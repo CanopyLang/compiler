@@ -1,0 +1,474 @@
+cabal-version: 2.2
+
+-- This file has been generated from package.yaml by hpack version 0.37.0.
+--
+-- see: https://github.com/sol/hpack
+
+name:           zokka
+version:        0.19.1
+synopsis:       The `elm` command line interface.
+description:    This includes commands like `elm make`, `elm repl`, and many others
+                for helping make Elm developers happy and productive.
+category:       Compiler, Language
+homepage:       https://elm-lang.org
+author:         Evan Czaplicki
+maintainer:     info@elm-lang.org
+copyright:      Copyright (c) 2011-present, Evan Czaplicki
+license:        BSD-3-Clause
+license-file:   LICENSE
+build-type:     Simple
+
+library
+  exposed-modules:
+      AST.Canonical
+      AST.Optimized
+      AST.Source
+      AST.Utils.Binop
+      AST.Utils.Shader
+      AST.Utils.Type
+      Canonicalize.Effects
+      Canonicalize.Environment
+      Canonicalize.Environment.Dups
+      Canonicalize.Environment.Foreign
+      Canonicalize.Environment.Local
+      Canonicalize.Expression
+      Canonicalize.Module
+      Canonicalize.Pattern
+      Canonicalize.Type
+      Compile
+      Data.Bag
+      Data.Index
+      Data.Map.Utils
+      Data.Name
+      Data.NonEmptyList
+      Data.OneOrMore
+      Data.Utf8
+      Elm.Compiler.Imports
+      Elm.Compiler.Type
+      Elm.Compiler.Type.Extract
+      Elm.Constraint
+      Elm.Docs
+      Elm.Float
+      Elm.Interface
+      Elm.Kernel
+      Elm.Licenses
+      Elm.Magnitude
+      Elm.ModuleName
+      Elm.Package
+      Elm.String
+      Elm.Version
+      Generate.Html
+      Generate.JavaScript
+      Generate.JavaScript.Builder
+      Generate.JavaScript.Expression
+      Generate.JavaScript.Functions
+      Generate.JavaScript.Name
+      Generate.Mode
+      Json.Decode
+      Json.Encode
+      Json.String
+      Nitpick.Debug
+      Nitpick.PatternMatches
+      Optimize.Case
+      Optimize.DecisionTree
+      Optimize.Expression
+      Optimize.Module
+      Optimize.Names
+      Optimize.Port
+      Parse.Declaration
+      Parse.Expression
+      Parse.Keyword
+      Parse.Module
+      Parse.Number
+      Parse.Pattern
+      Parse.Primitives
+      Parse.Shader
+      Parse.Space
+      Parse.String
+      Parse.Symbol
+      Parse.Type
+      Parse.Variable
+      Reporting.Annotation
+      Reporting.Doc
+      Reporting.Error
+      Reporting.Error.Canonicalize
+      Reporting.Error.Docs
+      Reporting.Error.Import
+      Reporting.Error.Json
+      Reporting.Error.Main
+      Reporting.Error.Pattern
+      Reporting.Error.Syntax
+      Reporting.Error.Type
+      Reporting.Render.Code
+      Reporting.Render.Type
+      Reporting.Render.Type.Localizer
+      Reporting.Report
+      Reporting.Result
+      Reporting.Suggest
+      Reporting.Warning
+      Type.Constrain.Expression
+      Type.Constrain.Module
+      Type.Constrain.Pattern
+      Type.Error
+      Type.Instantiate
+      Type.Occurs
+      Type.Solve
+      Type.Type
+      Type.Unify
+      Type.UnionFind
+      BackgroundWriter
+      Build
+      Deps.Bump
+      Deps.CustomRepositoryDataIO
+      Deps.Diff
+      Deps.Registry
+      Deps.Solver
+      Deps.Website
+      Elm.CustomRepositoryData
+      Elm.Details
+      Elm.Outline
+      Elm.PackageOverrideData
+      File
+      Generate
+      Http
+      Logging.Logger
+      Reporting
+      Reporting.Exit
+      Reporting.Exit.Help
+      Reporting.Task
+      Stuff
+      Terminal
+      Terminal.Chomp
+      Terminal.Error
+      Terminal.Helpers
+      Terminal.Internal
+      Bump
+      Develop
+      Develop.Generate.Help
+      Develop.Generate.Index
+      Develop.Socket
+      Develop.StaticFiles
+      Develop.StaticFiles.Build
+      Diff
+      Init
+      Install
+      Main
+      Make
+      Publish
+      Repl
+      Watch
+  other-modules:
+      Paths_zokka
+  autogen-modules:
+      Paths_zokka
+  hs-source-dirs:
+      compiler/src
+      builder/src
+      terminal/impl
+      terminal/src
+  default-extensions:
+      ConstraintKinds
+      DataKinds
+      DerivingStrategies
+      DerivingVia
+      DeriveFunctor
+      DeriveGeneric
+      DeriveDataTypeable
+      DuplicateRecordFields
+      FlexibleContexts
+      FlexibleInstances
+      GADTs
+      KindSignatures
+      LambdaCase
+      MultiParamTypeClasses
+      NamedFieldPuns
+      OverloadedStrings
+      PolyKinds
+      RankNTypes
+      ScopedTypeVariables
+      StandaloneDeriving
+      TypeApplications
+      TypeFamilies
+      TypeOperators
+      ViewPatterns
+      UndecidableInstances
+      ConstraintKinds
+      DataKinds
+      DerivingStrategies
+      DerivingVia
+      DeriveFunctor
+      DeriveGeneric
+      DeriveDataTypeable
+      DuplicateRecordFields
+      FlexibleContexts
+      FlexibleInstances
+      GADTs
+      KindSignatures
+      LambdaCase
+      MultiParamTypeClasses
+      NamedFieldPuns
+      OverloadedStrings
+      PolyKinds
+      RankNTypes
+      ScopedTypeVariables
+      StandaloneDeriving
+      TypeApplications
+      TypeFamilies
+      TypeOperators
+      ViewPatterns
+      UndecidableInstances
+  ghc-options: -Wall -fwarn-tabs -O2
+  build-depends:
+      HTTP
+    , SHA
+    , ansi-terminal
+    , ansi-wl-pprint <0.7
+    , base
+    , binary
+    , bytestring
+    , containers
+    , crypton-connection
+    , directory
+    , edit-distance
+    , file-embed
+    , filelock
+    , filepath
+    , fsnotify
+    , ghc-prim
+    , haskeline
+    , http-client
+    , http-client-tls
+    , http-types
+    , language-glsl
+    , mtl
+    , network
+    , parsec
+    , process
+    , raw-strings-qq
+    , scientific
+    , snap-core
+    , snap-server
+    , template-haskell
+    , time
+    , tls <2
+    , unordered-containers
+    , utf8-string
+    , vector
+    , websockets
+    , zip-archive
+  default-language: Haskell2010
+
+executable zokka
+  main-is: Main.hs
+  other-modules:
+      AST.Canonical
+      AST.Optimized
+      AST.Source
+      AST.Utils.Binop
+      AST.Utils.Shader
+      AST.Utils.Type
+      Canonicalize.Effects
+      Canonicalize.Environment
+      Canonicalize.Environment.Dups
+      Canonicalize.Environment.Foreign
+      Canonicalize.Environment.Local
+      Canonicalize.Expression
+      Canonicalize.Module
+      Canonicalize.Pattern
+      Canonicalize.Type
+      Compile
+      Data.Bag
+      Data.Index
+      Data.Map.Utils
+      Data.Name
+      Data.NonEmptyList
+      Data.OneOrMore
+      Data.Utf8
+      Elm.Compiler.Imports
+      Elm.Compiler.Type
+      Elm.Compiler.Type.Extract
+      Elm.Constraint
+      Elm.Docs
+      Elm.Float
+      Elm.Interface
+      Elm.Kernel
+      Elm.Licenses
+      Elm.Magnitude
+      Elm.ModuleName
+      Elm.Package
+      Elm.String
+      Elm.Version
+      Generate.Html
+      Generate.JavaScript
+      Generate.JavaScript.Builder
+      Generate.JavaScript.Expression
+      Generate.JavaScript.Functions
+      Generate.JavaScript.Name
+      Generate.Mode
+      Json.Decode
+      Json.Encode
+      Json.String
+      Nitpick.Debug
+      Nitpick.PatternMatches
+      Optimize.Case
+      Optimize.DecisionTree
+      Optimize.Expression
+      Optimize.Module
+      Optimize.Names
+      Optimize.Port
+      Parse.Declaration
+      Parse.Expression
+      Parse.Keyword
+      Parse.Module
+      Parse.Number
+      Parse.Pattern
+      Parse.Primitives
+      Parse.Shader
+      Parse.Space
+      Parse.String
+      Parse.Symbol
+      Parse.Type
+      Parse.Variable
+      Reporting.Annotation
+      Reporting.Doc
+      Reporting.Error
+      Reporting.Error.Canonicalize
+      Reporting.Error.Docs
+      Reporting.Error.Import
+      Reporting.Error.Json
+      Reporting.Error.Main
+      Reporting.Error.Pattern
+      Reporting.Error.Syntax
+      Reporting.Error.Type
+      Reporting.Render.Code
+      Reporting.Render.Type
+      Reporting.Render.Type.Localizer
+      Reporting.Report
+      Reporting.Result
+      Reporting.Suggest
+      Reporting.Warning
+      Type.Constrain.Expression
+      Type.Constrain.Module
+      Type.Constrain.Pattern
+      Type.Error
+      Type.Instantiate
+      Type.Occurs
+      Type.Solve
+      Type.Type
+      Type.Unify
+      Type.UnionFind
+      BackgroundWriter
+      Build
+      Deps.Bump
+      Deps.CustomRepositoryDataIO
+      Deps.Diff
+      Deps.Registry
+      Deps.Solver
+      Deps.Website
+      Elm.CustomRepositoryData
+      Elm.Details
+      Elm.Outline
+      Elm.PackageOverrideData
+      File
+      Generate
+      Http
+      Logging.Logger
+      Reporting
+      Reporting.Exit
+      Reporting.Exit.Help
+      Reporting.Task
+      Stuff
+      Terminal
+      Terminal.Chomp
+      Terminal.Error
+      Terminal.Helpers
+      Terminal.Internal
+      Bump
+      Develop
+      Develop.Generate.Help
+      Develop.Generate.Index
+      Develop.Socket
+      Develop.StaticFiles
+      Develop.StaticFiles.Build
+      Diff
+      Init
+      Install
+      Make
+      Publish
+      Repl
+      Watch
+      Paths_zokka
+  autogen-modules:
+      Paths_zokka
+  hs-source-dirs:
+      compiler/src
+      builder/src
+      terminal/impl
+      terminal/src
+  default-extensions:
+      ConstraintKinds
+      DataKinds
+      DerivingStrategies
+      DerivingVia
+      DeriveFunctor
+      DeriveGeneric
+      DeriveDataTypeable
+      DuplicateRecordFields
+      FlexibleContexts
+      FlexibleInstances
+      GADTs
+      KindSignatures
+      LambdaCase
+      MultiParamTypeClasses
+      NamedFieldPuns
+      OverloadedStrings
+      PolyKinds
+      RankNTypes
+      ScopedTypeVariables
+      StandaloneDeriving
+      TypeApplications
+      TypeFamilies
+      TypeOperators
+      ViewPatterns
+      UndecidableInstances
+  ghc-options: -rtsopts -threaded -Werror=incomplete-patterns -Werror=missing-fields
+  build-depends:
+      HTTP
+    , SHA
+    , ansi-terminal
+    , ansi-wl-pprint <0.7
+    , base
+    , binary
+    , bytestring
+    , containers
+    , crypton-connection
+    , directory
+    , edit-distance
+    , file-embed
+    , filelock
+    , filepath
+    , fsnotify
+    , ghc-prim
+    , haskeline
+    , http-client
+    , http-client-tls
+    , http-types
+    , language-glsl
+    , mtl
+    , network
+    , parsec
+    , process
+    , raw-strings-qq
+    , scientific
+    , snap-core
+    , snap-server
+    , template-haskell
+    , time
+    , tls <2
+    , unordered-containers
+    , utf8-string
+    , vector
+    , websockets
+    , zip-archive
+    , zokka
+  default-language: Haskell2010

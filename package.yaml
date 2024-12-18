@@ -1,0 +1,157 @@
+---
+name: zokka
+version: 0.19.1
+synopsis: "The `elm` command line interface."
+description: |
+  This includes commands like `elm make`, `elm repl`, and many others
+  for helping make Elm developers happy and productive.
+homepage: "https://elm-lang.org"
+license: BSD-3-Clause
+license-file: LICENSE
+author: "Evan Czaplicki"
+maintainer: "info@elm-lang.org"
+copyright: "Copyright (c) 2011-present, Evan Czaplicki"
+category: Compiler, Language
+
+dependencies:
+  - ansi-terminal
+  - ansi-wl-pprint < 0.7
+  - base
+  - binary
+  - bytestring
+  - containers
+  - directory
+  - edit-distance
+  - file-embed
+  - filelock
+  - filepath
+  - ghc-prim
+  - haskeline
+  - HTTP
+  - http-client
+  - http-client-tls
+  - http-types
+  - tls < 2
+  - language-glsl
+  - mtl
+  - network
+  - crypton-connection
+  - parsec
+  - filepath
+  - process
+  - raw-strings-qq
+  - scientific
+  - SHA
+  - snap-core
+  - snap-server
+  - template-haskell
+  - time
+  - unordered-containers
+  - utf8-string
+  - vector
+  - zip-archive
+  - fsnotify
+  - websockets
+default-extensions:
+  - ConstraintKinds
+  - DataKinds
+  - DerivingStrategies
+  - DerivingVia
+  - DeriveFunctor
+  - DeriveGeneric
+  - DeriveDataTypeable
+  - DuplicateRecordFields
+  - FlexibleContexts
+  - FlexibleInstances
+  - GADTs
+  - KindSignatures
+  - LambdaCase
+  - MultiParamTypeClasses
+  - NamedFieldPuns
+  - OverloadedStrings
+  - PolyKinds
+  - RankNTypes
+  - ScopedTypeVariables
+  - StandaloneDeriving
+  - TypeApplications
+  - TypeFamilies
+  - TypeOperators
+  - ViewPatterns
+  - UndecidableInstances
+library:
+  source-dirs:
+    - compiler/src
+    - builder/src
+    - terminal/impl
+    - terminal/src
+  default-extensions:
+    - ConstraintKinds
+    - DataKinds
+    - DerivingStrategies
+    - DerivingVia
+    - DeriveFunctor
+    - DeriveGeneric
+    - DeriveDataTypeable
+    - DuplicateRecordFields
+    - FlexibleContexts
+    - FlexibleInstances
+    - GADTs
+    - KindSignatures
+    - LambdaCase
+    - MultiParamTypeClasses
+    - NamedFieldPuns
+    - OverloadedStrings
+    - PolyKinds
+    - RankNTypes
+    - ScopedTypeVariables
+    - StandaloneDeriving
+    - TypeApplications
+    - TypeFamilies
+    - TypeOperators
+    - ViewPatterns
+    - UndecidableInstances
+  ghc-options:
+    - -Wall
+    - -fwarn-tabs
+    - -O2
+
+executables:
+  zokka:
+    main: Main.hs
+    source-dirs:
+      - compiler/src
+      - builder/src
+      - terminal/impl
+      - terminal/src
+    ghc-options:
+      - -rtsopts
+      - -threaded
+      - -Werror=incomplete-patterns
+      - -Werror=missing-fields
+    dependencies:
+      - zokka
+
+test-suites:
+  zokka-tests:
+    main: TestMain.hs
+    type: exitcode-stdio-1.0
+    source-dirs:
+      - tests
+    dependencies:
+      - tasty
+      - tasty-smallcheck
+      - tasty-hunit
+      - tasty-quickcheck
+      - tasty-hedgehog
+      - hedgehog
+    import:
+      - zokka
+
+source-dirs:
+  - compiler/src
+  - builder/src
+  - terminal/impl
+  - terminal/src
+
+other-modules:
+  - Paths_elm
