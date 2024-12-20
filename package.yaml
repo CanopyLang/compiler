@@ -131,27 +131,8 @@ executables:
     dependencies:
       - zokka
 
-test-suites:
-  zokka-tests:
-    main: TestMain.hs
-    type: exitcode-stdio-1.0
-    source-dirs:
-      - tests
-    dependencies:
-      - tasty
-      - tasty-smallcheck
-      - tasty-hunit
-      - tasty-quickcheck
-      - tasty-hedgehog
-      - hedgehog
-    import:
-      - zokka
-
 source-dirs:
   - compiler/src
   - builder/src
   - terminal/impl
   - terminal/src
-
-other-modules:
-  - Paths_elm

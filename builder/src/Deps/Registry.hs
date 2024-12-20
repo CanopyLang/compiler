@@ -1,54 +1,53 @@
+{-# LANGUAGE BangPatterns #-}
+{-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE TupleSections #-}
 {-# OPTIONS_GHC -Wall #-}
-{-# LANGUAGE BangPatterns, OverloadedStrings, TupleSections #-}
+
 module Deps.Registry
-  ( Registry(..)
-  , KnownVersions(..)
-  , ZokkaRegistries(..)
-  , RegistryKey(..)
-  , read
-  , fetch
-  , update
-  , latest
-  , getVersions
-  , getVersions'
-  , mergeRegistries
-  , lookupPackageRegistryKey
-  , createAuthHeader
+  ( Registry (..),
+    KnownVersions (..),
+    ZokkaRegistries (..),
+    RegistryKey (..),
+    read,
+    fetch,
+    update,
+    latest,
+    getVersions,
+    getVersions',
+    mergeRegistries,
+    lookupPackageRegistryKey,
+    createAuthHeader,
   )
-  where
+where
 
-
-import Prelude hiding (read)
-import Control.Monad (liftM2, join)
+import Control.Monad (join, liftM2)
 import Data.Binary (Binary, get, put)
+import Data.Binary.Get (Get)
+import Data.ByteString (ByteString)
+import qualified Data.ByteString as ByteString
+import Data.ByteString.Char8 (pack)
 import qualified Data.List as List
 import qualified Data.Map.Strict as Map
-
+import Data.Map.Utils (exchangeKeys, invertMap)
+import qualified Data.NonEmptyList as NE
+import qualified Data.Set as Set
+import qualified Data.Utf8 as Utf8
+import Data.Vector.Internal.Check (HasCallStack)
+import Data.Word (Word8)
 import qualified Deps.Website as Website
+import Elm.CustomRepositoryData (CustomRepositoriesData (..), CustomSingleRepositoryData (..), DefaultPackageServerRepo (..), PZRPackageServerRepo (..), PackageUrl, RepositoryAuthToken, RepositoryType (..), RepositoryUrl, SinglePackageLocationData (..))
 import qualified Elm.Package as Pkg
 import qualified Elm.Version as V
+import File (Time, getTime)
 import qualified File
+import Http (Header)
 import qualified Http
 import qualified Json.Decode as D
 import qualified Parse.Primitives as P
 import qualified Reporting.Exit as Exit
+import Stuff (ZokkaCustomRepositoryConfigFilePath (unZokkaCustomRepositoryConfigFilePath))
 import qualified Stuff
-import Elm.CustomRepositoryData (CustomSingleRepositoryData(..), CustomRepositoriesData(..), RepositoryUrl, RepositoryType(..), SinglePackageLocationData(..), PackageUrl, DefaultPackageServerRepo (..), PZRPackageServerRepo(..), RepositoryAuthToken)
-import Data.Binary.Get (Get)
-import Data.Word (Word8)
-import qualified Data.Set as Set
-import qualified Data.NonEmptyList as NE
-import Data.Vector.Internal.Check (HasCallStack)
-import Data.Map.Utils (exchangeKeys, invertMap)
-import File (Time, getTime)
-import Stuff (ZokkaCustomRepositoryConfigFilePath(unZokkaCustomRepositoryConfigFilePath))
-import Http (Header)
-import qualified Data.Utf8 as Utf8
-import Data.ByteString.Char8 (pack)
-import Data.ByteString (ByteString)
-import qualified Data.ByteString as ByteString
-
-
+import Prelude hiding (read)
 
 -- REGISTRY
 
@@ -61,9 +60,9 @@ data ZokkaRegistries = ZokkaRegistries
   -- things along if our custom repository config hasn't been changed (we just need
   -- to update pre-existing repos). If the config has been changed then we need to
   -- re-fetch from scratch.
-  { _lastModificationTimeOfCustomRepoConfig :: Time
-  , _registries :: !(Map.Map RegistryKey Registry)
-  , _packagesToLocations :: !(Map.Map Pkg.Name (Map.Map V.Version RegistryKey))
+  { _lastModificationTimeOfCustomRepoConfig :: Time,
+    _registries :: !(Map.Map RegistryKey Registry),
+    _packagesToLocations :: !(Map.Map Pkg.Name (Map.Map V.Version RegistryKey))
   }
   deriving (Show, Eq)
 
@@ -72,82 +71,62 @@ data ZokkaRegistries = ZokkaRegistries
 knownVersionsToNEListOfVersions :: KnownVersions -> NE.List V.Version
 knownVersionsToNEListOfVersions (KnownVersions newest rest) = NE.List newest rest
 
-
 zokkaRegistriesFromRegistriesMap :: Time -> Map.Map RegistryKey Registry -> ZokkaRegistries
 zokkaRegistriesFromRegistriesMap custmoRepoConfigLastModificationTime registriesMap =
-  let
-    --FIXME: Deal with what happens when we have multiple registries with the same
-    -- version of a package. Right now we just essentially randomly choose one
-    -- (subject to the ordering of maps)
-    registryKeysToPkgVersions = Map.map _versions registriesMap
-    pkgNamesToRegistryAndKnownVersions = exchangeKeys registryKeysToPkgVersions
-    pkgNamesToRegistryAndAllVersions = (fmap . fmap) knownVersionsToNEListOfVersions pkgNamesToRegistryAndKnownVersions
-    pkgNamesToAllVersionsAndRegistry = fmap invertMap pkgNamesToRegistryAndAllVersions
-    pkgNamesToSingleVersionAndRegistry = (fmap . fmap) NE.head pkgNamesToAllVersionsAndRegistry
-  in
-    ZokkaRegistries{_lastModificationTimeOfCustomRepoConfig=custmoRepoConfigLastModificationTime, _registries=registriesMap, _packagesToLocations=pkgNamesToSingleVersionAndRegistry}
-
+  let --FIXME: Deal with what happens when we have multiple registries with the same
+      -- version of a package. Right now we just essentially randomly choose one
+      -- (subject to the ordering of maps)
+      registryKeysToPkgVersions = Map.map _versions registriesMap
+      pkgNamesToRegistryAndKnownVersions = exchangeKeys registryKeysToPkgVersions
+      pkgNamesToRegistryAndAllVersions = (fmap . fmap) knownVersionsToNEListOfVersions pkgNamesToRegistryAndKnownVersions
+      pkgNamesToAllVersionsAndRegistry = fmap invertMap pkgNamesToRegistryAndAllVersions
+      pkgNamesToSingleVersionAndRegistry = (fmap . fmap) NE.head pkgNamesToAllVersionsAndRegistry
+   in ZokkaRegistries {_lastModificationTimeOfCustomRepoConfig = custmoRepoConfigLastModificationTime, _registries = registriesMap, _packagesToLocations = pkgNamesToSingleVersionAndRegistry}
 
 lookupPackageRegistryKey :: ZokkaRegistries -> Pkg.Name -> V.Version -> Maybe RegistryKey
-lookupPackageRegistryKey ZokkaRegistries{_packagesToLocations=packagesToLocations} pkgName pkgVersion =
+lookupPackageRegistryKey ZokkaRegistries {_packagesToLocations = packagesToLocations} pkgName pkgVersion =
   do
     versions <- Map.lookup pkgName packagesToLocations
     Map.lookup pkgVersion versions
-
 
 data RegistryKey
   = RepositoryUrlKey CustomSingleRepositoryData
   | PackageUrlKey SinglePackageLocationData
   deriving (Eq, Ord, Show)
 
-
 combineKnownVersions :: KnownVersions -> KnownVersions -> KnownVersions
 combineKnownVersions (KnownVersions newest0 previous0) (KnownVersions newest1 previous1) =
   KnownVersions (max newest0 newest1) (min newest0 newest1 : (previous0 ++ previous1))
-
 
 combineRegistry :: Registry -> Registry -> Registry
 combineRegistry (Registry count0 versions0) (Registry count1 versions1) =
   Registry (count0 + count1) (Map.unionWith combineKnownVersions versions0 versions1)
 
-
 emptyRegistry :: Registry
 emptyRegistry = Registry 0 Map.empty
 
-
 mergeRegistries :: ZokkaRegistries -> Registry
-mergeRegistries ZokkaRegistries{_registries=registries} = Map.foldl combineRegistry emptyRegistry registries
+mergeRegistries ZokkaRegistries {_registries = registries} = Map.foldl combineRegistry emptyRegistry registries
 
+data Registry = Registry
+  { _count :: !Int,
+    _versions :: !(Map.Map Pkg.Name KnownVersions)
+  }
+  deriving (Eq, Show)
 
-data Registry =
-  Registry
-    { _count :: !Int
-    , _versions :: !(Map.Map Pkg.Name KnownVersions)
-    }
-    deriving (Eq, Show)
-
-
-data KnownVersions =
-  KnownVersions
-    { _newest :: V.Version
-    , _previous :: ![V.Version]
-    }
-    deriving (Eq, Show)
-
-
+data KnownVersions = KnownVersions
+  { _newest :: V.Version,
+    _previous :: ![V.Version]
+  }
+  deriving (Eq, Show)
 
 -- READ
-
 
 read :: HasCallStack => Stuff.ZokkaSpecificCache -> IO (Maybe ZokkaRegistries)
 read cache =
   File.readBinary (Stuff.registry cache)
 
-
-
 -- FETCH
-
-
 
 fetch :: Http.Manager -> Stuff.ZokkaSpecificCache -> CustomRepositoriesData -> Time -> IO (Either Exit.RegistryProblem ZokkaRegistries)
 fetch manager cache (CustomRepositoriesData customFullRepositories singlePackageLocations) customRepoConfigLastModified =
@@ -165,66 +144,54 @@ fetch manager cache (CustomRepositoriesData customFullRepositories singlePackage
         File.writeBinary path (zokkaRegistriesFromRegistriesMap customRepoConfigLastModified registry)
         pure $ Right (zokkaRegistriesFromRegistriesMap customRepoConfigLastModified registry)
 
-
 createRegistryFromSinglePackageLocation :: SinglePackageLocationData -> Registry
-createRegistryFromSinglePackageLocation SinglePackageLocationData{_packageName=packageName, _version=version} =
-    Registry {_count = 0, _versions = Map.singleton packageName KnownVersions {_newest = version, _previous=[]}}
-
+createRegistryFromSinglePackageLocation SinglePackageLocationData {_packageName = packageName, _version = version} =
+  Registry {_count = 0, _versions = Map.singleton packageName KnownVersions {_newest = version, _previous = []}}
 
 fetchSingleCustomRepository :: Http.Manager -> CustomSingleRepositoryData -> IO (Either Exit.RegistryProblem Registry)
 fetchSingleCustomRepository manager customRepositoryData =
   case customRepositoryData of
     DefaultPackageServerRepoData defaultPackageServerRepo ->
-      let
-        repositoryUrl = _defaultPackageServerRepoTypeUrl defaultPackageServerRepo
-      in
-      fetchFromRepositoryUrl manager repositoryUrl
+      let repositoryUrl = _defaultPackageServerRepoTypeUrl defaultPackageServerRepo
+       in fetchFromRepositoryUrl manager repositoryUrl
     PZRPackageServerRepoData pzrPackageServerRepo ->
-      let
-        repositoryUrl = _pzrPackageServerRepoTypeUrl pzrPackageServerRepo
-        repositoryAuthToken = _pzrPackageServerRepoAuthToken pzrPackageServerRepo
-      in
-      fetchFromRepositoryUrlWithRepoAuthToken manager repositoryUrl repositoryAuthToken
-
+      let repositoryUrl = _pzrPackageServerRepoTypeUrl pzrPackageServerRepo
+          repositoryAuthToken = _pzrPackageServerRepoAuthToken pzrPackageServerRepo
+       in fetchFromRepositoryUrlWithRepoAuthToken manager repositoryUrl repositoryAuthToken
 
 fetchFromRepositoryUrlWithRepoAuthToken :: Http.Manager -> RepositoryUrl -> RepositoryAuthToken -> IO (Either Exit.RegistryProblem Registry)
 fetchFromRepositoryUrlWithRepoAuthToken manager repositoryUrl repositoryAuthToken =
   getWithHeaders manager repositoryUrl "/all-packages" [createAuthHeader repositoryAuthToken] allPkgsDecoder $
     \versions ->
-      do  let size = Map.foldr' addEntry 0 versions
-          pure $ Registry size versions
-
+      do
+        let size = Map.foldr' addEntry 0 versions
+        pure $ Registry size versions
 
 fetchFromRepositoryUrl :: Http.Manager -> RepositoryUrl -> IO (Either Exit.RegistryProblem Registry)
 fetchFromRepositoryUrl manager repositoryUrl =
   post manager repositoryUrl "/all-packages" allPkgsDecoder $
     \versions ->
-      do  let size = Map.foldr' addEntry 0 versions
-          pure $ Registry size versions
-
+      do
+        let size = Map.foldr' addEntry 0 versions
+        pure $ Registry size versions
 
 addEntry :: KnownVersions -> Int -> Int
 addEntry (KnownVersions _ vs) count =
   count + 1 + length vs
 
-
 allPkgsDecoder :: D.Decoder () (Map.Map Pkg.Name KnownVersions)
 allPkgsDecoder =
-  let
-    keyDecoder =
-      Pkg.keyDecoder bail
+  let keyDecoder =
+        Pkg.keyDecoder bail
 
-    versionsDecoder =
-      D.list (D.mapError (\_ -> ()) V.decoder)
+      versionsDecoder =
+        D.list (D.mapError (\_ -> ()) V.decoder)
 
-    toKnownVersions versions =
-      case List.sortBy (flip compare) versions of
-        v:vs -> return (KnownVersions v vs)
-        []   -> D.failure ()
-  in
-  D.dict keyDecoder (toKnownVersions =<< versionsDecoder)
-
-
+      toKnownVersions versions =
+        case List.sortBy (flip compare) versions of
+          v : vs -> return (KnownVersions v vs)
+          [] -> D.failure ()
+   in D.dict keyDecoder (toKnownVersions =<< versionsDecoder)
 
 -- UPDATE
 
@@ -244,7 +211,6 @@ update manager cache zokkaRegistries customRepoConfigLastModified =
           _ <- File.writeBinary (Stuff.registry cache) newZokkaRegistries
           pure $ Right newZokkaRegistries
 
-
 updateSingleRegistry :: Http.Manager -> RegistryKey -> Registry -> IO (Either Exit.RegistryProblem Registry)
 updateSingleRegistry manager registryKey registry =
   case registryKey of
@@ -257,7 +223,6 @@ updateSingleRegistry manager registryKey registry =
     -- With package URLs, only one package can correspond to a single URL so there is no sensible notion of "update"
     PackageUrlKey _ -> pure $ Right registry
 
-
 updateSingleRegistryFromStandardElmRepo :: Http.Manager -> RepositoryUrl -> Registry -> IO (Either Exit.RegistryProblem Registry)
 updateSingleRegistryFromStandardElmRepo manager repositoryUrl oldRegistry@(Registry size packages) =
   post manager repositoryUrl ("/all-packages/since/" ++ show size) (D.list newPkgDecoder) $
@@ -265,14 +230,11 @@ updateSingleRegistryFromStandardElmRepo manager repositoryUrl oldRegistry@(Regis
       case news of
         [] ->
           pure oldRegistry
-
-        _:_ ->
-          let
-            newSize = size + length news
-            newPkgs = foldr addNew packages news
-            newRegistry = Registry newSize newPkgs
-          in
-            pure newRegistry
+        _ : _ ->
+          let newSize = size + length news
+              newPkgs = foldr addNew packages news
+              newRegistry = Registry newSize newPkgs
+           in pure newRegistry
 
 authSchemeName :: ByteString
 authSchemeName = "CustomZokkaRepoAuthToken"
@@ -282,7 +244,6 @@ createAuthHeader authTokenValue = ("Authorization", ByteString.concat [authSchem
   where
     authTokenValueAsChars = pack (Utf8.toChars authTokenValue)
 
-
 updateSingleRegistryFromPZRRepo :: Http.Manager -> PZRPackageServerRepo -> Registry -> IO (Either Exit.RegistryProblem Registry)
 updateSingleRegistryFromPZRRepo manager pzrPackageServerRepo _ =
   -- FIXME: Note that unlike for updateSingleRegistryFromStandardElmRepo we
@@ -291,49 +252,37 @@ updateSingleRegistryFromPZRRepo manager pzrPackageServerRepo _ =
   -- for now because we assume that custom repos will be generally small-ish.
   --
   -- This is why we don't use the registry argument at all for now.
-  let
-    serverUrl = _pzrPackageServerRepoTypeUrl pzrPackageServerRepo
-    repoAuthToken = _pzrPackageServerRepoAuthToken pzrPackageServerRepo
-  in
-  fetchFromRepositoryUrlWithRepoAuthToken manager serverUrl repoAuthToken
-
+  let serverUrl = _pzrPackageServerRepoTypeUrl pzrPackageServerRepo
+      repoAuthToken = _pzrPackageServerRepoAuthToken pzrPackageServerRepo
+   in fetchFromRepositoryUrlWithRepoAuthToken manager serverUrl repoAuthToken
 
 addNew :: (Pkg.Name, V.Version) -> Map.Map Pkg.Name KnownVersions -> Map.Map Pkg.Name KnownVersions
 addNew (name, version) versions =
-  let
-    add maybeKnowns =
-      case maybeKnowns of
-        Just (KnownVersions v vs) ->
-          KnownVersions version (v:vs)
-
-        Nothing ->
-          KnownVersions version []
-  in
-  Map.alter (Just . add) name versions
-
-
+  let add maybeKnowns =
+        case maybeKnowns of
+          Just (KnownVersions v vs) ->
+            KnownVersions version (v : vs)
+          Nothing ->
+            KnownVersions version []
+   in Map.alter (Just . add) name versions
 
 -- NEW PACKAGE DECODER
-
 
 newPkgDecoder :: D.Decoder () (Pkg.Name, V.Version)
 newPkgDecoder =
   D.customString newPkgParser bail
 
-
 newPkgParser :: P.Parser () (Pkg.Name, V.Version)
 newPkgParser =
-  do  pkg <- P.specialize (\_ _ _ -> ()) Pkg.parser
-      P.word1 0x40 {-@-} bail
-      vsn <- P.specialize (\_ _ _ -> ()) V.parser
-      return (pkg, vsn)
-
+  do
+    pkg <- P.specialize (\_ _ _ -> ()) Pkg.parser
+    P.word1 0x40 {-@-} bail
+    vsn <- P.specialize (\_ _ _ -> ()) V.parser
+    return (pkg, vsn)
 
 bail :: row -> col -> ()
 bail _ _ =
   ()
-
-
 
 -- LATEST
 
@@ -346,8 +295,8 @@ singlePackageLocationDataToRegistryKey = PackageUrlKey
 doesRegistryAgreeWithCustomRepositoriesData :: CustomRepositoriesData -> ZokkaRegistries -> Bool
 doesRegistryAgreeWithCustomRepositoriesData (CustomRepositoriesData fullRepositories singlePackages) registry =
   Set.fromList allRegistryKeys == Map.keysSet (_registries registry)
-    where
-      allRegistryKeys = (customSingleRepositoryDataToRegistryKey <$> fullRepositories) ++ (singlePackageLocationDataToRegistryKey <$> singlePackages)
+  where
+    allRegistryKeys = (customSingleRepositoryDataToRegistryKey <$> fullRepositories) ++ (singlePackageLocationDataToRegistryKey <$> singlePackages)
 
 latest :: Http.Manager -> CustomRepositoriesData -> Stuff.ZokkaSpecificCache -> Stuff.ZokkaCustomRepositoryConfigFilePath -> IO (Either Exit.RegistryProblem ZokkaRegistries)
 latest manager customRepositoriesData cache customRepoConfigFilePath =
@@ -355,13 +304,12 @@ latest manager customRepositoriesData cache customRepoConfigFilePath =
     maybeOldRegistry <- read cache
     customRepoConfigFilePathLastModified <- getTime (unZokkaCustomRepositoryConfigFilePath customRepoConfigFilePath)
     case maybeOldRegistry of
-      Just oldRegistry -> if doesRegistryAgreeWithCustomRepositoriesData customRepositoriesData oldRegistry
-        then update manager cache oldRegistry customRepoConfigFilePathLastModified
-        -- FIXME: This is too conservative
-        else fetch manager cache customRepositoriesData customRepoConfigFilePathLastModified
+      Just oldRegistry ->
+        if doesRegistryAgreeWithCustomRepositoriesData customRepositoriesData oldRegistry
+          then update manager cache oldRegistry customRepoConfigFilePathLastModified
+          else -- FIXME: This is too conservative
+            fetch manager cache customRepositoriesData customRepoConfigFilePathLastModified
       Nothing -> fetch manager cache customRepositoriesData customRepoConfigFilePathLastModified
-
-
 
 -- GET VERSIONS
 
@@ -371,13 +319,11 @@ compareVersionToKnownVersions version knownVersionsMaybe =
     Just (KnownVersions newest others) -> KnownVersions (max newest version) (min newest version : others)
     Nothing -> KnownVersions version []
 
-
 versionsToKnownVersions :: [V.Version] -> Maybe KnownVersions
 versionsToKnownVersions = foldr (\v acc -> Just $ compareVersionToKnownVersions v acc) Nothing
 
-
 getVersions :: Pkg.Name -> ZokkaRegistries -> Maybe KnownVersions
-getVersions name ZokkaRegistries{_packagesToLocations=packagesToLocations} =
+getVersions name ZokkaRegistries {_packagesToLocations = packagesToLocations} =
   do
     versionsMap <- Map.lookup name packagesToLocations
     let versions = Map.keys versionsMap
@@ -390,42 +336,34 @@ getVersions' name zokkaRegistry =
     -- FIXME: Maybe a faster way than just brute-force merging?
     Nothing -> Left $ Pkg.nearbyNames name (Map.keys (_versions $ mergeRegistries zokkaRegistry))
 
-
-
 -- POST
 
 -- FIXME: It's really unclear whether we should have post stuff here, since technically everything should be doable with a GET?
 postWithHeaders :: Http.Manager -> RepositoryUrl -> String -> [Header] -> D.Decoder x a -> (a -> IO b) -> IO (Either Exit.RegistryProblem b)
 postWithHeaders manager repositoryUrl path headers decoder callback =
-  let
-    url = Website.route repositoryUrl path []
-  in
-  do
-    Http.post manager url headers Exit.RP_Http $
-      \body ->
-        case D.fromByteString decoder body of
-          Right a -> Right <$> callback a
-          Left _ -> return $ Left $ Exit.RP_Data url body
+  let url = Website.route repositoryUrl path []
+   in do
+        Http.post manager url headers Exit.RP_Http $
+          \body ->
+            case D.fromByteString decoder body of
+              Right a -> Right <$> callback a
+              Left _ -> return $ Left $ Exit.RP_Data url body
 
 post :: Http.Manager -> RepositoryUrl -> String -> D.Decoder x a -> (a -> IO b) -> IO (Either Exit.RegistryProblem b)
 post manager repositoryUrl path decoder callback =
   postWithHeaders manager repositoryUrl path [] decoder callback
-
 
 -- GET
 
 -- FIXME: This maybe should just replace all the POSTs?
 getWithHeaders :: Http.Manager -> RepositoryUrl -> String -> [Header] -> D.Decoder x a -> (a -> IO b) -> IO (Either Exit.RegistryProblem b)
 getWithHeaders manager repositoryUrl path headers decoder callback =
-  let
-    url = Website.route repositoryUrl path []
-  in
-  Http.get manager url headers Exit.RP_Http $
-    \body ->
-      case D.fromByteString decoder body of
-        Right a -> Right <$> callback a
-        Left _ -> return $ Left $ Exit.RP_Data url body
-
+  let url = Website.route repositoryUrl path []
+   in Http.get manager url headers Exit.RP_Http $
+        \body ->
+          case D.fromByteString decoder body of
+            Right a -> Right <$> callback a
+            Left _ -> return $ Left $ Exit.RP_Data url body
 
 -- BINARY
 
@@ -451,23 +389,20 @@ instance Binary RegistryKey where
       put (1 :: Word8)
       put packageUrl
 
-
 instance Binary Registry where
   get = liftM2 Registry get get
   put (Registry a b) = put a >> put b
 
-
 instance Binary KnownVersions where
   get = liftM2 KnownVersions get get
   put (KnownVersions a b) = put a >> put b
-
 
 instance Binary ZokkaRegistries where
   get = do
     configFileTime <- get :: Get Time
     registries <- get :: Get (Map.Map RegistryKey Registry)
     packagesToLocations <- get :: Get (Map.Map Pkg.Name (Map.Map V.Version RegistryKey))
-    pure $ ZokkaRegistries{_lastModificationTimeOfCustomRepoConfig=configFileTime, _registries=registries, _packagesToLocations=packagesToLocations}
+    pure $ ZokkaRegistries {_lastModificationTimeOfCustomRepoConfig = configFileTime, _registries = registries, _packagesToLocations = packagesToLocations}
 
   put (ZokkaRegistries configFileTime registries packagesToLocations) = do
     put configFileTime

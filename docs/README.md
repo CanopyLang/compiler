@@ -21,26 +21,26 @@ also provides them directly. That means it includes on an ongoing basis:
 1. A collection of API-identical versions of foundational Elm packages that
    incorporate bug fixes that can be used to override their usual counterparts [this is not quite done yet]
 2. A minimal alternative package repository that hosts these packages
-3. Minor compiler bug fixes and quality of life improvements *that do not change
-   the Elm language* (ongoing)
+3. Minor compiler bug fixes and quality of life improvements _that do not change
+   the Elm language_ (ongoing)
 
 This aims to be the entirety of Zokka's mission until 2025. This
 means Zokka is a quite conservative extension of Elm. What this implies is:
 
-+ A commitment to bidirectional compatibility with Elm 0.19 through the end of
+- A commitment to bidirectional compatibility with Elm 0.19 through the end of
   2024: any code that compiles with the default Elm compiler should compile with
-  Zokka *and vice versa*. In particular, this means that Zokka will not just be
+  Zokka _and vice versa_. In particular, this means that Zokka will not just be
   backwards-compatible with Elm, all Zokka code that compiles with the Zokka
   compiler should compile with the Elm compiler, barring compiler bugs in the
   Elm compiler (or Zokka compiler!) or usage of packages not in the standard Elm
   package repository.
-+ What is considered a "bug fix" will be quite tightly scoped. E.g. something
+- What is considered a "bug fix" will be quite tightly scoped. E.g. something
   like [https://github.com/elm/compiler/issues/1773](https://github.com/elm/compiler/issues/1773)
   that adds the ability to pattern match on negative number literals would be on
   the fence (and likely not considered to be part of Zokka's current mission).
   Common candidates for compiler bug fixes that would be considered acceptable
   are compiler crashes and improved error messages.
-+ **Very little actual feature development.** Some experimentation may happen on side
+- **Very little actual feature development.** Some experimentation may happen on side
   branches that may show up in both private and public channels, but those will
   not be given an actual Github release until 2025 (if Zokka is still relevant
   then).
@@ -60,7 +60,7 @@ You can always drop in Zokka as a replacement for Elm so for example the
 following will work.
 
 1. Download the Zokka binary from Github releases
-   [https://github.com/changlinli/zokka-compiler/releases](https://github.com/changlinli/zokka-compiler/releases). 
+   [https://github.com/changlinli/zokka-compiler/releases](https://github.com/changlinli/zokka-compiler/releases).
 2. Run `zokka make $YOUR_ELM_MAIN_FILE` with whatever flags you usually pass to
    the Elm compiler.
 3. Everything should work just the exact same as it did before!
@@ -134,7 +134,7 @@ As can be seen, by default this configuration file includes both the standard El
 package repository as well as a separate Zokka package repository. Either
 repository can be deleted. For example if you would like to make use of the Zokka
 compiler with its bug fixes, but would otherwise like to ensure that you have a
-vanilla Elm project,  you can delete the `zokka-lang.com` repository. Likewise,
+vanilla Elm project, you can delete the `zokka-lang.com` repository. Likewise,
 if you set up an internal package repository for your company and would like to
 guarantee that all packages come from that repository and not the standard Elm
 repository, you can also delete the `elm-lang.org` repository and substitute
@@ -390,7 +390,6 @@ See [./FAQs.md](./FAQs.md).
 A delightful language for reliable webapps.
 
 Check out the [Home Page](http://elm-lang.org/), [Try Online](http://elm-lang.org/try), or [The Official Guide](http://guide.elm-lang.org/)
-
 
 <br>
 

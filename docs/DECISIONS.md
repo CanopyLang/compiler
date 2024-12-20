@@ -1,8 +1,8 @@
-## Don't use custom zelm.json append to elm.json
+## Don't use custom zokka.json append to elm.json
 
 Keep this compatible with existing Elm tooling.
 
-## Put custom repository info in ~/.elm not in elm.json/zelm.json
+## Put custom repository info in ~/.elm not in elm.json/zokka.json
 
 Custom repositories affect the global Elm cache and so should live globally lest
 different projects end up with conflicting ideas of what should be put in the
@@ -15,7 +15,7 @@ check would be (I guess on install?).
 
 ## Only allow overrides of single package versions not ranges
 
-Makes implementation *way* easier (otherwise have to come up with some sort of
+Makes implementation _way_ easier (otherwise have to come up with some sort of
 custom mapping syntax).
 
 Besides, overrides really should only exist in applications not libraries and
@@ -25,7 +25,7 @@ applications usually have single versions of libraries instead of ranges.
 
 On the one hand this would be nice if we required that packages introduced as an
 override also showed up in dependency lists to preserve the expectation that
-dependency lists do in fact list *all* the packages that an application depends
+dependency lists do in fact list _all_ the packages that an application depends
 on.
 
 However, this has the potential for severe breakage because different packages

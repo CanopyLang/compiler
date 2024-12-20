@@ -1,15 +1,15 @@
 # Roadmap for Spring/Summer of 2024
 
-+ Standup an online service allowing people to setup personal and company custom
+- Standup an online service allowing people to setup personal and company custom
   repositories very easily. This would include a new reference implementation of
   a Zokka custom repository that people can standup individually should they so
   choose.
-+ Fix up log messages and code hygiene. Right now there's a lot of hacky and
+- Fix up log messages and code hygiene. Right now there's a lot of hacky and
   borderline nonsensical print statements that I've thrown in for personal
   debugging.
-+ Set up consistent benchmarks of compile and runtime performance.
-+ Implement the learnings from elm optimize level 2.
-+ Random other bugfixes as they come in.
+- Set up consistent benchmarks of compile and runtime performance.
+- Implement the learnings from elm optimize level 2.
+- Random other bugfixes as they come in.
 
 ## Standup custom repositories
 
@@ -26,40 +26,40 @@ use on their own servers.
 The ability to quickly spin up and destroy custom repositories opens a wide
 range of new workflow possibilities.
 
-+ Users could treat these custom repositories as "staging grounds" for publishing
+- Users could treat these custom repositories as "staging grounds" for publishing
   packages. Right now every new package published to the Elm package repository
   must be treated as a production-ready, immutable package, which makes package
   publishing much more high-stakes than it needs to be. These custom
   repositories can act as an intermediary.
-    * New users can use this as a chance as a low-stakes method of getting
-      familiar with how to publish an Elm package
-    * All users can use this as a method for disseminating informal, beta
-      versions of libraries to a select group of testers
-+ Organizations might want their own custom repositories. Larger orgs might be
+  - New users can use this as a chance as a low-stakes method of getting
+    familiar with how to publish an Elm package
+  - All users can use this as a method for disseminating informal, beta
+    versions of libraries to a select group of testers
+- Organizations might want their own custom repositories. Larger orgs might be
   willing to eat the operations cost of setting up the package website and
   maintaining it, but smaller orgs might just want a turnkey solution.
-+ Both orgs and individuals might simply not want to use GitHub
+- Both orgs and individuals might simply not want to use GitHub
 
 Some notes:
 
-+ These custom repositories will be unchained from `git` and GitHub and will
+- These custom repositories will be unchained from `git` and GitHub and will
   directly store packages on the server.
-    * This may drastically increase server operation costs
-    * I will likely institute very strict limits on upload/download frequency,
-      package sizes, and overall repository sizes as a result.
-    * There may be a paid option with higher limits to cover server fees if
-      there's demand to raise those limits.
-+ Because these custom repositories may be ephemeral and/or mutable at the
+  - This may drastically increase server operation costs
+  - I will likely institute very strict limits on upload/download frequency,
+    package sizes, and overall repository sizes as a result.
+  - There may be a paid option with higher limits to cover server fees if
+    there's demand to raise those limits.
+- Because these custom repositories may be ephemeral and/or mutable at the
   discretion of their owners:
-    * The custom auth tokens used in lieu of GitHub handling authentication and
-      publish authorization will be *required* and no option will be given to
-      allow for explicitly "globally readable" packages.
-    * Moreover, I don't want to encourage fragmentation of the package ecosystem
-      among many servers, so if you want a package to globally readable, I would
-      still direct you first to the standard Elm package repo and failing that
-      to the standard Zokka repo.
-+ As a result, the standard Zokka repository at
-  [https://zokka-lang.com](https://zokka-lang.com) will *not* follow this design.
+  - The custom auth tokens used in lieu of GitHub handling authentication and
+    publish authorization will be _required_ and no option will be given to
+    allow for explicitly "globally readable" packages.
+  - Moreover, I don't want to encourage fragmentation of the package ecosystem
+    among many servers, so if you want a package to globally readable, I would
+    still direct you first to the standard Elm package repo and failing that
+    to the standard Zokka repo.
+- As a result, the standard Zokka repository at
+  [https://zokka-lang.com](https://zokka-lang.com) will _not_ follow this design.
 
 ## Fix up log messages and code hygiene
 

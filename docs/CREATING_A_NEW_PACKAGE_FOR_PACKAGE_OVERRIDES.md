@@ -9,7 +9,7 @@ Packages used to override other packages should:
 4. Not be used as a normal dependency by any other package or application.
 5. Shoud have the same dependencies as the original package.
 
-The first rule perhaps has the clearest motivation.  Packages used to override
+The first rule perhaps has the clearest motivation. Packages used to override
 other packages must be API-compatible with the original package, otherwise you
 can end up with unfixable compilation errors in your dependencies if you are
 overriding an indirect dependency. Indeed it would be advisable to have the APIs

@@ -25,14 +25,14 @@ endpoints.
 
 ### GET paths:
 
-+ `/all-packages/`: returns a JSON object listing all packages on the server.
+- `/all-packages/`: returns a JSON object listing all packages on the server.
   An example of the structure of the JSON object is provided below.
   ```
   { "author_0/project-name": ["1.0.0", "2.0.0"]
   , "author_1/project-name": ["1.0.0", "1.0.1"]
   }
   ```
-+ `/all-packages/since/{n}`: returns a JSON object listing all packages on the
+- `/all-packages/since/{n}`: returns a JSON object listing all packages on the
   server that have been created since the `n`th package was created. An example
   of the structure of the JSON objet is provided below.
   ```
@@ -42,7 +42,7 @@ endpoints.
   ```
   Note that this means that packages once created can never be deleted,
   otherwise the number of packages would change and mess up the `n` counter.
-+ `/packages/{author}/{project-name}/{version}/endpoint.json`: returns a JSON
+- `/packages/{author}/{project-name}/{version}/endpoint.json`: returns a JSON
   object listing the location of a zipped version of the package as well as the
   SHA1 hash of the zipfile. An example is provided below. Note that the
   URL structure of the `url` does not have to have any relation to the package
@@ -55,8 +55,9 @@ endpoints.
 
 ### POST paths:
 
-+ `/register?name={package-name}&version={version}&commit-hash={commit-hash}`: A
+- `/register?name={package-name}&version={version}&commit-hash={commit-hash}`: A
   `multipart/form-data` request that looks something like the following:
+
   ```
   POST /register HTTP/1.1
   Host: foo.example
@@ -86,6 +87,7 @@ endpoints.
 Upon a call to `/register`, the standard Elm package server will perform the
 following verification (purely using the query parameters, i.e. the `elm.json`
 file that is uploaded is not used for any verification):
+
 1. Verify that the package name, as a GitHub username and repository name, are
    in fact publically accessible on GitHub
 2. Verify that the package version exists as a tag in the GitHub repo
@@ -109,8 +111,9 @@ to be the zipfile containing the entire package.
 To emphasize that the format of our upload request has changed, the endpoint
 name is also changed, from `register` to `upload-package`.
 
-+ `/upload-package?name={package-name}&version={version}`: A
+- `/upload-package?name={package-name}&version={version}`: A
   `multipart/form-data` request that looks something like the following:
+
   ```
   POST /upload-package HTTP/1.1
   Host: foo.example
@@ -142,7 +145,7 @@ since that only works for append-only data structures. There are ideas I have to
 re-introduce incremental package list updates (mainly turning things into events
 and transmitting both "new package" and "package deleted" events from an
 offset), but they aren't necessary for this first iteration to work. The
-*entire* Elm package index is 205 KB, which is only 44 KB gzipped. Asking a user
+_entire_ Elm package index is 205 KB, which is only 44 KB gzipped. Asking a user
 to simply redownload the entire package index of their custom repository each
 time will likely be fine for a pretty long time to come.
 

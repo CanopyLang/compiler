@@ -16,4 +16,3 @@ Zokka aims to be:
 
 This has a variety of downstream effects on technical choices that Zokka has
 made, as elaborated further in the FAQs.
-

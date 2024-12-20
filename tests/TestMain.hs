@@ -1,35 +1,33 @@
-{-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE NumericUnderscores #-}
+{-# LANGUAGE OverloadedStrings #-}
+
+import qualified Data.Binary as Binary
+import Data.ByteString.Lazy (fromStrict)
+import qualified Data.Digest.Pure.SHA as SHA
+import Data.Fixed (Fixed (..))
+import Data.Function ((&))
+import qualified Data.Map.Strict as Map
+import qualified Data.Set as Set
+import qualified Data.Utf8
+import qualified Data.Utf8 as Utf8
+import Deps.Registry (KnownVersions (..), Registry (..), RegistryKey (..), ZokkaRegistries (..))
+import Elm.CustomRepositoryData (CustomSingleRepositoryData (..), DefaultPackageServerRepo (..), HumanReadableShaDigest (..), PZRPackageServerRepo (..), RepositoryAuthToken, RepositoryType, SinglePackageFileType, SinglePackageLocationData (..), shaToHumanReadableShaDigest)
+import qualified Elm.Package as Pkg
+import qualified Elm.Version as V
+import File (Time (..))
+import Hedgehog ((===))
 import qualified Hedgehog
 import qualified Hedgehog.Gen as Gen
 import qualified Hedgehog.Range as Range
-
-import Test.Tasty.Hedgehog as HH
-
-import qualified Data.Set as Set
-
-import Data.Function ((&))
-import Hedgehog ((===))
 import Test.Tasty (TestTree, defaultMain, testGroup)
 import Test.Tasty.HUnit (testCase, (@?=))
-import Deps.Registry (ZokkaRegistries (..), RegistryKey(..), Registry(..), KnownVersions(..))
-import qualified Data.Binary as Binary
-import qualified Data.Utf8
-import qualified Data.Utf8 as Utf8
-import qualified Data.Map.Strict as Map
-import qualified Elm.Package as Pkg
-import qualified Elm.Version as V
-import Elm.CustomRepositoryData (SinglePackageFileType, SinglePackageLocationData(..), CustomSingleRepositoryData (..), DefaultPackageServerRepo(..), PZRPackageServerRepo(..), HumanReadableShaDigest(..), shaToHumanReadableShaDigest, RepositoryType, RepositoryAuthToken)
-import File (Time(..))
-import Data.Fixed (Fixed(..))
-import qualified Data.Digest.Pure.SHA as SHA
-import Data.ByteString.Lazy (fromStrict)
+import Test.Tasty.Hedgehog as HH
 
 utf8String :: Hedgehog.Gen (Utf8.Utf8 a)
 utf8String = Utf8.fromChars <$> Gen.string (Range.linear 0 40) Gen.unicode
 
 singlePackageFileTypeGen :: Hedgehog.Gen SinglePackageFileType
-singlePackageFileTypeGen = Gen.element [minBound..]
+singlePackageFileTypeGen = Gen.element [minBound ..]
 
 humanReadableShaDigestGen :: Hedgehog.Gen HumanReadableShaDigest
 humanReadableShaDigestGen = fmap (shaToHumanReadableShaDigest . SHA.sha1 . fromStrict) (Gen.bytes (Range.linear 0 100))
@@ -45,23 +43,24 @@ singlePackageocationDataGen = do
   version <- versionGen
   url <- utf8String
   shaHash <- humanReadableShaDigestGen
-  pure $ SinglePackageLocationData
-    { _fileType=fileType
-    , _packageName = packageName
-    , _version = version
-    , _url = url
-    , _shaHash = shaHash
-    }
+  pure $
+    SinglePackageLocationData
+      { _fileType = fileType,
+        _packageName = packageName,
+        _version = version,
+        _url = url,
+        _shaHash = shaHash
+      }
 
 repositoryTypeGen :: Hedgehog.Gen RepositoryType
-repositoryTypeGen = Gen.element [minBound..]
+repositoryTypeGen = Gen.element [minBound ..]
 
 defaultPackageRepoGen :: Hedgehog.Gen DefaultPackageServerRepo
 defaultPackageRepoGen =
   do
     repositoryUrl <- utf8String
     repositoryLocalName <- utf8String
-    pure (DefaultPackageServerRepo {_defaultPackageServerRepoTypeUrl=repositoryUrl, _defaultPackageServerRepoLocalName=repositoryLocalName})
+    pure (DefaultPackageServerRepo {_defaultPackageServerRepoTypeUrl = repositoryUrl, _defaultPackageServerRepoLocalName = repositoryLocalName})
 
 pzrPackageServerRepoGen :: Hedgehog.Gen PZRPackageServerRepo
 pzrPackageServerRepoGen =
@@ -69,7 +68,7 @@ pzrPackageServerRepoGen =
     repositoryUrl <- utf8String
     authToken <- utf8String
     repositoryLocalName <- utf8String
-    pure (PZRPackageServerRepo {_pzrPackageServerRepoTypeUrl=repositoryUrl, _pzrPackageServerRepoAuthToken=authToken, _pzrPackageServerRepoLocalName=repositoryLocalName})
+    pure (PZRPackageServerRepo {_pzrPackageServerRepoTypeUrl = repositoryUrl, _pzrPackageServerRepoAuthToken = authToken, _pzrPackageServerRepoLocalName = repositoryLocalName})
 
 customSingleRepositoryDataGen :: Hedgehog.Gen CustomSingleRepositoryData
 customSingleRepositoryDataGen = do
@@ -78,18 +77,18 @@ customSingleRepositoryDataGen = do
   Gen.choice [fmap DefaultPackageServerRepoData defaultPackageRepoGen, fmap PZRPackageServerRepoData pzrPackageServerRepoGen]
 
 registryKeyGen :: Hedgehog.Gen RegistryKey
-registryKeyGen = Gen.choice [ fmap PackageUrlKey singlePackageocationDataGen, fmap RepositoryUrlKey customSingleRepositoryDataGen ]
+registryKeyGen = Gen.choice [fmap PackageUrlKey singlePackageocationDataGen, fmap RepositoryUrlKey customSingleRepositoryDataGen]
 
 knownVersionsGen :: Hedgehog.Gen KnownVersions
 knownVersionsGen = do
   version <- versionGen
   previousVersions <- Gen.list (Range.linear 0 10) versionGen
-  pure KnownVersions{_newest=version, _previous=previousVersions}
+  pure KnownVersions {_newest = version, _previous = previousVersions}
 
 registryGen :: Hedgehog.Gen Registry
 registryGen = do
-    versionsMap <- Gen.map (Range.linear 0 10) ((,) <$> pkgNameGen <*> knownVersionsGen)
-    pure Registry{_count=Map.size versionsMap, _versions=versionsMap}
+  versionsMap <- Gen.map (Range.linear 0 10) ((,) <$> pkgNameGen <*> knownVersionsGen)
+  pure Registry {_count = Map.size versionsMap, _versions = versionsMap}
 
 registryKeyToRegistryGen :: Hedgehog.Gen (Map.Map RegistryKey Registry)
 registryKeyToRegistryGen = Gen.map (Range.linear 0 10) ((,) <$> registryKeyGen <*> registryGen)
@@ -102,7 +101,7 @@ versionGen = do
   major <- Gen.word16 (Range.linear 0 10)
   minor <- Gen.word16 (Range.linear 0 10)
   patch <- Gen.word16 (Range.linear 0 10)
-  pure V.Version{V._major=major, V._minor=minor, V._patch=patch}
+  pure V.Version {V._major = major, V._minor = minor, V._patch = patch}
 
 authorGen :: Hedgehog.Gen Pkg.Author
 authorGen = utf8String
@@ -114,7 +113,7 @@ pkgNameGen :: Hedgehog.Gen Pkg.Name
 pkgNameGen = do
   author <- authorGen
   project <- projectGen
-  pure Pkg.Name{Pkg._author=author, Pkg._project=project}
+  pure Pkg.Name {Pkg._author = author, Pkg._project = project}
 
 packagesToLocationsGen :: Hedgehog.Gen (Map.Map Pkg.Name (Map.Map V.Version RegistryKey))
 packagesToLocationsGen = Gen.map (Range.linear 0 10) ((,) <$> pkgNameGen <*> versionToRegistryKeyGen)
@@ -130,29 +129,35 @@ zokkaRegistriesGen = do
   registryKeyToRegistry <- registryKeyToRegistryGen
   packagesToLocations <- packagesToLocationsGen
   time <- timeGen
-  pure (ZokkaRegistries{_lastModificationTimeOfCustomRepoConfig=time, _registries=registryKeyToRegistry, _packagesToLocations=packagesToLocations})
+  pure (ZokkaRegistries {_lastModificationTimeOfCustomRepoConfig = time, _registries = registryKeyToRegistry, _packagesToLocations = packagesToLocations})
 
 main :: IO ()
 main = defaultMain tests
 
 tests :: TestTree
-tests = testGroup "Tests"
-  [ properties
-  , unitTests
-  ]
+tests =
+  testGroup
+    "Tests"
+    [ properties,
+      unitTests
+    ]
 
 properties :: TestTree
-properties = testGroup "Properties"
-  [ hedgehogProperties
-  ]
+properties =
+  testGroup
+    "Properties"
+    [ hedgehogProperties
+    ]
 
 hedgehogProperties :: TestTree
-hedgehogProperties = testGroup "(checked by Hedgehog)"
-  [ HH.testProperty "dummy property" $
-      dummyProperty
-  , HH.testProperty "make sure roundtrip works" $
-      roundtripBinaryEncodingOfZokkaRegistryChangesNothing
-  ]
+hedgehogProperties =
+  testGroup
+    "(checked by Hedgehog)"
+    [ HH.testProperty "dummy property" $
+        dummyProperty,
+      HH.testProperty "make sure roundtrip works" $
+        roundtripBinaryEncodingOfZokkaRegistryChangesNothing
+    ]
 
 dummyProperty :: Hedgehog.Property
 dummyProperty =
@@ -168,7 +173,9 @@ roundtripBinaryEncodingOfZokkaRegistryChangesNothing =
     roundtrippedX === x
 
 unitTests :: TestTree
-unitTests = testGroup "Unit tests"
-  [ testCase "dummy unit test" $
-    1 @?= 1
-  ]
+unitTests =
+  testGroup
+    "Unit tests"
+    [ testCase "dummy unit test" $
+        1 @?= 1
+    ]

@@ -1,6 +1,4 @@
-
 **Quick Summary:** ???
-
 
 ## SSCCE
 
@@ -11,7 +9,6 @@
 - **Zokka:** ???
 - **Browser:** ???
 - **Operating System:** ???
-
 
 ## Additional Details
 
