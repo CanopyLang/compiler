@@ -1,5 +1,5 @@
 ---
-name: zokka
+name: canopy
 version: 0.19.1
 synopsis: "The `elm` command line interface."
 description: |
@@ -78,61 +78,26 @@ default-extensions:
   - TypeOperators
   - ViewPatterns
   - UndecidableInstances
+
 library:
   source-dirs:
     - compiler/src
     - builder/src
-    - terminal/impl
-    - terminal/src
-  default-extensions:
-    - ConstraintKinds
-    - DataKinds
-    - DerivingStrategies
-    - DerivingVia
-    - DeriveFunctor
-    - DeriveGeneric
-    - DeriveDataTypeable
-    - DuplicateRecordFields
-    - FlexibleContexts
-    - FlexibleInstances
-    - GADTs
-    - KindSignatures
-    - LambdaCase
-    - MultiParamTypeClasses
-    - NamedFieldPuns
-    - OverloadedStrings
-    - PolyKinds
-    - RankNTypes
-    - ScopedTypeVariables
-    - StandaloneDeriving
-    - TypeApplications
-    - TypeFamilies
-    - TypeOperators
-    - ViewPatterns
-    - UndecidableInstances
   ghc-options:
     - -Wall
     - -fwarn-tabs
     - -O2
 
 executables:
-  zokka:
+  canopy:
     main: Main.hs
     source-dirs:
-      - compiler/src
-      - builder/src
-      - terminal/impl
       - terminal/src
+      - terminal/impl
     ghc-options:
       - -rtsopts
       - -threaded
       - -Werror=incomplete-patterns
       - -Werror=missing-fields
     dependencies:
-      - zokka
-
-source-dirs:
-  - compiler/src
-  - builder/src
-  - terminal/impl
-  - terminal/src
+      - canopy

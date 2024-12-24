@@ -45,7 +45,6 @@ import Data.Binary (Binary, get, put)
 import qualified Data.Coerce as Coerce
 import qualified Data.List as List
 import qualified Data.Map as Map
-import Data.Monoid ((<>))
 import qualified Data.Name as Name
 import qualified Data.Utf8 as Utf8
 import Data.Word (Word8)

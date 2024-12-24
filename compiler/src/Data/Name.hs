@@ -1,4 +1,10 @@
-{-# LANGUAGE BangPatterns, EmptyDataDecls, FlexibleInstances, MagicHash, UnboxedTuples #-}
+{-# LANGUAGE BangPatterns #-}
+{-# LANGUAGE EmptyDataDecls#-}
+{-# LANGUAGE FlexibleInstances#-}
+{-# LANGUAGE MagicHash#-}
+{-# LANGUAGE UnboxedTuples #-}
+{-# OPTIONS_GHC -fno-warn-name-shadowing #-}
+
 module Data.Name
   ( Name
   --
@@ -44,12 +50,9 @@ import qualified Data.List as List
 import qualified Data.String as Chars
 import qualified Data.Utf8 as Utf8
 import GHC.Exts
-  ( Int(I#), Ptr
-  , MutableByteArray#
+  ( Int(I#)
+    , Ptr
   , isTrue#
-  , newByteArray#
-  , sizeofByteArray#
-  , unsafeFreezeByteArray#
   )
 import GHC.ST (ST(ST), runST)
 import GHC.Prim
@@ -159,9 +162,6 @@ getKernel name@(Utf8.Utf8 ba#) =
 
 isKernel :: Name -> Bool
 isKernel = Utf8.startsWith prefix_kernel
-
-isBasics :: Name -> Bool
-isBasics name = name == basics
 
 isNumberType :: Name -> Bool
 isNumberType = Utf8.startsWith prefix_number

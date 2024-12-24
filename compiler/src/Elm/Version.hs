@@ -28,7 +28,7 @@ import qualified Json.Decode as D
 import qualified Json.Encode as E
 import Parse.Primitives (Col, Row)
 import qualified Parse.Primitives as P
-import qualified Paths_zokka
+import qualified Paths_canopy
 import Prelude hiding (max)
 
 -- VERSION
@@ -50,7 +50,7 @@ max =
 
 compiler :: Version
 compiler =
-  case map fromIntegral (Version.versionBranch Paths_zokka.version) of
+  case map fromIntegral (Version.versionBranch Paths_canopy.version) of
     major : minor : patch : _ ->
       Version major minor patch
     [major, minor] ->

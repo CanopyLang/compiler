@@ -1,6 +1,6 @@
 cradle:
   cabal:
     - path: "./compiler"
-      component: "exe:zokka"
+      component: "exe:canopy"
     - path: "./tests/TestMain.hs"
-      component: "test:zokka-tests"
+      component: "test:canopy-tests"

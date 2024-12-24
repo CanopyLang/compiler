@@ -154,9 +154,6 @@ packageUrlEncoder packageUrl = E.string (coerce packageUrl)
 sha1Decoder :: D.Decoder e HumanReadableShaDigest
 sha1Decoder = fmap coerce D.string
 
-sha1Encoder :: HumanReadableShaDigest -> E.Value
-sha1Encoder (HumanReadableShaDigest shaDigest) = E.string shaDigest
-
 data CustomSingleRepositoryData
   = DefaultPackageServerRepoData DefaultPackageServerRepo
   | PZRPackageServerRepoData PZRPackageServerRepo
