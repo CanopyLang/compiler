@@ -20,4 +20,3 @@ cabal.project.freeze
 .aider*
 .env
 node_modules
-.stack-work
