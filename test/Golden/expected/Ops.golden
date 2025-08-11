@@ -1,0 +1,6 @@
+Module: Ops
+Exports: Explicit lower=1 upperOpen=0 upperClosed=0 operators=1
+Values: x
+Aliases: 
+Unions: 
+Imports: List exposing(explicit)

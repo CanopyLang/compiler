@@ -896,7 +896,7 @@ getRootInfoHelp :: Env -> FilePath -> FilePath -> IO (Either Exit.BuildProjectPr
 getRootInfoHelp (Env _ _ _ srcDirs _ _ _) path absolutePath =
   let (dirs, file) = FP.splitFileName absolutePath
       (final, ext) = FP.splitExtension file
-   in if ext /= ".canopy"
+   in if not (ext == ".can" || ext == ".canopy" || ext == ".elm")
         then return $ Left $ Exit.BP_WithBadExtension path
         else
           let absoluteSegments = FP.splitDirectories dirs ++ [final]
@@ -910,8 +910,8 @@ getRootInfoHelp (Env _ _ _ srcDirs _ _ _) path absolutePath =
                     case matchingDirs of
                       d1 : d2 : _ ->
                         do
-                          let p1 = addRelative d1 (FP.joinPath names <.> "canopy")
-                          let p2 = addRelative d2 (FP.joinPath names <.> "canopy")
+                          let p1 = addRelative d1 (FP.joinPath names <.> "can")
+                          let p2 = addRelative d2 (FP.joinPath names <.> "can")
                           return $ Left $ Exit.BP_RootNameDuplicate name p1 p2
                       _ ->
                         return $ Right $ RootInfo absolutePath path (LInside name)
@@ -922,7 +922,14 @@ getRootInfoHelp (Env _ _ _ srcDirs _ _ _) path absolutePath =
 
 isInsideSrcDirByName :: [String] -> AbsoluteSrcDir -> IO Bool
 isInsideSrcDirByName names srcDir =
-  File.exists (addRelative srcDir (FP.joinPath names <.> "canopy"))
+  do
+    let base = FP.joinPath names
+    existsCan <- File.exists (addRelative srcDir (base <.> "can"))
+    if existsCan
+      then return True
+      else do
+        existsCanopy <- File.exists (addRelative srcDir (base <.> "canopy"))
+        if existsCanopy then return True else File.exists (addRelative srcDir (base <.> "elm"))
 
 isInsideSrcDirByPath :: [String] -> AbsoluteSrcDir -> Maybe (FilePath, Either [String] [String])
 isInsideSrcDirByPath segments (AbsoluteSrcDir srcDir) =

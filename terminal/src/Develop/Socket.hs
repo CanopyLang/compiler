@@ -16,9 +16,13 @@ watchFile watchedFile pendingConnection =
   do  connection <- WS.acceptRequest pendingConnection
 
       Notify.withManager $ \mgmt ->
-        do  stop <- Notify.treeExtAny mgmt "." ".canopy" print
+        do  stop1 <- Notify.treeExtAny mgmt "." ".can" print
+            stop2 <- Notify.treeExtAny mgmt "." ".canopy" print
+            stop3 <- Notify.treeExtAny mgmt "." ".elm" print
             tend connection
-            stop
+            stop1
+            stop2
+            stop3
 
 
 tend :: WS.Connection -> IO ()

@@ -311,12 +311,27 @@ test-suite canopy-test
   type: exitcode-stdio-1.0
   main-is: Main.hs
   other-modules:
+      Golden.JsGenGolden
+      Golden.ParseAliasGolden
+      Golden.ParseExprGolden
+      Golden.ParseModuleGolden
+      Golden.ParseTypeGolden
+      Integration.CanExtensionTest
       Integration.CompilerTest
+      Integration.JsGenTest
+      Property.AST.CanonicalProps
+      Property.AST.OptimizedBinaryProps
       Property.Canopy.VersionProps
       Property.Data.NameProps
+      Unit.AST.CanonicalTypeTest
+      Unit.AST.SourceTest
       Unit.Canopy.VersionTest
       Unit.Data.NameTest
       Unit.Json.DecodeTest
+      Unit.Parse.ExpressionTest
+      Unit.Parse.ModuleTest
+      Unit.Parse.PatternTest
+      Unit.Parse.TypeTest
   hs-source-dirs:
       test
   default-extensions:

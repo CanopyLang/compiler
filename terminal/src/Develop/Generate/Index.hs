@@ -117,7 +117,7 @@ getFiles pwd contents =
 
 toFile :: FilePath -> FilePath -> IO File
 toFile pwd path =
-  if takeExtension path == ".canopy" then
+  if let ext = takeExtension path in ext == ".can" || ext == ".canopy" || ext == ".elm" then
     do  source <- readFile (pwd </> path)
         let hasMain = List.isInfixOf "\nmain " source
         return (File path hasMain)

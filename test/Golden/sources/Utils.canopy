@@ -1,0 +1,10 @@
+module Utils exposing (..)
+
+import List as L exposing (map)
+
+x = 1
+y n = n
+
+type alias Pair = ( Int, Int )
+type Maybe a = Just a | Nothing
+

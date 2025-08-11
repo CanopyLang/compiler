@@ -266,7 +266,7 @@ listAllCanopyFilesRecursively startPath = do
         pure (path : remainingFiles)
       else
         let (_, ext) = FP.splitExtension path
-         in if ext == ".canopy"
+         in if ext == ".can" || ext == ".canopy" || ext == ".elm"
               then pure [path]
               else pure []
   return (startPath : concat paths)

@@ -115,7 +115,8 @@ serveCode path =
 serveCanopy :: FilePath -> Snap ()
 serveCanopy path =
   do
-    guard (takeExtension path == ".canopy")
+    let ext = takeExtension path
+    guard (ext == ".can" || ext == ".canopy" || ext == ".elm")
     modifyResponse (setContentType "text/html")
     result <- liftIO $ compile path
     case result of

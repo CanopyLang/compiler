@@ -2377,8 +2377,8 @@ makeToReport make =
         Nothing
         "What should I make though? I need specific files like:"
         [ D.vcat
-            [ D.indent 4 $ D.green "canopy make src/Main.canopy",
-              D.indent 4 $ D.green "canopy make src/This.canopy src/That.canopy"
+            [ D.indent 4 $ D.green "canopy make src/Main.can",
+              D.indent 4 $ D.green "canopy make src/This.can src/That.can"
             ],
           D.reflow $
             "I recommend reading through https://guide.canopy-lang.org for guidance on what to\
@@ -2390,8 +2390,8 @@ makeToReport make =
         Nothing
         "What should I make though? I need specific files like:"
         [ D.vcat
-            [ D.indent 4 $ D.green "canopy make src/Main.canopy",
-              D.indent 4 $ D.green "canopy make src/This.canopy src/That.canopy"
+            [ D.indent 4 $ D.green "canopy make src/Main.can",
+              D.indent 4 $ D.green "canopy make src/This.can src/That.can"
             ],
           D.reflow $
             "You can also entries to the \"exposed-modules\" list in your canopy.json file, and\
@@ -2611,7 +2611,7 @@ toProjectProblemReport projectProblem =
       Help.report
         "UNEXPECTED FILE EXTENSION"
         Nothing
-        "I can only compile Canopy files (with a .canopy extension) but you want me to compile:"
+        "I can only compile Canopy files (default .can; .canopy/.elm also supported) but you want me to compile:"
         [ D.indent 4 $ D.red $ D.fromChars path,
           D.reflow $ "Is there a typo? Can the file extension be changed?"
         ]

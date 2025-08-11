@@ -163,10 +163,9 @@ make =
         stack
           [ reflow
               "For example:",
-            P.indent 4 $ P.green "canopy make src/Main.canopy",
+            P.indent 4 $ P.green "canopy make src/Main.can",
             reflow
-              "This tries to compile an Canopy file named src/Main.canopy, generating an index.html\
-              \ file if possible."
+              "This tries to compile a Canopy file named src/Main.can (also accepts .canopy), generating an index.html file if possible."
           ]
 
       makeFlags =

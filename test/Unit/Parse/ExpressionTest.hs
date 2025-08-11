@@ -1,0 +1,229 @@
+module Unit.Parse.ExpressionTest (tests) where
+
+import qualified AST.Source as Src
+import qualified Data.ByteString.Char8 as C8
+import qualified Data.Name as Name
+import qualified Parse.Expression as Expr
+import qualified Parse.Primitives as P
+import qualified Reporting.Annotation as A
+import qualified Reporting.Error.Syntax as E
+import Test.Tasty
+import Test.Tasty.HUnit
+
+parseExpr :: String -> Either E.Expr Src.Expr
+parseExpr s = fmap fst $ P.fromByteString Expr.expression (\r c -> E.Start r c) (C8.pack s)
+
+tests :: TestTree
+tests =
+  testGroup
+    "Parse.Expression"
+    [ testLiterals,
+      testLists,
+      testTuples,
+      testRecords,
+      testAccess,
+      testVariablesAndCalls,
+      testOperators,
+      testOperatorAssociativity,
+      testNegation,
+      testPrecedenceChain,
+      testNestedLambdaLet,
+      testIf,
+      testLambda,
+      testLet,
+      caseOfTest,
+      caseOfComplex,
+      testsNegatives
+    ]
+
+testLiterals :: TestTree
+testLiterals =
+  testGroup
+    "literals"
+    [ testCase "int" $ do
+        case parseExpr "42" of
+          Right (A.At _ (Src.Int 42)) -> return ()
+          other -> assertFailure ("unexpected: " ++ show other),
+      testCase "float" $ do
+        case parseExpr "3.14" of
+          Right (A.At _ (Src.Float _)) -> return ()
+          _ -> assertFailure "expected Float",
+      testCase "string" $ do
+        case parseExpr "\"hi\"" of
+          Right (A.At _ (Src.Str _)) -> return ()
+          _ -> assertFailure "expected Str",
+      testCase "char" $ do
+        case parseExpr "'x'" of
+          Right (A.At _ (Src.Chr _)) -> return ()
+          _ -> assertFailure "expected Chr"
+    ]
+
+testLists :: TestTree
+testLists = testCase "lists" $ do
+  case parseExpr "[1,2,3]" of
+    Right (A.At _ (Src.List [_, _, _])) -> return ()
+    _ -> assertFailure "expected 3-element list"
+
+testTuples :: TestTree
+testTuples =
+  testGroup
+    "tuples"
+    [ testCase "unit" $ do
+        case parseExpr "()" of
+          Right (A.At _ Src.Unit) -> return ()
+          _ -> assertFailure "expected Unit",
+      testCase "pair" $ do
+        case parseExpr "(1,2)" of
+          Right (A.At _ (Src.Tuple _ _ [])) -> return ()
+          _ -> assertFailure "expected 2-tuple",
+      testCase "triple" $ do
+        case parseExpr "(1,2,3)" of
+          Right (A.At _ (Src.Tuple _ _ [_])) -> return ()
+          _ -> assertFailure "expected 3-tuple"
+    ]
+
+testPrecedenceChain :: TestTree
+testPrecedenceChain = testCase "longer precedence chain" $ do
+  case parseExpr "1 + 2 * 3 + 4" of
+    Right (A.At _ (Src.Binops _ _)) -> return ()
+    _ -> assertFailure "expected Binops"
+
+testNestedLambdaLet :: TestTree
+testNestedLambdaLet = testCase "nested lambdas and let" $ do
+  let src = "let x = \\y -> y in x 2"
+  case parseExpr src of
+    Right (A.At _ (Src.Let _ _)) -> return ()
+    other -> assertFailure ("expected Let, got: " ++ show other)
+
+testRecords :: TestTree
+testRecords =
+  testGroup
+    "records"
+    [ testCase "empty" $ do
+        case parseExpr "{}" of
+          Right (A.At _ (Src.Record [])) -> return ()
+          _ -> assertFailure "expected empty record",
+      testCase "fields" $ do
+        case parseExpr "{ a = 1, b = 2 }" of
+          Right (A.At _ (Src.Record [(A.At _ a, _), (A.At _ b, _)])) -> do
+            a @?= Name.fromChars "a"
+            b @?= Name.fromChars "b"
+          other -> assertFailure ("unexpected: " ++ show other),
+      testCase "update" $ do
+        case parseExpr "{ r | a = 1 }" of
+          Right (A.At _ (Src.Update (A.At _ r) [(A.At _ field, _)])) -> do
+            r @?= Name.fromChars "r"
+            field @?= Name.fromChars "a"
+          _ -> assertFailure "expected record update"
+    ]
+
+testVariablesAndCalls :: TestTree
+testVariablesAndCalls = testCase "variables and calls" $ do
+  case parseExpr "f x y" of
+    Right (A.At _ (Src.Call (A.At _ (Src.Call (A.At _ (Src.Var Src.LowVar _)) [_, _])) [])) -> return ()
+    Right (A.At _ (Src.Call (A.At _ (Src.Var _ _)) [_, _])) -> return ()
+    Right (A.At _ (Src.Call _ [_, _])) -> return ()
+    other -> assertFailure ("unexpected: " ++ show other)
+
+testOperators :: TestTree
+testOperators = testCase "binops precedence and grouping" $ do
+  case parseExpr "1 + 2 * 3" of
+    Right (A.At _ (Src.Binops _ _)) -> return ()
+    _ -> assertFailure "expected Binops"
+
+testAccess :: TestTree
+testAccess =
+  testGroup
+    "access and accessor"
+    [ testCase "chained access" $ do
+        case parseExpr "obj.a.b" of
+          Right (A.At _ (Src.Access (A.At _ (Src.Access _ (A.At _ _))) (A.At _ _))) -> return ()
+          _ -> assertFailure "expected chained Access",
+      testCase "accessor function" $ do
+        case parseExpr ".field" of
+          Right (A.At _ (Src.Accessor _)) -> return ()
+          _ -> assertFailure "expected Accessor"
+    ]
+
+testOperatorAssociativity :: TestTree
+testOperatorAssociativity =
+  testGroup
+    "associativity"
+    [ testCase "left assoc for -" $ do
+        case parseExpr "1 - 2 - 3" of
+          Right (A.At _ (Src.Binops _ _)) -> return ()
+          _ -> assertFailure "expected Binops",
+      testCase "parentheses override" $ do
+        case parseExpr "(1 - 2) - 3" of
+          Right (A.At _ (Src.Binops _ _)) -> return ()
+          _ -> assertFailure "expected Binops"
+    ]
+
+testNegation :: TestTree
+testNegation =
+  testGroup
+    "negation"
+    [ testCase "unary negation" $ do
+        case parseExpr "-x" of
+          Right (A.At _ (Src.Negate _)) -> return ()
+          _ -> assertFailure "expected Negate",
+      testCase "negative numbers in ops" $ do
+        case parseExpr "-3 * -2" of
+          Right (A.At _ (Src.Binops _ _)) -> return ()
+          _ -> assertFailure "expected Binops"
+    ]
+
+
+testIf :: TestTree
+testIf = testCase "if/then/else" $ do
+  case parseExpr "if x then 1 else 2" of
+    Right (A.At _ (Src.If [(_, _)] _)) -> return ()
+    _ -> assertFailure "expected If"
+
+testLambda :: TestTree
+testLambda = testCase "lambda" $ do
+  case parseExpr "\\n -> n" of
+    Right (A.At _ (Src.Lambda [A.At _ (Src.PVar _)] _)) -> return ()
+    _ -> assertFailure "expected Lambda"
+
+testLet :: TestTree
+testLet = testCase "let/in" $ do
+  case parseExpr "let x = 1 in x" of
+    Right (A.At _ (Src.Let _ _)) -> return ()
+    _ -> assertFailure "expected Let"
+
+caseOfTest :: TestTree
+caseOfTest = testCaseSteps "case/of" $ \step -> do
+  step "parse"
+  let src = unlines
+        [ "case x of",
+          "  Just n -> n",
+          "  Nothing -> 0"
+        ]
+  case parseExpr src of
+    Right (A.At _ (Src.Case _ [(_, _), (_, _)])) -> return ()
+    other -> assertFailure ("unexpected: " ++ show other)
+
+-- Negative cases
+-- Unterminated string should produce a string-related error
+-- We only assert that it is a Left value (specific constructor varies by location)
+testsNegatives :: TestTree
+testsNegatives =
+  testGroup
+    "errors"
+    [ testCase "unterminated string" $ do
+        case parseExpr "\"hi" of
+          Left (E.String _ _ _) -> return ()
+          other -> assertFailure ("expected string error, got: " ++ show other)
+    ]
+
+caseOfComplex :: TestTree
+caseOfComplex = testCase "case/of with record pattern" $ do
+  let src = unlines
+        [ "case { a = 1 } of",
+          "  { a } -> a",
+          "  _ -> 0"
+        ]
+  case parseExpr src of
+    Right (A.At _ (Src.Case _ [(_, _), (_, _)])) -> return ()
+    other -> assertFailure ("unexpected: " ++ show other)

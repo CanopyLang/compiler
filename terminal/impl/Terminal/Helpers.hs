@@ -80,8 +80,8 @@ exampleRepositoryLocalNames _ = pure ["my-custom-zokka-repository", "another-zok
 canopyFile :: Parser FilePath
 canopyFile =
   Parser
-    { _singular = "canopy file",
-      _plural = "canopy files",
+    { _singular = "Canopy source file",
+      _plural = "Canopy source files",
       _parser = parseCanopyFile,
       _suggest = \_ -> return [],
       _examples = exampleCanopyFiles
@@ -89,13 +89,12 @@ canopyFile =
 
 parseCanopyFile :: String -> Maybe FilePath
 parseCanopyFile chars =
-  if FP.takeExtension chars == ".canopy"
-    then Just chars
-    else Nothing
+  let ext = FP.takeExtension chars in
+  if ext == ".can" || ext == ".canopy" || ext == ".elm" then Just chars else Nothing
 
 exampleCanopyFiles :: String -> IO [String]
 exampleCanopyFiles _ =
-  return ["Main.canopy", "src/Main.canopy"]
+  return ["Main.can", "src/Main.can"]
 
 -- PACKAGE
 
