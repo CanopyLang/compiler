@@ -32,7 +32,7 @@ module AST.Canonical
   where
 
 {- Creating a canonical AST means finding the home module for all variables.
-So if you have L.map, you need to figure out that it is from the elm/core
+So if you have L.map, you need to figure out that it is from the canopy/core
 package in the List module.
 
 In later phases (e.g. type inference, exhaustiveness checking, optimization)
@@ -61,9 +61,9 @@ import qualified AST.Source as Src
 import qualified AST.Utils.Binop as Binop
 import qualified AST.Utils.Shader as Shader
 import qualified Data.Index as Index
-import qualified Elm.Float as EF
-import qualified Elm.ModuleName as ModuleName
-import qualified Elm.String as ES
+import qualified Canopy.Float as EF
+import qualified Canopy.ModuleName as ModuleName
+import qualified Canopy.String as ES
 import qualified Reporting.Annotation as A
 
 

@@ -9,7 +9,7 @@ module Data.Name
   ( Name
   --
   , toChars
-  , toElmString
+  , toCanopyString
   , toBuilder
   --
   , fromPtr
@@ -58,7 +58,7 @@ import GHC.ST (ST(ST), runST)
 import GHC.Prim
 import GHC.Word (Word8(W8#))
 
-import qualified Elm.String as ES
+import qualified Canopy.String as ES
 
 
 
@@ -66,20 +66,20 @@ import qualified Elm.String as ES
 
 
 type Name =
-  Utf8.Utf8 ELM_NAME
+  Utf8.Utf8 CANOPY_NAME
 
 
-data ELM_NAME
+data CANOPY_NAME
 
 
 
 -- INSTANCES
 
 
-instance Chars.IsString (Utf8.Utf8 ELM_NAME) where
+instance Chars.IsString (Utf8.Utf8 CANOPY_NAME) where
   fromString = Utf8.fromChars
 
-instance Binary.Binary (Utf8.Utf8 ELM_NAME) where
+instance Binary.Binary (Utf8.Utf8 CANOPY_NAME) where
   get = Utf8.getUnder256
   put = Utf8.putUnder256
 
@@ -93,8 +93,8 @@ toChars =
   Utf8.toChars
 
 
-toElmString :: Name -> ES.String
-toElmString =
+toCanopyString :: Name -> ES.String
+toCanopyString =
   Coerce.coerce
 
 
@@ -177,7 +177,7 @@ isCompappendType = Utf8.startsWith prefix_compappend
 
 {-# NOINLINE prefix_kernel #-}
 prefix_kernel :: Name
-prefix_kernel = fromChars "Elm.Kernel."
+prefix_kernel = fromChars "Canopy.Kernel."
 
 {-# NOINLINE prefix_number #-}
 prefix_number :: Name
@@ -293,7 +293,7 @@ fromTypeVariableScheme scheme =
 --
 -- Creating a unique name by combining all the subnames can create names
 -- longer than 256 bytes relatively easily. So instead, the first given name
--- (e.g. foo) is prefixed chars that are valid in JS but not Elm (e.g. _M$foo)
+-- (e.g. foo) is prefixed chars that are valid in JS but not Canopy (e.g. _M$foo)
 --
 -- This should be a unique name since 0.19 disallows shadowing. It would not
 -- be possible for multiple top-level cycles to include values with the same
@@ -604,7 +604,7 @@ identity = fromChars "identity"
 
 {-# NOINLINE replModule #-}
 replModule :: Name
-replModule = fromChars "Elm_Repl"
+replModule = fromChars "Canopy_Repl"
 
 
 {-# NOINLINE replValueToPrint #-}

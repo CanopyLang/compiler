@@ -17,7 +17,7 @@ import qualified AST.Canonical as Can
 import qualified AST.Optimized as Opt
 import qualified AST.Utils.Type as Type
 import qualified Data.Index as Index
-import qualified Elm.ModuleName as ModuleName
+import qualified Canopy.ModuleName as ModuleName
 import qualified Optimize.Names as Names
 
 
@@ -68,7 +68,7 @@ toEncoder tipe =
         encodeField (name, Can.FieldType _ fieldType) =
           do  encoder <- toEncoder fieldType
               let value = Opt.Call encoder [Opt.Access (Opt.VarLocal Name.dollar) name]
-              return $ Opt.Tuple (Opt.Str (Name.toElmString name)) value Nothing
+              return $ Opt.Tuple (Opt.Str (Name.toCanopyString name)) value Nothing
       in
       do  object <- encode "object"
           keyValuePairs <- traverse encodeField (Map.toList fields)
@@ -309,7 +309,7 @@ fieldAndThen decoder (key, Can.FieldType _ tipe) =
       return $
         Opt.Call andThen
           [ Opt.Function [key] decoder
-          , Opt.Call field [ Opt.Str (Name.toElmString key), typeDecoder ]
+          , Opt.Call field [ Opt.Str (Name.toCanopyString key), typeDecoder ]
           ]
 
 

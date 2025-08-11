@@ -1,22 +1,22 @@
 module Deps.Website
-  ( standardElmPkgRepoDomain
+  ( standardCanopyPkgRepoDomain
   , route
   , metadata
   )
   where
 
 
-import qualified Elm.Package as Pkg
-import qualified Elm.Version as V
+import qualified Canopy.Package as Pkg
+import qualified Canopy.Version as V
 import qualified Http
-import Elm.CustomRepositoryData (RepositoryUrl)
+import Canopy.CustomRepositoryData (RepositoryUrl)
 import qualified Data.Utf8 as Utf8
 
 
 
-standardElmPkgRepoDomain :: RepositoryUrl
-standardElmPkgRepoDomain =
-  Utf8.fromChars "https://package.elm-lang.org"
+standardCanopyPkgRepoDomain :: RepositoryUrl
+standardCanopyPkgRepoDomain =
+  Utf8.fromChars "https://package.canopy-lang.org"
 
 
 route :: RepositoryUrl -> String -> [(String,String)] -> String

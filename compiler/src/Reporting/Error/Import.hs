@@ -10,8 +10,8 @@ module Reporting.Error.Import
 import qualified Data.Map as Map
 import qualified Data.Set as Set
 
-import qualified Elm.ModuleName as ModuleName
-import qualified Elm.Package as Pkg
+import qualified Canopy.ModuleName as ModuleName
+import qualified Canopy.Package as Pkg
 import qualified Reporting.Doc as D
 import qualified Reporting.Render.Code as Code
 import qualified Reporting.Report as Report
@@ -58,7 +58,7 @@ toReport source (Error region name unimportedModules problem) =
             D.stack
               [
                 D.reflow $
-                  "I checked the \"dependencies\" and \"source-directories\" listed in your elm.json,\
+                  "I checked the \"dependencies\" and \"source-directories\" listed in your canopy.json,\
                   \ but I cannot find it! Maybe it is a typo for one of these names?"
               ,
                 D.dullyellow $ D.indent 4 $ D.vcat $
@@ -68,7 +68,7 @@ toReport source (Error region name unimportedModules problem) =
                   Nothing ->
                     D.toSimpleHint $
                       "If it is not a typo, check the \"dependencies\" and \"source-directories\"\
-                      \ of your elm.json to make sure all the packages you need are listed there!"
+                      \ of your canopy.json to make sure all the packages you need are listed there!"
 
                   Just dependency ->
                     D.toFancyHint
@@ -77,7 +77,7 @@ toReport source (Error region name unimportedModules problem) =
                       ,"module","defined","in","the"
                       ,D.fromChars (Pkg.toChars dependency)
                       ,"package?","Running"
-                      ,D.green (D.fromChars ("elm install " ++ Pkg.toChars dependency))
+                      ,D.green (D.fromChars ("canopy install " ++ Pkg.toChars dependency))
                       ,"should","make","it","available!"
                       ]
               ]

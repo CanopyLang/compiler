@@ -16,7 +16,7 @@ watchFile watchedFile pendingConnection =
   do  connection <- WS.acceptRequest pendingConnection
 
       Notify.withManager $ \mgmt ->
-        do  stop <- Notify.treeExtAny mgmt "." ".elm" print
+        do  stop <- Notify.treeExtAny mgmt "." ".canopy" print
             tend connection
             stop
 

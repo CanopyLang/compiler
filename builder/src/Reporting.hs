@@ -35,9 +35,9 @@ import qualified System.Exit as Exit
 import qualified System.Info as Info
 import System.IO (hFlush, hPutStr, hPutStrLn, stderr, stdout)
 
-import qualified Elm.ModuleName as ModuleName
-import qualified Elm.Package as Pkg
-import qualified Elm.Version as V
+import qualified Canopy.ModuleName as ModuleName
+import qualified Canopy.Package as Pkg
+import qualified Canopy.Version as V
 import qualified Json.Encode as Encode
 import Reporting.Doc ((<+>))
 import qualified Reporting.Doc as D
@@ -456,15 +456,15 @@ putException e = do
     , D.vcat $ map (\line -> D.red ">" <> "   " <> D.fromChars line) (lines (show e))
     , D.reflow $
         "These errors are usually pretty confusing, so start by asking around on one of\
-        \ forums listed at https://elm-lang.org/community to see if anyone can get you\
+        \ forums listed at https://canopy-lang.org/community to see if anyone can get you\
         \ unstuck quickly."
     , D.dullyellow "-- REQUEST ---------------------------------------------------------------------"
     , D.reflow $
         "If you are feeling up to it, please try to get your code down to the smallest\
-        \ version that still triggers this message. Ideally in a single Main.elm and\
-        \ elm.json file."
+        \ version that still triggers this message. Ideally in a single Main.canopy and\
+        \ canopy.json file."
     , D.reflow $
-        "From there open a NEW issue at https://github.com/elm/compiler/issues with\
+        "From there open a NEW issue at https://github.com/canopy/compiler/issues with\
         \ your reduced example pasted in directly. (Not a link to a repo or gist!) Do not\
         \ worry about if someone else saw something similar. More examples is better!"
     , D.reflow $

@@ -72,7 +72,7 @@ toReports source err =
               \ declaration and the imports."
           ,
             D.reflow
-              "Learn more at <https://package.elm-lang.org/help/documentation-format>"
+              "Learn more at <https://package.canopy-lang.org/help/documentation-format>"
           )
 
     ImplicitExposing region ->
@@ -119,7 +119,7 @@ toSyntaxProblemReport source problem =
           , D.stack $
               [ D.reflow details
               , D.toSimpleHint $
-                  "Read through <https://package.elm-lang.org/help/documentation-format> for\
+                  "Read through <https://package.canopy-lang.org/help/documentation-format> for\
                   \ tips on how to write module documentation!"
               ]
           )

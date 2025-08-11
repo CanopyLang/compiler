@@ -2,22 +2,21 @@
 
 module Terminal.Helpers
   ( version,
-    elmFile,
+    canopyFile,
     repositoryLocalName,
     package,
   )
 where
 
+import Canopy.CustomRepositoryData (RepositoryLocalName)
+import qualified Canopy.Package as Pkg
+import qualified Canopy.Version as V
 import qualified Data.ByteString.UTF8 as BS_UTF8
 import qualified Data.Char as Char
 import qualified Data.List as List
 import qualified Data.Map as Map
 import qualified Data.Utf8 as Utf8
-import Deps.Registry (Registry (Registry))
 import qualified Deps.Registry as Registry
-import Elm.CustomRepositoryData (RepositoryLocalName)
-import qualified Elm.Package as Pkg
-import qualified Elm.Version as V
 import qualified Parse.Primitives as P
 import qualified Reporting.Suggest as Suggest
 import qualified Stuff
@@ -76,27 +75,27 @@ parseRepositoryLocalName str = Just $ Utf8.fromChars str
 exampleRepositoryLocalNames :: String -> IO [String]
 exampleRepositoryLocalNames _ = pure ["my-custom-zokka-repository", "another-zokka-repository"]
 
--- ELM FILE
+-- CANOPY FILE
 
-elmFile :: Parser FilePath
-elmFile =
+canopyFile :: Parser FilePath
+canopyFile =
   Parser
-    { _singular = "elm file",
-      _plural = "elm files",
-      _parser = parseElmFile,
+    { _singular = "canopy file",
+      _plural = "canopy files",
+      _parser = parseCanopyFile,
       _suggest = \_ -> return [],
-      _examples = exampleElmFiles
+      _examples = exampleCanopyFiles
     }
 
-parseElmFile :: String -> Maybe FilePath
-parseElmFile chars =
-  if FP.takeExtension chars == ".elm"
+parseCanopyFile :: String -> Maybe FilePath
+parseCanopyFile chars =
+  if FP.takeExtension chars == ".canopy"
     then Just chars
     else Nothing
 
-exampleElmFiles :: String -> IO [String]
-exampleElmFiles _ =
-  return ["Main.elm", "src/Main.elm"]
+exampleCanopyFiles :: String -> IO [String]
+exampleCanopyFiles _ =
+  return ["Main.canopy", "src/Main.canopy"]
 
 -- PACKAGE
 
@@ -139,9 +138,9 @@ examplePackages given =
     return $
       case mergedRegistries of
         Nothing ->
-          [ "elm/json",
-            "elm/http",
-            "elm/random"
+          [ "canopy/json",
+            "canopy/http",
+            "canopy/random"
           ]
         Just (Registry.Registry _ versions) ->
           map Pkg.toChars $

@@ -34,7 +34,7 @@ import qualified Data.ByteString.Builder as B
 import qualified Data.ByteString.Char8 as BS
 import qualified Data.Digest.Pure.SHA as SHA
 import qualified Data.String as String
-import qualified Elm.Version as V
+import qualified Canopy.Version as V
 import qualified Json.Encode as Encode
 import Network.HTTP (urlEncodeVars)
 import Network.HTTP.Client
@@ -92,7 +92,7 @@ addDefaultHeaders headers =
 {-# NOINLINE userAgent #-}
 userAgent :: BS.ByteString
 userAgent =
-  BS.pack ("elm/" ++ V.toChars V.compiler)
+  BS.pack ("canopy/" ++ V.toChars V.compiler)
 
 accept :: BS.ByteString -> Header
 accept mime =

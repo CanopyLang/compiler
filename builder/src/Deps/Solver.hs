@@ -27,11 +27,11 @@ import Deps.CustomRepositoryDataIO (loadCustomRepositoriesData, loadCustomReposi
 import Deps.Registry (ZokkaRegistries (..))
 import qualified Deps.Registry as Registry
 import qualified Deps.Website as Website
-import qualified Elm.Constraint as C
-import Elm.CustomRepositoryData (CustomSingleRepositoryData (..), DefaultPackageServerRepo (_defaultPackageServerRepoTypeUrl), PZRPackageServerRepo (_pzrPackageServerRepoAuthToken, _pzrPackageServerRepoTypeUrl), SinglePackageLocationData (..))
-import qualified Elm.Outline as Outline
-import qualified Elm.Package as Pkg
-import qualified Elm.Version as V
+import qualified Canopy.Constraint as C
+import Canopy.CustomRepositoryData (CustomSingleRepositoryData (..), DefaultPackageServerRepo (_defaultPackageServerRepoTypeUrl), PZRPackageServerRepo (_pzrPackageServerRepoAuthToken, _pzrPackageServerRepoTypeUrl), SinglePackageLocationData (..))
+import qualified Canopy.Outline as Outline
+import qualified Canopy.Package as Pkg
+import qualified Canopy.Version as V
 import File (getTime)
 import qualified File
 import qualified Http
@@ -64,7 +64,7 @@ data State = State
   }
 
 data Constraints = Constraints
-  { _elm :: C.Constraint,
+  { _canopy :: C.Constraint,
     _deps :: Map.Map Pkg.Name C.Constraint
   }
 
@@ -80,7 +80,7 @@ data Result a
   | NoOfflineSolution RegistryProblem
   | Err Exit.Solver
 
--- VERIFY -- used by Elm.Details
+-- VERIFY -- used by Canopy.Details
 
 data Details
   = Details V.Version (Map.Map Pkg.Name C.Constraint) -- First argument is the version, second is the set of dependencies that the package depends on
@@ -141,12 +141,12 @@ addToApp cache connection registry pkg outline@(Outline.AppOutline _ _ direct in
               (\e -> return $ Err e)
 
 toApp :: State -> Pkg.Name -> Outline.AppOutline -> Map.Map Pkg.Name V.Version -> Map.Map Pkg.Name V.Version -> AppSolution
-toApp (State _ _ _ constraints) pkg (Outline.AppOutline elm srcDirs direct _ testDirect _ pkgOverrides) old new =
+toApp (State _ _ _ constraints) pkg (Outline.AppOutline canopy srcDirs direct _ testDirect _ pkgOverrides) old new =
   let d = Map.intersection new (Map.insert pkg V.one direct)
       i = Map.difference (getTransitive constraints new (Map.toList d) Map.empty) d
       td = Map.intersection new (Map.delete pkg testDirect)
       ti = Map.difference new (Map.unions [d, i, td])
-   in AppSolution old new (Outline.AppOutline elm srcDirs d i td ti pkgOverrides)
+   in AppSolution old new (Outline.AppOutline canopy srcDirs d i td ti pkgOverrides)
 
 getTransitive :: Map.Map (Pkg.Name, V.Version) Constraints -> Map.Map Pkg.Name V.Version -> [(Pkg.Name, V.Version)] -> Map.Map Pkg.Name V.Version -> Map.Map Pkg.Name V.Version
 getTransitive constraints solution unvisited visited =
@@ -192,8 +192,8 @@ exploreGoals (Goals pending solved) =
 addVersion :: Goals -> Pkg.Name -> V.Version -> Solver Goals
 addVersion (Goals pending solved) name version =
   do
-    (Constraints elm deps) <- getConstraints name version
-    if C.goodElm elm
+    (Constraints canopy deps) <- getConstraints name version
+    if C.goodCanopy canopy
       then do
         newPending <- foldM (addConstraint solved) pending (Map.toList deps)
         return (Goals newPending (Map.insert name version solved))
@@ -250,9 +250,9 @@ getFromCustomSingleRepositoryData customSingleRepositoryData pkg vsn cache toNew
   case customSingleRepositoryData of
     DefaultPackageServerRepoData defaultPackageServerRepo ->
       let repositoryUrl = _defaultPackageServerRepoTypeUrl defaultPackageServerRepo
-          url = Website.metadata repositoryUrl pkg vsn "elm.json"
+          url = Website.metadata repositoryUrl pkg vsn "canopy.json"
           home = Stuff.package cache pkg vsn
-          path = home </> "elm.json"
+          path = home </> "canopy.json"
        in do
             result <- Http.get manager url [] id (return . Right)
             case result of
@@ -270,9 +270,9 @@ getFromCustomSingleRepositoryData customSingleRepositoryData pkg vsn cache toNew
     PZRPackageServerRepoData pzrPackageServerRepo ->
       let repositoryUrl = _pzrPackageServerRepoTypeUrl pzrPackageServerRepo
           repositoryAuthToken = _pzrPackageServerRepoAuthToken pzrPackageServerRepo
-          url = Website.metadata repositoryUrl pkg vsn "elm.json"
+          url = Website.metadata repositoryUrl pkg vsn "canopy.json"
           home = Stuff.package cache pkg vsn
-          path = home </> "elm.json"
+          path = home </> "canopy.json"
        in do
             result <- Http.get manager url [Registry.createAuthHeader repositoryAuthToken] id (return . Right)
             case result of
@@ -300,7 +300,7 @@ getConstraints pkg vsn =
           do
             let toNewState cs = State cache connection registry (Map.insert key cs cDict)
             let home = Stuff.package cache pkg vsn
-            let path = home </> "elm.json"
+            let path = home </> "canopy.json"
             outlineExists <- File.exists path
             if outlineExists
               then do
@@ -340,9 +340,9 @@ getConstraints pkg vsn =
                               -- FIXME: Deal with the SHA hash instead of ignoring it
                               \(_, archive) ->
                                 -- FIXME: Do I need to do this createDirectoryIfMissing?
-                                Right <$> do printLog "hello world! FIXME"; Dir.createDirectoryIfMissing True home; File.writePackageReturnElmJson (Stuff.package cache pkg vsn) archive
+                                Right <$> do printLog "hello world! FIXME"; Dir.createDirectoryIfMissing True home; File.writePackageReturnCanopyJson (Stuff.package cache pkg vsn) archive
                           case result of
-                            -- In this case we should've successfully written elm.json to our cache so let's take a look
+                            -- In this case we should've successfully written canopy.json to our cache so let's take a look
                             -- FIXME: I don't like this implicit dependence
                             Right (Just body) ->
                               case D.fromByteString constraintsDecoder body of
@@ -368,8 +368,8 @@ constraintsDecoder =
   do
     outline <- D.mapError (const ()) Outline.decoder
     case outline of
-      Outline.Pkg (Outline.PkgOutline _ _ _ _ _ deps _ elmConstraint) ->
-        return (Constraints elmConstraint deps)
+      Outline.Pkg (Outline.PkgOutline _ _ _ _ _ deps _ canopyConstraint) ->
+        return (Constraints canopyConstraint deps)
       Outline.App _ ->
         D.failure ()
 

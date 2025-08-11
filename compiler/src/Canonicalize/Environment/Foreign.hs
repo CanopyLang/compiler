@@ -16,9 +16,9 @@ import qualified Data.Name as Name
 import qualified AST.Canonical as Can
 import qualified AST.Source as Src
 import qualified Canonicalize.Environment as Env
-import qualified Elm.Interface as I
-import qualified Elm.ModuleName as ModuleName
-import qualified Elm.Package as Pkg
+import qualified Canopy.Interface as I
+import qualified Canopy.ModuleName as ModuleName
+import qualified Canopy.Package as Pkg
 import qualified Reporting.Annotation as A
 import qualified Reporting.Error.Canonicalize as Error
 import qualified Reporting.Result as Result

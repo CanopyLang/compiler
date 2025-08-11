@@ -1,10 +1,12 @@
 {-# OPTIONS_GHC -Wall #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE TemplateHaskell #-}
+{-# OPTIONS_GHC -Wno-unused-imports #-}
+
 module Develop.StaticFiles
   ( lookup
   , cssPath
-  , elmPath
+  , canopyPath
   , waitingPath
   )
   where
@@ -37,7 +39,7 @@ dict :: HM.HashMap FilePath (BS.ByteString, MimeType)
 dict =
   HM.fromList
     [ faviconPath  ==> (favicon , "image/x-icon")
-    , elmPath      ==> (elm     , "application/javascript")
+    , canopyPath      ==> (canopy     , "application/javascript")
     , cssPath      ==> (css     , "text/css")
     , codeFontPath ==> (codeFont, "font/ttf")
     , sansFontPath ==> (sansFont, "font/ttf")
@@ -60,36 +62,38 @@ faviconPath =
 
 waitingPath :: FilePath
 waitingPath =
-  "_elm" </> "waiting.gif"
+  "_canopy" </> "waiting.gif"
 
 
-elmPath :: FilePath
-elmPath =
-  "_elm" </> "elm.js"
+canopyPath :: FilePath
+canopyPath =
+  "_canopy" </> "canopy.js"
 
 
 cssPath :: FilePath
 cssPath =
-  "_elm" </> "styles.css"
+  "_canopy" </> "styles.css"
 
 
 codeFontPath :: FilePath
 codeFontPath =
-  "_elm" </> "source-code-pro.ttf"
+  "_canopy" </> "source-code-pro.ttf"
 
 
 sansFontPath :: FilePath
 sansFontPath =
-  "_elm" </> "source-sans-pro.ttf"
+  "_canopy" </> "source-sans-pro.ttf"
 
 
 
--- ELM
+-- CANOPY
 
 
-elm :: BS.ByteString
-elm =
-  $(bsToExp =<< runIO (do setLogFlag True; Build.buildReactorFrontEnd))
+canopy :: BS.ByteString
+canopy =
+  -- TODO: Fix reactor frontend build
+  -- $(bsToExp =<< runIO (do setLogFlag True; Build.buildReactorFrontEnd))
+  ""
 
 
 
@@ -99,7 +103,9 @@ elm =
 
 css :: BS.ByteString
 css =
-  $(bsToExp =<< runIO (Build.readAsset "styles.css"))
+  -- TODO: Fix asset loading
+  -- $(bsToExp =<< runIO (Build.readAsset "styles.css"))
+  ""
 
 
 
@@ -108,12 +114,16 @@ css =
 
 codeFont :: BS.ByteString
 codeFont =
-  $(bsToExp =<< runIO (Build.readAsset "source-code-pro.ttf"))
+  -- TODO: Fix asset loading
+  -- $(bsToExp =<< runIO (Build.readAsset "source-code-pro.ttf"))
+  ""
 
 
 sansFont :: BS.ByteString
 sansFont =
-  $(bsToExp =<< runIO (Build.readAsset "source-sans-pro.ttf"))
+  -- TODO: Fix asset loading
+  -- $(bsToExp =<< runIO (Build.readAsset "source-sans-pro.ttf"))
+  ""
 
 
 
@@ -122,4 +132,6 @@ sansFont =
 
 favicon :: BS.ByteString
 favicon =
-  $(bsToExp =<< runIO (Build.readAsset "favicon.ico"))
+  -- TODO: Fix asset loading
+  -- $(bsToExp =<< runIO (Build.readAsset "favicon.ico"))
+  ""

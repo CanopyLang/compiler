@@ -393,7 +393,7 @@ problemToHint problem =
   case problem of
     T.IntFloat ->
       [ D.fancyLink "Note" ["Read"] "implicit-casts"
-          ["to","learn","why","Elm","does","not","implicitly","convert"
+          ["to","learn","why","Canopy","does","not","implicitly","convert"
           ,"Ints","to","Floats.","Use",D.green "toFloat","and"
           ,D.green "round","to","do","explicit","conversions."
           ]
@@ -429,7 +429,7 @@ problemToHint problem =
 
     T.AnythingToBool ->
       [ D.toSimpleHint $
-          "Elm does not have “truthiness” such that ints and strings and lists\
+          "Canopy does not have “truthiness” such that ints and strings and lists\
           \ are automatically converted to booleans. Do that conversion explicitly!"
       ]
 
@@ -647,7 +647,7 @@ badFlexFlexSuper s1 s2 =
         T.Appendable -> "appendable"
   in
     [ D.toSimpleHint $
-        "There are no values in Elm that are both "
+        "There are no values in Canopy that are both "
         ++ likeThis s1 ++ " and " ++ likeThis s2 ++ "."
     ]
 
@@ -898,7 +898,7 @@ toExprReport source localizer exprRegion category tipe expected =
                   , "But this update needs it to be compatable with:"
                   , [ D.reflow
                         "Do you mind creating an <http://sscce.org/> that produces this error message and\
-                        \ sharing it at <https://github.com/elm/error-message-catalog/issues> so we\
+                        \ sharing it at <https://github.com/canopy/error-message-catalog/issues> so we\
                         \ can try to give better advice here?"
                     ]
                   )
@@ -1378,7 +1378,7 @@ badCastHelp anInt aFloat toFloat round =
         ["Use",toFloat,"on","the","left","(or",round,"on"
         ,"the","right)","to","make","both","sides","match!"
         ]
-    , D.link "Note" "Read" "implicit-casts" "to learn why Elm does not implicitly convert Ints to Floats."
+    , D.link "Note" "Read" "implicit-casts" "to learn why Canopy does not implicitly convert Ints to Floats."
     ]
 
 
@@ -1463,7 +1463,7 @@ badFDiv localizer direction tipe expected =
             [ D.green "toFloat" <> " for explicit conversions     " <> D.black "(toFloat 5 / 2) == 2.5"
             , D.green "(//)   " <> " for integer division         " <> D.black "(5 // 2)        == 2"
             ]
-        , D.link "Note" "Read" "implicit-casts" "to learn why Elm does not implicitly convert Ints to Floats."
+        , D.link "Note" "Read" "implicit-casts" "to learn why Canopy does not implicitly convert Ints to Floats."
         ]
 
     else
@@ -1498,7 +1498,7 @@ badIDiv localizer direction tipe expected =
             , D.green "ceiling" <> " 3.5   == 4"
             , D.green "truncate" <> " 3.5  == 3"
             ]
-        , D.link "Note" "Read" "implicit-casts" "to learn why Elm does not implicitly convert Ints to Floats."
+        , D.link "Note" "Read" "implicit-casts" "to learn why Canopy does not implicitly convert Ints to Floats."
         ]
     else
       loneType localizer tipe expected

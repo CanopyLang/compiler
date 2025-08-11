@@ -51,7 +51,7 @@ import qualified Data.Name as Name
 import Data.Word (Word16)
 import Numeric (showHex)
 
-import qualified Elm.ModuleName as ModuleName
+import qualified Canopy.ModuleName as ModuleName
 import Parse.Primitives (Row, Col)
 import Parse.Symbol (BadOperator(..))
 import qualified Reporting.Annotation as A
@@ -630,7 +630,7 @@ toReport source err =
         Code.toSnippet source region Nothing
           (
             D.reflow $
-              "It is not possible to declare an `effect module` outside the @elm organization,\
+              "It is not possible to declare an `effect module` outside the @canopy organization,\
               \ so I am getting stuck here:"
           ,
             D.stack
@@ -638,11 +638,11 @@ toReport source err =
                   "Switch to a normal module declaration."
               , D.toSimpleNote $
                   "Effect modules are designed to allow certain core functionality to be\
-                  \ defined separately from the compiler. So the @elm organization has access to\
+                  \ defined separately from the compiler. So the @canopy organization has access to\
                   \ this so that certain changes, extensions, and fixes can be introduced without\
-                  \ needing to release new Elm binaries. For example, we want to make it possible\
+                  \ needing to release new Canopy binaries. For example, we want to make it possible\
                   \ to test effects, but this may require changes to the design of effect modules.\
-                  \ By only having them defined in the @elm organization, that kind of design work\
+                  \ By only having them defined in the @canopy organization, that kind of design work\
                   \ can proceed much more smoothly."
               ]
           )
@@ -656,7 +656,7 @@ noteForPortsInPackage =
   D.stack
     [ D.toSimpleNote $
         "One of the major goals of the package ecosystem is to be completely written\
-        \ in Elm. This means when you install an Elm package, you can be sure you are safe\
+        \ in Canopy. This means when you install an Canopy package, you can be sure you are safe\
         \ from security issues on install and that you are not going to get any runtime\
         \ exceptions coming from your new dependency. This design also sets the ecosystem\
         \ up to target other platforms more easily (like mobile phones, WebAssembly, etc.)\
@@ -792,7 +792,7 @@ toParseErrorReport source modul =
               "I cannot parse this module declaration:"
           ,
             D.reflow $
-              "This type of module is reserved for the @elm organization. It is used to\
+              "This type of module is reserved for the @canopy organization. It is used to\
               \ define certain effects, avoiding building them into the compiler."
           )
 
@@ -826,7 +826,7 @@ toParseErrorReport source modul =
               ,
                 D.stack
                   [ D.reflow $
-                      "I am not sure what is going on, but I recommend starting an Elm\
+                      "I am not sure what is going on, but I recommend starting an Canopy\
                       \ file with the following lines:"
                   , D.indent 4 $ D.vcat $
                       [ D.fillSep [D.cyan "import","Html"]
@@ -836,7 +836,7 @@ toParseErrorReport source modul =
                       ]
                   , D.reflow $
                       "You should be able to copy those lines directly into your file. Check out the\
-                      \ examples at <https://elm-lang.org/examples> for more help getting started!"
+                      \ examples at <https://canopy-lang.org/examples> for more help getting started!"
                   , D.toSimpleNote $
                       "This can also happen when something is indented too much!"
                   ]
@@ -947,7 +947,7 @@ toParseErrorReport source modul =
               "Something went wrong in this infix operator declaration:"
           ,
             D.reflow $
-              "This feature is used by the @elm organization to define the\
+              "This feature is used by the @canopy organization to define the\
               \ languages built-in operators."
           )
 
@@ -1052,10 +1052,10 @@ toWeirdEndReport source row col =
                   , D.toSimpleNote $
                       "Some languages require semicolons at the end of each statement. These are\
                       \ often called C-like languages, and they usually share a lot of language design\
-                      \ choices. (E.g. side-effects, for loops, etc.) Elm manages effects with commands\
+                      \ choices. (E.g. side-effects, for loops, etc.) Canopy manages effects with commands\
                       \ and subscriptions instead, so there is no special syntax for \"statements\" and\
                       \ therefore no need to use semicolons to separate them. I think this will make\
-                      \ more sense as you work through <https://guide.elm-lang.org> though!"
+                      \ more sense as you work through <https://guide.canopy-lang.org> though!"
                   ]
               )
 
@@ -1086,9 +1086,9 @@ toWeirdEndReport source row col =
               ,
                 D.stack
                   [ D.reflow $
-                      "It is not used for anything in Elm syntax. It is used for multi-line strings in\
+                      "It is not used for anything in Canopy syntax. It is used for multi-line strings in\
                       \ some languages though, so if you want a string that spans multiple lines, you\
-                      \ can use Elm's multi-line string syntax like this:"
+                      \ can use Canopy's multi-line string syntax like this:"
                   , D.dullyellow $ D.indent 4 $ D.vcat $
                       [ "\"\"\""
                       , "# Multi-line Strings"
@@ -1112,7 +1112,7 @@ toWeirdEndReport source row col =
                   "I got stuck on this dollar sign:"
               ,
                 D.reflow $
-                  "It is not used for anything in Elm syntax. Are you coming from a language where\
+                  "It is not used for anything in Canopy syntax. Are you coming from a language where\
                   \ dollar signs can be used in variable names? If so, try a name that (1) starts\
                   \ with a letter and (2) only contains letters, numbers, and underscores."
               )
@@ -1125,7 +1125,7 @@ toWeirdEndReport source row col =
                   "I got stuck on this symbol:"
               ,
                 D.reflow $
-                  "It is not used for anything in Elm syntax. Try removing it?"
+                  "It is not used for anything in Canopy syntax. Try removing it?"
               )
 
         _ ->
@@ -1418,7 +1418,7 @@ toSpaceReport source space row col =
         Code.toSnippet source region Nothing
           (
             D.reflow $
-              "I ran into a tab, but tabs are not allowed in Elm files."
+              "I ran into a tab, but tabs are not allowed in Canopy files."
           ,
             D.reflow $
               "Replace the tab with spaces."
@@ -1437,7 +1437,7 @@ toSpaceReport source space row col =
             D.stack -- "{-"
               [ D.reflow "Add a -} somewhere after this to end the comment."
               , D.toSimpleHint
-                  "Multi-line comments can be nested in Elm, so {- {- -} -} is a comment\
+                  "Multi-line comments can be nested in Canopy, so {- {- -} -} is a comment\
                   \ that happens to contain another comment. Like parentheses and curly braces,\
                   \ the start and end markers must always be balanced. Maybe that is the problem?"
               ]
@@ -2229,7 +2229,7 @@ toDeclDefReport source name declDef startRow startCol =
                 D.fillSep
                   ["The","name"
                   ,"`" <> D.cyan (D.fromChars keyword) <> "`"
-                  ,"is","reserved","in","Elm,","so","it","cannot"
+                  ,"is","reserved","in","Canopy,","so","it","cannot"
                   ,"be","used","as","an","argument","here:"
                   ]
               ,
@@ -2246,7 +2246,7 @@ toDeclDefReport source name declDef startRow startCol =
 
                       _ ->
                         D.toSimpleNote $
-                          "The `" ++ keyword ++ "` keyword has a special meaning in Elm, so it can only be used in certain situations."
+                          "The `" ++ keyword ++ "` keyword has a special meaning in Canopy, so it can only be used in certain situations."
                   ]
               )
 
@@ -2442,7 +2442,7 @@ declDefNote =
         ]
     , D.reflow $
         "The top line (called a \"type annotation\") is optional. You can leave it off\
-        \ if you want. As you get more comfortable with Elm and as your project grows,\
+        \ if you want. As you get more comfortable with Canopy and as your project grows,\
         \ it becomes more and more valuable to add them though! They work great as\
         \ compiler-verified documentation, and they often improve error messages!"
     ]
@@ -2737,7 +2737,7 @@ toCharReport source char row col =
               , D.indent 4 $
                   D.dullyellow "'this'" <> " => " <> D.green "\"this\""
               , D.toSimpleNote $
-                  "Elm uses double quotes for strings like \"hello\", whereas it uses single\
+                  "Canopy uses double quotes for strings like \"hello\", whereas it uses single\
                   \ quotes for individual characters like 'a' and 'ø'. This distinction helps with\
                   \ code like (String.any (\\c -> c == 'X') \"90210\") where you are inspecting\
                   \ individual characters."
@@ -2992,7 +2992,7 @@ toNumberReport source number row col =
                   "Some languages let you to specify octal numbers by adding a leading zero.\
                   \ So in C, writing 0111 is the same as writing 73. Some people are used to\
                   \ that, but others probably want it to equal 111. Either path is going to\
-                  \ surprise people from certain backgrounds, so Elm tries to avoid this whole\
+                  \ surprise people from certain backgrounds, so Canopy tries to avoid this whole\
                   \ situation."
               ]
           )
@@ -3352,7 +3352,7 @@ toLetDefReport source name def startRow startCol =
                 D.fillSep
                   ["The","name"
                   ,"`" <> D.cyan (D.fromChars keyword) <> "`"
-                  ,"is","reserved","in","Elm,","so","it","cannot"
+                  ,"is","reserved","in","Canopy,","so","it","cannot"
                   ,"be","used","as","an","argument","here:"
                   ]
               ,
@@ -3369,7 +3369,7 @@ toLetDefReport source name def startRow startCol =
 
                       _ ->
                         D.toSimpleNote $
-                          "The `" ++ keyword ++ "` keyword has a special meaning in Elm, so it can only be used in certain situations."
+                          "The `" ++ keyword ++ "` keyword has a special meaning in Canopy, so it can only be used in certain situations."
                   ]
               )
 
@@ -3540,7 +3540,7 @@ defNote =
         ]
     , D.reflow $
         "The top line (called a \"type annotation\") is optional. You can leave it off\
-        \ if you want. As you get more comfortable with Elm and as your project grows,\
+        \ if you want. As you get more comfortable with Canopy and as your project grows,\
         \ it becomes more and more valuable to add them though! They work great as\
         \ compiler-verified documentation, and they often improve error messages!"
     ]
@@ -4300,7 +4300,7 @@ noteForRecordError =
         ]
     , D.reflow $
         "Notice that each line starts with some indentation. Usually two or four spaces.\
-        \ This is the stylistic convention in the Elm ecosystem."
+        \ This is the stylistic convention in the Canopy ecosystem."
     ]
 
 
@@ -4318,7 +4318,7 @@ noteForRecordIndentError =
         ]
     , D.reflow $
         "Notice that each line starts with some indentation. Usually two or four spaces.\
-        \ This is the stylistic convention in the Elm ecosystem!"
+        \ This is the stylistic convention in the Canopy ecosystem!"
     ]
 
 
@@ -4514,7 +4514,7 @@ toListReport source context list startRow startCol =
                       ]
                   , D.reflow $
                       "Notice that each line starts with some indentation. Usually two or four spaces.\
-                      \ This is the stylistic convention in the Elm ecosystem."
+                      \ This is the stylistic convention in the Canopy ecosystem."
                   ]
               )
 
@@ -4574,7 +4574,7 @@ toListReport source context list startRow startCol =
                   ]
               , D.reflow $
                   "Notice that each line starts with some indentation. Usually two or four spaces.\
-                  \ This is the stylistic convention in the Elm ecosystem."
+                  \ This is the stylistic convention in the Canopy ecosystem."
               ]
           )
 
@@ -4605,7 +4605,7 @@ toListReport source context list startRow startCol =
                   ]
               , D.reflow $
                   "Notice that each line starts with some indentation. Usually two or four spaces.\
-                  \ This is the stylistic convention in the Elm ecosystem."
+                  \ This is the stylistic convention in the Canopy ecosystem."
               ]
           )
 
@@ -4633,7 +4633,7 @@ toListReport source context list startRow startCol =
                   ]
               , D.reflow $
                   "Notice that each line starts with some indentation. Usually two or four spaces.\
-                  \ This is the stylistic convention in the Elm ecosystem."
+                  \ This is the stylistic convention in the Canopy ecosystem."
               ]
           )
 
@@ -5726,7 +5726,7 @@ noteForRecordTypeError =
         ]
     , D.reflow $
         "Notice that each line starts with some indentation. Usually two or four spaces.\
-        \ This is the stylistic convention in the Elm ecosystem."
+        \ This is the stylistic convention in the Canopy ecosystem."
     ]
 
 
@@ -5744,7 +5744,7 @@ noteForRecordTypeIndentError =
         ]
     , D.reflow $
         "Notice that each line starts with some indentation. Usually two or four spaces.\
-        \ This is the stylistic convention in the Elm ecosystem."
+        \ This is the stylistic convention in the Canopy ecosystem."
     ]
 
 

@@ -8,6 +8,13 @@ where
 
 import qualified BackgroundWriter as BW
 import qualified Build
+import Canopy.CustomRepositoryData (CustomSingleRepositoryData (..), DefaultPackageServerRepo (..), PZRPackageServerRepo (..), RepositoryAuthToken, RepositoryLocalName, RepositoryUrl)
+import qualified Canopy.Details as Details
+import qualified Canopy.Docs as Docs
+import qualified Canopy.Magnitude as M
+import qualified Canopy.Outline as Outline
+import qualified Canopy.Package as Pkg
+import qualified Canopy.Version as V
 import qualified Codec.Archive.Zip as Zip
 import Control.Exception (bracket_)
 import Control.Monad (void)
@@ -23,15 +30,8 @@ import Deps.CustomRepositoryDataIO (loadCustomRepositoriesData)
 import qualified Deps.Diff as Diff
 import Deps.Registry (createAuthHeader)
 import qualified Deps.Registry as Registry
-import Deps.Website (standardElmPkgRepoDomain)
+import Deps.Website (standardCanopyPkgRepoDomain)
 import qualified Deps.Website as Website
-import Elm.CustomRepositoryData (CustomSingleRepositoryData (..), DefaultPackageServerRepo (..), PZRPackageServerRepo (..), RepositoryAuthToken, RepositoryLocalName, RepositoryUrl)
-import qualified Elm.Details as Details
-import qualified Elm.Docs as Docs
-import qualified Elm.Magnitude as M
-import qualified Elm.Outline as Outline
-import qualified Elm.Package as Pkg
-import qualified Elm.Version as V
 import qualified File
 import qualified Http
 import qualified Json.Decode as D
@@ -59,7 +59,7 @@ data Args
   | PublishToRepository RepositoryLocalName
 
 -- TODO mandate no "exposing (..)" in packages to make
--- optimization to skip builds in Elm.Details always valid
+-- optimization to skip builds in Canopy.Details always valid
 
 run :: Args -> () -> IO ()
 run args () =
@@ -115,7 +115,7 @@ localNameOfCustomSingleRepositoryData customSingleRepositoryData =
     PZRPackageServerRepoData pzrPackageServerRepo -> _pzrPackageServerRepoLocalName pzrPackageServerRepo
 
 findKeyByLocalName :: RepositoryLocalName -> [CustomSingleRepositoryData] -> Maybe CustomSingleRepositoryData
-findKeyByLocalName localName [] = Nothing
+findKeyByLocalName _ [] = Nothing
 findKeyByLocalName localName (customSingleRepositoryData : restOfRepos) =
   if localNameOfCustomSingleRepositoryData customSingleRepositoryData == localName
     then Just customSingleRepositoryData
@@ -129,8 +129,8 @@ lookupRepositoryByLocalName repositoryLocalName zokkaRegistries =
 getAllLocalNamesInRegistries :: Registry.ZokkaRegistries -> [RepositoryLocalName]
 getAllLocalNamesInRegistries registries = map localNameOfCustomSingleRepositoryData (allCustomSingleRepositoryDataFromRegistries registries)
 
--- The only relevant things we need to zip up are the elm.json file and all Elm
--- files in `src`. Note that even though elm.json for applications can specify
+-- The only relevant things we need to zip up are the canopy.json file and all Canopy
+-- files in `src`. Note that even though canopy.json for applications can specify
 -- non-standard locations for source code, for packages, they must always be
 -- under src.
 --
@@ -139,15 +139,15 @@ getAllLocalNamesInRegistries registries = map localNameOfCustomSingleRepositoryD
 -- particular, they potentially expose sensitive data about a user's filesystem.
 --
 -- So we instead expect always that we are in the correct location when this is
--- run (which is okay to do because the Elm compiler can only be run from the
+-- run (which is okay to do because the Canopy compiler can only be run from the
 -- top-level of a project when building).
 --
 -- If we ever want to make the location of the compiler configurable, we'll have
 -- to revisit this.
 createZipArchiveOfSourceCode :: IO Zip.Archive
 createZipArchiveOfSourceCode = do
-  elmFiles <- File.listAllElmFilesRecursively "src"
-  -- Note that we must start with a "." entry. This is because the Elm compiler
+  canopyFiles <- File.listAllCanopyFilesRecursively "src"
+  -- Note that we must start with a "." entry. This is because the Canopy compiler
   -- expects the very first entry of a ZIP archive to be the parent directory
   -- and then subtracts that prefix from every other file that is decompressed.
   -- If we use ".", this creates an entry with a zero-length file name (the
@@ -155,7 +155,7 @@ createZipArchiveOfSourceCode = do
   --
   -- On the other hand if we used "", our underlying Zip library would blow up
   -- with an exception.
-  let filesToZip = "." : "elm.json" : elmFiles
+  let filesToZip = "." : "canopy.json" : canopyFiles
   printLog ("All the files we are zipping: " ++ show filesToZip)
   Zip.addFilesToArchive [] Zip.emptyArchive filesToZip
 
@@ -186,8 +186,8 @@ publish env@(Env root _ manager registry outline) repositoryLocalName =
             case customRepositoriesData of
               DefaultPackageServerRepoData defaultPackageServerRepo ->
                 let repositoryUrl = _defaultPackageServerRepoTypeUrl defaultPackageServerRepo
-                 in if Utf8.toChars standardElmPkgRepoDomain `isInfixOf` Utf8.toChars repositoryUrl
-                      then Task.throw Exit.PublishToStandardElmRepositoryUsingZokka
+                 in if Utf8.toChars standardCanopyPkgRepoDomain `isInfixOf` Utf8.toChars repositoryUrl
+                      then Task.throw Exit.PublishToStandardCanopyRepositoryUsingZokka
                       else do
                         git <- getGit
                         commitHash <- verifyTag git manager pkg vsn
@@ -455,7 +455,7 @@ register manager repositoryUrl pkg vsn docs commitHash sha =
         Http.upload
           manager
           url
-          [ Http.filePart "elm.json" "elm.json",
+          [ Http.filePart "canopy.json" "canopy.json",
             Http.jsonPart "docs.json" "docs.json" (Docs.encode docs),
             Http.filePart "README.md" "README.md",
             Http.stringPart "github-hash" (Http.shaToChars sha)
@@ -474,7 +474,7 @@ registerToPZRRepo manager repositoryUrl repositoryAuthToken pkg vsn docs zipArch
         Http.uploadWithHeaders
           manager
           url
-          [ Http.filePart "elm.json" "elm.json",
+          [ Http.filePart "canopy.json" "canopy.json",
             Http.jsonPart "docs.json" "docs.json" (Docs.encode docs),
             Http.filePart "README.md" "README.md",
             Http.bytesPart "package.zip" "package.zip" (BS.toStrict $ Zip.fromArchive zipArchive)

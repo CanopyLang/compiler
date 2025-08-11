@@ -13,9 +13,9 @@ import qualified AST.Source as Src
 import qualified AST.Canonical as Can
 import qualified AST.Optimized as Opt
 import qualified Canonicalize.Module as Canonicalize
-import qualified Elm.Interface as I
-import qualified Elm.ModuleName as ModuleName
-import qualified Elm.Package as Pkg
+import qualified Canopy.Interface as I
+import qualified Canopy.ModuleName as ModuleName
+import qualified Canopy.Package as Pkg
 import qualified Nitpick.PatternMatches as PatternMatches
 import qualified Optimize.Module as Optimize
 import qualified Reporting.Error as E

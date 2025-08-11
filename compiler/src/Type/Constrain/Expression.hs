@@ -13,7 +13,7 @@ import qualified Data.Name as Name
 import qualified AST.Canonical as Can
 import qualified AST.Utils.Shader as Shader
 import qualified Data.Index as Index
-import qualified Elm.ModuleName as ModuleName
+import qualified Canopy.ModuleName as ModuleName
 import qualified Reporting.Annotation as A
 import qualified Reporting.Error.Type as E
 import Reporting.Error.Type (Expected(..), Context(..), SubContext(..), MaybeName(..), Category(..), PExpected(..), PContext(..))

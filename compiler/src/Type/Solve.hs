@@ -208,7 +208,7 @@ isGeneric var =
                 ++ "    " ++ show (ET.toDoc L.empty RT.None tipe) ++ " [rank = " ++ show rank ++ "]\n\n"
                 ++
                   "Please create an <http://sscce.org/> and then report it\n\
-                  \at <https://github.com/elm/compiler/issues>\n\n"
+                  \at <https://github.com/canopy/compiler/issues>\n\n"
 
 
 

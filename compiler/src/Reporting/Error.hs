@@ -14,7 +14,7 @@ import qualified Data.NonEmptyList as NE
 import qualified Data.OneOrMore as OneOrMore
 import qualified System.FilePath as FP
 
-import qualified Elm.ModuleName as ModuleName
+import qualified Canopy.ModuleName as ModuleName
 import qualified File
 import qualified Json.Encode as E
 import Json.Encode ((==>))

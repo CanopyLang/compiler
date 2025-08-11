@@ -9,7 +9,7 @@ import qualified Bump
 import qualified Data.List as List
 import qualified Develop
 import qualified Diff
-import qualified Elm.Version as V
+import qualified Canopy.Version as V
 import qualified Init
 import qualified Install
 import qualified Make
@@ -49,14 +49,14 @@ intro =
           "for",
           "trying",
           "out",
-          P.green "Elm",
+          P.green "Canopy",
           P.green (P.text (V.toChars V.compiler)) <> ".",
           "I hope you like it!"
         ],
       "",
       P.black "-------------------------------------------------------------------------------",
-      P.black "I highly recommend working through <https://guide.elm-lang.org> to get started.",
-      P.black "It teaches many important concepts, including how to use `elm` in the terminal.",
+      P.black "I highly recommend working through <https://guide.canopy-lang.org> to get started.",
+      P.black "It teaches many important concepts, including how to use `canopy` in the terminal.",
       P.black "-------------------------------------------------------------------------------"
     ]
 
@@ -65,7 +65,7 @@ outro =
   P.fillSep $
     map P.text $
       words $
-        "Be sure to ask on the Elm slack if you run into trouble! Folks are friendly and\
+        "Be sure to ask on the Canopy slack if you run into trouble! Folks are friendly and\
         \ happy to help out. They hang out there because it is fun, so be kind to get the\
         \ best results!"
 
@@ -74,16 +74,16 @@ outro =
 init :: Terminal.Command
 init =
   let summary =
-        "Start an Elm project. It creates a starter elm.json file and\
+        "Start an Canopy project. It creates a starter canopy.json file and\
         \ provides a link explaining what to do from there."
 
       details =
-        "The `init` command helps start Elm projects:"
+        "The `init` command helps start Canopy projects:"
 
       example =
         reflow
-          "It will ask permission to create an elm.json file, the one thing common\
-          \ to all Elm projects. It also provides a link explaining what to do from there."
+          "It will ask permission to create an canopy.json file, the one thing common\
+          \ to all Canopy projects. It also provides a link explaining what to do from there."
    in Terminal.Command "init" (Common summary) details example noArgs noFlags Init.run
 
 -- REPL
@@ -91,7 +91,7 @@ init =
 repl :: Terminal.Command
 repl =
   let summary =
-        "Open up an interactive programming session. Type in Elm expressions\
+        "Open up an interactive programming session. Type in Canopy expressions\
         \ like (2 + 2) or (String.length \"test\") and see if they equal four!"
 
       details =
@@ -99,7 +99,7 @@ repl =
 
       example =
         reflow
-          "Start working through <https://guide.elm-lang.org> to learn how to use this!\
+          "Start working through <https://guide.canopy-lang.org> to learn how to use this!\
           \ It has a whole chapter that uses the REPL for everything, so that is probably\
           \ the quickest way to get started."
 
@@ -125,7 +125,7 @@ reactor :: Terminal.Command
 reactor =
   let summary =
         "Compile code with a click. It opens a file viewer in your browser, and\
-        \ when you click on an Elm file, it compiles and you see the result."
+        \ when you click on an Canopy file, it compiles and you see the result."
 
       details =
         "The `reactor` command starts a local server on your computer:"
@@ -134,7 +134,7 @@ reactor =
         reflow
           "After running that command, you would have a server at <http://localhost:8000>\
           \ that helps with development. It shows your files like a file viewer. If you\
-          \ click on an Elm file, it will compile it for you! And you can just press\
+          \ click on an Canopy file, it will compile it for you! And you can just press\
           \ the refresh button in the browser to recompile things."
 
       reactorFlags =
@@ -157,15 +157,15 @@ port_ =
 make :: Terminal.Command
 make =
   let details =
-        "The `make` command compiles Elm code into JS or HTML:"
+        "The `make` command compiles Canopy code into JS or HTML:"
 
       example =
         stack
           [ reflow
               "For example:",
-            P.indent 4 $ P.green "elm make src/Main.elm",
+            P.indent 4 $ P.green "canopy make src/Main.canopy",
             reflow
-              "This tries to compile an Elm file named src/Main.elm, generating an index.html\
+              "This tries to compile an Canopy file named src/Main.canopy, generating an index.html\
               \ file if possible."
           ]
 
@@ -174,18 +174,18 @@ make =
           |-- onOff "debug" "Turn on the time-travelling debugger. It allows you to rewind and replay events. The events can be imported/exported into a file, which makes for very precise bug reports!"
           |-- onOff "optimize" "Turn on optimizations to make code smaller and faster. For example, the compiler renames record fields to be as short as possible and unboxes values to reduce allocation."
           |-- onOff "watch" "Turn on file watcher"
-          |-- flag "output" Make.output "Specify the name of the resulting JS file. For example --output=assets/elm.js to generate the JS at assets/elm.js or --output=/dev/null to generate no output at all!"
+          |-- flag "output" Make.output "Specify the name of the resulting JS file. For example --output=assets/canopy.js to generate the JS at assets/canopy.js or --output=/dev/null to generate no output at all!"
           |-- flag "report" Make.reportType "You can say --report=json to get error messages as JSON. This is only really useful if you are an editor plugin. Humans should avoid it!"
           |-- flag "docs" Make.docsFile "Generate a JSON file of documentation for a package. Eventually it will be possible to preview docs with `reactor` because it is quite hard to deal with these JSON files directly."
           |-- onOff "verbose" "Turn on verbose logging when compiling. Useful for debugging errors in the Zokka compiler itself."
-   in Terminal.Command "make" Uncommon details example (zeroOrMore elmFile) makeFlags Make.run
+   in Terminal.Command "make" Uncommon details example (zeroOrMore canopyFile) makeFlags Make.run
 
 -- INSTALL
 
 install :: Terminal.Command
 install =
   let details =
-        "The `install` command fetches packages from <https://package.elm-lang.org> for\
+        "The `install` command fetches packages from <https://package.canopy-lang.org> for\
         \ use in your project:"
 
       example =
@@ -195,8 +195,8 @@ install =
             P.indent 4 $
               P.green $
                 P.vcat $
-                  [ "elm install elm/http",
-                    "elm install elm/json"
+                  [ "canopy install canopy/http",
+                    "canopy install canopy/json"
                   ],
             reflow
               "Notice that you must say the AUTHOR name and PROJECT name! After running those\
@@ -251,7 +251,7 @@ bump =
           "Say you just published version 1.0.0, but then decided to remove a function.\
           \ I will compare the published API to what you have locally, figure out that\
           \ it is a MAJOR change, and bump your version number to 2.0.0. I do this with\
-          \ all packages, so there cannot be MAJOR changes hiding in PATCH releases in Elm!"
+          \ all packages, so there cannot be MAJOR changes hiding in PATCH releases in Canopy!"
    in Terminal.Command "bump" Uncommon details example noArgs noFlags Bump.run
 
 -- DIFF
@@ -266,7 +266,7 @@ diff =
           [ reflow
               "For example, to see what changed in the HTML package between\
               \ versions 1.0.0 and 2.0.0, you can say:",
-            P.indent 4 $ P.green $ "elm diff elm/html 1.0.0 2.0.0",
+            P.indent 4 $ P.green $ "canopy diff canopy/html 1.0.0 2.0.0",
             reflow
               "Sometimes a MAJOR change is not actually very big, so\
               \ this can help you plan your upgrade timelines."

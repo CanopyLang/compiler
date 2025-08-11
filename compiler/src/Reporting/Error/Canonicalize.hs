@@ -23,7 +23,7 @@ import qualified Data.Set as Set
 import qualified AST.Canonical as Can
 import qualified AST.Source as Src
 import qualified Data.Index as Index
-import qualified Elm.ModuleName as ModuleName
+import qualified Canopy.ModuleName as ModuleName
 import qualified Reporting.Annotation as A
 import qualified Reporting.Doc as D
 import Reporting.Doc (Doc, (<+>))
@@ -441,7 +441,7 @@ toReport source err =
         Report.Report "UNKNOWN OPERATOR" region ["=="] $
           Code.toSnippet source region Nothing
             (
-              "Elm does not have a (===) operator like JavaScript."
+              "Canopy does not have a (===) operator like JavaScript."
             ,
               "Switch to (==) instead."
             )
@@ -451,7 +451,7 @@ toReport source err =
           Code.toSnippet source region Nothing
             (
               D.reflow $
-                "Elm uses a different name for the “not equal” operator:"
+                "Canopy uses a different name for the “not equal” operator:"
             ,
               D.stack
                 [ D.reflow "Switch to (/=) instead."
@@ -477,15 +477,15 @@ toReport source err =
           Code.toSnippet source region Nothing
             (
               D.reflow $
-                "Elm does not use (%) as the remainder operator:"
+                "Canopy does not use (%) as the remainder operator:"
             ,
               D.stack
                 [ D.reflow $
                     "If you want the behavior of (%) like in JavaScript, switch to:\
-                    \ <https://package.elm-lang.org/packages/elm/core/latest/Basics#remainderBy>"
+                    \ <https://package.canopy-lang.org/packages/canopy/core/latest/Basics#remainderBy>"
                 , D.reflow $
                     "If you want modular arithmetic like in math, switch to:\
-                    \ <https://package.elm-lang.org/packages/elm/core/latest/Basics#modBy>"
+                    \ <https://package.canopy-lang.org/packages/canopy/core/latest/Basics#modBy>"
                 , D.reflow $
                     "The difference is how things work when negative numbers are involved."
                 ]
@@ -564,7 +564,7 @@ toReport source err =
               D.reflow $
                 "But functions cannot be sent in and out ports. If we allowed functions in from JS\
                 \ they may perform some side-effects. If we let functions out, they could produce\
-                \ incorrect results because Elm optimizations assume there are no side-effects."
+                \ incorrect results because Canopy optimizations assume there are no side-effects."
             )
 
 
@@ -575,7 +575,7 @@ toReport source err =
               D.reflow $
                 "But type variables like `" <> Name.toChars name <> "` cannot flow through ports.\
                 \ I need to know exactly what type of data I am getting, so I can guarantee that\
-                \ unexpected data cannot sneak in and crash the Elm program."
+                \ unexpected data cannot sneak in and crash the Canopy program."
             )
 
           UnsupportedType name ->
@@ -583,7 +583,7 @@ toReport source err =
               "a `" <> Name.toChars name <> "` value"
             ,
               D.stack
-                [ D.reflow $ "I cannot handle that. The types that CAN flow in and out of Elm include:"
+                [ D.reflow $ "I cannot handle that. The types that CAN flow in and out of Canopy include:"
                 , D.indent 4 $
                     D.reflow $
                       "Ints, Floats, Bools, Strings, Maybes, Lists, Arrays,\
@@ -642,7 +642,7 @@ toReport source err =
               D.reflow $
                 "It must produce a (Cmd msg) type. Notice the lower case `msg` type\
                 \ variable. The command will trigger some JS code, but it will not send\
-                \ anything particular back to Elm."
+                \ anything particular back to Canopy."
             )
 
           SubBad ->
@@ -687,7 +687,7 @@ toReport source err =
               ,
                 D.stack
                   [ makeTheory "Are you trying to mutate a variable?" $
-                      "Elm does not have mutation, so when I see " ++ Name.toChars name
+                      "Canopy does not have mutation, so when I see " ++ Name.toChars name
                       ++ " defined in terms of " ++ Name.toChars name
                       ++ ", I treat it as a recursive definition. Try giving the new value a new name!"
                   , makeTheory "Maybe you DO want a recursive value?" $
@@ -733,7 +733,7 @@ toReport source err =
                 ,
                   D.stack
                     [ makeTheory "Are you trying to mutate a variable?" $
-                        "Elm does not have mutation, so when I see " ++ Name.toChars name
+                        "Canopy does not have mutation, so when I see " ++ Name.toChars name
                         ++ " defined in terms of " ++ Name.toChars name
                         ++ ", I treat it as a recursive definition. Try giving the new value a new name!"
                     , makeTheory "Maybe you DO want a recursive value?" $
@@ -780,7 +780,7 @@ toReport source err =
             [ D.reflow $
                 "Think of a more helpful name for one of them and you should be all set!"
             , D.link "Note"
-                "Linters advise against shadowing, so Elm makes “best practices” the default. Read"
+                "Linters advise against shadowing, so Canopy makes “best practices” the default. Read"
                 "shadowing"
                 "for more details on this choice."
             ]
@@ -798,7 +798,7 @@ toReport source err =
 
               , D.link "Note" "Read" "tuples"
 
-                  "for more comprehensive advice on working with large chunks of data in Elm."
+                  "for more comprehensive advice on working with large chunks of data in Canopy."
               ]
           )
 
@@ -1061,14 +1061,14 @@ notFound source region maybePrefix name thing (PossibleNames locals quals) =
         [] ->
           D.stack
             [ D.reflow noSuggestionDetails
-            , D.link "Hint" "Read" "imports" "to see how `import` declarations work in Elm."
+            , D.link "Hint" "Read" "imports" "to see how `import` declarations work in Canopy."
             ]
 
         suggestions ->
           D.stack
             [ D.reflow yesSuggestionDetails
             , D.indent 4 $ D.vcat $ map D.dullyellow $ map D.fromChars suggestions
-            , D.link "Hint" "Read" "imports" "to see how `import` declarations work in Elm."
+            , D.link "Hint" "Read" "imports" "to see how `import` declarations work in Canopy."
             ]
 
   in
@@ -1167,7 +1167,7 @@ notEqualsHint :: Text -> [Doc]
 notEqualsHint op =
   [ "Looking", "for", "the", "“not", "equal”", "operator?", "The", "traditional"
   , D.dullyellow $ text $ "(" <> op <> ")"
-  , "is", "replaced", "by", D.green "(/=)", "in", "Elm.", "It", "is", "meant"
+  , "is", "replaced", "by", D.green "(/=)", "in", "Canopy.", "It", "is", "meant"
   , "to", "look", "like", "the", "“not", "equal”", "sign", "from", "math!", "(≠)"
   ]
 
@@ -1175,16 +1175,16 @@ notEqualsHint op =
 equalsHint :: [Doc]
 equalsHint =
   [ "A", "special", D.dullyellow "(===)", "operator", "is", "not", "needed"
-  , "in", "Elm.", "We", "use", D.green "(==)", "for", "everything!"
+  , "in", "Canopy.", "We", "use", D.green "(==)", "for", "everything!"
   ]
 
 
 modHint :: [Doc]
 modHint =
   [ "Rather", "than", "a", D.dullyellow "(%)", "operator,"
-  , "Elm", "has", "a", D.green "modBy", "function."
+  , "Canopy", "has", "a", D.green "modBy", "function."
   , "Learn", "more", "here:"
-  , "<https://package.elm-lang.org/packages/elm/core/latest/Basics#modBy>"
+  , "<https://package.canopy-lang.org/packages/canopy/core/latest/Basics#modBy>"
   ]
 
 

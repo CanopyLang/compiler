@@ -18,8 +18,8 @@ import qualified Data.Utf8 as Utf8
 import qualified AST.Canonical as Can
 import qualified AST.Optimized as Opt
 import qualified Data.Index as Index
-import qualified Elm.Kernel as K
-import qualified Elm.ModuleName as ModuleName
+import qualified Canopy.Kernel as K
+import qualified Canopy.ModuleName as ModuleName
 import qualified Generate.JavaScript.Builder as JS
 import qualified Generate.JavaScript.Expression as Expr
 import qualified Generate.JavaScript.Functions as Functions
@@ -361,13 +361,13 @@ addChunk mode chunk builder =
     K.JS javascript ->
       B.byteString javascript <> builder
 
-    K.ElmVar home name ->
+    K.CanopyVar home name ->
       JsName.toBuilder (JsName.fromGlobal home name) <> builder
 
     K.JsVar home name ->
       JsName.toBuilder (JsName.fromKernel home name) <> builder
 
-    K.ElmField name ->
+    K.CanopyField name ->
       JsName.toBuilder (Expr.generateField mode name) <> builder
 
     K.JsField int ->

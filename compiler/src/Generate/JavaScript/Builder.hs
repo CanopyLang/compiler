@@ -23,7 +23,7 @@ import Data.ByteString.Builder as B
 import qualified Generate.JavaScript.Name as Name
 import Generate.JavaScript.Name (Name)
 import qualified Json.Encode as Json
-import qualified Elm.String as ES
+import qualified Canopy.String as ES
 import qualified Data.Utf8 as Utf8
 import qualified GHC.Word
 
@@ -40,8 +40,8 @@ exclamationMark = 0x21
 
 
 -- We need to remove escape / because otherwise we can end up with
--- https://github.com/elm-lang/elm-make/issues/174 Which is tracked from
--- https://github.com/elm/compiler/issues/1377
+-- https://github.com/canopy-lang/canopy-make/issues/174 Which is tracked from
+-- https://github.com/canopy/compiler/issues/1377
 --
 -- In particular we are trying to solve problems where string literals are
 -- </script> or <!-- Note that this is only a problem for string literals, and

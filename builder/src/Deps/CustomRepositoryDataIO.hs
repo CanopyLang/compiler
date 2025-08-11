@@ -5,7 +5,7 @@ module Deps.CustomRepositoryDataIO
   )
   where
 
-import Elm.CustomRepositoryData (CustomRepositoriesData, customRepostoriesDataDecoder, customRepostoriesDataEncoder, defaultCustomRepositoriesData, CustomRepositoryDataParseError, defaultCustomRepositoriesDataElmPackageRepoOnly)
+import Canopy.CustomRepositoryData (CustomRepositoriesData, customRepostoriesDataDecoder, customRepostoriesDataEncoder, defaultCustomRepositoriesData, CustomRepositoryDataParseError, defaultCustomRepositoriesDataCanopyPackageRepoOnly)
 import qualified File
 import qualified Json.Decode as D
 import qualified Json.Encode as E
@@ -19,7 +19,7 @@ data CustomRepositoriesError = CREJsonDecodeError (D.Error CustomRepositoryDataP
 createCustomRepositoriesData :: ZokkaCustomRepositoryConfigFilePath -> Bool -> IO (Either e CustomRepositoriesData)
 createCustomRepositoriesData (ZokkaCustomRepositoryConfigFilePath filePath) shouldIncludeZokkaRepo = 
   let
-    defaultData = if shouldIncludeZokkaRepo then defaultCustomRepositoriesData else defaultCustomRepositoriesDataElmPackageRepoOnly
+    defaultData = if shouldIncludeZokkaRepo then defaultCustomRepositoriesData else defaultCustomRepositoriesDataCanopyPackageRepoOnly
   in
   do
     E.write filePath (customRepostoriesDataEncoder defaultData)

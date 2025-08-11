@@ -1,0 +1,94 @@
+name: Test Suite
+
+on:
+  push:
+    branches: [ main, master, develop ]
+  pull_request:
+    branches: [ main, master, develop ]
+
+jobs:
+  test:
+    name: Test on ${{ matrix.os }} with GHC ${{ matrix.ghc }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [ubuntu-latest]
+        ghc: ['9.8.4']
+        include:
+          - os: macos-latest
+            ghc: '9.8.4'
+          - os: windows-latest  
+            ghc: '9.8.4'
+
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Setup Haskell
+      uses: haskell/actions/setup@v2
+      with:
+        ghc-version: ${{ matrix.ghc }}
+        enable-stack: true
+        stack-version: 'latest'
+
+    - name: Cache Stack dependencies
+      uses: actions/cache@v3
+      with:
+        path: |
+          ~/.stack
+          .stack-work
+        key: ${{ runner.os }}-stack-${{ matrix.ghc }}-${{ hashFiles('stack.yaml', 'package.yaml') }}
+        restore-keys: |
+          ${{ runner.os }}-stack-${{ matrix.ghc }}-
+          ${{ runner.os }}-stack-
+
+    - name: Install dependencies
+      run: stack build --test --only-dependencies
+
+    - name: Build
+      run: stack build --test --no-run-tests
+
+    - name: Run tests
+      run: stack test --coverage
+
+    - name: Generate coverage report
+      if: matrix.os == 'ubuntu-latest'
+      run: |
+        stack exec -- hpc-codecov --mix=.stack-work/install/*/doc/*/hpc_index.mix --out=codecov.json
+      continue-on-error: true
+
+    - name: Upload coverage to Codecov
+      if: matrix.os == 'ubuntu-latest'
+      uses: codecov/codecov-action@v3
+      with:
+        file: ./codecov.json
+      continue-on-error: true
+
+  lint:
+    name: Lint
+    runs-on: ubuntu-latest
+    
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Setup Haskell
+      uses: haskell/actions/setup@v2
+      with:
+        ghc-version: '9.8.4'
+        enable-stack: true
+        stack-version: 'latest'
+
+    - name: Install HLint
+      run: |
+        stack install hlint
+
+    - name: Run HLint
+      run: |
+        hlint compiler/ builder/ terminal/ test/ --report=hlint-report.html
+      continue-on-error: true
+
+    - name: Upload HLint report
+      uses: actions/upload-artifact@v3
+      if: always()
+      with:
+        name: hlint-report
+        path: hlint-report.html

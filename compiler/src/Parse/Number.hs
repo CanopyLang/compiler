@@ -15,7 +15,7 @@ import Data.Word (Word8)
 import Foreign.Ptr (Ptr, plusPtr, minusPtr)
 
 import qualified AST.Utils.Binop as Binop
-import qualified Elm.Float as EF
+import qualified Canopy.Float as EF
 import Parse.Primitives (Parser, Row, Col)
 import qualified Parse.Variable as Var
 import qualified Parse.Primitives as P

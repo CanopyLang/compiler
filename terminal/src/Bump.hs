@@ -1,4 +1,5 @@
 {-# LANGUAGE OverloadedStrings #-}
+{-# OPTIONS_GHC -Wno-x-partial #-}
 
 module Bump
   ( run,
@@ -7,20 +8,20 @@ where
 
 import qualified BackgroundWriter as BW
 import qualified Build
+import qualified Canopy.Details as Details
+import qualified Canopy.Docs as Docs
+import qualified Canopy.Magnitude as M
+import qualified Canopy.Outline as Outline
+import qualified Canopy.Version as V
 import qualified Data.List as List
 import qualified Data.NonEmptyList as NE
 import qualified Deps.Bump as Bump
 import Deps.CustomRepositoryDataIO (loadCustomRepositoriesData)
 import qualified Deps.Diff as Diff
 import qualified Deps.Registry as Registry
-import qualified Elm.Details as Details
-import qualified Elm.Docs as Docs
-import qualified Elm.Magnitude as M
-import qualified Elm.Outline as Outline
-import qualified Elm.Version as V
 import qualified Http
 import qualified Reporting
-import Reporting.Doc ((<+>), (<>))
+import Reporting.Doc ((<+>))
 import qualified Reporting.Doc as D
 import Reporting.Exit (Bump (BumpCustomRepositoryDataProblem))
 import qualified Reporting.Exit as Exit
@@ -91,10 +92,10 @@ checkNewPackage root outline@(Outline.PkgOutline _ _ _ version _ _ _ _) =
   do
     putStrLn Exit.newPackageOverview
     if version == V.one
-      then putStrLn "The version number in elm.json is correct so you are all set!"
+      then putStrLn "The version number in canopy.json is correct so you are all set!"
       else
         changeVersion root outline V.one $
-          "It looks like the version in elm.json has been changed though!\n\
+          "It looks like the version in canopy.json has been changed though!\n\
           \Would you like me to change it back to "
             <> D.fromVersion V.one
             <> "? [Y/n] "
@@ -114,13 +115,13 @@ suggestVersion (Env root cache manager registry outline@(Outline.PkgOutline pkg 
             new = D.fromVersion newVersion
             mag = D.fromChars $ M.toChars (Diff.toMagnitude changes)
          in "Based on your new API, this should be a" <+> D.green mag <+> "change (" <> old <> " => " <> new <> ")\n"
-              <> "Bail out of this command and run 'elm diff' for a full explanation.\n"
+              <> "Bail out of this command and run 'canopy diff' for a full explanation.\n"
               <> "\n"
               <> "Should I perform the update ("
               <> old
               <> " => "
               <> new
-              <> ") in elm.json? [Y/n] "
+              <> ") in canopy.json? [Y/n] "
 
 generateDocs :: FilePath -> Outline.PkgOutline -> Task.Task Exit.Bump Docs.Documentation
 generateDocs root (Outline.PkgOutline _ _ _ _ exposed _ _ _) =

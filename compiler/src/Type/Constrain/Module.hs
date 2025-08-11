@@ -10,7 +10,7 @@ import qualified Data.Map.Strict as Map
 import qualified Data.Name as Name
 
 import qualified AST.Canonical as Can
-import qualified Elm.ModuleName as ModuleName
+import qualified Canopy.ModuleName as ModuleName
 import qualified Reporting.Annotation as A
 import qualified Reporting.Error.Type as E
 import qualified Type.Constrain.Expression as Expr

@@ -14,7 +14,7 @@ import qualified Data.Name as Name
 
 import qualified AST.Canonical as Can
 import qualified Data.Index as Index
-import qualified Elm.ModuleName as ModuleName
+import qualified Canopy.ModuleName as ModuleName
 import qualified Reporting.Annotation as A
 import qualified Reporting.Error.Type as E
 import qualified Type.Instantiate as Instantiate

@@ -13,7 +13,7 @@ import qualified Data.Maybe as Maybe
 import qualified Data.Name as Name
 
 import qualified AST.Optimized as Opt
-import qualified Elm.Compiler.Type.Extract as Extract
+import qualified Canopy.Compiler.Type.Extract as Extract
 import qualified Generate.JavaScript.Name as JsName
 
 

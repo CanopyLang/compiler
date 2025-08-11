@@ -24,7 +24,7 @@ import System.IO (hPutStr, hPutStrLn, stdout)
 import qualified Text.PrettyPrint.ANSI.Leijen as P
 import qualified Text.Read as Read
 
-import qualified Elm.Version as V
+import qualified Canopy.Version as V
 import Terminal.Internal
 import qualified Terminal.Chomp as Chomp
 import qualified Terminal.Error as Error
@@ -336,7 +336,7 @@ require5 func a b c d e =
 file names:
 
     suggestFiles []             -- suggests any file
-    suggestFiles ["elm"]        -- suggests only .elm files
+    suggestFiles ["canopy"]        -- suggests only .canopy files
     suggestFiles ["js","html"]  -- suggests only .js and .html files
 
 Notice that you can limit the suggestion by the file extension! If you need

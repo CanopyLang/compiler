@@ -21,13 +21,13 @@ import qualified Data.Set as Set
 import Deps.Registry (ZokkaRegistries, createAuthHeader)
 import qualified Deps.Registry as Registry
 import qualified Deps.Website as Website
-import qualified Elm.Compiler.Type as Type
-import Elm.CustomRepositoryData (CustomSingleRepositoryData (..), DefaultPackageServerRepo (..), PZRPackageServerRepo (..))
-import qualified Elm.Docs as Docs
-import qualified Elm.Magnitude as M
-import qualified Elm.ModuleName as ModuleName
-import qualified Elm.Package as Pkg
-import qualified Elm.Version as V
+import qualified Canopy.Compiler.Type as Type
+import Canopy.CustomRepositoryData (CustomSingleRepositoryData (..), DefaultPackageServerRepo (..), PZRPackageServerRepo (..))
+import qualified Canopy.Docs as Docs
+import qualified Canopy.Magnitude as M
+import qualified Canopy.ModuleName as ModuleName
+import qualified Canopy.Package as Pkg
+import qualified Canopy.Version as V
 import qualified File
 import qualified Http
 import qualified Json.Decode as D

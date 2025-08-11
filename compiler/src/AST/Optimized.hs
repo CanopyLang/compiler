@@ -32,11 +32,11 @@ import qualified Data.Set as Set
 import qualified AST.Canonical as Can
 import qualified AST.Utils.Shader as Shader
 import qualified Data.Index as Index
-import qualified Elm.Float as EF
-import qualified Elm.Kernel as K
-import qualified Elm.ModuleName as ModuleName
-import qualified Elm.Package as Pkg
-import qualified Elm.String as ES
+import qualified Canopy.Float as EF
+import qualified Canopy.Kernel as K
+import qualified Canopy.ModuleName as ModuleName
+import qualified Canopy.Package as Pkg
+import qualified Canopy.String as ES
 import qualified Optimize.DecisionTree as DT
 import qualified Reporting.Annotation as A
 
@@ -219,9 +219,9 @@ addKernelDep :: K.Chunk -> Set.Set Global -> Set.Set Global
 addKernelDep chunk deps =
   case chunk of
     K.JS _              -> deps
-    K.ElmVar home name  -> Set.insert (Global home name) deps
+    K.CanopyVar home name  -> Set.insert (Global home name) deps
     K.JsVar shortName _ -> Set.insert (toKernelGlobal shortName) deps
-    K.ElmField _        -> deps
+    K.CanopyField _        -> deps
     K.JsField _         -> deps
     K.JsEnum _          -> deps
     K.Debug             -> deps

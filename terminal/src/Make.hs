@@ -14,17 +14,12 @@ where
 import qualified AST.Optimized as Opt
 import qualified BackgroundWriter as BW
 import qualified Build
+import qualified Canopy.Details as Details
+import qualified Canopy.ModuleName as ModuleName
 import Control.Monad (when)
 import qualified Data.ByteString.Builder as B
-import qualified Data.Map as Map
 import qualified Data.Maybe as Maybe
 import qualified Data.NonEmptyList as NE
-import qualified Data.Utf8 as Utf8
-import Elm.Details (Foreign (..))
-import qualified Elm.Details as Details
-import qualified Elm.ModuleName as ModuleName
-import Elm.Package (Name (..))
-import qualified Elm.Package as Pkg
 import qualified File
 import qualified Generate
 import qualified Generate.Html as Html
@@ -109,7 +104,7 @@ runHelp root paths style (Flags {_debug, _optimize, _output, _docs}) =
                       name : names ->
                         do
                           builder <- toBuilder root details desiredMode artifacts
-                          generate style "elm.js" builder (NE.List name names)
+                          generate style "canopy.js" builder (NE.List name names)
                   Just DevNull ->
                     return ()
                   Just (JS target) ->
@@ -263,7 +258,7 @@ output =
       _plural = "output files",
       _parser = parseOutput,
       _suggest = \_ -> return [],
-      _examples = \_ -> return ["elm.js", "index.html", "/dev/null"]
+      _examples = \_ -> return ["canopy.js", "index.html", "/dev/null"]
     }
 
 parseOutput :: String -> Maybe Output

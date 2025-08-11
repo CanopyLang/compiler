@@ -15,10 +15,10 @@ import System.FilePath ((</>), splitDirectories, takeExtension)
 
 import qualified BackgroundWriter as BW
 import qualified Develop.Generate.Help as Help
-import qualified Elm.Details as Details
-import qualified Elm.Outline as Outline
-import qualified Elm.Package as Pkg
-import qualified Elm.Version as V
+import qualified Canopy.Details as Details
+import qualified Canopy.Outline as Outline
+import qualified Canopy.Package as Pkg
+import qualified Canopy.Version as V
 import qualified Json.Encode as E
 import Json.Encode ((==>))
 import qualified Reporting
@@ -117,7 +117,7 @@ getFiles pwd contents =
 
 toFile :: FilePath -> FilePath -> IO File
 toFile pwd path =
-  if takeExtension path == ".elm" then
+  if takeExtension path == ".canopy" then
     do  source <- readFile (pwd </> path)
         let hasMain = List.isInfixOf "\nmain " source
         return (File path hasMain)
@@ -147,7 +147,7 @@ getOutline =
 -- GET EXACT DEPS
 
 
--- TODO revamp how `elm reactor` works so that this can go away.
+-- TODO revamp how `canopy reactor` works so that this can go away.
 -- I am trying to "just get it working again" at this point though.
 --
 getExactDeps :: Maybe Outline.Outline -> IO (Map.Map Pkg.Name V.Version)

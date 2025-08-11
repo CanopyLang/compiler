@@ -14,8 +14,8 @@ import qualified Data.ByteString as BS
 import qualified Data.Name as Name
 
 import qualified AST.Source as Src
-import qualified Elm.Compiler.Imports as Imports
-import qualified Elm.Package as Pkg
+import qualified Canopy.Compiler.Imports as Imports
+import qualified Canopy.Package as Pkg
 import qualified Parse.Declaration as Decl
 import qualified Parse.Keyword as Keyword
 import qualified Parse.Space as Space

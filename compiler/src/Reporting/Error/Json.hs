@@ -205,7 +205,7 @@ parseErrorToReport path source parseError reason =
         ,
           D.reflow $
             "I do not accept floating point numbers like 3.1415 right now. That kind\
-            \ of JSON value is not needed for any of the uses that Elm has for now."
+            \ of JSON value is not needed for any of the uses that Canopy has for now."
         )
 
     BadEnd row col ->
@@ -256,7 +256,7 @@ problemToReport path ftr source context problem reason =
 
     OneOf p ps ->
       -- NOTE: only displays the deepest problem. This works well for the kind
-      -- of JSON used by Elm, but probably would not work well in general.
+      -- of JSON used by Canopy, but probably would not work well in general.
       let
         (NE.List prob _) = NE.sortBy (negate . getMaxDepth) (NE.List p ps)
       in

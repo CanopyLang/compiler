@@ -30,8 +30,8 @@ import qualified Data.Set as Set
 
 import qualified AST.Canonical as Can
 import qualified Data.Index as Index
-import qualified Elm.ModuleName as ModuleName
-import qualified Elm.String as ES
+import qualified Canopy.ModuleName as ModuleName
+import qualified Canopy.String as ES
 import qualified Reporting.Annotation as A
 
 

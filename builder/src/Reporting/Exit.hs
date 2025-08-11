@@ -46,12 +46,12 @@ import qualified Data.Name as N
 import qualified Data.NonEmptyList as NE
 import qualified Data.Utf8 as Utf8
 import Deps.CustomRepositoryDataIO (CustomRepositoriesError (..))
-import qualified Elm.Constraint as C
-import Elm.CustomRepositoryData (CustomRepositoryDataParseError (..), RepositoryLocalName)
-import qualified Elm.Magnitude as M
-import qualified Elm.ModuleName as ModuleName
-import qualified Elm.Package as Pkg
-import qualified Elm.Version as V
+import qualified Canopy.Constraint as C
+import Canopy.CustomRepositoryData (CustomRepositoryDataParseError (..), RepositoryLocalName)
+import qualified Canopy.Magnitude as M
+import qualified Canopy.ModuleName as ModuleName
+import qualified Canopy.Package as Pkg
+import qualified Canopy.Version as V
 import qualified File
 import qualified Http
 import qualified Json.Decode as Decode
@@ -101,28 +101,28 @@ initToReport exit =
       Help.report
         "NO SOLUTION"
         Nothing
-        "I tried to create an elm.json with the following direct dependencies:"
+        "I tried to create an canopy.json with the following direct dependencies:"
         [ D.indent 4 $
             D.vcat $
               map (D.dullyellow . D.fromChars . Pkg.toChars) pkgs,
           D.reflow $
             "I could not find compatible versions though! This should not happen, so please\
-            \ ask around one of the community forums at https://elm-lang.org/community to learn\
+            \ ask around one of the community forums at https://canopy-lang.org/community to learn\
             \ what is going on!"
         ]
     InitNoOfflineSolution pkgs ->
       Help.report
         "NO OFFLINE SOLUTION"
         Nothing
-        "I tried to create an elm.json with the following direct dependencies:"
+        "I tried to create an canopy.json with the following direct dependencies:"
         [ D.indent 4 $
             D.vcat $
               map (D.dullyellow . D.fromChars . Pkg.toChars) pkgs,
           D.reflow $
             "I could not find compatible versions though, but that may be because I could not\
-            \ connect to https://package.elm-lang.org to get the latest list of packages. Are\
+            \ connect to https://package.canopy-lang.org to get the latest list of packages. Are\
             \ you able to connect to the internet? Please ask around one of the community\
-            \ forums at https://elm-lang.org/community for help!"
+            \ forums at https://canopy-lang.org/community for help!"
         ]
     InitSolverProblem solver ->
       toSolverReport solver
@@ -130,7 +130,7 @@ initToReport exit =
       Help.report
         "EXISTING PROJECT"
         Nothing
-        "You already have an elm.json file, so there is nothing for me to initialize!"
+        "You already have an canopy.json file, so there is nothing for me to initialize!"
         [ D.fillSep
             [ "Maybe",
               D.green (D.fromChars (D.makeLink "init")),
@@ -173,28 +173,28 @@ diffToReport diff =
       Help.report
         "DIFF WHAT?"
         Nothing
-        "I cannot find an elm.json so I am not sure what you want me to diff.\
-        \ Normally you run `elm diff` from within a project!"
+        "I cannot find an canopy.json so I am not sure what you want me to diff.\
+        \ Normally you run `canopy diff` from within a project!"
         [ D.reflow $ "If you are just curious to see a diff, try running this command:",
-          D.indent 4 $ D.green $ "elm diff elm/http 1.0.0 2.0.0"
+          D.indent 4 $ D.green $ "canopy diff canopy/http 1.0.0 2.0.0"
         ]
     DiffBadOutline outline ->
       toOutlineReport outline
     DiffApplication ->
       Help.report
         "CANNOT DIFF APPLICATIONS"
-        (Just "elm.json")
-        "Your elm.json says this project is an application, but `elm diff` only works\
+        (Just "canopy.json")
+        "Your canopy.json says this project is an application, but `canopy diff` only works\
         \ with packages. That way there are previously published versions of the API to\
         \ diff against!"
         [ D.reflow $ "If you are just curious to see a diff, try running this command:",
-          D.indent 4 $ D.dullyellow $ "elm diff elm/json 1.0.0 1.1.2"
+          D.indent 4 $ D.dullyellow $ "canopy diff canopy/json 1.0.0 1.1.2"
         ]
     DiffNoExposed ->
       Help.report
         "NO EXPOSED MODULES"
-        (Just "elm.json")
-        "Your elm.json has no \"exposed-modules\" which means there is no public API at\
+        (Just "canopy.json")
+        "Your canopy.json has no \"exposed-modules\" which means there is no public API at\
         \ all right now! What am I supposed to diff?"
         [ D.reflow $
             "Try adding some modules back to the \"exposed-modules\" field."
@@ -214,7 +214,7 @@ diffToReport diff =
         [ D.indent 4 $ D.red $ D.fromChars $ Pkg.toChars pkg,
           "Maybe you want one of these instead?",
           D.indent 4 $ D.dullyellow $ D.vcat $ map (D.fromChars . Pkg.toChars) suggestions,
-          "But check <https://package.elm-lang.org> to see all possibilities!"
+          "But check <https://package.canopy-lang.org> to see all possibilities!"
         ]
     DiffUnknownVersion _pkg vsn realVersions ->
       Help.docReport
@@ -283,10 +283,10 @@ bumpToReport bump =
       Help.report
         "BUMP WHAT?"
         Nothing
-        "I cannot find an elm.json so I am not sure what you want me to bump."
+        "I cannot find an canopy.json so I am not sure what you want me to bump."
         [ D.reflow $
-            "Elm packages always have an elm.json that says current the version number. If\
-            \ you run this command from a directory with an elm.json file, I will try to bump\
+            "Canopy packages always have an canopy.json that says current the version number. If\
+            \ you run this command from a directory with an canopy.json file, I will try to bump\
             \ the version in there based on the API changes."
         ]
     BumpBadOutline outline ->
@@ -294,17 +294,17 @@ bumpToReport bump =
     BumpApplication ->
       Help.report
         "CANNOT BUMP APPLICATIONS"
-        (Just "elm.json")
-        "Your elm.json says this is an application. That means it cannot be published\
-        \ on <https://package.elm-lang.org> and therefore has no version to bump!"
+        (Just "canopy.json")
+        "Your canopy.json says this is an application. That means it cannot be published\
+        \ on <https://package.canopy-lang.org> and therefore has no version to bump!"
         []
     BumpUnexpectedVersion vsn versions ->
       Help.docReport
         "CANNOT BUMP"
-        (Just "elm.json")
+        (Just "canopy.json")
         ( D.fillSep
             [ "Your",
-              "elm.json",
+              "canopy.json",
               "says",
               "I",
               "should",
@@ -320,7 +320,7 @@ bumpToReport bump =
               "that",
               "version",
               "on",
-              "<https://package.elm-lang.org>.",
+              "<https://package.canopy-lang.org>.",
               "That",
               "means",
               "there",
@@ -346,7 +346,7 @@ bumpToReport bump =
             ]
         )
         [ D.fillSep $
-            ["Try", "bumping", "again", "after", "changing", "the", D.dullyellow "\"version\"", "in", "elm.json"]
+            ["Try", "bumping", "again", "after", "changing", "the", D.dullyellow "\"version\"", "in", "canopy.json"]
               ++ if length versions == 1 then ["to:"] else ["to", "one", "of", "these:"],
           D.vcat $ map (D.green . D.fromVersion) versions
         ]
@@ -361,7 +361,7 @@ bumpToReport bump =
     BumpNoExposed ->
       Help.docReport
         "NO EXPOSED MODULES"
-        (Just "elm.json")
+        (Just "canopy.json")
         ( D.fillSep $
             [ "To",
               "bump",
@@ -372,7 +372,7 @@ bumpToReport bump =
               "field",
               "of",
               "your",
-              "elm.json",
+              "canopy.json",
               "must",
               "list",
               "at",
@@ -448,8 +448,8 @@ data Publish
   | PublishZipNoExposed
   | PublishZipBuildProblem BuildProblem
   | -- When publishing with Zokka we have to be careful not to publish to the standard
-    -- Elm repository so that we don't end up publishing packages that the vanilla Elm compiler cannot handle
-    PublishToStandardElmRepositoryUsingZokka
+    -- Canopy repository so that we don't end up publishing packages that the vanilla Canopy compiler cannot handle
+    PublishToStandardCanopyRepositoryUsingZokka
   | PublishWithNoRepositoryLocalName
   | PublishUsingRepositoryLocalNameThatDoesntExistInCustomRepositoryConfig RepositoryLocalName [RepositoryLocalName]
   | PublishCustomRepositoryConfigDataError CustomRepositoriesError
@@ -461,9 +461,9 @@ publishToReport publish =
       Help.report
         "PUBLISH WHAT?"
         Nothing
-        "I cannot find an elm.json so I am not sure what you want me to publish."
+        "I cannot find an canopy.json so I am not sure what you want me to publish."
         [ D.reflow $
-            "Elm packages always have an elm.json that states the version number,\
+            "Canopy packages always have an canopy.json that states the version number,\
             \ dependencies, exposed modules, etc."
         ]
     PublishBadOutline outline ->
@@ -502,7 +502,7 @@ publishToReport publish =
               "version",
               "for",
               "all",
-              "Elm",
+              "Canopy",
               "packages."
             ]
         ]
@@ -527,7 +527,7 @@ publishToReport publish =
               "Try using the `bump` command:"
             ]
         )
-        [ D.dullyellow $ D.indent 4 "elm bump",
+        [ D.dullyellow $ D.indent 4 "canopy bump",
           D.reflow $
             "It computes the version number based on API changes, ensuring\
             \ that no breaking changes end up in PATCH releases!"
@@ -535,10 +535,10 @@ publishToReport publish =
     PublishInvalidBump statedVersion latestVersion ->
       Help.docReport
         "INVALID VERSION"
-        (Just "elm.json")
+        (Just "canopy.json")
         ( D.fillSep $
             [ "Your",
-              "elm.json",
+              "canopy.json",
               "says",
               "the",
               "next",
@@ -576,25 +576,25 @@ publishToReport publish =
               "From",
               "there,",
               "have",
-              "Elm",
+              "Canopy",
               "bump",
               "the",
               "version",
               "by",
               "running:"
             ],
-          D.indent 4 $ D.green "elm bump",
+          D.indent 4 $ D.green "canopy bump",
           D.reflow $
-            "If you want more insight on the API changes Elm detects, you\
-            \ can run `elm diff` at this point as well."
+            "If you want more insight on the API changes Canopy detects, you\
+            \ can run `canopy diff` at this point as well."
         ]
     PublishBadBump old new magnitude realNew realMagnitude ->
       Help.docReport
         "INVALID VERSION"
-        (Just "elm.json")
+        (Just "canopy.json")
         ( D.fillSep $
             [ "Your",
-              "elm.json",
+              "canopy.json",
               "says",
               "the",
               "next",
@@ -623,7 +623,7 @@ publishToReport publish =
         )
         [ D.indent 4 $
             D.fromChars $
-              "elm diff " ++ V.toChars old,
+              "canopy diff " ++ V.toChars old,
           D.fillSep $
             [ "This",
               "command",
@@ -654,19 +654,19 @@ publishToReport publish =
               "want!"
             ],
           D.reflow $
-            "Also, next time use `elm bump` and I'll figure all this out for you!"
+            "Also, next time use `canopy bump` and I'll figure all this out for you!"
         ]
     PublishNoSummary ->
       Help.docReport
         "NO SUMMARY"
-        (Just "elm.json")
+        (Just "canopy.json")
         ( D.fillSep $
             [ "To",
               "publish",
               "a",
               "package,",
               "your",
-              "elm.json",
+              "canopy.json",
               "must",
               "have",
               "a",
@@ -689,7 +689,7 @@ publishToReport publish =
     PublishNoExposed ->
       Help.docReport
         "NO EXPOSED MODULES"
-        (Just "elm.json")
+        (Just "canopy.json")
         ( D.fillSep $
             [ "To",
               "publish",
@@ -700,7 +700,7 @@ publishToReport publish =
               "field",
               "of",
               "your",
-              "elm.json",
+              "canopy.json",
               "must",
               "list",
               "at",
@@ -725,13 +725,13 @@ publishToReport publish =
       Help.report
         "NO LICENSE FILE"
         (Just "LICENSE")
-        "By publishing a package you are inviting the Elm community to build\
+        "By publishing a package you are inviting the Canopy community to build\
         \ upon your work. But without knowing your license, we have no idea if\
         \ that is legal!"
         [ D.reflow $
             "Once you pick an OSI approved license from <https://spdx.org/licenses/>,\
             \ you must share that choice in two places. First, the license\
-            \ identifier must appear in your elm.json file. Second, the full\
+            \ identifier must appear in your canopy.json file. Second, the full\
             \ license text must appear in the root of your project in a file\
             \ named LICENSE. Add that file and you will be all set!"
         ]
@@ -909,31 +909,31 @@ publishToReport publish =
       badZipReport
     PublishZipBuildProblem _ ->
       badZipReport
-    PublishToStandardElmRepositoryUsingZokka ->
+    PublishToStandardCanopyRepositoryUsingZokka ->
       Help.report
         "PUBLISH TO PROHIBITED REPOSITORY"
         Nothing
-        "You are trying to use the Zokka compiler to publish to the standard Elm\
-        \ repository (package.elm-lang.org). This is prohibited!"
+        "You are trying to use the Zokka compiler to publish to the standard Canopy\
+        \ repository (package.canopy-lang.org). This is prohibited!"
         [ D.reflow $
-            "The standard Elm package repository is used by other Elm developers\
+            "The standard Canopy package repository is used by other Canopy developers\
             \ who may not be using the Zokka compiler. Because the Zokka compiler\
-            \ fixes some compiler crashes in the Elm compiler, if you publish a\
-            \ package that compiled crash-free with Zokka to the standard Elm \
-            \ repository, another Elm developer could try to use that package and\
+            \ fixes some compiler crashes in the Canopy compiler, if you publish a\
+            \ package that compiled crash-free with Zokka to the standard Canopy \
+            \ repository, another Canopy developer could try to use that package and\
             \ would be faced with a mysterious compiler crash.",
           D.reflow $
             "You might also be using a custom package repository for some of your\
-            \ dependencies. An Elm developer using the standard compiler would not\
+            \ dependencies. An Canopy developer using the standard compiler would not\
             \ have access to that repository and so the package could also fail to\
             \ build for that reason.",
           D.reflow $
-            "Zokka therefore prohibits publishing to the standard Elm repository to\
-            \ preserve the integrity of the standard Elm package repository for other Elm developers.",
+            "Zokka therefore prohibits publishing to the standard Canopy repository to\
+            \ preserve the integrity of the standard Canopy package repository for other Canopy developers.",
           D.toSimpleNote $
             "As long as none of your dependencies come from a custom package\
             \ repository you can still develop with Zokka and then use the standard\
-            \ Elm compiler at the last moment to publish!"
+            \ Canopy compiler at the last moment to publish!"
         ]
     PublishWithNoRepositoryLocalName ->
       Help.report
@@ -945,7 +945,7 @@ publishToReport publish =
               D.indent 4 $ D.green "zokka publish https://example.com/my-custom-repository"
             ],
           D.reflow $
-            "This is different from the standard Elm publish command because Zokka allows for\
+            "This is different from the standard Canopy publish command because Zokka allows for\
             \ custom repositories, which means when publishing you have to specify where to publish!"
         ]
     PublishUsingRepositoryLocalNameThatDoesntExistInCustomRepositoryConfig localNameProvided availableLocalNames ->
@@ -953,11 +953,11 @@ publishToReport publish =
         "PUBLISH WITH UNRECOGNIZED LOCAL REPOSITORY NAME"
         Nothing
         -- FIXME: Add actual path of the custom-repository-config.json
-        ("You provided the local repository name " ++ Utf8.toChars localNameProvided ++ " which does not seem to exist in the custom-package-repository-config.json being used in ELM_HOME. The following local names were found:")
+        ("You provided the local repository name " ++ Utf8.toChars localNameProvided ++ " which does not seem to exist in the custom-package-repository-config.json being used in CANOPY_HOME. The following local names were found:")
         [ D.vcat
             (map (\name -> D.indent 4 $ D.yellow (D.fromChars (Utf8.toChars name))) availableLocalNames),
           D.reflow $
-            "This is different from the standard Elm publish command because Zokka allows for\
+            "This is different from the standard Canopy publish command because Zokka allows for\
             \ custom repositories, which means when publishing you have to specify where to publish!"
         ]
     PublishCustomRepositoryConfigDataError _ ->
@@ -1078,7 +1078,7 @@ installToReport exit =
         "NEW PROJECT?"
         Nothing
         "Are you trying to start a new project? Try this command instead:"
-        [ D.indent 4 $ D.green "elm init",
+        [ D.indent 4 $ D.green "canopy init",
           D.reflow "It will help you get started!"
         ]
     InstallBadOutline outline ->
@@ -1086,7 +1086,7 @@ installToReport exit =
     InstallBadRegistry problem ->
       toRegistryProblemReport "PROBLEM LOADING PACKAGE LIST" problem $
         "I need the list of published packages to figure out how to install things"
-    InstallNoArgs elmHome ->
+    InstallNoArgs canopyHome ->
       Help.report
         "INSTALL WHAT?"
         Nothing
@@ -1094,9 +1094,9 @@ installToReport exit =
         [ D.green $
             D.indent 4 $
               D.vcat $
-                [ "elm install elm/http",
-                  "elm install elm/json",
-                  "elm install elm/random"
+                [ "canopy install canopy/http",
+                  "canopy install canopy/json",
+                  "canopy install canopy/random"
                 ],
           D.toFancyHint
             [ "In",
@@ -1118,11 +1118,11 @@ installToReport exit =
               "and",
               "again?",
               "Instead,",
-              "Elm",
+              "Canopy",
               "caches",
               "packages",
               "in",
-              D.dullyellow (D.fromChars elmHome),
+              D.dullyellow (D.fromChars canopyHome),
               "so",
               "each",
               "one",
@@ -1134,7 +1134,7 @@ installToReport exit =
               "on",
               "your",
               "machine.",
-              "Elm",
+              "Canopy",
               "projects",
               "check",
               "that",
@@ -1160,16 +1160,16 @@ installToReport exit =
               "As",
               "a",
               "result",
-              D.dullcyan "elm install",
+              D.dullcyan "canopy install",
               "is",
               "only",
               "for",
               "adding",
               "dependencies",
               "to",
-              "elm.json,",
+              "canopy.json,",
               "whereas",
-              D.dullcyan "elm make",
+              D.dullcyan "canopy make",
               "is",
               "in",
               "charge",
@@ -1182,14 +1182,14 @@ installToReport exit =
               "So",
               "maybe",
               "try",
-              D.green "elm make",
+              D.green "canopy make",
               "instead?"
             ]
         ]
     InstallNoOnlineAppSolution pkg ->
       Help.report
         "CANNOT FIND COMPATIBLE VERSION"
-        (Just "elm.json")
+        (Just "canopy.json")
         ( "I cannot find a version of " ++ Pkg.toChars pkg
             ++ " that is compatible\
                \ with your existing dependencies."
@@ -1200,9 +1200,9 @@ installToReport exit =
             \ existing dependencies! That did not work either!",
           D.reflow $
             "This is most likely to happen when a package is not upgraded yet. Maybe a new\
-            \ version of Elm came out recently? Maybe a common package was changed recently?\
+            \ version of Canopy came out recently? Maybe a common package was changed recently?\
             \ Maybe a better package came along, so there was no need to upgrade this one?\
-            \ Try asking around https://elm-lang.org/community to learn what might be going on\
+            \ Try asking around https://canopy-lang.org/community to learn what might be going on\
             \ with this package.",
           D.toSimpleNote $
             "Whatever the case, please be kind to the relevant package authors! Having\
@@ -1215,13 +1215,13 @@ installToReport exit =
     InstallNoOfflineAppSolution pkg ->
       Help.report
         "CANNOT FIND COMPATIBLE VERSION LOCALLY"
-        (Just "elm.json")
+        (Just "canopy.json")
         ( "I cannot find a version of " ++ Pkg.toChars pkg
             ++ " that is compatible\
                \ with your existing dependencies."
         )
         [ D.reflow $
-            "I was not able to connect to https://package.elm-lang.org/ though, so I was only\
+            "I was not able to connect to https://package.canopy-lang.org/ though, so I was only\
             \ able to look through packages that you have downloaded in the past.",
           D.reflow $
             "Try again later when you have internet!"
@@ -1229,7 +1229,7 @@ installToReport exit =
     InstallNoOnlinePkgSolution pkg ->
       Help.report
         "CANNOT FIND COMPATIBLE VERSION"
-        (Just "elm.json")
+        (Just "canopy.json")
         ( "I cannot find a version of " ++ Pkg.toChars pkg
             ++ " that is compatible\
                \ with your existing constraints."
@@ -1249,13 +1249,13 @@ installToReport exit =
     InstallNoOfflinePkgSolution pkg ->
       Help.report
         "CANNOT FIND COMPATIBLE VERSION LOCALLY"
-        (Just "elm.json")
+        (Just "canopy.json")
         ( "I cannot find a version of " ++ Pkg.toChars pkg
             ++ " that is compatible\
                \ with your existing constraints."
         )
         [ D.reflow $
-            "I was not able to connect to https://package.elm-lang.org/ though, so I was only\
+            "I was not able to connect to https://package.canopy-lang.org/ though, so I was only\
             \ able to look through packages that you have downloaded in the past.",
           D.reflow $
             "Try again later when you have internet!"
@@ -1270,7 +1270,7 @@ installToReport exit =
             ["I", "cannot", "find", "a", "package", "named", D.red (D.fromPackage pkg) <> "."]
         )
         [ D.reflow $
-            "I looked through https://package.elm-lang.org for packages with similar names\
+            "I looked through https://package.canopy-lang.org for packages with similar names\
             \ and found these:",
           D.indent 4 $ D.dullyellow $ D.vcat $ map D.fromPackage suggestions,
           D.reflow $ "Maybe you want one of these instead?"
@@ -1283,7 +1283,7 @@ installToReport exit =
             ["I", "cannot", "find", "a", "package", "named", D.red (D.fromPackage pkg) <> "."]
         )
         [ D.reflow $
-            "I could not connect to https://package.elm-lang.org though, so new packages may\
+            "I could not connect to https://package.canopy-lang.org though, so new packages may\
             \ have been published since I last updated my local cache of package names.",
           D.reflow $
             "Looking through the locally cached names, the closest ones are:",
@@ -1308,7 +1308,7 @@ toSolverReport problem =
       Help.report
         "PROBLEM SOLVING PACKAGE CONSTRAINTS"
         Nothing
-        ( "I need the elm.json of " ++ Pkg.toChars pkg ++ " " ++ V.toChars vsn
+        ( "I need the canopy.json of " ++ Pkg.toChars pkg ++ " " ++ V.toChars vsn
             ++ " to\
                \ help me search for a set of compatible packages. I had it cached locally, but\
                \ it looks like the file was corrupted!"
@@ -1322,7 +1322,7 @@ toSolverReport problem =
       Help.report
         "PROBLEM SOLVING PACKAGE CONSTRAINTS"
         Nothing
-        ( "I need the elm.json of " ++ Pkg.toChars pkg ++ " " ++ V.toChars vsn
+        ( "I need the canopy.json of " ++ Pkg.toChars pkg ++ " " ++ V.toChars vsn
             ++ " to\
                \ help me search for a set of compatible packages, but I ran into corrupted\
                \ information from:"
@@ -1335,7 +1335,7 @@ toSolverReport problem =
         ]
     SolverBadHttp pkg vsn httpError ->
       toHttpErrorReport "PROBLEM SOLVING PACKAGE CONSTRAINTS" httpError $
-        "I need the elm.json of " ++ Pkg.toChars pkg ++ " " ++ V.toChars vsn
+        "I need the canopy.json of " ++ Pkg.toChars pkg ++ " " ++ V.toChars vsn
           ++ " to help me search for a set of compatible packages"
     SolverNonexistentPackage pkg vsn ->
       Help.report
@@ -1380,15 +1380,15 @@ toOutlineReport :: Outline -> Help.Report
 toOutlineReport problem =
   case problem of
     OutlineHasBadStructure decodeError ->
-      Json.toReport "elm.json" (Json.FailureToReport toOutlineProblemReport) decodeError $
-        Json.ExplicitReason "I ran into a problem with your elm.json file."
+      Json.toReport "canopy.json" (Json.FailureToReport toOutlineProblemReport) decodeError $
+        Json.ExplicitReason "I ran into a problem with your canopy.json file."
     OutlineHasMissingSrcDirs dir dirs ->
       case dirs of
         [] ->
           Help.report
             "MISSING SOURCE DIRECTORY"
-            (Just "elm.json")
-            "I need a valid elm.json file, but the \"source-directories\" field lists the following directory:"
+            (Just "canopy.json")
+            "I need a valid canopy.json file, but the \"source-directories\" field lists the following directory:"
             [ D.indent 4 $ D.red $ D.fromChars dir,
               D.reflow $
                 "I cannot find it though. Is it missing? Is there a typo?"
@@ -1396,8 +1396,8 @@ toOutlineReport problem =
         _ : _ ->
           Help.report
             "MISSING SOURCE DIRECTORIES"
-            (Just "elm.json")
-            "I need a valid elm.json file, but the \"source-directories\" field lists the following directories:"
+            (Just "canopy.json")
+            "I need a valid canopy.json file, but the \"source-directories\" field lists the following directories:"
             [ D.indent 4 $
                 D.vcat $
                   map (D.red . D.fromChars) (dir : dirs),
@@ -1409,8 +1409,8 @@ toOutlineReport problem =
         then
           Help.report
             "REDUNDANT SOURCE DIRECTORIES"
-            (Just "elm.json")
-            "I need a valid elm.json file, but the \"source-directories\" field lists the same directory twice:"
+            (Just "canopy.json")
+            "I need a valid canopy.json file, but the \"source-directories\" field lists the same directory twice:"
             [ D.indent 4 $
                 D.vcat $
                   map (D.red . D.fromChars) [dir1, dir2],
@@ -1420,8 +1420,8 @@ toOutlineReport problem =
         else
           Help.report
             "REDUNDANT SOURCE DIRECTORIES"
-            (Just "elm.json")
-            "I need a valid elm.json file, but the \"source-directories\" field has some redundant directories:"
+            (Just "canopy.json")
+            "I need a valid canopy.json file, but the \"source-directories\" field has some redundant directories:"
             [ D.indent 4 $
                 D.vcat $
                   map (D.red . D.fromChars) [dir1, dir2],
@@ -1434,40 +1434,40 @@ toOutlineReport problem =
     OutlineNoPkgCore ->
       Help.report
         "MISSING DEPENDENCY"
-        (Just "elm.json")
-        "I need to see an \"elm/core\" dependency your elm.json file. The default imports\
+        (Just "canopy.json")
+        "I need to see an \"canopy/core\" dependency your canopy.json file. The default imports\
         \ of `List` and `Maybe` do not work without it."
         [ D.reflow $
-            "If you modified your elm.json by hand, try to change it back! And if you are\
-            \ having trouble getting back to a working elm.json, it may be easier to find a\
-            \ working package and start fresh with their elm.json file."
+            "If you modified your canopy.json by hand, try to change it back! And if you are\
+            \ having trouble getting back to a working canopy.json, it may be easier to find a\
+            \ working package and start fresh with their canopy.json file."
         ]
     OutlineNoAppCore ->
       Help.report
         "MISSING DEPENDENCY"
-        (Just "elm.json")
-        "I need to see an \"elm/core\" dependency your elm.json file. The default imports\
+        (Just "canopy.json")
+        "I need to see an \"canopy/core\" dependency your canopy.json file. The default imports\
         \ of `List` and `Maybe` do not work without it."
         [ D.reflow $
-            "If you modified your elm.json by hand, try to change it back! And if you are\
-            \ having trouble getting back to a working elm.json, it may be easier to delete it\
-            \ and use `elm init` to start fresh."
+            "If you modified your canopy.json by hand, try to change it back! And if you are\
+            \ having trouble getting back to a working canopy.json, it may be easier to delete it\
+            \ and use `canopy init` to start fresh."
         ]
     OutlineNoAppJson ->
       Help.report
         "MISSING DEPENDENCY"
-        (Just "elm.json")
-        "I need to see an \"elm/json\" dependency your elm.json file. It helps me handle\
+        (Just "canopy.json")
+        "I need to see an \"canopy/json\" dependency your canopy.json file. It helps me handle\
         \ flags and ports."
         [ D.reflow $
-            "If you modified your elm.json by hand, try to change it back! And if you are\
-            \ having trouble getting back to a working elm.json, it may be easier to delete it\
-            \ and use `elm init` to start fresh."
+            "If you modified your canopy.json by hand, try to change it back! And if you are\
+            \ having trouble getting back to a working canopy.json, it may be easier to delete it\
+            \ and use `canopy init` to start fresh."
         ]
     OutlinePkgOverridesDoNotMatchDeps packageName packageVersion ->
       Help.report
         "BAD PACKAGE OVERRIDE"
-        (Just "elm.json")
+        (Just "canopy.json")
         "Package overrides in zokka-package-overrides need to override versions of packages \
         \ that actually are used in your direct or indirect dependencies! You are attempting \
         \ to override "
@@ -1491,7 +1491,7 @@ toOutlineProblemReport path source _ region problem =
             "UNEXPECTED TYPE"
             Nothing
             ( D.reflow $
-                "I got stuck while reading your elm.json file. I cannot handle a \"type\" like this:",
+                "I got stuck while reading your canopy.json file. I cannot handle a \"type\" like this:",
               D.fillSep
                 [ "Try",
                   "changing",
@@ -1509,7 +1509,7 @@ toOutlineProblemReport path source _ region problem =
             "INVALID PACKAGE NAME"
             (toHighlight row col)
             ( D.reflow $
-                "I got stuck while reading your elm.json file. I ran into trouble with the package name:",
+                "I got stuck while reading your canopy.json file. I ran into trouble with the package name:",
               D.stack
                 [ D.fillSep
                     [ "Package",
@@ -1531,10 +1531,10 @@ toOutlineProblemReport path source _ region problem =
                   D.dullyellow $
                     D.indent 4 $
                       D.vcat $
-                        [ "\"mdgriffith/elm-ui\"",
-                          "\"w0rm/elm-physics\"",
-                          "\"Microsoft/elm-json-tree-view\"",
-                          "\"FordLabs/elm-star-rating\"",
+                        [ "\"mdgriffith/canopy-ui\"",
+                          "\"w0rm/canopy-physics\"",
+                          "\"Microsoft/canopy-json-tree-view\"",
+                          "\"FordLabs/canopy-star-rating\"",
                           "\"1602/json-schema\""
                         ],
                   D.reflow
@@ -1545,12 +1545,12 @@ toOutlineProblemReport path source _ region problem =
                       [ "+--------------------------------------+-----------+-----------+",
                         "| RULE                                 | BAD       | GOOD      |",
                         "+--------------------------------------+-----------+-----------+",
-                        "| only lower case, digits, and hyphens | elm-HTTP  | elm-http  |",
-                        "| no leading digits                    | 3D        | elm-3d    |",
-                        "| no non-ASCII characters              | elm-bjørn | elm-bear  |",
-                        "| no underscores                       | elm_ui    | elm-ui    |",
-                        "| no double hyphens                    | elm--hash | elm-hash  |",
-                        "| no starting or ending hyphen         | -elm-tar- | elm-tar   |",
+                        "| only lower case, digits, and hyphens | canopy-HTTP  | canopy-http  |",
+                        "| no leading digits                    | 3D        | canopy-3d    |",
+                        "| no non-ASCII characters              | canopy-bjørn | canopy-bear  |",
+                        "| no underscores                       | canopy_ui    | canopy-ui    |",
+                        "| no double hyphens                    | canopy--hash | canopy-hash  |",
+                        "| no starting or ending hyphen         | -canopy-tar- | canopy-tar   |",
                         "+--------------------------------------+-----------+-----------+"
                       ],
                   D.toSimpleNote $
@@ -1563,7 +1563,7 @@ toOutlineProblemReport path source _ region problem =
             "PROBLEM WITH VERSION"
             (toHighlight row col)
             ( D.reflow $
-                "I got stuck while reading your elm.json file. I was expecting a version number here:",
+                "I got stuck while reading your canopy.json file. I was expecting a version number here:",
               D.fillSep
                 [ "I",
                   "need",
@@ -1587,7 +1587,7 @@ toOutlineProblemReport path source _ region problem =
                 "PROBLEM WITH CONSTRAINT"
                 (toHighlight row col)
                 ( D.reflow $
-                    "I got stuck while reading your elm.json file. I do not understand this version constraint:",
+                    "I got stuck while reading your canopy.json file. I do not understand this version constraint:",
                   D.stack
                     [ D.fillSep
                         [ "I",
@@ -1617,9 +1617,9 @@ toOutlineProblemReport path source _ region problem =
                     "PROBLEM WITH CONSTRAINT"
                     Nothing
                     ( D.reflow $
-                        "I got stuck while reading your elm.json file. I ran into an invalid version constraint:",
+                        "I got stuck while reading your canopy.json file. I ran into an invalid version constraint:",
                       D.fillSep
-                        [ "Elm",
+                        [ "Canopy",
                           "checks",
                           "that",
                           "all",
@@ -1664,7 +1664,7 @@ toOutlineProblemReport path source _ region problem =
                     "PROBLEM WITH CONSTRAINT"
                     Nothing
                     ( D.reflow $
-                        "I got stuck while reading your elm.json file. I ran into an invalid version constraint:",
+                        "I got stuck while reading your canopy.json file. I ran into an invalid version constraint:",
                       D.fillSep
                         [ "Maybe",
                           "you",
@@ -1673,7 +1673,7 @@ toOutlineProblemReport path source _ region problem =
                           "like",
                           D.green $ "\"" <> D.fromVersion before <> " <= v < " <> D.fromVersion (V.bumpMajor before) <> "\"",
                           "instead?",
-                          "Elm",
+                          "Canopy",
                           "checks",
                           "that",
                           "all",
@@ -1707,7 +1707,7 @@ toOutlineProblemReport path source _ region problem =
             "PROBLEM WITH MODULE NAME"
             (toHighlight row col)
             ( D.reflow $
-                "I got stuck while reading your elm.json file. I was expecting a module name here:",
+                "I got stuck while reading your canopy.json file. I was expecting a module name here:",
               D.fillSep
                 [ "I",
                   "need",
@@ -1738,7 +1738,7 @@ toOutlineProblemReport path source _ region problem =
             "HEADER TOO LONG"
             Nothing
             ( D.reflow $
-                "I got stuck while reading your elm.json file. This section header is too long:",
+                "I got stuck while reading your canopy.json file. This section header is too long:",
               D.stack
                 [ D.fillSep
                     [ "I",
@@ -1760,7 +1760,7 @@ toOutlineProblemReport path source _ region problem =
                     ],
                   D.toSimpleNote
                     "I count the length in bytes, so using non-ASCII characters costs extra.\
-                    \ Please report your case at https://github.com/elm/compiler/issues if this seems\
+                    \ Please report your case at https://github.com/canopy/compiler/issues if this seems\
                     \ overly restrictive for your needs."
                 ]
             )
@@ -1769,7 +1769,7 @@ toOutlineProblemReport path source _ region problem =
             "PROBLEM WITH DEPENDENCY NAME"
             (toHighlight row col)
             ( D.reflow $
-                "I got stuck while reading your elm.json file. There is something wrong with this dependency name:",
+                "I got stuck while reading your canopy.json file. There is something wrong with this dependency name:",
               D.stack
                 [ D.fillSep
                     [ "Package",
@@ -1789,9 +1789,9 @@ toOutlineProblemReport path source _ region problem =
                       "see",
                       "dependencies",
                       "like",
-                      D.dullyellow "\"mdgriffith/elm-ui\"",
+                      D.dullyellow "\"mdgriffith/canopy-ui\"",
                       "and",
-                      D.dullyellow "\"Microsoft/elm-json-tree-view\"" <> "."
+                      D.dullyellow "\"Microsoft/canopy-json-tree-view\"" <> "."
                     ],
                   D.fillSep $
                     [ "I",
@@ -1811,7 +1811,7 @@ toOutlineProblemReport path source _ region problem =
                       "it",
                       "with",
                       "the",
-                      D.green "elm install",
+                      D.green "canopy install",
                       "command!"
                     ]
                 ]
@@ -1821,10 +1821,10 @@ toOutlineProblemReport path source _ region problem =
             "UNKNOWN LICENSE"
             Nothing
             ( D.reflow $
-                "I got stuck while reading your elm.json file. I do not know about this type of license:",
+                "I got stuck while reading your canopy.json file. I do not know about this type of license:",
               D.stack
                 [ D.fillSep
-                    [ "Elm",
+                    [ "Canopy",
                       "packages",
                       "generally",
                       "use",
@@ -1859,7 +1859,7 @@ toOutlineProblemReport path source _ region problem =
             "SUMMARY TOO LONG"
             Nothing
             ( D.reflow $
-                "I got stuck while reading your elm.json file. Your \"summary\" is too long:",
+                "I got stuck while reading your canopy.json file. Your \"summary\" is too long:",
               D.stack
                 [ D.fillSep
                     [ "I",
@@ -1881,7 +1881,7 @@ toOutlineProblemReport path source _ region problem =
                     ],
                   D.toSimpleNote
                     "I count the length in bytes, so using non-ASCII characters costs extra.\
-                    \ Please report your case at https://github.com/elm/compiler/issues if this seems\
+                    \ Please report your case at https://github.com/canopy/compiler/issues if this seems\
                     \ overly restrictive for your needs."
                 ]
             )
@@ -1890,7 +1890,7 @@ toOutlineProblemReport path source _ region problem =
             "NO SOURCE DIRECTORIES"
             Nothing
             ( D.reflow $
-                "I got stuck while reading your elm.json file. You do not have any \"source-directories\" listed here:",
+                "I got stuck while reading your canopy.json file. You do not have any \"source-directories\" listed here:",
               D.fillSep
                 [ "I",
                   "need",
@@ -1915,8 +1915,8 @@ data Details
   = DetailsNoSolution
   | DetailsNoOfflineSolution RegistryProblem
   | DetailsSolverProblem Solver
-  | DetailsBadElmInPkg C.Constraint
-  | DetailsBadElmInAppOutline V.Version
+  | DetailsBadCanopyInPkg C.Constraint
+  | DetailsBadCanopyInAppOutline V.Version
   | DetailsHandEditedDependencies
   | DetailsBadOutline Outline
   | DetailsCannotGetRegistry RegistryProblem
@@ -1933,8 +1933,8 @@ toDetailsReport details =
     DetailsNoSolution ->
       Help.report
         "INCOMPATIBLE DEPENDENCIES"
-        (Just "elm.json")
-        "The dependencies in your elm.json are not compatible."
+        (Just "canopy.json")
+        "The dependencies in your canopy.json are not compatible."
         [ D.fillSep
             [ "Did",
               "you",
@@ -1956,7 +1956,7 @@ toDetailsReport details =
               "add",
               "dependencies",
               "with",
-              D.green "elm install" <> "."
+              D.green "canopy install" <> "."
             ],
           D.reflow $
             "Please ask for help on the community forums if you try those paths and are still\
@@ -1965,7 +1965,7 @@ toDetailsReport details =
     DetailsNoOfflineSolution registryProblem ->
       Help.report
         "TROUBLE VERIFYING DEPENDENCIES"
-        (Just "elm.json")
+        (Just "canopy.json")
         ( "I got the error " ++ (show registryProblem)
             ++ " which meant that I assumed this computer is offline\
                \ , and I was unable to verify your dependencies with the information I\
@@ -1996,33 +1996,33 @@ toDetailsReport details =
               "add",
               "dependencies",
               "with",
-              D.green "elm install" <> "."
+              D.green "canopy install" <> "."
             ]
         ]
     DetailsSolverProblem solver ->
       toSolverReport solver
-    DetailsBadElmInPkg constraint ->
+    DetailsBadCanopyInPkg constraint ->
       Help.report
-        "ELM VERSION MISMATCH"
-        (Just "elm.json")
-        "Your elm.json says this package needs a version of Elm in this range:"
+        "CANOPY VERSION MISMATCH"
+        (Just "canopy.json")
+        "Your canopy.json says this package needs a version of Canopy in this range:"
         [ D.indent 4 $ D.dullyellow $ D.fromChars $ C.toChars constraint,
           D.fillSep
             [ "But",
               "you",
               "are",
               "using",
-              "Elm",
+              "Canopy",
               D.red (D.fromVersion V.compiler),
               "right",
               "now."
             ]
         ]
-    DetailsBadElmInAppOutline version ->
+    DetailsBadCanopyInAppOutline version ->
       Help.report
-        "ELM VERSION MISMATCH"
-        (Just "elm.json")
-        "Your elm.json says this application needs a different version of Elm."
+        "CANOPY VERSION MISMATCH"
+        (Just "canopy.json")
+        "Your canopy.json says this application needs a different version of Canopy."
         [ D.fillSep
             [ "It",
               "requires",
@@ -2039,8 +2039,8 @@ toDetailsReport details =
     DetailsHandEditedDependencies ->
       Help.report
         "ERROR IN DEPENDENCIES"
-        (Just "elm.json")
-        "It looks like the dependencies elm.json in were edited by hand (or by a 3rd\
+        (Just "canopy.json")
+        "It looks like the dependencies canopy.json in were edited by hand (or by a 3rd\
         \ party tool) leaving them in an invalid state."
         [ D.fillSep
             [ "Try",
@@ -2062,7 +2062,7 @@ toDetailsReport details =
               "add",
               "dependencies",
               "with",
-              D.green "elm install" <> "."
+              D.green "canopy install" <> "."
             ],
           D.reflow $
             "Please ask for help on the community forums if you try those paths and are still\
@@ -2082,11 +2082,11 @@ toDetailsReport details =
             "I am not sure what is going wrong though."
             [ D.reflow $
                 "I would try deleting the " ++ cacheDir
-                  ++ " and elm-stuff/ directories, then\
+                  ++ " and canopy-stuff/ directories, then\
                      \ trying to build again. That will work if some cached files got corrupted\
                      \ somehow.",
               D.reflow $
-                "If that does not work, go to https://elm-lang.org/community and ask for\
+                "If that does not work, go to https://canopy-lang.org/community and ask for\
                 \ help. This is a weird case!"
             ]
         d : _ ->
@@ -2101,8 +2101,8 @@ toDetailsReport details =
                 [ D.indent 4 $ D.red $ D.fromChars $ Pkg.toChars pkg ++ " " ++ V.toChars vsn,
                   D.reflow $
                     "This probably means it has package constraints that are too wide. It may be\
-                    \ possible to tweak your elm.json to avoid the root problem as a stopgap. Head\
-                    \ over to https://elm-lang.org/community to get help figuring out how to take\
+                    \ possible to tweak your canopy.json to avoid the root problem as a stopgap. Head\
+                    \ over to https://canopy-lang.org/community to get help figuring out how to take\
                     \ this path!",
                   D.toSimpleNote $
                     "To help with the root problem, please report this to the package author along\
@@ -2187,7 +2187,7 @@ toPackageProblemReport pkg vsn problem =
               D.reflow $
                 "This usually means that the package author moved the version\
                 \ tag, so report it to them and see if that is the issue. Folks\
-                \ on Elm slack can probably help as well."
+                \ on Canopy slack can probably help as well."
             ]
         -- FIXME
         PP_PackageNotInRegistry _ _ _ ->
@@ -2240,7 +2240,7 @@ toRegistryProblemReport title problem context =
       case err of
         CREJsonDecodeError jsonErr ->
           Json.toReport configFilePath (Json.FailureToReport toCustomPackageRepositoryProblemReport) jsonErr $
-            Json.ExplicitReason "I ran into a problem with your elm.json file."
+            Json.ExplicitReason "I ran into a problem with your canopy.json file."
 
 toHttpErrorReport :: String -> Http.Error -> String -> Help.Report
 toHttpErrorReport title err context =
@@ -2256,7 +2256,7 @@ toHttpErrorReport title err context =
               D.indent 4 $ D.fromChars reason,
               D.reflow $
                 "This may indicate that there is some problem in the compiler, so please open an\
-                \ issue at https://github.com/elm/compiler/issues listing your operating system, Elm\
+                \ issue at https://github.com/canopy/compiler/issues listing your operating system, Canopy\
                 \ version, the command you ran, the terminal output, and any additional information\
                 \ that might help others reproduce the error."
             ]
@@ -2274,7 +2274,7 @@ toHttpErrorReport title err context =
                       D.reflow $
                         "This may mean some online endpoint changed in an unexpected way, so if does not\
                         \ seem like something on your side is causing this (e.g. firewall) please report\
-                        \ this to https://github.com/elm/compiler/issues with your operating system, Elm\
+                        \ this to https://github.com/canopy/compiler/issues with your operating system, Canopy\
                         \ version, the command you ran, the terminal output, and any additional information\
                         \ that can help others reproduce the error!"
                     ]
@@ -2339,10 +2339,10 @@ makeToReport make =
   case make of
     MakeNoOutline ->
       Help.report
-        "NO elm.json FILE"
+        "NO canopy.json FILE"
         Nothing
-        "It looks like you are starting a new Elm project. Very exciting! Try running:"
-        [ D.indent 4 $ D.green $ "elm init",
+        "It looks like you are starting a new Canopy project. Very exciting! Try running:"
+        [ D.indent 4 $ D.green $ "canopy init",
           D.reflow $
             "It will help you get set up. It is really simple!"
         ]
@@ -2377,11 +2377,11 @@ makeToReport make =
         Nothing
         "What should I make though? I need specific files like:"
         [ D.vcat
-            [ D.indent 4 $ D.green "elm make src/Main.elm",
-              D.indent 4 $ D.green "elm make src/This.elm src/That.elm"
+            [ D.indent 4 $ D.green "canopy make src/Main.canopy",
+              D.indent 4 $ D.green "canopy make src/This.canopy src/That.canopy"
             ],
           D.reflow $
-            "I recommend reading through https://guide.elm-lang.org for guidance on what to\
+            "I recommend reading through https://guide.canopy-lang.org for guidance on what to\
             \ actually put in those files!"
         ]
     MakePkgNeedsExposing ->
@@ -2390,11 +2390,11 @@ makeToReport make =
         Nothing
         "What should I make though? I need specific files like:"
         [ D.vcat
-            [ D.indent 4 $ D.green "elm make src/Main.elm",
-              D.indent 4 $ D.green "elm make src/This.elm src/That.elm"
+            [ D.indent 4 $ D.green "canopy make src/Main.canopy",
+              D.indent 4 $ D.green "canopy make src/This.canopy src/That.canopy"
             ],
           D.reflow $
-            "You can also entries to the \"exposed-modules\" list in your elm.json file, and\
+            "You can also entries to the \"exposed-modules\" list in your canopy.json file, and\
             \ I will try to compile the relevant files."
         ]
     MakeMultipleFilesIntoHtml ->
@@ -2436,7 +2436,7 @@ makeToReport make =
           D.fillSep
             [ "Switch",
               "to",
-              D.dullyellow "--output=elm.js",
+              D.dullyellow "--output=canopy.js",
               "if",
               "you",
               "want",
@@ -2461,7 +2461,7 @@ makeToReport make =
               "that",
               "embeds",
               "multiple",
-              "Elm",
+              "Canopy",
               "nodes.",
               "The",
               "generated",
@@ -2504,7 +2504,7 @@ makeToReport make =
             ],
           D.reflow $
             "From there I can create an HTML file that says \"Hello!\" on screen. I recommend\
-            \ looking through https://guide.elm-lang.org for more guidance on how to fill in\
+            \ looking through https://guide.canopy-lang.org for more guidance on how to fill in\
             \ the `main` value."
         ]
     MakeNonMainFilesIntoJavaScript m ms ->
@@ -2514,7 +2514,7 @@ makeToReport make =
             "NO MAIN"
             Nothing
             ( "When producing a JS file, I require that the given file has a `main` value. That\
-              \ way Elm."
+              \ way Canopy."
                 ++ ModuleName.toChars m
                 ++ ".init() is definitely defined in the\
                    \ resulting file!"
@@ -2532,7 +2532,7 @@ makeToReport make =
                   D.indent 2 $ D.fillSep [D.cyan "Html" <> ".text", D.dullyellow "\"Hello!\""]
                 ],
               D.reflow $
-                "Or use https://package.elm-lang.org/packages/elm/core/latest/Platform#worker to\
+                "Or use https://package.canopy-lang.org/packages/canopy/core/latest/Platform#worker to\
                 \ make a `main` with no user interface."
             ]
         _ : _ ->
@@ -2540,7 +2540,7 @@ makeToReport make =
             "NO MAIN"
             Nothing
             ( "When producing a JS file, I require that given files all have `main` values.\
-              \ That way functions like Elm."
+              \ That way functions like Canopy."
                 ++ ModuleName.toChars m
                 ++ ".init() are\
                    \ definitely defined in the resulting file. I am missing `main` values in:"
@@ -2559,7 +2559,7 @@ makeToReport make =
                   D.indent 2 $ D.fillSep [D.cyan "Html" <> ".text", D.dullyellow "\"Hello!\""]
                 ],
               D.reflow $
-                "Or use https://package.elm-lang.org/packages/elm/core/latest/Platform#worker to\
+                "Or use https://package.canopy-lang.org/packages/canopy/core/latest/Platform#worker to\
                 \ make a `main` with no user interface."
             ]
     MakeCannotBuild buildProblem ->
@@ -2604,14 +2604,14 @@ toProjectProblemReport projectProblem =
           D.reflow $ "Is there a typo?",
           D.toSimpleNote $
             "If you are just getting started, try working through the examples in the\
-            \ official guide https://guide.elm-lang.org to get an idea of the kinds of things\
-            \ that typically go in a src/Main.elm file."
+            \ official guide https://guide.canopy-lang.org to get an idea of the kinds of things\
+            \ that typically go in a src/Main.canopy file."
         ]
     BP_WithBadExtension path ->
       Help.report
         "UNEXPECTED FILE EXTENSION"
         Nothing
-        "I can only compile Elm files (with a .elm extension) but you want me to compile:"
+        "I can only compile Canopy files (with a .canopy extension) but you want me to compile:"
         [ D.indent 4 $ D.red $ D.fromChars path,
           D.reflow $ "Is there a typo? Can the file extension be changed?"
         ]
@@ -2623,7 +2623,7 @@ toProjectProblemReport projectProblem =
         [ D.indent 4 $ D.red $ D.fromChars path,
           D.reflow $
             "I always check if files appear in any of the \"source-directories\" listed in\
-            \ your elm.json to see if there might be some cached information about them. That\
+            \ your canopy.json to see if there might be some cached information about them. That\
             \ can help me compile faster! But in this case, it looks like this file may be in\
             \ either of these directories:",
           D.indent 4 $ D.red $ D.vcat $ map D.fromChars [srcDir1, srcDir2],
@@ -2698,8 +2698,8 @@ toProjectProblemReport projectProblem =
         Import.NotFound ->
           Help.report
             "MISSING MODULE"
-            (Just "elm.json")
-            "The  \"exposed-modules\" of your elm.json lists the following module:"
+            (Just "canopy.json")
+            "The  \"exposed-modules\" of your canopy.json lists the following module:"
             [ D.indent 4 $ D.red $ D.fromName name,
               D.reflow $
                 "But I cannot find it in your src/ directory. Is there a typo? Was it renamed?"
@@ -2707,8 +2707,8 @@ toProjectProblemReport projectProblem =
         Import.Ambiguous _ _ pkg _ ->
           Help.report
             "AMBIGUOUS MODULE NAME"
-            (Just "elm.json")
-            "The  \"exposed-modules\" of your elm.json lists the following module:"
+            (Just "canopy.json")
+            "The  \"exposed-modules\" of your canopy.json lists the following module:"
             [ D.indent 4 $ D.red $ D.fromName name,
               D.reflow $
                 "But a module from " ++ Pkg.toChars pkg
@@ -2718,8 +2718,8 @@ toProjectProblemReport projectProblem =
         Import.AmbiguousLocal path1 path2 paths ->
           Help.report
             "AMBIGUOUS MODULE NAME"
-            (Just "elm.json")
-            "The  \"exposed-modules\" of your elm.json lists the following module:"
+            (Just "canopy.json")
+            "The  \"exposed-modules\" of your canopy.json lists the following module:"
             [ D.indent 4 $ D.red $ D.fromName name,
               D.reflow $
                 "But I found multiple files with that name:",
@@ -2733,8 +2733,8 @@ toProjectProblemReport projectProblem =
         Import.AmbiguousForeign _ _ _ ->
           Help.report
             "MISSING MODULE"
-            (Just "elm.json")
-            "The  \"exposed-modules\" of your elm.json lists the following module:"
+            (Just "canopy.json")
+            "The  \"exposed-modules\" of your canopy.json lists the following module:"
             [ D.indent 4 $ D.red $ D.fromName name,
               D.reflow $
                 "But I cannot find it in your src/ directory. Is there a typo? Was it renamed?",
@@ -2747,7 +2747,7 @@ toModuleNameConventionTable :: FilePath -> [String] -> D.Doc
 toModuleNameConventionTable srcDir names =
   let toPair name =
         ( name,
-          srcDir </> map (\c -> if c == '.' then FP.pathSeparator else c) name <.> "elm"
+          srcDir </> map (\c -> if c == '.' then FP.pathSeparator else c) name <.> "canopy"
         )
 
       namePairs = map toPair names
@@ -2812,12 +2812,12 @@ corruptCacheReport =
   Help.report
     "CORRUPT CACHE"
     Nothing
-    "It looks like some of the information cached in elm-stuff/ has been corrupted."
+    "It looks like some of the information cached in canopy-stuff/ has been corrupted."
     [ D.reflow $
-        "Try deleting your elm-stuff/ directory to get unstuck.",
+        "Try deleting your canopy-stuff/ directory to get unstuck.",
       D.toSimpleNote $
         "This almost certainly means that a 3rd party tool (or editor plugin) is\
-        \ causing problems your the elm-stuff/ directory. Try disabling 3rd party tools\
+        \ causing problems your the canopy-stuff/ directory. Try disabling 3rd party tools\
         \ one by one until you figure out which it is!"
     ]
 
@@ -2837,7 +2837,7 @@ reactorToReport problem =
         "NEW PROJECT?"
         Nothing
         "Are you trying to start a new project? Try this command in the terminal:"
-        [ D.indent 4 $ D.green "elm init",
+        [ D.indent 4 $ D.green "canopy init",
           D.reflow "It will help you get started!"
         ]
     ReactorBadDetails details ->
@@ -2927,10 +2927,10 @@ toCustomPackageRepositoryProblemReport path source _ region problem =
                   D.dullyellow $
                     D.indent 4 $
                       D.vcat $
-                        [ "\"mdgriffith/elm-ui\"",
-                          "\"w0rm/elm-physics\"",
-                          "\"Microsoft/elm-json-tree-view\"",
-                          "\"FordLabs/elm-star-rating\"",
+                        [ "\"mdgriffith/canopy-ui\"",
+                          "\"w0rm/canopy-physics\"",
+                          "\"Microsoft/canopy-json-tree-view\"",
+                          "\"FordLabs/canopy-star-rating\"",
                           "\"1602/json-schema\""
                         ],
                   D.reflow
@@ -2941,12 +2941,12 @@ toCustomPackageRepositoryProblemReport path source _ region problem =
                       [ "+--------------------------------------+-----------+-----------+",
                         "| RULE                                 | BAD       | GOOD      |",
                         "+--------------------------------------+-----------+-----------+",
-                        "| only lower case, digits, and hyphens | elm-HTTP  | elm-http  |",
-                        "| no leading digits                    | 3D        | elm-3d    |",
-                        "| no non-ASCII characters              | elm-bjørn | elm-bear  |",
-                        "| no underscores                       | elm_ui    | elm-ui    |",
-                        "| no double hyphens                    | elm--hash | elm-hash  |",
-                        "| no starting or ending hyphen         | -elm-tar- | elm-tar   |",
+                        "| only lower case, digits, and hyphens | canopy-HTTP  | canopy-http  |",
+                        "| no leading digits                    | 3D        | canopy-3d    |",
+                        "| no non-ASCII characters              | canopy-bjørn | canopy-bear  |",
+                        "| no underscores                       | canopy_ui    | canopy-ui    |",
+                        "| no double hyphens                    | canopy--hash | canopy-hash  |",
+                        "| no starting or ending hyphen         | -canopy-tar- | canopy-tar   |",
                         "+--------------------------------------+-----------+-----------+"
                       ],
                   D.toSimpleNote $

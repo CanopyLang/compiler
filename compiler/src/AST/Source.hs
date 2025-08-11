@@ -29,8 +29,8 @@ import qualified Data.Name as Name
 
 import qualified AST.Utils.Binop as Binop
 import qualified AST.Utils.Shader as Shader
-import qualified Elm.Float as EF
-import qualified Elm.String as ES
+import qualified Canopy.Float as EF
+import qualified Canopy.String as ES
 import qualified Parse.Primitives as P
 import qualified Reporting.Annotation as A
 

@@ -35,9 +35,9 @@ import qualified Data.Utf8 as Utf8
 import Data.Vector.Internal.Check (HasCallStack)
 import Data.Word (Word8)
 import qualified Deps.Website as Website
-import Elm.CustomRepositoryData (CustomRepositoriesData (..), CustomSingleRepositoryData (..), DefaultPackageServerRepo (..), PZRPackageServerRepo (..), RepositoryAuthToken, RepositoryUrl, SinglePackageLocationData (..))
-import qualified Elm.Package as Pkg
-import qualified Elm.Version as V
+import Canopy.CustomRepositoryData (CustomRepositoriesData (..), CustomSingleRepositoryData (..), DefaultPackageServerRepo (..), PZRPackageServerRepo (..), RepositoryAuthToken, RepositoryUrl, SinglePackageLocationData (..))
+import qualified Canopy.Package as Pkg
+import qualified Canopy.Version as V
 import File (Time, getTime)
 import qualified File
 import Http (Header)
@@ -217,14 +217,14 @@ updateSingleRegistry manager registryKey registry =
     -- FIXME: need to deal with bare repos
     RepositoryUrlKey repositoryData -> case repositoryData of
       DefaultPackageServerRepoData defaultPackageServerRepo ->
-        updateSingleRegistryFromStandardElmRepo manager (_defaultPackageServerRepoTypeUrl defaultPackageServerRepo) registry
+        updateSingleRegistryFromStandardCanopyRepo manager (_defaultPackageServerRepoTypeUrl defaultPackageServerRepo) registry
       -- FIXME: This is inefficient, in that we just download the entire custom repo every time, but we hope that custom repos are still quite small
       PZRPackageServerRepoData pzrPackageServerRepo -> updateSingleRegistryFromPZRRepo manager pzrPackageServerRepo registry
     -- With package URLs, only one package can correspond to a single URL so there is no sensible notion of "update"
     PackageUrlKey _ -> pure $ Right registry
 
-updateSingleRegistryFromStandardElmRepo :: Http.Manager -> RepositoryUrl -> Registry -> IO (Either Exit.RegistryProblem Registry)
-updateSingleRegistryFromStandardElmRepo manager repositoryUrl oldRegistry@(Registry size packages) =
+updateSingleRegistryFromStandardCanopyRepo :: Http.Manager -> RepositoryUrl -> Registry -> IO (Either Exit.RegistryProblem Registry)
+updateSingleRegistryFromStandardCanopyRepo manager repositoryUrl oldRegistry@(Registry size packages) =
   post manager repositoryUrl ("/all-packages/since/" ++ show size) (D.list newPkgDecoder) $
     \news ->
       case news of
@@ -246,7 +246,7 @@ createAuthHeader authTokenValue = ("Authorization", ByteString.concat [authSchem
 
 updateSingleRegistryFromPZRRepo :: Http.Manager -> PZRPackageServerRepo -> Registry -> IO (Either Exit.RegistryProblem Registry)
 updateSingleRegistryFromPZRRepo manager pzrPackageServerRepo _ =
-  -- FIXME: Note that unlike for updateSingleRegistryFromStandardElmRepo we
+  -- FIXME: Note that unlike for updateSingleRegistryFromStandardCanopyRepo we
   -- completely redownload the entire repository each time. This is quite
   -- inefficient and there may be a better way of doing this. We're keeping this
   -- for now because we assume that custom repos will be generally small-ish.

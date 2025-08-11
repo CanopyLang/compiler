@@ -11,10 +11,10 @@ import qualified Data.NonEmptyList as NE
 import qualified System.Directory as Dir
 
 import qualified Deps.Solver as Solver
-import qualified Elm.Constraint as Con
-import qualified Elm.Outline as Outline
-import qualified Elm.Package as Pkg
-import qualified Elm.Version as V
+import qualified Canopy.Constraint as Con
+import qualified Canopy.Outline as Outline
+import qualified Canopy.Package as Pkg
+import qualified Canopy.Version as V
 import qualified Reporting
 import qualified Reporting.Doc as D
 import qualified Reporting.Exit as Exit
@@ -27,7 +27,7 @@ import qualified Reporting.Exit as Exit
 run :: () -> () -> IO ()
 run () () =
   Reporting.attempt Exit.initToReport $
-  do  exists <- Dir.doesFileExist "elm.json"
+  do  exists <- Dir.doesFileExist "canopy.json"
       if exists
         then return (Left Exit.InitAlreadyExists)
         else
@@ -44,18 +44,18 @@ question =
   D.stack
     [ D.fillSep
         ["Hello!"
-        ,"Elm","projects","always","start","with","an",D.green "elm.json","file."
+        ,"Canopy","projects","always","start","with","an",D.green "canopy.json","file."
         ,"I","can","create","them!"
         ]
     , D.reflow
-        "Now you may be wondering, what will be in this file? How do I add Elm files to\
+        "Now you may be wondering, what will be in this file? How do I add Canopy files to\
         \ my project? How do I see it in the browser? How will my code grow? Do I need\
         \ more directories? What about tests? Etc."
     , D.fillSep
         ["Check","out",D.cyan (D.fromChars (D.makeLink "init"))
         ,"for","all","the","answers!"
         ]
-    , "Knowing all that, would you like me to create an elm.json file now? [Y/n]: "
+    , "Knowing all that, would you like me to create an canopy.json file now? [Y/n]: "
     ]
 
 

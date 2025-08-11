@@ -84,4 +84,4 @@ deciderHasDebug decider =
 
 
 -- TODO: FIND GLOBALLY UNUSED DEFINITIONS?
--- TODO: FIND PACKAGE USAGE STATS? (e.g. elm/core = 142, author/project = 2, etc.)
+-- TODO: FIND PACKAGE USAGE STATS? (e.g. canopy/core = 142, author/project = 2, etc.)

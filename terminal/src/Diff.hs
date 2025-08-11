@@ -9,6 +9,13 @@ where
 
 import qualified BackgroundWriter as BW
 import qualified Build
+import qualified Canopy.Compiler.Type as Type
+import qualified Canopy.Details as Details
+import qualified Canopy.Docs as Docs
+import qualified Canopy.Magnitude as M
+import qualified Canopy.Outline as Outline
+import qualified Canopy.Package as Pkg
+import qualified Canopy.Version as V
 import qualified Data.List as List
 import qualified Data.Map as Map
 import qualified Data.Maybe as Maybe
@@ -18,16 +25,9 @@ import Deps.CustomRepositoryDataIO (loadCustomRepositoriesData)
 import Deps.Diff (Changes (..), ModuleChanges (..), PackageChanges (..))
 import qualified Deps.Diff as DD
 import qualified Deps.Registry as Registry
-import qualified Elm.Compiler.Type as Type
-import qualified Elm.Details as Details
-import qualified Elm.Docs as Docs
-import qualified Elm.Magnitude as M
-import qualified Elm.Outline as Outline
-import qualified Elm.Package as Pkg
-import qualified Elm.Version as V
 import qualified Http
 import qualified Reporting
-import Reporting.Doc ((<+>), (<>))
+import Reporting.Doc ((<+>))
 import qualified Reporting.Doc as D
 import qualified Reporting.Exit as Exit
 import qualified Reporting.Exit.Help as Help

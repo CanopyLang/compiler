@@ -11,7 +11,7 @@ import qualified Data.Utf8 as Utf8
 import Data.Word (Word8, Word16)
 import Foreign.Ptr (Ptr, plusPtr, minusPtr)
 
-import qualified Elm.String as ES
+import qualified Canopy.String as ES
 import Parse.Primitives (Parser, Row, Col)
 import qualified Parse.Number as Number
 import qualified Parse.Primitives as P

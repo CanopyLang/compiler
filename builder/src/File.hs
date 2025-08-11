@@ -13,8 +13,8 @@ module File
     exists,
     remove,
     removeDir,
-    writePackageReturnElmJson,
-    listAllElmFilesRecursively,
+    writePackageReturnCanopyJson,
+    listAllCanopyFilesRecursively,
   )
 where
 
@@ -89,7 +89,7 @@ readBinary path =
                     "|   Byte Offset: " ++ show offset,
                     "|       Message: " ++ message,
                     "|",
-                    "| Please report this to https://github.com/elm/compiler/issues",
+                    "| Please report this to https://github.com/canopy/compiler/issues",
                     "| Trying to continue anyway.",
                     "+-------------------------------------------------------------------------------",
                     prettyCallStack callStack
@@ -178,7 +178,7 @@ writeEntry destination root entry =
    in if List.isPrefixOf "src/" path
         || path == "LICENSE"
         || path == "README.md"
-        || path == "elm.json"
+        || path == "canopy.json"
         then
           if not (null path) && last path == '/'
             then do
@@ -190,39 +190,39 @@ writeEntry destination root entry =
         else return ()
 
 -- FIXME: Is this needed? This basically duplicates writePackage
-writePackageReturnElmJson :: FilePath -> Zip.Archive -> IO (Maybe BS.ByteString)
-writePackageReturnElmJson destination archive =
+writePackageReturnCanopyJson :: FilePath -> Zip.Archive -> IO (Maybe BS.ByteString)
+writePackageReturnCanopyJson destination archive =
   case Zip.zEntries archive of
     [] ->
       return Nothing
     entry : entries ->
       do
         let root = length (Zip.eRelativePath entry)
-        printLog ("writePackageReturnElmJson to " ++ destination)
+        printLog ("writePackageReturnCanopyJson to " ++ destination)
         exists <- Dir.doesDirectoryExist destination
-        printLog ("writePackageReturnElmJson destination: " ++ destination ++ " exists: " ++ (show exists))
-        listOfMaybeElmJsons <- traverse (writeEntryReturnElmJson destination root) entries
-        let firstElmJson = msum listOfMaybeElmJsons
-        pure firstElmJson
+        printLog ("writePackageReturnCanopyJson destination: " ++ destination ++ " exists: " ++ (show exists))
+        listOfMaybeCanopyJsons <- traverse (writeEntryReturnCanopyJson destination root) entries
+        let firstCanopyJson = msum listOfMaybeCanopyJsons
+        pure firstCanopyJson
 
-writeEntryReturnElmJson :: FilePath -> Int -> Zip.Entry -> IO (Maybe BS.ByteString)
-writeEntryReturnElmJson destination root entry =
+writeEntryReturnCanopyJson :: FilePath -> Int -> Zip.Entry -> IO (Maybe BS.ByteString)
+writeEntryReturnCanopyJson destination root entry =
   let path = drop root (Zip.eRelativePath entry)
    in if List.isPrefixOf "src/" path
         || path == "LICENSE"
         || path == "README.md"
-        || path == "elm.json"
+        || path == "canopy.json"
         then
           if not (null path) && last path == '/'
             then do
-              printLog ("writeEntryReturnElmJson 0: " ++ path)
+              printLog ("writeEntryReturnCanopyJson 0: " ++ path)
               Dir.createDirectoryIfMissing True (destination </> path)
               pure Nothing
             else do
-              printLog ("writeEntryReturnElmJson 1: " ++ path)
+              printLog ("writeEntryReturnCanopyJson 1: " ++ path)
               let bytestring = Zip.fromEntry entry
               LBS.writeFile (destination </> path) bytestring
-              pure (if path == "elm.json" then Just (BS.toStrict bytestring) else Nothing)
+              pure (if path == "canopy.json" then Just (BS.toStrict bytestring) else Nothing)
         else pure Nothing
 
 -- EXISTS
@@ -251,22 +251,22 @@ removeDir path =
 
 -- RECURSIVE OPERATIONS
 
-listAllElmFilesRecursively :: FilePath -> IO [FilePath]
-listAllElmFilesRecursively startPath = do
+listAllCanopyFilesRecursively :: FilePath -> IO [FilePath]
+listAllCanopyFilesRecursively startPath = do
   names <- Dir.listDirectory startPath
   paths <- forM names $ \name -> do
     let path = startPath </> name
     isDirectory <- Dir.doesDirectoryExist path
     if isDirectory
       then do
-        remainingFiles <- listAllElmFilesRecursively path
+        remainingFiles <- listAllCanopyFilesRecursively path
         -- We want to actually append directories as well because the way
-        -- the Elm compiler decompresses ZIP files requires us to have
+        -- the Canopy compiler decompresses ZIP files requires us to have
         -- directories as well
         pure (path : remainingFiles)
       else
         let (_, ext) = FP.splitExtension path
-         in if ext == ".elm"
+         in if ext == ".canopy"
               then pure [path]
               else pure []
   return (startPath : concat paths)

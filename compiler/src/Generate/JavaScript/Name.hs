@@ -30,8 +30,8 @@ import qualified Data.Utf8 as Utf8
 import Data.Word (Word8)
 
 import qualified Data.Index as Index
-import qualified Elm.ModuleName as ModuleName
-import qualified Elm.Package as Pkg
+import qualified Canopy.ModuleName as ModuleName
+import qualified Canopy.Package as Pkg
 
 
 
@@ -151,7 +151,7 @@ usd =
 {-# NOINLINE reservedNames #-}
 reservedNames :: Set.Set Name.Name
 reservedNames =
-  Set.union jsReservedWords elmReservedWords
+  Set.union jsReservedWords canopyReservedWords
 
 
 jsReservedWords :: Set.Set Name.Name
@@ -170,8 +170,8 @@ jsReservedWords =
     ]
 
 
-elmReservedWords :: Set.Set Name.Name
-elmReservedWords =
+canopyReservedWords :: Set.Set Name.Name
+canopyReservedWords =
   Set.fromList
     [ "F2", "F3", "F4", "F5", "F6", "F7", "F8", "F9"
     , "A2", "A3", "A4", "A5", "A6", "A7", "A8", "A9"

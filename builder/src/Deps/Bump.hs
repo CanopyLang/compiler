@@ -7,8 +7,8 @@ module Deps.Bump
 import qualified Data.List as List
 
 import qualified Deps.Registry as Registry
-import qualified Elm.Magnitude as M
-import qualified Elm.Version as V
+import qualified Canopy.Magnitude as M
+import qualified Canopy.Version as V
 
 
 

@@ -20,11 +20,11 @@ import qualified Data.NonEmptyList as NE
 
 import qualified AST.Optimized as Opt
 import qualified Build
-import qualified Elm.Compiler.Type.Extract as Extract
-import qualified Elm.Details as Details
-import qualified Elm.Interface as I
-import qualified Elm.ModuleName as ModuleName
-import qualified Elm.Package as Pkg
+import qualified Canopy.Compiler.Type.Extract as Extract
+import qualified Canopy.Details as Details
+import qualified Canopy.Interface as I
+import qualified Canopy.ModuleName as ModuleName
+import qualified Canopy.Package as Pkg
 import qualified File
 import qualified Generate.JavaScript as JS
 import qualified Generate.Mode as Mode
@@ -143,7 +143,7 @@ loadObject root modul =
 
     Build.Cached name _ _ ->
       do  mvar <- newEmptyMVar
-          _ <- forkIO $ putMVar mvar =<< File.readBinary (Stuff.elmo root name)
+          _ <- forkIO $ putMVar mvar =<< File.readBinary (Stuff.canopyo root name)
           return (name, mvar)
 
 
@@ -200,7 +200,7 @@ loadTypesHelp root modul =
             Build.Unneeded ->
               do  mvar <- newEmptyMVar
                   _ <- forkIO $
-                    do  maybeIface <- File.readBinary (Stuff.elmi root name)
+                    do  maybeIface <- File.readBinary (Stuff.canopyi root name)
                         putMVar mvar (Extract.fromInterface name <$> maybeIface)
                   return mvar
 

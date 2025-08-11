@@ -16,7 +16,7 @@ import qualified Data.Name as Name
 import qualified Data.Set as Set
 
 import qualified AST.Source as Src
-import qualified Elm.ModuleName as ModuleName
+import qualified Canopy.ModuleName as ModuleName
 import qualified Reporting.Doc as D
 import qualified Reporting.Annotation as A
 

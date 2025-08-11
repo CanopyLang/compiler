@@ -15,7 +15,7 @@ import System.FilePath ((</>))
 
 import qualified BackgroundWriter as BW
 import qualified Build
-import qualified Elm.Details as Details
+import qualified Canopy.Details as Details
 import qualified Generate
 import qualified Reporting
 import qualified Reporting.Exit as Exit
@@ -32,7 +32,7 @@ readAsset path =
 
 
 
--- BUILD REACTOR ELM
+-- BUILD REACTOR CANOPY
 
 
 buildReactorFrontEnd :: IO BS.ByteString
@@ -50,9 +50,9 @@ buildReactorFrontEnd =
 paths :: NE.List FilePath
 paths =
   NE.List
-    ("src" </> "NotFound.elm")
-    [ "src" </> "Errors.elm"
-    , "src" </> "Index.elm"
+    ("src" </> "NotFound.canopy")
+    [ "src" </> "Errors.canopy"
+    , "src" </> "Index.canopy"
     ]
 
 
@@ -68,6 +68,6 @@ runTaskUnsafe task =
               error
                 "\n--------------------------------------------------------\
                 \\nError in Develop.StaticFiles.Build.buildReactorFrontEnd\
-                \\nCompile with `elm make` directly to figure it out faster\
+                \\nCompile with `canopy make` directly to figure it out faster\
                 \\n--------------------------------------------------------\
                 \\n"

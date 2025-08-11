@@ -28,7 +28,7 @@ import qualified Data.OneOrMore as OneOrMore
 import qualified AST.Utils.Binop as Binop
 import qualified AST.Canonical as Can
 import qualified Data.Index as Index
-import qualified Elm.ModuleName as ModuleName
+import qualified Canopy.ModuleName as ModuleName
 import qualified Reporting.Annotation as A
 import qualified Reporting.Error.Canonicalize as Error
 import qualified Reporting.Result as Result

@@ -38,7 +38,7 @@ import Data.Word (Word32)
 
 import qualified AST.Canonical as Can
 import qualified AST.Utils.Type as Type
-import qualified Elm.ModuleName as ModuleName
+import qualified Canopy.ModuleName as ModuleName
 import qualified Reporting.Annotation as A
 import qualified Reporting.Error.Type as E
 import qualified Type.Error as ET

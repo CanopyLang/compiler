@@ -5,8 +5,8 @@ module Stuff
     interfaces,
     objects,
     prepublishDir,
-    elmi,
-    elmo,
+    canopyi,
+    canopyo,
     temp,
     findRoot,
     withRootLock,
@@ -21,7 +21,7 @@ module Stuff
     package,
     packageOverride,
     getReplCache,
-    getElmHome,
+    getCanopyHome,
     getOrCreateZokkaCustomRepositoryConfig,
     getOrCreateZokkaCacheDir,
     ZokkaCustomRepositoryConfigFilePath (..),
@@ -29,9 +29,9 @@ module Stuff
   )
 where
 
-import qualified Elm.ModuleName as ModuleName
-import qualified Elm.Package as Pkg
-import qualified Elm.Version as V
+import qualified Canopy.ModuleName as ModuleName
+import qualified Canopy.Package as Pkg
+import qualified Canopy.Version as V
 import qualified System.Directory as Dir
 import qualified System.Environment as Env
 import qualified System.FileLock as Lock
@@ -42,32 +42,32 @@ import qualified System.FilePath as FP
 
 stuff :: FilePath -> FilePath
 stuff root =
-  -- We use zokka-stuff instead of elm-stuff because this gets around an edge
+  -- We use zokka-stuff instead of canopy-stuff because this gets around an edge
   -- case where the compiler checks the timestamp of the stuff directory vs
-  -- elm.json to decide whether any re-building is necessary and this can mean
+  -- canopy.json to decide whether any re-building is necessary and this can mean
   -- that compiling with the Zokka compiler doesn't change any code that was
-  -- compiled by the Elm compiler, even though it probably should.
+  -- compiled by the Canopy compiler, even though it probably should.
   root </> "zokka-stuff" </> customCompilerVersion
   where
     -- The following comment explains why we originally had compilerVersion ++ -zokka
-    -- under the same elm-stuff. Some of the reasoning there is stil true but not as
+    -- under the same canopy-stuff. Some of the reasoning there is stil true but not as
     -- relevant, because the -zokka suffix is superfluous now that we use
-    -- zokka-stuff instead of the directory name elm-stuff.
+    -- zokka-stuff instead of the directory name canopy-stuff.
     --
     -- We need a custom compiler version because of Zokka's support for dependency
     -- overrides. If we override dependencies, we could end up with what appears to
-    -- be an invalid cache for the vanilla Elm compiler, because we will have
-    -- resolved a different set of dependencies than what the vanilla Elm compiler
+    -- be an invalid cache for the vanilla Canopy compiler, because we will have
+    -- resolved a different set of dependencies than what the vanilla Canopy compiler
     -- would have, which can result in interface files that do not correspond to
-    -- elm.json as the vanilla Elm compiler understands the dependencies from
-    -- elm.json. This means that an end user who uses Zokka and then tries to revert
-    -- back to using Elm could observe non-obvious breakage (even though it's
-    -- easily fixable by just deleting the elm-stuff directory), which we are trying
+    -- canopy.json as the vanilla Canopy compiler understands the dependencies from
+    -- canopy.json. This means that an end user who uses Zokka and then tries to revert
+    -- back to using Canopy could observe non-obvious breakage (even though it's
+    -- easily fixable by just deleting the canopy-stuff directory), which we are trying
     -- to minimimze.
     --
-    -- As far as I know no Elm IDE integration tools use the elm-stuff directory for
+    -- As far as I know no Canopy IDE integration tools use the canopy-stuff directory for
     -- important analyses. If that's not true, then we may revert to using the usual
-    -- compiler version and just letting the user delete elm-stuff manually (the
+    -- compiler version and just letting the user delete canopy-stuff manually (the
     -- error message at least will tell them to delete the directory).
     customCompilerVersion = compilerVersion ++ "-zokka"
 
@@ -91,15 +91,15 @@ compilerVersion :: FilePath
 compilerVersion =
   V.toChars V.compiler
 
--- ELMI and ELMO
+-- CANOPYI and CANOPYO
 
-elmi :: FilePath -> ModuleName.Raw -> FilePath
-elmi root name =
-  toArtifactPath root name "elmi"
+canopyi :: FilePath -> ModuleName.Raw -> FilePath
+canopyi root name =
+  toArtifactPath root name "canopyi"
 
-elmo :: FilePath -> ModuleName.Raw -> FilePath
-elmo root name =
-  toArtifactPath root name "elmo"
+canopyo :: FilePath -> ModuleName.Raw -> FilePath
+canopyo root name =
+  toArtifactPath root name "canopyo"
 
 toArtifactPath :: FilePath -> ModuleName.Raw -> String -> FilePath
 toArtifactPath root name ext =
@@ -126,7 +126,7 @@ findRootHelp dirs =
       return Nothing
     _ : _ ->
       do
-        exists <- Dir.doesFileExist (FP.joinPath dirs </> "elm.json")
+        exists <- Dir.doesFileExist (FP.joinPath dirs </> "canopy.json")
         if exists
           then return (Just (FP.joinPath dirs))
           else findRootHelp (init dirs)
@@ -140,7 +140,7 @@ withRootLock root work =
     Dir.createDirectoryIfMissing True dir
     Lock.withFileLock (dir </> "lock") Lock.Exclusive (\_ -> work)
 
--- We keep the same lock as in vanilla Elm because we are writing to the same package cache
+-- We keep the same lock as in vanilla Canopy because we are writing to the same package cache
 withRegistryLock :: PackageCache -> IO a -> IO a
 withRegistryLock (PackageCache dir) work =
   Lock.withFileLock (dir </> "lock") Lock.Exclusive (\_ -> work)
@@ -191,18 +191,18 @@ getReplCache =
 getCacheDir :: FilePath -> IO FilePath
 getCacheDir projectName =
   do
-    home <- getElmHome
+    home <- getCanopyHome
     let root = home </> compilerVersion </> projectName
     Dir.createDirectoryIfMissing True root
     return root
 
-getElmHome :: IO FilePath
-getElmHome =
+getCanopyHome :: IO FilePath
+getCanopyHome =
   do
-    maybeCustomHome <- Env.lookupEnv "ELM_HOME"
+    maybeCustomHome <- Env.lookupEnv "CANOPY_HOME"
     case maybeCustomHome of
       Just customHome -> return customHome
-      Nothing -> Dir.getAppUserDataDirectory "elm"
+      Nothing -> Dir.getAppUserDataDirectory "canopy"
 
 -- The Zokka cache directory contains the Zokka-specific registry file, while the
 -- Zokka directory proper contains the custom repository configuration (and hence
