@@ -20,7 +20,7 @@ module Deps.Registry
   )
 where
 
-import Control.Monad (join, liftM2)
+import Control.Monad (liftM2)
 import Data.Binary (Binary, get, put)
 import Data.Binary.Get (Get)
 import Data.ByteString (ByteString)
@@ -35,7 +35,7 @@ import qualified Data.Utf8 as Utf8
 import Data.Vector.Internal.Check (HasCallStack)
 import Data.Word (Word8)
 import qualified Deps.Website as Website
-import Elm.CustomRepositoryData (CustomRepositoriesData (..), CustomSingleRepositoryData (..), DefaultPackageServerRepo (..), PZRPackageServerRepo (..), PackageUrl, RepositoryAuthToken, RepositoryType (..), RepositoryUrl, SinglePackageLocationData (..))
+import Elm.CustomRepositoryData (CustomRepositoriesData (..), CustomSingleRepositoryData (..), DefaultPackageServerRepo (..), PZRPackageServerRepo (..), RepositoryAuthToken, RepositoryUrl, SinglePackageLocationData (..))
 import qualified Elm.Package as Pkg
 import qualified Elm.Version as V
 import File (Time, getTime)

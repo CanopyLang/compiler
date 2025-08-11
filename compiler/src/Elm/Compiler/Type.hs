@@ -63,8 +63,11 @@ toDoc localizer context tipe =
   case tipe of
     Lambda _ _ ->
       let
-        a:b:cs =
-          map (toDoc localizer RT.Func) (collectLambdas tipe)
+        docs = map (toDoc localizer RT.Func) (collectLambdas tipe)
+        (a, b, cs) = case docs of
+          x:y:zs -> (x, y, zs)
+          [x] -> (x, D.fromChars "()", [])
+          [] -> (D.fromChars "()", D.fromChars "()", [])
       in
       RT.lambda context a b cs
 

@@ -64,7 +64,6 @@ where
 
 import qualified Data.Index as Index
 import qualified Data.List as List
-import Data.Monoid ((<>))
 import qualified Data.Name as Name
 import qualified Elm.Package as Pkg
 import qualified Elm.Version as V

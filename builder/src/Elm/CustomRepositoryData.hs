@@ -37,7 +37,6 @@ import Http (Sha, shaToChars)
 import qualified Json.Decode as D
 import qualified Json.Encode as E
 import qualified Json.String as Json
-import Network.HTTP (RequestMethod (Custom))
 import Parse.Primitives (Col, Row)
 
 data REPOSITORYURL

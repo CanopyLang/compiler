@@ -178,7 +178,9 @@ renderPair source@(Source sourceLines) region1 region2 =
       spaces2 = replicate (fromIntegral (startCol2 - endCol1)) ' '
       zigzag2 = replicate (fromIntegral (endCol2 - startCol2)) '^'
 
-      (Just line) = List.lookup startRow1 sourceLines
+      line = case List.lookup startRow1 sourceLines of
+               Just l -> l
+               Nothing -> ""
     in
     OneLine $
       D.vcat

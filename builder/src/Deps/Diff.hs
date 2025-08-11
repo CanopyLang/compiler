@@ -18,12 +18,11 @@ import qualified Data.List as List
 import qualified Data.Map as Map
 import qualified Data.Name as Name
 import qualified Data.Set as Set
-import qualified Data.Utf8 as Utf8
 import Deps.Registry (ZokkaRegistries, createAuthHeader)
 import qualified Deps.Registry as Registry
 import qualified Deps.Website as Website
 import qualified Elm.Compiler.Type as Type
-import Elm.CustomRepositoryData (CustomRepositoriesData, CustomSingleRepositoryData (..), DefaultPackageServerRepo (..), PZRPackageServerRepo (..))
+import Elm.CustomRepositoryData (CustomSingleRepositoryData (..), DefaultPackageServerRepo (..), PZRPackageServerRepo (..))
 import qualified Elm.Docs as Docs
 import qualified Elm.Magnitude as M
 import qualified Elm.ModuleName as ModuleName
@@ -280,10 +279,6 @@ changeMagnitude (Changes added changed removed) =
 
 -- GET DOCS
 
-getDocsFromCustomSingleRepositoryData :: CustomRepositoriesData -> IO ()
-getDocsFromCustomSingleRepositoryData customRepositoriesData =
-  do
-    pure ()
 
 getDocs :: Stuff.PackageCache -> ZokkaRegistries -> Http.Manager -> Pkg.Name -> V.Version -> IO (Either Exit.DocsProblem Docs.Documentation)
 getDocs cache zokkaRegistry manager name version =

@@ -507,7 +507,10 @@ gatherTypedArgs env name srcArgs tipe index revTypedArgs =
                 (arg, argType) : revTypedArgs
 
         _ ->
-          let (A.At start _, A.At end _) = (head srcArgs, last srcArgs) in
+          let (A.At start _, A.At end _) = case (srcArgs, reverse srcArgs) of
+                                             (firstArg:_, lastArg:_) -> (firstArg, lastArg)
+                                             _ -> error "Expected non-empty srcArgs"
+          in
           Result.throw $
             Error.AnnotationTooShort (A.mergeRegions start end) name index (length srcArgs)
 

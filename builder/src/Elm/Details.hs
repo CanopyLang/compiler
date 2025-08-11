@@ -21,14 +21,12 @@ import qualified AST.Optimized as Opt
 import qualified AST.Source as Src
 import qualified BackgroundWriter as BW
 import qualified Compile
-import Control.Concurrent (forkFinally, forkIO)
+import Control.Concurrent (forkIO)
 import Control.Concurrent.MVar (MVar, newEmptyMVar, newMVar, putMVar, readMVar, takeMVar)
-import Control.Exception (BlockedIndefinitelyOnMVar (BlockedIndefinitelyOnMVar), Exception, Handler (..), SomeException, catches, throwIO)
-import Control.Monad (liftM, liftM2, liftM3, when)
+import Control.Exception (BlockedIndefinitelyOnMVar, Handler (..), SomeException, catches, throwIO)
+import Control.Monad (liftM, liftM2, liftM3)
 import Data.Binary (Binary, get, getWord8, put, putWord8)
 import qualified Data.Either as Either
-import Data.Function ((&))
-import Data.Map ((!))
 import qualified Data.Map as Map
 import qualified Data.Map.Merge.Strict as Map
 import qualified Data.Map.Utils as Map
@@ -37,7 +35,6 @@ import qualified Data.Name as Name
 import qualified Data.NonEmptyList as NE
 import qualified Data.OneOrMore as OneOrMore
 import qualified Data.Set as Set
-import Data.Tuple (swap)
 import qualified Data.Utf8 as Utf8
 import Data.Word (Word64)
 import Deps.Registry (ZokkaRegistries)
@@ -66,7 +63,6 @@ import Logging.Logger (printLog)
 import qualified Parse.Module as Parse
 import qualified Reporting
 import qualified Reporting.Annotation as A
-import qualified Reporting.Annotation as Report.Annotation
 import Reporting.Exit (PackageProblem (PP_BadArchiveHash))
 import qualified Reporting.Exit as Exit
 import qualified Reporting.Task as Task
@@ -477,8 +473,8 @@ verifyDep key buildData manager zokkaRegistry depsMVar solution directDeps =
    in do
         exists <- Dir.doesDirectoryExist cacheFilePath
         printLog (show exists ++ "A0" ++ cacheFilePath)
-        exists <- Dir.doesDirectoryExist (cacheFilePath </> "src")
-        if exists
+        srcExists <- Dir.doesDirectoryExist (cacheFilePath </> "src")
+        if srcExists
           then do
             Reporting.report key Reporting.DCached
             maybeCache <- File.readBinary (cacheFilePath </> "artifacts.dat")
@@ -566,8 +562,8 @@ build :: Reporting.DKey -> BuildData -> MVar (Map.Map Pkg.Name (MVar Dep)) -> Fi
 build key buildData depsMVar f fs =
   let cacheFilePath = cacheFilePathFromBuildData buildData
       (pkg, vsn) = case buildData of
-        BuildOriginalPackage (OriginalPackageBuildData {_pkg = pkg, _version = vsn}) ->
-          (pkg, vsn)
+        BuildOriginalPackage (OriginalPackageBuildData {_pkg = origPkg, _version = origVsn}) ->
+          (origPkg, origVsn)
         BuildWithOverridingPackage
           (OverridingPackageBuildData {_originalPkg = origPkg, _originalPkgVersion = origPkgVer}) ->
             (origPkg, origPkgVer)
@@ -613,7 +609,7 @@ build key buildData depsMVar f fs =
                       Just statuses ->
                         do
                           rmvar <- newEmptyMVar
-                          let extractDepsFromStatus status = case status of (SLocal _ deps _) -> deps; _ -> Map.empty
+                          let extractDepsFromStatus status = case status of (SLocal _ statusDeps _) -> statusDeps; _ -> Map.empty
                           let compileAction status = genericErrorHandler ("This package failed: " ++ show pkg) (compile pkg rmvar status)
                           rmvars <- traverse (fork . compileAction) statuses
                           putMVar rmvar rmvars
@@ -921,13 +917,13 @@ downloadPackage cache zokkaRegistries manager pkg vsn =
   case Registry.lookupPackageRegistryKey zokkaRegistries pkg vsn of
     Just (Registry.RepositoryUrlKey repositoryData) ->
       do
-        exists <- Dir.doesDirectoryExist (Stuff.package cache pkg vsn)
+        _exists <- Dir.doesDirectoryExist (Stuff.package cache pkg vsn)
         let headers = getHeadersFromCustomRepositoryData repositoryData
         let repoUrl = getRepoUrlFromCustomRepositoryData repositoryData
         downloadPackageFromElmPackageRepo cache repoUrl headers manager pkg vsn
     Just (Registry.PackageUrlKey packageData) ->
       do
-        exists <- Dir.doesDirectoryExist (Stuff.package cache pkg vsn)
+        _exists <- Dir.doesDirectoryExist (Stuff.package cache pkg vsn)
         downloadPackageDirectly cache (CustomRepositoryData._url packageData) manager pkg vsn
     Nothing ->
       let --FIXME
@@ -997,8 +993,8 @@ downloadPackageFromElmPackageRepo cache repositoryUrl headers manager pkg vsn =
                     if expectedHash == Http.shaToChars sha
                       then
                         Right <$> do
-                          exists <- Dir.doesDirectoryExist (Stuff.package cache pkg vsn)
-                          printLog (show exists ++ "C" ++ Stuff.package cache pkg vsn)
+                          packageExists <- Dir.doesDirectoryExist (Stuff.package cache pkg vsn)
+                          printLog (show packageExists ++ "C" ++ Stuff.package cache pkg vsn)
                           File.writePackage (Stuff.package cache pkg vsn) archive
                       else return $ Left $ Exit.PP_BadArchiveHash endpoint expectedHash (Http.shaToChars sha)
 
@@ -1025,8 +1021,8 @@ downloadPackageFromElmPackageRepoToFilePath filePath repositoryUrl headers manag
                     if expectedHash == Http.shaToChars sha
                       then
                         Right <$> do
-                          exists <- Dir.doesDirectoryExist filePath
-                          printLog (show exists ++ "C (toFilePath)" ++ filePath)
+                          filePathExists <- Dir.doesDirectoryExist filePath
+                          printLog (show filePathExists ++ "C (toFilePath)" ++ filePath)
                           File.writePackage filePath archive
                       else return $ Left $ Exit.PP_BadArchiveHash endpoint expectedHash (Http.shaToChars sha)
 

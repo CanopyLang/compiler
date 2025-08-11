@@ -9,9 +9,7 @@ module Generate.JavaScript
 
 import Prelude hiding (cycle, print)
 import qualified Data.ByteString.Builder as B
-import Data.Monoid ((<>))
 import qualified Data.List as List
-import Data.Map ((!))
 import qualified Data.Map as Map
 import qualified Data.Name as Name
 import qualified Data.Set as Set
@@ -31,8 +29,6 @@ import qualified Reporting.Doc as D
 import qualified Reporting.Render.Type as RT
 import qualified Reporting.Render.Type.Localizer as L
 import Control.Exception (Exception, throw)
-import qualified Elm.Package as Pkg
-import qualified Data.Maybe as Maybe
 
 
 

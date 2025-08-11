@@ -22,14 +22,13 @@ import Control.Concurrent (forkIO, newEmptyMVar, putMVar, readMVar)
 import Control.Monad (foldM)
 import Data.Map ((!))
 import qualified Data.Map as Map
-import Data.Maybe (fromJust)
 import qualified Data.Utf8 as Utf8
 import Deps.CustomRepositoryDataIO (loadCustomRepositoriesData, loadCustomRepositoriesDataForReactorTH)
 import Deps.Registry (ZokkaRegistries (..))
 import qualified Deps.Registry as Registry
 import qualified Deps.Website as Website
 import qualified Elm.Constraint as C
-import Elm.CustomRepositoryData (CustomRepositoriesData, CustomSingleRepositoryData (..), DefaultPackageServerRepo (_defaultPackageServerRepoTypeUrl), PZRPackageServerRepo (_pzrPackageServerRepoAuthToken, _pzrPackageServerRepoTypeUrl), SinglePackageLocationData (..), customRepostoriesDataDecoder)
+import Elm.CustomRepositoryData (CustomSingleRepositoryData (..), DefaultPackageServerRepo (_defaultPackageServerRepoTypeUrl), PZRPackageServerRepo (_pzrPackageServerRepoAuthToken, _pzrPackageServerRepoTypeUrl), SinglePackageLocationData (..))
 import qualified Elm.Outline as Outline
 import qualified Elm.Package as Pkg
 import qualified Elm.Version as V
@@ -40,7 +39,7 @@ import qualified Json.Decode as D
 import Logging.Logger (printLog)
 import Reporting.Exit (RegistryProblem (..))
 import qualified Reporting.Exit as Exit
-import Stuff (ZokkaCustomRepositoryConfigFilePath (unZokkaCustomRepositoryConfigFilePath), zokkaCacheToFilePath)
+import Stuff (ZokkaCustomRepositoryConfigFilePath (unZokkaCustomRepositoryConfigFilePath))
 import qualified Stuff
 import qualified System.Directory as Dir
 import System.FilePath ((</>))
@@ -477,9 +476,6 @@ instance Applicative Solver where
        in solverFunc state okF back err
 
 instance Monad Solver where
-  return a =
-    Solver $ \state ok back _ -> ok state a back
-
   (>>=) (Solver solverA) callback =
     Solver $ \state ok back err ->
       let okA stateA a backA =

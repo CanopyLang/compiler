@@ -726,7 +726,7 @@ makeTailCallLoopContinueSentinel :: Name.Name -> JS.Expr
 -- code by reference via ===. Since we compare by reference, the actual
 -- contents of the object don't matter and we can save some memory by just
 -- using empty objects.
-makeTailCallLoopContinueSentinel name = JS.Object []
+makeTailCallLoopContinueSentinel _name = JS.Object []
 
 remapFromTailCallParamToLocalVariable :: Name.Name -> (JsName.Name, JS.Expr)
 remapFromTailCallParamToLocalVariable name = 
@@ -895,7 +895,9 @@ generateDecider mode label root decisionTree =
 
     Opt.FanOut path edges fallback ->
       [ JS.Switch
-          (generateCaseTest mode root path (fst (head edges)))
+          (case edges of
+             firstEdge:_ -> generateCaseTest mode root path (fst firstEdge)
+             [] -> error "Empty edges list in FanOut - this should not happen")
           ( foldr
               (\edge cases -> generateCaseBranch mode label root edge : cases)
               [ JS.Default (generateDecider mode label root fallback) ]

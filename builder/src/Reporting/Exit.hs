@@ -51,11 +51,9 @@ import Elm.CustomRepositoryData (CustomRepositoryDataParseError (..), Repository
 import qualified Elm.Magnitude as M
 import qualified Elm.ModuleName as ModuleName
 import qualified Elm.Package as Pkg
-import Elm.PackageOverrideData (PackageOverrideData (..))
 import qualified Elm.Version as V
 import qualified File
 import qualified Http
-import qualified Json.Decode as D
 import qualified Json.Decode as Decode
 import qualified Json.Encode as Encode
 import qualified Json.String as Json
@@ -64,11 +62,9 @@ import qualified Network.HTTP.Types.Header as HTTP
 import qualified Network.HTTP.Types.Status as HTTP
 import Parse.Primitives (Col, Row)
 import qualified Reporting.Annotation as A
-import Reporting.Doc ((<>))
 import qualified Reporting.Doc as D
 import qualified Reporting.Error as Error
 import qualified Reporting.Error.Import as Import
-import qualified Reporting.Error.Json
 import qualified Reporting.Error.Json as Json
 import qualified Reporting.Exit.Help as Help
 import qualified Reporting.Render.Code as Code

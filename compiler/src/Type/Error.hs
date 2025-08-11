@@ -20,7 +20,6 @@ module Type.Error
 
 import qualified Data.Map as Map
 import qualified Data.Maybe as Maybe
-import Data.Monoid ((<>))
 import qualified Data.Name as Name
 
 import qualified Data.Bag as Bag
@@ -447,9 +446,9 @@ isSuper super tipe =
     Type h n args ->
       case super of
         Number     -> isInt h n || isFloat h n
-        Comparable -> isInt h n || isFloat h n || isString h n || isChar h n || isList h n && isSuper super (head args)
+        Comparable -> isInt h n || isFloat h n || isString h n || isChar h n || (isList h n && case args of { firstArg:_ -> isSuper super firstArg; [] -> False })
         Appendable -> isString h n || isList h n
-        CompAppend -> isString h n || isList h n && isSuper Comparable (head args)
+        CompAppend -> isString h n || (isList h n && case args of { firstArg:_ -> isSuper Comparable firstArg; [] -> False })
 
     Tuple a b maybeC ->
       case super of

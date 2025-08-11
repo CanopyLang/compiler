@@ -138,30 +138,33 @@ toDecisionTree rawBranches =
 
 isComplete :: [Test] -> Bool
 isComplete tests =
-  case head tests of
-    IsCtor _ _ _ numAlts _ ->
-      numAlts == length tests
+  case tests of
+    [] -> False
+    test : _ ->
+      case test of
+        IsCtor _ _ _ numAlts _ ->
+          numAlts == length tests
 
-    IsCons ->
-      length tests == 2
+        IsCons ->
+          length tests == 2
 
-    IsNil ->
-      length tests == 2
+        IsNil ->
+          length tests == 2
 
-    IsTuple ->
-      True
+        IsTuple ->
+          True
 
-    IsChr _ ->
-      False
+        IsChr _ ->
+          False
 
-    IsStr _ ->
-      False
+        IsStr _ ->
+          False
 
-    IsInt _ ->
-      False
+        IsInt _ ->
+          False
 
-    IsBool _ ->
-      length tests == 2
+        IsBool _ ->
+          length tests == 2
 
 
 
@@ -536,7 +539,9 @@ pickPath branches =
           path
 
       tiedPaths ->
-          head (bests (addWeights (smallBranchingFactor branches) tiedPaths))
+          case bests (addWeights (smallBranchingFactor branches) tiedPaths) of
+            [] -> error "No paths available in tiedPaths case"
+            bestPath : _ -> bestPath
 
 
 isChoicePath :: (Path, Can.Pattern) -> Maybe Path

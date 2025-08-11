@@ -412,7 +412,14 @@ checkPatterns region context patterns errors =
           errors
 
         badPatterns ->
-          Incomplete region context (map head badPatterns) : errors
+          let
+            firstPatterns = map (\patternList -> 
+              case patternList of
+                [] -> error "Empty pattern list in badPatterns - this should not happen"
+                p : _ -> p
+              ) badPatterns
+          in
+            Incomplete region context firstPatterns : errors
 
 
 
