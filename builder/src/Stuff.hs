@@ -31,7 +31,9 @@ where
 
 import qualified Canopy.ModuleName as ModuleName
 import qualified Canopy.Package as Pkg
+import Canopy.Package (Name)
 import qualified Canopy.Version as V
+import Canopy.Version (Version)
 import qualified System.Directory as Dir
 import qualified System.Environment as Env
 import qualified System.FileLock as Lock
@@ -175,11 +177,11 @@ registry :: ZokkaSpecificCache -> FilePath
 registry (ZokkaSpecificCache dir) =
   dir </> "canopy-registry.dat"
 
-package :: PackageCache -> Pkg.Name -> V.Version -> FilePath
+package :: PackageCache -> Name -> Version -> FilePath
 package (PackageCache dir) name version =
   dir </> Pkg.toFilePath name </> V.toChars version
 
-packageOverride :: PackageOverridesCache -> Pkg.Name -> V.Version -> Pkg.Name -> V.Version -> FilePath
+packageOverride :: PackageOverridesCache -> Name -> Version -> Name -> Version -> FilePath
 packageOverride (PackageOverridesCache dir) originalPkgName originalPkgVersion overridingPkgName overridingPkgVersion =
   dir </> Pkg.toFilePath originalPkgName </> V.toChars originalPkgVersion </> Pkg.toFilePath overridingPkgName </> V.toChars overridingPkgVersion
 

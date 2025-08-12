@@ -22,16 +22,20 @@ where
 import Control.Monad (filterM, liftM)
 import Data.Binary (Binary, get, getWord8, put, putWord8)
 import qualified Data.Map as Map
+import Data.Map (Map)
 import Data.Maybe (mapMaybe)
 import qualified Data.NonEmptyList as NE
+import Data.NonEmptyList (List)
 import qualified Data.OneOrMore as OneOrMore
 import qualified Canopy.Constraint as Con
+import Canopy.Constraint (Constraint)
 import qualified Canopy.Licenses as Licenses
 import qualified Canopy.ModuleName as ModuleName
 import qualified Canopy.Package as Pkg
 import Canopy.PackageOverrideData (PackageOverrideData (..))
 import qualified Canopy.PackageOverrideData as PkgOverride
 import qualified Canopy.Version as V
+import Canopy.Version (Version)
 import qualified File
 import Foreign.Ptr (minusPtr)
 import qualified Json.Decode as D
@@ -53,12 +57,12 @@ data Outline
   deriving (Show)
 
 data AppOutline = AppOutline
-  { _app_canopy_version :: V.Version,
-    _app_source_dirs :: NE.List SrcDir,
-    _app_deps_direct :: Map.Map Pkg.Name V.Version,
-    _app_deps_indirect :: Map.Map Pkg.Name V.Version,
-    _app_test_direct :: Map.Map Pkg.Name V.Version,
-    _app_test_indirect :: Map.Map Pkg.Name V.Version,
+  { _app_canopy_version :: Version,
+    _app_source_dirs :: List SrcDir,
+    _app_deps_direct :: Map Pkg.Name Version,
+    _app_deps_indirect :: Map Pkg.Name Version,
+    _app_test_direct :: Map Pkg.Name Version,
+    _app_test_indirect :: Map Pkg.Name Version,
     _app_zokka_package_overrides :: [PkgOverride.PackageOverrideData]
   }
   deriving (Show)
@@ -67,11 +71,11 @@ data PkgOutline = PkgOutline
   { _pkg_name :: Pkg.Name,
     _pkg_summary :: Json.String,
     _pkg_license :: Licenses.License,
-    _pkg_version :: V.Version,
+    _pkg_version :: Version,
     _pkg_exposed :: Exposed,
-    _pkg_deps :: Map.Map Pkg.Name Con.Constraint,
-    _pkg_test_deps :: Map.Map Pkg.Name Con.Constraint,
-    _pkg_canopy_version :: Con.Constraint
+    _pkg_deps :: Map Pkg.Name Constraint,
+    _pkg_test_deps :: Map Pkg.Name Constraint,
+    _pkg_canopy_version :: Constraint
   }
   deriving (Show)
 
@@ -154,7 +158,7 @@ encodeModule :: ModuleName.Raw -> E.Value
 encodeModule name =
   E.name name
 
-encodeDeps :: (a -> E.Value) -> Map.Map Pkg.Name a -> E.Value
+encodeDeps :: (a -> E.Value) -> Map Pkg.Name a -> E.Value
 encodeDeps encodeValue deps =
   E.dict Pkg.toJsonString encodeValue deps
 
@@ -175,7 +179,7 @@ encodePkgOverride (PackageOverrideData overridePackageName overridePackageVersio
 
 -- PARSE AND VERIFY
 
-findPkgOverridesAgainstNonexistentDeps :: Map.Map Pkg.Name V.Version -> PackageOverrideData -> Maybe (Pkg.Name, V.Version)
+findPkgOverridesAgainstNonexistentDeps :: Map Pkg.Name Version -> PackageOverrideData -> Maybe (Pkg.Name, Version)
 findPkgOverridesAgainstNonexistentDeps deps PackageOverrideData {_originalPackageName = originalPackageName, _originalPackageVersion = originalPackageVersion} =
   if nameAndVersionMatch then Nothing else Just (originalPackageName, originalPackageVersion)
   where
@@ -348,19 +352,19 @@ summaryDecoder =
     (boundParser 80 Exit.OP_BadSummaryTooLong)
     (\_ _ -> Exit.OP_BadSummaryTooLong)
 
-versionDecoder :: Decoder V.Version
+versionDecoder :: Decoder Version
 versionDecoder =
   D.mapError (uncurry Exit.OP_BadVersion) V.decoder
 
-constraintDecoder :: Decoder Con.Constraint
+constraintDecoder :: Decoder Constraint
 constraintDecoder =
   D.mapError Exit.OP_BadConstraint Con.decoder
 
-depsDecoder :: Decoder a -> Decoder (Map.Map Pkg.Name a)
+depsDecoder :: Decoder a -> Decoder (Map Pkg.Name a)
 depsDecoder valueDecoder =
   D.dict (Pkg.keyDecoder Exit.OP_BadDependencyName) valueDecoder
 
-dirsDecoder :: Decoder (NE.List SrcDir)
+dirsDecoder :: Decoder (List SrcDir)
 dirsDecoder =
   fmap (toSrcDir . Json.toChars) <$> D.nonEmptyList D.string Exit.OP_NoSrcDirs
 

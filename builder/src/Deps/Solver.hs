@@ -19,15 +19,18 @@ module Deps.Solver
 where
 
 import qualified Canopy.Constraint as C
+import Canopy.Constraint (Constraint)
 import Canopy.CustomRepositoryData (CustomSingleRepositoryData (..), DefaultPackageServerRepo (_defaultPackageServerRepoTypeUrl), PZRPackageServerRepo (_pzrPackageServerRepoAuthToken, _pzrPackageServerRepoTypeUrl), SinglePackageLocationData (..))
 import qualified Canopy.Outline as Outline
 import qualified Canopy.Package as Pkg
 import qualified Canopy.Version as V
+import Canopy.Version (Version)
 import Control.Concurrent (forkIO, newEmptyMVar, putMVar, readMVar)
 import Control.Monad (foldM)
 import Data.ByteString (ByteString)
 import Data.Map ((!))
 import qualified Data.Map as Map
+import Data.Map (Map)
 import qualified Data.Utf8 as Utf8
 import Deps.CustomRepositoryDataIO (loadCustomRepositoriesData, loadCustomRepositoriesDataForReactorTH)
 import Deps.Registry (ZokkaRegistries (..))
@@ -61,12 +64,12 @@ data State = State
   { _cache :: Stuff.PackageCache,
     _connection :: Connection,
     _registry :: Registry.ZokkaRegistries,
-    _constraints :: Map.Map (Pkg.Name, V.Version) Constraints
+    _constraints :: Map (Pkg.Name, Version) Constraints
   }
 
 data Constraints = Constraints
-  { _canopy :: C.Constraint,
-    _deps :: Map.Map Pkg.Name C.Constraint
+  { _canopy :: Constraint,
+    _deps :: Map Pkg.Name Constraint
   }
 
 data Connection
@@ -84,10 +87,10 @@ data Result a
 -- VERIFY -- used by Canopy.Details
 
 data Details
-  = Details V.Version (Map.Map Pkg.Name C.Constraint) -- First argument is the version, second is the set of dependencies that the package depends on
+  = Details Version (Map Pkg.Name Constraint) -- First argument is the version, second is the set of dependencies that the package depends on
   deriving (Show)
 
-verify :: Stuff.PackageCache -> Connection -> Registry.ZokkaRegistries -> Map.Map Pkg.Name C.Constraint -> IO (Result (Map.Map Pkg.Name Details))
+verify :: Stuff.PackageCache -> Connection -> Registry.ZokkaRegistries -> Map Pkg.Name Constraint -> IO (Result (Map Pkg.Name Details))
 verify cache connection registry constraints =
   Stuff.withRegistryLock cache $
     case try constraints of
@@ -98,7 +101,7 @@ verify cache connection registry constraints =
           (\_ -> return $ noSolution connection)
           (\e -> return $ Err e)
 
-addDeps :: State -> Pkg.Name -> V.Version -> Details
+addDeps :: State -> Pkg.Name -> Version -> Details
 addDeps (State _ _ _ constraints) name vsn =
   case Map.lookup (name, vsn) constraints of
     Just (Constraints _ deps) -> Details vsn deps
@@ -113,8 +116,8 @@ noSolution connection =
 -- ADD TO APP - used in Install
 
 data AppSolution = AppSolution
-  { _old :: Map.Map Pkg.Name V.Version,
-    _new :: Map.Map Pkg.Name V.Version,
+  { _old :: Map Pkg.Name Version,
+    _new :: Map Pkg.Name Version,
     _app :: Outline.AppOutline
   }
 
@@ -141,7 +144,7 @@ addToApp cache connection registry pkg outline@(Outline.AppOutline _ _ direct in
               (\_ -> return $ noSolution connection)
               (\e -> return $ Err e)
 
-toApp :: State -> Pkg.Name -> Outline.AppOutline -> Map.Map Pkg.Name V.Version -> Map.Map Pkg.Name V.Version -> AppSolution
+toApp :: State -> Pkg.Name -> Outline.AppOutline -> Map Pkg.Name Version -> Map Pkg.Name Version -> AppSolution
 toApp (State _ _ _ constraints) pkg (Outline.AppOutline canopy srcDirs direct _ testDirect _ pkgOverrides) old new =
   let d = Map.intersection new (Map.insert pkg V.one direct)
       i = Map.difference (getTransitive constraints new (Map.toList d) Map.empty) d
@@ -149,7 +152,7 @@ toApp (State _ _ _ constraints) pkg (Outline.AppOutline canopy srcDirs direct _ 
       ti = Map.difference new (Map.unions [d, i, td])
    in AppSolution old new (Outline.AppOutline canopy srcDirs d i td ti pkgOverrides)
 
-getTransitive :: Map.Map (Pkg.Name, V.Version) Constraints -> Map.Map Pkg.Name V.Version -> [(Pkg.Name, V.Version)] -> Map.Map Pkg.Name V.Version -> Map.Map Pkg.Name V.Version
+getTransitive :: Map (Pkg.Name, Version) Constraints -> Map Pkg.Name Version -> [(Pkg.Name, Version)] -> Map Pkg.Name Version -> Map Pkg.Name Version
 getTransitive constraints solution unvisited visited =
   case unvisited of
     [] ->
@@ -166,18 +169,18 @@ getTransitive constraints solution unvisited visited =
 
 -- TRY
 
-try :: Map.Map Pkg.Name C.Constraint -> Solver (Map.Map Pkg.Name V.Version)
+try :: Map Pkg.Name Constraint -> Solver (Map Pkg.Name Version)
 try constraints =
   exploreGoals (Goals constraints Map.empty)
 
 -- EXPLORE GOALS
 
 data Goals = Goals
-  { _pending :: Map.Map Pkg.Name C.Constraint,
-    _solved :: Map.Map Pkg.Name V.Version
+  { _pending :: Map Pkg.Name Constraint,
+    _solved :: Map Pkg.Name Version
   }
 
-exploreGoals :: Goals -> Solver (Map.Map Pkg.Name V.Version)
+exploreGoals :: Goals -> Solver (Map Pkg.Name Version)
 exploreGoals (Goals pending solved) =
   case Map.minViewWithKey pending of
     Nothing ->
@@ -190,7 +193,7 @@ exploreGoals (Goals pending solved) =
         goals2 <- oneOf (addVsn v) (map addVsn vs)
         exploreGoals goals2
 
-addVersion :: Goals -> Pkg.Name -> V.Version -> Solver Goals
+addVersion :: Goals -> Pkg.Name -> Version -> Solver Goals
 addVersion (Goals pending solved) name version =
   do
     (Constraints canopy deps) <- getConstraints name version
@@ -200,7 +203,7 @@ addVersion (Goals pending solved) name version =
         return (Goals newPending (Map.insert name version solved))
       else backtrack
 
-addConstraint :: Map.Map Pkg.Name V.Version -> Map.Map Pkg.Name C.Constraint -> (Pkg.Name, C.Constraint) -> Solver (Map.Map Pkg.Name C.Constraint)
+addConstraint :: Map Pkg.Name Version -> Map Pkg.Name Constraint -> (Pkg.Name, Constraint) -> Solver (Map Pkg.Name Constraint)
 addConstraint solved unsolved (name, newConstraint) =
   case Map.lookup name solved of
     Just version ->
@@ -222,7 +225,7 @@ addConstraint solved unsolved (name, newConstraint) =
 
 -- GET RELEVANT VERSIONS
 
-getRelevantVersions :: Pkg.Name -> C.Constraint -> Solver (V.Version, [V.Version])
+getRelevantVersions :: Pkg.Name -> Constraint -> Solver (Version, [Version])
 getRelevantVersions name constraint =
   Solver $ \state@(State _ _ registry _) ok back _ ->
     case Registry.getVersions name registry of
@@ -238,7 +241,7 @@ getRelevantVersions name constraint =
 getFromCustomSingleRepositoryData ::
   CustomSingleRepositoryData ->
   Pkg.Name ->
-  V.Version ->
+  Version ->
   Stuff.PackageCache ->
   (Constraints -> State) ->
   Http.Manager ->
@@ -291,7 +294,7 @@ getFromCustomSingleRepositoryData customSingleRepositoryData pkg vsn cache toNew
                       Left _ ->
                         err (Exit.SolverBadHttpData pkg vsn url)
 
-getConstraints :: Pkg.Name -> V.Version -> Solver Constraints
+getConstraints :: Pkg.Name -> Version -> Solver Constraints
 getConstraints pkg vsn =
   Solver $ \state@(State cache connection registry cDict) ok back err ->
     do
@@ -506,13 +509,13 @@ backtrack =
 
 -- FETCH PACKAGE METADATA WITH ELM.JSON FALLBACK
 
-fetchPackageMetadata :: Http.Manager -> [Http.Header] -> String -> Pkg.Name -> V.Version -> String -> IO (Either Http.Error ByteString)
+fetchPackageMetadata :: Http.Manager -> [Http.Header] -> String -> Pkg.Name -> Version -> String -> IO (Either Http.Error ByteString)
 fetchPackageMetadata manager headers repositoryUrl pkg vsn filename =
   do
     let url = Website.metadata (Utf8.fromChars repositoryUrl) pkg vsn filename
     Http.get manager url headers id (return . Right)
 
-fetchPackageMetadataWithFallback :: Http.Manager -> [Http.Header] -> String -> Pkg.Name -> V.Version -> IO (Either Http.Error (ByteString, String))
+fetchPackageMetadataWithFallback :: Http.Manager -> [Http.Header] -> String -> Pkg.Name -> Version -> IO (Either Http.Error (ByteString, String))
 fetchPackageMetadataWithFallback manager headers repositoryUrl pkg vsn =
   do
     canopyResult <- fetchPackageMetadata manager headers repositoryUrl pkg vsn "canopy.json"
