@@ -7,6 +7,7 @@ module Canonicalize.Module
 
 import qualified Data.Graph as Graph
 import qualified Data.Map as Map
+import Data.Map (Map)
 import qualified Data.Name as Name
 
 import qualified AST.Canonical as Can
@@ -41,7 +42,7 @@ type Result i w a =
 -- MODULES
 
 
-canonicalize :: Pkg.Name -> Map.Map ModuleName.Raw I.Interface -> Src.Module -> Result i [W.Warning] Can.Module
+canonicalize :: Pkg.Name -> Map ModuleName.Raw I.Interface -> Src.Module -> Result i [W.Warning] Can.Module
 canonicalize pkg ifaces modul@(Src.Module _ exports docs imports values _ _ binops effects) =
   do  let home = ModuleName.Canonical pkg (Src.getName modul)
       let cbinops = Map.fromList (map canonicalizeBinop binops)
@@ -231,10 +232,10 @@ valueToName (A.At _ (Src.Value (A.At _ name) _ _ _)) =
 
 
 checkExposed
-  :: Map.Map Name.Name value
-  -> Map.Map Name.Name union
-  -> Map.Map Name.Name alias
-  -> Map.Map Name.Name binop
+  :: Map Name.Name value
+  -> Map Name.Name union
+  -> Map Name.Name alias
+  -> Map Name.Name binop
   -> Can.Effects
   -> Src.Exposed
   -> Result i w (Dups.Dict (A.Located Can.Export))

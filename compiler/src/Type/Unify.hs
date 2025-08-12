@@ -9,6 +9,7 @@ module Type.Unify
 where
 
 import qualified Data.Map.Strict as Map
+import Data.Map.Strict (Map)
 import qualified Data.Name as Name
 import qualified Canopy.ModuleName as ModuleName
 import qualified Type.Error as Error
@@ -529,7 +530,7 @@ unifyRecord context (RecordStructure fields1 ext1) (RecordStructure fields2 ext2
               subUnify sub1 ext2
               unifySharedFields context sharedFields otherFields ext
 
-unifySharedFields :: Context -> Map.Map Name.Name (Variable, Variable) -> Map.Map Name.Name Variable -> Variable -> Unify ()
+unifySharedFields :: Context -> Map Name.Name (Variable, Variable) -> Map Name.Name Variable -> Variable -> Unify ()
 unifySharedFields context sharedFields otherFields ext =
   do
     matchingFields <- Map.traverseMaybeWithKey unifyField sharedFields
@@ -550,11 +551,11 @@ unifyField _ (actual, expected) =
 -- GATHER RECORD STRUCTURE
 
 data RecordStructure = RecordStructure
-  { _fields :: Map.Map Name.Name Variable,
+  { _fields :: Map Name.Name Variable,
     _extension :: Variable
   }
 
-gatherFields :: Map.Map Name.Name Variable -> Variable -> IO RecordStructure
+gatherFields :: Map Name.Name Variable -> Variable -> IO RecordStructure
 gatherFields fields variable =
   do
     (Descriptor content _ _ _) <- UF.get variable

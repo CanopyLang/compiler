@@ -19,6 +19,7 @@ module Type.Error
 
 
 import qualified Data.Map as Map
+import Data.Map (Map)
 import qualified Data.Maybe as Maybe
 import qualified Data.Name as Name
 
@@ -42,7 +43,7 @@ data Type
   | RigidVar Name.Name
   | RigidSuper Super Name.Name
   | Type ModuleName.Canonical Name.Name [Type]
-  | Record (Map.Map Name.Name Type) Extension
+  | Record (Map Name.Name Type) Extension
   | Unit
   | Tuple Type Type (Maybe Type)
   | Alias ModuleName.Canonical Name.Name [(Name.Name, Type)] Type
@@ -133,7 +134,7 @@ aliasToDoc localizer ctx home name args =
     (map (toDoc localizer RT.App . snd) args)
 
 
-fieldsToDocs :: L.Localizer -> Map.Map Name.Name Type -> [(D.Doc, D.Doc)]
+fieldsToDocs :: L.Localizer -> Map Name.Name Type -> [(D.Doc, D.Doc)]
 fieldsToDocs localizer fields =
   Map.foldrWithKey (addField localizer) [] fields
 
@@ -490,7 +491,7 @@ diffAliasedRecord localizer t1 t2 =
 -- RECORD DIFFS
 
 
-diffRecord :: L.Localizer -> Map.Map Name.Name Type -> Extension -> Map.Map Name.Name Type -> Extension -> Diff D.Doc
+diffRecord :: L.Localizer -> Map Name.Name Type -> Extension -> Map Name.Name Type -> Extension -> Diff D.Doc
 diffRecord localizer fields1 ext1 fields2 ext2 =
   let
     toUnknownDocs field tipe =

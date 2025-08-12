@@ -36,10 +36,12 @@ import qualified Data.Graph as Graph
 import qualified Data.List as List
 import Data.Map.Strict ((!), (!?))
 import qualified Data.Map.Strict as Map
+import Data.Map.Strict (Map)
 import qualified Data.Map.Utils as Map
 import qualified Data.Maybe as Maybe
 import qualified Data.Name as Name
 import qualified Data.NonEmptyList as NE
+import Data.NonEmptyList (List)
 import qualified Data.OneOrMore as OneOrMore
 import qualified Data.Set as Set
 import Data.Vector.Internal.Check (HasCallStack)
@@ -69,8 +71,8 @@ data Env = Env
     _project :: Parse.ProjectType,
     _srcDirs :: [AbsoluteSrcDir],
     _buildID :: Details.BuildID,
-    _locals :: Map.Map ModuleName.Raw Details.Local,
-    _foreigns :: Map.Map ModuleName.Raw Details.Foreign
+    _locals :: Map ModuleName.Raw Details.Local,
+    _foreigns :: Map ModuleName.Raw Details.Foreign
   }
 
 makeEnv :: Reporting.BKey -> FilePath -> Details.Details -> IO Env
@@ -117,13 +119,13 @@ fork work =
     return mvar
 
 {-# INLINE forkWithKey #-}
-forkWithKey :: (k -> a -> IO b) -> Map.Map k a -> IO (Map.Map k (MVar b))
+forkWithKey :: (k -> a -> IO b) -> Map k a -> IO (Map k (MVar b))
 forkWithKey func dict =
   Map.traverseWithKey (\k v -> fork (func k v)) dict
 
 -- FROM EXPOSED
 
-fromExposed :: Reporting.Style -> FilePath -> Details.Details -> DocsGoal docs -> NE.List ModuleName.Raw -> IO (Either Exit.BuildProblem docs)
+fromExposed :: Reporting.Style -> FilePath -> Details.Details -> DocsGoal docs -> List ModuleName.Raw -> IO (Either Exit.BuildProblem docs)
 fromExposed style root details docsGoal exposed@(NE.List e es) =
   Reporting.trackBuild style $ \key ->
     do
@@ -1113,7 +1115,7 @@ addInside name result modules =
     RForeign _ -> modules
     RKernel -> modules
 
-addInsideSafe :: NE.List RootResult -> ModuleName.Raw -> Result -> [Module] -> [Module]
+addInsideSafe :: List RootResult -> ModuleName.Raw -> Result -> [Module] -> [Module]
 addInsideSafe rootResults name result modules =
   -- Root modules should never be processed by addInside since they're handled by addOutside
   if isRootModule rootResults name
@@ -1128,7 +1130,7 @@ addInsideSafe rootResults name result modules =
       RForeign _ -> modules
       RKernel -> modules
 
-isRootModule :: NE.List RootResult -> ModuleName.Raw -> Bool
+isRootModule :: List RootResult -> ModuleName.Raw -> Bool
 isRootModule rootResults name =
   any (matchesRootName name) (NE.toList rootResults)
 
@@ -1144,7 +1146,7 @@ badInside :: ModuleName.Raw -> [Char]
 badInside name =
   "Error from `" ++ Name.toChars name ++ "` should have been reported already."
 
-addOutside :: Map.Map ModuleName.Raw Result -> RootResult -> [Module] -> [Module]
+addOutside :: Map ModuleName.Raw Result -> RootResult -> [Module] -> [Module]
 addOutside results root modules =
   case root of
     RInside name -> do

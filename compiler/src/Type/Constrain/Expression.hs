@@ -8,6 +8,7 @@ module Type.Constrain.Expression
 
 
 import qualified Data.Map.Strict as Map
+import Data.Map.Strict (Map)
 import qualified Data.Name as Name
 
 import qualified AST.Canonical as Can
@@ -34,7 +35,7 @@ import Type.Type as Type hiding (Descriptor(..))
 -- dictionary will hold variables for `a` and `b`
 --
 type RTV =
-  Map.Map Name.Name Type
+  Map Name.Name Type
 
 
 constrain :: RTV -> Can.Expr -> Expected Type -> IO Constraint
@@ -375,7 +376,7 @@ constrainCaseBranch rtv (Can.CaseBranch pattern expr) pExpect bExpect =
 -- CONSTRAIN RECORD
 
 
-constrainRecord :: RTV -> A.Region -> Map.Map Name.Name Can.Expr -> Expected Type -> IO Constraint
+constrainRecord :: RTV -> A.Region -> Map Name.Name Can.Expr -> Expected Type -> IO Constraint
 constrainRecord rtv region fields expected =
   do  dict <- traverse (constrainField rtv) fields
 
@@ -401,7 +402,7 @@ constrainField rtv expr =
 -- CONSTRAIN RECORD UPDATE
 
 
-constrainUpdate :: RTV -> A.Region -> Name.Name -> Can.Expr -> Map.Map Name.Name Can.FieldUpdate -> Expected Type -> IO Constraint
+constrainUpdate :: RTV -> A.Region -> Name.Name -> Can.Expr -> Map Name.Name Can.FieldUpdate -> Expected Type -> IO Constraint
 constrainUpdate rtv region name expr fields expected =
   do  extVar <- mkFlexVar
       fieldDict <- Map.traverseWithKey (constrainUpdateField rtv region) fields
@@ -484,7 +485,7 @@ constrainShader region (Shader.Types attributes uniforms varyings) expected =
         CEqual region Shader shaderType expected
 
 
-toShaderRecord :: Map.Map Name.Name Shader.Type -> Type -> Type
+toShaderRecord :: Map Name.Name Shader.Type -> Type -> Type
 toShaderRecord types baseRecType =
   if Map.null types then
     baseRecType
@@ -589,7 +590,7 @@ data Info =
   Info
     { _vars :: [Variable]
     , _cons :: [Constraint]
-    , _headers :: Map.Map Name.Name (A.Located Type)
+    , _headers :: Map Name.Name (A.Located Type)
     }
 
 
@@ -723,12 +724,12 @@ data TypedArgs =
     }
 
 
-constrainTypedArgs :: Map.Map Name.Name Type -> Name.Name -> [(Can.Pattern, Can.Type)] -> Can.Type -> IO TypedArgs
+constrainTypedArgs :: Map Name.Name Type -> Name.Name -> [(Can.Pattern, Can.Type)] -> Can.Type -> IO TypedArgs
 constrainTypedArgs rtv name args srcResultType =
   typedArgsHelp rtv name Index.first args srcResultType Pattern.emptyState
 
 
-typedArgsHelp :: Map.Map Name.Name Type -> Name.Name -> Index.ZeroBased -> [(Can.Pattern, Can.Type)] -> Can.Type -> Pattern.State -> IO TypedArgs
+typedArgsHelp :: Map Name.Name Type -> Name.Name -> Index.ZeroBased -> [(Can.Pattern, Can.Type)] -> Can.Type -> Pattern.State -> IO TypedArgs
 typedArgsHelp rtv name index args srcResultType state =
   case args of
     [] ->
