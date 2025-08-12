@@ -81,7 +81,8 @@ encode docs =
 
 encodeModule :: Module -> E.Value
 encodeModule (Module name comment unions aliases values binops) =
-  E.object [ "name" ==> ModuleName.encode name,
+  E.object
+    [ "name" ==> ModuleName.encode name,
       "comment" ==> E.string comment,
       "unions" ==> E.list encodeUnion (Map.toList unions),
       "aliases" ==> E.list encodeAlias (Map.toList aliases),

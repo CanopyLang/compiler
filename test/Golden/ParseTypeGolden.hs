@@ -21,16 +21,16 @@ goldenType :: String -> String -> FilePath -> TestTree
 goldenType name src path =
   goldenVsString name path $ do
     let bs = C8.pack src
-    case P.fromByteString Ty.expression (\r c -> E.TIndentStart r c) bs of
-      Left err -> pure (BL8.pack ("Parse error: " ++ show err ++ "\n"))
-      Right (tipe, _) -> pure (BL8.pack (typeSummary tipe ++ "\n"))
+    case P.fromByteString Ty.expression E.TIndentStart bs of
+      Left err -> pure (BL8.pack ("Parse error: " <> (show err <> "\n")))
+      Right (tipe, _) -> pure (BL8.pack (typeSummary tipe <> "\n"))
 
 typeSummary :: Src.Type -> String
 typeSummary (A.At _ t) = go t
   where
     go v = case v of
       Src.TLambda _ _ -> "TLambda"
-      Src.TRecord fs ext -> "TRecord/fields=" ++ show (length fs) ++ maybe "" (const "/ext") ext
-      Src.TTuple _ _ rest -> "TTuple/len=" ++ show (2 + length rest)
-      Src.TType _ _ args -> "TType/args=" ++ show (length args)
+      Src.TRecord fs ext -> "TRecord/fields=" <> (show (length fs) <> maybe "" (const "/ext") ext)
+      Src.TTuple _ _ rest -> "TTuple/len=" <> show (2 + length rest)
+      Src.TType _ _ args -> "TType/args=" <> show (length args)
       other -> take 16 (show other)

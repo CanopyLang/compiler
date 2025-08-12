@@ -30,11 +30,7 @@ toChunks strings =
 
 toSuggest :: Maybe Int -> Suggest
 toSuggest maybeIndex =
-  case maybeIndex of
-    Nothing ->
-      NoSuggestion
-    Just index ->
-      Suggest index
+  maybe NoSuggestion Suggest maybeIndex
 
 -- CHOMPER
 
@@ -116,7 +112,7 @@ chompCompleteArgs suggest chunks completeArgs =
 chompExactly :: Suggest -> [Chunk] -> Chomper ArgError a -> (Suggest, Either ArgError a)
 chompExactly suggest chunks (Chomper chomper) =
   let ok s cs value =
-        case map _chunk cs of
+        case fmap _chunk cs of
           [] -> (s, Right value)
           es -> (s, Left (ArgExtras es))
 
@@ -135,7 +131,7 @@ chompOptional suggest chunks (Chomper chomper) parser =
               (s2, Left expectation) ->
                 (s2, Left (ArgBad string expectation))
               (s2, Right value) ->
-                case map _chunk others of
+                case fmap _chunk others of
                   [] -> (s2, Right (func (Just value)))
                   es -> (s2, Left (ArgExtras es))
 
@@ -250,9 +246,9 @@ chompOnOffFlag flagName =
       Just (FoundFlag before value after) ->
         case value of
           DefNope ->
-            ok suggest (before ++ after) True
+            ok suggest (before <> after) True
           Possibly chunk ->
-            ok suggest (before ++ chunk : after) True
+            ok suggest (before <> (chunk : after)) True
           Definitely _ string ->
             err suggest (FlagWithValue flagName string)
 
@@ -268,7 +264,7 @@ chompNormalFlag flagName parser@(Parser singular _ _ _ toExamples) =
                 (newSuggest, Left expectation) ->
                   err newSuggest (FlagWithBadValue flagName string expectation)
                 (newSuggest, Right flagValue) ->
-                  ok newSuggest (before ++ after) (Just flagValue)
+                  ok newSuggest (before <> after) (Just flagValue)
          in case value of
               Definitely index string ->
                 attempt index string
@@ -291,21 +287,19 @@ data Value
   | DefNope
 
 findFlag :: String -> [Chunk] -> Maybe FoundFlag
-findFlag flagName chunks =
-  findFlagHelp [] ("--" ++ flagName) ("--" ++ flagName ++ "=") chunks
+findFlag flagName = findFlagHelp [] ("--" ++ flagName) ("--" ++ flagName ++ "=")
 
 findFlagHelp :: [Chunk] -> String -> String -> [Chunk] -> Maybe FoundFlag
 findFlagHelp revPrev loneFlag flagPrefix chunks =
-  let succeed value after =
+  let 
+      deprefix = drop (length flagPrefix)
+      succeed value after =
         Just (FoundFlag (reverse revPrev) value after)
-
-      deprefix string =
-        drop (length flagPrefix) string
    in case chunks of
         [] ->
           Nothing
         chunk@(Chunk index string) : rest ->
-          if List.isPrefixOf flagPrefix string
+          if flagPrefix `List.isPrefixOf` string
             then succeed (Definitely index (deprefix string)) rest
             else
               if string /= loneFlag
@@ -314,7 +308,7 @@ findFlagHelp revPrev loneFlag flagPrefix chunks =
                   [] ->
                     succeed DefNope []
                   argChunk@(Chunk _ potentialArg) : restOfRest ->
-                    if List.isPrefixOf "-" potentialArg
+                    if "-" `List.isPrefixOf` potentialArg
                       then succeed DefNope rest
                       else succeed (Possibly argChunk) restOfRest
 
@@ -343,7 +337,7 @@ suggestFlag unknownFlags flags targetIndex =
 
 startsWithDash :: Chunk -> Bool
 startsWithDash (Chunk _ string) =
-  List.isPrefixOf "-" string
+  "-" `List.isPrefixOf` string
 
 getFlagNames :: Flags a -> [String] -> [String]
 getFlagNames flags names =
@@ -357,9 +351,9 @@ getFlagName :: Flag a -> String
 getFlagName flag =
   case flag of
     Flag name _ _ ->
-      "--" ++ name
+      "--" <> name
     OnOff name _ ->
-      "--" ++ name
+      "--" <> name
 
 -- CHOMPER INSTANCES
 

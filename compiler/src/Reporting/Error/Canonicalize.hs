@@ -452,9 +452,11 @@ toReport source err =
                           Nothing
                           ( D.reflow "Canopy does not use (%) as the remainder operator:",
                             D.stack
-                              [ D.reflow "If you want the behavior of (%) like in JavaScript, switch to:\
+                              [ D.reflow
+                                  "If you want the behavior of (%) like in JavaScript, switch to:\
                                   \ <https://package.canopy-lang.org/packages/canopy/core/latest/Basics#remainderBy>",
-                                D.reflow "If you want modular arithmetic like in math, switch to:\
+                                D.reflow
+                                  "If you want modular arithmetic like in math, switch to:\
                                   \ <https://package.canopy-lang.org/packages/canopy/core/latest/Basics#modBy>",
                                 D.reflow "The difference is how things work when negative numbers are involved."
                               ]
@@ -471,11 +473,15 @@ toReport source err =
                               region
                               Nothing
                               ( D.reflow ("I do not recognize the (" <> (Name.toChars op <> ") operator.")),
-                                D.fillSep (["Is", "there", "an", "`import`", "and", "`exposing`", "entry", "for", "it?"] <> (case fmap D.fromChars suggestions of
-                                      [] ->
-                                        []
-                                      alts ->
-                                        ["Maybe", "you", "want"] <> (D.commaSep "or" format alts <> ["instead?"])))
+                                D.fillSep
+                                  ( ["Is", "there", "an", "`import`", "and", "`exposing`", "entry", "for", "it?"]
+                                      <> ( case fmap D.fromChars suggestions of
+                                             [] ->
+                                               []
+                                             alts ->
+                                               ["Maybe", "you", "want"] <> (D.commaSep "or" format alts <> ["instead?"])
+                                         )
+                                  )
                               )
     PatternHasRecordCtor region name ->
       Report.Report "BAD PATTERN" region [] $
@@ -514,7 +520,8 @@ toReport source err =
                 )
               Function ->
                 ( "a function",
-                  D.reflow "But functions cannot be sent in and out ports. If we allowed functions in from JS\
+                  D.reflow
+                    "But functions cannot be sent in and out ports. If we allowed functions in from JS\
                     \ they may perform some side-effects. If we let functions out, they could produce\
                     \ incorrect results because Canopy optimizations assume there are no side-effects."
                 )
@@ -530,16 +537,19 @@ toReport source err =
                 ( "a `" <> Name.toChars name <> "` value",
                   D.stack
                     [ D.reflow "I cannot handle that. The types that CAN flow in and out of Canopy include:",
-                      D.indent 4 . D.reflow $ "Ints, Floats, Bools, Strings, Maybes, Lists, Arrays,\
-                          \ tuples, records, and JSON values.",
-                      D.reflow "Since JSON values can flow through, you can use JSON encoders and decoders\
+                      D.indent 4 . D.reflow $
+                        "Ints, Floats, Bools, Strings, Maybes, Lists, Arrays,\
+                        \ tuples, records, and JSON values.",
+                      D.reflow
+                        "Since JSON values can flow through, you can use JSON encoders and decoders\
                         \ to allow other types through as well. More advanced users often just do\
                         \ everything with encoders and decoders for more control and better errors."
                     ]
                 )
     PortTypeInvalid region name portProblem ->
       let formatDetails (before, after) =
-            (Report.Report "BAD PORT" region [] . Code.toSnippet source region Nothing $ ( D.reflow before,
+            ( Report.Report "BAD PORT" region [] . Code.toSnippet source region Nothing $
+                ( D.reflow before,
                   D.stack
                     [ after,
                       D.link
@@ -548,12 +558,14 @@ toReport source err =
                         "ports"
                         "for more advice. For example, do not end up with one port per JS function!"
                     ]
-                ))
+                )
+            )
        in formatDetails $
             case portProblem of
               CmdNoArg ->
                 ( "The `" <> Name.toChars name <> "` port cannot be just a command.",
-                  D.reflow "It can be (() -> Cmd msg) if you just need to trigger a JavaScript\
+                  D.reflow
+                    "It can be (() -> Cmd msg) if you just need to trigger a JavaScript\
                     \ function, but there is often a better way to set things up."
                 )
               CmdExtraArgs n ->
@@ -566,7 +578,8 @@ toReport source err =
                 )
               CmdBadMsg ->
                 ( "The `" <> Name.toChars name <> "` port cannot send any messages to the `update` function.",
-                  D.reflow "It must produce a (Cmd msg) type. Notice the lower case `msg` type\
+                  D.reflow
+                    "It must produce a (Cmd msg) type. Notice the lower case `msg` type\
                     \ variable. The command will trigger some JS code, but it will not send\
                     \ anything particular back to Canopy."
                 )
@@ -575,14 +588,16 @@ toReport source err =
                   D.stack
                     [ D.reflow "To receive messages from JavaScript, you need to define a port like this:",
                       (D.indent 4 . D.dullyellow) . D.fromChars $ ("port " <> Name.toChars name <> " : (Int -> msg) -> Sub msg"),
-                      D.reflow "Now every time JS sends an `Int` to this port, it is converted to a `msg`.\
+                      D.reflow
+                        "Now every time JS sends an `Int` to this port, it is converted to a `msg`.\
                         \ And if you subscribe, those `msg` values will be piped into your `update`\
                         \ function. The only thing you can customize here is the `Int` type."
                     ]
                 )
               NotCmdOrSub ->
                 ( "I am confused about the `" <> Name.toChars name <> "` port declaration.",
-                  D.reflow "Ports need to produce a command (Cmd) or a subscription (Sub) but\
+                  D.reflow
+                    "Ports need to produce a command (Cmd) or a subscription (Sub) but\
                     \ this is neither. I do not know how to handle this."
                 )
     RecursiveAlias region name args tipe others ->
@@ -590,37 +605,41 @@ toReport source err =
     RecursiveDecl region name names ->
       let makeTheory question details =
             D.fillSep (fmap (D.dullyellow . D.fromChars) (words question) <> fmap D.fromChars (words details))
-       in (Report.Report "CYCLIC DEFINITION" region [] . Code.toSnippet source region Nothing $ (case names of
-                [] ->
-                  ( D.reflow $
-                      "The `" <> Name.toChars name <> "` value is defined directly in terms of itself, causing an infinite loop.",
-                    D.stack
-                      [ makeTheory "Are you trying to mutate a variable?" ("Canopy does not have mutation, so when I see " <> (Name.toChars name <> (" defined in terms of " <> (Name.toChars name <> ", I treat it as a recursive definition. Try giving the new value a new name!")))),
-                        makeTheory "Maybe you DO want a recursive value?" ("To define " <> (Name.toChars name <> (" we need to know what " <> (Name.toChars name <> (" is, so let’s expand it. Wait, but now we need to know what " <> (Name.toChars name <> " is, so let’s expand it... This will keep going infinitely!")))))),
-                        D.link
-                          "Hint"
-                          "The root problem is often a typo in some variable name, but I recommend reading"
-                          "bad-recursion"
-                          "for more detailed advice, especially if you actually do need a recursive value."
-                      ]
-                  )
-                _ : _ ->
-                  ( D.reflow $
-                      "The `" <> Name.toChars name <> "` definition is causing a very tricky infinite loop.",
-                    D.stack
-                      [ D.reflow $
-                          "The `" <> Name.toChars name
-                            <> "` value depends on itself through the following chain of definitions:",
-                        D.cycle 4 name names,
-                        D.link
-                          "Hint"
-                          "The root problem is often a typo in some variable name, but I recommend reading"
-                          "bad-recursion"
-                          "for more detailed advice, especially if you actually do want mutually recursive values."
-                      ]
-                  )))
+       in ( Report.Report "CYCLIC DEFINITION" region [] . Code.toSnippet source region Nothing $
+              ( case names of
+                  [] ->
+                    ( D.reflow $
+                        "The `" <> Name.toChars name <> "` value is defined directly in terms of itself, causing an infinite loop.",
+                      D.stack
+                        [ makeTheory "Are you trying to mutate a variable?" ("Canopy does not have mutation, so when I see " <> (Name.toChars name <> (" defined in terms of " <> (Name.toChars name <> ", I treat it as a recursive definition. Try giving the new value a new name!")))),
+                          makeTheory "Maybe you DO want a recursive value?" ("To define " <> (Name.toChars name <> (" we need to know what " <> (Name.toChars name <> (" is, so let’s expand it. Wait, but now we need to know what " <> (Name.toChars name <> " is, so let’s expand it... This will keep going infinitely!")))))),
+                          D.link
+                            "Hint"
+                            "The root problem is often a typo in some variable name, but I recommend reading"
+                            "bad-recursion"
+                            "for more detailed advice, especially if you actually do need a recursive value."
+                        ]
+                    )
+                  _ : _ ->
+                    ( D.reflow $
+                        "The `" <> Name.toChars name <> "` definition is causing a very tricky infinite loop.",
+                      D.stack
+                        [ D.reflow $
+                            "The `" <> Name.toChars name
+                              <> "` value depends on itself through the following chain of definitions:",
+                          D.cycle 4 name names,
+                          D.link
+                            "Hint"
+                            "The root problem is often a typo in some variable name, but I recommend reading"
+                            "bad-recursion"
+                            "for more detailed advice, especially if you actually do want mutually recursive values."
+                        ]
+                    )
+              )
+          )
     RecursiveLet (A.At region name) names ->
-      Report.Report "CYCLIC VALUE" region [] . Code.toSnippet source region Nothing $ (case names of
+      Report.Report "CYCLIC VALUE" region [] . Code.toSnippet source region Nothing $
+        ( case names of
             [] ->
               let makeTheory question details =
                     D.fillSep (fmap (D.dullyellow . D.fromChars) (words question) <> fmap D.fromChars (words details))
@@ -649,7 +668,8 @@ toReport source err =
                       "bad-recursion"
                       "for more detailed advice, especially if you actually do want mutually recursive values."
                   ]
-              ))
+              )
+        )
     Shadowing name r1 r2 ->
       Report.Report "SHADOWING" r2 [] $
         Code.toPair
@@ -681,7 +701,8 @@ toReport source err =
           Nothing
           ( "I only accept tuples with two or three items. This has too many:",
             D.stack
-              [ D.reflow "I recommend switching to records. Each item will be named, and you can use\
+              [ D.reflow
+                  "I recommend switching to records. Each item will be named, and you can use\
                   \ the `point.x` syntax to access them.",
                 D.link
                   "Note"
@@ -734,7 +755,8 @@ toReport source err =
                     D.stack
                       [ D.fillSep (["I", "recommend", "removing"] <> (stuff <> ["from", "the", "declaration,", "like", "this:"])),
                         D.indent 4 . D.hsep $ (["type", "alias", D.green (D.fromName typeName)] <> (fmap D.fromName (filter (`notElem` allUnusedNames) allVars) <> ["=", "..."])),
-                        D.reflow "Why? Well, if I allowed `type alias Height a = Float` I would need to answer\
+                        D.reflow
+                          "Why? Well, if I allowed `type alias Height a = Float` I would need to answer\
                           \ some weird questions. Is `Height Bool` the same as `Float`? Is `Height Bool`\
                           \ the same as `Height Int`? My solution is to not need to ask them!"
                       ]
@@ -823,8 +845,17 @@ unboundTypeVars source declRegion tipe typeName allVars (unboundVar, varRegion) 
             D.stack
               [ D.reflow "You probably need to change the declaration to something like this:",
                 D.indent 4 . D.hsep $ (tipe <> ([D.fromName typeName] <> (fmap D.fromName allVars <> (fmap (D.green . D.fromName) (unboundVar : fmap fst unboundVars) <> ["=", "..."])))),
-                D.reflow ("Why? Well, imagine one `" <> (Name.toChars typeName <> ("` where `" <> (Name.toChars unboundVar <> "` is an Int and another where it is a Bool. When we explicitly list the type\
-                       \ variables, the type checker can see that they are actually different types."))))
+                D.reflow
+                  ( "Why? Well, imagine one `"
+                      <> ( Name.toChars typeName
+                             <> ( "` where `"
+                                    <> ( Name.toChars unboundVar
+                                           <> "` is an Int and another where it is a Bool. When we explicitly list the type\
+                                              \ variables, the type checker can see that they are actually different types."
+                                       )
+                                )
+                         )
+                  )
               ]
           )
 
@@ -850,36 +881,45 @@ nameClash source r1 r2 messageThatEndsWithPunctuation =
 ambiguousName :: Code.Source -> A.Region -> Maybe Name.Name -> Name.Name -> ModuleName.Canonical -> OneOrMore.OneOrMore ModuleName.Canonical -> String -> Report.Report
 ambiguousName source region maybePrefix name h hs thing =
   let possibleHomes = List.sort (h : OneOrMore.destruct (:) hs)
-   in (Report.Report "AMBIGUOUS NAME" region [] . Code.toSnippet source region Nothing $ (case maybePrefix of
-            Nothing ->
-              let homeToYellowDoc (ModuleName.Canonical _ home) =
-                    D.dullyellow (D.fromName home <> "." <> D.fromName name)
-               in ( D.reflow ("This usage of `" <> (Name.toChars name <> "` is ambiguous:")),
-                    D.stack
-                      [ D.reflow ("This name is exposed by " <> (show (length possibleHomes) <> " of your imports, so I am not\
-                               \ sure which one to use:")),
-                        D.indent 4 . D.vcat $ fmap homeToYellowDoc possibleHomes,
-                        D.reflow "I recommend using qualified names for imported values. I also recommend having\
-                          \ at most one `exposing (..)` per file to make name clashes like this less common\
-                          \ in the long run.",
-                        D.link "Note" "Check out" "imports" "for more info on the import syntax."
-                      ]
-                  )
-            Just prefix ->
-              let homeToYellowDoc (ModuleName.Canonical _ home) =
-                    if prefix == home
-                      then D.cyan "import" <+> D.fromName home
-                      else D.cyan "import" <+> D.fromName home <+> D.cyan "as" <+> D.fromName prefix
+   in ( Report.Report "AMBIGUOUS NAME" region [] . Code.toSnippet source region Nothing $
+          ( case maybePrefix of
+              Nothing ->
+                let homeToYellowDoc (ModuleName.Canonical _ home) =
+                      D.dullyellow (D.fromName home <> "." <> D.fromName name)
+                 in ( D.reflow ("This usage of `" <> (Name.toChars name <> "` is ambiguous:")),
+                      D.stack
+                        [ D.reflow
+                            ( "This name is exposed by "
+                                <> ( show (length possibleHomes)
+                                       <> " of your imports, so I am not\
+                                          \ sure which one to use:"
+                                   )
+                            ),
+                          D.indent 4 . D.vcat $ fmap homeToYellowDoc possibleHomes,
+                          D.reflow
+                            "I recommend using qualified names for imported values. I also recommend having\
+                            \ at most one `exposing (..)` per file to make name clashes like this less common\
+                            \ in the long run.",
+                          D.link "Note" "Check out" "imports" "for more info on the import syntax."
+                        ]
+                    )
+              Just prefix ->
+                let homeToYellowDoc (ModuleName.Canonical _ home) =
+                      if prefix == home
+                        then D.cyan "import" <+> D.fromName home
+                        else D.cyan "import" <+> D.fromName home <+> D.cyan "as" <+> D.fromName prefix
 
-                  eitherOrAny =
-                    if length possibleHomes == 2 then "either" else "any"
-               in ( D.reflow ("This usage of `" <> (toQualString prefix name <> "` is ambiguous.")),
-                    D.stack
-                      [ D.reflow ("It could refer to a " <> (thing <> (" from " <> (eitherOrAny <> " of these imports:")))),
-                        D.indent 4 . D.vcat $ fmap homeToYellowDoc possibleHomes,
-                        D.reflowLink "Read" "imports" "to learn how to clarify which one you want."
-                      ]
-                  )))
+                    eitherOrAny =
+                      if length possibleHomes == 2 then "either" else "any"
+                 in ( D.reflow ("This usage of `" <> (toQualString prefix name <> "` is ambiguous.")),
+                      D.stack
+                        [ D.reflow ("It could refer to a " <> (thing <> (" from " <> (eitherOrAny <> " of these imports:")))),
+                          D.indent 4 . D.vcat $ fmap homeToYellowDoc possibleHomes,
+                          D.reflowLink "Read" "imports" "to learn how to clarify which one you want."
+                        ]
+                    )
+          )
+      )
 
 -- NOT FOUND
 
@@ -1047,7 +1087,8 @@ aliasRecursionReport source region name args tipe others =
           Nothing
           ( "This type alias is recursive, forming an infinite type!",
             D.stack
-              [ D.reflow "When I expand a recursive type alias, it just keeps getting bigger and bigger.\
+              [ D.reflow
+                  "When I expand a recursive type alias, it just keeps getting bigger and bigger.\
                   \ So dealiasing results in an infinitely large type! Try this instead:",
                 D.indent 4 $
                   aliasToUnionDoc name args tipe,

@@ -55,7 +55,7 @@ debug root details (Build.Artifacts pkg ifaces roots modules) =
 dev :: FilePath -> Details.Details -> Build.Artifacts -> Task Builder
 dev root details (Build.Artifacts pkg _ roots modules) =
   do
-    objects <- finalizeObjects =<< loadObjects root details modules
+    objects <- loadObjects root details modules >>= finalizeObjects
     let mode = Mode.Dev Nothing
     let graph = objectsToGlobalGraph objects
     let mains = gatherMains pkg objects roots
@@ -64,7 +64,7 @@ dev root details (Build.Artifacts pkg _ roots modules) =
 prod :: FilePath -> Details.Details -> Build.Artifacts -> Task Builder
 prod root details (Build.Artifacts pkg _ roots modules) =
   do
-    objects <- finalizeObjects =<< loadObjects root details modules
+    objects <- loadObjects root details modules >>= finalizeObjects
     checkForDebugUses objects
     let graph = objectsToGlobalGraph objects
     let mode = Mode.Prod (Mode.shortenFieldNames graph)
@@ -74,7 +74,7 @@ prod root details (Build.Artifacts pkg _ roots modules) =
 repl :: FilePath -> Details.Details -> Bool -> Build.ReplArtifacts -> N.Name -> Task Builder
 repl root details ansi (Build.ReplArtifacts home modules localizer annotations) name =
   do
-    objects <- finalizeObjects =<< loadObjects root details modules
+    objects <- loadObjects root details modules >>= finalizeObjects
     let graph = objectsToGlobalGraph objects
     return $ JS.generateForRepl ansi localizer graph home name (annotations ! name)
 
@@ -97,7 +97,7 @@ lookupMain pkg locals root =
   let toPair name (Opt.LocalGraph maybeMain _ _) =
         (,) (ModuleName.Canonical pkg name) <$> maybeMain
    in case root of
-        Build.Inside name -> toPair name =<< Map.lookup name locals
+        Build.Inside name -> Map.lookup name locals >>= toPair name
         Build.Outside name _ g -> toPair name g
 
 -- LOADING OBJECTS
@@ -125,7 +125,7 @@ loadObject root modul =
     Build.Cached name _ _ ->
       do
         mvar <- newEmptyMVar
-        _ <- forkIO $ putMVar mvar =<< File.readBinary (Stuff.canopyo root name)
+        _ <- forkIO (File.readBinary (Stuff.canopyo root name) >>= putMVar mvar)
         return (name, mvar)
 
 -- FINALIZE OBJECTS
@@ -141,7 +141,7 @@ finalizeObjects (LoadingObjects mvar mvars) =
     do
       result <- readMVar mvar
       results <- traverse readMVar mvars
-      case liftM2 Objects result (sequence results) of
+      case liftM2 Objects result (sequenceA results) of
         Just loaded -> return (Right loaded)
         Nothing -> return (Left Exit.GenerateCannotLoadArtifacts)
 
@@ -158,7 +158,7 @@ loadTypes root ifaces modules =
       mvars <- traverse (loadTypesHelp root) modules
       let !foreigns = Extract.mergeMany (Map.elems (Map.mapWithKey Extract.fromDependencyInterface ifaces))
       results <- traverse readMVar mvars
-      case sequence results of
+      case sequenceA results of
         Just ts -> return (Right (Extract.merge foreigns (Extract.mergeMany ts)))
         Nothing -> return (Left Exit.GenerateCannotLoadArtifacts)
 

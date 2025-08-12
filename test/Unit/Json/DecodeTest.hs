@@ -24,13 +24,13 @@ testBasicDecoders =
     [ testCase "decode string" $ do
         let json = "\"hello\""
             expected = JsonStr.fromChars "hello"
-        case D.fromByteString D.string (BS.pack $ map (fromIntegral . fromEnum) json) of
+        case D.fromByteString D.string (BS.pack $ fmap (fromIntegral . fromEnum) json) of
           Right result -> result @?= expected
           Left _ -> assertFailure "String decoding should succeed",
       testCase "decode empty string" $ do
         let json = "\"\""
             expected = JsonStr.fromChars ""
-        case D.fromByteString D.string (BS.pack $ map (fromIntegral . fromEnum) json) of
+        case D.fromByteString D.string (BS.pack $ fmap (fromIntegral . fromEnum) json) of
           Right result -> result @?= expected
           Left _ -> assertFailure "Empty string decoding should succeed"
     ]
@@ -42,7 +42,7 @@ testStringDecoder =
     [ testCase "simple string" $ do
         let json = "\"test\""
             expected = JsonStr.fromChars "test"
-        case D.fromByteString D.string (BS.pack $ map (fromIntegral . fromEnum) json) of
+        case D.fromByteString D.string (BS.pack $ fmap (fromIntegral . fromEnum) json) of
           Right result -> result @?= expected
           Left _ -> assertFailure "Simple string should decode"
     ]
@@ -53,12 +53,12 @@ testNumberDecoders =
     "number decoder tests"
     [ testCase "decode int" $ do
         let json = "42"
-        case D.fromByteString D.int (BS.pack $ map (fromIntegral . fromEnum) json) of
+        case D.fromByteString D.int (BS.pack $ fmap (fromIntegral . fromEnum) json) of
           Right result -> result @?= 42
           Left _ -> assertFailure "Integer decoding should succeed",
       testCase "decode negative int" $ do
         let json = "-42"
-        case D.fromByteString D.int (BS.pack $ map (fromIntegral . fromEnum) json) of
+        case D.fromByteString D.int (BS.pack $ fmap (fromIntegral . fromEnum) json) of
           Right _ -> assertFailure "Negative integer decoding should fail"
           Left _ -> return () -- Expected failure
     ]
@@ -69,12 +69,12 @@ testBoolDecoder =
     "bool decoder tests"
     [ testCase "decode true" $ do
         let json = "true"
-        case D.fromByteString D.bool (BS.pack $ map (fromIntegral . fromEnum) json) of
+        case D.fromByteString D.bool (BS.pack $ fmap (fromIntegral . fromEnum) json) of
           Right result -> result @?= True
           Left _ -> assertFailure "True decoding should succeed",
       testCase "decode false" $ do
         let json = "false"
-        case D.fromByteString D.bool (BS.pack $ map (fromIntegral . fromEnum) json) of
+        case D.fromByteString D.bool (BS.pack $ fmap (fromIntegral . fromEnum) json) of
           Right result -> result @?= False
           Left _ -> assertFailure "False decoding should succeed"
     ]
@@ -85,12 +85,12 @@ testFailures =
     "decode failure tests"
     [ testCase "string decoder on number" $ do
         let json = "42"
-        case D.fromByteString D.string (BS.pack $ map (fromIntegral . fromEnum) json) of
+        case D.fromByteString D.string (BS.pack $ fmap (fromIntegral . fromEnum) json) of
           Right _ -> assertFailure "String decoder should fail on number"
           Left _ -> return (), -- Expected failure
       testCase "int decoder on string" $ do
         let json = "\"hello\""
-        case D.fromByteString D.int (BS.pack $ map (fromIntegral . fromEnum) json) of
+        case D.fromByteString D.int (BS.pack $ fmap (fromIntegral . fromEnum) json) of
           Right _ -> assertFailure "Int decoder should fail on string"
           Left _ -> return () -- Expected failure
     ]

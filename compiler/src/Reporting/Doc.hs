@@ -130,7 +130,8 @@ commaSep conjunction addStyle names =
     [name1, name2] ->
       [addStyle name1, conjunction, addStyle name2]
     _ ->
-      fmap (\name -> addStyle name <> ",") (init names) <> [ conjunction,
+      fmap (\name -> addStyle name <> ",") (init names)
+        <> [ conjunction,
              addStyle (last names)
            ]
 
@@ -160,8 +161,11 @@ link :: String -> String -> String -> String -> P.Doc
 link word before fileName after =
   P.fillSep $
     (P.underline (P.text word) <> ":") :
-    (fmap P.text (words before) <> (P.text (makeLink fileName) :
-    fmap P.text (words after)))
+    ( fmap P.text (words before)
+        <> ( P.text (makeLink fileName) :
+             fmap P.text (words after)
+           )
+    )
 
 fancyLink :: String -> [P.Doc] -> String -> [P.Doc] -> P.Doc
 fancyLink word before fileName after =
@@ -178,8 +182,12 @@ makeNakedLink fileName =
 
 reflowLink :: String -> String -> String -> P.Doc
 reflowLink before fileName after =
-  P.fillSep (fmap P.text (words before) <> (P.text (makeLink fileName) :
-    fmap P.text (words after)))
+  P.fillSep
+    ( fmap P.text (words before)
+        <> ( P.text (makeLink fileName) :
+             fmap P.text (words after)
+           )
+    )
 
 -- HELPERS
 
@@ -264,7 +272,8 @@ toJsonHelp :: Style -> [String] -> P.SimpleDoc -> [E.Value]
 toJsonHelp style revChunks simpleDoc =
   case simpleDoc of
     P.SFail ->
-      error "according to the main implementation, @SFail@ can not\
+      error
+        "according to the main implementation, @SFail@ can not\
         \ appear uncaught in a rendered @SimpleDoc@"
     P.SEmpty ->
       [encodeChunks style revChunks]
@@ -350,7 +359,8 @@ encodeChunks (Style bold underline color) revChunks =
 
 encodeColor :: Color -> E.Value
 encodeColor color =
-  E.string . Json.fromChars $ (case color of
+  E.string . Json.fromChars $
+    ( case color of
         Red -> "red"
         RED -> "RED"
         Magenta -> "magenta"
@@ -366,4 +376,5 @@ encodeColor color =
         Black -> "black"
         BLACK -> "BLACK"
         White -> "white"
-        WHITE -> "WHITE")
+        WHITE -> "WHITE"
+    )

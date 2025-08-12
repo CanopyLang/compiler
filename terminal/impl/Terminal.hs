@@ -41,7 +41,6 @@ import qualified System.Environment as Env
 import qualified System.Exit as Exit
 import System.FilePath ((</>))
 import qualified System.FilePath as FP
-import System.IO (hPutStr, hPutStrLn, stdout)
 import qualified Terminal.Chomp as Chomp
 import qualified Terminal.Error as Error
 import Terminal.Internal
@@ -58,10 +57,10 @@ _command details example args_ flags_ callback =
     case argStrings of
       ["--version"] ->
         do
-          hPutStrLn stdout (V.toChars V.compiler)
+          putStrLn (V.toChars V.compiler)
           Exit.exitSuccess
       chunks ->
-        if elem "--help" chunks
+        if "--help" `elem` chunks
           then Error.exitWithHelp Nothing details example args_ flags_
           else case snd $ Chomp.chomp Nothing chunks args_ flags_ of
             Right (argsValue, flagValue) ->
@@ -83,15 +82,15 @@ app intro outro commands =
         Error.exitWithOverview intro outro commands
       ["--version"] ->
         do
-          hPutStrLn stdout (V.toChars V.compiler)
+          putStrLn (V.toChars V.compiler)
           Exit.exitSuccess
       command : chunks ->
         do
           case List.find (\cmd -> toName cmd == command) commands of
             Nothing ->
-              Error.exitWithUnknown command (map toName commands)
+              Error.exitWithUnknown command (fmap toName commands)
             Just (Command _ _ details example args_ flags_ callback) ->
-              if elem "--help" chunks
+              if "--help" `elem` chunks
                 then Error.exitWithHelp (Just command) details example args_ flags_
                 else case snd $ Chomp.chomp Nothing chunks args_ flags_ of
                   Right (argsValue, flagsValue) ->
@@ -114,24 +113,24 @@ _maybeAutoComplete argStrings getSuggestions =
           do
             (index, chunks) <- getCompIndex line
             suggestions <- getSuggestions index chunks
-            hPutStr stdout (unlines suggestions)
+            putStr (unlines suggestions)
             Exit.exitFailure
 
 getCompIndex :: String -> IO (Int, [String])
 getCompIndex line =
   do
     maybePoint <- Env.lookupEnv "COMP_POINT"
-    case Read.readMaybe =<< maybePoint of
+    case maybePoint >>= Read.readMaybe of
       Nothing ->
         do
           let chunks = words line
           return (length chunks, chunks)
       Just point ->
         let groups = List.groupBy grouper (zip line [0 ..])
-            rawChunks = drop 1 (filter (all (not . isSpace . fst)) groups)
+            rawChunks = drop 1 (filter (not . any (isSpace . fst)) groups)
          in return
               ( findIndex 1 point rawChunks,
-                map (map fst) rawChunks
+                fmap (fmap fst) rawChunks
               )
 
 grouper :: (Char, Int) -> (Char, Int) -> Bool
@@ -161,10 +160,10 @@ _complexSuggest :: [Command] -> Int -> [String] -> IO [String]
 _complexSuggest commands index strings =
   case strings of
     [] ->
-      return (map toName commands)
+      return (fmap toName commands)
     command : chunks ->
       if index == 1
-        then return (filter (List.isPrefixOf command) (map toName commands))
+        then return (filter (List.isPrefixOf command) (fmap toName commands))
         else case List.find (\cmd -> toName cmd == command) commands of
           Nothing ->
             return []
@@ -241,8 +240,7 @@ noArgs =
 
 -- |
 required :: Parser a -> Args a
-required parser =
-  require1 id parser
+required = require1 id
 
 -- |
 optional :: Parser a -> Args (Maybe a)
@@ -312,12 +310,12 @@ _suggestFiles extensions string =
 
 isPossibleSuggestion :: [String] -> String -> FilePath -> FilePath -> IO (Maybe FilePath)
 isPossibleSuggestion extensions start dir path =
-  if List.isPrefixOf start path
+  if start `List.isPrefixOf` path
     then do
       isDir <- Dir.doesDirectoryExist (dir </> path)
       return $
         if isDir
-          then Just (path ++ "/")
+          then Just (path <> "/")
           else
             if isOkayExtension path extensions
               then Just path

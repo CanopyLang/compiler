@@ -90,7 +90,7 @@ runRepl settings env =
 --
 -- @since 0.19.1
 loop :: Env -> State -> InputT M ExitCode
-loop env state = do
+loop env state =
   Haskeline.handleInterrupt (pure Types.Skip) (readInput state)
     >>= Trans.liftIO . Eval.eval env state
     >>= \case
@@ -103,7 +103,7 @@ loop env state = do
 --
 -- @since 0.19.1
 readInput :: State -> InputT M Input
-readInput _state = do
+readInput _state =
   Haskeline.getInputLine "> "
     >>= \case
       Nothing -> pure Types.Exit
@@ -123,7 +123,7 @@ processInitialLine chars =
 --
 -- @since 0.19.1
 readMoreLines :: Lines -> Prefill -> InputT M Input
-readMoreLines previousLines prefill = do
+readMoreLines previousLines prefill =
   Haskeline.getInputLineWithInitial "| " (Commands.renderPrefill prefill, "")
     >>= \case
       Nothing -> pure Types.Skip

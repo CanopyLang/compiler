@@ -83,13 +83,13 @@ testToCharsProperties =
       testProperty "toChars contains only digits and dots" $
         \v ->
           let chars = V.toChars v
-              validChars = ['0' .. '9'] ++ "."
+              validChars = (['0' .. '9'] <> ".")
            in all (`elem` validChars) chars,
       testProperty "toChars format is X.Y.Z" $
         \v ->
           let chars = V.toChars v
               parts = splitOn '.' chars
-           in length parts == 3 && all (not . null) parts
+           in length parts == 3 && not (any null parts)
     ]
 
 -- Helper function to split on character

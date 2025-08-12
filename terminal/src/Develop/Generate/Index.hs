@@ -85,8 +85,7 @@ getReadme dir =
 -- GET DIRECTORIES
 
 getDirs :: FilePath -> [FilePath] -> IO [FilePath]
-getDirs pwd contents =
-  filterM (Dir.doesDirectoryExist . (pwd </>)) contents
+getDirs pwd = filterM (Dir.doesDirectoryExist . (pwd </>))
 
 -- GET FILES
 
@@ -94,14 +93,14 @@ getFiles :: FilePath -> [FilePath] -> IO [File]
 getFiles pwd contents =
   do
     paths <- filterM (Dir.doesFileExist . (pwd </>)) contents
-    mapM (toFile pwd) paths
+    traverse (toFile pwd) paths
 
 toFile :: FilePath -> FilePath -> IO File
 toFile pwd path =
   if let ext = takeExtension path in ext == ".can" || ext == ".canopy" || ext == ".elm"
     then do
       source <- readFile (pwd </> path)
-      let hasMain = List.isInfixOf "\nmain " source
+      let hasMain = "\nmain " `List.isInfixOf` source
       return (File path hasMain)
     else return (File path False)
 
@@ -170,8 +169,7 @@ encode (Flags root pwd dirs files readme outline exactDeps) =
     ]
 
 encodeFilePath :: FilePath -> E.Value
-encodeFilePath filePath =
-  E.chars filePath
+encodeFilePath = E.chars
 
 encodeFile :: File -> E.Value
 encodeFile (File path hasMain) =

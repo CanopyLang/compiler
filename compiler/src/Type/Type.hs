@@ -252,30 +252,19 @@ unnamedFlexSuper super =
 
 nameToFlex :: Name.Name -> IO Variable
 nameToFlex name =
-  UF.fresh $
-    makeDescriptor $
-      maybe FlexVar FlexSuper (toSuper name) (Just name)
+  UF.fresh . makeDescriptor $ maybe FlexVar FlexSuper (toSuper name) (Just name)
 
 nameToRigid :: Name.Name -> IO Variable
 nameToRigid name =
-  UF.fresh $
-    makeDescriptor $
-      maybe RigidVar RigidSuper (toSuper name) name
+  UF.fresh . makeDescriptor $ maybe RigidVar RigidSuper (toSuper name) name
 
 toSuper :: Name.Name -> Maybe SuperType
-toSuper name =
-  if Name.isNumberType name
-    then Just Number
-    else
-      if Name.isComparableType name
-        then Just Comparable
-        else
-          if Name.isAppendableType name
-            then Just Appendable
-            else
-              if Name.isCompappendType name
-                then Just CompAppend
-                else Nothing
+toSuper name
+  | Name.isNumberType name = Just Number
+  | Name.isComparableType name = Just Comparable
+  | Name.isAppendableType name = Just Appendable
+  | Name.isCompappendType name = Just CompAppend
+  | otherwise = Nothing
 
 -- TO TYPE ANNOTATION
 
@@ -559,24 +548,23 @@ getVarNames var takenNames =
           RigidSuper super name ->
             addName 0 name var (RigidSuper super) takenNames
           Alias _ _ args _ ->
-            foldrM getVarNames takenNames (map snd args)
+            foldrM getVarNames takenNames (fmap snd args)
           Structure flatType ->
             case flatType of
               App1 _ _ args ->
                 foldrM getVarNames takenNames args
               Fun1 arg body ->
-                getVarNames arg =<< getVarNames body takenNames
+                getVarNames body takenNames >>= getVarNames arg
               EmptyRecord1 ->
                 return takenNames
               Record1 fields extension ->
-                getVarNames extension
-                  =<< foldrM getVarNames takenNames (Map.elems fields)
+                foldrM getVarNames takenNames (Map.elems fields) >>= getVarNames extension
               Unit1 ->
                 return takenNames
               Tuple1 a b Nothing ->
-                getVarNames a =<< getVarNames b takenNames
+                getVarNames b takenNames >>= getVarNames a
               Tuple1 a b (Just c) ->
-                getVarNames a =<< getVarNames b =<< getVarNames c takenNames
+                (getVarNames c takenNames >>= getVarNames b) >>= getVarNames a
 
 -- REGISTER NAME / RENAME DUPLICATES
 

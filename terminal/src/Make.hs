@@ -73,14 +73,13 @@ runInternal paths flags@(Flags {_report, _verbose}) = do
   Reporting.attemptWithStyle style Exit.makeToReport $
     case maybeRoot of
       Just root -> runHelp root paths style flags
-      Nothing -> return $ Left $ Exit.MakeNoOutline
+      Nothing -> return . Left $ Exit.MakeNoOutline
 
 runHelp :: FilePath -> [FilePath] -> Reporting.Style -> Flags -> IO (Either Exit.Make ())
 runHelp root paths style (Flags {_debug, _optimize, _output, _docs}) =
   BW.withScope $ \scope ->
-    Stuff.withRootLock root $
-      Task.run $
-        do
+    Stuff.withRootLock root . Task.run $
+      ( do
           desiredMode <- getMode _debug _optimize
           _ <- Task.io (printLog "Made it to RUN 1")
           details <- Task.eio Exit.MakeBadDetails (Details.load style scope root)
@@ -93,7 +92,7 @@ runHelp root paths style (Flags {_debug, _optimize, _output, _docs}) =
                 buildExposed style root details _docs exposed
             p : ps ->
               do
-                Task.io (printLog ("RUNHELP: Building from paths: " ++ show (p : ps)))
+                Task.io (printLog ("RUNHELP: Building from paths: " <> show (p : ps)))
                 artifacts <- buildPaths style root details (NE.List p ps)
                 Task.io (printLog "Made it to RUN 3")
                 case _output of
@@ -106,12 +105,12 @@ runHelp root paths style (Flags {_debug, _optimize, _output, _docs}) =
                           return ()
                         [name] ->
                           do
-                            Task.io (printLog ("RUNHELP: Found single main function - generating HTML: " ++ Name.toChars name))
+                            Task.io (printLog ("RUNHELP: Found single main function - generating HTML: " <> Name.toChars name))
                             builder <- toBuilder root details desiredMode artifacts
                             generate style "index.html" (Html.sandwich name builder) (NE.List name [])
                         name : names ->
                           do
-                            Task.io (printLog ("RUNHELP: Found multiple main functions - generating JS: " ++ show (map Name.toChars (name : names))))
+                            Task.io (printLog ("RUNHELP: Found multiple main functions - generating JS: " <> show (fmap Name.toChars (name : names))))
                             Task.io (printLog (show (name : names)))
                             builder <- toBuilder root details desiredMode artifacts
                             generate style "canopy.js" builder (NE.List name names)
@@ -121,7 +120,7 @@ runHelp root paths style (Flags {_debug, _optimize, _output, _docs}) =
                       return ()
                   Just (JS target) ->
                     do
-                      Task.io (printLog ("RUNHELP: JS target specified: " ++ target))
+                      Task.io (printLog ("RUNHELP: JS target specified: " <> target))
                       case getNoMains artifacts of
                         [] ->
                           do
@@ -132,16 +131,17 @@ runHelp root paths style (Flags {_debug, _optimize, _output, _docs}) =
                             Task.io (printLog "Made it to RUN 5")
                         name : names ->
                           do
-                            Task.io (printLog ("RUNHELP: Cannot generate JS - found non-main modules: " ++ show (map Name.toChars (name : names))))
-                            Task.io (printLog ("NO MAIN FOUND: " ++ Name.toChars name))
+                            Task.io (printLog ("RUNHELP: Cannot generate JS - found non-main modules: " <> show (fmap Name.toChars (name : names))))
+                            Task.io (printLog ("NO MAIN FOUND: " <> Name.toChars name))
                             Task.throw (Exit.MakeNonMainFilesIntoJavaScript name names)
                   Just (Html target) ->
                     do
-                      Task.io (printLog ("RUNHELP: HTML target specified: " ++ target))
+                      Task.io (printLog ("RUNHELP: HTML target specified: " <> target))
                       name <- hasOneMain artifacts
-                      Task.io (printLog ("RUNHELP: Validated single main function for HTML: " ++ Name.toChars name))
+                      Task.io (printLog ("RUNHELP: Validated single main function for HTML: " <> Name.toChars name))
                       builder <- toBuilder root details desiredMode artifacts
                       generate style target (Html.sandwich name builder) (NE.List name [])
+      )
 
 -- GET INFORMATION
 

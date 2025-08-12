@@ -80,9 +80,10 @@ toReport localizer source warning =
                   "The `" <> Name.toChars name <> "` definition has no type annotation.",
             D.stack
               [ "I inferred the type annotation myself though! You can copy it into your code:",
-                (D.green . D.hang 4) . D.sep $ [ D.fromName name <> " :",
-                        RT.canToDoc localizer RT.None inferredType
-                      ]
+                (D.green . D.hang 4) . D.sep $
+                  [ D.fromName name <> " :",
+                    RT.canToDoc localizer RT.None inferredType
+                  ]
               ]
           )
 

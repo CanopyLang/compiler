@@ -20,7 +20,7 @@ tests =
 genName :: Gen Name.Name
 genName = do
   first <- elements ['a' .. 'z']
-  rest <- listOf (elements (['a' .. 'z'] ++ ['A' .. 'Z'] ++ ['0' .. '9']))
+  rest <- listOf (elements (['a' .. 'z'] <> (['A' .. 'Z'] <> ['0' .. '9'])))
   pure (Name.fromChars (first : rest))
 
 genUniqueNames :: Gen [Name.Name]
@@ -41,27 +41,31 @@ genFieldMap = do
   ns <- genUniqueNames
   idxs <- vectorOf (length ns) (choose (0, 20))
   let toField i = Can.FieldType (fromIntegral (i :: Int)) Can.TUnit
-  pure $ Map.fromList (zip ns (map toField idxs))
+  pure $ Map.fromList (zip ns (fmap toField idxs))
 
 -- Properties
 
 testFieldsToListSorted :: TestTree
-testFieldsToListSorted = testProperty "fieldsToList outputs ascending by index" $
-  forAll genFieldMap $ \m ->
-    let idxs = map (\(n, _) -> let Can.FieldType i _ = m Map.! n in i) (Can.fieldsToList m)
-     in idxs == sort idxs
+testFieldsToListSorted =
+  testProperty "fieldsToList outputs ascending by index" . forAll genFieldMap $
+    ( \m ->
+        let idxs = fmap (\(n, _) -> let Can.FieldType i _ = m Map.! n in i) (Can.fieldsToList m)
+         in idxs == sort idxs
+    )
 
 testFieldsToListStableNames :: TestTree
-testFieldsToListStableNames = testProperty "fieldsToList preserves key set" $
-  forAll genFieldMap $ \m ->
-    let namesOut = map fst (Can.fieldsToList m)
-        namesIn = Map.keys m
-        toS = map Name.toChars
-     in sort (toS namesOut) == sort (toS namesIn)
+testFieldsToListStableNames =
+  testProperty "fieldsToList preserves key set" . forAll genFieldMap $
+    ( \m ->
+        let namesOut = fmap fst (Can.fieldsToList m)
+            namesIn = Map.keys m
+            toS = fmap Name.toChars
+         in sort (toS namesOut) == sort (toS namesIn)
+    )
 
 -- Local helpers
 sort :: Ord a => [a] -> [a]
 sort = qsort
   where
     qsort [] = []
-    qsort (p : xs) = qsort [x | x <- xs, x <= p] ++ [p] ++ qsort [x | x <- xs, x > p]
+    qsort (p : xs) = (qsort [x | x <- xs, x <= p]) <> ([p] <> qsort [x | x <- xs, x > p])

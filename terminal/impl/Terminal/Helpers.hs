@@ -47,13 +47,13 @@ suggestVersion _ =
 
 exampleVersions :: String -> [String]
 exampleVersions chars =
-  let chunks = map Utf8.toChars (Utf8.split 0x2E {-.-} (Utf8.fromChars chars))
+  let chunks = fmap Utf8.toChars (Utf8.split 0x2E {-.-} (Utf8.fromChars chars))
       isNumber cs = not (null cs) && all Char.isDigit cs
    in if all isNumber chunks
         then case chunks of
-          [x] -> [x ++ ".0.0"]
-          [x, y] -> [x ++ "." ++ y ++ ".0"]
-          x : y : z : _ -> [x ++ "." ++ y ++ "." ++ z]
+          [x] -> [x <> ".0.0"]
+          [x, y] -> [x <> ("." <> (y <> ".0"))]
+          x : y : z : _ -> [x <> ("." <> (y <> ("." <> z)))]
           _ -> ["1.0.0", "2.0.3"]
         else ["1.0.0", "2.0.3"]
 
@@ -126,7 +126,7 @@ suggestPackages given =
           []
         Just (Registry.Registry _ versions) ->
           filter (List.isPrefixOf given) $
-            map Pkg.toChars (Map.keys versions)
+            fmap Pkg.toChars (Map.keys versions)
 
 examplePackages :: String -> IO [String]
 examplePackages given =
@@ -142,6 +142,4 @@ examplePackages given =
             "canopy/random"
           ]
         Just (Registry.Registry _ versions) ->
-          map Pkg.toChars $
-            take 4 $
-              Suggest.sort given Pkg.toChars (Map.keys versions)
+          fmap Pkg.toChars . take 4 $ Suggest.sort given Pkg.toChars (Map.keys versions)

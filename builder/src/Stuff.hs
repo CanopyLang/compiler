@@ -71,7 +71,7 @@ stuff root =
     -- important analyses. If that's not true, then we may revert to using the usual
     -- compiler version and just letting the user delete canopy-stuff manually (the
     -- error message at least will tell them to delete the directory).
-    customCompilerVersion = compilerVersion ++ "-canopy"
+    customCompilerVersion = compilerVersion <> "-canopy"
 
 details :: FilePath -> FilePath
 details root =
@@ -141,12 +141,12 @@ withRootLock root work =
   do
     let dir = stuff root
     Dir.createDirectoryIfMissing True dir
-    Lock.withFileLock (dir </> "lock") Lock.Exclusive (\_ -> work)
+    Lock.withFileLock (dir </> "lock") Lock.Exclusive (const work)
 
 -- We keep the same lock as in vanilla Canopy because we are writing to the same package cache
 withRegistryLock :: PackageCache -> IO a -> IO a
 withRegistryLock (PackageCache dir) work =
-  Lock.withFileLock (dir </> "lock") Lock.Exclusive (\_ -> work)
+  Lock.withFileLock (dir </> "lock") Lock.Exclusive (const work)
 
 -- PACKAGE CACHES
 
@@ -212,7 +212,7 @@ getCanopyHome =
 -- is a bit more valuable than just the cache).
 getOrCreateZokkaCacheDir :: IO FilePath
 getOrCreateZokkaCacheDir = do
-  cacheDir <- getCacheDir ("canopy-cache-" ++ zokkaVersion)
+  cacheDir <- getCacheDir ("canopy-cache-" <> zokkaVersion)
   Dir.createDirectoryIfMissing True cacheDir
   pure cacheDir
 

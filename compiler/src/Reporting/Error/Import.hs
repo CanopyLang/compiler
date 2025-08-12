@@ -45,19 +45,15 @@ toReport source (Error region name unimportedModules problem) =
           source
           region
           Nothing
-          ( D.reflow $
-              "You are trying to import a `" ++ ModuleName.toChars name ++ "` module:",
+          ( D.reflow ("You are trying to import a `" <> (ModuleName.toChars name <> "` module:")),
             D.stack
-              [ D.reflow $
+              [ D.reflow
                   "I checked the \"dependencies\" and \"source-directories\" listed in your canopy.json,\
                   \ but I cannot find it! Maybe it is a typo for one of these names?",
-                D.dullyellow $
-                  D.indent 4 $
-                    D.vcat $
-                      map D.fromName (toSuggestions name unimportedModules),
+                (D.dullyellow . D.indent 4) . D.vcat $ fmap D.fromName (toSuggestions name unimportedModules),
                 case Map.lookup name Pkg.suggestions of
                   Nothing ->
-                    D.toSimpleHint $
+                    D.toSimpleHint
                       "If it is not a typo, check the \"dependencies\" and \"source-directories\"\
                       \ of your canopy.json to make sure all the packages you need are listed there!"
                   Just dependency ->
@@ -74,7 +70,7 @@ toReport source (Error region name unimportedModules problem) =
                         D.fromChars (Pkg.toChars dependency),
                         "package?",
                         "Running",
-                        D.green (D.fromChars ("canopy install " ++ Pkg.toChars dependency)),
+                        D.green (D.fromChars ("canopy install " <> Pkg.toChars dependency)),
                         "should",
                         "make",
                         "it",
@@ -88,10 +84,9 @@ toReport source (Error region name unimportedModules problem) =
           source
           region
           Nothing
-          ( D.reflow $
-              "You are trying to import a `" ++ ModuleName.toChars name ++ "` module:",
+          ( D.reflow ("You are trying to import a `" <> (ModuleName.toChars name <> "` module:")),
             D.stack
-              [ D.fillSep $
+              [ D.fillSep
                   [ "But",
                     "I",
                     "found",
@@ -124,8 +119,7 @@ toReport source (Error region name unimportedModules problem) =
                     "between",
                     "them."
                   ],
-                D.reflow $
-                  "Try changing the name of the locally defined module to clear up the ambiguity?"
+                D.reflow "Try changing the name of the locally defined module to clear up the ambiguity?"
               ]
           )
     AmbiguousLocal path1 path2 paths ->
@@ -134,17 +128,11 @@ toReport source (Error region name unimportedModules problem) =
           source
           region
           Nothing
-          ( D.reflow $
-              "You are trying to import a `" ++ ModuleName.toChars name ++ "` module:",
+          ( D.reflow ("You are trying to import a `" <> (ModuleName.toChars name <> "` module:")),
             D.stack
-              [ D.reflow $
-                  "But I found multiple files in your \"source-directories\" with that name:",
-                D.dullyellow $
-                  D.indent 4 $
-                    D.vcat $
-                      map D.fromChars (path1 : path2 : paths),
-                D.reflow $
-                  "Change the module names to be distinct!"
+              [ D.reflow "But I found multiple files in your \"source-directories\" with that name:",
+                (D.dullyellow . D.indent 4) . D.vcat $ fmap D.fromChars (path1 : path2 : paths),
+                D.reflow "Change the module names to be distinct!"
               ]
           )
     AmbiguousForeign pkg1 pkg2 pkgs ->
@@ -153,20 +141,15 @@ toReport source (Error region name unimportedModules problem) =
           source
           region
           Nothing
-          ( D.reflow $
-              "You are trying to import a `" ++ ModuleName.toChars name ++ "` module:",
+          ( D.reflow ("You are trying to import a `" <> (ModuleName.toChars name <> "` module:")),
             D.stack
-              [ D.reflow $
-                  "But multiple packages in your \"dependencies\" that expose a module that name:",
-                D.dullyellow $
-                  D.indent 4 $
-                    D.vcat $
-                      map (D.fromChars . Pkg.toChars) (pkg1 : pkg2 : pkgs),
-                D.reflow $
+              [ D.reflow "But multiple packages in your \"dependencies\" that expose a module that name:",
+                (D.dullyellow . D.indent 4) . D.vcat $ fmap (D.fromChars . Pkg.toChars) (pkg1 : pkg2 : pkgs),
+                D.reflow
                   "There is no way to disambiguate in cases like this right now. Of the known name\
                   \ clashes, they are usually for packages with similar purposes, so the current\
                   \ recommendation is to pick just one of them.",
-                D.toSimpleNote $
+                D.toSimpleNote
                   "It seems possible to resolve this with new syntax in imports, but that is\
                   \ more complicated than it sounds. Right now, our module names are tied to GitHub\
                   \ repos, but we may want to get rid of that dependency for a variety of reasons.\

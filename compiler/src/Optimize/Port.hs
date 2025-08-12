@@ -88,13 +88,12 @@ encodeArray tipe =
 
 encodeTuple :: Can.Type -> Can.Type -> Maybe Can.Type -> Names.Tracker Opt.Expr
 encodeTuple a b maybeC =
-  let 
-    encodeArg arg tipe =
-      do
-        encoder <- toEncoder tipe
-        return $ Opt.Call encoder [Opt.VarLocal arg]
+  let encodeArg arg tipe =
+        do
+          encoder <- toEncoder tipe
+          return $ Opt.Call encoder [Opt.VarLocal arg]
 
-    let_ arg index = Opt.Destruct (Opt.Destructor arg (Opt.Index index (Opt.Root Name.dollar)))
+      let_ arg index = Opt.Destruct (Opt.Destructor arg (Opt.Index index (Opt.Root Name.dollar)))
    in do
         list <- encode "list"
         identity <- Names.registerGlobal ModuleName.basics Name.identity
@@ -103,16 +102,11 @@ encodeTuple a b maybeC =
 
         case maybeC of
           Nothing ->
-            return . Opt.Function [Name.dollar] $ (let_ "a" Index.first $
-                  let_ "b" Index.second $
-                    Opt.Call list [identity, Opt.List [arg1, arg2]])
+            ((return . Opt.Function [Name.dollar]) . let_ "a" Index.first) . let_ "b" Index.second $ Opt.Call list [identity, Opt.List [arg1, arg2]]
           Just c ->
             do
               arg3 <- encodeArg "c" c
-              return . Opt.Function [Name.dollar] $ (let_ "a" Index.first $
-                    let_ "b" Index.second $
-                      let_ "c" Index.third $
-                        Opt.Call list [identity, Opt.List [arg1, arg2, arg3]])
+              (((return . Opt.Function [Name.dollar]) . let_ "a" Index.first) . let_ "b" Index.second) . let_ "c" Index.third $ Opt.Call list [identity, Opt.List [arg1, arg2, arg3]]
 
 -- FLAGS DECODER
 
@@ -219,8 +213,7 @@ decodeTuple a b maybeC =
          in (indexAndThen 1 b (Opt.Call succeed [tuple]) >>= indexAndThen 0 a)
       Just c ->
         let tuple = Opt.Tuple (toLocal 0) (toLocal 1) (Just (toLocal 2))
-         in ((indexAndThen 1 b
-              =<< indexAndThen 2 c (Opt.Call succeed [tuple])) >>= indexAndThen 0 a)
+         in ((indexAndThen 2 c (Opt.Call succeed [tuple]) >>= indexAndThen 1 b) >>= indexAndThen 0 a)
 
 toLocal :: Int -> Opt.Expr
 toLocal index =

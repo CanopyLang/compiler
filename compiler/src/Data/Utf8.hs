@@ -39,6 +39,7 @@ module Data.Utf8
   )
 where
 
+import Control.Monad (when)
 import Data.Binary (Get, Put, get, getWord8, put, putWord8)
 import Data.Binary.Get.Internal (readN)
 import Data.Binary.Put (putBuilder)
@@ -62,7 +63,6 @@ import GHC.ST (ST (ST), runST)
 import GHC.Word (Word8 (W8#))
 import qualified Parse.Primitives as P
 import Prelude hiding (all, any, concat)
-import Control.Monad (when)
 
 -- UTF-8
 
@@ -113,13 +113,15 @@ startsWith (Utf8 ba1#) (Utf8 ba2#) =
 
 startsWithChar :: (Char -> Bool) -> Utf8 t -> Bool
 startsWithChar isGood bytes@(Utf8 ba#) =
-  not (isEmpty bytes) && (let !w# = word8ToWord# (indexWord8Array# ba# 0#)
-                              !char
-                                | isTrue# (ltWord# w# 0xC0##) = C# (chr# (word2Int# w#))
-                                | isTrue# (ltWord# w# 0xE0##) = chr2 ba# 0# w#
-                                | isTrue# (ltWord# w# 0xF0##) = chr3 ba# 0# w#
-                                | otherwise = chr4 ba# 0# w#
-                           in isGood char)
+  not (isEmpty bytes)
+    && ( let !w# = word8ToWord# (indexWord8Array# ba# 0#)
+             !char
+               | isTrue# (ltWord# w# 0xC0##) = C# (chr# (word2Int# w#))
+               | isTrue# (ltWord# w# 0xE0##) = chr2 ba# 0# w#
+               | isTrue# (ltWord# w# 0xF0##) = chr3 ba# 0# w#
+               | otherwise = chr4 ba# 0# w#
+          in isGood char
+       )
 
 -- ENDS WITH WORD
 
@@ -407,11 +409,12 @@ toEscapedBuilderHelp before after name@(Utf8 ba#) k =
 
 escape :: Word8 -> Word8 -> Ptr a -> Utf8 t -> Int -> Int -> Int -> IO ()
 escape before@(W8# before#) after ptr name@(Utf8 ba#) offset@(I# offset#) len@(I# len#) i@(I# i#) =
-  when (isTrue# (i# <# len#)) $ if isTrue# (eqWord8# before# (indexWord8Array# ba# (offset# +# i#)))
-        then do
-          writeWordToPtr ptr i after
-          escape before after ptr name offset len (i + 1)
-        else escape before after ptr name offset len (i + 1)
+  when (isTrue# (i# <# len#)) $
+    if isTrue# (eqWord8# before# (indexWord8Array# ba# (offset# +# i#)))
+      then do
+        writeWordToPtr ptr i after
+        escape before after ptr name offset len (i + 1)
+      else escape before after ptr name offset len (i + 1)
 
 -- FROM PTR
 

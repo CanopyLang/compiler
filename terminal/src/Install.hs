@@ -41,13 +41,11 @@ run args () =
         Just root ->
           case args of
             NoArgs ->
-              do
-                canopyHome <- Stuff.getCanopyHome
-                return (Left (Exit.InstallNoArgs canopyHome))
+              Left . Exit.InstallNoArgs <$> Stuff.getCanopyHome
             Install pkg ->
               Task.run $
                 do
-                  env <- Task.eio Exit.InstallBadRegistry $ Solver.initEnv
+                  env <- Task.eio Exit.InstallBadRegistry Solver.initEnv
                   oldOutline <- Task.eio Exit.InstallBadOutline $ Outline.read root
                   case oldOutline of
                     Outline.App outline ->
@@ -140,36 +138,37 @@ attemptChanges root env oldOutline toChars changes =
     Changes changeDict newOutline ->
       let widths = Map.foldrWithKey (widen toChars) (Widths 0 0 0) changeDict
           changeDocs = Map.foldrWithKey (addChange toChars widths) (Docs [] [] []) changeDict
-       in attemptChangesHelp root env oldOutline newOutline $
-            D.vcat $
+       in ( attemptChangesHelp root env oldOutline newOutline . D.vcat $
               [ "Here is my plan:",
                 viewChangeDocs changeDocs,
                 "",
                 "Would you like me to update your canopy.json accordingly? [Y/n]: "
               ]
+          )
 
 attemptChangesHelp :: FilePath -> Solver.Env -> Outline.Outline -> Outline.Outline -> Doc -> Task ()
 attemptChangesHelp root env oldOutline newOutline question =
-  Task.eio Exit.InstallBadDetails $
-    BW.withScope $ \scope ->
-      do
-        approved <- Reporting.ask question
-        if approved
-          then do
-            Outline.write root newOutline
-            result <- Details.verifyInstall scope root env newOutline
-            case result of
-              Left exit ->
-                do
-                  Outline.write root oldOutline
-                  return (Left exit)
-              Right () ->
-                do
-                  putStrLn "Success!"
-                  return (Right ())
-          else do
-            putStrLn "Okay, I did not change anything!"
-            return (Right ())
+  Task.eio Exit.InstallBadDetails . BW.withScope $
+    ( \scope ->
+        do
+          approved <- Reporting.ask question
+          if approved
+            then do
+              Outline.write root newOutline
+              result <- Details.verifyInstall scope root env newOutline
+              case result of
+                Left exit ->
+                  do
+                    Outline.write root oldOutline
+                    return (Left exit)
+                Right () ->
+                  do
+                    putStrLn "Success!"
+                    return (Right ())
+            else do
+              putStrLn "Okay, I did not change anything!"
+              return (Right ())
+    )
 
 -- MAKE APP PLAN
 
@@ -180,35 +179,29 @@ makeAppPlan (Solver.Env cache _ connection registry _) pkg outline@(Outline.AppO
     else -- is it already indirect?
     case Map.lookup pkg indirect of
       Just vsn ->
-        return $
-          PromoteIndirect $
-            Outline.App $
-              outline
-                { Outline._app_deps_direct = Map.insert pkg vsn direct,
-                  Outline._app_deps_indirect = Map.delete pkg indirect
-                }
+        (return . PromoteIndirect) . Outline.App $
+          outline
+            { Outline._app_deps_direct = Map.insert pkg vsn direct,
+              Outline._app_deps_indirect = Map.delete pkg indirect
+            }
       Nothing ->
         -- is it already a test dependency?
         case Map.lookup pkg testDirect of
           Just vsn ->
-            return $
-              PromoteTest $
-                Outline.App $
-                  outline
-                    { Outline._app_deps_direct = Map.insert pkg vsn direct,
-                      Outline._app_test_direct = Map.delete pkg testDirect
-                    }
+            (return . PromoteTest) . Outline.App $
+              outline
+                { Outline._app_deps_direct = Map.insert pkg vsn direct,
+                  Outline._app_test_direct = Map.delete pkg testDirect
+                }
           Nothing ->
             -- is it already an indirect test dependency?
             case Map.lookup pkg testIndirect of
               Just vsn ->
-                return $
-                  PromoteTest $
-                    Outline.App $
-                      outline
-                        { Outline._app_deps_direct = Map.insert pkg vsn direct,
-                          Outline._app_test_indirect = Map.delete pkg testIndirect
-                        }
+                (return . PromoteTest) . Outline.App $
+                  outline
+                    { Outline._app_deps_direct = Map.insert pkg vsn direct,
+                      Outline._app_test_indirect = Map.delete pkg testIndirect
+                    }
               Nothing ->
                 -- finally try to add it from scratch
                 case Registry.getVersions' pkg registry of
@@ -240,13 +233,11 @@ makePkgPlan (Solver.Env cache _ connection registry _) pkg outline@(Outline.PkgO
     else -- is already in test dependencies?
     case Map.lookup pkg test of
       Just con ->
-        return $
-          PromoteTest $
-            Outline.Pkg $
-              outline
-                { Outline._pkg_deps = Map.insert pkg con deps,
-                  Outline._pkg_test_deps = Map.delete pkg test
-                }
+        (return . PromoteTest) . Outline.Pkg $
+          outline
+            { Outline._pkg_deps = Map.insert pkg con deps,
+              Outline._pkg_test_deps = Map.delete pkg test
+            }
       Nothing ->
         -- try to add a new dependency
         case Registry.getVersions' pkg registry of
@@ -268,13 +259,12 @@ makePkgPlan (Solver.Env cache _ connection registry _) pkg outline@(Outline.PkgO
                       new = Map.insert pkg con old
                       changes = detectChanges old new
                       news = Map.mapMaybe keepNew changes
-                   in return $
-                        Changes changes $
-                          Outline.Pkg $
-                            outline
-                              { Outline._pkg_deps = addNews (Just pkg) news deps,
-                                Outline._pkg_test_deps = addNews Nothing news test
-                              }
+                   in ( (return . Changes changes) . Outline.Pkg $
+                          outline
+                            { Outline._pkg_deps = addNews (Just pkg) news deps,
+                              Outline._pkg_test_deps = addNews Nothing news test
+                            }
+                      )
                 Solver.NoSolution ->
                   Task.throw (Exit.InstallNoOnlinePkgSolution pkg)
                 -- FIXME: Propagate this solution
@@ -300,13 +290,11 @@ data Change a
   | Remove a
 
 detectChanges :: (Eq a) => Map Pkg.Name a -> Map Pkg.Name a -> Map Pkg.Name (Change a)
-detectChanges old new =
+detectChanges =
   Map.merge
     (Map.mapMissing (\_ v -> Remove v))
     (Map.mapMissing (\_ v -> Insert v))
     (Map.zipWithMaybeMatched keepChange)
-    old
-    new
 
 keepChange :: (Eq v) => k -> v -> v -> Maybe (Change v)
 keepChange _ old new =
@@ -334,13 +322,11 @@ data ChangeDocs = Docs
 
 viewChangeDocs :: ChangeDocs -> Doc
 viewChangeDocs (Docs inserts changes removes) =
-  D.indent 2 $
-    D.vcat $
-      concat $
-        [ viewNonZero "Add:" inserts,
-          viewNonZero "Change:" changes,
-          viewNonZero "Remove:" removes
-        ]
+  (D.indent 2 . D.vcat) . concat $
+    [ viewNonZero "Add:" inserts,
+      viewNonZero "Change:" changes,
+      viewNonZero "Remove:" removes
+    ]
 
 viewNonZero :: String -> [Doc] -> [Doc]
 viewNonZero title entries =

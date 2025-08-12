@@ -95,12 +95,14 @@ toSeparator :: Module -> Module -> D.Doc
 toSeparator beforeModule afterModule =
   let before = (ModuleName.toChars (_name beforeModule) <> "  ↑    ")
       after = ("    ↓  " <> ModuleName.toChars (_name afterModule))
-   in (D.dullred . D.vcat $ [ D.indent (80 - length before) (D.fromChars before),
+   in ( D.dullred . D.vcat $
+          [ D.indent (80 - length before) (D.fromChars before),
             "====o======================================================================o====",
             D.fromChars after,
             "",
             ""
-          ])
+          ]
+      )
 
 -- MODULE TO DOC
 

@@ -19,6 +19,7 @@ module Type.Error
 where
 
 import qualified Canopy.ModuleName as ModuleName
+import Control.Monad (zipWithM)
 import qualified Data.Bag as Bag
 import Data.Map (Map)
 import qualified Data.Map as Map
@@ -76,7 +77,7 @@ toDoc localizer ctx tipe =
         ctx
         (toDoc localizer RT.Func a)
         (toDoc localizer RT.Func b)
-        (map (toDoc localizer RT.Func) cs)
+        (fmap (toDoc localizer RT.Func) cs)
     Infinite ->
       "∞"
     Error ->
@@ -93,7 +94,7 @@ toDoc localizer ctx tipe =
       RT.apply
         ctx
         (L.toDoc localizer home name)
-        (map (toDoc localizer RT.App) args)
+        (fmap (toDoc localizer RT.App) args)
     Record fields ext ->
       RT.record (fieldsToDocs localizer fields) (extToDoc ext)
     Unit ->
@@ -102,7 +103,7 @@ toDoc localizer ctx tipe =
       RT.tuple
         (toDoc localizer RT.None a)
         (toDoc localizer RT.None b)
-        (map (toDoc localizer RT.None) (Maybe.maybeToList maybeC))
+        (fmap (toDoc localizer RT.None) (Maybe.maybeToList maybeC))
     Alias home name args _ ->
       aliasToDoc localizer ctx home name args
 
@@ -111,11 +112,10 @@ aliasToDoc localizer ctx home name args =
   RT.apply
     ctx
     (L.toDoc localizer home name)
-    (map (toDoc localizer RT.App . snd) args)
+    (fmap (toDoc localizer RT.App . snd) args)
 
 fieldsToDocs :: L.Localizer -> Map Name.Name Type -> [(D.Doc, D.Doc)]
-fieldsToDocs localizer fields =
-  Map.foldrWithKey (addField localizer) [] fields
+fieldsToDocs localizer = Map.foldrWithKey (addField localizer) []
 
 addField :: L.Localizer -> Name.Name -> Type -> [(D.Doc, D.Doc)] -> [(D.Doc, D.Doc)]
 addField localizer fieldName fieldType docs =
@@ -209,12 +209,12 @@ toDiff localizer ctx tipe1 tipe2 =
           RT.lambda ctx
             <$> toDiff localizer RT.Func a x
             <*> toDiff localizer RT.Func b y
-            <*> sequenceA (zipWith (toDiff localizer RT.Func) cs zs)
+            <*> zipWithM (toDiff localizer RT.Func) cs zs
         else
           let f = toDoc localizer RT.Func
            in different
-                (D.dullyellow (RT.lambda ctx (f a) (f b) (map f cs)))
-                (D.dullyellow (RT.lambda ctx (f x) (f y) (map f zs)))
+                (D.dullyellow (RT.lambda ctx (f a) (f b) (fmap f cs)))
+                (D.dullyellow (RT.lambda ctx (f x) (f y) (fmap f zs)))
                 (Bag.one (ArityMismatch (2 + length cs) (2 + length zs)))
     (Tuple a b Nothing, Tuple x y Nothing) ->
       RT.tuple
@@ -231,11 +231,11 @@ toDiff localizer ctx tipe1 tipe2 =
     (Type home1 name1 args1, Type home2 name2 args2)
       | home1 == home2 && name1 == name2 ->
         RT.apply ctx (L.toDoc localizer home1 name1)
-          <$> sequenceA (zipWith (toDiff localizer RT.App) args1 args2)
+          <$> zipWithM (toDiff localizer RT.App) args1 args2
     (Alias home1 name1 args1 _, Alias home2 name2 args2 _)
       | home1 == home2 && name1 == name2 ->
         RT.apply ctx (L.toDoc localizer home1 name1)
-          <$> sequenceA (zipWith (toDiff localizer RT.App) (map snd args1) (map snd args2))
+          <$> zipWithM (toDiff localizer RT.App) (fmap snd args1) (fmap snd args2)
     -- start trying to find specific problems
 
     (Type home1 name1 args1, Type home2 name2 args2)
@@ -265,7 +265,7 @@ toDiff localizer ctx tipe1 tipe2 =
             Type home2 name2 args2
               | L.toChars localizer home1 name1 == L.toChars localizer home2 name2 ->
                 different
-                  (nameClashToDoc ctx localizer home1 name1 (map snd args1))
+                  (nameClashToDoc ctx localizer home1 name1 (fmap snd args1))
                   (nameClashToDoc ctx localizer home2 name2 args2)
                   Bag.empty
             _ ->
@@ -283,7 +283,7 @@ toDiff localizer ctx tipe1 tipe2 =
               | L.toChars localizer home1 name1 == L.toChars localizer home2 name2 ->
                 different
                   (nameClashToDoc ctx localizer home1 name1 args1)
-                  (nameClashToDoc ctx localizer home2 name2 (map snd args2))
+                  (nameClashToDoc ctx localizer home2 name2 (fmap snd args2))
                   Bag.empty
             _ ->
               different
@@ -390,7 +390,7 @@ nameClashToDoc ctx localizer (ModuleName.Canonical _ home) name args =
   RT.apply
     ctx
     (D.yellow (D.fromName home) <> D.dullyellow ("." <> D.fromName name))
-    (map (toDoc localizer RT.App) args)
+    (fmap (toDoc localizer RT.App) args)
 
 -- DIFF ALIASED RECORD
 
@@ -429,26 +429,27 @@ diffRecord localizer fields1 ext1 fields2 ext2 =
         RT.record
           <$> fieldsDiff
           <*> extToDiff ext1 ext2
-   in Diff doc1 doc2 $
-        merge status $
-          case (hasFixedFields ext1, hasFixedFields ext2) of
-            (True, True) ->
-              case Map.lookupMin left of
-                Just (f, _) -> Different $ Bag.one $ FieldTypo f (Map.keys fields2)
-                Nothing ->
-                  if Map.null right
-                    then Similar
-                    else Different $ Bag.one $ FieldsMissing (Map.keys right)
-            (False, True) ->
-              case Map.lookupMin left of
-                Just (f, _) -> Different $ Bag.one $ FieldTypo f (Map.keys fields2)
-                Nothing -> Similar
-            (True, False) ->
-              case Map.lookupMin right of
-                Just (f, _) -> Different $ Bag.one $ FieldTypo f (Map.keys fields1)
-                Nothing -> Similar
-            (False, False) ->
-              Similar
+   in ( Diff doc1 doc2 . merge status $
+          ( case (hasFixedFields ext1, hasFixedFields ext2) of
+              (True, True) ->
+                case Map.lookupMin left of
+                  Just (f, _) -> Different . Bag.one $ FieldTypo f (Map.keys fields2)
+                  Nothing ->
+                    if Map.null right
+                      then Similar
+                      else Different . Bag.one $ FieldsMissing (Map.keys right)
+              (False, True) ->
+                case Map.lookupMin left of
+                  Just (f, _) -> Different . Bag.one $ FieldTypo f (Map.keys fields2)
+                  Nothing -> Similar
+              (True, False) ->
+                case Map.lookupMin right of
+                  Just (f, _) -> Different . Bag.one $ FieldTypo f (Map.keys fields1)
+                  Nothing -> Similar
+              (False, False) ->
+                Similar
+          )
+      )
 
 hasFixedFields :: Extension -> Bool
 hasFixedFields ext =
@@ -487,4 +488,4 @@ extToStatus ext1 ext2 =
         RigidOpen y ->
           if x == y
             then Similar
-            else Different $ Bag.one $ BadRigidVar x (RigidVar y)
+            else Different . Bag.one $ BadRigidVar x (RigidVar y)

@@ -33,7 +33,7 @@ type Aliases = Map.Map Name.Name Can.Alias
 
 add :: Src.Module -> Env.Env -> Result i w (Env.Env, Unions, Aliases)
 add module_ env =
-  (addVars module_ =<< addTypes module_ env) >>= addCtors module_
+  (addTypes module_ env >>= addVars module_) >>= addCtors module_
 
 -- ADD VARS
 
@@ -146,11 +146,10 @@ getEdges edges (A.At _ tipe) =
 
 checkUnionFreeVars :: A.Located Src.Union -> Result i w Int
 checkUnionFreeVars (A.At unionRegion (Src.Union (A.At _ name) args ctors)) =
-  let 
-    addCtorFreeVars (_, tipes) freeVars =
-      List.foldl' addFreeVars freeVars tipes
+  let addCtorFreeVars (_, tipes) freeVars =
+        List.foldl' addFreeVars freeVars tipes
 
-    addArg (A.At region arg) = Dups.insert arg region region
+      addArg (A.At region arg) = Dups.insert arg region region
    in do
         boundVars <- Dups.detect (Error.DuplicateUnionArg name) (foldr addArg Dups.none args)
         let freeVars = foldr addCtorFreeVars Map.empty ctors

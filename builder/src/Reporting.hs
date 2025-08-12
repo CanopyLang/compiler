@@ -41,7 +41,7 @@ import qualified Reporting.Doc as D
 import qualified Reporting.Exit as Exit
 import qualified Reporting.Exit.Help as Help
 import qualified System.Exit as Exit
-import System.IO (hFlush, hPutStr, hPutStrLn, stderr, stdout)
+import System.IO (hFlush, hPutStrLn, stderr, stdout)
 import qualified System.Info as Info
 
 -- STYLE
@@ -87,7 +87,7 @@ attemptWithStyle style toReport work =
       Left x ->
         case style of
           Silent ->
-            do Exit.exitFailure
+            Exit.exitFailure
           Json ->
             do
               B.hPutBuilder stderr (Encode.encodeUgly (Exit.toJson (toReport x)))
@@ -117,8 +117,7 @@ isWindows =
 newtype Key msg = Key (msg -> IO ())
 
 report :: Key msg -> msg -> IO ()
-report (Key send) msg =
-  send msg
+report (Key send) = send
 
 ignorer :: Key msg
 ignorer =
@@ -178,13 +177,11 @@ detailsLoop chan state@(DState total _ _ _ _ built _) =
     msg <- readChan chan
     case msg of
       Just dmsg ->
-        detailsLoop chan =<< detailsStep dmsg state
+        detailsStep dmsg state >>= detailsLoop chan
       Nothing ->
-        putStrLn $
-          clear (toBuildProgress total total) $
-            if built == total
+        putStrLn . clear (toBuildProgress total total) $ (if built == total
               then "Dependencies ready!"
-              else "Dependency problem!"
+              else "Dependency problem!")
 
 data DState = DState
   { _total :: !Int,
@@ -231,12 +228,10 @@ detailsStep msg (DState total cached rqst rcvd failed built broken) =
 
 putDownload :: D.Doc -> Pkg.Name -> V.Version -> IO ()
 putDownload mark pkg vsn =
-  Help.toStdout $
-    D.indent 2 $
-      mark
+  Help.toStdout . D.indent 2 $ (mark
         <+> D.fromPackage pkg
         <+> D.fromVersion vsn
-        <> "\n"
+        <> "\n")
 
 putTransition :: DState -> IO DState
 putTransition state@(DState total cached _ rcvd failed built broken) =
@@ -250,17 +245,16 @@ putTransition state@(DState total cached _ rcvd failed built broken) =
 putBuilt :: DState -> IO DState
 putBuilt state@(DState total cached _ rcvd failed built broken) =
   do
-    when (total == cached + rcvd + failed) $
-      putStrFlush $ '\r' : toBuildProgress (built + broken + failed) total
+    when (total == cached + rcvd + failed) . putStrFlush $ ('\r' : toBuildProgress (built + broken + failed) total)
     return state
 
-toBuildProgress :: Int -> Int -> [Char]
+toBuildProgress :: Int -> Int -> String
 toBuildProgress built total =
-  "Verifying dependencies (" ++ show built ++ "/" ++ show total ++ ")"
+  "Verifying dependencies (" <> (show built <> ("/" <> (show total <> ")")))
 
-clear :: [Char] -> [Char] -> [Char]
+clear :: String -> String -> String
 clear before after =
-  '\r' : replicate (length before) ' ' ++ '\r' : after
+  '\r' : (replicate (length before) ' ' <> ('\r' : after))
 
 -- BUILD
 
@@ -301,30 +295,30 @@ buildLoop chan done =
       Left BDone ->
         do
           let !done1 = done + 1
-          putStrFlush $ "\rCompiling (" ++ show done1 ++ ")"
+          putStrFlush ("\rCompiling (" <> (show done1 <> ")"))
           buildLoop chan done1
       Right result ->
         let !message = toFinalMessage done result
             !width = 12 + length (show done)
          in putStrLn $
               if length message < width
-                then '\r' : replicate width ' ' ++ '\r' : message
+                then '\r' : (replicate width ' ' <> ('\r' : message))
                 else '\r' : message
 
-toFinalMessage :: Int -> BResult a -> [Char]
+toFinalMessage :: Int -> BResult a -> String
 toFinalMessage done result =
   case result of
     Right _ ->
       case done of
         0 -> "Success!"
         1 -> "Success! Compiled 1 module."
-        n -> "Success! Compiled " ++ show n ++ " modules."
+        n -> "Success! Compiled " <> (show n <> " modules.")
     Left problem ->
       case problem of
         Exit.BuildBadModules _ _ [] ->
           "Detected problems in 1 module."
         Exit.BuildBadModules _ _ (_ : ps) ->
-          "Detected problems in " ++ show (2 + length ps) ++ " modules."
+          "Detected problems in " <> (show (2 + length ps) <> " modules.")
         Exit.BuildProjectProblem _ ->
           "Detected a problem."
 
@@ -343,20 +337,20 @@ reportGenerate style names output =
         let cnames = fmap ModuleName.toChars names
         putStrLn ('\n' : toGenDiagram cnames output)
 
-toGenDiagram :: NE.List [Char] -> FilePath -> [Char]
+toGenDiagram :: NE.List String -> FilePath -> String
 toGenDiagram (NE.List name names) output =
   let width = 3 + foldr (max . length) (length name) names
    in case names of
         [] ->
-          toGenLine width name ('>' : ' ' : output ++ "\n")
+          toGenLine width name ('>' : ' ' : (output <> "\n"))
         _ : _ ->
           unlines $
             toGenLine width name (vtop : hbar : hbar : '>' : ' ' : output) :
             reverse (zipWith (toGenLine width) (reverse names) ([vbottom] : repeat [vmiddle]))
 
-toGenLine :: Int -> [Char] -> [Char] -> [Char]
+toGenLine :: Int -> String -> String -> String
 toGenLine width name end =
-  "    " ++ name ++ ' ' : replicate (width - length name) hbar ++ end
+  "    " <> (name <> (' ' : (replicate (width - length name) hbar <> end)))
 
 hbar :: Char
 hbar = if isWindows then '-' else '─'
@@ -374,7 +368,7 @@ vbottom = if isWindows then '+' else '┘'
 
 putStrFlush :: String -> IO ()
 putStrFlush str =
-  hPutStr stdout str >> hFlush stdout
+  putStr str >> hFlush stdout
 
 -- REPORT EXCEPTIONS NICELY
 
@@ -387,28 +381,21 @@ reportExceptionsNicely e =
 putException :: SomeException -> IO ()
 putException e = do
   hPutStrLn stderr ""
-  Help.toStderr $
-    D.stack $
-      [ D.dullyellow "-- ERROR -----------------------------------------------------------------------",
-        D.reflow $
-          "I ran into something that bypassed the normal error reporting process!\
+  Help.toStderr . D.stack $ [ D.dullyellow "-- ERROR -----------------------------------------------------------------------",
+        D.reflow "I ran into something that bypassed the normal error reporting process!\
           \ I extracted whatever information I could from the internal error:",
-        D.vcat $ map (\line -> D.red ">" <> "   " <> D.fromChars line) (lines (show e)),
-        D.reflow $
-          "These errors are usually pretty confusing, so start by asking around on one of\
+        D.vcat $ fmap (\line -> D.red ">" <> "   " <> D.fromChars line) (lines (show e)),
+        D.reflow "These errors are usually pretty confusing, so start by asking around on one of\
           \ forums listed at https://canopy-lang.org/community to see if anyone can get you\
           \ unstuck quickly.",
         D.dullyellow "-- REQUEST ---------------------------------------------------------------------",
-        D.reflow $
-          "If you are feeling up to it, please try to get your code down to the smallest\
+        D.reflow "If you are feeling up to it, please try to get your code down to the smallest\
           \ version that still triggers this message. Ideally in a single Main.canopy and\
           \ canopy.json file.",
-        D.reflow $
-          "From there open a NEW issue at https://github.com/canopy/compiler/issues with\
+        D.reflow "From there open a NEW issue at https://github.com/canopy/compiler/issues with\
           \ your reduced example pasted in directly. (Not a link to a repo or gist!) Do not\
           \ worry about if someone else saw something similar. More examples is better!",
-        D.reflow $
-          "This kind of error is usually tied up in larger architectural choices that are\
+        D.reflow "This kind of error is usually tied up in larger architectural choices that are\
           \ hard to change, so even when we have a couple good examples, it can take some\
           \ time to resolve in a solid way."
       ]

@@ -15,6 +15,7 @@ where
 
 import qualified Control.Concurrent as Concurrent
 import qualified Control.Monad as Monad
+import Control.Monad (void)
 import qualified Data.Foldable as Foldable
 import System.FSNotify (Event)
 import qualified System.FSNotify as FSNotify
@@ -81,7 +82,7 @@ file handleEvent path =
     startWatching mgr =
       setupWatcher mgr >> keepAlive
     setupWatcher mgr =
-      Monad.void (FSNotify.watchTree mgr watchDir acceptAll handleEvent)
+      void (FSNotify.watchTree mgr watchDir acceptAll handleEvent)
     watchDir = FilePath.takeDirectory path
     acceptAll = const True
     keepAlive = Monad.forever (Concurrent.threadDelay delayMicroseconds)

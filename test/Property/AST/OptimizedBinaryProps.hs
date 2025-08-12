@@ -22,7 +22,7 @@ tests =
 genName :: Gen Name.Name
 genName = do
   first <- elements ['a' .. 'z']
-  rest <- listOf (elements (['a' .. 'z'] ++ ['A' .. 'Z'] ++ ['0' .. '9']))
+  rest <- listOf (elements (['a' .. 'z'] <> (['A' .. 'Z'] <> ['0' .. '9'])))
   pure (Name.fromChars (first : rest))
 
 genSimpleExpr :: Int -> Gen Opt.Expr
@@ -63,8 +63,7 @@ genDef n =
 genGlobal :: Gen Opt.Global
 genGlobal = do
   m <- elements [ModuleName.basics, ModuleName.list, ModuleName.jsonDecode]
-  n <- genName
-  pure (Opt.Global m n)
+  Opt.Global m <$> genName
 
 smallList :: Gen a -> Gen [a]
 smallList g = choose (0, 3) >>= flip vectorOf g
@@ -79,9 +78,9 @@ genMap k v = do
 
 testExprBinaryRoundTrip :: TestTree
 testExprBinaryRoundTrip =
-  localOption (QuickCheckMaxSize 8) $
-    testProperty "encode . decode . encode is stable for Expr" $
-      forAll (resize 8 (sized genSimpleExpr)) $ \e ->
+  (localOption (QuickCheckMaxSize 8) . testProperty "encode . decode . encode is stable for Expr") . forAll (resize 8 (sized genSimpleExpr)) $
+    ( \e ->
         let bs = encode e
             e' = decode bs :: Opt.Expr
          in encode e' === bs
+    )

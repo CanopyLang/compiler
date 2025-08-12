@@ -27,7 +27,7 @@ testFieldsToListOrdering = testCase "fieldsToList orders by source index" $ do
             (Name.fromChars "m", Can.FieldType 1 (Can.TVar (Name.fromChars "b")))
           ]
   let ordered = Can.fieldsToList fields
-  map fst ordered @?= [Name.fromChars "a", Name.fromChars "m", Name.fromChars "z"]
+  fmap fst ordered @?= [Name.fromChars "a", Name.fromChars "m", Name.fromChars "z"]
 
 testTypeConstructors :: TestTree
 testTypeConstructors = testCase "lambda, tuple, type constructors" $ do

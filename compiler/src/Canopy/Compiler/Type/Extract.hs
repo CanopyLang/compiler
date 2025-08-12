@@ -101,11 +101,13 @@ fromInterface name (I.Interface pkg _ unions aliases _) =
 
 fromDependencyInterface :: ModuleName.Canonical -> I.DependencyInterface -> Types
 fromDependencyInterface home di =
-  Types . Map.singleton home $ (case di of
+  Types . Map.singleton home $
+    ( case di of
         I.Public (I.Interface _ _ unions aliases _) ->
           Types_ (Map.map I.extractUnion unions) (Map.map I.extractAlias aliases)
         I.Private _ unions aliases ->
-          Types_ unions aliases)
+          Types_ unions aliases
+    )
 
 -- EXTRACT MODEL, MSG, AND ANY TRANSITIVE DEPENDENCIES
 

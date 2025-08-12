@@ -81,7 +81,7 @@ get point@(Pt ref) =
             Info _ descRef ->
               readIORef descRef
             Link _ ->
-              get =<< repr point
+              repr point >>= get
 
 set :: Point a -> a -> IO ()
 set point@(Pt ref) newDesc =

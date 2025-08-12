@@ -79,9 +79,11 @@ checkModule projectType (Module maybeHeader imports infixes decls) =
           Src.Module (Just name) exports (toDocs docs decls) imports values unions aliases infixes
             <$> checkEffects projectType ports effects
         Nothing ->
-          Right . Src.Module Nothing (A.At A.one Src.Open) (Src.NoDocs A.one) imports values unions aliases infixes $ (case ports of
+          Right . Src.Module Nothing (A.At A.one Src.Open) (Src.NoDocs A.one) imports values unions aliases infixes $
+            ( case ports of
                 [] -> Src.NoEffects
-                _ : _ -> Src.Ports ports)
+                _ : _ -> Src.Ports ports
+            )
 
 checkEffects :: ProjectType -> [Src.Port] -> Effects -> Either E.Error Src.Effects
 checkEffects projectType ports effects =

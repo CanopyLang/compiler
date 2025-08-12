@@ -28,18 +28,11 @@ constrain (Can.Module home _ _ decls _ _ _ effects) =
     Can.Manager r0 r1 r2 manager ->
       case manager of
         Can.Cmd cmdName ->
-          letCmd home cmdName
-            =<< constrainDecls decls
-            =<< constrainEffects home r0 r1 r2 manager
+          (constrainEffects home r0 r1 r2 manager >>= constrainDecls decls) >>= letCmd home cmdName
         Can.Sub subName ->
-          letSub home subName
-            =<< constrainDecls decls
-            =<< constrainEffects home r0 r1 r2 manager
+          (constrainEffects home r0 r1 r2 manager >>= constrainDecls decls) >>= letSub home subName
         Can.Fx cmdName subName ->
-          letCmd home cmdName
-            =<< letSub home subName
-            =<< constrainDecls decls
-            =<< constrainEffects home r0 r1 r2 manager
+          ((constrainEffects home r0 r1 r2 manager >>= constrainDecls decls) >>= letSub home subName) >>= letCmd home cmdName
 
 -- CONSTRAIN DECLARATIONS
 
@@ -47,9 +40,9 @@ constrainDecls :: Can.Decls -> Constraint -> IO Constraint
 constrainDecls decls finalConstraint =
   case decls of
     Can.Declare def otherDecls ->
-      Expr.constrainDef Map.empty def =<< constrainDecls otherDecls finalConstraint
+      constrainDecls otherDecls finalConstraint >>= Expr.constrainDef Map.empty def
     Can.DeclareRec def defs otherDecls ->
-      Expr.constrainRecursiveDefs Map.empty (def : defs) =<< constrainDecls otherDecls finalConstraint
+      constrainDecls otherDecls finalConstraint >>= Expr.constrainRecursiveDefs Map.empty (def : defs)
     Can.SaveTheEnvironment ->
       return finalConstraint
 
@@ -134,8 +127,7 @@ constrainEffects home r0 r1 r2 manager =
         Can.Sub sub ->
           checkMap "subMap" home sub CSaveTheEnvironment
         Can.Fx cmd sub ->
-          checkMap "cmdMap" home cmd
-            =<< checkMap "subMap" home sub CSaveTheEnvironment
+          checkMap "subMap" home sub CSaveTheEnvironment >>= checkMap "cmdMap" home cmd
 
 effectList :: ModuleName.Canonical -> Name.Name -> Type -> Type
 effectList home name msg =

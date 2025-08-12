@@ -32,6 +32,17 @@ fix-lint:
 	done
 	@$(MAKE) format
 
+fix-lint-folder:
+	@if [ -z "$(FOLDER)" ]; then \
+		echo "Usage: make fix-lint-folder FOLDER=<folder>"; \
+		echo "Available folders: compiler, builder, terminal, test"; \
+		exit 1; \
+	fi
+	@hlint -h .hlint.yaml --no-summary $(FOLDER) -j | \
+	grep -oP "(?<=$(FOLDER)/).*?(?=:)" | xargs -I _ \
+	hlint $(FOLDER)/_ -h .hlint.yaml --refactor --refactor-options="--inplace" -j &>/dev/null || true
+	@find $(FOLDER) -name '*.hs' -exec ormolu --ghc-opt=-XTypeApplications --mode=inplace {} \;
+
 format:
 	@find builder compiler terminal test -name '*.hs' -exec ormolu --ghc-opt=-XTypeApplications --mode=inplace {} \;
 

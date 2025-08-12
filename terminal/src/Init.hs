@@ -99,9 +99,7 @@ init =
                   indirects = Map.difference solution defaults
                in do
                     Dir.createDirectoryIfMissing True "src"
-                    Outline.write "." $
-                      Outline.App $
-                        Outline.AppOutline V.compiler (NE.List (Outline.RelativeSrcDir "src") []) directs indirects Map.empty Map.empty []
+                    Outline.write "." . Outline.App $ Outline.AppOutline V.compiler (NE.List (Outline.RelativeSrcDir "src") []) directs indirects Map.empty Map.empty []
                     putStrLn "Okay, I created it. Now read that link!"
                     return (Right ())
 

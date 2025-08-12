@@ -24,7 +24,7 @@ tests =
 
 goldenJs :: String -> String -> FilePath -> TestTree
 goldenJs name src expectedPath =
-  goldenVsString name expectedPath $ do
+  goldenVsString name expectedPath $
     withSystemTempDirectory "can-js-golden" $ \tmp -> do
       setupPkgProject tmp src
       builder <- runDev tmp

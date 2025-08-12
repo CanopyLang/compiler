@@ -62,12 +62,11 @@ intro =
 
 outro :: Doc
 outro =
-  P.fillSep $
-    map P.text $
-      words
-        "Be sure to ask on the Canopy slack if you run into trouble! Folks are friendly and\
-        \ happy to help out. They hang out there because it is fun, so be kind to get the\
-        \ best results!"
+  P.fillSep . fmap P.text $
+    words
+      "Be sure to ask on the Canopy slack if you run into trouble! Folks are friendly and\
+      \ happy to help out. They hang out there because it is fun, so be kind to get the\
+      \ best results!"
 
 -- INIT
 
@@ -191,12 +190,11 @@ install =
         stack
           [ reflow
               "For example, if you want to get packages for HTTP and JSON, you would say:",
-            P.indent 4 $
-              P.green $
-                P.vcat
-                  [ "canopy install canopy/http",
-                    "canopy install canopy/json"
-                  ],
+            P.indent 4 . P.green $
+              P.vcat
+                [ "canopy install canopy/http",
+                  "canopy install canopy/json"
+                ],
             reflow
               "Notice that you must say the AUTHOR name and PROJECT name! After running those\
               \ commands, you could say `import Http` or `import Json.Decode` in your code.",
@@ -224,11 +222,10 @@ publish =
         stack
           [ reflow
               "For example, if you have a custom repository located at https://www.example.com/my-custom-repo you can run the following command",
-            P.indent 4 $
-              P.green $
-                P.vcat
-                  [ "zokka publish https://www.example.com/my-custom-repo"
-                  ]
+            P.indent 4 . P.green $
+              P.vcat
+                [ "zokka publish https://www.example.com/my-custom-repo"
+                ]
           ]
 
       publishArgs =
@@ -288,4 +285,4 @@ stack docs =
 
 reflow :: String -> Doc
 reflow string =
-  P.fillSep $ map P.text $ words string
+  P.fillSep . fmap P.text $ words string

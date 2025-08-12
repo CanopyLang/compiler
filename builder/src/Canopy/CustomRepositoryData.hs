@@ -432,8 +432,7 @@ instance Binary.Binary HumanReadableShaDigest where
     shaDigestAsUtf8String <- Binary.get :: Binary.Get PackageUrl
     pure (HumanReadableShaDigest (coerce shaDigestAsUtf8String))
 
-  put (HumanReadableShaDigest shaDigestAsUtf8String) = do
-    Binary.put (coerce shaDigestAsUtf8String :: PackageUrl)
+  put (HumanReadableShaDigest shaDigestAsUtf8String) = Binary.put (coerce shaDigestAsUtf8String :: PackageUrl)
 
 instance Binary.Binary SinglePackageLocationData where
   get = do

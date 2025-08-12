@@ -20,7 +20,8 @@ where
 
 import qualified Codec.Archive.Zip as Zip
 import Control.Exception (catch)
-import Control.Monad (forM, msum, void)
+import Control.Monad (forM, msum, void, when)
+import Data.Foldable (traverse_)
 import qualified Data.Binary as Binary
 import qualified Data.ByteString as BS
 import qualified Data.ByteString.Builder as B
@@ -82,12 +83,10 @@ readBinary path =
             return (Just a)
           Left (offset, message) ->
             do
-              IO.hPutStrLn IO.stderr $
-                unlines $
-                  [ "+-------------------------------------------------------------------------------",
-                    "|  Corrupt File: " ++ path,
-                    "|   Byte Offset: " ++ show offset,
-                    "|       Message: " ++ message,
+              IO.hPutStrLn IO.stderr . unlines $ [ "+-------------------------------------------------------------------------------",
+                    "|  Corrupt File: " <> path,
+                    "|   Byte Offset: " <> show offset,
+                    "|       Message: " <> message,
                     "|",
                     "| Please report this to https://github.com/canopy/compiler/issues",
                     "| Trying to continue anyway.",
@@ -170,24 +169,21 @@ writePackage destination archive =
     entry : entries -> do
       void (Dir.doesDirectoryExist destination)
       let root = length (Zip.eRelativePath entry)
-      mapM_ (writeEntry destination root) entries
+      traverse_ (writeEntry destination root) entries
 
 writeEntry :: FilePath -> Int -> Zip.Entry -> IO ()
 writeEntry destination root entry =
   let path = drop root (Zip.eRelativePath entry)
-   in if List.isPrefixOf "src/" path
+   in (when (List.isPrefixOf "src/" path
         || path == "LICENSE"
         || path == "README.md"
-        || path == "canopy.json"
-        then
-          if not (null path) && last path == '/'
+        || path == "canopy.json") $ if not (null path) && last path == '/'
             then do
-              printLog ("writeEntry 0: " ++ path)
+              printLog ("writeEntry 0: " <> path)
               Dir.createDirectoryIfMissing True (destination </> path)
             else do
-              printLog ("writeEntry 1: " ++ path)
-              LBS.writeFile (destination </> path) (Zip.fromEntry entry)
-        else return ()
+              printLog ("writeEntry 1: " <> path)
+              LBS.writeFile (destination </> path) (Zip.fromEntry entry))
 
 -- FIXME: Is this needed? This basically duplicates writePackage
 writePackageReturnCanopyJson :: FilePath -> Zip.Archive -> IO (Maybe BS.ByteString)
@@ -198,9 +194,9 @@ writePackageReturnCanopyJson destination archive =
     entry : entries ->
       do
         let root = length (Zip.eRelativePath entry)
-        printLog ("writePackageReturnCanopyJson to " ++ destination)
+        printLog ("writePackageReturnCanopyJson to " <> destination)
         exists <- Dir.doesDirectoryExist destination
-        printLog ("writePackageReturnCanopyJson destination: " ++ destination ++ " exists: " ++ (show exists))
+        printLog ("writePackageReturnCanopyJson destination: " <> (destination <> (" exists: " <> show exists)))
         listOfMaybeCanopyJsons <- traverse (writeEntryReturnCanopyJson destination root) entries
         let firstCanopyJson = msum listOfMaybeCanopyJsons
         pure firstCanopyJson
@@ -215,11 +211,11 @@ writeEntryReturnCanopyJson destination root entry =
         then
           if not (null path) && last path == '/'
             then do
-              printLog ("writeEntryReturnCanopyJson 0: " ++ path)
+              printLog ("writeEntryReturnCanopyJson 0: " <> path)
               Dir.createDirectoryIfMissing True (destination </> path)
               pure Nothing
             else do
-              printLog ("writeEntryReturnCanopyJson 1: " ++ path)
+              printLog ("writeEntryReturnCanopyJson 1: " <> path)
               let bytestring = Zip.fromEntry entry
               LBS.writeFile (destination </> path) bytestring
               pure (if path == "canopy.json" then Just (BS.toStrict bytestring) else Nothing)
@@ -228,8 +224,7 @@ writeEntryReturnCanopyJson destination root entry =
 -- EXISTS
 
 exists :: FilePath -> IO Bool
-exists path =
-  Dir.doesFileExist path
+exists = Dir.doesFileExist
 
 -- REMOVE FILES
 
@@ -237,17 +232,13 @@ remove :: FilePath -> IO ()
 remove path =
   do
     exists_ <- Dir.doesFileExist path
-    if exists_
-      then Dir.removeFile path
-      else return ()
+    when exists_ $ Dir.removeFile path
 
 removeDir :: FilePath -> IO ()
 removeDir path =
   do
     exists_ <- Dir.doesDirectoryExist path
-    if exists_
-      then Dir.removeDirectoryRecursive path
-      else return ()
+    when exists_ $ Dir.removeDirectoryRecursive path
 
 -- RECURSIVE OPERATIONS
 

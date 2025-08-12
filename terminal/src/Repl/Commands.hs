@@ -106,13 +106,12 @@ attemptDeclOrExpr :: Lines -> CategorizedInput
 attemptDeclOrExpr inputLines =
   either handleDeclFailure handleDeclSuccess declResult
   where
+    handleDeclFailure = handleDeclError inputLines src exprParser
+    handleDeclSuccess (decl, _) = processDeclaration inputLines src decl
     src = linesToByteString inputLines
     exprParser = P.specialize (toExprPosition src) PE.expression
     declParser = P.specialize (toDeclPosition src) PD.declaration
     declResult = P.fromByteString declParser (,) src
-
-    handleDeclSuccess (decl, _) = processDeclaration inputLines src decl
-    handleDeclFailure declPosition = handleDeclError inputLines src exprParser declPosition
 
 -- | Process successfully parsed declaration.
 --
@@ -242,7 +241,7 @@ renderPrefill :: Prefill -> String
 renderPrefill prefill =
   case prefill of
     Indent -> "  "
-    DefStart name -> N.toChars name ++ " "
+    DefStart name -> N.toChars name <> " "
 
 -- | Generate help message for commands.
 --
@@ -251,7 +250,7 @@ toHelpMessage :: Maybe String -> String
 toHelpMessage maybeBadCommand =
   case maybeBadCommand of
     Nothing -> genericHelpMessage
-    Just command -> "I do not recognize the :" ++ command ++ " command. " ++ genericHelpMessage
+    Just command -> "I do not recognize the :" <> (command ++ " command. " ++ genericHelpMessage)
 
 -- | Generic help message text.
 --
@@ -264,6 +263,5 @@ genericHelpMessage =
   \  :help    Show this information\n\
   \  :reset   Clear all previous imports and definitions\n\
   \\n\
-  \More info at "
-    ++ D.makeLink "repl"
-    ++ "\n"
+  \More info at " <> (D.makeLink "repl"
+    ++ "\n")

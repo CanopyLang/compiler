@@ -15,9 +15,9 @@ import qualified Canopy.ModuleName as ModuleName
 import qualified Canopy.Package as Pkg
 import Control.Monad (foldM)
 import qualified Data.List as List
-import qualified Data.Maybe
 import Data.Map.Strict ((!))
 import qualified Data.Map.Strict as Map
+import qualified Data.Maybe
 import qualified Data.Name as Name
 import qualified Reporting.Annotation as A
 import qualified Reporting.Error.Canonicalize as Error
@@ -70,9 +70,11 @@ toSafeImports (ModuleName.Canonical pkg _) imports =
 
 isNormal :: Src.Import -> Bool
 isNormal (Src.Import (A.At _ name) maybeAlias _) =
-  not (Name.isKernel name) || (case maybeAlias of
-      Nothing -> False
-      Just _ -> error "kernel imports cannot use `as`")
+  not (Name.isKernel name)
+    || ( case maybeAlias of
+           Nothing -> False
+           Just _ -> error "kernel imports cannot use `as`"
+       )
 
 -- ADD IMPORTS
 

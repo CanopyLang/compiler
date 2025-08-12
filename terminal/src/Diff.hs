@@ -46,11 +46,11 @@ data Args
 
 run :: Args -> () -> IO ()
 run args () =
-  Reporting.attempt Exit.diffToReport $
-    Task.run $
-      do
+  Reporting.attempt Exit.diffToReport . Task.run $
+    ( do
         env <- getEnv
         runDiff env args
+    )
 
 -- ENVIRONMENT
 
@@ -153,9 +153,10 @@ generateDocs (Env maybeRoot _ _ _) =
     Just root ->
       do
         details <-
-          Task.eio Exit.DiffBadDetails $
-            BW.withScope $ \scope ->
-              Details.load Reporting.silent scope root
+          Task.eio Exit.DiffBadDetails . BW.withScope $
+            ( \scope ->
+                Details.load Reporting.silent scope root
+            )
 
         case Details._outline details of
           Details.ValidApp _ ->
@@ -174,7 +175,7 @@ writeDiff :: Documentation -> Documentation -> Task ()
 writeDiff oldDocs newDocs =
   let changes = Diff.diff oldDocs newDocs
       localizer = L.fromNames (Map.union oldDocs newDocs)
-   in Task.io $ Help.toStdout $ toDoc localizer changes <> "\n"
+   in (Task.io . Help.toStdout $ (toDoc localizer changes <> "\n"))
 
 -- TO DOC
 
@@ -193,21 +194,19 @@ toDoc localizer changes@(PackageChanges added changed removed) =
             if null added
               then []
               else
-                [ Chunk "ADDED MODULES" M.MINOR $
-                    D.vcat $ map D.fromName added
+                [ Chunk "ADDED MODULES" M.MINOR . D.vcat $ fmap D.fromName added
                 ]
 
           removedChunk =
             if null removed
               then []
               else
-                [ Chunk "REMOVED MODULES" M.MAJOR $
-                    D.vcat $ map D.fromName removed
+                [ Chunk "REMOVED MODULES" M.MAJOR . D.vcat $ fmap D.fromName removed
                 ]
 
           chunks =
-            addedChunk ++ removedChunk ++ map (changesToChunk localizer) (Map.toList changed)
-       in D.vcat (header : "" : map chunkToDoc chunks)
+            (addedChunk <> (removedChunk <> fmap (changesToChunk localizer) (Map.toList changed)))
+       in D.vcat (header : "" : fmap chunkToDoc chunks)
 
 data Chunk = Chunk
   { _title :: String,
@@ -243,14 +242,12 @@ changesToChunk localizer (name, changes@(ModuleChanges unions aliases values bin
 
       (binopAdd, binopChange, binopRemove) =
         changesToDocTriple (binopToDoc localizer) binops
-   in Chunk (Name.toChars name) magnitude $
-        D.vcat $
-          List.intersperse "" $
-            Maybe.catMaybes $
-              [ changesToDoc "Added" unionAdd aliasAdd valueAdd binopAdd,
-                changesToDoc "Removed" unionRemove aliasRemove valueRemove binopRemove,
-                changesToDoc "Changed" unionChange aliasChange valueChange binopChange
-              ]
+   in ( ((Chunk (Name.toChars name) magnitude . D.vcat) . List.intersperse "") . Maybe.catMaybes $
+          [ changesToDoc "Added" unionAdd aliasAdd valueAdd binopAdd,
+            changesToDoc "Removed" unionRemove aliasRemove valueRemove binopRemove,
+            changesToDoc "Changed" unionChange aliasChange valueChange binopChange
+          ]
+      )
 
 changesToDocTriple :: (k -> v -> Doc) -> Changes k v -> ([Doc], [Doc], [Doc])
 changesToDocTriple entryToDoc (Changes added changed removed) =
@@ -263,33 +260,30 @@ changesToDocTriple entryToDoc (Changes added changed removed) =
             "  + " <> entryToDoc name newValue,
             ""
           ]
-   in ( map indented (Map.toList added),
-        map diffed (Map.toList changed),
-        map indented (Map.toList removed)
+   in ( fmap indented (Map.toList added),
+        fmap diffed (Map.toList changed),
+        fmap indented (Map.toList removed)
       )
 
 changesToDoc :: String -> [Doc] -> [Doc] -> [Doc] -> [Doc] -> Maybe Doc
 changesToDoc categoryName unions aliases values binops =
   if null unions && null aliases && null values && null binops
     then Nothing
-    else
-      Just $
-        D.vcat $
-          D.fromChars categoryName <> ":" : unions ++ aliases ++ binops ++ values
+    else Just . D.vcat $ (D.fromChars categoryName <> ":" : (unions <> (aliases <> (binops <> values))))
 
 unionToDoc :: L.Localizer -> Name.Name -> Union -> Doc
 unionToDoc localizer name (Docs.Union _ tvars ctors) =
   let setup =
-        "type" <+> D.fromName name <+> D.hsep (map D.fromName tvars)
+        "type" <+> D.fromName name <+> D.hsep (fmap D.fromName tvars)
 
       ctorDoc (ctor, tipes) =
         typeDoc localizer (Type.Type ctor tipes)
-   in D.hang 4 (D.sep (setup : zipWith (<+>) ("=" : repeat "|") (map ctorDoc ctors)))
+   in D.hang 4 (D.sep (setup : zipWith (<+>) ("=" : repeat "|") (fmap ctorDoc ctors)))
 
 aliasToDoc :: L.Localizer -> Name.Name -> Alias -> Doc
 aliasToDoc localizer name (Docs.Alias _ tvars tipe) =
   let declaration =
-        "type" <+> "alias" <+> D.hsep (map D.fromName (name : tvars)) <+> "="
+        "type" <+> "alias" <+> D.hsep (fmap D.fromName (name : tvars)) <+> "="
    in D.hang 4 (D.sep [declaration, typeDoc localizer tipe])
 
 valueToDoc :: L.Localizer -> Name.Name -> Value -> Doc
@@ -310,5 +304,4 @@ binopToDoc localizer name (Docs.Binop _ tipe associativity (Docs.Precedence n)) 
         Docs.Right -> "right"
 
 typeDoc :: L.Localizer -> Type.Type -> Doc
-typeDoc localizer tipe =
-  Type.toDoc localizer Type.None tipe
+typeDoc localizer = Type.toDoc localizer Type.None

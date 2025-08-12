@@ -16,32 +16,36 @@ tests =
     ]
 
 testSimpleCanopyCompilation :: TestTree
-testSimpleCanopyCompilation = testCase "compile simple Canopy module" $ do
-  withSystemTempDirectory "canopy-test" $ \tmpDir -> do
-    -- Create a simple Canopy file
-    let canopyFile = tmpDir </> "Main.canopy"
-    writeFile canopyFile simpleCanopyModule
+testSimpleCanopyCompilation =
+  testCase "compile simple Canopy module" . withSystemTempDirectory "canopy-test" $
+    ( \tmpDir -> do
+        -- Create a simple Canopy file
+        let canopyFile = tmpDir </> "Main.canopy"
+        writeFile canopyFile simpleCanopyModule
 
-    -- Create canopy.json
-    let canopyJson = tmpDir </> "canopy.json"
-    writeFile canopyJson simpleCanopyJsonApplication
+        -- Create canopy.json
+        let canopyJson = tmpDir </> "canopy.json"
+        writeFile canopyJson simpleCanopyJsonApplication
 
-    -- TODO: Add actual compilation test when we understand the Compile module better
-    -- For now, just test that the files exist
-    doesExist <- doesFileExist canopyFile
-    doesExist @? "Canopy file should exist"
+        -- TODO: Add actual compilation test when we understand the Compile module better
+        -- For now, just test that the files exist
+        doesExist <- doesFileExist canopyFile
+        doesExist @? "Canopy file should exist"
 
-    jsonExists <- doesFileExist canopyJson
-    jsonExists @? "canopy.json should exist"
+        jsonExists <- doesFileExist canopyJson
+        jsonExists @? "canopy.json should exist"
+    )
 
 testCanopyJsonParsing :: TestTree
-testCanopyJsonParsing = testCase "parse canopy.json files" $ do
-  withSystemTempDirectory "canopy-json-test" $ \tmpDir -> do
-    let canopyJson = tmpDir </> "canopy.json"
-    writeFile canopyJson simpleCanopyJsonPackage
+testCanopyJsonParsing =
+  testCase "parse canopy.json files" . withSystemTempDirectory "canopy-json-test" $
+    ( \tmpDir -> do
+        let canopyJson = tmpDir </> "canopy.json"
+        writeFile canopyJson simpleCanopyJsonPackage
 
-    jsonExists <- doesFileExist canopyJson
-    jsonExists @? "canopy.json should exist"
+        jsonExists <- doesFileExist canopyJson
+        jsonExists @? "canopy.json should exist"
+    )
 
 -- TODO: Add actual JSON parsing tests
 

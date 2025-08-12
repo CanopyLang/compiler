@@ -14,6 +14,7 @@ where
 import qualified AST.Source as Src
 import qualified Canopy.ModuleName as ModuleName
 import qualified Data.Map as Map
+import qualified Data.Maybe
 import qualified Data.Name as Name
 import qualified Data.Set as Set
 import qualified Reporting.Annotation as A
@@ -61,7 +62,7 @@ toChars (Localizer localizer) moduleName@(ModuleName.Canonical _ home) name =
             else
               if name == Name.list && moduleName == ModuleName.list
                 then "List"
-                else Name.toChars (maybe home id alias) <> "." <> Name.toChars name
+                else Name.toChars (Data.Maybe.fromMaybe home alias) <> "." <> Name.toChars name
 
 -- FROM NAMES
 
@@ -73,9 +74,7 @@ fromNames names =
 
 fromModule :: Src.Module -> Localizer
 fromModule modul@(Src.Module _ _ _ imports _ _ _ _ _) =
-  Localizer $
-    Map.fromList $
-      (Src.getName modul, Import Nothing All) : map toPair imports
+  Localizer . Map.fromList $ ((Src.getName modul, Import Nothing All) : fmap toPair imports)
 
 toPair :: Src.Import -> (Name.Name, Import)
 toPair (Src.Import (A.At _ name) alias exposing) =

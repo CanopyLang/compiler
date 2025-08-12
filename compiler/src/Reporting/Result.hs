@@ -78,9 +78,8 @@ instance Applicative (Result i w e) where
              in kv i1 w1 bad2 good2
 
           good1 i1 w1 func =
-            let 
-            good2 i2 w2 value = good i2 w2 (func value)
-            bad2 = bad
+            let good2 i2 w2 value = good i2 w2 (func value)
+                bad2 = bad
              in kv i1 w1 bad2 good2
        in kf i w bad1 good1
 

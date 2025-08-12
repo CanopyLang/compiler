@@ -240,9 +240,4 @@ getInterpreterHelp name findExe = do
 -- @since 0.19.1
 exeNotFound :: String -> String
 exeNotFound name =
-  "The REPL relies on node.js to execute JavaScript code outside the browser.\n"
-    ++ "I could not find executable `"
-    ++ name
-    ++ "` on your PATH though!\n\n"
-    ++ "You can install node.js from <http://nodejs.org/>. If it is already installed\n"
-    ++ "but has a different name, use the --interpreter flag."
+  "The REPL relies on node.js to execute JavaScript code outside the browser.\n" <> ("I could not find executable `" <> (name <> ("` on your PATH though!\n\n" <> ("You can install node.js from <http://nodejs.org/>. If it is already installed\n" <> "but has a different name, use the --interpreter flag."))))

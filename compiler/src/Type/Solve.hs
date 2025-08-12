@@ -7,7 +7,8 @@ module Type.Solve
 where
 
 import qualified AST.Canonical as Can
-import Control.Monad
+import Control.Monad (forM_, foldM, liftM2, liftM3)
+import Data.Foldable (for_, traverse_)
 import Data.Map.Strict (Map, (!))
 import qualified Data.Map.Strict as Map
 import qualified Data.Name as Name
@@ -80,10 +81,7 @@ solve env rank pools state constraint =
           Unify.Err vars actualType expectedType ->
             do
               introduce rank pools vars
-              return $
-                addError state $
-                  Error.BadExpr region category actualType $
-                    Error.typeReplace expectation expectedType
+              (return . addError state) . Error.BadExpr region category actualType $ Error.typeReplace expectation expectedType
     CLocal region name expectation ->
       do
         actual <- makeCopy rank pools (env ! name)
@@ -97,10 +95,7 @@ solve env rank pools state constraint =
           Unify.Err vars actualType expectedType ->
             do
               introduce rank pools vars
-              return $
-                addError state $
-                  Error.BadExpr region (Error.Local name) actualType $
-                    Error.typeReplace expectation expectedType
+              (return . addError state) . Error.BadExpr region (Error.Local name) actualType $ Error.typeReplace expectation expectedType
     CForeign region name (Can.Forall freeVars srcType) expectation ->
       do
         actual <- srcTypeToVariable rank pools freeVars srcType
@@ -114,10 +109,7 @@ solve env rank pools state constraint =
           Unify.Err vars actualType expectedType ->
             do
               introduce rank pools vars
-              return $
-                addError state $
-                  Error.BadExpr region (Error.Foreign name) actualType $
-                    Error.typeReplace expectation expectedType
+              (return . addError state) . Error.BadExpr region (Error.Foreign name) actualType $ Error.typeReplace expectation expectedType
     CPattern region category tipe expectation ->
       do
         actual <- typeToVariable rank pools tipe
@@ -131,13 +123,12 @@ solve env rank pools state constraint =
           Unify.Err vars actualType expectedType ->
             do
               introduce rank pools vars
-              return $
-                addError state $
-                  Error.BadPattern
-                    region
-                    category
-                    actualType
-                    (Error.ptypeReplace expectation expectedType)
+              return . addError state $
+                Error.BadPattern
+                  region
+                  category
+                  actualType
+                  (Error.ptypeReplace expectation expectedType)
     CAnd constraints ->
       foldM (solve env rank pools) state constraints
     CLet [] flexs _ headerCon CTrue ->
@@ -162,8 +153,8 @@ solve env rank pools state constraint =
             else MVector.grow pools poolsLength
 
         -- introduce variables
-        let vars = rigids ++ flexs
-        forM_ vars $ \var ->
+        let vars = rigids <> flexs
+        for_ vars $ \var ->
           UF.modify var $ \(Descriptor content _ mark copy) ->
             Descriptor content nextRank mark copy
         MVector.write nextPools nextRank vars
@@ -182,7 +173,7 @@ solve env rank pools state constraint =
         MVector.write nextPools nextRank []
 
         -- check that things went well
-        mapM_ isGeneric rigids
+        traverse_ isGeneric rigids
 
         let newEnv = Map.union env (Map.map A.toValue locals)
         let tempState = State savedEnv finalMark errors
@@ -199,15 +190,21 @@ isGeneric var =
       then return ()
       else do
         tipe <- Type.toErrorType var
-        error $
-          "You ran into a compiler bug. Here are some details for the developers:\n\n"
-            ++ "    "
-            ++ show (ET.toDoc L.empty RT.None tipe)
-            ++ " [rank = "
-            ++ show rank
-            ++ "]\n\n"
-            ++ "Please create an <http://sscce.org/> and then report it\n\
-               \at <https://github.com/canopy/compiler/issues>\n\n"
+        error
+          ( "You ran into a compiler bug. Here are some details for the developers:\n\n"
+              <> ( "    "
+                     <> ( show (ET.toDoc L.empty RT.None tipe)
+                            <> ( " [rank = "
+                                   <> ( show rank
+                                          <> ( "]\n\n"
+                                                 <> "Please create an <http://sscce.org/> and then report it\n\
+                                                    \at <https://github.com/canopy/compiler/issues>\n\n"
+                                             )
+                                      )
+                               )
+                        )
+                 )
+          )
 
 -- EXPECTATIONS TO VARIABLE
 
@@ -265,13 +262,13 @@ generalize youngMark visitMark youngRank pools =
     -- start at low ranks so that we only have to pass
     -- over the information once.
     Vector.imapM_
-      (\rank table -> mapM_ (adjustRank youngMark visitMark rank) table)
+      (traverse_ . adjustRank youngMark visitMark)
       rankTable
 
     -- For variables that have rank lowerer than youngRank, register them in
     -- the appropriate old pool if they are not redundant.
     Vector.forM_ (Vector.unsafeInit rankTable) $ \vars ->
-      forM_ vars $ \var ->
+      for_ vars $ \var ->
         do
           isRedundant <- UF.redundant var
           if isRedundant
@@ -283,7 +280,7 @@ generalize youngMark visitMark youngRank pools =
     -- For variables with rank youngRank
     --   If rank < youngRank: register in oldPool
     --   otherwise generalize
-    forM_ (Vector.unsafeLast rankTable) $ \var ->
+    for_ (Vector.unsafeLast rankTable) $ \var ->
       do
         isRedundant <- UF.redundant var
         if isRedundant
@@ -300,7 +297,7 @@ poolToRankTable youngMark youngRank youngInhabitants =
     mutableTable <- MVector.replicate (youngRank + 1) []
 
     -- Sort the youngPool variables into buckets by rank.
-    forM_ youngInhabitants $ \var ->
+    for_ youngInhabitants $ \var ->
       do
         (Descriptor content rank _ copy) <- UF.get var
         UF.set var (Descriptor content rank youngMark copy)
@@ -383,15 +380,14 @@ introduce :: Int -> Pools -> [Variable] -> IO ()
 introduce rank pools variables =
   do
     MVector.modify pools (variables ++) rank
-    forM_ variables $ \var ->
+    for_ variables $ \var ->
       UF.modify var $ \(Descriptor content _ mark copy) ->
         Descriptor content rank mark copy
 
 -- TYPE TO VARIABLE
 
 typeToVariable :: Int -> Pools -> Type -> IO Variable
-typeToVariable rank pools tipe =
-  typeToVar rank pools Map.empty tipe
+typeToVariable rank pools = typeToVar rank pools Map.empty
 
 -- PERF working with @mgriffith we noticed that a 784 line entry in a `let` was
 -- causing a ~1.5 second slowdown. Moving it to the top-level to be a function
@@ -567,15 +563,15 @@ makeCopyHelp maxRank pools variable =
                 return copy
               RigidVar name ->
                 do
-                  UF.set copy $ makeDescriptor $ FlexVar (Just name)
+                  UF.set copy . makeDescriptor $ FlexVar (Just name)
                   return copy
               RigidSuper super name ->
                 do
-                  UF.set copy $ makeDescriptor $ FlexSuper super (Just name)
+                  UF.set copy . makeDescriptor $ FlexSuper super (Just name)
                   return copy
               Alias home name args realType ->
                 do
-                  newArgs <- mapM (traverse (makeCopyHelp maxRank pools)) args
+                  newArgs <- traverse (traverse (makeCopyHelp maxRank pools)) args
                   newRealType <- makeCopyHelp maxRank pools realType
                   UF.set copy $ makeDescriptor (Alias home name newArgs newRealType)
                   return copy
@@ -610,7 +606,7 @@ restoreContent content =
     Structure term ->
       case term of
         App1 _ _ args ->
-          mapM_ restore args
+          traverse_ restore args
         Fun1 arg result ->
           do
             restore arg
@@ -619,7 +615,7 @@ restoreContent content =
           return ()
         Record1 fields ext ->
           do
-            mapM_ restore fields
+            traverse_ restore fields
             restore ext
         Unit1 ->
           return ()
@@ -627,12 +623,10 @@ restoreContent content =
           do
             restore a
             restore b
-            case maybeC of
-              Nothing -> return ()
-              Just c -> restore c
+            forM_ maybeC restore
     Alias _ _ args var ->
       do
-        mapM_ (traverse restore) args
+        traverse_ (traverse restore) args
         restore var
     Error ->
       return ()
@@ -643,7 +637,7 @@ traverseFlatType :: (Variable -> IO Variable) -> FlatType -> IO FlatType
 traverseFlatType f flatType =
   case flatType of
     App1 home name args ->
-      liftM (App1 home name) (traverse f args)
+      fmap (App1 home name) (traverse f args)
     Fun1 a b ->
       liftM2 Fun1 (f a) (f b)
     EmptyRecord1 ->

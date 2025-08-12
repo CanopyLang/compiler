@@ -71,9 +71,11 @@ generate mode expression =
         Mode.Prod _ ->
           JsExpr $ JS.Int (Index.toMachine index)
     Opt.VarBox (Opt.Global home name) ->
-      JsExpr . JS.Ref $ (case mode of
+      JsExpr . JS.Ref $
+        ( case mode of
             Mode.Dev _ -> JsName.fromGlobal home name
-            Mode.Prod _ -> JsName.fromGlobal ModuleName.basics Name.identity)
+            Mode.Prod _ -> JsName.fromGlobal ModuleName.basics Name.identity
+        )
     Opt.VarCycle home name ->
       JsExpr $ JS.Call (JS.Ref (JsName.fromCycle home name)) []
     Opt.VarDebug name home region unhandledValueName ->
@@ -155,10 +157,12 @@ generate mode expression =
 
           toTranslationObject fields =
             JS.Object (fmap toTranlation (Set.toList fields))
-       in (JsExpr . JS.Object $ [ (JsName.fromLocal "src", JS.String (Shader.toJsStringBuilder src)),
+       in ( JsExpr . JS.Object $
+              [ (JsName.fromLocal "src", JS.String (Shader.toJsStringBuilder src)),
                 (JsName.fromLocal "attributes", toTranslationObject attributes),
                 (JsName.fromLocal "uniforms", toTranslationObject uniforms)
-              ])
+              ]
+          )
 
 -- CODE CHUNKS
 
@@ -248,11 +252,15 @@ generateDebug name (ModuleName.Canonical _ home) region unhandledValueName =
     then JS.Ref (JsName.fromGlobal ModuleName.debug name)
     else case unhandledValueName of
       Nothing ->
-        JS.Call (JS.Ref (JsName.fromKernel Name.debug "todo")) [ JS.String (Name.toBuilder home),
+        JS.Call
+          (JS.Ref (JsName.fromKernel Name.debug "todo"))
+          [ JS.String (Name.toBuilder home),
             regionToJsExpr region
           ]
       Just valueName ->
-        JS.Call (JS.Ref (JsName.fromKernel Name.debug "todoCase")) [ JS.String (Name.toBuilder home),
+        JS.Call
+          (JS.Ref (JsName.fromKernel Name.debug "todoCase"))
+          [ JS.String (Name.toBuilder home),
             regionToJsExpr region,
             JS.Ref (JsName.fromLocal valueName)
           ]
@@ -580,11 +588,12 @@ remapFromTailCallParamsToLocalVariables variables = JS.Vars (fmap remapFromTailC
 -- basically just calls the hoisted function.
 generateTailDef :: Mode.Mode -> Name.Name -> [Name.Name] -> Opt.Expr -> Code
 generateTailDef mode name argNames body =
-  generateFunction functionArgNames . JsBlock $ [ JS.Var (JsName.makeLoopSentinelName name) loopContinueSentinel,
-        loopAsFunction,
-        JS.Labelled (JsName.fromLocal name) $
-          JS.While (JS.Bool True) loopBodyStub
-      ]
+  generateFunction functionArgNames . JsBlock $
+    [ JS.Var (JsName.makeLoopSentinelName name) loopContinueSentinel,
+      loopAsFunction,
+      JS.Labelled (JsName.fromLocal name) $
+        JS.While (JS.Bool True) loopBodyStub
+    ]
   where
     -- We need to remap function args because if we have a closure with a
     -- function arg, we still have scoping issues
@@ -859,6 +868,7 @@ toDebugMetadata mode msgType =
     Mode.Dev Nothing ->
       JS.Int 0
     Mode.Dev (Just interfaces) ->
-      JS.Json . Encode.object $ [ "versions" ==> Encode.object ["canopy" ==> V.encode V.compiler],
-            "types" ==> Type.encodeMetadata (Extract.fromMsg interfaces msgType)
-          ]
+      JS.Json . Encode.object $
+        [ "versions" ==> Encode.object ["canopy" ==> V.encode V.compiler],
+          "types" ==> Type.encodeMetadata (Extract.fromMsg interfaces msgType)
+        ]

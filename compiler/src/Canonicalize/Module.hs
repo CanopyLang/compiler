@@ -220,24 +220,21 @@ checkExposed values unions aliases binops effects exposed =
     Src.Operator region name ->
       if Map.member name binops
         then ok name region Can.ExportBinop
-        else
-          Result.throw . Error.ExportNotFound region Error.BadOp name $ Map.keys binops
+        else Result.throw . Error.ExportNotFound region Error.BadOp name $ Map.keys binops
     Src.Upper (A.At region name) (Src.Public dotDotRegion) ->
       if Map.member name unions
         then ok name region Can.ExportUnionOpen
         else
           if Map.member name aliases
             then Result.throw $ Error.ExportOpenAlias dotDotRegion name
-            else
-              Result.throw . Error.ExportNotFound region Error.BadType name $ (Map.keys unions <> Map.keys aliases)
+            else Result.throw . Error.ExportNotFound region Error.BadType name $ (Map.keys unions <> Map.keys aliases)
     Src.Upper (A.At region name) Src.Private ->
       if Map.member name unions
         then ok name region Can.ExportUnionClosed
         else
           if Map.member name aliases
             then ok name region Can.ExportAlias
-            else
-              Result.throw . Error.ExportNotFound region Error.BadType name $ (Map.keys unions <> Map.keys aliases)
+            else Result.throw . Error.ExportNotFound region Error.BadType name $ (Map.keys unions <> Map.keys aliases)
 
 checkPorts :: Can.Effects -> Name.Name -> Maybe [Name.Name]
 checkPorts effects name =

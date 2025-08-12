@@ -140,7 +140,7 @@ addMatches string isFinished dict completions =
 -- @since 0.19.1
 addMatch :: String -> Bool -> N.Name -> v -> [Completion] -> [Completion]
 addMatch string isFinished name _ completions =
-  if List.isPrefixOf string suggestion
+  if string `List.isPrefixOf` suggestion
     then Repl.Completion suggestion suggestion isFinished : completions
     else completions
   where

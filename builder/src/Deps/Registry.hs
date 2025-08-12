@@ -23,6 +23,7 @@ where
 import Canopy.CustomRepositoryData (CustomRepositoriesData (..), CustomSingleRepositoryData (..), DefaultPackageServerRepo (..), PZRPackageServerRepo (..), RepositoryAuthToken, RepositoryUrl, SinglePackageLocationData (..))
 import qualified Canopy.Package as Pkg
 import qualified Canopy.Version as V
+import Control.Arrow ((&&&))
 import Control.Monad (liftM2)
 import Data.Binary (Binary, get, put)
 import Data.Binary.Get (Get)
@@ -96,7 +97,7 @@ data RegistryKey
 
 combineKnownVersions :: KnownVersions -> KnownVersions -> KnownVersions
 combineKnownVersions (KnownVersions newest0 previous0) (KnownVersions newest1 previous1) =
-  KnownVersions (max newest0 newest1) (min newest0 newest1 : (previous0 ++ previous1))
+  KnownVersions (max newest0 newest1) (min newest0 newest1 : (previous0 <> previous1))
 
 combineRegistry :: Registry -> Registry -> Registry
 combineRegistry (Registry count0 versions0) (Registry count1 versions1) =
@@ -134,8 +135,9 @@ fetch manager cache (CustomRepositoriesData customFullRepositories singlePackage
     -- FIXME: this is pretty awful
     let fetchSingleRepo repoData = (,) (RepositoryUrlKey repoData) <$> fetchSingleCustomRepository manager repoData
     fullRepositoryFetchResults <- traverse fetchSingleRepo customFullRepositories
-    let singlePackageRegistries = (\locData -> (PackageUrlKey locData, createRegistryFromSinglePackageLocation locData)) <$> singlePackageLocations
-    let allResults = (++) singlePackageRegistries <$> mapM sequence fullRepositoryFetchResults
+    let singlePackageRegistries = (PackageUrlKey
+          &&& createRegistryFromSinglePackageLocation) <$> singlePackageLocations
+    let allResults = (++) singlePackageRegistries <$> traverse sequenceA fullRepositoryFetchResults
     case allResults of
       Left err -> pure $ Left err
       Right registries -> do
@@ -185,13 +187,13 @@ allPkgsDecoder =
         Pkg.keyDecoder bail
 
       versionsDecoder =
-        D.list (D.mapError (\_ -> ()) V.decoder)
+        D.list (D.mapError (const ()) V.decoder)
 
       toKnownVersions versions =
         case List.sortBy (flip compare) versions of
           v : vs -> return (KnownVersions v vs)
           [] -> D.failure ()
-   in D.dict keyDecoder (toKnownVersions =<< versionsDecoder)
+   in D.dict keyDecoder (versionsDecoder >>= toKnownVersions)
 
 -- UPDATE
 
@@ -200,7 +202,7 @@ update manager cache zokkaRegistries customRepoConfigLastModified =
   do
     let registriesMap = _registries zokkaRegistries
     let listOfProblemsOrKeyRegistryPairs = traverse (\(k, v) -> fmap (fmap ((,) k)) (updateSingleRegistry manager k v)) (Map.toList registriesMap)
-    newRegistryOrError <- sequence <$> listOfProblemsOrKeyRegistryPairs
+    newRegistryOrError <- sequenceA <$> listOfProblemsOrKeyRegistryPairs
     let newRegistryOrError' = fmap Map.fromList newRegistryOrError
     case newRegistryOrError' of
       Left err -> pure $ Left err
@@ -225,7 +227,7 @@ updateSingleRegistry manager registryKey registry =
 
 updateSingleRegistryFromStandardCanopyRepo :: Http.Manager -> RepositoryUrl -> Registry -> IO (Either Exit.RegistryProblem Registry)
 updateSingleRegistryFromStandardCanopyRepo manager repositoryUrl oldRegistry@(Registry size packages) =
-  post manager repositoryUrl ("/all-packages/since/" ++ show size) (D.list newPkgDecoder) $
+  post manager repositoryUrl ("/all-packages/since/" <> show size) (D.list newPkgDecoder) $
     \news ->
       case news of
         [] ->
@@ -296,7 +298,7 @@ doesRegistryAgreeWithCustomRepositoriesData :: CustomRepositoriesData -> ZokkaRe
 doesRegistryAgreeWithCustomRepositoriesData (CustomRepositoriesData fullRepositories singlePackages) registry =
   Set.fromList allRegistryKeys == Map.keysSet (_registries registry)
   where
-    allRegistryKeys = (customSingleRepositoryDataToRegistryKey <$> fullRepositories) ++ (singlePackageLocationDataToRegistryKey <$> singlePackages)
+    allRegistryKeys = (customSingleRepositoryDataToRegistryKey <$> fullRepositories) <> (singlePackageLocationDataToRegistryKey <$> singlePackages)
 
 latest :: Http.Manager -> CustomRepositoriesData -> Stuff.ZokkaSpecificCache -> Stuff.ZokkaCustomRepositoryConfigFilePath -> IO (Either Exit.RegistryProblem ZokkaRegistries)
 latest manager customRepositoriesData cache customRepoConfigFilePath =
@@ -347,11 +349,10 @@ postWithHeaders manager repositoryUrl path headers decoder callback =
           \body ->
             case D.fromByteString decoder body of
               Right a -> Right <$> callback a
-              Left _ -> return $ Left $ Exit.RP_Data url body
+              Left _ -> return . Left $ Exit.RP_Data url body
 
 post :: Http.Manager -> RepositoryUrl -> String -> D.Decoder x a -> (a -> IO b) -> IO (Either Exit.RegistryProblem b)
-post manager repositoryUrl path decoder callback =
-  postWithHeaders manager repositoryUrl path [] decoder callback
+post manager repositoryUrl path = postWithHeaders manager repositoryUrl path []
 
 -- GET
 
@@ -363,7 +364,7 @@ getWithHeaders manager repositoryUrl path headers decoder callback =
         \body ->
           case D.fromByteString decoder body of
             Right a -> Right <$> callback a
-            Left _ -> return $ Left $ Exit.RP_Data url body
+            Left _ -> return . Left $ Exit.RP_Data url body
 
 -- BINARY
 

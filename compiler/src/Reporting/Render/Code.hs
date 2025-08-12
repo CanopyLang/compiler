@@ -18,6 +18,7 @@ import qualified Data.ByteString.UTF8 as UTF8_BS
 import qualified Data.Char as Char
 import qualified Data.IntSet as IntSet
 import qualified Data.List as List
+import qualified Data.Maybe
 import qualified Data.Name as Name
 import qualified Data.Set as Set
 import Data.Word (Word16)
@@ -35,9 +36,7 @@ newtype Source
 
 toSource :: B.ByteString -> Source
 toSource source =
-  Source $
-    zip [1 ..] $
-      lines (UTF8_BS.toString source) ++ [""]
+  Source . zip [1 ..] $ (lines (UTF8_BS.toString source) <> [""])
 
 -- CODE FORMATTING
 
@@ -88,7 +87,7 @@ render (Source sourceLines) region@(A.Region (A.Position startLine _) (A.Positio
         length (show (fst (last relevantLines)))
 
       smallerRegion =
-        maybe region id maybeSubRegion
+        Data.Maybe.fromMaybe region maybeSubRegion
    in case makeUnderline width endLine smallerRegion of
         Nothing ->
           drawLines True width smallerRegion relevantLines D.empty
@@ -106,9 +105,7 @@ makeUnderline width realEndLine (A.Region (A.Position start c1) (A.Position end 
 
 drawLines :: Bool -> Int -> A.Region -> [(Word16, String)] -> Doc -> Doc
 drawLines addZigZag width (A.Region (A.Position startLine _) (A.Position endLine _)) sourceLines finalLine =
-  D.vcat $
-    map (drawLine addZigZag width startLine endLine) sourceLines
-      ++ [finalLine]
+  D.vcat (fmap (drawLine addZigZag width startLine endLine) sourceLines <> [finalLine])
 
 drawLine :: Bool -> Int -> Word16 -> Word16 -> (Word16, String) -> Doc
 drawLine addZigZag width startLine endLine (n, line) =
@@ -120,7 +117,7 @@ addLineNumber addZigZag width start end n line =
         show n
 
       lineNumber =
-        replicate (width - length number) ' ' ++ number ++ "|"
+        (replicate (width - length number) ' ' <> (number <> "|"))
 
       spacer =
         if addZigZag && start <= n && n <= end
@@ -146,9 +143,7 @@ renderPair source@(Source sourceLines) region1 region2 =
               spaces2 = replicate (fromIntegral (startCol2 - endCol1)) ' '
               zigzag2 = replicate (fromIntegral (endCol2 - startCol2)) '^'
 
-              line = case List.lookup startRow1 sourceLines of
-                Just l -> l
-                Nothing -> ""
+              line = Data.Maybe.fromMaybe "" (List.lookup startRow1 sourceLines)
            in OneLine $
                 D.vcat
                   [ D.fromChars lineNumber <> "| " <> D.fromChars line,
@@ -164,11 +159,11 @@ renderPair source@(Source sourceLines) region1 region2 =
 -- WHAT IS NEXT?
 
 data Next
-  = Keyword [Char]
-  | Operator [Char]
-  | Close [Char] Char
-  | Upper Char [Char]
-  | Lower Char [Char]
+  = Keyword String
+  | Operator String
+  | Close String Char
+  | Upper Char String
+  | Lower Char String
   | Other (Maybe Char)
 
 whatIsNext :: Source -> Row -> Col -> Next
@@ -189,7 +184,7 @@ whatIsNext (Source sourceLines) row col =
           | c == '}' -> Close "curly brace" '}'
           | otherwise -> Other (Just c)
 
-detectKeywords :: Char -> [Char] -> Next
+detectKeywords :: Char -> String -> Next
 detectKeywords c rest =
   let cs = takeWhile isInner rest
       name = c : cs
@@ -205,7 +200,7 @@ isSymbol :: Char -> Bool
 isSymbol char =
   IntSet.member (Char.ord char) binopCharSet
 
-startsWithKeyword :: [Char] -> [Char] -> Bool
+startsWithKeyword :: String -> String -> Bool
 startsWithKeyword restOfLine keyword =
   List.isPrefixOf keyword restOfLine
     && case drop (length keyword) restOfLine of
@@ -214,7 +209,7 @@ startsWithKeyword restOfLine keyword =
       c : _ ->
         not (isInner c)
 
-nextLineStartsWithKeyword :: [Char] -> Source -> Row -> Maybe (Row, Col)
+nextLineStartsWithKeyword :: String -> Source -> Row -> Maybe (Row, Col)
 nextLineStartsWithKeyword keyword (Source sourceLines) row =
   case List.lookup (row + 1) sourceLines of
     Nothing ->

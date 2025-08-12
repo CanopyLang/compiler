@@ -9,6 +9,7 @@ module Type.Unify
 where
 
 import qualified Canopy.ModuleName as ModuleName
+import Data.Foldable (forM_)
 import Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
 import qualified Data.Name as Name
@@ -112,14 +113,11 @@ reorient (Context var1 desc1 var2 desc2) =
 merge :: Context -> Content -> Unify ()
 merge (Context var1 (Descriptor _ rank1 _ _) var2 (Descriptor _ rank2 _ _)) content =
   Unify $ \vars ok _ ->
-    ok vars
-      =<< UF.union var1 var2 (Descriptor content (min rank1 rank2) noMark Nothing)
+    UF.union var1 var2 (Descriptor content (min rank1 rank2) noMark Nothing) >>= ok vars
 
 fresh :: Context -> Content -> Unify Variable
 fresh (Context _ (Descriptor _ rank1 _ _) _ (Descriptor _ rank2 _ _)) content =
-  register $
-    UF.fresh $
-      Descriptor content (min rank1 rank2) noMark Nothing
+  register . UF.fresh $ Descriptor content (min rank1 rank2) noMark Nothing
 
 -- ACTUALLY UNIFY THINGS
 
@@ -156,8 +154,7 @@ guardedUnify left right =
                   k vars ok err
 
 subUnify :: Variable -> Variable -> Unify ()
-subUnify var1 var2 =
-  guardedUnify var1 var2
+subUnify = guardedUnify
 
 actuallyUnify :: Context -> Unify ()
 actuallyUnify context@(Context _ (Descriptor firstContent _ _ _) _ (Descriptor secondContent _ _ _)) =
@@ -199,7 +196,7 @@ unifyFlex context content otherContent =
       merge context otherContent
     RigidSuper _ _ ->
       merge context otherContent
-    Alias _ _ _ _ ->
+    Alias {} ->
       merge context otherContent
     Structure _ ->
       merge context otherContent
@@ -223,7 +220,7 @@ unifyRigid context maybeSuper content otherContent =
       mismatch
     RigidSuper _ _ ->
       mismatch
-    Alias _ _ _ _ ->
+    Alias {} ->
       mismatch
     Structure _ ->
       mismatch
@@ -335,9 +332,7 @@ unifyFlexSuperStructure context super flatType =
             comparableOccursCheck context
             unifyComparableRecursive a
             unifyComparableRecursive b
-            case maybeC of
-              Nothing -> return ()
-              Just c -> unifyComparableRecursive c
+            forM_ maybeC unifyComparableRecursive
             merge context (Structure flatType)
         CompAppend ->
           mismatch

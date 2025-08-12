@@ -53,7 +53,8 @@ import qualified Compile
 import Control.Concurrent (forkIO)
 import Control.Concurrent.MVar (MVar, newEmptyMVar, newMVar, putMVar, readMVar, takeMVar)
 import Control.Exception (BlockedIndefinitelyOnMVar, Handler (..), SomeException, catches, throwIO)
-import Control.Monad (liftM, liftM2, liftM3)
+import Control.Monad (liftM2, liftM3, void)
+import Data.Foldable (traverse_)
 import Data.Binary (Binary, get, getWord8, put, putWord8)
 import qualified Data.Either as Either
 import qualified Data.Map as Map
@@ -143,7 +144,7 @@ data Extras
 
 instance Show Extras where
   show ArtifactsCached = "ArtifactsCached"
-  show (ArtifactsFresh i _) = "ArtifactsFresh: " ++ show (Map.keys i)
+  show (ArtifactsFresh i _) = "ArtifactsFresh: " <> show (Map.keys i)
 
 type Interfaces =
   Map.Map ModuleName.Canonical I.DependencyInterface
@@ -171,8 +172,8 @@ verifyInstall scope root (Solver.Env cache manager connection registry packageOv
     let key = Reporting.ignorer
     let env = Env key scope root cache manager connection registry packageOverridesCache
     case outline of
-      Outline.Pkg pkg -> Task.run (verifyPkg env time pkg >> return ())
-      Outline.App app -> Task.run (verifyApp env time app >> return ())
+      Outline.Pkg pkg -> Task.run (void (verifyPkg env time pkg))
+      Outline.App app -> Task.run (void (verifyApp env time app))
 
 -- LOAD -- used by Make, Repl, Reactor
 
@@ -256,13 +257,13 @@ initEnv key scope root =
     eitherOutline <- Outline.read root
     case eitherOutline of
       Left problem ->
-        return $ Left $ Exit.DetailsBadOutline problem
+        return . Left $ Exit.DetailsBadOutline problem
       Right outline ->
         do
           maybeEnv <- readMVar mvar
           case maybeEnv of
             Left problem ->
-              return $ Left $ Exit.DetailsCannotGetRegistry problem
+              return . Left $ Exit.DetailsCannotGetRegistry problem
             Right (Solver.Env cache manager connection registry packageOverridesCache) ->
               return $ Right (Env key scope root cache manager connection registry packageOverridesCache, outline)
 
@@ -274,13 +275,13 @@ initEnvForReactorTH key scope root =
     eitherOutline <- Outline.read root
     case eitherOutline of
       Left problem ->
-        return $ Left $ Exit.DetailsBadOutline problem
+        return . Left $ Exit.DetailsBadOutline problem
       Right outline ->
         do
           maybeEnv <- readMVar mvar
           case maybeEnv of
             Left problem ->
-              return $ Left $ Exit.DetailsCannotGetRegistry problem
+              return . Left $ Exit.DetailsCannotGetRegistry problem
             Right (Solver.Env cache manager connection registry packageOverridesCache) ->
               return $ Right (Env key scope root cache manager connection registry packageOverridesCache, outline)
 
@@ -292,7 +293,7 @@ verifyPkg :: Env -> File.Time -> Outline.PkgOutline -> Task Details
 verifyPkg env time (Outline.PkgOutline pkg _ _ _ exposed direct testDirect canopy) =
   if Con.goodCanopy canopy
     then do
-      solution <- verifyConstraints env =<< union noDups direct testDirect
+      solution <- union noDups direct testDirect >>= verifyConstraints env
       let exposedList = Outline.flattenExposed exposed
       let exactDeps = Map.map (\(Solver.Details v _) -> v) solution -- for pkg docs in reactor
       -- We don't allow packages to override transitive dependencies, only applications
@@ -317,7 +318,7 @@ verifyApp env time outline@(Outline.AppOutline canopyVersion srcDirs direct _ _ 
       let originalPkgToOverridingPkg = groupByOriginalPkg packageOverrides
       if Map.size stated == Map.size actual
         then verifyDependencies env time (ValidApp srcDirs) actual direct originalPkgToOverridingPkg
-        else Task.throw $ Exit.DetailsHandEditedDependencies
+        else Task.throw Exit.DetailsHandEditedDependencies
     else Task.throw $ Exit.DetailsBadCanopyInAppOutline canopyVersion
 
 checkAppDeps :: Outline.AppOutline -> Task (Map.Map Pkg.Name V.Version)
@@ -335,15 +336,14 @@ verifyConstraints (Env _ _ _ cache _ connection registry _) constraints =
     result <- Task.io $ Solver.verify cache connection registry constraints
     case result of
       Solver.Ok details -> return details
-      Solver.NoSolution -> Task.throw $ Exit.DetailsNoSolution
+      Solver.NoSolution -> Task.throw Exit.DetailsNoSolution
       Solver.NoOfflineSolution r -> Task.throw $ Exit.DetailsNoOfflineSolution r
       Solver.Err exit -> Task.throw $ Exit.DetailsSolverProblem exit
 
 -- UNION
 
 union :: (Ord k) => (k -> v -> v -> Task v) -> Map.Map k v -> Map.Map k v -> Task (Map.Map k v)
-union tieBreaker deps1 deps2 =
-  Map.mergeA Map.preserveMissing Map.preserveMissing (Map.zipWithAMatched tieBreaker) deps1 deps2
+union tieBreaker = Map.mergeA Map.preserveMissing Map.preserveMissing (Map.zipWithAMatched tieBreaker)
 
 noDups :: k -> v -> v -> Task v
 noDups _ _ _ =
@@ -361,7 +361,7 @@ fork :: IO a -> IO (MVar a)
 fork work =
   do
     mvar <- newEmptyMVar
-    _ <- forkIO (putMVar mvar =<< work)
+    _ <- forkIO (work >>= putMVar mvar)
     return mvar
 
 hasLocked :: String -> IO a -> IO a
@@ -371,7 +371,7 @@ hasLocked msg action =
               ]
   where
     handler :: BlockedIndefinitelyOnMVar -> IO a
-    handler exception = printLog ("MVAR: " ++ msg) >> throwIO exception
+    handler exception = printLog ("MVAR: " <> msg) >> throwIO exception
 
 genericErrorHandler :: String -> IO a -> IO a
 genericErrorHandler msg action =
@@ -380,7 +380,7 @@ genericErrorHandler msg action =
               ]
   where
     handler :: SomeException -> IO a
-    handler exception = printLog ("SOME EXCEPTION: " ++ msg ++ " | exception was: " ++ show exception) >> throwIO exception
+    handler exception = printLog ("SOME EXCEPTION: " <> (msg <> (" | exception was: " <> show exception))) >> throwIO exception
 
 -- VERIFY DEPENDENCIES
 
@@ -413,27 +413,24 @@ verifyDependencies (Env key scope root cache manager _ zokkaRegistries packageOv
           printLog "Made it to VERIFYDEPENDENCIES 0"
           mvar <- newEmptyMVar
           printLog "Made it to VERIFYDEPENDENCIES 1"
-          printLog ("SOLUTION: " ++ show solution)
+          printLog ("SOLUTION: " <> show solution)
           mvars <-
             Stuff.withRegistryLock cache $
               Map.traverseWithKey (\k details -> fork (verifyDep key (generateBuildData k (extractVersionFromDetails details)) manager zokkaRegistries mvar solution (extractConstraintsFromDetails details))) solution
-          printLog ("Made it to VERIFYDEPENDENCIES 2: " ++ show (Map.keys mvars))
+          printLog ("Made it to VERIFYDEPENDENCIES 2: " <> show (Map.keys mvars))
           putMVar mvar mvars
           printLog "Made it to VERIFYDEPENDENCIES 3"
-          deps <- Map.traverseWithKey (\n m -> hasLocked (show n) (do r <- readMVar m; printLog ("deps result for " ++ show n); pure r)) mvars
+          deps <- Map.traverseWithKey (\n m -> hasLocked (show n) (do r <- readMVar m; printLog ("deps result for " <> show n); pure r)) mvars
           printLog "Made it to VERIFYDEPENDENCIES 4"
-          case sequence deps of
+          case sequenceA deps of
             Left _ ->
               do
                 home <- Stuff.getCanopyHome
-                return $
-                  Left $
-                    Exit.DetailsBadDeps home $
-                      Maybe.catMaybes $ Either.lefts $ Map.elems deps
+                (((return . Left) . Exit.DetailsBadDeps home) . Maybe.catMaybes) . Either.lefts $ Map.elems deps
             Right artifacts ->
               let objs = Map.foldr addObjects Opt.empty artifacts
                   ifaces = Map.foldrWithKey (addInterfaces directDeps) Map.empty artifacts
-                  foreigns = Map.map (OneOrMore.destruct Foreign) $ Map.foldrWithKey gatherForeigns Map.empty $ Map.intersection artifacts directDeps
+                  foreigns = (Map.map (OneOrMore.destruct Foreign) . Map.foldrWithKey gatherForeigns Map.empty $ Map.intersection artifacts directDeps)
                   details = Details time outline 0 Map.empty foreigns (ArtifactsFresh ifaces objs)
                in do
                     BW.writeBinary scope (Stuff.objects root) objs
@@ -442,23 +439,20 @@ verifyDependencies (Env key scope root cache manager _ zokkaRegistries packageOv
                     return (Right details)
 
 addObjects :: Artifacts -> Opt.GlobalGraph -> Opt.GlobalGraph
-addObjects (Artifacts _ objs) graph =
-  Opt.addGlobalGraph objs graph
+addObjects (Artifacts _ objs) = Opt.addGlobalGraph objs
 
 addInterfaces :: Map.Map Pkg.Name a -> Pkg.Name -> Artifacts -> Interfaces -> Interfaces
 addInterfaces directDeps pkg (Artifacts ifaces _) dependencyInterfaces =
-  Map.union dependencyInterfaces $
-    Map.mapKeysMonotonic (ModuleName.Canonical pkg) $
-      if Map.member pkg directDeps
+  Map.union dependencyInterfaces . Map.mapKeysMonotonic (ModuleName.Canonical pkg) $ (if Map.member pkg directDeps
         then ifaces
-        else Map.map I.privatize ifaces
+        else Map.map I.privatize ifaces)
 
 gatherForeigns :: Pkg.Name -> Artifacts -> Map.Map ModuleName.Raw (OneOrMore.OneOrMore Pkg.Name) -> Map.Map ModuleName.Raw (OneOrMore.OneOrMore Pkg.Name)
 gatherForeigns pkg (Artifacts ifaces _) foreigns =
   let isPublic di =
         case di of
           I.Public _ -> Just (OneOrMore.one pkg)
-          I.Private _ _ _ -> Nothing
+          I.Private {} -> Nothing
    in Map.unionWith OneOrMore.more foreigns (Map.mapMaybe isPublic ifaces)
 
 -- VERIFY DEPENDENCY
@@ -487,7 +481,7 @@ verifyDep key buildData manager zokkaRegistry depsMVar solution directDeps =
       downloadPackageAction = downloadPackageToFilePath cacheFilePath zokkaRegistry manager primaryPkg primaryPkgVersion
    in do
         exists <- Dir.doesDirectoryExist cacheFilePath
-        printLog (show exists ++ "A0" ++ cacheFilePath)
+        printLog (show exists <> ("A0" <> cacheFilePath))
         srcExists <- Dir.doesDirectoryExist (cacheFilePath </> "src")
         if srcExists
           then do
@@ -528,7 +522,7 @@ verifyDep key buildData manager zokkaRegistry depsMVar solution directDeps =
               Left problem ->
                 do
                   Reporting.report key (Reporting.DFailed primaryPkg primaryPkgVersion)
-                  return $ Left $ Just $ Exit.BD_BadDownload primaryPkg primaryPkgVersion problem
+                  (return . Left) . Just $ Exit.BD_BadDownload primaryPkg primaryPkgVersion problem
               Right () ->
                 do
                   Reporting.report key (Reporting.DReceived primaryPkg primaryPkgVersion)
@@ -584,57 +578,57 @@ build key buildData depsMVar f fs =
             (origPkg, origPkgVer)
    in do
         eitherOutline <- Outline.read cacheFilePath
-        printLog ("COMPILING: " ++ show pkg ++ show vsn ++ " OUTLINE: " ++ show eitherOutline)
+        printLog ("COMPILING: " <> (show pkg <> (show vsn <> (" OUTLINE: " <> show eitherOutline))))
         case eitherOutline of
           Left _ ->
             do
               Reporting.report key Reporting.DBroken
-              return $ Left $ Just $ Exit.BD_BadBuild pkg vsn f
+              (return . Left) . Just $ Exit.BD_BadBuild pkg vsn f
           Right (Outline.App _) ->
             do
               Reporting.report key Reporting.DBroken
-              return $ Left $ Just $ Exit.BD_BadBuild pkg vsn f
+              (return . Left) . Just $ Exit.BD_BadBuild pkg vsn f
           Right (Outline.Pkg (Outline.PkgOutline _ _ _ _ exposed deps _ _)) ->
             do
               allDeps <- readMVar depsMVar
               directDeps <- traverse readMVar (Map.intersection allDeps deps)
-              case sequence directDeps of
+              case sequenceA directDeps of
                 Left x ->
                   do
                     Reporting.report key Reporting.DBroken
-                    printLog ("bad dep! while building: " ++ show pkg ++ "|" ++ show x)
-                    return $ Left $ Nothing
+                    printLog ("bad dep! while building: " <> (show pkg <> ("|" <> show x)))
+                    return . Left $ Nothing
                 Right directArtifacts ->
                   do
                     let src = cacheFilePath </> "src"
                     let foreignDeps = gatherForeignInterfaces directArtifacts
-                    let exposedDict = Map.fromKeys (\_ -> ()) (Outline.flattenExposed exposed)
+                    let exposedDict = Map.fromKeys (const ()) (Outline.flattenExposed exposed)
                     docsStatus <- getDocsStatusFromFilePath cacheFilePath
                     mvar <- newEmptyMVar
                     mvars <- Map.traverseWithKey (const . fork . crawlModule foreignDeps mvar pkg src docsStatus) exposedDict
                     putMVar mvar mvars
-                    mapM_ readMVar mvars
-                    maybeStatuses <- traverse readMVar =<< readMVar mvar
-                    case sequence maybeStatuses of
+                    traverse_ readMVar mvars
+                    maybeStatuses <- readMVar mvar >>= traverse readMVar
+                    case sequenceA maybeStatuses of
                       Nothing ->
                         do
                           Reporting.report key Reporting.DBroken
-                          printLog ("maybeStatuses were Nothing for " ++ show pkg ++ " vsn " ++ show vsn ++ " and deps " ++ show deps)
-                          return $ Left $ Just $ Exit.BD_BadBuild pkg vsn f
+                          printLog ("maybeStatuses were Nothing for " <> (show pkg <> (" vsn " <> (show vsn <> (" and deps " <> show deps)))))
+                          (return . Left) . Just $ Exit.BD_BadBuild pkg vsn f
                       Just statuses ->
                         do
                           rmvar <- newEmptyMVar
                           let extractDepsFromStatus status = case status of (SLocal _ statusDeps _) -> statusDeps; _ -> Map.empty
-                          let compileAction status = genericErrorHandler ("This package failed: " ++ show pkg) (compile pkg rmvar status)
+                          let compileAction status = genericErrorHandler ("This package failed: " <> show pkg) (compile pkg rmvar status)
                           rmvars <- traverse (fork . compileAction) statuses
                           putMVar rmvar rmvars
                           maybeResults <- traverse readMVar rmvars
-                          case sequence maybeResults of
+                          case sequenceA maybeResults of
                             Nothing ->
                               do
-                                printLog ("maybeResults were Nothing for " ++ show pkg ++ " vsn " ++ show vsn ++ " and deps from status were " ++ show (fmap extractDepsFromStatus statuses))
+                                printLog ("maybeResults were Nothing for " <> (show pkg <> (" vsn " <> (show vsn <> (" and deps from status were " <> show (fmap extractDepsFromStatus statuses))))))
                                 Reporting.report key Reporting.DBroken
-                                return $ Left $ Just $ Exit.BD_BadBuild pkg vsn f
+                                (return . Left) . Just $ Exit.BD_BadBuild pkg vsn f
                             Just results ->
                               let path = cacheFilePath </> "artifacts.dat"
                                   ifaces = gatherInterfaces exposedDict results
@@ -650,8 +644,7 @@ build key buildData depsMVar f fs =
 -- GATHER
 
 gatherObjects :: Map.Map ModuleName.Raw Result -> Opt.GlobalGraph
-gatherObjects results =
-  Map.foldrWithKey addLocalGraph Opt.empty results
+gatherObjects = Map.foldrWithKey addLocalGraph Opt.empty
 
 addLocalGraph :: ModuleName.Raw -> Result -> Opt.GlobalGraph -> Opt.GlobalGraph
 addLocalGraph name status graph =
@@ -702,7 +695,7 @@ gatherForeignInterfaces directArtifacts =
     isPublic di =
       case di of
         I.Public iface -> Just (OneOrMore.one iface)
-        I.Private _ _ _ -> Nothing
+        I.Private {} -> Nothing
 
 -- CRAWL
 
@@ -725,7 +718,7 @@ crawlModule foreignDeps mvar pkg src docsStatus name =
     elmExists <- File.exists pathElm
     let exists = canopyExists || elmExists
     let path = if canopyExists then pathCanopy else pathElm
-    printLog $ "crawlModule: " ++ show name ++ " canopy exists: " ++ show canopyExists ++ " elm exists: " ++ show elmExists
+    printLog ("crawlModule: " <> (show name <> (" canopy exists: " <> (show canopyExists <> (" elm exists: " <> show elmExists)))))
     case Map.lookup name foreignDeps of
       Just ForeignAmbiguous ->
         return Nothing
@@ -736,15 +729,15 @@ crawlModule foreignDeps mvar pkg src docsStatus name =
       Nothing ->
         if exists
           then do
-            printLog $ "module " ++ show name ++ " is in exists branch"
+            printLog ("module " <> (show name <> " is in exists branch"))
             crawlFile foreignDeps mvar pkg src docsStatus name path
           else
             if Pkg.isKernel pkg && Name.isKernel name
               then do
-                printLog $ "module " ++ show name ++ " is in kernel branch"
+                printLog ("module " <> (show name <> " is in kernel branch"))
                 crawlKernel foreignDeps mvar pkg src name
               else do
-                printLog $ "module " ++ show name ++ " returning Nothing: Pkg.isKernel=" ++ show (Pkg.isKernel pkg) ++ " Name.isKernel=" ++ show (Name.isKernel name)
+                printLog ("module " <> (show name <> (" returning Nothing: Pkg.isKernel=" <> (show (Pkg.isKernel pkg) <> (" Name.isKernel=" <> show (Name.isKernel name))))))
                 return Nothing
 
 crawlFile :: Map.Map ModuleName.Raw ForeignInterface -> MVar StatusDict -> Pkg.Name -> FilePath -> DocsStatus -> ModuleName.Raw -> FilePath -> IO (Maybe Status)
@@ -754,9 +747,9 @@ crawlFile foreignDeps mvar pkg src docsStatus expectedName path =
     case Parse.fromByteString (Parse.Package pkg) bytes of
       Right modul@(Src.Module (Just (A.At _ actualName)) _ _ imports _ _ _ _ _) | expectedName == actualName ->
         do
-          printLog $ "crawlFile (imports) pkg: " ++ show pkg ++ " src: " ++ show src ++ " path : " ++ show path ++ " imports are " ++ show (fmap (Src._import) imports)
+          printLog ("crawlFile (imports) pkg: " <> (show pkg <> (" src: " <> (show src <> (" path : " <> (show path <> (" imports are " <> show (fmap (Src._import) imports))))))))
           deps <- crawlImports foreignDeps mvar pkg src imports
-          printLog $ "crawlFile (deps) pkg: " ++ show pkg ++ " src: " ++ show src ++ " path : " ++ show path ++ " deps are " ++ show deps
+          printLog ("crawlFile (deps) pkg: " <> (show pkg <> (" src: " <> (show src <> (" path : " <> (show path <> (" deps are " <> show deps)))))))
           return (Just (SLocal docsStatus deps modul))
       _ ->
         return Nothing
@@ -765,12 +758,12 @@ crawlImports :: Map.Map ModuleName.Raw ForeignInterface -> MVar StatusDict -> Pk
 crawlImports foreignDeps mvar pkg src imports =
   do
     statusDict <- takeMVar mvar
-    let deps = Map.fromList (map (\i -> (Src.getImportName i, ())) imports)
-    printLog $ "crawlImports pkg: " ++ show pkg ++ " src: " ++ show src ++ " deps are " ++ show deps
+    let deps = Map.fromList (fmap (\i -> (Src.getImportName i, ())) imports)
+    printLog ("crawlImports pkg: " <> (show pkg <> (" src: " <> (show src <> (" deps are " <> show deps)))))
     let news = Map.difference deps statusDict
     mvars <- Map.traverseWithKey (const . fork . crawlModule foreignDeps mvar pkg src DocsNotNeeded) news
     putMVar mvar (Map.union mvars statusDict)
-    mapM_ readMVar mvars
+    traverse_ readMVar mvars
     return deps
 
 crawlKernel :: Map.Map ModuleName.Raw ForeignInterface -> MVar StatusDict -> Pkg.Name -> FilePath -> ModuleName.Raw -> IO (Maybe Status)
@@ -810,23 +803,23 @@ compile pkg mvar status =
     SLocal docsStatus deps modul ->
       do
         resultsDict <- readMVar mvar
-        printLog ("all keys in resultsDict for pkg:  " ++ show pkg ++ " " ++ show (Map.keys resultsDict))
-        printLog ("all keys in deps for pkg: " ++ show pkg ++ " " ++ show (Map.keys deps))
+        printLog ("all keys in resultsDict for pkg:  " <> (show pkg <> (" " <> show (Map.keys resultsDict))))
+        printLog ("all keys in deps for pkg: " <> (show pkg <> (" " <> show (Map.keys deps))))
         let thingToRead = Map.intersection resultsDict deps
-        printLog ("all keys in thingToRead for pkg: " ++ show pkg ++ " " ++ show (Map.keys thingToRead))
-        maybeResults <- Map.traverseWithKey (\k v -> hasLocked ("compiling this pkg: " ++ show pkg ++ "reading this module: " ++ show k) (readMVar v)) (Map.intersection resultsDict deps)
-        case sequence maybeResults of
+        printLog ("all keys in thingToRead for pkg: " <> (show pkg <> (" " <> show (Map.keys thingToRead))))
+        maybeResults <- Map.traverseWithKey (\k v -> hasLocked ("compiling this pkg: " <> (show pkg <> ("reading this module: " <> show k))) (readMVar v)) (Map.intersection resultsDict deps)
+        case sequenceA maybeResults of
           Nothing -> do
-            printLog ("nothing branch of sequence maybeResults for pkg: " ++ show pkg)
+            printLog ("nothing branch of sequence maybeResults for pkg: " <> show pkg)
             return Nothing
           Just results ->
             case Compile.compile pkg (Map.mapMaybe getInterface results) modul of
               Left compileError ->
                 do
                   printLog ("=== COMPILE ERROR DEBUG INFO START ===")
-                  printLog ("Package: " ++ show pkg)
-                  printLog ("Module: " ++ show modul)
-                  printLog ("CompileError: " ++ show compileError)
+                  printLog ("Package: " <> show pkg)
+                  printLog ("Module: " <> show modul)
+                  printLog ("CompileError: " <> show compileError)
                   printLog ("=== COMPILE ERROR DEBUG INFO END ===")
                   return Nothing
               Right (Compile.Artifacts canonical annotations objects) ->
@@ -893,8 +886,7 @@ writeDocs :: Stuff.PackageCache -> Pkg.Name -> V.Version -> DocsStatus -> Map.Ma
 writeDocs cache pkg vsn status results =
   case status of
     DocsNeeded ->
-      E.writeUgly (Stuff.package cache pkg vsn </> "docs.json") $
-        Docs.encode $ Map.mapMaybe toDocs results
+      E.writeUgly (Stuff.package cache pkg vsn </> "docs.json") . Docs.encode $ Map.mapMaybe toDocs results
     DocsNotNeeded ->
       return ()
 
@@ -902,8 +894,7 @@ writeDocsToFilePath :: FilePath -> DocsStatus -> Map.Map ModuleName.Raw Result -
 writeDocsToFilePath pathToDocsDir status results =
   case status of
     DocsNeeded ->
-      E.writeUgly (pathToDocsDir </> "docs.json") $
-        Docs.encode $ Map.mapMaybe toDocs results
+      E.writeUgly (pathToDocsDir </> "docs.json") . Docs.encode $ Map.mapMaybe toDocs results
     DocsNotNeeded ->
       return ()
 
@@ -911,8 +902,7 @@ writeDocsOverridingPackage :: Stuff.PackageOverridesCache -> Pkg.Name -> V.Versi
 writeDocsOverridingPackage cache originalPkg originalVsn overridingPkg overridingVsn status results =
   case status of
     DocsNeeded ->
-      E.writeUgly (Stuff.packageOverride cache originalPkg originalVsn overridingPkg overridingVsn </> "docs.json") $
-        Docs.encode $ Map.mapMaybe toDocs results
+      E.writeUgly (Stuff.packageOverride cache originalPkg originalVsn overridingPkg overridingVsn </> "docs.json") . Docs.encode $ Map.mapMaybe toDocs results
     DocsNotNeeded ->
       return ()
 
@@ -963,14 +953,14 @@ downloadPackageToFilePath filePath zokkaRegistries manager pkg vsn =
     Just (Registry.RepositoryUrlKey repositoryData) ->
       do
         exists <- Dir.doesDirectoryExist filePath
-        printLog (show exists ++ "A (toFilePath)" ++ filePath)
+        printLog (show exists <> ("A (toFilePath)" <> filePath))
         let headers = getHeadersFromCustomRepositoryData repositoryData
         let repoUrl = getRepoUrlFromCustomRepositoryData repositoryData
         downloadPackageFromCanopyPackageRepoToFilePath filePath repoUrl headers manager pkg vsn
     Just (Registry.PackageUrlKey packageData) ->
       do
         exists <- Dir.doesDirectoryExist filePath
-        printLog ("Checking whether " ++ filePath ++ "exists as a directory. Result: " ++ show exists)
+        printLog ("Checking whether " <> (filePath <> ("exists as a directory. Result: " <> show exists)))
         downloadPackageDirectlyToFilePath filePath (CustomRepositoriesData._url packageData) (CustomRepositoriesData._shaHash packageData) manager
     Nothing ->
       let --FIXME
@@ -982,8 +972,7 @@ downloadPackageDirectly cache packageUrl manager pkg vsn =
   let urlString = Utf8.toChars packageUrl
    in Http.getArchive manager urlString Exit.PP_BadArchiveRequest (Exit.PP_BadArchiveContent urlString) $
         \(_, archive) ->
-          Right <$> do
-            File.writePackage (Stuff.package cache pkg vsn) archive
+          Right <$> File.writePackage (Stuff.package cache pkg vsn) archive
 
 downloadPackageDirectlyToFilePath :: FilePath -> PackageUrl -> HumanReadableShaDigest -> Http.Manager -> IO (Either Exit.PackageProblem ())
 downloadPackageDirectlyToFilePath filePath packageUrl expectedShaDigest manager =
@@ -992,8 +981,7 @@ downloadPackageDirectlyToFilePath filePath packageUrl expectedShaDigest manager 
         \(receivedShaHash, archive) ->
           if humanReadableShaDigestIsEqualToSha expectedShaDigest receivedShaHash
             then
-              Right <$> do
-                File.writePackage filePath archive
+              Right <$> File.writePackage filePath archive
             else -- FIXME Maybe use a custom error type instead of PP_BadArchiveHash that points to where the hash is defined in the custom-repo config
               pure (Left (PP_BadArchiveHash urlString (humanReadableShaDigestToString expectedShaDigest) (Http.shaToChars receivedShaHash)))
 
@@ -1004,15 +992,15 @@ downloadPackageFromCanopyPackageRepo cache repositoryUrl headers manager pkg vsn
         eitherByteString <-
           Http.get manager url headers id (return . Right)
         exists <- Dir.doesDirectoryExist (Stuff.package cache pkg vsn)
-        printLog (show exists ++ "B0" ++ Stuff.package cache pkg vsn)
+        printLog (show exists <> ("B0" <> Stuff.package cache pkg vsn))
 
         case eitherByteString of
           Left err ->
-            return $ Left $ Exit.PP_BadEndpointRequest err
+            return . Left $ Exit.PP_BadEndpointRequest err
           Right byteString ->
             case D.fromByteString endpointDecoder byteString of
               Left _ ->
-                return $ Left $ Exit.PP_BadEndpointContent url
+                return . Left $ Exit.PP_BadEndpointContent url
               Right (endpoint, expectedHash) ->
                 Http.getArchiveWithHeaders manager endpoint headers Exit.PP_BadArchiveRequest (Exit.PP_BadArchiveContent endpoint) $
                   \(sha, archive) ->
@@ -1020,9 +1008,9 @@ downloadPackageFromCanopyPackageRepo cache repositoryUrl headers manager pkg vsn
                       then
                         Right <$> do
                           packageExists <- Dir.doesDirectoryExist (Stuff.package cache pkg vsn)
-                          printLog (show packageExists ++ "C" ++ Stuff.package cache pkg vsn)
+                          printLog (show packageExists <> ("C" <> Stuff.package cache pkg vsn))
                           File.writePackage (Stuff.package cache pkg vsn) archive
-                      else return $ Left $ Exit.PP_BadArchiveHash endpoint expectedHash (Http.shaToChars sha)
+                      else return . Left $ Exit.PP_BadArchiveHash endpoint expectedHash (Http.shaToChars sha)
 
 -- FIXME: Reduce duplication
 downloadPackageFromCanopyPackageRepoToFilePath :: FilePath -> RepositoryUrl -> [Http.Header] -> Http.Manager -> Pkg.Name -> V.Version -> IO (Either Exit.PackageProblem ())
@@ -1032,15 +1020,15 @@ downloadPackageFromCanopyPackageRepoToFilePath filePath repositoryUrl headers ma
         eitherByteString <-
           Http.get manager url headers id (return . Right)
         exists <- Dir.doesDirectoryExist filePath
-        printLog (show exists ++ "B0 (toFilePath)" ++ filePath)
+        printLog (show exists <> ("B0 (toFilePath)" <> filePath))
 
         case eitherByteString of
           Left err ->
-            return $ Left $ Exit.PP_BadEndpointRequest err
+            return . Left $ Exit.PP_BadEndpointRequest err
           Right byteString ->
             case D.fromByteString endpointDecoder byteString of
               Left _ ->
-                return $ Left $ Exit.PP_BadEndpointContent url
+                return . Left $ Exit.PP_BadEndpointContent url
               Right (endpoint, expectedHash) ->
                 Http.getArchiveWithHeaders manager endpoint headers Exit.PP_BadArchiveRequest (Exit.PP_BadArchiveContent endpoint) $
                   \(sha, archive) ->
@@ -1048,9 +1036,9 @@ downloadPackageFromCanopyPackageRepoToFilePath filePath repositoryUrl headers ma
                       then
                         Right <$> do
                           filePathExists <- Dir.doesDirectoryExist filePath
-                          printLog (show filePathExists ++ "C (toFilePath)" ++ filePath)
+                          printLog (show filePathExists <> ("C (toFilePath)" <> filePath))
                           File.writePackage filePath archive
-                      else return $ Left $ Exit.PP_BadArchiveHash endpoint expectedHash (Http.shaToChars sha)
+                      else return . Left $ Exit.PP_BadArchiveHash endpoint expectedHash (Http.shaToChars sha)
 
 endpointDecoder :: D.Decoder e (String, String)
 endpointDecoder =
@@ -1082,7 +1070,7 @@ instance Binary ValidOutline where
     do
       n <- getWord8
       case n of
-        0 -> liftM ValidApp get
+        0 -> fmap ValidApp get
         1 -> liftM3 ValidPkg get get get
         _ -> fail "binary encoding of ValidOutline was corrupted"
 
@@ -1095,8 +1083,7 @@ instance Binary Local where
       c <- get
       d <- get
       e <- get
-      f <- get
-      return (Local a b c d e f)
+      Local a b c d e <$> get
 
 instance Binary Foreign where
   get = liftM2 Foreign get get

@@ -33,7 +33,7 @@ newtype Reason
 
 because :: Reason -> String -> String
 because (ExplicitReason iNeedThings) problem =
-  iNeedThings ++ " " ++ problem
+  iNeedThings <> (" " <> problem)
 
 -- PARSE ERROR TO REPORT
 
@@ -73,7 +73,7 @@ parseErrorToReport path source parseError reason =
                       "better",
                       "hints!"
                     ],
-                  D.toSimpleNote $
+                  D.toSimpleNote
                     "The JSON specification does not allow trailing commas, so you can sometimes\
                     \ get this error in arrays that have an extra comma at the end. In that case,\
                     \ remove that last comma or add another array entry after it!"
@@ -112,7 +112,7 @@ parseErrorToReport path source parseError reason =
                       D.dullyellow "\"dependencies\"",
                       "next."
                     ],
-                  D.reflow $
+                  D.reflow
                     "This error is commonly caused by trailing commas in JSON objects. Those are\
                     \ actually disallowed by <https://json.org> so check the previous line for a\
                     \ trailing comma that may need to be deleted.",
@@ -126,7 +126,7 @@ parseErrorToReport path source parseError reason =
             col
             ( "I was partway through parsing a JSON object when I got stuck here:",
               D.stack
-                [ D.reflow $ "I was expecting to see a colon next.",
+                [ D.reflow "I was expecting to see a colon next.",
                   objectNote
                 ]
             )
@@ -137,9 +137,8 @@ parseErrorToReport path source parseError reason =
             col
             ( "I was partway through parsing a JSON object when I got stuck here:",
               D.stack
-                [ D.reflow $
-                    "I was expecting to see a comma or a closing curly brace next.",
-                  D.reflow $
+                [ D.reflow "I was expecting to see a comma or a closing curly brace next.",
+                  D.reflow
                     "Is a comma missing on the previous line? Is an array missing a closing square\
                     \ bracket? It is often something tricky like that!",
                   objectNote
@@ -152,9 +151,8 @@ parseErrorToReport path source parseError reason =
             col
             ( "I was partway through parsing a JSON array when I got stuck here:",
               D.stack
-                [ D.reflow $ "I was expecting to see a comma or a closing square bracket next.",
-                  D.reflow $
-                    "Is a comma missing on the previous line? It is often something like that!"
+                [ D.reflow "I was expecting to see a comma or a closing square bracket next.",
+                  D.reflow "Is a comma missing on the previous line? It is often something like that!"
                 ]
             )
         StringProblem stringProblem row col ->
@@ -165,7 +163,7 @@ parseErrorToReport path source parseError reason =
                 row
                 col
                 ( "I got to the end of the line without seeing the closing double quote:",
-                  D.fillSep $
+                  D.fillSep
                     [ "Strings",
                       "look",
                       "like",
@@ -193,7 +191,7 @@ parseErrorToReport path source parseError reason =
                 row
                 col
                 ( "I ran into a control character unexpectedly:",
-                  D.reflow $
+                  D.reflow
                     "These are characters that represent tabs, backspaces, newlines, and\
                     \ a bunch of other invisible characters. They all come before 20 in the\
                     \ ASCII range, and they are disallowed by the JSON specificaiton. Maybe\
@@ -206,14 +204,9 @@ parseErrorToReport path source parseError reason =
                 col
                 ( "Backslashes always start escaped characters, but I do not recognize this one:",
                   D.stack
-                    [ D.reflow $
-                        "Valid escape characters include:",
-                      D.dullyellow $
-                        D.indent 4 $
-                          D.vcat $
-                            ["\\\"", "\\\\", "\\/", "\\b", "\\f", "\\n", "\\r", "\\t", "\\u003D"],
-                      D.reflow $
-                        "Do you want one of those instead? Maybe you need \\\\ to escape a backslash?"
+                    [ D.reflow "Valid escape characters include:",
+                      (D.dullyellow . D.indent 4) . D.vcat $ ["\\\"", "\\\\", "\\/", "\\b", "\\f", "\\n", "\\r", "\\t", "\\u003D"],
+                      D.reflow "Do you want one of those instead? Maybe you need \\\\ to escape a backslash?"
                     ]
                 )
             BadStringEscapeHex ->
@@ -222,7 +215,7 @@ parseErrorToReport path source parseError reason =
                 row
                 col
                 ( "This is not a valid hex escape:",
-                  D.fillSep $
+                  D.fillSep
                     [ "Valid",
                       "hex",
                       "escapes",
@@ -247,7 +240,7 @@ parseErrorToReport path source parseError reason =
             row
             col
             ( "Numbers cannot start with zeros like this:",
-              D.reflow $ "Try deleting the leading zeros?"
+              D.reflow "Try deleting the leading zeros?"
             )
         NoFloats row col ->
           toSnippet
@@ -255,7 +248,7 @@ parseErrorToReport path source parseError reason =
             row
             col
             ( "I got stuck while trying to parse this number:",
-              D.reflow $
+              D.reflow
                 "I do not accept floating point numbers like 3.1415 right now. That kind\
                 \ of JSON value is not needed for any of the uses that Canopy has for now."
             )
@@ -265,7 +258,7 @@ parseErrorToReport path source parseError reason =
             row
             col
             ( "I was partway through parsing some JSON when I got stuck here:",
-              D.reflow $
+              D.reflow
                 "I am not really sure what is wrong. This sometimes means there is extra\
                 \ stuff after a valid JSON value?"
             )
@@ -273,14 +266,14 @@ parseErrorToReport path source parseError reason =
 objectNote :: D.Doc
 objectNote =
   D.stack
-    [ D.toSimpleNote $ "Here is an example of a valid JSON object for reference:",
+    [ D.toSimpleNote "Here is an example of a valid JSON object for reference:",
       D.vcat
-        [ D.indent 4 $ "{",
+        [ D.indent 4 "{",
           D.indent 6 $ D.dullyellow "\"name\"" <> ": " <> D.dullyellow "\"Tom\"" <> ",",
           D.indent 6 $ D.dullyellow "\"age\"" <> ": " <> D.dullyellow "42",
-          D.indent 4 $ "}"
+          D.indent 4 "}"
         ],
-      D.reflow $
+      D.reflow
         "Notice that (1) the field names are in double quotes and (2) there is no\
         \ trailing comma after the last entry. Both are strict requirements in JSON!"
     ]
@@ -314,7 +307,7 @@ getMaxDepth problem =
   case problem of
     Field _ prob -> 1 + getMaxDepth prob
     Index _ prob -> 1 + getMaxDepth prob
-    OneOf p ps -> maximum (getMaxDepth p : map getMaxDepth ps)
+    OneOf p ps -> maximum (getMaxDepth p : fmap getMaxDepth ps)
     Failure _ _ -> 0
     Expecting _ _ -> 0
 
@@ -333,13 +326,11 @@ expectationToReport path source context (A.Region start end) expectation reason 
           CRoot ->
             "I ran into some trouble here:"
           CField field _ ->
-            "I ran into trouble with the value of the \"" ++ BS_UTF8.toString field ++ "\" field:"
+            "I ran into trouble with the value of the \"" <> (BS_UTF8.toString field <> "\" field:")
           CIndex index (CField field _) ->
-            "When looking at the \"" ++ BS_UTF8.toString field ++ "\" field, I ran into trouble with the "
-              ++ D.intToOrdinal index
-              ++ " entry:"
+            "When looking at the \"" <> (BS_UTF8.toString field <> ("\" field, I ran into trouble with the " <> (D.intToOrdinal index <> " entry:")))
           CIndex index _ ->
-            "I ran into trouble with the " ++ D.intToOrdinal index ++ " index of this array:"
+            "I ran into trouble with the " <> (D.intToOrdinal index <> " index of this array:")
 
       toSnippet title aThing =
         Help.jsonReport title (Just path) $
@@ -348,7 +339,7 @@ expectationToReport path source context (A.Region start end) expectation reason 
             region
             Nothing
             ( D.reflow (because reason introduction),
-              D.fillSep $ ["I", "was", "expecting", "to", "run", "into"] ++ aThing
+              D.fillSep (["I", "was", "expecting", "to", "run", "into"] <> aThing)
             )
    in case expectation of
         TObject ->

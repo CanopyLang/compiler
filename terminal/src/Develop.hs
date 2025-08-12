@@ -17,6 +17,7 @@ import qualified Data.ByteString as BS
 import Data.ByteString.Builder (Builder)
 import qualified Data.ByteString.Builder as B
 import qualified Data.HashMap.Strict as HashMap
+import qualified Data.Maybe
 import qualified Data.NonEmptyList as NE
 import qualified Develop.Generate.Help as Help
 import qualified Develop.Generate.Index as Index
@@ -42,8 +43,8 @@ data Flags = Flags
 run :: () -> Flags -> IO ()
 run () (Flags maybePort) =
   do
-    let port = maybe 8000 id maybePort
-    putStrLn $ "Go to http://localhost:" ++ show port ++ " to see your project dashboard."
+    let port = Data.Maybe.fromMaybe 8000 maybePort
+    putStrLn ("Go to http://localhost:" <> (show port <> " to see your project dashboard."))
     httpServe (config port) $
       serveFiles
         <|> serveDirectoryWith directoryConfig "."
@@ -52,9 +53,7 @@ run () (Flags maybePort) =
 
 config :: Int -> Config Snap a
 config port =
-  setVerbose False $
-    setPort port $
-      setAccessLog ConfigNoLog $ setErrorLog ConfigNoLog $ defaultConfig
+  ((setVerbose False . setPort port) . setAccessLog ConfigNoLog) . setErrorLog ConfigNoLog $ defaultConfig
 
 -- INDEX
 
@@ -65,7 +64,7 @@ directoryConfig =
       indexGenerator = \pwd ->
         do
           modifyResponse $ setContentType "text/html;charset=utf-8"
-          writeBuilder =<< liftIO (Index.generate pwd)
+          liftIO (Index.generate pwd) >>= writeBuilder
     }
 
 -- NOT FOUND
@@ -83,7 +82,7 @@ serveFiles :: Snap ()
 serveFiles =
   do
     path <- getSafePath
-    guard =<< liftIO (Dir.doesFileExist path)
+    liftIO (Dir.doesFileExist path) >>= guard
     serveCanopy path <|> serveFilePretty path
 
 -- SERVE FILES + CODE HIGHLIGHTING
@@ -92,7 +91,7 @@ serveFilePretty :: FilePath -> Snap ()
 serveFilePretty path =
   let possibleExtensions =
         getSubExts (takeExtensions path)
-   in case mconcat (map lookupMimeType possibleExtensions) of
+   in case mconcat (fmap lookupMimeType possibleExtensions) of
         Nothing ->
           serveCode path
         Just mimeType ->
@@ -125,10 +124,7 @@ serveCanopy path =
       Right builder ->
         writeBuilder builder
       Left exit ->
-        writeBuilder $
-          Help.makePageHtml "Errors" $
-            Just $
-              Exit.toJson $ Exit.reactorToReport exit
+        ((writeBuilder . Help.makePageHtml "Errors") . Just) . Exit.toJson $ Exit.reactorToReport exit
 
 compile :: FilePath -> IO (Either Exit.Reactor Builder)
 compile path =
@@ -136,16 +132,17 @@ compile path =
     maybeRoot <- Stuff.findRoot
     case maybeRoot of
       Nothing ->
-        return $ Left $ Exit.ReactorNoOutline
+        return . Left $ Exit.ReactorNoOutline
       Just root ->
-        BW.withScope $ \scope -> Stuff.withRootLock root $
-          Task.run $
-            do
-              details <- Task.eio Exit.ReactorBadDetails $ Details.load Reporting.silent scope root
-              artifacts <- Task.eio Exit.ReactorBadBuild $ Build.fromPaths Reporting.silent root details (NE.List path [])
-              javascript <- Task.mapError Exit.ReactorBadGenerate $ Generate.dev root details artifacts
-              let (NE.List name _) = Build.getRootNames artifacts
-              return $ Html.sandwich name javascript
+        BW.withScope $ \scope ->
+          Stuff.withRootLock root . Task.run $
+            ( do
+                details <- Task.eio Exit.ReactorBadDetails $ Details.load Reporting.silent scope root
+                artifacts <- Task.eio Exit.ReactorBadBuild $ Build.fromPaths Reporting.silent root details (NE.List path [])
+                javascript <- Task.mapError Exit.ReactorBadGenerate $ Generate.dev root details artifacts
+                let (NE.List name _) = Build.getRootNames artifacts
+                return $ Html.sandwich name javascript
+            )
 
 -- SERVE STATIC ASSETS
 

@@ -60,8 +60,8 @@ import qualified Canopy.Float as EF
 import qualified Canopy.ModuleName as ModuleName
 import qualified Canopy.String as ES
 import Control.Monad (liftM2, liftM3, liftM4, replicateM)
-import Data.Foldable (traverse_)
 import Data.Binary
+import Data.Foldable (traverse_)
 import qualified Data.Index as Index
 import qualified Data.List as List
 import Data.Map (Map)

@@ -68,11 +68,10 @@ getChanges isEquivalent old new =
 
 diff :: Docs.Documentation -> Docs.Documentation -> PackageChanges
 diff oldDocs newDocs =
-  let filterOutPatches chngs =
-        Map.filter (\chng -> moduleChangeMagnitude chng /= M.PATCH) chngs
-
+  let 
       (Changes added changed removed) =
         getChanges (\_ _ -> False) oldDocs newDocs
+      filterOutPatches = Map.filter (\chng -> moduleChangeMagnitude chng /= M.PATCH)
    in PackageChanges
         (Map.keys added)
         (filterOutPatches (Map.map diffModule changed))
@@ -91,7 +90,7 @@ diffModule (Docs.Module _ _ u1 a1 v1 b1, Docs.Module _ _ u2 a2 v2 b2) =
 isEquivalentUnion :: Docs.Union -> Docs.Union -> Bool
 isEquivalentUnion (Docs.Union oldComment oldVars oldCtors) (Docs.Union newComment newVars newCtors) =
   length oldCtors == length newCtors
-    && and (zipWith (==) (map fst oldCtors) (map fst newCtors))
+    && and (zipWith (==) (fmap fst oldCtors) (fmap fst newCtors))
     && and (Map.elems (Map.intersectionWith equiv (Map.fromList oldCtors) (Map.fromList newCtors)))
   where
     equiv :: [Type.Type] -> [Type.Type] -> Bool
@@ -99,8 +98,8 @@ isEquivalentUnion (Docs.Union oldComment oldVars oldCtors) (Docs.Union newCommen
       let allEquivalent =
             zipWith
               isEquivalentAlias
-              (map (Docs.Alias oldComment oldVars) oldTypes)
-              (map (Docs.Alias newComment newVars) newTypes)
+              (fmap (Docs.Alias oldComment oldVars) oldTypes)
+              (fmap (Docs.Alias newComment newVars) newTypes)
        in length oldTypes == length newTypes
             && and allEquivalent
 
@@ -111,7 +110,7 @@ isEquivalentAlias (Docs.Alias _ oldVars oldType) (Docs.Alias _ newVars newType) 
       False
     Just renamings ->
       length oldVars == length newVars
-        && isEquivalentRenaming (zip oldVars newVars ++ renamings)
+        && isEquivalentRenaming (zip oldVars newVars <> renamings)
 
 isEquivalentValue :: Docs.Value -> Docs.Value -> Bool
 isEquivalentValue (Docs.Value c1 t1) (Docs.Value c2 t2) =
@@ -157,7 +156,7 @@ diffType oldType newType =
           aVars <- diffType a x
           bVars <- diffType b y
           cVars <- concat <$> zipWithM diffType cs zs
-          return (aVars ++ bVars ++ cVars)
+          return (aVars <> (bVars ++ cVars))
     (_, _) ->
       Nothing
 
@@ -167,9 +166,9 @@ isSameName oldFullName newFullName =
   let dedot name =
         reverse (Name.splitDots name)
    in case (dedot oldFullName, dedot newFullName) of
-        (oldName : [], newName : _) ->
+        ([oldName], newName : _) ->
           oldName == newName
-        (oldName : _, newName : []) ->
+        (oldName : _, [newName]) ->
           oldName == newName
         _ ->
           oldFullName == newFullName
@@ -179,12 +178,7 @@ diffFields oldRawFields newRawFields =
   let sort = List.sortBy (compare `on` fst)
       oldFields = sort oldRawFields
       newFields = sort newRawFields
-   in if length oldRawFields /= length newRawFields
-        then Nothing
-        else
-          if or (zipWith ((/=) `on` fst) oldFields newFields)
-            then Nothing
-            else concat <$> zipWithM (diffType `on` snd) oldFields newFields
+   in (if (length oldRawFields /= length newRawFields) || or (zipWith ((/=) `on` fst) oldFields newFields) then Nothing else concat <$> zipWithM (diffType `on` snd) oldFields newFields)
 
 -- TYPE VARIABLES
 
@@ -192,9 +186,6 @@ isEquivalentRenaming :: [(Name.Name, Name.Name)] -> Bool
 isEquivalentRenaming varPairs =
   let renamings =
         Map.toList (foldr insert Map.empty varPairs)
-
-      insert (old, new) dict =
-        Map.insertWith (++) old [new] dict
 
       verify (old, news) =
         case news of
@@ -207,12 +198,14 @@ isEquivalentRenaming varPairs =
 
       allUnique list =
         length list == Set.size (Set.fromList list)
-   in case mapM verify renamings of
+
+      insert (old, new) = Map.insertWith (++) old [new]
+   in case traverse verify renamings of
         Nothing ->
           False
         Just verifiedRenamings ->
           all compatibleVars verifiedRenamings
-            && allUnique (map snd verifiedRenamings)
+            && allUnique (fmap snd verifiedRenamings)
 
 compatibleVars :: (Name.Name, Name.Name) -> Bool
 compatibleVars (old, new) =
@@ -256,7 +249,7 @@ toMagnitude :: PackageChanges -> M.Magnitude
 toMagnitude (PackageChanges added changed removed) =
   let addMag = if null added then M.PATCH else M.MINOR
       removeMag = if null removed then M.PATCH else M.MAJOR
-      changeMags = map moduleChangeMagnitude (Map.elems changed)
+      changeMags = fmap moduleChangeMagnitude (Map.elems changed)
    in maximum (addMag : removeMag : changeMags)
 
 moduleChangeMagnitude :: ModuleChanges -> M.Magnitude
@@ -269,13 +262,10 @@ moduleChangeMagnitude (ModuleChanges unions aliases values binops) =
     ]
 
 changeMagnitude :: Changes k v -> M.Magnitude
-changeMagnitude (Changes added changed removed) =
-  if Map.size removed > 0 || Map.size changed > 0
-    then M.MAJOR
-    else
-      if Map.size added > 0
-        then M.MINOR
-        else M.PATCH
+changeMagnitude (Changes added changed removed)
+  | Map.size removed > 0 || Map.size changed > 0 = M.MAJOR
+  | Map.size added > 0 = M.MINOR
+  | otherwise = M.PATCH
 
 -- GET DOCS
 
@@ -315,7 +305,7 @@ getDocs cache zokkaRegistry manager name version =
                       File.writeUtf8 path body
                       return $ Right docs
                   Left _ ->
-                    return $ Left $ Exit.DP_Data url body
+                    return . Left $ Exit.DP_Data url body
           PZRPackageServerRepoData pzrPackageServerRepo ->
             do
               let repositoryUrl = _pzrPackageServerRepoTypeUrl pzrPackageServerRepo
@@ -329,4 +319,4 @@ getDocs cache zokkaRegistry manager name version =
                       File.writeUtf8 path body
                       return $ Right docs
                   Left _ ->
-                    return $ Left $ Exit.DP_Data url body
+                    return . Left $ Exit.DP_Data url body

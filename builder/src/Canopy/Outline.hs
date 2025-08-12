@@ -28,7 +28,7 @@ import Canopy.PackageOverrideData (PackageOverrideData (..))
 import qualified Canopy.PackageOverrideData as PkgOverride
 import Canopy.Version (Version)
 import qualified Canopy.Version as V
-import Control.Monad (filterM, liftM)
+import Control.Monad (filterM)
 import Data.Binary (Binary, get, getWord8, put, putWord8)
 import Data.Map (Map)
 import qualified Data.Map as Map
@@ -152,15 +152,13 @@ encodeExposed exposed =
     ExposedList modules ->
       E.list encodeModule modules
     ExposedDict chunks ->
-      E.object (map (fmap (E.list encodeModule)) chunks)
+      E.object (fmap (fmap (E.list encodeModule)) chunks)
 
 encodeModule :: ModuleName.Raw -> E.Value
-encodeModule name =
-  E.name name
+encodeModule = E.name
 
 encodeDeps :: (a -> E.Value) -> Map Pkg.Name a -> E.Value
-encodeDeps encodeValue deps =
-  E.dict Pkg.toJsonString encodeValue deps
+encodeDeps = E.dict Pkg.toJsonString
 
 encodeSrcDir :: SrcDir -> E.Value
 encodeSrcDir srcDir =
@@ -217,7 +215,7 @@ read root =
             | otherwise ->
               do
                 badDirs <- filterM (isSrcDirMissing root) (NE.toList srcDirs)
-                case map toGiven badDirs of
+                case fmap toGiven badDirs of
                   d : ds ->
                     return $ Left (Exit.OutlineHasMissingSrcDirs d ds)
                   [] ->
@@ -249,10 +247,7 @@ detectDuplicates :: FilePath -> [SrcDir] -> IO (Maybe (FilePath, (FilePath, File
 detectDuplicates root srcDirs =
   do
     pairs <- traverse (toPair root) srcDirs
-    return $
-      Map.lookupMin $
-        Map.mapMaybe isDup $
-          Map.fromListWith OneOrMore.more pairs
+    (return . Map.lookupMin) . Map.mapMaybe isDup $ Map.fromListWith OneOrMore.more pairs
 
 toPair :: FilePath -> SrcDir -> IO (FilePath, OneOrMore.OneOrMore FilePath)
 toPair root srcDir =
@@ -362,8 +357,7 @@ constraintDecoder =
   D.mapError Exit.OP_BadConstraint Con.decoder
 
 depsDecoder :: Decoder a -> Decoder (Map Pkg.Name a)
-depsDecoder valueDecoder =
-  D.dict (Pkg.keyDecoder Exit.OP_BadDependencyName) valueDecoder
+depsDecoder = D.dict (Pkg.keyDecoder Exit.OP_BadDependencyName)
 
 dirsDecoder :: Decoder (List SrcDir)
 dirsDecoder =
@@ -425,6 +419,6 @@ instance Binary SrcDir where
     do
       n <- getWord8
       case n of
-        0 -> liftM AbsoluteSrcDir get
-        1 -> liftM RelativeSrcDir get
+        0 -> fmap AbsoluteSrcDir get
+        1 -> fmap RelativeSrcDir get
         _ -> fail "binary encoding of SrcDir was corrupted"

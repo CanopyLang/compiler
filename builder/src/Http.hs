@@ -57,7 +57,7 @@ toUrl :: String -> [(String, String)] -> String
 toUrl url params =
   case params of
     [] -> url
-    _ : _ -> url ++ "?" ++ urlEncodeVars params
+    _ : _ -> url <> ("?" <> urlEncodeVars params)
 
 -- FETCH
 
@@ -71,9 +71,7 @@ post =
 
 fetch :: Method -> Manager -> String -> [Header] -> (Error -> e) -> (ByteString -> IO (Either e a)) -> IO (Either e a)
 fetch methodVerb manager url headers onError onSuccess =
-  handle (handleSomeException url onError) $
-    handle (handleHttpException url onError) $
-      do
+  handle (handleSomeException url onError) . handle (handleHttpException url onError) $ (do
         req0 <- parseUrlThrow url
         let req1 =
               req0
@@ -83,7 +81,7 @@ fetch methodVerb manager url headers onError onSuccess =
         withResponse req1 manager $ \response ->
           do
             chunks <- brConsume (responseBody response)
-            onSuccess (BS.concat chunks)
+            onSuccess (BS.concat chunks))
 
 addDefaultHeaders :: [Header] -> [Header]
 addDefaultHeaders headers =
@@ -92,7 +90,7 @@ addDefaultHeaders headers =
 {-# NOINLINE userAgent #-}
 userAgent :: ByteString
 userAgent =
-  BS.pack ("canopy/" ++ V.toChars V.compiler)
+  BS.pack ("canopy/" <> V.toChars V.compiler)
 
 accept :: ByteString -> Header
 accept mime =
@@ -137,9 +135,7 @@ getArchiveWithHeaders ::
   ((Sha, Zip.Archive) -> IO (Either e a)) ->
   IO (Either e a)
 getArchiveWithHeaders manager url headers onError err onSuccess =
-  handle (handleSomeException url onError) $
-    handle (handleHttpException url onError) $
-      do
+  handle (handleSomeException url onError) . handle (handleHttpException url onError) $ (do
         req0 <- parseUrlThrow url
         let req1 =
               req0
@@ -151,7 +147,7 @@ getArchiveWithHeaders manager url headers onError err onSuccess =
             result <- readArchive (responseBody response)
             case result of
               Nothing -> return (Left err)
-              Just shaAndArchive -> onSuccess shaAndArchive
+              Just shaAndArchive -> onSuccess shaAndArchive)
 
 getArchive ::
   Manager ->
@@ -160,8 +156,7 @@ getArchive ::
   e ->
   ((Sha, Zip.Archive) -> IO (Either e a)) ->
   IO (Either e a)
-getArchive manager url onError err onSuccess =
-  getArchiveWithHeaders manager url [] onError err onSuccess
+getArchive manager url = getArchiveWithHeaders manager url []
 
 readArchive :: BodyReader -> IO (Maybe (Sha, Zip.Archive))
 readArchive body =
@@ -177,7 +172,7 @@ data ArchiveState = AS
 readArchiveHelp :: BodyReader -> ArchiveState -> IO (Maybe (Sha, Zip.Archive))
 readArchiveHelp body (AS len sha zip) =
   case zip of
-    Binary.Fail _ _ _ ->
+    Binary.Fail {} ->
       return Nothing
     Binary.Partial k ->
       do
@@ -195,9 +190,7 @@ readArchiveHelp body (AS len sha zip) =
 
 uploadWithHeaders :: Manager -> String -> [Multi.Part] -> [Header] -> IO (Either Error ())
 uploadWithHeaders manager url parts headers =
-  handle (handleSomeException url id) $
-    handle (handleHttpException url id) $
-      do
+  handle (handleSomeException url id) . handle (handleHttpException url id) $ (do
         req0 <- parseUrlThrow url
         req1 <-
           Multi.formDataBody parts $
@@ -207,20 +200,19 @@ uploadWithHeaders manager url parts headers =
                 responseTimeout = responseTimeoutNone
               }
         withResponse req1 manager $ \_ ->
-          return (Right ())
+          return (Right ()))
 
 upload :: Manager -> String -> [Multi.Part] -> IO (Either Error ())
 upload manager url parts =
   uploadWithHeaders manager url parts []
 
 filePart :: String -> FilePath -> Multi.Part
-filePart name filePath =
-  Multi.partFileSource (String.fromString name) filePath
+filePart name = Multi.partFileSource (String.fromString name)
 
 jsonPart :: String -> FilePath -> Encode.Value -> Multi.Part
 jsonPart name filePath value =
   let body =
-        Multi.RequestBodyLBS $ B.toLazyByteString $ Encode.encodeUgly value
+        (Multi.RequestBodyLBS . B.toLazyByteString $ Encode.encodeUgly value)
    in Multi.partFileRequestBody (String.fromString name) filePath body
 
 stringPart :: String -> String -> Multi.Part

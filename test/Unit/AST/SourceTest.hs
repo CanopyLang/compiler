@@ -66,7 +66,7 @@ testExprConstructors =
         let def = A.At A.one (Src.Define (A.At A.one n) [pat] body Nothing)
         let let_ = A.At A.one (Src.Let [def] body)
         case A.toValue let_ of
-          Src.Let [A.At _ (Src.Define _ _ _ _)] (A.At _ (Src.Int 0)) -> return ()
+          Src.Let [A.At _ (Src.Define {})] (A.At _ (Src.Int 0)) -> return ()
           _ -> assertFailure "unexpected let shape"
     ]
 

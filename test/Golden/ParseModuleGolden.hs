@@ -26,22 +26,21 @@ goldenModule name srcPath goldenPath =
   goldenVsString name goldenPath $ do
     src <- BS.readFile srcPath
     case M.fromByteString M.Application src of
-      Left err -> pure (BL8.pack ("Parse error: " ++ show err))
+      Left err -> pure (BL8.pack ("Parse error: " <> show err))
       Right modul -> pure (BL8.pack (summary modul))
 
 summary :: Src.Module -> String
 summary modul =
-  ( List.intercalate
-      "\n"
-      [ "Module: " ++ Name.toChars (Src.getName modul),
-        "Exports: " ++ exportsSummary modul,
-        "Values: " ++ comma (List.sort (map (Name.toChars . getValName) (Src._values modul))),
-        "Aliases: " ++ comma (List.sort (map aliasWithVars (Src._aliases modul))),
-        "Unions: " ++ comma (List.sort (map showUnion (Src._unions modul))),
-        "Imports: " ++ showListImport (Src._imports modul)
-      ]
-  )
-    ++ "\n"
+  List.intercalate
+    "\n"
+    [ "Module: " <> Name.toChars (Src.getName modul),
+      "Exports: " <> exportsSummary modul,
+      "Values: " <> comma (List.sort (fmap (Name.toChars . getValName) (Src._values modul))),
+      "Aliases: " <> comma (List.sort (fmap aliasWithVars (Src._aliases modul))),
+      "Unions: " <> comma (List.sort (fmap showUnion (Src._unions modul))),
+      "Imports: " <> showListImport (Src._imports modul)
+    ]
+    <> "\n"
 
 comma :: [String] -> String
 comma = List.intercalate ","
@@ -51,11 +50,11 @@ getValName (A.At _ (Src.Value (A.At _ n) _ _ _)) = n
 
 aliasWithVars :: A.Located Src.Alias -> String
 aliasWithVars (A.At _ (Src.Alias (A.At _ n) tvars _)) =
-  Name.toChars n ++ "(" ++ show (length tvars) ++ ")"
+  Name.toChars n <> ("(" <> (show (length tvars) <> ")"))
 
 showUnion :: A.Located Src.Union -> String
 showUnion (A.At _ (Src.Union (A.At _ n) _ ctors)) =
-  Name.toChars n ++ "(" ++ comma (map (\(A.At _ cn, _) -> Name.toChars cn) ctors) ++ ")"
+  Name.toChars n <> ("(" <> (comma (fmap (\(A.At _ cn, _) -> Name.toChars cn) ctors) <> ")"))
 
 showListImport :: [Src.Import] -> String
 showListImport is =
@@ -74,11 +73,11 @@ showListImport is =
         Src.Explicit _ -> True
    in case pick of
         Src.Import (A.At _ _) alias exposing ->
-          let aliasStr = maybe "" (\a -> " as " ++ Name.toChars a) alias
+          let aliasStr = maybe "" (\a -> " as " <> Name.toChars a) alias
               expoStr = case exposing of
                 Src.Open -> " exposing(..)"
                 Src.Explicit _ -> " exposing(explicit)"
-           in "List" ++ aliasStr ++ expoStr
+           in ("List" <> (aliasStr <> expoStr))
 
 exportsSummary :: Src.Module -> String
 exportsSummary m =
@@ -89,4 +88,4 @@ exportsSummary m =
           uppOpen = length [() | Src.Upper _ (Src.Public _) <- xs]
           uppClosed = length [() | Src.Upper _ Src.Private <- xs]
           ops = length [() | Src.Operator _ _ <- xs]
-       in "Explicit lower=" ++ show lowers ++ " upperOpen=" ++ show uppOpen ++ " upperClosed=" ++ show uppClosed ++ " operators=" ++ show ops
+       in ("Explicit lower=" <> (show lowers <> (" upperOpen=" <> (show uppOpen <> (" upperClosed=" <> (show uppClosed <> (" operators=" <> show ops)))))))

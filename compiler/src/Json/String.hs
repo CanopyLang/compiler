@@ -78,11 +78,13 @@ toBuilder =
 
 fromComment :: P.Snippet -> String
 fromComment (P.Snippet fptr off len _ _) =
-  unsafePerformIO . withForeignPtr fptr $ (\ptr ->
-      let !pos = plusPtr ptr off
-          !end = plusPtr pos len
-          !str = fromChunks (chompChunks pos end pos [])
-       in return str)
+  unsafePerformIO . withForeignPtr fptr $
+    ( \ptr ->
+        let !pos = plusPtr ptr off
+            !end = plusPtr pos len
+            !str = fromChunks (chompChunks pos end pos [])
+         in return str
+    )
 
 chompChunks :: Ptr Word8 -> Ptr Word8 -> Ptr Word8 -> [Chunk] -> [Chunk]
 chompChunks pos end start revChunks =

@@ -16,9 +16,9 @@ import Data.ByteString.Builder (Builder)
 import qualified Data.ByteString.Builder as B
 import qualified Data.Index as Index
 import qualified Data.List as List
-import qualified Data.Maybe
 import Data.Map (Map)
 import qualified Data.Map as Map
+import qualified Data.Maybe
 import qualified Data.Name as Name
 import Data.Set (Set)
 import qualified Data.Set as Set
@@ -150,7 +150,7 @@ stateToBuilder (State revKernels revBuilders _) =
 
 prependBuilders :: [Builder] -> Builder -> Builder
 prependBuilders revBuilders monolith =
-  List.foldl' (\acc x -> x <> acc) monolith revBuilders
+  List.foldl' (\m b -> b <> m) monolith revBuilders
 
 -- ADD DEPENDENCIES
 
@@ -176,7 +176,7 @@ addGlobalHelp mode graph currentGlobal state =
       global = Opt.Global (globalCanonical {ModuleName._package = canonicalPkgName}) globalName
       globalInGraph = case Map.lookup global graph of
         Just x -> x
-        Nothing -> throw (MyException ("addGlobalHelp: this was graph keys " <> (show (Map.keys graph) ++ " and this was old global " ++ show currentGlobal ++ " and this was new global: " ++ show global)))
+        Nothing -> throw (MyException ("addGlobalHelp: this was graph keys " <> (show (Map.keys graph) <> (" and this was old global " <> (show currentGlobal <> (" and this was new global: " <> show global))))))
    in case globalInGraph of
         Opt.Define expr deps ->
           addStmt
@@ -263,12 +263,13 @@ generateCycle mode (Opt.Global home _) names values functions =
             Mode.Prod _ ->
               JS.Block realBlock
             Mode.Dev _ ->
-              JS.Try (JS.Block realBlock) JsName.dollar . JS.Throw $ (JS.String $
-                    "Some top-level definitions from `" <> Name.toBuilder (ModuleName._module home) <> "` are causing infinite recursion:\\n"
-                      <> drawCycle names
-                      <> "\\n\\nThese errors are very tricky, so read "
-                      <> B.stringUtf8 (D.makeNakedLink "bad-recursion")
-                      <> " to learn how to fix it!")
+              (JS.Try (JS.Block realBlock) JsName.dollar . JS.Throw) . JS.String $
+                ( "Some top-level definitions from `" <> Name.toBuilder (ModuleName._module home) <> "` are causing infinite recursion:\\n"
+                    <> drawCycle names
+                    <> "\\n\\nThese errors are very tricky, so read "
+                    <> B.stringUtf8 (D.makeNakedLink "bad-recursion")
+                    <> " to learn how to fix it!"
+                )
     ]
 
 generateCycleFunc :: Mode.Mode -> ModuleName.Canonical -> Opt.Def -> JS.Stmt
@@ -299,7 +300,7 @@ drawCycle names =
       nameLine name = "\\n  │    " <> Name.toBuilder name
       midLine = "\\n  │     ↓"
       bottomLine = "\\n  └─────┘"
-   in mconcat (topLine : (List.intersperse midLine (map nameLine names) <> [bottomLine]))
+   in mconcat (topLine : (List.intersperse midLine (fmap nameLine names) <> [bottomLine]))
 
 -- GENERATE KERNEL
 
@@ -401,9 +402,8 @@ leaf =
 
 generateManagerHelp :: ModuleName.Canonical -> Opt.EffectsType -> ([Opt.Global], [JS.Expr], [JS.Stmt])
 generateManagerHelp home effectsType =
-  let 
-  ref name = JS.Ref (JsName.fromGlobal home name)
-  dep = Opt.Global home
+  let ref name = JS.Ref (JsName.fromGlobal home name)
+      dep = Opt.Global home
    in case effectsType of
         Opt.Cmd ->
           ( [dep "init", dep "onEffects", dep "onSelfMsg", dep "cmdMap"],

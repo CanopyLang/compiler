@@ -167,7 +167,10 @@ toPatternReport source localizer patternRegion category tipe expected =
   Report.Report "TYPE MISMATCH" patternRegion [] $
     case expected of
       PNoExpectation expectedType ->
-        Code.toSnippet source patternRegion Nothing $
+        Code.toSnippet
+          source
+          patternRegion
+          Nothing
           ( "This pattern is being used in an unexpected way:",
             patternTypeComparison
               localizer
@@ -198,16 +201,14 @@ toPatternReport source localizer patternRegion category tipe expected =
             PCaseMatch index ->
               if index == Index.first
                 then
-                  ( D.reflow $
-                      "The 1st pattern in this `case` causing a mismatch:",
+                  ( D.reflow "The 1st pattern in this `case` causing a mismatch:",
                     patternTypeComparison
                       localizer
                       tipe
                       expectedType
                       (addPatternCategory "The first pattern is trying to match" category)
                       "But the expression between `case` and `of` is:"
-                      [ D.reflow $
-                          "These can never match! Is the pattern the problem? Or is it the expression?"
+                      [ D.reflow "These can never match! Is the pattern the problem? Or is it the expression?"
                       ]
                   )
                 else
@@ -258,8 +259,7 @@ toPatternReport source localizer patternRegion category tipe expected =
                   ]
               )
             PTail ->
-              ( D.reflow $
-                  "The pattern after (::) is causing issues.",
+              ( D.reflow "The pattern after (::) is causing issues.",
                 patternTypeComparison
                   localizer
                   tipe
@@ -275,14 +275,14 @@ patternTypeComparison :: L.Localizer -> T.Type -> T.Type -> String -> String -> 
 patternTypeComparison localizer actual expected iAmSeeing insteadOf contextHints =
   let (actualDoc, expectedDoc, problems) =
         T.toComparison localizer actual expected
-   in D.stack $
-        [ D.reflow iAmSeeing,
-          D.indent 4 actualDoc,
-          D.reflow insteadOf,
-          D.indent 4 expectedDoc
-        ]
-          ++ problemsToHint problems
-          ++ contextHints
+   in D.stack
+        ( [ D.reflow iAmSeeing,
+            D.indent 4 actualDoc,
+            D.reflow insteadOf,
+            D.indent 4 expectedDoc
+          ]
+            <> (problemsToHint problems <> contextHints)
+        )
 
 addPatternCategory :: String -> PCategory -> String
 addPatternCategory iAmTryingToMatch category =
@@ -304,25 +304,25 @@ typeComparison :: L.Localizer -> T.Type -> T.Type -> String -> String -> [D.Doc]
 typeComparison localizer actual expected iAmSeeing insteadOf contextHints =
   let (actualDoc, expectedDoc, problems) =
         T.toComparison localizer actual expected
-   in D.stack $
-        [ D.reflow iAmSeeing,
-          D.indent 4 actualDoc,
-          D.reflow insteadOf,
-          D.indent 4 expectedDoc
-        ]
-          ++ contextHints
-          ++ problemsToHint problems
+   in D.stack
+        ( [ D.reflow iAmSeeing,
+            D.indent 4 actualDoc,
+            D.reflow insteadOf,
+            D.indent 4 expectedDoc
+          ]
+            <> (contextHints <> problemsToHint problems)
+        )
 
 loneType :: L.Localizer -> T.Type -> T.Type -> D.Doc -> [D.Doc] -> D.Doc
 loneType localizer actual expected iAmSeeing furtherDetails =
   let (actualDoc, _, problems) =
         T.toComparison localizer actual expected
-   in D.stack $
-        [ iAmSeeing,
-          D.indent 4 actualDoc
-        ]
-          ++ furtherDetails
-          ++ problemsToHint problems
+   in D.stack
+        ( [ iAmSeeing,
+            D.indent 4 actualDoc
+          ]
+            <> (furtherDetails <> problemsToHint problems)
+        )
 
 addCategory :: String -> Category -> String
 addCategory thisIs category =
@@ -453,7 +453,7 @@ problemToHint problem =
           ]
       ]
     T.AnythingToBool ->
-      [ D.toSimpleHint $
+      [ D.toSimpleHint
           "Canopy does not have “truthiness” such that ints and strings and lists\
           \ are automatically converted to booleans. Do that conversion explicitly!"
       ]
@@ -483,68 +483,67 @@ problemToHint problem =
     T.ArityMismatch x y ->
       [ D.toSimpleHint $
           if x < y
-            then "It looks like it takes too few arguments. I was expecting " ++ show (y - x) ++ " more."
-            else "It looks like it takes too many arguments. I see " ++ show (x - y) ++ " extra."
+            then "It looks like it takes too few arguments. I was expecting " <> (show (y - x) <> " more.")
+            else "It looks like it takes too many arguments. I see " <> (show (x - y) <> " extra.")
       ]
     T.BadFlexSuper direction super _ tipe ->
       case tipe of
-        T.Lambda _ _ _ -> badFlexSuper direction super tipe
+        T.Lambda {} -> badFlexSuper direction super tipe
         T.Infinite -> []
         T.Error -> []
         T.FlexVar _ -> []
         T.FlexSuper s _ -> badFlexFlexSuper super s
         T.RigidVar y -> badRigidVar y (toASuperThing super)
         T.RigidSuper s _ -> badRigidSuper s (toASuperThing super)
-        T.Type _ _ _ -> badFlexSuper direction super tipe
+        T.Type {} -> badFlexSuper direction super tipe
         T.Record _ _ -> badFlexSuper direction super tipe
         T.Unit -> badFlexSuper direction super tipe
-        T.Tuple _ _ _ -> badFlexSuper direction super tipe
-        T.Alias _ _ _ _ -> badFlexSuper direction super tipe
+        T.Tuple {} -> badFlexSuper direction super tipe
+        T.Alias {} -> badFlexSuper direction super tipe
     T.BadRigidVar x tipe ->
       case tipe of
-        T.Lambda _ _ _ -> badRigidVar x "a function"
+        T.Lambda {} -> badRigidVar x "a function"
         T.Infinite -> []
         T.Error -> []
         T.FlexVar _ -> []
         T.FlexSuper s _ -> badRigidVar x (toASuperThing s)
         T.RigidVar y -> badDoubleRigid x y
         T.RigidSuper _ y -> badDoubleRigid x y
-        T.Type _ n _ -> badRigidVar x ("a `" ++ Name.toChars n ++ "` value")
+        T.Type _ n _ -> badRigidVar x ("a `" <> (Name.toChars n <> "` value"))
         T.Record _ _ -> badRigidVar x "a record"
         T.Unit -> badRigidVar x "a unit value"
-        T.Tuple _ _ _ -> badRigidVar x "a tuple"
-        T.Alias _ n _ _ -> badRigidVar x ("a `" ++ Name.toChars n ++ "` value")
+        T.Tuple {} -> badRigidVar x "a tuple"
+        T.Alias _ n _ _ -> badRigidVar x ("a `" <> (Name.toChars n <> "` value"))
     T.BadRigidSuper super x tipe ->
       case tipe of
-        T.Lambda _ _ _ -> badRigidSuper super "a function"
+        T.Lambda {} -> badRigidSuper super "a function"
         T.Infinite -> []
         T.Error -> []
         T.FlexVar _ -> []
         T.FlexSuper s _ -> badRigidSuper super (toASuperThing s)
         T.RigidVar y -> badDoubleRigid x y
         T.RigidSuper _ y -> badDoubleRigid x y
-        T.Type _ n _ -> badRigidSuper super ("a `" ++ Name.toChars n ++ "` value")
+        T.Type _ n _ -> badRigidSuper super ("a `" <> (Name.toChars n <> "` value"))
         T.Record _ _ -> badRigidSuper super "a record"
         T.Unit -> badRigidSuper super "a unit value"
-        T.Tuple _ _ _ -> badRigidSuper super "a tuple"
-        T.Alias _ n _ _ -> badRigidSuper super ("a `" ++ Name.toChars n ++ "` value")
+        T.Tuple {} -> badRigidSuper super "a tuple"
+        T.Alias _ n _ _ -> badRigidSuper super ("a `" <> (Name.toChars n <> "` value"))
     T.FieldsMissing fields ->
-      case map (D.green . D.fromName) fields of
+      case fmap (D.green . D.fromName) fields of
         [] ->
           []
         [f1] ->
           [ D.toFancyHint ["Looks", "like", "the", f1, "field", "is", "missing."]
           ]
         fieldDocs ->
-          [ D.toFancyHint $
-              ["Looks", "like", "fields"] ++ D.commaSep "and" id fieldDocs ++ ["are", "missing."]
+          [ D.toFancyHint (["Looks", "like", "fields"] <> (D.commaSep "and" id fieldDocs <> ["are", "missing."]))
           ]
     T.FieldTypo typo possibilities ->
       case Suggest.sort (Name.toChars typo) Name.toChars possibilities of
         [] ->
           []
         nearest : _ ->
-          [ D.toFancyHint $
+          [ D.toFancyHint
               [ "Seems",
                 "like",
                 "a",
@@ -566,22 +565,34 @@ problemToHint problem =
 
 badRigidVar :: Name.Name -> String -> [D.Doc]
 badRigidVar name aThing =
-  [ D.toSimpleHint $
-      "Your type annotation uses type variable `" ++ Name.toChars name
-        ++ "` which means ANY type of value can flow through, but your code is saying it specifically wants "
-        ++ aThing
-        ++ ". Maybe change your type annotation to\
-           \ be more specific? Maybe change the code to be more general?",
+  [ D.toSimpleHint
+      ( "Your type annotation uses type variable `"
+          <> ( Name.toChars name
+                 <> ( "` which means ANY type of value can flow through, but your code is saying it specifically wants "
+                        <> ( aThing
+                               <> ". Maybe change your type annotation to\
+                                  \ be more specific? Maybe change the code to be more general?"
+                           )
+                    )
+             )
+      ),
     D.reflowLink "Read" "type-annotations" "for more advice!"
   ]
 
 badDoubleRigid :: Name.Name -> Name.Name -> [D.Doc]
 badDoubleRigid x y =
-  [ D.toSimpleHint $
-      "Your type annotation uses `" ++ Name.toChars x ++ "` and `" ++ Name.toChars y
-        ++ "` as separate type variables. Your code seems to be saying they are the\
-           \ same though. Maybe they should be the same in your type annotation?\
-           \ Maybe your code uses them in a weird way?",
+  [ D.toSimpleHint
+      ( "Your type annotation uses `"
+          <> ( Name.toChars x
+                 <> ( "` and `"
+                        <> ( Name.toChars y
+                               <> "` as separate type variables. Your code seems to be saying they are the\
+                                  \ same though. Maybe they should be the same in your type annotation?\
+                                  \ Maybe your code uses them in a weird way?"
+                           )
+                    )
+             )
+      ),
     D.reflowLink "Read" "type-annotations" "for more advice!"
   ]
 
@@ -610,18 +621,21 @@ badFlexSuper direction super tipe =
               "for ideas on how to proceed."
           ]
         T.Type _ name _ ->
-          [ D.toSimpleHint $
-              "I do not know how to compare `" ++ Name.toChars name
-                ++ "` values. I can only\
-                   \ compare ints, floats, chars, strings, lists of comparable values, and tuples\
-                   \ of comparable values.",
+          [ D.toSimpleHint
+              ( "I do not know how to compare `"
+                  <> ( Name.toChars name
+                         <> "` values. I can only\
+                            \ compare ints, floats, chars, strings, lists of comparable values, and tuples\
+                            \ of comparable values."
+                     )
+              ),
             D.reflowLink
               "Check out"
               "comparing-custom-types"
               "for ideas on how to proceed."
           ]
         _ ->
-          [ D.toSimpleHint $
+          [ D.toSimpleHint
               "I only know how to compare ints, floats, chars, strings, lists of\
               \ comparable values, and tuples of comparable values."
           ]
@@ -653,13 +667,21 @@ badRigidSuper super aThing =
           T.Comparable -> ("comparable", "ints, floats, chars, strings, lists, and tuples")
           T.Appendable -> ("appendable", "strings AND lists")
           T.CompAppend -> ("compappend", "strings AND lists")
-   in [ D.toSimpleHint $
-          "The `" ++ superType ++ "` in your type annotation is saying that "
-            ++ manyThings
-            ++ " can flow through, but your code is saying it specifically wants "
-            ++ aThing
-            ++ ". Maybe change your type annotation to\
-               \ be more specific? Maybe change the code to be more general?",
+   in [ D.toSimpleHint
+          ( "The `"
+              <> ( superType
+                     <> ( "` in your type annotation is saying that "
+                            <> ( manyThings
+                                   <> ( " can flow through, but your code is saying it specifically wants "
+                                          <> ( aThing
+                                                 <> ". Maybe change your type annotation to\
+                                                    \ be more specific? Maybe change the code to be more general?"
+                                             )
+                                      )
+                               )
+                        )
+                 )
+          ),
         D.reflowLink "Read" "type-annotations" "for more advice!"
       ]
 
@@ -671,12 +693,7 @@ badFlexFlexSuper s1 s2 =
           T.Comparable -> "comparable"
           T.CompAppend -> "a compappend"
           T.Appendable -> "appendable"
-   in [ D.toSimpleHint $
-          "There are no values in Canopy that are both "
-            ++ likeThis s1
-            ++ " and "
-            ++ likeThis s2
-            ++ "."
+   in [ D.toSimpleHint ("There are no values in Canopy that are both " <> (likeThis s1 <> (" and " <> (likeThis s2 <> "."))))
       ]
 
 -- TO EXPR REPORT
@@ -711,8 +728,7 @@ toExprReport source localizer exprRegion category tipe expected =
               TypedIfBranch index -> "The " <> D.ordinal index <> " branch is"
               TypedCaseBranch index -> "The " <> D.ordinal index <> " branch is"
               TypedBody -> "The body is"
-       in Report.Report "TYPE MISMATCH" exprRegion [] $
-            Code.toSnippet source exprRegion Nothing $
+       in ( Report.Report "TYPE MISMATCH" exprRegion [] . Code.toSnippet source exprRegion Nothing $
               ( D.reflow ("Something is off with the " <> thing),
                 typeComparison
                   localizer
@@ -722,6 +738,7 @@ toExprReport source localizer exprRegion category tipe expected =
                   ("But the type annotation on `" <> Name.toChars name <> "` says it should be:")
                   []
               )
+          )
     FromContext region context expectedType ->
       let mismatch (maybeHighlight, problem, thisIs, insteadOf, furtherDetails) =
             Report.Report "TYPE MISMATCH" exprRegion [] $
@@ -830,9 +847,8 @@ toExprReport source localizer exprRegion category tipe expected =
                       ]
                     )
             CallArity maybeFuncName numGivenArgs ->
-              Report.Report "TOO MANY ARGS" exprRegion [] $
-                Code.toSnippet source region (Just exprRegion) $
-                  case countArgs tipe of
+              Report.Report "TOO MANY ARGS" exprRegion [] . Code.toSnippet source region (Just exprRegion) $
+                ( case countArgs tipe of
                     0 ->
                       let thisValue =
                             case maybeFuncName of
@@ -841,7 +857,7 @@ toExprReport source localizer exprRegion category tipe expected =
                               CtorName name -> "The `" <> Name.toChars name <> "` value"
                               OpName op -> "The (" <> Name.toChars op <> ") operator"
                        in ( D.reflow $ thisValue <> " is not a function, but it was given " <> D.args numGivenArgs <> ".",
-                            D.reflow $ "Are there any missing commas? Or missing parentheses?"
+                            D.reflow "Are there any missing commas? Or missing parentheses?"
                           )
                     n ->
                       let thisFunction =
@@ -851,8 +867,9 @@ toExprReport source localizer exprRegion category tipe expected =
                               CtorName name -> "The `" <> Name.toChars name <> "` constructor"
                               OpName op -> "The (" <> Name.toChars op <> ") operator"
                        in ( D.reflow $ thisFunction <> " expects " <> D.args n <> ", but it got " <> show numGivenArgs <> " instead.",
-                            D.reflow $ "Are there any missing commas? Or missing parentheses?"
+                            D.reflow "Are there any missing commas? Or missing parentheses?"
                           )
+                )
             CallArg maybeFuncName index ->
               let ith = D.ordinal index
 
@@ -870,7 +887,7 @@ toExprReport source localizer exprRegion category tipe expected =
                       if Index.toHuman index == 1
                         then []
                         else
-                          [ D.toSimpleHint $
+                          [ D.toSimpleHint
                               "I always figure out the argument types from left to right. If an argument\
                               \ is acceptable, I assume it is “correct” and move on. So the problem may\
                               \ actually be in one of the previous arguments!"
@@ -971,7 +988,7 @@ toExprReport source localizer exprRegion category tipe expected =
                     ( Just exprRegion,
                       "This is not a record, so it has no fields to update!",
                       "It is",
-                      [ D.reflow $ "But I need a record!"
+                      [ D.reflow "But I need a record!"
                       ]
                     )
             RecordUpdateValue field ->
@@ -1010,8 +1027,8 @@ toNearbyRecord :: L.Localizer -> (Name.Name, T.Type) -> [(Name.Name, T.Type)] ->
 toNearbyRecord localizer f fs ext =
   D.indent 4 $
     if length fs <= 3
-      then RT.vrecord (map (fieldToDocs localizer) (f : fs)) (extToDoc ext)
-      else RT.vrecordSnippet (fieldToDocs localizer f) (map (fieldToDocs localizer) (take 3 fs))
+      then RT.vrecord (fmap (fieldToDocs localizer) (f : fs)) (extToDoc ext)
+      else RT.vrecordSnippet (fieldToDocs localizer f) (fmap (fieldToDocs localizer) (take 3 fs))
 
 fieldToDocs :: L.Localizer -> (Name.Name, T.Type) -> (D.Doc, D.Doc)
 fieldToDocs localizer (name, tipe) =
@@ -1056,7 +1073,7 @@ opLeftToDocs localizer category op tipe expected =
           tipe
           expected
           (D.reflow (addCategory "I am seeing" category))
-          [ D.reflow $ "This needs to be some kind of function though!"
+          [ D.reflow "This needs to be some kind of function though!"
           ]
       )
     _ ->
@@ -1083,7 +1100,7 @@ opRightToDocs localizer category op tipe expected =
     "+"
       | isFloat expected && isInt tipe -> badCast op FloatInt
       | isInt expected && isFloat tipe -> badCast op IntFloat
-      | isString tipe -> EmphRight $ badStringAdd
+      | isString tipe -> EmphRight badStringAdd
       | isList tipe -> EmphRight $ badListAdd localizer category "right" tipe expected
       | otherwise -> EmphRight $ badMath localizer category "Addition" "right" "+" tipe expected []
     "*"
@@ -1115,7 +1132,7 @@ opRightToDocs localizer category op tipe expected =
     "++" -> badAppendRight localizer category tipe expected
     "<|" ->
       EmphRight
-        ( D.reflow $ "I cannot send this through the (<|) pipe:",
+        ( D.reflow "I cannot send this through the (<|) pipe:",
           typeComparison
             localizer
             tipe
@@ -1128,7 +1145,7 @@ opRightToDocs localizer category op tipe expected =
       case (tipe, expected) of
         (T.Lambda expectedArgType _ _, T.Lambda argType _ _) ->
           EmphRight
-            ( D.reflow $ "This function cannot handle the argument sent through the (|>) pipe:",
+            ( D.reflow "This function cannot handle the argument sent through the (|>) pipe:",
               typeComparison
                 localizer
                 argType
@@ -1139,7 +1156,7 @@ opRightToDocs localizer category op tipe expected =
             )
         _ ->
           EmphRight
-            ( D.reflow $ "The right side of (|>) needs to be a function so I can pipe arguments to it!",
+            ( D.reflow "The right side of (|>) needs to be a function so I can pipe arguments to it!",
               loneType
                 localizer
                 tipe
@@ -1161,11 +1178,14 @@ badOpRightFallback localizer category op tipe expected =
         expected
         (addCategory "The right argument is" category)
         ("But (" <> Name.toChars op <> ") needs the right argument to be:")
-        [ D.toSimpleHint $
-            "With operators like (" ++ Name.toChars op
-              ++ ") I always check the left\
-                 \ side first. If it seems fine, I assume it is correct and check the right\
-                 \ side. So the problem may be in how the left and right arguments interact!"
+        [ D.toSimpleHint
+            ( "With operators like ("
+                <> ( Name.toChars op
+                       <> ") I always check the left\
+                          \ side first. If it seems fine, I assume it is correct and check the right\
+                          \ side. So the problem may be in how the left and right arguments interact!"
+                   )
+            )
         ]
     )
 
@@ -1315,8 +1335,7 @@ badAppendLeft localizer category tipe expected =
           ]
       )
     _ ->
-      ( D.reflow $
-          "The (++) operator cannot append this type of value:",
+      ( D.reflow "The (++) operator cannot append this type of value:",
         loneType
           localizer
           tipe
@@ -1394,8 +1413,7 @@ badAppendRight localizer category tipe expected =
         )
     (AString, AList) ->
       EmphBoth
-        ( D.reflow $
-            "The (++) operator needs the same type of value on both sides:",
+        ( D.reflow "The (++) operator needs the same type of value on both sides:",
           D.fillSep
             [ "I",
               "see",
@@ -1429,8 +1447,7 @@ badAppendRight localizer category tipe expected =
         )
     (AList, AString) ->
       EmphBoth
-        ( D.reflow $
-            "The (++) operator needs the same type of value on both sides:",
+        ( D.reflow "The (++) operator needs the same type of value on both sides:",
           D.fillSep
             [ "I",
               "see",
@@ -1464,8 +1481,7 @@ badAppendRight localizer category tipe expected =
         )
     (_, _) ->
       EmphBoth
-        ( D.reflow $
-            "The (++) operator cannot append these two values:",
+        ( D.reflow "The (++) operator cannot append these two values:",
           typeComparison
             localizer
             expected
@@ -1498,12 +1514,7 @@ badCast op thisThenThat =
 badCastHelp :: [D.Doc] -> [D.Doc] -> D.Doc -> D.Doc -> D.Doc
 badCastHelp anInt aFloat toFloat round =
   D.stack
-    [ D.fillSep $
-        ["But", "I", "see"]
-          ++ anInt
-          ++ ["on", "the", "left", "and"]
-          ++ aFloat
-          ++ ["on", "the", "right."],
+    [ D.fillSep (["But", "I", "see"] <> (anInt <> (["on", "the", "left", "and"] <> (aFloat <> ["on", "the", "right."])))),
       D.fillSep
         [ "Use",
           toFloat,
@@ -1612,8 +1623,7 @@ badListMul localizer category direction tipe expected =
 
 badMath :: L.Localizer -> Category -> String -> String -> String -> T.Type -> T.Type -> [D.Doc] -> (D.Doc, D.Doc)
 badMath localizer category operation direction op tipe expected otherHints =
-  ( D.reflow $
-      operation ++ " does not work with this value:",
+  ( D.reflow (operation <> " does not work with this value:"),
     loneType
       localizer
       tipe
@@ -1631,14 +1641,13 @@ badMath localizer category operation direction op tipe expected otherHints =
               "values."
             ]
         ]
-          ++ otherHints
+          <> otherHints
       )
   )
 
 badFDiv :: L.Localizer -> D.Doc -> T.Type -> T.Type -> (D.Doc, D.Doc)
 badFDiv localizer direction tipe expected =
-  ( D.reflow $
-      "The (/) operator is specifically for floating-point division:",
+  ( D.reflow "The (/) operator is specifically for floating-point division:",
     if isInt tipe
       then
         D.stack
@@ -1694,8 +1703,7 @@ badFDiv localizer direction tipe expected =
 
 badIDiv :: L.Localizer -> D.Doc -> T.Type -> T.Type -> (D.Doc, D.Doc)
 badIDiv localizer direction tipe expected =
-  ( D.reflow $
-      "The (//) operator is specifically for integer division:",
+  ( D.reflow "The (//) operator is specifically for integer division:",
     if isFloat tipe
       then
         D.stack
@@ -1764,8 +1772,7 @@ badIDiv localizer direction tipe expected =
 
 badBool :: L.Localizer -> D.Doc -> D.Doc -> T.Type -> T.Type -> (D.Doc, D.Doc)
 badBool localizer op direction tipe expected =
-  ( D.reflow $
-      "I am struggling with this boolean operation:",
+  ( D.reflow "I am struggling with this boolean operation:",
     loneType
       localizer
       tipe
@@ -1793,8 +1800,7 @@ badBool localizer op direction tipe expected =
 
 badCompLeft :: L.Localizer -> Category -> String -> String -> T.Type -> T.Type -> (D.Doc, D.Doc)
 badCompLeft localizer category op direction tipe expected =
-  ( D.reflow $
-      "I cannot do a comparison with this value:",
+  ( D.reflow "I cannot do a comparison with this value:",
     loneType
       localizer
       tipe
@@ -1869,7 +1875,7 @@ badEquality localizer op tipe expected =
         "But the right side is:"
         [ if isFloat tipe || isFloat expected
             then
-              D.toSimpleNote $
+              D.toSimpleNote
                 "Equality on floats is not 100% reliable due to the design of IEEE 754. I\
                 \ recommend a check like (abs (x - y) < 0.0001) instead."
             else D.reflow "Different types can never be equal though! Which side is messed up?"
@@ -1888,7 +1894,7 @@ toInfiniteReport source localizer region name overallType =
       ( D.reflow $
           "I am inferring a weird self-referential type for " <> Name.toChars name <> ":",
         D.stack
-          [ D.reflow $
+          [ D.reflow
               "Here is my best effort at writing down the type. You will see ∞ for\
               \ parts of the type that repeat something already printed out infinitely.",
             D.indent 4 (D.dullyellow (T.toDoc localizer RT.None overallType)),

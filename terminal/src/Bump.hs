@@ -37,7 +37,7 @@ import qualified Stuff
 run :: () -> () -> IO ()
 run () () =
   Reporting.attempt Exit.bumpToReport $
-    Task.run (bump =<< getEnv)
+    Task.run (getEnv >>= bump)
 
 -- ENV
 
@@ -52,16 +52,16 @@ data Env = Env
 getEnv :: Task Exit.Bump Env
 getEnv =
   do
-    maybeRoot <- Task.io $ Stuff.findRoot
+    maybeRoot <- Task.io Stuff.findRoot
     case maybeRoot of
       Nothing ->
         Task.throw Exit.BumpNoOutline
       Just root ->
         do
-          cache <- Task.io $ Stuff.getPackageCache
-          zokkaCache <- Task.io $ Stuff.getZokkaCache
-          manager <- Task.io $ Http.getManager
-          reposConfigLocation <- Task.io $ Stuff.getOrCreateZokkaCustomRepositoryConfig
+          cache <- Task.io Stuff.getPackageCache
+          zokkaCache <- Task.io Stuff.getZokkaCache
+          manager <- Task.io Http.getManager
+          reposConfigLocation <- Task.io Stuff.getOrCreateZokkaCustomRepositoryConfig
           customReposData <- Task.eio BumpCustomRepositoryDataProblem $ loadCustomRepositoriesData reposConfigLocation
           registry <- Task.eio Exit.BumpMustHaveLatestRegistry $ Registry.latest manager customReposData zokkaCache reposConfigLocation
           outline <- Task.eio Exit.BumpBadOutline $ Outline.read root
@@ -78,13 +78,10 @@ bump env@(Env root _ _ registry outline@(PkgOutline pkg _ _ vsn _ _ _ _)) =
   case Registry.getVersions pkg registry of
     Just knownVersions ->
       let bumpableVersions =
-            map (\(old, _, _) -> old) (Bump.getPossibilities knownVersions)
-       in if elem vsn bumpableVersions
+            fmap (\(old, _, _) -> old) (Bump.getPossibilities knownVersions)
+       in if vsn `elem` bumpableVersions
             then suggestVersion env
-            else
-              Task.throw $
-                Exit.BumpUnexpectedVersion vsn $
-                  map head (List.group (List.sort bumpableVersions))
+            else Task.throw . Exit.BumpUnexpectedVersion vsn $ fmap head (List.group (List.sort bumpableVersions))
     Nothing ->
       Task.io $ checkNewPackage root outline
 
@@ -112,9 +109,8 @@ suggestVersion (Env root cache manager registry outline@(PkgOutline pkg _ _ vsn 
     newDocs <- generateDocs root outline
     let changes = Diff.diff oldDocs newDocs
     let newVersion = Diff.bump changes vsn
-    Task.io $
-      changeVersion root outline newVersion $
-        let old = D.fromVersion vsn
+    Task.io . changeVersion root outline newVersion $
+      ( let old = D.fromVersion vsn
             new = D.fromVersion newVersion
             mag = D.fromChars $ M.toChars (Diff.toMagnitude changes)
          in "Based on your new API, this should be a" <+> D.green mag <+> "change (" <> old <> " => " <> new <> ")\n"
@@ -125,18 +121,20 @@ suggestVersion (Env root cache manager registry outline@(PkgOutline pkg _ _ vsn 
               <> " => "
               <> new
               <> ") in canopy.json? [Y/n] "
+      )
 
 generateDocs :: FilePath -> PkgOutline -> Task Exit.Bump Documentation
 generateDocs root (PkgOutline _ _ _ _ exposed _ _ _) =
   do
     details <-
-      Task.eio Exit.BumpBadDetails $
-        BW.withScope $ \scope ->
-          Details.load Reporting.silent scope root
+      Task.eio Exit.BumpBadDetails . BW.withScope $
+        ( \scope ->
+            Details.load Reporting.silent scope root
+        )
 
     case Outline.flattenExposed exposed of
       [] ->
-        Task.throw $ Exit.BumpNoExposed
+        Task.throw Exit.BumpNoExposed
       e : es ->
         Task.eio Exit.BumpBadBuild $
           Build.fromExposed Reporting.silent root details Build.KeepDocs (NE.List e es)
@@ -150,9 +148,7 @@ changeVersion root outline targetVersion question =
     if not approved
       then putStrLn "Okay, I did not change anything!"
       else do
-        Outline.write root $
-          Outline.Pkg $
-            outline {Outline._pkg_version = targetVersion}
+        Outline.write root . Outline.Pkg $ outline {Outline._pkg_version = targetVersion}
 
         Help.toStdout $
           "Version changed to "
