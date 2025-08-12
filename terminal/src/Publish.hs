@@ -10,10 +10,13 @@ import qualified BackgroundWriter as BW
 import qualified Build
 import Canopy.CustomRepositoryData (CustomSingleRepositoryData (..), DefaultPackageServerRepo (..), PZRPackageServerRepo (..), RepositoryAuthToken, RepositoryLocalName, RepositoryUrl)
 import qualified Canopy.Details as Details
+import Canopy.Docs (Documentation)
 import qualified Canopy.Docs as Docs
 import qualified Canopy.Magnitude as M
 import qualified Canopy.Outline as Outline
+import Canopy.Package (Name)
 import qualified Canopy.Package as Pkg
+import Canopy.Version (Version)
 import qualified Canopy.Version as V
 import qualified Codec.Archive.Zip as Zip
 import Control.Exception (bracket_)
@@ -38,11 +41,12 @@ import qualified Json.Decode as D
 import qualified Json.String as Json
 import Logging.Logger (printLog)
 import qualified Reporting
-import Reporting.Doc ((<+>))
+import Reporting.Doc (Doc, (<+>))
 import qualified Reporting.Doc as D
 import Reporting.Exit (Publish (PublishCustomRepositoryConfigDataError, PublishWithNoRepositoryLocalName))
 import qualified Reporting.Exit as Exit
 import qualified Reporting.Exit.Help as Help
+import Reporting.Task (Task)
 import qualified Reporting.Task as Task
 import qualified Stuff
 import qualified System.Directory as Dir
@@ -83,7 +87,7 @@ data Env = Env
     _outline :: Outline.Outline
   }
 
-getEnv :: Task.Task Exit.Publish Env
+getEnv :: Task Exit.Publish Env
 getEnv =
   do
     root <- Task.mio Exit.PublishNoOutline $ Stuff.findRoot
@@ -159,7 +163,7 @@ createZipArchiveOfSourceCode = do
   printLog ("All the files we are zipping: " ++ show filesToZip)
   Zip.addFilesToArchive [] Zip.emptyArchive filesToZip
 
-publish :: Env -> RepositoryLocalName -> Task.Task Exit.Publish ()
+publish :: Env -> RepositoryLocalName -> Task Exit.Publish ()
 publish env@(Env root _ manager registry outline) repositoryLocalName =
   case outline of
     Outline.App _ ->
@@ -226,7 +230,7 @@ noExposed exposed =
 
 -- VERIFY README
 
-verifyReadme :: FilePath -> Task.Task Exit.Publish ()
+verifyReadme :: FilePath -> Task Exit.Publish ()
 verifyReadme root =
   reportReadmeCheck $
     do
@@ -244,7 +248,7 @@ verifyReadme root =
 
 -- VERIFY LICENSE
 
-verifyLicense :: FilePath -> Task.Task Exit.Publish ()
+verifyLicense :: FilePath -> Task Exit.Publish ()
 verifyLicense root =
   reportLicenseCheck $
     do
@@ -256,7 +260,7 @@ verifyLicense root =
 
 -- VERIFY BUILD
 
-verifyBuild :: FilePath -> Task.Task Exit.Publish Docs.Documentation
+verifyBuild :: FilePath -> Task Exit.Publish Documentation
 verifyBuild root =
   reportBuildCheck $
     BW.withScope $ \scope ->
@@ -279,7 +283,7 @@ verifyBuild root =
 
 newtype Git = Git {_run :: [String] -> IO Exit.ExitCode}
 
-getGit :: Task.Task Exit.Publish Git
+getGit :: Task Exit.Publish Git
 getGit =
   do
     maybeGit <- Task.io $ Dir.findExecutable "git"
@@ -300,7 +304,7 @@ getGit =
 
 -- VERIFY GITHUB TAG
 
-verifyTag :: Git -> Http.Manager -> Pkg.Name -> V.Version -> Task.Task Exit.Publish String
+verifyTag :: Git -> Http.Manager -> Name -> Version -> Task Exit.Publish String
 verifyTag git manager pkg vsn =
   reportTagCheck vsn $
     do
@@ -318,7 +322,7 @@ verifyTag git manager pkg vsn =
                   Left _ ->
                     return $ Left (Exit.PublishCannotGetTagData vsn url body)
 
-toTagUrl :: Pkg.Name -> V.Version -> String
+toTagUrl :: Name -> Version -> String
 toTagUrl pkg vsn =
   "https://api.github.com/repos/" ++ Pkg.toUrl pkg ++ "/git/refs/tags/" ++ V.toChars vsn
 
@@ -329,7 +333,7 @@ commitHashDecoder =
 
 -- VERIFY NO LOCAL CHANGES SINCE TAG
 
-verifyNoChanges :: Git -> String -> V.Version -> Task.Task Exit.Publish ()
+verifyNoChanges :: Git -> String -> Version -> Task Exit.Publish ()
 verifyNoChanges git commitHash vsn =
   reportLocalChangesCheck $
     do
@@ -341,7 +345,7 @@ verifyNoChanges git commitHash vsn =
 
 -- VERIFY THAT ZIP BUILDS / COMPUTE HASH
 
-verifyZip :: Env -> Pkg.Name -> V.Version -> Task.Task Exit.Publish Http.Sha
+verifyZip :: Env -> Name -> Version -> Task Exit.Publish Http.Sha
 verifyZip (Env root _ manager _ _) pkg vsn =
   withPrepublishDir root $ \prepublishDir ->
     do
@@ -364,11 +368,11 @@ verifyZip (Env root _ manager _ _) pkg vsn =
 
       return sha
 
-toZipUrl :: Pkg.Name -> V.Version -> String
+toZipUrl :: Name -> Version -> String
 toZipUrl pkg vsn =
   "https://github.com/" ++ Pkg.toUrl pkg ++ "/zipball/" ++ V.toChars vsn ++ "/"
 
-withPrepublishDir :: FilePath -> (FilePath -> Task.Task x a) -> Task.Task x a
+withPrepublishDir :: FilePath -> (FilePath -> Task x a) -> Task x a
 withPrepublishDir root callback =
   let dir = Stuff.prepublishDir root
    in Task.eio id $
@@ -401,9 +405,9 @@ verifyZipBuild root =
 
 data GoodVersion
   = GoodStart
-  | GoodBump V.Version M.Magnitude
+  | GoodBump Version M.Magnitude
 
-verifyVersion :: Env -> Pkg.Name -> V.Version -> Docs.Documentation -> Maybe Registry.KnownVersions -> Task.Task Exit.Publish ()
+verifyVersion :: Env -> Name -> Version -> Documentation -> Maybe Registry.KnownVersions -> Task Exit.Publish ()
 verifyVersion env pkg vsn newDocs publishedVersions =
   reportSemverCheck vsn $
     case publishedVersions of
@@ -416,7 +420,7 @@ verifyVersion env pkg vsn newDocs publishedVersions =
           then return $ Left $ Exit.PublishAlreadyPublished vsn
           else verifyBump env pkg vsn newDocs knownVersions
 
-verifyBump :: Env -> Pkg.Name -> V.Version -> Docs.Documentation -> Registry.KnownVersions -> IO (Either Exit.Publish GoodVersion)
+verifyBump :: Env -> Name -> Version -> Documentation -> Registry.KnownVersions -> IO (Either Exit.Publish GoodVersion)
 verifyBump (Env _ cache manager registry _) pkg vsn newDocs knownVersions@(Registry.KnownVersions latest _) =
   case List.find (\(_, new, _) -> vsn == new) (Bump.getPossibilities knownVersions) of
     Nothing ->
@@ -441,7 +445,7 @@ verifyBump (Env _ cache manager registry _) pkg vsn newDocs knownVersions@(Regis
 
 -- REGISTER PACKAGES
 
-register :: Http.Manager -> RepositoryUrl -> Pkg.Name -> V.Version -> Docs.Documentation -> String -> Http.Sha -> Task.Task Exit.Publish ()
+register :: Http.Manager -> RepositoryUrl -> Name -> Version -> Documentation -> String -> Http.Sha -> Task Exit.Publish ()
 register manager repositoryUrl pkg vsn docs commitHash sha =
   let url =
         Website.route
@@ -461,7 +465,7 @@ register manager repositoryUrl pkg vsn docs commitHash sha =
             Http.stringPart "github-hash" (Http.shaToChars sha)
           ]
 
-registerToPZRRepo :: Http.Manager -> RepositoryUrl -> RepositoryAuthToken -> Pkg.Name -> V.Version -> Docs.Documentation -> Zip.Archive -> Task.Task Exit.Publish ()
+registerToPZRRepo :: Http.Manager -> RepositoryUrl -> RepositoryAuthToken -> Name -> Version -> Documentation -> Zip.Archive -> Task Exit.Publish ()
 registerToPZRRepo manager repositoryUrl repositoryAuthToken pkg vsn docs zipArchive =
   let url =
         Website.route
@@ -484,7 +488,7 @@ registerToPZRRepo manager repositoryUrl repositoryAuthToken pkg vsn docs zipArch
 
 -- REPORTING
 
-reportPublishStart :: Pkg.Name -> V.Version -> Maybe Registry.KnownVersions -> Task.Task x ()
+reportPublishStart :: Name -> Version -> Maybe Registry.KnownVersions -> Task x ()
 reportPublishStart pkg vsn maybeKnownVersions =
   Task.io $
     case maybeKnownVersions of
@@ -495,28 +499,28 @@ reportPublishStart pkg vsn maybeKnownVersions =
 
 -- REPORTING PHASES
 
-reportReadmeCheck :: IO (Either x a) -> Task.Task x a
+reportReadmeCheck :: IO (Either x a) -> Task x a
 reportReadmeCheck =
   reportCheck
     "Looking for README.md"
     "Found README.md"
     "Problem with your README.md"
 
-reportLicenseCheck :: IO (Either x a) -> Task.Task x a
+reportLicenseCheck :: IO (Either x a) -> Task x a
 reportLicenseCheck =
   reportCheck
     "Looking for LICENSE"
     "Found LICENSE"
     "Problem with your LICENSE"
 
-reportBuildCheck :: IO (Either x a) -> Task.Task x a
+reportBuildCheck :: IO (Either x a) -> Task x a
 reportBuildCheck =
   reportCheck
     "Verifying documentation..."
     "Verified documentation"
     "Problem with documentation"
 
-reportSemverCheck :: V.Version -> IO (Either x GoodVersion) -> Task.Task x ()
+reportSemverCheck :: Version -> IO (Either x GoodVersion) -> Task x ()
 reportSemverCheck version work =
   let vsn = V.toChars version
 
@@ -536,39 +540,39 @@ reportSemverCheck version work =
               ++ ")"
    in void $ reportCustomCheck waiting success failure work
 
-reportTagCheck :: V.Version -> IO (Either x a) -> Task.Task x a
+reportTagCheck :: Version -> IO (Either x a) -> Task x a
 reportTagCheck vsn =
   reportCheck
     ("Is version " ++ V.toChars vsn ++ " tagged on GitHub?")
     ("Version " ++ V.toChars vsn ++ " is tagged on GitHub")
     ("Version " ++ V.toChars vsn ++ " is not tagged on GitHub!")
 
-reportDownloadCheck :: IO (Either x a) -> Task.Task x a
+reportDownloadCheck :: IO (Either x a) -> Task x a
 reportDownloadCheck =
   reportCheck
     "Downloading code from GitHub..."
     "Code downloaded successfully from GitHub"
     "Could not download code from GitHub!"
 
-reportLocalChangesCheck :: IO (Either x a) -> Task.Task x a
+reportLocalChangesCheck :: IO (Either x a) -> Task x a
 reportLocalChangesCheck =
   reportCheck
     "Checking for uncommitted changes..."
     "No uncommitted changes in local code"
     "Your local code is different than the code tagged on GitHub"
 
-reportZipBuildCheck :: IO (Either x a) -> Task.Task x a
+reportZipBuildCheck :: IO (Either x a) -> Task x a
 reportZipBuildCheck =
   reportCheck
     "Verifying downloaded code..."
     "Downloaded code compiles successfully"
     "Cannot compile downloaded code!"
 
-reportCheck :: String -> String -> String -> IO (Either x a) -> Task.Task x a
+reportCheck :: String -> String -> String -> IO (Either x a) -> Task x a
 reportCheck waiting success failure work =
   reportCustomCheck waiting (\_ -> success) failure work
 
-reportCustomCheck :: String -> (a -> String) -> String -> IO (Either x a) -> Task.Task x a
+reportCustomCheck :: String -> (a -> String) -> String -> IO (Either x a) -> Task x a
 reportCustomCheck waiting success failure work =
   let putFlush doc =
         Help.toStdout doc >> IO.hFlush IO.stdout
@@ -588,15 +592,15 @@ reportCustomCheck waiting success failure work =
 
 -- MARKS
 
-goodMark :: D.Doc
+goodMark :: Doc
 goodMark =
   D.green $ if isWindows then "+" else "●"
 
-badMark :: D.Doc
+badMark :: Doc
 badMark =
   D.red $ if isWindows then "X" else "✗"
 
-waitingMark :: D.Doc
+waitingMark :: Doc
 waitingMark =
   D.dullyellow $ if isWindows then "-" else "→"
 
