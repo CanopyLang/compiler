@@ -173,8 +173,7 @@ data PrefixOp
 
 
 stmtToBuilder :: Stmt -> Builder
-stmtToBuilder stmts =
-  fromStmt levelZero stmts
+stmtToBuilder = fromStmt levelZero
 
 
 exprToBuilder :: Expr -> Builder
@@ -226,7 +225,7 @@ commaNewlineSep (Level _ (Level deeperIndent _)) builders =
 
 fromStmtBlock :: Level -> [Stmt] -> Builder
 fromStmtBlock level stmts =
-  mconcat (map (fromStmt level) stmts)
+  mconcat (fmap (fromStmt level) stmts)
 
 
 fromStmt :: Level -> Stmt -> Builder
@@ -253,7 +252,7 @@ fromStmt level@(Level indent nextLevel) statement =
     Switch expr clauses ->
       mconcat
         [ indent, "switch (", snd (fromExpr level Whatever expr), ") {\n"
-        , mconcat (map (fromClause nextLevel) clauses)
+        , mconcat (fmap (fromClause nextLevel) clauses)
         , indent, "}\n"
         ]
 
@@ -304,10 +303,10 @@ fromStmt level@(Level indent nextLevel) statement =
       mempty
 
     Vars vars ->
-      indent <> "var " <> commaNewlineSep level (map (varToBuilder level) vars) <> ";\n"
+      indent <> "var " <> commaNewlineSep level (fmap (varToBuilder level) vars) <> ";\n"
 
     FunctionStmt name args stmts ->
-      indent <> "function " <> Name.toBuilder name <> "(" <> commaSep (map Name.toBuilder args) <> ") {\n"
+      indent <> "function " <> Name.toBuilder name <> "(" <> commaSep (fmap Name.toBuilder args) <> ") {\n"
       <>
           fromStmtBlock nextLevel stmts
       <>
@@ -354,10 +353,10 @@ merge a b =
 linesMap :: (a -> (Lines, b)) -> [a] -> (Bool, [b])
 linesMap func xs =
   let
-    pairs = map func xs
+    pairs = fmap func xs
   in
   ( any ((==) Many . fst) pairs
-  , map snd pairs
+  , fmap snd pairs
   )
 
 
@@ -479,7 +478,7 @@ fromExpr level@(Level indent nextLevel@(Level deeperIndent _)) grouping expressi
 
     Function maybeName args stmts ->
       (,) Many $
-        "function " <> maybe mempty Name.toBuilder maybeName <> "(" <> commaSep (map Name.toBuilder args) <> ") {\n"
+        "function " <> maybe mempty Name.toBuilder maybeName <> "(" <> commaSep (fmap Name.toBuilder args) <> ") {\n"
         <>
             fromStmtBlock nextLevel stmts
         <>

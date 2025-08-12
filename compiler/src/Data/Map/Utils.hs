@@ -20,7 +20,7 @@ import Prelude hiding (any)
 
 fromKeys :: (Ord k) => (k -> v) -> [k] -> Map k v
 fromKeys toValue keys =
-  Map.fromList $ map (\k -> (k, toValue k)) keys
+  Map.fromList $ fmap (\k -> (k, toValue k)) keys
 
 fromKeysA :: (Applicative f, Ord k) => (k -> f v) -> [k] -> f (Map k v)
 fromKeysA toValue keys =
@@ -28,7 +28,7 @@ fromKeysA toValue keys =
 
 fromValues :: (Ord k) => (v -> k) -> [v] -> Map k v
 fromValues toKey values =
-  Map.fromList $ map (\v -> (toKey v, v)) values
+  Map.fromList $ fmap (\v -> (toKey v, v)) values
 
 -- ANY
 
@@ -62,7 +62,7 @@ invertMap :: (Ord v) => Map k (NE.List v) -> Map v (NE.List k)
 invertMap mapOfLists =
   let mapAsList = Map.toList mapOfLists
       listOfLists = fmap (\(k, vs) -> fmap (k,) vs) mapAsList
-      listOfLists' = NE.toList =<< listOfLists
+      listOfLists' = (listOfLists >>= NE.toList)
       swappedList = fmap (\(x, y) -> (y, NE.singleton x)) listOfLists'
       result = Map.fromListWith NE.append swappedList
    in result

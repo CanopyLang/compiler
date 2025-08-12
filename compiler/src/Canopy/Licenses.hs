@@ -48,16 +48,12 @@ check givenCode =
     then Right (License givenCode)
     else
       let pairs =
-            map (\code -> (code, Json.toChars code)) (Map.keys osiApprovedSpdxLicenses)
-              ++ Map.toList osiApprovedSpdxLicenses
-       in Left $
-            map fst $
-              take 4 $
-                Suggest.sort (Utf8.toChars givenCode) snd pairs
+            (fmap (\code -> (code, Json.toChars code)) (Map.keys osiApprovedSpdxLicenses) <> Map.toList osiApprovedSpdxLicenses)
+       in ((Left . fmap fst) . take 4 $ Suggest.sort (Utf8.toChars givenCode) snd pairs)
 
 -- LIST OF LICENCES
 
-(==>) :: [Char] -> [Char] -> (Json.String, [Char])
+(==>) :: String -> String -> (Json.String, String)
 (==>) code fullName =
   (Json.fromChars code, fullName)
 
@@ -65,7 +61,7 @@ check givenCode =
 -- OSI approved licenses in SPDX format.
 -- <https://spdx.org/licenses/>
 --
-osiApprovedSpdxLicenses :: Map.Map Json.String [Char]
+osiApprovedSpdxLicenses :: Map.Map Json.String String
 osiApprovedSpdxLicenses =
   Map.fromList
     [ "0BSD" ==> "BSD Zero Clause License",

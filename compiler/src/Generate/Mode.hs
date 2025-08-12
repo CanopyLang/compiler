@@ -39,8 +39,7 @@ shortenFieldNames (GlobalGraph _ frequencies) =
     Map.foldrWithKey addToBuckets Map.empty frequencies
 
 addToBuckets :: Name.Name -> Int -> Map Int [Name.Name] -> Map Int [Name.Name]
-addToBuckets field frequency buckets =
-  Map.insertWith (++) frequency [field] buckets
+addToBuckets field frequency = Map.insertWith (++) frequency [field]
 
 addToShortNames :: [Name.Name] -> ShortFieldNames -> ShortFieldNames
 addToShortNames fields shortNames =

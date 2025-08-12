@@ -36,11 +36,7 @@ type Annotations =
 
 optimize :: Annotations -> Can.Module -> Result i [W.Warning] Opt.LocalGraph
 optimize annotations (Can.Module home _ _ decls unions aliases _ effects) =
-  addDecls home annotations decls $
-    addEffects home effects $
-      addUnions home unions $
-        addAliases home aliases $
-          Opt.LocalGraph Nothing Map.empty Map.empty
+  ((addDecls home annotations decls . addEffects home effects) . addUnions home unions) . addAliases home aliases $ Opt.LocalGraph Nothing Map.empty Map.empty
 
 -- UNION
 
@@ -75,9 +71,7 @@ addAlias home name (Can.Alias _ tipe) graph@(Opt.LocalGraph main nodes fieldCoun
   case tipe of
     Can.TRecord fields Nothing ->
       let function =
-            Opt.Function (map fst (Can.fieldsToList fields)) $
-              Opt.Record $
-                Map.mapWithKey (\field _ -> Opt.VarLocal field) fields
+            (Opt.Function (fmap fst (Can.fieldsToList fields)) . Opt.Record $ Map.mapWithKey (\field _ -> Opt.VarLocal field) fields)
 
           node =
             Opt.Define function Set.empty
@@ -89,8 +83,7 @@ addAlias home name (Can.Alias _ tipe) graph@(Opt.LocalGraph main nodes fieldCoun
       graph
 
 addRecordCtorField :: Name.Name -> Can.FieldType -> Map.Map Name.Name Int -> Map.Map Name.Name Int
-addRecordCtorField name _ fields =
-  Map.insertWith (+) name 1 fields
+addRecordCtorField name _ = Map.insertWith (+) name 1
 
 -- ADD EFFECTS
 
@@ -115,9 +108,7 @@ addEffects home effects graph@(Opt.LocalGraph main nodes fields) =
                 Map.insert sub link $
                   Map.insert fx (Opt.Manager Opt.Sub) nodes
               Can.Fx _ _ ->
-                Map.insert cmd link $
-                  Map.insert sub link $
-                    Map.insert fx (Opt.Manager Opt.Fx) nodes
+                Map.insert cmd link . Map.insert sub link $ Map.insert fx (Opt.Manager Opt.Fx) nodes
        in Opt.LocalGraph main newNodes fields
 
 addPort :: ModuleName.Canonical -> Name.Name -> Can.Port -> Opt.LocalGraph -> Opt.LocalGraph
@@ -147,14 +138,14 @@ addDecls :: ModuleName.Canonical -> Annotations -> Can.Decls -> Opt.LocalGraph -
 addDecls home annotations decls graph =
   case decls of
     Can.Declare def subDecls ->
-      addDecls home annotations subDecls =<< addDef home annotations def graph
+      addDef home annotations def graph >>= addDecls home annotations subDecls
     Can.DeclareRec d ds subDecls ->
       let defs = d : ds
        in case findMain defs of
             Nothing ->
               addDecls home annotations subDecls (addRecDefs home defs graph)
             Just region ->
-              Result.throw $ E.BadCycle region (defToName d) (map defToName ds)
+              Result.throw $ E.BadCycle region (defToName d) (fmap defToName ds)
     Can.SaveTheEnvironment ->
       Result.ok graph
 
@@ -187,7 +178,7 @@ addDef home annotations def graph =
         Result.warn $ W.MissingTypeAnnotation region name tipe
         addDefHelp region annotations home name args body graph
     Can.TypedDef (A.At region name) _ typedArgs body _ ->
-      addDefHelp region annotations home name (map fst typedArgs) body graph
+      addDefHelp region annotations home name (fmap fst typedArgs) body graph
 
 addDefHelp :: A.Region -> Annotations -> ModuleName.Canonical -> Name.Name -> [Can.Pattern] -> Can.Expr -> Opt.LocalGraph -> Result i w Opt.LocalGraph
 addDefHelp region annotations home name args body graph@(Opt.LocalGraph _ nodes fieldCounts) =
@@ -202,17 +193,11 @@ addDefHelp region annotations home name args body graph@(Opt.LocalGraph _ nodes 
        in case Type.deepDealias tipe of
             Can.TType hm nm [_]
               | hm == ModuleName.virtualDom && nm == Name.node ->
-                Result.ok $
-                  addMain $
-                    Names.run $
-                      Names.registerKernel Name.virtualDom Opt.Static
+                (Result.ok . addMain) . Names.run $ Names.registerKernel Name.virtualDom Opt.Static
             Can.TType hm nm [flags, _, message] | hm == ModuleName.platform && nm == Name.program ->
               case Effects.checkPayload flags of
                 Right () ->
-                  Result.ok $
-                    addMain $
-                      Names.run $
-                        Opt.Dynamic message <$> Port.toFlagsDecoder flags
+                  (Result.ok . addMain) . Names.run $ (Opt.Dynamic message <$> Port.toFlagsDecoder flags)
                 Left (subType, invalidPayload) ->
                   Result.throw (E.BadFlags region subType invalidPayload)
             _ ->
@@ -229,9 +214,7 @@ addDefNode home name args body mainDeps graph =
               do
                 (argNames, destructors) <- Expr.destructArgs args
                 obody <- Expr.optimize Set.empty body
-                pure $
-                  Opt.Function argNames $
-                    foldr Opt.Destruct obody destructors
+                pure . Opt.Function argNames $ foldr Opt.Destruct obody destructors
    in addToGraph (Opt.Global home name) (Opt.Define def (Set.union deps mainDeps)) fields graph
 
 -- ADD RECURSIVE DEFS
@@ -243,7 +226,7 @@ data State = State
 
 addRecDefs :: ModuleName.Canonical -> [Can.Def] -> Opt.LocalGraph -> Opt.LocalGraph
 addRecDefs home defs (Opt.LocalGraph main nodes fieldCounts) =
-  let names = reverse (map toName defs)
+  let names = reverse (fmap toName defs)
       cycleName = Opt.Global home (Name.fromManyNames names)
       cycle = foldr addValueName Set.empty defs
       links = foldr (addLink home (Opt.Link cycleName)) Map.empty defs
@@ -284,7 +267,7 @@ addRecDef cycle state def =
     Can.Def (A.At _ name) args body ->
       addRecDefHelp cycle state name args body
     Can.TypedDef (A.At _ name) _ args body _ ->
-      addRecDefHelp cycle state name (map fst args) body
+      addRecDefHelp cycle state name (fmap fst args) body
 
 addRecDefHelp :: Set.Set Name.Name -> State -> Name.Name -> [Can.Pattern] -> Can.Expr -> Names.Tracker State
 addRecDefHelp cycle (State values funcs) name args body =

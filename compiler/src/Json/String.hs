@@ -78,12 +78,11 @@ toBuilder =
 
 fromComment :: P.Snippet -> String
 fromComment (P.Snippet fptr off len _ _) =
-  unsafePerformIO $
-    withForeignPtr fptr $ \ptr ->
+  unsafePerformIO . withForeignPtr fptr $ (\ptr ->
       let !pos = plusPtr ptr off
           !end = plusPtr pos len
           !str = fromChunks (chompChunks pos end pos [])
-       in return str
+       in return str)
 
 chompChunks :: Ptr Word8 -> Ptr Word8 -> Ptr Word8 -> [Chunk] -> [Chunk]
 chompChunks pos end start revChunks =
@@ -125,7 +124,7 @@ fromChunks chunks =
   unsafeDupablePerformIO
     ( stToIO
         ( do
-            let !len = sum (map chunkToWidth chunks)
+            let !len = sum (fmap chunkToWidth chunks)
             mba <- newByteArray len
             writeChunks mba 0 chunks
             freeze mba

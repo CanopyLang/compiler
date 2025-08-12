@@ -120,7 +120,7 @@ stack docs =
 
 reflow :: String -> P.Doc
 reflow paragraph =
-  P.fillSep (map P.text (words paragraph))
+  P.fillSep (fmap P.text (words paragraph))
 
 commaSep :: P.Doc -> (P.Doc -> P.Doc) -> [P.Doc] -> [P.Doc]
 commaSep conjunction addStyle names =
@@ -130,8 +130,7 @@ commaSep conjunction addStyle names =
     [name1, name2] ->
       [addStyle name1, conjunction, addStyle name2]
     _ ->
-      map (\name -> addStyle name <> ",") (init names)
-        ++ [ conjunction,
+      fmap (\name -> addStyle name <> ",") (init names) <> [ conjunction,
              addStyle (last names)
            ]
 
@@ -139,7 +138,7 @@ commaSep conjunction addStyle names =
 
 toSimpleNote :: String -> P.Doc
 toSimpleNote message =
-  toFancyNote (map P.text (words message))
+  toFancyNote (fmap P.text (words message))
 
 toFancyNote :: [P.Doc] -> P.Doc
 toFancyNote chunks =
@@ -149,7 +148,7 @@ toFancyNote chunks =
 
 toSimpleHint :: String -> P.Doc
 toSimpleHint message =
-  toFancyHint (map P.text (words message))
+  toFancyHint (fmap P.text (words message))
 
 toFancyHint :: [P.Doc] -> P.Doc
 toFancyHint chunks =
@@ -161,29 +160,26 @@ link :: String -> String -> String -> String -> P.Doc
 link word before fileName after =
   P.fillSep $
     (P.underline (P.text word) <> ":") :
-    map P.text (words before)
-      ++ P.text (makeLink fileName) :
-    map P.text (words after)
+    (fmap P.text (words before) <> (P.text (makeLink fileName) :
+    fmap P.text (words after)))
 
 fancyLink :: String -> [P.Doc] -> String -> [P.Doc] -> P.Doc
 fancyLink word before fileName after =
   P.fillSep $
-    (P.underline (P.text word) <> ":") : before ++ P.text (makeLink fileName) : after
+    (P.underline (P.text word) <> ":") : (before <> (P.text (makeLink fileName) : after))
 
-makeLink :: [Char] -> [Char]
+makeLink :: String -> String
 makeLink fileName =
   "<https://canopy-lang.org/" <> V.toChars V.compiler <> "/" <> fileName <> ">"
 
-makeNakedLink :: [Char] -> [Char]
+makeNakedLink :: String -> String
 makeNakedLink fileName =
   "https://canopy-lang.org/" <> V.toChars V.compiler <> "/" <> fileName
 
-reflowLink :: [Char] -> [Char] -> [Char] -> P.Doc
+reflowLink :: String -> String -> String -> P.Doc
 reflowLink before fileName after =
-  P.fillSep $
-    map P.text (words before)
-      ++ P.text (makeLink fileName) :
-    map P.text (words after)
+  P.fillSep (fmap P.text (words before) <> (P.text (makeLink fileName) :
+    fmap P.text (words after)))
 
 -- HELPERS
 
@@ -218,9 +214,7 @@ intToOrdinal number =
 cycle :: Int -> Name.Name -> [Name.Name] -> P.Doc
 cycle indent name names =
   let toLn n = cycleLn <> P.dullyellow (fromName n)
-   in P.indent indent $
-        P.vcat $
-          cycleTop : List.intersperse cycleMid (toLn name : map toLn names) ++ [cycleEnd]
+   in (P.indent indent . P.vcat $ (cycleTop : (List.intersperse cycleMid (toLn name : fmap toLn names) <> [cycleEnd])))
 
 cycleTop, cycleLn, cycleMid, cycleEnd :: P.Doc
 cycleTop = if isWindows then "+-----+" else "┌─────┐"
@@ -270,8 +264,7 @@ toJsonHelp :: Style -> [String] -> P.SimpleDoc -> [E.Value]
 toJsonHelp style revChunks simpleDoc =
   case simpleDoc of
     P.SFail ->
-      error $
-        "according to the main implementation, @SFail@ can not\
+      error "according to the main implementation, @SFail@ can not\
         \ appear uncaught in a rendered @SimpleDoc@"
     P.SEmpty ->
       [encodeChunks style revChunks]
@@ -357,9 +350,7 @@ encodeChunks (Style bold underline color) revChunks =
 
 encodeColor :: Color -> E.Value
 encodeColor color =
-  E.string $
-    Json.fromChars $
-      case color of
+  E.string . Json.fromChars $ (case color of
         Red -> "red"
         RED -> "RED"
         Magenta -> "magenta"
@@ -375,4 +366,4 @@ encodeColor color =
         Black -> "black"
         BLACK -> "BLACK"
         White -> "white"
-        WHITE -> "WHITE"
+        WHITE -> "WHITE")

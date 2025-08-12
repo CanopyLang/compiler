@@ -30,13 +30,12 @@ term =
           do  upper <- Var.foreignUpper E.TStart
               end <- getPosition
               let region = A.Region start end
-              return $ A.At region $
-                case upper of
+              return . A.At region $ (case upper of
                   Var.Unqualified name ->
                     Src.TType region name []
 
                   Var.Qualified home name ->
-                    Src.TTypeQual region home name []
+                    Src.TTypeQual region home name [])
         ,
           -- type variables
           do  var <- Var.lower E.TStart

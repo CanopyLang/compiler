@@ -68,8 +68,7 @@ extract astType =
           <$> traverse (extract . snd) args
 
 toPublicName :: ModuleName.Canonical -> Name.Name -> Name.Name
-toPublicName (ModuleName.Canonical _ home) name =
-  Name.sepBy 0x2E {- . -} home name
+toPublicName (ModuleName.Canonical _ home) = Name.sepBy 0x2E {- . -} home
 
 -- TRANSITIVELY AVAILABLE TYPES
 
@@ -98,19 +97,15 @@ merge (Types types1) (Types types2) =
 
 fromInterface :: ModuleName.Raw -> I.Interface -> Types
 fromInterface name (I.Interface pkg _ unions aliases _) =
-  Types $
-    Map.singleton (ModuleName.Canonical pkg name) $
-      Types_ (Map.map I.extractUnion unions) (Map.map I.extractAlias aliases)
+  Types . Map.singleton (ModuleName.Canonical pkg name) $ Types_ (Map.map I.extractUnion unions) (Map.map I.extractAlias aliases)
 
 fromDependencyInterface :: ModuleName.Canonical -> I.DependencyInterface -> Types
 fromDependencyInterface home di =
-  Types $
-    Map.singleton home $
-      case di of
+  Types . Map.singleton home $ (case di of
         I.Public (I.Interface _ _ unions aliases _) ->
           Types_ (Map.map I.extractUnion unions) (Map.map I.extractAlias aliases)
         I.Private _ unions aliases ->
-          Types_ unions aliases
+          Types_ unions aliases)
 
 -- EXTRACT MODEL, MSG, AND ANY TRANSITIVE DEPENDENCIES
 

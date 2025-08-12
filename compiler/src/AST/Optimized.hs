@@ -29,7 +29,7 @@ import qualified Canopy.Kernel as K
 import qualified Canopy.ModuleName as ModuleName
 import qualified Canopy.Package as Pkg
 import qualified Canopy.String as ES
-import Control.Monad (liftM, liftM2, liftM3, liftM4)
+import Control.Monad (liftM2, liftM3, liftM4)
 import Data.Binary (Binary, get, getWord8, put, putWord8)
 import qualified Data.Index as Index
 import Data.Map (Map)
@@ -257,19 +257,19 @@ instance Binary Expr where
     do
       word <- getWord8
       case word of
-        0 -> liftM Bool get
-        1 -> liftM Chr get
-        2 -> liftM Str get
-        3 -> liftM Int get
-        4 -> liftM Float get
-        5 -> liftM VarLocal get
-        6 -> liftM VarGlobal get
+        0 -> fmap Bool get
+        1 -> fmap Chr get
+        2 -> fmap Str get
+        3 -> fmap Int get
+        4 -> fmap Float get
+        5 -> fmap VarLocal get
+        6 -> fmap VarGlobal get
         7 -> liftM2 VarEnum get get
-        8 -> liftM VarBox get
+        8 -> fmap VarBox get
         9 -> liftM2 VarCycle get get
         10 -> liftM4 VarDebug get get get get
         11 -> liftM2 VarKernel get get
-        12 -> liftM List get
+        12 -> fmap List get
         13 -> liftM2 Function get get
         14 -> liftM2 Call get get
         15 -> liftM2 TailCall get get
@@ -277,10 +277,10 @@ instance Binary Expr where
         17 -> liftM2 Let get get
         18 -> liftM2 Destruct get get
         19 -> liftM4 Case get get get get
-        20 -> liftM Accessor get
+        20 -> fmap Accessor get
         21 -> liftM2 Access get get
         22 -> liftM2 Update get get
-        23 -> liftM Record get
+        23 -> fmap Record get
         24 -> pure Unit
         25 -> liftM3 Tuple get get get
         26 -> liftM3 Shader get get get
@@ -318,8 +318,8 @@ instance Binary Path where
       case word of
         0 -> liftM2 Index get get
         1 -> liftM2 Field get get
-        2 -> liftM Unbox get
-        3 -> liftM Root get
+        2 -> fmap Unbox get
+        3 -> fmap Root get
         _ -> fail "problem getting Opt.Path binary"
 
 instance (Binary a) => Binary (Decider a) where
@@ -333,7 +333,7 @@ instance (Binary a) => Binary (Decider a) where
     do
       word <- getWord8
       case word of
-        0 -> liftM Leaf get
+        0 -> fmap Leaf get
         1 -> liftM3 Chain get get get
         2 -> liftM3 FanOut get get get
         _ -> fail "problem getting Opt.Decider binary"
@@ -348,8 +348,8 @@ instance Binary Choice where
     do
       word <- getWord8
       case word of
-        0 -> liftM Inline get
-        1 -> liftM Jump get
+        0 -> fmap Inline get
+        1 -> fmap Jump get
         _ -> fail "problem getting Opt.Choice binary"
 
 instance Binary GlobalGraph where
@@ -396,11 +396,11 @@ instance Binary Node where
         0 -> liftM2 Define get get
         1 -> liftM3 DefineTailFunc get get get
         2 -> liftM2 Ctor get get
-        3 -> liftM Enum get
+        3 -> fmap Enum get
         4 -> return Box
-        5 -> liftM Link get
+        5 -> fmap Link get
         6 -> liftM4 Cycle get get get get
-        7 -> liftM Manager get
+        7 -> fmap Manager get
         8 -> liftM2 Kernel get get
         9 -> liftM2 PortIncoming get get
         10 -> liftM2 PortOutgoing get get

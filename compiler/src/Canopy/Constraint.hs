@@ -52,13 +52,13 @@ anything =
 
 -- TO CHARS
 
-toChars :: Constraint -> [Char]
+toChars :: Constraint -> String
 toChars constraint =
   case constraint of
     Range lower lowerOp upperOp upper ->
-      V.toChars lower ++ opToChars lowerOp ++ "v" ++ opToChars upperOp ++ V.toChars upper
+      V.toChars lower <> (opToChars lowerOp <> ("v" <> (opToChars upperOp <> V.toChars upper)))
 
-opToChars :: Op -> [Char]
+opToChars :: Op -> String
 opToChars op =
   case op of
     Less -> " < "
@@ -99,13 +99,13 @@ intersect (Range lo lop hop hi) (Range lo_ lop_ hop_ hi_) =
   let (newLo, newLop) =
         case compare lo lo_ of
           LT -> (lo_, lop_)
-          EQ -> (lo, if elem Less [lop, lop_] then Less else LessOrEqual)
+          EQ -> (lo, if Less `elem` [lop, lop_] then Less else LessOrEqual)
           GT -> (lo, lop)
 
       (newHi, newHop) =
         case compare hi hi_ of
           LT -> (hi, hop)
-          EQ -> (hi, if elem Less [hop, hop_] then Less else LessOrEqual)
+          EQ -> (hi, if Less `elem` [hop, hop_] then Less else LessOrEqual)
           GT -> (hi_, hop_)
    in if newLo <= newHi
         then Just (Range newLo newLop newHop newHi)

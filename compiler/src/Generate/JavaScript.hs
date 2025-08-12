@@ -16,6 +16,7 @@ import Data.ByteString.Builder (Builder)
 import qualified Data.ByteString.Builder as B
 import qualified Data.Index as Index
 import qualified Data.List as List
+import qualified Data.Maybe
 import Data.Map (Map)
 import qualified Data.Map as Map
 import qualified Data.Name as Name
@@ -102,7 +103,7 @@ print ansi localizer home name tipe =
 
 generateForReplEndpoint :: L.Localizer -> Opt.GlobalGraph -> ModuleName.Canonical -> Maybe Name.Name -> Can.Annotation -> Builder
 generateForReplEndpoint localizer (Opt.GlobalGraph graph _) home maybeName (Can.Forall _ tipe) =
-  let name = maybe Name.replValueToPrint id maybeName
+  let name = Data.Maybe.fromMaybe Name.replValueToPrint maybeName
       mode = Mode.Dev Nothing
       debugState = addGlobal mode graph emptyState (Opt.Global ModuleName.debug "toString")
       evalState = addGlobal mode graph debugState (Opt.Global home name)
@@ -112,7 +113,7 @@ generateForReplEndpoint localizer (Opt.GlobalGraph graph _) home maybeName (Can.
 
 postMessage :: L.Localizer -> ModuleName.Canonical -> Maybe Name.Name -> Can.Type -> Builder
 postMessage localizer home maybeName tipe =
-  let name = maybe Name.replValueToPrint id maybeName
+  let name = Data.Maybe.fromMaybe Name.replValueToPrint maybeName
       value = JsName.toBuilder (JsName.fromGlobal home name)
       toString = JsName.toBuilder (JsName.fromKernel Name.debug "toAnsiString")
       tipeDoc = RT.canToDoc localizer RT.None tipe
@@ -149,7 +150,7 @@ stateToBuilder (State revKernels revBuilders _) =
 
 prependBuilders :: [Builder] -> Builder -> Builder
 prependBuilders revBuilders monolith =
-  List.foldl' (\m b -> b <> m) monolith revBuilders
+  List.foldl' (\acc x -> x <> acc) monolith revBuilders
 
 -- ADD DEPENDENCIES
 
@@ -175,7 +176,7 @@ addGlobalHelp mode graph currentGlobal state =
       global = Opt.Global (globalCanonical {ModuleName._package = canonicalPkgName}) globalName
       globalInGraph = case Map.lookup global graph of
         Just x -> x
-        Nothing -> throw (MyException ("addGlobalHelp: this was graph keys " ++ show (Map.keys graph) ++ " and this was old global " ++ show currentGlobal ++ " and this was new global: " ++ show global))
+        Nothing -> throw (MyException ("addGlobalHelp: this was graph keys " <> (show (Map.keys graph) ++ " and this was old global " ++ show currentGlobal ++ " and this was new global: " ++ show global)))
    in case globalInGraph of
         Opt.Define expr deps ->
           addStmt
@@ -252,9 +253,9 @@ isDebugger (Opt.Global (ModuleName.Canonical _ home) _) =
 generateCycle :: Mode.Mode -> Opt.Global -> [Name.Name] -> [(Name.Name, Opt.Expr)] -> [Opt.Def] -> JS.Stmt
 generateCycle mode (Opt.Global home _) names values functions =
   JS.Block
-    [ JS.Block $ map (generateCycleFunc mode home) functions,
-      JS.Block $ map (generateSafeCycle mode home) values,
-      case map (generateRealCycle home) values of
+    [ JS.Block $ fmap (generateCycleFunc mode home) functions,
+      JS.Block $ fmap (generateSafeCycle mode home) values,
+      case fmap (generateRealCycle home) values of
         [] ->
           JS.EmptyStmt
         realBlock@(_ : _) ->
@@ -262,14 +263,12 @@ generateCycle mode (Opt.Global home _) names values functions =
             Mode.Prod _ ->
               JS.Block realBlock
             Mode.Dev _ ->
-              JS.Try (JS.Block realBlock) JsName.dollar $
-                JS.Throw $
-                  JS.String $
+              JS.Try (JS.Block realBlock) JsName.dollar . JS.Throw $ (JS.String $
                     "Some top-level definitions from `" <> Name.toBuilder (ModuleName._module home) <> "` are causing infinite recursion:\\n"
                       <> drawCycle names
                       <> "\\n\\nThese errors are very tricky, so read "
                       <> B.stringUtf8 (D.makeNakedLink "bad-recursion")
-                      <> " to learn how to fix it!"
+                      <> " to learn how to fix it!")
     ]
 
 generateCycleFunc :: Mode.Mode -> ModuleName.Canonical -> Opt.Def -> JS.Stmt
@@ -291,9 +290,7 @@ generateRealCycle home (name, _) =
       realName = JsName.fromGlobal home name
    in JS.Block
         [ JS.Var realName (JS.Call (JS.Ref safeName) []),
-          JS.ExprStmt $
-            JS.Assign (JS.LRef safeName) $
-              JS.Function Nothing [] [JS.Return (JS.Ref realName)]
+          JS.ExprStmt . JS.Assign (JS.LRef safeName) $ JS.Function Nothing [] [JS.Return (JS.Ref realName)]
         ]
 
 drawCycle :: [Name.Name] -> Builder
@@ -302,13 +299,12 @@ drawCycle names =
       nameLine name = "\\n  │    " <> Name.toBuilder name
       midLine = "\\n  │     ↓"
       bottomLine = "\\n  └─────┘"
-   in mconcat (topLine : List.intersperse midLine (map nameLine names) ++ [bottomLine])
+   in mconcat (topLine : (List.intersperse midLine (map nameLine names) <> [bottomLine]))
 
 -- GENERATE KERNEL
 
 generateKernel :: Mode.Mode -> [K.Chunk] -> Builder
-generateKernel mode chunks =
-  List.foldr (addChunk mode) mempty chunks
+generateKernel mode = List.foldr (addChunk mode) mempty
 
 addChunk :: Mode.Mode -> K.Chunk -> Builder -> Builder
 addChunk mode chunk builder =
@@ -389,9 +385,7 @@ generateManager mode graph (Opt.Global home@(ModuleName.Canonical _ moduleName) 
         generateManagerHelp home effectsType
 
       createManager =
-        JS.ExprStmt $
-          JS.Assign managerLVar $
-            JS.Call (JS.Ref (JsName.fromKernel Name.platform "createManager")) args
+        (JS.ExprStmt . JS.Assign managerLVar $ JS.Call (JS.Ref (JsName.fromKernel Name.platform "createManager")) args)
    in addStmt (List.foldl' (addGlobal mode graph) state deps) $
         JS.Block (createManager : stmts)
 
@@ -407,8 +401,9 @@ leaf =
 
 generateManagerHelp :: ModuleName.Canonical -> Opt.EffectsType -> ([Opt.Global], [JS.Expr], [JS.Stmt])
 generateManagerHelp home effectsType =
-  let dep name = Opt.Global home name
-      ref name = JS.Ref (JsName.fromGlobal home name)
+  let 
+  ref name = JS.Ref (JsName.fromGlobal home name)
+  dep = Opt.Global home
    in case effectsType of
         Opt.Cmd ->
           ( [dep "init", dep "onEffects", dep "onSelfMsg", dep "cmdMap"],

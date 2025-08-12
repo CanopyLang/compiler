@@ -43,7 +43,7 @@ canonicalize env values unions effects =
         pairs <- traverse (canonicalizePort env) ports
         return $ Can.Ports (Map.fromList pairs)
     Src.Manager region manager ->
-      let dict = Map.fromList (map toNameRegion values)
+      let dict = Map.fromList (fmap toNameRegion values)
        in Can.Manager
             <$> verifyManager region dict "init"
             <*> verifyManager region dict "onEffects"

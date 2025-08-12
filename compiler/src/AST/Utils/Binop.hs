@@ -6,7 +6,6 @@ module AST.Utils.Binop
   )
 where
 
-import Control.Monad (liftM)
 import Data.Binary
 import Prelude hiding (Either (..))
 
@@ -25,7 +24,7 @@ data Associativity
 
 instance Binary Precedence where
   get =
-    liftM Precedence get
+    fmap Precedence get
 
   put (Precedence n) =
     put n

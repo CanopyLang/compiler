@@ -37,8 +37,7 @@ type ToError =
   Name.Name -> A.Region -> A.Region -> Error.Error
 
 detect :: ToError -> Dict a -> Result.Result i w Error.Error (Map.Map Name.Name a)
-detect toError dict =
-  Map.traverseWithKey (detectHelp toError) dict
+detect toError = Map.traverseWithKey (detectHelp toError)
 
 detectHelp :: ToError -> Name.Name -> OneOrMore.OneOrMore (Info a) -> Result.Result i w Error.Error a
 detectHelp toError name values =
@@ -57,16 +56,14 @@ checkFields fields =
   detect Error.DuplicateField (foldr addField none fields)
 
 addField :: (A.Located Name.Name, a) -> Dict a -> Dict a
-addField (A.At region name, value) dups =
-  Map.insertWith OneOrMore.more name (OneOrMore.one (Info region value)) dups
+addField (A.At region name, value) = Map.insertWith OneOrMore.more name (OneOrMore.one (Info region value))
 
 checkFields' :: (A.Region -> a -> b) -> [(A.Located Name.Name, a)] -> Result.Result i w Error.Error (Map.Map Name.Name b)
 checkFields' toValue fields =
   detect Error.DuplicateField (foldr (addField' toValue) none fields)
 
 addField' :: (A.Region -> a -> b) -> (A.Located Name.Name, a) -> Dict b -> Dict b
-addField' toValue (A.At region name, value) dups =
-  Map.insertWith OneOrMore.more name (OneOrMore.one (Info region (toValue region value))) dups
+addField' toValue (A.At region name, value) = Map.insertWith OneOrMore.more name (OneOrMore.one (Info region (toValue region value)))
 
 -- BUILDING DICTIONARIES
 
@@ -79,13 +76,10 @@ one name region value =
   Map.singleton name (OneOrMore.one (Info region value))
 
 insert :: Name.Name -> A.Region -> a -> Dict a -> Dict a
-insert name region value dict =
-  Map.insertWith (\new old -> OneOrMore.more old new) name (OneOrMore.one (Info region value)) dict
+insert name region value = Map.insertWith (flip OneOrMore.more) name (OneOrMore.one (Info region value))
 
 union :: Dict a -> Dict a -> Dict a
-union a b =
-  Map.unionWith OneOrMore.more a b
+union = Map.unionWith OneOrMore.more
 
 unions :: [Dict a] -> Dict a
-unions dicts =
-  Map.unionsWith OneOrMore.more dicts
+unions = Map.unionsWith OneOrMore.more

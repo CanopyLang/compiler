@@ -111,11 +111,9 @@ data StringResult
 
 finalize :: Ptr Word8 -> Ptr Word8 -> [ES.Chunk] -> ES.String
 finalize start end revChunks =
-  ES.fromChunks $
-    reverse $
-      if start == end
+  ES.fromChunks . reverse $ (if start == end
         then revChunks
-        else ES.Slice start (minusPtr end start) : revChunks
+        else ES.Slice start (minusPtr end start) : revChunks)
 
 addEscape :: ES.Chunk -> Ptr Word8 -> Ptr Word8 -> [ES.Chunk] -> [ES.Chunk]
 addEscape chunk start end revChunks =

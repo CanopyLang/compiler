@@ -346,7 +346,7 @@ mapErrorHelp func problem =
   case problem of
     Field k p -> Field k (mapErrorHelp func p)
     Index i p -> Index i (mapErrorHelp func p)
-    OneOf p ps -> OneOf (mapErrorHelp func p) (map (mapErrorHelp func) ps)
+    OneOf p ps -> OneOf (mapErrorHelp func p) (fmap (mapErrorHelp func) ps)
     Failure r x -> Failure r (func x)
     Expecting r e -> Expecting r e
 

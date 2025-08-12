@@ -88,7 +88,7 @@ instance Binary.Binary (Utf8.Utf8 CANOPY_NAME) where
 -- TO
 
 
-toChars :: Name -> [Char]
+toChars :: Name -> String
 toChars =
   Utf8.toChars
 
@@ -113,7 +113,7 @@ fromPtr =
   Utf8.fromPtr
 
 
-fromChars :: [Char] -> Name
+fromChars :: String -> Name
 fromChars =
   Utf8.fromChars
 
@@ -224,7 +224,7 @@ getIndexSize :: Int -> Int
 getIndexSize n
   | n < 10  = 1
   | n < 100 = 2
-  | True    = ceiling (logBase 10 (fromIntegral n + 1) :: Float)
+  | otherwise    = ceiling (logBase 10 (fromIntegral n + 1) :: Float)
 
 
 

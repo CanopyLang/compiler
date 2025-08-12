@@ -15,6 +15,7 @@ import qualified Canopy.ModuleName as ModuleName
 import qualified Canopy.Package as Pkg
 import Control.Monad (foldM)
 import qualified Data.List as List
+import qualified Data.Maybe
 import Data.Map.Strict ((!))
 import qualified Data.Map.Strict as Map
 import qualified Data.Name as Name
@@ -69,18 +70,16 @@ toSafeImports (ModuleName.Canonical pkg _) imports =
 
 isNormal :: Src.Import -> Bool
 isNormal (Src.Import (A.At _ name) maybeAlias _) =
-  if Name.isKernel name
-    then case maybeAlias of
+  not (Name.isKernel name) || (case maybeAlias of
       Nothing -> False
-      Just _ -> error "kernel imports cannot use `as`"
-    else True
+      Just _ -> error "kernel imports cannot use `as`")
 
 -- ADD IMPORTS
 
 addImport :: Map.Map ModuleName.Raw I.Interface -> State -> Src.Import -> Result i w State
 addImport ifaces (State vs ts cs bs qvs qts qcs) (Src.Import (A.At _ name) maybeAlias exposing) =
   let (I.Interface pkg defs unions aliases binops) = ifaces ! name
-      !prefix = maybe name id maybeAlias
+      !prefix = Data.Maybe.fromMaybe name maybeAlias
       !home = ModuleName.Canonical pkg name
 
       !rawTypeInfo =
@@ -113,8 +112,7 @@ addExposed =
   Map.unionWith Env.mergeInfo
 
 addQualified :: Name.Name -> Env.Exposed a -> Env.Qualified a -> Env.Qualified a
-addQualified prefix exposed qualified =
-  Map.insertWith addExposed prefix exposed qualified
+addQualified = Map.insertWith addExposed
 
 -- UNION
 
@@ -141,7 +139,7 @@ aliasToTypeHelp home name (Can.Alias vars tipe) =
   ( Env.Alias (length vars) home vars tipe,
     case tipe of
       Can.TRecord fields Nothing ->
-        let avars = map (\var -> (var, Can.TVar var)) vars
+        let avars = fmap (\var -> (var, Can.TVar var)) vars
             alias =
               foldr
                 (\(_, t1) t2 -> Can.TLambda t1 t2)
@@ -185,7 +183,7 @@ addExposedValue home vars types binops (State vs ts cs bs qvs qts qcs) exposed =
                 Env.Union _ _ ->
                   let !ts2 = Map.insert name (Env.Specific home tipe) ts
                    in Result.ok (State vs ts2 cs bs qvs qts qcs)
-                Env.Alias _ _ _ _ ->
+                Env.Alias {} ->
                   let !ts2 = Map.insert name (Env.Specific home tipe) ts
                       !cs2 = addExposed cs ctors
                    in Result.ok (State vs ts2 cs2 bs qvs qts qcs)
@@ -203,7 +201,7 @@ addExposedValue home vars types binops (State vs ts cs bs qvs qts qcs) exposed =
                   let !ts2 = Map.insert name (Env.Specific home tipe) ts
                       !cs2 = addExposed cs ctors
                    in Result.ok (State vs ts2 cs2 bs qvs qts qcs)
-                Env.Alias _ _ _ _ ->
+                Env.Alias {} ->
                   Result.throw (Error.ImportOpenAlias dotDotRegion name)
             Nothing ->
               Result.throw (Error.ImportExposingNotFound region home name (Map.keys types))
@@ -216,8 +214,7 @@ addExposedValue home vars types binops (State vs ts cs bs qvs qts qcs) exposed =
           Result.throw (Error.ImportExposingNotFound region home op (Map.keys binops))
 
 checkForCtorMistake :: Name.Name -> Map.Map Name.Name (Env.Type, Env.Exposed Env.Ctor) -> [Name.Name]
-checkForCtorMistake givenName types =
-  Map.foldr addMatches [] types
+checkForCtorMistake givenName = Map.foldr addMatches []
   where
     addMatches (_, exposedCtors) matches =
       Map.foldrWithKey addMatch matches exposedCtors
@@ -228,7 +225,7 @@ checkForCtorMistake givenName types =
         else case info of
           Env.Specific _ (Env.Ctor _ tipeName _ _ _) ->
             tipeName : matches
-          Env.Specific _ (Env.RecordCtor _ _ _) ->
+          Env.Specific _ (Env.RecordCtor {}) ->
             matches
           Env.Ambiguous _ _ ->
             matches

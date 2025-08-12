@@ -63,11 +63,11 @@ toChars =
 
 toFilePath :: Raw -> FilePath
 toFilePath name =
-  map (\c -> if c == '.' then FP.pathSeparator else c) (Name.toChars name)
+  fmap (\c -> if c == '.' then FP.pathSeparator else c) (Name.toChars name)
 
 toHyphenPath :: Raw -> FilePath
 toHyphenPath name =
-  map (\c -> if c == '.' then '-' else c) (Name.toChars name)
+  fmap (\c -> if c == '.' then '-' else c) (Name.toChars name)
 
 -- JSON
 

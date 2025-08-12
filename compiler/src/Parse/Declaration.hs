@@ -239,7 +239,7 @@ infix_ :: Parser E.Module (A.Located Src.Infix)
 infix_ =
   let
     err = E.Infix
-    _err = \_ -> E.Infix
+    _err _ = E.Infix
   in
   do  start <- getPosition
       Keyword.infix_ err

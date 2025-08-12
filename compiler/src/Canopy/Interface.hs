@@ -20,7 +20,7 @@ where
 import qualified AST.Canonical as Can
 import qualified AST.Utils.Binop as Binop
 import qualified Canopy.Package as Pkg
-import Control.Monad (liftM, liftM3, liftM4, liftM5)
+import Control.Monad (liftM3, liftM4, liftM5)
 import Data.Binary
 import qualified Data.Map.Merge.Strict as Map
 import Data.Map.Strict ((!))
@@ -160,7 +160,7 @@ privatize :: DependencyInterface -> DependencyInterface
 privatize di =
   case di of
     Public i -> private i
-    Private _ _ _ -> di
+    Private {} -> di
 
 -- BINARY
 
@@ -179,9 +179,9 @@ instance Binary Union where
     do
       n <- getWord8
       case n of
-        0 -> liftM OpenUnion get
-        1 -> liftM ClosedUnion get
-        2 -> liftM PrivateUnion get
+        0 -> fmap OpenUnion get
+        1 -> fmap ClosedUnion get
+        2 -> fmap PrivateUnion get
         _ -> fail "binary encoding of Union was corrupted"
 
 instance Binary Alias where
@@ -194,8 +194,8 @@ instance Binary Alias where
     do
       n <- getWord8
       case n of
-        0 -> liftM PublicAlias get
-        1 -> liftM PrivateAlias get
+        0 -> fmap PublicAlias get
+        1 -> fmap PrivateAlias get
         _ -> fail "binary encoding of Alias was corrupted"
 
 instance Binary Binop where
@@ -215,6 +215,6 @@ instance Binary DependencyInterface where
     do
       n <- getWord8
       case n of
-        0 -> liftM Public get
+        0 -> fmap Public get
         1 -> liftM3 Private get get get
         _ -> fail "binary encoding of DependencyInterface was corrupted"

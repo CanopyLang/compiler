@@ -99,7 +99,7 @@ toChars (Name author project) =
 
 toUrl :: Name -> String
 toUrl (Name author project) =
-  Utf8.toChars author ++ "/" ++ Utf8.toChars project
+  Utf8.toChars author <> ("/" <> Utf8.toChars project)
 
 toFilePath :: Name -> FilePath
 toFilePath (Name author project) =
@@ -111,7 +111,7 @@ toJsonString (Name author project) =
 
 -- COMMON PACKAGE NAMES
 
-toName :: Author -> [Char] -> Name
+toName :: Author -> String -> Name
 toName author project =
   Name author (Utf8.fromChars project)
 
@@ -213,7 +213,7 @@ suggestions =
           "Url" ==> url
         ]
 
-(==>) :: [Char] -> Name -> (Name.Name, Name)
+(==>) :: String -> Name -> (Name.Name, Name)
 (==>) moduleName package =
   (Utf8.fromChars moduleName, package)
 
@@ -228,13 +228,13 @@ nearbyNames (Name author1 project1) possibleNames =
         authorDist author2 + projectDist project2
    in take 4 $ List.sortOn nameDistance possibleNames
 
-authorDistance :: [Char] -> Author -> Int
+authorDistance :: String -> Author -> Int
 authorDistance given possibility =
   if possibility == canopy || possibility == canopy_explorations
     then 0
     else abs (Suggest.distance given (Utf8.toChars possibility))
 
-projectDistance :: [Char] -> Project -> Int
+projectDistance :: String -> Project -> Int
 projectDistance given possibility =
   abs (Suggest.distance given (Utf8.toChars possibility))
 

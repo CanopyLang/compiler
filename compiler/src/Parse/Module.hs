@@ -79,11 +79,9 @@ checkModule projectType (Module maybeHeader imports infixes decls) =
           Src.Module (Just name) exports (toDocs docs decls) imports values unions aliases infixes
             <$> checkEffects projectType ports effects
         Nothing ->
-          Right $
-            Src.Module Nothing (A.At A.one Src.Open) (Src.NoDocs A.one) imports values unions aliases infixes $
-              case ports of
+          Right . Src.Module Nothing (A.At A.one Src.Open) (Src.NoDocs A.one) imports values unions aliases infixes $ (case ports of
                 [] -> Src.NoEffects
-                _ : _ -> Src.Ports ports
+                _ : _ -> Src.Ports ports)
 
 checkEffects :: ProjectType -> [Src.Port] -> Effects -> Either E.Error Src.Effects
 checkEffects projectType ports effects =
@@ -222,10 +220,7 @@ chompHeader =
           Keyword.exposing_ E.ModuleProblem
           Space.chompAndCheckIndent E.ModuleSpace E.ModuleProblem
           exports <- addLocation (specialize E.ModuleExposing exposing)
-          comment <- chompModuleDocCommentSpace
-          return $
-            Just $
-              Header name (NoEffects (A.Region start effectEnd)) exports comment,
+          Just . Header name (NoEffects (A.Region start effectEnd)) exports <$> chompModuleDocCommentSpace,
         -- port module MyThing exposing (..)
         do
           Keyword.port_ E.PortModuleProblem
@@ -238,10 +233,7 @@ chompHeader =
           Keyword.exposing_ E.PortModuleProblem
           Space.chompAndCheckIndent E.ModuleSpace E.PortModuleProblem
           exports <- addLocation (specialize E.PortModuleExposing exposing)
-          comment <- chompModuleDocCommentSpace
-          return $
-            Just $
-              Header name (Ports (A.Region start effectEnd)) exports comment,
+          Just . Header name (Ports (A.Region start effectEnd)) exports <$> chompModuleDocCommentSpace,
         -- effect module MyThing where { command = MyCmd } exposing (..)
         do
           Keyword.effect_ E.Effect
@@ -258,10 +250,7 @@ chompHeader =
           Keyword.exposing_ E.Effect
           Space.chompAndCheckIndent E.ModuleSpace E.Effect
           exports <- addLocation (specialize (const E.Effect) exposing)
-          comment <- chompModuleDocCommentSpace
-          return $
-            Just $
-              Header name (Manager (A.Region start effectEnd) manager) exports comment
+          Just . Header name (Manager (A.Region start effectEnd) manager) exports <$> chompModuleDocCommentSpace
       ]
       -- default header
       Nothing
@@ -436,7 +425,7 @@ chompExposed =
       [ do
           name <- Var.lower E.ExposingValue
           end <- getPosition
-          return $ Src.Lower $ A.at start end name,
+          return . Src.Lower $ A.at start end name,
         do
           word1 0x28 {-(-} E.ExposingValue
           op <- Symbol.operator E.ExposingOperator E.ExposingOperatorReserved

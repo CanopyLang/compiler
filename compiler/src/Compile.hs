@@ -45,7 +45,7 @@ compile pkg ifaces modul =
 
 canonicalize :: Pkg.Name -> Map ModuleName.Raw I.Interface -> Src.Module -> Either E.Error Can.Module
 canonicalize pkg ifaces modul =
-  case snd $ R.run $ Canonicalize.canonicalize pkg ifaces modul of
+  case snd . R.run $ Canonicalize.canonicalize pkg ifaces modul of
     Right canonical ->
       Right canonical
     Left errors ->
@@ -53,7 +53,7 @@ canonicalize pkg ifaces modul =
 
 typeCheck :: Src.Module -> Can.Module -> Either E.Error (Map Name.Name Can.Annotation)
 typeCheck modul canonical =
-  case unsafePerformIO (Type.run =<< Type.constrain canonical) of
+  case unsafePerformIO (Type.constrain canonical >>= Type.run) of
     Right annotations ->
       Right annotations
     Left errors ->
@@ -69,7 +69,7 @@ nitpick canonical =
 
 optimize :: Src.Module -> Map Name.Name Can.Annotation -> Can.Module -> Either E.Error Opt.LocalGraph
 optimize modul annotations canonical =
-  case snd $ R.run $ Optimize.optimize annotations canonical of
+  case snd . R.run $ Optimize.optimize annotations canonical of
     Right localGraph ->
       Right localGraph
     Left errors ->

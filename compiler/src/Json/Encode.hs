@@ -80,19 +80,19 @@ null =
 
 dict :: (k -> Json.String) -> (v -> Value) -> Map k v -> Value
 dict encodeKey encodeValue pairs =
-  Object $ map (encodeKey *** encodeValue) (Map.toList pairs)
+  Object $ fmap (encodeKey *** encodeValue) (Map.toList pairs)
 
 list :: (a -> Value) -> [a] -> Value
 list encodeEntry entries =
-  Array $ map encodeEntry entries
+  Array $ fmap encodeEntry entries
 
 -- CHARS
 
-chars :: [Char] -> Value -- PERF can this be done better? Look for examples.
+chars :: String -> Value -- PERF can this be done better? Look for examples.
 chars chrs =
   String (B.char7 '"' <> B.stringUtf8 (escape chrs) <> B.char7 '"')
 
-escape :: [Char] -> [Char]
+escape :: String -> String
 escape chrs =
   case chrs of
     [] ->
@@ -106,7 +106,7 @@ escape chrs =
 
 -- HELPERS
 
-(==>) :: [Char] -> value -> (Json.String, value)
+(==>) :: String -> value -> (Json.String, value)
 (==>) key value =
   (Json.fromChars key, value)
 
@@ -130,13 +130,13 @@ encodeUgly value =
     Array (first : rest) ->
       let encodeEntry entry =
             B.char7 ',' <> encodeUgly entry
-       in B.char7 '[' <> encodeUgly first <> mconcat (map encodeEntry rest) <> B.char7 ']'
+       in B.char7 '[' <> encodeUgly first <> mconcat (fmap encodeEntry rest) <> B.char7 ']'
     Object [] ->
       B.string7 "{}"
     Object (first : rest) ->
       let encodeEntry char (key, entry) =
             B.char7 char <> B.char7 '"' <> Utf8.toBuilder key <> B.string7 "\":" <> encodeUgly entry
-       in encodeEntry '{' first <> mconcat (map (encodeEntry ',') rest) <> B.char7 '}'
+       in encodeEntry '{' first <> mconcat (fmap (encodeEntry ',') rest) <> B.char7 '}'
     String builder ->
       builder
     Boolean boolean ->
@@ -151,8 +151,7 @@ encodeUgly value =
 -- ENCODE
 
 encode :: Value -> B.Builder
-encode value =
-  encodeHelp "" value
+encode = encodeHelp ""
 
 encodeHelp :: BSC.ByteString -> Value -> B.Builder
 encodeHelp indent value =

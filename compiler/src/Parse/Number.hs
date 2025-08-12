@@ -146,13 +146,10 @@ chompExponent pos end =
                 else Err pos E.NumberEnd
 
 chompExponentHelp :: Ptr Word8 -> Ptr Word8 -> Outcome
-chompExponentHelp pos end =
-  if pos >= end
-    then OkFloat pos
-    else
-      if isDecimalDigit (P.unsafeIndex pos)
-        then chompExponentHelp (plusPtr pos 1) end
-        else OkFloat pos
+chompExponentHelp pos end
+  | pos >= end = OkFloat pos
+  | isDecimalDigit (P.unsafeIndex pos) = chompExponentHelp (plusPtr pos 1) end
+  | otherwise = OkFloat pos
 
 -- CHOMP ZERO
 
@@ -210,7 +207,7 @@ stepHex pos end word acc
   | 0x61 {-a-} <= word && word <= 0x66 {-f-} = 16 * acc + 10 + fromIntegral (word - 0x61 {-a-})
   | 0x41 {-A-} <= word && word <= 0x46 {-F-} = 16 * acc + 10 + fromIntegral (word - 0x41 {-A-})
   | isDirtyEnd pos end word = -2
-  | True = -1
+  | otherwise = -1
 
 -- PRECEDENCE
 

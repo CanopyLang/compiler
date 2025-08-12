@@ -30,12 +30,12 @@ head :: List a -> a
 head (List x _) = x
 
 append :: List a -> List a -> List a
-append (List x xs) ys = List x (xs ++ toList ys)
+append (List x xs) ys = List x (xs <> toList ys)
 
 -- INSTANCES
 
 instance Functor List where
-  fmap func (List x xs) = List (func x) (map func xs)
+  fmap func (List x xs) = List (func x) (fmap func xs)
 
 instance Traversable List where
   traverse func (List x xs) = List <$> func x <*> traverse func xs

@@ -109,8 +109,7 @@ registerFieldList names value =
     ok uid deps (foldr addOne fields names) value
 
 addOne :: Name.Name -> Map Name.Name Int -> Map Name.Name Int
-addOne name fields =
-  Map.insertWith (+) name 1 fields
+addOne name = Map.insertWith (+) name 1
 
 -- INSTANCES
 

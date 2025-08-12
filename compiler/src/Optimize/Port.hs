@@ -70,9 +70,7 @@ encodeMaybe tipe =
     null <- encode "null"
     encoder <- toEncoder tipe
     destruct <- Names.registerGlobal ModuleName.maybe "destruct"
-    return $
-      Opt.Function [Name.dollar] $
-        Opt.Call destruct [null, encoder, Opt.VarLocal Name.dollar]
+    return . Opt.Function [Name.dollar] $ Opt.Call destruct [null, encoder, Opt.VarLocal Name.dollar]
 
 encodeList :: Can.Type -> Names.Tracker Opt.Expr
 encodeList tipe =
@@ -90,13 +88,13 @@ encodeArray tipe =
 
 encodeTuple :: Can.Type -> Can.Type -> Maybe Can.Type -> Names.Tracker Opt.Expr
 encodeTuple a b maybeC =
-  let let_ arg index body =
-        Opt.Destruct (Opt.Destructor arg (Opt.Index index (Opt.Root Name.dollar))) body
+  let 
+    encodeArg arg tipe =
+      do
+        encoder <- toEncoder tipe
+        return $ Opt.Call encoder [Opt.VarLocal arg]
 
-      encodeArg arg tipe =
-        do
-          encoder <- toEncoder tipe
-          return $ Opt.Call encoder [Opt.VarLocal arg]
+    let_ arg index = Opt.Destruct (Opt.Destructor arg (Opt.Index index (Opt.Root Name.dollar)))
    in do
         list <- encode "list"
         identity <- Names.registerGlobal ModuleName.basics Name.identity
@@ -105,20 +103,16 @@ encodeTuple a b maybeC =
 
         case maybeC of
           Nothing ->
-            return $
-              Opt.Function [Name.dollar] $
-                let_ "a" Index.first $
+            return . Opt.Function [Name.dollar] $ (let_ "a" Index.first $
                   let_ "b" Index.second $
-                    Opt.Call list [identity, Opt.List [arg1, arg2]]
+                    Opt.Call list [identity, Opt.List [arg1, arg2]])
           Just c ->
             do
               arg3 <- encodeArg "c" c
-              return $
-                Opt.Function [Name.dollar] $
-                  let_ "a" Index.first $
+              return . Opt.Function [Name.dollar] $ (let_ "a" Index.first $
                     let_ "b" Index.second $
                       let_ "c" Index.third $
-                        Opt.Call list [identity, Opt.List [arg1, arg2, arg3]]
+                        Opt.Call list [identity, Opt.List [arg1, arg2, arg3]])
 
 -- FLAGS DECODER
 
@@ -222,13 +216,11 @@ decodeTuple a b maybeC =
     case maybeC of
       Nothing ->
         let tuple = Opt.Tuple (toLocal 0) (toLocal 1) Nothing
-         in indexAndThen 0 a
-              =<< indexAndThen 1 b (Opt.Call succeed [tuple])
+         in (indexAndThen 1 b (Opt.Call succeed [tuple]) >>= indexAndThen 0 a)
       Just c ->
         let tuple = Opt.Tuple (toLocal 0) (toLocal 1) (Just (toLocal 2))
-         in indexAndThen 0 a
-              =<< indexAndThen 1 b
-              =<< indexAndThen 2 c (Opt.Call succeed [tuple])
+         in ((indexAndThen 1 b
+              =<< indexAndThen 2 c (Opt.Call succeed [tuple])) >>= indexAndThen 0 a)
 
 toLocal :: Int -> Opt.Expr
 toLocal index =
@@ -258,8 +250,7 @@ decodeRecord fields =
         Opt.Record (Map.mapWithKey toFieldExpr fields)
    in do
         succeed <- decode "succeed"
-        foldM fieldAndThen (Opt.Call succeed [record])
-          =<< Names.registerFieldDict fields (Map.toList fields)
+        Names.registerFieldDict fields (Map.toList fields) >>= foldM fieldAndThen (Opt.Call succeed [record])
 
 fieldAndThen :: Opt.Expr -> (Name.Name, Can.FieldType) -> Names.Tracker Opt.Expr
 fieldAndThen decoder (key, Can.FieldType _ tipe) =
@@ -277,9 +268,7 @@ fieldAndThen decoder (key, Can.FieldType _ tipe) =
 -- GLOBALS HELPERS
 
 encode :: Name.Name -> Names.Tracker Opt.Expr
-encode name =
-  Names.registerGlobal ModuleName.jsonEncode name
+encode = Names.registerGlobal ModuleName.jsonEncode
 
 decode :: Name.Name -> Names.Tracker Opt.Expr
-decode name =
-  Names.registerGlobal ModuleName.jsonDecode name
+decode = Names.registerGlobal ModuleName.jsonDecode

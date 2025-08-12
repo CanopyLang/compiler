@@ -39,11 +39,10 @@ canonicalize :: Pkg.Name -> Map ModuleName.Raw I.Interface -> Src.Module -> Resu
 canonicalize pkg ifaces modul@(Src.Module _ exports docs imports values _ _ binops effects) =
   do
     let home = ModuleName.Canonical pkg (Src.getName modul)
-    let cbinops = Map.fromList (map canonicalizeBinop binops)
+    let cbinops = Map.fromList (fmap canonicalizeBinop binops)
 
     (env, cunions, caliases) <-
-      Local.add modul
-        =<< Foreign.createInitialEnv home ifaces imports
+      Foreign.createInitialEnv home ifaces imports >>= Local.add modul
 
     cvalues <- canonicalizeValues env values
     ceffects <- Effects.canonicalize env values cunions effects
@@ -96,7 +95,7 @@ detectBadCycles scc =
       error "The definition of Data.Graph.SCC should not allow empty CyclicSCC!"
     Graph.CyclicSCC (def : defs) ->
       let (A.At region name) = extractDefName def
-          names = map (A.toValue . extractDefName) defs
+          names = fmap (A.toValue . extractDefName) defs
        in Result.throw (Error.RecursiveDecl region name names)
 
 extractDefName :: Can.Def -> A.Located Name.Name
@@ -192,7 +191,7 @@ canonicalizeExports values unions aliases binops effects (A.At region exposing) 
       Result.ok (Can.ExportEverything region)
     Src.Explicit exposeds ->
       do
-        let names = Map.fromList (map valueToName values)
+        let names = Map.fromList (fmap valueToName values)
         infos <- traverse (checkExposed names unions aliases binops effects) exposeds
         Can.Export <$> Dups.detect Error.ExportDuplicate (Dups.unions infos)
 
@@ -217,16 +216,12 @@ checkExposed values unions aliases binops effects exposed =
           Nothing ->
             ok name region Can.ExportPort
           Just ports ->
-            Result.throw $
-              Error.ExportNotFound region Error.BadVar name $
-                ports ++ Map.keys values
+            Result.throw . Error.ExportNotFound region Error.BadVar name $ (ports <> Map.keys values)
     Src.Operator region name ->
       if Map.member name binops
         then ok name region Can.ExportBinop
         else
-          Result.throw $
-            Error.ExportNotFound region Error.BadOp name $
-              Map.keys binops
+          Result.throw . Error.ExportNotFound region Error.BadOp name $ Map.keys binops
     Src.Upper (A.At region name) (Src.Public dotDotRegion) ->
       if Map.member name unions
         then ok name region Can.ExportUnionOpen
@@ -234,9 +229,7 @@ checkExposed values unions aliases binops effects exposed =
           if Map.member name aliases
             then Result.throw $ Error.ExportOpenAlias dotDotRegion name
             else
-              Result.throw $
-                Error.ExportNotFound region Error.BadType name $
-                  Map.keys unions ++ Map.keys aliases
+              Result.throw . Error.ExportNotFound region Error.BadType name $ (Map.keys unions <> Map.keys aliases)
     Src.Upper (A.At region name) Src.Private ->
       if Map.member name unions
         then ok name region Can.ExportUnionClosed
@@ -244,9 +237,7 @@ checkExposed values unions aliases binops effects exposed =
           if Map.member name aliases
             then ok name region Can.ExportAlias
             else
-              Result.throw $
-                Error.ExportNotFound region Error.BadType name $
-                  Map.keys unions ++ Map.keys aliases
+              Result.throw . Error.ExportNotFound region Error.BadType name $ (Map.keys unions <> Map.keys aliases)
 
 checkPorts :: Can.Effects -> Name.Name -> Maybe [Name.Name]
 checkPorts effects name =
@@ -255,7 +246,7 @@ checkPorts effects name =
       Just []
     Can.Ports ports ->
       if Map.member name ports then Nothing else Just (Map.keys ports)
-    Can.Manager _ _ _ _ ->
+    Can.Manager {} ->
       Just []
 
 ok :: Name.Name -> A.Region -> Can.Export -> Result i w (Dups.Dict (A.Located Can.Export))

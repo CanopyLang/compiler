@@ -53,7 +53,7 @@ toDoc :: L.Localizer -> RT.Context -> Type -> D.Doc
 toDoc localizer context tipe =
   case tipe of
     Lambda _ _ ->
-      let docs = map (toDoc localizer RT.Func) (collectLambdas tipe)
+      let docs = fmap (toDoc localizer RT.Func) (collectLambdas tipe)
           (a, b, cs) = case docs of
             x : y : zs -> (x, y, zs)
             [x] -> (x, D.fromChars "()", [])
@@ -67,15 +67,15 @@ toDoc localizer context tipe =
       RT.tuple
         (toDoc localizer RT.None a)
         (toDoc localizer RT.None b)
-        (map (toDoc localizer RT.None) cs)
+        (fmap (toDoc localizer RT.None) cs)
     Type name args ->
       RT.apply
         context
         (D.fromName name)
-        (map (toDoc localizer RT.App) args)
+        (fmap (toDoc localizer RT.App) args)
     Record fields ext ->
       RT.record
-        (map (entryToDoc localizer) fields)
+        (fmap (entryToDoc localizer) fields)
         (fmap D.fromName ext)
 
 entryToDoc :: L.Localizer -> (Name.Name, Type) -> (D.Doc, D.Doc)
@@ -115,15 +115,15 @@ fromRawType (A.At _ astType) =
       Tuple
         (fromRawType a)
         (fromRawType b)
-        (map fromRawType cs)
+        (fmap fromRawType cs)
     Src.TType _ name args ->
-      Type name (map fromRawType args)
+      Type name (fmap fromRawType args)
     Src.TTypeQual _ _ name args ->
-      Type name (map fromRawType args)
+      Type name (fmap fromRawType args)
     Src.TRecord fields ext ->
       let fromField (A.At _ field, tipe) = (field, fromRawType tipe)
        in Record
-            (map fromField fields)
+            (fmap fromField fields)
             (fmap A.toValue ext)
 
 -- JSON for PROGRAM
@@ -132,8 +132,8 @@ encodeMetadata :: DebugMetadata -> E.Value
 encodeMetadata (DebugMetadata msg aliases unions) =
   E.object
     [ "message" ==> encode msg,
-      "aliases" ==> E.object (map toTypeAliasField aliases),
-      "unions" ==> E.object (map toCustomTypeField unions)
+      "aliases" ==> E.object (fmap toTypeAliasField aliases),
+      "unions" ==> E.object (fmap toCustomTypeField unions)
     ]
 
 toTypeAliasField :: Alias -> (Json.String, E.Value)
@@ -150,7 +150,7 @@ toCustomTypeField (Union name args constructors) =
   ( Json.fromName name,
     E.object
       [ "args" ==> E.list E.name args,
-        "tags" ==> E.object (map toVariantObject constructors)
+        "tags" ==> E.object (fmap toVariantObject constructors)
       ]
   )
 

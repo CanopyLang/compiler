@@ -212,7 +212,7 @@ getUpperWidthHelp pos _ word
   | word < 0xe0 = if Char.isUpper (chr2 pos word) then 2 else 0
   | word < 0xf0 = if Char.isUpper (chr3 pos word) then 3 else 0
   | word < 0xf8 = if Char.isUpper (chr4 pos word) then 4 else 0
-  | True = 0
+  | otherwise = 0
 
 -- LOWER CHARS
 
@@ -238,7 +238,7 @@ getLowerWidthHelp pos _ word
   | word < 0xe0 = if Char.isLower (chr2 pos word) then 2 else 0
   | word < 0xf0 = if Char.isLower (chr3 pos word) then 3 else 0
   | word < 0xf8 = if Char.isLower (chr4 pos word) then 4 else 0
-  | True = 0
+  | otherwise = 0
 
 -- INNER CHARS
 
@@ -266,7 +266,7 @@ getInnerWidthHelp pos _ word
   | word < 0xe0 = if Char.isAlpha (chr2 pos word) then 2 else 0
   | word < 0xf0 = if Char.isAlpha (chr3 pos word) then 3 else 0
   | word < 0xf8 = if Char.isAlpha (chr4 pos word) then 4 else 0
-  | True = 0
+  | otherwise = 0
 
 -- EXTRACT CHARACTERS
 

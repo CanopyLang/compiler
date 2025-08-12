@@ -93,16 +93,14 @@ toDocHelp root module1 modules =
 
 toSeparator :: Module -> Module -> D.Doc
 toSeparator beforeModule afterModule =
-  let before = ModuleName.toChars (_name beforeModule) ++ "  ↑    "
-      after = "    ↓  " ++ ModuleName.toChars (_name afterModule)
-   in D.dullred $
-        D.vcat $
-          [ D.indent (80 - length before) (D.fromChars before),
+  let before = (ModuleName.toChars (_name beforeModule) <> "  ↑    ")
+      after = ("    ↓  " <> ModuleName.toChars (_name afterModule))
+   in (D.dullred . D.vcat $ [ D.indent (80 - length before) (D.fromChars before),
             "====o======================================================================o====",
             D.fromChars after,
             "",
             ""
-          ]
+          ])
 
 -- MODULE TO DOC
 
@@ -113,7 +111,7 @@ moduleToDoc root (Module _ absolutePath _ source err) =
 
       relativePath =
         FP.makeRelative root absolutePath
-   in D.vcat $ map (reportToDoc relativePath) (NE.toList reports)
+   in D.vcat $ fmap (reportToDoc relativePath) (NE.toList reports)
 
 reportToDoc :: FilePath -> Report.Report -> D.Doc
 reportToDoc relativePath (Report.Report title _ _ message) =
@@ -128,13 +126,7 @@ toMessageBar :: String -> FilePath -> D.Doc
 toMessageBar title filePath =
   let usedSpace =
         4 + length title + 1 + length filePath
-   in D.dullcyan $
-        D.fromChars $
-          "-- " ++ title
-            ++ " "
-            ++ replicate (max 1 (80 - usedSpace)) '-'
-            ++ " "
-            ++ filePath
+   in (D.dullcyan . D.fromChars $ ("-- " <> (title <> (" " <> (replicate (max 1 (80 - usedSpace)) '-' <> (" " <> filePath))))))
 
 -- TO JSON
 
@@ -145,7 +137,7 @@ toJson (Module name path _ source err) =
    in E.object
         [ "path" ==> E.chars path,
           "name" ==> E.name name,
-          "problems" ==> E.array (map reportToJson (NE.toList reports))
+          "problems" ==> E.array (fmap reportToJson (NE.toList reports))
         ]
 
 reportToJson :: Report.Report -> E.Value

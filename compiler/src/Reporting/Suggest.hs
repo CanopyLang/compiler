@@ -15,18 +15,15 @@ import qualified Text.EditDistance as Dist
 -- DISTANCE
 
 distance :: String -> String -> Int
-distance x y =
-  Dist.restrictedDamerauLevenshteinDistance Dist.defaultEditCosts x y
+distance = Dist.restrictedDamerauLevenshteinDistance Dist.defaultEditCosts
 
 -- SORT
 
 sort :: String -> (a -> String) -> [a] -> [a]
-sort target toString values =
-  List.sortOn (distance (toLower target) . toLower . toString) values
+sort target toString = List.sortOn (distance (toLower target) . toLower . toString)
 
 toLower :: String -> String
-toLower string =
-  map Char.toLower string
+toLower = fmap Char.toLower
 
 -- RANK
 
@@ -37,4 +34,4 @@ rank target toString values =
 
       addRank v =
         (toRank v, v)
-   in List.sortOn fst (map addRank values)
+   in List.sortOn fst (fmap addRank values)

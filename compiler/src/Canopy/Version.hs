@@ -50,7 +50,7 @@ max =
 
 compiler :: Version
 compiler =
-  case map fromIntegral (Version.versionBranch Paths_canopy.version) of
+  case fmap fromIntegral (Version.versionBranch Paths_canopy.version) of
     major : minor : patch : _ ->
       Version major minor patch
     [major, minor] ->
@@ -76,9 +76,9 @@ bumpMajor (Version major _minor _patch) =
 
 -- TO CHARS
 
-toChars :: Version -> [Char]
+toChars :: Version -> String
 toChars (Version major minor patch) =
-  show major ++ '.' : show minor ++ '.' : show patch
+  show major <> ('.' : (show minor <> ('.' : show patch)))
 
 -- JSON
 
@@ -100,8 +100,7 @@ instance Binary Version where
         then liftM3 Version get get get
         else do
           minor <- getWord8
-          patch <- getWord8
-          return (Version (fromIntegral word) (fromIntegral minor) (fromIntegral patch))
+          Version (fromIntegral word) (fromIntegral minor) . fromIntegral <$> getWord8
 
   put (Version major minor patch) =
     if major < 255 && minor < 256 && patch < 256
@@ -124,8 +123,7 @@ parser =
     P.word1 0x2E {-.-} (,)
     minor <- numberParser
     P.word1 0x2E {-.-} (,)
-    patch <- numberParser
-    return (Version major minor patch)
+    Version major minor <$> numberParser
 
 numberParser :: P.Parser (Row, Col) Word16
 numberParser =

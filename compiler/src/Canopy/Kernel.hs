@@ -9,7 +9,7 @@ module Canopy.Kernel
   where
 
 
-import Control.Monad (liftM, liftM2)
+import Control.Monad (liftM2)
 import Data.Binary (Binary, get, put, getWord8, putWord8)
 import qualified Data.ByteString.Internal as B
 import qualified Data.List as List
@@ -52,8 +52,7 @@ data Chunk
 
 
 countFields :: [Chunk] -> Map.Map Name.Name Int
-countFields chunks =
-  foldr addField Map.empty chunks
+countFields = foldr addField Map.empty
 
 
 addField :: Chunk -> Map.Map Name.Name Int -> Map.Map Name.Name Int
@@ -268,8 +267,7 @@ type VarTable =
 
 
 toVarTable :: Pkg.Name -> Foreigns -> [Src.Import] -> VarTable
-toVarTable pkg foreigns imports =
-  List.foldl' (addImport pkg foreigns) Map.empty imports
+toVarTable pkg foreigns = List.foldl' (addImport pkg foreigns) Map.empty
 
 
 addImport :: Pkg.Name -> Foreigns -> VarTable -> Src.Import -> VarTable
@@ -277,7 +275,7 @@ addImport pkg foreigns vtable (Src.Import (A.At _ importName) maybeAlias exposin
   if Name.isKernel importName then
     case maybeAlias of
       Just _ ->
-        error ("cannot use `as` with kernel import of: " ++ Name.toChars importName)
+        error ("cannot use `as` with kernel import of: " <> Name.toChars importName)
 
       Nothing ->
         let
@@ -305,7 +303,7 @@ toPrefix home maybeAlias =
 
     Nothing ->
       if Name.hasDot home then
-        error ("kernel imports with dots need an alias: " ++ show (Name.toChars home))
+        error ("kernel imports with dots need an alias: " <> show (Name.toChars home))
       else
         home
 
@@ -317,7 +315,7 @@ toNames exposing =
       error "cannot have `exposing (..)` in kernel code."
 
     Src.Explicit exposedList ->
-      map toName exposedList
+      fmap toName exposedList
 
 
 toName :: Src.Exposed -> Name.Name
@@ -355,12 +353,12 @@ instance Binary Chunk where
   get =
     do  word <- getWord8
         case word of
-          0 -> liftM  JS get
+          0 -> fmap  JS get
           1 -> liftM2 CanopyVar get get
           2 -> liftM2 JsVar get get
-          3 -> liftM  CanopyField get
-          4 -> liftM  JsField get
-          5 -> liftM  JsEnum get
+          3 -> fmap  CanopyField get
+          4 -> fmap  JsField get
+          5 -> fmap  JsEnum get
           6 -> return Debug
           7 -> return Prod
           _ -> error "problem deserializing Canopy.Kernel.Chunk"

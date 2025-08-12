@@ -41,8 +41,7 @@ toValue (At _ value) =
   value
 
 merge :: Located a -> Located b -> value -> Located value
-merge (At r1 _) (At r2 _) value =
-  At (mergeRegions r1 r2) value
+merge (At r1 _) (At r2 _) = At (mergeRegions r1 r2)
 
 -- POSITION
 
@@ -53,8 +52,7 @@ data Position
   deriving (Eq, Show)
 
 at :: Position -> Position -> a -> Located a
-at start end a =
-  At (Region start end) a
+at start end = At (Region start end)
 
 -- REGION
 

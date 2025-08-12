@@ -10,7 +10,6 @@ module AST.Utils.Shader
   )
 where
 
-import Control.Monad (liftM)
 import Data.Binary (Binary, get, put)
 import qualified Data.ByteString as BS
 import qualified Data.ByteString.Builder as B
@@ -51,11 +50,11 @@ toJsStringBuilder (Source src) =
 
 -- FROM CHARS
 
-fromChars :: [Char] -> Source
+fromChars :: String -> Source
 fromChars chars =
   Source (BS_UTF8.fromString (escape chars))
 
-escape :: [Char] -> [Char]
+escape :: String -> String
 escape chars =
   case chars of
     [] ->
@@ -71,5 +70,5 @@ escape chars =
 -- BINARY
 
 instance Binary Source where
-  get = liftM Source get
+  get = fmap Source get
   put (Source a) = put a

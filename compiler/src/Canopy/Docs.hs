@@ -81,8 +81,7 @@ encode docs =
 
 encodeModule :: Module -> E.Value
 encodeModule (Module name comment unions aliases values binops) =
-  E.object $
-    [ "name" ==> ModuleName.encode name,
+  E.object [ "name" ==> ModuleName.encode name,
       "comment" ==> E.string comment,
       "unions" ==> E.list encodeUnion (Map.toList unions),
       "aliases" ==> E.list encodeAlias (Map.toList aliases),
@@ -101,7 +100,7 @@ decoder =
 
 toDict :: [Module] -> Documentation
 toDict modules =
-  Map.fromList (map toDictHelp modules)
+  Map.fromList (fmap toDictHelp modules)
 
 toDictHelp :: Module -> (Name.Name, Module)
 toDictHelp modul@(Module name _ _ _ _ _) =
@@ -288,7 +287,7 @@ chompOverview names =
     if isDocs
       then do
         Space.chomp E.Space
-        chompOverview =<< chompDocs names
+        chompDocs names >>= chompOverview
       else return names
 
 chompDocs :: [A.Located Name.Name] -> Parser [A.Located Name.Name]
@@ -442,7 +441,7 @@ checkExport info name (A.At region export) =
         let (Can.Union tvars ctors _ _) = _iUnions info ! name
         comment <- getComment region name info
         Result.ok $ \m ->
-          m {_unions = Map.insert name (Union comment tvars (map dector ctors)) (_unions m)}
+          m {_unions = Map.insert name (Union comment tvars (fmap dector ctors)) (_unions m)}
     Can.ExportUnionClosed ->
       do
         let (Can.Union tvars _ _ _) = _iUnions info ! name
@@ -474,7 +473,7 @@ getType name info =
 
 dector :: Can.Ctor -> (Name.Name, [Type.Type])
 dector (Can.Ctor name _ _ args) =
-  (name, map Extract.fromType args)
+  (name, fmap Extract.fromType args)
 
 -- GATHER TYPES
 
@@ -497,5 +496,5 @@ addDef types def =
     Can.Def (A.At region name) _ _ ->
       Map.insert name (Left region) types
     Can.TypedDef (A.At _ name) _ typedArgs _ resultType ->
-      let tipe = foldr Can.TLambda resultType (map snd typedArgs)
+      let tipe = foldr (Can.TLambda . snd) resultType typedArgs
        in Map.insert name (Right tipe) types

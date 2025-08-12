@@ -53,7 +53,7 @@ fromChunks chunks =
   unsafeDupablePerformIO
     ( stToIO
         ( do
-            let !len = sum (map chunkToWidth chunks)
+            let !len = sum (fmap chunkToWidth chunks)
             mba <- newByteArray len
             writeChunks mba 0 chunks
             freeze mba

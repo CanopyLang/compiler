@@ -25,9 +25,11 @@ clean:
 	@stack clean
 
 fix-lint:
-	@hlint -h .hlint.yaml --no-summary src -j | \
-	grep -oP '(?<=src/).*?(?=:)' | xargs -I _ \
-	hlint src/_ -h .hlint.yaml --refactor --refactor-options="--inplace" -j &>/dev/null
+	@for dir in compiler builder terminal test; do \
+		hlint -h .hlint.yaml --no-summary $$dir -j | \
+		grep -oP "(?<=$$dir/).*?(?=:)" | xargs -I _ \
+		hlint $$dir/_ -h .hlint.yaml --refactor --refactor-options="--inplace" -j &>/dev/null || true; \
+	done
 	@$(MAKE) format
 
 format:

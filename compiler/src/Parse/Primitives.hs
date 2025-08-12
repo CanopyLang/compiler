@@ -76,8 +76,8 @@ instance Functor (Parser x) where
   {-# INLINE fmap #-}
   fmap f (Parser parser) =
     Parser $ \state cok eok cerr eerr ->
-      let cok' a s = cok (f a) s
-          eok' a s = eok (f a) s
+      let cok' a = cok (f a)
+          eok' a = eok (f a)
        in parser state cok' eok' cerr eerr
 
 -- APPLICATIVE
@@ -90,12 +90,12 @@ instance Applicative.Applicative (Parser x) where
   (<*>) (Parser parserFunc) (Parser parserArg) =
     Parser $ \state cok eok cerr eerr ->
       let cokF func s1 =
-            let cokA arg s2 = cok (func arg) s2
+            let cokA arg = cok (func arg)
              in parserArg s1 cokA cokA cerr cerr
 
           eokF func s1 =
-            let cokA arg s2 = cok (func arg) s2
-                eokA arg s2 = eok (func arg) s2
+            let cokA arg = cok (func arg)
+                eokA arg = eok (func arg)
              in parserArg s1 cokA eokA cerr eerr
        in parserFunc state cokF eokF cerr eerr
 
@@ -326,4 +326,4 @@ getCharWidth word
   | word < 0xe0 = 2
   | word < 0xf0 = 3
   | word < 0xf8 = 4
-  | True = error "Need UTF-8 encoded input. Ran into unrecognized bits."
+  | otherwise = error "Need UTF-8 encoded input. Ran into unrecognized bits."

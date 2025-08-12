@@ -59,7 +59,8 @@ import qualified AST.Utils.Shader as Shader
 import qualified Canopy.Float as EF
 import qualified Canopy.ModuleName as ModuleName
 import qualified Canopy.String as ES
-import Control.Monad (liftM, liftM2, liftM3, liftM4, replicateM)
+import Control.Monad (liftM2, liftM3, liftM4, replicateM)
+import Data.Foldable (traverse_)
 import Data.Binary
 import qualified Data.Index as Index
 import qualified Data.List as List
@@ -203,7 +204,7 @@ fieldsToList fields =
 
       dropIndex (name, FieldType _ tipe) =
         (name, tipe)
-   in map dropIndex (List.sortOn getIndex (Map.toList fields))
+   in fmap dropIndex (List.sortOn getIndex (Map.toList fields))
 
 -- MODULES
 
@@ -321,7 +322,7 @@ instance Binary Type where
                 putWord8 (fromIntegral potentialWord)
                 put home
                 put name
-                mapM_ put ts
+                traverse_ put ts
               else putWord8 6 >> put home >> put name >> put ts
 
   get =
@@ -329,7 +330,7 @@ instance Binary Type where
       word <- getWord8
       case word of
         0 -> liftM2 TLambda get get
-        1 -> liftM TVar get
+        1 -> fmap TVar get
         2 -> liftM2 TRecord get get
         3 -> return TUnit
         4 -> liftM3 TTuple get get get
@@ -347,8 +348,8 @@ instance Binary AliasType where
     do
       n <- getWord8
       case n of
-        0 -> liftM Holey get
-        1 -> liftM Filled get
+        0 -> fmap Holey get
+        1 -> fmap Filled get
         _ -> fail "binary encoding of AliasType was corrupted"
 
 instance Binary FieldType where

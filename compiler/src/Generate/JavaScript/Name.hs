@@ -247,7 +247,7 @@ toByte n
   | n == 52 = 95 {- _ -}
   | n == 53 = 36 {- $ -}
   | n < 64  = fromIntegral (48 + n - 54) {- digit -}
-  | otherwise    = error $ "cannot convert int " ++ show n ++ " to ASCII"
+  | otherwise    = error ("cannot convert int " <> (show n <> " to ASCII"))
 
 
 
@@ -265,8 +265,7 @@ type Renamings =
 allBadFields :: [BadFields]
 allBadFields =
   let
-    add keyword dict =
-      Map.alter (Just . addRenaming keyword) (Utf8.size keyword) dict
+    add keyword = Map.alter (Just . addRenaming keyword) (Utf8.size keyword)
   in
     Map.elems $ Set.foldr add Map.empty jsReservedWords
 

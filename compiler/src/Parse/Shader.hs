@@ -42,7 +42,7 @@ shader start@(A.Position row col) =
 -- BLOCK
 
 
-parseBlock :: Parser E.Expr [Char]
+parseBlock :: Parser E.Expr String
 parseBlock =
   P.Parser $ \(P.State src pos end indent row col) cok _ cerr eerr ->
     let
@@ -104,7 +104,7 @@ eatShader pos end row col =
 -- GLSL
 
 
-parseGlsl :: Row -> Col -> [Char] -> Parser E.Expr Shader.Types
+parseGlsl :: Row -> Col -> String -> Parser E.Expr Shader.Types
 parseGlsl startRow startCol src =
   case GLP.parse src of
     Right (GLS.TranslationUnit decls) ->
@@ -129,9 +129,9 @@ parseGlsl startRow startCol src =
         else failure (startRow + row - 1) col msg
 
 
-failure :: Row -> Col -> [Char] -> Parser E.Expr a
+failure :: Row -> Col -> String -> Parser E.Expr a
 failure row col msg =
-  P.Parser $ \(P.State _ _ _ _ _ _) _ _ cerr _ ->
+  P.Parser $ \(P.State {}) _ _ cerr _ ->
     cerr row col (E.ShaderProblem msg)
 
 
@@ -144,7 +144,7 @@ emptyTypes =
   Shader.Types Map.empty Map.empty Map.empty
 
 
-addInput :: (GLS.StorageQualifier, Shader.Type, [Char]) -> Shader.Types -> Shader.Types
+addInput :: (GLS.StorageQualifier, Shader.Type, String) -> Shader.Types -> Shader.Types
 addInput (qual, tipe, name) glDecls =
   case qual of
     GLS.Attribute -> glDecls { Shader._attribute = Map.insert (Name.fromChars name) tipe (Shader._attribute glDecls) }
@@ -153,7 +153,7 @@ addInput (qual, tipe, name) glDecls =
     _             -> error "Should never happen due to `extractInputs` function"
 
 
-extractInputs :: GLS.ExternalDeclaration -> [(GLS.StorageQualifier, Shader.Type, [Char])]
+extractInputs :: GLS.ExternalDeclaration -> [(GLS.StorageQualifier, Shader.Type, String)]
 extractInputs decl =
   case decl of
     GLS.Declaration
@@ -164,18 +164,15 @@ extractInputs decl =
                (GLS.TypeSpec _prec (GLS.TypeSpecNoPrecision tipe _mexpr1))))
          [GLS.InitDecl name _mexpr2 _mexpr3]
       ) ->
-        case elem qual [GLS.Attribute, GLS.Varying, GLS.Uniform] of
-          False -> []
-          True ->
-              case tipe of
-                GLS.Vec2 -> [(qual, Shader.V2, name)]
-                GLS.Vec3 -> [(qual, Shader.V3, name)]
-                GLS.Vec4 -> [(qual, Shader.V4, name)]
-                GLS.Mat4 -> [(qual, Shader.M4, name)]
-                GLS.Int -> [(qual, Shader.Int, name)]
-                GLS.Float -> [(qual, Shader.Float, name)]
-                GLS.Sampler2D -> [(qual, Shader.Texture, name)]
-                _ -> []
+        (if qual `elem` [GLS.Attribute, GLS.Varying, GLS.Uniform] then (case tipe of
+          GLS.Vec2 -> [(qual, Shader.V2, name)]
+          GLS.Vec3 -> [(qual, Shader.V3, name)]
+          GLS.Vec4 -> [(qual, Shader.V4, name)]
+          GLS.Mat4 -> [(qual, Shader.M4, name)]
+          GLS.Int -> [(qual, Shader.Int, name)]
+          GLS.Float -> [(qual, Shader.Float, name)]
+          GLS.Sampler2D -> [(qual, Shader.Texture, name)]
+          _ -> []) else [])
     _ -> []
 
 

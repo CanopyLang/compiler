@@ -71,11 +71,9 @@ generate mode expression =
         Mode.Prod _ ->
           JsExpr $ JS.Int (Index.toMachine index)
     Opt.VarBox (Opt.Global home name) ->
-      JsExpr $
-        JS.Ref $
-          case mode of
+      JsExpr . JS.Ref $ (case mode of
             Mode.Dev _ -> JsName.fromGlobal home name
-            Mode.Prod _ -> JsName.fromGlobal ModuleName.basics Name.identity
+            Mode.Prod _ -> JsName.fromGlobal ModuleName.basics Name.identity)
     Opt.VarCycle home name ->
       JsExpr $ JS.Call (JS.Ref (JsName.fromCycle home name)) []
     Opt.VarDebug name home region unhandledValueName ->
@@ -90,10 +88,10 @@ generate mode expression =
           JsExpr $
             JS.Call
               (JS.Ref (JsName.fromKernel Name.list "fromArray"))
-              [ JS.Array $ map (generateJsExpr mode) entries
+              [ JS.Array $ fmap (generateJsExpr mode) entries
               ]
     Opt.Function args body ->
-      generateFunction (map JsName.fromLocal args) (generate mode body)
+      generateFunction (fmap JsName.fromLocal args) (generate mode body)
     Opt.Call func args ->
       JsExpr $ generateCall mode func args
     Opt.TailCall name args ->
@@ -156,13 +154,11 @@ generate mode expression =
             )
 
           toTranslationObject fields =
-            JS.Object (map toTranlation (Set.toList fields))
-       in JsExpr $
-            JS.Object $
-              [ (JsName.fromLocal "src", JS.String (Shader.toJsStringBuilder src)),
+            JS.Object (fmap toTranlation (Set.toList fields))
+       in (JsExpr . JS.Object $ [ (JsName.fromLocal "src", JS.String (Shader.toJsStringBuilder src)),
                 (JsName.fromLocal "attributes", toTranslationObject attributes),
                 (JsName.fromLocal "uniforms", toTranslationObject uniforms)
-              ]
+              ])
 
 -- CODE CHUNKS
 
@@ -220,15 +216,12 @@ generateCtor mode (Opt.Global home name) index arity =
         case mode of
           Mode.Dev _ -> JS.String (Name.toBuilder name)
           Mode.Prod _ -> JS.Int (ctorToInt home name index)
-   in generateFunction argNames $
-        JsExpr $
-          JS.Object $
-            (JsName.dollar, ctorTag) : map (\n -> (n, JS.Ref n)) argNames
+   in ((generateFunction argNames . JsExpr) . JS.Object $ ((JsName.dollar, ctorTag) : fmap (\n -> (n, JS.Ref n)) argNames))
 
 ctorToInt :: ModuleName.Canonical -> Name.Name -> Index.ZeroBased -> Int
 ctorToInt home name index =
   if home == ModuleName.dict && name == "RBNode_canopy_builtin" || name == "RBEmpty_canopy_builtin"
-    then 0 - Index.toHuman index
+    then negate (Index.toHuman index)
     else Index.toMachine index
 
 -- RECORDS
@@ -237,7 +230,7 @@ generateRecord :: Mode.Mode -> Map Name.Name Opt.Expr -> JS.Expr
 generateRecord mode fields =
   let toPair (field, value) =
         (generateField mode field, generateJsExpr mode value)
-   in JS.Object (map toPair (Map.toList fields))
+   in JS.Object (fmap toPair (Map.toList fields))
 
 generateField :: Mode.Mode -> Name.Name -> JsName.Name
 generateField mode name =
@@ -255,13 +248,11 @@ generateDebug name (ModuleName.Canonical _ home) region unhandledValueName =
     then JS.Ref (JsName.fromGlobal ModuleName.debug name)
     else case unhandledValueName of
       Nothing ->
-        JS.Call (JS.Ref (JsName.fromKernel Name.debug "todo")) $
-          [ JS.String (Name.toBuilder home),
+        JS.Call (JS.Ref (JsName.fromKernel Name.debug "todo")) [ JS.String (Name.toBuilder home),
             regionToJsExpr region
           ]
       Just valueName ->
-        JS.Call (JS.Ref (JsName.fromKernel Name.debug "todoCase")) $
-          [ JS.String (Name.toBuilder home),
+        JS.Call (JS.Ref (JsName.fromKernel Name.debug "todoCase")) [ JS.String (Name.toBuilder home),
             regionToJsExpr region,
             JS.Ref (JsName.fromLocal valueName)
           ]
@@ -294,16 +285,14 @@ generateFunction args body =
           ]
     Nothing ->
       let addArg arg code =
-            JsExpr $
-              JS.Function Nothing [arg] $
-                codeToStmtList code
+            (JsExpr . JS.Function Nothing [arg] $ codeToStmtList code)
        in foldr addArg body args
 
 {-# NOINLINE funcHelpers #-}
 funcHelpers :: IntMap.IntMap JS.Expr
 funcHelpers =
   IntMap.fromList $
-    map (\n -> (n, JS.Ref (JsName.makeF n))) [2 .. 9]
+    fmap (\n -> (n, JS.Ref (JsName.makeF n))) [2 .. 9]
 
 -- CALLS
 
@@ -330,11 +319,10 @@ generateCallHelp :: Mode.Mode -> Opt.Expr -> [Opt.Expr] -> JS.Expr
 generateCallHelp mode func args =
   generateNormalCall
     (generateJsExpr mode func)
-    (map (generateJsExpr mode) args)
+    (fmap (generateJsExpr mode) args)
 
 generateGlobalCall :: ModuleName.Canonical -> Name.Name -> [JS.Expr] -> JS.Expr
-generateGlobalCall home name args =
-  generateNormalCall (JS.Ref (JsName.fromGlobal home name)) args
+generateGlobalCall home name = generateNormalCall (JS.Ref (JsName.fromGlobal home name))
 
 generateNormalCall :: JS.Expr -> [JS.Expr] -> JS.Expr
 generateNormalCall func args =
@@ -348,24 +336,17 @@ generateNormalCall func args =
 callHelpers :: IntMap.IntMap JS.Expr
 callHelpers =
   IntMap.fromList $
-    map (\n -> (n, JS.Ref (JsName.makeA n))) [2 .. 9]
+    fmap (\n -> (n, JS.Ref (JsName.makeA n))) [2 .. 9]
 
 -- CORE CALLS
 
 generateCoreCall :: Mode.Mode -> Opt.Global -> [Opt.Expr] -> JS.Expr
-generateCoreCall mode (Opt.Global home@(ModuleName.Canonical _ moduleName) name) args =
-  if moduleName == Name.basics
-    then generateBasicsCall mode home name args
-    else
-      if moduleName == Name.bitwise
-        then generateBitwiseCall home name (map (generateJsExpr mode) args)
-        else
-          if moduleName == Name.tuple
-            then generateTupleCall home name (map (generateJsExpr mode) args)
-            else
-              if moduleName == Name.jsArray
-                then generateJsArrayCall home name (map (generateJsExpr mode) args)
-                else generateGlobalCall home name (map (generateJsExpr mode) args)
+generateCoreCall mode (Opt.Global home@(ModuleName.Canonical _ moduleName) name) args
+  | moduleName == Name.basics = generateBasicsCall mode home name args
+  | moduleName == Name.bitwise = generateBitwiseCall home name (fmap (generateJsExpr mode) args)
+  | moduleName == Name.tuple = generateTupleCall home name (fmap (generateJsExpr mode) args)
+  | moduleName == Name.jsArray = generateJsArrayCall home name (fmap (generateJsExpr mode) args)
+  | otherwise = generateGlobalCall home name (fmap (generateJsExpr mode) args)
 
 generateTupleCall :: ModuleName.Canonical -> Name.Name -> [JS.Expr] -> JS.Expr
 generateTupleCall home name args =
@@ -443,7 +424,7 @@ generateBasicsCall mode home name args =
                 "remainderBy" -> JS.Infix JS.OpMod right left
                 _ -> generateGlobalCall home name [left, right]
     _ ->
-      generateGlobalCall home name (map (generateJsExpr mode) args)
+      generateGlobalCall home name (fmap (generateJsExpr mode) args)
 
 equal :: JS.Expr -> JS.Expr -> JS.Expr
 equal left right =
@@ -489,7 +470,7 @@ apply func value =
     Opt.Accessor field ->
       Opt.Access value field
     Opt.Call f args ->
-      Opt.Call f (args ++ [value])
+      Opt.Call f (args <> [value])
     _ ->
       Opt.Call func [value]
 
@@ -567,9 +548,8 @@ generateTailCall mode name args =
       toRealVars (argName, _) =
         JS.ExprStmt $
           JS.Assign (JS.LRef (JsName.makeTailCallFunctionParamName argName)) (JS.Ref (JsName.makeTemp argName))
-   in JS.Vars (map toTempVars args) :
-      map toRealVars args
-        ++ [JS.Return (JS.Ref (JsName.makeLoopSentinelName name))]
+   in JS.Vars (fmap toTempVars args) :
+      (fmap toRealVars args <> [JS.Return (JS.Ref (JsName.makeLoopSentinelName name))])
 
 -- DEFINITIONS
 
@@ -593,16 +573,14 @@ remapFromTailCallParamToLocalVariable name =
   (JsName.fromLocal name, JS.Ref (JsName.makeTailCallFunctionParamName name))
 
 remapFromTailCallParamsToLocalVariables :: [Name.Name] -> JS.Stmt
-remapFromTailCallParamsToLocalVariables variables = JS.Vars (map remapFromTailCallParamToLocalVariable variables)
+remapFromTailCallParamsToLocalVariables variables = JS.Vars (fmap remapFromTailCallParamToLocalVariable variables)
 
 -- We hoist out the body of the while loop into a separate function to solve
 -- var-scoping issues and then replace the body with a single stub that
 -- basically just calls the hoisted function.
 generateTailDef :: Mode.Mode -> Name.Name -> [Name.Name] -> Opt.Expr -> Code
 generateTailDef mode name argNames body =
-  generateFunction functionArgNames $
-    JsBlock $
-      [ JS.Var (JsName.makeLoopSentinelName name) loopContinueSentinel,
+  generateFunction functionArgNames . JsBlock $ [ JS.Var (JsName.makeLoopSentinelName name) loopContinueSentinel,
         loopAsFunction,
         JS.Labelled (JsName.fromLocal name) $
           JS.While (JS.Bool True) loopBodyStub
@@ -610,7 +588,7 @@ generateTailDef mode name argNames body =
   where
     -- We need to remap function args because if we have a closure with a
     -- function arg, we still have scoping issues
-    functionArgNames = map JsName.makeTailCallFunctionParamName argNames
+    functionArgNames = fmap JsName.makeTailCallFunctionParamName argNames
     remapArgNames = remapFromTailCallParamsToLocalVariables argNames
     loopContinueSentinel = makeTailCallLoopContinueSentinel name
     loopAsFunctionName = JsName.makeTailCallLoopHoistName name
@@ -659,19 +637,17 @@ generateIf mode givenBranches givenFinal =
           generate mode expr
         )
 
-      branchExprs = map convertBranch branches
+      branchExprs = fmap convertBranch branches
       finalCode = generate mode final
    in if isBlock finalCode || any (isBlock . snd) branchExprs
         then JsBlock [foldr addStmtIf (codeToStmt finalCode) branchExprs]
         else JsExpr $ foldr addExprIf (codeToExpr finalCode) branchExprs
 
 addExprIf :: (JS.Expr, Code) -> JS.Expr -> JS.Expr
-addExprIf (condition, branch) final =
-  JS.If condition (codeToExpr branch) final
+addExprIf (condition, branch) = JS.If condition (codeToExpr branch)
 
 addStmtIf :: (JS.Expr, Code) -> JS.Stmt -> JS.Stmt
-addStmtIf (condition, branch) final =
-  JS.IfStmt condition (codeToStmt branch) final
+addStmtIf (condition, branch) = JS.IfStmt condition (codeToStmt branch)
 
 isBlock :: Code -> Bool
 isBlock code =
@@ -680,8 +656,7 @@ isBlock code =
     JsExpr _ -> False
 
 crushIfs :: [(Opt.Expr, Opt.Expr)] -> Opt.Expr -> ([(Opt.Expr, Opt.Expr)], Opt.Expr)
-crushIfs branches final =
-  crushIfsHelp [] branches final
+crushIfs = crushIfsHelp []
 
 crushIfsHelp ::
   [(Opt.Expr, Opt.Expr)] ->
@@ -702,8 +677,7 @@ crushIfsHelp visitedBranches unvisitedBranches final =
 -- CASE EXPRESSIONS
 
 generateCase :: Mode.Mode -> Name.Name -> Name.Name -> Opt.Decider Opt.Choice -> [(Int, Opt.Expr)] -> [JS.Stmt]
-generateCase mode label root decider jumps =
-  foldr (goto mode label) (generateDecider mode label root decider) jumps
+generateCase mode label root decider = foldr (goto mode label) (generateDecider mode label root decider)
 
 goto :: Mode.Mode -> Name.Name -> (Int, Opt.Expr) -> [JS.Stmt] -> [JS.Stmt]
 goto mode label (index, branch) stmts =
@@ -722,7 +696,7 @@ generateDecider mode label root decisionTree =
       [JS.Break (Just (JsName.makeLabel label index))]
     Opt.Chain testChain success failure ->
       [ JS.IfStmt
-          (List.foldl1' (JS.Infix JS.OpAnd) (map (generateIfTest mode root) testChain))
+          (List.foldl1' (JS.Infix JS.OpAnd) (fmap (generateIfTest mode root) testChain))
           (JS.Block $ generateDecider mode label root success)
           (JS.Block $ generateDecider mode label root failure)
       ]
@@ -885,8 +859,6 @@ toDebugMetadata mode msgType =
     Mode.Dev Nothing ->
       JS.Int 0
     Mode.Dev (Just interfaces) ->
-      JS.Json $
-        Encode.object $
-          [ "versions" ==> Encode.object ["canopy" ==> V.encode V.compiler],
+      JS.Json . Encode.object $ [ "versions" ==> Encode.object ["canopy" ==> V.encode V.compiler],
             "types" ==> Type.encodeMetadata (Extract.fromMsg interfaces msgType)
           ]

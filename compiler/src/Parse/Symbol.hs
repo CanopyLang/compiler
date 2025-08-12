@@ -64,4 +64,4 @@ binopCharVector =
 {-# NOINLINE binopCharSet #-}
 binopCharSet :: IntSet.IntSet
 binopCharSet =
-  IntSet.fromList (map Char.ord "+-/*=.<>:&|^?%!")
+  IntSet.fromList (fmap Char.ord "+-/*=.<>:&|^?%!")

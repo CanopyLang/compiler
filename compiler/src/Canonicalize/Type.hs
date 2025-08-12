@@ -39,18 +39,16 @@ canonicalize env (A.At typeRegion tipe) =
     Src.TVar x ->
       Result.ok (Can.TVar x)
     Src.TType region name args ->
-      canonicalizeType env typeRegion name args
-        =<< Env.findType region env name
+      Env.findType region env name >>= canonicalizeType env typeRegion name args
     Src.TTypeQual region home name args ->
-      canonicalizeType env typeRegion name args
-        =<< Env.findTypeQual region env home name
+      Env.findTypeQual region env home name >>= canonicalizeType env typeRegion name args
     Src.TLambda a b ->
       Can.TLambda
         <$> canonicalize env a
         <*> canonicalize env b
     Src.TRecord fields ext ->
       do
-        cfields <- sequenceA =<< Dups.checkFields (canonicalizeFields env fields)
+        cfields <- Dups.checkFields (canonicalizeFields env fields) >>= sequenceA
         return $ Can.TRecord cfields (fmap A.toValue ext)
     Src.TUnit ->
       Result.ok Can.TUnit

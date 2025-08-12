@@ -15,7 +15,6 @@ module Data.Index
   )
 where
 
-import Control.Monad (liftM)
 import Data.Binary
 
 -- ZERO BASED
@@ -55,7 +54,7 @@ toHuman (ZeroBased index) =
 {-# INLINE indexedMap #-}
 indexedMap :: (ZeroBased -> a -> b) -> [a] -> [b]
 indexedMap func xs =
-  zipWith func (map ZeroBased [0 .. length xs]) xs
+  zipWith func (fmap ZeroBased [0 .. length xs]) xs
 
 {-# INLINE indexedTraverse #-}
 indexedTraverse :: (Applicative f) => (ZeroBased -> a -> f b) -> [a] -> f [b]
@@ -99,5 +98,5 @@ indexedZipWithA func listX listY =
 -- BINARY
 
 instance Binary ZeroBased where
-  get = liftM ZeroBased get
+  get = fmap ZeroBased get
   put (ZeroBased n) = put n

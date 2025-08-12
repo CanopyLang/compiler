@@ -40,7 +40,7 @@ hasDebug expression =
     Opt.VarEnum _ _ -> False
     Opt.VarBox _ -> False
     Opt.VarCycle _ _ -> False
-    Opt.VarDebug _ _ _ _ -> True
+    Opt.VarDebug {} -> True
     Opt.VarKernel _ _ -> False
     Opt.List exprs -> any hasDebug exprs
     Opt.Function _ expr -> hasDebug expr
@@ -56,7 +56,7 @@ hasDebug expression =
     Opt.Record fs -> any hasDebug fs
     Opt.Unit -> False
     Opt.Tuple a b c -> hasDebug a || hasDebug b || maybe False hasDebug c
-    Opt.Shader _ _ _ -> False
+    Opt.Shader {} -> False
 
 defHasDebug :: Opt.Def -> Bool
 defHasDebug def =
