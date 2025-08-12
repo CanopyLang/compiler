@@ -55,6 +55,7 @@ import Control.Monad (liftM, liftM2, liftM3, liftM4, replicateM)
 import Data.Binary
 import qualified Data.List as List
 import qualified Data.Map as Map
+import Data.Map (Map)
 import Data.Name (Name)
 
 import qualified AST.Source as Src
@@ -100,8 +101,8 @@ data Expr_
   | Case Expr [CaseBranch]
   | Accessor Name
   | Access Expr (A.Located Name)
-  | Update Name Expr (Map.Map Name FieldUpdate)
-  | Record (Map.Map Name Expr)
+  | Update Name Expr (Map Name FieldUpdate)
+  | Record (Map Name Expr)
   | Unit
   | Tuple Expr Expr (Maybe Expr)
   | Shader Shader.Source Shader.Types
@@ -192,14 +193,14 @@ data Annotation = Forall FreeVars Type
   deriving (Eq, Show)
 
 
-type FreeVars = Map.Map Name ()
+type FreeVars = Map Name ()
 
 
 data Type
   = TLambda Type Type
   | TVar Name
   | TType ModuleName.Canonical Name [Type]
-  | TRecord (Map.Map Name FieldType) (Maybe Name)
+  | TRecord (Map Name FieldType) (Maybe Name)
   | TUnit
   | TTuple Type Type (Maybe Type)
   | TAlias ModuleName.Canonical Name [(Name, Type)] AliasType
@@ -220,7 +221,7 @@ data FieldType = FieldType {-# UNPACK #-} !Word16 Type
 -- for every canonical type. For example, if the canonical type is inferred
 -- the orders will all be zeros.
 --
-fieldsToList :: Map.Map Name FieldType -> [(Name, Type)]
+fieldsToList :: Map Name FieldType -> [(Name, Type)]
 fieldsToList fields =
   let
     getIndex (_, FieldType index _) =
@@ -242,9 +243,9 @@ data Module =
     , _exports :: Exports
     , _docs    :: Src.Docs
     , _decls   :: Decls
-    , _unions  :: Map.Map Name Union
-    , _aliases :: Map.Map Name Alias
-    , _binops  :: Map.Map Name Binop
+    , _unions  :: Map Name Union
+    , _aliases :: Map Name Alias
+    , _binops  :: Map Name Binop
     , _effects :: Effects
     }
 
@@ -284,7 +285,7 @@ data Ctor = Ctor Name Index.ZeroBased Int [Type] -- CACHE length args
 
 data Exports
   = ExportEverything A.Region
-  | Export (Map.Map Name (A.Located Export))
+  | Export (Map Name (A.Located Export))
 
 
 data Export
@@ -302,7 +303,7 @@ data Export
 
 data Effects
   = NoEffects
-  | Ports (Map.Map Name Port)
+  | Ports (Map Name Port)
   | Manager A.Region A.Region A.Region Manager
 
 

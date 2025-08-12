@@ -16,6 +16,7 @@ import qualified Data.IntMap as IntMap
 import qualified Data.List as List
 import Data.Map ((!))
 import qualified Data.Map as Map
+import Data.Map (Map)
 import qualified Data.Name as Name
 import qualified Data.Set as Set
 import qualified Data.Utf8 as Utf8
@@ -289,7 +290,7 @@ ctorToInt home name index =
 -- RECORDS
 
 
-generateRecord :: Mode.Mode -> Map.Map Name.Name Opt.Expr -> JS.Expr
+generateRecord :: Mode.Mode -> Map Name.Name Opt.Expr -> JS.Expr
 generateRecord mode fields =
   let
     toPair (field, value) =

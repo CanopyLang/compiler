@@ -70,11 +70,11 @@ data Expr
   | Case Name Name (Decider Choice) [(Int, Expr)]
   | Accessor Name
   | Access Expr Name
-  | Update Expr (Map.Map Name Expr)
-  | Record (Map.Map Name Expr)
+  | Update Expr (Map Name Expr)
+  | Record (Map Name Expr)
   | Unit
   | Tuple Expr Expr (Maybe Expr)
-  | Shader Shader.Source (Set.Set Name) (Set.Set Name)
+  | Shader Shader.Source (Set Name) (Set Name)
   deriving Show
 
 
@@ -163,17 +163,17 @@ data Main
 
 
 data Node
-  = Define Expr (Set.Set Global)
-  | DefineTailFunc [Name] Expr (Set.Set Global)
+  = Define Expr (Set Global)
+  | DefineTailFunc [Name] Expr (Set Global)
   | Ctor Index.ZeroBased Int
   | Enum Index.ZeroBased
   | Box
   | Link Global
-  | Cycle [Name] [(Name, Expr)] [Def] (Set.Set Global)
+  | Cycle [Name] [(Name, Expr)] [Def] (Set Global)
   | Manager EffectsType
-  | Kernel [K.Chunk] (Set.Set Global)
-  | PortIncoming Expr (Set.Set Global)
-  | PortOutgoing Expr (Set.Set Global)
+  | Kernel [K.Chunk] (Set Global)
+  | PortIncoming Expr (Set Global)
+  | PortOutgoing Expr (Set Global)
   deriving Show
 
 

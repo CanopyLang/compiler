@@ -8,7 +8,7 @@ module Type.Instantiate
 
 
 import qualified Data.Map.Strict as Map
-import Data.Map.Strict ((!))
+import Data.Map.Strict (Map, (!))
 import qualified Data.Name as Name
 
 import qualified AST.Canonical as Can
@@ -20,14 +20,14 @@ import Type.Type
 
 
 type FreeVars =
-  Map.Map Name.Name Type
+  Map Name.Name Type
 
 
 
 -- FROM SOURCE TYPE
 
 
-fromSrcType :: Map.Map Name.Name Type -> Can.Type -> IO Type
+fromSrcType :: Map Name.Name Type -> Can.Type -> IO Type
 fromSrcType freeVars sourceType =
   case sourceType of
     Can.TLambda arg result ->

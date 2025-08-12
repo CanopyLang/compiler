@@ -26,6 +26,7 @@ import Control.Arrow ((***))
 import qualified Data.ByteString.Builder as B
 import qualified Data.ByteString.Char8 as BSC
 import qualified Data.Map as Map
+import Data.Map (Map)
 import qualified Data.Name as Name
 import qualified Data.Scientific as Sci
 import qualified Data.Utf8 as Utf8
@@ -77,7 +78,7 @@ null :: Value
 null =
   Null
 
-dict :: (k -> Json.String) -> (v -> Value) -> Map.Map k v -> Value
+dict :: (k -> Json.String) -> (v -> Value) -> Map k v -> Value
 dict encodeKey encodeValue pairs =
   Object $ map (encodeKey *** encodeValue) (Map.toList pairs)
 

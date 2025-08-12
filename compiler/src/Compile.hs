@@ -7,6 +7,7 @@ module Compile
 
 
 import qualified Data.Map as Map
+import Data.Map (Map)
 import qualified Data.Name as Name
 
 import qualified AST.Source as Src
@@ -34,12 +35,12 @@ import System.IO.Unsafe (unsafePerformIO)
 data Artifacts =
   Artifacts
     { _modul :: Can.Module
-    , _types :: Map.Map Name.Name Can.Annotation
+    , _types :: Map Name.Name Can.Annotation
     , _graph :: Opt.LocalGraph
     }
 
 
-compile :: Pkg.Name -> Map.Map ModuleName.Raw I.Interface -> Src.Module -> Either E.Error Artifacts
+compile :: Pkg.Name -> Map ModuleName.Raw I.Interface -> Src.Module -> Either E.Error Artifacts
 compile pkg ifaces modul =
   do  canonical   <- canonicalize pkg ifaces modul
       annotations <- typeCheck modul canonical
@@ -52,7 +53,7 @@ compile pkg ifaces modul =
 -- PHASES
 
 
-canonicalize :: Pkg.Name -> Map.Map ModuleName.Raw I.Interface -> Src.Module -> Either E.Error Can.Module
+canonicalize :: Pkg.Name -> Map ModuleName.Raw I.Interface -> Src.Module -> Either E.Error Can.Module
 canonicalize pkg ifaces modul =
   case snd $ R.run $ Canonicalize.canonicalize pkg ifaces modul of
     Right canonical ->
@@ -62,7 +63,7 @@ canonicalize pkg ifaces modul =
       Left $ E.BadNames errors
 
 
-typeCheck :: Src.Module -> Can.Module -> Either E.Error (Map.Map Name.Name Can.Annotation)
+typeCheck :: Src.Module -> Can.Module -> Either E.Error (Map Name.Name Can.Annotation)
 typeCheck modul canonical =
   case unsafePerformIO (Type.run =<< Type.constrain canonical) of
     Right annotations ->
@@ -82,7 +83,7 @@ nitpick canonical =
       Left (E.BadPatterns errors)
 
 
-optimize :: Src.Module -> Map.Map Name.Name Can.Annotation -> Can.Module -> Either E.Error Opt.LocalGraph
+optimize :: Src.Module -> Map Name.Name Can.Annotation -> Can.Module -> Either E.Error Opt.LocalGraph
 optimize modul annotations canonical =
   case snd $ R.run $ Optimize.optimize annotations canonical of
     Right localGraph ->

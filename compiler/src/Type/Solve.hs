@@ -8,9 +8,10 @@ module Type.Solve
 
 import Control.Monad
 import qualified Data.Map.Strict as Map
-import Data.Map.Strict ((!))
+import Data.Map.Strict (Map, (!))
 import qualified Data.Name as Name
 import qualified Data.NonEmptyList as NE
+import Data.NonEmptyList (List)
 import qualified Data.Vector as Vector
 import qualified Data.Vector.Mutable as MVector
 
@@ -30,7 +31,7 @@ import qualified Type.UnionFind as UF
 -- RUN SOLVER
 
 
-run :: Constraint -> IO (Either (NE.List Error.Error) (Map.Map Name.Name Can.Annotation))
+run :: Constraint -> IO (Either (List Error.Error) (Map Name.Name Can.Annotation))
 run constraint =
   do  pools <- MVector.replicate 8 []
 
@@ -57,7 +58,7 @@ emptyState =
 
 
 type Env =
-  Map.Map Name.Name Variable
+  Map Name.Name Variable
 
 
 type Pools =
@@ -434,7 +435,7 @@ typeToVariable rank pools tipe =
 -- are recommended in cases like this anyway, so there is at least a safety
 -- valve for now.
 --
-typeToVar :: Int -> Pools -> Map.Map Name.Name Variable -> Type -> IO Variable
+typeToVar :: Int -> Pools -> Map Name.Name Variable -> Type -> IO Variable
 typeToVar rank pools aliasDict tipe =
   let go = typeToVar rank pools aliasDict in
   case tipe of
@@ -499,7 +500,7 @@ unit1 =
 -- SOURCE TYPE TO VARIABLE
 
 
-srcTypeToVariable :: Int -> Pools -> Map.Map Name.Name () -> Can.Type -> IO Variable
+srcTypeToVariable :: Int -> Pools -> Map Name.Name () -> Can.Type -> IO Variable
 srcTypeToVariable rank pools freeVars srcType =
   let
     nameToContent name
@@ -517,7 +518,7 @@ srcTypeToVariable rank pools freeVars srcType =
       srcTypeToVar rank pools flexVars srcType
 
 
-srcTypeToVar :: Int -> Pools -> Map.Map Name.Name Variable -> Can.Type -> IO Variable
+srcTypeToVar :: Int -> Pools -> Map Name.Name Variable -> Can.Type -> IO Variable
 srcTypeToVar rank pools flexVars srcType =
   let go = srcTypeToVar rank pools flexVars in
   case srcType of
@@ -563,7 +564,7 @@ srcTypeToVar rank pools flexVars srcType =
           register rank pools (Alias home name argVars aliasVar)
 
 
-srcFieldTypeToVar :: Int -> Pools -> Map.Map Name.Name Variable -> Can.FieldType -> IO Variable
+srcFieldTypeToVar :: Int -> Pools -> Map Name.Name Variable -> Can.FieldType -> IO Variable
 srcFieldTypeToVar rank pools flexVars (Can.FieldType _ srcTipe) =
   srcTypeToVar rank pools flexVars srcTipe
 

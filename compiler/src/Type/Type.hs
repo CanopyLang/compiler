@@ -33,6 +33,7 @@ import Control.Monad.State.Strict (StateT, liftIO)
 import qualified Control.Monad.State.Strict as State
 import Data.Foldable (foldrM)
 import qualified Data.Map.Strict as Map
+import Data.Map.Strict (Map)
 import qualified Data.Name as Name
 import Data.Word (Word32)
 
@@ -60,7 +61,7 @@ data Constraint
   | CLet
       { _rigidVars :: [Variable]
       , _flexVars :: [Variable]
-      , _header :: Map.Map Name.Name (A.Located Type)
+      , _header :: Map Name.Name (A.Located Type)
       , _headerCon :: Constraint
       , _bodyCon :: Constraint
       }
@@ -83,7 +84,7 @@ data FlatType
     = App1 ModuleName.Canonical Name.Name [Variable]
     | Fun1 Variable Variable
     | EmptyRecord1
-    | Record1 (Map.Map Name.Name Variable) Variable
+    | Record1 (Map Name.Name Variable) Variable
     | Unit1
     | Tuple1 Variable Variable (Maybe Variable)
 
@@ -95,7 +96,7 @@ data Type
     | AppN ModuleName.Canonical Name.Name [Type]
     | FunN Type Type
     | EmptyRecordN
-    | RecordN (Map.Map Name.Name Type) Type
+    | RecordN (Map Name.Name Type) Type
     | UnitN
     | TupleN Type Type (Maybe Type)
 
@@ -556,7 +557,7 @@ termToErrorType term =
 
 data NameState =
   NameState
-    { _taken :: Map.Map Name.Name ()
+    { _taken :: Map Name.Name ()
     , _normals :: Int
     , _numbers :: Int
     , _comparables :: Int
@@ -565,7 +566,7 @@ data NameState =
     }
 
 
-makeNameState :: Map.Map Name.Name Variable -> NameState
+makeNameState :: Map Name.Name Variable -> NameState
 makeNameState taken =
   NameState (Map.map (const ()) taken) 0 0 0 0 0
 
@@ -583,7 +584,7 @@ getFreshVarName =
       return name
 
 
-getFreshVarNameHelp :: Int -> Map.Map Name.Name () -> (Name.Name, Int, Map.Map Name.Name ())
+getFreshVarNameHelp :: Int -> Map Name.Name () -> (Name.Name, Int, Map Name.Name ())
 getFreshVarNameHelp index taken =
   let
     name =
@@ -624,7 +625,7 @@ getFreshSuper prefix getter setter =
       return name
 
 
-getFreshSuperHelp :: Name.Name -> Int -> Map.Map Name.Name () -> (Name.Name, Int, Map.Map Name.Name ())
+getFreshSuperHelp :: Name.Name -> Int -> Map Name.Name () -> (Name.Name, Int, Map Name.Name ())
 getFreshSuperHelp prefix index taken =
   let
     name =
@@ -641,7 +642,7 @@ getFreshSuperHelp prefix index taken =
 -- GET ALL VARIABLE NAMES
 
 
-getVarNames :: Variable -> Map.Map Name.Name Variable -> IO (Map.Map Name.Name Variable)
+getVarNames :: Variable -> Map Name.Name Variable -> IO (Map Name.Name Variable)
 getVarNames var takenNames =
   do  (Descriptor content rank mark copy) <- UF.get var
       if mark == getVarNamesMark
@@ -706,7 +707,7 @@ getVarNames var takenNames =
 -- REGISTER NAME / RENAME DUPLICATES
 
 
-addName :: Int -> Name.Name -> Variable -> (Name.Name -> Content) -> Map.Map Name.Name Variable -> IO (Map.Map Name.Name Variable)
+addName :: Int -> Name.Name -> Variable -> (Name.Name -> Content) -> Map Name.Name Variable -> IO (Map Name.Name Variable)
 addName index givenName var makeContent takenNames =
   let
     indexedName =

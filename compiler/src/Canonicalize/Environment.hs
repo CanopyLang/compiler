@@ -22,6 +22,7 @@ module Canonicalize.Environment
 
 import qualified Data.Map.Merge.Strict as Map
 import qualified Data.Map.Strict as Map
+import Data.Map.Strict (Map)
 import qualified Data.Name as Name
 import qualified Data.OneOrMore as OneOrMore
 
@@ -49,7 +50,7 @@ type Result i w a =
 data Env =
   Env
     { _home :: ModuleName.Canonical
-    , _vars :: Map.Map Name.Name Var
+    , _vars :: Map Name.Name Var
     , _types :: Exposed Type
     , _ctors :: Exposed Ctor
     , _binops :: Exposed Binop
@@ -60,11 +61,11 @@ data Env =
 
 
 type Exposed a =
-  Map.Map Name.Name (Info a)
+  Map Name.Name (Info a)
 
 
 type Qualified a =
-  Map.Map Name.Name (Map.Map Name.Name (Info a))
+  Map Name.Name (Map Name.Name (Info a))
 
 
 
@@ -144,7 +145,7 @@ data Binop =
 -- VARIABLE -- ADD LOCALS
 
 
-addLocals :: Map.Map Name.Name A.Region -> Env -> Result i w Env
+addLocals :: Map Name.Name A.Region -> Env -> Result i w Env
 addLocals names (Env home vars ts cs bs qvs qts qcs) =
   do  newVars <-
         Map.mergeA
