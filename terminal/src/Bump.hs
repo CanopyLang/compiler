@@ -9,9 +9,11 @@ where
 import qualified BackgroundWriter as BW
 import qualified Build
 import qualified Canopy.Details as Details
-import qualified Canopy.Docs as Docs
+import Canopy.Docs (Documentation)
 import qualified Canopy.Magnitude as M
+import Canopy.Outline (PkgOutline(..))
 import qualified Canopy.Outline as Outline
+import Canopy.Version (Version)
 import qualified Canopy.Version as V
 import qualified Data.List as List
 import qualified Data.NonEmptyList as NE
@@ -21,11 +23,12 @@ import qualified Deps.Diff as Diff
 import qualified Deps.Registry as Registry
 import qualified Http
 import qualified Reporting
-import Reporting.Doc ((<+>))
+import Reporting.Doc (Doc, (<+>))
 import qualified Reporting.Doc as D
 import Reporting.Exit (Bump (BumpCustomRepositoryDataProblem))
 import qualified Reporting.Exit as Exit
 import qualified Reporting.Exit.Help as Help
+import Reporting.Task (Task)
 import qualified Reporting.Task as Task
 import qualified Stuff
 
@@ -43,10 +46,10 @@ data Env = Env
     _cache :: Stuff.PackageCache,
     _manager :: Http.Manager,
     _registry :: Registry.ZokkaRegistries,
-    _outline :: Outline.PkgOutline
+    _outline :: PkgOutline
   }
 
-getEnv :: Task.Task Exit.Bump Env
+getEnv :: Task Exit.Bump Env
 getEnv =
   do
     maybeRoot <- Task.io $ Stuff.findRoot
@@ -70,8 +73,8 @@ getEnv =
 
 -- BUMP
 
-bump :: Env -> Task.Task Exit.Bump ()
-bump env@(Env root _ _ registry outline@(Outline.PkgOutline pkg _ _ vsn _ _ _ _)) =
+bump :: Env -> Task Exit.Bump ()
+bump env@(Env root _ _ registry outline@(PkgOutline pkg _ _ vsn _ _ _ _)) =
   case Registry.getVersions pkg registry of
     Just knownVersions ->
       let bumpableVersions =
@@ -87,8 +90,8 @@ bump env@(Env root _ _ registry outline@(Outline.PkgOutline pkg _ _ vsn _ _ _ _)
 
 -- CHECK NEW PACKAGE
 
-checkNewPackage :: FilePath -> Outline.PkgOutline -> IO ()
-checkNewPackage root outline@(Outline.PkgOutline _ _ _ version _ _ _ _) =
+checkNewPackage :: FilePath -> PkgOutline -> IO ()
+checkNewPackage root outline@(PkgOutline _ _ _ version _ _ _ _) =
   do
     putStrLn Exit.newPackageOverview
     if version == V.one
@@ -102,8 +105,8 @@ checkNewPackage root outline@(Outline.PkgOutline _ _ _ version _ _ _ _) =
 
 -- SUGGEST VERSION
 
-suggestVersion :: Env -> Task.Task Exit.Bump ()
-suggestVersion (Env root cache manager registry outline@(Outline.PkgOutline pkg _ _ vsn _ _ _ _)) =
+suggestVersion :: Env -> Task Exit.Bump ()
+suggestVersion (Env root cache manager registry outline@(PkgOutline pkg _ _ vsn _ _ _ _)) =
   do
     oldDocs <- Task.eio (Exit.BumpCannotFindDocs pkg vsn) (Diff.getDocs cache registry manager pkg vsn)
     newDocs <- generateDocs root outline
@@ -123,8 +126,8 @@ suggestVersion (Env root cache manager registry outline@(Outline.PkgOutline pkg 
               <> new
               <> ") in canopy.json? [Y/n] "
 
-generateDocs :: FilePath -> Outline.PkgOutline -> Task.Task Exit.Bump Docs.Documentation
-generateDocs root (Outline.PkgOutline _ _ _ _ exposed _ _ _) =
+generateDocs :: FilePath -> PkgOutline -> Task Exit.Bump Documentation
+generateDocs root (PkgOutline _ _ _ _ exposed _ _ _) =
   do
     details <-
       Task.eio Exit.BumpBadDetails $
@@ -140,7 +143,7 @@ generateDocs root (Outline.PkgOutline _ _ _ _ exposed _ _ _) =
 
 -- CHANGE VERSION
 
-changeVersion :: FilePath -> Outline.PkgOutline -> V.Version -> D.Doc -> IO ()
+changeVersion :: FilePath -> PkgOutline -> Version -> Doc -> IO ()
 changeVersion root outline targetVersion question =
   do
     approved <- Reporting.ask question

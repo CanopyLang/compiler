@@ -11,11 +11,12 @@ import qualified BackgroundWriter as BW
 import qualified Build
 import qualified Canopy.Compiler.Type as Type
 import qualified Canopy.Details as Details
+import Canopy.Docs (Alias, Binop, Documentation, Union, Value)
 import qualified Canopy.Docs as Docs
 import qualified Canopy.Magnitude as M
 import qualified Canopy.Outline as Outline
-import qualified Canopy.Package as Pkg
-import qualified Canopy.Version as V
+import Canopy.Package (Name)
+import Canopy.Version (Version)
 import qualified Data.List as List
 import qualified Data.Map as Map
 import qualified Data.Maybe as Maybe
@@ -27,7 +28,7 @@ import qualified Deps.Diff as DD
 import qualified Deps.Registry as Registry
 import qualified Http
 import qualified Reporting
-import Reporting.Doc ((<+>))
+import Reporting.Doc (Doc, (<+>))
 import qualified Reporting.Doc as D
 import qualified Reporting.Exit as Exit
 import qualified Reporting.Exit.Help as Help
@@ -39,9 +40,9 @@ import qualified Stuff
 
 data Args
   = CodeVsLatest
-  | CodeVsExactly V.Version
-  | LocalInquiry V.Version V.Version
-  | GlobalInquiry Pkg.Name V.Version V.Version
+  | CodeVsExactly Version
+  | LocalInquiry Version Version
+  | GlobalInquiry Name Version Version
 
 run :: Args -> () -> IO ()
 run args () =
@@ -110,19 +111,19 @@ diff env@(Env _ _ _ registry) args =
 
 -- GET DOCS
 
-getDocs :: Env -> Pkg.Name -> Registry.KnownVersions -> V.Version -> Task Docs.Documentation
+getDocs :: Env -> Name -> Registry.KnownVersions -> Version -> Task Documentation
 getDocs (Env _ cache manager registry) name (Registry.KnownVersions latest previous) version =
   if latest == version || elem version previous
     then Task.eio (Exit.DiffDocsProblem version) $ DD.getDocs cache registry manager name version
     else Task.throw $ Exit.DiffUnknownVersion name version (latest : previous)
 
-getLatestDocs :: Env -> Pkg.Name -> Registry.KnownVersions -> Task Docs.Documentation
+getLatestDocs :: Env -> Name -> Registry.KnownVersions -> Task Documentation
 getLatestDocs (Env _ cache manager registry) name (Registry.KnownVersions latest _) =
   Task.eio (Exit.DiffDocsProblem latest) $ DD.getDocs cache registry manager name latest
 
 -- READ OUTLINE
 
-readOutline :: Env -> Task (Pkg.Name, Registry.KnownVersions)
+readOutline :: Env -> Task (Name, Registry.KnownVersions)
 readOutline (Env maybeRoot _ _ registry) =
   case maybeRoot of
     Nothing ->
@@ -144,7 +145,7 @@ readOutline (Env maybeRoot _ _ registry) =
 
 -- GENERATE DOCS
 
-generateDocs :: Env -> Task Docs.Documentation
+generateDocs :: Env -> Task Documentation
 generateDocs (Env maybeRoot _ _ _) =
   case maybeRoot of
     Nothing ->
@@ -169,7 +170,7 @@ generateDocs (Env maybeRoot _ _ _) =
 
 -- WRITE DIFF
 
-writeDiff :: Docs.Documentation -> Docs.Documentation -> Task ()
+writeDiff :: Documentation -> Documentation -> Task ()
 writeDiff oldDocs newDocs =
   let changes = DD.diff oldDocs newDocs
       localizer = L.fromNames (Map.union oldDocs newDocs)
@@ -177,7 +178,7 @@ writeDiff oldDocs newDocs =
 
 -- TO DOC
 
-toDoc :: L.Localizer -> PackageChanges -> D.Doc
+toDoc :: L.Localizer -> PackageChanges -> Doc
 toDoc localizer changes@(PackageChanges added changed removed) =
   if null added && Map.null changed && null removed
     then "No API changes detected, so this is a" <+> D.green "PATCH" <+> "change."
@@ -211,10 +212,10 @@ toDoc localizer changes@(PackageChanges added changed removed) =
 data Chunk = Chunk
   { _title :: String,
     _magnitude :: M.Magnitude,
-    _details :: D.Doc
+    _details :: Doc
   }
 
-chunkToDoc :: Chunk -> D.Doc
+chunkToDoc :: Chunk -> Doc
 chunkToDoc (Chunk title magnitude details) =
   let header =
         "----" <+> D.fromChars title <+> "-" <+> D.fromChars (M.toChars magnitude) <+> "----"
@@ -251,7 +252,7 @@ changesToChunk localizer (name, changes@(ModuleChanges unions aliases values bin
                 changesToDoc "Changed" unionChange aliasChange valueChange binopChange
               ]
 
-changesToDocTriple :: (k -> v -> D.Doc) -> Changes k v -> ([D.Doc], [D.Doc], [D.Doc])
+changesToDocTriple :: (k -> v -> Doc) -> Changes k v -> ([Doc], [Doc], [Doc])
 changesToDocTriple entryToDoc (Changes added changed removed) =
   let indented (name, value) =
         D.indent 4 (entryToDoc name value)
@@ -267,7 +268,7 @@ changesToDocTriple entryToDoc (Changes added changed removed) =
         map indented (Map.toList removed)
       )
 
-changesToDoc :: String -> [D.Doc] -> [D.Doc] -> [D.Doc] -> [D.Doc] -> Maybe D.Doc
+changesToDoc :: String -> [Doc] -> [Doc] -> [Doc] -> [Doc] -> Maybe Doc
 changesToDoc categoryName unions aliases values binops =
   if null unions && null aliases && null values && null binops
     then Nothing
@@ -276,7 +277,7 @@ changesToDoc categoryName unions aliases values binops =
         D.vcat $
           D.fromChars categoryName <> ":" : unions ++ aliases ++ binops ++ values
 
-unionToDoc :: L.Localizer -> Name.Name -> Docs.Union -> D.Doc
+unionToDoc :: L.Localizer -> Name.Name -> Union -> Doc
 unionToDoc localizer name (Docs.Union _ tvars ctors) =
   let setup =
         "type" <+> D.fromName name <+> D.hsep (map D.fromName tvars)
@@ -285,17 +286,17 @@ unionToDoc localizer name (Docs.Union _ tvars ctors) =
         typeDoc localizer (Type.Type ctor tipes)
    in D.hang 4 (D.sep (setup : zipWith (<+>) ("=" : repeat "|") (map ctorDoc ctors)))
 
-aliasToDoc :: L.Localizer -> Name.Name -> Docs.Alias -> D.Doc
+aliasToDoc :: L.Localizer -> Name.Name -> Alias -> Doc
 aliasToDoc localizer name (Docs.Alias _ tvars tipe) =
   let declaration =
         "type" <+> "alias" <+> D.hsep (map D.fromName (name : tvars)) <+> "="
    in D.hang 4 (D.sep [declaration, typeDoc localizer tipe])
 
-valueToDoc :: L.Localizer -> Name.Name -> Docs.Value -> D.Doc
+valueToDoc :: L.Localizer -> Name.Name -> Value -> Doc
 valueToDoc localizer name (Docs.Value _ tipe) =
   D.hang 4 $ D.sep [D.fromName name <+> ":", typeDoc localizer tipe]
 
-binopToDoc :: L.Localizer -> Name.Name -> Docs.Binop -> D.Doc
+binopToDoc :: L.Localizer -> Name.Name -> Binop -> Doc
 binopToDoc localizer name (Docs.Binop _ tipe associativity (Docs.Precedence n)) =
   "(" <> D.fromName name <> ")" <+> ":" <+> typeDoc localizer tipe <> D.black details
   where
@@ -308,6 +309,6 @@ binopToDoc localizer name (Docs.Binop _ tipe associativity (Docs.Precedence n)) 
         Docs.Non -> "non"
         Docs.Right -> "right"
 
-typeDoc :: L.Localizer -> Type.Type -> D.Doc
+typeDoc :: L.Localizer -> Type.Type -> Doc
 typeDoc localizer tipe =
   Type.toDoc localizer Type.None tipe
