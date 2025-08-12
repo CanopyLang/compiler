@@ -21,17 +21,17 @@ import Control.Monad (join)
 -- FROM KEYS
 
 
-fromKeys :: (Ord k) => (k -> v) -> [k] -> Map.Map k v
+fromKeys :: (Ord k) => (k -> v) -> [k] -> Map k v
 fromKeys toValue keys =
   Map.fromList $ map (\k -> (k, toValue k)) keys
 
 
-fromKeysA :: (Applicative f, Ord k) => (k -> f v) -> [k] -> f (Map.Map k v)
+fromKeysA :: (Applicative f, Ord k) => (k -> f v) -> [k] -> f (Map k v)
 fromKeysA toValue keys =
   Map.fromList <$> traverse (\k -> (,) k <$> toValue k) keys
 
 
-fromValues :: (Ord k) => (v -> k) -> [v] -> Map.Map k v
+fromValues :: (Ord k) => (v -> k) -> [v] -> Map k v
 fromValues toKey values =
   Map.fromList $ map (\v -> (toKey v, v)) values
 
@@ -41,7 +41,7 @@ fromValues toKey values =
 
 
 {-# INLINE any #-}
-any :: (v -> Bool) -> Map.Map k v -> Bool
+any :: (v -> Bool) -> Map k v -> Bool
 any isGood = go
   where
     go Tip = False
@@ -52,7 +52,7 @@ any isGood = go
 addToTuple :: a -> (b, c) -> (a, b, c)
 addToTuple k (k1, v) = (k, k1, v)
 
-flattenMaps :: Map.Map k0 (Map.Map k1 v) -> [(k0, k1, v)]
+flattenMaps :: Map k0 (Map k1 v) -> [(k0, k1, v)]
 flattenMaps nestedMaps =
   let
     mapAsList = Map.toList nestedMaps
@@ -61,7 +61,7 @@ flattenMaps nestedMaps =
   in
     result
 
-exchangeKeys :: (Ord k1, Ord k0) => Map.Map k0 (Map.Map k1 v) -> Map.Map k1 (Map.Map k0 v)
+exchangeKeys :: (Ord k1, Ord k0) => Map k0 (Map k1 v) -> Map k1 (Map k0 v)
 exchangeKeys nestedMap = 
   let
     asTriples = flattenMaps nestedMap
@@ -71,7 +71,7 @@ exchangeKeys nestedMap =
     fmap Map.fromList outerMap
 
 
-invertMap :: (Ord v) => Map.Map k (NE.List v) -> Map.Map v (NE.List k)
+invertMap :: (Ord v) => Map k (NE.List v) -> Map v (NE.List k)
 invertMap mapOfLists = 
   let 
     mapAsList = Map.toList mapOfLists
