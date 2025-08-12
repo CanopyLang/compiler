@@ -281,11 +281,14 @@ decoder =
 elmDecoder :: Decoder Outline
 elmDecoder =
   let application = Json.fromChars "application"
+      package = Json.fromChars "package"
    in do
         tipe <- D.field "type" D.string
         if tipe == application
           then App <$> elmAppDecoder
-          else D.failure Exit.OP_BadType
+          else if tipe == package
+            then Pkg <$> elmPkgDecoder
+            else D.failure Exit.OP_BadType
 
 appDecoder :: Decoder AppOutline
 appDecoder =
@@ -308,6 +311,18 @@ elmAppDecoder =
     <*> D.field "test-dependencies" (D.field "direct" (depsDecoder versionDecoder))
     <*> D.field "test-dependencies" (D.field "indirect" (depsDecoder versionDecoder))
     <*> pure []
+
+elmPkgDecoder :: Decoder PkgOutline
+elmPkgDecoder =
+  PkgOutline
+    <$> D.field "name" nameDecoder
+    <*> D.field "summary" summaryDecoder
+    <*> D.field "license" (Licenses.decoder Exit.OP_BadLicense)
+    <*> D.field "version" versionDecoder
+    <*> D.field "exposed-modules" exposedDecoder
+    <*> D.field "dependencies" (depsDecoder constraintDecoder)
+    <*> D.field "test-dependencies" (depsDecoder constraintDecoder)
+    <*> D.field "elm-version" constraintDecoder
 
 pkgDecoder :: Decoder PkgOutline
 pkgDecoder =
