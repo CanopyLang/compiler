@@ -30,6 +30,7 @@ import qualified Compile
 import Control.Concurrent (forkIO)
 import Control.Concurrent.MVar
 import Control.Monad (filterM)
+import Data.Foldable (traverse_)
 import qualified Data.ByteString as B
 import qualified Data.Char as Char
 import qualified Data.Graph as Graph
@@ -114,13 +115,13 @@ fork :: IO a -> IO (MVar a)
 fork work =
   do
     mvar <- newEmptyMVar
-    _ <- forkIO $ putMVar mvar =<< work
+    _ <- forkIO $ work >>= putMVar mvar
     return mvar
 
 {-# INLINE forkWithKey #-}
 forkWithKey :: (k -> a -> IO b) -> Map k a -> IO (Map k (MVar b))
-forkWithKey func dict =
-  Map.traverseWithKey (\k v -> fork (func k v)) dict
+forkWithKey func =
+  Map.traverseWithKey (\k v -> fork (func k v))
 
 -- FROM EXPOSED
 
@@ -136,8 +137,8 @@ fromExposed style root details docsGoal exposed@(NE.List e es) =
       let docsNeed = toDocsNeed docsGoal
       roots <- Map.fromKeysA (fork . crawlModule env mvar docsNeed) (e : es)
       putMVar mvar roots
-      mapM_ readMVar roots
-      statuses <- traverse readMVar =<< readMVar mvar
+      traverse_ readMVar roots
+      statuses <- readMVar mvar >>= traverse readMVar
 
       -- compile
       midpoint <- checkMidpoint dmvar statuses
@@ -175,27 +176,27 @@ fromPaths style root details paths =
   Reporting.trackBuild style $ \key ->
     do
       env <- makeEnv key root details
-      _ <- printLog ("foreigns env: " ++ show (_foreigns env))
-      _ <- printLog ("details foreigns: " ++ show (Details._foreigns details))
+      _ <- printLog ("foreigns env: " <> show (_foreigns env))
+      _ <- printLog ("details foreigns: " <> show (Details._foreigns details))
 
       elroots <- findRoots env paths
       _ <- case elroots of
         Left _ -> pure ()
-        Right roots -> printLog ("hello" ++ show roots)
+        Right roots -> printLog ("hello" <> show roots)
       case elroots of
         Left problem ->
           return (Left (Exit.BuildProjectProblem problem))
         Right lroots ->
           do
             -- crawl
-            _ <- printLog ("extras" ++ show (Details._extras details))
+            _ <- printLog ("extras" <> show (Details._extras details))
             dmvar <- Details.loadInterfaces root details
             dmvarContents <- readMVar dmvar
-            _ <- printLog ("dmvarContents: " ++ show (fmap Map.keys dmvarContents))
+            _ <- printLog ("dmvarContents: " <> show (fmap Map.keys dmvarContents))
             smvar <- newMVar Map.empty
             srootMVars <- traverse (fork . crawlRoot env smvar) lroots
             sroots <- traverse readMVar srootMVars
-            statuses <- traverse readMVar =<< readMVar smvar
+            statuses <- readMVar smvar >>= traverse readMVar
 
             midpoint <- checkMidpointAndRoots dmvar statuses sroots
             case midpoint of
@@ -241,11 +242,11 @@ crawlDeps :: Env -> MVar StatusDict -> [ModuleName.Raw] -> a -> IO a
 crawlDeps env mvar deps blockedValue =
   do
     statusDict <- takeMVar mvar
-    let depsDict = Map.fromKeys (\_ -> ()) deps
+    let depsDict = Map.fromKeys (const ()) deps
     let newsDict = Map.difference depsDict statusDict
     statuses <- Map.traverseWithKey crawlNew newsDict
     putMVar mvar (Map.union statuses statusDict)
-    mapM_ readMVar statuses
+    traverse_ readMVar statuses
     return blockedValue
   where
     crawlNew name () = fork (crawlModule env mvar (DocsNeed False) name)
@@ -253,13 +254,13 @@ crawlDeps env mvar deps blockedValue =
 findModuleFile :: [AbsoluteSrcDir] -> FilePath -> IO [FilePath]
 findModuleFile srcDirs baseName =
   do
-    canPaths <- filterM File.exists (map (`addRelative` (baseName <.> "can")) srcDirs)
+    canPaths <- filterM File.exists (fmap (`addRelative` (baseName <.> "can")) srcDirs)
     case canPaths of
       [] ->
         do
-          canopyPaths <- filterM File.exists (map (`addRelative` (baseName <.> "canopy")) srcDirs)
+          canopyPaths <- filterM File.exists (fmap (`addRelative` (baseName <.> "canopy")) srcDirs)
           case canopyPaths of
-            [] -> filterM File.exists (map (`addRelative` (baseName <.> "elm")) srcDirs)
+            [] -> filterM File.exists (fmap (`addRelative` (baseName <.> "elm")) srcDirs)
             _ -> return canopyPaths
       _ -> return canPaths
 
@@ -348,8 +349,8 @@ data CachedInterface
   deriving (Show)
 
 instance Show Module where
-  show (Fresh name iface objs) = "Fresh " ++ show name ++ " " ++ show iface ++ " " ++ show objs
-  show (Cached name main _) = "Cached " ++ show name ++ " " ++ show main ++ " <MVar>"
+  show (Fresh name iface objs) = "Fresh " <> show name <> " " <> show iface <> " " <> show objs
+  show (Cached name main _) = "Cached " <> show name <> " " <> show main <> " <MVar>"
 
 checkModule :: HasCallStack => Env -> Dependencies -> MVar ResultDict -> ModuleName.Raw -> Status -> IO Result
 checkModule env@(Env _ root projectType _ _ _ _) foreigns resultsMVar name status =
@@ -814,7 +815,7 @@ fromRepl root details source =
           mvar <- newMVar Map.empty
           crawlDeps env mvar deps ()
 
-          statuses <- traverse readMVar =<< readMVar mvar
+          statuses <- readMVar mvar >>= traverse readMVar
           midpoint <- checkMidpoint dmvar statuses
 
           case midpoint of
@@ -1156,7 +1157,7 @@ addOutside results root modules =
         Just (RCached main _ mvar) -> Cached name main mvar : modules
         Just (RNotFound prob) ->
           -- Log the specific problem to understand why Main is failing
-          trace ("WARNING: Main module has RNotFound status: " ++ show prob) modules
+          trace ("WARNING: Main module has RNotFound status: " <> show prob) modules
         Just (RProblem _) -> modules -- Root module has compilation errors, skip
         Just (RBlocked) -> modules -- Root module is blocked, skip
         Just (RForeign _) -> modules -- Shouldn't happen for root modules
