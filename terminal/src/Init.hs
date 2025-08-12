@@ -7,16 +7,20 @@ module Init
 
 import Prelude hiding (init)
 import qualified Data.Map as Map
+import Data.Map (Map)
 import qualified Data.NonEmptyList as NE
 import qualified System.Directory as Dir
 
 import qualified Deps.Solver as Solver
 import qualified Canopy.Constraint as Con
+import Canopy.Constraint (Constraint)
 import qualified Canopy.Outline as Outline
 import qualified Canopy.Package as Pkg
+import Canopy.Package (Name)
 import qualified Canopy.Version as V
 import qualified Reporting
 import qualified Reporting.Doc as D
+import Reporting.Doc (Doc)
 import qualified Reporting.Exit as Exit
 
 
@@ -39,7 +43,7 @@ run () () =
                       return (Right ())
 
 
-question :: D.Doc
+question :: Doc
 question =
   D.stack
     [ D.fillSep
@@ -96,7 +100,7 @@ init =
                       return (Right ())
 
 
-defaults :: Map.Map Pkg.Name Con.Constraint
+defaults :: Map Name Constraint
 defaults =
   Map.fromList
     [ (Pkg.core, Con.anything)

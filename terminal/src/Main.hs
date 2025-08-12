@@ -17,6 +17,7 @@ import qualified Publish
 import qualified Repl
 import Terminal
 import Terminal.Helpers
+import Text.PrettyPrint.ANSI.Leijen (Doc)
 import qualified Text.PrettyPrint.ANSI.Leijen as P
 import Text.Read (readMaybe)
 import Prelude hiding (init)
@@ -38,7 +39,7 @@ main =
       publish
     ]
 
-intro :: P.Doc
+intro :: Doc
 intro =
   P.vcat
     [ P.fillSep
@@ -59,11 +60,11 @@ intro =
       P.black "-------------------------------------------------------------------------------"
     ]
 
-outro :: P.Doc
+outro :: Doc
 outro =
   P.fillSep $
     map P.text $
-      words $
+      words
         "Be sure to ask on the Canopy slack if you run into trouble! Folks are friendly and\
         \ happy to help out. They hang out there because it is fun, so be kind to get the\
         \ best results!"
@@ -192,7 +193,7 @@ install =
               "For example, if you want to get packages for HTTP and JSON, you would say:",
             P.indent 4 $
               P.green $
-                P.vcat $
+                P.vcat
                   [ "canopy install canopy/http",
                     "canopy install canopy/json"
                   ],
@@ -225,7 +226,7 @@ publish =
               "For example, if you have a custom repository located at https://www.example.com/my-custom-repo you can run the following command",
             P.indent 4 $
               P.green $
-                P.vcat $
+                P.vcat
                   [ "zokka publish https://www.example.com/my-custom-repo"
                   ]
           ]
@@ -264,7 +265,7 @@ diff =
           [ reflow
               "For example, to see what changed in the HTML package between\
               \ versions 1.0.0 and 2.0.0, you can say:",
-            P.indent 4 $ P.green $ "canopy diff canopy/html 1.0.0 2.0.0",
+            P.indent 4 (P.green "canopy diff canopy/html 1.0.0 2.0.0"),
             reflow
               "Sometimes a MAJOR change is not actually very big, so\
               \ this can help you plan your upgrade timelines."
@@ -281,10 +282,10 @@ diff =
 
 -- HELPERS
 
-stack :: [P.Doc] -> P.Doc
+stack :: [Doc] -> Doc
 stack docs =
   P.vcat $ List.intersperse "" docs
 
-reflow :: String -> P.Doc
+reflow :: String -> Doc
 reflow string =
   P.fillSep $ map P.text $ words string
