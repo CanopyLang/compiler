@@ -24,7 +24,7 @@ import qualified Data.Name as Name
 import qualified Data.NonEmptyList as NE
 import Deps.CustomRepositoryDataIO (loadCustomRepositoriesData)
 import Deps.Diff (Changes (..), ModuleChanges (..), PackageChanges (..))
-import qualified Deps.Diff as DD
+import qualified Deps.Diff as Diff
 import qualified Deps.Registry as Registry
 import qualified Http
 import qualified Reporting
@@ -50,7 +50,7 @@ run args () =
     Task.run $
       do
         env <- getEnv
-        diff env args
+        runDiff env args
 
 -- ENVIRONMENT
 
@@ -64,11 +64,11 @@ data Env = Env
 getEnv :: Task Env
 getEnv =
   do
-    maybeRoot <- Task.io $ Stuff.findRoot
-    cache <- Task.io $ Stuff.getPackageCache
-    zokkaCache <- Task.io $ Stuff.getZokkaCache
-    manager <- Task.io $ Http.getManager
-    reposConf <- Task.io $ Stuff.getOrCreateZokkaCustomRepositoryConfig
+    maybeRoot <- Task.io Stuff.findRoot
+    cache <- Task.io Stuff.getPackageCache
+    zokkaCache <- Task.io Stuff.getZokkaCache
+    manager <- Task.io Http.getManager
+    reposConf <- Task.io Stuff.getOrCreateZokkaCustomRepositoryConfig
     reposData <- Task.eio Exit.DiffCustomReposDataProblem $ loadCustomRepositoriesData reposConf
     registry <- Task.eio Exit.DiffMustHaveLatestRegistry $ Registry.latest manager reposData zokkaCache reposConf
     return (Env maybeRoot cache manager registry)
@@ -78,23 +78,23 @@ getEnv =
 type Task a =
   Task.Task Exit.Diff a
 
-diff :: Env -> Args -> Task ()
-diff env@(Env _ _ _ registry) args =
+runDiff :: Env -> Args -> Task ()
+runDiff env@(Env _ _ _ registry) args =
   case args of
     GlobalInquiry name v1 v2 ->
       case Registry.getVersions' name registry of
         Right vsns ->
           do
-            oldDocs <- getDocs env name vsns (min v1 v2)
-            newDocs <- getDocs env name vsns (max v1 v2)
+            oldDocs <- getLocalDocs env name vsns (min v1 v2)
+            newDocs <- getLocalDocs env name vsns (max v1 v2)
             writeDiff oldDocs newDocs
         Left suggestions ->
-          Task.throw $ Exit.DiffUnknownPackage name suggestions
+          Task.throw (Exit.DiffUnknownPackage name suggestions)
     LocalInquiry v1 v2 ->
       do
         (name, vsns) <- readOutline env
-        oldDocs <- getDocs env name vsns (min v1 v2)
-        newDocs <- getDocs env name vsns (max v1 v2)
+        oldDocs <- getLocalDocs env name vsns (min v1 v2)
+        newDocs <- getLocalDocs env name vsns (max v1 v2)
         writeDiff oldDocs newDocs
     CodeVsLatest ->
       do
@@ -105,21 +105,21 @@ diff env@(Env _ _ _ registry) args =
     CodeVsExactly version ->
       do
         (name, vsns) <- readOutline env
-        oldDocs <- getDocs env name vsns version
+        oldDocs <- getLocalDocs env name vsns version
         newDocs <- generateDocs env
         writeDiff oldDocs newDocs
 
 -- GET DOCS
 
-getDocs :: Env -> Name -> Registry.KnownVersions -> Version -> Task Documentation
-getDocs (Env _ cache manager registry) name (Registry.KnownVersions latest previous) version =
+getLocalDocs :: Env -> Name -> Registry.KnownVersions -> Version -> Task Documentation
+getLocalDocs (Env _ cache manager registry) name (Registry.KnownVersions latest previous) version =
   if latest == version || elem version previous
-    then Task.eio (Exit.DiffDocsProblem version) $ DD.getDocs cache registry manager name version
-    else Task.throw $ Exit.DiffUnknownVersion name version (latest : previous)
+    then Task.eio (Exit.DiffDocsProblem version) $ Diff.getDocs cache registry manager name version
+    else Task.throw (Exit.DiffUnknownVersion name version (latest : previous))
 
 getLatestDocs :: Env -> Name -> Registry.KnownVersions -> Task Documentation
 getLatestDocs (Env _ cache manager registry) name (Registry.KnownVersions latest _) =
-  Task.eio (Exit.DiffDocsProblem latest) $ DD.getDocs cache registry manager name latest
+  Task.eio (Exit.DiffDocsProblem latest) $ Diff.getDocs cache registry manager name latest
 
 -- READ OUTLINE
 
@@ -127,17 +127,17 @@ readOutline :: Env -> Task (Name, Registry.KnownVersions)
 readOutline (Env maybeRoot _ _ registry) =
   case maybeRoot of
     Nothing ->
-      Task.throw $ Exit.DiffNoOutline
+      Task.throw Exit.DiffNoOutline
     Just root ->
       do
         result <- Task.io $ Outline.read root
         case result of
           Left err ->
-            Task.throw $ Exit.DiffBadOutline err
+            Task.throw (Exit.DiffBadOutline err)
           Right outline ->
             case outline of
               Outline.App _ ->
-                Task.throw $ Exit.DiffApplication
+                Task.throw Exit.DiffApplication
               Outline.Pkg (Outline.PkgOutline pkg _ _ _ _ _ _ _) ->
                 case Registry.getVersions pkg registry of
                   Just vsns -> return (pkg, vsns)
@@ -149,7 +149,7 @@ generateDocs :: Env -> Task Documentation
 generateDocs (Env maybeRoot _ _ _) =
   case maybeRoot of
     Nothing ->
-      Task.throw $ Exit.DiffNoOutline
+      Task.throw Exit.DiffNoOutline
     Just root ->
       do
         details <-
@@ -159,11 +159,11 @@ generateDocs (Env maybeRoot _ _ _) =
 
         case Details._outline details of
           Details.ValidApp _ ->
-            Task.throw $ Exit.DiffApplication
+            Task.throw Exit.DiffApplication
           Details.ValidPkg _ exposed _ ->
             case exposed of
               [] ->
-                Task.throw $ Exit.DiffNoExposed
+                Task.throw Exit.DiffNoExposed
               e : es ->
                 Task.eio Exit.DiffBadBuild $
                   Build.fromExposed Reporting.silent root details Build.KeepDocs (NE.List e es)
@@ -172,7 +172,7 @@ generateDocs (Env maybeRoot _ _ _) =
 
 writeDiff :: Documentation -> Documentation -> Task ()
 writeDiff oldDocs newDocs =
-  let changes = DD.diff oldDocs newDocs
+  let changes = Diff.diff oldDocs newDocs
       localizer = L.fromNames (Map.union oldDocs newDocs)
    in Task.io $ Help.toStdout $ toDoc localizer changes <> "\n"
 
@@ -184,7 +184,7 @@ toDoc localizer changes@(PackageChanges added changed removed) =
     then "No API changes detected, so this is a" <+> D.green "PATCH" <+> "change."
     else
       let magDoc =
-            D.fromChars (M.toChars (DD.toMagnitude changes))
+            D.fromChars (M.toChars (Diff.toMagnitude changes))
 
           header =
             "This is a" <+> D.green magDoc <+> "change."
@@ -230,7 +230,7 @@ chunkToDoc (Chunk title magnitude details) =
 changesToChunk :: L.Localizer -> (Name.Name, ModuleChanges) -> Chunk
 changesToChunk localizer (name, changes@(ModuleChanges unions aliases values binops)) =
   let magnitude =
-        DD.moduleChangeMagnitude changes
+        Diff.moduleChangeMagnitude changes
 
       (unionAdd, unionChange, unionRemove) =
         changesToDocTriple (unionToDoc localizer) unions
