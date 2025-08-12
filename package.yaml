@@ -8,9 +8,9 @@ description: |
 homepage: "https://github.com/quinten/canopy"
 license: BSD-3-Clause
 license-file: LICENSE
-author: "Evan Czaplicki"
+author: "Quinten Kasteel"
 maintainer: "info@canopy-lang.org"
-copyright: "Copyright (c) 2011-present, Evan Czaplicki"
+copyright: "Copyright (c) 2025-present, Quinten Kasteel"
 category: Compiler, Language
 
 dependencies:
@@ -52,6 +52,7 @@ dependencies:
   - zip-archive
   - fsnotify
   - websockets
+
 default-extensions:
   - ConstraintKinds
   - DataKinds

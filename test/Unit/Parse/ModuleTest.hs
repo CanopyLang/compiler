@@ -60,7 +60,7 @@ testSimpleModule = testCase "parse simple module structure" $ case parseModule M
 testImportsAndExports :: TestTree
 testImportsAndExports = testCase "imports and exports parsed" $ case parseModule M.Application simpleModuleSrc of
   Right m -> do
-    let isListImport i = case i of
+    let isListImport = \case
           Src.Import (A.At _ name) (Just alias) _ -> name == Name.list || alias == Name.fromChars "L"
           _ -> False
     assertBool "has List import with alias" (any isListImport (Src._imports m))
@@ -104,7 +104,13 @@ testOperatorExposing = testCase "explicit operator exposing" $ do
   case parseModule M.Application src of
     Right m -> case Src._exports m of
       A.At _ (Src.Explicit items) -> do
-        let hasOp = any (\e -> case e of Src.Operator _ _ -> True; _ -> False) items
+        let hasOp =
+              any
+                ( \case
+                    Src.Operator _ _ -> True
+                    _ -> False
+                )
+                items
         assertBool "operator exposed" hasOp
       _ -> assertFailure "expected explicit exports"
     other -> assertFailure ("unexpected: " <> show other)

@@ -29,8 +29,7 @@ toChunks strings =
   zipWith Chunk [1 .. length strings] strings
 
 toSuggest :: Maybe Int -> Suggest
-toSuggest maybeIndex =
-  maybe NoSuggestion Suggest maybeIndex
+toSuggest = maybe NoSuggestion Suggest
 
 -- CHOMPER
 
@@ -287,12 +286,11 @@ data Value
   | DefNope
 
 findFlag :: String -> [Chunk] -> Maybe FoundFlag
-findFlag flagName = findFlagHelp [] ("--" ++ flagName) ("--" ++ flagName ++ "=")
+findFlag flagName = findFlagHelp [] ("--" <> flagName) ("--" <> flagName <> "=")
 
 findFlagHelp :: [Chunk] -> String -> String -> [Chunk] -> Maybe FoundFlag
 findFlagHelp revPrev loneFlag flagPrefix chunks =
-  let 
-      deprefix = drop (length flagPrefix)
+  let deprefix = drop (length flagPrefix)
       succeed value after =
         Just (FoundFlag (reverse revPrev) value after)
    in case chunks of

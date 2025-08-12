@@ -226,15 +226,9 @@ getNoMain :: [Build.Module] -> Build.Root -> Maybe ModuleName.Raw
 getNoMain modules root =
   case root of
     Build.Inside name ->
-      if any (isMain name) modules
-        then Nothing
-        else -- Special handling for Main modules that aren't in the compiled modules list
-        -- This can happen when Main has import resolution issues during JS generation
-        -- but we know it has a main function from the source code
-
-          if Name.toChars name == "Main"
-            then Nothing -- Assume Main modules have main functions
-            else Just name
+      if any (isMain name) modules || Name.toChars name == "Main"
+        then Nothing -- Main modules or those with main functions
+        else Just name
     Build.Outside name _ (Opt.LocalGraph maybeMain _ _) ->
       case maybeMain of
         Just _ -> Nothing

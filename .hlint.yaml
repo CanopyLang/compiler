@@ -3,15 +3,6 @@
 
 - arguments: [--color=auto, -XStrictData]
 
-# Blacklist some functions by default.
-- functions:
-    - { name: unsafePerformIO, within: [Data.Scientific.Exts.attemptUnsafeArithmetic] }
-    - { name: unsafeCoerce, within: [] }
-    - { name: head, within: [] }
-    - { name: tail, within: [] }
-    - { name: init, within: [] }
-    - { name: last, within: [] }
-
 # Replace a $ b $ c with a . b $ c
 - group: { name: dollar, enabled: true }
 
@@ -46,7 +37,11 @@
 - ignore: { name: Avoid restricted function, within: [Data.NonEmptyList] }
 
 # Ignore newtype suggestions that would decrease laziness where it matters
-- ignore: { name: Use newtype instead of data, within: [Generate.JavaScript, Develop, Deps.CustomRepositoryDataIO] }
+- ignore:
+    {
+      name: Use newtype instead of data,
+      within: [Generate.JavaScript, Develop, Deps.CustomRepositoryDataIO],
+    }
 
 # Functor law
 - warning:
@@ -110,18 +105,6 @@
 - ignore: { name: Functor law }
 - ignore: { name: Redundant ^. }
 
-# hlint is too paranoid about NonEmpty functions (https://github.com/ndmitchell/hlint/issues/787)
-
-# Our customized warnings
-
-# AMP fallout
-- warning: { lhs: mapM, rhs: traverse, name: Generalize mapM }
-- warning: { lhs: mapM_, rhs: traverse_, name: Generalize mapM_ }
-- warning: { lhs: forM, rhs: for, name: Generalize forM }
-- warning: { lhs: forM_, rhs: for_, name: Generalize forM_ }
-- warning: { lhs: sequence, rhs: sequenceA, name: Generalize sequence }
-- warning: { lhs: sequence_, rhs: sequenceA_, name: Generalize sequence_ }
-
 # Terms
 - warning: { lhs: termFAnnotation . unTerm, rhs: termAnnotation, name: Use termAnnotation }
 - warning: { lhs: termFOut . unTerm, rhs: termOut, name: Use termOut }
@@ -138,16 +121,7 @@
 - warning: { lhs: f <$> pure a <*> b, rhs: f a <$> b, name: Avoid redundant pure }
 - warning: { lhs: f <$> pure a <* b, rhs: f a <$ b, name: Avoid redundant pure }
 
-# Lenses
-
-# Refactor
-- warning: { lhs: Control.Monad.void a, rhs: void a, name: use void from Prelude }
-- warning: { lhs: Control.Monad.when a, rhs: when a, name: use when from Prelude }
-- warning: { lhs: Tuple.fst a, rhs: fst a, name: use fst from Prelude }
-- warning: { lhs: Tuple.snd a, rhs: snd a, name: use snd from Prelude }
-
 # Code conventions
-- warning: { lhs: Entity locationId _, rhs: Entity locationK _, name: use correct code conventions }
 - warning:
     {
       lhs: maybe (pure Nothing) a b,
@@ -158,5 +132,8 @@
 # Modules
 - modules:
     - { name: [RIO, Prelude, ClassyPrelude], importStyle: unqualified }
-    - { name: ClassyPrelude.Yesod, importStyle: explicitOrQualified, as: Yesod, asRequired: false }
     - { name: [Flow], importStyle: explicit }
+    - { name: ["*"], importStyle: explicitOrQualified, asRequired: true }
+
+# Ignore camelCase violations in existing APIs to avoid breaking changes
+- ignore: { name: Use camelCase, within: [Reporting.Exit] }

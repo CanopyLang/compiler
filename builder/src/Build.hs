@@ -30,9 +30,9 @@ import qualified Compile
 import Control.Concurrent (forkIO)
 import Control.Concurrent.MVar
 import Control.Monad (filterM)
-import Data.Foldable (traverse_, sequenceA_)
 import qualified Data.ByteString as B
 import qualified Data.Char as Char
+import Data.Foldable (sequenceA_, traverse_)
 import qualified Data.Graph as Graph
 import qualified Data.List as List
 import Data.Map.Strict (Map, (!), (!?))
@@ -376,11 +376,13 @@ checkModule env@(Env _ root projectType _ _ _ _) foreigns resultsMVar name statu
           DepsNotFound problems ->
             do
               source <- File.readUtf8 path
-              (return . RProblem) . Error.Module name path time source $ (case Parse.fromByteString projectType source of
-                      Right (Src.Module _ _ _ imports _ _ _ _ _) ->
-                        Error.BadImports (toImportErrors env results imports problems)
-                      Left err ->
-                        Error.BadSyntax err)
+              (return . RProblem) . Error.Module name path time source $
+                ( case Parse.fromByteString projectType source of
+                    Right (Src.Module _ _ _ imports _ _ _ _ _) ->
+                      Error.BadImports (toImportErrors env results imports problems)
+                    Left err ->
+                      Error.BadSyntax err
+                )
     SChanged local@(Details.Local path time deps _ _ lastCompile) source modul@(Src.Module _ _ _ imports _ _ _ _ _) docsNeed ->
       do
         results <- readMVar resultsMVar

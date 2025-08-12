@@ -179,9 +179,11 @@ detailsLoop chan state@(DState total _ _ _ _ built _) =
       Just dmsg ->
         detailsStep dmsg state >>= detailsLoop chan
       Nothing ->
-        putStrLn . clear (toBuildProgress total total) $ (if built == total
+        putStrLn . clear (toBuildProgress total total) $
+          ( if built == total
               then "Dependencies ready!"
-              else "Dependency problem!")
+              else "Dependency problem!"
+          )
 
 data DState = DState
   { _total :: !Int,
@@ -228,10 +230,12 @@ detailsStep msg (DState total cached rqst rcvd failed built broken) =
 
 putDownload :: D.Doc -> Pkg.Name -> V.Version -> IO ()
 putDownload mark pkg vsn =
-  Help.toStdout . D.indent 2 $ (mark
+  Help.toStdout . D.indent 2 $
+    ( mark
         <+> D.fromPackage pkg
         <+> D.fromVersion vsn
-        <> "\n")
+        <> "\n"
+    )
 
 putTransition :: DState -> IO DState
 putTransition state@(DState total cached _ rcvd failed built broken) =
@@ -381,21 +385,27 @@ reportExceptionsNicely e =
 putException :: SomeException -> IO ()
 putException e = do
   hPutStrLn stderr ""
-  Help.toStderr . D.stack $ [ D.dullyellow "-- ERROR -----------------------------------------------------------------------",
-        D.reflow "I ran into something that bypassed the normal error reporting process!\
-          \ I extracted whatever information I could from the internal error:",
-        D.vcat $ fmap (\line -> D.red ">" <> "   " <> D.fromChars line) (lines (show e)),
-        D.reflow "These errors are usually pretty confusing, so start by asking around on one of\
-          \ forums listed at https://canopy-lang.org/community to see if anyone can get you\
-          \ unstuck quickly.",
-        D.dullyellow "-- REQUEST ---------------------------------------------------------------------",
-        D.reflow "If you are feeling up to it, please try to get your code down to the smallest\
-          \ version that still triggers this message. Ideally in a single Main.canopy and\
-          \ canopy.json file.",
-        D.reflow "From there open a NEW issue at https://github.com/canopy/compiler/issues with\
-          \ your reduced example pasted in directly. (Not a link to a repo or gist!) Do not\
-          \ worry about if someone else saw something similar. More examples is better!",
-        D.reflow "This kind of error is usually tied up in larger architectural choices that are\
-          \ hard to change, so even when we have a couple good examples, it can take some\
-          \ time to resolve in a solid way."
-      ]
+  Help.toStderr . D.stack $
+    [ D.dullyellow "-- ERROR -----------------------------------------------------------------------",
+      D.reflow
+        "I ran into something that bypassed the normal error reporting process!\
+        \ I extracted whatever information I could from the internal error:",
+      D.vcat $ fmap (\line -> D.red ">" <> "   " <> D.fromChars line) (lines (show e)),
+      D.reflow
+        "These errors are usually pretty confusing, so start by asking around on one of\
+        \ forums listed at https://canopy-lang.org/community to see if anyone can get you\
+        \ unstuck quickly.",
+      D.dullyellow "-- REQUEST ---------------------------------------------------------------------",
+      D.reflow
+        "If you are feeling up to it, please try to get your code down to the smallest\
+        \ version that still triggers this message. Ideally in a single Main.canopy and\
+        \ canopy.json file.",
+      D.reflow
+        "From there open a NEW issue at https://github.com/canopy/compiler/issues with\
+        \ your reduced example pasted in directly. (Not a link to a repo or gist!) Do not\
+        \ worry about if someone else saw something similar. More examples is better!",
+      D.reflow
+        "This kind of error is usually tied up in larger architectural choices that are\
+        \ hard to change, so even when we have a couple good examples, it can take some\
+        \ time to resolve in a solid way."
+    ]

@@ -250,7 +250,7 @@ toHelpMessage :: Maybe String -> String
 toHelpMessage maybeBadCommand =
   case maybeBadCommand of
     Nothing -> genericHelpMessage
-    Just command -> "I do not recognize the :" <> (command ++ " command. " ++ genericHelpMessage)
+    Just command -> "I do not recognize the :" <> command <> " command. " <> genericHelpMessage
 
 -- | Generic help message text.
 --
@@ -263,5 +263,6 @@ genericHelpMessage =
   \  :help    Show this information\n\
   \  :reset   Clear all previous imports and definitions\n\
   \\n\
-  \More info at " <> (D.makeLink "repl"
-    ++ "\n")
+  \More info at "
+    <> D.makeLink "repl"
+    <> "\n"

@@ -24,8 +24,9 @@ tests =
 
 goldenJs :: String -> String -> FilePath -> TestTree
 goldenJs name src expectedPath =
-  goldenVsString name expectedPath $
-    withSystemTempDirectory "can-js-golden" $ \tmp -> do
+  goldenVsString name expectedPath
+    . withSystemTempDirectory "can-js-golden"
+    $ \tmp -> do
       setupPkgProject tmp src
       builder <- runDev tmp
       -- Compare only a stable header to avoid brittle diffs

@@ -21,13 +21,13 @@ where
 import qualified Codec.Archive.Zip as Zip
 import Control.Exception (catch)
 import Control.Monad (forM, msum, void, when)
-import Data.Foldable (traverse_)
 import qualified Data.Binary as Binary
 import qualified Data.ByteString as BS
 import qualified Data.ByteString.Builder as B
 import qualified Data.ByteString.Internal as BS
 import qualified Data.ByteString.Lazy as LBS
 import qualified Data.Fixed as Fixed
+import Data.Foldable (traverse_)
 import qualified Data.List as List
 import qualified Data.Time.Clock as Time
 import qualified Data.Time.Clock.POSIX as Time
@@ -83,16 +83,17 @@ readBinary path =
             return (Just a)
           Left (offset, message) ->
             do
-              IO.hPutStrLn IO.stderr . unlines $ [ "+-------------------------------------------------------------------------------",
-                    "|  Corrupt File: " <> path,
-                    "|   Byte Offset: " <> show offset,
-                    "|       Message: " <> message,
-                    "|",
-                    "| Please report this to https://github.com/canopy/compiler/issues",
-                    "| Trying to continue anyway.",
-                    "+-------------------------------------------------------------------------------",
-                    prettyCallStack callStack
-                  ]
+              IO.hPutStrLn IO.stderr . unlines $
+                [ "+-------------------------------------------------------------------------------",
+                  "|  Corrupt File: " <> path,
+                  "|   Byte Offset: " <> show offset,
+                  "|       Message: " <> message,
+                  "|",
+                  "| Please report this to https://github.com/canopy/compiler/issues",
+                  "| Trying to continue anyway.",
+                  "+-------------------------------------------------------------------------------",
+                  prettyCallStack callStack
+                ]
               return Nothing
       else return Nothing
 
@@ -174,16 +175,20 @@ writePackage destination archive =
 writeEntry :: FilePath -> Int -> Zip.Entry -> IO ()
 writeEntry destination root entry =
   let path = drop root (Zip.eRelativePath entry)
-   in (when (List.isPrefixOf "src/" path
-        || path == "LICENSE"
-        || path == "README.md"
-        || path == "canopy.json") $ if not (null path) && last path == '/'
+   in ( when
+          ( List.isPrefixOf "src/" path
+              || path == "LICENSE"
+              || path == "README.md"
+              || path == "canopy.json"
+          )
+          $ if not (null path) && last path == '/'
             then do
               printLog ("writeEntry 0: " <> path)
               Dir.createDirectoryIfMissing True (destination </> path)
             else do
               printLog ("writeEntry 1: " <> path)
-              LBS.writeFile (destination </> path) (Zip.fromEntry entry))
+              LBS.writeFile (destination </> path) (Zip.fromEntry entry)
+      )
 
 -- FIXME: Is this needed? This basically duplicates writePackage
 writePackageReturnCanopyJson :: FilePath -> Zip.Archive -> IO (Maybe BS.ByteString)

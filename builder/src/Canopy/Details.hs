@@ -54,9 +54,9 @@ import Control.Concurrent (forkIO)
 import Control.Concurrent.MVar (MVar, newEmptyMVar, newMVar, putMVar, readMVar, takeMVar)
 import Control.Exception (BlockedIndefinitelyOnMVar, Handler (..), SomeException, catches, throwIO)
 import Control.Monad (liftM2, liftM3, void)
-import Data.Foldable (traverse_)
 import Data.Binary (Binary, get, getWord8, put, putWord8)
 import qualified Data.Either as Either
+import Data.Foldable (traverse_)
 import qualified Data.Map as Map
 import qualified Data.Map.Merge.Strict as Map
 import qualified Data.Map.Utils as Map
@@ -443,9 +443,11 @@ addObjects (Artifacts _ objs) = Opt.addGlobalGraph objs
 
 addInterfaces :: Map.Map Pkg.Name a -> Pkg.Name -> Artifacts -> Interfaces -> Interfaces
 addInterfaces directDeps pkg (Artifacts ifaces _) dependencyInterfaces =
-  Map.union dependencyInterfaces . Map.mapKeysMonotonic (ModuleName.Canonical pkg) $ (if Map.member pkg directDeps
+  Map.union dependencyInterfaces . Map.mapKeysMonotonic (ModuleName.Canonical pkg) $
+    ( if Map.member pkg directDeps
         then ifaces
-        else Map.map I.privatize ifaces)
+        else Map.map I.privatize ifaces
+    )
 
 gatherForeigns :: Pkg.Name -> Artifacts -> Map.Map ModuleName.Raw (OneOrMore.OneOrMore Pkg.Name) -> Map.Map ModuleName.Raw (OneOrMore.OneOrMore Pkg.Name)
 gatherForeigns pkg (Artifacts ifaces _) foreigns =
@@ -980,8 +982,7 @@ downloadPackageDirectlyToFilePath filePath packageUrl expectedShaDigest manager 
    in Http.getArchive manager urlString Exit.PP_BadArchiveRequest (Exit.PP_BadArchiveContent urlString) $
         \(receivedShaHash, archive) ->
           if humanReadableShaDigestIsEqualToSha expectedShaDigest receivedShaHash
-            then
-              Right <$> File.writePackage filePath archive
+            then Right <$> File.writePackage filePath archive
             else -- FIXME Maybe use a custom error type instead of PP_BadArchiveHash that points to where the hash is defined in the custom-repo config
               pure (Left (PP_BadArchiveHash urlString (humanReadableShaDigestToString expectedShaDigest) (Http.shaToChars receivedShaHash)))
 

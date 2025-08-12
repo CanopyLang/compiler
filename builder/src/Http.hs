@@ -71,7 +71,8 @@ post =
 
 fetch :: Method -> Manager -> String -> [Header] -> (Error -> e) -> (ByteString -> IO (Either e a)) -> IO (Either e a)
 fetch methodVerb manager url headers onError onSuccess =
-  handle (handleSomeException url onError) . handle (handleHttpException url onError) $ (do
+  handle (handleSomeException url onError) . handle (handleHttpException url onError) $
+    ( do
         req0 <- parseUrlThrow url
         let req1 =
               req0
@@ -81,7 +82,8 @@ fetch methodVerb manager url headers onError onSuccess =
         withResponse req1 manager $ \response ->
           do
             chunks <- brConsume (responseBody response)
-            onSuccess (BS.concat chunks))
+            onSuccess (BS.concat chunks)
+    )
 
 addDefaultHeaders :: [Header] -> [Header]
 addDefaultHeaders headers =
@@ -135,7 +137,8 @@ getArchiveWithHeaders ::
   ((Sha, Zip.Archive) -> IO (Either e a)) ->
   IO (Either e a)
 getArchiveWithHeaders manager url headers onError err onSuccess =
-  handle (handleSomeException url onError) . handle (handleHttpException url onError) $ (do
+  handle (handleSomeException url onError) . handle (handleHttpException url onError) $
+    ( do
         req0 <- parseUrlThrow url
         let req1 =
               req0
@@ -147,7 +150,8 @@ getArchiveWithHeaders manager url headers onError err onSuccess =
             result <- readArchive (responseBody response)
             case result of
               Nothing -> return (Left err)
-              Just shaAndArchive -> onSuccess shaAndArchive)
+              Just shaAndArchive -> onSuccess shaAndArchive
+    )
 
 getArchive ::
   Manager ->
@@ -190,7 +194,8 @@ readArchiveHelp body (AS len sha zip) =
 
 uploadWithHeaders :: Manager -> String -> [Multi.Part] -> [Header] -> IO (Either Error ())
 uploadWithHeaders manager url parts headers =
-  handle (handleSomeException url id) . handle (handleHttpException url id) $ (do
+  handle (handleSomeException url id) . handle (handleHttpException url id) $
+    ( do
         req0 <- parseUrlThrow url
         req1 <-
           Multi.formDataBody parts $
@@ -200,7 +205,8 @@ uploadWithHeaders manager url parts headers =
                 responseTimeout = responseTimeoutNone
               }
         withResponse req1 manager $ \_ ->
-          return (Right ()))
+          return (Right ())
+    )
 
 upload :: Manager -> String -> [Multi.Part] -> IO (Either Error ())
 upload manager url parts =

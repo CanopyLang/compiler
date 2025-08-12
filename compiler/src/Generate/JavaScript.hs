@@ -150,7 +150,7 @@ stateToBuilder (State revKernels revBuilders _) =
 
 prependBuilders :: [Builder] -> Builder -> Builder
 prependBuilders revBuilders monolith =
-  List.foldl' (\m b -> b <> m) monolith revBuilders
+  List.foldl' (flip (<>)) monolith revBuilders
 
 -- ADD DEPENDENCIES
 

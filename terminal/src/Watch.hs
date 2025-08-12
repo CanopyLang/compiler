@@ -14,8 +14,8 @@ module Watch
 where
 
 import qualified Control.Concurrent as Concurrent
-import qualified Control.Monad as Monad
 import Control.Monad (void)
+import qualified Control.Monad as Monad
 import qualified Data.Foldable as Foldable
 import System.FSNotify (Event)
 import qualified System.FSNotify as FSNotify

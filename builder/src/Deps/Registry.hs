@@ -135,8 +135,11 @@ fetch manager cache (CustomRepositoriesData customFullRepositories singlePackage
     -- FIXME: this is pretty awful
     let fetchSingleRepo repoData = (,) (RepositoryUrlKey repoData) <$> fetchSingleCustomRepository manager repoData
     fullRepositoryFetchResults <- traverse fetchSingleRepo customFullRepositories
-    let singlePackageRegistries = (PackageUrlKey
-          &&& createRegistryFromSinglePackageLocation) <$> singlePackageLocations
+    let singlePackageRegistries =
+          ( PackageUrlKey
+              &&& createRegistryFromSinglePackageLocation
+          )
+            <$> singlePackageLocations
     let allResults = (++) singlePackageRegistries <$> traverse sequenceA fullRepositoryFetchResults
     case allResults of
       Left err -> pure $ Left err

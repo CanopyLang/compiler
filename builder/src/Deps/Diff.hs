@@ -68,8 +68,7 @@ getChanges isEquivalent old new =
 
 diff :: Docs.Documentation -> Docs.Documentation -> PackageChanges
 diff oldDocs newDocs =
-  let
-      (Changes added changed removed) =
+  let (Changes added changed removed) =
         getChanges (\_ _ -> False) oldDocs newDocs
       filterOutPatches = Map.filter (\chng -> moduleChangeMagnitude chng /= M.PATCH)
    in PackageChanges

@@ -11,9 +11,9 @@ description:    This includes commands like `canopy make`, `canopy repl`, and ma
                 for helping make Canopy developers happy and productive.
 category:       Compiler, Language
 homepage:       https://github.com/quinten/canopy
-author:         Evan Czaplicki
+author:         Quinten Kasteel
 maintainer:     info@canopy-lang.org
-copyright:      Copyright (c) 2011-present, Evan Czaplicki
+copyright:      Copyright (c) 2025-present, Quinten Kasteel
 license:        BSD-3-Clause
 license-file:   LICENSE
 build-type:     Simple

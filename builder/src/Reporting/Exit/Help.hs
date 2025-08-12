@@ -64,7 +64,7 @@ reportToDoc report_ =
               Nothing ->
                 makeDashes (4 + length title)
               Just path ->
-                makeDashes (5 + length title + length path) ++ " " ++ path
+                makeDashes (5 + length title + length path) <> " " <> path
 
           errorBar =
             D.dullcyan $
@@ -96,12 +96,10 @@ toString =
   D.toString
 
 toStdout :: D.Doc -> IO ()
-toStdout doc =
-  toHandle stdout doc
+toStdout = toHandle stdout
 
 toStderr :: D.Doc -> IO ()
-toStderr doc =
-  toHandle stderr doc
+toStderr = toHandle stderr
 
 toHandle :: Handle -> D.Doc -> IO ()
 toHandle handle doc =
