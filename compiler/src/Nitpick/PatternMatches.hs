@@ -18,6 +18,7 @@ http://moscova.inria.fr/~maranget/papers/warn/warn.pdf
 -}
 
 import qualified Data.List as List
+import Data.Map (Map)
 import qualified Data.Map as Map
 import qualified Data.Maybe as Maybe
 import qualified Data.Name as Name
@@ -468,7 +469,7 @@ isExhaustive matrix n =
           concatMap isAltExhaustive altList
 
 
-isMissing :: Can.Union -> Map.Map Name.Name a -> Can.Ctor -> Maybe Pattern
+isMissing :: Can.Union -> Map Name.Name a -> Can.Ctor -> Maybe Pattern
 isMissing union ctors (Can.Ctor name _ arity _) =
   if Map.member name ctors then
     Nothing
@@ -648,12 +649,12 @@ isComplete matrix =
 -- COLLECT CTORS
 
 
-collectCtors :: [[Pattern]] -> Map.Map Name.Name Can.Union
+collectCtors :: [[Pattern]] -> Map Name.Name Can.Union
 collectCtors matrix =
   List.foldl' collectCtorsHelp Map.empty matrix
 
 
-collectCtorsHelp :: Map.Map Name.Name Can.Union -> [Pattern] -> Map.Map Name.Name Can.Union
+collectCtorsHelp :: Map Name.Name Can.Union -> [Pattern] -> Map Name.Name Can.Union
 collectCtorsHelp ctors row =
   case row of
     Ctor union name _ : _ ->

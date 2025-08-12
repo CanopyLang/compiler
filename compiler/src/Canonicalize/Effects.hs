@@ -14,6 +14,7 @@ import qualified Canonicalize.Environment as Env
 import qualified Canonicalize.Type as Type
 import qualified Canopy.ModuleName as ModuleName
 import qualified Data.Foldable as F
+import Data.Map (Map)
 import qualified Data.Map as Map
 import qualified Data.Name as Name
 import qualified Reporting.Annotation as A
@@ -30,7 +31,7 @@ type Result i w a =
 canonicalize ::
   Env.Env ->
   [A.Located Src.Value] ->
-  Map.Map Name.Name union ->
+  Map Name.Name union ->
   Src.Effects ->
   Result i w Can.Effects
 canonicalize env values unions effects =
@@ -113,7 +114,7 @@ canonicalizePort env (Src.Port (A.At region portName) tipe) =
 
 -- VERIFY MANAGER
 
-verifyEffectType :: A.Located Name.Name -> Map.Map Name.Name a -> Result i w Name.Name
+verifyEffectType :: A.Located Name.Name -> Map Name.Name a -> Result i w Name.Name
 verifyEffectType (A.At region name) unions =
   if Map.member name unions
     then Result.ok name
@@ -123,7 +124,7 @@ toNameRegion :: A.Located Src.Value -> (Name.Name, A.Region)
 toNameRegion (A.At _ (Src.Value (A.At region name) _ _ _)) =
   (name, region)
 
-verifyManager :: A.Region -> Map.Map Name.Name A.Region -> Name.Name -> Result i w A.Region
+verifyManager :: A.Region -> Map Name.Name A.Region -> Name.Name -> Result i w A.Region
 verifyManager tagRegion values name =
   case Map.lookup name values of
     Just region ->

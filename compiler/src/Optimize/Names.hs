@@ -16,8 +16,10 @@ module Optimize.Names
   where
 
 
+import Data.Map (Map)
 import qualified Data.Map as Map
 import qualified Data.Name as Name
+import Data.Set (Set)
 import qualified Data.Set as Set
 
 import qualified AST.Canonical as Can
@@ -35,14 +37,14 @@ newtype Tracker a =
   Tracker (
     forall r.
       Int
-      -> Set.Set Opt.Global
-      -> Map.Map Name.Name Int
-      -> (Int -> Set.Set Opt.Global -> Map.Map Name.Name Int -> a -> r)
+      -> Set Opt.Global
+      -> Map Name.Name Int
+      -> (Int -> Set Opt.Global -> Map Name.Name Int -> a -> r)
       -> r
   )
 
 
-run :: Tracker a -> (Set.Set Opt.Global, Map.Map Name.Name Int, a)
+run :: Tracker a -> (Set Opt.Global, Map Name.Name Int, a)
 run (Tracker k) =
   k 0 Set.empty Map.empty
     (\_uid deps fields value -> (deps, fields, value))
@@ -107,7 +109,7 @@ registerField name value =
     ok uid d (Map.insertWith (+) name 1 fields) value
 
 
-registerFieldDict :: Map.Map Name.Name v -> a -> Tracker a
+registerFieldDict :: Map Name.Name v -> a -> Tracker a
 registerFieldDict newFields value =
   Tracker $ \uid d fields ok ->
     ok uid d (Map.unionWith (+) fields (Map.map toOne newFields)) value
@@ -123,7 +125,7 @@ registerFieldList names value =
     ok uid deps (foldr addOne fields names) value
 
 
-addOne :: Name.Name -> Map.Map Name.Name Int -> Map.Map Name.Name Int
+addOne :: Name.Name -> Map Name.Name Int -> Map Name.Name Int
 addOne name fields =
   Map.insertWith (+) name 1 fields
 
