@@ -719,8 +719,13 @@ data Status
 crawlModule :: Map.Map ModuleName.Raw ForeignInterface -> MVar StatusDict -> Pkg.Name -> FilePath -> DocsStatus -> ModuleName.Raw -> IO (Maybe Status)
 crawlModule foreignDeps mvar pkg src docsStatus name =
   do
-    let path = src </> ModuleName.toFilePath name <.> "canopy"
-    exists <- File.exists path
+    let pathCanopy = src </> ModuleName.toFilePath name <.> "canopy"
+    let pathElm = src </> ModuleName.toFilePath name <.> "elm"
+    canopyExists <- File.exists pathCanopy
+    elmExists <- File.exists pathElm
+    let exists = canopyExists || elmExists
+    let path = if canopyExists then pathCanopy else pathElm
+    printLog $ "crawlModule: " ++ show name ++ " canopy exists: " ++ show canopyExists ++ " elm exists: " ++ show elmExists
     case Map.lookup name foreignDeps of
       Just ForeignAmbiguous ->
         return Nothing
@@ -738,7 +743,9 @@ crawlModule foreignDeps mvar pkg src docsStatus name =
               then do
                 printLog $ "module " ++ show name ++ " is in kernel branch"
                 crawlKernel foreignDeps mvar pkg src name
-              else return Nothing
+              else do
+                printLog $ "module " ++ show name ++ " returning Nothing: Pkg.isKernel=" ++ show (Pkg.isKernel pkg) ++ " Name.isKernel=" ++ show (Name.isKernel name)
+                return Nothing
 
 crawlFile :: Map.Map ModuleName.Raw ForeignInterface -> MVar StatusDict -> Pkg.Name -> FilePath -> DocsStatus -> ModuleName.Raw -> FilePath -> IO (Maybe Status)
 crawlFile foreignDeps mvar pkg src docsStatus expectedName path =
@@ -816,7 +823,11 @@ compile pkg mvar status =
             case Compile.compile pkg (Map.mapMaybe getInterface results) modul of
               Left compileError ->
                 do
-                  printLog ("compileError for " ++ show pkg ++ " pkg " ++ show pkg ++ "module: " ++ show modul ++ ": " ++ show compileError)
+                  printLog ("=== COMPILE ERROR DEBUG INFO START ===")
+                  printLog ("Package: " ++ show pkg)
+                  printLog ("Module: " ++ show modul)
+                  printLog ("CompileError: " ++ show compileError)
+                  printLog ("=== COMPILE ERROR DEBUG INFO END ===")
                   return Nothing
               Right (Compile.Artifacts canonical annotations objects) ->
                 let ifaces = I.fromModule pkg canonical annotations

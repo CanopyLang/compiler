@@ -8,10 +8,13 @@ module Generate.JavaScript
 
 
 import Prelude hiding (cycle, print)
+import Data.ByteString.Builder (Builder)
 import qualified Data.ByteString.Builder as B
 import qualified Data.List as List
+import Data.Map (Map)
 import qualified Data.Map as Map
 import qualified Data.Name as Name
+import Data.Set (Set)
 import qualified Data.Set as Set
 import qualified Data.Utf8 as Utf8
 
@@ -35,11 +38,11 @@ import Control.Exception (Exception, throw)
 -- GENERATE
 
 
-type Graph = Map.Map Opt.Global Opt.Node
-type Mains = Map.Map ModuleName.Canonical Opt.Main
+type Graph = Map Opt.Global Opt.Node
+type Mains = Map ModuleName.Canonical Opt.Main
 
 
-generate :: Mode.Mode -> Opt.GlobalGraph -> Mains -> B.Builder
+generate :: Mode.Mode -> Opt.GlobalGraph -> Mains -> Builder
 generate mode (Opt.GlobalGraph graph _) mains =
   let
     state = Map.foldrWithKey (addMain mode graph) emptyState mains
@@ -57,7 +60,7 @@ addMain mode graph home _ state =
   addGlobal mode graph state (Opt.Global home "main")
 
 
-perfNote :: Mode.Mode -> B.Builder
+perfNote :: Mode.Mode -> Builder
 perfNote mode =
   case mode of
     Mode.Prod _ ->
@@ -78,7 +81,7 @@ perfNote mode =
 -- GENERATE FOR REPL
 
 
-generateForRepl :: Bool -> L.Localizer -> Opt.GlobalGraph -> ModuleName.Canonical -> Name.Name -> Can.Annotation -> B.Builder
+generateForRepl :: Bool -> L.Localizer -> Opt.GlobalGraph -> ModuleName.Canonical -> Name.Name -> Can.Annotation -> Builder
 generateForRepl ansi localizer (Opt.GlobalGraph graph _) home name (Can.Forall _ tipe) =
   let
     mode = Mode.Dev Nothing
@@ -91,7 +94,7 @@ generateForRepl ansi localizer (Opt.GlobalGraph graph _) home name (Can.Forall _
   <> print ansi localizer home name tipe
 
 
-print :: Bool -> L.Localizer -> ModuleName.Canonical -> Name.Name -> Can.Type -> B.Builder
+print :: Bool -> L.Localizer -> ModuleName.Canonical -> Name.Name -> Can.Type -> Builder
 print ansi localizer home name tipe =
   let
     value = JsName.toBuilder (JsName.fromGlobal home name)
@@ -113,7 +116,7 @@ print ansi localizer home name tipe =
 -- GENERATE FOR REPL ENDPOINT
 
 
-generateForReplEndpoint :: L.Localizer -> Opt.GlobalGraph -> ModuleName.Canonical -> Maybe Name.Name -> Can.Annotation -> B.Builder
+generateForReplEndpoint :: L.Localizer -> Opt.GlobalGraph -> ModuleName.Canonical -> Maybe Name.Name -> Can.Annotation -> Builder
 generateForReplEndpoint localizer (Opt.GlobalGraph graph _) home maybeName (Can.Forall _ tipe) =
   let
     name = maybe Name.replValueToPrint id maybeName
@@ -126,7 +129,7 @@ generateForReplEndpoint localizer (Opt.GlobalGraph graph _) home maybeName (Can.
   <> postMessage localizer home maybeName tipe
 
 
-postMessage :: L.Localizer -> ModuleName.Canonical -> Maybe Name.Name -> Can.Type -> B.Builder
+postMessage :: L.Localizer -> ModuleName.Canonical -> Maybe Name.Name -> Can.Type -> Builder
 postMessage localizer home maybeName tipe =
   let
     name = maybe Name.replValueToPrint id maybeName
@@ -148,9 +151,9 @@ postMessage localizer home maybeName tipe =
 
 data State =
   State
-    { _revKernels :: [B.Builder]
-    , _revBuilders :: [B.Builder]
-    , _seenGlobals :: Set.Set Opt.Global
+    { _revKernels :: [Builder]
+    , _revBuilders :: [Builder]
+    , _seenGlobals :: Set Opt.Global
     }
 
 
@@ -159,12 +162,12 @@ emptyState =
   State mempty [] Set.empty
 
 
-stateToBuilder :: State -> B.Builder
+stateToBuilder :: State -> Builder
 stateToBuilder (State revKernels revBuilders _) =
   prependBuilders revKernels (prependBuilders revBuilders mempty)
 
 
-prependBuilders :: [B.Builder] -> B.Builder -> B.Builder
+prependBuilders :: [Builder] -> Builder -> Builder
 prependBuilders revBuilders monolith =
   List.foldl' (\m b -> b <> m) monolith revBuilders
 
@@ -258,12 +261,12 @@ addStmt state stmt =
   addBuilder state (JS.stmtToBuilder stmt)
 
 
-addBuilder :: State -> B.Builder -> State
+addBuilder :: State -> Builder -> State
 addBuilder (State revKernels revBuilders seen) builder =
   State revKernels (builder:revBuilders) seen
 
 
-addKernel :: State -> B.Builder -> State
+addKernel :: State -> Builder -> State
 addKernel (State revKernels revBuilders seen) kernel =
   State (kernel:revKernels) revBuilders seen
 
@@ -335,7 +338,7 @@ generateRealCycle home (name, _) =
     ]
 
 
-drawCycle :: [Name.Name] -> B.Builder
+drawCycle :: [Name.Name] -> Builder
 drawCycle names =
   let
     topLine       = "\\n  ┌─────┐"
@@ -350,12 +353,12 @@ drawCycle names =
 -- GENERATE KERNEL
 
 
-generateKernel :: Mode.Mode -> [K.Chunk] -> B.Builder
+generateKernel :: Mode.Mode -> [K.Chunk] -> Builder
 generateKernel mode chunks =
   List.foldr (addChunk mode) mempty chunks
 
 
-addChunk :: Mode.Mode -> K.Chunk -> B.Builder -> B.Builder
+addChunk :: Mode.Mode -> K.Chunk -> Builder -> Builder
 addChunk mode chunk builder =
   case chunk of
     K.JS javascript ->
@@ -510,7 +513,7 @@ generateManagerHelp home effectsType =
 -- MAIN EXPORTS
 
 
-toMainExports :: Mode.Mode -> Mains -> B.Builder
+toMainExports :: Mode.Mode -> Mains -> Builder
 toMainExports mode mains =
   let
     export = JsName.fromKernel Name.platform "export"
@@ -519,7 +522,7 @@ toMainExports mode mains =
   JsName.toBuilder export <> "(" <> exports <> ");"
 
 
-generateExports :: Mode.Mode -> Trie -> B.Builder
+generateExports :: Mode.Mode -> Trie -> Builder
 generateExports mode (Trie maybeMain subs) =
   let
     starter end =
@@ -543,7 +546,7 @@ generateExports mode (Trie maybeMain subs) =
         <> List.foldl' (addSubTrie mode) "}" otherSubTries
 
 
-addSubTrie :: Mode.Mode -> B.Builder -> (Name.Name, Trie) -> B.Builder
+addSubTrie :: Mode.Mode -> Builder -> (Name.Name, Trie) -> Builder
 addSubTrie mode end (name, trie) =
   ",'" <> Utf8.toBuilder name <> "':" <> generateExports mode trie <> end
 
@@ -555,7 +558,7 @@ addSubTrie mode end (name, trie) =
 data Trie =
   Trie
     { _main :: Maybe (ModuleName.Canonical, Opt.Main)
-    , _subs :: Map.Map Name.Name Trie
+    , _subs :: Map Name.Name Trie
     }
 
 

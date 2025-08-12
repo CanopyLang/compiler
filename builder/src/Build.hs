@@ -43,6 +43,7 @@ import qualified Data.NonEmptyList as NE
 import qualified Data.OneOrMore as OneOrMore
 import qualified Data.Set as Set
 import Data.Vector.Internal.Check (HasCallStack)
+import Debug.Trace (trace)
 import qualified File
 import qualified Json.Encode as E
 import Logging.Logger (printLog)
@@ -159,6 +160,7 @@ data Artifacts = Artifacts
     _roots :: NE.List Root,
     _modules :: [Module]
   }
+  deriving (Show)
 
 data Module
   = Fresh ModuleName.Raw I.Interface Opt.LocalGraph
@@ -247,12 +249,25 @@ crawlDeps env mvar deps blockedValue =
   where
     crawlNew name () = fork (crawlModule env mvar (DocsNeed False) name)
 
+findModuleFile :: [AbsoluteSrcDir] -> FilePath -> IO [FilePath]
+findModuleFile srcDirs baseName =
+  do
+    canPaths <- filterM File.exists (map (`addRelative` (baseName <.> "can")) srcDirs)
+    case canPaths of
+      [] ->
+        do
+          canopyPaths <- filterM File.exists (map (`addRelative` (baseName <.> "canopy")) srcDirs)
+          case canopyPaths of
+            [] -> filterM File.exists (map (`addRelative` (baseName <.> "elm")) srcDirs)
+            _ -> return canopyPaths
+      _ -> return canPaths
+
 crawlModule :: Env -> MVar StatusDict -> DocsNeed -> ModuleName.Raw -> IO Status
 crawlModule env@(Env _ root projectType srcDirs buildID locals foreigns) mvar docsNeed name =
   do
-    let fileName = ModuleName.toFilePath name <.> "canopy"
-
-    paths <- filterM File.exists (map (`addRelative` fileName) srcDirs)
+    let baseName = ModuleName.toFilePath name
+    -- Check for files in priority order: .can > .canopy > .elm
+    paths <- findModuleFile srcDirs baseName
 
     case paths of
       [path] ->
@@ -329,6 +344,11 @@ data CachedInterface
   = Unneeded
   | Loaded I.Interface
   | Corrupted
+  deriving (Show)
+
+instance Show Module where
+  show (Fresh name iface objs) = "Fresh " ++ show name ++ " " ++ show iface ++ " " ++ show objs
+  show (Cached name main _) = "Cached " ++ show name ++ " " ++ show main ++ " <MVar>"
 
 checkModule :: HasCallStack => Env -> Dependencies -> MVar ResultDict -> ModuleName.Raw -> Status -> IO Result
 checkModule env@(Env _ root projectType _ _ _ _) foreigns resultsMVar name status =
@@ -1050,6 +1070,7 @@ compileOutside (Env key _ projectType _ _ _ _) (Details.Local path time _ _ _ _)
 data Root
   = Inside ModuleName.Raw
   | Outside ModuleName.Raw I.Interface Opt.LocalGraph
+  deriving (Show)
 
 toArtifacts :: Env -> Dependencies -> Map.Map ModuleName.Raw Result -> NE.List RootResult -> Either Exit.BuildProblem Artifacts
 toArtifacts (Env _ root projectType _ _ _ _) foreigns results rootResults =
@@ -1059,7 +1080,7 @@ toArtifacts (Env _ root projectType _ _ _ _) foreigns results rootResults =
     Right roots ->
       Right $
         Artifacts (projectTypeToPkg projectType) foreigns roots $
-          Map.foldrWithKey addInside (foldr addOutside [] rootResults) results
+          Map.foldrWithKey (addInsideSafe rootResults) (foldr (addOutside results) [] rootResults) results
 
 gatherProblemsOrMains :: Map.Map ModuleName.Raw Result -> NE.List RootResult -> Either (NE.List Error.Module) (NE.List Root)
 gatherProblemsOrMains results (NE.List rootResult rootResults) =
@@ -1092,14 +1113,54 @@ addInside name result modules =
     RForeign _ -> modules
     RKernel -> modules
 
+addInsideSafe :: NE.List RootResult -> ModuleName.Raw -> Result -> [Module] -> [Module]
+addInsideSafe rootResults name result modules =
+  -- Root modules should never be processed by addInside since they're handled by addOutside
+  if isRootModule rootResults name
+    then modules -- Skip root modules entirely
+    else case result of
+      RNew _ iface objs _ -> Fresh name iface objs : modules
+      RSame _ iface objs _ -> Fresh name iface objs : modules
+      RCached main _ mvar -> Cached name main mvar : modules
+      RNotFound _ -> modules -- Ignore problematic dependencies
+      RProblem _ -> modules -- Ignore problematic dependencies
+      RBlocked -> modules -- Ignore problematic dependencies
+      RForeign _ -> modules
+      RKernel -> modules
+
+isRootModule :: NE.List RootResult -> ModuleName.Raw -> Bool
+isRootModule rootResults name =
+  any (matchesRootName name) (NE.toList rootResults)
+
+matchesRootName :: ModuleName.Raw -> RootResult -> Bool
+matchesRootName name rootResult =
+  case rootResult of
+    RInside n -> n == name
+    ROutsideOk n _ _ -> n == name
+    ROutsideErr _ -> False
+    ROutsideBlocked -> False
+
 badInside :: ModuleName.Raw -> [Char]
 badInside name =
   "Error from `" ++ Name.toChars name ++ "` should have been reported already."
 
-addOutside :: RootResult -> [Module] -> [Module]
-addOutside root modules =
+addOutside :: Map.Map ModuleName.Raw Result -> RootResult -> [Module] -> [Module]
+addOutside results root modules =
   case root of
-    RInside _ -> modules
+    RInside name -> do
+      -- Look up the result for this root module and handle it
+      case Map.lookup name results of
+        Just (RNew _ iface objs _) -> Fresh name iface objs : modules
+        Just (RSame _ iface objs _) -> Fresh name iface objs : modules
+        Just (RCached main _ mvar) -> Cached name main mvar : modules
+        Just (RNotFound prob) ->
+          -- Log the specific problem to understand why Main is failing
+          trace ("WARNING: Main module has RNotFound status: " ++ show prob) modules
+        Just (RProblem _) -> modules -- Root module has compilation errors, skip
+        Just (RBlocked) -> modules -- Root module is blocked, skip
+        Just (RForeign _) -> modules -- Shouldn't happen for root modules
+        Just (RKernel) -> modules -- Shouldn't happen for root modules
+        Nothing -> modules -- Result not found, skip
     ROutsideOk name iface objs -> Fresh name iface objs : modules
     ROutsideErr _ -> modules
     ROutsideBlocked -> modules

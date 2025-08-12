@@ -12,7 +12,7 @@ module Develop.StaticFiles
   where
 
 import Prelude hiding (lookup)
-import qualified Data.ByteString as BS
+import Data.ByteString (ByteString)
 import Data.FileEmbed (bsToExp)
 import qualified Data.HashMap.Strict as HM
 import Language.Haskell.TH (runIO)
@@ -27,15 +27,15 @@ import Logging.Logger (setLogFlag)
 
 
 type MimeType =
-  BS.ByteString
+  ByteString
 
 
-lookup :: FilePath -> Maybe (BS.ByteString, MimeType)
+lookup :: FilePath -> Maybe (ByteString, MimeType)
 lookup path =
   HM.lookup path dict
 
 
-dict :: HM.HashMap FilePath (BS.ByteString, MimeType)
+dict :: HM.HashMap FilePath (ByteString, MimeType)
 dict =
   HM.fromList
     [ faviconPath  ==> (favicon , "image/x-icon")
@@ -89,7 +89,7 @@ sansFontPath =
 -- CANOPY
 
 
-canopy :: BS.ByteString
+canopy :: ByteString
 canopy =
   -- TODO: Fix reactor frontend build
   -- $(bsToExp =<< runIO (do setLogFlag True; Build.buildReactorFrontEnd))
@@ -101,7 +101,7 @@ canopy =
 -- CSS
 
 
-css :: BS.ByteString
+css :: ByteString
 css =
   -- TODO: Fix asset loading
   -- $(bsToExp =<< runIO (Build.readAsset "styles.css"))
@@ -112,14 +112,14 @@ css =
 -- FONTS
 
 
-codeFont :: BS.ByteString
+codeFont :: ByteString
 codeFont =
   -- TODO: Fix asset loading
   -- $(bsToExp =<< runIO (Build.readAsset "source-code-pro.ttf"))
   ""
 
 
-sansFont :: BS.ByteString
+sansFont :: ByteString
 sansFont =
   -- TODO: Fix asset loading
   -- $(bsToExp =<< runIO (Build.readAsset "source-sans-pro.ttf"))
@@ -130,7 +130,7 @@ sansFont =
 -- IMAGES
 
 
-favicon :: BS.ByteString
+favicon :: ByteString
 favicon =
   -- TODO: Fix asset loading
   -- $(bsToExp =<< runIO (Build.readAsset "favicon.ico"))

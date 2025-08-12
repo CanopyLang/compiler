@@ -61,15 +61,15 @@ toUrl url params =
 
 -- FETCH
 
-get :: Manager -> String -> [Header] -> (Error -> e) -> (BS.ByteString -> IO (Either e a)) -> IO (Either e a)
+get :: Manager -> String -> [Header] -> (Error -> e) -> (ByteString -> IO (Either e a)) -> IO (Either e a)
 get =
   fetch methodGet
 
-post :: Manager -> String -> [Header] -> (Error -> e) -> (BS.ByteString -> IO (Either e a)) -> IO (Either e a)
+post :: Manager -> String -> [Header] -> (Error -> e) -> (ByteString -> IO (Either e a)) -> IO (Either e a)
 post =
   fetch methodPost
 
-fetch :: Method -> Manager -> String -> [Header] -> (Error -> e) -> (BS.ByteString -> IO (Either e a)) -> IO (Either e a)
+fetch :: Method -> Manager -> String -> [Header] -> (Error -> e) -> (ByteString -> IO (Either e a)) -> IO (Either e a)
 fetch methodVerb manager url headers onError onSuccess =
   handle (handleSomeException url onError) $
     handle (handleHttpException url onError) $
@@ -90,11 +90,11 @@ addDefaultHeaders headers =
   (hUserAgent, userAgent) : (hAcceptEncoding, "gzip") : headers
 
 {-# NOINLINE userAgent #-}
-userAgent :: BS.ByteString
+userAgent :: ByteString
 userAgent =
   BS.pack ("canopy/" ++ V.toChars V.compiler)
 
-accept :: BS.ByteString -> Header
+accept :: ByteString -> Header
 accept mime =
   (hAccept, mime)
 

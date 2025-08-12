@@ -22,6 +22,7 @@ module Generate.JavaScript.Name
   where
 
 
+import Data.ByteString.Builder (Builder)
 import qualified Data.ByteString.Builder as B
 import qualified Data.Map as Map
 import qualified Data.Name as Name
@@ -39,7 +40,7 @@ import qualified Canopy.Package as Pkg
 
 
 newtype Name =
-  Name { toBuilder :: B.Builder }
+  Name { toBuilder :: Builder }
   deriving Show
 
 
@@ -81,7 +82,7 @@ fromKernel home name =
 
 
 {-# INLINE homeToBuilder #-}
-homeToBuilder :: ModuleName.Canonical -> B.Builder
+homeToBuilder :: ModuleName.Canonical -> Builder
 homeToBuilder (ModuleName.Canonical (Pkg.Name author project) home) =
   usd <>
   Utf8.toEscapedBuilder 0x2D {- - -} 0x5F {- _ -} author
@@ -139,7 +140,7 @@ dollar =
   Name usd
 
 
-usd :: B.Builder
+usd :: Builder
 usd =
   Name.toBuilder Name.dollar
 

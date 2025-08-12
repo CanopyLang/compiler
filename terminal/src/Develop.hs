@@ -12,7 +12,9 @@ import qualified Canopy.Details as Details
 import Control.Applicative ((<|>))
 import Control.Monad (guard)
 import Control.Monad.Trans (MonadIO (liftIO))
+import Data.ByteString (ByteString)
 import qualified Data.ByteString as BS
+import Data.ByteString.Builder (Builder)
 import qualified Data.ByteString.Builder as B
 import qualified Data.HashMap.Strict as HashMap
 import qualified Data.NonEmptyList as NE
@@ -128,7 +130,7 @@ serveCanopy path =
             Just $
               Exit.toJson $ Exit.reactorToReport exit
 
-compile :: FilePath -> IO (Either Exit.Reactor B.Builder)
+compile :: FilePath -> IO (Either Exit.Reactor Builder)
 compile path =
   do
     maybeRoot <- Stuff.findRoot
@@ -161,7 +163,7 @@ serveAssets =
 
 -- MIME TYPES
 
-lookupMimeType :: FilePath -> Maybe BS.ByteString
+lookupMimeType :: FilePath -> Maybe ByteString
 lookupMimeType ext =
   HashMap.lookup ext mimeTypeDict
 
@@ -169,7 +171,7 @@ lookupMimeType ext =
 (==>) a b =
   (a, b)
 
-mimeTypeDict :: HashMap.HashMap FilePath BS.ByteString
+mimeTypeDict :: HashMap.HashMap FilePath ByteString
 mimeTypeDict =
   HashMap.fromList
     [ ".asc" ==> "text/plain",

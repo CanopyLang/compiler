@@ -5,7 +5,7 @@ module Generate.JavaScript.Functions
   where
 
 
-import qualified Data.ByteString.Builder as B
+import Data.ByteString.Builder (Builder)
 import Text.RawString.QQ (r)
 
 
@@ -13,7 +13,7 @@ import Text.RawString.QQ (r)
 -- FUNCTIONS
 
 
-functions :: B.Builder
+functions :: Builder
 functions = [r|
 
 function F(arity, fun, wrapper) {

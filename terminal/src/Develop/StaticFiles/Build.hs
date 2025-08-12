@@ -6,6 +6,7 @@ module Develop.StaticFiles.Build
   where
 
 
+import Data.ByteString (ByteString)
 import qualified Data.ByteString as BS
 import qualified Data.ByteString.Builder as B
 import qualified Data.ByteString.Lazy as LBS
@@ -26,7 +27,7 @@ import qualified Reporting.Task as Task
 -- ASSETS
 
 
-readAsset :: FilePath -> IO BS.ByteString
+readAsset :: FilePath -> IO ByteString
 readAsset path =
   BS.readFile ("reactor" </> "assets" </> path)
 
@@ -35,7 +36,7 @@ readAsset path =
 -- BUILD REACTOR CANOPY
 
 
-buildReactorFrontEnd :: IO BS.ByteString
+buildReactorFrontEnd :: IO ByteString
 buildReactorFrontEnd =
   BW.withScope $ \scope ->
   Dir.withCurrentDirectory "reactor" $

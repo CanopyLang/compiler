@@ -8,6 +8,7 @@ module Develop.Generate.Help
   )
 where
 
+import Data.ByteString.Builder (Builder)
 import qualified Data.ByteString.Builder as B
 import qualified Data.Name as Name
 import qualified Json.Encode as Encode
@@ -15,7 +16,7 @@ import Text.RawString.QQ (r)
 
 -- PAGES
 
-makePageHtml :: Name.Name -> Maybe Encode.Value -> B.Builder
+makePageHtml :: Name.Name -> Maybe Encode.Value -> Builder
 makePageHtml moduleName maybeFlags =
   [r|<!DOCTYPE HTML>
 <html>
@@ -38,7 +39,7 @@ Canopy.|]
 
 -- CODE
 
-makeCodeHtml :: FilePath -> B.Builder -> B.Builder
+makeCodeHtml :: FilePath -> Builder -> Builder
 makeCodeHtml title code =
   [r|<!DOCTYPE HTML>
 <html>

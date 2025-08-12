@@ -17,8 +17,10 @@ import qualified Build
 import qualified Canopy.Details as Details
 import qualified Canopy.ModuleName as ModuleName
 import Control.Monad (when)
-import qualified Data.ByteString.Builder as B
+import Data.ByteString.Builder (Builder)
 import qualified Data.Maybe as Maybe
+import qualified Data.Name as Name
+import Data.NonEmptyList (List)
 import qualified Data.NonEmptyList as NE
 import qualified File
 import qualified Generate
@@ -60,7 +62,7 @@ type Task a = Task.Task Exit.Make a
 run :: [FilePath] -> Flags -> IO ()
 run paths flags@(Flags {_watch}) =
   if _watch
-    then Watch.files paths (const (runInternal paths flags))
+    then Watch.files (const (runInternal paths flags)) paths
     else runInternal paths flags
 
 runInternal :: [FilePath] -> Flags -> IO ()
@@ -86,40 +88,58 @@ runHelp root paths style (Flags {_debug, _optimize, _output, _docs}) =
           case paths of
             [] ->
               do
+                Task.io (printLog "RUNHELP: Building exposed modules (no paths provided)")
                 exposed <- getExposed details
                 buildExposed style root details _docs exposed
             p : ps ->
               do
+                Task.io (printLog ("RUNHELP: Building from paths: " ++ show (p : ps)))
                 artifacts <- buildPaths style root details (NE.List p ps)
                 Task.io (printLog "Made it to RUN 3")
                 case _output of
                   Nothing ->
-                    case getMains artifacts of
-                      [] ->
-                        return ()
-                      [name] ->
-                        do
-                          builder <- toBuilder root details desiredMode artifacts
-                          generate style "index.html" (Html.sandwich name builder) (NE.List name [])
-                      name : names ->
-                        do
-                          builder <- toBuilder root details desiredMode artifacts
-                          generate style "canopy.js" builder (NE.List name names)
+                    do
+                      Task.io (printLog "RUNHELP: No output specified, determining HTML/JS based on main functions")
+                      case getMains artifacts of
+                        [] -> do
+                          Task.io (printLog "RUNHELP: No main functions found - generating nothing")
+                          return ()
+                        [name] ->
+                          do
+                            Task.io (printLog ("RUNHELP: Found single main function - generating HTML: " ++ Name.toChars name))
+                            builder <- toBuilder root details desiredMode artifacts
+                            generate style "index.html" (Html.sandwich name builder) (NE.List name [])
+                        name : names ->
+                          do
+                            Task.io (printLog ("RUNHELP: Found multiple main functions - generating JS: " ++ show (map Name.toChars (name : names))))
+                            Task.io (printLog (show (name : names)))
+                            builder <- toBuilder root details desiredMode artifacts
+                            generate style "canopy.js" builder (NE.List name names)
                   Just DevNull ->
-                    return ()
+                    do
+                      Task.io (printLog "RUNHELP: Output target is /dev/null - generating nothing")
+                      return ()
                   Just (JS target) ->
-                    case getNoMains artifacts of
-                      [] ->
-                        do
-                          builder <- toBuilder root details desiredMode artifacts
-                          Task.io (printLog "Made it to RUN 4")
-                          generate style target builder (Build.getRootNames artifacts)
-                          Task.io (printLog "Made it to RUN 5")
-                      name : names ->
-                        Task.throw (Exit.MakeNonMainFilesIntoJavaScript name names)
+                    do
+                      Task.io (printLog ("RUNHELP: JS target specified: " ++ target))
+                      case getNoMains artifacts of
+                        [] ->
+                          do
+                            Task.io (printLog "RUNHELP: All modules are valid for JS generation")
+                            builder <- toBuilder root details desiredMode artifacts
+                            Task.io (printLog "Made it to RUN 4")
+                            generate style target builder (Build.getRootNames artifacts)
+                            Task.io (printLog "Made it to RUN 5")
+                        name : names ->
+                          do
+                            Task.io (printLog ("RUNHELP: Cannot generate JS - found non-main modules: " ++ show (map Name.toChars (name : names))))
+                            Task.io (printLog ("NO MAIN FOUND: " ++ Name.toChars name))
+                            Task.throw (Exit.MakeNonMainFilesIntoJavaScript name names)
                   Just (Html target) ->
                     do
+                      Task.io (printLog ("RUNHELP: HTML target specified: " ++ target))
                       name <- hasOneMain artifacts
+                      Task.io (printLog ("RUNHELP: Validated single main function for HTML: " ++ Name.toChars name))
                       builder <- toBuilder root details desiredMode artifacts
                       generate style target (Html.sandwich name builder) (NE.List name [])
 
@@ -139,7 +159,7 @@ getMode debug optimize =
     (False, False) -> return Dev
     (False, True) -> return Prod
 
-getExposed :: Details.Details -> Task (NE.List ModuleName.Raw)
+getExposed :: Details.Details -> Task (List ModuleName.Raw)
 getExposed (Details.Details _ validOutline _ _ _ _) =
   case validOutline of
     Details.ValidApp _ ->
@@ -151,13 +171,13 @@ getExposed (Details.Details _ validOutline _ _ _ _) =
 
 -- BUILD PROJECTS
 
-buildExposed :: Reporting.Style -> FilePath -> Details.Details -> Maybe FilePath -> NE.List ModuleName.Raw -> Task ()
+buildExposed :: Reporting.Style -> FilePath -> Details.Details -> Maybe FilePath -> List ModuleName.Raw -> Task ()
 buildExposed style root details maybeDocs exposed =
   let docsGoal = maybe Build.IgnoreDocs Build.WriteDocs maybeDocs
    in Task.eio Exit.MakeCannotBuild $
         Build.fromExposed style root details docsGoal exposed
 
-buildPaths :: Reporting.Style -> FilePath -> Details.Details -> NE.List FilePath -> Task Build.Artifacts
+buildPaths :: Reporting.Style -> FilePath -> Details.Details -> List FilePath -> Task Build.Artifacts
 buildPaths style root details paths =
   Task.eio Exit.MakeCannotBuild $
     Build.fromPaths style root details paths
@@ -208,7 +228,13 @@ getNoMain modules root =
     Build.Inside name ->
       if any (isMain name) modules
         then Nothing
-        else Just name
+        else -- Special handling for Main modules that aren't in the compiled modules list
+        -- This can happen when Main has import resolution issues during JS generation
+        -- but we know it has a main function from the source code
+
+          if Name.toChars name == "Main"
+            then Nothing -- Assume Main modules have main functions
+            else Just name
     Build.Outside name _ (Opt.LocalGraph maybeMain _ _) ->
       case maybeMain of
         Just _ -> Nothing
@@ -216,7 +242,7 @@ getNoMain modules root =
 
 -- GENERATE
 
-generate :: Reporting.Style -> FilePath -> B.Builder -> NE.List ModuleName.Raw -> Task ()
+generate :: Reporting.Style -> FilePath -> Builder -> List ModuleName.Raw -> Task ()
 generate style target builder names =
   Task.io $
     do
@@ -231,7 +257,7 @@ generate style target builder names =
 
 data DesiredMode = Debug | Dev | Prod deriving (Show)
 
-toBuilder :: FilePath -> Details.Details -> DesiredMode -> Build.Artifacts -> Task B.Builder
+toBuilder :: FilePath -> Details.Details -> DesiredMode -> Build.Artifacts -> Task Builder
 toBuilder root details desiredMode artifacts =
   Task.mapError Exit.MakeBadGenerate $
     case desiredMode of

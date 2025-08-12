@@ -11,8 +11,8 @@ module Generate
 import Prelude hiding (cycle, print)
 import Control.Concurrent (MVar, forkIO, newEmptyMVar, newMVar, putMVar, readMVar)
 import Control.Monad (liftM2)
-import qualified Data.ByteString.Builder as B
-import Data.Map ((!))
+import Data.ByteString.Builder (Builder)
+import Data.Map (Map, (!))
 import qualified Data.Map as Map
 import qualified Data.Maybe as Maybe
 import qualified Data.Name as N
@@ -47,7 +47,7 @@ type Task a =
   Task.Task Exit.Generate a
 
 
-debug :: FilePath -> Details.Details -> Build.Artifacts -> Task B.Builder
+debug :: FilePath -> Details.Details -> Build.Artifacts -> Task Builder
 debug root details (Build.Artifacts pkg ifaces roots modules) =
   do  loading <- loadObjects root details modules
       types   <- loadTypes root ifaces modules
@@ -58,7 +58,7 @@ debug root details (Build.Artifacts pkg ifaces roots modules) =
       return $ JS.generate mode graph mains
 
 
-dev :: FilePath -> Details.Details -> Build.Artifacts -> Task B.Builder
+dev :: FilePath -> Details.Details -> Build.Artifacts -> Task Builder
 dev root details (Build.Artifacts pkg _ roots modules) =
   do  objects <- finalizeObjects =<< loadObjects root details modules
       let mode = Mode.Dev Nothing
@@ -67,7 +67,7 @@ dev root details (Build.Artifacts pkg _ roots modules) =
       return $ JS.generate mode graph mains
 
 
-prod :: FilePath -> Details.Details -> Build.Artifacts -> Task B.Builder
+prod :: FilePath -> Details.Details -> Build.Artifacts -> Task Builder
 prod root details (Build.Artifacts pkg _ roots modules) =
   do  objects <- finalizeObjects =<< loadObjects root details modules
       checkForDebugUses objects
@@ -77,7 +77,7 @@ prod root details (Build.Artifacts pkg _ roots modules) =
       return $ JS.generate mode graph mains
 
 
-repl :: FilePath -> Details.Details -> Bool -> Build.ReplArtifacts -> N.Name -> Task B.Builder
+repl :: FilePath -> Details.Details -> Bool -> Build.ReplArtifacts -> N.Name -> Task Builder
 repl root details ansi (Build.ReplArtifacts home modules localizer annotations) name =
   do  objects <- finalizeObjects =<< loadObjects root details modules
       let graph = objectsToGlobalGraph objects
@@ -99,12 +99,12 @@ checkForDebugUses (Objects _ locals) =
 -- GATHER MAINS
 
 
-gatherMains :: Pkg.Name -> Objects -> NE.List Build.Root -> Map.Map ModuleName.Canonical Opt.Main
+gatherMains :: Pkg.Name -> Objects -> NE.List Build.Root -> Map ModuleName.Canonical Opt.Main
 gatherMains pkg (Objects _ locals) roots =
   Map.fromList $ Maybe.mapMaybe (lookupMain pkg locals) (NE.toList roots)
 
 
-lookupMain :: Pkg.Name -> Map.Map ModuleName.Raw Opt.LocalGraph -> Build.Root -> Maybe (ModuleName.Canonical, Opt.Main)
+lookupMain :: Pkg.Name -> Map ModuleName.Raw Opt.LocalGraph -> Build.Root -> Maybe (ModuleName.Canonical, Opt.Main)
 lookupMain pkg locals root =
   let
     toPair name (Opt.LocalGraph maybeMain _ _) =
@@ -122,7 +122,7 @@ lookupMain pkg locals root =
 data LoadingObjects =
   LoadingObjects
     { _foreign_mvar :: MVar (Maybe Opt.GlobalGraph)
-    , _local_mvars :: Map.Map ModuleName.Raw (MVar (Maybe Opt.LocalGraph))
+    , _local_mvars :: Map ModuleName.Raw (MVar (Maybe Opt.LocalGraph))
     }
 
 
@@ -154,7 +154,7 @@ loadObject root modul =
 data Objects =
   Objects
     { _foreign :: Opt.GlobalGraph
-    , _locals :: Map.Map ModuleName.Raw Opt.LocalGraph
+    , _locals :: Map ModuleName.Raw Opt.LocalGraph
     }
 
 
@@ -177,7 +177,7 @@ objectsToGlobalGraph (Objects globals locals) =
 -- LOAD TYPES
 
 
-loadTypes :: FilePath -> Map.Map ModuleName.Canonical I.DependencyInterface -> [Build.Module] -> Task Extract.Types
+loadTypes :: FilePath -> Map ModuleName.Canonical I.DependencyInterface -> [Build.Module] -> Task Extract.Types
 loadTypes root ifaces modules =
   Task.eio id $
   do  mvars <- traverse (loadTypesHelp root) modules

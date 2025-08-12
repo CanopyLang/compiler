@@ -12,13 +12,13 @@ import qualified Canopy.Details as Details
 import qualified Canopy.Outline as Outline
 import qualified Canopy.Package as Pkg
 import qualified Canopy.Version as V
-import Data.Map ((!))
+import Data.Map (Map, (!))
 import qualified Data.Map as Map
 import qualified Data.Map.Merge.Strict as Map
 import qualified Deps.Registry as Registry
 import qualified Deps.Solver as Solver
 import qualified Reporting
-import Reporting.Doc ((<+>))
+import Reporting.Doc (Doc, (<+>))
 import qualified Reporting.Doc as D
 import qualified Reporting.Exit as Exit
 import qualified Reporting.Task as Task
@@ -65,7 +65,7 @@ data Changes vsn
   = AlreadyInstalled
   | PromoteTest Outline.Outline
   | PromoteIndirect Outline.Outline
-  | Changes (Map.Map Pkg.Name (Change vsn)) Outline.Outline
+  | Changes (Map Pkg.Name (Change vsn)) Outline.Outline
 
 type Task = Task.Task Exit.Install
 
@@ -148,7 +148,7 @@ attemptChanges root env oldOutline toChars changes =
                 "Would you like me to update your canopy.json accordingly? [Y/n]: "
               ]
 
-attemptChangesHelp :: FilePath -> Solver.Env -> Outline.Outline -> Outline.Outline -> D.Doc -> Task ()
+attemptChangesHelp :: FilePath -> Solver.Env -> Outline.Outline -> Outline.Outline -> Doc -> Task ()
 attemptChangesHelp root env oldOutline newOutline question =
   Task.eio Exit.InstallBadDetails $
     BW.withScope $ \scope ->
@@ -283,7 +283,7 @@ makePkgPlan (Solver.Env cache _ connection registry _) pkg outline@(Outline.PkgO
                 Solver.Err exit ->
                   Task.throw (Exit.InstallHadSolverTrouble exit)
 
-addNews :: Maybe Pkg.Name -> Map.Map Pkg.Name C.Constraint -> Map.Map Pkg.Name C.Constraint -> Map.Map Pkg.Name C.Constraint
+addNews :: Maybe Pkg.Name -> Map Pkg.Name C.Constraint -> Map Pkg.Name C.Constraint -> Map Pkg.Name C.Constraint
 addNews pkg new old =
   Map.merge
     Map.preserveMissing
@@ -299,7 +299,7 @@ data Change a
   | Change a a
   | Remove a
 
-detectChanges :: (Eq a) => Map.Map Pkg.Name a -> Map.Map Pkg.Name a -> Map.Map Pkg.Name (Change a)
+detectChanges :: (Eq a) => Map Pkg.Name a -> Map Pkg.Name a -> Map Pkg.Name (Change a)
 detectChanges old new =
   Map.merge
     (Map.mapMissing (\_ v -> Remove v))
@@ -327,12 +327,12 @@ keepNew change =
 -- VIEW CHANGE DOCS
 
 data ChangeDocs = Docs
-  { _doc_inserts :: [D.Doc],
-    _doc_changes :: [D.Doc],
-    _doc_removes :: [D.Doc]
+  { _doc_inserts :: [Doc],
+    _doc_changes :: [Doc],
+    _doc_removes :: [Doc]
   }
 
-viewChangeDocs :: ChangeDocs -> D.Doc
+viewChangeDocs :: ChangeDocs -> Doc
 viewChangeDocs (Docs inserts changes removes) =
   D.indent 2 $
     D.vcat $
@@ -342,7 +342,7 @@ viewChangeDocs (Docs inserts changes removes) =
           viewNonZero "Remove:" removes
         ]
 
-viewNonZero :: String -> [D.Doc] -> [D.Doc]
+viewNonZero :: String -> [Doc] -> [Doc]
 viewNonZero title entries =
   if null entries
     then []
@@ -364,11 +364,11 @@ addChange toChars widths name change (Docs inserts changes removes) =
     Remove old ->
       Docs inserts changes (viewRemove toChars widths name old : removes)
 
-viewInsert :: (a -> String) -> Widths -> Pkg.Name -> a -> D.Doc
+viewInsert :: (a -> String) -> Widths -> Pkg.Name -> a -> Doc
 viewInsert toChars (Widths nameWidth leftWidth _) name new =
   viewName nameWidth name <+> pad leftWidth (toChars new)
 
-viewChange :: (a -> String) -> Widths -> Pkg.Name -> a -> a -> D.Doc
+viewChange :: (a -> String) -> Widths -> Pkg.Name -> a -> a -> Doc
 viewChange toChars (Widths nameWidth leftWidth rightWidth) name old new =
   D.hsep
     [ viewName nameWidth name,
@@ -377,15 +377,15 @@ viewChange toChars (Widths nameWidth leftWidth rightWidth) name old new =
       pad rightWidth (toChars new)
     ]
 
-viewRemove :: (a -> String) -> Widths -> Pkg.Name -> a -> D.Doc
+viewRemove :: (a -> String) -> Widths -> Pkg.Name -> a -> Doc
 viewRemove toChars (Widths nameWidth leftWidth _) name old =
   viewName nameWidth name <+> pad leftWidth (toChars old)
 
-viewName :: Int -> Pkg.Name -> D.Doc
+viewName :: Int -> Pkg.Name -> Doc
 viewName width name =
   D.fill (width + 3) (D.fromPackage name)
 
-pad :: Int -> String -> D.Doc
+pad :: Int -> String -> Doc
 pad width string =
   D.fromChars (replicate (width - length string) ' ') <> D.fromChars string
 

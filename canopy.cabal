@@ -227,6 +227,10 @@ executable canopy
       Make
       Publish
       Repl
+      Repl.Commands
+      Repl.Eval
+      Repl.State
+      Repl.Types
       Watch
       Terminal
       Terminal.Chomp

@@ -6,13 +6,13 @@ module Generate.Html
   )
 where
 
-import qualified Data.ByteString.Builder as B
+import Data.ByteString.Builder (Builder)
 import qualified Data.Name as Name
 import Text.RawString.QQ (r)
 
 -- SANDWICH
 
-sandwich :: Name.Name -> B.Builder -> B.Builder
+sandwich :: Name.Name -> Builder -> Builder
 sandwich moduleName javascript =
   let name = Name.toBuilder moduleName
    in [r|<!DOCTYPE HTML>

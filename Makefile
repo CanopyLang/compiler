@@ -69,3 +69,8 @@ test-build:
 test-deps:
 	@echo "Installing test dependencies..."
 	@stack build --test --only-dependencies
+
+example:
+	@make build
+	@cd example && canopy make src/Main.can --output=canopy.js --verbose
+	@cd ..

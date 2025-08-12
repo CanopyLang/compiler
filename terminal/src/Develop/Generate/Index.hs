@@ -7,7 +7,7 @@ module Develop.Generate.Index
 
 
 import Control.Monad (filterM)
-import qualified Data.ByteString.Builder as B
+import Data.ByteString.Builder (Builder)
 import qualified Data.List as List
 import qualified Data.Map as Map
 import qualified System.Directory as Dir
@@ -29,7 +29,7 @@ import qualified Stuff
 -- GENERATE
 
 
-generate :: FilePath -> IO B.Builder
+generate :: FilePath -> IO Builder
 generate pwd =
   do  flags <- getFlags pwd
       return $ Help.makePageHtml "Index" (Just (encode flags))

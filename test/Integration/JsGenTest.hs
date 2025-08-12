@@ -87,15 +87,25 @@ canopyJsonPackage :: String
 canopyJsonPackage =
   unlines
     [ "{",
-      "  \"type\": \"package\",",
-      "  \"name\": \"author/project\",",
-      "  \"summary\": \"Test package\",",
-      "  \"license\": \"BSD-3-Clause\",",
-      "  \"version\": \"1.0.0\",",
-      "  \"exposed-modules\": [ \"Main\" ],",
-      "  \"canopy-version\": \"0.19.0 <= v < 0.20.0\",",
-      "  \"dependencies\": {\"canopy/core\": \"1.0.0 <= v < 2.0.0\"},",
-      "  \"test-dependencies\": {}",
+      "    \"type\": \"application\",",
+      "    \"source-directories\": [",
+      "        \"src\"",
+      "    ],",
+      "    \"canopy-version\": \"0.19.1\",",
+      "    \"dependencies\": {",
+      "        \"direct\": {",
+      "            \"elm/core\": \"1.0.5\",",
+      "            \"elm/html\": \"1.0.0\"",
+      "        },",
+      "        \"indirect\": {",
+      "            \"elm/json\": \"1.1.3\",",
+      "            \"elm/virtual-dom\": \"1.0.3\"",
+      "        }",
+      "    },",
+      "    \"test-dependencies\": {",
+      "        \"direct\": {},",
+      "        \"indirect\": {}",
+      "    }",
       "}"
     ]
 
@@ -104,9 +114,11 @@ sampleModule =
   unlines
     [ "module Main exposing (main, add, mul, compose)",
       "",
+      "import Html exposing (text)",
+      "",
       "add x y = x + y",
       "mul x y = x * y",
       "compose f g x = f (g x)",
       "",
-      "main = add (mul 2 3) 4"
+      "main = text (String.fromInt (compose (add 1) (mul 2) 3))"
     ]

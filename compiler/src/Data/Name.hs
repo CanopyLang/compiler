@@ -44,7 +44,7 @@ module Data.Name
 import Prelude hiding (length, maybe, negate)
 import Control.Exception (assert)
 import qualified Data.Binary as Binary
-import qualified Data.ByteString.Builder.Internal as B
+import Data.ByteString.Builder (Builder)
 import qualified Data.Coerce as Coerce
 import qualified Data.List as List
 import qualified Data.String as Chars
@@ -99,7 +99,7 @@ toCanopyString =
 
 
 {-# INLINE toBuilder #-}
-toBuilder :: Name -> B.Builder
+toBuilder :: Name -> Builder
 toBuilder =
   Utf8.toBuilder
 
@@ -143,12 +143,14 @@ getKernel name@(Utf8.Utf8 ba#) =
     runST
     (
       let
-        !size# = sizeofByteArray# ba# -# 11#
+        -- "Canopy.Kernel." = 14 chars, "Elm.Kernel." = 11 chars
+        !prefixLen# = if Utf8.startsWith prefix_kernel name then 14# else 11#
+        !size# = sizeofByteArray# ba# -# prefixLen#
       in
       ST $ \s ->
         case newByteArray# size# s of
           (# s, mba# #) ->
-            case copyByteArray# ba# 11# mba# 0# size# s of
+            case copyByteArray# ba# prefixLen# mba# 0# size# s of
               s ->
                 case unsafeFreezeByteArray# mba# s of
                   (# s, ba# #) -> (# s, Utf8.Utf8 ba# #)
@@ -161,7 +163,7 @@ getKernel name@(Utf8.Utf8 ba#) =
 
 
 isKernel :: Name -> Bool
-isKernel = Utf8.startsWith prefix_kernel
+isKernel name = Utf8.startsWith prefix_kernel name || Utf8.startsWith prefix_elm_kernel name
 
 isNumberType :: Name -> Bool
 isNumberType = Utf8.startsWith prefix_number
@@ -178,6 +180,10 @@ isCompappendType = Utf8.startsWith prefix_compappend
 {-# NOINLINE prefix_kernel #-}
 prefix_kernel :: Name
 prefix_kernel = fromChars "Canopy.Kernel."
+
+{-# NOINLINE prefix_elm_kernel #-}
+prefix_elm_kernel :: Name
+prefix_elm_kernel = fromChars "Elm.Kernel."
 
 {-# NOINLINE prefix_number #-}
 prefix_number :: Name

@@ -24,9 +24,11 @@ module AST.Optimized
 
 import Control.Monad (liftM, liftM2, liftM3, liftM4)
 import Data.Binary (Binary, get, put, getWord8, putWord8)
+import Data.Map (Map)
 import qualified Data.Map as Map
 import qualified Data.Name as Name
 import Data.Name (Name)
+import Data.Set (Set)
 import qualified Data.Set as Set
 
 import qualified AST.Canonical as Can
@@ -136,8 +138,8 @@ data Choice
 
 data GlobalGraph =
   GlobalGraph
-    { _g_nodes :: Map.Map Global Node
-    , _g_fields :: Map.Map Name Int
+    { _g_nodes :: Map Global Node
+    , _g_fields :: Map Name Int
     }
     deriving Show
 
@@ -145,9 +147,10 @@ data GlobalGraph =
 data LocalGraph =
   LocalGraph
     { _l_main :: Maybe Main
-    , _l_nodes :: Map.Map Global Node  -- PERF profile switching Global to Name
-    , _l_fields :: Map.Map Name Int
+    , _l_nodes :: Map Global Node  -- PERF profile switching Global to Name
+    , _l_fields :: Map Name Int
     }
+    deriving Show
 
 
 data Main
@@ -156,6 +159,7 @@ data Main
       { _message :: Can.Type
       , _decoder :: Expr
       }
+      deriving Show
 
 
 data Node
@@ -215,7 +219,7 @@ addKernel shortName chunks (GlobalGraph nodes fields) =
     }
 
 
-addKernelDep :: K.Chunk -> Set.Set Global -> Set.Set Global
+addKernelDep :: K.Chunk -> Set Global -> Set Global
 addKernelDep chunk deps =
   case chunk of
     K.JS _              -> deps
