@@ -18,19 +18,18 @@ module Deps.Solver
   )
 where
 
-import qualified Canopy.Constraint as C
 import Canopy.Constraint (Constraint)
+import qualified Canopy.Constraint as C
 import Canopy.CustomRepositoryData (CustomSingleRepositoryData (..), DefaultPackageServerRepo (_defaultPackageServerRepoTypeUrl), PZRPackageServerRepo (_pzrPackageServerRepoAuthToken, _pzrPackageServerRepoTypeUrl), SinglePackageLocationData (..))
 import qualified Canopy.Outline as Outline
 import qualified Canopy.Package as Pkg
-import qualified Canopy.Version as V
 import Canopy.Version (Version)
+import qualified Canopy.Version as V
 import Control.Concurrent (forkIO, newEmptyMVar, putMVar, readMVar)
 import Control.Monad (foldM)
 import Data.ByteString (ByteString)
-import Data.Map ((!))
+import Data.Map (Map, (!))
 import qualified Data.Map as Map
-import Data.Map (Map)
 import qualified Data.Utf8 as Utf8
 import Deps.CustomRepositoryDataIO (loadCustomRepositoriesData, loadCustomRepositoriesDataForReactorTH)
 import Deps.Registry (ZokkaRegistries (..))

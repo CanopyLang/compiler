@@ -31,7 +31,7 @@ fix-lint:
 	@$(MAKE) format
 
 format:
-	@find src test -name '*.hs' -exec ormolu --ghc-opt=-XTypeApplications --mode=inplace {} \;
+	@find builder compiler terminal test -name '*.hs' -exec ormolu --ghc-opt=-XTypeApplications --mode=inplace {} \;
 
 test:
 	@echo "Running all tests..."

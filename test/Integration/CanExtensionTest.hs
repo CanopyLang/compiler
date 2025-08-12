@@ -1,13 +1,13 @@
 module Integration.CanExtensionTest (tests) where
 
-import qualified File
-import qualified Parse.Module as PM
 import qualified AST.Source as Src
 import qualified Data.ByteString as BS
 import qualified Data.ByteString.Char8 as C8
+import qualified File
+import qualified Parse.Module as PM
+import System.Directory
 import System.FilePath
 import System.IO.Temp
-import System.Directory
 import Test.Tasty
 import Test.Tasty.HUnit
 
@@ -61,8 +61,9 @@ _toUtf8 :: String -> BS.ByteString
 _toUtf8 = C8.pack
 
 sampleModule :: String
-sampleModule = unlines
-  [ "module Main exposing (main)",
-    "",
-    "main = 1"
-  ]
+sampleModule =
+  unlines
+    [ "module Main exposing (main)",
+      "",
+      "main = 1"
+    ]

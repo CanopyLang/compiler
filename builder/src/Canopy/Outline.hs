@@ -19,23 +19,23 @@ module Canopy.Outline
   )
 where
 
-import Control.Monad (filterM, liftM)
-import Data.Binary (Binary, get, getWord8, put, putWord8)
-import qualified Data.Map as Map
-import Data.Map (Map)
-import Data.Maybe (mapMaybe)
-import qualified Data.NonEmptyList as NE
-import Data.NonEmptyList (List)
-import qualified Data.OneOrMore as OneOrMore
-import qualified Canopy.Constraint as Con
 import Canopy.Constraint (Constraint)
+import qualified Canopy.Constraint as Con
 import qualified Canopy.Licenses as Licenses
 import qualified Canopy.ModuleName as ModuleName
 import qualified Canopy.Package as Pkg
 import Canopy.PackageOverrideData (PackageOverrideData (..))
 import qualified Canopy.PackageOverrideData as PkgOverride
-import qualified Canopy.Version as V
 import Canopy.Version (Version)
+import qualified Canopy.Version as V
+import Control.Monad (filterM, liftM)
+import Data.Binary (Binary, get, getWord8, put, putWord8)
+import Data.Map (Map)
+import qualified Data.Map as Map
+import Data.Maybe (mapMaybe)
+import Data.NonEmptyList (List)
+import qualified Data.NonEmptyList as NE
+import qualified Data.OneOrMore as OneOrMore
 import qualified File
 import Foreign.Ptr (minusPtr)
 import qualified Json.Decode as D
@@ -290,9 +290,10 @@ elmDecoder =
         tipe <- D.field "type" D.string
         if tipe == application
           then App <$> elmAppDecoder
-          else if tipe == package
-            then Pkg <$> elmPkgDecoder
-            else D.failure Exit.OP_BadType
+          else
+            if tipe == package
+              then Pkg <$> elmPkgDecoder
+              else D.failure Exit.OP_BadType
 
 appDecoder :: Decoder AppOutline
 appDecoder =

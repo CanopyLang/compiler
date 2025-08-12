@@ -25,6 +25,7 @@ module Http
   )
 where
 
+import qualified Canopy.Version as V
 import qualified Codec.Archive.Zip as Zip
 import Control.Exception (SomeException, handle)
 import qualified Data.Binary as Binary
@@ -34,7 +35,6 @@ import qualified Data.ByteString.Builder as B
 import qualified Data.ByteString.Char8 as BS
 import qualified Data.Digest.Pure.SHA as SHA
 import qualified Data.String as String
-import qualified Canopy.Version as V
 import qualified Json.Encode as Encode
 import Network.HTTP (urlEncodeVars)
 import Network.HTTP.Client

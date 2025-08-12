@@ -9,31 +9,38 @@
 -- @since 0.19.1
 module Repl.Types
   ( -- * Configuration
-    Flags(..)
-  , Env(..)
-    -- * Input Types
-  , Input(..)
-  , Lines(..)  
-  , Prefill(..)
-  , CategorizedInput(..)
-    -- * State Types
-  , State(..)
-  , Output(..)
-    -- * Control Types
-  , Outcome(..)
-  , M
-    -- * Line Operations
-  , addLine
-  , isBlank
-  , isSingleLine
-  , endsWithBlankLine
-  , linesToByteString
-  , getFirstLine
-    -- * Output Operations
-  , outputToBuilder
-  , toPrintName
-  ) where
+    Flags (..),
+    Env (..),
 
+    -- * Input Types
+    Input (..),
+    Lines (..),
+    Prefill (..),
+    CategorizedInput (..),
+
+    -- * State Types
+    State (..),
+    Output (..),
+
+    -- * Control Types
+    Outcome (..),
+    M,
+
+    -- * Line Operations
+    addLine,
+    isBlank,
+    isSingleLine,
+    endsWithBlankLine,
+    linesToByteString,
+    getFirstLine,
+
+    -- * Output Operations
+    outputToBuilder,
+    toPrintName,
+  )
+where
+
+import qualified Canopy.ModuleName as ModuleName
 import Control.Monad.State.Strict (StateT)
 import Data.ByteString (ByteString)
 import qualified Data.ByteString as BS
@@ -43,32 +50,33 @@ import qualified Data.ByteString.Char8 as BSC
 import qualified Data.ByteString.UTF8 as BS_UTF8
 import Data.Map (Map)
 import qualified Data.Name as N
-import qualified Canopy.ModuleName as ModuleName
 import System.Exit (ExitCode)
 
 -- | REPL command line flags and configuration options.
 --
 -- @since 0.19.1
 data Flags = Flags
-  { _maybeInterpreter :: !(Maybe FilePath)
-  -- ^ Optional custom JavaScript interpreter path
-  , _noColors :: !Bool
-  -- ^ Disable ANSI color output
-  } deriving (Eq, Show)
+  { -- | Optional custom JavaScript interpreter path
+    _maybeInterpreter :: !(Maybe FilePath),
+    -- | Disable ANSI color output
+    _noColors :: !Bool
+  }
+  deriving (Eq, Show)
 
 -- | REPL runtime environment configuration.
 --
 -- Contains paths and settings determined at startup.
 --
--- @since 0.19.1  
+-- @since 0.19.1
 data Env = Env
-  { _root :: !FilePath
-  -- ^ Project root directory
-  , _interpreter :: !FilePath  
-  -- ^ JavaScript interpreter executable path
-  , _ansi :: !Bool
-  -- ^ Whether ANSI colors are enabled
-  } deriving (Eq, Show)
+  { -- | Project root directory
+    _root :: !FilePath,
+    -- | JavaScript interpreter executable path
+    _interpreter :: !FilePath,
+    -- | Whether ANSI colors are enabled
+    _ansi :: !Bool
+  }
+  deriving (Eq, Show)
 
 -- | User input categorized by type.
 --
@@ -77,24 +85,24 @@ data Env = Env
 --
 -- @since 0.19.1
 data Input
-  = Import !ModuleName.Raw !BS.ByteString
-  -- ^ Import statement
-  | Type !N.Name !BS.ByteString
-  -- ^ Type definition (union or alias)
-  | Port
-  -- ^ Port declaration (not supported)
-  | Decl !N.Name !BS.ByteString
-  -- ^ Function or value declaration
-  | Expr !BS.ByteString
-  -- ^ Expression to evaluate
-  | Reset
-  -- ^ Reset REPL state
-  | Exit
-  -- ^ Exit REPL
-  | Skip
-  -- ^ Skip/ignore input
-  | Help !(Maybe String)
-  -- ^ Show help message
+  = -- | Import statement
+    Import !ModuleName.Raw !BS.ByteString
+  | -- | Type definition (union or alias)
+    Type !N.Name !BS.ByteString
+  | -- | Port declaration (not supported)
+    Port
+  | -- | Function or value declaration
+    Decl !N.Name !BS.ByteString
+  | -- | Expression to evaluate
+    Expr !BS.ByteString
+  | -- | Reset REPL state
+    Reset
+  | -- | Exit REPL
+    Exit
+  | -- | Skip/ignore input
+    Skip
+  | -- | Show help message
+    Help !(Maybe String)
   deriving (Eq, Show)
 
 -- | Multi-line input accumulator.
@@ -104,30 +112,31 @@ data Input
 --
 -- @since 0.19.1
 data Lines = Lines
-  { _prevLine :: !String
-  -- ^ Most recently entered line
-  , _revLines :: ![String]
-  -- ^ Previous lines in reverse order
-  } deriving (Eq, Show)
+  { -- | Most recently entered line
+    _prevLine :: !String,
+    -- | Previous lines in reverse order
+    _revLines :: ![String]
+  }
+  deriving (Eq, Show)
 
 -- | Auto-completion prefill for multi-line input.
 --
 -- @since 0.19.1
 data Prefill
-  = Indent
-  -- ^ Add standard indentation
-  | DefStart !N.Name
-  -- ^ Start of a definition with the given name
+  = -- | Add standard indentation
+    Indent
+  | -- | Start of a definition with the given name
+    DefStart !N.Name
   deriving (Eq, Show)
 
 -- | Result of input categorization.
 --
 -- @since 0.19.1
 data CategorizedInput
-  = Done !Input
-  -- ^ Input is complete and ready for evaluation
-  | Continue !Prefill
-  -- ^ Input needs more lines with suggested prefill
+  = -- | Input is complete and ready for evaluation
+    Done !Input
+  | -- | Input needs more lines with suggested prefill
+    Continue !Prefill
   deriving (Eq, Show)
 
 -- | REPL evaluation state.
@@ -137,34 +146,34 @@ data CategorizedInput
 --
 -- @since 0.19.1
 data State = State
-  { _imports :: !(Map N.Name Builder)
-  -- ^ Module imports
-  , _types :: !(Map N.Name Builder)
-  -- ^ Type definitions
-  , _decls :: !(Map N.Name Builder)
-  -- ^ Value and function declarations
+  { -- | Module imports
+    _imports :: !(Map N.Name Builder),
+    -- | Type definitions
+    _types :: !(Map N.Name Builder),
+    -- | Value and function declarations
+    _decls :: !(Map N.Name Builder)
   }
 
 -- | Output type for evaluation results.
 --
 -- @since 0.19.1
 data Output
-  = OutputNothing
-  -- ^ No output expected
-  | OutputDecl !N.Name
-  -- ^ Declaration was processed
-  | OutputExpr !ByteString
-  -- ^ Expression result to display
+  = -- | No output expected
+    OutputNothing
+  | -- | Declaration was processed
+    OutputDecl !N.Name
+  | -- | Expression result to display
+    OutputExpr !ByteString
   deriving (Eq, Show)
 
 -- | Evaluation outcome determining next action.
 --
 -- @since 0.19.1
 data Outcome
-  = Loop !State
-  -- ^ Continue REPL with updated state
-  | End !ExitCode
-  -- ^ Exit REPL with the given code
+  = -- | Continue REPL with updated state
+    Loop !State
+  | -- | Exit REPL with the given code
+    End !ExitCode
 
 -- | REPL monad stack.
 --
@@ -183,7 +192,7 @@ addLine line (Lines x xs) = Lines line (x : xs)
 --
 -- @since 0.19.1
 isBlank :: Lines -> Bool
-isBlank (Lines prev rev) = 
+isBlank (Lines prev rev) =
   null rev && all (== ' ') prev
 
 -- | Check if only one line has been entered.

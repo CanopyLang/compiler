@@ -3,12 +3,12 @@ module Golden.JsGenGolden (tests) where
 import qualified BackgroundWriter as BW
 import qualified Build
 import qualified Canopy.Details as Details
-import qualified Generate
-import qualified Reporting
-import qualified Reporting.Task as Task
 import qualified Data.ByteString.Builder as BB
 import qualified Data.ByteString.Lazy.Char8 as BL8
 import qualified Data.NonEmptyList as NE
+import qualified Generate
+import qualified Reporting
+import qualified Reporting.Task as Task
 import System.Directory
 import System.FilePath
 import System.IO.Temp
@@ -35,7 +35,7 @@ goldenJs name src expectedPath =
 simplifyHeader :: BL8.ByteString -> BL8.ByteString
 simplifyHeader bs =
   case BL8.lines bs of
-    (l1:l2:_) -> BL8.unlines [l1, l2, ")}"]
+    (l1 : l2 : _) -> BL8.unlines [l1, l2, ")}"]
     _ -> bs
 
 runDev :: FilePath -> IO BB.Builder
@@ -62,39 +62,41 @@ setupPkgProject root src = do
   writeFile (root </> "src" </> "Main.can") src
 
 canopyJsonPackage :: String
-canopyJsonPackage = unlines
-  [ "{",
-    "  \"type\": \"application\",",
-    "  \"source-directories\": [",
-    "      \"src\"",
-    "  ],",
-    "  \"canopy-version\": \"0.19.1\",",
-    "  \"dependencies\": {",
-    "      \"direct\": {",
-    "          \"elm/core\": \"1.0.5\",",
-    "          \"elm/html\": \"1.0.0\"",
-    "      },",
-    "      \"indirect\": {",
-    "          \"elm/json\": \"1.1.3\",",
-    "          \"elm/virtual-dom\": \"1.0.3\"",
-    "      }",
-    "  },",
-    "  \"test-dependencies\": {",
-    "      \"direct\": {},",
-    "      \"indirect\": {}",
-    "  }",
-    "}"
-  ]
+canopyJsonPackage =
+  unlines
+    [ "{",
+      "  \"type\": \"application\",",
+      "  \"source-directories\": [",
+      "      \"src\"",
+      "  ],",
+      "  \"canopy-version\": \"0.19.1\",",
+      "  \"dependencies\": {",
+      "      \"direct\": {",
+      "          \"elm/core\": \"1.0.5\",",
+      "          \"elm/html\": \"1.0.0\"",
+      "      },",
+      "      \"indirect\": {",
+      "          \"elm/json\": \"1.1.3\",",
+      "          \"elm/virtual-dom\": \"1.0.3\"",
+      "      }",
+      "  },",
+      "  \"test-dependencies\": {",
+      "      \"direct\": {},",
+      "      \"indirect\": {}",
+      "  }",
+      "}"
+    ]
 
 sampleModule :: String
-sampleModule = unlines
-  [ "module Main exposing (main, add, mul, compose)",
-    "",
-    "import Html exposing (text)",
-    "",
-    "add x y = x + y",
-    "mul x y = x * y",
-    "compose f g x = f (g x)",
-    "",
-    "main = text (String.fromInt (compose (add 1) (mul 2) 3))"
-  ]
+sampleModule =
+  unlines
+    [ "module Main exposing (main, add, mul, compose)",
+      "",
+      "import Html exposing (text)",
+      "",
+      "add x y = x + y",
+      "mul x y = x * y",
+      "compose f g x = f (g x)",
+      "",
+      "main = text (String.fromInt (compose (add 1) (mul 2) 3))"
+    ]

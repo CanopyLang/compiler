@@ -20,6 +20,9 @@ module Deps.Registry
   )
 where
 
+import Canopy.CustomRepositoryData (CustomRepositoriesData (..), CustomSingleRepositoryData (..), DefaultPackageServerRepo (..), PZRPackageServerRepo (..), RepositoryAuthToken, RepositoryUrl, SinglePackageLocationData (..))
+import qualified Canopy.Package as Pkg
+import qualified Canopy.Version as V
 import Control.Monad (liftM2)
 import Data.Binary (Binary, get, put)
 import Data.Binary.Get (Get)
@@ -35,9 +38,6 @@ import qualified Data.Utf8 as Utf8
 import Data.Vector.Internal.Check (HasCallStack)
 import Data.Word (Word8)
 import qualified Deps.Website as Website
-import Canopy.CustomRepositoryData (CustomRepositoriesData (..), CustomSingleRepositoryData (..), DefaultPackageServerRepo (..), PZRPackageServerRepo (..), RepositoryAuthToken, RepositoryUrl, SinglePackageLocationData (..))
-import qualified Canopy.Package as Pkg
-import qualified Canopy.Version as V
 import File (Time, getTime)
 import qualified File
 import Http (Header)

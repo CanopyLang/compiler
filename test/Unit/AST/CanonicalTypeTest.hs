@@ -59,4 +59,3 @@ testExportsAndPorts = testCase "exports and ports data constructors" $ do
   let incoming = Can.Incoming Map.empty (Can.TUnit) (Can.TUnit)
   case incoming of
     Can.Incoming {} -> return ()
-

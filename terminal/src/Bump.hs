@@ -11,7 +11,7 @@ import qualified Build
 import qualified Canopy.Details as Details
 import Canopy.Docs (Documentation)
 import qualified Canopy.Magnitude as M
-import Canopy.Outline (PkgOutline(..))
+import Canopy.Outline (PkgOutline (..))
 import qualified Canopy.Outline as Outline
 import Canopy.Version (Version)
 import qualified Canopy.Version as V

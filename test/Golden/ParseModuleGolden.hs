@@ -31,14 +31,17 @@ goldenModule name srcPath goldenPath =
 
 summary :: Src.Module -> String
 summary modul =
-  (List.intercalate "\n"
-    [ "Module: " ++ Name.toChars (Src.getName modul),
-      "Exports: " ++ exportsSummary modul,
-      "Values: " ++ comma (List.sort (map (Name.toChars . getValName) (Src._values modul))),
-      "Aliases: " ++ comma (List.sort (map aliasWithVars (Src._aliases modul))),
-      "Unions: " ++ comma (List.sort (map showUnion (Src._unions modul))),
-      "Imports: " ++ showListImport (Src._imports modul)
-    ]) ++ "\n"
+  ( List.intercalate
+      "\n"
+      [ "Module: " ++ Name.toChars (Src.getName modul),
+        "Exports: " ++ exportsSummary modul,
+        "Values: " ++ comma (List.sort (map (Name.toChars . getValName) (Src._values modul))),
+        "Aliases: " ++ comma (List.sort (map aliasWithVars (Src._aliases modul))),
+        "Unions: " ++ comma (List.sort (map showUnion (Src._unions modul))),
+        "Imports: " ++ showListImport (Src._imports modul)
+      ]
+  )
+    ++ "\n"
 
 comma :: [String] -> String
 comma = List.intercalate ","
@@ -56,14 +59,14 @@ showUnion (A.At _ (Src.Union (A.At _ n) _ ctors)) =
 
 showListImport :: [Src.Import] -> String
 showListImport is =
-  let lists = [ i | i@(Src.Import (A.At _ n) _ _) <- is, n == Name.list ]
+  let lists = [i | i@(Src.Import (A.At _ n) _ _) <- is, n == Name.list]
       pick =
         case filter hasAlias lists of
-          (x:_) -> x
+          (x : _) -> x
           [] -> case filter hasExplicit lists of
-            (x:_) -> x
+            (x : _) -> x
             [] -> case lists of
-              (x:_) -> x
+              (x : _) -> x
               [] -> error "no List import"
       hasAlias (Src.Import _ alias _) = Maybe.isJust alias
       hasExplicit (Src.Import _ _ exposing) = case exposing of
@@ -82,8 +85,8 @@ exportsSummary m =
   case Src._exports m of
     A.At _ Src.Open -> "Open"
     A.At _ (Src.Explicit xs) ->
-      let lowers = length [ () | Src.Lower _ <- xs ]
-          uppOpen = length [ () | Src.Upper _ (Src.Public _) <- xs ]
-          uppClosed = length [ () | Src.Upper _ Src.Private <- xs ]
-          ops = length [ () | Src.Operator _ _ <- xs ]
+      let lowers = length [() | Src.Lower _ <- xs]
+          uppOpen = length [() | Src.Upper _ (Src.Public _) <- xs]
+          uppClosed = length [() | Src.Upper _ Src.Private <- xs]
+          ops = length [() | Src.Operator _ _ <- xs]
        in "Explicit lower=" ++ show lowers ++ " upperOpen=" ++ show uppOpen ++ " upperClosed=" ++ show uppClosed ++ " operators=" ++ show ops

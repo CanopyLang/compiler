@@ -1,11 +1,11 @@
 module Property.AST.OptimizedBinaryProps (tests) where
 
 import qualified AST.Optimized as Opt
+import qualified Canopy.ModuleName as ModuleName
 import Data.Binary (decode, encode)
 import qualified Data.ByteString.Lazy as BL
 import qualified Data.Map as Map
 import qualified Data.Name as Name
-import qualified Canopy.ModuleName as ModuleName
 import Test.QuickCheck
 import Test.Tasty
 import Test.Tasty.QuickCheck

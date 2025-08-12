@@ -138,18 +138,31 @@ import qualified System.Exit as Exit
 - **Constructors**: Use qualified prefix (`Types.Skip`, `Types.Loop`, `Exit.ExitSuccess`, `Map.empty`)
 - **Functions**: ALWAYS use qualified (`State.put`, `Haskeline.runInputT`, `Trans.liftIO`, `Map.insert`)
 - **Operators**: Import unqualified when frequently used (`(<+>)`, `(</>)`)
+- **Import aliases**: Use meaningful names, NOT abbreviations (`as Diff` NOT `as DD`, `as State` NOT `as S`)
 - **NO COMMENTS**: NEVER add comments like "-- Qualified imports" or "-- Local imports" in import blocks
 
 **WRONG:**
 ```haskell
+-- Bad type signatures
 processOutline :: FilePath -> IO (Either Exit.Outline Outline.Outline)
 toByteString :: State.State -> Output.Output -> BS.ByteString
+
+-- Bad import aliases
+import qualified Deps.Diff as DD
+import qualified Data.Map as M
+import qualified Control.Monad.State as S
 ```
 
 **CORRECT:**
 ```haskell
+-- Good type signatures
 processOutline :: FilePath -> IO (Either Exit Outline) 
 toByteString :: State -> Output -> ByteString
+
+-- Good import aliases
+import qualified Deps.Diff as Diff
+import qualified Data.Map as Map
+import qualified Control.Monad.State as State
 ```
 
 **Examples of correct usage:**

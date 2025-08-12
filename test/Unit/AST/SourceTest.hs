@@ -1,8 +1,8 @@
 module Unit.AST.SourceTest (tests) where
 
 import qualified AST.Source as Src
-import qualified Data.Name as Name
 import qualified AST.Utils.Binop as Binop
+import qualified Data.Name as Name
 import qualified Reporting.Annotation as A
 import Test.Tasty
 import Test.Tasty.HUnit
@@ -22,13 +22,13 @@ tests =
 
 testGetNameDefault :: TestTree
 testGetNameDefault = testCase "getName defaults to Main" $ do
-  let m = emptyModule { Src._name = Nothing }
+  let m = emptyModule {Src._name = Nothing}
   Src.getName m @?= Name._Main
 
 testGetNameExplicit :: TestTree
 testGetNameExplicit = testCase "getName returns explicit module name" $ do
   let modName = Name.fromChars "My.Module"
-  let m = emptyModule { Src._name = Just (A.At A.one modName) }
+  let m = emptyModule {Src._name = Just (A.At A.one modName)}
   Src.getName m @?= modName
 
 testGetImportName :: TestTree

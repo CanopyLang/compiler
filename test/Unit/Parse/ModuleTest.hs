@@ -29,17 +29,18 @@ parseModule :: M.ProjectType -> String -> Either E.Error Src.Module
 parseModule pt s = M.fromByteString pt (C8.pack s)
 
 simpleModuleSrc :: String
-simpleModuleSrc = unlines
-  [ "module Utils exposing (..)",
-    "", 
-    "import List as L exposing (map)",
-    "", 
-    "x = 1",
-    "y n = n",
-    "", 
-    "type alias Pair = ( Int, Int )",
-    "type Maybe a = Just a | Nothing"
-  ]
+simpleModuleSrc =
+  unlines
+    [ "module Utils exposing (..)",
+      "",
+      "import List as L exposing (map)",
+      "",
+      "x = 1",
+      "y n = n",
+      "",
+      "type alias Pair = ( Int, Int )",
+      "type Maybe a = Just a | Nothing"
+    ]
 
 testSimpleModule :: TestTree
 testSimpleModule = testCase "parse simple module structure" $ do
@@ -72,21 +73,23 @@ testImportsAndExports = testCase "imports and exports parsed" $ do
 
 testPortsDisallowedInPackage :: TestTree
 testPortsDisallowedInPackage = testCase "ports disallowed in package" $ do
-  let src = unlines
-        [ "module Utils exposing (..)",
-          "port p : Int"
-        ]
+  let src =
+        unlines
+          [ "module Utils exposing (..)",
+            "port p : Int"
+          ]
   case parseModule (M.Package Pkg.core) src of
     Left (E.NoPortsInPackage (A.At _ _)) -> return ()
     other -> assertFailure ("expected NoPortsInPackage, got: " ++ show other)
 
 testExplicitExposing :: TestTree
 testExplicitExposing = testCase "explicit exposing list with values and types" $ do
-  let src = unlines
-        [ "module M exposing (x, Pair(..))",
-          "x = 1",
-          "type Pair a = Pair a"
-        ]
+  let src =
+        unlines
+          [ "module M exposing (x, Pair(..))",
+            "x = 1",
+            "type Pair a = Pair a"
+          ]
   case parseModule M.Application src of
     Right m -> case Src._exports m of
       A.At _ (Src.Explicit items) -> length items @?= 2
@@ -95,10 +98,11 @@ testExplicitExposing = testCase "explicit exposing list with values and types" $
 
 testOperatorExposing :: TestTree
 testOperatorExposing = testCase "explicit operator exposing" $ do
-  let src = unlines
-        [ "module M exposing ((:+), x)",
-          "x = 1"
-        ]
+  let src =
+        unlines
+          [ "module M exposing ((:+), x)",
+            "x = 1"
+          ]
   case parseModule M.Application src of
     Right m -> case Src._exports m of
       A.At _ (Src.Explicit items) -> do
@@ -109,11 +113,12 @@ testOperatorExposing = testCase "explicit operator exposing" $ do
 
 testPortModuleApplication :: TestTree
 testPortModuleApplication = testCase "port module with ports under Application" $ do
-  let src = unlines
-        [ "port module Ports exposing (..)",
-          "",
-          "port p : Int"
-        ]
+  let src =
+        unlines
+          [ "port module Ports exposing (..)",
+            "",
+            "port p : Int"
+          ]
   case parseModule M.Application src of
     Right m -> case Src._effects m of
       Src.Ports ports -> length ports @?= 1
@@ -122,11 +127,12 @@ testPortModuleApplication = testCase "port module with ports under Application" 
 
 testEffectModuleKernel :: TestTree
 testEffectModuleKernel = testCase "effect module allowed only for kernel packages" $ do
-  let src = unlines
-        [ "effect module Eff where { command = Cmd, subscription = Sub } exposing (..)",
-          "",
-          "f = 1"
-        ]
+  let src =
+        unlines
+          [ "effect module Eff where { command = Cmd, subscription = Sub } exposing (..)",
+            "",
+            "f = 1"
+          ]
   case parseModule (M.Package Pkg.kernel) src of
     Right m -> case Src._effects m of
       Src.Manager _ _ -> return ()
@@ -135,22 +141,24 @@ testEffectModuleKernel = testCase "effect module allowed only for kernel package
 
 testEffectModuleDisallowedInApp :: TestTree
 testEffectModuleDisallowedInApp = testCase "effect module disallowed outside kernel packages" $ do
-  let src = unlines
-        [ "effect module Eff where { command = Cmd, subscription = Sub } exposing (..)",
-          "",
-          "f = 1"
-        ]
+  let src =
+        unlines
+          [ "effect module Eff where { command = Cmd, subscription = Sub } exposing (..)",
+            "",
+            "f = 1"
+          ]
   case parseModule M.Application src of
     Left (E.NoEffectsOutsideKernel _) -> return ()
     other -> assertFailure ("expected NoEffectsOutsideKernel, got: " ++ show other)
 
 testAliasGenerics :: TestTree
 testAliasGenerics = testCase "type alias generics referenced in field types" $ do
-  let src = unlines
-        [ "module A exposing (..)",
-          "",
-          "type alias Box a = { value : a }"
-        ]
+  let src =
+        unlines
+          [ "module A exposing (..)",
+            "",
+            "type alias Box a = { value : a }"
+          ]
   case parseModule M.Application src of
     Right m -> case Src._aliases m of
       [A.At _ (Src.Alias (A.At _ name) typeVars tipe)] -> do

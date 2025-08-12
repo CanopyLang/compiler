@@ -1,13 +1,13 @@
 module Golden.ParseExprGolden (tests) where
 
-import qualified Parse.Expression as Expr
-import qualified Parse.Primitives as P
-import qualified Reporting.Annotation as A
-import qualified Reporting.Error.Syntax as E
 import qualified AST.Source as Src
 import qualified Data.ByteString.Char8 as C8
 import qualified Data.ByteString.Lazy.Char8 as BL8
 import qualified Data.List as List
+import qualified Parse.Expression as Expr
+import qualified Parse.Primitives as P
+import qualified Reporting.Annotation as A
+import qualified Reporting.Error.Syntax as E
 import Test.Tasty
 import Test.Tasty.Golden
 

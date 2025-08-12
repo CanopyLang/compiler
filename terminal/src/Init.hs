@@ -1,109 +1,114 @@
 {-# LANGUAGE OverloadedStrings #-}
+
 module Init
-  ( run
+  ( run,
   )
-  where
+where
 
-
-import Prelude hiding (init)
-import qualified Data.Map as Map
-import Data.Map (Map)
-import qualified Data.NonEmptyList as NE
-import qualified System.Directory as Dir
-
-import qualified Deps.Solver as Solver
-import qualified Canopy.Constraint as Con
 import Canopy.Constraint (Constraint)
+import qualified Canopy.Constraint as Con
 import qualified Canopy.Outline as Outline
-import qualified Canopy.Package as Pkg
 import Canopy.Package (Name)
+import qualified Canopy.Package as Pkg
 import qualified Canopy.Version as V
+import Data.Map (Map)
+import qualified Data.Map as Map
+import qualified Data.NonEmptyList as NE
+import qualified Deps.Solver as Solver
 import qualified Reporting
-import qualified Reporting.Doc as D
 import Reporting.Doc (Doc)
+import qualified Reporting.Doc as D
 import qualified Reporting.Exit as Exit
-
-
+import qualified System.Directory as Dir
+import Prelude hiding (init)
 
 -- RUN
-
 
 run :: () -> () -> IO ()
 run () () =
   Reporting.attempt Exit.initToReport $
-  do  exists <- Dir.doesFileExist "canopy.json"
+    do
+      exists <- Dir.doesFileExist "canopy.json"
       if exists
         then return (Left Exit.InitAlreadyExists)
-        else
-          do  approved <- Reporting.ask question
-              if approved
-                then init
-                else
-                  do  putStrLn "Okay, I did not make any changes!"
-                      return (Right ())
-
+        else do
+          approved <- Reporting.ask question
+          if approved
+            then init
+            else do
+              putStrLn "Okay, I did not make any changes!"
+              return (Right ())
 
 question :: Doc
 question =
   D.stack
     [ D.fillSep
-        ["Hello!"
-        ,"Canopy","projects","always","start","with","an",D.green "canopy.json","file."
-        ,"I","can","create","them!"
-        ]
-    , D.reflow
+        [ "Hello!",
+          "Canopy",
+          "projects",
+          "always",
+          "start",
+          "with",
+          "an",
+          D.green "canopy.json",
+          "file.",
+          "I",
+          "can",
+          "create",
+          "them!"
+        ],
+      D.reflow
         "Now you may be wondering, what will be in this file? How do I add Canopy files to\
         \ my project? How do I see it in the browser? How will my code grow? Do I need\
-        \ more directories? What about tests? Etc."
-    , D.fillSep
-        ["Check","out",D.cyan (D.fromChars (D.makeLink "init"))
-        ,"for","all","the","answers!"
-        ]
-    , "Knowing all that, would you like me to create an canopy.json file now? [Y/n]: "
+        \ more directories? What about tests? Etc.",
+      D.fillSep
+        [ "Check",
+          "out",
+          D.cyan (D.fromChars (D.makeLink "init")),
+          "for",
+          "all",
+          "the",
+          "answers!"
+        ],
+      "Knowing all that, would you like me to create an canopy.json file now? [Y/n]: "
     ]
-
-
 
 -- INIT
 
-
 init :: IO (Either Exit.Init ())
 init =
-  do  eitherEnv <- Solver.initEnv
-      case eitherEnv of
-        Left problem ->
-          return (Left (Exit.InitRegistryProblem problem))
-
-        Right (Solver.Env cache _ connection registry _) ->
-          do  result <- Solver.verify cache connection registry defaults
-              case result of
-                Solver.Err exit ->
-                  return (Left (Exit.InitSolverProblem exit))
-
-                Solver.NoSolution ->
-                  return (Left (Exit.InitNoSolution (Map.keys defaults)))
-
-                -- FIXME: Propagate this error
-                Solver.NoOfflineSolution _ ->
-                  return (Left (Exit.InitNoOfflineSolution (Map.keys defaults)))
-
-                Solver.Ok details ->
-                  let
-                    solution = Map.map (\(Solver.Details vsn _) -> vsn) details
-                    directs = Map.intersection solution defaults
-                    indirects = Map.difference solution defaults
-                  in
-                  do  Dir.createDirectoryIfMissing True "src"
-                      Outline.write "." $ Outline.App $
+  do
+    eitherEnv <- Solver.initEnv
+    case eitherEnv of
+      Left problem ->
+        return (Left (Exit.InitRegistryProblem problem))
+      Right (Solver.Env cache _ connection registry _) ->
+        do
+          result <- Solver.verify cache connection registry defaults
+          case result of
+            Solver.Err exit ->
+              return (Left (Exit.InitSolverProblem exit))
+            Solver.NoSolution ->
+              return (Left (Exit.InitNoSolution (Map.keys defaults)))
+            -- FIXME: Propagate this error
+            Solver.NoOfflineSolution _ ->
+              return (Left (Exit.InitNoOfflineSolution (Map.keys defaults)))
+            Solver.Ok details ->
+              let solution = Map.map (\(Solver.Details vsn _) -> vsn) details
+                  directs = Map.intersection solution defaults
+                  indirects = Map.difference solution defaults
+               in do
+                    Dir.createDirectoryIfMissing True "src"
+                    Outline.write "." $
+                      Outline.App $
                         Outline.AppOutline V.compiler (NE.List (Outline.RelativeSrcDir "src") []) directs indirects Map.empty Map.empty []
-                      putStrLn "Okay, I created it. Now read that link!"
-                      return (Right ())
-
+                    putStrLn "Okay, I created it. Now read that link!"
+                    return (Right ())
 
 defaults :: Map Name Constraint
 defaults =
   Map.fromList
-    [ (Pkg.core, Con.anything)
-    , (Pkg.browser, Con.anything)
-    , (Pkg.html, Con.anything)
+    [ (Pkg.core, Con.anything),
+      (Pkg.browser, Con.anything),
+      (Pkg.html, Con.anything)
     ]

@@ -30,10 +30,10 @@ module Stuff
 where
 
 import qualified Canopy.ModuleName as ModuleName
-import qualified Canopy.Package as Pkg
 import Canopy.Package (Name)
-import qualified Canopy.Version as V
+import qualified Canopy.Package as Pkg
 import Canopy.Version (Version)
+import qualified Canopy.Version as V
 import qualified System.Directory as Dir
 import qualified System.Environment as Env
 import qualified System.FileLock as Lock

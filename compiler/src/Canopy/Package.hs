@@ -45,20 +45,19 @@ import Control.Monad (liftM2)
 import Data.Binary (Binary, get, put)
 import qualified Data.Coerce as Coerce
 import qualified Data.List as List
-import qualified Data.Map as Map
 import Data.Map (Map)
+import qualified Data.Map as Map
 import qualified Data.Name as Name
-import qualified Data.Utf8 as Utf8
 import Data.Utf8 (Utf8)
+import qualified Data.Utf8 as Utf8
 import Data.Word (Word8)
 import Foreign.Ptr (Ptr, minusPtr, plusPtr)
-import qualified Json.Decode as D
 import Json.Decode (Decoder, KeyDecoder)
+import qualified Json.Decode as D
 import qualified Json.Encode as E
 import qualified Json.String as Json
-import Parse.Primitives (Col, Row)
+import Parse.Primitives (Col, Parser, Row)
 import qualified Parse.Primitives as P
-import Parse.Primitives (Parser)
 import qualified Reporting.Suggest as Suggest
 import System.FilePath ((</>))
 

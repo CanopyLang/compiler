@@ -12,6 +12,13 @@ module Deps.Diff
   )
 where
 
+import qualified Canopy.Compiler.Type as Type
+import Canopy.CustomRepositoryData (CustomSingleRepositoryData (..), DefaultPackageServerRepo (..), PZRPackageServerRepo (..))
+import qualified Canopy.Docs as Docs
+import qualified Canopy.Magnitude as M
+import qualified Canopy.ModuleName as ModuleName
+import qualified Canopy.Package as Pkg
+import qualified Canopy.Version as V
 import Control.Monad (zipWithM)
 import Data.Function (on)
 import qualified Data.List as List
@@ -21,13 +28,6 @@ import qualified Data.Set as Set
 import Deps.Registry (ZokkaRegistries, createAuthHeader)
 import qualified Deps.Registry as Registry
 import qualified Deps.Website as Website
-import qualified Canopy.Compiler.Type as Type
-import Canopy.CustomRepositoryData (CustomSingleRepositoryData (..), DefaultPackageServerRepo (..), PZRPackageServerRepo (..))
-import qualified Canopy.Docs as Docs
-import qualified Canopy.Magnitude as M
-import qualified Canopy.ModuleName as ModuleName
-import qualified Canopy.Package as Pkg
-import qualified Canopy.Version as V
 import qualified File
 import qualified Http
 import qualified Json.Decode as D
@@ -278,7 +278,6 @@ changeMagnitude (Changes added changed removed) =
         else M.PATCH
 
 -- GET DOCS
-
 
 getDocs :: Stuff.PackageCache -> ZokkaRegistries -> Http.Manager -> Pkg.Name -> V.Version -> IO (Either Exit.DocsProblem Docs.Documentation)
 getDocs cache zokkaRegistry manager name version =

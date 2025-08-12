@@ -89,8 +89,8 @@ canopyFile =
 
 parseCanopyFile :: String -> Maybe FilePath
 parseCanopyFile chars =
-  let ext = FP.takeExtension chars in
-  if ext == ".can" || ext == ".canopy" || ext == ".elm" then Just chars else Nothing
+  let ext = FP.takeExtension chars
+   in if ext == ".can" || ext == ".canopy" || ext == ".elm" then Just chars else Nothing
 
 exampleCanopyFiles :: String -> IO [String]
 exampleCanopyFiles _ =

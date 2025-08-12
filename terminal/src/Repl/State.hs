@@ -10,15 +10,18 @@
 -- @since 0.19.1
 module Repl.State
   ( -- * State Operations
-    initialState
-  , toByteString
+    initialState,
+    toByteString,
+
     -- * State Updates
-  , addImport
-  , addType
-  , addDecl
+    addImport,
+    addType,
+    addDecl,
+
     -- * Auto-completion
-  , lookupCompletions
-  ) where
+    lookupCompletions,
+  )
+where
 
 import qualified Control.Monad.State.Strict as State
 import Data.ByteString (ByteString)
@@ -28,10 +31,9 @@ import qualified Data.List as List
 import Data.Map (Map)
 import qualified Data.Map as Map
 import qualified Data.Name as N
+import Repl.Types (M, Output (..), State (..), outputToBuilder)
 import System.Console.Haskeline (Completion)
 import qualified System.Console.Haskeline as Repl
-
-import Repl.Types (M, Output(..), State(..), outputToBuilder)
 
 -- | Create initial empty REPL state.
 --
@@ -49,40 +51,42 @@ toByteString :: State -> Output -> ByteString
 toByteString (State imports types decls) output =
   LBS.toStrict (B.toLazyByteString moduleBuilder)
   where
-    moduleBuilder = mconcat
-      [ moduleHeader
-      , Map.foldr mappend mempty imports
-      , Map.foldr mappend mempty types  
-      , Map.foldr mappend mempty decls
-      , outputToBuilder output
-      ]
-    
-    moduleHeader = mconcat
-      [ "module "
-      , N.toBuilder N.replModule
-      , " exposing (..)\n"
-      ]
+    moduleBuilder =
+      mconcat
+        [ moduleHeader,
+          Map.foldr mappend mempty imports,
+          Map.foldr mappend mempty types,
+          Map.foldr mappend mempty decls,
+          outputToBuilder output
+        ]
+
+    moduleHeader =
+      mconcat
+        [ "module ",
+          N.toBuilder N.replModule,
+          " exposing (..)\n"
+        ]
 
 -- | Add an import to the REPL state.
 --
 -- @since 0.19.1
 addImport :: N.Name -> ByteString -> State -> State
 addImport name src state =
-  state { _imports = Map.insert name (B.byteString src) (_imports state) }
+  state {_imports = Map.insert name (B.byteString src) (_imports state)}
 
 -- | Add a type definition to the REPL state.
 --
 -- @since 0.19.1
 addType :: N.Name -> ByteString -> State -> State
 addType name src state =
-  state { _types = Map.insert name (B.byteString src) (_types state) }
+  state {_types = Map.insert name (B.byteString src) (_types state)}
 
 -- | Add a declaration to the REPL state.
 --
 -- @since 0.19.1
 addDecl :: N.Name -> ByteString -> State -> State
 addDecl name src state =
-  state { _decls = Map.insert name (B.byteString src) (_decls state) }
+  state {_decls = Map.insert name (B.byteString src) (_decls state)}
 
 -- | Generate auto-completion suggestions.
 --
@@ -95,22 +99,34 @@ lookupCompletions string = do
   State imports types decls <- State.get
   pure (buildCompletions string imports types decls)
   where
-    buildCompletions str imp typ dec = 
-      addMatches str False dec
-        (addMatches str False typ
-          (addMatches str True imp
-            (addMatches str False commands [])))
+    buildCompletions str imp typ dec =
+      addMatches
+        str
+        False
+        dec
+        ( addMatches
+            str
+            False
+            typ
+            ( addMatches
+                str
+                True
+                imp
+                (addMatches str False commands [])
+            )
+        )
 
 -- | REPL command completions.
 --
 -- @since 0.19.1
 commands :: Map N.Name ()
-commands = Map.fromList
-  [ (":exit", ())
-  , (":quit", ())
-  , (":reset", ())
-  , (":help", ())
-  ]
+commands =
+  Map.fromList
+    [ (":exit", ()),
+      (":quit", ()),
+      (":reset", ()),
+      (":help", ())
+    ]
 
 -- | Add matching completions from a name map.
 --
@@ -129,4 +145,3 @@ addMatch string isFinished name _ completions =
     else completions
   where
     suggestion = N.toChars name
-

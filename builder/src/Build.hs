@@ -34,14 +34,13 @@ import qualified Data.ByteString as B
 import qualified Data.Char as Char
 import qualified Data.Graph as Graph
 import qualified Data.List as List
-import Data.Map.Strict ((!), (!?))
+import Data.Map.Strict (Map, (!), (!?))
 import qualified Data.Map.Strict as Map
-import Data.Map.Strict (Map)
 import qualified Data.Map.Utils as Map
 import qualified Data.Maybe as Maybe
 import qualified Data.Name as Name
-import qualified Data.NonEmptyList as NE
 import Data.NonEmptyList (List)
+import qualified Data.NonEmptyList as NE
 import qualified Data.OneOrMore as OneOrMore
 import qualified Data.Set as Set
 import Data.Vector.Internal.Check (HasCallStack)

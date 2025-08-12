@@ -173,7 +173,6 @@ testNegation =
           _ -> assertFailure "expected Binops"
     ]
 
-
 testIf :: TestTree
 testIf = testCase "if/then/else" $ do
   case parseExpr "if x then 1 else 2" of
@@ -195,11 +194,12 @@ testLet = testCase "let/in" $ do
 caseOfTest :: TestTree
 caseOfTest = testCaseSteps "case/of" $ \step -> do
   step "parse"
-  let src = unlines
-        [ "case x of",
-          "  Just n -> n",
-          "  Nothing -> 0"
-        ]
+  let src =
+        unlines
+          [ "case x of",
+            "  Just n -> n",
+            "  Nothing -> 0"
+          ]
   case parseExpr src of
     Right (A.At _ (Src.Case _ [(_, _), (_, _)])) -> return ()
     other -> assertFailure ("unexpected: " ++ show other)
@@ -219,11 +219,12 @@ testsNegatives =
 
 caseOfComplex :: TestTree
 caseOfComplex = testCase "case/of with record pattern" $ do
-  let src = unlines
-        [ "case { a = 1 } of",
-          "  { a } -> a",
-          "  _ -> 0"
-        ]
+  let src =
+        unlines
+          [ "case { a = 1 } of",
+            "  { a } -> a",
+            "  _ -> 0"
+          ]
   case parseExpr src of
     Right (A.At _ (Src.Case _ [(_, _), (_, _)])) -> return ()
     other -> assertFailure ("unexpected: " ++ show other)

@@ -1,20 +1,19 @@
-{-# LANGUAGE OverloadedStrings, QuasiQuotes #-}
-module Generate.JavaScript.Functions
-  ( functions
-  )
-  where
+{-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE QuasiQuotes #-}
 
+module Generate.JavaScript.Functions
+  ( functions,
+  )
+where
 
 import Data.ByteString.Builder (Builder)
 import Text.RawString.QQ (r)
 
-
-
 -- FUNCTIONS
 
-
 functions :: Builder
-functions = [r|
+functions =
+  [r|
 
 function F(arity, fun, wrapper) {
   wrapper.a = arity;

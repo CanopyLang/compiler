@@ -62,11 +62,11 @@ module Reporting.Doc
   )
 where
 
+import qualified Canopy.Package as Pkg
+import qualified Canopy.Version as V
 import qualified Data.Index as Index
 import qualified Data.List as List
 import qualified Data.Name as Name
-import qualified Canopy.Package as Pkg
-import qualified Canopy.Version as V
 import Json.Encode ((==>))
 import qualified Json.Encode as E
 import qualified Json.String as Json

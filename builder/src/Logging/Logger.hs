@@ -1,12 +1,12 @@
 module Logging.Logger
-  ( printLog
-  , setLogFlag
+  ( printLog,
+    setLogFlag,
   )
 where
-import GHC.IO (unsafePerformIO)
-import Data.IORef (IORef, newIORef, readIORef, writeIORef)
-import Control.Monad (when)
 
+import Control.Monad (when)
+import Data.IORef (IORef, newIORef, readIORef, writeIORef)
+import GHC.IO (unsafePerformIO)
 
 shouldLogFlag :: IORef Bool
 {-# NOINLINE shouldLogFlag #-}

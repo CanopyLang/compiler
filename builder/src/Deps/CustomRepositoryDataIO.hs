@@ -1,29 +1,27 @@
 module Deps.CustomRepositoryDataIO
-  ( loadCustomRepositoriesData
-  , CustomRepositoriesError(..)
-  , loadCustomRepositoriesDataForReactorTH
+  ( loadCustomRepositoriesData,
+    CustomRepositoriesError (..),
+    loadCustomRepositoriesDataForReactorTH,
   )
-  where
+where
 
-import Canopy.CustomRepositoryData (CustomRepositoriesData, customRepostoriesDataDecoder, customRepostoriesDataEncoder, defaultCustomRepositoriesData, CustomRepositoryDataParseError, defaultCustomRepositoriesDataCanopyPackageRepoOnly)
+import Canopy.CustomRepositoryData (CustomRepositoriesData, CustomRepositoryDataParseError, customRepostoriesDataDecoder, customRepostoriesDataEncoder, defaultCustomRepositoriesData, defaultCustomRepositoriesDataCanopyPackageRepoOnly)
+import Data.Bifunctor (first)
 import qualified File
 import qualified Json.Decode as D
 import qualified Json.Encode as E
-import Data.Bifunctor (first)
 import Stuff (ZokkaCustomRepositoryConfigFilePath (..))
 
 data CustomRepositoriesError = CREJsonDecodeError (D.Error CustomRepositoryDataParseError)
-  deriving Show
+  deriving (Show)
 
 -- FIXME: Boolean argument a hack for now
 createCustomRepositoriesData :: ZokkaCustomRepositoryConfigFilePath -> Bool -> IO (Either e CustomRepositoriesData)
-createCustomRepositoriesData (ZokkaCustomRepositoryConfigFilePath filePath) shouldIncludeZokkaRepo = 
-  let
-    defaultData = if shouldIncludeZokkaRepo then defaultCustomRepositoriesData else defaultCustomRepositoriesDataCanopyPackageRepoOnly
-  in
-  do
-    E.write filePath (customRepostoriesDataEncoder defaultData)
-    pure (Right defaultData)
+createCustomRepositoriesData (ZokkaCustomRepositoryConfigFilePath filePath) shouldIncludeZokkaRepo =
+  let defaultData = if shouldIncludeZokkaRepo then defaultCustomRepositoriesData else defaultCustomRepositoriesDataCanopyPackageRepoOnly
+   in do
+        E.write filePath (customRepostoriesDataEncoder defaultData)
+        pure (Right defaultData)
 
 loadCustomRepositoriesData :: ZokkaCustomRepositoryConfigFilePath -> IO (Either CustomRepositoriesError CustomRepositoriesData)
 loadCustomRepositoriesData z@(ZokkaCustomRepositoryConfigFilePath filePath) = do
@@ -32,8 +30,7 @@ loadCustomRepositoriesData z@(ZokkaCustomRepositoryConfigFilePath filePath) = do
     then do
       bytes <- File.readUtf8 filePath
       pure $ first CREJsonDecodeError (D.fromByteString customRepostoriesDataDecoder bytes)
-    else
-      createCustomRepositoriesData z True
+    else createCustomRepositoriesData z True
 
 loadCustomRepositoriesDataForReactorTH :: ZokkaCustomRepositoryConfigFilePath -> IO (Either CustomRepositoriesError CustomRepositoriesData)
 loadCustomRepositoriesDataForReactorTH z@(ZokkaCustomRepositoryConfigFilePath filePath) = do
@@ -42,5 +39,4 @@ loadCustomRepositoriesDataForReactorTH z@(ZokkaCustomRepositoryConfigFilePath fi
     then do
       bytes <- File.readUtf8 filePath
       pure $ first CREJsonDecodeError (D.fromByteString customRepostoriesDataDecoder bytes)
-    else
-      createCustomRepositoriesData z False
+    else createCustomRepositoriesData z False

@@ -1,44 +1,36 @@
 {-# LANGUAGE TupleSections #-}
+
 module Data.Map.Utils
-  ( fromKeys
-  , fromKeysA
-  , fromValues
-  , any
-  , invertMap
-  , exchangeKeys
+  ( fromKeys,
+    fromKeysA,
+    fromValues,
+    any,
+    invertMap,
+    exchangeKeys,
   )
-  where
+where
 
-
-import Prelude hiding (any)
-import qualified Data.Map as Map
-import Data.Map.Internal (Map(..))
-import qualified Data.NonEmptyList as NE
 import Control.Monad (join)
-
-
+import qualified Data.Map as Map
+import Data.Map.Internal (Map (..))
+import qualified Data.NonEmptyList as NE
+import Prelude hiding (any)
 
 -- FROM KEYS
-
 
 fromKeys :: (Ord k) => (k -> v) -> [k] -> Map k v
 fromKeys toValue keys =
   Map.fromList $ map (\k -> (k, toValue k)) keys
 
-
 fromKeysA :: (Applicative f, Ord k) => (k -> f v) -> [k] -> f (Map k v)
 fromKeysA toValue keys =
   Map.fromList <$> traverse (\k -> (,) k <$> toValue k) keys
-
 
 fromValues :: (Ord k) => (v -> k) -> [v] -> Map k v
 fromValues toKey values =
   Map.fromList $ map (\v -> (toKey v, v)) values
 
-
-
 -- ANY
-
 
 {-# INLINE any #-}
 any :: (v -> Bool) -> Map k v -> Bool
@@ -54,30 +46,23 @@ addToTuple k (k1, v) = (k, k1, v)
 
 flattenMaps :: Map k0 (Map k1 v) -> [(k0, k1, v)]
 flattenMaps nestedMaps =
-  let
-    mapAsList = Map.toList nestedMaps
-    listOfLists = fmap (\(k, innerMap) -> fmap (addToTuple k) (Map.toList innerMap)) mapAsList
-    result = join listOfLists
-  in
-    result
+  let mapAsList = Map.toList nestedMaps
+      listOfLists = fmap (\(k, innerMap) -> fmap (addToTuple k) (Map.toList innerMap)) mapAsList
+      result = join listOfLists
+   in result
 
 exchangeKeys :: (Ord k1, Ord k0) => Map k0 (Map k1 v) -> Map k1 (Map k0 v)
-exchangeKeys nestedMap = 
-  let
-    asTriples = flattenMaps nestedMap
-    rearrangedTriples = fmap (\(a, b, c) -> (b, [(a, c)])) asTriples
-    outerMap = Map.fromListWith (++) rearrangedTriples
-  in
-    fmap Map.fromList outerMap
-
+exchangeKeys nestedMap =
+  let asTriples = flattenMaps nestedMap
+      rearrangedTriples = fmap (\(a, b, c) -> (b, [(a, c)])) asTriples
+      outerMap = Map.fromListWith (++) rearrangedTriples
+   in fmap Map.fromList outerMap
 
 invertMap :: (Ord v) => Map k (NE.List v) -> Map v (NE.List k)
-invertMap mapOfLists = 
-  let 
-    mapAsList = Map.toList mapOfLists
-    listOfLists = fmap (\(k, vs) -> fmap (k,) vs) mapAsList
-    listOfLists' = NE.toList =<< listOfLists
-    swappedList = fmap (\(x, y) -> (y, NE.singleton x)) listOfLists'
-    result = Map.fromListWith NE.append swappedList
-  in 
-    result
+invertMap mapOfLists =
+  let mapAsList = Map.toList mapOfLists
+      listOfLists = fmap (\(k, vs) -> fmap (k,) vs) mapAsList
+      listOfLists' = NE.toList =<< listOfLists
+      swappedList = fmap (\(x, y) -> (y, NE.singleton x)) listOfLists'
+      result = Map.fromListWith NE.append swappedList
+   in result

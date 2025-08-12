@@ -8,14 +8,17 @@
 --
 -- @since 0.19.1
 module Repl.Commands
-  ( -- * Input Categorization  
-    categorize
+  ( -- * Input Categorization
+    categorize,
+
     -- * Input Reading
-  , stripLegacyBackslash
-  , renderPrefill
+    stripLegacyBackslash,
+    renderPrefill,
+
     -- * Help System
-  , toHelpMessage
-  ) where
+    toHelpMessage,
+  )
+where
 
 import qualified AST.Source as Src
 import Data.ByteString (ByteString)
@@ -29,22 +32,21 @@ import qualified Parse.Primitives as P
 import qualified Parse.Space as PS
 import qualified Parse.Type as PT
 import qualified Parse.Variable as PV
+import Repl.Types
+  ( CategorizedInput (..),
+    Input (..),
+    Lines (..),
+    Prefill (..),
+    endsWithBlankLine,
+    getFirstLine,
+    isSingleLine,
+    linesToByteString,
+  )
 import qualified Reporting.Annotation as A
 import qualified Reporting.Doc as D
 import qualified Reporting.Error.Syntax as ES
 import qualified Reporting.Render.Code as Code
 import qualified Reporting.Report as Report
-
-import Repl.Types
-  ( CategorizedInput(..),
-    Input(..),
-    Lines(..),
-    Prefill(..),
-    endsWithBlankLine,
-    getFirstLine,
-    isSingleLine,
-    linesToByteString
-  )
 
 -- | Categorize user input into appropriate action.
 --
@@ -69,13 +71,13 @@ isBlank (Lines prev rev) = null rev && all (== ' ') prev
 --
 -- @since 0.19.1
 attemptImport :: Lines -> CategorizedInput
-attemptImport inputLines = 
+attemptImport inputLines =
   either failHandler successHandler parseResult
   where
     src = linesToByteString inputLines
     parser = P.specialize (\_ _ _ -> ()) PM.chompImport
     parseResult = P.fromByteString parser (\_ _ -> ()) src
-    
+
     successHandler (Src.Import (A.At _ name) _ _) = Done (Import name src)
     failHandler () = ifFail inputLines (Import "ERR" src)
 
@@ -108,7 +110,7 @@ attemptDeclOrExpr inputLines =
     exprParser = P.specialize (toExprPosition src) PE.expression
     declParser = P.specialize (toDeclPosition src) PD.declaration
     declResult = P.fromByteString declParser (,) src
-    
+
     handleDeclSuccess (decl, _) = processDeclaration inputLines src decl
     handleDeclFailure declPosition = handleDeclError inputLines src exprParser declPosition
 
@@ -118,11 +120,11 @@ attemptDeclOrExpr inputLines =
 processDeclaration :: Lines -> ByteString -> PD.Decl -> CategorizedInput
 processDeclaration inputLines src decl =
   case decl of
-    PD.Value _ (A.At _ (Src.Value (A.At _ name) _ _ _)) -> 
+    PD.Value _ (A.At _ (Src.Value (A.At _ name) _ _ _)) ->
       ifDone inputLines (Decl name src)
-    PD.Union _ (A.At _ (Src.Union (A.At _ name) _ _)) -> 
+    PD.Union _ (A.At _ (Src.Union (A.At _ name) _ _)) ->
       ifDone inputLines (Type name src)
-    PD.Alias _ (A.At _ (Src.Alias (A.At _ name) _ _)) -> 
+    PD.Alias _ (A.At _ (Src.Alias (A.At _ name) _ _)) ->
       ifDone inputLines (Type name src)
     PD.Port _ _ -> Done Port
 
@@ -173,7 +175,7 @@ toCommand inputLines =
   case drop 1 (dropWhile (== ' ') (getFirstLine inputLines)) of
     "reset" -> Reset
     "exit" -> Exit
-    "quit" -> Exit  
+    "quit" -> Exit
     "help" -> Help Nothing
     rest -> Help (Just (takeWhile (/= ' ') rest))
 
@@ -262,4 +264,6 @@ genericHelpMessage =
   \  :help    Show this information\n\
   \  :reset   Clear all previous imports and definitions\n\
   \\n\
-  \More info at " ++ D.makeLink "repl" ++ "\n"
+  \More info at "
+    ++ D.makeLink "repl"
+    ++ "\n"

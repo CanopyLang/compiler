@@ -6,10 +6,10 @@ module Main
 where
 
 import qualified Bump
+import qualified Canopy.Version as V
 import qualified Data.List as List
 import qualified Develop
 import qualified Diff
-import qualified Canopy.Version as V
 import qualified Init
 import qualified Install
 import qualified Make

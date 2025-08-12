@@ -1,20 +1,20 @@
 module Golden.ParseAliasGolden (tests) where
 
 import qualified AST.Source as Src
-import qualified Parse.Module as M
-import qualified Reporting.Annotation as A
 import qualified Data.ByteString as BS
+import qualified Data.ByteString.Lazy.Char8 as BL8
 import qualified Data.List as List
 import qualified Data.Name as Name
+import qualified Parse.Module as M
+import qualified Reporting.Annotation as A
 import Test.Tasty
 import Test.Tasty.Golden
-import qualified Data.ByteString.Lazy.Char8 as BL8
 
 tests :: TestTree
 tests =
   testGroup
     "Golden.ParseAlias"
-    [ goldenAlias "Alias" "test/Golden/sources/Alias.can" "test/Golden/expected/Alias.golden" ]
+    [goldenAlias "Alias" "test/Golden/sources/Alias.can" "test/Golden/expected/Alias.golden"]
 
 goldenAlias :: String -> FilePath -> FilePath -> TestTree
 goldenAlias name srcPath goldenPath =

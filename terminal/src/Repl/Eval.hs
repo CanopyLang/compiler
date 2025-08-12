@@ -9,15 +9,18 @@
 -- @since 0.19.1
 module Repl.Eval
   ( -- * Evaluation
-    eval
-  , attemptEval
+    eval,
+    attemptEval,
+
     -- * JavaScript Execution
-  , interpret
+    interpret,
+
     -- * Environment Setup
-  , initEnv
-  , getRoot
-  , getInterpreter
-  ) where
+    initEnv,
+    getRoot,
+    getInterpreter,
+  )
+where
 
 import qualified BackgroundWriter as BW
 import qualified Build
@@ -33,6 +36,17 @@ import qualified Data.ByteString.Builder as B
 import Data.Map (Map)
 import qualified Data.Map as Map
 import qualified Generate
+import Repl.Commands (toHelpMessage)
+import Repl.State (addDecl, addImport, addType, initialState, toByteString)
+import Repl.Types
+  ( Env (..),
+    Flags (..),
+    Input (..),
+    Outcome (..),
+    Output (..),
+    State (..),
+    toPrintName,
+  )
 import qualified Reporting
 import qualified Reporting.Exit as Exit
 import qualified Reporting.Task as Task
@@ -44,18 +58,6 @@ import qualified System.Exit as Exit
 import System.FilePath ((</>))
 import qualified System.IO as IO
 import qualified System.Process as Proc
-
-import Repl.Commands (toHelpMessage)
-import Repl.State (addDecl, addImport, addType, initialState, toByteString)
-import Repl.Types
-  ( Env(..),
-    Flags(..),
-    Input(..),
-    Outcome(..),
-    Output(..),
-    State(..),
-    toPrintName
-  )
 
 -- | Main evaluation function for REPL input.
 --
@@ -77,17 +79,17 @@ processInput :: Env -> State -> Input -> IO Outcome
 processInput _ state Skip = pure (Loop state)
 processInput _ _ Exit = pure (End Exit.ExitSuccess)
 processInput _ _ Reset = putStrLn "<reset>" >> pure (Loop initialState)
-processInput _ state (Help maybeCmd) = 
+processInput _ state (Help maybeCmd) =
   putStrLn (toHelpMessage maybeCmd) >> pure (Loop state)
-processInput _ state Port = 
+processInput _ state Port =
   putStrLn "I cannot handle port declarations." >> pure (Loop state)
-processInput env oldState (Import name src) = 
+processInput env oldState (Import name src) =
   Loop <$> attemptEval env oldState (addImport name src oldState) OutputNothing
-processInput env oldState (Type name src) = 
+processInput env oldState (Type name src) =
   Loop <$> attemptEval env oldState (addType name src oldState) OutputNothing
-processInput env oldState (Decl name src) = 
+processInput env oldState (Decl name src) =
   Loop <$> attemptEval env oldState (addDecl name src oldState) (OutputDecl name)
-processInput env state (Expr src) = 
+processInput env state (Expr src) =
   Loop <$> attemptEval env state state (OutputExpr src)
 
 -- | Attempt to evaluate code with error handling.
@@ -108,12 +110,12 @@ attemptEval (Env root interpreter ansi) oldState newState output =
         Right (Just javascript) -> do
           result <- executeJavaScript interpreter javascript
           pure (Right result)
-    
+
     handleResult = either handleError handleSuccess
-    
+
     handleError exit = Exit.toStderr (Exit.replToReport exit) >> pure oldState
     handleSuccess = maybe (pure newState) checkExecution
-    
+
     checkExecution javascript = do
       exitCode <- interpret interpreter javascript
       pure (if exitCode == Exit.ExitSuccess then newState else oldState)
@@ -129,7 +131,7 @@ runCompilation rootDir enableAnsi state output scope =
       details <- Task.eio Exit.ReplBadDetails (Details.load Reporting.silent scope rootDir)
       artifacts <- Task.eio id (Build.fromRepl rootDir details (toByteString state output))
       traverse (generateJavaScript rootDir details enableAnsi artifacts) (toPrintName output)
-    
+
     generateJavaScript projectRoot projectDetails projectAnsi artifacts name =
       Task.mapError Exit.ReplBadGenerate (Generate.repl projectRoot projectDetails projectAnsi artifacts name)
 
@@ -138,7 +140,7 @@ runCompilation rootDir enableAnsi state output scope =
 -- @since 0.19.1
 executeJavaScript :: FilePath -> Builder -> IO (Maybe Builder)
 executeJavaScript interpreter javascript = do
-  exitCode <- interpret interpreter javascript  
+  exitCode <- interpret interpreter javascript
   pure (if exitCode == Exit.ExitSuccess then Just javascript else Nothing)
 
 -- | Execute JavaScript code through interpreter.
@@ -148,7 +150,7 @@ interpret :: FilePath -> Builder -> IO ExitCode
 interpret interpreter javascript =
   Proc.withCreateProcess createProcess executeCode
   where
-    createProcess = (Proc.proc interpreter []) { Proc.std_in = Proc.CreatePipe }
+    createProcess = (Proc.proc interpreter []) {Proc.std_in = Proc.CreatePipe}
     executeCode (Just stdin) _ _ handle = do
       B.hPutBuilder stdin javascript
       IO.hClose stdin
@@ -178,26 +180,30 @@ getRoot = do
       Dir.createDirectoryIfMissing True (root </> "src")
       Outline.write root defaultOutline
       pure root
-    
-    defaultOutline = Outline.Pkg (Outline.PkgOutline
-      Pkg.dummyName
-      Outline.defaultSummary
-      Licenses.bsd3
-      V.one
-      (Outline.ExposedList [])
-      defaultDeps
-      Map.empty
-      C.defaultCanopy)
+
+    defaultOutline =
+      Outline.Pkg
+        ( Outline.PkgOutline
+            Pkg.dummyName
+            Outline.defaultSummary
+            Licenses.bsd3
+            V.one
+            (Outline.ExposedList [])
+            defaultDeps
+            Map.empty
+            C.defaultCanopy
+        )
 
 -- | Default package dependencies for REPL.
 --
 -- @since 0.19.1
 defaultDeps :: Map Pkg.Name C.Constraint
-defaultDeps = Map.fromList
-  [ (Pkg.core, C.anything)
-  , (Pkg.json, C.anything)
-  , (Pkg.html, C.anything)
-  ]
+defaultDeps =
+  Map.fromList
+    [ (Pkg.core, C.anything),
+      (Pkg.json, C.anything),
+      (Pkg.html, C.anything)
+    ]
 
 -- | Find JavaScript interpreter executable.
 --
@@ -235,7 +241,8 @@ getInterpreterHelp name findExe = do
 exeNotFound :: String -> String
 exeNotFound name =
   "The REPL relies on node.js to execute JavaScript code outside the browser.\n"
-    ++ "I could not find executable `" ++ name ++ "` on your PATH though!\n\n"
+    ++ "I could not find executable `"
+    ++ name
+    ++ "` on your PATH though!\n\n"
     ++ "You can install node.js from <http://nodejs.org/>. If it is already installed\n"
     ++ "but has a different name, use the --interpreter flag."
-

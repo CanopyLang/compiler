@@ -88,5 +88,5 @@ testNestedTypes = testCase "nested complex types" $ do
     Right (A.At _ (Src.TRecord fields (Just (A.At _ r)))) -> do
       r @?= Name.fromChars "r"
       let names = map (\(A.At _ n, _) -> Name.toChars n) fields
-      assertBool "has a and t" (all (`elem` names) ["a","t"])
+      assertBool "has a and t" (all (`elem` names) ["a", "t"])
     other -> assertFailure ("expected nested record, got: " ++ show other)
