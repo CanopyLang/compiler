@@ -40,6 +40,7 @@ module Canopy.Package
   )
 where
 
+import qualified Canopy.Version as V
 import Control.Monad (liftM2)
 import Data.Binary (Binary, get, put)
 import qualified Data.Coerce as Coerce
@@ -48,7 +49,6 @@ import qualified Data.Map as Map
 import qualified Data.Name as Name
 import qualified Data.Utf8 as Utf8
 import Data.Word (Word8)
-import qualified Canopy.Version as V
 import Foreign.Ptr (Ptr, minusPtr, plusPtr)
 import qualified Json.Decode as D
 import qualified Json.Encode as E
@@ -84,7 +84,7 @@ data Canonical = Canonical
 
 isKernel :: Name -> Bool
 isKernel (Name author _) =
-  author == canopy || author == canopy_explorations || author == zokka || author == zokka_explorations
+  author == canopy || author == canopy_explorations
 
 -- FIXME: Need to think about how to make this better
 isCore :: Name -> Bool
@@ -174,7 +174,7 @@ linearAlgebra =
 {-# NOINLINE canopy #-}
 canopy :: Author
 canopy =
-  Utf8.fromChars "canopy"
+  Utf8.fromChars "elm"
 
 {-# NOINLINE zokka #-}
 zokka :: Author
@@ -184,12 +184,7 @@ zokka =
 {-# NOINLINE canopy_explorations #-}
 canopy_explorations :: Author
 canopy_explorations =
-  Utf8.fromChars "canopy-explorations"
-
-{-# NOINLINE zokka_explorations #-}
-zokka_explorations :: Author
-zokka_explorations =
-  Utf8.fromChars "zokka-explorations"
+  Utf8.fromChars "elm-explorations"
 
 -- PACKAGE SUGGESTIONS
 
@@ -232,7 +227,7 @@ nearbyNames (Name author1 project1) possibleNames =
 
 authorDistance :: [Char] -> Author -> Int
 authorDistance given possibility =
-  if possibility == canopy || possibility == canopy_explorations || possibility == zokka || possibility == zokka_explorations
+  if possibility == canopy || possibility == canopy_explorations
     then 0
     else abs (Suggest.distance given (Utf8.toChars possibility))
 
