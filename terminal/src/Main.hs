@@ -17,7 +17,6 @@ import qualified Publish
 import qualified Repl
 import Terminal
 import Terminal.Helpers
-import Text.PrettyPrint.ANSI.Leijen ((<>))
 import qualified Text.PrettyPrint.ANSI.Leijen as P
 import Text.Read (readMaybe)
 import Prelude hiding (init)

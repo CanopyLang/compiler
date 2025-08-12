@@ -126,8 +126,9 @@ findRootHelp dirs =
       return Nothing
     _ : _ ->
       do
-        exists <- Dir.doesFileExist (FP.joinPath dirs </> "canopy.json")
-        if exists
+        canopyExists <- Dir.doesFileExist (FP.joinPath dirs </> "canopy.json")
+        elmExists <- Dir.doesFileExist (FP.joinPath dirs </> "elm.json")
+        if canopyExists || elmExists
           then return (Just (FP.joinPath dirs))
           else findRootHelp (init dirs)
 

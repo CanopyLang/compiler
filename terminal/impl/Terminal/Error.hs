@@ -12,7 +12,6 @@ module Terminal.Error
   where
 
 
-import Data.Monoid ((<>))
 import qualified Data.List as List
 import qualified Data.Maybe as Maybe
 import GHC.IO.Handle (hIsTerminalDevice)
@@ -209,7 +208,7 @@ toSummary exeName (Command name summary _ _ (Args args) _ _) =
     Common summaryString ->
       Just $
         P.vcat
-          [ P.cyan $ argsToDoc (exeName ++ " " ++ name) (head args)
+          [ P.cyan $ argsToDoc (exeName ++ " " ++ name) (case args of { arg:_ -> arg; [] -> error "empty args list" })
           , P.indent 4 $ reflow summaryString
           ]
 
@@ -280,7 +279,7 @@ exitWithError err =
             argErrorToDocs argError
 
           _:_:_ ->
-            argErrorToDocs $ head $ List.sortOn toArgErrorRank (map snd argErrors)
+            argErrorToDocs $ case List.sortOn toArgErrorRank (map snd argErrors) of { topErr:_ -> topErr; [] -> error "impossible: empty list in _:_:_ pattern" }
 
 
 toArgErrorRank :: ArgError -> Int -- lower is better

@@ -25,6 +25,7 @@ import qualified Canopy.Package as Pkg
 import qualified Canopy.Version as V
 import Control.Concurrent (forkIO, newEmptyMVar, putMVar, readMVar)
 import Control.Monad (foldM)
+import Data.ByteString (ByteString)
 import Data.Map ((!))
 import qualified Data.Map as Map
 import qualified Data.Utf8 as Utf8
@@ -250,43 +251,45 @@ getFromCustomSingleRepositoryData customSingleRepositoryData pkg vsn cache toNew
   case customSingleRepositoryData of
     DefaultPackageServerRepoData defaultPackageServerRepo ->
       let repositoryUrl = _defaultPackageServerRepoTypeUrl defaultPackageServerRepo
-          url = Website.metadata repositoryUrl pkg vsn "canopy.json"
           home = Stuff.package cache pkg vsn
-          path = home </> "canopy.json"
        in do
-            result <- Http.get manager url [] id (return . Right)
+            result <- fetchPackageMetadataWithFallback manager [] (Utf8.toChars repositoryUrl) pkg vsn
             case result of
               Left httpProblem ->
                 err (Exit.SolverBadHttp pkg vsn httpProblem)
-              Right body ->
-                case D.fromByteString constraintsDecoder body of
-                  Right cs ->
-                    do
-                      Dir.createDirectoryIfMissing True home
-                      File.writeUtf8 path body
-                      ok (toNewState cs) cs back
-                  Left _ ->
-                    err (Exit.SolverBadHttpData pkg vsn url)
+              Right (body, filename) ->
+                let path = home </> filename
+                    decoder = if filename == "elm.json" then elmConstraintsDecoder else constraintsDecoder
+                    url = Website.metadata repositoryUrl pkg vsn filename
+                 in case D.fromByteString decoder body of
+                      Right cs ->
+                        do
+                          Dir.createDirectoryIfMissing True home
+                          File.writeUtf8 path body
+                          ok (toNewState cs) cs back
+                      Left _ ->
+                        err (Exit.SolverBadHttpData pkg vsn url)
     PZRPackageServerRepoData pzrPackageServerRepo ->
       let repositoryUrl = _pzrPackageServerRepoTypeUrl pzrPackageServerRepo
           repositoryAuthToken = _pzrPackageServerRepoAuthToken pzrPackageServerRepo
-          url = Website.metadata repositoryUrl pkg vsn "canopy.json"
           home = Stuff.package cache pkg vsn
-          path = home </> "canopy.json"
        in do
-            result <- Http.get manager url [Registry.createAuthHeader repositoryAuthToken] id (return . Right)
+            result <- fetchPackageMetadataWithFallback manager [Registry.createAuthHeader repositoryAuthToken] (Utf8.toChars repositoryUrl) pkg vsn
             case result of
               Left httpProblem ->
                 err (Exit.SolverBadHttp pkg vsn httpProblem)
-              Right body ->
-                case D.fromByteString constraintsDecoder body of
-                  Right cs ->
-                    do
-                      Dir.createDirectoryIfMissing True home
-                      File.writeUtf8 path body
-                      ok (toNewState cs) cs back
-                  Left _ ->
-                    err (Exit.SolverBadHttpData pkg vsn url)
+              Right (body, filename) ->
+                let path = home </> filename
+                    decoder = if filename == "elm.json" then elmConstraintsDecoder else constraintsDecoder
+                    url = Website.metadata repositoryUrl pkg vsn filename
+                 in case D.fromByteString decoder body of
+                      Right cs ->
+                        do
+                          Dir.createDirectoryIfMissing True home
+                          File.writeUtf8 path body
+                          ok (toNewState cs) cs back
+                      Left _ ->
+                        err (Exit.SolverBadHttpData pkg vsn url)
 
 getConstraints :: Pkg.Name -> V.Version -> Solver Constraints
 getConstraints pkg vsn =
@@ -500,3 +503,33 @@ oneOf solver@(Solver solverHead) solvers =
 backtrack :: Solver a
 backtrack =
   Solver $ \state _ back _ -> back state
+
+-- FETCH PACKAGE METADATA WITH ELM.JSON FALLBACK
+
+fetchPackageMetadata :: Http.Manager -> [Http.Header] -> String -> Pkg.Name -> V.Version -> String -> IO (Either Http.Error ByteString)
+fetchPackageMetadata manager headers repositoryUrl pkg vsn filename =
+  do
+    let url = Website.metadata (Utf8.fromChars repositoryUrl) pkg vsn filename
+    Http.get manager url headers id (return . Right)
+
+fetchPackageMetadataWithFallback :: Http.Manager -> [Http.Header] -> String -> Pkg.Name -> V.Version -> IO (Either Http.Error (ByteString, String))
+fetchPackageMetadataWithFallback manager headers repositoryUrl pkg vsn =
+  do
+    canopyResult <- fetchPackageMetadata manager headers repositoryUrl pkg vsn "canopy.json"
+    case canopyResult of
+      Right body -> return $ Right (body, "canopy.json")
+      Left _ -> do
+        elmResult <- fetchPackageMetadata manager headers repositoryUrl pkg vsn "elm.json"
+        case elmResult of
+          Right body -> return $ Right (body, "elm.json")
+          Left err -> return $ Left err
+
+elmConstraintsDecoder :: D.Decoder () Constraints
+elmConstraintsDecoder =
+  do
+    outline <- D.mapError (const ()) Outline.elmDecoder
+    case outline of
+      Outline.App (Outline.AppOutline canopyVersion _ deps _ _ _ _) ->
+        return (Constraints (C.exactly canopyVersion) (Map.map C.exactly deps))
+      Outline.Pkg (Outline.PkgOutline _ _ _ _ _ deps _ canopyConstraint) ->
+        return (Constraints canopyConstraint deps)

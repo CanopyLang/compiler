@@ -13,6 +13,7 @@ module Canopy.Outline
     write,
     encode,
     decoder,
+    elmDecoder,
     defaultSummary,
     flattenExposed,
   )
@@ -183,8 +184,16 @@ findPkgOverridesAgainstNonexistentDeps deps PackageOverrideData {_originalPackag
 read :: FilePath -> IO (Either Exit.Outline Outline)
 read root =
   do
-    bytes <- File.readUtf8 (root </> "canopy.json")
-    case D.fromByteString decoder bytes of
+    canopyExists <- Dir.doesFileExist (root </> "canopy.json")
+    (bytes, usedDecoder) <-
+      if canopyExists
+        then do
+          bytes <- File.readUtf8 (root </> "canopy.json")
+          return (bytes, decoder)
+        else do
+          bytes <- File.readUtf8 (root </> "elm.json")
+          return (bytes, elmDecoder)
+    case D.fromByteString usedDecoder bytes of
       Left err ->
         return $ Left (Exit.OutlineHasBadStructure err)
       Right outline ->
@@ -269,6 +278,15 @@ decoder =
             | tipe == package -> Pkg <$> pkgDecoder
             | otherwise -> D.failure Exit.OP_BadType
 
+elmDecoder :: Decoder Outline
+elmDecoder =
+  let application = Json.fromChars "application"
+   in do
+        tipe <- D.field "type" D.string
+        if tipe == application
+          then App <$> elmAppDecoder
+          else D.failure Exit.OP_BadType
+
 appDecoder :: Decoder AppOutline
 appDecoder =
   AppOutline
@@ -279,6 +297,17 @@ appDecoder =
     <*> D.field "test-dependencies" (D.field "direct" (depsDecoder versionDecoder))
     <*> D.field "test-dependencies" (D.field "indirect" (depsDecoder versionDecoder))
     <*> D.oneOf [D.field "zokka-package-overrides" (D.list packageOverrideDataDecoder), pure []]
+
+elmAppDecoder :: Decoder AppOutline
+elmAppDecoder =
+  AppOutline
+    <$> D.field "elm-version" versionDecoder
+    <*> D.field "source-directories" dirsDecoder
+    <*> D.field "dependencies" (D.field "direct" (depsDecoder versionDecoder))
+    <*> D.field "dependencies" (D.field "indirect" (depsDecoder versionDecoder))
+    <*> D.field "test-dependencies" (D.field "direct" (depsDecoder versionDecoder))
+    <*> D.field "test-dependencies" (D.field "indirect" (depsDecoder versionDecoder))
+    <*> pure []
 
 pkgDecoder :: Decoder PkgOutline
 pkgDecoder =

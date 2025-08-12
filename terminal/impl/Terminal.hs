@@ -151,8 +151,8 @@ findIndex index point chunks =
 
     chunk:cs ->
       let
-        lo = snd (head chunk)
-        hi = snd (last chunk)
+        lo = case chunk of { (_,i):_ -> i; [] -> error "empty chunk" }
+        hi = case reverse chunk of { (_,i):_ -> i; [] -> error "empty chunk" }
       in
       if point < lo then
         0

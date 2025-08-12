@@ -12,7 +12,7 @@ import qualified System.FSNotify as Notify
 
 
 watchFile :: FilePath -> WS.PendingConnection -> IO ()
-watchFile watchedFile pendingConnection =
+watchFile _watchedFile pendingConnection =
   do  connection <- WS.acceptRequest pendingConnection
 
       Notify.withManager $ \mgmt ->
