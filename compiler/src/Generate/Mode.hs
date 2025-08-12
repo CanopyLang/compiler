@@ -9,10 +9,11 @@ module Generate.Mode
 
 import qualified Data.List as List
 import qualified Data.Map as Map
+import Data.Map (Map)
 import qualified Data.Maybe as Maybe
 import qualified Data.Name as Name
 
-import qualified AST.Optimized as Opt
+import AST.Optimized (GlobalGraph(..))
 import qualified Canopy.Compiler.Type.Extract as Extract
 import qualified Generate.JavaScript.Name as JsName
 
@@ -39,16 +40,16 @@ isDebug mode =
 
 
 type ShortFieldNames =
-  Map.Map Name.Name JsName.Name
+  Map Name.Name JsName.Name
 
 
-shortenFieldNames :: Opt.GlobalGraph -> ShortFieldNames
-shortenFieldNames (Opt.GlobalGraph _ frequencies) =
+shortenFieldNames :: GlobalGraph -> ShortFieldNames
+shortenFieldNames (GlobalGraph _ frequencies) =
   Map.foldr addToShortNames Map.empty $
     Map.foldrWithKey addToBuckets Map.empty frequencies
 
 
-addToBuckets :: Name.Name -> Int -> Map.Map Int [Name.Name] -> Map.Map Int [Name.Name]
+addToBuckets :: Name.Name -> Int -> Map Int [Name.Name] -> Map Int [Name.Name]
 addToBuckets field frequency buckets =
   Map.insertWith (++) frequency [field] buckets
 

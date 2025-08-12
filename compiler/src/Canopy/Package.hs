@@ -46,15 +46,19 @@ import Data.Binary (Binary, get, put)
 import qualified Data.Coerce as Coerce
 import qualified Data.List as List
 import qualified Data.Map as Map
+import Data.Map (Map)
 import qualified Data.Name as Name
 import qualified Data.Utf8 as Utf8
+import Data.Utf8 (Utf8)
 import Data.Word (Word8)
 import Foreign.Ptr (Ptr, minusPtr, plusPtr)
 import qualified Json.Decode as D
+import Json.Decode (Decoder, KeyDecoder)
 import qualified Json.Encode as E
 import qualified Json.String as Json
 import Parse.Primitives (Col, Row)
 import qualified Parse.Primitives as P
+import Parse.Primitives (Parser)
 import qualified Reporting.Suggest as Suggest
 import System.FilePath ((</>))
 
@@ -66,9 +70,9 @@ data Name = Name
   }
   deriving (Ord, Show)
 
-type Author = Utf8.Utf8 AUTHOR
+type Author = Utf8 AUTHOR
 
-type Project = Utf8.Utf8 PROJECT
+type Project = Utf8 PROJECT
 
 data AUTHOR
 
@@ -188,7 +192,7 @@ canopy_explorations =
 
 -- PACKAGE SUGGESTIONS
 
-suggestions :: Map.Map Name.Name Name
+suggestions :: Map Name.Name Name
 suggestions =
   let random = toName canopy "random"
       time = toName canopy "time"
@@ -257,7 +261,7 @@ instance Binary Canonical where
 
 -- JSON
 
-decoder :: D.Decoder (Row, Col) Name
+decoder :: Decoder (Row, Col) Name
 decoder =
   D.customString parser (,)
 
@@ -265,7 +269,7 @@ encode :: Name -> E.Value
 encode name =
   E.chars (toChars name)
 
-keyDecoder :: (Row -> Col -> x) -> D.KeyDecoder x Name
+keyDecoder :: (Row -> Col -> x) -> KeyDecoder x Name
 keyDecoder toError =
   let keyParser =
         P.specialize (\(r, c) _ _ -> toError r c) parser
@@ -273,7 +277,7 @@ keyDecoder toError =
 
 -- PARSER
 
-parser :: P.Parser (Row, Col) Name
+parser :: Parser (Row, Col) Name
 parser =
   do
     author <- parseName isAlphaOrDigit isAlphaOrDigit
@@ -281,7 +285,7 @@ parser =
     project <- parseName isLower isLowerOrDigit
     return (Name author project)
 
-parseName :: (Word8 -> Bool) -> (Word8 -> Bool) -> P.Parser (Row, Col) (Utf8.Utf8 t)
+parseName :: (Word8 -> Bool) -> (Word8 -> Bool) -> Parser (Row, Col) (Utf8 t)
 parseName isGoodStart isGoodInner =
   P.Parser $ \(P.State src pos end indent row col) cok _ cerr eerr ->
     if pos >= end
