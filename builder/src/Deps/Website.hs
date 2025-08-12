@@ -16,9 +16,8 @@ standardCanopyPkgRepoDomain =
   Utf8.fromChars "https://package.elm-lang.org"
 
 route :: RepositoryUrl -> String -> [(String, String)] -> String
-route repositoryUrl path params =
-  Http.toUrl (Utf8.toChars repositoryUrl ++ path) params
+route repositoryUrl path = Http.toUrl (Utf8.toChars repositoryUrl <> path)
 
 metadata :: RepositoryUrl -> Pkg.Name -> V.Version -> String -> String
 metadata repositoryUrl name version file =
-  Utf8.toChars repositoryUrl ++ "/packages/" ++ Pkg.toUrl name ++ "/" ++ V.toChars version ++ "/" ++ file
+  Utf8.toChars repositoryUrl <> ("/packages/" <> (Pkg.toUrl name <> ("/" <> (V.toChars version <> ("/" <> file)))))

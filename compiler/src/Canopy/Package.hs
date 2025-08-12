@@ -87,7 +87,7 @@ data Canonical = Canonical
 
 isKernel :: Name -> Bool
 isKernel (Name author _) =
-  author == canopy || author == canopy_explorations
+  author == canopy || author == canopyExplorations
 
 -- FIXME: Need to think about how to make this better
 isCore :: Name -> Bool
@@ -167,12 +167,12 @@ url =
 {-# NOINLINE webgl #-}
 webgl :: Name
 webgl =
-  toName canopy_explorations "webgl"
+  toName canopyExplorations "webgl"
 
 {-# NOINLINE linearAlgebra #-}
 linearAlgebra :: Name
 linearAlgebra =
-  toName canopy_explorations "linear-algebra"
+  toName canopyExplorations "linear-algebra"
 
 {-# NOINLINE canopy #-}
 canopy :: Author
@@ -184,9 +184,9 @@ zokka :: Author
 zokka =
   Utf8.fromChars "zokka"
 
-{-# NOINLINE canopy_explorations #-}
-canopy_explorations :: Author
-canopy_explorations =
+{-# NOINLINE canopyExplorations #-}
+canopyExplorations :: Author
+canopyExplorations =
   Utf8.fromChars "elm-explorations"
 
 -- PACKAGE SUGGESTIONS
@@ -230,7 +230,7 @@ nearbyNames (Name author1 project1) possibleNames =
 
 authorDistance :: String -> Author -> Int
 authorDistance given possibility =
-  if possibility == canopy || possibility == canopy_explorations
+  if possibility == canopy || possibility == canopyExplorations
     then 0
     else abs (Suggest.distance given (Utf8.toChars possibility))
 

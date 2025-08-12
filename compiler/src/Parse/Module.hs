@@ -261,43 +261,43 @@ chompManager :: Parser E.Module Src.Manager
 chompManager =
   do
     word1 0x7B {- { -} E.Effect
-    spaces_em
+    spacesEm
     oneOf
       E.Effect
       [ do
           cmd <- chompCommand
-          spaces_em
+          spacesEm
           oneOf
             E.Effect
             [ do
                 word1 0x7D {-}-} E.Effect
-                spaces_em
+                spacesEm
                 return (Src.Cmd cmd),
               do
                 word1 0x2C {-,-} E.Effect
-                spaces_em
+                spacesEm
                 sub <- chompSubscription
-                spaces_em
+                spacesEm
                 word1 0x7D {-}-} E.Effect
-                spaces_em
+                spacesEm
                 return (Src.Fx cmd sub)
             ],
         do
           sub <- chompSubscription
-          spaces_em
+          spacesEm
           oneOf
             E.Effect
             [ do
                 word1 0x7D {-}-} E.Effect
-                spaces_em
+                spacesEm
                 return (Src.Sub sub),
               do
                 word1 0x2C {-,-} E.Effect
-                spaces_em
+                spacesEm
                 cmd <- chompCommand
-                spaces_em
+                spacesEm
                 word1 0x7D {-}-} E.Effect
-                spaces_em
+                spacesEm
                 return (Src.Fx cmd sub)
             ]
       ]
@@ -306,22 +306,22 @@ chompCommand :: Parser E.Module (A.Located Name.Name)
 chompCommand =
   do
     Keyword.command_ E.Effect
-    spaces_em
+    spacesEm
     word1 0x3D {-=-} E.Effect
-    spaces_em
+    spacesEm
     addLocation (Var.upper E.Effect)
 
 chompSubscription :: Parser E.Module (A.Located Name.Name)
 chompSubscription =
   do
     Keyword.subscription_ E.Effect
-    spaces_em
+    spacesEm
     word1 0x3D {-=-} E.Effect
-    spaces_em
+    spacesEm
     addLocation (Var.upper E.Effect)
 
-spaces_em :: Parser E.Module ()
-spaces_em =
+spacesEm :: Parser E.Module ()
+spacesEm =
   Space.chompAndCheckIndent E.ModuleSpace E.Effect
 
 -- IMPORTS

@@ -82,8 +82,7 @@ toStderr report =
   Help.toStderr (Help.reportToDoc report)
 
 toJson :: Help.Report -> Encode.Value
-toJson report =
-  Help.reportToJson report
+toJson = Help.reportToJson
 
 -- INIT
 
@@ -102,11 +101,8 @@ initToReport exit =
         "NO SOLUTION"
         Nothing
         "I tried to create an canopy.json with the following direct dependencies:"
-        [ D.indent 4 $
-            D.vcat $
-              map (D.dullyellow . D.fromChars . Pkg.toChars) pkgs,
-          D.reflow $
-            "I could not find compatible versions though! This should not happen, so please\
+        [ D.indent 4 . D.vcat $ fmap (D.dullyellow . D.fromChars . Pkg.toChars) pkgs,
+          D.reflow "I could not find compatible versions though! This should not happen, so please\
             \ ask around one of the community forums at https://canopy-lang.org/community to learn\
             \ what is going on!"
         ]
@@ -115,11 +111,8 @@ initToReport exit =
         "NO OFFLINE SOLUTION"
         Nothing
         "I tried to create an canopy.json with the following direct dependencies:"
-        [ D.indent 4 $
-            D.vcat $
-              map (D.dullyellow . D.fromChars . Pkg.toChars) pkgs,
-          D.reflow $
-            "I could not find compatible versions though, but that may be because I could not\
+        [ D.indent 4 . D.vcat $ fmap (D.dullyellow . D.fromChars . Pkg.toChars) pkgs,
+          D.reflow "I could not find compatible versions though, but that may be because I could not\
             \ connect to https://package.canopy-lang.org to get the latest list of packages. Are\
             \ you able to connect to the internet? Please ask around one of the community\
             \ forums at https://canopy-lang.org/community for help!"
@@ -146,8 +139,7 @@ initToReport exit =
             ]
         ]
     InitRegistryProblem problem ->
-      toRegistryProblemReport "PROBLEM LOADING PACKAGE LIST" problem $
-        "I need the list of published packages before I can start initializing projects"
+      toRegistryProblemReport "PROBLEM LOADING PACKAGE LIST" problem "I need the list of published packages before I can start initializing projects"
 
 -- DIFF
 
@@ -175,8 +167,8 @@ diffToReport diff =
         Nothing
         "I cannot find an canopy.json so I am not sure what you want me to diff.\
         \ Normally you run `canopy diff` from within a project!"
-        [ D.reflow $ "If you are just curious to see a diff, try running this command:",
-          D.indent 4 $ D.green $ "canopy diff canopy/http 1.0.0 2.0.0"
+        [ D.reflow "If you are just curious to see a diff, try running this command:",
+          D.indent 4 . D.green $ "canopy diff canopy/http 1.0.0 2.0.0"
         ]
     DiffBadOutline outline ->
       toOutlineReport outline
@@ -187,8 +179,8 @@ diffToReport diff =
         "Your canopy.json says this project is an application, but `canopy diff` only works\
         \ with packages. That way there are previously published versions of the API to\
         \ diff against!"
-        [ D.reflow $ "If you are just curious to see a diff, try running this command:",
-          D.indent 4 $ D.dullyellow $ "canopy diff canopy/json 1.0.0 1.1.2"
+        [ D.reflow "If you are just curious to see a diff, try running this command:",
+          D.indent 4 . D.dullyellow $ "canopy diff canopy/json 1.0.0 1.1.2"
         ]
     DiffNoExposed ->
       Help.report
@@ -196,8 +188,7 @@ diffToReport diff =
         (Just "canopy.json")
         "Your canopy.json has no \"exposed-modules\" which means there is no public API at\
         \ all right now! What am I supposed to diff?"
-        [ D.reflow $
-            "Try adding some modules back to the \"exposed-modules\" field."
+        [ D.reflow "Try adding some modules back to the \"exposed-modules\" field."
         ]
     DiffUnpublished ->
       Help.report
@@ -211,17 +202,16 @@ diffToReport diff =
         Nothing
         ( "I cannot find a package called:"
         )
-        [ D.indent 4 $ D.red $ D.fromChars $ Pkg.toChars pkg,
+        [ (D.indent 4 . D.red) . D.fromChars $ Pkg.toChars pkg,
           "Maybe you want one of these instead?",
-          D.indent 4 $ D.dullyellow $ D.vcat $ map (D.fromChars . Pkg.toChars) suggestions,
+          (D.indent 4 . D.dullyellow) . D.vcat $ fmap (D.fromChars . Pkg.toChars) suggestions,
           "But check <https://package.canopy-lang.org> to see all possibilities!"
         ]
     DiffUnknownVersion _pkg vsn realVersions ->
       Help.docReport
         "UNKNOWN VERSION"
         Nothing
-        ( D.fillSep $
-            [ "Version",
+        ( D.fillSep [ "Version",
               D.red (D.fromVersion vsn),
               "has",
               "never",
@@ -236,20 +226,15 @@ diffToReport diff =
             ]
         )
         [ "Here are all the versions that HAVE been published:",
-          D.indent 4 $
-            D.dullyellow $
-              D.vcat $
-                let sameMajor v1 v2 = V._major v1 == V._major v2
-                    mkRow vsns = D.hsep $ map D.fromVersion vsns
-                 in map mkRow $ List.groupBy sameMajor (List.sort realVersions),
+          (D.indent 4 . D.dullyellow) . D.vcat $ (let sameMajor v1 v2 = V._major v1 == V._major v2
+                                                      mkRow vsns = D.hsep $ fmap D.fromVersion vsns
+                                                   in (mkRow <$> List.groupBy sameMajor (List.sort realVersions))),
           "Want one of those instead?"
         ]
     DiffDocsProblem version problem ->
-      toDocsProblemReport problem $
-        "I need the docs for " ++ V.toChars version ++ " to compute this diff"
+      toDocsProblemReport problem ("I need the docs for " <> (V.toChars version <> " to compute this diff"))
     DiffMustHaveLatestRegistry problem ->
-      toRegistryProblemReport "PROBLEM UPDATING PACKAGE LIST" problem $
-        "I need the latest list of published packages before I do this diff"
+      toRegistryProblemReport "PROBLEM UPDATING PACKAGE LIST" problem "I need the latest list of published packages before I do this diff"
     DiffBadDetails details ->
       toDetailsReport details
     DiffBadBuild buildProblem ->
@@ -284,8 +269,7 @@ bumpToReport bump =
         "BUMP WHAT?"
         Nothing
         "I cannot find an canopy.json so I am not sure what you want me to bump."
-        [ D.reflow $
-            "Canopy packages always have an canopy.json that says current the version number. If\
+        [ D.reflow "Canopy packages always have an canopy.json that says current the version number. If\
             \ you run this command from a directory with an canopy.json file, I will try to bump\
             \ the version in there based on the API changes."
         ]
@@ -345,25 +329,20 @@ bumpToReport bump =
               "changes."
             ]
         )
-        [ D.fillSep $
-            ["Try", "bumping", "again", "after", "changing", "the", D.dullyellow "\"version\"", "in", "canopy.json"]
-              ++ if length versions == 1 then ["to:"] else ["to", "one", "of", "these:"],
-          D.vcat $ map (D.green . D.fromVersion) versions
+        [ D.fillSep (["Try", "bumping", "again", "after", "changing", "the", D.dullyellow "\"version\"", "in", "canopy.json"] <> (if length versions == 1 then ["to:"] else ["to", "one", "of", "these:"])),
+          D.vcat $ fmap (D.green . D.fromVersion) versions
         ]
     BumpMustHaveLatestRegistry problem ->
-      toRegistryProblemReport "PROBLEM UPDATING PACKAGE LIST" problem $
-        "I need the latest list of published packages before I can bump any versions"
+      toRegistryProblemReport "PROBLEM UPDATING PACKAGE LIST" problem "I need the latest list of published packages before I can bump any versions"
     BumpCannotFindDocs _ version problem ->
-      toDocsProblemReport problem $
-        "I need the docs for " ++ V.toChars version ++ " to compute the next version number"
+      toDocsProblemReport problem ("I need the docs for " <> (V.toChars version <> " to compute the next version number"))
     BumpBadDetails details ->
       toDetailsReport details
     BumpNoExposed ->
       Help.docReport
         "NO EXPOSED MODULES"
         (Just "canopy.json")
-        ( D.fillSep $
-            [ "To",
+        ( D.fillSep [ "To",
               "bump",
               "a",
               "package,",
@@ -381,8 +360,7 @@ bumpToReport bump =
               "module."
             ]
         )
-        [ D.reflow $
-            "Try adding some modules back to the \"exposed-modules\" field."
+        [ D.reflow "Try adding some modules back to the \"exposed-modules\" field."
         ]
     BumpBadBuild problem ->
       toBuildProblemReport problem
@@ -403,7 +381,7 @@ newPackageOverview =
       "",
       "  - Versions all have exactly three parts: MAJOR.MINOR.PATCH",
       "",
-      "  - All packages start with initial version " ++ V.toChars V.one,
+      "  - All packages start with initial version " <> V.toChars V.one,
       "",
       "  - Versions are incremented based on how the API changes:",
       "",
@@ -462,8 +440,7 @@ publishToReport publish =
         "PUBLISH WHAT?"
         Nothing
         "I cannot find an canopy.json so I am not sure what you want me to publish."
-        [ D.reflow $
-            "Canopy packages always have an canopy.json that states the version number,\
+        [ D.reflow "Canopy packages always have an canopy.json that states the version number,\
             \ dependencies, exposed modules, etc."
         ]
     PublishBadOutline outline ->
@@ -471,8 +448,7 @@ publishToReport publish =
     PublishBadDetails problem ->
       toDetailsReport problem
     PublishMustHaveLatestRegistry problem ->
-      toRegistryProblemReport "PROBLEM UPDATING PACKAGE LIST" problem $
-        "I need the latest list of published packages to make sure this is safe to publish"
+      toRegistryProblemReport "PROBLEM UPDATING PACKAGE LIST" problem "I need the latest list of published packages to make sure this is safe to publish"
     PublishApplication ->
       Help.report "UNPUBLISHABLE" Nothing "I cannot publish applications, only packages!" []
     PublishNotInitialVersion vsn ->
@@ -528,16 +504,14 @@ publishToReport publish =
             ]
         )
         [ D.dullyellow $ D.indent 4 "canopy bump",
-          D.reflow $
-            "It computes the version number based on API changes, ensuring\
+          D.reflow "It computes the version number based on API changes, ensuring\
             \ that no breaking changes end up in PATCH releases!"
         ]
     PublishInvalidBump statedVersion latestVersion ->
       Help.docReport
         "INVALID VERSION"
         (Just "canopy.json")
-        ( D.fillSep $
-            [ "Your",
+        ( D.fillSep [ "Your",
               "canopy.json",
               "says",
               "the",
@@ -559,8 +533,7 @@ publishToReport publish =
               "versions."
             ]
         )
-        [ D.fillSep $
-            [ "Change",
+        [ D.fillSep [ "Change",
               "the",
               "version",
               "back",
@@ -584,16 +557,14 @@ publishToReport publish =
               "running:"
             ],
           D.indent 4 $ D.green "canopy bump",
-          D.reflow $
-            "If you want more insight on the API changes Canopy detects, you\
+          D.reflow "If you want more insight on the API changes Canopy detects, you\
             \ can run `canopy diff` at this point as well."
         ]
     PublishBadBump old new magnitude realNew realMagnitude ->
       Help.docReport
         "INVALID VERSION"
         (Just "canopy.json")
-        ( D.fillSep $
-            [ "Your",
+        ( D.fillSep [ "Your",
               "canopy.json",
               "says",
               "the",
@@ -621,11 +592,8 @@ publishToReport publish =
               "by:"
             ]
         )
-        [ D.indent 4 $
-            D.fromChars $
-              "canopy diff " ++ V.toChars old,
-          D.fillSep $
-            [ "This",
+        [ D.indent 4 . D.fromChars $ ("canopy diff " <> V.toChars old),
+          D.fillSep [ "This",
               "command",
               "says",
               "this",
@@ -653,15 +621,13 @@ publishToReport publish =
               "you",
               "want!"
             ],
-          D.reflow $
-            "Also, next time use `canopy bump` and I'll figure all this out for you!"
+          D.reflow "Also, next time use `canopy bump` and I'll figure all this out for you!"
         ]
     PublishNoSummary ->
       Help.docReport
         "NO SUMMARY"
         (Just "canopy.json")
-        ( D.fillSep $
-            [ "To",
+        ( D.fillSep [ "To",
               "publish",
               "a",
               "package,",
@@ -682,16 +648,14 @@ publishToReport publish =
               "project."
             ]
         )
-        [ D.reflow $
-            "The summary must be less than 80 characters. It should describe\
+        [ D.reflow "The summary must be less than 80 characters. It should describe\
             \ the concrete use of your package as clearly and as plainly as possible."
         ]
     PublishNoExposed ->
       Help.docReport
         "NO EXPOSED MODULES"
         (Just "canopy.json")
-        ( D.fillSep $
-            [ "To",
+        ( D.fillSep [ "To",
               "publish",
               "a",
               "package,",
@@ -709,17 +673,14 @@ publishToReport publish =
               "module."
             ]
         )
-        [ D.reflow $
-            "Which modules do you want users of the package to have access to? Add their\
+        [ D.reflow "Which modules do you want users of the package to have access to? Add their\
             \ names to the \"exposed-modules\" list."
         ]
     PublishNoReadme ->
-      toBadReadmeReport "NO README" $
-        "Every published package must have a helpful README.md\
+      toBadReadmeReport "NO README" "Every published package must have a helpful README.md\
         \ file, but I do not see one in your project."
     PublishShortReadme ->
-      toBadReadmeReport "SHORT README" $
-        "This README.md is too short. Having more details will help\
+      toBadReadmeReport "SHORT README" "This README.md is too short. Having more details will help\
         \ people assess your package quickly and fairly."
     PublishNoLicense ->
       Help.report
@@ -728,8 +689,7 @@ publishToReport publish =
         "By publishing a package you are inviting the Canopy community to build\
         \ upon your work. But without knowing your license, we have no idea if\
         \ that is legal!"
-        [ D.reflow $
-            "Once you pick an OSI approved license from <https://spdx.org/licenses/>,\
+        [ D.reflow "Once you pick an OSI approved license from <https://spdx.org/licenses/>,\
             \ you must share that choice in two places. First, the license\
             \ identifier must appear in your canopy.json file. Second, the full\
             \ license text must appear in the root of your project in a file\
@@ -742,8 +702,7 @@ publishToReport publish =
        in Help.docReport
             "NO TAG"
             Nothing
-            ( D.fillSep $
-                [ "Packages",
+            ( D.fillSep [ "Packages",
                   "must",
                   "be",
                   "tagged",
@@ -762,12 +721,8 @@ publishToReport publish =
                 [ "These tags make it possible to find this specific version on GitHub.",
                   "To tag the most recent commit and push it to GitHub, run this:"
                 ],
-              D.indent 4 $
-                D.dullyellow $
-                  D.vcat $
-                    map D.fromChars $
-                      [ "git tag -a " ++ vsn ++ " -m \"new release\"",
-                        "git push origin " ++ vsn
+              ((D.indent 4 . D.dullyellow) . D.vcat) . fmap D.fromChars $ [ "git tag -a " <> (vsn <> " -m \"new release\""),
+                        "git push origin " <> vsn
                       ],
               "The -m flag is for a helpful message. Try to make it more informative!"
             ]
@@ -779,13 +734,10 @@ publishToReport publish =
              in Help.report
                   "NO TAG ON GITHUB"
                   Nothing
-                  ("You have version " ++ vsn ++ " tagged locally, but not on GitHub.")
+                  ("You have version " <> (vsn <> " tagged locally, but not on GitHub."))
                   [ D.reflow
                       "Run the following command to make this tag available on GitHub:",
-                    D.indent 4 $
-                      D.dullyellow $
-                        D.fromChars $
-                          "git push origin " ++ vsn,
+                    (D.indent 4 . D.dullyellow) . D.fromChars $ ("git push origin " <> vsn),
                     D.reflow
                       "This will make it possible to find your code online based on the version number."
                   ]
@@ -798,29 +750,20 @@ publishToReport publish =
       Help.report
         "PROBLEM VERIFYING TAG"
         Nothing
-        ("I need to check that version " ++ V.toChars version ++ " is tagged on GitHub, so I fetched:")
-        [ D.indent 4 $ D.dullyellow $ D.fromChars url,
-          D.reflow $
-            "I got the data back, but it was not what I was expecting. The response\
-            \ body contains "
-              ++ show (BS.length body)
-              ++ " bytes. Here is the "
-              ++ if BS.length body <= 76 then "whole thing:" else "beginning:",
-          D.indent 4 $
-            D.dullyellow $
-              D.fromChars $
-                if BS.length body <= 76
+        ("I need to check that version " <> (V.toChars version <> " is tagged on GitHub, so I fetched:"))
+        [ D.indent 4 . D.dullyellow $ D.fromChars url,
+          D.reflow ("I got the data back, but it was not what I was expecting. The response\
+            \ body contains " <> (show (BS.length body) <> (" bytes. Here is the " <> (if BS.length body <= 76 then "whole thing:" else "beginning:")))),
+          (D.indent 4 . D.dullyellow) . D.fromChars $ (if BS.length body <= 76
                   then BS_UTF8.toString body
-                  else take 73 (BS_UTF8.toString body) ++ "...",
-          D.reflow $
-            "Does this error keep showing up? Maybe there is something weird with your\
+                  else take 73 (BS_UTF8.toString body) <> "..."),
+          D.reflow "Does this error keep showing up? Maybe there is something weird with your\
             \ internet connection. We have gotten reports that schools, businesses,\
             \ airports, etc. sometimes intercept requests and add things to the body\
             \ or change its contents entirely. Could that be the problem?"
         ]
     PublishCannotGetZip httpError ->
-      toHttpErrorReport "PROBLEM DOWNLOADING CODE" httpError $
-        "I need to check that folks can download and build the source code when they\
+      toHttpErrorReport "PROBLEM DOWNLOADING CODE" httpError "I need to check that folks can download and build the source code when they\
         \ install this package"
     PublishCannotDecodeZip url ->
       Help.report
@@ -828,42 +771,34 @@ publishToReport publish =
         Nothing
         "I need to check that folks can download and build the source code when they\
         \ install this package, so I downloaded the code from:"
-        [ D.indent 4 $ D.dullyellow $ D.fromChars url,
-          D.reflow $
-            "I was unable to unzip the archive though. Maybe there is something weird with\
+        [ D.indent 4 . D.dullyellow $ D.fromChars url,
+          D.reflow "I was unable to unzip the archive though. Maybe there is something weird with\
             \ your internet connection. We have gotten reports that schools, businesses,\
             \ airports, etc. sometimes intercept requests and add things to the body or\
             \ change its contents entirely. Could that be the problem?"
         ]
     PublishCannotGetDocs old new docsProblem ->
-      toDocsProblemReport docsProblem $
-        "I need the docs for " ++ V.toChars old ++ " to verify that "
-          ++ V.toChars new
-          ++ " really does come next"
+      toDocsProblemReport docsProblem ("I need the docs for " <> (V.toChars old <> (" to verify that " <> (V.toChars new <> " really does come next"))))
     PublishCannotRegister httpError ->
-      toHttpErrorReport "PROBLEM PUBLISHING PACKAGE" httpError $
-        "I need to send information about your package to the package website"
+      toHttpErrorReport "PROBLEM PUBLISHING PACKAGE" httpError "I need to send information about your package to the package website"
     PublishNoGit ->
       Help.report
         "NO GIT"
         Nothing
         "I searched your PATH environment variable for `git` and could not\
         \ find it. Is it available through your PATH?"
-        [ D.reflow $
-            "Who cares about this? Well, I currently use `git` to check if there\
+        [ D.reflow "Who cares about this? Well, I currently use `git` to check if there\
             \ are any local changes in your code. Local changes are a good sign\
             \ that some important improvements have gotten mistagged, so this\
             \ check can be extremely helpful for package authors!",
-          D.toSimpleNote $
-            "We plan to do this without the `git` binary in a future release."
+          D.toSimpleNote "We plan to do this without the `git` binary in a future release."
         ]
     PublishLocalChanges version ->
       let vsn = V.toChars version
        in Help.docReport
             "LOCAL CHANGES"
             Nothing
-            ( D.fillSep $
-                [ "The",
+            ( D.fillSep [ "The",
                   "code",
                   "tagged",
                   "as",
@@ -896,10 +831,7 @@ publishToReport publish =
                   "published!"
                 ]
             )
-            [ D.toSimpleNote $
-                "If you are sure everything is in order, you can run `git checkout "
-                  ++ vsn
-                  ++ "` and publish your code from there."
+            [ D.toSimpleNote ("If you are sure everything is in order, you can run `git checkout " <> (vsn <> "` and publish your code from there."))
             ]
     PublishZipBadDetails _ ->
       badZipReport
@@ -915,23 +847,19 @@ publishToReport publish =
         Nothing
         "You are trying to use the Zokka compiler to publish to the standard Canopy\
         \ repository (package.canopy-lang.org). This is prohibited!"
-        [ D.reflow $
-            "The standard Canopy package repository is used by other Canopy developers\
+        [ D.reflow "The standard Canopy package repository is used by other Canopy developers\
             \ who may not be using the Zokka compiler. Because the Zokka compiler\
             \ fixes some compiler crashes in the Canopy compiler, if you publish a\
             \ package that compiled crash-free with Zokka to the standard Canopy \
             \ repository, another Canopy developer could try to use that package and\
             \ would be faced with a mysterious compiler crash.",
-          D.reflow $
-            "You might also be using a custom package repository for some of your\
+          D.reflow "You might also be using a custom package repository for some of your\
             \ dependencies. An Canopy developer using the standard compiler would not\
             \ have access to that repository and so the package could also fail to\
             \ build for that reason.",
-          D.reflow $
-            "Zokka therefore prohibits publishing to the standard Canopy repository to\
+          D.reflow "Zokka therefore prohibits publishing to the standard Canopy repository to\
             \ preserve the integrity of the standard Canopy package repository for other Canopy developers.",
-          D.toSimpleNote $
-            "As long as none of your dependencies come from a custom package\
+          D.toSimpleNote "As long as none of your dependencies come from a custom package\
             \ repository you can still develop with Zokka and then use the standard\
             \ Canopy compiler at the last moment to publish!"
         ]
@@ -944,8 +872,7 @@ publishToReport publish =
             [ D.indent 4 $ D.green "zokka publish https://package.elm-lang.org",
               D.indent 4 $ D.green "zokka publish https://example.com/my-custom-repository"
             ],
-          D.reflow $
-            "This is different from the standard Canopy publish command because Zokka allows for\
+          D.reflow "This is different from the standard Canopy publish command because Zokka allows for\
             \ custom repositories, which means when publishing you have to specify where to publish!"
         ]
     PublishUsingRepositoryLocalNameThatDoesntExistInCustomRepositoryConfig localNameProvided availableLocalNames ->
@@ -953,11 +880,10 @@ publishToReport publish =
         "PUBLISH WITH UNRECOGNIZED LOCAL REPOSITORY NAME"
         Nothing
         -- FIXME: Add actual path of the custom-repository-config.json
-        ("You provided the local repository name " ++ Utf8.toChars localNameProvided ++ " which does not seem to exist in the custom-package-repository-config.json being used in CANOPY_HOME. The following local names were found:")
+        ("You provided the local repository name " <> (Utf8.toChars localNameProvided <> " which does not seem to exist in the custom-package-repository-config.json being used in CANOPY_HOME. The following local names were found:"))
         [ D.vcat
-            (map (\name -> D.indent 4 $ D.yellow (D.fromChars (Utf8.toChars name))) availableLocalNames),
-          D.reflow $
-            "This is different from the standard Canopy publish command because Zokka allows for\
+            (fmap (D.indent 4 . D.yellow . D.fromChars . Utf8.toChars) availableLocalNames),
+          D.reflow "This is different from the standard Canopy publish command because Zokka allows for\
             \ custom repositories, which means when publishing you have to specify where to publish!"
         ]
     PublishCustomRepositoryConfigDataError _ ->
@@ -974,18 +900,15 @@ toBadReadmeReport title summary =
     title
     (Just "README.md")
     summary
-    [ D.reflow $
-        "When people look at your README, they are wondering:",
+    [ D.reflow "When people look at your README, they are wondering:",
       D.vcat
         [ "  - What does this package even do?",
           "  - Will it help me solve MY problems?"
         ],
-      D.reflow $
-        "So I recommend starting your README with a small example of the\
+      D.reflow "So I recommend starting your README with a small example of the\
         \ most common usage scenario. Show people what they can expect if\
         \ they learn more!",
-      D.toSimpleNote $
-        "By publishing your package, you are inviting people to invest time in\
+      D.toSimpleNote "By publishing your package, you are inviting people to invest time in\
         \ understanding your work. Spending an hour on your README to communicate your\
         \ knowledge more clearly can save the community days or weeks of time in\
         \ aggregate, and saving time in aggregate is the whole point of publishing\
@@ -1001,8 +924,7 @@ badZipReport =
     "Before publishing packages, I download the code from GitHub and try to build it\
     \ from scratch. That way I can be more confident that it will work for other\
     \ people too. But I am not able to build it!"
-    [ D.reflow $
-        "I was just able to build your local copy though. Is there some way the version\
+    [ D.reflow "I was just able to build your local copy though. Is there some way the version\
         \ on GitHub could be different?"
     ]
 
@@ -1022,22 +944,14 @@ toDocsProblemReport problem context =
       Help.report
         "PROBLEM LOADING DOCS"
         Nothing
-        (context ++ ", so I fetched:")
-        [ D.indent 4 $ D.dullyellow $ D.fromChars url,
-          D.reflow $
-            "I got the data back, but it was not what I was expecting. The response\
-            \ body contains "
-              ++ show (BS.length body)
-              ++ " bytes. Here is the "
-              ++ if BS.length body <= 76 then "whole thing:" else "beginning:",
-          D.indent 4 $
-            D.dullyellow $
-              D.fromChars $
-                if BS.length body <= 76
+        (context <> ", so I fetched:")
+        [ D.indent 4 . D.dullyellow $ D.fromChars url,
+          D.reflow ("I got the data back, but it was not what I was expecting. The response\
+            \ body contains " <> (show (BS.length body) <> (" bytes. Here is the " <> (if BS.length body <= 76 then "whole thing:" else "beginning:")))),
+          (D.indent 4 . D.dullyellow) . D.fromChars $ (if BS.length body <= 76
                   then BS_UTF8.toString body
-                  else take 73 (BS_UTF8.toString body) ++ "...",
-          D.reflow $
-            "Does this error keep showing up? Maybe there is something weird with your\
+                  else take 73 (BS_UTF8.toString body) <> "..."),
+          D.reflow "Does this error keep showing up? Maybe there is something weird with your\
             \ internet connection. We have gotten reports that schools, businesses,\
             \ airports, etc. sometimes intercept requests and add things to the body\
             \ or change its contents entirely. Could that be the problem?"
@@ -1046,9 +960,8 @@ toDocsProblemReport problem context =
       Help.report
         "PROBLEM LOADING DOCS"
         Nothing
-        (context ++ ", but the local copy seems to be corrupted.")
-        [ D.reflow $
-            "I deleted the cached version, so the next run should download a fresh copy of\
+        (context <> ", but the local copy seems to be corrupted.")
+        [ D.reflow "I deleted the cached version, so the next run should download a fresh copy of\
             \ the docs. Hopefully that will get you unstuck, but it will not resolve the root\
             \ problem if, for example, a 3rd party editor plugin is modifing cached files\
             \ for some reason."
@@ -1084,17 +997,13 @@ installToReport exit =
     InstallBadOutline outline ->
       toOutlineReport outline
     InstallBadRegistry problem ->
-      toRegistryProblemReport "PROBLEM LOADING PACKAGE LIST" problem $
-        "I need the list of published packages to figure out how to install things"
+      toRegistryProblemReport "PROBLEM LOADING PACKAGE LIST" problem "I need the list of published packages to figure out how to install things"
     InstallNoArgs canopyHome ->
       Help.report
         "INSTALL WHAT?"
         Nothing
         "I am expecting commands like:"
-        [ D.green $
-            D.indent 4 $
-              D.vcat $
-                [ "canopy install canopy/http",
+        [ (D.green . D.indent 4) . D.vcat $ [ "canopy install canopy/http",
                   "canopy install canopy/json",
                   "canopy install canopy/random"
                 ],
@@ -1190,22 +1099,18 @@ installToReport exit =
       Help.report
         "CANNOT FIND COMPATIBLE VERSION"
         (Just "canopy.json")
-        ( "I cannot find a version of " ++ Pkg.toChars pkg
-            ++ " that is compatible\
-               \ with your existing dependencies."
+        ( "I cannot find a version of " <> (Pkg.toChars pkg <> " that is compatible\
+               \ with your existing dependencies.")
         )
-        [ D.reflow $
-            "I checked all the published versions. When that failed, I tried to find any\
+        [ D.reflow "I checked all the published versions. When that failed, I tried to find any\
             \ compatible combination of these packages, even if it meant changing all your\
             \ existing dependencies! That did not work either!",
-          D.reflow $
-            "This is most likely to happen when a package is not upgraded yet. Maybe a new\
+          D.reflow "This is most likely to happen when a package is not upgraded yet. Maybe a new\
             \ version of Canopy came out recently? Maybe a common package was changed recently?\
             \ Maybe a better package came along, so there was no need to upgrade this one?\
             \ Try asking around https://canopy-lang.org/community to learn what might be going on\
             \ with this package.",
-          D.toSimpleNote $
-            "Whatever the case, please be kind to the relevant package authors! Having\
+          D.toSimpleNote "Whatever the case, please be kind to the relevant package authors! Having\
             \ friendly interactions with users is great motivation, and conversely, getting\
             \ berated by strangers on the internet sucks your soul dry. Furthermore, package\
             \ authors are humans with families, friends, jobs, vacations, responsibilities,\
@@ -1216,31 +1121,25 @@ installToReport exit =
       Help.report
         "CANNOT FIND COMPATIBLE VERSION LOCALLY"
         (Just "canopy.json")
-        ( "I cannot find a version of " ++ Pkg.toChars pkg
-            ++ " that is compatible\
-               \ with your existing dependencies."
+        ( "I cannot find a version of " <> (Pkg.toChars pkg <> " that is compatible\
+               \ with your existing dependencies.")
         )
-        [ D.reflow $
-            "I was not able to connect to https://package.canopy-lang.org/ though, so I was only\
+        [ D.reflow "I was not able to connect to https://package.canopy-lang.org/ though, so I was only\
             \ able to look through packages that you have downloaded in the past.",
-          D.reflow $
-            "Try again later when you have internet!"
+          D.reflow "Try again later when you have internet!"
         ]
     InstallNoOnlinePkgSolution pkg ->
       Help.report
         "CANNOT FIND COMPATIBLE VERSION"
         (Just "canopy.json")
-        ( "I cannot find a version of " ++ Pkg.toChars pkg
-            ++ " that is compatible\
-               \ with your existing constraints."
+        ( "I cannot find a version of " <> (Pkg.toChars pkg <> " that is compatible\
+               \ with your existing constraints.")
         )
-        [ D.reflow $
-            "With applications, I try to broaden the constraints to see if anything works,\
+        [ D.reflow "With applications, I try to broaden the constraints to see if anything works,\
             \ but messing with package constraints is much more delicate business. E.g. making\
             \ your constraints stricter may make it harder for applications to find compatible\
             \ dependencies. So fixing something here may break it for a lot of other people!",
-          D.reflow $
-            "So I recommend making an application with the same dependencies as your package.\
+          D.reflow "So I recommend making an application with the same dependencies as your package.\
             \ See if there is a solution at all. From there it may be easier to figure out\
             \ how to proceed in a way that will disrupt your users as little as possible. And\
             \ the solution may be to help other package authors to get their packages updated,\
@@ -1250,15 +1149,12 @@ installToReport exit =
       Help.report
         "CANNOT FIND COMPATIBLE VERSION LOCALLY"
         (Just "canopy.json")
-        ( "I cannot find a version of " ++ Pkg.toChars pkg
-            ++ " that is compatible\
-               \ with your existing constraints."
+        ( "I cannot find a version of " <> (Pkg.toChars pkg <> " that is compatible\
+               \ with your existing constraints.")
         )
-        [ D.reflow $
-            "I was not able to connect to https://package.canopy-lang.org/ though, so I was only\
+        [ D.reflow "I was not able to connect to https://package.canopy-lang.org/ though, so I was only\
             \ able to look through packages that you have downloaded in the past.",
-          D.reflow $
-            "Try again later when you have internet!"
+          D.reflow "Try again later when you have internet!"
         ]
     InstallHadSolverTrouble solver ->
       toSolverReport solver
@@ -1269,11 +1165,10 @@ installToReport exit =
         ( D.fillSep
             ["I", "cannot", "find", "a", "package", "named", D.red (D.fromPackage pkg) <> "."]
         )
-        [ D.reflow $
-            "I looked through https://package.canopy-lang.org for packages with similar names\
+        [ D.reflow "I looked through https://package.canopy-lang.org for packages with similar names\
             \ and found these:",
-          D.indent 4 $ D.dullyellow $ D.vcat $ map D.fromPackage suggestions,
-          D.reflow $ "Maybe you want one of these instead?"
+          (D.indent 4 . D.dullyellow) . D.vcat $ fmap D.fromPackage suggestions,
+          D.reflow "Maybe you want one of these instead?"
         ]
     InstallUnknownPackageOffline pkg suggestions ->
       Help.docReport
@@ -1282,13 +1177,11 @@ installToReport exit =
         ( D.fillSep
             ["I", "cannot", "find", "a", "package", "named", D.red (D.fromPackage pkg) <> "."]
         )
-        [ D.reflow $
-            "I could not connect to https://package.canopy-lang.org though, so new packages may\
+        [ D.reflow "I could not connect to https://package.canopy-lang.org though, so new packages may\
             \ have been published since I last updated my local cache of package names.",
-          D.reflow $
-            "Looking through the locally cached names, the closest ones are:",
-          D.indent 4 $ D.dullyellow $ D.vcat $ map D.fromPackage suggestions,
-          D.reflow $ "Maybe you want one of these instead?"
+          D.reflow "Looking through the locally cached names, the closest ones are:",
+          (D.indent 4 . D.dullyellow) . D.vcat $ fmap D.fromPackage suggestions,
+          D.reflow "Maybe you want one of these instead?"
         ]
     InstallBadDetails details ->
       toDetailsReport details
@@ -1308,13 +1201,11 @@ toSolverReport problem =
       Help.report
         "PROBLEM SOLVING PACKAGE CONSTRAINTS"
         Nothing
-        ( "I need the canopy.json of " ++ Pkg.toChars pkg ++ " " ++ V.toChars vsn
-            ++ " to\
+        ( "I need the canopy.json of " <> (Pkg.toChars pkg <> (" " <> (V.toChars vsn <> " to\
                \ help me search for a set of compatible packages. I had it cached locally, but\
-               \ it looks like the file was corrupted!"
+               \ it looks like the file was corrupted!")))
         )
-        [ D.reflow $
-            "I deleted the cached version, so the next run should download a fresh copy.\
+        [ D.reflow "I deleted the cached version, so the next run should download a fresh copy.\
             \ Hopefully that will get you unstuck, but it will not resolve the root\
             \ problem if a 3rd party tool is modifing cached files for some reason."
         ]
@@ -1322,21 +1213,17 @@ toSolverReport problem =
       Help.report
         "PROBLEM SOLVING PACKAGE CONSTRAINTS"
         Nothing
-        ( "I need the canopy.json of " ++ Pkg.toChars pkg ++ " " ++ V.toChars vsn
-            ++ " to\
+        ( "I need the canopy.json of " <> (Pkg.toChars pkg <> (" " <> (V.toChars vsn <> " to\
                \ help me search for a set of compatible packages, but I ran into corrupted\
-               \ information from:"
+               \ information from:")))
         )
-        [ D.indent 4 $ D.dullyellow $ D.fromChars url,
-          D.reflow $
-            "Is something weird with your internet connection. We have gotten reports that\
+        [ D.indent 4 . D.dullyellow $ D.fromChars url,
+          D.reflow "Is something weird with your internet connection. We have gotten reports that\
             \ schools, businesses, airports, etc. sometimes intercept requests and add things\
             \ to the body or change its contents entirely. Could that be the problem?"
         ]
     SolverBadHttp pkg vsn httpError ->
-      toHttpErrorReport "PROBLEM SOLVING PACKAGE CONSTRAINTS" httpError $
-        "I need the canopy.json of " ++ Pkg.toChars pkg ++ " " ++ V.toChars vsn
-          ++ " to help me search for a set of compatible packages"
+      toHttpErrorReport "PROBLEM SOLVING PACKAGE CONSTRAINTS" httpError ("I need the canopy.json of " <> (Pkg.toChars pkg <> (" " <> (V.toChars vsn <> " to help me search for a set of compatible packages"))))
     SolverNonexistentPackage pkg vsn ->
       Help.report
         "PROBLEM SOLVING PACKAGE CONSTRAINTS"
@@ -1345,8 +1232,8 @@ toSolverReport problem =
           "One of your dependencies depends on this package, but it doesn't exist in any of your package repositories."
         )
         -- [ D.indent 4 $ D.dullyellow $ D.fromChars url
-        [ D.indent 4 $ D.dullyellow $ D.fromChars $ Pkg.toChars pkg ++ " " ++ V.toChars vsn,
-          D.reflow $
+        [ (D.indent 4 . D.dullyellow) . D.fromChars $ (Pkg.toChars pkg <> (" " <> V.toChars vsn)),
+          D.reflow
             -- FIXME: Get the full location of this file
             "Did you forget to add a package repository to custom-repositories-config.json?"
         ]
@@ -1389,20 +1276,16 @@ toOutlineReport problem =
             "MISSING SOURCE DIRECTORY"
             (Just "canopy.json")
             "I need a valid canopy.json file, but the \"source-directories\" field lists the following directory:"
-            [ D.indent 4 $ D.red $ D.fromChars dir,
-              D.reflow $
-                "I cannot find it though. Is it missing? Is there a typo?"
+            [ D.indent 4 . D.red $ D.fromChars dir,
+              D.reflow "I cannot find it though. Is it missing? Is there a typo?"
             ]
         _ : _ ->
           Help.report
             "MISSING SOURCE DIRECTORIES"
             (Just "canopy.json")
             "I need a valid canopy.json file, but the \"source-directories\" field lists the following directories:"
-            [ D.indent 4 $
-                D.vcat $
-                  map (D.red . D.fromChars) (dir : dirs),
-              D.reflow $
-                "I cannot find them though. Are they missing? Are there typos?"
+            [ D.indent 4 . D.vcat $ fmap (D.red . D.fromChars) (dir : dirs),
+              D.reflow "I cannot find them though. Are they missing? Are there typos?"
             ]
     OutlineHasDuplicateSrcDirs canonicalDir dir1 dir2 ->
       if dir1 == dir2
@@ -1411,25 +1294,18 @@ toOutlineReport problem =
             "REDUNDANT SOURCE DIRECTORIES"
             (Just "canopy.json")
             "I need a valid canopy.json file, but the \"source-directories\" field lists the same directory twice:"
-            [ D.indent 4 $
-                D.vcat $
-                  map (D.red . D.fromChars) [dir1, dir2],
-              D.reflow $
-                "Remove one of the entries!"
+            [ D.indent 4 . D.vcat $ fmap (D.red . D.fromChars) [dir1, dir2],
+              D.reflow "Remove one of the entries!"
             ]
         else
           Help.report
             "REDUNDANT SOURCE DIRECTORIES"
             (Just "canopy.json")
             "I need a valid canopy.json file, but the \"source-directories\" field has some redundant directories:"
-            [ D.indent 4 $
-                D.vcat $
-                  map (D.red . D.fromChars) [dir1, dir2],
-              D.reflow $
-                "These are two different ways of refering to the same directory:",
-              D.indent 4 $ D.dullyellow $ D.fromChars canonicalDir,
-              D.reflow $
-                "Remove one of the redundant entries from your \"source-directories\" field."
+            [ D.indent 4 . D.vcat $ fmap (D.red . D.fromChars) [dir1, dir2],
+              D.reflow "These are two different ways of refering to the same directory:",
+              D.indent 4 . D.dullyellow $ D.fromChars canonicalDir,
+              D.reflow "Remove one of the redundant entries from your \"source-directories\" field."
             ]
     OutlineNoPkgCore ->
       Help.report
@@ -1437,8 +1313,7 @@ toOutlineReport problem =
         (Just "canopy.json")
         "I need to see an \"canopy/core\" dependency your canopy.json file. The default imports\
         \ of `List` and `Maybe` do not work without it."
-        [ D.reflow $
-            "If you modified your canopy.json by hand, try to change it back! And if you are\
+        [ D.reflow "If you modified your canopy.json by hand, try to change it back! And if you are\
             \ having trouble getting back to a working canopy.json, it may be easier to find a\
             \ working package and start fresh with their canopy.json file."
         ]
@@ -1448,8 +1323,7 @@ toOutlineReport problem =
         (Just "canopy.json")
         "I need to see an \"canopy/core\" dependency your canopy.json file. The default imports\
         \ of `List` and `Maybe` do not work without it."
-        [ D.reflow $
-            "If you modified your canopy.json by hand, try to change it back! And if you are\
+        [ D.reflow "If you modified your canopy.json by hand, try to change it back! And if you are\
             \ having trouble getting back to a working canopy.json, it may be easier to delete it\
             \ and use `canopy init` to start fresh."
         ]
@@ -1459,8 +1333,7 @@ toOutlineReport problem =
         (Just "canopy.json")
         "I need to see an \"canopy/json\" dependency your canopy.json file. It helps me handle\
         \ flags and ports."
-        [ D.reflow $
-            "If you modified your canopy.json by hand, try to change it back! And if you are\
+        [ D.reflow "If you modified your canopy.json by hand, try to change it back! And if you are\
             \ having trouble getting back to a working canopy.json, it may be easier to delete it\
             \ and use `canopy init` to start fresh."
         ]
@@ -1471,7 +1344,7 @@ toOutlineReport problem =
         "Package overrides in zokka-package-overrides need to override versions of packages \
         \ that actually are used in your direct or indirect dependencies! You are attempting \
         \ to override "
-        [ D.indent 4 $ D.red $ D.fromChars $ Pkg.toChars packageName ++ " " ++ V.toChars packageVersion,
+        [ (D.indent 4 . D.red) . D.fromChars $ (Pkg.toChars packageName <> (" " <> V.toChars packageVersion)),
           D.reflow
             "But this combination of package and version is not used in your direct nor in your indirect \
             \ dependencies."
@@ -1490,8 +1363,7 @@ toOutlineProblemReport path source _ region problem =
           toSnippet
             "UNEXPECTED TYPE"
             Nothing
-            ( D.reflow $
-                "I got stuck while reading your canopy.json file. I cannot handle a \"type\" like this:",
+            ( D.reflow "I got stuck while reading your canopy.json file. I cannot handle a \"type\" like this:",
               D.fillSep
                 [ "Try",
                   "changing",
@@ -1508,8 +1380,7 @@ toOutlineProblemReport path source _ region problem =
           toSnippet
             "INVALID PACKAGE NAME"
             (toHighlight row col)
-            ( D.reflow $
-                "I got stuck while reading your canopy.json file. I ran into trouble with the package name:",
+            ( D.reflow "I got stuck while reading your canopy.json file. I ran into trouble with the package name:",
               D.stack
                 [ D.fillSep
                     [ "Package",
@@ -1528,10 +1399,7 @@ toOutlineProblemReport path source _ region problem =
                       "something",
                       "like:"
                     ],
-                  D.dullyellow $
-                    D.indent 4 $
-                      D.vcat $
-                        [ "\"mdgriffith/canopy-ui\"",
+                  (D.dullyellow . D.indent 4) . D.vcat $ [ "\"mdgriffith/canopy-ui\"",
                           "\"w0rm/canopy-physics\"",
                           "\"Microsoft/canopy-json-tree-view\"",
                           "\"FordLabs/canopy-star-rating\"",
@@ -1540,9 +1408,7 @@ toOutlineProblemReport path source _ region problem =
                   D.reflow
                     "The author name should match your GitHub name exactly, and the project name\
                     \ needs to follow these rules:",
-                  D.indent 4 $
-                    D.vcat $
-                      [ "+--------------------------------------+-----------+-----------+",
+                  D.indent 4 . D.vcat $ [ "+--------------------------------------+-----------+-----------+",
                         "| RULE                                 | BAD       | GOOD      |",
                         "+--------------------------------------+-----------+-----------+",
                         "| only lower case, digits, and hyphens | canopy-HTTP  | canopy-http  |",
@@ -1553,8 +1419,7 @@ toOutlineProblemReport path source _ region problem =
                         "| no starting or ending hyphen         | -canopy-tar- | canopy-tar   |",
                         "+--------------------------------------+-----------+-----------+"
                       ],
-                  D.toSimpleNote $
-                    "These rules only apply to the project name, so you should never need\
+                  D.toSimpleNote "These rules only apply to the project name, so you should never need\
                     \ to change your GitHub name!"
                 ]
             )
@@ -1562,8 +1427,7 @@ toOutlineProblemReport path source _ region problem =
           toSnippet
             "PROBLEM WITH VERSION"
             (toHighlight row col)
-            ( D.reflow $
-                "I got stuck while reading your canopy.json file. I was expecting a version number here:",
+            ( D.reflow "I got stuck while reading your canopy.json file. I was expecting a version number here:",
               D.fillSep
                 [ "I",
                   "need",
@@ -1586,8 +1450,7 @@ toOutlineProblemReport path source _ region problem =
               toSnippet
                 "PROBLEM WITH CONSTRAINT"
                 (toHighlight row col)
-                ( D.reflow $
-                    "I got stuck while reading your canopy.json file. I do not understand this version constraint:",
+                ( D.reflow "I got stuck while reading your canopy.json file. I do not understand this version constraint:",
                   D.stack
                     [ D.fillSep
                         [ "I",
@@ -1604,8 +1467,7 @@ toOutlineProblemReport path source _ region problem =
                           "upper",
                           "bounds."
                         ],
-                      D.toSimpleNote $
-                        "The spaces in there are required! Taking them out will confuse me. Adding\
+                      D.toSimpleNote "The spaces in there are required! Taking them out will confuse me. Adding\
                         \ extra spaces confuses me too. I recommend starting with a valid example\
                         \ and just changing the version numbers."
                     ]
@@ -1616,8 +1478,7 @@ toOutlineProblemReport path source _ region problem =
                   toSnippet
                     "PROBLEM WITH CONSTRAINT"
                     Nothing
-                    ( D.reflow $
-                        "I got stuck while reading your canopy.json file. I ran into an invalid version constraint:",
+                    ( D.reflow "I got stuck while reading your canopy.json file. I ran into an invalid version constraint:",
                       D.fillSep
                         [ "Canopy",
                           "checks",
@@ -1663,8 +1524,7 @@ toOutlineProblemReport path source _ region problem =
                   toSnippet
                     "PROBLEM WITH CONSTRAINT"
                     Nothing
-                    ( D.reflow $
-                        "I got stuck while reading your canopy.json file. I ran into an invalid version constraint:",
+                    ( D.reflow "I got stuck while reading your canopy.json file. I ran into an invalid version constraint:",
                       D.fillSep
                         [ "Maybe",
                           "you",
@@ -1706,8 +1566,7 @@ toOutlineProblemReport path source _ region problem =
           toSnippet
             "PROBLEM WITH MODULE NAME"
             (toHighlight row col)
-            ( D.reflow $
-                "I got stuck while reading your canopy.json file. I was expecting a module name here:",
+            ( D.reflow "I got stuck while reading your canopy.json file. I was expecting a module name here:",
               D.fillSep
                 [ "I",
                   "need",
@@ -1737,8 +1596,7 @@ toOutlineProblemReport path source _ region problem =
           toSnippet
             "HEADER TOO LONG"
             Nothing
-            ( D.reflow $
-                "I got stuck while reading your canopy.json file. This section header is too long:",
+            ( D.reflow "I got stuck while reading your canopy.json file. This section header is too long:",
               D.stack
                 [ D.fillSep
                     [ "I",
@@ -1768,8 +1626,7 @@ toOutlineProblemReport path source _ region problem =
           toSnippet
             "PROBLEM WITH DEPENDENCY NAME"
             (toHighlight row col)
-            ( D.reflow $
-                "I got stuck while reading your canopy.json file. There is something wrong with this dependency name:",
+            ( D.reflow "I got stuck while reading your canopy.json file. There is something wrong with this dependency name:",
               D.stack
                 [ D.fillSep
                     [ "Package",
@@ -1793,8 +1650,7 @@ toOutlineProblemReport path source _ region problem =
                       "and",
                       D.dullyellow "\"Microsoft/canopy-json-tree-view\"" <> "."
                     ],
-                  D.fillSep $
-                    [ "I",
+                  D.fillSep [ "I",
                       "generally",
                       "recommend",
                       "finding",
@@ -1820,8 +1676,7 @@ toOutlineProblemReport path source _ region problem =
           toSnippet
             "UNKNOWN LICENSE"
             Nothing
-            ( D.reflow $
-                "I got stuck while reading your canopy.json file. I do not know about this type of license:",
+            ( D.reflow "I got stuck while reading your canopy.json file. I do not know about this type of license:",
               D.stack
                 [ D.fillSep
                     [ "Canopy",
@@ -1849,17 +1704,15 @@ toOutlineProblemReport path source _ region problem =
                       "you",
                       "wrote:"
                     ],
-                  D.indent 4 $ D.dullyellow $ D.vcat $ map (D.fromChars . Json.toChars) suggestions,
-                  D.reflow $
-                    "Check out https://spdx.org/licenses/ for the full list of options."
+                  (D.indent 4 . D.dullyellow) . D.vcat $ fmap (D.fromChars . Json.toChars) suggestions,
+                  D.reflow "Check out https://spdx.org/licenses/ for the full list of options."
                 ]
             )
         OP_BadSummaryTooLong ->
           toSnippet
             "SUMMARY TOO LONG"
             Nothing
-            ( D.reflow $
-                "I got stuck while reading your canopy.json file. Your \"summary\" is too long:",
+            ( D.reflow "I got stuck while reading your canopy.json file. Your \"summary\" is too long:",
               D.stack
                 [ D.fillSep
                     [ "I",
@@ -1889,8 +1742,7 @@ toOutlineProblemReport path source _ region problem =
           toSnippet
             "NO SOURCE DIRECTORIES"
             Nothing
-            ( D.reflow $
-                "I got stuck while reading your canopy.json file. You do not have any \"source-directories\" listed here:",
+            ( D.reflow "I got stuck while reading your canopy.json file. You do not have any \"source-directories\" listed here:",
               D.fillSep
                 [ "I",
                   "need",
@@ -1958,21 +1810,18 @@ toDetailsReport details =
               "with",
               D.green "canopy install" <> "."
             ],
-          D.reflow $
-            "Please ask for help on the community forums if you try those paths and are still\
+          D.reflow "Please ask for help on the community forums if you try those paths and are still\
             \ having problems!"
         ]
     DetailsNoOfflineSolution registryProblem ->
       Help.report
         "TROUBLE VERIFYING DEPENDENCIES"
         (Just "canopy.json")
-        ( "I got the error " ++ (show registryProblem)
-            ++ " which meant that I assumed this computer is offline\
+        ( "I got the error " <> (show registryProblem <> " which meant that I assumed this computer is offline\
                \ , and I was unable to verify your dependencies with the information I\
-               \ have cached locally."
+               \ have cached locally.")
         )
-        [ D.reflow $
-            "Are you able to connect to the internet? These dependencies may work once you\
+        [ D.reflow "Are you able to connect to the internet? These dependencies may work once you\
             \ get access to the registry!",
           D.toFancyNote
             [ "If",
@@ -2006,7 +1855,7 @@ toDetailsReport details =
         "CANOPY VERSION MISMATCH"
         (Just "canopy.json")
         "Your canopy.json says this package needs a version of Canopy in this range:"
-        [ D.indent 4 $ D.dullyellow $ D.fromChars $ C.toChars constraint,
+        [ (D.indent 4 . D.dullyellow) . D.fromChars $ C.toChars constraint,
           D.fillSep
             [ "But",
               "you",
@@ -2064,15 +1913,13 @@ toDetailsReport details =
               "with",
               D.green "canopy install" <> "."
             ],
-          D.reflow $
-            "Please ask for help on the community forums if you try those paths and are still\
+          D.reflow "Please ask for help on the community forums if you try those paths and are still\
             \ having problems!"
         ]
     DetailsBadOutline outline ->
       toOutlineReport outline
     DetailsCannotGetRegistry problem ->
-      toRegistryProblemReport "PROBLEM LOADING PACKAGE LIST" problem $
-        "I need the list of published packages to verify your dependencies"
+      toRegistryProblemReport "PROBLEM LOADING PACKAGE LIST" problem "I need the list of published packages to verify your dependencies"
     DetailsBadDeps cacheDir deps ->
       case List.sortOn toBadDepRank deps of
         [] ->
@@ -2080,13 +1927,10 @@ toDetailsReport details =
             "PROBLEM BUILDING DEPENDENCIES"
             Nothing
             "I am not sure what is going wrong though."
-            [ D.reflow $
-                "I would try deleting the " ++ cacheDir
-                  ++ " and canopy-stuff/ directories, then\
+            [ D.reflow ("I would try deleting the " <> (cacheDir <> " and canopy-stuff/ directories, then\
                      \ trying to build again. That will work if some cached files got corrupted\
-                     \ somehow.",
-              D.reflow $
-                "If that does not work, go to https://canopy-lang.org/community and ask for\
+                     \ somehow.")),
+              D.reflow "If that does not work, go to https://canopy-lang.org/community and ask for\
                 \ help. This is a weird case!"
             ]
         d : _ ->
@@ -2098,21 +1942,15 @@ toDetailsReport details =
                 "PROBLEM BUILDING DEPENDENCIES"
                 Nothing
                 "I ran into a compilation error when trying to build the following package:"
-                [ D.indent 4 $ D.red $ D.fromChars $ Pkg.toChars pkg ++ " " ++ V.toChars vsn,
-                  D.reflow $
-                    "This probably means it has package constraints that are too wide. It may be\
+                [ (D.indent 4 . D.red) . D.fromChars $ (Pkg.toChars pkg <> (" " <> V.toChars vsn)),
+                  D.reflow "This probably means it has package constraints that are too wide. It may be\
                     \ possible to tweak your canopy.json to avoid the root problem as a stopgap. Head\
                     \ over to https://canopy-lang.org/community to get help figuring out how to take\
                     \ this path!",
-                  D.toSimpleNote $
-                    "To help with the root problem, please report this to the package author along\
+                  D.toSimpleNote "To help with the root problem, please report this to the package author along\
                     \ with the following information:",
-                  D.indent 4 $
-                    D.vcat $
-                      map (\(p, v) -> D.fromChars $ Pkg.toChars p ++ " " ++ V.toChars v) $
-                        Map.toList fingerprint,
-                  D.reflow $
-                    "If you want to help out even more, try building the package locally. That should\
+                  (D.indent 4 . D.vcat) . fmap (\(p, v) -> D.fromChars (Pkg.toChars p <> (" " <> V.toChars v))) $ Map.toList fingerprint,
+                  D.reflow "If you want to help out even more, try building the package locally. That should\
                     \ give you much more specific information about why this package is failing to\
                     \ build, which will in turn make it easier for the package author to fix it!"
                 ]
@@ -2120,8 +1958,8 @@ toDetailsReport details =
 toBadDepRank :: DetailsBadDep -> Int -- lower is better
 toBadDepRank badDep =
   case badDep of
-    BD_BadDownload _ _ _ -> 0
-    BD_BadBuild _ _ _ -> 1
+    BD_BadDownload {} -> 0
+    BD_BadBuild {} -> 1
 
 -- PACKAGE PROBLEM
 
@@ -2138,35 +1976,31 @@ data PackageProblem
 toPackageProblemReport :: Pkg.Name -> V.Version -> PackageProblem -> Help.Report
 toPackageProblemReport pkg vsn problem =
   let thePackage =
-        Pkg.toChars pkg ++ " " ++ V.toChars vsn
+        (Pkg.toChars pkg <> (" " <> V.toChars vsn))
    in case problem of
         PP_BadEndpointRequest httpError ->
-          toHttpErrorReport "PROBLEM DOWNLOADING PACKAGE" httpError $
-            "I need to find the latest download link for " ++ thePackage
+          toHttpErrorReport "PROBLEM DOWNLOADING PACKAGE" httpError ("I need to find the latest download link for " <> thePackage)
         PP_BadEndpointContent url ->
           Help.report
             "PROBLEM DOWNLOADING PACKAGE"
             Nothing
-            ( "I need to find the latest download link for " ++ thePackage ++ ", but I ran into corrupted information from:"
+            ( "I need to find the latest download link for " <> (thePackage <> ", but I ran into corrupted information from:")
             )
-            [ D.indent 4 $ D.dullyellow $ D.fromChars url,
-              D.reflow $
-                "Is something weird with your internet connection. We have gotten reports that\
+            [ D.indent 4 . D.dullyellow $ D.fromChars url,
+              D.reflow "Is something weird with your internet connection. We have gotten reports that\
                 \ schools, businesses, airports, etc. sometimes intercept requests and add things\
                 \ to the body or change its contents entirely. Could that be the problem?"
             ]
         PP_BadArchiveRequest httpError ->
-          toHttpErrorReport "PROBLEM DOWNLOADING PACKAGE" httpError $
-            "I was trying to download the source code for " ++ thePackage
+          toHttpErrorReport "PROBLEM DOWNLOADING PACKAGE" httpError ("I was trying to download the source code for " <> thePackage)
         PP_BadArchiveContent url ->
           Help.report
             "PROBLEM DOWNLOADING PACKAGE"
             Nothing
-            ( "I downloaded the source code for " ++ thePackage ++ " from:"
+            ( "I downloaded the source code for " <> (thePackage <> " from:")
             )
-            [ D.indent 4 $ D.dullyellow $ D.fromChars url,
-              D.reflow $
-                "But I was unable to unzip the data. Maybe there is something weird with\
+            [ D.indent 4 . D.dullyellow $ D.fromChars url,
+              D.reflow "But I was unable to unzip the data. Maybe there is something weird with\
                 \ your internet connection. We have gotten reports that schools, businesses,\
                 \ airports, etc. sometimes intercept requests and add things to the body or\
                 \ change its contents entirely. Could that be the problem?"
@@ -2175,22 +2009,19 @@ toPackageProblemReport pkg vsn problem =
           Help.report
             "CORRUPT PACKAGE DATA"
             Nothing
-            ( "I downloaded the source code for " ++ thePackage ++ " from:"
+            ( "I downloaded the source code for " <> (thePackage <> " from:")
             )
-            [ D.indent 4 $ D.dullyellow $ D.fromChars url,
+            [ D.indent 4 . D.dullyellow $ D.fromChars url,
               D.reflow "But it looks like the hash of the archive has changed since publication:",
-              D.vcat $
-                map D.fromChars $
-                  [ "  Expected: " ++ expectedHash,
-                    "    Actual: " ++ actualHash
+              D.vcat . fmap D.fromChars $ [ "  Expected: " <> expectedHash,
+                    "    Actual: " <> actualHash
                   ],
-              D.reflow $
-                "This usually means that the package author moved the version\
+              D.reflow "This usually means that the package author moved the version\
                 \ tag, so report it to them and see if that is the issue. Folks\
                 \ on Canopy slack can probably help as well."
             ]
         -- FIXME
-        PP_PackageNotInRegistry _ _ _ ->
+        PP_PackageNotInRegistry {} ->
           Help.report
             "PACKAGE NOT FOUND IN REGISTRY"
             Nothing
@@ -2215,22 +2046,14 @@ toRegistryProblemReport title problem context =
       Help.report
         title
         Nothing
-        (context ++ ", so I fetched:")
-        [ D.indent 4 $ D.dullyellow $ D.fromChars url,
-          D.reflow $
-            "I got the data back, but it was not what I was expecting. The response\
-            \ body contains "
-              ++ show (BS.length body)
-              ++ " bytes. Here is the "
-              ++ if BS.length body <= 76 then "whole thing:" else "beginning:",
-          D.indent 4 $
-            D.dullyellow $
-              D.fromChars $
-                if BS.length body <= 76
+        (context <> ", so I fetched:")
+        [ D.indent 4 . D.dullyellow $ D.fromChars url,
+          D.reflow ("I got the data back, but it was not what I was expecting. The response\
+            \ body contains " <> (show (BS.length body) <> (" bytes. Here is the " <> (if BS.length body <= 76 then "whole thing:" else "beginning:")))),
+          (D.indent 4 . D.dullyellow) . D.fromChars $ (if BS.length body <= 76
                   then BS_UTF8.toString body
-                  else take 73 (BS_UTF8.toString body) ++ "...",
-          D.reflow $
-            "Does this error keep showing up? Maybe there is something weird with your\
+                  else take 73 (BS_UTF8.toString body) <> "..."),
+          D.reflow "Does this error keep showing up? Maybe there is something weird with your\
             \ internet connection. We have gotten reports that schools, businesses,\
             \ airports, etc. sometimes intercept requests and add things to the body\
             \ or change its contents entirely. Could that be the problem?"
@@ -2250,12 +2073,11 @@ toHttpErrorReport title err context =
    in case err of
         Http.BadUrl url reason ->
           toHttpReport
-            (context ++ ", so I wanted to fetch:")
+            (context <> ", so I wanted to fetch:")
             url
-            [ D.reflow $ "But my HTTP library is saying this is not a valid URL. It is saying:",
+            [ D.reflow "But my HTTP library is saying this is not a valid URL. It is saying:",
               D.indent 4 $ D.fromChars reason,
-              D.reflow $
-                "This may indicate that there is some problem in the compiler, so please open an\
+              D.reflow "This may indicate that there is some problem in the compiler, so please open an\
                 \ issue at https://github.com/canopy/compiler/issues listing your operating system, Canopy\
                 \ version, the command you ran, the terminal output, and any additional information\
                 \ that might help others reproduce the error."
@@ -2265,14 +2087,11 @@ toHttpErrorReport title err context =
             HTTP.StatusCodeException response body ->
               let (HTTP.Status code message) = HTTP.responseStatus response
                in toHttpReport
-                    (context ++ ", so I tried to fetch:")
+                    (context <> ", so I tried to fetch:")
                     url
-                    [ D.fillSep $
-                        ["But", "it", "came", "back", "as", D.red (D.fromInt code)]
-                          ++ map D.fromChars (words (BS_UTF8.toString message)),
-                      D.indent 4 $ D.reflow $ BS_UTF8.toString body,
-                      D.reflow $
-                        "This may mean some online endpoint changed in an unexpected way, so if does not\
+                    [ D.fillSep (["But", "it", "came", "back", "as", D.red (D.fromInt code)] <> fmap D.fromChars (words (BS_UTF8.toString message))),
+                      D.indent 4 . D.reflow $ BS_UTF8.toString body,
+                      D.reflow "This may mean some online endpoint changed in an unexpected way, so if does not\
                         \ seem like something on your side is causing this (e.g. firewall) please report\
                         \ this to https://github.com/canopy/compiler/issues with your operating system, Canopy\
                         \ version, the command you ran, the terminal output, and any additional information\
@@ -2280,35 +2099,32 @@ toHttpErrorReport title err context =
                     ]
             HTTP.TooManyRedirects responses ->
               toHttpReport
-                (context ++ ", so I tried to fetch:")
+                (context <> ", so I tried to fetch:")
                 url
-                [ D.reflow $ "But I gave up after following these " ++ show (length responses) ++ " redirects:",
-                  D.indent 4 $ D.vcat $ map toRedirectDoc responses,
-                  D.reflow $
-                    "Is it possible that your internet connection intercepts certain requests? That\
+                [ D.reflow ("But I gave up after following these " <> (show (length responses) <> " redirects:")),
+                  D.indent 4 . D.vcat $ fmap toRedirectDoc responses,
+                  D.reflow "Is it possible that your internet connection intercepts certain requests? That\
                     \ sometimes causes problems for folks in schools, businesses, airports, hotels,\
                     \ and certain countries. Try asking for help locally or in a community forum!"
                 ]
             otherException ->
               toHttpReport
-                (context ++ ", so I tried to fetch:")
+                (context <> ", so I tried to fetch:")
                 url
-                [ D.reflow $ "But my HTTP library is giving me the following error message:",
+                [ D.reflow "But my HTTP library is giving me the following error message:",
                   D.indent 4 $ D.fromChars (show otherException),
-                  D.reflow $
-                    "Are you somewhere with a slow internet connection? Or no internet?\
+                  D.reflow "Are you somewhere with a slow internet connection? Or no internet?\
                     \ Does the link I am trying to fetch work in your browser? Maybe the\
                     \ site is down? Does your internet connection have a firewall that\
                     \ blocks certain domains? It is usually something like that!"
                 ]
         Http.BadMystery url someException ->
           toHttpReport
-            (context ++ ", so I tried to fetch:")
+            (context <> ", so I tried to fetch:")
             url
-            [ D.reflow $ "But I ran into something weird! I was able to extract this error message:",
+            [ D.reflow "But I ran into something weird! I was able to extract this error message:",
               D.indent 4 $ D.fromChars (show someException),
-              D.reflow $
-                "Is it possible that your internet connection intercepts certain requests? That\
+              D.reflow "Is it possible that your internet connection intercepts certain requests? That\
                 \ sometimes causes problems for folks in schools, businesses, airports, hotels,\
                 \ and certain countries. Try asking for help locally or in a community forum!"
             ]
@@ -2342,9 +2158,8 @@ makeToReport make =
         "NO canopy.json FILE"
         Nothing
         "It looks like you are starting a new Canopy project. Very exciting! Try running:"
-        [ D.indent 4 $ D.green $ "canopy init",
-          D.reflow $
-            "It will help you get set up. It is really simple!"
+        [ D.indent 4 . D.green $ "canopy init",
+          D.reflow "It will help you get set up. It is really simple!"
         ]
     MakeCannotOptimizeAndDebug ->
       Help.docReport
@@ -2380,8 +2195,7 @@ makeToReport make =
             [ D.indent 4 $ D.green "canopy make src/Main.can",
               D.indent 4 $ D.green "canopy make src/This.can src/That.can"
             ],
-          D.reflow $
-            "I recommend reading through https://guide.canopy-lang.org for guidance on what to\
+          D.reflow "I recommend reading through https://guide.canopy-lang.org for guidance on what to\
             \ actually put in those files!"
         ]
     MakePkgNeedsExposing ->
@@ -2393,8 +2207,7 @@ makeToReport make =
             [ D.indent 4 $ D.green "canopy make src/Main.can",
               D.indent 4 $ D.green "canopy make src/This.can src/That.can"
             ],
-          D.reflow $
-            "You can also entries to the \"exposed-modules\" list in your canopy.json file, and\
+          D.reflow "You can also entries to the \"exposed-modules\" list in your canopy.json file, and\
             \ I will try to compile the relevant files."
         ]
     MakeMultipleFilesIntoHtml ->
@@ -2490,20 +2303,17 @@ makeToReport make =
         ( "When producing an HTML file, I require that the given file has a `main` value.\
           \ That way I have something to show on screen!"
         )
-        [ D.reflow $
-            "Try adding a `main` value to your file? Or if you just want to verify that this\
+        [ D.reflow "Try adding a `main` value to your file? Or if you just want to verify that this\
             \ module compiles, switch to --output=/dev/null to skip the code gen phase\
             \ altogether.",
-          D.toSimpleNote $
-            "Adding a `main` value can be as brief as adding something like this:",
+          D.toSimpleNote "Adding a `main` value can be as brief as adding something like this:",
           D.vcat
             [ D.fillSep [D.cyan "import", "Html"],
               "",
               D.fillSep [D.green "main", "="],
               D.indent 2 $ D.fillSep [D.cyan "Html" <> ".text", D.dullyellow "\"Hello!\""]
             ],
-          D.reflow $
-            "From there I can create an HTML file that says \"Hello!\" on screen. I recommend\
+          D.reflow "From there I can create an HTML file that says \"Hello!\" on screen. I recommend\
             \ looking through https://guide.canopy-lang.org for more guidance on how to fill in\
             \ the `main` value."
         ]
@@ -2514,25 +2324,20 @@ makeToReport make =
             "NO MAIN"
             Nothing
             ( "When producing a JS file, I require that the given file has a `main` value. That\
-              \ way Canopy."
-                ++ ModuleName.toChars m
-                ++ ".init() is definitely defined in the\
-                   \ resulting file!"
+              \ way Canopy." <> (ModuleName.toChars m <> ".init() is definitely defined in the\
+                   \ resulting file!")
             )
-            [ D.reflow $
-                "Try adding a `main` value to your file? Or if you just want to verify that this\
+            [ D.reflow "Try adding a `main` value to your file? Or if you just want to verify that this\
                 \ module compiles, switch to --output=/dev/null to skip the code gen phase\
                 \ altogether.",
-              D.toSimpleNote $
-                "Adding a `main` value can be as brief as adding something like this:",
+              D.toSimpleNote "Adding a `main` value can be as brief as adding something like this:",
               D.vcat
                 [ D.fillSep [D.cyan "import", "Html"],
                   "",
                   D.fillSep [D.green "main", "="],
                   D.indent 2 $ D.fillSep [D.cyan "Html" <> ".text", D.dullyellow "\"Hello!\""]
                 ],
-              D.reflow $
-                "Or use https://package.canopy-lang.org/packages/canopy/core/latest/Platform#worker to\
+              D.reflow "Or use https://package.canopy-lang.org/packages/canopy/core/latest/Platform#worker to\
                 \ make a `main` with no user interface."
             ]
         _ : _ ->
@@ -2540,26 +2345,21 @@ makeToReport make =
             "NO MAIN"
             Nothing
             ( "When producing a JS file, I require that given files all have `main` values.\
-              \ That way functions like Canopy."
-                ++ ModuleName.toChars m
-                ++ ".init() are\
-                   \ definitely defined in the resulting file. I am missing `main` values in:"
+              \ That way functions like Canopy." <> (ModuleName.toChars m <> ".init() are\
+                   \ definitely defined in the resulting file. I am missing `main` values in:")
             )
-            [ D.indent 4 $ D.red $ D.vcat $ map D.fromName (m : ms),
-              D.reflow $
-                "Try adding a `main` value to them? Or if you just want to verify that these\
+            [ (D.indent 4 . D.red) . D.vcat $ fmap D.fromName (m : ms),
+              D.reflow "Try adding a `main` value to them? Or if you just want to verify that these\
                 \ modules compile, switch to --output=/dev/null to skip the code gen phase\
                 \ altogether.",
-              D.toSimpleNote $
-                "Adding a `main` value can be as brief as adding something like this:",
+              D.toSimpleNote "Adding a `main` value can be as brief as adding something like this:",
               D.vcat
                 [ D.fillSep [D.cyan "import", "Html"],
                   "",
                   D.fillSep [D.green "main", "="],
                   D.indent 2 $ D.fillSep [D.cyan "Html" <> ".text", D.dullyellow "\"Hello!\""]
                 ],
-              D.reflow $
-                "Or use https://package.canopy-lang.org/packages/canopy/core/latest/Platform#worker to\
+              D.reflow "Or use https://package.canopy-lang.org/packages/canopy/core/latest/Platform#worker to\
                 \ make a `main` with no user interface."
             ]
     MakeCannotBuild buildProblem ->
@@ -2600,10 +2400,9 @@ toProjectProblemReport projectProblem =
         "FILE NOT FOUND"
         Nothing
         "I cannot find this file:"
-        [ D.indent 4 $ D.red $ D.fromChars path,
-          D.reflow $ "Is there a typo?",
-          D.toSimpleNote $
-            "If you are just getting started, try working through the examples in the\
+        [ D.indent 4 . D.red $ D.fromChars path,
+          D.reflow "Is there a typo?",
+          D.toSimpleNote "If you are just getting started, try working through the examples in the\
             \ official guide https://guide.canopy-lang.org to get an idea of the kinds of things\
             \ that typically go in a src/Main.canopy file."
         ]
@@ -2612,30 +2411,28 @@ toProjectProblemReport projectProblem =
         "UNEXPECTED FILE EXTENSION"
         Nothing
         "I can only compile Canopy files (default .can; .canopy/.elm also supported) but you want me to compile:"
-        [ D.indent 4 $ D.red $ D.fromChars path,
-          D.reflow $ "Is there a typo? Can the file extension be changed?"
+        [ D.indent 4 . D.red $ D.fromChars path,
+          D.reflow "Is there a typo? Can the file extension be changed?"
         ]
     BP_WithAmbiguousSrcDir path srcDir1 srcDir2 ->
       Help.report
         "CONFUSING FILE"
         Nothing
         "I am getting confused when I try to compile this file:"
-        [ D.indent 4 $ D.red $ D.fromChars path,
-          D.reflow $
-            "I always check if files appear in any of the \"source-directories\" listed in\
+        [ D.indent 4 . D.red $ D.fromChars path,
+          D.reflow "I always check if files appear in any of the \"source-directories\" listed in\
             \ your canopy.json to see if there might be some cached information about them. That\
             \ can help me compile faster! But in this case, it looks like this file may be in\
             \ either of these directories:",
-          D.indent 4 $ D.red $ D.vcat $ map D.fromChars [srcDir1, srcDir2],
-          D.reflow $
-            "Try to make it so no source directory contains another source directory!"
+          (D.indent 4 . D.red) . D.vcat $ fmap D.fromChars [srcDir1, srcDir2],
+          D.reflow "Try to make it so no source directory contains another source directory!"
         ]
     BP_MainPathDuplicate path1 path2 ->
       Help.report
         "CONFUSING FILES"
         Nothing
         "You are telling me to compile these two files:"
-        [ D.indent 4 $ D.red $ D.vcat $ map D.fromChars [path1, path2],
+        [ (D.indent 4 . D.red) . D.vcat $ fmap D.fromChars [path1, path2],
           D.reflow $
             if path1 == path2
               then
@@ -2653,31 +2450,24 @@ toProjectProblemReport projectProblem =
         "MODULE NAME CLASH"
         Nothing
         "These two files are causing a module name clash:"
-        [ D.indent 4 $ D.red $ D.vcat $ map D.fromChars [outsidePath, otherPath],
-          D.reflow $
-            "They both say `module " ++ ModuleName.toChars name
-              ++ " exposing (..)` up\
-                 \ at the top, but they cannot have the same name!",
-          D.reflow $
-            "Try changing to a different module name in one of them!"
+        [ (D.indent 4 . D.red) . D.vcat $ fmap D.fromChars [outsidePath, otherPath],
+          D.reflow ("They both say `module " <> (ModuleName.toChars name <> " exposing (..)` up\
+                 \ at the top, but they cannot have the same name!")),
+          D.reflow "Try changing to a different module name in one of them!"
         ]
     BP_RootNameInvalid givenPath srcDir _ ->
       Help.report
         "UNEXPECTED FILE NAME"
         Nothing
         "I am having trouble with this file name:"
-        [ D.indent 4 $ D.red $ D.fromChars givenPath,
-          D.reflow $
-            "I found it in your " ++ FP.addTrailingPathSeparator srcDir
-              ++ " directory\
+        [ D.indent 4 . D.red $ D.fromChars givenPath,
+          D.reflow ("I found it in your " <> (FP.addTrailingPathSeparator srcDir <> " directory\
                  \ which is good, but I expect all of the files in there to use the following\
-                 \ module naming convention:",
+                 \ module naming convention:")),
           toModuleNameConventionTable srcDir ["Main", "HomePage", "Http.Helpers"],
-          D.reflow $
-            "Notice that the names always start with capital letters! Can you make your file\
+          D.reflow "Notice that the names always start with capital letters! Can you make your file\
             \ use this naming convention?",
-          D.toSimpleNote $
-            "Having a strict naming convention like this makes it a lot easier to find\
+          D.toSimpleNote "Having a strict naming convention like this makes it a lot easier to find\
             \ things in large projects. If you see a module imported, you know where to look\
             \ for the corresponding file every time!"
         ]
@@ -2689,9 +2479,7 @@ toProjectProblemReport projectProblem =
         Nothing
         "Your module imports form a cycle:"
         [ D.cycle 4 name names,
-          D.reflow $
-            "Learn more about why this is disallowed and how to break cycles here:"
-              ++ D.makeLink "import-cycles"
+          D.reflow ("Learn more about why this is disallowed and how to break cycles here:" <> D.makeLink "import-cycles")
         ]
     BP_MissingExposed (NE.List (name, problem) _) ->
       case problem of
@@ -2700,46 +2488,36 @@ toProjectProblemReport projectProblem =
             "MISSING MODULE"
             (Just "canopy.json")
             "The  \"exposed-modules\" of your canopy.json lists the following module:"
-            [ D.indent 4 $ D.red $ D.fromName name,
-              D.reflow $
-                "But I cannot find it in your src/ directory. Is there a typo? Was it renamed?"
+            [ D.indent 4 . D.red $ D.fromName name,
+              D.reflow "But I cannot find it in your src/ directory. Is there a typo? Was it renamed?"
             ]
         Import.Ambiguous _ _ pkg _ ->
           Help.report
             "AMBIGUOUS MODULE NAME"
             (Just "canopy.json")
             "The  \"exposed-modules\" of your canopy.json lists the following module:"
-            [ D.indent 4 $ D.red $ D.fromName name,
-              D.reflow $
-                "But a module from " ++ Pkg.toChars pkg
-                  ++ " already uses that name. Try\
-                     \ choosing a different name for your local file."
+            [ D.indent 4 . D.red $ D.fromName name,
+              D.reflow ("But a module from " <> (Pkg.toChars pkg <> " already uses that name. Try\
+                     \ choosing a different name for your local file."))
             ]
         Import.AmbiguousLocal path1 path2 paths ->
           Help.report
             "AMBIGUOUS MODULE NAME"
             (Just "canopy.json")
             "The  \"exposed-modules\" of your canopy.json lists the following module:"
-            [ D.indent 4 $ D.red $ D.fromName name,
-              D.reflow $
-                "But I found multiple files with that name:",
-              D.dullyellow $
-                D.indent 4 $
-                  D.vcat $
-                    map D.fromChars (path1 : path2 : paths),
-              D.reflow $
-                "Change the module names to be distinct!"
+            [ D.indent 4 . D.red $ D.fromName name,
+              D.reflow "But I found multiple files with that name:",
+              (D.dullyellow . D.indent 4) . D.vcat $ fmap D.fromChars (path1 : path2 : paths),
+              D.reflow "Change the module names to be distinct!"
             ]
-        Import.AmbiguousForeign _ _ _ ->
+        Import.AmbiguousForeign {} ->
           Help.report
             "MISSING MODULE"
             (Just "canopy.json")
             "The  \"exposed-modules\" of your canopy.json lists the following module:"
-            [ D.indent 4 $ D.red $ D.fromName name,
-              D.reflow $
-                "But I cannot find it in your src/ directory. Is there a typo? Was it renamed?",
-              D.toSimpleNote $
-                "It is not possible to \"re-export\" modules from other packages. You can only\
+            [ D.indent 4 . D.red $ D.fromName name,
+              D.reflow "But I cannot find it in your src/ directory. Is there a typo? Was it renamed?",
+              D.toSimpleNote "It is not possible to \"re-export\" modules from other packages. You can only\
                 \ expose modules that you define in your own code."
             ]
 
@@ -2747,26 +2525,22 @@ toModuleNameConventionTable :: FilePath -> [String] -> D.Doc
 toModuleNameConventionTable srcDir names =
   let toPair name =
         ( name,
-          srcDir </> map (\c -> if c == '.' then FP.pathSeparator else c) name <.> "canopy"
+          srcDir </> fmap (\c -> if c == '.' then FP.pathSeparator else c) name <.> "canopy"
         )
 
-      namePairs = map toPair names
-      nameWidth = maximum (11 : map (length . fst) namePairs)
-      pathWidth = maximum (9 : map (length . snd) namePairs)
+      namePairs = fmap toPair names
+      nameWidth = maximum (11 : fmap (length . fst) namePairs)
+      pathWidth = maximum (9 : fmap (length . snd) namePairs)
 
       padded width str =
-        str ++ replicate (width - length str) ' '
+        (str <> replicate (width - length str) ' ')
 
       toRow (name, path) =
-        D.fromChars $
-          "| " ++ padded nameWidth name ++ " | " ++ padded pathWidth path ++ " |"
+        D.fromChars ("| " <> (padded nameWidth name <> (" | " <> (padded pathWidth path <> " |"))))
 
       bar =
-        D.fromChars $
-          "+-" ++ replicate nameWidth '-' ++ "-+-" ++ replicate pathWidth '-' ++ "-+"
-   in D.indent 4 $
-        D.vcat $
-          [bar, toRow ("Module Name", "File Path"), bar] ++ map toRow namePairs ++ [bar]
+        D.fromChars ("+-" <> (replicate nameWidth '-' <> ("-+-" <> (replicate pathWidth '-' <> "-+"))))
+   in (D.indent 4 . D.vcat $ ([bar, toRow ("Module Name", "File Path"), bar] <> (fmap toRow namePairs <> [bar])))
 
 -- GENERATE
 
@@ -2784,22 +2558,16 @@ toGenerateReport problem =
         "DEBUG REMNANTS"
         Nothing
         "There are uses of the `Debug` module in the following modules:"
-        [ D.indent 4 $ D.red $ D.vcat $ map (D.fromChars . ModuleName.toChars) (m : ms),
+        [ (D.indent 4 . D.red) . D.vcat $ fmap (D.fromChars . ModuleName.toChars) (m : ms),
           D.reflow "But the --optimize flag only works if all `Debug` functions are removed!",
-          D.toSimpleNote $
-            "The issue is that --optimize strips out info needed by `Debug` functions.\
+          D.toSimpleNote "The issue is that --optimize strips out info needed by `Debug` functions.\
             \ Here are two examples:",
-          D.indent 4 $
-            D.reflow $
-              "(1) It shortens record field names. This makes the generated JavaScript\
+          D.indent 4 . D.reflow $ "(1) It shortens record field names. This makes the generated JavaScript\
               \ smaller, but `Debug.toString` cannot know the real field names anymore.",
-          D.indent 4 $
-            D.reflow $
-              "(2) Values like `type Height = Height Float` are unboxed. This reduces\
+          D.indent 4 . D.reflow $ "(2) Values like `type Height = Height Float` are unboxed. This reduces\
               \ allocation, but it also means that `Debug.toString` cannot tell if it is\
               \ looking at a `Height` or `Float` value.",
-          D.reflow $
-            "There are a few other cases like that, and it will be much worse once we start\
+          D.reflow "There are a few other cases like that, and it will be much worse once we start\
             \ inlining code. That optimization could move `Debug.log` and `Debug.todo` calls,\
             \ resulting in unpredictable behavior. I hope that clarifies why this restriction\
             \ exists!"
@@ -2813,10 +2581,8 @@ corruptCacheReport =
     "CORRUPT CACHE"
     Nothing
     "It looks like some of the information cached in canopy-stuff/ has been corrupted."
-    [ D.reflow $
-        "Try deleting your canopy-stuff/ directory to get unstuck.",
-      D.toSimpleNote $
-        "This almost certainly means that a 3rd party tool (or editor plugin) is\
+    [ D.reflow "Try deleting your canopy-stuff/ directory to get unstuck.",
+      D.toSimpleNote "This almost certainly means that a 3rd party tool (or editor plugin) is\
         \ causing problems your the canopy-stuff/ directory. Try disabling 3rd party tools\
         \ one by one until you figure out which it is!"
     ]
@@ -2891,21 +2657,19 @@ toCustomPackageRepositoryProblemReport path source _ region problem =
           toSnippet
             "UNKNOWN FILE TYPE"
             Nothing
-            ( D.reflow $
-                "You created a single-package-locations entry with an invalid file type.",
+            ( D.reflow "You created a single-package-locations entry with an invalid file type.",
               D.stack
                 [ D.reflow "You wrote ",
-                  D.red $ D.indent 4 $ D.fromChars (Json.toChars submittedFileType),
+                  D.red . D.indent 4 $ D.fromChars (Json.toChars submittedFileType),
                   D.reflow "Did you mean one of the following options?",
-                  D.indent 4 $ D.dullyellow $ D.vcat $ map (D.fromChars . Json.toChars) fileTypeSuggestions
+                  (D.indent 4 . D.dullyellow) . D.vcat $ fmap (D.fromChars . Json.toChars) fileTypeSuggestions
                 ]
             )
         InvalidPackageName (row, col) ->
           toSnippet
             "INVALID PACKAGE NAME"
             (toHighlight row col)
-            ( D.reflow $
-                "I got stuck while reading your custom-repositories-config.json file. I ran into trouble with the package name:",
+            ( D.reflow "I got stuck while reading your custom-repositories-config.json file. I ran into trouble with the package name:",
               D.stack
                 [ D.fillSep
                     [ "Package",
@@ -2924,10 +2688,7 @@ toCustomPackageRepositoryProblemReport path source _ region problem =
                       "something",
                       "like:"
                     ],
-                  D.dullyellow $
-                    D.indent 4 $
-                      D.vcat $
-                        [ "\"mdgriffith/canopy-ui\"",
+                  (D.dullyellow . D.indent 4) . D.vcat $ [ "\"mdgriffith/canopy-ui\"",
                           "\"w0rm/canopy-physics\"",
                           "\"Microsoft/canopy-json-tree-view\"",
                           "\"FordLabs/canopy-star-rating\"",
@@ -2936,9 +2697,7 @@ toCustomPackageRepositoryProblemReport path source _ region problem =
                   D.reflow
                     "The author name should match your GitHub name exactly, and the project name\
                     \ needs to follow these rules:",
-                  D.indent 4 $
-                    D.vcat $
-                      [ "+--------------------------------------+-----------+-----------+",
+                  D.indent 4 . D.vcat $ [ "+--------------------------------------+-----------+-----------+",
                         "| RULE                                 | BAD       | GOOD      |",
                         "+--------------------------------------+-----------+-----------+",
                         "| only lower case, digits, and hyphens | canopy-HTTP  | canopy-http  |",
@@ -2949,8 +2708,7 @@ toCustomPackageRepositoryProblemReport path source _ region problem =
                         "| no starting or ending hyphen         | -canopy-tar- | canopy-tar   |",
                         "+--------------------------------------+-----------+-----------+"
                       ],
-                  D.toSimpleNote $
-                    "These rules only apply to the project name, so you should never need\
+                  D.toSimpleNote "These rules only apply to the project name, so you should never need\
                     \ to change your GitHub name!"
                 ]
             )
@@ -2958,8 +2716,7 @@ toCustomPackageRepositoryProblemReport path source _ region problem =
           toSnippet
             "PROBLEM WITH VERSION"
             (toHighlight row col)
-            ( D.reflow $
-                "I got stuck while reading your custom-repositories-config.json file. I was expecting a version number here:",
+            ( D.reflow "I got stuck while reading your custom-repositories-config.json file. I was expecting a version number here:",
               D.fillSep
                 [ "I",
                   "need",
@@ -2980,25 +2737,23 @@ toCustomPackageRepositoryProblemReport path source _ region problem =
           toSnippet
             "UNKNOWN REPOSITORY TYPE"
             Nothing
-            ( D.reflow $
-                "You created a repositories entry with an invalid file type.",
+            ( D.reflow "You created a repositories entry with an invalid file type.",
               D.stack
                 [ D.reflow "You wrote that the repository-type was ",
-                  D.red $ D.indent 4 $ D.fromChars (Json.toChars submittedRepoType),
+                  D.red . D.indent 4 $ D.fromChars (Json.toChars submittedRepoType),
                   D.reflow "Did you mean one of the following options?",
-                  D.indent 4 $ D.dullyellow $ D.vcat $ map (D.fromChars . Json.toChars) repoTypeSuggestions
+                  (D.indent 4 . D.dullyellow) . D.vcat $ fmap (D.fromChars . Json.toChars) repoTypeSuggestions
                 ]
             )
         InvalidHashType hashType hashTypeSuggestions ->
           toSnippet
             "UNKNOWN HASH TYPE"
             Nothing
-            ( D.reflow $
-                "You created a single packages entry with an invalid hash type. We currently only support sha-1.",
+            ( D.reflow "You created a single packages entry with an invalid hash type. We currently only support sha-1.",
               D.stack
                 [ D.reflow "You wrote that the hash-type was ",
-                  D.red $ D.indent 4 $ D.fromChars (Json.toChars hashType),
+                  D.red . D.indent 4 $ D.fromChars (Json.toChars hashType),
                   D.reflow "You should change it to one of our supported hash types.",
-                  D.indent 4 $ D.dullyellow $ D.vcat $ map (D.fromChars . Json.toChars) hashTypeSuggestions
+                  (D.indent 4 . D.dullyellow) . D.vcat $ fmap (D.fromChars . Json.toChars) hashTypeSuggestions
                 ]
             )

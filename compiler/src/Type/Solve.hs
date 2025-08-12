@@ -7,7 +7,7 @@ module Type.Solve
 where
 
 import qualified AST.Canonical as Can
-import Control.Monad (forM_, foldM, liftM2, liftM3)
+import Control.Monad (foldM, liftM2, liftM3)
 import Data.Foldable (for_, traverse_)
 import Data.Map.Strict (Map, (!))
 import qualified Data.Map.Strict as Map
@@ -623,7 +623,7 @@ restoreContent content =
           do
             restore a
             restore b
-            forM_ maybeC restore
+            for_ maybeC restore
     Alias _ _ args var ->
       do
         traverse_ (traverse restore) args

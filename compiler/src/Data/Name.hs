@@ -123,13 +123,13 @@ fromChars =
 
 
 hasDot :: Name -> Bool
-hasDot name =
-  Utf8.contains 0x2E {- . -} name
+hasDot =
+  Utf8.contains 0x2E {- . -}
 
 
 splitDots :: Name -> [Name]
-splitDots name =
-  Utf8.split 0x2E {- . -} name
+splitDots =
+  Utf8.split 0x2E {- . -}
 
 
 
@@ -144,7 +144,7 @@ getKernel name@(Utf8.Utf8 ba#) =
     (
       let
         -- "Canopy.Kernel." = 14 chars, "Elm.Kernel." = 11 chars
-        !prefixLen# = if Utf8.startsWith prefix_kernel name then 14# else 11#
+        !prefixLen# = if Utf8.startsWith prefixKernel name then 14# else 11#
         !size# = sizeofByteArray# ba# -# prefixLen#
       in
       ST $ \s ->
@@ -163,43 +163,43 @@ getKernel name@(Utf8.Utf8 ba#) =
 
 
 isKernel :: Name -> Bool
-isKernel name = Utf8.startsWith prefix_kernel name || Utf8.startsWith prefix_elm_kernel name
+isKernel name = Utf8.startsWith prefixKernel name || Utf8.startsWith prefixElmKernel name
 
 isNumberType :: Name -> Bool
-isNumberType = Utf8.startsWith prefix_number
+isNumberType = Utf8.startsWith prefixNumber
 
 isComparableType :: Name -> Bool
-isComparableType = Utf8.startsWith prefix_comparable
+isComparableType = Utf8.startsWith prefixComparable
 
 isAppendableType :: Name -> Bool
-isAppendableType = Utf8.startsWith prefix_appendable
+isAppendableType = Utf8.startsWith prefixAppendable
 
 isCompappendType :: Name -> Bool
-isCompappendType = Utf8.startsWith prefix_compappend
+isCompappendType = Utf8.startsWith prefixCompappend
 
-{-# NOINLINE prefix_kernel #-}
-prefix_kernel :: Name
-prefix_kernel = fromChars "Canopy.Kernel."
+{-# NOINLINE prefixKernel #-}
+prefixKernel :: Name
+prefixKernel = fromChars "Canopy.Kernel."
 
-{-# NOINLINE prefix_elm_kernel #-}
-prefix_elm_kernel :: Name
-prefix_elm_kernel = fromChars "Elm.Kernel."
+{-# NOINLINE prefixElmKernel #-}
+prefixElmKernel :: Name
+prefixElmKernel = fromChars "Elm.Kernel."
 
-{-# NOINLINE prefix_number #-}
-prefix_number :: Name
-prefix_number = fromChars "number"
+{-# NOINLINE prefixNumber #-}
+prefixNumber :: Name
+prefixNumber = fromChars "number"
 
-{-# NOINLINE prefix_comparable #-}
-prefix_comparable :: Name
-prefix_comparable = fromChars "comparable"
+{-# NOINLINE prefixComparable #-}
+prefixComparable :: Name
+prefixComparable = fromChars "comparable"
 
-{-# NOINLINE prefix_appendable #-}
-prefix_appendable :: Name
-prefix_appendable = fromChars "appendable"
+{-# NOINLINE prefixAppendable #-}
+prefixAppendable :: Name
+prefixAppendable = fromChars "appendable"
 
-{-# NOINLINE prefix_compappend #-}
-prefix_compappend :: Name
-prefix_compappend = fromChars "compappend"
+{-# NOINLINE prefixCompappend #-}
+prefixCompappend :: Name
+prefixCompappend = fromChars "compappend"
 
 
 

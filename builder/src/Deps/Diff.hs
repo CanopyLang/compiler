@@ -68,7 +68,7 @@ getChanges isEquivalent old new =
 
 diff :: Docs.Documentation -> Docs.Documentation -> PackageChanges
 diff oldDocs newDocs =
-  let 
+  let
       (Changes added changed removed) =
         getChanges (\_ _ -> False) oldDocs newDocs
       filterOutPatches = Map.filter (\chng -> moduleChangeMagnitude chng /= M.PATCH)
@@ -156,7 +156,7 @@ diffType oldType newType =
           aVars <- diffType a x
           bVars <- diffType b y
           cVars <- concat <$> zipWithM diffType cs zs
-          return (aVars <> (bVars ++ cVars))
+          return (aVars <> (bVars <> cVars))
     (_, _) ->
       Nothing
 

@@ -98,7 +98,7 @@ verify cache connection registry constraints =
           (State cache connection registry Map.empty)
           (\s a _ -> return $ Ok (Map.mapWithKey (addDeps s) a))
           (\_ -> return $ noSolution connection)
-          (\e -> return $ Err e)
+          (return . Err)
 
 addDeps :: State -> Pkg.Name -> Version -> Details
 addDeps (State _ _ _ constraints) name vsn =
@@ -134,14 +134,14 @@ addToApp cache connection registry pkg outline@(Outline.AppOutline _ _ direct in
           [ attempt C.exactly allDirects,
             attempt C.untilNextMinor allDirects,
             attempt C.untilNextMajor allDirects,
-            attempt (\_ -> C.anything) allDirects
+            attempt (const C.anything) allDirects
           ] of
           Solver solver ->
             solver
               (State cache connection registry Map.empty)
               (\s a _ -> return $ Ok (toApp s pkg outline allDeps a))
               (\_ -> return $ noSolution connection)
-              (\e -> return $ Err e)
+              (return . Err)
 
 toApp :: State -> Pkg.Name -> Outline.AppOutline -> Map Pkg.Name Version -> Map Pkg.Name Version -> AppSolution
 toApp (State _ _ _ constraints) pkg (Outline.AppOutline canopy srcDirs direct _ testDirect _ pkgOverrides) old new =
@@ -189,7 +189,7 @@ exploreGoals (Goals pending solved) =
         let goals1 = Goals otherPending solved
         let addVsn = addVersion goals1 name
         (v, vs) <- getRelevantVersions name constraint
-        goals2 <- oneOf (addVsn v) (map addVsn vs)
+        goals2 <- oneOf (addVsn v) (fmap addVsn vs)
         exploreGoals goals2
 
 addVersion :: Goals -> Pkg.Name -> Version -> Solver Goals
@@ -387,7 +387,7 @@ initEnv :: IO (Either Exit.RegistryProblem Env)
 initEnv =
   do
     mvar <- newEmptyMVar
-    _ <- forkIO $ putMVar mvar =<< Http.getManager
+    _ <- forkIO (Http.getManager >>= putMVar mvar)
     cache <- Stuff.getPackageCache
     packageOverridesCache <- Stuff.getPackageOverridesCache
     zokkaCache <- Stuff.getZokkaCache
@@ -408,9 +408,9 @@ initEnv =
                   eitherRegistry <- Registry.fetch manager zokkaCache customRepositoriesData modifiedTimeOfCustomRepositoriesData
                   case eitherRegistry of
                     Right latestRegistry ->
-                      return $ Right $ Env cache manager (Online manager) latestRegistry packageOverridesCache
+                      return . Right $ Env cache manager (Online manager) latestRegistry packageOverridesCache
                     Left problem ->
-                      return $ Left $ problem
+                      return . Left $ problem
               Just cachedRegistry@ZokkaRegistries {_lastModificationTimeOfCustomRepoConfig = customRepoConfigUpdateTime} ->
                 do
                   -- FIXME: Think about whether I need a lock on the custom repository JSON file as well
@@ -420,15 +420,15 @@ initEnv =
                       else Registry.fetch manager zokkaCache customRepositoriesData modifiedTimeOfCustomRepositoriesData
                   case eitherRegistry of
                     Right latestRegistry ->
-                      return $ Right $ Env cache manager (Online manager) latestRegistry packageOverridesCache
+                      return . Right $ Env cache manager (Online manager) latestRegistry packageOverridesCache
                     Left registryProblem ->
-                      return $ Right $ Env cache manager (Offline registryProblem) cachedRegistry packageOverridesCache
+                      return . Right $ Env cache manager (Offline registryProblem) cachedRegistry packageOverridesCache
 
 initEnvForReactorTH :: IO (Either Exit.RegistryProblem Env)
 initEnvForReactorTH =
   do
     mvar <- newEmptyMVar
-    _ <- forkIO $ putMVar mvar =<< Http.getManager
+    _ <- forkIO (Http.getManager >>= putMVar mvar)
     cache <- Stuff.getPackageCache
     packageOverridesCache <- Stuff.getPackageOverridesCache
     zokkaCache <- Stuff.getZokkaCache
@@ -451,24 +451,24 @@ initEnvForReactorTH =
                   print $ show eitherRegistry
                   case eitherRegistry of
                     Right latestRegistry ->
-                      return $ Right $ Env cache manager (Online manager) latestRegistry packageOverridesCache
+                      return . Right $ Env cache manager (Online manager) latestRegistry packageOverridesCache
                     Left problem ->
-                      return $ Left $ problem
+                      return . Left $ problem
               Just cachedRegistry ->
                 do
                   eitherRegistry <- Registry.update manager zokkaCache cachedRegistry modifiedTimeOfCustomRepositoriesData
                   case eitherRegistry of
                     Right latestRegistry ->
-                      return $ Right $ Env cache manager (Online manager) latestRegistry packageOverridesCache
+                      return . Right $ Env cache manager (Online manager) latestRegistry packageOverridesCache
                     Left registryProblem ->
-                      return $ Right $ Env cache manager (Offline registryProblem) cachedRegistry packageOverridesCache
+                      return . Right $ Env cache manager (Offline registryProblem) cachedRegistry packageOverridesCache
 
 -- INSTANCES
 
 instance Functor Solver where
   fmap func (Solver solver) =
     Solver $ \state ok back err ->
-      let okA stateA arg backA = ok stateA (func arg) backA
+      let okA stateA arg = ok stateA (func arg)
        in solver state okA back err
 
 instance Applicative Solver where
@@ -478,7 +478,7 @@ instance Applicative Solver where
   (<*>) (Solver solverFunc) (Solver solverArg) =
     Solver $ \state ok back err ->
       let okF stateF func backF =
-            let okA stateA arg backA = ok stateA (func arg) backA
+            let okA stateA arg = ok stateA (func arg)
              in solverArg stateF okA backF err
        in solverFunc state okF back err
 

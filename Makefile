@@ -24,6 +24,11 @@ build:
 clean:
 	@stack clean
 
+lint:
+	hlint -h .hlint.yaml --no-summary compiler builder terminal test -j && \
+	find compiler builder terminal test -name "*.hs" -print0 | \
+		xargs -P 8 -0 -I _ ormolu --ghc-opt=-XTypeApplications --mode=check _
+
 fix-lint:
 	@for dir in compiler builder terminal test; do \
 		hlint -h .hlint.yaml --no-summary $$dir -j | \
