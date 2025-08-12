@@ -18,6 +18,11 @@ module Deps.Solver
   )
 where
 
+import qualified Canopy.Constraint as C
+import Canopy.CustomRepositoryData (CustomSingleRepositoryData (..), DefaultPackageServerRepo (_defaultPackageServerRepoTypeUrl), PZRPackageServerRepo (_pzrPackageServerRepoAuthToken, _pzrPackageServerRepoTypeUrl), SinglePackageLocationData (..))
+import qualified Canopy.Outline as Outline
+import qualified Canopy.Package as Pkg
+import qualified Canopy.Version as V
 import Control.Concurrent (forkIO, newEmptyMVar, putMVar, readMVar)
 import Control.Monad (foldM)
 import Data.Map ((!))
@@ -27,11 +32,6 @@ import Deps.CustomRepositoryDataIO (loadCustomRepositoriesData, loadCustomReposi
 import Deps.Registry (ZokkaRegistries (..))
 import qualified Deps.Registry as Registry
 import qualified Deps.Website as Website
-import qualified Canopy.Constraint as C
-import Canopy.CustomRepositoryData (CustomSingleRepositoryData (..), DefaultPackageServerRepo (_defaultPackageServerRepoTypeUrl), PZRPackageServerRepo (_pzrPackageServerRepoAuthToken, _pzrPackageServerRepoTypeUrl), SinglePackageLocationData (..))
-import qualified Canopy.Outline as Outline
-import qualified Canopy.Package as Pkg
-import qualified Canopy.Version as V
 import File (getTime)
 import qualified File
 import qualified Http
@@ -429,6 +429,7 @@ initEnvForReactorTH =
     zokkaCache <- Stuff.getZokkaCache
     customRepositoriesConfigLocation <- Stuff.getOrCreateZokkaCustomRepositoryConfig
     customRepositoriesDataOrErr <- loadCustomRepositoriesDataForReactorTH customRepositoriesConfigLocation
+    print $ show customRepositoriesDataOrErr
     case customRepositoriesDataOrErr of
       Left err -> pure $ Left (RP_BadCustomReposData err (unZokkaCustomRepositoryConfigFilePath customRepositoriesConfigLocation))
       Right customRepositoriesData ->
@@ -442,6 +443,7 @@ initEnvForReactorTH =
               Nothing ->
                 do
                   eitherRegistry <- Registry.fetch manager zokkaCache customRepositoriesData modifiedTimeOfCustomRepositoriesData
+                  print $ show eitherRegistry
                   case eitherRegistry of
                     Right latestRegistry ->
                       return $ Right $ Env cache manager (Online manager) latestRegistry packageOverridesCache

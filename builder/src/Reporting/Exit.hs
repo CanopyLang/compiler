@@ -38,6 +38,12 @@ module Reporting.Exit
   )
 where
 
+import qualified Canopy.Constraint as C
+import Canopy.CustomRepositoryData (CustomRepositoryDataParseError (..), RepositoryLocalName)
+import qualified Canopy.Magnitude as M
+import qualified Canopy.ModuleName as ModuleName
+import qualified Canopy.Package as Pkg
+import qualified Canopy.Version as V
 import qualified Data.ByteString as BS
 import qualified Data.ByteString.UTF8 as BS_UTF8
 import qualified Data.List as List
@@ -46,12 +52,6 @@ import qualified Data.Name as N
 import qualified Data.NonEmptyList as NE
 import qualified Data.Utf8 as Utf8
 import Deps.CustomRepositoryDataIO (CustomRepositoriesError (..))
-import qualified Canopy.Constraint as C
-import Canopy.CustomRepositoryData (CustomRepositoryDataParseError (..), RepositoryLocalName)
-import qualified Canopy.Magnitude as M
-import qualified Canopy.ModuleName as ModuleName
-import qualified Canopy.Package as Pkg
-import qualified Canopy.Version as V
 import qualified File
 import qualified Http
 import qualified Json.Decode as Decode
@@ -941,7 +941,7 @@ publishToReport publish =
         Nothing
         "When publishing with Zokka you must provide a repository URL as an argument. For example:"
         [ D.vcat
-            [ D.indent 4 $ D.green "zokka publish https://package.zokka-lang.org",
+            [ D.indent 4 $ D.green "zokka publish https://package.elm-lang.org",
               D.indent 4 $ D.green "zokka publish https://example.com/my-custom-repository"
             ],
           D.reflow $

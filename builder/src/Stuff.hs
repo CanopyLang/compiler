@@ -47,7 +47,7 @@ stuff root =
   -- canopy.json to decide whether any re-building is necessary and this can mean
   -- that compiling with the Zokka compiler doesn't change any code that was
   -- compiled by the Canopy compiler, even though it probably should.
-  root </> "zokka-stuff" </> customCompilerVersion
+  root </> "canopy-stuff" </> customCompilerVersion
   where
     -- The following comment explains why we originally had compilerVersion ++ -zokka
     -- under the same canopy-stuff. Some of the reasoning there is stil true but not as
@@ -69,7 +69,7 @@ stuff root =
     -- important analyses. If that's not true, then we may revert to using the usual
     -- compiler version and just letting the user delete canopy-stuff manually (the
     -- error message at least will tell them to delete the directory).
-    customCompilerVersion = compilerVersion ++ "-zokka"
+    customCompilerVersion = compilerVersion ++ "-canopy"
 
 details :: FilePath -> FilePath
 details root =
@@ -172,7 +172,7 @@ getZokkaCache =
 
 registry :: ZokkaSpecificCache -> FilePath
 registry (ZokkaSpecificCache dir) =
-  dir </> "zokka-registry.dat"
+  dir </> "canopy-registry.dat"
 
 package :: PackageCache -> Pkg.Name -> V.Version -> FilePath
 package (PackageCache dir) name version =
@@ -209,12 +209,12 @@ getCanopyHome =
 -- is a bit more valuable than just the cache).
 getOrCreateZokkaCacheDir :: IO FilePath
 getOrCreateZokkaCacheDir = do
-  cacheDir <- getCacheDir ("zokka-cache-" ++ zokkaVersion)
+  cacheDir <- getCacheDir ("canopy-cache-" ++ zokkaVersion)
   Dir.createDirectoryIfMissing True cacheDir
   pure cacheDir
 
 getZokkaDir :: IO FilePath
-getZokkaDir = getCacheDir "zokka"
+getZokkaDir = getCacheDir "canopy"
 
 newtype ZokkaCustomRepositoryConfigFilePath = ZokkaCustomRepositoryConfigFilePath {unZokkaCustomRepositoryConfigFilePath :: FilePath}
 

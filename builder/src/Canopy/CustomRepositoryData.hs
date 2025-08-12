@@ -26,13 +26,13 @@ module Canopy.CustomRepositoryData
   )
 where
 
+import Canopy.Package (Name, decoder, encode)
+import Canopy.Version (Version, decoder, encode)
 import Control.Monad (when)
 import qualified Data.Binary as Binary
 import Data.Coerce (coerce)
 import qualified Data.Map as Map
 import qualified Data.Utf8 as Utf8
-import Canopy.Package (Name, decoder, encode)
-import Canopy.Version (Version, decoder, encode)
 import Http (Sha, shaToChars)
 import qualified Json.Decode as D
 import qualified Json.Encode as E
@@ -161,7 +161,7 @@ data CustomSingleRepositoryData
 standardCanopyRepositoryDefaultPackageServerRepo :: DefaultPackageServerRepo
 standardCanopyRepositoryDefaultPackageServerRepo =
   DefaultPackageServerRepo
-    { _defaultPackageServerRepoTypeUrl = Utf8.fromChars "https://package.canopy-lang.org",
+    { _defaultPackageServerRepoTypeUrl = Utf8.fromChars "https://package.elm-lang.org",
       _defaultPackageServerRepoLocalName = Utf8.fromChars "standard-canopy-repository"
     }
 
@@ -171,7 +171,7 @@ standardCanopyRepository = DefaultPackageServerRepoData standardCanopyRepository
 standardZokkaRepositoryDefaultPackageServerRepo :: DefaultPackageServerRepo
 standardZokkaRepositoryDefaultPackageServerRepo =
   DefaultPackageServerRepo
-    { _defaultPackageServerRepoTypeUrl = Utf8.fromChars "https://package-server.zokka-lang.com",
+    { _defaultPackageServerRepoTypeUrl = Utf8.fromChars "https://package.elm-lang.org",
       _defaultPackageServerRepoLocalName = Utf8.fromChars "standard-zokka-repository"
     }
 
@@ -332,6 +332,7 @@ data CustomRepositoriesData = CustomRepositoriesData
   { _customFullRepositories :: [CustomSingleRepositoryData],
     _customSinglePackageRepositories :: [SinglePackageLocationData]
   }
+  deriving (Show)
 
 customRepostoriesDataDecoder :: D.Decoder CustomRepositoryDataParseError CustomRepositoriesData
 customRepostoriesDataDecoder = do

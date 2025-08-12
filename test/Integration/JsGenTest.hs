@@ -3,16 +3,17 @@ module Integration.JsGenTest (tests) where
 import qualified BackgroundWriter as BW
 import qualified Build
 import qualified Canopy.Details as Details
-import qualified Generate
-import qualified Reporting
-import qualified Reporting.Task as Task
 import qualified Data.ByteString.Builder as BB
 import qualified Data.ByteString.Lazy as BL
 import qualified Data.List as List
 import qualified Data.NonEmptyList as NE
+import qualified Generate
+import qualified Reporting
+import qualified Reporting.Task as Task
 import System.Directory
 import System.FilePath
 import System.IO.Temp
+import System.Process
 import Test.Tasty
 import Test.Tasty.HUnit
 
@@ -44,9 +45,9 @@ testDevGenSingleFile = testCase "Generate.dev produces JS with multiple function
           Left _ -> assertFailure "generate failed"
           Right builder -> do
             let s = toChars (BB.toLazyByteString builder)
-            assertBool "contains Main$add" ("Main$add" `List.isInfixOf` s)
-            assertBool "contains Main$mul" ("Main$mul" `List.isInfixOf` s)
-            assertBool "contains Main$compose" ("Main$compose" `List.isInfixOf` s)
+            assertBool "contains $author$project$Main$add" ("$author$project$Main$add" `List.isInfixOf` s)
+            assertBool "contains $author$project$Main$mul" ("$author$project$Main$mul" `List.isInfixOf` s)
+            assertBool "contains $author$project$Main$compose" ("$author$project$Main$compose" `List.isInfixOf` s)
 
 testProdGenSingleFile :: TestTree
 testProdGenSingleFile = testCase "Generate.prod produces JS with multiple functions" $ do
@@ -68,7 +69,7 @@ testProdGenSingleFile = testCase "Generate.prod produces JS with multiple functi
           Right builder -> do
             let s = toChars (BB.toLazyByteString builder)
             -- In prod names may be shorter, but module markers remain
-            assertBool "contains module marker" ("Main$" `List.isInfixOf` s)
+            assertBool "contains module marker" ("$author$project$Main$" `List.isInfixOf` s)
 
 -- Helpers
 
@@ -77,32 +78,35 @@ setupPkgProject root src = do
   createDirectoryIfMissing True (root </> "src")
   writeFile (root </> "canopy.json") canopyJsonPackage
   writeFile (root </> "src" </> "Main.can") src
+  callCommand ("cd " <> root <> " && " <> "canopy make src/Main.can")
 
 toChars :: BL.ByteString -> String
 toChars = map (toEnum . fromEnum) . BL.unpack
 
 canopyJsonPackage :: String
-canopyJsonPackage = unlines
-  [ "{",
-    "  \"type\": \"package\",",
-    "  \"name\": \"author/project\",",
-    "  \"summary\": \"Test package\",",
-    "  \"license\": \"BSD-3-Clause\",",
-    "  \"version\": \"1.0.0\",",
-    "  \"exposed-modules\": [ \"Main\" ],",
-    "  \"canopy-version\": \"0.19.0 <= v < 0.20.0\",",
-    "  \"dependencies\": {},",
-    "  \"test-dependencies\": {}",
-    "}"
-  ]
+canopyJsonPackage =
+  unlines
+    [ "{",
+      "  \"type\": \"package\",",
+      "  \"name\": \"author/project\",",
+      "  \"summary\": \"Test package\",",
+      "  \"license\": \"BSD-3-Clause\",",
+      "  \"version\": \"1.0.0\",",
+      "  \"exposed-modules\": [ \"Main\" ],",
+      "  \"canopy-version\": \"0.19.0 <= v < 0.20.0\",",
+      "  \"dependencies\": {\"canopy/core\": \"1.0.0 <= v < 2.0.0\"},",
+      "  \"test-dependencies\": {}",
+      "}"
+    ]
 
 sampleModule :: String
-sampleModule = unlines
-  [ "module Main exposing (main, add, mul, compose)",
-    "",
-    "add x y = x + y",
-    "mul x y = x * y",
-    "compose f g x = f (g x)",
-    "",
-    "main = add (mul 2 3) 4"
-  ]
+sampleModule =
+  unlines
+    [ "module Main exposing (main, add, mul, compose)",
+      "",
+      "add x y = x + y",
+      "mul x y = x * y",
+      "compose f g x = f (g x)",
+      "",
+      "main = add (mul 2 3) 4"
+    ]

@@ -37,6 +37,10 @@ test:
 	@echo "Running all tests..."
 	@stack test --fast canopy:canopy-test
 
+test-match:
+	@echo "Running specific tests..."
+	@stack test --fast canopy:canopy-test --test-arguments "--pattern \"${PATTERN}\""
+
 test-unit:
 	@echo "Running unit tests..."
 	@stack test --fast canopy:canopy-test --test-arguments "--pattern=Unit"
