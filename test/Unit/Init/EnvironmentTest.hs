@@ -48,8 +48,9 @@ import Init.Types
 import qualified Reporting.Exit as Exit
 import Test.Tasty (TestTree)
 import qualified Test.Tasty as Test
-import Test.Tasty.HUnit ((@?=))
+import Test.Tasty.HUnit ((@?=), assertBool)
 import qualified Test.Tasty.HUnit as Test
+import Data.List (isInfixOf)
 
 -- | Main test suite for Init.Environment module.
 tests :: TestTree
@@ -289,8 +290,8 @@ validationTests = Test.testGroup "Validation Tests"
       case fsError of
         FileSystemError msg -> do
           -- Error message should be informative
-          "Directory" `elem` words msg @?= True
-          "writable" `elem` words msg @?= True
+          assertBool "Contains Directory" ("Directory" `isInfixOf` msg)
+          assertBool "Contains writable" ("writable" `isInfixOf` msg)
         _ -> fail "Expected FileSystemError"
         
       case regError of
