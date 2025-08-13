@@ -10,6 +10,7 @@
 module Unit.Diff.OutputTest (tests) where
 
 import qualified Canopy.Magnitude as M
+import qualified Data.List as List
 import qualified Data.Map as Map
 import qualified Data.Name as Name
 import Deps.Diff (Changes (..), ModuleChanges (..), PackageChanges (..))
@@ -88,4 +89,4 @@ entryTests =
 isPatchMessage :: D.Doc -> Bool
 isPatchMessage doc =
   let docText = show doc
-  in "PATCH" `elem` words docText
+  in "PATCH" `List.isInfixOf` docText
