@@ -155,6 +155,11 @@ library
       Develop.StaticFiles.Build
       Diff
       Init
+      Init.Display
+      Init.Environment
+      Init.Project
+      Init.Types
+      Init.Validation
       Install
       Install.AppPlan
       Install.Arguments
@@ -287,6 +292,11 @@ executable canopy
       Develop.StaticFiles.Build
       Diff
       Init
+      Init.Display
+      Init.Environment
+      Init.Project
+      Init.Types
+      Init.Validation
       Install
       Install.AppPlan
       Install.Arguments
@@ -406,6 +416,7 @@ test-suite canopy-test
       Golden.ParseTypeGolden
       Integration.CanExtensionTest
       Integration.CompilerTest
+      Integration.InitTest
       Integration.InstallTest
       Integration.JsGenTest
       Integration.MakeTest
@@ -413,6 +424,7 @@ test-suite canopy-test
       Property.AST.OptimizedBinaryProps
       Property.Canopy.VersionProps
       Property.Data.NameProps
+      Property.InitProps
       Property.InstallProps
       Property.MakeProps
       Unit.AST.CanonicalTypeTest
@@ -422,6 +434,12 @@ test-suite canopy-test
       Unit.CLI.DocumentationTest
       Unit.CLI.ParsersTest
       Unit.Data.NameTest
+      Unit.Init.DisplayTest
+      Unit.Init.EnvironmentTest
+      Unit.Init.ProjectTest
+      Unit.Init.TypesTest
+      Unit.Init.ValidationTest
+      Unit.InitTest
       Unit.InstallTest
       Unit.Json.DecodeTest
       Unit.MainTest

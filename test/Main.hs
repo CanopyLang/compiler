@@ -8,6 +8,7 @@ import qualified Golden.ParseExprGolden as ParseExprGolden
 import qualified Golden.ParseModuleGolden as ParseModuleGolden
 import qualified Golden.ParseTypeGolden as ParseTypeGolden
 import qualified Integration.CanExtensionTest as CanExtensionIT
+import qualified Integration.InitTest as InitIT
 import qualified Integration.InstallTest as InstallIT
 import qualified Integration.JsGenTest as JsGenIT
 import qualified Integration.MakeTest as MakeIT
@@ -15,6 +16,7 @@ import qualified Property.AST.CanonicalProps as CanonicalProps
 import qualified Property.AST.OptimizedBinaryProps as OptimizedBinaryProps
 import qualified Property.Canopy.VersionProps as VersionProps
 import qualified Property.Data.NameProps as NameProps
+import qualified Property.InitProps as InitProps
 import qualified Property.InstallProps as InstallProps
 import qualified Property.MakeProps as MakeProps
 import Test.Tasty
@@ -26,6 +28,12 @@ import qualified Unit.CLI.CommandsTest as CLICommandsTest
 import qualified Unit.CLI.DocumentationTest as CLIDocumentationTest
 import qualified Unit.CLI.ParsersTest as CLIParsersTest
 import qualified Unit.Data.NameTest as NameTest
+import qualified Unit.Init.DisplayTest as InitDisplayTest
+import qualified Unit.Init.EnvironmentTest as InitEnvironmentTest
+import qualified Unit.Init.ProjectTest as InitProjectTest
+import qualified Unit.Init.TypesTest as InitTypesTest
+import qualified Unit.Init.ValidationTest as InitValidationTest
+import qualified Unit.InitTest as InitTest
 import qualified Unit.InstallTest as InstallTest
 import qualified Unit.Json.DecodeTest as JsonDecodeTest
 import qualified Unit.MainTest as MainTest
@@ -62,6 +70,12 @@ unitTests =
       MakeTest.tests,
       MainTest.tests,
       InstallTest.tests,
+      InitTest.tests,
+      InitTypesTest.tests,
+      InitValidationTest.tests,
+      InitProjectTest.tests,
+      InitEnvironmentTest.tests,
+      InitDisplayTest.tests,
       CLIDocumentationTest.tests,
       CLIParsersTest.tests,
       CLICommandsTest.tests,
@@ -77,6 +91,7 @@ propertyTests =
       VersionProps.tests,
       CanonicalProps.tests,
       OptimizedBinaryProps.tests,
+      InitProps.tests,
       InstallProps.tests,
       MakeProps.tests
     ]
@@ -86,6 +101,7 @@ integrationTests =
   testGroup
     "Integration Tests"
     [ CanExtensionIT.tests,
+      InitIT.tests,
       InstallIT.tests,
       JsGenIT.tests,
       MakeIT.tests

@@ -1268,6 +1268,7 @@ data Solver
   | SolverBadHttpData Pkg.Name V.Version String
   | SolverBadHttp Pkg.Name V.Version Http.Error
   | SolverNonexistentPackage Pkg.Name V.Version
+  deriving (Show)
 
 toSolverReport :: Solver -> Help.Report
 toSolverReport problem =

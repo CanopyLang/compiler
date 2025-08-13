@@ -1,110 +1,176 @@
 {-# LANGUAGE OverloadedStrings #-}
+{-# OPTIONS_GHC -Wall #-}
 
+-- | Project initialization system for Canopy.
+--
+-- This module provides the main interface for initializing new Canopy projects.
+-- It orchestrates the complete initialization workflow through specialized
+-- sub-modules, following CLAUDE.md modular design principles.
+--
+-- == Architecture
+--
+-- The Init system is organized into focused sub-modules:
+--
+-- * 'Init.Types' - Core types, configuration, and lenses
+-- * 'Init.Environment' - Environment setup and solver integration
+-- * 'Init.Validation' - Project validation and prerequisite checking
+-- * 'Init.Project' - Project structure creation and file generation
+-- * 'Init.Display' - User interaction and message formatting
+--
+-- == Initialization Workflow
+--
+-- The initialization process follows these steps:
+--
+-- 1. **Validation** - Check directory state and prerequisites
+-- 2. **Environment Setup** - Initialize solver and package registry
+-- 3. **User Confirmation** - Prompt user for initialization approval
+-- 4. **Dependency Resolution** - Resolve default package dependencies
+-- 5. **Project Creation** - Create directory structure and configuration files
+--
+-- == Usage Examples
+--
+-- @
+-- -- Initialize project in current directory
+-- result <- run () ()
+-- case result of
+--   Right () -> putStrLn "Project initialized successfully"
+--   Left err -> reportError err
+-- @
+--
+-- == Error Handling
+--
+-- All initialization operations use rich error types defined in 'Init.Types':
+--
+-- * 'ProjectExists' - Project already exists (use --force to override)
+-- * 'RegistryFailure' - Package registry connection issues
+-- * 'SolverFailure' - Dependency resolution failures
+-- * 'FileSystemError' - Directory or file system problems
+--
+-- @since 0.19.1
 module Init
-  ( run,
-  )
-where
+  ( -- * Main Interface
+    run,
 
-import Canopy.Constraint (Constraint)
-import qualified Canopy.Constraint as Con
-import qualified Canopy.Outline as Outline
-import Canopy.Package (Name)
-import qualified Canopy.Package as Pkg
-import qualified Canopy.Version as V
-import Data.Map (Map)
-import qualified Data.Map as Map
-import qualified Data.NonEmptyList as NE
+    -- * Core Types (re-exported)
+    InitConfig (..),
+    ProjectContext (..),
+    InitError (..),
+
+    -- * Configuration (re-exported)
+    defaultConfig,
+    defaultContext,
+  ) where
+
+import Control.Lens ((^.))
 import qualified Deps.Solver as Solver
+import Init.Types
+  ( InitConfig (..),
+    InitError (..),
+    ProjectContext (..),
+    contextDependencies,
+    defaultConfig,
+    defaultContext
+  )
+import qualified Init.Display as Display
+import qualified Init.Environment as Environment
+import qualified Init.Project as Project
+import qualified Init.Validation as Validation
 import qualified Reporting
-import Reporting.Doc (Doc)
-import qualified Reporting.Doc as D
 import qualified Reporting.Exit as Exit
-import qualified System.Directory as Dir
-import Prelude hiding (init)
 
--- RUN
-
+-- | Main initialization entry point.
+--
+-- Orchestrates the complete project initialization workflow including
+-- validation, user confirmation, environment setup, dependency resolution,
+-- and project creation.
+--
+-- The workflow:
+--
+-- 1. Validate current directory for initialization
+-- 2. Prompt user for confirmation (unless skipped)
+-- 3. Set up solver environment and resolve dependencies
+-- 4. Create project structure and configuration files
+--
+-- ==== Examples
+--
+-- >>> run () ()
+-- -- Displays welcome message and prompts for confirmation
+-- -- Creates canopy.json and src/ directory on approval
+--
+-- ==== Error Handling
+--
+-- Uses 'Reporting.attempt' to convert 'InitError' to 'Exit.Init'
+-- for consistent CLI error reporting.
+--
+-- @since 0.19.1
 run :: () -> () -> IO ()
-run () () =
-  Reporting.attempt Exit.initToReport $
-    do
-      exists <- Dir.doesFileExist "canopy.json"
-      if exists
-        then return (Left Exit.InitAlreadyExists)
-        else do
-          approved <- Reporting.ask question
-          if approved
-            then init
-            else do
-              putStrLn "Okay, I did not make any changes!"
-              return (Right ())
+run () () = 
+  Reporting.attempt Exit.initToReport $ do
+    initResult <- initializeProject defaultConfig defaultContext
+    case initResult of
+      Right () -> pure (Right ())
+      Left initError -> pure (Left (convertInitError initError))
 
-question :: Doc
-question =
-  D.stack
-    [ D.fillSep
-        [ "Hello!",
-          "Canopy",
-          "projects",
-          "always",
-          "start",
-          "with",
-          "an",
-          D.green "canopy.json",
-          "file.",
-          "I",
-          "can",
-          "create",
-          "them!"
-        ],
-      D.reflow
-        "Now you may be wondering, what will be in this file? How do I add Canopy files to\
-        \ my project? How do I see it in the browser? How will my code grow? Do I need\
-        \ more directories? What about tests? Etc.",
-      D.fillSep
-        [ "Check",
-          "out",
-          D.cyan (D.fromChars (D.makeLink "init")),
-          "for",
-          "all",
-          "the",
-          "answers!"
-        ],
-      "Knowing all that, would you like me to create an canopy.json file now? [Y/n]: "
-    ]
+-- | Initialize project with configuration and context.
+--
+-- Performs the complete initialization workflow using the provided
+-- configuration and project context. This is the core orchestration
+-- function that coordinates all sub-modules.
+initiateProject :: InitConfig -> ProjectContext -> IO (Either InitError ())
+initiateProject config context = do
+  validationResult <- validatePrerequisites config context
+  case validationResult of
+    Left err -> pure (Left err)
+    Right () -> proceedWithInit config context
 
--- INIT
+-- | Validate prerequisites for initialization.
+validatePrerequisites :: InitConfig -> ProjectContext -> IO (Either InitError ())
+validatePrerequisites config context = do
+  Validation.validateProjectDirectory "." config >>= \case
+    Left err -> pure (Left err)
+    Right () -> pure (Validation.validateConfiguration config context)
 
-init :: IO (Either Exit.Init ())
-init = do
-  eitherEnv <- Solver.initEnv
-  case eitherEnv of
-    Left problem -> return (Left (Exit.InitRegistryProblem problem))
-    Right env -> initWithEnv env
+-- | Proceed with initialization after validation.
+proceedWithInit :: InitConfig -> ProjectContext -> IO (Either InitError ())
+proceedWithInit config context = do
+  confirmed <- Display.promptUserConfirmation config
+  if confirmed
+    then executeInitialization context
+    else cancelInitialization
 
-initWithEnv :: Solver.Env -> IO (Either Exit.Init ())
-initWithEnv (Solver.Env cache _ connection registry _) = do
-  result <- Solver.verify cache connection registry defaults
-  case result of
-    Solver.Err exit -> return (Left (Exit.InitSolverProblem exit))
-    Solver.NoSolution -> return (Left (Exit.InitNoSolution (Map.keys defaults)))
-    Solver.NoOfflineSolution _ -> return (Left (Exit.InitNoOfflineSolution (Map.keys defaults)))
-    Solver.Ok details -> createProjectStructure details
+-- | Execute the main initialization process.
+executeInitialization :: ProjectContext -> IO (Either InitError ())
+executeInitialization context = do
+  Environment.setupEnvironment >>= \case
+    Left err -> pure (Left err)
+    Right env -> createProjectWithEnvironment context env
 
-createProjectStructure :: Map Name Solver.Details -> IO (Either Exit.Init ())
-createProjectStructure details = do
-  let solution = Map.map (\(Solver.Details vsn _) -> vsn) details
-      directs = Map.intersection solution defaults
-      indirects = Map.difference solution defaults
-  Dir.createDirectoryIfMissing True "src"
-  Outline.write "." . Outline.App $ Outline.AppOutline V.compiler (NE.List (Outline.RelativeSrcDir "src") []) directs indirects Map.empty Map.empty []
-  putStrLn "Okay, I created it. Now read that link!"
-  return (Right ())
+-- | Create project using resolved environment.
+createProjectWithEnvironment :: ProjectContext -> Solver.Env -> IO (Either InitError ())
+createProjectWithEnvironment context env = do
+  Environment.resolveDefaults env (context ^. contextDependencies) >>= \case
+    Left err -> pure (Left err)
+    Right details -> Project.createProjectStructure context details
 
-defaults :: Map Name Constraint
-defaults =
-  Map.fromList
-    [ (Pkg.core, Con.anything),
-      (Pkg.browser, Con.anything),
-      (Pkg.html, Con.anything)
-    ]
+-- | Cancel initialization with user message.
+cancelInitialization :: IO (Either InitError ())
+cancelInitialization = do
+  putStrLn "Okay, I did not make any changes!"
+  pure (Right ())
+
+-- | Initialize project with default settings.
+initializeProject :: InitConfig -> ProjectContext -> IO (Either InitError ())
+initializeProject = initiateProject
+
+-- | Convert InitError to Exit.Init for CLI reporting.
+--
+-- Maps internal InitError types to the CLI exit code system
+-- for consistent error reporting across the application.
+convertInitError :: InitError -> Exit.Init
+convertInitError initError = case initError of
+  ProjectExists _ -> Exit.InitAlreadyExists
+  RegistryFailure problem -> Exit.InitRegistryProblem problem
+  SolverFailure solverExit -> Exit.InitSolverProblem solverExit
+  NoSolution packages -> Exit.InitNoSolution packages
+  NoOfflineSolution packages -> Exit.InitNoOfflineSolution packages
+  FileSystemError _ -> Exit.InitAlreadyExists -- Map to closest CLI error
