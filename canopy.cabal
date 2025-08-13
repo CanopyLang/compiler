@@ -231,6 +231,12 @@ executable canopy
       Init
       Install
       Make
+      Make.Builder
+      Make.Environment
+      Make.Generation
+      Make.Output
+      Make.Parser
+      Make.Types
       Publish
       Publish.Environment
       Publish.Git
