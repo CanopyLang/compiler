@@ -1,6 +1,31 @@
 {-# LANGUAGE GADTs #-}
 {-# LANGUAGE OverloadedStrings #-}
+{-# OPTIONS_GHC -Wall #-}
 
+-- | Terminal error handling and help display system.
+--
+-- This module provides comprehensive error reporting and help text
+-- generation for the Terminal framework. It handles all error
+-- conditions that can occur during command-line argument parsing
+-- and provides user-friendly error messages with suggestions.
+--
+-- == Key Functions
+--
+-- * 'exitWithHelp' - Display detailed help for commands
+-- * 'exitWithError' - Display formatted error messages  
+-- * 'exitWithUnknown' - Handle unknown command errors with suggestions
+-- * 'exitWithOverview' - Display application overview
+--
+-- == Error Types
+--
+-- The module defines comprehensive error types:
+--
+-- * 'Error' - Top-level errors (bad args, bad flags)
+-- * 'ArgError' - Argument-specific errors (missing, invalid, extra)
+-- * 'FlagError' - Flag-specific errors (value issues, unknown flags)
+-- * 'Expectation' - Type expectations for validation
+--
+-- @since 0.19.1
 module Terminal.Error
   ( Error (..),
     ArgError (..),
@@ -57,13 +82,13 @@ exitFailure =
   exitWith (Exit.ExitFailure 1)
 
 exitWith :: Exit.ExitCode -> [P.Doc] -> IO a
-exitWith code docs =
-  do
-    isTerminal <- hIsTerminalDevice stderr
-    let adjust = if isTerminal then id else P.plain
-    ((P.displayIO stderr . P.renderPretty 1 80) . adjust) . P.vcat $ concatMap (\d -> [d, ""]) docs
-    hPutStrLn stderr ""
-    Exit.exitWith code
+exitWith code docs = do
+  isTerminal <- hIsTerminalDevice stderr
+  let adjust = if isTerminal then id else P.plain
+      formattedDocs = P.vcat $ concatMap (\d -> [d, ""]) docs
+  ((P.displayIO stderr . P.renderPretty 1 80) . adjust) formattedDocs
+  hPutStrLn stderr ""
+  Exit.exitWith code
 
 getExeName :: IO String
 getExeName =
@@ -80,23 +105,29 @@ reflow string =
 -- HELP
 
 exitWithHelp :: Maybe String -> String -> P.Doc -> Args args -> Flags flags -> IO a
-exitWithHelp maybeCommand details example (Args args) flags =
-  do
-    command <- toCommand maybeCommand
-    exitSuccess
-      ( [ reflow details,
-          (P.indent 4 . P.cyan) . P.vcat $ fmap (argsToDoc command) args,
-          example
-        ]
-          <> ( case flagsToDocs flags [] of
-                 [] ->
-                   []
-                 docs@(_ : _) ->
-                   [ "You can customize this command with the following flags:",
-                     P.indent 4 $ stack docs
-                   ]
-             )
-      )
+exitWithHelp maybeCommand details example (Args args) flags = do
+  command <- toCommand maybeCommand
+  let basicDocs = createBasicHelpDocs command details example args
+      flagDocs = createFlagHelpDocs flags
+  exitSuccess (basicDocs <> flagDocs)
+
+-- | Create basic help documentation components.
+createBasicHelpDocs :: String -> String -> P.Doc -> [CompleteArgs a] -> [P.Doc]
+createBasicHelpDocs command details example args =
+  [ reflow details,
+    (P.indent 4 . P.cyan) . P.vcat $ fmap (argsToDoc command) args,
+    example
+  ]
+
+-- | Create flag documentation if flags exist.
+createFlagHelpDocs :: Flags flags -> [P.Doc]
+createFlagHelpDocs flags =
+  case flagsToDocs flags [] of
+    [] -> []
+    docs@(_ : _) ->
+      [ "You can customize this command with the following flags:",
+        P.indent 4 $ stack docs
+      ]
 
 toCommand :: Maybe String -> IO String
 toCommand maybeCommand =
@@ -153,18 +184,22 @@ flagsToDocs flags docs =
 -- OVERVIEW
 
 exitWithOverview :: P.Doc -> P.Doc -> [Command] -> IO a
-exitWithOverview intro outro commands =
-  do
-    exeName <- getExeName
-    exitSuccess
-      [ intro,
-        "The most common commands are:",
-        P.indent 4 . stack $ Maybe.mapMaybe (toSummary exeName) commands,
-        "There are a bunch of other commands as well though. Here is a full list:",
-        P.indent 4 . P.dullcyan $ toCommandList exeName commands,
-        "Adding the --help flag gives a bunch of additional details about each one.",
-        outro
-      ]
+exitWithOverview intro outro commands = do
+  exeName <- getExeName
+  let overviewDocs = createOverviewDocs exeName intro outro commands
+  exitSuccess overviewDocs
+
+-- | Create overview documentation sections.
+createOverviewDocs :: String -> P.Doc -> P.Doc -> [Command] -> [P.Doc]
+createOverviewDocs exeName intro outro commands =
+  [ intro,
+    "The most common commands are:",
+    P.indent 4 . stack $ Maybe.mapMaybe (toSummary exeName) commands,
+    "There are a bunch of other commands as well though. Here is a full list:",
+    P.indent 4 . P.dullcyan $ toCommandList exeName commands,
+    "Adding the --help flag gives a bunch of additional details about each one.",
+    outro
+  ]
 
 toSummary :: String -> Command -> Maybe P.Doc
 toSummary exeName (Command name summary _ _ (Args args) _ _) =
@@ -190,47 +225,72 @@ toCommandList exeName commands =
 -- UNKNOWN
 
 exitWithUnknown :: String -> [String] -> IO a
-exitWithUnknown unknown knowns =
-  let nearbyKnowns =
-        takeWhile (\(r, _) -> r <= 3) (Suggest.rank unknown id knowns)
+exitWithUnknown unknown knowns = do
+  exeName <- getExeName
+  let suggestions = createSuggestions unknown knowns
+      errorDocs = createUnknownCommandDocs exeName unknown suggestions
+  exitFailure errorDocs
 
-      suggestions =
-        case fmap (toGreen . snd) nearbyKnowns of
-          [] ->
-            []
-          [nearby] ->
-            ["Try", nearby, "instead?"]
-          [a, b] ->
-            ["Try", a, "or", b, "instead?"]
-          abcs@(_ : _ : _ : _) ->
-            ["Try"] <> (fmap (<> ",") (init abcs) <> ["or", last abcs, "instead?"])
-   in do
-        exeName <- getExeName
-        exitFailure
-          [ P.fillSep (["There", "is", "no", toRed unknown, "command."] <> suggestions),
-            reflow ("Run `" <> (exeName <> "` with no arguments to get more hints."))
-          ]
+-- | Create suggestions based on similar known commands.
+createSuggestions :: String -> [String] -> [P.Doc]
+createSuggestions unknown knowns =
+  let nearbyKnowns = takeWhile (\(r, _) -> r <= 3) (Suggest.rank unknown id knowns)
+  in formatSuggestionText (fmap (toGreen . snd) nearbyKnowns)
+
+-- | Format suggestion text based on number of suggestions.
+formatSuggestionText :: [P.Doc] -> [P.Doc]
+formatSuggestionText suggestions =
+  case suggestions of
+    [] -> []
+    [nearby] -> ["Try", nearby, "instead?"]
+    [a, b] -> ["Try", a, "or", b, "instead?"]
+    abcs@(_ : _ : _ : _) ->
+      ["Try"] <> (fmap (<> ",") (init abcs) <> ["or", last abcs, "instead?"])
+
+-- | Create error documentation for unknown commands.
+createUnknownCommandDocs :: String -> String -> [P.Doc] -> [P.Doc]
+createUnknownCommandDocs exeName unknown suggestions =
+  [ P.fillSep (["There", "is", "no", toRed unknown, "command."] <> suggestions),
+    reflow ("Run `" <> (exeName <> "` with no arguments to get more hints."))
+  ]
 
 -- ERROR TO DOC
 
 exitWithError :: Error -> IO a
-exitWithError err =
-  ( case err of
-      BadFlag flagError ->
-        flagErrorToDocs flagError
-      BadArgs argErrors ->
-        case argErrors of
-          [] ->
-            return
-              [ reflow "I was not expecting any arguments for this command.",
-                reflow "Try removing them?"
-              ]
-          [(_args, argError)] ->
-            argErrorToDocs argError
-          _ : _ : _ ->
-            argErrorToDocs $ case List.sortOn toArgErrorRank (fmap snd argErrors) of topErr : _ -> topErr; [] -> error "impossible: empty list in _:_:_ pattern"
-  )
-    >>= exitFailure
+exitWithError err = do
+  errorDocs <- convertErrorToDocs err
+  exitFailure errorDocs
+
+-- | Convert different error types to documentation.
+convertErrorToDocs :: Error -> IO [P.Doc]
+convertErrorToDocs err =
+  case err of
+    BadFlag flagError ->
+      flagErrorToDocs flagError
+    BadArgs argErrors ->
+      processArgErrors argErrors
+
+-- | Process argument errors into documentation.
+processArgErrors :: [(CompleteArgs a, ArgError)] -> IO [P.Doc]
+processArgErrors argErrors =
+  case argErrors of
+    [] ->
+      return
+        [ reflow "I was not expecting any arguments for this command.",
+          reflow "Try removing them?"
+        ]
+    [(_args, argError)] ->
+      argErrorToDocs argError
+    _ : _ : _ ->
+      let topError = getTopArgError argErrors
+      in argErrorToDocs topError
+
+-- | Get the highest priority argument error.
+getTopArgError :: [(CompleteArgs a, ArgError)] -> ArgError
+getTopArgError argErrors =
+  case List.sortOn toArgErrorRank (fmap snd argErrors) of
+    topErr : _ -> topErr
+    [] -> error "impossible: empty list in _:_:_ pattern"
 
 toArgErrorRank :: ArgError -> Int -- lower is better
 toArgErrorRank err =

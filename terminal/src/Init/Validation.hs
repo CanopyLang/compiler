@@ -194,13 +194,20 @@ validateCorePackage deps =
 -- | Validate source directories exist and are accessible.
 --
 -- Checks that all specified source directories can be created or
--- are already present and accessible for the project.
+-- are already present and accessible for the project. Also validates
+-- that directory names are valid (not empty, no invalid characters).
 validateSourceDirectories :: [String] -> FilePath -> IO (Either InitError ())
 validateSourceDirectories sourceDirs projectPath = do
-  results <- mapM (validateSingleSourceDir projectPath) sourceDirs
-  case sequence results of
-    Left err -> pure (Left err)
-    Right _ -> pure (Right ())
+  -- First validate directory names
+  let invalidDirs = filter isInvalidDirName sourceDirs
+  if not (null invalidDirs)
+    then pure (Left (FileSystemError ("Invalid source directory names: " <> show invalidDirs)))
+    else do
+      -- Then check file system accessibility
+      results <- mapM (validateSingleSourceDir projectPath) sourceDirs
+      case sequence results of
+        Left err -> pure (Left err)
+        Right _ -> pure (Right ())
 
 -- | Validate a single source directory.
 validateSingleSourceDir :: FilePath -> String -> IO (Either InitError ())

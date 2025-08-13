@@ -1,6 +1,28 @@
 {-# LANGUAGE GADTs #-}
 {-# LANGUAGE InstanceSigs #-}
+{-# OPTIONS_GHC -Wall #-}
 
+-- | Internal Terminal framework data types and operations.
+--
+-- This module defines the core data structures used by the Terminal
+-- framework for command-line argument parsing, flag handling, and
+-- command definition. It provides the foundation for building
+-- complex CLI applications with sophisticated argument handling.
+--
+-- == Core Types
+--
+-- * 'Command' - Complete command definition with args, flags, and action
+-- * 'Args' - Argument parsing specifications  
+-- * 'Flags' - Flag/option parsing specifications
+-- * 'Parser' - Generic parsing functions with validation and suggestions
+--
+-- == Design Philosophy
+--
+-- The design uses GADTs to ensure type safety while providing flexibility
+-- for complex argument parsing scenarios. All parsers support validation,
+-- error reporting, and shell completion.
+--
+-- @since 0.19.1
 module Terminal.Internal
   ( Command (..),
     toName,

@@ -1,7 +1,45 @@
+-- | Terminal framework for building command-line applications.
+--
+-- This module provides a comprehensive framework for building sophisticated
+-- command-line applications with robust argument parsing, flag handling,
+-- help generation, and error reporting. It supports complex argument
+-- patterns, shell completion, and user-friendly error messages.
+--
+-- == Core Functions
+--
+-- * 'app' - Main application entry point for multi-command CLIs
+-- * 'args' and 'flags' - Argument and flag specification builders
+-- * 'Parser' - Custom parsing functions with validation and completion
+--
+-- == Argument Patterns
+--
+-- The framework supports sophisticated argument patterns:
+--
+-- * Required arguments ('required', 'require1', 'require2', etc.)
+-- * Optional arguments ('optional', '?')
+-- * Variable arguments ('zeroOrMore', 'oneOrMore', '...')
+-- * Alternative patterns ('oneOf')
+--
+-- == Example Usage
+--
+-- @
+-- main :: IO ()
+-- main = app intro outro
+--   [ Command "init" (Common "Initialize new project") details examples
+--       (args identity ! projectName)
+--       (flags identity |-- verbose |-- force)
+--       initHandler
+--   ]
+-- @
+--
+-- @since 0.19.1
 module Terminal
-  ( app,
+  ( -- * Application
+    app,
+    -- * Commands  
     Command (..),
     Summary (..),
+    -- * Flags
     Flags,
     noFlags,
     flags,
@@ -9,7 +47,9 @@ module Terminal
     Flag,
     flag,
     onOff,
+    -- * Parsers
     Parser (..),
+    -- * Arguments
     Args,
     noArgs,
     required,
@@ -71,32 +111,46 @@ _command details example args_ flags_ callback =
 -- APP
 
 app :: P.Doc -> P.Doc -> [Command] -> IO ()
-app intro outro commands =
-  do
-    setLocaleEncoding utf8
-    argStrings <- Env.getArgs
-    case argStrings of
-      [] ->
-        Error.exitWithOverview intro outro commands
-      ["--help"] ->
-        Error.exitWithOverview intro outro commands
-      ["--version"] ->
-        do
-          putStrLn (V.toChars V.compiler)
-          Exit.exitSuccess
-      command : chunks ->
-        do
-          case List.find (\cmd -> toName cmd == command) commands of
-            Nothing ->
-              Error.exitWithUnknown command (fmap toName commands)
-            Just (Command _ _ details example args_ flags_ callback) ->
-              if "--help" `elem` chunks
-                then Error.exitWithHelp (Just command) details example args_ flags_
-                else case snd $ Chomp.chomp Nothing chunks args_ flags_ of
-                  Right (argsValue, flagsValue) ->
-                    callback argsValue flagsValue
-                  Left err ->
-                    Error.exitWithError err
+app intro outro commands = do
+  setLocaleEncoding utf8
+  argStrings <- Env.getArgs
+  processAppArguments intro outro commands argStrings
+
+-- | Process application arguments and dispatch to appropriate handler.
+processAppArguments :: P.Doc -> P.Doc -> [Command] -> [String] -> IO ()
+processAppArguments intro outro commands argStrings =
+  case argStrings of
+    [] -> Error.exitWithOverview intro outro commands
+    ["--help"] -> Error.exitWithOverview intro outro commands
+    ["--version"] -> displayVersionAndExit
+    command : chunks -> handleCommand commands command chunks
+
+-- | Display version information and exit successfully.
+displayVersionAndExit :: IO ()
+displayVersionAndExit = do
+  putStrLn (V.toChars V.compiler)
+  Exit.exitSuccess
+
+-- | Handle specific command execution with arguments and flags.
+handleCommand :: [Command] -> String -> [String] -> IO ()
+handleCommand commands command chunks = do
+  case List.find (\cmd -> toName cmd == command) commands of
+    Nothing -> Error.exitWithUnknown command (fmap toName commands)
+    Just foundCommand -> processCommandExecution foundCommand chunks
+
+-- | Process command execution with help checking and argument parsing.
+processCommandExecution :: Command -> [String] -> IO ()
+processCommandExecution (Command name _ details example args_ flags_ callback) chunks =
+  if "--help" `elem` chunks
+    then Error.exitWithHelp (Just name) details example args_ flags_
+    else executeCommandWithParsing args_ flags_ callback chunks
+
+-- | Execute command after parsing arguments and flags.
+executeCommandWithParsing :: Args args -> Flags flags -> (args -> flags -> IO ()) -> [String] -> IO ()
+executeCommandWithParsing args_ flags_ callback chunks =
+  case snd $ Chomp.chomp Nothing chunks args_ flags_ of
+    Right (argsValue, flagsValue) -> callback argsValue flagsValue
+    Left err -> Error.exitWithError err
 
 -- AUTO-COMPLETE
 

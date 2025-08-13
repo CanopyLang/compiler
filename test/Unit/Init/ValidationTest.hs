@@ -40,6 +40,7 @@ import Control.Lens ((^.), (&), (.~))
 import qualified Control.Lens as Lens
 import qualified Data.Map as Map
 import qualified System.Directory as Dir
+import Data.List (isInfixOf)
 import Init.Types
   ( InitConfig (..),
     InitError (..),
@@ -60,7 +61,7 @@ import Init.Validation
   )
 import Test.Tasty (TestTree)
 import qualified Test.Tasty as Test
-import Test.Tasty.HUnit ((@?=))
+import Test.Tasty.HUnit ((@?=), assertBool)
 import qualified Test.Tasty.HUnit as Test
 
 -- | Main test suite for Init.Validation module.
@@ -196,16 +197,18 @@ fileSystemTests = Test.testGroup "File System Tests"
         Right () -> pure ()
         Left err -> fail ("Validation failed: " <> show err)
 
-  , Test.testCase "validateSourceDirectories handles edge cases" $ do
-      let sourceDirs = ["src", "", "lib"]  -- Empty string creates interesting path
+  , Test.testCase "validateSourceDirectories rejects invalid dirs" $ do
+      let sourceDirs = ["src", "", "lib"]  -- Empty string should be invalid
       -- Use current directory which should exist
       currentDir <- Dir.getCurrentDirectory  
       result <- validateSourceDirectories sourceDirs currentDir
-      -- The function currently allows empty strings (they create paths like "/path/")
-      -- This test verifies the current behavior rather than enforcing a specific validation
+      -- Should fail due to empty directory name
       case result of
-        Left _ -> pure () -- Acceptable if validation catches empty names
-        Right () -> pure () -- Also acceptable as current implementation allows this"
+        Left (FileSystemError msg) -> do
+          -- Error message should mention invalid names
+          assertBool "Error mentions invalid names" ("Invalid" `isInfixOf` msg)
+        Left _ -> fail "Expected FileSystemError for invalid directory names"
+        Right () -> fail "Should have failed with empty directory name"
   ]
 
 

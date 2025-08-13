@@ -1,6 +1,13 @@
 {-# LANGUAGE OverloadedStrings #-}
 {-# OPTIONS_GHC -Wall #-}
 
+-- | Socket-based file watching for development server.
+--
+-- This module provides socket-based file monitoring functionality
+-- for the development server. It enables real-time file change
+-- detection to support hot reloading during development.
+--
+-- @since 0.19.1
 module Develop.Socket (watchFile) where
 
 import Control.Concurrent (forkIO, threadDelay)
