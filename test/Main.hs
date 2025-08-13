@@ -8,12 +8,14 @@ import qualified Golden.ParseExprGolden as ParseExprGolden
 import qualified Golden.ParseModuleGolden as ParseModuleGolden
 import qualified Golden.ParseTypeGolden as ParseTypeGolden
 import qualified Integration.CanExtensionTest as CanExtensionIT
+import qualified Integration.InstallTest as InstallIT
 import qualified Integration.JsGenTest as JsGenIT
 import qualified Integration.MakeTest as MakeIT
 import qualified Property.AST.CanonicalProps as CanonicalProps
 import qualified Property.AST.OptimizedBinaryProps as OptimizedBinaryProps
 import qualified Property.Canopy.VersionProps as VersionProps
 import qualified Property.Data.NameProps as NameProps
+import qualified Property.InstallProps as InstallProps
 import qualified Property.MakeProps as MakeProps
 import Test.Tasty
 import Test.Tasty.Runners
@@ -24,6 +26,7 @@ import qualified Unit.CLI.CommandsTest as CLICommandsTest
 import qualified Unit.CLI.DocumentationTest as CLIDocumentationTest
 import qualified Unit.CLI.ParsersTest as CLIParsersTest
 import qualified Unit.Data.NameTest as NameTest
+import qualified Unit.InstallTest as InstallTest
 import qualified Unit.Json.DecodeTest as JsonDecodeTest
 import qualified Unit.MainTest as MainTest
 import qualified Unit.MakeTest as MakeTest
@@ -58,6 +61,7 @@ unitTests =
       ParseModuleTest.tests,
       MakeTest.tests,
       MainTest.tests,
+      InstallTest.tests,
       CLIDocumentationTest.tests,
       CLIParsersTest.tests,
       CLICommandsTest.tests,
@@ -73,6 +77,7 @@ propertyTests =
       VersionProps.tests,
       CanonicalProps.tests,
       OptimizedBinaryProps.tests,
+      InstallProps.tests,
       MakeProps.tests
     ]
 
@@ -81,6 +86,7 @@ integrationTests =
   testGroup
     "Integration Tests"
     [ CanExtensionIT.tests,
+      InstallIT.tests,
       JsGenIT.tests,
       MakeIT.tests
     ]

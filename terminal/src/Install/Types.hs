@@ -186,6 +186,7 @@ data Widths = Widths
   , _rightWidth :: !Int
   -- ^ Maximum right column (new version) width
   }
+  deriving (Eq, Show)
 
 -- | Existing dependency found in project configuration.
 --

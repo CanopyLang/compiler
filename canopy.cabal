@@ -156,6 +156,13 @@ library
       Diff
       Init
       Install
+      Install.AppPlan
+      Install.Arguments
+      Install.Changes
+      Install.Display
+      Install.Execution
+      Install.PkgPlan
+      Install.Types
       Main
       Make
       Make.Builder
@@ -281,6 +288,13 @@ executable canopy
       Diff
       Init
       Install
+      Install.AppPlan
+      Install.Arguments
+      Install.Changes
+      Install.Display
+      Install.Execution
+      Install.PkgPlan
+      Install.Types
       Make
       Make.Builder
       Make.Environment
@@ -392,12 +406,14 @@ test-suite canopy-test
       Golden.ParseTypeGolden
       Integration.CanExtensionTest
       Integration.CompilerTest
+      Integration.InstallTest
       Integration.JsGenTest
       Integration.MakeTest
       Property.AST.CanonicalProps
       Property.AST.OptimizedBinaryProps
       Property.Canopy.VersionProps
       Property.Data.NameProps
+      Property.InstallProps
       Property.MakeProps
       Unit.AST.CanonicalTypeTest
       Unit.AST.SourceTest
@@ -406,6 +422,7 @@ test-suite canopy-test
       Unit.CLI.DocumentationTest
       Unit.CLI.ParsersTest
       Unit.Data.NameTest
+      Unit.InstallTest
       Unit.Json.DecodeTest
       Unit.MainTest
       Unit.MakeTest
