@@ -54,7 +54,6 @@ import qualified Data.Maybe as Maybe
 import Develop.Types
   ( Flags,
     ServerConfig (..),
-    defaultServerConfig,
     flagsPort,
     scPort
   )

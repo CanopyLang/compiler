@@ -10,8 +10,10 @@
   - `test/Integration`
 - Also look in the folders that are nested for this module for example Main.hs also look in Main/\*.hs
 - Ensure every test **complies with CLAUDE.md**, is **useful** (asserts real behavior and exact outcomes), and achieves **≥80% coverage** for the target module.
+- Ensure functions and their outcome are tested.
 - Iterate: **audit → fix → add → re-run** until all standards are met.
 - Use **Haskell Tasty** and follow the style of `test/Unit/Parse/PatternTest.hs`.
+- Be very strict when auditing.
 
 ---
 
@@ -63,6 +65,7 @@
    - Normalize imports to **CLAUDE.md** standard.
    - Replace ad-hoc generators with **QuickCheck** generators and **shrinkers** where relevant.
    - Deduplicate setup using helpers; keep each test ≤15 lines.
+   - Never mock test results, always implement meaningful test. If a test fails, fix the real problem.
 
 5. **Add Missing Tests**
 

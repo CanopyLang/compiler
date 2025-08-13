@@ -41,13 +41,13 @@ where
 import qualified Data.List as List
 import qualified Data.Maybe as Maybe
 import GHC.IO.Handle (hIsTerminalDevice)
-import Reporting.Suggest as Suggest
+import qualified Reporting.Suggest as Suggest
 import qualified System.Environment as Env
 import qualified System.Exit as Exit
-import qualified System.FilePath as FP
+import qualified System.FilePath as FilePath
 import System.IO (hPutStrLn, stderr)
-import Terminal.Internal
-import qualified Text.PrettyPrint.ANSI.Leijen as P
+import Terminal.Internal (CompleteArgs(..), RequiredArgs(..), Args(..), Flag(..), Flags(..), Parser(..), Command(..), Summary(..), toName)
+import qualified Text.PrettyPrint.ANSI.Leijen as PrettyPrint
 
 -- ERROR
 
@@ -73,38 +73,38 @@ data Expectation = Expectation
 
 -- EXIT
 
-exitSuccess :: [P.Doc] -> IO a
+exitSuccess :: [PrettyPrint.Doc] -> IO a
 exitSuccess =
   exitWith Exit.ExitSuccess
 
-exitFailure :: [P.Doc] -> IO a
+exitFailure :: [PrettyPrint.Doc] -> IO a
 exitFailure =
   exitWith (Exit.ExitFailure 1)
 
-exitWith :: Exit.ExitCode -> [P.Doc] -> IO a
+exitWith :: Exit.ExitCode -> [PrettyPrint.Doc] -> IO a
 exitWith code docs = do
   isTerminal <- hIsTerminalDevice stderr
-  let adjust = if isTerminal then id else P.plain
-      formattedDocs = P.vcat $ concatMap (\d -> [d, ""]) docs
-  ((P.displayIO stderr . P.renderPretty 1 80) . adjust) formattedDocs
+  let adjust = if isTerminal then id else PrettyPrint.plain
+      formattedDocs = PrettyPrint.vcat $ concatMap (\d -> [d, ""]) docs
+  ((PrettyPrint.displayIO stderr . PrettyPrint.renderPretty 1 80) . adjust) formattedDocs
   hPutStrLn stderr ""
   Exit.exitWith code
 
 getExeName :: IO String
 getExeName =
-  FP.takeFileName <$> Env.getProgName
+  FilePath.takeFileName <$> Env.getProgName
 
-stack :: [P.Doc] -> P.Doc
+stack :: [PrettyPrint.Doc] -> PrettyPrint.Doc
 stack docs =
-  P.vcat $ List.intersperse "" docs
+  PrettyPrint.vcat $ List.intersperse "" docs
 
-reflow :: String -> P.Doc
+reflow :: String -> PrettyPrint.Doc
 reflow string =
-  P.fillSep . fmap P.text $ words string
+  PrettyPrint.fillSep . fmap PrettyPrint.text $ words string
 
 -- HELP
 
-exitWithHelp :: Maybe String -> String -> P.Doc -> Args args -> Flags flags -> IO a
+exitWithHelp :: Maybe String -> String -> PrettyPrint.Doc -> Args args -> Flags flags -> IO a
 exitWithHelp maybeCommand details example (Args args) flags = do
   command <- toCommand maybeCommand
   let basicDocs = createBasicHelpDocs command details example args
@@ -112,21 +112,21 @@ exitWithHelp maybeCommand details example (Args args) flags = do
   exitSuccess (basicDocs <> flagDocs)
 
 -- | Create basic help documentation components.
-createBasicHelpDocs :: String -> String -> P.Doc -> [CompleteArgs a] -> [P.Doc]
+createBasicHelpDocs :: String -> String -> PrettyPrint.Doc -> [CompleteArgs a] -> [PrettyPrint.Doc]
 createBasicHelpDocs command details example args =
   [ reflow details,
-    (P.indent 4 . P.cyan) . P.vcat $ fmap (argsToDoc command) args,
+    (PrettyPrint.indent 4 . PrettyPrint.cyan) . PrettyPrint.vcat $ fmap (argsToDoc command) args,
     example
   ]
 
 -- | Create flag documentation if flags exist.
-createFlagHelpDocs :: Flags flags -> [P.Doc]
+createFlagHelpDocs :: Flags flags -> [PrettyPrint.Doc]
 createFlagHelpDocs flags =
   case flagsToDocs flags [] of
     [] -> []
     docs@(_ : _) ->
       [ "You can customize this command with the following flags:",
-        P.indent 4 $ stack docs
+        PrettyPrint.indent 4 $ stack docs
       ]
 
 toCommand :: Maybe String -> IO String
@@ -140,7 +140,7 @@ toCommand maybeCommand =
         Just command ->
           exeName <> (" " <> command)
 
-argsToDoc :: String -> CompleteArgs a -> P.Doc
+argsToDoc :: String -> CompleteArgs a -> PrettyPrint.Doc
 argsToDoc command args =
   case args of
     Exactly required ->
@@ -150,11 +150,11 @@ argsToDoc command args =
     Optional required (Parser singular _ _ _ _) ->
       argsToDocHelp command required ["optional " <> singular]
 
-argsToDocHelp :: String -> RequiredArgs a -> [String] -> P.Doc
+argsToDocHelp :: String -> RequiredArgs a -> [String] -> PrettyPrint.Doc
 argsToDocHelp command args names =
   case args of
     Done _ ->
-      (P.hang 4 . P.hsep) . fmap P.text $ (command : fmap toToken names)
+      (PrettyPrint.hang 4 . PrettyPrint.hsep) . fmap PrettyPrint.text $ (command : fmap toToken names)
     Required others (Parser singular _ _ _ _) ->
       argsToDocHelp command others (singular : names)
 
@@ -162,65 +162,65 @@ toToken :: String -> String
 toToken string =
   "<" <> (fmap (\c -> if c == ' ' then '-' else c) string <> ">")
 
-flagsToDocs :: Flags flags -> [P.Doc] -> [P.Doc]
+flagsToDocs :: Flags flags -> [PrettyPrint.Doc] -> [PrettyPrint.Doc]
 flagsToDocs flags docs =
   case flags of
     FDone _ ->
       docs
     FMore more flag ->
       let flagDoc =
-            P.vcat $
+            PrettyPrint.vcat $
               case flag of
                 Flag name (Parser singular _ _ _ _) description ->
-                  [ P.dullcyan . P.text $ ("--" <> (name <> ("=" <> toToken singular))),
-                    P.indent 4 $ reflow description
+                  [ PrettyPrint.dullcyan . PrettyPrint.text $ ("--" <> (name <> ("=" <> toToken singular))),
+                    PrettyPrint.indent 4 $ reflow description
                   ]
                 OnOff name description ->
-                  [ P.dullcyan . P.text $ ("--" <> name),
-                    P.indent 4 $ reflow description
+                  [ PrettyPrint.dullcyan . PrettyPrint.text $ ("--" <> name),
+                    PrettyPrint.indent 4 $ reflow description
                   ]
        in flagsToDocs more (flagDoc : docs)
 
 -- OVERVIEW
 
-exitWithOverview :: P.Doc -> P.Doc -> [Command] -> IO a
+exitWithOverview :: PrettyPrint.Doc -> PrettyPrint.Doc -> [Command] -> IO a
 exitWithOverview intro outro commands = do
   exeName <- getExeName
   let overviewDocs = createOverviewDocs exeName intro outro commands
   exitSuccess overviewDocs
 
 -- | Create overview documentation sections.
-createOverviewDocs :: String -> P.Doc -> P.Doc -> [Command] -> [P.Doc]
+createOverviewDocs :: String -> PrettyPrint.Doc -> PrettyPrint.Doc -> [Command] -> [PrettyPrint.Doc]
 createOverviewDocs exeName intro outro commands =
   [ intro,
     "The most common commands are:",
-    P.indent 4 . stack $ Maybe.mapMaybe (toSummary exeName) commands,
+    PrettyPrint.indent 4 . stack $ Maybe.mapMaybe (toSummary exeName) commands,
     "There are a bunch of other commands as well though. Here is a full list:",
-    P.indent 4 . P.dullcyan $ toCommandList exeName commands,
+    PrettyPrint.indent 4 . PrettyPrint.dullcyan $ toCommandList exeName commands,
     "Adding the --help flag gives a bunch of additional details about each one.",
     outro
   ]
 
-toSummary :: String -> Command -> Maybe P.Doc
+toSummary :: String -> Command -> Maybe PrettyPrint.Doc
 toSummary exeName (Command name summary _ _ (Args args) _ _) =
   case summary of
     Uncommon ->
       Nothing
     Common summaryString ->
       Just $
-        P.vcat
-          [ P.cyan $ argsToDoc (exeName <> (" " <> name)) (case args of arg : _ -> arg; [] -> error "empty args list"),
-            P.indent 4 $ reflow summaryString
+        PrettyPrint.vcat
+          [ PrettyPrint.cyan $ argsToDoc (exeName <> (" " <> name)) (case args of arg : _ -> arg; [] -> error "empty args list"),
+            PrettyPrint.indent 4 $ reflow summaryString
           ]
 
-toCommandList :: String -> [Command] -> P.Doc
+toCommandList :: String -> [Command] -> PrettyPrint.Doc
 toCommandList exeName commands =
   let names = fmap toName commands
       width = maximum (fmap length names)
 
       toExample name =
-        P.text (exeName <> (" " <> (name <> (replicate (width - length name) ' ' <> " --help"))))
-   in P.vcat (fmap toExample names)
+        PrettyPrint.text (exeName <> (" " <> (name <> (replicate (width - length name) ' ' <> " --help"))))
+   in PrettyPrint.vcat (fmap toExample names)
 
 -- UNKNOWN
 
@@ -232,13 +232,13 @@ exitWithUnknown unknown knowns = do
   exitFailure errorDocs
 
 -- | Create suggestions based on similar known commands.
-createSuggestions :: String -> [String] -> [P.Doc]
+createSuggestions :: String -> [String] -> [PrettyPrint.Doc]
 createSuggestions unknown knowns =
   let nearbyKnowns = takeWhile (\(r, _) -> r <= 3) (Suggest.rank unknown id knowns)
   in formatSuggestionText (fmap (toGreen . snd) nearbyKnowns)
 
 -- | Format suggestion text based on number of suggestions.
-formatSuggestionText :: [P.Doc] -> [P.Doc]
+formatSuggestionText :: [PrettyPrint.Doc] -> [PrettyPrint.Doc]
 formatSuggestionText suggestions =
   case suggestions of
     [] -> []
@@ -248,9 +248,9 @@ formatSuggestionText suggestions =
       ["Try"] <> (fmap (<> ",") (init abcs) <> ["or", last abcs, "instead?"])
 
 -- | Create error documentation for unknown commands.
-createUnknownCommandDocs :: String -> String -> [P.Doc] -> [P.Doc]
+createUnknownCommandDocs :: String -> String -> [PrettyPrint.Doc] -> [PrettyPrint.Doc]
 createUnknownCommandDocs exeName unknown suggestions =
-  [ P.fillSep (["There", "is", "no", toRed unknown, "command."] <> suggestions),
+  [ PrettyPrint.fillSep (["There", "is", "no", toRed unknown, "command."] <> suggestions),
     reflow ("Run `" <> (exeName <> "` with no arguments to get more hints."))
   ]
 
@@ -262,7 +262,7 @@ exitWithError err = do
   exitFailure errorDocs
 
 -- | Convert different error types to documentation.
-convertErrorToDocs :: Error -> IO [P.Doc]
+convertErrorToDocs :: Error -> IO [PrettyPrint.Doc]
 convertErrorToDocs err =
   case err of
     BadFlag flagError ->
@@ -271,7 +271,7 @@ convertErrorToDocs err =
       processArgErrors argErrors
 
 -- | Process argument errors into documentation.
-processArgErrors :: [(CompleteArgs a, ArgError)] -> IO [P.Doc]
+processArgErrors :: [(CompleteArgs a, ArgError)] -> IO [PrettyPrint.Doc]
 processArgErrors argErrors =
   case argErrors of
     [] ->
@@ -299,28 +299,28 @@ toArgErrorRank err =
     ArgMissing _ -> 1
     ArgExtras _ -> 2
 
-toGreen :: String -> P.Doc
+toGreen :: String -> PrettyPrint.Doc
 toGreen str =
-  P.green (P.text str)
+  PrettyPrint.green (PrettyPrint.text str)
 
-toYellow :: String -> P.Doc
+toYellow :: String -> PrettyPrint.Doc
 toYellow str =
-  P.yellow (P.text str)
+  PrettyPrint.yellow (PrettyPrint.text str)
 
-toRed :: String -> P.Doc
+toRed :: String -> PrettyPrint.Doc
 toRed str =
-  P.red (P.text str)
+  PrettyPrint.red (PrettyPrint.text str)
 
 -- ARG ERROR TO DOC
 
-argErrorToDocs :: ArgError -> IO [P.Doc]
+argErrorToDocs :: ArgError -> IO [PrettyPrint.Doc]
 argErrorToDocs argError =
   case argError of
     ArgMissing (Expectation tipe makeExamples) ->
       do
         examples <- makeExamples
         return
-          [ P.fillSep
+          [ PrettyPrint.fillSep
               [ "The",
                 "arguments",
                 "you",
@@ -339,15 +339,15 @@ argErrorToDocs argError =
                 "For",
                 "example:"
               ],
-            (P.indent 4 . P.green) . P.vcat $ fmap P.text examples
+            (PrettyPrint.indent 4 . PrettyPrint.green) . PrettyPrint.vcat $ fmap PrettyPrint.text examples
           ]
     ArgBad string (Expectation tipe makeExamples) ->
       do
         examples <- makeExamples
         return
           [ "I am having trouble with this argument:",
-            P.indent 4 $ toRed string,
-            P.fillSep
+            PrettyPrint.indent 4 $ toRed string,
+            PrettyPrint.fillSep
               ( [ "It",
                   "is",
                   "supposed",
@@ -360,7 +360,7 @@ argErrorToDocs argError =
                 ]
                   <> (if length examples == 1 then ["this:"] else ["one", "of", "these:"])
               ),
-            (P.indent 4 . P.green) . P.vcat $ fmap P.text examples
+            (PrettyPrint.indent 4 . PrettyPrint.green) . PrettyPrint.vcat $ fmap PrettyPrint.text examples
           ]
     ArgExtras extras ->
       let (these, them) =
@@ -369,22 +369,22 @@ argErrorToDocs argError =
               _ -> ("these arguments", "them")
        in return
             [ reflow ("I was not expecting " <> (these <> ":")),
-              (P.indent 4 . P.red) . P.vcat $ fmap P.text extras,
+              (PrettyPrint.indent 4 . PrettyPrint.red) . PrettyPrint.vcat $ fmap PrettyPrint.text extras,
               reflow ("Try removing " <> (them <> "?"))
             ]
 
 -- FLAG ERROR TO DOC
 
-flagErrorHelp :: String -> String -> [P.Doc] -> IO [P.Doc]
+flagErrorHelp :: String -> String -> [PrettyPrint.Doc] -> IO [PrettyPrint.Doc]
 flagErrorHelp summary original explanation =
   return
     ( [ reflow summary,
-        P.indent 4 (toRed original)
+        PrettyPrint.indent 4 (toRed original)
       ]
         <> explanation
     )
 
-flagErrorToDocs :: FlagError -> IO [P.Doc]
+flagErrorToDocs :: FlagError -> IO [PrettyPrint.Doc]
 flagErrorToDocs flagError =
   case flagError of
     FlagWithValue flagName value ->
@@ -393,7 +393,7 @@ flagErrorToDocs flagError =
         ("--" <> (flagName <> ("=" <> value)))
         [ "An on/off flag either exists or not. It cannot have an equals sign and value.\n\
           \Maybe you want this instead?",
-          P.indent 4 . toGreen $ ("--" <> flagName)
+          PrettyPrint.indent 4 . toGreen $ ("--" <> flagName)
         ]
     FlagWithNoValue flagName (Expectation tipe makeExamples) ->
       do
@@ -401,8 +401,8 @@ flagErrorToDocs flagError =
         flagErrorHelp
           "This flag needs more information:"
           ("--" <> flagName)
-          [ P.fillSep ["It", "needs", "a", toYellow (toToken tipe), "like", "this:"],
-            (P.indent 4 . P.vcat) . fmap toGreen $
+          [ PrettyPrint.fillSep ["It", "needs", "a", toYellow (toToken tipe), "like", "this:"],
+            (PrettyPrint.indent 4 . PrettyPrint.vcat) . fmap toGreen $
               ( case take 4 examples of
                   [] ->
                     ["--" <> (flagName <> ("=" <> toToken tipe))]
@@ -416,7 +416,7 @@ flagErrorToDocs flagError =
         flagErrorHelp
           "This flag was given a bad value:"
           ("--" <> (flagName <> ("=" <> badValue)))
-          [ P.fillSep
+          [ PrettyPrint.fillSep
               [ "I",
                 "need",
                 "a",
@@ -426,7 +426,7 @@ flagErrorToDocs flagError =
                 "For",
                 "example:"
               ],
-            (P.indent 4 . P.vcat) . fmap toGreen $
+            (PrettyPrint.indent 4 . PrettyPrint.vcat) . fmap toGreen $
               ( case take 4 examples of
                   [] ->
                     ["--" <> (flagName <> ("=" <> toToken tipe))]
@@ -443,22 +443,22 @@ flagErrorToDocs flagError =
                 [] ->
                   []
                 [thisOne] ->
-                  [ P.fillSep ["Maybe", "you", "want", P.green thisOne, "instead?"]
+                  [ PrettyPrint.fillSep ["Maybe", "you", "want", PrettyPrint.green thisOne, "instead?"]
                   ]
                 suggestions ->
-                  [ P.fillSep ["Maybe", "you", "want", "one", "of", "these", "instead?"],
-                    P.indent 4 . P.green $ P.vcat suggestions
+                  [ PrettyPrint.fillSep ["Maybe", "you", "want", "one", "of", "these", "instead?"],
+                    PrettyPrint.indent 4 . PrettyPrint.green $ PrettyPrint.vcat suggestions
                   ]
         )
 
-getNearbyFlags :: String -> Flags a -> [(Int, String)] -> [P.Doc]
+getNearbyFlags :: String -> Flags a -> [(Int, String)] -> [PrettyPrint.Doc]
 getNearbyFlags unknown flags unsortedFlags =
   case flags of
     FMore more flag ->
       getNearbyFlags unknown more (getNearbyFlagsHelp unknown flag : unsortedFlags)
     FDone _ ->
       fmap
-        (P.text . snd)
+        (PrettyPrint.text . snd)
         ( List.sortOn fst $
             case filter (\(d, _) -> d < 3) unsortedFlags of
               [] ->

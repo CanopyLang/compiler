@@ -12,6 +12,9 @@ import qualified Integration.InitTest as InitIT
 import qualified Integration.InstallTest as InstallIT
 import qualified Integration.JsGenTest as JsGenIT
 import qualified Integration.MakeTest as MakeIT
+import qualified Integration.DevelopTest as DevelopIT
+import qualified Integration.TerminalIntegrationTest as TerminalIT
+import qualified Integration.Terminal.ChompIntegrationTest as ChompIT
 import qualified Property.AST.CanonicalProps as CanonicalProps
 import qualified Property.AST.OptimizedBinaryProps as OptimizedBinaryProps
 import qualified Property.Canopy.VersionProps as VersionProps
@@ -19,6 +22,9 @@ import qualified Property.Data.NameProps as NameProps
 import qualified Property.InitProps as InitProps
 import qualified Property.InstallProps as InstallProps
 import qualified Property.MakeProps as MakeProps
+import qualified Property.DevelopProps as DevelopProps
+import qualified Property.TerminalProps as TerminalProps
+import qualified Property.Terminal.ChompProps as ChompProps
 import Test.Tasty
 import Test.Tasty.Runners
 import qualified Unit.AST.CanonicalTypeTest as CanonicalTypeTest
@@ -29,6 +35,11 @@ import qualified Unit.CLI.DocumentationTest as CLIDocumentationTest
 import qualified Unit.CLI.ParsersTest as CLIParsersTest
 import qualified Unit.Data.NameTest as NameTest
 import qualified Unit.DevelopTest as DevelopTest
+import qualified Unit.DevelopMainTest as DevelopMainTest
+import qualified Unit.Develop.CompilationTest as DevelopCompilationTest
+import qualified Unit.Develop.EnvironmentTest as DevelopEnvironmentTest
+import qualified Unit.Develop.MimeTypesTest as DevelopMimeTypesTest
+import qualified Unit.Develop.TypesTest as DevelopTypesTest
 import qualified Unit.Diff.EnvironmentTest as DiffEnvironmentTest
 import qualified Unit.Diff.OutputTest as DiffOutputTest
 import qualified Unit.Diff.TypesTest as DiffTypesTest
@@ -47,6 +58,8 @@ import qualified Unit.Parse.ExpressionTest as ParseExpressionTest
 import qualified Unit.Parse.ModuleTest as ParseModuleTest
 import qualified Unit.Parse.PatternTest as ParsePatternTest
 import qualified Unit.Parse.TypeTest as ParseTypeTest
+import qualified Unit.TerminalTest as TerminalTest
+import qualified Unit.Terminal.ChompTest as ChompTest
 
 main :: IO ()
 main = defaultMain tests
@@ -69,6 +82,11 @@ unitTests =
       VersionTest.tests,
       JsonDecodeTest.tests,
       DevelopTest.tests,
+      DevelopMainTest.tests,
+      DevelopCompilationTest.tests,
+      DevelopEnvironmentTest.tests,
+      DevelopMimeTypesTest.tests,
+      DevelopTypesTest.tests,
       DiffTest.tests,
       DiffTypesTest.tests,
       DiffEnvironmentTest.tests,
@@ -90,7 +108,9 @@ unitTests =
       CLIParsersTest.tests,
       CLICommandsTest.tests,
       SourceAstTest.tests,
-      CanonicalTypeTest.tests
+      CanonicalTypeTest.tests,
+      TerminalTest.tests,
+      ChompTest.tests
     ]
 
 propertyTests :: TestTree
@@ -103,7 +123,10 @@ propertyTests =
       OptimizedBinaryProps.tests,
       InitProps.tests,
       InstallProps.tests,
-      MakeProps.tests
+      MakeProps.tests,
+      DevelopProps.tests,
+      TerminalProps.tests,
+      ChompProps.tests
     ]
 
 integrationTests :: TestTree
@@ -114,7 +137,10 @@ integrationTests =
       InitIT.tests,
       InstallIT.tests,
       JsGenIT.tests,
-      MakeIT.tests
+      MakeIT.tests,
+      DevelopIT.tests,
+      TerminalIT.tests,
+      ChompIT.tests
     ]
 
 -- Optionally expose golden separately for clarity

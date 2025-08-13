@@ -9,23 +9,24 @@ module Terminal.Helpers
 where
 
 import Canopy.CustomRepositoryData (RepositoryLocalName)
-import qualified Canopy.Package as Pkg
-import qualified Canopy.Version as V
-import qualified Data.ByteString.UTF8 as BS_UTF8
+import qualified Canopy.Package as Package
+import qualified Canopy.Version as Version
+import qualified Data.ByteString.UTF8 as ByteString
 import qualified Data.Char as Char
 import qualified Data.List as List
 import qualified Data.Map as Map
 import qualified Data.Utf8 as Utf8
 import qualified Deps.Registry as Registry
-import qualified Parse.Primitives as P
+import qualified Parse.Primitives as Parse
 import qualified Reporting.Suggest as Suggest
 import qualified Stuff
-import qualified System.FilePath as FP
-import Terminal (Parser (..))
+import qualified System.FilePath as FilePath
+import Terminal (Parser(..))
+import qualified Terminal
 
 -- VERSION
 
-version :: Parser V.Version
+version :: Parser Version.Version
 version =
   Parser
     { _singular = "version",
@@ -35,9 +36,9 @@ version =
       _examples = return . exampleVersions
     }
 
-parseVersion :: String -> Maybe V.Version
+parseVersion :: String -> Maybe Version.Version
 parseVersion chars =
-  case P.fromByteString V.parser (,) (BS_UTF8.fromString chars) of
+  case Parse.fromByteString Version.parser (,) (ByteString.fromString chars) of
     Right vsn -> Just vsn
     Left _ -> Nothing
 
@@ -89,7 +90,7 @@ canopyFile =
 
 parseCanopyFile :: String -> Maybe FilePath
 parseCanopyFile chars =
-  let ext = FP.takeExtension chars
+  let ext = FilePath.takeExtension chars
    in if ext == ".can" || ext == ".canopy" || ext == ".elm" then Just chars else Nothing
 
 exampleCanopyFiles :: String -> IO [String]
@@ -98,7 +99,7 @@ exampleCanopyFiles _ =
 
 -- PACKAGE
 
-package :: Parser Pkg.Name
+package :: Parser Package.Name
 package =
   Parser
     { _singular = "package",
@@ -108,9 +109,9 @@ package =
       _examples = examplePackages
     }
 
-parsePackage :: String -> Maybe Pkg.Name
+parsePackage :: String -> Maybe Package.Name
 parsePackage chars =
-  case P.fromByteString Pkg.parser (,) (BS_UTF8.fromString chars) of
+  case Parse.fromByteString Package.parser (,) (ByteString.fromString chars) of
     Right pkg -> Just pkg
     Left _ -> Nothing
 
@@ -126,7 +127,7 @@ suggestPackages given =
           []
         Just (Registry.Registry _ versions) ->
           filter (List.isPrefixOf given) $
-            fmap Pkg.toChars (Map.keys versions)
+            fmap Package.toChars (Map.keys versions)
 
 examplePackages :: String -> IO [String]
 examplePackages given =
@@ -142,4 +143,4 @@ examplePackages given =
             "canopy/random"
           ]
         Just (Registry.Registry _ versions) ->
-          fmap Pkg.toChars . take 4 $ Suggest.sort given Pkg.toChars (Map.keys versions)
+          fmap Package.toChars . take 4 $ Suggest.sort given Package.toChars (Map.keys versions)

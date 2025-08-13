@@ -48,7 +48,6 @@ import qualified BackgroundWriter as BW
 import qualified Build
 import qualified Canopy.Details as Details
 import qualified Canopy.ModuleName as ModuleName
-import Control.Monad.Trans (liftIO)
 import Data.ByteString.Builder (Builder)
 import qualified Data.Name as Name
 import qualified Data.NonEmptyList as NE
@@ -132,11 +131,6 @@ generateJavaScriptCode :: FilePath -> Details.Details -> Build.Artifacts -> Task
 generateJavaScriptCode root details artifacts =
   Task.mapError Exit.ReactorBadGenerate (Generate.dev root details artifacts)
 
--- | Extract module name from build artifacts.
-extractModuleName :: Build.Artifacts -> String
-extractModuleName artifacts =
-  let (NE.List name _) = Build.getRootNames artifacts
-  in ModuleName.toChars name
 
 -- | Validate project structure for compilation.
 --
