@@ -1,598 +1,309 @@
 {-# LANGUAGE OverloadedStrings #-}
+{-# OPTIONS_GHC -Wall #-}
 
+-- | Package publishing functionality for the Canopy compiler.
+--
+-- This module provides the main interface for publishing Canopy packages
+-- to package repositories. It coordinates validation, version checking,
+-- Git operations, and repository uploads.
+--
+-- The publishing process includes:
+-- - Package validation (README, LICENSE, exposed modules)
+-- - Semantic versioning verification
+-- - Git tag verification
+-- - Documentation generation
+-- - Archive creation and upload
+--
+-- @since 0.19.1
 module Publish
-  ( run,
+  ( -- * Main Interface
+    run,
     Args (..),
+
+    -- * Environment
+    Env (..),
+    getEnv,
+
+    -- * Publishing
+    publish,
+    publishPackage,
+
+    -- * Repository Management
+    lookupRepositoryByLocalName,
+    getAllLocalNamesInRegistries,
+
+    -- * Validation
+    validatePackageForPublishing,
+    verifyReadme,
+    verifyLicense,
+    verifyBuild,
+    verifyVersion,
+
+    -- * Git Integration
+    Git (..),
+    getGit,
+    verifyTag,
+    verifyNoChanges,
+
+    -- * Reporting
+    reportPublishStart,
+    reportCheck,
+    reportCustomCheck,
   )
 where
 
-import qualified BackgroundWriter as BW
-import qualified Build
-import Canopy.CustomRepositoryData (CustomSingleRepositoryData (..), DefaultPackageServerRepo (..), PZRPackageServerRepo (..), RepositoryAuthToken, RepositoryLocalName, RepositoryUrl)
-import qualified Canopy.Details as Details
+import Canopy.CustomRepositoryData
+  ( CustomSingleRepositoryData (..),
+    DefaultPackageServerRepo (..),
+    PZRPackageServerRepo (..),
+    RepositoryLocalName,
+    RepositoryUrl,
+  )
 import Canopy.Docs (Documentation)
-import qualified Canopy.Docs as Docs
-import qualified Canopy.Magnitude as M
 import qualified Canopy.Outline as Outline
 import Canopy.Package (Name)
-import qualified Canopy.Package as Pkg
 import Canopy.Version (Version)
-import qualified Canopy.Version as V
 import qualified Codec.Archive.Zip as Zip
-import Control.Exception (bracket_)
-import Control.Monad (void, when)
-import qualified Data.ByteString as BS
+import Control.Lens ((^.))
 import Data.List (isInfixOf)
-import qualified Data.List as List
-import qualified Data.Map as Map
-import qualified Data.Maybe as Maybe
-import qualified Data.NonEmptyList as NE
 import qualified Data.Utf8 as Utf8
-import qualified Deps.Bump as Bump
-import Deps.CustomRepositoryDataIO (loadCustomRepositoriesData)
-import qualified Deps.Diff as Diff
-import Deps.Registry (createAuthHeader)
 import qualified Deps.Registry as Registry
 import Deps.Website (standardCanopyPkgRepoDomain)
-import qualified Deps.Website as Website
-import qualified File
-import qualified Http
-import qualified Json.Decode as D
-import qualified Json.String as Json
 import Logging.Logger (printLog)
+import Publish.Environment (getEnv, initGit)
+import Publish.Git
+  ( createZipArchive,
+    downloadAndVerifyZip,
+    verifyNoChanges,
+    verifyTag,
+  )
+import Publish.Progress
+  ( reportBuildCheck,
+    reportCheck,
+    reportCustomCheck,
+    reportDownloadCheck,
+    reportLicenseCheck,
+    reportLocalChangesCheck,
+    reportPublishStart,
+    reportReadmeCheck,
+    reportSemverCheck,
+    reportTagCheck,
+  )
+import Publish.Registry
+  ( getAllLocalNamesInRegistries,
+    lookupRepositoryByLocalName,
+    registerToDefaultServer,
+    registerToPZRServer,
+  )
+import Publish.Types
+  ( Args (..),
+    Env (..),
+    Git (..),
+    GoodVersion (..),
+    envOutline,
+    envRegistry,
+    envRoot,
+    envManager,
+  )
+import Publish.Validation
+  ( checkVersionValidity,
+    validatePackageForPublishing,
+    verifyBuild,
+    verifyLicense,
+    verifyReadme,
+    verifyVersion,
+  )
 import qualified Reporting
-import Reporting.Doc (Doc, (<+>))
-import qualified Reporting.Doc as D
-import Reporting.Exit (Publish (PublishCustomRepositoryConfigDataError, PublishWithNoRepositoryLocalName))
+import Reporting.Exit (Publish)
 import qualified Reporting.Exit as Exit
-import qualified Reporting.Exit.Help as Help
 import Reporting.Task (Task)
 import qualified Reporting.Task as Task
-import qualified Stuff
-import qualified System.Directory as Dir
-import qualified System.Exit as Exit
-import System.FilePath ((</>))
-import qualified System.IO as IO
-import qualified System.Info as Info
-import qualified System.Process as Process
 
--- RUN
-
-data Args
-  = NoArgs
-  | PublishToRepository RepositoryLocalName
-
--- TODO mandate no "exposing (..)" in packages to make
--- optimization to skip builds in Canopy.Details always valid
-
+-- | Main entry point for the publish command.
+--
+-- Publishes a Canopy package to the specified repository after performing
+-- comprehensive validation checks including:
+-- - Package structure validation
+-- - README and LICENSE file checks
+-- - Documentation generation
+-- - Semantic versioning verification
+-- - Git tag verification
+--
+-- @since 0.19.1
 run :: Args -> () -> IO ()
 run args () =
-  Reporting.attempt Exit.publishToReport $
-    case args of
-      NoArgs ->
-        pure $ Left PublishWithNoRepositoryLocalName
-      PublishToRepository repositoryUrl ->
-        Task.run $
-          do
-            env <- getEnv
-            publish env repositoryUrl
+  Reporting.attempt Exit.publishToReport (handlePublishArgs args)
 
--- ENV
-
-data Env = Env
-  { _root :: FilePath,
-    _cache :: Stuff.PackageCache,
-    _manager :: Http.Manager,
-    _registry :: Registry.ZokkaRegistries,
-    _outline :: Outline.Outline
-  }
-
-getEnv :: Task Exit.Publish Env
-getEnv =
-  do
-    root <- Task.mio Exit.PublishNoOutline Stuff.findRoot
-    cache <- Task.io Stuff.getPackageCache
-    zokkaCache <- Task.io Stuff.getZokkaCache
-    manager <- Task.io Http.getManager
-    reposConfigLocation <- Task.io Stuff.getOrCreateZokkaCustomRepositoryConfig
-    customReposData <- Task.eio PublishCustomRepositoryConfigDataError $ loadCustomRepositoriesData reposConfigLocation
-    zokkaRegistries <- Task.eio Exit.PublishMustHaveLatestRegistry $ Registry.latest manager customReposData zokkaCache reposConfigLocation
-    outline <- Task.eio Exit.PublishBadOutline $ Outline.read root
-    return $ Env root cache manager zokkaRegistries outline
-
--- PUBLISH
-
-convertRegistryKeyToCustomSingleRepositoryData :: Registry.RegistryKey -> Maybe CustomSingleRepositoryData
-convertRegistryKeyToCustomSingleRepositoryData registryKey =
-  case registryKey of
-    Registry.RepositoryUrlKey customSingleRepositoryData -> Just customSingleRepositoryData
-    Registry.PackageUrlKey _ -> Nothing
-
-allCustomSingleRepositoryDataFromRegistries :: Registry.ZokkaRegistries -> [CustomSingleRepositoryData]
-allCustomSingleRepositoryDataFromRegistries Registry.ZokkaRegistries {Registry._registries = registriesMap} =
-  Maybe.mapMaybe convertRegistryKeyToCustomSingleRepositoryData (Map.keys registriesMap)
-
-localNameOfCustomSingleRepositoryData :: CustomSingleRepositoryData -> RepositoryLocalName
-localNameOfCustomSingleRepositoryData customSingleRepositoryData =
-  case customSingleRepositoryData of
-    DefaultPackageServerRepoData defaultPackageServerRepo -> _defaultPackageServerRepoLocalName defaultPackageServerRepo
-    PZRPackageServerRepoData pzrPackageServerRepo -> _pzrPackageServerRepoLocalName pzrPackageServerRepo
-
-findKeyByLocalName :: RepositoryLocalName -> [CustomSingleRepositoryData] -> Maybe CustomSingleRepositoryData
-findKeyByLocalName _ [] = Nothing
-findKeyByLocalName localName (customSingleRepositoryData : restOfRepos) =
-  if localNameOfCustomSingleRepositoryData customSingleRepositoryData == localName
-    then Just customSingleRepositoryData
-    else findKeyByLocalName localName restOfRepos
-
--- Consider whether a linear scan in a list of repositories is okay perf-wise
-lookupRepositoryByLocalName :: RepositoryLocalName -> Registry.ZokkaRegistries -> Maybe CustomSingleRepositoryData
-lookupRepositoryByLocalName repositoryLocalName zokkaRegistries =
-  findKeyByLocalName repositoryLocalName (allCustomSingleRepositoryDataFromRegistries zokkaRegistries)
-
-getAllLocalNamesInRegistries :: Registry.ZokkaRegistries -> [RepositoryLocalName]
-getAllLocalNamesInRegistries registries = fmap localNameOfCustomSingleRepositoryData (allCustomSingleRepositoryDataFromRegistries registries)
-
--- The only relevant things we need to zip up are the canopy.json file and all Canopy
--- files in `src`. Note that even though canopy.json for applications can specify
--- non-standard locations for source code, for packages, they must always be
--- under src.
+-- | Handle different argument types for publishing.
 --
--- We specifically do NOT pass a root argument and use purely relative paths
--- because absolute paths are actually quite annoying to deal with. In
--- particular, they potentially expose sensitive data about a user's filesystem.
+-- @since 0.19.1
+handlePublishArgs :: Args -> IO (Either Publish ())
+handlePublishArgs args =
+  case args of
+    NoArgs -> pure (Left Exit.PublishWithNoRepositoryLocalName)
+    PublishToRepository repositoryLocalName -> runPublishProcess repositoryLocalName
+
+-- | Run the complete publishing process for a repository.
 --
--- So we instead expect always that we are in the correct location when this is
--- run (which is okay to do because the Canopy compiler can only be run from the
--- top-level of a project when building).
+-- @since 0.19.1
+runPublishProcess :: RepositoryLocalName -> IO (Either Publish ())
+runPublishProcess repositoryLocalName =
+  Task.run $ do
+    env <- getEnv
+    publish env repositoryLocalName
+
+-- | Main publishing entry point.
 --
--- If we ever want to make the location of the compiler configurable, we'll have
--- to revisit this.
-createZipArchiveOfSourceCode :: IO Zip.Archive
-createZipArchiveOfSourceCode = do
-  canopyFiles <- File.listAllCanopyFilesRecursively "src"
-  -- Note that we must start with a "." entry. This is because the Canopy compiler
-  -- expects the very first entry of a ZIP archive to be the parent directory
-  -- and then subtracts that prefix from every other file that is decompressed.
-  -- If we use ".", this creates an entry with a zero-length file name (the
-  -- period is effectively erased), which is what we want.
-  --
-  -- On the other hand if we used "", our underlying Zip library would blow up
-  -- with an exception.
-  let filesToZip = "." : "canopy.json" : canopyFiles
-  printLog ("All the files we are zipping: " <> show filesToZip)
-  Zip.addFilesToArchive [] Zip.emptyArchive filesToZip
+-- Determines whether the project is an application or package and routes
+-- to the appropriate publishing function. Only packages can be published.
+--
+-- @since 0.19.1
+publish :: Env -> RepositoryLocalName -> Task Publish ()
+publish env repositoryLocalName =
+  case env ^. envOutline of
+    Outline.App _ -> Task.throw Exit.PublishApplication
+    Outline.Pkg pkgOutline -> publishPackage env repositoryLocalName pkgOutline
 
-publish :: Env -> RepositoryLocalName -> Task Exit.Publish ()
-publish env@(Env root _ manager registry outline) repositoryLocalName =
-  case outline of
-    Outline.App _ ->
-      Task.throw Exit.PublishApplication
-    Outline.Pkg (Outline.PkgOutline pkg summary _ vsn exposed _ _ _) ->
-      case lookupRepositoryByLocalName repositoryLocalName registry of
-        Nothing ->
-          Task.throw (Exit.PublishUsingRepositoryLocalNameThatDoesntExistInCustomRepositoryConfig repositoryLocalName (getAllLocalNamesInRegistries registry))
-        Just customRepositoriesData ->
-          do
-            let maybeKnownVersions = Registry.getVersions pkg registry
+-- | Publish a package to the specified repository.
+--
+-- Validates the package and runs comprehensive checks before publishing.
+-- Supports both default package servers and PZR servers.
+--
+-- @since 0.19.1
+publishPackage :: Env -> RepositoryLocalName -> Outline.PkgOutline -> Task Publish ()
+publishPackage env repositoryLocalName (Outline.PkgOutline pkg summary _ vsn exposed _ _ _) =
+  case lookupRepositoryByLocalName repositoryLocalName (env ^. envRegistry) of
+    Nothing -> throwMissingRepository repositoryLocalName (env ^. envRegistry)
+    Just customRepositoryData -> do
+      validatePackageForPublishing exposed summary
+      docs <- runPublishChecks env pkg vsn
+      publishToRepository env pkg vsn docs customRepositoryData
 
-            reportPublishStart pkg vsn maybeKnownVersions
-
-            when (noExposed exposed) $ Task.throw Exit.PublishNoExposed
-            when (badSummary summary) $ Task.throw Exit.PublishNoSummary
-
-            verifyReadme root
-            verifyLicense root
-            docs <- verifyBuild root
-            verifyVersion env pkg vsn docs maybeKnownVersions
-
-            Task.io $ putStrLn ""
-            case customRepositoriesData of
-              DefaultPackageServerRepoData defaultPackageServerRepo ->
-                let repositoryUrl = _defaultPackageServerRepoTypeUrl defaultPackageServerRepo
-                 in if Utf8.toChars standardCanopyPkgRepoDomain `isInfixOf` Utf8.toChars repositoryUrl
-                      then Task.throw Exit.PublishToStandardCanopyRepositoryUsingZokka
-                      else do
-                        git <- getGit
-                        commitHash <- verifyTag git manager pkg vsn
-                        verifyNoChanges git commitHash vsn
-                        zipHash <- verifyZip env pkg vsn
-                        register manager repositoryUrl pkg vsn docs commitHash zipHash
-              PZRPackageServerRepoData pzrPackageServerRepo ->
-                do
-                  Task.io $ putStrLn "Beginning to create in-memory ZIP archive of source code..."
-                  zipArchive <- Task.io createZipArchiveOfSourceCode
-                  Task.io $ putStrLn "Finished creating in-memory ZIP archive of source code!"
-                  Task.io $ printLog ("All files in ZIP archive: " <> show (Zip.filesInArchive zipArchive))
-                  registerToPZRRepo
-                    manager
-                    (_pzrPackageServerRepoTypeUrl pzrPackageServerRepo)
-                    (_pzrPackageServerRepoAuthToken pzrPackageServerRepo)
-                    pkg
-                    vsn
-                    docs
-                    zipArchive
-            Task.io $ putStrLn "Success!"
-
--- VERIFY SUMMARY
-
-badSummary :: Json.String -> Bool
-badSummary summary =
-  Json.isEmpty summary || Outline.defaultSummary == summary
-
-noExposed :: Outline.Exposed -> Bool
-noExposed exposed =
-  case exposed of
-    Outline.ExposedList modules ->
-      null modules
-    Outline.ExposedDict chunks ->
-      all (null . snd) chunks
-
--- VERIFY README
-
-verifyReadme :: FilePath -> Task Exit.Publish ()
-verifyReadme root =
-  reportReadmeCheck $
-    do
-      let readmePath = root </> "README.md"
-      exists <- File.exists readmePath
-      ( if exists
-          then
-            ( do
-                size <- IO.withFile readmePath IO.ReadMode IO.hFileSize
-                if size < 300
-                  then return (Left Exit.PublishShortReadme)
-                  else return (Right ())
-            )
-          else return (Left Exit.PublishNoReadme)
-        )
-
--- VERIFY LICENSE
-
-verifyLicense :: FilePath -> Task Exit.Publish ()
-verifyLicense root =
-  reportLicenseCheck $
-    do
-      let licensePath = root </> "LICENSE"
-      exists <- File.exists licensePath
-      if exists
-        then return (Right ())
-        else return (Left Exit.PublishNoLicense)
-
--- VERIFY BUILD
-
-verifyBuild :: FilePath -> Task Exit.Publish Documentation
-verifyBuild root =
-  reportBuildCheck . BW.withScope $
-    ( \scope ->
-        Task.run $
-          do
-            details@(Details.Details _ outline _ _ _ _) <-
-              Task.eio Exit.PublishBadDetails $
-                Details.load Reporting.silent scope root
-
-            exposed <-
-              case outline of
-                Details.ValidApp _ -> Task.throw Exit.PublishApplication
-                Details.ValidPkg _ [] _ -> Task.throw Exit.PublishNoExposed
-                Details.ValidPkg _ (e : es) _ -> return (NE.List e es)
-
-            Task.eio Exit.PublishBuildProblem $
-              Build.fromExposed Reporting.silent root details Build.KeepDocs exposed
+-- | Throw an error for missing repository configuration.
+--
+-- @since 0.19.1
+throwMissingRepository :: RepositoryLocalName -> Registry.ZokkaRegistries -> Task Publish ()
+throwMissingRepository repositoryLocalName registry =
+  Task.throw
+    ( Exit.PublishUsingRepositoryLocalNameThatDoesntExistInCustomRepositoryConfig
+        repositoryLocalName
+        (getAllLocalNamesInRegistries registry)
     )
 
--- GET GIT
+-- | Run comprehensive publishing validation checks.
+--
+-- Performs all necessary verification including README, LICENSE, build,
+-- and version checks before publishing.
+--
+-- @since 0.19.1
+runPublishChecks :: Env -> Name -> Version -> Task Publish Documentation
+runPublishChecks env pkg vsn = do
+  let maybeKnownVersions = getVersions pkg (env ^. envRegistry)
+  reportPublishStart pkg vsn maybeKnownVersions
+  performFileChecks (env ^. envRoot)
+  docs <- reportBuildCheck (Task.run (verifyBuild (env ^. envRoot)))
+  _ <- reportSemverCheck vsn (checkVersionValidityIO env pkg vsn docs maybeKnownVersions)
+  Task.io (putStrLn "")
+  pure docs
 
-newtype Git = Git {_run :: [String] -> IO Exit.ExitCode}
+-- | Perform file validation checks.
+--
+-- @since 0.19.1
+performFileChecks :: FilePath -> Task Publish ()
+performFileChecks root = do
+  reportReadmeCheck (Task.run (verifyReadme root))
+  reportLicenseCheck (Task.run (verifyLicense root))
 
-getGit :: Task Exit.Publish Git
-getGit =
-  do
-    maybeGit <- Task.io $ Dir.findExecutable "git"
-    case maybeGit of
-      Nothing ->
-        Task.throw Exit.PublishNoGit
-      Just git ->
-        return . Git $
-          ( \args ->
-              let process =
-                    (Process.proc git args)
-                      { Process.std_in = Process.CreatePipe,
-                        Process.std_out = Process.CreatePipe,
-                        Process.std_err = Process.CreatePipe
-                      }
-               in Process.withCreateProcess process $ \_ _ _ handle ->
-                    Process.waitForProcess handle
-          )
+-- | Route publishing to appropriate repository type.
+--
+-- @since 0.19.1
+publishToRepository :: Env -> Name -> Version -> Documentation -> CustomSingleRepositoryData -> Task Publish ()
+publishToRepository env pkg vsn docs customRepositoryData =
+  case customRepositoryData of
+    DefaultPackageServerRepoData defaultRepo -> publishToDefaultServer env pkg vsn docs defaultRepo
+    PZRPackageServerRepoData pzrRepo -> publishToPZRServer env pkg vsn docs pzrRepo
 
--- VERIFY GITHUB TAG
+-- | Publish to a default package server repository.
+--
+-- Validates that the repository is not the standard Canopy repository
+-- (which should use elm publish instead) and proceeds with Git verification.
+--
+-- @since 0.19.1
+publishToDefaultServer :: Env -> Name -> Version -> Documentation -> DefaultPackageServerRepo -> Task Publish ()
+publishToDefaultServer env pkg vsn docs defaultRepo = do
+  let repositoryUrl = _defaultPackageServerRepoTypeUrl defaultRepo
+  if isStandardCanopyRepo repositoryUrl
+    then Task.throw Exit.PublishToStandardCanopyRepositoryUsingZokka
+    else publishWithGitVerification env pkg vsn docs repositoryUrl
 
-verifyTag :: Git -> Http.Manager -> Name -> Version -> Task Exit.Publish String
-verifyTag git manager pkg vsn =
-  reportTagCheck vsn $
-    do
-      -- https://stackoverflow.com/questions/1064499/how-to-list-all-git-tags
-      exitCode <- _run git ["show", "--name-only", V.toChars vsn, "--"]
-      case exitCode of
-        Exit.ExitFailure _ ->
-          return $ Left (Exit.PublishMissingTag vsn)
-        Exit.ExitSuccess ->
-          let url = toTagUrl pkg vsn
-           in Http.get manager url [Http.accept "application/json"] (Exit.PublishCannotGetTag vsn) $ \body ->
-                case D.fromByteString commitHashDecoder body of
-                  Right hash ->
-                    return $ Right hash
-                  Left _ ->
-                    return $ Left (Exit.PublishCannotGetTagData vsn url body)
+-- | Check if repository is the standard Canopy repository.
+--
+-- @since 0.19.1
+isStandardCanopyRepo :: RepositoryUrl -> Bool
+isStandardCanopyRepo url =
+  Utf8.toChars standardCanopyPkgRepoDomain `isInfixOf` Utf8.toChars url
 
-toTagUrl :: Name -> Version -> String
-toTagUrl pkg vsn =
-  "https://api.github.com/repos/" <> (Pkg.toUrl pkg <> ("/git/refs/tags/" <> V.toChars vsn))
+-- | Publish with Git tag verification and GitHub integration.
+--
+-- Verifies Git tags, checks for local changes, downloads and verifies
+-- the ZIP archive from GitHub, then registers the package.
+--
+-- @since 0.19.1
+publishWithGitVerification :: Env -> Name -> Version -> Documentation -> RepositoryUrl -> Task Publish ()
+publishWithGitVerification env pkg vsn docs repositoryUrl = do
+  git <- initGit
+  commitHash <- reportTagCheck vsn (Task.run (verifyTag git (env ^. envManager) pkg vsn))
+  reportLocalChangesCheck (Task.run (verifyNoChanges git commitHash vsn))
+  zipHash <- reportDownloadCheck (Task.run (downloadAndVerifyZip env pkg vsn))
+  registerToDefaultServer (env ^. envManager) repositoryUrl pkg vsn docs commitHash zipHash
 
-commitHashDecoder :: D.Decoder e String
-commitHashDecoder =
-  Utf8.toChars
-    <$> D.field "object" (D.field "sha" D.string)
+-- | Publish to a PZR (Package Zip Repository) server.
+--
+-- Creates a ZIP archive of the source code and uploads it directly
+-- to the PZR server without Git verification.
+--
+-- @since 0.19.1
+publishToPZRServer :: Env -> Name -> Version -> Documentation -> PZRPackageServerRepo -> Task Publish ()
+publishToPZRServer env pkg vsn docs pzrRepo = do
+  zipArchive <- createAndReportZipArchive
+  registerToPZRServer
+    (env ^. envManager)
+    (_pzrPackageServerRepoTypeUrl pzrRepo)
+    (_pzrPackageServerRepoAuthToken pzrRepo)
+    pkg
+    vsn
+    docs
+    zipArchive
+  Task.io (putStrLn "Success!")
 
--- VERIFY NO LOCAL CHANGES SINCE TAG
+-- | Create and report ZIP archive creation.
+--
+-- @since 0.19.1
+createAndReportZipArchive :: Task Publish Zip.Archive
+createAndReportZipArchive = do
+  Task.io (putStrLn "Beginning to create in-memory ZIP archive of source code...")
+  archive <- createZipArchive
+  Task.io (putStrLn "Finished creating in-memory ZIP archive of source code!")
+  Task.io (printLog ("All files in ZIP archive: " <> show (Zip.filesInArchive archive)))
+  pure archive
 
-verifyNoChanges :: Git -> String -> Version -> Task Exit.Publish ()
-verifyNoChanges git commitHash vsn =
-  reportLocalChangesCheck $
-    do
-      -- https://stackoverflow.com/questions/3878624/how-do-i-programmatically-determine-if-there-are-uncommited-changes
-      exitCode <- _run git ["diff-index", "--quiet", commitHash, "--"]
-      case exitCode of
-        Exit.ExitSuccess -> return $ Right ()
-        Exit.ExitFailure _ -> return $ Left (Exit.PublishLocalChanges vsn)
+-- | Get available versions for a package.
+--
+-- @since 0.19.1
+getVersions :: Name -> Registry.ZokkaRegistries -> Maybe Registry.KnownVersions
+getVersions = Registry.getVersions
 
--- VERIFY THAT ZIP BUILDS / COMPUTE HASH
+-- | Helper function to convert Task to IO for version checking.
+--
+-- @since 0.19.1
+checkVersionValidityIO :: Env -> Name -> Version -> Documentation -> Maybe Registry.KnownVersions -> IO (Either Publish GoodVersion)
+checkVersionValidityIO env pkg vsn docs maybeVersions = do
+  result <- Task.run (checkVersionValidity env pkg vsn docs maybeVersions)
+  case result of
+    Left err -> pure (Left err)
+    Right (Left err) -> pure (Left err)
+    Right (Right goodVer) -> pure (Right goodVer)
 
-verifyZip :: Env -> Name -> Version -> Task Exit.Publish Http.Sha
-verifyZip (Env root _ manager _ _) pkg vsn =
-  withPrepublishDir root $ \prepublishDir ->
-    do
-      let url = toZipUrl pkg vsn
-
-      (sha, archive) <-
-        reportDownloadCheck $
-          Http.getArchive
-            manager
-            url
-            Exit.PublishCannotGetZip
-            (Exit.PublishCannotDecodeZip url)
-            (return . Right)
-
-      Task.io $ File.writePackage prepublishDir archive
-
-      reportZipBuildCheck . Dir.withCurrentDirectory prepublishDir $ verifyZipBuild prepublishDir
-
-      return sha
-
-toZipUrl :: Name -> Version -> String
-toZipUrl pkg vsn =
-  "https://github.com/" <> (Pkg.toUrl pkg <> ("/zipball/" <> (V.toChars vsn <> "/")))
-
-withPrepublishDir :: FilePath -> (FilePath -> Task x a) -> Task x a
-withPrepublishDir root callback =
-  let dir = Stuff.prepublishDir root
-   in Task.eio id $
-        bracket_
-          (Dir.createDirectoryIfMissing True dir)
-          (Dir.removeDirectoryRecursive dir)
-          (Task.run (callback dir))
-
-verifyZipBuild :: FilePath -> IO (Either Exit.Publish ())
-verifyZipBuild root =
-  BW.withScope $ \scope -> Task.run $
-    do
-      details@(Details.Details _ outline _ _ _ _) <-
-        Task.eio Exit.PublishZipBadDetails $
-          Details.load Reporting.silent scope root
-
-      exposed <-
-        case outline of
-          Details.ValidApp _ -> Task.throw Exit.PublishZipApplication
-          Details.ValidPkg _ [] _ -> Task.throw Exit.PublishZipNoExposed
-          Details.ValidPkg _ (e : es) _ -> return (NE.List e es)
-
-      _ <-
-        Task.eio Exit.PublishZipBuildProblem $
-          Build.fromExposed Reporting.silent root details Build.KeepDocs exposed
-
-      return ()
-
--- VERIFY VERSION
-
-data GoodVersion
-  = GoodStart
-  | GoodBump Version M.Magnitude
-
-verifyVersion :: Env -> Name -> Version -> Documentation -> Maybe Registry.KnownVersions -> Task Exit.Publish ()
-verifyVersion env pkg vsn newDocs publishedVersions =
-  reportSemverCheck vsn $
-    case publishedVersions of
-      Nothing ->
-        if vsn == V.one
-          then return $ Right GoodStart
-          else return . Left $ Exit.PublishNotInitialVersion vsn
-      Just knownVersions@(Registry.KnownVersions latest previous) ->
-        if vsn == latest || elem vsn previous
-          then return . Left $ Exit.PublishAlreadyPublished vsn
-          else verifyBump env pkg vsn newDocs knownVersions
-
-verifyBump :: Env -> Name -> Version -> Documentation -> Registry.KnownVersions -> IO (Either Exit.Publish GoodVersion)
-verifyBump (Env _ cache manager registry _) pkg vsn newDocs knownVersions@(Registry.KnownVersions latest _) =
-  case List.find (\(_, new, _) -> vsn == new) (Bump.getPossibilities knownVersions) of
-    Nothing ->
-      return . Left $ Exit.PublishInvalidBump vsn latest
-    Just (old, new, magnitude) ->
-      do
-        result <- Diff.getDocs cache registry manager pkg old
-        case result of
-          Left dp ->
-            return . Left $ Exit.PublishCannotGetDocs old new dp
-          Right oldDocs ->
-            let changes = Diff.diff oldDocs newDocs
-                realNew = Diff.bump changes old
-             in if new == realNew
-                  then return . Right $ GoodBump old magnitude
-                  else return . Left $ Exit.PublishBadBump old new magnitude realNew (Diff.toMagnitude changes)
-
--- REGISTER PACKAGES
-
-register :: Http.Manager -> RepositoryUrl -> Name -> Version -> Documentation -> String -> Http.Sha -> Task Exit.Publish ()
-register manager repositoryUrl pkg vsn docs commitHash sha =
-  let url =
-        Website.route
-          repositoryUrl
-          "/register"
-          [ ("name", Pkg.toChars pkg),
-            ("version", V.toChars vsn),
-            ("commit-hash", commitHash)
-          ]
-   in Task.eio Exit.PublishCannotRegister $
-        Http.upload
-          manager
-          url
-          [ Http.filePart "canopy.json" "canopy.json",
-            Http.jsonPart "docs.json" "docs.json" (Docs.encode docs),
-            Http.filePart "README.md" "README.md",
-            Http.stringPart "github-hash" (Http.shaToChars sha)
-          ]
-
-registerToPZRRepo :: Http.Manager -> RepositoryUrl -> RepositoryAuthToken -> Name -> Version -> Documentation -> Zip.Archive -> Task Exit.Publish ()
-registerToPZRRepo manager repositoryUrl repositoryAuthToken pkg vsn docs zipArchive =
-  let url =
-        Website.route
-          repositoryUrl
-          "/upload-package"
-          [ ("name", Pkg.toChars pkg),
-            ("version", V.toChars vsn)
-          ]
-   in Task.eio Exit.PublishCannotRegister $
-        Http.uploadWithHeaders
-          manager
-          url
-          [ Http.filePart "canopy.json" "canopy.json",
-            Http.jsonPart "docs.json" "docs.json" (Docs.encode docs),
-            Http.filePart "README.md" "README.md",
-            Http.bytesPart "package.zip" "package.zip" (BS.toStrict $ Zip.fromArchive zipArchive)
-          ]
-          [ createAuthHeader repositoryAuthToken
-          ]
-
--- REPORTING
-
-reportPublishStart :: Name -> Version -> Maybe Registry.KnownVersions -> Task x ()
-reportPublishStart pkg vsn maybeKnownVersions =
-  Task.io $
-    case maybeKnownVersions of
-      Nothing ->
-        putStrLn (Exit.newPackageOverview <> "\nI will now verify that everything is in order...\n")
-      Just _ ->
-        putStrLn ("Verifying " <> (Pkg.toChars pkg <> (" " <> (V.toChars vsn <> " ...\n"))))
-
--- REPORTING PHASES
-
-reportReadmeCheck :: IO (Either x a) -> Task x a
-reportReadmeCheck =
-  reportCheck
-    "Looking for README.md"
-    "Found README.md"
-    "Problem with your README.md"
-
-reportLicenseCheck :: IO (Either x a) -> Task x a
-reportLicenseCheck =
-  reportCheck
-    "Looking for LICENSE"
-    "Found LICENSE"
-    "Problem with your LICENSE"
-
-reportBuildCheck :: IO (Either x a) -> Task x a
-reportBuildCheck =
-  reportCheck
-    "Verifying documentation..."
-    "Verified documentation"
-    "Problem with documentation"
-
-reportSemverCheck :: Version -> IO (Either x GoodVersion) -> Task x ()
-reportSemverCheck version work =
-  let vsn = V.toChars version
-
-      waiting = ("Checking semantic versioning rules. Is " <> (vsn <> " correct?"))
-      failure = ("Version " <> (vsn <> " is not correct!"))
-      success result =
-        case result of
-          GoodStart ->
-            "All packages start at version " <> V.toChars V.one
-          GoodBump oldVersion magnitude ->
-            "Version number " <> (vsn <> (" verified (" <> (M.toChars magnitude <> (" change, " <> (V.toChars oldVersion <> (" => " <> (vsn <> ")")))))))
-   in void (reportCustomCheck waiting success failure work)
-
-reportTagCheck :: Version -> IO (Either x a) -> Task x a
-reportTagCheck vsn =
-  reportCheck
-    ("Is version " <> (V.toChars vsn <> " tagged on GitHub?"))
-    ("Version " <> (V.toChars vsn <> " is tagged on GitHub"))
-    ("Version " <> (V.toChars vsn <> " is not tagged on GitHub!"))
-
-reportDownloadCheck :: IO (Either x a) -> Task x a
-reportDownloadCheck =
-  reportCheck
-    "Downloading code from GitHub..."
-    "Code downloaded successfully from GitHub"
-    "Could not download code from GitHub!"
-
-reportLocalChangesCheck :: IO (Either x a) -> Task x a
-reportLocalChangesCheck =
-  reportCheck
-    "Checking for uncommitted changes..."
-    "No uncommitted changes in local code"
-    "Your local code is different than the code tagged on GitHub"
-
-reportZipBuildCheck :: IO (Either x a) -> Task x a
-reportZipBuildCheck =
-  reportCheck
-    "Verifying downloaded code..."
-    "Downloaded code compiles successfully"
-    "Cannot compile downloaded code!"
-
-reportCheck :: String -> String -> String -> IO (Either x a) -> Task x a
-reportCheck waiting success = reportCustomCheck waiting (const success)
-
-reportCustomCheck :: String -> (a -> String) -> String -> IO (Either x a) -> Task x a
-reportCustomCheck waiting success failure work =
-  let putFlush doc =
-        Help.toStdout doc >> IO.hFlush IO.stdout
-
-      padded message =
-        (message <> replicate (length waiting - length message) ' ')
-   in Task.eio id $
-        do
-          putFlush $ "  " <> waitingMark <+> D.fromChars waiting
-          result <- work
-          putFlush $
-            case result of
-              Right a -> "\r  " <> goodMark <+> D.fromChars (padded (success a) <> "\n")
-              Left _ -> "\r  " <> badMark <+> D.fromChars (padded failure <> "\n\n")
-
-          return result
-
--- MARKS
-
-goodMark :: Doc
-goodMark =
-  D.green $ if isWindows then "+" else "●"
-
-badMark :: Doc
-badMark =
-  D.red $ if isWindows then "X" else "✗"
-
-waitingMark :: Doc
-waitingMark =
-  D.dullyellow $ if isWindows then "-" else "→"
-
-isWindows :: Bool
-isWindows =
-  Info.os == "mingw32"
+-- Re-exports for compatibility
+getGit :: Task Publish Git
+getGit = initGit

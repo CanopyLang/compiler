@@ -47,6 +47,13 @@ data Flags = Flags
     _verbose :: Bool
   }
 
+data BuildContext = BuildContext
+  { _bcStyle :: Reporting.Style,
+    _bcRoot :: FilePath,
+    _bcDetails :: Details.Details,
+    _bcDesiredMode :: DesiredMode
+  }
+
 data Output
   = JS FilePath
   | Html FilePath
@@ -76,72 +83,81 @@ runInternal paths flags@(Flags {_report, _verbose}) = do
       Nothing -> return . Left $ Exit.MakeNoOutline
 
 runHelp :: FilePath -> [FilePath] -> Reporting.Style -> Flags -> IO (Either Exit.Make ())
-runHelp root paths style (Flags {_debug, _optimize, _output, _docs}) =
+runHelp root paths style flags =
   BW.withScope $ \scope ->
     Stuff.withRootLock root . Task.run $
-      ( do
-          desiredMode <- getMode _debug _optimize
-          _ <- Task.io (printLog "Made it to RUN 1")
-          details <- Task.eio Exit.MakeBadDetails (Details.load style scope root)
-          _ <- Task.io (printLog "Made it to RUN 2")
-          case paths of
-            [] ->
-              do
-                Task.io (printLog "RUNHELP: Building exposed modules (no paths provided)")
-                exposed <- getExposed details
-                buildExposed style root details _docs exposed
-            p : ps ->
-              do
-                Task.io (printLog ("RUNHELP: Building from paths: " <> show (p : ps)))
-                artifacts <- buildPaths style root details (NE.List p ps)
-                Task.io (printLog "Made it to RUN 3")
-                case _output of
-                  Nothing ->
-                    do
-                      Task.io (printLog "RUNHELP: No output specified, determining HTML/JS based on main functions")
-                      case getMains artifacts of
-                        [] -> do
-                          Task.io (printLog "RUNHELP: No main functions found - generating nothing")
-                          return ()
-                        [name] ->
-                          do
-                            Task.io (printLog ("RUNHELP: Found single main function - generating HTML: " <> Name.toChars name))
-                            builder <- toBuilder root details desiredMode artifacts
-                            generate style "index.html" (Html.sandwich name builder) (NE.List name [])
-                        name : names ->
-                          do
-                            Task.io (printLog ("RUNHELP: Found multiple main functions - generating JS: " <> show (fmap Name.toChars (name : names))))
-                            Task.io (printLog (show (name : names)))
-                            builder <- toBuilder root details desiredMode artifacts
-                            generate style "canopy.js" builder (NE.List name names)
-                  Just DevNull ->
-                    do
-                      Task.io (printLog "RUNHELP: Output target is /dev/null - generating nothing")
-                      return ()
-                  Just (JS target) ->
-                    do
-                      Task.io (printLog ("RUNHELP: JS target specified: " <> target))
-                      case getNoMains artifacts of
-                        [] ->
-                          do
-                            Task.io (printLog "RUNHELP: All modules are valid for JS generation")
-                            builder <- toBuilder root details desiredMode artifacts
-                            Task.io (printLog "Made it to RUN 4")
-                            generate style target builder (Build.getRootNames artifacts)
-                            Task.io (printLog "Made it to RUN 5")
-                        name : names ->
-                          do
-                            Task.io (printLog ("RUNHELP: Cannot generate JS - found non-main modules: " <> show (fmap Name.toChars (name : names))))
-                            Task.io (printLog ("NO MAIN FOUND: " <> Name.toChars name))
-                            Task.throw (Exit.MakeNonMainFilesIntoJavaScript name names)
-                  Just (Html target) ->
-                    do
-                      Task.io (printLog ("RUNHELP: HTML target specified: " <> target))
-                      name <- hasOneMain artifacts
-                      Task.io (printLog ("RUNHELP: Validated single main function for HTML: " <> Name.toChars name))
-                      builder <- toBuilder root details desiredMode artifacts
-                      generate style target (Html.sandwich name builder) (NE.List name [])
-      )
+      buildProject root paths style flags scope
+
+buildProject :: FilePath -> [FilePath] -> Reporting.Style -> Flags -> BW.Scope -> Task ()
+buildProject root paths style (Flags {_debug, _optimize, _output, _docs}) scope = do
+  desiredMode <- getMode _debug _optimize
+  Task.io (printLog "Loading project details")
+  details <- Task.eio Exit.MakeBadDetails (Details.load style scope root)
+  let ctx = BuildContext style root details desiredMode
+  case paths of
+    [] -> buildExposedModules style root details _docs
+    p : ps -> buildFromPaths ctx _output (NE.List p ps)
+
+buildExposedModules :: Reporting.Style -> FilePath -> Details.Details -> Maybe FilePath -> Task ()
+buildExposedModules style root details docs = do
+  Task.io (printLog "Building exposed modules (no paths provided)")
+  exposed <- getExposed details
+  buildExposed style root details docs exposed
+
+buildFromPaths :: BuildContext -> Maybe Output -> List FilePath -> Task ()
+buildFromPaths ctx maybeOutput paths = do
+  Task.io (printLog ("Building from paths: " <> show paths))
+  artifacts <- buildPaths (_bcStyle ctx) (_bcRoot ctx) (_bcDetails ctx) paths
+  case maybeOutput of
+    Nothing -> generateBasedOnMains ctx artifacts
+    Just target -> generateForTarget ctx artifacts target
+
+generateBasedOnMains :: BuildContext -> Build.Artifacts -> Task ()
+generateBasedOnMains ctx artifacts =
+  case getMains artifacts of
+    [] -> Task.io (printLog "No main functions found - generating nothing")
+    [name] -> generateSingleMain ctx artifacts name
+    names -> generateMultipleMain ctx artifacts names
+
+generateSingleMain :: BuildContext -> Build.Artifacts -> ModuleName.Raw -> Task ()
+generateSingleMain ctx artifacts name = do
+  Task.io (printLog ("Found single main function - generating HTML: " <> Name.toChars name))
+  builder <- toBuilder (_bcRoot ctx) (_bcDetails ctx) (_bcDesiredMode ctx) artifacts
+  generate (_bcStyle ctx) "index.html" (Html.sandwich name builder) (NE.List name [])
+
+generateMultipleMain :: BuildContext -> Build.Artifacts -> [ModuleName.Raw] -> Task ()
+generateMultipleMain ctx artifacts names =
+  case names of
+    [] -> Task.io (printLog "No main functions found - generating nothing")
+    name : rest -> do
+      Task.io (printLog ("Found multiple main functions - generating JS: " <> show (fmap Name.toChars names)))
+      builder <- toBuilder (_bcRoot ctx) (_bcDetails ctx) (_bcDesiredMode ctx) artifacts
+      generate (_bcStyle ctx) "canopy.js" builder (NE.List name rest)
+
+generateForTarget :: BuildContext -> Build.Artifacts -> Output -> Task ()
+generateForTarget _ _ DevNull =
+  Task.io (printLog "Output target is /dev/null - generating nothing")
+generateForTarget ctx artifacts (JS target) =
+  generateJsTarget ctx artifacts target
+generateForTarget ctx artifacts (Html target) =
+  generateHtmlTarget ctx artifacts target
+
+generateJsTarget :: BuildContext -> Build.Artifacts -> FilePath -> Task ()
+generateJsTarget ctx artifacts target =
+  case getNoMains artifacts of
+    [] -> do
+      Task.io (printLog ("Generating JS to: " <> target))
+      builder <- toBuilder (_bcRoot ctx) (_bcDetails ctx) (_bcDesiredMode ctx) artifacts
+      generate (_bcStyle ctx) target builder (Build.getRootNames artifacts)
+    name : names ->
+      Task.throw (Exit.MakeNonMainFilesIntoJavaScript name names)
+
+generateHtmlTarget :: BuildContext -> Build.Artifacts -> FilePath -> Task ()
+generateHtmlTarget ctx artifacts target = do
+  Task.io (printLog ("Generating HTML to: " <> target))
+  name <- hasOneMain artifacts
+  builder <- toBuilder (_bcRoot ctx) (_bcDetails ctx) (_bcDesiredMode ctx) artifacts
+  generate (_bcStyle ctx) target (Html.sandwich name builder) (NE.List name [])
 
 -- GET INFORMATION
 

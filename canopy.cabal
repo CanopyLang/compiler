@@ -193,6 +193,7 @@ library
     , http-client-tls
     , http-types
     , language-glsl
+    , lens
     , mtl
     , network
     , parsec
@@ -226,6 +227,12 @@ executable canopy
       Install
       Make
       Publish
+      Publish.Environment
+      Publish.Git
+      Publish.Progress
+      Publish.Registry
+      Publish.Types
+      Publish.Validation
       Repl
       Repl.Commands
       Repl.Eval
@@ -293,6 +300,7 @@ executable canopy
     , http-client-tls
     , http-types
     , language-glsl
+    , lens
     , mtl
     , network
     , parsec
@@ -389,6 +397,7 @@ test-suite canopy-test
     , http-client-tls
     , http-types
     , language-glsl
+    , lens
     , mtl
     , network
     , parsec

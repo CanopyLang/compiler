@@ -15,7 +15,7 @@ import qualified Install
 import qualified Make
 import qualified Publish
 import qualified Repl
-import Terminal (Command, Parser, Summary, (|--))
+import Terminal (Command, Parser, (|--))
 import qualified Terminal
 import qualified Terminal.Helpers as Terminal
 import Text.PrettyPrint.ANSI.Leijen (Doc)

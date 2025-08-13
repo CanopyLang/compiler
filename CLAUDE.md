@@ -26,6 +26,7 @@ These constraints are enforced by CI and must be followed without exception:
 6. **Lens usage**: Use lenses for all record access/updates; NO record-dot syntax
 7. **Qualified imports**: Everything qualified except types, lenses, and pragmas
 8. **Test coverage**: Minimum 80% coverage for all modules
+9. **Add documentation to each module in Haddock style**: Complete module-level documentation with purpose, examples, and function-level docs with type explanations
 
 ## 📁 Project Structure
 
@@ -134,6 +135,7 @@ import qualified System.Exit as Exit
 ```
 
 **Usage Rules (APPLY TO ENTIRE CODEBASE):**
+
 - **Type signatures**: Use unqualified types (`StateT`, `InputT`, `ExitCode`, `ByteString`, `Map`, etc.)
 - **Constructors**: Use qualified prefix (`Types.Skip`, `Types.Loop`, `Exit.ExitSuccess`, `Map.empty`)
 - **Functions**: ALWAYS use qualified (`State.put`, `Haskeline.runInputT`, `Trans.liftIO`, `Map.insert`)
@@ -142,6 +144,7 @@ import qualified System.Exit as Exit
 - **NO COMMENTS**: NEVER add comments like "-- Qualified imports" or "-- Local imports" in import blocks
 
 **WRONG:**
+
 ```haskell
 -- Bad type signatures
 processOutline :: FilePath -> IO (Either Exit.Outline Outline.Outline)
@@ -154,9 +157,10 @@ import qualified Control.Monad.State as S
 ```
 
 **CORRECT:**
+
 ```haskell
 -- Good type signatures
-processOutline :: FilePath -> IO (Either Exit Outline) 
+processOutline :: FilePath -> IO (Either Exit Outline)
 toByteString :: State -> Output -> ByteString
 
 -- Good import aliases
@@ -166,6 +170,7 @@ import qualified Control.Monad.State as State
 ```
 
 **Examples of correct usage:**
+
 ```haskell
 -- Type signature uses unqualified types
 loop :: Env -> State -> InputT M ExitCode
@@ -238,13 +243,13 @@ compileModule path =
   where
     processContent = parseModule >=> canonicalize >=> typeCheck >=> optimize >=> generateJS
 
--- GOOD: Kleisli composition  
+-- GOOD: Kleisli composition
 processFile :: FilePath -> Either Error Result
 processFile = readContent >=> parse >=> validate >=> transform
 
 -- GOOD: Using fmap and where for cleaner code
 compileWithDetails :: FilePath -> IO (Either Error (Module, Stats))
-compileWithDetails path = 
+compileWithDetails path =
   readFileUtf8 path >>= \content ->
     either (pure . Left) compileWithStats (parseModule content)
   where
@@ -287,7 +292,7 @@ parseExpressionBad input =
        Left err -> Left (formatError err)
        Right result -> Right result
 -- GOOD: Should use either:
-parseExpressionGood input = 
+parseExpressionGood input =
   either (Left . ParseError . Text.pack . show) Right (runParser expressionParser input)
 ```
 
@@ -347,8 +352,8 @@ When functions exceed limits, apply these patterns:
 ```haskell
 -- Extract helper functions
 compileModule :: Module -> Either Error CompiledModule
-compileModule = 
-  canonicalizeModule 
+compileModule =
+  canonicalizeModule
     >=> typeCheckModule
     >=> optimizeModule
     >=> generateCode
@@ -646,7 +651,7 @@ cleanupCache :: ModuleCache -> IO ModuleCache
 cleanupCache cache =
   fmap filterOldEntries Time.getCurrentTime
   where
-    filterOldEntries currentTime = 
+    filterOldEntries currentTime =
       cache & cacheModules %~ Map.filter (isRecent (Time.addUTCTime (-3600) currentTime))
 ```
 
@@ -823,7 +828,7 @@ processFile = readFile >=> parse >=> validate
 
 -- Testing
 spec :: Spec
-spec = Test.describe "Feature" $ 
+spec = Test.describe "Feature" $
   Test.it "works correctly" $
     feature input `shouldBe` expected
 ```

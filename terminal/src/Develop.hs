@@ -127,22 +127,24 @@ serveCanopy path =
         ((writeBuilder . Help.makePageHtml "Errors") . Just) . Exit.toJson $ Exit.reactorToReport exit
 
 compile :: FilePath -> IO (Either Exit.Reactor Builder)
-compile path =
-  do
-    maybeRoot <- Stuff.findRoot
-    case maybeRoot of
-      Nothing ->
-        return . Left $ Exit.ReactorNoOutline
-      Just root ->
-        BW.withScope $ \scope ->
-          Stuff.withRootLock root . Task.run $
-            ( do
-                details <- Task.eio Exit.ReactorBadDetails $ Details.load Reporting.silent scope root
-                artifacts <- Task.eio Exit.ReactorBadBuild $ Build.fromPaths Reporting.silent root details (NE.List path [])
-                javascript <- Task.mapError Exit.ReactorBadGenerate $ Generate.dev root details artifacts
-                let (NE.List name _) = Build.getRootNames artifacts
-                return $ Html.sandwich name javascript
-            )
+compile path = do
+  maybeRoot <- Stuff.findRoot
+  case maybeRoot of
+    Nothing -> return . Left $ Exit.ReactorNoOutline
+    Just root -> compileWithRoot root path
+
+compileWithRoot :: FilePath -> FilePath -> IO (Either Exit.Reactor Builder)
+compileWithRoot root path =
+  BW.withScope $ \scope ->
+    Stuff.withRootLock root . Task.run $ buildArtifacts scope root path
+
+buildArtifacts :: BW.Scope -> FilePath -> FilePath -> Task.Task Exit.Reactor Builder
+buildArtifacts scope root path = do
+  details <- Task.eio Exit.ReactorBadDetails $ Details.load Reporting.silent scope root
+  artifacts <- Task.eio Exit.ReactorBadBuild $ Build.fromPaths Reporting.silent root details (NE.List path [])
+  javascript <- Task.mapError Exit.ReactorBadGenerate $ Generate.dev root details artifacts
+  let (NE.List name _) = Build.getRootNames artifacts
+  return $ Html.sandwich name javascript
 
 -- SERVE STATIC ASSETS
 

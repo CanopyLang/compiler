@@ -79,35 +79,42 @@ type Task a =
   Task.Task Exit.Diff a
 
 runDiff :: Env -> Args -> Task ()
-runDiff env@(Env _ _ _ registry) args =
+runDiff env args =
   case args of
-    GlobalInquiry name v1 v2 ->
-      case Registry.getVersions' name registry of
-        Right vsns ->
-          do
-            oldDocs <- getLocalDocs env name vsns (min v1 v2)
-            newDocs <- getLocalDocs env name vsns (max v1 v2)
-            writeDiff oldDocs newDocs
-        Left suggestions ->
-          Task.throw (Exit.DiffUnknownPackage name suggestions)
-    LocalInquiry v1 v2 ->
-      do
-        (name, vsns) <- readOutline env
-        oldDocs <- getLocalDocs env name vsns (min v1 v2)
-        newDocs <- getLocalDocs env name vsns (max v1 v2)
-        writeDiff oldDocs newDocs
-    CodeVsLatest ->
-      do
-        (name, vsns) <- readOutline env
-        oldDocs <- getLatestDocs env name vsns
-        newDocs <- generateDocs env
-        writeDiff oldDocs newDocs
-    CodeVsExactly version ->
-      do
-        (name, vsns) <- readOutline env
-        oldDocs <- getLocalDocs env name vsns version
-        newDocs <- generateDocs env
-        writeDiff oldDocs newDocs
+    GlobalInquiry name v1 v2 -> runGlobalInquiry env name v1 v2
+    LocalInquiry v1 v2 -> runLocalInquiry env v1 v2
+    CodeVsLatest -> runCodeVsLatest env
+    CodeVsExactly version -> runCodeVsExactly env version
+
+runGlobalInquiry :: Env -> Name -> Version -> Version -> Task ()
+runGlobalInquiry env@(Env _ _ _ registry) name v1 v2 =
+  case Registry.getVersions' name registry of
+    Right vsns -> do
+      oldDocs <- getLocalDocs env name vsns (min v1 v2)
+      newDocs <- getLocalDocs env name vsns (max v1 v2)
+      writeDiff oldDocs newDocs
+    Left suggestions -> Task.throw (Exit.DiffUnknownPackage name suggestions)
+
+runLocalInquiry :: Env -> Version -> Version -> Task ()
+runLocalInquiry env v1 v2 = do
+  (name, vsns) <- readOutline env
+  oldDocs <- getLocalDocs env name vsns (min v1 v2)
+  newDocs <- getLocalDocs env name vsns (max v1 v2)
+  writeDiff oldDocs newDocs
+
+runCodeVsLatest :: Env -> Task ()
+runCodeVsLatest env = do
+  (name, vsns) <- readOutline env
+  oldDocs <- getLatestDocs env name vsns
+  newDocs <- generateDocs env
+  writeDiff oldDocs newDocs
+
+runCodeVsExactly :: Env -> Version -> Task ()
+runCodeVsExactly env version = do
+  (name, vsns) <- readOutline env
+  oldDocs <- getLocalDocs env name vsns version
+  newDocs <- generateDocs env
+  writeDiff oldDocs newDocs
 
 -- GET DOCS
 
@@ -181,32 +188,28 @@ writeDiff oldDocs newDocs =
 
 toDoc :: L.Localizer -> PackageChanges -> Doc
 toDoc localizer changes@(PackageChanges added changed removed) =
-  if null added && Map.null changed && null removed
+  if isNoChanges added changed removed
     then "No API changes detected, so this is a" <+> D.green "PATCH" <+> "change."
-    else
-      let magDoc =
-            D.fromChars (M.toChars (Diff.toMagnitude changes))
+    else formatChangesDoc localizer changes added changed removed
 
-          header =
-            "This is a" <+> D.green magDoc <+> "change."
+isNoChanges :: [a] -> Map.Map b c -> [d] -> Bool
+isNoChanges added changed removed =
+  null added && Map.null changed && null removed
 
-          addedChunk =
-            if null added
-              then []
-              else
-                [ Chunk "ADDED MODULES" M.MINOR . D.vcat $ fmap D.fromName added
-                ]
+formatChangesDoc :: L.Localizer -> PackageChanges -> [Name.Name] -> Map.Map Name.Name ModuleChanges -> [Name.Name] -> Doc
+formatChangesDoc localizer changes added changed removed =
+  D.vcat (header : "" : fmap chunkToDoc chunks)
+  where
+    header = "This is a" <+> D.green magDoc <+> "change."
+    magDoc = D.fromChars (M.toChars (Diff.toMagnitude changes))
+    chunks = buildChunks localizer added changed removed
 
-          removedChunk =
-            if null removed
-              then []
-              else
-                [ Chunk "REMOVED MODULES" M.MAJOR . D.vcat $ fmap D.fromName removed
-                ]
-
-          chunks =
-            (addedChunk <> (removedChunk <> fmap (changesToChunk localizer) (Map.toList changed)))
-       in D.vcat (header : "" : fmap chunkToDoc chunks)
+buildChunks :: L.Localizer -> [Name.Name] -> Map.Map Name.Name ModuleChanges -> [Name.Name] -> [Chunk]
+buildChunks localizer added changed removed =
+  addedChunk <> removedChunk <> fmap (changesToChunk localizer) (Map.toList changed)
+  where
+    addedChunk = if null added then [] else [Chunk "ADDED MODULES" M.MINOR . D.vcat $ fmap D.fromName added]
+    removedChunk = if null removed then [] else [Chunk "REMOVED MODULES" M.MAJOR . D.vcat $ fmap D.fromName removed]
 
 data Chunk = Chunk
   { _title :: String,
@@ -228,26 +231,24 @@ chunkToDoc (Chunk title magnitude details) =
 
 changesToChunk :: L.Localizer -> (Name.Name, ModuleChanges) -> Chunk
 changesToChunk localizer (name, changes@(ModuleChanges unions aliases values binops)) =
-  let magnitude =
-        Diff.moduleChangeMagnitude changes
+  Chunk (Name.toChars name) magnitude . D.vcat . List.intersperse "" . Maybe.catMaybes $
+    [ changesToDoc "Added" unionAdd aliasAdd valueAdd binopAdd,
+      changesToDoc "Removed" unionRemove aliasRemove valueRemove binopRemove,
+      changesToDoc "Changed" unionChange aliasChange valueChange binopChange
+    ]
+  where
+    magnitude = Diff.moduleChangeMagnitude changes
+    docTriples = extractDocTriples localizer unions aliases values binops
+    (unionAdd, unionChange, unionRemove, aliasAdd, aliasChange, aliasRemove, valueAdd, valueChange, valueRemove, binopAdd, binopChange, binopRemove) = docTriples
 
-      (unionAdd, unionChange, unionRemove) =
-        changesToDocTriple (unionToDoc localizer) unions
-
-      (aliasAdd, aliasChange, aliasRemove) =
-        changesToDocTriple (aliasToDoc localizer) aliases
-
-      (valueAdd, valueChange, valueRemove) =
-        changesToDocTriple (valueToDoc localizer) values
-
-      (binopAdd, binopChange, binopRemove) =
-        changesToDocTriple (binopToDoc localizer) binops
-   in ( ((Chunk (Name.toChars name) magnitude . D.vcat) . List.intersperse "") . Maybe.catMaybes $
-          [ changesToDoc "Added" unionAdd aliasAdd valueAdd binopAdd,
-            changesToDoc "Removed" unionRemove aliasRemove valueRemove binopRemove,
-            changesToDoc "Changed" unionChange aliasChange valueChange binopChange
-          ]
-      )
+extractDocTriples :: L.Localizer -> Changes Name.Name Union -> Changes Name.Name Alias -> Changes Name.Name Value -> Changes Name.Name Binop -> ([Doc], [Doc], [Doc], [Doc], [Doc], [Doc], [Doc], [Doc], [Doc], [Doc], [Doc], [Doc])
+extractDocTriples localizer unions aliases values binops =
+  (unionAdd, unionChange, unionRemove, aliasAdd, aliasChange, aliasRemove, valueAdd, valueChange, valueRemove, binopAdd, binopChange, binopRemove)
+  where
+    (unionAdd, unionChange, unionRemove) = changesToDocTriple (unionToDoc localizer) unions
+    (aliasAdd, aliasChange, aliasRemove) = changesToDocTriple (aliasToDoc localizer) aliases
+    (valueAdd, valueChange, valueRemove) = changesToDocTriple (valueToDoc localizer) values
+    (binopAdd, binopChange, binopRemove) = changesToDocTriple (binopToDoc localizer) binops
 
 changesToDocTriple :: (k -> v -> Doc) -> Changes k v -> ([Doc], [Doc], [Doc])
 changesToDocTriple entryToDoc (Changes added changed removed) =

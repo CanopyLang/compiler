@@ -70,208 +70,250 @@ type Task = Task.Task Exit.Install
 attemptChanges :: FilePath -> Solver.Env -> Outline.Outline -> (a -> String) -> Changes a -> Task ()
 attemptChanges root env oldOutline toChars changes =
   case changes of
-    AlreadyInstalled ->
-      Task.io $ putStrLn "It is already installed!"
-    PromoteIndirect newOutline ->
-      attemptChangesHelp root env oldOutline newOutline $
-        D.vcat
-          [ D.fillSep
-              [ "I",
-                "found",
-                "it",
-                "in",
-                "your",
-                "canopy.json",
-                "file,",
-                "but",
-                "in",
-                "the",
-                D.dullyellow "\"indirect\"",
-                "dependencies."
-              ],
-            D.fillSep
-              [ "Should",
-                "I",
-                "move",
-                "it",
-                "into",
-                D.green "\"direct\"",
-                "dependencies",
-                "for",
-                "more",
-                "general",
-                "use?",
-                "[Y/n]: "
-              ]
-          ]
-    PromoteTest newOutline ->
-      attemptChangesHelp root env oldOutline newOutline $
-        D.vcat
-          [ D.fillSep
-              [ "I",
-                "found",
-                "it",
-                "in",
-                "your",
-                "canopy.json",
-                "file,",
-                "but",
-                "in",
-                "the",
-                D.dullyellow "\"test-dependencies\"",
-                "field."
-              ],
-            D.fillSep
-              [ "Should",
-                "I",
-                "move",
-                "it",
-                "into",
-                D.green "\"dependencies\"",
-                "for",
-                "more",
-                "general",
-                "use?",
-                "[Y/n]: "
-              ]
-          ]
-    Changes changeDict newOutline ->
-      let widths = Map.foldrWithKey (widen toChars) (Widths 0 0 0) changeDict
-          changeDocs = Map.foldrWithKey (addChange toChars widths) (Docs [] [] []) changeDict
-       in ( attemptChangesHelp root env oldOutline newOutline . D.vcat $
-              [ "Here is my plan:",
-                viewChangeDocs changeDocs,
-                "",
-                "Would you like me to update your canopy.json accordingly? [Y/n]: "
-              ]
-          )
+    AlreadyInstalled -> reportAlreadyInstalled
+    PromoteIndirect newOutline -> 
+      promptIndirectPromotion (InstallContext root env oldOutline newOutline)
+    PromoteTest newOutline -> 
+      promptTestPromotion (InstallContext root env oldOutline newOutline)
+    Changes changeDict newOutline -> 
+      promptChangePlan (ChangePlanRequest (InstallContext root env oldOutline newOutline) toChars changeDict)
 
-attemptChangesHelp :: FilePath -> Solver.Env -> Outline.Outline -> Outline.Outline -> Doc -> Task ()
-attemptChangesHelp root env oldOutline newOutline question =
-  Task.eio Exit.InstallBadDetails . BW.withScope $
-    ( \scope ->
-        do
-          approved <- Reporting.ask question
-          if approved
-            then do
-              Outline.write root newOutline
-              result <- Details.verifyInstall scope root env newOutline
-              case result of
-                Left exit ->
-                  do
-                    Outline.write root oldOutline
-                    return (Left exit)
-                Right () ->
-                  do
-                    putStrLn "Success!"
-                    return (Right ())
-            else do
-              putStrLn "Okay, I did not change anything!"
-              return (Right ())
-    )
+reportAlreadyInstalled :: Task ()
+reportAlreadyInstalled = Task.io $ putStrLn "It is already installed!"
+
+data InstallContext = InstallContext
+  { _icRoot :: FilePath,
+    _icEnv :: Solver.Env,
+    _icOldOutline :: Outline.Outline,
+    _icNewOutline :: Outline.Outline
+  }
+
+promptIndirectPromotion :: InstallContext -> Task ()
+promptIndirectPromotion ctx =
+  attemptChangesHelp ctx indirectPromotionMessage
+  where
+    indirectPromotionMessage = createPromotionMessage "indirect" "direct"
+
+promptTestPromotion :: InstallContext -> Task ()
+promptTestPromotion ctx =
+  attemptChangesHelp ctx testPromotionMessage
+  where
+    testPromotionMessage = createPromotionMessage "test-dependencies" "dependencies"
+
+createPromotionMessage :: String -> String -> Doc
+createPromotionMessage fromField toField =
+  D.vcat
+    [ D.fillSep $ foundInMessage fromField,
+      D.fillSep $ moveToMessage toField
+    ]
+  where
+    foundInMessage field =
+      ["I", "found", "it", "in", "your", "canopy.json", "file,", "but", "in", "the", D.dullyellow ("\"" <> D.fromChars field <> "\""), if field == "test-dependencies" then "field." else "dependencies."]
+    moveToMessage field =
+      ["Should", "I", "move", "it", "into", D.green ("\"" <> D.fromChars field <> "\""), if field == "dependencies" then "for" else "dependencies", "more", "general", "use?", "[Y/n]: "]
+
+data ChangePlanRequest a = ChangePlanRequest
+  { _cprContext :: InstallContext,
+    _cprToChars :: (a -> String),
+    _cprChangeDict :: Map Pkg.Name (Change a)
+  }
+
+promptChangePlan :: ChangePlanRequest a -> Task ()
+promptChangePlan (ChangePlanRequest ctx toChars changeDict) = do
+  let widths = Map.foldrWithKey (widen toChars) (Widths 0 0 0) changeDict
+  let changeDocs = Map.foldrWithKey (addChange toChars widths) (Docs [] [] []) changeDict
+  let planMessage = createPlanMessage changeDocs
+  attemptChangesHelp ctx planMessage
+
+createPlanMessage :: ChangeDocs -> Doc
+createPlanMessage changeDocs =
+  D.vcat
+    [ "Here is my plan:",
+      viewChangeDocs changeDocs,
+      "",
+      "Would you like me to update your canopy.json accordingly? [Y/n]: "
+    ]
+
+attemptChangesHelp :: InstallContext -> Doc -> Task ()
+attemptChangesHelp ctx question = do
+  result <- Task.io $ BW.withScope $ performInstallChanges ctx question
+  case result of
+    Left err -> Task.throw err
+    Right () -> return ()
+
+performInstallChanges :: InstallContext -> Doc -> BW.Scope -> IO (Either Exit.Install ())
+performInstallChanges ctx question scope = do
+  approved <- Reporting.ask question
+  if approved
+    then attemptInstallation ctx scope
+    else cancelInstallation
+
+attemptInstallation :: InstallContext -> BW.Scope -> IO (Either Exit.Install ())
+attemptInstallation (InstallContext root env oldOutline newOutline) scope = do
+  Outline.write root newOutline
+  result <- Details.verifyInstall scope root env newOutline
+  case result of
+    Left exit -> rollbackInstallation root oldOutline (Exit.InstallBadDetails exit)
+    Right () -> confirmInstallation
+
+rollbackInstallation :: FilePath -> Outline.Outline -> Exit.Install -> IO (Either Exit.Install ())
+rollbackInstallation root oldOutline exit = do
+  Outline.write root oldOutline
+  return (Left exit)
+
+confirmInstallation :: IO (Either Exit.Install ())
+confirmInstallation = do
+  putStrLn "Success!"
+  return (Right ())
+
+cancelInstallation :: IO (Either Exit.Install ())
+cancelInstallation = do
+  putStrLn "Okay, I did not change anything!"
+  return (Right ())
 
 -- MAKE APP PLAN
 
 makeAppPlan :: Solver.Env -> Pkg.Name -> Outline.AppOutline -> Task (Changes V.Version)
-makeAppPlan (Solver.Env cache _ connection registry _) pkg outline@(Outline.AppOutline _ _ direct indirect testDirect testIndirect _) =
-  if Map.member pkg direct
+makeAppPlan env pkg outline =
+  if isAlreadyDirect pkg outline
     then return AlreadyInstalled
-    else -- is it already indirect?
-    case Map.lookup pkg indirect of
-      Just vsn ->
-        (return . PromoteIndirect) . Outline.App $
-          outline
-            { Outline._app_deps_direct = Map.insert pkg vsn direct,
-              Outline._app_deps_indirect = Map.delete pkg indirect
-            }
-      Nothing ->
-        -- is it already a test dependency?
-        case Map.lookup pkg testDirect of
-          Just vsn ->
-            (return . PromoteTest) . Outline.App $
-              outline
-                { Outline._app_deps_direct = Map.insert pkg vsn direct,
-                  Outline._app_test_direct = Map.delete pkg testDirect
-                }
-          Nothing ->
-            -- is it already an indirect test dependency?
-            case Map.lookup pkg testIndirect of
-              Just vsn ->
-                (return . PromoteTest) . Outline.App $
-                  outline
-                    { Outline._app_deps_direct = Map.insert pkg vsn direct,
-                      Outline._app_test_indirect = Map.delete pkg testIndirect
-                    }
-              Nothing ->
-                -- finally try to add it from scratch
-                case Registry.getVersions' pkg registry of
-                  Left suggestions ->
-                    case connection of
-                      Solver.Online _ -> Task.throw (Exit.InstallUnknownPackageOnline pkg suggestions)
-                      -- FIXME: Propagate error into InstallUnknownPackageOffline
-                      Solver.Offline _ -> Task.throw (Exit.InstallUnknownPackageOffline pkg suggestions)
-                  Right _ ->
-                    do
-                      result <- Task.io $ Solver.addToApp cache connection registry pkg outline
-                      case result of
-                        Solver.Ok (Solver.AppSolution old new app) ->
-                          return (Changes (detectChanges old new) (Outline.App app))
-                        Solver.NoSolution ->
-                          Task.throw (Exit.InstallNoOnlineAppSolution pkg)
-                        -- FIXME: Propagate this problem
-                        Solver.NoOfflineSolution _ ->
-                          Task.throw (Exit.InstallNoOfflineAppSolution pkg)
-                        Solver.Err exit ->
-                          Task.throw (Exit.InstallHadSolverTrouble exit)
+    else checkExistingDependencies env pkg outline
+
+isAlreadyDirect :: Pkg.Name -> Outline.AppOutline -> Bool
+isAlreadyDirect pkg (Outline.AppOutline _ _ direct _ _ _ _) =
+  Map.member pkg direct
+
+checkExistingDependencies :: Solver.Env -> Pkg.Name -> Outline.AppOutline -> Task (Changes V.Version)
+checkExistingDependencies env pkg outline =
+  case findExistingDependency pkg outline of
+    Just (IndirectDep vsn) -> return $ promoteIndirectDep pkg vsn outline
+    Just (TestDirectDep vsn) -> return $ promoteTestDirectDep pkg vsn outline
+    Just (TestIndirectDep vsn) -> return $ promoteTestIndirectDep pkg vsn outline
+    Nothing -> addNewDependency env pkg outline
+
+data ExistingDep = IndirectDep V.Version | TestDirectDep V.Version | TestIndirectDep V.Version
+
+findExistingDependency :: Pkg.Name -> Outline.AppOutline -> Maybe ExistingDep
+findExistingDependency pkg (Outline.AppOutline _ _ _ indirect testDirect testIndirect _) =
+  case Map.lookup pkg indirect of
+    Just vsn -> Just (IndirectDep vsn)
+    Nothing -> case Map.lookup pkg testDirect of
+      Just vsn -> Just (TestDirectDep vsn)
+      Nothing -> case Map.lookup pkg testIndirect of
+        Just vsn -> Just (TestIndirectDep vsn)
+        Nothing -> Nothing
+
+promoteIndirectDep :: Pkg.Name -> V.Version -> Outline.AppOutline -> Changes V.Version
+promoteIndirectDep pkg vsn outline@(Outline.AppOutline _ _ direct indirect _ _ _) =
+  PromoteIndirect . Outline.App $
+    outline
+      { Outline._app_deps_direct = Map.insert pkg vsn direct,
+        Outline._app_deps_indirect = Map.delete pkg indirect
+      }
+
+promoteTestDirectDep :: Pkg.Name -> V.Version -> Outline.AppOutline -> Changes V.Version
+promoteTestDirectDep pkg vsn outline@(Outline.AppOutline _ _ direct _ testDirect _ _) =
+  PromoteTest . Outline.App $
+    outline
+      { Outline._app_deps_direct = Map.insert pkg vsn direct,
+        Outline._app_test_direct = Map.delete pkg testDirect
+      }
+
+promoteTestIndirectDep :: Pkg.Name -> V.Version -> Outline.AppOutline -> Changes V.Version
+promoteTestIndirectDep pkg vsn outline@(Outline.AppOutline _ _ direct _ _ testIndirect _) =
+  PromoteTest . Outline.App $
+    outline
+      { Outline._app_deps_direct = Map.insert pkg vsn direct,
+        Outline._app_test_indirect = Map.delete pkg testIndirect
+      }
+
+addNewDependency :: Solver.Env -> Pkg.Name -> Outline.AppOutline -> Task (Changes V.Version)
+addNewDependency (Solver.Env cache _ connection registry _) pkg outline =
+  case Registry.getVersions' pkg registry of
+    Left suggestions -> throwUnknownPackageError connection pkg suggestions
+    Right _ -> attemptSolverAddition cache connection registry pkg outline
+
+throwUnknownPackageError :: Solver.Connection -> Pkg.Name -> [Pkg.Name] -> Task (Changes V.Version)
+throwUnknownPackageError connection pkg suggestions =
+  case connection of
+    Solver.Online _ -> Task.throw (Exit.InstallUnknownPackageOnline pkg suggestions)
+    Solver.Offline _ -> Task.throw (Exit.InstallUnknownPackageOffline pkg suggestions)
+
+attemptSolverAddition :: Stuff.PackageCache -> Solver.Connection -> Registry.ZokkaRegistries -> Pkg.Name -> Outline.AppOutline -> Task (Changes V.Version)
+attemptSolverAddition cache connection registry pkg outline = do
+  result <- Task.io $ Solver.addToApp cache connection registry pkg outline
+  case result of
+    Solver.Ok (Solver.AppSolution old new app) ->
+      return (Changes (detectChanges old new) (Outline.App app))
+    Solver.NoSolution ->
+      Task.throw (Exit.InstallNoOnlineAppSolution pkg)
+    Solver.NoOfflineSolution _ ->
+      Task.throw (Exit.InstallNoOfflineAppSolution pkg)
+    Solver.Err exit ->
+      Task.throw (Exit.InstallHadSolverTrouble exit)
 
 -- MAKE PACKAGE PLAN
 
 makePkgPlan :: Solver.Env -> Pkg.Name -> Outline.PkgOutline -> Task (Changes C.Constraint)
-makePkgPlan (Solver.Env cache _ connection registry _) pkg outline@(Outline.PkgOutline _ _ _ _ _ deps test _) =
-  if Map.member pkg deps
+makePkgPlan env pkg outline =
+  if isPkgAlreadyDirect pkg outline
     then return AlreadyInstalled
-    else -- is already in test dependencies?
-    case Map.lookup pkg test of
-      Just con ->
-        (return . PromoteTest) . Outline.Pkg $
-          outline
-            { Outline._pkg_deps = Map.insert pkg con deps,
-              Outline._pkg_test_deps = Map.delete pkg test
-            }
-      Nothing ->
-        -- try to add a new dependency
-        case Registry.getVersions' pkg registry of
-          Left suggestions ->
-            case connection of
-              Solver.Online _ -> Task.throw (Exit.InstallUnknownPackageOnline pkg suggestions)
-              -- FIXME: Propagate error into InstallUnknownPackageOffline
-              Solver.Offline _ -> Task.throw (Exit.InstallUnknownPackageOffline pkg suggestions)
-          Right (Registry.KnownVersions _ _) ->
-            do
-              let old = Map.union deps test
-              let cons = Map.insert pkg C.anything old
-              result <- Task.io $ Solver.verify cache connection registry cons
-              case result of
-                Solver.Ok solution ->
-                  let (Solver.Details vsn _) = solution ! pkg
+    else checkPkgTestDependencies env pkg outline
 
-                      con = C.untilNextMajor vsn
-                      new = Map.insert pkg con old
-                      changes = detectChanges old new
-                      news = Map.mapMaybe keepNew changes
-                   in ( (return . Changes changes) . Outline.Pkg $
-                          outline
-                            { Outline._pkg_deps = addNews (Just pkg) news deps,
-                              Outline._pkg_test_deps = addNews Nothing news test
-                            }
-                      )
-                Solver.NoSolution ->
-                  Task.throw (Exit.InstallNoOnlinePkgSolution pkg)
-                -- FIXME: Propagate this solution
-                Solver.NoOfflineSolution _ ->
-                  Task.throw (Exit.InstallNoOfflinePkgSolution pkg)
-                Solver.Err exit ->
-                  Task.throw (Exit.InstallHadSolverTrouble exit)
+isPkgAlreadyDirect :: Pkg.Name -> Outline.PkgOutline -> Bool
+isPkgAlreadyDirect pkg (Outline.PkgOutline _ _ _ _ _ deps _ _) =
+  Map.member pkg deps
+
+checkPkgTestDependencies :: Solver.Env -> Pkg.Name -> Outline.PkgOutline -> Task (Changes C.Constraint)
+checkPkgTestDependencies env pkg outline@(Outline.PkgOutline _ _ _ _ _ _ test _) =
+  case Map.lookup pkg test of
+    Just con -> return $ promotePkgTestDep pkg con outline
+    Nothing -> addNewPkgDependency env pkg outline
+
+promotePkgTestDep :: Pkg.Name -> C.Constraint -> Outline.PkgOutline -> Changes C.Constraint
+promotePkgTestDep pkg con outline@(Outline.PkgOutline _ _ _ _ _ deps test _) =
+  PromoteTest . Outline.Pkg $
+    outline
+      { Outline._pkg_deps = Map.insert pkg con deps,
+        Outline._pkg_test_deps = Map.delete pkg test
+      }
+
+addNewPkgDependency :: Solver.Env -> Pkg.Name -> Outline.PkgOutline -> Task (Changes C.Constraint)
+addNewPkgDependency (Solver.Env cache _ connection registry _) pkg outline =
+  case Registry.getVersions' pkg registry of
+    Left suggestions -> throwPkgUnknownPackageError connection pkg suggestions
+    Right _ -> solvePkgDependency cache connection registry pkg outline
+
+throwPkgUnknownPackageError :: Solver.Connection -> Pkg.Name -> [Pkg.Name] -> Task (Changes C.Constraint)
+throwPkgUnknownPackageError connection pkg suggestions =
+  case connection of
+    Solver.Online _ -> Task.throw (Exit.InstallUnknownPackageOnline pkg suggestions)
+    Solver.Offline _ -> Task.throw (Exit.InstallUnknownPackageOffline pkg suggestions)
+
+solvePkgDependency :: Stuff.PackageCache -> Solver.Connection -> Registry.ZokkaRegistries -> Pkg.Name -> Outline.PkgOutline -> Task (Changes C.Constraint)
+solvePkgDependency cache connection registry pkg outline@(Outline.PkgOutline _ _ _ _ _ deps test _) = do
+  let old = Map.union deps test
+  let cons = Map.insert pkg C.anything old
+  result <- Task.io $ Solver.verify cache connection registry cons
+  case result of
+    Solver.Ok solution -> return $ buildPkgSolution pkg solution old outline
+    Solver.NoSolution -> Task.throw (Exit.InstallNoOnlinePkgSolution pkg)
+    Solver.NoOfflineSolution _ -> Task.throw (Exit.InstallNoOfflinePkgSolution pkg)
+    Solver.Err exit -> Task.throw (Exit.InstallHadSolverTrouble exit)
+
+buildPkgSolution :: Pkg.Name -> Map Pkg.Name Solver.Details -> Map Pkg.Name C.Constraint -> Outline.PkgOutline -> Changes C.Constraint
+buildPkgSolution pkg solution old outline@(Outline.PkgOutline _ _ _ _ _ deps test _) =
+  Changes changes . Outline.Pkg $
+    outline
+      { Outline._pkg_deps = addNews (Just pkg) news deps,
+        Outline._pkg_test_deps = addNews Nothing news test
+      }
+  where
+    (Solver.Details vsn _) = solution ! pkg
+    con = C.untilNextMajor vsn
+    new = Map.insert pkg con old
+    changes = detectChanges old new
+    news = Map.mapMaybe keepNew changes
 
 addNews :: Maybe Pkg.Name -> Map Pkg.Name C.Constraint -> Map Pkg.Name C.Constraint -> Map Pkg.Name C.Constraint
 addNews pkg new old =

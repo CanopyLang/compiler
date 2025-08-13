@@ -76,32 +76,30 @@ question =
 -- INIT
 
 init :: IO (Either Exit.Init ())
-init =
-  do
-    eitherEnv <- Solver.initEnv
-    case eitherEnv of
-      Left problem ->
-        return (Left (Exit.InitRegistryProblem problem))
-      Right (Solver.Env cache _ connection registry _) ->
-        do
-          result <- Solver.verify cache connection registry defaults
-          case result of
-            Solver.Err exit ->
-              return (Left (Exit.InitSolverProblem exit))
-            Solver.NoSolution ->
-              return (Left (Exit.InitNoSolution (Map.keys defaults)))
-            -- FIXME: Propagate this error
-            Solver.NoOfflineSolution _ ->
-              return (Left (Exit.InitNoOfflineSolution (Map.keys defaults)))
-            Solver.Ok details ->
-              let solution = Map.map (\(Solver.Details vsn _) -> vsn) details
-                  directs = Map.intersection solution defaults
-                  indirects = Map.difference solution defaults
-               in do
-                    Dir.createDirectoryIfMissing True "src"
-                    Outline.write "." . Outline.App $ Outline.AppOutline V.compiler (NE.List (Outline.RelativeSrcDir "src") []) directs indirects Map.empty Map.empty []
-                    putStrLn "Okay, I created it. Now read that link!"
-                    return (Right ())
+init = do
+  eitherEnv <- Solver.initEnv
+  case eitherEnv of
+    Left problem -> return (Left (Exit.InitRegistryProblem problem))
+    Right env -> initWithEnv env
+
+initWithEnv :: Solver.Env -> IO (Either Exit.Init ())
+initWithEnv (Solver.Env cache _ connection registry _) = do
+  result <- Solver.verify cache connection registry defaults
+  case result of
+    Solver.Err exit -> return (Left (Exit.InitSolverProblem exit))
+    Solver.NoSolution -> return (Left (Exit.InitNoSolution (Map.keys defaults)))
+    Solver.NoOfflineSolution _ -> return (Left (Exit.InitNoOfflineSolution (Map.keys defaults)))
+    Solver.Ok details -> createProjectStructure details
+
+createProjectStructure :: Map Name Solver.Details -> IO (Either Exit.Init ())
+createProjectStructure details = do
+  let solution = Map.map (\(Solver.Details vsn _) -> vsn) details
+      directs = Map.intersection solution defaults
+      indirects = Map.difference solution defaults
+  Dir.createDirectoryIfMissing True "src"
+  Outline.write "." . Outline.App $ Outline.AppOutline V.compiler (NE.List (Outline.RelativeSrcDir "src") []) directs indirects Map.empty Map.empty []
+  putStrLn "Okay, I created it. Now read that link!"
+  return (Right ())
 
 defaults :: Map Name Constraint
 defaults =
