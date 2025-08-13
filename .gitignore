@@ -21,3 +21,6 @@ cabal.project.freeze
 .env
 node_modules
 .stack-work
+
+# Build artifacts and binaries
+terminal/src/Main
