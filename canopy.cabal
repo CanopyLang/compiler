@@ -148,11 +148,16 @@ library
       CLI.Parsers
       CLI.Types
       Develop
+      Develop.Compilation
+      Develop.Environment
       Develop.Generate.Help
       Develop.Generate.Index
+      Develop.MimeTypes
+      Develop.Server
       Develop.Socket
       Develop.StaticFiles
       Develop.StaticFiles.Build
+      Develop.Types
       Diff
       Diff.Documentation
       Diff.Environment
@@ -382,6 +387,7 @@ test-suite canopy-test
       Unit.CLI.DocumentationTest
       Unit.CLI.ParsersTest
       Unit.Data.NameTest
+      Unit.DevelopTest
       Unit.Diff.EnvironmentTest
       Unit.Diff.OutputTest
       Unit.Diff.TypesTest
