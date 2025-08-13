@@ -85,6 +85,8 @@ library:
   source-dirs:
     - compiler/src
     - builder/src
+    - terminal/src
+    - terminal/impl
   ghc-options:
     - -Wall
     - -fwarn-tabs

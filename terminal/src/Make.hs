@@ -54,8 +54,12 @@ import Make.Environment (createBuildContext, getDesiredMode, getReportingStyle, 
 import Make.Output (generateOutput)
 import Make.Parser (docsFile, output, reportType)
 import Make.Types
-  ( Flags (..),
+  ( BuildContext,
+    Flags (..),
+    Output,
+    ReportType (..),
     Task,
+    bcDetails,
     debug,
     docs,
     optimize,

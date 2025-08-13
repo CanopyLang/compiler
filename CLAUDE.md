@@ -23,7 +23,7 @@ These constraints are enforced by CI and must be followed without exception:
 3. **Branching complexity**: ≤ 4 branching points (sum of if/case arms, guards, boolean splits)
 4. **No duplication (DRY)**: Extract common logic into reusable functions
 5. **Single responsibility**: One clear purpose per module
-6. **Lens usage**: Use lenses for all record access/updates; NO record-dot syntax
+6. **Lens usage**: Use lenses for record access/updates; record construction for initial creation
 7. **Qualified imports**: Everything qualified except types, lenses, and pragmas
 8. **Test coverage**: Minimum 80% coverage for all modules
 9. **Add documentation to each module in Haddock style**: Complete module-level documentation with purpose, examples, and function-level docs with type explanations
@@ -188,7 +188,7 @@ loop env state = do
 
 ### Lens Usage (Mandatory)
 
-**ALWAYS use lenses for record manipulation. NEVER use record-dot syntax.**
+**Use lenses for record access and updates. Use record construction for initial creation.**
 
 ```haskell
 -- Define records with lens support
@@ -201,6 +201,15 @@ data CompilerState = CompilerState
 
 -- Generate lenses
 makeLenses ''CompilerState
+
+-- GOOD: Initial construction with record syntax
+createInitialState :: CompilerState
+createInitialState = CompilerState
+  { _stateModules = Map.empty
+  , _stateErrors = []
+  , _stateWarnings = []
+  , _stateOptLevel = O0
+  }
 
 -- Access with (^.)
 getModules :: CompilerState -> Map.Map ModuleName Module
@@ -226,9 +235,11 @@ getModuleName :: CompilerState -> ModuleName -> Maybe Text
 getModuleName state modName =
   state ^? stateModules . at modName . _Just . moduleName
 
--- NEVER DO THIS (record-dot syntax)
--- BAD: state.stateModules
--- BAD: state { stateModules = newModules }
+-- NEVER DO THIS
+-- BAD: state.stateModules (record access)
+-- BAD: state { stateModules = newModules } (record update)
+-- BAD: Inefficient construction with lenses:
+-- BAD: CompilerState mempty [] [] O0 & stateModules .~ Map.empty & stateErrors .~ []
 ```
 
 ### Function Composition Style
@@ -911,7 +922,7 @@ make deploy-docs
 
 ✅ **ALWAYS**:
 
-- Use lenses for records (no record-dot syntax)
+- Use lenses for record access/updates; record construction for initial creation
 - Qualify imports (except types/lenses/pragmas)
 - Keep functions ≤15 lines, ≤4 params, ≤4 branches
 - Write tests first (TDD)
@@ -924,7 +935,7 @@ make deploy-docs
 
 ❌ **NEVER**:
 
-- Use record-dot syntax
+- Use record syntax for access/updates (use lenses instead)
 - Write functions >15 lines
 - Use partial functions without documentation
 - Duplicate code

@@ -20,8 +20,12 @@ import Test.Tasty.Runners
 import qualified Unit.AST.CanonicalTypeTest as CanonicalTypeTest
 import qualified Unit.AST.SourceTest as SourceAstTest
 import qualified Unit.Canopy.VersionTest as VersionTest
+import qualified Unit.CLI.CommandsTest as CLICommandsTest
+import qualified Unit.CLI.DocumentationTest as CLIDocumentationTest
+import qualified Unit.CLI.ParsersTest as CLIParsersTest
 import qualified Unit.Data.NameTest as NameTest
 import qualified Unit.Json.DecodeTest as JsonDecodeTest
+import qualified Unit.MainTest as MainTest
 import qualified Unit.MakeTest as MakeTest
 import qualified Unit.Parse.ExpressionTest as ParseExpressionTest
 import qualified Unit.Parse.ModuleTest as ParseModuleTest
@@ -53,6 +57,10 @@ unitTests =
       ParseTypeTest.tests,
       ParseModuleTest.tests,
       MakeTest.tests,
+      MainTest.tests,
+      CLIDocumentationTest.tests,
+      CLIParsersTest.tests,
+      CLICommandsTest.tests,
       SourceAstTest.tests,
       CanonicalTypeTest.tests
     ]

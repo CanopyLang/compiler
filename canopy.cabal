@@ -137,6 +137,51 @@ library
       Reporting.Exit.Help
       Reporting.Task
       Stuff
+      Bump
+      Bump.Analysis
+      Bump.Environment
+      Bump.Operations
+      Bump.Types
+      Bump.Validation
+      CLI.Commands
+      CLI.Documentation
+      CLI.Parsers
+      CLI.Types
+      Develop
+      Develop.Generate.Help
+      Develop.Generate.Index
+      Develop.Socket
+      Develop.StaticFiles
+      Develop.StaticFiles.Build
+      Diff
+      Init
+      Install
+      Main
+      Make
+      Make.Builder
+      Make.Environment
+      Make.Generation
+      Make.Output
+      Make.Parser
+      Make.Types
+      Publish
+      Publish.Environment
+      Publish.Git
+      Publish.Progress
+      Publish.Registry
+      Publish.Types
+      Publish.Validation
+      Repl
+      Repl.Commands
+      Repl.Eval
+      Repl.State
+      Repl.Types
+      Watch
+      Terminal
+      Terminal.Chomp
+      Terminal.Error
+      Terminal.Helpers
+      Terminal.Internal
   other-modules:
       Paths_canopy
   autogen-modules:
@@ -144,6 +189,8 @@ library
   hs-source-dirs:
       compiler/src
       builder/src
+      terminal/src
+      terminal/impl
   default-extensions:
       ConstraintKinds
       DataKinds
@@ -221,6 +268,10 @@ executable canopy
       Bump.Operations
       Bump.Types
       Bump.Validation
+      CLI.Commands
+      CLI.Documentation
+      CLI.Parsers
+      CLI.Types
       Develop
       Develop.Generate.Help
       Develop.Generate.Index
@@ -351,8 +402,12 @@ test-suite canopy-test
       Unit.AST.CanonicalTypeTest
       Unit.AST.SourceTest
       Unit.Canopy.VersionTest
+      Unit.CLI.CommandsTest
+      Unit.CLI.DocumentationTest
+      Unit.CLI.ParsersTest
       Unit.Data.NameTest
       Unit.Json.DecodeTest
+      Unit.MainTest
       Unit.MakeTest
       Unit.Parse.ExpressionTest
       Unit.Parse.ModuleTest
