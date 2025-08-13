@@ -1,308 +1,128 @@
 {-# LANGUAGE OverloadedStrings #-}
 {-# OPTIONS_GHC -Wall #-}
 
+-- | API difference analysis and semantic versioning classification.
+--
+-- This module provides comprehensive API difference analysis for Canopy
+-- packages, supporting multiple comparison modes with structured output
+-- and semantic versioning magnitude classification. It follows CLAUDE.md
+-- modular design patterns with specialized sub-modules for focused
+-- responsibilities and maintainable architecture.
+--
+-- == Key Features
+--
+-- * Multi-mode diff analysis (global, local, code-based comparisons)
+-- * Semantic versioning magnitude classification (MAJOR/MINOR/PATCH)
+-- * Rich output formatting with color-coded change indicators
+-- * Comprehensive error handling and user feedback
+-- * Registry integration for published package access
+-- * Local source code documentation generation
+--
+-- == Architecture
+--
+-- The module follows modular design patterns:
+--
+-- * 'Diff.Types' - Core data structures and lenses
+-- * 'Diff.Environment' - Runtime environment setup and configuration
+-- * 'Diff.Documentation' - Documentation loading and generation
+-- * 'Diff.Execution' - Core diff execution logic and orchestration
+-- * 'Diff.Output' - Result formatting and display
+--
+-- == Comparison Modes
+--
+-- Four primary diff comparison modes are supported:
+--
+-- * __Global Inquiry__ - Compare two published package versions
+-- * __Local Inquiry__ - Compare local project versions
+-- * __Code vs Latest__ - Compare local code against latest published version
+-- * __Code vs Specific__ - Compare local code against specific published version
+--
+-- == Usage Examples
+--
+-- @
+-- -- Compare local code against latest published version
+-- main = run CodeVsLatest ()
+--
+-- -- Compare two published versions globally  
+-- main = run (GlobalInquiry packageName version1 version2) ()
+--
+-- -- Compare local versions within project
+-- main = run (LocalInquiry version1 version2) ()
+-- @
+--
+-- == Error Handling
+--
+-- All operations use structured error handling with rich error types:
+--
+-- * 'Exit.DiffNoOutline' - No project outline found
+-- * 'Exit.DiffBadOutline' - Invalid project outline
+-- * 'Exit.DiffUnknownPackage' - Package not found in registry
+-- * 'Exit.DiffDocsProblem' - Documentation loading failures
+-- * 'Exit.DiffBadBuild' - Source compilation failures
+--
+-- == Integration
+--
+-- The module integrates with the broader Canopy toolchain:
+--
+-- * Package registry system for version lookups
+-- * Build system for documentation generation
+-- * Terminal framework for command-line interface
+-- * Reporting system for structured error output
+--
+-- @since 0.19.1
 module Diff
-  ( Args (..),
+  ( -- * Core Types (re-exported)
+    Args (..),
+    
+    -- * Main Interface
     run,
   )
 where
 
-import qualified BackgroundWriter as BW
-import qualified Build
-import qualified Canopy.Compiler.Type as Type
-import qualified Canopy.Details as Details
-import Canopy.Docs (Alias, Binop, Documentation, Union, Value)
-import qualified Canopy.Docs as Docs
-import qualified Canopy.Magnitude as M
-import qualified Canopy.Outline as Outline
-import Canopy.Package (Name)
-import Canopy.Version (Version)
-import qualified Data.List as List
-import qualified Data.Map as Map
-import qualified Data.Maybe as Maybe
-import qualified Data.Name as Name
-import qualified Data.NonEmptyList as NE
-import Deps.CustomRepositoryDataIO (loadCustomRepositoriesData)
-import Deps.Diff (Changes (..), ModuleChanges (..), PackageChanges (..))
-import qualified Deps.Diff as Diff
-import qualified Deps.Registry as Registry
-import qualified Http
+import Diff.Types (Args (..))
+import qualified Diff.Environment as Environment
+import qualified Diff.Execution as Execution
 import qualified Reporting
-import Reporting.Doc (Doc, (<+>))
-import qualified Reporting.Doc as D
 import qualified Reporting.Exit as Exit
-import qualified Reporting.Exit.Help as Help
-import qualified Reporting.Render.Type.Localizer as L
 import qualified Reporting.Task as Task
-import qualified Stuff
 
--- RUN
-
-data Args
-  = CodeVsLatest
-  | CodeVsExactly Version
-  | LocalInquiry Version Version
-  | GlobalInquiry Name Version Version
-
+-- | Main entry point for diff operations.
+--
+-- Initializes the runtime environment, executes the requested diff
+-- operation, and handles all errors through the structured reporting
+-- system. Provides unified interface for all diff comparison modes.
+--
+-- The execution flow:
+--
+-- 1. 'Environment.setup' - Initialize runtime environment
+-- 2. 'Execution.run' - Execute diff operation with error handling
+-- 3. Error reporting through structured exit codes
+--
+-- ==== Examples
+--
+-- >>> run CodeVsLatest ()
+-- -- Compare local source against latest published version
+--
+-- >>> run (GlobalInquiry pkg v1 v2) ()
+-- -- Compare two published versions of a package
+--
+-- >>> run (LocalInquiry v1 v2) ()
+-- -- Compare two local versions within project
+--
+-- ==== Error Conditions
+--
+-- Handles and reports all error conditions:
+--   * Environment setup failures
+--   * Package resolution problems
+--   * Documentation loading issues
+--   * Build and compilation errors
+--   * Network connectivity problems
+--
+-- @since 0.19.1
 run :: Args -> () -> IO ()
 run args () =
-  Reporting.attempt Exit.diffToReport . Task.run $
-    ( do
-        env <- getEnv
-        runDiff env args
-    )
-
--- ENVIRONMENT
-
-data Env = Env
-  { _maybeRoot :: Maybe FilePath,
-    _cache :: Stuff.PackageCache,
-    _manager :: Http.Manager,
-    _registry :: Registry.ZokkaRegistries
-  }
-
-getEnv :: Task Env
-getEnv =
-  do
-    maybeRoot <- Task.io Stuff.findRoot
-    cache <- Task.io Stuff.getPackageCache
-    zokkaCache <- Task.io Stuff.getZokkaCache
-    manager <- Task.io Http.getManager
-    reposConf <- Task.io Stuff.getOrCreateZokkaCustomRepositoryConfig
-    reposData <- Task.eio Exit.DiffCustomReposDataProblem $ loadCustomRepositoriesData reposConf
-    registry <- Task.eio Exit.DiffMustHaveLatestRegistry $ Registry.latest manager reposData zokkaCache reposConf
-    return (Env maybeRoot cache manager registry)
-
--- DIFF
-
-type Task a =
-  Task.Task Exit.Diff a
-
-runDiff :: Env -> Args -> Task ()
-runDiff env args =
-  case args of
-    GlobalInquiry name v1 v2 -> runGlobalInquiry env name v1 v2
-    LocalInquiry v1 v2 -> runLocalInquiry env v1 v2
-    CodeVsLatest -> runCodeVsLatest env
-    CodeVsExactly version -> runCodeVsExactly env version
-
-runGlobalInquiry :: Env -> Name -> Version -> Version -> Task ()
-runGlobalInquiry env@(Env _ _ _ registry) name v1 v2 =
-  case Registry.getVersions' name registry of
-    Right vsns -> do
-      oldDocs <- getLocalDocs env name vsns (min v1 v2)
-      newDocs <- getLocalDocs env name vsns (max v1 v2)
-      writeDiff oldDocs newDocs
-    Left suggestions -> Task.throw (Exit.DiffUnknownPackage name suggestions)
-
-runLocalInquiry :: Env -> Version -> Version -> Task ()
-runLocalInquiry env v1 v2 = do
-  (name, vsns) <- readOutline env
-  oldDocs <- getLocalDocs env name vsns (min v1 v2)
-  newDocs <- getLocalDocs env name vsns (max v1 v2)
-  writeDiff oldDocs newDocs
-
-runCodeVsLatest :: Env -> Task ()
-runCodeVsLatest env = do
-  (name, vsns) <- readOutline env
-  oldDocs <- getLatestDocs env name vsns
-  newDocs <- generateDocs env
-  writeDiff oldDocs newDocs
-
-runCodeVsExactly :: Env -> Version -> Task ()
-runCodeVsExactly env version = do
-  (name, vsns) <- readOutline env
-  oldDocs <- getLocalDocs env name vsns version
-  newDocs <- generateDocs env
-  writeDiff oldDocs newDocs
-
--- GET DOCS
-
-getLocalDocs :: Env -> Name -> Registry.KnownVersions -> Version -> Task Documentation
-getLocalDocs (Env _ cache manager registry) name (Registry.KnownVersions latest previous) version =
-  if latest == version || elem version previous
-    then Task.eio (Exit.DiffDocsProblem version) $ Diff.getDocs cache registry manager name version
-    else Task.throw (Exit.DiffUnknownVersion name version (latest : previous))
-
-getLatestDocs :: Env -> Name -> Registry.KnownVersions -> Task Documentation
-getLatestDocs (Env _ cache manager registry) name (Registry.KnownVersions latest _) =
-  Task.eio (Exit.DiffDocsProblem latest) $ Diff.getDocs cache registry manager name latest
-
--- READ OUTLINE
-
-readOutline :: Env -> Task (Name, Registry.KnownVersions)
-readOutline (Env maybeRoot _ _ registry) =
-  case maybeRoot of
-    Nothing ->
-      Task.throw Exit.DiffNoOutline
-    Just root ->
-      do
-        result <- Task.io $ Outline.read root
-        case result of
-          Left err ->
-            Task.throw (Exit.DiffBadOutline err)
-          Right outline ->
-            case outline of
-              Outline.App _ ->
-                Task.throw Exit.DiffApplication
-              Outline.Pkg (Outline.PkgOutline pkg _ _ _ _ _ _ _) ->
-                case Registry.getVersions pkg registry of
-                  Just vsns -> return (pkg, vsns)
-                  Nothing -> Task.throw Exit.DiffUnpublished
-
--- GENERATE DOCS
-
-generateDocs :: Env -> Task Documentation
-generateDocs (Env maybeRoot _ _ _) =
-  case maybeRoot of
-    Nothing ->
-      Task.throw Exit.DiffNoOutline
-    Just root ->
-      do
-        details <-
-          Task.eio Exit.DiffBadDetails . BW.withScope $
-            ( \scope ->
-                Details.load Reporting.silent scope root
-            )
-
-        case Details._outline details of
-          Details.ValidApp _ ->
-            Task.throw Exit.DiffApplication
-          Details.ValidPkg _ exposed _ ->
-            case exposed of
-              [] ->
-                Task.throw Exit.DiffNoExposed
-              e : es ->
-                Task.eio Exit.DiffBadBuild $
-                  Build.fromExposed Reporting.silent root details Build.KeepDocs (NE.List e es)
-
--- WRITE DIFF
-
-writeDiff :: Documentation -> Documentation -> Task ()
-writeDiff oldDocs newDocs =
-  let changes = Diff.diff oldDocs newDocs
-      localizer = L.fromNames (Map.union oldDocs newDocs)
-   in (Task.io . Help.toStdout $ (toDoc localizer changes <> "\n"))
-
--- TO DOC
-
-toDoc :: L.Localizer -> PackageChanges -> Doc
-toDoc localizer changes@(PackageChanges added changed removed) =
-  if isNoChanges added changed removed
-    then "No API changes detected, so this is a" <+> D.green "PATCH" <+> "change."
-    else formatChangesDoc localizer changes added changed removed
-
-isNoChanges :: [a] -> Map.Map b c -> [d] -> Bool
-isNoChanges added changed removed =
-  null added && Map.null changed && null removed
-
-formatChangesDoc :: L.Localizer -> PackageChanges -> [Name.Name] -> Map.Map Name.Name ModuleChanges -> [Name.Name] -> Doc
-formatChangesDoc localizer changes added changed removed =
-  D.vcat (header : "" : fmap chunkToDoc chunks)
+  Reporting.attempt Exit.diffToReport (Task.run executeWithEnvironment)
   where
-    header = "This is a" <+> D.green magDoc <+> "change."
-    magDoc = D.fromChars (M.toChars (Diff.toMagnitude changes))
-    chunks = buildChunks localizer added changed removed
-
-buildChunks :: L.Localizer -> [Name.Name] -> Map.Map Name.Name ModuleChanges -> [Name.Name] -> [Chunk]
-buildChunks localizer added changed removed =
-  addedChunk <> removedChunk <> fmap (changesToChunk localizer) (Map.toList changed)
-  where
-    addedChunk = if null added then [] else [Chunk "ADDED MODULES" M.MINOR . D.vcat $ fmap D.fromName added]
-    removedChunk = if null removed then [] else [Chunk "REMOVED MODULES" M.MAJOR . D.vcat $ fmap D.fromName removed]
-
-data Chunk = Chunk
-  { _title :: String,
-    _magnitude :: M.Magnitude,
-    _details :: Doc
-  }
-
-chunkToDoc :: Chunk -> Doc
-chunkToDoc (Chunk title magnitude details) =
-  let header =
-        "----" <+> D.fromChars title <+> "-" <+> D.fromChars (M.toChars magnitude) <+> "----"
-   in D.vcat
-        [ D.dullcyan header,
-          "",
-          D.indent 4 details,
-          "",
-          ""
-        ]
-
-changesToChunk :: L.Localizer -> (Name.Name, ModuleChanges) -> Chunk
-changesToChunk localizer (name, changes@(ModuleChanges unions aliases values binops)) =
-  Chunk (Name.toChars name) magnitude . D.vcat . List.intersperse "" . Maybe.catMaybes $
-    [ changesToDoc "Added" unionAdd aliasAdd valueAdd binopAdd,
-      changesToDoc "Removed" unionRemove aliasRemove valueRemove binopRemove,
-      changesToDoc "Changed" unionChange aliasChange valueChange binopChange
-    ]
-  where
-    magnitude = Diff.moduleChangeMagnitude changes
-    docTriples = extractDocTriples localizer unions aliases values binops
-    (unionAdd, unionChange, unionRemove, aliasAdd, aliasChange, aliasRemove, valueAdd, valueChange, valueRemove, binopAdd, binopChange, binopRemove) = docTriples
-
-extractDocTriples :: L.Localizer -> Changes Name.Name Union -> Changes Name.Name Alias -> Changes Name.Name Value -> Changes Name.Name Binop -> ([Doc], [Doc], [Doc], [Doc], [Doc], [Doc], [Doc], [Doc], [Doc], [Doc], [Doc], [Doc])
-extractDocTriples localizer unions aliases values binops =
-  (unionAdd, unionChange, unionRemove, aliasAdd, aliasChange, aliasRemove, valueAdd, valueChange, valueRemove, binopAdd, binopChange, binopRemove)
-  where
-    (unionAdd, unionChange, unionRemove) = changesToDocTriple (unionToDoc localizer) unions
-    (aliasAdd, aliasChange, aliasRemove) = changesToDocTriple (aliasToDoc localizer) aliases
-    (valueAdd, valueChange, valueRemove) = changesToDocTriple (valueToDoc localizer) values
-    (binopAdd, binopChange, binopRemove) = changesToDocTriple (binopToDoc localizer) binops
-
-changesToDocTriple :: (k -> v -> Doc) -> Changes k v -> ([Doc], [Doc], [Doc])
-changesToDocTriple entryToDoc (Changes added changed removed) =
-  let indented (name, value) =
-        D.indent 4 (entryToDoc name value)
-
-      diffed (name, (oldValue, newValue)) =
-        D.vcat
-          [ "  - " <> entryToDoc name oldValue,
-            "  + " <> entryToDoc name newValue,
-            ""
-          ]
-   in ( fmap indented (Map.toList added),
-        fmap diffed (Map.toList changed),
-        fmap indented (Map.toList removed)
-      )
-
-changesToDoc :: String -> [Doc] -> [Doc] -> [Doc] -> [Doc] -> Maybe Doc
-changesToDoc categoryName unions aliases values binops =
-  if null unions && null aliases && null values && null binops
-    then Nothing
-    else Just . D.vcat $ (D.fromChars categoryName <> ":" : (unions <> (aliases <> (binops <> values))))
-
-unionToDoc :: L.Localizer -> Name.Name -> Union -> Doc
-unionToDoc localizer name (Docs.Union _ tvars ctors) =
-  let setup =
-        "type" <+> D.fromName name <+> D.hsep (fmap D.fromName tvars)
-
-      ctorDoc (ctor, tipes) =
-        typeDoc localizer (Type.Type ctor tipes)
-   in D.hang 4 (D.sep (setup : zipWith (<+>) ("=" : repeat "|") (fmap ctorDoc ctors)))
-
-aliasToDoc :: L.Localizer -> Name.Name -> Alias -> Doc
-aliasToDoc localizer name (Docs.Alias _ tvars tipe) =
-  let declaration =
-        "type" <+> "alias" <+> D.hsep (fmap D.fromName (name : tvars)) <+> "="
-   in D.hang 4 (D.sep [declaration, typeDoc localizer tipe])
-
-valueToDoc :: L.Localizer -> Name.Name -> Value -> Doc
-valueToDoc localizer name (Docs.Value _ tipe) =
-  D.hang 4 $ D.sep [D.fromName name <+> ":", typeDoc localizer tipe]
-
-binopToDoc :: L.Localizer -> Name.Name -> Binop -> Doc
-binopToDoc localizer name (Docs.Binop _ tipe associativity (Docs.Precedence n)) =
-  "(" <> D.fromName name <> ")" <+> ":" <+> typeDoc localizer tipe <> D.black details
-  where
-    details =
-      "    (" <> D.fromName assoc <> "/" <> D.fromInt n <> ")"
-
-    assoc =
-      case associativity of
-        Docs.Left -> "left"
-        Docs.Non -> "non"
-        Docs.Right -> "right"
-
-typeDoc :: L.Localizer -> Type.Type -> Doc
-typeDoc localizer = Type.toDoc localizer Type.None
+    executeWithEnvironment = do
+      env <- Environment.setup
+      Execution.run env args

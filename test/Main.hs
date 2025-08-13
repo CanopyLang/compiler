@@ -28,6 +28,10 @@ import qualified Unit.CLI.CommandsTest as CLICommandsTest
 import qualified Unit.CLI.DocumentationTest as CLIDocumentationTest
 import qualified Unit.CLI.ParsersTest as CLIParsersTest
 import qualified Unit.Data.NameTest as NameTest
+import qualified Unit.Diff.EnvironmentTest as DiffEnvironmentTest
+import qualified Unit.Diff.OutputTest as DiffOutputTest
+import qualified Unit.Diff.TypesTest as DiffTypesTest
+import qualified Unit.DiffTest as DiffTest
 import qualified Unit.Init.DisplayTest as InitDisplayTest
 import qualified Unit.Init.EnvironmentTest as InitEnvironmentTest
 import qualified Unit.Init.ProjectTest as InitProjectTest
@@ -63,6 +67,10 @@ unitTests =
     [ NameTest.tests,
       VersionTest.tests,
       JsonDecodeTest.tests,
+      DiffTest.tests,
+      DiffTypesTest.tests,
+      DiffEnvironmentTest.tests,
+      DiffOutputTest.tests,
       ParseExpressionTest.tests,
       ParsePatternTest.tests,
       ParseTypeTest.tests,

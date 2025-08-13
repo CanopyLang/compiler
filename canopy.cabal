@@ -154,6 +154,12 @@ library
       Develop.StaticFiles
       Develop.StaticFiles.Build
       Diff
+      Diff.Documentation
+      Diff.Environment
+      Diff.Execution
+      Diff.Outline
+      Diff.Output
+      Diff.Types
       Init
       Init.Display
       Init.Environment
@@ -291,6 +297,12 @@ executable canopy
       Develop.StaticFiles
       Develop.StaticFiles.Build
       Diff
+      Diff.Documentation
+      Diff.Environment
+      Diff.Execution
+      Diff.Outline
+      Diff.Output
+      Diff.Types
       Init
       Init.Display
       Init.Environment
@@ -434,6 +446,10 @@ test-suite canopy-test
       Unit.CLI.DocumentationTest
       Unit.CLI.ParsersTest
       Unit.Data.NameTest
+      Unit.Diff.EnvironmentTest
+      Unit.Diff.OutputTest
+      Unit.Diff.TypesTest
+      Unit.DiffTest
       Unit.Init.DisplayTest
       Unit.Init.EnvironmentTest
       Unit.Init.ProjectTest
