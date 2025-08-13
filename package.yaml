@@ -95,9 +95,7 @@ library:
 executables:
   canopy:
     main: Main.hs
-    source-dirs:
-      - terminal/src
-      - terminal/impl
+    source-dirs: app
     ghc-options:
       - -rtsopts
       - -threaded

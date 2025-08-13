@@ -23,4 +23,4 @@ node_modules
 .stack-work
 
 # Build artifacts and binaries
-terminal/src/Main
+# (No longer needed - executable now builds to proper location)

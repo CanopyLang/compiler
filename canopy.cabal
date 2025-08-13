@@ -174,7 +174,6 @@ library
       Install.Execution
       Install.PkgPlan
       Install.Types
-      Main
       Make
       Make.Builder
       Make.Environment
@@ -280,74 +279,11 @@ library
 executable canopy
   main-is: Main.hs
   other-modules:
-      Bump
-      Bump.Analysis
-      Bump.Environment
-      Bump.Operations
-      Bump.Types
-      Bump.Validation
-      CLI.Commands
-      CLI.Documentation
-      CLI.Parsers
-      CLI.Types
-      Develop
-      Develop.Generate.Help
-      Develop.Generate.Index
-      Develop.Socket
-      Develop.StaticFiles
-      Develop.StaticFiles.Build
-      Diff
-      Diff.Documentation
-      Diff.Environment
-      Diff.Execution
-      Diff.Outline
-      Diff.Output
-      Diff.Types
-      Init
-      Init.Display
-      Init.Environment
-      Init.Project
-      Init.Types
-      Init.Validation
-      Install
-      Install.AppPlan
-      Install.Arguments
-      Install.Changes
-      Install.Display
-      Install.Execution
-      Install.PkgPlan
-      Install.Types
-      Make
-      Make.Builder
-      Make.Environment
-      Make.Generation
-      Make.Output
-      Make.Parser
-      Make.Types
-      Publish
-      Publish.Environment
-      Publish.Git
-      Publish.Progress
-      Publish.Registry
-      Publish.Types
-      Publish.Validation
-      Repl
-      Repl.Commands
-      Repl.Eval
-      Repl.State
-      Repl.Types
-      Watch
-      Terminal
-      Terminal.Chomp
-      Terminal.Error
-      Terminal.Helpers
-      Terminal.Internal
       Paths_canopy
   autogen-modules:
       Paths_canopy
   hs-source-dirs:
-      terminal/src
-      terminal/impl
+      app
   default-extensions:
       ConstraintKinds
       DataKinds
