@@ -197,5 +197,5 @@ installInPackage context pkg outline = do
 -- written if the installation is approved and executed.
 --
 -- @since 0.19.1
-updateContextWithChanges :: InstallContext -> changes -> InstallContext  
+updateContextWithChanges :: InstallContext -> a -> InstallContext  
 updateContextWithChanges context _changes = context

@@ -144,21 +144,28 @@ calculateWidths toChars changeMap =
 -- @since 0.19.1
 expandWidths :: (a -> String) -> Pkg.Name -> Change a -> Widths -> Widths
 expandWidths toChars pkg change widths =
-  let nameLen = length (Pkg.toChars pkg)
-      currentName = widths ^. nameWidth
-      currentLeft = widths ^. leftWidth  
-      currentRight = widths ^. rightWidth
-      
-      newName = max currentName nameLen
+  let newName = max (widths ^. nameWidth) (length (Pkg.toChars pkg))
   in case change of
-       Insert new ->
-         Widths newName (max currentLeft (length (toChars new))) currentRight
-       Change old new ->
-         Widths newName 
-                (max currentLeft (length (toChars old))) 
-                (max currentRight (length (toChars new)))
-       Remove old ->
-         Widths newName (max currentLeft (length (toChars old))) currentRight
+       Insert new -> updateWidthsInsert toChars widths newName new
+       Change old new -> updateWidthsChange toChars widths newName old new
+       Remove old -> updateWidthsRemove toChars widths newName old
+
+-- | Update widths for Insert changes.
+updateWidthsInsert :: (a -> String) -> Widths -> Int -> a -> Widths
+updateWidthsInsert toChars widths newName new =
+  Widths newName (max (widths ^. leftWidth) (length (toChars new))) (widths ^. rightWidth)
+
+-- | Update widths for Change modifications.
+updateWidthsChange :: (a -> String) -> Widths -> Int -> a -> a -> Widths
+updateWidthsChange toChars widths newName old new =
+  Widths newName 
+    (max (widths ^. leftWidth) (length (toChars old))) 
+    (max (widths ^. rightWidth) (length (toChars new)))
+
+-- | Update widths for Remove operations.
+updateWidthsRemove :: (a -> String) -> Widths -> Int -> a -> Widths
+updateWidthsRemove toChars widths newName old =
+  Widths newName (max (widths ^. leftWidth) (length (toChars old))) (widths ^. rightWidth)
 
 -- | Create a promotion message for moving dependencies.
 --
@@ -169,19 +176,24 @@ expandWidths toChars pkg change widths =
 createPromotionMessage :: String -> String -> Doc
 createPromotionMessage fromField toField =
   D.vcat
-    [ D.fillSep (foundInMessage fromField),
-      D.fillSep (moveToMessage toField)
+    [ D.fillSep (createFoundMessage fromField),
+      D.fillSep (createMoveMessage toField)
     ]
-  where
-    foundInMessage field =
-      ["I", "found", "it", "in", "your", "canopy.json", "file,", "but", "in", "the", 
-       D.dullyellow ("\"" <> D.fromChars field <> "\""), 
-       if field == "test-dependencies" then "field." else "dependencies."]
-    moveToMessage field =
-      ["Should", "I", "move", "it", "into", 
-       D.green ("\"" <> D.fromChars field <> "\""), 
-       if field == "dependencies" then "for" else "dependencies", 
-       "more", "general", "use?", "[Y/n]: "]
+
+-- | Create found message for promotion prompts.
+createFoundMessage :: String -> [Doc]
+createFoundMessage field =
+  ["I", "found", "it", "in", "your", "canopy.json", "file,", "but", "in", "the", 
+   D.dullyellow ("\"" <> D.fromChars field <> "\""), 
+   if field == "test-dependencies" then "field." else "dependencies."]
+
+-- | Create move message for promotion prompts.
+createMoveMessage :: String -> [Doc]
+createMoveMessage field =
+  ["Should", "I", "move", "it", "into", 
+   D.green ("\"" <> D.fromChars field <> "\""), 
+   if field == "dependencies" then "for" else "dependencies", 
+   "more", "general", "use?", "[Y/n]: "]
 
 -- | Format an insert change for display.
 --

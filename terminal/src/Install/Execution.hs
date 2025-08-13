@@ -40,7 +40,7 @@ module Install.Execution
     reportInstallationStatus,
   ) where
 
-import Control.Lens ((^.))
+import Control.Lens ((^.), (&), (.~))
 import qualified BackgroundWriter as BW
 import qualified Canopy.Details as Details
 import qualified Canopy.Outline as Outline
@@ -97,7 +97,7 @@ executeInstallation ctx changes _toChars =
 handlePromotionInstallation :: InstallContext -> Outline.Outline -> String -> String -> Task ()
 handlePromotionInstallation ctx newOutline fromField toField = do
   let promotionMessage = createPromotionMessage fromField toField
-      updatedCtx = ctx { _icNewOutline = newOutline }
+      updatedCtx = ctx & icNewOutline .~ newOutline
   attemptInstallChanges updatedCtx promotionMessage
 
 -- | Handle complex installations with multiple changes.
@@ -109,7 +109,7 @@ handlePromotionInstallation ctx newOutline fromField toField = do
 handleComplexInstallation :: InstallContext -> Outline.Outline -> Task ()
 handleComplexInstallation ctx newOutline = do
   let planMessage = createComplexPlanMessage
-      updatedCtx = ctx { _icNewOutline = newOutline }
+      updatedCtx = ctx & icNewOutline .~ newOutline
   attemptInstallChanges updatedCtx planMessage
 
 -- | Create a promotion message for user display.
