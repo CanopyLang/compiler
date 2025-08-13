@@ -1,10 +1,31 @@
 {-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE TemplateHaskell #-}
+{-# OPTIONS_GHC -Wall #-}
 
+-- | Build system for Canopy projects.
+--
+-- This module provides the main build functionality for Canopy projects,
+-- including compilation, optimization, and code generation. It supports
+-- multiple output formats (JavaScript, HTML) and various build modes.
+--
+-- Key features:
+--   * Incremental compilation
+--   * Multiple output formats (JS, HTML, /dev/null)
+--   * Development and production modes
+--   * File watching for continuous builds
+--   * Comprehensive error reporting
+--
+-- @since 0.19.1
 module Make
-  ( Flags (..),
+  ( -- * Types
+    Flags (..),
     Output (..),
     ReportType (..),
+
+    -- * Main Interface
     run,
+
+    -- * Parsers
     reportType,
     output,
     docsFile,

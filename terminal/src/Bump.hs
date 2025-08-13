@@ -1,156 +1,143 @@
 {-# LANGUAGE OverloadedStrings #-}
-{-# OPTIONS_GHC -Wno-x-partial #-}
+{-# OPTIONS_GHC -Wall #-}
 
+-- | Module for version bumping functionality in the Canopy package manager.
+--
+-- This module provides commands to automatically suggest and apply version
+-- bumps based on API changes. It follows semantic versioning principles
+-- and integrates with the package registry to ensure proper version management.
+--
+-- The main entry point is 'run', which analyzes the current package's API
+-- changes and suggests appropriate version increments.
+--
+-- ==== Architecture
+--
+-- The bump system is organized into several specialized modules:
+--   * 'Bump.Types' - Core data types and lenses
+--   * 'Bump.Environment' - Environment setup and validation
+--   * 'Bump.Validation' - Version validation logic
+--   * 'Bump.Analysis' - Documentation analysis and comparison
+--   * 'Bump.Operations' - User interaction and file operations
+--
+-- ==== Workflow
+--
+-- 1. Initialize environment and validate project structure
+-- 2. Check if package is new or exists in registry
+-- 3. For new packages: validate initial version is 1.0.0
+-- 4. For existing packages: analyze API changes and suggest version
+-- 5. Prompt user for confirmation and apply changes
+--
+-- @since 0.19.1
 module Bump
-  ( run,
-  )
-where
+  ( run
+  ) where
 
-import qualified BackgroundWriter as BW
-import qualified Build
-import qualified Canopy.Details as Details
-import Canopy.Docs (Documentation)
-import qualified Canopy.Magnitude as M
-import Canopy.Outline (PkgOutline (..))
-import qualified Canopy.Outline as Outline
-import Canopy.Version (Version)
-import qualified Canopy.Version as V
-import qualified Data.List as List
-import qualified Data.NonEmptyList as NE
-import qualified Deps.Bump as Bump
-import Deps.CustomRepositoryDataIO (loadCustomRepositoriesData)
-import qualified Deps.Diff as Diff
-import qualified Deps.Registry as Registry
-import qualified Http
-import qualified Reporting
-import Reporting.Doc (Doc, (<+>))
-import qualified Reporting.Doc as D
-import Reporting.Exit (Bump (BumpCustomRepositoryDataProblem))
-import qualified Reporting.Exit as Exit
-import qualified Reporting.Exit.Help as Help
+import Bump.Types (Env, envRegistry, envOutline)
+import Canopy.Package (Name)
+import Control.Lens ((^.))
+import Reporting.Exit (Bump)
 import Reporting.Task (Task)
+import qualified Bump.Analysis as Analysis
+import qualified Bump.Environment as Environment
+import qualified Bump.Operations as Operations
+import qualified Bump.Validation as Validation
+import qualified Data.Maybe as Maybe
+import qualified Deps.Registry as Registry
+import qualified Reporting
+import qualified Reporting.Exit as Exit
 import qualified Reporting.Task as Task
-import qualified Stuff
 
--- RUN
-
+-- | Main entry point for the bump command.
+--
+-- Analyzes the current package's API changes and suggests appropriate
+-- version increments based on semantic versioning principles.
+--
+-- The function orchestrates the entire bump workflow:
+-- 1. Sets up environment
+-- 2. Determines if package is new or existing
+-- 3. Handles version validation and suggestions accordingly
+--
+-- @since 0.19.1
 run :: () -> () -> IO ()
 run () () =
-  Reporting.attempt Exit.bumpToReport $
-    Task.run (getEnv >>= bump)
+  Reporting.attempt Exit.bumpToReport (Task.run bumpWorkflow)
+  where
+    bumpWorkflow = Environment.getEnv >>= bump
 
--- ENV
+-- | Performs the version bump operation based on package registry status.
+--
+-- For existing packages, analyzes API changes and suggests version increments.
+-- For new packages, validates the initial version is set to 1.0.0.
+--
+-- ==== Parameters
+--
+-- * 'env': Validated bump environment with all necessary context
+--
+-- ==== Errors
+--
+-- Throws 'Exit.BumpUnexpectedVersion' if the current version is not suitable for bumping.
+--
+-- @since 0.19.1
+bump :: Env -> Task Bump ()
+bump env =
+  Maybe.maybe handleNewPackage (handleExistingPackage env) (getPackageVersions env)
+  where
+    getPackageVersions environment =
+      Registry.getVersions (getPackageName environment) (environment ^. envRegistry)
+    
+    handleNewPackage = Task.io (checkNewPackage env)
 
-data Env = Env
-  { _root :: FilePath,
-    _cache :: Stuff.PackageCache,
-    _manager :: Http.Manager,
-    _registry :: Registry.ZokkaRegistries,
-    _outline :: PkgOutline
-  }
+-- | Handles version bumping for packages that exist in the registry.
+--
+-- Validates that the current version is suitable for bumping, then
+-- analyzes API changes and prompts for version update.
+--
+-- ==== Parameters
+--
+-- * 'env': Bump environment
+-- * 'knownVersions': List of versions already published in registry
+--
+-- ==== Errors
+--
+-- Delegates to validation and analysis modules for specific error handling.
+--
+-- @since 0.19.1
+handleExistingPackage :: Env -> Registry.KnownVersions -> Task Bump ()
+handleExistingPackage env knownVersions = do
+  Validation.handleExistingPackage env knownVersions
+  (newVersion, changes) <- Analysis.suggestVersion env
+  Task.io (Operations.promptVersionUpdate env newVersion changes)
 
-getEnv :: Task Exit.Bump Env
-getEnv =
-  do
-    maybeRoot <- Task.io Stuff.findRoot
-    case maybeRoot of
-      Nothing ->
-        Task.throw Exit.BumpNoOutline
-      Just root ->
-        do
-          cache <- Task.io Stuff.getPackageCache
-          zokkaCache <- Task.io Stuff.getZokkaCache
-          manager <- Task.io Http.getManager
-          reposConfigLocation <- Task.io Stuff.getOrCreateZokkaCustomRepositoryConfig
-          customReposData <- Task.eio BumpCustomRepositoryDataProblem $ loadCustomRepositoriesData reposConfigLocation
-          registry <- Task.eio Exit.BumpMustHaveLatestRegistry $ Registry.latest manager customReposData zokkaCache reposConfigLocation
-          outline <- Task.eio Exit.BumpBadOutline $ Outline.read root
-          case outline of
-            Outline.App _ ->
-              Task.throw Exit.BumpApplication
-            Outline.Pkg pkgOutline ->
-              return $ Env root cache manager registry pkgOutline
+-- | Validates version for new packages that haven't been published.
+--
+-- Delegates to the validation module to handle new package version checking.
+--
+-- ==== Parameters
+--
+-- * 'env': Bump environment with package information
+--
+-- ==== Output
+--
+-- Prints guidance and validates initial version through validation module.
+--
+-- @since 0.19.1
+checkNewPackage :: Env -> IO ()
+checkNewPackage env =
+  Validation.checkNewPackage (Validation.getPackageVersion (env ^. envOutline))
 
--- BUMP
+-- | Extracts package name from environment.
+--
+-- Utility function to get the package name for registry operations.
+--
+-- ==== Parameters
+--
+-- * 'env': Bump environment
+--
+-- ==== Returns
+--
+-- Package name for registry lookups.
+--
+-- @since 0.19.1
+getPackageName :: Env -> Name
+getPackageName env = Validation.getPackageName (env ^. envOutline)
 
-bump :: Env -> Task Exit.Bump ()
-bump env@(Env root _ _ registry outline@(PkgOutline pkg _ _ vsn _ _ _ _)) =
-  case Registry.getVersions pkg registry of
-    Just knownVersions ->
-      let bumpableVersions =
-            fmap (\(old, _, _) -> old) (Bump.getPossibilities knownVersions)
-       in if vsn `elem` bumpableVersions
-            then suggestVersion env
-            else Task.throw . Exit.BumpUnexpectedVersion vsn $ fmap head (List.group (List.sort bumpableVersions))
-    Nothing ->
-      Task.io $ checkNewPackage root outline
-
--- CHECK NEW PACKAGE
-
-checkNewPackage :: FilePath -> PkgOutline -> IO ()
-checkNewPackage root outline@(PkgOutline _ _ _ version _ _ _ _) =
-  do
-    putStrLn Exit.newPackageOverview
-    if version == V.one
-      then putStrLn "The version number in canopy.json is correct so you are all set!"
-      else
-        changeVersion root outline V.one $
-          "It looks like the version in canopy.json has been changed though!\n\
-          \Would you like me to change it back to "
-            <> D.fromVersion V.one
-            <> "? [Y/n] "
-
--- SUGGEST VERSION
-
-suggestVersion :: Env -> Task Exit.Bump ()
-suggestVersion (Env root cache manager registry outline@(PkgOutline pkg _ _ vsn _ _ _ _)) =
-  do
-    oldDocs <- Task.eio (Exit.BumpCannotFindDocs pkg vsn) (Diff.getDocs cache registry manager pkg vsn)
-    newDocs <- generateDocs root outline
-    let changes = Diff.diff oldDocs newDocs
-    let newVersion = Diff.bump changes vsn
-    Task.io . changeVersion root outline newVersion $
-      ( let old = D.fromVersion vsn
-            new = D.fromVersion newVersion
-            mag = D.fromChars $ M.toChars (Diff.toMagnitude changes)
-         in "Based on your new API, this should be a" <+> D.green mag <+> "change (" <> old <> " => " <> new <> ")\n"
-              <> "Bail out of this command and run 'canopy diff' for a full explanation.\n"
-              <> "\n"
-              <> "Should I perform the update ("
-              <> old
-              <> " => "
-              <> new
-              <> ") in canopy.json? [Y/n] "
-      )
-
-generateDocs :: FilePath -> PkgOutline -> Task Exit.Bump Documentation
-generateDocs root (PkgOutline _ _ _ _ exposed _ _ _) =
-  do
-    details <-
-      Task.eio Exit.BumpBadDetails . BW.withScope $
-        ( \scope ->
-            Details.load Reporting.silent scope root
-        )
-
-    case Outline.flattenExposed exposed of
-      [] ->
-        Task.throw Exit.BumpNoExposed
-      e : es ->
-        Task.eio Exit.BumpBadBuild $
-          Build.fromExposed Reporting.silent root details Build.KeepDocs (NE.List e es)
-
--- CHANGE VERSION
-
-changeVersion :: FilePath -> PkgOutline -> Version -> Doc -> IO ()
-changeVersion root outline targetVersion question =
-  do
-    approved <- Reporting.ask question
-    if not approved
-      then putStrLn "Okay, I did not change anything!"
-      else do
-        Outline.write root . Outline.Pkg $ outline {Outline._pkg_version = targetVersion}
-
-        Help.toStdout $
-          "Version changed to "
-            <> D.green (D.fromVersion targetVersion)
-            <> "!\n"

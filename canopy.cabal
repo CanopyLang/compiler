@@ -216,6 +216,11 @@ executable canopy
   main-is: Main.hs
   other-modules:
       Bump
+      Bump.Analysis
+      Bump.Environment
+      Bump.Operations
+      Bump.Types
+      Bump.Validation
       Develop
       Develop.Generate.Help
       Develop.Generate.Index
