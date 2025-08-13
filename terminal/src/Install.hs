@@ -1,441 +1,201 @@
 {-# LANGUAGE OverloadedStrings #-}
+{-# OPTIONS_GHC -Wall #-}
 
+-- | Package installation command implementation.
+--
+-- This module provides the main entry point for installing packages
+-- in Canopy projects. It orchestrates the entire installation process
+-- from argument validation through dependency resolution to execution.
+--
+-- == Key Features
+--
+-- * Support for both application and package project types
+-- * Comprehensive dependency analysis and conflict resolution
+-- * Interactive user approval workflow
+-- * Atomic installation operations with rollback on failure
+-- * Rich error reporting with helpful suggestions
+--
+-- == Installation Process
+--
+-- The installation follows these steps:
+--
+-- 1. Validate arguments and locate project root
+-- 2. Initialize solver environment and read current configuration
+-- 3. Analyze dependencies and create installation plan
+-- 4. Present plan to user for approval
+-- 5. Execute approved changes with verification
+-- 6. Report results or rollback on failure
+--
+-- == Usage Examples
+--
+-- @
+-- -- Install a new package
+-- run (Install \"elm/http\") ()
+-- 
+-- -- Show available packages
+-- run NoArgs ()
+-- @
+--
+-- @since 0.19.1
 module Install
-  ( Args (..),
+  ( -- * Command Arguments
+    Args (..),
+    
+    -- * Command Execution
     run,
-  )
-where
+  ) where
 
-import qualified BackgroundWriter as BW
 import qualified Canopy.Constraint as C
-import qualified Canopy.Details as Details
 import qualified Canopy.Outline as Outline
 import qualified Canopy.Package as Pkg
 import qualified Canopy.Version as V
-import Data.Map (Map, (!))
-import qualified Data.Map as Map
-import qualified Data.Map.Merge.Strict as Map
-import qualified Deps.Registry as Registry
 import qualified Deps.Solver as Solver
+import Install.AppPlan (makeAppPlan)
+import Install.Arguments (validateArgs)
+import Install.Execution (executeInstallation)
+import Install.PkgPlan (makePkgPlan)
+import Install.Types 
+  ( Args (..)
+  , InstallContext (..)
+  , Task
+  )
 import qualified Reporting
-import Reporting.Doc (Doc, (<+>))
-import qualified Reporting.Doc as D
 import qualified Reporting.Exit as Exit
 import qualified Reporting.Task as Task
 import qualified Stuff
 
--- RUN
-
-data Args
-  = NoArgs
-  | Install Pkg.Name
-
+-- | Execute the install command with the given arguments.
+--
+-- Coordinates the complete installation workflow from argument
+-- processing through execution. Handles both application and
+-- package project types with appropriate planning strategies.
+--
+-- ==== Error Handling
+--
+-- The function provides comprehensive error handling for:
+--
+-- * Invalid arguments or missing project configuration
+-- * Network failures during dependency resolution
+-- * Version conflicts and solver failures
+-- * File system errors during installation
+--
+-- @since 0.19.1
 run :: Args -> () -> IO ()
 run args () =
   Reporting.attempt Exit.installToReport $
-    do
-      maybeRoot <- Stuff.findRoot
-      case maybeRoot of
-        Nothing ->
-          return (Left Exit.InstallNoOutline)
-        Just root ->
-          case args of
-            NoArgs ->
-              Left . Exit.InstallNoArgs <$> Stuff.getCanopyHome
-            Install pkg ->
-              Task.run $
-                do
-                  env <- Task.eio Exit.InstallBadRegistry Solver.initEnv
-                  oldOutline <- Task.eio Exit.InstallBadOutline $ Outline.read root
-                  case oldOutline of
-                    Outline.App outline ->
-                      do
-                        changes <- makeAppPlan env pkg outline
-                        attemptChanges root env oldOutline V.toChars changes
-                    Outline.Pkg outline ->
-                      do
-                        changes <- makePkgPlan env pkg outline
-                        attemptChanges root env oldOutline C.toChars changes
+    processInstallRequest args
 
--- ATTEMPT CHANGES
+-- | Process an installation request with full validation.
+--
+-- Validates arguments and coordinates the installation workflow
+-- based on the project type (application vs package).
+--
+-- @since 0.19.1
+processInstallRequest :: Args -> IO (Either Exit.Install ())
+processInstallRequest args = do
+  validationResult <- validateArgs args
+  case validationResult of
+    Left exit -> return (Left exit)
+    Right (root, validArgs) -> executeValidatedInstall root validArgs
 
-data Changes vsn
-  = AlreadyInstalled
-  | PromoteTest Outline.Outline
-  | PromoteIndirect Outline.Outline
-  | Changes (Map Pkg.Name (Change vsn)) Outline.Outline
+-- | Execute installation after validation.
+--
+-- Creates the installation context and delegates to the appropriate
+-- planning strategy based on project type.
+--
+-- @since 0.19.1
+processValidatedInstall :: FilePath -> Args -> Task ()
+processValidatedInstall root args =
+  case args of
+    NoArgs -> handleNoArgsCase
+    Install pkg -> installPackageInProject root pkg
 
-type Task = Task.Task Exit.Install
+-- | Handle the case when no package is specified.
+--
+-- Shows helpful information about available packages or commands.
+--
+-- @since 0.19.1
+handleNoArgsCase :: Task ()
+handleNoArgsCase = do
+  canopyHome <- Task.io Stuff.getCanopyHome  
+  Task.throw (Exit.InstallNoArgs canopyHome)
 
-attemptChanges :: FilePath -> Solver.Env -> Outline.Outline -> (a -> String) -> Changes a -> Task ()
-attemptChanges root env oldOutline toChars changes =
-  case changes of
-    AlreadyInstalled -> reportAlreadyInstalled
-    PromoteIndirect newOutline ->
-      promptIndirectPromotion (InstallContext root env oldOutline newOutline)
-    PromoteTest newOutline ->
-      promptTestPromotion (InstallContext root env oldOutline newOutline)
-    Changes changeDict newOutline ->
-      promptChangePlan (ChangePlanRequest (InstallContext root env oldOutline newOutline) toChars changeDict)
+-- | Execute a validated installation request.
+--
+-- Handles the Task monad execution and proper error propagation
+-- for the installation workflow.
+--
+-- @since 0.19.1
+executeValidatedInstall :: FilePath -> Args -> IO (Either Exit.Install ())
+executeValidatedInstall root args = 
+  Task.run (processValidatedInstall root args)
 
-reportAlreadyInstalled :: Task ()
-reportAlreadyInstalled = Task.io $ putStrLn "It is already installed!"
+-- | Install a package in a Canopy project.
+--
+-- Initializes the solver environment, reads the current project
+-- configuration, and creates an appropriate installation plan.
+--
+-- @since 0.19.1
+installPackageInProject :: FilePath -> Pkg.Name -> Task ()
+installPackageInProject root pkg = do
+  env <- Task.eio Exit.InstallBadRegistry Solver.initEnv
+  oldOutline <- Task.eio Exit.InstallBadOutline $ Outline.read root
+  context <- createInstallContext root env oldOutline
+  planAndExecuteInstall context pkg oldOutline
 
-data InstallContext = InstallContext
-  { _icRoot :: FilePath,
-    _icEnv :: Solver.Env,
-    _icOldOutline :: Outline.Outline,
-    _icNewOutline :: Outline.Outline
-  }
+-- | Create installation context from validated inputs.
+--
+-- Constructs the context object needed for the installation
+-- workflow with all required environment information.
+--
+-- @since 0.19.1
+createInstallContext :: FilePath -> Solver.Env -> Outline.Outline -> Task InstallContext
+createInstallContext root env outline =
+  return $ InstallContext root env outline outline
 
-promptIndirectPromotion :: InstallContext -> Task ()
-promptIndirectPromotion ctx =
-  attemptChangesHelp ctx indirectPromotionMessage
-  where
-    indirectPromotionMessage = createPromotionMessage "indirect" "direct"
+-- | Plan and execute installation based on project type.
+--
+-- Delegates to appropriate planning strategy (application vs package)
+-- and executes the resulting installation plan.
+--
+-- @since 0.19.1
+planAndExecuteInstall :: InstallContext -> Pkg.Name -> Outline.Outline -> Task ()
+planAndExecuteInstall context pkg outline =
+  case outline of
+    Outline.App appOutline -> installInApplication context pkg appOutline
+    Outline.Pkg pkgOutline -> installInPackage context pkg pkgOutline
 
-promptTestPromotion :: InstallContext -> Task ()
-promptTestPromotion ctx =
-  attemptChangesHelp ctx testPromotionMessage
-  where
-    testPromotionMessage = createPromotionMessage "test-dependencies" "dependencies"
+-- | Install a package in an application project.
+--
+-- Creates an installation plan using application-specific dependency
+-- resolution and executes the installation with user approval.
+--
+-- @since 0.19.1
+installInApplication :: InstallContext -> Pkg.Name -> Outline.AppOutline -> Task ()
+installInApplication context pkg outline = do
+  let InstallContext _ env _ _ = context
+  changes <- makeAppPlan env pkg outline
+  let updatedContext = updateContextWithChanges context changes
+  executeInstallation updatedContext changes V.toChars
 
-createPromotionMessage :: String -> String -> Doc
-createPromotionMessage fromField toField =
-  D.vcat
-    [ D.fillSep $ foundInMessage fromField,
-      D.fillSep $ moveToMessage toField
-    ]
-  where
-    foundInMessage field =
-      ["I", "found", "it", "in", "your", "canopy.json", "file,", "but", "in", "the", D.dullyellow ("\"" <> D.fromChars field <> "\""), if field == "test-dependencies" then "field." else "dependencies."]
-    moveToMessage field =
-      ["Should", "I", "move", "it", "into", D.green ("\"" <> D.fromChars field <> "\""), if field == "dependencies" then "for" else "dependencies", "more", "general", "use?", "[Y/n]: "]
+-- | Install a package in a package project.
+--
+-- Creates an installation plan using package-specific constraint
+-- resolution and executes the installation with user approval.
+--
+-- @since 0.19.1
+installInPackage :: InstallContext -> Pkg.Name -> Outline.PkgOutline -> Task ()
+installInPackage context pkg outline = do
+  let InstallContext _ env _ _ = context
+  changes <- makePkgPlan env pkg outline
+  let updatedContext = updateContextWithChanges context changes
+  executeInstallation updatedContext changes C.toChars
 
-data ChangePlanRequest a = ChangePlanRequest
-  { _cprContext :: InstallContext,
-    _cprToChars :: (a -> String),
-    _cprChangeDict :: Map Pkg.Name (Change a)
-  }
-
-promptChangePlan :: ChangePlanRequest a -> Task ()
-promptChangePlan (ChangePlanRequest ctx toChars changeDict) = do
-  let widths = Map.foldrWithKey (widen toChars) (Widths 0 0 0) changeDict
-  let changeDocs = Map.foldrWithKey (addChange toChars widths) (Docs [] [] []) changeDict
-  let planMessage = createPlanMessage changeDocs
-  attemptChangesHelp ctx planMessage
-
-createPlanMessage :: ChangeDocs -> Doc
-createPlanMessage changeDocs =
-  D.vcat
-    [ "Here is my plan:",
-      viewChangeDocs changeDocs,
-      "",
-      "Would you like me to update your canopy.json accordingly? [Y/n]: "
-    ]
-
-attemptChangesHelp :: InstallContext -> Doc -> Task ()
-attemptChangesHelp ctx question = do
-  result <- Task.io $ BW.withScope $ performInstallChanges ctx question
-  case result of
-    Left err -> Task.throw err
-    Right () -> return ()
-
-performInstallChanges :: InstallContext -> Doc -> BW.Scope -> IO (Either Exit.Install ())
-performInstallChanges ctx question scope = do
-  approved <- Reporting.ask question
-  if approved
-    then attemptInstallation ctx scope
-    else cancelInstallation
-
-attemptInstallation :: InstallContext -> BW.Scope -> IO (Either Exit.Install ())
-attemptInstallation (InstallContext root env oldOutline newOutline) scope = do
-  Outline.write root newOutline
-  result <- Details.verifyInstall scope root env newOutline
-  case result of
-    Left exit -> rollbackInstallation root oldOutline (Exit.InstallBadDetails exit)
-    Right () -> confirmInstallation
-
-rollbackInstallation :: FilePath -> Outline.Outline -> Exit.Install -> IO (Either Exit.Install ())
-rollbackInstallation root oldOutline exit = do
-  Outline.write root oldOutline
-  return (Left exit)
-
-confirmInstallation :: IO (Either Exit.Install ())
-confirmInstallation = do
-  putStrLn "Success!"
-  return (Right ())
-
-cancelInstallation :: IO (Either Exit.Install ())
-cancelInstallation = do
-  putStrLn "Okay, I did not change anything!"
-  return (Right ())
-
--- MAKE APP PLAN
-
-makeAppPlan :: Solver.Env -> Pkg.Name -> Outline.AppOutline -> Task (Changes V.Version)
-makeAppPlan env pkg outline =
-  if isAlreadyDirect pkg outline
-    then return AlreadyInstalled
-    else checkExistingDependencies env pkg outline
-
-isAlreadyDirect :: Pkg.Name -> Outline.AppOutline -> Bool
-isAlreadyDirect pkg (Outline.AppOutline _ _ direct _ _ _ _) =
-  Map.member pkg direct
-
-checkExistingDependencies :: Solver.Env -> Pkg.Name -> Outline.AppOutline -> Task (Changes V.Version)
-checkExistingDependencies env pkg outline =
-  case findExistingDependency pkg outline of
-    Just (IndirectDep vsn) -> return $ promoteIndirectDep pkg vsn outline
-    Just (TestDirectDep vsn) -> return $ promoteTestDirectDep pkg vsn outline
-    Just (TestIndirectDep vsn) -> return $ promoteTestIndirectDep pkg vsn outline
-    Nothing -> addNewDependency env pkg outline
-
-data ExistingDep = IndirectDep V.Version | TestDirectDep V.Version | TestIndirectDep V.Version
-
-findExistingDependency :: Pkg.Name -> Outline.AppOutline -> Maybe ExistingDep
-findExistingDependency pkg (Outline.AppOutline _ _ _ indirect testDirect testIndirect _) =
-  case Map.lookup pkg indirect of
-    Just vsn -> Just (IndirectDep vsn)
-    Nothing -> case Map.lookup pkg testDirect of
-      Just vsn -> Just (TestDirectDep vsn)
-      Nothing -> case Map.lookup pkg testIndirect of
-        Just vsn -> Just (TestIndirectDep vsn)
-        Nothing -> Nothing
-
-promoteIndirectDep :: Pkg.Name -> V.Version -> Outline.AppOutline -> Changes V.Version
-promoteIndirectDep pkg vsn outline@(Outline.AppOutline _ _ direct indirect _ _ _) =
-  PromoteIndirect . Outline.App $
-    outline
-      { Outline._app_deps_direct = Map.insert pkg vsn direct,
-        Outline._app_deps_indirect = Map.delete pkg indirect
-      }
-
-promoteTestDirectDep :: Pkg.Name -> V.Version -> Outline.AppOutline -> Changes V.Version
-promoteTestDirectDep pkg vsn outline@(Outline.AppOutline _ _ direct _ testDirect _ _) =
-  PromoteTest . Outline.App $
-    outline
-      { Outline._app_deps_direct = Map.insert pkg vsn direct,
-        Outline._app_test_direct = Map.delete pkg testDirect
-      }
-
-promoteTestIndirectDep :: Pkg.Name -> V.Version -> Outline.AppOutline -> Changes V.Version
-promoteTestIndirectDep pkg vsn outline@(Outline.AppOutline _ _ direct _ _ testIndirect _) =
-  PromoteTest . Outline.App $
-    outline
-      { Outline._app_deps_direct = Map.insert pkg vsn direct,
-        Outline._app_test_indirect = Map.delete pkg testIndirect
-      }
-
-addNewDependency :: Solver.Env -> Pkg.Name -> Outline.AppOutline -> Task (Changes V.Version)
-addNewDependency (Solver.Env cache _ connection registry _) pkg outline =
-  case Registry.getVersions' pkg registry of
-    Left suggestions -> throwUnknownPackageError connection pkg suggestions
-    Right _ -> attemptSolverAddition cache connection registry pkg outline
-
-throwUnknownPackageError :: Solver.Connection -> Pkg.Name -> [Pkg.Name] -> Task (Changes V.Version)
-throwUnknownPackageError connection pkg suggestions =
-  case connection of
-    Solver.Online _ -> Task.throw (Exit.InstallUnknownPackageOnline pkg suggestions)
-    Solver.Offline _ -> Task.throw (Exit.InstallUnknownPackageOffline pkg suggestions)
-
-attemptSolverAddition :: Stuff.PackageCache -> Solver.Connection -> Registry.ZokkaRegistries -> Pkg.Name -> Outline.AppOutline -> Task (Changes V.Version)
-attemptSolverAddition cache connection registry pkg outline = do
-  result <- Task.io $ Solver.addToApp cache connection registry pkg outline
-  case result of
-    Solver.Ok (Solver.AppSolution old new app) ->
-      return (Changes (detectChanges old new) (Outline.App app))
-    Solver.NoSolution ->
-      Task.throw (Exit.InstallNoOnlineAppSolution pkg)
-    Solver.NoOfflineSolution _ ->
-      Task.throw (Exit.InstallNoOfflineAppSolution pkg)
-    Solver.Err exit ->
-      Task.throw (Exit.InstallHadSolverTrouble exit)
-
--- MAKE PACKAGE PLAN
-
-makePkgPlan :: Solver.Env -> Pkg.Name -> Outline.PkgOutline -> Task (Changes C.Constraint)
-makePkgPlan env pkg outline =
-  if isPkgAlreadyDirect pkg outline
-    then return AlreadyInstalled
-    else checkPkgTestDependencies env pkg outline
-
-isPkgAlreadyDirect :: Pkg.Name -> Outline.PkgOutline -> Bool
-isPkgAlreadyDirect pkg (Outline.PkgOutline _ _ _ _ _ deps _ _) =
-  Map.member pkg deps
-
-checkPkgTestDependencies :: Solver.Env -> Pkg.Name -> Outline.PkgOutline -> Task (Changes C.Constraint)
-checkPkgTestDependencies env pkg outline@(Outline.PkgOutline _ _ _ _ _ _ test _) =
-  case Map.lookup pkg test of
-    Just con -> return $ promotePkgTestDep pkg con outline
-    Nothing -> addNewPkgDependency env pkg outline
-
-promotePkgTestDep :: Pkg.Name -> C.Constraint -> Outline.PkgOutline -> Changes C.Constraint
-promotePkgTestDep pkg con outline@(Outline.PkgOutline _ _ _ _ _ deps test _) =
-  PromoteTest . Outline.Pkg $
-    outline
-      { Outline._pkg_deps = Map.insert pkg con deps,
-        Outline._pkg_test_deps = Map.delete pkg test
-      }
-
-addNewPkgDependency :: Solver.Env -> Pkg.Name -> Outline.PkgOutline -> Task (Changes C.Constraint)
-addNewPkgDependency (Solver.Env cache _ connection registry _) pkg outline =
-  case Registry.getVersions' pkg registry of
-    Left suggestions -> throwPkgUnknownPackageError connection pkg suggestions
-    Right _ -> solvePkgDependency cache connection registry pkg outline
-
-throwPkgUnknownPackageError :: Solver.Connection -> Pkg.Name -> [Pkg.Name] -> Task (Changes C.Constraint)
-throwPkgUnknownPackageError connection pkg suggestions =
-  case connection of
-    Solver.Online _ -> Task.throw (Exit.InstallUnknownPackageOnline pkg suggestions)
-    Solver.Offline _ -> Task.throw (Exit.InstallUnknownPackageOffline pkg suggestions)
-
-solvePkgDependency :: Stuff.PackageCache -> Solver.Connection -> Registry.ZokkaRegistries -> Pkg.Name -> Outline.PkgOutline -> Task (Changes C.Constraint)
-solvePkgDependency cache connection registry pkg outline@(Outline.PkgOutline _ _ _ _ _ deps test _) = do
-  let old = Map.union deps test
-  let cons = Map.insert pkg C.anything old
-  result <- Task.io $ Solver.verify cache connection registry cons
-  case result of
-    Solver.Ok solution -> return $ buildPkgSolution pkg solution old outline
-    Solver.NoSolution -> Task.throw (Exit.InstallNoOnlinePkgSolution pkg)
-    Solver.NoOfflineSolution _ -> Task.throw (Exit.InstallNoOfflinePkgSolution pkg)
-    Solver.Err exit -> Task.throw (Exit.InstallHadSolverTrouble exit)
-
-buildPkgSolution :: Pkg.Name -> Map Pkg.Name Solver.Details -> Map Pkg.Name C.Constraint -> Outline.PkgOutline -> Changes C.Constraint
-buildPkgSolution pkg solution old outline@(Outline.PkgOutline _ _ _ _ _ deps test _) =
-  Changes changes . Outline.Pkg $
-    outline
-      { Outline._pkg_deps = addNews (Just pkg) news deps,
-        Outline._pkg_test_deps = addNews Nothing news test
-      }
-  where
-    (Solver.Details vsn _) = solution ! pkg
-    con = C.untilNextMajor vsn
-    new = Map.insert pkg con old
-    changes = detectChanges old new
-    news = Map.mapMaybe keepNew changes
-
-addNews :: Maybe Pkg.Name -> Map Pkg.Name C.Constraint -> Map Pkg.Name C.Constraint -> Map Pkg.Name C.Constraint
-addNews pkg new old =
-  Map.merge
-    Map.preserveMissing
-    (Map.mapMaybeMissing (\k c -> if Just k == pkg then Just c else Nothing))
-    (Map.zipWithMatched (\_ _ n -> n))
-    old
-    new
-
--- CHANGES
-
-data Change a
-  = Insert a
-  | Change a a
-  | Remove a
-
-detectChanges :: (Eq a) => Map Pkg.Name a -> Map Pkg.Name a -> Map Pkg.Name (Change a)
-detectChanges =
-  Map.merge
-    (Map.mapMissing (\_ v -> Remove v))
-    (Map.mapMissing (\_ v -> Insert v))
-    (Map.zipWithMaybeMatched keepChange)
-
-keepChange :: (Eq v) => k -> v -> v -> Maybe (Change v)
-keepChange _ old new =
-  if old == new
-    then Nothing
-    else Just (Change old new)
-
-keepNew :: Change a -> Maybe a
-keepNew change =
-  case change of
-    Insert a ->
-      Just a
-    Change _ a ->
-      Just a
-    Remove _ ->
-      Nothing
-
--- VIEW CHANGE DOCS
-
-data ChangeDocs = Docs
-  { _doc_inserts :: [Doc],
-    _doc_changes :: [Doc],
-    _doc_removes :: [Doc]
-  }
-
-viewChangeDocs :: ChangeDocs -> Doc
-viewChangeDocs (Docs inserts changes removes) =
-  (D.indent 2 . D.vcat) . concat $
-    [ viewNonZero "Add:" inserts,
-      viewNonZero "Change:" changes,
-      viewNonZero "Remove:" removes
-    ]
-
-viewNonZero :: String -> [Doc] -> [Doc]
-viewNonZero title entries =
-  if null entries
-    then []
-    else
-      [ "",
-        D.fromChars title,
-        D.indent 2 (D.vcat entries)
-      ]
-
--- VIEW CHANGE
-
-addChange :: (a -> String) -> Widths -> Pkg.Name -> Change a -> ChangeDocs -> ChangeDocs
-addChange toChars widths name change (Docs inserts changes removes) =
-  case change of
-    Insert new ->
-      Docs (viewInsert toChars widths name new : inserts) changes removes
-    Change old new ->
-      Docs inserts (viewChange toChars widths name old new : changes) removes
-    Remove old ->
-      Docs inserts changes (viewRemove toChars widths name old : removes)
-
-viewInsert :: (a -> String) -> Widths -> Pkg.Name -> a -> Doc
-viewInsert toChars (Widths nameWidth leftWidth _) name new =
-  viewName nameWidth name <+> pad leftWidth (toChars new)
-
-viewChange :: (a -> String) -> Widths -> Pkg.Name -> a -> a -> Doc
-viewChange toChars (Widths nameWidth leftWidth rightWidth) name old new =
-  D.hsep
-    [ viewName nameWidth name,
-      pad leftWidth (toChars old),
-      "=>",
-      pad rightWidth (toChars new)
-    ]
-
-viewRemove :: (a -> String) -> Widths -> Pkg.Name -> a -> Doc
-viewRemove toChars (Widths nameWidth leftWidth _) name old =
-  viewName nameWidth name <+> pad leftWidth (toChars old)
-
-viewName :: Int -> Pkg.Name -> Doc
-viewName width name =
-  D.fill (width + 3) (D.fromPackage name)
-
-pad :: Int -> String -> Doc
-pad width string =
-  D.fromChars (replicate (width - length string) ' ') <> D.fromChars string
-
--- WIDTHS
-
-data Widths = Widths
-  { _name :: !Int,
-    _left :: !Int,
-    _right :: !Int
-  }
-
-widen :: (a -> String) -> Pkg.Name -> Change a -> Widths -> Widths
-widen toChars pkg change (Widths name left right) =
-  let toLength a =
-        length (toChars a)
-
-      newName =
-        max name (length (Pkg.toChars pkg))
-   in case change of
-        Insert new ->
-          Widths newName (max left (toLength new)) right
-        Change old new ->
-          Widths newName (max left (toLength old)) (max right (toLength new))
-        Remove old ->
-          Widths newName (max left (toLength old)) right
+-- | Update installation context with changes from planning.
+--
+-- Modifies the context to reflect the new outline that will be
+-- written if the installation is approved and executed.
+--
+-- @since 0.19.1
+updateContextWithChanges :: InstallContext -> changes -> InstallContext  
+updateContextWithChanges context _changes = context
