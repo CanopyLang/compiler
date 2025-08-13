@@ -60,6 +60,10 @@ import qualified Unit.Parse.PatternTest as ParsePatternTest
 import qualified Unit.Parse.TypeTest as ParseTypeTest
 import qualified Unit.TerminalTest as TerminalTest
 import qualified Unit.Terminal.ChompTest as ChompTest
+import qualified Unit.Terminal.ErrorTest as TerminalErrorTest
+import qualified Unit.Terminal.Error.TypesTest as TerminalErrorTypesTest
+import qualified Unit.Terminal.Error.FormattingTest as TerminalErrorFormattingTest
+import qualified Unit.Terminal.Error.SuggestionsTest as TerminalErrorSuggestionsTest
 
 main :: IO ()
 main = defaultMain tests
@@ -110,7 +114,11 @@ unitTests =
       SourceAstTest.tests,
       CanonicalTypeTest.tests,
       TerminalTest.tests,
-      ChompTest.tests
+      ChompTest.tests,
+      TerminalErrorTest.tests,
+      TerminalErrorTypesTest.tests,
+      TerminalErrorFormattingTest.tests,
+      TerminalErrorSuggestionsTest.tests
     ]
 
 propertyTests :: TestTree

@@ -211,6 +211,11 @@ library
       Terminal.Command
       Terminal.Completion
       Terminal.Error
+      Terminal.Error.Display
+      Terminal.Error.Formatting
+      Terminal.Error.Help
+      Terminal.Error.Suggestions
+      Terminal.Error.Types
       Terminal.Helpers
       Terminal.Internal
       Terminal.Parser
@@ -429,6 +434,10 @@ test-suite canopy-test
       Unit.Parse.PatternTest
       Unit.Parse.TypeTest
       Unit.Terminal.ChompTest
+      Unit.Terminal.Error.FormattingTest
+      Unit.Terminal.Error.SuggestionsTest
+      Unit.Terminal.Error.TypesTest
+      Unit.Terminal.ErrorTest
       Unit.TerminalTest
   hs-source-dirs:
       test
