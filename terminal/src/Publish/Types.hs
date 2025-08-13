@@ -13,7 +13,7 @@ module Publish.Types
   ( -- * Configuration
     Args (..),
     Env (..),
-    
+
     -- * Environment Lenses
     envRoot,
     envCache,
@@ -24,7 +24,7 @@ module Publish.Types
     -- * Publishing Types
     GoodVersion (..),
     RegistrationData (..),
-    
+
     -- * RegistrationData Lenses
     regPkg,
     regVersion,

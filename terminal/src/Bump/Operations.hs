@@ -17,25 +17,26 @@
 --
 -- @since 0.19.1
 module Bump.Operations
-  ( promptVersionUpdate
-  , promptVersionReset
-  , changeVersion
-  , applyVersionChange
-  , reportNoChange
-  , reportVersionChanged
-  , buildUpdatePrompt
-  ) where
+  ( promptVersionUpdate,
+    promptVersionReset,
+    changeVersion,
+    applyVersionChange,
+    reportNoChange,
+    reportVersionChanged,
+    buildUpdatePrompt,
+  )
+where
 
-import Bump.Types (Env, envRoot, envOutline)
-import Canopy.Outline (PkgOutline)
-import Canopy.Version (Version)
-import Control.Lens ((^.))
-import Reporting.Doc (Doc, (<+>))
+import Bump.Types (Env, envOutline, envRoot)
 import qualified Canopy.Magnitude as Magnitude
+import Canopy.Outline (PkgOutline)
 import qualified Canopy.Outline as Outline
+import Canopy.Version (Version)
 import qualified Canopy.Version as Version
+import Control.Lens ((^.))
 import qualified Deps.Diff as Diff
 import qualified Reporting
+import Reporting.Doc (Doc, (<+>))
 import qualified Reporting.Doc as Doc
 import qualified Reporting.Exit.Help as Help
 
@@ -203,14 +204,14 @@ buildUpdatePrompt oldVsn newVsn changes =
     oldVersionText = Doc.fromVersion oldVsn
     newVersionText = Doc.fromVersion newVsn
     magnitudeText = Doc.fromChars (Magnitude.toChars (Diff.toMagnitude changes))
-    
+
     apiChangeMessage =
-      "Based on your new API, this should be a" <+> Doc.green magnitudeText <+> 
-      "change (" <> oldVersionText <> " => " <> newVersionText <> ")"
-    
+      "Based on your new API, this should be a" <+> Doc.green magnitudeText
+        <+> "change (" <> oldVersionText <> " => " <> newVersionText <> ")"
+
     explanationMessage =
       "Bail out of this command and run 'canopy diff' for a full explanation."
-    
+
     confirmationMessage =
       "Should I perform the update (" <> oldVersionText <> " => " <> newVersionText <> ") in canopy.json? [Y/n] "
 

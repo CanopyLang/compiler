@@ -28,12 +28,12 @@ import Reporting.Exit (Publish)
 import qualified Reporting.Exit as Exit
 import Reporting.Task (Task)
 import qualified Reporting.Task as Task
-import Stuff (PackageCache, ZokkaSpecificCache, ZokkaCustomRepositoryConfigFilePath)
+import Stuff (PackageCache, ZokkaCustomRepositoryConfigFilePath, ZokkaSpecificCache)
 import qualified Stuff
 import qualified System.Directory as Dir
+import System.Exit (ExitCode)
 import System.Process (CreateProcess)
 import qualified System.Process as Process
-import System.Exit (ExitCode)
 
 -- | Initialize the publishing environment.
 --

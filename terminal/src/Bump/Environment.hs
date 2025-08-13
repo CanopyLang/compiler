@@ -20,23 +20,24 @@
 --
 -- @since 0.19.1
 module Bump.Environment
-  ( getEnv
-  , findProjectRoot
-  , loadEnvironmentData
-  , validatePackageOutline
-  , loadRegistry
-  ) where
+  ( getEnv,
+    findProjectRoot,
+    loadEnvironmentData,
+    validatePackageOutline,
+    loadRegistry,
+  )
+where
 
-import Bump.Types (Env(..))
+import Bump.Types (Env (..))
 import Canopy.Outline (Outline)
-import Deps.CustomRepositoryDataIO (loadCustomRepositoriesData)
-import Reporting.Exit (Bump(BumpCustomRepositoryDataProblem))
-import Reporting.Task (Task)
 import qualified Canopy.Outline as Outline
 import qualified Data.Maybe as Maybe
+import Deps.CustomRepositoryDataIO (loadCustomRepositoriesData)
 import qualified Deps.Registry as Registry
 import qualified Http
+import Reporting.Exit (Bump (BumpCustomRepositoryDataProblem))
 import qualified Reporting.Exit as Exit
+import Reporting.Task (Task)
 import qualified Reporting.Task as Task
 import qualified Stuff
 
@@ -92,9 +93,9 @@ findProjectRoot = do
 -- Tuple containing all loaded environment components ready for validation.
 --
 -- @since 0.19.1
-loadEnvironmentData 
-  :: FilePath 
-  -> Task Exit.Bump (FilePath, Stuff.PackageCache, Http.Manager, Registry.ZokkaRegistries, Outline)
+loadEnvironmentData ::
+  FilePath ->
+  Task Exit.Bump (FilePath, Stuff.PackageCache, Http.Manager, Registry.ZokkaRegistries, Outline)
 loadEnvironmentData root = do
   cache <- Task.io Stuff.getPackageCache
   manager <- Task.io Http.getManager
@@ -137,9 +138,9 @@ loadRegistry manager = do
 -- Throws 'Exit.BumpApplication' if the project is an application.
 --
 -- @since 0.19.1
-validatePackageOutline 
-  :: (FilePath, Stuff.PackageCache, Http.Manager, Registry.ZokkaRegistries, Outline) 
-  -> Task Exit.Bump Env
+validatePackageOutline ::
+  (FilePath, Stuff.PackageCache, Http.Manager, Registry.ZokkaRegistries, Outline) ->
+  Task Exit.Bump Env
 validatePackageOutline (root, cache, manager, registry, outline) =
   case outline of
     Outline.App _ -> Task.throw Exit.BumpApplication

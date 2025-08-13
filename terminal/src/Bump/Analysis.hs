@@ -20,29 +20,30 @@
 --
 -- @since 0.19.1
 module Bump.Analysis
-  ( suggestVersion
-  , analyzeDocs
-  , generateDocs
-  , loadPackageDetails
-  , buildDocumentation
-  ) where
+  ( suggestVersion,
+    analyzeDocs,
+    generateDocs,
+    loadPackageDetails,
+    buildDocumentation,
+  )
+where
 
-import Bump.Types (Env, envCache, envRegistry, envManager, envRoot, envOutline)
+import qualified BackgroundWriter as BW
+import qualified Build
+import Bump.Types (Env, envCache, envManager, envOutline, envRegistry, envRoot)
+import qualified Canopy.Details as Details
 import Canopy.Docs (Documentation)
-import Canopy.Outline (PkgOutline(..))
+import qualified Canopy.ModuleName as ModuleName
+import Canopy.Outline (PkgOutline (..))
+import qualified Canopy.Outline as Outline
 import Canopy.Package (Name)
 import Canopy.Version (Version)
 import Control.Lens ((^.))
-import Reporting.Task (Task)
-import qualified BackgroundWriter as BW
-import qualified Build
-import qualified Canopy.Details as Details
-import qualified Canopy.ModuleName as ModuleName
-import qualified Canopy.Outline as Outline
 import qualified Data.NonEmptyList as NE
 import qualified Deps.Diff as Diff
 import qualified Reporting
 import qualified Reporting.Exit as Exit
+import Reporting.Task (Task)
 import qualified Reporting.Task as Task
 
 -- | Suggests appropriate version bump based on API changes.

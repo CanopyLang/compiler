@@ -49,12 +49,12 @@ import qualified System.FilePath as FP
 -- @
 -- writeOutputFile style \"output.js\" builder moduleNames
 -- @
-writeOutputFile
-  :: Reporting.Style
-  -> FilePath
-  -> Builder
-  -> List ModuleName.Raw
-  -> Task ()
+writeOutputFile ::
+  Reporting.Style ->
+  FilePath ->
+  Builder ->
+  List ModuleName.Raw ->
+  Task ()
 writeOutputFile style targetPath builder moduleNames = do
   Task.io (prepareOutputPath targetPath)
   Task.io (writeBuilderContent targetPath builder)
@@ -83,11 +83,11 @@ writeBuilderContent targetPath builder = do
 --
 -- Notifies the user about successful file generation using the
 -- appropriate reporting style. Provides feedback on build completion.
-reportGeneration
-  :: Reporting.Style
-  -> List ModuleName.Raw
-  -> FilePath
-  -> IO ()
+reportGeneration ::
+  Reporting.Style ->
+  List ModuleName.Raw ->
+  FilePath ->
+  IO ()
 reportGeneration style moduleNames targetPath = do
   printLog "Reporting generation success"
   Reporting.reportGenerate style moduleNames targetPath

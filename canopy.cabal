@@ -342,15 +342,18 @@ test-suite canopy-test
       Integration.CanExtensionTest
       Integration.CompilerTest
       Integration.JsGenTest
+      Integration.MakeTest
       Property.AST.CanonicalProps
       Property.AST.OptimizedBinaryProps
       Property.Canopy.VersionProps
       Property.Data.NameProps
+      Property.MakeProps
       Unit.AST.CanonicalTypeTest
       Unit.AST.SourceTest
       Unit.Canopy.VersionTest
       Unit.Data.NameTest
       Unit.Json.DecodeTest
+      Unit.MakeTest
       Unit.Parse.ExpressionTest
       Unit.Parse.ModuleTest
       Unit.Parse.PatternTest

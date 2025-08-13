@@ -22,13 +22,14 @@
 --
 -- @since 0.19.1
 module Bump.Types
-  ( Env(..)
-  , envRoot
-  , envCache
-  , envManager
-  , envRegistry
-  , envOutline
-  ) where
+  ( Env (..),
+    envRoot,
+    envCache,
+    envManager,
+    envRegistry,
+    envOutline,
+  )
+where
 
 import Canopy.Outline (PkgOutline)
 import Control.Lens (makeLenses)
@@ -54,16 +55,16 @@ import qualified Stuff
 --
 -- @since 0.19.1
 data Env = Env
-  { _envRoot :: !FilePath
-  -- ^ Project root directory path
-  , _envCache :: !Stuff.PackageCache
-  -- ^ Package cache for dependencies
-  , _envManager :: !Http.Manager
-  -- ^ HTTP manager for network requests
-  , _envRegistry :: !Registry.ZokkaRegistries
-  -- ^ Registry configuration
-  , _envOutline :: !PkgOutline
-  -- ^ Package outline from canopy.json
+  { -- | Project root directory path
+    _envRoot :: !FilePath,
+    -- | Package cache for dependencies
+    _envCache :: !Stuff.PackageCache,
+    -- | HTTP manager for network requests
+    _envManager :: !Http.Manager,
+    -- | Registry configuration
+    _envRegistry :: !Registry.ZokkaRegistries,
+    -- | Package outline from canopy.json
+    _envOutline :: !PkgOutline
   }
 
 -- | Generate lenses for Env record fields.

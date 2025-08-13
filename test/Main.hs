@@ -9,10 +9,12 @@ import qualified Golden.ParseModuleGolden as ParseModuleGolden
 import qualified Golden.ParseTypeGolden as ParseTypeGolden
 import qualified Integration.CanExtensionTest as CanExtensionIT
 import qualified Integration.JsGenTest as JsGenIT
+import qualified Integration.MakeTest as MakeIT
 import qualified Property.AST.CanonicalProps as CanonicalProps
 import qualified Property.AST.OptimizedBinaryProps as OptimizedBinaryProps
 import qualified Property.Canopy.VersionProps as VersionProps
 import qualified Property.Data.NameProps as NameProps
+import qualified Property.MakeProps as MakeProps
 import Test.Tasty
 import Test.Tasty.Runners
 import qualified Unit.AST.CanonicalTypeTest as CanonicalTypeTest
@@ -20,6 +22,7 @@ import qualified Unit.AST.SourceTest as SourceAstTest
 import qualified Unit.Canopy.VersionTest as VersionTest
 import qualified Unit.Data.NameTest as NameTest
 import qualified Unit.Json.DecodeTest as JsonDecodeTest
+import qualified Unit.MakeTest as MakeTest
 import qualified Unit.Parse.ExpressionTest as ParseExpressionTest
 import qualified Unit.Parse.ModuleTest as ParseModuleTest
 import qualified Unit.Parse.PatternTest as ParsePatternTest
@@ -34,9 +37,8 @@ tests =
     "Canopy Tests"
     [ unitTests,
       propertyTests,
+      integrationTests,
       goldenTests
-      -- , integrationTests  -- TODO: Add when we have integration tests
-      -- , goldenTests       -- TODO: Add when we have golden tests
     ]
 
 unitTests :: TestTree
@@ -50,8 +52,7 @@ unitTests =
       ParsePatternTest.tests,
       ParseTypeTest.tests,
       ParseModuleTest.tests,
-      CanExtensionIT.tests,
-      JsGenIT.tests,
+      MakeTest.tests,
       SourceAstTest.tests,
       CanonicalTypeTest.tests
     ]
@@ -63,7 +64,17 @@ propertyTests =
     [ NameProps.tests,
       VersionProps.tests,
       CanonicalProps.tests,
-      OptimizedBinaryProps.tests
+      OptimizedBinaryProps.tests,
+      MakeProps.tests
+    ]
+
+integrationTests :: TestTree
+integrationTests =
+  testGroup
+    "Integration Tests"
+    [ CanExtensionIT.tests,
+      JsGenIT.tests,
+      MakeIT.tests
     ]
 
 -- Optionally expose golden separately for clarity

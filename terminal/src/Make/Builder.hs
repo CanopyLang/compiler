@@ -39,9 +39,9 @@ where
 
 import qualified AST.Optimized as Opt
 import qualified Build
-import Control.Lens ((^.))
 import qualified Canopy.Details as Details
 import qualified Canopy.ModuleName as ModuleName
+import Control.Lens ((^.))
 import Data.ByteString.Builder (Builder)
 import qualified Data.Maybe as Maybe
 import qualified Data.Name as Name
@@ -69,14 +69,14 @@ import qualified Reporting.Task as Task
 -- @
 -- artifacts <- buildFromExposed ctx exposedModules maybeDocs
 -- @
-buildFromExposed
-  :: BuildContext
-  -> List ModuleName.Raw
-  -> Maybe FilePath
-  -> Task ()
+buildFromExposed ::
+  BuildContext ->
+  List ModuleName.Raw ->
+  Maybe FilePath ->
+  Task ()
 buildFromExposed ctx exposedModules maybeDocs = do
   let style = ctx ^. bcStyle
-      root = ctx ^. bcRoot  
+      root = ctx ^. bcRoot
       details = ctx ^. bcDetails
       docsGoal = maybe Build.IgnoreDocs Build.WriteDocs maybeDocs
   Task.eio Exit.MakeCannotBuild $
@@ -90,10 +90,10 @@ buildFromExposed ctx exposedModules maybeDocs = do
 -- @
 -- artifacts <- buildFromPaths ctx [\"src/Main.hs\", \"src/Utils.hs\"]
 -- @
-buildFromPaths
-  :: BuildContext
-  -> List FilePath
-  -> Task Build.Artifacts
+buildFromPaths ::
+  BuildContext ->
+  List FilePath ->
+  Task Build.Artifacts
 buildFromPaths ctx paths = do
   let style = ctx ^. bcStyle
       root = ctx ^. bcRoot
@@ -110,10 +110,10 @@ buildFromPaths ctx paths = do
 --   * 'Debug' - Includes debug information and readable output
 --   * 'Dev' - Fast compilation with minimal optimization
 --   * 'Prod' - Full optimization for production deployment
-createBuilder
-  :: BuildContext
-  -> Build.Artifacts
-  -> Task Builder
+createBuilder ::
+  BuildContext ->
+  Build.Artifacts ->
+  Task Builder
 createBuilder ctx artifacts = do
   let root = ctx ^. bcRoot
       details = ctx ^. bcDetails
@@ -124,12 +124,12 @@ createBuilder ctx artifacts = do
 --
 -- Delegates to the appropriate Generate function based on mode.
 -- Each mode has different optimization and output characteristics.
-generateForMode
-  :: FilePath
-  -> Details.Details
-  -> DesiredMode
-  -> Build.Artifacts
-  -> Task Builder
+generateForMode ::
+  FilePath ->
+  Details.Details ->
+  DesiredMode ->
+  Build.Artifacts ->
+  Task Builder
 generateForMode root details mode artifacts =
   Task.mapError Exit.MakeBadGenerate $
     case mode of
@@ -146,7 +146,7 @@ generateForMode root details mode artifacts =
 -- mains <- extractMainModules artifacts
 -- case mains of
 --   [] -> generateLibrary artifacts
---   [main] -> generateSingleApp main artifacts  
+--   [main] -> generateSingleApp main artifacts
 --   mains -> generateMultiApp mains artifacts
 -- @
 extractMainModules :: Build.Artifacts -> [ModuleName.Raw]
@@ -198,7 +198,7 @@ getModuleMain modules root =
 --
 -- Returns module name if it doesn't contain a main function and
 -- isn't named "Main". Used for library module extraction.
-getNonMainModule :: [Build.Module] -> Build.Root -> Maybe ModuleName.Raw  
+getNonMainModule :: [Build.Module] -> Build.Root -> Maybe ModuleName.Raw
 getNonMainModule modules root =
   case root of
     Build.Inside name ->

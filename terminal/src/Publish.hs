@@ -100,10 +100,10 @@ import Publish.Types
     Env (..),
     Git (..),
     GoodVersion (..),
+    envManager,
     envOutline,
     envRegistry,
     envRoot,
-    envManager,
   )
 import Publish.Validation
   ( checkVersionValidity,

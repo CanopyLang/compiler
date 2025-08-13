@@ -33,33 +33,34 @@ module Publish.Progress
   )
 where
 
+import qualified Canopy.Magnitude as Magnitude
 import Canopy.Package (Name)
 import qualified Canopy.Package as Pkg
-import qualified Canopy.Magnitude as Magnitude
 import Canopy.Version (Version)
 import qualified Canopy.Version as Version
 import Control.Monad (void)
 import Deps.Registry (KnownVersions)
 import Publish.Types (GoodVersion)
 import qualified Publish.Types as Types
-import qualified Reporting.Doc as Doc
 import Reporting.Doc (Doc, (<+>))
+import qualified Reporting.Doc as Doc
 import qualified Reporting.Exit as Exit
 import qualified Reporting.Exit.Help as Help
 import Reporting.Task (Task)
 import qualified Reporting.Task as Task
-import qualified System.Info as Info
 import qualified System.IO as IO
+import qualified System.Info as Info
 
 -- | Report the start of the publishing process.
 --
 -- @since 0.19.1
 reportPublishStart :: Name -> Version -> Maybe KnownVersions -> Task x ()
 reportPublishStart pkg vsn maybeKnownVersions =
-  Task.io $ maybe 
-    (putStrLn (Exit.newPackageOverview <> "\nI will now verify that everything is in order...\n"))
-    (\_ -> putStrLn ("Verifying " <> Pkg.toChars pkg <> " " <> Version.toChars vsn <> " ...\n"))
-    maybeKnownVersions
+  Task.io $
+    maybe
+      (putStrLn (Exit.newPackageOverview <> "\nI will now verify that everything is in order...\n"))
+      (\_ -> putStrLn ("Verifying " <> Pkg.toChars pkg <> " " <> Version.toChars vsn <> " ...\n"))
+      maybeKnownVersions
 
 -- | Report README.md validation progress.
 --
@@ -98,8 +99,12 @@ formatVersionSuccess vsn = \case
   Types.GoodStart ->
     "All packages start at version " <> Version.toChars Version.one
   Types.GoodBump oldVersion magnitude ->
-    "Version number " <> vsn <> " verified (" <> Magnitude.toChars magnitude 
-      <> " change, " <> Version.toChars oldVersion <> " => " <> vsn <> ")"
+    "Version number " <> vsn <> " verified (" <> Magnitude.toChars magnitude
+      <> " change, "
+      <> Version.toChars oldVersion
+      <> " => "
+      <> vsn
+      <> ")"
 
 -- | Report Git tag validation.
 --

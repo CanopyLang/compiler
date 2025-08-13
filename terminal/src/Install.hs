@@ -71,11 +71,11 @@ attemptChanges :: FilePath -> Solver.Env -> Outline.Outline -> (a -> String) -> 
 attemptChanges root env oldOutline toChars changes =
   case changes of
     AlreadyInstalled -> reportAlreadyInstalled
-    PromoteIndirect newOutline -> 
+    PromoteIndirect newOutline ->
       promptIndirectPromotion (InstallContext root env oldOutline newOutline)
-    PromoteTest newOutline -> 
+    PromoteTest newOutline ->
       promptTestPromotion (InstallContext root env oldOutline newOutline)
-    Changes changeDict newOutline -> 
+    Changes changeDict newOutline ->
       promptChangePlan (ChangePlanRequest (InstallContext root env oldOutline newOutline) toChars changeDict)
 
 reportAlreadyInstalled :: Task ()

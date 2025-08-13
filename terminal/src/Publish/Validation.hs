@@ -54,7 +54,7 @@ import Deps.Registry (KnownVersions)
 import qualified Deps.Registry as Registry
 import qualified File
 import qualified Json.String as Json
-import Publish.Types (Env (..), GoodVersion (..), envCache, envRegistry, envManager)
+import Publish.Types (Env (..), GoodVersion (..), envCache, envManager, envRegistry)
 import qualified Reporting
 import Reporting.Exit (Publish)
 import qualified Reporting.Exit as Exit
@@ -200,7 +200,8 @@ extractExposedModules (Details.Details _ outline _ _ _ _) =
 -- @since 0.19.1
 buildPackageWithDocs :: FilePath -> Details -> List Raw -> Task Publish Documentation
 buildPackageWithDocs projectRoot details exposed =
-  Task.eio Exit.PublishBuildProblem
+  Task.eio
+    Exit.PublishBuildProblem
     (Build.fromExposed Reporting.silent projectRoot details Build.KeepDocs exposed)
 
 -- | Verify that the version follows semantic versioning rules.
@@ -215,8 +216,9 @@ verifyVersion env pkg vsn newDocs publishedVersions = do
 --
 -- @since 0.19.1
 checkVersionValidity :: Env -> Name -> Version -> Documentation -> Maybe KnownVersions -> Task Publish (Either Publish GoodVersion)
-checkVersionValidity env package version docs versions = Task.io $
-  maybe (validateInitialVersion version) (validateVersionBump env package version docs) versions
+checkVersionValidity env package version docs versions =
+  Task.io $
+    maybe (validateInitialVersion version) (validateVersionBump env package version docs) versions
 
 -- | Validate initial version (must be 1.0.0).
 --
@@ -242,7 +244,8 @@ validateVersionBump env package version docs knownVersions@(Registry.KnownVersio
 -- @since 0.19.1
 verifyBump :: Env -> Name -> Version -> Documentation -> KnownVersions -> IO (Either Publish GoodVersion)
 verifyBump env pkg vsn newDocs knownVersions@(Registry.KnownVersions latest _) =
-  maybe (pure (Left (Exit.PublishInvalidBump vsn latest))) 
+  maybe
+    (pure (Left (Exit.PublishInvalidBump vsn latest)))
     (\(old, new, magnitude) -> validateBumpAgainstDocs env pkg old new magnitude newDocs)
     (findMatchingBump vsn knownVersions)
 
@@ -261,8 +264,10 @@ findMatchingBump version versions =
 validateBumpAgainstDocs :: Env -> Name -> Version -> Version -> Magnitude -> Documentation -> IO (Either Publish GoodVersion)
 validateBumpAgainstDocs env package oldVer newVer mag docs = do
   result <- Diff.getDocs (env ^. envCache) (env ^. envRegistry) (env ^. envManager) package oldVer
-  either (\dp -> pure (Left (Exit.PublishCannotGetDocs oldVer newVer dp))) 
-    (\oldDocs -> validateSemanticChanges oldDocs docs oldVer newVer mag) result
+  either
+    (\dp -> pure (Left (Exit.PublishCannotGetDocs oldVer newVer dp)))
+    (\oldDocs -> validateSemanticChanges oldDocs docs oldVer newVer mag)
+    result
 
 -- | Validate semantic changes between versions.
 --

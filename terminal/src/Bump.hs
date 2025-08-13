@@ -29,22 +29,23 @@
 --
 -- @since 0.19.1
 module Bump
-  ( run
-  ) where
+  ( run,
+  )
+where
 
-import Bump.Types (Env, envRegistry, envOutline)
-import Canopy.Package (Name)
-import Control.Lens ((^.))
-import Reporting.Exit (Bump)
-import Reporting.Task (Task)
 import qualified Bump.Analysis as Analysis
 import qualified Bump.Environment as Environment
 import qualified Bump.Operations as Operations
+import Bump.Types (Env, envOutline, envRegistry)
 import qualified Bump.Validation as Validation
+import Canopy.Package (Name)
+import Control.Lens ((^.))
 import qualified Data.Maybe as Maybe
 import qualified Deps.Registry as Registry
 import qualified Reporting
+import Reporting.Exit (Bump)
 import qualified Reporting.Exit as Exit
+import Reporting.Task (Task)
 import qualified Reporting.Task as Task
 
 -- | Main entry point for the bump command.
@@ -84,7 +85,7 @@ bump env =
   where
     getPackageVersions environment =
       Registry.getVersions (getPackageName environment) (environment ^. envRegistry)
-    
+
     handleNewPackage = Task.io (checkNewPackage env)
 
 -- | Handles version bumping for packages that exist in the registry.
@@ -140,4 +141,3 @@ checkNewPackage env =
 -- @since 0.19.1
 getPackageName :: Env -> Name
 getPackageName env = Validation.getPackageName (env ^. envOutline)
-

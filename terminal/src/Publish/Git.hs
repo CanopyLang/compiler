@@ -26,13 +26,13 @@ module Publish.Git
   )
 where
 
-import Codec.Archive.Zip (Archive)
-import qualified Codec.Archive.Zip as Zip
-import Control.Exception (bracket_)
 import Canopy.Package (Name)
 import qualified Canopy.Package as Pkg
 import Canopy.Version (Version)
 import qualified Canopy.Version as Version
+import Codec.Archive.Zip (Archive)
+import qualified Codec.Archive.Zip as Zip
+import Control.Exception (bracket_)
 import Control.Lens ((^.))
 import qualified Data.Utf8 as Utf8
 import qualified File
@@ -75,7 +75,9 @@ fetchCommitHashFromGitHub mgr package version = do
   let url = toTagUrl package version
   result <- Task.io $
     Http.get mgr url [Http.accept "application/json"] (Exit.PublishCannotGetTag version) $ \body ->
-      either (\_ -> pure (Left (Exit.PublishCannotGetTagData version url body))) (pure . Right) 
+      either
+        (\_ -> pure (Left (Exit.PublishCannotGetTagData version url body)))
+        (pure . Right)
         (Decode.fromByteString commitHashDecoder body)
   either Task.throw pure result
 
@@ -134,8 +136,9 @@ downloadAndVerifyZip env pkg vsn =
 downloadArchiveFromGitHub :: Env -> Name -> Version -> Task Publish (Sha, Archive)
 downloadArchiveFromGitHub env package version = do
   let url = toZipUrl package version
-  result <- Task.io $
-    Http.getArchive (env ^. envManager) url Exit.PublishCannotGetZip (Exit.PublishCannotDecodeZip url) (pure . Right)
+  result <-
+    Task.io $
+      Http.getArchive (env ^. envManager) url Exit.PublishCannotGetZip (Exit.PublishCannotDecodeZip url) (pure . Right)
   either Task.throw pure result
 
 -- | Create GitHub ZIP download URL for a package version.

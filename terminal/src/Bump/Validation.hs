@@ -19,26 +19,27 @@
 --
 -- @since 0.19.1
 module Bump.Validation
-  ( checkNewPackage
-  , validateInitialVersion
-  , handleExistingPackage
-  , extractOldVersions
-  , getPackageName
-  , getPackageVersion
-  ) where
+  ( checkNewPackage,
+    validateInitialVersion,
+    handleExistingPackage,
+    extractOldVersions,
+    getPackageName,
+    getPackageVersion,
+  )
+where
 
 import Bump.Types (Env, envOutline)
-import Canopy.Outline (PkgOutline(..))
+import Canopy.Outline (PkgOutline (..))
 import Canopy.Package (Name)
 import Canopy.Version (Version)
-import Control.Lens ((^.))
-import Reporting.Task (Task)
 import qualified Canopy.Version as Version
+import Control.Lens ((^.))
 import qualified Data.List as List
 import qualified Data.Maybe as Maybe
-import qualified Deps.Registry as Registry
 import qualified Deps.Bump as Bump
+import qualified Deps.Registry as Registry
 import qualified Reporting.Exit as Exit
+import Reporting.Task (Task)
 import qualified Reporting.Task as Task
 
 -- | Validates version for new packages that haven't been published.

@@ -41,13 +41,13 @@ import Control.Lens ((^.))
 import qualified Data.ByteString as BS
 import qualified Data.Map as Map
 import qualified Data.Maybe as Maybe
-import Deps.Registry (createAuthHeader, RegistryKey, ZokkaRegistries)
+import Deps.Registry (RegistryKey, ZokkaRegistries, createAuthHeader)
 import qualified Deps.Registry as Registry
 import qualified Deps.Website as Website
 import Http (Manager, Sha)
 import qualified Http
 import Network.HTTP.Client.MultipartFormData (Part)
-import Publish.Types (RegistrationData (..), regPkg, regVersion, regDocs, regCommitHash, regSha)
+import Publish.Types (RegistrationData (..), regCommitHash, regDocs, regPkg, regSha, regVersion)
 import Reporting.Exit (Publish)
 import qualified Reporting.Exit as Exit
 import Reporting.Task (Task)

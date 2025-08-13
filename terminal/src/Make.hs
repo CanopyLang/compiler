@@ -43,26 +43,19 @@ module Make
 where
 
 import qualified BackgroundWriter as BW
-import Control.Lens ((^.))
 import qualified Canopy.Details as Details
 import qualified Canopy.ModuleName as ModuleName
+import Control.Lens ((^.))
 import Data.NonEmptyList (List)
 import qualified Data.NonEmptyList as NE
 import Logging.Logger (printLog, setLogFlag)
 import Make.Builder (buildFromExposed, buildFromPaths)
-import Make.Environment (getDesiredMode, getReportingStyle, setupEnvironment)
+import Make.Environment (createBuildContext, getDesiredMode, getReportingStyle, setupEnvironment)
 import Make.Output (generateOutput)
 import Make.Parser (docsFile, output, reportType)
 import Make.Types
-  ( BuildContext (..),
-    DesiredMode (..),
-    Flags (..),
-    Output (..),
-    ReportType (..),
+  ( Flags (..),
     Task,
-    bcDetails,
-    bcRoot,
-    bcStyle,
     debug,
     docs,
     optimize,
@@ -108,10 +101,10 @@ runSingleBuild :: [FilePath] -> Flags -> IO ()
 runSingleBuild paths flags = do
   enableVerboseLogging flags
   style <- getReportingStyle (flags ^. report)
-  maybeContext <- setupEnvironment flags
+  maybeRoot <- setupEnvironment flags
   Reporting.attemptWithStyle style Exit.makeToReport $
-    case maybeContext of
-      Just ctx -> executeBuild ctx paths flags
+    case maybeRoot of
+      Just root -> executeBuildWithRoot root paths flags style
       Nothing -> pure (Left Exit.MakeNoOutline)
 
 -- | Enable verbose logging if requested.
@@ -122,64 +115,47 @@ enableVerboseLogging :: Flags -> IO ()
 enableVerboseLogging flags =
   setLogFlag (flags ^. verbose)
 
--- | Execute the complete build process.
+-- | Execute the complete build process with root path.
 --
 -- Coordinates between environment setup, project loading, and build
 -- execution. This is the main build orchestration function.
-executeBuild :: BuildContext -> [FilePath] -> Flags -> IO (Either Exit.Make ())
-executeBuild ctx paths flags =
+executeBuildWithRoot :: FilePath -> [FilePath] -> Flags -> Reporting.Style -> IO (Either Exit.Make ())
+executeBuildWithRoot root paths flags style =
   BW.withScope $ \scope ->
-    Stuff.withRootLock (ctx ^. bcRoot) . Task.run $
-      coordinateBuild ctx paths flags scope
+    Stuff.withRootLock root . Task.run $
+      coordinateBuildWithRoot root paths flags style scope
 
 -- | Coordinate the build process with proper resource management.
 --
 -- Loads project details, creates build context, and delegates to
 -- appropriate build strategy based on input paths.
-coordinateBuild :: BuildContext -> [FilePath] -> Flags -> BW.Scope -> Task ()
-coordinateBuild ctx paths flags scope = do
+coordinateBuildWithRoot :: FilePath -> [FilePath] -> Flags -> Reporting.Style -> BW.Scope -> Task ()
+coordinateBuildWithRoot root paths flags style scope = do
   Task.io (printLog "Loading project details")
-  details <- loadProjectDetails ctx scope
-  let updatedCtx = updateContextWithDetails ctx details
+  details <- loadProjectDetailsFromRoot style scope root
   mode <- getDesiredMode (flags ^. debug) (flags ^. optimize)
-  let finalCtx = updateContextWithMode updatedCtx mode
-  executeBuildStrategy finalCtx paths (flags ^. docs) (flags ^. Types.output)
+  let ctx = createBuildContext style root details mode
+  executeBuildStrategy ctx paths (flags ^. docs) (flags ^. Types.output)
 
--- | Load project details for the build context.
+-- | Load project details from root directory.
 --
 -- Reads project configuration and validates the build environment.
 -- Returns loaded details or throws an appropriate error.
-loadProjectDetails :: BuildContext -> BW.Scope -> Task Details.Details
-loadProjectDetails ctx scope =
+loadProjectDetailsFromRoot :: Reporting.Style -> BW.Scope -> FilePath -> Task Details.Details
+loadProjectDetailsFromRoot style scope root =
   Task.eio Exit.MakeBadDetails $
-    Details.load (ctx ^. bcStyle) scope (ctx ^. bcRoot)
-
--- | Update build context with loaded project details.
---
--- Creates a new context with the validated project details.
--- This ensures all subsequent operations have access to configuration.
-updateContextWithDetails :: BuildContext -> Details.Details -> BuildContext
-updateContextWithDetails ctx details =
-  ctx { _bcDetails = details }
-
--- | Update build context with determined build mode.
---
--- Sets the final build mode based on command line flags.
--- This affects optimization and code generation strategies.
-updateContextWithMode :: BuildContext -> DesiredMode -> BuildContext
-updateContextWithMode ctx mode =
-  ctx { _bcDesiredMode = mode }
+    Details.load style scope root
 
 -- | Execute appropriate build strategy based on input paths.
 --
 -- Chooses between exposed module builds (packages) and path-based
 -- builds (applications) depending on whether paths are provided.
-executeBuildStrategy
-  :: BuildContext
-  -> [FilePath]
-  -> Maybe FilePath
-  -> Maybe Output
-  -> Task ()
+executeBuildStrategy ::
+  BuildContext ->
+  [FilePath] ->
+  Maybe FilePath ->
+  Maybe Output ->
+  Task ()
 executeBuildStrategy ctx [] maybeDocs _maybeOutput = do
   Task.io (printLog "Building exposed modules (no paths provided)")
   exposed <- getExposedModules (ctx ^. bcDetails)

@@ -11,7 +11,7 @@
 --
 -- Key types:
 --   * 'Flags' - Command line flags and build options
---   * 'BuildContext' - Shared build environment and configuration  
+--   * 'BuildContext' - Shared build environment and configuration
 --   * 'Output' - Target output format (JS, HTML, DevNull)
 --   * 'ReportType' - Error reporting format options
 --   * 'DesiredMode' - Build mode (Debug, Dev, Prod)
@@ -28,6 +28,7 @@ module Make.Types
     DesiredMode (..),
 
     -- * Lenses
+
     -- ** Flags Lenses
     debug,
     optimize,
@@ -37,7 +38,7 @@ module Make.Types
     docs,
     verbose,
 
-    -- ** BuildContext Lenses  
+    -- ** BuildContext Lenses
     bcStyle,
     bcRoot,
     bcDetails,
@@ -48,8 +49,8 @@ module Make.Types
   )
 where
 
-import Control.Lens.TH (makeLenses)
 import qualified Canopy.Details as Details
+import Control.Lens.TH (makeLenses)
 import qualified Reporting
 import qualified Reporting.Exit as Exit
 import qualified Reporting.Task as Task
@@ -66,21 +67,22 @@ import qualified Reporting.Task as Task
 -- flags & optimize .~ True  -- Set optimize flag
 -- @
 data Flags = Flags
-  { _debug :: !Bool
-    -- ^ Enable debug mode (disables optimization)
-  , _optimize :: !Bool  
-    -- ^ Enable production optimizations
-  , _watch :: !Bool
-    -- ^ Enable file watching for continuous builds
-  , _output :: !(Maybe Output)
-    -- ^ Specific output target (overrides default behavior)
-  , _report :: !(Maybe ReportType)
-    -- ^ Error reporting format
-  , _docs :: !(Maybe FilePath)
-    -- ^ Documentation output file
-  , _verbose :: !Bool
-    -- ^ Enable verbose logging
-  } deriving (Eq, Show)
+  { -- | Enable debug mode (disables optimization)
+    _debug :: !Bool,
+    -- | Enable production optimizations
+    _optimize :: !Bool,
+    -- | Enable file watching for continuous builds
+    _watch :: !Bool,
+    -- | Specific output target (overrides default behavior)
+    _output :: !(Maybe Output),
+    -- | Error reporting format
+    _report :: !(Maybe ReportType),
+    -- | Documentation output file
+    _docs :: !(Maybe FilePath),
+    -- | Enable verbose logging
+    _verbose :: !Bool
+  }
+  deriving (Eq, Show)
 
 -- | Build environment and shared configuration.
 --
@@ -94,14 +96,14 @@ data Flags = Flags
 -- ctx & bcStyle .~ newStyle  -- Update reporting style
 -- @
 data BuildContext = BuildContext
-  { _bcStyle :: !Reporting.Style
-    -- ^ Error reporting and output style
-  , _bcRoot :: !FilePath
-    -- ^ Project root directory
-  , _bcDetails :: !Details.Details
-    -- ^ Project configuration and metadata
-  , _bcDesiredMode :: !DesiredMode
-    -- ^ Target build mode
+  { -- | Error reporting and output style
+    _bcStyle :: !Reporting.Style,
+    -- | Project root directory
+    _bcRoot :: !FilePath,
+    -- | Project configuration and metadata
+    _bcDetails :: !Details.Details,
+    -- | Target build mode
+    _bcDesiredMode :: !DesiredMode
   }
 
 -- | Output format and target file.
@@ -109,12 +111,12 @@ data BuildContext = BuildContext
 -- Specifies where and how to generate the final build artifacts.
 -- Supports JavaScript, HTML, and null output for testing.
 data Output
-  = JS !FilePath
-    -- ^ Generate JavaScript to specified file
-  | Html !FilePath  
-    -- ^ Generate HTML to specified file
-  | DevNull
-    -- ^ Generate nothing (for testing/benchmarking)
+  = -- | Generate JavaScript to specified file
+    JS !FilePath
+  | -- | Generate HTML to specified file
+    Html !FilePath
+  | -- | Generate nothing (for testing/benchmarking)
+    DevNull
   deriving (Eq, Show)
 
 -- | Error reporting format options.
@@ -122,23 +124,23 @@ data Output
 -- Currently supports only JSON format for structured error output,
 -- with terminal format as the default.
 data ReportType
-  = Json
-    -- ^ JSON-formatted error output
+  = -- | JSON-formatted error output
+    Json
   deriving (Eq, Show)
 
 -- | Build mode determining optimization level and debug information.
 --
 -- Controls the compilation pipeline and output characteristics:
 --   * 'Debug' - Maximum debug info, no optimization
---   * 'Dev' - Fast compilation, minimal optimization  
+--   * 'Dev' - Fast compilation, minimal optimization
 --   * 'Prod' - Full optimization, minimal size
-data DesiredMode 
-  = Debug
-    -- ^ Debug mode with full debug information
-  | Dev
-    -- ^ Development mode with fast compilation
-  | Prod  
-    -- ^ Production mode with full optimization
+data DesiredMode
+  = -- | Debug mode with full debug information
+    Debug
+  | -- | Development mode with fast compilation
+    Dev
+  | -- | Production mode with full optimization
+    Prod
   deriving (Eq, Show)
 
 -- | Task monad for build operations.

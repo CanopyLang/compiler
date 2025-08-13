@@ -34,8 +34,8 @@ module Make.Output
 where
 
 import qualified Build
-import Control.Lens ((^.))
 import qualified Canopy.ModuleName as ModuleName
+import Control.Lens ((^.))
 import qualified Data.Name as Name
 import qualified Data.NonEmptyList as NE
 import qualified Generate.Html as Html
@@ -61,11 +61,11 @@ import qualified Reporting.Task as Task
 -- generateOutput ctx artifacts Nothing      -- Auto-select format
 -- generateOutput ctx artifacts (Just target) -- Use specific target
 -- @
-generateOutput
-  :: BuildContext
-  -> Build.Artifacts  
-  -> Maybe Output
-  -> Task ()
+generateOutput ::
+  BuildContext ->
+  Build.Artifacts ->
+  Maybe Output ->
+  Task ()
 generateOutput ctx artifacts maybeTarget =
   case maybeTarget of
     Nothing -> selectOutputFormat ctx artifacts
@@ -99,11 +99,11 @@ generateForTarget ctx artifacts (Html target) =
 --
 -- Creates JavaScript output from artifacts. Validates that no main
 -- functions are present (main functions require HTML wrapper).
-generateJavaScript
-  :: BuildContext
-  -> Build.Artifacts
-  -> FilePath
-  -> Task ()
+generateJavaScript ::
+  BuildContext ->
+  Build.Artifacts ->
+  FilePath ->
+  Task ()
 generateJavaScript ctx artifacts target = do
   validateNoMainsForJs artifacts
   Task.io (printLog ("Generating JavaScript to: " <> target))
@@ -115,11 +115,11 @@ generateJavaScript ctx artifacts target = do
 --
 -- Creates HTML output with embedded JavaScript. Requires exactly one
 -- main function to serve as the application entry point.
-generateHtml
-  :: BuildContext
-  -> Build.Artifacts
-  -> FilePath
-  -> Task ()
+generateHtml ::
+  BuildContext ->
+  Build.Artifacts ->
+  FilePath ->
+  Task ()
 generateHtml ctx artifacts target = do
   Task.io (printLog ("Generating HTML to: " <> target))
   mainName <- hasExactlyOneMain artifacts
@@ -147,11 +147,11 @@ generateNoOutput =
 --
 -- Creates index.html with the single main function as entry point.
 -- Used for simple applications with one executable module.
-generateSingleAppHtml
-  :: BuildContext
-  -> Build.Artifacts
-  -> ModuleName.Raw
-  -> Task ()
+generateSingleAppHtml ::
+  BuildContext ->
+  Build.Artifacts ->
+  ModuleName.Raw ->
+  Task ()
 generateSingleAppHtml ctx artifacts mainName = do
   Task.io (printLog ("Found single main function - generating HTML: " <> Name.toChars mainName))
   builder <- createBuilder ctx artifacts
@@ -163,11 +163,11 @@ generateSingleAppHtml ctx artifacts mainName = do
 --
 -- Creates canopy.js with multiple entry points. Used for complex
 -- applications with multiple executable modules.
-generateMultiAppJs
-  :: BuildContext
-  -> Build.Artifacts
-  -> [ModuleName.Raw]
-  -> Task ()
+generateMultiAppJs ::
+  BuildContext ->
+  Build.Artifacts ->
+  [ModuleName.Raw] ->
+  Task ()
 generateMultiAppJs ctx artifacts mainNames =
   case mainNames of
     [] -> generateNoOutput

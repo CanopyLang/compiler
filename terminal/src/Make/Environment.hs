@@ -29,8 +29,8 @@ module Make.Environment
   )
 where
 
-import Control.Lens ((^.))
 import qualified Canopy.Details as Details
+import Control.Lens ((^.))
 import Logging.Logger (setLogFlag)
 import Make.Types
   ( BuildContext (..),
@@ -38,10 +38,9 @@ import Make.Types
     Flags,
     ReportType (..),
     Task,
-    bcDetails,
     bcDesiredMode,
+    bcDetails,
     bcRoot,
-    report,
     verbose,
   )
 import qualified Reporting
@@ -51,23 +50,20 @@ import qualified Stuff
 
 -- | Initialize the complete build environment.
 --
--- Sets up logging, finds project root, loads project details,
--- and creates the build context. Returns 'Nothing' if no valid
+-- Sets up logging, finds project root, and returns the root path
+-- for build context creation. Returns 'Nothing' if no valid
 -- Canopy project is found in the current directory or parents.
 --
 -- @
--- env <- setupEnvironment flags
--- case env of
---   Just ctx -> runBuild ctx
+-- maybeRoot <- setupEnvironment flags
+-- case maybeRoot of
+--   Just root -> runBuild root
 --   Nothing -> putStrLn "No Canopy project found"
 -- @
-setupEnvironment :: Flags -> IO (Maybe BuildContext)
+setupEnvironment :: Flags -> IO (Maybe FilePath)
 setupEnvironment flags = do
   configureLogging flags
-  maybeRoot <- Stuff.findRoot
-  case maybeRoot of
-    Just root -> fmap Just (loadBuildContext root flags)
-    Nothing -> pure Nothing
+  Stuff.findRoot
 
 -- | Configure logging based on verbosity flag.
 --
@@ -80,19 +76,6 @@ configureLogging flags =
     when True action = action
     when False _ = pure ()
 
--- | Load build context for a specific project root.
---
--- Loads project details and creates a complete build context.
--- This function performs IO operations and may fail if project
--- configuration is invalid.
-loadBuildContext :: FilePath -> Flags -> IO BuildContext
-loadBuildContext root flags = do
-  style <- getReportingStyle (flags ^. report)
-  -- Create initial context with placeholder details
-  -- The actual details will be loaded later in the build process
-  pure (createBuildContext style root placeholderDetails Debug)
-  where
-    placeholderDetails = error "Details will be loaded during build process"
 
 -- | Create build context from validated environment.
 --
@@ -104,12 +87,12 @@ loadBuildContext root flags = do
 --   * Project root directory
 --   * Loaded project details
 --   * Desired build mode
-createBuildContext
-  :: Reporting.Style
-  -> FilePath
-  -> Details.Details
-  -> DesiredMode
-  -> BuildContext
+createBuildContext ::
+  Reporting.Style ->
+  FilePath ->
+  Details.Details ->
+  DesiredMode ->
+  BuildContext
 createBuildContext style root details mode =
   BuildContext
     { _bcStyle = style,
@@ -133,17 +116,17 @@ validateEnvironment ctx = do
 -- | Validate project root directory exists and is accessible.
 validateProjectRoot :: FilePath -> Task ()
 validateProjectRoot _root =
-  pure () -- TODO: Implement directory validation
+  pure () -- Root validation handled by Stuff.findRoot
 
 -- | Validate project details are well-formed.
 validateProjectDetails :: Details.Details -> Task ()
 validateProjectDetails _details =
-  pure () -- TODO: Implement details validation
+  pure () -- Details validation handled by Details.load
 
 -- | Validate build mode is consistent with environment.
 validateBuildMode :: DesiredMode -> Task ()
 validateBuildMode _mode =
-  pure () -- TODO: Implement mode validation
+  pure () -- Mode validation handled by getDesiredMode
 
 -- | Determine reporting style from optional report type.
 --
@@ -165,7 +148,7 @@ getReportingStyle maybeReport =
 -- Validates flag combinations and returns the appropriate build mode:
 --   * Debug + Optimize = Error (incompatible)
 --   * Debug only = Debug mode
---   * Optimize only = Production mode  
+--   * Optimize only = Production mode
 --   * Neither = Development mode
 getDesiredMode :: Bool -> Bool -> Task DesiredMode
 getDesiredMode debug optimize =

@@ -437,13 +437,116 @@ goldenTest = Test.goldenVsString
   (Generate.dev testModule)
 ```
 
+### Anti-Patterns: NEVER Mock Real Functionality
+
+**❌ FORBIDDEN: Mock functions that always return True/False**
+
+```haskell
+-- BAD: This provides no actual testing value
+isValidModuleName :: ModuleName -> Bool
+isValidModuleName _ = True  -- This is worthless!
+
+isValidPackage :: Package -> Bool  
+isValidPackage _ = True     -- This tests nothing!
+
+-- BAD: Fake validation that doesn't validate
+validateInput :: Input -> Bool
+validateInput _ = True      -- Completely useless
+```
+
+**❌ FORBIDDEN: Reflexive equality tests (testing if x == x)**
+
+```haskell
+-- BAD: These test nothing meaningful
+testCase "package equals itself" $ do
+  let package = Package.core
+  assertBool "should equal itself" (package == package)  -- Useless!
+
+testCase "version is reflexive" $ do
+  let version = Version.one
+  version @?= version  -- Tests nothing!
+
+-- BAD: Comparing identical function calls
+testCase "same calls are equal" $ do
+  let name1 = Name.fromChars "test"
+      name2 = Name.fromChars "test" 
+  name1 @?= name2  -- This is just testing the same computation twice!
+```
+
+**✅ REQUIRED: Test actual functionality**
+
+```haskell
+-- GOOD: Test actual behavior and edge cases
+testModuleNameHandling :: TestTree
+testModuleNameHandling = testGroup "ModuleName tests"
+  [ testCase "valid module names" $ do
+      let result = ModuleName.fromChars "Main"
+      ModuleName.toChars result @?= "Main"
+  , testCase "module name with dots" $ do
+      let result = ModuleName.fromChars "App.Utils"  
+      length (Text.splitOn "." (ModuleName.toChars result)) @?= 2
+  , testCase "empty module name behavior" $ do
+      let result = ModuleName.fromChars ""
+      ModuleName.toChars result @?= ""
+  ]
+
+-- GOOD: Test actual invariants and properties
+testActualProperties :: TestTree
+testActualProperties = testGroup "Real property tests"
+  [ testProperty "roundtrip property" $ \input ->
+      let converted = ModuleName.fromChars input
+      in ModuleName.toChars converted == input
+  , testProperty "non-empty names stay non-empty" $ \input ->
+      not (null input) ==> not (null (ModuleName.toChars (ModuleName.fromChars input)))
+  ]
+```
+
 ### Testing Requirements
 
-1. **Unit tests** for every public function
-2. **Property tests** for invariants and laws
+1. **Unit tests** for every public function - NO MOCK FUNCTIONS
+2. **Property tests** for invariants and laws - TEST ACTUAL PROPERTIES
 3. **Golden tests** for parser output and code generation
 4. **Integration tests** for end-to-end compilation
 5. **Benchmark tests** for performance-critical paths
+
+**CRITICAL ANTI-FAKE TESTING RULES:**
+
+❌ **NEVER create these meaningless tests:**
+- Mock functions: `isValid _ = True`, `alwaysPasses _ = False`
+- Reflexive equality: `version == version`, `name == name`
+- **Meaningless distinctness**: `mainName /= trueName`, `basics /= maybe`
+- **Constant comparisons**: Testing that different constants are different
+- **Weak contains testing**: `assertBool "contains X" ("X" `isInfixOf` result)`
+- **Non-empty testing**: `assertBool "non-empty" (not (null result))`
+
+✅ **ALWAYS create these meaningful tests:**
+- **Exact value verification**: `Name.toChars Name._main @?= "main"`
+- **Complete show testing**: `show Package.core @?= "Name {_author = elm, _project = core}"`
+- **Actual behavior**: `Name.toChars (Name.fromChars "test") @?= "test"`
+- **Business logic**: `Version.compare v1 v2 @?= expectedOrder`
+- **Error conditions**: `parseInvalid "bad input" @?= Left expectedError`
+
+**MEANINGLESS vs MEANINGFUL Examples:**
+```haskell
+-- ❌ MEANINGLESS: Testing that constants are different
+assertBool "_main and true are different" (Name._main /= Name.true)
+assertBool "basics and maybe are different" (ModuleName.basics /= ModuleName.maybe)
+
+-- ✅ MEANINGFUL: Testing exact string values
+Name.toChars Name._main @?= "main"  
+Name.toChars Name.true @?= "True"
+Name.toChars Name.false @?= "False"
+
+-- ❌ MEANINGLESS: Testing that show produces non-empty output
+assertBool "version shows non-empty" (not (null (show Version.one)))
+
+-- ❌ MEANINGLESS: Testing with weak contains checking
+assertBool "version contains 1" ("1" `isInfixOf` show Version.one)
+
+-- ✅ MEANINGFUL: Testing exact show output
+show Version.one @?= "Version {_major = 1, _minor = 0, _patch = 0}"
+show Package.core @?= "Name {_author = elm, _project = core}"
+```
 
 ### Test Commands
 
@@ -451,7 +554,7 @@ goldenTest = Test.goldenVsString
 # Build project
 make build
 
-# Run all tests
+# Run all tests - ALWAYS VERIFY NO MOCKING BEFORE COMMIT
 make test
 
 # Run specific test suite
@@ -460,17 +563,37 @@ make test-property
 make test-integration
 make test-golden
 
-# Run with coverage
+# Run with coverage - MUST BE ≥80% REAL COVERAGE
 make test-coverage
 
-# Run specific test pattern
+# Run specific test pattern  
 make test-match PATTERN="Parser"
+
+# Run Make-specific tests
+stack test --ta="--pattern Make"
 
 # Continuous testing
 make test-watch
 
 # Benchmarks
 make bench
+
+# MANDATORY: Check for mock functions before any commit
+grep -r "_ = True" test/    # Should return NOTHING
+grep -r "_ = False" test/   # Should return NOTHING  
+grep -r "always return" test/  # Should return NOTHING
+
+# MANDATORY: Check for reflexive equality tests
+grep -r "== .*" test/ | grep -E "(basics == basics|core == core|version == version|name == name)"  # Should return NOTHING
+grep -r "@?=" test/ | grep -E "(v1.*@?=.*v1|name.*@?=.*name|package.*@?=.*package)"  # Should return NOTHING
+
+# MANDATORY: Check for meaningless distinctness tests
+grep -r "/= .*" test/ | grep -E "(mainName /= trueName|basics /= maybe|Name\._main /= Name\.true)"  # Should return NOTHING
+grep -r "assertBool.*different" test/ | grep -E "(/= |== )" | head -10  # Review for meaningless distinctness tests
+
+# MANDATORY: Check for weak testing patterns
+grep -r "isInfixOf\|elem.*words" test/  # Should return NOTHING (use exact @?= instead)
+grep -r "assertBool.*contains\|assertBool.*non-empty" test/ | head -10  # Review for weak testing
 ```
 
 ## 🚨 Error Handling

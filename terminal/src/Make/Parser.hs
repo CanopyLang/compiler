@@ -79,7 +79,7 @@ exampleReportTypes _ = pure ["json"]
 --
 -- Supports three output formats based on file extension:
 --   * ".js" files → JavaScript output
---   * ".html" files → HTML output  
+--   * ".html" files → HTML output
 --   * "/dev/null" → No output (testing)
 --
 -- Examples:
@@ -90,7 +90,7 @@ output :: Parser Output
 output =
   Parser
     { _singular = "output file",
-      _plural = "output files", 
+      _plural = "output files",
       _parser = parseOutput,
       _suggest = suggestOutputs,
       _examples = exampleOutputs
