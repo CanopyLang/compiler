@@ -10,6 +10,7 @@ travis.log
 dist-newstyle
 .idea
 
+
 # We ignore the freeze file because we have separate ones for GHC-9.2 and GHC-9.4
 # We let developers instead choose which one of cabal.project.freeze.ghc92 or
 # cabal.project.freeze.ghc94 they want to use locally
