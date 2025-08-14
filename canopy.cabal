@@ -392,8 +392,10 @@ test-suite canopy-test
       Integration.MakeTest
       Integration.Terminal.ChompIntegrationTest
       Integration.TerminalIntegrationTest
+      Integration.WatchIntegrationTest
       Property.AST.CanonicalProps
       Property.AST.OptimizedBinaryProps
+      Property.AST.OptimizedProps
       Property.Canopy.VersionProps
       Property.Data.NameProps
       Property.DevelopProps
@@ -402,7 +404,9 @@ test-suite canopy-test
       Property.MakeProps
       Property.Terminal.ChompProps
       Property.TerminalProps
+      Property.WatchProps
       Unit.AST.CanonicalTypeTest
+      Unit.AST.OptimizedTest
       Unit.AST.SourceTest
       Unit.Canopy.VersionTest
       Unit.CLI.CommandsTest
@@ -439,6 +443,7 @@ test-suite canopy-test
       Unit.Terminal.Error.TypesTest
       Unit.Terminal.ErrorTest
       Unit.TerminalTest
+      Unit.WatchTest
   hs-source-dirs:
       test
   default-extensions:

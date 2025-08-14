@@ -15,8 +15,10 @@ import qualified Integration.MakeTest as MakeIT
 import qualified Integration.DevelopTest as DevelopIT
 import qualified Integration.TerminalIntegrationTest as TerminalIT
 import qualified Integration.Terminal.ChompIntegrationTest as ChompIT
+import qualified Integration.WatchIntegrationTest as WatchIT
 import qualified Property.AST.CanonicalProps as CanonicalProps
 import qualified Property.AST.OptimizedBinaryProps as OptimizedBinaryProps
+import qualified Property.AST.OptimizedProps as OptimizedProps
 import qualified Property.Canopy.VersionProps as VersionProps
 import qualified Property.Data.NameProps as NameProps
 import qualified Property.InitProps as InitProps
@@ -25,9 +27,11 @@ import qualified Property.MakeProps as MakeProps
 import qualified Property.DevelopProps as DevelopProps
 import qualified Property.TerminalProps as TerminalProps
 import qualified Property.Terminal.ChompProps as ChompProps
+import qualified Property.WatchProps as WatchProps
 import Test.Tasty
 import Test.Tasty.Runners
 import qualified Unit.AST.CanonicalTypeTest as CanonicalTypeTest
+import qualified Unit.AST.OptimizedTest as OptimizedTest
 import qualified Unit.AST.SourceTest as SourceAstTest
 import qualified Unit.Canopy.VersionTest as VersionTest
 import qualified Unit.CLI.CommandsTest as CLICommandsTest
@@ -64,6 +68,7 @@ import qualified Unit.Terminal.ErrorTest as TerminalErrorTest
 import qualified Unit.Terminal.Error.TypesTest as TerminalErrorTypesTest
 import qualified Unit.Terminal.Error.FormattingTest as TerminalErrorFormattingTest
 import qualified Unit.Terminal.Error.SuggestionsTest as TerminalErrorSuggestionsTest
+import qualified Unit.WatchTest as WatchTest
 
 main :: IO ()
 main = defaultMain tests
@@ -113,12 +118,14 @@ unitTests =
       CLICommandsTest.tests,
       SourceAstTest.tests,
       CanonicalTypeTest.tests,
+      OptimizedTest.tests,
       TerminalTest.tests,
       ChompTest.tests,
       TerminalErrorTest.tests,
       TerminalErrorTypesTest.tests,
       TerminalErrorFormattingTest.tests,
-      TerminalErrorSuggestionsTest.tests
+      TerminalErrorSuggestionsTest.tests,
+      WatchTest.tests
     ]
 
 propertyTests :: TestTree
@@ -129,12 +136,14 @@ propertyTests =
       VersionProps.tests,
       CanonicalProps.tests,
       OptimizedBinaryProps.tests,
+      OptimizedProps.tests,
       InitProps.tests,
       InstallProps.tests,
       MakeProps.tests,
       DevelopProps.tests,
       TerminalProps.tests,
-      ChompProps.tests
+      ChompProps.tests,
+      WatchProps.tests
     ]
 
 integrationTests :: TestTree
@@ -148,7 +157,8 @@ integrationTests =
       MakeIT.tests,
       DevelopIT.tests,
       TerminalIT.tests,
-      ChompIT.tests
+      ChompIT.tests,
+      WatchIT.tests
     ]
 
 -- Optionally expose golden separately for clarity
