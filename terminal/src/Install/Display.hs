@@ -39,6 +39,9 @@ module Install.Display
     reportSuccess,
     reportCancellation,
     
+    -- * Formatting Context
+    FormatContext (..),
+    
     -- * Change Formatting
     formatInsert,
     formatChange,
@@ -62,7 +65,18 @@ import Install.Types
   , rightWidth
   )
 import Reporting.Doc (Doc, (<+>))
-import qualified Reporting.Doc as D
+import qualified Reporting.Doc as Doc
+
+-- | Display formatting context for consistent width calculations.
+--
+-- Groups display parameters together to avoid parameter list violations
+-- while maintaining consistent formatting across change displays.
+--
+-- @since 0.19.1
+data FormatContext a = FormatContext
+  { _fcToChars :: !(a -> String)
+  , _fcWidths :: !Widths
+  }
 
 -- | Create a formatted change plan message for user review.
 --
@@ -87,7 +101,7 @@ import qualified Reporting.Doc as D
 -- @since 0.19.1
 createPlanMessage :: ChangeDocs -> Doc
 createPlanMessage changeDocs =
-  D.vcat
+  Doc.vcat
     [ "Here is my plan:",
       formatChangeDocs changeDocs,
       "",
@@ -102,7 +116,7 @@ createPlanMessage changeDocs =
 -- @since 0.19.1
 formatChangeDocs :: ChangeDocs -> Doc
 formatChangeDocs changeDocs =
-  (D.indent 2 . D.vcat) . concat $
+  (Doc.indent 2 . Doc.vcat) . concat $
     [ formatSection "Add:" (changeDocs ^. docInserts),
       formatSection "Change:" (changeDocs ^. docChanges),
       formatSection "Remove:" (changeDocs ^. docRemoves)
@@ -120,8 +134,8 @@ formatSection title entries =
     then []
     else
       [ "",
-        D.fromChars title,
-        D.indent 2 (D.vcat entries)
+        Doc.fromChars title,
+        Doc.indent 2 (Doc.vcat entries)
       ]
 
 -- | Calculate column widths for aligned change display.
@@ -132,9 +146,12 @@ formatSection title entries =
 -- @since 0.19.1
 calculateWidths :: (a -> String) -> Map Pkg.Name (Change a) -> Widths
 calculateWidths toChars changeMap = 
-  Map.foldrWithKey (expandWidths toChars) initialWidths changeMap
+  Map.foldrWithKey expandWidthsForChange initialWidths changeMap
   where
     initialWidths = Widths 0 0 0
+    expandWidthsForChange pkg change widths =
+      let ctx = FormatContext toChars widths
+      in expandWidths ctx pkg change
 
 -- | Expand column widths based on a single change.
 --
@@ -142,30 +159,35 @@ calculateWidths toChars changeMap =
 -- a new change entry.
 --
 -- @since 0.19.1
-expandWidths :: (a -> String) -> Pkg.Name -> Change a -> Widths -> Widths
-expandWidths toChars pkg change widths =
-  let newName = max (widths ^. nameWidth) (length (Pkg.toChars pkg))
+expandWidths :: FormatContext a -> Pkg.Name -> Change a -> Widths
+expandWidths ctx pkg change =
+  let FormatContext toChars widths = ctx
+      newName = max (widths ^. nameWidth) (length (Pkg.toChars pkg))
+      newCtx = FormatContext toChars widths
   in case change of
-       Insert new -> updateWidthsInsert toChars widths newName new
-       Change old new -> updateWidthsChange toChars widths newName old new
-       Remove old -> updateWidthsRemove toChars widths newName old
+       Insert new -> updateWidthsInsert newCtx newName new
+       Change old new -> updateWidthsChange newCtx newName old new
+       Remove old -> updateWidthsRemove newCtx newName old
 
 -- | Update widths for Insert changes.
-updateWidthsInsert :: (a -> String) -> Widths -> Int -> a -> Widths
-updateWidthsInsert toChars widths newName new =
-  Widths newName (max (widths ^. leftWidth) (length (toChars new))) (widths ^. rightWidth)
+updateWidthsInsert :: FormatContext a -> Int -> a -> Widths
+updateWidthsInsert ctx newName new =
+  let FormatContext toChars widths = ctx
+  in Widths newName (max (widths ^. leftWidth) (length (toChars new))) (widths ^. rightWidth)
 
 -- | Update widths for Change modifications.
-updateWidthsChange :: (a -> String) -> Widths -> Int -> a -> a -> Widths
-updateWidthsChange toChars widths newName old new =
-  Widths newName 
+updateWidthsChange :: FormatContext a -> Int -> a -> a -> Widths
+updateWidthsChange ctx newName old new =
+  let FormatContext toChars widths = ctx
+  in Widths newName 
     (max (widths ^. leftWidth) (length (toChars old))) 
     (max (widths ^. rightWidth) (length (toChars new)))
 
 -- | Update widths for Remove operations.
-updateWidthsRemove :: (a -> String) -> Widths -> Int -> a -> Widths
-updateWidthsRemove toChars widths newName old =
-  Widths newName (max (widths ^. leftWidth) (length (toChars old))) (widths ^. rightWidth)
+updateWidthsRemove :: FormatContext a -> Int -> a -> Widths
+updateWidthsRemove ctx newName old =
+  let FormatContext toChars widths = ctx
+  in Widths newName (max (widths ^. leftWidth) (length (toChars old))) (widths ^. rightWidth)
 
 -- | Create a promotion message for moving dependencies.
 --
@@ -175,23 +197,23 @@ updateWidthsRemove toChars widths newName old =
 -- @since 0.19.1
 createPromotionMessage :: String -> String -> Doc
 createPromotionMessage fromField toField =
-  D.vcat
-    [ D.fillSep (createFoundMessage fromField),
-      D.fillSep (createMoveMessage toField)
+  Doc.vcat
+    [ Doc.fillSep (createFoundMessage fromField),
+      Doc.fillSep (createMoveMessage toField)
     ]
 
 -- | Create found message for promotion prompts.
 createFoundMessage :: String -> [Doc]
 createFoundMessage field =
   ["I", "found", "it", "in", "your", "canopy.json", "file,", "but", "in", "the", 
-   D.dullyellow ("\"" <> D.fromChars field <> "\""), 
+   Doc.dullyellow ("\"" <> Doc.fromChars field <> "\""), 
    if field == "test-dependencies" then "field." else "dependencies."]
 
 -- | Create move message for promotion prompts.
 createMoveMessage :: String -> [Doc]
 createMoveMessage field =
   ["Should", "I", "move", "it", "into", 
-   D.green ("\"" <> D.fromChars field <> "\""), 
+   Doc.green ("\"" <> Doc.fromChars field <> "\""), 
    if field == "dependencies" then "for" else "dependencies", 
    "more", "general", "use?", "[Y/n]: "]
 
@@ -200,19 +222,21 @@ createMoveMessage field =
 -- Creates a formatted line showing a new package addition.
 --
 -- @since 0.19.1
-formatInsert :: (a -> String) -> Widths -> Pkg.Name -> a -> Doc
-formatInsert toChars widths name new =
-  formatPackageName (widths ^. nameWidth) name <+> 
-  padRight (widths ^. leftWidth) (toChars new)
+formatInsert :: FormatContext a -> Pkg.Name -> a -> Doc
+formatInsert ctx name new =
+  let FormatContext toChars widths = ctx
+  in formatPackageName (widths ^. nameWidth) name <+> 
+     padRight (widths ^. leftWidth) (toChars new)
 
 -- | Format a change modification for display.
 --
 -- Creates a formatted line showing an old → new version change.
 --
 -- @since 0.19.1
-formatChange :: (a -> String) -> Widths -> Pkg.Name -> a -> a -> Doc
-formatChange toChars widths name old new =
-  D.hsep
+formatChange :: FormatContext a -> Pkg.Name -> a -> a -> Doc
+formatChange ctx name old new =
+  let FormatContext toChars widths = ctx
+  in Doc.hsep
     [ formatPackageName (widths ^. nameWidth) name,
       padRight (widths ^. leftWidth) (toChars old),
       "=>",
@@ -224,10 +248,11 @@ formatChange toChars widths name old new =
 -- Creates a formatted line showing a package removal.
 --
 -- @since 0.19.1
-formatRemove :: (a -> String) -> Widths -> Pkg.Name -> a -> Doc
-formatRemove toChars widths name old =
-  formatPackageName (widths ^. nameWidth) name <+> 
-  padRight (widths ^. leftWidth) (toChars old)
+formatRemove :: FormatContext a -> Pkg.Name -> a -> Doc
+formatRemove ctx name old =
+  let FormatContext toChars widths = ctx
+  in formatPackageName (widths ^. nameWidth) name <+> 
+     padRight (widths ^. leftWidth) (toChars old)
 
 -- | Format a package name with consistent width.
 --
@@ -237,7 +262,7 @@ formatRemove toChars widths name old =
 -- @since 0.19.1
 formatPackageName :: Int -> Pkg.Name -> Doc
 formatPackageName width name =
-  D.fill (width + 3) (D.fromPackage name)
+  Doc.fill (width + 3) (Doc.fromPackage name)
 
 -- | Pad a string to a specific width with right alignment.
 --
@@ -246,7 +271,7 @@ formatPackageName width name =
 -- @since 0.19.1
 padRight :: Int -> String -> Doc
 padRight width string =
-  D.fromChars (replicate (width - length string) ' ') <> D.fromChars string
+  Doc.fromChars (replicate (width - length string) ' ') <> Doc.fromChars string
 
 -- | Prompt user for installation approval.
 --

@@ -41,10 +41,10 @@ module Install.Execution
   ) where
 
 import Control.Lens ((^.), (&), (.~))
-import qualified BackgroundWriter as BW
+import qualified BackgroundWriter as BackgroundWriter
 import qualified Canopy.Details as Details
 import qualified Canopy.Outline as Outline
-import Install.Display (reportAlreadyInstalled, reportSuccess, reportCancellation)
+import qualified Install.Display as Display
 import Install.Types 
   ( Changes (..)
   , InstallContext (..)
@@ -55,7 +55,7 @@ import Install.Types
   , icNewOutline
   )
 import Reporting.Doc (Doc)
-import qualified Reporting.Doc as D
+import qualified Reporting.Doc as Doc
 import qualified Reporting
 import qualified Reporting.Exit as Exit
 import qualified Reporting.Task as Task
@@ -80,7 +80,7 @@ executeInstallation :: InstallContext -> Changes a -> (a -> String) -> Task ()
 executeInstallation ctx changes _toChars =
   case changes of
     AlreadyInstalled -> 
-      Task.io reportAlreadyInstalled
+      Task.io Display.reportAlreadyInstalled
     PromoteIndirect newOutline ->
       handlePromotionInstallation ctx newOutline "indirect" "direct"
     PromoteTest newOutline ->
@@ -121,7 +121,7 @@ handleComplexInstallation ctx newOutline = do
 -- @since 0.19.1
 createPromotionMessage :: String -> String -> Doc
 createPromotionMessage fromField toField =
-  "Move from " <> D.fromChars fromField <> " to " <> D.fromChars toField <> "? [Y/n]: "
+  "Move from " <> Doc.fromChars fromField <> " to " <> Doc.fromChars toField <> "? [Y/n]: "
 
 -- | Create a complex plan message for user display.
 --
@@ -141,7 +141,7 @@ createComplexPlanMessage = "Apply changes? [Y/n]: "
 -- @since 0.19.1
 attemptInstallChanges :: InstallContext -> Doc -> Task ()
 attemptInstallChanges ctx question = do
-  result <- Task.io $ BW.withScope $ executeWithApproval ctx question
+  result <- Task.io $ BackgroundWriter.withScope $ executeWithApproval ctx question
   case result of
     Left err -> Task.throw err
     Right () -> return ()
@@ -152,7 +152,7 @@ attemptInstallChanges ctx question = do
 -- a background writer scope for proper resource management.
 --
 -- @since 0.19.1
-executeWithApproval :: InstallContext -> Doc -> BW.Scope -> IO (Either Exit.Install ())
+executeWithApproval :: InstallContext -> Doc -> BackgroundWriter.Scope -> IO (Either Exit.Install ())
 executeWithApproval ctx question scope = do
   approved <- promptForApproval question
   if approved
@@ -174,7 +174,7 @@ promptForApproval question = Reporting.ask question
 -- with automatic rollback on failure.
 --
 -- @since 0.19.1
-performInstallation :: InstallContext -> BW.Scope -> IO (Either Exit.Install ())
+performInstallation :: InstallContext -> BackgroundWriter.Scope -> IO (Either Exit.Install ())
 performInstallation ctx scope = do
   let root = ctx ^. icRoot
       env = ctx ^. icEnv
@@ -208,7 +208,7 @@ rollbackInstallation root oldOutline exit = do
 -- @since 0.19.1
 confirmInstallation :: IO (Either Exit.Install ())
 confirmInstallation = do
-  reportSuccess
+  Display.reportSuccess
   return (Right ())
 
 -- | Cancel installation at user request.
@@ -218,7 +218,7 @@ confirmInstallation = do
 -- @since 0.19.1
 cancelInstallation :: IO (Either Exit.Install ())
 cancelInstallation = do
-  reportCancellation
+  Display.reportCancellation
   return (Right ())
 
 -- | Report installation status to the user.
@@ -230,5 +230,5 @@ cancelInstallation = do
 reportInstallationStatus :: Either Exit.Install () -> IO ()
 reportInstallationStatus result =
   case result of
-    Right () -> reportSuccess
+    Right () -> Display.reportSuccess
     Left _err -> putStrLn "Installation failed. See error details above."

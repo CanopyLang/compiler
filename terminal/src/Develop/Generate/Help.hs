@@ -2,8 +2,23 @@
 {-# LANGUAGE QuasiQuotes #-}
 {-# OPTIONS_GHC -Wall #-}
 
+-- | HTML help page generation for the Canopy development server.
+--
+-- This module generates dynamic help and documentation pages served
+-- by the development server. It provides runtime help information
+-- about modules, compilation errors, and debugging tools.
+--
+-- == Key Features
+--
+-- * Dynamic HTML page generation with embedded JavaScript
+-- * Module-specific help content and documentation
+-- * Error reporting and debugging interface generation
+-- * Interactive development tool integration
+--
+-- @since 0.19.1
 module Develop.Generate.Help
-  ( makePageHtml,
+  ( -- * Page Generation
+    makePageHtml,
     makeCodeHtml,
   )
 where

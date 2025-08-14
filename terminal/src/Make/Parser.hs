@@ -32,7 +32,7 @@ module Make.Parser
 where
 
 import Make.Types (Output (..), ReportType (..))
-import qualified System.FilePath as FP
+import qualified System.FilePath as FilePath
 import Terminal (Parser (..))
 
 -- | Parser for error reporting format.
@@ -177,7 +177,7 @@ exampleDocsFiles _ = pure ["docs.json", "documentation.json"]
 -- @
 hasExtension :: String -> String -> Bool
 hasExtension ext path =
-  FP.takeExtension path == ext && length path > length ext
+  FilePath.takeExtension path == ext && length path > length ext
 
 -- | Check if path represents null/no output.
 --

@@ -65,10 +65,8 @@ import Terminal.Types
     cmdHandler,
     cmdMeta,
     cmdName,
-    cmArgs,
     cmDetails,
-    cmExample,
-    cmFlags
+    cmExample
   )
 import Terminal.Internal
   ( Args,

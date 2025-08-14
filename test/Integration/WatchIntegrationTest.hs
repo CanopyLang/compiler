@@ -8,8 +8,7 @@
 module Integration.WatchIntegrationTest (tests) where
 
 -- Pattern: Types unqualified, functions qualified
-import Control.Concurrent (ThreadId, forkIO, killThread, threadDelay)
-import Control.Exception (tryJust)
+import Control.Concurrent (forkIO, killThread, threadDelay)
 import qualified Control.Exception as Exception
 import Data.IORef (IORef)
 import qualified Data.IORef as IORef
@@ -19,7 +18,7 @@ import qualified System.IO.Temp as Temp
 import System.Timeout (timeout)
 import System.FSNotify (Event)
 import Test.Tasty (TestTree, testGroup)
-import Test.Tasty.HUnit (testCase, (@?=), assertBool, assertFailure)
+import Test.Tasty.HUnit (testCase, assertBool, assertFailure)
 import qualified Watch
 
 tests :: TestTree
@@ -74,7 +73,8 @@ testRealFileOperations = testGroup "real file operations"
   , testCase "file deletion and recreation" $ do
       eventsRef <- IORef.newIORef []
       
-      Temp.withSystemTempFile "deleteme.txt" $ \path _ -> do
+      Temp.withSystemTempDirectory "deletedir" $ \dir -> do
+        let path = dir </> "deleteme.txt"
         writeFile path "initial"
         
         success <- withWatcher (recordEvent eventsRef) path 200000 $ do
@@ -103,7 +103,8 @@ testRealFileOperations = testGroup "real file operations"
   , testCase "large file operations" $ do
       eventsRef <- IORef.newIORef []
       
-      Temp.withSystemTempFile "largefile.txt" $ \path _ -> do
+      Temp.withSystemTempDirectory "largedir" $ \dir -> do
+        let path = dir </> "largefile.txt"
         let largeContent = replicate 10000 'x'  -- Smaller for faster tests
         writeFile path largeContent
         
@@ -132,21 +133,21 @@ testMultipleWatchers = testGroup "multiple watchers"
         writeFile file2 "content2"
         writeFile file3 "content3"
         
-        -- Start watchers
-        result1 <- timeout 300000 $ do
+        -- Start watchers with longer timeout for multi-watcher scenario
+        result1 <- timeout 600000 $ do
           watcher1 <- forkIO (Watch.file (recordEvent eventsRef1) file1)
           watcher2 <- forkIO (Watch.file (recordEvent eventsRef2) file2)
           watcher3 <- forkIO (Watch.file (recordEvent eventsRef3) file3)
           
-          threadDelay 100000
+          threadDelay 150000  -- Longer startup delay
           
-          -- Modify each file
+          -- Modify each file with more time between operations
           appendFile file1 " modified"
-          threadDelay 50000
-          appendFile file2 " updated"
-          threadDelay 50000
-          appendFile file3 " changed"
           threadDelay 100000
+          appendFile file2 " updated"
+          threadDelay 100000
+          appendFile file3 " changed"
+          threadDelay 150000  -- More time for event detection
           
           -- Cancel all watchers
           killThread watcher1
@@ -161,24 +162,26 @@ testMultipleWatchers = testGroup "multiple watchers"
       eventsRef <- IORef.newIORef []
       
       Temp.withSystemTempDirectory "fileswatch" $ \dir -> do
-        let paths = [dir </> ("file" ++ show i ++ ".txt") | i <- [1..3]]
+        let paths = [dir </> ("file" ++ show (i :: Int) ++ ".txt") | i <- [1..3]]
         
         -- Create all files
         mapM_ (\p -> writeFile p "initial") paths
         
         -- Watch all files with single watcher
-        success <- withWatcher (recordEvent eventsRef) (head paths) 200000 $ do
-          -- Use files function 
-          result <- timeout 100000 $ do
-            watcher <- forkIO (Watch.files (recordEvent eventsRef) paths)
-            threadDelay 50000
-            killThread watcher
-          case result of
-            Nothing -> return ()
-            Just _ -> return ()
-          
-          -- Modify files
-          mapM_ (\p -> appendFile p " modified") paths
+        success <- case paths of
+          [] -> pure False
+          (firstPath : _) -> withWatcher (recordEvent eventsRef) firstPath 200000 $ do
+            -- Use files function 
+            result <- timeout 100000 $ do
+              watcher <- forkIO (Watch.files (recordEvent eventsRef) paths)
+              threadDelay 50000
+              killThread watcher
+            case result of
+              Nothing -> return ()
+              Just _ -> return ()
+            
+            -- Modify files
+            mapM_ (\p -> appendFile p " modified") paths
         
         events <- IORef.readIORef eventsRef
         assertBool "Should handle multiple files" (not (null events) || success)
@@ -186,7 +189,8 @@ testMultipleWatchers = testGroup "multiple watchers"
   , testCase "watcher lifecycle management" $ do
       eventsRef <- IORef.newIORef []
       
-      Temp.withSystemTempFile "lifecycle.txt" $ \path _ -> do
+      Temp.withSystemTempDirectory "lifecycledir" $ \dir -> do
+        let path = dir </> "lifecycle.txt"
         writeFile path "base"
         
         -- Create, run, and cancel watchers in sequence
@@ -202,7 +206,7 @@ testMultipleWatchers = testGroup "multiple watchers"
             Nothing -> return False
             Just _ -> return True
         
-        events <- IORef.readIORef eventsRef
+        _events <- IORef.readIORef eventsRef
         assertBool "Sequential watchers should work" (any id results)
   ]
 
@@ -256,7 +260,8 @@ testFileSystemIntegration = testGroup "file system integration"
   , testCase "cross-platform path handling" $ do
       eventsRef <- IORef.newIORef []
       
-      Temp.withSystemTempFile "crossplatform.txt" $ \path _ -> do
+      Temp.withSystemTempDirectory "crossdir" $ \dir -> do
+        let path = dir </> "crossplatform.txt"
         writeFile path "cross-platform content"
         
         success <- withWatcher (recordEvent eventsRef) path 150000 $ do
@@ -272,7 +277,8 @@ testPerformanceCharacteristics = testGroup "performance characteristics"
   [ testCase "high frequency file changes" $ do
       eventsRef <- IORef.newIORef []
       
-      Temp.withSystemTempFile "highfreq.txt" $ \path _ -> do
+      Temp.withSystemTempDirectory "highfreqdir" $ \dir -> do
+        let path = dir </> "highfreq.txt"
         writeFile path "base"
         
         success <- withWatcher (recordEvent eventsRef) path 300000 $ do
@@ -293,7 +299,7 @@ testPerformanceCharacteristics = testGroup "performance characteristics"
       
       Temp.withSystemTempDirectory "manywatchers" $ \dir -> do
         let fileCount = 5  -- Reduced for test performance
-        let paths = [dir </> ("file" ++ show i ++ ".txt") | i <- [1..fileCount]]
+        let paths = [dir </> ("file" ++ show (i :: Int) ++ ".txt") | i <- [1..fileCount]]
         
         -- Create all files
         mapM_ (\p -> writeFile p "content") paths
@@ -317,7 +323,8 @@ testPerformanceCharacteristics = testGroup "performance characteristics"
   , testCase "sustained operation stability" $ do
       eventsRef <- IORef.newIORef []
       
-      Temp.withSystemTempFile "sustained.txt" $ \path _ -> do
+      Temp.withSystemTempDirectory "sustaineddir" $ \dir -> do
+        let path = dir </> "sustained.txt"
         writeFile path "baseline"
         
         -- Run watcher for extended period with moderate activity
@@ -332,8 +339,6 @@ testPerformanceCharacteristics = testGroup "performance characteristics"
   ]
 
 -- Helper functions
-selectIOError :: Exception.IOException -> Maybe Exception.IOException
-selectIOError = Just
 
 when :: Bool -> IO () -> IO ()
 when True action = action

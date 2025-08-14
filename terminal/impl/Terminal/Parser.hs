@@ -234,7 +234,10 @@ zeroOrMore parser = Args [Multiple (Done id) parser]
 --
 -- @since 0.19.1
 oneOrMore :: Parser a -> Args (a, [a])
-oneOrMore parser = Args [Multiple (Done (\xs -> (head xs, tail xs))) parser]
+oneOrMore parser = Args [Multiple (Done extractFirstAndRest) parser]
+  where
+    extractFirstAndRest [] = error "oneOrMore: empty list should not occur in Multiple context"
+    extractFirstAndRest (x:xs) = (x, xs)
 
 -- | Alternative argument patterns.
 --

@@ -68,7 +68,7 @@ module Terminal.Completion
   )
 where
 
-import Control.Lens ((&), (.~), (^.))
+import Control.Lens ((^.), (&), (.~))
 import qualified Data.List as List
 import qualified System.Environment as Environment
 import qualified System.Exit as Exit
@@ -83,8 +83,6 @@ import Terminal.Types
     ccIndex,
     ccLine,
     ccPoint,
-    cmdHandler,
-    cmdMeta,
     cmdName
   )
 import Terminal.Internal
@@ -223,7 +221,7 @@ suggestArguments
   -- ^ Current arguments
   -> IO [String]
   -- ^ Argument suggestions
-suggestArguments command context args = do
+suggestArguments _command context args = do
   let SuggestionIndex index = context ^. ccIndex
       -- For now, use empty args/flags since we're using () types
       (suggestions, _) = Chomp.chomp (Just (index - 1)) args Parser.noArgs Parser.noFlags
@@ -278,12 +276,9 @@ createCompletionContext line point = do
   let chunks = words line
       index = findCompletionIndex point line chunks
   
-  Types.CompletionContext
-    { _ccIndex = SuggestionIndex index
-    , _ccChunks = chunks
-    , _ccLine = line
-    , _ccPoint = point
-    }
+  Types.CompletionContext (SuggestionIndex index) chunks "" 0
+    & ccLine .~ line
+    & ccPoint .~ point
 
 -- | Find completion index based on cursor position.
 --
@@ -300,7 +295,7 @@ findCompletionIndex
   -- ^ Words in command line
   -> Int
   -- ^ Completion index
-findCompletionIndex point line chunks = do
+findCompletionIndex point _line chunks = do
   let wordPositions = scanl (+) 0 (fmap ((+ 1) . length) chunks)
       beforeCursor = takeWhile (<= point) wordPositions
   length beforeCursor
@@ -349,19 +344,12 @@ parseContextFromLine line point = do
 
 -- | Create default context when parsing fails.
 createDefaultContext :: String -> IO CompletionContext
-createDefaultContext line = do
-  let chunks = words line
-      index = length chunks
+createDefaultContext line = 
   pure $ createCompletionContext line (length line)
 
 -- | Default completion context for error cases.
 defaultCompletionContext :: CompletionContext
-defaultCompletionContext = Types.CompletionContext
-  { _ccIndex = SuggestionIndex 0
-  , _ccChunks = []
-  , _ccLine = ""
-  , _ccPoint = 0
-  }
+defaultCompletionContext = Types.CompletionContext (SuggestionIndex 0) [] "" 0
 
 -- | Generate argument suggestions for single command.
 generateArgumentSuggestions

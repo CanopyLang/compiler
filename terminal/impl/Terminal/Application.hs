@@ -65,8 +65,7 @@ import Terminal.Types
     Command (..),
     acCommands,
     acIntro,
-    acOutro,
-    cmdName
+    acOutro
   )
 import qualified Terminal.Types as Types
 import qualified Text.PrettyPrint.ANSI.Leijen as Doc

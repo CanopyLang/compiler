@@ -75,7 +75,6 @@ where
 
 import Control.Lens (makeLenses, (^.))
 import Terminal.Error (Error)
-import Terminal.Internal (Args, Flags)
 
 -- | Core parsing monad with continuation-based design.
 --

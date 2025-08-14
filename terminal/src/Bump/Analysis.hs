@@ -28,7 +28,7 @@ module Bump.Analysis
   )
 where
 
-import qualified BackgroundWriter as BW
+import qualified BackgroundWriter as BackgroundWriter
 import qualified Build
 import Bump.Types (Env, envCache, envManager, envOutline, envRegistry, envRoot)
 import qualified Canopy.Details as Details
@@ -39,7 +39,7 @@ import qualified Canopy.Outline as Outline
 import Canopy.Package (Name)
 import Canopy.Version (Version)
 import Control.Lens ((^.))
-import qualified Data.NonEmptyList as NE
+import qualified Data.NonEmptyList as NonEmptyList
 import qualified Deps.Diff as Diff
 import qualified Reporting
 import qualified Reporting.Exit as Exit
@@ -152,7 +152,7 @@ generateDocs root outline =
 -- @since 0.19.1
 loadPackageDetails :: FilePath -> Task Exit.Bump Details.Details
 loadPackageDetails root =
-  Task.eio Exit.BumpBadDetails (BW.withScope loadDetails)
+  Task.eio Exit.BumpBadDetails (BackgroundWriter.withScope loadDetails)
   where
     loadDetails scope = Details.load Reporting.silent scope root
 
@@ -201,4 +201,4 @@ buildDocumentation root (PkgOutline _ _ _ _ exposed _ _ _) details =
 -- @since 0.19.1
 buildFromExposed :: FilePath -> Details.Details -> ModuleName.Raw -> [ModuleName.Raw] -> IO (Either Exit.BuildProblem Documentation)
 buildFromExposed root details e es =
-  Build.fromExposed Reporting.silent root details Build.KeepDocs (NE.List e es)
+  Build.fromExposed Reporting.silent root details Build.KeepDocs (NonEmptyList.List e es)

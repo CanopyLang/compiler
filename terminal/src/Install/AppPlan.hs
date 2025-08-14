@@ -44,7 +44,7 @@ module Install.AppPlan
 
 import qualified Canopy.Outline as Outline
 import qualified Canopy.Package as Pkg
-import qualified Canopy.Version as V
+import qualified Canopy.Version as Version
 import qualified Data.Map as Map
 import qualified Deps.Registry as Registry
 import qualified Deps.Solver as Solver
@@ -79,7 +79,7 @@ import qualified Stuff
 -- Right (Changes changeMap newOutline)  -- if completely new
 --
 -- @since 0.19.1
-makeAppPlan :: Solver.Env -> Pkg.Name -> Outline.AppOutline -> Task (Changes V.Version)
+makeAppPlan :: Solver.Env -> Pkg.Name -> Outline.AppOutline -> Task (Changes Version.Version)
 makeAppPlan env pkg outline =
   if isAlreadyDirectApp pkg outline
     then return AlreadyInstalled
@@ -102,7 +102,7 @@ isAlreadyDirectApp pkg outline =
 -- already exists and can be promoted to direct dependencies.
 --
 -- @since 0.19.1
-checkExistingAppDependencies :: Solver.Env -> Pkg.Name -> Outline.AppOutline -> Task (Changes V.Version)
+checkExistingAppDependencies :: Solver.Env -> Pkg.Name -> Outline.AppOutline -> Task (Changes Version.Version)
 checkExistingAppDependencies env pkg outline =
   case findExistingAppDependency pkg outline of
     Just (IndirectDep vsn) -> return $ promoteIndirectDep pkg vsn outline
@@ -134,7 +134,7 @@ findExistingAppDependency pkg outline =
 -- dependency into the direct dependency category.
 --
 -- @since 0.19.1
-promoteIndirectDep :: Pkg.Name -> V.Version -> Outline.AppOutline -> Changes V.Version
+promoteIndirectDep :: Pkg.Name -> Version.Version -> Outline.AppOutline -> Changes Version.Version
 promoteIndirectDep pkg vsn outline =
   PromoteIndirect . Outline.App $
     case outline of
@@ -150,7 +150,7 @@ promoteIndirectDep pkg vsn outline =
 -- main dependencies for general use.
 --
 -- @since 0.19.1
-promoteTestDirectDep :: Pkg.Name -> V.Version -> Outline.AppOutline -> Changes V.Version
+promoteTestDirectDep :: Pkg.Name -> Version.Version -> Outline.AppOutline -> Changes Version.Version
 promoteTestDirectDep pkg vsn outline =
   PromoteTest . Outline.App $
     case outline of
@@ -167,7 +167,7 @@ promoteTestDirectDep pkg vsn outline =
 -- to main direct dependencies.
 --
 -- @since 0.19.1
-promoteTestIndirectDep :: Pkg.Name -> V.Version -> Outline.AppOutline -> Changes V.Version
+promoteTestIndirectDep :: Pkg.Name -> Version.Version -> Outline.AppOutline -> Changes Version.Version
 promoteTestIndirectDep pkg vsn outline =
   PromoteTest . Outline.App $
     case outline of
@@ -185,7 +185,7 @@ promoteTestIndirectDep pkg vsn outline =
 -- doesn't exist anywhere in the current dependency structure.
 --
 -- @since 0.19.1
-addNewAppDependency :: Solver.Env -> Pkg.Name -> Outline.AppOutline -> Task (Changes V.Version)
+addNewAppDependency :: Solver.Env -> Pkg.Name -> Outline.AppOutline -> Task (Changes Version.Version)
 addNewAppDependency env pkg outline =
   case extractSolverComponents env of
     (cache, connection, registry) ->
@@ -209,7 +209,7 @@ extractSolverComponents (Solver.Env cache _ connection registry _) =
 -- a requested package cannot be found in the registry.
 --
 -- @since 0.19.1
-throwAppUnknownPackageError :: Solver.Connection -> Pkg.Name -> [Pkg.Name] -> Task (Changes V.Version)
+throwAppUnknownPackageError :: Solver.Connection -> Pkg.Name -> [Pkg.Name] -> Task (Changes Version.Version)
 throwAppUnknownPackageError connection pkg suggestions =
   case connection of
     Solver.Online _ -> Task.throw (Exit.InstallUnknownPackageOnline pkg suggestions)
@@ -221,7 +221,7 @@ throwAppUnknownPackageError connection pkg suggestions =
 -- the new package while maintaining dependency consistency.
 --
 -- @since 0.19.1
-attemptAppSolverAddition :: Stuff.PackageCache -> Solver.Connection -> Registry.ZokkaRegistries -> Pkg.Name -> Outline.AppOutline -> Task (Changes V.Version)
+attemptAppSolverAddition :: Stuff.PackageCache -> Solver.Connection -> Registry.ZokkaRegistries -> Pkg.Name -> Outline.AppOutline -> Task (Changes Version.Version)
 attemptAppSolverAddition cache connection registry pkg outline = do
   result <- Task.io $ Solver.addToApp cache connection registry pkg outline
   case result of

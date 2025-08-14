@@ -37,7 +37,7 @@ import qualified Build
 import qualified Canopy.ModuleName as ModuleName
 import Control.Lens ((^.))
 import qualified Data.Name as Name
-import qualified Data.NonEmptyList as NE
+import qualified Data.NonEmptyList as NonEmptyList
 import qualified Generate.Html as Html
 import Logging.Logger (printLog)
 import Make.Builder (createBuilder, extractMainModules, hasExactlyOneMain)
@@ -125,7 +125,7 @@ generateHtml ctx artifacts target = do
   mainName <- hasExactlyOneMain artifacts
   builder <- createBuilder ctx artifacts
   let htmlBuilder = Html.sandwich mainName builder
-  writeOutputFile (ctx ^. bcStyle) target htmlBuilder (NE.List mainName [])
+  writeOutputFile (ctx ^. bcStyle) target htmlBuilder (NonEmptyList.List mainName [])
 
 -- | Generate null output (no files created).
 --
@@ -157,7 +157,7 @@ generateSingleAppHtml ctx artifacts mainName = do
   builder <- createBuilder ctx artifacts
   let htmlBuilder = Html.sandwich mainName builder
       target = "index.html"
-  writeOutputFile (ctx ^. bcStyle) target htmlBuilder (NE.List mainName [])
+  writeOutputFile (ctx ^. bcStyle) target htmlBuilder (NonEmptyList.List mainName [])
 
 -- | Generate JavaScript for multi-application build.
 --
@@ -176,7 +176,7 @@ generateMultiAppJs ctx artifacts mainNames =
       Task.io (printLog ("Found multiple main functions - generating JS: " <> show nameStrs))
       builder <- createBuilder ctx artifacts
       let target = "canopy.js"
-      writeOutputFile (ctx ^. bcStyle) target builder (NE.List name rest)
+      writeOutputFile (ctx ^. bcStyle) target builder (NonEmptyList.List name rest)
 
 -- | Validate that artifacts contain no main functions for JS output.
 --

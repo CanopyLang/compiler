@@ -55,7 +55,6 @@ module Terminal.Error.Display
   ) where
 
 import Control.Lens ((^.))
-import qualified Data.List as List
 import GHC.IO.Handle (hIsTerminalDevice)
 import qualified System.Exit as Exit
 import System.IO (hPutStrLn, stderr)

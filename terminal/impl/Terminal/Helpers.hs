@@ -22,7 +22,6 @@ import qualified Reporting.Suggest as Suggest
 import qualified Stuff
 import qualified System.FilePath as FilePath
 import Terminal (Parser(..))
-import qualified Terminal
 
 -- VERSION
 

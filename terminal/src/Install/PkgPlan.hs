@@ -34,6 +34,7 @@ module Install.PkgPlan
     promotePkgTestDep,
     
     -- * Solver Integration
+    PkgSolverContext (..),
     addNewPkgDependency,
     solvePkgDependency,
     buildPkgSolution,
@@ -42,7 +43,7 @@ module Install.PkgPlan
     addNewsToPackage,
   ) where
 
-import qualified Canopy.Constraint as C
+import qualified Canopy.Constraint as Constraint
 import qualified Canopy.Outline as Outline
 import qualified Canopy.Package as Pkg
 import Data.Map (Map, (!))
@@ -77,7 +78,7 @@ import qualified Stuff
 -- Right (Changes changeMap newOutline)  -- if completely new
 --
 -- @since 0.19.1
-makePkgPlan :: Solver.Env -> Pkg.Name -> Outline.PkgOutline -> Task (Changes C.Constraint)
+makePkgPlan :: Solver.Env -> Pkg.Name -> Outline.PkgOutline -> Task (Changes Constraint.Constraint)
 makePkgPlan env pkg outline =
   if isPkgAlreadyDirect pkg outline
     then return AlreadyInstalled
@@ -100,7 +101,7 @@ isPkgAlreadyDirect pkg outline =
 -- and can be promoted to main dependencies.
 --
 -- @since 0.19.1
-checkPkgTestDependencies :: Solver.Env -> Pkg.Name -> Outline.PkgOutline -> Task (Changes C.Constraint)
+checkPkgTestDependencies :: Solver.Env -> Pkg.Name -> Outline.PkgOutline -> Task (Changes Constraint.Constraint)
 checkPkgTestDependencies env pkg outline =
   case outline of
     Outline.PkgOutline _ _ _ _ _ _ testDeps _ ->
@@ -114,7 +115,7 @@ checkPkgTestDependencies env pkg outline =
 -- This is common when a test utility becomes useful in main code.
 --
 -- @since 0.19.1
-promotePkgTestDep :: Pkg.Name -> C.Constraint -> Outline.PkgOutline -> Changes C.Constraint
+promotePkgTestDep :: Pkg.Name -> Constraint.Constraint -> Outline.PkgOutline -> Changes Constraint.Constraint
 promotePkgTestDep pkg constraint outline =
   PromoteTest . Outline.Pkg $
     case outline of
@@ -130,23 +131,35 @@ promotePkgTestDep pkg constraint outline =
 -- doesn't exist anywhere in the current package configuration.
 --
 -- @since 0.19.1
-addNewPkgDependency :: Solver.Env -> Pkg.Name -> Outline.PkgOutline -> Task (Changes C.Constraint)
-addNewPkgDependency env pkg outline =
-  case extractPkgSolverComponents env of
-    (cache, connection, registry) ->
-      case Registry.getVersions' pkg registry of
-        Left suggestions -> throwPkgUnknownPackageError connection pkg suggestions
-        Right _ -> solvePkgDependency cache connection registry pkg outline
+addNewPkgDependency :: Solver.Env -> Pkg.Name -> Outline.PkgOutline -> Task (Changes Constraint.Constraint)
+addNewPkgDependency env pkg outline = do
+  let solverCtx = extractPkgSolverComponents env
+      PkgSolverContext _cache connection registry = solverCtx
+  case Registry.getVersions' pkg registry of
+    Left suggestions -> throwPkgUnknownPackageError connection pkg suggestions
+    Right _ -> solvePkgDependency solverCtx pkg outline
+
+-- | Package solver context containing all needed components.
+--
+-- Groups solver components together to avoid parameter list violations
+-- while maintaining clear component access.
+--
+-- @since 0.19.1
+data PkgSolverContext = PkgSolverContext
+  { _pscCache :: !Stuff.PackageCache
+  , _pscConnection :: !Solver.Connection
+  , _pscRegistry :: !Registry.ZokkaRegistries
+  }
 
 -- | Extract solver environment components for package operations.
 --
--- Unpacks the solver environment for use in package-specific
--- dependency resolution operations.
+-- Unpacks the solver environment into a structured context for
+-- package-specific dependency resolution operations.
 --
 -- @since 0.19.1
-extractPkgSolverComponents :: Solver.Env -> (Stuff.PackageCache, Solver.Connection, Registry.ZokkaRegistries)
+extractPkgSolverComponents :: Solver.Env -> PkgSolverContext
 extractPkgSolverComponents (Solver.Env cache _ connection registry _) =
-  (cache, connection, registry)
+  PkgSolverContext cache connection registry
 
 -- | Throw an error for unknown packages in package context.
 --
@@ -154,7 +167,7 @@ extractPkgSolverComponents (Solver.Env cache _ connection registry _) =
 -- a requested dependency cannot be found in the registry.
 --
 -- @since 0.19.1
-throwPkgUnknownPackageError :: Solver.Connection -> Pkg.Name -> [Pkg.Name] -> Task (Changes C.Constraint)
+throwPkgUnknownPackageError :: Solver.Connection -> Pkg.Name -> [Pkg.Name] -> Task (Changes Constraint.Constraint)
 throwPkgUnknownPackageError connection pkg suggestions =
   case connection of
     Solver.Online _ -> Task.throw (Exit.InstallUnknownPackageOnline pkg suggestions)
@@ -166,12 +179,13 @@ throwPkgUnknownPackageError connection pkg suggestions =
 -- to add the new dependency while maintaining version compatibility.
 --
 -- @since 0.19.1
-solvePkgDependency :: Stuff.PackageCache -> Solver.Connection -> Registry.ZokkaRegistries -> Pkg.Name -> Outline.PkgOutline -> Task (Changes C.Constraint)
-solvePkgDependency cache connection registry pkg outline = do
+solvePkgDependency :: PkgSolverContext -> Pkg.Name -> Outline.PkgOutline -> Task (Changes Constraint.Constraint)
+solvePkgDependency solverCtx pkg outline = do
+  let PkgSolverContext cache connection registry = solverCtx
   case outline of
     Outline.PkgOutline _ _ _ _ _ deps testDeps _ -> do
       let oldConstraints = Map.union deps testDeps
-          newConstraints = Map.insert pkg C.anything oldConstraints
+          newConstraints = Map.insert pkg Constraint.anything oldConstraints
       
       result <- Task.io $ Solver.verify cache connection registry newConstraints
       case result of
@@ -186,12 +200,12 @@ solvePkgDependency cache connection registry pkg outline = do
 -- what modifications need to be made to the package configuration.
 --
 -- @since 0.19.1
-buildPkgSolution :: Pkg.Name -> Map Pkg.Name Solver.Details -> Map Pkg.Name C.Constraint -> Outline.PkgOutline -> Changes C.Constraint
+buildPkgSolution :: Pkg.Name -> Map Pkg.Name Solver.Details -> Map Pkg.Name Constraint.Constraint -> Outline.PkgOutline -> Changes Constraint.Constraint
 buildPkgSolution pkg solution oldConstraints outline =
   case outline of
     Outline.PkgOutline n summary license version exposed deps testDeps srcDirs ->
       let (Solver.Details vsn _) = solution ! pkg
-          constraint = C.untilNextMajor vsn
+          constraint = Constraint.untilNextMajor vsn
           newConstraints = Map.insert pkg constraint oldConstraints
           changes = detectChanges oldConstraints newConstraints
           newDependencies = Map.mapMaybe keepNew changes
@@ -207,7 +221,7 @@ buildPkgSolution pkg solution oldConstraints outline =
 -- based on whether they're the target package or transitive dependencies.
 --
 -- @since 0.19.1
-addNewsToPackage :: Maybe Pkg.Name -> Map Pkg.Name C.Constraint -> Map Pkg.Name C.Constraint -> Map Pkg.Name C.Constraint
+addNewsToPackage :: Maybe Pkg.Name -> Map Pkg.Name Constraint.Constraint -> Map Pkg.Name Constraint.Constraint -> Map Pkg.Name Constraint.Constraint
 addNewsToPackage targetPkg newDeps oldDeps =
   Map.merge
     Map.preserveMissing
@@ -222,7 +236,7 @@ addNewsToPackage targetPkg newDeps oldDeps =
 -- they're the explicitly requested package or transitive.
 --
 -- @since 0.19.1
-includeIfTarget :: Maybe Pkg.Name -> Pkg.Name -> C.Constraint -> Maybe C.Constraint
+includeIfTarget :: Maybe Pkg.Name -> Pkg.Name -> Constraint.Constraint -> Maybe Constraint.Constraint
 includeIfTarget targetPkg pkgName constraint =
   if Just pkgName == targetPkg
     then Just constraint

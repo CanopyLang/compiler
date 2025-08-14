@@ -3,11 +3,49 @@
 {-# LANGUAGE TemplateHaskell #-}
 {-# OPTIONS_GHC -Wno-unused-imports #-}
 
+-- | Static file serving for the Canopy development server.
+--
+-- This module manages embedded static assets used by the development server,
+-- including JavaScript, CSS, fonts, and images. All assets are embedded at
+-- compile time using Template Haskell for distribution without external files.
+--
+-- == Key Features
+--
+-- * Embedded static asset serving with MIME type detection
+-- * File path routing for development server assets
+-- * Asset compilation and optimization pipeline integration
+-- * Font and CSS resource management
+--
+-- == Asset Categories
+--
+-- The module handles several asset types:
+--
+-- * __JavaScript__: Compiled Canopy runtime and reactor frontend
+-- * __CSS__: Development server styling and themes
+-- * __Fonts__: Source Code Pro and Source Sans Pro typefaces
+-- * __Images__: Favicon and loading graphics
+--
+-- == Usage Examples
+--
+-- @
+-- -- Look up a static file by path
+-- case StaticFiles.lookup \"_canopy\/canopy.js\" of
+--   Just (content, mimeType) -> serveContent content mimeType
+--   Nothing -> serve404
+-- @
+--
+-- @since 0.19.1
 module Develop.StaticFiles
-  ( lookup
-  , cssPath
-  , canopyPath
-  , waitingPath
+  ( -- * File Lookup
+    lookup,
+    
+    -- * Asset Paths
+    cssPath,
+    canopyPath,
+    waitingPath,
+    
+    -- * MIME Types
+    MimeType,
   )
   where
 
@@ -25,11 +63,29 @@ import Logging.Logger (setLogFlag)
 
 -- FILE LOOKUP
 
+-- | MIME type identifier for HTTP content type headers.
+--
+-- Used to specify the content type when serving static assets
+-- to ensure proper browser handling and display.
+--
+-- @since 0.19.1
+type MimeType = ByteString
 
-type MimeType =
-  ByteString
-
-
+-- | Look up a static file by its request path.
+--
+-- Returns the file content and MIME type if the path corresponds
+-- to a known static asset. Used by the development server to
+-- serve embedded resources.
+--
+-- ==== Examples
+--
+-- >>> lookup "_canopy/canopy.js"
+-- Just (jsContent, "application/javascript")
+--
+-- >>> lookup "nonexistent.txt"  
+-- Nothing
+--
+-- @since 0.19.1
 lookup :: FilePath -> Maybe (ByteString, MimeType)
 lookup path =
   HM.lookup path dict

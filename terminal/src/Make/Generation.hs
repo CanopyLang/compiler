@@ -38,7 +38,7 @@ import Make.Types (Task)
 import qualified Reporting
 import qualified Reporting.Task as Task
 import qualified System.Directory as Dir
-import qualified System.FilePath as FP
+import qualified System.FilePath as FilePath
 
 -- | Write builder content to output file.
 --
@@ -67,7 +67,7 @@ writeOutputFile style targetPath builder moduleNames = do
 prepareOutputPath :: FilePath -> IO ()
 prepareOutputPath targetPath = do
   printLog "Preparing output directory"
-  let parentDir = FP.takeDirectory targetPath
+  let parentDir = FilePath.takeDirectory targetPath
   Dir.createDirectoryIfMissing True parentDir
 
 -- | Write builder content to file.
@@ -102,5 +102,5 @@ reportGeneration style moduleNames targetPath = do
 -- @
 ensureDirectoryExists :: FilePath -> IO ()
 ensureDirectoryExists filePath = do
-  let directory = FP.takeDirectory filePath
+  let directory = FilePath.takeDirectory filePath
   Dir.createDirectoryIfMissing True directory

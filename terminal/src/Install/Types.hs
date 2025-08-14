@@ -73,7 +73,7 @@ module Install.Types
 import Control.Lens.TH (makeLenses)
 import qualified Canopy.Outline as Outline
 import qualified Canopy.Package as Pkg
-import qualified Canopy.Version as V
+import qualified Canopy.Version as Version
 import Data.Map (Map)
 import qualified Deps.Solver as Solver
 import Reporting.Doc (Doc)
@@ -195,11 +195,11 @@ data Widths = Widths
 --
 -- @since 0.19.1
 data ExistingDep 
-  = IndirectDep V.Version
+  = IndirectDep Version.Version
   -- ^ Found in indirect dependencies
-  | TestDirectDep V.Version  
+  | TestDirectDep Version.Version  
   -- ^ Found in test direct dependencies
-  | TestIndirectDep V.Version
+  | TestIndirectDep Version.Version
   -- ^ Found in test indirect dependencies
   deriving (Eq, Show)
 

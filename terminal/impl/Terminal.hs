@@ -128,7 +128,7 @@ app
   -- ^ Available commands
   -> IO ()
   -- ^ Exits with appropriate status code
-app intro outro commands = do
+app _intro _outro _commands = do
   -- Convert to simplified structure for now
   Application.initializeApp
   putStrLn "Multi-command applications not yet fully implemented"
@@ -173,8 +173,8 @@ command
   -- ^ Command handler function
   -> Command
   -- ^ Complete command definition
-command name summary details examples args flags handler =
-  Internal.Command name summary details examples args flags handler
+command name summary details examples args flagSpec handler =
+  Internal.Command name summary details examples args flagSpec handler
 
 -- Argument Builders (re-exported from Terminal.Parser)
 

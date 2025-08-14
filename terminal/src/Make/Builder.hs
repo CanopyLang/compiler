@@ -46,7 +46,7 @@ import Data.ByteString.Builder (Builder)
 import qualified Data.Maybe as Maybe
 import qualified Data.Name as Name
 import Data.NonEmptyList (List)
-import qualified Data.NonEmptyList as NE
+import qualified Data.NonEmptyList as NonEmptyList
 import qualified Generate
 import Make.Types
   ( BuildContext,
@@ -151,7 +151,7 @@ generateForMode root details mode artifacts =
 -- @
 extractMainModules :: Build.Artifacts -> [ModuleName.Raw]
 extractMainModules (Build.Artifacts _ _ roots modules) =
-  Maybe.mapMaybe (getModuleMain modules) (NE.toList roots)
+  Maybe.mapMaybe (getModuleMain modules) (NonEmptyList.toList roots)
 
 -- | Extract modules that do not contain main functions.
 --
@@ -160,7 +160,7 @@ extractMainModules (Build.Artifacts _ _ roots modules) =
 -- accidentally included in library builds.
 extractNonMainModules :: Build.Artifacts -> [ModuleName.Raw]
 extractNonMainModules (Build.Artifacts _ _ roots modules) =
-  Maybe.mapMaybe (getNonMainModule modules) (NE.toList roots)
+  Maybe.mapMaybe (getNonMainModule modules) (NonEmptyList.toList roots)
 
 -- | Check if artifacts contain exactly one main module.
 --
@@ -173,9 +173,9 @@ extractNonMainModules (Build.Artifacts _ _ roots modules) =
 hasExactlyOneMain :: Build.Artifacts -> Task ModuleName.Raw
 hasExactlyOneMain (Build.Artifacts _ _ roots modules) =
   case roots of
-    NE.List root [] ->
+    NonEmptyList.List root [] ->
       Task.mio Exit.MakeNoMain (pure $ getModuleMain modules root)
-    NE.List _ (_ : _) ->
+    NonEmptyList.List _ (_ : _) ->
       Task.throw Exit.MakeMultipleFilesIntoHtml
 
 -- | Get main function from specific module.

@@ -56,12 +56,10 @@ module Terminal.Chomp.Processing
   )
 where
 
-import Control.Lens ((^.))
 import Terminal.Chomp.Arguments (parseArguments)
 import Terminal.Chomp.Flags (parseFlags)
 import Terminal.Chomp.Suggestion
-  ( combineCompletions,
-    generateCompletions,
+  ( generateCompletions,
     fromMaybeIndex
   )
 import Terminal.Chomp.Types
@@ -69,8 +67,6 @@ import Terminal.Chomp.Types
     Chunk,
     Chomper (..),
     Suggest,
-    chunkContent,
-    chunkIndex,
     createChunk
   )
 import Terminal.Error (Error (..), FlagError)
@@ -153,7 +149,7 @@ processArguments
 processArguments suggest chunks argSpec flagValue =
   let (suggestions, argResult) = parseArguments suggest chunks argSpec
   in case argResult of
-       Left error -> (suggestions, Left error)
+       Left err -> (suggestions, Left err)
        Right args -> (suggestions, Right (args, flagValue))
 
 -- | Process flags with comprehensive error handling.
@@ -240,8 +236,8 @@ combineResults suggestions result = (suggestions, result)
 --
 -- @since 0.19.1
 formatProcessingError :: Error -> [String] -> String
-formatProcessingError error suggestions =
-  let baseMessage = case error of
+formatProcessingError err suggestions =
+  let baseMessage = case err of
         BadArgs _ -> "Argument parsing failed"
         BadFlag _ -> "Flag parsing failed"
       suggestionText = if null suggestions
@@ -265,7 +261,7 @@ formatProcessingError error suggestions =
 --
 -- @since 0.19.1
 validateInputs :: [String] -> Args args -> Flags flags -> Either String ()
-validateInputs strings argSpec flagSpec
+validateInputs strings _argSpec _flagSpec
   | null strings = Right ()  -- Empty input is valid
   | hasInvalidCharacters strings = Left "Invalid characters in arguments"
   | otherwise = Right ()
@@ -283,7 +279,7 @@ validateInputs strings argSpec flagSpec
 --
 -- @since 0.19.1
 extractProcessingInfo :: [Chunk] -> Args args -> Flags flags -> (String, String, String)
-extractProcessingInfo chunks argSpec flagSpec =
+extractProcessingInfo chunks _argSpec _flagSpec =
   let argCount = show (length chunks) ++ " arguments"
       flagInfo = "unknown flags"  -- Placeholder for flag counting logic
       targetInfo = "no target"    -- Placeholder for target information
@@ -296,11 +292,12 @@ hasInvalidCharacters = any containsInvalidChars
     containsInvalidChars [] = False
     containsInvalidChars (c:_) = c `elem` ['\0', '\r']  -- Basic validation
 
--- Helper function to count chunks with specific properties
+{- Currently unused helper functions - kept for future debugging:
+
 countChunksWithProperty :: (Chunk -> Bool) -> [Chunk] -> Int
 countChunksWithProperty predicate chunks = length (filter predicate chunks)
 
--- Helper function to extract chunk information for debugging
 getChunkInfo :: Chunk -> String
 getChunkInfo chunk = 
   "Chunk " ++ show (chunk ^. chunkIndex) ++ ": " ++ (chunk ^. chunkContent)
+-}
