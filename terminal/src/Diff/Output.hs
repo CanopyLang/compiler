@@ -34,11 +34,11 @@
 module Diff.Output
   ( -- * Main Display
     display,
-    
+
     -- * Formatting
     formatChanges,
     buildSections,
-    
+
     -- * Section Building
     createModuleSections,
     createChangeSections,
@@ -46,9 +46,11 @@ module Diff.Output
   )
 where
 
+import qualified Canopy.Compiler.Type as Type
 import Canopy.Docs (Alias, Binop, Documentation, Union, Value)
 import qualified Canopy.Docs as Docs
 import qualified Canopy.Magnitude as M
+import Control.Lens ((^.))
 import qualified Data.List as List
 import qualified Data.Map as Map
 import qualified Data.Maybe as Maybe
@@ -56,11 +58,9 @@ import qualified Data.Name as Name
 import Deps.Diff (Changes (..), ModuleChanges (..), PackageChanges (..))
 import qualified Deps.Diff as Diff
 import Diff.Types (Chunk (..), chunkDetails, chunkMagnitude, chunkTitle)
-import Control.Lens ((^.))
 import qualified Reporting.Doc as D
 import qualified Reporting.Exit.Help as Help
 import qualified Reporting.Render.Type.Localizer as L
-import qualified Canopy.Compiler.Type as Type
 
 -- | Display formatted diff results.
 --
@@ -135,7 +135,7 @@ createAddedModuleSection :: [Name.Name] -> Chunk
 createAddedModuleSection added =
   Chunk "ADDED MODULES" M.MINOR (D.vcat (fmap D.fromName added))
 
--- | Create removed modules section.  
+-- | Create removed modules section.
 createRemovedModuleSection :: [Name.Name] -> Chunk
 createRemovedModuleSection removed =
   Chunk "REMOVED MODULES" M.MAJOR (D.vcat (fmap D.fromName removed))
@@ -177,15 +177,37 @@ createChangeTypeSections localizer unions aliases values binops =
     formatChangesSection "Changed" unionChange aliasChange valueChange binopChange
   ]
   where
-    (unionAdd, unionChange, unionRemove, aliasAdd, aliasChange, aliasRemove, 
-     valueAdd, valueChange, valueRemove, binopAdd, binopChange, binopRemove) = 
-       formatChangeTriples localizer unions aliases values binops
+    ( unionAdd,
+      unionChange,
+      unionRemove,
+      aliasAdd,
+      aliasChange,
+      aliasRemove,
+      valueAdd,
+      valueChange,
+      valueRemove,
+      binopAdd,
+      binopChange,
+      binopRemove
+      ) =
+        formatChangeTriples localizer unions aliases values binops
 
 -- | Format change triples for all entry types.
 formatChangeTriples :: L.Localizer -> Changes Name.Name Union -> Changes Name.Name Alias -> Changes Name.Name Value -> Changes Name.Name Binop -> ([D.Doc], [D.Doc], [D.Doc], [D.Doc], [D.Doc], [D.Doc], [D.Doc], [D.Doc], [D.Doc], [D.Doc], [D.Doc], [D.Doc])
 formatChangeTriples localizer unions aliases values binops =
-  (unionAdd, unionChange, unionRemove, aliasAdd, aliasChange, aliasRemove,
-   valueAdd, valueChange, valueRemove, binopAdd, binopChange, binopRemove)
+  ( unionAdd,
+    unionChange,
+    unionRemove,
+    aliasAdd,
+    aliasChange,
+    aliasRemove,
+    valueAdd,
+    valueChange,
+    valueRemove,
+    binopAdd,
+    binopChange,
+    binopRemove
+  )
   where
     (unionAdd, unionChange, unionRemove) = formatEntryChanges (formatUnion localizer) unions
     (aliasAdd, aliasChange, aliasRemove) = formatEntryChanges (formatAlias localizer) aliases
@@ -198,15 +220,16 @@ formatEntryChanges entryFormatter (Changes added changed removed) =
   (fmap formatAdded addedList, fmap formatChanged changedList, fmap formatRemoved removedList)
   where
     addedList = Map.toList added
-    changedList = Map.toList changed  
+    changedList = Map.toList changed
     removedList = Map.toList removed
     formatAdded (name, value) = D.indent 4 (entryFormatter name value)
     formatRemoved (name, value) = D.indent 4 (entryFormatter name value)
-    formatChanged (name, (oldValue, newValue)) = D.vcat
-      [ "  - " <> entryFormatter name oldValue,
-        "  + " <> entryFormatter name newValue,
-        ""
-      ]
+    formatChanged (name, (oldValue, newValue)) =
+      D.vcat
+        [ "  - " <> entryFormatter name oldValue,
+          "  + " <> entryFormatter name newValue,
+          ""
+        ]
 
 -- | Format changes section if any exist.
 formatChangesSection :: String -> [D.Doc] -> [D.Doc] -> [D.Doc] -> [D.Doc] -> Maybe D.Doc
@@ -216,17 +239,16 @@ formatChangesSection categoryName unions aliases values binops =
     else Just (D.vcat (D.fromChars categoryName <> ":" : (unions <> aliases <> binops <> values)))
 
 -- | Format individual API entry types.
-
 formatUnion :: L.Localizer -> Name.Name -> Union -> D.Doc
 formatUnion localizer name (Docs.Union _ tvars ctors) =
   let setup = "type" <+> D.fromName name <+> D.hsep (fmap D.fromName tvars)
       ctorDoc (ctor, tipes) = formatType localizer (Type.Type ctor tipes)
-  in D.hang 4 (D.sep (setup : zipWith (<+>) ("=" : repeat "|") (fmap ctorDoc ctors)))
+   in D.hang 4 (D.sep (setup : zipWith (<+>) ("=" : repeat "|") (fmap ctorDoc ctors)))
 
-formatAlias :: L.Localizer -> Name.Name -> Alias -> D.Doc  
+formatAlias :: L.Localizer -> Name.Name -> Alias -> D.Doc
 formatAlias localizer name (Docs.Alias _ tvars tipe) =
   let declaration = "type" <+> "alias" <+> D.hsep (fmap D.fromName (name : tvars)) <+> "="
-  in D.hang 4 (D.sep [declaration, formatType localizer tipe])
+   in D.hang 4 (D.sep [declaration, formatType localizer tipe])
 
 formatValue :: L.Localizer -> Name.Name -> Value -> D.Doc
 formatValue localizer name (Docs.Value _ tipe) =
@@ -239,7 +261,7 @@ formatBinop localizer name (Docs.Binop _ tipe associativity (Docs.Precedence n))
     details = "    (" <> D.fromName assoc <> "/" <> D.fromInt n <> ")"
     assoc = case associativity of
       Docs.Left -> "left"
-      Docs.Non -> "non" 
+      Docs.Non -> "non"
       Docs.Right -> "right"
 
 -- | Format type with localizer.

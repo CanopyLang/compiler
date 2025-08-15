@@ -20,7 +20,7 @@
 -- The module supports multiple documentation sources:
 --
 -- * Local cache - Previously downloaded documentation
--- * Package registry - Published package documentation  
+-- * Package registry - Published package documentation
 -- * Source generation - Generate from local Canopy code
 -- * Version validation - Verify version existence
 --
@@ -29,7 +29,7 @@
 -- All functions return structured errors within the 'Task' monad:
 --
 -- * 'Exit.DiffDocsProblem' - Documentation loading failures
--- * 'Exit.DiffUnknownVersion' - Invalid version specifications  
+-- * 'Exit.DiffUnknownVersion' - Invalid version specifications
 -- * 'Exit.DiffBadBuild' - Source generation failures
 -- * 'Exit.DiffNoExposed' - No exposed modules found
 --
@@ -38,10 +38,10 @@ module Diff.Documentation
   ( -- * Documentation Loading
     getLocal,
     getLatest,
-    
+
     -- * Documentation Generation
     generate,
-    
+
     -- * Validation
     validateVersion,
     validateExposed,
@@ -110,7 +110,7 @@ loadDocumentation env name version =
   Task.eio (Exit.DiffDocsProblem version) loadAction
   where
     cache = env ^. envCache
-    manager = env ^. envManager  
+    manager = env ^. envManager
     registry = env ^. envRegistry
     loadAction = Diff.getDocs cache registry manager name version
 

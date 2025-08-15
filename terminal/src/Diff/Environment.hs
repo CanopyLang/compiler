@@ -10,7 +10,7 @@
 --
 -- == Key Functions
 --
--- * 'setup' - Initialize complete diff environment 
+-- * 'setup' - Initialize complete diff environment
 -- * 'validateRoot' - Verify project root accessibility
 -- * 'initializeRegistry' - Set up package registry connections
 -- * 'configureCache' - Configure local package caching
@@ -20,7 +20,7 @@
 -- All functions use the 'Task' monad for structured error handling:
 --
 -- * Registry connection failures
--- * Cache initialization problems  
+-- * Cache initialization problems
 -- * Custom repository configuration issues
 -- * Network connectivity problems
 --
@@ -38,11 +38,11 @@
 module Diff.Environment
   ( -- * Environment Setup
     setup,
-    
+
     -- * Validation
     validateRoot,
-    
-    -- * Component Initialization  
+
+    -- * Component Initialization
     initializeRegistry,
     configureCache,
     setupNetworking,
@@ -150,5 +150,6 @@ loadRepositoryData reposConf =
 -- | Create registry from validated components.
 createRegistry :: Http.Manager -> CustomRepositoriesData -> Stuff.ZokkaSpecificCache -> Stuff.ZokkaCustomRepositoryConfigFilePath -> Task Registry.ZokkaRegistries
 createRegistry manager reposData zokkaCache reposConf =
-  Task.eio Exit.DiffMustHaveLatestRegistry 
+  Task.eio
+    Exit.DiffMustHaveLatestRegistry
     (Registry.latest manager reposData zokkaCache reposConf)

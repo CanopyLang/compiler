@@ -12,14 +12,14 @@
 module Diff.Outline
   ( -- * Loading
     load,
-    
+
     -- * Information Extraction
     extractPackageName,
   )
 where
 
-import Canopy.Package (Name)
 import qualified Canopy.Outline as Outline
+import Canopy.Package (Name)
 import Control.Lens ((^.))
 import Diff.Types (Env, Task, envMaybeRoot)
 import qualified Reporting.Exit as Exit

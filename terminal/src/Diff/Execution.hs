@@ -12,7 +12,7 @@
 --
 -- * 'run' - Main execution entry point for all diff operations
 -- * 'runGlobal' - Execute global package comparisons
--- * 'runLocal' - Execute local project comparisons  
+-- * 'runLocal' - Execute local project comparisons
 -- * 'runCodeVs' - Execute code vs published comparisons
 --
 -- == Execution Modes
@@ -28,7 +28,7 @@
 --
 -- Each execution function follows the same pattern:
 --
--- 1. Load/generate required documentation 
+-- 1. Load/generate required documentation
 -- 2. Perform diff computation
 -- 3. Format and output results
 -- 4. Handle errors appropriately
@@ -37,13 +37,13 @@
 module Diff.Execution
   ( -- * Main Execution
     run,
-    
+
     -- * Specific Execution Modes
     runGlobal,
     runLocal,
     runCodeVsLatest,
     runCodeVsSpecific,
-    
+
     -- * Helper Operations
     loadOutlineInfo,
     computeDiff,
@@ -55,10 +55,10 @@ import Canopy.Package (Name)
 import Canopy.Version (Version)
 import Control.Lens ((^.))
 import qualified Deps.Registry as Registry
-import Diff.Types (Args (..), Env, Task, envRegistry)
 import qualified Diff.Documentation as Documentation
-import qualified Diff.Output as Output
 import qualified Diff.Outline as Outline
+import qualified Diff.Output as Output
+import Diff.Types (Args (..), Env, Task, envRegistry)
 import qualified Reporting.Exit as Exit
 import qualified Reporting.Task as Task
 
@@ -78,7 +78,7 @@ import qualified Reporting.Task as Task
 --
 -- Propagates errors from specific execution modes:
 --   * Documentation loading failures
---   * Package resolution problems  
+--   * Package resolution problems
 --   * Diff computation errors
 --   * Output formatting issues
 --
@@ -170,5 +170,5 @@ loadOutlineInfo env = do
 --
 -- @since 0.19.1
 computeDiff :: Documentation -> Documentation -> Task ()
-computeDiff oldDocs newDocs = 
+computeDiff oldDocs newDocs =
   Task.io (Output.display oldDocs newDocs)

@@ -23,7 +23,7 @@
 -- @
 -- env <- Environment.setup
 -- let cache = env ^. envCache
---     updatedEnv = env & envRegistry .~ newRegistry  
+--     updatedEnv = env & envRegistry .~ newRegistry
 -- @
 --
 -- == Design Philosophy
@@ -39,10 +39,10 @@ module Diff.Types
     Env (..),
     Chunk (..),
     Task,
-    
+
     -- * Lenses
     envMaybeRoot,
-    envCache, 
+    envCache,
     envManager,
     envRegistry,
     chunkTitle,
@@ -51,10 +51,10 @@ module Diff.Types
   )
 where
 
-import Control.Lens (makeLenses)
 import qualified Canopy.Magnitude as M
 import Canopy.Package (Name)
 import Canopy.Version (Version)
+import Control.Lens (makeLenses)
 import qualified Deps.Registry as Registry
 import qualified Http
 import qualified Reporting.Doc as D
@@ -90,10 +90,10 @@ data Args
 --
 -- @since 0.19.1
 data Env = Env
-  { _envMaybeRoot :: !(Maybe FilePath)
-  , _envCache :: !Stuff.PackageCache
-  , _envManager :: !Http.Manager
-  , _envRegistry :: !Registry.ZokkaRegistries
+  { _envMaybeRoot :: !(Maybe FilePath),
+    _envCache :: !Stuff.PackageCache,
+    _envManager :: !Http.Manager,
+    _envRegistry :: !Registry.ZokkaRegistries
   }
 
 -- | Formatted output section with magnitude classification.
@@ -106,9 +106,9 @@ data Env = Env
 --
 -- @since 0.19.1
 data Chunk = Chunk
-  { _chunkTitle :: !String
-  , _chunkMagnitude :: !M.Magnitude
-  , _chunkDetails :: !D.Doc
+  { _chunkTitle :: !String,
+    _chunkMagnitude :: !M.Magnitude,
+    _chunkDetails :: !D.Doc
   }
 
 -- | Specialized task monad for diff operations.
