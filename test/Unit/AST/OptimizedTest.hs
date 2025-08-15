@@ -19,27 +19,27 @@ import Data.Set (Set)
 import qualified Data.Set as Set
 import qualified Optimize.DecisionTree as DT
 import Test.Tasty
-import Test.Tasty.HUnit (testCase, (@?=), assertBool, assertFailure)
+import Test.Tasty.HUnit (assertBool, assertFailure, testCase, (@?=))
 
 tests :: TestTree
 tests =
   testGroup
     "AST.Optimized Tests"
-    [ testEmptyGlobalGraph
-    , testAddGlobalGraph
-    , testAddLocalGraph
-    , testAddKernel
-    , testToKernelGlobal
-    , testGlobalEquality
-    , testGlobalOrdering
-    , testExprConstructors
-    , testDefConstructors
-    , testPathConstructors
-    , testChoiceConstructors
-    , testMainConstructors
-    , testNodeConstructors
-    , testEffectsTypeConstructors
-    , testEdgeCases
+    [ testEmptyGlobalGraph,
+      testAddGlobalGraph,
+      testAddLocalGraph,
+      testAddKernel,
+      testToKernelGlobal,
+      testGlobalEquality,
+      testGlobalOrdering,
+      testExprConstructors,
+      testDefConstructors,
+      testPathConstructors,
+      testChoiceConstructors,
+      testMainConstructors,
+      testNodeConstructors,
+      testEffectsTypeConstructors,
+      testEdgeCases
     ]
 
 -- Test empty GlobalGraph
@@ -64,16 +64,16 @@ testAddGlobalGraph =
           Opt.GlobalGraph nodes fields ->
             do
               Map.null nodes @?= True
-              Map.null fields @?= True
-    , testCase "combining with non-empty graph preserves nodes" $ do
+              Map.null fields @?= True,
+      testCase "combining with non-empty graph preserves nodes" $ do
         let global1 = Opt.Global ModuleName.basics Name.true
             node1 = Opt.Define (Opt.Bool True) Set.empty
             graph1 = Opt.GlobalGraph (Map.singleton global1 node1) Map.empty
             result = Opt.addGlobalGraph Opt.empty graph1
         case result of
           Opt.GlobalGraph nodes _ ->
-            Map.member global1 nodes @?= True
-    , testCase "combining two non-empty graphs includes both" $ do
+            Map.member global1 nodes @?= True,
+      testCase "combining two non-empty graphs includes both" $ do
         let global1 = Opt.Global ModuleName.basics Name.true
             global2 = Opt.Global ModuleName.basics Name.false
             node1 = Opt.Define (Opt.Bool True) Set.empty
@@ -100,8 +100,8 @@ testAddLocalGraph =
           Opt.GlobalGraph nodes fields ->
             do
               Map.null nodes @?= True
-              Map.null fields @?= True
-    , testCase "adding local graph with nodes" $ do
+              Map.null fields @?= True,
+      testCase "adding local graph with nodes" $ do
         let global1 = Opt.Global ModuleName.basics Name.true
             node1 = Opt.Define (Opt.Bool True) Set.empty
             localGraph =
@@ -124,8 +124,8 @@ testAddKernel =
             expectedGlobal = Opt.toKernelGlobal shortName
         case result of
           Opt.GlobalGraph nodes _ ->
-            Map.member expectedGlobal nodes @?= True
-    , testCase "adding kernel with Canopy variable" $ do
+            Map.member expectedGlobal nodes @?= True,
+      testCase "adding kernel with Canopy variable" $ do
         let shortName = Name.fromChars "test"
             chunks = [K.CanopyVar ModuleName.basics Name.true]
             result = Opt.addKernel shortName chunks Opt.empty
@@ -147,8 +147,8 @@ testToKernelGlobal =
           Opt.Global moduleName globalName ->
             do
               moduleName @?= ModuleName.Canonical Pkg.kernel shortName
-              globalName @?= Name.dollar
-    , testCase "different names create different globals" $ do
+              globalName @?= Name.dollar,
+      testCase "different names create different globals" $ do
         let name1 = Name.fromChars "test1"
             name2 = Name.fromChars "test2"
             global1 = Opt.toKernelGlobal name1
@@ -164,12 +164,12 @@ testGlobalEquality =
     [ testCase "same globals are equal" $ do
         let global1 = Opt.Global ModuleName.basics Name.true
             global2 = Opt.Global ModuleName.basics Name.true
-        global1 == global2 @?= True
-    , testCase "different names are not equal" $ do
+        global1 == global2 @?= True,
+      testCase "different names are not equal" $ do
         let global1 = Opt.Global ModuleName.basics Name.true
             global2 = Opt.Global ModuleName.basics Name.false
-        global1 == global2 @?= False
-    , testCase "different modules are not equal" $ do
+        global1 == global2 @?= False,
+      testCase "different modules are not equal" $ do
         let global1 = Opt.Global ModuleName.basics Name.true
             global2 = Opt.Global ModuleName.list Name.true
         global1 == global2 @?= False
@@ -183,12 +183,12 @@ testGlobalOrdering =
     [ testCase "ordering by name first" $ do
         let global1 = Opt.Global ModuleName.basics Name.false
             global2 = Opt.Global ModuleName.list Name.true
-        compare global1 global2 @?= LT
-    , testCase "ordering by module when names equal" $ do
+        compare global1 global2 @?= LT,
+      testCase "ordering by module when names equal" $ do
         let global1 = Opt.Global ModuleName.basics Name.true
             global2 = Opt.Global ModuleName.list Name.true
-        compare global1 global2 @?= LT
-    , testCase "equal globals compare as EQ" $ do
+        compare global1 global2 @?= LT,
+      testCase "equal globals compare as EQ" $ do
         let global1 = Opt.Global ModuleName.basics Name.true
             global2 = Opt.Global ModuleName.basics Name.true
         compare global1 global2 @?= EQ
@@ -205,8 +205,8 @@ testExprConstructors =
         -- Test that we can extract the boolean value
         extractBoolValue exprTrue @?= Just True
         extractBoolValue exprFalse @?= Just False
-        extractBoolValue (Opt.Int 42) @?= Nothing
-    , testCase "Int constructor creates correct integer expression" $ do
+        extractBoolValue (Opt.Int 42) @?= Nothing,
+      testCase "Int constructor creates correct integer expression" $ do
         let expr42 = Opt.Int 42
             expr0 = Opt.Int 0
             exprNeg = Opt.Int (-5)
@@ -214,21 +214,21 @@ testExprConstructors =
         extractIntValue expr42 @?= Just 42
         extractIntValue expr0 @?= Just 0
         extractIntValue exprNeg @?= Just (-5)
-        extractIntValue (Opt.Bool True) @?= Nothing
-    , testCase "Unit constructor represents unit value" $ do
+        extractIntValue (Opt.Bool True) @?= Nothing,
+      testCase "Unit constructor represents unit value" $ do
         let expr = Opt.Unit
         -- Test that unit expressions are recognized
         isUnitExpression expr @?= True
         isUnitExpression (Opt.Bool True) @?= False
-        isUnitExpression (Opt.Int 0) @?= False
-    , testCase "VarLocal constructor creates local variable reference" $ do
+        isUnitExpression (Opt.Int 0) @?= False,
+      testCase "VarLocal constructor creates local variable reference" $ do
         let name = Name.fromChars "x"
             expr = Opt.VarLocal name
         -- Test that we can extract variable name and it's local
         extractLocalVarName expr @?= Just name
         extractLocalVarName (Opt.Bool True) @?= Nothing
-        isLocalVariable expr @?= True
-    , testCase "List constructor creates list expressions" $ do
+        isLocalVariable expr @?= True,
+      testCase "List constructor creates list expressions" $ do
         let emptyList = Opt.List []
             intList = Opt.List [Opt.Int 1, Opt.Int 2]
             mixedList = Opt.List [Opt.Int 1, Opt.Bool True]
@@ -238,8 +238,8 @@ testExprConstructors =
         getListLength mixedList @?= Just 2
         getListLength (Opt.Int 42) @?= Nothing
         isEmptyList emptyList @?= True
-        isEmptyList intList @?= False
-    , testCase "Record constructor creates record expressions" $ do
+        isEmptyList intList @?= False,
+      testCase "Record constructor creates record expressions" $ do
         let emptyRecord = Opt.Record Map.empty
             singleField = Opt.Record (Map.singleton (Name.fromChars "x") (Opt.Int 42))
         -- Test record structure
@@ -266,8 +266,8 @@ testDefConstructors =
           Opt.Def n e -> do
             n @?= name
             extractIntValue e @?= Just 42
-          _ -> assertFailure "Expected Def constructor"
-    , testCase "TailDef constructor creates tail-recursive definition" $ do
+          _ -> assertFailure "Expected Def constructor",
+      testCase "TailDef constructor creates tail-recursive definition" $ do
         let name = Name.fromChars "f"
             params = [Name.fromChars "x"]
             expr = Opt.Int 42
@@ -298,8 +298,8 @@ testPathConstructors =
         isFieldPath path @?= False
         isIndexPath path @?= False
         isUnboxPath path @?= False
-        getPathRootName path @?= Just name
-    , testCase "Field constructor creates field access path" $ do
+        getPathRootName path @?= Just name,
+      testCase "Field constructor creates field access path" $ do
         let fieldName = Name.fromChars "field"
             root = Opt.Root (Name.fromChars "x")
             path = Opt.Field fieldName root
@@ -311,8 +311,8 @@ testPathConstructors =
           Opt.Field name innerPath -> do
             name @?= fieldName
             isRootPath innerPath @?= True
-          _ -> assertFailure "Expected Field constructor"
-    , testCase "Index constructor creates indexed access path" $ do
+          _ -> assertFailure "Expected Field constructor",
+      testCase "Index constructor creates indexed access path" $ do
         let index = Index.first
             root = Opt.Root (Name.fromChars "x")
             path = Opt.Index index root
@@ -324,8 +324,8 @@ testPathConstructors =
           Opt.Index idx innerPath -> do
             idx @?= index
             isRootPath innerPath @?= True
-          _ -> assertFailure "Expected Index constructor"
-    , testCase "Unbox constructor creates unboxing path" $ do
+          _ -> assertFailure "Expected Index constructor",
+      testCase "Unbox constructor creates unboxing path" $ do
         let root = Opt.Root (Name.fromChars "x")
             path = Opt.Unbox root
         -- Test unbox path properties
@@ -351,8 +351,8 @@ testChoiceConstructors =
         isJumpChoice choice @?= False
         case choice of
           Opt.Inline e -> extractBoolValue e @?= Just True
-          _ -> assertFailure "Expected Inline constructor"
-    , testCase "Jump constructor creates jump to target" $ do
+          _ -> assertFailure "Expected Inline constructor",
+      testCase "Jump constructor creates jump to target" $ do
         let targetId = 42
             choice = Opt.Jump targetId
         -- Test jump choice properties
@@ -372,8 +372,8 @@ testMainConstructors =
         let main = Opt.Static
         -- Test main type properties
         isStaticMain main @?= True
-        isDynamicMain main @?= False
-    , testCase "Dynamic constructor creates dynamic main with message and decoder" $ do
+        isDynamicMain main @?= False,
+      testCase "Dynamic constructor creates dynamic main with message and decoder" $ do
         let message = Can.TUnit
             decoder = Opt.Unit
             main = Opt.Dynamic message decoder
@@ -405,15 +405,15 @@ testNodeConstructors =
           Opt.Define e d -> do
             extractBoolValue e @?= Just True
             Set.null d @?= True
-          _ -> assertFailure "Expected Define constructor"
-    , testCase "Box constructor creates boxing node" $ do
+          _ -> assertFailure "Expected Define constructor",
+      testCase "Box constructor creates boxing node" $ do
         let node = Opt.Box
         -- Test box node properties
         isBoxNode node @?= True
         isDefineNode node @?= False
         isEnumNode node @?= False
-        isManagerNode node @?= False
-    , testCase "Enum constructor creates enumeration node" $ do
+        isManagerNode node @?= False,
+      testCase "Enum constructor creates enumeration node" $ do
         let index = Index.first
             node = Opt.Enum index
         -- Test enum node properties
@@ -421,8 +421,8 @@ testNodeConstructors =
         isBoxNode node @?= False
         case node of
           Opt.Enum idx -> idx @?= index
-          _ -> assertFailure "Expected Enum constructor"
-    , testCase "Manager constructor creates effects manager node" $ do
+          _ -> assertFailure "Expected Enum constructor",
+      testCase "Manager constructor creates effects manager node" $ do
         let effectsType = Opt.Cmd
             node = Opt.Manager effectsType
         -- Test manager node properties
@@ -443,14 +443,14 @@ testEffectsTypeConstructors =
         -- Test effects type classification
         isCmdEffect effectsType @?= True
         isSubEffect effectsType @?= False
-        isFxEffect effectsType @?= False
-    , testCase "Sub constructor creates subscription effects type" $ do
+        isFxEffect effectsType @?= False,
+      testCase "Sub constructor creates subscription effects type" $ do
         let effectsType = Opt.Sub
         -- Test effects type classification
         isSubEffect effectsType @?= True
         isCmdEffect effectsType @?= False
-        isFxEffect effectsType @?= False
-    , testCase "Fx constructor creates general effects type" $ do
+        isFxEffect effectsType @?= False,
+      testCase "Fx constructor creates general effects type" $ do
         let effectsType = Opt.Fx
         -- Test effects type classification
         isFxEffect effectsType @?= True
@@ -480,29 +480,29 @@ testEdgeCases =
                 getDefName innerDef @?= Name.fromChars "y"
                 extractLocalVarName finalExpr @?= Just (Name.fromChars "x")
               _ -> assertFailure "Expected nested Let expression"
-          _ -> assertFailure "Expected Let expression"
-    , testCase "large integer values are preserved correctly" $ do
+          _ -> assertFailure "Expected Let expression",
+      testCase "large integer values are preserved correctly" $ do
         let expr = Opt.Int maxBound
         -- Test that large integers are handled correctly
         extractIntValue expr @?= Just maxBound
         case expr of
           Opt.Int val -> val @?= maxBound
-          _ -> assertFailure "Expected Int expression"
-    , testCase "negative integer values are preserved correctly" $ do
+          _ -> assertFailure "Expected Int expression",
+      testCase "negative integer values are preserved correctly" $ do
         let expr = Opt.Int minBound
         -- Test that negative integers are handled correctly
         extractIntValue expr @?= Just minBound
         case expr of
           Opt.Int val -> val @?= minBound
-          _ -> assertFailure "Expected Int expression"
-    , testCase "empty string expressions are handled correctly" $ do
+          _ -> assertFailure "Expected Int expression",
+      testCase "empty string expressions are handled correctly" $ do
         let emptyStr = ES.fromChunks []
             expr = Opt.Str emptyStr
         -- Test string expression structure
         case expr of
           Opt.Str str -> str @?= emptyStr
-          _ -> assertFailure "Expected Str expression"
-    , testCase "complex tuple with all slots" $ do
+          _ -> assertFailure "Expected Str expression",
+      testCase "complex tuple with all slots" $ do
         let tuple = Opt.Tuple (Opt.Int 1) (Opt.Int 2) (Just (Opt.Int 3))
         -- Test tuple structure and accessing components
         getTupleSize tuple @?= 3
@@ -510,14 +510,14 @@ testEdgeCases =
         extractIntValue (getTupleSecond tuple) @?= Just 2
         case getTupleThird tuple of
           Just thirdExpr -> extractIntValue thirdExpr @?= Just 3
-          Nothing -> assertFailure "Expected third element in 3-tuple"
-    , testCase "tuple with only two elements" $ do
+          Nothing -> assertFailure "Expected third element in 3-tuple",
+      testCase "tuple with only two elements" $ do
         let tuple = Opt.Tuple (Opt.Int 1) (Opt.Int 2) Nothing
         -- Test tuple structure and accessing components
         getTupleSize tuple @?= 2
         extractIntValue (getTupleFirst tuple) @?= Just 1
         extractIntValue (getTupleSecond tuple) @?= Just 2
-        isJust (getTupleThird tuple) @?= False  -- 2-tuple should not have third element
+        isJust (getTupleThird tuple) @?= False -- 2-tuple should not have third element
     ]
 
 -- Helper functions for testing actual AST behavior instead of Show instances
@@ -576,11 +576,11 @@ getTupleSize _ = 0
 -- Get tuple components (avoiding Eq comparisons by using helper functions)
 getTupleFirst :: Opt.Expr -> Opt.Expr
 getTupleFirst (Opt.Tuple first _ _) = first
-getTupleFirst _ = Opt.Unit  -- Default fallback
+getTupleFirst _ = Opt.Unit -- Default fallback
 
 getTupleSecond :: Opt.Expr -> Opt.Expr
 getTupleSecond (Opt.Tuple _ second _) = second
-getTupleSecond _ = Opt.Unit  -- Default fallback
+getTupleSecond _ = Opt.Unit -- Default fallback
 
 getTupleThird :: Opt.Expr -> Maybe Opt.Expr
 getTupleThird (Opt.Tuple _ _ third) = third
