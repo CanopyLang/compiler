@@ -3,7 +3,7 @@
 
 -- | Property-based tests for Make-related library components.
 --
--- Tests invariants and laws for the Make system's supporting types using 
+-- Tests invariants and laws for the Make system's supporting types using
 -- QuickCheck. Since Make modules are in the terminal executable, these
 -- tests focus on the library components that Make depends on.
 --
@@ -18,12 +18,12 @@
 module Property.MakeProps (tests) where
 
 import qualified Canopy.ModuleName as ModuleName
-import qualified Canopy.Package as Package  
+import qualified Canopy.Package as Package
 import qualified Canopy.Version as Version
 import qualified Data.Name as Name
+import Test.QuickCheck (Arbitrary (..), elements)
 import Test.Tasty (TestTree, testGroup)
 import Test.Tasty.QuickCheck (testProperty, (==>))
-import Test.QuickCheck (Arbitrary (..), elements)
 
 -- | All property tests for Make-related library components.
 tests :: TestTree
@@ -49,11 +49,11 @@ testModuleNameProperties =
         (name1 == name2) == (name2 == (name1 :: ModuleName.Canonical) :: Bool),
       testProperty "canonical module name ordering is consistent" $ \name ->
         let n = name :: ModuleName.Canonical
-        in (n <= n) && (n >= n)
+         in (n <= n) && (n >= n)
     ]
 
 -- | Test properties of Version.
-testVersionProperties :: TestTree  
+testVersionProperties :: TestTree
 testVersionProperties =
   testGroup
     "Version properties"
@@ -71,7 +71,7 @@ testVersionProperties =
 testNameProperties :: TestTree
 testNameProperties =
   testGroup
-    "Name properties" 
+    "Name properties"
     [ testProperty "name equality is reflexive" $ \name ->
         name == (name :: Name.Name),
       testProperty "name roundtrip property" $ \str ->
@@ -103,7 +103,7 @@ instance Arbitrary ModuleName.Canonical where
 
 -- | Arbitrary instance for Version.Version.
 instance Arbitrary Version.Version where
-  arbitrary = pure Version.one  -- Use predefined version
+  arbitrary = pure Version.one -- Use predefined version
 
 -- | Arbitrary instance for Name.Name.
 instance Arbitrary Name.Name where
@@ -111,7 +111,7 @@ instance Arbitrary Name.Name where
 
 -- | Arbitrary instance for Package.Name.
 instance Arbitrary Package.Name where
-  arbitrary = pure Package.core  -- Use predefined package
+  arbitrary = pure Package.core -- Use predefined package
 
 -- | Test properties of Make system integration.
 testMakeSystemProperties :: TestTree
@@ -121,19 +121,19 @@ testMakeSystemProperties =
     [ testProperty "ModuleName and Package interaction consistency" $ \moduleName packageName ->
         let mn = moduleName :: ModuleName.Canonical
             pn = packageName :: Package.Name
-        in (mn == mn) && (pn == pn),
+         in (mn == mn) && (pn == pn),
       testProperty "Version and Name compatibility" $ \version name ->
         let v = version :: Version.Version
             n = name :: Name.Name
-        in show v /= show n,  -- Different types should show differently
+         in show v /= show n, -- Different types should show differently
       testProperty "Make component type distinction" $ \moduleName version ->
         let mn = moduleName :: ModuleName.Canonical
             v = version :: Version.Version
-        in show mn /= show v,  -- Different component types have different representations
+         in show mn /= show v, -- Different component types have different representations
       testProperty "cross-component equality is type-safe" $ \name1 name2 ->
-        let n1 = name1 :: Name.Name  
+        let n1 = name1 :: Name.Name
             n2 = name2 :: Name.Name
-        in (n1 == n2) == (n2 == n1)  -- Equality is symmetric within type
+         in (n1 == n2) == (n2 == n1) -- Equality is symmetric within type
     ]
 
 -- | Test invariants of build system components.
@@ -143,24 +143,24 @@ testBuildSystemInvariants =
     "Build system invariants"
     [ testProperty "module name consistency across operations" $ \moduleName ->
         let mn = moduleName :: ModuleName.Canonical
-        in mn == mn && (mn <= mn) && (mn >= mn),
+         in mn == mn && (mn <= mn) && (mn >= mn),
       testProperty "version consistency across operations" $ \version ->
         let v = version :: Version.Version
-        in v == v && (v <= v) && (v >= v),
+         in v == v && (v <= v) && (v >= v),
       testProperty "name roundtrip invariant" $ \name ->
         let n = name :: Name.Name
             chars = Name.toChars n
             rebuilt = Name.fromChars chars
-        in Name.toChars rebuilt == chars,
+         in Name.toChars rebuilt == chars,
       testProperty "build component show stability" $ \moduleName version name ->
         let mn = moduleName :: ModuleName.Canonical
-            v = version :: Version.Version  
+            v = version :: Version.Version
             n = name :: Name.Name
             show1 = (show mn, show v, show n)
             show2 = (show mn, show v, show n)
-        in show1 == show2,  -- Show is deterministic
+         in show1 == show2, -- Show is deterministic
       testProperty "Make system type safety invariant" $ \name ->
         let n1 = name :: Name.Name
             n2 = name :: Name.Name
-        in (n1 == n2) ==> (show n1 == show n2)  -- Equal values show equally
+         in (n1 == n2) ==> (show n1 == show n2) -- Equal values show equally
     ]
