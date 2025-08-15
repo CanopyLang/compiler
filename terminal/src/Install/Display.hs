@@ -29,40 +29,41 @@ module Install.Display
     createPlanMessage,
     formatChangeDocs,
     calculateWidths,
-    
+
     -- * User Prompts
     createPromotionMessage,
     promptForApproval,
-    
+
     -- * Status Messages
     reportAlreadyInstalled,
     reportSuccess,
     reportCancellation,
-    
+
     -- * Formatting Context
     FormatContext (..),
-    
+
     -- * Change Formatting
     formatInsert,
     formatChange,
     formatRemove,
     formatPackageName,
-  ) where
+  )
+where
 
-import Control.Lens ((^.))
 import qualified Canopy.Package as Pkg
+import Control.Lens ((^.))
 import Data.Map (Map)
 import qualified Data.Map as Map
-import Install.Types 
-  ( Change (..)
-  , ChangeDocs (..)
-  , Widths (..)
-  , docInserts
-  , docChanges
-  , docRemoves
-  , nameWidth
-  , leftWidth
-  , rightWidth
+import Install.Types
+  ( Change (..),
+    ChangeDocs (..),
+    Widths (..),
+    docChanges,
+    docInserts,
+    docRemoves,
+    leftWidth,
+    nameWidth,
+    rightWidth,
   )
 import Reporting.Doc (Doc, (<+>))
 import qualified Reporting.Doc as Doc
@@ -74,8 +75,8 @@ import qualified Reporting.Doc as Doc
 --
 -- @since 0.19.1
 data FormatContext a = FormatContext
-  { _fcToChars :: !(a -> String)
-  , _fcWidths :: !Widths
+  { _fcToChars :: !(a -> String),
+    _fcWidths :: !Widths
   }
 
 -- | Create a formatted change plan message for user review.
@@ -87,14 +88,14 @@ data FormatContext a = FormatContext
 --
 -- @
 -- Here is my plan:
---   
+--
 --   Add:
 --     elm/http    1.0.0
 --     elm/json    1.1.2
---     
+--
 --   Change:
 --     elm/core    1.0.0 => 1.0.2
---     
+--
 -- Would you like me to update your canopy.json accordingly? [Y/n]:
 -- @
 --
@@ -145,13 +146,13 @@ formatSection title entries =
 --
 -- @since 0.19.1
 calculateWidths :: (a -> String) -> Map Pkg.Name (Change a) -> Widths
-calculateWidths toChars changeMap = 
+calculateWidths toChars changeMap =
   Map.foldrWithKey expandWidthsForChange initialWidths changeMap
   where
     initialWidths = Widths 0 0 0
     expandWidthsForChange pkg change widths =
       let ctx = FormatContext toChars widths
-      in expandWidths ctx pkg change
+       in expandWidths ctx pkg change
 
 -- | Expand column widths based on a single change.
 --
@@ -164,30 +165,31 @@ expandWidths ctx pkg change =
   let FormatContext toChars widths = ctx
       newName = max (widths ^. nameWidth) (length (Pkg.toChars pkg))
       newCtx = FormatContext toChars widths
-  in case change of
-       Insert new -> updateWidthsInsert newCtx newName new
-       Change old new -> updateWidthsChange newCtx newName old new
-       Remove old -> updateWidthsRemove newCtx newName old
+   in case change of
+        Insert new -> updateWidthsInsert newCtx newName new
+        Change old new -> updateWidthsChange newCtx newName old new
+        Remove old -> updateWidthsRemove newCtx newName old
 
 -- | Update widths for Insert changes.
 updateWidthsInsert :: FormatContext a -> Int -> a -> Widths
 updateWidthsInsert ctx newName new =
   let FormatContext toChars widths = ctx
-  in Widths newName (max (widths ^. leftWidth) (length (toChars new))) (widths ^. rightWidth)
+   in Widths newName (max (widths ^. leftWidth) (length (toChars new))) (widths ^. rightWidth)
 
 -- | Update widths for Change modifications.
 updateWidthsChange :: FormatContext a -> Int -> a -> a -> Widths
 updateWidthsChange ctx newName old new =
   let FormatContext toChars widths = ctx
-  in Widths newName 
-    (max (widths ^. leftWidth) (length (toChars old))) 
-    (max (widths ^. rightWidth) (length (toChars new)))
+   in Widths
+        newName
+        (max (widths ^. leftWidth) (length (toChars old)))
+        (max (widths ^. rightWidth) (length (toChars new)))
 
 -- | Update widths for Remove operations.
 updateWidthsRemove :: FormatContext a -> Int -> a -> Widths
 updateWidthsRemove ctx newName old =
   let FormatContext toChars widths = ctx
-  in Widths newName (max (widths ^. leftWidth) (length (toChars old))) (widths ^. rightWidth)
+   in Widths newName (max (widths ^. leftWidth) (length (toChars old))) (widths ^. rightWidth)
 
 -- | Create a promotion message for moving dependencies.
 --
@@ -205,17 +207,35 @@ createPromotionMessage fromField toField =
 -- | Create found message for promotion prompts.
 createFoundMessage :: String -> [Doc]
 createFoundMessage field =
-  ["I", "found", "it", "in", "your", "canopy.json", "file,", "but", "in", "the", 
-   Doc.dullyellow ("\"" <> Doc.fromChars field <> "\""), 
-   if field == "test-dependencies" then "field." else "dependencies."]
+  [ "I",
+    "found",
+    "it",
+    "in",
+    "your",
+    "canopy.json",
+    "file,",
+    "but",
+    "in",
+    "the",
+    Doc.dullyellow ("\"" <> Doc.fromChars field <> "\""),
+    if field == "test-dependencies" then "field." else "dependencies."
+  ]
 
 -- | Create move message for promotion prompts.
 createMoveMessage :: String -> [Doc]
 createMoveMessage field =
-  ["Should", "I", "move", "it", "into", 
-   Doc.green ("\"" <> Doc.fromChars field <> "\""), 
-   if field == "dependencies" then "for" else "dependencies", 
-   "more", "general", "use?", "[Y/n]: "]
+  [ "Should",
+    "I",
+    "move",
+    "it",
+    "into",
+    Doc.green ("\"" <> Doc.fromChars field <> "\""),
+    if field == "dependencies" then "for" else "dependencies",
+    "more",
+    "general",
+    "use?",
+    "[Y/n]: "
+  ]
 
 -- | Format an insert change for display.
 --
@@ -225,8 +245,8 @@ createMoveMessage field =
 formatInsert :: FormatContext a -> Pkg.Name -> a -> Doc
 formatInsert ctx name new =
   let FormatContext toChars widths = ctx
-  in formatPackageName (widths ^. nameWidth) name <+> 
-     padRight (widths ^. leftWidth) (toChars new)
+   in formatPackageName (widths ^. nameWidth) name
+        <+> padRight (widths ^. leftWidth) (toChars new)
 
 -- | Format a change modification for display.
 --
@@ -236,12 +256,12 @@ formatInsert ctx name new =
 formatChange :: FormatContext a -> Pkg.Name -> a -> a -> Doc
 formatChange ctx name old new =
   let FormatContext toChars widths = ctx
-  in Doc.hsep
-    [ formatPackageName (widths ^. nameWidth) name,
-      padRight (widths ^. leftWidth) (toChars old),
-      "=>",
-      padRight (widths ^. rightWidth) (toChars new)
-    ]
+   in Doc.hsep
+        [ formatPackageName (widths ^. nameWidth) name,
+          padRight (widths ^. leftWidth) (toChars old),
+          "=>",
+          padRight (widths ^. rightWidth) (toChars new)
+        ]
 
 -- | Format a remove change for display.
 --
@@ -251,8 +271,8 @@ formatChange ctx name old new =
 formatRemove :: FormatContext a -> Pkg.Name -> a -> Doc
 formatRemove ctx name old =
   let FormatContext toChars widths = ctx
-  in formatPackageName (widths ^. nameWidth) name <+> 
-     padRight (widths ^. leftWidth) (toChars old)
+   in formatPackageName (widths ^. nameWidth) name
+        <+> padRight (widths ^. leftWidth) (toChars old)
 
 -- | Format a package name with consistent width.
 --

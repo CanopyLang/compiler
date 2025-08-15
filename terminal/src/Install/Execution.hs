@@ -27,36 +27,37 @@ module Install.Execution
   ( -- * Installation Execution
     executeInstallation,
     attemptInstallChanges,
-    
+
     -- * User Interaction
     promptForApproval,
-    
+
     -- * File Operations
     performInstallation,
     rollbackInstallation,
     confirmInstallation,
-    
+
     -- * Status Reporting
     reportInstallationStatus,
-  ) where
+  )
+where
 
-import Control.Lens ((^.), (&), (.~))
 import qualified BackgroundWriter as BackgroundWriter
 import qualified Canopy.Details as Details
 import qualified Canopy.Outline as Outline
+import Control.Lens ((&), (.~), (^.))
 import qualified Install.Display as Display
-import Install.Types 
-  ( Changes (..)
-  , InstallContext (..)
-  , Task
-  , icRoot
-  , icEnv
-  , icOldOutline
-  , icNewOutline
+import Install.Types
+  ( Changes (..),
+    InstallContext (..),
+    Task,
+    icEnv,
+    icNewOutline,
+    icOldOutline,
+    icRoot,
   )
+import qualified Reporting
 import Reporting.Doc (Doc)
 import qualified Reporting.Doc as Doc
-import qualified Reporting
 import qualified Reporting.Exit as Exit
 import qualified Reporting.Task as Task
 
@@ -79,7 +80,7 @@ import qualified Reporting.Task as Task
 executeInstallation :: InstallContext -> Changes a -> (a -> String) -> Task ()
 executeInstallation ctx changes _toChars =
   case changes of
-    AlreadyInstalled -> 
+    AlreadyInstalled ->
       Task.io Display.reportAlreadyInstalled
     PromoteIndirect newOutline ->
       handlePromotionInstallation ctx newOutline "indirect" "direct"
@@ -180,10 +181,10 @@ performInstallation ctx scope = do
       env = ctx ^. icEnv
       oldOutline = ctx ^. icOldOutline
       newOutline = ctx ^. icNewOutline
-      
+
   -- Write the new outline atomically
   Outline.write root newOutline
-  
+
   -- Verify the installation
   result <- Details.verifyInstall scope root env newOutline
   case result of

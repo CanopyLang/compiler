@@ -25,23 +25,24 @@
 module Install.PkgPlan
   ( -- * Plan Creation
     makePkgPlan,
-    
+
     -- * Dependency Analysis
     isPkgAlreadyDirect,
     checkPkgTestDependencies,
-    
+
     -- * Promotion Operations
     promotePkgTestDep,
-    
+
     -- * Solver Integration
     PkgSolverContext (..),
     addNewPkgDependency,
     solvePkgDependency,
     buildPkgSolution,
-    
+
     -- * Utilities
     addNewsToPackage,
-  ) where
+  )
+where
 
 import qualified Canopy.Constraint as Constraint
 import qualified Canopy.Outline as Outline
@@ -120,9 +121,14 @@ promotePkgTestDep pkg constraint outline =
   PromoteTest . Outline.Pkg $
     case outline of
       Outline.PkgOutline n summary license version exposed deps testDeps srcDirs ->
-        Outline.PkgOutline n summary license version exposed 
-          (Map.insert pkg constraint deps) 
-          (Map.delete pkg testDeps) 
+        Outline.PkgOutline
+          n
+          summary
+          license
+          version
+          exposed
+          (Map.insert pkg constraint deps)
+          (Map.delete pkg testDeps)
           srcDirs
 
 -- | Add a completely new dependency to the package.
@@ -146,9 +152,9 @@ addNewPkgDependency env pkg outline = do
 --
 -- @since 0.19.1
 data PkgSolverContext = PkgSolverContext
-  { _pscCache :: !Stuff.PackageCache
-  , _pscConnection :: !Solver.Connection
-  , _pscRegistry :: !Registry.ZokkaRegistries
+  { _pscCache :: !Stuff.PackageCache,
+    _pscConnection :: !Solver.Connection,
+    _pscRegistry :: !Registry.ZokkaRegistries
   }
 
 -- | Extract solver environment components for package operations.
@@ -186,7 +192,7 @@ solvePkgDependency solverCtx pkg outline = do
     Outline.PkgOutline _ _ _ _ _ deps testDeps _ -> do
       let oldConstraints = Map.union deps testDeps
           newConstraints = Map.insert pkg Constraint.anything oldConstraints
-      
+
       result <- Task.io $ Solver.verify cache connection registry newConstraints
       case result of
         Solver.Ok solution -> return $ buildPkgSolution pkg solution oldConstraints outline
@@ -211,9 +217,16 @@ buildPkgSolution pkg solution oldConstraints outline =
           newDependencies = Map.mapMaybe keepNew changes
           updatedDeps = addNewsToPackage (Just pkg) newDependencies deps
           updatedTestDeps = addNewsToPackage Nothing newDependencies testDeps
-      in Changes changes . Outline.Pkg $
-           Outline.PkgOutline n summary license version exposed 
-             updatedDeps updatedTestDeps srcDirs
+       in Changes changes . Outline.Pkg $
+            Outline.PkgOutline
+              n
+              summary
+              license
+              version
+              exposed
+              updatedDeps
+              updatedTestDeps
+              srcDirs
 
 -- | Add new dependencies to appropriate dependency maps.
 --

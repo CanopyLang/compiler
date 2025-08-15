@@ -23,10 +23,11 @@ module Install.Arguments
     validateArgs,
     findProjectRoot,
     determineInstallMode,
-    
+
     -- * Helper Functions
     checkProjectStructure,
-  ) where
+  )
+where
 
 import Install.Types (Args (..))
 import qualified Reporting.Exit as Exit
@@ -92,7 +93,7 @@ validateArgsWithRoot root args = do
 --
 -- @since 0.19.1
 checkProjectStructure :: FilePath -> IO Bool
-checkProjectStructure _root = 
+checkProjectStructure _root =
   -- Implementation would check for canopy.json, etc.
   pure True
 
@@ -102,7 +103,7 @@ checkProjectStructure _root =
 --
 -- @since 0.19.1
 validateSpecificArgs :: FilePath -> Args -> IO (Either Exit.Install (FilePath, Args))
-validateSpecificArgs root args = 
+validateSpecificArgs root args =
   case args of
     NoArgs -> pure (Right (root, args))
     Install _pkg -> pure (Right (root, args))
@@ -126,8 +127,8 @@ determineInstallMode args =
 --
 -- @since 0.19.1
 data InstallMode
-  = InstallAllMode
-  -- ^ Install all dependencies from canopy.json
-  | InstallPackageMode  
-  -- ^ Install a specific named package
+  = -- | Install all dependencies from canopy.json
+    InstallAllMode
+  | -- | Install a specific named package
+    InstallPackageMode
   deriving (Eq, Show)

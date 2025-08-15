@@ -7,7 +7,7 @@
 -- This module defines all the core types used throughout the Install system:
 --
 -- * Command-line arguments and configuration types
--- * Installation state and context management 
+-- * Installation state and context management
 -- * Change tracking and display structures
 -- * Error types and validation results
 --
@@ -31,49 +31,52 @@
 module Install.Types
   ( -- * Arguments
     Args (..),
-    
+
     -- * Installation Context
     InstallContext (..),
+
     -- ** Lenses
     icRoot,
     icEnv,
     icOldOutline,
     icNewOutline,
-    
+
     -- * Changes
     Changes (..),
     Change (..),
-    
+
     -- * User Interface
     ChangePlanRequest (..),
-    -- ** Lenses  
+
+    -- ** Lenses
     cprContext,
     cprToChars,
     cprChangeDict,
-    
     ChangeDocs (..),
+
     -- ** Lenses
     docInserts,
     docChanges,
     docRemoves,
-    
     Widths (..),
+
     -- ** Lenses
     nameWidth,
     leftWidth,
     rightWidth,
-    
+
     -- * Dependencies
     ExistingDep (..),
-    
+
     -- * Task Type
     Task,
-  ) where
+  )
+where
 
-import Control.Lens.TH (makeLenses)
 import qualified Canopy.Outline as Outline
 import qualified Canopy.Package as Pkg
 import qualified Canopy.Version as Version
+import Control.Lens.TH (makeLenses)
 import Data.Map (Map)
 import qualified Deps.Solver as Solver
 import Reporting.Doc (Doc)
@@ -100,14 +103,14 @@ data Args
 --
 -- @since 0.19.1
 data InstallContext = InstallContext
-  { _icRoot :: !FilePath
-  -- ^ Project root directory
-  , _icEnv :: !Solver.Env  
-  -- ^ Solver environment with registry information
-  , _icOldOutline :: !Outline.Outline
-  -- ^ Original canopy.json outline before changes
-  , _icNewOutline :: !Outline.Outline
-  -- ^ Updated canopy.json outline after changes
+  { -- | Project root directory
+    _icRoot :: !FilePath,
+    -- | Solver environment with registry information
+    _icEnv :: !Solver.Env,
+    -- | Original canopy.json outline before changes
+    _icOldOutline :: !Outline.Outline,
+    -- | Updated canopy.json outline after changes
+    _icNewOutline :: !Outline.Outline
   }
 
 -- | Changes to be applied to dependency configuration.
@@ -115,7 +118,7 @@ data InstallContext = InstallContext
 -- Represents different types of dependency modifications:
 --
 -- * 'AlreadyInstalled' - Package is already present
--- * 'PromoteTest' - Move from test-dependencies to dependencies  
+-- * 'PromoteTest' - Move from test-dependencies to dependencies
 -- * 'PromoteIndirect' - Move from indirect to direct dependencies
 -- * 'Changes' - Complex set of additions/modifications/removals
 --
@@ -149,12 +152,12 @@ data Change a
 --
 -- @since 0.19.1
 data ChangePlanRequest a = ChangePlanRequest
-  { _cprContext :: !InstallContext
-  -- ^ Installation context
-  , _cprToChars :: !(a -> String)
-  -- ^ Function to convert version/constraint to string
-  , _cprChangeDict :: !(Map Pkg.Name (Change a))
-  -- ^ Map of package changes to display
+  { -- | Installation context
+    _cprContext :: !InstallContext,
+    -- | Function to convert version/constraint to string
+    _cprToChars :: !(a -> String),
+    -- | Map of package changes to display
+    _cprChangeDict :: !(Map Pkg.Name (Change a))
   }
 
 -- | Documentation for formatting change displays.
@@ -164,12 +167,12 @@ data ChangePlanRequest a = ChangePlanRequest
 --
 -- @since 0.19.1
 data ChangeDocs = ChangeDocs
-  { _docInserts :: ![Doc]
-  -- ^ New packages being added
-  , _docChanges :: ![Doc]  
-  -- ^ Existing packages being modified
-  , _docRemoves :: ![Doc]
-  -- ^ Packages being removed
+  { -- | New packages being added
+    _docInserts :: ![Doc],
+    -- | Existing packages being modified
+    _docChanges :: ![Doc],
+    -- | Packages being removed
+    _docRemoves :: ![Doc]
   }
 
 -- | Column widths for aligned change display formatting.
@@ -179,12 +182,12 @@ data ChangeDocs = ChangeDocs
 --
 -- @since 0.19.1
 data Widths = Widths
-  { _nameWidth :: !Int
-  -- ^ Maximum package name width
-  , _leftWidth :: !Int
-  -- ^ Maximum left column (old version) width  
-  , _rightWidth :: !Int
-  -- ^ Maximum right column (new version) width
+  { -- | Maximum package name width
+    _nameWidth :: !Int,
+    -- | Maximum left column (old version) width
+    _leftWidth :: !Int,
+    -- | Maximum right column (new version) width
+    _rightWidth :: !Int
   }
   deriving (Eq, Show)
 
@@ -194,13 +197,13 @@ data Widths = Widths
 -- already exist in the project's dependency structure.
 --
 -- @since 0.19.1
-data ExistingDep 
-  = IndirectDep Version.Version
-  -- ^ Found in indirect dependencies
-  | TestDirectDep Version.Version  
-  -- ^ Found in test direct dependencies
-  | TestIndirectDep Version.Version
-  -- ^ Found in test indirect dependencies
+data ExistingDep
+  = -- | Found in indirect dependencies
+    IndirectDep Version.Version
+  | -- | Found in test direct dependencies
+    TestDirectDep Version.Version
+  | -- | Found in test indirect dependencies
+    TestIndirectDep Version.Version
   deriving (Eq, Show)
 
 -- | Task monad for install operations.
@@ -213,6 +216,6 @@ type Task = Task.Task Exit.Install
 
 -- Generate lenses for all record types
 makeLenses ''InstallContext
-makeLenses ''ChangePlanRequest  
+makeLenses ''ChangePlanRequest
 makeLenses ''ChangeDocs
 makeLenses ''Widths

@@ -26,15 +26,16 @@ module Install.Changes
   ( -- * Change Detection
     detectChanges,
     keepChange,
-    
+
     -- * Change Manipulation
     keepNew,
     filterSignificantChanges,
-    
+
     -- * Utilities
     hasSignificantChanges,
     countChanges,
-  ) where
+  )
+where
 
 import qualified Canopy.Package as Pkg
 import Data.Map (Map)
@@ -50,7 +51,7 @@ import Install.Types (Change (..))
 -- Uses efficient Map merging to handle all cases:
 --
 -- * Packages only in old map → 'Remove'
--- * Packages only in new map → 'Insert'  
+-- * Packages only in new map → 'Insert'
 -- * Packages in both with different values → 'Change'
 -- * Packages in both with same values → omitted
 --
@@ -91,7 +92,7 @@ keepChange _ old new =
 -- >>> keepNew (Insert "1.0.0")
 -- Just "1.0.0"
 --
--- >>> keepNew (Change "1.0.0" "1.1.0")  
+-- >>> keepNew (Change "1.0.0" "1.1.0")
 -- Just "1.1.0"
 --
 -- >>> keepNew (Remove "1.0.0")
@@ -130,7 +131,7 @@ isSignificantChange _change = True
 --
 -- @since 0.19.1
 hasSignificantChanges :: Map Pkg.Name (Change a) -> Bool
-hasSignificantChanges changes = 
+hasSignificantChanges changes =
   not (Map.null (filterSignificantChanges changes))
 
 -- | Count the total number of changes by type.

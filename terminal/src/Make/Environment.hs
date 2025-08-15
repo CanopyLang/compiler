@@ -76,7 +76,6 @@ configureLogging flags =
     when True action = action
     when False _ = pure ()
 
-
 -- | Create build context from validated environment.
 --
 -- Constructs a 'BuildContext' with the provided configuration.

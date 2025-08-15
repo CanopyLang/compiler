@@ -27,20 +27,21 @@
 module Install.AppPlan
   ( -- * Plan Creation
     makeAppPlan,
-    
+
     -- * Dependency Analysis
     findExistingAppDependency,
     isAlreadyDirectApp,
-    
+
     -- * Promotion Operations
     promoteIndirectDep,
     promoteTestDirectDep,
     promoteTestIndirectDep,
-    
+
     -- * Solver Integration
     addNewAppDependency,
     attemptAppSolverAddition,
-  ) where
+  )
+where
 
 import qualified Canopy.Outline as Outline
 import qualified Canopy.Package as Pkg
@@ -49,10 +50,10 @@ import qualified Data.Map as Map
 import qualified Deps.Registry as Registry
 import qualified Deps.Solver as Solver
 import Install.Changes (detectChanges)
-import Install.Types 
-  ( Changes (..)
-  , ExistingDep (..)
-  , Task
+import Install.Types
+  ( Changes (..),
+    ExistingDep (..),
+    Task,
   )
 import qualified Reporting.Exit as Exit
 import qualified Reporting.Task as Task
@@ -75,7 +76,7 @@ import qualified Stuff
 -- >>> makeAppPlan env "elm/http" appOutline
 -- Right (PromoteIndirect newOutline)  -- if found in indirect deps
 --
--- >>> makeAppPlan env "new/package" appOutline  
+-- >>> makeAppPlan env "new/package" appOutline
 -- Right (Changes changeMap newOutline)  -- if completely new
 --
 -- @since 0.19.1
@@ -139,10 +140,14 @@ promoteIndirectDep pkg vsn outline =
   PromoteIndirect . Outline.App $
     case outline of
       Outline.AppOutline name summary direct indirect testDirect testIndirect srcDirs ->
-        Outline.AppOutline name summary 
-          (Map.insert pkg vsn direct) 
-          (Map.delete pkg indirect) 
-          testDirect testIndirect srcDirs
+        Outline.AppOutline
+          name
+          summary
+          (Map.insert pkg vsn direct)
+          (Map.delete pkg indirect)
+          testDirect
+          testIndirect
+          srcDirs
 
 -- | Promote a package from test-direct to direct dependencies.
 --
@@ -155,11 +160,14 @@ promoteTestDirectDep pkg vsn outline =
   PromoteTest . Outline.App $
     case outline of
       Outline.AppOutline name summary direct indirect testDirect testIndirect srcDirs ->
-        Outline.AppOutline name summary 
-          (Map.insert pkg vsn direct) 
-          indirect 
-          (Map.delete pkg testDirect) 
-          testIndirect srcDirs
+        Outline.AppOutline
+          name
+          summary
+          (Map.insert pkg vsn direct)
+          indirect
+          (Map.delete pkg testDirect)
+          testIndirect
+          srcDirs
 
 -- | Promote a package from test-indirect to direct dependencies.
 --
@@ -172,11 +180,13 @@ promoteTestIndirectDep pkg vsn outline =
   PromoteTest . Outline.App $
     case outline of
       Outline.AppOutline name summary direct indirect testDirect testIndirect srcDirs ->
-        Outline.AppOutline name summary 
-          (Map.insert pkg vsn direct) 
-          indirect 
-          testDirect 
-          (Map.delete pkg testIndirect) 
+        Outline.AppOutline
+          name
+          summary
+          (Map.insert pkg vsn direct)
+          indirect
+          testDirect
+          (Map.delete pkg testIndirect)
           srcDirs
 
 -- | Add a completely new dependency to the application.
