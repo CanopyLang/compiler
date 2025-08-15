@@ -17,10 +17,10 @@ import CLI.Commands
     createReactorCommand,
     createReplCommand,
   )
-import Test.Tasty (TestTree, testGroup)
-import Test.Tasty.HUnit (testCase, (@?=))
 import qualified Terminal
 import Terminal.Internal (toName)
+import Test.Tasty (TestTree, testGroup)
+import Test.Tasty.HUnit (testCase, (@?=))
 
 -- | All unit tests for CLI command creation functionality.
 tests :: TestTree
