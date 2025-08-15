@@ -70,46 +70,47 @@ module Terminal.Error
     ArgError (..),
     FlagError (..),
     Expectation (..),
-    
+
     -- * Lenses (re-exported from Types)
     expectationType,
     expectationExamples,
-    
+
     -- * Main Exit Functions
     exitWithError,
     exitWithHelp,
     exitWithOverview,
     exitWithUnknown,
-    
+
     -- * Error Processing (re-exported from Display)
     convertErrorToDocs,
     argErrorToDocs,
     flagErrorToDocs,
-    
+
     -- * Suggestion Generation (re-exported from Suggestions)
     generateFlagSuggestions,
     generateCommandSuggestions,
-    
+
     -- * Help Generation (re-exported from Help)
     generateCommandHelp,
     generateAppOverview,
-  ) where
+  )
+where
 
 import qualified System.Exit as Exit
 import Terminal.Error.Display
   ( argErrorToDocs,
     convertErrorToDocs,
     exitWithCode,
-    flagErrorToDocs
+    flagErrorToDocs,
   )
 import Terminal.Error.Help
   ( generateAppOverview,
-    generateCommandHelp
+    generateCommandHelp,
   )
 import Terminal.Error.Suggestions
-  ( generateCommandSuggestions,
+  ( createSuggestionMessage,
+    generateCommandSuggestions,
     generateFlagSuggestions,
-    createSuggestionMessage
   )
 import Terminal.Error.Types
   ( ArgError (..),
@@ -117,7 +118,7 @@ import Terminal.Error.Types
     Expectation (..),
     FlagError (..),
     expectationExamples,
-    expectationType
+    expectationType,
   )
 import Terminal.Internal (Args, Command, Flags)
 import qualified Text.PrettyPrint.ANSI.Leijen as Doc
@@ -161,7 +162,7 @@ exitWithError err = do
 -- >>> exitWithHelp Nothing "Build Canopy projects" examples args flags
 -- -- Shows help for main command
 --
--- >>> exitWithHelp (Just "install") "Install packages" examples args flags  
+-- >>> exitWithHelp (Just "install") "Install packages" examples args flags
 -- -- Shows help for install subcommand
 --
 -- ==== Help Structure
@@ -247,12 +248,22 @@ createUnknownErrorDocs unknown suggestions = do
 createUnknownCommandMessage :: String -> [Doc.Doc] -> Doc.Doc
 createUnknownCommandMessage unknown suggestions =
   let baseMessage = ["There", "is", "no", Doc.red (Doc.text unknown), "command."]
-  in Doc.fillSep (baseMessage ++ suggestions)
+   in Doc.fillSep (baseMessage ++ suggestions)
 
 -- | Create help guidance message.
 --
 -- @since 0.19.1
 createHelpGuidance :: Doc.Doc
-createHelpGuidance = 
-  Doc.fillSep ["Run", "the", "command", "with", "no", "arguments", 
-               "to", "get", "more", "hints."]
+createHelpGuidance =
+  Doc.fillSep
+    [ "Run",
+      "the",
+      "command",
+      "with",
+      "no",
+      "arguments",
+      "to",
+      "get",
+      "more",
+      "hints."
+    ]
