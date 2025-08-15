@@ -36,7 +36,7 @@ import Terminal.Internal
     RequiredArgs (..),
   )
 import Test.Tasty (TestTree, testGroup)
-import Test.Tasty.HUnit (assertBool, testCase, (@?=), assertFailure)
+import Test.Tasty.HUnit (assertBool, assertFailure, testCase, (@?=))
 
 tests :: TestTree
 tests =
@@ -114,27 +114,33 @@ testChompInterface :: TestTree
 testChompInterface =
   testGroup
     "Chomp Interface Tests"
-    [ testCase "chomp with empty arguments" $ (do
-        let noArgs = Args []
-            noFlags = FDone ()
-            (suggestions, result) = Chomp.chomp Nothing [] noArgs noFlags
-        suggestionList <- suggestions
-        assertBool "Empty suggestions for empty args" (null suggestionList)
-        case result of
-          Left _ -> assertFailure "Should succeed with empty args and empty input"
-          Right ((), ()) -> pure ()) -- Expected success with empty args and empty input
-    , testCase "chomp with simple flag" $ (do
-        let noArgs = Args []
-            flagSpec = FDone True -- Simple boolean flag
-            (suggestions, _) = Chomp.chomp Nothing ["--test"] noArgs flagSpec
-        suggestionList <- suggestions
-        length suggestionList @?= 0) -- Expected no suggestions for simple flag
-    , testCase "chomp with suggestion index" $ (do
-        let noArgs = Args []
-            noFlags = FDone ()
-            (suggestions, _) = Chomp.chomp (Just 1) [""] noArgs noFlags
-        suggestionList <- suggestions
-        length suggestionList @?= 0) -- Expected no suggestions with suggestion index
+    [ testCase "chomp with empty arguments" $
+        ( do
+            let noArgs = Args []
+                noFlags = FDone ()
+                (suggestions, result) = Chomp.chomp Nothing [] noArgs noFlags
+            suggestionList <- suggestions
+            assertBool "Empty suggestions for empty args" (null suggestionList)
+            case result of
+              Left _ -> assertFailure "Should succeed with empty args and empty input"
+              Right ((), ()) -> pure () -- Expected success with empty args and empty input
+        ),
+      testCase "chomp with simple flag" $
+        ( do
+            let noArgs = Args []
+                flagSpec = FDone True -- Simple boolean flag
+                (suggestions, _) = Chomp.chomp Nothing ["--test"] noArgs flagSpec
+            suggestionList <- suggestions
+            length suggestionList @?= 0 -- Expected no suggestions for simple flag
+        ),
+      testCase "chomp with suggestion index" $
+        ( do
+            let noArgs = Args []
+                noFlags = FDone ()
+                (suggestions, _) = Chomp.chomp (Just 1) [""] noArgs noFlags
+            suggestionList <- suggestions
+            length suggestionList @?= 0 -- Expected no suggestions with suggestion index
+        )
     ]
 
 -- | Test error handling scenarios
