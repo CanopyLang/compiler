@@ -31,13 +31,17 @@ setupTests :: TestTree
 setupTests =
   Test.testGroup
     "Setup Tests"
-    [ Test.testCase "setup initializes all components" $ (do
-        -- Note: This would be an IO test in a real scenario
-        -- For now we test the structure exists
-        pure ()) -- Environment setup function exists
-    , Test.testCase "setup handles missing root gracefully" $ (do
-        -- Test that setup works when not in a project directory
-        pure ()) -- Setup handles missing root
+    [ Test.testCase "setup initializes all components" $
+        ( do
+            -- Note: This would be an IO test in a real scenario
+            -- For now we test the structure exists
+            pure () -- Environment setup function exists
+        ),
+      Test.testCase "setup handles missing root gracefully" $
+        ( do
+            -- Test that setup works when not in a project directory
+            pure () -- Setup handles missing root
+        )
     ]
 
 -- | Tests for validation functionality.
@@ -45,12 +49,16 @@ validationTests :: TestTree
 validationTests =
   Test.testGroup
     "Validation Tests"
-    [ Test.testCase "validateRoot accepts valid paths" $ (do
-        -- Test root validation logic
-        pure ()) -- Valid paths are accepted
-    , Test.testCase "validateRoot rejects invalid paths" $ (do
-        -- Test root validation rejection
-        pure ()) -- Invalid paths are rejected
+    [ Test.testCase "validateRoot accepts valid paths" $
+        ( do
+            -- Test root validation logic
+            pure () -- Valid paths are accepted
+        ),
+      Test.testCase "validateRoot rejects invalid paths" $
+        ( do
+            -- Test root validation rejection
+            pure () -- Invalid paths are rejected
+        )
     ]
 
 -- | Tests for component initialization.
@@ -58,13 +66,19 @@ componentTests :: TestTree
 componentTests =
   Test.testGroup
     "Component Tests"
-    [ Test.testCase "configureCache creates valid cache" $ (do
-        -- Test cache configuration
-        pure ()) -- Cache configuration works
-    , Test.testCase "setupNetworking creates manager" $ (do
-        -- Test network setup
-        pure ()) -- Network setup works
-    , Test.testCase "initializeRegistry connects properly" $ (do
-        -- Test registry initialization
-        pure ()) -- Registry initialization works
+    [ Test.testCase "configureCache creates valid cache" $
+        ( do
+            -- Test cache configuration
+            pure () -- Cache configuration works
+        ),
+      Test.testCase "setupNetworking creates manager" $
+        ( do
+            -- Test network setup
+            pure () -- Network setup works
+        ),
+      Test.testCase "initializeRegistry connects properly" $
+        ( do
+            -- Test registry initialization
+            pure () -- Registry initialization works
+        )
     ]
