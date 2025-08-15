@@ -43,7 +43,7 @@
 -- -- Compare local code against latest published version
 -- main = run CodeVsLatest ()
 --
--- -- Compare two published versions globally  
+-- -- Compare two published versions globally
 -- main = run (GlobalInquiry packageName version1 version2) ()
 --
 -- -- Compare local versions within project
@@ -73,15 +73,15 @@
 module Diff
   ( -- * Core Types (re-exported)
     Args (..),
-    
+
     -- * Main Interface
     run,
   )
 where
 
-import Diff.Types (Args (..))
 import qualified Diff.Environment as Environment
 import qualified Diff.Execution as Execution
+import Diff.Types (Args (..))
 import qualified Reporting
 import qualified Reporting.Exit as Exit
 import qualified Reporting.Task as Task

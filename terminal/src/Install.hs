@@ -31,7 +31,7 @@
 -- @
 -- -- Install a new package
 -- run (Install \"elm/http\") ()
--- 
+--
 -- -- Show available packages
 -- run NoArgs ()
 -- @
@@ -40,10 +40,11 @@
 module Install
   ( -- * Command Arguments
     Args (..),
-    
+
     -- * Command Execution
     run,
-  ) where
+  )
+where
 
 import qualified Canopy.Constraint as C
 import qualified Canopy.Outline as Outline
@@ -54,10 +55,10 @@ import Install.AppPlan (makeAppPlan)
 import Install.Arguments (validateArgs)
 import Install.Execution (executeInstallation)
 import Install.PkgPlan (makePkgPlan)
-import Install.Types 
-  ( Args (..)
-  , InstallContext (..)
-  , Task
+import Install.Types
+  ( Args (..),
+    InstallContext (..),
+    Task,
   )
 import qualified Reporting
 import qualified Reporting.Exit as Exit
@@ -117,7 +118,7 @@ processValidatedInstall root args =
 -- @since 0.19.1
 handleNoArgsCase :: Task ()
 handleNoArgsCase = do
-  canopyHome <- Task.io Stuff.getCanopyHome  
+  canopyHome <- Task.io Stuff.getCanopyHome
   Task.throw (Exit.InstallNoArgs canopyHome)
 
 -- | Execute a validated installation request.
@@ -127,7 +128,7 @@ handleNoArgsCase = do
 --
 -- @since 0.19.1
 executeValidatedInstall :: FilePath -> Args -> IO (Either Exit.Install ())
-executeValidatedInstall root args = 
+executeValidatedInstall root args =
   Task.run (processValidatedInstall root args)
 
 -- | Install a package in a Canopy project.
@@ -197,5 +198,5 @@ installInPackage context pkg outline = do
 -- written if the installation is approved and executed.
 --
 -- @since 0.19.1
-updateContextWithChanges :: InstallContext -> a -> InstallContext  
+updateContextWithChanges :: InstallContext -> a -> InstallContext
 updateContextWithChanges context _changes = context

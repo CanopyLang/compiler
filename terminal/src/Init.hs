@@ -59,21 +59,22 @@ module Init
     -- * Configuration (re-exported)
     defaultConfig,
     defaultContext,
-  ) where
+  )
+where
 
 import Control.Lens ((^.))
 import qualified Deps.Solver as Solver
+import qualified Init.Display as Display
+import qualified Init.Environment as Environment
+import qualified Init.Project as Project
 import Init.Types
   ( InitConfig (..),
     InitError (..),
     ProjectContext (..),
     contextDependencies,
     defaultConfig,
-    defaultContext
+    defaultContext,
   )
-import qualified Init.Display as Display
-import qualified Init.Environment as Environment
-import qualified Init.Project as Project
 import qualified Init.Validation as Validation
 import qualified Reporting
 import qualified Reporting.Exit as Exit
@@ -104,7 +105,7 @@ import qualified Reporting.Exit as Exit
 --
 -- @since 0.19.1
 run :: () -> () -> IO ()
-run () () = 
+run () () =
   Reporting.attempt Exit.initToReport $ do
     initResult <- initializeProject defaultConfig defaultContext
     case initResult of

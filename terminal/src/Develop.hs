@@ -11,7 +11,7 @@
 -- == Key Features
 --
 -- * Live compilation and serving of Canopy source files
--- * Hot reloading with WebSocket-based file watching  
+-- * Hot reloading with WebSocket-based file watching
 -- * Static asset serving with comprehensive MIME type support
 -- * Directory browsing with custom index pages
 -- * Error reporting with rich diagnostics
@@ -36,7 +36,7 @@
 -- Develop.run () flags
 --
 -- -- Start on custom port
--- flags <- parseFlags ["--port", "3000"]  
+-- flags <- parseFlags ["--port", "3000"]
 -- Develop.run () flags
 -- @
 --
@@ -50,10 +50,11 @@
 module Develop
   ( -- * Types
     Flags (..),
-    
+
     -- * Main Interface
     run,
-  ) where
+  )
+where
 
 import qualified Develop.Environment as Environment
 import qualified Develop.Server as Server
@@ -79,7 +80,7 @@ import Develop.Types (Flags (..))
 -- Go to http://localhost:3000 to see your project dashboard.
 -- -- Server starts and blocks
 --
--- >>> run () (Flags Nothing)  
+-- >>> run () (Flags Nothing)
 -- Go to http://localhost:8000 to see your project dashboard.
 -- -- Server starts on default port
 --
