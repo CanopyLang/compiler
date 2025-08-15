@@ -10,7 +10,7 @@
 -- @since 0.19.1
 module Unit.Develop.TypesTest (tests) where
 
-import Control.Lens ((^.), (&), (.~))
+import Control.Lens ((&), (.~), (^.))
 import Data.ByteString.Builder (Builder)
 import qualified Data.ByteString.Builder as B
 import Develop.Types
@@ -23,12 +23,12 @@ import Develop.Types
     flagsPort,
     scPort,
     scRoot,
-    scVerbose
+    scVerbose,
   )
 import qualified Reporting.Exit as Exit
 import Test.Tasty (TestTree)
 import qualified Test.Tasty as Test
-import Test.Tasty.HUnit ((@?=), assertBool)
+import Test.Tasty.HUnit (assertBool, (@?=))
 import qualified Test.Tasty.HUnit as Test
 
 -- | Main test suite for Types module.
@@ -119,7 +119,7 @@ compileResultDataTests =
           CompileError Exit.ReactorNoOutline -> pure ()
           _ -> Test.assertFailure "Expected CompileError with ReactorNoOutline",
       Test.testCase "compile error with reactor no outline" $ do
-        let result = CompileError Exit.ReactorNoOutline  
+        let result = CompileError Exit.ReactorNoOutline
         case result of
           CompileError Exit.ReactorNoOutline -> pure ()
           _ -> Test.assertFailure "Expected CompileError with ReactorNoOutline"
@@ -187,9 +187,10 @@ behavioralOperationTests =
           _ -> Test.assertFailure "Expected successful root path update",
       Test.testCase "complex server config updates preserve consistency" $ do
         let original = ServerConfig 8000 False Nothing
-            updated = original & scPort .~ 5000 
-                              & scVerbose .~ True 
-                              & scRoot .~ Just "/project"
+            updated =
+              original & scPort .~ 5000
+                & scVerbose .~ True
+                & scRoot .~ Just "/project"
         case updated of
           ServerConfig 5000 True (Just "/project") -> pure ()
           _ -> Test.assertFailure "Expected successful multi-field update"
@@ -214,7 +215,6 @@ defaultValueTests =
           (Flags Nothing, ServerConfig 8000 False Nothing) -> pure ()
           _ -> Test.assertFailure "Expected usable default configurations"
     ]
-
 
 -- | Tests for equality instances.
 equalityTests :: TestTree

@@ -10,7 +10,7 @@
 -- @since 0.19.1
 module Unit.Develop.EnvironmentTest (tests) where
 
-import Control.Exception (catch, SomeException)
+import Control.Exception (SomeException, catch)
 import Control.Lens ((^.))
 import qualified Develop.Environment as Environment
 import Develop.Types
@@ -19,11 +19,11 @@ import Develop.Types
     defaultFlags,
     scPort,
     scRoot,
-    scVerbose
+    scVerbose,
   )
 import Test.Tasty (TestTree)
 import qualified Test.Tasty as Test
-import Test.Tasty.HUnit ((@?=), assertBool)
+import Test.Tasty.HUnit (assertBool, (@?=))
 import qualified Test.Tasty.HUnit as Test
 
 -- | Main test suite for Environment module.
@@ -135,20 +135,23 @@ errorHandlingTests =
     "Error Handling Tests"
     [ Test.testCase "invalid port 0 causes error" $ do
         let config = ServerConfig 0 False Nothing
-        result <- catch
-          (Environment.validateConfiguration config >> pure True)
-          (\(_ :: SomeException) -> pure False)
+        result <-
+          catch
+            (Environment.validateConfiguration config >> pure True)
+            (\(_ :: SomeException) -> pure False)
         assertBool "should handle invalid port 0" (not result),
       Test.testCase "invalid port -1 causes error" $ do
         let config = ServerConfig (-1) False Nothing
-        result <- catch
-          (Environment.validateConfiguration config >> pure True)
-          (\(_ :: SomeException) -> pure False)
+        result <-
+          catch
+            (Environment.validateConfiguration config >> pure True)
+            (\(_ :: SomeException) -> pure False)
         assertBool "should handle invalid port -1" (not result),
       Test.testCase "invalid port 65536 causes error" $ do
         let config = ServerConfig 65536 False Nothing
-        result <- catch
-          (Environment.validateConfiguration config >> pure True)
-          (\(_ :: SomeException) -> pure False)
+        result <-
+          catch
+            (Environment.validateConfiguration config >> pure True)
+            (\(_ :: SomeException) -> pure False)
         assertBool "should handle invalid port 65536" (not result)
     ]

@@ -15,7 +15,7 @@ import qualified Data.ByteString.Builder as Builder
 import qualified Data.Name as Name
 import qualified Develop.Compilation as Compilation
 import Test.Tasty (TestTree, testGroup)
-import Test.Tasty.HUnit ((@?=), assertBool, testCase, assertFailure)
+import Test.Tasty.HUnit (assertBool, assertFailure, testCase, (@?=))
 
 -- | Main test suite for Compilation module.
 tests :: TestTree

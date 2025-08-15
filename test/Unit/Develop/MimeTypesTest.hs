@@ -13,7 +13,7 @@ module Unit.Develop.MimeTypesTest (tests) where
 import qualified Data.ByteString.Char8 as BS8
 import qualified Develop.MimeTypes as MimeTypes
 import Test.Tasty (TestTree, testGroup)
-import Test.Tasty.HUnit ((@?=), assertBool, testCase)
+import Test.Tasty.HUnit (assertBool, testCase, (@?=))
 
 -- | Main test suite for MimeTypes module.
 tests :: TestTree
