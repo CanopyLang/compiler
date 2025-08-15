@@ -44,22 +44,23 @@ module Terminal.Error.Formatting
     toYellowText,
     toGreenText,
     toCyanText,
-    
+
     -- * Token Formatting
     formatTokenName,
     formatFlagUsage,
     formatArgumentUsage,
-    
+
     -- * List Formatting
     formatExamplesList,
     formatSuggestionsList,
     formatCommandList,
-    
+
     -- * Text Utilities
     reflowText,
     createStackedDocs,
     indentDoc,
-  ) where
+  )
+where
 
 import qualified Data.List as List
 import qualified Text.PrettyPrint.ANSI.Leijen as Doc
@@ -135,7 +136,7 @@ toCyanText text = Doc.cyan (Doc.text text)
 --
 -- @since 0.19.1
 formatTokenName :: String -> String
-formatTokenName typeName = 
+formatTokenName typeName =
   "<" ++ transformTokenText typeName ++ ">"
 
 -- | Transform text for use in tokens.
@@ -216,9 +217,9 @@ formatCommandList exeName commands =
   let maxWidth = case commands of
         [] -> 0
         _ -> maximum (map length commands)
-      formatCommand cmd = 
+      formatCommand cmd =
         Doc.text (exeName ++ " " ++ cmd ++ replicate (maxWidth - length cmd) ' ' ++ " --help")
-  in Doc.vcat (map formatCommand commands)
+   in Doc.vcat (map formatCommand commands)
 
 -- | Reflow text for proper line wrapping.
 --

@@ -40,19 +40,20 @@ module Terminal.Error.Display
   ( -- * Main Display Functions
     convertErrorToDocs,
     exitWithDocs,
-    
+
     -- * Error Type Converters
     argErrorToDocs,
     flagErrorToDocs,
     processArgErrors,
-    
+
     -- * Display Utilities
     createErrorContext,
     formatErrorMessage,
-    
+
     -- * Terminal Output
     exitWithCode,
-  ) where
+  )
+where
 
 import Control.Lens ((^.))
 import GHC.IO.Handle (hIsTerminalDevice)
@@ -61,9 +62,9 @@ import System.IO (hPutStrLn, stderr)
 import Terminal.Error.Formatting
   ( formatExamplesList,
     formatTokenName,
+    toGreenText,
     toRedText,
     toYellowText,
-    toGreenText
   )
 import Terminal.Error.Types
   ( ArgError (..),
@@ -72,7 +73,7 @@ import Terminal.Error.Types
     FlagError (..),
     expectationExamples,
     expectationType,
-    getTopArgError
+    getTopArgError,
   )
 import Terminal.Internal (CompleteArgs)
 import qualified Text.PrettyPrint.ANSI.Leijen as Doc
@@ -152,9 +153,23 @@ createMissingArgMessage expectation = do
   let typeToken = expectation ^. expectationType
   return
     [ Doc.fillSep
-        [ "The", "arguments", "you", "have", "are", "fine,", "but", "in", "addition,",
-          "I", "was", "expecting", "a", toYellowText (formatTokenName typeToken), 
-          "value.", "For", "example:"
+        [ "The",
+          "arguments",
+          "you",
+          "have",
+          "are",
+          "fine,",
+          "but",
+          "in",
+          "addition,",
+          "I",
+          "was",
+          "expecting",
+          "a",
+          toYellowText (formatTokenName typeToken),
+          "value.",
+          "For",
+          "example:"
         ],
       formatExamplesList examples
     ]
@@ -171,8 +186,17 @@ createBadArgMessage badValue expectation = do
     [ "I am having trouble with this argument:",
       Doc.indent 4 $ toRedText badValue,
       Doc.fillSep
-        ( ["It", "is", "supposed", "to", "be", "a", toYellowText (formatTokenName typeToken), 
-           "value,", "like"] ++ [exampleLabel]
+        ( [ "It",
+            "is",
+            "supposed",
+            "to",
+            "be",
+            "a",
+            toYellowText (formatTokenName typeToken),
+            "value,",
+            "like"
+          ]
+            ++ [exampleLabel]
         ),
       formatExamplesList examples
     ]
@@ -185,11 +209,11 @@ createExtraArgsMessage extras =
   let (theseLabel, themLabel) = case extras of
         [_] -> ("this argument", "it")
         _ -> ("these arguments", "them")
-  in return
-       [ Doc.fillSep ["I", "was", "not", "expecting", theseLabel <> ":"],
-         Doc.indent 4 . Doc.red . Doc.vcat $ map Doc.text extras,
-         Doc.fillSep ["Try", "removing", themLabel <> "?"]
-       ]
+   in return
+        [ Doc.fillSep ["I", "was", "not", "expecting", theseLabel <> ":"],
+          Doc.indent 4 . Doc.red . Doc.vcat $ map Doc.text extras,
+          Doc.fillSep ["Try", "removing", themLabel <> "?"]
+        ]
 
 -- | Convert flag error to formatted documentation.
 --
@@ -248,8 +272,16 @@ createFlagBadValueMessage flagName badValue expectation = do
   createFlagError
     "This flag was given a bad value:"
     ("--" ++ flagName ++ "=" ++ badValue)
-    [ Doc.fillSep ["I", "need", "a", "valid", toYellowText (formatTokenName typeToken), 
-                   "value.", "For", "example:"],
+    [ Doc.fillSep
+        [ "I",
+          "need",
+          "a",
+          "valid",
+          toYellowText (formatTokenName typeToken),
+          "value.",
+          "For",
+          "example:"
+        ],
       Doc.indent 4 . Doc.vcat . map toGreenText $ exampleFlags
     ]
 
@@ -257,7 +289,7 @@ createFlagBadValueMessage flagName badValue expectation = do
 --
 -- @since 0.19.1
 createUnknownFlagMessage :: String -> flags -> IO [Doc.Doc]
-createUnknownFlagMessage unknown _flags = 
+createUnknownFlagMessage unknown _flags =
   createFlagError
     "I do not recognize this flag:"
     unknown
@@ -271,7 +303,8 @@ createFlagError summary original explanation =
   return $
     [ Doc.fillSep (map Doc.text (words summary)),
       Doc.indent 4 (toRedText original)
-    ] ++ explanation
+    ]
+      ++ explanation
 
 -- | Create example flag usage from type and examples.
 --

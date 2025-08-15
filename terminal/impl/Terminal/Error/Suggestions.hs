@@ -44,25 +44,26 @@ module Terminal.Error.Suggestions
     generateFlagSuggestions,
     getNearbyFlags,
     extractFlagName,
-    
+
     -- * Command Suggestions
     generateCommandSuggestions,
     rankCommandSuggestions,
-    
+
     -- * Suggestion Formatting
     formatSuggestionText,
     createSuggestionMessage,
-    
+
     -- * Utilities
     calculateEditDistance,
     filterByDistance,
     limitSuggestions,
-  ) where
+  )
+where
 
 import qualified Data.List as List
 import qualified Reporting.Suggest as Suggest
 import Terminal.Error.Formatting
-  ( toGreenText
+  ( toGreenText,
   )
 import Terminal.Internal (Flag (..), Flags (..), Parser (..))
 import qualified Text.PrettyPrint.ANSI.Leijen as Doc
@@ -86,7 +87,7 @@ generateFlagSuggestions :: String -> Flags a -> [Doc.Doc]
 generateFlagSuggestions unknown flags =
   let flagName = extractFlagName unknown
       nearbyFlags = getNearbyFlags flagName flags []
-  in nearbyFlags
+   in nearbyFlags
 
 -- | Extract flag name from potentially malformed flag input.
 --
@@ -106,7 +107,7 @@ extractFlagName :: String -> String
 extractFlagName unknown =
   let withoutDashes = dropWhile (== '-') unknown
       withoutValue = takeWhile (/= '=') withoutDashes
-  in withoutValue
+   in withoutValue
 
 -- | Get nearby flags using edit distance ranking.
 --
@@ -119,7 +120,7 @@ getNearbyFlags unknown flags unsortedFlags =
   case flags of
     FMore more flag ->
       let flagDistance = calculateFlagDistance unknown flag
-      in getNearbyFlags unknown more (flagDistance : unsortedFlags)
+       in getNearbyFlags unknown more (flagDistance : unsortedFlags)
     FDone _ ->
       formatFlagSuggestions (filterByDistance unsortedFlags)
 
@@ -147,9 +148,9 @@ filterByDistance :: [(Int, String)] -> [(Int, String)]
 filterByDistance unsortedFlags =
   let sortedFlags = List.sortOn fst unsortedFlags
       goodMatches = filter (\(distance, _) -> distance < 3) sortedFlags
-  in case goodMatches of
-       [] -> sortedFlags  -- Return all if no good matches
-       _ -> goodMatches   -- Return only good matches
+   in case goodMatches of
+        [] -> sortedFlags -- Return all if no good matches
+        _ -> goodMatches -- Return only good matches
 
 -- | Format flag suggestions with proper styling.
 --
@@ -158,7 +159,7 @@ formatFlagSuggestions :: [(Int, String)] -> [Doc.Doc]
 formatFlagSuggestions rankedFlags =
   let limitedFlags = limitSuggestions 5 rankedFlags
       flagNames = map snd limitedFlags
-  in map toGreenText flagNames
+   in map toGreenText flagNames
 
 -- | Generate command suggestions for unknown commands.
 --
@@ -176,7 +177,7 @@ generateCommandSuggestions unknown commands =
   let rankedCommands = rankCommandSuggestions unknown commands
       filteredCommands = filterByDistance rankedCommands
       limitedCommands = limitSuggestions 3 filteredCommands
-  in map snd limitedCommands
+   in map snd limitedCommands
 
 -- | Rank commands by edit distance from unknown command.
 --
@@ -184,7 +185,7 @@ generateCommandSuggestions unknown commands =
 rankCommandSuggestions :: String -> [String] -> [(Int, String)]
 rankCommandSuggestions unknown commands =
   let distances = map (\cmd -> (calculateEditDistance unknown cmd, cmd)) commands
-  in List.sortOn fst distances
+   in List.sortOn fst distances
 
 -- | Format suggestion text based on number of suggestions.
 --
@@ -206,11 +207,11 @@ formatSuggestionText suggestions =
     [] -> []
     [single] -> ["Try", single, "instead?"]
     [first, second] -> ["Try", first, "or", second, "instead?"]
-    multiple -> 
+    multiple ->
       let allButLast = init multiple
           lastOne = last multiple
           withCommas = map (<> ",") allButLast
-      in ["Try"] ++ withCommas ++ ["or", lastOne, "instead?"]
+       in ["Try"] ++ withCommas ++ ["or", lastOne, "instead?"]
 
 -- | Create complete suggestion message for error display.
 --
@@ -221,7 +222,7 @@ formatSuggestionText suggestions =
 createSuggestionMessage :: String -> [String] -> [Doc.Doc]
 createSuggestionMessage unknown candidates =
   let suggestions = generateCommandSuggestions unknown candidates
-  in formatSuggestionText suggestions
+   in formatSuggestionText suggestions
 
 -- | Calculate edit distance between two strings.
 --

@@ -27,7 +27,7 @@
 -- -- Argument error with expectation
 -- let expectation = Expectation "file" (pure ["input.txt", "data.csv"])
 -- let argError = ArgMissing expectation
--- 
+--
 -- -- Flag error with suggestion context
 -- let flagError = FlagUnknown "--unknwon" someFlags
 -- let topError = BadFlag flagError
@@ -40,15 +40,16 @@ module Terminal.Error.Types
     ArgError (..),
     FlagError (..),
     Expectation (..),
-    
+
     -- * Lenses for Expectation
     expectationType,
     expectationExamples,
-    
+
     -- * Error Ranking and Comparison
     argErrorRank,
     getTopArgError,
-  ) where
+  )
+where
 
 import Control.Lens (makeLenses)
 import Terminal.Internal (CompleteArgs, Flags)
@@ -116,10 +117,10 @@ instance Show FlagError where
 --
 -- @since 0.19.1
 data Expectation = Expectation
-  { _expectationType :: !String
-    -- ^ Human-readable type description (e.g., "file", "number")
-  , _expectationExamples :: !(IO [String])
-    -- ^ Example values for this type (e.g., ["input.txt", "data.csv"])
+  { -- | Human-readable type description (e.g., "file", "number")
+    _expectationType :: !String,
+    -- | Example values for this type (e.g., ["input.txt", "data.csv"])
+    _expectationExamples :: !(IO [String])
   }
 
 -- Manual instances for Expectation since IO isn't Eq/Show
@@ -141,7 +142,7 @@ makeLenses ''Expectation
 --
 -- >>> argErrorRank (ArgBad "invalid" expectation)
 -- 0
--- >>> argErrorRank (ArgMissing expectation)  
+-- >>> argErrorRank (ArgMissing expectation)
 -- 1
 -- >>> argErrorRank (ArgExtras ["extra"])
 -- 2
@@ -150,9 +151,9 @@ makeLenses ''Expectation
 argErrorRank :: ArgError -> Int
 argErrorRank err =
   case err of
-    ArgBad _ _ -> 0    -- Highest priority: bad format
-    ArgMissing _ -> 1  -- Medium priority: missing required
-    ArgExtras _ -> 2   -- Lowest priority: unexpected extras
+    ArgBad _ _ -> 0 -- Highest priority: bad format
+    ArgMissing _ -> 1 -- Medium priority: missing required
+    ArgExtras _ -> 2 -- Lowest priority: unexpected extras
 
 -- | Extract the highest priority argument error from a list.
 --
@@ -175,16 +176,16 @@ getTopArgError :: [(CompleteArgs a, ArgError)] -> ArgError
 getTopArgError argErrors =
   case argErrors of
     [] -> error "getTopArgError: empty error list"
-    _ -> 
+    _ ->
       let sortedErrors = map snd argErrors
           rankedErrors = map (\e -> (argErrorRank e, e)) sortedErrors
           sortedByRank = sortByRank rankedErrors
-      in case sortedByRank of
-           (_, topErr) : _ -> topErr
-           [] -> error "impossible: empty list after non-empty input"
+       in case sortedByRank of
+            (_, topErr) : _ -> topErr
+            [] -> error "impossible: empty list after non-empty input"
   where
     sortByRank pairs = insertionSort pairs
     insertionSort [] = []
-    insertionSort (x:xs) = insert x (insertionSort xs)
+    insertionSort (x : xs) = insert x (insertionSort xs)
     insert x [] = [x]
-    insert x (y:ys) = if fst x <= fst y then x:y:ys else y:insert x ys
+    insert x (y : ys) = if fst x <= fst y then x : y : ys else y : insert x ys

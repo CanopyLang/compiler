@@ -41,29 +41,30 @@ module Terminal.Error.Help
   ( -- * Main Help Functions
     generateCommandHelp,
     generateAppOverview,
-    
+
     -- * Command Help Components
     createUsagePattern,
     createFlagDocumentation,
     createArgumentDocumentation,
-    
+
     -- * Overview Functions
     createCommandSummary,
     createCompleteCommandList,
-    
+
     -- * Utilities
     getExecutableName,
     formatCommandName,
-  ) where
+  )
+where
 
 import qualified Data.Maybe as Maybe
 import qualified System.Environment as Env
 import qualified System.FilePath as FilePath
 import Terminal.Error.Formatting
-  ( formatCommandList,
+  ( createStackedDocs,
+    formatCommandList,
     reflowText,
-    createStackedDocs,
-    toCyanText
+    toCyanText,
   )
 import Terminal.Internal
   ( Args (..),
@@ -73,7 +74,7 @@ import Terminal.Internal
     Flags (..),
     Parser (..),
     RequiredArgs (..),
-    Summary (..)
+    Summary (..),
   )
 import qualified Text.PrettyPrint.ANSI.Leijen as Doc
 
@@ -104,7 +105,8 @@ createHelpStructure details example usageDocs flagDocs =
   [ reflowText details,
     createStackedDocs usageDocs,
     example
-  ] ++ flagDocs
+  ]
+    ++ flagDocs
 
 -- | Generate application overview with command list.
 --
@@ -172,14 +174,14 @@ createRequiredPattern commandName args extraTokens =
 -- @since 0.19.1
 formatUsageLine :: String -> [String] -> Doc.Doc
 formatUsageLine commandName tokens =
-  Doc.hang 4 . Doc.hsep $ 
+  Doc.hang 4 . Doc.hsep $
     map Doc.text (commandName : map formatArgumentToken tokens)
 
 -- | Format argument token for usage display.
 --
 -- @since 0.19.1
 formatArgumentToken :: String -> String
-formatArgumentToken token = 
+formatArgumentToken token =
   "<" ++ map replaceSpace token ++ ">"
   where
     replaceSpace ' ' = '-'
@@ -206,7 +208,7 @@ collectFlagDocs flags docs =
     FDone _ -> docs
     FMore more flag ->
       let flagDoc = createFlagDoc flag
-      in collectFlagDocs more (flagDoc : docs)
+       in collectFlagDocs more (flagDoc : docs)
 
 -- | Create documentation for individual flag.
 --
@@ -236,10 +238,11 @@ createCommandSummary exeName (Command name summary _ _ (Args args) _ _) =
       let usagePattern = case args of
             arg : _ -> createUsagePattern (exeName ++ " " ++ name) arg
             [] -> Doc.text (exeName ++ " " ++ name)
-      in Just $ Doc.vcat
-           [ Doc.cyan usagePattern,
-             Doc.indent 4 (reflowText summaryText)
-           ]
+       in Just $
+            Doc.vcat
+              [ Doc.cyan usagePattern,
+                Doc.indent 4 (reflowText summaryText)
+              ]
 
 -- | Create list of common commands.
 --
@@ -254,7 +257,7 @@ createCommonCommandList exeName commands =
 createCompleteCommandList :: String -> [Command] -> Doc.Doc
 createCompleteCommandList exeName commands =
   let commandNames = map extractCommandName commands
-  in formatCommandList exeName commandNames
+   in formatCommandList exeName commandNames
 
 -- | Extract command name from Command structure.
 --
