@@ -68,12 +68,16 @@ testVersionHandling :: TestTree
 testVersionHandling =
   testGroup
     "Version handling"
-    [ testCase "version toChars conversion works correctly" $ (do
-        Version.toChars Version.one @?= "1.0.0")
-    , testCase "version bumping functions work correctly" $ (do
-        "1.0.1" @?= Version.toChars (Version.bumpPatch Version.one)
-        Version.toChars (Version.bumpMinor Version.one) @?= "1.1.0"
-        Version.toChars (Version.bumpMajor Version.one) @?= "2.0.0")
+    [ testCase "version toChars conversion works correctly" $
+        ( do
+            Version.toChars Version.one @?= "1.0.0"
+        ),
+      testCase "version bumping functions work correctly" $
+        ( do
+            "1.0.1" @?= Version.toChars (Version.bumpPatch Version.one)
+            Version.toChars (Version.bumpMinor Version.one) @?= "1.1.0"
+            Version.toChars (Version.bumpMajor Version.one) @?= "2.0.0"
+        )
     ]
 
 -- | Test Name functionality used by Make system.
@@ -106,5 +110,3 @@ testNameHandling =
           )
           inputs
     ]
-
-

@@ -10,7 +10,7 @@
 -- @since 0.19.1
 module Unit.DevelopTest (tests) where
 
-import Control.Lens ((^.), (&), (.~))
+import Control.Lens ((&), (.~), (^.))
 import Data.ByteString.Builder (Builder)
 import Develop (Flags (..))
 import qualified Develop.Environment as Environment
@@ -23,12 +23,12 @@ import Develop.Types
     flagsPort,
     scPort,
     scRoot,
-    scVerbose
+    scVerbose,
   )
 import qualified Reporting.Exit as Exit
 import System.IO.Unsafe (unsafePerformIO)
 import Test.Tasty (TestTree, testGroup)
-import Test.Tasty.HUnit ((@?=), assertBool, assertFailure, testCase)
+import Test.Tasty.HUnit (assertBool, assertFailure, testCase, (@?=))
 
 -- | Main test suite for Develop module system.
 tests :: TestTree
@@ -91,9 +91,10 @@ serverConfigTests =
         config ^. scRoot @?= Just "/project/root",
       testCase "server config lens updates" $ do
         let config = defaultServerConfig
-            updated = config & scPort .~ 9000
-                              & scVerbose .~ True
-                              & scRoot .~ Just "/custom/root"
+            updated =
+              config & scPort .~ 9000
+                & scVerbose .~ True
+                & scRoot .~ Just "/custom/root"
         updated ^. scPort @?= 9000
         updated ^. scVerbose @?= True
         updated ^. scRoot @?= Just "/custom/root",
@@ -110,7 +111,7 @@ compileResultTests =
   testGroup
     "CompileResult Tests"
     [ testCase "compile success construction" $ do
-        let builder = mempty :: Builder  -- Simple builder for testing
+        let builder = mempty :: Builder -- Simple builder for testing
             result = CompileSuccess builder
         case result of
           CompileSuccess _ -> pure ()
@@ -237,9 +238,11 @@ configurationValidationTests =
     "Configuration Validation Tests"
     [ testCase "flags port validation accepts valid ports" $ do
         let validPorts = [80, 8000, 8080, 3000, 65535]
-        mapM_ (\port ->
-          assertBool ("Port " ++ show port ++ " should be valid") (port > 0 && port <= 65535)
-          ) validPorts,
+        mapM_
+          ( \port ->
+              assertBool ("Port " ++ show port ++ " should be valid") (port > 0 && port <= 65535)
+          )
+          validPorts,
       testCase "server config verbose mode affects behavior" $ do
         let quietConfig = defaultServerConfig & scVerbose .~ False
             verboseConfig = defaultServerConfig & scVerbose .~ True
@@ -251,16 +254,16 @@ configurationValidationTests =
             canopyMode = ServeCanopy "/src/Main.can"
             assetMode = ServeAsset "body { color: red; }" "text/css"
         -- Test that each mode is correctly constructed
-        case rawMode of 
+        case rawMode of
           ServeRaw path -> path @?= "/static/image.png"
           _ -> assertFailure "Wrong constructor for rawMode"
-        case codeMode of 
+        case codeMode of
           ServeCode path -> path @?= "/src/Main.hs"
-          _ -> assertFailure "Wrong constructor for codeMode" 
-        case canopyMode of 
+          _ -> assertFailure "Wrong constructor for codeMode"
+        case canopyMode of
           ServeCanopy path -> path @?= "/src/Main.can"
           _ -> assertFailure "Wrong constructor for canopyMode"
-        case assetMode of 
+        case assetMode of
           ServeAsset content mime -> do
             content @?= "body { color: red; }"
             mime @?= "text/css"

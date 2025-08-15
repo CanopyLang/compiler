@@ -8,44 +8,45 @@ import qualified Golden.ParseExprGolden as ParseExprGolden
 import qualified Golden.ParseModuleGolden as ParseModuleGolden
 import qualified Golden.ParseTypeGolden as ParseTypeGolden
 import qualified Integration.CanExtensionTest as CanExtensionIT
+import qualified Integration.CompileIntegrationTest as CompileIT
+import qualified Integration.DevelopTest as DevelopIT
 import qualified Integration.InitTest as InitIT
 import qualified Integration.InstallTest as InstallIT
 import qualified Integration.JsGenTest as JsGenIT
 import qualified Integration.MakeTest as MakeIT
-import qualified Integration.DevelopTest as DevelopIT
-import qualified Integration.TerminalIntegrationTest as TerminalIT
 import qualified Integration.Terminal.ChompIntegrationTest as ChompIT
+import qualified Integration.TerminalIntegrationTest as TerminalIT
 import qualified Integration.WatchIntegrationTest as WatchIT
-import qualified Integration.CompileIntegrationTest as CompileIT
 import qualified Property.AST.CanonicalProps as CanonicalProps
 import qualified Property.AST.OptimizedBinaryProps as OptimizedBinaryProps
 import qualified Property.AST.OptimizedProps as OptimizedProps
 import qualified Property.Canopy.VersionProps as VersionProps
+import qualified Property.CompileProps as CompileProps
 import qualified Property.Data.NameProps as NameProps
+import qualified Property.DevelopProps as DevelopProps
 import qualified Property.InitProps as InitProps
 import qualified Property.InstallProps as InstallProps
 import qualified Property.MakeProps as MakeProps
-import qualified Property.DevelopProps as DevelopProps
-import qualified Property.TerminalProps as TerminalProps
 import qualified Property.Terminal.ChompProps as ChompProps
+import qualified Property.TerminalProps as TerminalProps
 import qualified Property.WatchProps as WatchProps
-import qualified Property.CompileProps as CompileProps
 import Test.Tasty
 import Test.Tasty.Runners
 import qualified Unit.AST.CanonicalTypeTest as CanonicalTypeTest
 import qualified Unit.AST.OptimizedTest as OptimizedTest
 import qualified Unit.AST.SourceTest as SourceAstTest
-import qualified Unit.Canopy.VersionTest as VersionTest
 import qualified Unit.CLI.CommandsTest as CLICommandsTest
 import qualified Unit.CLI.DocumentationTest as CLIDocumentationTest
 import qualified Unit.CLI.ParsersTest as CLIParsersTest
+import qualified Unit.Canopy.VersionTest as VersionTest
+import qualified Unit.CompileTest as CompileTest
 import qualified Unit.Data.NameTest as NameTest
-import qualified Unit.DevelopTest as DevelopTest
-import qualified Unit.DevelopMainTest as DevelopMainTest
 import qualified Unit.Develop.CompilationTest as DevelopCompilationTest
 import qualified Unit.Develop.EnvironmentTest as DevelopEnvironmentTest
 import qualified Unit.Develop.MimeTypesTest as DevelopMimeTypesTest
 import qualified Unit.Develop.TypesTest as DevelopTypesTest
+import qualified Unit.DevelopMainTest as DevelopMainTest
+import qualified Unit.DevelopTest as DevelopTest
 import qualified Unit.Diff.EnvironmentTest as DiffEnvironmentTest
 import qualified Unit.Diff.OutputTest as DiffOutputTest
 import qualified Unit.Diff.TypesTest as DiffTypesTest
@@ -64,14 +65,13 @@ import qualified Unit.Parse.ExpressionTest as ParseExpressionTest
 import qualified Unit.Parse.ModuleTest as ParseModuleTest
 import qualified Unit.Parse.PatternTest as ParsePatternTest
 import qualified Unit.Parse.TypeTest as ParseTypeTest
-import qualified Unit.TerminalTest as TerminalTest
 import qualified Unit.Terminal.ChompTest as ChompTest
-import qualified Unit.Terminal.ErrorTest as TerminalErrorTest
-import qualified Unit.Terminal.Error.TypesTest as TerminalErrorTypesTest
 import qualified Unit.Terminal.Error.FormattingTest as TerminalErrorFormattingTest
 import qualified Unit.Terminal.Error.SuggestionsTest as TerminalErrorSuggestionsTest
+import qualified Unit.Terminal.Error.TypesTest as TerminalErrorTypesTest
+import qualified Unit.Terminal.ErrorTest as TerminalErrorTest
+import qualified Unit.TerminalTest as TerminalTest
 import qualified Unit.WatchTest as WatchTest
-import qualified Unit.CompileTest as CompileTest
 
 main :: IO ()
 main = defaultMain tests
