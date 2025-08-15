@@ -20,7 +20,7 @@
 -- The file watching system operates through several components:
 --
 -- 1. WebSocket connection management and lifecycle
--- 2. File system monitoring with multiple extension support  
+-- 2. File system monitoring with multiple extension support
 -- 3. Connection keep-alive with periodic pings
 -- 4. Graceful error handling and connection cleanup
 --
@@ -36,7 +36,7 @@
 --
 -- @
 -- -- In server route handler:
--- app <- WS.acceptRequest pending  
+-- app <- WS.acceptRequest pending
 -- Socket.handleWebSocket "." app
 -- @
 --
@@ -44,15 +44,16 @@
 module Develop.Socket
   ( -- * WebSocket Handling
     handleWebSocket,
-    
+
     -- * File Monitoring
     startFileWatcher,
     watchCanopyFiles,
-    
+
     -- * Connection Management
     maintainConnection,
     createWatchManager,
-  ) where
+  )
+where
 
 import Control.Concurrent (forkIO, threadDelay)
 import Control.Exception (SomeException, catch)
@@ -74,7 +75,7 @@ import qualified System.FSNotify as Notify
 --
 -- Handles connection errors gracefully:
 --   * Network disconnections
---   * File system monitoring failures  
+--   * File system monitoring failures
 --   * Invalid directory paths
 --   * Resource cleanup on shutdown
 --
@@ -104,7 +105,7 @@ createWatchManager = Notify.startManager
 startFileWatcher :: Notify.WatchManager -> FilePath -> IO [IO ()]
 startFileWatcher manager watchDir = do
   canWatcher <- watchCanopyFiles manager watchDir ".can"
-  canopyWatcher <- watchCanopyFiles manager watchDir ".canopy" 
+  canopyWatcher <- watchCanopyFiles manager watchDir ".canopy"
   elmWatcher <- watchCanopyFiles manager watchDir ".elm"
   pure [canWatcher, canopyWatcher, elmWatcher]
 
@@ -118,11 +119,11 @@ watchCanopyFiles :: Notify.WatchManager -> FilePath -> String -> IO (IO ())
 watchCanopyFiles manager watchDir extension =
   Notify.watchTree manager watchDir (matchesExtension extension) handleFileEvent
   where
-    matchesExtension ext event = 
+    matchesExtension ext event =
       let eventPath = Notify.eventPath event
-      in takeExtension eventPath == ext
-      
-    handleFileEvent _event = 
+       in takeExtension eventPath == ext
+
+    handleFileEvent _event =
       putStrLn ("File changed: " ++ show _event)
 
 -- | Extract file extension from path.
@@ -130,7 +131,7 @@ takeExtension :: FilePath -> String
 takeExtension path =
   let segments = reverse path
       extension = takeWhile (/= '.') segments
-  in if null extension then "" else '.' : reverse extension
+   in if null extension then "" else '.' : reverse extension
 
 -- | Maintain WebSocket connection with periodic pings.
 --
@@ -152,12 +153,12 @@ runMessageReceiver connection = do
     messageLoop conn = do
       _message <- WS.receiveDataMessage conn
       messageLoop conn
-      
+
     handleConnectionError :: SomeException -> IO ()
     handleConnectionError _exception = pure () -- Graceful shutdown
 
 -- | Run connection pinger with periodic keep-alive messages.
-runConnectionPinger :: WS.Connection -> Integer -> IO ()  
+runConnectionPinger :: WS.Connection -> Integer -> IO ()
 runConnectionPinger connection pingNumber = do
   result <- sendPingMessage connection pingNumber
   case result of

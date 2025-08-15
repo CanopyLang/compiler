@@ -35,26 +35,28 @@
 -- @since 0.19.1
 module Develop.Types
   ( -- * Configuration Types
-    Flags (..), 
+    Flags (..),
     ServerConfig (..),
-    
+
     -- * Result Types
     CompileResult (..),
     FileServeMode (..),
-    
+
     -- * Lenses
+
     -- ** Flags Lenses
     flagsPort,
-    
-    -- ** ServerConfig Lenses  
+
+    -- ** ServerConfig Lenses
     scPort,
     scVerbose,
     scRoot,
-    
+
     -- * Default Values
     defaultFlags,
     defaultServerConfig,
-  ) where
+  )
+where
 
 import Control.Lens (makeLenses)
 import Data.ByteString (ByteString)
@@ -68,9 +70,10 @@ import qualified Reporting.Exit as Exit
 --
 -- @since 0.19.1
 data Flags = Flags
-  { _flagsPort :: !(Maybe Int)
-    -- ^ Optional port number for the development server
-  } deriving (Eq, Show)
+  { -- | Optional port number for the development server
+    _flagsPort :: !(Maybe Int)
+  }
+  deriving (Eq, Show)
 
 -- | Internal server configuration with resolved settings.
 --
@@ -79,13 +82,14 @@ data Flags = Flags
 --
 -- @since 0.19.1
 data ServerConfig = ServerConfig
-  { _scPort :: !Int,
-    -- ^ Resolved port number for the server
+  { -- | Resolved port number for the server
+    _scPort :: !Int,
+    -- | Enable verbose logging output
     _scVerbose :: !Bool,
-    -- ^ Enable verbose logging output
+    -- | Project root directory path
     _scRoot :: !(Maybe FilePath)
-    -- ^ Project root directory path
-  } deriving (Eq, Show)
+  }
+  deriving (Eq, Show)
 
 -- | Result of Canopy file compilation.
 --
@@ -94,10 +98,10 @@ data ServerConfig = ServerConfig
 --
 -- @since 0.19.1
 data CompileResult
-  = CompileSuccess !Builder
-    -- ^ Successful compilation with generated content
-  | CompileError !Exit.Reactor
-    -- ^ Compilation failed with error details
+  = -- | Successful compilation with generated content
+    CompileSuccess !Builder
+  | -- | Compilation failed with error details
+    CompileError !Exit.Reactor
 
 -- | Different modes for serving files in development.
 --
@@ -106,14 +110,14 @@ data CompileResult
 --
 -- @since 0.19.1
 data FileServeMode
-  = ServeRaw !FilePath
-    -- ^ Serve file as-is without processing
-  | ServeCode !FilePath 
-    -- ^ Serve with syntax highlighting
-  | ServeCanopy !FilePath
-    -- ^ Compile and serve Canopy source file
-  | ServeAsset !ByteString !ByteString
-    -- ^ Serve static asset with content and MIME type
+  = -- | Serve file as-is without processing
+    ServeRaw !FilePath
+  | -- | Serve with syntax highlighting
+    ServeCode !FilePath
+  | -- | Compile and serve Canopy source file
+    ServeCanopy !FilePath
+  | -- | Serve static asset with content and MIME type
+    ServeAsset !ByteString !ByteString
   deriving (Eq, Show)
 
 -- Generate lenses for all types
@@ -128,9 +132,10 @@ makeLenses ''ServerConfig
 --
 -- @since 0.19.1
 defaultFlags :: Flags
-defaultFlags = Flags
-  { _flagsPort = Nothing
-  }
+defaultFlags =
+  Flags
+    { _flagsPort = Nothing
+    }
 
 -- | Default server configuration.
 --
@@ -139,8 +144,9 @@ defaultFlags = Flags
 --
 -- @since 0.19.1
 defaultServerConfig :: ServerConfig
-defaultServerConfig = ServerConfig
-  { _scPort = 8000,
-    _scVerbose = False,
-    _scRoot = Nothing
-  }
+defaultServerConfig =
+  ServerConfig
+    { _scPort = 8000,
+      _scVerbose = False,
+      _scRoot = Nothing
+    }

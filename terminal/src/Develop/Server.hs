@@ -36,34 +36,35 @@
 module Develop.Server
   ( -- * Server Lifecycle
     startServer,
-    
+
     -- * Configuration
     createServerConfig,
     createDirectoryConfig,
-    
+
     -- * Routing
     setupRouting,
-    
+
     -- * Request Handlers
     handleFiles,
     handleAssets,
     handleNotFound,
-  ) where
+  )
+where
 
 import Control.Applicative ((<|>))
 import Control.Lens ((^.))
 import Control.Monad (guard)
 import Control.Monad.Trans (MonadIO (liftIO))
-import Data.ByteString.Builder (Builder)
-import qualified Data.Maybe as Maybe
 import qualified Data.ByteString as BS
+import Data.ByteString.Builder (Builder)
 import qualified Data.ByteString.Builder as B
 import qualified Data.ByteString.Char8 as BS8
+import qualified Data.Maybe as Maybe
 import qualified Develop.Compilation as Compilation
 import qualified Develop.Generate.Help as Help
 import qualified Develop.Generate.Index as Index
-import Develop.Types (FileServeMode (..), ServerConfig, scPort, scVerbose)
 import qualified Develop.StaticFiles as StaticFiles
+import Develop.Types (FileServeMode (..), ServerConfig, scPort, scVerbose)
 import Snap.Core hiding (path)
 import qualified Snap.Core as Snap
 import qualified Snap.Http.Server as Server
@@ -98,7 +99,7 @@ createServerConfig :: ServerConfig -> Server.Config Snap.Snap ()
 createServerConfig config =
   let port = config ^. scPort
       verbose = config ^. scVerbose
-  in configureLogging verbose . configurePort port $ Server.defaultConfig
+   in configureLogging verbose . configurePort port $ Server.defaultConfig
 
 -- | Configure server port setting.
 configurePort :: Int -> Server.Config Snap.Snap a -> Server.Config Snap.Snap a
@@ -109,9 +110,10 @@ configureLogging :: Bool -> Server.Config Snap.Snap a -> Server.Config Snap.Snap
 configureLogging verbose =
   if verbose
     then id -- Keep default logging
-    else Server.setVerbose False
-           . Server.setAccessLog Server.ConfigNoLog  
-           . Server.setErrorLog Server.ConfigNoLog
+    else
+      Server.setVerbose False
+        . Server.setAccessLog Server.ConfigNoLog
+        . Server.setErrorLog Server.ConfigNoLog
 
 -- | Setup request routing for the development server.
 --
@@ -148,32 +150,31 @@ serveFileWithMode path = do
 -- | Determine appropriate file serving mode.
 determineFileMode :: FilePath -> IO FileServeMode
 determineFileMode path
-  | isCanopyFile path = pure (ServeCanopy path)  
+  | isCanopyFile path = pure (ServeCanopy path)
   | hasKnownMimeType path = pure (ServeRaw path)
   | otherwise = pure (ServeCode path)
 
 -- | Check if file is a Canopy source file.
 isCanopyFile :: FilePath -> Bool
-isCanopyFile path = 
+isCanopyFile path =
   let ext = takeExtension path
-  in ext `elem` [".can", ".canopy", ".elm"]
+   in ext `elem` [".can", ".canopy", ".elm"]
 
 -- | Check if file has a known MIME type.
 hasKnownMimeType :: FilePath -> Bool
-hasKnownMimeType path = 
+hasKnownMimeType path =
   Maybe.isJust (lookupMimeTypeForPath path)
 
 -- | Lookup MIME type for file path.
 lookupMimeTypeForPath :: FilePath -> Maybe String
 lookupMimeTypeForPath _path = Nothing -- Placeholder implementation
 
-
 -- | Process file based on determined serving mode.
 processFileMode :: FileServeMode -> Snap.Snap ()
 processFileMode (ServeCanopy path) = serveCanopyFile path
-processFileMode (ServeRaw path) = FileServe.serveFile path  
+processFileMode (ServeRaw path) = FileServe.serveFile path
 processFileMode (ServeCode path) = serveCodeFile path
-processFileMode (ServeAsset content mimeType) = 
+processFileMode (ServeAsset content mimeType) =
   serveAssetContent (BS8.unpack content) (BS8.unpack mimeType)
 
 -- | Serve Canopy source file with compilation.
@@ -191,7 +192,7 @@ serveCompiledContent builder = do
   writeBuilder builder
 
 -- | Serve compilation error as formatted HTML.
-serveCompilationError :: String -> FilePath -> Snap.Snap () 
+serveCompilationError :: String -> FilePath -> Snap.Snap ()
 serveCompilationError _exitCode _path = do
   modifyResponse (setContentType "text/html")
   writeBuilder (Help.makePageHtml "Errors" Nothing)
@@ -259,5 +260,5 @@ handleAssets = do
 handleNotFound :: Snap.Snap ()
 handleNotFound = do
   modifyResponse (setResponseStatus 404 "Not Found")
-  modifyResponse (setContentType "text/html;charset=utf-8")  
+  modifyResponse (setContentType "text/html;charset=utf-8")
   writeBuilder (Help.makePageHtml "NotFound" Nothing)

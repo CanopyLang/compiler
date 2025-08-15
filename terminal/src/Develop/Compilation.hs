@@ -11,7 +11,7 @@
 -- == Key Functions
 --
 -- * 'compileFile' - Main compilation entry point for single files
--- * 'compileToBuild' - Compile with build system integration  
+-- * 'compileToBuild' - Compile with build system integration
 -- * 'validateProjectStructure' - Ensure valid project setup
 -- * 'generateHtmlOutput' - Create HTML wrapper for compiled code
 --
@@ -34,15 +34,16 @@
 module Develop.Compilation
   ( -- * Main Compilation
     compileFile,
-    
+
     -- * Build Integration
     compileToBuild,
     validateProjectStructure,
-    
+
     -- * Output Generation
     generateHtmlOutput,
     createJavaScriptOutput,
-  ) where
+  )
+where
 
 import qualified BackgroundWriter as BW
 import qualified Build
@@ -51,7 +52,7 @@ import qualified Canopy.ModuleName as ModuleName
 import Data.ByteString.Builder (Builder)
 import qualified Data.Name as Name
 import qualified Data.NonEmptyList as NE
-import qualified Generate  
+import qualified Generate
 import qualified Generate.Html as Html
 import qualified Reporting
 import qualified Reporting.Exit as Exit
@@ -75,7 +76,7 @@ import qualified Stuff
 -- Returns compilation errors for:
 --   * Missing project root or canopy.json
 --   * Invalid project configuration
---   * Source file parsing errors  
+--   * Source file parsing errors
 --   * Type checking failures
 --   * Code generation problems
 --
@@ -100,7 +101,7 @@ compileInProject root path = do
 -- Integrates with the build system to compile source files through
 -- the standard compilation pipeline with proper error reporting.
 --
--- @since 0.19.1  
+-- @since 0.19.1
 compileToBuild :: FilePath -> FilePath -> IO (Either Exit.Reactor Builder)
 compileToBuild root path =
   BW.withScope $ \scope ->
@@ -124,13 +125,12 @@ loadProjectDetails scope root =
 buildSourceArtifacts :: FilePath -> Details.Details -> FilePath -> Task.Task Exit.Reactor Build.Artifacts
 buildSourceArtifacts root details path =
   let sourceList = NE.List path []
-  in Task.eio Exit.ReactorBadBuild (Build.fromPaths Reporting.silent root details sourceList)
+   in Task.eio Exit.ReactorBadBuild (Build.fromPaths Reporting.silent root details sourceList)
 
 -- | Generate JavaScript code from build artifacts.
 generateJavaScriptCode :: FilePath -> Details.Details -> Build.Artifacts -> Task.Task Exit.Reactor Builder
 generateJavaScriptCode root details artifacts =
   Task.mapError Exit.ReactorBadGenerate (Generate.dev root details artifacts)
-
 
 -- | Validate project structure for compilation.
 --

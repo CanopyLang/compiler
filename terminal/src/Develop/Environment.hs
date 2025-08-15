@@ -37,17 +37,18 @@
 module Develop.Environment
   ( -- * Configuration Setup
     setupServerConfig,
-    
+
     -- * Component Resolution
     resolvePort,
     detectProjectRoot,
-    
+
     -- * Validation
     validateConfiguration,
-    
+
     -- * Utilities
     displayStartupMessage,
-  ) where
+  )
+where
 
 import Control.Lens ((^.))
 import qualified Data.Maybe as Maybe
@@ -55,7 +56,7 @@ import Develop.Types
   ( Flags,
     ServerConfig (..),
     flagsPort,
-    scPort
+    scPort,
   )
 import qualified Stuff
 
@@ -71,7 +72,7 @@ import qualified Stuff
 -- >>> config ^. scPort
 -- 3000
 --
--- >>> config <- setupServerConfig defaultFlags  
+-- >>> config <- setupServerConfig defaultFlags
 -- >>> config ^. scPort
 -- 8000
 --
@@ -86,11 +87,12 @@ setupServerConfig flags = do
 
 -- | Create server configuration from resolved components.
 createServerConfig :: Int -> Maybe FilePath -> ServerConfig
-createServerConfig port maybeRoot = ServerConfig
-  { _scPort = port,
-    _scVerbose = False, -- Default to non-verbose
-    _scRoot = maybeRoot
-  }
+createServerConfig port maybeRoot =
+  ServerConfig
+    { _scPort = port,
+      _scVerbose = False, -- Default to non-verbose
+      _scRoot = maybeRoot
+    }
 
 -- | Resolve port number from flags with fallback to default.
 --
@@ -99,7 +101,7 @@ createServerConfig port maybeRoot = ServerConfig
 --
 -- @since 0.19.1
 resolvePort :: Flags -> Int
-resolvePort flags = 
+resolvePort flags =
   Maybe.fromMaybe 8000 (flags ^. flagsPort)
 
 -- | Detect project root directory.
@@ -131,8 +133,8 @@ validateConfiguration config = do
 -- | Validate port number is in acceptable range.
 validatePortRange :: Int -> IO ()
 validatePortRange port
-  | port < 1 || port > 65535 = 
-      error ("Invalid port number: " ++ show port)
+  | port < 1 || port > 65535 =
+    error ("Invalid port number: " ++ show port)
   | otherwise = pure ()
 
 -- | Validate project root directory if specified.
@@ -148,6 +150,7 @@ validateProjectRoot (Just _) = pure () -- Assume valid if found by Stuff.findRoo
 -- @since 0.19.1
 displayStartupMessage :: ServerConfig -> IO ()
 displayStartupMessage config =
-  putStrLn $ "Go to http://localhost:" 
-    ++ show (config ^. scPort) 
-    ++ " to see your project dashboard."
+  putStrLn $
+    "Go to http://localhost:"
+      ++ show (config ^. scPort)
+      ++ " to see your project dashboard."
