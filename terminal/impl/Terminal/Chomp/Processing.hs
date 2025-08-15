@@ -12,7 +12,7 @@
 --
 -- * Coordinated argument and flag parsing with proper error handling
 -- * Integrated suggestion generation for shell completion
--- * Comprehensive error reporting with context information  
+-- * Comprehensive error reporting with context information
 -- * Type-safe parsing results with rich error types
 -- * Support for complex command-line patterns and validation
 --
@@ -41,15 +41,15 @@ module Terminal.Chomp.Processing
     processCommandLine,
     processArguments,
     processFlags,
-    
+
     -- * Chunk Management
     convertToChunks,
     createSuggestionContext,
-    
+
     -- * Result Combination
     combineResults,
     formatProcessingError,
-    
+
     -- * Utility Functions
     validateInputs,
     extractProcessingInfo,
@@ -59,15 +59,15 @@ where
 import Terminal.Chomp.Arguments (parseArguments)
 import Terminal.Chomp.Flags (parseFlags)
 import Terminal.Chomp.Suggestion
-  ( generateCompletions,
-    fromMaybeIndex
+  ( fromMaybeIndex,
+    generateCompletions,
   )
 import Terminal.Chomp.Types
   ( ChompResult,
-    Chunk,
     Chomper (..),
+    Chunk,
     Suggest,
-    createChunk
+    createChunk,
   )
 import Terminal.Error (Error (..), FlagError)
 import Terminal.Internal (Args, Flags)
@@ -102,27 +102,27 @@ import Terminal.Internal (Args, Flags)
 --   * Type validation failures with expected format information
 --
 -- @since 0.19.1
-processCommandLine
-  :: Maybe Int
-  -- ^ Optional suggestion target index
-  -> [String]
-  -- ^ Raw command-line arguments
-  -> Args args
-  -- ^ Argument specification
-  -> Flags flags
-  -- ^ Flag specification
-  -> ChompResult args flags
+processCommandLine ::
+  -- | Optional suggestion target index
+  Maybe Int ->
+  -- | Raw command-line arguments
+  [String] ->
+  -- | Argument specification
+  Args args ->
+  -- | Flag specification
+  Flags flags ->
+  ChompResult args flags
 processCommandLine maybeIndex strings argSpec flagSpec =
   let chunks = convertToChunks strings
       suggest = createSuggestionContext maybeIndex
       (Chomper flagChomper) = processFlags flagSpec
-      
+
       successCallback suggestResult remainingChunks flagValue =
         processArguments suggestResult remainingChunks argSpec flagValue
-      
+
       errorCallback suggestResult flagError =
         (generateCompletions suggestResult, Left (BadFlag flagError))
-  in flagChomper suggest chunks successCallback errorCallback
+   in flagChomper suggest chunks successCallback errorCallback
 
 -- | Process arguments with context from flag parsing.
 --
@@ -136,21 +136,21 @@ processCommandLine maybeIndex strings argSpec flagSpec =
 -- (suggestions, Right (args, flags))
 --
 -- @since 0.19.1
-processArguments
-  :: Suggest
-  -- ^ Current suggestion context
-  -> [Chunk]
-  -- ^ Remaining chunks after flag processing
-  -> Args args
-  -- ^ Argument specification
-  -> flags
-  -- ^ Parsed flag values
-  -> ChompResult args flags
+processArguments ::
+  -- | Current suggestion context
+  Suggest ->
+  -- | Remaining chunks after flag processing
+  [Chunk] ->
+  -- | Argument specification
+  Args args ->
+  -- | Parsed flag values
+  flags ->
+  ChompResult args flags
 processArguments suggest chunks argSpec flagValue =
   let (suggestions, argResult) = parseArguments suggest chunks argSpec
-  in case argResult of
-       Left err -> (suggestions, Left err)
-       Right args -> (suggestions, Right (args, flagValue))
+   in case argResult of
+        Left err -> (suggestions, Left err)
+        Right args -> (suggestions, Right (args, flagValue))
 
 -- | Process flags with comprehensive error handling.
 --
@@ -184,7 +184,7 @@ processFlags = parseFlags
 -- @since 0.19.1
 convertToChunks :: [String] -> [Chunk]
 convertToChunks strings =
-  zipWith createChunk [1..] strings
+  zipWith createChunk [1 ..] strings
 
 -- | Create suggestion context from optional target index.
 --
@@ -215,12 +215,12 @@ createSuggestionContext = fromMaybeIndex
 -- (combinedSuggestions, Right (args, flags))
 --
 -- @since 0.19.1
-combineResults
-  :: IO [String]
-  -- ^ Suggestion completions
-  -> Either Error (args, flags)
-  -- ^ Parsing result
-  -> ChompResult args flags
+combineResults ::
+  -- | Suggestion completions
+  IO [String] ->
+  -- | Parsing result
+  Either Error (args, flags) ->
+  ChompResult args flags
 combineResults suggestions result = (suggestions, result)
 
 -- | Format processing error with context information.
@@ -240,10 +240,11 @@ formatProcessingError err suggestions =
   let baseMessage = case err of
         BadArgs _ -> "Argument parsing failed"
         BadFlag _ -> "Flag parsing failed"
-      suggestionText = if null suggestions
-                         then ""
-                         else " Suggestions: " ++ unwords suggestions
-  in baseMessage ++ suggestionText
+      suggestionText =
+        if null suggestions
+          then ""
+          else " Suggestions: " ++ unwords suggestions
+   in baseMessage ++ suggestionText
 
 -- | Validate input parameters before processing.
 --
@@ -256,13 +257,13 @@ formatProcessingError err suggestions =
 -- >>> validateInputs strings argSpec flagSpec
 -- Right ()  -- inputs are valid
 --
--- >>> validateInputs [] invalidSpec flagSpec  
+-- >>> validateInputs [] invalidSpec flagSpec
 -- Left "Invalid argument specification"
 --
 -- @since 0.19.1
 validateInputs :: [String] -> Args args -> Flags flags -> Either String ()
 validateInputs strings _argSpec _flagSpec
-  | null strings = Right ()  -- Empty input is valid
+  | null strings = Right () -- Empty input is valid
   | hasInvalidCharacters strings = Left "Invalid characters in arguments"
   | otherwise = Right ()
 
@@ -281,16 +282,16 @@ validateInputs strings _argSpec _flagSpec
 extractProcessingInfo :: [Chunk] -> Args args -> Flags flags -> (String, String, String)
 extractProcessingInfo chunks _argSpec _flagSpec =
   let argCount = show (length chunks) ++ " arguments"
-      flagInfo = "unknown flags"  -- Placeholder for flag counting logic
-      targetInfo = "no target"    -- Placeholder for target information
-  in (argCount, flagInfo, targetInfo)
+      flagInfo = "unknown flags" -- Placeholder for flag counting logic
+      targetInfo = "no target" -- Placeholder for target information
+   in (argCount, flagInfo, targetInfo)
 
 -- Helper function to check for invalid characters in input
 hasInvalidCharacters :: [String] -> Bool
 hasInvalidCharacters = any containsInvalidChars
   where
     containsInvalidChars [] = False
-    containsInvalidChars (c:_) = c `elem` ['\0', '\r']  -- Basic validation
+    containsInvalidChars (c : _) = c `elem` ['\0', '\r'] -- Basic validation
 
 {- Currently unused helper functions - kept for future debugging:
 
@@ -298,6 +299,6 @@ countChunksWithProperty :: (Chunk -> Bool) -> [Chunk] -> Int
 countChunksWithProperty predicate chunks = length (filter predicate chunks)
 
 getChunkInfo :: Chunk -> String
-getChunkInfo chunk = 
+getChunkInfo chunk =
   "Chunk " ++ show (chunk ^. chunkIndex) ++ ": " ++ (chunk ^. chunkContent)
 -}

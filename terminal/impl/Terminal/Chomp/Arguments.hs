@@ -40,17 +40,17 @@ module Terminal.Chomp.Arguments
     parseArguments,
     parseCompleteArgs,
     parseRequiredArgs,
-    
-    -- * Argument Type Handlers  
+
+    -- * Argument Type Handlers
     parseExactly,
     parseOptional,
     parseMultiple,
-    
+
     -- * Utility Functions
     parseArgument,
     validateArguments,
     extractArguments,
-    
+
     -- * Suggestion Support
     generateArgumentSuggestion,
     combineArgumentSuggestions,
@@ -58,29 +58,29 @@ module Terminal.Chomp.Arguments
 where
 
 import Control.Lens ((^.))
-import Unsafe.Coerce (unsafeCoerce)
 import Terminal.Chomp.Parser
-  ( attemptParse
+  ( attemptParse,
   )
 import Terminal.Chomp.Suggestion
   ( combineCompletions,
     generateCompletions,
-    updateSuggestion
+    updateSuggestion,
   )
 import Terminal.Chomp.Types
   ( Chomper (..),
     Chunk,
     Suggest (..),
     chunkContent,
-    chunkIndex
+    chunkIndex,
   )
 import Terminal.Error (ArgError (..), Error (..), Expectation (..))
 import Terminal.Internal
   ( Args (..),
     CompleteArgs (..),
     Parser (..),
-    RequiredArgs (..)
+    RequiredArgs (..),
   )
+import Unsafe.Coerce (unsafeCoerce)
 
 -- | Parse complete argument specification with error handling.
 --
@@ -102,15 +102,15 @@ import Terminal.Internal
 --   * Position-specific error reporting
 --
 -- @since 0.19.1
-parseArguments
-  :: Suggest
-  -- ^ Current suggestion context
-  -> [Chunk]
-  -- ^ Input arguments to parse
-  -> Args a
-  -- ^ Argument specification
-  -> (IO [String], Either Error a)
-  -- ^ Suggestions and parse result
+parseArguments ::
+  -- | Current suggestion context
+  Suggest ->
+  -- | Input arguments to parse
+  [Chunk] ->
+  -- | Argument specification
+  Args a ->
+  -- | Suggestions and parse result
+  (IO [String], Either Error a)
 parseArguments suggest chunks (Args completeArgsList) =
   parseArgumentsWithFallback suggest chunks completeArgsList [] []
 
@@ -129,20 +129,20 @@ parseArguments suggest chunks (Args completeArgsList) =
 -- (suggestions, Right (Just value))
 --
 -- @since 0.19.1
-parseCompleteArgs
-  :: Suggest
-  -> [Chunk]
-  -> CompleteArgs a
-  -> (Suggest, Either ArgError a)
+parseCompleteArgs ::
+  Suggest ->
+  [Chunk] ->
+  CompleteArgs a ->
+  (Suggest, Either ArgError a)
 parseCompleteArgs suggest chunks completeArgs =
   let numChunks = length chunks
-  in case completeArgs of
-       Exactly requiredArgs ->
-         parseExactly suggest chunks (parseRequiredArgs numChunks requiredArgs)
-       Optional requiredArgs parser ->
-         parseOptional suggest chunks (parseRequiredArgs numChunks requiredArgs) parser
-       Multiple requiredArgs parser ->
-         parseMultiple suggest chunks (parseRequiredArgs numChunks requiredArgs) parser
+   in case completeArgs of
+        Exactly requiredArgs ->
+          parseExactly suggest chunks (parseRequiredArgs numChunks requiredArgs)
+        Optional requiredArgs parser ->
+          parseOptional suggest chunks (parseRequiredArgs numChunks requiredArgs) parser
+        Multiple requiredArgs parser ->
+          parseMultiple suggest chunks (parseRequiredArgs numChunks requiredArgs) parser
 
 -- | Parse required argument sequence.
 --
@@ -178,20 +178,20 @@ parseRequiredArgs numChunks = \case
 -- (newSuggest, Left (ArgExtras ["extra"]))  -- if too many args
 --
 -- @since 0.19.1
-parseExactly
-  :: Suggest
-  -> [Chunk]
-  -> Chomper ArgError a
-  -> (Suggest, Either ArgError a)
+parseExactly ::
+  Suggest ->
+  [Chunk] ->
+  Chomper ArgError a ->
+  (Suggest, Either ArgError a)
 parseExactly suggest chunks (Chomper chomper) =
   let success s cs value =
         case fmap (^. chunkContent) cs of
           [] -> (s, Right value)
           extras -> (s, Left (ArgExtras extras))
-      
+
       failure s argError =
         (s, Left argError)
-  in chomper suggest chunks success failure
+   in chomper suggest chunks success failure
 
 -- | Parse optional argument with fallback handling.
 --
@@ -208,12 +208,12 @@ parseExactly suggest chunks (Chomper chomper) =
 -- (newSuggest, Right (func (Just value)))  -- successful parse
 --
 -- @since 0.19.1
-parseOptional
-  :: Suggest
-  -> [Chunk]
-  -> Chomper ArgError (Maybe a -> b)
-  -> Parser a
-  -> (Suggest, Either ArgError b)
+parseOptional ::
+  Suggest ->
+  [Chunk] ->
+  Chomper ArgError (Maybe a -> b) ->
+  Parser a ->
+  (Suggest, Either ArgError b)
 parseOptional suggest chunks (Chomper chomper) parser =
   let success s1 cs func =
         case cs of
@@ -227,10 +227,10 @@ parseOptional suggest chunks (Chomper chomper) parser =
                 case fmap (^. chunkContent) others of
                   [] -> (s2, Right (func (Just value)))
                   extras -> (s2, Left (ArgExtras extras))
-      
+
       failure s1 argError =
         (s1, Left argError)
-  in chomper suggest chunks success failure
+   in chomper suggest chunks success failure
 
 -- | Parse multiple arguments with accumulation.
 --
@@ -247,15 +247,15 @@ parseOptional suggest chunks (Chomper chomper) parser =
 -- (suggest, Right (func [value1, value2]))  -- all parsed successfully
 --
 -- @since 0.19.1
-parseMultiple
-  :: Suggest
-  -> [Chunk]
-  -> Chomper ArgError ([a] -> b)
-  -> Parser a
-  -> (Suggest, Either ArgError b)
+parseMultiple ::
+  Suggest ->
+  [Chunk] ->
+  Chomper ArgError ([a] -> b) ->
+  Parser a ->
+  (Suggest, Either ArgError b)
 parseMultiple suggest chunks (Chomper chomper) parser =
   let failure s1 argError = (s1, Left argError)
-  in chomper suggest chunks (parseMultipleHelper parser []) failure
+   in chomper suggest chunks (parseMultipleHelper parser []) failure
 
 -- | Parse individual argument with error handling.
 --
@@ -276,10 +276,10 @@ parseArgument numChunks parser@(Parser singular _ _ _ exampleFunc) =
       [] ->
         -- For missing arguments, always provide suggestions/examples
         let newSuggest = case suggest of
-              NoSuggestion -> SuggestIO (exampleFunc "")  -- Provide examples for missing args
+              NoSuggestion -> SuggestIO (exampleFunc "") -- Provide examples for missing args
               _ -> updateSuggestion suggest (generateArgumentSuggestion parser numChunks)
             theError = ArgMissing (Expectation singular (exampleFunc ""))
-        in failure newSuggest theError
+         in failure newSuggest theError
       chunk : otherChunks ->
         case attemptParse suggest parser (chunk ^. chunkIndex) (chunk ^. chunkContent) of
           (newSuggest, Left expectation) ->
@@ -373,13 +373,13 @@ parseMultipleHelper parser revArgs suggest chunks func =
           parseMultipleHelper parser (arg : revArgs) s1 otherChunks func
 
 -- Helper function for parsing with fallback error accumulation
-parseArgumentsWithFallback
-  :: Suggest
-  -> [Chunk]
-  -> [CompleteArgs a]
-  -> [Suggest]
-  -> [(CompleteArgs a, ArgError)]
-  -> (IO [String], Either Error a)
+parseArgumentsWithFallback ::
+  Suggest ->
+  [Chunk] ->
+  [CompleteArgs a] ->
+  [Suggest] ->
+  [(CompleteArgs a, ArgError)] ->
+  (IO [String], Either Error a)
 parseArgumentsWithFallback suggest chunks completeArgsList revSuggest revArgErrors =
   case completeArgsList of
     [] ->

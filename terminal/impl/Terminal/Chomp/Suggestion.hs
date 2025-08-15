@@ -11,7 +11,7 @@
 -- == Key Features
 --
 -- * Context-aware suggestion generation based on parsing state
--- * Target-specific completion for different argument positions  
+-- * Target-specific completion for different argument positions
 -- * IO-based suggestion computation for dynamic completions
 -- * Suggestion combination and merging for complex scenarios
 --
@@ -34,17 +34,17 @@ module Terminal.Chomp.Suggestion
     updateSuggestion,
     targetSuggestion,
     ioSuggestion,
-    
+
     -- * Completion Generation
     generateCompletions,
     combineCompletions,
     addCompletion,
-    
+
     -- * Suggestion Utilities
     hasSuggestion,
     getSuggestionTarget,
     isTargetSuggestion,
-    
+
     -- * Conversion Functions
     toMaybeIndex,
     fromMaybeIndex,
@@ -55,7 +55,7 @@ import Control.Lens ((^.))
 import Terminal.Chomp.Types
   ( Suggest (..),
     SuggestTarget (..),
-    suggestTarget
+    suggestTarget,
   )
 
 -- | Update suggestion based on optional modification function.
@@ -274,6 +274,6 @@ removeDuplicates :: Eq a => [a] -> [a]
 removeDuplicates = removeDuplicatesHelper []
   where
     removeDuplicatesHelper _ [] = []
-    removeDuplicatesHelper seen (x:xs)
+    removeDuplicatesHelper seen (x : xs)
       | x `elem` seen = removeDuplicatesHelper seen xs
-      | otherwise = x : removeDuplicatesHelper (x:seen) xs
+      | otherwise = x : removeDuplicatesHelper (x : seen) xs

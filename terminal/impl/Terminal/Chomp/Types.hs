@@ -43,28 +43,27 @@ module Terminal.Chomp.Types
   ( -- * Core Parsing Types
     Chomper (..),
     ChompResult,
-    
+
     -- * Input Processing Types
     Chunk (..),
     chunkIndex,
     chunkContent,
-    
+
     -- * Suggestion System Types
     Suggest (..),
     SuggestTarget (..),
     suggestTarget,
-    
+
     -- * Flag Parsing Types
     FoundFlag (..),
     foundBefore,
     foundValue,
     foundAfter,
-    
     Value (..),
     ValueType (..),
     valueIndex,
     valueContent,
-    
+
     -- * Utility Functions
     createChunk,
     createSuggest,
@@ -87,14 +86,15 @@ import Terminal.Error (Error)
 --   * @a@ - Success type for parsed values
 --
 -- @since 0.19.1
-newtype Chomper x a = Chomper
-  ( forall result.
-    Suggest ->
-    [Chunk] ->
-    (Suggest -> [Chunk] -> a -> result) ->
-    (Suggest -> x -> result) ->
-    result
-  )
+newtype Chomper x a
+  = Chomper
+      ( forall result.
+        Suggest ->
+        [Chunk] ->
+        (Suggest -> [Chunk] -> a -> result) ->
+        (Suggest -> x -> result) ->
+        result
+      )
 
 -- | Result type for chomp operations combining IO suggestions and parsing results.
 --
@@ -112,11 +112,12 @@ type ChompResult args flags = (IO [String], Either Error (args, flags))
 --
 -- @since 0.19.1
 data Chunk = Chunk
-  { _chunkIndex :: !Int
-    -- ^ Position in argument list (1-based)
-  , _chunkContent :: !String
-    -- ^ Raw argument content
-  } deriving (Eq, Show)
+  { -- | Position in argument list (1-based)
+    _chunkIndex :: !Int,
+    -- | Raw argument content
+    _chunkContent :: !String
+  }
+  deriving (Eq, Show)
 
 -- | Suggestion system for shell completion support.
 --
@@ -125,12 +126,12 @@ data Chunk = Chunk
 --
 -- @since 0.19.1
 data Suggest
-  = NoSuggestion
-    -- ^ No suggestions available
-  | SuggestAt !SuggestTarget
-    -- ^ Target-specific suggestions
-  | SuggestIO !(IO [String])
-    -- ^ IO-based suggestion generation
+  = -- | No suggestions available
+    NoSuggestion
+  | -- | Target-specific suggestions
+    SuggestAt !SuggestTarget
+  | -- | IO-based suggestion generation
+    SuggestIO !(IO [String])
 
 instance Show Suggest where
   show NoSuggestion = "NoSuggestion"
@@ -141,7 +142,7 @@ instance Show Suggest where
 instance Eq Suggest where
   NoSuggestion == NoSuggestion = True
   (SuggestAt t1) == (SuggestAt t2) = t1 == t2
-  _ == _ = False  -- SuggestIO cases are not comparable
+  _ == _ = False -- SuggestIO cases are not comparable
 
 -- | Suggestion target specification.
 --
@@ -150,9 +151,10 @@ instance Eq Suggest where
 --
 -- @since 0.19.1
 newtype SuggestTarget = SuggestTarget
-  { _suggestTarget :: Int
-    -- ^ Target argument position (1-based)
-  } deriving (Eq, Show)
+  { -- | Target argument position (1-based)
+    _suggestTarget :: Int
+  }
+  deriving (Eq, Show)
 
 -- | Flag parsing result with context information.
 --
@@ -162,13 +164,14 @@ newtype SuggestTarget = SuggestTarget
 --
 -- @since 0.19.1
 data FoundFlag = FoundFlag
-  { _foundBefore :: ![Chunk]
-    -- ^ Arguments before the flag
-  , _foundValue :: !Value
-    -- ^ Parsed flag value
-  , _foundAfter :: ![Chunk]
-    -- ^ Arguments after the flag
-  } deriving (Eq, Show)
+  { -- | Arguments before the flag
+    _foundBefore :: ![Chunk],
+    -- | Parsed flag value
+    _foundValue :: !Value,
+    -- | Arguments after the flag
+    _foundAfter :: ![Chunk]
+  }
+  deriving (Eq, Show)
 
 -- | Flag value classification and content.
 --
@@ -178,12 +181,12 @@ data FoundFlag = FoundFlag
 --
 -- @since 0.19.1
 data Value
-  = DefiniteValue !ValueType
-    -- ^ Explicitly specified value
-  | PossibleValue !Chunk
-    -- ^ Potentially a value (could be next flag)
-  | NoValue
-    -- ^ Flag with no value
+  = -- | Explicitly specified value
+    DefiniteValue !ValueType
+  | -- | Potentially a value (could be next flag)
+    PossibleValue !Chunk
+  | -- | Flag with no value
+    NoValue
   deriving (Eq, Show)
 
 -- | Classification of definite flag values.
@@ -193,15 +196,16 @@ data Value
 --
 -- @since 0.19.1
 data ValueType = ValueType
-  { _valueIndex :: !Int
-    -- ^ Position where value was found
-  , _valueContent :: !String
-    -- ^ Raw value content
-  } deriving (Eq, Show)
+  { -- | Position where value was found
+    _valueIndex :: !Int,
+    -- | Raw value content
+    _valueContent :: !String
+  }
+  deriving (Eq, Show)
 
 -- Generate lenses for all record types
 makeLenses ''Chunk
-makeLenses ''SuggestTarget  
+makeLenses ''SuggestTarget
 makeLenses ''FoundFlag
 makeLenses ''ValueType
 
@@ -214,14 +218,18 @@ instance Functor (Chomper x) where
 instance Applicative (Chomper x) where
   pure a = Chomper $ \suggest chunks success _ -> success suggest chunks a
   (Chomper parserF) <*> (Chomper parserA) = Chomper $ \suggest chunks success failure ->
-    parserF suggest chunks
+    parserF
+      suggest
+      chunks
       (\s1 c1 f -> parserA s1 c1 (\s2 c2 a -> success s2 c2 (f a)) failure)
       failure
 
 -- | Monad instance for Chomper
 instance Monad (Chomper x) where
   (Chomper parserA) >>= f = Chomper $ \suggest chunks success failure ->
-    parserA suggest chunks
+    parserA
+      suggest
+      chunks
       (\s1 c1 a -> let (Chomper parserB) = f a in parserB s1 c1 success failure)
       failure
 

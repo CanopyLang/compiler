@@ -40,12 +40,12 @@ module Terminal.Chomp.Parser
     attemptParse,
     parseWithSuggestion,
     createExpectation,
-    
+
     -- * Suggestion Integration
     generateSuggestion,
     updateParserSuggestion,
     createParserSuggestion,
-    
+
     -- * Utility Functions
     extractParserInfo,
     checkParserMatch,
@@ -66,7 +66,7 @@ import Terminal.Internal (Parser (..))
 --
 -- The parsing process:
 --   1. Update suggestions based on position and input
---   2. Apply parser to input string  
+--   2. Apply parser to input string
 --   3. Generate result with updated suggestion context
 --   4. Provide rich error information on failure
 --
@@ -87,23 +87,23 @@ import Terminal.Internal (Parser (..))
 --   * Validation constraint violations
 --
 -- @since 0.19.1
-attemptParse
-  :: Suggest
-  -- ^ Current suggestion context
-  -> Parser a
-  -- ^ Parser to apply
-  -> Int
-  -- ^ Position index for error reporting
-  -> String
-  -- ^ Input string to parse
-  -> (Suggest, Either Expectation a)
-  -- ^ Updated suggestion and parse result
+attemptParse ::
+  -- | Current suggestion context
+  Suggest ->
+  -- | Parser to apply
+  Parser a ->
+  -- | Position index for error reporting
+  Int ->
+  -- | Input string to parse
+  String ->
+  -- | Updated suggestion and parse result
+  (Suggest, Either Expectation a)
 attemptParse suggest parser@(Parser singular _ parseFunc _ exampleFunc) index input =
   let updatedSuggest = updateParserSuggestion suggest parser index input
       parseResult = case parseFunc input of
         Nothing -> Left (Expectation singular (exampleFunc input))
         Just value -> Right value
-  in (updatedSuggest, parseResult)
+   in (updatedSuggest, parseResult)
 
 -- | Parse with explicit suggestion generation.
 --
@@ -117,12 +117,12 @@ attemptParse suggest parser@(Parser singular _ parseFunc _ exampleFunc) index in
 -- (SuggestIO (...), Right value)
 --
 -- @since 0.19.1
-parseWithSuggestion
-  :: Suggest
-  -> Parser a
-  -> Int
-  -> String
-  -> IO (Suggest, Either Expectation a)
+parseWithSuggestion ::
+  Suggest ->
+  Parser a ->
+  Int ->
+  String ->
+  IO (Suggest, Either Expectation a)
 parseWithSuggestion suggest parser index input = do
   let (updatedSuggest, result) = attemptParse suggest parser index input
   finalSuggest <- enhanceWithSuggestions updatedSuggest parser input

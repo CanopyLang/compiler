@@ -39,20 +39,20 @@ module Terminal.Chomp.Flags
     parseFlags,
     parseFlag,
     parseFlagsHelper,
-    
+
     -- * Flag Type Handlers
     parseOnOffFlag,
     parseValueFlag,
-    
+
     -- * Flag Discovery
     findFlag,
     checkUnknownFlags,
-    
+
     -- * Suggestion Support
     generateFlagSuggestion,
     getFlagNames,
     extractFlagName,
-    
+
     -- * Utility Functions
     validateFlags,
     extractFlagInfo,
@@ -64,10 +64,10 @@ import Control.Lens ((^.))
 import qualified Data.List as List
 import qualified Reporting.Suggest as Suggest
 import Terminal.Chomp.Parser
-  ( attemptParse
+  ( attemptParse,
   )
 import Terminal.Chomp.Suggestion
-  ( updateSuggestion
+  ( updateSuggestion,
   )
 import Terminal.Chomp.Types
   ( Chomper (..),
@@ -82,13 +82,13 @@ import Terminal.Chomp.Types
     foundBefore,
     foundValue,
     valueContent,
-    valueIndex
+    valueIndex,
   )
-import Terminal.Error (FlagError (..), Expectation (..))
+import Terminal.Error (Expectation (..), FlagError (..))
 import Terminal.Internal
   ( Flag (..),
     Flags (..),
-    Parser (..)
+    Parser (..),
   )
 
 -- | Parse complete flag specification with error handling.
@@ -222,13 +222,13 @@ parseValueFlag flagName parser@(Parser singular _ _ _ exampleFunc) =
                   failure newSuggest (FlagWithBadValue flagName content expectation)
                 (newSuggest, Right flagValue) ->
                   success newSuggest (combineChunks foundFlag) (Just flagValue)
-        in case foundFlag ^. foundValue of
-             DefiniteValue valueType ->
-               attemptParsing (valueType ^. valueIndex) (valueType ^. valueContent)
-             PossibleValue chunk ->
-               attemptParsing (chunk ^. chunkIndex) (chunk ^. chunkContent)
-             NoValue ->
-               failure suggest (FlagWithNoValue flagName (Expectation singular (exampleFunc "")))
+         in case foundFlag ^. foundValue of
+              DefiniteValue valueType ->
+                attemptParsing (valueType ^. valueIndex) (valueType ^. valueContent)
+              PossibleValue chunk ->
+                attemptParsing (chunk ^. chunkIndex) (chunk ^. chunkContent)
+              NoValue ->
+                failure suggest (FlagWithNoValue flagName (Expectation singular (exampleFunc "")))
 
 -- | Find flag in chunk list with value extraction.
 --
@@ -293,9 +293,9 @@ generateFlagSuggestion unknownFlags flags targetIndex =
     [] -> Nothing
     chunk : otherUnknownFlags ->
       if chunk ^. chunkIndex == targetIndex
-        then 
+        then
           let unknownFlag = chunk ^. chunkContent
-              -- Remove leading dashes and extract flag name for comparison  
+              -- Remove leading dashes and extract flag name for comparison
               unknownName = dropWhile (== '-') unknownFlag
               allFlags = getFlagNames flags []
               -- Extract flag names without dashes for distance comparison
@@ -304,9 +304,9 @@ generateFlagSuggestion unknownFlags flags targetIndex =
               distances = zip (map (Suggest.distance unknownName) flagNamesOnly) allFlags
               sortedDistances = List.sortOn fst distances
               nearbyFlags = case filter (\(d, _) -> d < 3) sortedDistances of
-                [] -> map snd sortedDistances  -- Fallback: return all flags sorted by distance
+                [] -> map snd sortedDistances -- Fallback: return all flags sorted by distance
                 goodMatches -> map snd goodMatches
-          in Just (return nearbyFlags)
+           in Just (return nearbyFlags)
         else generateFlagSuggestion otherUnknownFlags flags targetIndex
 
 -- | Extract all flag names from flag specification.
@@ -383,9 +383,9 @@ validateFlags :: Flags a -> Either String ()
 validateFlags flags =
   let flagNames = getFlagNames flags []
       duplicates = findDuplicates flagNames
-  in if null duplicates
-       then Right ()
-       else Left ("Duplicate flag names: " ++ unwords duplicates)
+   in if null duplicates
+        then Right ()
+        else Left ("Duplicate flag names: " ++ unwords duplicates)
 
 -- | Extract flag information for help generation.
 --
@@ -410,21 +410,22 @@ findFlagHelper revPrev loneFlag flagPrefix chunks =
   let deprefix content = drop (length flagPrefix) content
       succeed value after =
         Just (createFoundFlag (reverse revPrev) value after)
-  in case chunks of
-       [] -> Nothing
-       chunk : rest ->
-         let content = chunk ^. chunkContent
-             index = chunk ^. chunkIndex
-         in if flagPrefix `List.isPrefixOf` content
-              then succeed (DefiniteValue (ValueType index (deprefix content))) rest
-              else if content /= loneFlag
-                     then findFlagHelper (chunk : revPrev) loneFlag flagPrefix rest
-                     else case rest of
-                            [] -> succeed NoValue []
-                            argChunk : restOfRest ->
-                              if "-" `List.isPrefixOf` (argChunk ^. chunkContent)
-                                then succeed NoValue rest
-                                else succeed (PossibleValue argChunk) restOfRest
+   in case chunks of
+        [] -> Nothing
+        chunk : rest ->
+          let content = chunk ^. chunkContent
+              index = chunk ^. chunkIndex
+           in if flagPrefix `List.isPrefixOf` content
+                then succeed (DefiniteValue (ValueType index (deprefix content))) rest
+                else
+                  if content /= loneFlag
+                    then findFlagHelper (chunk : revPrev) loneFlag flagPrefix rest
+                    else case rest of
+                      [] -> succeed NoValue []
+                      argChunk : restOfRest ->
+                        if "-" `List.isPrefixOf` (argChunk ^. chunkContent)
+                          then succeed NoValue rest
+                          else succeed (PossibleValue argChunk) restOfRest
 
 -- Helper function to combine chunks after flag extraction
 combineChunks :: FoundFlag -> [Chunk]
@@ -441,9 +442,9 @@ findDuplicates :: Eq a => [a] -> [a]
 findDuplicates = findDuplicatesHelper []
   where
     findDuplicatesHelper _ [] = []
-    findDuplicatesHelper seen (x:xs)
+    findDuplicatesHelper seen (x : xs)
       | x `elem` seen = x : findDuplicatesHelper seen xs
-      | otherwise = findDuplicatesHelper (x:seen) xs
+      | otherwise = findDuplicatesHelper (x : seen) xs
 
 -- Helper function to extract flag information
 getFlagInfo :: Flag a -> (String, String)
