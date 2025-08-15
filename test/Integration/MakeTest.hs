@@ -24,7 +24,7 @@ import qualified Canopy.Package as Package
 import qualified Canopy.Version as Version
 import qualified Data.Name as Name
 import Test.Tasty (TestTree, testGroup)
-import Test.Tasty.HUnit (testCase, assertBool, (@?=), assertEqual)
+import Test.Tasty.HUnit (assertBool, assertEqual, testCase, (@?=))
 
 -- | All integration tests for Make-related library components.
 tests :: TestTree
@@ -79,26 +79,31 @@ testVersionHandling =
             v3 = Version.one
         v1 @?= v2
         v2 @?= v3,
-      testCase "version shows consistently" $ (do
-        let ver1 = Version.one
-            ver2 = Version.one
-            show1 = show ver1
-            show2 = show ver2
-        assertEqual "ver show representation stable" show1 show2
-        "1.0.0" @?= Version.toChars ver1)
-    , testCase "version integration with other components" $ (do
-        let version = Version.one
-            packageCore = Package.core
-            moduleBasics = ModuleName.basics
-            nameMain = Name._main
-        -- Test cross-component show consistency and meaningful output
-        let versionShow = show version
-            packageShow = show packageCore
-            moduleShow = show moduleBasics
-            nameShow = show nameMain
-        length [versionShow, packageShow, moduleShow, nameShow] @?= 4
-        assertBool "different types produce different show formats"
-          (length (filter (== versionShow) [packageShow, moduleShow, nameShow]) == 0))
+      testCase "version shows consistently" $
+        ( do
+            let ver1 = Version.one
+                ver2 = Version.one
+                show1 = show ver1
+                show2 = show ver2
+            assertEqual "ver show representation stable" show1 show2
+            "1.0.0" @?= Version.toChars ver1
+        ),
+      testCase "version integration with other components" $
+        ( do
+            let version = Version.one
+                packageCore = Package.core
+                moduleBasics = ModuleName.basics
+                nameMain = Name._main
+            -- Test cross-component show consistency and meaningful output
+            let versionShow = show version
+                packageShow = show packageCore
+                moduleShow = show moduleBasics
+                nameShow = show nameMain
+            length [versionShow, packageShow, moduleShow, nameShow] @?= 4
+            assertBool
+              "different types produce different show formats"
+              (length (filter (== versionShow) [packageShow, moduleShow, nameShow]) == 0)
+        )
     ]
 
 -- | Test module name integration scenarios.
@@ -120,11 +125,14 @@ testModuleNameIntegration =
             listModule = ModuleName.list
         -- Test that ordering operations work and produce meaningful results
         let allModules = [basics, maybeModule, listModule]
-        assertBool "modules can be compared without errors" 
+        assertBool
+          "modules can be compared without errors"
           (all (\m -> all (\n -> (m <= n) `elem` [True, False]) allModules) allModules)
-        assertBool "different modules have stable ordering" 
+        assertBool
+          "different modules have stable ordering"
           ((basics < maybeModule) == (basics < maybeModule))
-        assertBool "ordering transitivity setup" 
+        assertBool
+          "ordering transitivity setup"
           (if basics <= maybeModule && maybeModule <= listModule then basics <= listModule else True),
       testCase "module name show integration" $ do
         let modules = [ModuleName.basics, ModuleName.maybe, ModuleName.list, ModuleName.string]
@@ -158,7 +166,8 @@ testPackageHandling =
         -- Test that types can be used in heterogeneous data structures
         let componentStrings = [show packageCore, show versionOne, show moduleBasics, show nameMain]
             uniqueStrings = filter (\s -> length (filter (== s) componentStrings) == 1) componentStrings
-        assertBool "components produce distinct string representations" 
+        assertBool
+          "components produce distinct string representations"
           (length uniqueStrings >= 2)
         length componentStrings @?= 4
     ]
@@ -208,7 +217,7 @@ testMakeSystemIntegration =
             moduleCount = length coreModules
             expectedCount = 4
         assertBool "core modules available" (ModuleName.basics `elem` coreModules)
-        assertBool "list module available" (ModuleName.list `elem` coreModules) 
+        assertBool "list module available" (ModuleName.list `elem` coreModules)
         assertBool "maybe module available" (ModuleName.maybe `elem` coreModules)
         assertBool "string module available" (ModuleName.string `elem` coreModules)
         assertBool "correct module count" (moduleCount == expectedCount)
@@ -220,46 +229,54 @@ testBuildWorkflowIntegration :: TestTree
 testBuildWorkflowIntegration =
   testGroup
     "Build workflow integration"
-    [ testCase "development workflow integration" $ (do
-        -- Test components used in development workflows
-        let devModules = [ModuleName.basics, ModuleName.debug]
-            devNames = [Name._main, Name.true, Name.false]
-            devPackage = Package.core
-            devVer = Version.one
-        assertBool "development modules available" (length devModules == 2)
-        assertBool "development names available" (length devNames == 3)
-        Package.toChars devPackage @?= "elm/core"
-        "1.0.0" @?= Version.toChars devVer
-        assertBool "development modules have string representations" (all (\m -> length (show m) > 0) devModules))
-    , testCase "production build workflow integration" $ (do
-        -- Test components used in production build workflows
-        let prodModules = [ModuleName.basics, ModuleName.list, ModuleName.maybe, ModuleName.string]
-            prodPackage = Package.core
-            prodVer = Version.one
-            prodEntryPoint = Name._main
-        assertBool "production modules comprehensive" (length prodModules == 4)
-        Package.toChars prodPackage @?= "elm/core"
-        "1.0.0" @?= Version.toChars prodVer
-        Name.toChars prodEntryPoint @?= "main"
-        assertBool "prod workflow ready" (all (\m -> m `elem` prodModules) [ModuleName.basics, ModuleName.list]))
-    , testCase "testing workflow integration" $ (do
-        -- Test components support testing workflows
-        let testModules = [ModuleName.basics, ModuleName.maybe]
-            testNames = [Name.true, Name.false, Name._main]
-            testPackage = Package.core
-        assertBool "test modules available" (length testModules == 2)
-        assertBool "test names available" (length testNames == 3)
-        Package.toChars testPackage @?= "elm/core"
-        assertBool "testing workflow supported" (Name.true `elem` testNames && Name.false `elem` testNames))
-    , testCase "build optimization workflow integration" $ (do  
-        -- Test components support build optimization workflows
-        let optModules = [ModuleName.basics, ModuleName.list, ModuleName.string, ModuleName.maybe]
-            optPackage = Package.core
-            optVer = Version.one
-            criticalNames = [Name._main, Name.value, Name.identity]
-        assertBool "optimization modules complete" (length optModules == 4)
-        Package.toChars optPackage @?= "elm/core"
-        "1.0.0" @?= Version.toChars optVer
-        assertBool "critical names available" (length criticalNames == 3)
-        assertBool "optimization workflow ready" (all (`elem` criticalNames) [Name._main, Name.value]))
+    [ testCase "development workflow integration" $
+        ( do
+            -- Test components used in development workflows
+            let devModules = [ModuleName.basics, ModuleName.debug]
+                devNames = [Name._main, Name.true, Name.false]
+                devPackage = Package.core
+                devVer = Version.one
+            assertBool "development modules available" (length devModules == 2)
+            assertBool "development names available" (length devNames == 3)
+            Package.toChars devPackage @?= "elm/core"
+            "1.0.0" @?= Version.toChars devVer
+            assertBool "development modules have string representations" (all (\m -> length (show m) > 0) devModules)
+        ),
+      testCase "production build workflow integration" $
+        ( do
+            -- Test components used in production build workflows
+            let prodModules = [ModuleName.basics, ModuleName.list, ModuleName.maybe, ModuleName.string]
+                prodPackage = Package.core
+                prodVer = Version.one
+                prodEntryPoint = Name._main
+            assertBool "production modules comprehensive" (length prodModules == 4)
+            Package.toChars prodPackage @?= "elm/core"
+            "1.0.0" @?= Version.toChars prodVer
+            Name.toChars prodEntryPoint @?= "main"
+            assertBool "prod workflow ready" (all (\m -> m `elem` prodModules) [ModuleName.basics, ModuleName.list])
+        ),
+      testCase "testing workflow integration" $
+        ( do
+            -- Test components support testing workflows
+            let testModules = [ModuleName.basics, ModuleName.maybe]
+                testNames = [Name.true, Name.false, Name._main]
+                testPackage = Package.core
+            assertBool "test modules available" (length testModules == 2)
+            assertBool "test names available" (length testNames == 3)
+            Package.toChars testPackage @?= "elm/core"
+            assertBool "testing workflow supported" (Name.true `elem` testNames && Name.false `elem` testNames)
+        ),
+      testCase "build optimization workflow integration" $
+        ( do
+            -- Test components support build optimization workflows
+            let optModules = [ModuleName.basics, ModuleName.list, ModuleName.string, ModuleName.maybe]
+                optPackage = Package.core
+                optVer = Version.one
+                criticalNames = [Name._main, Name.value, Name.identity]
+            assertBool "optimization modules complete" (length optModules == 4)
+            Package.toChars optPackage @?= "elm/core"
+            "1.0.0" @?= Version.toChars optVer
+            assertBool "critical names available" (length criticalNames == 3)
+            assertBool "optimization workflow ready" (all (`elem` criticalNames) [Name._main, Name.value])
+        )
     ]
