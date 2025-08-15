@@ -32,7 +32,8 @@ module CLI.Types
 
     -- * Utility Re-exports
     Doc,
-  ) where
+  )
+where
 
 import Terminal (Command, Parser, (|--))
 import Text.PrettyPrint.ANSI.Leijen (Doc)

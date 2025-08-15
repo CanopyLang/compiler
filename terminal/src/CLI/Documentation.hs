@@ -29,11 +29,12 @@ module CLI.Documentation
   ( -- * Welcome Messages
     createIntroduction,
     createOutro,
-    
+
     -- * Text Formatting
     stackDocuments,
     reflowText,
-  ) where
+  )
+where
 
 import qualified Canopy.Version as Version
 import qualified Data.List as List

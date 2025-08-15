@@ -57,12 +57,12 @@ module Terminal
   ( -- * Application Entry Points
     app,
     singleCommand,
-    
+
     -- * Command Definition
     Command (..),
     command,
     Summary (..),
-    
+
     -- * Argument Builders
     Args (..),
     RequiredArgs (..),
@@ -79,7 +79,7 @@ module Terminal
     require3,
     require4,
     require5,
-    
+
     -- * Flag Builders
     Flags (..),
     Flag (..),
@@ -89,7 +89,7 @@ module Terminal
     onOff,
     onOffFlag,
     (|--),
-    
+
     -- * Parser Creation
     Parser (..),
     stringParser,
@@ -101,7 +101,8 @@ module Terminal
 where
 
 -- Re-export from Terminal.Internal for main API
-import qualified Terminal.Internal as Internal
+
+import qualified Terminal.Application as Application
 import Terminal.Internal
   ( Args (..),
     Command (..),
@@ -110,24 +111,24 @@ import Terminal.Internal
     Flags (..),
     Parser (..),
     RequiredArgs (..),
-    Summary (..)
+    Summary (..),
   )
-import qualified Terminal.Application as Application
+import qualified Terminal.Internal as Internal
 import qualified Terminal.Parser as Parser
 import qualified Text.PrettyPrint.ANSI.Leijen as Doc
 
 -- | Run multi-command application with introduction and outro.
 --
 -- @since 0.19.1
-app
-  :: Doc.Doc
-  -- ^ Introduction text for application overview
-  -> Doc.Doc
-  -- ^ Outro text for application overview
-  -> [Command]
-  -- ^ Available commands
-  -> IO ()
-  -- ^ Exits with appropriate status code
+app ::
+  -- | Introduction text for application overview
+  Doc.Doc ->
+  -- | Outro text for application overview
+  Doc.Doc ->
+  -- | Available commands
+  [Command] ->
+  -- | Exits with appropriate status code
+  IO ()
 app _intro _outro _commands = do
   -- Convert to simplified structure for now
   Application.initializeApp
@@ -136,19 +137,19 @@ app _intro _outro _commands = do
 -- | Run single-command application with details and examples.
 --
 -- @since 0.19.1
-singleCommand
-  :: Doc.Doc
-  -- ^ Command details documentation  
-  -> Doc.Doc
-  -- ^ Command usage examples
-  -> Args args
-  -- ^ Argument specification
-  -> Flags flags
-  -- ^ Flag specification
-  -> (args -> flags -> IO ())
-  -- ^ Command handler function
-  -> IO ()
-  -- ^ Exits with appropriate status code
+singleCommand ::
+  -- | Command details documentation
+  Doc.Doc ->
+  -- | Command usage examples
+  Doc.Doc ->
+  -- | Argument specification
+  Args args ->
+  -- | Flag specification
+  Flags flags ->
+  -- | Command handler function
+  (args -> flags -> IO ()) ->
+  -- | Exits with appropriate status code
+  IO ()
 singleCommand _details _examples _args _flags _handler = do
   Application.initializeApp
   putStrLn "Single command applications not yet fully implemented"
@@ -156,23 +157,23 @@ singleCommand _details _examples _args _flags _handler = do
 -- | Create command with metadata and handler.
 --
 -- @since 0.19.1
-command
-  :: String
-  -- ^ Command name
-  -> Summary
-  -- ^ Command summary for overview
-  -> String
-  -- ^ Detailed command description
-  -> Doc.Doc
-  -- ^ Command usage examples
-  -> Args args
-  -- ^ Argument specification
-  -> Flags flags
-  -- ^ Flag specification
-  -> (args -> flags -> IO ())
-  -- ^ Command handler function
-  -> Command
-  -- ^ Complete command definition
+command ::
+  -- | Command name
+  String ->
+  -- | Command summary for overview
+  Summary ->
+  -- | Detailed command description
+  String ->
+  -- | Command usage examples
+  Doc.Doc ->
+  -- | Argument specification
+  Args args ->
+  -- | Flag specification
+  Flags flags ->
+  -- | Command handler function
+  (args -> flags -> IO ()) ->
+  -- | Complete command definition
+  Command
 command name summary details examples args flagSpec handler =
   Internal.Command name summary details examples args flagSpec handler
 

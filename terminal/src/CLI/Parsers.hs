@@ -26,10 +26,11 @@
 module CLI.Parsers
   ( -- * Interpreter Parsers
     createInterpreterParser,
-    
+
     -- * Network Parsers
     createPortParser,
-  ) where
+  )
+where
 
 import CLI.Types (Parser)
 import qualified Terminal
@@ -52,11 +53,11 @@ import Text.Read (readMaybe)
 createInterpreterParser :: Parser String
 createInterpreterParser =
   Terminal.Parser
-    { _singular = "interpreter"
-    , _plural = "interpreters"
-    , _parser = Just
-    , _suggest = suggestInterpreters
-    , _examples = provideInterpreterExamples
+    { _singular = "interpreter",
+      _plural = "interpreters",
+      _parser = Just,
+      _suggest = suggestInterpreters,
+      _examples = provideInterpreterExamples
     }
 
 -- | Create a parser for port numbers.
@@ -76,11 +77,11 @@ createInterpreterParser =
 createPortParser :: Parser Int
 createPortParser =
   Terminal.Parser
-    { _singular = "port"
-    , _plural = "ports"
-    , _parser = parsePortNumber
-    , _suggest = suggestPorts
-    , _examples = providePortExamples
+    { _singular = "port",
+      _plural = "ports",
+      _parser = parsePortNumber,
+      _suggest = suggestPorts,
+      _examples = providePortExamples
     }
 
 -- | Parse and validate port numbers.

@@ -34,16 +34,17 @@ module CLI.Commands
     createInitCommand,
     createReplCommand,
     createReactorCommand,
-    
+
     -- * Build Commands
     createMakeCommand,
-    
+
     -- * Package Commands
     createInstallCommand,
     createPublishCommand,
     createBumpCommand,
     createDiffCommand,
-  ) where
+  )
+where
 
 import qualified Bump
 import CLI.Documentation (reflowText, stackDocuments)
@@ -72,7 +73,7 @@ createInitCommand =
   Terminal.Command "init" (Terminal.Common summary) details example Terminal.noArgs Terminal.noFlags Init.run
   where
     summary = createInitSummary
-    details = createInitDetails  
+    details = createInitDetails
     example = createInitExample
 
 -- | Create the REPL command for interactive programming sessions.
@@ -182,7 +183,7 @@ createInitSummary =
   "Start an Canopy project. It creates a starter canopy.json file and\
   \ provides a link explaining what to do from there."
 
-createInitDetails :: String  
+createInitDetails :: String
 createInitDetails =
   "The `init` command helps start Canopy projects:"
 
