@@ -26,7 +26,7 @@
 --
 -- -- Compile a source module
 -- compileModule :: Pkg.Name -> Interfaces -> Src.Module -> Either Error Artifacts
--- compileModule pkg ifaces sourceModule = 
+-- compileModule pkg ifaces sourceModule =
 --   Compile.compile pkg ifaces sourceModule
 -- @
 --
@@ -42,10 +42,10 @@
 module Compile
   ( -- * Core Types
     Artifacts (..),
-    
+
     -- * Compilation Interface
     compile,
-    
+
     -- * Lens Accessors
     artifactsModule,
     artifactsTypes,
@@ -93,7 +93,7 @@ import qualified Type.Solve as Type
 -- processArtifacts :: Artifacts -> IO ()
 -- processArtifacts artifacts = do
 --   let canonical = artifacts ^. artifactsModule
---       typeMap = artifacts ^. artifactsTypes  
+--       typeMap = artifacts ^. artifactsTypes
 --       optimized = artifacts ^. artifactsGraph
 --   -- Process each artifact...
 -- @
@@ -125,7 +125,7 @@ makeLenses ''Artifacts
 -- == Compilation Phases
 --
 -- 1. **Canonicalization** - Resolves names, validates imports, and creates canonical AST
--- 2. **Type Checking** - Infers types and validates type constraints  
+-- 2. **Type Checking** - Infers types and validates type constraints
 -- 3. **Pattern Validation** - Ensures pattern matches are exhaustive and non-redundant
 -- 4. **Optimization** - Generates optimized intermediate representation
 --
@@ -136,7 +136,7 @@ makeLenses ''Artifacts
 -- >>> compile Pkg.core Map.empty sourceModule
 -- Right (Artifacts {...})
 --
--- >>> compile invalidPkg interfaces malformedModule  
+-- >>> compile invalidPkg interfaces malformedModule
 -- Left (E.BadNames [...])
 --
 -- == Error Conditions
@@ -148,15 +148,15 @@ makeLenses ''Artifacts
 --   * 'E.BadMains' - Invalid main function, optimization failures
 --
 -- @since 0.19.1
-compile 
-  :: Pkg.Name
-  -- ^ Package name for the module being compiled
-  -> Map ModuleName.Raw I.Interface
-  -- ^ Available module interfaces for dependency resolution
-  -> Src.Module
-  -- ^ Source module to compile
-  -> Either E.Error Artifacts
-  -- ^ Compilation artifacts or error
+compile ::
+  -- | Package name for the module being compiled
+  Pkg.Name ->
+  -- | Available module interfaces for dependency resolution
+  Map ModuleName.Raw I.Interface ->
+  -- | Source module to compile
+  Src.Module ->
+  -- | Compilation artifacts or error
+  Either E.Error Artifacts
 compile pkg ifaces modul = do
   canonical <- canonicalize pkg ifaces modul
   annotations <- typeCheck modul canonical
@@ -179,28 +179,28 @@ compile pkg ifaces modul = do
 -- == Process
 --
 -- 1. Resolve all name references to their definitions
--- 2. Validate import statements and exposed symbols  
+-- 2. Validate import statements and exposed symbols
 -- 3. Build canonical AST with fully qualified names
 -- 4. Detect circular dependencies and scope violations
 --
 -- == Error Cases
 --
 -- * Undefined variables or functions
--- * Invalid import statements  
+-- * Invalid import statements
 -- * Circular module dependencies
 -- * Name shadowing violations
 -- * Scope resolution failures
 --
 -- @since 0.19.1
-canonicalize 
-  :: Pkg.Name
-  -- ^ Package context for name resolution
-  -> Map ModuleName.Raw I.Interface  
-  -- ^ Available module interfaces
-  -> Src.Module
-  -- ^ Source module to canonicalize
-  -> Either E.Error Can.Module
-  -- ^ Canonical module or canonicalization errors
+canonicalize ::
+  -- | Package context for name resolution
+  Pkg.Name ->
+  -- | Available module interfaces
+  Map ModuleName.Raw I.Interface ->
+  -- | Source module to canonicalize
+  Src.Module ->
+  -- | Canonical module or canonicalization errors
+  Either E.Error Can.Module
 canonicalize pkg ifaces modul =
   case snd . R.run $ Canonicalize.canonicalize pkg ifaces modul of
     Right canonical -> Right canonical
@@ -222,19 +222,19 @@ canonicalize pkg ifaces modul =
 -- == Error Cases
 --
 -- * Type mismatches between expected and actual types
--- * Unsolvable type constraints  
+-- * Unsolvable type constraints
 -- * Infinite or recursive type definitions
 -- * Missing type class instances
 -- * Constraint solver failures
 --
 -- @since 0.19.1
-typeCheck 
-  :: Src.Module
-  -- ^ Original source module for error localization
-  -> Can.Module
-  -- ^ Canonical module to type check
-  -> Either E.Error (Map Name.Name Can.Annotation)
-  -- ^ Type annotations or type errors
+typeCheck ::
+  -- | Original source module for error localization
+  Src.Module ->
+  -- | Canonical module to type check
+  Can.Module ->
+  -- | Type annotations or type errors
+  Either E.Error (Map Name.Name Can.Annotation)
 typeCheck modul canonical =
   case unsafePerformIO (Type.constrain canonical >>= Type.run) of
     Right annotations -> Right annotations
@@ -261,11 +261,11 @@ typeCheck modul canonical =
 -- * Invalid guard conditions in patterns
 --
 -- @since 0.19.1
-nitpick 
-  :: Can.Module
-  -- ^ Canonical module to validate patterns in
-  -> Either E.Error ()
-  -- ^ Success or pattern match errors
+nitpick ::
+  -- | Canonical module to validate patterns in
+  Can.Module ->
+  -- | Success or pattern match errors
+  Either E.Error ()
 nitpick canonical =
   case PatternMatches.check canonical of
     Right () -> Right ()
@@ -292,15 +292,15 @@ nitpick canonical =
 -- * Code generation preparation failures
 --
 -- @since 0.19.1
-optimize 
-  :: Src.Module
-  -- ^ Original source module for error localization
-  -> Map Name.Name Can.Annotation
-  -- ^ Type annotations from type checking phase
-  -> Can.Module
-  -- ^ Canonical module to optimize
-  -> Either E.Error Opt.LocalGraph
-  -- ^ Optimized dependency graph or optimization errors
+optimize ::
+  -- | Original source module for error localization
+  Src.Module ->
+  -- | Type annotations from type checking phase
+  Map Name.Name Can.Annotation ->
+  -- | Canonical module to optimize
+  Can.Module ->
+  -- | Optimized dependency graph or optimization errors
+  Either E.Error Opt.LocalGraph
 optimize modul annotations canonical =
   case snd . R.run $ Optimize.optimize annotations canonical of
     Right localGraph -> Right localGraph
