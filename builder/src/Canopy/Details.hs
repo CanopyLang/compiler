@@ -82,6 +82,7 @@ import qualified Reporting.Annotation as A
 import Reporting.Exit (PackageProblem (PP_BadArchiveHash))
 import qualified Reporting.Exit as Exit
 import qualified Reporting.Task as Task
+import Stuff (PackageOverrideConfig (..))
 import qualified Stuff
 import qualified System.Directory as Dir
 import System.FilePath ((<.>), (</>))
@@ -567,7 +568,7 @@ cacheFilePathFromBuildData buildData =
       Stuff.package cache pkg vsn
     BuildWithOverridingPackage
       (OverridingPackageBuildData {_originalPkg = origPkg, _originalPkgVersion = origPkgVer, _overridingPkg = overPkg, _overridingPkgVersion = overPkgVer, _overridingCache = cache}) ->
-        Stuff.packageOverride cache origPkg origPkgVer overPkg overPkgVer
+        Stuff.packageOverride (PackageOverrideConfig cache origPkg origPkgVer overPkg overPkgVer)
 
 build :: Reporting.DKey -> BuildData -> MVar (Map.Map Pkg.Name (MVar Dep)) -> Fingerprint -> Set.Set Fingerprint -> IO Dep
 build key buildData depsMVar f fs =
@@ -869,7 +870,7 @@ getDocsStatusFromFilePath pathToDocsDir =
 getDocsStatusOverridePkg :: Stuff.PackageOverridesCache -> Pkg.Name -> V.Version -> Pkg.Name -> V.Version -> IO DocsStatus
 getDocsStatusOverridePkg cache originalPkg originalVsn overridingPkg overridingVsn =
   do
-    exists <- File.exists (Stuff.packageOverride cache originalPkg originalVsn overridingPkg overridingVsn </> "docs.json")
+    exists <- File.exists (Stuff.packageOverride (PackageOverrideConfig cache originalPkg originalVsn overridingPkg overridingVsn) </> "docs.json")
     if exists
       then return DocsNotNeeded
       else return DocsNeeded
@@ -904,7 +905,7 @@ writeDocsOverridingPackage :: Stuff.PackageOverridesCache -> Pkg.Name -> V.Versi
 writeDocsOverridingPackage cache originalPkg originalVsn overridingPkg overridingVsn status results =
   case status of
     DocsNeeded ->
-      E.writeUgly (Stuff.packageOverride cache originalPkg originalVsn overridingPkg overridingVsn </> "docs.json") . Docs.encode $ Map.mapMaybe toDocs results
+      E.writeUgly (Stuff.packageOverride (PackageOverrideConfig cache originalPkg originalVsn overridingPkg overridingVsn) </> "docs.json") . Docs.encode $ Map.mapMaybe toDocs results
     DocsNotNeeded ->
       return ()
 
