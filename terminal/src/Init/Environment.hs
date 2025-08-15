@@ -52,19 +52,20 @@ module Init.Environment
     -- * Solver Integration
     initializeSolver,
     createSolverContext,
-  ) where
+  )
+where
 
 import qualified Canopy.Constraint as Con
 import Canopy.Package (Name)
 import Data.Map (Map)
 import qualified Data.Map as Map
 import qualified Deps.Registry as Registry
-import qualified Deps.Solver as Solver
 import Deps.Solver (Connection)
+import qualified Deps.Solver as Solver
 import qualified Http
 import Init.Types
   ( InitError (..),
-    ProjectContext
+    ProjectContext,
   )
 import qualified Stuff
 
@@ -93,9 +94,9 @@ setupEnvironment :: IO (Either InitError Solver.Env)
 setupEnvironment = do
   eitherEnv <- Solver.initEnv
   case eitherEnv of
-    Left registryProblem -> 
+    Left registryProblem ->
       pure (Left (RegistryFailure registryProblem))
-    Right env -> 
+    Right env ->
       validateSolverEnv env
 
 -- | Validate solver environment is ready for dependency resolution.
@@ -103,14 +104,14 @@ setupEnvironment = do
 -- Performs basic checks on the solver environment to ensure it's
 -- properly configured and can handle dependency resolution requests.
 validateSolverEnv :: Solver.Env -> IO (Either InitError Solver.Env)
-validateSolverEnv env@(Solver.Env cache manager connection registry _) = 
+validateSolverEnv env@(Solver.Env cache manager connection registry _) =
   if isValidSolverEnv cache manager connection registry
     then pure (Right env)
     else pure (Left (FileSystemError "Invalid solver environment configuration"))
 
 -- | Check if solver environment components are valid.
 isValidSolverEnv :: Stuff.PackageCache -> Http.Manager -> Connection -> Registry.ZokkaRegistries -> Bool
-isValidSolverEnv _ _ _ _ = True  -- Simplified validation for now
+isValidSolverEnv _ _ _ _ = True -- Simplified validation for now
 
 -- | Resolve default dependencies using the solver environment.
 --
@@ -136,20 +137,20 @@ isValidSolverEnv _ _ _ _ = True  -- Simplified validation for now
 --   * Solver computation errors
 --
 -- @since 0.19.1
-resolveDefaults 
-  :: Solver.Env 
-  -> Map Name Con.Constraint 
-  -> IO (Either InitError (Map Name Solver.Details))
+resolveDefaults ::
+  Solver.Env ->
+  Map Name Con.Constraint ->
+  IO (Either InitError (Map Name Solver.Details))
 resolveDefaults (Solver.Env cache _ connection registry _) deps = do
   result <- Solver.verify cache connection registry deps
   case result of
-    Solver.Err solverExit -> 
+    Solver.Err solverExit ->
       pure (Left (SolverFailure solverExit))
-    Solver.NoSolution -> 
+    Solver.NoSolution ->
       pure (Left (NoSolution (Map.keys deps)))
-    Solver.NoOfflineSolution _ -> 
+    Solver.NoOfflineSolution _ ->
       pure (Left (NoOfflineSolution (Map.keys deps)))
-    Solver.Ok details -> 
+    Solver.Ok details ->
       pure (Right details)
 
 -- | Validate environment is ready for initialization operations.
@@ -198,7 +199,7 @@ initializeSolver = setupEnvironment
 --
 -- @since 0.19.1
 createSolverContext :: ProjectContext -> Solver.Env -> IO (Either InitError Solver.Env)
-createSolverContext _context env = 
+createSolverContext _context env =
   -- For now, return the environment as-is
   -- Future enhancement: customize solver based on project context
   pure (Right env)

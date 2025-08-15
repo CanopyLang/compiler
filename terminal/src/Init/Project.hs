@@ -63,10 +63,11 @@ module Init.Project
     setupSourceDirectories,
     createSourceDirectory,
     createTestDirectory,
-  ) where
+  )
+where
 
-import Canopy.Package (Name)
 import qualified Canopy.Outline as Outline
+import Canopy.Package (Name)
 import qualified Canopy.Version as V
 import Control.Lens ((^.))
 import Data.Map (Map)
@@ -78,7 +79,7 @@ import Init.Types
     ProjectContext (..),
     contextDependencies,
     contextSourceDirs,
-    contextTestDeps
+    contextTestDeps,
   )
 import qualified System.Directory as Dir
 
@@ -112,10 +113,10 @@ import qualified System.Directory as Dir
 --   * Invalid project configuration
 --
 -- @since 0.19.1
-createProjectStructure 
-  :: ProjectContext 
-  -> Map Name Solver.Details 
-  -> IO (Either InitError ())
+createProjectStructure ::
+  ProjectContext ->
+  Map Name Solver.Details ->
+  IO (Either InitError ())
 createProjectStructure context solverDetails = do
   directoryResult <- setupDirectoryStructure context
   case directoryResult of
@@ -172,7 +173,7 @@ attemptDirectoryCreation dirPath = do
     try action = do
       success <- attemptIO action
       pure (if success then Right () else Left "IO Error")
-    
+
     attemptIO :: IO () -> IO Bool
     attemptIO action = do
       _ <- action
@@ -203,10 +204,10 @@ setupAdditionalDirectories = do
 -- ...   Left err -> reportConfigError err
 --
 -- @since 0.19.1
-generateCanopyJson 
-  :: ProjectContext 
-  -> Map Name Solver.Details 
-  -> IO (Either InitError ())
+generateCanopyJson ::
+  ProjectContext ->
+  Map Name Solver.Details ->
+  IO (Either InitError ())
 generateCanopyJson context solverDetails = do
   let outline = createOutlineConfig context solverDetails
   result <- attemptOutlineWrite outline
@@ -225,14 +226,15 @@ createOutlineConfig context solverDetails =
       directs = Map.intersection solution (context ^. contextDependencies)
       indirects = Map.difference solution (context ^. contextDependencies)
       testDeps = Map.intersection solution (context ^. contextTestDeps)
-  in Outline.App $ Outline.AppOutline 
-       V.compiler 
-       sourceDirs 
-       directs 
-       indirects 
-       testDeps 
-       Map.empty  -- test indirects
-       []         -- elm-version (deprecated)
+   in Outline.App $
+        Outline.AppOutline
+          V.compiler
+          sourceDirs
+          directs
+          indirects
+          testDeps
+          Map.empty -- test indirects
+          [] -- elm-version (deprecated)
 
 -- | Extract version information from solver details.
 extractVersions :: Map Name Solver.Details -> Map Name V.Version
@@ -241,7 +243,7 @@ extractVersions = Map.map (\(Solver.Details version _) -> version)
 -- | Create source directory list for outline.
 createSourceDirList :: [String] -> NE.List Outline.SrcDir
 createSourceDirList [] = NE.List (Outline.RelativeSrcDir "src") []
-createSourceDirList (first:rest) = 
+createSourceDirList (first : rest) =
   NE.List (Outline.RelativeSrcDir first) (map Outline.RelativeSrcDir rest)
 
 -- | Attempt to write outline configuration to file.
@@ -256,7 +258,7 @@ attemptOutlineWrite outline = do
     try action = do
       success <- attemptIO action
       pure (if success then Right () else Left "IO Error")
-    
+
     attemptIO :: IO () -> IO Bool
     attemptIO action = do
       _ <- action
@@ -294,7 +296,7 @@ attemptSuccessMessage = do
 -- Sets up the test directory hierarchy if test dependencies are
 -- specified in the project context.
 createTestDirectory :: ProjectContext -> IO (Either InitError ())
-createTestDirectory context = 
+createTestDirectory context =
   if Map.null (context ^. contextTestDeps)
     then pure (Right ()) -- No test dependencies, skip test directory
     else createTestDir

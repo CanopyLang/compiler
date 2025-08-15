@@ -62,14 +62,15 @@ module Init.Types
     defaultContext,
     defaultDependencies,
     defaultDeps,
-  ) where
+  )
+where
 
 import qualified Canopy.Constraint as Con
 import Canopy.Package (Name)
 import qualified Canopy.Package as Pkg
 import Control.Lens (makeLenses)
-import qualified Data.Map as Map
 import Data.Map (Map)
+import qualified Data.Map as Map
 import qualified Reporting.Exit as Exit
 
 -- | Configuration for the initialization process.
@@ -77,59 +78,62 @@ import qualified Reporting.Exit as Exit
 -- Controls behavior of project initialization including user interaction,
 -- validation strictness, and output verbosity.
 data InitConfig = InitConfig
-  { _configVerbose :: !Bool
-  -- ^ Enable verbose output during initialization
-  , _configForce :: !Bool
-  -- ^ Force initialization even if canopy.json exists
-  , _configSkipPrompt :: !Bool
-  -- ^ Skip user confirmation prompt
-  } deriving (Eq, Show)
+  { -- | Enable verbose output during initialization
+    _configVerbose :: !Bool,
+    -- | Force initialization even if canopy.json exists
+    _configForce :: !Bool,
+    -- | Skip user confirmation prompt
+    _configSkipPrompt :: !Bool
+  }
+  deriving (Eq, Show)
 
 -- | Project context containing setup parameters.
 --
 -- Encapsulates all information needed to create a new Canopy project,
 -- including source directories, dependencies, and project metadata.
 data ProjectContext = ProjectContext
-  { _contextProjectName :: !(Maybe String)
-  -- ^ Optional project name override
-  , _contextSourceDirs :: ![String]
-  -- ^ List of source directories (default: ["src"])
-  , _contextDependencies :: !(Map Name Con.Constraint)
-  -- ^ Direct project dependencies
-  , _contextTestDeps :: !(Map Name Con.Constraint)
-  -- ^ Test-only dependencies
-  } deriving (Eq, Show)
+  { -- | Optional project name override
+    _contextProjectName :: !(Maybe String),
+    -- | List of source directories (default: ["src"])
+    _contextSourceDirs :: ![String],
+    -- | Direct project dependencies
+    _contextDependencies :: !(Map Name Con.Constraint),
+    -- | Test-only dependencies
+    _contextTestDeps :: !(Map Name Con.Constraint)
+  }
+  deriving (Eq, Show)
 
 -- | Default dependency configuration for new projects.
 --
 -- Specifies the standard dependencies that every new Canopy project
 -- should include by default.
 data DefaultDeps = DefaultDeps
-  { _depsCore :: !Con.Constraint
-  -- ^ Core language package constraint
-  , _depsBrowser :: !Con.Constraint
-  -- ^ Browser API package constraint
-  , _depsHtml :: !Con.Constraint
-  -- ^ HTML package constraint
-  } deriving (Eq, Show)
+  { -- | Core language package constraint
+    _depsCore :: !Con.Constraint,
+    -- | Browser API package constraint
+    _depsBrowser :: !Con.Constraint,
+    -- | HTML package constraint
+    _depsHtml :: !Con.Constraint
+  }
+  deriving (Eq, Show)
 
 -- | Comprehensive error types for initialization failures.
 --
 -- Captures all possible failure modes during project initialization,
 -- providing rich error information for user feedback.
 data InitError
-  = ProjectExists !FilePath
-  -- ^ Project already exists at path
-  | RegistryFailure !Exit.RegistryProblem
-  -- ^ Package registry connection or communication failure
-  | SolverFailure !Exit.Solver
-  -- ^ Dependency resolution failure
-  | NoSolution ![Name]
-  -- ^ No valid dependency solution found for packages
-  | NoOfflineSolution ![Name]
-  -- ^ No offline solution available for packages
-  | FileSystemError !String
-  -- ^ File system operation failure with description
+  = -- | Project already exists at path
+    ProjectExists !FilePath
+  | -- | Package registry connection or communication failure
+    RegistryFailure !Exit.RegistryProblem
+  | -- | Dependency resolution failure
+    SolverFailure !Exit.Solver
+  | -- | No valid dependency solution found for packages
+    NoSolution ![Name]
+  | -- | No offline solution available for packages
+    NoOfflineSolution ![Name]
+  | -- | File system operation failure with description
+    FileSystemError !String
   deriving (Show)
 
 -- Generate lenses for all record types
@@ -148,11 +152,12 @@ makeLenses ''DefaultDeps
 -- >>> defaultConfig ^. configForce
 -- False
 defaultConfig :: InitConfig
-defaultConfig = InitConfig
-  { _configVerbose = False
-  , _configForce = False
-  , _configSkipPrompt = False
-  }
+defaultConfig =
+  InitConfig
+    { _configVerbose = False,
+      _configForce = False,
+      _configSkipPrompt = False
+    }
 
 -- | Default project context for standard Canopy applications.
 --
@@ -165,30 +170,33 @@ defaultConfig = InitConfig
 -- >>> Map.keys (defaultContext ^. contextDependencies)
 -- [core, browser, html]
 defaultContext :: ProjectContext
-defaultContext = ProjectContext
-  { _contextProjectName = Nothing
-  , _contextSourceDirs = ["src"]
-  , _contextDependencies = defaultDependencies
-  , _contextTestDeps = Map.empty
-  }
+defaultContext =
+  ProjectContext
+    { _contextProjectName = Nothing,
+      _contextSourceDirs = ["src"],
+      _contextDependencies = defaultDependencies,
+      _contextTestDeps = Map.empty
+    }
 
 -- | Standard default dependencies for new projects.
 --
 -- Every new Canopy project includes these essential packages:
 -- core (language fundamentals), browser (DOM APIs), and html (HTML generation).
 defaultDependencies :: Map Name Con.Constraint
-defaultDependencies = Map.fromList
-  [ (Pkg.core, Con.anything)
-  , (Pkg.browser, Con.anything)
-  , (Pkg.html, Con.anything)
-  ]
+defaultDependencies =
+  Map.fromList
+    [ (Pkg.core, Con.anything),
+      (Pkg.browser, Con.anything),
+      (Pkg.html, Con.anything)
+    ]
 
 -- | Default dependency constraints.
 --
 -- Provides the standard constraint configuration used for new projects.
 defaultDeps :: DefaultDeps
-defaultDeps = DefaultDeps
-  { _depsCore = Con.anything
-  , _depsBrowser = Con.anything
-  , _depsHtml = Con.anything
-  }
+defaultDeps =
+  DefaultDeps
+    { _depsCore = Con.anything,
+      _depsBrowser = Con.anything,
+      _depsHtml = Con.anything
+    }

@@ -49,7 +49,8 @@ module Init.Validation
     -- * System Validation
     checkPrerequisites,
     validateEnvironment,
-  ) where
+  )
+where
 
 import Canopy.Constraint (Constraint)
 import Canopy.Package (Name)
@@ -63,7 +64,7 @@ import Init.Types
     ProjectContext (..),
     configForce,
     contextDependencies,
-    contextSourceDirs
+    contextSourceDirs,
   )
 import qualified System.Directory as Dir
 
@@ -129,11 +130,11 @@ validateSourceDirs sourceDirs = do
 
 -- | Check if directory name is valid for source directory.
 isInvalidDirName :: String -> Bool
-isInvalidDirName dirName = 
-  null dirName || 
-  any (`elem` dirName) ['\0', '/', '\\'] ||
-  dirName == "." || 
-  dirName == ".."
+isInvalidDirName dirName =
+  null dirName
+    || any (`elem` dirName) ['\0', '/', '\\']
+    || dirName == "."
+    || dirName == ".."
 
 -- | Validate directory permissions for project creation.
 validateDirectoryPermissions :: FilePath -> IO (Either InitError ())
@@ -166,27 +167,27 @@ validateProjectContext :: ProjectContext -> Either InitError ()
 validateProjectContext context = do
   let sourceDirs = context ^. contextSourceDirs
       dependencies = context ^. contextDependencies
-  
-  validateSourceDirNames sourceDirs >>
-    validateDependencyMap dependencies
+
+  validateSourceDirNames sourceDirs
+    >> validateDependencyMap dependencies
 
 -- | Validate source directory names are appropriate.
 validateSourceDirNames :: [String] -> Either InitError ()
-validateSourceDirNames sourceDirs 
+validateSourceDirNames sourceDirs
   | null sourceDirs = Left (FileSystemError "No source directories specified")
   | any isInvalidDirName sourceDirs = Left (FileSystemError "Invalid source directory names")
   | otherwise = Right ()
 
 -- | Validate dependency map is well-formed.
 validateDependencyMap :: Map Name Constraint -> Either InitError ()
-validateDependencyMap deps = 
+validateDependencyMap deps =
   if Map.null deps
     then Left (FileSystemError "No dependencies specified")
     else validateCorePackage deps
 
 -- | Ensure core package is included in dependencies.
 validateCorePackage :: Map Name Constraint -> Either InitError ()
-validateCorePackage deps = 
+validateCorePackage deps =
   if Map.member Pkg.core deps
     then Right ()
     else Left (FileSystemError "Core package must be included in dependencies")
@@ -233,12 +234,12 @@ checkDirectoryPermissions dirPath = do
 -- full dependency resolution.
 validateDependencies :: Map Name Constraint -> Either InitError ()
 validateDependencies deps = do
-  validatePackageNames (Map.keys deps) >>
-    validateConstraints (Map.elems deps)
+  validatePackageNames (Map.keys deps)
+    >> validateConstraints (Map.elems deps)
 
 -- | Validate package names are well-formed.
 validatePackageNames :: [Name] -> Either InitError ()
-validatePackageNames names = 
+validatePackageNames names =
   if all isValidPackageName names
     then Right ()
     else Left (FileSystemError "Invalid package names in dependencies")

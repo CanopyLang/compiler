@@ -59,14 +59,15 @@ module Init.Display
     formatErrorMessage,
     displayError,
     showErrorDetails,
-  ) where
+  )
+where
 
 import Canopy.Package (Name)
 import Control.Lens ((^.))
 import Init.Types
   ( InitConfig (..),
     InitError (..),
-    configSkipPrompt
+    configSkipPrompt,
   )
 import qualified Reporting
 import Reporting.Doc (Doc)
@@ -96,7 +97,7 @@ import qualified Reporting.Exit as Exit
 --
 -- @since 0.19.1
 promptUserConfirmation :: InitConfig -> IO Bool
-promptUserConfirmation config = 
+promptUserConfirmation config =
   if config ^. configSkipPrompt
     then pure True
     else askUserConfirmation
@@ -122,17 +123,19 @@ displayInitMessage = do
 -- Generates a comprehensive welcome message explaining the initialization
 -- process and what will be created.
 welcomeMessage :: Doc
-welcomeMessage = Doc.vcat
-  [ Doc.fromChars "Welcome to Canopy project initialization!"
-  , Doc.fromChars ""
-  , Doc.fromChars "This will create a new Canopy project with:"
-  , Doc.indent 2 $ Doc.vcat
-      [ Doc.fromChars "• canopy.json configuration file"
-      , Doc.fromChars "• src/ directory for source code"
-      , Doc.fromChars "• Standard dependency setup"
-      ]
-  , Doc.fromChars ""
-  ]
+welcomeMessage =
+  Doc.vcat
+    [ Doc.fromChars "Welcome to Canopy project initialization!",
+      Doc.fromChars "",
+      Doc.fromChars "This will create a new Canopy project with:",
+      Doc.indent 2 $
+        Doc.vcat
+          [ Doc.fromChars "• canopy.json configuration file",
+            Doc.fromChars "• src/ directory for source code",
+            Doc.fromChars "• Standard dependency setup"
+          ],
+      Doc.fromChars ""
+    ]
 
 -- | Show confirmation prompt to user.
 --
@@ -148,53 +151,57 @@ showConfirmationPrompt = confirmationPrompt
 -- initialization, broken down into manageable parts to meet CLAUDE.md
 -- function size requirements.
 confirmationPrompt :: Doc
-confirmationPrompt = Doc.stack
-  [ introductionText
-  , explanationText  
-  , helpfulLinksText
-  , confirmationText
-  ]
+confirmationPrompt =
+  Doc.stack
+    [ introductionText,
+      explanationText,
+      helpfulLinksText,
+      confirmationText
+    ]
 
 -- | Introduction text for the confirmation prompt.
 introductionText :: Doc
-introductionText = Doc.fillSep
-  [ "Hello!"
-  , "Canopy"
-  , "projects"
-  , "always"
-  , "start"
-  , "with"
-  , "an"
-  , Doc.green "canopy.json"
-  , "file."
-  , "I"
-  , "can"
-  , "create"
-  , "them!"
-  ]
+introductionText =
+  Doc.fillSep
+    [ "Hello!",
+      "Canopy",
+      "projects",
+      "always",
+      "start",
+      "with",
+      "an",
+      Doc.green "canopy.json",
+      "file.",
+      "I",
+      "can",
+      "create",
+      "them!"
+    ]
 
 -- | Explanation text for what will happen during initialization.
 explanationText :: Doc
-explanationText = Doc.reflow $
-  "Now you may be wondering, what will be in this file? How do I add Canopy files to" <>
-  " my project? How do I see it in the browser? How will my code grow? Do I need" <>
-  " more directories? What about tests? Etc."
+explanationText =
+  Doc.reflow $
+    "Now you may be wondering, what will be in this file? How do I add Canopy files to"
+      <> " my project? How do I see it in the browser? How will my code grow? Do I need"
+      <> " more directories? What about tests? Etc."
 
 -- | Helpful links text directing users to documentation.
-helpfulLinksText :: Doc  
-helpfulLinksText = Doc.fillSep
-  [ "Check"
-  , "out"
-  , Doc.cyan (Doc.fromChars (Doc.makeLink "init"))
-  , "for"
-  , "all"
-  , "the"
-  , "answers!"
-  ]
+helpfulLinksText :: Doc
+helpfulLinksText =
+  Doc.fillSep
+    [ "Check",
+      "out",
+      Doc.cyan (Doc.fromChars (Doc.makeLink "init")),
+      "for",
+      "all",
+      "the",
+      "answers!"
+    ]
 
 -- | Final confirmation question text.
 confirmationText :: Doc
-confirmationText = 
+confirmationText =
   "Knowing all that, would you like me to create an canopy.json file now? [Y/n]: "
 
 -- | Display progress indicator during initialization.
@@ -203,7 +210,7 @@ confirmationText =
 -- process, helping them understand what's happening and that the
 -- system is working.
 displayProgress :: String -> IO ()
-displayProgress message = 
+displayProgress message =
   putStrLn ("Initializing: " <> message)
 
 -- | Show success message after completion.
@@ -216,16 +223,18 @@ showSuccessMessage = do
 
 -- | Create success message content.
 successMessage :: Doc
-successMessage = Doc.vcat
-  [ Doc.fromChars "Project initialized successfully!"
-  , Doc.fromChars ""
-  , Doc.fromChars "Your new Canopy project is ready. Next steps:"
-  , Doc.indent 2 $ Doc.vcat
-      [ Doc.fromChars "1. Add your source files to src/"
-      , Doc.fromChars "2. Run 'canopy make' to build your project"
-      , Doc.fromChars "3. Check out the documentation for more information"
-      ]
-  ]
+successMessage =
+  Doc.vcat
+    [ Doc.fromChars "Project initialized successfully!",
+      Doc.fromChars "",
+      Doc.fromChars "Your new Canopy project is ready. Next steps:",
+      Doc.indent 2 $
+        Doc.vcat
+          [ Doc.fromChars "1. Add your source files to src/",
+            Doc.fromChars "2. Run 'canopy make' to build your project",
+            Doc.fromChars "3. Check out the documentation for more information"
+          ]
+    ]
 
 -- | Report completion with specific details.
 --
@@ -250,7 +259,7 @@ reportCompletion = do
 -- @since 0.19.1
 formatErrorMessage :: InitError -> Doc
 formatErrorMessage initError = case initError of
-  ProjectExists path -> 
+  ProjectExists path ->
     formatProjectExistsError path
   RegistryFailure registryProblem ->
     formatRegistryError registryProblem
@@ -265,45 +274,51 @@ formatErrorMessage initError = case initError of
 
 -- | Format project exists error message.
 formatProjectExistsError :: FilePath -> Doc
-formatProjectExistsError path = Doc.vcat
-  [ Doc.fromChars ("Project already exists: " <> path)
-  , Doc.fromChars "Use --force to override existing project."
-  ]
+formatProjectExistsError path =
+  Doc.vcat
+    [ Doc.fromChars ("Project already exists: " <> path),
+      Doc.fromChars "Use --force to override existing project."
+    ]
 
 -- | Format registry failure error message.
 formatRegistryError :: Exit.RegistryProblem -> Doc
-formatRegistryError _problem = Doc.vcat
-  [ Doc.fromChars "Failed to connect to package registry."
-  , Doc.fromChars "Check your network connection and try again."
-  ]
+formatRegistryError _problem =
+  Doc.vcat
+    [ Doc.fromChars "Failed to connect to package registry.",
+      Doc.fromChars "Check your network connection and try again."
+    ]
 
 -- | Format solver failure error message.
 formatSolverError :: Exit.Solver -> Doc
-formatSolverError _solverExit = Doc.vcat
-  [ Doc.fromChars "Dependency resolution failed."
-  , Doc.fromChars "Please check package constraints and try again."
-  ]
+formatSolverError _solverExit =
+  Doc.vcat
+    [ Doc.fromChars "Dependency resolution failed.",
+      Doc.fromChars "Please check package constraints and try again."
+    ]
 
 -- | Format no solution error message.
 formatNoSolutionError :: [Name] -> Doc
-formatNoSolutionError packages = Doc.vcat
-  [ Doc.fromChars "No valid dependency solution found for:"
-  , Doc.indent 2 $ Doc.vcat $ map (Doc.fromChars . show) packages
-  ]
+formatNoSolutionError packages =
+  Doc.vcat
+    [ Doc.fromChars "No valid dependency solution found for:",
+      Doc.indent 2 $ Doc.vcat $ map (Doc.fromChars . show) packages
+    ]
 
 -- | Format offline solution error message.
 formatOfflineError :: [Name] -> Doc
-formatOfflineError packages = Doc.vcat
-  [ Doc.fromChars "No offline solution available for:"
-  , Doc.indent 2 $ Doc.vcat $ map (Doc.fromChars . show) packages
-  ]
+formatOfflineError packages =
+  Doc.vcat
+    [ Doc.fromChars "No offline solution available for:",
+      Doc.indent 2 $ Doc.vcat $ map (Doc.fromChars . show) packages
+    ]
 
 -- | Format file system error message.
 formatFileSystemError :: String -> Doc
-formatFileSystemError message = Doc.vcat
-  [ Doc.fromChars ("File system error: " <> message)
-  , Doc.fromChars "Check directory permissions and disk space."
-  ]
+formatFileSystemError message =
+  Doc.vcat
+    [ Doc.fromChars ("File system error: " <> message),
+      Doc.fromChars "Check directory permissions and disk space."
+    ]
 
 -- | Display error to user with formatting.
 --
