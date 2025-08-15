@@ -12,7 +12,7 @@
 -- == Core Types
 --
 -- * 'Command' - Complete command definition with args, flags, and action
--- * 'Args' - Argument parsing specifications  
+-- * 'Args' - Argument parsing specifications
 -- * 'Flags' - Flag/option parsing specifications
 -- * 'Parser' - Generic parsing functions with validation and suggestions
 --

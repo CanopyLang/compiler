@@ -28,7 +28,7 @@ import Terminal.Internal (Args, Flags)
 -- >>> chomp Nothing ["file.txt"] argSpec flagSpec
 -- (suggestions, Right (args, flags))
 --
--- >>> chomp (Just 1) ["--help"] argSpec flagSpec  
+-- >>> chomp (Just 1) ["--help"] argSpec flagSpec
 -- (suggestions, Left flagError)
 --
 -- @since 0.19.1

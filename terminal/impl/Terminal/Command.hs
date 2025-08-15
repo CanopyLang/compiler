@@ -41,12 +41,12 @@ module Terminal.Command
   ( -- * Command Execution
     handleCommandExecution,
     processSingleCommand,
-    
+
     -- * Command Management
     findCommand,
     executeCommand,
     executeCommandWithHelp,
-    
+
     -- * Command Creation
     createCommand,
     createCommandMeta,
@@ -57,22 +57,22 @@ import Control.Lens ((^.))
 import qualified Data.List as List
 import qualified Terminal.Chomp as Chomp
 import qualified Terminal.Error as Error
+import Terminal.Internal
+  ( Args,
+    Flags,
+  )
+import qualified Terminal.Parser as Parser
 import Terminal.Types
   ( AppConfig (..),
     Command (..),
     CommandMeta (..),
     acCommands,
+    cmDetails,
+    cmExample,
     cmdHandler,
     cmdMeta,
     cmdName,
-    cmDetails,
-    cmExample
   )
-import Terminal.Internal
-  ( Args,
-    Flags
-  )
-import qualified Terminal.Parser as Parser
 import qualified Terminal.Types as Types
 import qualified Text.PrettyPrint.ANSI.Leijen as Doc
 
@@ -106,15 +106,15 @@ import qualified Text.PrettyPrint.ANSI.Leijen as Doc
 --   * Command execution errors
 --
 -- @since 0.19.1
-handleCommandExecution
-  :: AppConfig
-  -- ^ Application configuration with commands
-  -> String
-  -- ^ Command name to execute
-  -> [String]
-  -- ^ Command arguments
-  -> IO ()
-  -- ^ Exits with appropriate status
+handleCommandExecution ::
+  -- | Application configuration with commands
+  AppConfig ->
+  -- | Command name to execute
+  String ->
+  -- | Command arguments
+  [String] ->
+  -- | Exits with appropriate status
+  IO ()
 handleCommandExecution config commandName args = do
   case findCommand config commandName of
     Nothing -> Error.exitWithUnknown commandName (getCommandNames config)
@@ -127,17 +127,17 @@ handleCommandExecution config commandName args = do
 -- without command lookup logic.
 --
 -- @since 0.19.1
-processSingleCommand
-  :: Doc.Doc
-  -- ^ Command details documentation
-  -> Doc.Doc
-  -- ^ Command examples
-  -> (() -> () -> IO ())
-  -- ^ Command handler function
-  -> [String]
-  -- ^ Command arguments
-  -> IO ()
-  -- ^ Exits with appropriate status
+processSingleCommand ::
+  -- | Command details documentation
+  Doc.Doc ->
+  -- | Command examples
+  Doc.Doc ->
+  -- | Command handler function
+  (() -> () -> IO ()) ->
+  -- | Command arguments
+  [String] ->
+  -- | Exits with appropriate status
+  IO ()
 processSingleCommand details examples handler args = do
   if "--help" `elem` args
     then Error.exitWithHelp Nothing (show details) examples Parser.noArgs Parser.noFlags
@@ -149,13 +149,13 @@ processSingleCommand details examples handler args = do
 -- Used for command lookup before execution.
 --
 -- @since 0.19.1
-findCommand
-  :: AppConfig
-  -- ^ Application configuration
-  -> String
-  -- ^ Command name to find
-  -> Maybe Command
-  -- ^ Found command or Nothing
+findCommand ::
+  -- | Application configuration
+  AppConfig ->
+  -- | Command name to find
+  String ->
+  -- | Found command or Nothing
+  Maybe Command
 findCommand config name =
   List.find (\cmd -> cmd ^. cmdName == name) (config ^. acCommands)
 
@@ -166,13 +166,13 @@ findCommand config name =
 -- parses arguments and executes the command handler.
 --
 -- @since 0.19.1
-executeCommandWithHelp
-  :: Command
-  -- ^ Command to execute
-  -> [String]
-  -- ^ Command arguments
-  -> IO ()
-  -- ^ Exits with appropriate status
+executeCommandWithHelp ::
+  -- | Command to execute
+  Command ->
+  -- | Command arguments
+  [String] ->
+  -- | Exits with appropriate status
+  IO ()
 executeCommandWithHelp command args = do
   if "--help" `elem` args
     then displayCommandHelp command
@@ -185,17 +185,17 @@ executeCommandWithHelp command args = do
 -- with the parsed values.
 --
 -- @since 0.19.1
-executeCommand
-  :: Command
-  -- ^ Command to execute
-  -> [String]
-  -- ^ Raw command arguments
-  -> IO ()
-  -- ^ Exits with appropriate status
+executeCommand ::
+  -- | Command to execute
+  Command ->
+  -- | Raw command arguments
+  [String] ->
+  -- | Exits with appropriate status
+  IO ()
 executeCommand command args = do
   let handler = command ^. cmdHandler
-      -- Use empty args/flags since we're working with () types
-  
+  -- Use empty args/flags since we're working with () types
+
   case parseCommandArguments args Parser.noArgs Parser.noFlags of
     Right (parsedArgs, parsedFlags) -> handler parsedArgs parsedFlags
     Left err -> Error.exitWithError err
@@ -203,38 +203,40 @@ executeCommand command args = do
 -- | Create command with metadata and handler.
 --
 -- @since 0.19.1
-createCommand
-  :: String
-  -- ^ Command name
-  -> CommandMeta
-  -- ^ Command metadata
-  -> (() -> () -> IO ())
-  -- ^ Command handler
-  -> Command
-  -- ^ Complete command definition
-createCommand name meta handler = Command
-  { _cmdName = name
-  , _cmdMeta = meta
-  , _cmdHandler = handler
-  }
+createCommand ::
+  -- | Command name
+  String ->
+  -- | Command metadata
+  CommandMeta ->
+  -- | Command handler
+  (() -> () -> IO ()) ->
+  -- | Complete command definition
+  Command
+createCommand name meta handler =
+  Command
+    { _cmdName = name,
+      _cmdMeta = meta,
+      _cmdHandler = handler
+    }
 
 -- | Create command metadata from components.
 --
 -- @since 0.19.1
-createCommandMeta
-  :: Types.Summary
-  -- ^ Command summary
-  -> String
-  -- ^ Command details
-  -> Doc.Doc
-  -- ^ Command examples
-  -> CommandMeta
-  -- ^ Complete metadata
-createCommandMeta summary details examples = Types.defaultCommandMeta
-  { _cmSummary = summary
-  , _cmDetails = details
-  , _cmExample = examples
-  }
+createCommandMeta ::
+  -- | Command summary
+  Types.Summary ->
+  -- | Command details
+  String ->
+  -- | Command examples
+  Doc.Doc ->
+  -- | Complete metadata
+  CommandMeta
+createCommandMeta summary details examples =
+  Types.defaultCommandMeta
+    { _cmSummary = summary,
+      _cmDetails = details,
+      _cmExample = examples
+    }
 
 -- Helper Functions
 
@@ -249,31 +251,31 @@ displayCommandHelp command = do
       meta = command ^. cmdMeta
       details = meta ^. cmDetails
       examples = meta ^. cmExample
-      -- Use empty args/flags since we're working with () types
-  
+  -- Use empty args/flags since we're working with () types
+
   Error.exitWithHelp (Just name) details examples Parser.noArgs Parser.noFlags
 
 -- | Parse command arguments using Chomp parser.
-parseCommandArguments
-  :: [String]
-  -- ^ Raw arguments
-  -> Args ()
-  -- ^ Argument specification
-  -> Flags ()
-  -- ^ Flag specification
-  -> Either Error.Error ((), ())
-  -- ^ Parsed values or error
+parseCommandArguments ::
+  -- | Raw arguments
+  [String] ->
+  -- | Argument specification
+  Args () ->
+  -- | Flag specification
+  Flags () ->
+  -- | Parsed values or error
+  Either Error.Error ((), ())
 parseCommandArguments args argSpec flagSpec =
   snd $ Chomp.chomp Nothing args argSpec flagSpec
 
 -- | Execute command with simplified argument processing.
-executeWithArguments
-  :: (() -> () -> IO ())
-  -- ^ Command handler
-  -> [String]
-  -- ^ Arguments
-  -> IO ()
-  -- ^ Exits appropriately
+executeWithArguments ::
+  -- | Command handler
+  (() -> () -> IO ()) ->
+  -- | Arguments
+  [String] ->
+  -- | Exits appropriately
+  IO ()
 executeWithArguments handler args = do
   case parseCommandArguments args Parser.noArgs Parser.noFlags of
     Right (parsedArgs, parsedFlags) -> handler parsedArgs parsedFlags

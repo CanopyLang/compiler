@@ -41,11 +41,11 @@ module Terminal.Application
   ( -- * Application Entry Points
     runApp,
     runSingleCommand,
-    
+
     -- * Configuration
     createAppConfig,
     initializeApp,
-    
+
     -- * Argument Processing
     processAppArguments,
     handleVersionRequest,
@@ -53,19 +53,19 @@ module Terminal.Application
   )
 where
 
-import Control.Lens ((&), (.~), (^.))
 import qualified Canopy.Version as Version
+import Control.Lens ((&), (.~), (^.))
 import GHC.IO.Encoding (setLocaleEncoding, utf8)
 import qualified System.Environment as Environment
 import qualified System.Exit as Exit
 import qualified Terminal.Command as Command
-import qualified Terminal.Error as Error  
+import qualified Terminal.Error as Error
 import Terminal.Types
   ( AppConfig (..),
     Command (..),
     acCommands,
     acIntro,
-    acOutro
+    acOutro,
   )
 import qualified Terminal.Types as Types
 import qualified Text.PrettyPrint.ANSI.Leijen as Doc
@@ -79,7 +79,7 @@ import qualified Text.PrettyPrint.ANSI.Leijen as Doc
 -- The application processes arguments in this order:
 --
 -- 1. Initialize locale and encoding
--- 2. Parse command-line arguments  
+-- 2. Parse command-line arguments
 -- 3. Handle version/help requests
 -- 4. Find and execute command
 --
@@ -97,11 +97,11 @@ import qualified Text.PrettyPrint.ANSI.Leijen as Doc
 --   * Command execution failures
 --
 -- @since 0.19.1
-runApp
-  :: AppConfig
-  -- ^ Application configuration with commands
-  -> IO ()
-  -- ^ Exits with appropriate code
+runApp ::
+  -- | Application configuration with commands
+  AppConfig ->
+  -- | Exits with appropriate code
+  IO ()
 runApp config = do
   initializeApp
   args <- Environment.getArgs
@@ -114,15 +114,15 @@ runApp config = do
 -- selection logic.
 --
 -- @since 0.19.1
-runSingleCommand
-  :: Doc.Doc
-  -- ^ Command details documentation
-  -> Doc.Doc  
-  -- ^ Command examples
-  -> (() -> () -> IO ())
-  -- ^ Command handler function
-  -> IO ()
-  -- ^ Exits with appropriate code
+runSingleCommand ::
+  -- | Command details documentation
+  Doc.Doc ->
+  -- | Command examples
+  Doc.Doc ->
+  -- | Command handler function
+  (() -> () -> IO ()) ->
+  -- | Exits with appropriate code
+  IO ()
 runSingleCommand details examples handler = do
   initializeApp
   args <- Environment.getArgs
@@ -131,20 +131,21 @@ runSingleCommand details examples handler = do
 -- | Create application configuration from components.
 --
 -- @since 0.19.1
-createAppConfig
-  :: Doc.Doc
-  -- ^ Introduction text
-  -> Doc.Doc
-  -- ^ Outro text  
-  -> [Command]
-  -- ^ Available commands
-  -> IO AppConfig
-  -- ^ Configured application
+createAppConfig ::
+  -- | Introduction text
+  Doc.Doc ->
+  -- | Outro text
+  Doc.Doc ->
+  -- | Available commands
+  [Command] ->
+  -- | Configured application
+  IO AppConfig
 createAppConfig intro outro commands = do
-  pure $ Types.defaultAppConfig
-    & acIntro .~ intro
-    & acOutro .~ outro  
-    & acCommands .~ commands
+  pure $
+    Types.defaultAppConfig
+      & acIntro .~ intro
+      & acOutro .~ outro
+      & acCommands .~ commands
 
 -- | Initialize application environment and encoding.
 --
@@ -162,13 +163,13 @@ initializeApp = setLocaleEncoding utf8
 -- including special cases and command dispatch.
 --
 -- @since 0.19.1
-processAppArguments
-  :: AppConfig
-  -- ^ Application configuration
-  -> [String]
-  -- ^ Command-line arguments
-  -> IO ()
-  -- ^ Exits with appropriate code
+processAppArguments ::
+  -- | Application configuration
+  AppConfig ->
+  -- | Command-line arguments
+  [String] ->
+  -- | Exits with appropriate code
+  IO ()
 processAppArguments config args =
   case args of
     [] -> handleOverviewRequest config
@@ -193,13 +194,13 @@ handleVersionRequest = do
 -- available commands, and usage information.
 --
 -- @since 0.19.1
-handleOverviewRequest
-  :: AppConfig
-  -- ^ Application configuration
-  -> IO ()
-  -- ^ Exits with overview display
+handleOverviewRequest ::
+  -- | Application configuration
+  AppConfig ->
+  -- | Exits with overview display
+  IO ()
 handleOverviewRequest config =
   Error.exitWithOverview
     (config ^. acIntro)
     (config ^. acOutro)
-    []  -- Empty commands list for now since we have different Command types
+    [] -- Empty commands list for now since we have different Command types

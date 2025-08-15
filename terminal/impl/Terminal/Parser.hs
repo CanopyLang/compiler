@@ -48,14 +48,14 @@ module Terminal.Parser
   ( -- * Parser Creation
     createParser,
     createParserWithExamples,
-    
+
     -- * Basic Parsers
     stringParser,
     intParser,
     floatParser,
     boolParser,
     fileParser,
-    
+
     -- * Argument Builders
     required,
     optional,
@@ -63,7 +63,7 @@ module Terminal.Parser
     oneOrMore,
     oneOf,
     noArgs,
-    
+
     -- * Argument Composition
     require0,
     require1,
@@ -71,13 +71,13 @@ module Terminal.Parser
     require3,
     require4,
     require5,
-    
+
     -- * Flag Builders
     flag,
     onOffFlag,
     noFlags,
     flagChain,
-    
+
     -- * Parser Combinators
     mapParser,
     validateParser,
@@ -90,80 +90,80 @@ import qualified System.Directory as Directory
 import qualified System.FilePath as FilePath
 import Terminal.Internal
   ( Args (..),
+    CompleteArgs (..),
     Flag (..),
     Flags (..),
     Parser (..),
-    CompleteArgs (..),
-    RequiredArgs (..)
+    RequiredArgs (..),
   )
 import qualified Text.Read as Read
 
 -- | Create custom parser with validation and completion.
 --
 -- @since 0.19.1
-createParser
-  :: String
-  -- ^ Singular form (e.g., "file")
-  -> String
-  -- ^ Plural form (e.g., "files")
-  -> (String -> Maybe a)
-  -- ^ Parsing function
-  -> (String -> IO [String])
-  -- ^ Suggestion function
-  -> (String -> IO [String])
-  -- ^ Examples function
-  -> Parser a
-  -- ^ Complete parser
+createParser ::
+  -- | Singular form (e.g., "file")
+  String ->
+  -- | Plural form (e.g., "files")
+  String ->
+  -- | Parsing function
+  (String -> Maybe a) ->
+  -- | Suggestion function
+  (String -> IO [String]) ->
+  -- | Examples function
+  (String -> IO [String]) ->
+  -- | Complete parser
+  Parser a
 createParser singular plural parseFunc suggestFunc exampleFunc =
   Parser
-    { _singular = singular
-    , _plural = plural
-    , _parser = parseFunc
-    , _suggest = suggestFunc
-    , _examples = exampleFunc
+    { _singular = singular,
+      _plural = plural,
+      _parser = parseFunc,
+      _suggest = suggestFunc,
+      _examples = exampleFunc
     }
 
 -- | Create parser with dynamic examples (same as createParser).
 --
 -- @since 0.19.1
-createParserWithExamples
-  :: String
-  -- ^ Singular form
-  -> String
-  -- ^ Plural form
-  -> (String -> Maybe a)
-  -- ^ Parsing function
-  -> (String -> IO [String])
-  -- ^ Suggestion function
-  -> (String -> IO [String])
-  -- ^ Examples function
-  -> Parser a
-  -- ^ Complete parser
+createParserWithExamples ::
+  -- | Singular form
+  String ->
+  -- | Plural form
+  String ->
+  -- | Parsing function
+  (String -> Maybe a) ->
+  -- | Suggestion function
+  (String -> IO [String]) ->
+  -- | Examples function
+  (String -> IO [String]) ->
+  -- | Complete parser
+  Parser a
 createParserWithExamples = createParser
 
 -- | Simple string parser with no validation.
 --
 -- @since 0.19.1
-stringParser
-  :: String
-  -- ^ Singular form
-  -> String
-  -- ^ Description for help
-  -> Parser String
-  -- ^ String parser
+stringParser ::
+  -- | Singular form
+  String ->
+  -- | Description for help
+  String ->
+  -- | String parser
+  Parser String
 stringParser singular _description =
   createParser singular (singular ++ "s") Just (const (pure [])) (const (pure []))
 
 -- | Integer parser with optional bounds validation.
 --
 -- @since 0.19.1
-intParser
-  :: Int
-  -- ^ Minimum value
-  -> Int
-  -- ^ Maximum value
-  -> Parser Int
-  -- ^ Integer parser
+intParser ::
+  -- | Minimum value
+  Int ->
+  -- | Maximum value
+  Int ->
+  -- | Integer parser
+  Parser Int
 intParser minVal maxVal =
   createParser "number" "numbers" parseWithBounds (const (pure [])) (const (pure examples))
   where
@@ -172,7 +172,7 @@ intParser minVal maxVal =
       if value >= minVal && value <= maxVal
         then Just value
         else Nothing
-    
+
     examples = [show minVal, show maxVal, show ((minVal + maxVal) `div` 2)]
 
 -- | Float parser with validation.
@@ -197,18 +197,18 @@ boolParser =
       "1" -> Just True
       "0" -> Just False
       _ -> Nothing
-    
+
     suggestBool _ = pure ["true", "false", "yes", "no"]
     examples = ["true", "false"]
 
 -- | File parser with extension filtering and completion.
 --
 -- @since 0.19.1
-fileParser
-  :: [String]
-  -- ^ Allowed extensions (empty for any)
-  -> Parser String
-  -- ^ File path parser
+fileParser ::
+  -- | Allowed extensions (empty for any)
+  [String] ->
+  -- | File path parser
+  Parser String
 fileParser extensions =
   createParser "file" "files" Just (suggestFiles extensions) (const (pure []))
 
@@ -237,7 +237,7 @@ oneOrMore :: Parser a -> Args (a, [a])
 oneOrMore parser = Args [Multiple (Done extractFirstAndRest) parser]
   where
     extractFirstAndRest [] = error "oneOrMore: empty list should not occur in Multiple context"
-    extractFirstAndRest (x:xs) = (x, xs)
+    extractFirstAndRest (x : xs) = (x, xs)
 
 -- | Alternative argument patterns.
 --
@@ -267,7 +267,7 @@ require1 func parser = Args [Exactly (Required (Done func) parser)]
 --
 -- @since 0.19.1
 require2 :: (a -> b -> args) -> Parser a -> Parser b -> Args args
-require2 func parserA parserB = 
+require2 func parserA parserB =
   Args [Exactly (Required (Required (Done func) parserA) parserB)]
 
 -- | Exactly three arguments.
@@ -280,51 +280,64 @@ require3 func parserA parserB parserC =
 -- | Exactly four arguments.
 --
 -- @since 0.19.1
-require4 
-  :: (a -> b -> c -> d -> args) 
-  -> Parser a -> Parser b -> Parser c -> Parser d 
-  -> Args args
+require4 ::
+  (a -> b -> c -> d -> args) ->
+  Parser a ->
+  Parser b ->
+  Parser c ->
+  Parser d ->
+  Args args
 require4 func parserA parserB parserC parserD =
-  Args [Exactly $ Required 
-    (Required (Required (Required (Done func) parserA) parserB) parserC) 
-    parserD]
+  Args
+    [ Exactly $
+        Required
+          (Required (Required (Required (Done func) parserA) parserB) parserC)
+          parserD
+    ]
 
 -- | Exactly five arguments.
 --
 -- @since 0.19.1
-require5 
-  :: (a -> b -> c -> d -> e -> args) 
-  -> Parser a -> Parser b -> Parser c -> Parser d -> Parser e
-  -> Args args
+require5 ::
+  (a -> b -> c -> d -> e -> args) ->
+  Parser a ->
+  Parser b ->
+  Parser c ->
+  Parser d ->
+  Parser e ->
+  Args args
 require5 func parserA parserB parserC parserD parserE =
-  Args [Exactly $ Required 
-    (Required (Required (Required (Required (Done func) parserA) parserB) parserC) parserD)
-    parserE]
+  Args
+    [ Exactly $
+        Required
+          (Required (Required (Required (Required (Done func) parserA) parserB) parserC) parserD)
+          parserE
+    ]
 
 -- | Create flag with value parser.
 --
 -- @since 0.19.1
-flag
-  :: String
-  -- ^ Flag name
-  -> Parser a
-  -- ^ Value parser
-  -> String
-  -- ^ Description
-  -> Flag (Maybe a)
-  -- ^ Flag specification
+flag ::
+  -- | Flag name
+  String ->
+  -- | Value parser
+  Parser a ->
+  -- | Description
+  String ->
+  -- | Flag specification
+  Flag (Maybe a)
 flag name parser description = Flag name parser description
 
 -- | Create boolean on/off flag.
 --
 -- @since 0.19.1
-onOffFlag
-  :: String
-  -- ^ Flag name
-  -> String
-  -- ^ Description
-  -> Flag Bool
-  -- ^ Boolean flag specification
+onOffFlag ::
+  -- | Flag name
+  String ->
+  -- | Description
+  String ->
+  -- | Boolean flag specification
+  Flag Bool
 onOffFlag name description = OnOff name description
 
 -- | No flags specification.
@@ -343,28 +356,29 @@ flagChain = FMore
 --
 -- @since 0.19.1
 mapParser :: (a -> b) -> Parser a -> Parser b
-mapParser func parser = parser { _parser = fmap func . _parser parser }
+mapParser func parser = parser {_parser = fmap func . _parser parser}
 
 -- | Add validation to existing parser.
 --
 -- @since 0.19.1
 validateParser :: (a -> Bool) -> Parser a -> Parser a
-validateParser predicate parser = parser
-  { _parser = \input -> do
-      value <- _parser parser input
-      if predicate value then Just value else Nothing
-  }
+validateParser predicate parser =
+  parser
+    { _parser = \input -> do
+        value <- _parser parser input
+        if predicate value then Just value else Nothing
+    }
 
 -- | Suggest files with extension filtering.
 --
 -- @since 0.19.1
-suggestFiles
-  :: [String]
-  -- ^ Allowed extensions
-  -> String
-  -- ^ Current input
-  -> IO [String]
-  -- ^ File suggestions
+suggestFiles ::
+  -- | Allowed extensions
+  [String] ->
+  -- | Current input
+  String ->
+  -- | File suggestions
+  IO [String]
 suggestFiles extensions input = do
   let (dir, prefix) = FilePath.splitFileName input
   contents <- Directory.getDirectoryContents dir
@@ -374,43 +388,44 @@ suggestFiles extensions input = do
 -- Helper Functions
 
 -- | Filter directory contents for valid file suggestions.
-filterValidFiles
-  :: [String]
-  -- ^ Allowed extensions
-  -> String
-  -- ^ Filename prefix
-  -> FilePath
-  -- ^ Directory path
-  -> [FilePath]
-  -- ^ Directory contents
-  -> IO [FilePath]
-  -- ^ Valid suggestions
+filterValidFiles ::
+  -- | Allowed extensions
+  [String] ->
+  -- | Filename prefix
+  String ->
+  -- | Directory path
+  FilePath ->
+  -- | Directory contents
+  [FilePath] ->
+  -- | Valid suggestions
+  IO [FilePath]
 filterValidFiles extensions prefix dir contents = do
   let candidates = filter (List.isPrefixOf prefix) contents
   validCandidates <- mapM (checkFileCandidate extensions dir) candidates
   pure $ concat validCandidates
 
 -- | Check if file candidate is valid suggestion.
-checkFileCandidate
-  :: [String]
-  -- ^ Allowed extensions
-  -> FilePath
-  -- ^ Directory path
-  -> FilePath
-  -- ^ Candidate filename
-  -> IO [FilePath]
-  -- ^ Valid paths (empty or singleton)
+checkFileCandidate ::
+  -- | Allowed extensions
+  [String] ->
+  -- | Directory path
+  FilePath ->
+  -- | Candidate filename
+  FilePath ->
+  -- | Valid paths (empty or singleton)
+  IO [FilePath]
 checkFileCandidate extensions dir candidate = do
   let fullPath = dir FilePath.</> candidate
   isDir <- Directory.doesDirectoryExist fullPath
   if isDir
     then pure [candidate ++ "/"]
-    else if hasValidExtension candidate extensions
-      then pure [candidate]
-      else pure []
+    else
+      if hasValidExtension candidate extensions
+        then pure [candidate]
+        else pure []
 
 -- | Check if file has valid extension.
 hasValidExtension :: FilePath -> [String] -> Bool
-hasValidExtension _ [] = True  -- No restriction
-hasValidExtension path extensions = 
+hasValidExtension _ [] = True -- No restriction
+hasValidExtension path extensions =
   FilePath.takeExtension path `elem` extensions

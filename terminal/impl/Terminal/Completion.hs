@@ -50,29 +50,34 @@ module Terminal.Completion
   ( -- * Main Completion Interface
     processAutoComplete,
     processAutoCompleteSimple,
-    
+
     -- * Suggestion Generation
     generateSuggestions,
     suggestCommands,
     suggestArguments,
     suggestFlags,
-    
+
     -- * Context Processing
     parseCompletionContext,
     createCompletionContext,
     findCompletionIndex,
-    
+
     -- * Utilities
     isCompletionRequest,
     outputSuggestions,
   )
 where
 
-import Control.Lens ((^.), (&), (.~))
+import Control.Lens ((&), (.~), (^.))
 import qualified Data.List as List
 import qualified System.Environment as Environment
 import qualified System.Exit as Exit
 import qualified Terminal.Chomp as Chomp
+import Terminal.Internal
+  ( Args,
+    Flags,
+  )
+import qualified Terminal.Parser as Parser
 import Terminal.Types
   ( AppConfig (..),
     Command (..),
@@ -83,13 +88,8 @@ import Terminal.Types
     ccIndex,
     ccLine,
     ccPoint,
-    cmdName
+    cmdName,
   )
-import Terminal.Internal
-  ( Args,
-    Flags
-  )
-import qualified Terminal.Parser as Parser
 import qualified Terminal.Types as Types
 import qualified Text.Read as Read
 
@@ -120,13 +120,13 @@ import qualified Text.Read as Read
 --   * Formatted suggestion output
 --
 -- @since 0.19.1
-processAutoComplete
-  :: AppConfig
-  -- ^ Application configuration with commands
-  -> [String]
-  -- ^ Command-line arguments from shell
-  -> IO ()
-  -- ^ Exits with completion or continues normally
+processAutoComplete ::
+  -- | Application configuration with commands
+  AppConfig ->
+  -- | Command-line arguments from shell
+  [String] ->
+  -- | Exits with completion or continues normally
+  IO ()
 processAutoComplete config args = do
   if not (isCompletionRequest args)
     then pure ()
@@ -143,15 +143,15 @@ processAutoComplete config args = do
 -- command name suggestions.
 --
 -- @since 0.19.1
-processAutoCompleteSimple
-  :: Args ()
-  -- ^ Command argument specification
-  -> Flags ()
-  -- ^ Command flag specification
-  -> [String]
-  -- ^ Command-line arguments
-  -> IO ()
-  -- ^ Exits with completion or continues normally
+processAutoCompleteSimple ::
+  -- | Command argument specification
+  Args () ->
+  -- | Command flag specification
+  Flags () ->
+  -- | Command-line arguments
+  [String] ->
+  -- | Exits with completion or continues normally
+  IO ()
 processAutoCompleteSimple args flags cmdArgs = do
   if not (isCompletionRequest cmdArgs)
     then pure ()
@@ -174,20 +174,20 @@ processAutoCompleteSimple args flags cmdArgs = do
 -- 3. Otherwise, suggest available commands
 --
 -- @since 0.19.1
-generateSuggestions
-  :: AppConfig
-  -- ^ Application configuration
-  -> CompletionContext
-  -- ^ Current completion context
-  -> IO [String]
-  -- ^ Generated suggestions
+generateSuggestions ::
+  -- | Application configuration
+  AppConfig ->
+  -- | Current completion context
+  CompletionContext ->
+  -- | Generated suggestions
+  IO [String]
 generateSuggestions config context = do
   let chunks = context ^. ccChunks
       SuggestionIndex index = context ^. ccIndex
-  
+
   case chunks of
     [] -> pure (getCommandNames config)
-    command : args -> 
+    command : args ->
       if index == 1
         then suggestCommands config command
         else case findCommand config command of
@@ -197,13 +197,13 @@ generateSuggestions config context = do
 -- | Suggest command names based on prefix.
 --
 -- @since 0.19.1
-suggestCommands
-  :: AppConfig
-  -- ^ Application configuration
-  -> String
-  -- ^ Command prefix
-  -> IO [String]
-  -- ^ Matching command names
+suggestCommands ::
+  -- | Application configuration
+  AppConfig ->
+  -- | Command prefix
+  String ->
+  -- | Matching command names
+  IO [String]
 suggestCommands config prefix = do
   let commands = getCommandNames config
       matches = filter (List.isPrefixOf prefix) commands
@@ -212,32 +212,32 @@ suggestCommands config prefix = do
 -- | Suggest arguments for specific command.
 --
 -- @since 0.19.1
-suggestArguments
-  :: Command
-  -- ^ Command specification
-  -> CompletionContext
-  -- ^ Completion context
-  -> [String]
-  -- ^ Current arguments
-  -> IO [String]
-  -- ^ Argument suggestions
+suggestArguments ::
+  -- | Command specification
+  Command ->
+  -- | Completion context
+  CompletionContext ->
+  -- | Current arguments
+  [String] ->
+  -- | Argument suggestions
+  IO [String]
 suggestArguments _command context args = do
   let SuggestionIndex index = context ^. ccIndex
       -- For now, use empty args/flags since we're using () types
       (suggestions, _) = Chomp.chomp (Just (index - 1)) args Parser.noArgs Parser.noFlags
-  
+
   suggestions
 
 -- | Suggest flags for specific command.
 --
 -- @since 0.19.1
-suggestFlags
-  :: Command
-  -- ^ Command specification
-  -> String
-  -- ^ Flag prefix
-  -> IO [String]
-  -- ^ Flag suggestions
+suggestFlags ::
+  -- | Command specification
+  Command ->
+  -- | Flag prefix
+  String ->
+  -- | Flag suggestions
+  IO [String]
 suggestFlags _command _prefix = do
   -- TODO: Implement flag suggestion logic
   pure []
@@ -253,9 +253,9 @@ parseCompletionContext :: IO CompletionContext
 parseCompletionContext = do
   maybeLine <- Environment.lookupEnv "COMP_LINE"
   maybePoint <- Environment.lookupEnv "COMP_POINT"
-  
+
   case (maybeLine, maybePoint) of
-    (Just line, Just pointStr) -> 
+    (Just line, Just pointStr) ->
       case Read.readMaybe pointStr of
         Just point -> parseContextFromLine line point
         Nothing -> createDefaultContext line
@@ -265,17 +265,17 @@ parseCompletionContext = do
 -- | Create completion context from command line and cursor position.
 --
 -- @since 0.19.1
-createCompletionContext
-  :: String
-  -- ^ Command line
-  -> Int
-  -- ^ Cursor position
-  -> CompletionContext
-  -- ^ Completion context
+createCompletionContext ::
+  -- | Command line
+  String ->
+  -- | Cursor position
+  Int ->
+  -- | Completion context
+  CompletionContext
 createCompletionContext line point = do
   let chunks = words line
       index = findCompletionIndex point line chunks
-  
+
   Types.CompletionContext (SuggestionIndex index) chunks "" 0
     & ccLine .~ line
     & ccPoint .~ point
@@ -286,15 +286,15 @@ createCompletionContext line point = do
 -- based on cursor position and word boundaries.
 --
 -- @since 0.19.1
-findCompletionIndex
-  :: Int
-  -- ^ Cursor position
-  -> String
-  -- ^ Command line
-  -> [String]
-  -- ^ Words in command line
-  -> Int
-  -- ^ Completion index
+findCompletionIndex ::
+  -- | Cursor position
+  Int ->
+  -- | Command line
+  String ->
+  -- | Words in command line
+  [String] ->
+  -- | Completion index
+  Int
 findCompletionIndex point _line chunks = do
   let wordPositions = scanl (+) 0 (fmap ((+ 1) . length) chunks)
       beforeCursor = takeWhile (<= point) wordPositions
@@ -303,21 +303,21 @@ findCompletionIndex point _line chunks = do
 -- | Check if current invocation is completion request.
 --
 -- @since 0.19.1
-isCompletionRequest
-  :: [String]
-  -- ^ Command arguments
-  -> Bool
-  -- ^ True if completion requested
+isCompletionRequest ::
+  -- | Command arguments
+  [String] ->
+  -- | True if completion requested
+  Bool
 isCompletionRequest args = length args == 3
 
 -- | Output suggestions for shell consumption.
 --
 -- @since 0.19.1
-outputSuggestions
-  :: [String]
-  -- ^ Suggestions to output
-  -> IO ()
-  -- ^ Outputs suggestions line by line
+outputSuggestions ::
+  -- | Suggestions to output
+  [String] ->
+  -- | Outputs suggestions line by line
+  IO ()
 outputSuggestions suggestions = putStr (unlines suggestions)
 
 -- Helper Functions
@@ -344,7 +344,7 @@ parseContextFromLine line point = do
 
 -- | Create default context when parsing fails.
 createDefaultContext :: String -> IO CompletionContext
-createDefaultContext line = 
+createDefaultContext line =
   pure $ createCompletionContext line (length line)
 
 -- | Default completion context for error cases.
@@ -352,18 +352,18 @@ defaultCompletionContext :: CompletionContext
 defaultCompletionContext = Types.CompletionContext (SuggestionIndex 0) [] "" 0
 
 -- | Generate argument suggestions for single command.
-generateArgumentSuggestions
-  :: Args ()
-  -- ^ Argument specification
-  -> Flags ()
-  -- ^ Flag specification
-  -> CompletionContext
-  -- ^ Completion context
-  -> IO [String]
-  -- ^ Generated suggestions
+generateArgumentSuggestions ::
+  -- | Argument specification
+  Args () ->
+  -- | Flag specification
+  Flags () ->
+  -- | Completion context
+  CompletionContext ->
+  -- | Generated suggestions
+  IO [String]
 generateArgumentSuggestions args flags context = do
   let chunks = context ^. ccChunks
       SuggestionIndex index = context ^. ccIndex
       (suggestions, _) = Chomp.chomp (Just index) chunks args flags
-  
+
   suggestions

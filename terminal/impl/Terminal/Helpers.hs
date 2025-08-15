@@ -21,7 +21,7 @@ import qualified Parse.Primitives as Parse
 import qualified Reporting.Suggest as Suggest
 import qualified Stuff
 import qualified System.FilePath as FilePath
-import Terminal (Parser(..))
+import Terminal (Parser (..))
 
 -- VERSION
 

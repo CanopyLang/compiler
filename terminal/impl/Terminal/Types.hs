@@ -30,7 +30,7 @@
 -- import qualified Terminal.Types as Types
 --
 -- -- Create configuration with lenses
--- config <- Types.defaultAppConfig 
+-- config <- Types.defaultAppConfig
 --   & Types.acIntro .~ "My App"
 --   & Types.acOutro .~ "Thank you"
 --
@@ -43,60 +43,66 @@ module Terminal.Types
   ( -- * Application Configuration
     AppConfig (..),
     defaultAppConfig,
+
     -- * Lenses for AppConfig
     acIntro,
     acOutro,
     acCommands,
-    
+
     -- * Type Aliases
     CommandArgs,
     CommandFlags,
-    
+
     -- * Command Types
     Command (..),
     CommandMeta (..),
     Summary (..),
     defaultCommandMeta,
+
     -- * Lenses for Command
     cmdName,
     cmdMeta,
     cmdHandler,
+
     -- * Lenses for CommandMeta
     cmSummary,
     cmDetails,
     cmExample,
     cmArgs,
     cmFlags,
-    
-    -- * Parser Types  
+
+    -- * Parser Types
     Parser (..),
     ParserConfig (..),
     defaultParserConfig,
+
     -- * Lenses for Parser
     pcSingular,
-    pcPlural, 
+    pcPlural,
     pcParser,
     pcSuggest,
     pcExamples,
-    
+
     -- * Argument Types
     Args (..),
     CompleteArgs (..),
     RequiredArgs (..),
-    
+
     -- * Flag Types
     Flags (..),
     Flag (..),
     FlagConfig (..),
     defaultFlagConfig,
+
     -- * Lenses for FlagConfig
     fcName,
     fcParser,
     fcDescription,
-    
+
     -- * Completion Types
     CompletionContext (..),
     SuggestionIndex (..),
+
     -- * Lenses for CompletionContext
     ccIndex,
     ccChunks,
@@ -110,48 +116,50 @@ import qualified Text.PrettyPrint.ANSI.Leijen as Doc
 
 -- | Application-level configuration with introduction, outro, and commands.
 data AppConfig = AppConfig
-  { _acIntro :: !Doc.Doc
-  , _acOutro :: !Doc.Doc  
-  , _acCommands :: ![Command]
+  { _acIntro :: !Doc.Doc,
+    _acOutro :: !Doc.Doc,
+    _acCommands :: ![Command]
   }
 
 -- | Create default application configuration.
 defaultAppConfig :: AppConfig
-defaultAppConfig = AppConfig
-  { _acIntro = Doc.empty
-  , _acOutro = Doc.empty
-  , _acCommands = []
-  }
+defaultAppConfig =
+  AppConfig
+    { _acIntro = Doc.empty,
+      _acOutro = Doc.empty,
+      _acCommands = []
+    }
 
 -- | Complete command definition with metadata and execution handler.
 data Command = Command
-  { _cmdName :: !String
-  , _cmdMeta :: !CommandMeta
-  , _cmdHandler :: !(CommandArgs -> CommandFlags -> IO ())
+  { _cmdName :: !String,
+    _cmdMeta :: !CommandMeta,
+    _cmdHandler :: !(CommandArgs -> CommandFlags -> IO ())
   }
 
 -- | Command metadata including documentation and argument specifications.
 data CommandMeta = CommandMeta
-  { _cmSummary :: !Summary
-  , _cmDetails :: !String
-  , _cmExample :: !Doc.Doc
-  , _cmArgs :: !CommandArgs
-  , _cmFlags :: !CommandFlags
+  { _cmSummary :: !Summary,
+    _cmDetails :: !String,
+    _cmExample :: !Doc.Doc,
+    _cmArgs :: !CommandArgs,
+    _cmFlags :: !CommandFlags
   }
 
 -- | Create default command metadata.
 defaultCommandMeta :: CommandMeta
-defaultCommandMeta = CommandMeta
-  { _cmSummary = Uncommon
-  , _cmDetails = ""
-  , _cmExample = Doc.empty
-  , _cmArgs = ()
-  , _cmFlags = ()
-  }
+defaultCommandMeta =
+  CommandMeta
+    { _cmSummary = Uncommon,
+      _cmDetails = "",
+      _cmExample = Doc.empty,
+      _cmArgs = (),
+      _cmFlags = ()
+    }
 
 -- | Command summary for help display.
 -- 'Common' commands show in overview, 'Uncommon' commands require --help.
-data Summary 
+data Summary
   = Common !String
   | Uncommon
   deriving (Eq, Show)
@@ -163,22 +171,23 @@ data Parser a = Parser
 
 -- | Parser configuration with all parsing functions.
 data ParserConfig a = ParserConfig
-  { _pcSingular :: !String
-  , _pcPlural :: !String
-  , _pcParser :: !(String -> Maybe a)
-  , _pcSuggest :: !(String -> IO [String])
-  , _pcExamples :: !(String -> IO [String])
+  { _pcSingular :: !String,
+    _pcPlural :: !String,
+    _pcParser :: !(String -> Maybe a),
+    _pcSuggest :: !(String -> IO [String]),
+    _pcExamples :: !(String -> IO [String])
   }
 
 -- | Create default parser configuration.
 defaultParserConfig :: ParserConfig a
-defaultParserConfig = ParserConfig
-  { _pcSingular = "value"
-  , _pcPlural = "values"
-  , _pcParser = const Nothing
-  , _pcSuggest = const (pure [])
-  , _pcExamples = const (pure [])
-  }
+defaultParserConfig =
+  ParserConfig
+    { _pcSingular = "value",
+      _pcPlural = "values",
+      _pcParser = const Nothing,
+      _pcSuggest = const (pure []),
+      _pcExamples = const (pure [])
+    }
 
 -- | Argument parsing specification using GADTs for type safety.
 data Args a where
@@ -210,25 +219,26 @@ data Flag a where
 
 -- | Flag configuration with name, parser, and documentation.
 data FlagConfig a = FlagConfig
-  { _fcName :: !String
-  , _fcParser :: !(Parser a)
-  , _fcDescription :: !String
+  { _fcName :: !String,
+    _fcParser :: !(Parser a),
+    _fcDescription :: !String
   }
 
 -- | Create default flag configuration.
 defaultFlagConfig :: FlagConfig a
-defaultFlagConfig = FlagConfig
-  { _fcName = ""
-  , _fcParser = Parser defaultParserConfig
-  , _fcDescription = ""
-  }
+defaultFlagConfig =
+  FlagConfig
+    { _fcName = "",
+      _fcParser = Parser defaultParserConfig,
+      _fcDescription = ""
+    }
 
 -- | Shell completion context with index and command line information.
 data CompletionContext = CompletionContext
-  { _ccIndex :: !SuggestionIndex
-  , _ccChunks :: ![String]
-  , _ccLine :: !String
-  , _ccPoint :: !Int
+  { _ccIndex :: !SuggestionIndex,
+    _ccChunks :: ![String],
+    _ccLine :: !String,
+    _ccPoint :: !Int
   }
 
 -- | Suggestion index for completion context.
@@ -237,6 +247,7 @@ newtype SuggestionIndex = SuggestionIndex Int
 
 -- Type aliases for command arguments and flags
 type CommandArgs = ()
+
 type CommandFlags = ()
 
 -- Generate lenses for all record types
@@ -244,12 +255,14 @@ makeLenses ''AppConfig
 makeLenses ''Command
 makeLenses ''CommandMeta
 makeLenses ''ParserConfig
-makeLenses ''FlagConfig  
+makeLenses ''FlagConfig
 makeLenses ''CompletionContext
 
 -- Functor instance for Parser
 instance Functor Parser where
   fmap :: (a -> b) -> Parser a -> Parser b
-  fmap f (Parser config) = Parser $ config 
-    { _pcParser = fmap f . _pcParser config
-    }
+  fmap f (Parser config) =
+    Parser $
+      config
+        { _pcParser = fmap f . _pcParser config
+        }
