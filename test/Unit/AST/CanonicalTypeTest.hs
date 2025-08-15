@@ -27,7 +27,7 @@ testFieldsToListOrdering = testCase "fieldsToList orders by source index" $ do
             (Name.fromChars "m", Can.FieldType 1 (Can.TVar (Name.fromChars "b")))
           ]
   let ordered = Can.fieldsToList fields
-  fmap fst ordered @?= [Name.fromChars "a", Name.fromChars "m", Name.fromChars "z"]
+  [Name.fromChars "a", Name.fromChars "m", Name.fromChars "z"] @?= fmap fst ordered
 
 testTypeConstructors :: TestTree
 testTypeConstructors = testCase "lambda, tuple, type constructors" $ do
@@ -45,7 +45,7 @@ testTypeConstructors = testCase "lambda, tuple, type constructors" $ do
 testAliasAndRecord :: TestTree
 testAliasAndRecord = testCase "alias and record types" $ do
   let alias = Can.Alias [Name.fromChars "a"] (Can.TVar (Name.fromChars "a"))
-  alias @?= Can.Alias [Name.fromChars "a"] (Can.TVar (Name.fromChars "a"))
+  Can.Alias [Name.fromChars "a"] (Can.TVar (Name.fromChars "a")) @?= alias
   let rec = Can.TRecord (Map.fromList [(Name.fromChars "x", Can.FieldType 0 (Can.TUnit))]) Nothing
   case rec of
     Can.TRecord m Nothing -> Map.size m @?= 1

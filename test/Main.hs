@@ -16,6 +16,7 @@ import qualified Integration.DevelopTest as DevelopIT
 import qualified Integration.TerminalIntegrationTest as TerminalIT
 import qualified Integration.Terminal.ChompIntegrationTest as ChompIT
 import qualified Integration.WatchIntegrationTest as WatchIT
+import qualified Integration.CompileIntegrationTest as CompileIT
 import qualified Property.AST.CanonicalProps as CanonicalProps
 import qualified Property.AST.OptimizedBinaryProps as OptimizedBinaryProps
 import qualified Property.AST.OptimizedProps as OptimizedProps
@@ -28,6 +29,7 @@ import qualified Property.DevelopProps as DevelopProps
 import qualified Property.TerminalProps as TerminalProps
 import qualified Property.Terminal.ChompProps as ChompProps
 import qualified Property.WatchProps as WatchProps
+import qualified Property.CompileProps as CompileProps
 import Test.Tasty
 import Test.Tasty.Runners
 import qualified Unit.AST.CanonicalTypeTest as CanonicalTypeTest
@@ -69,6 +71,7 @@ import qualified Unit.Terminal.Error.TypesTest as TerminalErrorTypesTest
 import qualified Unit.Terminal.Error.FormattingTest as TerminalErrorFormattingTest
 import qualified Unit.Terminal.Error.SuggestionsTest as TerminalErrorSuggestionsTest
 import qualified Unit.WatchTest as WatchTest
+import qualified Unit.CompileTest as CompileTest
 
 main :: IO ()
 main = defaultMain tests
@@ -125,7 +128,8 @@ unitTests =
       TerminalErrorTypesTest.tests,
       TerminalErrorFormattingTest.tests,
       TerminalErrorSuggestionsTest.tests,
-      WatchTest.tests
+      WatchTest.tests,
+      CompileTest.tests
     ]
 
 propertyTests :: TestTree
@@ -143,7 +147,8 @@ propertyTests =
       DevelopProps.tests,
       TerminalProps.tests,
       ChompProps.tests,
-      WatchProps.tests
+      WatchProps.tests,
+      CompileProps.tests
     ]
 
 integrationTests :: TestTree
@@ -158,7 +163,8 @@ integrationTests =
       DevelopIT.tests,
       TerminalIT.tests,
       ChompIT.tests,
-      WatchIT.tests
+      WatchIT.tests,
+      CompileIT.tests
     ]
 
 -- Optionally expose golden separately for clarity

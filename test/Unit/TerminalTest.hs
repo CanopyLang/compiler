@@ -14,7 +14,7 @@ module Unit.TerminalTest (tests) where
 import qualified Data.List as List
 import qualified System.Directory as Directory
 import Test.Tasty (TestTree, testGroup)
-import Test.Tasty.HUnit (testCase, (@?=), assertBool)
+import Test.Tasty.HUnit (testCase, (@?=), assertBool, assertEqual, assertFailure)
 import Test.Tasty.QuickCheck (testProperty, (==>))
 import qualified Terminal
 import qualified Text.PrettyPrint.ANSI.Leijen as Doc
@@ -64,7 +64,7 @@ testParserCreation = testGroup "Parser Creation Tests"
       let parser = Terminal.floatParser
           Terminal.Parser _ _ parseFunc _ _ = parser
       parseFunc "1.5" @?= Just 1.5
-      parseFunc "0.0" @?= Just 0.0
+      parseFunc "0.5" @?= Just 0.5
       parseFunc "-3.14" @?= Just (-3.14)
       parseFunc "abc" @?= Nothing
   , testCase "fileParser accepts all files with empty extensions" $ do
@@ -83,26 +83,26 @@ testArgumentBuilders = testGroup "Argument Builders Tests"
   [ testCase "noArgs creates empty argument specification" $ do
       let args = Terminal.noArgs
       case args of
-        Terminal.Args [Terminal.Exactly (Terminal.Done ())] -> True @?= True
-        _ -> assertBool "noArgs should create exactly Done ()" False
+        Terminal.Args [Terminal.Exactly (Terminal.Done ())] -> pure () -- noArgs creates exactly Done ()
+        _ -> assertFailure "noArgs should create exactly Done ()"
   , testCase "required creates single required argument" $ do
       let parser = Terminal.stringParser "name" "description"
           args = Terminal.required parser
       case args of
-        Terminal.Args [Terminal.Exactly (Terminal.Required (Terminal.Done _) _)] -> True @?= True
-        _ -> assertBool "required should create Required pattern" False
+        Terminal.Args [Terminal.Exactly (Terminal.Required (Terminal.Done _) _)] -> pure () -- required creates Required pattern
+        _ -> assertFailure "required should create Required pattern"
   , testCase "optional creates optional argument" $ do
       let parser = Terminal.stringParser "name" "description"
           args = Terminal.optional parser
       case args of
-        Terminal.Args [Terminal.Optional (Terminal.Done _) _] -> True @?= True
-        _ -> assertBool "optional should create Optional pattern" False
+        Terminal.Args [Terminal.Optional (Terminal.Done _) _] -> pure () -- optional creates Optional pattern
+        _ -> assertFailure "optional should create Optional pattern"
   , testCase "zeroOrMore creates multiple argument pattern" $ do
       let parser = Terminal.stringParser "name" "description"
           args = Terminal.zeroOrMore parser
       case args of
-        Terminal.Args [Terminal.Multiple (Terminal.Done _) _] -> True @?= True
-        _ -> assertBool "zeroOrMore should create Multiple pattern" False
+        Terminal.Args [Terminal.Multiple (Terminal.Done _) _] -> pure () -- zeroOrMore creates Multiple pattern
+        _ -> assertFailure "zeroOrMore should create Multiple pattern"
   , testCase "oneOf combines multiple argument patterns" $ do
       let parser1 = Terminal.stringParser "name1" "desc1"
           parser2 = Terminal.stringParser "name2" "desc2"
@@ -114,21 +114,21 @@ testArgumentBuilders = testGroup "Argument Builders Tests"
   , testCase "require0 creates args with fixed value" $ do
       let args = Terminal.require0 "fixed"
       case args of
-        Terminal.Args [Terminal.Exactly (Terminal.Done "fixed")] -> True @?= True
-        _ -> assertBool "require0 should create Done with value" False
+        Terminal.Args [Terminal.Exactly (Terminal.Done "fixed")] -> pure () -- require0 creates Done with value
+        _ -> assertFailure "require0 should create Done with value"
   , testCase "require1 creates single argument with function" $ do
       let parser = Terminal.stringParser "input" "description"
           args = Terminal.require1 id parser
       case args of
-        Terminal.Args [Terminal.Exactly (Terminal.Required (Terminal.Done _) _)] -> True @?= True
-        _ -> assertBool "require1 should create Required pattern" False
+        Terminal.Args [Terminal.Exactly (Terminal.Required (Terminal.Done _) _)] -> pure () -- require1 creates Required pattern
+        _ -> assertFailure "require1 should create Required pattern"
   , testCase "require2 creates two-argument pattern" $ do
       let parser1 = Terminal.stringParser "first" "description"
           parser2 = Terminal.stringParser "second" "description"
           args = Terminal.require2 (,) parser1 parser2
       case args of
-        Terminal.Args [Terminal.Exactly (Terminal.Required (Terminal.Required (Terminal.Done _) _) _)] -> True @?= True
-        _ -> assertBool "require2 should create nested Required pattern" False
+        Terminal.Args [Terminal.Exactly (Terminal.Required (Terminal.Required (Terminal.Done _) _) _)] -> pure () -- require2 creates nested Required pattern
+        _ -> assertFailure "require2 should create nested Required pattern"
   ]
 
 -- | Test flag builder functions
@@ -137,29 +137,29 @@ testFlagBuilders = testGroup "Flag Builders Tests"
   [ testCase "noFlags creates empty flag specification" $ do
       let flags = Terminal.noFlags
       case flags of
-        Terminal.FDone () -> True @?= True
-        _ -> assertBool "noFlags should create FDone ()" False
+        Terminal.FDone () -> pure () -- noFlags creates FDone ()
+        _ -> assertFailure "noFlags should create FDone ()"
   , testCase "flags creates flag specification with value" $ do
       let flags = Terminal.flags "test"
       case flags of
-        Terminal.FDone "test" -> True @?= True
-        _ -> assertBool "flags should create FDone with value" False
+        Terminal.FDone "test" -> pure () -- flags creates FDone with value
+        _ -> assertFailure "flags should create FDone with value"
   , testCase "flag creates value flag" $ do
       let parser = Terminal.stringParser "value" "description"
           flagDef = Terminal.flag "output" parser "output directory"
       case flagDef of
-        Terminal.Flag "output" _ "output directory" -> True @?= True
-        _ -> assertBool "flag should create Flag with correct parameters" False
+        Terminal.Flag "output" _ "output directory" -> pure () -- flag creates Flag with correct parameters
+        _ -> assertFailure "flag should create Flag with correct parameters"
   , testCase "onOff creates boolean flag" $ do
       let flagDef = Terminal.onOff "verbose" "enable verbose output"
       case flagDef of
-        Terminal.OnOff "verbose" "enable verbose output" -> True @?= True
-        _ -> assertBool "onOff should create OnOff flag" False
+        Terminal.OnOff "verbose" "enable verbose output" -> pure () -- onOff creates OnOff flag
+        _ -> assertFailure "onOff should create OnOff flag"
   , testCase "onOffFlag creates boolean flag (alias)" $ do
       let flagDef = Terminal.onOffFlag "debug" "enable debug mode"
       case flagDef of
-        Terminal.OnOff "debug" "enable debug mode" -> True @?= True
-        _ -> assertBool "onOffFlag should create OnOff flag" False
+        Terminal.OnOff "debug" "enable debug mode" -> pure () -- onOffFlag creates OnOff flag
+        _ -> assertFailure "onOffFlag should create OnOff flag"
   ]
 
 -- | Test type constructors and data types
@@ -169,12 +169,12 @@ testTypeConstructors = testGroup "Type Constructor Tests"
       let summary = Terminal.Common "test description"
       case summary of
         Terminal.Common desc -> desc @?= "test description"
-        _ -> assertBool "Common should contain description" False
+        _ -> assertFailure "Common should contain description"
   , testCase "Summary Uncommon has no description" $ do
       let summary = Terminal.Uncommon
       case summary of
-        Terminal.Uncommon -> True @?= True
-        _ -> assertBool "Uncommon should have no description" False
+        Terminal.Uncommon -> pure () -- Uncommon has no description
+        _ -> assertFailure "Uncommon should have no description"
   , testCase "Parser has all required fields" $ do
       let parser = Terminal.stringParser "test" "description"
           Terminal.Parser singular plural parseFunc suggestFunc exampleFunc = parser
@@ -183,20 +183,22 @@ testTypeConstructors = testGroup "Type Constructor Tests"
       parseFunc "input" @?= Just "input"
       -- Test that suggest and example functions exist and return IO
       suggestions <- suggestFunc "prefix"
-      length suggestions >= 0 @?= True
+      -- Test that suggest function exists and can be called without error
+      pure () -- Function call succeeded
       examples <- exampleFunc "input"
-      length examples >= 0 @?= True
+      -- Test that example function exists and can be called without error  
+      pure () -- Function call succeeded
   , testCase "Flags FDone contains value" $ do
       let flags = Terminal.FDone 42
       case flags of
-        Terminal.FDone 42 -> True @?= True
-        _ -> assertBool "FDone should contain value" False
+        Terminal.FDone 42 -> pure () -- FDone contains value
+        _ -> assertFailure "FDone should contain value"
   , testCase "Flag construction preserves parameters" $ do
       let parser = Terminal.stringParser "param" "description"
           flag = Terminal.Flag "name" parser "help text"
       case flag of
-        Terminal.Flag "name" _ "help text" -> True @?= True
-        _ -> assertBool "Flag should preserve name and help text" False
+        Terminal.Flag "name" _ "help text" -> pure () -- Flag preserves name and help text
+        _ -> assertFailure "Flag should preserve name and help text"
   ]
 
 -- | Test integration properties and behavior
@@ -230,7 +232,8 @@ testIntegrationProperties = testGroup "Integration Properties"
           Terminal.Parser _ _ _ suggestFunc _ = parser
       suggestions <- suggestFunc "."
       -- Should return some suggestions or empty list
-      length suggestions >= 0 @?= True
+      -- Test that suggest function exists and can be called without error
+      pure () -- Function call succeeded
   ]
 
 -- | Test error conditions and edge cases
@@ -264,6 +267,6 @@ testErrorConditions = testGroup "Error Conditions Tests"
   , testCase "empty oneOf creates empty Args" $ do
       let combined = Terminal.oneOf []
       case combined of
-        Terminal.Args [] -> True @?= True
-        _ -> assertBool "empty oneOf should create empty Args" False
+        Terminal.Args [] -> pure () -- empty oneOf creates empty Args
+        _ -> assertFailure "empty oneOf should create empty Args"
   ]

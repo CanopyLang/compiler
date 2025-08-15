@@ -5,7 +5,7 @@ Please analyze the test files for module: `$ARGUMENTS`.
 
 - **Target**: Test file analysis with automatic source module inference for comprehensive coverage
 - **Standards**: Follow **CLAUDE.md testing guidelines** exactly - all rules are **non-negotiable**
-- **Quality**: Identify ALL missing edge cases, test gaps, and coverage holes
+- **Quality**: Identify ALL missing edge cases, test gaps, and coverage holes. DO NOT add test for standard haskell functionaly, like testing if lenses work or a deriving show instance.
 - **Architecture**: Apply systematic test analysis patterns from exemplar test modules
 
 ---

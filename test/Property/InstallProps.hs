@@ -137,7 +137,9 @@ isTestDep (Types.IndirectDep _) = False
 
 isDirectTestDep :: Types.ExistingDep -> Bool
 isDirectTestDep (Types.TestDirectDep _) = True
-isDirectTestDep _ = False
+isDirectTestDep (Types.TestIndirectDep _) = False
+-- No DirectDep constructor exists - this pattern was incorrect
+isDirectTestDep (Types.IndirectDep _) = False
 
 extractVersionFromDep :: Types.ExistingDep -> V.Version
 extractVersionFromDep (Types.IndirectDep v) = v

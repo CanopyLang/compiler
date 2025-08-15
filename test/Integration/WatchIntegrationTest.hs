@@ -18,7 +18,7 @@ import qualified System.IO.Temp as Temp
 import System.Timeout (timeout)
 import System.FSNotify (Event)
 import Test.Tasty (TestTree, testGroup)
-import Test.Tasty.HUnit (testCase, assertBool, assertFailure)
+import Test.Tasty.HUnit (testCase, assertBool, assertFailure, assertEqual)
 import qualified Watch
 
 tests :: TestTree
@@ -67,8 +67,9 @@ testRealFileOperations = testGroup "real file operations"
         threadDelay 100000 -- Extra time for event detection
         events <- IORef.readIORef eventsRef
         
-        assertBool "Should detect file operations or complete successfully" 
-          (not (null events) || success)
+        if success
+          then assertEqual "Test completed successfully" True success
+          else assertBool "Events detected during file operations" (length events > 0)
 
   , testCase "file deletion and recreation" $ do
       eventsRef <- IORef.newIORef []
@@ -83,7 +84,9 @@ testRealFileOperations = testGroup "real file operations"
           writeFile path "recreated"
         
         events <- IORef.readIORef eventsRef
-        assertBool "Should handle deletion and recreation" (not (null events) || success)
+        if success
+          then assertEqual "Deletion test completed successfully" True success  
+          else assertBool "Events detected during deletion/recreation" (length events > 0)
 
   , testCase "file rename detection" $ do
       eventsRef <- IORef.newIORef []
@@ -98,7 +101,9 @@ testRealFileOperations = testGroup "real file operations"
           Directory.renameFile oldPath newPath
         
         events <- IORef.readIORef eventsRef
-        assertBool "Should detect file rename" (not (null events) || success)
+        if success
+          then assertEqual "Rename test completed successfully" True success
+          else assertBool "Events detected during file rename" (length events > 0)
 
   , testCase "large file operations" $ do
       eventsRef <- IORef.newIORef []
@@ -112,7 +117,9 @@ testRealFileOperations = testGroup "real file operations"
           appendFile path "\nend marker"
         
         events <- IORef.readIORef eventsRef
-        assertBool "Should handle large file modifications" (not (null events) || success)
+        if success
+          then assertEqual "Large file test completed successfully" True success
+          else assertBool "Events detected during large file operations" (length events > 0)
   ]
 
 -- Test multiple watchers
@@ -184,7 +191,9 @@ testMultipleWatchers = testGroup "multiple watchers"
             mapM_ (\p -> appendFile p " modified") paths
         
         events <- IORef.readIORef eventsRef
-        assertBool "Should handle multiple files" (not (null events) || success)
+        if success
+          then assertEqual "Multiple file test completed successfully" True success
+          else assertBool "Events detected during multiple file operations" (length events > 0)
 
   , testCase "watcher lifecycle management" $ do
       eventsRef <- IORef.newIORef []
@@ -233,8 +242,8 @@ testFileSystemIntegration = testGroup "file system integration"
           writeFile jsonFile "{\"key\": \"updated_value\"}"
         
         events <- IORef.readIORef eventsRef
-        assertBool "Should handle different file types" 
-          (not (null events) || success1 || success2)
+        assertBool "File type test completed or events detected" 
+          (success1 || success2 || length events > 0)
 
   , testCase "filesystem edge cases" $ do
       eventsRef <- IORef.newIORef []
@@ -254,8 +263,8 @@ testFileSystemIntegration = testGroup "file system integration"
           appendFile binaryFile "\x00\x00"
         
         events <- IORef.readIORef eventsRef
-        assertBool "Should handle filesystem edge cases" 
-          (not (null events) || success1 || success2)
+        assertBool "Edge case test completed or events detected" 
+          (success1 || success2 || length events > 0)
 
   , testCase "cross-platform path handling" $ do
       eventsRef <- IORef.newIORef []
@@ -268,7 +277,9 @@ testFileSystemIntegration = testGroup "file system integration"
           appendFile path "\nPlatform-specific content"
         
         events <- IORef.readIORef eventsRef
-        assertBool "Should handle cross-platform paths" (not (null events) || success)
+        if success
+          then assertEqual "Cross-platform test completed successfully" True success
+          else assertBool "Events detected during cross-platform operations" (length events > 0)
   ]
 
 -- Test performance characteristics
@@ -290,9 +301,12 @@ testPerformanceCharacteristics = testGroup "performance characteristics"
         events <- IORef.readIORef eventsRef
         
         -- Should handle high frequency without overwhelming
-        assertBool "Should handle high frequency changes" (not (null events) || success)
-        when (not (null events)) $
-          assertBool "Should not be overwhelmed by events" (length events <= 50)
+        if success
+          then assertEqual "High frequency test completed successfully" True success
+          else assertBool "Events detected during high frequency changes" (length events > 0)
+        if length events > 0
+          then assertBool "Event count should be reasonable" (length events <= 50)
+          else pure () -- No events to validate
 
   , testCase "multiple watchers resource usage" $ do
       eventsRef <- IORef.newIORef []
@@ -335,7 +349,9 @@ testPerformanceCharacteristics = testGroup "performance characteristics"
             threadDelay 50000
         
         events <- IORef.readIORef eventsRef
-        assertBool "Should maintain stability" (not (null events) || success)
+        if success
+          then assertEqual "Long running test completed successfully" True success
+          else assertBool "Events detected during long running test" (length events > 0)
   ]
 
 -- Helper functions

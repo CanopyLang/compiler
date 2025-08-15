@@ -14,7 +14,7 @@ import qualified Canopy.Package as Pkg
 import Install (Args (..))
 import qualified Install.Arguments as Arguments
 import Test.Tasty (TestTree, testGroup)
-import Test.Tasty.HUnit (testCase, (@?=), assertBool)
+import Test.Tasty.HUnit (testCase, (@?=), assertBool, assertFailure)
 import System.IO.Temp (withSystemTempDirectory)
 import System.FilePath ((</>))
 import qualified System.Directory as Dir
@@ -35,15 +35,15 @@ testArgumentValidation = testGroup "Argument validation"
       withSystemTempDirectory "canopy-test" $ \tmpDir -> do
         result <- Arguments.validateArgs NoArgs
         case result of
-          Left _ -> True @?= True  -- Expected failure
-          Right _ -> assertBool "Should fail without canopy.json" False
+          Left _ -> pure () -- Expected failure
+          Right _ -> assertFailure "Should fail without canopy.json"
   , testCase "Install args validation without project" $ do
       withSystemTempDirectory "canopy-test" $ \tmpDir -> do
         let pkg = Pkg.core
         result <- Arguments.validateArgs (Install pkg)
         case result of
-          Left _ -> True @?= True  -- Expected failure
-          Right _ -> assertBool "Should fail without canopy.json" False
+          Left _ -> pure () -- Expected failure
+          Right _ -> assertFailure "Should fail without canopy.json"
   ]
 
 -- | Test project structure detection.
@@ -66,7 +66,7 @@ testProjectDetection = testGroup "Project detection"
         
         case result of
           Just foundRoot -> foundRoot @?= tmpDir
-          Nothing -> assertBool "Should find project root" False
+          Nothing -> assertFailure "Should find project root"
   , testCase "No project root returns Nothing" $ do
       withSystemTempDirectory "canopy-test" $ \tmpDir -> do
         origDir <- Dir.getCurrentDirectory
@@ -86,7 +86,7 @@ testErrorHandling = testGroup "Error handling and validation"
       let args = Install pkg
       case args of
         Install extractedPkg -> extractedPkg @?= pkg
-        NoArgs -> assertBool "Install should not become NoArgs" False
+        NoArgs -> assertFailure "Install should not become NoArgs"
   , testCase "NoArgs remains distinct from Install" $ do
       let noArgs = NoArgs
       let installArgs = Install Pkg.core
@@ -99,8 +99,8 @@ testWorkflowIntegration = testGroup "Installation workflow integration"
   [ testCase "NoArgs represents sync-all workflow" $ do
       let noArgs = NoArgs
       case noArgs of
-        NoArgs -> assertBool "NoArgs represents dependency sync workflow" True
-        Install _ -> assertBool "NoArgs should not be Install workflow" False
+        NoArgs -> pure () -- NoArgs represents dependency sync workflow
+        Install _ -> assertFailure "NoArgs should not be Install workflow"
   , testCase "Install args represent targeted installation" $ do
       let pkg = Pkg.http
       let installArgs = Install pkg
@@ -108,7 +108,7 @@ testWorkflowIntegration = testGroup "Installation workflow integration"
         Install targetPkg -> do
           -- Test that we can extract the target for installation workflow
           assertBool "Should have target package for installation" (targetPkg == pkg)
-        NoArgs -> assertBool "Install should have target package" False
+        NoArgs -> assertFailure "Install should have target package"
   , testCase "Different installation targets are distinct" $ do
       let coreInstall = Install Pkg.core
       let httpInstall = Install Pkg.http

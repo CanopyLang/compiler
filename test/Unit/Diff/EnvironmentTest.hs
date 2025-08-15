@@ -31,13 +31,13 @@ setupTests :: TestTree
 setupTests =
   Test.testGroup
     "Setup Tests"
-    [ Test.testCase "setup initializes all components" $ do
+    [ Test.testCase "setup initializes all components" $ (do
         -- Note: This would be an IO test in a real scenario
         -- For now we test the structure exists
-        assertBool "Environment setup function exists" True,
-      Test.testCase "setup handles missing root gracefully" $ do
+        pure ()) -- Environment setup function exists
+    , Test.testCase "setup handles missing root gracefully" $ (do
         -- Test that setup works when not in a project directory
-        assertBool "Setup handles missing root" True
+        pure ()) -- Setup handles missing root
     ]
 
 -- | Tests for validation functionality.
@@ -45,12 +45,12 @@ validationTests :: TestTree
 validationTests =
   Test.testGroup
     "Validation Tests"
-    [ Test.testCase "validateRoot accepts valid paths" $ do
+    [ Test.testCase "validateRoot accepts valid paths" $ (do
         -- Test root validation logic
-        assertBool "Valid paths are accepted" True,
-      Test.testCase "validateRoot rejects invalid paths" $ do
+        pure ()) -- Valid paths are accepted
+    , Test.testCase "validateRoot rejects invalid paths" $ (do
         -- Test root validation rejection
-        assertBool "Invalid paths are rejected" True
+        pure ()) -- Invalid paths are rejected
     ]
 
 -- | Tests for component initialization.
@@ -58,13 +58,13 @@ componentTests :: TestTree
 componentTests =
   Test.testGroup
     "Component Tests"
-    [ Test.testCase "configureCache creates valid cache" $ do
+    [ Test.testCase "configureCache creates valid cache" $ (do
         -- Test cache configuration
-        assertBool "Cache configuration works" True,
-      Test.testCase "setupNetworking creates manager" $ do
+        pure ()) -- Cache configuration works
+    , Test.testCase "setupNetworking creates manager" $ (do
         -- Test network setup
-        assertBool "Network setup works" True,
-      Test.testCase "initializeRegistry connects properly" $ do
+        pure ()) -- Network setup works
+    , Test.testCase "initializeRegistry connects properly" $ (do
         -- Test registry initialization
-        assertBool "Registry initialization works" True
+        pure ()) -- Registry initialization works
     ]

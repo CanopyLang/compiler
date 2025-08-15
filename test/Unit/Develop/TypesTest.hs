@@ -3,9 +3,9 @@
 
 -- | Unit tests for Develop.Types module.
 --
--- Tests all type constructors, lens operations, default values, and Show
--- instances. Validates type safety and lens compliance following CLAUDE.md
--- patterns with exact value verification.
+-- Tests all type constructors, behavioral patterns, default values, and
+-- data operations. Validates type safety and business logic following CLAUDE.md
+-- standards with behavioral verification.
 --
 -- @since 0.19.1
 module Unit.Develop.TypesTest (tests) where
@@ -40,9 +40,8 @@ tests =
       serverConfigDataTests,
       compileResultDataTests,
       fileServeModeDataTests,
-      lensOperationTests,
+      behavioralOperationTests,
       defaultValueTests,
-      showInstanceTests,
       equalityTests
     ]
 
@@ -51,25 +50,33 @@ flagsDataTests :: TestTree
 flagsDataTests =
   Test.testGroup
     "Flags Data Type Tests"
-    [ Test.testCase "flags construction with no port" $ do
+    [ Test.testCase "flags supports no port configuration" $ do
         let flags = Flags Nothing
-        flags ^. flagsPort @?= Nothing,
-      Test.testCase "flags construction with port 3000" $ do
+        case flags of
+          Flags Nothing -> pure ()
+          _ -> Test.assertFailure "Expected no port configuration",
+      Test.testCase "flags supports specific port configuration" $ do
         let flags = Flags (Just 3000)
-        flags ^. flagsPort @?= Just 3000,
-      Test.testCase "flags construction with port 8080" $ do
+        case flags of
+          Flags (Just 3000) -> pure ()
+          _ -> Test.assertFailure "Expected port 3000 configuration",
+      Test.testCase "flags supports high port numbers" $ do
         let flags = Flags (Just 8080)
-        flags ^. flagsPort @?= Just 8080,
-      Test.testCase "flags lens update from Nothing to Just" $ do
-        let flags = Flags Nothing
-            updated = flags & flagsPort .~ Just 5000
-        flags ^. flagsPort @?= Nothing
-        updated ^. flagsPort @?= Just 5000,
-      Test.testCase "flags lens update from Just to Nothing" $ do
-        let flags = Flags (Just 3000)
-            updated = flags & flagsPort .~ Nothing
-        flags ^. flagsPort @?= Just 3000
-        updated ^. flagsPort @?= Nothing
+        case flags of
+          Flags (Just 8080) -> pure ()
+          _ -> Test.assertFailure "Expected port 8080 configuration",
+      Test.testCase "flags configuration can be updated" $ do
+        let original = Flags Nothing
+            updated = original & flagsPort .~ Just 5000
+        case (original, updated) of
+          (Flags Nothing, Flags (Just 5000)) -> pure ()
+          _ -> Test.assertFailure "Expected successful port update",
+      Test.testCase "port configuration can be cleared" $ do
+        let original = Flags (Just 3000)
+            cleared = original & flagsPort .~ Nothing
+        case (original, cleared) of
+          (Flags (Just 3000), Flags Nothing) -> pure ()
+          _ -> Test.assertFailure "Expected successful port clearing"
     ]
 
 -- | Tests for ServerConfig data type.
@@ -77,22 +84,22 @@ serverConfigDataTests :: TestTree
 serverConfigDataTests =
   Test.testGroup
     "ServerConfig Data Type Tests"
-    [ Test.testCase "server config construction with all fields" $ do
+    [ Test.testCase "server config supports full configuration" $ do
         let config = ServerConfig 3000 True (Just "/project")
-        config ^. scPort @?= 3000
-        config ^. scVerbose @?= True
-        config ^. scRoot @?= Just "/project",
-      Test.testCase "server config construction with minimal fields" $ do
+        case config of
+          ServerConfig 3000 True (Just "/project") -> pure ()
+          _ -> Test.assertFailure "Expected full server configuration",
+      Test.testCase "server config supports minimal configuration" $ do
         let config = ServerConfig 8000 False Nothing
-        config ^. scPort @?= 8000
-        config ^. scVerbose @?= False
-        config ^. scRoot @?= Nothing,
-      Test.testCase "server config lens updates preserve other fields" $ do
-        let config = ServerConfig 3000 False (Just "/root")
-            updated = config & scPort .~ 9000 & scVerbose .~ True
-        updated ^. scPort @?= 9000
-        updated ^. scVerbose @?= True
-        updated ^. scRoot @?= Just "/root" -- Preserved
+        case config of
+          ServerConfig 8000 False Nothing -> pure ()
+          _ -> Test.assertFailure "Expected minimal server configuration",
+      Test.testCase "server config preserves fields during updates" $ do
+        let original = ServerConfig 3000 False (Just "/root")
+            updated = original & scPort .~ 9000 & scVerbose .~ True
+        case (original, updated) of
+          (ServerConfig 3000 False (Just "/root"), ServerConfig 9000 True (Just "/root")) -> pure ()
+          _ -> Test.assertFailure "Expected field preservation during update"
     ]
 
 -- | Tests for CompileResult data type.
@@ -149,39 +156,43 @@ fileServeModeDataTests =
           _ -> Test.assertFailure "Expected ServeAsset"
     ]
 
--- | Tests for lens operations across all types.
-lensOperationTests :: TestTree
-lensOperationTests =
+-- | Tests for behavioral operations across all types.
+behavioralOperationTests :: TestTree
+behavioralOperationTests =
   Test.testGroup
-    "Lens Operation Tests"
-    [ Test.testCase "flags port lens view operations" $ do
-        let flags1 = Flags Nothing
-            flags2 = Flags (Just 1234)
-        flags1 ^. flagsPort @?= Nothing
-        flags2 ^. flagsPort @?= Just 1234,
-      Test.testCase "server config port lens operations" $ do
-        let config = ServerConfig 8000 False Nothing
-            updated = config & scPort .~ 3000
-        config ^. scPort @?= 8000
-        updated ^. scPort @?= 3000,
-      Test.testCase "server config verbose lens operations" $ do
-        let config = ServerConfig 8000 False Nothing
-            updated = config & scVerbose .~ True
-        config ^. scVerbose @?= False
-        updated ^. scVerbose @?= True,
-      Test.testCase "server config root lens operations" $ do
-        let config = ServerConfig 8000 False Nothing
-            updated = config & scRoot .~ Just "/new/root"
-        config ^. scRoot @?= Nothing
-        updated ^. scRoot @?= Just "/new/root",
-      Test.testCase "multiple lens updates in chain" $ do
-        let config = ServerConfig 8000 False Nothing
-            updated = config & scPort .~ 5000 
+    "Behavioral Operation Tests"
+    [ Test.testCase "flags distinguish port configurations" $ do
+        let noPort = Flags Nothing
+            withPort = Flags (Just 1234)
+        case (noPort, withPort) of
+          (Flags Nothing, Flags (Just 1234)) -> pure ()
+          _ -> Test.assertFailure "Expected distinct port configurations",
+      Test.testCase "server config port updates work correctly" $ do
+        let original = ServerConfig 8000 False Nothing
+            updated = original & scPort .~ 3000
+        case (original, updated) of
+          (ServerConfig 8000 _ _, ServerConfig 3000 _ _) -> pure ()
+          _ -> Test.assertFailure "Expected successful port update",
+      Test.testCase "server config verbose mode toggles correctly" $ do
+        let quiet = ServerConfig 8000 False Nothing
+            verbose = quiet & scVerbose .~ True
+        case (quiet, verbose) of
+          (ServerConfig _ False _, ServerConfig _ True _) -> pure ()
+          _ -> Test.assertFailure "Expected successful verbose toggle",
+      Test.testCase "server config root path updates correctly" $ do
+        let defaultRoot = ServerConfig 8000 False Nothing
+            customRoot = defaultRoot & scRoot .~ Just "/new/root"
+        case (defaultRoot, customRoot) of
+          (ServerConfig _ _ Nothing, ServerConfig _ _ (Just "/new/root")) -> pure ()
+          _ -> Test.assertFailure "Expected successful root path update",
+      Test.testCase "complex server config updates preserve consistency" $ do
+        let original = ServerConfig 8000 False Nothing
+            updated = original & scPort .~ 5000 
                               & scVerbose .~ True 
                               & scRoot .~ Just "/project"
-        updated ^. scPort @?= 5000
-        updated ^. scVerbose @?= True
-        updated ^. scRoot @?= Just "/project"
+        case updated of
+          ServerConfig 5000 True (Just "/project") -> pure ()
+          _ -> Test.assertFailure "Expected successful multi-field update"
     ]
 
 -- | Tests for default value correctness.
@@ -189,45 +200,21 @@ defaultValueTests :: TestTree
 defaultValueTests =
   Test.testGroup
     "Default Value Tests"
-    [ Test.testCase "default flags has no port set" $ do
-        defaultFlags ^. flagsPort @?= Nothing,
-      Test.testCase "default server config has standard values" $ do
-        defaultServerConfig ^. scPort @?= 8000
-        defaultServerConfig ^. scVerbose @?= False
-        defaultServerConfig ^. scRoot @?= Nothing,
-      Test.testCase "default values are consistent with documentation" $ do
-        -- Default port should be 8000 as documented
-        defaultServerConfig ^. scPort @?= 8000
-        -- Default verbose should be False for clean output
-        defaultServerConfig ^. scVerbose @?= False
+    [ Test.testCase "default flags provides sensible defaults" $ do
+        case defaultFlags of
+          Flags Nothing -> pure ()
+          _ -> Test.assertFailure "Expected default flags with no port",
+      Test.testCase "default server config provides standard values" $ do
+        case defaultServerConfig of
+          ServerConfig 8000 False Nothing -> pure ()
+          _ -> Test.assertFailure "Expected standard default server config",
+      Test.testCase "default values support immediate usage" $ do
+        -- Should be able to use defaults directly
+        case (defaultFlags, defaultServerConfig) of
+          (Flags Nothing, ServerConfig 8000 False Nothing) -> pure ()
+          _ -> Test.assertFailure "Expected usable default configurations"
     ]
 
--- | Tests for Show instances producing exact output.
-showInstanceTests :: TestTree
-showInstanceTests =
-  Test.testGroup
-    "Show Instance Tests"
-    [ Test.testCase "flags show with no port" $ do
-        let flags = Flags Nothing
-        show flags @?= "Flags {_flagsPort = Nothing}",
-      Test.testCase "flags show with port 3000" $ do
-        let flags = Flags (Just 3000)
-        show flags @?= "Flags {_flagsPort = Just 3000}",
-      Test.testCase "server config show with default values" $ do
-        let config = ServerConfig 8000 False Nothing
-        show config @?= "ServerConfig {_scPort = 8000, _scVerbose = False, _scRoot = Nothing}",
-      Test.testCase "server config show with all fields set" $ do
-        let config = ServerConfig 3000 True (Just "/project")
-        show config @?= "ServerConfig {_scPort = 3000, _scVerbose = True, _scRoot = Just \"/project\"}",
-      Test.testCase "file serve mode show instances" $ do
-        show (ServeRaw "/file.txt") @?= "ServeRaw \"/file.txt\""
-        show (ServeCode "/code.hs") @?= "ServeCode \"/code.hs\""
-        show (ServeCanopy "/main.can") @?= "ServeCanopy \"/main.can\""
-        show (ServeAsset "content" "text/plain") @?= "ServeAsset \"content\" \"text/plain\"",
-      Test.testCase "default values show correctly" $ do
-        show defaultFlags @?= "Flags {_flagsPort = Nothing}"
-        show defaultServerConfig @?= "ServerConfig {_scPort = 8000, _scVerbose = False, _scRoot = Nothing}"
-    ]
 
 -- | Tests for equality instances.
 equalityTests :: TestTree

@@ -34,7 +34,7 @@ testDevGenSingleFile =
         details <- BW.withScope $ \scope -> do
           e <- Details.load Reporting.silent scope tmp
           case e of
-            Left _ -> assertFailure "details failed" >> undefined
+            Left _ -> assertFailure "details failed to load"
             Right d -> pure d
         let srcFile = tmp </> "src" </> "Main.can"
         artifactsE <- Build.fromPaths Reporting.silent tmp details (NE.List srcFile [])
@@ -59,7 +59,7 @@ testProdGenSingleFile =
         details <- BW.withScope $ \scope -> do
           e <- Details.load Reporting.silent scope tmp
           case e of
-            Left _ -> assertFailure "details failed" >> undefined
+            Left _ -> assertFailure "details failed to load"
             Right d -> pure d
         let srcFile = tmp </> "src" </> "Main.can"
         artifactsE <- Build.fromPaths Reporting.silent tmp details (NE.List srcFile [])

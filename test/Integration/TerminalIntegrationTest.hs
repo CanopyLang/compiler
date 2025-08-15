@@ -11,7 +11,7 @@
 module Integration.TerminalIntegrationTest (tests) where
 
 import Test.Tasty (TestTree, testGroup)
-import Test.Tasty.HUnit (testCase, (@?=), assertBool)
+import Test.Tasty.HUnit (testCase, (@?=), assertBool, assertFailure)
 import qualified Terminal
 import qualified Text.PrettyPrint.ANSI.Leijen as Doc
 
@@ -42,7 +42,7 @@ testCompleteCommandWorkflow = testGroup "Complete Command Workflow"
           name @?= "build"
           case summary of
             Terminal.Common desc -> desc @?= "Build project"
-            _ -> assertBool "Expected Common summary" False
+            _ -> assertFailure "Expected Common summary"
           details @?= "Compile and build the project"
   , testCase "command with no arguments and no flags" $ do
       let args = Terminal.noArgs
@@ -54,8 +54,8 @@ testCompleteCommandWorkflow = testGroup "Complete Command Workflow"
         Terminal.Command name summary _ _ _ _ _ -> do
           name @?= "help"
           case summary of
-            Terminal.Uncommon -> True @?= True
-            _ -> assertBool "Expected Uncommon summary" False
+            Terminal.Uncommon -> pure () -- Expected Uncommon summary
+            _ -> assertFailure "Expected Uncommon summary"
   , testCase "command with complex argument patterns" $ do
       let fileParser = Terminal.fileParser [".hs", ".canopy"]
           stringParser = Terminal.stringParser "module" "module name"
@@ -94,16 +94,16 @@ testArgumentFlagIntegration = testGroup "Argument Flag Integration"
                            Terminal.|-- Terminal.flag "second" stringParser "second flag"  
                            Terminal.|-- Terminal.onOff "third" "third flag"
       case chainedFlags of
-        Terminal.FMore (Terminal.FMore (Terminal.FMore (Terminal.FDone _) _) _) _ -> True @?= True
-        _ -> assertBool "Expected nested FMore structure" False
+        Terminal.FMore (Terminal.FMore (Terminal.FMore (Terminal.FDone _) _) _) _ -> pure () -- Expected nested FMore structure
+        _ -> assertFailure "Expected nested FMore structure"
   , testCase "argument builders with different types" $ do
       let stringParser = Terminal.stringParser "text" "text input"
           intParser = Terminal.intParser 0 1000
           floatParser = Terminal.floatParser
           mixedArgs = Terminal.require3 (,,) stringParser intParser floatParser
       case mixedArgs of
-        Terminal.Args [Terminal.Exactly _] -> True @?= True
-        _ -> assertBool "Expected Exactly pattern for require3" False
+        Terminal.Args [Terminal.Exactly _] -> pure () -- Expected Exactly pattern for require3
+        _ -> assertFailure "Expected Exactly pattern for require3"
   ]
 
 -- | Test parser chain integration
@@ -156,8 +156,8 @@ testComplexScenarios = testGroup "Complex Scenarios"
           buildCmd = Terminal.command "make" (Terminal.Common "Build project")
                        "Compile source files" Doc.empty args flags handler
       case buildCmd of
-        Terminal.Command "make" (Terminal.Common "Build project") _ _ _ _ _ -> True @?= True
-        _ -> assertBool "Expected make command with Common summary" False
+        Terminal.Command "make" (Terminal.Common "Build project") _ _ _ _ _ -> pure () -- Expected make command with Common summary
+        _ -> assertFailure "Expected make command with Common summary"
   , testCase "install command simulation" $ do
       let packageParser = Terminal.stringParser "package" "package name"
           versionParser = Terminal.stringParser "version" "package version"
@@ -173,9 +173,9 @@ testComplexScenarios = testGroup "Complex Scenarios"
       case installCmd of
         Terminal.Command "install" summary _ _ _ _ _ -> 
           case summary of
-            Terminal.Uncommon -> True @?= True
-            _ -> assertBool "Expected Uncommon summary" False
-        _ -> assertBool "Expected install command with Uncommon summary" False
+            Terminal.Uncommon -> pure () -- Expected Uncommon summary
+            _ -> assertFailure "Expected Uncommon summary"
+        _ -> assertFailure "Expected install command with Uncommon summary"
   , testCase "help command with minimal structure" $ do
       let args = Terminal.noArgs
           flags = Terminal.noFlags
@@ -183,8 +183,8 @@ testComplexScenarios = testGroup "Complex Scenarios"
           helpCmd = Terminal.command "help" (Terminal.Common "Show help")
                       "Display help information" Doc.empty args flags handler
       case helpCmd of
-        Terminal.Command "help" (Terminal.Common "Show help") _ _ _ _ _ -> True @?= True
-        _ -> assertBool "Expected help command structure" False
+        Terminal.Command "help" (Terminal.Common "Show help") _ _ _ _ _ -> pure () -- Expected help command structure
+        _ -> assertFailure "Expected help command structure"
   , testCase "complex argument validation scenarios" $ do
       let nameParser = Terminal.stringParser "name" "entity name"
           countParser = Terminal.intParser 1 100

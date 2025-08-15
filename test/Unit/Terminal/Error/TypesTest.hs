@@ -139,7 +139,7 @@ testErrorTypeShow = testGroup "Error Type Show Tests"
           missingError = ArgMissing expectation
           badError = ArgBad "invalid" expectation
           extrasError = ArgExtras ["extra1", "extra2"]
-      assertBool "ArgMissing shows correctly" (not (null (show missingError)))
-      assertBool "ArgBad shows correctly" (not (null (show badError)))
-      assertBool "ArgExtras shows correctly" (not (null (show extrasError)))
+      assertBool "ArgMissing produces output" (length (show missingError) > 5)
+      assertBool "ArgBad produces output" (length (show badError) > 5)
+      assertBool "ArgExtras produces output" (length (show extrasError) > 5)
   ]

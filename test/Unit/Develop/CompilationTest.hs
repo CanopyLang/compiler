@@ -15,7 +15,7 @@ import qualified Data.ByteString.Builder as Builder
 import qualified Data.Name as Name
 import qualified Develop.Compilation as Compilation
 import Test.Tasty (TestTree, testGroup)
-import Test.Tasty.HUnit ((@?=), assertBool, testCase)
+import Test.Tasty.HUnit ((@?=), assertBool, testCase, assertFailure)
 
 -- | Main test suite for Compilation module.
 tests :: TestTree
@@ -38,12 +38,12 @@ compilationTests =
         result <- Compilation.compileFile ""
         case result of
           Left _ -> pure () -- Expected error
-          Right _ -> assertBool "Should fail for empty path" False,
+          Right _ -> assertFailure "Should fail for empty path",
       testCase "compileFile with non-canopy extension" $ do
         result <- Compilation.compileFile "not-canopy.txt"
         case result of
           Left _ -> pure () -- Expected error for wrong extension
-          Right _ -> assertBool "Should reject non-canopy files" False
+          Right _ -> assertFailure "Should reject non-canopy files"
     ]
 
 -- | Tests for build system integration.
@@ -71,13 +71,13 @@ outputGenerationTests =
             moduleName = Name.fromChars "Main"
             result = Compilation.generateHtmlOutput moduleName jsContent
             htmlString = show result
-        assertBool "HTML should be non-empty" (not (null htmlString)),
+        assertBool "HTML should contain content" (length htmlString > 0),
       testCase "generateHtmlOutput with empty content" $ do
         let emptyContent = mempty :: Builder
             moduleName = Name.fromChars "Empty"
             result = Compilation.generateHtmlOutput moduleName emptyContent
             htmlString = show result
-        assertBool "Should handle empty content gracefully" (not (null htmlString))
+        assertBool "Should produce HTML output" (length htmlString > 0)
     ]
 
 -- | Tests for project validation.
@@ -99,14 +99,14 @@ errorHandlingTests =
     [ testCase "compilation error types are meaningful" $ do
         result <- Compilation.compileFile "nonexistent.can"
         case result of
-          Left errMsg -> assertBool "Error message should be non-empty" (not (null errMsg))
-          Right _ -> assertBool "Should return error for missing file" False,
+          Left errMsg -> assertBool "Error message should contain details" (length errMsg > 5)
+          Right _ -> assertFailure "Should return error for missing file",
       testCase "error propagation provides consistent messages" $ do
         result <- Compilation.compileFile "test.invalid"
         case result of
           Left errMsg -> do
             -- The actual error is "No project root found", not file-specific
-            assertBool "Error message should be non-empty" (not (null errMsg))
+            assertBool "Error message should contain details" (length errMsg > 5)
             errMsg @?= "No project root found"
-          Right _ -> assertBool "Should fail for invalid extension" False
+          Right _ -> assertFailure "Should fail for invalid extension"
     ]

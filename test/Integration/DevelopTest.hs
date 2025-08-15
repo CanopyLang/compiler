@@ -51,7 +51,7 @@ serverSetupWorkflowTests =
         
         -- Test display message generation
         let output = "Go to http://localhost:" ++ show (config ^. scPort) ++ " to see your project dashboard."
-        output @?= "Go to http://localhost:8000 to see your project dashboard.",
+        "Go to http://localhost:8000 to see your project dashboard." @?= output,
         
       Test.testCase "complete setup workflow with custom port" $ do
         let flags = Flags (Just 3000)
@@ -63,7 +63,7 @@ serverSetupWorkflowTests =
         
         -- Test display message reflects custom port
         let output = "Go to http://localhost:" ++ show (config ^. scPort) ++ " to see your project dashboard."
-        output @?= "Go to http://localhost:3000 to see your project dashboard.",
+        "Go to http://localhost:3000 to see your project dashboard." @?= output,
         
       Test.testCase "setup workflow preserves project root detection" $ do
         let flags = Flags (Just 9000)
@@ -149,7 +149,7 @@ environmentIntegrationTests =
         
         -- Display should use resolved config
         let output = "Go to http://localhost:" ++ show (config ^. scPort) ++ " to see your project dashboard."
-        output @?= "Go to http://localhost:6000 to see your project dashboard."
+        "Go to http://localhost:6000 to see your project dashboard." @?= output
     ]
 
 -- | Tests for complete end-to-end workflows.
@@ -157,7 +157,7 @@ endToEndWorkflowTests :: TestTree
 endToEndWorkflowTests =
   Test.testGroup
     "End-to-End Workflow Tests"
-    [ Test.testCase "complete development server initialization" $ do
+    [ Test.testCase "complete development server initialization" $ (do
         -- Simulate complete server initialization workflow
         let flags = Flags (Just 7000)
         
@@ -172,9 +172,9 @@ endToEndWorkflowTests =
         
         -- Verify end-to-end results
         config ^. scPort @?= 7000
-        output @?= "Go to http://localhost:7000 to see your project dashboard.",
+        "Go to http://localhost:7000 to see your project dashboard." @?= output)
         
-      Test.testCase "workflow handles edge cases gracefully" $ do
+    , Test.testCase "workflow handles edge cases gracefully" $ (do
         -- Test with minimal configuration
         let flags = defaultFlags
         
@@ -184,9 +184,9 @@ endToEndWorkflowTests =
         
         -- Should work with defaults
         config ^. scPort @?= 8000
-        output @?= "Go to http://localhost:8000 to see your project dashboard.",
+        "Go to http://localhost:8000 to see your project dashboard." @?= output)
         
-      Test.testCase "workflow integrates with project detection" $ do
+    , Test.testCase "workflow integrates with project detection" $ (do
         let flags = Flags (Just 8888)
         config <- Environment.setupServerConfig flags
         
@@ -197,5 +197,5 @@ endToEndWorkflowTests =
         -- Rest of workflow should continue normally
         Environment.validateConfiguration config
         let output = "Go to http://localhost:" ++ show (config ^. scPort) ++ " to see your project dashboard."
-        output @?= "Go to http://localhost:8888 to see your project dashboard."
+        "Go to http://localhost:8888 to see your project dashboard." @?= output)
     ]

@@ -16,7 +16,7 @@ import Control.Lens ((^.))
 import Install (Args (..))
 import qualified Install.Types as Types
 import Test.Tasty (TestTree, testGroup)
-import Test.Tasty.HUnit (testCase, (@?=), assertBool)
+import Test.Tasty.HUnit (testCase, (@?=), assertBool, assertFailure)
 
 -- | All unit tests for Install module functionality.
 tests :: TestTree
@@ -88,11 +88,11 @@ testArgsParsing = testGroup "Args usage scenarios"
 -- Helper functions for testing
 isNoArgs :: Args -> Bool
 isNoArgs NoArgs = True
-isNoArgs _ = False
+isNoArgs (Install _) = False
 
 isInstall :: Args -> Bool
 isInstall (Install _) = True
-isInstall _ = False
+isInstall NoArgs = False
 
 extractPackage :: Args -> Maybe Pkg.Name
 extractPackage (Install pkg) = Just pkg
@@ -108,25 +108,27 @@ testInstallTypes = testGroup "Install.Types behavior"
       let remove = Types.Remove version
       -- Test that different constructors can be distinguished
       case insert of
-        Types.Insert _ -> True @?= True
-        _ -> assertBool "Insert should match Insert pattern" False
+        Types.Insert v -> v @?= version
+        _ -> assertFailure "Insert should match Insert pattern"
       case change of
-        Types.Change _ _ -> True @?= True
-        _ -> assertBool "Change should match Change pattern" False
+        Types.Change v1 v2 -> do
+          v1 @?= version
+          v2 @?= V.one
+        _ -> assertFailure "Change should match Change pattern"
       case remove of
-        Types.Remove _ -> True @?= True
-        _ -> assertBool "Remove should match Remove pattern" False
+        Types.Remove v -> v @?= version
+        _ -> assertFailure "Remove should match Remove pattern"
   ]
 
 -- | Test Changes type represents installation states.
 testChangesType :: TestTree
 testChangesType = testGroup "Changes represent installation workflow"
   [ testCase "Changes can represent different installation states" $ do
-      -- Test the different Changes constructors (not Change constructors)
+      -- Test the different Changes constructors behavior
       let alreadyInstalled = Types.AlreadyInstalled
       case alreadyInstalled of
-        Types.AlreadyInstalled -> True @?= True
-        _ -> assertBool "AlreadyInstalled should match pattern" False
+        Types.AlreadyInstalled -> pure () -- Successfully pattern matched AlreadyInstalled
+        _ -> assertFailure "AlreadyInstalled should match pattern"
   , testCase "Change operations carry version information" $ do
       let version = V.one
       case Types.Insert version of
@@ -149,7 +151,7 @@ testDisplayTypes = testGroup "Display types support UI formatting"
       let totalChanges = length (docs ^. Types.docInserts) + 
                         length (docs ^. Types.docChanges) + 
                         length (docs ^. Types.docRemoves)
-      totalChanges @?= 0  -- Empty docs should have 0 total changes
+      0 @?= totalChanges  -- Empty docs should have 0 total changes
   , testCase "ExistingDep distinguishes dependency contexts" $ do
       let deps = [Types.IndirectDep V.one, Types.TestDirectDep V.one, Types.TestIndirectDep V.one]
       -- Test that we can distinguish different dependency contexts
@@ -163,11 +165,11 @@ testContextOperations = testGroup "Context operations"
       let noArgs = NoArgs
       let installArgs = Install Pkg.dummyName
       case noArgs of
-        NoArgs -> True @?= True
-        _ -> False @?= True
+        NoArgs -> noArgs @?= NoArgs
+        _ -> assertFailure "NoArgs should match NoArgs pattern"
       case installArgs of
-        Install _ -> True @?= True
-        _ -> False @?= True
+        Install pkg -> pkg @?= Pkg.dummyName
+        _ -> assertFailure "Install should match Install pattern"
   , testCase "Package name extraction is consistent" $ do
       let pkg = Pkg.core
       let args = Install pkg

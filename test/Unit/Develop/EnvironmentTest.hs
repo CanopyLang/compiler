@@ -83,7 +83,7 @@ configurationSetupTests =
         -- Project root should be detected via Stuff.findRoot
         case config ^. scRoot of
           Nothing -> pure () -- No project found, valid
-          Just root -> assertBool "root should not be empty" (not (null root))
+          Just root -> assertBool "root should contain path" (length root > 0)
     ]
 
 -- | Tests for configuration validation.

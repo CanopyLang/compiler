@@ -181,7 +181,7 @@ environmentTests =
         let maybeRoot = unsafePerformIO Environment.detectProjectRoot
         case maybeRoot of
           Nothing -> pure () -- No project root found, valid
-          Just root -> assertBool "root path should not be empty" (not (null root))
+          Just root -> assertBool "root path should contain content" (length root > 0)
     ]
 
 -- | Tests for lens operations across all types.

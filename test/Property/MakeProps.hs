@@ -63,8 +63,8 @@ testVersionProperties =
         (v1 == v2 && v2 == v3) ==> (v1 == (v3 :: Version.Version)),
       testProperty "version ordering is antisymmetric" $ \v1 v2 ->
         (v1 <= v2 && v2 <= v1) ==> (v1 == (v2 :: Version.Version)),
-      testProperty "version one is valid" $
-        Version.one == Version.one
+      testProperty "version one has expected structure" $
+        Version.toChars Version.one == "1.0.0"
     ]
 
 -- | Test properties of Name.

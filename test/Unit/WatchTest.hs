@@ -19,7 +19,7 @@ import qualified System.IO.Temp as Temp
 import System.Timeout (timeout)
 import System.FSNotify (Event)
 import Test.Tasty (TestTree, testGroup)
-import Test.Tasty.HUnit (testCase, assertBool, assertFailure)
+import Test.Tasty.HUnit (testCase, assertBool, assertEqual, assertFailure)
 import qualified Watch
 
 tests :: TestTree
@@ -62,8 +62,8 @@ testBasicFunctionality = testGroup "basic functionality"
           threadDelay 100000
           killThread watcher
         case result of
-          Nothing -> assertBool "Watch function should handle timeout" True
-          Just _ -> assertBool "Watch function should start and stop cleanly" True
+          Nothing -> pure () -- Watch function should handle timeout
+          Just _ -> pure () -- Watch function should start and stop cleanly
 
   , testCase "files function exists and can be called" $ do
       eventsRef <- IORef.newIORef []
@@ -90,7 +90,9 @@ testBasicFunctionality = testGroup "basic functionality"
         
         threadDelay 100000 -- Extra time for event detection
         events <- IORef.readIORef eventsRef
-        assertBool "Should detect file modification" (not (null events) || success)
+        if success
+          then assertEqual "File modification test completed" True success
+          else assertBool "Events detected during file modification" (length events > 0)
   ]
 
 -- Test file system boundaries
@@ -117,7 +119,9 @@ testFileSystemBoundaries = testGroup "file system boundaries"
           appendFile path "content"
         
         events <- IORef.readIORef eventsRef
-        assertBool "Should handle empty file modifications" (success || not (null events))
+        if success
+          then assertEqual "Empty file test completed" True success  
+          else assertBool "Events detected during empty file operations" (length events > 0)
 
   , testCase "directory as file parameter" $ do
       eventsRef <- IORef.newIORef []
@@ -169,7 +173,7 @@ testErrorHandling = testGroup "error handling"
           Directory.removeFile path
         
         -- Should handle deletion gracefully (not crash)
-        assertBool "Should handle file deletion gracefully" True
+        pure () -- Should handle file deletion gracefully
 
   , testCase "invalid path characters" $ do
       eventsRef <- IORef.newIORef []
@@ -251,7 +255,9 @@ testEdgeCases = testGroup "edge cases"
             threadDelay 10000
         
         events <- IORef.readIORef eventsRef
-        assertBool "Should handle rapid changes" (not (null events) || success)
+        if success
+          then assertEqual "Rapid changes test completed" True success
+          else assertBool "Events detected during rapid changes" (length events > 0)
 
   , testCase "large file handling" $ do
       eventsRef <- IORef.newIORef []
@@ -264,7 +270,9 @@ testEdgeCases = testGroup "edge cases"
           appendFile path "end"
         
         events <- IORef.readIORef eventsRef
-        assertBool "Should handle large files" (not (null events) || success)
+        if success
+          then assertEqual "Large file test completed" True success
+          else assertBool "Events detected during large file operations" (length events > 0)
 
   , testCase "file rename detection" $ do
       eventsRef <- IORef.newIORef []
@@ -278,7 +286,9 @@ testEdgeCases = testGroup "edge cases"
           Directory.renameFile oldPath newPath
         
         events <- IORef.readIORef eventsRef
-        assertBool "Should detect rename events" (not (null events) || success)
+        if success
+          then assertEqual "Rename test completed" True success
+          else assertBool "Events detected during file rename" (length events > 0)
 
   , testCase "empty path handling" $ do
       eventsRef <- IORef.newIORef []
@@ -288,9 +298,9 @@ testEdgeCases = testGroup "edge cases"
         killThread watcher
       
       case result of
-        Left _ -> assertBool "Should handle empty path" True -- Expected behavior for empty path
-        Right Nothing -> assertBool "Should handle empty path" True -- Timeout acceptable
-        Right (Just _) -> assertBool "Should handle empty path" True -- Some systems may handle empty paths
+        Left _ -> pure () -- Should handle empty path - Expected behavior for empty path
+        Right Nothing -> pure () -- Should handle empty path - Timeout acceptable
+        Right (Just _) -> pure () -- Should handle empty path - Some systems may handle empty paths
 
   , testCase "whitespace-only path handling" $ do
       eventsRef <- IORef.newIORef []
