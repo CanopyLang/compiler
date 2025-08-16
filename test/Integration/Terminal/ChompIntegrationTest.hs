@@ -137,8 +137,8 @@ testSuggestionGeneration =
             flags = FMore (FMore (FDone (\v1 v2 -> (v1, v2))) flag1) flag2
             (suggestions, _) = Chomp.chomp (Just 1) ["--ver"] args flags
         suggestionList <- suggestions
-        -- Test that flag completion functionality works - accept any reasonable behavior
-        assertBool "Flag completion should work" (length suggestionList >= 0),
+        -- Test that flag completion provides reasonable suggestions
+        assertBool "Flag completion should provide at least one suggestion" (length suggestionList >= 1),
       testCase "contextual value suggestions" $ do
         let enumParser = createEnumParser ["development", "production", "testing"]
             args = Args [Exactly (Required (Done id) enumParser)]

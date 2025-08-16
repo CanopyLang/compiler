@@ -58,7 +58,7 @@ testRealCompilationScenarios =
             let module_ = artifacts ^. Compile.artifactsModule
             Can._name module_ @?= ModuleName.Canonical Pkg.core (Name.fromChars "SimpleValid")
             let types = artifacts ^. Compile.artifactsTypes
-            assertBool "types map should be reasonable size" (Map.size types >= 0)
+            assertBool "Types map should contain at least one type" (Map.size types >= 1)
             let graph = artifacts ^. Compile.artifactsGraph
             case Opt._l_main graph of
               Nothing -> pure () -- Expected no main for simple module
@@ -74,7 +74,7 @@ testRealCompilationScenarios =
             assertBool "dependency compilation error is informative" (length (show err) > 10)
           Right artifacts -> do
             let types = artifacts ^. Compile.artifactsTypes
-            assertBool "types map should be reasonable size" (Map.size types >= 0),
+            assertBool "Types map should contain at least one type" (Map.size types >= 1),
       testCase "compile application module" $ do
         let pkg = createApplicationPackage
             interfaces = createApplicationInterfaces
@@ -108,7 +108,7 @@ testRealCompilationScenarios =
             assertBool "complex module may have compilation errors" (length (show err) > 0)
           Right artifacts -> do
             let types = artifacts ^. Compile.artifactsTypes
-            assertBool "types map should be reasonable size" (Map.size types >= 0)
+            assertBool "Types map should contain at least one type" (Map.size types >= 1)
     ]
 
 -- Test compilation pipeline
@@ -133,7 +133,7 @@ testCompilationPipeline =
             let module_ = artifacts ^. Compile.artifactsModule
             Can._name module_ @?= ModuleName.Canonical Pkg.core (Name.fromChars "Valid")
             let types = artifacts ^. Compile.artifactsTypes
-            assertBool "types map should be reasonable size" (Map.size types >= 0)
+            assertBool "Types map should contain at least one type" (Map.size types >= 1)
             let graph = artifacts ^. Compile.artifactsGraph
             case Opt._l_main graph of
               Nothing -> pure () -- Expected no main for valid module
@@ -174,7 +174,7 @@ testCompilationPipeline =
           Right artifacts -> do
             -- Verify internal consistency of artifacts
             let types = artifacts ^. Compile.artifactsTypes
-            assertBool "types map should be reasonable size" (Map.size types >= 0)
+            assertBool "Types map should contain at least one type" (Map.size types >= 1)
     ]
 
 -- Test error integration
@@ -255,7 +255,7 @@ testPerformanceCharacteristics =
           Left _ -> pure () -- small module compilation may fail
           Right artifacts -> do
             let types = artifacts ^. Compile.artifactsTypes
-            assertBool "types map should be reasonable size" (Map.size types >= 0),
+            assertBool "Types map should contain at least one type" (Map.size types >= 1),
       testCase "compilation with many interfaces" $ do
         let pkg = Pkg.core
             manyInterfaces = createManyInterfaces 50
@@ -495,7 +495,14 @@ createValidModule =
       Src._exports = A.at (A.Position 0 0) (A.Position 0 0) Src.Open,
       Src._docs = Src.NoDocs A.zero,
       Src._imports = [],
-      Src._values = [],
+      Src._values =
+        [ A.at (A.Position 0 0) (A.Position 0 0) $
+            Src.Value
+              (A.at (A.Position 0 0) (A.Position 0 0) (Name.fromChars "validValue"))
+              []
+              (A.at (A.Position 0 0) (A.Position 0 0) (Src.Int 42))
+              Nothing
+        ],
       Src._unions = [],
       Src._aliases = [],
       Src._binops = [],

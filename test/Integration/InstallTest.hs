@@ -11,6 +11,7 @@
 module Integration.InstallTest (tests) where
 
 import qualified Canopy.Package as Pkg
+import Control.Exception (bracket)
 import Install (Args (..))
 import qualified Install.Arguments as Arguments
 import qualified System.Directory as Dir
@@ -65,23 +66,23 @@ testProjectDetection =
 
           -- Test that we find the root even from deep directory
           origDir <- Dir.getCurrentDirectory
-          Dir.setCurrentDirectory subDir
-
-          result <- Arguments.findProjectRoot
-          Dir.setCurrentDirectory origDir
-
-          case result of
-            Just foundRoot -> foundRoot @?= tmpDir
-            Nothing -> assertFailure "Should find project root",
+          bracket
+            (Dir.setCurrentDirectory subDir)
+            (\_ -> Dir.setCurrentDirectory origDir)
+            (\_ -> do
+              result <- Arguments.findProjectRoot
+              case result of
+                Just foundRoot -> foundRoot @?= tmpDir
+                Nothing -> assertFailure "Should find project root"),
       testCase "No project root returns Nothing" $ do
         withSystemTempDirectory "canopy-test" $ \tmpDir -> do
           origDir <- Dir.getCurrentDirectory
-          Dir.setCurrentDirectory tmpDir
-
-          result <- Arguments.findProjectRoot
-          Dir.setCurrentDirectory origDir
-
-          result @?= Nothing
+          bracket
+            (Dir.setCurrentDirectory tmpDir)
+            (\_ -> Dir.setCurrentDirectory origDir)
+            (\_ -> do
+              result <- Arguments.findProjectRoot
+              result @?= Nothing)
     ]
 
 -- | Test error handling and validation scenarios.

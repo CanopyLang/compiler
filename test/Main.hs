@@ -38,6 +38,7 @@ import qualified Unit.AST.SourceTest as SourceAstTest
 import qualified Unit.CLI.CommandsTest as CLICommandsTest
 import qualified Unit.CLI.DocumentationTest as CLIDocumentationTest
 import qualified Unit.CLI.ParsersTest as CLIParsersTest
+import qualified Unit.Canopy.StuffTest as StuffTest
 import qualified Unit.Canopy.VersionTest as VersionTest
 import qualified Unit.CompileTest as CompileTest
 import qualified Unit.Data.NameTest as NameTest
@@ -91,6 +92,7 @@ unitTests =
   testGroup
     "Unit Tests"
     [ NameTest.tests,
+      StuffTest.tests,
       VersionTest.tests,
       JsonDecodeTest.tests,
       DevelopTest.tests,
