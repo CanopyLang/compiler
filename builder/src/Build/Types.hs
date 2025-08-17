@@ -100,12 +100,10 @@ import qualified Data.ByteString as B
 import Data.Map.Strict (Map)
 import qualified Data.Name as Name
 import Data.NonEmptyList (List)
-import qualified Data.OneOrMore as OneOrMore
 import qualified File
 import qualified Parse.Module as Parse
 import qualified Reporting
 import qualified Reporting.Error as Error
-import qualified Reporting.Error.Docs as EDocs
 import qualified Reporting.Error.Import as Import
 import qualified Reporting.Error.Syntax as Syntax
 import qualified Reporting.Render.Type.Localizer as L

@@ -30,13 +30,6 @@ module Build.Config
   , depsLastCompile
   ) where
 
-import Control.Concurrent.MVar (MVar)
-import Control.Lens (makeLenses)
-import qualified Data.ByteString as B
-import Data.Map.Strict (Map)
-import qualified Canopy.ModuleName as ModuleName
-import qualified Canopy.Interface as I
-import qualified Canopy.Details as Details
 
 -- Note: Configuration types are defined in Build.Types to avoid circular imports.
 -- This module re-exports them for convenience.

@@ -37,7 +37,6 @@ import qualified Canopy.Package as Pkg
 import qualified Compile
 import qualified Data.ByteString as B
 import Data.Map.Strict (Map, (!?))
-import qualified Data.Map.Strict as Map
 import qualified Data.Name as Name
 import Data.NonEmptyList (List)
 import Data.Vector.Internal.Check (HasCallStack)
@@ -87,7 +86,7 @@ processModuleStatus env foreigns resultsMVar name status =
 
 -- | Process cached module status.
 processCachedStatus :: Env -> MVar ResultDict -> ModuleName.Raw -> Details.Local -> IO Result
-processCachedStatus env@(Env _ root projectType _ _ _ _) resultsMVar name local@(Details.Local path time deps hasMain lastChange lastCompile) = do
+processCachedStatus env@(Env _ root projectType _ _ _ _) resultsMVar name local@(Details.Local path time deps _hasMain _lastChange lastCompile) = do
   results <- readMVar resultsMVar
   depsStatus <- checkDepsForModule root results deps lastCompile
   processCachedDepsStatus env projectType name local path time depsStatus
@@ -127,7 +126,7 @@ handleCachedImportProblems env@(Env _ _ _ _ _ _ _) projectType name path time pr
 
 -- | Process changed module status.
 processChangedStatus :: Env -> MVar ResultDict -> ModuleName.Raw -> Details.Local -> B.ByteString -> Src.Module -> DocsNeed -> IO Result
-processChangedStatus env@(Env _ root _ _ _ _ _) resultsMVar name local@(Details.Local path time deps _ _ lastCompile) source modul@(Src.Module _ _ _ imports _ _ _ _ _) docsNeed = do
+processChangedStatus env@(Env _ root _ _ _ _ _) resultsMVar name local@(Details.Local _path _time deps _ _ lastCompile) source modul@(Src.Module _ _ _ imports _ _ _ _ _) docsNeed = do
   results <- readMVar resultsMVar
   depsStatus <- checkDepsForModule root results deps lastCompile
   processChangedDepsStatus env name local source modul docsNeed imports depsStatus
@@ -145,7 +144,7 @@ processChangedDepsStatus env name local@(Details.Local path time _ _ _ _) source
 
 -- | Handle same dependencies case.
 handleSameDeps :: Env -> ModuleName.Raw -> Details.Local -> B.ByteString -> Src.Module -> DocsNeed -> [Dep] -> [CDep] -> IO Result
-handleSameDeps env@(Env _ root _ _ _ _ _) name local source modul docsNeed same cached = do
+handleSameDeps env@(Env _ root _ _ _ _ _) _name local source modul docsNeed same cached = do
   maybeLoaded <- loadInterfaces root same cached
   case maybeLoaded of
     Nothing -> pure RBlocked

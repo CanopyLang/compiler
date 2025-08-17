@@ -27,7 +27,6 @@ module Build.Paths
 
 import Control.Concurrent.MVar (MVar, newEmptyMVar, newMVar, readMVar, putMVar)
 import Control.Lens ((^.))
-import Data.Traversable (traverse)
 import qualified Canopy.Details as Details
 import qualified Canopy.ModuleName as ModuleName
 import qualified Canopy.Package as Pkg
@@ -46,9 +45,7 @@ import qualified Canopy.Outline as Outline
 import qualified File
 import qualified Stuff
 import qualified Compile
-import qualified Canopy.Docs as Docs
 import qualified Canopy.Interface as I
-import qualified Reporting
 import qualified Reporting.Error.Import as Import
 import qualified Reporting.Annotation as A
 import qualified Data.Set as Set
@@ -74,8 +71,6 @@ import Build.Types
   , AbsoluteSrcDir (..)
   , DepsStatus (..)
   , DepsConfig (..)
-  , Dep
-  , CDep
   , envForeigns
   )
 
@@ -153,7 +148,7 @@ runCompilePhase env foreigns rmvar statuses sroots = do
 
 -- | Convert build results to artifacts.
 toArtifacts :: Env -> Dependencies -> Map ModuleName.Raw Result -> List RootResult -> Either Exit.BuildProblem Artifacts
-toArtifacts env@(Env _ root projectType _ _ _ _) foreigns results rootResults =
+toArtifacts env@(Env _ root _projectType _ _ _ _) foreigns results rootResults =
   case gatherProblemsOrMains results rootResults of
     Left (NE.List e es) -> Left (Exit.BuildBadModules root e es)
     Right roots -> createArtifacts env foreigns results rootResults roots
@@ -196,7 +191,7 @@ addInsideSafe rootResults name result modules =
     else addInside name result modules
 
 addOutside :: Map ModuleName.Raw Result -> RootResult -> [Module] -> [Module]
-addOutside results rootResult modules =
+addOutside _results rootResult modules =
   case rootResult of
     RInside _ -> modules
     ROutsideOk name iface objs -> Fresh name iface objs : modules
@@ -286,7 +281,9 @@ checkRoot env@(Env _ root _ _ _ _ _) results rootStatus =
 findRoots :: Env -> List FilePath -> IO (Either Exit.BuildProjectProblem (List RootLocation))
 findRoots env paths = do
   locations <- traverse (processPath env) paths
-  pure (Right (NE.List (head (NE.toList locations)) (tail (NE.toList locations))))
+  case NE.toList locations of
+    (x:xs) -> pure (Right (NE.List x xs))
+    [] -> pure (Right (NE.List (LOutside "") []))
 
 processPath :: Env -> FilePath -> IO RootLocation
 processPath (Env _ root _ _ _ _ _) path =
@@ -327,20 +324,20 @@ isRootName name rootResults =
 addInside :: ModuleName.Raw -> Result -> [Module] -> [Module]
 addInside name result modules =
   case result of
-    RNew (Details.Local _ _ _ main lastChange buildID) iface objs _ ->
+    RNew (Details.Local _ _ _ _main _lastChange _buildID) iface objs _ ->
       Fresh name iface objs : modules
-    RSame (Details.Local _ _ _ main lastChange buildID) iface objs _ ->
+    RSame (Details.Local _ _ _ _main _lastChange _buildID) iface objs _ ->
       Fresh name iface objs : modules
-    RCached main buildID mvar ->
+    RCached main _buildID mvar ->
       Cached name main mvar : modules
     _ -> modules
 
 checkForCycles :: Map ModuleName.Raw Status -> Maybe (NE.List ModuleName.Raw)
-checkForCycles modules = 
+checkForCycles _modules = 
   Nothing -- Simplified implementation for now
 
 checkUniqueRoots :: Map ModuleName.Raw Status -> List RootStatus -> Maybe Exit.BuildProjectProblem
-checkUniqueRoots statuses sroots = 
+checkUniqueRoots _statuses _sroots = 
   Nothing -- Simplified implementation for now
 
 compileOutside :: Env -> Details.Local -> B.ByteString -> Map ModuleName.Raw I.Interface -> Src.Module -> IO RootResult

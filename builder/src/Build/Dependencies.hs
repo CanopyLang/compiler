@@ -24,12 +24,8 @@ import Control.Lens ((^.))
 import qualified Canopy.Details as Details
 import qualified Canopy.Interface as I
 import qualified Canopy.ModuleName as ModuleName
-import Control.Monad (when)
 import Data.Map.Strict (Map, (!))
 import qualified Data.Map.Strict as Map
-import Data.Maybe (isJust)
-import Data.Traversable (traverse, sequenceA)
-import Data.NonEmptyList (List)
 import qualified Data.NonEmptyList as NE
 import qualified File
 import qualified Reporting.Error.Import as Import
@@ -59,15 +55,6 @@ processDependencies :: FilePath -> ResultDict -> [ModuleName.Raw] -> Details.Bui
 processDependencies root results deps lastCompile =
   aggregateDepsState root results deps [] [] [] [] False 0 lastCompile
 
--- | State for dependency aggregation.
-data DepsState = DepsState
-  { newDeps :: ![Dep]
-  , sameDeps :: ![Dep]
-  , cachedDeps :: ![CDep]
-  , importProblems :: ![(ModuleName.Raw, Import.Problem)]
-  , isBlocked :: !Bool
-  , lastDepChange :: !Details.BuildID
-  }
 
 -- | Aggregate dependency state through recursive processing.
 aggregateDepsState :: FilePath -> ResultDict -> [ModuleName.Raw] -> [Dep] -> [Dep] -> [CDep] -> [(ModuleName.Raw, Import.Problem)] -> Bool -> Details.BuildID -> Details.BuildID -> IO DepsStatus

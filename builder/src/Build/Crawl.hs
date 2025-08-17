@@ -27,16 +27,14 @@ module Build.Crawl
 import Control.Concurrent (forkIO)
 import Control.Concurrent.MVar (MVar, takeMVar, putMVar, newEmptyMVar, readMVar)
 import Control.Lens ((^.))
-import Control.Monad (filterM, when)
-import Data.Traversable (traverse)
+import Control.Monad (filterM)
 import Data.Foldable (traverse_)
 import qualified AST.Source as Src
 import qualified Canopy.Details as Details
 import qualified Canopy.ModuleName as ModuleName
 import qualified Canopy.Package as Pkg
 import qualified Data.ByteString as B
-import qualified Data.List as List
-import Data.Map.Strict (Map, (!))
+import Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
 import qualified Data.Set as Set
 import qualified Data.Name as Name
@@ -46,7 +44,7 @@ import qualified Reporting.Annotation as A
 import qualified Reporting.Error.Import as Import
 import qualified Reporting.Error.Syntax as Syntax
 import qualified Reporting.Error as Error
-import System.FilePath ((<.>), (</>), makeRelative)
+import System.FilePath ((<.>), (</>))
 import qualified System.FilePath as FP
 
 import Build.Config (CrawlConfig (..), crawlEnv, crawlMVar, crawlDocsNeed)
@@ -92,7 +90,7 @@ processSinglePath env mvar docsNeed name path root buildID locals foreigns =
 
 -- | Process local module path.
 processLocalPath :: Env -> MVar StatusDict -> DocsNeed -> ModuleName.Raw -> FilePath -> FilePath -> Details.BuildID -> Map ModuleName.Raw Details.Local -> IO Status
-processLocalPath env mvar docsNeed name path root buildID locals = do
+processLocalPath env mvar docsNeed name path _root buildID locals = do
   newTime <- File.getTime path
   case Map.lookup name locals of
     Nothing -> crawlFile env mvar docsNeed name path newTime buildID
@@ -200,7 +198,7 @@ parseAndValidate env mvar docsNeed expectedName path time source projectType bui
 
 -- | Validate module name and process.
 validateAndProcess :: Env -> MVar StatusDict -> DocsNeed -> ModuleName.Raw -> FilePath -> File.Time -> B.ByteString -> Src.Module -> Details.BuildID -> Details.BuildID -> IO Status
-validateAndProcess env mvar docsNeed expectedName path time source modul@(Src.Module maybeActualName _ _ imports values _ _ _ _) buildID lastChange =
+validateAndProcess env mvar docsNeed expectedName path time source (Src.Module maybeActualName _ _ imports values _ _ _ _) buildID lastChange =
   case maybeActualName of
     Nothing -> pure $ SBadSyntax path time source (Syntax.ModuleNameUnspecified expectedName)
     Just name@(A.At _ actualName) -> validateModuleName env mvar docsNeed expectedName actualName path time source imports values buildID lastChange name
