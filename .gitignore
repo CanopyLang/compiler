@@ -25,3 +25,7 @@ node_modules
 
 # Build artifacts and binaries
 # (No longer needed - executable now builds to proper location)
+*.hi
+*.o
+*.dyn_hi
+*.dyn_o
