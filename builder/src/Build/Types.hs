@@ -88,6 +88,8 @@ module Build.Types
 
 import Control.Concurrent.MVar (MVar)
 import Control.Lens (makeLenses)
+import Data.Map.Strict (Map)
+import Data.NonEmptyList (List)
 import qualified AST.Canonical as Can
 import qualified AST.Optimized as Opt
 import qualified AST.Source as Src
@@ -97,9 +99,7 @@ import qualified Canopy.Interface as I
 import qualified Canopy.ModuleName as ModuleName
 import qualified Canopy.Package as Pkg
 import qualified Data.ByteString as B
-import Data.Map.Strict (Map)
 import qualified Data.Name as Name
-import Data.NonEmptyList (List)
 import qualified File
 import qualified Parse.Module as Parse
 import qualified Reporting
@@ -219,8 +219,12 @@ data Module
   deriving ()
 
 instance Show Module where
-  show (Fresh name iface objs) = "Fresh " <> show name <> " " <> show iface <> " " <> show objs
-  show (Cached name main _) = "Cached " <> show name <> " " <> show main <> " <MVar>"
+  show (Fresh name iface objs) = formatFresh name iface objs
+    where
+      formatFresh n i o = "Fresh " <> show n <> " " <> show i <> " " <> show o
+  show (Cached name main _) = formatCached name main
+    where
+      formatCached n m = "Cached " <> show n <> " " <> show m <> " <MVar>"
 
 data ReplArtifacts = ReplArtifacts
   { _replHome :: !ModuleName.Canonical

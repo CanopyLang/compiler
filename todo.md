@@ -8,7 +8,7 @@ This checklist tracks comprehensive refactoring of ALL modules in the Canopy com
 
 - [x] run command `/refactor Build.hs` - Main build orchestration module
 - [x] run command `/refactor File.hs` - File system operations and I/O
-- [ ] run command `/refactor Build/Types.hs` - Core build system types
+- [x] run command `/refactor Build/Types.hs` - Core build system types
 - [ ] run command `/refactor Build/Config.hs` - Build configuration management
 - [ ] run command `/refactor Build/Crawl.hs` - Module discovery and crawling
 - [ ] run command `/refactor Build/Dependencies.hs` - Dependency resolution
