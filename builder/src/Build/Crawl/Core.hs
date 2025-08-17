@@ -49,9 +49,7 @@ import Control.Concurrent.MVar (MVar)
 import Control.Lens ((^.))
 import qualified AST.Source as Src
 import qualified Canopy.Details as Details
-import Canopy.Details (Foreign(..))
 import qualified Canopy.ModuleName as ModuleName
-import qualified Canopy.Package as Pkg
 import qualified Data.Name as Name
 import qualified Data.ByteString as B
 import qualified Data.Map.Strict as Map
