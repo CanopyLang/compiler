@@ -6,8 +6,8 @@ This checklist tracks comprehensive refactoring of ALL modules in the Canopy com
 
 ### Builder Core Modules
 
-- [x] run command `/refactor Build.hs` - Main build orchestration module 
-- [x] run command `/refactor File.hs` - File system operations and I/O
+- [ ] run command `/refactor Build.hs` - Main build orchestration module
+- [ ] run command `/refactor File.hs` - File system operations and I/O
 - [ ] run command `/refactor Build/Types.hs` - Core build system types
 - [ ] run command `/refactor Build/Config.hs` - Build configuration management
 - [ ] run command `/refactor Build/Crawl.hs` - Module discovery and crawling
@@ -17,9 +17,9 @@ This checklist tracks comprehensive refactoring of ALL modules in the Canopy com
 
 ### Compiler Core Modules
 
-- [x] run command `/refactor Type/Solve.hs` - Type constraint solving (CRITICAL)
+- [ ] run command `/refactor Type/Solve.hs` - Type constraint solving (CRITICAL)
 - [ ] run command `/refactor Parse/Module.hs` - Module parsing logic
-- [ ] run command `/refactor Parse/Expression.hs` - Expression parsing 
+- [ ] run command `/refactor Parse/Expression.hs` - Expression parsing
 - [ ] run command `/refactor Generate/JavaScript.hs` - JavaScript code generation
 - [ ] run command `/refactor Type/Unify.hs` - Type unification algorithm
 - [ ] run command `/refactor Type/Type.hs` - Core type system
@@ -46,7 +46,7 @@ This checklist tracks comprehensive refactoring of ALL modules in the Canopy com
 
 - [ ] run command `/refactor Parse/Declaration.hs` - Declaration parsing
 - [ ] run command `/refactor Parse/Pattern.hs` - Pattern parsing
-- [ ] run command `/refactor Parse/Type.hs` - Type annotation parsing  
+- [ ] run command `/refactor Parse/Type.hs` - Type annotation parsing
 - [ ] run command `/refactor Parse/Primitives.hs` - Parsing primitives
 - [ ] run command `/refactor Parse/String.hs` - String literal parsing
 - [ ] run command `/refactor Parse/Number.hs` - Number literal parsing
@@ -61,7 +61,7 @@ This checklist tracks comprehensive refactoring of ALL modules in the Canopy com
 ### Type Inference
 
 - [ ] run command `/refactor Type/Constrain/Expression.hs` - Expression constraints
-- [ ] run command `/refactor Type/Constrain/Module.hs` - Module constraints  
+- [ ] run command `/refactor Type/Constrain/Module.hs` - Module constraints
 - [ ] run command `/refactor Type/Constrain/Pattern.hs` - Pattern constraints
 - [ ] run command `/refactor Type/Instantiate.hs` - Type instantiation
 - [ ] run command `/refactor Type/Occurs.hs` - Occurs check
@@ -86,7 +86,7 @@ This checklist tracks comprehensive refactoring of ALL modules in the Canopy com
 - [ ] run command `/refactor Canonicalize/Type.hs` - Type canonicalization
 - [ ] run command `/refactor Canonicalize/Environment.hs` - Environment handling
 - [ ] run command `/refactor Canonicalize/Environment/Local.hs` - Local environment
-- [ ] run command `/refactor Canonicalize/Environment/Foreign.hs` - Foreign environment  
+- [ ] run command `/refactor Canonicalize/Environment/Foreign.hs` - Foreign environment
 - [ ] run command `/refactor Canonicalize/Environment/Dups.hs` - Duplicate detection
 - [ ] run command `/refactor Canonicalize/Effects.hs` - Effect handling
 
@@ -309,7 +309,7 @@ This checklist tracks comprehensive refactoring of ALL modules in the Canopy com
 # Build validation
 make build
 
-# Test validation  
+# Test validation
 make test
 
 # Style validation
@@ -324,7 +324,7 @@ rg "function.*{.*\n.*\n.*\n.*\n.*\n.*\n.*\n.*\n.*\n.*\n.*\n.*\n.*\n.*\n.*\n.*}" 
 ## Progress Tracking
 
 **Total Modules**: 180+
-**Completed**: 2 
+**Completed**: 2
 **Remaining**: 178+
 **Completion**: 1.1%
 
