@@ -1,4 +1,5 @@
 {-# OPTIONS_GHC -fno-warn-name-shadowing #-}
+{-# LANGUAGE OverloadedStrings #-}
 
 module File
   ( Time (..),
@@ -18,30 +19,31 @@ module File
   )
 where
 
-import qualified Codec.Archive.Zip as Zip
 import Control.Exception (catch)
 import Control.Monad (forM, msum, void, when)
-import qualified Data.Binary as Binary
-import qualified Data.ByteString as BS
-import qualified Data.ByteString.Builder as B
-import qualified Data.ByteString.Internal as BS
-import qualified Data.ByteString.Lazy as LBS
-import qualified Data.Fixed as Fixed
 import Data.Foldable (traverse_)
-import qualified Data.List as List
-import qualified Data.Time.Clock as Time
-import qualified Data.Time.Clock.POSIX as Time
 import Data.Vector.Internal.Check (HasCallStack)
-import qualified Foreign.ForeignPtr as FPtr
 import GHC.Exception (prettyCallStack)
 import GHC.IO.Exception (IOErrorType (InvalidArgument), IOException)
 import GHC.Stack (callStack)
-import Logging.Logger (printLog)
-import qualified System.Directory as Dir
 import System.FilePath ((</>))
+import System.IO.Error (annotateIOError, ioeGetErrorType, modifyIOError)
+import qualified Codec.Archive.Zip as Zip
+import qualified Data.Binary as Binary
+import qualified Data.ByteString as BS
+import qualified Data.ByteString.Builder as Builder
+import qualified Data.ByteString.Internal as BSInternal
+import qualified Data.Int as Int
+import qualified Data.ByteString.Lazy as LBS
+import qualified Data.Fixed as Fixed
+import qualified Data.List as List
+import qualified Data.Time.Clock as Time
+import qualified Data.Time.Clock.POSIX as Time
+import qualified Foreign.ForeignPtr as FPtr
+import qualified Logging.Logger as Logger
+import qualified System.Directory as Dir
 import qualified System.FilePath as FP
 import qualified System.IO as IO
-import System.IO.Error (annotateIOError, ioeGetErrorType, modifyIOError)
 
 -- TIME
 
@@ -71,31 +73,35 @@ writeBinary path value =
     Dir.createDirectoryIfMissing True dir
     Binary.encodeFile path value
 
-readBinary :: (HasCallStack, (Binary.Binary a)) => FilePath -> IO (Maybe a)
-readBinary path =
-  do
-    pathExists <- Dir.doesFileExist path
-    if pathExists
-      then do
-        result <- Binary.decodeFileOrFail path
-        case result of
-          Right a ->
-            return (Just a)
-          Left (offset, message) ->
-            do
-              IO.hPutStrLn IO.stderr . unlines $
-                [ "+-------------------------------------------------------------------------------",
-                  "|  Corrupt File: " <> path,
-                  "|   Byte Offset: " <> show offset,
-                  "|       Message: " <> message,
-                  "|",
-                  "| Please report this to https://github.com/canopy/compiler/issues",
-                  "| Trying to continue anyway.",
-                  "+-------------------------------------------------------------------------------",
-                  prettyCallStack callStack
-                ]
-              return Nothing
-      else return Nothing
+readBinary :: (HasCallStack, Binary.Binary a) => FilePath -> IO (Maybe a)
+readBinary path = do
+  pathExists <- Dir.doesFileExist path
+  if pathExists
+    then decodeBinaryFile path
+    else pure Nothing
+
+decodeBinaryFile :: Binary.Binary a => FilePath -> IO (Maybe a)
+decodeBinaryFile path = do
+  result <- Binary.decodeFileOrFail path
+  case result of
+    Right a -> pure (Just a)
+    Left (offset, message) -> do
+      reportCorruptFile path offset message
+      pure Nothing
+
+reportCorruptFile :: FilePath -> Int.Int64 -> String -> IO ()
+reportCorruptFile path offset message =
+  IO.hPutStrLn IO.stderr . unlines $
+    [ "+-------------------------------------------------------------------------------",
+      "|  Corrupt File: " <> path,
+      "|   Byte Offset: " <> show offset,
+      "|       Message: " <> message,
+      "|",
+      "| Please report this to https://github.com/canopy/compiler/issues",
+      "| Trying to continue anyway.",
+      "+-------------------------------------------------------------------------------",
+      prettyCallStack callStack
+    ]
 
 -- WRITE UTF-8
 
@@ -127,17 +133,22 @@ useZeroIfNotRegularFile _ =
   return 0
 
 hGetContentsSizeHint :: IO.Handle -> Int -> Int -> IO BS.ByteString
-hGetContentsSizeHint handle =
-  readChunks []
+hGetContentsSizeHint handle readSize incrementSize =
+  readChunks [] readSize incrementSize
   where
-    readChunks chunks readSize incrementSize =
-      do
-        fp <- BS.mallocByteString readSize
-        readCount <- FPtr.withForeignPtr fp $ \buf -> IO.hGetBuf handle buf readSize
-        let chunk = BS.PS fp 0 readCount
-        if readCount < readSize && readSize > 0
-          then return $! BS.concat (reverse (chunk : chunks))
-          else readChunks (chunk : chunks) incrementSize (min 32752 (readSize + incrementSize))
+    readChunks chunks currentSize increment = do
+      fp <- BSInternal.mallocByteString currentSize
+      readCount <- FPtr.withForeignPtr fp $ \buf -> IO.hGetBuf handle buf currentSize
+      let chunk = BSInternal.PS fp 0 readCount
+      if shouldFinishReading readCount currentSize
+        then pure $! BS.concat (reverse (chunk : chunks))
+        else readChunks (chunk : chunks) increment (calculateNextSize currentSize increment)
+
+shouldFinishReading :: Int -> Int -> Bool
+shouldFinishReading readCount readSize = readCount < readSize && readSize > 0
+
+calculateNextSize :: Int -> Int -> Int
+calculateNextSize readSize incrementSize = min 32752 (readSize + incrementSize)
 
 encodingError :: FilePath -> IOError -> IOError
 encodingError path ioErr =
@@ -153,12 +164,11 @@ encodingError path ioErr =
 
 -- WRITE BUILDER
 
-writeBuilder :: FilePath -> B.Builder -> IO ()
+writeBuilder :: FilePath -> Builder.Builder -> IO ()
 writeBuilder path builder =
-  IO.withBinaryFile path IO.WriteMode $ \handle ->
-    do
-      IO.hSetBuffering handle (IO.BlockBuffering Nothing)
-      B.hPutBuilder handle builder
+  IO.withBinaryFile path IO.WriteMode $ \handle -> do
+    IO.hSetBuffering handle (IO.BlockBuffering Nothing)
+    Builder.hPutBuilder handle builder
 
 -- WRITE PACKAGE
 
@@ -173,58 +183,78 @@ writePackage destination archive =
       traverse_ (writeEntry destination root) entries
 
 writeEntry :: FilePath -> Int -> Zip.Entry -> IO ()
-writeEntry destination root entry =
-  let path = drop root (Zip.eRelativePath entry)
-   in ( when
-          ( List.isPrefixOf "src/" path
-              || path == "LICENSE"
-              || path == "README.md"
-              || path == "canopy.json"
-          )
-          $ if not (null path) && last path == '/'
-            then do
-              printLog ("writeEntry 0: " <> path)
-              Dir.createDirectoryIfMissing True (destination </> path)
-            else do
-              printLog ("writeEntry 1: " <> path)
-              LBS.writeFile (destination </> path) (Zip.fromEntry entry)
-      )
+writeEntry destination root entry = do
+  let path = extractRelativePath root entry
+  when (isAllowedPath path) $ do
+    if isDirectoryPath path
+      then createEntryDirectory destination path
+      else writeEntryFile destination path entry
 
--- FIXME: Is this needed? This basically duplicates writePackage
+extractRelativePath :: Int -> Zip.Entry -> FilePath
+extractRelativePath root entry = drop root (Zip.eRelativePath entry)
+
+isAllowedPath :: FilePath -> Bool
+isAllowedPath path =
+  List.isPrefixOf "src/" path
+    || path == "LICENSE"
+    || path == "README.md"
+    || path == "canopy.json"
+
+isDirectoryPath :: FilePath -> Bool
+isDirectoryPath path = not (null path) && last path == '/'
+
+createEntryDirectory :: FilePath -> FilePath -> IO ()
+createEntryDirectory destination path = do
+  Logger.printLog ("writeEntry 0: " <> path)
+  Dir.createDirectoryIfMissing True (destination </> path)
+
+writeEntryFile :: FilePath -> FilePath -> Zip.Entry -> IO ()
+writeEntryFile destination path entry = do
+  Logger.printLog ("writeEntry 1: " <> path)
+  LBS.writeFile (destination </> path) (Zip.fromEntry entry)
+
 writePackageReturnCanopyJson :: FilePath -> Zip.Archive -> IO (Maybe BS.ByteString)
 writePackageReturnCanopyJson destination archive =
   case Zip.zEntries archive of
-    [] ->
-      return Nothing
-    entry : entries ->
-      do
-        let root = length (Zip.eRelativePath entry)
-        printLog ("writePackageReturnCanopyJson to " <> destination)
-        exists <- Dir.doesDirectoryExist destination
-        printLog ("writePackageReturnCanopyJson destination: " <> (destination <> (" exists: " <> show exists)))
-        listOfMaybeCanopyJsons <- traverse (writeEntryReturnCanopyJson destination root) entries
-        let firstCanopyJson = msum listOfMaybeCanopyJsons
-        pure firstCanopyJson
+    [] -> pure Nothing
+    entry : entries -> do
+      let root = length (Zip.eRelativePath entry)
+      logPackageWrite destination
+      listOfMaybeCanopyJsons <- traverse (writeEntryReturnCanopyJson destination root) entries
+      pure (msum listOfMaybeCanopyJsons)
+
+logPackageWrite :: FilePath -> IO ()
+logPackageWrite destination = do
+  Logger.printLog ("writePackageReturnCanopyJson to " <> destination)
+  exists <- Dir.doesDirectoryExist destination
+  Logger.printLog ("writePackageReturnCanopyJson destination: " <> (destination <> (" exists: " <> show exists)))
 
 writeEntryReturnCanopyJson :: FilePath -> Int -> Zip.Entry -> IO (Maybe BS.ByteString)
-writeEntryReturnCanopyJson destination root entry =
-  let path = drop root (Zip.eRelativePath entry)
-   in if List.isPrefixOf "src/" path
-        || path == "LICENSE"
-        || path == "README.md"
-        || path == "canopy.json"
-        then
-          if not (null path) && last path == '/'
-            then do
-              printLog ("writeEntryReturnCanopyJson 0: " <> path)
-              Dir.createDirectoryIfMissing True (destination </> path)
-              pure Nothing
-            else do
-              printLog ("writeEntryReturnCanopyJson 1: " <> path)
-              let bytestring = Zip.fromEntry entry
-              LBS.writeFile (destination </> path) bytestring
-              pure (if path == "canopy.json" then Just (BS.toStrict bytestring) else Nothing)
-        else pure Nothing
+writeEntryReturnCanopyJson destination root entry = do
+  let path = extractRelativePath root entry
+  if isAllowedPath path
+    then processAllowedEntry destination path entry
+    else pure Nothing
+
+processAllowedEntry :: FilePath -> FilePath -> Zip.Entry -> IO (Maybe BS.ByteString)
+processAllowedEntry destination path entry =
+  if isDirectoryPath path
+    then do
+      createEntryDirectoryForJson destination path
+      pure Nothing
+    else writeEntryFileForJson destination path entry
+
+createEntryDirectoryForJson :: FilePath -> FilePath -> IO ()
+createEntryDirectoryForJson destination path = do
+  Logger.printLog ("writeEntryReturnCanopyJson 0: " <> path)
+  Dir.createDirectoryIfMissing True (destination </> path)
+
+writeEntryFileForJson :: FilePath -> FilePath -> Zip.Entry -> IO (Maybe BS.ByteString)
+writeEntryFileForJson destination path entry = do
+  Logger.printLog ("writeEntryReturnCanopyJson 1: " <> path)
+  let bytestring = Zip.fromEntry entry
+  LBS.writeFile (destination </> path) bytestring
+  pure (if path == "canopy.json" then Just (BS.toStrict bytestring) else Nothing)
 
 -- EXISTS
 
@@ -250,19 +280,31 @@ removeDir path =
 listAllCanopyFilesRecursively :: FilePath -> IO [FilePath]
 listAllCanopyFilesRecursively startPath = do
   names <- Dir.listDirectory startPath
-  paths <- forM names $ \name -> do
-    let path = startPath </> name
-    isDirectory <- Dir.doesDirectoryExist path
-    if isDirectory
-      then do
-        remainingFiles <- listAllCanopyFilesRecursively path
-        -- We want to actually append directories as well because the way
-        -- the Canopy compiler decompresses ZIP files requires us to have
-        -- directories as well
-        pure (path : remainingFiles)
-      else
-        let (_, ext) = FP.splitExtension path
-         in if ext == ".can" || ext == ".canopy" || ext == ".elm"
-              then pure [path]
-              else pure []
-  return (startPath : concat paths)
+  paths <- forM names (processDirectoryEntry startPath)
+  pure (startPath : concat paths)
+
+processDirectoryEntry :: FilePath -> String -> IO [FilePath]
+processDirectoryEntry startPath name = do
+  let path = startPath </> name
+  isDirectory <- Dir.doesDirectoryExist path
+  if isDirectory
+    then processSubdirectory path
+    else processFile path
+
+processSubdirectory :: FilePath -> IO [FilePath]
+processSubdirectory path = do
+  remainingFiles <- listAllCanopyFilesRecursively path
+  -- We want to actually append directories as well because the way
+  -- the Canopy compiler decompresses ZIP files requires us to have
+  -- directories as well
+  pure (path : remainingFiles)
+
+processFile :: FilePath -> IO [FilePath]
+processFile path =
+  let (_, ext) = FP.splitExtension path
+   in if isCanopyFile ext
+        then pure [path]
+        else pure []
+
+isCanopyFile :: String -> Bool
+isCanopyFile ext = ext == ".can" || ext == ".canopy" || ext == ".elm"
