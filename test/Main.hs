@@ -42,6 +42,11 @@ import qualified Unit.Canopy.StuffTest as StuffTest
 import qualified Unit.Canopy.VersionTest as VersionTest
 import qualified Unit.CompileTest as CompileTest
 import qualified Unit.Data.NameTest as NameTest
+import qualified Unit.File.ArchiveTest as FileArchiveTest
+import qualified Unit.File.BinaryTest as FileBinaryTest
+import qualified Unit.File.FileSystemTest as FileFileSystemTest
+import qualified Unit.File.TimeTest as FileTimeTest
+import qualified Unit.File.Utf8Test as FileUtf8Test
 import qualified Unit.Develop.CompilationTest as DevelopCompilationTest
 import qualified Unit.Develop.EnvironmentTest as DevelopEnvironmentTest
 import qualified Unit.Develop.MimeTypesTest as DevelopMimeTypesTest
@@ -133,7 +138,12 @@ unitTests =
       TerminalErrorFormattingTest.tests,
       TerminalErrorSuggestionsTest.tests,
       WatchTest.tests,
-      CompileTest.tests
+      CompileTest.tests,
+      FileArchiveTest.tests,
+      FileBinaryTest.tests,
+      FileFileSystemTest.tests,
+      FileTimeTest.tests,
+      FileUtf8Test.tests
     ]
 
 propertyTests :: TestTree
