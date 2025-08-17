@@ -19,15 +19,17 @@ module File
   )
 where
 
-import Control.Exception (catch)
-import Control.Monad (forM, msum, void, when)
-import Data.Foldable (traverse_)
+import Control.Exception (IOException)
 import Data.Vector.Internal.Check (HasCallStack)
-import GHC.Exception (prettyCallStack)
-import GHC.IO.Exception (IOErrorType (InvalidArgument), IOException)
-import GHC.Stack (callStack)
+import GHC.IO.Exception (IOErrorType (InvalidArgument))
 import System.FilePath ((</>))
-import System.IO.Error (annotateIOError, ioeGetErrorType, modifyIOError)
+import qualified Control.Exception as Exception
+import qualified Control.Monad as Monad
+import qualified Data.Foldable as Foldable
+import qualified Data.Traversable as Traversable
+import qualified GHC.Exception as Exception
+import qualified GHC.Stack as Stack
+import qualified System.IO.Error as IOError
 import qualified Codec.Archive.Zip as Zip
 import qualified Data.Binary as Binary
 import qualified Data.ByteString as BS
@@ -100,7 +102,7 @@ reportCorruptFile path offset message =
       "| Please report this to https://github.com/canopy/compiler/issues",
       "| Trying to continue anyway.",
       "+-------------------------------------------------------------------------------",
-      prettyCallStack callStack
+      Exception.prettyCallStack Stack.callStack
     ]
 
 -- WRITE UTF-8
@@ -122,15 +124,14 @@ withUtf8 path mode callback =
 readUtf8 :: FilePath -> IO BS.ByteString
 readUtf8 path =
   withUtf8 path IO.ReadMode $ \handle ->
-    modifyIOError (encodingError path) $
-      do
-        fileSize <- catch (IO.hFileSize handle) useZeroIfNotRegularFile
-        let readSize = max 0 (fromIntegral fileSize) + 1
-        hGetContentsSizeHint handle readSize (max 255 readSize)
+    IOError.modifyIOError (encodingError path) $ do
+      fileSize <- Exception.catch (IO.hFileSize handle) useZeroIfNotRegularFile
+      let readSize = max 0 (fromIntegral fileSize) + 1
+      hGetContentsSizeHint handle readSize (max 255 readSize)
 
 useZeroIfNotRegularFile :: IOException -> IO Integer
 useZeroIfNotRegularFile _ =
-  return 0
+  Monad.return 0
 
 hGetContentsSizeHint :: IO.Handle -> Int -> Int -> IO BS.ByteString
 hGetContentsSizeHint handle readSize incrementSize =
@@ -141,7 +142,7 @@ hGetContentsSizeHint handle readSize incrementSize =
       readCount <- FPtr.withForeignPtr fp $ \buf -> IO.hGetBuf handle buf currentSize
       let chunk = BSInternal.PS fp 0 readCount
       if shouldFinishReading readCount currentSize
-        then pure $! BS.concat (reverse (chunk : chunks))
+        then pure $! BS.concat (List.reverse (chunk : chunks))
         else readChunks (chunk : chunks) increment (calculateNextSize currentSize increment)
 
 shouldFinishReading :: Int -> Int -> Bool
@@ -152,10 +153,10 @@ calculateNextSize readSize incrementSize = min 32752 (readSize + incrementSize)
 
 encodingError :: FilePath -> IOError -> IOError
 encodingError path ioErr =
-  case ioeGetErrorType ioErr of
+  case IOError.ioeGetErrorType ioErr of
     InvalidArgument ->
-      annotateIOError
-        (userError "Bad encoding; the file must be valid UTF-8")
+      IOError.annotateIOError
+        (IOError.userError "Bad encoding; the file must be valid UTF-8")
         ""
         Nothing
         (Just path)
@@ -176,22 +177,24 @@ writePackage :: FilePath -> Zip.Archive -> IO ()
 writePackage destination archive =
   case Zip.zEntries archive of
     [] ->
-      return ()
+      Monad.return ()
     entry : entries -> do
-      void (Dir.doesDirectoryExist destination)
-      let root = length (Zip.eRelativePath entry)
-      traverse_ (writeEntry destination root) entries
+      Monad.void (Dir.doesDirectoryExist destination)
+      Foldable.traverse_ (writeEntry destination root) entries
+      where
+        root = List.length (Zip.eRelativePath entry)
 
 writeEntry :: FilePath -> Int -> Zip.Entry -> IO ()
 writeEntry destination root entry = do
-  let path = extractRelativePath root entry
-  when (isAllowedPath path) $ do
+  Monad.when (isAllowedPath path) $ do
     if isDirectoryPath path
       then createEntryDirectory destination path
       else writeEntryFile destination path entry
+  where
+    path = extractRelativePath root entry
 
 extractRelativePath :: Int -> Zip.Entry -> FilePath
-extractRelativePath root entry = drop root (Zip.eRelativePath entry)
+extractRelativePath root entry = List.drop root (Zip.eRelativePath entry)
 
 isAllowedPath :: FilePath -> Bool
 isAllowedPath path =
@@ -201,7 +204,7 @@ isAllowedPath path =
     || path == "canopy.json"
 
 isDirectoryPath :: FilePath -> Bool
-isDirectoryPath path = not (null path) && last path == '/'
+isDirectoryPath path = not (List.null path) && List.last path == '/'
 
 createEntryDirectory :: FilePath -> FilePath -> IO ()
 createEntryDirectory destination path = do
@@ -218,10 +221,11 @@ writePackageReturnCanopyJson destination archive =
   case Zip.zEntries archive of
     [] -> pure Nothing
     entry : entries -> do
-      let root = length (Zip.eRelativePath entry)
       logPackageWrite destination
-      listOfMaybeCanopyJsons <- traverse (writeEntryReturnCanopyJson destination root) entries
-      pure (msum listOfMaybeCanopyJsons)
+      listOfMaybeCanopyJsons <- Traversable.traverse (writeEntryReturnCanopyJson destination root) entries
+      pure (Monad.msum listOfMaybeCanopyJsons)
+      where
+        root = List.length (Zip.eRelativePath entry)
 
 logPackageWrite :: FilePath -> IO ()
 logPackageWrite destination = do
@@ -252,9 +256,10 @@ createEntryDirectoryForJson destination path = do
 writeEntryFileForJson :: FilePath -> FilePath -> Zip.Entry -> IO (Maybe BS.ByteString)
 writeEntryFileForJson destination path entry = do
   Logger.printLog ("writeEntryReturnCanopyJson 1: " <> path)
-  let bytestring = Zip.fromEntry entry
   LBS.writeFile (destination </> path) bytestring
   pure (if path == "canopy.json" then Just (BS.toStrict bytestring) else Nothing)
+  where
+    bytestring = Zip.fromEntry entry
 
 -- EXISTS
 
@@ -264,24 +269,22 @@ exists = Dir.doesFileExist
 -- REMOVE FILES
 
 remove :: FilePath -> IO ()
-remove path =
-  do
-    exists_ <- Dir.doesFileExist path
-    when exists_ $ Dir.removeFile path
+remove path = do
+  exists_ <- Dir.doesFileExist path
+  Monad.when exists_ $ Dir.removeFile path
 
 removeDir :: FilePath -> IO ()
-removeDir path =
-  do
-    exists_ <- Dir.doesDirectoryExist path
-    when exists_ $ Dir.removeDirectoryRecursive path
+removeDir path = do
+  exists_ <- Dir.doesDirectoryExist path
+  Monad.when exists_ $ Dir.removeDirectoryRecursive path
 
 -- RECURSIVE OPERATIONS
 
 listAllCanopyFilesRecursively :: FilePath -> IO [FilePath]
 listAllCanopyFilesRecursively startPath = do
   names <- Dir.listDirectory startPath
-  paths <- forM names (processDirectoryEntry startPath)
-  pure (startPath : concat paths)
+  paths <- Monad.forM names (processDirectoryEntry startPath)
+  pure (startPath : List.concat paths)
 
 processDirectoryEntry :: FilePath -> String -> IO [FilePath]
 processDirectoryEntry startPath name = do
@@ -301,10 +304,11 @@ processSubdirectory path = do
 
 processFile :: FilePath -> IO [FilePath]
 processFile path =
-  let (_, ext) = FP.splitExtension path
-   in if isCanopyFile ext
-        then pure [path]
-        else pure []
+  if isCanopyFile ext
+    then pure [path]
+    else pure []
+  where
+    (_, ext) = FP.splitExtension path
 
 isCanopyFile :: String -> Bool
 isCanopyFile ext = ext == ".can" || ext == ".canopy" || ext == ".elm"
