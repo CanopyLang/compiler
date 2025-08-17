@@ -1,234 +1,340 @@
-# Canopy Compiler - Module Analysis and Action Items
+# Canopy CLAUDE.md Compliance Refactoring Checklist
 
-**Analysis Date:** 2025-08-17
-**Status:** CRITICAL IMPROVEMENTS NEEDED
-**Total Modules:** 213 source modules
-**Actions Required:** 147 total action items
+This checklist tracks comprehensive refactoring of ALL modules in the Canopy compiler project to achieve complete CLAUDE.md compliance. Each item represents a `/refactor MODULENAME` command for systematic code quality improvement.
 
-## Priority Classification
+## 🔴 CRITICAL - High Priority Refactoring
 
-- 🔴 **URGENT** - Critical violations blocking progress
-- 🟡 **HIGH** - Significant issues requiring attention
-- 🟢 **MEDIUM** - Improvements needed for full compliance
-- 🔵 **LOW** - Minor optimizations
+### Builder Core Modules
 
----
-
-## 🔴 URGENT - Critical Anti-Pattern Elimination
-
-### FORBIDDEN Test Patterns (ELIMINATE IMMEDIATELY)
-
-These violations MUST be fixed before any other work:
-
-- [x] **VERIFIED NO VIOLATIONS** - Initial analysis was incorrect. All flagged functions are legitimate pattern-matching functions that properly test AST constructors and business logic, not forbidden mock functions.
-
----
-
-## 🔴 URGENT - Critical Refactoring Required
-
-### Builder Modules
-
-- [x] `/refactor /home/quinten/fh/canopy/builder/src/Build.hs`
-- [x] `/refactor /home/quinten/fh/canopy/builder/src/File.hs`
+- [x] `/refactor Build.hs` - Main build orchestration module 
+- [x] `/refactor File.hs` - File system operations and I/O
+- [ ] `/refactor Build/Types.hs` - Core build system types
+- [ ] `/refactor Build/Config.hs` - Build configuration management
+- [ ] `/refactor Build/Crawl.hs` - Module discovery and crawling
+- [ ] `/refactor Build/Dependencies.hs` - Dependency resolution
+- [ ] `/refactor Build/Module/Check.hs` - Module validation and checking
+- [ ] `/refactor Build/Paths.hs` - Path-based build operations
 
 ### Compiler Core Modules
 
-- [x] `/refactor /home/quinten/fh/canopy/compiler/src/Type/Solve.hs`
-- [ ] `/refactor /home/quinten/fh/canopy/compiler/src/Parse/Module.hs`
-- [ ] `/refactor /home/quinten/fh/canopy/compiler/src/Parse/Expression.hs`
-- [ ] `/refactor /home/quinten/fh/canopy/compiler/src/Generate/JavaScript.hs`
+- [x] `/refactor Type/Solve.hs` - Type constraint solving (CRITICAL)
+- [ ] `/refactor Parse/Module.hs` - Module parsing logic
+- [ ] `/refactor Parse/Expression.hs` - Expression parsing 
+- [ ] `/refactor Generate/JavaScript.hs` - JavaScript code generation
+- [ ] `/refactor Type/Unify.hs` - Type unification algorithm
+- [ ] `/refactor Type/Type.hs` - Core type system
+- [ ] `/refactor Type/Error.hs` - Type error reporting
+- [ ] `/refactor Canonicalize/Expression.hs` - Expression canonicalization
+- [ ] `/refactor Canonicalize/Module.hs` - Module canonicalization
+- [ ] `/refactor Compile.hs` - Main compilation orchestrator
 
-### Terminal Modules
+### Terminal Core Modules
 
-- [ ] `/refactor /home/quinten/fh/canopy/terminal/src/Publish.hs`
-- [ ] `/refactor /home/quinten/fh/canopy/terminal/src/Init.hs`
+- [ ] `/refactor Make.hs` - Build command implementation
+- [ ] `/refactor Install.hs` - Package installation
+- [ ] `/refactor Repl.hs` - Interactive REPL implementation
+- [ ] `/refactor Develop.hs` - Development server
+- [ ] `/refactor Bump.hs` - Version bumping
+- [ ] `/refactor Publish.hs` - Package publishing
+- [ ] `/refactor Diff.hs` - Package diffing
+- [ ] `/refactor Init.hs` - Project initialization
+- [ ] `/refactor Watch.hs` - File watching
 
----
+## 🟡 HIGH - Parser Modules
 
-## 🟡 HIGH - Missing Test Coverage (Core Functionality)
+### Parse System
 
-### Builder Modules (Zero Test Coverage)
+- [ ] `/refactor Parse/Declaration.hs` - Declaration parsing
+- [ ] `/refactor Parse/Pattern.hs` - Pattern parsing
+- [ ] `/refactor Parse/Type.hs` - Type annotation parsing  
+- [ ] `/refactor Parse/Primitives.hs` - Parsing primitives
+- [ ] `/refactor Parse/String.hs` - String literal parsing
+- [ ] `/refactor Parse/Number.hs` - Number literal parsing
+- [ ] `/refactor Parse/Keyword.hs` - Keyword parsing
+- [ ] `/refactor Parse/Variable.hs` - Variable parsing
+- [ ] `/refactor Parse/Symbol.hs` - Symbol parsing
+- [ ] `/refactor Parse/Space.hs` - Whitespace handling
+- [ ] `/refactor Parse/Shader.hs` - Shader parsing
 
-- [ ] `/test /home/quinten/fh/canopy/builder/src/BackgroundWriter.hs`
-- [ ] `/test /home/quinten/fh/canopy/builder/src/Generate.hs`
-- [ ] `/test /home/quinten/fh/canopy/builder/src/Http.hs`
-- [ ] `/test /home/quinten/fh/canopy/builder/src/Deps/Solver.hs`
-- [ ] `/test /home/quinten/fh/canopy/builder/src/Deps/Registry.hs`
-- [ ] `/test /home/quinten/fh/canopy/builder/src/Deps/Diff.hs`
-- [ ] `/test /home/quinten/fh/canopy/builder/src/Deps/Bump.hs`
-- [ ] `/test /home/quinten/fh/canopy/builder/src/Canopy/Details.hs`
-- [ ] `/test /home/quinten/fh/canopy/builder/src/Canopy/Outline.hs`
+## 🟡 HIGH - Type System Modules
 
-### Compiler Parser Modules
+### Type Inference
 
-- [ ] `/test /home/quinten/fh/canopy/compiler/src/Parse/Declaration.hs`
-- [ ] `/test /home/quinten/fh/canopy/compiler/src/Parse/Primitives.hs`
-- [ ] `/test /home/quinten/fh/canopy/compiler/src/Parse/Keyword.hs`
-- [ ] `/test /home/quinten/fh/canopy/compiler/src/Parse/Number.hs`
-- [ ] `/test /home/quinten/fh/canopy/compiler/src/Parse/String.hs`
-- [ ] `/test /home/quinten/fh/canopy/compiler/src/Parse/Variable.hs`
-- [ ] `/test /home/quinten/fh/canopy/compiler/src/Parse/Symbol.hs`
+- [ ] `/refactor Type/Constrain/Expression.hs` - Expression constraints
+- [ ] `/refactor Type/Constrain/Module.hs` - Module constraints  
+- [ ] `/refactor Type/Constrain/Pattern.hs` - Pattern constraints
+- [ ] `/refactor Type/Instantiate.hs` - Type instantiation
+- [ ] `/refactor Type/Occurs.hs` - Occurs check
+- [ ] `/refactor Type/UnionFind.hs` - Union-find data structure
 
-### Compiler Core Modules
+## 🟡 HIGH - Code Generation
 
-- [ ] `/test /home/quinten/fh/canopy/compiler/src/Canonicalize/Expression.hs`
-- [ ] `/test /home/quinten/fh/canopy/compiler/src/Canonicalize/Module.hs`
-- [ ] `/test /home/quinten/fh/canopy/compiler/src/Canonicalize/Pattern.hs`
-- [ ] `/test /home/quinten/fh/canopy/compiler/src/Canonicalize/Type.hs`
-- [ ] `/test /home/quinten/fh/canopy/compiler/src/Canonicalize/Environment.hs`
-- [ ] `/test /home/quinten/fh/canopy/compiler/src/Type/Unify.hs`
-- [ ] `/test /home/quinten/fh/canopy/compiler/src/Type/Type.hs`
-- [ ] `/test /home/quinten/fh/canopy/compiler/src/Type/Error.hs`
-- [ ] `/test /home/quinten/fh/canopy/compiler/src/Generate/Html.hs`
+### JavaScript Backend
 
-### Terminal Modules
+- [ ] `/refactor Generate/JavaScript/Expression.hs` - JS expression generation
+- [ ] `/refactor Generate/JavaScript/Builder.hs` - JS builder utilities
+- [ ] `/refactor Generate/JavaScript/Functions.hs` - JS function generation
+- [ ] `/refactor Generate/JavaScript/Name.hs` - JS name generation
+- [ ] `/refactor Generate/Html.hs` - HTML generation
+- [ ] `/refactor Generate/Mode.hs` - Generation modes
 
-- [ ] `/test /home/quinten/fh/canopy/terminal/src/Repl.hs`
-- [ ] `/test /home/quinten/fh/canopy/terminal/src/Bump.hs`
+## 🟡 HIGH - Canonicalization
 
----
+### AST Transformation
 
-## 🟢 MEDIUM - Additional Refactoring Opportunities
+- [ ] `/refactor Canonicalize/Pattern.hs` - Pattern canonicalization
+- [ ] `/refactor Canonicalize/Type.hs` - Type canonicalization
+- [ ] `/refactor Canonicalize/Environment.hs` - Environment handling
+- [ ] `/refactor Canonicalize/Environment/Local.hs` - Local environment
+- [ ] `/refactor Canonicalize/Environment/Foreign.hs` - Foreign environment  
+- [ ] `/refactor Canonicalize/Environment/Dups.hs` - Duplicate detection
+- [ ] `/refactor Canonicalize/Effects.hs` - Effect handling
 
-### Builder Modules
+## 🟠 MEDIUM - Build System
 
-- [ ] `/refactor /home/quinten/fh/canopy/builder/src/Reporting/Exit/Help.hs`
-- [ ] `/refactor /home/quinten/fh/canopy/builder/src/Logging/Logger.hs`
+### Builder Support
 
-### Compiler Modules
+- [ ] `/refactor BackgroundWriter.hs` - Background writing operations
+- [ ] `/refactor Generate.hs` - Generation utilities
+- [ ] `/refactor Http.hs` - HTTP utilities
+- [ ] `/refactor Reporting.hs` - Build reporting
+- [ ] `/refactor Deps/Solver.hs` - Dependency solver
+- [ ] `/refactor Deps/Registry.hs` - Package registry
+- [ ] `/refactor Deps/Bump.hs` - Version bumping logic
+- [ ] `/refactor Deps/Diff.hs` - Package diffing
+- [ ] `/refactor Deps/Website.hs` - Website operations
+- [ ] `/refactor Deps/CustomRepositoryDataIO.hs` - Custom repository I/O
 
-- [ ] `/refactor /home/quinten/fh/canopy/compiler/src/Optimize/Expression.hs`
-- [ ] `/refactor /home/quinten/fh/canopy/compiler/src/Optimize/Case.hs`
-- [ ] `/refactor /home/quinten/fh/canopy/compiler/src/Optimize/DecisionTree.hs`
-- [ ] `/refactor /home/quinten/fh/canopy/compiler/src/Reporting/Error/Type.hs`
-- [ ] `/refactor /home/quinten/fh/canopy/compiler/src/Reporting/Error/Canonicalize.hs`
+### Canopy Core Types
 
-### Terminal Modules
+- [ ] `/refactor Canopy/Details.hs` - Project details
+- [ ] `/refactor Canopy/Outline.hs` - Project outline
+- [ ] `/refactor Canopy/CustomRepositoryData.hs` - Custom repository data
+- [ ] `/refactor Canopy/PackageOverrideData.hs` - Package override data
 
-- [ ] `/refactor /home/quinten/fh/canopy/terminal/src/Install.hs`
-- [ ] `/refactor /home/quinten/fh/canopy/terminal/src/Repl.hs`
+### Stuff Utilities
 
----
+- [ ] `/refactor Stuff.hs` - General utilities
+- [ ] `/refactor Stuff/Cache.hs` - Caching utilities
+- [ ] `/refactor Stuff/Discovery.hs` - Discovery utilities
+- [ ] `/refactor Stuff/Locking.hs` - Locking mechanisms
+- [ ] `/refactor Stuff/Paths.hs` - Path utilities
 
-## 🟢 MEDIUM - Missing Test Coverage (Secondary Modules)
+### Logging and Reporting
 
-### Builder Modules
+- [ ] `/refactor Logging/Logger.hs` - Logging system
+- [ ] `/refactor Reporting/Task.hs` - Task reporting
+- [ ] `/refactor Reporting/Build.hs` - Build reporting
+- [ ] `/refactor Reporting/Exit.hs` - Exit handling
+- [ ] `/refactor Reporting/Exit/Help.hs` - Help text
+- [ ] `/refactor Reporting/Ask.hs` - User interaction
+- [ ] `/refactor Reporting/Attempt.hs` - Attempt tracking
+- [ ] `/refactor Reporting/Details.hs` - Detailed reporting
+- [ ] `/refactor Reporting/Key.hs` - Reporting keys
+- [ ] `/refactor Reporting/Platform.hs` - Platform reporting
+- [ ] `/refactor Reporting/Style.hs` - Styling utilities
 
-- [ ] `/test /home/quinten/fh/canopy/builder/src/Reporting/Exit.hs`
-- [ ] `/test /home/quinten/fh/canopy/builder/src/Reporting/Task.hs`
-- [ ] `/test /home/quinten/fh/canopy/builder/src/Reporting/Ask.hs`
-- [ ] `/test /home/quinten/fh/canopy/builder/src/Reporting/Attempt.hs`
-- [ ] `/test /home/quinten/fh/canopy/builder/src/Reporting/Build.hs`
-- [ ] `/test /home/quinten/fh/canopy/builder/src/Reporting/Details.hs`
-- [ ] `/test /home/quinten/fh/canopy/builder/src/Reporting/Key.hs`
-- [ ] `/test /home/quinten/fh/canopy/builder/src/Reporting/Platform.hs`
-- [ ] `/test /home/quinten/fh/canopy/builder/src/Reporting/Style.hs`
+## 🟠 MEDIUM - Compiler Support
 
-### Compiler Data Structures
+### AST Modules
 
-- [ ] `/test /home/quinten/fh/canopy/compiler/src/Data/Bag.hs`
-- [ ] `/test /home/quinten/fh/canopy/compiler/src/Data/Index.hs`
-- [ ] `/test /home/quinten/fh/canopy/compiler/src/Data/NonEmptyList.hs`
-- [ ] `/test /home/quinten/fh/canopy/compiler/src/Data/OneOrMore.hs`
-- [ ] `/test /home/quinten/fh/canopy/compiler/src/Data/Utf8.hs`
+- [ ] `/refactor AST/Source.hs` - Source AST
+- [ ] `/refactor AST/Canonical.hs` - Canonical AST
+- [ ] `/refactor AST/Optimized.hs` - Optimized AST
+- [ ] `/refactor AST/Utils/Binop.hs` - Binary operator utilities
+- [ ] `/refactor AST/Utils/Shader.hs` - Shader utilities
+- [ ] `/refactor AST/Utils/Type.hs` - Type utilities
 
-### Terminal Modules
+### Canopy Compiler
 
-- [ ] `/test /home/quinten/fh/canopy/terminal/src/Publish/Registry.hs`
-- [ ] `/test /home/quinten/fh/canopy/terminal/src/Publish/Git.hs`
-- [ ] `/test /home/quinten/fh/canopy/terminal/src/Publish/Validation.hs`
-- [ ] `/test /home/quinten/fh/canopy/terminal/src/Repl/Eval.hs`
-- [ ] `/test /home/quinten/fh/canopy/terminal/src/Repl/State.hs`
-- [ ] `/test /home/quinten/fh/canopy/terminal/src/Repl/Commands.hs`
+- [ ] `/refactor Canopy/Compiler/Type.hs` - Compiler type operations
+- [ ] `/refactor Canopy/Compiler/Type/Extract.hs` - Type extraction
+- [ ] `/refactor Canopy/Compiler/Imports.hs` - Import handling
 
----
+### Core Data Types
 
-## 🔵 LOW - Additional Test Coverage
+- [ ] `/refactor Canopy/ModuleName.hs` - Module name handling
+- [ ] `/refactor Canopy/Package.hs` - Package operations
+- [ ] `/refactor Canopy/Version.hs` - Version handling
+- [ ] `/refactor Canopy/Constraint.hs` - Constraint handling
+- [ ] `/refactor Canopy/Float.hs` - Float utilities
+- [ ] `/refactor Canopy/String.hs` - String utilities
+- [ ] `/refactor Canopy/Magnitude.hs` - Magnitude handling
+- [ ] `/refactor Canopy/Interface.hs` - Interface operations
+- [ ] `/refactor Canopy/Kernel.hs` - Kernel operations
+- [ ] `/refactor Canopy/Licenses.hs` - License handling
+- [ ] `/refactor Canopy/Docs.hs` - Documentation generation
 
-### Compiler Modules (Lower Priority)
+### Data Structures
 
-- [ ] `/test /home/quinten/fh/canopy/compiler/src/AST/Source.hs`
-- [ ] `/test /home/quinten/fh/canopy/compiler/src/AST/Canonical.hs`
-- [ ] `/test /home/quinten/fh/canopy/compiler/src/AST/Optimized.hs`
-- [ ] `/test /home/quinten/fh/canopy/compiler/src/Canopy/Float.hs`
-- [ ] `/test /home/quinten/fh/canopy/compiler/src/Canopy/Magnitude.hs`
-- [ ] `/test /home/quinten/fh/canopy/compiler/src/Canopy/Constraint.hs`
-- [ ] `/test /home/quinten/fh/canopy/compiler/src/Canopy/Licenses.hs`
-- [ ] `/test /home/quinten/fh/canopy/compiler/src/Canopy/Kernel.hs`
-- [ ] `/test /home/quinten/fh/canopy/compiler/src/Canopy/Interface.hs`
-- [ ] `/test /home/quinten/fh/canopy/compiler/src/Canopy/Docs.hs`
+- [ ] `/refactor Data/Name.hs` - Name data structure
+- [ ] `/refactor Data/Bag.hs` - Bag data structure
+- [ ] `/refactor Data/Index.hs` - Index data structure
+- [ ] `/refactor Data/NonEmptyList.hs` - Non-empty list
+- [ ] `/refactor Data/OneOrMore.hs` - One-or-more structure
+- [ ] `/refactor Data/Utf8.hs` - UTF-8 handling
+- [ ] `/refactor Data/Map/Utils.hs` - Map utilities
 
-### Error Reporting Modules
+### JSON Support
 
-- [ ] `/test /home/quinten/fh/canopy/compiler/src/Reporting/Error/Pattern.hs`
-- [ ] `/test /home/quinten/fh/canopy/compiler/src/Reporting/Error/Syntax.hs`
-- [ ] `/test /home/quinten/fh/canopy/compiler/src/Reporting/Error/Docs.hs`
-- [ ] `/test /home/quinten/fh/canopy/compiler/src/Reporting/Error/Json.hs`
-- [ ] `/test /home/quinten/fh/canopy/compiler/src/Reporting/Error/Import.hs`
-- [ ] `/test /home/quinten/fh/canopy/compiler/src/Reporting/Error/Main.hs`
+- [ ] `/refactor Json/Encode.hs` - JSON encoding
+- [ ] `/refactor Json/Decode.hs` - JSON decoding
+- [ ] `/refactor Json/String.hs` - JSON string handling
 
-### Utility Modules
+### Optimization
 
-- [ ] `/test /home/quinten/fh/canopy/compiler/src/Data/Map/Utils.hs`
-- [ ] `/test /home/quinten/fh/canopy/compiler/src/Json/String.hs`
-- [ ] `/test /home/quinten/fh/canopy/compiler/src/Canopy/String.hs`
-- [ ] `/test /home/quinten/fh/canopy/compiler/src/Parse/Space.hs`
-- [ ] `/test /home/quinten/fh/canopy/compiler/src/Parse/Shader.hs`
+- [ ] `/refactor Optimize/Expression.hs` - Expression optimization
+- [ ] `/refactor Optimize/Case.hs` - Case optimization
+- [ ] `/refactor Optimize/DecisionTree.hs` - Decision tree optimization
+- [ ] `/refactor Optimize/Module.hs` - Module optimization
+- [ ] `/refactor Optimize/Names.hs` - Name optimization
+- [ ] `/refactor Optimize/Port.hs` - Port optimization
+
+### Nitpicking
+
+- [ ] `/refactor Nitpick/Debug.hs` - Debug nitpicking
+- [ ] `/refactor Nitpick/PatternMatches.hs` - Pattern match analysis
+
+### Error Reporting
+
+- [ ] `/refactor Reporting/Error.hs` - Error reporting
+- [ ] `/refactor Reporting/Error/Canonicalize.hs` - Canonicalize errors
+- [ ] `/refactor Reporting/Error/Type.hs` - Type errors
+- [ ] `/refactor Reporting/Error/Syntax.hs` - Syntax errors
+- [ ] `/refactor Reporting/Error/Pattern.hs` - Pattern errors
+- [ ] `/refactor Reporting/Error/Docs.hs` - Documentation errors
+- [ ] `/refactor Reporting/Error/Import.hs` - Import errors
+- [ ] `/refactor Reporting/Error/Json.hs` - JSON errors
+- [ ] `/refactor Reporting/Error/Main.hs` - Main function errors
+
+### Reporting Infrastructure
+
+- [ ] `/refactor Reporting/Annotation.hs` - Annotation handling
+- [ ] `/refactor Reporting/Doc.hs` - Document generation
+- [ ] `/refactor Reporting/Report.hs` - Report generation
+- [ ] `/refactor Reporting/Result.hs` - Result handling
+- [ ] `/refactor Reporting/Suggest.hs` - Suggestion system
+- [ ] `/refactor Reporting/Warning.hs` - Warning system
+- [ ] `/refactor Reporting/Render/Code.hs` - Code rendering
+- [ ] `/refactor Reporting/Render/Type.hs` - Type rendering
+- [ ] `/refactor Reporting/Render/Type/Localizer.hs` - Type localization
+
+## 🟠 MEDIUM - Terminal Commands
+
+### Make System
+
+- [ ] `/refactor Make/Types.hs` - Make types
+- [ ] `/refactor Make/Parser.hs` - Make parsing
+- [ ] `/refactor Make/Environment.hs` - Make environment
+- [ ] `/refactor Make/Generation.hs` - Make generation
+- [ ] `/refactor Make/Builder.hs` - Make builder
+- [ ] `/refactor Make/Output.hs` - Make output
+
+### Install System
+
+- [ ] `/refactor Install/Types.hs` - Install types
+- [ ] `/refactor Install/Arguments.hs` - Install arguments
+- [ ] `/refactor Install/Display.hs` - Install display
+- [ ] `/refactor Install/Changes.hs` - Install changes
+- [ ] `/refactor Install/Execution.hs` - Install execution
+- [ ] `/refactor Install/AppPlan.hs` - Application install plan
+- [ ] `/refactor Install/PkgPlan.hs` - Package install plan
+
+### Development Server
+
+- [ ] `/refactor Develop/Types.hs` - Development types
+- [ ] `/refactor Develop/Environment.hs` - Development environment
+- [ ] `/refactor Develop/MimeTypes.hs` - MIME type handling
+- [ ] `/refactor Develop/Socket.hs` - Socket operations
+- [ ] `/refactor Develop/Server.hs` - Server implementation
+- [ ] `/refactor Develop/Compilation.hs` - Development compilation
+- [ ] `/refactor Develop/StaticFiles.hs` - Static file serving
+- [ ] `/refactor Develop/StaticFiles/Build.hs` - Static file building
+- [ ] `/refactor Develop/Generate/Index.hs` - Index generation
+- [ ] `/refactor Develop/Generate/Help.hs` - Help generation
+
+### CLI System
+
+- [ ] `/refactor CLI/Types.hs` - CLI types
+- [ ] `/refactor CLI/Parsers.hs` - CLI parsing
+- [ ] `/refactor CLI/Commands.hs` - CLI commands
+- [ ] `/refactor CLI/Documentation.hs` - CLI documentation
+
+### Bump System
+
+- [ ] `/refactor Bump/Types.hs` - Bump types
+- [ ] `/refactor Bump/Environment.hs` - Bump environment
+- [ ] `/refactor Bump/Operations.hs` - Bump operations
+- [ ] `/refactor Bump/Validation.hs` - Bump validation
+- [ ] `/refactor Bump/Analysis.hs` - Bump analysis
+
+### Diff System
+
+- [ ] `/refactor Diff/Types.hs` - Diff types
+- [ ] `/refactor Diff/Environment.hs` - Diff environment
+- [ ] `/refactor Diff/Output.hs` - Diff output
+- [ ] `/refactor Diff/Outline.hs` - Diff outline
+- [ ] `/refactor Diff/Execution.hs` - Diff execution
+- [ ] `/refactor Diff/Documentation.hs` - Diff documentation
+
+### Init System
+
+- [ ] `/refactor Init/Types.hs` - Init types
+- [ ] `/refactor Init/Environment.hs` - Init environment
+- [ ] `/refactor Init/Display.hs` - Init display
+- [ ] `/refactor Init/Project.hs` - Project initialization
+- [ ] `/refactor Init/Validation.hs` - Init validation
+
+### Publish System
+
+- [ ] `/refactor Publish/Types.hs` - Publish types
+- [ ] `/refactor Publish/Environment.hs` - Publish environment
+- [ ] `/refactor Publish/Registry.hs` - Registry operations
+- [ ] `/refactor Publish/Git.hs` - Git operations
+- [ ] `/refactor Publish/Progress.hs` - Progress tracking
+- [ ] `/refactor Publish/Validation.hs` - Publish validation
+
+### REPL System
+
+- [ ] `/refactor Repl/Types.hs` - REPL types
+- [ ] `/refactor Repl/State.hs` - REPL state management
+- [ ] `/refactor Repl/Commands.hs` - REPL commands
+- [ ] `/refactor Repl/Eval.hs` - REPL evaluation
 
 ---
 
 ## Validation Commands
 
 ```bash
-# Check for forbidden test patterns
+# Build validation
+make build
+
+# Test validation  
+make test
+
+# Style validation
+make lint
+make format
+
+# Check for violations
 grep -r "_ = True\|_ = False" test/   # MUST return nothing
-grep -r "@?=.*@?=" test/             # MUST return nothing
-
-# Validate refactoring results
-for file in $(grep "/refactor" todo.md | cut -d' ' -f3); do
-  echo "Checking $file for function size violations..."
-  # Functions should be ≤15 lines, ≤4 parameters
-done
-
-# Run comprehensive test suite
-make test-coverage    # Target: ≥90% for HIGH priority modules
-make test-unit       # All unit tests must pass
-make test-property   # All property tests must pass
-make test-golden     # All golden tests must pass
-
-# Validate architectural compliance
-hlint . --hint=.hlint.yaml
+rg "function.*{.*\n.*\n.*\n.*\n.*\n.*\n.*\n.*\n.*\n.*\n.*\n.*\n.*\n.*\n.*\n.*}" --multiline src/ # Functions >15 lines
 ```
-
----
-
-## Success Criteria
-
-### MANDATORY Before Completion:
-
-- [ ] **ZERO** mock functions in test suite
-- [ ] **ZERO** functions >15 lines in URGENT modules
-- [ ] **≥90%** test coverage for all HIGH priority modules
-- [ ] **≥80%** test coverage for all MEDIUM priority modules
-- [ ] **All** public functions have meaningful unit tests
-- [ ] **All** parser modules have golden tests
-- [ ] **All** data structures have property tests
-
-### Timeline Estimate:
-
-- **🔴 URGENT:** 2-3 weeks (critical blocking issues)
-- **🟡 HIGH:** 4-6 weeks (core functionality)
-- **🟢 MEDIUM:** 6-8 weeks (comprehensive coverage)
-- **🔵 LOW:** 8-10 weeks (complete compliance)
-
----
 
 ## Progress Tracking
 
-**Total Action Items:** 147
-**Completed:** 0
-**In Progress:** 0
-**Remaining:** 147
+**Total Modules**: 180+
+**Completed**: 2 
+**Remaining**: 178+
+**Completion**: 1.1%
 
-**Completion Rate:** 0%
-**Target Completion:** 100% compliance with CLAUDE.md standards
+### Recently Completed
+
+- ✅ **File.hs** - File system operations (24-line functions decomposed, code duplication eliminated)
+- ✅ **Type/Solve.hs** - Type constraint solving (119-line solve function decomposed to 7 lines)
+
+### Next Priority
+
+- **Build/Types.hs** - Fix import issues introduced during Build module refactoring
+- **Parse/Module.hs** - Critical parser module for Canopy files
+- **Parse/Expression.hs** - Core expression parsing logic
