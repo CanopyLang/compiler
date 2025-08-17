@@ -1,4 +1,5 @@
 {-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE TemplateHaskell #-}
 {-# OPTIONS_GHC -Wall #-}
 
 -- | Dependency checking and resolution for the Build system.
@@ -11,16 +12,11 @@ module Build.Dependencies
     checkDeps
   , loadInterfaces
   , loadInterface
-  
-  -- * Helper Functions
-  , processDep
-  , finalizeDepsStatus
-  , aggregateDepsState
   ) where
 
 import Control.Concurrent (forkIO)
 import Control.Concurrent.MVar (MVar, readMVar, takeMVar, putMVar, newEmptyMVar)
-import Control.Lens ((^.))
+import Control.Lens ((^.), makeLenses)
 import qualified Canopy.Details as Details
 import qualified Canopy.Interface as I
 import qualified Canopy.ModuleName as ModuleName
@@ -41,6 +37,47 @@ import Build.Types
   , CachedInterface (..)
   )
 
+-- | Configuration for dependency aggregation state.
+data DepsAggregateConfig = DepsAggregateConfig
+  { _dacRoot :: !FilePath
+  , _dacResults :: !ResultDict
+  , _dacLastCompile :: !Details.BuildID
+  }
+
+makeLenses ''DepsAggregateConfig
+
+-- | State for dependency aggregation.
+data DepsAggregateState = DepsAggregateState
+  { _dasNew :: ![Dep]
+  , _dasSame :: ![Dep]
+  , _dasCached :: ![CDep]
+  , _dasImportProblems :: ![(ModuleName.Raw, Import.Problem)]
+  , _dasBlocked :: !Bool
+  , _dasLastDepChange :: !Details.BuildID
+  }
+
+makeLenses ''DepsAggregateState
+
+-- | Configuration for valid dependency finalization.
+data ValidDepsConfig = ValidDepsConfig
+  { _vdcRoot :: !FilePath
+  , _vdcBlocked :: !Bool
+  , _vdcLastDepChange :: !Details.BuildID
+  , _vdcLastCompile :: !Details.BuildID
+  }
+
+makeLenses ''ValidDepsConfig
+
+-- | State updates for a single dependency.
+data DepUpdate = DepUpdate
+  { depNew :: ![Dep]
+  , depSame :: ![Dep]
+  , depCached :: ![CDep]
+  , depProblems :: ![(ModuleName.Raw, Import.Problem)]
+  , depBlocked :: !Bool
+  , depLastChange :: !Details.BuildID
+  }
+
 -- | Check dependencies for a module using configuration record.
 checkDeps :: DepsConfig -> IO DepsStatus
 checkDeps config =
@@ -53,75 +90,94 @@ checkDeps config =
 -- | Process dependencies with initial state.
 processDependencies :: FilePath -> ResultDict -> [ModuleName.Raw] -> Details.BuildID -> IO DepsStatus
 processDependencies root results deps lastCompile =
-  aggregateDepsState root results deps [] [] [] [] False 0 lastCompile
+  aggregateWithConfig config initialState deps
+  where
+    config = DepsAggregateConfig root results lastCompile
+    initialState = DepsAggregateState [] [] [] [] False 0
 
 
--- | Aggregate dependency state through recursive processing.
-aggregateDepsState :: FilePath -> ResultDict -> [ModuleName.Raw] -> [Dep] -> [Dep] -> [CDep] -> [(ModuleName.Raw, Import.Problem)] -> Bool -> Details.BuildID -> Details.BuildID -> IO DepsStatus
-aggregateDepsState root results deps new same cached importProblems blocked lastDepChange lastCompile =
+-- | Aggregate dependencies using configuration and state records.
+aggregateWithConfig :: DepsAggregateConfig -> DepsAggregateState -> [ModuleName.Raw] -> IO DepsStatus
+aggregateWithConfig config state deps =
   case deps of
-    [] -> finalizeDepsStatus root new same cached importProblems blocked lastDepChange lastCompile
+    [] -> finalizeDepsWithState config state
     dep : otherDeps -> do
-      result <- readMVar (results ! dep)
-      state <- processDep result dep lastDepChange
-      aggregateDepsState root results otherDeps
-        (updateNew state new)
-        (updateSame state same)
-        (updateCached state cached)
-        (updateProblems state importProblems)
-        (updateBlocked state blocked)
-        (updateLastChange state)
-        lastCompile
+      result <- readMVar ((config ^. dacResults) ! dep)
+      update <- processDep result dep (state ^. dasLastDepChange)
+      aggregateWithConfig config (applyUpdate update state) otherDeps
 
--- | State updates for a single dependency.
-data DepUpdate = DepUpdate
-  { depNew :: ![Dep]
-  , depSame :: ![Dep]
-  , depCached :: ![CDep]
-  , depProblems :: ![(ModuleName.Raw, Import.Problem)]
-  , depBlocked :: !Bool
-  , depLastChange :: !Details.BuildID
+-- | Apply dependency update to state.
+applyUpdate :: DepUpdate -> DepsAggregateState -> DepsAggregateState
+applyUpdate update state = DepsAggregateState
+  { _dasNew = depNew update ++ (state ^. dasNew)
+  , _dasSame = depSame update ++ (state ^. dasSame)
+  , _dasCached = depCached update ++ (state ^. dasCached)
+  , _dasImportProblems = depProblems update ++ (state ^. dasImportProblems)
+  , _dasBlocked = depBlocked update || (state ^. dasBlocked)
+  , _dasLastDepChange = depLastChange update
   }
 
 -- | Process a single dependency result.
 processDep :: Result -> ModuleName.Raw -> Details.BuildID -> IO DepUpdate
 processDep result dep currentLastChange =
   case result of
-    RNew (Details.Local _ _ _ _ lastChange _) iface _ _ ->
-      pure $ DepUpdate [(dep, iface)] [] [] [] False (max lastChange currentLastChange)
-    RSame (Details.Local _ _ _ _ lastChange _) iface _ _ ->
-      pure $ DepUpdate [] [(dep, iface)] [] [] False (max lastChange currentLastChange)
-    RCached _ lastChange mvar ->
-      pure $ DepUpdate [] [] [(dep, mvar)] [] False (max lastChange currentLastChange)
-    RNotFound prob ->
-      pure $ DepUpdate [] [] [] [(dep, prob)] True currentLastChange
-    RProblem _ ->
-      pure $ DepUpdate [] [] [] [] True currentLastChange
-    RBlocked ->
-      pure $ DepUpdate [] [] [] [] True currentLastChange
-    RForeign iface ->
-      pure $ DepUpdate [] [(dep, iface)] [] [] False currentLastChange
-    RKernel ->
-      pure $ DepUpdate [] [] [] [] False currentLastChange
+    RNew local iface _ _ -> processNewResult local dep currentLastChange iface
+    RSame local iface _ _ -> processSameResult local dep currentLastChange iface
+    RCached _ lastChange mvar -> processCachedResult dep currentLastChange lastChange mvar
+    RNotFound prob -> processNotFoundResult dep currentLastChange prob
+    RProblem _ -> processBlockedResult currentLastChange
+    RBlocked -> processBlockedResult currentLastChange
+    RForeign iface -> processForeignResult dep currentLastChange iface
+    RKernel -> processKernelResult currentLastChange
 
--- | Update functions for dependency state.
-updateNew :: DepUpdate -> [Dep] -> [Dep]
-updateNew state existing = depNew state ++ existing
+-- | Process new dependency result.
+processNewResult :: Details.Local -> ModuleName.Raw -> Details.BuildID -> I.Interface -> IO DepUpdate
+processNewResult (Details.Local _ _ _ _ lastChange _) dep currentLastChange iface =
+  pure $ DepUpdate [(dep, iface)] [] [] [] False (max lastChange currentLastChange)
 
-updateSame :: DepUpdate -> [Dep] -> [Dep]
-updateSame state existing = depSame state ++ existing
+-- | Process same dependency result.
+processSameResult :: Details.Local -> ModuleName.Raw -> Details.BuildID -> I.Interface -> IO DepUpdate
+processSameResult (Details.Local _ _ _ _ lastChange _) dep currentLastChange iface =
+  pure $ DepUpdate [] [(dep, iface)] [] [] False (max lastChange currentLastChange)
 
-updateCached :: DepUpdate -> [CDep] -> [CDep]
-updateCached state existing = depCached state ++ existing
+-- | Process cached dependency result.
+processCachedResult :: ModuleName.Raw -> Details.BuildID -> Details.BuildID -> MVar CachedInterface -> IO DepUpdate
+processCachedResult dep currentLastChange lastChange mvar =
+  pure $ DepUpdate [] [] [(dep, mvar)] [] False (max lastChange currentLastChange)
 
-updateProblems :: DepUpdate -> [(ModuleName.Raw, Import.Problem)] -> [(ModuleName.Raw, Import.Problem)]
-updateProblems state existing = depProblems state ++ existing
+-- | Process not found dependency result.
+processNotFoundResult :: ModuleName.Raw -> Details.BuildID -> Import.Problem -> IO DepUpdate
+processNotFoundResult dep currentLastChange prob =
+  pure $ DepUpdate [] [] [] [(dep, prob)] True currentLastChange
 
-updateBlocked :: DepUpdate -> Bool -> Bool
-updateBlocked state existing = depBlocked state || existing
+-- | Process blocked dependency result.
+processBlockedResult :: Details.BuildID -> IO DepUpdate
+processBlockedResult currentLastChange =
+  pure $ DepUpdate [] [] [] [] True currentLastChange
 
-updateLastChange :: DepUpdate -> Details.BuildID
-updateLastChange state = depLastChange state
+-- | Process foreign dependency result.
+processForeignResult :: ModuleName.Raw -> Details.BuildID -> I.Interface -> IO DepUpdate
+processForeignResult dep currentLastChange iface =
+  pure $ DepUpdate [] [(dep, iface)] [] [] False currentLastChange
+
+-- | Process kernel dependency result.
+processKernelResult :: Details.BuildID -> IO DepUpdate
+processKernelResult currentLastChange =
+  pure $ DepUpdate [] [] [] [] False currentLastChange
+
+
+-- | Finalize dependency status using state record.
+finalizeDepsWithState :: DepsAggregateConfig -> DepsAggregateState -> IO DepsStatus
+finalizeDepsWithState config state =
+  finalizeDepsStatus
+    (config ^. dacRoot)
+    (state ^. dasNew)
+    (state ^. dasSame)
+    (state ^. dasCached)
+    (state ^. dasImportProblems)
+    (state ^. dasBlocked)
+    (state ^. dasLastDepChange)
+    (config ^. dacLastCompile)
 
 -- | Finalize dependency status based on aggregated state.
 finalizeDepsStatus :: FilePath -> [Dep] -> [Dep] -> [CDep] -> [(ModuleName.Raw, Import.Problem)] -> Bool -> Details.BuildID -> Details.BuildID -> IO DepsStatus
@@ -132,10 +188,17 @@ finalizeDepsStatus root new same cached importProblems blocked lastDepChange las
 
 -- | Finalize valid dependencies without import problems.
 finalizeValidDeps :: FilePath -> [Dep] -> [Dep] -> [CDep] -> Bool -> Details.BuildID -> Details.BuildID -> IO DepsStatus
-finalizeValidDeps root new same cached blocked lastDepChange lastCompile
-  | blocked = pure DepsBlock
-  | null new && lastDepChange <= lastCompile = pure $ DepsSame same cached
-  | otherwise = finalizeWithLoading root new same cached
+finalizeValidDeps root new same cached blocked lastDepChange lastCompile =
+  finalizeValidDepsWithConfig config new same cached
+  where
+    config = ValidDepsConfig root blocked lastDepChange lastCompile
+
+-- | Finalize valid dependencies using configuration.
+finalizeValidDepsWithConfig :: ValidDepsConfig -> [Dep] -> [Dep] -> [CDep] -> IO DepsStatus
+finalizeValidDepsWithConfig config new same cached
+  | config ^. vdcBlocked = pure DepsBlock
+  | null new && (config ^. vdcLastDepChange) <= (config ^. vdcLastCompile) = pure $ DepsSame same cached
+  | otherwise = finalizeWithLoading (config ^. vdcRoot) new same cached
 
 -- | Finalize dependencies with interface loading.
 finalizeWithLoading :: FilePath -> [Dep] -> [Dep] -> [CDep] -> IO DepsStatus
