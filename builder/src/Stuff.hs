@@ -69,6 +69,7 @@ module Stuff
   , temp
     -- * Project Discovery
   , findRoot
+  , findRootFrom
     -- * Locking Mechanisms
   , withRootLock
   , withRegistryLock
@@ -127,6 +128,7 @@ import Stuff.Cache
 -- Re-export project discovery functionality
 import Stuff.Discovery
   ( findRoot
+  , findRootFrom
   )
 
 -- Re-export locking functionality

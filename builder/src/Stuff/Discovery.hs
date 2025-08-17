@@ -113,6 +113,7 @@
 module Stuff.Discovery
   ( -- * Project Root Discovery
     findRoot
+  , findRootFrom
   , findRootHelp
   ) where
 
@@ -159,6 +160,40 @@ findRoot :: IO (Maybe FilePath)
 findRoot = do
   dir <- Dir.getCurrentDirectory
   findRootHelp (FP.splitDirectories dir)
+
+-- | Find the root directory of a Canopy or Elm project starting from a specific directory.
+--
+-- Searches upward from the given directory to find a directory containing either
+-- "canopy.json" or "elm.json" configuration files. This function provides thread-safe
+-- project discovery that doesn't depend on the current working directory.
+--
+-- The search process:
+--
+-- 1. **Start from given directory** - Begin search at specified directory
+-- 2. **Check for config files** - Look for canopy.json or elm.json
+-- 3. **Traverse upward** - Move to parent directory if not found
+-- 4. **Terminate at filesystem root** - Return Nothing if no project found
+--
+-- ==== Examples
+--
+-- >>> findRootFrom "/home/user/myproject/src"
+-- Just "/home/user/myproject"
+--
+-- >>> findRootFrom "/tmp"
+-- Nothing
+--
+-- ==== Error Conditions
+--
+-- Returns 'Nothing' when:
+--
+-- * No canopy.json or elm.json found in directory tree
+-- * Insufficient permissions to read directories
+-- * Filesystem traversal reaches root without finding project
+-- * Starting directory does not exist
+--
+-- @since 0.19.1
+findRootFrom :: FilePath -> IO (Maybe FilePath)
+findRootFrom startDir = findRootHelp (FP.splitDirectories startDir)
 
 -- | Helper function for project root discovery.
 --
