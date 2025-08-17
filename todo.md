@@ -33,7 +33,7 @@ These violations MUST be fixed before any other work:
 
 ### Compiler Core Modules
 
-- [ ] `/refactor /home/quinten/fh/canopy/compiler/src/Type/Solve.hs`
+- [x] `/refactor /home/quinten/fh/canopy/compiler/src/Type/Solve.hs`
 - [ ] `/refactor /home/quinten/fh/canopy/compiler/src/Parse/Module.hs`
 - [ ] `/refactor /home/quinten/fh/canopy/compiler/src/Parse/Expression.hs`
 - [ ] `/refactor /home/quinten/fh/canopy/compiler/src/Generate/JavaScript.hs`
