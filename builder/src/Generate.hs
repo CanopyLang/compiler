@@ -1,185 +1,280 @@
 {-# LANGUAGE BangPatterns #-}
+{-# LANGUAGE TemplateHaskell #-}
+{-# OPTIONS_GHC -Wall #-}
 
+-- | Code generation coordination for the Canopy compiler.
+--
+-- This module provides the main entry points for code generation,
+-- coordinating between object loading, type extraction, validation,
+-- and JavaScript generation for different build modes.
+--
+-- === Build Modes
+--
+-- * Debug: Full type information for debugging
+-- * Development: Fast compilation without optimization
+-- * Production: Optimized code with minification
+-- * REPL: Interactive evaluation support
+--
+-- === Generation Pipeline
+--
+-- @
+-- Build.Artifacts -> Objects -> GlobalGraph -> JavaScript
+-- @
+--
+-- === Usage Examples
+--
+-- @
+-- -- Generate debug build with type information
+-- result <- debug root details artifacts
+--
+-- -- Generate optimized production build
+-- result <- prod root details artifacts
+--
+-- -- Generate for REPL evaluation
+-- result <- repl root details ansi replArtifacts name
+-- @
+--
+-- === Error Handling
+--
+-- All generation functions return Task types that can fail with
+-- appropriate generation errors for troubleshooting.
+--
+-- @since 0.19.1
 module Generate
-  ( debug,
-    dev,
-    prod,
-    repl,
-  )
-where
+  ( -- * Generation Functions
+    debug
+  , dev
+  , prod
+  , repl
+    -- * Configuration Types
+  , ReplConfig(..)
+    -- * Re-exports from sub-modules
+  , module Generate.Types
+  , module Generate.Objects
+  , module Generate.Types.Loading
+  , module Generate.Validation
+  , module Generate.Mains
+  ) where
 
-import qualified AST.Optimized as Opt
 import qualified Build
-import qualified Canopy.Compiler.Type.Extract as Extract
 import qualified Canopy.Details as Details
-import qualified Canopy.Interface as I
-import qualified Canopy.ModuleName as ModuleName
-import qualified Canopy.Package as Pkg
-import Control.Concurrent (MVar, forkIO, newEmptyMVar, newMVar, putMVar, readMVar)
-import Control.Monad (liftM2)
+import Control.Lens (makeLenses, (^.))
 import Data.ByteString.Builder (Builder)
-import Data.Map (Map, (!))
-import qualified Data.Map as Map
-import qualified Data.Maybe as Maybe
+import Data.Map ((!))
 import qualified Data.Name as N
-import qualified Data.NonEmptyList as NE
-import qualified File
 import qualified Generate.JavaScript as JS
 import qualified Generate.Mode as Mode
-import qualified Nitpick.Debug as Nitpick
-import qualified Reporting.Exit as Exit
-import qualified Reporting.Task as Task
-import qualified Stuff
-import Prelude hiding (cycle, print)
+import qualified Generate.Objects as Objects
+import qualified Generate.Types.Loading as Loading
+import qualified Generate.Validation as Validation
+import qualified Generate.Mains as Mains
+-- Re-export sub-modules
+import Generate.Types
+import Generate.Objects
+import Generate.Types.Loading
+import Generate.Validation
+import Generate.Mains
 
--- NOTE: This is used by Make, Repl, and Reactor right now. But it may be
--- desireable to have Repl and Reactor to keep foreign objects in memory
--- to make things a bit faster?
+-- | Configuration for REPL code generation.
+--
+-- Groups REPL-specific generation parameters to maintain
+-- function parameter limits while preserving clarity.
+--
+-- @since 0.19.1
+data ReplConfig = ReplConfig
+  { _replConfigAnsi :: !Bool
+    -- ^ Whether to use ANSI color codes in output
+  , _replConfigName :: !N.Name
+    -- ^ Name of the expression to evaluate
+  } deriving (Eq, Show)
 
--- GENERATORS
+-- Generate lenses for ReplConfig
+makeLenses ''ReplConfig
 
-type Task a =
-  Task.Task Exit.Generate a
-
+-- | Generate debug build with full type information.
+--
+-- This function generates JavaScript code with complete type information
+-- for debugging purposes. The debug build includes all type annotations
+-- and maintains full symbol information for development tools.
+--
+-- === Parameters
+--
+-- * 'root': Root directory for the project
+-- * 'details': Project details and configuration
+-- * 'artifacts': Build artifacts containing modules and interfaces
+--
+-- === Returns
+--
+-- A Task containing the generated JavaScript as a Builder.
+--
+-- === Generation Process
+--
+-- 1. Load objects and types concurrently
+-- 2. Finalize loaded objects
+-- 3. Create development mode with type information
+-- 4. Generate JavaScript with debug symbols
+--
+-- === Examples
+--
+-- @
+-- result <- debug root details artifacts
+-- case result of
+--   Right js -> writeBuilder outputPath js
+--   Left err -> reportError err
+-- @
+--
+-- === Error Conditions
+--
+-- Returns Task failure for:
+--
+-- * Missing or corrupted object files
+-- * Interface loading failures
+-- * Type extraction errors
+-- * JavaScript generation errors
+--
+-- @since 0.19.1
 debug :: FilePath -> Details.Details -> Build.Artifacts -> Task Builder
-debug root details (Build.Artifacts pkg ifaces roots modules) =
-  do
-    loading <- loadObjects root details modules
-    types <- loadTypes root ifaces modules
-    objects <- finalizeObjects loading
-    let mode = Mode.Dev (Just types)
-    let graph = objectsToGlobalGraph objects
-    let mains = gatherMains pkg objects roots
-    return $ JS.generate mode graph mains
+debug root details (Build.Artifacts pkg ifaces roots modules) = do
+  loading <- Objects.loadObjects root details modules
+  types <- Loading.loadTypes root ifaces modules
+  objects <- Objects.finalizeObjects loading
+  let mode = Mode.Dev (Just types)
+  let graph = Objects.objectsToGlobalGraph objects
+  let mains = Mains.gatherMains pkg objects roots
+  return $ JS.generate mode graph mains
 
+-- | Generate development build without type information.
+--
+-- This function generates JavaScript code optimized for development
+-- speed without full type information. Faster than debug mode while
+-- maintaining readability.
+--
+-- === Parameters
+--
+-- * 'root': Root directory for the project
+-- * 'details': Project details and configuration
+-- * 'artifacts': Build artifacts containing modules and roots
+--
+-- === Returns
+--
+-- A Task containing the generated JavaScript as a Builder.
+--
+-- === Examples
+--
+-- @
+-- result <- dev root details artifacts
+-- case result of
+--   Right js -> writeBuilder outputPath js
+--   Left err -> reportError err
+-- @
+--
+-- === Error Conditions
+--
+-- Returns Task failure for:
+--
+-- * Object loading failures
+-- * Missing module files
+-- * JavaScript generation errors
+--
+-- @since 0.19.1
 dev :: FilePath -> Details.Details -> Build.Artifacts -> Task Builder
-dev root details (Build.Artifacts pkg _ roots modules) =
-  do
-    objects <- loadObjects root details modules >>= finalizeObjects
-    let mode = Mode.Dev Nothing
-    let graph = objectsToGlobalGraph objects
-    let mains = gatherMains pkg objects roots
-    return $ JS.generate mode graph mains
+dev root details (Build.Artifacts pkg _ roots modules) = do
+  objects <- Objects.loadObjects root details modules >>= Objects.finalizeObjects
+  let mode = Mode.Dev Nothing
+  let graph = Objects.objectsToGlobalGraph objects
+  let mains = Mains.gatherMains pkg objects roots
+  return $ JS.generate mode graph mains
 
+-- | Generate optimized production build.
+--
+-- This function generates highly optimized JavaScript code suitable
+-- for production deployment. Includes minification, dead code elimination,
+-- and field name shortening.
+--
+-- === Parameters
+--
+-- * 'root': Root directory for the project
+-- * 'details': Project details and configuration
+-- * 'artifacts': Build artifacts containing modules and roots
+--
+-- === Returns
+--
+-- A Task containing the optimized JavaScript as a Builder.
+--
+-- === Validation
+--
+-- Validates that no debug statements are present before optimization.
+--
+-- === Examples
+--
+-- @
+-- result <- prod root details artifacts
+-- case result of
+--   Right js -> writeBuilder outputPath js
+--   Left err -> reportError err
+-- @
+--
+-- === Error Conditions
+--
+-- Returns Task failure for:
+--
+-- * Debug statements found in code (GenerateCannotOptimizeDebugValues)
+-- * Object loading failures
+-- * Missing module files
+-- * JavaScript generation errors
+--
+-- @since 0.19.1
 prod :: FilePath -> Details.Details -> Build.Artifacts -> Task Builder
-prod root details (Build.Artifacts pkg _ roots modules) =
-  do
-    objects <- loadObjects root details modules >>= finalizeObjects
-    checkForDebugUses objects
-    let graph = objectsToGlobalGraph objects
-    let mode = Mode.Prod (Mode.shortenFieldNames graph)
-    let mains = gatherMains pkg objects roots
-    return $ JS.generate mode graph mains
+prod root details (Build.Artifacts pkg _ roots modules) = do
+  objects <- Objects.loadObjects root details modules >>= Objects.finalizeObjects
+  Validation.checkForDebugUses objects
+  let graph = Objects.objectsToGlobalGraph objects
+  let mode = Mode.Prod (Mode.shortenFieldNames graph)
+  let mains = Mains.gatherMains pkg objects roots
+  return $ JS.generate mode graph mains
 
-repl :: FilePath -> Details.Details -> Bool -> Build.ReplArtifacts -> N.Name -> Task Builder
-repl root details ansi (Build.ReplArtifacts home modules localizer annotations) name =
-  do
-    objects <- loadObjects root details modules >>= finalizeObjects
-    let graph = objectsToGlobalGraph objects
-    return $ JS.generateForRepl ansi localizer graph home name (annotations ! name)
-
--- CHECK FOR DEBUG
-
-checkForDebugUses :: Objects -> Task ()
-checkForDebugUses (Objects _ locals) =
-  case Map.keys (Map.filter Nitpick.hasDebugUses locals) of
-    [] -> return ()
-    m : ms -> Task.throw (Exit.GenerateCannotOptimizeDebugValues m ms)
-
--- GATHER MAINS
-
-gatherMains :: Pkg.Name -> Objects -> NE.List Build.Root -> Map ModuleName.Canonical Opt.Main
-gatherMains pkg (Objects _ locals) roots =
-  Map.fromList $ Maybe.mapMaybe (lookupMain pkg locals) (NE.toList roots)
-
-lookupMain :: Pkg.Name -> Map ModuleName.Raw Opt.LocalGraph -> Build.Root -> Maybe (ModuleName.Canonical, Opt.Main)
-lookupMain pkg locals root =
-  let toPair name (Opt.LocalGraph maybeMain _ _) =
-        (,) (ModuleName.Canonical pkg name) <$> maybeMain
-   in case root of
-        Build.Inside name -> Map.lookup name locals >>= toPair name
-        Build.Outside name _ g -> toPair name g
-
--- LOADING OBJECTS
-
-data LoadingObjects = LoadingObjects
-  { _foreign_mvar :: MVar (Maybe Opt.GlobalGraph),
-    _local_mvars :: Map ModuleName.Raw (MVar (Maybe Opt.LocalGraph))
-  }
-
-loadObjects :: FilePath -> Details.Details -> [Build.Module] -> Task LoadingObjects
-loadObjects root details modules =
-  Task.io $
-    do
-      mvar <- Details.loadObjects root details
-      mvars <- traverse (loadObject root) modules
-      return $ LoadingObjects mvar (Map.fromList mvars)
-
-loadObject :: FilePath -> Build.Module -> IO (ModuleName.Raw, MVar (Maybe Opt.LocalGraph))
-loadObject root modul =
-  case modul of
-    Build.Fresh name _ graph ->
-      do
-        mvar <- newMVar (Just graph)
-        return (name, mvar)
-    Build.Cached name _ _ ->
-      do
-        mvar <- newEmptyMVar
-        _ <- forkIO (File.readBinary (Stuff.canopyo root name) >>= putMVar mvar)
-        return (name, mvar)
-
--- FINALIZE OBJECTS
-
-data Objects = Objects
-  { _foreign :: Opt.GlobalGraph,
-    _locals :: Map ModuleName.Raw Opt.LocalGraph
-  }
-
-finalizeObjects :: LoadingObjects -> Task Objects
-finalizeObjects (LoadingObjects mvar mvars) =
-  Task.eio id $
-    do
-      result <- readMVar mvar
-      results <- traverse readMVar mvars
-      case liftM2 Objects result (sequenceA results) of
-        Just loaded -> return (Right loaded)
-        Nothing -> return (Left Exit.GenerateCannotLoadArtifacts)
-
-objectsToGlobalGraph :: Objects -> Opt.GlobalGraph
-objectsToGlobalGraph (Objects globals locals) =
-  foldr Opt.addLocalGraph globals locals
-
--- LOAD TYPES
-
-loadTypes :: FilePath -> Map ModuleName.Canonical I.DependencyInterface -> [Build.Module] -> Task Extract.Types
-loadTypes root ifaces modules =
-  Task.eio id $
-    do
-      mvars <- traverse (loadTypesHelp root) modules
-      let !foreigns = Extract.mergeMany (Map.elems (Map.mapWithKey Extract.fromDependencyInterface ifaces))
-      results <- traverse readMVar mvars
-      case sequenceA results of
-        Just ts -> return (Right (Extract.merge foreigns (Extract.mergeMany ts)))
-        Nothing -> return (Left Exit.GenerateCannotLoadArtifacts)
-
-loadTypesHelp :: FilePath -> Build.Module -> IO (MVar (Maybe Extract.Types))
-loadTypesHelp root modul =
-  case modul of
-    Build.Fresh name iface _ ->
-      newMVar (Just (Extract.fromInterface name iface))
-    Build.Cached name _ ciMVar ->
-      do
-        cachedInterface <- readMVar ciMVar
-        case cachedInterface of
-          Build.Unneeded ->
-            do
-              mvar <- newEmptyMVar
-              _ <- forkIO $
-                do
-                  maybeIface <- File.readBinary (Stuff.canopyi root name)
-                  putMVar mvar (Extract.fromInterface name <$> maybeIface)
-              return mvar
-          Build.Loaded iface ->
-            newMVar (Just (Extract.fromInterface name iface))
-          Build.Corrupted ->
-            newMVar Nothing
+-- | Generate code for REPL evaluation.
+--
+-- This function generates JavaScript code optimized for interactive
+-- evaluation in the REPL environment, supporting dynamic loading
+-- and evaluation of expressions.
+--
+-- === Parameters
+--
+-- * 'root': Root directory for the project
+-- * 'details': Project details and configuration
+-- * 'config': REPL configuration (ANSI mode and expression name)
+-- * 'replArtifacts': REPL-specific artifacts and annotations
+--
+-- === Returns
+--
+-- A Task containing the REPL JavaScript as a Builder.
+--
+-- === Examples
+--
+-- @
+-- let config = ReplConfig True exprName
+-- result <- repl root details config replArtifacts
+-- case result of
+--   Right js -> evaluateInRepl js
+--   Left err -> reportError err
+-- @
+--
+-- === Error Conditions
+--
+-- Returns Task failure for:
+--
+-- * Object loading failures
+-- * Missing REPL artifacts
+-- * Expression annotation errors
+-- * JavaScript generation errors
+--
+-- @since 0.19.1
+repl :: FilePath -> Details.Details -> ReplConfig -> Build.ReplArtifacts -> Task Builder
+repl root details config (Build.ReplArtifacts home modules localizer annotations) = do
+  objects <- Objects.loadObjects root details modules >>= Objects.finalizeObjects
+  let graph = Objects.objectsToGlobalGraph objects
+  return $ JS.generateForRepl ansi localizer graph home name (annotations ! name)
+  where
+    ansi = config ^. replConfigAnsi
+    name = config ^. replConfigName
