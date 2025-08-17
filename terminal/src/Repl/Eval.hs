@@ -133,7 +133,8 @@ runCompilation rootDir enableAnsi state output scope =
       traverse (generateJavaScript rootDir details enableAnsi artifacts) (toPrintName output)
 
     generateJavaScript projectRoot projectDetails projectAnsi artifacts name =
-      Task.mapError Exit.ReplBadGenerate (Generate.repl projectRoot projectDetails projectAnsi artifacts name)
+      let config = Generate.ReplConfig projectAnsi name
+      in Task.mapError Exit.ReplBadGenerate (Generate.repl projectRoot projectDetails config artifacts)
 
 -- | Execute JavaScript and return result.
 --

@@ -11,6 +11,7 @@ module Canopy.Details
     Foreign (..),
     Artifacts (..),
     ArtifactCache (..),
+    Extras (..),
     -- Lens exports
     outlineTime,
     buildID,
