@@ -47,6 +47,12 @@ import qualified Unit.File.BinaryTest as FileBinaryTest
 import qualified Unit.File.FileSystemTest as FileFileSystemTest
 import qualified Unit.File.TimeTest as FileTimeTest
 import qualified Unit.File.Utf8Test as FileUtf8Test
+import qualified Unit.GenerateTest as GenerateTest
+import qualified Unit.Generate.MainsTest as GenerateMainsTest
+import qualified Unit.Generate.ObjectsTest as GenerateObjectsTest
+import qualified Unit.Generate.TypesTest as GenerateTypesTest
+import qualified Unit.Generate.Types.LoadingTest as GenerateTypesLoadingTest
+import qualified Unit.Generate.ValidationTest as GenerateValidationTest
 import qualified Unit.Develop.CompilationTest as DevelopCompilationTest
 import qualified Unit.Develop.EnvironmentTest as DevelopEnvironmentTest
 import qualified Unit.Develop.MimeTypesTest as DevelopMimeTypesTest
@@ -143,7 +149,13 @@ unitTests =
       FileBinaryTest.tests,
       FileFileSystemTest.tests,
       FileTimeTest.tests,
-      FileUtf8Test.tests
+      FileUtf8Test.tests,
+      GenerateTest.tests,
+      GenerateTypesTest.tests,
+      GenerateObjectsTest.tests,
+      GenerateTypesLoadingTest.tests,
+      GenerateValidationTest.tests,
+      GenerateMainsTest.tests
     ]
 
 propertyTests :: TestTree
