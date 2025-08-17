@@ -71,6 +71,7 @@ import qualified Unit.Terminal.Error.FormattingTest as TerminalErrorFormattingTe
 import qualified Unit.Terminal.Error.SuggestionsTest as TerminalErrorSuggestionsTest
 import qualified Unit.Terminal.Error.TypesTest as TerminalErrorTypesTest
 import qualified Unit.Terminal.ErrorTest as TerminalErrorTest
+import qualified Unit.ReportingTest as ReportingTest
 import qualified Unit.TerminalTest as TerminalTest
 import qualified Unit.WatchTest as WatchTest
 
@@ -124,6 +125,7 @@ unitTests =
       SourceAstTest.tests,
       CanonicalTypeTest.tests,
       OptimizedTest.tests,
+      ReportingTest.tests,
       TerminalTest.tests,
       ChompTest.tests,
       TerminalErrorTest.tests,

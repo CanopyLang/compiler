@@ -474,14 +474,9 @@ projectDiscoveryTests = testGroup "Project Discovery Tests"
         let canopyJson = tmpDir </> "canopy.json"
         writeFile canopyJson "{}"
         
-        -- Change to temp directory and find root
-        origDir <- Dir.getCurrentDirectory
-        bracket
-          (Dir.setCurrentDirectory tmpDir)
-          (\_ -> Dir.setCurrentDirectory origDir)
-          (\_ -> do
-            result <- Stuff.findRoot
-            result @?= Just tmpDir)
+        -- Use findRootFrom to avoid changing working directory
+        result <- Stuff.findRootFrom tmpDir
+        result @?= Just tmpDir
 
   , testCase "findRoot finds elm.json" $ do
       Temp.withSystemTempDirectory "canopy-test" $ \tmpDir -> do
@@ -489,25 +484,15 @@ projectDiscoveryTests = testGroup "Project Discovery Tests"
         let elmJson = tmpDir </> "elm.json"
         writeFile elmJson "{}"
         
-        -- Change to temp directory and find root
-        origDir <- Dir.getCurrentDirectory
-        bracket
-          (Dir.setCurrentDirectory tmpDir)
-          (\_ -> Dir.setCurrentDirectory origDir)
-          (\_ -> do
-            result <- Stuff.findRoot
-            result @?= Just tmpDir)
+        -- Use findRootFrom to avoid changing working directory
+        result <- Stuff.findRootFrom tmpDir
+        result @?= Just tmpDir
 
   , testCase "findRoot returns Nothing when no project" $ do
       Temp.withSystemTempDirectory "canopy-test" $ \tmpDir -> do
-        -- Change to empty temp directory
-        origDir <- Dir.getCurrentDirectory
-        bracket
-          (Dir.setCurrentDirectory tmpDir)
-          (\_ -> Dir.setCurrentDirectory origDir)
-          (\_ -> do
-            result <- Stuff.findRoot
-            result @?= Nothing)
+        -- Use findRootFrom to avoid changing working directory
+        result <- Stuff.findRootFrom tmpDir
+        result @?= Nothing
 
   , testCase "findRoot finds project in parent directory" $ do
       Temp.withSystemTempDirectory "canopy-test" $ \tmpDir -> do
@@ -519,14 +504,20 @@ projectDiscoveryTests = testGroup "Project Discovery Tests"
         let subDir = tmpDir </> "src" </> "nested"
         Dir.createDirectoryIfMissing True subDir
         
-        -- Change to subdirectory and find root
-        origDir <- Dir.getCurrentDirectory
-        bracket
-          (Dir.setCurrentDirectory subDir)
-          (\_ -> Dir.setCurrentDirectory origDir)
-          (\_ -> do
-            result <- Stuff.findRoot
-            result @?= Just tmpDir)
+        -- Use findRootFrom starting from subdirectory
+        result <- Stuff.findRootFrom subDir
+        result @?= Just tmpDir
+
+  , testCase "findRootFrom works independently of current directory" $ do
+      Temp.withSystemTempDirectory "canopy-test" $ \tmpDir -> do
+        -- Create a canopy.json file
+        let canopyJson = tmpDir </> "canopy.json"
+        writeFile canopyJson "{}"
+        
+        -- Test that findRootFrom works regardless of current working directory
+        -- (this test demonstrates that it's thread-safe)
+        result <- Stuff.findRootFrom tmpDir
+        result @?= Just tmpDir
   ]
 
 -- CACHE DIRECTORY TESTS
