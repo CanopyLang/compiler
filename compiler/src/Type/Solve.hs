@@ -89,8 +89,8 @@ solve config constraint = case constraint of
     solveEqual config region category tipe expectation
   CLocal region name expectation -> 
     solveLocal config region name expectation
-  CForeign region name forall expectation -> 
-    solveForeign config region name forall expectation
+  CForeign region name forAll expectation -> 
+    solveForeign config region name forAll expectation
   CPattern region category tipe expectation -> 
     solvePattern config region category tipe expectation
   CAnd constraints -> 

@@ -38,7 +38,6 @@ module Build
 
 -- Core AST and compilation imports
 import qualified AST.Canonical as Can
-import qualified AST.Optimized as Opt
 import qualified AST.Source as Src
 import qualified Compile
 
@@ -54,12 +53,11 @@ import qualified Canopy.Package as Pkg
 import Build.Config
   ( CheckConfig (..)
   , CrawlConfig (..) 
-  , CompileConfig (..)
   , DepsConfig (..)
   )
-import Build.Crawl (crawlModule, crawlDeps, crawlRoot)
+import Build.Crawl (crawlModule, crawlDeps)
 import Build.Dependencies (checkDeps, loadInterfaces)
-import Build.Module.Check (checkModule, compile)
+import Build.Module.Check (checkModule)
 import Build.Paths (fromPaths)
 import Build.Types
   ( Env (..)
@@ -71,8 +69,6 @@ import Build.Types
   , ResultDict
   , CachedInterface (..)
   , Dependencies
-  , Dep
-  , CDep
   , DepsStatus (..)
   , RootLocation (..)
   , RootInfo (..)
@@ -85,7 +81,6 @@ import Build.Types
   , DocsGoal (..)
   , rootInfoRelative
   , rootInfoLocation
-  , rootInfoAbsolute
   )
 
 -- Standard library imports
@@ -98,15 +93,14 @@ import Control.Concurrent.MVar
   , readMVar
   , takeMVar
   )
-import Control.Lens (makeLenses, (^.))
+import Control.Lens ((^.))
 import Control.Monad (filterM)
-import Data.Traversable (traverse)
 import qualified Data.ByteString as B
 import qualified Data.Char as Char
 import Data.Foldable (sequenceA_, traverse_)
 import qualified Data.Graph as Graph
 import qualified Data.List as List
-import Data.Map.Strict (Map, (!), (!?))
+import Data.Map.Strict (Map, (!))
 import qualified Data.Map.Strict as Map
 import qualified Data.Map.Utils as Map
 import qualified Data.Maybe as Maybe
@@ -126,7 +120,6 @@ import qualified Reporting.Annotation as A
 import qualified Reporting.Error as Error
 import qualified Reporting.Error.Docs as EDocs
 import qualified Reporting.Error.Import as Import
-import qualified Reporting.Error.Syntax as Syntax
 import qualified Reporting.Exit as Exit
 import qualified Reporting.Render.Type.Localizer as L
 import qualified Stuff
