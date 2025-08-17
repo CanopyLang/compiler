@@ -1,4 +1,5 @@
 {-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE TemplateHaskell #-}
 {-# OPTIONS_GHC -Wall #-}
 
 -- | Module crawling functionality for the Build system.
@@ -21,12 +22,15 @@ module Build.Crawl
   , processForeignModule
   , processKernelModule
   , validateModuleName
+  , createSinglePathConfig
+  , createLocalPathConfig
+  , createValidationConfig
   , fork
   ) where
 
 import Control.Concurrent (forkIO)
 import Control.Concurrent.MVar (MVar, takeMVar, putMVar, newEmptyMVar, readMVar)
-import Control.Lens ((^.))
+import Control.Lens ((^.), makeLenses)
 import Control.Monad (filterM)
 import Data.Foldable (traverse_)
 import qualified AST.Source as Src
@@ -58,6 +62,81 @@ import Build.Types
   , RootStatus (..)
   )
 
+-- | Configuration for processing module paths.
+data ProcessPathConfig = ProcessPathConfig
+  { _pathConfigEnv :: !Env
+  , _pathConfigMVar :: !(MVar StatusDict)
+  , _pathConfigDocsNeed :: !DocsNeed
+  , _pathConfigName :: !ModuleName.Raw
+  , _pathConfigPaths :: ![FilePath]
+  , _pathConfigRoot :: !FilePath
+  , _pathConfigProjectType :: !Parse.ProjectType
+  , _pathConfigBuildID :: !Details.BuildID
+  , _pathConfigLocals :: !(Map ModuleName.Raw Details.Local)
+  , _pathConfigForeigns :: !(Map ModuleName.Raw Details.Foreign)
+  }
+
+-- | Configuration for single path processing.
+data SinglePathConfig = SinglePathConfig
+  { _singlePathEnv :: !Env
+  , _singlePathMVar :: !(MVar StatusDict)
+  , _singlePathDocsNeed :: !DocsNeed
+  , _singlePathName :: !ModuleName.Raw
+  , _singlePathPath :: !FilePath
+  , _singlePathBuildID :: !Details.BuildID
+  , _singlePathLocals :: !(Map ModuleName.Raw Details.Local)
+  , _singlePathForeigns :: !(Map ModuleName.Raw Details.Foreign)
+  }
+
+-- | Configuration for local path processing.
+data LocalPathConfig = LocalPathConfig
+  { _localPathEnv :: !Env
+  , _localPathMVar :: !(MVar StatusDict)
+  , _localPathDocsNeed :: !DocsNeed
+  , _localPathName :: !ModuleName.Raw
+  , _localPathPath :: !FilePath
+  , _localPathBuildID :: !Details.BuildID
+  , _localPathLocals :: !(Map ModuleName.Raw Details.Local)
+  }
+
+-- | Configuration for parsing and validation.
+data ParseConfig = ParseConfig
+  { _parseConfigEnv :: !Env
+  , _parseConfigMVar :: !(MVar StatusDict)
+  , _parseConfigDocsNeed :: !DocsNeed
+  , _parseConfigExpectedName :: !ModuleName.Raw
+  , _parseConfigPath :: !FilePath
+  , _parseConfigTime :: !File.Time
+  , _parseConfigSource :: !B.ByteString
+  , _parseConfigProjectType :: !Parse.ProjectType
+  , _parseConfigBuildID :: !Details.BuildID
+  , _parseConfigLastChange :: !Details.BuildID
+  }
+
+-- | Configuration for module validation.
+data ValidationConfig = ValidationConfig
+  { _validationConfigEnv :: !Env
+  , _validationConfigMVar :: !(MVar StatusDict)
+  , _validationConfigDocsNeed :: !DocsNeed
+  , _validationConfigExpectedName :: !ModuleName.Raw
+  , _validationConfigActualName :: !ModuleName.Raw
+  , _validationConfigPath :: !FilePath
+  , _validationConfigTime :: !File.Time
+  , _validationConfigSource :: !B.ByteString
+  , _validationConfigImports :: ![Src.Import]
+  , _validationConfigValues :: ![A.Located Src.Value]
+  , _validationConfigBuildID :: !Details.BuildID
+  , _validationConfigLastChange :: !Details.BuildID
+  , _validationConfigName :: !(A.Located ModuleName.Raw)
+  }
+
+-- Generate lenses for configuration records
+makeLenses ''ProcessPathConfig
+makeLenses ''SinglePathConfig  
+makeLenses ''LocalPathConfig
+makeLenses ''ParseConfig
+makeLenses ''ValidationConfig
+
 -- | Crawl a module using configuration record.
 crawlModule :: CrawlConfig -> ModuleName.Raw -> IO Status
 crawlModule config name = do
@@ -71,30 +150,56 @@ processModuleDiscovery :: Env -> MVar StatusDict -> DocsNeed -> ModuleName.Raw -
 processModuleDiscovery env@(Env _ root projectType srcDirs buildID locals foreigns) mvar docsNeed name = do
   let baseName = ModuleName.toFilePath name
   paths <- findModuleFile srcDirs baseName
-  processModulePaths env mvar docsNeed name paths root projectType buildID locals foreigns
+  let config = ProcessPathConfig env mvar docsNeed name paths root projectType buildID locals foreigns
+  processModulePaths config
+
+-- | Create single path configuration from process path configuration.
+createSinglePathConfig :: ProcessPathConfig -> FilePath -> SinglePathConfig
+createSinglePathConfig cfg path = SinglePathConfig
+  { _singlePathEnv = cfg ^. pathConfigEnv
+  , _singlePathMVar = cfg ^. pathConfigMVar
+  , _singlePathDocsNeed = cfg ^. pathConfigDocsNeed
+  , _singlePathName = cfg ^. pathConfigName
+  , _singlePathPath = path
+  , _singlePathBuildID = cfg ^. pathConfigBuildID
+  , _singlePathLocals = cfg ^. pathConfigLocals
+  , _singlePathForeigns = cfg ^. pathConfigForeigns
+  }
 
 -- | Process discovered module paths.
-processModulePaths :: Env -> MVar StatusDict -> DocsNeed -> ModuleName.Raw -> [FilePath] -> FilePath -> Parse.ProjectType -> Details.BuildID -> Map ModuleName.Raw Details.Local -> Map ModuleName.Raw Details.Foreign -> IO Status
-processModulePaths env mvar docsNeed name paths root projectType buildID locals foreigns =
-  case paths of
-    [path] -> processSinglePath env mvar docsNeed name path root buildID locals foreigns
-    p1 : p2 : ps -> processAmbiguousPaths root p1 p2 ps
-    [] -> processNoPath name projectType foreigns
+processModulePaths :: ProcessPathConfig -> IO Status
+processModulePaths config =
+  case config ^. pathConfigPaths of
+    [path] -> processSinglePath (createSinglePathConfig config path)
+    p1 : p2 : ps -> processAmbiguousPaths (config ^. pathConfigRoot) p1 p2 ps
+    [] -> processNoPath (config ^. pathConfigName) (config ^. pathConfigProjectType) (config ^. pathConfigForeigns)
+
+-- | Create local path configuration from single path configuration.
+createLocalPathConfig :: SinglePathConfig -> LocalPathConfig
+createLocalPathConfig cfg = LocalPathConfig
+  { _localPathEnv = cfg ^. singlePathEnv
+  , _localPathMVar = cfg ^. singlePathMVar
+  , _localPathDocsNeed = cfg ^. singlePathDocsNeed
+  , _localPathName = cfg ^. singlePathName
+  , _localPathPath = cfg ^. singlePathPath
+  , _localPathBuildID = cfg ^. singlePathBuildID
+  , _localPathLocals = cfg ^. singlePathLocals
+  }
 
 -- | Process single discovered path.
-processSinglePath :: Env -> MVar StatusDict -> DocsNeed -> ModuleName.Raw -> FilePath -> FilePath -> Details.BuildID -> Map ModuleName.Raw Details.Local -> Map ModuleName.Raw Details.Foreign -> IO Status
-processSinglePath env mvar docsNeed name path root buildID locals foreigns =
-  case Map.lookup name foreigns of
-    Just (Details.Foreign dep deps) -> pure . SBadImport $ Import.Ambiguous path [] dep deps
-    Nothing -> processLocalPath env mvar docsNeed name path root buildID locals
+processSinglePath :: SinglePathConfig -> IO Status
+processSinglePath config =
+  case Map.lookup (config ^. singlePathName) (config ^. singlePathForeigns) of
+    Just (Details.Foreign dep deps) -> pure . SBadImport $ Import.Ambiguous (config ^. singlePathPath) [] dep deps
+    Nothing -> processLocalPath (createLocalPathConfig config)
 
 -- | Process local module path.
-processLocalPath :: Env -> MVar StatusDict -> DocsNeed -> ModuleName.Raw -> FilePath -> FilePath -> Details.BuildID -> Map ModuleName.Raw Details.Local -> IO Status
-processLocalPath env mvar docsNeed name path _root buildID locals = do
-  newTime <- File.getTime path
-  case Map.lookup name locals of
-    Nothing -> crawlFile env mvar docsNeed name path newTime buildID
-    Just local -> processExistingLocal env mvar docsNeed name path newTime local
+processLocalPath :: LocalPathConfig -> IO Status
+processLocalPath config = do
+  newTime <- File.getTime (config ^. localPathPath)
+  case Map.lookup (config ^. localPathName) (config ^. localPathLocals) of
+    Nothing -> crawlFile (config ^. localPathEnv) (config ^. localPathMVar) (config ^. localPathDocsNeed) (config ^. localPathName) (config ^. localPathPath) newTime (config ^. localPathBuildID)
+    Just local -> processExistingLocal (config ^. localPathEnv) (config ^. localPathMVar) (config ^. localPathDocsNeed) (config ^. localPathName) (config ^. localPathPath) newTime local
 
 -- | Process existing local module.
 processExistingLocal :: Env -> MVar StatusDict -> DocsNeed -> ModuleName.Raw -> FilePath -> File.Time -> Details.Local -> IO Status
@@ -187,35 +292,54 @@ crawlNewDep env mvar name () = fork (crawlModule (CrawlConfig env mvar (DocsNeed
 crawlFile :: Env -> MVar StatusDict -> DocsNeed -> ModuleName.Raw -> FilePath -> File.Time -> Details.BuildID -> IO Status
 crawlFile env@(Env _ root projectType _ buildID _ _) mvar docsNeed expectedName path time lastChange = do
   source <- File.readUtf8 (root </> path)
-  parseAndValidate env mvar docsNeed expectedName path time source projectType buildID lastChange
+  let config = ParseConfig env mvar docsNeed expectedName path time source projectType buildID lastChange
+  parseAndValidate config
 
 -- | Parse and validate module source.
-parseAndValidate :: Env -> MVar StatusDict -> DocsNeed -> ModuleName.Raw -> FilePath -> File.Time -> B.ByteString -> Parse.ProjectType -> Details.BuildID -> Details.BuildID -> IO Status
-parseAndValidate env mvar docsNeed expectedName path time source projectType buildID lastChange =
-  case Parse.fromByteString projectType source of
-    Left err -> pure $ SBadSyntax path time source err
-    Right modul -> validateAndProcess env mvar docsNeed expectedName path time source modul buildID lastChange
+parseAndValidate :: ParseConfig -> IO Status
+parseAndValidate config =
+  case Parse.fromByteString (config ^. parseConfigProjectType) (config ^. parseConfigSource) of
+    Left err -> pure $ SBadSyntax (config ^. parseConfigPath) (config ^. parseConfigTime) (config ^. parseConfigSource) err
+    Right modul -> validateAndProcess config modul
+
+-- | Create validation configuration from parse configuration.
+createValidationConfig :: ParseConfig -> ModuleName.Raw -> [Src.Import] -> [A.Located Src.Value] -> A.Located ModuleName.Raw -> ValidationConfig
+createValidationConfig cfg actualName imports values name = ValidationConfig
+  { _validationConfigEnv = cfg ^. parseConfigEnv
+  , _validationConfigMVar = cfg ^. parseConfigMVar
+  , _validationConfigDocsNeed = cfg ^. parseConfigDocsNeed
+  , _validationConfigExpectedName = cfg ^. parseConfigExpectedName
+  , _validationConfigActualName = actualName
+  , _validationConfigPath = cfg ^. parseConfigPath
+  , _validationConfigTime = cfg ^. parseConfigTime
+  , _validationConfigSource = cfg ^. parseConfigSource
+  , _validationConfigImports = imports
+  , _validationConfigValues = values
+  , _validationConfigBuildID = cfg ^. parseConfigBuildID
+  , _validationConfigLastChange = cfg ^. parseConfigLastChange
+  , _validationConfigName = name
+  }
 
 -- | Validate module name and process.
-validateAndProcess :: Env -> MVar StatusDict -> DocsNeed -> ModuleName.Raw -> FilePath -> File.Time -> B.ByteString -> Src.Module -> Details.BuildID -> Details.BuildID -> IO Status
-validateAndProcess env mvar docsNeed expectedName path time source (Src.Module maybeActualName _ _ imports values _ _ _ _) buildID lastChange =
+validateAndProcess :: ParseConfig -> Src.Module -> IO Status
+validateAndProcess config (Src.Module maybeActualName _ _ imports values _ _ _ _) =
   case maybeActualName of
-    Nothing -> pure $ SBadSyntax path time source (Syntax.ModuleNameUnspecified expectedName)
-    Just name@(A.At _ actualName) -> validateModuleName env mvar docsNeed expectedName actualName path time source imports values buildID lastChange name
+    Nothing -> pure $ SBadSyntax (config ^. parseConfigPath) (config ^. parseConfigTime) (config ^. parseConfigSource) (Syntax.ModuleNameUnspecified (config ^. parseConfigExpectedName))
+    Just name@(A.At _ actualName) -> validateModuleName (createValidationConfig config actualName imports values name)
 
 -- | Validate module name matches expected.
-validateModuleName :: Env -> MVar StatusDict -> DocsNeed -> ModuleName.Raw -> ModuleName.Raw -> FilePath -> File.Time -> B.ByteString -> [Src.Import] -> [A.Located Src.Value] -> Details.BuildID -> Details.BuildID -> A.Located ModuleName.Raw -> IO Status
-validateModuleName env mvar docsNeed expectedName actualName path time source imports values buildID lastChange name =
-  if expectedName == actualName
-    then processValidModule env mvar docsNeed path time source imports values buildID lastChange
-    else pure $ SBadSyntax path time source (Syntax.ModuleNameMismatch expectedName name)
+validateModuleName :: ValidationConfig -> IO Status
+validateModuleName config =
+  if config ^. validationConfigExpectedName == config ^. validationConfigActualName
+    then processValidModule config
+    else pure $ SBadSyntax (config ^. validationConfigPath) (config ^. validationConfigTime) (config ^. validationConfigSource) (Syntax.ModuleNameMismatch (config ^. validationConfigExpectedName) (config ^. validationConfigName))
 
 -- | Process valid module.
-processValidModule :: Env -> MVar StatusDict -> DocsNeed -> FilePath -> File.Time -> B.ByteString -> [Src.Import] -> [A.Located Src.Value] -> Details.BuildID -> Details.BuildID -> IO Status
-processValidModule env mvar docsNeed path time source imports values buildID lastChange = do
-  let deps = fmap Src.getImportName imports
-  let local = Details.Local path time deps (any isMain values) lastChange buildID
-  crawlDeps env mvar deps (SChanged local source undefined docsNeed)
+processValidModule :: ValidationConfig -> IO Status
+processValidModule config = do
+  let deps = fmap Src.getImportName (config ^. validationConfigImports)
+  let local = Details.Local (config ^. validationConfigPath) (config ^. validationConfigTime) deps (any isMain (config ^. validationConfigValues)) (config ^. validationConfigLastChange) (config ^. validationConfigBuildID)
+  crawlDeps (config ^. validationConfigEnv) (config ^. validationConfigMVar) deps (SChanged local (config ^. validationConfigSource) undefined (config ^. validationConfigDocsNeed))
 
 -- | Check if value is main function.
 isMain :: A.Located Src.Value -> Bool
@@ -248,12 +372,13 @@ crawlOutsideRoot env mvar projectType path buildID = do
 parseRootModule :: Env -> MVar StatusDict -> Parse.ProjectType -> FilePath -> File.Time -> B.ByteString -> Details.BuildID -> IO RootStatus
 parseRootModule env mvar projectType path time source buildID =
   case Parse.fromByteString projectType source of
-    Right modul@(Src.Module _ _ _ imports values _ _ _ _) -> do
+    Right modul@(Src.Module _ _ _ imports values _ _ _ _) -> processRootModule env mvar path time source imports values buildID modul
+    Left syntaxError -> pure . SOutsideErr $ Error.Module "???" path time source (Error.BadSyntax syntaxError)
+  where
+    processRootModule e m p t s imports values bID modul = do
       let deps = fmap Src.getImportName imports
-      let local = Details.Local path time deps (any isMain values) buildID buildID
-      crawlDeps env mvar deps (SOutsideOk local source modul)
-    Left syntaxError ->
-      pure . SOutsideErr $ Error.Module "???" path time source (Error.BadSyntax syntaxError)
+      let local = Details.Local p t deps (any isMain values) bID bID
+      crawlDeps e m deps (SOutsideOk local s modul)
 
 -- | Fork an IO operation.
 fork :: IO a -> IO (MVar a)

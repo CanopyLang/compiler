@@ -63,7 +63,6 @@ import Build.Types
   ( Env (..)
   , AbsoluteSrcDir (..)
   , Status (..)
-  , StatusDict
   , DocsNeed (..)
   , Result (..)
   , ResultDict
@@ -91,7 +90,6 @@ import Control.Concurrent.MVar
   , newMVar
   , putMVar
   , readMVar
-  , takeMVar
   )
 import Control.Lens ((^.))
 import Control.Monad (filterM)
@@ -109,11 +107,9 @@ import Data.NonEmptyList (List)
 import qualified Data.NonEmptyList as NE
 import qualified Data.OneOrMore as OneOrMore
 import qualified Data.Set as Set
-import Data.Vector.Internal.Check (HasCallStack)
 import Debug.Trace (trace)
 import qualified File
 import qualified Json.Encode as E
-import Logging.Logger (printLog)
 import qualified Parse.Module as Parse
 import qualified Reporting
 import qualified Reporting.Annotation as A
@@ -230,30 +226,15 @@ getRootName root =
 
 
 
-findModuleFile :: [AbsoluteSrcDir] -> FilePath -> IO [FilePath]
-findModuleFile srcDirs baseName =
-  do
-    canPaths <- filterM File.exists (fmap (`addRelative` (baseName <.> "can")) srcDirs)
-    case canPaths of
-      [] ->
-        do
-          canopyPaths <- filterM File.exists (fmap (`addRelative` (baseName <.> "canopy")) srcDirs)
-          case canopyPaths of
-            [] -> filterM File.exists (fmap (`addRelative` (baseName <.> "elm")) srcDirs)
-            _ -> return canopyPaths
-      _ -> return canPaths
 
 -- NOTE: crawlModule function is now implemented in Build.Crawl module
 -- Using configuration-based approach to reduce parameter count
 
-crawlModuleWithConfig :: CrawlConfig -> ModuleName.Raw -> IO Status
-crawlModuleWithConfig = crawlModule
+-- NOTE: crawlModule function is now implemented in Build.Crawl module
 
 -- NOTE: crawlFile function is now implemented in Build.Crawl module
 
-isMain :: A.Located Src.Value -> Bool
-isMain (A.At _ (Src.Value (A.At _ name) _ _ _)) =
-  name == Name._main
+-- NOTE: isMain function is now implemented in Build.Crawl module
 
 -- CHECK MODULE
 
@@ -262,16 +243,14 @@ isMain (A.At _ (Src.Value (A.At _ name) _ _ _)) =
 -- NOTE: checkModule function is now implemented in Build.Module.Check module
 -- Using configuration-based approach to reduce parameter count
 
-checkModuleWithConfig :: HasCallStack => CheckConfig -> ModuleName.Raw -> Status -> IO Result
-checkModuleWithConfig = checkModule
+-- NOTE: checkModule function is now imported from Build.Module.Check
 
 -- CHECK DEPS
 
 -- NOTE: DepsStatus, Dep, CDep types are now defined in Build.Types and imported
 -- NOTE: checkDeps and checkDepsHelp functions are now implemented in Build.Dependencies module
 
-checkDepsWithConfig :: DepsConfig -> IO DepsStatus
-checkDepsWithConfig = checkDeps
+-- NOTE: checkDeps function is now imported from Build.Dependencies
 
 -- TO IMPORT ERROR
 
@@ -717,33 +696,7 @@ dropPrefix roots paths =
 -- CRAWL ROOTS
 
 
-crawlRoot :: Env -> MVar StatusDict -> RootLocation -> IO RootStatus
-crawlRoot env@(Env _ _ projectType _ buildID _ _) mvar root =
-  case root of
-    LInside name ->
-      do
-        statusMVar <- newEmptyMVar
-        printLog "Made it to point AAA"
-        statusDict <- takeMVar mvar
-        putMVar mvar (Map.insert name statusMVar statusDict)
-        printLog "Made it to point BBB"
-        crawlModule (CrawlConfig env mvar (DocsNeed False)) name >>= putMVar statusMVar
-        printLog "Made it to point CCC"
-        return (SInside name)
-    LOutside path ->
-      do
-        time <- File.getTime path
-        source <- File.readUtf8 path
-        printLog "Made it to point AA"
-        case Parse.fromByteString projectType source of
-          Right modul@(Src.Module _ _ _ imports values _ _ _ _) ->
-            do
-              let deps = fmap Src.getImportName imports
-              let local = Details.Local path time deps (any isMain values) buildID buildID
-              printLog "Made it to point BB"
-              crawlDeps env mvar deps (SOutsideOk local source modul)
-          Left syntaxError ->
-            return . SOutsideErr $ Error.Module "???" path time source (Error.BadSyntax syntaxError)
+-- NOTE: crawlRoot function is now imported from Build.Crawl
 
 -- CHECK ROOTS
 
