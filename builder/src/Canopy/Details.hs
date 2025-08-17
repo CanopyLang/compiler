@@ -1,5 +1,6 @@
 {-# LANGUAGE BangPatterns #-}
 {-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE TemplateHaskell #-}
 {-# OPTIONS_GHC -Wall #-}
 
 module Canopy.Details
@@ -8,6 +9,25 @@ module Canopy.Details
     ValidOutline (..),
     Local (..),
     Foreign (..),
+    Artifacts (..),
+    ArtifactCache (..),
+    -- Lens exports
+    outlineTime,
+    buildID,
+    foreigns,
+    outline,
+    locals,
+    extras,
+    lastCompile,
+    lastChange,
+    deps,
+    path,
+    time,
+    main,
+    ifaces,
+    objects,
+    fingerprints,
+    artifacts,
     load,
     loadForReactorTH,
     loadObjects,
@@ -51,6 +71,7 @@ import qualified Canopy.PackageOverrideData as PackageOverrideData
 import qualified Canopy.Version as V
 import qualified Compile
 import Control.Concurrent (forkIO)
+import Control.Lens (makeLenses)
 import Control.Concurrent.MVar (MVar, newEmptyMVar, newMVar, putMVar, readMVar, takeMVar)
 import Control.Exception (BlockedIndefinitelyOnMVar, Handler (..), SomeException, catches, throwIO)
 import Control.Monad (liftM2, liftM3, void)
@@ -1098,3 +1119,10 @@ instance Binary Artifacts where
 instance Binary ArtifactCache where
   get = liftM2 ArtifactCache get get
   put (ArtifactCache a b) = put a >> put b
+
+-- Generate lenses for record types  
+makeLenses ''Details
+makeLenses ''Local
+makeLenses ''Foreign
+makeLenses ''Artifacts
+makeLenses ''ArtifactCache

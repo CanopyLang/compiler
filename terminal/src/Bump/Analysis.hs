@@ -201,4 +201,4 @@ buildDocumentation root (PkgOutline _ _ _ _ exposed _ _ _) details =
 -- @since 0.19.1
 buildFromExposed :: FilePath -> Details.Details -> ModuleName.Raw -> [ModuleName.Raw] -> IO (Either Exit.BuildProblem Documentation)
 buildFromExposed root details e es =
-  Build.fromExposed Reporting.silent root details Build.KeepDocs (NonEmptyList.List e es)
+  Build.fromExposed (Build.ExposedBuildConfig Reporting.silent root details Build.KeepDocs) (NonEmptyList.List e es)

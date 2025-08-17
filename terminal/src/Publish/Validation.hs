@@ -202,7 +202,7 @@ buildPackageWithDocs :: FilePath -> Details -> List Raw -> Task Publish Document
 buildPackageWithDocs projectRoot details exposed =
   Task.eio
     Exit.PublishBuildProblem
-    (Build.fromExposed Reporting.silent projectRoot details Build.KeepDocs exposed)
+    (Build.fromExposed (Build.ExposedBuildConfig Reporting.silent projectRoot details Build.KeepDocs) exposed)
 
 -- | Verify that the version follows semantic versioning rules.
 --

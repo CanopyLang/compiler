@@ -27,9 +27,10 @@ grep -n "^- \[ \]" /home/quinten/fh/canopy/todo.md | head -1
 ### Processing Logic
 
 1. **Parse Command**: Extract `/refactor FILENAME` or `/test FILENAME` from checklist item
-2. **Execute Action**: Run appropriate agent with specialized tools
+2. **Execute Action**: Run appropriate command with specialized tools
 3. **Validate**: Ensure completion meets CLAUDE.md standards
-4. **Mark Complete**: Update checkbox from `- [ ]` to `- [x]`
+4. **Validate Build and Tests**: BEFORE finishing a checklist task you should always validate that everything works with `make build` and `make test`. Everything should compile, all test should pass and no lint warnings should be given. Only then you can check of an item.
+5. **Mark Complete**: Update checkbox from `- [ ]` to `- [x]`
 
 ## Dynamic Processing
 
@@ -45,6 +46,7 @@ grep -n "^- \[ \]" /home/quinten/fh/canopy/todo.md | head -1
 ### Agent Selection:
 
 The command automatically selects the appropriate agent based on task type:
+
 - `/refactor` tasks → `validate-functions`, `analyze-architecture`, or related agents
 - `/test` tasks → `validate-test-creation`, `analyze-tests`, or related agents
 

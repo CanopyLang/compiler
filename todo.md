@@ -1,6 +1,6 @@
 # Canopy CLAUDE.md Compliance Refactoring Checklist
 
-This checklist tracks comprehensive refactoring of ALL modules in the Canopy compiler project to achieve complete CLAUDE.md compliance. Each item represents a "run command `/refactor MODULENAME`" for systematic code quality improvement.
+This checklist tracks comprehensive refactoring of ALL modules in the Canopy compiler project to achieve complete CLAUDE.md compliance. Each item represents a "run command `/refactor MODULENAME`" for systematic code quality improvement. BEFORE finishing a checklist task you should always validate that everything works with `make build` and `make test`. Everything should compile, all test should pass and no lint warnings should be given. Only then you can check of an item.
 
 ## 🔴 CRITICAL - High Priority Refactoring
 

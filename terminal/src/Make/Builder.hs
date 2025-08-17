@@ -80,7 +80,7 @@ buildFromExposed ctx exposedModules maybeDocs = do
       details = ctx ^. bcDetails
       docsGoal = maybe Build.IgnoreDocs Build.WriteDocs maybeDocs
   Task.eio Exit.MakeCannotBuild $
-    Build.fromExposed style root details docsGoal exposedModules
+    Build.fromExposed (Build.ExposedBuildConfig style root details docsGoal) exposedModules
 
 -- | Build project from specific file paths.
 --

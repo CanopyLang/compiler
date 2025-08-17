@@ -51,10 +51,12 @@ import qualified Reporting.Annotation as A
 import qualified Data.Set as Set
 import qualified Data.ByteString as B
 
-import Build.Config (CheckConfig (..))
-import Build.Crawl (crawlRoot, fork)
+import Build.Config (CheckConfig (..), DepsConfig (..))
+import Build.Crawl (crawlRoot)
+import Build.Crawl.Core (fork)
 import Build.Dependencies (checkDeps, loadInterfaces)
 import Build.Module.Check (checkModule)
+import qualified Build.Validation as Validation
 import Build.Types
   ( Env (..)
   , Dependencies
@@ -70,7 +72,6 @@ import Build.Types
   , Result (..)
   , AbsoluteSrcDir (..)
   , DepsStatus (..)
-  , DepsConfig (..)
   , envForeigns
   )
 
@@ -94,8 +95,8 @@ processPathsBuild env paths root details = do
 logEnvironmentInfo :: Env -> Details.Details -> IO ()
 logEnvironmentInfo env details = do
   _ <- printLog ("foreigns env: " <> show (env ^. envForeigns))
-  _ <- printLog ("details foreigns: " <> show (Details._foreigns details))
-  _ <- printLog ("extras" <> show (Details._extras details))
+  _ <- printLog ("details foreigns: " <> show (details ^. Details.foreigns))
+  _ <- printLog ("extras" <> show (details ^. Details.extras))
   pure ()
 
 -- | Run the complete build pipeline.
@@ -212,11 +213,11 @@ projectTypeToPkg projectType =
 
 makeEnv :: Reporting.BKey -> FilePath -> Details.Details -> IO Env
 makeEnv key root details = do
-  let srcDirs = getSrcDirs (Details._outline details)
-  let locals = Details._locals details
-  let foreigns = Details._foreigns details
-  let buildID = Details._buildID details
-  let projectType = outlineToProjectType (Details._outline details)
+  let srcDirs = getSrcDirs (details ^. Details.outline)
+  let locals = details ^. Details.locals
+  let foreigns = details ^. Details.foreigns
+  let buildID = details ^. Details.buildID
+  let projectType = outlineToProjectType (details ^. Details.outline)
   pure (Env key root projectType srcDirs buildID locals foreigns)
 
 getSrcDirs :: Details.ValidOutline -> [AbsoluteSrcDir]
@@ -263,8 +264,10 @@ checkRoot env@(Env _ root _ _ _ _ _) results rootStatus =
   case rootStatus of
     SInside name -> pure (RInside name)
     SOutsideErr err -> pure (ROutsideErr err)
-    SOutsideOk local@(Details.Local path time deps _ _ lastCompile) source modul@(Src.Module _ _ _ imports _ _ _ _ _) -> do
-      depsStatus <- checkDeps (DepsConfig root results deps lastCompile)
+    SOutsideOk local source modul@(Src.Module _ _ _ imports _ _ _ _ _) -> do
+      let localDeps = local ^. Details.deps
+      let localLastCompile = local ^. Details.lastCompile  
+      depsStatus <- checkDeps (DepsConfig root results localDeps localLastCompile)
       case depsStatus of
         DepsChange ifaces ->
           compileOutside env local source ifaces modul
@@ -276,7 +279,7 @@ checkRoot env@(Env _ root _ _ _ _ _) results rootStatus =
         DepsBlock ->
           pure ROutsideBlocked
         DepsNotFound problems ->
-          (pure . ROutsideErr) . Error.Module (Src.getName modul) path time source $ Error.BadImports (toImportErrors env results imports problems)
+          (pure . ROutsideErr) . Error.Module (Src.getName modul) (local ^. Details.path) (local ^. Details.time) source $ Error.BadImports (toImportErrors env results imports problems)
 
 findRoots :: Env -> List FilePath -> IO (Either Exit.BuildProjectProblem (List RootLocation))
 findRoots env paths = do
@@ -293,9 +296,9 @@ processPath (Env _ root _ _ _ _ _) path =
 
 checkMidpointAndRoots :: MVar (Maybe Dependencies) -> Map ModuleName.Raw Status -> List RootStatus -> IO (Either Exit.BuildProjectProblem Dependencies)
 checkMidpointAndRoots dmvar statuses sroots = do
-  case checkForCycles statuses of
+  case Validation.checkForCycles statuses of
     Nothing ->
-      case checkUniqueRoots statuses sroots of
+      case Validation.checkUniqueRoots statuses sroots of
         Nothing -> do
           maybeForeigns <- readMVar dmvar
           case maybeForeigns of
@@ -324,24 +327,17 @@ isRootName name rootResults =
 addInside :: ModuleName.Raw -> Result -> [Module] -> [Module]
 addInside name result modules =
   case result of
-    RNew (Details.Local _ _ _ _main _lastChange _buildID) iface objs _ ->
+    RNew _ iface objs _ ->
       Fresh name iface objs : modules
-    RSame (Details.Local _ _ _ _main _lastChange _buildID) iface objs _ ->
+    RSame _ iface objs _ ->
       Fresh name iface objs : modules
     RCached main _buildID mvar ->
       Cached name main mvar : modules
     _ -> modules
 
-checkForCycles :: Map ModuleName.Raw Status -> Maybe (NE.List ModuleName.Raw)
-checkForCycles _modules = 
-  Nothing -- Simplified implementation for now
-
-checkUniqueRoots :: Map ModuleName.Raw Status -> List RootStatus -> Maybe Exit.BuildProjectProblem
-checkUniqueRoots _statuses _sroots = 
-  Nothing -- Simplified implementation for now
 
 compileOutside :: Env -> Details.Local -> B.ByteString -> Map ModuleName.Raw I.Interface -> Src.Module -> IO RootResult
-compileOutside (Env key _ projectType _ _ _ _) (Details.Local path time _ _ _ _) source ifaces modul =
+compileOutside (Env key _ projectType _ _ _ _) local source ifaces modul =
   let pkg = projectTypeToPkg projectType
       name = Src.getName modul
    in case Compile.compile pkg ifaces modul of
@@ -349,7 +345,7 @@ compileOutside (Env key _ projectType _ _ _ _) (Details.Local path time _ _ _ _)
           Reporting.report key Reporting.BDone
           pure $ ROutsideOk name (I.fromModule pkg canonical annotations) objects
         Left errors ->
-          pure . ROutsideErr $ Error.Module name path time source errors
+          pure . ROutsideErr $ Error.Module name (local ^. Details.path) (local ^. Details.time) source errors
 
 toImportErrors :: Env -> Map ModuleName.Raw (MVar Result) -> [Src.Import] -> NE.List (ModuleName.Raw, Import.Problem) -> NE.List Import.Error
 toImportErrors (Env _ _ _ _ _ locals foreigns) results imports problems =

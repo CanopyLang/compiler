@@ -170,4 +170,4 @@ buildDocumentation :: FilePath -> Details.Details -> NE.List ModuleName.Raw -> T
 buildDocumentation root details exposedModules =
   Task.eio Exit.DiffBadBuild buildAction
   where
-    buildAction = Build.fromExposed Reporting.silent root details Build.KeepDocs exposedModules
+    buildAction = Build.fromExposed (Build.ExposedBuildConfig Reporting.silent root details Build.KeepDocs) exposedModules

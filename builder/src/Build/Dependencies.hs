@@ -132,13 +132,13 @@ processDep result dep currentLastChange =
 
 -- | Process new dependency result.
 processNewResult :: Details.Local -> ModuleName.Raw -> Details.BuildID -> I.Interface -> IO DepUpdate
-processNewResult (Details.Local _ _ _ _ lastChange _) dep currentLastChange iface =
-  pure $ DepUpdate [(dep, iface)] [] [] [] False (max lastChange currentLastChange)
+processNewResult local dep currentLastChange iface =
+  pure $ DepUpdate [(dep, iface)] [] [] [] False (max (local ^. Details.lastChange) currentLastChange)
 
 -- | Process same dependency result.
 processSameResult :: Details.Local -> ModuleName.Raw -> Details.BuildID -> I.Interface -> IO DepUpdate
-processSameResult (Details.Local _ _ _ _ lastChange _) dep currentLastChange iface =
-  pure $ DepUpdate [] [(dep, iface)] [] [] False (max lastChange currentLastChange)
+processSameResult local dep currentLastChange iface =
+  pure $ DepUpdate [] [(dep, iface)] [] [] False (max (local ^. Details.lastChange) currentLastChange)
 
 -- | Process cached dependency result.
 processCachedResult :: ModuleName.Raw -> Details.BuildID -> Details.BuildID -> MVar CachedInterface -> IO DepUpdate
