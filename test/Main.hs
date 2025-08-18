@@ -53,6 +53,7 @@ import qualified Unit.Generate.ObjectsTest as GenerateObjectsTest
 import qualified Unit.Generate.TypesTest as GenerateTypesTest
 import qualified Unit.Generate.Types.LoadingTest as GenerateTypesLoadingTest
 import qualified Unit.Generate.ValidationTest as GenerateValidationTest
+import qualified Unit.HttpTest as HttpTest
 import qualified Unit.Develop.CompilationTest as DevelopCompilationTest
 import qualified Unit.Develop.EnvironmentTest as DevelopEnvironmentTest
 import qualified Unit.Develop.MimeTypesTest as DevelopMimeTypesTest
@@ -155,7 +156,8 @@ unitTests =
       GenerateObjectsTest.tests,
       GenerateTypesLoadingTest.tests,
       GenerateValidationTest.tests,
-      GenerateMainsTest.tests
+      GenerateMainsTest.tests,
+      HttpTest.tests
     ]
 
 propertyTests :: TestTree
