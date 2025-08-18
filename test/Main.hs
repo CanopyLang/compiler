@@ -35,6 +35,7 @@ import Test.Tasty.Runners
 import qualified Unit.AST.CanonicalTypeTest as CanonicalTypeTest
 import qualified Unit.AST.OptimizedTest as OptimizedTest
 import qualified Unit.AST.SourceTest as SourceAstTest
+import qualified Unit.BackgroundWriterTest as BackgroundWriterTest
 import qualified Unit.CLI.CommandsTest as CLICommandsTest
 import qualified Unit.CLI.DocumentationTest as CLIDocumentationTest
 import qualified Unit.CLI.ParsersTest as CLIParsersTest
@@ -135,6 +136,7 @@ unitTests =
       CLIParsersTest.tests,
       CLICommandsTest.tests,
       SourceAstTest.tests,
+      BackgroundWriterTest.tests,
       CanonicalTypeTest.tests,
       OptimizedTest.tests,
       ReportingTest.tests,
