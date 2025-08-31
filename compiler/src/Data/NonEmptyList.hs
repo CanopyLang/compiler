@@ -45,6 +45,9 @@ instance Foldable List where
   foldl step state (List x xs) = foldl step (step state x) xs
   foldl1 step (List x xs) = foldl step x xs
 
+instance (Eq a) => Eq (List a) where
+  List x xs == List y ys = x == y && xs == ys
+
 instance (Show a) => Show (List a) where
   show xs = show (toList xs)
 
