@@ -17,6 +17,7 @@ import qualified Integration.MakeTest as MakeIT
 import qualified Integration.Terminal.ChompIntegrationTest as ChompIT
 import qualified Integration.TerminalIntegrationTest as TerminalIT
 import qualified Integration.WatchIntegrationTest as WatchIT
+import qualified Integration.JsonIntegrationTest as JsonIT
 import qualified Property.AST.CanonicalProps as CanonicalProps
 import qualified Property.AST.OptimizedBinaryProps as OptimizedBinaryProps
 import qualified Property.AST.OptimizedProps as OptimizedProps
@@ -35,6 +36,9 @@ import Test.Tasty.Runners
 import qualified Unit.AST.CanonicalTypeTest as CanonicalTypeTest
 import qualified Unit.AST.OptimizedTest as OptimizedTest
 import qualified Unit.AST.SourceTest as SourceAstTest
+import qualified Unit.AST.Utils.BinopTest as ASTUtilsBinopTest
+import qualified Unit.AST.Utils.ShaderTest as ASTUtilsShaderTest
+import qualified Unit.AST.Utils.TypeTest as ASTUtilsTypeTest
 import qualified Unit.BackgroundWriterTest as BackgroundWriterTest
 import qualified Unit.CLI.CommandsTest as CLICommandsTest
 import qualified Unit.CLI.DocumentationTest as CLIDocumentationTest
@@ -73,6 +77,8 @@ import qualified Unit.Init.ValidationTest as InitValidationTest
 import qualified Unit.InitTest as InitTest
 import qualified Unit.InstallTest as InstallTest
 import qualified Unit.Json.DecodeTest as JsonDecodeTest
+import qualified Unit.Json.EncodeTest as JsonEncodeTest
+import qualified Unit.Json.StringTest as JsonStringTest
 import qualified Unit.MainTest as MainTest
 import qualified Unit.MakeTest as MakeTest
 import qualified Unit.Parse.ExpressionTest as ParseExpressionTest
@@ -109,6 +115,8 @@ unitTests =
       StuffTest.tests,
       VersionTest.tests,
       JsonDecodeTest.tests,
+      JsonEncodeTest.tests,
+      JsonStringTest.tests,
       DevelopTest.tests,
       DevelopMainTest.tests,
       DevelopCompilationTest.tests,
@@ -136,6 +144,9 @@ unitTests =
       CLIParsersTest.tests,
       CLICommandsTest.tests,
       SourceAstTest.tests,
+      ASTUtilsBinopTest.tests,
+      ASTUtilsShaderTest.tests,
+      ASTUtilsTypeTest.tests,
       BackgroundWriterTest.tests,
       CanonicalTypeTest.tests,
       OptimizedTest.tests,
@@ -194,7 +205,8 @@ integrationTests =
       TerminalIT.tests,
       ChompIT.tests,
       WatchIT.tests,
-      CompileIT.tests
+      CompileIT.tests,
+      JsonIT.tests
     ]
 
 -- Optionally expose golden separately for clarity

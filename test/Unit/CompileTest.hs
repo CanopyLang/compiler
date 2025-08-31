@@ -460,9 +460,9 @@ mockLargeSourceModule =
   where
     mockImport =
       Src.Import
-        { Src._import = A.at (A.Position 0 0) (A.Position 0 0) (Name.fromChars "List"),
-          Src._alias = Nothing,
-          Src._exposing = Src.Open
+        { Src._importName = A.at (A.Position 0 0) (A.Position 0 0) (Name.fromChars "List"),
+          Src._importAlias = Nothing,
+          Src._importExposing = Src.Open
         }
     mockValue =
       A.at (A.Position 0 0) (A.Position 0 0) $
