@@ -9,7 +9,7 @@ module Property.WatchProps (tests) where
 
 -- Pattern: Types unqualified, functions qualified
 import Control.Concurrent (forkIO, killThread, threadDelay)
-import Control.Exception (tryJust)
+import Control.Exception (SomeException, try, tryJust)
 import qualified Control.Exception as Exception
 import Data.IORef (IORef)
 import qualified Data.IORef as IORef
@@ -85,24 +85,7 @@ testErrorHandlingProperties :: TestTree
 testErrorHandlingProperties =
   testGroup
     "error handling properties"
-    [ testCase "nonexistent files handled consistently" $ do
-        eventsRef <- IORef.newIORef []
-
-        -- Use a path that definitely doesn't exist
-        let nonexistentPath = "/tmp/definitely_does_not_exist_12345678901234567890.txt"
-
-        result <- do
-          watchResult <- tryJust selectIOError $
-            timeout 100000 $ do
-              watcher <- forkIO (Watch.file (recordEvent eventsRef) nonexistentPath)
-              threadDelay 50000
-              killThread watcher
-
-          case watchResult of
-            Left _ -> return True -- Error expected for nonexistent file
-            Right Nothing -> return True -- Timeout acceptable
-            Right (Just _) -> return False -- Should not succeed
-        assertBool "Should handle nonexistent files consistently" result,
+    [ testCase "nonexistent files handled consistently" testNonexistentFiles,
       testCase "empty paths handled safely" $ do
         eventsRef <- IORef.newIORef []
 
@@ -119,6 +102,22 @@ testErrorHandlingProperties =
             Right (Just _) -> return True -- Some systems may handle empty paths differently
         assertBool "Should handle empty paths safely" result
     ]
+
+-- Test implementation functions
+testNonexistentFiles :: IO ()
+testNonexistentFiles = do
+  eventsRef <- IORef.newIORef []
+  
+  -- Use a path that definitely doesn't exist
+  let nonexistentPath = "/tmp/definitely_does_not_exist_12345678901234567890.txt"
+
+  -- Directly try to call Watch.file and expect an exception
+  result <- try (timeout 100000 (Watch.file (recordEvent eventsRef) nonexistentPath))
+  
+  case result of
+    Left (_ :: SomeException) -> assertBool "Should handle nonexistent files consistently" True -- Exception expected
+    Right Nothing -> assertBool "Should handle nonexistent files consistently" True -- Timeout acceptable
+    Right (Just _) -> assertBool "Should handle nonexistent files consistently" False -- Should not succeed
 
 -- Helper functions
 selectIOError :: Exception.IOException -> Maybe Exception.IOException

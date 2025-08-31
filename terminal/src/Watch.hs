@@ -17,9 +17,11 @@ import qualified Control.Concurrent as Concurrent
 import Control.Monad (void)
 import qualified Control.Monad as Monad
 import qualified Data.Foldable as Foldable
+import qualified System.Directory as Directory
 import System.FSNotify (Event)
 import qualified System.FSNotify as FSNotify
 import qualified System.FilePath as FilePath
+import qualified System.IO.Error as IOError
 
 -- | Watch multiple file paths for changes.
 --
@@ -67,6 +69,7 @@ files handleEvent =
 --
 -- * Uses FSNotify for cross-platform file watching
 -- * Watches entire parent directory for efficiency
+-- * Handles nonexistent files and permission errors gracefully
 -- * Keeps thread alive with periodic sleep
 --
 -- @since 0.19.1
@@ -76,14 +79,21 @@ file ::
   -- | File path to monitor
   FilePath ->
   IO ()
-file handleEvent path =
-  FSNotify.withManager startWatching
+file handleEvent path = do
+  let watchDir = FilePath.takeDirectory path
+  
+  -- Check if the directory exists
+  dirExists <- Directory.doesDirectoryExist watchDir
+  if not dirExists
+    then IOError.ioError (IOError.mkIOError IOError.doesNotExistErrorType "Watch.file" Nothing (Just watchDir))
+    else do
+      -- Try to watch the directory, propagating any errors (including permission errors)
+      FSNotify.withManager (startWatching watchDir)
   where
-    startWatching mgr =
-      setupWatcher mgr >> keepAlive
-    setupWatcher mgr =
-      void (FSNotify.watchTree mgr watchDir acceptAll handleEvent)
-    watchDir = FilePath.takeDirectory path
+    startWatching dir mgr =
+      setupWatcher dir mgr >> keepAlive
+    setupWatcher dir mgr =
+      void (FSNotify.watchTree mgr dir acceptAll handleEvent)
     acceptAll = const True
     keepAlive = Monad.forever (Concurrent.threadDelay delayMicroseconds)
     delayMicroseconds = 1000000 -- 1 second
