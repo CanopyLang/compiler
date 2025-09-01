@@ -102,6 +102,12 @@ solve config constraint = case constraint of
   CLet rigids flexs header headerCon subCon -> 
     solveFullLet config rigids flexs header headerCon subCon
 
+-- | Reset a rigid variable to noRank after generalization
+resetRigidToNoRank :: Variable -> IO ()
+resetRigidToNoRank var = do
+  (Descriptor content _ mark copy) <- UF.get var
+  UF.set var (Descriptor content noRank mark copy)
+
 isGeneric :: Variable -> IO ()
 isGeneric var = do
   (Descriptor _ rank _ _) <- UF.get var
@@ -268,6 +274,8 @@ finalizeLetSolving :: SolveConfig -> Map Name.Name (A.Located Variable) -> State
 finalizeLetSolving config locals solvedState rigids subCon nextRank nextPools = do
   let (youngMark, visitMark, finalMark) = calculateMarks solvedState
   performGeneralization youngMark visitMark nextRank nextPools
+  -- Ensure rigid variables have noRank after generalization
+  traverse_ resetRigidToNoRank rigids
   traverse_ isGeneric rigids
   let newEnv = Map.union (config ^. solveEnv) (Map.map A.toValue locals)
   let tempState = solvedState & stateMark .~ finalMark
