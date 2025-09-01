@@ -14,6 +14,7 @@ module Watch
 where
 
 import qualified Control.Concurrent as Concurrent
+import qualified Control.Exception as Exception
 import Control.Monad (void)
 import qualified Control.Monad as Monad
 import qualified Data.Foldable as Foldable
@@ -95,5 +96,8 @@ file handleEvent path = do
     setupWatcher dir mgr =
       void (FSNotify.watchTree mgr dir acceptAll handleEvent)
     acceptAll = const True
-    keepAlive = Monad.forever (Concurrent.threadDelay delayMicroseconds)
+    keepAlive = Exception.handle handleThreadKilled $
+      Monad.forever (Concurrent.threadDelay delayMicroseconds)
     delayMicroseconds = 1000000 -- 1 second
+    handleThreadKilled Exception.ThreadKilled = return ()
+    handleThreadKilled ex = Exception.throwIO ex

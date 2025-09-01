@@ -47,6 +47,7 @@ where
 
 import qualified BackgroundWriter as BW
 import qualified Build
+import qualified System.Directory as Directory
 import qualified Canopy.Details as Details
 import qualified Canopy.ModuleName as ModuleName
 import Data.ByteString.Builder (Builder)
@@ -83,10 +84,19 @@ import qualified Stuff
 -- @since 0.19.1
 compileFile :: FilePath -> IO (Either String Builder)
 compileFile path = do
-  maybeRoot <- Stuff.findRoot
-  case maybeRoot of
-    Nothing -> pure (Left "No project root found")
-    Just root -> compileInProject root path
+  -- Validate path early to prevent directory/file confusion
+  if null path
+    then pure (Left "Empty file path provided")
+    else do
+      -- Check if file exists before proceeding
+      fileExists <- Directory.doesFileExist path
+      if not fileExists
+        then pure (Left "File does not exist")
+        else do
+          maybeRoot <- Stuff.findRoot
+          case maybeRoot of
+            Nothing -> pure (Left "No project root found")
+            Just root -> compileInProject root path
 
 -- | Compile file within detected project context.
 compileInProject :: FilePath -> FilePath -> IO (Either String Builder)

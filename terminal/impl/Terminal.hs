@@ -102,6 +102,7 @@ where
 
 -- Re-export from Terminal.Internal for main API
 
+import qualified System.Exit as Exit
 import qualified Terminal.Application as Application
 import Terminal.Internal
   ( Args (..),
@@ -133,6 +134,7 @@ app _intro _outro _commands = do
   -- Convert to simplified structure for now
   Application.initializeApp
   putStrLn "Multi-command applications not yet fully implemented"
+  Exit.exitFailure
 
 -- | Run single-command application with details and examples.
 --
