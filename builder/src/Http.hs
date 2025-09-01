@@ -123,6 +123,11 @@ module Http
     shaToChars,
     getArchive,
     getArchiveWithHeaders,
+    -- fallback
+    getWithFallback,
+    getArchiveWithFallback,
+    getArchiveWithHeadersAndFallback,
+    fallbackToElmUrl,
     -- upload
     upload,
     uploadWithHeaders,
@@ -144,6 +149,7 @@ import Data.ByteString (ByteString)
 import qualified Data.ByteString.Builder as B
 import qualified Data.ByteString.Char8 as BS
 import qualified Data.Digest.Pure.SHA as SHA
+import qualified Data.List as List
 import qualified Data.String as String
 import qualified Json.Encode as Encode
 import qualified Network.HTTP as HTTP
@@ -395,6 +401,37 @@ userAgent =
 accept :: ByteString -> Header
 accept mime =
   (hAccept, mime)
+
+-- URL FALLBACK
+
+-- | Convert canopy-lang.org URL to elm-lang.org URL for fallback.
+--
+-- Replaces 'package.canopy-lang.org' and 'canopy-lang.org' domains with 
+-- 'package.elm-lang.org' and 'elm-lang.org' respectively for package fallback.
+--
+-- ==== Examples
+--
+-- >>> fallbackToElmUrl "https://package.canopy-lang.org/packages/elm/core/1.0.0.zip"
+-- "https://package.elm-lang.org/packages/elm/core/1.0.0.zip"
+--
+-- >>> fallbackToElmUrl "https://canopy-lang.org/packages/elm/core/1.0.0.zip"
+-- "https://elm-lang.org/packages/elm/core/1.0.0.zip"
+--
+-- @since 0.19.1
+fallbackToElmUrl :: String -> String
+fallbackToElmUrl url =
+  let withPackageFallback = replaceString "package.canopy-lang.org" "package.elm-lang.org" url
+      withMainFallback = replaceString "canopy-lang.org" "elm-lang.org" withPackageFallback
+  in withMainFallback
+
+-- | Replace all occurrences of a substring in a string.
+replaceString :: String -> String -> String -> String
+replaceString old new = go
+  where
+    go [] = []
+    go str@(c:cs)
+      | List.isPrefixOf old str = new ++ go (drop (length old) str)
+      | otherwise = c : go cs
 
 -- EXCEPTIONS
 
@@ -666,6 +703,86 @@ getArchive ::
   -- | Result containing processed data or error
   IO (Either e a)
 getArchive manager url = getArchiveWithHeaders manager url []
+
+-- FALLBACK FUNCTIONS
+
+-- | Perform HTTP GET request with automatic fallback from canopy-lang.org to elm-lang.org.
+--
+-- Attempts the original URL first. If it fails with a network error, automatically
+-- retries with elm-lang.org domains. This enables seamless fallback when Canopy
+-- packages don't exist but equivalent Elm packages do.
+--
+-- @since 0.19.1
+getWithFallback :: Manager -> String -> [Header] -> (Error -> e) -> (ByteString -> IO (Either e a)) -> IO (Either e a)
+getWithFallback manager url headers onError onSuccess = do
+  result <- get manager url headers onError onSuccess
+  case result of
+    Left err -> do
+      let fallbackUrl = fallbackToElmUrl url
+      if fallbackUrl /= url
+        then get manager fallbackUrl headers onError onSuccess
+        else pure (Left err)
+    Right success -> pure (Right success)
+
+-- | Download ZIP archive with automatic fallback from canopy-lang.org to elm-lang.org.
+--
+-- Attempts the original URL first. If it fails with a network error, automatically
+-- retries with elm-lang.org domains for seamless package fallback.
+--
+-- @since 0.19.1
+getArchiveWithFallback ::
+  -- | HTTP connection manager for request execution
+  Manager ->
+  -- | URL of ZIP archive to download
+  String ->
+  -- | Function to convert network errors to application error type
+  (Error -> e) ->
+  -- | Error value to return for archive parsing failures
+  e ->
+  -- | Success callback with verified archive and computed hash
+  ((Sha, Zip.Archive) -> IO (Either e a)) ->
+  -- | Result containing processed data or error
+  IO (Either e a)
+getArchiveWithFallback manager url onError err onSuccess = do
+  result <- getArchive manager url onError err onSuccess
+  case result of
+    Left networkErr -> do
+      let fallbackUrl = fallbackToElmUrl url
+      if fallbackUrl /= url
+        then getArchive manager fallbackUrl onError err onSuccess
+        else pure (Left networkErr)
+    Right success -> pure (Right success)
+
+-- | Download ZIP archive with custom headers and automatic fallback from canopy-lang.org to elm-lang.org.
+--
+-- Attempts the original URL first. If it fails with a network error, automatically
+-- retries with elm-lang.org domains for seamless package fallback.
+--
+-- @since 0.19.1
+getArchiveWithHeadersAndFallback ::
+  -- | HTTP connection manager for request execution
+  Manager ->
+  -- | URL of ZIP archive to download
+  String ->
+  -- | Additional HTTP headers for the request
+  [Header] ->
+  -- | Function to convert network errors to application error type
+  (Error -> e) ->
+  -- | Error value to return for archive parsing failures
+  e ->
+  -- | Success callback with verified archive and computed hash
+  ((Sha, Zip.Archive) -> IO (Either e a)) ->
+  -- | Result containing processed data or error
+  IO (Either e a)
+getArchiveWithHeadersAndFallback manager url headers onError err onSuccess = do
+  result <- getArchiveWithHeaders manager url headers onError err onSuccess
+  case result of
+    Left networkErr -> do
+      let fallbackUrl = fallbackToElmUrl url
+      if fallbackUrl /= url
+        then getArchiveWithHeaders manager fallbackUrl headers onError err onSuccess
+        else pure (Left networkErr)
+    Right success -> pure (Right success)
 
 -- UPLOAD
 

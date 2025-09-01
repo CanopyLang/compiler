@@ -13,7 +13,7 @@ import qualified Http
 
 standardCanopyPkgRepoDomain :: RepositoryUrl
 standardCanopyPkgRepoDomain =
-  Utf8.fromChars "https://package.elm-lang.org"
+  Utf8.fromChars "https://package.canopy-lang.org"
 
 route :: RepositoryUrl -> String -> [(String, String)] -> String
 route repositoryUrl path = Http.toUrl (Utf8.toChars repositoryUrl <> path)

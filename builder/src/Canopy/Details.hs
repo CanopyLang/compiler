@@ -995,14 +995,14 @@ downloadPackageToFilePath filePath zokkaRegistries manager pkg vsn =
 downloadPackageDirectly :: Stuff.PackageCache -> PackageUrl -> Http.Manager -> Pkg.Name -> V.Version -> IO (Either Exit.PackageProblem ())
 downloadPackageDirectly cache packageUrl manager pkg vsn =
   let urlString = Utf8.toChars packageUrl
-   in Http.getArchive manager urlString Exit.PP_BadArchiveRequest (Exit.PP_BadArchiveContent urlString) $
+   in Http.getArchiveWithFallback manager urlString Exit.PP_BadArchiveRequest (Exit.PP_BadArchiveContent urlString) $
         \(_, archive) ->
           Right <$> File.writePackage (Stuff.package cache pkg vsn) archive
 
 downloadPackageDirectlyToFilePath :: FilePath -> PackageUrl -> HumanReadableShaDigest -> Http.Manager -> IO (Either Exit.PackageProblem ())
 downloadPackageDirectlyToFilePath filePath packageUrl expectedShaDigest manager =
   let urlString = Utf8.toChars packageUrl
-   in Http.getArchive manager urlString Exit.PP_BadArchiveRequest (Exit.PP_BadArchiveContent urlString) $
+   in Http.getArchiveWithFallback manager urlString Exit.PP_BadArchiveRequest (Exit.PP_BadArchiveContent urlString) $
         \(receivedShaHash, archive) ->
           if humanReadableShaDigestIsEqualToSha expectedShaDigest receivedShaHash
             then Right <$> File.writePackage filePath archive
@@ -1014,7 +1014,7 @@ downloadPackageFromCanopyPackageRepo cache repositoryUrl headers manager pkg vsn
   let url = Website.metadata repositoryUrl pkg vsn "endpoint.json"
    in do
         eitherByteString <-
-          Http.get manager url headers id (return . Right)
+          Http.getWithFallback manager url headers id (return . Right)
         exists <- Dir.doesDirectoryExist (Stuff.package cache pkg vsn)
         printLog (show exists <> ("B0" <> Stuff.package cache pkg vsn))
 
@@ -1026,7 +1026,7 @@ downloadPackageFromCanopyPackageRepo cache repositoryUrl headers manager pkg vsn
               Left _ ->
                 return . Left $ Exit.PP_BadEndpointContent url
               Right (endpoint, expectedHash) ->
-                Http.getArchiveWithHeaders manager endpoint headers Exit.PP_BadArchiveRequest (Exit.PP_BadArchiveContent endpoint) $
+                Http.getArchiveWithHeadersAndFallback manager endpoint headers Exit.PP_BadArchiveRequest (Exit.PP_BadArchiveContent endpoint) $
                   \(sha, archive) ->
                     if expectedHash == Http.shaToChars sha
                       then
@@ -1042,7 +1042,7 @@ downloadPackageFromCanopyPackageRepoToFilePath filePath repositoryUrl headers ma
   let url = Website.metadata repositoryUrl pkg vsn "endpoint.json"
    in do
         eitherByteString <-
-          Http.get manager url headers id (return . Right)
+          Http.getWithFallback manager url headers id (return . Right)
         exists <- Dir.doesDirectoryExist filePath
         printLog (show exists <> ("B0 (toFilePath)" <> filePath))
 
@@ -1054,7 +1054,7 @@ downloadPackageFromCanopyPackageRepoToFilePath filePath repositoryUrl headers ma
               Left _ ->
                 return . Left $ Exit.PP_BadEndpointContent url
               Right (endpoint, expectedHash) ->
-                Http.getArchiveWithHeaders manager endpoint headers Exit.PP_BadArchiveRequest (Exit.PP_BadArchiveContent endpoint) $
+                Http.getArchiveWithHeadersAndFallback manager endpoint headers Exit.PP_BadArchiveRequest (Exit.PP_BadArchiveContent endpoint) $
                   \(sha, archive) ->
                     if expectedHash == Http.shaToChars sha
                       then

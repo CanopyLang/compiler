@@ -296,7 +296,7 @@ getDocs cache zokkaRegistry manager name version =
             do
               let repositoryUrl = _defaultPackageServerRepoTypeUrl defaultPackageServerRepo
               let url = Website.metadata repositoryUrl name version "docs.json"
-              Http.get manager url [] Exit.DP_Http $ \body ->
+              Http.getWithFallback manager url [] Exit.DP_Http $ \body ->
                 case D.fromByteString Docs.decoder body of
                   Right docs ->
                     do
@@ -310,7 +310,7 @@ getDocs cache zokkaRegistry manager name version =
               let repositoryUrl = _pzrPackageServerRepoTypeUrl pzrPackageServerRepo
               let repoAuthToken = _pzrPackageServerRepoAuthToken pzrPackageServerRepo
               let url = Website.metadata repositoryUrl name version "docs.json"
-              Http.get manager url [createAuthHeader repoAuthToken] Exit.DP_Http $ \body ->
+              Http.getWithFallback manager url [createAuthHeader repoAuthToken] Exit.DP_Http $ \body ->
                 case D.fromByteString Docs.decoder body of
                   Right docs ->
                     do

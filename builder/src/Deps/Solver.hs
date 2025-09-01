@@ -341,7 +341,7 @@ getConstraints pkg vsn =
                           let url = Utf8.toChars packageUrl
                           result <-
                             -- FIXME: Use custom error instead of SolverBadHttpData for bad ZIP data
-                            Http.getArchive manager url (Exit.SolverBadHttp pkg vsn) (Exit.SolverBadHttpData pkg vsn url) $
+                            Http.getArchiveWithFallback manager url (Exit.SolverBadHttp pkg vsn) (Exit.SolverBadHttpData pkg vsn url) $
                               -- FIXME: Deal with the SHA hash instead of ignoring it
                               \(_, archive) ->
                                 -- FIXME: Do I need to do this createDirectoryIfMissing?
@@ -512,7 +512,7 @@ fetchPackageMetadata :: Http.Manager -> [Http.Header] -> String -> Pkg.Name -> V
 fetchPackageMetadata manager headers repositoryUrl pkg vsn filename =
   do
     let url = Website.metadata (Utf8.fromChars repositoryUrl) pkg vsn filename
-    Http.get manager url headers id (return . Right)
+    Http.getWithFallback manager url headers id (return . Right)
 
 fetchPackageMetadataWithFallback :: Http.Manager -> [Http.Header] -> String -> Pkg.Name -> Version -> IO (Either Http.Error (ByteString, String))
 fetchPackageMetadataWithFallback manager headers repositoryUrl pkg vsn =

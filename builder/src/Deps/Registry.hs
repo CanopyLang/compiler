@@ -363,7 +363,7 @@ post manager repositoryUrl path = postWithHeaders manager repositoryUrl path []
 getWithHeaders :: Http.Manager -> RepositoryUrl -> String -> [Header] -> D.Decoder x a -> (a -> IO b) -> IO (Either Exit.RegistryProblem b)
 getWithHeaders manager repositoryUrl path headers decoder callback =
   let url = Website.route repositoryUrl path []
-   in Http.get manager url headers Exit.RP_Http $
+   in Http.getWithFallback manager url headers Exit.RP_Http $
         \body ->
           case D.fromByteString decoder body of
             Right a -> Right <$> callback a
