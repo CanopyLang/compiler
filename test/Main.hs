@@ -10,6 +10,7 @@ import qualified Golden.ParseTypeGolden as ParseTypeGolden
 import qualified Integration.CanExtensionTest as CanExtensionIT
 import qualified Integration.CompileIntegrationTest as CompileIT
 import qualified Integration.DevelopTest as DevelopIT
+import qualified Integration.ElmCanopyCompatibilityTest as ElmCanopyCompatIT
 import qualified Integration.InitTest as InitIT
 import qualified Integration.InstallTest as InstallIT
 import qualified Integration.JsGenTest as JsGenIT
@@ -18,6 +19,7 @@ import qualified Integration.Terminal.ChompIntegrationTest as ChompIT
 import qualified Integration.TerminalIntegrationTest as TerminalIT
 import qualified Integration.WatchIntegrationTest as WatchIT
 import qualified Integration.JsonIntegrationTest as JsonIT
+import qualified Integration.ElmCanopyGoldenTest as ElmCanopyGoldenIT
 import qualified Property.AST.CanonicalProps as CanonicalProps
 import qualified Property.AST.OptimizedBinaryProps as OptimizedBinaryProps
 import qualified Property.AST.OptimizedProps as OptimizedProps
@@ -206,7 +208,9 @@ integrationTests =
       ChompIT.tests,
       WatchIT.tests,
       CompileIT.tests,
-      JsonIT.tests
+      JsonIT.tests,
+      ElmCanopyCompatIT.tests,
+      ElmCanopyGoldenIT.tests
     ]
 
 -- Optionally expose golden separately for clarity
