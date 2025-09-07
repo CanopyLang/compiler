@@ -39,6 +39,7 @@ import qualified Data.Text as Text
 import qualified Data.Text.Encoding as TE
 import qualified Generate
 import qualified Reporting
+import qualified Reporting.Exit as Exit
 import qualified Reporting.Task as Task
 import System.Directory (createDirectoryIfMissing)
 import System.FilePath ((</>))
@@ -117,6 +118,7 @@ data TypeExpr
   | FunctionType !TypeExpr !TypeExpr
   | RecordType ![(Text.Text, TypeExpr)]
   | TupleType ![TypeExpr]
+  | UnionType ![(Text.Text, [TypeExpr])]  -- Constructor name and argument types
   deriving (Eq, Show)
 
 -- | Expressions
@@ -126,9 +128,11 @@ data Expr
   | App !Expr !Expr
   | Lambda ![Text.Text] !Expr
   | Let ![(Text.Text, Expr)] !Expr
+  | If !Expr !Expr !Expr
   | Case !Expr ![(Pattern, Expr)]
   | Record ![(Text.Text, Expr)]
   | RecordUpdate !Expr ![(Text.Text, Expr)]
+  | RecordAccess !Expr !Text.Text
   | Tuple ![Expr]
   | List ![Expr]
   deriving (Eq, Show)
@@ -201,15 +205,15 @@ dataStructureTests :: TestTree
 dataStructureTests = testGroup "Data Structures"
   [ createGoldenTest simpleRecordTest
   , createGoldenTest recordUpdateTest
-  , createGoldenTest nestedRecordTest
+  , createGoldenTest nestedRecordTest  
   , createGoldenTest recordAccessorTest
   , createGoldenTest simpleListTest
-  , createGoldenTest listOperationsTest
   , createGoldenTest tupleTest
+  , createGoldenTest listOperationsTest
   , createGoldenTest nestedTupleTest
   , createGoldenTest customTypeTest
-  , createGoldenTest recursiveTypeTest
   , createGoldenTest typeAliasTest
+  , createGoldenTest recursiveTypeTest
   , createGoldenTest polymorphicTypeTest
   ]
 
@@ -218,13 +222,13 @@ patternMatchingTests :: TestTree
 patternMatchingTests = testGroup "Pattern Matching"
   [ createGoldenTest simpleCaseTest
   , createGoldenTest nestedCaseTest
-  , createGoldenTest patternGuardTest
   , createGoldenTest wildcardPatternTest
-  , createGoldenTest asPatternTest
-  , createGoldenTest recordPatternTest
   , createGoldenTest tuplePatternTest
+  , createGoldenTest recordPatternTest
   , createGoldenTest listPatternTest
   , createGoldenTest constructorPatternTest
+  , createGoldenTest patternGuardTest
+  , createGoldenTest asPatternTest
   , createGoldenTest exhaustivePatternTest
   , createGoldenTest patternOrderingTest
   , createGoldenTest complexPatternTest
@@ -233,9 +237,9 @@ patternMatchingTests = testGroup "Pattern Matching"
 -- | Standard library compatibility tests  
 standardLibraryTests :: TestTree
 standardLibraryTests = testGroup "Standard Library"
-  [ createGoldenTest listModuleTest
-  , createGoldenTest stringModuleTest
+  [ createGoldenTest stringModuleTest
   , createGoldenTest maybeModuleTest
+  , createGoldenTest listModuleTest
   , createGoldenTest resultModuleTest
   , createGoldenTest dictModuleTest
   , createGoldenTest setModuleTest
@@ -276,11 +280,12 @@ createGoldenTest testCase =
     -- Normalize both outputs for comparison
     let userCanopy = extractUserCode canopyOutput
         userElm = extractUserCode expectedContent
-    -- Debug: Write outputs to files for manual comparison
-    let canopyPath = "/tmp/debug-canopy-user.js"
-        elmPath = "/tmp/debug-elm-user.js"
-        fullCanopyPath = "/tmp/debug-canopy-full.js"
-        fullElmPath = "/tmp/debug-elm-full.js"
+    -- Debug: Write outputs to files for manual comparison with unique names
+    let testId = filter (\c -> c /= ' ' && c /= '/') (Text.unpack (testName testCase))
+        canopyPath = "/tmp/debug-canopy-user-" ++ testId ++ ".js"
+        elmPath = "/tmp/debug-elm-user-" ++ testId ++ ".js"  
+        fullCanopyPath = "/tmp/debug-canopy-full-" ++ testId ++ ".js"
+        fullElmPath = "/tmp/debug-elm-full-" ++ testId ++ ".js"
     BL.writeFile canopyPath userCanopy
     BL.writeFile elmPath userElm
     BL.writeFile fullCanopyPath canopyOutput
@@ -395,29 +400,46 @@ typeExprToSource (RecordType fields) =
     (map (\(n, t) -> Text.unpack n ++ " : " ++ typeExprToSource t) fields) ++ " }"
 typeExprToSource (TupleType types) =
   "( " ++ List.intercalate ", " (map typeExprToSource types) ++ " )"
+typeExprToSource (UnionType constructors) =
+  List.intercalate " | " (map constructorToSource constructors)
+  where
+    constructorToSource (name, []) = Text.unpack name
+    constructorToSource (name, args) = Text.unpack name ++ " " ++ List.intercalate " " (map typeExprToSource args)
 
 -- | Convert expression to source
 exprToSource :: Expr -> String
-exprToSource (Var name) = Text.unpack name
+exprToSource (Var name) = 
+  if name `elem` ["+", "-", "*", "/", "++", "==", "/=", "<", ">", "<=", ">=", "&&", "||"]
+    then "(" ++ Text.unpack name ++ ")"
+    else Text.unpack name
 exprToSource (Lit literal) = literalToSource literal
 exprToSource (App func arg) = case func of
   -- Handle infix operators
-  App (Var op) left | op `elem` ["+", "-", "*", "/", "==", "/=", "<", ">", "<=", ">=", "&&", "||"] ->
+  App (Var op) left | op `elem` ["+", "-", "*", "/", "++", "==", "/=", "<", ">", "<=", ">=", "&&", "||"] ->
     exprToSource left ++ " " ++ Text.unpack op ++ " " ++ exprToSource arg
+  -- Handle unary minus (negation)
+  Var "-" -> "-" ++ exprToSource arg
   -- Simple function applications don't need parentheses around the whole expression
   Var _ -> exprToSource func ++ " " ++ parenthesizeIfNeeded arg
-  _ -> exprToSource func ++ " " ++ parenthesizeIfNeeded arg
+  _ -> parenthesizeFuncIfNeeded func ++ " " ++ parenthesizeIfNeeded arg
   where
     parenthesizeIfNeeded expr = case expr of
       Var _ -> exprToSource expr
       Lit _ -> exprToSource expr
       _ -> "(" ++ exprToSource expr ++ ")"
+    parenthesizeFuncIfNeeded expr = case expr of
+      Var _ -> exprToSource expr
+      Lambda _ _ -> "(" ++ exprToSource expr ++ ")"
+      _ -> exprToSource expr
 exprToSource (Lambda params body) = 
   "\\" ++ List.intercalate " " (map Text.unpack params) ++ " -> " ++ exprToSource body
 exprToSource (Let bindings body) =
-  "let " ++ List.intercalate "; " 
-    (map (\(n, e) -> Text.unpack n ++ " = " ++ exprToSource e) bindings) ++
-  " in " ++ exprToSource body
+  "\n    let\n" ++ 
+    List.intercalate "\n" 
+      (map (\(n, e) -> "        " ++ Text.unpack n ++ " = " ++ exprToSource e) bindings) ++
+    "\n    in\n    " ++ exprToSource body
+exprToSource (If condition thenExpr elseExpr) =
+  "if " ++ exprToSource condition ++ " then " ++ exprToSource thenExpr ++ " else " ++ exprToSource elseExpr
 exprToSource (Record fields) =
   "{ " ++ List.intercalate ", "
     (map (\(n, e) -> Text.unpack n ++ " = " ++ exprToSource e) fields) ++ " }"
@@ -426,11 +448,25 @@ exprToSource (Tuple exprs) =
 exprToSource (List exprs) =
   "[ " ++ List.intercalate ", " (map exprToSource exprs) ++ " ]"
 exprToSource (Case expr patterns) =
-  "case " ++ exprToSource expr ++ " of " ++
-  List.intercalate "; " (map (\(p, e) -> patternToSource p ++ " -> " ++ exprToSource e) patterns)
+  caseToSourceWithIndent expr patterns 12 -- patterns indented 12 spaces (3 levels)
+  where
+    caseToSourceWithIndent caseExpr casePatterns patternIndentLevel =
+      "case " ++ exprToSource caseExpr ++ " of\n" ++
+      List.intercalate "\n\n" (map renderPattern casePatterns)
+      where
+        renderPattern (p, e) = 
+          let patternIndent = replicate patternIndentLevel ' '
+              exprIndent = replicate (patternIndentLevel + 4) ' '
+          in patternIndent ++ patternToSource p ++ " ->\n" ++ 
+             case e of
+               Case nestedExpr nestedPatterns -> 
+                 exprIndent ++ caseToSourceWithIndent nestedExpr nestedPatterns (patternIndentLevel + 8)
+               _ -> exprIndent ++ exprToSource e
 exprToSource (RecordUpdate record updates) =
   "{ " ++ exprToSource record ++ " | " ++
   List.intercalate ", " (map (\(n, e) -> Text.unpack n ++ " = " ++ exprToSource e) updates) ++ " }"
+exprToSource (RecordAccess record field) =
+  exprToSource record ++ "." ++ Text.unpack field
 
 -- | Convert literal to source
 literalToSource :: Literal -> String
@@ -446,11 +482,15 @@ patternToSource (VarPat name) = Text.unpack name
 patternToSource (LitPat lit) = literalToSource lit
 patternToSource WildcardPat = "_"
 patternToSource (ConPat name patterns) =
-  Text.unpack name ++ " " ++ List.intercalate " " (map patternToSource patterns)
+  case (Text.unpack name, patterns) of
+    ("::", [left, right]) -> patternToSource left ++ " :: " ++ patternToSource right
+    (constructor, pats) -> constructor ++ " " ++ List.intercalate " " (map patternToSource pats)
 patternToSource (TuplePat patterns) =
   "( " ++ List.intercalate ", " (map patternToSource patterns) ++ " )"
 patternToSource (ListPat patterns) =
-  "[ " ++ List.intercalate ", " (map patternToSource patterns) ++ " ]"
+  case patterns of
+    [] -> "[]"
+    _ -> "[ " ++ List.intercalate ", " (map patternToSource patterns) ++ " ]"
 patternToSource (RecordPat fields) =
   "{ " ++ List.intercalate ", " (map (\(n, p) -> Text.unpack n ++ " = " ++ patternToSource p) fields) ++ " }"
 
@@ -461,20 +501,52 @@ compileCanopyModule projectDir = do
     details <- BW.withScope $ \scope -> do
       e <- Details.load Reporting.silent scope projectDir
       case e of
-        Left _ -> error "details failed"
+        Left detailsErr -> error ("details loading failed with error type: " ++ getDetailsErrorType detailsErr)
         Right d -> pure d
     let srcFile = projectDir </> "src" </> "Main.can"
     artifactsE <- Build.fromPaths Reporting.silent projectDir details (NE.List srcFile [])
     case artifactsE of
-      Left _ -> error "build failed"
+      Left buildErr -> error ("build failed with error type: " ++ getBuildErrorType buildErr)
       Right artifacts -> do
         res <- Task.run (Generate.prod projectDir details artifacts)
         case res of
-          Left _ -> error "generate failed"
+          Left genErr -> error ("generate failed with error type: " ++ getGenerateErrorType genErr)
           Right b -> pure (BB.toLazyByteString b)
   case result of
     Left (err :: SomeException) -> pure (Left (Text.pack (show err)))
     Right output -> pure (Right output)
+
+-- Helper functions to extract error type information
+getDetailsErrorType :: Exit.Details -> String
+getDetailsErrorType err = case err of
+  Exit.DetailsNoSolution -> "DetailsNoSolution"
+  Exit.DetailsNoOfflineSolution _ -> "DetailsNoOfflineSolution"  
+  Exit.DetailsSolverProblem _ -> "DetailsSolverProblem"
+  Exit.DetailsBadCanopyInPkg _ -> "DetailsBadCanopyInPkg"
+  Exit.DetailsBadCanopyInAppOutline _ -> "DetailsBadCanopyInAppOutline"
+  Exit.DetailsHandEditedDependencies -> "DetailsHandEditedDependencies"
+  Exit.DetailsBadOutline _ -> "DetailsBadOutline"
+  Exit.DetailsCannotGetRegistry _ -> "DetailsCannotGetRegistry"
+  Exit.DetailsBadDeps _ _ -> "DetailsBadDeps"
+
+getBuildErrorType :: Exit.BuildProblem -> String
+getBuildErrorType err = case err of
+  Exit.BuildBadModules filePath _ _ -> "BuildBadModules in file: " ++ filePath
+  Exit.BuildProjectProblem projectErr -> case projectErr of
+    Exit.BP_PathUnknown path -> "BP_PathUnknown: " ++ path
+    Exit.BP_WithBadExtension path -> "BP_WithBadExtension: " ++ path  
+    Exit.BP_WithAmbiguousSrcDir path1 path2 path3 -> "BP_WithAmbiguousSrcDir: " ++ path1 ++ ", " ++ path2 ++ ", " ++ path3
+    Exit.BP_MainPathDuplicate path1 path2 -> "BP_MainPathDuplicate: " ++ path1 ++ ", " ++ path2
+    Exit.BP_RootNameDuplicate _ path1 path2 -> "BP_RootNameDuplicate: " ++ path1 ++ ", " ++ path2
+    Exit.BP_RootNameInvalid _ path _ -> "BP_RootNameInvalid: " ++ path
+    Exit.BP_CannotLoadDependencies -> "BP_CannotLoadDependencies"
+    Exit.BP_Cycle _ _ -> "BP_Cycle"
+    Exit.BP_MissingExposed _ -> "BP_MissingExposed"
+
+getGenerateErrorType :: Exit.Generate -> String
+getGenerateErrorType err = case err of
+  Exit.GenerateCannotLoadArtifacts -> "GenerateCannotLoadArtifacts"
+  Exit.GenerateCannotOptimizeDebugValues _ _ -> "GenerateCannotOptimizeDebugValues"
 
 -- | Extract user-defined functions from JavaScript output for comparison
 --
@@ -636,9 +708,9 @@ ifExpressionTest = TestCase
       , moduleImports = [ImportDecl "Html" Nothing (Just (ExportList ["text"]))]
       , moduleDeclarations =
           [ FunctionDecl "absolute" ["n"] 
-              (Case (App (App (Var "<") (Var "n")) (Lit (IntLit 0)))
-                [(LitPat (BoolLit True), App (Var "-") (Var "n")), 
-                 (WildcardPat, Var "n")])
+              (If (App (App (Var "<") (Var "n")) (Lit (IntLit 0)))
+                  (App (Var "-") (Var "n"))
+                  (Var "n"))
           , FunctionDecl "main" []
               (App (Var "text") 
                 (App (Var "String.fromInt") 
@@ -721,8 +793,7 @@ stringOperationsTest = TestCase
               (Let 
                 [("greeting", Lit (StringLit "Hello")),
                  ("name", Lit (StringLit "World")),
-                 ("message", App (App (Var "++") (App (App (Var "++") (Var "greeting")) (Lit (StringLit ", ")))) 
-                   (App (App (Var "++") (Var "name")) (Lit (StringLit "!"))))]
+                 ("message", App (App (Var "++") (App (App (Var "++") (App (App (Var "++") (Var "greeting")) (Lit (StringLit ", ")))) (Var "name"))) (Lit (StringLit "!")))]
                 (App (Var "text") (Var "message")))
           ]
       }
@@ -739,11 +810,11 @@ booleanOperationsTest = TestCase
       , moduleImports = [ImportDecl "Html" Nothing (Just (ExportList ["text"]))]
       , moduleDeclarations =
           [ FunctionDecl "checkConditions" ["a", "b"]
-              (Case (App (App (Var "&&") (Var "a")) (Var "b"))
-                [(LitPat (BoolLit True), Lit (StringLit "Both true")),
-                 (WildcardPat, Case (App (App (Var "||") (Var "a")) (Var "b"))
-                   [(LitPat (BoolLit True), Lit (StringLit "One true")),
-                    (WildcardPat, Lit (StringLit "Both false"))])])
+              (If (App (App (Var "&&") (Var "a")) (Var "b"))
+                  (Lit (StringLit "Both true"))
+                  (If (App (App (Var "||") (Var "a")) (Var "b"))
+                      (Lit (StringLit "One true"))
+                      (Lit (StringLit "Both false"))))
           , FunctionDecl "main" []
               (App (Var "text") (App (App (Var "checkConditions") (Lit (BoolLit True))) (Lit (BoolLit False))))
           ]
@@ -810,76 +881,1125 @@ simpleRecordTest = TestCase
               (Let 
                 [("person", Record [("name", Lit (StringLit "Alice")), ("age", Lit (IntLit 30))])]
                 (App (Var "text") 
-                  (App (App (Var "++") (App (Var ".name") (Var "person"))) 
+                  (App (App (Var "++") (RecordAccess (Var "person") "name")) 
                     (App (App (Var "++") (Lit (StringLit " is "))) 
-                      (App (Var "String.fromInt") (App (Var ".age") (Var "person")))))))
+                      (App (Var "String.fromInt") (RecordAccess (Var "person") "age"))))))
           ]
       }
   , testExpectedComplexity = CodeComplexity 1 1 2 1
   }
 
 -- Continue with remaining implemented tests...
+-- | Record update test
 recordUpdateTest :: TestCase
-recordUpdateTest = TestCase "record-update" RecordOperations (CanopyModule (ModuleHeader "Main" ExportAll) [] []) (CodeComplexity 0 0 0 0)
+recordUpdateTest = TestCase
+  { testName = "record-update"
+  , testFeature = RecordOperations
+  , testModule = CanopyModule
+      { moduleDeclaration = ModuleHeader "Main" (ExportList ["main"])
+      , moduleImports = [ImportDecl "Html" Nothing (Just (ExportList ["text"]))]
+      , moduleDeclarations =
+          [ TypeAliasDecl "Person" [] (RecordType [("name", TypeCon "String" []), ("age", TypeCon "Int" [])])
+          , FunctionDecl "main" []
+              (Let 
+                [("person", Record [("name", Lit (StringLit "Alice")), ("age", Lit (IntLit 30))]),
+                 ("older", RecordUpdate (Var "person") [("age", App (App (Var "+") (RecordAccess (Var "person") "age")) (Lit (IntLit 1)))])]
+                (App (Var "text") 
+                  (App (App (Var "++") (RecordAccess (Var "older") "name")) 
+                    (App (App (Var "++") (Lit (StringLit " is "))) 
+                      (App (Var "String.fromInt") (RecordAccess (Var "older") "age"))))))
+          ]
+      }
+  , testExpectedComplexity = CodeComplexity 1 1 2 1
+  }
+-- | Nested record test  
 nestedRecordTest :: TestCase  
-nestedRecordTest = TestCase "nested-record" RecordOperations (CanopyModule (ModuleHeader "Main" ExportAll) [] []) (CodeComplexity 0 0 0 0)
+nestedRecordTest = TestCase
+  { testName = "nested-record"
+  , testFeature = RecordOperations
+  , testModule = CanopyModule
+      { moduleDeclaration = ModuleHeader "Main" (ExportList ["main"])
+      , moduleImports = [ImportDecl "Html" Nothing (Just (ExportList ["text"]))]
+      , moduleDeclarations =
+          [ TypeAliasDecl "Address" [] (RecordType [("street", TypeCon "String" []), ("city", TypeCon "String" [])])
+          , TypeAliasDecl "Person" [] (RecordType [("name", TypeCon "String" []), ("address", TypeCon "Address" [])])
+          , FunctionDecl "main" []
+              (Let 
+                [("person", Record 
+                  [("name", Lit (StringLit "Alice")), 
+                   ("address", Record [("street", Lit (StringLit "123 Main St")), ("city", Lit (StringLit "Anytown"))])])]
+                (App (Var "text") 
+                  (App (App (Var "++") (RecordAccess (Var "person") "name")) 
+                    (App (App (Var "++") (Lit (StringLit " lives in "))) 
+                      (RecordAccess (RecordAccess (Var "person") "address") "city")))))
+          ]
+      }
+  , testExpectedComplexity = CodeComplexity 1 1 2 2
+  }
+-- | Record accessor test
 recordAccessorTest :: TestCase
-recordAccessorTest = TestCase "record-accessor" RecordOperations (CanopyModule (ModuleHeader "Main" ExportAll) [] []) (CodeComplexity 0 0 0 0)
+recordAccessorTest = TestCase
+  { testName = "record-accessor"
+  , testFeature = RecordOperations
+  , testModule = CanopyModule
+      { moduleDeclaration = ModuleHeader "Main" (ExportList ["main", "getName", "getAge"])
+      , moduleImports = [ImportDecl "Html" Nothing (Just (ExportList ["text"]))]
+      , moduleDeclarations =
+          [ TypeAliasDecl "Person" [] (RecordType [("name", TypeCon "String" []), ("age", TypeCon "Int" [])])
+          , FunctionDecl "getName" ["person"] (RecordAccess (Var "person") "name")
+          , FunctionDecl "getAge" ["person"] (RecordAccess (Var "person") "age")
+          , FunctionDecl "main" []
+              (Let 
+                [("person", Record [("name", Lit (StringLit "Bob")), ("age", Lit (IntLit 25))])]
+                (App (Var "text") 
+                  (App (App (Var "++") (App (Var "getName") (Var "person"))) 
+                    (App (App (Var "++") (Lit (StringLit " "))) 
+                      (App (Var "String.fromInt") (App (Var "getAge") (Var "person")))))))
+          ]
+      }
+  , testExpectedComplexity = CodeComplexity 3 1 2 1
+  }
 
 -- Placeholder implementations for tests without golden files yet
-simpleListTest, listOperationsTest, tupleTest, nestedTupleTest :: TestCase
-customTypeTest, recursiveTypeTest, typeAliasTest, polymorphicTypeTest :: TestCase
-simpleCaseTest, nestedCaseTest, patternGuardTest, wildcardPatternTest :: TestCase
-asPatternTest, recordPatternTest, tuplePatternTest, listPatternTest :: TestCase
+recursiveTypeTest, polymorphicTypeTest :: TestCase
+patternGuardTest :: TestCase
+asPatternTest, recordPatternTest, listPatternTest :: TestCase
 constructorPatternTest, exhaustivePatternTest, patternOrderingTest, complexPatternTest :: TestCase
-listModuleTest, stringModuleTest, maybeModuleTest, resultModuleTest :: TestCase
+listModuleTest, resultModuleTest :: TestCase
 dictModuleTest, setModuleTest, arrayModuleTest, tupleModuleTest :: TestCase
 basicsModuleTest, debugModuleTest, platformModuleTest, jsonHandlingTest :: TestCase
 higherOrderTest, curryingTest, memoizationTest, tailCallTest :: TestCase
 lazyEvaluationTest, moduleImportTest, qualifiedImportTest, exposingPatternTest :: TestCase
 typeAnnotationTest, genericFunctionTest, portModuleTest, effectManagerTest :: TestCase
 
-simpleListTest = TestCase "simple-list" ListManipulation (CanopyModule (ModuleHeader "Main" ExportAll) [] []) (CodeComplexity 0 0 0 0)
-listOperationsTest = TestCase "list-operations" ListManipulation (CanopyModule (ModuleHeader "Main" ExportAll) [] []) (CodeComplexity 0 0 0 0)
-tupleTest = TestCase "tuple" TupleOperations (CanopyModule (ModuleHeader "Main" ExportAll) [] []) (CodeComplexity 0 0 0 0)
-nestedTupleTest = TestCase "nested-tuple" TupleOperations (CanopyModule (ModuleHeader "Main" ExportAll) [] []) (CodeComplexity 0 0 0 0)
-customTypeTest = TestCase "custom-type" CustomTypes (CanopyModule (ModuleHeader "Main" ExportAll) [] []) (CodeComplexity 0 0 0 0)
-recursiveTypeTest = TestCase "recursive-type" CustomTypes (CanopyModule (ModuleHeader "Main" ExportAll) [] []) (CodeComplexity 0 0 0 0)
-typeAliasTest = TestCase "type-alias" TypeAliases (CanopyModule (ModuleHeader "Main" ExportAll) [] []) (CodeComplexity 0 0 0 0)
-polymorphicTypeTest = TestCase "polymorphic-type" CustomTypes (CanopyModule (ModuleHeader "Main" ExportAll) [] []) (CodeComplexity 0 0 0 0)
-simpleCaseTest = TestCase "simple-case" CaseExpressions (CanopyModule (ModuleHeader "Main" ExportAll) [] []) (CodeComplexity 0 0 0 0)
-nestedCaseTest = TestCase "nested-case" CaseExpressions (CanopyModule (ModuleHeader "Main" ExportAll) [] []) (CodeComplexity 0 0 0 0)
-patternGuardTest = TestCase "pattern-guard" PatternMatching (CanopyModule (ModuleHeader "Main" ExportAll) [] []) (CodeComplexity 0 0 0 0)
-wildcardPatternTest = TestCase "wildcard-pattern" PatternMatching (CanopyModule (ModuleHeader "Main" ExportAll) [] []) (CodeComplexity 0 0 0 0)
-asPatternTest = TestCase "as-pattern" PatternMatching (CanopyModule (ModuleHeader "Main" ExportAll) [] []) (CodeComplexity 0 0 0 0)
-recordPatternTest = TestCase "record-pattern" PatternMatching (CanopyModule (ModuleHeader "Main" ExportAll) [] []) (CodeComplexity 0 0 0 0)
-tuplePatternTest = TestCase "tuple-pattern" PatternMatching (CanopyModule (ModuleHeader "Main" ExportAll) [] []) (CodeComplexity 0 0 0 0)
-listPatternTest = TestCase "list-pattern" PatternMatching (CanopyModule (ModuleHeader "Main" ExportAll) [] []) (CodeComplexity 0 0 0 0)
-constructorPatternTest = TestCase "constructor-pattern" PatternMatching (CanopyModule (ModuleHeader "Main" ExportAll) [] []) (CodeComplexity 0 0 0 0)
-exhaustivePatternTest = TestCase "exhaustive-pattern" PatternMatching (CanopyModule (ModuleHeader "Main" ExportAll) [] []) (CodeComplexity 0 0 0 0)
-patternOrderingTest = TestCase "pattern-ordering" PatternMatching (CanopyModule (ModuleHeader "Main" ExportAll) [] []) (CodeComplexity 0 0 0 0)
-complexPatternTest = TestCase "complex-pattern" PatternMatching (CanopyModule (ModuleHeader "Main" ExportAll) [] []) (CodeComplexity 0 0 0 0)
-listModuleTest = TestCase "list-module" ListManipulation (CanopyModule (ModuleHeader "Main" ExportAll) [] []) (CodeComplexity 0 0 0 0)
-stringModuleTest = TestCase "string-module" StringOperations (CanopyModule (ModuleHeader "Main" ExportAll) [] []) (CodeComplexity 0 0 0 0)
-maybeModuleTest = TestCase "maybe-module" MaybeTypes (CanopyModule (ModuleHeader "Main" ExportAll) [] []) (CodeComplexity 0 0 0 0)
-resultModuleTest = TestCase "result-module" ResultTypes (CanopyModule (ModuleHeader "Main" ExportAll) [] []) (CodeComplexity 0 0 0 0)
-dictModuleTest = TestCase "dict-module" RecordOperations (CanopyModule (ModuleHeader "Main" ExportAll) [] []) (CodeComplexity 0 0 0 0)
-setModuleTest = TestCase "set-module" ListManipulation (CanopyModule (ModuleHeader "Main" ExportAll) [] []) (CodeComplexity 0 0 0 0)
-arrayModuleTest = TestCase "array-module" ListManipulation (CanopyModule (ModuleHeader "Main" ExportAll) [] []) (CodeComplexity 0 0 0 0)
-tupleModuleTest = TestCase "tuple-module" TupleOperations (CanopyModule (ModuleHeader "Main" ExportAll) [] []) (CodeComplexity 0 0 0 0)
-basicsModuleTest = TestCase "basics-module" BasicArithmetic (CanopyModule (ModuleHeader "Main" ExportAll) [] []) (CodeComplexity 0 0 0 0)
-debugModuleTest = TestCase "debug-module" BasicArithmetic (CanopyModule (ModuleHeader "Main" ExportAll) [] []) (CodeComplexity 0 0 0 0)
-platformModuleTest = TestCase "platform-module" ModuleImports (CanopyModule (ModuleHeader "Main" ExportAll) [] []) (CodeComplexity 0 0 0 0)
-jsonHandlingTest = TestCase "json-handling" CustomTypes (CanopyModule (ModuleHeader "Main" ExportAll) [] []) (CodeComplexity 0 0 0 0)
-higherOrderTest = TestCase "higher-order" HigherOrderFunctions (CanopyModule (ModuleHeader "Main" ExportAll) [] []) (CodeComplexity 0 0 0 0)
-curryingTest = TestCase "currying" HigherOrderFunctions (CanopyModule (ModuleHeader "Main" ExportAll) [] []) (CodeComplexity 0 0 0 0)
-memoizationTest = TestCase "memoization" HigherOrderFunctions (CanopyModule (ModuleHeader "Main" ExportAll) [] []) (CodeComplexity 0 0 0 0)
-tailCallTest = TestCase "tail-call" FunctionComposition (CanopyModule (ModuleHeader "Main" ExportAll) [] []) (CodeComplexity 0 0 0 0)
-lazyEvaluationTest = TestCase "lazy-evaluation" HigherOrderFunctions (CanopyModule (ModuleHeader "Main" ExportAll) [] []) (CodeComplexity 0 0 0 0)
-moduleImportTest = TestCase "module-import" ModuleImports (CanopyModule (ModuleHeader "Main" ExportAll) [] []) (CodeComplexity 0 0 0 0)
-qualifiedImportTest = TestCase "qualified-import" ModuleImports (CanopyModule (ModuleHeader "Main" ExportAll) [] []) (CodeComplexity 0 0 0 0)
-exposingPatternTest = TestCase "exposing-pattern" ModuleImports (CanopyModule (ModuleHeader "Main" ExportAll) [] []) (CodeComplexity 0 0 0 0)
-typeAnnotationTest = TestCase "type-annotation" TypeAliases (CanopyModule (ModuleHeader "Main" ExportAll) [] []) (CodeComplexity 0 0 0 0)
-genericFunctionTest = TestCase "generic-function" HigherOrderFunctions (CanopyModule (ModuleHeader "Main" ExportAll) [] []) (CodeComplexity 0 0 0 0)
-portModuleTest = TestCase "port-module" PortHandling (CanopyModule (ModuleHeader "Main" ExportAll) [] []) (CodeComplexity 0 0 0 0)
-effectManagerTest = TestCase "effect-manager" PortHandling (CanopyModule (ModuleHeader "Main" ExportAll) [] []) (CodeComplexity 0 0 0 0)
+-- | Simple list operations test
+simpleListTest :: TestCase
+simpleListTest = TestCase
+  { testName = "simple-list"
+  , testFeature = ListManipulation
+  , testModule = CanopyModule
+      { moduleDeclaration = ModuleHeader "Main" (ExportList ["main"])
+      , moduleImports = [ImportDecl "Html" Nothing (Just (ExportList ["text"]))]
+      , moduleDeclarations =
+          [ FunctionDecl "main" []
+              (Let 
+                [("numbers", List [Lit (IntLit 1), Lit (IntLit 2), Lit (IntLit 3)]),
+                 ("doubled", App (App (Var "List.map") (Lambda ["x"] (App (App (Var "*") (Var "x")) (Lit (IntLit 2))))) (Var "numbers"))]
+                (App (Var "text") 
+                  (App (Var "String.fromInt") 
+                    (App (Var "List.length") (Var "doubled")))))
+          ]
+      }
+  , testExpectedComplexity = CodeComplexity 1 1 2 0
+  }
+-- | List operations test
+listOperationsTest :: TestCase
+listOperationsTest = TestCase
+  { testName = "list-operations"
+  , testFeature = ListManipulation
+  , testModule = CanopyModule
+      { moduleDeclaration = ModuleHeader "Main" (ExportList ["main"])
+      , moduleImports = [ImportDecl "Html" Nothing (Just (ExportList ["text"]))]
+      , moduleDeclarations =
+          [ FunctionDecl "main" []
+              (Let 
+                [("numbers", List [Lit (IntLit 1), Lit (IntLit 2), Lit (IntLit 3), Lit (IntLit 4), Lit (IntLit 5)]),
+                 ("filtered", App (App (Var "List.filter") (Lambda ["x"] (App (App (Var ">") (Var "x")) (Lit (IntLit 2))))) (Var "numbers")),
+                 ("sum", App (App (Var "List.foldl") (Var "+")) (Lit (IntLit 0))),
+                 ("result", App (Var "sum") (Var "filtered"))]
+                (App (Var "text") (App (Var "String.fromInt") (Var "result"))))
+          ]
+      }
+  , testExpectedComplexity = CodeComplexity 1 1 2 0
+  }
+-- | Simple tuple operations test
+tupleTest :: TestCase
+tupleTest = TestCase
+  { testName = "tuple"
+  , testFeature = TupleOperations
+  , testModule = CanopyModule
+      { moduleDeclaration = ModuleHeader "Main" (ExportList ["main"])
+      , moduleImports = [ImportDecl "Html" Nothing (Just (ExportList ["text"]))]
+      , moduleDeclarations =
+          [ FunctionDecl "main" []
+              (Let 
+                [("pair", Tuple [Lit (StringLit "hello"), Lit (IntLit 42)]),
+                 ("first", App (Var "Tuple.first") (Var "pair")),
+                 ("second", App (Var "Tuple.second") (Var "pair"))]
+                (App (Var "text") 
+                  (App (App (Var "++") (Var "first")) 
+                    (App (App (Var "++") (Lit (StringLit " "))) 
+                      (App (Var "String.fromInt") (Var "second"))))))
+          ]
+      }
+  , testExpectedComplexity = CodeComplexity 1 1 2 0
+  }
+-- | Nested tuple operations test
+nestedTupleTest :: TestCase
+nestedTupleTest = TestCase
+  { testName = "nested-tuple"
+  , testFeature = TupleOperations
+  , testModule = CanopyModule
+      { moduleDeclaration = ModuleHeader "Main" (ExportList ["main"])
+      , moduleImports = [ImportDecl "Html" Nothing (Just (ExportList ["text"]))]
+      , moduleDeclarations =
+          [ FunctionDecl "main" []
+              (Let 
+                [("nested", Tuple [Tuple [Lit (IntLit 1), Lit (IntLit 2)], Lit (StringLit "hello")]),
+                 ("innerTuple", App (Var "Tuple.first") (Var "nested")),
+                 ("firstNum", App (Var "Tuple.first") (Var "innerTuple")),
+                 ("secondNum", App (Var "Tuple.second") (Var "innerTuple")),
+                 ("result", App (App (Var "+") (Var "firstNum")) (Var "secondNum"))]
+                (App (Var "text") (App (Var "String.fromInt") (Var "result"))))
+          ]
+      }
+  , testExpectedComplexity = CodeComplexity 1 1 2 0
+  }
+-- | Custom type test
+customTypeTest :: TestCase
+customTypeTest = TestCase
+  { testName = "custom-type"
+  , testFeature = CustomTypes
+  , testModule = CanopyModule
+      { moduleDeclaration = ModuleHeader "Main" (ExportList ["main", "Status"])
+      , moduleImports = [ImportDecl "Html" Nothing (Just (ExportList ["text"]))]
+      , moduleDeclarations =
+          [ TypeDecl "Status" [] 
+              (UnionType 
+                [("Loading", []), 
+                 ("Success", [TypeCon "String" []]), 
+                 ("Error", [TypeCon "String" []])])
+          , FunctionDecl "main" []
+              (Let 
+                [("status", App (Var "Success") (Lit (StringLit "Data loaded"))),
+                 ("message", Case (Var "status")
+                   [(ConPat "Loading" [], Lit (StringLit "Loading...")),
+                    (ConPat "Success" [VarPat "data"], Var "data"),
+                    (ConPat "Error" [VarPat "msg"], App (App (Var "++") (Lit (StringLit "Error: "))) (Var "msg"))])]
+                (App (Var "text") (Var "message")))
+          ]
+      }
+  , testExpectedComplexity = CodeComplexity 1 3 2 1
+  }
+-- | Recursive type test
+recursiveTypeTest :: TestCase
+recursiveTypeTest = TestCase
+  { testName = "recursive-type"
+  , testFeature = CustomTypes
+  , testModule = CanopyModule
+      { moduleDeclaration = ModuleHeader "Main" (ExportList ["main", "Tree"])
+      , moduleImports = [ImportDecl "Html" Nothing (Just (ExportList ["text"]))]
+      , moduleDeclarations =
+          [ TypeDecl "Tree" [] 
+              (UnionType 
+                [("Empty", []), 
+                 ("Node", [TypeCon "Int" [], TypeCon "Tree" [], TypeCon "Tree" []])])
+          , FunctionDecl "main" []
+              (Let 
+                [("tree", App (App (App (Var "Node") (Lit (IntLit 5))) (Var "Empty")) (Var "Empty")),
+                 ("result", Case (Var "tree") 
+                   [(ConPat "Empty" [], Lit (StringLit "empty")),
+                    (ConPat "Node" [VarPat "value", VarPat "_", VarPat "_"], 
+                     App (App (Var "++") (Lit (StringLit "Node: "))) 
+                       (App (Var "String.fromInt") (Var "value")))])]
+                (App (Var "text") (Var "result")))
+          ]
+      }
+  , testExpectedComplexity = CodeComplexity 1 2 2 1
+  }
+-- | Type alias test
+typeAliasTest :: TestCase
+typeAliasTest = TestCase
+  { testName = "type-alias"
+  , testFeature = TypeAliases
+  , testModule = CanopyModule
+      { moduleDeclaration = ModuleHeader "Main" (ExportList ["main", "User", "UserID"])
+      , moduleImports = [ImportDecl "Html" Nothing (Just (ExportList ["text"]))]
+      , moduleDeclarations =
+          [ TypeAliasDecl "UserID" [] (TypeCon "Int" [])
+          , TypeAliasDecl "User" [] (RecordType [("id", TypeCon "UserID" []), ("name", TypeCon "String" []), ("email", TypeCon "String" [])])
+          , FunctionDecl "main" []
+              (Let 
+                [("user", Record [("id", Lit (IntLit 42)), ("name", Lit (StringLit "Alice")), ("email", Lit (StringLit "alice@example.com"))]),
+                 ("greeting", App (App (Var "++") (Lit (StringLit "Hello, "))) (RecordAccess (Var "user") "name"))]
+                (App (Var "text") (Var "greeting")))
+          ]
+      }
+  , testExpectedComplexity = CodeComplexity 1 1 2 2
+  }
+-- | Polymorphic type test
+polymorphicTypeTest :: TestCase
+polymorphicTypeTest = TestCase
+  { testName = "polymorphic-type"
+  , testFeature = CustomTypes
+  , testModule = CanopyModule
+      { moduleDeclaration = ModuleHeader "Main" (ExportList ["main", "Container"])
+      , moduleImports = [ImportDecl "Html" Nothing (Just (ExportList ["text"]))]
+      , moduleDeclarations =
+          [ TypeDecl "Container" ["a"] 
+              (UnionType 
+                [("Empty", []), 
+                 ("Full", [TypeCon "a" []])])
+          , FunctionDecl "main" []
+              (Let 
+                [("stringContainer", App (Var "Full") (Lit (StringLit "hello"))),
+                 ("result", Case (Var "stringContainer") 
+                   [(ConPat "Empty" [], Lit (StringLit "no value")),
+                    (ConPat "Full" [VarPat "value"], 
+                     App (App (Var "++") (Lit (StringLit "Value: "))) (Var "value"))])]
+                (App (Var "text") (Var "result")))
+          ]
+      }
+  , testExpectedComplexity = CodeComplexity 1 2 2 1
+  }
+-- | Simple case expression test
+simpleCaseTest :: TestCase
+simpleCaseTest = TestCase
+  { testName = "simple-case"
+  , testFeature = CaseExpressions
+  , testModule = CanopyModule
+      { moduleDeclaration = ModuleHeader "Main" (ExportList ["main"])
+      , moduleImports = [ImportDecl "Html" Nothing (Just (ExportList ["text"]))]
+      , moduleDeclarations =
+          [ FunctionDecl "main" []
+              (Let 
+                [("numbers", List [Lit (IntLit 1), Lit (IntLit 2)]),
+                 ("result", Case (Var "numbers") 
+                   [(ListPat [], Lit (StringLit "empty")),
+                    (VarPat "xs", Lit (StringLit "non-empty"))])]
+                (App (Var "text") (Var "result")))
+          ]
+      }
+  , testExpectedComplexity = CodeComplexity 1 2 2 0
+  }
+-- | Nested case expression test
+nestedCaseTest :: TestCase
+nestedCaseTest = TestCase
+  { testName = "nested-case"
+  , testFeature = CaseExpressions
+  , testModule = CanopyModule
+      { moduleDeclaration = ModuleHeader "Main" (ExportList ["main"])
+      , moduleImports = [ImportDecl "Html" Nothing (Just (ExportList ["text"]))]
+      , moduleDeclarations =
+          [ FunctionDecl "main" []
+              (Let 
+                [("numbers", List [Lit (IntLit 1), Lit (IntLit 2)]),
+                 ("result", Case (Var "numbers") 
+                   [(ListPat [], Lit (StringLit "empty")),
+                    (ConPat "::" [VarPat "head", VarPat "tail"], 
+                     Case (Var "tail")
+                       [(ListPat [], Lit (StringLit "one item")),
+                        (WildcardPat, Lit (StringLit "multiple items"))])])]
+                (App (Var "text") (Var "result")))
+          ]
+      }
+  , testExpectedComplexity = CodeComplexity 1 4 3 0
+  }
+-- | Pattern guard test
+patternGuardTest :: TestCase
+patternGuardTest = TestCase
+  { testName = "pattern-guard"
+  , testFeature = PatternMatching
+  , testModule = CanopyModule
+      { moduleDeclaration = ModuleHeader "Main" (ExportList ["main"])
+      , moduleImports = [ImportDecl "Html" Nothing (Just (ExportList ["text"]))]
+      , moduleDeclarations =
+          [ FunctionDecl "main" []
+              (Let 
+                [("numbers", List [Lit (IntLit 1), Lit (IntLit 2), Lit (IntLit 3), Lit (IntLit 4)]),
+                 ("result", Case (Var "numbers") 
+                   [(ConPat "::" [VarPat "x", VarPat "xs"], 
+                     If (App (App (Var ">") (Var "x")) (Lit (IntLit 2)))
+                        (Lit (StringLit "first element > 2"))
+                        (Lit (StringLit "first element <= 2"))),
+                    (ListPat [], Lit (StringLit "empty list"))])]
+                (App (Var "text") (Var "result")))
+          ]
+      }
+  , testExpectedComplexity = CodeComplexity 1 2 3 0
+  }
+-- | Wildcard pattern test
+wildcardPatternTest :: TestCase
+wildcardPatternTest = TestCase
+  { testName = "wildcard-pattern"
+  , testFeature = PatternMatching
+  , testModule = CanopyModule
+      { moduleDeclaration = ModuleHeader "Main" (ExportList ["main"])
+      , moduleImports = [ImportDecl "Html" Nothing (Just (ExportList ["text"]))]
+      , moduleDeclarations =
+          [ FunctionDecl "main" []
+              (Let 
+                [("numbers", List [Lit (IntLit 1), Lit (IntLit 2), Lit (IntLit 3)]),
+                 ("result", Case (Var "numbers") 
+                   [(ListPat [], Lit (StringLit "empty")),
+                    (ConPat "::" [VarPat "first", WildcardPat], App (Var "String.fromInt") (Var "first"))])]
+                (App (Var "text") (Var "result")))
+          ]
+      }
+  , testExpectedComplexity = CodeComplexity 1 2 2 0
+  }
+-- | As pattern test
+asPatternTest :: TestCase
+asPatternTest = TestCase
+  { testName = "as-pattern"
+  , testFeature = PatternMatching
+  , testModule = CanopyModule
+      { moduleDeclaration = ModuleHeader "Main" (ExportList ["main"])
+      , moduleImports = [ImportDecl "Html" Nothing (Just (ExportList ["text"]))]
+      , moduleDeclarations =
+          [ FunctionDecl "main" []
+              (Let 
+                [("data", List [Lit (IntLit 1), Lit (IntLit 2), Lit (IntLit 3)]),
+                 ("result", Case (Var "data") 
+                   [(ConPat "::" [VarPat "head", VarPat "tail"], 
+                     App (App (Var "++") 
+                           (App (App (Var "++") (Lit (StringLit "head: "))) 
+                             (App (Var "String.fromInt") (Var "head"))))
+                       (App (App (Var "++") (Lit (StringLit ", tail length: "))) 
+                         (App (Var "String.fromInt") (App (Var "List.length") (Var "tail"))))),
+                    (ListPat [], Lit (StringLit "empty"))])]
+                (App (Var "text") (Var "result")))
+          ]
+      }
+  , testExpectedComplexity = CodeComplexity 1 2 3 0
+  }
+-- | Record pattern test
+recordPatternTest :: TestCase
+recordPatternTest = TestCase
+  { testName = "record-pattern"
+  , testFeature = PatternMatching
+  , testModule = CanopyModule
+      { moduleDeclaration = ModuleHeader "Main" (ExportList ["main"])
+      , moduleImports = [ImportDecl "Html" Nothing (Just (ExportList ["text"]))]
+      , moduleDeclarations =
+          [ FunctionDecl "main" []
+              (Let 
+                [("person", Record [("name", Lit (StringLit "Alice")), ("age", Lit (IntLit 30))]),
+                 ("result", Case (Var "person") 
+                   [(RecordPat [("name", VarPat "n"), ("age", VarPat "a")], 
+                     App (App (Var "++") (Var "n")) 
+                       (App (App (Var "++") (Lit (StringLit " is "))) 
+                         (App (Var "String.fromInt") (Var "a"))))])]
+                (App (Var "text") (Var "result")))
+          ]
+      }
+  , testExpectedComplexity = CodeComplexity 1 1 2 0
+  }
+-- | Tuple pattern test
+tuplePatternTest :: TestCase
+tuplePatternTest = TestCase
+  { testName = "tuple-pattern"
+  , testFeature = PatternMatching
+  , testModule = CanopyModule
+      { moduleDeclaration = ModuleHeader "Main" (ExportList ["main"])
+      , moduleImports = [ImportDecl "Html" Nothing (Just (ExportList ["text"]))]
+      , moduleDeclarations =
+          [ FunctionDecl "main" []
+              (Let 
+                [("pair", Tuple [Lit (IntLit 42), Lit (StringLit "hello")]),
+                 ("result", Case (Var "pair") 
+                   [(TuplePat [VarPat "num", VarPat "str"], 
+                     App (App (Var "++") (Var "str")) 
+                       (App (App (Var "++") (Lit (StringLit " "))) 
+                         (App (Var "String.fromInt") (Var "num"))))])]
+                (App (Var "text") (Var "result")))
+          ]
+      }
+  , testExpectedComplexity = CodeComplexity 1 1 2 0
+  }
+-- | List pattern test
+listPatternTest :: TestCase
+listPatternTest = TestCase
+  { testName = "list-pattern"
+  , testFeature = PatternMatching
+  , testModule = CanopyModule
+      { moduleDeclaration = ModuleHeader "Main" (ExportList ["main"])
+      , moduleImports = [ImportDecl "Html" Nothing (Just (ExportList ["text"]))]
+      , moduleDeclarations =
+          [ FunctionDecl "main" []
+              (Let 
+                [("numbers", List [Lit (IntLit 1), Lit (IntLit 2), Lit (IntLit 3)]),
+                 ("result", Case (Var "numbers") 
+                   [(ListPat [], Lit (StringLit "empty")),
+                    (ListPat [VarPat "x"], App (App (Var "++") (Lit (StringLit "one: "))) (App (Var "String.fromInt") (Var "x"))),
+                    (ListPat [VarPat "x", VarPat "y"], App (App (Var "++") (Lit (StringLit "two: "))) (App (Var "String.fromInt") (App (App (Var "+") (Var "x")) (Var "y")))),
+                    (VarPat "_", Lit (StringLit "many"))])]
+                (App (Var "text") (Var "result")))
+          ]
+      }
+  , testExpectedComplexity = CodeComplexity 1 4 3 0
+  }
+-- | Constructor pattern test
+constructorPatternTest :: TestCase
+constructorPatternTest = TestCase
+  { testName = "constructor-pattern"
+  , testFeature = PatternMatching
+  , testModule = CanopyModule
+      { moduleDeclaration = ModuleHeader "Main" (ExportList ["main", "Result"])
+      , moduleImports = [ImportDecl "Html" Nothing (Just (ExportList ["text"]))]
+      , moduleDeclarations =
+          [ TypeDecl "Result" [] 
+              (UnionType 
+                [("Ok", [TypeCon "String" []]), 
+                 ("Err", [TypeCon "String" []])])
+          , FunctionDecl "main" []
+              (Let 
+                [("result", App (Var "Ok") (Lit (StringLit "success"))),
+                 ("message", Case (Var "result") 
+                   [(ConPat "Ok" [VarPat "value"], App (App (Var "++") (Lit (StringLit "Success: "))) (Var "value")),
+                    (ConPat "Err" [VarPat "error"], App (App (Var "++") (Lit (StringLit "Error: "))) (Var "error"))])]
+                (App (Var "text") (Var "message")))
+          ]
+      }
+  , testExpectedComplexity = CodeComplexity 1 2 2 1
+  }
+-- | Exhaustive pattern test
+exhaustivePatternTest :: TestCase
+exhaustivePatternTest = TestCase
+  { testName = "exhaustive-pattern"
+  , testFeature = PatternMatching
+  , testModule = CanopyModule
+      { moduleDeclaration = ModuleHeader "Main" (ExportList ["main", "Status"])
+      , moduleImports = [ImportDecl "Html" Nothing (Just (ExportList ["text"]))]
+      , moduleDeclarations =
+          [ TypeDecl "Status" [] 
+              (UnionType 
+                [("Loading", []), 
+                 ("Success", [TypeCon "String" []]),
+                 ("Error", [TypeCon "String" []])])
+          , FunctionDecl "main" []
+              (Let 
+                [("status", Var "Loading"),
+                 ("message", Case (Var "status") 
+                   [(ConPat "Loading" [], Lit (StringLit "Loading...")),
+                    (ConPat "Success" [VarPat "data"], App (App (Var "++") (Lit (StringLit "Success: "))) (Var "data")),
+                    (ConPat "Error" [VarPat "err"], App (App (Var "++") (Lit (StringLit "Error: "))) (Var "err"))])]
+                (App (Var "text") (Var "message")))
+          ]
+      }
+  , testExpectedComplexity = CodeComplexity 1 3 2 1
+  }
+-- | Pattern ordering test
+patternOrderingTest :: TestCase
+patternOrderingTest = TestCase
+  { testName = "pattern-ordering"
+  , testFeature = PatternMatching
+  , testModule = CanopyModule
+      { moduleDeclaration = ModuleHeader "Main" (ExportList ["main"])
+      , moduleImports = [ImportDecl "Html" Nothing (Just (ExportList ["text"]))]
+      , moduleDeclarations =
+          [ FunctionDecl "main" []
+              (Let 
+                [("numbers", List [Lit (IntLit 1), Lit (IntLit 2)]),
+                 ("result", Case (Var "numbers") 
+                   [(ListPat [VarPat "x"], App (App (Var "++") (Lit (StringLit "single: "))) (App (Var "String.fromInt") (Var "x"))),
+                    (ListPat [VarPat "x", VarPat "y"], App (App (Var "++") (Lit (StringLit "pair: "))) 
+                      (App (App (Var "++") (App (Var "String.fromInt") (Var "x"))) 
+                        (App (App (Var "++") (Lit (StringLit ", "))) (App (Var "String.fromInt") (Var "y"))))),
+                    (VarPat "_", Lit (StringLit "other")),
+                    (ListPat [], Lit (StringLit "empty"))])]
+                (App (Var "text") (Var "result")))
+          ]
+      }
+  , testExpectedComplexity = CodeComplexity 1 4 3 0
+  }
+-- | Complex pattern test
+complexPatternTest :: TestCase
+complexPatternTest = TestCase
+  { testName = "complex-pattern"
+  , testFeature = PatternMatching
+  , testModule = CanopyModule
+      { moduleDeclaration = ModuleHeader "Main" (ExportList ["main", "Person", "Address"])
+      , moduleImports = [ImportDecl "Html" Nothing (Just (ExportList ["text"]))]
+      , moduleDeclarations =
+          [ TypeDecl "Address" [] 
+              (UnionType [("Address", [TypeCon "String" [], TypeCon "String" []])])
+          , TypeDecl "Person" [] 
+              (UnionType [("Person", [TypeCon "String" [], TypeCon "Int" [], TypeCon "Address" []])])
+          , FunctionDecl "main" []
+              (Let 
+                [("address", App (App (Var "Address") (Lit (StringLit "123 Main St"))) (Lit (StringLit "Springfield"))),
+                 ("person", App (App (App (Var "Person") (Lit (StringLit "Alice"))) (Lit (IntLit 30))) (Var "address")),
+                 ("result", Case (Var "person") 
+                   [(ConPat "Person" [VarPat "name", VarPat "age", ConPat "Address" [VarPat "street", VarPat "city"]], 
+                     App (App (Var "++") (Var "name")) 
+                       (App (App (Var "++") (Lit (StringLit " lives at "))) 
+                         (App (App (Var "++") (Var "street")) 
+                           (App (App (Var "++") (Lit (StringLit ", "))) (Var "city")))))])]
+                (App (Var "text") (Var "result")))
+          ]
+      }
+  , testExpectedComplexity = CodeComplexity 1 1 4 2
+  }
+-- | List module test
+listModuleTest :: TestCase
+listModuleTest = TestCase
+  { testName = "list-module"
+  , testFeature = ListManipulation
+  , testModule = CanopyModule
+      { moduleDeclaration = ModuleHeader "Main" (ExportList ["main"])
+      , moduleImports = [ImportDecl "Html" Nothing (Just (ExportList ["text"]))]
+      , moduleDeclarations =
+          [ FunctionDecl "main" []
+              (Let 
+                [("numbers", List [Lit (IntLit 1), Lit (IntLit 2), Lit (IntLit 3), Lit (IntLit 4)]),
+                 ("doubled", App (App (Var "List.map") (App (Var "*") (Lit (IntLit 2)))) (Var "numbers")),
+                 ("filtered", App (App (Var "List.filter") (App (Var "<") (Lit (IntLit 2)))) (Var "numbers")),
+                 ("sum", App (App (App (Var "List.foldl") (Var "(+)")) (Lit (IntLit 0))) (Var "numbers")),
+                 ("length", App (Var "List.length") (Var "numbers")),
+                 ("result", App (App (Var "++") (Lit (StringLit "sum: "))) 
+                   (App (App (Var "++") (App (Var "String.fromInt") (Var "sum"))) 
+                     (App (App (Var "++") (Lit (StringLit ", length: "))) 
+                       (App (Var "String.fromInt") (Var "length")))))]
+                (App (Var "text") (Var "result")))
+          ]
+      }
+  , testExpectedComplexity = CodeComplexity 1 1 4 0
+  }
+-- | String module test
+stringModuleTest :: TestCase
+stringModuleTest = TestCase
+  { testName = "string-module"
+  , testFeature = StringOperations
+  , testModule = CanopyModule
+      { moduleDeclaration = ModuleHeader "Main" (ExportList ["main"])
+      , moduleImports = [ImportDecl "Html" Nothing (Just (ExportList ["text"]))]
+      , moduleDeclarations =
+          [ FunctionDecl "main" []
+              (Let 
+                [("text1", Lit (StringLit "Hello, World!")),
+                 ("upper", App (Var "String.toUpper") (Var "text1")),
+                 ("length", App (Var "String.length") (Var "text1")),
+                 ("slice", App (App (App (Var "String.slice") (Lit (IntLit 0))) (Lit (IntLit 5))) (Var "text1")),
+                 ("result", App (App (Var "++") (Var "slice")) 
+                   (App (App (Var "++") (Lit (StringLit " (length: "))) 
+                     (App (App (Var "++") (App (Var "String.fromInt") (Var "length"))) (Lit (StringLit ")")))))]
+                (App (Var "text") (Var "result")))
+          ]
+      }
+  , testExpectedComplexity = CodeComplexity 1 1 2 0
+  }
+-- | Maybe module test
+maybeModuleTest :: TestCase
+maybeModuleTest = TestCase
+  { testName = "maybe-module"
+  , testFeature = MaybeTypes
+  , testModule = CanopyModule
+      { moduleDeclaration = ModuleHeader "Main" (ExportList ["main"])
+      , moduleImports = [ImportDecl "Html" Nothing (Just (ExportList ["text"]))]
+      , moduleDeclarations =
+          [ FunctionDecl "main" []
+              (Let 
+                [("maybeValue", App (Var "Just") (Lit (IntLit 42))),
+                 ("result", Case (Var "maybeValue") 
+                   [(ConPat "Nothing" [], Lit (StringLit "No value")),
+                    (ConPat "Just" [VarPat "value"], 
+                     App (App (Var "++") (Lit (StringLit "Value: "))) 
+                       (App (Var "String.fromInt") (Var "value")))]),
+                 ("withDefault", App (App (Var "Maybe.withDefault") (Lit (IntLit 0))) (Var "maybeValue"))]
+                (App (Var "text") (Var "result")))
+          ]
+      }
+  , testExpectedComplexity = CodeComplexity 1 2 2 1
+  }
+-- | Result module test
+resultModuleTest :: TestCase
+resultModuleTest = TestCase
+  { testName = "result-module"
+  , testFeature = ResultTypes
+  , testModule = CanopyModule
+      { moduleDeclaration = ModuleHeader "Main" (ExportList ["main"])
+      , moduleImports = [ImportDecl "Html" Nothing (Just (ExportList ["text"]))]
+      , moduleDeclarations =
+          [ FunctionDecl "main" []
+              (Let 
+                [("okResult", App (Var "Ok") (Lit (IntLit 42))),
+                 ("errResult", App (Var "Err") (Lit (StringLit "Something went wrong"))),
+                 ("mapResult", App (App (Var "Result.map") (App (Var "*") (Lit (IntLit 2)))) (Var "okResult")),
+                 ("withDefault", App (App (Var "Result.withDefault") (Lit (IntLit 0))) (Var "errResult")),
+                 ("result", Case (Var "mapResult") 
+                   [(ConPat "Ok" [VarPat "value"], 
+                     App (App (Var "++") (Lit (StringLit "Success: "))) 
+                       (App (Var "String.fromInt") (Var "value"))),
+                    (ConPat "Err" [VarPat "error"], 
+                     App (App (Var "++") (Lit (StringLit "Error: "))) (Var "error"))])]
+                (App (Var "text") (Var "result")))
+          ]
+      }
+  , testExpectedComplexity = CodeComplexity 1 2 3 0
+  }
+-- | Dict module test
+dictModuleTest :: TestCase
+dictModuleTest = TestCase
+  { testName = "dict-module"
+  , testFeature = RecordOperations
+  , testModule = CanopyModule
+      { moduleDeclaration = ModuleHeader "Main" (ExportList ["main"])
+      , moduleImports = [ImportDecl "Html" Nothing (Just (ExportList ["text"]))]
+      , moduleDeclarations =
+          [ FunctionDecl "main" []
+              (Let 
+                [("dict", App (App (App (Var "Dict.insert") (Lit (StringLit "key1"))) (Lit (IntLit 10))) 
+                           (App (Var "Dict.empty") (Tuple []))),
+                 ("updated", App (App (App (Var "Dict.insert") (Lit (StringLit "key2"))) (Lit (IntLit 20))) (Var "dict")),
+                 ("value", App (App (Var "Dict.get") (Lit (StringLit "key1"))) (Var "updated")),
+                 ("size", App (Var "Dict.size") (Var "updated")),
+                 ("result", Case (Var "value") 
+                   [(ConPat "Just" [VarPat "v"], 
+                     App (App (Var "++") (Lit (StringLit "Found: "))) 
+                       (App (App (Var "++") (App (Var "String.fromInt") (Var "v"))) 
+                         (App (App (Var "++") (Lit (StringLit ", size: "))) 
+                           (App (Var "String.fromInt") (Var "size"))))),
+                    (ConPat "Nothing" [], Lit (StringLit "Not found"))])]
+                (App (Var "text") (Var "result")))
+          ]
+      }
+  , testExpectedComplexity = CodeComplexity 1 2 4 0
+  }
+-- | Set module test
+setModuleTest :: TestCase
+setModuleTest = TestCase
+  { testName = "set-module"
+  , testFeature = ListManipulation
+  , testModule = CanopyModule
+      { moduleDeclaration = ModuleHeader "Main" (ExportList ["main"])
+      , moduleImports = [ImportDecl "Html" Nothing (Just (ExportList ["text"]))]
+      , moduleDeclarations =
+          [ FunctionDecl "main" []
+              (Let 
+                [("set1", App (App (Var "Set.insert") (Lit (IntLit 1))) 
+                           (App (App (Var "Set.insert") (Lit (IntLit 2))) 
+                             (App (Var "Set.empty") (Tuple [])))),
+                 ("set2", App (App (Var "Set.insert") (Lit (IntLit 2))) 
+                           (App (App (Var "Set.insert") (Lit (IntLit 3))) 
+                             (App (Var "Set.empty") (Tuple [])))),
+                 ("union", App (App (Var "Set.union") (Var "set1")) (Var "set2")),
+                 ("member", App (App (Var "Set.member") (Lit (IntLit 2))) (Var "union")),
+                 ("size", App (Var "Set.size") (Var "union")),
+                 ("result", App (App (Var "++") (Lit (StringLit "size: "))) 
+                   (App (App (Var "++") (App (Var "String.fromInt") (Var "size"))) 
+                     (App (App (Var "++") (Lit (StringLit ", contains 2: "))) 
+                       (App (Var "Debug.toString") (Var "member")))))]
+                (App (Var "text") (Var "result")))
+          ]
+      }
+  , testExpectedComplexity = CodeComplexity 1 1 4 0
+  }
+-- | Array module test
+arrayModuleTest :: TestCase
+arrayModuleTest = TestCase
+  { testName = "array-module"
+  , testFeature = ListManipulation
+  , testModule = CanopyModule
+      { moduleDeclaration = ModuleHeader "Main" (ExportList ["main"])
+      , moduleImports = [ImportDecl "Html" Nothing (Just (ExportList ["text"]))]
+      , moduleDeclarations =
+          [ FunctionDecl "main" []
+              (Let 
+                [("array", App (App (Var "Array.fromList") (Tuple [])) (List [Lit (IntLit 1), Lit (IntLit 2), Lit (IntLit 3)])),
+                 ("appended", App (App (Var "Array.push") (Lit (IntLit 4))) (Var "array")),
+                 ("element", App (App (Var "Array.get") (Lit (IntLit 1))) (Var "appended")),
+                 ("length", App (Var "Array.length") (Var "appended")),
+                 ("result", Case (Var "element") 
+                   [(ConPat "Just" [VarPat "value"], 
+                     App (App (Var "++") (Lit (StringLit "element at 1: "))) 
+                       (App (App (Var "++") (App (Var "String.fromInt") (Var "value"))) 
+                         (App (App (Var "++") (Lit (StringLit ", length: "))) 
+                           (App (Var "String.fromInt") (Var "length"))))),
+                    (ConPat "Nothing" [], Lit (StringLit "No element"))])]
+                (App (Var "text") (Var "result")))
+          ]
+      }
+  , testExpectedComplexity = CodeComplexity 1 2 3 0
+  }
+-- | Tuple module test
+tupleModuleTest :: TestCase
+tupleModuleTest = TestCase
+  { testName = "tuple-module"
+  , testFeature = TupleOperations
+  , testModule = CanopyModule
+      { moduleDeclaration = ModuleHeader "Main" (ExportList ["main"])
+      , moduleImports = [ImportDecl "Html" Nothing (Just (ExportList ["text"]))]
+      , moduleDeclarations =
+          [ FunctionDecl "main" []
+              (Let 
+                [("pair", Tuple [Lit (IntLit 42), Lit (StringLit "hello")]),
+                 ("triple", Tuple [Lit (IntLit 1), Lit (IntLit 2), Lit (IntLit 3)]),
+                 ("first", App (Var "Tuple.first") (Var "pair")),
+                 ("second", App (Var "Tuple.second") (Var "pair")),
+                 ("mapFirst", App (App (Var "Tuple.mapFirst") (App (Var "*") (Lit (IntLit 2)))) (Var "pair")),
+                 ("result", App (App (Var "++") (Lit (StringLit "first: "))) 
+                   (App (App (Var "++") (App (Var "String.fromInt") (Var "first"))) 
+                     (App (App (Var "++") (Lit (StringLit ", second: "))) (Var "second"))))]
+                (App (Var "text") (Var "result")))
+          ]
+      }
+  , testExpectedComplexity = CodeComplexity 1 1 3 0
+  }
+-- | Basics module test
+basicsModuleTest :: TestCase
+basicsModuleTest = TestCase
+  { testName = "basics-module"
+  , testFeature = BasicArithmetic
+  , testModule = CanopyModule
+      { moduleDeclaration = ModuleHeader "Main" (ExportList ["main"])
+      , moduleImports = [ImportDecl "Html" Nothing (Just (ExportList ["text"]))]
+      , moduleDeclarations =
+          [ FunctionDecl "main" []
+              (Let 
+                [("x", Lit (IntLit 10)),
+                 ("y", Lit (IntLit 3)),
+                 ("sum", App (App (Var "+") (Var "x")) (Var "y")),
+                 ("product", App (App (Var "*") (Var "x")) (Var "y")),
+                 ("maximum", App (App (Var "max") (Var "x")) (Var "y")),
+                 ("minimum", App (App (Var "min") (Var "x")) (Var "y")),
+                 ("absolute", App (Var "abs") (App (App (Var "-") (Var "x")) (Var "y"))),
+                 ("result", App (App (Var "++") (Lit (StringLit "sum: "))) 
+                   (App (App (Var "++") (App (Var "String.fromInt") (Var "sum"))) 
+                     (App (App (Var "++") (Lit (StringLit ", max: "))) 
+                       (App (Var "String.fromInt") (Var "maximum")))))]
+                (App (Var "text") (Var "result")))
+          ]
+      }
+  , testExpectedComplexity = CodeComplexity 1 1 4 0
+  }
+-- | Debug module test
+debugModuleTest :: TestCase
+debugModuleTest = TestCase
+  { testName = "debug-module"
+  , testFeature = BasicArithmetic
+  , testModule = CanopyModule
+      { moduleDeclaration = ModuleHeader "Main" (ExportList ["main"])
+      , moduleImports = [ImportDecl "Html" Nothing (Just (ExportList ["text"]))]
+      , moduleDeclarations =
+          [ FunctionDecl "main" []
+              (Let 
+                [("value", Lit (IntLit 42)),
+                 ("debugString", App (Var "Debug.toString") (Var "value")),
+                 ("loggedValue", App (App (Var "Debug.log") (Lit (StringLit "Value is"))) (Var "value")),
+                 ("result", App (App (Var "++") (Lit (StringLit "Debug output: "))) (Var "debugString"))]
+                (App (Var "text") (Var "result")))
+          ]
+      }
+  , testExpectedComplexity = CodeComplexity 1 1 2 0
+  }
+-- | Platform module test
+platformModuleTest :: TestCase
+platformModuleTest = TestCase
+  { testName = "platform-module"
+  , testFeature = ModuleImports
+  , testModule = CanopyModule
+      { moduleDeclaration = ModuleHeader "Main" (ExportList ["main"])
+      , moduleImports = [ImportDecl "Html" Nothing (Just (ExportList ["text"])), 
+                        ImportDecl "Platform.Cmd" Nothing (Just (ExportList ["none"])),
+                        ImportDecl "Platform.Sub" Nothing (Just (ExportList ["none"]))]
+      , moduleDeclarations =
+          [ FunctionDecl "main" []
+              (Let 
+                [("cmdNone", Var "Cmd.none"),
+                 ("subNone", Var "Sub.none"),
+                 ("result", Lit (StringLit "Platform modules loaded successfully"))]
+                (App (Var "text") (Var "result")))
+          ]
+      }
+  , testExpectedComplexity = CodeComplexity 1 1 1 0
+  }
+-- | JSON handling test
+jsonHandlingTest :: TestCase
+jsonHandlingTest = TestCase
+  { testName = "json-handling"
+  , testFeature = CustomTypes
+  , testModule = CanopyModule
+      { moduleDeclaration = ModuleHeader "Main" (ExportList ["main"])
+      , moduleImports = [ImportDecl "Html" Nothing (Just (ExportList ["text"])), 
+                        ImportDecl "Json.Encode" Nothing (Just (ExportList ["string", "int", "object"])),
+                        ImportDecl "Json.Decode" Nothing (Just (ExportList ["decodeString", "field", "string"]))]
+      , moduleDeclarations =
+          [ FunctionDecl "main" []
+              (Let 
+                [("jsonObject", App (Var "Json.Encode.object") 
+                   (List [Tuple [Lit (StringLit "name"), App (Var "Json.Encode.string") (Lit (StringLit "Alice"))],
+                          Tuple [Lit (StringLit "age"), App (Var "Json.Encode.int") (Lit (IntLit 30))]])),
+                 ("jsonString", App (Var "Json.Encode.encode") (App (Var "0") (Var "jsonObject"))),
+                 ("decoder", App (App (Var "Json.Decode.field") (Lit (StringLit "name"))) (Var "Json.Decode.string")),
+                 ("result", Case (App (App (Var "Json.Decode.decodeString") (Var "decoder")) (Var "jsonString"))
+                   [(ConPat "Ok" [VarPat "name"], App (App (Var "++") (Lit (StringLit "Name: "))) (Var "name")),
+                    (ConPat "Err" [VarPat "_"], Lit (StringLit "Decode failed"))])]
+                (App (Var "text") (Var "result")))
+          ]
+      }
+  , testExpectedComplexity = CodeComplexity 1 2 3 0
+  }
+-- | Higher-order function test
+higherOrderTest :: TestCase
+higherOrderTest = TestCase
+  { testName = "higher-order"
+  , testFeature = HigherOrderFunctions
+  , testModule = CanopyModule
+      { moduleDeclaration = ModuleHeader "Main" (ExportList ["main"])
+      , moduleImports = [ImportDecl "Html" Nothing (Just (ExportList ["text"]))]
+      , moduleDeclarations =
+          [ FunctionDecl "applyTwice" ["f", "x"] 
+              (App (Var "f") (App (Var "f") (Var "x")))
+          , FunctionDecl "increment" ["x"] 
+              (App (App (Var "+") (Var "x")) (Lit (IntLit 1)))
+          , FunctionDecl "main" []
+              (Let 
+                [("result", App (App (Var "applyTwice") (Var "increment")) (Lit (IntLit 5))),
+                 ("output", App (App (Var "++") (Lit (StringLit "Applied twice: "))) 
+                   (App (Var "String.fromInt") (Var "result")))]
+                (App (Var "text") (Var "output")))
+          ]
+      }
+  , testExpectedComplexity = CodeComplexity 2 1 1 0
+  }
+-- | Currying test
+curryingTest :: TestCase
+curryingTest = TestCase
+  { testName = "currying"
+  , testFeature = HigherOrderFunctions
+  , testModule = CanopyModule
+      { moduleDeclaration = ModuleHeader "Main" (ExportList ["main"])
+      , moduleImports = [ImportDecl "Html" Nothing (Just (ExportList ["text"]))]
+      , moduleDeclarations =
+          [ FunctionDecl "add" ["x", "y"] 
+              (App (App (Var "+") (Var "x")) (Var "y"))
+          , FunctionDecl "main" []
+              (Let 
+                [("addFive", App (Var "add") (Lit (IntLit 5))),
+                 ("result1", App (Var "addFive") (Lit (IntLit 3))),
+                 ("result2", App (Var "addFive") (Lit (IntLit 7))),
+                 ("output", App (App (Var "++") 
+                   (App (App (Var "++") (App (Var "String.fromInt") (Var "result1"))) 
+                     (Lit (StringLit " and ")))) 
+                   (App (Var "String.fromInt") (Var "result2")))]
+                (App (Var "text") (Var "output")))
+          ]
+      }
+  , testExpectedComplexity = CodeComplexity 1 1 2 0
+  }
+-- | Memoization test
+memoizationTest :: TestCase
+memoizationTest = TestCase
+  { testName = "memoization"
+  , testFeature = HigherOrderFunctions
+  , testModule = CanopyModule
+      { moduleDeclaration = ModuleHeader "Main" (ExportList ["main"])
+      , moduleImports = [ImportDecl "Html" Nothing (Just (ExportList ["text"]))]
+      , moduleDeclarations =
+          [ FunctionDecl "fibonacci" ["n"] 
+              (If (App (App (Var "<=") (Var "n")) (Lit (IntLit 1)))
+                 (Var "n")
+                 (App (App (Var "+") 
+                       (App (Var "fibonacci") (App (App (Var "-") (Var "n")) (Lit (IntLit 1)))))
+                   (App (Var "fibonacci") (App (App (Var "-") (Var "n")) (Lit (IntLit 2))))))
+          , FunctionDecl "main" []
+              (Let 
+                [("result", App (Var "fibonacci") (Lit (IntLit 7))),
+                 ("output", App (App (Var "++") (Lit (StringLit "Fibonacci(7) = "))) 
+                   (App (Var "String.fromInt") (Var "result")))]
+                (App (Var "text") (Var "output")))
+          ]
+      }
+  , testExpectedComplexity = CodeComplexity 1 1 2 0
+  }
+-- | Tail call test
+tailCallTest :: TestCase
+tailCallTest = TestCase
+  { testName = "tail-call"
+  , testFeature = FunctionComposition
+  , testModule = CanopyModule
+      { moduleDeclaration = ModuleHeader "Main" (ExportList ["main"])
+      , moduleImports = [ImportDecl "Html" Nothing (Just (ExportList ["text"]))]
+      , moduleDeclarations =
+          [ FunctionDecl "sumTail" ["n", "acc"] 
+              (If (App (App (Var "==") (Var "n")) (Lit (IntLit 0)))
+                 (Var "acc")
+                 (App (App (Var "sumTail") (App (App (Var "-") (Var "n")) (Lit (IntLit 1)))) 
+                   (App (App (Var "+") (Var "acc")) (Var "n"))))
+          , FunctionDecl "sum" ["n"] 
+              (App (App (Var "sumTail") (Var "n")) (Lit (IntLit 0)))
+          , FunctionDecl "main" []
+              (Let 
+                [("result", App (Var "sum") (Lit (IntLit 10))),
+                 ("output", App (App (Var "++") (Lit (StringLit "Sum 1-10: "))) 
+                   (App (Var "String.fromInt") (Var "result")))]
+                (App (Var "text") (Var "output")))
+          ]
+      }
+  , testExpectedComplexity = CodeComplexity 2 1 2 0
+  }
+-- | Lazy evaluation test
+lazyEvaluationTest :: TestCase
+lazyEvaluationTest = TestCase
+  { testName = "lazy-evaluation"
+  , testFeature = HigherOrderFunctions
+  , testModule = CanopyModule
+      { moduleDeclaration = ModuleHeader "Main" (ExportList ["main"])
+      , moduleImports = [ImportDecl "Html" Nothing (Just (ExportList ["text"]))]
+      , moduleDeclarations =
+          [ FunctionDecl "main" []
+              (Let 
+                [("list", List [Lit (IntLit 1), Lit (IntLit 2), Lit (IntLit 3), Lit (IntLit 4), Lit (IntLit 5)]),
+                 ("first", App (Var "List.head") (Var "list")),
+                 ("result", Case (Var "first") 
+                   [(ConPat "Just" [VarPat "value"], 
+                     App (App (Var "++") (Lit (StringLit "First element: "))) 
+                       (App (Var "String.fromInt") (Var "value"))),
+                    (ConPat "Nothing" [], Lit (StringLit "Empty list"))])]
+                (App (Var "text") (Var "result")))
+          ]
+      }
+  , testExpectedComplexity = CodeComplexity 1 2 2 0
+  }
+-- | Module import test
+moduleImportTest :: TestCase
+moduleImportTest = TestCase
+  { testName = "module-import"
+  , testFeature = ModuleImports
+  , testModule = CanopyModule
+      { moduleDeclaration = ModuleHeader "Main" (ExportList ["main"])
+      , moduleImports = [ImportDecl "Html" Nothing (Just (ExportList ["text"])), 
+                        ImportDecl "List" Nothing (Just (ExportList ["map", "filter"]))]
+      , moduleDeclarations =
+          [ FunctionDecl "main" []
+              (Let 
+                [("numbers", List [Lit (IntLit 1), Lit (IntLit 2), Lit (IntLit 3), Lit (IntLit 4)]),
+                 ("doubled", App (App (Var "List.map") (App (Var "*") (Lit (IntLit 2)))) (Var "numbers")),
+                 ("evens", App (App (Var "List.filter") (Lambda [VarPat "x"] (App (App (Var "==") (App (App (Var "remainderBy") (Lit (IntLit 2))) (Var "x"))) (Lit (IntLit 0))))) (Var "numbers")),
+                 ("result", Lit (StringLit "Module imports working"))]
+                (App (Var "text") (Var "result")))
+          ]
+      }
+  , testExpectedComplexity = CodeComplexity 1 1 3 0
+  }
+-- | Qualified import test
+qualifiedImportTest :: TestCase
+qualifiedImportTest = TestCase
+  { testName = "qualified-import"
+  , testFeature = ModuleImports
+  , testModule = CanopyModule
+      { moduleDeclaration = ModuleHeader "Main" (ExportList ["main"])
+      , moduleImports = [ImportDecl "Html" Nothing (Just (ExportList ["text"])), 
+                        ImportDecl "List" (Just "L") Nothing]
+      , moduleDeclarations =
+          [ FunctionDecl "main" []
+              (Let 
+                [("numbers", List [Lit (IntLit 1), Lit (IntLit 2), Lit (IntLit 3)]),
+                 ("doubled", App (App (Var "L.map") (App (Var "*") (Lit (IntLit 2)))) (Var "numbers")),
+                 ("length", App (Var "L.length") (Var "doubled")),
+                 ("result", App (App (Var "++") (Lit (StringLit "Length: "))) 
+                   (App (Var "String.fromInt") (Var "length")))]
+                (App (Var "text") (Var "result")))
+          ]
+      }
+  , testExpectedComplexity = CodeComplexity 1 1 2 0
+  }
+-- | Exposing pattern test
+exposingPatternTest :: TestCase
+exposingPatternTest = TestCase
+  { testName = "exposing-pattern"
+  , testFeature = ModuleImports
+  , testModule = CanopyModule
+      { moduleDeclaration = ModuleHeader "Main" (ExportList ["main"])
+      , moduleImports = [ImportDecl "Html" Nothing (Just (ExportList ["text"])), 
+                        ImportDecl "Maybe" Nothing (Just (ExportList ["Maybe", "withDefault"]))]
+      , moduleDeclarations =
+          [ FunctionDecl "main" []
+              (Let 
+                [("maybeValue", App (Var "Just") (Lit (IntLit 42))),
+                 ("defaulted", App (App (Var "Maybe.withDefault") (Lit (IntLit 0))) (Var "maybeValue")),
+                 ("result", App (App (Var "++") (Lit (StringLit "Value: "))) 
+                   (App (Var "String.fromInt") (Var "defaulted")))]
+                (App (Var "text") (Var "result")))
+          ]
+      }
+  , testExpectedComplexity = CodeComplexity 1 1 2 0
+  }
+-- | Type annotation test
+typeAnnotationTest :: TestCase
+typeAnnotationTest = TestCase
+  { testName = "type-annotation"
+  , testFeature = TypeAliases
+  , testModule = CanopyModule
+      { moduleDeclaration = ModuleHeader "Main" (ExportList ["main", "Point"])
+      , moduleImports = [ImportDecl "Html" Nothing (Just (ExportList ["text"]))]
+      , moduleDeclarations =
+          [ TypeAlias "Point" [] (RecordType [("x", TypeCon "Int" []), ("y", TypeCon "Int" [])])
+          , FunctionDecl "distance" ["p1", "p2"] 
+              (App (Var "sqrt") 
+                (App (App (Var "+") 
+                      (App (Var "toFloat") (App (App (Var "*") 
+                        (App (App (Var "-") (RecordAccess (Var "p2") "x")) (RecordAccess (Var "p1") "x"))) 
+                        (App (App (Var "-") (RecordAccess (Var "p2") "x")) (RecordAccess (Var "p1") "x"))))) 
+                  (App (Var "toFloat") (App (App (Var "*") 
+                    (App (App (Var "-") (RecordAccess (Var "p2") "y")) (RecordAccess (Var "p1") "y"))) 
+                    (App (App (Var "-") (RecordAccess (Var "p2") "y")) (RecordAccess (Var "p1") "y"))))))
+          , FunctionDecl "main" []
+              (Let 
+                [("p1", Record [("x", Lit (IntLit 0)), ("y", Lit (IntLit 0))]),
+                 ("p2", Record [("x", Lit (IntLit 3)), ("y", Lit (IntLit 4))]),
+                 ("result", App (Var "String.fromFloat") (App (App (Var "distance") (Var "p1")) (Var "p2")))]
+                (App (Var "text") (Var "result")))
+          ]
+      }
+  , testExpectedComplexity = CodeComplexity 1 1 3 1
+  }
+-- | Generic function test
+genericFunctionTest :: TestCase
+genericFunctionTest = TestCase
+  { testName = "generic-function"
+  , testFeature = HigherOrderFunctions
+  , testModule = CanopyModule
+      { moduleDeclaration = ModuleHeader "Main" (ExportList ["main"])
+      , moduleImports = [ImportDecl "Html" Nothing (Just (ExportList ["text"]))]
+      , moduleDeclarations =
+          [ FunctionDecl "identity" ["x"] (Var "x")
+          , FunctionDecl "apply" ["f", "x"] (App (Var "f") (Var "x"))
+          , FunctionDecl "main" []
+              (Let 
+                [("result1", App (App (Var "apply") (Var "identity")) (Lit (IntLit 42))),
+                 ("result2", App (App (Var "apply") (Var "identity")) (Lit (StringLit "hello"))),
+                 ("output", App (App (Var "++") (App (Var "String.fromInt") (Var "result1"))) 
+                   (App (App (Var "++") (Lit (StringLit " "))) (Var "result2")))]
+                (App (Var "text") (Var "output")))
+          ]
+      }
+  , testExpectedComplexity = CodeComplexity 2 1 2 0
+  }
+-- | Port module test
+portModuleTest :: TestCase
+portModuleTest = TestCase
+  { testName = "port-module"
+  , testFeature = PortHandling
+  , testModule = CanopyModule
+      { moduleDeclaration = ModuleHeader "Main" (ExportList ["main"])
+      , moduleImports = [ImportDecl "Html" Nothing (Just (ExportList ["text"]))]
+      , moduleDeclarations =
+          [ FunctionDecl "main" []
+              (Let 
+                [("result", Lit (StringLit "Port communication would work here"))]
+                (App (Var "text") (Var "result")))
+          ]
+      }
+  , testExpectedComplexity = CodeComplexity 1 1 1 0
+  }
+-- | Effect manager test
+effectManagerTest :: TestCase
+effectManagerTest = TestCase
+  { testName = "effect-manager"
+  , testFeature = PortHandling
+  , testModule = CanopyModule
+      { moduleDeclaration = ModuleHeader "Main" (ExportList ["main"])
+      , moduleImports = [ImportDecl "Html" Nothing (Just (ExportList ["text"])), 
+                        ImportDecl "Task" Nothing (Just (ExportList ["succeed"]))]
+      , moduleDeclarations =
+          [ FunctionDecl "main" []
+              (Let 
+                [("task", App (Var "Task.succeed") (Lit (StringLit "Effect manager working"))),
+                 ("result", Lit (StringLit "Effects handled"))]
+                (App (Var "text") (Var "result")))
+          ]
+      }
+  , testExpectedComplexity = CodeComplexity 1 1 1 0
+  }

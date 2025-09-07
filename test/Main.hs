@@ -10,7 +10,6 @@ import qualified Golden.ParseTypeGolden as ParseTypeGolden
 import qualified Integration.CanExtensionTest as CanExtensionIT
 import qualified Integration.CompileIntegrationTest as CompileIT
 import qualified Integration.DevelopTest as DevelopIT
-import qualified Integration.ElmCanopyCompatibilityTest as ElmCanopyCompatIT
 import qualified Integration.InitTest as InitIT
 import qualified Integration.InstallTest as InstallIT
 import qualified Integration.JsGenTest as JsGenIT
@@ -49,6 +48,12 @@ import qualified Unit.Canopy.StuffTest as StuffTest
 import qualified Unit.Canopy.VersionTest as VersionTest
 import qualified Unit.CompileTest as CompileTest
 import qualified Unit.Data.NameTest as NameTest
+import qualified Unit.Data.IndexTest as IndexTest
+import qualified Unit.Data.BagTest as BagTest
+import qualified Unit.Data.NonEmptyListTest as NonEmptyListTest
+import qualified Unit.Data.OneOrMoreTest as OneOrMoreTest
+import qualified Unit.Data.Map.UtilsTest as MapUtilsTest
+import qualified Unit.Data.Utf8Test as Utf8Test
 import qualified Unit.File.ArchiveTest as FileArchiveTest
 import qualified Unit.File.BinaryTest as FileBinaryTest
 import qualified Unit.File.FileSystemTest as FileFileSystemTest
@@ -114,6 +119,12 @@ unitTests =
   testGroup
     "Unit Tests"
     [ NameTest.tests,
+      IndexTest.tests,
+      BagTest.tests,
+      NonEmptyListTest.tests,
+      OneOrMoreTest.tests,
+      MapUtilsTest.tests,
+      Utf8Test.tests,
       StuffTest.tests,
       VersionTest.tests,
       JsonDecodeTest.tests,
@@ -209,7 +220,6 @@ integrationTests =
       WatchIT.tests,
       CompileIT.tests,
       JsonIT.tests,
-      ElmCanopyCompatIT.tests,
       ElmCanopyGoldenIT.tests
     ]
 

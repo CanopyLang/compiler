@@ -4419,26 +4419,25 @@ var $elm$virtual_dom$VirtualDom$toHandlerInt = function (handler) {
 			return 3;
 	}
 };
-var $author$project$Main$add = F2(
-	function (x, y) {
-		return x + y;
-	});
-var $author$project$Main$compose = F3(
-	function (f, g, x) {
-		return f(
-			g(x));
-	});
-var $author$project$Main$mul = F2(
-	function (x, y) {
-		return x * y;
-	});
+var $author$project$Main$Success = function (a) {
+	return {$: 1, a: a};
+};
 var $elm$virtual_dom$VirtualDom$text = _VirtualDom_text;
 var $elm$html$Html$text = $elm$virtual_dom$VirtualDom$text;
-var $author$project$Main$main = $elm$html$Html$text(
-	$elm$core$String$fromInt(
-		A3(
-			$author$project$Main$compose,
-			$author$project$Main$add(1),
-			$author$project$Main$mul(2),
-			3)));
+var $author$project$Main$main = function () {
+	var status = $author$project$Main$Success('Data loaded');
+	var message = function () {
+		switch (status.$) {
+			case 0:
+				return 'Loading...';
+			case 1:
+				var data = status.a;
+				return data;
+			default:
+				var msg = status.a;
+				return 'Error: ' + msg;
+		}
+	}();
+	return $elm$html$Html$text(message);
+}();
 _Platform_export({'Main':{'init':_VirtualDom_init($author$project$Main$main)(0)(0)}});}(this));

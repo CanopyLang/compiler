@@ -4419,26 +4419,28 @@ var $elm$virtual_dom$VirtualDom$toHandlerInt = function (handler) {
 			return 3;
 	}
 };
-var $author$project$Main$add = F2(
-	function (x, y) {
-		return x + y;
-	});
-var $author$project$Main$compose = F3(
-	function (f, g, x) {
-		return f(
-			g(x));
-	});
-var $author$project$Main$mul = F2(
-	function (x, y) {
-		return x * y;
-	});
 var $elm$virtual_dom$VirtualDom$text = _VirtualDom_text;
 var $elm$html$Html$text = $elm$virtual_dom$VirtualDom$text;
-var $author$project$Main$main = $elm$html$Html$text(
-	$elm$core$String$fromInt(
-		A3(
-			$author$project$Main$compose,
-			$author$project$Main$add(1),
-			$author$project$Main$mul(2),
-			3)));
+var $elm$core$Maybe$withDefault = F2(
+	function (_default, maybe) {
+		if (!maybe.$) {
+			var value = maybe.a;
+			return value;
+		} else {
+			return _default;
+		}
+	});
+var $author$project$Main$main = function () {
+	var maybeValue = $elm$core$Maybe$Just(42);
+	var result = function () {
+		if (maybeValue.$ === 1) {
+			return 'No value';
+		} else {
+			var value = maybeValue.a;
+			return 'Value: ' + $elm$core$String$fromInt(value);
+		}
+	}();
+	var withDefault = A2($elm$core$Maybe$withDefault, 0, maybeValue);
+	return $elm$html$Html$text(result);
+}();
 _Platform_export({'Main':{'init':_VirtualDom_init($author$project$Main$main)(0)(0)}});}(this));

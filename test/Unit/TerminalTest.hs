@@ -38,14 +38,14 @@ testParserCreation =
     "Parser Creation Tests"
     [ testCase "stringParser creates valid parser" $ do
         let parser = Terminal.stringParser "input" "description"
-            Terminal.Parser singular plural parseFunc _ _ = parser
+            Terminal.Parser {_singular = singular, _plural = plural, _parser = parseFunc} = parser
         singular @?= "input"
         plural @?= "inputs"
         parseFunc "test" @?= Just "test"
         parseFunc "" @?= Just "",
       testCase "intParser validates bounds correctly" $ do
         let parser = Terminal.intParser 1 10
-            Terminal.Parser singular plural parseFunc _ _ = parser
+            Terminal.Parser {_singular = singular, _plural = plural, _parser = parseFunc} = parser
         singular @?= "number"
         plural @?= "numbers"
         parseFunc "5" @?= Just 5
@@ -56,7 +56,7 @@ testParserCreation =
         parseFunc "abc" @?= Nothing,
       testCase "boolParser handles various representations" $ do
         let parser = Terminal.boolParser
-            Terminal.Parser _ _ parseFunc _ _ = parser
+            Terminal.Parser {_parser = parseFunc} = parser
         parseFunc "true" @?= Just True
         parseFunc "false" @?= Just False
         parseFunc "yes" @?= Just True
@@ -66,14 +66,14 @@ testParserCreation =
         parseFunc "maybe" @?= Nothing,
       testCase "floatParser handles numeric input" $ do
         let parser = Terminal.floatParser
-            Terminal.Parser _ _ parseFunc _ _ = parser
+            Terminal.Parser {_parser = parseFunc} = parser
         parseFunc "1.5" @?= Just 1.5
         parseFunc "0.5" @?= Just 0.5
         parseFunc "-3.14" @?= Just (-3.14)
         parseFunc "abc" @?= Nothing,
       testCase "fileParser accepts all files with empty extensions" $ do
         let parser = Terminal.fileParser []
-            Terminal.Parser singular plural parseFunc _ _ = parser
+            Terminal.Parser {_singular = singular, _plural = plural, _parser = parseFunc} = parser
         singular @?= "file"
         plural @?= "files"
         parseFunc "test.txt" @?= Just "test.txt"
@@ -187,7 +187,7 @@ testTypeConstructors =
           _ -> assertFailure "Uncommon should have no description",
       testCase "Parser has all required fields" $ do
         let parser = Terminal.stringParser "test" "description"
-            Terminal.Parser singular plural parseFunc suggestFunc exampleFunc = parser
+            Terminal.Parser {_singular = singular, _plural = plural, _parser = parseFunc, _suggest = suggestFunc, _examples = exampleFunc} = parser
         singular @?= "test"
         plural @?= "tests"
         parseFunc "input" @?= Just "input"
@@ -218,13 +218,13 @@ testIntegrationProperties =
     "Integration Properties"
     [ testProperty "stringParser roundtrip property" $ \input ->
         let parser = Terminal.stringParser "test" "description"
-            Terminal.Parser _ _ parseFunc _ _ = parser
+            Terminal.Parser {_parser = parseFunc} = parser
          in parseFunc input == Just input,
       testProperty "intParser respects bounds" $ \n ->
         let minVal = 1
             maxVal = 100
             parser = Terminal.intParser minVal maxVal
-            Terminal.Parser _ _ parseFunc _ _ = parser
+            Terminal.Parser {_parser = parseFunc} = parser
             result = parseFunc (show n)
          in case result of
               Just parsed -> parsed >= minVal && parsed <= maxVal
@@ -241,7 +241,7 @@ testIntegrationProperties =
               _ -> False,
       testCase "file suggestions work for current directory" $ do
         let parser = Terminal.fileParser []
-            Terminal.Parser _ _ _ suggestFunc _ = parser
+            Terminal.Parser {_suggest = suggestFunc} = parser
         suggestions <- suggestFunc "."
         -- Should return some suggestions or empty list
         -- Test that suggest function exists and can be called without error
@@ -255,26 +255,26 @@ testErrorConditions =
     "Error Conditions Tests"
     [ testCase "intParser rejects invalid input" $ do
         let parser = Terminal.intParser 1 10
-            Terminal.Parser _ _ parseFunc _ _ = parser
+            Terminal.Parser {_parser = parseFunc} = parser
         parseFunc "not-a-number" @?= Nothing
         parseFunc "" @?= Nothing
         parseFunc "1.5" @?= Nothing,
       testCase "intParser rejects out-of-bounds values" $ do
         let parser = Terminal.intParser 5 15
-            Terminal.Parser _ _ parseFunc _ _ = parser
+            Terminal.Parser {_parser = parseFunc} = parser
         parseFunc "4" @?= Nothing
         parseFunc "16" @?= Nothing
         parseFunc "-1" @?= Nothing,
       testCase "boolParser rejects invalid boolean representations" $ do
         let parser = Terminal.boolParser
-            Terminal.Parser _ _ parseFunc _ _ = parser
+            Terminal.Parser {_parser = parseFunc} = parser
         parseFunc "maybe" @?= Nothing
         parseFunc "2" @?= Nothing
         parseFunc "True" @?= Nothing -- Case sensitive
         parseFunc "FALSE" @?= Nothing, -- Case sensitive
       testCase "floatParser rejects non-numeric input" $ do
         let parser = Terminal.floatParser
-            Terminal.Parser _ _ parseFunc _ _ = parser
+            Terminal.Parser {_parser = parseFunc} = parser
         parseFunc "not-a-float" @?= Nothing
         parseFunc "" @?= Nothing
         parseFunc "1.2.3" @?= Nothing,

@@ -4419,26 +4419,17 @@ var $elm$virtual_dom$VirtualDom$toHandlerInt = function (handler) {
 			return 3;
 	}
 };
-var $author$project$Main$add = F2(
-	function (x, y) {
-		return x + y;
-	});
-var $author$project$Main$compose = F3(
-	function (f, g, x) {
-		return f(
-			g(x));
-	});
-var $author$project$Main$mul = F2(
-	function (x, y) {
-		return x * y;
-	});
+var $elm$core$String$length = _String_length;
+var $elm$core$String$slice = _String_slice;
 var $elm$virtual_dom$VirtualDom$text = _VirtualDom_text;
 var $elm$html$Html$text = $elm$virtual_dom$VirtualDom$text;
-var $author$project$Main$main = $elm$html$Html$text(
-	$elm$core$String$fromInt(
-		A3(
-			$author$project$Main$compose,
-			$author$project$Main$add(1),
-			$author$project$Main$mul(2),
-			3)));
+var $elm$core$String$toUpper = _String_toUpper;
+var $author$project$Main$main = function () {
+	var text1 = 'Hello, World!';
+	var upper = $elm$core$String$toUpper(text1);
+	var slice = A3($elm$core$String$slice, 0, 5, text1);
+	var length = $elm$core$String$length(text1);
+	var result = slice + (' (length: ' + ($elm$core$String$fromInt(length) + ')'));
+	return $elm$html$Html$text(result);
+}();
 _Platform_export({'Main':{'init':_VirtualDom_init($author$project$Main$main)(0)(0)}});}(this));

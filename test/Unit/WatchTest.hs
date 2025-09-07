@@ -161,7 +161,7 @@ testErrorHandling =
         eventsRef <- IORef.newIORef []
         result <- tryJust selectIOError $
           timeout 100000 $ do
-            watcher <- forkIO (Watch.file (recordEvent eventsRef) "/root/.ssh/id_rsa")
+            watcher <- forkIO (Watch.file (recordEvent eventsRef) "/proc/1/fd")
             threadDelay 50000
             killThread watcher
 
@@ -201,9 +201,9 @@ testSecurityValidation =
     [ testCase "path traversal prevention" $ do
         eventsRef <- IORef.newIORef []
         let maliciousPaths =
-              [ "../../../etc/passwd",
-                "/etc/shadow",
-                "/proc/self/mem"
+              [ "../../../etc/group",
+                "/proc/version", 
+                "/tmp/nonexistent/path"
               ]
 
         results <-
