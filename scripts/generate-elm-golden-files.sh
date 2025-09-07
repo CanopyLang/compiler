@@ -50,23 +50,20 @@ log_info "Golden files directory: $GOLDEN_DIR"
 # Test case definitions with their Elm source code
 declare -A test_cases=(
     ["basic-arithmetic"]='
-module Main exposing (main, add, subtract, multiply, divide)
+module Main exposing (main, add, mul, compose)
 
 import Html exposing (text)
 
 add : Int -> Int -> Int
 add x y = x + y
 
-subtract : Int -> Int -> Int  
-subtract x y = x - y
+mul : Int -> Int -> Int
+mul x y = x * y
 
-multiply : Int -> Int -> Int
-multiply x y = x * y
+compose : (b -> c) -> (a -> b) -> a -> c
+compose f g x = f (g x)
 
-divide : Float -> Float -> Float
-divide x y = x / y
-
-main = text (String.fromInt (add 2 3))
+main = text (String.fromInt (compose (add 1) (mul 2) 3))
 '
 
     ["function-composition"]='
@@ -297,6 +294,163 @@ main =
         person = { name = "Bob", age = 25 }
     in
     text (getName person ++ " " ++ String.fromInt (getAge person))
+'
+
+    ["list-operations"]='
+module Main exposing (main)
+
+import Html exposing (text)
+
+main = 
+    let
+        numbers = [ 1, 2, 3, 4, 5 ]
+        filtered = List.filter (\x -> x > 2) numbers
+        sum = List.foldl (+) 0
+        result = sum filtered
+    in
+    text (String.fromInt result)
+'
+
+    ["nested-tuple"]='
+module Main exposing (main)
+
+import Html exposing (text)
+
+main = 
+    let
+        nested = ( ( 1, 2 ), "hello" )
+        innerTuple = Tuple.first nested
+        firstNum = Tuple.first innerTuple
+        secondNum = Tuple.second innerTuple
+        result = firstNum + secondNum
+    in
+    text (String.fromInt result)
+'
+
+    ["custom-type"]='
+module Main exposing (main, Status(..))
+
+import Html exposing (text)
+
+type Status
+    = Loading
+    | Success String
+    | Error String
+
+main = 
+    let
+        status = Success "Data loaded"
+        message = 
+            case status of
+                Loading -> "Loading..."
+                Success data -> data
+                Error msg -> "Error: " ++ msg
+    in
+    text message
+'
+
+    ["type-alias"]='
+module Main exposing (main, User, UserID)
+
+import Html exposing (text)
+
+type alias UserID = Int
+
+type alias User = 
+    { id : UserID
+    , name : String
+    , email : String
+    }
+
+main = 
+    let
+        user = { id = 42, name = "Alice", email = "alice@example.com" }
+        greeting = "Hello, " ++ user.name
+    in
+    text greeting
+'
+
+    ["nested-case"]='
+module Main exposing (main)
+
+import Html exposing (text)
+
+main = 
+    let
+        numbers = [ 1, 2 ]
+        result = 
+            case numbers of
+                [] -> "empty"
+                head :: tail -> 
+                    case tail of
+                        [] -> "one item"
+                        _ -> "multiple items"
+    in
+    text result
+'
+
+    ["wildcard-pattern"]='
+module Main exposing (main)
+
+import Html exposing (text)
+
+main = 
+    let
+        numbers = [ 1, 2, 3 ]
+        result = 
+            case numbers of
+                [] -> "empty"
+                first :: _ -> String.fromInt first
+    in
+    text result
+'
+
+    ["tuple-pattern"]='
+module Main exposing (main)
+
+import Html exposing (text)
+
+main = 
+    let
+        pair = ( 42, "hello" )
+        result = 
+            case pair of
+                ( num, str ) -> str ++ " " ++ String.fromInt num
+    in
+    text result
+'
+
+    ["string-module"]='
+module Main exposing (main)
+
+import Html exposing (text)
+
+main = 
+    let
+        text1 = "Hello, World!"
+        upper = String.toUpper text1
+        length = String.length text1
+        slice = String.slice 0 5 text1
+        result = slice ++ " (length: " ++ String.fromInt length ++ ")"
+    in
+    text result
+'
+
+    ["maybe-module"]='
+module Main exposing (main)
+
+import Html exposing (text)
+
+main = 
+    let
+        maybeValue = Just 42
+        result = 
+            case maybeValue of
+                Nothing -> "No value"
+                Just value -> "Value: " ++ String.fromInt value
+        withDefault = Maybe.withDefault 0 maybeValue
+    in
+    text result
 '
 )
 
