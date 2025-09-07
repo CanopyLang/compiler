@@ -11,14 +11,10 @@ module Generate.JavaScript.Builder
   )
   where
 
--- Based on the language-ecmascript package.
--- https://hackage.haskell.org/package/language-ecmascript
--- They did the hard work of reading the spec to figure out
--- how all the types should fit together.
+-- Using language-javascript 0.8.0.0 with modern JavaScript support
+-- https://github.com/quintenkasteel/language-javascript
 
-import Prelude hiding (lines)
-import qualified Data.List as List
-import qualified Data.ByteString as BS
+import qualified Data.ByteString.Lazy.Char8 as LBS
 import Data.ByteString.Builder as B
 import qualified Generate.JavaScript.Name as Name
 import Generate.JavaScript.Name (Name)
@@ -26,6 +22,11 @@ import qualified Json.Encode as Json
 import qualified Canopy.String as ES
 import qualified Data.Utf8 as Utf8
 import qualified GHC.Word
+
+-- Language JavaScript 0.8.0.0 imports
+import qualified Language.JavaScript.Parser.AST as JS
+import Language.JavaScript.Parser.AST (JSAnnot(..), JSAST(..), JSExpression, JSStatement)
+import qualified Language.JavaScript.Pretty.Printer as JSP
 
 
 backslash :: GHC.Word.Word8
@@ -169,403 +170,173 @@ data PrefixOp
 
 
 
--- ENCODE
+-- LANGUAGE-JAVASCRIPT CONVERSION
+
+-- Convert custom AST to language-javascript AST
+noAnnot :: JSAnnot
+noAnnot = JSNoAnnot
+
+-- Convert Name to String
+nameToString :: Name -> String
+nameToString = LBS.unpack . B.toLazyByteString . Name.toBuilder
+
+-- Convert Builder to String  
+builderToString :: Builder -> String
+builderToString = LBS.unpack . B.toLazyByteString
+
+-- Convert custom Expr to JSExpression
+exprToJS :: Expr -> JSExpression
+exprToJS expr = case expr of
+  String builder -> JS.JSStringLiteral noAnnot (show $ builderToString builder)
+  Float builder -> JS.JSDecimal noAnnot (builderToString builder) 
+  Int n -> JS.JSDecimal noAnnot (show n)
+  Bool True -> JS.JSLiteral noAnnot "true"
+  Bool False -> JS.JSLiteral noAnnot "false"  
+  Null -> JS.JSLiteral noAnnot "null"
+  Json jsonValue -> JS.JSLiteral noAnnot (LBS.unpack $ B.toLazyByteString $ Json.encodeUgly jsonValue)
+  Array exprs -> JS.JSArrayLiteral noAnnot (exprToJSArrayElements exprs) noAnnot
+  Object fields -> JS.JSObjectLiteral noAnnot (fieldsToJSCommaTrailingList fields) noAnnot  
+  Ref name -> JS.JSIdentifier noAnnot (nameToString name)
+  Access obj field -> JS.JSMemberDot (exprToJS obj) noAnnot (JS.JSIdentifier noAnnot (nameToString field))
+  Index obj key -> JS.JSMemberSquare (exprToJS obj) noAnnot (exprToJS key) noAnnot
+  Prefix PrefixNot e -> JS.JSUnaryExpression (JS.JSUnaryOpNot noAnnot) (exprToJS e)
+  Prefix PrefixNegate e -> JS.JSUnaryExpression (JS.JSUnaryOpMinus noAnnot) (exprToJS e)  
+  Prefix PrefixComplement e -> JS.JSUnaryExpression (JS.JSUnaryOpTilde noAnnot) (exprToJS e)
+  Infix op left right -> JS.JSExpressionBinary (exprToJS left) (infixOpToJS op) (exprToJS right)
+  If cond thenExpr elseExpr -> JS.JSExpressionTernary (exprToJS cond) noAnnot (exprToJS thenExpr) noAnnot (exprToJS elseExpr)
+  Assign lval e -> JS.JSAssignExpression (lvalueToJS lval) (JS.JSAssign noAnnot) (exprToJS e)  
+  Call func args -> JS.JSCallExpression (exprToJS func) noAnnot (argsToJSCommaList args) noAnnot
+  Function maybeName params body -> 
+    JS.JSFunctionExpression 
+      noAnnot 
+      (maybe JS.JSIdentNone (JS.JSIdentName noAnnot . nameToString) maybeName)
+      noAnnot
+      (paramsToJSCommaList params)
+      noAnnot
+      (JS.JSBlock noAnnot (map stmtToJS body) noAnnot)
+
+-- Convert custom Stmt to JSStatement  
+stmtToJS :: Stmt -> JSStatement
+stmtToJS stmt = case stmt of
+  Block stmts -> JS.JSStatementBlock noAnnot (map stmtToJS stmts) noAnnot (JS.JSSemiAuto)
+  EmptyStmt -> JS.JSEmptyStatement noAnnot
+  ExprStmt e -> JS.JSExpressionStatement (exprToJS e) (JS.JSSemiAuto)  
+  IfStmt cond thenStmt elseStmt -> 
+    JS.JSIfElse noAnnot noAnnot (exprToJS cond) noAnnot (stmtToJS thenStmt) noAnnot (stmtToJS elseStmt)
+  Switch e cases -> JS.JSSwitch noAnnot noAnnot (exprToJS e) noAnnot noAnnot (map caseToJS cases) noAnnot (JS.JSSemiAuto)
+  While cond body -> JS.JSWhile noAnnot noAnnot (exprToJS cond) noAnnot (stmtToJS body)
+  Break Nothing -> JS.JSBreak noAnnot JS.JSIdentNone (JS.JSSemiAuto)
+  Break (Just label) -> JS.JSBreak noAnnot (JS.JSIdentName noAnnot (nameToString label)) (JS.JSSemiAuto)
+  Continue Nothing -> JS.JSContinue noAnnot JS.JSIdentNone (JS.JSSemiAuto)
+  Continue (Just label) -> JS.JSContinue noAnnot (JS.JSIdentName noAnnot (nameToString label)) (JS.JSSemiAuto)
+  Labelled label s -> JS.JSLabelled (JS.JSIdentName noAnnot (nameToString label)) noAnnot (stmtToJS s)
+  Try tryStmt errName catchStmt -> 
+    JS.JSTry noAnnot (blockFromStmt tryStmt) 
+      [JS.JSCatch noAnnot noAnnot (JS.JSIdentifier noAnnot (nameToString errName)) noAnnot (blockFromStmt catchStmt)]
+      JS.JSNoFinally
+  Throw e -> JS.JSThrow noAnnot (exprToJS e) (JS.JSSemiAuto)
+  Return e -> JS.JSReturn noAnnot (Just $ exprToJS e) (JS.JSSemiAuto)
+  Var name e -> JS.JSVariable noAnnot (JS.JSLOne (JS.JSVarInitExpression (JS.JSIdentifier noAnnot (nameToString name)) (JS.JSVarInit noAnnot (exprToJS e)))) (JS.JSSemiAuto)
+  Vars pairs -> JS.JSVariable noAnnot (varsToJSCommaList pairs) (JS.JSSemiAuto)
+  FunctionStmt name params body ->
+    JS.JSFunction noAnnot (JS.JSIdentName noAnnot (nameToString name)) noAnnot (paramsToJSCommaList params) noAnnot (JS.JSBlock noAnnot (map stmtToJS body) noAnnot) (JS.JSSemiAuto)
+
+-- Helper conversion functions
+infixOpToJS :: InfixOp -> JS.JSBinOp
+infixOpToJS op = case op of
+  OpAdd -> JS.JSBinOpPlus noAnnot
+  OpSub -> JS.JSBinOpMinus noAnnot
+  OpMul -> JS.JSBinOpTimes noAnnot
+  OpDiv -> JS.JSBinOpDivide noAnnot
+  OpMod -> JS.JSBinOpMod noAnnot
+  OpEq -> JS.JSBinOpStrictEq noAnnot  
+  OpNe -> JS.JSBinOpStrictNeq noAnnot
+  OpLt -> JS.JSBinOpLt noAnnot
+  OpLe -> JS.JSBinOpLe noAnnot
+  OpGt -> JS.JSBinOpGt noAnnot
+  OpGe -> JS.JSBinOpGe noAnnot
+  OpAnd -> JS.JSBinOpAnd noAnnot
+  OpOr -> JS.JSBinOpOr noAnnot
+  OpBitwiseAnd -> JS.JSBinOpBitAnd noAnnot
+  OpBitwiseXor -> JS.JSBinOpBitXor noAnnot
+  OpBitwiseOr -> JS.JSBinOpBitOr noAnnot
+  OpLShift -> JS.JSBinOpLsh noAnnot
+  OpSpRShift -> JS.JSBinOpRsh noAnnot
+  OpZfRShift -> JS.JSBinOpUrsh noAnnot
+
+lvalueToJS :: LValue -> JSExpression  
+lvalueToJS lval = case lval of
+  LRef name -> JS.JSIdentifier noAnnot (nameToString name)
+  LDot e field -> JS.JSMemberDot (exprToJS e) noAnnot (JS.JSIdentifier noAnnot (nameToString field))
+  LBracket e key -> JS.JSMemberSquare (exprToJS e) noAnnot (exprToJS key) noAnnot
+
+caseToJS :: Case -> JS.JSSwitchParts  
+caseToJS c = case c of
+  Case e stmts -> JS.JSCase noAnnot (exprToJS e) noAnnot (map stmtToJS stmts)
+  Default stmts -> JS.JSDefault noAnnot noAnnot (map stmtToJS stmts)
+
+-- varPairToJS not needed - using varsToJSCommaList instead
+
+paramsToJSCommaList :: [Name] -> JS.JSCommaList JSExpression
+paramsToJSCommaList [] = JS.JSLNil
+paramsToJSCommaList [n] = JS.JSLOne (JS.JSIdentifier noAnnot (nameToString n))  
+paramsToJSCommaList (n:ns) = 
+  foldr (\name acc -> JS.JSLCons acc noAnnot (JS.JSIdentifier noAnnot (nameToString name))) 
+        (JS.JSLOne (JS.JSIdentifier noAnnot (nameToString $ last (n:ns)))) 
+        (init (n:ns))
+
+exprToJSArrayElements :: [Expr] -> [JS.JSArrayElement]
+exprToJSArrayElements = map (JS.JSArrayElement . exprToJS)
+
+argsToJSCommaList :: [Expr] -> JS.JSCommaList JSExpression
+argsToJSCommaList [] = JS.JSLNil  
+argsToJSCommaList [e] = JS.JSLOne (exprToJS e)
+argsToJSCommaList (e:es) = 
+  foldr (\expr acc -> JS.JSLCons acc noAnnot (exprToJS expr)) 
+        (JS.JSLOne (exprToJS $ last (e:es))) 
+        (init (e:es))
+
+fieldsToJSCommaTrailingList :: [(Name, Expr)] -> JS.JSCommaTrailingList JS.JSObjectProperty
+fieldsToJSCommaTrailingList fields = JS.JSCTLNone (fieldsToJSCommaList fields)
+
+fieldsToJSCommaList :: [(Name, Expr)] -> JS.JSCommaList JS.JSObjectProperty
+fieldsToJSCommaList [] = JS.JSLNil
+fieldsToJSCommaList [f] = JS.JSLOne (fieldToJSProperty f)
+fieldsToJSCommaList (f:fs) =
+  foldr (\field acc -> JS.JSLCons acc noAnnot (fieldToJSProperty field))
+        (JS.JSLOne (fieldToJSProperty $ last (f:fs)))
+        (init (f:fs))
+
+fieldToJSProperty :: (Name, Expr) -> JS.JSObjectProperty  
+fieldToJSProperty (key, value) = 
+  JS.JSPropertyNameandValue 
+    (JS.JSPropertyIdent noAnnot (nameToString key))
+    noAnnot
+    [exprToJS value]
+
+blockFromStmt :: Stmt -> JS.JSBlock
+blockFromStmt (Block stmts) = JS.JSBlock noAnnot (map stmtToJS stmts) noAnnot
+blockFromStmt stmt = JS.JSBlock noAnnot [stmtToJS stmt] noAnnot
+
+varsToJSCommaList :: [(Name, Expr)] -> JS.JSCommaList JSExpression
+varsToJSCommaList [] = JS.JSLNil
+varsToJSCommaList [(name, e)] = JS.JSLOne (JS.JSVarInitExpression (JS.JSIdentifier noAnnot (nameToString name)) (JS.JSVarInit noAnnot (exprToJS e)))
+varsToJSCommaList ((name, e):rest) = 
+  foldr (\(n, expr) acc -> JS.JSLCons acc noAnnot (JS.JSVarInitExpression (JS.JSIdentifier noAnnot (nameToString n)) (JS.JSVarInit noAnnot (exprToJS expr)))) 
+        (JS.JSLOne (JS.JSVarInitExpression (JS.JSIdentifier noAnnot (nameToString $ fst $ last ((name, e):rest))) (JS.JSVarInit noAnnot (exprToJS $ snd $ last ((name, e):rest))))) 
+        (init ((name, e):rest))
+
+
+-- ENCODE USING LANGUAGE-JAVASCRIPT
 
 
 stmtToBuilder :: Stmt -> Builder
-stmtToBuilder = fromStmt levelZero
+stmtToBuilder stmt = B.stringUtf8 $ JSP.renderToString $ JSAstStatement (stmtToJS stmt) noAnnot
 
 
 exprToBuilder :: Expr -> Builder
-exprToBuilder expr =
-  snd $ fromExpr levelZero Whatever expr
+exprToBuilder expr = B.stringUtf8 $ JSP.renderToString $ JSAstExpression (exprToJS expr) noAnnot
 
 
 
--- INDENT LEVEL
-
-
-data Level =
-  Level Builder Level
-
-
-levelZero :: Level
-levelZero =
-  Level mempty (makeLevel 1 (BS.replicate 16 0x09 {-\t-}))
-
-
-makeLevel :: Int -> BS.ByteString -> Level
-makeLevel level oldTabs =
-  let
-    tabs =
-      if level <= BS.length oldTabs
-      then oldTabs
-      else BS.replicate (BS.length oldTabs * 2) 0x09 {-\t-}
-  in
-  Level (B.byteString (BS.take level tabs)) (makeLevel (level + 1) tabs)
-
-
-
--- HELPERS
-
-
-commaSep :: [Builder] -> Builder
-commaSep builders =
-  mconcat (List.intersperse ", " builders)
-
-
-commaNewlineSep :: Level -> [Builder] -> Builder
-commaNewlineSep (Level _ (Level deeperIndent _)) builders =
-  mconcat (List.intersperse (",\n" <> deeperIndent) builders)
-
-
-
--- STATEMENTS
-
-
-fromStmtBlock :: Level -> [Stmt] -> Builder
-fromStmtBlock level stmts =
-  mconcat (fmap (fromStmt level) stmts)
-
-
-fromStmt :: Level -> Stmt -> Builder
-fromStmt level@(Level indent nextLevel) statement =
-  case statement of
-    Block stmts ->
-      fromStmtBlock level stmts
-
-    EmptyStmt ->
-      mempty
-
-    ExprStmt expr ->
-      indent <> snd (fromExpr level Whatever expr) <> ";\n"
-
-    IfStmt condition thenStmt elseStmt ->
-      mconcat
-        [ indent, "if (", snd (fromExpr level Whatever condition), ") {\n"
-        , fromStmt nextLevel thenStmt
-        , indent, "} else {\n"
-        , fromStmt nextLevel elseStmt
-        , indent, "}\n"
-        ]
-
-    Switch expr clauses ->
-      mconcat
-        [ indent, "switch (", snd (fromExpr level Whatever expr), ") {\n"
-        , mconcat (fmap (fromClause nextLevel) clauses)
-        , indent, "}\n"
-        ]
-
-    While expr stmt ->
-      mconcat
-        [ indent, "while (", snd (fromExpr level Whatever expr), ") {\n"
-        , fromStmt nextLevel stmt
-        , indent, "}\n"
-        ]
-
-    Break Nothing ->
-      indent <> "break;\n"
-
-    Break (Just label) ->
-      indent <> "break " <> Name.toBuilder label <> ";\n"
-
-    Continue Nothing ->
-      indent <> "continue;\n"
-
-    Continue (Just label) ->
-      indent <> "continue " <> Name.toBuilder label <> ";\n"
-
-    Labelled label stmt ->
-      mconcat
-        [ indent, Name.toBuilder label, ":\n"
-        , fromStmt level stmt
-        ]
-
-    Try tryStmt errorName catchStmt ->
-      mconcat
-        [ indent, "try {\n"
-        , fromStmt nextLevel tryStmt
-        , indent, "} catch (", Name.toBuilder errorName, ") {\n"
-        , fromStmt nextLevel catchStmt
-        , indent, "}\n"
-        ]
-
-    Throw expr ->
-      indent <> "throw " <> snd (fromExpr level Whatever expr) <> ";"
-
-    Return expr ->
-      indent <> "return " <> snd (fromExpr level Whatever expr) <> ";\n"
-
-    Var name expr ->
-      indent <> "var " <> Name.toBuilder name <> " = " <> snd (fromExpr level Whatever expr) <> ";\n"
-
-    Vars [] ->
-      mempty
-
-    Vars vars ->
-      indent <> "var " <> commaNewlineSep level (fmap (varToBuilder level) vars) <> ";\n"
-
-    FunctionStmt name args stmts ->
-      indent <> "function " <> Name.toBuilder name <> "(" <> commaSep (fmap Name.toBuilder args) <> ") {\n"
-      <>
-          fromStmtBlock nextLevel stmts
-      <>
-      indent <> "}\n"
-
-
-
--- SWITCH CLAUSES
-
-
-fromClause :: Level -> Case -> Builder
-fromClause level@(Level indent nextLevel) clause =
-  case clause of
-    Case expr stmts ->
-      indent <> "case " <> snd (fromExpr level Whatever expr) <> ":\n"
-      <> fromStmtBlock nextLevel stmts
-
-    Default stmts ->
-      indent <> "default:\n"
-      <> fromStmtBlock nextLevel stmts
-
-
-
--- VAR DECLS
-
-
-varToBuilder :: Level -> (Name, Expr) -> Builder
-varToBuilder level (name, expr) =
-  Name.toBuilder name <> " = " <> snd (fromExpr level Whatever expr)
-
-
-
--- EXPRESSIONS
-
-
-data Lines = One | Many deriving (Eq)
-
-
-merge :: Lines -> Lines -> Lines
-merge a b =
-  if a == Many || b == Many then Many else One
-
-
-linesMap :: (a -> (Lines, b)) -> [a] -> (Bool, [b])
-linesMap func xs =
-  let
-    pairs = fmap func xs
-  in
-  ( any ((==) Many . fst) pairs
-  , fmap snd pairs
-  )
-
-
-data Grouping = Atomic | Whatever
-
-
-parensFor :: Grouping -> Builder -> Builder
-parensFor grouping builder =
-  case grouping of
-    Atomic ->
-      "(" <> builder <> ")"
-
-    Whatever ->
-      builder
-
-
-fromExpr :: Level -> Grouping -> Expr -> (Lines, Builder)
-fromExpr level@(Level indent nextLevel@(Level deeperIndent _)) grouping expression =
-  case expression of
-    String string ->
-      ( One, "'" <> string <> "'" )
-
-    Float float ->
-      ( One, float )
-
-    Int n ->
-      ( One, B.intDec n )
-
-    Bool bool ->
-      ( One, if bool then "true" else "false" )
-
-    Null ->
-      ( One, "null" )
-
-    Json json ->
-      ( One, Json.encodeUgly json )
-
-    Array exprs ->
-      (,) Many $
-        let
-          (anyMany, builders) = linesMap (fromExpr level Whatever) exprs
-        in
-        if anyMany then
-          "[\n"
-          <> deeperIndent
-          <> commaNewlineSep level builders
-          <> "\n" <> indent <> "]"
-        else
-          "[" <> commaSep builders <> "]"
-
-    Object fields ->
-      (,) Many $
-        let
-          (anyMany, builders) = linesMap (fromField nextLevel) fields
-        in
-        if anyMany then
-          "{\n"
-          <> deeperIndent
-          <> commaNewlineSep level builders
-          <> "\n" <> indent <> "}"
-        else
-          "{" <> commaSep builders <> "}"
-
-    Ref name ->
-      ( One, Name.toBuilder name )
-
-    Access expr field ->
-      makeDot level expr field
-
-    Index expr bracketedExpr ->
-      makeBracketed level expr bracketedExpr
-
-    Prefix op expr ->
-      let
-        (lines, builder) = fromExpr level Atomic expr
-      in
-      ( lines
-      , parensFor grouping (fromPrefix op <> builder)
-      )
-
-    Infix op leftExpr rightExpr ->
-      let
-        (leftLines , left ) = fromExpr level Atomic leftExpr
-        (rightLines, right) = fromExpr level Atomic rightExpr
-      in
-      ( merge leftLines rightLines
-      , parensFor grouping (left <> fromInfix op <> right)
-      )
-
-    If condExpr thenExpr elseExpr ->
-      let
-        condB = snd (fromExpr level Atomic condExpr)
-        thenB = snd (fromExpr level Atomic thenExpr)
-        elseB = snd (fromExpr level Atomic elseExpr)
-      in
-      ( Many
-      , parensFor grouping (condB <> " ? " <> thenB <> " : " <> elseB)
-      )
-
-    Assign lValue expr ->
-      let
-        (leftLines , left ) = fromLValue level lValue
-        (rightLines, right) = fromExpr level Whatever expr
-      in
-      ( merge leftLines rightLines
-      , parensFor grouping (left <> " = " <> right)
-      )
-
-    Call function args ->
-      (,) Many $
-        let
-          (_      , funcB) = fromExpr level Atomic function
-          (anyMany, argsB) = linesMap (fromExpr nextLevel Whatever) args
-        in
-        if anyMany then
-          funcB <> "(\n" <> deeperIndent <> commaNewlineSep level argsB <> ")"
-        else
-          funcB <> "(" <> commaSep argsB <> ")"
-
-    Function maybeName args stmts ->
-      (,) Many $
-        "function " <> maybe mempty Name.toBuilder maybeName <> "(" <> commaSep (fmap Name.toBuilder args) <> ") {\n"
-        <>
-            fromStmtBlock nextLevel stmts
-        <>
-        indent <> "}"
-
-
-
--- FIELDS
-
-
-fromField :: Level -> (Name, Expr) -> (Lines, Builder)
-fromField level (field, expr) =
-  let
-    (lines, builder) = fromExpr level Whatever expr
-  in
-  ( lines
-  , Name.toBuilder field <> ": " <> builder
-  )
-
-
-
--- VALUES
-
-
-fromLValue :: Level -> LValue -> (Lines, Builder)
-fromLValue level lValue =
-  case lValue of
-    LRef name ->
-      (One, Name.toBuilder name)
-
-    LDot expr field ->
-      makeDot level expr field
-
-    LBracket expr bracketedExpr ->
-      makeBracketed level expr bracketedExpr
-
-
-makeDot :: Level -> Expr -> Name -> (Lines, Builder)
-makeDot level expr field =
-  let
-    (lines, builder) = fromExpr level Atomic expr
-  in
-  (lines, builder <> "." <> Name.toBuilder field)
-
-
-makeBracketed :: Level -> Expr -> Expr -> (Lines, Builder)
-makeBracketed level expr bracketedExpr =
-  let
-    (lines         , builder         ) = fromExpr level Atomic expr
-    (bracketedLines, bracketedBuilder) = fromExpr level Whatever bracketedExpr
-  in
-  ( merge lines bracketedLines
-  , builder <> "[" <> bracketedBuilder <> "]"
-  )
-
-
-
--- OPERATORS
-
-
-fromPrefix :: PrefixOp -> Builder
-fromPrefix op =
-  case op of
-    PrefixNot        -> "!"
-    PrefixNegate     -> "-"
-    PrefixComplement -> "~"
-
-
-fromInfix :: InfixOp -> Builder
-fromInfix op =
-  case op of
-    OpAdd        -> " + "
-    OpSub        -> " - "
-    OpMul        -> " * "
-    OpDiv        -> " / "
-    OpMod        -> " % "
-    OpEq         -> " === "
-    OpNe         -> " !== "
-    OpLt         -> " < "
-    OpLe         -> " <= "
-    OpGt         -> " > "
-    OpGe         -> " >= "
-    OpAnd        -> " && "
-    OpOr         -> " || "
-    OpBitwiseAnd -> " & "
-    OpBitwiseXor -> " ^ "
-    OpBitwiseOr  -> " | "
-    OpLShift     -> " << "
-    OpSpRShift   -> " >> "
-    OpZfRShift   -> " >>> "
+-- Old implementation removed - now using language-javascript 0.8.0.0 for all rendering

@@ -106,7 +106,7 @@ import qualified Data.List as List
 import qualified System.Environment as Environment
 import qualified System.Exit as Exit
 import GHC.IO.Encoding (setLocaleEncoding, utf8)
-import System.IO (hPutStr, hPutStrLn, stdout)
+import System.IO (hPutStrLn, stdout)
 import qualified Text.PrettyPrint.ANSI.Leijen as Doc
 
 import qualified Canopy.Version as Version
@@ -151,14 +151,14 @@ app intro outro commands = do
       hPutStrLn stdout (Version.toChars Version.compiler)
       Exit.exitSuccess
       
-    command : chunks -> do
-      case List.find (\cmd -> toName cmd == command) commands of
+    commandName : chunks -> do
+      case List.find (\cmd -> toName cmd == commandName) commands of
         Nothing ->
-          Error.exitWithUnknown command (map toName commands)
+          Error.exitWithUnknown commandName (map toName commands)
           
         Just (Command _ _ details example args_ flags_ callback) ->
           if elem "--help" chunks then
-            Error.exitWithHelp (Just command) details example args_ flags_
+            Error.exitWithHelp (Just commandName) details example args_ flags_
           else
             case snd (Chomp.chomp Nothing chunks args_ flags_) of
               Right (argsValue, flagsValue) ->

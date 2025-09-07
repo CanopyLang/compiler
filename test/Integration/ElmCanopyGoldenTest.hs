@@ -962,7 +962,6 @@ recordAccessorTest = TestCase
 
 -- Placeholder implementations for tests without golden files yet
 recursiveTypeTest, polymorphicTypeTest :: TestCase
-patternGuardTest :: TestCase
 asPatternTest, recordPatternTest, listPatternTest :: TestCase
 constructorPatternTest, exhaustivePatternTest, patternOrderingTest, complexPatternTest :: TestCase
 listModuleTest, resultModuleTest :: TestCase
@@ -1082,7 +1081,6 @@ customTypeTest = TestCase
   , testExpectedComplexity = CodeComplexity 1 3 2 1
   }
 -- | Recursive type test
-recursiveTypeTest :: TestCase
 recursiveTypeTest = TestCase
   { testName = "recursive-type"
   , testFeature = CustomTypes
@@ -1128,7 +1126,6 @@ typeAliasTest = TestCase
   , testExpectedComplexity = CodeComplexity 1 1 2 2
   }
 -- | Polymorphic type test
-polymorphicTypeTest :: TestCase
 polymorphicTypeTest = TestCase
   { testName = "polymorphic-type"
   , testFeature = CustomTypes
@@ -1196,7 +1193,6 @@ nestedCaseTest = TestCase
   , testExpectedComplexity = CodeComplexity 1 4 3 0
   }
 -- | Pattern guard test
-patternGuardTest :: TestCase
 patternGuardTest = TestCase
   { testName = "pattern-guard"
   , testFeature = PatternMatching
@@ -1239,7 +1235,6 @@ wildcardPatternTest = TestCase
   , testExpectedComplexity = CodeComplexity 1 2 2 0
   }
 -- | As pattern test
-asPatternTest :: TestCase
 asPatternTest = TestCase
   { testName = "as-pattern"
   , testFeature = PatternMatching
@@ -1264,7 +1259,6 @@ asPatternTest = TestCase
   , testExpectedComplexity = CodeComplexity 1 2 3 0
   }
 -- | Record pattern test
-recordPatternTest :: TestCase
 recordPatternTest = TestCase
   { testName = "record-pattern"
   , testFeature = PatternMatching
@@ -1308,7 +1302,6 @@ tuplePatternTest = TestCase
   , testExpectedComplexity = CodeComplexity 1 1 2 0
   }
 -- | List pattern test
-listPatternTest :: TestCase
 listPatternTest = TestCase
   { testName = "list-pattern"
   , testFeature = PatternMatching
@@ -1330,7 +1323,6 @@ listPatternTest = TestCase
   , testExpectedComplexity = CodeComplexity 1 4 3 0
   }
 -- | Constructor pattern test
-constructorPatternTest :: TestCase
 constructorPatternTest = TestCase
   { testName = "constructor-pattern"
   , testFeature = PatternMatching
@@ -1354,7 +1346,6 @@ constructorPatternTest = TestCase
   , testExpectedComplexity = CodeComplexity 1 2 2 1
   }
 -- | Exhaustive pattern test
-exhaustivePatternTest :: TestCase
 exhaustivePatternTest = TestCase
   { testName = "exhaustive-pattern"
   , testFeature = PatternMatching
@@ -1380,7 +1371,6 @@ exhaustivePatternTest = TestCase
   , testExpectedComplexity = CodeComplexity 1 3 2 1
   }
 -- | Pattern ordering test
-patternOrderingTest :: TestCase
 patternOrderingTest = TestCase
   { testName = "pattern-ordering"
   , testFeature = PatternMatching
@@ -1404,7 +1394,6 @@ patternOrderingTest = TestCase
   , testExpectedComplexity = CodeComplexity 1 4 3 0
   }
 -- | Complex pattern test
-complexPatternTest :: TestCase
 complexPatternTest = TestCase
   { testName = "complex-pattern"
   , testFeature = PatternMatching
@@ -1432,7 +1421,6 @@ complexPatternTest = TestCase
   , testExpectedComplexity = CodeComplexity 1 1 4 2
   }
 -- | List module test
-listModuleTest :: TestCase
 listModuleTest = TestCase
   { testName = "list-module"
   , testFeature = ListManipulation
@@ -1503,7 +1491,6 @@ maybeModuleTest = TestCase
   , testExpectedComplexity = CodeComplexity 1 2 2 1
   }
 -- | Result module test
-resultModuleTest :: TestCase
 resultModuleTest = TestCase
   { testName = "result-module"
   , testFeature = ResultTypes
@@ -1529,7 +1516,6 @@ resultModuleTest = TestCase
   , testExpectedComplexity = CodeComplexity 1 2 3 0
   }
 -- | Dict module test
-dictModuleTest :: TestCase
 dictModuleTest = TestCase
   { testName = "dict-module"
   , testFeature = RecordOperations
@@ -1557,7 +1543,6 @@ dictModuleTest = TestCase
   , testExpectedComplexity = CodeComplexity 1 2 4 0
   }
 -- | Set module test
-setModuleTest :: TestCase
 setModuleTest = TestCase
   { testName = "set-module"
   , testFeature = ListManipulation
@@ -1586,7 +1571,6 @@ setModuleTest = TestCase
   , testExpectedComplexity = CodeComplexity 1 1 4 0
   }
 -- | Array module test
-arrayModuleTest :: TestCase
 arrayModuleTest = TestCase
   { testName = "array-module"
   , testFeature = ListManipulation
@@ -1613,7 +1597,6 @@ arrayModuleTest = TestCase
   , testExpectedComplexity = CodeComplexity 1 2 3 0
   }
 -- | Tuple module test
-tupleModuleTest :: TestCase
 tupleModuleTest = TestCase
   { testName = "tuple-module"
   , testFeature = TupleOperations
@@ -1637,7 +1620,6 @@ tupleModuleTest = TestCase
   , testExpectedComplexity = CodeComplexity 1 1 3 0
   }
 -- | Basics module test
-basicsModuleTest :: TestCase
 basicsModuleTest = TestCase
   { testName = "basics-module"
   , testFeature = BasicArithmetic
@@ -1664,7 +1646,6 @@ basicsModuleTest = TestCase
   , testExpectedComplexity = CodeComplexity 1 1 4 0
   }
 -- | Debug module test
-debugModuleTest :: TestCase
 debugModuleTest = TestCase
   { testName = "debug-module"
   , testFeature = BasicArithmetic
@@ -1684,7 +1665,6 @@ debugModuleTest = TestCase
   , testExpectedComplexity = CodeComplexity 1 1 2 0
   }
 -- | Platform module test
-platformModuleTest :: TestCase
 platformModuleTest = TestCase
   { testName = "platform-module"
   , testFeature = ModuleImports
@@ -1705,7 +1685,6 @@ platformModuleTest = TestCase
   , testExpectedComplexity = CodeComplexity 1 1 1 0
   }
 -- | JSON handling test
-jsonHandlingTest :: TestCase
 jsonHandlingTest = TestCase
   { testName = "json-handling"
   , testFeature = CustomTypes
@@ -1731,7 +1710,6 @@ jsonHandlingTest = TestCase
   , testExpectedComplexity = CodeComplexity 1 2 3 0
   }
 -- | Higher-order function test
-higherOrderTest :: TestCase
 higherOrderTest = TestCase
   { testName = "higher-order"
   , testFeature = HigherOrderFunctions
@@ -1754,7 +1732,6 @@ higherOrderTest = TestCase
   , testExpectedComplexity = CodeComplexity 2 1 1 0
   }
 -- | Currying test
-curryingTest :: TestCase
 curryingTest = TestCase
   { testName = "currying"
   , testFeature = HigherOrderFunctions
@@ -1779,7 +1756,6 @@ curryingTest = TestCase
   , testExpectedComplexity = CodeComplexity 1 1 2 0
   }
 -- | Memoization test
-memoizationTest :: TestCase
 memoizationTest = TestCase
   { testName = "memoization"
   , testFeature = HigherOrderFunctions
@@ -1804,7 +1780,6 @@ memoizationTest = TestCase
   , testExpectedComplexity = CodeComplexity 1 1 2 0
   }
 -- | Tail call test
-tailCallTest :: TestCase
 tailCallTest = TestCase
   { testName = "tail-call"
   , testFeature = FunctionComposition
@@ -1830,7 +1805,6 @@ tailCallTest = TestCase
   , testExpectedComplexity = CodeComplexity 2 1 2 0
   }
 -- | Lazy evaluation test
-lazyEvaluationTest :: TestCase
 lazyEvaluationTest = TestCase
   { testName = "lazy-evaluation"
   , testFeature = HigherOrderFunctions
@@ -1853,7 +1827,6 @@ lazyEvaluationTest = TestCase
   , testExpectedComplexity = CodeComplexity 1 2 2 0
   }
 -- | Module import test
-moduleImportTest :: TestCase
 moduleImportTest = TestCase
   { testName = "module-import"
   , testFeature = ModuleImports
@@ -1866,7 +1839,7 @@ moduleImportTest = TestCase
               (Let 
                 [("numbers", List [Lit (IntLit 1), Lit (IntLit 2), Lit (IntLit 3), Lit (IntLit 4)]),
                  ("doubled", App (App (Var "List.map") (App (Var "*") (Lit (IntLit 2)))) (Var "numbers")),
-                 ("evens", App (App (Var "List.filter") (Lambda [VarPat "x"] (App (App (Var "==") (App (App (Var "remainderBy") (Lit (IntLit 2))) (Var "x"))) (Lit (IntLit 0))))) (Var "numbers")),
+                 ("evens", App (App (Var "List.filter") (Lambda ["x"] (App (App (Var "==") (App (App (Var "remainderBy") (Lit (IntLit 2))) (Var "x"))) (Lit (IntLit 0))))) (Var "numbers")),
                  ("result", Lit (StringLit "Module imports working"))]
                 (App (Var "text") (Var "result")))
           ]
@@ -1874,7 +1847,6 @@ moduleImportTest = TestCase
   , testExpectedComplexity = CodeComplexity 1 1 3 0
   }
 -- | Qualified import test
-qualifiedImportTest :: TestCase
 qualifiedImportTest = TestCase
   { testName = "qualified-import"
   , testFeature = ModuleImports
@@ -1896,7 +1868,6 @@ qualifiedImportTest = TestCase
   , testExpectedComplexity = CodeComplexity 1 1 2 0
   }
 -- | Exposing pattern test
-exposingPatternTest :: TestCase
 exposingPatternTest = TestCase
   { testName = "exposing-pattern"
   , testFeature = ModuleImports
@@ -1917,7 +1888,6 @@ exposingPatternTest = TestCase
   , testExpectedComplexity = CodeComplexity 1 1 2 0
   }
 -- | Type annotation test
-typeAnnotationTest :: TestCase
 typeAnnotationTest = TestCase
   { testName = "type-annotation"
   , testFeature = TypeAliases
@@ -1925,7 +1895,7 @@ typeAnnotationTest = TestCase
       { moduleDeclaration = ModuleHeader "Main" (ExportList ["main", "Point"])
       , moduleImports = [ImportDecl "Html" Nothing (Just (ExportList ["text"]))]
       , moduleDeclarations =
-          [ TypeAlias "Point" [] (RecordType [("x", TypeCon "Int" []), ("y", TypeCon "Int" [])])
+          [ TypeAliasDecl "Point" [] (RecordType [("x", TypeCon "Int" []), ("y", TypeCon "Int" [])])
           , FunctionDecl "distance" ["p1", "p2"] 
               (App (Var "sqrt") 
                 (App (App (Var "+") 
@@ -1946,7 +1916,6 @@ typeAnnotationTest = TestCase
   , testExpectedComplexity = CodeComplexity 1 1 3 1
   }
 -- | Generic function test
-genericFunctionTest :: TestCase
 genericFunctionTest = TestCase
   { testName = "generic-function"
   , testFeature = HigherOrderFunctions
@@ -1968,7 +1937,6 @@ genericFunctionTest = TestCase
   , testExpectedComplexity = CodeComplexity 2 1 2 0
   }
 -- | Port module test
-portModuleTest :: TestCase
 portModuleTest = TestCase
   { testName = "port-module"
   , testFeature = PortHandling
@@ -1985,7 +1953,6 @@ portModuleTest = TestCase
   , testExpectedComplexity = CodeComplexity 1 1 1 0
   }
 -- | Effect manager test
-effectManagerTest :: TestCase
 effectManagerTest = TestCase
   { testName = "effect-manager"
   , testFeature = PortHandling

@@ -57,15 +57,27 @@ perfNote :: Mode.Mode -> Builder
 perfNote mode =
   case mode of
     Mode.Prod _ ->
-      ""
+      mempty
     Mode.Dev Nothing ->
-      "console.warn('Compiled in DEV mode. Follow the advice at "
-        <> B.stringUtf8 (D.makeNakedLink "optimize")
-        <> " for better performance and smaller assets.');"
+      JS.stmtToBuilder $
+        JS.ExprStmt $
+          JS.Call
+            (JS.Access (JS.Ref (JsName.fromLocal "console")) (JsName.fromLocal "warn"))
+            [ JS.String $
+                "Compiled in DEV mode. Follow the advice at "
+                  <> B.stringUtf8 (D.makeNakedLink "optimize")
+                  <> " for better performance and smaller assets."
+            ]
     Mode.Dev (Just _) ->
-      "console.warn('Compiled in DEBUG mode. Follow the advice at "
-        <> B.stringUtf8 (D.makeNakedLink "optimize")
-        <> " for better performance and smaller assets.');"
+      JS.stmtToBuilder $
+        JS.ExprStmt $
+          JS.Call
+            (JS.Access (JS.Ref (JsName.fromLocal "console")) (JsName.fromLocal "warn"))
+            [ JS.String $
+                "Compiled in DEBUG mode. Follow the advice at "
+                  <> B.stringUtf8 (D.makeNakedLink "optimize")
+                  <> " for better performance and smaller assets."
+            ]
 
 -- GENERATE FOR REPL
 
@@ -74,30 +86,99 @@ generateForRepl ansi localizer (Opt.GlobalGraph graph _) home name (Can.Forall _
   let mode = Mode.Dev Nothing
       debugState = addGlobal mode graph emptyState (Opt.Global ModuleName.debug "toString")
       evalState = addGlobal mode graph debugState (Opt.Global home name)
-   in "process.on('uncaughtException', function(err) { process.stderr.write(err.toString() + '\\n'); process.exit(1); });"
+      processExceptionHandler = JS.stmtToBuilder $
+        JS.ExprStmt $
+          JS.Call
+            (JS.Access (JS.Ref (JsName.fromLocal "process")) (JsName.fromLocal "on"))
+            [ JS.String "uncaughtException",
+              JS.Function Nothing [JsName.fromLocal "err"] [
+                JS.ExprStmt $ JS.Call
+                  (JS.Access
+                    (JS.Access (JS.Ref (JsName.fromLocal "process")) (JsName.fromLocal "stderr"))
+                    (JsName.fromLocal "write"))
+                  [ JS.Infix JS.OpAdd
+                      (JS.Call
+                        (JS.Access (JS.Ref (JsName.fromLocal "err")) (JsName.fromLocal "toString"))
+                        [])
+                      (JS.String "\\n")
+                  ],
+                JS.ExprStmt $ JS.Call
+                  (JS.Access (JS.Ref (JsName.fromLocal "process")) (JsName.fromLocal "exit"))
+                  [JS.Int 1]
+              ]
+            ]
+   in processExceptionHandler
         <> Functions.functions
         <> stateToBuilder evalState
         <> print ansi localizer home name tipe
 
 print :: Bool -> L.Localizer -> ModuleName.Canonical -> Name.Name -> Can.Type -> Builder
 print ansi localizer home name tipe =
-  let value = JsName.toBuilder (JsName.fromGlobal home name)
-      toString = JsName.toBuilder (JsName.fromKernel Name.debug "toAnsiString")
+  let value = JS.Ref (JsName.fromGlobal home name)
+      toString = JS.Ref (JsName.fromKernel Name.debug "toAnsiString")
       tipeDoc = RT.canToDoc localizer RT.None tipe
-      bool = if ansi then "true" else "false"
-   in "var _value = " <> toString <> "(" <> bool <> ", " <> value
-        <> ");\n\
-           \var _type = "
-        <> B.stringUtf8 (show (D.toString tipeDoc))
-        <> ";\n\
-           \function _print(t) { console.log(_value + ("
-        <> bool
-        <> " ? '\x1b[90m' + t + '\x1b[0m' : t)); }\n\
-           \if (_value.length + 3 + _type.length >= 80 || _type.indexOf('\\n') >= 0) {\n\
-           \    _print('\\n    : ' + _type.split('\\n').join('\\n      '));\n\
-           \} else {\n\
-           \    _print(' : ' + _type);\n\
-           \}\n"
+      boolValue = if ansi then JS.Bool True else JS.Bool False
+      
+      -- var _value = toString(bool, value);
+      valueVar = JS.Var (JsName.fromLocal "_value") $
+        JS.Call toString [boolValue, value]
+      
+      -- var _type = "type string";
+      typeVar = JS.Var (JsName.fromLocal "_type") $
+        JS.String $ B.stringUtf8 (show (D.toString tipeDoc))
+      
+      -- function _print(t) { console.log(_value + (ansi ? '\x1b[90m' + t + '\x1b[0m' : t)); }
+      printFunc = JS.FunctionStmt (JsName.fromLocal "_print") [JsName.fromLocal "t"] [
+        JS.ExprStmt $ JS.Call
+          (JS.Access (JS.Ref (JsName.fromLocal "console")) (JsName.fromLocal "log"))
+          [ JS.Infix JS.OpAdd
+              (JS.Ref (JsName.fromLocal "_value"))
+              (JS.If boolValue
+                (JS.Infix JS.OpAdd
+                  (JS.Infix JS.OpAdd (JS.String "\\x1b[90m") (JS.Ref (JsName.fromLocal "t")))
+                  (JS.String "\\x1b[0m"))
+                (JS.Ref (JsName.fromLocal "t")))
+          ]
+        ]
+      
+      -- Condition: _value.length + 3 + _type.length >= 80 || _type.indexOf('\n') >= 0
+      lengthCondition = JS.Infix JS.OpGe
+        (JS.Infix JS.OpAdd
+          (JS.Infix JS.OpAdd
+            (JS.Access (JS.Ref (JsName.fromLocal "_value")) (JsName.fromLocal "length"))
+            (JS.Int 3))
+          (JS.Access (JS.Ref (JsName.fromLocal "_type")) (JsName.fromLocal "length")))
+        (JS.Int 80)
+      
+      newlineCondition = JS.Infix JS.OpGe
+        (JS.Call
+          (JS.Access (JS.Ref (JsName.fromLocal "_type")) (JsName.fromLocal "indexOf"))
+          [JS.String "\\n"])
+        (JS.Int 0)
+      
+      condition = JS.Infix JS.OpOr lengthCondition newlineCondition
+      
+      -- if/else statement
+      ifStmt = JS.IfStmt condition
+        -- _print('\n    : ' + _type.split('\n').join('\n      '));
+        (JS.ExprStmt $ JS.Call
+          (JS.Ref (JsName.fromLocal "_print"))
+          [ JS.Infix JS.OpAdd
+              (JS.String "\\n    : ")
+              (JS.Call
+                (JS.Access
+                  (JS.Call
+                    (JS.Access (JS.Ref (JsName.fromLocal "_type")) (JsName.fromLocal "split"))
+                    [JS.String "\\n"])
+                  (JsName.fromLocal "join"))
+                [JS.String "\\n      "])
+          ])
+        -- _print(' : ' + _type);
+        (JS.ExprStmt $ JS.Call
+          (JS.Ref (JsName.fromLocal "_print"))
+          [ JS.Infix JS.OpAdd (JS.String " : ") (JS.Ref (JsName.fromLocal "_type")) ]
+        )
+   in JS.stmtToBuilder $ JS.Block [valueVar, typeVar, printFunc, ifStmt]
 
 -- GENERATE FOR REPL ENDPOINT
 
@@ -114,23 +195,26 @@ generateForReplEndpoint localizer (Opt.GlobalGraph graph _) home maybeName (Can.
 postMessage :: L.Localizer -> ModuleName.Canonical -> Maybe Name.Name -> Can.Type -> Builder
 postMessage localizer home maybeName tipe =
   let name = Data.Maybe.fromMaybe Name.replValueToPrint maybeName
-      value = JsName.toBuilder (JsName.fromGlobal home name)
-      toString = JsName.toBuilder (JsName.fromKernel Name.debug "toAnsiString")
+      value = JS.Ref (JsName.fromGlobal home name)
+      toString = JS.Ref (JsName.fromKernel Name.debug "toAnsiString")
       tipeDoc = RT.canToDoc localizer RT.None tipe
-      toName n = "\"" <> Name.toBuilder n <> "\""
-   in "self.postMessage({\n\
-      \  name: "
-        <> maybe "null" toName maybeName
-        <> ",\n\
-           \  value: "
-        <> toString
-        <> "(true, "
-        <> value
-        <> "),\n\
-           \  type: "
-        <> B.stringUtf8 (show (D.toString tipeDoc))
-        <> "\n\
-           \});\n"
+      
+      nameField = case maybeName of
+        Nothing -> JS.Null
+        Just n -> JS.String (Name.toBuilder n)
+      
+      messageObj = JS.Object
+        [ (JsName.fromLocal "name", nameField),
+          (JsName.fromLocal "value", JS.Call toString [JS.Bool True, value]),
+          (JsName.fromLocal "type", JS.String $ B.stringUtf8 (show (D.toString tipeDoc)))
+        ]
+      
+      postMessageCall = JS.ExprStmt $
+        JS.Call
+          (JS.Access (JS.Ref (JsName.fromLocal "self")) (JsName.fromLocal "postMessage"))
+          [messageObj]
+          
+   in JS.stmtToBuilder postMessageCall
 
 -- GRAPH TRAVERSAL STATE
 

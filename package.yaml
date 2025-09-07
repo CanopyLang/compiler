@@ -33,6 +33,7 @@ dependencies:
   - http-types
   - tls < 2
   - language-glsl
+  - language-javascript
   - lens
   - mtl
   - network
