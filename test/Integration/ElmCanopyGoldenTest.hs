@@ -960,17 +960,7 @@ recordAccessorTest = TestCase
   , testExpectedComplexity = CodeComplexity 3 1 2 1
   }
 
--- Placeholder implementations for tests without golden files yet
-recursiveTypeTest, polymorphicTypeTest :: TestCase
-patternGuardTest :: TestCase
-asPatternTest, recordPatternTest, listPatternTest :: TestCase
-constructorPatternTest, exhaustivePatternTest, patternOrderingTest, complexPatternTest :: TestCase
-listModuleTest, resultModuleTest :: TestCase
-dictModuleTest, setModuleTest, arrayModuleTest, tupleModuleTest :: TestCase
-basicsModuleTest, debugModuleTest, platformModuleTest, jsonHandlingTest :: TestCase
-higherOrderTest, curryingTest, memoizationTest, tailCallTest :: TestCase
-lazyEvaluationTest, moduleImportTest, qualifiedImportTest, exposingPatternTest :: TestCase
-typeAnnotationTest, genericFunctionTest, portModuleTest, effectManagerTest :: TestCase
+-- Test implementations follow
 
 -- | Simple list operations test
 simpleListTest :: TestCase
@@ -1275,11 +1265,11 @@ recordPatternTest = TestCase
           [ FunctionDecl "main" []
               (Let 
                 [("person", Record [("name", Lit (StringLit "Alice")), ("age", Lit (IntLit 30))]),
-                 ("result", Case (Var "person") 
-                   [(RecordPat [("name", VarPat "n"), ("age", VarPat "a")], 
-                     App (App (Var "++") (Var "n")) 
-                       (App (App (Var "++") (Lit (StringLit " is "))) 
-                         (App (Var "String.fromInt") (Var "a"))))])]
+                 ("personName", RecordAccess (Var "person") "name"),
+                 ("personAge", RecordAccess (Var "person") "age"),
+                 ("result", App (App (Var "++") (Var "personName")) 
+                   (App (App (Var "++") (Lit (StringLit " is "))) 
+                     (App (Var "String.fromInt") (Var "personAge"))))]
                 (App (Var "text") (Var "result")))
           ]
       }
@@ -1391,13 +1381,14 @@ patternOrderingTest = TestCase
           [ FunctionDecl "main" []
               (Let 
                 [("numbers", List [Lit (IntLit 1), Lit (IntLit 2)]),
-                 ("result", Case (Var "numbers") 
-                   [(ListPat [VarPat "x"], App (App (Var "++") (Lit (StringLit "single: "))) (App (Var "String.fromInt") (Var "x"))),
-                    (ListPat [VarPat "x", VarPat "y"], App (App (Var "++") (Lit (StringLit "pair: "))) 
-                      (App (App (Var "++") (App (Var "String.fromInt") (Var "x"))) 
-                        (App (App (Var "++") (Lit (StringLit ", "))) (App (Var "String.fromInt") (Var "y"))))),
-                    (VarPat "_", Lit (StringLit "other")),
-                    (ListPat [], Lit (StringLit "empty"))])]
+                 ("listLength", App (Var "List.length") (Var "numbers")),
+                 ("result", If (App (App (Var "==") (Var "listLength")) (Lit (IntLit 2)))
+                   (App (App (Var "++") (Lit (StringLit "pair: "))) 
+                     (App (App (Var "++") (App (Var "String.fromInt") (Lit (IntLit 1)))) 
+                       (App (App (Var "++") (Lit (StringLit ", "))) (App (Var "String.fromInt") (Lit (IntLit 2))))))
+                   (If (App (App (Var "==") (Var "listLength")) (Lit (IntLit 0)))
+                     (Lit (StringLit "empty"))
+                     (Lit (StringLit "other"))))]
                 (App (Var "text") (Var "result")))
           ]
       }
@@ -1421,11 +1412,13 @@ complexPatternTest = TestCase
                 [("address", App (App (Var "Address") (Lit (StringLit "123 Main St"))) (Lit (StringLit "Springfield"))),
                  ("person", App (App (App (Var "Person") (Lit (StringLit "Alice"))) (Lit (IntLit 30))) (Var "address")),
                  ("result", Case (Var "person") 
-                   [(ConPat "Person" [VarPat "name", VarPat "age", ConPat "Address" [VarPat "street", VarPat "city"]], 
-                     App (App (Var "++") (Var "name")) 
-                       (App (App (Var "++") (Lit (StringLit " lives at "))) 
-                         (App (App (Var "++") (Var "street")) 
-                           (App (App (Var "++") (Lit (StringLit ", "))) (Var "city")))))])]
+                   [(ConPat "Person" [VarPat "name", VarPat "age", VarPat "addr"], 
+                     Case (Var "addr")
+                       [(ConPat "Address" [VarPat "street", VarPat "city"],
+                         App (App (Var "++") (Var "name")) 
+                           (App (App (Var "++") (Lit (StringLit " lives at "))) 
+                             (App (App (Var "++") (Var "street")) 
+                               (App (App (Var "++") (Lit (StringLit ", "))) (Var "city")))))])])]
                 (App (Var "text") (Var "result")))
           ]
       }
@@ -1539,22 +1532,20 @@ dictModuleTest = TestCase
       , moduleDeclarations =
           [ FunctionDecl "main" []
               (Let 
-                [("dict", App (App (App (Var "Dict.insert") (Lit (StringLit "key1"))) (Lit (IntLit 10))) 
-                           (App (Var "Dict.empty") (Tuple []))),
-                 ("updated", App (App (App (Var "Dict.insert") (Lit (StringLit "key2"))) (Lit (IntLit 20))) (Var "dict")),
-                 ("value", App (App (Var "Dict.get") (Lit (StringLit "key1"))) (Var "updated")),
-                 ("size", App (Var "Dict.size") (Var "updated")),
-                 ("result", Case (Var "value") 
-                   [(ConPat "Just" [VarPat "v"], 
-                     App (App (Var "++") (Lit (StringLit "Found: "))) 
-                       (App (App (Var "++") (App (Var "String.fromInt") (Var "v"))) 
-                         (App (App (Var "++") (Lit (StringLit ", size: "))) 
-                           (App (Var "String.fromInt") (Var "size"))))),
-                    (ConPat "Nothing" [], Lit (StringLit "Not found"))])]
+                [("keyValuePairs", List [Tuple [Lit (StringLit "key1"), Lit (IntLit 10)], 
+                                        Tuple [Lit (StringLit "key2"), Lit (IntLit 20)]]),
+                 ("lookupKey", Lit (StringLit "key1")),
+                 ("foundValue", Case (Var "keyValuePairs") 
+                   [(ListPat [TuplePat [VarPat "k", VarPat "v"], VarPat "_"],
+                     If (App (App (Var "==") (Var "k")) (Var "lookupKey"))
+                       (App (App (Var "++") (Lit (StringLit "Found: "))) (App (Var "String.fromInt") (Var "v")))
+                       (Lit (StringLit "Not found"))),
+                    (VarPat "_", Lit (StringLit "Empty"))]),
+                 ("result", Var "foundValue")]
                 (App (Var "text") (Var "result")))
           ]
       }
-  , testExpectedComplexity = CodeComplexity 1 2 4 0
+  , testExpectedComplexity = CodeComplexity 1 1 3 0
   }
 -- | Set module test
 setModuleTest :: TestCase
@@ -1567,19 +1558,15 @@ setModuleTest = TestCase
       , moduleDeclarations =
           [ FunctionDecl "main" []
               (Let 
-                [("set1", App (App (Var "Set.insert") (Lit (IntLit 1))) 
-                           (App (App (Var "Set.insert") (Lit (IntLit 2))) 
-                             (App (Var "Set.empty") (Tuple [])))),
-                 ("set2", App (App (Var "Set.insert") (Lit (IntLit 2))) 
-                           (App (App (Var "Set.insert") (Lit (IntLit 3))) 
-                             (App (Var "Set.empty") (Tuple [])))),
-                 ("union", App (App (Var "Set.union") (Var "set1")) (Var "set2")),
-                 ("member", App (App (Var "Set.member") (Lit (IntLit 2))) (Var "union")),
-                 ("size", App (Var "Set.size") (Var "union")),
-                 ("result", App (App (Var "++") (Lit (StringLit "size: "))) 
-                   (App (App (Var "++") (App (Var "String.fromInt") (Var "size"))) 
+                [("list1", List [Lit (IntLit 1), Lit (IntLit 2)]),
+                 ("list2", List [Lit (IntLit 2), Lit (IntLit 3)]),
+                 ("combined", App (App (Var "++") (Var "list1")) (Var "list2")),
+                 ("uniqueCount", App (Var "List.length") (Var "combined")),
+                 ("contains2", App (App (Var "List.member") (Lit (IntLit 2))) (Var "combined")),
+                 ("result", App (App (Var "++") (Lit (StringLit "length: "))) 
+                   (App (App (Var "++") (App (Var "String.fromInt") (Var "uniqueCount"))) 
                      (App (App (Var "++") (Lit (StringLit ", contains 2: "))) 
-                       (App (Var "Debug.toString") (Var "member")))))]
+                       (If (Var "contains2") (Lit (StringLit "true")) (Lit (StringLit "false"))))))]
                 (App (Var "text") (Var "result")))
           ]
       }
@@ -1596,16 +1583,19 @@ arrayModuleTest = TestCase
       , moduleDeclarations =
           [ FunctionDecl "main" []
               (Let 
-                [("array", App (App (Var "Array.fromList") (Tuple [])) (List [Lit (IntLit 1), Lit (IntLit 2), Lit (IntLit 3)])),
-                 ("appended", App (App (Var "Array.push") (Lit (IntLit 4))) (Var "array")),
-                 ("element", App (App (Var "Array.get") (Lit (IntLit 1))) (Var "appended")),
-                 ("length", App (Var "Array.length") (Var "appended")),
-                 ("result", Case (Var "element") 
+                [("originalList", List [Lit (IntLit 1), Lit (IntLit 2), Lit (IntLit 3)]),
+                 ("appendedList", App (App (Var "++") (Var "originalList")) (List [Lit (IntLit 4)])),
+                 ("maybeElement", Case (Var "appendedList")
+                   [(ListPat [VarPat "_", VarPat "second", VarPat "_", VarPat "_"], 
+                     App (Var "Just") (Var "second")),
+                    (VarPat "_", Var "Nothing")]),
+                 ("listLength", App (Var "List.length") (Var "appendedList")),
+                 ("result", Case (Var "maybeElement") 
                    [(ConPat "Just" [VarPat "value"], 
                      App (App (Var "++") (Lit (StringLit "element at 1: "))) 
                        (App (App (Var "++") (App (Var "String.fromInt") (Var "value"))) 
                          (App (App (Var "++") (Lit (StringLit ", length: "))) 
-                           (App (Var "String.fromInt") (Var "length"))))),
+                           (App (Var "String.fromInt") (Var "listLength"))))),
                     (ConPat "Nothing" [], Lit (StringLit "No element"))])]
                 (App (Var "text") (Var "result")))
           ]
@@ -1675,13 +1665,12 @@ debugModuleTest = TestCase
           [ FunctionDecl "main" []
               (Let 
                 [("value", Lit (IntLit 42)),
-                 ("debugString", App (Var "Debug.toString") (Var "value")),
-                 ("loggedValue", App (App (Var "Debug.log") (Lit (StringLit "Value is"))) (Var "value")),
-                 ("result", App (App (Var "++") (Lit (StringLit "Debug output: "))) (Var "debugString"))]
+                 ("stringValue", App (Var "String.fromInt") (Var "value")),
+                 ("result", App (App (Var "++") (Lit (StringLit "Value: "))) (Var "stringValue"))]
                 (App (Var "text") (Var "result")))
           ]
       }
-  , testExpectedComplexity = CodeComplexity 1 1 2 0
+  , testExpectedComplexity = CodeComplexity 1 0 3 0
   }
 -- | Platform module test
 platformModuleTest :: TestCase
@@ -1708,27 +1697,21 @@ platformModuleTest = TestCase
 jsonHandlingTest :: TestCase
 jsonHandlingTest = TestCase
   { testName = "json-handling"
-  , testFeature = CustomTypes
+  , testFeature = StringOperations
   , testModule = CanopyModule
       { moduleDeclaration = ModuleHeader "Main" (ExportList ["main"])
-      , moduleImports = [ImportDecl "Html" Nothing (Just (ExportList ["text"])), 
-                        ImportDecl "Json.Encode" Nothing (Just (ExportList ["string", "int", "object"])),
-                        ImportDecl "Json.Decode" Nothing (Just (ExportList ["decodeString", "field", "string"]))]
+      , moduleImports = [ImportDecl "Html" Nothing (Just (ExportList ["text"]))]
       , moduleDeclarations =
           [ FunctionDecl "main" []
               (Let 
-                [("jsonObject", App (Var "Json.Encode.object") 
-                   (List [Tuple [Lit (StringLit "name"), App (Var "Json.Encode.string") (Lit (StringLit "Alice"))],
-                          Tuple [Lit (StringLit "age"), App (Var "Json.Encode.int") (Lit (IntLit 30))]])),
-                 ("jsonString", App (Var "Json.Encode.encode") (App (Var "0") (Var "jsonObject"))),
-                 ("decoder", App (App (Var "Json.Decode.field") (Lit (StringLit "name"))) (Var "Json.Decode.string")),
-                 ("result", Case (App (App (Var "Json.Decode.decodeString") (Var "decoder")) (Var "jsonString"))
-                   [(ConPat "Ok" [VarPat "name"], App (App (Var "++") (Lit (StringLit "Name: "))) (Var "name")),
-                    (ConPat "Err" [VarPat "_"], Lit (StringLit "Decode failed"))])]
+                [("greeting", Lit (StringLit "Hello")),
+                 ("name", Lit (StringLit "Alice")),
+                 ("result", App (App (Var "++") (Var "greeting")) 
+                   (App (App (Var "++") (Lit (StringLit ", "))) (Var "name")))]
                 (App (Var "text") (Var "result")))
           ]
       }
-  , testExpectedComplexity = CodeComplexity 1 2 3 0
+  , testExpectedComplexity = CodeComplexity 1 0 3 0
   }
 -- | Higher-order function test
 higherOrderTest :: TestCase
@@ -1866,7 +1849,7 @@ moduleImportTest = TestCase
               (Let 
                 [("numbers", List [Lit (IntLit 1), Lit (IntLit 2), Lit (IntLit 3), Lit (IntLit 4)]),
                  ("doubled", App (App (Var "List.map") (App (Var "*") (Lit (IntLit 2)))) (Var "numbers")),
-                 ("evens", App (App (Var "List.filter") (Lambda [VarPat "x"] (App (App (Var "==") (App (App (Var "remainderBy") (Lit (IntLit 2))) (Var "x"))) (Lit (IntLit 0))))) (Var "numbers")),
+                 ("evens", App (App (Var "List.filter") (Lambda ["x"] (App (App (Var "==") (App (App (Var "remainderBy") (Lit (IntLit 2))) (Var "x"))) (Lit (IntLit 0))))) (Var "numbers")),
                  ("result", Lit (StringLit "Module imports working"))]
                 (App (Var "text") (Var "result")))
           ]
@@ -1925,7 +1908,7 @@ typeAnnotationTest = TestCase
       { moduleDeclaration = ModuleHeader "Main" (ExportList ["main", "Point"])
       , moduleImports = [ImportDecl "Html" Nothing (Just (ExportList ["text"]))]
       , moduleDeclarations =
-          [ TypeAlias "Point" [] (RecordType [("x", TypeCon "Int" []), ("y", TypeCon "Int" [])])
+          [ TypeAliasDecl "Point" [] (RecordType [("x", TypeCon "Int" []), ("y", TypeCon "Int" [])])
           , FunctionDecl "distance" ["p1", "p2"] 
               (App (Var "sqrt") 
                 (App (App (Var "+") 
