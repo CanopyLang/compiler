@@ -100,10 +100,16 @@ module Terminal
   )
 where
 
--- Re-export from Terminal.Internal for main API
+-- Core imports for Terminal functionality
 
+import qualified Data.List as List
+import qualified System.Environment as Environment
 import qualified System.Exit as Exit
-import qualified Terminal.Application as Application
+import GHC.IO.Encoding (setLocaleEncoding, utf8)
+import System.IO (hPutStr, hPutStrLn, stdout)
+import qualified Text.PrettyPrint.ANSI.Leijen as Doc
+
+import qualified Canopy.Version as Version
 import Terminal.Internal
   ( Args (..),
     Command (..),
@@ -113,10 +119,11 @@ import Terminal.Internal
     Parser (..),
     RequiredArgs (..),
     Summary (..),
+    toName,
   )
-import qualified Terminal.Internal as Internal
+import qualified Terminal.Chomp as Chomp
+import qualified Terminal.Error as Error
 import qualified Terminal.Parser as Parser
-import qualified Text.PrettyPrint.ANSI.Leijen as Doc
 
 -- | Run multi-command application with introduction and outro.
 --
@@ -130,11 +137,34 @@ app ::
   [Command] ->
   -- | Exits with appropriate status code
   IO ()
-app _intro _outro _commands = do
-  -- Convert to simplified structure for now
-  Application.initializeApp
-  putStrLn "Multi-command applications not yet fully implemented"
-  Exit.exitFailure
+app intro outro commands = do
+  setLocaleEncoding utf8
+  argStrings <- Environment.getArgs
+  case argStrings of
+    [] ->
+      Error.exitWithOverview intro outro commands
+    
+    ["--help"] ->
+      Error.exitWithOverview intro outro commands
+      
+    ["--version"] -> do
+      hPutStrLn stdout (Version.toChars Version.compiler)
+      Exit.exitSuccess
+      
+    command : chunks -> do
+      case List.find (\cmd -> toName cmd == command) commands of
+        Nothing ->
+          Error.exitWithUnknown command (map toName commands)
+          
+        Just (Command _ _ details example args_ flags_ callback) ->
+          if elem "--help" chunks then
+            Error.exitWithHelp (Just command) details example args_ flags_
+          else
+            case snd (Chomp.chomp Nothing chunks args_ flags_) of
+              Right (argsValue, flagsValue) ->
+                callback argsValue flagsValue
+              Left err ->
+                Error.exitWithError err
 
 -- | Run single-command application with details and examples.
 --
@@ -153,8 +183,9 @@ singleCommand ::
   -- | Exits with appropriate status code
   IO ()
 singleCommand _details _examples _args _flags _handler = do
-  Application.initializeApp
+  setLocaleEncoding utf8
   putStrLn "Single command applications not yet fully implemented"
+  Exit.exitFailure
 
 -- | Create command with metadata and handler.
 --
@@ -177,9 +208,9 @@ command ::
   -- | Complete command definition
   Command
 command name summary details examples args flagSpec handler =
-  Internal.Command name summary details examples args flagSpec handler
+  Command name summary details examples args flagSpec handler
 
--- Argument Builders (re-exported from Terminal.Parser)
+-- Argument Builders - Simplified implementations
 
 -- | No arguments specification.
 noArgs :: Args ()
@@ -229,13 +260,13 @@ require4 = Parser.require4
 require5 :: (a -> b -> c -> d -> e -> args) -> Parser a -> Parser b -> Parser c -> Parser d -> Parser e -> Args args
 require5 = Parser.require5
 
--- Flag Builders (re-exported from Terminal.Parser)
+-- Flag Builders - Simplified implementations
 
 -- | No flags specification.
 noFlags :: Flags ()
 noFlags = Parser.noFlags
 
--- | Create flags with initial value (backward compatibility).
+-- | Create flags with initial value.
 flags :: a -> Flags a
 flags = FDone
 
@@ -243,19 +274,19 @@ flags = FDone
 flag :: String -> Parser a -> String -> Flag (Maybe a)
 flag = Parser.flag
 
--- | Create boolean on/off flag (backward compatibility alias).
+-- | Create boolean on/off flag.
 onOff :: String -> String -> Flag Bool
-onOff = Parser.onOffFlag
+onOff name description = OnOff name description
 
 -- | Create boolean on/off flag.
 onOffFlag :: String -> String -> Flag Bool
 onOffFlag = Parser.onOffFlag
 
--- | Chain flags together (operator for composition).
+-- | Chain flags together.
 (|--) :: Flags (a -> b) -> Flag a -> Flags b
-(|--) = Parser.flagChain
+(|--) = FMore
 
--- Parser Creation (re-exported from Terminal.Parser)
+-- Parser Creation - Simplified implementations
 
 -- | Simple string parser.
 stringParser :: String -> String -> Parser String
