@@ -277,9 +277,9 @@ createGoldenTest testCase =
     -- Read expected Elm output  
     expectedPath <- pure (getExpectedPath testCase)
     expectedContent <- BL.readFile expectedPath
-    -- Normalize both outputs for comparison
-    let userCanopy = extractUserCode canopyOutput
-        userElm = extractUserCode expectedContent
+    -- Normalize both outputs for comparison (use existing normalization to handle whitespace differences)
+    let userCanopy = normalizeJSOutput (extractUserCode canopyOutput)
+        userElm = normalizeJSOutput (extractUserCode expectedContent)
     -- Debug: Write outputs to files for manual comparison with unique names
     let testId = filter (\c -> c /= ' ' && c /= '/') (Text.unpack (testName testCase))
         canopyPath = "/tmp/debug-canopy-user-" ++ testId ++ ".js"
@@ -290,7 +290,7 @@ createGoldenTest testCase =
     BL.writeFile elmPath userElm
     BL.writeFile fullCanopyPath canopyOutput
     BL.writeFile fullElmPath expectedContent
-    -- Compare user code only
+    -- Compare normalized user code (whitespace differences ignored)
     userCanopy @?= userElm
 
 -- | Get the expected golden file path for a test case
@@ -564,12 +564,36 @@ extractUserCode input =
 extractUserLines :: Text.Text -> [Text.Text]
 extractUserLines jsText =
   let allLines = Text.lines jsText
-      userLines = filter isUserDefinedLine allLines
-  in userLines
+      userStatements = extractUserStatements allLines []
+  in userStatements
+
+-- | Extract complete user-defined JavaScript statements (including multi-line)
+extractUserStatements :: [Text.Text] -> [Text.Text] -> [Text.Text]
+extractUserStatements [] acc = reverse acc
+extractUserStatements (line:rest) acc
+  | isUserDefinedLine line = 
+      let (statement, remaining) = collectStatement (line:rest) []
+      in extractUserStatements remaining (statement ++ acc)
+  | otherwise = extractUserStatements rest acc
   where
     isUserDefinedLine line =
       "$author$project$" `Text.isInfixOf` line ||
       "_Platform_export" `Text.isInfixOf` line
+
+-- | Collect a complete JavaScript statement (may span multiple lines)
+collectStatement :: [Text.Text] -> [Text.Text] -> ([Text.Text], [Text.Text])
+collectStatement [] acc = (reverse acc, [])
+collectStatement (line:rest) acc
+  | Text.null (Text.strip line) = collectStatement rest (line:acc) -- Include empty lines
+  | endsStatement line = (reverse (line:acc), rest) -- Statement complete
+  | otherwise = collectStatement rest (line:acc) -- Continue collecting
+  where
+    endsStatement line = 
+      let trimmed = Text.strip line
+      in Text.isSuffixOf "};" trimmed || 
+         Text.isSuffixOf ";" trimmed ||
+         Text.isSuffixOf "})" trimmed ||
+         Text.isSuffixOf "});" trimmed
 
 -- | Normalize JavaScript output for consistent comparison (fallback method)
 --
@@ -1072,6 +1096,7 @@ customTypeTest = TestCase
   , testExpectedComplexity = CodeComplexity 1 3 2 1
   }
 -- | Recursive type test
+recursiveTypeTest :: TestCase
 recursiveTypeTest = TestCase
   { testName = "recursive-type"
   , testFeature = CustomTypes
@@ -1117,6 +1142,7 @@ typeAliasTest = TestCase
   , testExpectedComplexity = CodeComplexity 1 1 2 2
   }
 -- | Polymorphic type test
+polymorphicTypeTest :: TestCase
 polymorphicTypeTest = TestCase
   { testName = "polymorphic-type"
   , testFeature = CustomTypes
@@ -1184,6 +1210,7 @@ nestedCaseTest = TestCase
   , testExpectedComplexity = CodeComplexity 1 4 3 0
   }
 -- | Pattern guard test
+patternGuardTest :: TestCase
 patternGuardTest = TestCase
   { testName = "pattern-guard"
   , testFeature = PatternMatching
@@ -1226,6 +1253,7 @@ wildcardPatternTest = TestCase
   , testExpectedComplexity = CodeComplexity 1 2 2 0
   }
 -- | As pattern test
+asPatternTest :: TestCase
 asPatternTest = TestCase
   { testName = "as-pattern"
   , testFeature = PatternMatching
@@ -1250,6 +1278,7 @@ asPatternTest = TestCase
   , testExpectedComplexity = CodeComplexity 1 2 3 0
   }
 -- | Record pattern test
+recordPatternTest :: TestCase
 recordPatternTest = TestCase
   { testName = "record-pattern"
   , testFeature = PatternMatching
@@ -1293,6 +1322,7 @@ tuplePatternTest = TestCase
   , testExpectedComplexity = CodeComplexity 1 1 2 0
   }
 -- | List pattern test
+listPatternTest :: TestCase
 listPatternTest = TestCase
   { testName = "list-pattern"
   , testFeature = PatternMatching
@@ -1314,6 +1344,7 @@ listPatternTest = TestCase
   , testExpectedComplexity = CodeComplexity 1 4 3 0
   }
 -- | Constructor pattern test
+constructorPatternTest :: TestCase
 constructorPatternTest = TestCase
   { testName = "constructor-pattern"
   , testFeature = PatternMatching
@@ -1337,6 +1368,7 @@ constructorPatternTest = TestCase
   , testExpectedComplexity = CodeComplexity 1 2 2 1
   }
 -- | Exhaustive pattern test
+exhaustivePatternTest :: TestCase
 exhaustivePatternTest = TestCase
   { testName = "exhaustive-pattern"
   , testFeature = PatternMatching
@@ -1362,6 +1394,7 @@ exhaustivePatternTest = TestCase
   , testExpectedComplexity = CodeComplexity 1 3 2 1
   }
 -- | Pattern ordering test
+patternOrderingTest :: TestCase
 patternOrderingTest = TestCase
   { testName = "pattern-ordering"
   , testFeature = PatternMatching
@@ -1386,6 +1419,7 @@ patternOrderingTest = TestCase
   , testExpectedComplexity = CodeComplexity 1 4 3 0
   }
 -- | Complex pattern test
+complexPatternTest :: TestCase
 complexPatternTest = TestCase
   { testName = "complex-pattern"
   , testFeature = PatternMatching
@@ -1415,6 +1449,7 @@ complexPatternTest = TestCase
   , testExpectedComplexity = CodeComplexity 1 1 4 2
   }
 -- | List module test
+listModuleTest :: TestCase
 listModuleTest = TestCase
   { testName = "list-module"
   , testFeature = ListManipulation
@@ -1485,6 +1520,7 @@ maybeModuleTest = TestCase
   , testExpectedComplexity = CodeComplexity 1 2 2 1
   }
 -- | Result module test
+resultModuleTest :: TestCase
 resultModuleTest = TestCase
   { testName = "result-module"
   , testFeature = ResultTypes
@@ -1510,6 +1546,7 @@ resultModuleTest = TestCase
   , testExpectedComplexity = CodeComplexity 1 2 3 0
   }
 -- | Dict module test
+dictModuleTest :: TestCase
 dictModuleTest = TestCase
   { testName = "dict-module"
   , testFeature = RecordOperations
@@ -1535,6 +1572,7 @@ dictModuleTest = TestCase
   , testExpectedComplexity = CodeComplexity 1 1 3 0
   }
 -- | Set module test
+setModuleTest :: TestCase
 setModuleTest = TestCase
   { testName = "set-module"
   , testFeature = ListManipulation
@@ -1559,6 +1597,7 @@ setModuleTest = TestCase
   , testExpectedComplexity = CodeComplexity 1 1 4 0
   }
 -- | Array module test
+arrayModuleTest :: TestCase
 arrayModuleTest = TestCase
   { testName = "array-module"
   , testFeature = ListManipulation
@@ -1588,6 +1627,7 @@ arrayModuleTest = TestCase
   , testExpectedComplexity = CodeComplexity 1 2 3 0
   }
 -- | Tuple module test
+tupleModuleTest :: TestCase
 tupleModuleTest = TestCase
   { testName = "tuple-module"
   , testFeature = TupleOperations
@@ -1611,6 +1651,7 @@ tupleModuleTest = TestCase
   , testExpectedComplexity = CodeComplexity 1 1 3 0
   }
 -- | Basics module test
+basicsModuleTest :: TestCase
 basicsModuleTest = TestCase
   { testName = "basics-module"
   , testFeature = BasicArithmetic
@@ -1637,6 +1678,7 @@ basicsModuleTest = TestCase
   , testExpectedComplexity = CodeComplexity 1 1 4 0
   }
 -- | Debug module test
+debugModuleTest :: TestCase
 debugModuleTest = TestCase
   { testName = "debug-module"
   , testFeature = BasicArithmetic
@@ -1655,6 +1697,7 @@ debugModuleTest = TestCase
   , testExpectedComplexity = CodeComplexity 1 0 3 0
   }
 -- | Platform module test
+platformModuleTest :: TestCase
 platformModuleTest = TestCase
   { testName = "platform-module"
   , testFeature = ModuleImports
@@ -1675,6 +1718,7 @@ platformModuleTest = TestCase
   , testExpectedComplexity = CodeComplexity 1 1 1 0
   }
 -- | JSON handling test
+jsonHandlingTest :: TestCase
 jsonHandlingTest = TestCase
   { testName = "json-handling"
   , testFeature = StringOperations
@@ -1694,6 +1738,7 @@ jsonHandlingTest = TestCase
   , testExpectedComplexity = CodeComplexity 1 0 3 0
   }
 -- | Higher-order function test
+higherOrderTest :: TestCase
 higherOrderTest = TestCase
   { testName = "higher-order"
   , testFeature = HigherOrderFunctions
@@ -1716,6 +1761,7 @@ higherOrderTest = TestCase
   , testExpectedComplexity = CodeComplexity 2 1 1 0
   }
 -- | Currying test
+curryingTest :: TestCase
 curryingTest = TestCase
   { testName = "currying"
   , testFeature = HigherOrderFunctions
@@ -1740,6 +1786,7 @@ curryingTest = TestCase
   , testExpectedComplexity = CodeComplexity 1 1 2 0
   }
 -- | Memoization test
+memoizationTest :: TestCase
 memoizationTest = TestCase
   { testName = "memoization"
   , testFeature = HigherOrderFunctions
@@ -1764,6 +1811,7 @@ memoizationTest = TestCase
   , testExpectedComplexity = CodeComplexity 1 1 2 0
   }
 -- | Tail call test
+tailCallTest :: TestCase
 tailCallTest = TestCase
   { testName = "tail-call"
   , testFeature = FunctionComposition
@@ -1789,6 +1837,7 @@ tailCallTest = TestCase
   , testExpectedComplexity = CodeComplexity 2 1 2 0
   }
 -- | Lazy evaluation test
+lazyEvaluationTest :: TestCase
 lazyEvaluationTest = TestCase
   { testName = "lazy-evaluation"
   , testFeature = HigherOrderFunctions
@@ -1811,6 +1860,7 @@ lazyEvaluationTest = TestCase
   , testExpectedComplexity = CodeComplexity 1 2 2 0
   }
 -- | Module import test
+moduleImportTest :: TestCase
 moduleImportTest = TestCase
   { testName = "module-import"
   , testFeature = ModuleImports
@@ -1831,6 +1881,7 @@ moduleImportTest = TestCase
   , testExpectedComplexity = CodeComplexity 1 1 3 0
   }
 -- | Qualified import test
+qualifiedImportTest :: TestCase
 qualifiedImportTest = TestCase
   { testName = "qualified-import"
   , testFeature = ModuleImports
@@ -1852,6 +1903,7 @@ qualifiedImportTest = TestCase
   , testExpectedComplexity = CodeComplexity 1 1 2 0
   }
 -- | Exposing pattern test
+exposingPatternTest :: TestCase
 exposingPatternTest = TestCase
   { testName = "exposing-pattern"
   , testFeature = ModuleImports
@@ -1872,6 +1924,7 @@ exposingPatternTest = TestCase
   , testExpectedComplexity = CodeComplexity 1 1 2 0
   }
 -- | Type annotation test
+typeAnnotationTest :: TestCase
 typeAnnotationTest = TestCase
   { testName = "type-annotation"
   , testFeature = TypeAliases
@@ -1900,6 +1953,7 @@ typeAnnotationTest = TestCase
   , testExpectedComplexity = CodeComplexity 1 1 3 1
   }
 -- | Generic function test
+genericFunctionTest :: TestCase
 genericFunctionTest = TestCase
   { testName = "generic-function"
   , testFeature = HigherOrderFunctions
@@ -1921,6 +1975,7 @@ genericFunctionTest = TestCase
   , testExpectedComplexity = CodeComplexity 2 1 2 0
   }
 -- | Port module test
+portModuleTest :: TestCase
 portModuleTest = TestCase
   { testName = "port-module"
   , testFeature = PortHandling
@@ -1937,6 +1992,7 @@ portModuleTest = TestCase
   , testExpectedComplexity = CodeComplexity 1 1 1 0
   }
 -- | Effect manager test
+effectManagerTest :: TestCase
 effectManagerTest = TestCase
   { testName = "effect-manager"
   , testFeature = PortHandling

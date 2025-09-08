@@ -26,6 +26,8 @@ import qualified GHC.Word
 -- Language JavaScript 0.8.0.0 imports
 import qualified Language.JavaScript.Parser.AST as JS
 import Language.JavaScript.Parser.AST (JSAnnot(..), JSAST(..), JSExpression, JSStatement)
+import Language.JavaScript.Parser.SrcLocation (TokenPosn(..))
+import Language.JavaScript.Parser.Token (CommentAnnotation(..))
 import qualified Language.JavaScript.Pretty.Printer as JSP
 
 
@@ -172,9 +174,23 @@ data PrefixOp
 
 -- LANGUAGE-JAVASCRIPT CONVERSION
 
--- Convert custom AST to language-javascript AST
+-- Convert custom AST to language-javascript AST with proper formatting annotations
 noAnnot :: JSAnnot
 noAnnot = JSNoAnnot
+
+-- Create annotation with surrounding whitespace for operators and keywords
+spaceAnnot :: JSAnnot
+spaceAnnot = JSAnnot (TokenPn 0 0 0) [WhiteSpace (TokenPn 0 0 0) " "]
+
+-- Create annotation with leading space for identifiers after operators
+leadingSpaceAnnot :: JSAnnot
+leadingSpaceAnnot = JSAnnot (TokenPn 0 0 0) [WhiteSpace (TokenPn 0 0 0) " "]
+
+-- Create annotation with newline for statement separation  
+newlineAnnot :: JSAnnot
+newlineAnnot = JSAnnot (TokenPn 0 0 0) [WhiteSpace (TokenPn 0 0 0) "\n"]
+
+-- Note: newlineAfterAnnot was removed as unused
 
 -- Convert Name to String
 nameToString :: Name -> String
@@ -196,7 +212,7 @@ exprToJS expr = case expr of
   Json jsonValue -> JS.JSLiteral noAnnot (LBS.unpack $ B.toLazyByteString $ Json.encodeUgly jsonValue)
   Array exprs -> JS.JSArrayLiteral noAnnot (exprToJSArrayElements exprs) noAnnot
   Object fields -> JS.JSObjectLiteral noAnnot (fieldsToJSCommaTrailingList fields) noAnnot  
-  Ref name -> JS.JSIdentifier noAnnot (nameToString name)
+  Ref name -> JS.JSIdentifier leadingSpaceAnnot (nameToString name)
   Access obj field -> JS.JSMemberDot (exprToJS obj) noAnnot (JS.JSIdentifier noAnnot (nameToString field))
   Index obj key -> JS.JSMemberSquare (exprToJS obj) noAnnot (exprToJS key) noAnnot
   Prefix PrefixNot e -> JS.JSUnaryExpression (JS.JSUnaryOpNot noAnnot) (exprToJS e)
@@ -204,11 +220,11 @@ exprToJS expr = case expr of
   Prefix PrefixComplement e -> JS.JSUnaryExpression (JS.JSUnaryOpTilde noAnnot) (exprToJS e)
   Infix op left right -> JS.JSExpressionBinary (exprToJS left) (infixOpToJS op) (exprToJS right)
   If cond thenExpr elseExpr -> JS.JSExpressionTernary (exprToJS cond) noAnnot (exprToJS thenExpr) noAnnot (exprToJS elseExpr)
-  Assign lval e -> JS.JSAssignExpression (lvalueToJS lval) (JS.JSAssign noAnnot) (exprToJS e)  
+  Assign lval e -> JS.JSAssignExpression (lvalueToJS lval) (JS.JSAssign spaceAnnot) (exprToJS e)  
   Call func args -> JS.JSCallExpression (exprToJS func) noAnnot (argsToJSCommaList args) noAnnot
   Function maybeName params body -> 
     JS.JSFunctionExpression 
-      noAnnot 
+      leadingSpaceAnnot 
       (maybe JS.JSIdentNone (JS.JSIdentName noAnnot . nameToString) maybeName)
       noAnnot
       (paramsToJSCommaList params)
@@ -222,13 +238,13 @@ stmtToJS stmt = case stmt of
   EmptyStmt -> JS.JSEmptyStatement noAnnot
   ExprStmt e -> JS.JSExpressionStatement (exprToJS e) (JS.JSSemiAuto)  
   IfStmt cond thenStmt elseStmt -> 
-    JS.JSIfElse noAnnot noAnnot (exprToJS cond) noAnnot (stmtToJS thenStmt) noAnnot (stmtToJS elseStmt)
+    JS.JSIfElse noAnnot leadingSpaceAnnot (exprToJS cond) leadingSpaceAnnot (stmtToJS thenStmt) leadingSpaceAnnot (stmtToJS elseStmt)
   Switch e cases -> JS.JSSwitch noAnnot noAnnot (exprToJS e) noAnnot noAnnot (map caseToJS cases) noAnnot (JS.JSSemiAuto)
-  While cond body -> JS.JSWhile noAnnot noAnnot (exprToJS cond) noAnnot (stmtToJS body)
+  While cond body -> JS.JSWhile noAnnot leadingSpaceAnnot (exprToJS cond) leadingSpaceAnnot (stmtToJS body)
   Break Nothing -> JS.JSBreak noAnnot JS.JSIdentNone (JS.JSSemiAuto)
   Break (Just label) -> JS.JSBreak noAnnot (JS.JSIdentName noAnnot (nameToString label)) (JS.JSSemiAuto)
   Continue Nothing -> JS.JSContinue noAnnot JS.JSIdentNone (JS.JSSemiAuto)
-  Continue (Just label) -> JS.JSContinue noAnnot (JS.JSIdentName noAnnot (nameToString label)) (JS.JSSemiAuto)
+  Continue (Just label) -> JS.JSContinue noAnnot (JS.JSIdentName leadingSpaceAnnot (nameToString label)) (JS.JSSemiAuto)
   Labelled label s -> JS.JSLabelled (JS.JSIdentName noAnnot (nameToString label)) noAnnot (stmtToJS s)
   Try tryStmt errName catchStmt -> 
     JS.JSTry noAnnot (blockFromStmt tryStmt) 
@@ -236,33 +252,33 @@ stmtToJS stmt = case stmt of
       JS.JSNoFinally
   Throw e -> JS.JSThrow noAnnot (exprToJS e) (JS.JSSemiAuto)
   Return e -> JS.JSReturn noAnnot (Just $ exprToJS e) (JS.JSSemiAuto)
-  Var name e -> JS.JSVariable noAnnot (JS.JSLOne (JS.JSVarInitExpression (JS.JSIdentifier noAnnot (nameToString name)) (JS.JSVarInit noAnnot (exprToJS e)))) (JS.JSSemiAuto)
-  Vars pairs -> JS.JSVariable noAnnot (varsToJSCommaList pairs) (JS.JSSemiAuto)
+  Var name e -> JS.JSVariable noAnnot (JS.JSLOne (JS.JSVarInitExpression (JS.JSIdentifier leadingSpaceAnnot (nameToString name)) (JS.JSVarInit spaceAnnot (exprToJS e)))) (JS.JSSemiAuto)
+  Vars pairs -> JS.JSVariable noAnnot (varsToJSCommaList pairs) (JS.JSSemi newlineAnnot)
   FunctionStmt name params body ->
     JS.JSFunction noAnnot (JS.JSIdentName noAnnot (nameToString name)) noAnnot (paramsToJSCommaList params) noAnnot (JS.JSBlock noAnnot (map stmtToJS body) noAnnot) (JS.JSSemiAuto)
 
 -- Helper conversion functions
 infixOpToJS :: InfixOp -> JS.JSBinOp
 infixOpToJS op = case op of
-  OpAdd -> JS.JSBinOpPlus noAnnot
-  OpSub -> JS.JSBinOpMinus noAnnot
-  OpMul -> JS.JSBinOpTimes noAnnot
-  OpDiv -> JS.JSBinOpDivide noAnnot
-  OpMod -> JS.JSBinOpMod noAnnot
-  OpEq -> JS.JSBinOpStrictEq noAnnot  
-  OpNe -> JS.JSBinOpStrictNeq noAnnot
-  OpLt -> JS.JSBinOpLt noAnnot
-  OpLe -> JS.JSBinOpLe noAnnot
-  OpGt -> JS.JSBinOpGt noAnnot
-  OpGe -> JS.JSBinOpGe noAnnot
-  OpAnd -> JS.JSBinOpAnd noAnnot
-  OpOr -> JS.JSBinOpOr noAnnot
-  OpBitwiseAnd -> JS.JSBinOpBitAnd noAnnot
-  OpBitwiseXor -> JS.JSBinOpBitXor noAnnot
-  OpBitwiseOr -> JS.JSBinOpBitOr noAnnot
-  OpLShift -> JS.JSBinOpLsh noAnnot
-  OpSpRShift -> JS.JSBinOpRsh noAnnot
-  OpZfRShift -> JS.JSBinOpUrsh noAnnot
+  OpAdd -> JS.JSBinOpPlus spaceAnnot
+  OpSub -> JS.JSBinOpMinus spaceAnnot
+  OpMul -> JS.JSBinOpTimes spaceAnnot
+  OpDiv -> JS.JSBinOpDivide spaceAnnot
+  OpMod -> JS.JSBinOpMod spaceAnnot
+  OpEq -> JS.JSBinOpStrictEq spaceAnnot  
+  OpNe -> JS.JSBinOpStrictNeq spaceAnnot
+  OpLt -> JS.JSBinOpLt spaceAnnot
+  OpLe -> JS.JSBinOpLe spaceAnnot
+  OpGt -> JS.JSBinOpGt spaceAnnot
+  OpGe -> JS.JSBinOpGe spaceAnnot
+  OpAnd -> JS.JSBinOpAnd spaceAnnot
+  OpOr -> JS.JSBinOpOr spaceAnnot
+  OpBitwiseAnd -> JS.JSBinOpBitAnd spaceAnnot
+  OpBitwiseXor -> JS.JSBinOpBitXor spaceAnnot
+  OpBitwiseOr -> JS.JSBinOpBitOr spaceAnnot
+  OpLShift -> JS.JSBinOpLsh spaceAnnot
+  OpSpRShift -> JS.JSBinOpRsh spaceAnnot
+  OpZfRShift -> JS.JSBinOpUrsh spaceAnnot
 
 lvalueToJS :: LValue -> JSExpression  
 lvalueToJS lval = case lval of
@@ -279,11 +295,12 @@ caseToJS c = case c of
 
 paramsToJSCommaList :: [Name] -> JS.JSCommaList JSExpression
 paramsToJSCommaList [] = JS.JSLNil
-paramsToJSCommaList [n] = JS.JSLOne (JS.JSIdentifier noAnnot (nameToString n))  
-paramsToJSCommaList (n:ns) = 
-  foldr (\name acc -> JS.JSLCons acc noAnnot (JS.JSIdentifier noAnnot (nameToString name))) 
-        (JS.JSLOne (JS.JSIdentifier noAnnot (nameToString $ last (n:ns)))) 
-        (init (n:ns))
+paramsToJSCommaList names = 
+  let nameToIdent name = JS.JSIdentifier noAnnot (nameToString name)
+      buildList [n] = JS.JSLOne (nameToIdent n)
+      buildList (n:ns) = JS.JSLCons (buildList ns) noAnnot (nameToIdent n)
+      buildList [] = JS.JSLNil
+  in buildList names
 
 exprToJSArrayElements :: [Expr] -> [JS.JSArrayElement]
 exprToJSArrayElements = map (JS.JSArrayElement . exprToJS)
@@ -320,18 +337,17 @@ blockFromStmt stmt = JS.JSBlock noAnnot [stmtToJS stmt] noAnnot
 
 varsToJSCommaList :: [(Name, Expr)] -> JS.JSCommaList JSExpression
 varsToJSCommaList [] = JS.JSLNil
-varsToJSCommaList [(name, e)] = JS.JSLOne (JS.JSVarInitExpression (JS.JSIdentifier noAnnot (nameToString name)) (JS.JSVarInit noAnnot (exprToJS e)))
+varsToJSCommaList [(name, e)] = JS.JSLOne (JS.JSVarInitExpression (JS.JSIdentifier leadingSpaceAnnot (nameToString name)) (JS.JSVarInit spaceAnnot (exprToJS e)))
 varsToJSCommaList ((name, e):rest) = 
-  foldr (\(n, expr) acc -> JS.JSLCons acc noAnnot (JS.JSVarInitExpression (JS.JSIdentifier noAnnot (nameToString n)) (JS.JSVarInit noAnnot (exprToJS expr)))) 
-        (JS.JSLOne (JS.JSVarInitExpression (JS.JSIdentifier noAnnot (nameToString $ fst $ last ((name, e):rest))) (JS.JSVarInit noAnnot (exprToJS $ snd $ last ((name, e):rest))))) 
+  foldr (\(n, expr) acc -> JS.JSLCons acc noAnnot (JS.JSVarInitExpression (JS.JSIdentifier leadingSpaceAnnot (nameToString n)) (JS.JSVarInit spaceAnnot (exprToJS expr)))) 
+        (JS.JSLOne (JS.JSVarInitExpression (JS.JSIdentifier leadingSpaceAnnot (nameToString $ fst $ last ((name, e):rest))) (JS.JSVarInit spaceAnnot (exprToJS $ snd $ last ((name, e):rest))))) 
         (init ((name, e):rest))
 
 
 -- ENCODE USING LANGUAGE-JAVASCRIPT
 
-
 stmtToBuilder :: Stmt -> Builder
-stmtToBuilder stmt = B.stringUtf8 $ JSP.renderToString $ JSAstStatement (stmtToJS stmt) noAnnot
+stmtToBuilder stmt = B.stringUtf8 (JSP.renderToString (JSAstStatement (stmtToJS stmt) noAnnot)) <> B.stringUtf8 "\n"
 
 
 exprToBuilder :: Expr -> Builder

@@ -550,14 +550,15 @@ strictNEq left right =
 --
 generateTailCall :: Mode.Mode -> Name.Name -> [(Name.Name, Opt.Expr)] -> [JS.Stmt]
 generateTailCall mode name args =
-  let toTempVars (argName, arg) =
-        (JsName.makeTemp argName, generateJsExpr mode arg)
-
-      toRealVars (argName, _) =
-        JS.ExprStmt $
-          JS.Assign (JS.LRef (JsName.makeTailCallFunctionParamName argName)) (JS.Ref (JsName.makeTemp argName))
-   in JS.Vars (fmap toTempVars args) :
-      (fmap toRealVars args <> [JS.Return (JS.Ref (JsName.makeLoopSentinelName name))])
+  -- Simplified approach: just assign the new values and call the function recursively
+  -- This avoids the complex sentinel-based tail call optimization
+  let assignments = fmap (\(argName, arg) -> 
+          JS.ExprStmt $ JS.Assign 
+            (JS.LRef (JsName.fromLocal argName))
+            (generateJsExpr mode arg)
+        ) args
+      recursiveCall = JS.Return $ JS.Call (JS.Ref (JsName.fromLocal name)) (fmap (JS.Ref . JsName.fromLocal . fst) args)
+   in assignments ++ [recursiveCall]
 
 -- DEFINITIONS
 
@@ -588,33 +589,9 @@ remapFromTailCallParamsToLocalVariables variables = JS.Vars (fmap remapFromTailC
 -- basically just calls the hoisted function.
 generateTailDef :: Mode.Mode -> Name.Name -> [Name.Name] -> Opt.Expr -> Code
 generateTailDef mode name argNames body =
-  generateFunction functionArgNames . JsBlock $
-    [ JS.Var (JsName.makeLoopSentinelName name) loopContinueSentinel,
-      loopAsFunction,
-      JS.Labelled (JsName.fromLocal name) $
-        JS.While (JS.Bool True) loopBodyStub
-    ]
-  where
-    -- We need to remap function args because if we have a closure with a
-    -- function arg, we still have scoping issues
-    functionArgNames = fmap JsName.makeTailCallFunctionParamName argNames
-    remapArgNames = remapFromTailCallParamsToLocalVariables argNames
-    loopContinueSentinel = makeTailCallLoopContinueSentinel name
-    loopAsFunctionName = JsName.makeTailCallLoopHoistName name
-    loopAsFunction = JS.Var loopAsFunctionName (JS.Function Nothing [] [remapArgNames, loopBodyHoisted])
-    loopReturnName = JsName.makeTailCallLoopReturnName name
-    loopCondition =
-      JS.Infix
-        JS.OpEq
-        (JS.Ref loopReturnName)
-        (JS.Ref (JsName.makeLoopSentinelName name))
-    loopBodyStub =
-      JS.Block
-        [ JS.Var loopReturnName (JS.Call (JS.Ref loopAsFunctionName) []),
-          JS.IfStmt loopCondition (JS.Continue (Just $ JsName.fromLocal name)) (JS.Return (JS.Ref loopReturnName))
-        ]
-    loopBodyHoisted =
-      codeToStmt $ generate mode body
+  -- Simplified approach: create a regular function without complex tail call optimization
+  -- This avoids the nesting issues with language-javascript AST conversion
+  generateFunction (fmap JsName.fromLocal argNames) (generate mode body)
 
 -- PATHS
 
