@@ -525,11 +525,11 @@ generateBasicsCall mode home name args =
             right = generateJsExpr mode canopyRight
           in
           case name of
-            "add"  -> JS.Infix JS.OpAdd left right
-            "sub"  -> JS.Infix JS.OpSub left right
-            "mul"  -> JS.Infix JS.OpMul left right
-            "fdiv" -> JS.Infix JS.OpDiv left right
-            "idiv" -> JS.Infix JS.OpBitwiseOr (JS.Infix JS.OpDiv left right) (JS.Int 0)
+            "add"  -> JS.Call (JS.Ref (JsName.fromKernel Name.basics "add")) [left, right]
+            "sub"  -> JS.Call (JS.Ref (JsName.fromKernel Name.basics "sub")) [left, right]
+            "mul"  -> JS.Call (JS.Ref (JsName.fromKernel Name.basics "mul")) [left, right]
+            "fdiv" -> JS.Call (JS.Ref (JsName.fromKernel Name.basics "fdiv")) [left, right]
+            "idiv" -> JS.Call (JS.Ref (JsName.fromKernel Name.basics "idiv")) [left, right]
             "eq"   -> equal left right
             "neq"  -> notEqual left right
             "lt"   -> cmp JS.OpLt JS.OpLt   0  left right
