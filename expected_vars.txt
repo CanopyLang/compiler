@@ -1,0 +1,1 @@
+var $elm$virtual_dom$VirtualDom$text=_VirtualDom_text;var $elm$html$Html$text=$elm$virtual_dom$VirtualDom$text;

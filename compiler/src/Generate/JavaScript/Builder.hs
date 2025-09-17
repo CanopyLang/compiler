@@ -4,6 +4,8 @@
 module Generate.JavaScript.Builder
   ( stmtToBuilder
   , exprToBuilder
+  , stmtToBuilderWithMode
+  , exprToBuilderWithMode
   , Expr(..), LValue(..)
   , Stmt(..), Case(..)
   , InfixOp(..), PrefixOp(..)
@@ -22,6 +24,7 @@ import qualified Json.Encode as Json
 import qualified Canopy.String as ES
 import qualified Data.Utf8 as Utf8
 import qualified GHC.Word
+import qualified Generate.Mode as Mode
 
 -- Language JavaScript 0.8.0.0 imports
 import qualified Language.JavaScript.Parser.AST as JS
@@ -116,6 +119,7 @@ data Stmt
   = Block [Stmt]
   | EmptyStmt
   | ExprStmt Expr
+  | ExprStmtWithSemi Expr  -- Expression statement with explicit semicolon
   | IfStmt Expr Stmt Stmt
   | Switch Expr [Case]
   | While Expr Stmt
@@ -190,6 +194,16 @@ leadingSpaceAnnot = JSAnnot (TokenPn 0 0 0) [WhiteSpace (TokenPn 0 0 0) " "]
 newlineAnnot :: JSAnnot
 newlineAnnot = JSAnnot (TokenPn 0 0 0) [WhiteSpace (TokenPn 0 0 0) "\n"]
 
+-- Mode-aware annotation functions
+annotForMode :: Mode.Mode -> JSAnnot -> JSAnnot
+annotForMode mode defaultAnnot = 
+  if Mode.isElmCompatible mode 
+    then spaceAnnot  -- Use space for elm-compatibility
+    else defaultAnnot -- Use original annotation for optimized mode
+
+paramAnnotForMode :: Mode.Mode -> JSAnnot
+paramAnnotForMode mode = annotForMode mode noAnnot
+
 -- Note: newlineAfterAnnot was removed as unused
 
 -- Convert Name to String
@@ -200,10 +214,35 @@ nameToString = LBS.unpack . B.toLazyByteString . Name.toBuilder
 builderToString :: Builder -> String
 builderToString = LBS.unpack . B.toLazyByteString
 
+-- Escape single quotes and backslashes in string content
+escapeSingleQuotes :: String -> String
+escapeSingleQuotes [] = []
+escapeSingleQuotes ('\'':rest) = "\\'" ++ escapeSingleQuotes rest
+escapeSingleQuotes ('\\':rest) = "\\\\" ++ escapeSingleQuotes rest
+escapeSingleQuotes (c:rest) = c : escapeSingleQuotes rest
+
+-- Wrap expression in parentheses like Elm does for precedence
+wrapInParens :: Expr -> JSExpression
+wrapInParens expr = JS.JSExpressionParen noAnnot (exprToJS expr) noAnnot
+
+-- Check if expression needs parentheses in ternary context
+needsParensInTernary :: Expr -> Bool
+needsParensInTernary expr = case expr of
+  Infix _ _ _ -> True
+  Prefix _ _ -> True
+  _ -> False
+
+-- Check if expression needs parentheses as right operand in binary operation
+needsParensAsRightOperand :: Expr -> Bool
+needsParensAsRightOperand expr = case expr of
+  Infix OpAdd _ _ -> True  -- a + (b + c)
+  Infix OpSub _ _ -> True  -- a + (b - c) 
+  _ -> False
+
 -- Convert custom Expr to JSExpression
 exprToJS :: Expr -> JSExpression
 exprToJS expr = case expr of
-  String builder -> JS.JSStringLiteral noAnnot (show $ builderToString builder)
+  String builder -> JS.JSLiteral noAnnot ("'" ++ escapeSingleQuotes (builderToString builder) ++ "'")
   Float builder -> JS.JSDecimal noAnnot (builderToString builder) 
   Int n -> JS.JSDecimal noAnnot (show n)
   Bool True -> JS.JSLiteral noAnnot "true"
@@ -218,8 +257,15 @@ exprToJS expr = case expr of
   Prefix PrefixNot e -> JS.JSUnaryExpression (JS.JSUnaryOpNot noAnnot) (exprToJS e)
   Prefix PrefixNegate e -> JS.JSUnaryExpression (JS.JSUnaryOpMinus noAnnot) (exprToJS e)  
   Prefix PrefixComplement e -> JS.JSUnaryExpression (JS.JSUnaryOpTilde noAnnot) (exprToJS e)
-  Infix op left right -> JS.JSExpressionBinary (exprToJS left) (infixOpToJS op) (exprToJS right)
-  If cond thenExpr elseExpr -> JS.JSExpressionTernary (exprToJS cond) noAnnot (exprToJS thenExpr) noAnnot (exprToJS elseExpr)
+  Infix op left right -> 
+    let leftJS = exprToJS left
+        rightJS = if needsParensAsRightOperand right then wrapInParens right else exprToJS right
+    in JS.JSExpressionBinary leftJS (infixOpToJS op) rightJS
+  If cond thenExpr elseExpr -> 
+    let condJS = if needsParensInTernary cond then wrapInParens cond else exprToJS cond
+        thenJS = if needsParensInTernary thenExpr then wrapInParens thenExpr else exprToJS thenExpr
+        elseJS = exprToJS elseExpr
+    in JS.JSExpressionTernary condJS noAnnot thenJS noAnnot elseJS
   Assign lval e -> JS.JSAssignExpression (lvalueToJS lval) (JS.JSAssign spaceAnnot) (exprToJS e)  
   Call func args -> JS.JSCallExpression (exprToJS func) noAnnot (argsToJSCommaList args) noAnnot
   Function maybeName params body -> 
@@ -234,11 +280,18 @@ exprToJS expr = case expr of
 -- Convert custom Stmt to JSStatement  
 stmtToJS :: Stmt -> JSStatement
 stmtToJS stmt = case stmt of
+  Block [] -> JS.JSEmptyStatement noAnnot
+  Block [singleStmt] -> stmtToJS singleStmt  -- Avoid unnecessary block wrapper for single statements
   Block stmts -> JS.JSStatementBlock noAnnot (map stmtToJS stmts) noAnnot (JS.JSSemiAuto)
   EmptyStmt -> JS.JSEmptyStatement noAnnot
-  ExprStmt e -> JS.JSExpressionStatement (exprToJS e) (JS.JSSemiAuto)  
-  IfStmt cond thenStmt elseStmt -> 
-    JS.JSIfElse noAnnot leadingSpaceAnnot (exprToJS cond) leadingSpaceAnnot (stmtToJS thenStmt) leadingSpaceAnnot (stmtToJS elseStmt)
+  ExprStmt e -> JS.JSExpressionStatement (exprToJS e) (JS.JSSemiAuto)
+  ExprStmtWithSemi e -> JS.JSExpressionStatement (exprToJS e) (JS.JSSemi noAnnot)  
+  IfStmt cond thenStmt elseStmt ->
+    JS.JSIfElse noAnnot leadingSpaceAnnot (exprToJS cond) leadingSpaceAnnot (ensureBlock thenStmt) leadingSpaceAnnot (ensureBlock elseStmt)
+    where
+      ensureBlock blockStmt = case blockStmt of
+        Block _ -> stmtToJS blockStmt
+        _ -> JS.JSStatementBlock noAnnot [stmtToJS blockStmt] noAnnot (JS.JSSemiAuto)
   Switch e cases -> JS.JSSwitch noAnnot noAnnot (exprToJS e) noAnnot noAnnot (map caseToJS cases) noAnnot (JS.JSSemiAuto)
   While cond body -> JS.JSWhile noAnnot leadingSpaceAnnot (exprToJS cond) leadingSpaceAnnot (stmtToJS body)
   Break Nothing -> JS.JSBreak noAnnot JS.JSIdentNone (JS.JSSemiAuto)
@@ -251,8 +304,8 @@ stmtToJS stmt = case stmt of
       [JS.JSCatch noAnnot noAnnot (JS.JSIdentifier noAnnot (nameToString errName)) noAnnot (blockFromStmt catchStmt)]
       JS.JSNoFinally
   Throw e -> JS.JSThrow noAnnot (exprToJS e) (JS.JSSemiAuto)
-  Return e -> JS.JSReturn noAnnot (Just $ exprToJS e) (JS.JSSemiAuto)
-  Var name e -> JS.JSVariable noAnnot (JS.JSLOne (JS.JSVarInitExpression (JS.JSIdentifier leadingSpaceAnnot (nameToString name)) (JS.JSVarInit spaceAnnot (exprToJS e)))) (JS.JSSemiAuto)
+  Return e -> JS.JSReturn noAnnot (Just $ exprToJS e) (JS.JSSemi noAnnot)
+  Var name e -> JS.JSVariable noAnnot (JS.JSLOne (JS.JSVarInitExpression (JS.JSIdentifier leadingSpaceAnnot (nameToString name)) (JS.JSVarInit spaceAnnot (exprToJS e)))) (JS.JSSemi noAnnot)
   Vars pairs -> JS.JSVariable noAnnot (varsToJSCommaList pairs) (JS.JSSemi newlineAnnot)
   FunctionStmt name params body ->
     JS.JSFunction noAnnot (JS.JSIdentName noAnnot (nameToString name)) noAnnot (paramsToJSCommaList params) noAnnot (JS.JSBlock noAnnot (map stmtToJS body) noAnnot) (JS.JSSemiAuto)
@@ -300,7 +353,7 @@ paramsToJSCommaList names =
       buildList [n] = JS.JSLOne (nameToIdent n)
       buildList (n:ns) = JS.JSLCons (buildList ns) noAnnot (nameToIdent n)
       buildList [] = JS.JSLNil
-  in buildList names
+  in buildList (reverse names)
 
 exprToJSArrayElements :: [Expr] -> [JS.JSArrayElement]
 exprToJSArrayElements = map (JS.JSArrayElement . exprToJS)
@@ -308,10 +361,11 @@ exprToJSArrayElements = map (JS.JSArrayElement . exprToJS)
 argsToJSCommaList :: [Expr] -> JS.JSCommaList JSExpression
 argsToJSCommaList [] = JS.JSLNil  
 argsToJSCommaList [e] = JS.JSLOne (exprToJS e)
-argsToJSCommaList (e:es) = 
-  foldr (\expr acc -> JS.JSLCons acc noAnnot (exprToJS expr)) 
-        (JS.JSLOne (exprToJS $ last (e:es))) 
-        (init (e:es))
+argsToJSCommaList args = 
+  let reversedArgs = reverse args
+  in foldr (\expr acc -> JS.JSLCons acc noAnnot (exprToJS expr)) 
+           (JS.JSLOne (exprToJS $ last reversedArgs)) 
+           (init reversedArgs)
 
 fieldsToJSCommaTrailingList :: [(Name, Expr)] -> JS.JSCommaTrailingList JS.JSObjectProperty
 fieldsToJSCommaTrailingList fields = JS.JSCTLNone (fieldsToJSCommaList fields)
@@ -325,10 +379,10 @@ fieldsToJSCommaList (f:fs) =
         (init (f:fs))
 
 fieldToJSProperty :: (Name, Expr) -> JS.JSObjectProperty  
-fieldToJSProperty (key, value) = 
-  JS.JSPropertyNameandValue 
+fieldToJSProperty (key, value) =
+  JS.JSPropertyNameandValue
     (JS.JSPropertyIdent noAnnot (nameToString key))
-    noAnnot
+    leadingSpaceAnnot
     [exprToJS value]
 
 blockFromStmt :: Stmt -> JS.JSBlock
@@ -353,6 +407,45 @@ stmtToBuilder stmt = B.stringUtf8 (JSP.renderToString (JSAstStatement (stmtToJS 
 exprToBuilder :: Expr -> Builder
 exprToBuilder expr = B.stringUtf8 $ JSP.renderToString $ JSAstExpression (exprToJS expr) noAnnot
 
+-- Mode-aware versions for elm-compatibility
+stmtToBuilderWithMode :: Mode.Mode -> Stmt -> Builder
+stmtToBuilderWithMode mode stmt = B.stringUtf8 (JSP.renderToString (JSAstStatement (stmtToJSWithMode mode stmt) noAnnot)) <> B.stringUtf8 "\n"
 
+exprToBuilderWithMode :: Mode.Mode -> Expr -> Builder
+exprToBuilderWithMode mode expr = B.stringUtf8 $ JSP.renderToString $ JSAstExpression (exprToJSWithMode mode expr) noAnnot
+
+-- Mode-aware AST conversion functions
+stmtToJSWithMode :: Mode.Mode -> Stmt -> JSStatement
+stmtToJSWithMode mode stmt = case stmt of
+  Block [] -> JS.JSEmptyStatement noAnnot
+  Block [singleStmt] -> stmtToJSWithMode mode singleStmt  -- Avoid unnecessary block wrapper for single statements
+  Block stmts -> JS.JSStatementBlock noAnnot (map (stmtToJSWithMode mode) stmts) noAnnot (JS.JSSemiAuto)
+  FunctionStmt name params body ->
+    JS.JSFunction noAnnot (JS.JSIdentName noAnnot (nameToString name)) noAnnot (paramsToJSCommaListWithMode mode params) noAnnot (JS.JSBlock noAnnot (map (stmtToJSWithMode mode) body) noAnnot) (JS.JSSemiAuto)
+  _ -> stmtToJS stmt -- Use original for other statements
+
+exprToJSWithMode :: Mode.Mode -> Expr -> JSExpression  
+exprToJSWithMode mode expr = case expr of
+  Function maybeName params body -> 
+    JS.JSFunctionExpression 
+      leadingSpaceAnnot 
+      (maybe JS.JSIdentNone (JS.JSIdentName noAnnot . nameToString) maybeName)
+      noAnnot
+      (paramsToJSCommaListWithMode mode params)
+      noAnnot
+      (JS.JSBlock noAnnot (map (stmtToJSWithMode mode) body) noAnnot)
+  _ -> exprToJS expr -- Use original for other expressions
+
+-- Mode-aware parameter list conversion  
+paramsToJSCommaListWithMode :: Mode.Mode -> [Name] -> JS.JSCommaList JSExpression
+paramsToJSCommaListWithMode mode params = 
+  case params of
+    [] -> JS.JSLNil
+    [param] -> JS.JSLOne (JS.JSIdentifier (paramAnnotForMode mode) (nameToString param))
+    (firstParam:restParams) -> 
+      let paramAnnot = paramAnnotForMode mode
+      in foldr (\param acc -> JS.JSLCons acc (paramAnnotForMode mode) (JS.JSIdentifier paramAnnot (nameToString param))) 
+               (JS.JSLOne (JS.JSIdentifier paramAnnot (nameToString firstParam)))
+               restParams
 
 -- Old implementation removed - now using language-javascript 0.8.0.0 for all rendering

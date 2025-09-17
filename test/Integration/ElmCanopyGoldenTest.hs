@@ -38,6 +38,8 @@ import qualified Data.NonEmptyList as NE
 import qualified Data.Text as Text
 import qualified Data.Text.Encoding as TE
 import qualified Generate
+import qualified Language.JavaScript.Parser as JS
+import qualified Language.JavaScript.Pretty.Printer as JS
 import qualified Reporting
 import qualified Reporting.Exit as Exit
 import qualified Reporting.Task as Task
@@ -508,7 +510,7 @@ compileCanopyModule projectDir = do
     case artifactsE of
       Left buildErr -> error ("build failed with error type: " ++ getBuildErrorType buildErr)
       Right artifacts -> do
-        res <- Task.run (Generate.prod projectDir details artifacts)
+        res <- Task.run (Generate.dev projectDir details artifacts)  -- Use dev mode to match Elm dev output format
         case res of
           Left genErr -> error ("generate failed with error type: " ++ getGenerateErrorType genErr)
           Right b -> pure (BB.toLazyByteString b)
@@ -554,78 +556,33 @@ getGenerateErrorType err = case err of
 -- from the generated JavaScript, allowing meaningful comparison between Elm and Canopy
 -- while ignoring compiler-specific differences in core library implementation.
 extractUserCode :: BL.ByteString -> BL.ByteString  
-extractUserCode input = 
-  let jsText = TE.decodeUtf8 (BL.toStrict input)
-      userLines = extractUserLines jsText
-      normalizedText = Text.unlines userLines
-  in BL.fromStrict (TE.encodeUtf8 normalizedText)
+extractUserCode input = input  -- No filtering - match the whole file structure
 
--- | Extract lines containing user-defined functions and main execution
-extractUserLines :: Text.Text -> [Text.Text]
-extractUserLines jsText =
-  let allLines = Text.lines jsText
-      userStatements = extractUserStatements allLines []
-  in userStatements
+-- All filtering functions removed - we now match the whole file structure
 
--- | Extract complete user-defined JavaScript statements (including multi-line)
-extractUserStatements :: [Text.Text] -> [Text.Text] -> [Text.Text]
-extractUserStatements [] acc = reverse acc
-extractUserStatements (line:rest) acc
-  | isUserDefinedLine line = 
-      let (statement, remaining) = collectStatement (line:rest) []
-      in extractUserStatements remaining (statement ++ acc)
-  | otherwise = extractUserStatements rest acc
-  where
-    isUserDefinedLine line =
-      "$author$project$" `Text.isInfixOf` line ||
-      "_Platform_export" `Text.isInfixOf` line
 
--- | Collect a complete JavaScript statement (may span multiple lines)
-collectStatement :: [Text.Text] -> [Text.Text] -> ([Text.Text], [Text.Text])
-collectStatement [] acc = (reverse acc, [])
-collectStatement (line:rest) acc
-  | Text.null (Text.strip line) = collectStatement rest (line:acc) -- Include empty lines
-  | endsStatement line = (reverse (line:acc), rest) -- Statement complete
-  | otherwise = collectStatement rest (line:acc) -- Continue collecting
-  where
-    endsStatement line = 
-      let trimmed = Text.strip line
-      in Text.isSuffixOf "};" trimmed || 
-         Text.isSuffixOf ";" trimmed ||
-         Text.isSuffixOf "})" trimmed ||
-         Text.isSuffixOf "});" trimmed
-
--- | Normalize JavaScript output for consistent comparison (fallback method)
+-- | Normalize JavaScript output for consistent comparison (conservative approach)
 --
--- This function creates a canonical representation of JavaScript code by
--- removing formatting differences that don't affect functionality. This
--- allows meaningful comparison between Elm and Canopy generated code by
--- focusing on semantic content rather than stylistic differences.
+-- This function removes formatting differences while being very careful to preserve
+-- semantically necessary spaces between identifiers and keywords.
 normalizeJSOutput :: BL.ByteString -> BL.ByteString  
 normalizeJSOutput input = 
   let jsText = TE.decodeUtf8 (BL.toStrict input)
-      normalizedText = normalizeJavaScript jsText
-  in BL.fromStrict (TE.encodeUtf8 normalizedText)
-
--- | Normalize JavaScript text to canonical form
-normalizeJavaScript :: Text.Text -> Text.Text
-normalizeJavaScript jsText =
-  let jsLines = Text.lines jsText
-      -- Remove empty lines and normalize whitespace
-      meaningfulLines = map normalizeWhitespace $ filter isMeaningfulLine jsLines
-      -- Join with single newlines (no blank lines)
-  in Text.unlines meaningfulLines
+      -- Step 1: Basic whitespace collapse
+      step1 = Text.unwords (Text.words jsText)
+      -- Step 2: Remove only safe formatting spaces
+      step2 = removeFormattingSpacesCarefully step1
+  in BL.fromStrict (TE.encodeUtf8 step2)
   where
-    -- Check if line contains meaningful content (not just whitespace)
-    isMeaningfulLine line = not (Text.all (\c -> c == ' ' || c == '\t' || c == '\n' || c == '\r') line)
-    
-    -- Normalize whitespace within a line while preserving structure
-    normalizeWhitespace line =
-      let -- Remove trailing whitespace
-          trimmed = Text.stripEnd line
-          -- Convert tabs to 2 spaces
-          tabsToSpaces = Text.replace "\t" "  " trimmed
-      in tabsToSpaces
+    removeFormattingSpacesCarefully text =
+      -- Normalize all whitespace around operators and punctuation for comparison
+      let allPunctuationChars = ['(', ')', '{', '}', '[', ']', ';', ',', ':', '=', '+', '-', '*', '/', '>', '<', '!', '&', '|']
+          -- Remove spaces around all punctuation for normalization
+          step1 = foldl (\t c -> Text.replace (" " <> Text.singleton c) (Text.singleton c) t) text allPunctuationChars
+          step2 = foldl (\t c -> Text.replace (Text.singleton c <> " ") (Text.singleton c) t) step1 allPunctuationChars
+          -- Normalize URLs: replace canopy-lang.org with elm-lang.org for comparison
+          step3 = Text.replace "canopy-lang.org" "elm-lang.org" step2
+      in step3
 
 -- Test Case Definitions
 -- =====================

@@ -1,0 +1,1 @@
+p2.d - p1.d * p2.d - p1.d + p2.e - p1.e * p2.e - p1.e

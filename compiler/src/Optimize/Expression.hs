@@ -74,9 +74,10 @@ optimize cycle (A.At region expression) =
         obody <- optimize cycle body
         pure $ Opt.Function argNames (foldr Opt.Destruct obody destructors)
     Can.Call func args ->
-      Opt.Call
-        <$> optimize cycle func
-        <*> traverse (optimize cycle) args
+      do
+        optFunc <- optimize cycle func
+        optArgs <- traverse (optimize cycle) args
+        pure (Opt.Call optFunc optArgs)
     Can.If branches finally ->
       let optimizeBranch (condition, branch) =
             (,)
@@ -401,3 +402,4 @@ decidecHasTailCall decider =
       decidecHasTailCall success || decidecHasTailCall failure
     Opt.FanOut _ tests fallback ->
       decidecHasTailCall fallback || any (decidecHasTailCall . snd) tests
+

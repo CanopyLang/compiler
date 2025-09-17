@@ -45,13 +45,13 @@ module Generate
     debug
   , dev
   , prod
+  , prodElmCompatible
   , repl
     -- * Configuration Types
   , ReplConfig(..)
     -- * Re-exports from sub-modules
   , module Generate.Types
   , module Generate.Objects
-  , module Generate.Types.Loading
   , module Generate.Validation
   , module Generate.Mains
   ) where
@@ -65,13 +65,11 @@ import qualified Data.Name as N
 import qualified Generate.JavaScript as JS
 import qualified Generate.Mode as Mode
 import qualified Generate.Objects as Objects
-import qualified Generate.Types.Loading as Loading
 import qualified Generate.Validation as Validation
 import qualified Generate.Mains as Mains
 -- Re-export sub-modules
 import Generate.Types
 import Generate.Objects
-import Generate.Types.Loading
 import Generate.Validation
 import Generate.Mains
 
@@ -134,11 +132,10 @@ makeLenses ''ReplConfig
 --
 -- @since 0.19.1
 debug :: FilePath -> Details.Details -> Build.Artifacts -> Task Builder
-debug root details (Build.Artifacts pkg ifaces roots modules) = do
+debug root details (Build.Artifacts pkg _ roots modules) = do
   loading <- Objects.loadObjects root details modules
-  types <- Loading.loadTypes root ifaces modules
   objects <- Objects.finalizeObjects loading
-  let mode = Mode.Dev (Just types)
+  let mode = Mode.Dev Nothing True  -- Elm-compatible mode without debug info
   let graph = Objects.objectsToGlobalGraph objects
   let mains = Mains.gatherMains pkg objects roots
   return $ JS.generate mode graph mains
@@ -180,7 +177,7 @@ debug root details (Build.Artifacts pkg ifaces roots modules) = do
 dev :: FilePath -> Details.Details -> Build.Artifacts -> Task Builder
 dev root details (Build.Artifacts pkg _ roots modules) = do
   objects <- Objects.loadObjects root details modules >>= Objects.finalizeObjects
-  let mode = Mode.Dev Nothing
+  let mode = Mode.Dev Nothing True  -- Default to elm-compatible mode
   let graph = Objects.objectsToGlobalGraph objects
   let mains = Mains.gatherMains pkg objects roots
   return $ JS.generate mode graph mains
@@ -229,7 +226,33 @@ prod root details (Build.Artifacts pkg _ roots modules) = do
   objects <- Objects.loadObjects root details modules >>= Objects.finalizeObjects
   Validation.checkForDebugUses objects
   let graph = Objects.objectsToGlobalGraph objects
-  let mode = Mode.Prod (Mode.shortenFieldNames graph)
+  let mode = Mode.Prod (Mode.shortenFieldNames graph) False  -- Production mode: use optimized approach by default
+  let mains = Mains.gatherMains pkg objects roots
+  return $ JS.generate mode graph mains
+
+-- | Generate optimized production build with Elm compatibility.
+--
+-- This function generates highly optimized JavaScript code that is
+-- compatible with Elm's output format, suitable for golden tests
+-- and comparison with Elm compiler output.
+--
+-- === Parameters
+--
+-- * 'root': Root directory for the project
+-- * 'details': Project details and configuration
+-- * 'artifacts': Build artifacts containing modules and roots
+--
+-- === Returns
+--
+-- A Task containing the optimized elm-compatible JavaScript as a Builder.
+--
+-- @since 0.19.1
+prodElmCompatible :: FilePath -> Details.Details -> Build.Artifacts -> Task Builder
+prodElmCompatible root details (Build.Artifacts pkg _ roots modules) = do
+  objects <- Objects.loadObjects root details modules >>= Objects.finalizeObjects
+  Validation.checkForDebugUses objects
+  let graph = Objects.objectsToGlobalGraph objects
+  let mode = Mode.Prod (Mode.shortenFieldNames graph) True  -- Production mode with elm-compatibility
   let mains = Mains.gatherMains pkg objects roots
   return $ JS.generate mode graph mains
 

@@ -1,4 +1,5 @@
 {-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE QuasiQuotes #-}
 
 module Generate.JavaScript
   ( generate,
@@ -11,6 +12,7 @@ import qualified AST.Canonical as Can
 import qualified AST.Optimized as Opt
 import qualified Canopy.Kernel as K
 import qualified Canopy.ModuleName as ModuleName
+import qualified Canopy.Package as Pkg
 import Control.Exception (Exception, throw)
 import Data.ByteString.Builder (Builder)
 import qualified Data.ByteString.Builder as B
@@ -32,6 +34,7 @@ import qualified Reporting.Doc as D
 import qualified Reporting.Render.Type as RT
 import qualified Reporting.Render.Type.Localizer as L
 import Prelude hiding (cycle, print)
+import Text.RawString.QQ (r)
 
 -- GENERATE
 
@@ -41,13 +44,40 @@ type Mains = Map ModuleName.Canonical Opt.Main
 
 generate :: Mode.Mode -> Opt.GlobalGraph -> Mains -> Builder
 generate mode (Opt.GlobalGraph graph _) mains =
-  let state = Map.foldrWithKey (addMain mode graph) emptyState mains
-   in "(function(scope){\n'use strict';"
+  let baseState = Map.foldrWithKey (addMain mode graph) emptyState mains
+      -- In elm-compatible mode, ensure core kernel functions are included
+      state = case mode of
+        Mode.Dev _ True -> addElmCoreKernels mode graph baseState
+        _ -> baseState
+      headerNewline = if Mode.isElmCompatible mode then "\n" else ""
+   in "(function(scope){\n'use strict';" <> headerNewline
         <> Functions.functions
         <> perfNote mode
+        <> comprehensiveRuntime mode
         <> stateToBuilder state
         <> toMainExports mode mains
         <> "}(this));"
+
+-- | Force inclusion of elm/core kernel functions in elm-compatible mode
+addElmCoreKernels :: Mode.Mode -> Graph -> State -> State
+addElmCoreKernels mode graph state =
+  -- Add kernel functions that Elm always includes
+  let coreKernels = [
+        -- Basics kernel functions
+        Opt.Global (ModuleName.Canonical Pkg.core "Basics") "add",
+        Opt.Global (ModuleName.Canonical Pkg.core "Basics") "sub",
+        Opt.Global (ModuleName.Canonical Pkg.core "Basics") "mul",
+        Opt.Global (ModuleName.Canonical Pkg.core "Basics") "fdiv",
+        Opt.Global (ModuleName.Canonical Pkg.core "Basics") "idiv",
+        -- Utils kernel functions
+        Opt.Global (ModuleName.Canonical Pkg.core "Utils") "eq",
+        Opt.Global (ModuleName.Canonical Pkg.core "Utils") "cmp"
+      ]
+  in List.foldl' (\s global ->
+       case Map.lookup global graph of
+         Just _ -> addGlobal mode graph s global
+         Nothing -> s  -- Skip if not in graph
+     ) state coreKernels
 
 addMain :: Mode.Mode -> Graph -> ModuleName.Canonical -> Opt.Main -> State -> State
 addMain mode graph home _ state =
@@ -56,11 +86,13 @@ addMain mode graph home _ state =
 perfNote :: Mode.Mode -> Builder
 perfNote mode =
   case mode of
-    Mode.Prod _ ->
+    Mode.Prod _ _ ->
       mempty
-    Mode.Dev Nothing ->
+    Mode.Dev Nothing _ ->
+      -- Always include console.warn in dev mode to match Elm behavior
+      -- Use explicit semicolon annotation to ensure semicolon is added
       JS.stmtToBuilder $
-        JS.ExprStmt $
+        JS.ExprStmtWithSemi $
           JS.Call
             (JS.Access (JS.Ref (JsName.fromLocal "console")) (JsName.fromLocal "warn"))
             [ JS.String $
@@ -68,9 +100,11 @@ perfNote mode =
                   <> B.stringUtf8 (D.makeNakedLink "optimize")
                   <> " for better performance and smaller assets."
             ]
-    Mode.Dev (Just _) ->
+    Mode.Dev (Just _) _ ->
+      -- Always include console.warn in dev mode to match Elm behavior
+      -- Use explicit semicolon annotation to ensure semicolon is added
       JS.stmtToBuilder $
-        JS.ExprStmt $
+        JS.ExprStmtWithSemi $
           JS.Call
             (JS.Access (JS.Ref (JsName.fromLocal "console")) (JsName.fromLocal "warn"))
             [ JS.String $
@@ -79,11 +113,342 @@ perfNote mode =
                   <> " for better performance and smaller assets."
             ]
 
+-- COMPREHENSIVE RUNTIME
+--
+-- This implements Elm-compatible runtime inclusion strategy.
+-- Instead of dependency-based inclusion, we include a comprehensive
+-- set of core runtime functions that Elm always provides.
+
+comprehensiveRuntime :: Mode.Mode -> Builder
+comprehensiveRuntime mode =
+  case mode of
+    Mode.Dev _ True ->  -- Only include comprehensive runtime in elm-compatible dev mode
+      generateElmCompatibleRuntime
+    _ ->
+      mempty
+
+-- Generate the core runtime functions that Elm always includes
+generateElmCompatibleRuntime :: Builder
+generateElmCompatibleRuntime =
+  utilityFunctions
+  <> equalityFunctions
+  <> comparisonFunctions
+  <> mathFunctions
+  <> stringFunctions
+  <> listFunctions
+  <> debugFunctions
+  <> jsonFunctions
+  <> basicsFunctions
+
+utilityFunctions :: Builder
+utilityFunctions = [r|
+
+// UTILITY FUNCTIONS
+
+function _Utils_Tuple2(a, b) { return { $: '#2', a: a, b: b }; }
+function _Utils_Tuple3(a, b, c) { return { $: '#3', a: a, b: b, c: c }; }
+function _Utils_chr(c) { return { $: '#chr', valueOf: function() { return c; } }; }
+function _Utils_update(oldRecord, updatedFields) {
+  var newRecord = {};
+  for (var key in oldRecord) { newRecord[key] = oldRecord[key]; }
+  for (var key in updatedFields) { newRecord[key] = updatedFields[key]; }
+  return newRecord;
+}
+
+|]
+
+equalityFunctions :: Builder
+equalityFunctions = [r|
+
+// EQUALITY
+
+function _Utils_eq(x, y)
+{
+	for (
+		var pair, stack = [], isEqual = _Utils_eqHelp(x, y, 0, stack);
+		isEqual && (pair = stack.pop());
+		isEqual = _Utils_eqHelp(pair.a, pair.b, 0, stack)
+		)
+	{}
+
+	return isEqual;
+}
+
+function _Utils_eqHelp(x, y, depth, stack)
+{
+	if (x === y)
+	{
+		return true;
+	}
+
+	if (typeof x !== 'object' || x === null || y === null)
+	{
+		typeof x === 'function' && _Debug_crash(5);
+		return false;
+	}
+
+	if (depth > 100)
+	{
+		stack.push(_Utils_Tuple2(x,y));
+		return true;
+	}
+
+	/**/
+	if (x.$ === 'Set_elm_builtin')
+	{
+		x = $elm$core$Set$toList(x);
+		y = $elm$core$Set$toList(y);
+	}
+	if (x.$ === 'RBNode_elm_builtin' || x.$ === 'RBEmpty_elm_builtin')
+	{
+		x = $elm$core$Dict$toList(x);
+		y = $elm$core$Dict$toList(y);
+	}
+	//*/
+
+	/**_UNUSED/
+	if (x.$ < 0)
+	{
+		x = $elm$core$Dict$toList(x);
+		y = $elm$core$Dict$toList(y);
+	}
+	//*/
+
+	for (var key in x)
+	{
+		if (!_Utils_eqHelp(x[key], y[key], depth + 1, stack))
+		{
+			return false;
+		}
+	}
+	return true;
+}
+
+var _Utils_equal = F2(_Utils_eq);
+var _Utils_notEqual = F2(function(a, b) { return !_Utils_eq(a,b); });
+
+|]
+
+comparisonFunctions :: Builder
+comparisonFunctions =
+  "// COMPARISON\n\
+  \function _Utils_cmp(x, y, ord)\n\
+  \{\n\
+  \\tif (typeof x !== 'object')\n\
+  \\t{\n\
+  \\t\treturn x === y ? /*EQ*/ 0 : x < y ? /*LT*/ -1 : /*GT*/ 1;\n\
+  \\t}\n\
+  \\n\
+  \\t/*\n\
+  \\t * If x and y are both objects, we need to compare their tags and values.\n\
+  \\t */\n\
+  \\tif (x.$ !== y.$)\n\
+  \\t{\n\
+  \\t\treturn x.$ < y.$ ? -1 : 1;\n\
+  \\t}\n\
+  \\n\
+  \\tfor (var idx = 0, xs = x.a, ys = y.a; idx < xs.length; idx++)\n\
+  \\t{\n\
+  \\t\tvar ord = _Utils_cmp(xs[idx], ys[idx]);\n\
+  \\t\tif (ord !== 0) return ord;\n\
+  \\t}\n\
+  \\treturn xs.length - ys.length;\n\
+  \}\n\
+  \\n\
+  \var _Utils_lt = F2(function(a, b) { return _Utils_cmp(a, b) < 0; });\n\
+  \var _Utils_le = F2(function(a, b) { return _Utils_cmp(a, b) < 1; });\n\
+  \var _Utils_gt = F2(function(a, b) { return _Utils_cmp(a, b) > 0; });\n\
+  \var _Utils_ge = F2(function(a, b) { return _Utils_cmp(a, b) > -1; });\n\
+  \var _Utils_compare = F2(_Utils_cmp);\n\n"
+
+mathFunctions :: Builder
+mathFunctions =
+  "// MATH\n\
+  \var _Basics_add = F2(function(a, b) { return a + b; });\n\
+  \var _Basics_sub = F2(function(a, b) { return a - b; });\n\
+  \var _Basics_mul = F2(function(a, b) { return a * b; });\n\
+  \var _Basics_fdiv = F2(function(a, b) { return a / b; });\n\
+  \var _Basics_idiv = F2(function(a, b) { return (a / b) | 0; });\n\
+  \var _Basics_pow = F2(Math.pow);\n\
+  \var _Basics_remainderBy = F2(function(b, a) { return a % b; });\n\
+  \var _Basics_modBy = F2(function(modulus, x) {\n\
+  \\tvar answer = x % modulus;\n\
+  \\treturn modulus === 0 ? _Debug_crash(11) :\n\
+  \\t\t((answer > 0 && modulus < 0) || (answer < 0 && modulus > 0)) ? answer + modulus : answer;\n\
+  \});\n\
+  \var _Basics_log = Math.log;\n\
+  \var _Basics_isInfinite = function(n) { return n === Infinity || n === -Infinity; };\n\
+  \var _Basics_isNaN = isNaN;\n\
+  \var _Basics_sqrt = Math.sqrt;\n\
+  \var _Basics_negate = function(n) { return -n; };\n\
+  \var _Basics_abs = Math.abs;\n\
+  \var _Basics_clamp = F3(function(lo, hi, n) { return n < lo ? lo : n > hi ? hi : n; });\n\
+  \var _Basics_min = F2(Math.min);\n\
+  \var _Basics_max = F2(Math.max);\n\n"
+
+stringFunctions :: Builder
+stringFunctions =
+  "// STRINGS\n\
+  \var _String_cons = F2(function(chr, str) { return chr + str; });\n\
+  \function _String_fromNumber(number) { return number + ''; }\n\
+  \function _String_fromChar(char) { return char; }\n\
+  \var _String_uncons = F2(function(str) {\n\
+  \\tvar hd = str.charAt(0);\n\
+  \\treturn hd ? $elm$core$Maybe$Just(_Utils_Tuple2(hd, str.slice(1))) : $elm$core$Maybe$Nothing;\n\
+  \});\n\n"
+
+listFunctions :: Builder
+listFunctions =
+  "// LIST UTILS\n\
+  \var _List_Nil = { $: '[]' };\n\
+  \function _List_Nil_UNUSED() { return { $: '[]' }; }\n\
+  \var _List_Cons = F2(function(hd, tl) { return { $: '::', a: hd, b: tl }; });\n\
+  \function _List_Cons_UNUSED(hd) { return function(tl) { return { $: '::', a: hd, b: tl }; }; }\n\
+  \\n\
+  \var _List_cons = F2(_List_Cons);\n\
+  \\n\
+  \function _List_fromArray(arr)\n\
+  \{\n\
+  \\tvar out = _List_Nil;\n\
+  \\tfor (var i = arr.length; i--; )\n\
+  \\t{\n\
+  \\t\tout = _List_Cons(arr[i], out);\n\
+  \\t}\n\
+  \\treturn out;\n\
+  \}\n\
+  \\n\
+  \function _List_toArray(xs)\n\
+  \{\n\
+  \\tfor (var out = []; xs.$ === '::'; xs = xs.b) // WHILE_CONS\n\
+  \\t{\n\
+  \\t\tout.push(xs.a);\n\
+  \\t}\n\
+  \\treturn out;\n\
+  \}\n\n"
+
+debugFunctions :: Builder
+debugFunctions =
+  "// DEBUG\n\
+  \function _Debug_crash(identifier)\n\
+  \{\n\
+  \\tthrow new Error('https://github.com/elm/core/blob/1.0.0/hints/' + identifier + '.md');\n\
+  \}\n\
+  \\n\
+  \function _Debug_crash_UNUSED(identifier, fact1, fact2, fact3, fact4)\n\
+  \{\n\
+  \\tswitch(identifier)\n\
+  \\t{\n\
+  \\t\tcase 0:\n\
+  \\t\t\tthrow new Error('What node should I take over? In JavaScript I need something like:\\n\\n    Elm.Main.init(\\n        { node: document.getElementById(\"elm-node\") }\\n    )\\n\\nYou need to do this with any Browser.* or Browser.application program.');\n\
+  \\n\
+  \\t\tcase 1:\n\
+  \\t\t\tthrow new Error('Browser.application programs cannot handle URLs like this:\\n\\n    ' + document.location.href + '\\n\\nWhat is the root? The root of your file system? Try looking at this program with `canopy reactor` or some other local server.');\n\
+  \\n\
+  \\t\tcase 2:\n\
+  \\t\t\tvar jsonErrorString = fact1;\n\
+  \\t\t\tthrow new Error('Problem with the flags given to your Elm program on initialization.\\n\\n' + jsonErrorString);\n\
+  \\n\
+  \\t\tcase 3:\n\
+  \\t\t\tvar portName = fact1;\n\
+  \\t\t\tthrow new Error('There can only be one port named `' + portName + '`, but your program has multiple.');\n\
+  \\n\
+  \\t\tcase 4:\n\
+  \\t\t\tvar portName = fact1;\n\
+  \\t\t\tvar problem = fact2;\n\
+  \\t\t\tthrow new Error('Trying to send an unexpected type of value through port `' + portName + '`:\\n' + problem);\n\
+  \\n\
+  \\t\tcase 5:\n\
+  \\t\t\tthrow new Error('Trying to use `(==)` on functions.\\nThere is no way to know if functions are \"the same\" in the Elm sense.\\nRead more about this at https://package.canopy-lang.org/packages/canopy/core/latest/Basics#== which describes why it is this way and what the better version will look like.');\n\
+  \\n\
+  \\t\tcase 6:\n\
+  \\t\t\tvar moduleName = fact1;\n\
+  \\t\t\tthrow new Error('Your page is loading multiple Elm scripts with a module named ' + moduleName + '. Maybe a duplicate script is getting loaded accidentally? If not, rename one of them so I know which is which!');\n\
+  \\n\
+  \\t\tcase 8:\n\
+  \\t\t\tvar moduleName = fact1;\n\
+  \\t\t\tvar region = fact2;\n\
+  \\t\t\tvar value = fact3;\n\
+  \\t\t\tthrow new Error('TODO in module `' + moduleName + '` ' + _Debug_regionToString(region) + '\\n\\n' + value);\n\
+  \\n\
+  \\t\tcase 9:\n\
+  \\t\t\tvar moduleName = fact1;\n\
+  \\t\t\tvar region = fact2;\n\
+  \\t\t\tthrow new Error('TODO in module `' + moduleName + '` from the `case` expression ' + _Debug_regionToString(region) + '\\n\\nIt received a value outside the range of the `case`. Add another branch to account for it or use a `default` branch to ignore it.');\n\
+  \\n\
+  \\t\tcase 10:\n\
+  \\t\t\tthrow new Error('Bug in https://github.com/elm/virtual-dom/issues');\n\
+  \\n\
+  \\t\tcase 11:\n\
+  \\t\t\tthrow new Error('Cannot perform mod 0. Division by zero error.');\n\
+  \\t}\n\
+  \}\n\n"
+
+jsonFunctions :: Builder
+jsonFunctions =
+  "// JSON\n\
+  \function _Json_succeed(msg)\n\
+  \{\n\
+  \\treturn {\n\
+  \\t\t$: 0,\n\
+  \\t\ta: msg\n\
+  \\t};\n\
+  \}\n\
+  \\n\
+  \function _Json_fail(msg)\n\
+  \{\n\
+  \\treturn {\n\
+  \\t\t$: 1,\n\
+  \\t\ta: msg\n\
+  \\t};\n\
+  \}\n\
+  \\n\
+  \function _Json_decodePrim(decoder)\n\
+  \{\n\
+  \\treturn { $: 1, b: decoder };\n\
+  \}\n\
+  \\n\
+  \var _Json_decodeInt = _Json_decodePrim(function(value) {\n\
+  \\treturn (typeof value !== 'number') ? _Json_expecting('an INT', value) :\n\
+  \\t\t(-2147483647 < value && value < 2147483647 && (value | 0) === value) ? $elm$core$Result$Ok(value) :\n\
+  \\t\t(isFinite(value) && !(value % 1)) ? $elm$core$Result$Ok(value) :\n\
+  \\t\t_Json_expecting('an INT', value);\n\
+  \});\n\n"
+
+basicsFunctions :: Builder
+basicsFunctions =
+  "// BASICS\n\
+  \function _Basics_append(xs, ys)\n\
+  \{\n\
+  \\t// append String/Text\n\
+  \\tif (typeof xs === \"string\")\n\
+  \\t{\n\
+  \\t\treturn xs + ys;\n\
+  \\t}\n\
+  \\n\
+  \\t// append List\n\
+  \\tif (!xs.b)\n\
+  \\t{\n\
+  \\t\treturn ys;\n\
+  \\t}\n\
+  \\tvar root = _List_Cons(xs.a, _List_Nil);\n\
+  \\tvar curr = root;\n\
+  \\txs = xs.b;\n\
+  \\twhile (xs.b)\n\
+  \\t{\n\
+  \\t\tcurr = curr.b = _List_Cons(xs.a, _List_Nil);\n\
+  \\t\txs = xs.b;\n\
+  \\t}\n\
+  \\tcurr.b = _List_Cons(xs.a, ys);\n\
+  \\treturn root;\n\
+  \}\n\
+  \var _Basics_apL = F2(_Basics_append);\n\
+  \var _Basics_apR = F3(function(f, b, a) { return f(a, b); });\n\n"
+
 -- GENERATE FOR REPL
 
 generateForRepl :: Bool -> L.Localizer -> Opt.GlobalGraph -> ModuleName.Canonical -> Name.Name -> Can.Annotation -> Builder
 generateForRepl ansi localizer (Opt.GlobalGraph graph _) home name (Can.Forall _ tipe) =
-  let mode = Mode.Dev Nothing
+  let mode = Mode.Dev Nothing True  -- Default to elm-compatible for REPL
       debugState = addGlobal mode graph emptyState (Opt.Global ModuleName.debug "toString")
       evalState = addGlobal mode graph debugState (Opt.Global home name)
       processExceptionHandler = JS.stmtToBuilder $
@@ -185,7 +550,7 @@ print ansi localizer home name tipe =
 generateForReplEndpoint :: L.Localizer -> Opt.GlobalGraph -> ModuleName.Canonical -> Maybe Name.Name -> Can.Annotation -> Builder
 generateForReplEndpoint localizer (Opt.GlobalGraph graph _) home maybeName (Can.Forall _ tipe) =
   let name = Data.Maybe.fromMaybe Name.replValueToPrint maybeName
-      mode = Mode.Dev Nothing
+      mode = Mode.Dev Nothing True  -- Default to elm-compatible for REPL
       debugState = addGlobal mode graph emptyState (Opt.Global ModuleName.debug "toString")
       evalState = addGlobal mode graph debugState (Opt.Global home name)
    in Functions.functions
@@ -271,7 +636,7 @@ addGlobalHelp mode graph currentGlobal state =
           addStmt
             (addDeps deps state)
             ( let (Opt.Global _ name) = global
-               in var global (Expr.generateTailDef mode name argNames body)
+               in JS.Var (JsName.fromGlobal (case global of Opt.Global home _ -> home) name) (Expr.generateTailDefExpr mode name argNames body)
             )
         Opt.Ctor index arity ->
           addStmt
@@ -281,10 +646,11 @@ addGlobalHelp mode graph currentGlobal state =
         Opt.Link linkedGlobal ->
           addGlobal mode graph state linkedGlobal
         Opt.Cycle names values functions deps ->
-          addStmt
-            (addDeps deps state)
-            ( generateCycle mode global names values functions
-            )
+          let cycleStmt = generateCycle mode global names values functions
+              baseState = addDeps deps state
+          in case cycleStmt of
+               JS.Block stmts -> List.foldl' addStmt baseState stmts
+               stmt -> addStmt baseState stmt
         Opt.Manager effectsType ->
           generateManager mode graph global effectsType state
         Opt.Kernel chunks deps ->
@@ -336,25 +702,26 @@ isDebugger (Opt.Global (ModuleName.Canonical _ home) _) =
 
 generateCycle :: Mode.Mode -> Opt.Global -> [Name.Name] -> [(Name.Name, Opt.Expr)] -> [Opt.Def] -> JS.Stmt
 generateCycle mode (Opt.Global home _) names values functions =
-  JS.Block
-    [ JS.Block $ fmap (generateCycleFunc mode home) functions,
-      JS.Block $ fmap (generateSafeCycle mode home) values,
-      case fmap (generateRealCycle home) values of
-        [] ->
-          JS.EmptyStmt
+  let functionStmts = fmap (generateCycleFunc mode home) functions
+      safeStmts = fmap (generateSafeCycle mode home) values
+      realStmts = case fmap (generateRealCycle home) values of
+        [] -> []
         realBlock@(_ : _) ->
           case mode of
-            Mode.Prod _ ->
-              JS.Block realBlock
-            Mode.Dev _ ->
-              (JS.Try (JS.Block realBlock) JsName.dollar . JS.Throw) . JS.String $
+            Mode.Prod _ _ ->
+              realBlock
+            Mode.Dev _ _ ->
+              [(JS.Try (JS.Block realBlock) JsName.dollar . JS.Throw) . JS.String $
                 ( "Some top-level definitions from `" <> Name.toBuilder (ModuleName._module home) <> "` are causing infinite recursion:\\n"
                     <> drawCycle names
                     <> "\\n\\nThese errors are very tricky, so read "
                     <> B.stringUtf8 (D.makeNakedLink "bad-recursion")
                     <> " to learn how to fix it!"
-                )
-    ]
+                )]
+      allStmts = functionStmts ++ safeStmts ++ realStmts
+  in case allStmts of
+       [singleStmt] -> singleStmt
+       _ -> JS.Block allStmts
 
 generateCycleFunc :: Mode.Mode -> ModuleName.Canonical -> Opt.Def -> JS.Stmt
 generateCycleFunc mode home def =
@@ -362,7 +729,7 @@ generateCycleFunc mode home def =
     Opt.Def name expr ->
       JS.Var (JsName.fromGlobal home name) (Expr.codeToExpr (Expr.generate mode expr))
     Opt.TailDef name args expr ->
-      JS.Var (JsName.fromGlobal home name) (Expr.codeToExpr (Expr.generateTailDef mode name args expr))
+      JS.Var (JsName.fromGlobal home name) (Expr.generateTailDefExpr mode name args expr)
 
 generateSafeCycle :: Mode.Mode -> ModuleName.Canonical -> (Name.Name, Opt.Expr) -> JS.Stmt
 generateSafeCycle mode home (name, expr) =
@@ -408,15 +775,19 @@ addChunk mode chunk builder =
       B.intDec int <> builder
     K.Debug ->
       case mode of
-        Mode.Dev _ ->
-          builder
-        Mode.Prod _ ->
+        Mode.Dev _ elmCompatible ->
+          if elmCompatible
+            then builder               -- Elm dev: debug functions are used (clean)
+            else builder               -- Canopy dev: use debug functions
+        Mode.Prod _ _ ->
           "_UNUSED" <> builder
     K.Prod ->
       case mode of
-        Mode.Dev _ ->
-          "_UNUSED" <> builder
-        Mode.Prod _ ->
+        Mode.Dev _ elmCompatible ->
+          if elmCompatible
+            then "_UNUSED" <> builder  -- Elm dev: prod functions marked unused
+            else "_UNUSED" <> builder  -- Canopy dev: prod functions marked unused
+        Mode.Prod _ _ ->
           builder
 
 -- GENERATE ENUM
@@ -425,9 +796,9 @@ generateEnum :: Mode.Mode -> Opt.Global -> Index.ZeroBased -> JS.Stmt
 generateEnum mode global@(Opt.Global home name) index =
   JS.Var (JsName.fromGlobal home name) $
     case mode of
-      Mode.Dev _ ->
+      Mode.Dev _ _ ->
         Expr.codeToExpr (Expr.generateCtor mode global index 0)
-      Mode.Prod _ ->
+      Mode.Prod _ _ ->
         JS.Int (Index.toMachine index)
 
 -- GENERATE BOX
@@ -436,9 +807,9 @@ generateBox :: Mode.Mode -> Opt.Global -> JS.Stmt
 generateBox mode global@(Opt.Global home name) =
   JS.Var (JsName.fromGlobal home name) $
     case mode of
-      Mode.Dev _ ->
+      Mode.Dev _ _ ->
         Expr.codeToExpr (Expr.generateCtor mode global Index.first 1)
-      Mode.Prod _ ->
+      Mode.Prod _ _ ->
         JS.Ref (JsName.fromGlobal ModuleName.basics Name.identity)
 
 {-# NOINLINE identity #-}
@@ -471,8 +842,7 @@ generateManager mode graph (Opt.Global home@(ModuleName.Canonical _ moduleName) 
 
       createManager =
         (JS.ExprStmt . JS.Assign managerLVar $ JS.Call (JS.Ref (JsName.fromKernel Name.platform "createManager")) args)
-   in addStmt (List.foldl' (addGlobal mode graph) state deps) $
-        JS.Block (createManager : stmts)
+   in List.foldl' addStmt (List.foldl' (addGlobal mode graph) state deps) (createManager : stmts)
 
 generateLeaf :: ModuleName.Canonical -> Name.Name -> JS.Stmt
 generateLeaf home@(ModuleName.Canonical _ moduleName) name =

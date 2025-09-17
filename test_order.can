@@ -1,0 +1,14 @@
+module Main exposing (..)
+
+import Html exposing (Html, text)
+
+absolute : Int -> Int  
+absolute n =
+    if n < 0 then
+        -n
+    else
+        n
+
+main : Html msg
+main =
+    text (String.fromInt (absolute -42))

@@ -1,12 +1,14 @@
 {-# LANGUAGE OverloadedStrings #-}
+{-# OPTIONS_GHC -Wno-unused-top-binds -Wno-unused-matches #-}
 
 module Generate.JavaScript.Expression
   ( generate,
     generateCtor,
     generateField,
-    generateTailDef,
+    generateTailDefExpr,
+    generateFunction,
     generateMain,
-    Code,
+    Code(..),
     codeToExpr,
     codeToStmtList,
   )
@@ -50,9 +52,9 @@ generate mode expression =
     Opt.Chr char ->
       JsExpr $
         case mode of
-          Mode.Dev _ ->
+          Mode.Dev _ _ ->
             JS.Call toChar [JS.String (Utf8.toBuilder char)]
-          Mode.Prod _ ->
+          Mode.Prod _ _ ->
             JS.String (Utf8.toBuilder char)
     Opt.Str string ->
       JsExpr $ JS.String (Utf8.toBuilder (JS.sanitizeScriptElementString string))
@@ -66,20 +68,20 @@ generate mode expression =
       JsExpr $ JS.Ref (JsName.fromGlobal home name)
     Opt.VarEnum (Opt.Global home name) index ->
       case mode of
-        Mode.Dev _ ->
+        Mode.Dev _ _ ->
           JsExpr $ JS.Ref (JsName.fromGlobal home name)
-        Mode.Prod _ ->
+        Mode.Prod _ _ ->
           JsExpr $ JS.Int (Index.toMachine index)
     Opt.VarBox (Opt.Global home name) ->
       JsExpr . JS.Ref $
         ( case mode of
-            Mode.Dev _ -> JsName.fromGlobal home name
-            Mode.Prod _ -> JsName.fromGlobal ModuleName.basics Name.identity
+            Mode.Dev _ _ -> JsName.fromGlobal home name
+            Mode.Prod _ _ -> JsName.fromGlobal ModuleName.basics Name.identity
         )
     Opt.VarCycle home name ->
       JsExpr $ JS.Call (JS.Ref (JsName.fromCycle home name)) []
     Opt.VarDebug name home region unhandledValueName ->
-      JsExpr $ generateDebug name home region unhandledValueName
+      JsExpr $ generateDebug mode name home region unhandledValueName
     Opt.VarKernel home name ->
       JsExpr $ JS.Ref (JsName.fromKernel home name)
     Opt.List entries ->
@@ -97,15 +99,47 @@ generate mode expression =
     Opt.Call func args ->
       JsExpr $ generateCall mode func args
     Opt.TailCall name args ->
-      JsBlock $ generateTailCall mode name args
+      generateTailCall mode name args
     Opt.If branches final ->
       generateIf mode branches final
     Opt.Let def body ->
-      JsBlock $
-        generateDef mode def : codeToStmtList (generate mode body)
+      -- Special case: if this is just a tail-recursive function definition
+      -- followed by a reference to that function, don't wrap in IIFE
+      case (def, body) of
+        (Opt.TailDef name _ _, Opt.VarLocal bodyName) | name == bodyName ->
+          JsExpr $ generateTailDefExpr mode name (getTailDefArgs def) (getTailDefBody def)
+        (Opt.TailDef name _ _, Opt.VarLocal bodyName) | name /= bodyName ->
+          -- TailDef with different variable reference - treat as separate statements
+          let defStmt = generateDef mode def
+              bodyStmts = codeToStmtList (generate mode body)
+              allStmts = flattenStatements [defStmt] ++ bodyStmts
+              nonEmptyStmts = filter (\stmt -> case stmt of
+                                        JS.EmptyStmt -> False
+                                        JS.Return _ -> False
+                                        _ -> True) allStmts
+          in case nonEmptyStmts of
+               [singleStmt] -> JsStmt singleStmt
+               [] -> JsStmt JS.EmptyStmt
+               stmts -> JsBlock stmts
+        (Opt.TailDef name _ _, _) ->
+          -- Other TailDef cases - generate as expression when possible
+          JsExpr $ generateTailDefExpr mode name (getTailDefArgs def) (getTailDefBody def)
+        _ ->
+          let defStmt = generateDef mode def
+              bodyStmts = codeToStmtList (generate mode body)
+              allStmts = flattenStatements [defStmt] ++ bodyStmts
+              -- Filter out empty statements to avoid unnecessary blocks
+              nonEmptyStmts = filter (\stmt -> case stmt of
+                                        JS.EmptyStmt -> False
+                                        JS.Return _ -> False  -- Also filter return statements for def contexts
+                                        _ -> True) allStmts
+          in case nonEmptyStmts of
+               [singleStmt] -> JsStmt singleStmt  -- Single statement doesn't need block
+               [] -> JsStmt JS.EmptyStmt  -- Empty should be empty statement
+               stmts -> JsBlock stmts  -- Multiple statements need block
     Opt.Destruct (Opt.Destructor name path) body ->
       let pathDef = JS.Var (JsName.fromLocal name) (generatePath mode path)
-       in JsBlock $ pathDef : codeToStmtList (generate mode body)
+       in JsBlock $ flattenStatements [pathDef] ++ codeToStmtList (generate mode body)
     Opt.Case label root decider jumps ->
       JsBlock $ generateCase mode label root decider jumps
     Opt.Accessor field ->
@@ -129,9 +163,9 @@ generate mode expression =
       JsExpr $ generateRecord mode fields
     Opt.Unit ->
       case mode of
-        Mode.Dev _ ->
+        Mode.Dev _ _ ->
           JsExpr $ JS.Ref (JsName.fromKernel Name.utils "Tuple0")
-        Mode.Prod _ ->
+        Mode.Prod _ _ ->
           JsExpr $ JS.Int 0
     Opt.Tuple a b maybeC ->
       JsExpr $
@@ -168,6 +202,7 @@ generate mode expression =
 
 data Code
   = JsExpr JS.Expr
+  | JsStmt JS.Stmt
   | JsBlock [JS.Stmt]
 
 codeToExpr :: Code -> JS.Expr
@@ -175,6 +210,10 @@ codeToExpr code =
   case code of
     JsExpr expr ->
       expr
+    JsStmt (JS.Return expr) ->
+      expr
+    JsStmt stmt ->
+      JS.Call (JS.Function Nothing [] [stmt]) []
     JsBlock [JS.Return expr] ->
       expr
     JsBlock stmts ->
@@ -184,11 +223,27 @@ codeToStmtList :: Code -> [JS.Stmt]
 codeToStmtList code =
   case code of
     JsExpr (JS.Call (JS.Function Nothing [] stmts) []) ->
-      stmts
+      flattenStatements stmts
     JsExpr expr ->
       [JS.Return expr]
+    JsStmt stmt ->
+      [stmt]
     JsBlock stmts ->
-      stmts
+      flattenStatements stmts
+
+flattenStatements :: [JS.Stmt] -> [JS.Stmt]
+flattenStatements = concatMap flattenStatement
+  where
+    flattenStatement :: JS.Stmt -> [JS.Stmt]
+    flattenStatement stmt =
+      case stmt of
+        JS.Block [] -> []  -- Remove empty blocks
+        JS.Block stmts -> flattenStatements stmts  -- Flatten nested blocks
+        JS.ExprStmt (JS.Call (JS.Function Nothing [] innerStmts) []) ->
+          -- Handle IIFE expressions that should be flattened
+          flattenStatements innerStmts
+        JS.EmptyStmt -> []  -- Remove empty statements
+        _ -> [stmt]  -- Keep other statements as-is
 
 codeToStmt :: Code -> JS.Stmt
 codeToStmt code =
@@ -197,6 +252,8 @@ codeToStmt code =
       JS.Block stmts
     JsExpr expr ->
       JS.Return expr
+    JsStmt stmt ->
+      stmt
     JsBlock [stmt] ->
       stmt
     JsBlock stmts ->
@@ -218,8 +275,8 @@ generateCtor mode (Opt.Global home name) index arity =
 
       ctorTag =
         case mode of
-          Mode.Dev _ -> JS.String (Name.toBuilder name)
-          Mode.Prod _ -> JS.Int (ctorToInt home name index)
+          Mode.Dev _ _ -> JS.String (Name.toBuilder name)
+          Mode.Prod _ _ -> JS.Int (ctorToInt home name index)
    in ((generateFunction argNames . JsExpr) . JS.Object $ ((JsName.dollar, ctorTag) : fmap (\n -> (n, JS.Ref n)) argNames))
 
 ctorToInt :: ModuleName.Canonical -> Name.Name -> Index.ZeroBased -> Int
@@ -239,15 +296,15 @@ generateRecord mode fields =
 generateField :: Mode.Mode -> Name.Name -> JsName.Name
 generateField mode name =
   case mode of
-    Mode.Dev _ ->
+    Mode.Dev _ _ ->
       JsName.fromLocal name
-    Mode.Prod fields ->
+    Mode.Prod fields _ ->
       fields ! name
 
 -- DEBUG
 
-generateDebug :: Name.Name -> ModuleName.Canonical -> A.Region -> Maybe Name.Name -> JS.Expr
-generateDebug name (ModuleName.Canonical _ home) region unhandledValueName =
+generateDebug :: Mode.Mode -> Name.Name -> ModuleName.Canonical -> A.Region -> Maybe Name.Name -> JS.Expr
+generateDebug mode name (ModuleName.Canonical _ home) region unhandledValueName =
   if name /= "todo"
     then JS.Ref (JsName.fromGlobal ModuleName.debug name)
     else case unhandledValueName of
@@ -255,29 +312,43 @@ generateDebug name (ModuleName.Canonical _ home) region unhandledValueName =
         JS.Call
           (JS.Ref (JsName.fromKernel Name.debug "todo"))
           [ JS.String (Name.toBuilder home),
-            regionToJsExpr region
+            regionToJsExpr mode region
           ]
       Just valueName ->
         JS.Call
           (JS.Ref (JsName.fromKernel Name.debug "todoCase"))
           [ JS.String (Name.toBuilder home),
-            regionToJsExpr region,
+            regionToJsExpr mode region,
             JS.Ref (JsName.fromLocal valueName)
           ]
 
-regionToJsExpr :: A.Region -> JS.Expr
-regionToJsExpr (A.Region start end) =
-  JS.Object
-    [ (JsName.fromLocal "start", positionToJsExpr start),
-      (JsName.fromLocal "end", positionToJsExpr end)
-    ]
+regionToJsExpr :: Mode.Mode -> A.Region -> JS.Expr
+regionToJsExpr mode (A.Region start end) =
+  if Mode.isElmCompatible mode
+    then  -- Elm-compatible mode
+      JS.Object
+        [ (JsName.fromLocal "I", positionToJsExpr mode start),
+          (JsName.fromLocal "N", positionToJsExpr mode end)
+        ]
+    else  -- Canopy native mode
+      JS.Object
+        [ (JsName.fromLocal "start", positionToJsExpr mode start),
+          (JsName.fromLocal "end", positionToJsExpr mode end)
+        ]
 
-positionToJsExpr :: A.Position -> JS.Expr
-positionToJsExpr (A.Position line column) =
-  JS.Object
-    [ (JsName.fromLocal "line", JS.Int (fromIntegral line)),
-      (JsName.fromLocal "column", JS.Int (fromIntegral column))
-    ]
+positionToJsExpr :: Mode.Mode -> A.Position -> JS.Expr
+positionToJsExpr mode (A.Position line column) =
+  if Mode.isElmCompatible mode
+    then  -- Elm-compatible mode
+      JS.Object
+        [ (JsName.fromLocal "z", JS.Int (fromIntegral line)),
+          (JsName.fromLocal "A", JS.Int (fromIntegral column))
+        ]
+    else  -- Canopy native mode
+      JS.Object
+        [ (JsName.fromLocal "line", JS.Int (fromIntegral line)),
+          (JsName.fromLocal "column", JS.Int (fromIntegral column))
+        ]
 
 -- FUNCTION
 
@@ -296,6 +367,37 @@ generateFunction args body =
             (JsExpr . JS.Function Nothing [arg] $ codeToStmtList code)
        in foldr addArg body args
 
+-- Generate tail-call optimized function with while(true) loop like Elm
+generateTailFunction :: Name.Name -> [JsName.Name] -> Code -> Code
+generateTailFunction functionName args body =
+  let labelName = JsName.fromLocal functionName
+      -- Force a multi-statement block to avoid the single-statement optimization
+      bodyStmts = codeToStmtList body
+      whileBody = case bodyStmts of
+        [stmt] -> JS.Block [stmt, JS.EmptyStmt]  -- Add empty statement to force braces
+        stmts -> JS.Block stmts
+  in case IntMap.lookup (length args) funcHelpers of
+    Just helper ->
+      JsExpr $
+        JS.Call
+          helper
+          [ JS.Function Nothing args $
+              [ JS.Labelled labelName $
+                  JS.While (JS.Bool True) whileBody
+              ]
+          ]
+    Nothing ->
+      let addArg arg code =
+            let codeStmts = codeToStmtList code
+                argWhileBody = case codeStmts of
+                  [stmt] -> JS.Block [stmt, JS.EmptyStmt]
+                  stmts -> JS.Block stmts
+            in (JsExpr . JS.Function Nothing [arg] $
+              [ JS.Labelled labelName $
+                  JS.While (JS.Bool True) argWhileBody
+              ])
+       in foldr addArg body args
+
 {-# NOINLINE funcHelpers #-}
 funcHelpers :: IntMap.IntMap JS.Expr
 funcHelpers =
@@ -312,9 +414,9 @@ generateCall mode func args =
         generateCoreCall mode global args
     Opt.VarBox _ ->
       case mode of
-        Mode.Dev _ ->
+        Mode.Dev _ _ ->
           generateCallHelp mode func args
-        Mode.Prod _ ->
+        Mode.Prod _ _ ->
           case args of
             [arg] ->
               generateJsExpr mode arg
@@ -544,21 +646,6 @@ strictNEq left right =
         _ ->
           JS.Infix JS.OpNe left right
 
--- TAIL CALL
-
--- TODO check if JS minifiers collapse unnecessary temporary variables
---
-generateTailCall :: Mode.Mode -> Name.Name -> [(Name.Name, Opt.Expr)] -> [JS.Stmt]
-generateTailCall mode name args =
-  -- Simplified approach: just assign the new values and call the function recursively
-  -- This avoids the complex sentinel-based tail call optimization
-  let assignments = fmap (\(argName, arg) -> 
-          JS.ExprStmt $ JS.Assign 
-            (JS.LRef (JsName.fromLocal argName))
-            (generateJsExpr mode arg)
-        ) args
-      recursiveCall = JS.Return $ JS.Call (JS.Ref (JsName.fromLocal name)) (fmap (JS.Ref . JsName.fromLocal . fst) args)
-   in assignments ++ [recursiveCall]
 
 -- DEFINITIONS
 
@@ -568,30 +655,41 @@ generateDef mode def =
     Opt.Def name body ->
       JS.Var (JsName.fromLocal name) (generateJsExpr mode body)
     Opt.TailDef name argNames body ->
-      JS.Var (JsName.fromLocal name) (codeToExpr (generateTailDef mode name argNames body))
+      JS.Var (JsName.fromLocal name) (generateTailDefExpr mode name argNames body)
 
-makeTailCallLoopContinueSentinel :: Name.Name -> JS.Expr
--- We create an empty object here because we will compare later in the JS
--- code by reference via ===. Since we compare by reference, the actual
--- contents of the object don't matter and we can save some memory by just
--- using empty objects.
-makeTailCallLoopContinueSentinel _name = JS.Object []
 
-remapFromTailCallParamToLocalVariable :: Name.Name -> (JsName.Name, JS.Expr)
-remapFromTailCallParamToLocalVariable name =
-  (JsName.fromLocal name, JS.Ref (JsName.makeTailCallFunctionParamName name))
+-- Helper functions for extracting TailDef components
+getTailDefArgs :: Opt.Def -> [Name.Name]
+getTailDefArgs def = case def of
+  Opt.TailDef _ args _ -> args
+  _ -> []
 
-remapFromTailCallParamsToLocalVariables :: [Name.Name] -> JS.Stmt
-remapFromTailCallParamsToLocalVariables variables = JS.Vars (fmap remapFromTailCallParamToLocalVariable variables)
+getTailDefBody :: Opt.Def -> Opt.Expr
+getTailDefBody def = case def of
+  Opt.TailDef _ _ body -> body
+  _ -> error "getTailDefBody called on non-TailDef"
 
--- We hoist out the body of the while loop into a separate function to solve
--- var-scoping issues and then replace the body with a single stub that
--- basically just calls the hoisted function.
-generateTailDef :: Mode.Mode -> Name.Name -> [Name.Name] -> Opt.Expr -> Code
-generateTailDef mode name argNames body =
-  -- Simplified approach: create a regular function without complex tail call optimization
-  -- This avoids the nesting issues with language-javascript AST conversion
-  generateFunction (fmap JsName.fromLocal argNames) (generate mode body)
+
+generateTailDefExpr :: Mode.Mode -> Name.Name -> [Name.Name] -> Opt.Expr -> JS.Expr
+generateTailDefExpr mode name argNames body =
+  codeToExpr (generateTailFunction name (fmap JsName.fromLocal argNames) (generate mode body))
+
+-- Generate tail-call assignment like Elm: var $temp$func=func,$temp$acc=...; func=$temp$func; continue label;
+generateTailCall :: Mode.Mode -> Name.Name -> [(Name.Name, Opt.Expr)] -> Code
+generateTailCall mode name args =
+  JsBlock allStmts
+  where
+    tempVarNames = fmap (\(argName, argExpr) ->
+        (JsName.makeTemp argName, generateJsExpr mode argExpr)) args
+    realAssignments = fmap (\(argName, _) ->
+        JS.ExprStmtWithSemi (JS.Assign
+          (JS.LRef (JsName.fromLocal argName))
+          (JS.Ref (JsName.makeTemp argName)))) args
+    continueStmt = JS.Continue (Just (JsName.fromLocal name))
+    tempVarStmt = case tempVarNames of
+      [] -> []
+      _ -> [JS.Vars tempVarNames]
+    allStmts = tempVarStmt ++ realAssignments ++ [continueStmt]
 
 -- PATHS
 
@@ -606,9 +704,9 @@ generatePath mode path =
       JS.Access (generatePath mode subPath) (generateField mode field)
     Opt.Unbox subPath ->
       case mode of
-        Mode.Dev _ ->
+        Mode.Dev _ _ ->
           JS.Access (generatePath mode subPath) (JsName.fromIndex Index.first)
-        Mode.Prod _ ->
+        Mode.Prod _ _ ->
           generatePath mode subPath
 
 -- GENERATE IFS
@@ -639,6 +737,7 @@ isBlock :: Code -> Bool
 isBlock code =
   case code of
     JsBlock _ -> True
+    JsStmt _ -> False  -- Single statements are not blocks
     JsExpr _ -> False
 
 crushIfs :: [(Opt.Expr, Opt.Expr)] -> Opt.Expr -> ([(Opt.Expr, Opt.Expr)], Opt.Expr)
@@ -706,16 +805,16 @@ generateIfTest mode root (path, test) =
         DT.IsCtor home name index _ opts ->
           let tag =
                 case mode of
-                  Mode.Dev _ -> JS.Access value JsName.dollar
-                  Mode.Prod _ ->
+                  Mode.Dev _ _ -> JS.Access value JsName.dollar
+                  Mode.Prod _ _ ->
                     case opts of
                       Can.Normal -> JS.Access value JsName.dollar
                       Can.Enum -> value
                       Can.Unbox -> value
            in strictEq tag $
                 case mode of
-                  Mode.Dev _ -> JS.String (Name.toBuilder name)
-                  Mode.Prod _ -> JS.Int (ctorToInt home name index)
+                  Mode.Dev _ _ -> JS.String (Name.toBuilder name)
+                  Mode.Prod _ _ -> JS.Int (ctorToInt home name index)
         DT.IsBool True ->
           value
         DT.IsBool False ->
@@ -725,8 +824,8 @@ generateIfTest mode root (path, test) =
         DT.IsChr char ->
           strictEq (JS.String (Utf8.toBuilder char)) $
             case mode of
-              Mode.Dev _ -> JS.Call (JS.Access value (JsName.fromLocal "valueOf")) []
-              Mode.Prod _ -> value
+              Mode.Dev _ _ -> JS.Call (JS.Access value (JsName.fromLocal "valueOf")) []
+              Mode.Prod _ _ -> value
         DT.IsStr string ->
           strictEq value (JS.String (Utf8.toBuilder string))
         DT.IsCons ->
@@ -748,8 +847,8 @@ generateCaseValue mode test =
   case test of
     DT.IsCtor home name index _ _ ->
       case mode of
-        Mode.Dev _ -> JS.String (Name.toBuilder name)
-        Mode.Prod _ -> JS.Int (ctorToInt home name index)
+        Mode.Dev _ _ -> JS.String (Name.toBuilder name)
+        Mode.Prod _ _ -> JS.Int (ctorToInt home name index)
     DT.IsInt int ->
       JS.Int int
     DT.IsChr char ->
@@ -773,9 +872,9 @@ generateCaseTest mode root path exampleTest =
           if name == Name.bool && home == ModuleName.basics
             then value
             else case mode of
-              Mode.Dev _ ->
+              Mode.Dev _ _ ->
                 JS.Access value JsName.dollar
-              Mode.Prod _ ->
+              Mode.Prod _ _ ->
                 case opts of
                   Can.Normal ->
                     JS.Access value JsName.dollar
@@ -789,9 +888,9 @@ generateCaseTest mode root path exampleTest =
           value
         DT.IsChr _ ->
           case mode of
-            Mode.Dev _ ->
+            Mode.Dev _ _ ->
               JS.Call (JS.Access value (JsName.fromLocal "valueOf")) []
-            Mode.Prod _ ->
+            Mode.Prod _ _ ->
               value
         DT.IsBool _ ->
           error "COMPILER BUG - there should never be three tests on a list"
@@ -811,9 +910,9 @@ pathToJsExpr mode root path =
       JS.Access (pathToJsExpr mode root subPath) (JsName.fromIndex index)
     DT.Unbox subPath ->
       case mode of
-        Mode.Dev _ ->
+        Mode.Dev _ _ ->
           JS.Access (pathToJsExpr mode root subPath) (JsName.fromIndex Index.first)
-        Mode.Prod _ ->
+        Mode.Prod _ _ ->
           pathToJsExpr mode root subPath
     DT.Empty ->
       JS.Ref (JsName.fromLocal root)
@@ -840,11 +939,11 @@ generateMain mode home main =
 toDebugMetadata :: Mode.Mode -> Can.Type -> JS.Expr
 toDebugMetadata mode msgType =
   case mode of
-    Mode.Prod _ ->
+    Mode.Prod _ _ ->
       JS.Int 0
-    Mode.Dev Nothing ->
+    Mode.Dev Nothing _ ->
       JS.Int 0
-    Mode.Dev (Just interfaces) ->
+    Mode.Dev (Just interfaces) _ ->
       JS.Json . Encode.object $
         [ "versions" ==> Encode.object ["canopy" ==> V.encode V.compiler],
           "types" ==> Type.encodeMetadata (Extract.fromMsg interfaces msgType)

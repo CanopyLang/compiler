@@ -1,0 +1,1 @@
+a && b ? 'Both true' : 'Not both'
