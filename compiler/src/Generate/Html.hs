@@ -35,6 +35,9 @@ try {
         <> javascript
         <> [r|
 
+  // Create Canopy alias for backward compatibility
+  window.Canopy = window.Elm;
+
   var app = Canopy.|]
         <> name
         <> [r|.init({ node: document.getElementById("canopy") });

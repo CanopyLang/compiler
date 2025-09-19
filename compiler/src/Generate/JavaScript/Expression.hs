@@ -128,10 +128,9 @@ generate mode expression =
           let defStmt = generateDef mode def
               bodyStmts = codeToStmtList (generate mode body)
               allStmts = flattenStatements [defStmt] ++ bodyStmts
-              -- Filter out empty statements to avoid unnecessary blocks
+              -- Filter out only empty statements, preserve return statements for let expressions
               nonEmptyStmts = filter (\stmt -> case stmt of
                                         JS.EmptyStmt -> False
-                                        JS.Return _ -> False  -- Also filter return statements for def contexts
                                         _ -> True) allStmts
           in case nonEmptyStmts of
                [singleStmt] -> JsStmt singleStmt  -- Single statement doesn't need block

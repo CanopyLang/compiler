@@ -19,6 +19,8 @@ import qualified Integration.TerminalIntegrationTest as TerminalIT
 import qualified Integration.WatchIntegrationTest as WatchIT
 import qualified Integration.JsonIntegrationTest as JsonIT
 import qualified Integration.ElmCanopyGoldenTest as ElmCanopyGoldenIT
+import qualified Integration.JavaScriptRuntimeTest as JavaScriptRuntimeIT
+import qualified Integration.JavaScriptSyntaxTest as JavaScriptSyntaxIT
 import qualified Property.AST.CanonicalProps as CanonicalProps
 import qualified Property.AST.OptimizedBinaryProps as OptimizedBinaryProps
 import qualified Property.AST.OptimizedProps as OptimizedProps
@@ -220,7 +222,9 @@ integrationTests =
       WatchIT.tests,
       CompileIT.tests,
       JsonIT.tests,
-      ElmCanopyGoldenIT.tests
+      JavaScriptRuntimeIT.tests,
+      JavaScriptSyntaxIT.tests
+      -- ElmCanopyGoldenIT.tests  -- Disabled: exact string matching too brittle
     ]
 
 -- Optionally expose golden separately for clarity

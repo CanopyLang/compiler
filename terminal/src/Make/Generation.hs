@@ -31,7 +31,13 @@ where
 
 import qualified Canopy.ModuleName as ModuleName
 import Data.ByteString.Builder (Builder)
+import qualified Data.ByteString.Builder as Builder
+import qualified Data.ByteString as ByteString
+import Data.Function ((&))
 import Data.NonEmptyList (List)
+import qualified Data.Text as Text
+import Data.Text (Text)
+import qualified Data.Text.Encoding as Text
 import qualified File
 import Logging.Logger (printLog)
 import Make.Types (Task)
@@ -72,12 +78,48 @@ prepareOutputPath targetPath = do
 
 -- | Write builder content to file.
 --
--- Writes the builder content to the specified file path. Uses the
--- File module's writeBuilder function for efficient I/O.
+-- Writes the builder content to the specified file path. For JavaScript files,
+-- applies post-processing to fix spacing issues before writing.
 writeBuilderContent :: FilePath -> Builder -> IO ()
 writeBuilderContent targetPath builder = do
   printLog "Writing builder content"
-  File.writeBuilder targetPath builder
+  if FilePath.takeExtension targetPath == ".js"
+    then writeJavaScriptWithPostProcessing targetPath builder
+    else File.writeBuilder targetPath builder
+
+-- | Write JavaScript with post-processing to fix spacing issues.
+--
+-- Fixes common JavaScript spacing problems that can occur during optimization:
+--   * 'elseif' becomes 'else if'
+--   * 'elsereturn' becomes 'else return'
+--   * Other missing spaces around 'else' keyword
+writeJavaScriptWithPostProcessing :: FilePath -> Builder -> IO ()
+writeJavaScriptWithPostProcessing targetPath builder = do
+  let content = builderToText builder
+      fixedContent = fixJavaScriptSpacing content
+      fixedBytes = Text.encodeUtf8 fixedContent
+  File.writeUtf8 targetPath fixedBytes
+
+-- | Fix JavaScript spacing issues.
+--
+-- Applies regex-based fixes for spacing problems in generated JavaScript.
+-- These issues typically arise from optimization passes that concat strings
+-- without preserving proper keyword spacing.
+fixJavaScriptSpacing :: Text -> Text
+fixJavaScriptSpacing content =
+  content
+    & Text.replace "elseif" "else if"
+    & Text.replace "elsereturn" "else return"
+    & Text.replace "elsethrow" "else throw"
+    & Text.replace "elsevar" "else var"
+    & Text.replace "elsefor" "else for"
+    & Text.replace "elsewhile" "else while"
+
+-- | Convert Builder to Text for post-processing.
+--
+-- Efficiently converts a Builder to Text using the underlying ByteString.
+builderToText :: Builder -> Text
+builderToText = Text.decodeUtf8 . ByteString.toStrict . Builder.toLazyByteString
 
 -- | Report successful file generation.
 --

@@ -47,6 +47,7 @@ dependencies:
   - snap-core
   - snap-server
   - template-haskell
+  - text
   - time
   - unordered-containers
   - utf8-string

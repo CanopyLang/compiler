@@ -30,14 +30,23 @@ module Make.Output
 
     -- * Format Selection
     chooseFormatFromMains,
+
+    -- * Utilities
+    fixEmbeddedJavaScript,
   )
 where
 
 import qualified Build
 import qualified Canopy.ModuleName as ModuleName
 import Control.Lens ((^.))
+import Data.ByteString.Builder (Builder)
+import qualified Data.ByteString.Builder as Builder
+import qualified Data.ByteString as ByteString
+import Data.Function ((&))
 import qualified Data.Name as Name
 import qualified Data.NonEmptyList as NonEmptyList
+import qualified Data.Text as Text
+import qualified Data.Text.Encoding as Text
 import qualified Generate.Html as Html
 import Logging.Logger (printLog)
 import Make.Builder (createBuilder, extractMainModules, hasExactlyOneMain)
@@ -48,7 +57,6 @@ import Make.Types
     Task,
     bcStyle,
   )
-import qualified Reporting.Exit as Exit
 import qualified Reporting.Task as Task
 
 -- | Generate output based on artifacts and optional target.
@@ -97,15 +105,14 @@ generateForTarget ctx artifacts (Html target) =
 
 -- | Generate JavaScript output to specified file.
 --
--- Creates JavaScript output from artifacts. Validates that no main
--- functions are present (main functions require HTML wrapper).
+-- Creates JavaScript output from artifacts. Supports main functions
+-- for creating executable JavaScript applications.
 generateJavaScript ::
   BuildContext ->
   Build.Artifacts ->
   FilePath ->
   Task ()
 generateJavaScript ctx artifacts target = do
-  validateNoMainsForJs artifacts
   Task.io (printLog ("Generating JavaScript to: " <> target))
   builder <- createBuilder ctx artifacts
   let rootNames = Build.getRootNames artifacts
@@ -124,7 +131,9 @@ generateHtml ctx artifacts target = do
   Task.io (printLog ("Generating HTML to: " <> target))
   mainName <- hasExactlyOneMain artifacts
   builder <- createBuilder ctx artifacts
-  let htmlBuilder = Html.sandwich mainName builder
+  -- Apply JavaScript spacing fixes to embedded JS before HTML wrapping
+  let fixedBuilder = fixEmbeddedJavaScript builder
+  let htmlBuilder = Html.sandwich mainName fixedBuilder
   writeOutputFile (ctx ^. bcStyle) target htmlBuilder (NonEmptyList.List mainName [])
 
 -- | Generate null output (no files created).
@@ -155,7 +164,9 @@ generateSingleAppHtml ::
 generateSingleAppHtml ctx artifacts mainName = do
   Task.io (printLog ("Found single main function - generating HTML: " <> Name.toChars mainName))
   builder <- createBuilder ctx artifacts
-  let htmlBuilder = Html.sandwich mainName builder
+  -- Apply JavaScript spacing fixes to embedded JS before HTML wrapping
+  let fixedBuilder = fixEmbeddedJavaScript builder
+  let htmlBuilder = Html.sandwich mainName fixedBuilder
       target = "index.html"
   writeOutputFile (ctx ^. bcStyle) target htmlBuilder (NonEmptyList.List mainName [])
 
@@ -178,15 +189,6 @@ generateMultiAppJs ctx artifacts mainNames =
       let target = "canopy.js"
       writeOutputFile (ctx ^. bcStyle) target builder (NonEmptyList.List name rest)
 
--- | Validate that artifacts contain no main functions for JS output.
---
--- JavaScript output should not contain main functions, as they require
--- HTML wrapper for proper execution. Throws error if mains are found.
-validateNoMainsForJs :: Build.Artifacts -> Task ()
-validateNoMainsForJs artifacts =
-  case extractMainModules artifacts of
-    [] -> pure ()
-    name : names -> Task.throw (Exit.MakeNonMainFilesIntoJavaScript name names)
 
 -- | Select output format automatically based on artifacts.
 --
@@ -194,3 +196,34 @@ validateNoMainsForJs artifacts =
 -- across the module interface.
 selectOutputFormat :: BuildContext -> Build.Artifacts -> Task ()
 selectOutputFormat = chooseFormatFromMains
+
+-- | Fix JavaScript spacing issues in embedded JavaScript.
+--
+-- Applies the same spacing fixes used for standalone JavaScript files
+-- to JavaScript code that will be embedded in HTML files.
+fixEmbeddedJavaScript :: Builder -> Builder
+fixEmbeddedJavaScript builder =
+  let content = builderToText builder
+      fixedContent = fixJavaScriptSpacing content
+  in Builder.stringUtf8 (Text.unpack fixedContent)
+
+-- | Convert Builder to Text for post-processing.
+--
+-- Efficiently converts a Builder to Text using the underlying ByteString.
+builderToText :: Builder -> Text.Text
+builderToText = Text.decodeUtf8 . ByteString.toStrict . Builder.toLazyByteString
+
+-- | Fix JavaScript spacing issues.
+--
+-- Applies regex-based fixes for spacing problems in generated JavaScript.
+-- These issues typically arise from optimization passes that concat strings
+-- without preserving proper keyword spacing.
+fixJavaScriptSpacing :: Text.Text -> Text.Text
+fixJavaScriptSpacing content =
+  content
+    & Text.replace "elseif" "else if"
+    & Text.replace "elsereturn" "else return"
+    & Text.replace "elsethrow" "else throw"
+    & Text.replace "elsevar" "else var"
+    & Text.replace "elsefor" "else for"
+    & Text.replace "elsewhile" "else while"

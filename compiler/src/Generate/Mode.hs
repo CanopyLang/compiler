@@ -1,9 +1,9 @@
 module Generate.Mode
-  ( Mode (..),
-    isDebug,
-    isElmCompatible,
-    ShortFieldNames,
-    shortenFieldNames,
+  ( Mode(..)
+  , isDebug
+  , isElmCompatible
+  , ShortFieldNames
+  , shortenFieldNames
   )
 where
 
@@ -20,7 +20,7 @@ import qualified Generate.JavaScript.Name as JsName
 
 data Mode
   = Dev (Maybe Extract.Types) Bool  -- Bool indicates elm-compatibility mode
-  | Prod ShortFieldNames Bool       -- Bool indicates elm-compatibility mode  
+  | Prod ShortFieldNames Bool       -- Bool indicates elm-compatibility mode
   deriving (Show)
 
 isDebug :: Mode -> Bool

@@ -177,7 +177,7 @@ debug root details (Build.Artifacts pkg _ roots modules) = do
 dev :: FilePath -> Details.Details -> Build.Artifacts -> Task Builder
 dev root details (Build.Artifacts pkg _ roots modules) = do
   objects <- Objects.loadObjects root details modules >>= Objects.finalizeObjects
-  let mode = Mode.Dev Nothing True  -- Default to elm-compatible mode
+  let mode = Mode.Dev Nothing False  -- Use Canopy mode, not elm-compatible mode
   let graph = Objects.objectsToGlobalGraph objects
   let mains = Mains.gatherMains pkg objects roots
   return $ JS.generate mode graph mains

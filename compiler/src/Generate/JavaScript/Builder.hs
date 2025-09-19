@@ -249,7 +249,7 @@ exprToJS expr = case expr of
   Bool False -> JS.JSLiteral noAnnot "false"  
   Null -> JS.JSLiteral noAnnot "null"
   Json jsonValue -> JS.JSLiteral noAnnot (LBS.unpack $ B.toLazyByteString $ Json.encodeUgly jsonValue)
-  Array exprs -> JS.JSArrayLiteral noAnnot (exprToJSArrayElements exprs) noAnnot
+  Array exprs -> JS.JSArrayLiteral noAnnot (exprToJSArrayElementsWithCommas exprs) noAnnot
   Object fields -> JS.JSObjectLiteral noAnnot (fieldsToJSCommaTrailingList fields) noAnnot  
   Ref name -> JS.JSIdentifier leadingSpaceAnnot (nameToString name)
   Access obj field -> JS.JSMemberDot (exprToJS obj) noAnnot (JS.JSIdentifier noAnnot (nameToString field))
@@ -294,10 +294,10 @@ stmtToJS stmt = case stmt of
         _ -> JS.JSStatementBlock noAnnot [stmtToJS blockStmt] noAnnot (JS.JSSemiAuto)
   Switch e cases -> JS.JSSwitch noAnnot noAnnot (exprToJS e) noAnnot noAnnot (map caseToJS cases) noAnnot (JS.JSSemiAuto)
   While cond body -> JS.JSWhile noAnnot leadingSpaceAnnot (exprToJS cond) leadingSpaceAnnot (stmtToJS body)
-  Break Nothing -> JS.JSBreak noAnnot JS.JSIdentNone (JS.JSSemiAuto)
-  Break (Just label) -> JS.JSBreak noAnnot (JS.JSIdentName noAnnot (nameToString label)) (JS.JSSemiAuto)
-  Continue Nothing -> JS.JSContinue noAnnot JS.JSIdentNone (JS.JSSemiAuto)
-  Continue (Just label) -> JS.JSContinue noAnnot (JS.JSIdentName leadingSpaceAnnot (nameToString label)) (JS.JSSemiAuto)
+  Break Nothing -> JS.JSBreak noAnnot JS.JSIdentNone (JS.JSSemi noAnnot)
+  Break (Just label) -> JS.JSBreak noAnnot (JS.JSIdentName noAnnot (nameToString label)) (JS.JSSemi noAnnot)
+  Continue Nothing -> JS.JSContinue noAnnot JS.JSIdentNone (JS.JSSemi noAnnot)
+  Continue (Just label) -> JS.JSContinue noAnnot (JS.JSIdentName leadingSpaceAnnot (nameToString label)) (JS.JSSemi noAnnot)
   Labelled label s -> JS.JSLabelled (JS.JSIdentName noAnnot (nameToString label)) noAnnot (stmtToJS s)
   Try tryStmt errName catchStmt -> 
     JS.JSTry noAnnot (blockFromStmt tryStmt) 
@@ -339,10 +339,17 @@ lvalueToJS lval = case lval of
   LDot e field -> JS.JSMemberDot (exprToJS e) noAnnot (JS.JSIdentifier noAnnot (nameToString field))
   LBracket e key -> JS.JSMemberSquare (exprToJS e) noAnnot (exprToJS key) noAnnot
 
-caseToJS :: Case -> JS.JSSwitchParts  
+caseToJS :: Case -> JS.JSSwitchParts
 caseToJS c = case c of
-  Case e stmts -> JS.JSCase noAnnot (exprToJS e) noAnnot (map stmtToJS stmts)
-  Default stmts -> JS.JSDefault noAnnot noAnnot (map stmtToJS stmts)
+  Case e stmts -> JS.JSCase leadingSpaceAnnot (exprToJSWithSpace e) leadingSpaceAnnot (map stmtToJS stmts)
+  Default stmts -> JS.JSDefault leadingSpaceAnnot leadingSpaceAnnot (map stmtToJS stmts)
+
+-- Generate expression with leading space for case statements
+exprToJSWithSpace :: Expr -> JSExpression
+exprToJSWithSpace expr = case expr of
+  Int n -> JS.JSDecimal leadingSpaceAnnot (show n)
+  String builder -> JS.JSLiteral leadingSpaceAnnot ("'" ++ escapeSingleQuotes (builderToString builder) ++ "'")
+  _ -> exprToJS expr
 
 -- varPairToJS not needed - using varsToJSCommaList instead
 
@@ -355,8 +362,12 @@ paramsToJSCommaList names =
       buildList [] = JS.JSLNil
   in buildList (reverse names)
 
-exprToJSArrayElements :: [Expr] -> [JS.JSArrayElement]
-exprToJSArrayElements = map (JS.JSArrayElement . exprToJS)
+-- Proper comma-separated array elements using JSArrayComma
+exprToJSArrayElementsWithCommas :: [Expr] -> [JS.JSArrayElement]
+exprToJSArrayElementsWithCommas [] = []
+exprToJSArrayElementsWithCommas [e] = [JS.JSArrayElement (exprToJS e)]
+exprToJSArrayElementsWithCommas (e:es) =
+  JS.JSArrayElement (exprToJS e) : concatMap (\expr -> [JS.JSArrayComma leadingSpaceAnnot, JS.JSArrayElement (exprToJS expr)]) es
 
 argsToJSCommaList :: [Expr] -> JS.JSCommaList JSExpression
 argsToJSCommaList [] = JS.JSLNil  
