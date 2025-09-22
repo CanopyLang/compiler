@@ -127,7 +127,7 @@ type CapabilityError
 -}
 isUserActivationAvailable : Bool
 isUserActivationAvailable =
-    CapabilityFFI.hasFeature "navigator.userActivation"
+    hasFeature "navigator.userActivation"
 
 {-| Check if user activation is currently active.
 -}

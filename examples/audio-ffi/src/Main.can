@@ -110,8 +110,8 @@ update msg model =
                 newModel =
                     { model
                         | audioSupport = Just audioSupport
-                        , activationAvailable = isUserActivationAvailable ()
-                        , activationActive = isUserActivationActive ()
+                        , activationAvailable = isUserActivationAvailable
+                        , activationActive = isUserActivationActive
                         , status = "Checked audio capabilities - " ++ describeAudioSupport audioSupport
                         , error = Nothing
                     }
@@ -120,7 +120,7 @@ update msg model =
 
         ConsumeActivation ->
             let
-                userGesture = consumeUserActivation ()
+                userGesture = consumeUserActivation
                 newModel =
                     { model
                         | userActivation = Just userGesture

@@ -1,0 +1,15 @@
+{
+  "type": "package",
+  "name": "capability/core",
+  "summary": "Core capability types for safe Web API access",
+  "license": "BSD-3-Clause",
+  "version": "1.0.0",
+  "exposed-modules": [
+    "Capability"
+  ],
+  "canopy-version": "0.19.1 <= v < 0.20.0",
+  "dependencies": {
+    "elm/core": "1.0.5"
+  },
+  "test-dependencies": {}
+}
