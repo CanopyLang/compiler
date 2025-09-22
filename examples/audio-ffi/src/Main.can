@@ -1,0 +1,394 @@
+module Main exposing (main)
+
+import Html exposing (Html, div, text, p, h1, button, h2)
+import Html.Attributes exposing (style, disabled)
+import Html.Events exposing (onClick)
+import Task exposing (Task)
+import Capability exposing
+    ( UserActivated(..), Initialized(..), Permitted(..), Available(..)
+    , CapabilityError(..)
+    , isUserActivationAvailable, isUserActivationActive
+    , consumeUserActivation, detectAPISupport, hasFeature
+    , checkGenericPermission, requestGenericPermission
+    , createGenericInitializer, validateCapability
+    )
+
+-- Web Audio API FFI
+foreign import javascript "external/audio.js" as AudioFFI
+
+-- Audio-specific types and context
+type alias AudioContext = AudioFFI.AudioContext
+type alias OscillatorNode = AudioFFI.OscillatorNode
+
+-- Message type for the comprehensive audio demo
+type Msg
+    = CheckAudioCapabilities
+    | ConsumeActivation
+    | InitializeAudio UserActivated
+    | CreateOscillator (Initialized AudioContext)
+    | PlayTone OscillatorNode
+    | StopTone OscillatorNode
+    | CheckAudioPermission
+    | RequestAudioPermission
+
+-- Comprehensive model tracking all audio states
+type alias Model =
+    { userActivation : Maybe UserActivated
+    , audioSupport : Maybe (Available ())
+    , audioContext : Maybe (Initialized AudioContext)
+    , audioPermission : Maybe (Permitted ())
+    , oscillator : Maybe OscillatorNode
+    , activationAvailable : Bool
+    , activationActive : Bool
+    , status : String
+    , error : Maybe String
+    }
+
+-- Initialize with comprehensive state tracking
+init : ( Model, Cmd Msg )
+init =
+    ( { userActivation = Nothing
+      , audioSupport = Nothing
+      , audioContext = Nothing
+      , audioPermission = Nothing
+      , oscillator = Nothing
+      , activationAvailable = False
+      , activationActive = False
+      , status = "Ready - Click buttons to test comprehensive audio capabilities"
+      , error = Nothing
+      }
+    , Cmd.none
+    )
+
+-- Audio-specific capability detection
+detectWebAudioSupport : () -> Available ()
+detectWebAudioSupport _ =
+    if hasFeature "AudioContext" then
+        Supported ()
+    else if hasFeature "webkitAudioContext" then
+        Prefixed () "webkit"
+    else
+        PartialSupport ()  -- Could be polyfilled
+
+-- Audio context state detector for rich lifecycle tracking
+audioContextStateDetector : AudioContext -> Initialized AudioContext
+audioContextStateDetector context =
+    case AudioFFI.getContextState context of
+        "suspended" -> Suspended context
+        "running" -> Running context
+        "interrupted" -> Interrupted context
+        "closed" -> Closing context
+        _ -> Fresh context
+
+-- Audio-specific permission checker
+checkAudioPermission : () -> Task CapabilityError (Permitted ())
+checkAudioPermission _ =
+    -- For audio, we check microphone permission as a proxy
+    checkGenericPermission "microphone"
+
+-- Audio-specific permission requester
+requestAudioPermission : () -> Task CapabilityError (Permitted ())
+requestAudioPermission _ =
+    requestGenericPermission (\_ ->
+        AudioFFI.requestAudioPermission ()
+    )
+
+-- Initialize audio context with proper capability checking
+initializeAudioContext : UserActivated -> Task CapabilityError (Initialized AudioContext)
+initializeAudioContext userGesture =
+    createGenericInitializer "AudioContext" (\_ ->
+        AudioFFI.createAudioContext ()
+    ) audioContextStateDetector
+
+-- Update function with comprehensive capability handling
+update : Msg -> Model -> ( Model, Cmd Msg )
+update msg model =
+    case msg of
+        CheckAudioCapabilities ->
+            let
+                audioSupport = detectAPISupport detectWebAudioSupport
+                newModel =
+                    { model
+                        | audioSupport = Just audioSupport
+                        , activationAvailable = isUserActivationAvailable ()
+                        , activationActive = isUserActivationActive ()
+                        , status = "Checked audio capabilities - " ++ describeAudioSupport audioSupport
+                        , error = Nothing
+                    }
+            in
+            ( newModel, Cmd.none )
+
+        ConsumeActivation ->
+            let
+                userGesture = consumeUserActivation ()
+                newModel =
+                    { model
+                        | userActivation = Just userGesture
+                        , status = "Consumed " ++ describeActivation userGesture ++ " - ready for audio initialization"
+                        , error = Nothing
+                    }
+            in
+            ( newModel, Cmd.none )
+
+        InitializeAudio userGesture ->
+            let
+                cmd = Task.attempt handleAudioInit (initializeAudioContext userGesture)
+                newModel = { model | status = "Initializing audio context..." }
+            in
+            ( newModel, cmd )
+
+        CreateOscillator audioContext ->
+            let
+                cmd = case audioContext of
+                    Running context ->
+                        Task.attempt handleOscillatorCreation (AudioFFI.createOscillator context)
+                    Fresh context ->
+                        -- Try to resume context first
+                        Task.attempt handleOscillatorCreation (AudioFFI.createOscillator context)
+                    Suspended context ->
+                        -- Need to resume context
+                        Task.attempt handleContextResume (AudioFFI.resumeContext context)
+                    _ ->
+                        Cmd.none
+                newModel = { model | status = "Creating oscillator..." }
+            in
+            ( newModel, cmd )
+
+        PlayTone oscillator ->
+            let
+                cmd = Task.attempt handleToneResult (AudioFFI.playTone oscillator)
+                newModel = { model | status = "Playing 440Hz tone..." }
+            in
+            ( newModel, cmd )
+
+        StopTone oscillator ->
+            let
+                cmd = Task.attempt handleToneResult (AudioFFI.stopTone oscillator)
+                newModel = { model | status = "Stopping tone..." }
+            in
+            ( newModel, cmd )
+
+        CheckAudioPermission ->
+            let
+                cmd = Task.attempt handlePermissionCheck (checkAudioPermission ())
+                newModel = { model | status = "Checking audio permissions..." }
+            in
+            ( newModel, cmd )
+
+        RequestAudioPermission ->
+            let
+                cmd = Task.attempt handlePermissionRequest (requestAudioPermission ())
+                newModel = { model | status = "Requesting audio permissions..." }
+            in
+            ( newModel, cmd )
+
+-- Helper functions for describing states
+describeAudioSupport : Available () -> String
+describeAudioSupport support =
+    case support of
+        Supported _ -> "Full Web Audio API support"
+        Prefixed _ prefix -> "Web Audio API available with " ++ prefix ++ " prefix"
+        PartialSupport _ -> "Partial Web Audio API support"
+        Experimental _ -> "Experimental Web Audio API support"
+        LegacySupport _ -> "Legacy Web Audio API support"
+        _ -> "No Web Audio API support"
+
+describeActivation : UserActivated -> String
+describeActivation activation =
+    case activation of
+        Click -> "click gesture"
+        Keypress -> "keyboard gesture"
+        Touch -> "touch gesture"
+        Drag -> "drag gesture"
+        Focus -> "focus gesture"
+        Transient -> "transient gesture"
+
+-- Task result handlers
+handleAudioInit : Result CapabilityError (Initialized AudioContext) -> Msg
+handleAudioInit result =
+    -- This would be handled in a real implementation
+    -- For now, we'll simulate success
+    case result of
+        Ok audioContext -> CreateOscillator audioContext
+        Err _ -> CheckAudioCapabilities -- Reset on error
+
+handleOscillatorCreation : Result CapabilityError OscillatorNode -> Msg
+handleOscillatorCreation result =
+    -- This would be handled in a real implementation
+    CheckAudioCapabilities
+
+handleToneResult : Result CapabilityError () -> Msg
+handleToneResult result =
+    CheckAudioCapabilities
+
+handleContextResume : Result CapabilityError AudioContext -> Msg
+handleContextResume result =
+    CheckAudioCapabilities
+
+handlePermissionCheck : Result CapabilityError (Permitted ()) -> Msg
+handlePermissionCheck result =
+    CheckAudioCapabilities
+
+handlePermissionRequest : Result CapabilityError (Permitted ()) -> Msg
+handlePermissionRequest result =
+    CheckAudioCapabilities
+
+-- Comprehensive view showing all capability states
+view : Model -> Html Msg
+view model =
+    div [ style "padding" "20px", style "font-family" "Arial, sans-serif" ]
+        [ h1 [] [ text "Comprehensive Audio Capability Example" ]
+        , p [] [ text "This demonstrates proper separation of concerns: core capability system + Web Audio API specific implementation." ]
+
+        -- Capability Detection Section
+        , div [ style "margin" "20px 0" ]
+            [ h2 [] [ text "Capability Detection" ]
+            , button
+                [ onClick CheckAudioCapabilities
+                , buttonStyle
+                ]
+                [ text "Check Audio Capabilities" ]
+            , div [ style "margin-top" "10px" ]
+                [ text ("Audio Support: " ++ Maybe.withDefault "Not checked" (Maybe.map describeAudioSupport model.audioSupport))
+                , br
+                , text ("User Activation Available: " ++ boolToString model.activationAvailable)
+                , br
+                , text ("User Activation Active: " ++ boolToString model.activationActive)
+                ]
+            ]
+
+        -- User Activation Section
+        , div [ style "margin" "20px 0" ]
+            [ h2 [] [ text "User Activation" ]
+            , button
+                [ onClick ConsumeActivation
+                , buttonStyle
+                , style "margin-right" "10px"
+                ]
+                [ text "Consume User Activation" ]
+            , case model.userActivation of
+                Just activation ->
+                    button
+                        [ onClick (InitializeAudio activation)
+                        , buttonStyle
+                        ]
+                        [ text "Initialize Audio Context" ]
+                Nothing ->
+                    button
+                        [ disabled True
+                        , buttonStyle
+                        ]
+                        [ text "Initialize Audio Context (Need Activation)" ]
+            ]
+
+        -- Audio Context Section
+        , div [ style "margin" "20px 0" ]
+            [ h2 [] [ text "Audio Context Management" ]
+            , case model.audioContext of
+                Just audioContext ->
+                    div []
+                        [ text ("Audio Context State: " ++ describeAudioContextState audioContext)
+                        , br
+                        , button
+                            [ onClick (CreateOscillator audioContext)
+                            , buttonStyle
+                            ]
+                            [ text "Create Oscillator" ]
+                        ]
+                Nothing ->
+                    text "No audio context initialized"
+            ]
+
+        -- Audio Operations Section
+        , div [ style "margin" "20px 0" ]
+            [ h2 [] [ text "Audio Operations" ]
+            , case model.oscillator of
+                Just osc ->
+                    div []
+                        [ button
+                            [ onClick (PlayTone osc)
+                            , buttonStyle
+                            , style "margin-right" "10px"
+                            ]
+                            [ text "Play 440Hz Tone" ]
+                        , button
+                            [ onClick (StopTone osc)
+                            , buttonStyle
+                            ]
+                            [ text "Stop Tone" ]
+                        ]
+                Nothing ->
+                    text "No oscillator available (create audio context first)"
+            ]
+
+        -- Permission Section
+        , div [ style "margin" "20px 0" ]
+            [ h2 [] [ text "Audio Permissions" ]
+            , button
+                [ onClick CheckAudioPermission
+                , buttonStyle
+                , style "margin-right" "10px"
+                ]
+                [ text "Check Audio Permission" ]
+            , button
+                [ onClick RequestAudioPermission
+                , buttonStyle
+                ]
+                [ text "Request Audio Permission" ]
+            , div [ style "margin-top" "10px" ]
+                [ text ("Permission State: " ++ Maybe.withDefault "Not checked" (Maybe.map describePermissionState model.audioPermission))
+                ]
+            ]
+
+        -- Status Display
+        , div [ style "margin" "20px 0", style "border" "1px solid #ccc", style "padding" "10px" ]
+            [ h2 [] [ text "Status" ]
+            , p [] [ text model.status ]
+            , case model.error of
+                Just err -> p [ style "color" "red" ] [ text ("Error: " ++ err) ]
+                Nothing -> text ""
+            ]
+        ]
+
+-- Helper functions for the view
+describeAudioContextState : Initialized AudioContext -> String
+describeAudioContextState state =
+    case state of
+        Fresh _ -> "Fresh (just created)"
+        Running _ -> "Running (active)"
+        Suspended _ -> "Suspended (needs resume)"
+        Interrupted _ -> "Interrupted (temporarily paused)"
+        Restored _ -> "Restored (from previous session)"
+        Closing _ -> "Closing (shutting down)"
+
+describePermissionState : Permitted () -> String
+describePermissionState state =
+    case state of
+        Granted _ -> "Granted"
+        Prompt _ -> "Prompt required"
+        Denied _ -> "Denied"
+        Unknown _ -> "Unknown"
+        Revoked _ -> "Revoked"
+        Restricted _ -> "Restricted"
+
+-- Helper functions
+buttonStyle : Html.Attribute msg
+buttonStyle =
+    style "all" "padding: 8px 16px; font-size: 14px; background-color: #007cba; color: white; border: none; border-radius: 3px; cursor: pointer; margin: 2px;"
+
+boolToString : Bool -> String
+boolToString bool =
+    if bool then "Yes" else "No"
+
+br : Html msg
+br = Html.br [] []
+
+-- Main entry point
+main : Program () Model Msg
+main =
+    Html.element
+        { init = \_ -> init
+        , update = update
+        , view = view
+        , subscriptions = \_ -> Sub.none
+        }

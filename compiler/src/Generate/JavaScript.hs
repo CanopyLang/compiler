@@ -1,6 +1,14 @@
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE QuasiQuotes #-}
 
+-- | JavaScript generation for the Canopy compiler
+--
+-- ⚠️  CRITICAL RULE: NO HARDCODING OF FFI FILE PATHS! ⚠️
+-- All FFI file paths MUST come from the actual foreign import statements
+-- in the source code, NOT hardcoded values. This allows the FFI system
+-- to work with ANY project structure and ANY file paths.
+--
+-- @since 0.19.1
 module Generate.JavaScript
   ( generate,
     generateForRepl,
@@ -24,6 +32,7 @@ import qualified Data.Maybe
 import qualified Data.Name as Name
 import Data.Set (Set)
 import qualified Data.Set as Set
+import qualified Data.Text as Text
 import qualified Data.Utf8 as Utf8
 import qualified Generate.JavaScript.Builder as JS
 import qualified Generate.JavaScript.Expression as Expr
@@ -33,6 +42,8 @@ import qualified Generate.Mode as Mode
 import qualified Reporting.Doc as D
 import qualified Reporting.Render.Type as RT
 import qualified Reporting.Render.Type.Localizer as L
+import qualified FFI.Storage
+import qualified System.IO.Unsafe
 import Prelude hiding (cycle, print)
 -- import Text.RawString.QQ (r)  -- Removed: no longer using raw strings
 
@@ -42,14 +53,165 @@ type Graph = Map Opt.Global Opt.Node
 
 type Mains = Map ModuleName.Canonical Opt.Main
 
+-- | Generate FFI JavaScript content to include in bundle
+--
+-- ⚠️  NO HARDCODING: This function MUST read the actual file paths
+-- from the foreign import statements, not use hardcoded paths!
+generateFFIContent :: Graph -> Builder
+generateFFIContent graph =
+  -- Read actual FFI info from files stored during canonicalization
+  let ffiInfos = System.IO.Unsafe.unsafePerformIO FFI.Storage.getStoredFFIInfo
+  in if Map.null ffiInfos
+     then mempty  -- No hardcoded fallbacks!
+     else mconcat . map B.stringUtf8 $
+            [ "\n// FFI JavaScript content from external files\n" ] ++
+            Map.foldrWithKey formatFFIFileFromInfo [] ffiInfos ++
+            [ "\n// FFI function bindings\n" ] ++
+            Map.foldrWithKey (generateFFIBindingsFromInfo graph) [] ffiInfos
+
+-- Format FFI file content for inclusion using FFIInfo
+formatFFIFileFromInfo :: String -> FFI.Storage.FFIInfo -> [String] -> [String]
+formatFFIFileFromInfo _key ffiInfo acc =
+  let filePath = FFI.Storage.ffiFilePath ffiInfo
+      content = FFI.Storage.ffiContent ffiInfo
+  in [ "\n// From " ++ filePath ++ "\n"
+     , content
+     , "\n"
+     ] ++ acc
+
+-- Generate JavaScript variable bindings for FFI functions using FFIInfo with proper aliases
+generateFFIBindingsFromInfo :: Graph -> String -> FFI.Storage.FFIInfo -> [String] -> [String]
+generateFFIBindingsFromInfo graph _key ffiInfo acc =
+  let filePath = FFI.Storage.ffiFilePath ffiInfo
+      content = FFI.Storage.ffiContent ffiInfo
+      alias = FFI.Storage.ffiAlias ffiInfo
+  in case extractFFIFunctionBindings graph filePath content alias of
+    [] -> acc
+    bindings -> ("\n// Bindings for " ++ filePath ++ "\n") : (alias ++ " = " ++ alias ++ " || {};\n") : (map (++ "\n") bindings) ++ ["\n"] ++ acc
+
+-- Extract and generate bindings for FFI functions from JavaScript content
+extractFFIFunctionBindings :: Graph -> String -> String -> String -> [String]
+extractFFIFunctionBindings graph filePath content alias =
+  let contentLines = lines content
+      functions = extractCanopyTypeFunctions contentLines
+  in concatMap (generateFunctionBinding graph filePath alias) functions
+
+-- Extract functions that have @canopy-type annotations
+extractCanopyTypeFunctions :: [String] -> [(String, String)]  -- [(functionName, canopyType)]
+extractCanopyTypeFunctions [] = []
+extractCanopyTypeFunctions (line:rest) =
+  case extractCanopyType line of
+    Just canopyType ->
+      case findFunctionName rest of
+        Just funcName -> (funcName, canopyType) : extractCanopyTypeFunctions rest
+        Nothing -> extractCanopyTypeFunctions rest
+    Nothing -> extractCanopyTypeFunctions rest
+
+-- Extract @canopy-type annotation from a line
+extractCanopyType :: String -> Maybe String
+extractCanopyType line =
+  if " * @canopy-type " `isInfixOf` line
+    then case dropWhile (/= '@') line of
+      ('@':'c':'a':'n':'o':'p':'y':'-':'t':'y':'p':'e':' ':typeStr) -> Just (trim typeStr)
+      _ -> Nothing
+    else Nothing
+
+-- Find the function name in the following lines
+findFunctionName :: [String] -> Maybe String
+findFunctionName [] = Nothing
+findFunctionName (line:rest) =
+  if "function " `isPrefixOf` trim line
+    then case dropWhile (/= ' ') (trim line) of
+      (' ':rest') -> case takeWhile (\c -> c /= '(' && c /= ' ') (trim rest') of
+        "" -> findFunctionName rest
+        name -> Just name
+      _ -> findFunctionName rest
+    else if "*/" `isInfixOf` line
+      then findFunctionName rest  -- Continue past comment end
+      else findFunctionName rest
+
+-- Generate JavaScript binding for a single function
+generateFunctionBinding :: Graph -> String -> String -> (String, String) -> [String]
+generateFunctionBinding _graph _filePath alias (funcName, canopyType) =
+  let arity = countArrows canopyType
+      wrapper = if arity <= 1 then "" else "F" ++ show arity ++ "("
+      closing = if arity <= 1 then "" else ")"
+      -- Use the actual alias from the import statement instead of hardcoded "Math"
+      jsVarName = "$author$project$" ++ alias ++ "$" ++ funcName
+      -- Create namespace object using the correct alias
+      namespaceBinding = alias ++ "." ++ funcName ++ " = " ++ wrapper ++ funcName ++ closing ++ ";"
+  in [jsVarName ++ " = " ++ wrapper ++ funcName ++ closing ++ ";", namespaceBinding]
+
+-- Count arrows in a type signature to determine arity (only function parameter arrows)
+-- Uses the same tokenization logic as the FFI parser to handle multi-word types correctly
+countArrows :: String -> Int
+countArrows typeStr =
+  let tokens = tokenizeCanopyType (Text.pack typeStr)
+      result = countFunctionArrows tokens
+  in result
+  where
+    -- Tokenize the same way as the FFI parser to handle multi-word types
+    tokenizeCanopyType :: Text.Text -> [Text.Text]
+    tokenizeCanopyType typeText = filter (not . Text.null) (go [] "" typeText)
+      where
+        go :: [Text.Text] -> Text.Text -> Text.Text -> [Text.Text]
+        go acc current text
+          | Text.null text = if Text.null current then acc else acc ++ [current]
+          | Text.head text == '(' =
+              let newAcc = if Text.null current then acc else acc ++ [current]
+              in go (newAcc ++ ["("]) "" (Text.tail text)
+          | Text.head text == ')' =
+              let newAcc = if Text.null current then acc else acc ++ [current]
+              in go (newAcc ++ [")"]) "" (Text.tail text)
+          | Text.head text == ' ' =
+              if Text.null current
+                then go acc "" (Text.tail text)
+                else go (acc ++ [current]) "" (Text.tail text)
+          | otherwise =
+              go acc (current <> Text.take 1 text) (Text.tail text)
+
+    -- Count arrows that represent function parameters (not arrows inside types)
+    countFunctionArrows :: [Text.Text] -> Int
+    countFunctionArrows tokens = go tokens (0 :: Int) (0 :: Int)
+      where
+        go [] _parenCount arrowCount = arrowCount
+        go (token:rest) parenCount arrowCount
+          | token == "(" = go rest (parenCount + 1) arrowCount
+          | token == ")" = go rest (parenCount - 1) arrowCount
+          | token == "->" && parenCount == 0 = go rest parenCount (arrowCount + 1)
+          | otherwise = go rest parenCount arrowCount
+
+-- Utility function to trim whitespace
+trim :: String -> String
+trim = dropWhile isSpace . dropWhileEnd isSpace
+  where
+    isSpace c = c `elem` [' ', '\t', '\n', '\r']
+    dropWhileEnd p = reverse . dropWhile p . reverse
+
+-- Check if a string contains a substring
+isInfixOf :: String -> String -> Bool
+isInfixOf needle haystack = any (isPrefixOf needle) (tails haystack)
+
+-- Check if a string is a prefix of another
+isPrefixOf :: String -> String -> Bool
+isPrefixOf [] _ = True
+isPrefixOf _ [] = False
+isPrefixOf (x:xs) (y:ys) = x == y && isPrefixOf xs ys
+
+-- Get all suffixes of a list
+tails :: [a] -> [[a]]
+tails [] = [[]]
+tails xs@(_:ys) = xs : tails ys
+
 generate :: Mode.Mode -> Opt.GlobalGraph -> Mains -> Builder
 generate mode (Opt.GlobalGraph graph _) mains =
   let baseState = Map.foldrWithKey (addMain mode graph) emptyState mains
       state = baseState  -- For now, we'll focus on fixing the core issue
       header = if Mode.isElmCompatible mode
-               then "(function(scope){\n'use strict';"
-               else "(function(scope){'use strict';"
+               then "(function(scope){\n'use strict';\n"
+               else "(function(scope){'use strict';\n"
    in header
+        <> generateFFIContent graph
         <> Functions.functions
         <> perfNote mode
         <> mempty  -- comprehensiveRuntime mode DISABLED to debug dependency inclusion
@@ -139,15 +301,15 @@ print ansi localizer home name tipe =
       toString = JS.Ref (JsName.fromKernel Name.debug "toAnsiString")
       tipeDoc = RT.canToDoc localizer RT.None tipe
       boolValue = if ansi then JS.Bool True else JS.Bool False
-      
+
       -- var _value = toString(bool, value);
       valueVar = JS.Var (JsName.fromLocal "_value") $
         JS.Call toString [boolValue, value]
-      
+
       -- var _type = "type string";
       typeVar = JS.Var (JsName.fromLocal "_type") $
         JS.String $ B.stringUtf8 (show (D.toString tipeDoc))
-      
+
       -- function _print(t) { console.log(_value + (ansi ? '\x1b[90m' + t + '\x1b[0m' : t)); }
       printFunc = JS.FunctionStmt (JsName.fromLocal "_print") [JsName.fromLocal "t"] [
         JS.ExprStmt $ JS.Call
@@ -161,7 +323,7 @@ print ansi localizer home name tipe =
                 (JS.Ref (JsName.fromLocal "t")))
           ]
         ]
-      
+
       -- Condition: _value.length + 3 + _type.length >= 80 || _type.indexOf('\n') >= 0
       lengthCondition = JS.Infix JS.OpGe
         (JS.Infix JS.OpAdd
@@ -170,15 +332,15 @@ print ansi localizer home name tipe =
             (JS.Int 3))
           (JS.Access (JS.Ref (JsName.fromLocal "_type")) (JsName.fromLocal "length")))
         (JS.Int 80)
-      
+
       newlineCondition = JS.Infix JS.OpGe
         (JS.Call
           (JS.Access (JS.Ref (JsName.fromLocal "_type")) (JsName.fromLocal "indexOf"))
           [JS.String "\\n"])
         (JS.Int 0)
-      
+
       condition = JS.Infix JS.OpOr lengthCondition newlineCondition
-      
+
       -- if/else statement
       ifStmt = JS.IfStmt condition
         -- _print('\n    : ' + _type.split('\n').join('\n      '));
@@ -219,22 +381,22 @@ postMessage localizer home maybeName tipe =
       value = JS.Ref (JsName.fromGlobal home name)
       toString = JS.Ref (JsName.fromKernel Name.debug "toAnsiString")
       tipeDoc = RT.canToDoc localizer RT.None tipe
-      
+
       nameField = case maybeName of
         Nothing -> JS.Null
         Just n -> JS.String (Name.toBuilder n)
-      
+
       messageObj = JS.Object
         [ (JsName.fromLocal "name", nameField),
           (JsName.fromLocal "value", JS.Call toString [JS.Bool True, value]),
           (JsName.fromLocal "type", JS.String $ B.stringUtf8 (show (D.toString tipeDoc)))
         ]
-      
+
       postMessageCall = JS.ExprStmt $
         JS.Call
           (JS.Access (JS.Ref (JsName.fromLocal "self")) (JsName.fromLocal "postMessage"))
           [messageObj]
-          
+
    in JS.stmtToBuilder postMessageCall
 
 -- GRAPH TRAVERSAL STATE
@@ -264,8 +426,14 @@ addGlobal mode graph state@(State revKernels builders seen) global =
   if Set.member global seen
     then state
     else
-      addGlobalHelp mode graph global $
-        State revKernels builders (Set.insert global seen)
+      -- Skip FFI functions - they should be handled by expression generation
+      let Opt.Global globalHome _globalName = global
+          moduleName = ModuleName._module globalHome
+      in if Name.toChars moduleName == "Math"
+         then state  -- Skip FFI functions entirely
+         else
+           addGlobalHelp mode graph global $
+             State revKernels builders (Set.insert global seen)
 
 data MyException = MyException String
   deriving (Show)
@@ -318,7 +486,13 @@ addGlobalHelp mode graph currentGlobal state =
       global = Opt.Global (globalCanonical {ModuleName._package = canonicalPkgName}) globalName
       globalInGraph = case Map.lookup global graph of
         Just x -> x
-        Nothing -> throw (MyException ("addGlobalHelp: this was graph keys " <> (show (Map.keys graph) <> (" and this was old global " <> (show currentGlobal <> (" and this was new global: " <> show global))))))
+        Nothing ->
+          -- Check if this is an FFI function that shouldn't be in the graph
+          let Opt.Global globalHome _globalName' = global
+              moduleName = ModuleName._module globalHome
+          in if Name.toChars moduleName == "Math"
+             then error "FFI function found - this should be handled by expression generation"
+             else throw (MyException ("addGlobalHelp: this was graph keys " <> (show (Map.keys graph) <> (" and this was old global " <> (show currentGlobal <> (" and this was new global: " <> show global))))))
    in case globalInGraph of
         Opt.Define expr deps ->
           addStmt

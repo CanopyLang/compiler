@@ -24,6 +24,8 @@ module Parse.Keyword
     where_,
     command_,
     subscription_,
+    foreign_,
+    javascript_,
     k4,
     k5,
   )
@@ -131,6 +133,30 @@ subscription_ toError =
           && P.unsafeIndex (plusPtr pos 11) == 0x6E
           && Var.getInnerWidth pos12 end == 0
           then let !s = P.State src pos12 end indent row (col + 12) in cok () s
+          else eerr row col toError
+
+-- FFI KEYWORDS
+
+foreign_ :: (Row -> Col -> x) -> Parser x ()
+foreign_ = k7 0x66 0x6F 0x72 0x65 0x69 0x67 0x6E
+
+javascript_ :: (Row -> Col -> x) -> Parser x ()
+javascript_ toError =
+  P.Parser $ \(P.State src pos end indent row col) cok _ _ eerr ->
+    let !pos10 = plusPtr pos 10
+     in if pos10 <= end
+          && P.unsafeIndex (pos) == 0x6A
+          && P.unsafeIndex (plusPtr pos 1) == 0x61
+          && P.unsafeIndex (plusPtr pos 2) == 0x76
+          && P.unsafeIndex (plusPtr pos 3) == 0x61
+          && P.unsafeIndex (plusPtr pos 4) == 0x73
+          && P.unsafeIndex (plusPtr pos 5) == 0x63
+          && P.unsafeIndex (plusPtr pos 6) == 0x72
+          && P.unsafeIndex (plusPtr pos 7) == 0x69
+          && P.unsafeIndex (plusPtr pos 8) == 0x70
+          && P.unsafeIndex (plusPtr pos 9) == 0x74
+          && Var.getInnerWidth pos10 end == 0
+          then let !s = P.State src pos10 end indent row (col + 10) in cok () s
           else eerr row col toError
 
 -- KEYWORDS

@@ -26,6 +26,7 @@ module Canopy.ModuleName
     cmd,
     sub,
     debug,
+    capability,
     virtualDom,
     jsonDecode,
     jsonEncode,
@@ -193,6 +194,10 @@ sub = Canonical Pkg.core "Platform.Sub"
 {-# NOINLINE debug #-}
 debug :: Canonical
 debug = Canonical Pkg.core Name.debug
+
+{-# NOINLINE capability #-}
+capability :: Canonical
+capability = Canonical Pkg.core Name.capability
 
 -- HTML
 

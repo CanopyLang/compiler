@@ -1,0 +1,2 @@
+import Debug
+main = Debug.log "test" ()

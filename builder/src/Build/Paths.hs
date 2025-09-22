@@ -264,7 +264,7 @@ checkRoot env@(Env _ root _ _ _ _ _) results rootStatus =
   case rootStatus of
     SInside name -> pure (RInside name)
     SOutsideErr err -> pure (ROutsideErr err)
-    SOutsideOk local source modul@(Src.Module _ _ _ imports _ _ _ _ _) -> do
+    SOutsideOk local source modul@(Src.Module _ _ _ imports _ _ _ _ _ _) -> do
       let localDeps = local ^. Details.deps
       let localLastCompile = local ^. Details.lastCompile  
       depsStatus <- checkDeps (DepsConfig root results localDeps localLastCompile)

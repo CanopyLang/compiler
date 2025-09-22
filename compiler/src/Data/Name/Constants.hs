@@ -74,6 +74,7 @@ module Data.Name.Constants
     debugger,
     bitwise,
     basics,
+    capability,
 
     -- * Special Names
     utils,
@@ -196,6 +197,10 @@ bitwise = fromChars "Bitwise"
 {-# NOINLINE basics #-}
 basics :: Name
 basics = fromChars "Basics"
+
+{-# NOINLINE capability #-}
+capability :: Name
+capability = fromChars "Capability"
 
 -- SPECIAL NAMES
 

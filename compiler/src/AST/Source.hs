@@ -116,6 +116,7 @@ module AST.Source
     getName,
     getImportName,
     Import (..),
+    ForeignImport (..),
     Value (..),
     Union (..),
     Alias (..),
@@ -139,6 +140,9 @@ import Data.Name (Name)
 import qualified Data.Name as Name
 import qualified Parse.Primitives as P
 import qualified Reporting.Annotation as A
+
+-- FFI Support
+import qualified Foreign.FFI as FFI
 
 -- EXPRESSIONS
 
@@ -495,6 +499,7 @@ data Module = Module
     _exports :: A.Located Exposing,
     _docs :: Docs,
     _imports :: [Import],
+    _foreignImports :: [ForeignImport],
     _values :: [A.Located Value],
     _unions :: [A.Located Union],
     _aliases :: [A.Located Alias],
@@ -519,7 +524,7 @@ data Module = Module
 --
 -- @since 0.19.1
 getName :: Module -> Name
-getName (Module maybeName _ _ _ _ _ _ _ _) =
+getName (Module maybeName _ _ _ _ _ _ _ _ _) =
   case maybeName of
     Just (A.At _ moduleName) ->
       moduleName
@@ -561,6 +566,24 @@ data Import = Import
   { _importName :: A.Located Name,
     _importAlias :: Maybe Name,
     _importExposing :: Exposing
+  }
+  deriving (Show)
+
+-- | Foreign import declaration for FFI support.
+--
+-- Represents foreign import statements that allow Canopy code to interface
+-- with external code (currently JavaScript) in a type-safe manner.
+--
+-- Example:
+-- @
+-- foreign import javascript "./api.js" as API
+-- @
+--
+-- @since 0.19.1
+data ForeignImport = ForeignImport
+  { _foreignTarget :: FFI.FFITarget,
+    _foreignAlias :: A.Located Name,
+    _foreignLocation :: A.Region
   }
   deriving (Show)
 

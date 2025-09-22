@@ -1,0 +1,122 @@
+-- | Test framework for Canopy (similar to elm-explorations/test)
+-- Provides core testing functionality for FFI and general testing
+
+module Test exposing
+  ( Test
+  , describe
+  , test
+  , run
+  , Expectation
+  , expect
+  , equal
+  , pass
+  , fail
+  )
+
+-- | A Test is a collection of expectations or other tests
+type Test
+  = UnitTest String (() -> Expectation)
+  | TestGroup String (List Test)
+
+-- | An Expectation is the result of testing something
+type Expectation
+  = Pass
+  | Fail String
+
+-- | Create a group of tests with a description
+describe : String -> List Test -> Test
+describe description tests =
+  TestGroup description tests
+
+-- | Create a single test with a description and expectation
+test : String -> (() -> Expectation) -> Test
+test description expectationFn =
+  UnitTest description expectationFn
+
+-- | Run a test and get the results
+run : Test -> TestResult
+run testCase =
+  case testCase of
+    UnitTest description expectationFn ->
+      let
+        result = expectationFn ()
+      in
+      case result of
+        Pass ->
+          { description = description
+          , status = "PASS"
+          , message = ""
+          , duration = 0
+          }
+        Fail message ->
+          { description = description
+          , status = "FAIL"
+          , message = message
+          , duration = 0
+          }
+
+    TestGroup description tests ->
+      let
+        results = List.map run tests
+        failures = List.filter (.status >> (==) "FAIL") results
+      in
+      { description = description
+      , status = if List.isEmpty failures then "PASS" else "FAIL"
+      , message = String.fromInt (List.length failures) ++ " of " ++ String.fromInt (List.length results) ++ " tests failed"
+      , duration = 0
+      }
+
+-- | Test result type
+type alias TestResult =
+  { description : String
+  , status : String
+  , message : String
+  , duration : Int
+  }
+
+-- | Create an expectation (basic assertion framework)
+expect : a -> Expect a
+expect actual =
+  Expect actual
+
+-- | Expectation builder type
+type Expect a = Expect a
+
+-- | Check if two values are equal
+equal : a -> Expect a -> Expectation
+equal expected (Expect actual) =
+  if actual == expected then
+    Pass
+  else
+    Fail ("Expected: " ++ Debug.toString expected ++ ", but got: " ++ Debug.toString actual)
+
+-- | An expectation that always passes
+pass : Expectation
+pass = Pass
+
+-- | An expectation that always fails with a message
+fail : String -> Expectation
+fail message = Fail message
+
+-- | Test runner that outputs to console (will be called from generated JavaScript)
+runTests : List Test -> String
+runTests tests =
+  let
+    results = List.map run tests
+    totalTests = List.length results
+    passedTests = List.length (List.filter (.status >> (==) "PASS") results)
+    failedTests = totalTests - passedTests
+  in
+  "Test Results:\n" ++
+  "Total: " ++ String.fromInt totalTests ++ "\n" ++
+  "Passed: " ++ String.fromInt passedTests ++ "\n" ++
+  "Failed: " ++ String.fromInt failedTests ++ "\n" ++
+  (if failedTests > 0 then
+    "\nFailures:\n" ++
+    String.join "\n" (List.map formatFailure (List.filter (.status >> (==) "FAIL") results))
+   else
+    "\nAll tests passed!")
+
+formatFailure : TestResult -> String
+formatFailure result =
+  "❌ " ++ result.description ++ ": " ++ result.message

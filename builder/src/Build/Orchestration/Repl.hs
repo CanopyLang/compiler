@@ -197,7 +197,7 @@ createReplEnvironment root (Details.Details _ validOutline buildID locals foreig
 --
 -- @since 0.19.1
 processReplModule :: Env -> FilePath -> Details.Details -> B.ByteString -> Src.Module -> IO (Either Exit.Repl ReplArtifacts)
-processReplModule env root details source modul@(Src.Module _ _ _ imports _ _ _ _ _) = do
+processReplModule env root details source modul@(Src.Module _ _ _ imports _ _ _ _ _ _) = do
   dmvar <- Details.loadInterfaces root details
   
   statuses <- crawlReplDependencies env imports
@@ -264,7 +264,7 @@ compileReplModule env root details source modul foreigns statuses = do
 --
 -- @since 0.19.1
 extractModuleDependencies :: Src.Module -> IO [ModuleName.Raw]
-extractModuleDependencies (Src.Module _ _ _ imports _ _ _ _ _) =
+extractModuleDependencies (Src.Module _ _ _ imports _ _ _ _ _ _) =
   pure $ fmap Src.getImportName imports
 
 -- | Fork a computation for each key-value pair in a Map.

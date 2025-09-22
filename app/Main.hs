@@ -23,8 +23,9 @@
 --
 -- * @init@ - Initialize new Canopy projects
 -- * @repl@ - Interactive programming session
--- * @reactor@ - Development server with hot reload  
+-- * @reactor@ - Development server with hot reload
 -- * @make@ - Compile Canopy code to JavaScript or HTML
+-- * @test-ffi@ - Test and validate FFI functions
 -- * @install@ - Install packages from repositories
 -- * @publish@ - Publish packages to repositories
 -- * @bump@ - Automatic version number management
@@ -48,6 +49,7 @@ module Main
 import CLI.Commands
   ( createBumpCommand,
     createDiffCommand,
+    createFFITestCommand,
     createInitCommand,
     createInstallCommand,
     createMakeCommand,
@@ -98,6 +100,7 @@ createAllCommands =
     createInitCommand,
     createReactorCommand,
     createMakeCommand,
+    createFFITestCommand,
     createInstallCommand,
     createBumpCommand,
     createDiffCommand,

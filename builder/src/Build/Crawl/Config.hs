@@ -60,9 +60,9 @@ module Build.Crawl.Config
   , parseConfigBuildID, parseConfigLastChange
   , validationConfigEnv, validationConfigMVar, validationConfigDocsNeed
   , validationConfigExpectedName, validationConfigActualName, validationConfigPath
-  , validationConfigTime, validationConfigSource, validationConfigImports
-  , validationConfigValues, validationConfigBuildID, validationConfigLastChange
-  , validationConfigName
+  , validationConfigTime, validationConfigSource, validationConfigSrcModule
+  , validationConfigImports, validationConfigValues, validationConfigBuildID
+  , validationConfigLastChange, validationConfigName
     -- * Configuration Creation
   , createSinglePathConfig
   , createLocalPathConfig  
@@ -165,6 +165,7 @@ data ValidationConfig = ValidationConfig
   , _validationConfigPath :: !FilePath
   , _validationConfigTime :: !File.Time
   , _validationConfigSource :: !B.ByteString
+  , _validationConfigSrcModule :: !Src.Module
   , _validationConfigImports :: ![Src.Import]
   , _validationConfigValues :: ![A.Located Src.Value]
   , _validationConfigBuildID :: !Details.BuildID
@@ -233,9 +234,11 @@ createLocalPathConfig cfg = LocalPathConfig
 -- @since 0.19.1
 createValidationConfig
   :: ParseConfig
-  -- ^ Source parse configuration  
+  -- ^ Source parse configuration
   -> ModuleName.Raw
   -- ^ Actual module name from parsed AST
+  -> Src.Module
+  -- ^ Parsed module AST
   -> [Src.Import]
   -- ^ Import declarations from parsed AST
   -> [A.Located Src.Value]
@@ -244,7 +247,7 @@ createValidationConfig
   -- ^ Located module name for error reporting
   -> ValidationConfig
   -- ^ Validation configuration for module validation
-createValidationConfig cfg actualName imports values name = ValidationConfig
+createValidationConfig cfg actualName srcModule imports values name = ValidationConfig
   { _validationConfigEnv = cfg ^. parseConfigEnv
   , _validationConfigMVar = cfg ^. parseConfigMVar
   , _validationConfigDocsNeed = cfg ^. parseConfigDocsNeed
@@ -253,6 +256,7 @@ createValidationConfig cfg actualName imports values name = ValidationConfig
   , _validationConfigPath = cfg ^. parseConfigPath
   , _validationConfigTime = cfg ^. parseConfigTime
   , _validationConfigSource = cfg ^. parseConfigSource
+  , _validationConfigSrcModule = srcModule
   , _validationConfigImports = imports
   , _validationConfigValues = values
   , _validationConfigBuildID = cfg ^. parseConfigBuildID

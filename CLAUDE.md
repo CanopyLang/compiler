@@ -27,6 +27,7 @@ These constraints are enforced by CI and must be followed without exception:
 7. **Qualified imports**: Everything qualified except types, lenses, and pragmas
 8. **Test coverage**: Minimum 80% coverage for all modules
 9. **Add documentation to each module in Haddock style**: Complete module-level documentation with purpose, examples, and function-level docs with type explanations
+10. **NEVER SIMPLIFY Cases to get around**: Investigate issues properly, by adding debug logging or testing scripts, but do not simplify a implementation because its easier.
 
 ## 📁 Project Structure
 
@@ -457,7 +458,7 @@ goldenTest = Test.goldenVsString
 isValidModuleName :: ModuleName -> Bool
 isValidModuleName _ = True  -- This is worthless!
 
-isValidPackage :: Package -> Bool  
+isValidPackage :: Package -> Bool
 isValidPackage _ = True     -- This tests nothing!
 
 -- BAD: Fake validation that doesn't validate
@@ -480,7 +481,7 @@ testCase "version is reflexive" $ do
 -- BAD: Comparing identical function calls
 testCase "same calls are equal" $ do
   let name1 = Name.fromChars "test"
-      name2 = Name.fromChars "test" 
+      name2 = Name.fromChars "test"
   name1 @?= name2  -- This is just testing the same computation twice!
 ```
 
@@ -494,7 +495,7 @@ testModuleNameHandling = testGroup "ModuleName tests"
       let result = ModuleName.fromChars "Main"
       ModuleName.toChars result @?= "Main"
   , testCase "module name with dots" $ do
-      let result = ModuleName.fromChars "App.Utils"  
+      let result = ModuleName.fromChars "App.Utils"
       length (Text.splitOn "." (ModuleName.toChars result)) @?= 2
   , testCase "empty module name behavior" $ do
       let result = ModuleName.fromChars ""
@@ -523,6 +524,7 @@ testActualProperties = testGroup "Real property tests"
 **CRITICAL ANTI-FAKE TESTING RULES:**
 
 ❌ **NEVER create these meaningless tests:**
+
 - Mock functions: `isValid _ = True`, `alwaysPasses _ = False`
 - Reflexive equality: `version == version`, `name == name`
 - **Meaningless distinctness**: `mainName /= trueName`, `basics /= maybe`
@@ -531,6 +533,7 @@ testActualProperties = testGroup "Real property tests"
 - **Non-empty testing**: `assertBool "non-empty" (not (null result))`
 
 ✅ **ALWAYS create these meaningful tests:**
+
 - **Exact value verification**: `Name.toChars Name._main @?= "main"`
 - **Complete show testing**: `show Package.core @?= "Name {_author = elm, _project = core}"`
 - **Actual behavior**: `Name.toChars (Name.fromChars "test") @?= "test"`
@@ -538,13 +541,14 @@ testActualProperties = testGroup "Real property tests"
 - **Error conditions**: `parseInvalid "bad input" @?= Left expectedError`
 
 **MEANINGLESS vs MEANINGFUL Examples:**
+
 ```haskell
 -- ❌ MEANINGLESS: Testing that constants are different
 assertBool "_main and true are different" (Name._main /= Name.true)
 assertBool "basics and maybe are different" (ModuleName.basics /= ModuleName.maybe)
 
 -- ✅ MEANINGFUL: Testing exact string values
-Name.toChars Name._main @?= "main"  
+Name.toChars Name._main @?= "main"
 Name.toChars Name.true @?= "True"
 Name.toChars Name.false @?= "False"
 
@@ -577,7 +581,7 @@ make test-golden
 # Run with coverage - MUST BE ≥80% REAL COVERAGE
 make test-coverage
 
-# Run specific test pattern  
+# Run specific test pattern
 make test-match PATTERN="Parser"
 
 # Run Make-specific tests
@@ -591,7 +595,7 @@ make bench
 
 # MANDATORY: Check for mock functions before any commit
 grep -r "_ = True" test/    # Should return NOTHING
-grep -r "_ = False" test/   # Should return NOTHING  
+grep -r "_ = False" test/   # Should return NOTHING
 grep -r "always return" test/  # Should return NOTHING
 
 # MANDATORY: Check for reflexive equality tests

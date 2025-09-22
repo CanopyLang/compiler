@@ -1,3 +1,4 @@
+{-# LANGUAGE BangPatterns #-}
 {-# OPTIONS_GHC -Wall #-}
 
 module Canonicalize.Module
@@ -20,13 +21,20 @@ import qualified Canopy.ModuleName as ModuleName
 import qualified Canopy.Package as Pkg
 import qualified Data.Graph as Graph
 import qualified Data.Index as Index
+import Data.List (isPrefixOf)
+import qualified Data.List as List
 import Data.Map (Map)
 import qualified Data.Map as Map
 import qualified Data.Name as Name
+import qualified Data.Text as Text
+import qualified Foreign.FFI as FFI
+import qualified FFI.Storage as FFIStorage
 import qualified Reporting.Annotation as A
 import qualified Reporting.Error.Canonicalize as Error
 import qualified Reporting.Result as Result
+import qualified System.IO.Unsafe
 import qualified Reporting.Warning as W
+import Control.Exception (SomeException, catch)
 
 -- RESULT
 
@@ -36,7 +44,7 @@ type Result i w a =
 -- MODULES
 
 canonicalize :: Pkg.Name -> Map ModuleName.Raw I.Interface -> Src.Module -> Result i [W.Warning] Can.Module
-canonicalize pkg ifaces modul@(Src.Module _ exports docs imports values _ _ binops effects) =
+canonicalize pkg ifaces modul@(Src.Module _ exports docs imports foreignImports values _ _ binops effects) =
   do
     let home = ModuleName.Canonical pkg (Src.getName modul)
     let cbinops = Map.fromList (fmap canonicalizeBinop binops)
@@ -44,8 +52,11 @@ canonicalize pkg ifaces modul@(Src.Module _ exports docs imports values _ _ bino
     (env, cunions, caliases) <-
       Foreign.createInitialEnv home ifaces imports >>= Local.add modul
 
-    cvalues <- canonicalizeValues env values
-    ceffects <- Effects.canonicalize env values cunions effects
+    -- Process FFI imports and add to environment
+    envWithFFI <- addFFIToEnv env foreignImports
+
+    cvalues <- canonicalizeValues envWithFFI values
+    ceffects <- Effects.canonicalize envWithFFI values cunions effects
     cexports <- canonicalizeExports values cunions caliases cbinops ceffects exports
 
     return $ Can.Module home cexports docs cvalues cunions caliases cbinops ceffects
@@ -249,3 +260,287 @@ checkPorts effects name =
 ok :: Name.Name -> A.Region -> Can.Export -> Result i w (Dups.Dict (A.Located Can.Export))
 ok name region export =
   Result.ok $ Dups.one name region (A.At region export)
+
+-- FFI SUPPORT
+
+addFFIToEnv :: Env.Env -> [Src.ForeignImport] -> Result i [W.Warning] Env.Env
+addFFIToEnv env foreignImports =
+  case foreignImports of
+    [] ->
+      Result.ok env
+    [Src.ForeignImport (FFI.JavaScriptFFI jsPath) alias _region] ->
+      let aliasName = A.toValue alias
+          home = Env._home env
+          ffiModuleName = ModuleName.Canonical (ModuleName._package home) aliasName
+      in case parseJavaScriptFile jsPath (Name.toChars aliasName) of
+           Left _err -> Result.throw (Error.ImportNotFound A.one (Name.fromChars jsPath) [])
+           Right functions -> addParsedFunctionsToEnv env ffiModuleName aliasName functions
+    _fis ->
+      -- Multiple foreign imports not yet supported
+      Result.ok env
+
+-- PROPER JAVASCRIPT FILE PARSING IMPLEMENTATION
+parseJavaScriptFile :: String -> String -> Either String [(String, String)] -- [(functionName, canopyType)]
+parseJavaScriptFile jsPath alias = do
+  -- Step 1: Read the actual JavaScript file from filesystem
+  jsContent <- readJavaScriptFileIO jsPath alias
+  -- Step 2: Parse JSDoc comments and function declarations
+  parseJavaScriptContent jsContent
+
+-- Read JavaScript file from filesystem
+readJavaScriptFileIO :: String -> String -> Either String String
+readJavaScriptFileIO jsPath alias =
+  -- PERMANENT RULE: NO HARDCODING OF FFI PATHS - read from foreign import statements
+  -- Use ONLY the exact path specified in the foreign import statement
+  let paths = [jsPath]
+  in case System.IO.Unsafe.unsafePerformIO (tryPaths paths) of
+    Left err -> Left err
+    Right (actualPath, content) ->
+      let !_ = System.IO.Unsafe.unsafePerformIO (FFIStorage.storeFFIInfo actualPath content alias)
+      in Right content
+  where
+    tryPaths :: [String] -> IO (Either String (String, String))
+    tryPaths [] = return (Left ("Cannot read JavaScript file: " ++ jsPath ++ ". Ensure the file exists relative to your project root."))
+    tryPaths (path:rest) = do
+      result <- try (readFile path)
+      case result of
+        Left (_ :: SomeException) -> tryPaths rest
+        Right content -> return (Right (path, content))
+
+    try :: IO a -> IO (Either SomeException a)
+    try action = (Right <$> action) `catch` (return . Left)
+
+
+-- Parse JavaScript content to extract functions and their types
+parseJavaScriptContent :: String -> Either String [(String, String)]
+parseJavaScriptContent jsContent =
+  Right (extractFunctionsWithTypes (lines jsContent))
+
+-- Extract functions with their @canopy-type annotations
+extractFunctionsWithTypes :: [String] -> [(String, String)]
+extractFunctionsWithTypes [] = []
+extractFunctionsWithTypes (line:rest) =
+  case parseCanopyTypeAnnotation line of
+    Just canopyType ->
+      case findNextFunctionDeclaration rest of
+        Just functionName -> (functionName, canopyType) : extractFunctionsWithTypes rest
+        Nothing -> extractFunctionsWithTypes rest
+    Nothing -> extractFunctionsWithTypes rest
+
+-- Parse @canopy-type annotation from a line
+parseCanopyTypeAnnotation :: String -> Maybe String
+parseCanopyTypeAnnotation line =
+  let trimmed = dropWhile (`elem` (" *" :: String)) line
+  in if ("@canopy-type " :: String) `isPrefixOf` trimmed
+     then Just (drop (length ("@canopy-type " :: String)) trimmed)
+     else Nothing
+
+-- Find the next function declaration after type annotation
+findNextFunctionDeclaration :: [String] -> Maybe String
+findNextFunctionDeclaration [] = Nothing
+findNextFunctionDeclaration (line:rest) =
+  case extractFunctionName line of
+    Just name -> Just name
+    Nothing -> findNextFunctionDeclaration rest
+
+-- Extract function name from a JavaScript function declaration
+extractFunctionName :: String -> Maybe String
+extractFunctionName line =
+  let trimmed = dropWhile (`elem` (" */" :: String)) line
+  in if ("function " :: String) `isPrefixOf` trimmed
+     then let afterFunction = drop (length ("function " :: String)) trimmed
+              nameEnd = takeWhile (\c -> c /= '(' && c /= ' ') afterFunction
+          in if null nameEnd then Nothing else Just nameEnd
+     else Nothing
+
+-- DYNAMIC FUNCTION ENVIRONMENT GENERATION
+addParsedFunctionsToEnv :: Env.Env -> ModuleName.Canonical -> Name.Name -> [(String, String)] -> Result i [W.Warning] Env.Env
+addParsedFunctionsToEnv env ffiModuleName aliasName functions = do
+  -- Dynamically process each parsed function
+  processedFunctions <- traverse (processParsedFunction ffiModuleName) functions
+
+  -- Build environment dynamically
+  let (vars, qVars) = buildDynamicEnvironment aliasName processedFunctions
+      newVars = List.foldl' (\acc (name, var) -> Map.insert name var acc) (Env._vars env) vars
+      newQVars = Map.insertWith Map.union aliasName qVars (Env._q_vars env)
+      newEnv = env { Env._vars = newVars, Env._q_vars = newQVars }
+
+  Result.ok newEnv
+
+-- Process a single parsed function (name, typeString) into Canopy types
+processParsedFunction :: ModuleName.Canonical -> (String, String) -> Result i [W.Warning] (String, Can.Annotation, Env.Var)
+processParsedFunction ffiModuleName (functionName, typeString) = do
+  -- Parse the type string into actual Canopy types
+  canopyType <- parseTypeString typeString
+  let annotation = Can.Forall Map.empty canopyType
+      var = Env.Foreign ffiModuleName annotation
+  Result.ok (functionName, annotation, var)
+
+-- Build the dynamic environment from processed functions
+buildDynamicEnvironment :: Name.Name -> [(String, Can.Annotation, Env.Var)] -> ([(Name.Name, Env.Var)], Map.Map Name.Name (Env.Info Can.Annotation))
+buildDynamicEnvironment aliasName processedFunctions =
+  let -- Build vars with qualified names (Module.functionName)
+      vars = List.map (\(fname, _, var) ->
+               (Name.fromChars (Name.toChars aliasName ++ "." ++ fname), var)
+             ) processedFunctions
+
+      -- Build qualified vars (Module.functionName syntax)
+      qVars = Map.fromList (List.map (\(fname, annotation, _) ->
+                (Name.fromChars fname, Env.Specific ffiModuleName annotation)
+              ) processedFunctions)
+              where ffiModuleName = ModuleName.Canonical (Pkg.dummyName) aliasName
+
+  in (vars, qVars)
+
+-- Parse type string like "Int -> Int -> Int" into Canopy types
+parseTypeString :: String -> Result i [W.Warning] Can.Type
+parseTypeString typeStr =
+  case parseTypeTokens (tokenizeCanopyType (Text.pack typeStr)) of
+    Just canopyType -> Result.ok canopyType
+    Nothing -> Result.throw (Error.ImportNotFound A.one (Name.fromChars typeStr) [])
+
+-- Tokenize Canopy type string correctly, handling multi-word types
+-- First split by arrows, then handle each segment as a potentially multi-word type
+tokenizeCanopyType :: Text.Text -> [String]
+tokenizeCanopyType typeText =
+  let arrowSegments = Text.splitOn "->" typeText
+      nonEmptySegments = filter (not . Text.null . Text.strip) arrowSegments
+      processedSegments = map (Text.unpack . Text.strip) nonEmptySegments
+  in case processedSegments of
+       [] -> []
+       [single] -> [single]  -- No arrows, just a single type
+       multiple -> List.intercalate ["->"] (map (:[]) multiple)  -- Insert arrows between segments
+
+-- Parse type tokens into Canopy types
+parseTypeTokens :: [String] -> Maybe Can.Type
+parseTypeTokens tokens =
+  case tokens of
+    [] -> Nothing
+    [typeName] -> Just (parseBasicType typeName)
+    ["(", ")"] -> Just (Can.TType ModuleName.basics (Name.fromChars "Unit") [])
+    (t1 : "->" : rest) ->
+      case parseTypeTokens rest of
+        Just restType -> Just (Can.TLambda (parseComplexType [t1]) restType)
+        Nothing -> Nothing
+    _ -> Just (parseComplexType tokens)
+
+-- Parse complex types that may have multiple words
+parseComplexType :: [String] -> Can.Type
+parseComplexType tokens =
+  case tokens of
+    [] -> Can.TType ModuleName.basics (Name.fromChars "Unit") []
+    ["(", ")"] -> Can.TType ModuleName.basics (Name.fromChars "Unit") []
+    [typeName] -> parseBasicType typeName
+    ("Task" : errorType : resultType : _rest) ->
+      -- Handle Task types: Task ErrorType ResultType -> use Task module from core
+      Can.TType (ModuleName.Canonical Pkg.core (Name.fromChars "Task")) (Name.fromChars "Task")
+        [parseBasicType errorType, parseBasicType resultType]
+    multiWordTokens ->
+      -- Handle multi-word types like "Initialized AudioContext" as a single opaque type
+      let typeName = unwords multiWordTokens
+      in parseBasicType typeName
+
+-- Parse basic type names
+parseBasicType :: String -> Can.Type
+parseBasicType typeName =
+  case typeName of
+    "Int" -> Can.TType ModuleName.basics (Name.fromChars "Int") []
+    "Float" -> Can.TType ModuleName.basics (Name.fromChars "Float") []
+    "Bool" -> Can.TType ModuleName.basics (Name.fromChars "Bool") []
+    "String" -> Can.TType ModuleName.string (Name.fromChars "String") []
+    "()" -> Can.TType ModuleName.basics (Name.fromChars "Unit") []
+    -- Handle complex types like "AudioContext", "OscillatorNode", etc.
+    _ -> Can.TType ModuleName.basics (Name.fromChars typeName) []
+
+{-
+addSingleFFI :: Env.Env -> Src.ForeignImport -> Result i [W.Warning] Env.Env
+addSingleFFI env (Src.ForeignImport target alias _region) =
+  case target of
+    FFI.JavaScriptFFI jsFilePath ->
+      -- Parse the JavaScript file and add functions to environment
+      case addFFIFunctions env alias jsFilePath of
+        Left _errMsg -> Result.throw (Error.ImportNotFound A.one (Name.fromChars "FFI") []) -- TODO: Better error handling
+        Right newEnv -> Result.ok newEnv
+    FFI.WebAssemblyFFI _ ->
+      -- WebAssembly not supported yet
+      Result.ok env
+
+addFFIFunctions :: Env.Env -> A.Located Name.Name -> String -> Either Text.Text Env.Env
+addFFIFunctions env alias jsFilePath = do
+  -- Read the JavaScript file
+  jsContent <- case readJavaScriptFile jsFilePath of
+    Left err -> Left err
+    Right content -> Right content
+
+  -- Parse the JavaScript file to extract FFI functions
+  ffiFunctions <- FFI.parseJavaScriptFile jsFilePath jsContent
+
+  -- Add each function to the environment
+  let aliasName = A.toValue alias
+      home = Env._home env
+      ffiModuleName = ModuleName.Canonical (ModuleName._package home) aliasName
+
+  Right (addFFIFunctionsToEnv env ffiModuleName ffiFunctions)
+
+readJavaScriptFile :: String -> Either Text.Text Text.Text
+readJavaScriptFile jsFilePath =
+  -- PERMANENT RULE: NO HARDCODING OF FFI PATHS - read from foreign import statements
+  -- Read ANY JavaScript file path specified in the foreign import statement
+  case System.IO.Unsafe.unsafePerformIO (tryReadFile jsFilePath) of
+    Left err -> Left ("Cannot read file: " <> Text.pack err)
+    Right content -> Right (Text.pack content)
+  where
+    tryReadFile :: String -> IO (Either String String)
+    tryReadFile path = do
+      result <- try (readFile path)
+      case result of
+        Left (_ :: SomeException) -> return (Left ("File not found or cannot be read: " ++ path))
+        Right content -> return (Right content)
+
+    try :: IO a -> IO (Either SomeException a)
+    try action = (Right <$> action) `catch` (return . Left)
+
+addFFIFunctionsToEnv :: Env.Env -> ModuleName.Canonical -> Map.Map Text.Text FFI.FFIFunction -> Env.Env
+addFFIFunctionsToEnv env ffiModuleName ffiFunctions =
+  let aliasName = ModuleName._module ffiModuleName
+      vars = Env._vars env
+      qVars = Env._q_vars env
+
+      -- Convert each FFI function to environment entries
+      (newVars, newQVars) = Map.foldlWithKey (addFFIFunction aliasName ffiModuleName) (vars, qVars) ffiFunctions
+  in env { Env._vars = newVars, Env._q_vars = newQVars }
+
+addFFIFunction :: Name.Name -> ModuleName.Canonical -> (Map.Map Name.Name Env.Var, Env.Qualified Can.Annotation) -> Text.Text -> FFI.FFIFunction -> (Map.Map Name.Name Env.Var, Env.Qualified Can.Annotation)
+addFFIFunction aliasName ffiModuleName (vars, qVars) funcNameText ffiFunc =
+  let funcName = Name.fromChars (Text.unpack funcNameText)
+      canType = ffiTypeToCanonicalType (FFI.ffiFuncOutputType ffiFunc) (FFI.ffiFuncInputTypes ffiFunc)
+      annotation = Can.Forall Map.empty canType
+      var = Env.Foreign ffiModuleName annotation
+      qualifiedName = Name.fromChars (Name.toChars aliasName ++ "." ++ Text.unpack funcNameText)
+      newVars = Map.insert qualifiedName var vars
+      -- For qualified vars, we need to update the nested map structure
+      info = Env.Specific ffiModuleName annotation
+      innerMap = Map.singleton funcName info
+      newQVars = Map.insertWith Map.union aliasName innerMap qVars
+  in (newVars, newQVars)
+
+ffiTypeToCanonicalType :: FFI.FFIType -> [FFI.FFIType] -> Can.Type
+ffiTypeToCanonicalType returnType inputTypes =
+  let canReturnType = ffiTypeToCanType returnType
+      canInputTypes = map ffiTypeToCanType inputTypes
+  in foldr Can.TLambda canReturnType canInputTypes
+
+ffiTypeToCanType :: FFI.FFIType -> Can.Type
+ffiTypeToCanType ffiType =
+  case ffiType of
+    FFI.FFIBasic "Int" -> Can.TType ModuleName.basics (Name.fromChars "Int") []
+    FFI.FFIBasic "Float" -> Can.TType ModuleName.basics (Name.fromChars "Float") []
+    FFI.FFIBasic "String" -> Can.TType ModuleName.string (Name.fromChars "String") []
+    FFI.FFIBasic "Bool" -> Can.TType ModuleName.basics (Name.fromChars "Bool") []
+    FFI.FFIBasic _ -> Can.TType ModuleName.string (Name.fromChars "String") [] -- Default to String for unknown basics
+    FFI.FFIMaybe innerType ->
+      Can.TType ModuleName.maybe (Name.fromChars "Maybe") [ffiTypeToCanType innerType]
+    FFI.FFIList innerType ->
+      Can.TType ModuleName.list (Name.fromChars "List") [ffiTypeToCanType innerType]
+    _ -> Can.TType ModuleName.string (Name.fromChars "String") [] -- Default to String for unsupported types
+-}

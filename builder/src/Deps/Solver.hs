@@ -434,7 +434,6 @@ initEnvForReactorTH =
     zokkaCache <- Stuff.getZokkaCache
     customRepositoriesConfigLocation <- Stuff.getOrCreateZokkaCustomRepositoryConfig
     customRepositoriesDataOrErr <- loadCustomRepositoriesDataForReactorTH customRepositoriesConfigLocation
-    print $ show customRepositoriesDataOrErr
     case customRepositoriesDataOrErr of
       Left err -> pure $ Left (RP_BadCustomReposData err (unZokkaCustomRepositoryConfigFilePath customRepositoriesConfigLocation))
       Right customRepositoriesData ->
@@ -448,7 +447,6 @@ initEnvForReactorTH =
               Nothing ->
                 do
                   eitherRegistry <- Registry.fetch manager zokkaCache customRepositoriesData modifiedTimeOfCustomRepositoriesData
-                  print $ show eitherRegistry
                   case eitherRegistry of
                     Right latestRegistry ->
                       return . Right $ Env cache manager (Online manager) latestRegistry packageOverridesCache

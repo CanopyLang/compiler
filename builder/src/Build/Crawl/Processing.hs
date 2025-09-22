@@ -107,10 +107,10 @@ validateAndProcess
   -- ^ Parsed module AST
   -> IO Status
   -- ^ Validation status result
-validateAndProcess config (Src.Module maybeActualName _ _ imports values _ _ _ _) =
+validateAndProcess config srcModule@(Src.Module maybeActualName _ _ imports _ values _ _ _ _) =
   case maybeActualName of
     Nothing -> pure $ SBadSyntax (config ^. parseConfigPath) (config ^. parseConfigTime) (config ^. parseConfigSource) (Syntax.ModuleNameUnspecified (config ^. parseConfigExpectedName))
-    Just name@(A.At _ actualName) -> validateModuleName (createValidationConfig config actualName imports values name)
+    Just name@(A.At _ actualName) -> validateModuleName (createValidationConfig config actualName srcModule imports values name)
 
 -- | Validate module name matches expected.
 --
@@ -142,7 +142,7 @@ processValidModule
 processValidModule config = do
   let deps = fmap Src.getImportName (config ^. validationConfigImports)
   let local = Details.Local (config ^. validationConfigPath) (config ^. validationConfigTime) deps (any isMain (config ^. validationConfigValues)) (config ^. validationConfigLastChange) (config ^. validationConfigBuildID)
-  Deps.crawlDeps (config ^. validationConfigEnv) (config ^. validationConfigMVar) deps (SChanged local (config ^. validationConfigSource) undefined (config ^. validationConfigDocsNeed))
+  Deps.crawlDeps (config ^. validationConfigEnv) (config ^. validationConfigMVar) deps (SChanged local (config ^. validationConfigSource) (config ^. validationConfigSrcModule) (config ^. validationConfigDocsNeed))
 
 -- | Check if value is main function.
 --

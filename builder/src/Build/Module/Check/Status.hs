@@ -285,7 +285,7 @@ processCachedDepsStatus config path time depsStatus =
 --
 -- IO action producing compilation result
 processChangedStatus :: Env -> MVar ResultDict -> ModuleName.Raw -> Details.Local -> B.ByteString -> Src.Module -> DocsNeed -> IO Result
-processChangedStatus env@(Env _ root _ _ _ _ _) resultsMVar name local source modul@(Src.Module _ _ _ imports _ _ _ _ _) docsNeed = do
+processChangedStatus env@(Env _ root _ _ _ _ _) resultsMVar name local source modul@(Src.Module _ _ _ imports _ _ _ _ _ _) docsNeed = do
   let deps = local ^. Details.deps
   let lastCompile = local ^. Details.lastCompile
   results <- MVar.readMVar resultsMVar

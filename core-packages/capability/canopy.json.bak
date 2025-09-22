@@ -1,0 +1,3 @@
+# REMOVED: This canopy.json was interfering with direct source inclusion
+# The core-packages/capability directory should be included as source files only
+# TODO: Restore as real package when canopy/capability is published

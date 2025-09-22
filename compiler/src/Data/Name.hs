@@ -92,6 +92,7 @@ module Data.Name
     debugger,
     bitwise,
     basics,
+    capability,
     utils,
     negate,
     true,

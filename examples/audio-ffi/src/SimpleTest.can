@@ -1,0 +1,29 @@
+module SimpleTest exposing (main)
+
+import Html exposing (Html, div, text, button)
+import Html.Events exposing (onClick)
+import Capability exposing (UserActivated, isUserActivationAvailable, isUserActivationActive, consumeUserActivation)
+
+main : Html Never
+main =
+    div []
+        [ div [] [ text ("User activation available: " ++ Debug.toString isUserActivationAvailable) ]
+        , div [] [ text ("User activation active: " ++ Debug.toString isUserActivationActive) ]
+        , button [ onClick TestClick ] [ text "Test User Activation" ]
+        ]
+
+type Msg
+    = TestClick
+
+update : Msg -> Model -> Model
+update msg model =
+    case msg of
+        TestClick ->
+            let
+                activation = consumeUserActivation
+            in
+            { model | lastActivation = Just activation }
+
+type alias Model =
+    { lastActivation : Maybe UserActivated
+    }

@@ -24,6 +24,9 @@ import qualified Parse.Symbol as Symbol
 import qualified Parse.Variable as Var
 import qualified Reporting.Annotation as A
 import qualified Reporting.Error.Syntax as E
+import qualified Foreign.FFI as FFI
+import qualified Parse.String as String
+import qualified Canopy.String as ES
 
 -- FROM BYTE STRING
 
@@ -56,6 +59,7 @@ isKernel projectType =
 data Module = Module
   { _header :: Maybe Header,
     _imports :: [Src.Import],
+    _foreignImports :: [Src.ForeignImport],
     _infixes :: [A.Located Src.Infix],
     _decls :: [Decl.Decl]
   }
@@ -64,22 +68,22 @@ chompModule :: ProjectType -> Parser E.Module Module
 chompModule projectType =
   do
     header <- chompHeader
-    imports <- chompImports (if isCore projectType then [] else Imports.defaults)
+    (imports, foreignImports) <- chompAllImports (if isCore projectType then [] else Imports.defaults) []
     infixes <- if isKernel projectType then chompInfixes [] else return []
     decls <- specialize E.Declarations $ chompDecls []
-    return (Module header imports infixes decls)
+    return (Module header imports foreignImports infixes decls)
 
 -- CHECK MODULE
 
 checkModule :: ProjectType -> Module -> Either E.Error Src.Module
-checkModule projectType (Module maybeHeader imports infixes decls) =
+checkModule projectType (Module maybeHeader imports foreignImports infixes decls) =
   let (values, unions, aliases, ports) = categorizeDecls [] [] [] [] decls
    in case maybeHeader of
         Just (Header name effects exports docs) ->
-          Src.Module (Just name) exports (toDocs docs decls) imports values unions aliases infixes
+          Src.Module (Just name) exports (toDocs docs decls) imports foreignImports values unions aliases infixes
             <$> checkEffects projectType ports effects
         Nothing ->
-          Right . Src.Module Nothing (A.At A.one Src.Open) (Src.NoDocs A.one) imports values unions aliases infixes $
+          Right . Src.Module Nothing (A.At A.one Src.Open) (Src.NoDocs A.one) imports foreignImports values unions aliases infixes $
             ( case ports of
                 [] -> Src.NoEffects
                 _ : _ -> Src.Ports ports
@@ -326,6 +330,18 @@ spacesEm =
 
 -- IMPORTS
 
+chompAllImports :: [Src.Import] -> [Src.ForeignImport] -> Parser E.Module ([Src.Import], [Src.ForeignImport])
+chompAllImports imports foreignImports =
+  oneOfWithFallback
+    [ do
+        foreignImport_ <- chompForeignImport
+        chompAllImports imports (foreignImport_ : foreignImports),
+      do
+        import_ <- chompImport
+        chompAllImports (import_ : imports) foreignImports
+    ]
+    (reverse imports, reverse foreignImports)
+
 chompImports :: [Src.Import] -> Parser E.Module [Src.Import]
 chompImports is =
   oneOfWithFallback
@@ -382,6 +398,43 @@ chompExposing name maybeAlias =
     exposed <- specialize E.ImportExposingList exposing
     freshLine E.ImportEnd
     return $ Src.Import name maybeAlias exposed
+
+-- FOREIGN IMPORTS
+
+chompForeignImport :: Parser E.Module Src.ForeignImport
+chompForeignImport =
+  do
+    start <- getPosition
+    Keyword.foreign_ E.ImportStart
+    Space.chompAndCheckIndent E.ModuleSpace E.ImportIndentName
+    Keyword.import_ E.ImportStart
+    Space.chompAndCheckIndent E.ModuleSpace E.ImportIndentName
+    target <- chompForeignTarget
+    Space.chompAndCheckIndent E.ModuleSpace E.ImportIndentAlias
+    Keyword.as_ E.ImportAs
+    Space.chompAndCheckIndent E.ModuleSpace E.ImportIndentAlias
+    alias <- addLocation (Var.upper E.ImportAlias)
+    end <- getPosition
+    freshLine E.ImportEnd
+    let region = A.Region start end
+    return $ Src.ForeignImport target alias region
+
+chompForeignTarget :: Parser E.Module FFI.FFITarget
+chompForeignTarget =
+  oneOf
+    E.ImportName
+    [ do
+        Keyword.javascript_ E.ImportName
+        Space.chompAndCheckIndent E.ModuleSpace E.ImportIndentName
+        path <- parseStringLiteral E.ImportName
+        return (FFI.JavaScriptFFI path)
+    ]
+
+parseStringLiteral :: (Row -> Col -> E.Module) -> Parser E.Module String
+parseStringLiteral toError =
+  do
+    esString <- String.string toError (\_ _ _ -> toError 0 0)
+    return (ES.toChars esString)
 
 -- LISTING
 

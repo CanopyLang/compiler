@@ -180,12 +180,12 @@ parseAndValidateModule
 parseAndValidateModule env mvar docsNeed expectedName path time source projectType buildID lastChange =
   case Parse.fromByteString projectType source of
     Left err -> pure $ SBadSyntax path time source err
-    Right (Src.Module maybeActualName _ _ imports values _ _ _ _) ->
+    Right srcModule@(Src.Module maybeActualName _ _ imports _ values _ _ _ _) ->
       case maybeActualName of
         Nothing -> pure $ SBadSyntax path time source (Syntax.ModuleNameUnspecified expectedName)
         Just name@(A.At _ actualName) ->
           if expectedName == actualName
-            then processValidatedModule env mvar docsNeed path time source imports values buildID lastChange
+            then processValidatedModule env mvar docsNeed path time source srcModule imports values buildID lastChange
             else pure $ SBadSyntax path time source (Syntax.ModuleNameMismatch expectedName name)
 
 -- | Process validated module.
@@ -198,15 +198,16 @@ processValidatedModule
   -> FilePath
   -> File.Time
   -> B.ByteString
+  -> Src.Module
   -> [Src.Import]
   -> [A.Located Src.Value]
   -> Details.BuildID
   -> Details.BuildID
   -> IO Status
-processValidatedModule env mvar docsNeed path time source imports values buildID lastChange = do
+processValidatedModule env mvar docsNeed path time source srcModule imports values buildID lastChange = do
   let deps = fmap Src.getImportName imports
   let local = Details.Local path time deps (any isMainValue values) lastChange buildID
-  crawlDeps env mvar deps (SChanged local source undefined docsNeed)
+  crawlDeps env mvar deps (SChanged local source srcModule docsNeed)
 
 -- | Check if value is main function.
 --

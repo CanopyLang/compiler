@@ -38,7 +38,7 @@
 --
 -- 1. Environment setup and validation
 -- 2. Module crawling and dependency discovery
--- 3. Midpoint checking for cycles and dependencies  
+-- 3. Midpoint checking for cycles and dependencies
 -- 4. Module compilation and checking
 -- 5. Result finalization and documentation generation
 --
@@ -51,75 +51,76 @@
 -- @since 0.19.1
 module Build.Orchestration.Workflow
   ( -- * Main Build Functions
-    fromExposed
-  , ExposedBuildConfig (..)
-    
-  -- * Environment Management  
-  , makeEnv
-  , toAbsoluteSrcDir
-  , addRelative
-    
-  -- * Build Phase Coordination
-  , performCrawlPhase
-  , performCompilePhase
-  , compileModules
-    
-  -- * Threading Utilities
-  , fork
-  , forkWithKey
-    
-  -- * Configuration Lenses
-  , ebcStyle
-  , ebcRoot
-  , ebcDetails
-  , ebcDocsGoal
-  ) where
+    fromExposed,
+    ExposedBuildConfig (..),
+
+    -- * Environment Management
+    makeEnv,
+    toAbsoluteSrcDir,
+    addRelative,
+
+    -- * Build Phase Coordination
+    performCrawlPhase,
+    performCompilePhase,
+    compileModules,
+
+    -- * Threading Utilities
+    fork,
+    forkWithKey,
+
+    -- * Configuration Lenses
+    ebcStyle,
+    ebcRoot,
+    ebcDetails,
+    ebcDocsGoal,
+  )
+where
 
 -- Canopy-specific imports
-import qualified Canopy.Details as Details
-import qualified Canopy.ModuleName as ModuleName
-import qualified Canopy.Outline as Outline
 
 -- Build system modules
 import Build.Config (CheckConfig (..), CrawlConfig (..))
 import qualified Build.Crawl as Crawl
 import qualified Build.Module.Check as Check
 import Build.Types
-  ( Env (..)
-  , AbsoluteSrcDir (..)
-  , Status (..)
-  , DocsNeed (..)
-  , DocsGoal (..)
-  , Dependencies
-  , Result
+  ( AbsoluteSrcDir (..),
+    Dependencies,
+    DocsGoal (..),
+    DocsNeed (..),
+    Env (..),
+    Result,
+    Status (..),
   )
 import qualified Build.Validation as Validation
-
+import qualified Canopy.Details as Details
+import qualified Canopy.ModuleName as ModuleName
+import qualified Canopy.Outline as Outline
 -- Parser and AST imports
-import qualified Parse.Module as Parse
 
 -- Standard library imports
-import Control.Concurrent.MVar
-  ( MVar
-  , newEmptyMVar
-  , putMVar
-  , readMVar
-  )
+
 import qualified Control.Concurrent as Concurrent
+import Control.Concurrent.MVar
+  ( MVar,
+    newEmptyMVar,
+    putMVar,
+    readMVar,
+  )
+import Control.Lens (makeLenses)
 import qualified Data.Foldable as Foldable
 import Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
 import qualified Data.Map.Utils as MapUtils
 import Data.NonEmptyList (List)
 import qualified Data.NonEmptyList as NE
+import qualified Parse.Module as Parse
 import qualified Reporting
 import qualified Reporting.Exit as Exit
 import qualified System.Directory as Dir
 import System.FilePath ((</>))
-import Control.Lens (makeLenses)
 
 -- =============================================================================
--- Project Validation Functions  
+-- Project Validation Functions
 -- =============================================================================
 -- Local implementation to avoid circular imports between Build.Orchestration
 -- and Build.Orchestration.Workflow modules.
@@ -151,15 +152,16 @@ checkMidpoint dmvar statuses =
 --
 -- @since 0.19.1
 data ExposedBuildConfig docs = ExposedBuildConfig
-  { _ebcStyle :: !Reporting.Style
-    -- ^ Reporting style for build output
-  , _ebcRoot :: !FilePath
-    -- ^ Project root directory
-  , _ebcDetails :: !Details.Details
-    -- ^ Project details and configuration
-  , _ebcDocsGoal :: !(DocsGoal docs)
-    -- ^ Documentation generation goal
-  } deriving ()
+  { -- | Reporting style for build output
+    _ebcStyle :: !Reporting.Style,
+    -- | Project root directory
+    _ebcRoot :: !FilePath,
+    -- | Project details and configuration
+    _ebcDetails :: !Details.Details,
+    -- | Documentation generation goal
+    _ebcDocsGoal :: !(DocsGoal docs)
+  }
+  deriving ()
 
 -- Generate lenses for configuration
 makeLenses ''ExposedBuildConfig
@@ -182,11 +184,20 @@ makeEnv :: Reporting.BKey -> FilePath -> Details.Details -> IO Env
 makeEnv key root (Details.Details _ validOutline buildID locals foreigns _) =
   case validOutline of
     Details.ValidApp givenSrcDirs -> do
-      srcDirs <- traverse (toAbsoluteSrcDir root) (NE.toList givenSrcDirs)
-      pure $ Env key root Parse.Application srcDirs buildID locals foreigns
+      userSrcDirs <- traverse (toAbsoluteSrcDir root) (NE.toList givenSrcDirs)
+      -- TODO: Remove this when canopy/capability becomes a real package
+      -- For now, include core-packages so Capability module is available by default
+      -- Path is relative to the project root where canopy.json exists
+      corePackagesDir <- toAbsoluteSrcDir root (Outline.RelativeSrcDir "core-packages/capability/src")
+      let allSrcDirs = corePackagesDir : userSrcDirs
+      pure $ Env key root Parse.Application allSrcDirs buildID locals foreigns
     Details.ValidPkg pkg _ _ -> do
-      srcDir <- toAbsoluteSrcDir root (Outline.RelativeSrcDir "src")
-      pure $ Env key root (Parse.Package pkg) [srcDir] buildID locals foreigns
+      userSrcDir <- toAbsoluteSrcDir root (Outline.RelativeSrcDir "src")
+      -- TODO: Remove this when canopy/capability becomes a real package
+      -- For now, include core-packages so Capability module is available by default
+      -- Path is relative to the project root where canopy.json exists
+      corePackagesDir <- toAbsoluteSrcDir root (Outline.RelativeSrcDir "core-packages/capability/src")
+      pure $ Env key root (Parse.Package pkg) [corePackagesDir, userSrcDir] buildID locals foreigns
 
 -- | Convert a source directory to an absolute path.
 --
@@ -245,7 +256,7 @@ forkWithKey func =
 -- The build process:
 --
 -- 1. Creates build environment
--- 2. Crawls modules to discover dependencies  
+-- 2. Crawls modules to discover dependencies
 -- 3. Validates project structure and checks for cycles
 -- 4. Compiles modules and checks interfaces
 -- 5. Finalizes build artifacts and generates documentation
@@ -271,7 +282,7 @@ fromExposed (ExposedBuildConfig style root details docsGoal) exposed =
   Reporting.trackBuild style $ \key -> do
     env <- makeEnv key root details
     dmvar <- Details.loadInterfaces root details
-    
+
     statuses <- performCrawlPhase env dmvar docsGoal exposed
     performCompilePhase env dmvar root details docsGoal exposed statuses
 

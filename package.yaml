@@ -20,6 +20,7 @@ dependencies:
   - binary
   - bytestring
   - containers
+  - deepseq
   - directory
   - edit-distance
   - file-embed
@@ -33,7 +34,7 @@ dependencies:
   - http-types
   - tls < 2
   - language-glsl
-  - language-javascript >= 0.8.0.0
+  - language-javascript
   - lens
   - mtl
   - network

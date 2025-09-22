@@ -187,7 +187,7 @@ parseRootModule
   -- ^ Root module parsing status
 parseRootModule env mvar projectType path time source buildID =
   case Parse.fromByteString projectType source of
-    Right modul@(Src.Module _ _ _ imports values _ _ _ _) -> processRootModule env mvar path time source imports values buildID modul
+    Right modul@(Src.Module _ _ _ imports _ values _ _ _ _) -> processRootModule env mvar path time source imports values buildID modul
     Left syntaxError -> pure . SOutsideErr $ Error.Module "???" path time source (Error.BadSyntax syntaxError)
   where
     processRootModule e m p t s imports values bID modul = do

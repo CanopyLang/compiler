@@ -194,7 +194,7 @@ handleNotFoundDepsForRepl config problems =
       source = config ^. replSource
       modul = config ^. replModule
       resultMVars = config ^. replResultMVars
-      (Src.Module _ _ _ imports _ _ _ _ _) = modul
+      (Src.Module _ _ _ imports _ _ _ _ _ _) = modul
       importErrors = Imports.toImportErrors env resultMVars imports problems
    in return . Left $ Exit.ReplBadInput source (Error.BadImports importErrors)
 

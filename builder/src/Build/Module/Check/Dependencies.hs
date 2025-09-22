@@ -115,6 +115,7 @@ import Build.Module.Check.Config
   , cachedImportModuleName
   , cachedImportPath
   )
+import Build.Module.Check.Workflow (compile)
 
 -- | Process dependency status for changed module.
 --
@@ -295,7 +296,7 @@ handleCachedImportProblemsWithConfig config time problems = do
       env = config ^. cachedImportEnv
   (pure . RProblem) . Error.Module name path time source $
     case Parse.fromByteString projectType source of
-      Right (Src.Module _ _ _ imports _ _ _ _ _) ->
+      Right (Src.Module _ _ _ imports _ _ _ _ _ _) ->
         Error.BadImports (toImportErrors env undefined imports problems)
       Left err -> Error.BadSyntax err
 
@@ -358,10 +359,6 @@ checkDepsForModule :: FilePath -> ResultDict -> [ModuleName.Raw] -> Details.Buil
 checkDepsForModule root results deps lastCompile =
   checkDeps (DepsConfig root results deps lastCompile)
 
--- Forward declarations for functions implemented in other modules
--- | Compile module (implemented in Build.Module.Check.Workflow).
-compile :: Env -> DocsNeed -> Details.Local -> B.ByteString -> Map ModuleName.Raw I.Interface -> Src.Module -> IO Result
-compile = undefined -- This will be resolved by import from Workflow module
 
 -- | Convert import errors (placeholder for complex function).
 toImportErrors :: Env -> ResultDict -> [Src.Import] -> List (ModuleName.Raw, Import.Problem) -> List Import.Error

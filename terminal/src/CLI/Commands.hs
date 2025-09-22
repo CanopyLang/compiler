@@ -38,6 +38,9 @@ module CLI.Commands
     -- * Build Commands
     createMakeCommand,
 
+    -- * Testing Commands
+    createFFITestCommand,
+
     -- * Package Commands
     createInstallCommand,
     createPublishCommand,
@@ -59,6 +62,7 @@ import qualified Publish
 import qualified Repl
 import qualified Terminal
 import qualified Terminal.Helpers as Terminal
+import qualified Test.FFI as FFI
 import Text.PrettyPrint.ANSI.Leijen (Doc)
 import qualified Text.PrettyPrint.ANSI.Leijen as P
 
@@ -175,6 +179,20 @@ createDiffCommand =
     details = createDiffDetails
     example = createDiffExample
     args = createDiffArgs
+
+-- | Create the test-ffi command for FFI testing and validation.
+--
+-- The test-ffi command provides comprehensive testing of FFI functions
+-- including property-based testing, integration testing, and runtime validation.
+--
+-- @since 0.19.1
+createFFITestCommand :: Command
+createFFITestCommand =
+  Terminal.Command "test-ffi" Terminal.Uncommon details example Terminal.noArgs flags FFI.run
+  where
+    details = createFFITestDetails
+    example = createFFITestExample
+    flags = createFFITestFlags
 
 -- Internal command content creators
 
@@ -350,3 +368,33 @@ createDiffArgs =
       Terminal.require2 Diff.LocalInquiry Terminal.version Terminal.version,
       Terminal.require3 Diff.GlobalInquiry Terminal.package Terminal.version Terminal.version
     ]
+
+createFFITestDetails :: String
+createFFITestDetails =
+  "The `test-ffi` command provides comprehensive testing of FFI functions:"
+
+createFFITestExample :: Doc
+createFFITestExample =
+  stackDocuments
+    [ reflowText "For example:",
+      P.indent 4 $ P.green "canopy test-ffi",
+      reflowText
+        "This runs all FFI tests in your project, validating contracts and testing function behavior.",
+      P.indent 4 $ P.green "canopy test-ffi --generate --output test-generation/",
+      reflowText
+        "This generates test files without running them, useful for CI integration.",
+      P.indent 4 $ P.green "canopy test-ffi --watch",
+      reflowText
+        "This watches for changes and re-runs tests automatically."
+    ]
+
+createFFITestFlags :: Terminal.Flags FFI.FFITestConfig
+createFFITestFlags =
+  Terminal.flags FFI.FFITestConfig
+    |-- Terminal.onOff "generate" "Generate test files instead of running them"
+    |-- Terminal.flag "output" FFI.outputParser "Output directory for generated tests (default: test-generation/)"
+    |-- Terminal.onOff "watch" "Watch for file changes and re-run tests"
+    |-- Terminal.onOff "validate-only" "Only validate contracts, don't run tests"
+    |-- Terminal.onOff "verbose" "Verbose output showing detailed progress"
+    |-- Terminal.flag "property-runs" FFI.propertyRunsParser "Number of property test runs (default: 100)"
+    |-- Terminal.onOff "browser" "Run tests in browser instead of Node.js"

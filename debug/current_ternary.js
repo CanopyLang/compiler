@@ -1,1 +1,0 @@
-var $author$project$Main$absolute=function(n){return(n < 0)?(- n):n;};
