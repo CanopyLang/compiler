@@ -94,6 +94,8 @@ addEffects home effects graph@(Opt.LocalGraph main nodes fields) =
       graph
     Can.Ports ports ->
       Map.foldrWithKey (addPort home) graph ports
+    Can.FFI ->
+      graph
     Can.Manager _ _ _ manager ->
       let fx = Opt.Global home "$fx$"
           cmd = Opt.Global home "command"

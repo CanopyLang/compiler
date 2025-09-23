@@ -68,10 +68,39 @@ chompModule :: ProjectType -> Parser E.Module Module
 chompModule projectType =
   do
     header <- chompHeader
-    (imports, foreignImports) <- chompAllImports (if isCore projectType then [] else Imports.defaults) []
+    case header of
+      Just (Header _ (FFI _) _ _) ->
+        -- FFI modules allow flexible ordering of imports and declarations
+        chompFFIModule projectType header
+      _ ->
+        -- Regular modules follow strict ordering
+        do
+          (imports, foreignImports) <- chompAllImports (if isCore projectType then [] else Imports.defaults) []
+          infixes <- if isKernel projectType then chompInfixes [] else return []
+          decls <- specialize E.Declarations $ chompDecls []
+          return (Module header imports foreignImports infixes decls)
+
+chompFFIModule :: ProjectType -> Maybe Header -> Parser E.Module Module
+chompFFIModule projectType header =
+  do
+    (imports, foreignImports, decls) <- chompFFIContent (if isCore projectType then [] else Imports.defaults) [] []
     infixes <- if isKernel projectType then chompInfixes [] else return []
-    decls <- specialize E.Declarations $ chompDecls []
     return (Module header imports foreignImports infixes decls)
+
+chompFFIContent :: [Src.Import] -> [Src.ForeignImport] -> [Decl.Decl] -> Parser E.Module ([Src.Import], [Src.ForeignImport], [Decl.Decl])
+chompFFIContent imports foreignImports decls =
+  oneOfWithFallback
+    [ do
+        foreignImport_ <- chompForeignImport
+        chompFFIContent imports (foreignImport_ : foreignImports) decls,
+      do
+        import_ <- chompImport
+        chompFFIContent (import_ : imports) foreignImports decls,
+      do
+        (decl, _) <- specialize E.Declarations Decl.declaration
+        chompFFIContent imports foreignImports (decl : decls)
+    ]
+    (reverse imports, reverse foreignImports, reverse decls)
 
 -- CHECK MODULE
 
@@ -108,6 +137,14 @@ checkEffects projectType ports effects =
           case ports of
             [] -> Left (E.NoPorts region)
             _ : _ -> Right (Src.Ports ports)
+    FFI region ->
+      case projectType of
+        Package _ ->
+          Left (E.NoFFIModulesInPackage region)
+        Application ->
+          case ports of
+            [] -> Right (Src.FFI [])  -- Foreign imports handled separately
+            _ : _ -> Left (E.UnexpectedPort region)
     Manager region manager ->
       if isKernel projectType
         then case ports of
@@ -209,6 +246,7 @@ data Effects
   = NoEffects A.Region
   | Ports A.Region
   | Manager A.Region Src.Manager
+  | FFI A.Region
 
 chompHeader :: Parser E.Module (Maybe Header)
 chompHeader =
@@ -240,6 +278,19 @@ chompHeader =
           Space.chompAndCheckIndent E.ModuleSpace E.PortModuleProblem
           exports <- addLocation (specialize E.PortModuleExposing exposing)
           Just . Header name (Ports (A.Region start effectEnd)) exports <$> chompModuleDocCommentSpace,
+        -- ffi module MyThing exposing (..)
+        do
+          Keyword.ffi_ E.FFIModuleProblem
+          Space.chompAndCheckIndent E.ModuleSpace E.FFIModuleProblem
+          Keyword.module_ E.FFIModuleProblem
+          effectEnd <- getPosition
+          Space.chompAndCheckIndent E.ModuleSpace E.FFIModuleProblem
+          name <- addLocation (Var.moduleName E.FFIModuleName)
+          Space.chompAndCheckIndent E.ModuleSpace E.FFIModuleProblem
+          Keyword.exposing_ E.FFIModuleProblem
+          Space.chompAndCheckIndent E.ModuleSpace E.FFIModuleProblem
+          exports <- addLocation (specialize E.FFIModuleExposing exposing)
+          Just . Header name (FFI (A.Region start effectEnd)) exports <$> chompModuleDocCommentSpace,
         -- effect module MyThing where { command = MyCmd } exposing (..)
         do
           Keyword.effect_ E.Effect

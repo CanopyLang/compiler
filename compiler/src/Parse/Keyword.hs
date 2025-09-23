@@ -5,6 +5,7 @@ module Parse.Keyword
   ( type_,
     alias_,
     port_,
+    ffi_,
     if_,
     then_,
     else_,
@@ -47,6 +48,9 @@ alias_ = k5 0x61 0x6C 0x69 0x61 0x73
 
 port_ :: (Row -> Col -> x) -> Parser x ()
 port_ = k4 0x70 0x6F 0x72 0x74
+
+ffi_ :: (Row -> Col -> x) -> Parser x ()
+ffi_ = k3 0x66 0x66 0x69
 
 -- IF EXPRESSIONS
 

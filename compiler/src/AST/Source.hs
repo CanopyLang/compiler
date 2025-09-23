@@ -664,6 +664,7 @@ data Effects
   = NoEffects
   | Ports [Port]
   | Manager A.Region Manager
+  | FFI [ForeignImport]
   deriving (Show)
 
 -- | Effect manager specification.

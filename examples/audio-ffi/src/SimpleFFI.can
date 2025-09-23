@@ -1,0 +1,16 @@
+module SimpleFFI exposing (main)
+
+import Html exposing (Html, div, text)
+
+-- Test minimal FFI import
+foreign import javascript "external/capability.js" as CapabilityFFI
+
+-- Simple function call test
+main : Html Never
+main =
+    let
+        -- Test if we can call a simple JavaScript function with Unit argument
+        result = CapabilityFFI.isUserActivationAvailable ()
+    in
+    div []
+        [ text ("FFI Test Result: " ++ (if result then "True" else "False")) ]

@@ -67,6 +67,7 @@ data Error
   | NoPorts A.Region
   | NoPortsInPackage (A.Located Name.Name)
   | NoPortModulesInPackage A.Region
+  | NoFFIModulesInPackage A.Region
   | NoEffectsOutsideKernel A.Region
   | ParseError Module
   deriving (Show)
@@ -84,6 +85,10 @@ data Module
     PortModuleProblem Row Col
   | PortModuleName Row Col
   | PortModuleExposing Exposing Row Col
+  | --
+    FFIModuleProblem Row Col
+  | FFIModuleName Row Col
+  | FFIModuleExposing Exposing Row Col
   | --
     Effect Row Col
   | --
@@ -581,12 +586,23 @@ toReport source err =
           region
           Nothing
           ( D.reflow $
-              "Packages cannot declare any ports, so I am getting stuck here:",
+              "Packages cannot have `port module` declarations.",
+            D.reflow $
+              "Try using a regular `module` declaration instead. Ports are only allowed in applications."
+          )
+    NoFFIModulesInPackage region ->
+      Report.Report "PACKAGES CANNOT HAVE FFI MODULES" region [] $
+        Code.toSnippet
+          source
+          region
+          Nothing
+          ( D.reflow $
+              "Packages cannot have `ffi module` declarations, so I am getting stuck here:",
             D.stack
               [ D.fillSep $
                   [ "Remove",
                     "the",
-                    D.cyan "port",
+                    D.cyan "ffi",
                     "keyword",
                     "and",
                     "I",
@@ -596,7 +612,8 @@ toReport source err =
                     "to",
                     "continue."
                   ],
-                noteForPortsInPackage
+                D.reflow $
+                  "FFI modules are only allowed in applications, not in packages that other people can install."
               ]
           )
     NoEffectsOutsideKernel region ->
@@ -744,6 +761,49 @@ toParseErrorReport source modul =
                   ]
               )
     PortModuleExposing exposing row col ->
+      toExposingReport source exposing row col
+    FFIModuleProblem row col ->
+      let region = toRegion row col
+       in Report.Report "UNFINISHED FFI MODULE DECLARATION" region [] $
+            Code.toSnippet
+              source
+              region
+              Nothing
+              ( D.reflow $
+                  "I am parsing an `ffi module` declaration, but I got stuck here:",
+                D.stack
+                  [ D.reflow $
+                      "Here are some examples of valid `ffi module` declarations:",
+                    D.indent 4 $
+                      D.vcat $
+                        [ D.fillSep [D.cyan "ffi", D.cyan "module", "AudioDemo", D.cyan "exposing", "(playTone, stopTone)"],
+                          D.fillSep [D.cyan "ffi", D.cyan "module", "WebGL", D.cyan "exposing", "(.."]
+                        ],
+                    D.link "Note" "Read" "foreign-function-interface" "for more help."
+                  ]
+              )
+    FFIModuleName row col ->
+      let region = toRegion row col
+       in Report.Report "EXPECTING MODULE NAME" region [] $
+            Code.toSnippet
+              source
+              region
+              Nothing
+              ( D.reflow $
+                  "I was parsing an `ffi module` declaration until I got stuck here:",
+                D.stack
+                  [ D.reflow $
+                      "I was expecting to see a module name like:",
+                    D.indent 4 $
+                      D.vcat $
+                        [ D.fillSep [D.cyan "ffi", D.cyan "module", D.green "AudioDemo", D.cyan "exposing", "(..)"],
+                          D.fillSep [D.cyan "ffi", D.cyan "module", D.green "WebGL", D.cyan "exposing", "(Texture, render)"]
+                        ],
+                    D.reflow $
+                      "Notice that the module names start with capital letters. That is required!"
+                  ]
+              )
+    FFIModuleExposing exposing row col ->
       toExposingReport source exposing row col
     Effect row col ->
       let region = toRegion row col

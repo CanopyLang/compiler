@@ -1,0 +1,24 @@
+module TestBasicFFI exposing (main)
+
+import Html exposing (Html, div, text, p, h1)
+import Html.Attributes exposing (style)
+
+-- Test the most basic FFI possible
+foreign import javascript "external/simple-test.js" as TestFFI
+
+-- Test function with simple types
+main : Html Never
+main =
+    let
+        result1 = TestFFI.getTestValue
+        result2 = TestFFI.getTestString
+    in
+    div [ style "padding" "20px" ]
+        [ h1 [] [ text "Basic FFI Test" ]
+        , p [] [ text ("Boolean: " ++ boolToString result1) ]
+        , p [] [ text ("String: " ++ result2) ]
+        ]
+
+boolToString : Bool -> String
+boolToString bool =
+    if bool then "True" else "False"

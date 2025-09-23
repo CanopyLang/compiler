@@ -1,0 +1,47 @@
+module TestComplexTypes exposing (main)
+
+import Html exposing (Html, div, text, p, h1)
+import Html.Attributes exposing (style)
+
+-- Define the complex types locally
+type UserActivated
+    = Click | Keypress | Touch | Drag | Focus | Transient
+
+type Available a
+    = Supported a | Prefixed a String | Polyfilled a | Experimental a | PartialSupport a | LegacySupport a
+
+-- Import FFI with complex types
+foreign import javascript "external/test-complex.js" as ComplexFFI
+
+-- Test function
+main : Html Never
+main =
+    let
+        gesture = ComplexFFI.getCurrentGesture
+        support = ComplexFFI.getAudioSupport
+    in
+    div [ style "padding" "20px" ]
+        [ h1 [] [ text "Complex Types FFI Test" ]
+        , p [] [ text ("Gesture: " ++ describeGesture gesture) ]
+        , p [] [ text ("Support: " ++ describeSupport support) ]
+        ]
+
+describeGesture : UserActivated -> String
+describeGesture gesture =
+    case gesture of
+        Click -> "Click"
+        Keypress -> "Keypress"
+        Touch -> "Touch"
+        Drag -> "Drag"
+        Focus -> "Focus"
+        Transient -> "Transient"
+
+describeSupport : Available () -> String
+describeSupport support =
+    case support of
+        Supported _ -> "Supported"
+        Prefixed _ prefix -> "Prefixed with " ++ prefix
+        Polyfilled _ -> "Polyfilled"
+        Experimental _ -> "Experimental"
+        PartialSupport _ -> "Partial Support"
+        LegacySupport _ -> "Legacy Support"

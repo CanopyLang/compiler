@@ -1,0 +1,65 @@
+module TestSimpleFFI exposing (main)
+
+import Html exposing (Html, div, text, p, h1, button, pre)
+import Html.Attributes exposing (style)
+import Html.Events exposing (onClick)
+
+-- Import simple FFI with only basic types
+foreign import javascript "external/simple-audio.js" as SimpleAudio
+
+-- Simple message type for demo
+type Msg = PlayBeep
+
+-- Basic model
+type alias Model = String
+
+-- Initialize with status
+init : Model
+init = "Ready to test simple audio FFI"
+
+-- Update function
+update : Msg -> Model -> Model
+update msg model =
+    case msg of
+        PlayBeep ->
+            runSimpleAudioTest
+
+-- Main view
+main : Html Msg
+main =
+    Html.div [ style "padding" "20px", style "font-family" "Arial, sans-serif" ]
+        [ h1 [] [ text "Simple Audio FFI Test" ]
+        , p [] [ text "Testing basic types only (Bool, String)" ]
+        , button
+            [ onClick PlayBeep
+            , style "padding" "10px 20px"
+            , style "font-size" "16px"
+            , style "background-color" "#007cba"
+            , style "color" "white"
+            , style "border" "none"
+            , style "border-radius" "5px"
+            , style "cursor" "pointer"
+            ]
+            [ text "Test Audio FFI" ]
+        , pre [ style "margin-top" "20px", style "background-color" "#f5f5f5", style "padding" "10px" ]
+            [ text init ]
+        ]
+
+-- Run simple audio tests
+runSimpleAudioTest : String
+runSimpleAudioTest =
+    let
+        results =
+            [ "=== SIMPLE AUDIO FFI TEST ==="
+            , "Web Audio supported: " ++ boolToString (SimpleAudio.isWebAudioSupported ())
+            , "User activation available: " ++ boolToString (SimpleAudio.isUserActivationAvailable ())
+            , "Audio context state: " ++ SimpleAudio.getAudioContextState ()
+            , "Play beep result: " ++ SimpleAudio.playSimpleBeep ()
+            ]
+    in
+    String.join "\n" results
+
+-- Helper function to convert Bool to String
+boolToString : Bool -> String
+boolToString bool =
+    if bool then "True" else "False"

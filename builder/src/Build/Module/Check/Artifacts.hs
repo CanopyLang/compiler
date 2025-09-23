@@ -71,6 +71,7 @@ module Build.Module.Check.Artifacts
   , resultInterface
   , resultMaybeOldInterface
   , resultModuleName
+  , resultRoot
   , resultLocal
   , resultDocs
   , resultObjects
@@ -113,6 +114,7 @@ data ResultConfig = ResultConfig
   , _resultInterface :: !I.Interface
   , _resultMaybeOldInterface :: !(Maybe I.Interface)
   , _resultModuleName :: !ModuleName.Raw
+  , _resultRoot :: !FilePath
   , _resultLocal :: !Details.Local
   , _resultDocs :: !(Maybe Docs.Module)
   , _resultObjects :: !Opt.LocalGraph
@@ -146,11 +148,13 @@ writeModuleArtifacts config = do
   where
     createResultConfig cfg iface maybeOldi moduleName =
       let local = cfg ^. artifactLocal
+          root = cfg ^. artifactRoot
       in pure $ ResultConfig
            { _resultKey = cfg ^. artifactKey
            , _resultInterface = iface
            , _resultMaybeOldInterface = maybeOldi
            , _resultModuleName = moduleName
+           , _resultRoot = root
            , _resultLocal = local
            , _resultDocs = cfg ^. artifactDocs
            , _resultObjects = cfg ^. artifactObjects
@@ -182,7 +186,7 @@ determineResult config =
       pure (RSame local iface (cfg ^. resultObjects) (cfg ^. resultDocs))
     
     createNewResult cfg = do
-      File.writeBinary (Stuff.canopyi undefined (cfg ^. resultModuleName)) iface
+      File.writeBinary (Stuff.canopyi (cfg ^. resultRoot) (cfg ^. resultModuleName)) iface
       Reporting.report (cfg ^. resultKey) Reporting.BDone
       let local = cfg ^. resultLocal
           newLocal = local & Details.lastChange .~ (local ^. Details.lastCompile)

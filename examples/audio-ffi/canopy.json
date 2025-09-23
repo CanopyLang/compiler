@@ -1,8 +1,7 @@
 {
   "type": "application",
   "source-directories": [
-      "src",
-      "../../core-packages/capability/src"
+      "src"
   ],
   "canopy-version": "0.19.1",
   "dependencies": {

@@ -87,7 +87,7 @@ generateFFIBindingsFromInfo graph _key ffiInfo acc =
       alias = FFI.Storage.ffiAlias ffiInfo
   in case extractFFIFunctionBindings graph filePath content alias of
     [] -> acc
-    bindings -> ("\n// Bindings for " ++ filePath ++ "\n") : (alias ++ " = " ++ alias ++ " || {};\n") : (map (++ "\n") bindings) ++ ["\n"] ++ acc
+    bindings -> ("\n// Bindings for " ++ filePath ++ "\n") : ("var " ++ alias ++ " = " ++ alias ++ " || {};\n") : (map (++ "\n") bindings) ++ ["\n"] ++ acc
 
 -- Extract and generate bindings for FFI functions from JavaScript content
 extractFFIFunctionBindings :: Graph -> String -> String -> String -> [String]
@@ -140,7 +140,7 @@ generateFunctionBinding _graph _filePath alias (funcName, canopyType) =
       jsVarName = "$author$project$" ++ alias ++ "$" ++ funcName
       -- Create namespace object using the correct alias
       namespaceBinding = alias ++ "." ++ funcName ++ " = " ++ wrapper ++ funcName ++ closing ++ ";"
-  in [jsVarName ++ " = " ++ wrapper ++ funcName ++ closing ++ ";", namespaceBinding]
+  in ["var " ++ jsVarName ++ " = " ++ wrapper ++ funcName ++ closing ++ ";", namespaceBinding]
 
 -- Count arrows in a type signature to determine arity (only function parameter arrows)
 -- Uses the same tokenization logic as the FFI parser to handle multi-word types correctly

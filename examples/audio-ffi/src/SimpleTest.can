@@ -1,0 +1,16 @@
+module SimpleTest exposing (main)
+
+-- Simple test to isolate the FFI type issue
+
+type UserActivated
+    = Click
+    | Keypress
+
+foreign import javascript "external/math.js" as Math
+
+testFunction : UserActivated
+testFunction =
+    Math.getActivation
+
+main : UserActivated
+main = testFunction

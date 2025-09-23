@@ -1,0 +1,58 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Perfect FFI Audio Demo Test</title>
+    <meta charset="utf-8">
+    <style>
+        body { font-family: Arial, sans-serif; padding: 20px; }
+        .test-section { margin: 20px 0; padding: 15px; border: 1px solid #ddd; border-radius: 5px; }
+        .success { background-color: #d4edda; border-color: #c3e6cb; }
+        .error { background-color: #f8d7da; border-color: #f5c6cb; }
+    </style>
+</head>
+<body>
+    <h1>🎵 Perfect FFI Audio Demo Browser Test</h1>
+
+    <div id="canopy-app"></div>
+
+    <div class="test-section">
+        <h3>🔧 Test Status</h3>
+        <div id="test-status">Loading...</div>
+    </div>
+
+    <script src="perfect-ffi-fixed.js"></script>
+    <script>
+        // Test that the Canopy app loads and runs
+        try {
+            console.log('Starting Canopy FFI test...');
+            console.log('Available globals:', Object.keys(window));
+            console.log('Canopy object:', window.Canopy);
+            console.log('Elm object:', window.Elm);
+
+            // Try different ways to access the app
+            let app;
+            if (window.Canopy && window.Canopy.PerfectFFIAudioDemoFixed) {
+                app = window.Canopy.PerfectFFIAudioDemoFixed.init({
+                    node: document.getElementById('canopy-app')
+                });
+            } else if (window.Elm && window.Elm.PerfectFFIAudioDemoFixed) {
+                app = window.Elm.PerfectFFIAudioDemoFixed.init({
+                    node: document.getElementById('canopy-app')
+                });
+            } else {
+                throw new Error('Neither Canopy nor Elm object found');
+            }
+
+            document.getElementById('test-status').innerHTML =
+                '<span style="color: green;">✅ Canopy FFI app loaded successfully!</span>';
+
+            console.log('Canopy FFI app initialized:', app);
+
+        } catch (error) {
+            console.error('Failed to load Canopy FFI app:', error);
+            document.getElementById('test-status').innerHTML =
+                '<span style="color: red;">❌ Failed to load Canopy FFI app: ' + error.message + '</span>';
+        }
+    </script>
+</body>
+</html>

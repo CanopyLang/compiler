@@ -395,6 +395,7 @@ data Effects
   = NoEffects
   | Ports (Map Name Port)
   | Manager A.Region A.Region A.Region Manager
+  | FFI
 
 data Port
   = Incoming {_freeVars :: FreeVars, _payload :: Type, _func :: Type}

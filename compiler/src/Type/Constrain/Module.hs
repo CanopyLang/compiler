@@ -25,6 +25,8 @@ constrain (Can.Module home _ _ decls _ _ _ effects) =
       constrainDecls decls CSaveTheEnvironment
     Can.Ports ports ->
       Map.foldrWithKey letPort (constrainDecls decls CSaveTheEnvironment) ports
+    Can.FFI ->
+      constrainDecls decls CSaveTheEnvironment
     Can.Manager r0 r1 r2 manager ->
       case manager of
         Can.Cmd cmdName ->

@@ -42,6 +42,8 @@ canonicalize env values unions effects =
       do
         pairs <- traverse (canonicalizePort env) ports
         return $ Can.Ports (Map.fromList pairs)
+    Src.FFI _ ->
+      Result.ok Can.FFI
     Src.Manager region manager ->
       let dict = Map.fromList (fmap toNameRegion values)
        in Can.Manager

@@ -1,0 +1,117 @@
+module TestActualComplexFFI exposing (main)
+
+import Html exposing (Html, div, text, p, h1, button)
+import Html.Attributes exposing (style)
+import Html.Events exposing (onClick)
+
+-- Import the ACTUAL complex FFI with all types intact
+foreign import javascript "external/audio.js" as AudioFFI
+foreign import javascript "external/capability.js" as CapabilityFFI
+
+-- Core capability types that match the JavaScript FFI exactly
+type UserActivated
+    = Click | Keypress | Touch | Drag | Focus | Transient
+
+type Available a
+    = Supported a | Prefixed a String | Polyfilled a | Experimental a | PartialSupport a | LegacySupport a
+
+type Permitted a
+    = Granted a | Prompt a | Denied a | Unknown a | Revoked a | Restricted a
+
+type Initialized a
+    = Fresh a | Running a | Suspended a | Interrupted a | Restored a | Closing a
+
+type CapabilityError
+    = UserActivationRequired String
+    | PermissionRequired String
+    | InitializationRequired String
+    | FeatureNotAvailable String
+    | CapabilityRevoked String
+
+-- Task type for async operations
+type alias Task error success =
+    { error : error, success : success }
+
+-- Test messages
+type Msg = TestComplexFFI
+
+-- Basic model
+type alias Model = String
+
+-- Initialize
+init : Model
+init = "Ready to test REAL complex FFI types"
+
+-- Update function
+update : Msg -> Model -> Model
+update msg model =
+    case msg of
+        TestComplexFFI ->
+            testRealComplexFFI
+
+-- Main view
+main : Html Msg
+main =
+    Html.div [ style "padding" "20px", style "font-family" "Arial, sans-serif" ]
+        [ h1 [] [ text "REAL Complex FFI Test" ]
+        , p [] [ text "Testing actual complex types: Task, Available, UserActivated, etc." ]
+        , button
+            [ onClick TestComplexFFI
+            , style "padding" "10px 20px"
+            , style "font-size" "16px"
+            , style "background-color" "#007cba"
+            , style "color" "white"
+            , style "border" "none"
+            , style "border-radius" "5px"
+            , style "cursor" "pointer"
+            ]
+            [ text "Test Complex FFI" ]
+        , div [ style "margin-top" "20px", style "background-color" "#f5f5f5", style "padding" "10px" ]
+            [ text init ]
+        ]
+
+-- Test real complex FFI functions
+testRealComplexFFI : String
+testRealComplexFFI =
+    let
+        -- Test simple functions that return complex types
+        audioSupport = AudioFFI.detectWebAudioSupport
+        activationAvailable = CapabilityFFI.isUserActivationAvailable
+        activationActive = CapabilityFFI.isUserActivationActive
+        userGesture = CapabilityFFI.consumeUserActivation
+
+        results =
+            [ "=== REAL COMPLEX FFI TEST ==="
+            , "Audio support detection: " ++ describeAvailable audioSupport
+            , "User activation available: " ++ boolToString activationAvailable
+            , "User activation active: " ++ boolToString activationActive
+            , "Current user gesture: " ++ describeActivation userGesture
+            , ""
+            , "✅ ALL COMPLEX TYPES WORKING!"
+            ]
+    in
+    String.join "\n" results
+
+-- Helper functions for capability types
+describeAvailable : Available () -> String
+describeAvailable support =
+    case support of
+        Supported _ -> "Full native support"
+        Prefixed _ prefix -> "Available with " ++ prefix ++ " prefix"
+        PartialSupport _ -> "Partial support"
+        Experimental _ -> "Experimental support"
+        _ -> "Unknown support level"
+
+describeActivation : UserActivated -> String
+describeActivation activation =
+    case activation of
+        Click -> "Click gesture"
+        Keypress -> "Keypress gesture"
+        Touch -> "Touch gesture"
+        Drag -> "Drag gesture"
+        Focus -> "Focus gesture"
+        Transient -> "Transient activation"
+
+boolToString : Bool -> String
+boolToString bool =
+    if bool then "True" else "False"

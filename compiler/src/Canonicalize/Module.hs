@@ -254,6 +254,8 @@ checkPorts effects name =
       Just []
     Can.Ports ports ->
       if Map.member name ports then Nothing else Just (Map.keys ports)
+    Can.FFI ->
+      Just []
     Can.Manager {} ->
       Just []
 
@@ -379,7 +381,9 @@ processParsedFunction ffiModuleName (functionName, typeString) = do
 -- Build the dynamic environment from processed functions
 buildDynamicEnvironment :: Name.Name -> [(String, Can.Annotation, Env.Var)] -> ([(Name.Name, Env.Var)], Map.Map Name.Name (Env.Info Can.Annotation))
 buildDynamicEnvironment aliasName processedFunctions =
-  let -- Build vars with qualified names (Module.functionName)
+  let ffiModuleName = ModuleName.Canonical Pkg.dummyName aliasName
+
+      -- Build vars with qualified names (Module.functionName)
       vars = List.map (\(fname, _, var) ->
                (Name.fromChars (Name.toChars aliasName ++ "." ++ fname), var)
              ) processedFunctions
@@ -388,7 +392,6 @@ buildDynamicEnvironment aliasName processedFunctions =
       qVars = Map.fromList (List.map (\(fname, annotation, _) ->
                 (Name.fromChars fname, Env.Specific ffiModuleName annotation)
               ) processedFunctions)
-              where ffiModuleName = ModuleName.Canonical (Pkg.dummyName) aliasName
 
   in (vars, qVars)
 
@@ -432,7 +435,7 @@ parseComplexType tokens =
     ["(", ")"] -> Can.TType ModuleName.basics (Name.fromChars "Unit") []
     [typeName] -> parseBasicType typeName
     ("Task" : errorType : resultType : _rest) ->
-      -- Handle Task types: Task ErrorType ResultType -> use Task module from core
+      -- Handle Task types: Task ErrorType ResultType -> Task is a core type, but error/result types are resolved dynamically
       Can.TType (ModuleName.Canonical Pkg.core (Name.fromChars "Task")) (Name.fromChars "Task")
         [parseBasicType errorType, parseBasicType resultType]
     multiWordTokens ->
@@ -440,17 +443,21 @@ parseComplexType tokens =
       let typeName = unwords multiWordTokens
       in parseBasicType typeName
 
--- Parse basic type names
+-- Parse basic type names with proper module resolution
 parseBasicType :: String -> Can.Type
 parseBasicType typeName =
   case typeName of
+    -- Core basic types from standard library
     "Int" -> Can.TType ModuleName.basics (Name.fromChars "Int") []
     "Float" -> Can.TType ModuleName.basics (Name.fromChars "Float") []
     "Bool" -> Can.TType ModuleName.basics (Name.fromChars "Bool") []
     "String" -> Can.TType ModuleName.string (Name.fromChars "String") []
     "()" -> Can.TType ModuleName.basics (Name.fromChars "Unit") []
-    -- Handle complex types like "AudioContext", "OscillatorNode", etc.
-    _ -> Can.TType ModuleName.basics (Name.fromChars typeName) []
+    "Unit" -> Can.TType ModuleName.basics (Name.fromChars "Unit") []
+
+    -- All other types should be resolved against the current module
+    -- This allows custom types like UserActivated, AudioContext, etc. to be defined in the importing module
+    _ -> Can.TVar (Name.fromChars typeName)
 
 {-
 addSingleFFI :: Env.Env -> Src.ForeignImport -> Result i [W.Warning] Env.Env

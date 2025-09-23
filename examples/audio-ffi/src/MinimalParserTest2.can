@@ -1,0 +1,10 @@
+module MinimalParserTest2 exposing (main)
+
+import Html exposing (Html, div, text)
+
+type UserActivated = Click
+
+foreign import javascript "external/math.js" as Math
+
+main : Html Never
+main = div [] [ text "Testing parser with type before FFI" ]

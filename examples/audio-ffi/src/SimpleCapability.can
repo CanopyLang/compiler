@@ -1,0 +1,18 @@
+module SimpleCapability exposing
+    ( UserActivated(..)
+    , consumeUserActivation
+    )
+
+-- Simple capability types for testing
+type UserActivated
+    = Click
+    | Keypress
+    | Touch
+
+-- Simple FFI import
+foreign import javascript "external/simple-capability.js" as CapabilityFFI
+
+-- Simple function
+consumeUserActivation : UserActivated
+consumeUserActivation =
+    CapabilityFFI.consumeUserActivation

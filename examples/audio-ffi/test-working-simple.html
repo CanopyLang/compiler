@@ -1,0 +1,37 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Working Simple FFI Test</title>
+</head>
+<body>
+    <h1>Working Simple FFI Test</h1>
+    <div id="app"></div>
+
+    <script src="working-simple.js"></script>
+    <script>
+        console.log('Script loaded');
+
+        setTimeout(() => {
+            console.log('window.Elm:', window.Elm);
+            console.log('window.Canopy:', window.Canopy);
+
+            if (window.Elm && window.Elm.PerfectFFIAudioDemoWorkingSimple) {
+                console.log('Found module in Elm namespace');
+                const app = window.Elm.PerfectFFIAudioDemoWorkingSimple.init({
+                    node: document.getElementById('app')
+                });
+                console.log('App initialized:', app);
+            } else if (window.Canopy && window.Canopy.PerfectFFIAudioDemoWorkingSimple) {
+                console.log('Found module in Canopy namespace');
+                const app = window.Canopy.PerfectFFIAudioDemoWorkingSimple.init({
+                    node: document.getElementById('app')
+                });
+                console.log('App initialized:', app);
+            } else {
+                console.log('Module not found');
+                document.getElementById('app').innerHTML = '<p style="color: red;">❌ Module not found</p>';
+            }
+        }, 100);
+    </script>
+</body>
+</html>

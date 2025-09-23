@@ -62,6 +62,8 @@ toEffectDups effects =
       let addPort dict (Src.Port (A.At region name) _) =
             Dups.insert name region (Env.TopLevel region) dict
        in List.foldl' addPort Dups.none ports
+    Src.FFI _ ->
+      Dups.none
     Src.Manager _ manager ->
       case manager of
         Src.Cmd (A.At region _) ->
