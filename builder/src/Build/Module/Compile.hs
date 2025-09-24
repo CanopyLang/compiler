@@ -160,13 +160,14 @@ data CompileConfig = CompileConfig
 compile :: CompileConfig -> Map ModuleName.Raw I.Interface -> Src.Module -> IO Result
 compile (CompileConfig env docsNeed local source) ifaces modul =
   case env of
-    Env _ _ projectType _ _ _ _ ->
+    Env _ root projectType _ _ _ _ -> do
       let pkg = projectTypeToPkg projectType
           moduleName = Src.getName modul
-       in case Compile.compile pkg ifaces modul of
+      compileResult <- Compile.compileWithRoot pkg ifaces root modul
+      case compileResult of
             Right artifacts -> handleSuccessfulCompilation env docsNeed local source moduleName artifacts
             Left err -> case local of
-              Details.Local path time _ _ _ _ -> 
+              Details.Local path time _ _ _ _ ->
                 return . RProblem $ Error.Module moduleName path time source err
 
 -- | Handle successful compilation artifacts.
@@ -175,8 +176,9 @@ compile (CompileConfig env docsNeed local source) ifaces modul =
 --
 -- @since 0.19.1
 handleSuccessfulCompilation :: Env -> DocsNeed -> Details.Local -> B.ByteString -> ModuleName.Raw -> Compile.Artifacts -> IO Result
-handleSuccessfulCompilation env docsNeed local source moduleName (Compile.Artifacts canonical annotations objects) =
-  case makeDocs docsNeed canonical of
+handleSuccessfulCompilation env docsNeed local source moduleName (Compile.Artifacts canonical annotations objects _ffiInfo) = do
+  docsResult <- makeDocs docsNeed canonical
+  case docsResult of
     Left err ->
       return . RProblem $ Error.Module moduleName (local ^. Details.path) (local ^. Details.time) source (Error.BadDocs err)
     Right docs -> do
@@ -242,11 +244,12 @@ data OutsideCompileConfig = OutsideCompileConfig
 --
 -- @since 0.19.1
 compileOutside :: OutsideCompileConfig -> Map ModuleName.Raw I.Interface -> IO RootResult
-compileOutside (OutsideCompileConfig (Env key _ projectType _ _ _ _) (Details.Local path time _ _ _ _) source modul) ifaces =
+compileOutside (OutsideCompileConfig (Env key root projectType _ _ _ _) (Details.Local path time _ _ _ _) source modul) ifaces = do
   let pkg = projectTypeToPkg projectType
       name = Src.getName modul
-   in case Compile.compile pkg ifaces modul of
-        Right (Compile.Artifacts canonical annotations objects) -> do
+  compileResult <- Compile.compileWithRoot pkg ifaces root modul
+  case compileResult of
+        Right (Compile.Artifacts canonical annotations objects _ffiInfo) -> do
           Reporting.report key Reporting.BDone
           return $ ROutsideOk name (I.fromModule pkg canonical annotations) objects
         Left errors ->
@@ -279,13 +282,15 @@ projectTypeToPkg projectType =
 -- * On failure: Returns documentation error for reporting
 --
 -- @since 0.19.1
-makeDocs :: DocsNeed -> Can.Module -> Either EDocs.Error (Maybe Docs.Module)
+makeDocs :: DocsNeed -> Can.Module -> IO (Either EDocs.Error (Maybe Docs.Module))
 makeDocs (DocsNeed isNeeded) modul =
   if isNeeded
-    then case Docs.fromModule modul of
-      Right docs -> Right (Just docs)
-      Left err -> Left err
-    else Right Nothing
+    then do
+      result <- Docs.fromModule modul
+      case result of
+        Right docs -> pure (Right (Just docs))
+        Left err -> pure (Left err)
+    else pure (Right Nothing)
 
 -- | Finalize documentation output based on documentation goal.
 --

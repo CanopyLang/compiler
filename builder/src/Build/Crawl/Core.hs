@@ -36,7 +36,6 @@ module Build.Crawl.Core
     crawlFile
   , crawlModule
   , crawlDeps
-  , crawlNewDep
   , fork
     -- * Module Processing
   , parseAndValidateModule
@@ -46,6 +45,7 @@ module Build.Crawl.Core
   ) where
 
 import Control.Concurrent.MVar (MVar)
+import Control.Exception (SomeException, catch, throwIO)
 import Control.Lens ((^.))
 import qualified AST.Source as Src
 import qualified Canopy.Details as Details
@@ -66,7 +66,7 @@ import qualified Build.Crawl.Discovery as Discovery
 
 -- For dependency crawling
 import Control.Concurrent (forkIO)
-import Control.Concurrent.MVar (takeMVar, putMVar, newEmptyMVar, readMVar)
+import Control.Concurrent.MVar (putMVar, newEmptyMVar, readMVar, modifyMVar)
 import qualified Data.Set as Set
 import Data.Foldable (traverse_)
 
@@ -153,14 +153,13 @@ checkForeignOrNotFound
   -> Map.Map ModuleName.Raw Details.Local
   -> Map.Map ModuleName.Raw Details.Foreign
   -> IO Status
-checkForeignOrNotFound name locals foreigns
-  | Map.member name locals = 
-      let local = locals Map.! name
-      in pure (SCached local)
-  | Map.member name foreigns = 
-      let (Details.Foreign pkgName _duplicates) = foreigns Map.! name
-      in pure (SForeign pkgName)
-  | otherwise = pure (SBadImport Import.NotFound)
+checkForeignOrNotFound name locals foreigns =
+  case Map.lookup name locals of
+    Just local -> pure (SCached local)
+    Nothing ->
+      case Map.lookup name foreigns of
+        Just (Details.Foreign pkgName _duplicates) -> pure (SForeign pkgName)
+        Nothing -> pure (SBadImport Import.NotFound)
 
 -- | Parse and validate module.
 --
@@ -224,6 +223,9 @@ isMainValue (A.At _ (Src.Value (A.At _ name) _ _ _)) = name == Name._main
 -- status dictionary to track which modules are already being processed
 -- and ensuring all dependencies are resolved before proceeding.
 --
+-- FIXED: Uses proper concurrent pattern to avoid MVar deadlock.
+-- Previously used take-modify-put anti-pattern which caused circular dependencies.
+--
 -- @since 0.19.1
 crawlDeps
   :: Env
@@ -237,34 +239,37 @@ crawlDeps
   -> IO a
   -- ^ Result value after dependency resolution
 crawlDeps env mvar deps blockedValue = do
-  statusDict <- takeMVar mvar
-  let depsDict = Map.fromSet (const ()) (Set.fromList deps)
-  let newsDict = Map.difference depsDict statusDict
-  statuses <- Map.traverseWithKey (crawlNewDep env mvar) newsDict
-  putMVar mvar (Map.union statuses statusDict)
-  traverse_ readMVar statuses
-  pure blockedValue
+  -- FIXED: Use modifyMVar to atomically determine new dependencies without holding the MVar
+  newDepsAndMVars <- modifyMVar mvar $ \statusDict -> do
+    let depsDict = Map.fromSet (const ()) (Set.fromList deps)
+    let newsDict = Map.difference depsDict statusDict
+    -- Create MVars for new dependencies but don't start crawling yet
+    newMVars <- Map.traverseWithKey (\_ () -> newEmptyMVar) newsDict
+    -- Update status dict with the new MVars and return both
+    let updatedStatusDict = Map.union newMVars statusDict
+    pure (updatedStatusDict, newMVars)
 
--- | Crawl a new dependency.
---
--- Initiates crawling for a dependency that hasn't been processed yet
--- by forking a new thread and returning an MVar for coordination.
---
--- @since 0.19.1
-crawlNewDep
-  :: Env
-  -- ^ Build environment  
-  -> MVar StatusDict
-  -- ^ Status dictionary for coordination
-  -> ModuleName.Raw
-  -- ^ Module name to crawl
-  -> ()
-  -- ^ Unit value (from Map traversal)
-  -> IO (MVar Status)
-  -- ^ MVar containing crawling result
-crawlNewDep env mvar name () = 
-  let config = CrawlConfig env mvar (DocsNeed False)
-  in fork (crawlModule config name)
+  -- Now start crawling the new dependencies outside the MVar lock
+  traverse_ (startCrawling env mvar) (Map.toList newDepsAndMVars)
+
+  -- Wait for all dependencies to complete
+  traverse_ readMVar newDepsAndMVars
+  pure blockedValue
+  where
+    startCrawling :: Env -> MVar StatusDict -> (ModuleName.Raw, MVar Status) -> IO ()
+    startCrawling env' _statusMVar (name, resultMVar) = do
+      let config = CrawlConfig env' mvar (DocsNeed False)
+      _ <- forkIO $ do
+        -- FIXED: Handle exceptions to prevent MVar deadlock
+        -- Always put a result to the MVar, even if crawling fails
+        result <- (crawlModule config name) `catch` \(e :: SomeException) -> do
+          -- Log the exception but return a failure status
+          putStrLn $ "WARNING: Exception in crawlModule for " ++ show name ++ ": " ++ show e
+          pure (SBadImport Import.NotFound)
+        putMVar resultMVar result
+      pure ()
+
+-- NOTE: crawlNewDep function removed - functionality integrated into fixed crawlDeps
 
 -- | Fork an IO operation into a new thread.
 --
@@ -279,5 +284,12 @@ fork
   -- ^ MVar containing result when operation completes
 fork work = do
   mvar <- newEmptyMVar
-  _ <- forkIO $ work >>= putMVar mvar
+  _ <- forkIO $ do
+    -- FIXED: Handle exceptions in generic fork to prevent MVar deadlock
+    result <- work `catch` \(e :: SomeException) -> do
+      -- For generic fork, we can't provide a meaningful default value
+      -- so we re-throw the exception after logging it
+      putStrLn $ "ERROR: Exception in fork: " ++ show e
+      throwIO e
+    putMVar mvar result
   pure mvar

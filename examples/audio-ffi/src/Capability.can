@@ -1,34 +1,26 @@
 module Capability exposing
-    ( UserActivated(..), Initialized(..), Permitted(..), Available(..), CapabilityError(..)
-    , isUserActivationAvailable, isUserActivationActive, consumeUserActivation
-    , detectAPISupport, hasFeature, checkGenericPermission, requestGenericPermission
-    , createGenericInitializer, validateCapability
+    ( UserActivated(..), Available(..), Initialized(..), Permitted(..)
+    , CapabilityError(..)
+    , isUserActivationActive, consumeUserActivation, hasFeature
     )
 
-{-| Universal Capability System for Safe Web API Access
+{-| Real Capability System with Actual Browser FFI
 
-This module provides a comprehensive capability-based type system that can be
-applied to ANY Web API to prevent runtime errors at compile time.
-
-Based on the core capability module at core-packages/capability/src/Capability.can
-but with working FFI integration for the audio example.
+This module provides REAL capability checking through proper FFI calls
+to browser APIs like navigator.userActivation and feature detection.
 
 @since 0.19.1
 -}
 
-import Task exposing (Task)
-
--- Simple capability implementation for demonstration
--- Complex FFI functions removed due to type signature compatibility issues
+-- Import the capability JavaScript FFI module
+-- Use basic types only to avoid MVar deadlock
+foreign import javascript "external/capability.js" as CapabilityFFI
 
 -- ============================================================================
 -- CORE CAPABILITY TYPES
 -- ============================================================================
 
 {-| User activation capability - prevents "user activation required" errors.
-
-Rich enum capturing different types of user gestures that can trigger activation.
-Different APIs may require different types of activation.
 -}
 type UserActivated
     = Click         -- Mouse click gesture
@@ -39,9 +31,6 @@ type UserActivated
     | Transient     -- Temporary/transient activation
 
 {-| Initialization capability - prevents "not initialized" errors.
-
-Rich enum tracking the complete lifecycle of initialized resources.
-Enables proper state management and error prevention.
 -}
 type Initialized a
     = Fresh a           -- Just created, ready to use
@@ -52,9 +41,6 @@ type Initialized a
     | Closing a         -- In process of closing
 
 {-| Permission capability - prevents "permission denied" errors.
-
-Rich enum representing all possible permission states.
-Provides detailed information for proper UX handling.
 -}
 type Permitted a
     = Granted a         -- Permission granted
@@ -65,9 +51,6 @@ type Permitted a
     | Restricted a      -- Restricted by policy/settings
 
 {-| Availability capability - prevents "feature not available" errors.
-
-Rich enum representing different levels of feature support.
-Enables graceful degradation and progressive enhancement.
 -}
 type Available a
     = Supported a           -- Full native support
@@ -78,8 +61,6 @@ type Available a
     | LegacySupport a       -- Legacy/deprecated support
 
 {-| Capability errors that can occur with any API.
-
-Comprehensive error types for all capability violations.
 -}
 type CapabilityError
     = UserActivationRequired String
@@ -89,51 +70,41 @@ type CapabilityError
     | CapabilityRevoked String
 
 -- ============================================================================
--- SIMPLIFIED CAPABILITY FUNCTIONS
+-- REAL CAPABILITY FUNCTIONS (Actual Browser FFI)
 -- ============================================================================
 
-{-| Check if user activation API is available in this browser.
--}
-isUserActivationAvailable : Bool
-isUserActivationAvailable = True
-
 {-| Check if user activation is currently active.
+
+This makes REAL FFI calls to navigator.userActivation.isActive through
+direct JavaScript calls to avoid MVar deadlock.
 -}
 isUserActivationActive : Bool
-isUserActivationActive = True
+isUserActivationActive =
+    CapabilityFFI.isUserActivationActive
 
-{-| Consume user activation and detect gesture type.
+{-| Consume user activation and detect actual gesture type.
+
+This makes REAL FFI calls and converts the JavaScript result to Canopy types.
+Works around MVar deadlock by using String as intermediate type.
 -}
 consumeUserActivation : UserActivated
-consumeUserActivation = Click
+consumeUserActivation =
+    let
+        gestureString = CapabilityFFI.consumeUserActivationString
+    in
+    case gestureString of
+        "Click" -> Click
+        "Keypress" -> Keypress
+        "Touch" -> Touch
+        "Drag" -> Drag
+        "Focus" -> Focus
+        _ -> Transient
 
-{-| Generic API availability detection framework.
--}
-detectAPISupport : (() -> Available ()) -> Available ()
-detectAPISupport detectionFunction = detectionFunction ()
+{-| Generic feature detection using real browser object checking.
 
-{-| Generic feature detection helper.
+This makes REAL FFI calls to check if browser features exist by
+traversing the window object hierarchy.
 -}
 hasFeature : String -> Bool
-hasFeature featurePath = True
-
-{-| Generic permission status checking framework.
--}
-checkGenericPermission : String -> Task CapabilityError (Permitted ())
-checkGenericPermission permissionName = Task.succeed (Granted ())
-
-{-| Generic permission request framework.
--}
-requestGenericPermission : (() -> Task CapabilityError (Permitted ())) -> Task CapabilityError (Permitted ())
-requestGenericPermission requestFunction = requestFunction ()
-
-{-| Generic initialization framework with custom state detection.
--}
-createGenericInitializer : String -> (() -> Task CapabilityError a) -> (a -> Initialized a) -> Task CapabilityError (Initialized a)
-createGenericInitializer contextType initFunction stateDetector =
-    Task.map stateDetector (initFunction ())
-
-{-| Validate that a value has the correct capability type.
--}
-validateCapability : String -> a -> Task CapabilityError a
-validateCapability expectedType value = Task.succeed value
+hasFeature featurePath =
+    CapabilityFFI.hasFeature featurePath

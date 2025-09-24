@@ -133,13 +133,14 @@ finalizeReplArtifacts config depsStatus results =
 --
 -- @since 0.19.1
 compileReplInput :: ReplConfig -> Map.Map ModuleName.Raw I.Interface -> Map.Map ModuleName.Raw Result -> IO (Either Exit.Repl ReplArtifacts)
-compileReplInput config ifaces results =
+compileReplInput config ifaces results = do
   let env = config ^. replEnv
       source = config ^. replSource
       modul = config ^. replModule
       pkg = projectTypeToPkg (getProjectType env)
-   in case Compile.compile pkg ifaces modul of
-        Right (Compile.Artifacts canonical annotations objects) ->
+  compileResult <- Compile.compile pkg ifaces modul
+  case compileResult of
+        Right (Compile.Artifacts canonical annotations objects _ffiInfo) ->
           createReplArtifacts canonical annotations objects modul results
         Left errors ->
           return . Left $ Exit.ReplBadInput source errors

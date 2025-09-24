@@ -121,17 +121,18 @@
 --
 -- == Thread Safety
 --
--- All operations are pure and thread-safe. 'Json.String' values are immutable
--- and can be safely shared across threads without synchronization.
+-- All operations except 'fromComment' are pure and thread-safe. 'Json.String'
+-- values are immutable and can be safely shared across threads without synchronization.
+-- The 'fromComment' function requires IO for thread-safe escape processing.
 --
 -- == Unsafe Operations
 --
 -- Some functions use unsafe operations internally for performance:
 -- * 'fromPtr' - Direct pointer construction (caller must ensure validity)
--- * 'fromComment' - Uses IO.unsafePerformIO for escape processing
+-- * 'fromComment' - Uses proper IO for thread-safe escape processing
 --
 -- These operations are safe when used correctly but require careful attention
--- to memory management and UTF-8 validity.
+-- to memory management and UTF-8 validity. Use 'fromComment' for new code.
 --
 -- @since 0.19.1
 module Json.String
@@ -595,9 +596,9 @@ toBuilder = Utf8.toBuilder
 
 -- | Construct a JSON string from a comment snippet with escape processing.
 --
--- **UNSAFE**: Uses 'IO.unsafePerformIO' internally for escape sequence processing.
--- Processes comment content by handling escape sequences and special characters
--- that appear in source code comments.
+-- **THREAD-SAFE**: Uses proper IO for escape sequence processing to avoid
+-- MVar deadlocks. Processes comment content by handling escape sequences and
+-- special characters that appear in source code comments.
 --
 -- This function is specialized for processing documentation strings and
 -- comments that may contain escape sequences needing interpretation.
@@ -606,15 +607,15 @@ toBuilder = Utf8.toBuilder
 --
 -- Documentation processing:
 -- @
--- processDocComment :: P.Snippet -> Json.String
+-- processDocComment :: P.Snippet -> IO Json.String
 -- processDocComment snippet = fromComment snippet
 --
--- extractComment :: P.Snippet -> Json.String
--- extractComment commentSnippet =
---   let processed = fromComment commentSnippet
---   in if isEmpty processed
---        then fromChars "<no comment>"
---        else processed
+-- extractComment :: P.Snippet -> IO Json.String
+-- extractComment commentSnippet = do
+--   processed <- fromComment commentSnippet
+--   pure $ if isEmpty processed
+--            then fromChars "<no comment>"
+--            else processed
 -- @
 --
 -- ==== Escape Processing
@@ -625,11 +626,11 @@ toBuilder = Utf8.toBuilder
 -- * Backslashes (@\\@) → literal backslash characters
 -- * Carriage returns (@\r@) → removed from output
 --
--- ==== Safety Considerations
+-- ==== Thread Safety
 --
--- **UNSAFE OPERATIONS**:
--- * Uses 'IO.unsafePerformIO' for memory processing
--- * Direct memory access through foreign pointers
+-- **THREAD-SAFE OPERATIONS**:
+-- * Uses proper IO for memory processing
+-- * Direct memory access through foreign pointers in IO context
 -- * Assumes valid UTF-8 input from parser
 --
 -- **Safe Usage Requirements**:
@@ -642,21 +643,22 @@ toBuilder = Utf8.toBuilder
 -- * **Time Complexity**: O(n) where n is comment length
 -- * **Space Complexity**: O(n + e) where e is number of escape sequences
 -- * **Memory Usage**: Single allocation for processed result
--- * **Unsafe Operations**: Required for efficient escape processing
+-- * **Thread Safety**: Proper IO context prevents MVar deadlocks
 --
--- **Performance Note**: The unsafe operations are necessary for efficient
--- in-place escape processing without multiple string copies.
+-- **Performance Note**: The IO operations ensure thread safety while
+-- maintaining efficient in-place escape processing.
 --
 -- @since 0.19.1
-fromComment :: P.Snippet -> String
+fromComment :: P.Snippet -> IO String
 fromComment (P.Snippet fptr off len _ _) =
-  IO.unsafePerformIO . ForeignPtr.withForeignPtr fptr $
-    ( \ptr ->
+  ForeignPtr.withForeignPtr fptr $
+    ( \ptr -> do
         let !pos = Ptr.plusPtr ptr off
             !end = Ptr.plusPtr pos len
-            !str = fromChunks (chompChunks pos end pos [])
-         in return str
+        str <- fromChunksIO (chompChunks pos end pos [])
+        return str
     )
+
 
 -- | Process comment content by chunking and escape handling.
 --
@@ -748,24 +750,22 @@ data Chunk
     -- must be converted to its literal character representation.
     Escape !Word8
 
--- | Convert a list of chunks into a JSON string.
+-- | Convert a list of chunks into a JSON string in IO context.
 --
 -- Internal function for 'fromComment' that processes the chunk list
 -- and constructs the final string with proper escape handling.
 --
--- **UNSAFE**: Uses 'IO.unsafeDupablePerformIO' for memory operations.
+-- **THREAD-SAFE**: Uses proper IO for memory operations.
 --
 -- @since 0.19.1
-fromChunks :: [Chunk] -> String
-fromChunks chunks =
-  IO.unsafeDupablePerformIO
-    ( IO.stToIO
-        ( do
-            let !len = sum (fmap chunkToWidth chunks)
-            mba <- Utf8.newByteArray len
-            writeChunks mba 0 chunks
-            Utf8.freeze mba
-        )
+fromChunksIO :: [Chunk] -> IO String
+fromChunksIO chunks =
+  IO.stToIO
+    ( do
+        let !len = sum (fmap chunkToWidth chunks)
+        mba <- Utf8.newByteArray len
+        writeChunks mba 0 chunks
+        Utf8.freeze mba
     )
 
 -- | Calculate the output width (in bytes) of a chunk.

@@ -76,6 +76,46 @@ function consumeUserActivation() {
 	return { $: "Transient" };
 }
 
+/**
+ * Consume user activation and return as string (workaround for MVar deadlock)
+ * @canopy-type String
+ * @name consumeUserActivationString
+ */
+function consumeUserActivationString() {
+	// Detect the type of user activation based on recent events
+	const now = Date.now();
+	const recentEvents = window.__canopyRecentEvents || [];
+
+	// Find the most recent user event within the last 100ms
+	const recentEvent = recentEvents
+		.filter((event) => now - event.timestamp < 100)
+		.sort((a, b) => b.timestamp - a.timestamp)[0];
+
+	if (recentEvent) {
+		// Return specific gesture type as string
+		switch (recentEvent.type) {
+			case "click":
+				return "Click";
+			case "keydown":
+			case "keyup":
+				return "Keypress";
+			case "touchstart":
+			case "touchend":
+				return "Touch";
+			case "dragstart":
+			case "dragend":
+				return "Drag";
+			case "focus":
+				return "Focus";
+			default:
+				return "Transient";
+		}
+	}
+
+	// Fallback: return transient activation
+	return "Transient";
+}
+
 // Track recent user events for gesture type detection
 if (typeof window !== "undefined") {
 	window.__canopyRecentEvents = [];
@@ -303,15 +343,47 @@ class CapabilityError extends Error {
 	}
 }
 
+// Create browser exports for Canopy FFI
+if (typeof window !== "undefined") {
+	// Make functions available globally and as properties of a CapabilityFFI object
+	window.isUserActivationActive = isUserActivationActive;
+	window.consumeUserActivation = consumeUserActivation;
+	window.hasFeature = hasFeature;
+
+	// Create Canopy-compiled namespace structure
+	if (!window.$author$project$Capability$hasFeature) {
+		window.$author$project$Capability$hasFeature = hasFeature;
+		window.$author$project$Capability$isUserActivationActive = isUserActivationActive;
+		window.$author$project$Capability$consumeUserActivation = consumeUserActivation;
+	}
+
+	// Also create an object for module-style imports
+	window.CapabilityFFI = {
+		isUserActivationActive: isUserActivationActive,
+		consumeUserActivation: consumeUserActivation,
+		consumeUserActivationString: consumeUserActivationString,
+		hasFeature: hasFeature,
+		detectAPISupport: detectAPISupport,
+		checkGenericPermission: checkGenericPermission,
+		requestGenericPermission: requestGenericPermission,
+		createGenericInitializer: createGenericInitializer,
+		createInitializationChecker: createInitializationChecker,
+		validateCapability: validateCapability,
+		CapabilityError: CapabilityError
+	};
+}
+
 // Export for Node.js testing
 if (typeof module !== "undefined") {
 	module.exports = {
 		isUserActivationAvailable,
 		isUserActivationActive,
 		consumeUserActivation,
-		isAPIAvailable,
-		checkPermission,
-		requestPermission,
+		consumeUserActivationString,
+		hasFeature,
+		detectAPISupport,
+		checkGenericPermission,
+		requestGenericPermission,
 		createInitializationChecker,
 		validateCapability,
 		CapabilityError,

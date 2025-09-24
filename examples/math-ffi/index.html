@@ -14,256 +14,6 @@
 try {
 (function(scope){'use strict';
 
-// FFI JavaScript content from external files
-
-// From external/math.js
-/**
- * Advanced Math Operations for Canopy FFI
- *
- * This demonstrates clean FFI integration with mathematical operations
- * that aren't available in standard Elm/Canopy.
- */
-
-/**
- * Calculate the factorial of a number
- * @canopy-type Int -> Int
- * @name factorial
- * @param {number} n - Non-negative integer
- * @returns {number} The factorial of n
- * @throws {MathError} When n is negative or not an integer
- */
-function factorial(n) {
-    if (!Number.isInteger(n) || n < 0) {
-        throw new MathError(`factorial: input must be a non-negative integer, got ${n}`);
-    }
-
-    if (n === 0 || n === 1) return 1;
-
-    let result = 1;
-    for (let i = 2; i <= n; i++) {
-        result *= i;
-    }
-    return result;
-}
-
-/**
- * Calculate the greatest common divisor of two integers
- * @canopy-type Int -> Int -> Int
- * @name gcd
- * @param {number} a - First integer
- * @param {number} b - Second integer
- * @returns {number} The GCD of a and b
- */
-function gcd(a, b) {
-    a = Math.abs(a);
-    b = Math.abs(b);
-
-    while (b !== 0) {
-        let temp = b;
-        b = a % b;
-        a = temp;
-    }
-    return a;
-}
-
-/**
- * Calculate the least common multiple of two integers
- * @canopy-type Int -> Int -> Int
- * @name lcm
- * @param {number} a - First integer
- * @param {number} b - Second integer
- * @returns {number} The LCM of a and b
- */
-function lcm(a, b) {
-    if (a === 0 || b === 0) return 0;
-    return Math.abs(a * b) / gcd(a, b);
-}
-
-/**
- * Check if a number is prime
- * @canopy-type Int -> Bool
- * @name isPrime
- * @param {number} n - Integer to test
- * @returns {boolean} True if n is prime
- */
-function isPrime(n) {
-    if (!Number.isInteger(n) || n < 2) return false;
-    if (n === 2) return true;
-    if (n % 2 === 0) return false;
-
-    const sqrt = Math.sqrt(n);
-    for (let i = 3; i <= sqrt; i += 2) {
-        if (n % i === 0) return false;
-    }
-    return true;
-}
-
-/**
- * Generate Fibonacci number at position n
- * @canopy-type Int -> Int
- * @name fibonacci
- * @param {number} n - Position in Fibonacci sequence (0-indexed)
- * @returns {number} The nth Fibonacci number
- * @throws {MathError} When n is negative
- */
-function fibonacci(n) {
-    if (!Number.isInteger(n) || n < 0) {
-        throw new MathError(`fibonacci: input must be a non-negative integer, got ${n}`);
-    }
-
-    if (n <= 1) return n;
-
-    let a = 0, b = 1;
-    for (let i = 2; i <= n; i++) {
-        let temp = a + b;
-        a = b;
-        b = temp;
-    }
-    return b;
-}
-
-/**
- * Calculate the power of a number with integer exponent
- * @canopy-type Float -> Int -> Float
- * @name power
- * @param {number} base - The base number
- * @param {number} exponent - Integer exponent
- * @returns {number} base raised to the power of exponent
- */
-function power(base, exponent) {
-    if (!Number.isInteger(exponent)) {
-        throw new MathError(`power: exponent must be an integer, got ${exponent}`);
-    }
-
-    if (exponent === 0) return 1;
-    if (exponent === 1) return base;
-
-    if (exponent < 0) {
-        return 1 / power(base, -exponent);
-    }
-
-    let result = 1;
-    while (exponent > 0) {
-        if (exponent % 2 === 1) {
-            result *= base;
-        }
-        base *= base;
-        exponent = Math.floor(exponent / 2);
-    }
-    return result;
-}
-
-/**
- * Calculate the square root using Newton's method
- * @canopy-type Float -> Result MathError Float
- * @name sqrt
- * @param {number} x - Non-negative number
- * @returns {number} Square root of x
- * @throws {MathError} When x is negative
- */
-function sqrt(x) {
-    if (typeof x !== 'number' || x < 0) {
-        throw new MathError(`sqrt: input must be a non-negative number, got ${x}`);
-    }
-
-    if (x === 0) return 0;
-    if (x === 1) return 1;
-
-    // Newton's method for better precision than Math.sqrt
-    let guess = x / 2;
-    const epsilon = 1e-15;
-
-    while (true) {
-        const newGuess = (guess + x / guess) / 2;
-        if (Math.abs(guess - newGuess) < epsilon) {
-            return newGuess;
-        }
-        guess = newGuess;
-    }
-}
-
-/**
- * Convert degrees to radians
- * @canopy-type Float -> Float
- * @name degreesToRadians
- * @param {number} degrees - Angle in degrees
- * @returns {number} Angle in radians
- */
-function degreesToRadians(degrees) {
-    return degrees * (Math.PI / 180);
-}
-
-/**
- * Convert radians to degrees
- * @canopy-type Float -> Float
- * @name radiansToDegrees
- * @param {number} radians - Angle in radians
- * @returns {number} Angle in degrees
- */
-function radiansToDegrees(radians) {
-    return radians * (180 / Math.PI);
-}
-
-/**
- * Calculate the distance between two 2D points
- * @canopy-type Float -> Float -> Float -> Float -> Float
- * @name distance2D
- * @param {number} x1 - X coordinate of first point
- * @param {number} y1 - Y coordinate of first point
- * @param {number} x2 - X coordinate of second point
- * @param {number} y2 - Y coordinate of second point
- * @returns {number} Euclidean distance between the points
- */
-function distance2D(x1, y1, x2, y2) {
-    const dx = x2 - x1;
-    const dy = y2 - y1;
-    return Math.sqrt(dx * dx + dy * dy);
-}
-
-/**
- * Custom error class for mathematical operations
- */
-class MathError extends Error {
-    constructor(message) {
-        super(message);
-        this.name = 'MathError';
-    }
-}
-
-// Export for Node.js testing
-if (typeof module !== 'undefined') {
-    module.exports = {
-        factorial, gcd, lcm, isPrime, fibonacci, power, sqrt,
-        degreesToRadians, radiansToDegrees, distance2D, MathError
-    };
-}
-
-// FFI function bindings
-
-// Bindings for external/math.js
-Math = Math || {};
-$author$project$Math$factorial = factorial;
-Math.factorial = factorial;
-$author$project$Math$gcd = F2(gcd);
-Math.gcd = F2(gcd);
-$author$project$Math$lcm = F2(lcm);
-Math.lcm = F2(lcm);
-$author$project$Math$isPrime = isPrime;
-Math.isPrime = isPrime;
-$author$project$Math$fibonacci = fibonacci;
-Math.fibonacci = fibonacci;
-$author$project$Math$power = F2(power);
-Math.power = F2(power);
-$author$project$Math$sqrt = sqrt;
-Math.sqrt = sqrt;
-$author$project$Math$degreesToRadians = degreesToRadians;
-Math.degreesToRadians = degreesToRadians;
-$author$project$Math$radiansToDegrees = radiansToDegrees;
-Math.radiansToDegrees = radiansToDegrees;
-$author$project$Math$distance2D = F4(distance2D);
-Math.distance2D = F4(distance2D);
-
-
 function F(arity, fun, wrapper) {
   wrapper.a = arity;
   wrapper.f = fun;
@@ -4186,10 +3936,10 @@ var $elm$core$List$reverse = function(list){return A3( $elm$core$List$foldl, $el
 var $elm$core$String$uncons = _String_uncons;
 var $elm$json$Json$Decode$errorOneOf = F2( function(i,error){return'\\n\\n(' +( $elm$core$String$fromInt( i +1) +(') ' + $elm$json$Json$Decode$indent( $elm$json$Json$Decode$errorToString( error))));});
 var $elm$json$Json$Decode$errorToString = function(error){return A2( $elm$json$Json$Decode$errorToStringHelp, error, _List_Nil);};
-var $elm$json$Json$Decode$errorToStringHelp = F2( function(error,context){errorToStringHelp:while (true ){switch( error.$){ case 'Field' :var f = error.a;var err = error.b;var isSimple = function(){var _v1 = $elm$core$String$uncons( f);if ( _v1.$ ==='Nothing' )returnfalse; else{var _v2 = _v1.a;var _char = _v2.a;var rest = _v2.b;return $elm$core$Char$isAlpha( _char) && A2( $elm$core$String$all, $elm$core$Char$isAlphaNum, rest);}}();var fieldName = isSimple?('.' + f):'[\\\'' +( f +'\\\']');var $temp$context = A2( $elm$core$List$cons, fieldName, context), $temp$error = err
+var $elm$json$Json$Decode$errorToStringHelp = F2( function(error,context){errorToStringHelp:while (true ){switch( error.$){ case 'Field' :var f = error.a;var err = error.b;var isSimple = function(){var _v1 = $elm$core$String$uncons( f);if ( _v1.$ ==='Nothing' )return false; else{var _v2 = _v1.a;var _char = _v2.a;var rest = _v2.b;return $elm$core$Char$isAlpha( _char) && A2( $elm$core$String$all, $elm$core$Char$isAlphaNum, rest);}}();var fieldName = isSimple?('.' + f):'[\\\'' +( f +'\\\']');var $temp$context = A2( $elm$core$List$cons, fieldName, context), $temp$error = err
 ;error = $temp$error;context = $temp$context;continue errorToStringHelp; case 'Index' :var i = error.a;var err = error.b;var indexName ='[' +( $elm$core$String$fromInt( i) +']');var $temp$context = A2( $elm$core$List$cons, indexName, context), $temp$error = err
-;error = $temp$error;context = $temp$context;continue errorToStringHelp; case 'OneOf' :var errors = error.a;if (! errors.b )return'Ran into a Json.Decode.oneOf with no possibilities' + function(){if (! context.b )return'\\'; else return' at json' + A2( $elm$core$String$join,'', $elm$core$List$reverse( context));}(); else if (! errors.b.b ){var err = errors.a;var $temp$context = context, $temp$error = err
-;error = $temp$error;context = $temp$context;continue errorToStringHelp;} else{var starter = function(){if (! context.b )return'Json.Decode.oneOf'; else return'The Json.Decode.oneOf at json' + A2( $elm$core$String$join,'', $elm$core$List$reverse( context));}();var introduction = starter +(' failed in the following ' +( $elm$core$String$fromInt( $elm$core$List$length( errors)) +' ways:'));return A2( $elm$core$String$join,'\\n\\n', A2( $elm$core$List$cons, introduction, A2( $elm$core$List$indexedMap, $elm$json$Json$Decode$errorOneOf, errors)));} default :var msg = error.a;var json = error.b;var introduction = function(){if (! context.b )return'Problem with the given value:\\n\\n'; else return'Problem with the value at json' +( A2( $elm$core$String$join,'', $elm$core$List$reverse( context)) +':\\n\\n    ');}();return introduction +( $elm$json$Json$Decode$indent( A2( $elm$json$Json$Encode$encode,4, json)) +('\\n\\n' + msg));};}});
+;error = $temp$error;context = $temp$context;continue errorToStringHelp; case 'OneOf' :var errors = error.a;if (! errors.b )return'Ran into a Json.Decode.oneOf with no possibilities' + function(){if (! context.b )return '\\'; else return' at json' + A2( $elm$core$String$join,'', $elm$core$List$reverse( context));}(); else if (! errors.b.b ){var err = errors.a;var $temp$context = context, $temp$error = err
+;error = $temp$error;context = $temp$context;continue errorToStringHelp;} else{var starter = function(){if (! context.b )return 'Json.Decode.oneOf'; else return'The Json.Decode.oneOf at json' + A2( $elm$core$String$join,'', $elm$core$List$reverse( context));}();var introduction = starter +(' failed in the following ' +( $elm$core$String$fromInt( $elm$core$List$length( errors)) +' ways:'));return A2( $elm$core$String$join,'\\n\\n', A2( $elm$core$List$cons, introduction, A2( $elm$core$List$indexedMap, $elm$json$Json$Decode$errorOneOf, errors)));} default :var msg = error.a;var json = error.b;var introduction = function(){if (! context.b )return 'Problem with the given value:\\n\\n'; else return'Problem with the value at json' +( A2( $elm$core$String$join,'', $elm$core$List$reverse( context)) +':\\n\\n    ');}();return introduction +( $elm$json$Json$Decode$indent( A2( $elm$json$Json$Encode$encode,4, json)) +('\\n\\n' + msg));};}});
 var $elm$core$Array$branchFactor =32;
 var $elm$core$Array$Array_elm_builtin = F4( function(a,b,c,d){return{d : d,c : c,b : b,a : a,$ :'Array_elm_builtin'};});
 var $elm$core$Elm$JsArray$empty = _JsArray_empty;
@@ -4224,26 +3974,13 @@ var $elm$core$Array$initializeHelp = F5( function(fn,fromIndex,len,nodeList,tail
 var $elm$core$Basics$remainderBy = _Basics_remainderBy;
 var $elm$core$Array$initialize = F2( function(len,fn){if ( len <=0 ){return $elm$core$Array$empty;} else{var tailLen = len % $elm$core$Array$branchFactor;var tail = A3( $elm$core$Elm$JsArray$initialize, tailLen, len - tailLen, fn);var initialFromIndex = len - tailLen - $elm$core$Array$branchFactor;return A5( $elm$core$Array$initializeHelp, fn, initialFromIndex, len, _List_Nil, tail);}});
 var $elm$core$Basics$True ={$ :'True'};
-var $elm$core$Result$isOk = function(result){if ( result.$ ==='Ok' )returntrue; else returnfalse;};
+var $elm$core$Result$isOk = function(result){if ( result.$ ==='Ok' )return true; else return false;};
 var $elm$json$Json$Decode$map = _Json_map1;
 var $elm$json$Json$Decode$map2 = _Json_map2;
 var $elm$json$Json$Decode$succeed = _Json_succeed;
-var $elm$virtual_dom$VirtualDom$toHandlerInt = function(handler){switch( handler.$){ case 'Normal' :return0; case 'MayStopPropagation' :return1; case 'MayPreventDefault' :return2; default :return3;}};
+var $elm$virtual_dom$VirtualDom$toHandlerInt = function(handler){switch( handler.$){ case 'Normal' :return 0; case 'MayStopPropagation' :return 1; case 'MayPreventDefault' :return 2; default :return 3;}};
 var $author$project$Main$RunCalculations ={$ :'RunCalculations'};
-var $elm$html$Html$button = _VirtualDom_node('button');
-var $elm$html$Html$div = _VirtualDom_node('div');
-var $elm$html$Html$h1 = _VirtualDom_node('h1');
 var $author$project$Main$init ='Click the button to run mathematical calculations\\';
-var $elm$virtual_dom$VirtualDom$Normal = function(a){return{a : a,$ :'Normal'};};
-var $elm$virtual_dom$VirtualDom$on = _VirtualDom_on;
-var $elm$html$Html$Events$on = F2( function(event,decoder){return A2( $elm$virtual_dom$VirtualDom$on, event, $elm$virtual_dom$VirtualDom$Normal( decoder));});
-var $elm$html$Html$Events$onClick = function(msg){return A2( $elm$html$Html$Events$on,'click', $elm$json$Json$Decode$succeed( msg));};
-var $elm$html$Html$p = _VirtualDom_node('p');
-var $elm$html$Html$pre = _VirtualDom_node('pre');
-var $elm$virtual_dom$VirtualDom$style = _VirtualDom_style;
-var $elm$html$Html$Attributes$style = $elm$virtual_dom$VirtualDom$style;
-var $elm$virtual_dom$VirtualDom$text = _VirtualDom_text;
-var $elm$html$Html$text = $elm$virtual_dom$VirtualDom$text;
 var $author$project$Main$main = A2( $elm$html$Html$div, _List_fromArray([ A2( $elm$html$Html$Attributes$style,'padding','20px') , A2( $elm$html$Html$Attributes$style,'font-family','Arial, sans-serif')]), _List_fromArray([ A2( $elm$html$Html$h1, _List_Nil, _List_fromArray([ $elm$html$Html$text('Math FFI Example')])) , A2( $elm$html$Html$p, _List_Nil, _List_fromArray([ $elm$html$Html$text('Mathematical operations through Canopy\\\'s FFI system.')])) , A2( $elm$html$Html$button, _List_fromArray([ $elm$html$Html$Events$onClick( $author$project$Main$RunCalculations) , A2( $elm$html$Html$Attributes$style,'padding','10px 20px') , A2( $elm$html$Html$Attributes$style,'font-size','16px') , A2( $elm$html$Html$Attributes$style,'background-color','#007cba') , A2( $elm$html$Html$Attributes$style,'color','white') , A2( $elm$html$Html$Attributes$style,'border','none') , A2( $elm$html$Html$Attributes$style,'border-radius','5px') , A2( $elm$html$Html$Attributes$style,'cursor','pointer')]), _List_fromArray([ $elm$html$Html$text('Run Calculations')])) , A2( $elm$html$Html$pre, _List_fromArray([ A2( $elm$html$Html$Attributes$style,'margin-top','20px') , A2( $elm$html$Html$Attributes$style,'background-color','#f5f5f5') , A2( $elm$html$Html$Attributes$style,'padding','10px')]), _List_fromArray([ $elm$html$Html$text( $author$project$Main$init)]))]));
 _Platform_export({'Main':{'init': _VirtualDom_init( $author$project$Main$main)(0)(0)}});scope['Canopy'] = scope['Elm'];
 }(this));

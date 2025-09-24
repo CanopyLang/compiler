@@ -150,7 +150,7 @@ generateForMode root details mode artifacts =
 --   mains -> generateMultiApp mains artifacts
 -- @
 extractMainModules :: Build.Artifacts -> [ModuleName.Raw]
-extractMainModules (Build.Artifacts _ _ roots modules) =
+extractMainModules (Build.Artifacts _ _ roots modules _) =
   Maybe.mapMaybe (getModuleMain modules) (NonEmptyList.toList roots)
 
 -- | Extract modules that do not contain main functions.
@@ -159,7 +159,7 @@ extractMainModules (Build.Artifacts _ _ roots modules) =
 -- JavaScript output validation - ensures no main functions are
 -- accidentally included in library builds.
 extractNonMainModules :: Build.Artifacts -> [ModuleName.Raw]
-extractNonMainModules (Build.Artifacts _ _ roots modules) =
+extractNonMainModules (Build.Artifacts _ _ roots modules _) =
   Maybe.mapMaybe (getNonMainModule modules) (NonEmptyList.toList roots)
 
 -- | Check if artifacts contain exactly one main module.
@@ -171,7 +171,7 @@ extractNonMainModules (Build.Artifacts _ _ roots modules) =
 --   * No main functions found
 --   * Multiple main functions found (invalid for HTML)
 hasExactlyOneMain :: Build.Artifacts -> Task ModuleName.Raw
-hasExactlyOneMain (Build.Artifacts _ _ roots modules) =
+hasExactlyOneMain (Build.Artifacts _ _ roots modules _) =
   case roots of
     NonEmptyList.List root [] ->
       Task.mio Exit.MakeNoMain (pure $ getModuleMain modules root)

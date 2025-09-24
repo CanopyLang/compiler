@@ -8,6 +8,7 @@ module Optimize.Names
     generate,
     registerKernel,
     registerGlobal,
+    registerFFI,
     registerDebug,
     registerCtor,
     registerField,
@@ -62,6 +63,12 @@ registerGlobal home name =
   Tracker $ \uid deps fields ok ->
     let global = Opt.Global home name
      in ok uid (Set.insert global deps) fields (Opt.VarGlobal global)
+
+registerFFI :: ModuleName.Canonical -> Name.Name -> Tracker Opt.Expr
+registerFFI home name =
+  Tracker $ \uid deps fields ok ->
+    let global = Opt.Global home name
+     in ok uid deps fields (Opt.VarGlobal global)
 
 registerDebug :: Name.Name -> ModuleName.Canonical -> A.Region -> Tracker Opt.Expr
 registerDebug name home region =

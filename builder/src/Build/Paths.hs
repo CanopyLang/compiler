@@ -30,7 +30,7 @@ import Control.Lens ((^.))
 import qualified Canopy.Details as Details
 import qualified Canopy.ModuleName as ModuleName
 import qualified Canopy.Package as Pkg
-import Data.Map.Strict (Map, (!))
+import Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
 import Data.NonEmptyList (List)
 import qualified Data.NonEmptyList as NE
@@ -157,8 +157,9 @@ toArtifacts env@(Env _ root _projectType _ _ _ _) foreigns results rootResults =
 -- | Create artifacts from successful build.
 createArtifacts :: Env -> Dependencies -> Map ModuleName.Raw Result -> List RootResult -> List Root -> Either Exit.BuildProblem Artifacts
 createArtifacts (Env _ _ projectType _ _ _ _) foreigns results rootResults roots =
-  Right . Artifacts (projectTypeToPkg projectType) foreigns roots $
-    Map.foldrWithKey (addInsideSafe rootResults) (foldr (addOutside results) [] rootResults) results
+  let modules = Map.foldrWithKey (addInsideSafe rootResults) (foldr (addOutside results) [] rootResults) results
+      ffiInfo = Map.empty  -- TODO: Collect FFI info from modules
+  in Right $ Artifacts (projectTypeToPkg projectType) foreigns roots modules ffiInfo
 
 -- | Gather problems or main modules from results.
 gatherProblemsOrMains :: Map ModuleName.Raw Result -> List RootResult -> Either (List Error.Module) (List Root)
@@ -337,11 +338,12 @@ addInside name result modules =
 
 
 compileOutside :: Env -> Details.Local -> B.ByteString -> Map ModuleName.Raw I.Interface -> Src.Module -> IO RootResult
-compileOutside (Env key _ projectType _ _ _ _) local source ifaces modul =
+compileOutside (Env key _ projectType _ _ _ _) local source ifaces modul = do
   let pkg = projectTypeToPkg projectType
       name = Src.getName modul
-   in case Compile.compile pkg ifaces modul of
-        Right (Compile.Artifacts canonical annotations objects) -> do
+  compileResult <- Compile.compile pkg ifaces modul
+  case compileResult of
+        Right (Compile.Artifacts canonical annotations objects _ffiInfo) -> do
           Reporting.report key Reporting.BDone
           pure $ ROutsideOk name (I.fromModule pkg canonical annotations) objects
         Left errors ->
@@ -363,6 +365,8 @@ toImportErrors (Env _ _ _ _ _ locals foreigns) results imports problems =
         Map.fromList (fmap (\(Src.Import (A.At region name) _ _) -> (name, region)) imports)
 
       toError (name, problem) =
-        Import.Error (regionDict ! name) name unimportedModules problem
+        case Map.lookup name regionDict of
+          Just region -> Import.Error region name unimportedModules problem
+          Nothing -> Import.Error A.one name unimportedModules problem  -- Use default region if not found
    in fmap toError problems
 

@@ -164,10 +164,11 @@ makeLenses ''CompileConfig
 compile :: Env -> DocsNeed -> Details.Local -> B.ByteString -> Map ModuleName.Raw I.Interface -> Src.Module -> IO Result
 compile (Env key root projectType _ buildID _ _) docsNeed local source ifaces modul = do
   let pkg = projectTypeToPkg projectType
-  case Compile.compile pkg ifaces modul of
-    Right (Compile.Artifacts canonical annotations objects) ->
+  compileResult <- Compile.compile pkg ifaces modul
+  case compileResult of
+    Right (Compile.Artifacts canonical annotations objects _ffiInfo) ->
       createCompileConfig key root pkg modul canonical annotations objects docsNeed local buildID source >>= compileWithDocs
-    Left err -> 
+    Left err ->
       pure . RProblem $ Error.Module (Src.getName modul) (local ^. Details.path) (local ^. Details.time) source err
   where
     createCompileConfig k r p m c a o d l b s = pure $ CompileConfig
@@ -197,8 +198,9 @@ compile (Env key root projectType _ buildID _ _) docsNeed local source ifaces mo
 --
 -- IO action producing compilation result with documentation or error
 compileWithDocs :: CompileConfig -> IO Result
-compileWithDocs config =
-  case makeDocs (config ^. compileDocsNeed) (config ^. compileCanonical) of
+compileWithDocs config = do
+  docsResult <- makeDocs (config ^. compileDocsNeed) (config ^. compileCanonical)
+  case docsResult of
     Left err -> createDocsError config err
     Right docs -> createArtifactConfig config docs >>= writeModuleArtifacts
   where
@@ -257,13 +259,15 @@ projectTypeToPkg projectType =
 -- ==== Returns
 --
 -- Either documentation error or optional documentation module
-makeDocs :: DocsNeed -> Can.Module -> Either EDocs.Error (Maybe Docs.Module)
+makeDocs :: DocsNeed -> Can.Module -> IO (Either EDocs.Error (Maybe Docs.Module))
 makeDocs (DocsNeed isNeeded) modul =
   if isNeeded
-    then case Docs.fromModule modul of
-      Right docs -> Right (Just docs)
-      Left err -> Left err
-    else Right Nothing
+    then do
+      result <- Docs.fromModule modul
+      case result of
+        Right docs -> pure (Right (Just docs))
+        Left err -> pure (Left err)
+    else pure (Right Nothing)
 
 -- | Recompile cached module with changed dependencies.
 --

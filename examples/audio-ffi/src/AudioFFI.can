@@ -1,0 +1,225 @@
+module AudioFFI exposing
+    ( AudioContext
+    , OscillatorNode
+    , GainNode
+    , createAudioContext
+    , createOscillator
+    , createGainNode
+    -- , connectNodes -- Temporarily disabled
+    , connectToDestination
+    , startOscillator
+    , stopOscillator
+    , setGain
+    , getCurrentTime
+    , checkWebAudioSupport
+    , resumeAudioContext
+    )
+
+{-| Web Audio API bindings for Canopy
+
+This module provides proper FFI bindings to the Web Audio API through
+external JavaScript functions. All functions are properly typed and
+use the capability system for safe audio operations.
+
+## Audio Context Management
+@docs AudioContext, createAudioContext, resumeAudioContext, getCurrentTime
+
+## Audio Nodes
+@docs OscillatorNode, GainNode, createOscillator, createGainNode
+
+## Audio Operations
+@docs connectNodes, startOscillator, stopOscillator, setGain
+
+## Feature Detection
+@docs checkWebAudioSupport
+
+-}
+
+import Task exposing (Task)
+import Capability exposing (UserActivated, Initialized, Available, CapabilityError)
+
+-- Proper external JavaScript FFI import (compiler MVar deadlock fixed)
+foreign import javascript "external/audio.js" as AudioFFI
+
+-- ============================================================================
+-- AUDIO TYPES
+-- ============================================================================
+
+{-| Opaque type representing a Web Audio API AudioContext.
+
+The AudioContext is the fundamental building block of Web Audio,
+providing the environment for audio processing and playback.
+-}
+type AudioContext = AudioContext
+
+{-| Opaque type representing a Web Audio API OscillatorNode.
+
+OscillatorNodes generate audio waveforms (sine, square, sawtooth, triangle)
+at specified frequencies.
+-}
+type OscillatorNode = OscillatorNode
+
+{-| Opaque type representing a Web Audio API GainNode.
+
+GainNodes control the volume/amplitude of audio signals passing through them.
+-}
+type GainNode = GainNode
+
+-- ============================================================================
+-- AUDIO CONTEXT OPERATIONS
+-- ============================================================================
+
+{-| Create a new AudioContext with user activation.
+
+This function requires a user activation token to prevent audio
+from playing without user interaction (browser security requirement).
+
+    import Capability
+
+    playAudio : UserActivated -> Task CapabilityError ()
+    playAudio userActivation =
+        createAudioContext userActivation
+            |> Task.andThen (\context ->
+                -- Use the context for audio operations...
+            )
+
+-}
+createAudioContext : UserActivated -> Task CapabilityError (Initialized AudioContext)
+createAudioContext userActivation =
+    AudioFFI.createAudioContext userActivation
+
+{-| Resume a suspended AudioContext.
+
+Audio contexts may be suspended by the browser to save power.
+This function resumes playback when needed.
+
+-}
+resumeAudioContext : Initialized AudioContext -> Task CapabilityError (Initialized AudioContext)
+resumeAudioContext audioContext =
+    AudioFFI.resumeAudioContext audioContext
+
+{-| Get the current time from the audio context.
+
+This returns the time in seconds since the audio context was created,
+useful for scheduling audio events.
+
+-}
+getCurrentTime : Initialized AudioContext -> Float
+getCurrentTime audioContext =
+    AudioFFI.getCurrentTime audioContext
+
+-- ============================================================================
+-- AUDIO NODE CREATION
+-- ============================================================================
+
+{-| Create an oscillator node that generates audio waveforms.
+
+    createOscillator context 440.0 "sine"
+        |> Task.andThen (\oscillator ->
+            -- Connect and start the oscillator...
+        )
+
+Supported wave types:
+- "sine" - Pure sine wave
+- "square" - Square wave
+- "sawtooth" - Sawtooth wave
+- "triangle" - Triangle wave
+
+-}
+createOscillator : Initialized AudioContext -> Float -> String -> Task CapabilityError OscillatorNode
+createOscillator audioContext frequency waveType =
+    AudioFFI.createOscillator audioContext frequency waveType
+
+{-| Create a gain node for volume control.
+
+    createGainNode context 0.5
+        |> Task.andThen (\gainNode ->
+            -- Connect the gain node in your audio graph...
+        )
+
+Gain values should be between 0.0 (silence) and 1.0 (full volume).
+
+-}
+createGainNode : Initialized AudioContext -> Float -> Task CapabilityError GainNode
+createGainNode audioContext gain =
+    AudioFFI.createGainNode audioContext gain
+
+-- ============================================================================
+-- AUDIO NODE OPERATIONS
+-- ============================================================================
+
+{-| Connect two audio nodes together.
+
+This creates the audio processing graph by connecting the output
+of one node to the input of another.
+
+    connectNodes oscillator gainNode
+        |> Task.andThen (\_ ->
+            connectNodes gainNode destination
+        )
+
+-}
+-- Temporarily disabled due to polymorphic type issues
+-- connectNodes : a -> b -> Task CapabilityError ()
+-- connectNodes sourceNode destinationNode =
+--     AudioFFI.connectNodes sourceNode destinationNode
+
+-- ============================================================================
+-- AUDIO NODE CONNECTIONS
+-- ============================================================================
+
+connectToDestination : GainNode -> Initialized AudioContext -> Task CapabilityError ()
+connectToDestination gainNode audioContext =
+    AudioFFI.connectToDestination gainNode audioContext
+
+{-| Start an oscillator at a specific time.
+
+    startOscillator oscillator 0.0  -- Start immediately
+
+The time parameter is relative to the audio context's current time.
+Use 0.0 to start immediately.
+
+-}
+startOscillator : OscillatorNode -> Float -> Task CapabilityError ()
+startOscillator oscillator when =
+    AudioFFI.startOscillator oscillator when
+
+{-| Stop an oscillator at a specific time.
+
+    stopOscillator oscillator (getCurrentTime context + 2.0)  -- Stop in 2 seconds
+
+Note: Oscillators can only be started and stopped once. Create new
+oscillators for repeated playback.
+
+-}
+stopOscillator : OscillatorNode -> Float -> Task CapabilityError ()
+stopOscillator oscillator when =
+    AudioFFI.stopOscillator oscillator when
+
+{-| Set the gain value of a gain node.
+
+    setGain gainNode 0.8 0.0  -- Set volume to 80% immediately
+
+The value should be between 0.0 (silence) and 1.0 (full volume).
+The time parameter schedules when the change takes effect.
+
+-}
+setGain : GainNode -> Float -> Float -> Task CapabilityError ()
+setGain gainNode value when =
+    AudioFFI.setGain gainNode value when
+
+-- ============================================================================
+-- FEATURE DETECTION
+-- ============================================================================
+
+{-| Check if Web Audio API is supported in the current browser.
+
+This returns an Available type indicating the level of support:
+- Supported: Full native support
+- Prefixed: Available with vendor prefix (webkit)
+- PartialSupport: Limited or polyfilled support
+
+-}
+checkWebAudioSupport : Available ()
+checkWebAudioSupport =
+    AudioFFI.checkWebAudioSupport

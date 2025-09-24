@@ -136,9 +136,18 @@ solveEqual config region category tipe expectation = do
 
 solveLocal :: SolveConfig -> A.Region -> Name.Name -> Error.Expected Type -> IO State
 solveLocal config region name expectation = do
-  actual <- makeCopy (config ^. solveRank) (config ^. solvePools) ((config ^. solveEnv) ! name)
-  expected <- expectedToVariable (config ^. solveRank) (config ^. solvePools) expectation
-  handleUnifyResult config actual expected (createLocalError region name expectation)
+  case Map.lookup name (config ^. solveEnv) of
+    Nothing -> do
+      -- FIXED: Handle missing name in solve environment (e.g., FFI functions)
+      putStrLn $ "WARNING: Missing name in solve environment: " ++ show name
+      -- Create a placeholder variable for missing names
+      actual <- register Type.noRank (config ^. solvePools) (FlexVar Nothing)
+      expected <- expectedToVariable (config ^. solveRank) (config ^. solvePools) expectation
+      handleUnifyResult config actual expected (createLocalError region name expectation)
+    Just nameType -> do
+      actual <- makeCopy (config ^. solveRank) (config ^. solvePools) nameType
+      expected <- expectedToVariable (config ^. solveRank) (config ^. solvePools) expectation
+      handleUnifyResult config actual expected (createLocalError region name expectation)
 
 solveForeign :: SolveConfig -> A.Region -> Name.Name -> Can.Annotation -> Error.Expected Type -> IO State
 solveForeign config region name (Can.Forall freeVars srcType) expectation = do

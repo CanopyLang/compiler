@@ -13,6 +13,7 @@ module Generate.JavaScript
   ( generate,
     generateForRepl,
     generateForReplEndpoint,
+    FFIInfo(..),
   )
 where
 
@@ -42,8 +43,6 @@ import qualified Generate.Mode as Mode
 import qualified Reporting.Doc as D
 import qualified Reporting.Render.Type as RT
 import qualified Reporting.Render.Type.Localizer as L
-import qualified FFI.Storage
-import qualified System.IO.Unsafe
 import Prelude hiding (cycle, print)
 -- import Text.RawString.QQ (r)  -- Removed: no longer using raw strings
 
@@ -53,16 +52,24 @@ type Graph = Map Opt.Global Opt.Node
 
 type Mains = Map ModuleName.Canonical Opt.Main
 
+-- | FFI information for JavaScript generation
+--
+-- This type contains the information needed to generate FFI JavaScript code
+-- without relying on global storage.
+data FFIInfo = FFIInfo
+  { ffiFilePath :: !String    -- ^ Path to the JavaScript file
+  , ffiContent  :: !String    -- ^ Content of the JavaScript file
+  , ffiAlias    :: !String    -- ^ Alias used in the import statement
+  } deriving (Eq, Show)
+
 -- | Generate FFI JavaScript content to include in bundle
 --
--- ⚠️  NO HARDCODING: This function MUST read the actual file paths
--- from the foreign import statements, not use hardcoded paths!
-generateFFIContent :: Graph -> Builder
-generateFFIContent graph =
-  -- Read actual FFI info from files stored during canonicalization
-  let ffiInfos = System.IO.Unsafe.unsafePerformIO FFI.Storage.getStoredFFIInfo
-  in if Map.null ffiInfos
-     then mempty  -- No hardcoded fallbacks!
+-- This function now receives FFI information directly through the compilation
+-- pipeline instead of using global storage, eliminating MVar deadlock issues.
+generateFFIContent :: Graph -> Map String FFIInfo -> Builder
+generateFFIContent graph ffiInfos =
+  if Map.null ffiInfos
+     then mempty
      else mconcat . map B.stringUtf8 $
             [ "\n// FFI JavaScript content from external files\n" ] ++
             Map.foldrWithKey formatFFIFileFromInfo [] ffiInfos ++
@@ -70,21 +77,21 @@ generateFFIContent graph =
             Map.foldrWithKey (generateFFIBindingsFromInfo graph) [] ffiInfos
 
 -- Format FFI file content for inclusion using FFIInfo
-formatFFIFileFromInfo :: String -> FFI.Storage.FFIInfo -> [String] -> [String]
+formatFFIFileFromInfo :: String -> FFIInfo -> [String] -> [String]
 formatFFIFileFromInfo _key ffiInfo acc =
-  let filePath = FFI.Storage.ffiFilePath ffiInfo
-      content = FFI.Storage.ffiContent ffiInfo
+  let filePath = ffiFilePath ffiInfo
+      content = ffiContent ffiInfo
   in [ "\n// From " ++ filePath ++ "\n"
      , content
      , "\n"
      ] ++ acc
 
 -- Generate JavaScript variable bindings for FFI functions using FFIInfo with proper aliases
-generateFFIBindingsFromInfo :: Graph -> String -> FFI.Storage.FFIInfo -> [String] -> [String]
+generateFFIBindingsFromInfo :: Graph -> String -> FFIInfo -> [String] -> [String]
 generateFFIBindingsFromInfo graph _key ffiInfo acc =
-  let filePath = FFI.Storage.ffiFilePath ffiInfo
-      content = FFI.Storage.ffiContent ffiInfo
-      alias = FFI.Storage.ffiAlias ffiInfo
+  let filePath = ffiFilePath ffiInfo
+      content = ffiContent ffiInfo
+      alias = ffiAlias ffiInfo
   in case extractFFIFunctionBindings graph filePath content alias of
     [] -> acc
     bindings -> ("\n// Bindings for " ++ filePath ++ "\n") : ("var " ++ alias ++ " = " ++ alias ++ " || {};\n") : (map (++ "\n") bindings) ++ ["\n"] ++ acc
@@ -203,15 +210,15 @@ tails :: [a] -> [[a]]
 tails [] = [[]]
 tails xs@(_:ys) = xs : tails ys
 
-generate :: Mode.Mode -> Opt.GlobalGraph -> Mains -> Builder
-generate mode (Opt.GlobalGraph graph _) mains =
+generate :: Mode.Mode -> Opt.GlobalGraph -> Mains -> Map String FFIInfo -> Builder
+generate mode (Opt.GlobalGraph graph _) mains ffiInfos =
   let baseState = Map.foldrWithKey (addMain mode graph) emptyState mains
       state = baseState  -- For now, we'll focus on fixing the core issue
       header = if Mode.isElmCompatible mode
                then "(function(scope){\n'use strict';\n"
                else "(function(scope){'use strict';\n"
    in header
-        <> generateFFIContent graph
+        <> generateFFIContent graph ffiInfos
         <> Functions.functions
         <> perfNote mode
         <> mempty  -- comprehensiveRuntime mode DISABLED to debug dependency inclusion

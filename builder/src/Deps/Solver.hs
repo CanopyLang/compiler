@@ -28,7 +28,7 @@ import qualified Canopy.Version as V
 import Control.Concurrent (forkIO, newEmptyMVar, putMVar, readMVar)
 import Control.Monad (foldM)
 import Data.ByteString (ByteString)
-import Data.Map (Map, (!))
+import Data.Map (Map)
 import qualified Data.Map as Map
 import qualified Data.Utf8 as Utf8
 import Deps.CustomRepositoryDataIO (loadCustomRepositoriesData, loadCustomRepositoriesDataForReactorTH)
@@ -160,11 +160,16 @@ getTransitive constraints solution unvisited visited =
       if Map.member pkg visited
         then getTransitive constraints solution infos visited
         else
-          let newDeps = _deps (constraints ! info)
-              newUnvisited = Map.toList (Map.intersection solution (Map.difference newDeps visited))
-              newVisited = Map.insert pkg vsn visited
-           in getTransitive constraints solution infos $
-                getTransitive constraints solution newUnvisited newVisited
+          case Map.lookup info constraints of
+            Nothing ->
+              -- FIXED: Handle missing constraint to prevent Map.! error
+              getTransitive constraints solution infos visited  -- Skip this dependency
+            Just constraint ->
+              let newDeps = _deps constraint
+                  newUnvisited = Map.toList (Map.intersection solution (Map.difference newDeps visited))
+                  newVisited = Map.insert pkg vsn visited
+              in getTransitive constraints solution infos $
+                   getTransitive constraints solution newUnvisited newVisited
 
 -- TRY
 

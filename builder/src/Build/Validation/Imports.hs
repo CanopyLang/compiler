@@ -84,7 +84,7 @@ import qualified Canopy.ModuleName as ModuleName
 import Build.Types (Env (..), ResultDict)
 
 -- Standard library imports
-import Data.Map.Strict (Map, (!))
+import Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
 import qualified Data.NonEmptyList as NE
 import Data.Set (Set)
@@ -233,4 +233,6 @@ createRegionDict imports =
 -- @since 0.19.1
 createImportError :: Map ModuleName.Raw A.Region -> Set ModuleName.Raw -> (ModuleName.Raw, Import.Problem) -> Import.Error
 createImportError regionDict unimportedModules (name, problem) =
-  Import.Error (regionDict ! name) name unimportedModules problem
+  case Map.lookup name regionDict of
+    Just region -> Import.Error region name unimportedModules problem
+    Nothing -> Import.Error A.one name unimportedModules problem  -- Use default region if not found

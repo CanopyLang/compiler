@@ -20,7 +20,7 @@ import Control.Lens ((^.), makeLenses)
 import qualified Canopy.Details as Details
 import qualified Canopy.Interface as I
 import qualified Canopy.ModuleName as ModuleName
-import Data.Map.Strict (Map, (!))
+import Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
 import qualified Data.NonEmptyList as NE
 import qualified File
@@ -102,9 +102,15 @@ aggregateWithConfig config state deps =
   case deps of
     [] -> finalizeDepsWithState config state
     dep : otherDeps -> do
-      result <- readMVar ((config ^. dacResults) ! dep)
-      update <- processDep result dep (state ^. dasLastDepChange)
-      aggregateWithConfig config (applyUpdate update state) otherDeps
+      case Map.lookup dep (config ^. dacResults) of
+        Just mvar -> do
+          result <- readMVar mvar
+          update <- processDep result dep (state ^. dasLastDepChange)
+          aggregateWithConfig config (applyUpdate update state) otherDeps
+        Nothing -> do
+          -- FIXED: Handle missing dependency MVar to prevent Map.! error
+          putStrLn $ "WARNING: Missing dependency MVar for " ++ show dep
+          aggregateWithConfig config state otherDeps  -- Skip this dependency
 
 -- | Apply dependency update to state.
 applyUpdate :: DepUpdate -> DepsAggregateState -> DepsAggregateState

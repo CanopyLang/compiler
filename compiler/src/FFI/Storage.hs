@@ -19,8 +19,8 @@ module FFI.Storage
 
 import qualified Data.Map.Strict as Map
 import Data.Map (Map)
-import Data.IORef (IORef, newIORef, modifyIORef', readIORef, writeIORef)
-import qualified System.IO.Unsafe
+-- import Data.IORef (IORef) -- No longer needed - removed global storage
+-- import qualified System.IO.Unsafe -- No longer needed - removed global storage to fix MVar deadlocks
 
 -- | Information about an FFI import
 data FFIInfo = FFIInfo
@@ -29,39 +29,31 @@ data FFIInfo = FFIInfo
   , ffiAlias    :: !String    -- ^ Alias used in the import statement
   } deriving (Eq, Show)
 
--- | Global storage for FFI file contents (legacy compatibility)
-{-# NOINLINE ffiContentStore #-}
-ffiContentStore :: IORef (Map String String)
-ffiContentStore = System.IO.Unsafe.unsafePerformIO (newIORef Map.empty)
-
--- | Global storage for FFI information with aliases
-{-# NOINLINE ffiInfoStore #-}
-ffiInfoStore :: IORef (Map String FFIInfo)
-ffiInfoStore = System.IO.Unsafe.unsafePerformIO (newIORef Map.empty)
+-- NOTE: Global storage removed due to unsafePerformIO causing MVar deadlocks
+-- The FFI system now uses parameter passing instead of global state
+-- This module is kept for API compatibility but functions are now no-ops
 
 -- | Store FFI content for later use in generation (legacy compatibility)
+-- Now a no-op since global storage was causing MVar deadlocks
 storeFFIContent :: String -> String -> IO ()
-storeFFIContent filePath content = do
-  modifyIORef' ffiContentStore (Map.insert filePath content)
+storeFFIContent _filePath _content = pure ()
 
 -- | Store FFI information including alias for proper namespace generation
+-- Now a no-op since global storage was causing MVar deadlocks
 storeFFIInfo :: String -> String -> String -> IO ()
-storeFFIInfo filePath content alias = do
-  let ffiInfo = FFIInfo filePath content alias
-  modifyIORef' ffiInfoStore (Map.insert filePath ffiInfo)
-  -- Also store in legacy format for compatibility
-  storeFFIContent filePath content
+storeFFIInfo _filePath _content _alias = pure ()
 
 -- | Get stored FFI content from canonicalization phase (legacy compatibility)
+-- Now returns empty map since global storage was causing MVar deadlocks
 getStoredFFIContent :: IO (Map String String)
-getStoredFFIContent = readIORef ffiContentStore
+getStoredFFIContent = pure Map.empty
 
 -- | Get stored FFI information with aliases
+-- Now returns empty map since global storage was causing MVar deadlocks
 getStoredFFIInfo :: IO (Map String FFIInfo)
-getStoredFFIInfo = readIORef ffiInfoStore
+getStoredFFIInfo = pure Map.empty
 
 -- | Clear all stored FFI content
+-- Now a no-op since global storage was causing MVar deadlocks
 clearFFIContent :: IO ()
-clearFFIContent = do
-  writeIORef ffiContentStore Map.empty
-  writeIORef ffiInfoStore Map.empty
+clearFFIContent = pure ()

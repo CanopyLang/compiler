@@ -103,11 +103,12 @@ import qualified Control.Concurrent as Concurrent
 import Control.Concurrent.MVar
   ( MVar,
     newEmptyMVar,
+    newMVar,
     putMVar,
     readMVar,
+    takeMVar,
   )
 import Control.Lens (makeLenses)
-import qualified Data.Foldable as Foldable
 import Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
 import qualified Data.Map.Utils as MapUtils
@@ -290,15 +291,20 @@ fromExposed (ExposedBuildConfig style root details docsGoal) exposed =
 --
 -- Crawls modules to discover dependencies and build the dependency graph.
 --
+-- **FIXED MVar DEADLOCK**: Pre-populate the status MVar with empty map
+-- before starting crawl workers to prevent deadlock where workers wait
+-- for access to status dictionary they need to update.
+--
 -- @since 0.19.1
 performCrawlPhase :: Env -> MVar (Maybe Dependencies) -> DocsGoal docs -> List ModuleName.Raw -> IO (Map ModuleName.Raw Status)
 performCrawlPhase env _dmvar docsGoal (NE.List e es) = do
-  mvar <- newEmptyMVar
+  -- Pre-populate MVar with empty map before starting workers
+  mvar <- newMVar Map.empty
   let docsNeed = toDocsNeed docsGoal
   roots <- MapUtils.fromKeysA (fork . Crawl.crawlModule (CrawlConfig env mvar docsNeed)) (e : es)
-  putMVar mvar roots
-  Foldable.traverse_ readMVar roots
-  readMVar mvar >>= traverse readMVar
+  -- No need to putMVar since it's already initialized
+  statuses <- traverse readMVar roots
+  return statuses
 
 -- | Perform the compilation phase.
 --
@@ -320,11 +326,20 @@ performCompilePhase env dmvar root details docsGoal exposed statuses = do
 --
 -- Coordinates parallel compilation of all modules in the dependency graph.
 --
+-- **FIXED MVar DEADLOCK**: Pre-populate the results MVar with placeholder MVars
+-- before starting workers to prevent circular dependency deadlock where workers
+-- wait for results they must produce themselves.
+--
 -- @since 0.19.1
 compileModules :: Env -> Dependencies -> Map ModuleName.Raw Status -> IO (Map ModuleName.Raw Result)
 compileModules env foreigns statuses = do
-  rmvar <- newEmptyMVar
+  -- Create placeholder MVars for each module before starting workers
+  placeholderMVars <- mapM (\_ -> newEmptyMVar) statuses
+  rmvar <- newMVar placeholderMVars
+  -- Now start workers with pre-populated results MVar
   resultMVars <- forkWithKey (Check.checkModule (CheckConfig env foreigns rmvar)) statuses
+  -- Replace placeholder MVars with actual result MVars
+  _ <- takeMVar rmvar
   putMVar rmvar resultMVars
   traverse readMVar resultMVars
 

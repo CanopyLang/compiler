@@ -786,8 +786,17 @@ crawlImports foreignDeps mvar pkg src imports =
     let deps = Map.fromList (fmap (\i -> (Src.getImportName i, ())) imports)
     printLog ("crawlImports pkg: " <> (show pkg <> (" src: " <> (show src <> (" deps are " <> show deps)))))
     let news = Map.difference deps statusDict
-    mvars <- Map.traverseWithKey (const . fork . crawlModule foreignDeps mvar pkg src DocsNotNeeded) news
-    putMVar mvar (Map.union mvars statusDict)
+
+    -- CRITICAL FIX: Create placeholder MVars and put back the MVar BEFORE forking
+    -- This prevents deadlock where forked threads wait for the MVar that's held by this thread
+    placeholderMVars <- Map.traverseWithKey (\_ () -> newEmptyMVar) news
+    putMVar mvar (Map.union placeholderMVars statusDict)
+
+    -- Now fork the threads and populate the placeholder MVars
+    mvars <- Map.traverseWithKey (\name () -> do
+      result <- fork (crawlModule foreignDeps mvar pkg src DocsNotNeeded name)
+      return result) news
+
     traverse_ readMVar mvars
     return deps
 
@@ -837,8 +846,9 @@ compile pkg mvar status =
           Nothing -> do
             printLog ("nothing branch of sequence maybeResults for pkg: " <> show pkg)
             return Nothing
-          Just results ->
-            case Compile.compile pkg (Map.mapMaybe getInterface results) modul of
+          Just results -> do
+            compileResult <- Compile.compile pkg (Map.mapMaybe getInterface results) modul
+            case compileResult of
               Left compileError ->
                 do
                   printLog ("=== COMPILE ERROR DEBUG INFO START ===")
@@ -847,10 +857,10 @@ compile pkg mvar status =
                   printLog ("CompileError: " <> show compileError)
                   printLog ("=== COMPILE ERROR DEBUG INFO END ===")
                   return Nothing
-              Right (Compile.Artifacts canonical annotations objects) ->
+              Right (Compile.Artifacts canonical annotations objects _ffiInfo) -> do
                 let ifaces = I.fromModule pkg canonical annotations
-                    docs = makeDocs docsStatus canonical
-                 in return (Just (RLocal ifaces objects docs))
+                docs <- makeDocs docsStatus canonical
+                return (Just (RLocal ifaces objects docs))
     SForeign iface ->
       return (Just (RForeign iface))
     SKernelLocal chunks ->
@@ -897,15 +907,16 @@ getDocsStatusOverridePkg cache originalPkg originalVsn overridingPkg overridingV
       then return DocsNotNeeded
       else return DocsNeeded
 
-makeDocs :: DocsStatus -> Can.Module -> Maybe Docs.Module
+makeDocs :: DocsStatus -> Can.Module -> IO (Maybe Docs.Module)
 makeDocs status modul =
   case status of
-    DocsNeeded ->
-      case Docs.fromModule modul of
-        Right docs -> Just docs
-        Left _ -> Nothing
+    DocsNeeded -> do
+      result <- Docs.fromModule modul
+      case result of
+        Right docs -> pure (Just docs)
+        Left _ -> pure Nothing
     DocsNotNeeded ->
-      Nothing
+      pure Nothing
 
 writeDocs :: Stuff.PackageCache -> Pkg.Name -> V.Version -> DocsStatus -> Map.Map ModuleName.Raw Result -> IO ()
 writeDocs cache pkg vsn status results =

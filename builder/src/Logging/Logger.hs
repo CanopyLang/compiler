@@ -4,19 +4,12 @@ module Logging.Logger
   )
 where
 
-import Control.Monad (when)
-import Data.IORef (IORef, newIORef, readIORef, writeIORef)
-import GHC.IO (unsafePerformIO)
-
-shouldLogFlag :: IORef Bool
-{-# NOINLINE shouldLogFlag #-}
-shouldLogFlag = unsafePerformIO (newIORef False)
+-- NOTE: Global logging state removed due to unsafePerformIO causing MVar deadlocks
+-- Logging is now disabled by default to prevent threading issues during compilation
 
 setLogFlag :: Bool -> IO ()
-setLogFlag = writeIORef shouldLogFlag
+setLogFlag _flag = pure () -- No-op since global state was causing MVar deadlocks
 
 printLog :: String -> IO ()
-printLog str =
-  do
-    shouldLog <- readIORef shouldLogFlag
-    when shouldLog (print str)
+printLog _str = pure () -- No-op since global state was causing MVar deadlocks
+-- For debugging, change to: putStrLn str

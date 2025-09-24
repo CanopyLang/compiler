@@ -1,270 +1,138 @@
 /**
- * Web Audio API FFI Implementation for Canopy
+ * External Audio FFI - Test file for external FFI imports
  *
- * This demonstrates how to build API-specific FFI on top of the core
- * capability system. It implements Web Audio API functionality using
- * the generic capability checking framework.
+ * This file tests the MVar deadlock fix for external file imports.
+ * Previously, importing this file with:
+ * `foreign import javascript "external/audio.js" as AudioFFI`
+ * would cause "thread blocked indefinitely in an MVar operation"
  */
 
 /**
- * AudioContext type for FFI
- * @typedef {AudioContext} AudioContext
- */
-
-/**
- * OscillatorNode type for FFI
- * @typedef {OscillatorNode} OscillatorNode
- */
-
-/**
- * Create a new AudioContext with proper capability validation
- * @canopy-type () -> Task CapabilityError AudioContext
+ * Create audio context
  * @name createAudioContext
+ * @canopy-type UserActivated -> Task CapabilityError (Initialized AudioContext)
  */
-function createAudioContext() {
-    return new Promise((resolve, reject) => {
-        try {
-            // Use the best available AudioContext constructor
-            const AudioContextClass = window.AudioContext || window.webkitAudioContext;
-
-            if (!AudioContextClass) {
-                reject(new CapabilityError("FeatureNotAvailable", "Web Audio API not supported"));
-                return;
-            }
-
-            const context = new AudioContextClass();
-
-            // Web Audio contexts often start suspended and need user activation
-            if (context.state === 'suspended') {
-                context.resume().then(() => {
-                    resolve(context);
-                }).catch(error => {
-                    reject(new CapabilityError("InitializationRequired", `Failed to resume AudioContext: ${error.message}`));
-                });
-            } else {
-                resolve(context);
-            }
-        } catch (error) {
-            reject(new CapabilityError("InitializationRequired", `Failed to create AudioContext: ${error.message}`));
-        }
-    });
+function createAudioContext(userActivation) {
+    return new (window.AudioContext || window.webkitAudioContext)();
 }
 
 /**
- * Get the current state of an AudioContext
- * @canopy-type AudioContext -> String
- * @name getContextState
- */
-function getContextState(context) {
-    return context.state || "unknown";
-}
-
-/**
- * Resume a suspended AudioContext
- * @canopy-type AudioContext -> Task CapabilityError AudioContext
- * @name resumeContext
- */
-function resumeContext(context) {
-    return new Promise((resolve, reject) => {
-        if (context.state === 'suspended') {
-            context.resume().then(() => {
-                resolve(context);
-            }).catch(error => {
-                reject(new CapabilityError("InitializationRequired", `Failed to resume AudioContext: ${error.message}`));
-            });
-        } else {
-            resolve(context);
-        }
-    });
-}
-
-/**
- * Create an oscillator node
- * @canopy-type AudioContext -> Task CapabilityError OscillatorNode
- * @name createOscillator
- */
-function createOscillator(context) {
-    return new Promise((resolve, reject) => {
-        try {
-            if (context.state === 'closed') {
-                reject(new CapabilityError("InitializationRequired", "AudioContext is closed"));
-                return;
-            }
-
-            const oscillator = context.createOscillator();
-            const gainNode = context.createGain();
-
-            // Configure oscillator
-            oscillator.type = 'sine';
-            oscillator.frequency.setValueAtTime(440, context.currentTime); // A4 note
-
-            // Configure gain (volume)
-            gainNode.gain.setValueAtTime(0.1, context.currentTime); // Low volume
-
-            // Connect nodes
-            oscillator.connect(gainNode);
-            gainNode.connect(context.destination);
-
-            // Store references for cleanup
-            oscillator._gainNode = gainNode;
-            oscillator._context = context;
-
-            resolve(oscillator);
-        } catch (error) {
-            reject(new CapabilityError("InitializationRequired", `Failed to create oscillator: ${error.message}`));
-        }
-    });
-}
-
-/**
- * Play a tone using an oscillator
- * @canopy-type OscillatorNode -> Task CapabilityError ()
+ * Play a tone
  * @name playTone
+ * @canopy-type AudioContext -> Float -> Float -> ()
  */
-function playTone(oscillator) {
-    return new Promise((resolve, reject) => {
-        try {
-            if (oscillator._isStarted) {
-                reject(new CapabilityError("InvalidOperation", "Oscillator already started"));
-                return;
-            }
+function playTone(audioContext, frequency, duration) {
+    const oscillator = audioContext.createOscillator();
+    const gainNode = audioContext.createGain();
 
-            oscillator.start();
-            oscillator._isStarted = true;
+    oscillator.connect(gainNode);
+    gainNode.connect(audioContext.destination);
 
-            resolve(null);
-        } catch (error) {
-            reject(new CapabilityError("InvalidOperation", `Failed to start oscillator: ${error.message}`));
-        }
-    });
+    oscillator.frequency.setValueAtTime(frequency, audioContext.currentTime);
+    gainNode.gain.setValueAtTime(0.3, audioContext.currentTime);
+    gainNode.gain.exponentialRampToValueAtTime(0.01, audioContext.currentTime + duration);
+
+    oscillator.start(audioContext.currentTime);
+    oscillator.stop(audioContext.currentTime + duration);
 }
 
 /**
- * Stop a playing tone
- * @canopy-type OscillatorNode -> Task CapabilityError ()
- * @name stopTone
+ * Create oscillator node
+ * @name createOscillator
+ * @canopy-type Initialized AudioContext -> Float -> String -> Task CapabilityError OscillatorNode
  */
-function stopTone(oscillator) {
-    return new Promise((resolve, reject) => {
-        try {
-            if (!oscillator._isStarted) {
-                reject(new CapabilityError("InvalidOperation", "Oscillator not started"));
-                return;
-            }
-
-            oscillator.stop();
-            resolve(null);
-        } catch (error) {
-            reject(new CapabilityError("InvalidOperation", `Failed to stop oscillator: ${error.message}`));
-        }
-    });
+function createOscillator(audioContext, frequency, waveType) {
+    const oscillator = audioContext.createOscillator();
+    oscillator.frequency.setValueAtTime(frequency, audioContext.currentTime);
+    oscillator.type = waveType || 'sine';
+    return oscillator;
 }
 
 /**
- * Request audio permissions (for microphone access as a proxy for audio capabilities)
- * @canopy-type () -> Task CapabilityError (Permitted ())
- * @name requestAudioPermission
+ * Create gain node
+ * @name createGainNode
+ * @canopy-type Initialized AudioContext -> Float -> Task CapabilityError GainNode
  */
-function requestAudioPermission() {
-    return new Promise((resolve, reject) => {
-        // For audio playback, we don't need explicit permission
-        // But for microphone access (which is often associated with audio apps), we do
-        if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
-            reject(new CapabilityError("FeatureNotAvailable", "MediaDevices API not supported"));
-            return;
-        }
-
-        navigator.mediaDevices.getUserMedia({ audio: true })
-            .then(stream => {
-                // Permission granted, clean up the stream immediately
-                stream.getTracks().forEach(track => track.stop());
-                resolve({ type: 'Granted', value: null });
-            })
-            .catch(error => {
-                switch (error.name) {
-                    case 'NotAllowedError':
-                        resolve({ type: 'Denied', value: null });
-                        break;
-                    case 'NotFoundError':
-                        reject(new CapabilityError("FeatureNotAvailable", "No audio input devices found"));
-                        break;
-                    case 'NotSupportedError':
-                        reject(new CapabilityError("FeatureNotAvailable", "Audio input not supported"));
-                        break;
-                    default:
-                        reject(new CapabilityError("PermissionRequired", `Audio permission error: ${error.message}`));
-                }
-            });
-    });
+function createGainNode(audioContext, gain) {
+    const gainNode = audioContext.createGain();
+    gainNode.gain.setValueAtTime(gain, audioContext.currentTime);
+    return gainNode;
 }
 
 /**
- * Detect Web Audio API support with rich information
- * @canopy-type () -> Available ()
- * @name detectWebAudioSupport
+ * Connect audio nodes
+ * @name connectNodes
+ * @canopy-type a -> b -> Task CapabilityError ()
  */
-function detectWebAudioSupport() {
+function connectNodes(sourceNode, destinationNode) {
+    sourceNode.connect(destinationNode);
+}
+
+/**
+ * Connect to destination
+ * @name connectToDestination
+ * @canopy-type GainNode -> Initialized AudioContext -> Task CapabilityError ()
+ */
+function connectToDestination(gainNode, audioContext) {
+    gainNode.connect(audioContext.destination);
+}
+
+/**
+ * Start oscillator
+ * @name startOscillator
+ * @canopy-type OscillatorNode -> Float -> Task CapabilityError ()
+ */
+function startOscillator(oscillator, when) {
+    oscillator.start(when);
+}
+
+/**
+ * Stop oscillator
+ * @name stopOscillator
+ * @canopy-type OscillatorNode -> Float -> Task CapabilityError ()
+ */
+function stopOscillator(oscillator, when) {
+    oscillator.stop(when);
+}
+
+/**
+ * Set gain value
+ * @name setGain
+ * @canopy-type GainNode -> Float -> Float -> Task CapabilityError ()
+ */
+function setGain(gainNode, value, when) {
+    gainNode.gain.setValueAtTime(value, when);
+}
+
+/**
+ * Get current time
+ * @name getCurrentTime
+ * @canopy-type Initialized AudioContext -> Float
+ */
+function getCurrentTime(audioContext) {
+    return audioContext.currentTime;
+}
+
+/**
+ * Resume audio context
+ * @name resumeAudioContext
+ * @canopy-type Initialized AudioContext -> Task CapabilityError (Initialized AudioContext)
+ */
+function resumeAudioContext(audioContext) {
+    return audioContext.resume().then(() => audioContext);
+}
+
+/**
+ * Check Web Audio support
+ * @name checkWebAudioSupport
+ * @canopy-type Available ()
+ */
+function checkWebAudioSupport() {
     if (window.AudioContext) {
-        return { type: 'Supported', value: null };
+        return { $: "Supported", a: null };
     } else if (window.webkitAudioContext) {
-        return { type: 'Prefixed', value: null, prefix: 'webkit' };
-    } else if (window.Audio && window.Audio.prototype.play) {
-        // Basic HTML5 audio support
-        return { type: 'PartialSupport', value: null };
+        return { $: "Prefixed", a: "webkit" };
     } else {
-        return { type: 'NotAvailable' };
+        return { $: "PartialSupport", a: null };
     }
-}
-
-/**
- * Check if Web Audio API features are available
- * @canopy-type String -> Bool
- * @name hasWebAudioFeature
- */
-function hasWebAudioFeature(featureName) {
-    switch (featureName) {
-        case 'AudioContext':
-            return !!(window.AudioContext || window.webkitAudioContext);
-        case 'OfflineAudioContext':
-            return !!(window.OfflineAudioContext || window.webkitOfflineAudioContext);
-        case 'AudioWorklet':
-            return !!(window.AudioContext && window.AudioContext.prototype.audioWorklet);
-        case 'MediaStreamAudioSourceNode':
-            return !!(window.AudioContext && window.AudioContext.prototype.createMediaStreamSource);
-        default:
-            return false;
-    }
-}
-
-/**
- * Custom error class for Web Audio specific errors
- */
-class WebAudioError extends Error {
-    constructor(type, message) {
-        super(message);
-        this.name = 'WebAudioError';
-        this.type = type;
-    }
-}
-
-// Re-export CapabilityError for consistency
-if (typeof CapabilityError === 'undefined') {
-    class CapabilityError extends Error {
-        constructor(type, message) {
-            super(message);
-            this.name = 'CapabilityError';
-            this.type = type;
-        }
-    }
-    window.CapabilityError = CapabilityError;
-}
-
-// Export for Node.js testing
-if (typeof module !== 'undefined') {
-    module.exports = {
-        createAudioContext, getContextState, resumeContext,
-        createOscillator, playTone, stopTone,
-        requestAudioPermission, detectWebAudioSupport,
-        hasWebAudioFeature, WebAudioError
-    };
 }

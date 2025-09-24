@@ -1,8 +1,0 @@
-ffi module PerfectFFIAudioDemoWorkingSimple exposing (main)
-
-import Html exposing (Html, div, text)
-
--- Test without any FFI to isolate the issue
-main : Html msg
-main =
-    div [] [ text "🎉 WORKING FFI MODULE - No FFI functions used yet!" ]

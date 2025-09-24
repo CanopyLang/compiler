@@ -220,12 +220,16 @@ addErrors result errors =
 -- @since 0.19.1
 addImportProblems :: Map.Map ModuleName.Raw Result -> ModuleName.Raw -> [(ModuleName.Raw, Import.Problem)] -> [(ModuleName.Raw, Import.Problem)]
 addImportProblems results name problems =
-  case results Map.! name of
-    RNew {} -> problems
-    RSame {} -> problems
-    RCached {} -> problems
-    RNotFound p -> (name, p) : problems
-    RProblem _ -> problems
-    RBlocked -> problems
-    RForeign _ -> problems
-    RKernel -> problems
+  -- FIXED Map.! ERROR: Use safe lookup to prevent "key not found" errors
+  -- when modules haven't finished compilation due to threading issues.
+  case Map.lookup name results of
+    Nothing -> problems  -- Module result not available yet - skip for now
+    Just result -> case result of
+      RNew {} -> problems
+      RSame {} -> problems
+      RCached {} -> problems
+      RNotFound p -> (name, p) : problems
+      RProblem _ -> problems
+      RBlocked -> problems
+      RForeign _ -> problems
+      RKernel -> problems

@@ -304,7 +304,7 @@ stmtToJS stmt = case stmt of
       [JS.JSCatch noAnnot noAnnot (JS.JSIdentifier noAnnot (nameToString errName)) noAnnot (blockFromStmt catchStmt)]
       JS.JSNoFinally
   Throw e -> JS.JSThrow noAnnot (exprToJS e) (JS.JSSemiAuto)
-  Return e -> JS.JSReturn noAnnot (Just $ exprToJS e) (JS.JSSemi noAnnot)
+  Return e -> JS.JSReturn noAnnot (Just $ exprToJSWithSpace e) (JS.JSSemi noAnnot)
   Var name e -> JS.JSVariable noAnnot (JS.JSLOne (JS.JSVarInitExpression (JS.JSIdentifier leadingSpaceAnnot (nameToString name)) (JS.JSVarInit spaceAnnot (exprToJS e)))) (JS.JSSemi noAnnot)
   Vars pairs -> JS.JSVariable noAnnot (varsToJSCommaList pairs) (JS.JSSemi newlineAnnot)
   FunctionStmt name params body ->
@@ -344,11 +344,13 @@ caseToJS c = case c of
   Case e stmts -> JS.JSCase leadingSpaceAnnot (exprToJSWithSpace e) leadingSpaceAnnot (map stmtToJS stmts)
   Default stmts -> JS.JSDefault leadingSpaceAnnot leadingSpaceAnnot (map stmtToJS stmts)
 
--- Generate expression with leading space for case statements
+-- Generate expression with leading space for case statements and return statements
 exprToJSWithSpace :: Expr -> JSExpression
 exprToJSWithSpace expr = case expr of
   Int n -> JS.JSDecimal leadingSpaceAnnot (show n)
   String builder -> JS.JSLiteral leadingSpaceAnnot ("'" ++ escapeSingleQuotes (builderToString builder) ++ "'")
+  Bool True -> JS.JSLiteral leadingSpaceAnnot "true"
+  Bool False -> JS.JSLiteral leadingSpaceAnnot "false"
   _ -> exprToJS expr
 
 -- varPairToJS not needed - using varsToJSCommaList instead

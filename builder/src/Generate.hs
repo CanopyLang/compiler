@@ -60,7 +60,7 @@ import qualified Build
 import qualified Canopy.Details as Details
 import Control.Lens (makeLenses, (^.))
 import Data.ByteString.Builder (Builder)
-import Data.Map ((!))
+import Data.Map ((!))  -- Map unused until FFI info is properly collected
 import qualified Data.Name as N
 import qualified Generate.JavaScript as JS
 import qualified Generate.Mode as Mode
@@ -132,13 +132,13 @@ makeLenses ''ReplConfig
 --
 -- @since 0.19.1
 debug :: FilePath -> Details.Details -> Build.Artifacts -> Task Builder
-debug root details (Build.Artifacts pkg _ roots modules) = do
+debug root details (Build.Artifacts pkg _ roots modules ffiInfo) = do
   loading <- Objects.loadObjects root details modules
   objects <- Objects.finalizeObjects loading
   let mode = Mode.Dev Nothing True  -- Elm-compatible mode without debug info
   let graph = Objects.objectsToGlobalGraph objects
   let mains = Mains.gatherMains pkg objects roots
-  return $ JS.generate mode graph mains
+  return $ JS.generate mode graph mains ffiInfo
 
 -- | Generate development build without type information.
 --
@@ -175,12 +175,12 @@ debug root details (Build.Artifacts pkg _ roots modules) = do
 --
 -- @since 0.19.1
 dev :: FilePath -> Details.Details -> Build.Artifacts -> Task Builder
-dev root details (Build.Artifacts pkg _ roots modules) = do
+dev root details (Build.Artifacts pkg _ roots modules ffiInfo) = do
   objects <- Objects.loadObjects root details modules >>= Objects.finalizeObjects
   let mode = Mode.Dev Nothing False  -- Use Canopy mode, not elm-compatible mode
   let graph = Objects.objectsToGlobalGraph objects
   let mains = Mains.gatherMains pkg objects roots
-  return $ JS.generate mode graph mains
+  return $ JS.generate mode graph mains ffiInfo
 
 -- | Generate optimized production build.
 --
@@ -222,13 +222,13 @@ dev root details (Build.Artifacts pkg _ roots modules) = do
 --
 -- @since 0.19.1
 prod :: FilePath -> Details.Details -> Build.Artifacts -> Task Builder
-prod root details (Build.Artifacts pkg _ roots modules) = do
+prod root details (Build.Artifacts pkg _ roots modules ffiInfo) = do
   objects <- Objects.loadObjects root details modules >>= Objects.finalizeObjects
   Validation.checkForDebugUses objects
   let graph = Objects.objectsToGlobalGraph objects
   let mode = Mode.Prod (Mode.shortenFieldNames graph) False  -- Production mode: use optimized approach by default
   let mains = Mains.gatherMains pkg objects roots
-  return $ JS.generate mode graph mains
+  return $ JS.generate mode graph mains ffiInfo
 
 -- | Generate optimized production build with Elm compatibility.
 --
@@ -248,13 +248,13 @@ prod root details (Build.Artifacts pkg _ roots modules) = do
 --
 -- @since 0.19.1
 prodElmCompatible :: FilePath -> Details.Details -> Build.Artifacts -> Task Builder
-prodElmCompatible root details (Build.Artifacts pkg _ roots modules) = do
+prodElmCompatible root details (Build.Artifacts pkg _ roots modules ffiInfo) = do
   objects <- Objects.loadObjects root details modules >>= Objects.finalizeObjects
   Validation.checkForDebugUses objects
   let graph = Objects.objectsToGlobalGraph objects
   let mode = Mode.Prod (Mode.shortenFieldNames graph) True  -- Production mode with elm-compatibility
   let mains = Mains.gatherMains pkg objects roots
-  return $ JS.generate mode graph mains
+  return $ JS.generate mode graph mains ffiInfo
 
 -- | Generate code for REPL evaluation.
 --

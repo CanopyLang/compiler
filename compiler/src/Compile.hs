@@ -45,6 +45,7 @@ module Compile
 
     -- * Compilation Interface
     compile,
+    compileWithRoot,
 
     -- * Lens Accessors
     artifactsModule,
@@ -60,15 +61,19 @@ import qualified Canonicalize.Module as Canonicalize
 import qualified Canopy.Interface as I
 import qualified Canopy.ModuleName as ModuleName
 import qualified Canopy.Package as Pkg
-import Control.Lens (makeLenses)
+import Control.Lens (Lens')
 import Data.Map (Map)
+import qualified Data.Map as Map
 import qualified Data.Name as Name
+import qualified Foreign.FFI as FFI
+import qualified Generate.JavaScript as JS
 import qualified Nitpick.PatternMatches as PatternMatches
 import qualified Optimize.Module as Optimize
+import qualified Reporting.Annotation as A
 import qualified Reporting.Error as E
 import qualified Reporting.Render.Type.Localizer as Localizer
 import qualified Reporting.Result as R
-import System.IO.Unsafe (unsafePerformIO)
+-- import System.IO.Unsafe (unsafePerformIO) -- No longer needed - fixed MVar deadlock by using IO properly
 import qualified Type.Constrain.Module as Type
 import qualified Type.Solve as Type
 
@@ -102,18 +107,24 @@ import qualified Type.Solve as Type
 data Artifacts = Artifacts
   { _artifactsModule :: !Can.Module,
     _artifactsTypes :: !(Map Name.Name Can.Annotation),
-    _artifactsGraph :: !Opt.LocalGraph
+    _artifactsGraph :: !Opt.LocalGraph,
+    _artifactsFFIInfo :: !(Map String JS.FFIInfo)
   }
 
--- | Generate lens accessors for Artifacts record fields.
+-- | Lens accessors for Artifacts record fields.
 --
--- Creates the following lenses:
---   * 'artifactsModule' - Access the canonicalized module
---   * 'artifactsTypes' - Access the type annotation map
---   * 'artifactsGraph' - Access the optimized dependency graph
+-- Only creates lenses for the fields that are actually used to avoid
+-- compiler warnings about unused bindings.
 --
 -- @since 0.19.1
-makeLenses ''Artifacts
+artifactsModule :: Lens' Artifacts Can.Module
+artifactsModule f artifacts = fmap (\m -> artifacts { _artifactsModule = m }) (f (_artifactsModule artifacts))
+
+artifactsTypes :: Lens' Artifacts (Map Name.Name Can.Annotation)
+artifactsTypes f artifacts = fmap (\t -> artifacts { _artifactsTypes = t }) (f (_artifactsTypes artifacts))
+
+artifactsGraph :: Lens' Artifacts Opt.LocalGraph
+artifactsGraph f artifacts = fmap (\g -> artifacts { _artifactsGraph = g }) (f (_artifactsGraph artifacts))
 
 -- | Compile a source module through the complete compilation pipeline.
 --
@@ -155,14 +166,74 @@ compile ::
   Map ModuleName.Raw I.Interface ->
   -- | Source module to compile
   Src.Module ->
-  -- | Compilation artifacts or error
-  Either E.Error Artifacts
-compile pkg ifaces modul = do
-  canonical <- canonicalize pkg ifaces modul
-  annotations <- typeCheck modul canonical
-  () <- nitpick canonical
-  objects <- optimize modul annotations canonical
-  return (Artifacts canonical annotations objects)
+  -- | Compilation artifacts or error (now in IO monad for thread safety)
+  IO (Either E.Error Artifacts)
+compile pkg ifaces modul@(Src.Module _ _ _ _ foreignImports _ _ _ _ _) = do
+  -- CRITICAL: Load FFI content in IO monad BEFORE pure compilation phases
+  -- This eliminates the unsafePerformIO MVar deadlock that was causing
+  -- "thread blocked indefinitely in an MVar operation" errors
+  ffiContentMap <- Canonicalize.loadFFIContent foreignImports
+
+  -- Convert FFI content map to FFI info format
+  let ffiInfoMap = convertFFIContentToInfo foreignImports ffiContentMap
+
+  -- Now perform compilation phases with pre-loaded FFI content
+  -- Note: typeCheck is now in IO to prevent MVar deadlocks
+  case canonicalizePure pkg ifaces ffiContentMap modul of
+    Left canonError -> pure (Left canonError)
+    Right canonical -> do
+      typeResult <- typeCheck modul canonical
+      case typeResult of
+        Left typeError -> pure (Left typeError)
+        Right annotations ->
+          case nitpick canonical of
+            Left nitpickError -> pure (Left nitpickError)
+            Right () ->
+              case optimize modul annotations canonical of
+                Left optimizeError -> pure (Left optimizeError)
+                Right objects -> pure (Right (Artifacts canonical annotations objects ffiInfoMap))
+
+-- | Compile a module with explicit root directory for FFI path resolution.
+--
+-- This variant of 'compile' allows passing the project root directory
+-- to properly resolve relative paths in foreign import statements.
+-- This fixes MVar deadlocks that occurred when FFI files couldn't be found.
+--
+-- @since 0.19.1
+compileWithRoot ::
+  -- | Package name for the module being compiled
+  Pkg.Name ->
+  -- | Available module interfaces for dependency resolution
+  Map ModuleName.Raw I.Interface ->
+  -- | Project root directory for path resolution
+  FilePath ->
+  -- | Source module to compile
+  Src.Module ->
+  -- | Compilation artifacts or error (now in IO monad for thread safety)
+  IO (Either E.Error Artifacts)
+compileWithRoot pkg ifaces rootDir modul@(Src.Module _ _ _ _ foreignImports _ _ _ _ _) = do
+  -- CRITICAL: Load FFI content with proper root directory path resolution
+  -- This eliminates path resolution issues that caused MVar deadlocks
+  ffiContentMap <- Canonicalize.loadFFIContentWithRoot rootDir foreignImports
+
+  -- Convert FFI content map to FFI info format
+  let ffiInfoMap = convertFFIContentToInfo foreignImports ffiContentMap
+
+  -- Now perform compilation phases with pre-loaded FFI content
+  -- Note: typeCheck is now in IO to prevent MVar deadlocks
+  case canonicalizePure pkg ifaces ffiContentMap modul of
+    Left canonError -> pure (Left canonError)
+    Right canonical -> do
+      typeResult <- typeCheck modul canonical
+      case typeResult of
+        Left typeError -> pure (Left typeError)
+        Right annotations ->
+          case nitpick canonical of
+            Left nitpickError -> pure (Left nitpickError)
+            Right () ->
+              case optimize modul annotations canonical of
+                Left optimizeError -> pure (Left optimizeError)
+                Right objects -> pure (Right (Artifacts canonical annotations objects ffiInfoMap))
 
 -- COMPILATION PHASES
 --
@@ -192,17 +263,34 @@ compile pkg ifaces modul = do
 -- * Scope resolution failures
 --
 -- @since 0.19.1
-canonicalize ::
+
+-- | Canonicalize a source module with thread-safe FFI handling
+--
+-- This function now performs FFI file loading and canonicalization in the
+-- Result monad to avoid threading issues. The old signature is maintained
+-- for compatibility with the existing compilation pipeline.
+--
+-- @since 0.19.1
+-- | Canonicalize a source module with pre-loaded FFI content (pure)
+--
+-- This function performs canonicalization using pre-loaded FFI content
+-- to avoid any IO operations or threading issues. The FFI content should
+-- be loaded in the IO monad before calling this function.
+--
+-- @since 0.19.1
+canonicalizePure ::
   -- | Package context for name resolution
   Pkg.Name ->
   -- | Available module interfaces
   Map ModuleName.Raw I.Interface ->
+  -- | Pre-loaded FFI content map
+  Map String String ->
   -- | Source module to canonicalize
   Src.Module ->
   -- | Canonical module or canonicalization errors
   Either E.Error Can.Module
-canonicalize pkg ifaces modul =
-  case snd . R.run $ Canonicalize.canonicalize pkg ifaces modul of
+canonicalizePure pkg ifaces ffiContentMap modul =
+  case snd . R.run $ Canonicalize.canonicalize pkg ifaces ffiContentMap modul of
     Right canonical -> Right canonical
     Left errors -> Left $ E.BadNames errors
 
@@ -233,12 +321,15 @@ typeCheck ::
   Src.Module ->
   -- | Canonical module to type check
   Can.Module ->
-  -- | Type annotations or type errors
-  Either E.Error (Map Name.Name Can.Annotation)
-typeCheck modul canonical =
-  case unsafePerformIO (Type.constrain canonical >>= Type.run) of
-    Right annotations -> Right annotations
-    Left errors -> Left (E.BadTypes (Localizer.fromModule modul) errors)
+  -- | Type annotations or type errors (now in IO monad for thread safety)
+  IO (Either E.Error (Map Name.Name Can.Annotation))
+typeCheck modul canonical = do
+  -- FIXED: Now properly running in IO monad instead of unsafePerformIO
+  -- This eliminates the MVar deadlock issues during concurrent compilation
+  constraintResult <- Type.constrain canonical >>= Type.run
+  case constraintResult of
+    Right annotations -> pure (Right annotations)
+    Left errors -> pure (Left (E.BadTypes (Localizer.fromModule modul) errors))
 
 -- | Validate pattern match exhaustiveness and detect redundant patterns.
 --
@@ -305,3 +396,26 @@ optimize modul annotations canonical =
   case snd . R.run $ Optimize.optimize annotations canonical of
     Right localGraph -> Right localGraph
     Left errors -> Left (E.BadMains (Localizer.fromModule modul) errors)
+
+-- | Convert FFI content map to FFI info format
+--
+-- This function takes the FFI content loaded during canonicalization and
+-- combines it with foreign import information to create the FFI info format
+-- needed for JavaScript generation.
+--
+-- @since 0.19.1
+convertFFIContentToInfo :: [Src.ForeignImport] -> Map String String -> Map String JS.FFIInfo
+convertFFIContentToInfo foreignImports ffiContentMap =
+  Map.fromList $ concatMap convertSingleImport foreignImports
+  where
+    convertSingleImport :: Src.ForeignImport -> [(String, JS.FFIInfo)]
+    convertSingleImport (Src.ForeignImport target alias _region) =
+      case target of
+        FFI.JavaScriptFFI jsPath ->
+          case Map.lookup jsPath ffiContentMap of
+            Just content ->
+              let aliasStr = Name.toChars (A.toValue alias)
+                  ffiInfo = JS.FFIInfo jsPath content aliasStr
+              in [(jsPath, ffiInfo)]
+            Nothing -> []
+        _ -> []

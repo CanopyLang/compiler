@@ -224,7 +224,7 @@ processFoundResult name result modules =
 --
 -- @since 0.19.1
 getRootNames :: Artifacts -> NE.List ModuleName.Raw
-getRootNames (Artifacts _ _ roots _) =
+getRootNames (Artifacts _ _ roots _ _) =
   fmap getRootName roots
 
 -- | Extract the name from a root module.

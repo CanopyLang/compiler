@@ -62,6 +62,7 @@ module Build.Types
   , artifactsDeps
   , artifactsRoots
   , artifactsModules
+  , artifactsFFIInfo
   , replHome
   , replModules
   , replLocalizer
@@ -101,6 +102,7 @@ import qualified Canopy.Package as Pkg
 import qualified Data.ByteString as B
 import qualified Data.Name as Name
 import qualified File
+import qualified Generate.JavaScript as JS (FFIInfo)
 import qualified Parse.Module as Parse
 import qualified Reporting
 import qualified Reporting.Error as Error
@@ -211,6 +213,7 @@ data Artifacts = Artifacts
   , _artifactsDeps :: !Dependencies
   , _artifactsRoots :: !(List Root)
   , _artifactsModules :: ![Module]
+  , _artifactsFFIInfo :: !(Map String JS.FFIInfo)
   } deriving (Show)
 
 data Module

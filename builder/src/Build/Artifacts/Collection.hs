@@ -127,8 +127,9 @@ toArtifacts (Env _ root projectType _ _ _ _) foreigns results rootResults =
     Left (NE.List e es) ->
       Left (Exit.BuildBadModules root e es)
     Right roots ->
-      Right . Artifacts (projectTypeToPkg projectType) foreigns roots $
-        assembleInternalModules results rootResults
+      let modules = assembleInternalModules results rootResults
+          ffiInfo = Map.empty  -- TODO: Collect FFI info from modules
+      in Right $ Artifacts (projectTypeToPkg projectType) foreigns roots modules ffiInfo
 
 -- | Assemble internal modules using processing functions.
 --
