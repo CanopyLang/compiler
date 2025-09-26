@@ -1,0 +1,8 @@
+module SimpleCanopyTest exposing (..)
+
+import Basics exposing (Int, (+))
+
+simpleAdd : Int -> Int -> Int
+simpleAdd x y = x + y
+
+main = simpleAdd 1 2

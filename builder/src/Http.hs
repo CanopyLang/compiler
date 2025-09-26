@@ -148,11 +148,14 @@ import qualified Data.Binary.Get as Binary
 import Data.ByteString (ByteString)
 import qualified Data.ByteString.Builder as B
 import qualified Data.ByteString.Char8 as BS
+import qualified Data.ByteString.Lazy as LBS
 import qualified Data.Digest.Pure.SHA as SHA
 import qualified Data.List as List
 import qualified Data.String as String
 import qualified Json.Encode as Encode
 import qualified Network.HTTP as HTTP
+import qualified Network.URI as URI
+import qualified System.Directory as Directory
 import Network.HTTP.Client
   ( BodyReader,
     HttpException (HttpExceptionRequest, InvalidUrlException),
@@ -249,6 +252,35 @@ toUrl url params =
   case params of
     [] -> url
     _ : _ -> url <> ("?" <> HTTP.urlEncodeVars params)
+
+-- FILE URL HANDLING
+
+-- | Check if a URL uses the file:// scheme
+isFileUrl :: String -> Bool
+isFileUrl url =
+  case URI.parseURI url of
+    Just uri -> URI.uriScheme uri == "file:"
+    Nothing -> False
+
+-- | Convert file:// URL to local file path
+fileUrlToPath :: String -> Maybe FilePath
+fileUrlToPath url =
+  case URI.parseURI url of
+    Just uri | URI.uriScheme uri == "file:" -> Just (URI.uriPath uri)
+    _ -> Nothing
+
+-- | Read a local ZIP file and compute its SHA1 hash
+readLocalArchive :: FilePath -> IO (Maybe (Sha, Zip.Archive))
+readLocalArchive filePath = do
+  fileExists <- Directory.doesFileExist filePath
+  if fileExists
+    then do
+      content <- LBS.readFile filePath
+      let sha = SHA.sha1 content
+      case Binary.decodeOrFail content of
+        Right (_, _, archive) -> return $ Just (sha, archive)
+        Left _ -> return Nothing
+    else return Nothing
 
 -- FETCH
 
@@ -349,19 +381,32 @@ post =
 
 fetch :: Method -> Manager -> String -> [Header] -> (Error -> e) -> (ByteString -> IO (Either e a)) -> IO (Either e a)
 fetch methodVerb manager url headers onError onSuccess =
-  Exception.handle (handleSomeException url onError) . Exception.handle (handleHttpException url onError) $
-    ( do
-        req0 <- parseUrlThrow url
-        let req1 =
-              req0
-                { Client.method = methodVerb,
-                  Client.requestHeaders = addDefaultHeaders headers
-                }
-        withResponse req1 manager $ \response ->
-          do
-            chunks <- brConsume (responseBody response)
-            onSuccess (BS.concat chunks)
-    )
+  if isFileUrl url
+    then -- Handle file:// URLs by reading from local filesystem
+      Exception.handle (handleSomeException url onError) $
+        case fileUrlToPath url of
+          Just filePath -> do
+            fileExists <- Directory.doesFileExist filePath
+            if fileExists
+              then do
+                content <- BS.readFile filePath
+                onSuccess content
+              else return (Left (onError (BadUrl url "File not found")))
+          Nothing -> return (Left (onError (BadUrl url "Invalid file:// URL format")))
+    else -- Handle http:// and https:// URLs with standard HTTP client
+      Exception.handle (handleSomeException url onError) . Exception.handle (handleHttpException url onError) $
+        ( do
+            req0 <- parseUrlThrow url
+            let req1 =
+                  req0
+                    { Client.method = methodVerb,
+                      Client.requestHeaders = addDefaultHeaders headers
+                    }
+            withResponse req1 manager $ \response ->
+              do
+                chunks <- brConsume (responseBody response)
+                onSuccess (BS.concat chunks)
+        )
 
 addDefaultHeaders :: [Header] -> [Header]
 addDefaultHeaders headers =
@@ -633,21 +678,32 @@ getArchiveWithHeaders ::
   -- | Result containing processed data or error
   IO (Either e a)
 getArchiveWithHeaders manager url headers onError err onSuccess =
-  Exception.handle (handleSomeException url onError) . Exception.handle (handleHttpException url onError) $
-    ( do
-        req0 <- parseUrlThrow url
-        let req1 =
-              req0
-                { Client.method = methodGet,
-                  Client.requestHeaders = addDefaultHeaders headers
-                }
-        withResponse req1 manager $ \response ->
-          do
-            result <- readArchive (responseBody response)
+  if isFileUrl url
+    then -- Handle file:// URLs by reading from local filesystem
+      Exception.handle (handleSomeException url onError) $
+        case fileUrlToPath url of
+          Just filePath -> do
+            result <- readLocalArchive filePath
             case result of
               Nothing -> return (Left err)
               Just shaAndArchive -> onSuccess shaAndArchive
-    )
+          Nothing -> return (Left (onError (BadUrl url "Invalid file:// URL format")))
+    else -- Handle http:// and https:// URLs with standard HTTP client
+      Exception.handle (handleSomeException url onError) . Exception.handle (handleHttpException url onError) $
+          ( do
+              req0 <- parseUrlThrow url
+              let req1 =
+                    req0
+                      { Client.method = methodGet,
+                        Client.requestHeaders = addDefaultHeaders headers
+                      }
+              withResponse req1 manager $ \response ->
+                do
+                  result <- readArchive (responseBody response)
+                  case result of
+                    Nothing -> return (Left err)
+                    Just shaAndArchive -> onSuccess shaAndArchive
+          )
 
 -- | Download ZIP archive with integrity verification.
 --

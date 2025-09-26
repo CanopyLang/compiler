@@ -1,0 +1,38 @@
+module MinimalCapabilityTest exposing (main)
+
+import Capability exposing (UserActivated(..), Available(..), CapabilityError(..))
+
+main : String
+main =
+    let
+        activation = Click
+        availability = Supported "test"
+        error = UserActivationRequired "test required"
+    in
+        testCapabilities activation availability error
+
+testCapabilities : UserActivated -> Available String -> CapabilityError -> String
+testCapabilities activation availability error =
+    "Capability types working: " ++
+    (case activation of
+        Click -> "click"
+        Keypress -> "keypress"
+        Touch -> "touch"
+        Drag -> "drag"
+        Focus -> "focus"
+        Transient -> "transient") ++
+    " + " ++
+    (case availability of
+        Supported value -> "supported: " ++ value
+        Prefixed value prefix -> "prefixed: " ++ value ++ " (" ++ prefix ++ ")"
+        Polyfilled value -> "polyfilled: " ++ value
+        Experimental value -> "experimental: " ++ value
+        PartialSupport value -> "partial: " ++ value
+        LegacySupport value -> "legacy: " ++ value) ++
+    " + " ++
+    (case error of
+        UserActivationRequired msg -> "activation error: " ++ msg
+        PermissionRequired msg -> "permission error: " ++ msg
+        InitializationRequired msg -> "init error: " ++ msg
+        FeatureNotAvailable msg -> "feature error: " ++ msg
+        CapabilityRevoked msg -> "revoked error: " ++ msg)

@@ -1,0 +1,4 @@
+module VerySimpleTest exposing (..)
+
+test = "hello world"
+

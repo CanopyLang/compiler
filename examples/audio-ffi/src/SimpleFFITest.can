@@ -1,0 +1,24 @@
+module SimpleFFITest exposing (main)
+
+{-| Minimal FFI test to validate the compilation system
+This tests basic FFI functionality without HTML dependencies
+-}
+
+import Task
+import AudioFFI
+import Capability exposing (UserActivated(..), Initialized(..), CapabilityError(..))
+
+-- Simple test that validates FFI compilation
+main : () -> ()
+main _ =
+    let
+        -- Test basic FFI function
+        testResult = AudioFFI.simpleTest 42
+
+        -- Test Web Audio support detection
+        audioSupport = AudioFFI.checkWebAudioSupport
+
+        -- Test simplified audio interface
+        contextResult = AudioFFI.createAudioContextSimplified
+    in
+    ()

@@ -191,19 +191,36 @@ loadInterfaces root (Details _ _ _ _ _ extras) =
 verifyInstall :: BW.Scope -> FilePath -> Solver.Env -> Outline.Outline -> IO (Either Exit.Details ())
 verifyInstall scope root (Solver.Env cache manager connection registry packageOverridesCache) outline =
   do
-    time <- File.getTime (root </> "canopy.json")
+    time <- getProjectFileTime root
     let key = Reporting.ignorer
     let env = Env key scope root cache manager connection registry packageOverridesCache
     case outline of
       Outline.Pkg pkg -> Task.run (void (verifyPkg env time pkg))
       Outline.App app -> Task.run (void (verifyApp env time app))
 
+-- PROJECT FILE DISCOVERY
+
+-- | Get the modification time of the active project file.
+--
+-- Checks for canopy.json first, falls back to elm.json if canopy.json
+-- doesn't exist. This ensures backwards compatibility with existing
+-- Elm projects while supporting the new Canopy format.
+--
+-- Returns the modification time of whichever project file is found.
+-- Throws IOException if neither file exists.
+getProjectFileTime :: FilePath -> IO File.Time
+getProjectFileTime root = do
+  canopyExists <- Dir.doesFileExist (root </> "canopy.json")
+  if canopyExists
+    then File.getTime (root </> "canopy.json")
+    else File.getTime (root </> "elm.json")
+
 -- LOAD -- used by Make, Repl, Reactor
 
 load :: Reporting.Style -> BW.Scope -> FilePath -> IO (Either Exit.Details Details)
 load style scope root =
   do
-    newTime <- File.getTime (root </> "canopy.json")
+    newTime <- getProjectFileTime root
     maybeDetails <- File.readBinary (Stuff.details root)
     printLog "Finished file operations for generating the Details data structure"
     case maybeDetails of
@@ -218,7 +235,7 @@ load style scope root =
 loadForReactorTH :: Reporting.Style -> BW.Scope -> FilePath -> IO (Either Exit.Details Details)
 loadForReactorTH style scope root =
   do
-    newTime <- File.getTime (root </> "canopy.json")
+    newTime <- getProjectFileTime root
     maybeDetails <- File.readBinary (Stuff.details root)
     printLog "Finished file operations for generating the Details data structure"
     case maybeDetails of
@@ -331,15 +348,25 @@ groupByOriginalPkg packageOverrides =
     const
     (fmap (\po -> (PackageOverrideData._originalPackageName po, (PackageOverrideData._overridePackageName po, PackageOverrideData._overridePackageVersion po))) packageOverrides)
 
+applyPackageOverridesToDeps :: Map.Map Pkg.Name V.Version -> Map.Map Pkg.Name (Pkg.Name, V.Version) -> Map.Map Pkg.Name V.Version
+applyPackageOverridesToDeps originalDeps overrideMap =
+  Map.fromList $ map applyOverride (Map.toList originalDeps)
+  where
+    applyOverride (pkgName, version) =
+      case Map.lookup pkgName overrideMap of
+        Nothing -> (pkgName, version)
+        Just (overridePkgName, overrideVersion) -> (overridePkgName, overrideVersion)
+
 verifyApp :: Env -> File.Time -> Outline.AppOutline -> Task Details
 verifyApp env time outline@(Outline.AppOutline canopyVersion srcDirs direct _ _ _ packageOverrides) =
   if canopyVersion == V.compiler
     then do
       stated <- checkAppDeps outline
-      actual <- verifyConstraints env (Map.map Con.exactly stated)
       -- FIXME: Think about what to do with multiple packageOverrides that have the same keys (probably shouldn't be possible?)
       let originalPkgToOverridingPkg = groupByOriginalPkg packageOverrides
-      if Map.size stated == Map.size actual
+      let statedWithOverrides = applyPackageOverridesToDeps stated originalPkgToOverridingPkg
+      actual <- verifyConstraints env (Map.map Con.exactly statedWithOverrides)
+      if Map.size statedWithOverrides == Map.size actual
         then verifyDependencies env time (ValidApp srcDirs) actual direct originalPkgToOverridingPkg
         else Task.throw Exit.DetailsHandEditedDependencies
     else Task.throw $ Exit.DetailsBadCanopyInAppOutline canopyVersion
@@ -434,15 +461,17 @@ verifyDependencies (Env key scope root cache manager _ zokkaRegistries packageOv
         do
           Reporting.report key (Reporting.DStart (Map.size solution))
           printLog "Made it to VERIFYDEPENDENCIES 0"
-          mvar <- newEmptyMVar
+          -- Fix MVar deadlock by creating MVars map first
+          solutionMVar <- newEmptyMVar
           printLog "Made it to VERIFYDEPENDENCIES 1"
           printLog ("SOLUTION: " <> show solution)
           mvars <-
             Stuff.withRegistryLock cache $
-              Map.traverseWithKey (\k details -> fork (verifyDep key (generateBuildData k (extractVersionFromDetails details)) manager zokkaRegistries mvar solution (extractConstraintsFromDetails details))) solution
+              Map.traverseWithKey (\k details -> fork (verifyDep key (generateBuildData k (extractVersionFromDetails details)) manager zokkaRegistries solutionMVar solution (extractConstraintsFromDetails details))) solution
           printLog ("Made it to VERIFYDEPENDENCIES 2: " <> show (Map.keys mvars))
-          putMVar mvar mvars
+          putMVar solutionMVar mvars
           printLog "Made it to VERIFYDEPENDENCIES 3"
+          -- Wait for all dependency verification to complete
           deps <- Map.traverseWithKey (\n m -> hasLocked (show n) (do r <- readMVar m; printLog ("deps result for " <> show n); pure r)) mvars
           printLog "Made it to VERIFYDEPENDENCIES 4"
           case sequenceA deps of
@@ -629,11 +658,13 @@ build key buildData depsMVar f fs =
                     let foreignDeps = gatherForeignInterfaces directArtifacts
                     let exposedDict = Map.fromKeys (const ()) (Outline.flattenExposed exposed)
                     docsStatus <- getDocsStatusFromFilePath cacheFilePath
-                    mvar <- newEmptyMVar
-                    mvars <- Map.traverseWithKey (const . fork . crawlModule foreignDeps mvar pkg src docsStatus) exposedDict
-                    putMVar mvar mvars
-                    traverse_ readMVar mvars
-                    maybeStatuses <- readMVar mvar >>= traverse readMVar
+                    -- Fix MVar deadlock by creating MVars map first, then forking
+                    mvarsMap <- newEmptyMVar
+                    mvars <- Map.traverseWithKey (const . fork . crawlModule foreignDeps mvarsMap pkg src docsStatus) exposedDict
+                    putMVar mvarsMap mvars
+                    -- Wait for all forked threads to complete
+                    statuses <- traverse readMVar mvars
+                    maybeStatuses <- pure statuses
                     case sequenceA maybeStatuses of
                       Nothing ->
                         do

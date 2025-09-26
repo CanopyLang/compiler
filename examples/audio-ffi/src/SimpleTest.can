@@ -1,0 +1,7 @@
+module SimpleTest exposing (main)
+
+import List
+
+main = 
+    List.length [1, 2, 3]
+

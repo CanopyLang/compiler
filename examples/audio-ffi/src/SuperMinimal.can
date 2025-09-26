@@ -1,0 +1,3 @@
+module SuperMinimal exposing (main)
+
+main = "hello"

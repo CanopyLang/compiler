@@ -1,0 +1,6 @@
+module MinimalTest exposing (main)
+
+import Task exposing (Task)
+
+main =
+    Task.succeed "Hello World"

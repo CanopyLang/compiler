@@ -1,0 +1,17 @@
+module Main exposing (main)
+
+import List
+
+-- This test checks basic elm/core List functionality
+-- No HTML dependency - just test core List operations
+main : List String
+main =
+    let
+        myList : List String  -- This comes from elm/core
+        myList = ["Hello", "World", "Test"]
+
+        -- Basic List operations to test compilation
+        doubled : List String
+        doubled = List.map (\item -> item ++ "!") myList
+    in
+    doubled

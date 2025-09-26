@@ -1,0 +1,6 @@
+module Simple exposing (main)
+
+-- Very simple module without any dependencies
+main = ()
+
+type alias Unit = ()

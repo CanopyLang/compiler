@@ -1,0 +1,4 @@
+module TestSimple exposing (main)
+
+main =
+    "Hello World"

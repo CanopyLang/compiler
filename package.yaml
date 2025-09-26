@@ -38,6 +38,7 @@ dependencies:
   - lens
   - mtl
   - network
+  - network-uri
   - crypton-connection
   - parsec
   - filepath

@@ -1,0 +1,7 @@
+module TestSuccess exposing (main)
+
+import Capability exposing (UserActivated(..), Initialized(..), CapabilityError(..))
+
+main : String
+main =
+    "Test compilation success: " ++ showInit (Initialized True)

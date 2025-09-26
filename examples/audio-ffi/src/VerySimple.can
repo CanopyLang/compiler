@@ -1,0 +1,4 @@
+module VerySimple exposing (..)
+
+test = "hello"
+

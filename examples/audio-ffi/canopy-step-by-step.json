@@ -1,0 +1,21 @@
+{
+    "type": "application",
+    "source-directories": [
+        "src"
+    ],
+    "canopy-version": "0.19.1",
+    "dependencies": {
+        "direct": {
+            "canopy/core": "1.0.0",
+            "canopy/json": "1.1.4"
+        },
+        "indirect": {}
+    },
+    "test-dependencies": {
+        "direct": {},
+        "indirect": {}
+    },
+    "canopy-package-overrides": [
+        "../../canopy-package-overrides"
+    ]
+}
