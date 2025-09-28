@@ -526,23 +526,18 @@ verifyDependencies (Env key scope root cache manager _ zokkaRegistries packageOv
           printLog "Made it to VERIFYDEPENDENCIES 1 - created STM store"
           printLog ("SOLUTION: " <> show solution)
 
-          -- ARCHITECTURAL FIX: Filter elm/core from dependency building
-          -- elm/core should use foreign interfaces, not source compilation
-          let solutionWithoutCore = Map.delete Pkg.core solution
-          printLog ("FILTERED SOLUTION (without elm/core): " <> show solutionWithoutCore)
-
-          -- Start workers concurrently without circular dependencies (excluding elm/core)
+          -- Start workers concurrently for all dependencies (including elm/core)
           workers <- Stuff.withRegistryLock cache $
-            forConcurrently (Map.toList solutionWithoutCore) $ \(pkg, details) ->
+            forConcurrently (Map.toList solution) $ \(pkg, details) ->
               async (verifyDep store key (generateBuildData pkg (extractVersionFromDetails details)) manager zokkaRegistries solution (extractConstraintsFromDetails details))
 
           printLog ("Made it to VERIFYDEPENDENCIES 2: started " <> show (length workers) <> " workers")
 
-          -- Wait for all workers with proper error handling (excluding elm/core)
+          -- Wait for all workers with proper error handling
           deps <- Map.fromList <$> mapM (\(worker, (pkg, _)) -> do
             result <- wait worker
             printLog ("deps result for " <> show pkg)
-            return (pkg, result)) (zip workers (Map.toList solutionWithoutCore))
+            return (pkg, result)) (zip workers (Map.toList solution))
 
           printLog "Made it to VERIFYDEPENDENCIES 3 - collected all results"
           case sequenceA deps of
@@ -639,20 +634,29 @@ verifyDep store key buildData _manager _zokkaRegistry solution directDeps = do
         BuildOriginalPackage (OriginalPackageBuildData {_pkg = pkg}) -> pkg
         BuildWithOverridingPackage (OverridingPackageBuildData {_overridingPkg = overridingPkg}) -> overridingPkg
 
-  -- Check if another thread is already processing this package
-  shouldProcess <- atomically $ claimDependency store primaryPkg
-
-  if not shouldProcess
+  -- ARCHITECTURAL FIX: elm/core should be treated as foreign interface, not source compilation
+  if primaryPkg == Pkg.core
     then do
-      -- Another thread is handling it, wait for result using STM
-      result <- atomically $ waitForSpecificDependency store primaryPkg
-      return result
+      putStrLn ("FOREIGN-INTERFACE: Providing elm/core as foreign interface instead of source compilation")
+      -- Return empty artifacts for elm/core - interfaces will be provided by the runtime
+      let emptyArtifacts = Artifacts Map.empty Opt.empty
+      atomically $ completeDependency store primaryPkg (Right emptyArtifacts)
+      return (Right emptyArtifacts)
     else do
-      -- Process this package
-      result <- build store key buildData fingerprint Set.empty
-      -- Mark as completed
-      atomically $ completeDependency store primaryPkg result
-      return result
+      -- Check if another thread is already processing this package
+      shouldProcess <- atomically $ claimDependency store primaryPkg
+
+      if not shouldProcess
+        then do
+          -- Another thread is handling it, wait for result using STM
+          result <- atomically $ waitForSpecificDependency store primaryPkg
+          return result
+        else do
+          -- Process this package
+          result <- build store key buildData fingerprint Set.empty
+          -- Mark as completed
+          atomically $ completeDependency store primaryPkg result
+          return result
 
 -- | Safe build function that eliminates MVar deadlocks
 build :: DepStore -> Reporting.DKey -> BuildData -> Fingerprint -> Set.Set Fingerprint -> IO Dep
@@ -687,11 +691,9 @@ build store key buildData f fs = do
           putStrLn ("CIRCULAR-DEP-FIX: elm/core available deps: " <> show (Map.keys available))
           return available
         else do
-          -- For non-core packages, wait for dependencies (excluding elm/core)
-          -- elm/core is provided as foreign interface, not built as dependency
-          let depsWithoutCore = Map.delete Pkg.core deps
-          putStrLn ("ATOMICALLY-DEBUG: Details.hs:666 - about to wait for dependencies: " <> show (Map.keys depsWithoutCore))
-          atomically $ waitForDependencies store (Map.keys depsWithoutCore)
+          -- For non-core packages, wait for dependencies as before
+          putStrLn ("ATOMICALLY-DEBUG: Details.hs:666 - about to wait for dependencies: " <> show (Map.keys deps))
+          atomically $ waitForDependencies store (Map.keys deps)
       putStrLn ("ATOMICALLY-DEBUG: Details.hs:666 - dependency resolution completed successfully")
 
       case sequenceA depResults of
