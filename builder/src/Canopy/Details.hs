@@ -71,13 +71,14 @@ import qualified Canopy.Package as Pkg
 import Canopy.PackageOverrideData (PackageOverrideData (..))
 import qualified Canopy.PackageOverrideData as PackageOverrideData
 import qualified Canopy.Version as V
+import qualified Build.Foundation as Foundation
 import qualified Compile
 import Control.Concurrent.Async (async, wait, forConcurrently)
 import Control.Concurrent.STM (TVar, STM, atomically, newTVar, newTVarIO, readTVar, readTVarIO, writeTVar, modifyTVar, retry)
 import Debug.Trace (trace)
 import Control.Lens (makeLenses)
 import Control.Exception (Handler (..), SomeException, catches, throwIO, catch, ErrorCall)
-import Control.Monad (foldM, liftM2, liftM3, void, when, filterM)
+import Control.Monad (liftM2, liftM3, void, when, filterM)
 import Data.Binary (Binary, get, getWord8, put, putWord8)
 import qualified Data.Either as Either
 import Data.Foldable ()
@@ -265,22 +266,46 @@ loadObjects root (Details _ _ _ _ _ extras) =
       newTVarIO objects
 
 loadInterfaces :: FilePath -> Details -> IO (TVar (Maybe Interfaces))
-loadInterfaces root (Details _ _ _ _ _ extras) =
+loadInterfaces root (Details _ _ _ _ _ extras) = do
+  -- FOUNDATION LAYER: Load foundation layer interfaces for elm/core
+  foundation <- Foundation.loadFoundationLayer
+  let foundationInterfaces = convertFoundationToCanonical foundation
   case extras of
-    ArtifactsFresh i _ -> newTVarIO (Just i)
+    ArtifactsFresh i _ -> do
+      let mergedInterfaces = Map.union i foundationInterfaces
+      newTVarIO (Just mergedInterfaces)
     ArtifactsCached -> do
       interfaces <- File.readBinary (Stuff.interfaces root) :: IO (Maybe Interfaces)
-      newTVarIO interfaces
+      case interfaces of
+        Nothing -> newTVarIO (Just foundationInterfaces)
+        Just i -> do
+          let mergedInterfaces = Map.union i foundationInterfaces
+          newTVarIO (Just mergedInterfaces)
+
+-- | Convert foundation layer interfaces to canonical form.
+--
+-- Converts foundation layer interfaces from Raw module names to Canonical
+-- module names and wraps them in DependencyInterface format for inclusion
+-- in the Dependencies map.
+--
+-- @since 0.19.1
+convertFoundationToCanonical :: Foundation.FoundationLayer -> Interfaces
+convertFoundationToCanonical foundation =
+  let rawInterfaces = Foundation._foundationInterfaces foundation
+      canonicalInterfaces = Map.mapKeys (ModuleName.Canonical Pkg.core) rawInterfaces
+      dependencyInterfaces = Map.map I.public canonicalInterfaces
+  in dependencyInterfaces
 
 -- VERIFY INSTALL -- used by Install
 
 verifyInstall :: BW.Scope -> FilePath -> Solver.Env -> Outline.Outline -> IO (Either Exit.Details ())
 verifyInstall scope root (Solver.Env cache manager connection registry packageOverridesCache) outline =
   do
+    foundation <- Foundation.loadFoundationLayer
     configPath <- Stuff.getConfigFilePath root
     time <- File.getTime configPath
     let key = Reporting.ignorer
-    let env = Env key scope root cache manager connection registry packageOverridesCache
+    let env = Env key scope root cache manager connection registry packageOverridesCache foundation
     case outline of
       Outline.Pkg pkg -> Task.run (void (verifyPkg env time pkg))
       Outline.App app -> Task.run (void (verifyApp env time app))
@@ -359,13 +384,15 @@ data Env = Env
     _manager :: Http.Manager,
     _connection :: Solver.Connection,
     _registry :: Registry.ZokkaRegistries,
-    _packageOverridesCache :: Stuff.PackageOverridesCache
+    _packageOverridesCache :: Stuff.PackageOverridesCache,
+    _foundation :: Foundation.FoundationLayer
   }
 
 initEnv :: Reporting.DKey -> BW.Scope -> FilePath -> IO (Either Exit.Details (Env, Outline.Outline))
 initEnv key scope root =
   do
     asyncAction <- async Solver.initEnv
+    foundation <- Foundation.loadFoundationLayer
     eitherOutline <- Outline.read root
     case eitherOutline of
       Left problem ->
@@ -377,13 +404,14 @@ initEnv key scope root =
             Left problem ->
               return . Left $ Exit.DetailsCannotGetRegistry problem
             Right (Solver.Env cache manager connection registry packageOverridesCache) ->
-              return $ Right (Env key scope root cache manager connection registry packageOverridesCache, outline)
+              return $ Right (Env key scope root cache manager connection registry packageOverridesCache foundation, outline)
 
 -- FIXME
 initEnvForReactorTH :: Reporting.DKey -> BW.Scope -> FilePath -> IO (Either Exit.Details (Env, Outline.Outline))
 initEnvForReactorTH key scope root =
   do
     asyncAction <- async Solver.initEnv
+    foundation <- Foundation.loadFoundationLayer
     eitherOutline <- Outline.read root
     case eitherOutline of
       Left problem ->
@@ -395,7 +423,7 @@ initEnvForReactorTH key scope root =
             Left problem ->
               return . Left $ Exit.DetailsCannotGetRegistry problem
             Right (Solver.Env cache manager connection registry packageOverridesCache) ->
-              return $ Right (Env key scope root cache manager connection registry packageOverridesCache, outline)
+              return $ Right (Env key scope root cache manager connection registry packageOverridesCache foundation, outline)
 
 -- VERIFY PROJECT
 
@@ -443,21 +471,15 @@ checkAppDeps (Outline.AppOutline _ _ direct indirect testDirect testIndirect _) 
 -- VERIFY CONSTRAINTS
 
 verifyConstraints :: Env -> Map.Map Pkg.Name Con.Constraint -> Task (Map.Map Pkg.Name Solver.Details)
-verifyConstraints (Env _ _ _ cache _ connection registry _) constraints =
+verifyConstraints (Env _ _ _ cache _ connection registry _ _) constraints =
   do
-    -- ARCHITECTURAL FIX: Filter elm/core from solver and provide as foreign interface
-    -- elm/core should not go through source compilation, it should use interface files
-    let (coreConstraint, nonCoreConstraints) = Map.partitionWithKey (\pkg _ -> pkg == Pkg.core) constraints
+    -- FOUNDATION LAYER: elm/core will be processed FIRST, then other packages
+    -- elm/core is included in dependency resolution but prioritized
+    let nonCoreConstraints = constraints  -- Don't filter elm/core anymore
 
     result <- Task.io $ Solver.verify cache connection registry nonCoreConstraints
     case result of
-      Solver.Ok details ->
-        -- Add elm/core back as a foreign dependency if it was requested
-        if Map.member Pkg.core coreConstraint
-          then do
-            let coreDetails = Solver.Details V.one Map.empty  -- elm/core 1.0.0 with no deps
-            return (Map.insert Pkg.core coreDetails details)
-          else return details
+      Solver.Ok details -> return details
       Solver.NoSolution -> Task.throw Exit.DetailsNoSolution
       Solver.NoOfflineSolution r -> Task.throw $ Exit.DetailsNoOfflineSolution r
       Solver.Err exit -> Task.throw $ Exit.DetailsSolverProblem exit
@@ -494,7 +516,7 @@ genericErrorHandler msg action =
 -- VERIFY DEPENDENCIES
 
 verifyDependencies :: Env -> File.Time -> ValidOutline -> Map.Map Pkg.Name Solver.Details -> Map.Map Pkg.Name a -> Map.Map Pkg.Name (Pkg.Name, V.Version) -> Task Details
-verifyDependencies (Env key scope root cache manager _ zokkaRegistries packageOverridesCache) time outline solution directDeps originalPkgToOverridingPkg =
+verifyDependencies (Env key scope root cache manager _ zokkaRegistries packageOverridesCache _) time outline solution directDeps originalPkgToOverridingPkg =
   let generateBuildData :: Pkg.Name -> V.Version -> BuildData
       generateBuildData pkgName pkgVersion = case Map.lookup pkgName originalPkgToOverridingPkg of
         Nothing ->
@@ -526,10 +548,19 @@ verifyDependencies (Env key scope root cache manager _ zokkaRegistries packageOv
           printLog "Made it to VERIFYDEPENDENCIES 1 - created STM store"
           printLog ("SOLUTION: " <> show solution)
 
-          -- Start workers concurrently for all dependencies (including elm/core)
+          -- FOUNDATION LAYER: elm/core will be built normally through build pipeline
+          -- No pre-population needed - elm/core will be processed like other packages
+          printLog "FOUNDATION LAYER: elm/core will be built as a regular package"
+
+          -- FOUNDATION LAYER: Include elm/core in buildable solution
+          -- elm/core will be built first, then other packages can depend on it
+          let buildableSolution = solution  -- Include elm/core in build pipeline
+          printLog ("BUILDABLE SOLUTION (elm/core included): " <> show buildableSolution)
+
+          -- Start workers concurrently for all user package dependencies (including elm/core)
           workers <- Stuff.withRegistryLock cache $
-            forConcurrently (Map.toList solution) $ \(pkg, details) ->
-              async (verifyDep store key (generateBuildData pkg (extractVersionFromDetails details)) manager zokkaRegistries solution (extractConstraintsFromDetails details))
+            forConcurrently (Map.toList buildableSolution) $ \(pkg, details) ->
+              async (verifyDep store key (generateBuildData pkg (extractVersionFromDetails details)) manager zokkaRegistries buildableSolution (extractConstraintsFromDetails details))
 
           printLog ("Made it to VERIFYDEPENDENCIES 2: started " <> show (length workers) <> " workers")
 
@@ -634,33 +665,25 @@ verifyDep store key buildData _manager _zokkaRegistry solution directDeps = do
         BuildOriginalPackage (OriginalPackageBuildData {_pkg = pkg}) -> pkg
         BuildWithOverridingPackage (OverridingPackageBuildData {_overridingPkg = overridingPkg}) -> overridingPkg
 
-  -- ARCHITECTURAL FIX: elm/core should be treated as foreign interface, not source compilation
-  if primaryPkg == Pkg.core
-    then do
-      putStrLn ("FOREIGN-INTERFACE: Providing elm/core as foreign interface instead of source compilation")
-      -- Return empty artifacts for elm/core - interfaces will be provided by the runtime
-      let emptyArtifacts = Artifacts Map.empty Opt.empty
-      atomically $ completeDependency store primaryPkg (Right emptyArtifacts)
-      return (Right emptyArtifacts)
-    else do
-      -- Check if another thread is already processing this package
-      shouldProcess <- atomically $ claimDependency store primaryPkg
+  -- elm/core is now excluded from dependency pipeline entirely via foundation layer
+  -- Check if another thread is already processing this package
+  shouldProcess <- atomically $ claimDependency store primaryPkg
 
-      if not shouldProcess
-        then do
-          -- Another thread is handling it, wait for result using STM
-          result <- atomically $ waitForSpecificDependency store primaryPkg
-          return result
-        else do
-          -- Process this package
-          result <- build store key buildData fingerprint Set.empty
-          -- Mark as completed
-          atomically $ completeDependency store primaryPkg result
-          return result
+  if not shouldProcess
+    then do
+      -- Another thread is handling it, wait for result using STM
+      result <- atomically $ waitForSpecificDependency store primaryPkg
+      return result
+    else do
+      -- Process this package
+      result <- build store key buildData fingerprint Set.empty _manager _zokkaRegistry
+      -- Mark as completed
+      atomically $ completeDependency store primaryPkg result
+      return result
 
 -- | Safe build function that eliminates MVar deadlocks
-build :: DepStore -> Reporting.DKey -> BuildData -> Fingerprint -> Set.Set Fingerprint -> IO Dep
-build store key buildData f fs = do
+build :: DepStore -> Reporting.DKey -> BuildData -> Fingerprint -> Set.Set Fingerprint -> Http.Manager -> ZokkaRegistries -> IO Dep
+build store key buildData f fs manager zokkaRegistry = do
   let cacheFilePath = cacheFilePathFromBuildData buildData
       (pkg, vsn) = case buildData of
         BuildOriginalPackage (OriginalPackageBuildData {_pkg = origPkg, _version = origVsn}) ->
@@ -681,19 +704,9 @@ build store key buildData f fs = do
       Reporting.report key Reporting.DBroken
       return $ Left $ Just $ Exit.BD_BadBuild pkg vsn f
     Right (Outline.Pkg (Outline.PkgOutline _ _ _ _ exposed deps _ _)) -> do
-      -- CIRCULAR DEPENDENCY FIX: elm/core should not wait for other packages
-      depResults <- if pkg == Pkg.core
-        then do
-          putStrLn ("CIRCULAR-DEP-FIX: elm/core detected - using non-blocking dependency resolution")
-          -- For elm/core, use immediate/non-blocking dependency access
-          completed <- readTVarIO (_completedDeps store)
-          let available = Map.intersection completed (Map.fromList [(p, ()) | p <- Map.keys deps])
-          putStrLn ("CIRCULAR-DEP-FIX: elm/core available deps: " <> show (Map.keys available))
-          return available
-        else do
-          -- For non-core packages, wait for dependencies as before
-          putStrLn ("ATOMICALLY-DEBUG: Details.hs:666 - about to wait for dependencies: " <> show (Map.keys deps))
-          atomically $ waitForDependencies store (Map.keys deps)
+      -- elm/core no longer reaches this point due to foundation layer exclusion
+      putStrLn ("ATOMICALLY-DEBUG: Details.hs:666 - about to wait for dependencies: " <> show (Map.keys deps))
+      depResults <- atomically $ waitForDependencies store (Map.keys deps)
       putStrLn ("ATOMICALLY-DEBUG: Details.hs:666 - dependency resolution completed successfully")
 
       case sequenceA depResults of
@@ -702,17 +715,26 @@ build store key buildData f fs = do
           return $ Left x
         Right directArtifacts -> do
           let src = cacheFilePath </> "src"
-          let foreignDeps = gatherForeignInterfaces directArtifacts
+
+          -- Check if source files exist, download if missing
+          srcExists <- File.exists src
+          when (not srcExists) $ do
+            putStrLn ("DOWNLOAD_DEBUG: Source directory missing for " <> show pkg <> ", downloading package...")
+            case buildData of
+              BuildOriginalPackage (OriginalPackageBuildData {_buildCache = cache}) -> do
+                downloadResult <- downloadPackage cache zokkaRegistry manager pkg vsn
+                case downloadResult of
+                  Left err -> putStrLn ("DOWNLOAD_ERROR: " <> show err)
+                  Right () -> putStrLn ("DOWNLOAD_SUCCESS: Downloaded " <> show pkg)
+              BuildWithOverridingPackage _ ->
+                putStrLn ("DOWNLOAD_SKIP: Package override detected for " <> show pkg)
+
           -- Create package-aware foreign dependency lookup
           let pkgForeignDeps = gatherPackageForeignInterfaces directArtifacts
-          printLog ("DEBUG: Processing package " <> show pkg <> " (isCore: " <> show (pkg == Pkg.core) <> ")")
-          when (pkg == Pkg.core) $ do
-            printLog ("DEBUG: Foreign interfaces for pkg " <> show pkg <> ": " <> show (Map.keys foreignDeps))
+          printLog ("DEBUG: Processing package " <> show pkg)
           let exposedDict = Map.fromSet (const ()) (Set.fromList (Outline.flattenExposed exposed))
-          when (pkg == Pkg.core) $ do
-            printLog ("DEBUG: Exposed modules for " <> show pkg <> ": " <> show (Map.keys exposedDict))
 
-          -- FIXED: Treat elm/core like any other package - use exposed modules only
+          -- Foundation layer: All packages use exposed modules and interface files
           -- Package overrides are optional, normal packages use interface files
           let modulesToCrawl = exposedDict
 
@@ -721,18 +743,13 @@ build store key buildData f fs = do
           statusStore <- atomically $ newTVar Map.empty
           mvars <- Map.traverseWithKey (\name _ -> async (crawlModuleWithPackageContext pkgForeignDeps statusStore pkg src docsStatus name)) modulesToCrawl
           statuses <- traverse wait mvars
-          let successfulCrawls = Map.keys $ Map.mapMaybe id statuses
-          when (pkg == Pkg.core) $ do
-            printLog ("DEBUG: Successfully crawled modules for " <> show pkg <> ": " <> show successfulCrawls)
           case sequenceA statuses of
             Nothing -> do
               Reporting.report key Reporting.DBroken
               printLog ("maybeStatuses were Nothing for " <> (show pkg <> (" vsn " <> (show vsn <> (" and deps " <> show deps)))))
               return $ Left $ Just $ Exit.BD_BadBuild pkg vsn f
-            Just statusList -> do
-              printLog ("DEBUG: MAIN ENTRY POINT - Processing statusList for pkg: " <> show pkg)
-              when (pkg == Pkg.core) $ do
-                printLog ("DEBUG: Modules in statusList for " <> show pkg <> ": " <> show (Map.keys statusList))
+            Just _ -> do
+              printLog ("DEBUG: MAIN ENTRY POINT - Processing for pkg: " <> show pkg)
 
 
               -- STM-based result tracking for compilation
@@ -774,8 +791,7 @@ build store key buildData f fs = do
               printLog ("DEBUG: CHECKPOINT 8 - Created completeStatusList")
               printLog ("DEBUG: Kernel modules check - looking for Elm.JsArray in completeStatusList: " <> show (Map.member "Elm.JsArray" completeStatusList))
 
-              printLog ("DEBUG: CHECKPOINT 9 - About to check if elm/core package")
-              -- Bootstrap-aware compilation ordering for elm/core
+              -- Foundation layer: Use regular compilation for all packages
               -- Use ALL modules from finalStatusStore for dependency graph, not just successful ones
               -- This ensures kernel modules are included even if they fail to parse
               let allStatusList = Map.mapWithKey (\name maybeStatus ->
@@ -787,14 +803,9 @@ build store key buildData f fs = do
                     ) finalStatusValues
               printLog ("DEBUG: allStatusList keys: " <> show (Map.keys allStatusList))
               printLog ("DEBUG: completeStatusList keys: " <> show (Map.keys completeStatusList))
-              -- Re-enable bootstrap compilation now that STM issue is fixed
-              maybeResults <- if isElmCorePackage pkg
-                then do
-                  printLog ("BOOTSTRAP: Detected elm/core package, using bootstrap compilation ordering")
-                  compileElmCoreBootstrapSimple compileAction allStatusList moduleResultTVars
-                else do
-                  printLog ("REGULAR: Using regular parallel compilation for " <> show pkg)
-                  compileRegularWithTVars compileAction allStatusList moduleResultTVars
+              -- elm/core excluded from pipeline - use regular parallel compilation for all packages
+              printLog ("REGULAR: Using regular parallel compilation for " <> show pkg)
+              maybeResults <- compileRegularWithTVars compileAction allStatusList moduleResultTVars
               case sequenceA maybeResults of
                 Nothing -> do
                   printLog ("maybeResults were Nothing for " <> (show pkg <> (" vsn " <> (show vsn <> (" and deps from status were " <> show (fmap extractDepsFromStatus allStatusList))))))
@@ -908,11 +919,15 @@ crawlModule foreignDeps mvar pkg src docsStatus name =
 
     let pathCanopy = src </> ModuleName.toFilePath name <.> "canopy"
     let pathElm = src </> ModuleName.toFilePath name <.> "elm"
+    let pathCan = src </> ModuleName.toFilePath name <.> "can"
     canopyExists <- File.exists pathCanopy
     elmExists <- File.exists pathElm
-    let exists = canopyExists || elmExists
-    let path = if canopyExists then pathCanopy else pathElm
-    printLog ("crawlModule: " <> (show name <> (" canopy exists: " <> (show canopyExists <> (" elm exists: " <> show elmExists)))))
+    canExists <- File.exists pathCan
+    let exists = canopyExists || elmExists || canExists
+    let path = if canopyExists then pathCanopy
+               else if canExists then pathCan
+               else pathElm
+    printLog ("crawlModule: " <> (show name <> (" canopy exists: " <> (show canopyExists <> (" elm exists: " <> (show elmExists <> (" can exists: " <> show canExists)))))))
     when (name == "Elm.JsArray") $ do
       printLog ("DEBUG: Elm.JsArray src path: " <> show src)
       printLog ("DEBUG: Elm.JsArray pathCanopy: " <> show pathCanopy)
@@ -1058,24 +1073,28 @@ crawlKernel foreignDeps mvar pkg src name =
         when (ModuleName.toChars name `elem` ["Elm.Kernel.Basics", "Elm.Kernel.JsArray"]) $ do
           printLog ("DEBUG: crawlKernel " <> show name <> " using kernelForeignDeps: " <> show kernelForeignDeps)
           printLog ("DEBUG: crawlKernel " <> show name <> " isKernel: " <> show (Name.isKernel name))
-        case Kernel.fromByteString pkg kernelForeignDeps bytes of
-          Nothing -> do
-            when (ModuleName.toChars name `elem` ["Elm.Kernel.Basics", "Elm.Kernel.JsArray"]) $ do
-              printLog ("DEBUG: crawlKernel " <> show name <> " Kernel.fromByteString returned Nothing")
-            -- FOUNDATION FIX: Kernel modules are foundation layer and should never fail
-            -- If parsing fails, treat as foreign kernel to maintain dependency graph integrity
-            if Name.isKernel name
-              then do
-                printLog ("DEBUG: crawlKernel " <> show name <> " treating as foreign kernel (foundation layer)")
-                return (Just SKernelForeign)
-              else return Nothing
-          Just (Kernel.Content imports chunks) -> do
-            when (ModuleName.toChars name `elem` ["Elm.Kernel.Basics", "Elm.Kernel.JsArray"]) $ do
-              printLog ("DEBUG: crawlKernel " <> show name <> " parsed successfully, crawling imports")
-            _ <- crawlImports foreignDeps mvar pkg src imports
-            when (ModuleName.toChars name `elem` ["Elm.Kernel.Basics", "Elm.Kernel.JsArray"]) $ do
-              printLog ("DEBUG: crawlKernel " <> show name <> " returning SKernelLocal")
-            return (Just (SKernelLocal chunks))
+        -- FOUNDATION LAYER: Check if this is a kernel module in the foundation registry
+        if Name.isKernel name && ModuleName.toChars name `elem` Foundation.kernelModuleRegistry
+          then do
+            printLog ("FOUNDATION: Kernel module " <> show name <> " provided by foundation layer")
+            return (Just SKernelForeign)
+          else case Kernel.fromByteString pkg kernelForeignDeps bytes of
+            Nothing -> do
+              when (ModuleName.toChars name `elem` ["Elm.Kernel.Basics", "Elm.Kernel.JsArray"]) $ do
+                printLog ("DEBUG: crawlKernel " <> show name <> " Kernel.fromByteString returned Nothing")
+              -- Fallback: treat failed kernels as foreign
+              if Name.isKernel name
+                then do
+                  printLog ("DEBUG: crawlKernel " <> show name <> " treating as foreign kernel (fallback)")
+                  return (Just SKernelForeign)
+                else return Nothing
+            Just (Kernel.Content imports chunks) -> do
+              when (ModuleName.toChars name `elem` ["Elm.Kernel.Basics", "Elm.Kernel.JsArray"]) $ do
+                printLog ("DEBUG: crawlKernel " <> show name <> " parsed successfully, crawling imports")
+              _ <- crawlImports foreignDeps mvar pkg src imports
+              when (ModuleName.toChars name `elem` ["Elm.Kernel.Basics", "Elm.Kernel.JsArray"]) $ do
+                printLog ("DEBUG: crawlKernel " <> show name <> " returning SKernelLocal")
+              return (Just (SKernelLocal chunks))
       else do
         when (ModuleName.toChars name `elem` ["Elm.Kernel.Basics", "Elm.Kernel.JsArray"]) $ do
           printLog ("DEBUG: crawlKernel " <> show name <> " file does not exist, returning SKernelForeign")
@@ -1095,149 +1114,7 @@ data Result
   | RKernelLocal [Kernel.Chunk]
   | RKernelForeign
 
--- BOOTSTRAP COMPILATION HELPERS
-
--- | Check if a package is elm/core which needs bootstrap compilation ordering
-isElmCorePackage :: Pkg.Name -> Bool
-isElmCorePackage pkg =
-  case pkg of
-    Pkg.Name author project ->
-      Utf8.toChars author == "elm" && Utf8.toChars project == "core"
-
--- | Compile elm/core modules in proper dependency order using topological sort
-compileElmCoreBootstrapSimple :: (Status -> IO (Maybe Result))
-                              -> Map.Map ModuleName.Raw Status
-                              -> Map.Map ModuleName.Raw (TVar (Maybe Result))
-                              -> IO (Map.Map ModuleName.Raw (Maybe Result))
-compileElmCoreBootstrapSimple compileAction statusMap moduleResultTVars = do
-  printLog ("BOOTSTRAP: Starting compileElmCoreBootstrapSimple")
-  printLog ("BOOTSTRAP: statusMap has " <> show (Map.size statusMap) <> " modules")
-  printLog ("BOOTSTRAP: statusMap keys: " <> show (map ModuleName.toChars (Map.keys statusMap)))
-
-  -- Extract dependency graph
-  printLog ("BOOTSTRAP: About to build dependency graph")
-  let depGraph = buildDependencyGraph statusMap
-  printLog ("BOOTSTRAP: Built dependency graph with " <> show (Map.size depGraph) <> " modules")
-  printLog ("BOOTSTRAP: All modules found: " <> show (Map.keys statusMap))
-  printLog ("BOOTSTRAP: Status types by module:")
-  Map.foldrWithKey (\k status acc -> do
-    let statusType = case status of
-          SLocal {} -> "SLocal"
-          SKernelLocal {} -> "SKernelLocal"
-          SKernelForeign -> "SKernelForeign"
-          SForeign {} -> "SForeign"
-    printLog ("  " <> ModuleName.toChars k <> " -> " <> statusType)
-    acc) (pure ()) statusMap
-  printLog ("BOOTSTRAP: Dependency details:")
-  Map.foldrWithKey (\k v acc -> do
-    printLog ("  " <> ModuleName.toChars k <> " depends on: " <> show (map ModuleName.toChars v))
-    acc) (pure ()) depGraph
-
-  -- Prepare debug info for topological sort
-  let allNodes = Map.keys depGraph
-      inDegree = Map.fromList [(node, length (Map.findWithDefault [] node depGraph)) | node <- allNodes]
-      noIncoming = [node | (node, degree) <- Map.toList inDegree, degree == 0]
-  printLog ("TOPOLOGICAL: All nodes in dependency graph: " <> show (map ModuleName.toChars allNodes))
-  printLog ("TOPOLOGICAL: In-degree calculation: " <> show [(ModuleName.toChars k, v) | (k, v) <- Map.toList inDegree])
-  printLog ("TOPOLOGICAL: Nodes with no incoming edges: " <> show (map ModuleName.toChars noIncoming))
-  -- Detailed debug for Elm.JsArray
-  let jsArrayNodes = filter (\name -> ModuleName.toChars name == "Elm.JsArray") allNodes
-  printLog ("JSARRAY-DEBUG: Found Elm.JsArray nodes: " <> show (map ModuleName.toChars jsArrayNodes))
-  case jsArrayNodes of
-    [jsArrayName] -> do
-      printLog ("JSARRAY-DEBUG: Elm.JsArray in-degree: " <> show (Map.lookup jsArrayName inDegree))
-      printLog ("JSARRAY-DEBUG: Is Elm.JsArray in noIncoming? " <> show (jsArrayName `elem` noIncoming))
-      case Map.lookup jsArrayName statusMap of
-        Just status -> printLog ("JSARRAY-DEBUG: Elm.JsArray status type: " <> case status of
-          SLocal {} -> "SLocal"
-          SKernelLocal {} -> "SKernelLocal"
-          SKernelForeign -> "SKernelForeign"
-          SForeign {} -> "SForeign")
-        Nothing -> printLog ("JSARRAY-DEBUG: Elm.JsArray not found in statusMap")
-    _ -> printLog ("JSARRAY-DEBUG: Elm.JsArray not found or multiple matches")
-
-  -- Perform topological sort
-  case topologicalSort depGraph of
-    Nothing -> do
-      printLog ("BOOTSTRAP: ERROR - Cycle detected in elm/core dependencies!")
-      -- Fallback to parallel compilation with proper module names
-      results <- Map.traverseWithKey compileAndStore statusMap
-      pure results
-    Just sortedModules -> do
-      printLog ("BOOTSTRAP: Final sorted order length: " <> show (length sortedModules) <> ", expected: " <> show (Map.size depGraph))
-      printLog ("BOOTSTRAP: Dependency order: " <> show (map ModuleName.toChars sortedModules))
-      compileInDependencyOrder sortedModules statusMap
-
-  where
-    -- Build dependency graph from status map
-    buildDependencyGraph :: Map.Map ModuleName.Raw Status -> Map.Map ModuleName.Raw [ModuleName.Raw]
-    buildDependencyGraph sMap = Map.mapWithKey extractDependencies sMap
-      where
-        extractDependencies :: ModuleName.Raw -> Status -> [ModuleName.Raw]
-        extractDependencies _name status = case status of
-          SLocal _ deps _ -> Map.keys (Map.intersection deps sMap) -- Only deps that are in this package
-          SKernelLocal _ -> [] -- Kernel modules have no dependencies - they're leaf nodes
-          SKernelForeign -> [] -- Foreign kernel modules have no dependencies
-          SForeign _ -> [] -- Foreign modules have no dependencies in this package
-
-    -- Kahn's algorithm for topological sort
-    topologicalSort :: Map.Map ModuleName.Raw [ModuleName.Raw] -> Maybe [ModuleName.Raw]
-    topologicalSort dependsOn =
-      let allNodes = Map.keys dependsOn
-          -- Calculate in-degree for each node (number of dependencies)
-          inDegree = Map.fromList [(node, length (Map.findWithDefault [] node dependsOn)) | node <- allNodes]
-          -- Build reverse graph: module -> list of modules that depend on it
-          dependents = buildDependents dependsOn
-          -- Find nodes with no dependencies
-          noIncoming = [node | (node, degree) <- Map.toList inDegree, degree == 0]
-      in kahnsAlgorithm dependents inDegree noIncoming []
-      where
-        buildDependents depGraph =
-          let pairs = [(dep, node) | (node, deps) <- Map.toList depGraph, dep <- deps]
-          in Map.fromListWith (++) [(dep, [dependent]) | (dep, dependent) <- pairs]
-
-        kahnsAlgorithm :: Map.Map ModuleName.Raw [ModuleName.Raw] -> Map.Map ModuleName.Raw Int -> [ModuleName.Raw] -> [ModuleName.Raw] -> Maybe [ModuleName.Raw]
-        kahnsAlgorithm _ _ [] result =
-          if length result == Map.size dependsOn
-          then Just result  -- Don't reverse - build in correct order
-          else Nothing -- Cycle detected
-        kahnsAlgorithm dependentsGraph inDeg (node:queue) result =
-          let nodesDependingOnThis = Map.findWithDefault [] node dependentsGraph
-              newInDeg = foldl (\acc dependent -> Map.adjust (\d -> d - 1) dependent acc) inDeg nodesDependingOnThis
-              newlyFree = [dep | dep <- nodesDependingOnThis, Map.findWithDefault 0 dep newInDeg == 0]
-              newQueue = queue ++ newlyFree
-          in kahnsAlgorithm dependentsGraph newInDeg newQueue (result ++ [node])
-
-    -- Compile modules in dependency order
-    compileInDependencyOrder :: [ModuleName.Raw] -> Map.Map ModuleName.Raw Status -> IO (Map.Map ModuleName.Raw (Maybe Result))
-    compileInDependencyOrder sortedModules sMap = do
-      results <- foldM compileNextModule Map.empty sortedModules
-      pure results
-      where
-        compileNextModule :: Map.Map ModuleName.Raw (Maybe Result) -> ModuleName.Raw -> IO (Map.Map ModuleName.Raw (Maybe Result))
-        compileNextModule resultsSoFar moduleName = do
-          case Map.lookup moduleName sMap of
-            Nothing -> do
-              printLog ("BOOTSTRAP: Warning - module not found: " <> show moduleName)
-              pure resultsSoFar
-            Just status -> do
-              printLog ("BOOTSTRAP: Compiling " <> show moduleName)
-              result <- compileAndStore moduleName status
-              pure (Map.insert moduleName result resultsSoFar)
-
-    -- Wrapper that updates TVar after compilation
-    compileAndStore :: ModuleName.Raw -> Status -> IO (Maybe Result)
-    compileAndStore moduleName status = do
-      result <- compileAction status
-      case result of
-        Just res -> do
-          case Map.lookup moduleName moduleResultTVars of
-            Just tvar -> do
-              atomically $ writeTVar tvar (Just res)
-              printLog ("TVar updated for module: " <> show moduleName)
-            Nothing -> printLog ("BOOTSTRAP: Warning - no TVar found for module " <> show moduleName)
-        Nothing -> printLog ("BOOTSTRAP: Compilation failed for module: " <> show moduleName)
-      pure result
+-- FOUNDATION LAYER: elm/core bootstrap logic removed - handled by foundation layer
 
 -- | Compile modules in parallel with TVar updates
 compileRegularWithTVars :: (Status -> IO (Maybe Result))
@@ -1261,7 +1138,9 @@ compileRegularWithTVars compileAction statusMap moduleResultTVars = do
   traverse wait vars
 
 compile :: Pkg.Name -> TVar (Map.Map ModuleName.Raw (TVar (Maybe Result))) -> Status -> IO (Maybe Result)
-compile pkg mvar status =
+compile pkg mvar status = do
+  -- FOUNDATION LAYER: Load foundation layer for interface resolution
+  foundation <- Foundation.loadFoundationLayer
   case status of
     SLocal docsStatus deps modul ->
       do
@@ -1281,7 +1160,9 @@ compile pkg mvar status =
         printLog ("DEBUG: lazy interfaces keys for pkg " <> show pkg <> ": " <> show (Map.keys lazyInterfaces))
 
         -- DETAILED LOGGING FOR COMPILE.COMPILE ARGUMENTS
-        let interfaces = lazyInterfaces
+        -- FOUNDATION LAYER: Merge foundation layer interfaces with resolved dependencies
+        let foundationInterfaces = Foundation._foundationInterfaces foundation
+            interfaces = Map.union lazyInterfaces foundationInterfaces
         printLog ("COMPILE-DEBUG: About to call Compile.compile")
         printLog ("COMPILE-DEBUG: pkg = " <> show pkg)
         printLog ("COMPILE-DEBUG: interfaces size = " <> show (Map.size interfaces))

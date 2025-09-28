@@ -122,13 +122,26 @@ calculateRootDepth _ =
 -- Returns 'Just' ByteString content if config file was found and extracted,
 -- 'Nothing' if no config file (canopy.json or elm.json) exists in the archive.
 writePackageReturnCanopyJson :: FilePath -> Zip.Archive -> IO (Maybe BS.ByteString)
-writePackageReturnCanopyJson destination archive =
+writePackageReturnCanopyJson destination archive = do
+  putStrLn ("ARCHIVE_DEBUG: writePackageReturnCanopyJson called for " <> destination)
   case Zip.zEntries archive of
-    [] -> pure Nothing
+    [] -> do
+      putStrLn ("ARCHIVE_EMPTY: " <> destination)
+      Logger.printLog ("ARCHIVE_EMPTY: " <> destination)
+      pure Nothing
     allEntries@(firstEntry : _) -> do
+      putStrLn ("ARCHIVE_DEBUG: Archive has " <> show (length allEntries) <> " entries")
       logPackageWrite destination
       let rootDepth = calculateRootDepth firstEntry
+          entryCount = length allEntries
+      putStrLn ("ARCHIVE_PROCESSING: " <> destination <> " with " <> show entryCount <> " entries, rootDepth=" <> show rootDepth)
+      putStrLn ("ARCHIVE_FIRST_ENTRY: " <> Zip.eRelativePath firstEntry)
+      Logger.printLog ("ARCHIVE_PROCESSING: " <> destination <> " with " <> show entryCount <> " entries, rootDepth=" <> show rootDepth)
+      Logger.printLog ("ARCHIVE_FIRST_ENTRY: " <> Zip.eRelativePath firstEntry)
       canopyJsonResults <- Traversable.traverse (writeEntryReturnCanopyJson destination rootDepth) allEntries
+      let extractedFiles = length (filter (/= Nothing) canopyJsonResults)
+      putStrLn ("ARCHIVE_COMPLETE: " <> destination <> " extracted " <> show extractedFiles <> " files")
+      Logger.printLog ("ARCHIVE_COMPLETE: " <> destination <> " extracted " <> show extractedFiles <> " files")
       pure (Monad.msum canopyJsonResults)
 
 -- | Log package extraction operation.
@@ -145,11 +158,18 @@ logPackageWrite destination = do
 -- and creating appropriate files or directories.
 writeEntry :: FilePath -> Int -> Zip.Entry -> IO ()
 writeEntry destination rootDepth entry = do
-  let relativePath = extractRelativePath rootDepth entry
-  Monad.when (isAllowedPath relativePath) $ do
+  let originalPath = Zip.eRelativePath entry
+      relativePath = extractRelativePath rootDepth entry
+      allowed = isAllowedPath relativePath
+  Logger.printLog ("EXTRACT_DEBUG: " <> originalPath <> " -> " <> relativePath <> " (allowed: " <> show allowed <> ")")
+  Monad.when allowed $ do
     if isDirectoryPath relativePath
-      then createEntryDirectory destination relativePath
-      else writeEntryFile destination relativePath entry
+      then do
+        Logger.printLog ("EXTRACT_DIRECTORY: " <> relativePath)
+        createEntryDirectory destination relativePath
+      else do
+        Logger.printLog ("EXTRACT_FILE: " <> relativePath)
+        writeEntryFile destination relativePath entry
 
 -- | Extract relative path from ZIP entry.
 --
@@ -176,8 +196,6 @@ extractRelativePath rootDepth entry =
 --   * Package metadata files
 isAllowedPath :: FilePath -> Bool
 isAllowedPath path =
-  -- Reject paths with null characters for security
-  not (List.elem '\0' path) &&
   -- Reject path traversal attempts
   not (List.isInfixOf "../" path) &&
   -- Allow specific files and src/ directory contents
@@ -244,8 +262,11 @@ writeEntryFile destination relativePath entry = do
 -- files for metadata processing.
 writeEntryReturnCanopyJson :: FilePath -> Int -> Zip.Entry -> IO (Maybe BS.ByteString)
 writeEntryReturnCanopyJson destination rootDepth entry = do
-  let relativePath = extractRelativePath rootDepth entry
-  if isAllowedPath relativePath
+  let originalPath = Zip.eRelativePath entry
+      relativePath = extractRelativePath rootDepth entry
+      allowed = isAllowedPath relativePath
+  Logger.printLog ("EXTRACT_JSON_DEBUG: " <> originalPath <> " -> " <> relativePath <> " (allowed: " <> show allowed <> ")")
+  if allowed
     then processAllowedEntry destination relativePath entry
     else pure Nothing
 

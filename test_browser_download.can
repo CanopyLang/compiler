@@ -1,0 +1,1 @@
+module Main exposing (main); import Browser; main = Browser.sandbox { init = 0, update = \_ m -> m, view = \_ -> Html.text "Hello" }

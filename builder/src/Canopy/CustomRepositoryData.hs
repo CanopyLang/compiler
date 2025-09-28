@@ -161,7 +161,7 @@ data CustomSingleRepositoryData
 standardCanopyRepositoryDefaultPackageServerRepo :: DefaultPackageServerRepo
 standardCanopyRepositoryDefaultPackageServerRepo =
   DefaultPackageServerRepo
-    { _defaultPackageServerRepoTypeUrl = Utf8.fromChars "https://package.canopy-lang.org",
+    { _defaultPackageServerRepoTypeUrl = Utf8.fromChars "https://package.elm-lang.org",
       _defaultPackageServerRepoLocalName = Utf8.fromChars "standard-canopy-repository"
     }
 
@@ -171,7 +171,7 @@ standardCanopyRepository = DefaultPackageServerRepoData standardCanopyRepository
 standardZokkaRepositoryDefaultPackageServerRepo :: DefaultPackageServerRepo
 standardZokkaRepositoryDefaultPackageServerRepo =
   DefaultPackageServerRepo
-    { _defaultPackageServerRepoTypeUrl = Utf8.fromChars "https://package.canopy-lang.org",
+    { _defaultPackageServerRepoTypeUrl = Utf8.fromChars "https://package.elm-lang.org",
       _defaultPackageServerRepoLocalName = Utf8.fromChars "standard-zokka-repository"
     }
 

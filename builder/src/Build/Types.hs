@@ -91,7 +91,6 @@ module Build.Types
   , waitForMaybeResult
   ) where
 
-import qualified Control.Concurrent as Concurrent
 import qualified Control.Concurrent.STM as STM
 import Control.Lens (makeLenses)
 import Data.Map.Strict (Map)
@@ -299,19 +298,12 @@ makeLenses ''DepsConfig
 -- | Wait for a result from a Maybe TVar (used with fork) - WITH DEBUGGING
 waitForMaybeResult :: STM.TVar (Maybe a) -> IO a
 waitForMaybeResult tvar = do
-  putStrLn "POLLING-DEBUG: Build.Types.waitForMaybeResult called"
-  -- Use simple polling instead of STM retry to avoid deadlocks
-  result <- STM.readTVarIO tvar
-  case result of
-    Nothing -> do
-      putStrLn "POLLING-DEBUG: Build.Types.waitForMaybeResult - TVar empty, polling..."
-      threadDelay 1000  -- 1ms delay
-      waitForMaybeResult tvar
-    Just value -> do
-      putStrLn "POLLING-DEBUG: Build.Types.waitForMaybeResult - TVar filled, returning value"
-      pure value
-  where
-    threadDelay = Concurrent.threadDelay
+  result <- STM.atomically $ do
+    maybeResult <- STM.readTVar tvar
+    case maybeResult of
+      Nothing -> STM.retry
+      Just value -> pure value
+  pure result
 
 -- | Wait for a result from a regular TVar (used with other operations)
 waitForResult :: STM.TVar a -> IO a

@@ -677,32 +677,45 @@ getArchiveWithHeaders ::
   ((Sha, Zip.Archive) -> IO (Either e a)) ->
   -- | Result containing processed data or error
   IO (Either e a)
-getArchiveWithHeaders manager url headers onError err onSuccess =
+getArchiveWithHeaders manager url headers onError err onSuccess = do
+  putStrLn ("HTTP_DEBUG: Starting archive download from " <> url)
   if isFileUrl url
     then -- Handle file:// URLs by reading from local filesystem
       Exception.handle (handleSomeException url onError) $
         case fileUrlToPath url of
           Just filePath -> do
+            putStrLn ("HTTP_DEBUG: Reading local archive from " <> filePath)
             result <- readLocalArchive filePath
             case result of
-              Nothing -> return (Left err)
-              Just shaAndArchive -> onSuccess shaAndArchive
-          Nothing -> return (Left (onError (BadUrl url "Invalid file:// URL format")))
+              Nothing -> do
+                putStrLn ("HTTP_DEBUG: Failed to read local archive " <> filePath)
+                return (Left err)
+              Just shaAndArchive -> do
+                putStrLn ("HTTP_DEBUG: Successfully read local archive, calling onSuccess")
+                onSuccess shaAndArchive
+          Nothing -> do
+            putStrLn ("HTTP_DEBUG: Invalid file URL format " <> url)
+            return (Left (onError (BadUrl url "Invalid file:// URL format")))
     else -- Handle http:// and https:// URLs with standard HTTP client
       Exception.handle (handleSomeException url onError) . Exception.handle (handleHttpException url onError) $
           ( do
+              putStrLn ("HTTP_DEBUG: Downloading HTTP archive from " <> url)
               req0 <- parseUrlThrow url
               let req1 =
                     req0
                       { Client.method = methodGet,
                         Client.requestHeaders = addDefaultHeaders headers
                       }
-              withResponse req1 manager $ \response ->
-                do
-                  result <- readArchive (responseBody response)
-                  case result of
-                    Nothing -> return (Left err)
-                    Just shaAndArchive -> onSuccess shaAndArchive
+              withResponse req1 manager $ \response -> do
+                putStrLn ("HTTP_DEBUG: Got HTTP response, reading archive content")
+                result <- readArchive (responseBody response)
+                case result of
+                  Nothing -> do
+                    putStrLn ("HTTP_DEBUG: Failed to parse archive from response")
+                    return (Left err)
+                  Just shaAndArchive -> do
+                    putStrLn ("HTTP_DEBUG: Successfully parsed archive, calling onSuccess callback")
+                    onSuccess shaAndArchive
           )
 
 -- | Download ZIP archive with integrity verification.

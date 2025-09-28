@@ -1,0 +1,9 @@
+module Main exposing (..)
+
+import Browser
+import Html exposing (..)
+
+type alias Model = String
+
+main : Program () Model String
+main = Browser.sandbox { init = "Hello", update = \msg model -> msg, view = \model -> text model }

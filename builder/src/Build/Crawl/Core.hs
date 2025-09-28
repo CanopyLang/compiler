@@ -49,8 +49,10 @@ import Debug.Trace (trace)
 import qualified AST.Source as Src
 import qualified Canopy.Details as Details
 import qualified Canopy.ModuleName as ModuleName
+import qualified Canopy.Package as Pkg
 import qualified Data.Name as Name
 import qualified Data.ByteString as B
+import qualified Data.Text as Text
 import qualified File
 import qualified Data.Map.Strict as Map
 import qualified Parse.Module as Parse
@@ -62,6 +64,7 @@ import qualified Reporting.Error.Syntax as Syntax
 import Build.Config (CrawlConfig (..), crawlEnv, crawlMVar, crawlDocsNeed)
 import Build.Types (Env (..), Status (..), StatusDict, DocsNeed(DocsNeed))
 import qualified Build.Crawl.Discovery as Discovery
+import qualified Build.Foundation as Foundation
 
 -- For dependency crawling
 import Control.Concurrent (forkIO)
@@ -184,13 +187,18 @@ checkForeignOrNotFound
   -> Map.Map ModuleName.Raw Details.Local
   -> Map.Map ModuleName.Raw Details.Foreign
   -> IO Status
-checkForeignOrNotFound name locals foreigns =
+checkForeignOrNotFound name locals foreigns = do
   case Map.lookup name locals of
     Just local -> pure (SCached local)
     Nothing ->
       case Map.lookup name foreigns of
         Just (Details.Foreign pkgName _duplicates) -> pure (SForeign pkgName)
-        Nothing -> pure (SBadImport Import.NotFound)
+        Nothing -> do
+          -- FOUNDATION LAYER: Check if module is provided by foundation layer
+          foundation <- Foundation.loadFoundationLayer
+          if Foundation.hasFoundationInterface foundation (Text.pack (ModuleName.toChars name))
+            then pure (SForeign Pkg.core)  -- Treat foundation modules as elm/core foreign
+            else pure (SBadImport Import.NotFound)
 
 -- | Parse and validate module.
 --

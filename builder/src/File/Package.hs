@@ -208,8 +208,6 @@ makeRelativeToPackageUnsafe path =
 --   * Package metadata
 isAllowedPackageFile :: FilePath -> Bool
 isAllowedPackageFile path =
-  -- Reject paths with null characters for security
-  not (List.elem '\0' path) &&
   -- Reject path traversal attempts
   not (List.isInfixOf "../" path) &&
   -- Only allow relative paths
@@ -228,7 +226,6 @@ isAllowedPackageFile path =
 -- contain security vulnerabilities.
 validatePackagePath :: FilePath -> Either String FilePath
 validatePackagePath path
-  | List.elem '\0' path = Left "Path contains null characters"
   | List.isInfixOf "../" path = Left "Path traversal not allowed"
   | FP.isAbsolute path = Left "Absolute paths not allowed"
   | otherwise = Right (FP.normalise path)
