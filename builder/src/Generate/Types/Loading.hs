@@ -50,7 +50,9 @@ import qualified Build
 import qualified Canopy.Compiler.Type.Extract as Extract
 import qualified Canopy.Interface as I
 import qualified Canopy.ModuleName as ModuleName
-import Control.Concurrent (MVar, forkIO, newEmptyMVar, newMVar, putMVar, readMVar)
+import Control.Concurrent (forkIO)
+import Control.Concurrent.STM (TVar, newTVarIO, writeTVar, atomically, readTVar, readTVarIO, retry)
+import Debug.Trace (trace)
 import Data.Map (Map)
 import qualified Data.Map as Map
 import qualified File
@@ -58,6 +60,17 @@ import Generate.Types (Task)
 import qualified Reporting.Exit as Exit
 import qualified Reporting.Task as Task
 import qualified Stuff
+
+-- | Wait for a TVar that may contain Nothing or Just a result.
+--
+-- For TVars that are initialized with Nothing and later populated.
+-- Uses labeled STM retry for debugging.
+waitForMaybeTVar :: TVar (Maybe a) -> IO (Maybe a)
+waitForMaybeTVar tvar = atomically $ do
+  maybeResult <- readTVar tvar
+  case maybeResult of
+    Nothing -> trace ("STM-RETRY: Generate.Types.Loading waitForMaybeTVar - waiting for TVar to be populated") retry
+    Just _ -> return maybeResult
 
 -- | Load types from modules for debug code generation.
 --
@@ -101,9 +114,9 @@ loadTypes
   -- ^ Merged types for debug mode generation
 loadTypes root ifaces modules =
   Task.eio id $ do
-    mvars <- traverse (loadTypesHelp root) modules
+    tvars <- traverse (loadTypesHelp root) modules
     let !foreigns = Extract.mergeMany (Map.elems (Map.mapWithKey Extract.fromDependencyInterface ifaces))
-    results <- traverse readMVar mvars
+    results <- traverse waitForMaybeTVar tvars
     case sequenceA results of
       Just ts -> return (Right (Extract.merge foreigns (Extract.mergeMany ts)))
       Nothing -> return (Left Exit.GenerateCannotLoadArtifacts)
@@ -121,7 +134,7 @@ loadTypes root ifaces modules =
 --
 -- === Returns
 --
--- IO action producing an MVar containing extracted types.
+-- IO action producing a TVar containing extracted types.
 --
 -- === Loading Strategies
 --
@@ -131,27 +144,27 @@ loadTypes root ifaces modules =
 -- * Cached with corrupted interface: Return Nothing
 --
 -- @since 0.19.1
-loadTypesHelp 
+loadTypesHelp
   :: FilePath
   -- ^ Root directory for the project
   -> Build.Module
   -- ^ Module to extract types from
-  -> IO (MVar (Maybe Extract.Types))
-  -- ^ MVar containing extracted types
+  -> IO (TVar (Maybe Extract.Types))
+  -- ^ TVar containing extracted types
 loadTypesHelp root modul =
   case modul of
     Build.Fresh name iface _ ->
-      newMVar (Just (Extract.fromInterface name iface))
-    Build.Cached name _ ciMVar -> do
-      cachedInterface <- readMVar ciMVar
+      newTVarIO (Just (Extract.fromInterface name iface))
+    Build.Cached name _ ciTVar -> do
+      cachedInterface <- readTVarIO ciTVar
       case cachedInterface of
         Build.Unneeded -> do
-          mvar <- newEmptyMVar
+          tvar <- newTVarIO Nothing
           _ <- forkIO $ do
             maybeIface <- File.readBinary (Stuff.canopyi root name)
-            putMVar mvar (Extract.fromInterface name <$> maybeIface)
-          return mvar
+            atomically $ writeTVar tvar (Extract.fromInterface name <$> maybeIface)
+          return tvar
         Build.Loaded iface ->
-          newMVar (Just (Extract.fromInterface name iface))
+          newTVarIO (Just (Extract.fromInterface name iface))
         Build.Corrupted ->
-          newMVar Nothing
+          newTVarIO Nothing

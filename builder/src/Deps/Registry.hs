@@ -146,7 +146,7 @@ fetch manager cache (CustomRepositoriesData customFullRepositories singlePackage
       Right registries -> do
         let path = Stuff.registry cache
         let registry = Map.fromList registries
-        File.writeBinary path (zokkaRegistriesFromRegistriesMap customRepoConfigLastModified registry)
+        File.writeBinaryAtomic path (zokkaRegistriesFromRegistriesMap customRepoConfigLastModified registry)
         pure $ Right (zokkaRegistriesFromRegistriesMap customRepoConfigLastModified registry)
 
 createRegistryFromSinglePackageLocation :: SinglePackageLocationData -> Registry
@@ -213,7 +213,7 @@ update manager cache zokkaRegistries customRepoConfigLastModified =
         do
           -- FIXME: There's gotta be a faster way of doing this
           let newZokkaRegistries = zokkaRegistriesFromRegistriesMap customRepoConfigLastModified newRegistry
-          _ <- File.writeBinary (Stuff.registry cache) newZokkaRegistries
+          _ <- File.writeBinaryAtomic (Stuff.registry cache) newZokkaRegistries
           pure $ Right newZokkaRegistries
 
 updateSingleRegistry :: Http.Manager -> RegistryKey -> Registry -> IO (Either Exit.RegistryProblem Registry)

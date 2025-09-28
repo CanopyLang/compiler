@@ -191,7 +191,7 @@ handleSuccessfulCompilation env docsNeed local source moduleName (Compile.Artifa
 -- @since 0.19.1
 processCompiledInterface :: Env -> Details.Local -> ModuleName.Raw -> I.Interface -> Opt.LocalGraph -> Maybe Docs.Module -> IO Result
 processCompiledInterface env local moduleName iface objects docs = do
-  File.writeBinary (Stuff.canopyo (env ^. envRoot) moduleName) objects
+  File.writeBinaryAtomic (Stuff.canopyo (env ^. envRoot) moduleName) objects
   maybeOldi <- File.readBinary (Stuff.canopyi (env ^. envRoot) moduleName)
   case maybeOldi of
     Just oldi | oldi == iface ->
@@ -213,7 +213,7 @@ reportUnchangedInterface env local iface objects docs = do
 -- @since 0.19.1
 reportChangedInterface :: Env -> Details.Local -> ModuleName.Raw -> I.Interface -> Opt.LocalGraph -> Maybe Docs.Module -> IO Result
 reportChangedInterface env local moduleName iface objects docs = do
-  File.writeBinary (Stuff.canopyi (env ^. envRoot) moduleName) iface
+  File.writeBinaryAtomic (Stuff.canopyi (env ^. envRoot) moduleName) iface
   Reporting.report (env ^. envKey) Reporting.BDone
   let newLocal = local & Details.lastChange .~ (env ^. envBuildID)
                          & Details.lastCompile .~ (env ^. envBuildID)

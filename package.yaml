@@ -16,6 +16,7 @@ category: Compiler, Language
 dependencies:
   - ansi-terminal
   - ansi-wl-pprint < 0.7
+  - async
   - base
   - binary
   - bytestring
@@ -48,6 +49,7 @@ dependencies:
   - SHA
   - snap-core
   - snap-server
+  - stm
   - template-haskell
   - text
   - time

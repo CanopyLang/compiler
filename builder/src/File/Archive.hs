@@ -18,7 +18,7 @@
 --
 -- All extraction operations include security checks:
 --   * Path traversal prevention (no .. in paths)
---   * Allowed file filtering (only src/, LICENSE, README.md, canopy.json)
+--   * Allowed file filtering (only src/, LICENSE, README.md, canopy.json, elm.json)
 --   * Safe directory creation
 --   * Logging of all operations
 --
@@ -63,6 +63,7 @@ import qualified Data.ByteString.Lazy as LBS
 import qualified Data.List as List
 import qualified Logging.Logger as Logger
 import qualified System.Directory as Dir
+import qualified File.Atomic as Atomic
 
 -- | Extract a ZIP archive to a destination directory.
 --
@@ -106,10 +107,10 @@ calculateRootDepth _ =
   -- e.g., "package/src/Main.can" becomes "src/Main.can" with depth 1
   1
 
--- | Extract archive and return canopy.json content if found.
+-- | Extract archive and return config file content if found.
 --
 -- Similar to 'writePackage' but additionally captures and returns
--- the content of canopy.json file during extraction.
+-- the content of config file (canopy.json or elm.json) during extraction.
 --
 -- >>> maybeJson <- writePackageReturnCanopyJson "/tmp/package" archive
 -- >>> case maybeJson of
@@ -118,8 +119,8 @@ calculateRootDepth _ =
 --
 -- ==== Return Value
 --
--- Returns 'Just' ByteString content if canopy.json was found and extracted,
--- 'Nothing' if no canopy.json file exists in the archive.
+-- Returns 'Just' ByteString content if config file was found and extracted,
+-- 'Nothing' if no config file (canopy.json or elm.json) exists in the archive.
 writePackageReturnCanopyJson :: FilePath -> Zip.Archive -> IO (Maybe BS.ByteString)
 writePackageReturnCanopyJson destination archive =
   case Zip.zEntries archive of
@@ -153,12 +154,19 @@ writeEntry destination rootDepth entry = do
 -- | Extract relative path from ZIP entry.
 --
 -- Removes the root directory component based on the calculated depth
--- to get the actual relative path for extraction.
+-- to get the actual relative path for extraction. Preserves trailing
+-- slashes to maintain directory/file distinction.
 extractRelativePath :: Int -> Zip.Entry -> FilePath
-extractRelativePath rootDepth entry = 
-  let pathComponents = FP.splitDirectories (Zip.eRelativePath entry)
+extractRelativePath rootDepth entry =
+  let originalPath = Zip.eRelativePath entry
+      pathComponents = FP.splitDirectories originalPath
       droppedComponents = List.drop rootDepth pathComponents
-  in FP.joinPath droppedComponents
+      joinedPath = FP.joinPath droppedComponents
+  in if List.null droppedComponents
+     then ""
+     else if List.last originalPath == '/' && not (List.null joinedPath) && List.last joinedPath /= '/'
+          then joinedPath ++ "/"
+          else joinedPath
 
 -- | Check if a path is allowed for extraction.
 --
@@ -176,7 +184,8 @@ isAllowedPath path =
   (List.isPrefixOf "src/" path
     || path == "LICENSE"
     || path == "README.md"
-    || path == "canopy.json")
+    || path == "canopy.json"
+    || path == "elm.json")
 
 -- | Check if a path represents a directory.
 --
@@ -184,6 +193,25 @@ isAllowedPath path =
 -- following ZIP archive conventions.
 isDirectoryPath :: FilePath -> Bool
 isDirectoryPath path = not (List.null path) && List.last path == '/'
+
+-- | Check if a file is critical and needs atomic writes.
+--
+-- Critical files are those that could corrupt the build system if
+-- partially written or corrupted. These files receive special treatment
+-- with atomic write operations to prevent corruption.
+--
+-- Critical files include:
+--   * Package metadata (canopy.json, elm.json)
+--   * License files (important for legal compliance)
+--   * Documentation (README.md for package information)
+--
+-- @since 0.19.1
+isCriticalFile :: FilePath -> Bool
+isCriticalFile path =
+  path == "canopy.json"
+    || path == "elm.json"
+    || path == "LICENSE"
+    || path == "README.md"
 
 -- | Create a directory for a ZIP entry.
 --
@@ -197,14 +225,18 @@ createEntryDirectory destination relativePath = do
 -- | Write a file from a ZIP entry.
 --
 -- Extracts the file content and writes it to the destination with logging.
--- Preserves file content exactly as stored in the ZIP.
+-- Uses atomic writes for critical files to prevent corruption.
 writeEntryFile :: FilePath -> FilePath -> Zip.Entry -> IO ()
 writeEntryFile destination relativePath entry = do
   Logger.printLog ("writeEntry 1: " <> relativePath)
   let fullPath = destination </> relativePath
+      fileContent = Zip.fromEntry entry
   -- Create parent directories if they don't exist
   Dir.createDirectoryIfMissing True (FP.takeDirectory fullPath)
-  LBS.writeFile fullPath (Zip.fromEntry entry)
+  -- Use atomic writes for critical package files
+  if isCriticalFile relativePath
+    then Atomic.writeLazyBytesAtomic fullPath fileContent
+    else LBS.writeFile fullPath fileContent
 
 -- | Extract entry and return canopy.json content if applicable.
 --
@@ -235,18 +267,60 @@ createEntryDirectoryForJson destination relativePath = do
   Logger.printLog ("writeEntryReturnCanopyJson 0: " <> relativePath)
   Dir.createDirectoryIfMissing True (destination </> relativePath)
 
--- | Write file and return content if it's canopy.json.
+-- | Write file and return content if it's a config file.
 --
 -- Writes the file to disk and additionally returns its content
--- if the file is canopy.json for metadata processing.
+-- if the file is a config file (canopy.json or elm.json) for metadata processing.
+-- Uses atomic writes for critical files to prevent corruption.
 writeEntryFileForJson :: FilePath -> FilePath -> Zip.Entry -> IO (Maybe BS.ByteString)
 writeEntryFileForJson destination relativePath entry = do
   Logger.printLog ("writeEntryReturnCanopyJson 1: " <> relativePath)
   let fileContent = Zip.fromEntry entry
       fullPath = destination </> relativePath
+      contentSize = LBS.length fileContent
+
+  -- Log detailed extraction information
+  Logger.printLog ("EXTRACT: " <> relativePath <> " -> " <> fullPath <> " (size: " <> show contentSize <> " bytes)")
+
   -- Create parent directories if they don't exist
   Dir.createDirectoryIfMissing True (FP.takeDirectory fullPath)
-  LBS.writeFile fullPath fileContent
-  pure (if relativePath == "canopy.json" 
-        then Just (BS.toStrict fileContent) 
-        else Nothing)
+
+  -- Use atomic writes for critical package files
+  if isCriticalFile relativePath
+    then do
+      Logger.printLog ("ATOMIC_WRITE: " <> fullPath <> " (critical file)")
+      Atomic.writeLazyBytesAtomic fullPath fileContent
+      Logger.printLog ("ATOMIC_WRITE_COMPLETE: " <> fullPath)
+    else do
+      Logger.printLog ("REGULAR_WRITE: " <> fullPath <> " (non-critical file)")
+      LBS.writeFile fullPath fileContent
+      Logger.printLog ("REGULAR_WRITE_COMPLETE: " <> fullPath)
+
+  -- Return content for JSON files with detailed logging and integrity validation
+  if relativePath == "canopy.json" || relativePath == "elm.json"
+    then do
+      let strictContent = BS.toStrict fileContent
+          strictSize = BS.length strictContent
+      Logger.printLog ("JSON_RETURN: " <> relativePath <> " returning content (size: " <> show strictSize <> " bytes)")
+      -- Log first 100 chars for debugging
+      let preview = BS.take 100 strictContent
+          previewText = show preview
+      Logger.printLog ("JSON_PREVIEW: " <> relativePath <> " content preview: " <> previewText)
+
+      -- Verify file integrity by reading back what was written
+      if isCriticalFile relativePath
+        then do
+          Logger.printLog ("INTEGRITY_CHECK: Verifying " <> fullPath)
+          writtenContent <- BS.readFile fullPath
+          if writtenContent == strictContent
+            then do
+              Logger.printLog ("INTEGRITY_SUCCESS: " <> fullPath <> " matches extracted content")
+              pure (Just strictContent)
+            else do
+              Logger.printLog ("INTEGRITY_FAILURE: " <> fullPath <> " does not match extracted content!")
+              Logger.printLog ("WRITTEN_SIZE: " <> show (BS.length writtenContent) <> " bytes")
+              Logger.printLog ("EXPECTED_SIZE: " <> show strictSize <> " bytes")
+              Logger.printLog ("WRITTEN_PREVIEW: " <> show (BS.take 100 writtenContent))
+              pure (Just strictContent) -- Return original content, let parser handle corruption
+        else pure (Just strictContent)
+    else pure Nothing

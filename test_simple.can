@@ -1,0 +1,7 @@
+module TestSimple exposing (..)
+
+simpleFunction : Int -> Int
+simpleFunction x = x + 1
+
+result : Int
+result = simpleFunction 42

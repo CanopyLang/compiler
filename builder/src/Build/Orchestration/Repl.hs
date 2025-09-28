@@ -75,6 +75,7 @@ import Build.Types
   , Status (..)
   , Dependencies
   , ReplArtifacts (..)
+  , waitForResult
   )
 import qualified Build.Validation as Validation
 
@@ -83,15 +84,12 @@ import qualified AST.Source as Src
 import qualified Parse.Module as Parse
 
 -- Standard library imports
-import Control.Concurrent.MVar
-  ( MVar
-  , readMVar
-  , newEmptyMVar
-  , newMVar
-  , putMVar
-  )
+import Control.Concurrent.STM (TVar, atomically, readTVar, readTVarIO, newTVar, newTVarIO, writeTVar, retry)
+import Debug.Trace (trace)
+import Control.Exception (SomeException, catch)
 import qualified Control.Concurrent as Control.Concurrent
 import qualified Data.ByteString as B
+import Data.List (isPrefixOf)
 import Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
 import qualified Data.NonEmptyList as NE
@@ -111,16 +109,16 @@ import System.FilePath ((</>))
 --
 -- Local implementation to avoid circular imports between Build.Orchestration
 -- and Build.Orchestration.Repl modules.
-checkMidpoint :: MVar (Maybe Dependencies) -> Map ModuleName.Raw Status -> IO (Either Exit.BuildProjectProblem Dependencies)
-checkMidpoint dmvar statuses =
+checkMidpoint :: TVar (Maybe Dependencies) -> Map ModuleName.Raw Status -> IO (Either Exit.BuildProjectProblem Dependencies)
+checkMidpoint dtvar statuses =
   case Validation.checkForCycles statuses of
     Nothing -> do
-      maybeForeigns <- readMVar dmvar
+      maybeForeigns <- readTVarIO dtvar
       case maybeForeigns of
         Nothing -> return (Left Exit.BP_CannotLoadDependencies)
         Just fs -> return (Right fs)
     Just (NE.List name names) -> do
-      _ <- readMVar dmvar
+      _ <- readTVarIO dtvar
       return (Left (Exit.BP_Cycle name names))
 
 -- =============================================================================
@@ -198,10 +196,10 @@ createReplEnvironment root (Details.Details _ validOutline buildID locals foreig
 -- @since 0.19.1
 processReplModule :: Env -> FilePath -> Details.Details -> B.ByteString -> Src.Module -> IO (Either Exit.Repl ReplArtifacts)
 processReplModule env root details source modul@(Src.Module _ _ _ imports _ _ _ _ _ _) = do
-  dmvar <- Details.loadInterfaces root details
-  
+  dtvar <- Details.loadInterfaces root details
+
   statuses <- crawlReplDependencies env imports
-  midpoint <- checkMidpoint dmvar statuses
+  midpoint <- checkMidpoint dtvar statuses
   
   case midpoint of
     Left problem ->
@@ -224,9 +222,9 @@ processReplModule env root details source modul@(Src.Module _ _ _ imports _ _ _ 
 crawlReplDependencies :: Env -> [Src.Import] -> IO (Map ModuleName.Raw Status)
 crawlReplDependencies env imports = do
   let deps = fmap Src.getImportName imports
-  mvar <- newMVar Map.empty
-  Crawl.crawlDeps env mvar deps ()
-  readMVar mvar >>= traverse readMVar
+  tvar <- atomically (newTVar Map.empty)
+  Crawl.crawlDeps env tvar deps ()
+  readTVarIO tvar >>= traverse waitForResult
 
 -- | Compile a REPL module and generate artifacts.
 --
@@ -245,27 +243,48 @@ crawlReplDependencies env imports = do
 -- @since 0.19.1
 compileReplModule :: Env -> FilePath -> Details.Details -> B.ByteString -> Src.Module -> Dependencies -> Map ModuleName.Raw Status -> IO (Either Exit.Repl ReplArtifacts)
 compileReplModule env root details source modul foreigns statuses = do
-  -- Compile modules and get both MVars and resolved results
-  rmvar <- newEmptyMVar
-  resultMVars <- forkWithKey (Check.checkModule (CheckConfig env foreigns rmvar)) statuses
-  putMVar rmvar resultMVars
-  results <- traverse readMVar resultMVars
+  -- Compile modules and get both TVars and resolved results
+  rmvar <- newTVarIO Map.empty
+  resultTVars <- forkWithKey (Check.checkModule (CheckConfig env foreigns rmvar)) statuses
+  atomically $ writeTVar rmvar resultTVars
+  results <- traverse waitForResult resultTVars
   Validation.writeDetails root details results
-  
+
   deps <- extractModuleDependencies modul
-  depsStatus <- Dependencies.checkDeps (DepsConfig root resultMVars deps 0)
-  let replConfig = Validation.ReplConfig env source modul resultMVars
+  depsStatus <- Dependencies.checkDeps (DepsConfig root resultTVars deps 0)
+  let replConfig = Validation.ReplConfig env source modul resultTVars
   Validation.finalizeReplArtifacts replConfig depsStatus results
+
+-- | Check if a module name is a kernel module.
+--
+-- Kernel modules should be filtered out of dependency lists as they are handled
+-- specially by the compiler and don't go through normal dependency resolution.
+--
+-- @since 0.19.1
+isKernelModule :: ModuleName.Raw -> Bool
+isKernelModule moduleName =
+  let moduleStr = ModuleName.toChars moduleName
+  in "Elm.Kernel." `isPrefixOf` moduleStr || "Canopy.Kernel." `isPrefixOf` moduleStr
+
+-- | Filter out kernel modules from dependency list.
+--
+-- Removes kernel modules from a list of module dependencies since they
+-- should not go through normal dependency resolution.
+--
+-- @since 0.19.1
+filterNonKernelDeps :: [ModuleName.Raw] -> [ModuleName.Raw]
+filterNonKernelDeps = filter (not . isKernelModule)
 
 -- | Extract dependencies from a parsed module.
 --
 -- Extracts the list of imported module names from a parsed source module
--- for use in dependency checking and resolution.
+-- for use in dependency checking and resolution. Filters out kernel modules
+-- as they are handled specially by the compiler.
 --
 -- @since 0.19.1
 extractModuleDependencies :: Src.Module -> IO [ModuleName.Raw]
 extractModuleDependencies (Src.Module _ _ _ imports _ _ _ _ _ _) =
-  pure $ fmap Src.getImportName imports
+  pure $ filterNonKernelDeps (fmap Src.getImportName imports)
 
 -- | Fork a computation for each key-value pair in a Map.
 --
@@ -275,20 +294,36 @@ extractModuleDependencies (Src.Module _ _ _ imports _ _ _ _ _ _) =
 --
 -- @since 0.19.1
 {-# INLINE forkWithKey #-}
-forkWithKey :: (k -> a -> IO b) -> Map k a -> IO (Map k (MVar b))
-forkWithKey func = Map.traverseWithKey (\k v -> forkComputation (func k v))
+forkWithKey :: (k -> a -> IO b) -> Map k a -> IO (Map k (TVar b))
+forkWithKey func = Map.traverseWithKey (\k v -> do
+  tvar <- forkComputation (func k v)
+  result <- waitForMaybeResult tvar
+  newTVarIO result)
+
+-- | Wait for a Maybe result from a forked computation with labeled retry
+waitForMaybeResult :: TVar (Maybe a) -> IO a
+waitForMaybeResult tvar = atomically $ do
+  maybeResult <- readTVar tvar
+  case maybeResult of
+    Nothing -> trace ("STM-RETRY: Build.Orchestration.Repl waitForMaybeResult - waiting for forked computation to complete") retry
+    Just result -> return result
 
 -- | Fork a single computation for REPL compilation.
 --
--- Creates a separate thread for the computation and returns an MVar
+-- Creates a separate thread for the computation and returns a TVar
 -- that will contain the result when the computation completes.
 --
 -- @since 0.19.1
-forkComputation :: IO a -> IO (MVar a)
+forkComputation :: IO a -> IO (TVar (Maybe a))
 forkComputation work = do
-  mvar <- newEmptyMVar
-  _ <- Control.Concurrent.forkIO $ work >>= putMVar mvar
-  return mvar
+  tvar <- newTVarIO Nothing
+  _ <- Control.Concurrent.forkIO $ do
+    -- FIXED: Handle exceptions to prevent TVar deadlock
+    result <- work `catch` \(e :: SomeException) -> do
+      putStrLn $ "ERROR: Exception in REPL forkComputation: " ++ show e
+      error $ "REPL compilation failed due to exception: " ++ show e
+    atomically $ writeTVar tvar (Just result)
+  return tvar
 
 -- | Convert a source directory to an absolute path.
 --

@@ -24,6 +24,7 @@ import qualified Canopy.ModuleName as ModuleName
 import qualified Canopy.Package as Pkg
 import qualified Data.Graph as Graph
 import qualified Data.Index as Index
+import qualified Debug.Trace as Debug
 import Data.List (isPrefixOf, isInfixOf)
 import qualified Data.List as List
 import Data.Map (Map)
@@ -57,6 +58,7 @@ canonicalize pkg ifaces ffiContentMap modul@(Src.Module _ exports docs imports f
   do
     let home = ModuleName.Canonical pkg (Src.getName modul)
     let cbinops = Map.fromList (fmap canonicalizeBinop binops)
+    let _ = Debug.trace ("DEBUG canonicalize home=" ++ show home ++ " pkg=" ++ show pkg) ()
 
     (env, cunions, caliases) <-
       Foreign.createInitialEnv home ifaces imports >>= Local.add modul

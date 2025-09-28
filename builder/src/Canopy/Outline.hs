@@ -30,6 +30,7 @@ import Canopy.Version (Version)
 import qualified Canopy.Version as V
 import Control.Monad (filterM)
 import Data.Binary (Binary, get, getWord8, put, putWord8)
+import Data.List (isSuffixOf)
 import Data.Map (Map)
 import qualified Data.Map as Map
 import Data.Maybe (mapMaybe)
@@ -44,6 +45,7 @@ import qualified Json.Encode as E
 import qualified Json.String as Json
 import qualified Parse.Primitives as P
 import qualified Reporting.Exit as Exit
+import qualified Stuff
 import qualified System.Directory as Dir
 import System.FilePath ((</>))
 import qualified System.FilePath as FP
@@ -109,7 +111,9 @@ flattenExposed exposed =
 
 write :: FilePath -> Outline -> IO ()
 write root outline =
-  E.write (root </> "canopy.json") (encode outline)
+  do
+    configPath <- Stuff.getConfigFilePath root
+    E.write configPath (encode outline)
 
 -- JSON ENCODE
 
@@ -186,15 +190,9 @@ findPkgOverridesAgainstNonexistentDeps deps PackageOverrideData {_originalPackag
 read :: FilePath -> IO (Either Exit.Outline Outline)
 read root =
   do
-    canopyExists <- Dir.doesFileExist (root </> "canopy.json")
-    (bytes, usedDecoder) <-
-      if canopyExists
-        then do
-          bytes <- File.readUtf8 (root </> "canopy.json")
-          return (bytes, decoder)
-        else do
-          bytes <- File.readUtf8 (root </> "elm.json")
-          return (bytes, elmDecoder)
+    configPath <- Stuff.getConfigFilePath root
+    let usedDecoder = if "canopy.json" `isSuffixOf` configPath then decoder else elmDecoder
+    bytes <- File.readUtf8 configPath
     case D.fromByteString usedDecoder bytes of
       Left err ->
         return $ Left (Exit.OutlineHasBadStructure err)
@@ -208,8 +206,6 @@ read root =
           App (AppOutline _ srcDirs direct indirect _ _ pkgOverrides)
             | Map.notMember Pkg.core direct ->
               return $ Left Exit.OutlineNoAppCore
-            | Map.notMember Pkg.json direct && Map.notMember Pkg.json indirect ->
-              return $ Left Exit.OutlineNoAppJson
             | (packageName, packageVersion) : _ <- mapMaybe (findPkgOverridesAgainstNonexistentDeps (Map.union direct indirect)) pkgOverrides ->
               pure $ Left (Exit.OutlinePkgOverridesDoNotMatchDeps packageName packageVersion)
             | otherwise ->

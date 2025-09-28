@@ -67,7 +67,10 @@ module Build.Crawl.Processing
 import Control.Lens ((^.))
 import qualified AST.Source as Src
 import qualified Canopy.Details as Details
+import qualified Canopy.ModuleName as ModuleName
+import qualified Data.List as List
 import qualified Data.Name as Name
+import qualified Debug.Trace as Debug
 import qualified Parse.Module as Parse
 import qualified Reporting.Annotation as A
 import qualified Reporting.Error.Syntax as Syntax
@@ -77,6 +80,34 @@ import Build.Crawl.Config
 import Build.Crawl.Core (crawlModule, crawlFile)
 import Build.Crawl.Paths
 import qualified Build.Crawl.Dependencies as Deps
+
+-- =============================================================================
+-- Kernel Module Filtering
+-- =============================================================================
+
+-- | Check if a module name is a kernel module.
+--
+-- Kernel modules should be filtered out of dependency lists as they are handled
+-- specially by the compiler and don't go through normal dependency resolution.
+--
+-- @since 0.19.1
+isKernelModule :: ModuleName.Raw -> Bool
+isKernelModule moduleName =
+  let moduleStr = ModuleName.toChars moduleName
+  in "Elm.Kernel." `List.isPrefixOf` moduleStr || "Canopy.Kernel." `List.isPrefixOf` moduleStr
+
+-- | Filter out kernel modules from dependency list.
+--
+-- Removes kernel modules from a list of module dependencies since they
+-- should not go through normal dependency resolution.
+--
+-- @since 0.19.1
+filterNonKernelDeps :: [ModuleName.Raw] -> [ModuleName.Raw]
+filterNonKernelDeps = filter (not . isKernelModule)
+
+-- =============================================================================
+-- Module Processing Functions
+-- =============================================================================
 
 -- | Parse and validate module source.
 --
@@ -140,8 +171,11 @@ processValidModule
   -> IO Status
   -- ^ Processing status result
 processValidModule config = do
-  let deps = fmap Src.getImportName (config ^. validationConfigImports)
-  let local = Details.Local (config ^. validationConfigPath) (config ^. validationConfigTime) deps (any isMain (config ^. validationConfigValues)) (config ^. validationConfigLastChange) (config ^. validationConfigBuildID)
+  let allDeps = fmap Src.getImportName (config ^. validationConfigImports)
+  let deps = filterNonKernelDeps allDeps
+  -- DEBUG: Track Elm.JsArray dependency processing
+  let debugMsg = Debug.trace ("DEBUG Processing Dependencies for " ++ show (config ^. validationConfigPath) ++ ": allDeps=" ++ show allDeps ++ " filteredDeps=" ++ show deps) deps
+  let local = Details.Local (config ^. validationConfigPath) (config ^. validationConfigTime) debugMsg (any isMain (config ^. validationConfigValues)) (config ^. validationConfigLastChange) (config ^. validationConfigBuildID)
   Deps.crawlDeps (config ^. validationConfigEnv) (config ^. validationConfigMVar) deps (SChanged local (config ^. validationConfigSource) (config ^. validationConfigSrcModule) (config ^. validationConfigDocsNeed))
 
 -- | Check if value is main function.

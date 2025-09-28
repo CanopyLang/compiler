@@ -85,9 +85,14 @@ module Build.Types
   , depsResults
   , depsList
   , depsLastCompile
+
+  -- * Utility Functions
+  , waitForResult
+  , waitForMaybeResult
   ) where
 
-import Control.Concurrent.MVar (MVar)
+import qualified Control.Concurrent as Concurrent
+import qualified Control.Concurrent.STM as STM
 import Control.Lens (makeLenses)
 import Data.Map.Strict (Map)
 import Data.NonEmptyList (List)
@@ -136,7 +141,7 @@ data Status
   | SKernel
   deriving ()
 
-type StatusDict = Map ModuleName.Raw (MVar Status)
+type StatusDict = Map ModuleName.Raw (STM.TVar Status)
 
 newtype DocsNeed = DocsNeed {needsDocs :: Bool}
   deriving (Eq, Show)
@@ -146,7 +151,7 @@ newtype DocsNeed = DocsNeed {needsDocs :: Bool}
 data Result
   = RNew !Details.Local !I.Interface !Opt.LocalGraph !(Maybe Docs.Module)
   | RSame !Details.Local !I.Interface !Opt.LocalGraph !(Maybe Docs.Module)
-  | RCached Bool Details.BuildID (MVar CachedInterface)
+  | RCached Bool Details.BuildID (STM.TVar CachedInterface)
   | RNotFound Import.Problem
   | RProblem Error.Module
   | RBlocked
@@ -154,7 +159,7 @@ data Result
   | RKernel
   deriving ()
 
-type ResultDict = Map ModuleName.Raw (MVar Result)
+type ResultDict = Map ModuleName.Raw (STM.TVar Result)
 
 data CachedInterface
   = Unneeded
@@ -166,7 +171,7 @@ data CachedInterface
 
 type Dependencies = Map ModuleName.Canonical I.DependencyInterface
 type Dep = (ModuleName.Raw, I.Interface)
-type CDep = (ModuleName.Raw, MVar CachedInterface)
+type CDep = (ModuleName.Raw, STM.TVar CachedInterface)
 
 data DepsStatus
   = DepsChange (Map ModuleName.Raw I.Interface)
@@ -218,7 +223,7 @@ data Artifacts = Artifacts
 
 data Module
   = Fresh ModuleName.Raw I.Interface Opt.LocalGraph
-  | Cached ModuleName.Raw Bool (MVar CachedInterface)
+  | Cached ModuleName.Raw Bool (STM.TVar CachedInterface)
   deriving ()
 
 instance Show Module where
@@ -248,14 +253,14 @@ data DocsGoal a where
 -- | Configuration for module checking operations.
 data CheckConfig = CheckConfig
   { _checkEnv :: !Env
-  , _checkForeigns :: !Dependencies  
-  , _checkResultsMVar :: !(MVar ResultDict)
+  , _checkForeigns :: !Dependencies
+  , _checkResultsMVar :: !(STM.TVar ResultDict)
   }
 
 -- | Configuration for module crawling operations.
 data CrawlConfig = CrawlConfig
   { _crawlEnv :: !Env
-  , _crawlMVar :: !(MVar StatusDict)
+  , _crawlMVar :: !(STM.TVar StatusDict)
   , _crawlDocsNeed :: !DocsNeed
   }
 
@@ -284,3 +289,30 @@ makeLenses ''CheckConfig
 makeLenses ''CrawlConfig
 makeLenses ''CompileConfig
 makeLenses ''DepsConfig
+
+-- | Wait for a forked computation to complete and return the result
+--
+-- Handles TVars created by fork operations that may contain error values
+-- while the computation is still running.
+--
+-- @since 0.19.1
+-- | Wait for a result from a Maybe TVar (used with fork) - WITH DEBUGGING
+waitForMaybeResult :: STM.TVar (Maybe a) -> IO a
+waitForMaybeResult tvar = do
+  putStrLn "POLLING-DEBUG: Build.Types.waitForMaybeResult called"
+  -- Use simple polling instead of STM retry to avoid deadlocks
+  result <- STM.readTVarIO tvar
+  case result of
+    Nothing -> do
+      putStrLn "POLLING-DEBUG: Build.Types.waitForMaybeResult - TVar empty, polling..."
+      threadDelay 1000  -- 1ms delay
+      waitForMaybeResult tvar
+    Just value -> do
+      putStrLn "POLLING-DEBUG: Build.Types.waitForMaybeResult - TVar filled, returning value"
+      pure value
+  where
+    threadDelay = Concurrent.threadDelay
+
+-- | Wait for a result from a regular TVar (used with other operations)
+waitForResult :: STM.TVar a -> IO a
+waitForResult = STM.readTVarIO

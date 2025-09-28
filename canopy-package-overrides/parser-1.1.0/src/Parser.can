@@ -1,0 +1,129 @@
+module Parser exposing
+    ( Parser, run
+    , int, float, number
+    , symbol, keyword, variable, end
+    , succeed, lazy, andThen, problem
+    , oneOf, map, map2, keep, skip
+    , sequence, Trailing(..), loop, Step(..)
+    , spaces, lineComment, multiComment, Nestable(..)
+    , getChompedString, chompIf, chompWhile, chompUntil, chompUntilEndOr
+    , mapChompedString, withIndent, getIndent
+    , getPosition, getRow, getCol, getOffset, getSource
+    )
+
+-- This is a minimal implementation to satisfy dependencies
+-- The actual functionality would need to be properly ported from elm/parser
+
+type Parser a = Parser_
+
+type Trailing = Forbidden | Optional | Mandatory
+
+type Nestable = NotNestable | Nestable
+
+type Step state a = Loop state | Done a
+
+-- Placeholder implementations
+run : Parser a -> String -> Result String a
+run parser source = Err "Parser not implemented"
+
+succeed : a -> Parser a  
+succeed value = Parser_
+
+lazy : (() -> Parser a) -> Parser a
+lazy thunk = Parser_
+
+andThen : (a -> Parser b) -> Parser a -> Parser b
+andThen callback parser = Parser_
+
+problem : String -> Parser a
+problem msg = Parser_
+
+oneOf : List (Parser a) -> Parser a
+oneOf parsers = Parser_
+
+map : (a -> b) -> Parser a -> Parser b
+map func parser = Parser_
+
+map2 : (a -> b -> c) -> Parser a -> Parser b -> Parser c
+map2 func parserA parserB = Parser_
+
+keep : Parser a -> Parser (a -> b) -> Parser b
+keep argParser funcParser = Parser_
+
+skip : Parser ignore -> Parser keep -> Parser keep
+skip ignoreParser keepParser = Parser_
+
+sequence : { start : String, separator : String, end : String, spaces : Parser (), item : Parser a, trailing : Trailing } -> Parser (List a)
+sequence config = Parser_
+
+loop : state -> (state -> Parser (Step state a)) -> Parser a
+loop state callback = Parser_
+
+spaces : Parser ()
+spaces = Parser_
+
+lineComment : String -> Parser ()
+lineComment start = Parser_
+
+multiComment : String -> String -> Nestable -> Parser ()
+multiComment open close nestable = Parser_
+
+getChompedString : Parser a -> Parser String
+getChompedString parser = Parser_
+
+chompIf : (Char -> Bool) -> Parser ()
+chompIf isGood = Parser_
+
+chompWhile : (Char -> Bool) -> Parser ()
+chompWhile isGood = Parser_
+
+chompUntil : String -> Parser ()
+chompUntil str = Parser_
+
+chompUntilEndOr : String -> Parser ()
+chompUntilEndOr str = Parser_
+
+mapChompedString : (String -> a -> b) -> Parser a -> Parser b
+mapChompedString func parser = Parser_
+
+withIndent : Int -> Parser a -> Parser a
+withIndent newIndent parser = Parser_
+
+getIndent : Parser Int
+getIndent = Parser_
+
+getPosition : Parser { row : Int, col : Int }
+getPosition = Parser_
+
+getRow : Parser Int
+getRow = Parser_
+
+getCol : Parser Int
+getCol = Parser_
+
+getOffset : Parser Int
+getOffset = Parser_
+
+getSource : Parser String
+getSource = Parser_
+
+int : Parser Int
+int = Parser_
+
+float : Parser Float  
+float = Parser_
+
+number : Parser Float
+number = Parser_
+
+symbol : String -> Parser ()
+symbol str = Parser_
+
+keyword : String -> Parser ()
+keyword str = Parser_
+
+variable : { start : Char -> Bool, inner : Char -> Bool, reserved : Set String } -> Parser String
+variable config = Parser_
+
+end : Parser ()
+end = Parser_

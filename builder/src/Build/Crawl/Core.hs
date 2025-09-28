@@ -36,7 +36,6 @@ module Build.Crawl.Core
     crawlFile
   , crawlModule
   , crawlDeps
-  , fork
     -- * Module Processing
   , parseAndValidateModule
   , processValidatedModule
@@ -44,31 +43,61 @@ module Build.Crawl.Core
   , isMainValue
   ) where
 
-import Control.Concurrent.MVar (MVar)
-import Control.Exception (SomeException, catch, throwIO)
+import Control.Exception (SomeException, catch)
 import Control.Lens ((^.))
+import Debug.Trace (trace)
 import qualified AST.Source as Src
 import qualified Canopy.Details as Details
 import qualified Canopy.ModuleName as ModuleName
 import qualified Data.Name as Name
 import qualified Data.ByteString as B
-import qualified Data.Map.Strict as Map
 import qualified File
+import qualified Data.Map.Strict as Map
 import qualified Parse.Module as Parse
 import qualified Reporting.Annotation as A
 import qualified Reporting.Error.Import as Import
 import qualified Reporting.Error.Syntax as Syntax
-import System.FilePath ((</>))
+-- FilePath import removed since paths are now absolute
 
 import Build.Config (CrawlConfig (..), crawlEnv, crawlMVar, crawlDocsNeed)
-import Build.Types (Env (..), Status (..), StatusDict, DocsNeed (..))
+import Build.Types (Env (..), Status (..), StatusDict, DocsNeed(DocsNeed))
 import qualified Build.Crawl.Discovery as Discovery
 
 -- For dependency crawling
 import Control.Concurrent (forkIO)
-import Control.Concurrent.MVar (putMVar, newEmptyMVar, readMVar, modifyMVar)
+import Control.Concurrent.STM (TVar, atomically, readTVar, modifyTVar, newTVar, writeTVar)
+import qualified Control.Concurrent.STM as STM
 import qualified Data.Set as Set
 import Data.Foldable (traverse_)
+import qualified Data.List as List
+
+-- =============================================================================
+-- Kernel Module Filtering
+-- =============================================================================
+
+-- | Check if a module name is a kernel module.
+--
+-- Kernel modules should be filtered out of dependency lists as they are handled
+-- specially by the compiler and don't go through normal dependency resolution.
+--
+-- @since 0.19.1
+isKernelModule :: ModuleName.Raw -> Bool
+isKernelModule moduleName =
+  let moduleStr = ModuleName.toChars moduleName
+  in "Elm.Kernel." `List.isPrefixOf` moduleStr || "Canopy.Kernel." `List.isPrefixOf` moduleStr
+
+-- | Filter out kernel modules from dependency list.
+--
+-- Removes kernel modules from a list of module dependencies since they
+-- should not go through normal dependency resolution.
+--
+-- @since 0.19.1
+filterNonKernelDeps :: [ModuleName.Raw] -> [ModuleName.Raw]
+filterNonKernelDeps = filter (not . isKernelModule)
+
+-- =============================================================================
+-- File Processing Functions
+-- =============================================================================
 
 -- | Crawl file with validation.
 --
@@ -80,7 +109,7 @@ import Data.Foldable (traverse_)
 crawlFile
   :: Env
   -- ^ Build environment
-  -> MVar StatusDict
+  -> TVar StatusDict
   -- ^ Status dictionary for coordination
   -> DocsNeed
   -- ^ Documentation generation requirements
@@ -94,8 +123,9 @@ crawlFile
   -- ^ Build ID for tracking
   -> IO Status
   -- ^ File processing status result
-crawlFile env@(Env _ root projectType _ buildID _ _) mvar docsNeed expectedName path time lastChange = do
-  source <- File.readUtf8 (root </> path)
+crawlFile env@(Env _ _root projectType _ buildID _ _) mvar docsNeed expectedName path time lastChange = do
+  -- FIXED: path is already absolute from Discovery.findModuleFile, don't prefix with root
+  source <- File.readUtf8 path
   parseAndValidateModule env mvar docsNeed expectedName path time source projectType buildID lastChange
 
 -- | Crawl a module using configuration record.
@@ -128,7 +158,7 @@ crawlModule config name = do
 -- @since 0.19.1
 processFoundPaths
   :: Env
-  -> MVar StatusDict
+  -> TVar StatusDict
   -> DocsNeed
   -> ModuleName.Raw
   -> [FilePath]
@@ -138,11 +168,12 @@ processFoundPaths
   -> Map.Map ModuleName.Raw Details.Local
   -> Map.Map ModuleName.Raw Details.Foreign
   -> IO Status
-processFoundPaths env mvar docsNeed name paths root _projectType buildID locals foreigns =
+processFoundPaths env mvar docsNeed name paths _root _projectType buildID locals foreigns =
   case paths of
     [] -> checkForeignOrNotFound name locals foreigns
     (path:_) -> do
-      time <- File.getTime (root </> path)
+      -- FIXED: Discovery.findModuleFile returns absolute paths, don't prefix with root
+      time <- File.getTime path
       crawlFile env mvar docsNeed name path time buildID
 
 -- | Check if module is foreign or not found.
@@ -166,7 +197,7 @@ checkForeignOrNotFound name locals foreigns =
 -- @since 0.19.1
 parseAndValidateModule
   :: Env
-  -> MVar StatusDict
+  -> TVar StatusDict
   -> DocsNeed
   -> ModuleName.Raw
   -> FilePath
@@ -192,7 +223,7 @@ parseAndValidateModule env mvar docsNeed expectedName path time source projectTy
 -- @since 0.19.1
 processValidatedModule
   :: Env
-  -> MVar StatusDict
+  -> TVar StatusDict
   -> DocsNeed
   -> FilePath
   -> File.Time
@@ -204,7 +235,8 @@ processValidatedModule
   -> Details.BuildID
   -> IO Status
 processValidatedModule env mvar docsNeed path time source srcModule imports values buildID lastChange = do
-  let deps = fmap Src.getImportName imports
+  let allDeps = fmap Src.getImportName imports
+  let deps = filterNonKernelDeps allDeps
   let local = Details.Local path time deps (any isMainValue values) lastChange buildID
   crawlDeps env mvar deps (SChanged local source srcModule docsNeed)
 
@@ -230,7 +262,7 @@ isMainValue (A.At _ (Src.Value (A.At _ name) _ _ _)) = name == Name._main
 crawlDeps
   :: Env
   -- ^ Build environment
-  -> MVar StatusDict
+  -> TVar StatusDict
   -- ^ Status dictionary for coordination
   -> [ModuleName.Raw]
   -- ^ List of dependencies to crawl
@@ -239,57 +271,48 @@ crawlDeps
   -> IO a
   -- ^ Result value after dependency resolution
 crawlDeps env mvar deps blockedValue = do
-  -- FIXED: Use modifyMVar to atomically determine new dependencies without holding the MVar
-  newDepsAndMVars <- modifyMVar mvar $ \statusDict -> do
+  -- FIXED: Use STM to atomically determine new dependencies
+  newTVars <- atomically $ do
+    statusDict <- readTVar mvar
     let depsDict = Map.fromSet (const ()) (Set.fromList deps)
     let newsDict = Map.difference depsDict statusDict
-    -- Create MVars for new dependencies but don't start crawling yet
-    newMVars <- Map.traverseWithKey (\_ () -> newEmptyMVar) newsDict
-    -- Update status dict with the new MVars and return both
-    let updatedStatusDict = Map.union newMVars statusDict
-    pure (updatedStatusDict, newMVars)
+    -- Create TVars for new dependencies inside STM
+    newTVars <- Map.traverseWithKey (\_ () -> newTVar (SBadImport Import.NotFound)) newsDict
+    -- Update status dict with the new TVars
+    modifyTVar mvar (Map.union newTVars)
+    pure newTVars
 
-  -- Now start crawling the new dependencies outside the MVar lock
-  traverse_ (startCrawling env mvar) (Map.toList newDepsAndMVars)
+  -- Now start crawling the new dependencies
+  traverse_ (startCrawling env mvar) (Map.toList newTVars)
 
   -- Wait for all dependencies to complete
-  traverse_ readMVar newDepsAndMVars
+  traverse_ waitForStatusResult newTVars
   pure blockedValue
   where
-    startCrawling :: Env -> MVar StatusDict -> (ModuleName.Raw, MVar Status) -> IO ()
-    startCrawling env' _statusMVar (name, resultMVar) = do
+    startCrawling :: Env -> TVar StatusDict -> (ModuleName.Raw, TVar Status) -> IO ()
+    startCrawling env' _statusTVar (name, resultTVar) = do
       let config = CrawlConfig env' mvar (DocsNeed False)
       _ <- forkIO $ do
-        -- FIXED: Handle exceptions to prevent MVar deadlock
-        -- Always put a result to the MVar, even if crawling fails
+        -- FIXED: Handle exceptions to prevent TVar deadlock
+        -- Always put a result to the TVar, even if crawling fails
         result <- (crawlModule config name) `catch` \(e :: SomeException) -> do
           -- Log the exception but return a failure status
           putStrLn $ "WARNING: Exception in crawlModule for " ++ show name ++ ": " ++ show e
-          pure (SBadImport Import.NotFound)
-        putMVar resultMVar result
+          -- Use zero time for error case
+          let errorTime = File.Time 0
+          pure (SBadSyntax "error" errorTime B.empty (error ("Exception in crawlModule: " ++ show e)))
+        atomically $ writeTVar resultTVar result
       pure ()
+
+-- | Wait for a Status TVar that may initially contain a placeholder error value
+waitForStatusResult :: TVar Status -> IO Status
+waitForStatusResult tvar = do
+  STM.atomically $ do
+    status <- STM.readTVar tvar
+    case status of
+      SBadImport Import.NotFound -> trace ("STM-RETRY: Build.Crawl.Core - waiting for real result, got placeholder NotFound") STM.retry
+      _ -> pure status  -- Return any other status
 
 -- NOTE: crawlNewDep function removed - functionality integrated into fixed crawlDeps
 
--- | Fork an IO operation into a new thread.
---
--- Creates a new thread for the given IO operation and returns
--- an MVar that will contain the result when the operation completes.
---
--- @since 0.19.1
-fork
-  :: IO a
-  -- ^ IO operation to fork
-  -> IO (MVar a)
-  -- ^ MVar containing result when operation completes
-fork work = do
-  mvar <- newEmptyMVar
-  _ <- forkIO $ do
-    -- FIXED: Handle exceptions in generic fork to prevent MVar deadlock
-    result <- work `catch` \(e :: SomeException) -> do
-      -- For generic fork, we can't provide a meaningful default value
-      -- so we re-throw the exception after logging it
-      putStrLn $ "ERROR: Exception in fork: " ++ show e
-      throwIO e
-    putMVar mvar result
-  pure mvar
+-- NOTE: fork function removed - use TVar-based fork from Build.Orchestration.Workflow

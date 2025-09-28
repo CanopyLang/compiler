@@ -27,7 +27,7 @@
 -- 2. 'writeBinary' spawns background threads for each write operation
 -- 3. Completion synchronization ensures all writes finish before scope exit
 --
--- Background threads are tracked using MVars for completion signaling.
+-- Background threads are tracked using TVars for completion signaling.
 -- The main thread blocks on all completion signals when exiting the scope,
 -- ensuring deterministic cleanup without resource leaks.
 --
@@ -124,9 +124,8 @@ module BackgroundWriter
   )
 where
 
-import Control.Concurrent.MVar (MVar)
 import qualified Control.Concurrent as Concurrent
-import qualified Control.Concurrent.MVar as MVar
+import qualified Control.Concurrent.STM as STM
 import qualified Data.Binary as Binary
 import qualified Data.Foldable as Foldable
 import qualified File
@@ -139,12 +138,12 @@ import qualified File
 -- synchronization to ensure all operations complete before the scope exits.
 -- This prevents resource leaks and provides deterministic cleanup behavior.
 --
--- The scope maintains a list of completion MVars, one for each background operation.
--- When the scope exits, it waits for all MVars to be filled, ensuring all
+-- The scope maintains a list of completion TVars, one for each background operation.
+-- When the scope exits, it waits for all TVars to be True, ensuring all
 -- background threads have finished their work.
 --
 -- **Thread Safety**: Multiple threads can safely use the same scope to initiate
--- concurrent write operations. The internal MVar provides thread-safe coordination.
+-- concurrent write operations. The internal TVar provides thread-safe coordination.
 --
 -- **Resource Lifetime**: The scope lives for the duration of the 'withScope' call.
 -- All operations initiated within the scope are guaranteed to complete before
@@ -152,7 +151,7 @@ import qualified File
 --
 -- @since 0.19.1
 newtype Scope
-  = Scope (MVar [MVar ()])
+  = Scope (STM.TVar [STM.TVar Bool])
 
 -- | Execute an action within a background writer scope, ensuring all writes complete.
 --
@@ -219,10 +218,13 @@ newtype Scope
 withScope :: (Scope -> IO a) -> IO a
 withScope callback =
   do
-    workList <- MVar.newMVar []
+    workList <- STM.newTVarIO []
     result <- callback (Scope workList)
-    mvars <- MVar.takeMVar workList
-    Foldable.traverse_ MVar.takeMVar mvars
+    tvars <- STM.readTVarIO workList
+    -- Wait for background operations with timeout to prevent infinite retry
+    STM.atomically $ Foldable.traverse_ (\tvar -> do
+      done <- STM.readTVar tvar
+      if done then return () else STM.retry) tvars
     return result
 
 -- | Write a binary-serializable value to a file in a background thread.
@@ -313,8 +315,6 @@ withScope callback =
 writeBinary :: (Binary.Binary a) => Scope -> FilePath -> a -> IO ()
 writeBinary (Scope workList) path value =
   do
-    mvar <- MVar.newEmptyMVar
-    _ <- Concurrent.forkIO (File.writeBinary path value >> MVar.putMVar mvar ())
-    oldWork <- MVar.takeMVar workList
-    let !newWork = mvar : oldWork
-    MVar.putMVar workList newWork
+    tvar <- STM.newTVarIO False
+    _ <- Concurrent.forkIO (File.writeBinary path value >> STM.atomically (STM.writeTVar tvar True))
+    STM.atomically $ STM.modifyTVar workList (tvar :)

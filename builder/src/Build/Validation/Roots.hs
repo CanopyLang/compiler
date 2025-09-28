@@ -191,21 +191,22 @@ checkOutside name paths =
 --
 -- ==== Conflict Detection Rules
 --
--- Conflicts occur when outside modules have the same name as:
+-- Conflicts occur when outside modules have the same name as internal modules
+-- BUT different file paths. If an outside root module has the same name AND
+-- same file path as an internal module, this is not a conflict - it means
+-- the same module is being processed both as a root and as a dependency.
 --
--- * **@SCached@ modules**: Cached internal modules
--- * **@SChanged@ modules**: Modified internal modules
+-- Non-conflicting scenarios:
 --
--- Non-conflicting inside statuses:
---
+-- * **Same file paths**: Module processed as both root and dependency - allowed
 -- * **@SBadImport@**: Import errors don't cause conflicts
--- * **@SBadSyntax@**: Syntax errors don't cause conflicts  
+-- * **@SBadSyntax@**: Syntax errors don't cause conflicts
 -- * **@SForeign@**: Foreign modules don't cause conflicts
 -- * **@SKernel@**: Kernel modules don't cause conflicts
 --
 -- ==== Error Reporting
 --
--- For conflicts, creates @BP_RootNameDuplicate@ error with:
+-- For actual conflicts (different file paths), creates @BP_RootNameDuplicate@ error with:
 --
 -- * **Module Name**: The conflicting module name
 -- * **Outside Path**: The outside module file path
@@ -215,8 +216,16 @@ checkOutside name paths =
 checkInside :: ModuleName.Raw -> FilePath -> Status -> Either Exit.BuildProjectProblem ()
 checkInside name p1 status =
   case status of
-    SCached local -> Left (Exit.BP_RootNameDuplicate name p1 (local ^. Details.path))
-    SChanged local _ _ _ -> Left (Exit.BP_RootNameDuplicate name p1 (local ^. Details.path))
+    SCached local ->
+      let p2 = local ^. Details.path
+      in if p1 == p2
+         then Right ()  -- Same file as root and dependency - allowed
+         else Left (Exit.BP_RootNameDuplicate name p1 p2)
+    SChanged local _ _ _ ->
+      let p2 = local ^. Details.path
+      in if p1 == p2
+         then Right ()  -- Same file as root and dependency - allowed
+         else Left (Exit.BP_RootNameDuplicate name p1 p2)
     SBadImport _ -> Right ()
     SBadSyntax {} -> Right ()
     SForeign _ -> Right ()

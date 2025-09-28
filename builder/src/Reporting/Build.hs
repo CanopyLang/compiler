@@ -77,7 +77,8 @@ module Reporting.Build
   ) where
 
 import qualified Canopy.ModuleName as ModuleName
-import Control.Concurrent (Chan, forkIO, newChan, readChan, writeChan, takeMVar, putMVar, readMVar)
+import Control.Concurrent (Chan, forkIO, newChan, readChan, writeChan)
+import Control.Concurrent.STM (atomically, readTVarIO, writeTVar)
 import qualified Data.NonEmptyList as NE
 import Reporting.Key (Key(..))
 import Reporting.Platform (hbar, vtop, vmiddle, vbottom)
@@ -207,10 +208,11 @@ trackBuild style callback =
 
         _ <- forkIO $
           do
-            _ <- takeMVar mvar
+            -- Use TVar for thread synchronization
+            readTVarIO mvar
             putStrFlush "Compiling ..."
             buildLoop chan 0
-            putMVar mvar ()
+            atomically $ writeTVar mvar ()
 
         result <- callback (Key (writeChan chan . Left))
         writeChan chan (Right result)
@@ -329,7 +331,7 @@ reportGenerate style names output =
       return ()
     Terminal mvar ->
       do
-        _ <- readMVar mvar
+        _ <- readTVarIO mvar
         let cnames = fmap ModuleName.toChars names
         putStrLn ('\n' : toGenDiagram cnames output)
 

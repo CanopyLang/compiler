@@ -216,8 +216,16 @@ unifyRigid context maybeSuper content otherContent =
             else mismatch
         Nothing ->
           mismatch
-    RigidVar _ ->
-      mismatch
+    RigidVar otherName ->
+      -- FIXED: Allow rigid variables with the same name to unify
+      -- This fixes the bug where identical types like "Array a" with RigidVar a
+      -- could not unify with themselves
+      case content of
+        RigidVar thisName | thisName == otherName ->
+          -- FIXED: Allow rigid variables with the same name to unify
+          merge context content
+        _ ->
+          mismatch
     RigidSuper _ _ ->
       mismatch
     Alias {} ->

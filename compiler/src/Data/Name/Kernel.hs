@@ -13,7 +13,7 @@
 -- * Type checking for special compiler-known types
 -- * Prefix matching for built-in type categories
 --
--- Kernel names use special prefixes like "Canopy.Kernel." or "Elm.Kernel."
+-- Kernel names use special prefixes like "Canopy." or "Elm."
 -- to identify JavaScript interop functions and built-in type operations.
 --
 -- === Usage Examples
@@ -60,8 +60,8 @@ extractKernelName :: Name -> ByteArray# -> Name
 extractKernelName name ba# =
   runST (copyKernelBytes ba# prefixLen#)
   where
-    -- "Canopy.Kernel." = 14 chars, "Elm.Kernel." = 11 chars
-    !prefixLen# = if Utf8.startsWith prefixKernel name then 14# else 11#
+    -- "Canopy." = 7 chars, "Elm." = 4 chars
+    !prefixLen# = if Utf8.startsWith prefixKernel name then 7# else 4#
 
 copyKernelBytes :: ByteArray# -> Int# -> ST s Name
 copyKernelBytes ba# prefixLen# =
@@ -96,11 +96,11 @@ isCompappendType = Utf8.startsWith prefixCompappend
 
 {-# NOINLINE prefixKernel #-}
 prefixKernel :: Name
-prefixKernel = Utf8.fromChars "Canopy.Kernel."
+prefixKernel = Utf8.fromChars "Canopy."
 
 {-# NOINLINE prefixElmKernel #-}
 prefixElmKernel :: Name
-prefixElmKernel = Utf8.fromChars "Elm.Kernel."
+prefixElmKernel = Utf8.fromChars "Elm."
 
 {-# NOINLINE prefixNumber #-}
 prefixNumber :: Name

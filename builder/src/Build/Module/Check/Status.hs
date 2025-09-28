@@ -46,7 +46,7 @@
 --
 -- === Thread Safety
 --
--- Status processing operations are thread-safe through proper MVar usage
+-- Status processing operations are thread-safe through proper STM usage
 -- and immutable data structures.
 --
 -- @since 0.19.1
@@ -69,8 +69,7 @@ module Build.Module.Check.Status
   , module Build.Module.Check.Dependencies
   ) where
 
-import Control.Concurrent.MVar (MVar)
-import qualified Control.Concurrent.MVar as MVar
+import Control.Concurrent.STM (TVar)
 import Control.Lens ((^.))
 import qualified AST.Source as Src
 import qualified Canopy.Details as Details
@@ -102,6 +101,7 @@ import Build.Types
   , ResultDict
   , DocsNeed(..)
   , DepsStatus(..)
+  , waitForResult
   )
 import Build.Module.Check.Config
   ( ModuleStatusConfig(..)
@@ -152,7 +152,7 @@ import Build.Module.Check.Config
 -- ==== Returns
 --
 -- IO action producing a 'Result' for the module processing
-processModuleStatus :: Env -> Dependencies -> MVar ResultDict -> ModuleName.Raw -> Status -> IO Result
+processModuleStatus :: Env -> Dependencies -> TVar ResultDict -> ModuleName.Raw -> Status -> IO Result
 processModuleStatus env foreigns resultsMVar name status =
   let config = ModuleStatusConfig env foreigns resultsMVar name
   in processModuleStatusWithConfig config status
@@ -218,13 +218,13 @@ processModuleStatusWithConfig config status =
 -- ==== Returns
 --
 -- IO action producing appropriate result based on dependency status
-processCachedStatus :: Env -> MVar ResultDict -> ModuleName.Raw -> Details.Local -> IO Result
+processCachedStatus :: Env -> TVar ResultDict -> ModuleName.Raw -> Details.Local -> IO Result
 processCachedStatus env@(Env _ root projectType _ _ _ _) resultsMVar name local = do
   let path = local ^. Details.path
   let time = local ^. Details.time
   let deps = local ^. Details.deps
   let lastCompile = local ^. Details.lastCompile
-  results <- MVar.readMVar resultsMVar
+  results <- waitForResult resultsMVar
   depsStatus <- checkDepsForModule root results deps lastCompile
   let config = CachedConfig
         { _cachedEnv = env
@@ -284,11 +284,11 @@ processCachedDepsStatus config path time depsStatus =
 -- ==== Returns
 --
 -- IO action producing compilation result
-processChangedStatus :: Env -> MVar ResultDict -> ModuleName.Raw -> Details.Local -> B.ByteString -> Src.Module -> DocsNeed -> IO Result
+processChangedStatus :: Env -> TVar ResultDict -> ModuleName.Raw -> Details.Local -> B.ByteString -> Src.Module -> DocsNeed -> IO Result
 processChangedStatus env@(Env _ root _ _ _ _ _) resultsMVar name local source modul@(Src.Module _ _ _ imports _ _ _ _ _ _) docsNeed = do
   let deps = local ^. Details.deps
   let lastCompile = local ^. Details.lastCompile
-  results <- MVar.readMVar resultsMVar
+  results <- waitForResult resultsMVar
   depsStatus <- checkDepsForModule root results deps lastCompile
   let config = ChangedConfig
         { _changedEnv = env

@@ -488,68 +488,77 @@ addGlobalHelp mode graph currentGlobal state =
   let addDeps deps someState =
         let filteredDeps = filterEssentialDeps mode deps
         in Set.foldl' (addGlobal mode graph) someState filteredDeps
-      Opt.Global globalCanonical globalName = currentGlobal
-      canonicalPkgName = ModuleName._package globalCanonical
-      global = Opt.Global (globalCanonical {ModuleName._package = canonicalPkgName}) globalName
-      globalInGraph = case Map.lookup global graph of
+      globalInGraph = case Map.lookup currentGlobal graph of
         Just x -> x
         Nothing ->
-          -- Check if this is an FFI function that shouldn't be in the graph
-          let Opt.Global globalHome _globalName' = global
+          -- Try alternative package name (canopy/kernel vs elm/kernel)
+          let Opt.Global globalHome globalName = currentGlobal
+              currentPkg = ModuleName._package globalHome
+              altPkg = if Pkg._author currentPkg == Pkg.canopy && Pkg._project currentPkg == Pkg._project Pkg.kernel
+                      then Pkg.Name Pkg.elm (Pkg._project currentPkg)
+                      else if Pkg._author currentPkg == Pkg.elm && Pkg._project currentPkg == Pkg._project Pkg.kernel
+                      then Pkg.kernel
+                      else currentPkg
+              altGlobalHome = globalHome { ModuleName._package = altPkg }
+              altGlobal = Opt.Global altGlobalHome globalName
               moduleName = ModuleName._module globalHome
-          in if Name.toChars moduleName == "Math"
-             then error "FFI function found - this should be handled by expression generation"
-             else throw (MyException ("addGlobalHelp: this was graph keys " <> (show (Map.keys graph) <> (" and this was old global " <> (show currentGlobal <> (" and this was new global: " <> show global))))))
+          in case Map.lookup altGlobal graph of
+               Just x -> x
+               Nothing ->
+                 if Name.toChars moduleName == "Math"
+                 then error "FFI function found - this should be handled by expression generation"
+                 else throw (MyException ("addGlobalHelp: missing global in graph " <> show currentGlobal <>
+                                         " (also tried " <> show altGlobal <> ") - available keys: " <> show (length (Map.keys graph)) <> " globals"))
    in case globalInGraph of
         Opt.Define expr deps ->
           addStmt
             (addDeps deps state)
-            ( var global (Expr.generate mode expr)
+            ( var currentGlobal (Expr.generate mode expr)
             )
         Opt.DefineTailFunc argNames body deps ->
           addStmt
             (addDeps deps state)
-            ( let (Opt.Global _ name) = global
-               in JS.Var (JsName.fromGlobal (case global of Opt.Global home _ -> home) name) (Expr.generateTailDefExpr mode name argNames body)
+            ( let (Opt.Global _ name) = currentGlobal
+               in JS.Var (JsName.fromGlobal (case currentGlobal of Opt.Global home _ -> home) name) (Expr.generateTailDefExpr mode name argNames body)
             )
         Opt.Ctor index arity ->
           addStmt
             state
-            ( var global (Expr.generateCtor mode global index arity)
+            ( var currentGlobal (Expr.generateCtor mode currentGlobal index arity)
             )
         Opt.Link linkedGlobal ->
           addGlobal mode graph state linkedGlobal
         Opt.Cycle names values functions deps ->
-          let cycleStmt = generateCycle mode global names values functions
+          let cycleStmt = generateCycle mode currentGlobal names values functions
               baseState = addDeps deps state
           in case cycleStmt of
                JS.Block stmts -> List.foldl' addStmt baseState stmts
                stmt -> addStmt baseState stmt
         Opt.Manager effectsType ->
-          generateManager mode graph global effectsType state
+          generateManager mode graph currentGlobal effectsType state
         Opt.Kernel chunks deps ->
-          if isDebugger global && not (Mode.isDebug mode)
+          if isDebugger currentGlobal && not (Mode.isDebug mode)
             then state
             else addKernel (addDeps deps state) (generateKernel mode chunks)
         Opt.Enum index ->
           addStmt
             state
-            ( generateEnum mode global index
+            ( generateEnum mode currentGlobal index
             )
         Opt.Box ->
           addStmt
             (addGlobal mode graph state identity)
-            ( generateBox mode global
+            ( generateBox mode currentGlobal
             )
         Opt.PortIncoming decoder deps ->
           addStmt
             (addDeps deps state)
-            ( generatePort mode global "incomingPort" decoder
+            ( generatePort mode currentGlobal "incomingPort" decoder
             )
         Opt.PortOutgoing encoder deps ->
           addStmt
             (addDeps deps state)
-            ( generatePort mode global "outgoingPort" encoder
+            ( generatePort mode currentGlobal "outgoingPort" encoder
             )
 
 addStmt :: State -> JS.Stmt -> State

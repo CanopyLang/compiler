@@ -83,7 +83,7 @@ module Reporting.Attempt
   , putException
   ) where
 
-import Control.Concurrent (readMVar)
+import Control.Concurrent.STM (readTVarIO)
 import Control.Exception (AsyncException (UserInterrupt), SomeException, catch, fromException, throw)
 import qualified Data.ByteString.Builder as B
 import qualified Json.Encode as Encode
@@ -224,7 +224,7 @@ attemptWithStyle style toReport work =
               Exit.exitFailure
           Terminal mvar ->
             do
-              _ <- readMVar mvar
+              _ <- readTVarIO mvar
               Exit.toStderr (toReport x)
               Exit.exitFailure
 

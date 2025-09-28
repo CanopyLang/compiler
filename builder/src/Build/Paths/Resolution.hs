@@ -84,11 +84,11 @@ import Build.Types
   , RootLocation (..)
   , rootInfoRelative
   , rootInfoLocation
+  , waitForMaybeResult
   )
 import qualified Build.Orchestration as Orchestration
 
 -- Standard library imports
-import Control.Concurrent.MVar (readMVar)
 import Control.Lens ((^.))
 import qualified Control.Monad as Monad
 import qualified Data.Char as Char
@@ -141,7 +141,7 @@ import qualified System.FilePath as FP
 findRoots :: Env -> NE.List FilePath -> IO (Either Exit.BuildProjectProblem (NE.List RootLocation))
 findRoots env paths = do
   mvars <- traverse (Orchestration.fork . getRootInfo env) paths
-  einfos <- traverse readMVar mvars
+  einfos <- traverse waitForMaybeResult mvars
   return (sequenceA einfos >>= checkRoots)
 
 -- | Validate root information and extract locations.

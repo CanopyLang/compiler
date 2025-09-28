@@ -67,6 +67,7 @@ module Build.Orchestration.Workflow
     -- * Threading Utilities
     fork,
     forkWithKey,
+    readTVarIOSafe,
 
     -- * Configuration Lenses
     ebcStyle,
@@ -90,6 +91,7 @@ import Build.Types
     Env (..),
     Result,
     Status (..),
+    waitForMaybeResult,
   )
 import qualified Build.Validation as Validation
 import qualified Canopy.Details as Details
@@ -100,14 +102,8 @@ import qualified Canopy.Outline as Outline
 -- Standard library imports
 
 import qualified Control.Concurrent as Concurrent
-import Control.Concurrent.MVar
-  ( MVar,
-    newEmptyMVar,
-    newMVar,
-    putMVar,
-    readMVar,
-    takeMVar,
-  )
+import Control.Concurrent.STM (TVar, atomically, newTVarIO, writeTVar, readTVarIO)
+import Control.Exception (ErrorCall, SomeException, catch)
 import Control.Lens (makeLenses)
 import Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
@@ -130,16 +126,16 @@ import System.FilePath ((</>))
 --
 -- Local implementation to avoid circular imports between Build.Orchestration
 -- and Build.Orchestration.Workflow modules.
-checkMidpoint :: MVar (Maybe Dependencies) -> Map ModuleName.Raw Status -> IO (Either Exit.BuildProjectProblem Dependencies)
-checkMidpoint dmvar statuses =
+checkMidpoint :: TVar (Maybe Dependencies) -> Map ModuleName.Raw Status -> IO (Either Exit.BuildProjectProblem Dependencies)
+checkMidpoint dtvar statuses =
   case Validation.checkForCycles statuses of
     Nothing -> do
-      maybeForeigns <- readMVar dmvar
+      maybeForeigns <- readTVarIO dtvar
       case maybeForeigns of
         Nothing -> return (Left Exit.BP_CannotLoadDependencies)
         Just fs -> return (Right fs)
     Just (NE.List name names) -> do
-      _ <- readMVar dmvar
+      _ <- readTVarIO dtvar
       return (Left (Exit.BP_Cycle name names))
 
 -- =============================================================================
@@ -225,26 +221,30 @@ addRelative :: AbsoluteSrcDir -> FilePath -> FilePath
 addRelative (AbsoluteSrcDir srcDir) path =
   srcDir </> path
 
--- | Fork a computation into a separate thread.
+-- | Fork a computation into a separate thread using STM.
 --
--- Returns an MVar that will contain the result when the computation completes.
+-- Returns a TVar that will contain the result when the computation completes.
 -- Used for parallelizing independent build operations.
 --
 -- @since 0.19.1
-fork :: IO a -> IO (MVar a)
+fork :: IO a -> IO (TVar (Maybe a))
 fork work = do
-  mvar <- newEmptyMVar
-  _ <- Concurrent.forkIO $ work >>= putMVar mvar
-  return mvar
+  resultTVar <- newTVarIO Nothing
+  _ <- Concurrent.forkIO $ do
+    result <- work `catch` \(e :: SomeException) -> do
+      putStrLn $ "ERROR: Exception in forked work: " ++ show e
+      error $ "Forked work failed: " ++ show e
+    atomically (writeTVar resultTVar (Just result))
+  return resultTVar
 
 -- | Fork a computation for each key-value pair in a Map.
 --
 -- Applies the given function to each key-value pair in a separate thread,
--- returning a Map of MVars containing the results.
+-- returning a Map of TVars containing the results.
 --
 -- @since 0.19.1
 {-# INLINE forkWithKey #-}
-forkWithKey :: (k -> a -> IO b) -> Map k a -> IO (Map k (MVar b))
+forkWithKey :: (k -> a -> IO b) -> Map k a -> IO (Map k (TVar (Maybe b)))
 forkWithKey func =
   Map.traverseWithKey (\k v -> fork (func k v))
 
@@ -282,10 +282,10 @@ fromExposed :: ExposedBuildConfig docs -> List ModuleName.Raw -> IO (Either Exit
 fromExposed (ExposedBuildConfig style root details docsGoal) exposed =
   Reporting.trackBuild style $ \key -> do
     env <- makeEnv key root details
-    dmvar <- Details.loadInterfaces root details
+    dtvar <- Details.loadInterfaces root details
 
-    statuses <- performCrawlPhase env dmvar docsGoal exposed
-    performCompilePhase env dmvar root details docsGoal exposed statuses
+    statuses <- performCrawlPhase env dtvar docsGoal exposed
+    performCompilePhase env dtvar root details docsGoal exposed statuses
 
 -- | Perform the module crawling phase.
 --
@@ -296,24 +296,31 @@ fromExposed (ExposedBuildConfig style root details docsGoal) exposed =
 -- for access to status dictionary they need to update.
 --
 -- @since 0.19.1
-performCrawlPhase :: Env -> MVar (Maybe Dependencies) -> DocsGoal docs -> List ModuleName.Raw -> IO (Map ModuleName.Raw Status)
-performCrawlPhase env _dmvar docsGoal (NE.List e es) = do
-  -- Pre-populate MVar with empty map before starting workers
-  mvar <- newMVar Map.empty
+performCrawlPhase :: Env -> TVar (Maybe Dependencies) -> DocsGoal docs -> List ModuleName.Raw -> IO (Map ModuleName.Raw Status)
+performCrawlPhase env _dtvar docsGoal (NE.List e es) = do
+  -- Pre-populate TVar with empty map before starting workers
+  mvar <- newTVarIO Map.empty
   let docsNeed = toDocsNeed docsGoal
   roots <- MapUtils.fromKeysA (fork . Crawl.crawlModule (CrawlConfig env mvar docsNeed)) (e : es)
-  -- No need to putMVar since it's already initialized
-  statuses <- traverse readMVar roots
+  -- No need to writeTVar since it's already initialized
+  statuses <- traverse waitForMaybeResult roots
   return statuses
+
+-- | Safe version of readTVarIO that handles forked TVars with debugging
+readTVarIOSafe :: String -> TVar a -> IO a
+readTVarIOSafe caller tvar = do
+  catch (readTVarIO tvar) $ \(e :: ErrorCall) -> do
+    putStrLn ("ERROR: readTVarIO called from " <> caller <> " on unready TVar: " <> show e)
+    error ("Caller " <> caller <> " must use waitForResult instead of readTVarIO")
 
 -- | Perform the compilation phase.
 --
 -- Compiles modules and generates final artifacts or documentation.
 --
 -- @since 0.19.1
-performCompilePhase :: Env -> MVar (Maybe Dependencies) -> FilePath -> Details.Details -> DocsGoal docs -> List ModuleName.Raw -> Map ModuleName.Raw Status -> IO (Either Exit.BuildProblem docs)
-performCompilePhase env dmvar root details docsGoal exposed statuses = do
-  midpoint <- checkMidpoint dmvar statuses
+performCompilePhase :: Env -> TVar (Maybe Dependencies) -> FilePath -> Details.Details -> DocsGoal docs -> List ModuleName.Raw -> Map ModuleName.Raw Status -> IO (Either Exit.BuildProblem docs)
+performCompilePhase env dtvar root details docsGoal exposed statuses = do
+  midpoint <- checkMidpoint dtvar statuses
   case midpoint of
     Left problem ->
       return (Left (Exit.BuildProjectProblem problem))
@@ -326,22 +333,20 @@ performCompilePhase env dmvar root details docsGoal exposed statuses = do
 --
 -- Coordinates parallel compilation of all modules in the dependency graph.
 --
--- **FIXED MVar DEADLOCK**: Pre-populate the results MVar with placeholder MVars
--- before starting workers to prevent circular dependency deadlock where workers
--- wait for results they must produce themselves.
+-- **FIXED MVar DEADLOCK**: Create empty results MVar first, start workers with
+-- shared config, then populate the MVar with worker MVars. This follows the
+-- proven pattern from Build.Paths and avoids circular dependency.
 --
 -- @since 0.19.1
 compileModules :: Env -> Dependencies -> Map ModuleName.Raw Status -> IO (Map ModuleName.Raw Result)
 compileModules env foreigns statuses = do
-  -- Create placeholder MVars for each module before starting workers
-  placeholderMVars <- mapM (\_ -> newEmptyMVar) statuses
-  rmvar <- newMVar placeholderMVars
-  -- Now start workers with pre-populated results MVar
-  resultMVars <- forkWithKey (Check.checkModule (CheckConfig env foreigns rmvar)) statuses
-  -- Replace placeholder MVars with actual result MVars
-  _ <- takeMVar rmvar
-  putMVar rmvar resultMVars
-  traverse readMVar resultMVars
+  -- Create empty results TVar that will be populated
+  rmvar <- newTVarIO Map.empty
+  -- Start workers with shared config that includes the TVar
+  let config = CheckConfig env foreigns rmvar
+  resultTVars <- forkWithKey (Check.checkModule config) statuses
+  -- Wait for all workers to complete and return results
+  traverse waitForMaybeResult resultTVars
 
 -- | Convert documentation goal to documentation need flag.
 toDocsNeed :: DocsGoal a -> DocsNeed

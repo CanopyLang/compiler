@@ -17,7 +17,7 @@
 --
 -- @
 -- -- Create loading objects container
--- loading <- createLoadingObjects foreignMVar localMVars
+-- loading <- createLoadingObjects foreignTVar localMVars
 -- 
 -- -- Convert to finalized objects
 -- objects <- finalizeToObjects loading
@@ -40,14 +40,14 @@ module Generate.Types
   , createLoadingObjects
   , createObjects
     -- * Lenses
-  , foreign_mvarL
-  , local_mvarsL
+  , foreign_tvarL
+  , local_tvarsL
   , foreignGraph
   , localGraphs
   ) where
 
 import qualified AST.Optimized as Opt
-import Control.Concurrent (MVar)
+import Control.Concurrent.STM (TVar)
 import Control.Lens (Lens', lens)
 import Data.Map (Map)
 import qualified Canopy.ModuleName as ModuleName
@@ -65,20 +65,20 @@ type Task a = Task.Task Exit.Generate a
 --
 -- === Fields
 --
--- * '_foreign_mvar': MVar containing the global foreign object graph
--- * '_local_mvars': Map of module names to MVars containing local graphs
+-- * '_foreign_tvar': TVar containing the global foreign object graph
+-- * '_local_tvars': Map of module names to TVars containing local graphs
 --
 -- === Usage
 --
 -- @
--- loading <- createLoadingObjects foreignMVar localMVars
+-- loading <- createLoadingObjects foreignTVar localTVars
 -- objects <- finalizeToObjects loading
 -- @
 data LoadingObjects = LoadingObjects
-  { _foreign_mvar :: !(MVar (Maybe Opt.GlobalGraph))
-    -- ^ MVar containing the global foreign object graph
-  , _local_mvars :: !(Map ModuleName.Raw (MVar (Maybe Opt.LocalGraph)))
-    -- ^ Map of module names to MVars containing local graphs
+  { _foreign_tvar :: !(TVar (Maybe Opt.GlobalGraph))
+    -- ^ TVar containing the global foreign object graph
+  , _local_tvars :: !(Map ModuleName.Raw (TVar (Maybe Opt.LocalGraph)))
+    -- ^ Map of module names to TVars containing local graphs
   }
 
 -- | Container for finalized objects ready for code generation.
@@ -106,11 +106,11 @@ data Objects = Objects
   } deriving (Show)
 
 -- Manual lenses for LoadingObjects
-foreign_mvarL :: Lens' LoadingObjects (MVar (Maybe Opt.GlobalGraph))
-foreign_mvarL = lens _foreign_mvar (\s x -> s { _foreign_mvar = x })
+foreign_tvarL :: Lens' LoadingObjects (TVar (Maybe Opt.GlobalGraph))
+foreign_tvarL = lens _foreign_tvar (\s x -> s { _foreign_tvar = x })
 
-local_mvarsL :: Lens' LoadingObjects (Map ModuleName.Raw (MVar (Maybe Opt.LocalGraph)))
-local_mvarsL = lens _local_mvars (\s x -> s { _local_mvars = x })
+local_tvarsL :: Lens' LoadingObjects (Map ModuleName.Raw (TVar (Maybe Opt.LocalGraph)))
+local_tvarsL = lens _local_tvars (\s x -> s { _local_tvars = x })
 
 -- Manual lenses for Objects with safe names  
 foreignGraph :: Lens' Objects Opt.GlobalGraph
@@ -122,12 +122,12 @@ localGraphs = lens _locals (\s x -> s { _locals = x })
 -- | Create a LoadingObjects container.
 --
 -- This function constructs a LoadingObjects container from the provided
--- MVars for foreign and local object graphs.
+-- TVars for foreign and local object graphs.
 --
 -- === Parameters
 --
--- * 'foreignMVar': MVar containing the global foreign object graph
--- * 'localMVars': Map of module names to MVars containing local graphs
+-- * 'foreignTVar': TVar containing the global foreign object graph
+-- * 'localTVars': Map of module names to TVars containing local graphs
 --
 -- === Returns
 --
@@ -136,19 +136,19 @@ localGraphs = lens _locals (\s x -> s { _locals = x })
 -- === Examples
 --
 -- @
--- loading <- createLoadingObjects foreignMVar localMVars
+-- loading <- createLoadingObjects foreignTVar localTVars
 -- @
 --
 -- @since 0.19.1
-createLoadingObjects 
-  :: MVar (Maybe Opt.GlobalGraph)
-  -- ^ MVar containing the global foreign object graph
-  -> Map ModuleName.Raw (MVar (Maybe Opt.LocalGraph))
-  -- ^ Map of module names to MVars containing local graphs
+createLoadingObjects
+  :: TVar (Maybe Opt.GlobalGraph)
+  -- ^ TVar containing the global foreign object graph
+  -> Map ModuleName.Raw (TVar (Maybe Opt.LocalGraph))
+  -- ^ Map of module names to TVars containing local graphs
   -> LoadingObjects
   -- ^ LoadingObjects container
-createLoadingObjects foreignMVar localMVars = 
-  LoadingObjects foreignMVar localMVars
+createLoadingObjects foreignTVar localTVars =
+  LoadingObjects foreignTVar localTVars
 
 -- | Create an Objects container.
 --

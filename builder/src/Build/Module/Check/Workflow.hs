@@ -83,7 +83,7 @@ module Build.Module.Check.Workflow
   , createCachedResult
   ) where
 
-import qualified Control.Concurrent.MVar as MVar
+import qualified Control.Concurrent.STM as STM
 import Control.Lens ((^.), makeLenses)
 import qualified AST.Canonical as Can
 import qualified AST.Optimized as Opt
@@ -306,7 +306,7 @@ recompileCachedModule config path time ifaces = do
 -- IO action producing cached result with appropriate status
 createCachedResult :: Bool -> Details.BuildID -> IO Result
 createCachedResult hasMain lastChange = do
-  mvar <- MVar.newMVar Unneeded
-  pure (RCached hasMain lastChange mvar)
+  tvar <- STM.newTVarIO Unneeded
+  pure (RCached hasMain lastChange tvar)
 
 -- Import CachedConfig from Build.Module.Check.Config to avoid duplication

@@ -7,7 +7,7 @@
 --
 -- * Dependency discovery and crawling coordination
 -- * Root module processing for different project entry points
--- * Concurrent dependency resolution using MVars
+-- * Concurrent dependency resolution using STM
 -- * Foreign dependency resolution and validation
 --
 -- The dependency system handles two main scenarios:
@@ -39,7 +39,7 @@
 --
 -- === Concurrency Model
 --
--- Dependency crawling uses MVar-based coordination to handle concurrent
+-- Dependency crawling uses STM-based coordination to handle concurrent
 -- module processing while avoiding race conditions and ensuring proper
 -- dependency resolution order.
 --
@@ -62,21 +62,25 @@ module Build.Crawl.Dependencies
   , parseRootModule
   ) where
 
-import Control.Concurrent.MVar (MVar, takeMVar, putMVar, newEmptyMVar)
+import Control.Concurrent.STM (TVar, atomically, writeTVar, newTVar, modifyTVar)
 import qualified AST.Source as Src
 import qualified Canopy.Details as Details
 import qualified Canopy.ModuleName as ModuleName
+import qualified Data.List as List
 import qualified Data.Map.Strict as Map
+import qualified Debug.Trace as Debug
 import qualified Data.Name as Name
 import qualified Data.ByteString as B
 import qualified File
 import qualified Parse.Module as Parse
 import qualified Reporting.Annotation as A
 import qualified Reporting.Error as Error
+import qualified Reporting.Error.Import as Import
 
 import Build.Config (CrawlConfig (..))  
 import Build.Types
   ( Env (..)
+  , Status (..)
   , StatusDict
   , DocsNeed (..)
   , RootLocation (..)
@@ -104,7 +108,7 @@ import Build.Crawl.Core
 crawlRoot
   :: Env
   -- ^ Build environment
-  -> MVar StatusDict
+  -> TVar StatusDict
   -- ^ Status dictionary for coordination
   -> RootLocation
   -- ^ Root module location specification
@@ -124,18 +128,18 @@ crawlRoot env@(Env _ _ projectType _ buildID _ _) mvar root =
 crawlInsideRoot
   :: Env
   -- ^ Build environment
-  -> MVar StatusDict
+  -> TVar StatusDict
   -- ^ Status dictionary for coordination
   -> ModuleName.Raw
   -- ^ Root module name
   -> IO RootStatus
   -- ^ Inside root processing status
 crawlInsideRoot env mvar name = do
-  statusMVar <- newEmptyMVar
-  statusDict <- takeMVar mvar
-  putMVar mvar (Map.insert name statusMVar statusDict)
+  statusTVar <- atomically (newTVar (SBadImport Import.NotFound))
+  atomically $ modifyTVar mvar (Map.insert name statusTVar)
   let config = CrawlConfig env mvar (DocsNeed False)
-  crawlModule config name >>= putMVar statusMVar
+  result <- crawlModule config name
+  atomically $ writeTVar statusTVar result
   pure (SInside name)
 
 -- | Crawl outside root module.
@@ -147,7 +151,7 @@ crawlInsideRoot env mvar name = do
 crawlOutsideRoot
   :: Env
   -- ^ Build environment
-  -> MVar StatusDict
+  -> TVar StatusDict
   -- ^ Status dictionary for coordination
   -> Parse.ProjectType
   -- ^ Project type for parsing context
@@ -162,6 +166,26 @@ crawlOutsideRoot env mvar projectType path buildID = do
   source <- File.readUtf8 path
   parseRootModule env mvar projectType path time source buildID
 
+-- | Check if a module name is a kernel module.
+--
+-- Kernel modules should be filtered out of dependency lists as they are handled
+-- specially by the compiler and don't go through normal dependency resolution.
+--
+-- @since 0.19.1
+isKernelModule :: ModuleName.Raw -> Bool
+isKernelModule moduleName =
+  let moduleStr = ModuleName.toChars moduleName
+  in "Elm.Kernel." `List.isPrefixOf` moduleStr || "Canopy.Kernel." `List.isPrefixOf` moduleStr
+
+-- | Filter out kernel modules from dependency list.
+--
+-- Removes kernel modules from a list of module dependencies since they
+-- should not go through normal dependency resolution.
+--
+-- @since 0.19.1
+filterNonKernelDeps :: [ModuleName.Raw] -> [ModuleName.Raw]
+filterNonKernelDeps = List.filter (not . isKernelModule)
+
 -- | Parse root module source.
 --
 -- Parses external root module source and processes dependencies
@@ -171,7 +195,7 @@ crawlOutsideRoot env mvar projectType path buildID = do
 parseRootModule
   :: Env
   -- ^ Build environment
-  -> MVar StatusDict
+  -> TVar StatusDict
   -- ^ Status dictionary for coordination
   -> Parse.ProjectType
   -- ^ Project type for parsing context
@@ -191,8 +215,11 @@ parseRootModule env mvar projectType path time source buildID =
     Left syntaxError -> pure . SOutsideErr $ Error.Module "???" path time source (Error.BadSyntax syntaxError)
   where
     processRootModule e m p t s imports values bID modul = do
-      let deps = fmap Src.getImportName imports
-      let local = Details.Local p t deps (any isMain values) bID bID
+      let allDeps = fmap Src.getImportName imports
+      let deps = filterNonKernelDeps allDeps
+      -- DEBUG: Track Elm.JsArray dependency processing
+      let debugMsg = Debug.trace ("DEBUG Dependencies for " ++ show p ++ ": allDeps=" ++ show allDeps ++ " filteredDeps=" ++ show deps) deps
+      let local = Details.Local p t debugMsg (any isMain values) bID bID
       crawlDeps e m deps (SOutsideOk local s modul)
 
 -- fork function is now re-exported from Build.Crawl.Core

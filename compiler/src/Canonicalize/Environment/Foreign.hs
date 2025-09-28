@@ -78,28 +78,31 @@ isNormal (Src.Import (A.At _ name) maybeAlias _) =
 -- ADD IMPORTS
 
 addImport :: Map.Map ModuleName.Raw I.Interface -> State -> Src.Import -> Result i w State
-addImport ifaces (State vs ts cs bs qvs qts qcs) (Src.Import (A.At _ name) maybeAlias exposing) =
-  case Map.lookup name ifaces of
-    Nothing ->
-      -- FIXED: Handle missing interface (e.g., FFI modules not in interface map)
-      Result.throw (Error.ImportNotFound A.one (Name.fromChars (ModuleName.toChars name)) [])
-    Just (I.Interface pkg defs unions aliases binops) ->
-      let !prefix = Data.Maybe.fromMaybe name maybeAlias
-          !home = ModuleName.Canonical pkg name
+addImport ifaces state@(State vs ts cs bs qvs qts qcs) (Src.Import (A.At _ name) maybeAlias exposing) =
+  -- FIXED: Handle kernel imports by bypassing interface lookup
+  if Name.isKernel name
+    then Result.ok state  -- Kernel imports don't need interface resolution
+    else case Map.lookup name ifaces of
+      Nothing ->
+        -- Handle missing interface (e.g., FFI modules not in interface map)
+        Result.throw (Error.ImportNotFound A.one (Name.fromChars (ModuleName.toChars name)) [])
+      Just (I.Interface pkg defs unions aliases binops) ->
+        let !prefix = Data.Maybe.fromMaybe name maybeAlias
+            !home = ModuleName.Canonical pkg name
 
-          !rawTypeInfo =
-            Map.union
-              (Map.mapMaybeWithKey (unionToType home) unions)
-              (Map.mapMaybeWithKey (aliasToType home) aliases)
+            !rawTypeInfo =
+              Map.union
+                (Map.mapMaybeWithKey (unionToType home) unions)
+                (Map.mapMaybeWithKey (aliasToType home) aliases)
 
-          !vars = Map.map (Env.Specific home) defs
-          !types = Map.map (Env.Specific home . fst) rawTypeInfo
-          !ctors = Map.foldr (addExposed . snd) Map.empty rawTypeInfo
+            !vars = Map.map (Env.Specific home) defs
+            !types = Map.map (Env.Specific home . fst) rawTypeInfo
+            !ctors = Map.foldr (addExposed . snd) Map.empty rawTypeInfo
 
-          !qvs2 = addQualified prefix vars qvs
-          !qts2 = addQualified prefix types qts
-          !qcs2 = addQualified prefix ctors qcs
-      in case exposing of
+            !qvs2 = addQualified prefix vars qvs
+            !qts2 = addQualified prefix types qts
+            !qcs2 = addQualified prefix ctors qcs
+        in case exposing of
         Src.Open ->
           let !vs2 = addExposed vs vars
               !ts2 = addExposed ts types

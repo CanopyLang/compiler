@@ -57,7 +57,7 @@ module Build.Crawl.Paths
   , shouldRecrawl
   ) where
 
-import Control.Concurrent.MVar (MVar)
+import Control.Concurrent.STM (TVar)
 import Control.Lens ((^.))
 import qualified Canopy.Details as Details
 import qualified Canopy.ModuleName as ModuleName
@@ -141,7 +141,7 @@ processLocalPath config = do
 processExistingLocal
   :: Env
   -- ^ Build environment
-  -> MVar StatusDict
+  -> TVar StatusDict
   -- ^ Status dictionary for coordination
   -> DocsNeed
   -- ^ Documentation generation requirements
@@ -279,11 +279,11 @@ needsDocs
 needsDocs (DocsNeed need) = need
 
 -- | Crawl file - imported from Core module
-crawlFile :: Env -> MVar StatusDict -> DocsNeed -> ModuleName.Raw -> FilePath -> File.Time -> Details.BuildID -> IO Status
+crawlFile :: Env -> TVar StatusDict -> DocsNeed -> ModuleName.Raw -> FilePath -> File.Time -> Details.BuildID -> IO Status
 crawlFile = Core.crawlFile
 
--- | Crawl dependencies - imported from Core module  
-crawlDeps :: Env -> MVar StatusDict -> [ModuleName.Raw] -> a -> IO a  
+-- | Crawl dependencies - imported from Core module
+crawlDeps :: Env -> TVar StatusDict -> [ModuleName.Raw] -> a -> IO a
 crawlDeps = Core.crawlDeps
 
 -- | Check kernel exists - imported from Discovery module

@@ -69,7 +69,7 @@ module Build.Crawl.Config
   , createValidationConfig
   ) where
 
-import Control.Concurrent.MVar (MVar)
+import Control.Concurrent.STM (TVar)
 import Control.Lens (makeLenses, (^.))
 import qualified AST.Source as Src
 import qualified Canopy.Details as Details
@@ -93,7 +93,7 @@ import Build.Types
 -- metadata needed for proper module resolution.
 data ProcessPathConfig = ProcessPathConfig
   { _pathConfigEnv :: !Env
-  , _pathConfigMVar :: !(MVar StatusDict)  
+  , _pathConfigMVar :: !(TVar StatusDict)  
   , _pathConfigDocsNeed :: !DocsNeed
   , _pathConfigName :: !ModuleName.Raw
   , _pathConfigPaths :: ![FilePath]
@@ -111,7 +111,7 @@ data ProcessPathConfig = ProcessPathConfig
 -- corresponding module file.
 data SinglePathConfig = SinglePathConfig
   { _singlePathEnv :: !Env
-  , _singlePathMVar :: !(MVar StatusDict)
+  , _singlePathMVar :: !(TVar StatusDict)
   , _singlePathDocsNeed :: !DocsNeed
   , _singlePathName :: !ModuleName.Raw
   , _singlePathPath :: !FilePath
@@ -127,7 +127,7 @@ data SinglePathConfig = SinglePathConfig
 -- context and validation requirements.
 data LocalPathConfig = LocalPathConfig
   { _localPathEnv :: !Env
-  , _localPathMVar :: !(MVar StatusDict)
+  , _localPathMVar :: !(TVar StatusDict)
   , _localPathDocsNeed :: !DocsNeed
   , _localPathName :: !ModuleName.Raw
   , _localPathPath :: !FilePath
@@ -141,7 +141,7 @@ data LocalPathConfig = LocalPathConfig
 -- and performing initial validation of the parsed AST.
 data ParseConfig = ParseConfig
   { _parseConfigEnv :: !Env
-  , _parseConfigMVar :: !(MVar StatusDict)
+  , _parseConfigMVar :: !(TVar StatusDict)
   , _parseConfigDocsNeed :: !DocsNeed
   , _parseConfigExpectedName :: !ModuleName.Raw
   , _parseConfigPath :: !FilePath
@@ -158,7 +158,7 @@ data ParseConfig = ParseConfig
 -- including name consistency checks and dependency validation.
 data ValidationConfig = ValidationConfig
   { _validationConfigEnv :: !Env
-  , _validationConfigMVar :: !(MVar StatusDict)
+  , _validationConfigMVar :: !(TVar StatusDict)
   , _validationConfigDocsNeed :: !DocsNeed
   , _validationConfigExpectedName :: !ModuleName.Raw
   , _validationConfigActualName :: !ModuleName.Raw

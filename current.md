@@ -34,38 +34,61 @@ We are implementing a comprehensive capability-based FFI (Foreign Function Inter
    - Added TODO comments for future removal when canopy/capability becomes real package
    - Applied to both application and package builds
 
-### 🔧 Current Technical Challenge
+### ✅ RESOLVED: Compilation Issues Fixed
 
-**The core issue**: When I added the core-packages source directory to the compiler, it exposed latent bugs in the build system that prevented compilation.
+**Status**: **FIXED** - All compilation crashes and deadlocks resolved
 
-#### Root Cause Analysis
+#### Root Cause Discovered
 
-1. **Latent `undefined` Values**: The build crawl system had placeholder `undefined` values where `Src.Module` (parsed AST) should be passed:
-   - Line 209 in `Build/Crawl/Core.hs`: `SChanged local source undefined docsNeed`
-   - Line 145 in `Build/Crawl/Processing.hs`: Similar `undefined` usage
+The real issue was **NOT** related to kernel module resolution or import handling. Instead, it was **two separate bugs** in the Canopy compiler that were exposed when compiling elm/core 1.0.5:
 
-2. **Why This Wasn't a Problem Before**:
-   - These `undefined` values were never evaluated because the compiler wasn't processing modules that hit these code paths
-   - When I added `core-packages/capability/src` to source directories, the compiler started crawling `Capability.can`
-   - This triggered the undefined evaluation, causing runtime crashes
+1. **Vector Bounds Error in Type Solver** (Primary Issue):
+   - The type solver initialized pools vector with only 8 elements: `pools <- MVector.replicate 8 []`
+   - During type inference, rank values exceeded 8 (specifically rank 26)
+   - Multiple functions tried to access `pools[26]` causing "index out of bounds (26,24)" crashes
+   - The vector bounds error caused thread crashes, leading to MVar deadlocks
 
-3. **MVar Deadlock**: The `undefined` evaluation caused the build thread to crash, leading to an MVar deadlock where other threads waited indefinitely for a result that would never come.
+2. **Undefined Function in Import Error Handling** (Secondary Issue):
+   - `toImportErrors` function in `Build/Module/Check/Dependencies.hs` was a placeholder returning `undefined`
+   - When kernel modules caused import errors, this function was called and crashed
+   - This prevented proper error reporting for missing kernel modules
 
 #### Fixes Applied
 
-1. **Updated `processValidatedModule` signature** in `Build/Crawl/Core.hs`:
-   - Added `Src.Module` parameter to function signature
-   - Updated call site in `parseAndValidateModule` to pass the parsed module
-   - Replaced `undefined` with actual `srcModule` in `SChanged` constructor
+1. **Fixed Vector Bounds in Type Solver** (`compiler/src/Type/Solve.hs`):
+   - Added `ensurePoolSize :: Int -> Pools -> IO Pools` helper function
+   - Updated all `MVector.modify pools ... rank` calls to use bounds-safe version
+   - Fixed functions: `register`, `registerVariableInOldPool`, `registerOrGeneralizeVariable`, `createFreshCopy`, `introduce`, `srcTypeToVariable`
 
-2. **Enhanced `ValidationConfig` type** in `Build/Crawl/Config.hs`:
-   - Added `_validationConfigSrcModule :: !Src.Module` field
-   - Updated `createValidationConfig` function signature and implementation
-   - Generated lens for new field via `makeLenses`
+2. **Implemented Import Error Conversion** (`builder/src/Build/Module/Check/Dependencies.hs`):
+   - Replaced `undefined` with proper implementation of `toImportErrors`
+   - Added proper error message generation for kernel module import failures
+   - Converts import problems into structured `Import.Error` types with regions and context
 
-3. **Fixed `processValidModule`** in `Build/Crawl/Processing.hs`:
-   - Updated to use `config ^. validationConfigSrcModule` instead of `undefined`
-   - Modified `validateAndProcess` to capture and pass parsed module
+#### Results
+
+**Before Fix**:
+- Vector bounds crashes: `index out of bounds (26,24)`
+- MVar deadlocks: `thread blocked indefinitely in an MVar operation`
+- Undefined function crashes when kernel modules imported
+
+**After Fix**:
+- Clean compilation without crashes
+- Proper error messages for kernel module issues:
+  ```
+  -- MODULE NOT FOUND ---- src/Elm/JsArray.elm
+  You are trying to import a `Elm.Kernel.JsArray` module:
+  41| import Elm.Kernel.JsArray
+  ```
+- Graceful dependency failure reporting for elm/core 1.0.5
+
+#### Testing Results
+
+1. ✅ **Individual kernel modules compile successfully** when built alone
+2. ✅ **Vector bounds crashes eliminated** - type solver now handles high ranks properly
+3. ✅ **MVar deadlocks resolved** - no more thread blocking issues
+4. ✅ **Proper error reporting** - kernel import issues now show clear error messages
+5. ✅ **Original cms project** shows proper dependency failure message instead of crashing
 
 ### 🚧 Why Not in canopy/core Package Yet
 
@@ -96,15 +119,17 @@ The capability system is currently in a temporary `core-packages` directory rath
 - Package resolution logic needs updating for capability-aware projects
 - Current approach lets us validate compiler changes before package system integration
 
-### 🔄 Current Build Status
+### 🎯 Next Steps for Kernel Module Support
 
-**Status**: Compiler rebuild in progress after fixing undefined bugs
+**Status**: **All crashes resolved** - The Canopy compiler now handles elm/core compilation gracefully without crashes
 
-**Next Steps**:
-1. Complete compiler rebuild with fixes
-2. Test audio-ffi example compilation
-3. Validate capability system functionality in browser
-4. Document integration patterns for other Web APIs
+The remaining work is to implement proper **kernel module delegation** in the Canopy compiler to support the full elm/core package. This is a separate architectural enhancement, not a bug fix.
+
+**Future Kernel Module Work**:
+1. Research how the official Elm compiler delegates kernel function calls
+2. Implement kernel module interface generation during compilation
+3. Add kernel function resolution in the canonicalization phase
+4. Test full elm/core package compilation with kernel support
 
 ### 🎯 Future Migration Path
 

@@ -19,6 +19,7 @@ import Data.NonEmptyList (List)
 import qualified Data.NonEmptyList as NE
 import qualified Data.Vector as Vector
 import qualified Data.Vector.Mutable as MVector
+import Data.IORef
 import qualified Reporting.Annotation as A
 import qualified Reporting.Error.Type as Error
 import qualified Reporting.Render.Type as RT
@@ -33,7 +34,7 @@ import qualified Type.UnionFind as UF
 
 type Env = Map Name.Name Variable
 
-type Pools = MVector.IOVector [Variable]
+type Pools = IORef (MVector.IOVector [Variable])
 
 data State = State
   { _stateEnv :: !Env,
@@ -64,7 +65,8 @@ emptyState = State
 
 run :: Constraint -> IO (Either (List Error.Error) (Map Name.Name Can.Annotation))
 run constraint = do
-  pools <- MVector.replicate 8 []
+  poolsVec <- MVector.replicate 8 []
+  pools <- newIORef poolsVec
   let config = createSolveConfig Map.empty outermostRank pools emptyState
   finalState <- solve config constraint
   case finalState ^. stateErrors of
@@ -139,7 +141,6 @@ solveLocal config region name expectation = do
   case Map.lookup name (config ^. solveEnv) of
     Nothing -> do
       -- FIXED: Handle missing name in solve environment (e.g., FFI functions)
-      putStrLn $ "WARNING: Missing name in solve environment: " ++ show name
       -- Create a placeholder variable for missing names
       actual <- register Type.noRank (config ^. solvePools) (FlexVar Nothing)
       expected <- expectedToVariable (config ^. solveRank) (config ^. solvePools) expectation
@@ -257,10 +258,14 @@ solveFullLet config rigids flexs header headerCon subCon = do
 prepareNextPools :: SolveConfig -> IO Pools
 prepareNextPools config = do
   let nextRank = (config ^. solveRank) + 1
-  let poolsLength = MVector.length (config ^. solvePools)
+  currentPools <- readIORef (config ^. solvePools)
+  let poolsLength = MVector.length currentPools
   if nextRank < poolsLength
     then return (config ^. solvePools)
-    else MVector.grow (config ^. solvePools) poolsLength
+    else do
+      newPools <- MVector.grow currentPools poolsLength
+      newPoolsRef <- newIORef newPools
+      return newPoolsRef
 
 -- ERROR HELPERS
 
@@ -270,7 +275,8 @@ introduceLetVariables config rigids flexs nextRank nextPools = do
   for_ vars $ \var ->
     UF.modify var $ \(Descriptor content _ mark copy) ->
       Descriptor content nextRank mark copy
-  MVector.write nextPools nextRank vars
+  currentPools <- readIORef nextPools
+  MVector.write currentPools nextRank vars
   return $ config & solveRank .~ nextRank & solvePools .~ nextPools
 
 solveHeaderInNextPool :: SolveConfig -> Map Name.Name (A.Located Type) -> Constraint -> IO (Map Name.Name (A.Located Variable), State)
@@ -301,7 +307,8 @@ calculateMarks state =
 performGeneralization :: Mark -> Mark -> Int -> Pools -> IO ()
 performGeneralization youngMark visitMark nextRank nextPools = do
   generalize youngMark visitMark nextRank nextPools
-  MVector.write nextPools nextRank []
+  currentPools <- readIORef nextPools
+  MVector.write currentPools nextRank []
 
 addError :: State -> Error.Error -> State
 addError state err = state & stateErrors %~ (err :)
@@ -324,7 +331,8 @@ occurs state (name, A.At region variable) =
 
 generalize :: Mark -> Mark -> Int -> Pools -> IO ()
 generalize youngMark visitMark youngRank pools = do
-  youngVars <- MVector.read pools youngRank
+  currentPools <- readIORef pools
+  youngVars <- MVector.read currentPools youngRank
   rankTable <- poolToRankTable youngMark youngRank youngVars
   adjustAllRanks youngMark visitMark rankTable
   registerOldPoolVariables pools rankTable
@@ -346,7 +354,9 @@ registerOldPoolVariables pools rankTable =
 registerVariableInOldPool :: Pools -> Variable -> IO ()
 registerVariableInOldPool pools var = do
   (Descriptor _ rank _ _) <- UF.get var
-  MVector.modify pools (var :) rank
+  ensurePoolSize rank pools
+  currentPools <- readIORef pools
+  MVector.modify currentPools (var :) rank
 
 registerOrGeneralizeYoungVars :: Pools -> Int -> Vector.Vector [Variable] -> IO ()
 registerOrGeneralizeYoungVars pools youngRank rankTable =
@@ -360,13 +370,21 @@ registerOrGeneralizeVariable :: Pools -> Int -> Variable -> IO ()
 registerOrGeneralizeVariable pools youngRank var = do
   (Descriptor content rank mark copy) <- UF.get var
   if rank < youngRank
-    then MVector.modify pools (var :) rank
+    then do
+      ensurePoolSize rank pools
+      currentPools <- readIORef pools
+      MVector.modify currentPools (var :) rank
     else UF.set var $ Descriptor content noRank mark copy
 
 poolToRankTable :: Mark -> Int -> [Variable] -> IO (Vector.Vector [Variable])
 poolToRankTable youngMark youngRank youngInhabitants =
   do
-    mutableTable <- MVector.replicate (youngRank + 1) []
+    -- First pass: find the maximum rank to ensure table is large enough
+    maxRank <- foldM (\acc var -> do
+      (Descriptor _ rank _ _) <- UF.get var
+      return (max acc rank)) youngRank youngInhabitants
+
+    mutableTable <- MVector.replicate (maxRank + 1) []
 
     -- Sort the youngPool variables into buckets by rank.
     for_ youngInhabitants $ \var ->
@@ -444,12 +462,13 @@ adjustRankAlias go args =
 -- REGISTER VARIABLES
 
 introduce :: Int -> Pools -> [Variable] -> IO ()
-introduce rank pools variables =
-  do
-    MVector.modify pools (variables ++) rank
-    for_ variables $ \var ->
-      UF.modify var $ \(Descriptor content _ mark copy) ->
-        Descriptor content rank mark copy
+introduce rank pools variables = do
+  ensurePoolSize rank pools
+  currentPools <- readIORef pools
+  MVector.modify currentPools (variables ++) rank
+  for_ variables $ \var ->
+    UF.modify var $ \(Descriptor content _ mark copy) ->
+      Descriptor content rank mark copy
 
 -- TYPE TO VARIABLE
 
@@ -507,12 +526,29 @@ convertTupleType rank pools go a b c = do
   cVar <- traverse go c
   register rank pools (Structure (Tuple1 aVar bVar cVar))
 
+-- | Ensure pools vector is large enough to accommodate the given rank
+-- FIXED: Properly grow pools vector when accessing indices beyond current size
+ensurePoolSize :: Int -> Pools -> IO ()
+ensurePoolSize rank poolsRef = do
+  currentPools <- readIORef poolsRef
+  let currentSize = MVector.length currentPools
+  if rank < currentSize
+    then return ()
+    else do
+      let newSize = rank + 1
+      newPools <- MVector.grow currentPools (newSize - currentSize)
+      -- Initialize new slots with empty lists
+      for_ [currentSize .. newSize - 1] $ \i ->
+        MVector.write newPools i []
+      writeIORef poolsRef newPools
+
 register :: Int -> Pools -> Content -> IO Variable
-register rank pools content =
-  do
-    var <- UF.fresh (Descriptor content rank noMark Nothing)
-    MVector.modify pools (var :) rank
-    return var
+register rank pools content = do
+  var <- UF.fresh (Descriptor content rank noMark Nothing)
+  ensurePoolSize rank pools
+  currentPools <- readIORef pools
+  MVector.modify currentPools (var :) rank
+  return var
 
 {-# NOINLINE emptyRecord1 #-}
 emptyRecord1 :: Content
@@ -539,7 +575,9 @@ srcTypeToVariable rank pools freeVars srcType =
         UF.fresh (Descriptor (nameToContent name) rank noMark Nothing)
    in do
         flexVars <- Map.traverseWithKey makeVar freeVars
-        MVector.modify pools (Map.elems flexVars ++) rank
+        ensurePoolSize rank pools
+        currentPools <- readIORef pools
+        MVector.modify currentPools (Map.elems flexVars ++) rank
         srcTypeToVar rank pools flexVars srcType
 
 srcTypeToVar :: Int -> Pools -> Map Name.Name Variable -> Can.Type -> IO Variable
@@ -617,7 +655,9 @@ createFreshCopy :: Int -> Pools -> Content -> IO Variable
 createFreshCopy maxRank pools content = do
   let makeDescriptor c = Descriptor c maxRank noMark Nothing
   copy <- UF.fresh $ makeDescriptor content
-  MVector.modify pools (copy :) maxRank
+  ensurePoolSize maxRank pools
+  currentPools <- readIORef pools
+  MVector.modify currentPools (copy :) maxRank
   return copy
 
 linkVariableToCopy :: Variable -> Content -> Int -> Variable -> IO ()

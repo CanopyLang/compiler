@@ -70,6 +70,7 @@ module Stuff
     -- * Project Discovery
   , findRoot
   , findRootFrom
+  , getConfigFilePath
     -- * Locking Mechanisms
   , withRootLock
   , withRegistryLock
@@ -129,6 +130,7 @@ import Stuff.Cache
 import Stuff.Discovery
   ( findRoot
   , findRootFrom
+  , getConfigFilePath
   )
 
 -- Re-export locking functionality

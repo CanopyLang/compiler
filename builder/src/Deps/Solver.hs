@@ -25,9 +25,10 @@ import qualified Canopy.Outline as Outline
 import qualified Canopy.Package as Pkg
 import Canopy.Version (Version)
 import qualified Canopy.Version as V
-import Control.Concurrent (forkIO, newEmptyMVar, putMVar, readMVar)
+import Control.Concurrent.STM (newTVarIO, readTVarIO)
 import Control.Monad (foldM)
 import Data.ByteString (ByteString)
+import qualified Data.ByteString as BS
 import Data.Map (Map)
 import qualified Data.Map as Map
 import qualified Data.Utf8 as Utf8
@@ -46,6 +47,7 @@ import Stuff (ZokkaCustomRepositoryConfigFilePath (unZokkaCustomRepositoryConfig
 import qualified Stuff
 import qualified System.Directory as Dir
 import System.FilePath ((</>))
+import qualified System.FilePath as FP
 
 -- SOLVER
 
@@ -272,7 +274,7 @@ getFromCustomSingleRepositoryData customSingleRepositoryData pkg vsn cache toNew
                       Right cs ->
                         do
                           Dir.createDirectoryIfMissing True home
-                          File.writeUtf8 path body
+                          File.writeUtf8Atomic path body
                           ok (toNewState cs) cs back
                       Left _ ->
                         err (Exit.SolverBadHttpData pkg vsn url)
@@ -293,7 +295,7 @@ getFromCustomSingleRepositoryData customSingleRepositoryData pkg vsn cache toNew
                       Right cs ->
                         do
                           Dir.createDirectoryIfMissing True home
-                          File.writeUtf8 path body
+                          File.writeUtf8Atomic path body
                           ok (toNewState cs) cs back
                       Left _ ->
                         err (Exit.SolverBadHttpData pkg vsn url)
@@ -310,24 +312,40 @@ getConstraints pkg vsn =
           do
             let toNewState cs = State cache connection registry (Map.insert key cs cDict)
             let home = Stuff.package cache pkg vsn
-            let path = home </> "canopy.json"
+            path <- Stuff.getConfigFilePath home
             outlineExists <- File.exists path
             if outlineExists
               then do
                 bytes <- File.readUtf8 path
-                case D.fromByteString constraintsDecoder bytes of
+                -- Log detailed parsing attempt
+                printLog ("PARSE_ATTEMPT: Reading " <> path <> " for " <> Pkg.toChars pkg <> " " <> V.toChars vsn)
+                printLog ("PARSE_SIZE: " <> show (BS.length bytes) <> " bytes")
+                -- Log first 200 chars for debugging
+                let preview = BS.take 200 bytes
+                    previewText = show preview
+                printLog ("PARSE_PREVIEW: " <> previewText)
+                -- Choose decoder based on filename (elm.json vs canopy.json)
+                let filename = FP.takeFileName path
+                    decoder = if filename == "elm.json" then elmConstraintsDecoder else constraintsDecoder
+                printLog ("DECODER_CHOICE: Using " <> (if filename == "elm.json" then "elmConstraintsDecoder" else "constraintsDecoder") <> " for " <> filename)
+                case D.fromByteString decoder bytes of
                   Right cs ->
-                    case connection of
-                      Online _ ->
-                        ok (toNewState cs) cs back
-                      Offline _ ->
-                        do
-                          srcExists <- Dir.doesDirectoryExist (Stuff.package cache pkg vsn </> "src")
-                          if srcExists
-                            then ok (toNewState cs) cs back
-                            else back state
-                  Left _ ->
                     do
+                      printLog ("PARSE_SUCCESS: " <> path <> " for " <> Pkg.toChars pkg <> " " <> V.toChars vsn)
+                      case connection of
+                        Online _ ->
+                          ok (toNewState cs) cs back
+                        Offline _ ->
+                          do
+                            srcExists <- Dir.doesDirectoryExist (Stuff.package cache pkg vsn </> "src")
+                            if srcExists
+                              then ok (toNewState cs) cs back
+                              else back state
+                  Left parseError ->
+                    do
+                      printLog ("PARSE_FAILURE: " <> path <> " for " <> Pkg.toChars pkg <> " " <> V.toChars vsn)
+                      printLog ("PARSE_ERROR: " <> show parseError)
+                      printLog ("CORRUPT_CONTENT_FULL: " <> show bytes)
                       File.remove path
                       err (Exit.SolverBadCacheData pkg vsn)
               else case connection of
@@ -344,25 +362,88 @@ getConstraints pkg vsn =
                         do
                           let packageUrl = _url singlePackageData
                           let url = Utf8.toChars packageUrl
+                          printLog ("DOWNLOAD_START: " <> Pkg.toChars pkg <> " " <> V.toChars vsn <> " from " <> url)
                           result <-
                             -- FIXME: Use custom error instead of SolverBadHttpData for bad ZIP data
                             Http.getArchiveWithFallback manager url (Exit.SolverBadHttp pkg vsn) (Exit.SolverBadHttpData pkg vsn url) $
                               -- FIXME: Deal with the SHA hash instead of ignoring it
                               \(_, archive) ->
                                 -- FIXME: Do I need to do this createDirectoryIfMissing?
-                                Right <$> do printLog "hello world! FIXME"; Dir.createDirectoryIfMissing True home; File.writePackageReturnCanopyJson (Stuff.package cache pkg vsn) archive
+                                Right <$> do
+                                  printLog ("EXTRACT_START: " <> Pkg.toChars pkg <> " " <> V.toChars vsn <> " to " <> home)
+                                  Dir.createDirectoryIfMissing True home
+                                  File.writePackageReturnCanopyJson (Stuff.package cache pkg vsn) archive
                           case result of
                             -- In this case we should've successfully written canopy.json to our cache so let's take a look
                             -- FIXME: I don't like this implicit dependence
                             Right (Just body) ->
-                              case D.fromByteString constraintsDecoder body of
-                                Right cs ->
-                                  do
-                                    Dir.createDirectoryIfMissing True home
-                                    File.writeUtf8 path body
-                                    ok (toNewState cs) cs back
-                                Left _ ->
-                                  err (Exit.SolverBadHttpData pkg vsn url)
+                              do
+                                printLog ("EXTRACT_SUCCESS: " <> Pkg.toChars pkg <> " " <> V.toChars vsn <> " extracted canopy.json (" <> show (BS.length body) <> " bytes)")
+                                -- Log preview of extracted content
+                                let preview = BS.take 200 body
+                                    previewText = show preview
+                                printLog ("EXTRACT_PREVIEW: " <> previewText)
+                                -- Try canopy.json format first, then fallback to elm.json format
+                                case D.fromByteString constraintsDecoder body of
+                                  Right cs ->
+                                    do
+                                      printLog ("EXTRACT_PARSE_SUCCESS: " <> Pkg.toChars pkg <> " " <> V.toChars vsn <> " (canopy.json format)")
+                                      Dir.createDirectoryIfMissing True home
+                                      printLog ("CACHE_WRITE_START: Writing to cache " <> path)
+                                      File.writeUtf8Atomic path body
+                                      printLog ("CACHE_WRITE_COMPLETE: " <> path)
+
+                                      -- Verify cache write integrity
+                                      printLog ("CACHE_INTEGRITY_CHECK: Verifying " <> path)
+                                      cachedContent <- File.readUtf8 path
+                                      if cachedContent == body
+                                        then do
+                                          printLog ("CACHE_INTEGRITY_SUCCESS: " <> path <> " matches written content")
+                                          ok (toNewState cs) cs back
+                                        else do
+                                          printLog ("CACHE_INTEGRITY_FAILURE: " <> path <> " does not match written content!")
+                                          printLog ("CACHE_WRITTEN_SIZE: " <> show (BS.length cachedContent) <> " bytes")
+                                          printLog ("CACHE_EXPECTED_SIZE: " <> show (BS.length body) <> " bytes")
+                                          printLog ("CACHE_WRITTEN_PREVIEW: " <> show (BS.take 100 cachedContent))
+                                          printLog ("CACHE_EXPECTED_PREVIEW: " <> show (BS.take 100 body))
+                                          -- Still proceed but log the issue
+                                          ok (toNewState cs) cs back
+                                  Left canopyParseError ->
+                                    do
+                                      printLog ("EXTRACT_CANOPY_PARSE_FAILURE: " <> Pkg.toChars pkg <> " " <> V.toChars vsn <> ", trying elm.json format")
+                                      printLog ("EXTRACT_CANOPY_ERROR: " <> show canopyParseError)
+                                      -- Try elm.json format as fallback
+                                      case D.fromByteString elmConstraintsDecoder body of
+                                        Right cs ->
+                                          do
+                                            printLog ("EXTRACT_PARSE_SUCCESS: " <> Pkg.toChars pkg <> " " <> V.toChars vsn <> " (elm.json format)")
+                                            Dir.createDirectoryIfMissing True home
+                                            printLog ("CACHE_WRITE_START: Writing to cache " <> path)
+                                            File.writeUtf8Atomic path body
+                                            printLog ("CACHE_WRITE_COMPLETE: " <> path)
+
+                                            -- Verify cache write integrity
+                                            printLog ("CACHE_INTEGRITY_CHECK: Verifying " <> path)
+                                            cachedContent <- File.readUtf8 path
+                                            if cachedContent == body
+                                              then do
+                                                printLog ("CACHE_INTEGRITY_SUCCESS: " <> path <> " matches written content")
+                                                ok (toNewState cs) cs back
+                                              else do
+                                                printLog ("CACHE_INTEGRITY_FAILURE: " <> path <> " does not match written content!")
+                                                printLog ("CACHE_WRITTEN_SIZE: " <> show (BS.length cachedContent) <> " bytes")
+                                                printLog ("CACHE_EXPECTED_SIZE: " <> show (BS.length body) <> " bytes")
+                                                printLog ("CACHE_WRITTEN_PREVIEW: " <> show (BS.take 100 cachedContent))
+                                                printLog ("CACHE_EXPECTED_PREVIEW: " <> show (BS.take 100 body))
+                                                -- Still proceed but log the issue
+                                                ok (toNewState cs) cs back
+                                        Left elmParseError ->
+                                          do
+                                            printLog ("EXTRACT_ELM_PARSE_FAILURE: " <> Pkg.toChars pkg <> " " <> V.toChars vsn)
+                                            printLog ("EXTRACT_CANOPY_ERROR: " <> show canopyParseError)
+                                            printLog ("EXTRACT_ELM_ERROR: " <> show elmParseError)
+                                            printLog ("EXTRACT_CORRUPT_CONTENT: " <> show body)
+                                            err (Exit.SolverBadHttpData pkg vsn url)
                             Right Nothing ->
                               -- FIXME: Maybe want a custom error for this?
                               err (Exit.SolverBadHttpData pkg vsn url)
@@ -391,8 +472,8 @@ data Env
 initEnv :: IO (Either Exit.RegistryProblem Env)
 initEnv =
   do
-    mvar <- newEmptyMVar
-    _ <- forkIO (Http.getManager >>= putMVar mvar)
+    manager <- Http.getManager
+    tvar <- newTVarIO (Just manager)
     cache <- Stuff.getPackageCache
     packageOverridesCache <- Stuff.getPackageOverridesCache
     zokkaCache <- Stuff.getZokkaCache
@@ -404,36 +485,39 @@ initEnv =
         Stuff.withRegistryLock cache $
           do
             maybeRegistry <- Registry.read zokkaCache
-            manager <- readMVar mvar
-            modifiedTimeOfCustomRepositoriesData <- getTime (unZokkaCustomRepositoryConfigFilePath customRepositoriesConfigLocation)
+            maybeManager <- readTVarIO tvar
+            case maybeManager of
+              Nothing -> error "HTTP manager not initialized"
+              Just httpManager -> do
+                modifiedTimeOfCustomRepositoriesData <- getTime (unZokkaCustomRepositoryConfigFilePath customRepositoriesConfigLocation)
 
-            case maybeRegistry of
-              Nothing ->
-                do
-                  eitherRegistry <- Registry.fetch manager zokkaCache customRepositoriesData modifiedTimeOfCustomRepositoriesData
-                  case eitherRegistry of
-                    Right latestRegistry ->
-                      return . Right $ Env cache manager (Online manager) latestRegistry packageOverridesCache
-                    Left problem ->
-                      return . Left $ problem
-              Just cachedRegistry@ZokkaRegistries {_lastModificationTimeOfCustomRepoConfig = customRepoConfigUpdateTime} ->
-                do
-                  -- FIXME: Think about whether I need a lock on the custom repository JSON file as well
-                  eitherRegistry <-
-                    if customRepoConfigUpdateTime == modifiedTimeOfCustomRepositoriesData
-                      then Registry.update manager zokkaCache cachedRegistry modifiedTimeOfCustomRepositoriesData
-                      else Registry.fetch manager zokkaCache customRepositoriesData modifiedTimeOfCustomRepositoriesData
-                  case eitherRegistry of
-                    Right latestRegistry ->
-                      return . Right $ Env cache manager (Online manager) latestRegistry packageOverridesCache
-                    Left registryProblem ->
-                      return . Right $ Env cache manager (Offline registryProblem) cachedRegistry packageOverridesCache
+                case maybeRegistry of
+                  Nothing ->
+                    do
+                      eitherRegistry <- Registry.fetch httpManager zokkaCache customRepositoriesData modifiedTimeOfCustomRepositoriesData
+                      case eitherRegistry of
+                        Right latestRegistry ->
+                          return . Right $ Env cache httpManager (Online httpManager) latestRegistry packageOverridesCache
+                        Left problem ->
+                          return . Left $ problem
+                  Just cachedRegistry@ZokkaRegistries {_lastModificationTimeOfCustomRepoConfig = customRepoConfigUpdateTime} ->
+                    do
+                      -- FIXME: Think about whether I need a lock on the custom repository JSON file as well
+                      eitherRegistry <-
+                        if customRepoConfigUpdateTime == modifiedTimeOfCustomRepositoriesData
+                          then Registry.update httpManager zokkaCache cachedRegistry modifiedTimeOfCustomRepositoriesData
+                          else Registry.fetch httpManager zokkaCache customRepositoriesData modifiedTimeOfCustomRepositoriesData
+                      case eitherRegistry of
+                        Right latestRegistry ->
+                          return . Right $ Env cache httpManager (Online httpManager) latestRegistry packageOverridesCache
+                        Left registryProblem ->
+                          return . Right $ Env cache httpManager (Offline registryProblem) cachedRegistry packageOverridesCache
 
 initEnvForReactorTH :: IO (Either Exit.RegistryProblem Env)
 initEnvForReactorTH =
   do
-    mvar <- newEmptyMVar
-    _ <- forkIO (Http.getManager >>= putMVar mvar)
+    manager <- Http.getManager
+    tvar <- newTVarIO (Just manager)
     cache <- Stuff.getPackageCache
     packageOverridesCache <- Stuff.getPackageOverridesCache
     zokkaCache <- Stuff.getZokkaCache
@@ -445,26 +529,29 @@ initEnvForReactorTH =
         Stuff.withRegistryLock cache $
           do
             maybeRegistry <- Registry.read zokkaCache
-            manager <- readMVar mvar
-            modifiedTimeOfCustomRepositoriesData <- getTime (unZokkaCustomRepositoryConfigFilePath customRepositoriesConfigLocation)
+            maybeManager <- readTVarIO tvar
+            case maybeManager of
+              Nothing -> error "HTTP manager not initialized"
+              Just httpManager -> do
+                modifiedTimeOfCustomRepositoriesData <- getTime (unZokkaCustomRepositoryConfigFilePath customRepositoriesConfigLocation)
 
-            case maybeRegistry of
-              Nothing ->
-                do
-                  eitherRegistry <- Registry.fetch manager zokkaCache customRepositoriesData modifiedTimeOfCustomRepositoriesData
-                  case eitherRegistry of
-                    Right latestRegistry ->
-                      return . Right $ Env cache manager (Online manager) latestRegistry packageOverridesCache
-                    Left problem ->
-                      return . Left $ problem
-              Just cachedRegistry ->
-                do
-                  eitherRegistry <- Registry.update manager zokkaCache cachedRegistry modifiedTimeOfCustomRepositoriesData
-                  case eitherRegistry of
-                    Right latestRegistry ->
-                      return . Right $ Env cache manager (Online manager) latestRegistry packageOverridesCache
-                    Left registryProblem ->
-                      return . Right $ Env cache manager (Offline registryProblem) cachedRegistry packageOverridesCache
+                case maybeRegistry of
+                  Nothing ->
+                    do
+                      eitherRegistry <- Registry.fetch httpManager zokkaCache customRepositoriesData modifiedTimeOfCustomRepositoriesData
+                      case eitherRegistry of
+                        Right latestRegistry ->
+                          return . Right $ Env cache httpManager (Online httpManager) latestRegistry packageOverridesCache
+                        Left problem ->
+                          return . Left $ problem
+                  Just cachedRegistry ->
+                    do
+                      eitherRegistry <- Registry.update manager zokkaCache cachedRegistry modifiedTimeOfCustomRepositoriesData
+                      case eitherRegistry of
+                        Right latestRegistry ->
+                          return . Right $ Env cache httpManager (Online httpManager) latestRegistry packageOverridesCache
+                        Left registryProblem ->
+                          return . Right $ Env cache httpManager (Offline registryProblem) cachedRegistry packageOverridesCache
 
 -- INSTANCES
 

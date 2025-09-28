@@ -29,6 +29,9 @@ module Canopy.Package
     webgl,
     linearAlgebra,
     --
+    elm,
+    canopy,
+    --
     suggestions,
     nearbyNames,
     --
@@ -87,7 +90,7 @@ data Canonical = Canonical
 
 isKernel :: Name -> Bool
 isKernel (Name author _) =
-  author == canopy || author == canopyExplorations
+  author == elm || author == canopy || author == elmExplorations || author == canopyExplorations
 
 -- FIXME: Need to think about how to make this better
 isCore :: Name -> Bool
@@ -128,7 +131,7 @@ kernel =
 {-# NOINLINE core #-}
 core :: Name
 core =
-  toName canopy "core"
+  toName elm "core"
 
 zokkaCore :: Name
 zokkaCore =
@@ -137,65 +140,75 @@ zokkaCore =
 {-# NOINLINE browser #-}
 browser :: Name
 browser =
-  toName canopy "browser"
+  toName elm "browser"
 
 {-# NOINLINE virtualDom #-}
 virtualDom :: Name
 virtualDom =
-  toName canopy "virtual-dom"
+  toName elm "virtual-dom"
 
 {-# NOINLINE html #-}
 html :: Name
 html =
-  toName canopy "html"
+  toName elm "html"
 
 {-# NOINLINE json #-}
 json :: Name
 json =
-  toName canopy "json"
+  toName elm "json"
 
 {-# NOINLINE http #-}
 http :: Name
 http =
-  toName canopy "http"
+  toName elm "http"
 
 {-# NOINLINE url #-}
 url :: Name
 url =
-  toName canopy "url"
+  toName elm "url"
 
 {-# NOINLINE webgl #-}
 webgl :: Name
 webgl =
-  toName canopyExplorations "webgl"
+  toName elmExplorations "webgl"
 
 {-# NOINLINE linearAlgebra #-}
 linearAlgebra :: Name
 linearAlgebra =
-  toName canopyExplorations "linear-algebra"
+  toName elmExplorations "linear-algebra"
+
+{-# NOINLINE elm #-}
+elm :: Author
+elm =
+  Utf8.fromChars "elm"
 
 {-# NOINLINE canopy #-}
 canopy :: Author
 canopy =
-  Utf8.fromChars "elm"
+  Utf8.fromChars "canopy"
 
 {-# NOINLINE zokka #-}
 zokka :: Author
 zokka =
   Utf8.fromChars "zokka"
 
+{-# NOINLINE elmExplorations #-}
+elmExplorations :: Author
+elmExplorations =
+  Utf8.fromChars "elm-explorations"
+
 {-# NOINLINE canopyExplorations #-}
 canopyExplorations :: Author
 canopyExplorations =
-  Utf8.fromChars "elm-explorations"
+  Utf8.fromChars "canopy-explorations"
 
 -- PACKAGE SUGGESTIONS
 
 suggestions :: Map Name.Name Name
 suggestions =
-  let random = toName canopy "random"
-      time = toName canopy "time"
-      file = toName canopy "file"
+  let random = toName elm "random"
+      time = toName elm "time"
+      file = toName elm "file"
    in Map.fromList
         [ "Browser" ==> browser,
           "File" ==> file,
@@ -230,7 +243,7 @@ nearbyNames (Name author1 project1) possibleNames =
 
 authorDistance :: String -> Author -> Int
 authorDistance given possibility =
-  if possibility == canopy || possibility == canopyExplorations
+  if possibility == elm || possibility == canopy || possibility == elmExplorations || possibility == canopyExplorations
     then 0
     else abs (Suggest.distance given (Utf8.toChars possibility))
 

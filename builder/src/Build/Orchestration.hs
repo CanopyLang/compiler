@@ -109,7 +109,7 @@ import Build.Types
 import qualified Build.Validation as Validation
 
 -- Standard library imports
-import Control.Concurrent.MVar (MVar, readMVar)
+import Control.Concurrent.STM (TVar, readTVarIO)
 import Data.Map.Strict (Map)
 import qualified Data.NonEmptyList as NE
 import qualified Reporting.Exit as Exit
@@ -135,16 +135,16 @@ import qualified Reporting.Exit as Exit
 -- 3. Ensure interfaces can be loaded successfully
 --
 -- @since 0.19.1
-checkMidpoint :: MVar (Maybe Dependencies) -> Map ModuleName.Raw Status -> IO (Either Exit.BuildProjectProblem Dependencies)
-checkMidpoint dmvar statuses =
+checkMidpoint :: TVar (Maybe Dependencies) -> Map ModuleName.Raw Status -> IO (Either Exit.BuildProjectProblem Dependencies)
+checkMidpoint dtvar statuses =
   case Validation.checkForCycles statuses of
     Nothing -> do
-      maybeForeigns <- readMVar dmvar
+      maybeForeigns <- readTVarIO dtvar
       case maybeForeigns of
         Nothing -> return (Left Exit.BP_CannotLoadDependencies)
         Just fs -> return (Right fs)
     Just (NE.List name names) -> do
-      _ <- readMVar dmvar
+      _ <- readTVarIO dtvar
       return (Left (Exit.BP_Cycle name names))
 
 -- | Check project integrity including root validation.
@@ -165,19 +165,19 @@ checkMidpoint dmvar statuses =
 -- 4. File path to module name mapping validation
 --
 -- @since 0.19.1
-checkMidpointAndRoots :: MVar (Maybe Dependencies) -> Map ModuleName.Raw Status -> NE.List RootStatus -> IO (Either Exit.BuildProjectProblem Dependencies)
-checkMidpointAndRoots dmvar statuses sroots =
+checkMidpointAndRoots :: TVar (Maybe Dependencies) -> Map ModuleName.Raw Status -> NE.List RootStatus -> IO (Either Exit.BuildProjectProblem Dependencies)
+checkMidpointAndRoots dtvar statuses sroots =
   case Validation.checkForCycles statuses of
     Nothing ->
       case Validation.checkUniqueRoots statuses sroots of
         Nothing -> do
-          maybeForeigns <- readMVar dmvar
+          maybeForeigns <- readTVarIO dtvar
           case maybeForeigns of
             Nothing -> return (Left Exit.BP_CannotLoadDependencies)
             Just fs -> return (Right fs)
         Just problem -> do
-          _ <- readMVar dmvar
+          _ <- readTVarIO dtvar
           return (Left problem)
     Just (NE.List name names) -> do
-      _ <- readMVar dmvar
+      _ <- readTVarIO dtvar
       return (Left (Exit.BP_Cycle name names))

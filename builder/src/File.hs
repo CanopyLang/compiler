@@ -62,6 +62,12 @@ module File
   , writeUtf8
   , readUtf8
   , writeBuilder
+    -- * Atomic File Operations
+    -- | Atomic writes that prevent corruption from partial writes or interruption
+  , writeUtf8Atomic
+  , writeBinaryAtomic
+  , writeLazyBytesAtomic
+  , writeBuilderAtomic
     -- * Archive Operations
     -- | ZIP file extraction and package handling
   , writePackage
@@ -98,6 +104,14 @@ import File.Utf8
 import File.Archive
   ( writePackage
   , writePackageReturnCanopyJson
+  )
+
+-- Re-export atomic operations
+import File.Atomic
+  ( writeUtf8Atomic
+  , writeBinaryAtomic
+  , writeLazyBytesAtomic
+  , writeBuilderAtomic
   )
 
 -- Re-export file system operations

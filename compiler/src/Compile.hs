@@ -169,29 +169,51 @@ compile ::
   -- | Compilation artifacts or error (now in IO monad for thread safety)
   IO (Either E.Error Artifacts)
 compile pkg ifaces modul@(Src.Module _ _ _ _ foreignImports _ _ _ _ _) = do
+  -- DEBUG: Add detailed logging to track compilation progress
+  putStrLn ("COMPILE-INTERNAL: Starting compilation for pkg " <> show pkg)
+  putStrLn ("COMPILE-INTERNAL: Module has " <> show (length foreignImports) <> " foreign imports")
+
   -- CRITICAL: Load FFI content in IO monad BEFORE pure compilation phases
   -- This eliminates the unsafePerformIO MVar deadlock that was causing
   -- "thread blocked indefinitely in an MVar operation" errors
+  putStrLn ("COMPILE-INTERNAL: About to load FFI content")
   ffiContentMap <- Canonicalize.loadFFIContent foreignImports
+  putStrLn ("COMPILE-INTERNAL: FFI content loaded, " <> show (Map.size ffiContentMap) <> " items")
 
   -- Convert FFI content map to FFI info format
   let ffiInfoMap = convertFFIContentToInfo foreignImports ffiContentMap
+  putStrLn ("COMPILE-INTERNAL: FFI info map created, " <> show (Map.size ffiInfoMap) <> " items")
 
   -- Now perform compilation phases with pre-loaded FFI content
   -- Note: typeCheck is now in IO to prevent MVar deadlocks
+  putStrLn ("COMPILE-INTERNAL: About to canonicalize")
   case canonicalizePure pkg ifaces ffiContentMap modul of
-    Left canonError -> pure (Left canonError)
+    Left canonError -> do
+      putStrLn ("COMPILE-INTERNAL: Canonicalization failed: " <> show canonError)
+      pure (Left canonError)
     Right canonical -> do
+      putStrLn ("COMPILE-INTERNAL: Canonicalization successful, about to type check")
       typeResult <- typeCheck modul canonical
+      putStrLn ("COMPILE-INTERNAL: Type check completed")
       case typeResult of
-        Left typeError -> pure (Left typeError)
-        Right annotations ->
+        Left typeError -> do
+          putStrLn ("COMPILE-INTERNAL: Type check failed: " <> show typeError)
+          pure (Left typeError)
+        Right annotations -> do
+          putStrLn ("COMPILE-INTERNAL: Type check successful, about to nitpick")
           case nitpick canonical of
-            Left nitpickError -> pure (Left nitpickError)
-            Right () ->
+            Left nitpickError -> do
+              putStrLn ("COMPILE-INTERNAL: Nitpick failed: " <> show nitpickError)
+              pure (Left nitpickError)
+            Right () -> do
+              putStrLn ("COMPILE-INTERNAL: Nitpick successful, about to optimize")
               case optimize modul annotations canonical of
-                Left optimizeError -> pure (Left optimizeError)
-                Right objects -> pure (Right (Artifacts canonical annotations objects ffiInfoMap))
+                Left optimizeError -> do
+                  putStrLn ("COMPILE-INTERNAL: Optimization failed: " <> show optimizeError)
+                  pure (Left optimizeError)
+                Right objects -> do
+                  putStrLn ("COMPILE-INTERNAL: Optimization successful, creating artifacts")
+                  pure (Right (Artifacts canonical annotations objects ffiInfoMap))
 
 -- | Compile a module with explicit root directory for FFI path resolution.
 --

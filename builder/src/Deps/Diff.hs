@@ -301,7 +301,7 @@ getDocs cache zokkaRegistry manager name version =
                   Right docs ->
                     do
                       Dir.createDirectoryIfMissing True home
-                      File.writeUtf8 path body
+                      File.writeUtf8Atomic path body
                       return $ Right docs
                   Left _ ->
                     return . Left $ Exit.DP_Data url body
@@ -315,7 +315,7 @@ getDocs cache zokkaRegistry manager name version =
                   Right docs ->
                     do
                       Dir.createDirectoryIfMissing True home
-                      File.writeUtf8 path body
+                      File.writeUtf8Atomic path body
                       return $ Right docs
                   Left _ ->
                     return . Left $ Exit.DP_Data url body

@@ -1,0 +1,12 @@
+module Main exposing (main)
+
+import Array
+import Html
+
+main =
+  let
+    numbers = Array.fromList [1, 2, 3, 4, 5]
+    doubled = Array.map (\x -> x * 2) numbers
+    result = Array.toList doubled
+  in
+    Html.text (String.fromInt (List.sum result))

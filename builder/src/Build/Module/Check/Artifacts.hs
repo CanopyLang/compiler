@@ -142,7 +142,7 @@ writeModuleArtifacts config = do
       iface = I.fromModule (config ^. artifactPkg) (config ^. artifactCanonical) (config ^. artifactAnnotations)
       root = config ^. artifactRoot
       objects = config ^. artifactObjects
-  File.writeBinary (Stuff.canopyo root name) objects
+  File.writeBinaryAtomic (Stuff.canopyo root name) objects
   maybeOldi <- File.readBinary (Stuff.canopyi root name)
   createResultConfig config iface maybeOldi name >>= determineResult
   where
@@ -186,7 +186,7 @@ determineResult config =
       pure (RSame local iface (cfg ^. resultObjects) (cfg ^. resultDocs))
     
     createNewResult cfg = do
-      File.writeBinary (Stuff.canopyi (cfg ^. resultRoot) (cfg ^. resultModuleName)) iface
+      File.writeBinaryAtomic (Stuff.canopyi (cfg ^. resultRoot) (cfg ^. resultModuleName)) iface
       Reporting.report (cfg ^. resultKey) Reporting.BDone
       let local = cfg ^. resultLocal
           newLocal = local & Details.lastChange .~ (local ^. Details.lastCompile)

@@ -75,7 +75,7 @@ module Build.Module.Check.Config
   , cachedImportPath
   ) where
 
-import Control.Concurrent.MVar (MVar)
+import Control.Concurrent.STM (TVar)
 import Control.Lens (makeLenses)
 import qualified AST.Source as Src
 import qualified Canopy.Details as Details
@@ -94,7 +94,7 @@ import Build.Types
 data ModuleStatusConfig = ModuleStatusConfig
   { _moduleStatusEnv :: !Env
   , _moduleStatusForeigns :: !Dependencies
-  , _moduleStatusResultsMVar :: !(MVar ResultDict)
+  , _moduleStatusResultsMVar :: !(TVar ResultDict)
   , _moduleStatusName :: !ModuleName.Raw
   } deriving ()
 

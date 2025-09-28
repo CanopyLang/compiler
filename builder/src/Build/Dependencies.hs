@@ -15,7 +15,9 @@ module Build.Dependencies
   ) where
 
 import Control.Concurrent (forkIO)
-import Control.Concurrent.MVar (MVar, readMVar, takeMVar, putMVar, newEmptyMVar)
+import qualified Control.Concurrent.STM as STM
+import Control.Concurrent.STM (TVar, atomically, readTVar, writeTVar, newTVarIO, readTVarIO, retry)
+import Debug.Trace (trace)
 import Control.Lens ((^.), makeLenses)
 import qualified Canopy.Details as Details
 import qualified Canopy.Interface as I
@@ -35,6 +37,7 @@ import Build.Types
   , Result (..)
   , ResultDict
   , CachedInterface (..)
+  , waitForResult
   )
 
 -- | Configuration for dependency aggregation state.
@@ -104,7 +107,7 @@ aggregateWithConfig config state deps =
     dep : otherDeps -> do
       case Map.lookup dep (config ^. dacResults) of
         Just mvar -> do
-          result <- readMVar mvar
+          result <- waitForResult mvar
           update <- processDep result dep (state ^. dasLastDepChange)
           aggregateWithConfig config (applyUpdate update state) otherDeps
         Nothing -> do
@@ -147,9 +150,9 @@ processSameResult local dep currentLastChange iface =
   pure $ DepUpdate [] [(dep, iface)] [] [] False (max (local ^. Details.lastChange) currentLastChange)
 
 -- | Process cached dependency result.
-processCachedResult :: ModuleName.Raw -> Details.BuildID -> Details.BuildID -> MVar CachedInterface -> IO DepUpdate
-processCachedResult dep currentLastChange lastChange mvar =
-  pure $ DepUpdate [] [] [(dep, mvar)] [] False (max lastChange currentLastChange)
+processCachedResult :: ModuleName.Raw -> Details.BuildID -> Details.BuildID -> STM.TVar CachedInterface -> IO DepUpdate
+processCachedResult dep currentLastChange lastChange tvar =
+  pure $ DepUpdate [] [] [(dep, tvar)] [] False (max lastChange currentLastChange)
 
 -- | Process not found dependency result.
 processNotFoundResult :: ModuleName.Raw -> Details.BuildID -> Import.Problem -> IO DepUpdate
@@ -218,39 +221,50 @@ finalizeWithLoading root new same cached = do
 loadInterfaces :: FilePath -> [Dep] -> [CDep] -> IO (Maybe (Map ModuleName.Raw I.Interface))
 loadInterfaces root same cached = do
   loading <- traverse (forkLoadInterface root) cached
-  maybeLoaded <- traverse readMVar loading
+  maybeLoaded <- traverse waitForMaybeTVar loading
   case sequenceA maybeLoaded of
     Nothing -> pure Nothing
     Just loaded -> pure . Just $ Map.union (Map.fromList loaded) (Map.fromList same)
 
+-- | Wait for a TVar that may contain Nothing or Just a result.
+--
+-- For TVars that are initialized with Nothing and later populated.
+-- Uses labeled STM retry for debugging.
+waitForMaybeTVar :: TVar (Maybe a) -> IO (Maybe a)
+waitForMaybeTVar tvar = atomically $ do
+  maybeResult <- readTVar tvar
+  case maybeResult of
+    Nothing -> trace ("STM-RETRY: Build.Dependencies waitForMaybeTVar - waiting for TVar to be populated") retry
+    Just _ -> return maybeResult
+
 -- | Fork interface loading operation.
-forkLoadInterface :: FilePath -> CDep -> IO (MVar (Maybe Dep))
+forkLoadInterface :: FilePath -> CDep -> IO (TVar (Maybe Dep))
 forkLoadInterface root cdep = do
-  mvar <- newEmptyMVar
-  _ <- forkIO $ loadInterface root cdep >>= putMVar mvar
-  pure mvar
+  tvar <- newTVarIO Nothing
+  _ <- forkIO $ do
+    result <- loadInterface root cdep
+    atomically (writeTVar tvar result)
+  pure tvar
 
 -- | Load a single cached interface.
 loadInterface :: FilePath -> CDep -> IO (Maybe Dep)
 loadInterface root (name, ciMvar) = do
-  cachedInterface <- takeMVar ciMvar
+  cachedInterface <- readTVarIO ciMvar
   case cachedInterface of
     Corrupted -> do
-      putMVar ciMvar cachedInterface
       pure Nothing
     Loaded iface -> do
-      putMVar ciMvar cachedInterface
       pure (Just (name, iface))
     Unneeded -> loadUnneededInterface root name ciMvar
 
 -- | Load interface that wasn't previously loaded.
-loadUnneededInterface :: FilePath -> ModuleName.Raw -> MVar CachedInterface -> IO (Maybe Dep)
-loadUnneededInterface root name ciMvar = do
+loadUnneededInterface :: FilePath -> ModuleName.Raw -> STM.TVar CachedInterface -> IO (Maybe Dep)
+loadUnneededInterface root name ciTvar = do
   maybeIface <- File.readBinary (Stuff.canopyi root name)
   case maybeIface of
     Nothing -> do
-      putMVar ciMvar Corrupted
+      atomically $ writeTVar ciTvar Corrupted
       pure Nothing
     Just iface -> do
-      putMVar ciMvar (Loaded iface)
+      atomically $ writeTVar ciTvar (Loaded iface)
       pure (Just (name, iface))

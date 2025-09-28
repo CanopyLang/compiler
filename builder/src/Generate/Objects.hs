@@ -16,7 +16,7 @@
 -- === Loading Strategy
 --
 -- * Fresh modules: Use in-memory graphs directly
--- * Cached modules: Load from .canopyo files concurrently using MVars
+-- * Cached modules: Load from .canopyo files concurrently using TVars
 -- * Foreign objects: Load global dependencies
 --
 -- === Usage Examples
@@ -58,7 +58,9 @@ import qualified AST.Optimized as Opt
 import qualified Build
 import qualified Canopy.Details as Details
 import qualified Canopy.ModuleName as ModuleName
-import Control.Concurrent (MVar, forkIO, newEmptyMVar, newMVar, putMVar, readMVar)
+import Control.Concurrent (forkIO)
+import Control.Concurrent.STM (TVar, atomically, readTVar, newTVarIO, writeTVar, retry)
+import Debug.Trace (trace)
 import Control.Lens ((^.))
 import qualified Generate.Types as Types
 import Control.Monad (liftM2)
@@ -68,6 +70,18 @@ import Generate.Types (LoadingObjects(..), Objects(..), Task, createLoadingObjec
 import qualified Reporting.Exit as Exit
 import qualified Reporting.Task as Task
 import qualified Stuff
+
+-- | Wait for a TVar that may contain Nothing or Just a result.
+--
+-- For TVars that are initialized with Nothing and later populated.
+-- This is different from waitForResult which is for TVars initialized with error.
+-- Uses labeled STM retry for debugging.
+waitForMaybeTVar :: TVar (Maybe a) -> IO (Maybe a)
+waitForMaybeTVar tvar = atomically $ do
+  maybeResult <- readTVar tvar
+  case maybeResult of
+    Nothing -> trace ("STM-RETRY: Generate.Objects waitForMaybeTVar - waiting for TVar to be populated") retry
+    Just _ -> return maybeResult
 
 -- | Load objects concurrently from modules.
 --
@@ -83,7 +97,7 @@ import qualified Stuff
 --
 -- === Returns
 --
--- A Task containing LoadingObjects with MVars for concurrent access.
+-- A Task containing LoadingObjects with TVars for concurrent access.
 --
 -- === Examples
 --
@@ -106,7 +120,7 @@ loadObjects
   -> [Build.Module]
   -- ^ List of modules to load
   -> Task LoadingObjects
-  -- ^ LoadingObjects with MVars for concurrent access
+  -- ^ LoadingObjects with TVars for concurrent access
 loadObjects root details modules =
   Task.io $ do
     mvar <- Details.loadObjects root details
@@ -126,7 +140,7 @@ loadObjects root details modules =
 --
 -- === Returns
 --
--- IO action producing a tuple of module name and MVar containing
+-- IO action producing a tuple of module name and TVar containing
 -- the loaded local graph.
 --
 -- === Loading Strategies
@@ -135,22 +149,24 @@ loadObjects root details modules =
 -- * Cached modules: Fork thread to load from .canopyo file
 --
 -- @since 0.19.1
-loadObject 
+loadObject
   :: FilePath
   -- ^ Root directory for the project
   -> Build.Module
   -- ^ Module to load
-  -> IO (ModuleName.Raw, MVar (Maybe Opt.LocalGraph))
-  -- ^ Module name and MVar containing loaded graph
+  -> IO (ModuleName.Raw, TVar (Maybe Opt.LocalGraph))
+  -- ^ Module name and TVar containing loaded graph
 loadObject root modul =
   case modul of
     Build.Fresh name _ graph -> do
-      mvar <- newMVar (Just graph)
-      return (name, mvar)
+      tvar <- newTVarIO (Just graph)
+      return (name, tvar)
     Build.Cached name _ _ -> do
-      mvar <- newEmptyMVar
-      _ <- forkIO (File.readBinary (Stuff.canopyo root name) >>= putMVar mvar)
-      return (name, mvar)
+      tvar <- newTVarIO Nothing
+      _ <- forkIO $ do
+        result <- File.readBinary (Stuff.canopyo root name)
+        atomically (writeTVar tvar result)
+      return (name, tvar)
 
 -- | Finalize loading objects into a unified container.
 --
@@ -178,15 +194,17 @@ loadObject root modul =
 -- @
 --
 -- @since 0.19.1
-finalizeObjects 
+finalizeObjects
   :: LoadingObjects
-  -- ^ LoadingObjects with MVars to finalize
+  -- ^ LoadingObjects with TVars to finalize
   -> Task Objects
   -- ^ Finalized Objects ready for code generation
 finalizeObjects loading =
   Task.eio id $ do
-    result <- readMVar (loading ^. Types.foreign_mvarL)
-    results <- traverse readMVar (loading ^. Types.local_mvarsL)
+    putStrLn "ATOMICALLY-DEBUG: Generate.Objects.finalizeObjects - about to read foreign TVar"
+    result <- atomically (readTVar (loading ^. Types.foreign_tvarL))
+    putStrLn "ATOMICALLY-DEBUG: Generate.Objects.finalizeObjects - foreign TVar read successful"
+    results <- traverse waitForMaybeTVar (loading ^. Types.local_tvarsL)
     case liftM2 createObjects result (sequenceA results) of
       Just loaded -> return (Right loaded)
       Nothing -> return (Left Exit.GenerateCannotLoadArtifacts)

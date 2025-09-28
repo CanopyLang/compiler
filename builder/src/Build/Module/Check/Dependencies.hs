@@ -63,7 +63,7 @@ module Build.Module.Check.Dependencies
   , checkDepsForModule
   ) where
 
-import qualified Control.Concurrent.MVar as MVar
+import qualified Control.Concurrent.STM as STM
 import Control.Lens ((^.))
 import qualified AST.Source as Src
 import qualified Canopy.Details as Details
@@ -72,8 +72,11 @@ import qualified Canopy.ModuleName as ModuleName
 import qualified Data.ByteString as B
 import Data.Map.Strict (Map)
 import Data.NonEmptyList (List)
+import qualified Data.List as List
+import qualified Data.Set as Set
 import qualified File
 import qualified Parse.Module as Parse
+import qualified Reporting.Annotation as A
 import qualified Reporting.Error as Error
 import qualified Reporting.Error.Import as Import
 
@@ -337,8 +340,8 @@ recompileCachedModule config path time ifaces = do
 -- IO action producing cached result with appropriate status
 createCachedResult :: Bool -> Details.BuildID -> IO Result
 createCachedResult hasMain lastChange = do
-  mvar <- MVar.newMVar Unneeded
-  pure (RCached hasMain lastChange mvar)
+  tvar <- STM.newTVarIO Unneeded
+  pure (RCached hasMain lastChange tvar)
 
 -- | Check dependencies for a module.
 --
@@ -360,6 +363,21 @@ checkDepsForModule root results deps lastCompile =
   checkDeps (DepsConfig root results deps lastCompile)
 
 
--- | Convert import errors (placeholder for complex function).
+-- | Convert import errors to proper error types.
+--
+-- This function converts import problems into structured error messages.
+-- For kernel modules, we provide informative error messages.
 toImportErrors :: Env -> ResultDict -> [Src.Import] -> List (ModuleName.Raw, Import.Problem) -> List Import.Error
-toImportErrors _ _ _ _ = undefined -- This is a complex function that would need its own decomposition
+toImportErrors _env _results imports problems =
+  fmap convertProblem problems
+  where
+    convertProblem (moduleName, problem) =
+      let region = findImportRegion moduleName imports
+          unimported = Set.empty
+      in Import.Error region moduleName unimported problem
+
+    findImportRegion :: ModuleName.Raw -> [Src.Import] -> A.Region
+    findImportRegion targetName importList =
+      case List.find (\(Src.Import (A.At _ name) _ _) -> name == targetName) importList of
+        Just (Src.Import (A.At region _) _ _) -> region
+        Nothing -> A.Region (A.Position 1 1) (A.Position 1 1)

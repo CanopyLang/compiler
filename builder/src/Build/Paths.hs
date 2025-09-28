@@ -25,7 +25,7 @@ module Build.Paths
   , forkWithKey
   ) where
 
-import Control.Concurrent.MVar (MVar, newEmptyMVar, newMVar, readMVar, putMVar)
+import Control.Concurrent.STM (TVar, atomically, newTVarIO, writeTVar, readTVarIO)
 import Control.Lens ((^.))
 import qualified Canopy.Details as Details
 import qualified Canopy.ModuleName as ModuleName
@@ -53,8 +53,8 @@ import qualified Data.ByteString as B
 
 import Build.Config (CheckConfig (..), DepsConfig (..))
 import Build.Crawl (crawlRoot)
-import Build.Crawl.Core (fork)
 import Build.Dependencies (checkDeps, loadInterfaces)
+import Build.Orchestration.Workflow (fork)
 import Build.Module.Check (checkModule)
 import qualified Build.Validation as Validation
 import Build.Types
@@ -73,6 +73,8 @@ import Build.Types
   , AbsoluteSrcDir (..)
   , DepsStatus (..)
   , envForeigns
+  , waitForResult
+  , waitForMaybeResult
   )
 
 -- | Build artifacts from file paths.
@@ -102,49 +104,52 @@ logEnvironmentInfo env details = do
 -- | Run the complete build pipeline.
 runBuildPipeline :: Env -> FilePath -> Details.Details -> List RootLocation -> IO (Either Exit.BuildProblem Artifacts)
 runBuildPipeline env root details lroots = do
-  dmvar <- Details.loadInterfaces root details
-  crawlResult <- runCrawlPhase env lroots dmvar
+  dtvar <- Details.loadInterfaces root details
+  crawlResult <- runCrawlPhase env lroots dtvar
   case crawlResult of
     Left problem -> pure (Left (Exit.BuildProjectProblem problem))
     Right (sroots, statuses, foreigns) -> runCompilePipeline env root details sroots statuses foreigns
 
 -- | Run crawl phase of build pipeline.
-runCrawlPhase :: Env -> List RootLocation -> MVar (Maybe Dependencies) -> IO (Either Exit.BuildProjectProblem (List RootStatus, Map ModuleName.Raw Status, Dependencies))
-runCrawlPhase env lroots dmvar = do
-  dmvarContents <- readMVar dmvar
+runCrawlPhase :: Env -> List RootLocation -> TVar (Maybe Dependencies) -> IO (Either Exit.BuildProjectProblem (List RootStatus, Map ModuleName.Raw Status, Dependencies))
+runCrawlPhase env lroots dtvar = do
+  dmvarContents <- readTVarIO dtvar
   _ <- printLog ("dmvarContents: " <> show (fmap Map.keys dmvarContents))
-  smvar <- newMVar Map.empty
+  smvar <- newTVarIO Map.empty
   (sroots, statuses) <- crawlRoots env smvar lroots
-  midpoint <- checkMidpointAndRoots dmvar statuses sroots
+  midpoint <- checkMidpointAndRoots dtvar statuses sroots
   case midpoint of
     Left problem -> pure (Left problem)
     Right foreigns -> pure (Right (sroots, statuses, foreigns))
 
 -- | Crawl all root modules.
-crawlRoots :: Env -> MVar StatusDict -> List RootLocation -> IO (List RootStatus, Map ModuleName.Raw Status)
+crawlRoots :: Env -> TVar StatusDict -> List RootLocation -> IO (List RootStatus, Map ModuleName.Raw Status)
 crawlRoots env smvar lroots = do
-  srootMVars <- traverse (fork . crawlRoot env smvar) lroots
-  sroots <- traverse readMVar srootMVars
-  statuses <- readMVar smvar >>= traverse readMVar
+  srootTVars <- traverse (fork . crawlRoot env smvar) lroots
+  sroots <- traverse waitForMaybeResult srootTVars
+  statusDict <- readTVarIO smvar
+  statuses <- traverse waitForResult statusDict
   pure (sroots, statuses)
 
 -- | Run compile phase of build pipeline.
 runCompilePipeline :: Env -> FilePath -> Details.Details -> List RootStatus -> Map ModuleName.Raw Status -> Dependencies -> IO (Either Exit.BuildProblem Artifacts)
 runCompilePipeline env root details sroots statuses foreigns = do
-  rmvar <- newEmptyMVar
+  rmvar <- newTVarIO Map.empty
   (results, rrootResults) <- runCompilePhase env foreigns rmvar statuses sroots
   writeDetails root details results
   pure (toArtifacts env foreigns results rrootResults)
 
 -- | Run compilation phase.
-runCompilePhase :: Env -> Dependencies -> MVar ResultDict -> Map ModuleName.Raw Status -> List RootStatus -> IO (Map ModuleName.Raw Result, List RootResult)
+runCompilePhase :: Env -> Dependencies -> TVar ResultDict -> Map ModuleName.Raw Status -> List RootStatus -> IO (Map ModuleName.Raw Result, List RootResult)
 runCompilePhase env foreigns rmvar statuses sroots = do
   let checkConfig = CheckConfig env foreigns rmvar
-  resultsMVars <- forkWithKey (checkModule checkConfig) statuses
-  putMVar rmvar resultsMVars
-  rrootMVars <- traverse (fork . checkRoot env resultsMVars) sroots
-  results <- traverse readMVar resultsMVars
-  rrootResults <- traverse readMVar rrootMVars
+  resultsMaybeTVars <- forkWithKey (checkModule checkConfig) statuses
+  -- Extract actual results and create regular TVar map for coordination
+  resultsTVars <- extractResults resultsMaybeTVars
+  atomically $ writeTVar rmvar resultsTVars
+  rrootTVars <- traverse (fork . checkRoot env resultsTVars) sroots
+  results <- traverse waitForResult resultsTVars
+  rrootResults <- traverse waitForMaybeResult rrootTVars
   pure (results, rrootResults)
 
 -- | Convert build results to artifacts.
@@ -214,18 +219,18 @@ projectTypeToPkg projectType =
 
 makeEnv :: Reporting.BKey -> FilePath -> Details.Details -> IO Env
 makeEnv key root details = do
-  let srcDirs = getSrcDirs (details ^. Details.outline)
+  let srcDirs = getSrcDirs root (details ^. Details.outline)
   let locals = details ^. Details.locals
   let foreigns = details ^. Details.foreigns
   let buildID = details ^. Details.buildID
   let projectType = outlineToProjectType (details ^. Details.outline)
   pure (Env key root projectType srcDirs buildID locals foreigns)
 
-getSrcDirs :: Details.ValidOutline -> [AbsoluteSrcDir]
-getSrcDirs outline =
+getSrcDirs :: FilePath -> Details.ValidOutline -> [AbsoluteSrcDir]
+getSrcDirs root outline =
   case outline of
     Details.ValidApp srcDirs -> fmap srcDirToAbsolute (NE.toList srcDirs)
-    Details.ValidPkg _ _ _ -> [AbsoluteSrcDir "src"]
+    Details.ValidPkg _ _ _ -> [AbsoluteSrcDir (root </> "src")]
 
 srcDirToAbsolute :: Outline.SrcDir -> AbsoluteSrcDir
 srcDirToAbsolute srcDir =
@@ -256,11 +261,17 @@ addNewLocal name result locals =
     RForeign _ -> locals
     RKernel -> locals
 
-forkWithKey :: (ModuleName.Raw -> a -> IO b) -> Map ModuleName.Raw a -> IO (Map ModuleName.Raw (MVar b))
+forkWithKey :: (ModuleName.Raw -> a -> IO b) -> Map ModuleName.Raw a -> IO (Map ModuleName.Raw (TVar (Maybe b)))
 forkWithKey function dictionary =
   Map.traverseWithKey (\key value -> fork (function key value)) dictionary
 
-checkRoot :: Env -> Map ModuleName.Raw (MVar Result) -> RootStatus -> IO RootResult
+-- | Extract results from Maybe TVars and convert to regular TVar map
+extractResults :: Map ModuleName.Raw (TVar (Maybe b)) -> IO (Map ModuleName.Raw (TVar b))
+extractResults maybeTVars = do
+  results <- traverse waitForMaybeResult maybeTVars
+  Map.traverseWithKey (\_ result -> newTVarIO result) results
+
+checkRoot :: Env -> Map ModuleName.Raw (TVar Result) -> RootStatus -> IO RootResult
 checkRoot env@(Env _ root _ _ _ _ _) results rootStatus =
   case rootStatus of
     SInside name -> pure (RInside name)
@@ -295,21 +306,21 @@ processPath (Env _ root _ _ _ _ _) path =
     then pure (LOutside path)
     else pure (LOutside (root </> path))
 
-checkMidpointAndRoots :: MVar (Maybe Dependencies) -> Map ModuleName.Raw Status -> List RootStatus -> IO (Either Exit.BuildProjectProblem Dependencies)
-checkMidpointAndRoots dmvar statuses sroots = do
+checkMidpointAndRoots :: TVar (Maybe Dependencies) -> Map ModuleName.Raw Status -> List RootStatus -> IO (Either Exit.BuildProjectProblem Dependencies)
+checkMidpointAndRoots dtvar statuses sroots = do
   case Validation.checkForCycles statuses of
     Nothing ->
       case Validation.checkUniqueRoots statuses sroots of
         Nothing -> do
-          maybeForeigns <- readMVar dmvar
+          maybeForeigns <- readTVarIO dtvar
           case maybeForeigns of
             Nothing -> pure (Left Exit.BP_CannotLoadDependencies)
             Just fs -> pure (Right fs)
         Just problem -> do
-          _ <- readMVar dmvar
+          _ <- readTVarIO dtvar
           pure (Left problem)
     Just cycles -> do
-      _ <- readMVar dmvar
+      _ <- readTVarIO dtvar
       case cycles of
         NE.List name names -> pure (Left (Exit.BP_Cycle name names))
 
@@ -349,7 +360,7 @@ compileOutside (Env key _ projectType _ _ _ _) local source ifaces modul = do
         Left errors ->
           pure . ROutsideErr $ Error.Module name (local ^. Details.path) (local ^. Details.time) source errors
 
-toImportErrors :: Env -> Map ModuleName.Raw (MVar Result) -> [Src.Import] -> NE.List (ModuleName.Raw, Import.Problem) -> NE.List Import.Error
+toImportErrors :: Env -> Map ModuleName.Raw (TVar Result) -> [Src.Import] -> NE.List (ModuleName.Raw, Import.Problem) -> NE.List Import.Error
 toImportErrors (Env _ _ _ _ _ locals foreigns) results imports problems =
   let knownModules =
         Set.unions

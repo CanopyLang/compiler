@@ -126,7 +126,7 @@ import Build.Types
   )
 
 -- Additional imports for re-export functions
-import Control.Concurrent.MVar (MVar)
+import Control.Concurrent.STM (TVar)
 import Data.Map.Strict (Map)
 import qualified Data.NonEmptyList as NE
 import qualified Data.ByteString as B
@@ -165,9 +165,9 @@ addRelative :: AbsoluteSrcDir -> FilePath -> FilePath
 addRelative = Orchestration.addRelative
 
 -- | Fork a computation into a separate thread.
-fork :: IO a -> IO (MVar a)
+fork :: IO a -> IO (TVar (Maybe a))
 fork = Orchestration.fork
 
 -- | Fork a computation for each key-value pair in a Map.
-forkWithKey :: (k -> a -> IO b) -> Map k a -> IO (Map k (MVar b))
+forkWithKey :: (k -> a -> IO b) -> Map k a -> IO (Map k (TVar (Maybe b)))
 forkWithKey = Orchestration.forkWithKey

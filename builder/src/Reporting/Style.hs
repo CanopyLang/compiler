@@ -24,7 +24,7 @@
 --
 -- == Thread Safety
 --
--- The Terminal style includes MVar synchronization to prevent output corruption
+-- The Terminal style includes TVar synchronization to prevent output corruption
 -- during concurrent progress updates. Multiple threads can safely report progress
 -- simultaneously without interfering with each other's output.
 --
@@ -67,7 +67,7 @@ module Reporting.Style
   , terminal
   ) where
 
-import Control.Concurrent (MVar, newMVar)
+import Control.Concurrent.STM (TVar, newTVarIO)
 
 -- | Output style configuration for the reporting system.
 --
@@ -78,7 +78,7 @@ import Control.Concurrent (MVar, newMVar)
 -- * 'Json' - Structured output for tooling integration  
 -- * 'Terminal' - Interactive output with progress indicators
 --
--- The Terminal style includes an MVar for thread synchronization to prevent
+-- The Terminal style includes a TVar for thread synchronization to prevent
 -- output corruption during concurrent progress updates.
 --
 -- @since 0.19.1
@@ -96,8 +96,8 @@ data Style
   | -- | Interactive terminal output with progress indicators.
     --
     -- Provides real-time progress updates, colored output, and user interaction
-    -- prompts. The MVar ensures thread-safe output in concurrent scenarios.
-    Terminal !(MVar ())
+    -- prompts. The TVar ensures thread-safe output in concurrent scenarios.
+    Terminal !(TVar ())
 
 -- | Create a silent reporting style that suppresses all output.
 --
@@ -153,7 +153,7 @@ json =
 -- | Create a terminal reporting style with interactive progress indicators.
 --
 -- Provides real-time progress updates, colored output, user interaction prompts,
--- and platform-appropriate terminal characters. Uses MVar synchronization to
+-- and platform-appropriate terminal characters. Uses TVar synchronization to
 -- ensure thread-safe output during concurrent operations.
 --
 -- ==== Examples
@@ -177,10 +177,10 @@ json =
 --
 -- ==== Thread Safety
 --
--- The MVar ensures that multiple threads can safely update progress without
--- corrupting terminal output. Progress updates are serialized through the MVar.
+-- The TVar ensures that multiple threads can safely update progress without
+-- corrupting terminal output. Progress updates are serialized through the TVar.
 --
 -- @since 0.19.1
 terminal :: IO Style
 terminal =
-  Terminal <$> newMVar ()
+  Terminal <$> newTVarIO ()

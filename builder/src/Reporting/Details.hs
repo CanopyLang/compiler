@@ -108,7 +108,8 @@ module Reporting.Details
 
 import qualified Canopy.Package as Pkg
 import qualified Canopy.Version as V
-import Control.Concurrent (Chan, forkIO, newChan, readChan, writeChan, takeMVar, putMVar)
+import Control.Concurrent (Chan, forkIO, newChan, readChan, writeChan)
+import Control.Concurrent.STM (atomically, readTVarIO, writeTVar)
 import Control.Lens (makeLenses, (^.))
 import Control.Monad (when)
 import Reporting.Key (Key(..))
@@ -272,7 +273,7 @@ makeLenses ''DState
 --
 -- ==== Thread Safety
 --
--- The terminal implementation uses concurrent threads with MVar synchronization.
+-- The terminal implementation uses concurrent threads with TVar synchronization.
 -- The background thread safely updates progress display while the main thread
 -- performs dependency work. All progress messages are serialized through channels.
 --
@@ -295,9 +296,10 @@ trackDetails style callback =
 
         _ <- forkIO $
           do
-            _ <- takeMVar mvar
+            -- Use TVar for thread synchronization
+            readTVarIO mvar
             detailsLoop chan (DState 0 0 0 0 0 0 0)
-            putMVar mvar ()
+            atomically $ writeTVar mvar ()
 
         answer <- callback (Key (writeChan chan . Just))
         writeChan chan Nothing

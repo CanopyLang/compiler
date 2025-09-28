@@ -115,6 +115,8 @@ module Stuff.Discovery
     findRoot
   , findRootFrom
   , findRootHelp
+    -- * Configuration File Discovery
+  , getConfigFilePath
   ) where
 
 import qualified Data.List as List
@@ -248,3 +250,39 @@ findRootHelp dirs =
       if canopyExists || elmExists
         then return (Just (FP.joinPath dirs))
         else findRootHelp (List.init dirs)
+
+-- | Get the actual configuration file path for a directory.
+--
+-- Returns the full path to the configuration file that exists in the given
+-- directory. Prefers canopy.json if it exists, otherwise returns elm.json.
+-- This is the ONLY function that should know about the canopy.json/elm.json
+-- fallback logic - all other code should use this function.
+--
+-- The search follows this priority:
+--
+-- 1. **canopy.json** - Preferred for native Canopy projects
+-- 2. **elm.json** - Fallback for Elm compatibility
+--
+-- ==== Examples
+--
+-- >>> configPath <- getConfigFilePath "/path/to/canopy/project"
+-- >>> configPath
+-- "/path/to/canopy/project/canopy.json"
+--
+-- >>> configPath <- getConfigFilePath "/path/to/elm/project"
+-- >>> configPath
+-- "/path/to/elm/project/elm.json"
+--
+-- ==== Error Conditions
+--
+-- This function assumes that at least one configuration file exists.
+-- It should only be called on directories where project discovery has
+-- already confirmed the presence of a configuration file.
+--
+-- @since 0.19.1
+getConfigFilePath :: FilePath -> IO FilePath
+getConfigFilePath root = do
+  let canopyPath = root </> "canopy.json"
+  let elmPath = root </> "elm.json"
+  canopyExists <- Dir.doesFileExist canopyPath
+  return (if canopyExists then canopyPath else elmPath)
