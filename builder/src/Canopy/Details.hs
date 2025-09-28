@@ -687,9 +687,11 @@ build store key buildData f fs = do
           putStrLn ("CIRCULAR-DEP-FIX: elm/core available deps: " <> show (Map.keys available))
           return available
         else do
-          -- For non-core packages, wait for dependencies as before
-          putStrLn ("ATOMICALLY-DEBUG: Details.hs:666 - about to wait for dependencies: " <> show (Map.keys deps))
-          atomically $ waitForDependencies store (Map.keys deps)
+          -- For non-core packages, wait for dependencies (excluding elm/core)
+          -- elm/core is provided as foreign interface, not built as dependency
+          let depsWithoutCore = Map.delete Pkg.core deps
+          putStrLn ("ATOMICALLY-DEBUG: Details.hs:666 - about to wait for dependencies: " <> show (Map.keys depsWithoutCore))
+          atomically $ waitForDependencies store (Map.keys depsWithoutCore)
       putStrLn ("ATOMICALLY-DEBUG: Details.hs:666 - dependency resolution completed successfully")
 
       case sequenceA depResults of
