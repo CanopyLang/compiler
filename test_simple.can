@@ -1,4 +1,1 @@
-module Main exposing (main)
-
-main : String
-main = "Hello, World!"
+import Basics exposing (Int)\n\nmain : Int\nmain = 42

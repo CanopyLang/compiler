@@ -71,7 +71,6 @@ import qualified Canopy.Package as Pkg
 import Canopy.PackageOverrideData (PackageOverrideData (..))
 import qualified Canopy.PackageOverrideData as PackageOverrideData
 import qualified Canopy.Version as V
-import qualified Build.Foundation as Foundation
 import qualified Compile
 import Control.Concurrent.Async (async, wait, forConcurrently)
 import Control.Concurrent.STM (TVar, STM, atomically, newTVar, newTVarIO, readTVar, readTVarIO, writeTVar, modifyTVar, retry)
@@ -267,45 +266,23 @@ loadObjects root (Details _ _ _ _ _ extras) =
 
 loadInterfaces :: FilePath -> Details -> IO (TVar (Maybe Interfaces))
 loadInterfaces root (Details _ _ _ _ _ extras) = do
-  -- FOUNDATION LAYER: Load foundation layer interfaces for elm/core
-  foundation <- Foundation.loadFoundationLayer
-  let foundationInterfaces = convertFoundationToCanonical foundation
   case extras of
     ArtifactsFresh i _ -> do
-      let mergedInterfaces = Map.union i foundationInterfaces
-      newTVarIO (Just mergedInterfaces)
+      newTVarIO (Just i)
     ArtifactsCached -> do
       interfaces <- File.readBinary (Stuff.interfaces root) :: IO (Maybe Interfaces)
-      case interfaces of
-        Nothing -> newTVarIO (Just foundationInterfaces)
-        Just i -> do
-          let mergedInterfaces = Map.union i foundationInterfaces
-          newTVarIO (Just mergedInterfaces)
+      newTVarIO interfaces
 
--- | Convert foundation layer interfaces to canonical form.
---
--- Converts foundation layer interfaces from Raw module names to Canonical
--- module names and wraps them in DependencyInterface format for inclusion
--- in the Dependencies map.
---
--- @since 0.19.1
-convertFoundationToCanonical :: Foundation.FoundationLayer -> Interfaces
-convertFoundationToCanonical foundation =
-  let rawInterfaces = Foundation._foundationInterfaces foundation
-      canonicalInterfaces = Map.mapKeys (ModuleName.Canonical Pkg.core) rawInterfaces
-      dependencyInterfaces = Map.map I.public canonicalInterfaces
-  in dependencyInterfaces
 
 -- VERIFY INSTALL -- used by Install
 
 verifyInstall :: BW.Scope -> FilePath -> Solver.Env -> Outline.Outline -> IO (Either Exit.Details ())
 verifyInstall scope root (Solver.Env cache manager connection registry packageOverridesCache) outline =
   do
-    foundation <- Foundation.loadFoundationLayer
     configPath <- Stuff.getConfigFilePath root
     time <- File.getTime configPath
     let key = Reporting.ignorer
-    let env = Env key scope root cache manager connection registry packageOverridesCache foundation
+    let env = Env key scope root cache manager connection registry packageOverridesCache
     case outline of
       Outline.Pkg pkg -> Task.run (void (verifyPkg env time pkg))
       Outline.App app -> Task.run (void (verifyApp env time app))
@@ -384,15 +361,13 @@ data Env = Env
     _manager :: Http.Manager,
     _connection :: Solver.Connection,
     _registry :: Registry.ZokkaRegistries,
-    _packageOverridesCache :: Stuff.PackageOverridesCache,
-    _foundation :: Foundation.FoundationLayer
+    _packageOverridesCache :: Stuff.PackageOverridesCache
   }
 
 initEnv :: Reporting.DKey -> BW.Scope -> FilePath -> IO (Either Exit.Details (Env, Outline.Outline))
 initEnv key scope root =
   do
     asyncAction <- async Solver.initEnv
-    foundation <- Foundation.loadFoundationLayer
     eitherOutline <- Outline.read root
     case eitherOutline of
       Left problem ->
@@ -404,14 +379,13 @@ initEnv key scope root =
             Left problem ->
               return . Left $ Exit.DetailsCannotGetRegistry problem
             Right (Solver.Env cache manager connection registry packageOverridesCache) ->
-              return $ Right (Env key scope root cache manager connection registry packageOverridesCache foundation, outline)
+              return $ Right (Env key scope root cache manager connection registry packageOverridesCache, outline)
 
 -- FIXME
 initEnvForReactorTH :: Reporting.DKey -> BW.Scope -> FilePath -> IO (Either Exit.Details (Env, Outline.Outline))
 initEnvForReactorTH key scope root =
   do
     asyncAction <- async Solver.initEnv
-    foundation <- Foundation.loadFoundationLayer
     eitherOutline <- Outline.read root
     case eitherOutline of
       Left problem ->
@@ -423,7 +397,7 @@ initEnvForReactorTH key scope root =
             Left problem ->
               return . Left $ Exit.DetailsCannotGetRegistry problem
             Right (Solver.Env cache manager connection registry packageOverridesCache) ->
-              return $ Right (Env key scope root cache manager connection registry packageOverridesCache foundation, outline)
+              return $ Right (Env key scope root cache manager connection registry packageOverridesCache, outline)
 
 -- VERIFY PROJECT
 
@@ -471,7 +445,7 @@ checkAppDeps (Outline.AppOutline _ _ direct indirect testDirect testIndirect _) 
 -- VERIFY CONSTRAINTS
 
 verifyConstraints :: Env -> Map.Map Pkg.Name Con.Constraint -> Task (Map.Map Pkg.Name Solver.Details)
-verifyConstraints (Env _ _ _ cache _ connection registry _ _) constraints =
+verifyConstraints (Env _ _ _ cache _ connection registry _) constraints =
   do
     -- FOUNDATION LAYER: elm/core will be processed FIRST, then other packages
     -- elm/core is included in dependency resolution but prioritized
@@ -516,7 +490,7 @@ genericErrorHandler msg action =
 -- VERIFY DEPENDENCIES
 
 verifyDependencies :: Env -> File.Time -> ValidOutline -> Map.Map Pkg.Name Solver.Details -> Map.Map Pkg.Name a -> Map.Map Pkg.Name (Pkg.Name, V.Version) -> Task Details
-verifyDependencies (Env key scope root cache manager _ zokkaRegistries packageOverridesCache _) time outline solution directDeps originalPkgToOverridingPkg =
+verifyDependencies (Env key scope root cache manager _ zokkaRegistries packageOverridesCache) time outline solution directDeps originalPkgToOverridingPkg =
   let generateBuildData :: Pkg.Name -> V.Version -> BuildData
       generateBuildData pkgName pkgVersion = case Map.lookup pkgName originalPkgToOverridingPkg of
         Nothing ->
@@ -665,7 +639,6 @@ verifyDep store key buildData _manager _zokkaRegistry solution directDeps = do
         BuildOriginalPackage (OriginalPackageBuildData {_pkg = pkg}) -> pkg
         BuildWithOverridingPackage (OverridingPackageBuildData {_overridingPkg = overridingPkg}) -> overridingPkg
 
-  -- elm/core is now excluded from dependency pipeline entirely via foundation layer
   -- Check if another thread is already processing this package
   shouldProcess <- atomically $ claimDependency store primaryPkg
 
@@ -704,7 +677,6 @@ build store key buildData f fs manager zokkaRegistry = do
       Reporting.report key Reporting.DBroken
       return $ Left $ Just $ Exit.BD_BadBuild pkg vsn f
     Right (Outline.Pkg (Outline.PkgOutline _ _ _ _ exposed deps _ _)) -> do
-      -- elm/core no longer reaches this point due to foundation layer exclusion
       putStrLn ("ATOMICALLY-DEBUG: Details.hs:666 - about to wait for dependencies: " <> show (Map.keys deps))
       depResults <- atomically $ waitForDependencies store (Map.keys deps)
       putStrLn ("ATOMICALLY-DEBUG: Details.hs:666 - dependency resolution completed successfully")
@@ -734,7 +706,6 @@ build store key buildData f fs manager zokkaRegistry = do
           printLog ("DEBUG: Processing package " <> show pkg)
           let exposedDict = Map.fromSet (const ()) (Set.fromList (Outline.flattenExposed exposed))
 
-          -- Foundation layer: All packages use exposed modules and interface files
           -- Package overrides are optional, normal packages use interface files
           let modulesToCrawl = exposedDict
 
@@ -791,7 +762,6 @@ build store key buildData f fs manager zokkaRegistry = do
               printLog ("DEBUG: CHECKPOINT 8 - Created completeStatusList")
               printLog ("DEBUG: Kernel modules check - looking for Elm.JsArray in completeStatusList: " <> show (Map.member "Elm.JsArray" completeStatusList))
 
-              -- Foundation layer: Use regular compilation for all packages
               -- Use ALL modules from finalStatusStore for dependency graph, not just successful ones
               -- This ensures kernel modules are included even if they fail to parse
               let allStatusList = Map.mapWithKey (\name maybeStatus ->
@@ -1067,18 +1037,12 @@ crawlKernel foreignDeps mvar pkg src name =
           printLog ("DEBUG: crawlKernel " <> show name <> " pkg: " <> show pkg)
           printLog ("DEBUG: crawlKernel " <> show name <> " foreignDeps keys: " <> show (Map.keys foreignDeps))
           printLog ("DEBUG: crawlKernel " <> show name <> " getDepHome mapped: " <> show (Map.mapMaybe getDepHome foreignDeps))
-        -- Kernel modules are foundation layer - they provide foreign interfaces rather than consume them
         -- For kernel modules, use empty foreign dependency context since they don't depend on other packages
         let kernelForeignDeps = if Name.isKernel name then Map.empty else Map.mapMaybe getDepHome foreignDeps
         when (ModuleName.toChars name `elem` ["Elm.Kernel.Basics", "Elm.Kernel.JsArray"]) $ do
           printLog ("DEBUG: crawlKernel " <> show name <> " using kernelForeignDeps: " <> show kernelForeignDeps)
           printLog ("DEBUG: crawlKernel " <> show name <> " isKernel: " <> show (Name.isKernel name))
-        -- FOUNDATION LAYER: Check if this is a kernel module in the foundation registry
-        if Name.isKernel name && ModuleName.toChars name `elem` Foundation.kernelModuleRegistry
-          then do
-            printLog ("FOUNDATION: Kernel module " <> show name <> " provided by foundation layer")
-            return (Just SKernelForeign)
-          else case Kernel.fromByteString pkg kernelForeignDeps bytes of
+        case Kernel.fromByteString pkg kernelForeignDeps bytes of
             Nothing -> do
               when (ModuleName.toChars name `elem` ["Elm.Kernel.Basics", "Elm.Kernel.JsArray"]) $ do
                 printLog ("DEBUG: crawlKernel " <> show name <> " Kernel.fromByteString returned Nothing")
@@ -1114,7 +1078,6 @@ data Result
   | RKernelLocal [Kernel.Chunk]
   | RKernelForeign
 
--- FOUNDATION LAYER: elm/core bootstrap logic removed - handled by foundation layer
 
 -- | Compile modules in parallel with TVar updates
 compileRegularWithTVars :: (Status -> IO (Maybe Result))
@@ -1139,8 +1102,6 @@ compileRegularWithTVars compileAction statusMap moduleResultTVars = do
 
 compile :: Pkg.Name -> TVar (Map.Map ModuleName.Raw (TVar (Maybe Result))) -> Status -> IO (Maybe Result)
 compile pkg mvar status = do
-  -- FOUNDATION LAYER: Load foundation layer for interface resolution
-  foundation <- Foundation.loadFoundationLayer
   case status of
     SLocal docsStatus deps modul ->
       do
@@ -1160,9 +1121,7 @@ compile pkg mvar status = do
         printLog ("DEBUG: lazy interfaces keys for pkg " <> show pkg <> ": " <> show (Map.keys lazyInterfaces))
 
         -- DETAILED LOGGING FOR COMPILE.COMPILE ARGUMENTS
-        -- FOUNDATION LAYER: Merge foundation layer interfaces with resolved dependencies
-        let foundationInterfaces = Foundation._foundationInterfaces foundation
-            interfaces = Map.union lazyInterfaces foundationInterfaces
+        let interfaces = lazyInterfaces
         printLog ("COMPILE-DEBUG: About to call Compile.compile")
         printLog ("COMPILE-DEBUG: pkg = " <> show pkg)
         printLog ("COMPILE-DEBUG: interfaces size = " <> show (Map.size interfaces))
