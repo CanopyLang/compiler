@@ -554,7 +554,40 @@ verifyDependencies (Env key scope root cache manager _ zokkaRegistries packageOv
                     return (Right details)
 
 addObjects :: Artifacts -> Opt.GlobalGraph -> Opt.GlobalGraph
-addObjects (Artifacts _ objs) = Opt.addGlobalGraph objs
+addObjects (Artifacts ifaces objs) =
+  let -- Check for missing kernel $ entry points
+      existingKernelGlobals = Map.filterWithKey (\global _ -> isKernelGlobal global) (Opt._g_nodes objs)
+
+      -- Find modules that should have kernel $ entry points but don't
+      possibleKernelModules = ["List", "String", "Basics", "Debug", "Dict", "Array", "Set", "Char", "Bitwise"]
+      missingKernelGlobals = filter (not . hasKernelGlobal existingKernelGlobals) possibleKernelModules
+
+      _ = trace ("DEBUG-KERNEL-FIX: Existing kernel globals: " <> show (Map.size existingKernelGlobals)) ()
+      _ = trace ("DEBUG-KERNEL-FIX: Missing kernel modules: " <> show missingKernelGlobals) ()
+
+      -- Create missing kernel $ entry points for elm/core modules
+      newKernelGlobals = foldl addMissingKernelGlobal Map.empty missingKernelGlobals
+
+      -- Combine original objects with new kernel globals
+      combinedNodes = Map.union (Opt._g_nodes objs) newKernelGlobals
+      objsWithKernels = objs { Opt._g_nodes = combinedNodes }
+
+      _ = trace ("DEBUG-KERNEL-FIX: Added " <> show (Map.size newKernelGlobals) <> " kernel globals") ()
+  in Opt.addGlobalGraph objsWithKernels
+  where
+    isKernelGlobal (Opt.Global _ name) = Name.toChars name == "$"
+
+    hasKernelGlobal kernelMap modName =
+      let kernelModuleName = "Kernel." <> modName
+          kernelGlobal = Opt.Global (ModuleName.Canonical Pkg.core (Name.fromChars kernelModuleName)) Name.dollar
+      in Map.member kernelGlobal kernelMap
+
+    addMissingKernelGlobal acc modName =
+      let kernelModuleName = "Kernel." <> modName
+          kernelGlobal = Opt.Global (ModuleName.Canonical Pkg.core (Name.fromChars kernelModuleName)) Name.dollar
+          -- Create proper kernel node that references JavaScript implementation
+          kernelNode = Opt.Define (Opt.VarKernel (Name.fromChars modName) Name.dollar) Set.empty
+      in Map.insert kernelGlobal kernelNode acc
 
 addInterfaces :: Map.Map Pkg.Name a -> Pkg.Name -> Artifacts -> Interfaces -> Interfaces
 addInterfaces directDeps pkg (Artifacts ifaces _) dependencyInterfaces =

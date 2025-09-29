@@ -23,6 +23,7 @@ import qualified Canopy.Kernel as K
 import qualified Canopy.ModuleName as ModuleName
 import qualified Canopy.Package as Pkg
 import Control.Exception (Exception, throw)
+import qualified Debug.Trace as Debug
 import Data.ByteString.Builder (Builder)
 import qualified Data.ByteString.Builder as B
 import qualified Data.Index as Index
@@ -213,7 +214,21 @@ tails xs@(_:ys) = xs : tails ys
 
 generate :: Mode.Mode -> Opt.GlobalGraph -> Mains -> Map String FFIInfo -> Builder
 generate mode (Opt.GlobalGraph graph _) mains ffiInfos =
-  let baseState = Map.foldrWithKey (addMain mode graph) emptyState mains
+  let _ = Debug.trace ("GLOBAL-GRAPH-DEBUG: Total globals: " <> show (Map.size graph)) ()
+      allGlobals = Map.keys graph
+      listGlobals = filter (\(Opt.Global home name) ->
+        let modName = ModuleName._module home
+            pkgName = ModuleName._package home
+        in "List" `isInfixOf` Name.toChars modName || "List" `isInfixOf` Name.toChars name) allGlobals
+      elmCoreGlobals = filter (\(Opt.Global home _) ->
+        let pkg = ModuleName._package home
+        in Pkg._author pkg == Pkg.elm && Pkg._project pkg == Pkg._project Pkg.core) allGlobals
+      dollarGlobals = filter (\(Opt.Global _ name) -> Name.toChars name == "$") allGlobals
+      _ = Debug.trace ("GLOBAL-GRAPH-DEBUG: List-related globals: " <> show listGlobals) ()
+      _ = Debug.trace ("GLOBAL-GRAPH-DEBUG: elm/core globals count: " <> show (length elmCoreGlobals)) ()
+      _ = Debug.trace ("GLOBAL-GRAPH-DEBUG: $ globals: " <> show dollarGlobals) ()
+      _ = Debug.trace ("GLOBAL-GRAPH-DEBUG: First 20 globals: " <> show (take 20 allGlobals)) ()
+      baseState = Map.foldrWithKey (addMain mode graph) emptyState mains
       state = baseState  -- For now, we'll focus on fixing the core issue
       header = if Mode.isElmCompatible mode
                then "(function(scope){\n'use strict';\n"
@@ -517,8 +532,24 @@ addGlobalHelp mode graph currentGlobal state =
                Nothing ->
                  if Name.toChars moduleName == "Math"
                  then error "FFI function found - this should be handled by expression generation"
-                 else throw (MyException ("addGlobalHelp: missing global in graph " <> show currentGlobal <>
-                                         " (also tried " <> show altGlobal <> ") - available keys: " <> show (length (Map.keys graph)) <> " globals"))
+                 else let allKeys = Map.keys graph
+                          listRelated = filter (\(Opt.Global home name) ->
+                            let modName = ModuleName._module home
+                            in "List" `isInfixOf` Name.toChars modName || "List" `isInfixOf` Name.toChars name) allKeys
+                          dollarKeys = filter (\(Opt.Global _ name) -> Name.toChars name == "$") allKeys
+                          elmCoreKeys = filter (\(Opt.Global home _) ->
+                            let pkg = ModuleName._package home
+                            in Pkg._author pkg == Pkg.elm && Pkg._project pkg == Pkg._project Pkg.core) allKeys
+                          errorMsg = "\n=== GLOBALHELP DEBUG ===\n" <>
+                                   "Missing: " <> show currentGlobal <> "\n" <>
+                                   "Also tried: " <> show altGlobal <> "\n" <>
+                                   "Total keys: " <> show (length allKeys) <> "\n" <>
+                                   "List-related: " <> show listRelated <> "\n" <>
+                                   "$ globals: " <> show dollarKeys <> "\n" <>
+                                   "elm/core count: " <> show (length elmCoreKeys) <> "\n" <>
+                                   "First 20: " <> show (take 20 allKeys) <> "\n" <>
+                                   "========================"
+                      in error errorMsg
    in case globalInGraph of
         Opt.Define expr deps ->
           addStmt

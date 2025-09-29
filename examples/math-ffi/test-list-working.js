@@ -75,8 +75,7 @@ function A9(fun, a, b, c, d, e, f, g, h, i) {
   return fun.a === 9 ? fun.f(a, b, c, d, e, f, g, h, i) : fun(a)(b)(c)(d)(e)(f)(g)(h)(i);
 }
  console.warn('Compiled in DEV mode. Follow the advice at https://canopy-lang.org/0.19.1/optimize for better performance and smaller assets.');
-var $author$project$Main$RunCalculations ={$ :'RunCalculations'};
-var $author$project$Main$init ='Click the button to run mathematical calculations\\';
-var $author$project$Main$main = A2( $elm$html$Html$div, _List_fromArray([ A2( $elm$html$Html$Attributes$style,'padding','20px') , A2( $elm$html$Html$Attributes$style,'font-family','Arial, sans-serif')]), _List_fromArray([ A2( $elm$html$Html$h1, _List_Nil, _List_fromArray([ $elm$html$Html$text('Math FFI Example')])) , A2( $elm$html$Html$p, _List_Nil, _List_fromArray([ $elm$html$Html$text('Mathematical operations through Canopy\\\'s FFI system.')])) , A2( $elm$html$Html$button, _List_fromArray([ $elm$html$Html$Events$onClick( $author$project$Main$RunCalculations) , A2( $elm$html$Html$Attributes$style,'padding','10px 20px') , A2( $elm$html$Html$Attributes$style,'font-size','16px') , A2( $elm$html$Html$Attributes$style,'background-color','#007cba') , A2( $elm$html$Html$Attributes$style,'color','white') , A2( $elm$html$Html$Attributes$style,'border','none') , A2( $elm$html$Html$Attributes$style,'border-radius','5px') , A2( $elm$html$Html$Attributes$style,'cursor','pointer')]), _List_fromArray([ $elm$html$Html$text('Run Calculations')])) , A2( $elm$html$Html$pre, _List_fromArray([ A2( $elm$html$Html$Attributes$style,'margin-top','20px') , A2( $elm$html$Html$Attributes$style,'background-color','#f5f5f5') , A2( $elm$html$Html$Attributes$style,'padding','10px')]), _List_fromArray([ $elm$html$Html$text( $author$project$Main$init)]))]));
-_Platform_export({'Main':{'init': _VirtualDom_init( $author$project$Main$main)(0)(0)}});scope['Canopy'] = scope['Elm'];
+var $elm$core$Basics$append = _Kernel.Utils_append;
+var $author$project$TestList$main = function(){var numbers = _List_fromArray([1 ,2 ,3 ,4 ,5]);var count = $elm$core$List$length( numbers);return A2( $elm$html$Html$div, _List_Nil, _List_fromArray([ $elm$html$Html$text( $elm$core$String$fromInt( count) +' items')]));}();
+_Platform_export({'TestList':{'init': _VirtualDom_init( $author$project$TestList$main)(0)(0)}});scope['Canopy'] = scope['Elm'];
 }(this));

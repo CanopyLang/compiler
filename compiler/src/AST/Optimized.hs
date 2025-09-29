@@ -639,7 +639,8 @@ addKernelDepSimple chunk deps =
 -- @since 0.19.1
 toKernelGlobal :: Name.Name -> Global
 toKernelGlobal shortName =
-  Global (ModuleName.Canonical Pkg.core shortName) Name.dollar
+  let kernelModuleName = Name.fromChars ("Kernel." <> Name.toChars shortName)
+  in Global (ModuleName.Canonical Pkg.core kernelModuleName) Name.dollar
 
 -- INSTANCES
 
