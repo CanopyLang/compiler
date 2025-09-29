@@ -634,11 +634,12 @@ addKernelDepSimple chunk deps =
 --
 -- Creates a global reference for a kernel function with the proper
 -- kernel package module name and standard kernel naming convention.
+-- Kernel modules belong to elm/core package.
 --
 -- @since 0.19.1
 toKernelGlobal :: Name.Name -> Global
 toKernelGlobal shortName =
-  Global (ModuleName.Canonical Pkg.kernel shortName) Name.dollar
+  Global (ModuleName.Canonical Pkg.core shortName) Name.dollar
 
 -- INSTANCES
 

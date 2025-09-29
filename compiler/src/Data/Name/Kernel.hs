@@ -100,7 +100,7 @@ prefixKernel = Utf8.fromChars "Canopy."
 
 {-# NOINLINE prefixElmKernel #-}
 prefixElmKernel :: Name
-prefixElmKernel = Utf8.fromChars "Elm."
+prefixElmKernel = Utf8.fromChars "Elm.Kernel."
 
 {-# NOINLINE prefixNumber #-}
 prefixNumber :: Name

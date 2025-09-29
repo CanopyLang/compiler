@@ -1,0 +1,34 @@
+module TestCoreModules exposing (..)
+
+import Array
+import Basics
+import Bitwise
+import Char
+import Debug
+import Dict
+import List
+import Maybe
+import Platform
+import Platform.Cmd
+import Platform.Sub
+import Process
+import Result
+import Set
+import String
+import Task
+import Tuple
+
+-- Test function that uses modules from elm/core
+testFunction : String
+testFunction =
+    let
+        arr = Array.fromList [1, 2, 3]
+        dict = Dict.fromList [("a", 1), ("b", 2)]
+        set = Set.fromList [1, 2, 3]
+        str = String.toUpper "hello"
+        char = Char.toUpper 'a'
+        result = Result.Ok "success"
+        tuple = Tuple.pair 1 2
+        maybe = Maybe.Just "value"
+    in
+    "All elm/core modules accessible"

@@ -35,6 +35,7 @@ import Data.Set (Set)
 import qualified Data.Set as Set
 import qualified Data.Text as Text
 import qualified Data.Utf8 as Utf8
+import Debug.Trace (trace)
 import qualified Generate.JavaScript.Builder as JS
 import qualified Generate.JavaScript.Expression as Expr
 import qualified Generate.JavaScript.Functions as Functions
@@ -485,6 +486,8 @@ filterEssentialDeps _mode deps =
 
 addGlobalHelp :: Mode.Mode -> Graph -> Opt.Global -> State -> State
 addGlobalHelp mode graph currentGlobal state =
+  let _ = trace ("DEBUG GLOBAL: Processing global " ++ show currentGlobal) ()
+  in
   let addDeps deps someState =
         let filteredDeps = filterEssentialDeps mode deps
         in Set.foldl' (addGlobal mode graph) someState filteredDeps
@@ -494,13 +497,20 @@ addGlobalHelp mode graph currentGlobal state =
           -- Try alternative package name (canopy/kernel vs elm/kernel)
           let Opt.Global globalHome globalName = currentGlobal
               currentPkg = ModuleName._package globalHome
-              altPkg = if Pkg._author currentPkg == Pkg.canopy && Pkg._project currentPkg == Pkg._project Pkg.kernel
-                      then Pkg.Name Pkg.elm (Pkg._project currentPkg)
+              _ = trace ("DEBUG PACKAGE MAPPING: currentPkg=" ++ show currentPkg ++ ", module=" ++ show (ModuleName._module globalHome)) ()
+              altPkg = if Pkg._author currentPkg == Pkg.canopy
+                      then -- Map canopy packages: kernel->core for standard modules, others stay the same
+                           if Pkg._project currentPkg == Pkg._project Pkg.kernel
+                           then Pkg.core  -- canopy/kernel -> elm/core (for List, String, etc.)
+                           else Pkg.Name Pkg.elm (Pkg._project currentPkg)  -- canopy/other -> elm/other
                       else if Pkg._author currentPkg == Pkg.elm && Pkg._project currentPkg == Pkg._project Pkg.kernel
-                      then Pkg.kernel
-                      else currentPkg
+                      then -- Map elm/kernel back to canopy/kernel as fallback
+                           Pkg.kernel
+                      else -- No mapping needed
+                           currentPkg
               altGlobalHome = globalHome { ModuleName._package = altPkg }
               altGlobal = Opt.Global altGlobalHome globalName
+              _ = trace ("DEBUG PACKAGE MAPPING: trying altPkg=" ++ show altPkg) ()
               moduleName = ModuleName._module globalHome
           in case Map.lookup altGlobal graph of
                Just x -> x

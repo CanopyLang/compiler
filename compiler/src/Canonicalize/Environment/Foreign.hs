@@ -18,6 +18,7 @@ import qualified Data.List as List
 import qualified Data.Map.Strict as Map
 import qualified Data.Maybe
 import qualified Data.Name as Name
+import Debug.Trace (trace)
 import qualified Reporting.Annotation as A
 import qualified Reporting.Error.Canonicalize as Error
 import qualified Reporting.Result as Result
@@ -72,7 +73,11 @@ isNormal (Src.Import (A.At _ name) maybeAlias _) =
   not (Name.isKernel name)
     || ( case maybeAlias of
            Nothing -> False
-           Just _ -> error "kernel imports cannot use `as`"
+           Just alias ->
+             let nameStr = Name.toChars name
+                 aliasStr = Name.toChars alias
+             in trace ("KERNEL_IMPORT_DEBUG: Kernel import '" ++ nameStr ++ "' with alias '" ++ aliasStr ++ "' - this is not allowed") $
+                error "kernel imports cannot use `as`"
        )
 
 -- ADD IMPORTS

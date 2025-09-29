@@ -26,6 +26,7 @@ import qualified Data.Index as Index
 import qualified Data.List as List
 import qualified Data.Map.Strict as Map
 import qualified Data.Name as Name
+import Debug.Trace (trace)
 import qualified Reporting.Annotation as A
 import qualified Reporting.Error.Canonicalize as Error
 import qualified Reporting.Result as Result
@@ -572,9 +573,11 @@ findVar region (Env.Env localHome vs _ _ _ qvs _ _) name =
         Env.Local _ ->
           logVar name (Can.VarLocal name)
         Env.TopLevel _ ->
-          logVar name (Can.VarTopLevel localHome name)
+          let _ = trace ("DEBUG CANONICALIZE: " ++ Name.toChars name ++ " classified as TopLevel with localHome=" ++ show localHome) ()
+          in logVar name (Can.VarTopLevel localHome name)
         Env.Foreign home annotation ->
-          Result.ok $
+          let _ = trace ("DEBUG CANONICALIZE: " ++ Name.toChars name ++ " classified as Foreign with home=" ++ show home) ()
+          in Result.ok $
             if home == ModuleName.debug
               then Can.VarDebug localHome name annotation
               else Can.VarForeign home name annotation
@@ -585,11 +588,13 @@ findVar region (Env.Env localHome vs _ _ _ qvs _ _) name =
 
 findVarQual :: A.Region -> Env.Env -> Name.Name -> Name.Name -> Result FreeLocals w Can.Expr_
 findVarQual region (Env.Env localHome vs _ _ _ qvs _ _) prefix name =
-  case Map.lookup prefix qvs of
+  let _ = trace ("DEBUG CANONICALIZE QUAL: Looking for " ++ Name.toChars prefix ++ "." ++ Name.toChars name ++ " with localHome=" ++ show localHome) ()
+  in case Map.lookup prefix qvs of
     Just qualified ->
       case Map.lookup name qualified of
         Just (Env.Specific home annotation) ->
-          Result.ok $
+          let _ = trace ("DEBUG CANONICALIZE QUAL: " ++ Name.toChars prefix ++ "." ++ Name.toChars name ++ " resolved to home=" ++ show home) ()
+          in Result.ok $
             if home == ModuleName.debug
               then Can.VarDebug localHome name annotation
               else Can.VarForeign home name annotation
