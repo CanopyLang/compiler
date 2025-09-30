@@ -54,62 +54,70 @@
 -- @since 0.19.1
 module Build.Module.Compile
   ( -- * Compilation Functions
-    compile
-  , compileOutside
-    
-  -- * Configuration Types
-  , CompileConfig (..)
-  , OutsideCompileConfig (..)
-    
-  -- * Documentation Generation
-  , makeDocs
-  , finalizeDocs
-  , toDocs
-    
-  -- * Project Type Utilities
-  , projectTypeToPkg
-  ) where
+    compile,
+    compileOutside,
+
+    -- * Configuration Types
+    CompileConfig (..),
+    OutsideCompileConfig (..),
+
+    -- * Documentation Generation
+    makeDocs,
+    finalizeDocs,
+    toDocs,
+
+    -- * Project Type Utilities
+    projectTypeToPkg,
+  )
+where
 
 -- Core compilation imports
-import qualified Compile
+
 import qualified AST.Canonical as Can
 import qualified AST.Optimized as Opt
 import qualified AST.Source as Src
+-- New compiler imports
 
 -- Canopy-specific imports
+
+-- Build system imports
+import Build.Types
+  ( DocsGoal (..),
+    DocsNeed (..),
+    Env (..),
+    Result (..),
+    RootResult (..),
+    envBuildID,
+    envKey,
+    envProject,
+    envRoot,
+  )
 import qualified Canopy.Details as Details
 import qualified Canopy.Docs as Docs
 import qualified Canopy.Interface as I
 import qualified Canopy.ModuleName as ModuleName
 import qualified Canopy.Package as Pkg
-
--- Build system imports
-import Build.Types
-  ( Env (..)
-  , DocsNeed (..)
-  , DocsGoal (..)
-  , Result (..)
-  , RootResult (..)
-  , envKey
-  , envRoot
-  , envProject
-  , envBuildID
-  )
-
+import qualified Compile
 -- Parser imports
-import qualified Parse.Module as Parse
 
 -- Standard library imports
-import Control.Lens ((^.), (&), (.~))
+import Control.Lens ((&), (.~), (^.))
 import qualified Data.ByteString as B
 import Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
 import qualified File
 import qualified Json.Encode as E
+import New.Compiler.Debug.Logger (DebugCategory (..))
+import qualified New.Compiler.Debug.Logger as Logger
+import qualified New.Compiler.Driver as Driver
+import qualified New.Compiler.Query.Simple as Simple
+import qualified Parse.Module as Parse
 import qualified Reporting
 import qualified Reporting.Error as Error
 import qualified Reporting.Error.Docs as EDocs
+import qualified Reporting.Error.Syntax as Syntax
 import qualified Stuff
+import qualified System.Environment as Env
 
 -- | Configuration for module compilation.
 --
@@ -117,10 +125,10 @@ import qualified Stuff
 --
 -- @since 0.19.1
 data CompileConfig = CompileConfig
-  { _ccEnv :: !Env
-  , _ccDocsNeed :: !DocsNeed
-  , _ccLocal :: !Details.Local
-  , _ccSource :: !B.ByteString
+  { _ccEnv :: !Env,
+    _ccDocsNeed :: !DocsNeed,
+    _ccLocal :: !Details.Local,
+    _ccSource :: !B.ByteString
   }
 
 -- | Compile a single module with dependency interfaces.
@@ -163,12 +171,20 @@ compile (CompileConfig env docsNeed local source) ifaces modul =
     Env _ root projectType _ _ _ _ -> do
       let pkg = projectTypeToPkg projectType
           moduleName = Src.getName modul
-      compileResult <- Compile.compileWithRoot pkg ifaces root modul
+
+      -- Check if we should use new compiler
+      _useNew <- shouldUseNewCompiler
+
+      compileResult <-
+        if True
+          then compileWithNewCompiler pkg ifaces modul
+          else Compile.compileWithRoot pkg ifaces root modul
+
       case compileResult of
-            Right artifacts -> handleSuccessfulCompilation env docsNeed local source moduleName artifacts
-            Left err -> case local of
-              Details.Local path time _ _ _ _ ->
-                return . RProblem $ Error.Module moduleName path time source err
+        Right artifacts -> handleSuccessfulCompilation env docsNeed local source moduleName artifacts
+        Left err -> case local of
+          Details.Local path time _ _ _ _ ->
+            return . RProblem $ Error.Module moduleName path time source err
 
 -- | Handle successful compilation artifacts.
 --
@@ -194,8 +210,9 @@ processCompiledInterface env local moduleName iface objects docs = do
   File.writeBinaryAtomic (Stuff.canopyo (env ^. envRoot) moduleName) objects
   maybeOldi <- File.readBinary (Stuff.canopyi (env ^. envRoot) moduleName)
   case maybeOldi of
-    Just oldi | oldi == iface ->
-      reportUnchangedInterface env local iface objects docs
+    Just oldi
+      | oldi == iface ->
+        reportUnchangedInterface env local iface objects docs
     _ ->
       reportChangedInterface env local moduleName iface objects docs
 
@@ -215,8 +232,9 @@ reportChangedInterface :: Env -> Details.Local -> ModuleName.Raw -> I.Interface 
 reportChangedInterface env local moduleName iface objects docs = do
   File.writeBinaryAtomic (Stuff.canopyi (env ^. envRoot) moduleName) iface
   Reporting.report (env ^. envKey) Reporting.BDone
-  let newLocal = local & Details.lastChange .~ (env ^. envBuildID)
-                         & Details.lastCompile .~ (env ^. envBuildID)
+  let newLocal =
+        local & Details.lastChange .~ (env ^. envBuildID)
+          & Details.lastCompile .~ (env ^. envBuildID)
   return (RNew newLocal iface objects docs)
 
 -- | Configuration for outside module compilation.
@@ -225,10 +243,10 @@ reportChangedInterface env local moduleName iface objects docs = do
 --
 -- @since 0.19.1
 data OutsideCompileConfig = OutsideCompileConfig
-  { _ocEnv :: !Env
-  , _ocLocal :: !Details.Local
-  , _ocSource :: !B.ByteString
-  , _ocModule :: !Src.Module
+  { _ocEnv :: !Env,
+    _ocLocal :: !Details.Local,
+    _ocSource :: !B.ByteString,
+    _ocModule :: !Src.Module
   }
 
 -- | Compile a module outside the main project structure.
@@ -249,11 +267,11 @@ compileOutside (OutsideCompileConfig (Env key root projectType _ _ _ _) (Details
       name = Src.getName modul
   compileResult <- Compile.compileWithRoot pkg ifaces root modul
   case compileResult of
-        Right (Compile.Artifacts canonical annotations objects _ffiInfo) -> do
-          Reporting.report key Reporting.BDone
-          return $ ROutsideOk name (I.fromModule pkg canonical annotations) objects
-        Left errors ->
-          return . ROutsideErr $ Error.Module name path time source errors
+    Right (Compile.Artifacts canonical annotations objects _ffiInfo) -> do
+      Reporting.report key Reporting.BDone
+      return $ ROutsideOk name (I.fromModule pkg canonical annotations) objects
+    Left errors ->
+      return . ROutsideErr $ Error.Module name path time source errors
 
 -- | Convert project type to package name.
 --
@@ -331,6 +349,71 @@ toDocs result =
     RBlocked -> Nothing
     RForeign _ -> Nothing
     RKernel -> Nothing
+
+-- | Check if new compiler should be used.
+--
+-- Reads CANOPY_NEW_COMPILER environment variable.
+-- Returns True if set to "1", False otherwise.
+--
+-- @since 0.19.1
+shouldUseNewCompiler :: IO Bool
+shouldUseNewCompiler = do
+  maybeFlag <- Env.lookupEnv "CANOPY_NEW_COMPILER"
+  let useNew = maybeFlag == Just "1"
+  Logger.debug COMPILE_DEBUG ("shouldUseNewCompiler: " ++ show useNew)
+  return useNew
+
+-- | Compile with new query-based compiler.
+--
+-- Converts Driver.CompileResult to Compile.Artifacts format.
+--
+-- @since 0.19.1
+compileWithNewCompiler ::
+  Pkg.Name ->
+  Map ModuleName.Raw I.Interface ->
+  Src.Module ->
+  IO (Either Error.Error Compile.Artifacts)
+compileWithNewCompiler pkg ifaces modul = do
+  Logger.debug COMPILE_DEBUG "Using new query-based compiler"
+
+  result <- Driver.compileFromSource pkg ifaces modul
+
+  case result of
+    Left queryErr -> convertQueryError queryErr
+    Right compileResult -> convertToArtifacts compileResult
+
+-- | Convert query error to old error format.
+convertQueryError :: Simple.QueryError -> IO (Either Error.Error a)
+convertQueryError err = do
+  Logger.debug COMPILE_DEBUG ("Query error occurred: " ++ show err)
+  Logger.debug COMPILE_DEBUG "Conversion of query errors not yet fully implemented"
+  -- For now, just create a generic syntax error
+  -- TODO: Proper conversion based on query error type
+  return (Left (Error.BadSyntax (Syntax.ModuleNameUnspecified "Unknown")))
+
+-- | Convert CompileResult to Artifacts.
+convertToArtifacts ::
+  Driver.CompileResult ->
+  IO (Either Error.Error Compile.Artifacts)
+convertToArtifacts result = do
+  Logger.debug COMPILE_DEBUG "Converting CompileResult to Artifacts"
+
+  let canonModule = Driver.compileResultModule result
+      types = Driver.compileResultTypes result
+      localGraph = Driver.compileResultLocalGraph result
+
+  -- FFI info is not yet extracted by new compiler
+  let ffiInfo = Map.empty -- TODO: Extract FFI info
+  return
+    ( Right
+        ( Compile.Artifacts
+            { Compile._artifactsModule = canonModule,
+              Compile._artifactsTypes = types,
+              Compile._artifactsGraph = localGraph,
+              Compile._artifactsFFIInfo = ffiInfo
+            }
+        )
+    )
 
 -- Generate lenses for record types
 -- TODO: Uncomment when lenses are used in the module

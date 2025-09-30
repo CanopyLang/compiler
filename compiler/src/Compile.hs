@@ -71,11 +71,19 @@ import qualified Nitpick.PatternMatches as PatternMatches
 import qualified Optimize.Module as Optimize
 import qualified Reporting.Annotation as A
 import qualified Reporting.Error as E
+import qualified Reporting.Error.Syntax as Syntax
 import qualified Reporting.Render.Type.Localizer as Localizer
 import qualified Reporting.Result as R
 -- import System.IO.Unsafe (unsafePerformIO) -- No longer needed - fixed MVar deadlock by using IO properly
 import qualified Type.Constrain.Module as Type
 import qualified Type.Solve as Type
+
+-- New compiler integration
+import qualified New.Compiler.Driver as Driver
+import qualified New.Compiler.Debug.Logger as Logger
+import New.Compiler.Debug.Logger (DebugCategory (..))
+import qualified New.Compiler.Query.Simple as Simple
+import qualified System.Environment as Env
 
 -- | Compilation artifacts containing all outputs from the compilation pipeline.
 --
@@ -168,7 +176,62 @@ compile ::
   Src.Module ->
   -- | Compilation artifacts or error (now in IO monad for thread safety)
   IO (Either E.Error Artifacts)
-compile pkg ifaces modul@(Src.Module _ _ _ _ foreignImports _ _ _ _ _) = do
+compile pkg ifaces modul = do
+  -- Check if we should use new compiler
+  useNew <- shouldUseNewCompiler
+  if useNew
+    then compileWithNewCompiler pkg ifaces modul
+    else compileWithOldCompiler pkg ifaces modul
+
+-- | Check if new compiler should be used.
+shouldUseNewCompiler :: IO Bool
+shouldUseNewCompiler = do
+  maybeFlag <- Env.lookupEnv "CANOPY_NEW_COMPILER"
+  return (maybeFlag == Just "1")
+
+-- | Compile with new query-based compiler.
+compileWithNewCompiler ::
+  Pkg.Name ->
+  Map ModuleName.Raw I.Interface ->
+  Src.Module ->
+  IO (Either E.Error Artifacts)
+compileWithNewCompiler pkg ifaces modul = do
+  Logger.debug COMPILE_DEBUG "[Compile.hs] Using new query-based compiler"
+
+  result <- Driver.compileFromSource pkg ifaces modul
+
+  case result of
+    Left queryErr -> convertQueryError queryErr
+    Right compileResult -> convertToArtifacts compileResult
+
+-- | Convert query error to old error format.
+convertQueryError :: Simple.QueryError -> IO (Either E.Error a)
+convertQueryError err = do
+  Logger.debug COMPILE_DEBUG ("[Compile.hs] Query error: " ++ show err)
+  -- TODO: Proper error conversion
+  return (Left (E.BadSyntax (Syntax.ModuleNameUnspecified "Unknown")))
+
+-- | Convert CompileResult to Artifacts.
+convertToArtifacts ::
+  Driver.CompileResult ->
+  IO (Either E.Error Artifacts)
+convertToArtifacts result = do
+  Logger.debug COMPILE_DEBUG "[Compile.hs] Converting CompileResult to Artifacts"
+
+  let canonModule = Driver.compileResultModule result
+      types = Driver.compileResultTypes result
+      localGraph = Driver.compileResultLocalGraph result
+      ffiInfo = Map.empty  -- TODO: Extract FFI info
+
+  return (Right (Artifacts canonModule types localGraph ffiInfo))
+
+-- | Compile with old compiler (original implementation).
+compileWithOldCompiler ::
+  Pkg.Name ->
+  Map ModuleName.Raw I.Interface ->
+  Src.Module ->
+  IO (Either E.Error Artifacts)
+compileWithOldCompiler pkg ifaces modul@(Src.Module _ _ _ _ foreignImports _ _ _ _ _) = do
   -- DEBUG: Add detailed logging to track compilation progress
   putStrLn ("COMPILE-INTERNAL: Starting compilation for pkg " <> show pkg)
   putStrLn ("COMPILE-INTERNAL: Module has " <> show (length foreignImports) <> " foreign imports")

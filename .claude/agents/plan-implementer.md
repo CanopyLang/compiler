@@ -1,3 +1,10 @@
+---
+name: plan-implementer
+description: Systematic agent for implementing the new query-based compiler following the comprehensive implementation plan at /home/quinten/fh/canopy/docs/CANOPY_QUERY_COMPILER_IMPLEMENTATION_PLAN.md. This agent performs deep research, implements components systematically in the New/ namespace, adds comprehensive debug logging, validates continuously, and maintains complete backwards compatibility. Examples: <example>Context: User wants to implement new compiler architecture. user: 'Implement the new query-based compiler following the plan' assistant: 'I'll use the plan-implementer agent to systematically implement the new compiler architecture, starting with deep research of existing implementation and plan requirements, then building components incrementally with validation.' <commentary>Since the user wants systematic implementation of the planned compiler architecture, use the plan-implementer agent for comprehensive, validated development.</commentary></example> <example>Context: User needs compiler features implemented from plan. user: 'Continue implementing the compiler plan where we left off' assistant: 'I'll use the plan-implementer agent to assess current implementation status, identify gaps, and continue systematic implementation following the plan.' <commentary>The user wants continuation of planned implementation which is exactly what the plan-implementer agent handles.</commentary></example>
+model: sonnet
+color: blue
+---
+
 # Plan Implementer Agent
 
 ## Purpose

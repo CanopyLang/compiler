@@ -87,7 +87,7 @@ testDebug = testGroup "debug Tests"
   , testCase "debug handles empty modules" $ do
       let root = "/test/root"
       let details = sampleDetails
-      let artifacts = Build.Artifacts samplePackage Map.empty (NE.List sampleRoot []) []
+      let artifacts = Build.Artifacts samplePackage Map.empty (NE.List sampleRoot []) [] Map.empty
       
       result <- Task.run $ Generate.debug root details artifacts
       
@@ -321,7 +321,7 @@ edgeCaseTests = testGroup "Edge Case Tests"
       let details = sampleDetails
       let moduleCount = 100
       let modules = map (\i -> Build.Fresh (N.fromChars ("Module" ++ show i)) sampleInterface sampleLocalGraph) [1..moduleCount]
-      let artifacts = Build.Artifacts samplePackage Map.empty (NE.List sampleRoot []) modules
+      let artifacts = Build.Artifacts samplePackage Map.empty (NE.List sampleRoot []) modules Map.empty
       
       result <- Task.run $ Generate.debug root details artifacts
       
@@ -334,7 +334,7 @@ edgeCaseTests = testGroup "Edge Case Tests"
       let details = sampleDetails
       let deepModuleName = "Very.Deeply.Nested.Module.Name.Here"
       let modules = [Build.Fresh deepModuleName sampleInterface sampleLocalGraph]
-      let artifacts = Build.Artifacts samplePackage Map.empty (NE.List sampleRoot []) modules
+      let artifacts = Build.Artifacts samplePackage Map.empty (NE.List sampleRoot []) modules Map.empty
       
       result <- Task.run $ Generate.dev root details artifacts
       
@@ -346,7 +346,7 @@ edgeCaseTests = testGroup "Edge Case Tests"
       let root = "/test/root"
       let details = sampleDetails
       let modules = [Build.Fresh "Minimal" sampleInterface sampleCleanLocalGraph]
-      let artifacts = Build.Artifacts samplePackage Map.empty (NE.List sampleRoot []) modules
+      let artifacts = Build.Artifacts samplePackage Map.empty (NE.List sampleRoot []) modules Map.empty
       
       result <- Task.run $ Generate.prod root details artifacts
       
@@ -370,7 +370,7 @@ edgeCaseTests = testGroup "Edge Case Tests"
       let root = "/test/root"
       let details = sampleDetails
       let modules = [Build.Fresh "Test" sampleInterface sampleLocalGraph]
-      let artifacts = Build.Artifacts samplePackage Map.empty (NE.List sampleRoot []) modules
+      let artifacts = Build.Artifacts samplePackage Map.empty (NE.List sampleRoot []) modules Map.empty
       
       result <- Task.run $ Generate.debug root details artifacts
       
@@ -422,7 +422,7 @@ errorConditionTests = testGroup "Error Condition Tests"
       let cleanModule = Build.Fresh (N.fromChars "Clean") sampleInterface sampleCleanLocalGraph
       let debugModule = Build.Fresh (N.fromChars "Debug") sampleInterface sampleDebugLocalGraph
       let modules = [cleanModule, debugModule]
-      let artifacts = Build.Artifacts samplePackage Map.empty (NE.List sampleRoot []) modules
+      let artifacts = Build.Artifacts samplePackage Map.empty (NE.List sampleRoot []) modules Map.empty
       
       result <- Task.run $ Generate.prod root details artifacts
       
@@ -523,25 +523,25 @@ sampleSrcDir :: Outline.SrcDir
 sampleSrcDir = Outline.AbsoluteSrcDir "/test/src"
 
 sampleArtifacts :: Build.Artifacts
-sampleArtifacts = Build.Artifacts samplePackage Map.empty (NE.List sampleRoot []) []
+sampleArtifacts = Build.Artifacts samplePackage Map.empty (NE.List sampleRoot []) [] Map.empty
 
 sampleArtifactsWithFreshModule :: Build.Artifacts
-sampleArtifactsWithFreshModule = 
+sampleArtifactsWithFreshModule =
   let modules = [Build.Fresh (N.fromChars "Main") sampleInterface sampleLocalGraph]
-  in Build.Artifacts samplePackage Map.empty (NE.List sampleRoot []) modules
+  in Build.Artifacts samplePackage Map.empty (NE.List sampleRoot []) modules Map.empty
 
 sampleArtifactsWithCleanModules :: Build.Artifacts
-sampleArtifactsWithCleanModules = 
+sampleArtifactsWithCleanModules =
   let modules = [Build.Fresh (N.fromChars "Clean") sampleInterface sampleCleanLocalGraph]
-  in Build.Artifacts samplePackage Map.empty (NE.List sampleRoot []) modules
+  in Build.Artifacts samplePackage Map.empty (NE.List sampleRoot []) modules Map.empty
 
 sampleArtifactsWithDebugUses :: Build.Artifacts
-sampleArtifactsWithDebugUses = 
+sampleArtifactsWithDebugUses =
   let modules = [Build.Fresh (N.fromChars "Debug") sampleInterface sampleDebugLocalGraph]
-  in Build.Artifacts samplePackage Map.empty (NE.List sampleRoot []) modules
+  in Build.Artifacts samplePackage Map.empty (NE.List sampleRoot []) modules Map.empty
 
 sampleCorruptedArtifacts :: Build.Artifacts
-sampleCorruptedArtifacts = Build.Artifacts samplePackage Map.empty (NE.List sampleRoot []) []
+sampleCorruptedArtifacts = Build.Artifacts samplePackage Map.empty (NE.List sampleRoot []) [] Map.empty
 
 sampleReplArtifacts :: Build.ReplArtifacts
 sampleReplArtifacts = 

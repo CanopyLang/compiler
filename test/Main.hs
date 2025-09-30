@@ -102,6 +102,7 @@ import qualified Unit.Terminal.ErrorTest as TerminalErrorTest
 import qualified Unit.ReportingTest as ReportingTest
 import qualified Unit.TerminalTest as TerminalTest
 import qualified Unit.WatchTest as WatchTest
+import qualified Unit.New.Compiler.DriverTest as NewCompilerDriverTest
 
 main :: IO ()
 main = defaultMain tests
@@ -185,7 +186,8 @@ unitTests =
       GenerateTypesLoadingTest.tests,
       GenerateValidationTest.tests,
       GenerateMainsTest.tests,
-      HttpTest.tests
+      HttpTest.tests,
+      NewCompilerDriverTest.tests
     ]
 
 propertyTests :: TestTree

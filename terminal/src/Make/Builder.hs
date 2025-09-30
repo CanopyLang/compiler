@@ -57,6 +57,8 @@ import Make.Types
     bcRoot,
     bcStyle,
   )
+import qualified New.Compiler.Bridge as Bridge
+import qualified Reporting
 import qualified Reporting.Exit as Exit
 import qualified Reporting.Task as Task
 
@@ -87,6 +89,9 @@ buildFromExposed ctx exposedModules maybeDocs = do
 -- Compiles modules found at the given file paths. Used for application
 -- builds and targeted compilation of specific modules.
 --
+-- Checks CANOPY_NEW_COMPILER environment variable to switch between
+-- old and new query-based compiler implementations.
+--
 -- @
 -- artifacts <- buildFromPaths ctx [\"src/Main.hs\", \"src/Utils.hs\"]
 -- @
@@ -98,8 +103,34 @@ buildFromPaths ctx paths = do
   let style = ctx ^. bcStyle
       root = ctx ^. bcRoot
       details = ctx ^. bcDetails
+
+  useNew <- Task.io Bridge.shouldUseNewCompiler
+
+  if useNew
+    then buildWithNewCompiler style root details paths
+    else buildWithOldCompiler style root details paths
+
+-- | Build with old compiler (Build.fromPaths).
+buildWithOldCompiler ::
+  Reporting.Style ->
+  FilePath ->
+  Details.Details ->
+  List FilePath ->
+  Task Build.Artifacts
+buildWithOldCompiler style root details paths =
   Task.eio Exit.MakeCannotBuild $
     Build.fromPaths style root details paths
+
+-- | Build with new query-based compiler.
+buildWithNewCompiler ::
+  Reporting.Style ->
+  FilePath ->
+  Details.Details ->
+  List FilePath ->
+  Task Build.Artifacts
+buildWithNewCompiler style root details paths =
+  Task.eio Exit.MakeCannotBuild $
+    Bridge.compileFromPaths style root details paths
 
 -- | Create output builder from compiled artifacts.
 --
