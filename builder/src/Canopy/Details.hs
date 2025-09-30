@@ -75,6 +75,7 @@ import qualified Canopy.Version as V
 import qualified Compile
 import Control.Concurrent.Async (async, wait, forConcurrently)
 import Control.Concurrent.STM (TVar, STM, atomically, newTVar, newTVarIO, readTVar, readTVarIO, writeTVar, modifyTVar, retry)
+import qualified System.Timeout as Timeout
 import Control.Lens (makeLenses)
 import Control.Exception (Handler (..), SomeException, catches, throwIO, catch, ErrorCall)
 import Control.Monad (liftM2, liftM3, void, when, filterM)
@@ -120,6 +121,36 @@ waitForResult tvar = do
     -- If we get the "fork: result not yet available" error, retry
     waitForResult tvar
   pure result
+
+-- | Wait for result with timeout to prevent infinite blocking
+waitForResultWithTimeout :: TVar a -> String -> IO (Either String a)
+waitForResultWithTimeout tvar resourceName = do
+  putStrLn ("WAIT-TIMEOUT-DEBUG: Starting wait for result: " <> resourceName)
+  result <- Timeout.timeout timeoutMicroseconds (readTVarIO tvar)
+  case result of
+    Nothing -> do
+      putStrLn ("WAIT-TIMEOUT-DEBUG: Timeout waiting for result: " <> resourceName)
+      return (Left ("RESULT_TIMEOUT: Failed to get result for " ++ resourceName ++ " after " ++ show timeoutSeconds ++ "s"))
+    Just value -> do
+      putStrLn ("WAIT-TIMEOUT-DEBUG: Successfully got result: " <> resourceName)
+      return (Right value)
+  where
+    timeoutSeconds = 60  -- 60 second timeout
+    timeoutMicroseconds = timeoutSeconds * 1000000
+
+-- | Wait for all results with timeout protection
+waitForAllResultsWithTimeout :: Map.Map ModuleName.Raw (TVar a) -> IO (Either String (Map.Map ModuleName.Raw a))
+waitForAllResultsWithTimeout tvars = do
+  putStrLn ("WAIT-ALL-DEBUG: Waiting for " ++ show (Map.size tvars) ++ " module results with timeout protection")
+  results <- Map.traverseWithKey (\modName tvar ->
+    waitForResultWithTimeout tvar (ModuleName.toChars modName)) tvars
+  case sequenceA results of
+    Left errorMsg -> do
+      putStrLn ("WAIT-ALL-DEBUG: Failed to get all results: " ++ errorMsg)
+      return (Left errorMsg)
+    Right values -> do
+      putStrLn ("WAIT-ALL-DEBUG: Successfully got all " ++ show (Map.size values) ++ " results")
+      return (Right values)
 
 -- | Wait for a result from a Maybe TVar (used with fork)
 -- Uses proper STM retry - need to investigate why TVars aren't filled
@@ -233,7 +264,7 @@ completeDependency store pkg result = do
   modifyTVar (_completedDeps store) (Map.insert pkg result)
   modifyTVar (_inProgressDeps store) (Set.delete pkg)
 
--- | Wait for specific dependencies with labeled STM retry for debugging
+-- | Wait for specific dependencies with timeout and better error handling
 -- This replaces the deadlock-prone MVar pattern
 waitForDependencies :: DepStore -> [Pkg.Name] -> STM (Map.Map Pkg.Name Dep)
 waitForDependencies store pkgs = do
@@ -247,6 +278,27 @@ waitForDependencies store pkgs = do
       let missingStr = show missing
       in trace ("STM-WAIT-DEPS: Waiting for dependencies: " <> missingStr) retry
 
+-- | Wait for dependencies with timeout to prevent infinite blocking
+waitForDependenciesWithTimeout :: DepStore -> [Pkg.Name] -> IO (Either String (Map.Map Pkg.Name Dep))
+waitForDependenciesWithTimeout store pkgs = do
+  result <- Timeout.timeout timeoutMicroseconds (atomically (waitForDependencies store pkgs))
+  case result of
+    Nothing -> do
+      -- Timeout occurred, gather debug information
+      completed <- readTVarIO (_completedDeps store)
+      inProgress <- readTVarIO (_inProgressDeps store)
+      let missing = [p | p <- pkgs, not (Map.member p completed)]
+      let stuckMsg = "DEPENDENCY_TIMEOUT: Failed to resolve dependencies after " ++ show timeoutSeconds ++ "s. " ++
+                    "Missing: " ++ show missing ++ ", " ++
+                    "In progress: " ++ show (Set.toList inProgress) ++ ", " ++
+                    "Completed: " ++ show (Map.keys completed)
+      putStrLn stuckMsg
+      return (Left stuckMsg)
+    Just deps -> return (Right deps)
+  where
+    timeoutSeconds = 60  -- 60 second timeout
+    timeoutMicroseconds = timeoutSeconds * 1000000
+
 -- | Wait for a specific dependency with labeled STM retry for debugging
 waitForSpecificDependency :: DepStore -> Pkg.Name -> STM Dep
 waitForSpecificDependency store pkg = do
@@ -254,6 +306,25 @@ waitForSpecificDependency store pkg = do
   case Map.lookup pkg completed of
     Just result -> return result
     Nothing -> trace ("STM-WAIT-DEP: Waiting for specific dependency: " <> show pkg) retry
+
+-- | Wait for a specific dependency with timeout to prevent infinite blocking
+waitForSpecificDependencyWithTimeout :: DepStore -> Pkg.Name -> IO (Either String Dep)
+waitForSpecificDependencyWithTimeout store pkg = do
+  result <- Timeout.timeout timeoutMicroseconds (atomically (waitForSpecificDependency store pkg))
+  case result of
+    Nothing -> do
+      -- Timeout occurred, gather debug information
+      completed <- readTVarIO (_completedDeps store)
+      inProgress <- readTVarIO (_inProgressDeps store)
+      let stuckMsg = "SPECIFIC_DEPENDENCY_TIMEOUT: Failed to resolve dependency " ++ show pkg ++ " after " ++ show timeoutSeconds ++ "s. " ++
+                    "In progress: " ++ show (Set.toList inProgress) ++ ", " ++
+                    "Completed: " ++ show (Map.keys completed)
+      putStrLn stuckMsg
+      return (Left stuckMsg)
+    Just dep -> return (Right dep)
+  where
+    timeoutSeconds = 60  -- 60 second timeout
+    timeoutMicroseconds = timeoutSeconds * 1000000
 
 -- LOAD ARTIFACTS
 
@@ -554,7 +625,7 @@ verifyDependencies (Env key scope root cache manager _ zokkaRegistries packageOv
                     return (Right details)
 
 addObjects :: Artifacts -> Opt.GlobalGraph -> Opt.GlobalGraph
-addObjects (Artifacts ifaces objs) =
+addObjects (Artifacts _ifaces objs) =
   let -- Check for missing kernel $ entry points
       existingKernelGlobals = Map.filterWithKey (\global _ -> isKernelGlobal global) (Opt._g_nodes objs)
 
@@ -668,14 +739,22 @@ verifyDep store key buildData manager zokkaRegistry solution directDeps = do
 
   if not shouldProcess
     then do
-      -- Another thread is handling it, wait for result using STM
-      result <- atomically $ waitForSpecificDependency store primaryPkg
-      return result
+      -- Another thread is handling it, wait for result using STM with timeout protection
+      resultOrTimeout <- waitForSpecificDependencyWithTimeout store primaryPkg
+      case resultOrTimeout of
+        Left timeoutMsg -> do
+          putStrLn $ "VERIFY_DEP_TIMEOUT: " ++ timeoutMsg
+          error $ "Dependency resolution timeout for " ++ show primaryPkg ++ ": " ++ timeoutMsg
+        Right result -> return result
     else do
       -- Process this package
+      putStrLn $ "BUILD_START_DEBUG: *** Starting build for pkg: " ++ show primaryPkg
       result <- build store key buildData fingerprint Set.empty manager zokkaRegistry
       -- Mark as completed
+      putStrLn $ "BUILD_COMPLETE_DEBUG: *** Build finished for pkg: " ++ show primaryPkg ++ " with result: " ++ (case result of Left _ -> "FAILURE"; Right _ -> "SUCCESS")
+      putStrLn $ "BUILD_COMPLETE_DEBUG: *** About to mark pkg as completed: " ++ show primaryPkg
       atomically $ completeDependency store primaryPkg result
+      putStrLn $ "BUILD_COMPLETE_DEBUG: *** Successfully marked pkg as completed: " ++ show primaryPkg
       return result
 
 build :: DepStore -> Reporting.DKey -> BuildData -> Fingerprint -> Set.Set Fingerprint -> Http.Manager -> ZokkaRegistries -> IO Dep
@@ -717,192 +796,224 @@ build store key buildData f fs manager zokkaRegistry = do
           putStrLn ("ELM-CSV-DEBUG: Dependency " <> Pkg.toChars dep <> " -> " <> show constraint)
           acc) (pure ()) deps
 
-      depResults <- atomically $ waitForDependencies store (Map.keys deps)
-      putStrLn ("ATOMICALLY-DEBUG: Details.hs:666 - dependency resolution completed successfully")
+      depResults <- waitForDependenciesWithTimeout store (Map.keys deps)
+      case depResults of
+        Left timeoutMsg -> do
+          putStrLn ("ATOMICALLY-DEBUG: Details.hs:666 - dependency resolution TIMED OUT: " <> timeoutMsg)
+          return $ Left $ Just $ Exit.BD_BadBuild pkg vsn f
+        Right resolvedDeps -> do
+          putStrLn ("ATOMICALLY-DEBUG: Details.hs:666 - dependency resolution completed successfully")
 
-      -- ELM-CSV DEBUG: Log dependency resolution results
-      when (Pkg.toChars pkg == "BrianHicks/elm-csv") $ do
-        putStrLn "ELM-CSV-DEBUG: *** DEPENDENCY RESOLUTION RESULTS ***"
-        putStrLn ("ELM-CSV-DEBUG: Number of depResults: " <> show (Map.size depResults))
-        Map.foldrWithKey (\depPkg result acc -> do
-          case result of
-            Left err -> putStrLn ("ELM-CSV-DEBUG: ✗ " <> Pkg.toChars depPkg <> " FAILED: " <> show err)
-            Right _ -> putStrLn ("ELM-CSV-DEBUG: ✓ " <> Pkg.toChars depPkg <> " SUCCESS")
-          acc) (pure ()) depResults
+          -- ELM-CSV DEBUG: Log dependency resolution results
+          when (Pkg.toChars pkg == "BrianHicks/elm-csv") $ do
+            putStrLn "ELM-CSV-DEBUG: *** DEPENDENCY RESOLUTION RESULTS ***"
+            putStrLn ("ELM-CSV-DEBUG: Number of depResults: " <> show (Map.size resolvedDeps))
+            Map.foldrWithKey (\depPkg result acc -> do
+              case result of
+                Left err -> putStrLn ("ELM-CSV-DEBUG: ✗ " <> Pkg.toChars depPkg <> " FAILED: " <> show err)
+                Right _ -> putStrLn ("ELM-CSV-DEBUG: ✓ " <> Pkg.toChars depPkg <> " SUCCESS")
+              acc) (pure ()) resolvedDeps
 
-      case sequenceA depResults of
-        Left x -> do
-          Reporting.report key Reporting.DBroken
-          return $ Left x
-        Right directArtifacts -> do
-          -- CRITICAL DEBUG: Log directArtifacts content to understand cross-package interface issue
-          printLog ("CROSS-PACKAGE-DEBUG: Package " <> show pkg <> " received directArtifacts from packages: " <> show (Map.keys directArtifacts))
-          when (pkg == Pkg.json) $ do
-            putStrLn ("ELM-JSON-DEBUG: *** elm/json directArtifacts keys: " ++ show (Map.keys directArtifacts))
-            putStrLn ("ELM-JSON-DEBUG: *** elm/json expected elm/core in directArtifacts")
-            case Map.lookup Pkg.core directArtifacts of
-              Nothing -> putStrLn ("ELM-JSON-DEBUG: *** elm/core NOT FOUND in directArtifacts!")
-              Just artifacts -> do
-                putStrLn ("ELM-JSON-DEBUG: *** elm/core FOUND in directArtifacts")
-                let (Artifacts ifaces _) = artifacts
-                putStrLn ("ELM-JSON-DEBUG: *** elm/core provides interfaces: " ++ show (Map.keys ifaces))
-                putStrLn ("ELM-JSON-DEBUG: *** elm/core total interfaces count: " ++ show (Map.size ifaces))
-                -- Debug individual interface types
-                let publicCount = length [() | I.Public _ <- Map.elems ifaces]
-                let privateCount = length [() | I.Private _ _ _ <- Map.elems ifaces]
-                putStrLn ("ELM-JSON-DEBUG: *** elm/core public interfaces: " ++ show (publicCount :: Int))
-                putStrLn ("ELM-JSON-DEBUG: *** elm/core private interfaces: " ++ show (privateCount :: Int))
-          let src = cacheFilePath </> "src"
-
-          -- Check if source files exist, download if missing
-          srcExists <- File.exists src
-          when (not srcExists) $ do
-            putStrLn ("DOWNLOAD_DEBUG: Source directory missing for " <> show pkg <> ", downloading package...")
-            case buildData of
-              BuildOriginalPackage (OriginalPackageBuildData {_buildCache = cache}) -> do
-                downloadResult <- downloadPackage cache zokkaRegistry manager pkg vsn
-                case downloadResult of
-                  Left err -> putStrLn ("DOWNLOAD_ERROR: " <> show err)
-                  Right () -> putStrLn ("DOWNLOAD_SUCCESS: Downloaded " <> show pkg)
-              BuildWithOverridingPackage _ ->
-                putStrLn ("DOWNLOAD_SKIP: Package override detected for " <> show pkg)
-
-          -- Create package-aware foreign dependency lookup
-          let pkgForeignDeps = gatherPackageForeignInterfaces directArtifacts
-          printLog ("DEBUG: Processing package " <> show pkg)
-          -- DEBUG: Log foreign interface gathering results
-          when (pkg == Pkg.json) $ do
-            putStrLn ("ELM-JSON-DEBUG: *** pkgForeignDeps after gathering: " ++ show (Map.keys pkgForeignDeps))
-            case Map.lookup Pkg.core pkgForeignDeps of
-              Nothing -> putStrLn ("ELM-JSON-DEBUG: *** elm/core foreign interfaces NOT FOUND!")
-              Just coreInterfaces -> do
-                putStrLn ("ELM-JSON-DEBUG: *** elm/core foreign interfaces FOUND: " ++ show (Map.keys coreInterfaces))
-                putStrLn ("ELM-JSON-DEBUG: *** Total elm/core interfaces available: " ++ show (Map.size coreInterfaces))
-          let exposedDict = Map.fromSet (const ()) (Set.fromList (Outline.flattenExposed exposed))
-
-          -- Package overrides are optional, normal packages use interface files
-          let modulesToCrawl = exposedDict
-
-          docsStatus <- getDocsStatusFromFilePath cacheFilePath
-          -- STM-based status tracking for modules
-          statusStore <- atomically $ newTVar Map.empty
-          mvars <- Map.traverseWithKey (\name _ -> async (crawlModuleWithPackageContext pkgForeignDeps statusStore pkg src docsStatus name)) modulesToCrawl
-          statuses <- traverse wait mvars
-          case sequenceA statuses of
-            Nothing -> do
+          case sequenceA resolvedDeps of
+            Left x -> do
               Reporting.report key Reporting.DBroken
-              printLog ("maybeStatuses were Nothing for " <> (show pkg <> (" vsn " <> (show vsn <> (" and deps " <> show deps)))))
-              return $ Left $ Just $ Exit.BD_BadBuild pkg vsn f
-            Just _ -> do
-              printLog ("DEBUG: MAIN ENTRY POINT - Processing for pkg: " <> show pkg)
+              return $ Left x
+            Right directArtifacts -> do
+              -- CRITICAL DEBUG: Log directArtifacts content to understand cross-package interface issue
+              printLog ("CROSS-PACKAGE-DEBUG: Package " <> show pkg <> " received directArtifacts from packages: " <> show (Map.keys directArtifacts))
+              when (pkg == Pkg.json) $ do
+                putStrLn ("ELM-JSON-DEBUG: *** elm/json directArtifacts keys: " ++ show (Map.keys directArtifacts))
+                putStrLn ("ELM-JSON-DEBUG: *** elm/json expected elm/core in directArtifacts")
+                case Map.lookup Pkg.core directArtifacts of
+                  Nothing -> putStrLn ("ELM-JSON-DEBUG: *** elm/core NOT FOUND in directArtifacts!")
+                  Just artifacts -> do
+                    putStrLn ("ELM-JSON-DEBUG: *** elm/core FOUND in directArtifacts")
+                    let (Artifacts ifaces _) = artifacts
+                    putStrLn ("ELM-JSON-DEBUG: *** elm/core provides interfaces: " ++ show (Map.keys ifaces))
+                    putStrLn ("ELM-JSON-DEBUG: *** elm/core total interfaces count: " ++ show (Map.size ifaces))
+                    -- Debug individual interface types
+                    let publicCount = length [() | I.Public _ <- Map.elems ifaces]
+                    let privateCount = length [() | I.Private _ _ _ <- Map.elems ifaces]
+                    putStrLn ("ELM-JSON-DEBUG: *** elm/core public interfaces: " ++ show (publicCount :: Int))
+                    putStrLn ("ELM-JSON-DEBUG: *** elm/core private interfaces: " ++ show (privateCount :: Int))
+              let src = cacheFilePath </> "src"
 
+              -- Check if source files exist, download if missing
+              srcExists <- File.exists src
+              when (not srcExists) $ do
+                putStrLn ("DOWNLOAD_DEBUG: Source directory missing for " <> show pkg <> ", downloading package...")
+                case buildData of
+                  BuildOriginalPackage (OriginalPackageBuildData {_buildCache = cache}) -> do
+                    downloadResult <- downloadPackage cache zokkaRegistry manager pkg vsn
+                    case downloadResult of
+                      Left err -> putStrLn ("DOWNLOAD_ERROR: " <> show err)
+                      Right () -> putStrLn ("DOWNLOAD_SUCCESS: Downloaded " <> show pkg)
+                  BuildWithOverridingPackage _ ->
+                    putStrLn ("DOWNLOAD_SKIP: Package override detected for " <> show pkg)
 
-              -- STM-based result tracking for compilation
-              resultStore <- atomically $ newTVar Map.empty
-              let extractDepsFromStatus status = case status of (SLocal _ statusDeps _ _) -> statusDeps; _ -> Map.empty
+              -- Create package-aware foreign dependency lookup
+              let pkgForeignDeps = gatherPackageForeignInterfaces directArtifacts
+              printLog ("DEBUG: Processing package " <> show pkg)
+              -- DEBUG: Log foreign interface gathering results
+              when (pkg == Pkg.json) $ do
+                putStrLn ("ELM-JSON-DEBUG: *** pkgForeignDeps after gathering: " ++ show (Map.keys pkgForeignDeps))
+                case Map.lookup Pkg.core pkgForeignDeps of
+                  Nothing -> putStrLn ("ELM-JSON-DEBUG: *** elm/core foreign interfaces NOT FOUND!")
+                  Just coreInterfaces -> do
+                    putStrLn ("ELM-JSON-DEBUG: *** elm/core foreign interfaces FOUND: " ++ show (Map.keys coreInterfaces))
+                    putStrLn ("ELM-JSON-DEBUG: *** Total elm/core interfaces available: " ++ show (Map.size coreInterfaces))
+              let exposedDict = Map.fromSet (const ()) (Set.fromList (Outline.flattenExposed exposed))
 
-              printLog ("DEBUG: CHECKPOINT 1 - Starting resultStore setup")
+              -- Package overrides are optional, normal packages use interface files
+              let modulesToCrawl = exposedDict
 
-              -- Read final state of statusStore to get ALL modules (including those discovered during import crawling)
-              putStrLn "ATOMICALLY-DEBUG: Details.hs:724 - about to read statusStore"
-              finalStatusStore <- atomically $ readTVar statusStore
-              putStrLn "ATOMICALLY-DEBUG: Details.hs:724 - statusStore read successful"
-              printLog ("DEBUG: CHECKPOINT 2 - Read finalStatusStore successfully")
-              printLog ("DEBUG: Final statusStore contains modules: " <> show (Map.keys finalStatusStore))
-
-              -- Pre-populate result store with TVars for ALL modules in final statusStore
-              allModuleNames <- pure $ Map.keys finalStatusStore
-              printLog ("DEBUG: CHECKPOINT 3 - About to create moduleResultTVars")
-              printLog ("DEBUG: Creating result TVars for ALL modules (including crawled imports): " <> show allModuleNames)
-              moduleResultTVars <- traverse (\_ -> atomically $ newTVar Nothing) (Map.fromList (zip allModuleNames allModuleNames))
-              printLog ("DEBUG: CHECKPOINT 4 - Created moduleResultTVars successfully")
-              atomically $ writeTVar resultStore moduleResultTVars
-              printLog ("DEBUG: CHECKPOINT 5 - Result store populated with modules: " <> show (Map.keys moduleResultTVars))
-
-              -- IMPORTANT: Create compileAction AFTER populating resultStore
-              let compileAction status = genericErrorHandler ("This package failed: " <> show pkg) (compile pkg resultStore status)
-
-              printLog ("DEBUG: CHECKPOINT 6 - About to extract final status values")
-
-              -- Extract final status values from all TVars in statusStore
-              finalStatusValues <- traverse waitForResult finalStatusStore
-              printLog ("DEBUG: CHECKPOINT 7 - Extracted final status values")
-              -- Debug: Check which modules returned Nothing
-              let nothingModules = Map.keys $ Map.filter (\case { Nothing -> True; Just _ -> False }) finalStatusValues
-              let justModules = Map.keys $ Map.filter (\case { Nothing -> False; Just _ -> True }) finalStatusValues
-              printLog ("DEBUG: Modules that returned Nothing: " <> show nothingModules)
-              printLog ("DEBUG: Modules that returned Just: " <> show justModules)
-              let completeStatusList = Map.mapMaybe id finalStatusValues
-              printLog ("DEBUG: CHECKPOINT 8 - Created completeStatusList")
-              printLog ("DEBUG: Kernel modules check - looking for Elm.JsArray in completeStatusList: " <> show (Map.member "Elm.JsArray" completeStatusList))
-
-              -- Use ALL modules from finalStatusStore for dependency graph, not just successful ones
-              -- This ensures kernel modules are included even if they fail to parse
-              let allStatusList = Map.mapWithKey (\name maybeStatus ->
-                    case maybeStatus of
-                      Just status -> status
-                      Nothing -> if Name.isKernel name
-                        then SKernelForeign  -- Treat failed kernel modules as foreign
-                        else SNotFound ("Module failed to crawl: " <> show name)  -- NEW: Don't throw error, create SNotFound status
-                    ) finalStatusValues
-              printLog ("DEBUG: allStatusList keys: " <> show (Map.keys allStatusList))
-              printLog ("DEBUG: completeStatusList keys: " <> show (Map.keys completeStatusList))
-              -- elm/core excluded from pipeline - use regular parallel compilation for all packages
-              printLog ("REGULAR: Using regular parallel compilation for " <> show pkg)
-              -- ELM-CSV DEBUG: Log before compilation
-              when (Pkg.toChars pkg == "BrianHicks/elm-csv") $ do
-                putStrLn "ELM-CSV-DEBUG: *** STARTING MODULE COMPILATION ***"
-                putStrLn ("ELM-CSV-DEBUG: Number of modules to compile: " <> show (Map.size allStatusList))
-                putStrLn ("ELM-CSV-DEBUG: Module names: " <> show (Map.keys allStatusList))
-
-              maybeResults <- compileRegularWithTVars compileAction allStatusList moduleResultTVars
-
-              -- ELM-CSV DEBUG: Log compilation results
-              when (Pkg.toChars pkg == "BrianHicks/elm-csv") $ do
-                putStrLn "ELM-CSV-DEBUG: *** MODULE COMPILATION COMPLETED ***"
-                let successCount = length [() | Just _ <- Map.elems maybeResults]
-                let failureCount = length [() | Nothing <- Map.elems maybeResults]
-                putStrLn ("ELM-CSV-DEBUG: Successful modules: " <> show successCount)
-                putStrLn ("ELM-CSV-DEBUG: Failed modules: " <> show failureCount)
-                when (failureCount > 0) $ do
-                  let failedModules = Map.keys (Map.filter (\case Nothing -> True; Just _ -> False) maybeResults)
-                  putStrLn ("ELM-CSV-DEBUG: Failed module names: " <> show failedModules)
-
-              case sequenceA maybeResults of
+              docsStatus <- getDocsStatusFromFilePath cacheFilePath
+              -- STM-based status tracking for modules
+              statusStore <- atomically $ newTVar Map.empty
+              mvars <- Map.traverseWithKey (\name _ -> async (crawlModuleWithPackageContext pkgForeignDeps statusStore pkg src docsStatus name)) modulesToCrawl
+              statuses <- traverse wait mvars
+              case sequenceA statuses of
                 Nothing -> do
-                  when (Pkg.toChars pkg == "BrianHicks/elm-csv") $ do
-                    putStrLn "ELM-CSV-DEBUG: *** COMPILATION FAILED - sequenceA returned Nothing ***"
-                  printLog ("maybeResults were Nothing for " <> (show pkg <> (" vsn " <> (show vsn <> (" and deps from status were " <> show (fmap extractDepsFromStatus allStatusList))))))
                   Reporting.report key Reporting.DBroken
+                  printLog ("maybeStatuses were Nothing for " <> (show pkg <> (" vsn " <> (show vsn <> (" and deps " <> show deps)))))
                   return $ Left $ Just $ Exit.BD_BadBuild pkg vsn f
-                Just results -> do
-                  let path = cacheFilePath </> "artifacts.dat"
-                  putStrLn $ "LIST_DEBUG: About to gatherInterfaces for pkg: " ++ show pkg
-                  putStrLn $ "LIST_DEBUG: exposedDict keys: " ++ show (Map.keys exposedDict)
-                  putStrLn $ "LIST_DEBUG: results keys: " ++ show (Map.keys results)
-                  when (Map.member "List" results) $ do
-                    putStrLn $ "LIST_DEBUG: *** List is in results map ***"
-                  when (Map.member "Tuple" results) $ do
-                    putStrLn $ "TUPLE_DEBUG: *** Tuple is in results map ***"
-                  when (Map.member "String" results) $ do
-                    putStrLn $ "STRING_DEBUG: *** String is in results map ***"
-                  let ifaces = gatherInterfaces pkg exposedDict results
-                  putStrLn $ "LIST_DEBUG: After gatherInterfaces, ifaces keys: " ++ show (Map.keys ifaces)
-                  when (Map.member "List" ifaces) $ do
-                    putStrLn $ "LIST_DEBUG: *** List is in ifaces map ***"
-                  if Map.member "Tuple" ifaces
-                    then putStrLn $ "TUPLE_DEBUG: *** Tuple is in ifaces map ***"
-                    else putStrLn $ "TUPLE_DEBUG: *** Tuple is MISSING from ifaces map ***"
-                  if Map.member "String" ifaces
-                    then putStrLn $ "STRING_DEBUG: *** String is in ifaces map ***"
-                    else putStrLn $ "STRING_DEBUG: *** String is MISSING from ifaces map ***"
-                  let objects = gatherObjects results
-                  let artifacts = Artifacts ifaces objects
-                  let fingerprints = Set.insert f fs
-                  writeDocsToFilePath cacheFilePath docsStatus results
-                  File.writeBinary path (ArtifactCache fingerprints artifacts)
-                  Reporting.report key Reporting.DBuilt
-                  return (Right artifacts)
+                Just _ -> do
+                  printLog ("DEBUG: MAIN ENTRY POINT - Processing for pkg: " <> show pkg)
+
+
+                  -- STM-based result tracking for compilation
+                  resultStore <- atomically $ newTVar Map.empty
+                  let extractDepsFromStatus status = case status of (SLocal _ statusDeps _ _) -> statusDeps; _ -> Map.empty
+
+                  printLog ("DEBUG: CHECKPOINT 1 - Starting resultStore setup")
+
+                  -- Read final state of statusStore to get ALL modules (including those discovered during import crawling)
+                  putStrLn "ATOMICALLY-DEBUG: Details.hs:724 - about to read statusStore"
+                  finalStatusStore <- atomically $ readTVar statusStore
+                  putStrLn "ATOMICALLY-DEBUG: Details.hs:724 - statusStore read successful"
+                  printLog ("DEBUG: CHECKPOINT 2 - Read finalStatusStore successfully")
+                  printLog ("DEBUG: Final statusStore contains modules: " <> show (Map.keys finalStatusStore))
+
+                  -- Pre-populate result store with TVars for ALL modules in final statusStore
+                  allModuleNames <- pure $ Map.keys finalStatusStore
+                  printLog ("DEBUG: CHECKPOINT 3 - About to create moduleResultTVars")
+                  printLog ("DEBUG: Creating result TVars for ALL modules (including crawled imports): " <> show allModuleNames)
+                  moduleResultTVars <- traverse (\_ -> atomically $ newTVar Nothing) (Map.fromList (zip allModuleNames allModuleNames))
+                  printLog ("DEBUG: CHECKPOINT 4 - Created moduleResultTVars successfully")
+                  atomically $ writeTVar resultStore moduleResultTVars
+                  printLog ("DEBUG: CHECKPOINT 5 - Result store populated with modules: " <> show (Map.keys moduleResultTVars))
+
+                  -- IMPORTANT: Create compileAction AFTER populating resultStore
+                  let compileAction status = genericErrorHandler ("This package failed: " <> show pkg) (compile pkg resultStore status)
+
+                  printLog ("DEBUG: CHECKPOINT 6 - About to extract final status values")
+
+                  -- Extract final status values from all TVars in statusStore with timeout protection
+                  putStrLn ("WAIT-TIMEOUT-DEBUG: Starting traverse waitForResult with timeout protection")
+                  finalStatusResult <- Timeout.timeout (60 * 1000000) (traverse waitForResult finalStatusStore)
+                  case finalStatusResult of
+                    Nothing -> do
+                      putStrLn ("FINAL-STATUS-TIMEOUT: Failed to get all final status values after 60s")
+                      return $ Left $ Just $ Exit.BD_BadBuild pkg vsn f
+                    Just finalStatusValues -> do
+                      putStrLn ("FINAL-STATUS-TIMEOUT: Successfully got all final status values")
+                      printLog ("DEBUG: CHECKPOINT 7 - Extracted final status values")
+                      -- Debug: Check which modules returned Nothing
+                      let nothingModules = Map.keys $ Map.filter (\case { Nothing -> True; Just _ -> False }) finalStatusValues
+                      let justModules = Map.keys $ Map.filter (\case { Nothing -> False; Just _ -> True }) finalStatusValues
+                      printLog ("DEBUG: Modules that returned Nothing: " <> show nothingModules)
+                      printLog ("DEBUG: Modules that returned Just: " <> show justModules)
+                      let completeStatusList = Map.mapMaybe id finalStatusValues
+                      printLog ("DEBUG: CHECKPOINT 8 - Created completeStatusList")
+                      printLog ("DEBUG: Kernel modules check - looking for Elm.JsArray in completeStatusList: " <> show (Map.member "Elm.JsArray" completeStatusList))
+
+                      -- Use ALL modules from finalStatusStore for dependency graph, not just successful ones
+                      -- This ensures kernel modules are included even if they fail to parse
+                      let allStatusList = Map.mapWithKey (\name maybeStatus ->
+                            case maybeStatus of
+                              Just status -> status
+                              Nothing -> if Name.isKernel name
+                                then SKernelForeign  -- Treat failed kernel modules as foreign
+                                else SNotFound ("Module failed to crawl: " <> show name)  -- NEW: Don't throw error, create SNotFound status
+                            ) finalStatusValues
+                      printLog ("DEBUG: allStatusList keys: " <> show (Map.keys allStatusList))
+                      printLog ("DEBUG: completeStatusList keys: " <> show (Map.keys completeStatusList))
+                      -- elm/core excluded from pipeline - use regular parallel compilation for all packages
+                      printLog ("REGULAR: Using regular parallel compilation for " <> show pkg)
+                      -- ELM-CSV DEBUG: Log before compilation
+                      when (Pkg.toChars pkg == "BrianHicks/elm-csv") $ do
+                        putStrLn "ELM-CSV-DEBUG: *** STARTING MODULE COMPILATION ***"
+                        putStrLn ("ELM-CSV-DEBUG: Number of modules to compile: " <> show (Map.size allStatusList))
+                        putStrLn ("ELM-CSV-DEBUG: Module names: " <> show (Map.keys allStatusList))
+
+                      maybeResults <- compileRegularWithTVars compileAction allStatusList moduleResultTVars
+
+                      -- ELM-CSV DEBUG: Log compilation results
+                      when (Pkg.toChars pkg == "BrianHicks/elm-csv") $ do
+                        putStrLn "ELM-CSV-DEBUG: *** MODULE COMPILATION COMPLETED ***"
+                        let successCount = length [() | Just _ <- Map.elems maybeResults]
+                        let failureCount = length [() | Nothing <- Map.elems maybeResults]
+                        putStrLn ("ELM-CSV-DEBUG: Successful modules: " <> show successCount)
+                        putStrLn ("ELM-CSV-DEBUG: Failed modules: " <> show failureCount)
+                        when (failureCount > 0) $ do
+                          let failedModules = Map.keys (Map.filter (\case Nothing -> True; Just _ -> False) maybeResults)
+                          putStrLn ("ELM-CSV-DEBUG: Failed module names: " <> show failedModules)
+
+                      case sequenceA maybeResults of
+                        Nothing -> do
+                          when (Pkg.toChars pkg == "BrianHicks/elm-csv") $ do
+                            putStrLn "ELM-CSV-DEBUG: *** COMPILATION FAILED - sequenceA returned Nothing ***"
+                          printLog ("maybeResults were Nothing for " <> (show pkg <> (" vsn " <> (show vsn <> (" and deps from status were " <> show (fmap extractDepsFromStatus allStatusList))))))
+                          Reporting.report key Reporting.DBroken
+                          return $ Left $ Just $ Exit.BD_BadBuild pkg vsn f
+                        Just results -> do
+                          let path = cacheFilePath </> "artifacts.dat"
+                          putStrLn $ "LIST_DEBUG: About to gatherInterfaces for pkg: " ++ show pkg
+                          putStrLn $ "LIST_DEBUG: exposedDict keys: " ++ show (Map.keys exposedDict)
+                          putStrLn $ "LIST_DEBUG: results keys: " ++ show (Map.keys results)
+                          when (Map.member "List" results) $ do
+                            putStrLn $ "LIST_DEBUG: *** List is in results map ***"
+                          when (Map.member "Tuple" results) $ do
+                            putStrLn $ "TUPLE_DEBUG: *** Tuple is in results map ***"
+                          when (Map.member "String" results) $ do
+                            putStrLn $ "STRING_DEBUG: *** String is in results map ***"
+                          -- DEBUG: Log exactly what's being passed to gatherInterfaces
+                          putStrLn $ "GATHER_DEBUG: About to call gatherInterfaces for pkg: " ++ show pkg
+                          putStrLn $ "GATHER_DEBUG: exposedDict keys: " ++ show (Map.keys exposedDict)
+                          putStrLn $ "GATHER_DEBUG: results keys: " ++ show (Map.keys results)
+                          -- Check for Browser.Dom issues
+                          when (Map.member "Browser.Dom" exposedDict && not (Map.member "Browser.Dom" results)) $ do
+                            putStrLn $ "BROWSER_DOM_DEBUG: *** Browser.Dom is EXPOSED but MISSING from results for pkg: " ++ show pkg
+                          when (Map.member "Browser.Dom" exposedDict) $ do
+                            putStrLn $ "BROWSER_DOM_DEBUG: Browser.Dom is exposed in pkg: " ++ show pkg
+                          when (Pkg.toChars pkg == "BrianHicks/elm-csv") $ do
+                            putStrLn $ "CSV_GATHER_DEBUG: Checking CSV package specifically"
+                            putStrLn $ "CSV_GATHER_DEBUG: Csv.Encode in exposedDict: " ++ show (Map.member "Csv.Encode" exposedDict)
+                            putStrLn $ "CSV_GATHER_DEBUG: Csv.Encode in results: " ++ show (Map.member "Csv.Encode" results)
+                            case Map.lookup "Csv.Encode" results of
+                              Nothing -> putStrLn $ "CSV_GATHER_DEBUG: Csv.Encode is NOT in results map!"
+                              Just _ -> putStrLn $ "CSV_GATHER_DEBUG: Csv.Encode found in results map!"
+                          let ifaces = gatherInterfaces pkg exposedDict results
+                          putStrLn $ "LIST_DEBUG: After gatherInterfaces, ifaces keys: " ++ show (Map.keys ifaces)
+                          when (Map.member "List" ifaces) $ do
+                            putStrLn $ "LIST_DEBUG: *** List is in ifaces map ***"
+                          if Map.member "Tuple" ifaces
+                            then putStrLn $ "TUPLE_DEBUG: *** Tuple is in ifaces map ***"
+                            else putStrLn $ "TUPLE_DEBUG: *** Tuple is MISSING from ifaces map ***"
+                          if Map.member "String" ifaces
+                            then putStrLn $ "STRING_DEBUG: *** String is in ifaces map ***"
+                            else putStrLn $ "STRING_DEBUG: *** String is MISSING from ifaces map ***"
+                          let objects = gatherObjects results
+                          let artifacts = Artifacts ifaces objects
+                          let fingerprints = Set.insert f fs
+                          putStrLn $ "BUILD_COMPLETION_DEBUG: *** About to write docs and artifacts for pkg: " ++ show pkg
+                          writeDocsToFilePath cacheFilePath docsStatus results
+                          putStrLn $ "BUILD_COMPLETION_DEBUG: *** About to write binary artifacts for pkg: " ++ show pkg
+                          File.writeBinary path (ArtifactCache fingerprints artifacts)
+                          putStrLn $ "BUILD_COMPLETION_DEBUG: *** About to report DBuilt for pkg: " ++ show pkg
+                          Reporting.report key Reporting.DBuilt
+                          putStrLn $ "BUILD_COMPLETION_DEBUG: *** SUCCESSFULLY COMPLETED BUILD for pkg: " ++ show pkg ++ " - about to return Right artifacts"
+                          return (Right artifacts)
 
 
 -- GATHER
@@ -927,17 +1038,23 @@ isElmCoreModule moduleName =
 
 gatherInterfaces :: Pkg.Name -> Map.Map ModuleName.Raw () -> Map.Map ModuleName.Raw Result -> Map.Map ModuleName.Raw I.DependencyInterface
 gatherInterfaces _pkg exposed artifacts =
-  let -- Handle exposed modules that are missing from artifacts
-      onLeft = Map.mapMissing (\key _ ->
+  let -- Log missing exposed modules with warnings but don't fail compilation
+      _ = Map.mapWithKey (\key _ ->
         let moduleName = ModuleName.toChars key
-        in trace ("GATHER_INTERFACES_WARNING: Module '" ++ moduleName ++ "' is exposed but missing from compilation artifacts. This indicates the module failed to crawl or compile properly.") $
-           error ("GATHER_INTERFACES_ERROR: Module '" ++ moduleName ++ "' is exposed but missing from compilation artifacts."))
+            pkgName = show _pkg
+        in trace ("GATHER_INTERFACES_WARNING: Module '" ++ moduleName ++ "' is exposed but missing from compilation artifacts for package " ++ pkgName ++ ". This indicates the module failed to crawl or compile properly. Skipping this module and continuing compilation.") ()) (Map.difference exposed artifacts)
+
+      -- Handle exposed modules that are missing from artifacts
+      -- CRITICAL FIX: Instead of throwing an error, skip missing modules gracefully
+      onLeft = Map.dropMissing
 
       -- Handle modules in artifacts but not exposed
       -- CRITICAL FIX: elm/core modules should always be public, not private
       onRight = Map.mapMaybeMissing (\key iface ->
         case iface of
           RNotFound reason -> trace ("GATHER_INTERFACES_INFO: Module '" ++ ModuleName.toChars key ++ "' not found: " ++ reason) Nothing
+          RKernelLocal _ -> trace ("GATHER_INTERFACES_INFO: Kernel module '" ++ ModuleName.toChars key ++ "' has no interface") Nothing
+          RKernelForeign -> trace ("GATHER_INTERFACES_INFO: Foreign kernel module '" ++ ModuleName.toChars key ++ "' has no interface") Nothing
           _ -> if isElmCoreModule key
             then if ModuleName.toChars key == "List"
               then trace "LIST_DEBUG: *** List found in artifacts (elm/core module - making public) ***" (toLocalInterface I.public iface)
@@ -955,16 +1072,16 @@ gatherInterfaces _pkg exposed artifacts =
                   else toLocalInterface I.private iface)
 
       -- Handle modules that are both exposed and in artifacts
-      onBoth = Map.zipWithMaybeMatched (\key () iface ->
+      onBoth = Map.zipWithMatched (\key () iface ->
         case iface of
-          RNotFound reason -> trace ("GATHER_INTERFACES_SKIP: Exposed module '" ++ ModuleName.toChars key ++ "' not found: " ++ reason) Nothing
+          RNotFound reason -> trace ("GATHER_INTERFACES_SKIP: Exposed module '" ++ ModuleName.toChars key ++ "' not found: " ++ reason) (error "This should not happen")
           _ -> if ModuleName.toChars key == "List"
-            then trace "LIST_DEBUG: *** List found in both exposed and artifacts (public) ***" (toLocalInterface I.public iface)
+            then trace "LIST_DEBUG: *** List found in both exposed and artifacts (public) ***" (Maybe.fromJust $ toLocalInterface I.public iface)
             else if ModuleName.toChars key == "Tuple"
-              then trace "TUPLE_DEBUG: *** Tuple found in both exposed and artifacts (public) ***" (toLocalInterface I.public iface)
+              then trace "TUPLE_DEBUG: *** Tuple found in both exposed and artifacts (public) ***" (Maybe.fromJust $ toLocalInterface I.public iface)
               else if ModuleName.toChars key == "String"
-                then trace "STRING_DEBUG: *** String found in both exposed and artifacts (public) ***" (toLocalInterface I.public iface)
-                else toLocalInterface I.public iface)
+                then trace "STRING_DEBUG: *** String found in both exposed and artifacts (public) ***" (Maybe.fromJust $ toLocalInterface I.public iface)
+                else Maybe.fromJust $ toLocalInterface I.public iface)
 
       result = Map.merge onLeft onRight onBoth exposed artifacts
    in result

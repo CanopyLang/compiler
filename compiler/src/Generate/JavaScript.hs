@@ -22,7 +22,7 @@ import qualified AST.Optimized as Opt
 import qualified Canopy.Kernel as K
 import qualified Canopy.ModuleName as ModuleName
 import qualified Canopy.Package as Pkg
-import Control.Exception (Exception, throw)
+import Control.Exception (Exception)
 import qualified Debug.Trace as Debug
 import Data.ByteString.Builder (Builder)
 import qualified Data.ByteString.Builder as B
@@ -215,19 +215,6 @@ tails xs@(_:ys) = xs : tails ys
 generate :: Mode.Mode -> Opt.GlobalGraph -> Mains -> Map String FFIInfo -> Builder
 generate mode (Opt.GlobalGraph graph _) mains ffiInfos =
   let _ = Debug.trace ("GLOBAL-GRAPH-DEBUG: Total globals: " <> show (Map.size graph)) ()
-      allGlobals = Map.keys graph
-      listGlobals = filter (\(Opt.Global home name) ->
-        let modName = ModuleName._module home
-            pkgName = ModuleName._package home
-        in "List" `isInfixOf` Name.toChars modName || "List" `isInfixOf` Name.toChars name) allGlobals
-      elmCoreGlobals = filter (\(Opt.Global home _) ->
-        let pkg = ModuleName._package home
-        in Pkg._author pkg == Pkg.elm && Pkg._project pkg == Pkg._project Pkg.core) allGlobals
-      dollarGlobals = filter (\(Opt.Global _ name) -> Name.toChars name == "$") allGlobals
-      _ = Debug.trace ("GLOBAL-GRAPH-DEBUG: List-related globals: " <> show listGlobals) ()
-      _ = Debug.trace ("GLOBAL-GRAPH-DEBUG: elm/core globals count: " <> show (length elmCoreGlobals)) ()
-      _ = Debug.trace ("GLOBAL-GRAPH-DEBUG: $ globals: " <> show dollarGlobals) ()
-      _ = Debug.trace ("GLOBAL-GRAPH-DEBUG: First 20 globals: " <> show (take 20 allGlobals)) ()
       baseState = Map.foldrWithKey (addMain mode graph) emptyState mains
       state = baseState  -- For now, we'll focus on fixing the core issue
       header = if Mode.isElmCompatible mode
