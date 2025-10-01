@@ -1,0 +1,45 @@
+---
+name: canopy-core
+version: 0.19.1
+synopsis: "Canopy compiler core components"
+description: |
+  Core compiler functionality including AST, parsing, type checking,
+  canonicalization, optimization, and code generation. This package
+  contains no STM/MVar/TVar usage - only pure functional code.
+
+homepage: "https://github.com/quinten/canopy"
+license: BSD-3-Clause
+license-file: ../../LICENSE
+author: "Quinten Kasteel"
+maintainer: "info@canopy-lang.org"
+copyright: "Copyright (c) 2025-present, Quinten Kasteel"
+category: Compiler, Language
+
+dependencies:
+  - base
+  - bytestring
+  - containers
+  - text
+  - directory
+  - filepath
+  - binary
+  - time
+  - mtl
+  - parsec
+  - scientific
+  - vector
+  - ansi-wl-pprint
+  - edit-distance
+  - utf8-string
+  - SHA
+  - language-glsl
+  - language-javascript
+  - template-haskell
+
+library:
+  source-dirs: src
+  ghc-options:
+    - -Wall
+    - -fwarn-tabs
+    - -O2
+    - -Wno-unused-do-bind
