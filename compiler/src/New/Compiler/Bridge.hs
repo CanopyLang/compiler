@@ -48,11 +48,12 @@ import qualified System.Environment as Env
 -- | Check if new compiler should be used.
 --
 -- Reads CANOPY_NEW_COMPILER environment variable.
--- Returns True if set to "1", False otherwise.
+-- NEW compiler is now the DEFAULT. Set CANOPY_NEW_COMPILER=0 to use old system.
+-- Returns False only if explicitly set to "0", True otherwise.
 shouldUseNewCompiler :: IO Bool
 shouldUseNewCompiler = do
   maybeFlag <- Env.lookupEnv "CANOPY_NEW_COMPILER"
-  let useNew = maybeFlag == Just "1"
+  let useNew = maybeFlag /= Just "0"  -- Default to NEW compiler
   Logger.debug COMPILE_DEBUG ("shouldUseNewCompiler: flag=" ++ show maybeFlag ++ ", useNew=" ++ show useNew)
   return useNew
 

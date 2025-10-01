@@ -106,6 +106,7 @@ buildFromPaths ctx paths = do
 
   useNew <- Task.io Bridge.shouldUseNewCompiler
 
+  -- NEW compiler is now default; set CANOPY_NEW_COMPILER=0 to use old system
   if useNew
     then buildWithNewCompiler style root details paths
     else buildWithOldCompiler style root details paths
