@@ -35,6 +35,9 @@ dependencies:
   - language-glsl
   - language-javascript
   - template-haskell
+  - ghc-prim
+  - raw-strings-qq
+  - lens
 
 library:
   source-dirs: src
