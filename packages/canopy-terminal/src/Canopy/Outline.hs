@@ -105,13 +105,19 @@ data SrcDir
   deriving (Show, Eq)
 
 -- | Read outline from project root.
+-- Checks for canopy.json first, then elm.json as fallback.
 read :: FilePath -> IO (Maybe Outline)
 read root = do
-  let path = root </> "canopy.json"
-  maybeContent <- safeReadFile path
-  case maybeContent of
-    Nothing -> pure Nothing
+  let canopyPath = root </> "canopy.json"
+      elmPath = root </> "elm.json"
+  maybeCanopy <- safeReadFile canopyPath
+  case maybeCanopy of
     Just content -> pure (Json.decode content)
+    Nothing -> do
+      maybeElm <- safeReadFile elmPath
+      case maybeElm of
+        Nothing -> pure Nothing
+        Just content -> pure (Json.decode content)
 
 -- | Write outline to project root.
 write :: FilePath -> Outline -> IO ()
@@ -157,7 +163,8 @@ instance Json.ToJSON AppOutline where
 
 instance Json.FromJSON AppOutline where
   parseJSON = Json.withObject "AppOutline" $ \o -> do
-    canopyVer <- o Json..: "canopy-version"
+    -- Support both "canopy-version" and "elm-version" for compatibility
+    canopyVer <- (o Json..: "canopy-version") <|> (o Json..: "elm-version")
     srcDirs <- o Json..: "source-directories"
 
     deps <- o Json..: "dependencies"
@@ -184,7 +191,9 @@ instance Json.ToJSON PkgOutline where
       ]
 
 instance Json.FromJSON PkgOutline where
-  parseJSON = Json.withObject "PkgOutline" $ \o ->
+  parseJSON = Json.withObject "PkgOutline" $ \o -> do
+    -- Support both "canopy-version" and "elm-version" for compatibility
+    canopyVer <- (o Json..: "canopy-version") <|> (o Json..: "elm-version")
     PkgOutline
       <$> o Json..: "name"
       <*> o Json..: "summary"
@@ -193,7 +202,7 @@ instance Json.FromJSON PkgOutline where
       <*> o Json..: "exposed-modules"
       <*> o Json..: "dependencies"
       <*> o Json..: "test-dependencies"
-      <*> o Json..: "canopy-version"
+      <*> pure canopyVer
 
 instance Json.ToJSON Exposed where
   toJSON (ExposedList mods) = Json.toJSON mods
