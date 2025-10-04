@@ -92,7 +92,7 @@ compileFromSource pkg ifaces sourceModule = do
   case canonResult of
     Left err -> return (Left err)
     Right canonModule -> do
-      typeResult <- runTypeCheckPhase canonModule
+      typeResult <- runTypeCheckPhase "<unknown>" canonModule
       case typeResult of
         Left err -> return (Left err)
         Right types -> do
@@ -133,7 +133,7 @@ compileModuleFull engine pkg ifaces path projectType = do
       case canonResult of
         Left err -> return (Left err)
         Right canonModule -> do
-          typeResult <- runTypeCheckPhase canonModule
+          typeResult <- runTypeCheckPhase path canonModule
           case typeResult of
             Left err -> return (Left err)
             Right types -> do
@@ -184,11 +184,12 @@ runCanonicalizePhase pkg ifaces ffiContent sourceModule = do
 
 -- | Run type check phase.
 runTypeCheckPhase ::
+  FilePath ->
   Can.Module ->
   IO (Either QueryError (Map Name.Name Can.Annotation))
-runTypeCheckPhase canonModule = do
+runTypeCheckPhase path canonModule = do
   Logger.debug COMPILE_DEBUG "Phase 3: Type Checking"
-  TypeQuery.typeCheckModuleQuery canonModule
+  TypeQuery.typeCheckModuleQuery path canonModule
 
 -- | Run optimize phase.
 runOptimizePhase ::

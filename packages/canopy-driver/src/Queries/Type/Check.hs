@@ -14,6 +14,7 @@ module Queries.Type.Check
 where
 
 import qualified AST.Canonical as Can
+import qualified Data.ByteString as BS
 import Data.Map (Map)
 import qualified Data.Map as Map
 import qualified Data.Name as Name
@@ -22,16 +23,22 @@ import qualified Data.NonEmptyList as NE
 import qualified Debug.Logger as Logger
 import Debug.Logger (DebugCategory (..))
 import Query.Simple
+import qualified Reporting.Doc as D
 import qualified Reporting.Error.Type as Error
+import qualified Reporting.Render.Code as Code
+import qualified Reporting.Render.Type.Localizer as L
+import qualified Reporting.Report as Report
+import System.IO.Unsafe (unsafePerformIO)
 import qualified Type.Constrain.Module as Constrain
 import qualified Type.Solve as Solve
 import Type.Type (Constraint)
 
 -- | Execute a type check module query.
 typeCheckModuleQuery ::
+  FilePath ->
   Can.Module ->
   IO (Either QueryError (Map Name.Name Can.Annotation))
-typeCheckModuleQuery canonical = do
+typeCheckModuleQuery path canonical = do
   let modName = Can._name canonical
   Logger.debug TYPE ("Starting type checking for: " ++ show modName)
 
@@ -48,7 +55,7 @@ typeCheckModuleQuery canonical = do
     Left errors -> do
       Logger.debug TYPE ("Type checking failed: " ++ show (countErrors errors))
       logTypeErrors errors
-      return (Left (processErrors errors))
+      return (Left (processErrors path errors))
     Right typeMap -> do
       Logger.debug TYPE ("Type checking success: " ++ show (Map.size typeMap) ++ " bindings")
       logTypedBindings typeMap
@@ -108,7 +115,26 @@ logBinding :: Name.Name -> Can.Annotation -> IO ()
 logBinding name _ =
   Logger.debug TYPE ("  " ++ show name)
 
--- | Convert type errors to QueryError.
-processErrors :: List Error.Error -> QueryError
-processErrors errors =
-  TypeError (show (NE.head errors))
+-- | Convert type errors to QueryError with proper formatting.
+processErrors :: FilePath -> List Error.Error -> QueryError
+processErrors path errors =
+  TypeError (formatTypeError path (NE.head errors))
+
+-- | Format a single type error using the proper Reporting infrastructure.
+formatTypeError :: FilePath -> Error.Error -> String
+formatTypeError path err = unsafePerformIO (do
+  -- Read source file
+  sourceBytes <- BS.readFile path
+  let source = Code.toSource sourceBytes
+
+  -- Create localizer for type rendering
+      localizer = L.empty
+
+  -- Convert error to Report
+      report = Error.toReport source localizer err
+
+  -- Extract and render the Doc
+      doc = Report._message report
+      rendered = D.toString doc
+
+  return rendered)
