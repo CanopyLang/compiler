@@ -88,11 +88,12 @@ default-extensions:
   - UndecidableInstances
 
 library:
-  source-dirs:
-    - compiler/src
-    - builder/src
-    - terminal/src
-    - terminal/impl
+  dependencies:
+    - canopy-core
+    - canopy-query
+    - canopy-driver
+    - canopy-builder
+    - canopy-terminal
   ghc-options:
     - -Wall
     - -fwarn-tabs
@@ -109,6 +110,11 @@ executables:
       - -Werror=missing-fields
     dependencies:
       - canopy
+      - canopy-core
+      - canopy-query
+      - canopy-driver
+      - canopy-builder
+      - canopy-terminal
 
 tests:
   canopy-test:
@@ -120,6 +126,11 @@ tests:
       - -with-rtsopts=-N
     dependencies:
       - canopy
+      - canopy-core
+      - canopy-query
+      - canopy-driver
+      - canopy-builder
+      - canopy-terminal
       - tasty
       - tasty-hunit
       - tasty-quickcheck

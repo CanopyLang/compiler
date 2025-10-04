@@ -3,6 +3,10 @@ snapshot: lts-23.0
 packages:
   - .
   - packages/canopy-core
+  - packages/canopy-query
+  - packages/canopy-driver
+  - packages/canopy-builder
+  - packages/canopy-terminal
 
 allow-newer: true
 
