@@ -53,6 +53,7 @@ import qualified Debug.Logger as Logger
 import Debug.Logger (DebugCategory (..))
 import qualified Driver
 import qualified Exit
+import qualified Query.Simple as Query
 import qualified PackageCache
 import qualified Parse.Module as Parse
 import qualified Reporting.Annotation as A
@@ -245,7 +246,7 @@ compileModulesInOrder pkg projectType _root initialInterfaces modulePaths = do
           Logger.debug COMPILE_DEBUG ("Compiling module: " ++ Name.toChars modName)
           result <- Driver.compileModule pkg ifaces path projectType
           case result of
-            Left err -> return (Left (Exit.BuildCannotCompile (Exit.CompileParseError path (show err))))
+            Left err -> return (Left (Exit.BuildCannotCompile (queryErrorToCompileError path err)))
             Right compiledResult -> do
               let newIface = Driver.compileResultInterface compiledResult
                   newIfaces = Map.insert modName newIface ifaces
@@ -283,6 +284,15 @@ topologicalSort depGraph modules =
               visited' = Set.insert modName visited
               (visited'', sorted') = foldl (\(v, s) dep -> visitModule v s dep) (visited', sorted) deps
            in (visited'', modName : sorted')
+
+-- Helper: Convert QueryError to CompileError with proper categorization
+queryErrorToCompileError :: FilePath -> Query.QueryError -> Exit.CompileError
+queryErrorToCompileError path qErr =
+  case qErr of
+    Query.ParseError _ msg -> Exit.CompileParseError path msg
+    Query.TypeError msg -> Exit.CompileTypeError path msg
+    Query.FileNotFound fpath -> Exit.CompileModuleNotFound fpath
+    Query.OtherError msg -> Exit.CompileCanonicalizeError path msg
 
 -- Helper: Load all dependency artifacts (interfaces + GlobalGraph)
 -- Uses parallel loading for optimal performance
