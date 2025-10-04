@@ -37,6 +37,11 @@ import qualified Canopy.Interface as I
 import qualified Canopy.ModuleName as ModuleName
 import qualified Canopy.Package as Pkg
 import qualified Canopy.Version as V
+import qualified Data.Aeson as Json
+import qualified Data.Aeson.Key as Key
+import qualified Data.Aeson.KeyMap as KeyMap
+import qualified Data.ByteString.Lazy as LBS
+import qualified Data.Text as Text
 import Control.Monad (filterM, foldM)
 import qualified Data.Map.Strict as Map
 import qualified Data.Name as Name
@@ -279,26 +284,116 @@ topologicalSort depGraph modules =
            in modName : sorted'
 
 -- Helper: Load all dependency artifacts (interfaces + GlobalGraph)
--- TODO: Read actual dependencies from project elm.json/canopy.json
 loadDependencyArtifacts :: FilePath -> IO (Maybe (Map.Map ModuleName.Raw I.Interface, Opt.GlobalGraph))
-loadDependencyArtifacts _root = do
-  -- Load common core packages
-  let elm = Utf8.fromChars "elm"
-      coreDeps =
-        [ (Pkg.Name elm (Utf8.fromChars "core"), V.Version 1 0 5)
-        , (Pkg.Name elm (Utf8.fromChars "html"), V.Version 1 0 0)
-        , (Pkg.Name elm (Utf8.fromChars "json"), V.Version 1 1 3)
-        , (Pkg.Name elm (Utf8.fromChars "virtual-dom"), V.Version 1 0 3)
-        ]
+loadDependencyArtifacts root = do
+  -- Read project dependencies from elm.json/canopy.json
+  allDeps <- readProjectDependencies root
+  Logger.debug COMPILE_DEBUG ("Found " ++ show (length allDeps) ++ " total dependencies")
 
-  maybeArtifacts <- PackageCache.loadAllPackageArtifacts coreDeps
-  case maybeArtifacts of
-    Nothing -> return Nothing
-    Just artifacts ->
-      let depInterfaces = PackageCache.artifactInterfaces artifacts
-          convertedInterfaces = convertDependencyInterfaces depInterfaces
-          globalGraph = PackageCache.artifactObjects artifacts
-       in return (Just (convertedInterfaces, globalGraph))
+  -- Filter to only core Elm packages for now (performance optimization)
+  -- TODO: Load all dependencies when PackageCache performance is improved
+  let elm = Utf8.fromChars "elm"
+      coreDeps = filter (\(Pkg.Name author _, _) -> author == elm) allDeps
+
+  Logger.debug COMPILE_DEBUG ("Loading " ++ show (length coreDeps) ++ " core dependencies")
+
+  case coreDeps of
+    [] -> do
+      Logger.debug COMPILE_DEBUG "No core dependencies, using empty interfaces"
+      return (Just (Map.empty, Opt.empty))
+    _ -> do
+      maybeArtifacts <- PackageCache.loadAllPackageArtifacts coreDeps
+      case maybeArtifacts of
+        Nothing -> do
+          Logger.debug COMPILE_DEBUG "Failed to load core dependencies, using empty interfaces"
+          return (Just (Map.empty, Opt.empty))
+        Just artifacts ->
+          let depInterfaces = PackageCache.artifactInterfaces artifacts
+              convertedInterfaces = convertDependencyInterfaces depInterfaces
+              globalGraph = PackageCache.artifactObjects artifacts
+           in return (Just (convertedInterfaces, globalGraph))
+
+-- Helper: Read project dependencies from elm.json or canopy.json
+readProjectDependencies :: FilePath -> IO [(Pkg.Name, V.Version)]
+readProjectDependencies root = do
+  let canopyPath = root </> "canopy.json"
+      elmPath = root </> "elm.json"
+
+  -- Try canopy.json first, then elm.json
+  canopyExists <- Dir.doesFileExist canopyPath
+  elmExists <- Dir.doesFileExist elmPath
+
+  let jsonPath = if canopyExists then canopyPath else if elmExists then elmPath else ""
+
+  if null jsonPath
+    then do
+      Logger.debug COMPILE_DEBUG "No project file found"
+      return []
+    else do
+      Logger.debug COMPILE_DEBUG ("Reading dependencies from: " ++ jsonPath)
+      content <- LBS.readFile jsonPath
+      case Json.decode content of
+        Nothing -> do
+          Logger.debug COMPILE_DEBUG "Failed to parse project file"
+          return []
+        Just (Json.Object obj) -> do
+          let deps = extractDepsFromJson obj
+          Logger.debug COMPILE_DEBUG ("Extracted " ++ show (length deps) ++ " dependencies")
+          return deps
+        _ -> return []
+
+-- Helper: Extract dependencies from parsed JSON object
+extractDepsFromJson :: Json.Object -> [(Pkg.Name, V.Version)]
+extractDepsFromJson obj =
+  case KeyMap.lookup "dependencies" obj of
+    Nothing -> []
+    Just (Json.Object depsObj) ->
+      -- Handle both application format (dependencies.direct + dependencies.indirect)
+      -- and package format (dependencies is a flat map)
+      case (KeyMap.lookup "direct" depsObj, KeyMap.lookup "indirect" depsObj) of
+        (Just (Json.Object directObj), Just (Json.Object indirectObj)) ->
+          parseDepsMap directObj ++ parseDepsMap indirectObj
+        _ -> parseDepsMap depsObj
+    _ -> []
+
+-- Helper: Parse dependencies map from JSON
+parseDepsMap :: Json.Object -> [(Pkg.Name, V.Version)]
+parseDepsMap depsMap =
+  foldr extractDep [] (KeyMap.toList depsMap)
+  where
+    extractDep (pkgNameKey, versionValue) acc =
+      case (parsePackageName pkgNameKey, parseVersion versionValue) of
+        (Just pkgName, Just version) -> (pkgName, version) : acc
+        _ -> acc
+
+-- Helper: Parse package name from JSON key
+parsePackageName :: Json.Key -> Maybe Pkg.Name
+parsePackageName key =
+  let keyText = Key.toText key
+      parts = Text.splitOn "/" keyText
+   in case parts of
+        [authorText, projectText] ->
+          let author = Utf8.fromChars (Text.unpack authorText)
+              project = Utf8.fromChars (Text.unpack projectText)
+           in Just (Pkg.Name author project)
+        _ -> Nothing
+
+-- Helper: Parse version from JSON value
+parseVersion :: Json.Value -> Maybe V.Version
+parseVersion (Json.String versionStr) =
+  let parts = Text.splitOn "." versionStr
+   in case parts of
+        [majorStr, minorStr, patchStr] ->
+          case (readMaybe (Text.unpack majorStr), readMaybe (Text.unpack minorStr), readMaybe (Text.unpack patchStr)) of
+            (Just major, Just minor, Just patch) -> Just (V.Version major minor patch)
+            _ -> Nothing
+        _ -> Nothing
+parseVersion _ = Nothing
+
+readMaybe :: Read a => String -> Maybe a
+readMaybe s = case reads s of
+  [(val, "")] -> Just val
+  _ -> Nothing
 
 -- Helper: Convert DependencyInterface map to Interface map
 convertDependencyInterfaces :: Map.Map ModuleName.Raw I.DependencyInterface -> Map.Map ModuleName.Raw I.Interface
