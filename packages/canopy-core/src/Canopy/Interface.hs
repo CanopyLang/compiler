@@ -21,6 +21,9 @@ import qualified AST.Canonical as Can
 import qualified AST.Utils.Binop as Binop
 import qualified Canopy.Package as Pkg
 import Control.Monad (liftM3, liftM4, liftM5)
+import Data.Aeson (FromJSON, ToJSON, object, withObject, (.:), (.=))
+import qualified Data.Aeson as Aeson
+import Data.Aeson.Types (Parser)
 import Data.Binary
 import qualified Data.Map.Merge.Strict as Map
 import Data.Map.Strict ((!))
@@ -218,3 +221,118 @@ instance Binary DependencyInterface where
         0 -> fmap Public get
         1 -> liftM3 Private get get get
         _ -> fail "binary encoding of DependencyInterface was corrupted"
+
+-- JSON INSTANCES
+
+instance ToJSON Interface where
+  toJSON (Interface home values unions aliases binops) =
+    object
+      [ "home" .= home,
+        "values" .= values,
+        "unions" .= unions,
+        "aliases" .= aliases,
+        "binops" .= binops
+      ]
+
+instance FromJSON Interface where
+  parseJSON = withObject "Interface" $ \o ->
+    Interface
+      <$> o .: "home"
+      <*> o .: "values"
+      <*> o .: "unions"
+      <*> o .: "aliases"
+      <*> o .: "binops"
+
+instance ToJSON Union where
+  toJSON union = case union of
+    OpenUnion u ->
+      object
+        [ "type" .= ("open" :: String),
+          "union" .= u
+        ]
+    ClosedUnion u ->
+      object
+        [ "type" .= ("closed" :: String),
+          "union" .= u
+        ]
+    PrivateUnion u ->
+      object
+        [ "type" .= ("private" :: String),
+          "union" .= u
+        ]
+
+instance FromJSON Union where
+  parseJSON = withObject "Union" $ \o -> do
+    unionType <- o .: "type" :: Parser String
+    unionValue <- o .: "union"
+    case unionType of
+      "open" -> pure (OpenUnion unionValue)
+      "closed" -> pure (ClosedUnion unionValue)
+      "private" -> pure (PrivateUnion unionValue)
+      _ -> fail ("Unknown union type: " ++ unionType)
+
+instance ToJSON Alias where
+  toJSON alias = case alias of
+    PublicAlias a ->
+      object
+        [ "type" .= ("public" :: String),
+          "alias" .= a
+        ]
+    PrivateAlias a ->
+      object
+        [ "type" .= ("private" :: String),
+          "alias" .= a
+        ]
+
+instance FromJSON Alias where
+  parseJSON = withObject "Alias" $ \o -> do
+    aliasType <- o .: "type" :: Parser String
+    aliasValue <- o .: "alias"
+    case aliasType of
+      "public" -> pure (PublicAlias aliasValue)
+      "private" -> pure (PrivateAlias aliasValue)
+      _ -> fail ("Unknown alias type: " ++ aliasType)
+
+instance ToJSON Binop where
+  toJSON (Binop name annotation associativity precedence) =
+    object
+      [ "name" .= name,
+        "annotation" .= annotation,
+        "associativity" .= associativity,
+        "precedence" .= precedence
+      ]
+
+instance FromJSON Binop where
+  parseJSON = withObject "Binop" $ \o ->
+    Binop
+      <$> o .: "name"
+      <*> o .: "annotation"
+      <*> o .: "associativity"
+      <*> o .: "precedence"
+
+instance ToJSON DependencyInterface where
+  toJSON depInterface = case depInterface of
+    Public iface ->
+      object
+        [ "type" .= ("public" :: String),
+          "interface" .= iface
+        ]
+    Private pkg unions aliases ->
+      object
+        [ "type" .= ("private" :: String),
+          "package" .= pkg,
+          "unions" .= unions,
+          "aliases" .= aliases
+        ]
+
+instance FromJSON DependencyInterface where
+  parseJSON = withObject "DependencyInterface" $ \o -> do
+    depType <- o .: "type" :: Parser String
+    case depType of
+      "public" -> Public <$> o .: "interface"
+      "private" ->
+        Private
+          <$> o .: "package"
+          <*> o .: "unions"
+          <*> o .: "aliases"
+      _ -> fail ("Unknown dependency interface type: " ++ depType)

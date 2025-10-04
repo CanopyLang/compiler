@@ -86,9 +86,9 @@ canonicalizePort env (Src.Port (A.At region portName) tipe) =
                       Result.ok
                         ( portName,
                           Can.Outgoing
-                            { _freeVars = freeVars,
-                              _payload = outgoingType,
-                              _func = ctipe
+                            { Can._freeVars = freeVars,
+                              Can._payload = outgoingType,
+                              Can._func = ctipe
                             }
                         )
                     Left (badType, err) ->

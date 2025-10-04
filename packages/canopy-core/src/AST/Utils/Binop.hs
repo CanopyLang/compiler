@@ -109,6 +109,7 @@ module AST.Utils.Binop
   )
 where
 
+import qualified Data.Aeson as Aeson
 import Data.Binary
 import Prelude hiding (Either (..))
 
@@ -204,3 +205,26 @@ instance Binary Associativity where
         Left -> 0
         Non -> 1
         Right -> 2
+
+-- AESON JSON INSTANCES
+
+instance Aeson.ToJSON Precedence where
+  toJSON (Precedence n) = Aeson.toJSON n
+
+instance Aeson.FromJSON Precedence where
+  parseJSON value = Precedence <$> Aeson.parseJSON value
+
+instance Aeson.ToJSON Associativity where
+  toJSON assoc = Aeson.String $
+    case assoc of
+      Left -> "left"
+      Non -> "non"
+      Right -> "right"
+
+instance Aeson.FromJSON Associativity where
+  parseJSON = Aeson.withText "Associativity" $ \txt ->
+    case txt of
+      "left" -> pure Left
+      "non" -> pure Non
+      "right" -> pure Right
+      _ -> fail ("Unknown associativity: " ++ show txt)

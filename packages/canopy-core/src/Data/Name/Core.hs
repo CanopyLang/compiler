@@ -50,10 +50,14 @@ module Data.Name.Core
 where
 
 import qualified Canopy.String as ES
+import qualified Data.Aeson as Aeson
+import qualified Data.Aeson.Encoding as AesonEnc
+import qualified Data.Aeson.Key as AesonKey
 import qualified Data.Binary as Binary
 import Data.ByteString.Builder (Builder)
 import qualified Data.Coerce as Coerce
 import qualified Data.String as Chars
+import qualified Data.Text as Text
 import qualified Data.Utf8 as Utf8
 import GHC.Exts
   ( Ptr,
@@ -76,6 +80,24 @@ instance Chars.IsString (Utf8.Utf8 CANOPY_NAME) where
 instance Binary.Binary (Utf8.Utf8 CANOPY_NAME) where
   get = Utf8.getUnder256
   put = Utf8.putUnder256
+
+-- AESON JSON INSTANCES
+
+instance Aeson.ToJSON (Utf8.Utf8 CANOPY_NAME) where
+  toJSON name = Aeson.String (Text.pack (Utf8.toChars name))
+
+instance Aeson.FromJSON (Utf8.Utf8 CANOPY_NAME) where
+  parseJSON = Aeson.withText "Name" $ \txt ->
+    pure (Utf8.fromChars (Text.unpack txt))
+
+instance Aeson.ToJSONKey (Utf8.Utf8 CANOPY_NAME) where
+  toJSONKey = Aeson.ToJSONKeyText
+    (AesonKey.fromText . Text.pack . Utf8.toChars)
+    (AesonEnc.text . Text.pack . Utf8.toChars)
+
+instance Aeson.FromJSONKey (Utf8.Utf8 CANOPY_NAME) where
+  fromJSONKey = Aeson.FromJSONKeyTextParser $ \txt ->
+    pure (Utf8.fromChars (Text.unpack txt))
 
 -- TO
 

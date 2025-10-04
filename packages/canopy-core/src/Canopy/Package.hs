@@ -45,12 +45,17 @@ where
 
 import qualified Canopy.Version as V
 import Control.Monad (liftM2)
+import qualified Data.Aeson as Aeson
+import qualified Data.Aeson.Encoding as AesonEnc
+import qualified Data.Aeson.Key as AesonKey
 import Data.Binary (Binary, get, put)
 import qualified Data.Coerce as Coerce
 import qualified Data.List as List
 import Data.Map (Map)
 import qualified Data.Map as Map
 import qualified Data.Name as Name
+import qualified Data.Text as Text
+import qualified Data.Text.Encoding as TextEnc
 import Data.Utf8 (Utf8)
 import qualified Data.Utf8 as Utf8
 import Data.Word (Word8)
@@ -270,6 +275,41 @@ instance Binary Name where -- PERF try storing as a Word16
 instance Binary Canonical where
   get = liftM2 Canonical get get
   put (Canonical a b) = put a >> put b
+
+-- AESON JSON INSTANCES
+
+instance Aeson.ToJSON Name where
+  toJSON name = Aeson.String (Text.pack (toChars name))
+
+instance Aeson.FromJSON Name where
+  parseJSON = Aeson.withText "Package.Name" $ \txt ->
+    case P.fromByteString parser (,) (TextEnc.encodeUtf8 txt) of
+      Right pkgName -> pure pkgName
+      Left _ -> fail ("Invalid package name: " ++ Text.unpack txt)
+
+instance Aeson.ToJSONKey Name where
+  toJSONKey = Aeson.ToJSONKeyText
+    (AesonKey.fromText . Text.pack . toChars)
+    (AesonEnc.text . Text.pack . toChars)
+
+instance Aeson.FromJSONKey Name where
+  fromJSONKey = Aeson.FromJSONKeyTextParser $ \txt ->
+    case P.fromByteString parser (,) (TextEnc.encodeUtf8 txt) of
+      Right pkgName -> pure pkgName
+      Left _ -> fail ("Invalid package name: " ++ Text.unpack txt)
+
+instance Aeson.ToJSON Canonical where
+  toJSON (Canonical name version) =
+    Aeson.object
+      [ "name" Aeson..= name,
+        "version" Aeson..= version
+      ]
+
+instance Aeson.FromJSON Canonical where
+  parseJSON = Aeson.withObject "Package.Canonical" $ \o ->
+    Canonical
+      <$> o Aeson..: "name"
+      <*> o Aeson..: "version"
 
 -- JSON
 

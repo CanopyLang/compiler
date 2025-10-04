@@ -88,6 +88,7 @@ module Data.Index
   )
 where
 
+import qualified Data.Aeson as Aeson
 import Data.Binary
 
 -- | Zero-based index type for type-safe indexing operations.
@@ -494,3 +495,11 @@ indexedZipWithA func listX listY =
 instance Binary ZeroBased where
   get = fmap ZeroBased get
   put (ZeroBased n) = put n
+
+-- AESON JSON INSTANCES
+
+instance Aeson.ToJSON ZeroBased where
+  toJSON (ZeroBased n) = Aeson.toJSON n
+
+instance Aeson.FromJSON ZeroBased where
+  parseJSON value = ZeroBased <$> Aeson.parseJSON value

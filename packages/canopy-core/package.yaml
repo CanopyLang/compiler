@@ -29,6 +29,7 @@ dependencies:
   - scientific
   - vector
   - ansi-wl-pprint
+  - ansi-terminal-types
   - edit-distance
   - utf8-string
   - SHA
@@ -38,6 +39,37 @@ dependencies:
   - ghc-prim
   - raw-strings-qq
   - lens
+  - zip-archive
+  - filelock
+  - aeson
+  - aeson-pretty
+
+default-extensions:
+  - ConstraintKinds
+  - DataKinds
+  - DerivingStrategies
+  - DerivingVia
+  - DeriveFunctor
+  - DeriveGeneric
+  - DeriveDataTypeable
+  - DuplicateRecordFields
+  - FlexibleContexts
+  - FlexibleInstances
+  - GADTs
+  - KindSignatures
+  - LambdaCase
+  - MultiParamTypeClasses
+  - NamedFieldPuns
+  - OverloadedStrings
+  - PolyKinds
+  - RankNTypes
+  - ScopedTypeVariables
+  - StandaloneDeriving
+  - TypeApplications
+  - TypeFamilies
+  - TypeOperators
+  - ViewPatterns
+  - UndecidableInstances
 
 library:
   source-dirs: src

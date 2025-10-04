@@ -20,7 +20,10 @@ module Canopy.Version
 where
 
 import Control.Monad (liftM3)
+import qualified Data.Aeson as Aeson
 import Data.Binary (Binary, get, getWord8, put, putWord8)
+import qualified Data.Text as Text
+import qualified Data.Text.Encoding as TextEnc
 import qualified Data.Version as Version
 import Data.Word (Word16, Word8)
 import Foreign.Ptr (Ptr, minusPtr, plusPtr)
@@ -28,7 +31,7 @@ import qualified Json.Decode as D
 import qualified Json.Encode as E
 import Parse.Primitives (Col, Row)
 import qualified Parse.Primitives as P
-import qualified Paths_canopy
+import qualified Paths_canopy_core as Paths_canopy
 import Prelude hiding (max)
 
 -- VERSION
@@ -113,6 +116,17 @@ instance Binary Version where
         put major
         put minor
         put patch
+
+-- AESON JSON INSTANCES
+
+instance Aeson.ToJSON Version where
+  toJSON version = Aeson.String (Text.pack (toChars version))
+
+instance Aeson.FromJSON Version where
+  parseJSON = Aeson.withText "Version" $ \txt ->
+    case P.fromByteString parser (,) (TextEnc.encodeUtf8 txt) of
+      Right version -> pure version
+      Left _ -> fail ("Invalid version: " ++ Text.unpack txt)
 
 -- PARSER
 

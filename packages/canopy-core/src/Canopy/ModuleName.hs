@@ -41,7 +41,12 @@ where
 
 import qualified Canopy.Package as Pkg
 import Control.Monad (liftM2)
+import qualified Data.Aeson as Aeson
+import qualified Data.Aeson.Encoding as AesonEnc
+import qualified Data.Aeson.Key as AesonKey
 import Data.Binary (Binary (..))
+import qualified Data.Text as Text
+import qualified Data.Text.Encoding as TextEnc
 import qualified Data.Name as Name
 import qualified Data.Utf8 as Utf8
 import Data.Word (Word8)
@@ -140,6 +145,41 @@ instance Ord Canonical where
 instance Binary Canonical where
   put (Canonical a b) = put a >> put b
   get = liftM2 Canonical get get
+
+-- AESON JSON INSTANCES
+
+instance Aeson.ToJSON Canonical where
+  toJSON (Canonical pkg modName) =
+    Aeson.object
+      [ "package" Aeson..= pkg,
+        "module" Aeson..= modName
+      ]
+
+instance Aeson.FromJSON Canonical where
+  parseJSON = Aeson.withObject "ModuleName.Canonical" $ \o ->
+    Canonical
+      <$> o Aeson..: "package"
+      <*> o Aeson..: "module"
+
+instance Aeson.ToJSONKey Canonical where
+  toJSONKey = Aeson.ToJSONKeyText
+    (AesonKey.fromText . canonicalToText)
+    (AesonEnc.text . canonicalToText)
+    where
+      canonicalToText (Canonical pkg modName) =
+        Text.pack (Pkg.toChars pkg) <> "@" <> Text.pack (Name.toChars modName)
+
+instance Aeson.FromJSONKey Canonical where
+  fromJSONKey = Aeson.FromJSONKeyText parseCanonicalKey
+    where
+      parseCanonicalKey txt =
+        case Text.breakOn "@" txt of
+          (pkgText, modText) | not (Text.null modText) ->
+            let modStr = Text.unpack (Text.drop 1 modText)  -- drop the @ symbol
+             in case P.fromByteString Pkg.parser (,) (TextEnc.encodeUtf8 pkgText) of
+                  Right pkg -> Canonical pkg (Name.fromChars modStr)
+                  Left _ -> error ("Invalid package in canonical key: " ++ Text.unpack pkgText)
+          _ -> error ("Invalid canonical module name key format: " ++ Text.unpack txt)
 
 -- CORE
 
