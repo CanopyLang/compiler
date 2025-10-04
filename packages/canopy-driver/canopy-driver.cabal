@@ -1,0 +1,76 @@
+cabal-version: 2.2
+
+-- This file has been generated from package.yaml by hpack version 0.38.0.
+--
+-- see: https://github.com/sol/hpack
+
+name:           canopy-driver
+version:        0.19.1
+synopsis:       Canopy compiler driver and orchestration
+description:    High-level compiler driver that orchestrates the query-based compilation
+                system. Includes specific query implementations, worker pool for parallel
+                compilation, and overall compilation coordination.
+category:       Compiler, Language
+homepage:       https://github.com/quinten/canopy
+author:         Quinten Kasteel
+maintainer:     info@canopy-lang.org
+copyright:      Copyright (c) 2025-present, Quinten Kasteel
+license:        BSD-3-Clause
+license-file:   ../../LICENSE
+build-type:     Simple
+
+library
+  exposed-modules:
+      Driver
+      Queries.Canonicalize.Module
+      Queries.Foreign
+      Queries.Generate
+      Queries.Kernel
+      Queries.Optimize
+      Queries.Parse.Module
+      Queries.Type.Check
+      Worker.Pool
+  other-modules:
+      Paths_canopy_driver
+  autogen-modules:
+      Paths_canopy_driver
+  hs-source-dirs:
+      src
+  default-extensions:
+      ConstraintKinds
+      DataKinds
+      DerivingStrategies
+      DerivingVia
+      DeriveFunctor
+      DeriveGeneric
+      DeriveDataTypeable
+      DuplicateRecordFields
+      FlexibleContexts
+      FlexibleInstances
+      GADTs
+      KindSignatures
+      LambdaCase
+      MultiParamTypeClasses
+      NamedFieldPuns
+      OverloadedStrings
+      PolyKinds
+      RankNTypes
+      ScopedTypeVariables
+      StandaloneDeriving
+      TypeApplications
+      TypeFamilies
+      TypeOperators
+      ViewPatterns
+      UndecidableInstances
+  ghc-options: -Wall -fwarn-tabs -O2 -Wno-unused-do-bind
+  build-depends:
+      base
+    , bytestring
+    , canopy-core
+    , canopy-query
+    , containers
+    , directory
+    , filepath
+    , text
+    , time
+  default-language: Haskell2010

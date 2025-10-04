@@ -1,0 +1,232 @@
+{-# LANGUAGE DeriveGeneric #-}
+{-# OPTIONS_GHC -Wall #-}
+
+-- | Incremental compilation support using content hashing.
+--
+-- This module implements incremental compilation by:
+--
+-- * Tracking content hashes of source files
+-- * Detecting changes in dependencies
+-- * Skipping unchanged modules
+-- * Invalidating transitive dependencies
+--
+-- Follows the NEW query engine pattern with pure data structures.
+--
+-- @since 0.19.1
+module Builder.Incremental
+  ( -- * Cache Types
+    BuildCache (..),
+    CacheEntry (..),
+
+    -- * Cache Operations
+    emptyCache,
+    loadCache,
+    saveCache,
+    lookupCache,
+    insertCache,
+
+    -- * Change Detection
+    needsRecompile,
+    invalidateModule,
+    invalidateTransitive,
+
+    -- * Cache Management
+    pruneCache,
+    getCacheStats,
+  )
+where
+
+import qualified Builder.Hash as Hash
+import qualified Canopy.ModuleName as ModuleName
+import Data.Aeson (FromJSON (..), ToJSON (..), (.:), (.=))
+import qualified Data.Aeson as Aeson
+import qualified Data.ByteString.Lazy as BSL
+import Data.Map.Strict (Map)
+import qualified Data.Map.Strict as Map
+import qualified Data.Name as Name
+import Data.Time.Clock (UTCTime, getCurrentTime)
+import GHC.Generics (Generic)
+import qualified Logging.Debug as Logger
+import Logging.Debug (DebugCategory (..))
+import qualified System.Directory as Dir
+
+-- | Cache entry for a module.
+data CacheEntry = CacheEntry
+  { cacheSourceHash :: !Hash.ContentHash,
+    cacheDepsHash :: !Hash.ContentHash,
+    cacheArtifactPath :: !FilePath,
+    cacheTimestamp :: !UTCTime
+  }
+  deriving (Show, Eq, Generic)
+
+instance ToJSON CacheEntry where
+  toJSON entry =
+    Aeson.object
+      [ "sourceHash" .= Hash.hashValue (cacheSourceHash entry),
+        "depsHash" .= Hash.hashValue (cacheDepsHash entry),
+        "artifactPath" .= cacheArtifactPath entry,
+        "timestamp" .= cacheTimestamp entry
+      ]
+
+instance FromJSON CacheEntry where
+  parseJSON = Aeson.withObject "CacheEntry" (\obj -> do
+    sourceHashStr <- obj .: "sourceHash"
+    depsHashStr <- obj .: "depsHash"
+    artifactPath <- obj .: "artifactPath"
+    timestamp <- obj .: "timestamp"
+    return CacheEntry
+      { cacheSourceHash = Hash.ContentHash sourceHashStr "loaded",
+        cacheDepsHash = Hash.ContentHash depsHashStr "loaded",
+        cacheArtifactPath = artifactPath,
+        cacheTimestamp = timestamp
+      })
+
+-- | Build cache for incremental compilation.
+data BuildCache = BuildCache
+  { cacheEntries :: !(Map ModuleName.Raw CacheEntry),
+    cacheVersion :: !String,
+    cacheCreated :: !UTCTime
+  }
+  deriving (Show, Eq, Generic)
+
+-- Custom serialization to handle ModuleName.Raw keys
+instance ToJSON BuildCache where
+  toJSON cache =
+    Aeson.object
+      [ "entries" .= map serializeEntry (Map.toList (cacheEntries cache)),
+        "version" .= cacheVersion cache,
+        "created" .= cacheCreated cache
+      ]
+    where
+      serializeEntry (moduleName, entry) =
+        Aeson.object
+          [ "module" .= show moduleName,
+            "entry" .= entry
+          ]
+
+instance FromJSON BuildCache where
+  parseJSON = Aeson.withObject "BuildCache" (\obj -> do
+    entriesList <- obj .: "entries"
+    version <- obj .: "version"
+    created <- obj .: "created"
+    entries <- mapM deserializeEntry entriesList
+    return BuildCache
+      { cacheEntries = Map.fromList entries,
+        cacheVersion = version,
+        cacheCreated = created
+      })
+    where
+      deserializeEntry = Aeson.withObject "Entry" (\entryObj -> do
+        moduleStr <- entryObj .: "module"
+        entry <- entryObj .: "entry"
+        -- Parse module name from string using Name.fromChars
+        let moduleName = Name.fromChars moduleStr
+        return (moduleName, entry))
+
+-- | Create empty cache.
+emptyCache :: IO BuildCache
+emptyCache = do
+  now <- getCurrentTime
+  return
+    BuildCache
+      { cacheEntries = Map.empty,
+        cacheVersion = "0.19.1",
+        cacheCreated = now
+      }
+
+-- | Load cache from disk using JSON deserialization.
+loadCache :: FilePath -> IO (Maybe BuildCache)
+loadCache path = do
+  Logger.debug BUILD ("Loading cache from: " ++ path)
+  exists <- Dir.doesFileExist path
+  if exists
+    then do
+      contents <- BSL.readFile path
+      case Aeson.eitherDecode contents of
+        Left err -> do
+          Logger.debug BUILD ("Cache decode error: " ++ err)
+          return Nothing
+        Right cache -> do
+          Logger.debug BUILD ("Cache loaded successfully: " ++ show (Map.size (cacheEntries cache)) ++ " entries")
+          return (Just cache)
+    else do
+      Logger.debug BUILD "No cache file found"
+      return Nothing
+
+-- | Save cache to disk using JSON serialization.
+saveCache :: FilePath -> BuildCache -> IO ()
+saveCache path cache = do
+  Logger.debug BUILD ("Saving cache to: " ++ path)
+  Logger.debug BUILD ("Cache entries: " ++ show (Map.size (cacheEntries cache)))
+  let json = Aeson.encode cache
+  BSL.writeFile path json
+  Logger.debug BUILD "Cache saved successfully"
+
+-- | Lookup module in cache.
+lookupCache :: BuildCache -> ModuleName.Raw -> Maybe CacheEntry
+lookupCache cache moduleName =
+  Map.lookup moduleName (cacheEntries cache)
+
+-- | Insert module into cache.
+insertCache :: BuildCache -> ModuleName.Raw -> CacheEntry -> BuildCache
+insertCache cache moduleName entry =
+  cache {cacheEntries = Map.insert moduleName entry (cacheEntries cache)}
+
+-- | Check if module needs recompilation.
+needsRecompile ::
+  BuildCache ->
+  ModuleName.Raw ->
+  Hash.ContentHash -> -- ^ Current source hash
+  Hash.ContentHash -> -- ^ Current deps hash
+  Bool
+needsRecompile cache moduleName sourceHash depsHash =
+  case lookupCache cache moduleName of
+    Nothing ->
+      True -- Not in cache, must compile
+    Just entry
+      | Hash.hashChanged sourceHash (cacheSourceHash entry) ->
+          True
+      | Hash.hashChanged depsHash (cacheDepsHash entry) ->
+          True
+      | otherwise ->
+          False
+
+-- | Invalidate a module in cache.
+invalidateModule :: BuildCache -> ModuleName.Raw -> BuildCache
+invalidateModule cache moduleName =
+  cache {cacheEntries = Map.delete moduleName (cacheEntries cache)}
+
+-- | Invalidate module and all transitive dependents.
+invalidateTransitive ::
+  BuildCache ->
+  ModuleName.Raw ->
+  Map ModuleName.Raw [ModuleName.Raw] -> -- ^ Reverse dependency map
+  BuildCache
+invalidateTransitive cache moduleName reverseDeps =
+  let toInvalidate = collectTransitive [moduleName]
+      newEntries = foldr Map.delete (cacheEntries cache) toInvalidate
+   in cache {cacheEntries = newEntries}
+  where
+    collectTransitive [] = []
+    collectTransitive (m : ms) =
+      let deps = maybe [] id (Map.lookup m reverseDeps)
+          rest = collectTransitive (ms ++ deps)
+       in m : rest
+
+-- | Prune old entries from cache.
+pruneCache :: BuildCache -> UTCTime -> BuildCache
+pruneCache cache cutoff =
+  let validEntries = Map.filter (isRecent cutoff) (cacheEntries cache)
+   in cache {cacheEntries = validEntries}
+  where
+    isRecent cutoffTime entry = cacheTimestamp entry > cutoffTime
+
+-- | Get cache statistics.
+getCacheStats :: BuildCache -> IO (Int, Int, Int)
+getCacheStats cache = do
+  let entries = cacheEntries cache
+      totalEntries = Map.size entries
+      -- These are simplified - real impl would track hits/misses
+      hitCount = 0
+      missCount = 0
+  return (totalEntries, hitCount, missCount)

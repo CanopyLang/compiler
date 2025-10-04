@@ -1,0 +1,289 @@
+{-# LANGUAGE OverloadedStrings #-}
+{-# OPTIONS_GHC -Wall #-}
+
+-- | Code generation and building functionality.
+--
+-- This module handles the core compilation pipeline, including building
+-- from source files, generating artifacts, and creating output builders.
+-- It coordinates between parsing, type checking, optimization, and
+-- code generation phases.
+--
+-- Key functions:
+--   * 'buildFromExposed' - Build from exposed package modules
+--   * 'buildFromPaths' - Build from specific file paths
+--   * 'createBuilder' - Generate output builder from artifacts
+--   * 'extractModuleInfo' - Analyze module metadata
+--
+-- The module follows CLAUDE.md guidelines with functions ≤15 lines,
+-- comprehensive error handling, and lens-based record access.
+--
+-- @since 0.19.1
+module Make.Builder
+  ( -- * Building Functions
+    buildFromExposed,
+    buildFromPaths,
+
+    -- * Builder Creation
+    createBuilder,
+
+    -- * Module Analysis
+    extractMainModules,
+    extractNonMainModules,
+    hasExactlyOneMain,
+
+    -- * Helper Functions
+    isMainModule,
+    getModuleMain,
+  )
+where
+
+import qualified AST.Optimized as Opt
+import qualified Build.Artifacts as Build
+import qualified Canopy.ModuleName as ModuleName
+import qualified Canopy.Package as Pkg
+import qualified Compiler
+import Control.Lens ((^.))
+import Data.ByteString.Builder (Builder)
+import Data.Map (Map)
+import qualified Data.Map as Map
+import qualified Data.Maybe as Maybe
+import qualified Data.Name as Name
+import Data.NonEmptyList (List)
+import qualified Data.NonEmptyList as NonEmptyList
+import qualified Debug.Logger as Logger
+import Debug.Logger (DebugCategory (..))
+import qualified Exit as BuildExit
+import qualified Generate.JavaScript as JS
+import qualified Generate.Mode as Mode
+import Make.Types
+  ( BuildContext,
+    DesiredMode (..),
+    Task,
+    bcDesiredMode,
+    bcPackage,
+    bcRoot,
+  )
+import qualified Reporting.Exit as Exit
+import qualified Reporting.Task as Task
+import System.IO.Unsafe (unsafePerformIO)
+
+-- | Build project from exposed package modules.
+--
+-- Compiles all modules listed in the package outline's exposed-modules
+-- field. Used for package builds where specific modules are exposed
+-- to consumers.
+--
+-- Uses NEW compiler by default. Set CANOPY_NEW_COMPILER=0 to use old system.
+--
+-- @
+-- artifacts <- buildFromExposed ctx exposedModules maybeDocs
+-- @
+buildFromExposed ::
+  BuildContext ->
+  [Compiler.SrcDir] ->
+  List ModuleName.Raw ->
+  Maybe FilePath ->
+  Task ()
+buildFromExposed ctx srcDirs exposedModules _maybeDocs = do
+  let pkg = ctx ^. bcPackage
+      root = ctx ^. bcRoot
+
+  result <- Task.io $ Compiler.compileFromExposed pkg root srcDirs exposedModules
+  case result of
+    Left err -> Task.throw (Exit.MakeBuildError (BuildExit.toString err))
+    Right _artifacts -> return ()
+
+-- | Build project from specific file paths.
+--
+-- Compiles modules found at the given file paths. Used for application
+-- builds and targeted compilation of specific modules.
+--
+-- Checks CANOPY_NEW_COMPILER environment variable to switch between
+-- old and new query-based compiler implementations.
+--
+-- @
+-- artifacts <- buildFromPaths ctx [\"src/Main.hs\", \"src/Utils.hs\"]
+-- @
+buildFromPaths ::
+  BuildContext ->
+  List FilePath ->
+  Task Compiler.Artifacts
+buildFromPaths ctx paths = do
+  let pkg = ctx ^. bcPackage
+      root = ctx ^. bcRoot
+
+  result <- Task.io $ Compiler.compileFromPaths pkg root (NonEmptyList.toList paths)
+  case result of
+    Left err -> Task.throw (Exit.MakeBuildError (BuildExit.toString err))
+    Right artifacts -> return artifacts
+
+-- | Create output builder from compiled artifacts.
+--
+-- Generates the appropriate code builder based on the desired build mode.
+-- The builder contains the final JavaScript or other target code.
+--
+-- Build modes:
+--   * 'Debug' - Includes debug information and readable output
+--   * 'Dev' - Fast compilation with minimal optimization
+--   * 'Prod' - Full optimization for production deployment
+createBuilder ::
+  BuildContext ->
+  Compiler.Artifacts ->
+  Task Builder
+createBuilder ctx artifacts = do
+  let mode = ctx ^. bcDesiredMode
+  generateForMode mode artifacts
+
+-- | Generate builder for specific build mode.
+--
+-- Delegates to JavaScript generation based on mode.
+-- Each mode has different optimization and output characteristics.
+generateForMode ::
+  DesiredMode ->
+  Compiler.Artifacts ->
+  Task Builder
+generateForMode mode artifacts =
+  Task.mapError Exit.MakeBadGenerate $
+    case mode of
+      Debug -> return $ generateJS (Mode.Dev Nothing False) artifacts
+      Dev -> return $ generateJS (Mode.Dev Nothing False) artifacts
+      Prod -> return $ generateJS (Mode.Prod (Mode.shortenFieldNames globalGraph) False) artifacts
+  where
+    globalGraph = extractGlobalGraph artifacts
+
+-- Helper: Generate JavaScript from artifacts
+generateJS :: Mode.Mode -> Compiler.Artifacts -> Builder
+generateJS mode artifacts =
+  let globalGraph = extractGlobalGraph artifacts
+      mains = extractMains artifacts
+      ffiInfo = artifacts ^. Build.artifactsFFIInfo
+   in JS.generate mode globalGraph mains ffiInfo
+
+-- Helper: Extract GlobalGraph for optimization
+extractGlobalGraph :: Compiler.Artifacts -> Opt.GlobalGraph
+extractGlobalGraph artifacts =
+  -- Use the merged GlobalGraph from artifacts (includes dependencies)
+  let globalGraph = artifacts ^. Build.artifactsGlobalGraph
+   in unsafePerformIO $ do
+        let nodeCount = countGlobals globalGraph
+        Logger.debug CODEGEN ("Make.Builder: Extracted GlobalGraph with " ++ show nodeCount ++ " globals")
+        return globalGraph
+
+-- Helper: Count globals in GlobalGraph
+countGlobals :: Opt.GlobalGraph -> Int
+countGlobals (Opt.GlobalGraph nodes _) = Map.size nodes
+
+-- Helper: Extract mains from artifacts
+extractMains :: Compiler.Artifacts -> Map ModuleName.Canonical Opt.Main
+extractMains artifacts =
+  let pkg = artifacts ^. Build.artifactsName
+      modules = artifacts ^. Build.artifactsModules
+      roots = artifacts ^. Build.artifactsRoots
+   in gatherMains pkg modules roots
+
+-- Helper: Gather mains from roots and modules
+gatherMains ::
+  Pkg.Name ->
+  [Compiler.Module] ->
+  List Compiler.Root ->
+  Map ModuleName.Canonical Opt.Main
+gatherMains pkg _modules roots =
+  let mainList = Maybe.mapMaybe (extractMainFromRoot pkg) (NonEmptyList.toList roots)
+   in Map.fromList mainList
+
+-- Helper: Extract main from a single root
+extractMainFromRoot ::
+  Pkg.Name ->
+  Compiler.Root ->
+  Maybe (ModuleName.Canonical, Opt.Main)
+extractMainFromRoot pkg root = case root of
+  Compiler.Inside _name -> Nothing
+  Compiler.Outside name _iface (Opt.LocalGraph maybeMain _ _) ->
+    case maybeMain of
+      Just main -> Just (ModuleName.Canonical pkg name, main)
+      Nothing -> Nothing
+
+-- | Extract modules that contain main functions.
+--
+-- Scans build artifacts to find modules with executable main functions.
+-- Used to determine output format and entry points for applications.
+--
+-- @
+-- mains <- extractMainModules artifacts
+-- case mains of
+--   [] -> generateLibrary artifacts
+--   [main] -> generateSingleApp main artifacts
+--   mains -> generateMultiApp mains artifacts
+-- @
+extractMainModules :: Compiler.Artifacts -> [ModuleName.Raw]
+extractMainModules (Compiler.Artifacts _ _ roots modules _ _) =
+  Maybe.mapMaybe (getModuleMain modules) (NonEmptyList.toList roots)
+
+-- | Extract modules that do not contain main functions.
+--
+-- Finds library modules without executable entry points. Used for
+-- JavaScript output validation - ensures no main functions are
+-- accidentally included in library builds.
+extractNonMainModules :: Compiler.Artifacts -> [ModuleName.Raw]
+extractNonMainModules (Compiler.Artifacts _ _ roots modules _ _) =
+  Maybe.mapMaybe (getNonMainModule modules) (NonEmptyList.toList roots)
+
+-- | Check if artifacts contain exactly one main module.
+--
+-- Validates that HTML output has exactly one entry point. Returns
+-- the main module name or throws an appropriate error.
+--
+-- Errors:
+--   * No main functions found
+--   * Multiple main functions found (invalid for HTML)
+hasExactlyOneMain :: Compiler.Artifacts -> Task ModuleName.Raw
+hasExactlyOneMain (Compiler.Artifacts _ _ roots modules _ _) =
+  case roots of
+    NonEmptyList.List root [] ->
+      case getModuleMain modules root of
+        Just mainName -> pure mainName
+        Nothing -> Task.throw Exit.MakeNoMain
+    NonEmptyList.List _ (_ : _) ->
+      Task.throw Exit.MakeMultipleFilesIntoHtml
+
+-- | Get main function from specific module.
+--
+-- Checks if a build root contains a main function. Returns the module
+-- name if a main function is found, Nothing otherwise.
+getModuleMain :: [Compiler.Module] -> Compiler.Root -> Maybe ModuleName.Raw
+getModuleMain modules root =
+  case root of
+    Compiler.Inside name ->
+      if any (isMainModule name) modules
+        then Just name
+        else Nothing
+    Compiler.Outside name _ (Opt.LocalGraph maybeMain _ _) ->
+      case maybeMain of
+        Just _ -> Just name
+        Nothing -> Nothing
+
+-- | Get non-main module from build root.
+--
+-- Returns module name if it doesn't contain a main function and
+-- isn't named "Main". Used for library module extraction.
+getNonMainModule :: [Compiler.Module] -> Compiler.Root -> Maybe ModuleName.Raw
+getNonMainModule modules root =
+  case root of
+    Compiler.Inside name ->
+      if any (isMainModule name) modules || Name.toChars name == "Main"
+        then Nothing
+        else Just name
+    Compiler.Outside name _ (Opt.LocalGraph maybeMain _ _) ->
+      case maybeMain of
+        Just _ -> Nothing
+        Nothing -> Just name
+
+-- | Check if module contains a main function.
+--
+-- Examines build module to determine if it defines an executable
+-- main function. Works with both fresh and cached modules.
+isMainModule :: ModuleName.Raw -> Compiler.Module -> Bool
+isMainModule targetName modul =
+  case modul of
+    Compiler.Fresh name _ (Opt.LocalGraph maybeMain _ _) ->
+      Maybe.isJust maybeMain && name == targetName

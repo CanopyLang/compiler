@@ -1,0 +1,60 @@
+---
+name: canopy-query
+version: 0.19.1
+synopsis: "Canopy query-based compilation system"
+description: |
+  Query-based compilation system following modern compiler architectures
+  (Rust Salsa, Swift 6.0, TypeScript). Features content-hash caching,
+  automatic invalidation, and zero STM (single IORef only).
+
+homepage: "https://github.com/quinten/canopy"
+license: BSD-3-Clause
+license-file: ../../LICENSE
+author: "Quinten Kasteel"
+maintainer: "info@canopy-lang.org"
+copyright: "Copyright (c) 2025-present, Quinten Kasteel"
+category: Compiler, Language
+
+dependencies:
+  - base
+  - bytestring
+  - containers
+  - cryptohash-sha256
+  - text
+  - time
+  - canopy-core
+
+default-extensions:
+  - ConstraintKinds
+  - DataKinds
+  - DerivingStrategies
+  - DerivingVia
+  - DeriveFunctor
+  - DeriveGeneric
+  - DeriveDataTypeable
+  - DuplicateRecordFields
+  - FlexibleContexts
+  - FlexibleInstances
+  - GADTs
+  - KindSignatures
+  - LambdaCase
+  - MultiParamTypeClasses
+  - NamedFieldPuns
+  - OverloadedStrings
+  - PolyKinds
+  - RankNTypes
+  - ScopedTypeVariables
+  - StandaloneDeriving
+  - TypeApplications
+  - TypeFamilies
+  - TypeOperators
+  - ViewPatterns
+  - UndecidableInstances
+
+library:
+  source-dirs: src
+  ghc-options:
+    - -Wall
+    - -fwarn-tabs
+    - -O2
+    - -Wno-unused-do-bind
