@@ -115,7 +115,7 @@ pathConstructionTests = testGroup "Path Construction Tests"
       let root = "/project"
       let result = Stuff.interfaces root
       root `List.isPrefixOf` result @? "Should contain root path"
-      "i.dat" `List.isSuffixOf` result @? "Should end with i.dat"
+      "i.json" `List.isSuffixOf` result @? "Should end with i.json"
 
   , testCase "objects creates correct path" $ do
       let root = "/project"
@@ -256,10 +256,10 @@ pathInvariantTests = testGroup "Path Invariant Tests"
           result = Stuff.details normalized
       in "d.dat" `List.isSuffixOf` result
 
-  , testProperty "interfaces always ends with i.dat" $ \root ->
+  , testProperty "interfaces always ends with i.json" $ \root ->
       let normalized = if null root then "." else root
           result = Stuff.interfaces normalized
-      in "i.dat" `List.isSuffixOf` result
+      in "i.json" `List.isSuffixOf` result
 
   , testProperty "objects always ends with o.dat" $ \root ->
       let normalized = if null root then "." else root
@@ -390,7 +390,7 @@ specialCharacterTests = testGroup "Special Character Tests"
       let root = "/path/with/üñíçøðé"
       let result = Stuff.interfaces root
       root `List.isPrefixOf` result @? "Should handle unicode in paths"
-      "i.dat" `List.isSuffixOf` result @? "Should end with i.dat"
+      "i.json" `List.isSuffixOf` result @? "Should end with i.json"
 
   , testCase "temp with special extension" $ do
       let result = Stuff.temp "/project" "spec.ial"
@@ -437,7 +437,7 @@ permissionTests = testGroup "Permission Tests"
       -- Path construction should work even if we can't write to the path
       let result = Stuff.interfaces "/readonly/path"
       "/readonly/path" `List.isPrefixOf` result @? "Should construct paths to readonly locations"
-      "i.dat" `List.isSuffixOf` result @? "Should end with i.dat"
+      "i.json" `List.isSuffixOf` result @? "Should end with i.json"
   ]
 
 filesystemLimitTests :: TestTree

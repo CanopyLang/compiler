@@ -30,7 +30,7 @@ import qualified Data.Name as Name
 
 -- Additional imports for test helpers
 import qualified Data.Map.Strict as Map
-import Control.Concurrent.MVar (readMVar)
+import Control.Concurrent.STM (TVar, newTVarIO, readTVarIO)
 import Control.Concurrent (threadDelay)
 
 -- | Main test tree containing all Build.Orchestration tests.
@@ -61,14 +61,14 @@ unitTests = testGroup "Unit Tests"
       ]
   , testGroup "Threading Operations"
       [ testCase "fork creates concurrent computation" $ do
-          mvar <- Orchestration.fork $ do
+          tvar <- Orchestration.fork $ do
             threadDelay 1000 -- 1ms delay
             return (42 :: Int)
-          result <- readMVar mvar
-          result @?= 42
+          result <- readTVarIO tvar
+          result @?= Just 42
       , testCase "forkWithKey with empty map" $ do
-          mvars <- Orchestration.forkWithKey (\k v -> return v) (Map.empty :: Map.Map String Int)
-          Map.size mvars @?= 0
+          tvars <- Orchestration.forkWithKey (\k v -> return v) (Map.empty :: Map.Map String Int)
+          Map.size tvars @?= 0
       ]
   ]
 
@@ -84,14 +84,14 @@ propertyTests = testGroup "Property Tests"
       in "/test/base" `isPrefixOf` combined
   , testProperty "fork preserves computation results" $ \value ->
       monadicIO $ do
-        mvar <- run $ Orchestration.fork (return value)
-        result <- run $ readMVar mvar
-        QCM.assert (result == (value :: Int))
+        tvar <- run $ Orchestration.fork (return value)
+        result <- run $ readTVarIO tvar
+        QCM.assert (result == Just (value :: Int))
   , testProperty "forkWithKey preserves map structure" $ \(keyValues :: [(String, Int)]) ->
       let testMap = Map.fromList (take 5 keyValues) -- Limit size for performance
       in monadicIO $ do
-        mvars <- run $ Orchestration.forkWithKey (\k v -> return v) testMap
-        results <- run $ traverse readMVar mvars
+        tvars <- run $ Orchestration.forkWithKey (\k v -> return v) testMap
+        results <- run $ traverse readTVarIO tvars
         QCM.assert (Map.keys testMap == Map.keys results)
   ]
 

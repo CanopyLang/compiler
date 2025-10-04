@@ -46,7 +46,7 @@ testRealCompilationScenarios =
         let pkg = Pkg.core
             interfaces = Map.empty
             sourceModule = createSimpleValidModule
-            result = Compile.compile pkg interfaces sourceModule
+        result <- Compile.compile pkg interfaces sourceModule
 
         case result of
           Left err -> do
@@ -67,7 +67,7 @@ testRealCompilationScenarios =
         let pkg = Pkg.core
             interfaces = createBasicInterfaces
             sourceModule = createModuleWithDependencies
-            result = Compile.compile pkg interfaces sourceModule
+        result <- Compile.compile pkg interfaces sourceModule
 
         case result of
           Left err -> do
@@ -79,7 +79,7 @@ testRealCompilationScenarios =
         let pkg = createApplicationPackage
             interfaces = createApplicationInterfaces
             sourceModule = createApplicationModule
-            result = Compile.compile pkg interfaces sourceModule
+        result <- Compile.compile pkg interfaces sourceModule
 
         case result of
           Left _ -> pure () -- application compilation may fail with mock data
@@ -90,7 +90,7 @@ testRealCompilationScenarios =
         let pkg = createLibraryPackage
             interfaces = createLibraryInterfaces
             sourceModule = createLibraryModule
-            result = Compile.compile pkg interfaces sourceModule
+        result <- Compile.compile pkg interfaces sourceModule
 
         case result of
           Left _ -> pure () -- library compilation may fail with mock data
@@ -101,7 +101,7 @@ testRealCompilationScenarios =
         let pkg = Pkg.core
             interfaces = createComplexInterfaces
             sourceModule = createComplexModule
-            result = Compile.compile pkg interfaces sourceModule
+        result <- Compile.compile pkg interfaces sourceModule
 
         case result of
           Left err -> do
@@ -122,7 +122,7 @@ testCompilationPipeline =
         let pkg = Pkg.core
             interfaces = Map.empty
             sourceModule = createValidModule
-            result = Compile.compile pkg interfaces sourceModule
+        result <- Compile.compile pkg interfaces sourceModule
 
         case result of
           Left err -> do
@@ -142,7 +142,7 @@ testCompilationPipeline =
         let pkg = Pkg.core
             interfaces = Map.empty
             invalidModule = createInvalidModule
-            result = Compile.compile pkg interfaces invalidModule
+        result <- Compile.compile pkg interfaces invalidModule
 
         case result of
           Left err -> do
@@ -155,8 +155,8 @@ testCompilationPipeline =
             baseInterfaces = Map.empty
             extendedInterfaces = Map.insert (Name.fromChars "Base") mockInterface baseInterfaces
             sourceModule = createModuleWithImports
-            result1 = Compile.compile pkg baseInterfaces sourceModule
-            result2 = Compile.compile pkg extendedInterfaces sourceModule
+        result1 <- Compile.compile pkg baseInterfaces sourceModule
+        result2 <- Compile.compile pkg extendedInterfaces sourceModule
 
         -- Results may differ based on available interfaces
         case (result1, result2) of
@@ -167,7 +167,7 @@ testCompilationPipeline =
         let pkg = Pkg.core
             interfaces = Map.empty
             sourceModule = createConsistentModule
-            result = Compile.compile pkg interfaces sourceModule
+        result <- Compile.compile pkg interfaces sourceModule
 
         case result of
           Left _ -> pure () -- consistency errors may occur
@@ -186,7 +186,7 @@ testErrorIntegration =
         let pkg = Pkg.core
             interfaces = Map.empty
             moduleWithNameErrors = createModuleWithNameErrors
-            result = Compile.compile pkg interfaces moduleWithNameErrors
+        result <- Compile.compile pkg interfaces moduleWithNameErrors
 
         case result of
           Left err -> do
@@ -197,7 +197,7 @@ testErrorIntegration =
         let pkg = Pkg.core
             interfaces = Map.empty
             moduleWithTypeErrors = createModuleWithTypeErrors
-            result = Compile.compile pkg interfaces moduleWithTypeErrors
+        result <- Compile.compile pkg interfaces moduleWithTypeErrors
 
         case result of
           Left err -> do
@@ -208,7 +208,7 @@ testErrorIntegration =
         let pkg = Pkg.core
             interfaces = Map.empty
             moduleWithPatternErrors = createModuleWithPatternErrors
-            result = Compile.compile pkg interfaces moduleWithPatternErrors
+        result <- Compile.compile pkg interfaces moduleWithPatternErrors
 
         case result of
           Left err -> do
@@ -219,7 +219,7 @@ testErrorIntegration =
         let pkg = Pkg.core
             interfaces = Map.empty
             moduleWithOptimizationErrors = createModuleWithOptimizationErrors
-            result = Compile.compile pkg interfaces moduleWithOptimizationErrors
+        result <- Compile.compile pkg interfaces moduleWithOptimizationErrors
 
         case result of
           Left err -> do
@@ -230,7 +230,7 @@ testErrorIntegration =
         let pkg = Pkg.core
             interfaces = Map.empty
             multipleErrorsModule = createModuleWithMultipleErrors
-            result = Compile.compile pkg interfaces multipleErrorsModule
+        result <- Compile.compile pkg interfaces multipleErrorsModule
 
         case result of
           Left err -> do
@@ -249,7 +249,7 @@ testPerformanceCharacteristics =
         let pkg = Pkg.core
             interfaces = Map.empty
             smallModule = createSmallModule
-            result = Compile.compile pkg interfaces smallModule
+        result <- Compile.compile pkg interfaces smallModule
 
         case result of
           Left _ -> pure () -- small module compilation may fail
@@ -260,7 +260,7 @@ testPerformanceCharacteristics =
         let pkg = Pkg.core
             manyInterfaces = createManyInterfaces 50
             sourceModule = createModuleUsingManyInterfaces
-            result = Compile.compile pkg manyInterfaces sourceModule
+        result <- Compile.compile pkg manyInterfaces sourceModule
 
         case result of
           Left _ -> pure () -- many interfaces may cause issues
@@ -271,7 +271,7 @@ testPerformanceCharacteristics =
         let pkg = Pkg.core
             interfaces = Map.empty
             complexTypesModule = createModuleWithComplexTypes
-            result = Compile.compile pkg interfaces complexTypesModule
+        result <- Compile.compile pkg interfaces complexTypesModule
 
         case result of
           Left _ -> pure () -- complex types may cause compilation issues
@@ -282,7 +282,7 @@ testPerformanceCharacteristics =
         let pkg = Pkg.core
             interfaces = Map.empty
             sourceModule = createDeterministicModule
-            results = replicate 3 (Compile.compile pkg interfaces sourceModule)
+        results <- sequence (replicate 3 (Compile.compile pkg interfaces sourceModule))
 
         -- All results should be identical
         case results of
@@ -313,7 +313,7 @@ testSystemIntegration =
           let pkg = Pkg.core
               interfaces = Map.empty
               sourceModule = createFileSystemModule
-              result = Compile.compile pkg interfaces sourceModule
+          result <- Compile.compile pkg interfaces sourceModule
 
           case result of
             Left _ -> pure () -- file system integration may have issues
@@ -325,8 +325,8 @@ testSystemIntegration =
             customPackage = createCustomPackage
             interfaces = Map.empty
             sourceModule = createPackageAwareModule
-            coreResult = Compile.compile corePackage interfaces sourceModule
-            customResult = Compile.compile customPackage interfaces sourceModule
+        coreResult <- Compile.compile corePackage interfaces sourceModule
+        customResult <- Compile.compile customPackage interfaces sourceModule
 
         -- Results may differ based on package context
         case (coreResult, customResult) of
@@ -338,8 +338,8 @@ testSystemIntegration =
             interfaces = createCrossModuleInterfaces
             module1 = createModule1
             module2 = createModule2
-            result1 = Compile.compile pkg interfaces module1
-            result2 = Compile.compile pkg interfaces module2
+        result1 <- Compile.compile pkg interfaces module1
+        result2 <- Compile.compile pkg interfaces module2
 
         -- Both modules should compile consistently in the same environment
         case (result1, result2) of
@@ -351,8 +351,8 @@ testSystemIntegration =
             interfaces1 = createEnvironment1Interfaces
             interfaces2 = createEnvironment2Interfaces
             sourceModule = createEnvironmentSensitiveModule
-            result1 = Compile.compile pkg interfaces1 sourceModule
-            result2 = Compile.compile pkg interfaces2 sourceModule
+        result1 <- Compile.compile pkg interfaces1 sourceModule
+        result2 <- Compile.compile pkg interfaces2 sourceModule
 
         -- Same module in different environments may produce different results
         case (result1, result2) of
