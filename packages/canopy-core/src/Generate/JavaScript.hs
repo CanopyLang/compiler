@@ -453,67 +453,42 @@ instance Exception MyException
 -- | Filter dependencies to only include essential ones that match Elm's inclusion strategy
 filterEssentialDeps :: Mode.Mode -> Set Opt.Global -> Set Opt.Global
 filterEssentialDeps _mode deps =
-  Set.filter isEssentialDependency deps
-  where
-    isEssentialDependency (Opt.Global modName funcName) =
-      let pkgName = ModuleName._package modName
-          moduleName = ModuleName._module modName
-      in case (Pkg.toChars pkgName, Name.toChars moduleName) of
-        -- Always include user project functions
-        ("author/project", _) -> True
-        -- Always include platform/kernel functions (essential runtime)
-        (pkg, _) | "elm/" `List.isPrefixOf` pkg && isKernelFunction funcName -> True
-        -- Include core elm/core functions that Elm includes
-        ("elm/core", "Basics") -> True  -- Include all Basics functions
-        ("elm/core", "String") -> True  -- Include String functions
-        ("elm/core", "List") -> True    -- Include List functions
-        ("elm/core", "Array") -> True   -- Include Array functions
-        ("elm/core", "Dict") -> True    -- Include Dict functions
-        ("elm/core", "Set") -> True     -- Include Set functions
-        ("elm/core", "Result") -> True  -- Include Result functions
-        ("elm/core", "Platform") -> True -- Include Platform functions
-        ("elm/core", "VirtualDom") -> True -- Include VirtualDom functions
-        ("elm/core", "Html") -> True     -- Include Html functions
-        ("elm/core", "Json.Decode") -> True -- Include Json.Decode functions
-        ("elm/core", "Json.Encode") -> True -- Include Json.Encode functions
-        ("elm/core", "Elm.JsArray") -> True -- Include JsArray functions
-        ("elm/core", "Tuple") -> True    -- Include Tuple functions
-        -- Skip larger modules that might not be essential
-        ("elm/core", _) -> False
-        -- Include everything else (non-elm/core dependencies)
-        _ -> True
-
-    isKernelFunction name = "_" `List.isPrefixOf` Name.toChars name
+  -- INCLUDE ALL DEPENDENCIES - the graph already contains only what's needed
+  deps
 
 
 addGlobalHelp :: Mode.Mode -> Graph -> Opt.Global -> State -> State
 addGlobalHelp mode graph currentGlobal state =
-  let _ = trace ("DEBUG GLOBAL: Processing global " ++ show currentGlobal) ()
-  in
   let addDeps deps someState =
         let filteredDeps = filterEssentialDeps mode deps
         in Set.foldl' (addGlobal mode graph) someState filteredDeps
       globalInGraph = case Map.lookup currentGlobal graph of
         Just x -> x
         Nothing ->
-          -- Try alternative package name (canopy/kernel vs elm/kernel)
+          -- Try alternative package/module name (elm/core Kernel.* vs elm/kernel *)
           let Opt.Global globalHome globalName = currentGlobal
               currentPkg = ModuleName._package globalHome
-              _ = trace ("DEBUG PACKAGE MAPPING: currentPkg=" ++ show currentPkg ++ ", module=" ++ show (ModuleName._module globalHome)) ()
-              altPkg = if Pkg._author currentPkg == Pkg.canopy
-                      then -- Map canopy packages: kernel->core for standard modules, others stay the same
-                           if Pkg._project currentPkg == Pkg._project Pkg.kernel
-                           then Pkg.core  -- canopy/kernel -> elm/core (for List, String, etc.)
-                           else Pkg.Name Pkg.elm (Pkg._project currentPkg)  -- canopy/other -> elm/other
-                      else if Pkg._author currentPkg == Pkg.elm && Pkg._project currentPkg == Pkg._project Pkg.kernel
-                      then -- Map elm/kernel back to canopy/kernel as fallback
-                           Pkg.kernel
-                      else -- No mapping needed
-                           currentPkg
-              altGlobalHome = globalHome { ModuleName._package = altPkg }
-              altGlobal = Opt.Global altGlobalHome globalName
-              _ = trace ("DEBUG PACKAGE MAPPING: trying altPkg=" ++ show altPkg) ()
               moduleName = ModuleName._module globalHome
+              _ = trace ("DEBUG PACKAGE MAPPING: currentPkg=" ++ show currentPkg ++ ", module=" ++ show moduleName) ()
+
+              -- Check if this is a Kernel.* module in elm/core
+              isKernelModule = "Kernel." `List.isPrefixOf` Name.toChars moduleName
+
+              (altPkg, altModuleName) =
+                if Pkg._author currentPkg == Pkg.elm && Pkg._project currentPkg == Pkg._project Pkg.core && isKernelModule
+                then -- Map elm/core Kernel.* -> elm/kernel *
+                     let kernelName = drop 7 (Name.toChars moduleName)  -- Remove "Kernel." prefix
+                         kernelPkg = Pkg.Name Pkg.elm (Pkg._project Pkg.kernel)
+                     in (kernelPkg, Name.fromChars kernelName)
+                else if Pkg._author currentPkg == Pkg.elm && Pkg._project currentPkg == Pkg._project Pkg.kernel
+                then -- Map elm/kernel * -> elm/core Kernel.*
+                     let kernelModuleName = "Kernel." ++ Name.toChars moduleName
+                     in (Pkg.core, Name.fromChars kernelModuleName)
+                else (currentPkg, moduleName)
+
+              altGlobalHome = ModuleName.Canonical altPkg altModuleName
+              altGlobal = Opt.Global altGlobalHome globalName
+              _ = trace ("DEBUG PACKAGE MAPPING: trying altPkg=" ++ show altPkg ++ ", altModule=" ++ show altModuleName) ()
           in case Map.lookup altGlobal graph of
                Just x -> x
                Nothing ->
