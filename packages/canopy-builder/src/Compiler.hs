@@ -264,24 +264,25 @@ parseModuleImports projectType (modName, path) = do
 -- Helper: Topological sort of modules based on dependencies
 topologicalSort :: Map.Map ModuleName.Raw [ModuleName.Raw] -> [ModuleName.Raw] -> [ModuleName.Raw]
 topologicalSort depGraph modules =
-  reverse (go Set.empty [] modules)
+  let (_visited, sorted) = go Set.empty [] modules
+   in reverse sorted
   where
-    go _visited sorted [] = sorted
+    go visited sorted [] = (visited, sorted)
     go visited sorted (m : ms)
       | Set.member m visited = go visited sorted ms
       | otherwise =
           let deps = Map.findWithDefault [] m depGraph
               visited' = Set.insert m visited
-              (visited'', sorted') = foldl (\(v, s) dep -> (v, visitModule v s dep)) (visited', sorted) deps
+              (visited'', sorted') = foldl (\(v, s) dep -> visitModule v s dep) (visited', sorted) deps
            in go visited'' (m : sorted') ms
 
     visitModule visited sorted modName
-      | Set.member modName visited = sorted
+      | Set.member modName visited = (visited, sorted)
       | otherwise =
           let deps = Map.findWithDefault [] modName depGraph
               visited' = Set.insert modName visited
-              sorted' = foldl (visitModule visited') sorted deps
-           in modName : sorted'
+              (visited'', sorted') = foldl (\(v, s) dep -> visitModule v s dep) (visited', sorted) deps
+           in (visited'', modName : sorted')
 
 -- Helper: Load all dependency artifacts (interfaces + GlobalGraph)
 -- Uses parallel loading for optimal performance
