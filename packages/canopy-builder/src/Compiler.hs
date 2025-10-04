@@ -60,17 +60,19 @@ import qualified System.Directory as Dir
 -- Now includes source directories for transitive import discovery.
 compileFromPaths ::
   Pkg.Name ->
+  Bool -> -- Is this an application (True) or package (False)?
   FilePath ->
   [SrcDir] ->
   [FilePath] ->
   IO (Either Exit.BuildError Build.Artifacts)
-compileFromPaths pkg root srcDirs paths = do
+compileFromPaths pkg isApp root srcDirs paths = do
   Logger.debug COMPILE_DEBUG "Compiler: compileFromPaths (NEW pure compiler)"
   Logger.debug COMPILE_DEBUG ("Package: " ++ show pkg)
+  Logger.debug COMPILE_DEBUG ("IsApplication: " ++ show isApp)
   Logger.debug COMPILE_DEBUG ("Paths: " ++ show paths)
 
   -- Load dependency artifacts (interfaces + GlobalGraph)
-  maybeArtifacts <- loadDependencyArtifacts
+  maybeArtifacts <- loadDependencyArtifacts root
   let (depInterfaces, depGlobalGraph) = case maybeArtifacts of
         Just (ifaces, globalGraph) -> (ifaces, globalGraph)
         Nothing -> (Map.empty, Opt.empty)
@@ -79,11 +81,12 @@ compileFromPaths pkg root srcDirs paths = do
   Logger.debug COMPILE_DEBUG ("Loaded dependency GlobalGraph with " ++ show (countGlobals depGlobalGraph) ++ " globals")
 
   -- Discover transitive dependencies
-  allModulePaths <- discoverTransitiveDeps root srcDirs paths depInterfaces
+  let projectType = if isApp then Parse.Application else Parse.Package pkg
+  allModulePaths <- discoverTransitiveDeps root srcDirs paths depInterfaces projectType
   Logger.debug COMPILE_DEBUG ("Discovered " ++ show (Map.size allModulePaths) ++ " total modules to compile")
 
   -- Compile in dependency order with growing interface map
-  compileResult <- compileModulesInOrder pkg root depInterfaces allModulePaths
+  compileResult <- compileModulesInOrder pkg projectType root depInterfaces allModulePaths
   case compileResult of
     Left err -> return (Left err)
     Right (compiledModules, _finalInterfaces) -> do
@@ -113,11 +116,12 @@ data SrcDir
 
 compileFromExposed ::
   Pkg.Name ->
+  Bool -> -- Is this an application (True) or package (False)?
   FilePath ->
   [SrcDir] ->
   NE.List ModuleName.Raw ->
   IO (Either Exit.BuildError Build.Artifacts)
-compileFromExposed pkg root srcDirs exposedModules = do
+compileFromExposed pkg isApp root srcDirs exposedModules = do
   Logger.debug COMPILE_DEBUG "Compiler: compileFromExposed (NEW pure compiler)"
   Logger.debug COMPILE_DEBUG ("Package: " ++ show pkg)
   Logger.debug COMPILE_DEBUG ("Exposed: " ++ show (NE.toList exposedModules))
@@ -125,7 +129,7 @@ compileFromExposed pkg root srcDirs exposedModules = do
   -- Discover module paths
   paths <- discoverModulePaths root srcDirs (NE.toList exposedModules)
 
-  compileFromPaths pkg root srcDirs paths
+  compileFromPaths pkg isApp root srcDirs paths
 
 -- Helper: Discover transitive dependencies
 discoverTransitiveDeps ::
@@ -133,25 +137,26 @@ discoverTransitiveDeps ::
   [SrcDir] ->
   [FilePath] ->
   Map.Map ModuleName.Raw I.Interface ->
+  Parse.ProjectType ->
   IO (Map.Map ModuleName.Raw FilePath)
-discoverTransitiveDeps root srcDirs initialPaths depInterfaces = do
+discoverTransitiveDeps root srcDirs initialPaths depInterfaces projectType = do
   Logger.debug COMPILE_DEBUG ("discoverTransitiveDeps: root=" ++ root)
   Logger.debug COMPILE_DEBUG ("discoverTransitiveDeps: srcDirs=" ++ show srcDirs)
   Logger.debug COMPILE_DEBUG ("discoverTransitiveDeps: initialPaths=" ++ show initialPaths)
   -- Parse initial modules to get their names and imports
-  initialModules <- mapM parseModuleFile initialPaths
+  initialModules <- mapM (parseModuleFile projectType) initialPaths
   Logger.debug COMPILE_DEBUG ("discoverTransitiveDeps: parsed " ++ show (length initialModules) ++ " initial modules")
   let initialMap = Map.fromList [(Src.getName m, p) | (m, p) <- zip initialModules initialPaths]
   Logger.debug COMPILE_DEBUG ("discoverTransitiveDeps: initialMap keys=" ++ show (Map.keys initialMap))
   -- Recursively discover imports
-  result <- discoverImports root srcDirs initialMap Set.empty initialModules depInterfaces
+  result <- discoverImports root srcDirs initialMap Set.empty initialModules depInterfaces projectType
   Logger.debug COMPILE_DEBUG ("discoverTransitiveDeps: final result keys=" ++ show (Map.keys result))
   return result
   where
-    parseModuleFile path = do
+    parseModuleFile projType path = do
       content <- BS.readFile path
-      case Parse.fromByteString (Parse.Package (Pkg.Name (Utf8.fromChars "user") (Utf8.fromChars "project"))) content of
-        Left _ -> error ("Failed to parse: " ++ path)
+      case Parse.fromByteString projType content of
+        Left err -> error ("Failed to parse: " ++ path ++ "\nError: " ++ show err)
         Right m -> return m
 
 -- Helper: Recursively discover imports
@@ -162,8 +167,9 @@ discoverImports ::
   Set.Set ModuleName.Raw ->
   [Src.Module] ->
   Map.Map ModuleName.Raw I.Interface ->
+  Parse.ProjectType ->
   IO (Map.Map ModuleName.Raw FilePath)
-discoverImports root srcDirs found visited modules depInterfaces =
+discoverImports root srcDirs found visited modules depInterfaces projectType =
   case modules of
     [] -> do
       Logger.debug COMPILE_DEBUG ("discoverImports: no more modules, returning found=" ++ show (Map.keys found))
@@ -174,7 +180,7 @@ discoverImports root srcDirs found visited modules depInterfaces =
       if Set.member modName visited || Map.member modName depInterfaces
         then do
           Logger.debug COMPILE_DEBUG ("discoverImports: skipping " ++ Name.toChars modName ++ " (already visited or dep)")
-          discoverImports root srcDirs found (Set.insert modName visited) rest depInterfaces
+          discoverImports root srcDirs found (Set.insert modName visited) rest depInterfaces projectType
         else do
           let imports = [A.toValue (Src._importName imp) | imp <- Src._imports modul]
           Logger.debug COMPILE_DEBUG ("discoverImports: found " ++ show (length imports) ++ " imports in " ++ Name.toChars modName)
@@ -188,19 +194,19 @@ discoverImports root srcDirs found visited modules depInterfaces =
           Logger.debug COMPILE_DEBUG ("discoverImports: validPairs count=" ++ show (length validPairs))
           let newFound = foldr (\(imp, path) m -> Map.insert imp path m) found validPairs
           -- Parse new modules
-          newModules <- mapM (parseModuleFromPath root srcDirs) [imp | (imp, _) <- validPairs]
+          newModules <- mapM (parseModuleFromPath root srcDirs projectType) [imp | (imp, _) <- validPairs]
           Logger.debug COMPILE_DEBUG ("discoverImports: parsed " ++ show (length newModules) ++ " new modules")
-          discoverImports root srcDirs newFound (Set.insert modName visited) (rest ++ newModules) depInterfaces
+          discoverImports root srcDirs newFound (Set.insert modName visited) (rest ++ newModules) depInterfaces projectType
 
-parseModuleFromPath :: FilePath -> [SrcDir] -> ModuleName.Raw -> IO Src.Module
-parseModuleFromPath root srcDirs modName = do
+parseModuleFromPath :: FilePath -> [SrcDir] -> Parse.ProjectType -> ModuleName.Raw -> IO Src.Module
+parseModuleFromPath root srcDirs projectType modName = do
   maybePath <- findModulePath root srcDirs modName
   case maybePath of
     Nothing -> error ("Module not found: " ++ Name.toChars modName)
     Just path -> do
       content <- BS.readFile path
-      case Parse.fromByteString (Parse.Package (Pkg.Name (Utf8.fromChars "user") (Utf8.fromChars "project"))) content of
-        Left _ -> error ("Failed to parse: " ++ path)
+      case Parse.fromByteString projectType content of
+        Left err -> error ("Failed to parse: " ++ path ++ "\nError: " ++ show err)
         Right m -> return m
 
 findModulePath :: FilePath -> [SrcDir] -> ModuleName.Raw -> IO (Maybe FilePath)
@@ -213,46 +219,86 @@ findModulePath root srcDirs modName = do
 -- Helper: Compile modules in dependency order
 compileModulesInOrder ::
   Pkg.Name ->
+  Parse.ProjectType ->
   FilePath ->
   Map.Map ModuleName.Raw I.Interface ->
   Map.Map ModuleName.Raw FilePath ->
   IO (Either Exit.BuildError ([Driver.CompileResult], Map.Map ModuleName.Raw I.Interface))
-compileModulesInOrder pkg _root initialInterfaces modulePaths = do
-  -- Simple approach: compile in arbitrary order, building interfaces
-  foldM compileNext (Right ([], initialInterfaces)) (Map.toList modulePaths)
+compileModulesInOrder pkg projectType _root initialInterfaces modulePaths = do
+  -- Build dependency graph and sort topologically
+  moduleImports <- mapM (parseModuleImports projectType) (Map.toList modulePaths)
+  let depGraph = Map.fromList [(modName, imports) | (modName, _, imports) <- moduleImports]
+      sortedModules = topologicalSort depGraph (Map.keys modulePaths)
+  -- Compile in topological order
+  foldM compileNext (Right ([], initialInterfaces)) sortedModules
   where
     compileNext (Left err) _ = return (Left err)
-    compileNext (Right (compiled, ifaces)) (modName, path) = do
-      Logger.debug COMPILE_DEBUG ("Compiling module: " ++ Name.toChars modName)
-      result <- Driver.compileModule pkg ifaces path (Parse.Package pkg)
-      case result of
-        Left err -> return (Left (Exit.BuildCannotCompile (Exit.CompileParseError path (show err))))
-        Right compiledResult -> do
-          let newIface = Driver.compileResultInterface compiledResult
-              newIfaces = Map.insert modName newIface ifaces
-          return (Right (compiled ++ [compiledResult], newIfaces))
+    compileNext (Right (compiled, ifaces)) modName = do
+      case Map.lookup modName modulePaths of
+        Nothing -> return (Right (compiled, ifaces))
+        Just path -> do
+          Logger.debug COMPILE_DEBUG ("Compiling module: " ++ Name.toChars modName)
+          result <- Driver.compileModule pkg ifaces path projectType
+          case result of
+            Left err -> return (Left (Exit.BuildCannotCompile (Exit.CompileParseError path (show err))))
+            Right compiledResult -> do
+              let newIface = Driver.compileResultInterface compiledResult
+                  newIfaces = Map.insert modName newIface ifaces
+              return (Right (compiled ++ [compiledResult], newIfaces))
+
+-- Helper: Parse module to extract its imports
+parseModuleImports :: Parse.ProjectType -> (ModuleName.Raw, FilePath) -> IO (ModuleName.Raw, FilePath, [ModuleName.Raw])
+parseModuleImports projectType (modName, path) = do
+  content <- BS.readFile path
+  case Parse.fromByteString projectType content of
+    Left _err -> return (modName, path, [])
+    Right modul -> do
+      let imports = [A.toValue (Src._importName imp) | imp <- Src._imports modul]
+      return (modName, path, imports)
+
+-- Helper: Topological sort of modules based on dependencies
+topologicalSort :: Map.Map ModuleName.Raw [ModuleName.Raw] -> [ModuleName.Raw] -> [ModuleName.Raw]
+topologicalSort depGraph modules =
+  reverse (go Set.empty [] modules)
+  where
+    go _visited sorted [] = sorted
+    go visited sorted (m : ms)
+      | Set.member m visited = go visited sorted ms
+      | otherwise =
+          let deps = Map.findWithDefault [] m depGraph
+              visited' = Set.insert m visited
+              (visited'', sorted') = foldl (\(v, s) dep -> (v, visitModule v s dep)) (visited', sorted) deps
+           in go visited'' (m : sorted') ms
+
+    visitModule visited sorted modName
+      | Set.member modName visited = sorted
+      | otherwise =
+          let deps = Map.findWithDefault [] modName depGraph
+              visited' = Set.insert modName visited
+              sorted' = foldl (visitModule visited') sorted deps
+           in modName : sorted'
 
 -- Helper: Load all dependency artifacts (interfaces + GlobalGraph)
-loadDependencyArtifacts :: IO (Maybe (Map.Map ModuleName.Raw I.Interface, Opt.GlobalGraph))
-loadDependencyArtifacts = do
-  -- Load common packages that are typically used
+-- TODO: Read actual dependencies from project elm.json/canopy.json
+loadDependencyArtifacts :: FilePath -> IO (Maybe (Map.Map ModuleName.Raw I.Interface, Opt.GlobalGraph))
+loadDependencyArtifacts _root = do
+  -- Load common core packages
   let elm = Utf8.fromChars "elm"
-      commonDeps =
+      coreDeps =
         [ (Pkg.Name elm (Utf8.fromChars "core"), V.Version 1 0 5)
         , (Pkg.Name elm (Utf8.fromChars "html"), V.Version 1 0 0)
         , (Pkg.Name elm (Utf8.fromChars "json"), V.Version 1 1 3)
         , (Pkg.Name elm (Utf8.fromChars "virtual-dom"), V.Version 1 0 3)
         ]
 
-  maybeArtifacts <- PackageCache.loadAllPackageArtifacts commonDeps
+  maybeArtifacts <- PackageCache.loadAllPackageArtifacts coreDeps
   case maybeArtifacts of
     Nothing -> return Nothing
     Just artifacts ->
-      -- Convert DependencyInterfaces to Interfaces
       let depInterfaces = PackageCache.artifactInterfaces artifacts
           convertedInterfaces = convertDependencyInterfaces depInterfaces
           globalGraph = PackageCache.artifactObjects artifacts
-      in return (Just (convertedInterfaces, globalGraph))
+       in return (Just (convertedInterfaces, globalGraph))
 
 -- Helper: Convert DependencyInterface map to Interface map
 convertDependencyInterfaces :: Map.Map ModuleName.Raw I.DependencyInterface -> Map.Map ModuleName.Raw I.Interface

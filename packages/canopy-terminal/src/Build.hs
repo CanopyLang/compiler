@@ -75,10 +75,13 @@ fromPaths _style root details paths = do
   let pkg = case details ^. Details.detailsOutline of
         Details.ValidApp _ -> Details.dummyPkgName
         Details.ValidPkg pkgName _ _ -> pkgName
+      isApp = case details ^. Details.detailsOutline of
+        Details.ValidApp _ -> True
+        Details.ValidPkg _ _ _ -> False
       srcDirs = details ^. Details.detailsSrcDirs
   case paths of
     [] -> pure (Left (BuildExit.BuildBadArgs "No paths provided"))
-    _ -> Compiler.compileFromPaths pkg root (fmap Compiler.RelativeSrcDir srcDirs) paths
+    _ -> Compiler.compileFromPaths pkg isApp root (fmap Compiler.RelativeSrcDir srcDirs) paths
 
 -- | Build from exposed modules.
 fromExposed ::
@@ -89,8 +92,11 @@ fromExposed (ExposedBuildConfig _style root details _docsGoal) exposedModules = 
   let pkg = case details ^. Details.detailsOutline of
         Details.ValidApp _ -> Details.dummyPkgName
         Details.ValidPkg pkgName _ _ -> pkgName
+      isApp = case details ^. Details.detailsOutline of
+        Details.ValidApp _ -> True
+        Details.ValidPkg _ _ _ -> False
       srcDirs = details ^. Details.detailsSrcDirs
-  Compiler.compileFromExposed pkg root (fmap Compiler.AbsoluteSrcDir srcDirs) exposedModules
+  Compiler.compileFromExposed pkg isApp root (fmap Compiler.AbsoluteSrcDir srcDirs) exposedModules
 
 -- | Build for REPL.
 fromRepl ::
@@ -101,9 +107,12 @@ fromRepl root details = do
   let pkg = case details ^. Details.detailsOutline of
         Details.ValidApp _ -> Details.dummyPkgName
         Details.ValidPkg pkgName _ _ -> pkgName
+      isApp = case details ^. Details.detailsOutline of
+        Details.ValidApp _ -> True
+        Details.ValidPkg _ _ _ -> False
       srcDirs = details ^. Details.detailsSrcDirs
   -- For REPL, compile all source directories
-  Compiler.compileFromExposed pkg root (fmap Compiler.AbsoluteSrcDir srcDirs) (NonEmptyList.List (Name.fromChars "Main") [])
+  Compiler.compileFromExposed pkg isApp root (fmap Compiler.AbsoluteSrcDir srcDirs) (NonEmptyList.List (Name.fromChars "Main") [])
 
 -- | Extract root module names from artifacts.
 getRootNames :: Artifacts -> List ModuleName.Raw

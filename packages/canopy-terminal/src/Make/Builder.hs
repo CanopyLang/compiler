@@ -88,8 +88,12 @@ buildFromExposed ::
 buildFromExposed ctx srcDirs exposedModules _maybeDocs = do
   let pkg = ctx ^. bcPackage
       root = ctx ^. bcRoot
+      details = ctx ^. bcDetails
+      isApp = case details ^. Details.detailsOutline of
+        Details.ValidApp _ -> True
+        Details.ValidPkg _ _ _ -> False
 
-  result <- Task.io $ Compiler.compileFromExposed pkg root srcDirs exposedModules
+  result <- Task.io $ Compiler.compileFromExposed pkg isApp root srcDirs exposedModules
   case result of
     Left err -> Task.throw (Exit.MakeCannotBuild err)
     Right _artifacts -> return ()
@@ -114,8 +118,11 @@ buildFromPaths ctx paths = do
       root = ctx ^. bcRoot
       details = ctx ^. bcDetails
       srcDirs = map Compiler.RelativeSrcDir (Details._detailsSrcDirs details)
+      isApp = case details ^. Details.detailsOutline of
+        Details.ValidApp _ -> True
+        Details.ValidPkg _ _ _ -> False
 
-  result <- Task.io $ Compiler.compileFromPaths pkg root srcDirs (NonEmptyList.toList paths)
+  result <- Task.io $ Compiler.compileFromPaths pkg isApp root srcDirs (NonEmptyList.toList paths)
   case result of
     Left err -> Task.throw (Exit.MakeCannotBuild err)
     Right artifacts -> return artifacts
