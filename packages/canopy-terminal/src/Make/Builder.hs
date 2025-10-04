@@ -39,6 +39,7 @@ where
 
 import qualified AST.Optimized as Opt
 import qualified Build.Artifacts as Build
+import qualified Canopy.Details as Details
 import qualified Canopy.ModuleName as ModuleName
 import qualified Canopy.Package as Pkg
 import qualified Compiler
@@ -52,7 +53,6 @@ import Data.NonEmptyList (List)
 import qualified Data.NonEmptyList as NonEmptyList
 import qualified Debug.Logger as Logger
 import Debug.Logger (DebugCategory (..))
-import qualified Exit as BuildExit
 import qualified Generate.JavaScript as JS
 import qualified Generate.Mode as Mode
 import Make.Types
@@ -60,6 +60,7 @@ import Make.Types
     DesiredMode (..),
     Task,
     bcDesiredMode,
+    bcDetails,
     bcPackage,
     bcRoot,
   )
@@ -90,7 +91,7 @@ buildFromExposed ctx srcDirs exposedModules _maybeDocs = do
 
   result <- Task.io $ Compiler.compileFromExposed pkg root srcDirs exposedModules
   case result of
-    Left err -> Task.throw (Exit.MakeBuildError (BuildExit.toString err))
+    Left err -> Task.throw (Exit.MakeCannotBuild err)
     Right _artifacts -> return ()
 
 -- | Build project from specific file paths.
@@ -111,10 +112,12 @@ buildFromPaths ::
 buildFromPaths ctx paths = do
   let pkg = ctx ^. bcPackage
       root = ctx ^. bcRoot
+      details = ctx ^. bcDetails
+      srcDirs = map Compiler.RelativeSrcDir (Details._detailsSrcDirs details)
 
-  result <- Task.io $ Compiler.compileFromPaths pkg root (NonEmptyList.toList paths)
+  result <- Task.io $ Compiler.compileFromPaths pkg root srcDirs (NonEmptyList.toList paths)
   case result of
-    Left err -> Task.throw (Exit.MakeBuildError (BuildExit.toString err))
+    Left err -> Task.throw (Exit.MakeCannotBuild err)
     Right artifacts -> return artifacts
 
 -- | Create output builder from compiled artifacts.

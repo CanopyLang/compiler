@@ -4,7 +4,7 @@
 -- | Pure error types for builder operations.
 --
 -- Clean, minimal exit codes and error types for the NEW builder.
--- No dependencies on complex OLD reporting system.
+-- Provides beautiful colored error output using the Reporting infrastructure.
 --
 -- @since 0.19.1
 module Exit
@@ -16,8 +16,12 @@ module Exit
   -- * Conversion
   , toString
   , makeErrorToString
+  , toDoc
+  , compileErrorToDoc
   )
 where
+
+import qualified Reporting.Doc as D
 
 -- | Build-level errors.
 data BuildError
@@ -83,3 +87,86 @@ makeErrorToString err = case err of
     "ERROR: No main function found"
   MakeMultipleFilesIntoHtml ->
     "ERROR: Cannot generate HTML from multiple files"
+
+-- BEAUTIFUL ERROR OUTPUT
+
+-- | Convert error to beautiful colored Doc.
+toDoc :: BuildError -> D.Doc
+toDoc err = case err of
+  BuildCannotCompile compileErr ->
+    D.vcat
+      [ D.dullred (D.fromChars "-- BUILD ERROR ") <> D.fromChars "----------"
+      , D.empty
+      , compileErrorToDoc compileErr
+      ]
+  BuildProjectNotFound path ->
+    D.vcat
+      [ D.dullred (D.fromChars "-- PROJECT NOT FOUND ") <> D.fromChars "----------"
+      , D.empty
+      , D.reflow ("I cannot find a project at: " ++ path)
+      , D.empty
+      , D.reflow
+          "Make sure you are running this command from a directory with a \
+          \canopy.json or elm.json file."
+      ]
+  BuildInvalidOutline msg ->
+    D.vcat
+      [ D.dullred (D.fromChars "-- INVALID PROJECT ") <> D.fromChars "----------"
+      , D.empty
+      , D.reflow "There is a problem with your project configuration:"
+      , D.empty
+      , D.indent 4 (D.dullyellow (D.fromChars msg))
+      ]
+  BuildDependencyError msg ->
+    D.vcat
+      [ D.dullred (D.fromChars "-- DEPENDENCY ERROR ") <> D.fromChars "----------"
+      , D.empty
+      , D.reflow msg
+      ]
+  BuildBadArgs msg ->
+    D.vcat
+      [ D.dullred (D.fromChars "-- BAD ARGUMENTS ") <> D.fromChars "----------"
+      , D.empty
+      , D.reflow msg
+      ]
+
+-- | Convert compile error to beautiful colored Doc.
+compileErrorToDoc :: CompileError -> D.Doc
+compileErrorToDoc err = case err of
+  CompileParseError path msg ->
+    D.vcat
+      [ D.reflow ("Parse error in " ++ path ++ ":")
+      , D.empty
+      , D.indent 4 (D.dullyellow (D.fromChars msg))
+      , D.empty
+      , D.toSimpleHint
+          "Check for missing parentheses, commas, or other syntax issues."
+      ]
+  CompileTypeError path msg ->
+    D.vcat
+      [ D.reflow ("Type error in " ++ path ++ ":")
+      , D.empty
+      , D.indent 4 (D.dullyellow (D.fromChars msg))
+      ]
+  CompileCanonicalizeError path msg ->
+    D.vcat
+      [ D.reflow ("Error in " ++ path ++ ":")
+      , D.empty
+      , D.indent 4 (D.dullyellow (D.fromChars msg))
+      ]
+  CompileOptimizeError path msg ->
+    D.vcat
+      [ D.reflow ("Optimization error in " ++ path ++ ":")
+      , D.empty
+      , D.indent 4 (D.dullyellow (D.fromChars msg))
+      ]
+  CompileModuleNotFound path ->
+    D.vcat
+      [ D.reflow "I cannot find a module:"
+      , D.empty
+      , D.indent 4 (D.dullyellow (D.fromChars path))
+      , D.empty
+      , D.toSimpleHint
+          "Check the \"source-directories\" in your canopy.json or elm.json \
+          \to make sure the module is in one of the listed directories."
+      ]

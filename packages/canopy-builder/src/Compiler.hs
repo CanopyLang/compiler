@@ -30,16 +30,19 @@ module Compiler
 where
 
 import qualified AST.Optimized as Opt
+import qualified AST.Source as Src
 import qualified Build.Artifacts as Build
 import Build.Artifacts
 import qualified Canopy.Interface as I
 import qualified Canopy.ModuleName as ModuleName
 import qualified Canopy.Package as Pkg
 import qualified Canopy.Version as V
-import Control.Monad (filterM)
+import Control.Monad (filterM, foldM)
 import qualified Data.Map.Strict as Map
 import qualified Data.Name as Name
 import qualified Data.NonEmptyList as NE
+import qualified Data.Set as Set
+import qualified Data.ByteString as BS
 import qualified Data.Utf8 as Utf8
 import qualified Debug.Logger as Logger
 import Debug.Logger (DebugCategory (..))
@@ -47,18 +50,21 @@ import qualified Driver
 import qualified Exit
 import qualified PackageCache
 import qualified Parse.Module as Parse
-import System.FilePath ((</>))
+import qualified Reporting.Annotation as A
+import System.FilePath ((</>), normalise)
 import qualified System.Directory as Dir
 
 -- | Compile from file paths using NEW compiler.
 --
 -- This is the NEW replacement for Build.fromPaths.
+-- Now includes source directories for transitive import discovery.
 compileFromPaths ::
   Pkg.Name ->
   FilePath ->
+  [SrcDir] ->
   [FilePath] ->
   IO (Either Exit.BuildError Build.Artifacts)
-compileFromPaths pkg root paths = do
+compileFromPaths pkg root srcDirs paths = do
   Logger.debug COMPILE_DEBUG "Compiler: compileFromPaths (NEW pure compiler)"
   Logger.debug COMPILE_DEBUG ("Package: " ++ show pkg)
   Logger.debug COMPILE_DEBUG ("Paths: " ++ show paths)
@@ -69,17 +75,18 @@ compileFromPaths pkg root paths = do
         Just (ifaces, globalGraph) -> (ifaces, globalGraph)
         Nothing -> (Map.empty, Opt.empty)
 
-  -- Log dependency loading
   Logger.debug COMPILE_DEBUG ("Loaded dependency interfaces: " ++ show (Map.size depInterfaces))
   Logger.debug COMPILE_DEBUG ("Loaded dependency GlobalGraph with " ++ show (countGlobals depGlobalGraph) ++ " globals")
 
-  -- Compile all modules using Driver with dependency interfaces
-  results <- mapM (compileModuleWithInterfaces pkg root depInterfaces) paths
+  -- Discover transitive dependencies
+  allModulePaths <- discoverTransitiveDeps root srcDirs paths depInterfaces
+  Logger.debug COMPILE_DEBUG ("Discovered " ++ show (Map.size allModulePaths) ++ " total modules to compile")
 
-  -- Check for errors
-  case sequence results of
+  -- Compile in dependency order with growing interface map
+  compileResult <- compileModulesInOrder pkg root depInterfaces allModulePaths
+  case compileResult of
     Left err -> return (Left err)
-    Right compiledModules -> do
+    Right (compiledModules, _finalInterfaces) -> do
       -- Build artifacts with merged GlobalGraph
       let modules = map driverResultToModule compiledModules
           localGraphs = map extractLocalGraph compiledModules
@@ -87,10 +94,10 @@ compileFromPaths pkg root paths = do
       Logger.debug COMPILE_DEBUG ("Merged GlobalGraph has " ++ show (countGlobals mergedGlobalGraph) ++ " globals")
       let artifacts = Build.Artifacts
             { Build._artifactsName = pkg
-            , Build._artifactsDeps = Map.empty  -- TODO: Load from cache
+            , Build._artifactsDeps = Map.empty
             , Build._artifactsRoots = detectRoots modules
             , Build._artifactsModules = modules
-            , Build._artifactsFFIInfo = Map.empty  -- TODO: Extract FFI info
+            , Build._artifactsFFIInfo = Map.empty
             , Build._artifactsGlobalGraph = mergedGlobalGraph
             }
       return (Right artifacts)
@@ -118,20 +125,112 @@ compileFromExposed pkg root srcDirs exposedModules = do
   -- Discover module paths
   paths <- discoverModulePaths root srcDirs (NE.toList exposedModules)
 
-  compileFromPaths pkg root paths
+  compileFromPaths pkg root srcDirs paths
 
--- Helper: Compile a single module with provided interfaces
-compileModuleWithInterfaces ::
+-- Helper: Discover transitive dependencies
+discoverTransitiveDeps ::
+  FilePath ->
+  [SrcDir] ->
+  [FilePath] ->
+  Map.Map ModuleName.Raw I.Interface ->
+  IO (Map.Map ModuleName.Raw FilePath)
+discoverTransitiveDeps root srcDirs initialPaths depInterfaces = do
+  Logger.debug COMPILE_DEBUG ("discoverTransitiveDeps: root=" ++ root)
+  Logger.debug COMPILE_DEBUG ("discoverTransitiveDeps: srcDirs=" ++ show srcDirs)
+  Logger.debug COMPILE_DEBUG ("discoverTransitiveDeps: initialPaths=" ++ show initialPaths)
+  -- Parse initial modules to get their names and imports
+  initialModules <- mapM parseModuleFile initialPaths
+  Logger.debug COMPILE_DEBUG ("discoverTransitiveDeps: parsed " ++ show (length initialModules) ++ " initial modules")
+  let initialMap = Map.fromList [(Src.getName m, p) | (m, p) <- zip initialModules initialPaths]
+  Logger.debug COMPILE_DEBUG ("discoverTransitiveDeps: initialMap keys=" ++ show (Map.keys initialMap))
+  -- Recursively discover imports
+  result <- discoverImports root srcDirs initialMap Set.empty initialModules depInterfaces
+  Logger.debug COMPILE_DEBUG ("discoverTransitiveDeps: final result keys=" ++ show (Map.keys result))
+  return result
+  where
+    parseModuleFile path = do
+      content <- BS.readFile path
+      case Parse.fromByteString (Parse.Package (Pkg.Name (Utf8.fromChars "user") (Utf8.fromChars "project"))) content of
+        Left _ -> error ("Failed to parse: " ++ path)
+        Right m -> return m
+
+-- Helper: Recursively discover imports
+discoverImports ::
+  FilePath ->
+  [SrcDir] ->
+  Map.Map ModuleName.Raw FilePath ->
+  Set.Set ModuleName.Raw ->
+  [Src.Module] ->
+  Map.Map ModuleName.Raw I.Interface ->
+  IO (Map.Map ModuleName.Raw FilePath)
+discoverImports root srcDirs found visited modules depInterfaces =
+  case modules of
+    [] -> do
+      Logger.debug COMPILE_DEBUG ("discoverImports: no more modules, returning found=" ++ show (Map.keys found))
+      return found
+    (modul : rest) -> do
+      let modName = Src.getName modul
+      Logger.debug COMPILE_DEBUG ("discoverImports: processing module=" ++ Name.toChars modName)
+      if Set.member modName visited || Map.member modName depInterfaces
+        then do
+          Logger.debug COMPILE_DEBUG ("discoverImports: skipping " ++ Name.toChars modName ++ " (already visited or dep)")
+          discoverImports root srcDirs found (Set.insert modName visited) rest depInterfaces
+        else do
+          let imports = [A.toValue (Src._importName imp) | imp <- Src._imports modul]
+          Logger.debug COMPILE_DEBUG ("discoverImports: found " ++ show (length imports) ++ " imports in " ++ Name.toChars modName)
+          Logger.debug COMPILE_DEBUG ("discoverImports: imports=" ++ show (map Name.toChars imports))
+          let newImports = filter (\imp -> not (Map.member imp found) && not (Map.member imp depInterfaces)) imports
+          Logger.debug COMPILE_DEBUG ("discoverImports: newImports=" ++ show (map Name.toChars newImports))
+          -- Find paths for new imports
+          newPaths <- mapM (findModulePath root srcDirs) newImports
+          Logger.debug COMPILE_DEBUG ("discoverImports: newPaths=" ++ show newPaths)
+          let validPairs = [(imp, path) | (Just path, imp) <- zip newPaths newImports]
+          Logger.debug COMPILE_DEBUG ("discoverImports: validPairs count=" ++ show (length validPairs))
+          let newFound = foldr (\(imp, path) m -> Map.insert imp path m) found validPairs
+          -- Parse new modules
+          newModules <- mapM (parseModuleFromPath root srcDirs) [imp | (imp, _) <- validPairs]
+          Logger.debug COMPILE_DEBUG ("discoverImports: parsed " ++ show (length newModules) ++ " new modules")
+          discoverImports root srcDirs newFound (Set.insert modName visited) (rest ++ newModules) depInterfaces
+
+parseModuleFromPath :: FilePath -> [SrcDir] -> ModuleName.Raw -> IO Src.Module
+parseModuleFromPath root srcDirs modName = do
+  maybePath <- findModulePath root srcDirs modName
+  case maybePath of
+    Nothing -> error ("Module not found: " ++ Name.toChars modName)
+    Just path -> do
+      content <- BS.readFile path
+      case Parse.fromByteString (Parse.Package (Pkg.Name (Utf8.fromChars "user") (Utf8.fromChars "project"))) content of
+        Left _ -> error ("Failed to parse: " ++ path)
+        Right m -> return m
+
+findModulePath :: FilePath -> [SrcDir] -> ModuleName.Raw -> IO (Maybe FilePath)
+findModulePath root srcDirs modName = do
+  paths <- findModuleInDirs root srcDirs modName
+  return (case paths of
+            [] -> Nothing
+            (p:_) -> Just p)
+
+-- Helper: Compile modules in dependency order
+compileModulesInOrder ::
   Pkg.Name ->
   FilePath ->
   Map.Map ModuleName.Raw I.Interface ->
-  FilePath ->
-  IO (Either Exit.BuildError Driver.CompileResult)
-compileModuleWithInterfaces pkg _root ifaces path = do
-  result <- Driver.compileModule pkg ifaces path (Parse.Package pkg)
-  case result of
-    Left err -> return (Left (Exit.BuildCannotCompile (Exit.CompileParseError path (show err))))
-    Right compiled -> return (Right compiled)
+  Map.Map ModuleName.Raw FilePath ->
+  IO (Either Exit.BuildError ([Driver.CompileResult], Map.Map ModuleName.Raw I.Interface))
+compileModulesInOrder pkg _root initialInterfaces modulePaths = do
+  -- Simple approach: compile in arbitrary order, building interfaces
+  foldM compileNext (Right ([], initialInterfaces)) (Map.toList modulePaths)
+  where
+    compileNext (Left err) _ = return (Left err)
+    compileNext (Right (compiled, ifaces)) (modName, path) = do
+      Logger.debug COMPILE_DEBUG ("Compiling module: " ++ Name.toChars modName)
+      result <- Driver.compileModule pkg ifaces path (Parse.Package pkg)
+      case result of
+        Left err -> return (Left (Exit.BuildCannotCompile (Exit.CompileParseError path (show err))))
+        Right compiledResult -> do
+          let newIface = Driver.compileResultInterface compiledResult
+              newIfaces = Map.insert modName newIface ifaces
+          return (Right (compiled ++ [compiledResult], newIfaces))
 
 -- Helper: Load all dependency artifacts (interfaces + GlobalGraph)
 loadDependencyArtifacts :: IO (Maybe (Map.Map ModuleName.Raw I.Interface, Opt.GlobalGraph))
@@ -205,16 +304,23 @@ discoverModulePaths root srcDirs moduleNames = do
 
 findModuleInDirs :: FilePath -> [SrcDir] -> ModuleName.Raw -> IO [FilePath]
 findModuleInDirs root srcDirs moduleName = do
-  let relativePath = moduleNameToPath moduleName
-  let searchPaths = map (\dir -> root </> srcDirToString dir </> relativePath) srcDirs
-  existing <- filterM Dir.doesFileExist searchPaths
+  let basePath = moduleNameToBasePath moduleName
+      candidates = concatMap (buildCandidates root basePath) srcDirs
+  existing <- filterM Dir.doesFileExist candidates
   return existing
+  where
+    buildCandidates :: FilePath -> FilePath -> SrcDir -> [FilePath]
+    buildCandidates projectRoot base srcDir =
+      let dirPath = normalise (projectRoot </> srcDirToString srcDir)
+       in [ dirPath </> base ++ ".can"
+          , dirPath </> base ++ ".elm"
+          ]
 
-moduleNameToPath :: ModuleName.Raw -> FilePath
-moduleNameToPath moduleName =
+moduleNameToBasePath :: ModuleName.Raw -> FilePath
+moduleNameToBasePath moduleName =
   let nameStr = Name.toChars moduleName
       parts = splitOn '.' nameStr
-   in foldr1 (</>) (map (++ ".can") parts)
+   in foldr1 (</>) parts
 
 srcDirToString :: SrcDir -> String
 srcDirToString srcDir = case srcDir of

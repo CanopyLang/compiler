@@ -50,8 +50,10 @@ findRoot = do
 findRootFrom :: FilePath -> IO (Maybe FilePath)
 findRootFrom dir = do
   let canopyJson = dir </> "canopy.json"
-  exists <- Dir.doesFileExist canopyJson
-  if exists
+      elmJson = dir </> "elm.json"
+  canopyExists <- Dir.doesFileExist canopyJson
+  elmExists <- Dir.doesFileExist elmJson
+  if canopyExists || elmExists
     then pure (Just dir)
     else do
       let parent = takeDirectory dir

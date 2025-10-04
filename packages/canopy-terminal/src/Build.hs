@@ -75,9 +75,10 @@ fromPaths _style root details paths = do
   let pkg = case details ^. Details.detailsOutline of
         Details.ValidApp _ -> Details.dummyPkgName
         Details.ValidPkg pkgName _ _ -> pkgName
+      srcDirs = details ^. Details.detailsSrcDirs
   case paths of
     [] -> pure (Left (BuildExit.BuildBadArgs "No paths provided"))
-    _ -> Compiler.compileFromPaths pkg root paths
+    _ -> Compiler.compileFromPaths pkg root (fmap Compiler.RelativeSrcDir srcDirs) paths
 
 -- | Build from exposed modules.
 fromExposed ::

@@ -223,7 +223,7 @@ makeToReport err = case err of
   MakeMultipleFilesIntoHtml ->
     Doc.fromChars "ERROR: Cannot generate HTML from multiple files."
   MakeCannotBuild buildErr ->
-    Doc.fromChars (BuildExit.toString buildErr)
+    BuildExit.toDoc buildErr
   MakeCannotOptimizeAndDebug ->
     Doc.fromChars "ERROR: Cannot use both optimize and debug flags together."
 
@@ -235,7 +235,7 @@ replToReport err = case err of
   ReplBadGenerate msg ->
     Doc.fromChars ("GENERATE ERROR: " ++ msg)
   ReplCannotBuild buildErr ->
-    Doc.fromChars (BuildExit.toString buildErr)
+    BuildExit.toDoc buildErr
 
 -- | Print Report to stderr.
 toStderr :: Report -> IO ()
