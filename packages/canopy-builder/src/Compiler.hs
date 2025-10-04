@@ -284,34 +284,31 @@ topologicalSort depGraph modules =
            in modName : sorted'
 
 -- Helper: Load all dependency artifacts (interfaces + GlobalGraph)
+-- Uses parallel loading for optimal performance
 loadDependencyArtifacts :: FilePath -> IO (Maybe (Map.Map ModuleName.Raw I.Interface, Opt.GlobalGraph))
 loadDependencyArtifacts root = do
   -- Read project dependencies from elm.json/canopy.json
-  allDeps <- readProjectDependencies root
-  Logger.debug COMPILE_DEBUG ("Found " ++ show (length allDeps) ++ " total dependencies")
+  deps <- readProjectDependencies root
+  Logger.debug COMPILE_DEBUG ("Loading " ++ show (length deps) ++ " dependencies in parallel...")
 
-  -- Filter to only core Elm packages for now (performance optimization)
-  -- TODO: Load all dependencies when PackageCache performance is improved
-  let elm = Utf8.fromChars "elm"
-      coreDeps = filter (\(Pkg.Name author _, _) -> author == elm) allDeps
-
-  Logger.debug COMPILE_DEBUG ("Loading " ++ show (length coreDeps) ++ " core dependencies")
-
-  case coreDeps of
+  case deps of
     [] -> do
-      Logger.debug COMPILE_DEBUG "No core dependencies, using empty interfaces"
+      Logger.debug COMPILE_DEBUG "No dependencies found"
       return (Just (Map.empty, Opt.empty))
     _ -> do
-      maybeArtifacts <- PackageCache.loadAllPackageArtifacts coreDeps
+      -- Load all packages in parallel with async
+      -- Packages that fail to load are silently skipped
+      maybeArtifacts <- PackageCache.loadAllPackageArtifacts deps
       case maybeArtifacts of
         Nothing -> do
-          Logger.debug COMPILE_DEBUG "Failed to load core dependencies, using empty interfaces"
+          Logger.debug COMPILE_DEBUG "No valid packages loaded"
           return (Just (Map.empty, Opt.empty))
-        Just artifacts ->
+        Just artifacts -> do
           let depInterfaces = PackageCache.artifactInterfaces artifacts
               convertedInterfaces = convertDependencyInterfaces depInterfaces
               globalGraph = PackageCache.artifactObjects artifacts
-           in return (Just (convertedInterfaces, globalGraph))
+          Logger.debug COMPILE_DEBUG ("Successfully loaded " ++ show (Map.size convertedInterfaces) ++ " module interfaces")
+          return (Just (convertedInterfaces, globalGraph))
 
 -- Helper: Read project dependencies from elm.json or canopy.json
 readProjectDependencies :: FilePath -> IO [(Pkg.Name, V.Version)]
