@@ -53,6 +53,7 @@ import qualified Debug.Logger as Logger
 import Debug.Logger (DebugCategory (..))
 import qualified Driver
 import qualified Exit
+import qualified Query.Engine as Engine
 import qualified Query.Simple as Query
 import qualified PackageCache
 import qualified Parse.Module as Parse
@@ -231,21 +232,30 @@ compileModulesInOrder ::
   Map.Map ModuleName.Raw FilePath ->
   IO (Either Exit.BuildError ([Driver.CompileResult], Map.Map ModuleName.Raw I.Interface))
 compileModulesInOrder pkg projectType _root initialInterfaces modulePaths = do
+  -- Create shared query engine for all module compilations
+  engine <- Engine.initEngine
+
   -- Build dependency graph and sort topologically
   moduleImports <- mapM (parseModuleImports projectType) (Map.toList modulePaths)
   let depGraph = Map.fromList [(modName, imports) | (modName, _, imports) <- moduleImports]
       sortedModules = topologicalSort depGraph (Map.keys modulePaths)
-  -- Compile in topological order
-  foldM compileNext (Right ([], initialInterfaces)) sortedModules
+
+  -- Compile in topological order with shared engine
+  result <- foldM (compileNext engine) (Right ([], initialInterfaces)) sortedModules
+
+  -- Log cache statistics after all compilations
+  Driver.logCacheStats engine
+
+  return result
   where
-    compileNext (Left err) _ = return (Left err)
-    compileNext (Right (compiled, ifaces)) modName = do
+    compileNext _ (Left err) _ = return (Left err)
+    compileNext queryEngine (Right (compiled, ifaces)) modName = do
       case Map.lookup modName modulePaths of
         Nothing -> return (Right (compiled, ifaces))
         Just path -> do
           Logger.debug COMPILE_DEBUG ("Compiling module: " ++ Name.toChars modName)
-          result <- Driver.compileModule pkg ifaces path projectType
-          case result of
+          compilationResult <- Driver.compileModuleWithEngine queryEngine pkg ifaces path projectType
+          case compilationResult of
             Left err -> return (Left (Exit.BuildCannotCompile (queryErrorToCompileError path err)))
             Right compiledResult -> do
               let newIface = Driver.compileResultInterface compiledResult

@@ -7,6 +7,7 @@ module Type.UnionFind
     union,
     equivalent,
     redundant,
+    repr,
     get,
     set,
     modify,

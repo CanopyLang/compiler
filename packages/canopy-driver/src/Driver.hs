@@ -20,11 +20,15 @@ module Driver
     -- * Single Module Compilation
     compileModule,
     compileModuleFull,
+    compileModuleWithEngine,
     compileFromSource,
 
     -- * Parallel Compilation
     compileModulesParallel,
     compileModulesWithProgress,
+
+    -- * Cache Statistics
+    logCacheStats,
   )
 where
 
@@ -73,6 +77,21 @@ compileModule pkg ifaces path projectType = do
   logCacheStats engine
 
   return result
+
+-- | Compile a module with a shared query engine for caching across modules.
+-- This variant allows cache reuse across multiple module compilations.
+compileModuleWithEngine ::
+  Engine.QueryEngine ->
+  Pkg.Name ->
+  Map ModuleName.Raw I.Interface ->
+  FilePath ->
+  Parse.ProjectType ->
+  IO (Either QueryError CompileResult)
+compileModuleWithEngine engine pkg ifaces path projectType = do
+  Logger.debug COMPILE_DEBUG ("Compiling module: " ++ path)
+  Logger.debug COMPILE_DEBUG ("Package: " ++ show pkg)
+
+  compileModuleFull engine pkg ifaces path projectType
 
 -- | Compile from already-parsed source module.
 --
