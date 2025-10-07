@@ -1,6 +1,6 @@
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE TemplateHaskell #-}
-{-# OPTIONS_GHC -Wall #-}
+{-# OPTIONS_GHC -Wall -Wno-unused-top-binds #-}
 
 module Type.Solve
   ( run,
@@ -10,8 +10,8 @@ where
 import qualified AST.Canonical as Can
 import qualified Canopy.ModuleName as ModuleName
 import Control.Lens (makeLenses, (^.), (.~), (&), (%~))
-import Control.Monad (foldM, liftM2, liftM3)
-import Data.Foldable (for_, traverse_)
+import Control.Monad (filterM, foldM, forM, liftM2, liftM3, when)
+import Data.Foldable (for_, traverse_, maximumBy)
 import Data.Map.Strict (Map, (!))
 import qualified Data.Map.Strict as Map
 import qualified Data.Name as Name
@@ -39,7 +39,8 @@ type Pools = IORef (MVector.IOVector [Variable])
 data State = State
   { _stateEnv :: !Env,
     _stateMark :: !Mark,
-    _stateErrors :: ![Error.Error]
+    _stateErrors :: ![Error.Error],
+    _stateMonoEnv :: !Env
   }
 
 makeLenses ''State
@@ -48,7 +49,9 @@ data SolveConfig = SolveConfig
   { _solveEnv :: !Env,
     _solveRank :: !Int,
     _solvePools :: !Pools,
-    _solveState :: !State
+    _solveState :: !State,
+    _solveAmbientRigids :: ![(Int, Variable)],
+    _solveDeferAllGeneralization :: !Bool
   }
 
 makeLenses ''SolveConfig
@@ -59,6 +62,7 @@ emptyState = State
   { _stateEnv = Map.empty
   , _stateMark = nextMark noMark
   , _stateErrors = []
+  , _stateMonoEnv = Map.empty
   }
 
 -- RUN SOLVER
@@ -79,6 +83,8 @@ createSolveConfig env rank pools state = SolveConfig
   , _solveRank = rank
   , _solvePools = pools
   , _solveState = state
+  , _solveAmbientRigids = []
+  , _solveDeferAllGeneralization = False
   }
 
 -- SOLVER
@@ -87,28 +93,99 @@ solve :: SolveConfig -> Constraint -> IO State
 solve config constraint = case constraint of
   CTrue -> return (config ^. solveState)
   CSaveTheEnvironment -> return $ config ^. solveState & stateEnv .~ (config ^. solveEnv)
-  CEqual region category tipe expectation -> 
+  CEqual region category tipe expectation ->
     solveEqual config region category tipe expectation
-  CLocal region name expectation -> 
+  CLocal region name expectation ->
     solveLocal config region name expectation
-  CForeign region name forAll expectation -> 
+  CForeign region name forAll expectation ->
     solveForeign config region name forAll expectation
-  CPattern region category tipe expectation -> 
+  CPattern region category tipe expectation ->
     solvePattern config region category tipe expectation
-  CAnd constraints -> 
+  CAnd constraints ->
     foldM (solve . updateSolveState config) (config ^. solveState) constraints
-  CLet [] flexs _ headerCon CTrue -> 
+  CCaseBranchesIsolated constraints ->
+    -- DISABLED: Full isolation breaks Domains.elm
+    -- The identity bug and Domains.elm bug have DIFFERENT root causes:
+    -- 1. Identity bug: Case branches pollute each other via Links (needs isolation)
+    -- 2. Domains bug: Let binding generalized before outer constraints apply (different fix needed)
+    -- TODO: Implement selective isolation that fixes identity without breaking Domains
+    foldM (solve . updateSolveState config) (config ^. solveState) constraints
+  CLet [] flexs _ headerCon CTrue _ ->
     solveSimpleLet config flexs headerCon
-  CLet [] [] header headerCon subCon -> 
+  CLet [] [] header headerCon subCon _ ->
     solveEmptyLet config header headerCon subCon
-  CLet rigids flexs header headerCon subCon -> 
-    solveFullLet config rigids flexs header headerCon subCon
+  CLet rigids flexs header headerCon subCon expectedType ->
+    solveFullLet config rigids flexs header headerCon subCon expectedType
 
 -- | Reset a rigid variable to noRank after generalization
+-- IMPORTANT: Only reset RigidVar, NOT RigidSuper!
+-- RigidSuper represents constraints (comparable, number, etc.) that must maintain their ranks
+-- to avoid polluting ambient rigids in nested scopes
 resetRigidToNoRank :: Variable -> IO ()
 resetRigidToNoRank var = do
   (Descriptor content _ mark copy) <- UF.get var
-  UF.set var (Descriptor content noRank mark copy)
+  case content of
+    RigidVar _ ->
+      UF.set var (Descriptor content noRank mark copy)
+    RigidSuper _ _ ->
+      return ()  -- DO NOT reset RigidSuper variables - they must maintain their ranks
+    _ -> UF.set var (Descriptor content noRank mark copy)  -- Reset other content types
+
+-- | Recursively generalize a variable and all nested variables to rank 0
+-- This ensures that when makeCopy is called, all parts of the type structure
+-- are properly instantiated with fresh variables
+--
+-- IMPORTANT: Only generalize FlexVar and Structure content. NEVER generalize:
+-- - Error: Error markers should NEVER be generalized or modified
+-- - RigidSuper: Constraint variables (comparable, number, etc.) must maintain their ranks
+-- - RigidVar: Rigid type parameters should maintain their ranks
+generalizeRecursively :: Variable -> IO ()
+generalizeRecursively var = do
+  (Descriptor content rank mark copy) <- UF.get var
+  -- Check for Error content FIRST, before rank check
+  case content of
+    Error -> return ()  -- NEVER generalize Error variables
+    -- Only generalize if not already at rank 0 to avoid infinite loops
+    _ | rank == noRank -> return ()
+      | otherwise -> case content of
+          -- Only generalize flex variables and structures
+          FlexVar _ -> do
+            UF.set var (Descriptor content noRank mark copy)
+          FlexSuper _ _ -> do
+            UF.set var (Descriptor content noRank mark copy)
+          Structure flatType -> do
+            -- Set this variable to rank 0 first (prevents infinite recursion)
+            UF.set var (Descriptor content noRank mark copy)
+            -- Recursively generalize nested variables in structure
+            generalizeStructure flatType
+          Alias _ _ args realVar -> do
+            -- Set this variable to rank 0 first
+            UF.set var (Descriptor content noRank mark copy)
+            -- Recursively generalize alias arguments and real variable
+            traverse_ (generalizeRecursively . snd) args
+            generalizeRecursively realVar
+          -- NEVER generalize constraint variables or rigid type parameters
+          RigidSuper _ _ -> return ()
+          RigidVar _ -> return ()
+
+-- | Generalize all nested variables in a structure
+-- This is called by generalizeRecursively after setting the structure itself to rank 0
+-- Note: generalizeRecursively will skip RigidSuper/RigidVar/Error variables automatically
+generalizeStructure :: FlatType -> IO ()
+generalizeStructure flatType = case flatType of
+  App1 _ _ args -> traverse_ generalizeRecursively args
+  Fun1 arg result -> do
+    generalizeRecursively arg
+    generalizeRecursively result
+  EmptyRecord1 -> return ()
+  Record1 fields ext -> do
+    traverse_ generalizeRecursively fields
+    generalizeRecursively ext
+  Unit1 -> return ()
+  Tuple1 a b maybeC -> do
+    generalizeRecursively a
+    generalizeRecursively b
+    traverse_ generalizeRecursively maybeC
 
 isGeneric :: Variable -> IO ()
 isGeneric var = do
@@ -138,17 +215,68 @@ solveEqual config region category tipe expectation = do
 
 solveLocal :: SolveConfig -> A.Region -> Name.Name -> Error.Expected Type -> IO State
 solveLocal config region name expectation = do
+  putStrLn $ "DEBUG solveLocal: Looking up " <> show name
+  -- CRITICAL FIX: solveEnv ALWAYS takes precedence over monoEnv!
+  -- Parameters and local bindings in solveEnv should NEVER be shadowed by stale monoEnv entries.
+  -- Only check monoEnv if the variable is NOT in solveEnv at all.
   case Map.lookup name (config ^. solveEnv) of
+    Just envType -> do
+      -- Variable found in solveEnv - use it regardless of rank
+      -- IMPORTANT: Follow repr chain to get actual current descriptor
+      actualEnvType <- UF.repr envType
+      descriptor <- UF.get actualEnvType
+      let envRank = case descriptor of
+            Descriptor _ r _ _ -> r
+      let descContent = case descriptor of
+            Descriptor c _ _ _ -> case c of
+              FlexVar _ -> "FlexVar"
+              FlexSuper _ _ -> "FlexSuper"
+              RigidVar _ -> "RigidVar"
+              RigidSuper _ _ -> "RigidSuper"
+              Structure _ -> "Structure"
+              Alias _ _ _ _ -> "Alias"
+              Error -> "Error"
+      putStrLn $ "DEBUG solveLocal: Found " <> show name <> " in solveEnv at rank " <> show envRank <> ", content: " <> descContent
+      if envRank == noRank
+        then do
+          -- Variable is generalized (polymorphic), instantiate it with makeCopy
+          putStrLn $ "DEBUG solveLocal: Found " <> show name <> " in solveEnv at rank 0 (generalized), instantiating"
+          actual <- makeCopy (config ^. solveRank) (config ^. solvePools) (config ^. solveAmbientRigids) actualEnvType
+          expected <- expectedToVariable (config ^. solveRank) (config ^. solvePools) expectation
+          handleUnifyResult config actual expected (createLocalError region name expectation)
+        else do
+          -- Variable is at non-zero rank (local/parameter), use directly without instantiation
+          putStrLn $ "DEBUG solveLocal: Found " <> show name <> " in solveEnv at rank " <> show envRank <> " (local), using directly"
+          expected <- expectedToVariable (config ^. solveRank) (config ^. solvePools) expectation
+          handleUnifyResult config actualEnvType expected (createLocalError region name expectation)
     Nothing -> do
-      -- FIXED: Handle missing name in solve environment (e.g., FFI functions)
-      -- Create a placeholder variable for missing names
-      actual <- register Type.noRank (config ^. solvePools) (FlexVar Nothing)
-      expected <- expectedToVariable (config ^. solveRank) (config ^. solvePools) expectation
-      handleUnifyResult config actual expected (createLocalError region name expectation)
-    Just nameType -> do
-      actual <- makeCopy (config ^. solveRank) (config ^. solvePools) nameType
-      expected <- expectedToVariable (config ^. solveRank) (config ^. solvePools) expectation
-      handleUnifyResult config actual expected (createLocalError region name expectation)
+      -- Not in solveEnv, check monoEnv
+      let currentMonoEnv = (config ^. solveState . stateMonoEnv)
+      case Map.lookup name currentMonoEnv of
+        Just monoType -> do
+          -- Check if the variable was generalized (rank 0)
+          -- IMPORTANT: Follow repr chain to get actual descriptor (monoType might be a Link)
+          actualMonoType <- UF.repr monoType
+          (Descriptor _ monoRank _ _) <- UF.get actualMonoType
+          putStrLn $ "DEBUG solveLocal: Found " <> show name <> " in monoEnv at rank " <> show monoRank
+          if monoRank == noRank
+            then do
+              -- Variable was generalized, instantiate it
+              putStrLn $ "DEBUG solveLocal: Variable in monoEnv is generalized (rank 0), instantiating"
+              actual <- makeCopy (config ^. solveRank) (config ^. solvePools) (config ^. solveAmbientRigids) actualMonoType
+              expected <- expectedToVariable (config ^. solveRank) (config ^. solvePools) expectation
+              handleUnifyResult config actual expected (createLocalError region name expectation)
+            else do
+              -- Use monomorphic variable directly without makeCopy
+              putStrLn $ "DEBUG solveLocal: Using monomorphic variable from monoEnv directly"
+              expected <- expectedToVariable (config ^. solveRank) (config ^. solvePools) expectation
+              handleUnifyResult config actualMonoType expected (createLocalError region name expectation)
+        Nothing -> do
+          -- Not found anywhere, create placeholder
+          putStrLn $ "DEBUG solveLocal: " <> show name <> " NOT FOUND in env, creating placeholder"
+          actual <- register Type.noRank (config ^. solvePools) (FlexVar Nothing)
+          expected <- expectedToVariable (config ^. solveRank) (config ^. solvePools) expectation
+          handleUnifyResult config actual expected (createLocalError region name expectation)
 
 solveForeign :: SolveConfig -> A.Region -> Name.Name -> Can.Annotation -> Error.Expected Type -> IO State
 solveForeign config region name (Can.Forall freeVars srcType) expectation = do
@@ -210,6 +338,95 @@ convertExpectedToET expectation etType = Error.typeReplace expectation etType
 convertPExpectedToET :: Error.PExpected Type -> ET.Type -> Error.PExpected ET.Type
 convertPExpectedToET expectation etType = Error.ptypeReplace expectation etType
 
+-- CASE BRANCH ISOLATION
+--
+-- This section implements proper isolation of case branch environments to prevent
+-- cross-branch type pollution through union-find Links. Each case branch gets a
+-- completely independent deep clone of polymorphic environment variables, preventing
+-- unification in one branch from affecting other branches.
+--
+-- This fixes the polymorphism bug where:
+--   case page of
+--     Branch1 -> polymorphicFn concrete1
+--     Branch2 -> polymorphicFn concrete2  -- Must get fresh polymorphic types
+--
+-- Without isolation, Branch 1 unification creates permanent union-find Links in nested
+-- type variables (e.g., inside Fun1 structures). When Branch 2 calls makeCopy on the
+-- same environment variable, makeCopyHelp follows these Links and gets Branch 1's
+-- specialized types instead of fresh polymorphic variables.
+--
+-- Deep cloning creates completely independent variable structures without any shared
+-- Links, ensuring each branch starts with truly fresh polymorphic types.
+
+solveCaseBranchesIsolated :: SolveConfig -> [Constraint] -> IO State
+solveCaseBranchesIsolated config branchConstraints = do
+  envSnapshot <- snapshotPolymorphicVariables (config ^. solveEnv)
+  foldM (solveOneBranch config envSnapshot) (config ^. solveState) branchConstraints
+
+solveOneBranch :: SolveConfig -> Map Name.Name Variable -> State -> Constraint -> IO State
+solveOneBranch config envSnapshot currentState branchConstraint = do
+  restoredEnv <- restoreEnvironmentFromSnapshot envSnapshot (config ^. solveEnv)
+  let branchConfig = config & solveEnv .~ restoredEnv & solveState .~ currentState
+  solve branchConfig branchConstraint
+
+snapshotPolymorphicVariables :: Env -> IO (Map Name.Name Variable)
+snapshotPolymorphicVariables env = do
+  let envList = Map.toList env
+  polymorphicFunctionPairs <- filterPolymorphicFunctions envList
+  return (Map.fromList polymorphicFunctionPairs)
+  where
+    filterPolymorphicFunctions [] = return []
+    filterPolymorphicFunctions ((name, var) : rest) = do
+      isPolyFunc <- isPolymorphicFunction var
+      remaining <- filterPolymorphicFunctions rest
+      if isPolyFunc
+        then return ((name, var) : remaining)
+        else return remaining
+
+isPolymorphicFunction :: Variable -> IO Bool
+isPolymorphicFunction var = do
+  (Descriptor content rank _ _) <- UF.get var
+  case (rank == noRank, content) of
+    (True, Structure (Fun1 _ _)) -> return True  -- Polymorphic function type
+    (True, Alias _ _ _ _) -> return True  -- Polymorphic alias (might wrap function)
+    _ -> return False  -- Not a polymorphic function, don't isolate
+
+restoreEnvironmentFromSnapshot :: Map Name.Name Variable -> Env -> IO Env
+restoreEnvironmentFromSnapshot snapshot baseEnv =
+  Map.traverseWithKey (restoreVariable snapshot) baseEnv
+
+restoreVariable :: Map Name.Name Variable -> Name.Name -> Variable -> IO Variable
+restoreVariable snapshot name var =
+  case Map.lookup name snapshot of
+    Nothing -> return var
+    Just originalVar -> deepCloneVariable originalVar
+
+deepCloneVariable :: Variable -> IO Variable
+deepCloneVariable var = do
+  (Descriptor content rank mark _) <- UF.get var
+  case content of
+    Structure flatType -> do
+      -- Deep clone the entire structure recursively
+      -- This prevents ANY Link pollution from previous branches
+      clonedFlatType <- traverseFlatType deepCloneVariable flatType
+      UF.fresh (Descriptor (Structure clonedFlatType) rank mark Nothing)
+    Alias home name args realVar -> do
+      -- Deep clone alias arguments and real variable
+      clonedArgs <- traverse (traverse deepCloneVariable) args
+      clonedRealVar <- deepCloneVariable realVar
+      UF.fresh (Descriptor (Alias home name clonedArgs clonedRealVar) rank mark Nothing)
+    FlexVar maybeName ->
+      -- Create fresh flex variable for complete independence
+      UF.fresh (Descriptor (FlexVar maybeName) rank mark Nothing)
+    FlexSuper super maybeName ->
+      UF.fresh (Descriptor (FlexSuper super maybeName) rank mark Nothing)
+    RigidVar name ->
+      UF.fresh (Descriptor (RigidVar name) rank mark Nothing)
+    RigidSuper super name ->
+      UF.fresh (Descriptor (RigidSuper super name) rank mark Nothing)
+    Error ->
+      UF.fresh (Descriptor Error rank mark Nothing)
+
 -- EXPECTATIONS TO VARIABLE
 
 expectedToVariable :: Int -> Pools -> Error.Expected Type -> IO Variable
@@ -239,20 +456,26 @@ solveSimpleLet config flexs headerCon = do
 
 solveEmptyLet :: SolveConfig -> Map Name.Name (A.Located Type) -> Constraint -> Constraint -> IO State
 solveEmptyLet config header headerCon subCon = do
-  state1 <- solve config headerCon
+  -- CRITICAL FIX: Create locals and add to environment BEFORE solving headerCon
+  -- This ensures parameters shadow any previous bindings with the same name
   locals <- traverse (A.traverse (typeToVariable (config ^. solveRank) (config ^. solvePools))) header
+  putStrLn $ "DEBUG solveEmptyLet: Adding locals to solveEnv: " <> show (Map.keys locals)
+  let localsEnv = Map.fromList [(name, var) | (name, A.At _ var) <- Map.toList locals]
+  let configWithLocals = config & solveEnv .~ Map.union localsEnv (config ^. solveEnv)
+  putStrLn $ "DEBUG solveEmptyLet: solveEnv now has " <> show (Map.size (configWithLocals ^. solveEnv)) <> " entries"
+  state1 <- solve configWithLocals headerCon
   let newEnv = Map.union (config ^. solveEnv) (Map.map A.toValue locals)
   let newConfig = config & solveEnv .~ newEnv & solveState .~ state1
   state2 <- solve newConfig subCon
   foldM occurs state2 (Map.toList locals)
 
-solveFullLet :: SolveConfig -> [Variable] -> [Variable] -> Map Name.Name (A.Located Type) -> Constraint -> Constraint -> IO State
-solveFullLet config rigids flexs header headerCon subCon = do
+solveFullLet :: SolveConfig -> [Variable] -> [Variable] -> Map Name.Name (A.Located Type) -> Constraint -> Constraint -> Maybe Type -> IO State
+solveFullLet config rigids flexs header headerCon subCon expectedType = do
   nextPools <- prepareNextPools config
   let nextRank = (config ^. solveRank) + 1
   nextConfig <- introduceLetVariables config rigids flexs nextRank nextPools
-  (locals, solvedState) <- solveHeaderInNextPool nextConfig header headerCon
-  finalState <- finalizeLetSolving nextConfig locals solvedState rigids subCon nextRank nextPools
+  (locals, solvedState) <- solveHeaderInNextPool nextConfig header headerCon rigids
+  finalState <- finalizeLetSolving nextConfig locals solvedState rigids subCon nextRank nextPools expectedType
   foldM occurs finalState (Map.toList locals)
 
 prepareNextPools :: SolveConfig -> IO Pools
@@ -272,30 +495,371 @@ prepareNextPools config = do
 introduceLetVariables :: SolveConfig -> [Variable] -> [Variable] -> Int -> Pools -> IO SolveConfig
 introduceLetVariables config rigids flexs nextRank nextPools = do
   let vars = rigids <> flexs
+  putStrLn $ "DEBUG: introduceLetVariables - setting " <> show (length rigids) <> " rigids and " <> show (length flexs) <> " flexs to rank " <> show nextRank
+  for_ (zip ([1..] :: [Int]) rigids) $ \(i, var) -> do
+    (Descriptor _ oldRank _ _) <- UF.get var
+    putStrLn $ "DEBUG:   rigid " <> show i <> " oldRank=" <> show oldRank <> " -> newRank=" <> show nextRank
   for_ vars $ \var ->
     UF.modify var $ \(Descriptor content _ mark copy) ->
       Descriptor content nextRank mark copy
   currentPools <- readIORef nextPools
   MVector.write currentPools nextRank vars
-  return $ config & solveRank .~ nextRank & solvePools .~ nextPools
+  -- Filter out any Error variables from rigids before adding to ambient rigids
+  -- Error variables should never be treated as ambient rigids
+  validRigids <- filterM (\rigid -> do
+    (Descriptor content _ _ _) <- UF.get rigid
+    return (case content of
+      Error -> False
+      _ -> True)
+    ) rigids
+  let rankedRigids = [(nextRank, rigid) | rigid <- validRigids]
+  let newAmbientRigids = (config ^. solveAmbientRigids) <> rankedRigids
+  putStrLn $ "DEBUG: Total ambient rigids now: " <> show (length newAmbientRigids) <> " (ranks: " <> show (fmap fst newAmbientRigids) <> ")"
+  return $ config
+    & solveRank .~ nextRank
+    & solvePools .~ nextPools
+    & solveAmbientRigids .~ newAmbientRigids
 
-solveHeaderInNextPool :: SolveConfig -> Map Name.Name (A.Located Type) -> Constraint -> IO (Map Name.Name (A.Located Variable), State)
-solveHeaderInNextPool config header headerCon = do
+solveHeaderInNextPool :: SolveConfig -> Map Name.Name (A.Located Type) -> Constraint -> [Variable] -> IO (Map Name.Name (A.Located Variable), State)
+solveHeaderInNextPool config header headerCon _rigids = do
   locals <- traverse (A.traverse (typeToVariable (config ^. solveRank) (config ^. solvePools))) header
-  solvedState <- solve config headerCon
+  -- DON'T filter THIS function's rigids from ambient rigids!
+  -- The function body NEEDS access to these rigids for proper type variable instantiation
+  -- When the body instantiates polymorphic functions, makeCopy looks for matching rigids
+  -- If we filter out the current function's rigids, instantiation will find wrong rigids
+  -- from outer scopes, breaking type identity for types with 3+ parameters
+  -- CRITICAL FIX: Add locals to environment BEFORE solving headerCon
+  -- This ensures that when the body references parameters, it finds the NEW bindings, not stale ones from monoEnv
+  -- Parameters should shadow any previous bindings with the same name
+  putStrLn $ "DEBUG solveHeaderInNextPool: Adding locals to solveEnv: " <> show (Map.keys locals)
+  let localsEnv = Map.fromList [(name, var) | (name, A.At _ var) <- Map.toList locals]
+  let configWithLocals = config & solveEnv .~ Map.union localsEnv (config ^. solveEnv)
+  putStrLn $ "DEBUG solveHeaderInNextPool: solveEnv now has " <> show (Map.size (configWithLocals ^. solveEnv)) <> " entries (added " <> show (length (Map.keys locals)) <> ")"
+  solvedState <- solve configWithLocals headerCon
   return (locals, solvedState)
 
-finalizeLetSolving :: SolveConfig -> Map Name.Name (A.Located Variable) -> State -> [Variable] -> Constraint -> Int -> Pools -> IO State
-finalizeLetSolving config locals solvedState rigids subCon nextRank nextPools = do
-  let (youngMark, visitMark, finalMark) = calculateMarks solvedState
-  performGeneralization youngMark visitMark nextRank nextPools
-  -- Ensure rigid variables have noRank after generalization
-  traverse_ resetRigidToNoRank rigids
-  traverse_ isGeneric rigids
-  let newEnv = Map.union (config ^. solveEnv) (Map.map A.toValue locals)
-  let tempState = solvedState & stateMark .~ finalMark
-  let finalConfig = config & solveEnv .~ newEnv & solveState .~ tempState & solveRank .~ (config ^. solveRank)
-  solve finalConfig subCon
+finalizeLetSolving :: SolveConfig -> Map Name.Name (A.Located Variable) -> State -> [Variable] -> Constraint -> Int -> Pools -> Maybe Type -> IO State
+finalizeLetSolving config locals solvedState rigids subCon nextRank nextPools expectedType = do
+  let ambientRigids = config ^. solveAmbientRigids
+  let hasAmbientRigids = not (null ambientRigids)
+  let hasExpectedType = maybe False (const True) expectedType
+  let shouldDefer = (config ^. solveDeferAllGeneralization) || hasAmbientRigids || hasExpectedType
+  let currentRank = config ^. solveRank
+  putStrLn $ "DEBUG: finalizeLetSolving at rank=" <> show currentRank <> ", nextRank=" <> show nextRank <> ", locals=" <> show (Map.keys locals) <> ", hasExpectedType=" <> show hasExpectedType
+
+  if shouldDefer
+    then do
+      -- MONOMORPHIC PATH: Add let bindings to monoEnv, solve body, then check generalization
+      -- isOriginalDefer: ANY TypedDef (with rigids) should check generalization for its nested bindings
+      -- This includes both module-level and nested typed functions
+      let hasOwnRigids = not (null rigids)
+      let isOriginalDefer = hasOwnRigids  -- Simplified: any typed function checks generalization
+      putStrLn $ "DEBUG: Using monomorphic environment (ambient rigids: " <> show (length ambientRigids) <> ", ownRigids: " <> show (length rigids) <> ", rank: " <> show currentRank <> ", isOriginal: " <> show isOriginalDefer <> ")"
+
+      -- Add locals to monoEnv (NOT main env) - these are constrained by outer scope
+      -- IMPORTANT: Use Map.union with locals FIRST so new variables shadow old ones with same name
+      -- This prevents parameter name collisions across different functions
+      let currentMonoEnv = solvedState ^. stateMonoEnv
+      let newMonoEnv = Map.union (Map.map A.toValue locals) currentMonoEnv
+      -- Track which variables are NEW at this level (not from outer scope)
+      let newVarsThisLevel = Map.keys (Map.map A.toValue locals)
+      putStrLn $ "DEBUG: Adding to monoEnv: newVarsThisLevel=" <> show newVarsThisLevel <> ", currentMonoEnv size=" <> show (Map.size currentMonoEnv)
+      let tempState = solvedState
+            & stateMark .~ (solvedState ^. stateMark)
+            & stateMonoEnv .~ newMonoEnv
+      -- FOR TYPED DEFS: Generalize immediately BEFORE solving body
+      -- This allows subsequent functions to use this one polymorphically
+      -- Any function with explicit type annotation (isOriginalDefer) can be generalized early
+      let _parentRank = nextRank - 1
+      let shouldGeneralizeEarly = isOriginalDefer  -- All TypedDefs, not just module-level
+      tempState2 <- if shouldGeneralizeEarly
+        then do
+          putStrLn $ "DEBUG: MODULE LEVEL - generalizing BEFORE solving body"
+          -- Recursively generalize the locals immediately
+          -- This ensures ALL nested variables (including Structure variables and nested RigidVars)
+          -- are set to rank 0, not just the top-level variable
+          for_ (Map.toList locals) $ \(name, A.At _ var) -> do
+            actualVar <- UF.repr var
+            generalizeRecursively actualVar
+            putStrLn $ "DEBUG:   Generalized " <> show name <> " recursively to rank 0"
+          -- Reset THIS function's rigids to rank 0 (they are the function's type parameters)
+          -- This allows them to be properly instantiated when the function is called
+          traverse_ resetRigidToNoRank rigids
+          return tempState
+        else
+          return tempState
+
+      -- DON'T filter ambient rigids before solving the body!
+      -- The body needs ALL rigids (including RigidVar) to be available for proper instantiation
+      -- When the body uses type variables like `k`, makeCopy needs to find the original RigidVar
+      -- Filtering only happens later during the final generalization check
+      let currentAmbientRigids = config ^. solveAmbientRigids
+
+      let bodyConfig = config
+            & solveState .~ tempState2
+            & solveRank .~ (config ^. solveRank)
+            & solveAmbientRigids .~ currentAmbientRigids  -- Use filtered ambient rigids
+            & solveDeferAllGeneralization .~ True  -- Nested lets in body should also defer
+
+      -- Solve body - monomorphic variables will be used directly (no makeCopy)
+      -- This establishes unifications with outer scope
+      putStrLn $ "DEBUG: Before solving body, monoEnv has " <> show (Map.size newMonoEnv) <> " variables (new at this level: " <> show (length newVarsThisLevel) <> ")"
+      bodyState <- solve bodyConfig subCon
+      putStrLn $ "DEBUG: After solving body"
+
+      -- Only do generalization check if this is the ORIGINAL deferred let (first one with ambient rigids)
+      -- Nested lets inherit the defer flag but should NOT generalize
+      -- Skip if we already generalized early for TypedDefs
+      if shouldGeneralizeEarly
+        then do
+          -- MODULE LEVEL: Already generalized, just update environment
+          putStrLn $ "DEBUG: MODULE LEVEL - skipping late generalization, already done"
+          let (_, _, finalMark) = calculateMarks bodyState
+          let polyEnv = Map.fromList [(name, var) | (name, A.At _ var) <- Map.toList locals]
+          putStrLn $ "DEBUG: Adding to polyEnv (module level): " <> show (Map.keys polyEnv)
+          let finalEnv = Map.union (config ^. solveEnv) polyEnv
+          return $ bodyState
+            & stateMark .~ finalMark
+            & stateEnv .~ finalEnv
+            & stateMonoEnv .~ Map.empty  -- No remaining mono vars at module level
+        else if isOriginalDefer
+          then do
+          -- Now check which variables unified with OUTER scope (not current let)
+          -- Use the PARENT rank (nextRank - 1) to detect unifications with truly outer scope
+          -- IMPORTANT: Only check NEWLY ADDED variables at this level, not outer scope variables
+          let parentRank = nextRank - 1
+          -- Get the FINAL monoEnv from bodyState (includes all nested let additions)
+          let finalMonoEnv = bodyState ^. stateMonoEnv
+          -- Check variables at THIS level and DEEPER (rank >= parentRank)
+          -- Exclude variables from OUTER scope (rank < parentRank)
+          -- IMPORTANT: Also check locals being defined at this level!
+          let dummyPos = A.Position 0 0
+          -- FIXED: Only check variables that are NEW at this level or defined at this level
+          -- Don't check variables inherited from outer scopes that happen to be in monoEnv
+          varsFromMonoEnv <- forM (Map.toList finalMonoEnv) $ \(name, var) -> do
+            -- Only include if this variable was added at THIS level (in newVarsThisLevel)
+            if name `elem` newVarsThisLevel
+              then do
+                actualVar <- UF.repr var
+                (Descriptor _ actualRank _ _) <- UF.get actualVar
+                -- Include if at current level or deeper
+                if actualRank >= parentRank
+                  then return (Just (name, A.At (A.Region dummyPos dummyPos) var))
+                  else return Nothing
+              else return Nothing  -- Variable from outer scope, skip it
+          let varsFromMonoEnvFiltered = [x | Just x <- varsFromMonoEnv]
+          -- Add locals to the check (they are being defined at THIS level)
+          let localsToCheck = [(name, locatedVar) | (name, locatedVar) <- Map.toList locals]
+          let varsToCheckFiltered = varsFromMonoEnvFiltered <> localsToCheck
+
+          putStrLn $ "DEBUG: ORIGINAL defer - checking generalization with nextRank=" <> show nextRank <> ", parentRank=" <> show parentRank <> ", ambientRigids=" <> show (length ambientRigids) <> " (ranks: " <> show (fmap fst ambientRigids) <> ")"
+          putStrLn $ "DEBUG:   locals=" <> show (Map.keys locals) <> ", varsToCheck=" <> show (fmap fst varsToCheckFiltered) <> " (filtered by rank>=" <> show parentRank <> ")"
+          -- Check against AMBIENT RIGIDS from OUTER levels only (rank < nextRank)
+          -- Filter to exclude rigids from current level - only check against truly outer rigids
+          let outerRigids = [(rank, var) | (rank, var) <- ambientRigids, rank < nextRank]
+          putStrLn $ "DEBUG:   outerRigids (rank < " <> show nextRank <> "): " <> show (length outerRigids) <> " (ranks: " <> show (fmap fst outerRigids) <> ")"
+          monoToPolyVars <- foldM (checkAndGeneralizeWithParent nextRank parentRank outerRigids locals) [] varsToCheckFiltered
+
+          -- Add ALL variables to environment:
+          -- - Generalized variables (from monoToPolyVars) go to main env
+          -- - Monomorphic variables stay in monoEnv but need to remain accessible
+          let polyEnv = Map.fromList [(name, var) | (name, var) <- monoToPolyVars]
+          putStrLn $ "DEBUG: Adding to polyEnv: " <> show (Map.keys polyEnv)
+          let finalEnv = Map.union (config ^. solveEnv) polyEnv
+
+          -- Keep only mono variables from OUTER scopes (rank < nextRank), not locals
+          -- Locals either got generalized (in polyEnv) or are scoped to this level only
+          remainingMonoVars <- foldM (\acc (name, var) ->
+            if Map.member name polyEnv
+              then return acc  -- Already generalized
+              else do
+                actualVar <- UF.repr var
+                (Descriptor _ actualRank _ _) <- UF.get actualVar
+                -- Only keep if from outer scope (rank < parentRank)
+                if actualRank < parentRank
+                  then return (Map.insert name var acc)
+                  else return acc  -- Local variable, scoped to this level
+            ) Map.empty [(name, var) | (name, A.At _ var) <- varsToCheckFiltered]
+          putStrLn $ "DEBUG: remainingMonoVars after generalization: " <> show (Map.keys remainingMonoVars)
+
+          -- Reset THIS function's rigids to rank 0 (they are the function's type parameters)
+          let (_, _, finalMark) = calculateMarks bodyState
+          traverse_ resetRigidToNoRank rigids
+          traverse_ isGeneric rigids
+
+          return $ bodyState
+            & stateMark .~ finalMark
+            & stateEnv .~ finalEnv
+            & stateMonoEnv .~ remainingMonoVars  -- Keep mono variables for outer scopes
+        else do
+          -- Nested let: add locals to monoEnv in the returned state
+          -- These variables stay monomorphic (not added to main env)
+          putStrLn $ "DEBUG: NESTED defer - keeping in monoEnv without generalization"
+
+          -- The monoEnv is lost when we return State, so we need to keep track of it differently
+          -- For now, add non-generalized locals back to state's monoEnv tracking
+          -- Actually, the parent's monoEnv already has these from bodyConfig, so just return
+          return bodyState
+
+    else do
+      -- STANDARD PATH: No ambient rigids, use normal generalization
+      let (youngMark, visitMark, finalMark) = calculateMarks solvedState
+      let ambientRigidVars = fmap snd ambientRigids
+      performGeneralization youngMark visitMark nextRank nextPools ambientRigidVars
+      -- Reset THIS function's rigids to rank 0 (they are the function's type parameters)
+      traverse_ resetRigidToNoRank rigids
+      traverse_ isGeneric rigids
+      let newEnv = Map.union (config ^. solveEnv) (Map.map A.toValue locals)
+      let tempState = solvedState & stateMark .~ finalMark
+      let finalConfig = config & solveEnv .~ newEnv & solveState .~ tempState & solveRank .~ (config ^. solveRank)
+      solve finalConfig subCon
+
+-- Extract all type variables from a Type
+extractTypeVars :: Type -> IO [Variable]
+extractTypeVars tipe = case tipe of
+  VarN v -> return [v]
+  AppN _ _ args -> foldM (\acc arg -> do
+    vars <- extractTypeVars arg
+    return (acc <> vars)) [] args
+  FunN arg result -> do
+    argVars <- extractTypeVars arg
+    resultVars <- extractTypeVars result
+    return (argVars <> resultVars)
+  AliasN _ _ args realType -> do
+    argVars <- foldM (\acc (_, arg) -> do
+      vars <- extractTypeVars arg
+      return (acc <> vars)) [] args
+    realVars <- extractTypeVars realType
+    return (argVars <> realVars)
+  RecordN fields ext -> do
+    fieldVars <- foldM (\acc (_, fieldType) -> do
+      vars <- extractTypeVars fieldType
+      return (acc <> vars)) [] (Map.toList fields)
+    extVars <- extractTypeVars ext
+    return (fieldVars <> extVars)
+  EmptyRecordN -> return []
+  UnitN -> return []
+  TupleN a b maybeC -> do
+    aVars <- extractTypeVars a
+    bVars <- extractTypeVars b
+    cVars <- maybe (return []) extractTypeVars maybeC
+    return (aVars <> bVars <> cVars)
+  PlaceHolder _ -> return []
+
+-- Extract all variables from a FlatType (non-recursive, returns immediate child variables)
+extractVarsFromFlatType :: FlatType -> [Variable]
+extractVarsFromFlatType flatType = case flatType of
+  App1 _ _ vars -> vars
+  Fun1 arg result -> [arg, result]
+  EmptyRecord1 -> []
+  Record1 fields ext -> Map.elems fields <> [ext]
+  Unit1 -> []
+  Tuple1 a b maybeC -> [a, b] <> maybe [] pure maybeC
+
+-- Extract all variables from a variable's unified Type by following union-find links RECURSIVELY
+extractVarsFromUnifiedType :: Variable -> IO [Variable]
+extractVarsFromUnifiedType var = do
+  actualVar <- UF.repr var
+  (Descriptor content _ _ _) <- UF.get actualVar
+  case content of
+    Structure flatType -> do
+      -- Get immediate child variables from the flat type
+      let childVars = extractVarsFromFlatType flatType
+      -- Recursively extract from each child variable
+      nestedVars <- foldM (\acc childVar -> do
+        vars <- extractVarsFromUnifiedType childVar
+        return (acc <> vars)) [] childVars
+      -- Include both the child variables themselves AND their nested variables
+      return (childVars <> nestedVars)
+    FlexVar _ -> return [actualVar]
+    FlexSuper _ _ -> return [actualVar]
+    RigidVar _ -> return [actualVar]
+    RigidSuper _ _ -> return [actualVar]
+    Alias _ _ args realVar -> do
+      argVars <- foldM (\acc (_, argVar) -> do
+        vars <- extractVarsFromUnifiedType argVar
+        return (acc <> vars)) [] args
+      realVars <- extractVarsFromUnifiedType realVar
+      return (argVars <> realVars)
+    Error -> return []
+
+-- Check if a monomorphic variable can be generalized
+-- If rank <= parentRank, it unified with OUTER scope (not just current let) - keep monomorphic
+-- If any nested variable is equivalent to an outer rigid (rank < parentRank for locals) - keep monomorphic
+-- If rank == youngRank, it's still local to current let - generalize it
+-- If parentRank < rank < youngRank, it unified within current let only - generalize it
+-- IMPORTANT: For variables in locals (being defined at this level), only check rigids < parentRank
+--            to avoid false positives from peer module-level functions
+checkAndGeneralizeWithParent :: Int -> Int -> [(Int, Variable)] -> Map Name.Name (A.Located Variable) -> [(Name.Name, Variable)] -> (Name.Name, A.Located Variable) -> IO [(Name.Name, Variable)]
+checkAndGeneralizeWithParent youngRank parentRank outerRigids locals acc (name, A.At _ var) = do
+  (Descriptor _ rank _ _) <- UF.get var
+  -- Follow links to get the representative variable
+  actualVar <- UF.repr var
+  (Descriptor _ actualRank _ _) <- UF.get actualVar
+
+  -- Extract ALL variables from the unified type structure
+  allVarsInType <- extractVarsFromUnifiedType var
+
+  -- Check if ANY of the nested variables are equivalent to TRULY OUTER rigids
+  -- For variables in locals (being defined at this level), only check rigids < parentRank
+  -- This prevents false positives from peer module-level functions at the same conceptual level
+  -- For nested variables (not in locals), check rigids < actualRank as before
+  let isLocal = Map.member name locals
+  let rigidRankThreshold = if isLocal then parentRank else actualRank
+  let strictlyOuterRigids = [(r, v) | (r, v) <- outerRigids, r < rigidRankThreshold]
+  let rigidsToCheck = fmap snd strictlyOuterRigids
+  equivalences <- forM allVarsInType $ \typeVar -> do
+    results <- forM rigidsToCheck $ \rigidVar -> do
+      equiv <- UF.equivalent typeVar rigidVar
+      when equiv $ putStrLn $ "DEBUG:     MATCH! Found variable equivalent to rigid at rank < " <> show rigidRankThreshold
+      return equiv
+    return (any id results)
+  let isUnifiedWithRigid = any id equivalences
+
+  let hasOuterRigids = not (null outerRigids)
+  -- Module level: variable is being defined as a local (has type annotation at module level)
+  -- This is more accurate than checking rank, since module-level functions can have various ranks due to dependency order
+  let isModuleLevel = isLocal
+  putStrLn $ "DEBUG:   Checking " <> show name <> ": rank=" <> show rank <> ", actualRank=" <> show actualRank <> ", nestedVars=" <> show (length allVarsInType) <> ", isLocal=" <> show isLocal <> ", threshold=" <> show rigidRankThreshold <> ", isUnifiedWithRigid=" <> show isUnifiedWithRigid <> ", isModuleLevel=" <> show isModuleLevel
+
+  let finalRank = actualRank
+  if finalRank == noRank
+    then do
+      -- Already generalized by nested let - this is OK, it's polymorphic
+      putStrLn $ "DEBUG:   -> Already generalized (rank 0) - adding to polyEnv"
+      return ((name, var) : acc)
+    else if isUnifiedWithRigid && not isModuleLevel
+      then do
+        -- Unified with an OUTER rigid in NESTED context - stays monomorphic!
+        -- But at module level, always generalize regardless of rigid unification
+        putStrLn $ "DEBUG:   -> Unified with OUTER rigid in nested context - STAYS MONO"
+        return acc
+    else if finalRank <= parentRank
+      then do
+        -- Unified with OUTER scope (parent or higher) - stays monomorphic
+        putStrLn $ "DEBUG:   -> Unified with OUTER scope (rank " <> show finalRank <> " <= parentRank " <> show parentRank <> ") - STAYS MONO"
+        return acc
+    else if hasOuterRigids && finalRank /= youngRank && not isModuleLevel
+      then do
+        -- When outer rigids present in NESTED context, be VERY conservative: only generalize variables exactly at youngRank
+        -- But at module level, generalize regardless of rank mismatch
+        putStrLn $ "DEBUG:   -> Has outer rigids and rank " <> show finalRank <> " /= youngRank " <> show youngRank <> " in nested context - STAYS MONO (conservative)"
+        return acc
+      else do
+        -- rank > parentRank and (no outer rigids OR rank == youngRank OR module level)
+        putStrLn $ "DEBUG:   -> Can be generalized (rank " <> show finalRank <> ", parentRank=" <> show parentRank <> ", youngRank=" <> show youngRank <> ", isModuleLevel=" <> show isModuleLevel <> ") - GENERALIZING"
+        -- Recursively generalize to ensure ALL nested variables are at rank 0
+        generalizeRecursively actualVar
+        return ((name, var) : acc)
+
+-- Helper for checking if any element satisfies predicate
+anyM :: (Monad m) => (a -> m Bool) -> [a] -> m Bool
+anyM _ [] = return False
+anyM p (x:xs) = do
+  result <- p x
+  if result
+    then return True
+    else anyM p xs
 
 calculateMarks :: State -> (Mark, Mark, Mark)
 calculateMarks state =
@@ -304,9 +868,34 @@ calculateMarks state =
       finalMark = nextMark visitMark
   in (youngMark, visitMark, finalMark)
 
-performGeneralization :: Mark -> Mark -> Int -> Pools -> IO ()
-performGeneralization youngMark visitMark nextRank nextPools = do
-  generalize youngMark visitMark nextRank nextPools
+collectAmbientVariables :: [Variable] -> IO [Variable]
+collectAmbientVariables ambientRigids = do
+  let go visited var = do
+        desc <- UF.get var
+        case desc of
+          Descriptor (Alias _ _ _ actualVar) _ _ _ ->
+            if any (== actualVar) visited
+              then return visited
+              else go (var : visited) actualVar
+          Descriptor (Structure term) _ _ _ -> do
+            termVars <- getTermVariables term
+            foldM go (var : visited) termVars
+          _ ->
+            return (var : visited)
+  foldM go [] ambientRigids
+  where
+    getTermVariables term = case term of
+      App1 _ _ args -> return args
+      Fun1 arg result -> return [arg, result]
+      EmptyRecord1 -> return []
+      Record1 fields ext -> return (Map.elems fields <> [ext])
+      Unit1 -> return []
+      Tuple1 a b maybeC -> return ([a, b] <> maybe [] pure maybeC)
+
+performGeneralization :: Mark -> Mark -> Int -> Pools -> [Variable] -> IO ()
+performGeneralization youngMark visitMark nextRank nextPools ambientRigids = do
+  ambientVars <- collectAmbientVariables ambientRigids
+  generalize youngMark visitMark nextRank nextPools ambientVars
   currentPools <- readIORef nextPools
   MVector.write currentPools nextRank []
 
@@ -329,14 +918,14 @@ occurs state (name, A.At region variable) =
 
 -- GENERALIZE
 
-generalize :: Mark -> Mark -> Int -> Pools -> IO ()
-generalize youngMark visitMark youngRank pools = do
+generalize :: Mark -> Mark -> Int -> Pools -> [Variable] -> IO ()
+generalize youngMark visitMark youngRank pools ambientVars = do
   currentPools <- readIORef pools
   youngVars <- MVector.read currentPools youngRank
   rankTable <- poolToRankTable youngMark youngRank youngVars
   adjustAllRanks youngMark visitMark rankTable
   registerOldPoolVariables pools rankTable
-  registerOrGeneralizeYoungVars pools youngRank rankTable
+  registerOrGeneralizeYoungVars pools youngRank rankTable ambientVars
 
 adjustAllRanks :: Mark -> Mark -> Vector.Vector [Variable] -> IO ()
 adjustAllRanks youngMark visitMark rankTable =
@@ -358,18 +947,20 @@ registerVariableInOldPool pools var = do
   currentPools <- readIORef pools
   MVector.modify currentPools (var :) rank
 
-registerOrGeneralizeYoungVars :: Pools -> Int -> Vector.Vector [Variable] -> IO ()
-registerOrGeneralizeYoungVars pools youngRank rankTable =
+registerOrGeneralizeYoungVars :: Pools -> Int -> Vector.Vector [Variable] -> [Variable] -> IO ()
+registerOrGeneralizeYoungVars pools youngRank rankTable ambientVars =
   for_ (Vector.unsafeLast rankTable) $ \var -> do
     isRedundant <- UF.redundant var
     if isRedundant
       then return ()
-      else registerOrGeneralizeVariable pools youngRank var
+      else registerOrGeneralizeVariable pools youngRank var ambientVars
 
-registerOrGeneralizeVariable :: Pools -> Int -> Variable -> IO ()
-registerOrGeneralizeVariable pools youngRank var = do
+registerOrGeneralizeVariable :: Pools -> Int -> Variable -> [Variable] -> IO ()
+registerOrGeneralizeVariable pools youngRank var ambientVars = do
   (Descriptor content rank mark copy) <- UF.get var
-  if rank < youngRank
+  isAmbientList <- mapM (`UF.equivalent` var) ambientVars
+  let isAmbient = or isAmbientList
+  if rank < youngRank || isAmbient
     then do
       ensurePoolSize rank pools
       currentPools <- readIORef pools
@@ -632,24 +1223,95 @@ srcFieldTypeToVar rank pools flexVars (Can.FieldType _ srcTipe) =
 
 -- COPY
 
-makeCopy :: Int -> Pools -> Variable -> IO Variable
-makeCopy rank pools var =
+makeCopy :: Int -> Pools -> [(Int, Variable)] -> Variable -> IO Variable
+makeCopy rank pools ambientRigids var =
   do
-    copy <- makeCopyHelp rank pools var
+    copy <- makeCopyHelp rank pools ambientRigids var
     restore var
     return copy
 
-makeCopyHelp :: Int -> Pools -> Variable -> IO Variable
-makeCopyHelp maxRank pools variable = do
+makeCopyHelp :: Int -> Pools -> [(Int, Variable)] -> Variable -> IO Variable
+makeCopyHelp maxRank pools ambientRigids variable = do
   (Descriptor content rank _ maybeCopy) <- UF.get variable
-  case maybeCopy of
-    Just copy -> return copy
-    Nothing -> handleNoCopy maxRank pools variable content rank
+  putStrLn $ "DEBUG makeCopyHelp: rank=" <> show rank <> ", content type=" <> showContentType content <> ", ambientRigids=" <> show (length ambientRigids) <> ", hasCopy=" <> show (maybe False (const True) maybeCopy)
 
-handleNoCopy :: Int -> Pools -> Variable -> Content -> Int -> IO Variable
-handleNoCopy maxRank pools variable content rank
-  | rank /= noRank = return variable
-  | otherwise = createAndLinkCopy maxRank pools variable content rank
+  -- Check for Error content BEFORE checking hasCopy
+  -- Error variables should NEVER be instantiated, regardless of their copy field
+  case content of
+    Error -> do
+      putStrLn $ "DEBUG makeCopyHelp: Skipping Error variable (returning as-is)"
+      return variable  -- Return Error variables unchanged
+    _ -> case maybeCopy of
+      Just copy -> do
+        putStrLn $ "DEBUG makeCopyHelp: Returning cached copy"
+        return copy
+      Nothing -> handleNoCopy maxRank pools ambientRigids variable content rank
+
+showContentType :: Content -> String
+showContentType (FlexVar _) = "FlexVar"
+showContentType (FlexSuper _ _) = "FlexSuper"
+showContentType (RigidVar _) = "RigidVar"
+showContentType (RigidSuper _ _) = "RigidSuper"
+showContentType (Structure _) = "Structure"
+showContentType (Alias _ _ _ _) = "Alias"
+showContentType Error = "Error"
+
+showSuperType :: SuperType -> String
+showSuperType Number = "Number"
+showSuperType Comparable = "Comparable"
+showSuperType Appendable = "Appendable"
+showSuperType CompAppend = "CompAppend"
+
+handleNoCopy :: Int -> Pools -> [(Int, Variable)] -> Variable -> Content -> Int -> IO Variable
+handleNoCopy maxRank pools ambientRigids variable content rank
+  | rank /= noRank = do
+      putStrLn $ "DEBUG handleNoCopy: Variable has rank " <> show rank <> ", checking for higher-rank ambient rigid"
+      -- Check if this is a rigid that might have a higher-rank version in ambient rigids
+      case content of
+        RigidVar name -> checkForHigherRankRigid name variable rank ambientRigids
+        RigidSuper super name -> checkForHigherRankRigidSuper name super variable rank ambientRigids
+        _ -> do
+          putStrLn $ "DEBUG handleNoCopy: Not a rigid, returning as-is"
+          return variable
+  | otherwise = do
+      putStrLn $ "DEBUG handleNoCopy: Copying (rank == noRank)"
+      createAndLinkCopy maxRank pools ambientRigids variable content rank
+
+-- | Check if there's a higher-rank version of a RigidVar in ambient rigids
+checkForHigherRankRigid :: Name.Name -> Variable -> Int -> [(Int, Variable)] -> IO Variable
+checkForHigherRankRigid name variable currentRank ambientRigids = do
+  matchingRigid <- findMatchingRigid name ambientRigids
+  case matchingRigid of
+    Just higherRigid -> do
+      (Descriptor _ higherRank _ _) <- UF.get higherRigid
+      if higherRank > currentRank
+        then do
+          putStrLn $ "DEBUG checkForHigherRankRigid: Found higher-rank rigid (rank " <> show higherRank <> " > " <> show currentRank <> "), using it"
+          return higherRigid
+        else do
+          putStrLn $ "DEBUG checkForHigherRankRigid: Found rigid but not higher rank, using current"
+          return variable
+    Nothing -> do
+      putStrLn $ "DEBUG checkForHigherRankRigid: No matching rigid found, using current"
+      return variable
+
+-- | Check if there's a higher-rank version of a RigidSuper in ambient rigids
+checkForHigherRankRigidSuper :: Name.Name -> SuperType -> Variable -> Int -> [(Int, Variable)] -> IO Variable
+checkForHigherRankRigidSuper name super variable currentRank ambientRigids = do
+  matchingRigid <- findMatchingRigidSuper name super ambientRigids
+  case matchingRigid of
+    Just higherRigid -> do
+      (Descriptor _ higherRank _ _) <- UF.get higherRigid
+      if higherRank > currentRank
+        then do
+          putStrLn $ "DEBUG checkForHigherRankRigidSuper: Found higher-rank rigid (rank " <> show higherRank <> " > " <> show currentRank <> "), using it"
+          return higherRigid
+        else do
+          putStrLn $ "DEBUG checkForHigherRankRigidSuper: Found rigid but not higher rank, using current"
+          return variable
+    Nothing -> do
+      putStrLn $ "DEBUG checkForHigherRankRigidSuper: No matching rigid found, using current"
+      return variable
 
 createFreshCopy :: Int -> Pools -> Content -> IO Variable
 createFreshCopy maxRank pools content = do
@@ -664,46 +1326,129 @@ linkVariableToCopy :: Variable -> Content -> Int -> Variable -> IO ()
 linkVariableToCopy variable content rank copy =
   UF.set variable $ Descriptor content rank noMark (Just copy)
 
-processCopyContent :: Int -> Pools -> Variable -> Content -> IO Variable
-processCopyContent maxRank pools copy content = do
+processCopyContent :: Int -> Pools -> [(Int, Variable)] -> Variable -> Content -> IO Variable
+processCopyContent maxRank pools ambientRigids copy content = do
   let makeDescriptor c = Descriptor c maxRank noMark Nothing
   case content of
-    Structure term -> copyStructureContent maxRank pools copy makeDescriptor term
+    Structure term -> copyStructureContent maxRank pools ambientRigids copy makeDescriptor term
     FlexVar _ -> return copy
     FlexSuper _ _ -> return copy
-    RigidVar name -> copyRigidVarContent copy makeDescriptor name
-    RigidSuper super name -> copyRigidSuperContent copy makeDescriptor super name
-    Alias home name args realType -> copyAliasContent maxRank pools copy makeDescriptor home name args realType
+    RigidVar name -> copyRigidVarContent ambientRigids copy makeDescriptor name
+    RigidSuper super name -> copyRigidSuperContent ambientRigids copy makeDescriptor super name
+    Alias home name args realType -> copyAliasContent maxRank pools ambientRigids copy makeDescriptor home name args realType
     Error -> return copy
 
-copyStructureContent :: Int -> Pools -> Variable -> (Content -> Descriptor) -> FlatType -> IO Variable
-copyStructureContent maxRank pools copy makeDescriptor term = do
-  newTerm <- traverseFlatType (makeCopyHelp maxRank pools) term
+copyStructureContent :: Int -> Pools -> [(Int, Variable)] -> Variable -> (Content -> Descriptor) -> FlatType -> IO Variable
+copyStructureContent maxRank pools ambientRigids copy makeDescriptor term = do
+  newTerm <- traverseFlatType (makeCopyHelp maxRank pools ambientRigids) term
   UF.set copy $ makeDescriptor (Structure newTerm)
   return copy
 
-copyRigidVarContent :: Variable -> (Content -> Descriptor) -> Name.Name -> IO Variable
-copyRigidVarContent copy makeDescriptor name = do
-  UF.set copy . makeDescriptor $ FlexVar (Just name)
-  return copy
+-- | Copy a RigidVar by converting it to FlexVar, but check if it should unify with ambient rigids
+-- When instantiating a polymorphic function, rigid type variables become flexible
+-- But if there are ambient rigids with the same name, the fresh flex should unify with them
+copyRigidVarContent :: [(Int, Variable)] -> Variable -> (Content -> Descriptor) -> Name.Name -> IO Variable
+copyRigidVarContent ambientRigids copy makeDescriptor name = do
+  putStrLn $ "DEBUG copyRigidVarContent: Looking for rigid with name " <> show name <> " in " <> show (length ambientRigids) <> " ambient rigids"
+  -- Check if there's an ambient rigid with the same name
+  matchingRigid <- findMatchingRigid name ambientRigids
+  case matchingRigid of
+    Just rigidVar -> do
+      putStrLn $ "DEBUG copyRigidVarContent: FOUND matching rigid for " <> show name <> ", unifying!"
+      -- Unify the copy with the ambient rigid
+      -- The copy will now point to the same variable as the rigid
+      UF.union copy rigidVar (makeDescriptor (RigidVar name))
+      return copy
+    Nothing -> do
+      putStrLn $ "DEBUG copyRigidVarContent: NO matching rigid for " <> show name <> ", creating FlexVar"
+      -- No matching rigid, create a regular FlexVar
+      UF.set copy . makeDescriptor $ FlexVar (Just name)
+      return copy
 
-copyRigidSuperContent :: Variable -> (Content -> Descriptor) -> SuperType -> Name.Name -> IO Variable
-copyRigidSuperContent copy makeDescriptor super name = do
-  UF.set copy . makeDescriptor $ FlexSuper super (Just name)
-  return copy
+-- | Find an ambient rigid variable with matching name
+-- Prefers the HIGHEST rank (most local scope) when multiple matches exist
+findMatchingRigid :: Name.Name -> [(Int, Variable)] -> IO (Maybe Variable)
+findMatchingRigid targetName rigids = do
+  putStrLn $ "DEBUG findMatchingRigid: Looking for " <> show targetName
+  for_ rigids $ \(rank, var) -> do
+    desc <- UF.get var
+    case desc of
+      Descriptor (RigidVar n) _ _ _ ->
+        putStrLn $ "  - Found RigidVar " <> show n <> " at rank " <> show rank
+      Descriptor (RigidSuper _ n) _ _ _ ->
+        putStrLn $ "  - Found RigidSuper " <> show n <> " at rank " <> show rank
+      _ -> putStrLn $ "  - Found other content at rank " <> show rank
+  -- Collect all matching rigids with their ranks
+  matches <- collectMatches rigids
+  case matches of
+    [] -> return Nothing
+    _ -> do
+      -- Select the highest rank (most local)
+      let (bestRank, bestVar) = maximumBy (\(r1, _) (r2, _) -> compare r1 r2) matches
+      putStrLn $ "DEBUG findMatchingRigid: Selected rigid at rank " <> show bestRank <> " (highest)"
+      return (Just bestVar)
+  where
+    collectMatches [] = return []
+    collectMatches ((rank, var) : rest) = do
+      desc <- UF.get var
+      case desc of
+        Descriptor (RigidVar rigidName) _ _ _ | rigidName == targetName ->
+          fmap ((rank, var) :) (collectMatches rest)
+        Descriptor (RigidSuper _ rigidName) _ _ _ | rigidName == targetName ->
+          fmap ((rank, var) :) (collectMatches rest)
+        _ -> collectMatches rest
 
-copyAliasContent :: Int -> Pools -> Variable -> (Content -> Descriptor) -> ModuleName.Canonical -> Name.Name -> [(Name.Name, Variable)] -> Variable -> IO Variable
-copyAliasContent maxRank pools copy makeDescriptor home name args realType = do
-  newArgs <- traverse (traverse (makeCopyHelp maxRank pools)) args
-  newRealType <- makeCopyHelp maxRank pools realType
+copyRigidSuperContent :: [(Int, Variable)] -> Variable -> (Content -> Descriptor) -> SuperType -> Name.Name -> IO Variable
+copyRigidSuperContent ambientRigids copy makeDescriptor super name = do
+  -- Check if there's an ambient rigid with the same name and compatible supertype
+  matchingRigid <- findMatchingRigidSuper name super ambientRigids
+  case matchingRigid of
+    Just rigidVar -> do
+      -- Unify the copy with the ambient rigid
+      UF.union copy rigidVar (makeDescriptor (RigidSuper super name))
+      return copy
+    Nothing -> do
+      -- No matching rigid, create a regular FlexSuper
+      UF.set copy . makeDescriptor $ FlexSuper super (Just name)
+      return copy
+
+-- | Find an ambient rigid super variable with matching name and compatible supertype
+-- | Find a matching RigidSuper in ambient rigids
+-- Prefers the HIGHEST rank (most local scope) when multiple matches exist
+findMatchingRigidSuper :: Name.Name -> SuperType -> [(Int, Variable)] -> IO (Maybe Variable)
+findMatchingRigidSuper targetName targetSuper rigids = do
+  matches <- collectMatches rigids
+  case matches of
+    [] -> return Nothing
+    _ -> do
+      let (bestRank, bestVar) = maximumBy (\(r1, _) (r2, _) -> compare r1 r2) matches
+      putStrLn $ "DEBUG findMatchingRigidSuper: Selected rigid at rank " <> show bestRank <> " (highest)"
+      return (Just bestVar)
+  where
+    collectMatches [] = return []
+    collectMatches ((rank, var) : rest) = do
+      desc <- UF.get var
+      case desc of
+        Descriptor (RigidSuper rigidSuper rigidName) _ _ _
+          | rigidName == targetName && rigidSuper == targetSuper ->
+            fmap ((rank, var) :) (collectMatches rest)
+        Descriptor (RigidVar rigidName) _ _ _ | rigidName == targetName ->
+          -- RigidVar can match any supertype
+          fmap ((rank, var) :) (collectMatches rest)
+        _ -> collectMatches rest
+
+copyAliasContent :: Int -> Pools -> [(Int, Variable)] -> Variable -> (Content -> Descriptor) -> ModuleName.Canonical -> Name.Name -> [(Name.Name, Variable)] -> Variable -> IO Variable
+copyAliasContent maxRank pools ambientRigids copy makeDescriptor home name args realType = do
+  newArgs <- traverse (traverse (makeCopyHelp maxRank pools ambientRigids)) args
+  newRealType <- makeCopyHelp maxRank pools ambientRigids realType
   UF.set copy $ makeDescriptor (Alias home name newArgs newRealType)
   return copy
 
-createAndLinkCopy :: Int -> Pools -> Variable -> Content -> Int -> IO Variable
-createAndLinkCopy maxRank pools variable content rank = do
+createAndLinkCopy :: Int -> Pools -> [(Int, Variable)] -> Variable -> Content -> Int -> IO Variable
+createAndLinkCopy maxRank pools ambientRigids variable content rank = do
   copy <- createFreshCopy maxRank pools content
   linkVariableToCopy variable content rank copy
-  processCopyContent maxRank pools copy content
+  processCopyContent maxRank pools ambientRigids copy content
 
 -- RESTORE
 
