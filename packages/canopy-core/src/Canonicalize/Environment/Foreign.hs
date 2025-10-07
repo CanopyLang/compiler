@@ -94,6 +94,7 @@ addImport ifaces state@(State vs ts cs bs qvs qts qcs) (Src.Import (A.At _ name)
       Just (I.Interface pkg defs unions aliases binops) ->
         let !prefix = Data.Maybe.fromMaybe name maybeAlias
             !home = ModuleName.Canonical pkg name
+            !isAliased = Data.Maybe.isJust maybeAlias
 
             !rawTypeInfo =
               Map.union
@@ -104,9 +105,9 @@ addImport ifaces state@(State vs ts cs bs qvs qts qcs) (Src.Import (A.At _ name)
             !types = Map.map (Env.Specific home . fst) rawTypeInfo
             !ctors = Map.foldr (addExposed . snd) Map.empty rawTypeInfo
 
-            !qvs2 = addQualified prefix vars qvs
-            !qts2 = addQualified prefix types qts
-            !qcs2 = addQualified prefix ctors qcs
+            !qvs2 = addQualified isAliased prefix vars qvs
+            !qts2 = addQualified isAliased prefix types qts
+            !qcs2 = addQualified isAliased prefix ctors qcs
         in case exposing of
         Src.Open ->
           let !vs2 = addExposed vs vars
@@ -124,8 +125,11 @@ addExposed :: Env.Exposed a -> Env.Exposed a -> Env.Exposed a
 addExposed =
   Map.unionWith Env.mergeInfo
 
-addQualified :: Name.Name -> Env.Exposed a -> Env.Qualified a -> Env.Qualified a
-addQualified = Map.insertWith addExposed
+addQualified :: Bool -> Name.Name -> Env.Exposed a -> Env.Qualified a -> Env.Qualified a
+addQualified isAliased prefix exposed qualified =
+  if isAliased
+    then Map.insert prefix exposed qualified
+    else Map.insertWith addExposed prefix exposed qualified
 
 -- UNION
 
