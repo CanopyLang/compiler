@@ -63,17 +63,19 @@ data Constraint
   | CForeign A.Region Name.Name Can.Annotation (E.Expected Type)
   | CPattern A.Region E.PCategory Type (E.PExpected Type)
   | CAnd [Constraint]
+  | CCaseBranchesIsolated [Constraint]
   | CLet
       { _rigidVars :: [Variable],
         _flexVars :: [Variable],
         _header :: Map Name.Name (A.Located Type),
         _headerCon :: Constraint,
-        _bodyCon :: Constraint
+        _bodyCon :: Constraint,
+        _expectedType :: Maybe Type
       }
 
 exists :: [Variable] -> Constraint -> Constraint
 exists flexVars constraint =
-  CLet [] flexVars Map.empty constraint CTrue
+  CLet [] flexVars Map.empty constraint CTrue Nothing
 
 -- TYPE PRIMITIVES
 
@@ -122,7 +124,7 @@ data SuperType
   | Comparable
   | Appendable
   | CompAppend
-  deriving (Eq)
+  deriving (Eq, Show)
 
 makeDescriptor :: Content -> Descriptor
 makeDescriptor content =

@@ -32,17 +32,16 @@ unify v1 v2 =
         do
           t1 <- Type.toErrorType v1
           t2 <- Type.toErrorType v2
-          UF.union v1 v2 errorDescriptor
+          -- CRITICAL FIX: DO NOT mutate variables to Error!
+          -- The error types have already been extracted above.
+          -- Mutating variables to Error/rank 0 breaks subsequent type checking
+          -- when the same variable is used again (e.g., dict parameter used twice).
+          -- Previously: UF.union v1 v2 errorDescriptor
           return (Err vars t1 t2)
 
 onSuccess :: [Variable] -> () -> IO Answer
 onSuccess vars () =
   return (Ok vars)
-
-{-# NOINLINE errorDescriptor #-}
-errorDescriptor :: Descriptor
-errorDescriptor =
-  Descriptor Error noRank noMark Nothing
 
 -- CPS UNIFIER
 
@@ -230,8 +229,12 @@ unifyRigid context maybeSuper content otherContent =
       mismatch
     Alias {} ->
       mismatch
-    Structure _ ->
-      mismatch
+    Structure flatType ->
+      case maybeSuper of
+        Just super ->
+          unifyStructureRigidSuper (reorient context) flatType super
+        Nothing ->
+          mismatch
     Error ->
       merge context Error
 
@@ -367,6 +370,52 @@ unifyComparableRecursive var =
         UF.fresh $ Descriptor (Type.unnamedFlexSuper Comparable) rank noMark Nothing
     guardedUnify compVar var
 
+-- UNIFY STRUCTURE WITH RIGID SUPER
+--
+-- When a concrete type (Structure) meets a rigid super type variable,
+-- we need to check if the concrete type satisfies the super type constraint.
+-- For example, Int should unify with a rigid "number" type variable.
+unifyStructureRigidSuper :: Context -> FlatType -> SuperType -> Unify ()
+unifyStructureRigidSuper context flatType super =
+  case flatType of
+    App1 home name [] ->
+      if atomMatchesSuper super home name
+        then merge context (Structure flatType)
+        else mismatch
+    App1 home name [variable] | home == ModuleName.list && name == Name.list ->
+      case super of
+        Number ->
+          mismatch
+        Appendable ->
+          merge context (Structure flatType)
+        Comparable ->
+          do
+            comparableOccursCheck context
+            unifyComparableRecursive variable
+            merge context (Structure flatType)
+        CompAppend ->
+          do
+            comparableOccursCheck context
+            unifyComparableRecursive variable
+            merge context (Structure flatType)
+    Tuple1 a b maybeC ->
+      case super of
+        Number ->
+          mismatch
+        Appendable ->
+          mismatch
+        Comparable ->
+          do
+            comparableOccursCheck context
+            unifyComparableRecursive a
+            unifyComparableRecursive b
+            forM_ maybeC unifyComparableRecursive
+            merge context (Structure flatType)
+        CompAppend ->
+          mismatch
+    _ ->
+      mismatch
+
 -- UNIFY ALIASES
 
 unifyAlias :: Context -> ModuleName.Canonical -> Name.Name -> [(Name.Name, Variable)] -> Variable -> Content -> Unify ()
@@ -426,8 +475,8 @@ unifyStructure context flatType content otherContent =
       unifyFlexSuperStructure (reorient context) super flatType
     RigidVar _ ->
       mismatch
-    RigidSuper _ _ ->
-      mismatch
+    RigidSuper super _ ->
+      unifyStructureRigidSuper context flatType super
     Alias _ _ _ realVar ->
       subUnify (_first context) realVar
     Structure otherFlatType ->

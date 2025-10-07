@@ -80,8 +80,8 @@ constrain rtv (A.At region expression) expected =
     Can.Case expr branches ->
       constrainCase rtv region expr branches expected
     Can.Let def body ->
-      constrainDef rtv def
-        =<< constrain rtv body expected
+      constrain rtv body expected >>= \bodyCon ->
+        constrainDef rtv def bodyCon expected
     Can.LetRec defs body ->
       constrainRecursiveDefs rtv defs
         =<< constrain rtv body expected
@@ -145,7 +145,8 @@ constrainLambda rtv region args body expected =
                 _flexVars = pvars,
                 _header = headers,
                 _headerCon = CAnd (reverse revCons),
-                _bodyCon = bodyCon
+                _bodyCon = bodyCon,
+                _expectedType = Nothing
               },
             CEqual region Lambda tipe expected
           ]
@@ -312,7 +313,7 @@ constrainCase rtv region expr branches expected =
               (PFromContext region (PCaseMatch index) ptrnType)
               (FromAnnotation name arity (TypedCaseBranch index) tipe)
 
-          return $ exists [ptrnVar] $ CAnd (exprCon : branchCons)
+          return $ exists [ptrnVar] $ CAnd [exprCon, CCaseBranchesIsolated branchCons]
       _ ->
         do
           branchVar <- mkFlexVar
@@ -329,7 +330,7 @@ constrainCase rtv region expr branches expected =
             exists [ptrnVar, branchVar] $
               CAnd
                 [ exprCon,
-                  CAnd branchCons,
+                  CCaseBranchesIsolated branchCons,
                   CEqual region Case branchType expected
                 ]
 
@@ -341,6 +342,7 @@ constrainCaseBranch rtv (Can.CaseBranch pattern expr) pExpect bExpect =
 
     CLet [] pvars headers (CAnd (reverse revCons))
       <$> constrain rtv expr bExpect
+      <*> pure Nothing
 
 -- CONSTRAIN RECORD
 
@@ -482,12 +484,20 @@ constrainDestruct rtv region pattern expr bodyCon =
     exprCon <-
       constrain rtv expr (FromContext region Destructure patternType)
 
-    return $ CLet [] (patternVar : pvars) headers (CAnd (reverse (exprCon : revCons))) bodyCon
+    return $ CLet [] (patternVar : pvars) headers (CAnd (reverse (exprCon : revCons))) bodyCon Nothing
 
 -- CONSTRAIN DEF
 
-constrainDef :: RTV -> Can.Def -> Constraint -> IO Constraint
-constrainDef rtv def bodyCon =
+constrainDef :: RTV -> Can.Def -> Constraint -> Expected Type -> IO Constraint
+constrainDef rtv def bodyCon expected = do
+  let (defName, defType) = case def of
+        Can.Def (A.At _ n) _ _ -> (n, "Def" :: String)
+        Can.TypedDef (A.At _ n) _ _ _ _ -> (n, "TypedDef")
+      expectedType = case expected of
+        NoExpectation t -> Just t
+        FromContext _ _ t -> Just t
+        FromAnnotation _ _ _ t -> Just t
+  putStrLn $ "DEBUG constrainDef " <> show defName <> " (" <> defType <> "): RTV size=" <> show (Map.size rtv) <> ", expectedType present=" <> show (maybe False (const True) expectedType)
   case def of
     Can.Def (A.At region name) args expr ->
       do
@@ -499,18 +509,20 @@ constrainDef rtv def bodyCon =
 
         return $
           CLet
-            { _rigidVars = [],
+            { _rigidVars = [],  -- Don't re-introduce rigids from RTV
               _flexVars = vars,
               _header = Map.singleton name (A.At region tipe),
               _headerCon =
                 CLet
-                  { _rigidVars = [],
+                  { _rigidVars = [],  -- Don't re-introduce rigids from RTV
                     _flexVars = pvars,
                     _header = headers,
                     _headerCon = CAnd (reverse revCons),
-                    _bodyCon = exprCon
+                    _bodyCon = exprCon,
+                    _expectedType = Nothing
                   },
-              _bodyCon = bodyCon
+              _bodyCon = bodyCon,
+              _expectedType = expectedType
             }
     Can.TypedDef (A.At region name) freeVars typedArgs expr srcResultType ->
       do
@@ -518,16 +530,20 @@ constrainDef rtv def bodyCon =
         newRigids <- Map.traverseWithKey (\n _ -> nameToRigid n) newNames
         let newRtv = Map.union rtv (Map.map VarN newRigids)
 
+        -- Extract existing rigids from rtv for variables in freeVars
+        let existingRigids = [var | (n, VarN var) <- Map.toList rtv, Map.member n freeVars]
+        let allRigids = existingRigids <> Map.elems newRigids
+
         (TypedArgs tipe resultType (Pattern.State headers pvars revCons)) <-
           constrainTypedArgs newRtv name typedArgs srcResultType
 
-        let expected = FromAnnotation name (length typedArgs) TypedBody resultType
+        let exprExpected = FromAnnotation name (length typedArgs) TypedBody resultType
         exprCon <-
-          constrain newRtv expr expected
+          constrain newRtv expr exprExpected
 
         return $
           CLet
-            { _rigidVars = Map.elems newRigids,
+            { _rigidVars = allRigids,
               _flexVars = [],
               _header = Map.singleton name (A.At region tipe),
               _headerCon =
@@ -536,9 +552,11 @@ constrainDef rtv def bodyCon =
                     _flexVars = pvars,
                     _header = headers,
                     _headerCon = CAnd (reverse revCons),
-                    _bodyCon = exprCon
+                    _bodyCon = exprCon,
+                    _expectedType = Nothing
                   },
-              _bodyCon = bodyCon
+              _bodyCon = bodyCon,
+              _expectedType = expectedType
             }
 
 -- CONSTRAIN RECURSIVE DEFS
@@ -566,9 +584,12 @@ recDefsHelp rtv defs bodyCon rigidInfo flexInfo =
         let (Info rigidVars rigidCons rigidHeaders) = rigidInfo
         let (Info flexVars flexCons flexHeaders) = flexInfo
         return $
-          CLet rigidVars [] rigidHeaders CTrue $
-            CLet [] flexVars flexHeaders (CLet [] [] flexHeaders CTrue (CAnd flexCons)) $
-              CAnd [CAnd rigidCons, bodyCon]
+          CLet rigidVars [] rigidHeaders CTrue
+            (CLet [] flexVars flexHeaders
+              (CLet [] [] flexHeaders CTrue (CAnd flexCons) Nothing)
+              (CAnd [CAnd rigidCons, bodyCon])
+              Nothing)
+            Nothing
     def : otherDefs ->
       case def of
         Can.Def (A.At region name) args expr ->
@@ -587,7 +608,8 @@ recDefsHelp rtv defs bodyCon rigidInfo flexInfo =
                       _flexVars = pvars,
                       _header = headers,
                       _headerCon = CAnd (reverse revCons),
-                      _bodyCon = exprCon
+                      _bodyCon = exprCon,
+                      _expectedType = Nothing
                     }
 
             recDefsHelp rtv otherDefs bodyCon rigidInfo $
@@ -602,6 +624,10 @@ recDefsHelp rtv defs bodyCon rigidInfo flexInfo =
             newRigids <- Map.traverseWithKey (\n _ -> nameToRigid n) newNames
             let newRtv = Map.union rtv (Map.map VarN newRigids)
 
+            -- Extract existing rigids from rtv for variables in freeVars
+            let existingRigids = [var | (n, VarN var) <- Map.toList rtv, Map.member n freeVars]
+            let allRigids = existingRigids <> Map.elems newRigids
+
             (TypedArgs tipe resultType (Pattern.State headers pvars revCons)) <-
               constrainTypedArgs newRtv name typedArgs srcResultType
 
@@ -615,7 +641,8 @@ recDefsHelp rtv defs bodyCon rigidInfo flexInfo =
                       _flexVars = pvars,
                       _header = headers,
                       _headerCon = CAnd (reverse revCons),
-                      _bodyCon = exprCon
+                      _bodyCon = exprCon,
+                      _expectedType = Nothing
                     }
 
             let (Info rigidVars rigidCons rigidHeaders) = rigidInfo
@@ -624,8 +651,8 @@ recDefsHelp rtv defs bodyCon rigidInfo flexInfo =
               otherDefs
               bodyCon
               ( Info
-                  { _vars = Map.foldr (:) rigidVars newRigids,
-                    _cons = CLet (Map.elems newRigids) [] Map.empty defCon CTrue : rigidCons,
+                  { _vars = foldr (:) rigidVars allRigids,
+                    _cons = CLet allRigids [] Map.empty defCon CTrue Nothing : rigidCons,
                     _headers = Map.insert name (A.At region tipe) rigidHeaders
                   }
               )

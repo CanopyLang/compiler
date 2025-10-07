@@ -8,6 +8,7 @@ where
 
 import qualified AST.Canonical as Can
 import qualified Canopy.ModuleName as ModuleName
+import Control.Monad (forM)
 import qualified Data.Map.Strict as Map
 import qualified Data.Name as Name
 import qualified Reporting.Annotation as A
@@ -42,9 +43,27 @@ constrainDecls :: Can.Decls -> Constraint -> IO Constraint
 constrainDecls decls finalConstraint =
   case decls of
     Can.Declare def otherDecls ->
-      constrainDecls otherDecls finalConstraint >>= Expr.constrainDef Map.empty def
+      do
+        v <- mkFlexVar
+        -- For TypedDef, create rigids from freeVars and pass in RTV
+        rtv <- case def of
+          Can.TypedDef _ freeVars _ _ _ ->
+            Map.traverseWithKey (\k _ -> nameToRigid k) freeVars
+          Can.Def _ _ _ ->
+            return Map.empty
+        constrainDecls otherDecls finalConstraint >>= \con ->
+          Expr.constrainDef (Map.map VarN rtv) def con (E.NoExpectation (VarN v))
     Can.DeclareRec def defs otherDecls ->
-      constrainDecls otherDecls finalConstraint >>= Expr.constrainRecursiveDefs Map.empty (def : defs)
+      do
+        -- Build RTV from all TypedDefs in recursive group
+        let allDefs = def : defs
+        rtvMaps <- forM allDefs $ \d -> case d of
+          Can.TypedDef _ freeVars _ _ _ ->
+            Map.traverseWithKey (\k _ -> nameToRigid k) freeVars
+          Can.Def _ _ _ ->
+            return Map.empty
+        let combinedRtv = Map.unions (fmap (Map.map VarN) rtvMaps)
+        constrainDecls otherDecls finalConstraint >>= Expr.constrainRecursiveDefs combinedRtv allDefs
     Can.SaveTheEnvironment ->
       return finalConstraint
 
@@ -58,13 +77,13 @@ letPort name port_ makeConstraint =
         vars <- Map.traverseWithKey (\k _ -> nameToRigid k) freeVars
         tipe <- Instantiate.fromSrcType (Map.map VarN vars) srcType
         let header = Map.singleton name (A.At A.zero tipe)
-        CLet (Map.elems vars) [] header CTrue <$> makeConstraint
+        CLet (Map.elems vars) [] header CTrue <$> makeConstraint <*> pure Nothing
     Can.Outgoing freeVars _ srcType ->
       do
         vars <- Map.traverseWithKey (\k _ -> nameToRigid k) freeVars
         tipe <- Instantiate.fromSrcType (Map.map VarN vars) srcType
         let header = Map.singleton name (A.At A.zero tipe)
-        CLet (Map.elems vars) [] header CTrue <$> makeConstraint
+        CLet (Map.elems vars) [] header CTrue <$> makeConstraint <*> pure Nothing
 
 -- EFFECT MANAGER HELPERS
 
@@ -75,7 +94,7 @@ letCmd home tipe constraint =
     let msg = VarN msgVar
     let cmdType = FunN (AppN home tipe [msg]) (AppN ModuleName.cmd Name.cmd [msg])
     let header = Map.singleton "command" (A.At A.zero cmdType)
-    return $ CLet [msgVar] [] header CTrue constraint
+    return $ CLet [msgVar] [] header CTrue constraint Nothing
 
 letSub :: ModuleName.Canonical -> Name.Name -> Constraint -> IO Constraint
 letSub home tipe constraint =
@@ -84,7 +103,7 @@ letSub home tipe constraint =
     let msg = VarN msgVar
     let subType = FunN (AppN home tipe [msg]) (AppN ModuleName.sub Name.sub [msg])
     let header = Map.singleton "subscription" (A.At A.zero subType)
-    return $ CLet [msgVar] [] header CTrue constraint
+    return $ CLet [msgVar] [] header CTrue constraint Nothing
 
 constrainEffects :: ModuleName.Canonical -> A.Region -> A.Region -> A.Region -> Can.Manager -> IO Constraint
 constrainEffects home r0 r1 r2 manager =
@@ -130,6 +149,7 @@ constrainEffects home r0 r1 r2 manager =
           checkMap "subMap" home sub CSaveTheEnvironment
         Can.Fx cmd sub ->
           checkMap "subMap" home sub CSaveTheEnvironment >>= checkMap "cmdMap" home cmd
+      <*> pure Nothing
 
 effectList :: ModuleName.Canonical -> Name.Name -> Type -> Type
 effectList home name msg =
@@ -150,7 +170,7 @@ checkMap name home tipe constraint =
     b <- mkFlexVar
     let mapType = toMapType home tipe (VarN a) (VarN b)
     let mapCon = CLocal A.zero name (E.NoExpectation mapType)
-    return $ CLet [a, b] [] Map.empty mapCon constraint
+    return $ CLet [a, b] [] Map.empty mapCon constraint Nothing
 
 toMapType :: ModuleName.Canonical -> Name.Name -> Type -> Type -> Type
 toMapType home tipe a b =

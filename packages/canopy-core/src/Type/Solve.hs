@@ -20,6 +20,7 @@ import qualified Data.NonEmptyList as NE
 import qualified Data.Vector as Vector
 import qualified Data.Vector.Mutable as MVector
 import Data.IORef
+import qualified Debug.Trace
 import qualified Reporting.Annotation as A
 import qualified Reporting.Error.Type as Error
 import qualified Reporting.Render.Type as RT
@@ -118,9 +119,9 @@ solve config constraint = case constraint of
     solveFullLet config rigids flexs header headerCon subCon expectedType
 
 -- | Reset a rigid variable to noRank after generalization
--- IMPORTANT: Only reset RigidVar, NOT RigidSuper!
--- RigidSuper represents constraints (comparable, number, etc.) that must maintain their ranks
--- to avoid polluting ambient rigids in nested scopes
+-- IMPORTANT: Reset BOTH RigidVar and RigidSuper!
+-- RigidSuper represents constrained type variables (comparable, number, etc.) that must be
+-- generalized so they can be instantiated independently for each use
 resetRigidToNoRank :: Variable -> IO ()
 resetRigidToNoRank var = do
   (Descriptor content _ mark copy) <- UF.get var
@@ -128,17 +129,19 @@ resetRigidToNoRank var = do
     RigidVar _ ->
       UF.set var (Descriptor content noRank mark copy)
     RigidSuper _ _ ->
-      return ()  -- DO NOT reset RigidSuper variables - they must maintain their ranks
+      UF.set var (Descriptor content noRank mark copy)  -- MUST reset RigidSuper for generalization
     _ -> UF.set var (Descriptor content noRank mark copy)  -- Reset other content types
 
 -- | Recursively generalize a variable and all nested variables to rank 0
 -- This ensures that when makeCopy is called, all parts of the type structure
 -- are properly instantiated with fresh variables
 --
--- IMPORTANT: Only generalize FlexVar and Structure content. NEVER generalize:
+-- IMPORTANT: Generalize FlexVar, FlexSuper, RigidSuper, and Structure content. NEVER generalize:
 -- - Error: Error markers should NEVER be generalized or modified
--- - RigidSuper: Constraint variables (comparable, number, etc.) must maintain their ranks
--- - RigidVar: Rigid type parameters should maintain their ranks
+-- - RigidVar: Rigid type parameters from explicit annotations should maintain their ranks
+--
+-- NOTE: RigidSuper (constrained type variables like 'number') MUST be generalized!
+-- They represent polymorphic constraints that need fresh instantiation for each use
 generalizeRecursively :: Variable -> IO ()
 generalizeRecursively var = do
   (Descriptor content rank mark copy) <- UF.get var
@@ -164,13 +167,18 @@ generalizeRecursively var = do
             -- Recursively generalize alias arguments and real variable
             traverse_ (generalizeRecursively . snd) args
             generalizeRecursively realVar
-          -- NEVER generalize constraint variables or rigid type parameters
-          RigidSuper _ _ -> return ()
+          -- CRITICAL FIX: MUST generalize RigidSuper variables!
+          -- RigidSuper represents constrained type variables (number, comparable, etc.)
+          -- These MUST be generalized to rank 0 so makeCopy can instantiate them properly
+          -- Previously we were NOT generalizing them, causing them to stay at rank 2
+          RigidSuper _ _ -> do
+            UF.set var (Descriptor content noRank mark copy)
+          -- NEVER generalize regular rigid variables (type parameters from annotations)
           RigidVar _ -> return ()
 
 -- | Generalize all nested variables in a structure
 -- This is called by generalizeRecursively after setting the structure itself to rank 0
--- Note: generalizeRecursively will skip RigidSuper/RigidVar/Error variables automatically
+-- Note: generalizeRecursively will skip RigidVar/Error but WILL generalize RigidSuper
 generalizeStructure :: FlatType -> IO ()
 generalizeStructure flatType = case flatType of
   App1 _ _ args -> traverse_ generalizeRecursively args
@@ -255,22 +263,34 @@ solveLocal config region name expectation = do
       case Map.lookup name currentMonoEnv of
         Just monoType -> do
           -- Check if the variable was generalized (rank 0)
-          -- IMPORTANT: Follow repr chain to get actual descriptor (monoType might be a Link)
-          actualMonoType <- UF.repr monoType
-          (Descriptor _ monoRank _ _) <- UF.get actualMonoType
-          putStrLn $ "DEBUG solveLocal: Found " <> show name <> " in monoEnv at rank " <> show monoRank
+          -- CRITICAL FIX: DO NOT call UF.repr! The variable in monoEnv is the pristine
+          -- generalized type. If we call UF.repr, it might follow union-find Links created
+          -- during previous instantiations, returning an already-unified type instead of
+          -- the pristine generalized type. This causes phantom type bugs where the first
+          -- use constrains subsequent uses.
+          (Descriptor content monoRank _ _) <- UF.get monoType
+          -- DEBUG: Check if monoType has become a Link
+          isLink <- UF.redundant monoType
+          putStrLn $ "DEBUG solveLocal: Found " <> show name <> " in monoEnv at rank " <> show monoRank <> ", isLink=" <> show isLink <> ", content=" <> showContentType content
           if monoRank == noRank
             then do
               -- Variable was generalized, instantiate it
+              -- IMPORTANT: Use empty ambient rigids list! Generalized type variables should
+              -- become fresh FlexVars, not unify with ambient rigids that happen to share names.
+              -- Type variables in generalized types are QUANTIFIED and independent of outer scope.
               putStrLn $ "DEBUG solveLocal: Variable in monoEnv is generalized (rank 0), instantiating"
-              actual <- makeCopy (config ^. solveRank) (config ^. solvePools) (config ^. solveAmbientRigids) actualMonoType
+              actual <- makeCopy (config ^. solveRank) (config ^. solvePools) (config ^. solveAmbientRigids) monoType
+              -- CRITICAL: Check if monoType was corrupted by makeCopy
+              (Descriptor afterContent afterRank _ _) <- UF.get monoType
+              isLinkAfter <- UF.redundant monoType
+              putStrLn $ "DEBUG solveLocal: After makeCopy, monoType rank=" <> show afterRank <> ", isLink=" <> show isLinkAfter <> ", content=" <> showContentType afterContent
               expected <- expectedToVariable (config ^. solveRank) (config ^. solvePools) expectation
               handleUnifyResult config actual expected (createLocalError region name expectation)
             else do
               -- Use monomorphic variable directly without makeCopy
               putStrLn $ "DEBUG solveLocal: Using monomorphic variable from monoEnv directly"
               expected <- expectedToVariable (config ^. solveRank) (config ^. solvePools) expectation
-              handleUnifyResult config actualMonoType expected (createLocalError region name expectation)
+              handleUnifyResult config monoType expected (createLocalError region name expectation)
         Nothing -> do
           -- Not found anywhere, create placeholder
           putStrLn $ "DEBUG solveLocal: " <> show name <> " NOT FOUND in env, creating placeholder"
@@ -550,11 +570,19 @@ finalizeLetSolving config locals solvedState rigids subCon nextRank nextPools ex
   if shouldDefer
     then do
       -- MONOMORPHIC PATH: Add let bindings to monoEnv, solve body, then check generalization
-      -- isOriginalDefer: ANY TypedDef (with rigids) should check generalization for its nested bindings
-      -- This includes both module-level and nested typed functions
+      -- isOriginalDefer: Check generalization if:
+      --   1. Has own rigids (explicit type annotation), OR
+      --   2. At module level (no ambient rigids), OR
+      --   3. Let-bound function (should enable let-polymorphism)
+      -- The key insight: ALL let-bound functions should be checked for generalization
+      -- to enable Hindley-Milner let-polymorphism
       let hasOwnRigids = not (null rigids)
-      let isOriginalDefer = hasOwnRigids  -- Simplified: any typed function checks generalization
-      putStrLn $ "DEBUG: Using monomorphic environment (ambient rigids: " <> show (length ambientRigids) <> ", ownRigids: " <> show (length rigids) <> ", rank: " <> show currentRank <> ", isOriginal: " <> show isOriginalDefer <> ")"
+      let isAtModuleLevel = null ambientRigids
+      let hasLocals = not (Map.null locals)
+      -- CRITICAL FIX: ALL let-bound functions should attempt generalization (let-polymorphism)
+      -- Not just those with explicit type annotations (hasOwnRigids)
+      let isOriginalDefer = hasOwnRigids || isAtModuleLevel || hasLocals
+      putStrLn $ "DEBUG: Using monomorphic environment (ambient rigids: " <> show (length ambientRigids) <> ", ownRigids: " <> show (length rigids) <> ", hasLocals: " <> show hasLocals <> ", rank: " <> show currentRank <> ", isOriginal: " <> show isOriginalDefer <> ")"
 
       -- Add locals to monoEnv (NOT main env) - these are constrained by outer scope
       -- IMPORTANT: Use Map.union with locals FIRST so new variables shadow old ones with same name
@@ -589,16 +617,23 @@ finalizeLetSolving config locals solvedState rigids subCon nextRank nextPools ex
         else
           return tempState
 
-      -- DON'T filter ambient rigids before solving the body!
-      -- The body needs ALL rigids (including RigidVar) to be available for proper instantiation
-      -- When the body uses type variables like `k`, makeCopy needs to find the original RigidVar
-      -- Filtering only happens later during the final generalization check
-      let currentAmbientRigids = config ^. solveAmbientRigids
+      -- CRITICAL FIX: After generalizing, remove THIS function's rigids from ambient rigids
+      -- When a function is generalized to rank 0, its type parameters are no longer "ambient"
+      -- to subsequent code - they're quantified variables of the generalized function.
+      -- If we keep them in ambient rigids, later instantiations will incorrectly unify with them.
+      let currentAmbientRigids =
+            if shouldGeneralizeEarly
+            then
+              -- Remove rigids that belong to THIS function (nextRank)
+              -- These rigids are now generalized and should not be in ambient rigids for subsequent code
+              [(rank, var) | (rank, var) <- config ^. solveAmbientRigids, rank /= nextRank]
+            else
+              config ^. solveAmbientRigids
 
       let bodyConfig = config
             & solveState .~ tempState2
             & solveRank .~ (config ^. solveRank)
-            & solveAmbientRigids .~ currentAmbientRigids  -- Use filtered ambient rigids
+            & solveAmbientRigids .~ currentAmbientRigids  -- Use filtered ambient rigids (generalized rigids removed)
             & solveDeferAllGeneralization .~ True  -- Nested lets in body should also defer
 
       -- Solve body - monomorphic variables will be used directly (no makeCopy)
@@ -616,8 +651,9 @@ finalizeLetSolving config locals solvedState rigids subCon nextRank nextPools ex
           putStrLn $ "DEBUG: MODULE LEVEL - skipping late generalization, already done"
           let (_, _, finalMark) = calculateMarks bodyState
           let polyEnv = Map.fromList [(name, var) | (name, A.At _ var) <- Map.toList locals]
-          putStrLn $ "DEBUG: Adding to polyEnv (module level): " <> show (Map.keys polyEnv)
-          let finalEnv = Map.union (config ^. solveEnv) polyEnv
+          -- FIXED: Use bodyState's stateEnv (accumulated) instead of config's solveEnv (original)
+          -- This ensures that module-level definitions accumulate across multiple top-level lets
+          let finalEnv = Map.union (bodyState ^. stateEnv) polyEnv
           return $ bodyState
             & stateMark .~ finalMark
             & stateEnv .~ finalEnv
@@ -1233,17 +1269,14 @@ makeCopy rank pools ambientRigids var =
 makeCopyHelp :: Int -> Pools -> [(Int, Variable)] -> Variable -> IO Variable
 makeCopyHelp maxRank pools ambientRigids variable = do
   (Descriptor content rank _ maybeCopy) <- UF.get variable
-  putStrLn $ "DEBUG makeCopyHelp: rank=" <> show rank <> ", content type=" <> showContentType content <> ", ambientRigids=" <> show (length ambientRigids) <> ", hasCopy=" <> show (maybe False (const True) maybeCopy)
 
   -- Check for Error content BEFORE checking hasCopy
   -- Error variables should NEVER be instantiated, regardless of their copy field
   case content of
-    Error -> do
-      putStrLn $ "DEBUG makeCopyHelp: Skipping Error variable (returning as-is)"
+    Error ->
       return variable  -- Return Error variables unchanged
     _ -> case maybeCopy of
-      Just copy -> do
-        putStrLn $ "DEBUG makeCopyHelp: Returning cached copy"
+      Just copy ->
         return copy
       Nothing -> handleNoCopy maxRank pools ambientRigids variable content rank
 
@@ -1264,17 +1297,19 @@ showSuperType CompAppend = "CompAppend"
 
 handleNoCopy :: Int -> Pools -> [(Int, Variable)] -> Variable -> Content -> Int -> IO Variable
 handleNoCopy maxRank pools ambientRigids variable content rank
-  | rank /= noRank = do
-      putStrLn $ "DEBUG handleNoCopy: Variable has rank " <> show rank <> ", checking for higher-rank ambient rigid"
+  | rank /= noRank =
       -- Check if this is a rigid that might have a higher-rank version in ambient rigids
       case content of
-        RigidVar name -> checkForHigherRankRigid name variable rank ambientRigids
+        RigidVar name -> do
+          Debug.Trace.trace ("DEBUG handleNoCopy RigidVar: name=" ++ show name ++ " rank=" ++ show rank ++ " (checking ambient)") (pure ())
+          checkForHigherRankRigid name variable rank ambientRigids
         RigidSuper super name -> checkForHigherRankRigidSuper name super variable rank ambientRigids
-        _ -> do
-          putStrLn $ "DEBUG handleNoCopy: Not a rigid, returning as-is"
-          return variable
+        _ -> return variable
   | otherwise = do
-      putStrLn $ "DEBUG handleNoCopy: Copying (rank == noRank)"
+      let debugMsg = case content of
+            RigidVar name -> "DEBUG handleNoCopy rank==noRank: RigidVar " ++ show name ++ " rank=" ++ show rank ++ " (creating fresh copy)"
+            _ -> "DEBUG handleNoCopy rank==noRank: " ++ showContentType content ++ " rank=" ++ show rank
+      Debug.Trace.trace debugMsg (pure ())
       createAndLinkCopy maxRank pools ambientRigids variable content rank
 
 -- | Check if there's a higher-rank version of a RigidVar in ambient rigids
@@ -1285,14 +1320,9 @@ checkForHigherRankRigid name variable currentRank ambientRigids = do
     Just higherRigid -> do
       (Descriptor _ higherRank _ _) <- UF.get higherRigid
       if higherRank > currentRank
-        then do
-          putStrLn $ "DEBUG checkForHigherRankRigid: Found higher-rank rigid (rank " <> show higherRank <> " > " <> show currentRank <> "), using it"
-          return higherRigid
-        else do
-          putStrLn $ "DEBUG checkForHigherRankRigid: Found rigid but not higher rank, using current"
-          return variable
-    Nothing -> do
-      putStrLn $ "DEBUG checkForHigherRankRigid: No matching rigid found, using current"
+        then return higherRigid
+        else return variable
+    Nothing ->
       return variable
 
 -- | Check if there's a higher-rank version of a RigidSuper in ambient rigids
@@ -1303,14 +1333,9 @@ checkForHigherRankRigidSuper name super variable currentRank ambientRigids = do
     Just higherRigid -> do
       (Descriptor _ higherRank _ _) <- UF.get higherRigid
       if higherRank > currentRank
-        then do
-          putStrLn $ "DEBUG checkForHigherRankRigidSuper: Found higher-rank rigid (rank " <> show higherRank <> " > " <> show currentRank <> "), using it"
-          return higherRigid
-        else do
-          putStrLn $ "DEBUG checkForHigherRankRigidSuper: Found rigid but not higher rank, using current"
-          return variable
-    Nothing -> do
-      putStrLn $ "DEBUG checkForHigherRankRigidSuper: No matching rigid found, using current"
+        then return higherRigid
+        else return variable
+    Nothing ->
       return variable
 
 createFreshCopy :: Int -> Pools -> Content -> IO Variable
@@ -1326,15 +1351,15 @@ linkVariableToCopy :: Variable -> Content -> Int -> Variable -> IO ()
 linkVariableToCopy variable content rank copy =
   UF.set variable $ Descriptor content rank noMark (Just copy)
 
-processCopyContent :: Int -> Pools -> [(Int, Variable)] -> Variable -> Content -> IO Variable
-processCopyContent maxRank pools ambientRigids copy content = do
+processCopyContent :: Int -> Pools -> [(Int, Variable)] -> Variable -> Content -> Int -> IO Variable
+processCopyContent maxRank pools ambientRigids copy content originalRank = do
   let makeDescriptor c = Descriptor c maxRank noMark Nothing
   case content of
     Structure term -> copyStructureContent maxRank pools ambientRigids copy makeDescriptor term
     FlexVar _ -> return copy
     FlexSuper _ _ -> return copy
-    RigidVar name -> copyRigidVarContent ambientRigids copy makeDescriptor name
-    RigidSuper super name -> copyRigidSuperContent ambientRigids copy makeDescriptor super name
+    RigidVar name -> copyRigidVarContent ambientRigids copy makeDescriptor name originalRank
+    RigidSuper super name -> copyRigidSuperContent ambientRigids copy makeDescriptor super name originalRank
     Alias home name args realType -> copyAliasContent maxRank pools ambientRigids copy makeDescriptor home name args realType
     Error -> return copy
 
@@ -1347,45 +1372,42 @@ copyStructureContent maxRank pools ambientRigids copy makeDescriptor term = do
 -- | Copy a RigidVar by converting it to FlexVar, but check if it should unify with ambient rigids
 -- When instantiating a polymorphic function, rigid type variables become flexible
 -- But if there are ambient rigids with the same name, the fresh flex should unify with them
-copyRigidVarContent :: [(Int, Variable)] -> Variable -> (Content -> Descriptor) -> Name.Name -> IO Variable
-copyRigidVarContent ambientRigids copy makeDescriptor name = do
-  putStrLn $ "DEBUG copyRigidVarContent: Looking for rigid with name " <> show name <> " in " <> show (length ambientRigids) <> " ambient rigids"
-  -- Check if there's an ambient rigid with the same name
-  matchingRigid <- findMatchingRigid name ambientRigids
-  case matchingRigid of
-    Just rigidVar -> do
-      putStrLn $ "DEBUG copyRigidVarContent: FOUND matching rigid for " <> show name <> ", unifying!"
-      -- Unify the copy with the ambient rigid
-      -- The copy will now point to the same variable as the rigid
-      UF.union copy rigidVar (makeDescriptor (RigidVar name))
-      return copy
-    Nothing -> do
-      putStrLn $ "DEBUG copyRigidVarContent: NO matching rigid for " <> show name <> ", creating FlexVar"
-      -- No matching rigid, create a regular FlexVar
+copyRigidVarContent :: [(Int, Variable)] -> Variable -> (Content -> Descriptor) -> Name.Name -> Int -> IO Variable
+copyRigidVarContent ambientRigids copy makeDescriptor name originalRank = do
+  -- CRITICAL: Only check ambient rigids if originalRank != 0
+  -- Generalized variables (rank 0) should ALWAYS become FlexVars, never unify with ambient rigids
+  if originalRank == noRank
+    then do
+      -- Generalized rigid: convert to FlexVar without checking ambient rigids
+      Debug.Trace.trace ("DEBUG copyRigidVarContent: Generalized rigid " ++ show name ++ " -> FlexVar (no ambient check)") (pure ())
       UF.set copy . makeDescriptor $ FlexVar (Just name)
       return copy
+    else do
+      -- Non-generalized rigid: check for matching ambient rigid
+      matchingRigid <- findMatchingRigid name ambientRigids
+      case matchingRigid of
+        Just rigidVar -> do
+          -- Unify the copy with the ambient rigid
+          -- The copy will now point to the same variable as the rigid
+          Debug.Trace.trace ("DEBUG copyRigidVarContent: Unifying " ++ show name ++ " with ambient rigid") (pure ())
+          UF.union copy rigidVar (makeDescriptor (RigidVar name))
+          return copy
+        Nothing -> do
+          -- No matching rigid, create a regular FlexVar
+          UF.set copy . makeDescriptor $ FlexVar (Just name)
+          return copy
 
 -- | Find an ambient rigid variable with matching name
 -- Prefers the HIGHEST rank (most local scope) when multiple matches exist
 findMatchingRigid :: Name.Name -> [(Int, Variable)] -> IO (Maybe Variable)
 findMatchingRigid targetName rigids = do
-  putStrLn $ "DEBUG findMatchingRigid: Looking for " <> show targetName
-  for_ rigids $ \(rank, var) -> do
-    desc <- UF.get var
-    case desc of
-      Descriptor (RigidVar n) _ _ _ ->
-        putStrLn $ "  - Found RigidVar " <> show n <> " at rank " <> show rank
-      Descriptor (RigidSuper _ n) _ _ _ ->
-        putStrLn $ "  - Found RigidSuper " <> show n <> " at rank " <> show rank
-      _ -> putStrLn $ "  - Found other content at rank " <> show rank
   -- Collect all matching rigids with their ranks
   matches <- collectMatches rigids
   case matches of
     [] -> return Nothing
     _ -> do
       -- Select the highest rank (most local)
-      let (bestRank, bestVar) = maximumBy (\(r1, _) (r2, _) -> compare r1 r2) matches
-      putStrLn $ "DEBUG findMatchingRigid: Selected rigid at rank " <> show bestRank <> " (highest)"
+      let (_, bestVar) = maximumBy (\(r1, _) (r2, _) -> compare r1 r2) matches
       return (Just bestVar)
   where
     collectMatches [] = return []
@@ -1398,19 +1420,27 @@ findMatchingRigid targetName rigids = do
           fmap ((rank, var) :) (collectMatches rest)
         _ -> collectMatches rest
 
-copyRigidSuperContent :: [(Int, Variable)] -> Variable -> (Content -> Descriptor) -> SuperType -> Name.Name -> IO Variable
-copyRigidSuperContent ambientRigids copy makeDescriptor super name = do
-  -- Check if there's an ambient rigid with the same name and compatible supertype
-  matchingRigid <- findMatchingRigidSuper name super ambientRigids
-  case matchingRigid of
-    Just rigidVar -> do
-      -- Unify the copy with the ambient rigid
-      UF.union copy rigidVar (makeDescriptor (RigidSuper super name))
-      return copy
-    Nothing -> do
-      -- No matching rigid, create a regular FlexSuper
+copyRigidSuperContent :: [(Int, Variable)] -> Variable -> (Content -> Descriptor) -> SuperType -> Name.Name -> Int -> IO Variable
+copyRigidSuperContent ambientRigids copy makeDescriptor super name originalRank = do
+  -- CRITICAL: Only check ambient rigids if originalRank != 0
+  -- Generalized variables (rank 0) should ALWAYS become FlexSupers, never unify with ambient rigids
+  if originalRank == noRank
+    then do
+      -- Generalized rigid super: convert to FlexSuper without checking ambient rigids
       UF.set copy . makeDescriptor $ FlexSuper super (Just name)
       return copy
+    else do
+      -- Non-generalized rigid super: check for matching ambient rigid
+      matchingRigid <- findMatchingRigidSuper name super ambientRigids
+      case matchingRigid of
+        Just rigidVar -> do
+          -- Unify the copy with the ambient rigid
+          UF.union copy rigidVar (makeDescriptor (RigidSuper super name))
+          return copy
+        Nothing -> do
+          -- No matching rigid, create a regular FlexSuper
+          UF.set copy . makeDescriptor $ FlexSuper super (Just name)
+          return copy
 
 -- | Find an ambient rigid super variable with matching name and compatible supertype
 -- | Find a matching RigidSuper in ambient rigids
@@ -1421,8 +1451,7 @@ findMatchingRigidSuper targetName targetSuper rigids = do
   case matches of
     [] -> return Nothing
     _ -> do
-      let (bestRank, bestVar) = maximumBy (\(r1, _) (r2, _) -> compare r1 r2) matches
-      putStrLn $ "DEBUG findMatchingRigidSuper: Selected rigid at rank " <> show bestRank <> " (highest)"
+      let (_, bestVar) = maximumBy (\(r1, _) (r2, _) -> compare r1 r2) matches
       return (Just bestVar)
   where
     collectMatches [] = return []
@@ -1448,7 +1477,7 @@ createAndLinkCopy :: Int -> Pools -> [(Int, Variable)] -> Variable -> Content ->
 createAndLinkCopy maxRank pools ambientRigids variable content rank = do
   copy <- createFreshCopy maxRank pools content
   linkVariableToCopy variable content rank copy
-  processCopyContent maxRank pools ambientRigids copy content
+  processCopyContent maxRank pools ambientRigids copy content rank
 
 -- RESTORE
 

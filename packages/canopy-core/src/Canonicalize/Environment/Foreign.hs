@@ -101,10 +101,14 @@ addImport ifaces state@(State vs ts cs bs qvs qts qcs) (Src.Import (A.At _ name)
                 (Map.mapMaybeWithKey (unionToType home) unions)
                 (Map.mapMaybeWithKey (aliasToType home) aliases)
 
-            !vars = Map.map (Env.Specific home) defs
+            !vars = trace ("DEBUG interface defs for " ++ show name ++ ": " ++ show (Map.keys defs)) (Map.map (Env.Specific home) defs)
             !types = Map.map (Env.Specific home . fst) rawTypeInfo
             !ctors = Map.foldr (addExposed . snd) Map.empty rawTypeInfo
 
+            -- Always merge imports - never delete existing entries
+            -- This matches Elm behavior where aliased imports ADD to existing qualifiers
+            -- Example: "import Maybe.Extra as Maybe" adds Maybe.Extra functions to the Maybe qualifier
+            -- without removing stdlib Maybe functions (from auto-imports)
             !qvs2 = addQualified isAliased prefix vars qvs
             !qts2 = addQualified isAliased prefix types qts
             !qcs2 = addQualified isAliased prefix ctors qcs
@@ -126,10 +130,10 @@ addExposed =
   Map.unionWith Env.mergeInfo
 
 addQualified :: Bool -> Name.Name -> Env.Exposed a -> Env.Qualified a -> Env.Qualified a
-addQualified isAliased prefix exposed qualified =
-  if isAliased
-    then Map.insert prefix exposed qualified
-    else Map.insertWith addExposed prefix exposed qualified
+addQualified _ prefix exposed qualified =
+  -- Always merge exports to allow multiple imports with same alias
+  -- The shouldDeletePrefix logic above handles stdlib shadowing
+  Map.insertWith addExposed prefix exposed qualified
 
 -- UNION
 

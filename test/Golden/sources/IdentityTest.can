@@ -1,0 +1,13 @@
+module Test exposing (..)
+
+type Msg = AMsg String | BMsg Int
+type Page = PageA | PageB
+
+viewPage toMsg page = { msg = toMsg page.msg }
+
+view page =
+    case page of
+        PageA -> viewPage AMsg { msg = "test" }
+        PageB -> viewPage identity { msg = BMsg 42 }
+
+identity x = x
