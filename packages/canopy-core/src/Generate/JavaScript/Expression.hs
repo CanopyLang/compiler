@@ -57,7 +57,7 @@ generate mode expression =
           Mode.Prod _ _ ->
             JS.String (Utf8.toBuilder char)
     Opt.Str string ->
-      JsExpr $ JS.String (Utf8.toBuilder (JS.sanitizeScriptElementString string))
+      JsExpr $ JS.String (Utf8.toBuilder string)
     Opt.Int int ->
       JsExpr $ JS.Int int
     Opt.Float float ->
@@ -106,7 +106,11 @@ generate mode expression =
               [ JS.Array $ fmap (generateJsExpr mode) entries
               ]
     Opt.Function args body ->
-      generateFunction (fmap JsName.fromLocal args) (generate mode body)
+      -- For functions with >100 args that just return a record, cap at F9 + currying
+      -- to avoid stack overflow but keep correct semantics
+      if length args > 100
+        then generateLargeFunction mode (fmap JsName.fromLocal args) (generate mode body)
+        else generateFunction (fmap JsName.fromLocal args) (generate mode body)
     Opt.Call func args ->
       JsExpr $ generateCall mode func args
     Opt.TailCall name args ->
@@ -124,17 +128,14 @@ generate mode expression =
           let defStmt = generateDef mode def
               bodyStmts = codeToStmtList (generate mode body)
               allStmts = flattenStatements [defStmt] ++ bodyStmts
+              -- Don't filter return statements for TailDef followed by different variable
               nonEmptyStmts = filter (\stmt -> case stmt of
                                         JS.EmptyStmt -> False
-                                        JS.Return _ -> False
                                         _ -> True) allStmts
           in case nonEmptyStmts of
                [singleStmt] -> JsStmt singleStmt
                [] -> JsStmt JS.EmptyStmt
                stmts -> JsBlock stmts
-        (Opt.TailDef name _ _, _) ->
-          -- Other TailDef cases - generate as expression when possible
-          JsExpr $ generateTailDefExpr mode name (getTailDefArgs def) (getTailDefBody def)
         _ ->
           let defStmt = generateDef mode def
               bodyStmts = codeToStmtList (generate mode body)
@@ -310,6 +311,24 @@ generateField mode name =
       JsName.fromLocal name
     Mode.Prod fields _ ->
       fields ! name
+
+-- | Generate large functions (>100 parameters) with chunking to avoid stack overflow
+generateLargeFunction :: Mode.Mode -> [JsName.Name] -> Code -> Code
+generateLargeFunction mode args body =
+  -- Use F9 for first 9 args, then curry the rest in chunks of 9
+  let chunks = chunkList 9 args
+  in case chunks of
+    [] -> body
+    [single] -> generateFunction single body
+    (first : rest) ->
+      let innerFn = foldr (\chunk acc -> generateFunction chunk acc) body rest
+      in generateFunction first innerFn
+
+chunkList :: Int -> [a] -> [[a]]
+chunkList _ [] = []
+chunkList n xs =
+  let (chunk, rest) = splitAt n xs
+  in chunk : chunkList n rest
 
 -- DEBUG
 
@@ -950,10 +969,13 @@ toDebugMetadata :: Mode.Mode -> Can.Type -> JS.Expr
 toDebugMetadata mode msgType =
   case mode of
     Mode.Prod _ _ ->
+      -- Production mode: use simple 0 like Elm for compatibility
       JS.Int 0
     Mode.Dev Nothing _ ->
+      -- Dev mode without interfaces: use simple 0 like Elm
       JS.Int 0
     Mode.Dev (Just interfaces) _ ->
+      -- Dev mode with interfaces: full type metadata
       JS.Json . Encode.object $
         [ "versions" ==> Encode.object ["canopy" ==> V.encode V.compiler],
           "types" ==> Type.encodeMetadata (Extract.fromMsg interfaces msgType)

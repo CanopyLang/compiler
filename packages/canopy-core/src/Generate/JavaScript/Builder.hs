@@ -210,16 +210,9 @@ paramAnnotForMode mode = annotForMode mode noAnnot
 nameToString :: Name -> String
 nameToString = LBS.unpack . B.toLazyByteString . Name.toBuilder
 
--- Convert Builder to String  
+-- Convert Builder to String
 builderToString :: Builder -> String
 builderToString = LBS.unpack . B.toLazyByteString
-
--- Escape single quotes and backslashes in string content
-escapeSingleQuotes :: String -> String
-escapeSingleQuotes [] = []
-escapeSingleQuotes ('\'':rest) = "\\'" ++ escapeSingleQuotes rest
-escapeSingleQuotes ('\\':rest) = "\\\\" ++ escapeSingleQuotes rest
-escapeSingleQuotes (c:rest) = c : escapeSingleQuotes rest
 
 -- Wrap expression in parentheses like Elm does for precedence
 wrapInParens :: Expr -> JSExpression
@@ -242,7 +235,7 @@ needsParensAsRightOperand expr = case expr of
 -- Convert custom Expr to JSExpression
 exprToJS :: Expr -> JSExpression
 exprToJS expr = case expr of
-  String builder -> JS.JSLiteral noAnnot ("'" ++ escapeSingleQuotes (builderToString builder) ++ "'")
+  String builder -> JS.JSStringLiteral noAnnot ("'" ++ builderToString builder ++ "'")
   Float builder -> JS.JSDecimal noAnnot (builderToString builder) 
   Int n -> JS.JSDecimal noAnnot (show n)
   Bool True -> JS.JSLiteral noAnnot "true"
@@ -292,23 +285,23 @@ stmtToJS stmt = case stmt of
       ensureBlock blockStmt = case blockStmt of
         Block _ -> stmtToJS blockStmt
         _ -> JS.JSStatementBlock noAnnot [stmtToJS blockStmt] noAnnot (JS.JSSemiAuto)
-  Switch e cases -> JS.JSSwitch noAnnot noAnnot (exprToJS e) noAnnot noAnnot (map caseToJS cases) noAnnot (JS.JSSemiAuto)
-  While cond body -> JS.JSWhile noAnnot leadingSpaceAnnot (exprToJS cond) leadingSpaceAnnot (stmtToJS body)
-  Break Nothing -> JS.JSBreak noAnnot JS.JSIdentNone (JS.JSSemi noAnnot)
-  Break (Just label) -> JS.JSBreak noAnnot (JS.JSIdentName noAnnot (nameToString label)) (JS.JSSemi noAnnot)
-  Continue Nothing -> JS.JSContinue noAnnot JS.JSIdentNone (JS.JSSemi noAnnot)
-  Continue (Just label) -> JS.JSContinue noAnnot (JS.JSIdentName leadingSpaceAnnot (nameToString label)) (JS.JSSemi noAnnot)
+  Switch e cases -> JS.JSSwitch leadingSpaceAnnot noAnnot (exprToJS e) noAnnot noAnnot (map caseToJS cases) noAnnot (JS.JSSemiAuto)
+  While cond body -> JS.JSWhile leadingSpaceAnnot leadingSpaceAnnot (exprToJS cond) leadingSpaceAnnot (stmtToJS body)
+  Break Nothing -> JS.JSBreak leadingSpaceAnnot JS.JSIdentNone (JS.JSSemi noAnnot)
+  Break (Just label) -> JS.JSBreak leadingSpaceAnnot (JS.JSIdentName leadingSpaceAnnot (nameToString label)) (JS.JSSemi noAnnot)
+  Continue Nothing -> JS.JSContinue leadingSpaceAnnot JS.JSIdentNone (JS.JSSemi noAnnot)
+  Continue (Just label) -> JS.JSContinue leadingSpaceAnnot (JS.JSIdentName leadingSpaceAnnot (nameToString label)) (JS.JSSemi noAnnot)
   Labelled label s -> JS.JSLabelled (JS.JSIdentName noAnnot (nameToString label)) noAnnot (stmtToJS s)
-  Try tryStmt errName catchStmt -> 
-    JS.JSTry noAnnot (blockFromStmt tryStmt) 
+  Try tryStmt errName catchStmt ->
+    JS.JSTry leadingSpaceAnnot (blockFromStmt tryStmt)
       [JS.JSCatch noAnnot noAnnot (JS.JSIdentifier noAnnot (nameToString errName)) noAnnot (blockFromStmt catchStmt)]
       JS.JSNoFinally
-  Throw e -> JS.JSThrow noAnnot (exprToJS e) (JS.JSSemiAuto)
-  Return e -> JS.JSReturn noAnnot (Just $ exprToJSWithSpace e) (JS.JSSemi noAnnot)
+  Throw e -> JS.JSThrow leadingSpaceAnnot (exprToJS e) (JS.JSSemiAuto)
+  Return e -> JS.JSReturn leadingSpaceAnnot (Just $ exprToJSWithSpace e) (JS.JSSemi noAnnot)
   Var name e -> JS.JSVariable noAnnot (JS.JSLOne (JS.JSVarInitExpression (JS.JSIdentifier leadingSpaceAnnot (nameToString name)) (JS.JSVarInit spaceAnnot (exprToJS e)))) (JS.JSSemi noAnnot)
   Vars pairs -> JS.JSVariable noAnnot (varsToJSCommaList pairs) (JS.JSSemi newlineAnnot)
   FunctionStmt name params body ->
-    JS.JSFunction noAnnot (JS.JSIdentName noAnnot (nameToString name)) noAnnot (paramsToJSCommaList params) noAnnot (JS.JSBlock noAnnot (map stmtToJS body) noAnnot) (JS.JSSemiAuto)
+    JS.JSFunction noAnnot (JS.JSIdentName leadingSpaceAnnot (nameToString name)) noAnnot (paramsToJSCommaList params) noAnnot (JS.JSBlock noAnnot (map stmtToJS body) noAnnot) (JS.JSSemiAuto)
 
 -- Helper conversion functions
 infixOpToJS :: InfixOp -> JS.JSBinOp
@@ -348,10 +341,10 @@ caseToJS c = case c of
 exprToJSWithSpace :: Expr -> JSExpression
 exprToJSWithSpace expr = case expr of
   Int n -> JS.JSDecimal leadingSpaceAnnot (show n)
-  String builder -> JS.JSLiteral leadingSpaceAnnot ("'" ++ escapeSingleQuotes (builderToString builder) ++ "'")
+  String builder -> JS.JSStringLiteral leadingSpaceAnnot ("'" ++ builderToString builder ++ "'")
   Bool True -> JS.JSLiteral leadingSpaceAnnot "true"
   Bool False -> JS.JSLiteral leadingSpaceAnnot "false"
-  _ -> exprToJS expr
+  _ -> JS.JSExpressionParen leadingSpaceAnnot (exprToJS expr) noAnnot
 
 -- varPairToJS not needed - using varsToJSCommaList instead
 

@@ -23,9 +23,10 @@ import qualified Canopy.Kernel as K
 import qualified Canopy.ModuleName as ModuleName
 import qualified Canopy.Package as Pkg
 import Control.Exception (Exception)
-import qualified Debug.Trace as Debug
+import Data.ByteString (ByteString)
 import Data.ByteString.Builder (Builder)
 import qualified Data.ByteString.Builder as B
+import qualified Data.ByteString.Lazy as BL
 import qualified Data.Index as Index
 import qualified Data.List as List
 import Data.Map (Map)
@@ -214,20 +215,27 @@ tails xs@(_:ys) = xs : tails ys
 
 generate :: Mode.Mode -> Opt.GlobalGraph -> Mains -> Map String FFIInfo -> Builder
 generate mode (Opt.GlobalGraph graph _) mains ffiInfos =
-  let _ = Debug.trace ("GLOBAL-GRAPH-DEBUG: Total globals: " <> show (Map.size graph)) ()
-      baseState = Map.foldrWithKey (addMain mode graph) emptyState mains
-      state = baseState  -- For now, we'll focus on fixing the core issue
+  let baseState = Map.foldrWithKey (addMain mode graph) emptyState mains
+      -- Add ALL remaining globals from the graph that weren't reached from main
+      -- EXCEPT debugger modules in production mode (they're not needed)
+      shouldInclude global =
+        not (isDebugger global && not (Mode.isDebug mode))
+      filteredGraph = Map.filterWithKey (\global _ -> shouldInclude global) graph
+      state = Map.foldlWithKey' (\s global _ -> addGlobal mode graph s global) baseState filteredGraph
       header = if Mode.isElmCompatible mode
                then "(function(scope){\n'use strict';\n"
                else "(function(scope){'use strict';\n"
+      -- Add missing debugger function stub (identity function)
+      debuggerStub = "var _Debugger_unsafeCoerce = function(value) { return value; };\n"
    in header
+        <> debuggerStub
         <> generateFFIContent graph ffiInfos
         <> Functions.functions
         <> perfNote mode
         <> mempty  -- comprehensiveRuntime mode DISABLED to debug dependency inclusion
         <> stateToBuilder state
         <> toMainExports mode mains
-        <> "\n}(this));"
+        <> "\n}(typeof window !== 'undefined' ? window : this));"
 
 
 addMain :: Mode.Mode -> Graph -> ModuleName.Canonical -> Opt.Main -> State -> State
@@ -414,15 +422,16 @@ postMessage localizer home maybeName tipe =
 data State = State
   { _revKernels :: [Builder],
     _revBuilders :: [Builder],
-    _seenGlobals :: Set Opt.Global
+    _seenGlobals :: Set Opt.Global,
+    _seenKernelChunks :: Set ByteString
   }
 
 emptyState :: State
 emptyState =
-  State mempty [] Set.empty
+  State mempty [] Set.empty Set.empty
 
 stateToBuilder :: State -> Builder
-stateToBuilder (State revKernels revBuilders _) =
+stateToBuilder (State revKernels revBuilders _ _) =
   prependBuilders revKernels (prependBuilders revBuilders mempty)
 
 prependBuilders :: [Builder] -> Builder -> Builder
@@ -432,7 +441,7 @@ prependBuilders revBuilders monolith =
 -- ADD DEPENDENCIES
 
 addGlobal :: Mode.Mode -> Graph -> State -> Opt.Global -> State
-addGlobal mode graph state@(State revKernels builders seen) global =
+addGlobal mode graph state@(State revKernels builders seen seenChunks) global =
   if Set.member global seen
     then state
     else
@@ -443,22 +452,29 @@ addGlobal mode graph state@(State revKernels builders seen) global =
          then state  -- Skip FFI functions entirely
          else
            addGlobalHelp mode graph global $
-             State revKernels builders (Set.insert global seen)
+             State revKernels builders (Set.insert global seen) seenChunks
 
 data MyException = MyException String
   deriving (Show)
 
 instance Exception MyException
 
--- | Filter dependencies to only include essential ones that match Elm's inclusion strategy
+-- | Filter dependencies to exclude debugger modules in production mode
 filterEssentialDeps :: Mode.Mode -> Set Opt.Global -> Set Opt.Global
-filterEssentialDeps _mode deps =
-  -- INCLUDE ALL DEPENDENCIES - the graph already contains only what's needed
-  deps
+filterEssentialDeps mode deps =
+  if Mode.isDebug mode
+    then deps
+    else Set.filter (not . isDebugger) deps
 
 
 addGlobalHelp :: Mode.Mode -> Graph -> Opt.Global -> State -> State
 addGlobalHelp mode graph currentGlobal state =
+  if isDebugger currentGlobal && not (Mode.isDebug mode)
+    then state
+    else continueAddGlobal mode graph currentGlobal state
+
+continueAddGlobal :: Mode.Mode -> Graph -> Opt.Global -> State -> State
+continueAddGlobal mode graph currentGlobal state =
   let addDeps deps someState =
         let filteredDeps = filterEssentialDeps mode deps
         in Set.foldl' (addGlobal mode graph) someState filteredDeps
@@ -540,9 +556,12 @@ addGlobalHelp mode graph currentGlobal state =
         Opt.Manager effectsType ->
           generateManager mode graph currentGlobal effectsType state
         Opt.Kernel chunks deps ->
-          if isDebugger currentGlobal && not (Mode.isDebug mode)
-            then state
-            else addKernel (addDeps deps state) (generateKernel mode chunks)
+          let State revKernels revBuilders seen seenChunks = addDeps deps state
+              kernelCode = generateKernel mode chunks
+              kernelBytes = BL.toStrict (B.toLazyByteString kernelCode)
+          in if Set.member kernelBytes seenChunks
+             then State revKernels revBuilders (Set.insert currentGlobal seen) seenChunks
+             else State (kernelCode : revKernels) revBuilders (Set.insert currentGlobal seen) (Set.insert kernelBytes seenChunks)
         Opt.Enum index ->
           addStmt
             state
@@ -569,12 +588,8 @@ addStmt state stmt =
   addBuilder state (JS.stmtToBuilder stmt)
 
 addBuilder :: State -> Builder -> State
-addBuilder (State revKernels revBuilders seen) builder =
-  State revKernels (builder : revBuilders) seen
-
-addKernel :: State -> Builder -> State
-addKernel (State revKernels revBuilders seen) kernel =
-  State (kernel : revKernels) revBuilders seen
+addBuilder (State revKernels revBuilders seen seenChunks) builder =
+  State revKernels (builder : revBuilders) seen seenChunks
 
 var :: Opt.Global -> Expr.Code -> JS.Stmt
 var (Opt.Global home name) code =

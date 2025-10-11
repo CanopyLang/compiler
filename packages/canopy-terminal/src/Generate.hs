@@ -101,11 +101,11 @@ extractGlobalGraph artifacts =
 -- Helper: Combine module graphs into global nodes.
 combineModuleGraphs :: [Build.Module] -> Map.Map Opt.Global Opt.Node
 combineModuleGraphs modules =
-  Map.unions [localGraphToGlobal graph | Build.Fresh _name _iface graph <- modules]
+  let graphs = [localGraphToGlobal graph | Build.Fresh _name _iface graph <- modules]
+      combined = Map.unions graphs
+   in combined
 
--- Helper: Extract global nodes from LocalGraph.
---
--- LocalGraph already contains Global keys, so we just extract the nodes.
+-- Helper: Extract graph
 localGraphToGlobal :: Opt.LocalGraph -> Map.Map Opt.Global Opt.Node
 localGraphToGlobal (Opt.LocalGraph _ nodes _) = nodes
 

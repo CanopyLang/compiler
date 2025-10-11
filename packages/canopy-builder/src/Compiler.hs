@@ -43,6 +43,7 @@ import qualified Data.Aeson.KeyMap as KeyMap
 import qualified Data.ByteString.Lazy as LBS
 import qualified Data.Text as Text
 import Control.Monad (filterM, foldM)
+import qualified Data.Maybe as Maybe
 import qualified Data.Map.Strict as Map
 import qualified Data.Name as Name
 import qualified Data.NonEmptyList as NE
@@ -85,7 +86,6 @@ compileFromPaths pkg isApp root srcDirs paths = do
         Nothing -> (Map.empty, Opt.empty)
 
   Logger.debug COMPILE_DEBUG ("Loaded dependency interfaces: " ++ show (Map.size depInterfaces))
-  Logger.debug COMPILE_DEBUG ("Loaded dependency GlobalGraph with " ++ show (countGlobals depGlobalGraph) ++ " globals")
 
   -- Discover transitive dependencies
   let projectType = if isApp then Parse.Application else Parse.Package pkg
@@ -101,8 +101,7 @@ compileFromPaths pkg isApp root srcDirs paths = do
       let modules = map driverResultToModule compiledModules
           localGraphs = map extractLocalGraph compiledModules
           mergedGlobalGraph = mergeGraphs depGlobalGraph localGraphs
-      Logger.debug COMPILE_DEBUG ("Merged GlobalGraph has " ++ show (countGlobals mergedGlobalGraph) ++ " globals")
-      let artifacts = Build.Artifacts
+          artifacts = Build.Artifacts
             { Build._artifactsName = pkg
             , Build._artifactsDeps = Map.empty
             , Build._artifactsRoots = detectRoots modules
@@ -440,10 +439,6 @@ mergeGraphs :: Opt.GlobalGraph -> [Opt.LocalGraph] -> Opt.GlobalGraph
 mergeGraphs depGlobalGraph localGraphs =
   foldr Opt.addLocalGraph depGlobalGraph localGraphs
 
--- Helper: Count globals in a GlobalGraph
-countGlobals :: Opt.GlobalGraph -> Int
-countGlobals (Opt.GlobalGraph nodes _) = Map.size nodes
-
 -- Helper: Extract module name from canonical module
 extractModuleName :: a -> ModuleName.Raw
 extractModuleName _ = Name.fromChars "Main"  -- TODO: Extract actual name
@@ -451,10 +446,21 @@ extractModuleName _ = Name.fromChars "Main"  -- TODO: Extract actual name
 -- Helper: Detect root modules
 detectRoots :: [Build.Module] -> NE.List Build.Root
 detectRoots modules =
-  case modules of
-    [] -> NE.List (Build.Inside (Name.fromChars "Main")) []
-    (Build.Fresh modName iface localGraph : _) ->
-      NE.List (Build.Outside modName iface localGraph) []
+  case findMainModules modules of
+    [] -> case modules of
+      [] -> NE.List (Build.Inside (Name.fromChars "Main")) []
+      (Build.Fresh modName iface localGraph : _) ->
+        NE.List (Build.Outside modName iface localGraph) []
+    (mainMod : rest) -> NE.List mainMod rest
+  where
+    findMainModules :: [Build.Module] -> [Build.Root]
+    findMainModules = Maybe.mapMaybe moduleToRootIfMain
+
+    moduleToRootIfMain :: Build.Module -> Maybe Build.Root
+    moduleToRootIfMain (Build.Fresh modName iface localGraph@(Opt.LocalGraph maybeMain _ _)) =
+      case maybeMain of
+        Just _ -> Just (Build.Outside modName iface localGraph)
+        Nothing -> Nothing
 
 -- Helper: Discover module file paths from module names
 discoverModulePaths :: FilePath -> [SrcDir] -> [ModuleName.Raw] -> IO [FilePath]
