@@ -1,0 +1,332 @@
+{
+  "biquadFilter": {
+    "passed": 11,
+    "failed": 1,
+    "tests": [
+      {
+        "name": "Page loads successfully",
+        "passed": true,
+        "details": "",
+        "timestamp": "2025-10-22T10:27:35.710Z"
+      },
+      {
+        "name": "Initialize AudioContext",
+        "passed": true,
+        "details": "Status: [12:27:35 PM] ✅ AudioContext initialized - Ready to create nodes",
+        "timestamp": "2025-10-22T10:27:36.828Z"
+      },
+      {
+        "name": "Play audio successfully",
+        "passed": true,
+        "details": "Status: [12:27:36 PM] 🔊 Audio playing (no filter)",
+        "timestamp": "2025-10-22T10:27:39.274Z"
+      },
+      {
+        "name": "Create filter node",
+        "passed": false,
+        "details": "Status: [12:27:39 PM] 🔊 Audio playing with filter applied",
+        "timestamp": "2025-10-22T10:27:40.217Z"
+      },
+      {
+        "name": "Test Lowpass filter",
+        "passed": true,
+        "details": "",
+        "timestamp": "2025-10-22T10:27:42.663Z"
+      },
+      {
+        "name": "Test Highpass filter",
+        "passed": true,
+        "details": "",
+        "timestamp": "2025-10-22T10:27:45.120Z"
+      },
+      {
+        "name": "Test Bandpass filter",
+        "passed": true,
+        "details": "",
+        "timestamp": "2025-10-22T10:27:47.573Z"
+      },
+      {
+        "name": "Test Notch filter",
+        "passed": true,
+        "details": "",
+        "timestamp": "2025-10-22T10:27:49.991Z"
+      },
+      {
+        "name": "Set frequency to 500 Hz",
+        "passed": true,
+        "details": "Display: 500 Hz",
+        "timestamp": "2025-10-22T10:27:50.875Z"
+      },
+      {
+        "name": "Set Q to 10",
+        "passed": true,
+        "details": "Display: 10",
+        "timestamp": "2025-10-22T10:27:51.788Z"
+      },
+      {
+        "name": "Set gain to 20 dB",
+        "passed": true,
+        "details": "Display: 20 dB",
+        "timestamp": "2025-10-22T10:27:52.669Z"
+      },
+      {
+        "name": "Stop audio successfully",
+        "passed": true,
+        "details": "",
+        "timestamp": "2025-10-22T10:27:53.597Z"
+      }
+    ]
+  },
+  "spatialAudio": {
+    "passed": 13,
+    "failed": 0,
+    "tests": [
+      {
+        "name": "Page loads successfully",
+        "passed": true,
+        "details": "",
+        "timestamp": "2025-10-22T10:27:54.614Z"
+      },
+      {
+        "name": "Initialize AudioContext",
+        "passed": true,
+        "details": "Status: ✅ AudioContext initialized successfully",
+        "timestamp": "2025-10-22T10:27:55.662Z"
+      },
+      {
+        "name": "Play audio successfully",
+        "passed": true,
+        "details": "Status: 🔊 Audio playing at 440 Hz",
+        "timestamp": "2025-10-22T10:27:58.220Z"
+      },
+      {
+        "name": "Create panner node",
+        "passed": true,
+        "details": "Status: ✅ PannerNode created at position (0, 0, -1)",
+        "timestamp": "2025-10-22T10:27:59.235Z"
+      },
+      {
+        "name": "Pan audio to left (X=-10)",
+        "passed": true,
+        "details": "Display: -10.0",
+        "timestamp": "2025-10-22T10:28:01.743Z"
+      },
+      {
+        "name": "Pan audio to right (X=10)",
+        "passed": true,
+        "details": "Display: 10.0",
+        "timestamp": "2025-10-22T10:28:04.310Z"
+      },
+      {
+        "name": "Move audio up (Y=10)",
+        "passed": true,
+        "details": "",
+        "timestamp": "2025-10-22T10:28:06.867Z"
+      },
+      {
+        "name": "Move audio down (Y=-10)",
+        "passed": true,
+        "details": "",
+        "timestamp": "2025-10-22T10:28:09.416Z"
+      },
+      {
+        "name": "Move audio near (Z=10)",
+        "passed": true,
+        "details": "",
+        "timestamp": "2025-10-22T10:28:11.990Z"
+      },
+      {
+        "name": "Move audio far (Z=-10)",
+        "passed": true,
+        "details": "",
+        "timestamp": "2025-10-22T10:28:14.532Z"
+      },
+      {
+        "name": "Test spatial preset 1",
+        "passed": true,
+        "details": "",
+        "timestamp": "2025-10-22T10:28:17.109Z"
+      },
+      {
+        "name": "Test spatial preset 2",
+        "passed": true,
+        "details": "",
+        "timestamp": "2025-10-22T10:28:19.717Z"
+      },
+      {
+        "name": "Stop audio successfully",
+        "passed": true,
+        "details": "",
+        "timestamp": "2025-10-22T10:28:20.804Z"
+      }
+    ]
+  },
+  "mediaStream": {
+    "passed": 2,
+    "failed": 4,
+    "tests": [
+      {
+        "name": "Page loads successfully",
+        "passed": true,
+        "details": "",
+        "timestamp": "2025-10-22T10:28:21.438Z"
+      },
+      {
+        "name": "Request microphone access",
+        "passed": false,
+        "details": "Status: \n        Click a button to test MediaStream functionality\n     (May fail without user permission)",
+        "timestamp": "2025-10-22T10:28:22.544Z"
+      },
+      {
+        "name": "Create MediaStreamSource",
+        "passed": false,
+        "details": "Status: \n        Click a button to test MediaStream functionality\n    ",
+        "timestamp": "2025-10-22T10:28:23.170Z"
+      },
+      {
+        "name": "Create MediaStream destination",
+        "passed": false,
+        "details": "Status: \n        Click a button to test MediaStream functionality\n    ",
+        "timestamp": "2025-10-22T10:28:23.756Z"
+      },
+      {
+        "name": "Get destination stream",
+        "passed": true,
+        "details": "Status: \n        Click a button to test MediaStream functionality\n    ",
+        "timestamp": "2025-10-22T10:28:24.332Z"
+      },
+      {
+        "name": "Test full MediaStream pipeline",
+        "passed": false,
+        "details": "Status: \n        Click a button to test MediaStream functionality\n    ",
+        "timestamp": "2025-10-22T10:28:26.424Z"
+      }
+    ]
+  },
+  "screenshots": [
+    {
+      "name": "01-biquad-filter-initial",
+      "path": "/home/quinten/fh/canopy/examples/audio-ffi/test-results/integration/01-biquad-filter-initial.png"
+    },
+    {
+      "name": "02-biquad-audio-initialized",
+      "path": "/home/quinten/fh/canopy/examples/audio-ffi/test-results/integration/02-biquad-audio-initialized.png"
+    },
+    {
+      "name": "03-biquad-audio-playing",
+      "path": "/home/quinten/fh/canopy/examples/audio-ffi/test-results/integration/03-biquad-audio-playing.png"
+    },
+    {
+      "name": "04-biquad-filter-created",
+      "path": "/home/quinten/fh/canopy/examples/audio-ffi/test-results/integration/04-biquad-filter-created.png"
+    },
+    {
+      "name": "05-biquad-lowpass",
+      "path": "/home/quinten/fh/canopy/examples/audio-ffi/test-results/integration/05-biquad-lowpass.png"
+    },
+    {
+      "name": "06-biquad-highpass",
+      "path": "/home/quinten/fh/canopy/examples/audio-ffi/test-results/integration/06-biquad-highpass.png"
+    },
+    {
+      "name": "07-biquad-bandpass",
+      "path": "/home/quinten/fh/canopy/examples/audio-ffi/test-results/integration/07-biquad-bandpass.png"
+    },
+    {
+      "name": "08-biquad-notch",
+      "path": "/home/quinten/fh/canopy/examples/audio-ffi/test-results/integration/08-biquad-notch.png"
+    },
+    {
+      "name": "09-biquad-freq-500",
+      "path": "/home/quinten/fh/canopy/examples/audio-ffi/test-results/integration/09-biquad-freq-500.png"
+    },
+    {
+      "name": "10-biquad-q-10",
+      "path": "/home/quinten/fh/canopy/examples/audio-ffi/test-results/integration/10-biquad-q-10.png"
+    },
+    {
+      "name": "11-biquad-gain-20",
+      "path": "/home/quinten/fh/canopy/examples/audio-ffi/test-results/integration/11-biquad-gain-20.png"
+    },
+    {
+      "name": "12-biquad-audio-stopped",
+      "path": "/home/quinten/fh/canopy/examples/audio-ffi/test-results/integration/12-biquad-audio-stopped.png"
+    },
+    {
+      "name": "13-spatial-audio-initial",
+      "path": "/home/quinten/fh/canopy/examples/audio-ffi/test-results/integration/13-spatial-audio-initial.png"
+    },
+    {
+      "name": "14-spatial-audio-initialized",
+      "path": "/home/quinten/fh/canopy/examples/audio-ffi/test-results/integration/14-spatial-audio-initialized.png"
+    },
+    {
+      "name": "15-spatial-audio-playing",
+      "path": "/home/quinten/fh/canopy/examples/audio-ffi/test-results/integration/15-spatial-audio-playing.png"
+    },
+    {
+      "name": "16-spatial-panner-created",
+      "path": "/home/quinten/fh/canopy/examples/audio-ffi/test-results/integration/16-spatial-panner-created.png"
+    },
+    {
+      "name": "17-spatial-pan-left",
+      "path": "/home/quinten/fh/canopy/examples/audio-ffi/test-results/integration/17-spatial-pan-left.png"
+    },
+    {
+      "name": "18-spatial-pan-right",
+      "path": "/home/quinten/fh/canopy/examples/audio-ffi/test-results/integration/18-spatial-pan-right.png"
+    },
+    {
+      "name": "19-spatial-move-up",
+      "path": "/home/quinten/fh/canopy/examples/audio-ffi/test-results/integration/19-spatial-move-up.png"
+    },
+    {
+      "name": "20-spatial-move-down",
+      "path": "/home/quinten/fh/canopy/examples/audio-ffi/test-results/integration/20-spatial-move-down.png"
+    },
+    {
+      "name": "21-spatial-move-near",
+      "path": "/home/quinten/fh/canopy/examples/audio-ffi/test-results/integration/21-spatial-move-near.png"
+    },
+    {
+      "name": "22-spatial-move-far",
+      "path": "/home/quinten/fh/canopy/examples/audio-ffi/test-results/integration/22-spatial-move-far.png"
+    },
+    {
+      "name": "23-spatial-preset-1",
+      "path": "/home/quinten/fh/canopy/examples/audio-ffi/test-results/integration/23-spatial-preset-1.png"
+    },
+    {
+      "name": "24-spatial-preset-2",
+      "path": "/home/quinten/fh/canopy/examples/audio-ffi/test-results/integration/24-spatial-preset-2.png"
+    },
+    {
+      "name": "25-spatial-audio-stopped",
+      "path": "/home/quinten/fh/canopy/examples/audio-ffi/test-results/integration/25-spatial-audio-stopped.png"
+    },
+    {
+      "name": "26-mediastream-initial",
+      "path": "/home/quinten/fh/canopy/examples/audio-ffi/test-results/integration/26-mediastream-initial.png"
+    },
+    {
+      "name": "27-mediastream-mic-requested",
+      "path": "/home/quinten/fh/canopy/examples/audio-ffi/test-results/integration/27-mediastream-mic-requested.png"
+    },
+    {
+      "name": "28-mediastream-source-created",
+      "path": "/home/quinten/fh/canopy/examples/audio-ffi/test-results/integration/28-mediastream-source-created.png"
+    },
+    {
+      "name": "29-mediastream-destination-created",
+      "path": "/home/quinten/fh/canopy/examples/audio-ffi/test-results/integration/29-mediastream-destination-created.png"
+    },
+    {
+      "name": "30-mediastream-get-stream",
+      "path": "/home/quinten/fh/canopy/examples/audio-ffi/test-results/integration/30-mediastream-get-stream.png"
+    },
+    {
+      "name": "31-mediastream-full-pipeline",
+      "path": "/home/quinten/fh/canopy/examples/audio-ffi/test-results/integration/31-mediastream-full-pipeline.png"
+    }
+  ]
+}

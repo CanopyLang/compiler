@@ -1,0 +1,16 @@
+module AudioFFITest exposing (test)
+
+import Capability exposing (UserActivated, Initialized, CapabilityError)
+
+type Result err val
+    = Ok val
+    | Err err
+
+type AudioContext = AudioContext
+
+test : UserActivated -> Result CapabilityError (Initialized AudioContext)
+test activation =
+    Ok (Fresh AudioContext)
+
+type Initialized a
+    = Fresh a

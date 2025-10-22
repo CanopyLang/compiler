@@ -1,0 +1,7 @@
+module CapabilityTest exposing (main)
+
+import Capability exposing (UserActivated(..))
+
+main : UserActivated
+main =
+    Click

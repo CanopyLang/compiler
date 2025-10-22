@@ -153,7 +153,7 @@ update msg model =
         -- Simplified Interface Operations
         InitializeAudioSimple ->
             let
-                result = AudioFFI.createAudioContextSimplified
+                result = AudioFFI.createAudioContextSimplified ()
             in
             ( { model
               | status = result
@@ -176,7 +176,7 @@ update msg model =
 
         StopAudioSimple ->
             let
-                result = AudioFFI.stopAudioSimplified
+                result = AudioFFI.stopAudioSimplified ()
             in
             ( { model
               | status = result
@@ -233,7 +233,7 @@ update msg model =
         -- Type-Safe Interface Operations
         InitializeAudioTypeSafe ->
             case AudioFFI.createAudioContext Click of
-                AudioFFI.Ok initializedContext ->
+                Ok initializedContext ->
                     ( { model
                       | audioContext = Just initializedContext
                       , status = "✅ AudioContext created successfully"
@@ -242,7 +242,7 @@ update msg model =
                       }
                     , Cmd.none
                     )
-                AudioFFI.Err error ->
+                Err error ->
                     ( { model
                       | status = "❌ AudioContext creation failed: " ++ capabilityErrorString error
                       , lastError = Just (capabilityErrorString error)
@@ -255,9 +255,9 @@ update msg model =
             case model.audioContext of
                 Just initializedContext ->
                     case (AudioFFI.createOscillator initializedContext model.frequency model.waveform, AudioFFI.createGainNode initializedContext (model.volume / 100.0)) of
-                        (AudioFFI.Ok oscillator, AudioFFI.Ok gainNode) ->
+                        (Ok oscillator, Ok gainNode) ->
                             case (AudioFFI.connectNodes oscillator gainNode, AudioFFI.connectToDestination gainNode initializedContext) of
-                                (AudioFFI.Ok _, AudioFFI.Ok _) ->
+                                (Ok _, Ok _) ->
                                     ( { model
                                       | currentOscillator = Just oscillator
                                       , currentGainNode = Just gainNode
@@ -267,28 +267,28 @@ update msg model =
                                       }
                                     , Cmd.none
                                     )
-                                (AudioFFI.Err error, _) ->
+                                (Err error, _) ->
                                     ( { model
                                       | status = "❌ Node connection failed: " ++ capabilityErrorString error
                                       , lastError = Just (capabilityErrorString error)
                                       }
                                     , Cmd.none
                                     )
-                                (_, AudioFFI.Err error) ->
+                                (_, Err error) ->
                                     ( { model
                                       | status = "❌ Destination connection failed: " ++ capabilityErrorString error
                                       , lastError = Just (capabilityErrorString error)
                                       }
                                     , Cmd.none
                                     )
-                        (AudioFFI.Err error, _) ->
+                        (Err error, _) ->
                             ( { model
                               | status = "❌ Oscillator creation failed: " ++ capabilityErrorString error
                               , lastError = Just (capabilityErrorString error)
                               }
                             , Cmd.none
                             )
-                        (_, AudioFFI.Err error) ->
+                        (_, Err error) ->
                             ( { model
                               | status = "❌ Gain node creation failed: " ++ capabilityErrorString error
                               , lastError = Just (capabilityErrorString error)
@@ -307,7 +307,7 @@ update msg model =
                         currentTime = AudioFFI.getCurrentTime audioContext
                     in
                     case AudioFFI.startOscillator oscillator currentTime of
-                        AudioFFI.Ok _ ->
+                        Ok _ ->
                             ( { model
                               | status = "🔊 Audio playing with type-safe interface!"
                               , isPlaying = True
@@ -316,7 +316,7 @@ update msg model =
                               }
                             , Cmd.none
                             )
-                        AudioFFI.Err error ->
+                        Err error ->
                             ( { model
                               | status = "❌ Audio start failed: " ++ capabilityErrorString error
                               , lastError = Just (capabilityErrorString error)
@@ -335,7 +335,7 @@ update msg model =
                         currentTime = AudioFFI.getCurrentTime audioContext
                     in
                     case AudioFFI.stopOscillator oscillator currentTime of
-                        AudioFFI.Ok _ ->
+                        Ok _ ->
                             ( { model
                               | status = "⏹️ Audio stopped"
                               , isPlaying = False
@@ -345,7 +345,7 @@ update msg model =
                               }
                             , Cmd.none
                             )
-                        AudioFFI.Err error ->
+                        Err error ->
                             ( { model
                               | status = "❌ Audio stop failed: " ++ capabilityErrorString error
                               , lastError = Just (capabilityErrorString error)
@@ -460,7 +460,7 @@ ffiValidationSection model =
             , Attr.style "gap" "15px"
             ]
             [ validationItem "Basic FFI Test" ("simpleTest(42) = " ++ String.fromInt (AudioFFI.simpleTest 42))
-            , validationItem "Web Audio Support" AudioFFI.checkWebAudioSupport
+            , validationItem "Web Audio Support" (AudioFFI.checkWebAudioSupport ())
             ]
         ]
 
@@ -526,7 +526,7 @@ typeSafeInterfaceDemo model =
             [ Html.h4 [] [ Html.text "Step 1: Initialize AudioContext (requires user activation)" ]
             , Html.div
                 [ Attr.style "margin-bottom" "20px" ]
-                [ controlButton "🎛️ Create AudioContext" InitializeAudioTypeSafe (model.audioContext == Nothing)
+                [ controlButton "🎛️ Create AudioContext" InitializeAudioTypeSafe (model.audioContext /= Nothing)
                 , Html.span
                     [ Attr.style "margin-left" "10px"
                     , Attr.style "opacity" "0.8"
@@ -537,7 +537,7 @@ typeSafeInterfaceDemo model =
             , Html.h4 [] [ Html.text "Step 2: Create Audio Nodes" ]
             , Html.div
                 [ Attr.style "margin-bottom" "20px" ]
-                [ controlButton "🎵 Create Oscillator & Gain" CreateAudioNodesTypeSafe (model.audioContext == Nothing)
+                [ controlButton "🎵 Create Oscillator & Gain" CreateAudioNodesTypeSafe (model.audioContext == Nothing || (model.currentOscillator /= Nothing && model.currentGainNode /= Nothing))
                 , Html.span
                     [ Attr.style "margin-left" "10px"
                     , Attr.style "opacity" "0.8"
@@ -547,7 +547,7 @@ typeSafeInterfaceDemo model =
 
             , Html.h4 [] [ Html.text "Step 3: Audio Playback Control" ]
             , Html.div []
-                [ controlButton "▶️ Start Audio" PlayAudioTypeSafe (model.currentOscillator == Nothing)
+                [ controlButton "▶️ Start Audio" PlayAudioTypeSafe (model.currentOscillator == Nothing || model.isPlaying)
                 , controlButton "⏹️ Stop Audio" StopAudioTypeSafe (not model.isPlaying)
                 ]
             ]

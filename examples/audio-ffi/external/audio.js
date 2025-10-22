@@ -627,11 +627,11 @@ function disconnectNode(node) {
 // ============================================================================
 
 /**
- * Check Web Audio support
+ * Check Web Audio API support
  * @name checkWebAudioSupport
- * @canopy-type String
+ * @canopy-type () -> String
  */
-var checkWebAudioSupport = (function() {
+function checkWebAudioSupport() {
     if (window.AudioContext) {
         return "Supported";
     } else if (window.webkitAudioContext) {
@@ -639,7 +639,7 @@ var checkWebAudioSupport = (function() {
     } else {
         return "PartialSupport";
     }
-})();
+}
 
 // ============================================================================
 // UTILITY FUNCTIONS

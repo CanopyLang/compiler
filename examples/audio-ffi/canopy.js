@@ -1,17 +1,3 @@
-<!DOCTYPE HTML>
-<html>
-<head>
-  <meta charset="UTF-8">
-  <title>Main</title>
-  <style>body { padding: 0; margin: 0; }</style>
-</head>
-
-<body>
-
-<pre id="canopy"></pre>
-
-<script>
-try {
 (function(scope){'use strict';
 var _Debugger_unsafeCoerce = function(value) { return value; };
 
@@ -6630,7 +6616,7 @@ var $user$project$Main$statusSection = function(model){ return ( A2( $elm$html$H
 var $user$project$Main$CreateAudioNodesTypeSafe ={$ :'CreateAudioNodesTypeSafe'};
 var $user$project$Main$PlayAudioTypeSafe ={$ :'PlayAudioTypeSafe'};
 var $user$project$Main$StopAudioTypeSafe ={$ :'StopAudioTypeSafe'};
-var $user$project$Main$typeSafeInterfaceDemo = function(model){ return ( A2( $elm$html$Html$div, _List_fromArray([ A2( $elm$html$Html$Attributes$style,'background','rgba(255,255,255,0.1)') , A2( $elm$html$Html$Attributes$style,'padding','25px') , A2( $elm$html$Html$Attributes$style,'border-radius','10px') , A2( $elm$html$Html$Attributes$style,'margin-bottom','20px')]), _List_fromArray([ A2( $elm$html$Html$h3, _List_Nil, _List_fromArray([ $elm$html$Html$text('ð¡ï¸ Type-Safe Result-Based Interface')])) , A2( $elm$html$Html$p, _List_fromArray([ A2( $elm$html$Html$Attributes$style,'margin-bottom','20px') , A2( $elm$html$Html$Attributes$style,'opacity','0.9')]), _List_fromArray([ $elm$html$Html$text('Production-ready interface with proper Result types, capability constraints, and error handling.')])) , A2( $elm$html$Html$div, _List_Nil, _List_fromArray([ A2( $elm$html$Html$h4, _List_Nil, _List_fromArray([ $elm$html$Html$text('Step 1: Initialize AudioContext (requires user activation)')])) , A2( $elm$html$Html$div, _List_fromArray([ A2( $elm$html$Html$Attributes$style,'margin-bottom','20px')]), _List_fromArray([ A3( $user$project$Main$controlButton,'ðï¸ Create AudioContext', $user$project$Main$InitializeAudioTypeSafe, _Utils_eq( model.audioContext, $elm$core$Maybe$Nothing)) , A2( $elm$html$Html$span, _List_fromArray([ A2( $elm$html$Html$Attributes$style,'margin-left','10px') , A2( $elm$html$Html$Attributes$style,'opacity','0.8')]), _List_fromArray([ $elm$html$Html$text((! _Utils_eq( model.audioContext, $elm$core$Maybe$Nothing))?'â Ready':'â³ Required')]))])) , A2( $elm$html$Html$h4, _List_Nil, _List_fromArray([ $elm$html$Html$text('Step 2: Create Audio Nodes')])) , A2( $elm$html$Html$div, _List_fromArray([ A2( $elm$html$Html$Attributes$style,'margin-bottom','20px')]), _List_fromArray([ A3( $user$project$Main$controlButton,'ðµ Create Oscillator & Gain', $user$project$Main$CreateAudioNodesTypeSafe, _Utils_eq( model.audioContext, $elm$core$Maybe$Nothing)) , A2( $elm$html$Html$span, _List_fromArray([ A2( $elm$html$Html$Attributes$style,'margin-left','10px') , A2( $elm$html$Html$Attributes$style,'opacity','0.8')]), _List_fromArray([ $elm$html$Html$text((! _Utils_eq( model.currentOscillator, $elm$core$Maybe$Nothing) &&! _Utils_eq( model.currentGainNode, $elm$core$Maybe$Nothing))?'â Ready':'â³ Required')]))])) , A2( $elm$html$Html$h4, _List_Nil, _List_fromArray([ $elm$html$Html$text('Step 3: Audio Playback Control')])) , A2( $elm$html$Html$div, _List_Nil, _List_fromArray([ A3( $user$project$Main$controlButton,'â¶ï¸ Start Audio', $user$project$Main$PlayAudioTypeSafe, _Utils_eq( model.currentOscillator, $elm$core$Maybe$Nothing)) , A3( $user$project$Main$controlButton,'â¹ï¸ Stop Audio', $user$project$Main$StopAudioTypeSafe,! model.isPlaying)]))]))])));};
+var $user$project$Main$typeSafeInterfaceDemo = function(model){ return ( A2( $elm$html$Html$div, _List_fromArray([ A2( $elm$html$Html$Attributes$style,'background','rgba(255,255,255,0.1)') , A2( $elm$html$Html$Attributes$style,'padding','25px') , A2( $elm$html$Html$Attributes$style,'border-radius','10px') , A2( $elm$html$Html$Attributes$style,'margin-bottom','20px')]), _List_fromArray([ A2( $elm$html$Html$h3, _List_Nil, _List_fromArray([ $elm$html$Html$text('ð¡ï¸ Type-Safe Result-Based Interface')])) , A2( $elm$html$Html$p, _List_fromArray([ A2( $elm$html$Html$Attributes$style,'margin-bottom','20px') , A2( $elm$html$Html$Attributes$style,'opacity','0.9')]), _List_fromArray([ $elm$html$Html$text('Production-ready interface with proper Result types, capability constraints, and error handling.')])) , A2( $elm$html$Html$div, _List_Nil, _List_fromArray([ A2( $elm$html$Html$h4, _List_Nil, _List_fromArray([ $elm$html$Html$text('Step 1: Initialize AudioContext (requires user activation)')])) , A2( $elm$html$Html$div, _List_fromArray([ A2( $elm$html$Html$Attributes$style,'margin-bottom','20px')]), _List_fromArray([ A3( $user$project$Main$controlButton,'ðï¸ Create AudioContext', $user$project$Main$InitializeAudioTypeSafe,! _Utils_eq( model.audioContext, $elm$core$Maybe$Nothing)) , A2( $elm$html$Html$span, _List_fromArray([ A2( $elm$html$Html$Attributes$style,'margin-left','10px') , A2( $elm$html$Html$Attributes$style,'opacity','0.8')]), _List_fromArray([ $elm$html$Html$text((! _Utils_eq( model.audioContext, $elm$core$Maybe$Nothing))?'â Ready':'â³ Required')]))])) , A2( $elm$html$Html$h4, _List_Nil, _List_fromArray([ $elm$html$Html$text('Step 2: Create Audio Nodes')])) , A2( $elm$html$Html$div, _List_fromArray([ A2( $elm$html$Html$Attributes$style,'margin-bottom','20px')]), _List_fromArray([ A3( $user$project$Main$controlButton,'ðµ Create Oscillator & Gain', $user$project$Main$CreateAudioNodesTypeSafe, _Utils_eq( model.audioContext, $elm$core$Maybe$Nothing) ||! _Utils_eq( model.currentOscillator, $elm$core$Maybe$Nothing) &&! _Utils_eq( model.currentGainNode, $elm$core$Maybe$Nothing)) , A2( $elm$html$Html$span, _List_fromArray([ A2( $elm$html$Html$Attributes$style,'margin-left','10px') , A2( $elm$html$Html$Attributes$style,'opacity','0.8')]), _List_fromArray([ $elm$html$Html$text((! _Utils_eq( model.currentOscillator, $elm$core$Maybe$Nothing) &&! _Utils_eq( model.currentGainNode, $elm$core$Maybe$Nothing))?'â Ready':'â³ Required')]))])) , A2( $elm$html$Html$h4, _List_Nil, _List_fromArray([ $elm$html$Html$text('Step 3: Audio Playback Control')])) , A2( $elm$html$Html$div, _List_Nil, _List_fromArray([ A3( $user$project$Main$controlButton,'â¶ï¸ Start Audio', $user$project$Main$PlayAudioTypeSafe, _Utils_eq( model.currentOscillator, $elm$core$Maybe$Nothing) || model.isPlaying) , A3( $user$project$Main$controlButton,'â¹ï¸ Stop Audio', $user$project$Main$StopAudioTypeSafe,! model.isPlaying)]))]))])));};
 var $user$project$Main$view = function(model){ return ( A2( $elm$html$Html$div, _List_fromArray([ A2( $elm$html$Html$Attributes$style,'padding','20px') , A2( $elm$html$Html$Attributes$style,'font-family','system-ui, -apple-system, sans-serif') , A2( $elm$html$Html$Attributes$style,'max-width','1200px') , A2( $elm$html$Html$Attributes$style,'margin','0 auto') , A2( $elm$html$Html$Attributes$style,'background','linear-gradient(135deg, #667eea 0%, #764ba2 100%)') , A2( $elm$html$Html$Attributes$style,'min-height','100vh') , A2( $elm$html$Html$Attributes$style,'color','white')]), _List_fromArray([ A2( $elm$html$Html$header, _List_Nil, _List_fromArray([ A2( $elm$html$Html$h1, _List_fromArray([ A2( $elm$html$Html$Attributes$style,'text-align','center') , A2( $elm$html$Html$Attributes$style,'margin-bottom','30px') , A2( $elm$html$Html$Attributes$style,'text-shadow','2px 2px 4px rgba(0,0,0,0.3)')]), _List_fromArray([ $elm$html$Html$text('ðµ Complete Audio FFI System - Interactive Demo')])) , A2( $elm$html$Html$p, _List_fromArray([ A2( $elm$html$Html$Attributes$style,'text-align','center') , A2( $elm$html$Html$Attributes$style,'font-size','18px') , A2( $elm$html$Html$Attributes$style,'margin-bottom','30px') , A2( $elm$html$Html$Attributes$style,'opacity','0.9')]), _List_fromArray([ $elm$html$Html$text('Demonstrates both type-safe Result-based and simplified string-based FFI interfaces')]))])) , $user$project$Main$demoModeSelector( model) , $user$project$Main$ffiValidationSection( model) , function(){var _v0 = model.demoMode; switch( _v0.$){ case 'SimplifiedInterface' : return ( $user$project$Main$simplifiedInterfaceDemo( model)); case 'TypeSafeInterface' : return ( $user$project$Main$typeSafeInterfaceDemo( model)); default : return ( $user$project$Main$comparisonModeDemo( model));}}() , $user$project$Main$statusSection( model) , model.showAdvanced? $user$project$Main$advancedInfoSection( model): $elm$html$Html$text('')])));};
 var $user$project$Main$main = $elm$browser$Browser$element({view : $user$project$Main$view,update : $user$project$Main$update,subscriptions : $user$project$Main$subscriptions,init : $user$project$Main$init});
 var $elm$time$Time$Name = function(a){ return ({a : a,$ :'Name'});};
@@ -6751,7 +6737,6 @@ var $elm$browser$Debugger$Main$DragStart ={$ :'DragStart'};
 var $user$project$AudioFFI$DynamicsCompressorNode ={$ :'DynamicsCompressorNode'};
 var $elm$browser$Browser$Dom$Element = F3( function(scene,viewport,element){ return ({viewport : viewport,scene : scene,element : element});});
 var $elm$time$Time$Era = F2( function(start,offset){ return ({start : start,offset : offset});});
-var $user$project$AudioFFI$Err = function(a){ return ({a : a,$ :'Err'});};
 var $elm$browser$Debugger$Metadata$Error = F2( function(message,problems){ return ({problems : problems,message : message});});
 var $user$project$Capability$Experimental = function(a){ return ({a : a,$ :'Experimental'});};
 var $elm$browser$Debugger$Main$Export ={$ :'Export'};
@@ -6807,7 +6792,6 @@ var $user$project$Capability$NotSupportedError = function(a){ return ({a : a,$ :
 var $elm$time$Time$Nov ={$ :'Nov'};
 var $elm$time$Time$Oct ={$ :'Oct'};
 var $user$project$AudioFFI$OfflineAudioContext ={$ :'OfflineAudioContext'};
-var $user$project$AudioFFI$Ok = function(a){ return ({a : a,$ :'Ok'});};
 var $elm$browser$Debugger$Main$Open ={$ :'Open'};
 var $user$project$AudioFFI$OscillatorNode ={$ :'OscillatorNode'};
 var $elm$browser$Debugger$Main$OverlayMsg = function(a){ return ({a : a,$ :'OverlayMsg'});};
@@ -7638,24 +7622,3 @@ var $elm$core$Basics$xor = _Basics_xor;
 var $elm$core$Bitwise$xor = _Bitwise_xor;
 _Platform_export({'Main':{'init': $user$project$Main$main( $elm$json$Json$Decode$succeed( _Utils_Tuple0))(0)}});scope['Canopy'] = scope['Elm'];
 }(typeof window !== 'undefined' ? window : this));
-
-  // Create Canopy alias for backward compatibility
-  window.Canopy = window.Elm;
-
-  var app = Canopy.Main.init({ node: document.getElementById("canopy") });
-}
-catch (e)
-{
-  // display initialization errors (e.g. bad flags, infinite recursion)
-  var header = document.createElement("h1");
-  header.style.fontFamily = "monospace";
-  header.innerText = "Initialization Error";
-  var pre = document.getElementById("canopy");
-  document.body.insertBefore(header, pre);
-  pre.innerText = e;
-  throw e;
-}
-</script>
-
-</body>
-</html>

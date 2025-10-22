@@ -7,16 +7,9 @@ This module provides comprehensive bindings to the Web Audio API with proper Res
 -}
 
 import Capability exposing (UserActivated, Initialized, CapabilityError)
+import Result exposing (Result(..))
 
 foreign import javascript "external/audio.js" as FFI
-
--- ============================================================================
--- RESULT TYPE (Must match JavaScript FFI encoding)
--- ============================================================================
-
-type Result err val
-    = Ok val
-    | Err err
 
 -- ============================================================================
 -- OPAQUE TYPES
@@ -116,6 +109,7 @@ disconnectNode =
 simpleTest =
     FFI.simpleTest
 
+checkWebAudioSupport : () -> String
 checkWebAudioSupport =
     FFI.checkWebAudioSupport
 

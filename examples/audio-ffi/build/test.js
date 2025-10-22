@@ -1,17 +1,3 @@
-<!DOCTYPE HTML>
-<html>
-<head>
-  <meta charset="UTF-8">
-  <title>Main</title>
-  <style>body { padding: 0; margin: 0; }</style>
-</head>
-
-<body>
-
-<pre id="canopy"></pre>
-
-<script>
-try {
 (function(scope){'use strict';
 var _Debugger_unsafeCoerce = function(value) { return value; };
 
@@ -29,6 +15,34 @@ var _Debugger_unsafeCoerce = function(value) { return value; };
  */
 
 // ============================================================================
+// ERROR MAPPING HELPERS
+// ============================================================================
+
+function mapAudioError(error, context) {
+    const errorMap = {
+        'NotSupportedError': (msg) => ({ $: 'NotSupportedError', a: msg }),
+        'SecurityError': (msg) => ({ $: 'SecurityError', a: msg }),
+        'InvalidStateError': (msg) => ({ $: 'InvalidStateError', a: msg }),
+        'NotAllowedError': (msg) => ({ $: 'UserActivationRequired', a: msg }),
+        'QuotaExceededError': (msg) => ({ $: 'QuotaExceededError', a: msg }),
+        'RangeError': (msg) => ({ $: 'RangeError', a: msg }),
+        'TypeError': (msg) => ({ $: 'InvalidAccessError', a: msg }),
+        'IndexSizeError': (msg) => ({ $: 'IndexSizeError', a: msg })
+    };
+    const mapper = errorMap[error.name];
+    return mapper ? mapper(context + ': ' + error.message)
+                  : { $: 'InitializationRequired', a: context + ': ' + error.message };
+}
+
+function wrapOk(value) {
+    return { $: 'Ok', a: value };
+}
+
+function wrapErr(error, context) {
+    return { $: 'Err', a: mapAudioError(error, context) };
+}
+
+// ============================================================================
 // AUDIO CONTEXT MANAGEMENT
 // ============================================================================
 
@@ -40,21 +54,9 @@ var _Debugger_unsafeCoerce = function(value) { return value; };
 function createAudioContext(userActivation) {
     try {
         const ctx = new (window.AudioContext || window.webkitAudioContext)();
-        // Return Task Ok with Fresh initialized context
-        return { $: 'Ok', a: { $: 'Fresh', a: ctx } };
+        return wrapOk({ $: 'Fresh', a: ctx });
     } catch (e) {
-        // Map JavaScript errors to CapabilityError
-        if (e.name === 'NotSupportedError') {
-            return { $: 'Err', a: { $: 'NotSupportedError', a: 'Web Audio API not supported: ' + e.message } };
-        } else if (e.name === 'SecurityError') {
-            return { $: 'Err', a: { $: 'SecurityError', a: 'Security error creating AudioContext: ' + e.message } };
-        } else if (e.name === 'NotAllowedError') {
-            return { $: 'Err', a: { $: 'UserActivationRequired', a: 'User activation required to create AudioContext: ' + e.message } };
-        } else if (e.name === 'QuotaExceededError') {
-            return { $: 'Err', a: { $: 'QuotaExceededError', a: 'Memory quota exceeded: ' + e.message } };
-        } else {
-            return { $: 'Err', a: { $: 'InitializationRequired', a: 'Failed to create AudioContext: ' + e.message } };
-        }
+        return wrapErr(e, 'Failed to create AudioContext');
     }
 }
 
@@ -239,7 +241,7 @@ function stopOscillator(oscillator, when) {
  * @canopy-type OscillatorNode -> Float -> Float -> ()
  */
 function setOscillatorFrequency(oscillator, frequency, when) {
-    oscillator.frequency.value = frequency;
+    oscillator.frequency.setValueAtTime(frequency, when);
 }
 
 /**
@@ -464,6 +466,34 @@ function createConvolver(audioContext) {
 }
 
 /**
+ * Set convolver buffer for impulse response
+ * @name setConvolverBuffer
+ * @canopy-type ConvolverNode -> AudioBuffer -> Result Capability.CapabilityError Basics.Int
+ */
+function setConvolverBuffer(convolver, audioBuffer) {
+    try {
+        if (!convolver) {
+            throw new TypeError('ConvolverNode is null or undefined');
+        }
+        if (!audioBuffer) {
+            throw new TypeError('AudioBuffer is null or undefined');
+        }
+        convolver.buffer = audioBuffer;
+        return { $: 'Ok', a: 1 };
+    } catch (e) {
+        if (e.name === 'InvalidStateError') {
+            return { $: 'Err', a: { $: 'InvalidStateError', a: 'Cannot set buffer on destroyed node: ' + e.message } };
+        } else if (e.name === 'TypeError') {
+            return { $: 'Err', a: { $: 'InvalidAccessError', a: 'Invalid buffer or node: ' + e.message } };
+        } else if (e.name === 'NotSupportedError') {
+            return { $: 'Err', a: { $: 'NotSupportedError', a: 'Buffer format not supported: ' + e.message } };
+        } else {
+            return { $: 'Err', a: { $: 'InvalidAccessError', a: 'Failed to set convolver buffer: ' + e.message } };
+        }
+    }
+}
+
+/**
  * Create dynamics compressor
  * @name createDynamicsCompressor
  * @canopy-type AudioContext -> DynamicsCompressorNode
@@ -524,6 +554,39 @@ function setCompressorRelease(compressor, release, when) {
  */
 function createWaveShaper(audioContext) {
     return audioContext.createWaveShaper();
+}
+
+/**
+ * Set wave shaper curve for distortion/waveshaping
+ * @name setWaveShaperCurve
+ * @canopy-type WaveShaperNode -> List Float -> Result Capability.CapabilityError Basics.Int
+ */
+function setWaveShaperCurve(shaper, curveArray) {
+    try {
+        if (!shaper) {
+            throw new TypeError('WaveShaperNode is null or undefined');
+        }
+        if (!curveArray || !Array.isArray(curveArray)) {
+            throw new TypeError('Curve must be an array');
+        }
+        if (curveArray.length < 2) {
+            throw new RangeError('Curve array must have at least 2 elements');
+        }
+        shaper.curve = new Float32Array(curveArray);
+        return { $: 'Ok', a: 1 };
+    } catch (e) {
+        if (e.name === 'InvalidStateError') {
+            return { $: 'Err', a: { $: 'InvalidStateError', a: 'Cannot set curve on destroyed node: ' + e.message } };
+        } else if (e.name === 'TypeError') {
+            return { $: 'Err', a: { $: 'InvalidAccessError', a: 'Invalid curve or node: ' + e.message } };
+        } else if (e.name === 'RangeError') {
+            return { $: 'Err', a: { $: 'RangeError', a: 'Invalid curve array: ' + e.message } };
+        } else if (e.name === 'NotSupportedError') {
+            return { $: 'Err', a: { $: 'NotSupportedError', a: 'Curve format not supported: ' + e.message } };
+        } else {
+            return { $: 'Err', a: { $: 'InvalidAccessError', a: 'Failed to set wave shaper curve: ' + e.message } };
+        }
+    }
 }
 
 /**
@@ -647,11 +710,11 @@ function disconnectNode(node) {
 // ============================================================================
 
 /**
- * Check Web Audio API support
+ * Check Web Audio support
  * @name checkWebAudioSupport
- * @canopy-type () -> String
+ * @canopy-type String
  */
-function checkWebAudioSupport() {
+var checkWebAudioSupport = (function() {
     if (window.AudioContext) {
         return "Supported";
     } else if (window.webkitAudioContext) {
@@ -659,7 +722,7 @@ function checkWebAudioSupport() {
     } else {
         return "PartialSupport";
     }
-}
+})();
 
 // ============================================================================
 // UTILITY FUNCTIONS
@@ -1051,45 +1114,45 @@ function cancelAndHoldAtTime(param, cancelTime) {
 /**
  * Get byte time domain data
  * @name getByteTimeDomainData
- * @canopy-type AnalyserNode -> Int
+ * @canopy-type AnalyserNode -> List Int
  */
 function getByteTimeDomainData(analyser) {
     const dataArray = new Uint8Array(analyser.frequencyBinCount);
     analyser.getByteTimeDomainData(dataArray);
-    return dataArray[0];
+    return Array.from(dataArray);
 }
 
 /**
  * Get byte frequency data
  * @name getByteFrequencyData
- * @canopy-type AnalyserNode -> Int
+ * @canopy-type AnalyserNode -> List Int
  */
 function getByteFrequencyData(analyser) {
     const dataArray = new Uint8Array(analyser.frequencyBinCount);
     analyser.getByteFrequencyData(dataArray);
-    return dataArray[0];
+    return Array.from(dataArray);
 }
 
 /**
  * Get float time domain data
  * @name getFloatTimeDomainData
- * @canopy-type AnalyserNode -> Float
+ * @canopy-type AnalyserNode -> List Float
  */
 function getFloatTimeDomainData(analyser) {
     const dataArray = new Float32Array(analyser.frequencyBinCount);
     analyser.getFloatTimeDomainData(dataArray);
-    return dataArray[0];
+    return Array.from(dataArray);
 }
 
 /**
  * Get float frequency data
  * @name getFloatFrequencyData
- * @canopy-type AnalyserNode -> Float
+ * @canopy-type AnalyserNode -> List Float
  */
 function getFloatFrequencyData(analyser) {
     const dataArray = new Float32Array(analyser.frequencyBinCount);
     analyser.getFloatFrequencyData(dataArray);
-    return dataArray[0];
+    return Array.from(dataArray);
 }
 
 // ============================================================================
@@ -1757,6 +1820,8 @@ var $author$project$FFI$setDelayTime = F3(setDelayTime);
 FFI.setDelayTime = F3(setDelayTime);
 var $author$project$FFI$createConvolver = createConvolver;
 FFI.createConvolver = createConvolver;
+var $author$project$FFI$setConvolverBuffer = F2(setConvolverBuffer);
+FFI.setConvolverBuffer = F2(setConvolverBuffer);
 var $author$project$FFI$createDynamicsCompressor = createDynamicsCompressor;
 FFI.createDynamicsCompressor = createDynamicsCompressor;
 var $author$project$FFI$setCompressorThreshold = F3(setCompressorThreshold);
@@ -1771,6 +1836,8 @@ var $author$project$FFI$setCompressorRelease = F3(setCompressorRelease);
 FFI.setCompressorRelease = F3(setCompressorRelease);
 var $author$project$FFI$createWaveShaper = createWaveShaper;
 FFI.createWaveShaper = createWaveShaper;
+var $author$project$FFI$setWaveShaperCurve = F2(setWaveShaperCurve);
+FFI.setWaveShaperCurve = F2(setWaveShaperCurve);
 var $author$project$FFI$createStereoPanner = createStereoPanner;
 FFI.createStereoPanner = createStereoPanner;
 var $author$project$FFI$setPan = F3(setPan);
@@ -1789,8 +1856,8 @@ var $author$project$FFI$connectToDestination = F2(connectToDestination);
 FFI.connectToDestination = F2(connectToDestination);
 var $author$project$FFI$disconnectNode = disconnectNode;
 FFI.disconnectNode = disconnectNode;
-var $author$project$FFI$checkWebAudioSupport = checkWebAudioSupport;
-FFI.checkWebAudioSupport = checkWebAudioSupport;
+var $author$project$FFI$simpleTest = simpleTest;
+FFI.simpleTest = simpleTest;
 var $author$project$FFI$simpleTest = simpleTest;
 FFI.simpleTest = simpleTest;
 var $author$project$FFI$createPanner = createPanner;
@@ -6589,7 +6656,7 @@ var $user$project$AudioFFI$simpleTest = FFI.simpleTest;
 var $elm$html$Html$span = _VirtualDom_node('span');
 var $elm$html$Html$strong = _VirtualDom_node('strong');
 var $user$project$Main$validationItem = F2( function(label,result){ return ( A2( $elm$html$Html$div, _List_fromArray([ A2( $elm$html$Html$Attributes$style,'background','rgba(0,0,0,0.2)') , A2( $elm$html$Html$Attributes$style,'padding','10px') , A2( $elm$html$Html$Attributes$style,'border-radius','5px')]), _List_fromArray([ A2( $elm$html$Html$strong, _List_Nil, _List_fromArray([ $elm$html$Html$text( label +': ')])) , A2( $elm$html$Html$span, _List_fromArray([ A2( $elm$html$Html$Attributes$style,'color','#90EE90')]), _List_fromArray([ $elm$html$Html$text( result)]))])));});
-var $user$project$Main$ffiValidationSection = function(model){ return ( A2( $elm$html$Html$div, _List_fromArray([ A2( $elm$html$Html$Attributes$style,'background','rgba(255,255,255,0.1)') , A2( $elm$html$Html$Attributes$style,'padding','20px') , A2( $elm$html$Html$Attributes$style,'border-radius','10px') , A2( $elm$html$Html$Attributes$style,'margin-bottom','20px')]), _List_fromArray([ A2( $elm$html$Html$h3, _List_Nil, _List_fromArray([ $elm$html$Html$text('ð§ FFI System Validation')])) , A2( $elm$html$Html$div, _List_fromArray([ A2( $elm$html$Html$Attributes$style,'display','grid') , A2( $elm$html$Html$Attributes$style,'grid-template-columns','1fr 1fr') , A2( $elm$html$Html$Attributes$style,'gap','15px')]), _List_fromArray([ A2( $user$project$Main$validationItem,'Basic FFI Test','simpleTest(42) = ' + $elm$core$String$fromInt( $user$project$AudioFFI$simpleTest(42))) , A2( $user$project$Main$validationItem,'Web Audio Support', $user$project$AudioFFI$checkWebAudioSupport( _Utils_Tuple0))]))])));};
+var $user$project$Main$ffiValidationSection = function(model){ return ( A2( $elm$html$Html$div, _List_fromArray([ A2( $elm$html$Html$Attributes$style,'background','rgba(255,255,255,0.1)') , A2( $elm$html$Html$Attributes$style,'padding','20px') , A2( $elm$html$Html$Attributes$style,'border-radius','10px') , A2( $elm$html$Html$Attributes$style,'margin-bottom','20px')]), _List_fromArray([ A2( $elm$html$Html$h3, _List_Nil, _List_fromArray([ $elm$html$Html$text('ð§ FFI System Validation')])) , A2( $elm$html$Html$div, _List_fromArray([ A2( $elm$html$Html$Attributes$style,'display','grid') , A2( $elm$html$Html$Attributes$style,'grid-template-columns','1fr 1fr') , A2( $elm$html$Html$Attributes$style,'gap','15px')]), _List_fromArray([ A2( $user$project$Main$validationItem,'Basic FFI Test','simpleTest(42) = ' + $elm$core$String$fromInt( $user$project$AudioFFI$simpleTest(42))) , A2( $user$project$Main$validationItem,'Web Audio Support', $user$project$AudioFFI$checkWebAudioSupport)]))])));};
 var $elm$html$Html$h1 = _VirtualDom_node('h1');
 var $elm$html$Html$header = _VirtualDom_node('header');
 var $user$project$Main$InitializeAudioSimple ={$ :'InitializeAudioSimple'};
@@ -6751,7 +6818,6 @@ var $elm$browser$Debugger$Main$DragStart ={$ :'DragStart'};
 var $user$project$AudioFFI$DynamicsCompressorNode ={$ :'DynamicsCompressorNode'};
 var $elm$browser$Browser$Dom$Element = F3( function(scene,viewport,element){ return ({viewport : viewport,scene : scene,element : element});});
 var $elm$time$Time$Era = F2( function(start,offset){ return ({start : start,offset : offset});});
-var $user$project$AudioFFI$Err = function(a){ return ({a : a,$ :'Err'});};
 var $elm$browser$Debugger$Metadata$Error = F2( function(message,problems){ return ({problems : problems,message : message});});
 var $user$project$Capability$Experimental = function(a){ return ({a : a,$ :'Experimental'});};
 var $elm$browser$Debugger$Main$Export ={$ :'Export'};
@@ -6807,7 +6873,6 @@ var $user$project$Capability$NotSupportedError = function(a){ return ({a : a,$ :
 var $elm$time$Time$Nov ={$ :'Nov'};
 var $elm$time$Time$Oct ={$ :'Oct'};
 var $user$project$AudioFFI$OfflineAudioContext ={$ :'OfflineAudioContext'};
-var $user$project$AudioFFI$Ok = function(a){ return ({a : a,$ :'Ok'});};
 var $elm$browser$Debugger$Main$Open ={$ :'Open'};
 var $user$project$AudioFFI$OscillatorNode ={$ :'OscillatorNode'};
 var $elm$browser$Debugger$Main$OverlayMsg = function(a){ return ({a : a,$ :'OverlayMsg'});};
@@ -7198,6 +7263,12 @@ var $elm$browser$Debugger$Overlay$viewReport = F2( function(isBad,report){ switc
 var $elm$browser$Debugger$Overlay$view = F5( function(config,isPaused,isOpen,numMsgs,state){ switch( state.$){ case 'None' : return ( isOpen? $elm$html$Html$text(''): isPaused? A2( $elm$html$Html$div, _List_fromArray([ $elm$html$Html$Attributes$id('elm-debugger-overlay') , A2( $elm$html$Html$Attributes$style,'position','fixed') , A2( $elm$html$Html$Attributes$style,'top','0') , A2( $elm$html$Html$Attributes$style,'left','0') , A2( $elm$html$Html$Attributes$style,'width','100vw') , A2( $elm$html$Html$Attributes$style,'height','100vh') , A2( $elm$html$Html$Attributes$style,'cursor','pointer') , A2( $elm$html$Html$Attributes$style,'display','flex') , A2( $elm$html$Html$Attributes$style,'align-items','center') , A2( $elm$html$Html$Attributes$style,'justify-content','center') , A2( $elm$html$Html$Attributes$style,'pointer-events','auto') , A2( $elm$html$Html$Attributes$style,'background-color','rgba(200, 200, 200, 0.7)') , A2( $elm$html$Html$Attributes$style,'color','white') , A2( $elm$html$Html$Attributes$style,'font-family','\'Trebuchet MS\', \'Lucida Grande\', \'Bitstream Vera Sans\', \'Helvetica Neue\', sans-serif') , A2( $elm$html$Html$Attributes$style,'z-index','2147483646') , $elm$html$Html$Events$onClick( config.resume)]), _List_fromArray([ A2( $elm$html$Html$span, _List_fromArray([ A2( $elm$html$Html$Attributes$style,'font-size','80px')]), _List_fromArray([ $elm$html$Html$text('Click to Resume')])) , A2( $elm$browser$Debugger$Overlay$viewMiniControls, config, numMsgs)])): A2( $elm$browser$Debugger$Overlay$viewMiniControls, config, numMsgs)); case 'BadMetadata' :var badMetadata_ = state.a; return ( A4( $elm$browser$Debugger$Overlay$viewMessage, config,'Cannot use Import or Export', $elm$browser$Debugger$Overlay$viewBadMetadata( badMetadata_), $elm$browser$Debugger$Overlay$Accept('Ok'))); case 'BadImport' :var report = state.a; return ( A4( $elm$browser$Debugger$Overlay$viewMessage, config,'Cannot Import History', A2( $elm$browser$Debugger$Overlay$viewReport,true, report), $elm$browser$Debugger$Overlay$Accept('Ok'))); default :var report = state.a; return ( A4( $elm$browser$Debugger$Overlay$viewMessage, config,'Warning', A2( $elm$browser$Debugger$Overlay$viewReport,false, report), A2( $elm$browser$Debugger$Overlay$Choose,'Cancel','Import Anyway')));}});
 var $elm$browser$Debugger$Main$cornerView = function(model){ return ( A5( $elm$browser$Debugger$Overlay$view,{wrap : $elm$browser$Debugger$Main$OverlayMsg,resume : $elm$browser$Debugger$Main$Resume,open : $elm$browser$Debugger$Main$Open,importHistory : $elm$browser$Debugger$Main$Import,exportHistory : $elm$browser$Debugger$Main$Export}, $elm$browser$Debugger$Main$isPaused( model.state), _Debugger_isOpen( model.popout), $elm$browser$Debugger$History$size( model.history), model.overlay));};
 var $elm$core$Basics$cos = _Basics_cos;
+var $user$project$AudioFFI$createAnalyser = FFI.createAnalyser;
+var $user$project$AudioFFI$createChannelMerger = FFI.createChannelMerger;
+var $user$project$AudioFFI$createChannelSplitter = FFI.createChannelSplitter;
+var $user$project$AudioFFI$createConvolver = FFI.createConvolver;
+var $user$project$AudioFFI$createPanner = FFI.createPanner;
+var $user$project$AudioFFI$createWaveShaper = FFI.createWaveShaper;
 var $elm$url$Url$Builder$crossOrigin = F3( function(prePath,pathSegments,parameters){ return ( prePath +('/' +( A2( $elm$core$String$join,'/', pathSegments) + $elm$url$Url$Builder$toQuery( parameters))));});
 var $elm$html$Html$Events$custom = F2( function(event,decoder){ return ( A2( $elm$virtual_dom$VirtualDom$on, event, $elm$virtual_dom$VirtualDom$Custom( decoder)));});
 var $elm$url$Url$Builder$rootToPrePath = function(root){ switch( root.$){ case 'Absolute' : return '/'; case 'Relative' : return ''; default :var prePath = root.a; return ( prePath +'/');}};
@@ -7269,10 +7340,16 @@ var $elm$core$String$fromList = _String_fromList;
 var $elm$core$Result$fromMaybe = F2( function(err,maybe){if ( maybe.$ ==='Just' ){var v = maybe.a; return ( $elm$core$Result$Ok( v));} else return ( $elm$core$Result$Err( err));});
 var $elm$core$Basics$sin = _Basics_sin;
 var $elm$core$Basics$fromPolar = function(_v0){var radius = _v0.a;var theta = _v0.b; return ( _Utils_Tuple2( radius * $elm$core$Basics$cos( theta), radius * $elm$core$Basics$sin( theta)));};
+var $user$project$AudioFFI$getAudioListener = FFI.getAudioListener;
+var $user$project$AudioFFI$getByteFrequencyData = FFI.getByteFrequencyData;
+var $user$project$AudioFFI$getByteTimeDomainData = FFI.getByteTimeDomainData;
 var $user$project$AudioFFI$getContextState = FFI.getContextState;
 var $elm$browser$Debugger$Main$getCurrentModel = function(state){if ( state.$ ==='Running' ){var model = state.a; return ( model);} else{var model = state.b; return ( model);}};
 var $elm$browser$Debugger$Main$getDragStatus = function(layout){if ( layout.$ ==='Horizontal' ){var status = layout.a; return ( status);} else{var status = layout.a; return ( status);}};
 var $elm$browser$Browser$Dom$getElement = _Browser_getElement;
+var $user$project$AudioFFI$getFloatFrequencyData = FFI.getFloatFrequencyData;
+var $user$project$AudioFFI$getFloatTimeDomainData = FFI.getFloatTimeDomainData;
+var $user$project$AudioFFI$getFrequencyBinCount = FFI.getFrequencyBinCount;
 var $user$project$AudioFFI$getSampleRate = FFI.getSampleRate;
 var $elm$browser$Debugger$Main$getUserModel = function(model){ return ( $elm$browser$Debugger$Main$getCurrentModel( model.state));};
 var $elm$browser$Browser$Dom$getViewport = _Browser_withWindow( _Browser_getViewport);
@@ -7542,11 +7619,28 @@ var $elm$html$Html$select = _VirtualDom_node('select');
 var $elm$html$Html$Attributes$selected = $elm$html$Html$Attributes$boolProperty('selected');
 var $elm$core$Array$set = F3( function(index,value,array){var len = array.a;var startShift = array.b;var tree = array.c;var tail = array.d; return (( index <0 || _Utils_cmp( index, len) >-1)? array:( _Utils_cmp( index, $elm$core$Array$tailIndex( len)) >-1)? A4( $elm$core$Array$Array_elm_builtin, len, startShift, tree, A3( $elm$core$Elm$JsArray$unsafeSet, $elm$core$Array$bitMask & index, value, tail)): A4( $elm$core$Array$Array_elm_builtin, len, startShift, A4( $elm$core$Array$setHelp, startShift, index, value, tree), tail));});
 var $elm$json$Json$Encode$set = F2( function(func,entries){ return ( _Json_wrap( A3( $elm$core$Set$foldl, _Json_addEntry( func), _Json_emptyArray( _Utils_Tuple0), entries)));});
+var $user$project$AudioFFI$setAnalyserFFTSize = FFI.setAnalyserFFTSize;
+var $user$project$AudioFFI$setAnalyserSmoothing = FFI.setAnalyserSmoothing;
+var $user$project$AudioFFI$setConeInnerAngle = FFI.setConeInnerAngle;
+var $user$project$AudioFFI$setConeOuterAngle = FFI.setConeOuterAngle;
+var $user$project$AudioFFI$setConeOuterGain = FFI.setConeOuterGain;
+var $user$project$AudioFFI$setConvolverBuffer = FFI.setConvolverBuffer;
+var $user$project$AudioFFI$setDistanceModel = FFI.setDistanceModel;
 var $user$project$AudioFFI$setGain = FFI.setGain;
+var $user$project$AudioFFI$setListenerForward = FFI.setListenerForward;
+var $user$project$AudioFFI$setListenerPosition = FFI.setListenerPosition;
+var $user$project$AudioFFI$setListenerUp = FFI.setListenerUp;
+var $user$project$AudioFFI$setMaxDistance = FFI.setMaxDistance;
 var $user$project$AudioFFI$setOscillatorDetune = FFI.setOscillatorDetune;
 var $user$project$AudioFFI$setOscillatorFrequency = FFI.setOscillatorFrequency;
+var $user$project$AudioFFI$setPannerOrientation = FFI.setPannerOrientation;
+var $user$project$AudioFFI$setPannerPosition = FFI.setPannerPosition;
+var $user$project$AudioFFI$setPanningModel = FFI.setPanningModel;
+var $user$project$AudioFFI$setRefDistance = FFI.setRefDistance;
+var $user$project$AudioFFI$setRolloffFactor = FFI.setRolloffFactor;
 var $elm$browser$Browser$Dom$setViewport = _Browser_setViewport;
 var $elm$browser$Browser$Dom$setViewportOf = _Browser_setViewportOf;
+var $user$project$AudioFFI$setWaveShaperCurve = FFI.setWaveShaperCurve;
 var $elm$html$Html$Attributes$shape = $elm$html$Html$Attributes$stringProperty('shape');
 var $elm$core$Dict$singleton = F2( function(key,value){ return ( A5( $elm$core$Dict$RBNode_elm_builtin, $elm$core$Dict$Black, key, value, $elm$core$Dict$RBEmpty_elm_builtin, $elm$core$Dict$RBEmpty_elm_builtin));});
 var $elm$core$List$singleton = function(value){ return ( _List_fromArray([ value]));};
@@ -7638,24 +7732,3 @@ var $elm$core$Basics$xor = _Basics_xor;
 var $elm$core$Bitwise$xor = _Bitwise_xor;
 _Platform_export({'Main':{'init': $user$project$Main$main( $elm$json$Json$Decode$succeed( _Utils_Tuple0))(0)}});scope['Canopy'] = scope['Elm'];
 }(typeof window !== 'undefined' ? window : this));
-
-  // Create Canopy alias for backward compatibility
-  window.Canopy = window.Elm;
-
-  var app = Canopy.Main.init({ node: document.getElementById("canopy") });
-}
-catch (e)
-{
-  // display initialization errors (e.g. bad flags, infinite recursion)
-  var header = document.createElement("h1");
-  header.style.fontFamily = "monospace";
-  header.innerText = "Initialization Error";
-  var pre = document.getElementById("canopy");
-  document.body.insertBefore(header, pre);
-  pre.innerText = e;
-  throw e;
-}
-</script>
-
-</body>
-</html>

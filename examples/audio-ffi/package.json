@@ -1,0 +1,22 @@
+{
+  "name": "canopy-audio-ffi-performance-tests",
+  "version": "1.0.0",
+  "description": "Performance and resource usage testing for Canopy Audio FFI",
+  "scripts": {
+    "test:performance": "node performance-tests.js",
+    "test:performance:quick": "node performance-tests.js --quick",
+    "install": "npm install playwright && npx playwright install chromium"
+  },
+  "dependencies": {
+    "playwright": "^1.56.1"
+  },
+  "keywords": [
+    "performance",
+    "testing",
+    "audio",
+    "ffi",
+    "playwright"
+  ],
+  "author": "Canopy Team",
+  "license": "MIT"
+}
