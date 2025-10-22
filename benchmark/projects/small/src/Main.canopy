@@ -1,0 +1,10 @@
+module Main exposing (main)
+
+import Html exposing (Html, text, div, h1)
+
+main : Html msg
+main =
+    div []
+        [ h1 [] [ text "Hello, Canopy!" ]
+        , text "This is a small test project."
+        ]

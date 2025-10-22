@@ -106,6 +106,7 @@ executables:
     ghc-options:
       - -rtsopts
       - -threaded
+      - -with-rtsopts=-N
       - -Werror=incomplete-patterns
       - -Werror=missing-fields
     dependencies:

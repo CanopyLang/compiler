@@ -1,0 +1,171 @@
+module AudioFFI exposing
+    ( AudioContext
+    , OscillatorNode
+    , GainNode
+    , AudioResult(..)
+    , createAudioContext
+    , createOscillator
+    , createGainNode
+    , connectNodes
+    , connectToDestination
+    , startOscillator
+    , stopOscillator
+    , setGain
+    , getCurrentTime
+    , checkWebAudioSupport
+    , simpleTest
+    , createAudioContextSimplified
+    , playToneSimplified
+    , stopAudioSimplified
+    , updateFrequency
+    , updateVolume
+    , updateWaveform
+    )
+
+{-| Web Audio API bindings for Canopy
+
+Clean, minimal FFI bindings with proper error handling.
+
+## Types
+@docs AudioContext, OscillatorNode, GainNode, Result
+
+## Audio Context
+@docs createAudioContext, getCurrentTime
+
+## Audio Nodes
+@docs createOscillator, createGainNode
+
+## Audio Operations
+@docs connectToDestination, startOscillator, stopOscillator, setGain
+
+## Feature Detection
+@docs checkWebAudioSupport
+
+-}
+
+import Capability exposing (UserActivated, Initialized, CapabilityError)
+
+foreign import javascript "external/audio.js" as AudioFFI
+
+-- ============================================================================
+-- TYPES
+-- ============================================================================
+
+{-| Opaque type for AudioContext -}
+type AudioContext = AudioContext
+
+{-| Opaque type for OscillatorNode -}
+type OscillatorNode = OscillatorNode
+
+{-| Opaque type for GainNode -}
+type GainNode = GainNode
+
+{-| Result type for audio operations that can fail -}
+type AudioResult err val
+    = Ok val
+    | Err err
+
+-- ============================================================================
+-- AUDIO CONTEXT
+-- ============================================================================
+
+{-| Create audio context with user activation -}
+createAudioContext : UserActivated -> AudioResult Capability.CapabilityError (Initialized AudioContext)
+createAudioContext userActivation =
+    AudioFFI.createAudioContext userActivation
+
+{-| Get current time from audio context -}
+getCurrentTime : Initialized AudioContext -> Float
+getCurrentTime audioContext =
+    AudioFFI.getCurrentTime audioContext
+
+{-| Check if Web Audio is supported -}
+checkWebAudioSupport : String
+checkWebAudioSupport =
+    AudioFFI.checkWebAudioSupport
+
+-- ============================================================================
+-- AUDIO NODES
+-- ============================================================================
+
+{-| Create oscillator node -}
+createOscillator : Initialized AudioContext -> Float -> String -> AudioResult Capability.CapabilityError OscillatorNode
+createOscillator context freq waveform =
+    AudioFFI.createOscillator context freq waveform
+
+{-| Create gain node -}
+createGainNode : Initialized AudioContext -> Float -> AudioResult CapabilityError GainNode
+createGainNode context gain =
+    AudioFFI.createGainNode context gain
+
+-- ============================================================================
+-- AUDIO OPERATIONS
+-- ============================================================================
+
+{-| Connect nodes to audio destination -}
+connectToDestination : GainNode -> Initialized AudioContext -> AudioResult CapabilityError ()
+connectToDestination gainNode audioContext =
+    AudioFFI.connectToDestination gainNode audioContext
+
+{-| Start oscillator at given time -}
+startOscillator : OscillatorNode -> Float -> AudioResult CapabilityError ()
+startOscillator oscillator when =
+    AudioFFI.startOscillator oscillator when
+
+{-| Stop oscillator at given time -}
+stopOscillator : OscillatorNode -> Float -> AudioResult CapabilityError ()
+stopOscillator oscillator when =
+    AudioFFI.stopOscillator oscillator when
+
+{-| Set gain value -}
+setGain : GainNode -> Float -> ()
+setGain gainNode value =
+    AudioFFI.setGain gainNode value
+
+-- ============================================================================
+-- NODE CONNECTIONS
+-- ============================================================================
+
+{-| Connect two audio nodes together -}
+connectNodes : OscillatorNode -> GainNode -> AudioResult CapabilityError ()
+connectNodes sourceNode destinationNode =
+    AudioFFI.connectNodes sourceNode destinationNode
+
+-- ============================================================================
+-- SIMPLIFIED INTERFACE
+-- ============================================================================
+
+{-| Simple FFI test function -}
+simpleTest : Int -> Int
+simpleTest x =
+    AudioFFI.simpleTest x
+
+{-| Create audio context (simplified interface) -}
+createAudioContextSimplified : String
+createAudioContextSimplified =
+    AudioFFI.createAudioContextSimplified
+
+{-| Play tone (simplified interface) -}
+playToneSimplified : Float -> String -> String
+playToneSimplified frequency waveform =
+    AudioFFI.playToneSimplified frequency waveform
+
+{-| Stop audio (simplified interface) -}
+stopAudioSimplified : String
+stopAudioSimplified =
+    AudioFFI.stopAudioSimplified
+
+{-| Update frequency (simplified interface) -}
+updateFrequency : Float -> String
+updateFrequency frequency =
+    AudioFFI.updateFrequency frequency
+
+{-| Update volume (simplified interface) -}
+updateVolume : Float -> String
+updateVolume volumePercent =
+    AudioFFI.updateVolume volumePercent
+
+{-| Update waveform (simplified interface) -}
+updateWaveform : String -> String
+updateWaveform waveform =
+    AudioFFI.updateWaveform waveform

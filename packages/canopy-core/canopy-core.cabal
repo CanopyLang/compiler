@@ -76,6 +76,7 @@ library
       File.Archive
       File.Atomic
       File.Binary
+      File.Cache
       File.FileSystem
       File.JSON
       File.Package

@@ -1,0 +1,78 @@
+module Utils.ListUtils exposing (chunk, unique, groupBy, findBy, removeAt)
+
+-- List utility functions
+
+
+chunk : Int -> List a -> List (List a)
+chunk size list =
+    if size <= 0 then
+        []
+
+    else
+        case list of
+            [] ->
+                []
+
+            _ ->
+                List.take size list :: chunk size (List.drop size list)
+
+
+unique : List comparable -> List comparable
+unique list =
+    case list of
+        [] ->
+            []
+
+        x :: xs ->
+            if List.member x xs then
+                unique xs
+
+            else
+                x :: unique xs
+
+
+groupBy : (a -> comparable) -> List a -> List ( comparable, List a )
+groupBy keyFn list =
+    list
+        |> List.foldl
+            (\item acc ->
+                let
+                    key =
+                        keyFn item
+
+                    existing =
+                        List.filter (\( k, _ ) -> k == key) acc
+
+                    others =
+                        List.filter (\( k, _ ) -> k /= key) acc
+                in
+                case existing of
+                    [] ->
+                        ( key, [ item ] ) :: others
+
+                    [ ( k, items ) ] ->
+                        ( k, item :: items ) :: others
+
+                    _ ->
+                        acc
+            )
+            []
+
+
+findBy : (a -> Bool) -> List a -> Maybe a
+findBy predicate list =
+    case list of
+        [] ->
+            Nothing
+
+        x :: xs ->
+            if predicate x then
+                Just x
+
+            else
+                findBy predicate xs
+
+
+removeAt : Int -> List a -> List a
+removeAt index list =
+    List.take index list ++ List.drop (index + 1) list

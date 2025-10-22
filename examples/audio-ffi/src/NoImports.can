@@ -1,5 +1,0 @@
-module NoImports exposing (value)
-
-value : Int
-value =
-    42

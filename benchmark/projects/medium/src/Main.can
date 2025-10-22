@@ -1,0 +1,92 @@
+module Main exposing (main)
+
+-- Main module for medium test project
+
+import Html exposing (Html, div, h1, h2, p, text, ul, li, button)
+import Html.Attributes exposing (class)
+import Html.Events exposing (onClick)
+import Types exposing (User, Post, Status(..))
+import Utils exposing (capitalize, formatNumber, pluralize)
+import Utils
+import Logic exposing (createPost, likePost, filterPosts)
+
+
+type alias Model =
+    { posts : List Post
+    , currentUser : User
+    }
+
+
+type Msg
+    = LikePost Int
+    | CreateNewPost
+    | NoOp
+
+
+initialUser : User
+initialUser =
+    { id = 1
+    , name = "John Doe"
+    , email = "john@example.com"
+    , active = True
+    }
+
+
+initialModel : Model
+initialModel =
+    { posts = []
+    , currentUser = initialUser
+    }
+
+
+update : Msg -> Model -> Model
+update msg model =
+    case msg of
+        LikePost postId ->
+            { model
+                | posts =
+                    List.map
+                        (\post ->
+                            if post.id == postId then
+                                likePost post
+
+                            else
+                                post
+                        )
+                        model.posts
+            }
+
+        CreateNewPost ->
+            let
+                newPost =
+                    createPost model.currentUser "New Post" "This is a new post"
+            in
+            { model | posts = newPost :: model.posts }
+
+        NoOp ->
+            model
+
+
+viewPost : Post -> Html Msg
+viewPost post =
+    li [ class "post" ]
+        [ h2 [] [ text (capitalize post.title) ]
+        , p [] [ text (Utils.truncate 100 post.content) ]
+        , p [] [ text ("by " ++ Types.userToString post.author) ]
+        , p [] [ text (formatNumber post.likes ++ " " ++ pluralize post.likes "like" "likes") ]
+        , button [ onClick (LikePost post.id) ] [ text "Like" ]
+        ]
+
+
+view : Model -> Html Msg
+view model =
+    div [ class "app" ]
+        [ h1 [] [ text "Medium Test Project" ]
+        , button [ onClick CreateNewPost ] [ text "Create Post" ]
+        , ul [] (List.map viewPost model.posts)
+        ]
+
+
+main : Html Msg
+main =
+    view initialModel

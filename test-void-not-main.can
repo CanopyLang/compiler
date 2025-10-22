@@ -1,0 +1,8 @@
+module TestVoid exposing (doSideEffect)
+
+foreign import javascript "test-void-not-main.js" as TestFFI
+
+{-| Do a side effect through FFI -}
+doSideEffect : Int -> ()
+doSideEffect x =
+    TestFFI.voidFunction x

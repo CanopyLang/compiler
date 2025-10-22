@@ -29,10 +29,13 @@ module Compiler
   )
 where
 
+import qualified AST.Canonical as Can
 import qualified AST.Optimized as Opt
 import qualified AST.Source as Src
 import qualified Build.Artifacts as Build
 import Build.Artifacts
+import qualified Build.Parallel as Parallel
+import qualified Builder.Graph as Graph
 import qualified Canopy.Interface as I
 import qualified Canopy.ModuleName as ModuleName
 import qualified Canopy.Package as Pkg
@@ -42,7 +45,8 @@ import qualified Data.Aeson.Key as Key
 import qualified Data.Aeson.KeyMap as KeyMap
 import qualified Data.ByteString.Lazy as LBS
 import qualified Data.Text as Text
-import Control.Monad (filterM, foldM)
+import Control.Monad (filterM)
+import qualified Control.Concurrent.Async as Async
 import qualified Data.Maybe as Maybe
 import qualified Data.Map.Strict as Map
 import qualified Data.Name as Name
@@ -54,6 +58,7 @@ import qualified Debug.Logger as Logger
 import Debug.Logger (DebugCategory (..))
 import qualified Driver
 import qualified Exit
+import qualified Generate.JavaScript as JS
 import qualified Query.Engine as Engine
 import qualified Query.Simple as Query
 import qualified PackageCache
@@ -101,12 +106,13 @@ compileFromPaths pkg isApp root srcDirs paths = do
       let modules = map driverResultToModule compiledModules
           localGraphs = map extractLocalGraph compiledModules
           mergedGlobalGraph = mergeGraphs depGlobalGraph localGraphs
+          ffiInfoMap = collectFFIInfo compiledModules
           artifacts = Build.Artifacts
             { Build._artifactsName = pkg
             , Build._artifactsDeps = Map.empty
             , Build._artifactsRoots = detectRoots modules
             , Build._artifactsModules = modules
-            , Build._artifactsFFIInfo = Map.empty
+            , Build._artifactsFFIInfo = ffiInfoMap
             , Build._artifactsGlobalGraph = mergedGlobalGraph
             }
       return (Right artifacts)
@@ -222,7 +228,7 @@ findModulePath root srcDirs modName = do
             [] -> Nothing
             (p:_) -> Just p)
 
--- Helper: Compile modules in dependency order
+-- Helper: Compile modules in dependency order with PARALLEL execution
 compileModulesInOrder ::
   Pkg.Name ->
   Parse.ProjectType ->
@@ -231,26 +237,107 @@ compileModulesInOrder ::
   Map.Map ModuleName.Raw FilePath ->
   IO (Either Exit.BuildError ([Driver.CompileResult], Map.Map ModuleName.Raw I.Interface))
 compileModulesInOrder pkg projectType _root initialInterfaces modulePaths = do
+  Logger.debug COMPILE_DEBUG ("====== PARALLEL COMPILATION STARTING ======")
+  Logger.debug COMPILE_DEBUG ("Total modules to compile: " ++ show (Map.size modulePaths))
+
   -- Create shared query engine for all module compilations
   engine <- Engine.initEngine
 
-  -- Build dependency graph and sort topologically
+  -- Build dependency graph for parallel compilation
+  -- Only include dependencies that are in modulePaths (i.e., modules we're compiling)
   moduleImports <- mapM (parseModuleImports projectType) (Map.toList modulePaths)
-  let depGraph = Map.fromList [(modName, imports) | (modName, _, imports) <- moduleImports]
-      sortedModules = topologicalSort depGraph (Map.keys modulePaths)
+  let moduleNames = Map.keysSet modulePaths
+      -- Filter imports to only include modules we're actually compiling
+      depList = [(modName, filter (`Set.member` moduleNames) imports) | (modName, _, imports) <- moduleImports]
+      graph = Graph.buildGraph depList
 
-  -- Compile in topological order with shared engine
-  result <- foldM (compileNext engine) (Right ([], initialInterfaces)) sortedModules
+  Logger.debug COMPILE_DEBUG ("Dependency graph built with " ++ show (length depList) ++ " modules")
+
+  -- Prepare module statuses (moduleName -> filepath)
+  let moduleStatuses = modulePaths
+
+  -- Compile in parallel using Build.Parallel with dependency graph
+  -- We need to thread through interfaces as we compile, so we'll use a custom approach
+  -- that leverages the parallel infrastructure while maintaining interface state
+  result <- compileParallelWithInterfaces engine graph moduleStatuses initialInterfaces
 
   -- Log cache statistics after all compilations
   Driver.logCacheStats engine
 
   return result
   where
-    compileNext _ (Left err) _ = return (Left err)
-    compileNext queryEngine (Right (compiled, ifaces)) modName = do
-      case Map.lookup modName modulePaths of
-        Nothing -> return (Right (compiled, ifaces))
+    -- Compile modules in parallel while threading interfaces through each dependency level
+    compileParallelWithInterfaces ::
+      Engine.QueryEngine ->
+      Graph.DependencyGraph ->
+      Map.Map ModuleName.Raw FilePath ->
+      Map.Map ModuleName.Raw I.Interface ->
+      IO (Either Exit.BuildError ([Driver.CompileResult], Map.Map ModuleName.Raw I.Interface))
+    compileParallelWithInterfaces queryEngine graph statuses initialIfaces = do
+      let plan = Parallel.groupByDependencyLevel graph
+          levels = Parallel.planLevels plan
+
+      Logger.debug COMPILE_DEBUG ("PARALLEL COMPILATION: " ++ show (length levels) ++ " dependency levels identified")
+      Logger.debug COMPILE_DEBUG ("Level breakdown: " ++ show (map length levels) ++ " modules per level")
+
+      -- Compile each level sequentially, but within each level compile in parallel
+      compileLevels queryEngine levels initialIfaces [] statuses
+
+    -- Compile levels one by one, accumulating results and interfaces
+    compileLevels ::
+      Engine.QueryEngine ->
+      [[ModuleName.Raw]] ->
+      Map.Map ModuleName.Raw I.Interface ->
+      [Driver.CompileResult] ->
+      Map.Map ModuleName.Raw FilePath ->
+      IO (Either Exit.BuildError ([Driver.CompileResult], Map.Map ModuleName.Raw I.Interface))
+    compileLevels _ [] ifaces compiled _ = return (Right (compiled, ifaces))
+    compileLevels queryEngine (level : restLevels) ifaces compiled statuses = do
+      -- Log parallel compilation level
+      Logger.debug COMPILE_DEBUG ("Compiling level with " ++ show (length level) ++ " modules in parallel: " ++ show (map Name.toChars level))
+      -- Compile all modules in this level in parallel
+      levelResult <- compileLevelInParallel queryEngine level ifaces statuses
+      case levelResult of
+        Left err -> return (Left err)
+        Right (levelCompiled, levelIfaces) -> do
+          -- Merge interfaces and continue with next level
+          let newIfaces = Map.union levelIfaces ifaces
+              newCompiled = compiled ++ levelCompiled
+          compileLevels queryEngine restLevels newIfaces newCompiled statuses
+
+    -- Compile a single level (all modules in parallel)
+    compileLevelInParallel ::
+      Engine.QueryEngine ->
+      [ModuleName.Raw] ->
+      Map.Map ModuleName.Raw I.Interface ->
+      Map.Map ModuleName.Raw FilePath ->
+      IO (Either Exit.BuildError ([Driver.CompileResult], Map.Map ModuleName.Raw I.Interface))
+    compileLevelInParallel queryEngine modules ifaces statuses = do
+      -- Compile all modules in this level concurrently using Async
+      results <- Async.mapConcurrently (compileOneModule queryEngine ifaces statuses) modules
+
+      -- Check for errors
+      let (errors, successes) = partitionEithers results
+      case errors of
+        (err : _) -> return (Left err)
+        [] -> do
+          let compiled = map fst successes
+              newIfaces = Map.fromList [pair | (_, pair) <- successes]
+          return (Right (compiled, newIfaces))
+
+    -- Compile a single module
+    compileOneModule ::
+      Engine.QueryEngine ->
+      Map.Map ModuleName.Raw I.Interface ->
+      Map.Map ModuleName.Raw FilePath ->
+      ModuleName.Raw ->
+      IO (Either Exit.BuildError (Driver.CompileResult, (ModuleName.Raw, I.Interface)))
+    compileOneModule queryEngine ifaces statuses modName = do
+      case Map.lookup modName statuses of
+        Nothing -> do
+          -- This should not happen - module in dependency graph but not in paths
+          let errMsg = "Internal error: Module " ++ Name.toChars modName ++ " not found in module paths"
+          return (Left (Exit.BuildCannotCompile (Exit.CompileModuleNotFound errMsg)))
         Just path -> do
           Logger.debug COMPILE_DEBUG ("Compiling module: " ++ Name.toChars modName)
           compilationResult <- Driver.compileModuleWithEngine queryEngine pkg ifaces path projectType
@@ -258,8 +345,14 @@ compileModulesInOrder pkg projectType _root initialInterfaces modulePaths = do
             Left err -> return (Left (Exit.BuildCannotCompile (queryErrorToCompileError path err)))
             Right compiledResult -> do
               let newIface = Driver.compileResultInterface compiledResult
-                  newIfaces = Map.insert modName newIface ifaces
-              return (Right (compiled ++ [compiledResult], newIfaces))
+              return (Right (compiledResult, (modName, newIface)))
+
+    -- Helper to partition Either lists
+    partitionEithers :: [Either a b] -> ([a], [b])
+    partitionEithers = foldr (either left right) ([], [])
+      where
+        left a (l, r) = (a : l, r)
+        right b (l, r) = (l, b : r)
 
 -- Helper: Parse module to extract its imports
 parseModuleImports :: Parse.ProjectType -> (ModuleName.Raw, FilePath) -> IO (ModuleName.Raw, FilePath, [ModuleName.Raw])
@@ -270,29 +363,6 @@ parseModuleImports projectType (modName, path) = do
     Right modul -> do
       let imports = [A.toValue (Src._importName imp) | imp <- Src._imports modul]
       return (modName, path, imports)
-
--- Helper: Topological sort of modules based on dependencies
-topologicalSort :: Map.Map ModuleName.Raw [ModuleName.Raw] -> [ModuleName.Raw] -> [ModuleName.Raw]
-topologicalSort depGraph modules =
-  let (_visited, sorted) = go Set.empty [] modules
-   in reverse sorted
-  where
-    go visited sorted [] = (visited, sorted)
-    go visited sorted (m : ms)
-      | Set.member m visited = go visited sorted ms
-      | otherwise =
-          let deps = Map.findWithDefault [] m depGraph
-              visited' = Set.insert m visited
-              (visited'', sorted') = foldl (\(v, s) dep -> visitModule v s dep) (visited', sorted) deps
-           in go visited'' (m : sorted') ms
-
-    visitModule visited sorted modName
-      | Set.member modName visited = (visited, sorted)
-      | otherwise =
-          let deps = Map.findWithDefault [] modName depGraph
-              visited' = Set.insert modName visited
-              (visited'', sorted') = foldl (\(v, s) dep -> visitModule v s dep) (visited', sorted) deps
-           in (visited'', modName : sorted')
 
 -- Helper: Convert QueryError to CompileError with proper categorization
 queryErrorToCompileError :: FilePath -> Query.QueryError -> Exit.CompileError
@@ -434,14 +504,33 @@ driverResultToModule result =
 extractLocalGraph :: Driver.CompileResult -> Opt.LocalGraph
 extractLocalGraph = Driver.compileResultLocalGraph
 
+-- Helper: Collect FFI info from all compiled modules
+collectFFIInfo :: [Driver.CompileResult] -> Map.Map String JS.FFIInfo
+collectFFIInfo compiledModules =
+  Map.unions (map extractFFIInfo compiledModules)
+
+-- Helper: Extract FFI info from single CompileResult
+extractFFIInfo :: Driver.CompileResult -> Map.Map String JS.FFIInfo
+extractFFIInfo result =
+  Map.map convertFFIInfo (Driver.compileResultFFIInfo result)
+
+-- Helper: Convert Driver.FFIInfo to JS.FFIInfo
+convertFFIInfo :: Driver.FFIInfo -> JS.FFIInfo
+convertFFIInfo driverInfo =
+  JS.FFIInfo
+    { JS.ffiFilePath = Driver.ffiFilePath driverInfo
+    , JS.ffiContent = Driver.ffiContent driverInfo
+    , JS.ffiAlias = Driver.ffiAlias driverInfo
+    }
+
 -- Helper: Merge dependency GlobalGraph with compiled LocalGraphs
 mergeGraphs :: Opt.GlobalGraph -> [Opt.LocalGraph] -> Opt.GlobalGraph
 mergeGraphs depGlobalGraph localGraphs =
   foldr Opt.addLocalGraph depGlobalGraph localGraphs
 
 -- Helper: Extract module name from canonical module
-extractModuleName :: a -> ModuleName.Raw
-extractModuleName _ = Name.fromChars "Main"  -- TODO: Extract actual name
+extractModuleName :: Can.Module -> ModuleName.Raw
+extractModuleName canModule = ModuleName._module (Can._name canModule)
 
 -- Helper: Detect root modules
 detectRoots :: [Build.Module] -> NE.List Build.Root

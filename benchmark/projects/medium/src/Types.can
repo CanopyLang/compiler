@@ -1,0 +1,50 @@
+module Types exposing (User, Post, Status(..), userToString, postToString)
+
+-- Type definitions for the medium project
+
+
+type Status
+    = Draft
+    | Published
+    | Archived
+
+
+type alias User =
+    { id : Int
+    , name : String
+    , email : String
+    , active : Bool
+    }
+
+
+type alias Post =
+    { id : Int
+    , title : String
+    , content : String
+    , author : User
+    , status : Status
+    , likes : Int
+    }
+
+
+userToString : User -> String
+userToString user =
+    user.name ++ " (" ++ user.email ++ ")"
+
+
+postToString : Post -> String
+postToString post =
+    "Post: " ++ post.title ++ " by " ++ userToString post.author
+
+
+statusToString : Status -> String
+statusToString status =
+    case status of
+        Draft ->
+            "Draft"
+
+        Published ->
+            "Published"
+
+        Archived ->
+            "Archived"

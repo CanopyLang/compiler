@@ -1,5 +1,0 @@
-module SimpleCanopyTest exposing (main)
-
-import String
-
-main = String.length "hello world"

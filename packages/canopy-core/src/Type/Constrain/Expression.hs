@@ -497,7 +497,6 @@ constrainDef rtv def bodyCon expected = do
         NoExpectation t -> Just t
         FromContext _ _ t -> Just t
         FromAnnotation _ _ _ t -> Just t
-  putStrLn $ "DEBUG constrainDef " <> show defName <> " (" <> defType <> "): RTV size=" <> show (Map.size rtv) <> ", expectedType present=" <> show (maybe False (const True) expectedType)
   case def of
     Can.Def (A.At region name) args expr ->
       do

@@ -1,0 +1,51 @@
+# Audio FFI Example
+
+This example demonstrates the Foreign Function Interface (FFI) capabilities in Canopy, showcasing how to integrate with the Web Audio API.
+
+## Features
+
+- **Audio Context Management**: Initialize and control Web Audio API context
+- **Oscillator Control**: Create and manage audio oscillators with different waveforms
+- **Gain Control**: Adjust volume levels dynamically
+- **Capability-Based Security**: Type-safe FFI access through capability tokens
+
+## Files
+
+- `src/Main.can` - Main example application demonstrating all audio features
+- `src/AudioFFI.can` - FFI bindings for Web Audio API
+- `src/Capability.can` - Capability type definitions
+- `external/audio.js` - JavaScript implementation of audio functions
+- `external/capability.js` - Capability runtime system
+- `index.html` - Demo page
+
+## Building
+
+From the `examples/audio-ffi` directory:
+
+```bash
+canopy make
+```
+
+## Running
+
+Open `index.html` in a web browser. The page demonstrates:
+
+1. Creating an audio context
+2. Creating oscillators with different waveforms (sine, square, sawtooth, triangle)
+3. Controlling gain/volume
+4. Starting and stopping audio playback
+
+## Architecture
+
+This example uses a capability-based FFI system where:
+
+1. JavaScript functions are accessed through capability tokens
+2. Each capability is type-checked at compile time
+3. The Canopy compiler generates proper FFI bindings
+4. Runtime capability validation ensures security
+
+The FFI system supports:
+- Simple data types (Int, Float, String, Bool)
+- Lists and complex structures
+- Effect types (IO/Task)
+- Type-safe function signatures

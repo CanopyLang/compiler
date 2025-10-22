@@ -1,0 +1,96 @@
+module Logic.Validation exposing (validatePost, validateComment, ValidationError(..))
+
+-- Validation logic for posts and comments
+
+import Models.Post exposing (Post)
+import Models.Comment exposing (Comment)
+
+
+type ValidationError
+    = EmptyTitle
+    | EmptyContent
+    | TitleTooShort
+    | TitleTooLong
+    | ContentTooShort
+    | InvalidCategory
+    | MultipleErrors (List ValidationError)
+
+
+validatePost : Post -> Result ValidationError Post
+validatePost post =
+    let
+        errors =
+            List.filterMap identity
+                [ if String.isEmpty post.title then
+                    Just EmptyTitle
+
+                  else
+                    Nothing
+                , if String.length post.title < 5 then
+                    Just TitleTooShort
+
+                  else
+                    Nothing
+                , if String.length post.title > 200 then
+                    Just TitleTooLong
+
+                  else
+                    Nothing
+                , if String.isEmpty post.content then
+                    Just EmptyContent
+
+                  else
+                    Nothing
+                , if String.length post.content < 50 then
+                    Just ContentTooShort
+
+                  else
+                    Nothing
+                ]
+    in
+    case errors of
+        [] ->
+            Ok post
+
+        [ single ] ->
+            Err single
+
+        multiple ->
+            Err (MultipleErrors multiple)
+
+
+validateComment : Comment -> Result ValidationError Comment
+validateComment comment =
+    if String.isEmpty comment.content then
+        Err EmptyContent
+
+    else if String.length comment.content < 10 then
+        Err ContentTooShort
+
+    else
+        Ok comment
+
+
+errorToString : ValidationError -> String
+errorToString error =
+    case error of
+        EmptyTitle ->
+            "Title cannot be empty"
+
+        EmptyContent ->
+            "Content cannot be empty"
+
+        TitleTooShort ->
+            "Title must be at least 5 characters"
+
+        TitleTooLong ->
+            "Title cannot exceed 200 characters"
+
+        ContentTooShort ->
+            "Content is too short"
+
+        InvalidCategory ->
+            "Invalid category"
+
+        MultipleErrors errors ->
+            String.join ", " (List.map errorToString errors)

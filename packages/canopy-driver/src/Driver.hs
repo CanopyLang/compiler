@@ -16,6 +16,7 @@
 module Driver
   ( -- * Driver Types
     CompileResult (..),
+    FFIInfo (..),
 
     -- * Single Module Compilation
     compileModule,
@@ -39,7 +40,9 @@ import qualified Canonicalize.Module as Canonicalize
 import qualified Canopy.Interface as I
 import qualified Canopy.ModuleName as ModuleName
 import qualified Canopy.Package as Pkg
+import qualified Foreign.FFI as FFI
 import Data.Map (Map)
+import qualified Data.Map as Map
 import qualified Data.Name as Name
 import qualified Debug.Logger as Logger
 import Debug.Logger (DebugCategory (..))
@@ -51,14 +54,24 @@ import qualified Query.Engine as Engine
 import Query.Simple
 import qualified Worker.Pool as Pool
 import qualified Parse.Module as Parse
+import qualified Reporting.Annotation as A
 
 -- | Compilation result with all artifacts.
 data CompileResult = CompileResult
   { compileResultModule :: !Can.Module,
     compileResultTypes :: !(Map Name.Name Can.Annotation),
     compileResultInterface :: !I.Interface,
-    compileResultLocalGraph :: !Opt.LocalGraph
+    compileResultLocalGraph :: !Opt.LocalGraph,
+    compileResultFFIInfo :: !(Map String FFIInfo)
   }
+
+-- | FFI information for JavaScript generation
+data FFIInfo = FFIInfo
+  { ffiFilePath :: !String,
+    ffiContent :: !String,
+    ffiAlias :: !String
+  }
+  deriving (Eq, Show)
 
 -- | Compile a module from file path (simplified).
 compileModule ::
@@ -107,6 +120,8 @@ compileFromSource pkg ifaces sourceModule = do
   Logger.debug COMPILE_DEBUG ("Package: " ++ show pkg)
 
   ffiContent <- loadFFIContent sourceModule
+  let foreignImports = Src._foreignImports sourceModule
+      ffiInfoMap = buildFFIInfoMap foreignImports ffiContent
   canonResult <- runCanonicalizePhase pkg ifaces ffiContent sourceModule
   case canonResult of
     Left err -> return (Left err)
@@ -127,7 +142,8 @@ compileFromSource pkg ifaces sourceModule = do
                         { compileResultModule = canonModule,
                           compileResultTypes = types,
                           compileResultInterface = iface,
-                          compileResultLocalGraph = localGraph
+                          compileResultLocalGraph = localGraph,
+                          compileResultFFIInfo = ffiInfoMap
                         }
                     )
                 )
@@ -148,6 +164,8 @@ compileModuleFull engine pkg ifaces path projectType = do
     Left err -> return (Left err)
     Right sourceModule -> do
       ffiContent <- loadFFIContent sourceModule
+      let foreignImports = Src._foreignImports sourceModule
+          ffiInfoMap = buildFFIInfoMap foreignImports ffiContent
       canonResult <- runCanonicalizePhase pkg ifaces ffiContent sourceModule
       case canonResult of
         Left err -> return (Left err)
@@ -168,7 +186,8 @@ compileModuleFull engine pkg ifaces path projectType = do
                             { compileResultModule = canonModule,
                               compileResultTypes = types,
                               compileResultInterface = iface,
-                              compileResultLocalGraph = localGraph
+                              compileResultLocalGraph = localGraph,
+                              compileResultFFIInfo = ffiInfoMap
                             }
                         )
                     )
@@ -189,6 +208,26 @@ loadFFIContent sourceModule = do
   let foreignImports = Src._foreignImports sourceModule
   Logger.debug FFI_DEBUG ("Loading FFI content for " ++ show (length foreignImports) ++ " imports")
   Canonicalize.loadFFIContent foreignImports
+
+-- | Build FFIInfo map from foreign imports and content.
+buildFFIInfoMap :: [Src.ForeignImport] -> Map String String -> Map String FFIInfo
+buildFFIInfoMap foreignImports contentMap =
+  Map.fromList (buildFFIInfoList foreignImports contentMap)
+
+-- | Build list of FFIInfo from imports and content.
+buildFFIInfoList :: [Src.ForeignImport] -> Map String String -> [(String, FFIInfo)]
+buildFFIInfoList foreignImports contentMap =
+  concatMap (buildSingleFFI contentMap) foreignImports
+
+-- | Build FFIInfo for a single import.
+buildSingleFFI :: Map String String -> Src.ForeignImport -> [(String, FFIInfo)]
+buildSingleFFI contentMap (Src.ForeignImport (FFI.JavaScriptFFI jsPath) alias _region) =
+  case Map.lookup jsPath contentMap of
+    Just content ->
+      let aliasStr = Name.toChars (A.toValue alias)
+       in [(jsPath, FFIInfo jsPath content aliasStr)]
+    Nothing -> []
+buildSingleFFI _ _ = []
 
 -- | Run canonicalize phase.
 runCanonicalizePhase ::

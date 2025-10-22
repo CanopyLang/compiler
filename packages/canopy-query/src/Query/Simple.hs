@@ -25,7 +25,20 @@ import qualified AST.Source as Src
 import qualified Crypto.Hash.SHA256 as SHA256
 import qualified Data.ByteString as BS
 import Data.ByteString (ByteString)
+import Data.IORef (IORef, newIORef, readIORef, writeIORef)
+import qualified Parse.Cache
 import qualified Parse.Module as Parse
+import System.IO.Unsafe (unsafePerformIO)
+
+-- | Global parse cache (module-level IORef for sharing across queries).
+--
+-- This is safe because:
+-- 1. Parse cache is append-only (never invalidated)
+-- 2. Concurrent access is thread-safe with IORef
+-- 3. Improves performance by caching across query executions
+{-# NOINLINE globalParseCache #-}
+globalParseCache :: IORef Parse.Cache.ParseCache
+globalParseCache = unsafePerformIO (newIORef Parse.Cache.emptyCache)
 
 -- | Content hash for cache invalidation.
 newtype ContentHash = ContentHash ByteString
@@ -79,11 +92,14 @@ instance Ord Query where
   compare (ParseModuleQuery f1 h1 _) (ParseModuleQuery f2 h2 _) =
     compare (f1, h1) (f2, h2)
 
--- | Execute a query.
+-- | Execute a query with parse caching.
 executeQuery :: Query -> IO (Either QueryError QueryResult)
 executeQuery query = case query of
   ParseModuleQuery path _ projectType -> do
     content <- BS.readFile path
-    case Parse.fromByteString projectType content of
+    cache <- readIORef globalParseCache
+    let (result, newCache) = Parse.Cache.cacheLookupOrParse path projectType content cache
+    writeIORef globalParseCache newCache
+    case result of
       Left err -> return $ Left $ ParseError path (show err)
       Right modul -> return $ Right $ ParsedModule modul

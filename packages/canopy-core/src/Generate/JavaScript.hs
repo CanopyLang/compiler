@@ -37,7 +37,6 @@ import Data.Set (Set)
 import qualified Data.Set as Set
 import qualified Data.Text as Text
 import qualified Data.Utf8 as Utf8
-import Debug.Trace (trace)
 import qualified Generate.JavaScript.Builder as JS
 import qualified Generate.JavaScript.Expression as Expr
 import qualified Generate.JavaScript.Functions as Functions
@@ -469,9 +468,14 @@ filterEssentialDeps mode deps =
 
 addGlobalHelp :: Mode.Mode -> Graph -> Opt.Global -> State -> State
 addGlobalHelp mode graph currentGlobal state =
-  if isDebugger currentGlobal && not (Mode.isDebug mode)
-    then state
-    else continueAddGlobal mode graph currentGlobal state
+  let Opt.Global globalHome _ = currentGlobal
+      pkg = ModuleName._package globalHome
+  in if isDebugger currentGlobal && not (Mode.isDebug mode)
+     then state
+     -- Skip FFI functions - they're handled by expression generation
+     else if Pkg._author pkg == Pkg._author Pkg.dummyName && Pkg._project pkg == Pkg._project Pkg.dummyName
+     then state
+     else continueAddGlobal mode graph currentGlobal state
 
 continueAddGlobal :: Mode.Mode -> Graph -> Opt.Global -> State -> State
 continueAddGlobal mode graph currentGlobal state =
@@ -485,7 +489,6 @@ continueAddGlobal mode graph currentGlobal state =
           let Opt.Global globalHome globalName = currentGlobal
               currentPkg = ModuleName._package globalHome
               moduleName = ModuleName._module globalHome
-              _ = trace ("DEBUG PACKAGE MAPPING: currentPkg=" ++ show currentPkg ++ ", module=" ++ show moduleName) ()
 
               -- Check if this is a Kernel.* module in elm/core
               isKernelModule = "Kernel." `List.isPrefixOf` Name.toChars moduleName
@@ -504,11 +507,11 @@ continueAddGlobal mode graph currentGlobal state =
 
               altGlobalHome = ModuleName.Canonical altPkg altModuleName
               altGlobal = Opt.Global altGlobalHome globalName
-              _ = trace ("DEBUG PACKAGE MAPPING: trying altPkg=" ++ show altPkg ++ ", altModule=" ++ show altModuleName) ()
           in case Map.lookup altGlobal graph of
                Just x -> x
                Nothing ->
-                 if Name.toChars moduleName == "Math"
+                 -- Check if this is an FFI module (author/project package)
+                 if Pkg._author currentPkg == Pkg._author Pkg.dummyName && Pkg._project currentPkg == Pkg._project Pkg.dummyName
                  then error "FFI function found - this should be handled by expression generation"
                  else let allKeys = Map.keys graph
                           listRelated = filter (\(Opt.Global home name) ->

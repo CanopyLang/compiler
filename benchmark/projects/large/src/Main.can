@@ -1,0 +1,267 @@
+module Main exposing (main)
+
+-- Main application module that brings together all components
+
+import Html exposing (Html, div, h1, h2, button, text, section)
+import Html.Attributes exposing (class)
+import Html.Events exposing (onClick)
+import Models.User exposing (User, Role(..))
+import Models.Post exposing (Post, Category(..))
+import Models.Comment exposing (Comment)
+import Logic.Auth as Auth
+import Logic.Validation as Validation
+import Logic.API as API
+import Utils.StringUtils as StringUtils
+import Utils.ListUtils as ListUtils
+import Utils.DateUtils as DateUtils
+import Views.UserView as UserView
+import Views.PostView as PostView
+import Views.CommentView as CommentView
+
+
+type alias Model =
+    { currentUser : Maybe User
+    , posts : List Post
+    , comments : List Comment
+    , currentTime : Int
+    , selectedCategory : Maybe Category
+    , searchQuery : String
+    , page : Page
+    }
+
+
+type Page
+    = HomePage
+    | PostPage Int
+    | UserPage Int
+    | LoginPage
+
+
+type Msg
+    = NoOp
+    | Login String String
+    | Logout
+    | SelectCategory Category
+    | SelectPage Page
+    | LoadPosts
+    | CreatePost Post
+    | LikePost Int
+    | AddComment Int String
+
+
+initialModel : Model
+initialModel =
+    { currentUser = Nothing
+    , posts = []
+    , comments = []
+    , currentTime = 0
+    , selectedCategory = Nothing
+    , searchQuery = ""
+    , page = HomePage
+    }
+
+
+update : Msg -> Model -> Model
+update msg model =
+    case msg of
+        NoOp ->
+            model
+
+        Login username password ->
+            let
+                credentials =
+                    { username = username, password = password }
+
+                user =
+                    Auth.login credentials
+            in
+            { model | currentUser = user }
+
+        Logout ->
+            { model | currentUser = Nothing }
+
+        SelectCategory category ->
+            { model | selectedCategory = Just category }
+
+        SelectPage page ->
+            { model | page = page }
+
+        LoadPosts ->
+            model
+
+        CreatePost post ->
+            case Validation.validatePost post of
+                Ok validPost ->
+                    { model | posts = validPost :: model.posts }
+
+                Err _ ->
+                    model
+
+        LikePost postId ->
+            { model
+                | posts =
+                    List.map
+                        (\post ->
+                            if post.id == postId then
+                                { post | likes = post.likes + 1 }
+
+                            else
+                                post
+                        )
+                        model.posts
+            }
+
+        AddComment postId content ->
+            let
+                baseComment =
+                    Models.Comment.defaultComment
+
+                newComment =
+                    { baseComment
+                        | postId = postId
+                        , content = content
+                    }
+            in
+            case Validation.validateComment newComment of
+                Ok validComment ->
+                    { model | comments = validComment :: model.comments }
+
+                Err _ ->
+                    model
+
+
+view : Model -> Html Msg
+view model =
+    div [ class "app" ]
+        [ viewHeader model
+        , viewContent model
+        , viewFooter
+        ]
+
+
+viewHeader : Model -> Html Msg
+viewHeader model =
+    div [ class "header" ]
+        [ h1 [] [ text "Large Test Project" ]
+        , viewNavigation
+        , viewUserStatus model.currentUser
+        ]
+
+
+viewNavigation : Html Msg
+viewNavigation =
+    div [ class "navigation" ]
+        [ button [ onClick (SelectPage HomePage) ] [ text "Home" ]
+        , button [ onClick (SelectPage LoginPage) ] [ text "Login" ]
+        ]
+
+
+viewUserStatus : Maybe User -> Html Msg
+viewUserStatus maybeUser =
+    case maybeUser of
+        Just user ->
+            div [ class "user-status" ]
+                [ text ("Logged in as: " ++ user.username)
+                , button [ onClick Logout ] [ text "Logout" ]
+                ]
+
+        Nothing ->
+            div [ class "user-status" ]
+                [ text "Not logged in" ]
+
+
+viewContent : Model -> Html Msg
+viewContent model =
+    case model.page of
+        HomePage ->
+            viewHomePage model
+
+        PostPage postId ->
+            viewPostPage model postId
+
+        UserPage userId ->
+            viewUserPage model userId
+
+        LoginPage ->
+            viewLoginPage
+
+
+viewHomePage : Model -> Html Msg
+viewHomePage model =
+    section [ class "home-page" ]
+        [ h2 [] [ text "Recent Posts" ]
+        , viewCategoryFilter model.selectedCategory
+        , PostView.viewPostList (filterPosts model)
+        ]
+
+
+viewPostPage : Model -> Int -> Html Msg
+viewPostPage model postId =
+    let
+        maybePost =
+            ListUtils.findBy (\p -> p.id == postId) model.posts
+    in
+    case maybePost of
+        Just post ->
+            section [ class "post-page" ]
+                [ PostView.viewPost model.currentTime post
+                , h2 [] [ text "Comments" ]
+                , viewCommentsForPost model postId
+                ]
+
+        Nothing ->
+            div [] [ text "Post not found" ]
+
+
+viewUserPage : Model -> Int -> Html Msg
+viewUserPage model userId =
+    section [ class "user-page" ]
+        [ text "User profile would be here" ]
+
+
+viewLoginPage : Html Msg
+viewLoginPage =
+    section [ class "login-page" ]
+        [ h2 [] [ text "Login" ]
+        , text "Login form would be here"
+        ]
+
+
+viewCategoryFilter : Maybe Category -> Html Msg
+viewCategoryFilter selectedCategory =
+    div [ class "category-filter" ]
+        [ button [ onClick (SelectCategory Technology) ] [ text "Technology" ]
+        , button [ onClick (SelectCategory Science) ] [ text "Science" ]
+        , button [ onClick (SelectCategory Arts) ] [ text "Arts" ]
+        , button [ onClick (SelectCategory Sports) ] [ text "Sports" ]
+        ]
+
+
+viewCommentsForPost : Model -> Int -> Html Msg
+viewCommentsForPost model postId =
+    let
+        postComments =
+            List.filter (\c -> c.postId == postId) model.comments
+    in
+    CommentView.viewCommentList model.currentTime postComments
+
+
+viewFooter : Html Msg
+viewFooter =
+    div [ class "footer" ]
+        [ text "Large Canopy Test Project - 2024" ]
+
+
+filterPosts : Model -> List Post
+filterPosts model =
+    case model.selectedCategory of
+        Just category ->
+            List.filter (\p -> p.category == category) model.posts
+
+        Nothing ->
+            model.posts
+
+
+main : Html Msg
+main =
+    view initialModel

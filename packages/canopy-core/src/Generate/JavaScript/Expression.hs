@@ -65,18 +65,18 @@ generate mode expression =
     Opt.VarLocal name ->
       JsExpr $ JS.Ref (JsName.fromLocal name)
     Opt.VarGlobal (Opt.Global home name) ->
-      -- Check if this is an FFI function (Math module - simple check)
-      case ModuleName._module home of
-        moduleName | Name.toChars moduleName == "Math" ->
-          -- This is an FFI function - generate direct JavaScript access
-          -- Create JavaScript: Math.add, Math.multiply, etc.
-          let moduleStr = Name.toChars moduleName
-              nameStr = Name.toChars name
-              jsName = Name.fromChars (moduleStr ++ "." ++ nameStr)
-          in JsExpr $ JS.Ref (JsName.fromLocal jsName)
-        _ ->
-          -- Regular global function
-          JsExpr $ JS.Ref (JsName.fromGlobal home name)
+      -- Check if this is an FFI module (identified by author/project package)
+      let pkg = ModuleName._package home
+          moduleName = ModuleName._module home
+      in if Pkg._author pkg == Pkg._author Pkg.dummyName && Pkg._project pkg == Pkg._project Pkg.dummyName
+         then -- This is an FFI function - generate direct JavaScript access
+              -- Create JavaScript: Math.add, AudioFFI.createContext, etc.
+              let moduleStr = Name.toChars moduleName
+                  nameStr = Name.toChars name
+                  jsName = Name.fromChars (moduleStr ++ "." ++ nameStr)
+              in JsExpr $ JS.Ref (JsName.fromLocal jsName)
+         else -- Regular global function
+              JsExpr $ JS.Ref (JsName.fromGlobal home name)
     Opt.VarEnum (Opt.Global home name) index ->
       case mode of
         Mode.Dev _ _ ->

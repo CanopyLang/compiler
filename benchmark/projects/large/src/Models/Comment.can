@@ -1,0 +1,47 @@
+module Models.Comment exposing (Comment, defaultComment, canDelete, isEdited)
+
+-- Comment model and related functions
+
+
+type alias Comment =
+    { id : Int
+    , postId : Int
+    , authorId : Int
+    , content : String
+    , parentId : Maybe Int
+    , likes : Int
+    , dislikes : Int
+    , flagged : Bool
+    , createdAt : Int
+    , updatedAt : Maybe Int
+    }
+
+
+defaultComment : Comment
+defaultComment =
+    { id = 0
+    , postId = 0
+    , authorId = 0
+    , content = ""
+    , parentId = Nothing
+    , likes = 0
+    , dislikes = 0
+    , flagged = False
+    , createdAt = 0
+    , updatedAt = Nothing
+    }
+
+
+canDelete : Int -> Comment -> Bool
+canDelete userId comment =
+    comment.authorId == userId
+
+
+isEdited : Comment -> Bool
+isEdited comment =
+    comment.updatedAt /= Nothing
+
+
+isReply : Comment -> Bool
+isReply comment =
+    comment.parentId /= Nothing

@@ -72,6 +72,12 @@ data Error
   | TupleLargerThanThree A.Region
   | TypeVarsUnboundInUnion A.Region Name.Name [Name.Name] (Name.Name, A.Region) [(Name.Name, A.Region)]
   | TypeVarsMessedUpInAlias A.Region Name.Name [Name.Name] [(Name.Name, A.Region)] [(Name.Name, A.Region)]
+  | FFIFileNotFound A.Region FilePath
+  | FFIFileTimeout A.Region FilePath Int
+  | FFIParseError A.Region FilePath String
+  | FFIInvalidType A.Region FilePath Name.Name String
+  | FFIMissingAnnotation A.Region FilePath Name.Name
+  | FFICircularDependency A.Region FilePath [FilePath]
   deriving (Show)
 
 data BadArityContext

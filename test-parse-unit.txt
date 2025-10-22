@@ -1,0 +1,24 @@
+Type string: "OscillatorNode -> Float -> ()"
+Tokenized: ["OscillatorNode", "->", "Float", "->", "()"]
+
+After tokenizeCanopyType:
+  Split by "->": ["OscillatorNode ", " Float ", " ()"]
+  Stripped: ["OscillatorNode", "Float", "()"]
+  With arrows: ["OscillatorNode", "->", "Float", "->", "()"]
+
+parseTypeTokensWithHome processes:
+  tokens = ["OscillatorNode", "->", "Float", "->", "()"]
+  Matches: (t1 : "->" : rest)
+    t1 = "OscillatorNode"
+    rest = ["Float", "->", "()"]
+  Recursively parse rest:
+    tokens = ["Float", "->", "()"]
+    Matches: (t1 : "->" : rest)
+      t1 = "Float"
+      rest = ["()"]
+    Recursively parse rest:
+      tokens = ["()"]
+      Matches: [typeName]
+      parseBasicTypeWithHome homeModuleName "()"
+      Before fix: Can.TType ModuleName.basics (Name.fromChars "Unit") []
+      After fix: Can.TUnit

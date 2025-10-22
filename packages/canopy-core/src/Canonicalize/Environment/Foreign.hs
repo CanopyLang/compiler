@@ -18,7 +18,6 @@ import qualified Data.List as List
 import qualified Data.Map.Strict as Map
 import qualified Data.Maybe
 import qualified Data.Name as Name
-import Debug.Trace (trace)
 import qualified Reporting.Annotation as A
 import qualified Reporting.Error.Canonicalize as Error
 import qualified Reporting.Result as Result
@@ -74,10 +73,7 @@ isNormal (Src.Import (A.At _ name) maybeAlias _) =
     || ( case maybeAlias of
            Nothing -> False
            Just alias ->
-             let nameStr = Name.toChars name
-                 aliasStr = Name.toChars alias
-             in trace ("KERNEL_IMPORT_DEBUG: Kernel import '" ++ nameStr ++ "' with alias '" ++ aliasStr ++ "' - this is not allowed") $
-                error "kernel imports cannot use `as`"
+             error "kernel imports cannot use `as`"
        )
 
 -- ADD IMPORTS
@@ -89,7 +85,7 @@ addImport ifaces state@(State vs ts cs bs qvs qts qcs) (Src.Import (A.At _ name)
     then Result.ok state  -- Kernel imports don't need interface resolution
     else case Map.lookup name ifaces of
       Nothing ->
-        -- Handle missing interface (e.g., FFI modules not in interface map)
+        -- Missing interface - module not found
         Result.throw (Error.ImportNotFound A.one (Name.fromChars (ModuleName.toChars name)) [])
       Just (I.Interface pkg defs unions aliases binops) ->
         let !prefix = Data.Maybe.fromMaybe name maybeAlias
@@ -101,7 +97,7 @@ addImport ifaces state@(State vs ts cs bs qvs qts qcs) (Src.Import (A.At _ name)
                 (Map.mapMaybeWithKey (unionToType home) unions)
                 (Map.mapMaybeWithKey (aliasToType home) aliases)
 
-            !vars = trace ("DEBUG interface defs for " ++ show name ++ ": " ++ show (Map.keys defs)) (Map.map (Env.Specific home) defs)
+            !vars = Map.map (Env.Specific home) defs
             !types = Map.map (Env.Specific home . fst) rawTypeInfo
             !ctors = Map.foldr (addExposed . snd) Map.empty rawTypeInfo
 

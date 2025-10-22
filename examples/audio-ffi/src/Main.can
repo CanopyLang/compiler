@@ -5,7 +5,7 @@ module Main exposing (main)
 This application demonstrates the complete Canopy Foreign Function Interface (FFI) system
 for Web Audio API integration, showcasing both:
 
-- **Type-safe Task-based interface**: Production-ready with proper capability handling
+- **Type-safe Result-based interface**: Production-ready with proper capability handling
 - **Simplified string interface**: Easy-to-use functions for quick prototyping
 
 ## 🎵 COMPLETE FEATURES DEMONSTRATED:
@@ -14,7 +14,7 @@ for Web Audio API integration, showcasing both:
 - Basic function binding and type conversion testing
 - Web Audio API availability detection
 
-### Type-Safe Audio Operations (Task-based)
+### Type-Safe Audio Operations (Result-based)
 - User activation requirement enforcement
 - AudioContext lifecycle management with Initialized wrapper
 - Type-safe audio node creation (OscillatorNode, GainNode)
@@ -37,7 +37,7 @@ for Web Audio API integration, showcasing both:
 ```
 User Interaction → Elm Architecture → AudioFFI.can → external/audio.js → Web Audio API
         ↑                ↑                ↑                ↑
-   UI Events        Task/Cmd        Capabilities      Native Browser
+   UI Events         Result          Capabilities      Native Browser
 ```
 
 This proves Canopy can build production-ready, type-safe web applications with complex browser APIs.
@@ -49,7 +49,7 @@ import Browser
 import Html exposing (Html)
 import Html.Attributes as Attr
 import Html.Events as Events
-import Task
+import Result exposing (Result(..))
 import AudioFFI
 import Capability exposing (UserActivated(..), Initialized(..), CapabilityError(..))
 
@@ -126,14 +126,6 @@ type Msg
     | CreateAudioNodesTypeSafe
     | PlayAudioTypeSafe
     | StopAudioTypeSafe
-
-    -- System Events (Task Results)
-    | AudioContextCreated (Result CapabilityError (Initialized AudioFFI.AudioContext))
-    | OscillatorCreated (Result CapabilityError AudioFFI.OscillatorNode)
-    | GainNodeCreated (Result CapabilityError AudioFFI.GainNode)
-    | NodesConnected (Result CapabilityError ())
-    | AudioStarted (Result CapabilityError ())
-    | AudioStopped (Result CapabilityError ())
 
 -- ============================================================================
 -- UPDATE (State Management and Side Effects)
@@ -240,33 +232,97 @@ update msg model =
 
         -- Type-Safe Interface Operations
         InitializeAudioTypeSafe ->
-            ( { model | status = "Creating AudioContext with user activation..." }
-            , Task.attempt AudioContextCreated (AudioFFI.createAudioContext Click)
-            )
+            case AudioFFI.createAudioContext Click of
+                AudioFFI.Ok initializedContext ->
+                    ( { model
+                      | audioContext = Just initializedContext
+                      , status = "✅ AudioContext created successfully"
+                      , operationLog = "AudioContext initialized" :: model.operationLog
+                      , lastError = Nothing
+                      }
+                    , Cmd.none
+                    )
+                AudioFFI.Err error ->
+                    ( { model
+                      | status = "❌ AudioContext creation failed: " ++ capabilityErrorString error
+                      , lastError = Just (capabilityErrorString error)
+                      , operationLog = ("AudioContext error: " ++ capabilityErrorString error) :: model.operationLog
+                      }
+                    , Cmd.none
+                    )
 
         CreateAudioNodesTypeSafe ->
             case model.audioContext of
                 Just initializedContext ->
-                    ( { model | status = "Creating audio nodes..." }
-                    , Cmd.batch
-                        [ Task.attempt OscillatorCreated (AudioFFI.createOscillator initializedContext model.frequency model.waveform)
-                        , Task.attempt GainNodeCreated (AudioFFI.createGainNode initializedContext (model.volume / 100.0))
-                        ]
-                    )
+                    case (AudioFFI.createOscillator initializedContext model.frequency model.waveform, AudioFFI.createGainNode initializedContext (model.volume / 100.0)) of
+                        (AudioFFI.Ok oscillator, AudioFFI.Ok gainNode) ->
+                            case (AudioFFI.connectNodes oscillator gainNode, AudioFFI.connectToDestination gainNode initializedContext) of
+                                (AudioFFI.Ok _, AudioFFI.Ok _) ->
+                                    ( { model
+                                      | currentOscillator = Just oscillator
+                                      , currentGainNode = Just gainNode
+                                      , status = "✅ Audio nodes created and connected - ready to play"
+                                      , operationLog = "Audio graph connected" :: "GainNode created" :: "OscillatorNode created" :: model.operationLog
+                                      , lastError = Nothing
+                                      }
+                                    , Cmd.none
+                                    )
+                                (AudioFFI.Err error, _) ->
+                                    ( { model
+                                      | status = "❌ Node connection failed: " ++ capabilityErrorString error
+                                      , lastError = Just (capabilityErrorString error)
+                                      }
+                                    , Cmd.none
+                                    )
+                                (_, AudioFFI.Err error) ->
+                                    ( { model
+                                      | status = "❌ Destination connection failed: " ++ capabilityErrorString error
+                                      , lastError = Just (capabilityErrorString error)
+                                      }
+                                    , Cmd.none
+                                    )
+                        (AudioFFI.Err error, _) ->
+                            ( { model
+                              | status = "❌ Oscillator creation failed: " ++ capabilityErrorString error
+                              , lastError = Just (capabilityErrorString error)
+                              }
+                            , Cmd.none
+                            )
+                        (_, AudioFFI.Err error) ->
+                            ( { model
+                              | status = "❌ Gain node creation failed: " ++ capabilityErrorString error
+                              , lastError = Just (capabilityErrorString error)
+                              }
+                            , Cmd.none
+                            )
                 Nothing ->
                     ( { model | status = "Error: No AudioContext available", lastError = Just "AudioContext must be created first" }
                     , Cmd.none
                     )
 
         PlayAudioTypeSafe ->
-            case (model.currentOscillator, model.currentGainNode, model.audioContext) of
-                (Just oscillator, Just gainNode, Just audioContext) ->
+            case (model.currentOscillator, model.audioContext) of
+                (Just oscillator, Just audioContext) ->
                     let
                         currentTime = AudioFFI.getCurrentTime audioContext
                     in
-                    ( { model | status = "Starting audio playback..." }
-                    , Task.attempt AudioStarted (AudioFFI.startOscillator oscillator currentTime)
-                    )
+                    case AudioFFI.startOscillator oscillator currentTime of
+                        AudioFFI.Ok _ ->
+                            ( { model
+                              | status = "🔊 Audio playing with type-safe interface!"
+                              , isPlaying = True
+                              , operationLog = "Audio playback started" :: model.operationLog
+                              , lastError = Nothing
+                              }
+                            , Cmd.none
+                            )
+                        AudioFFI.Err error ->
+                            ( { model
+                              | status = "❌ Audio start failed: " ++ capabilityErrorString error
+                              , lastError = Just (capabilityErrorString error)
+                              }
+                            , Cmd.none
+                            )
                 _ ->
                     ( { model | status = "Error: Audio nodes not ready", lastError = Just "Create audio nodes first" }
                     , Cmd.none
@@ -278,130 +334,29 @@ update msg model =
                     let
                         currentTime = AudioFFI.getCurrentTime audioContext
                     in
-                    ( { model | status = "Stopping audio..." }
-                    , Task.attempt AudioStopped (AudioFFI.stopOscillator oscillator currentTime)
-                    )
+                    case AudioFFI.stopOscillator oscillator currentTime of
+                        AudioFFI.Ok _ ->
+                            ( { model
+                              | status = "⏹️ Audio stopped"
+                              , isPlaying = False
+                              , currentOscillator = Nothing
+                              , operationLog = "Audio playback stopped" :: model.operationLog
+                              , lastError = Nothing
+                              }
+                            , Cmd.none
+                            )
+                        AudioFFI.Err error ->
+                            ( { model
+                              | status = "❌ Audio stop failed: " ++ capabilityErrorString error
+                              , lastError = Just (capabilityErrorString error)
+                              }
+                            , Cmd.none
+                            )
                 _ ->
                     ( { model | status = "No audio to stop" }
                     , Cmd.none
                     )
 
-        -- Task Result Handlers
-        AudioContextCreated (Ok initializedContext) ->
-            ( { model
-              | audioContext = Just initializedContext
-              , status = "✅ AudioContext created successfully"
-              , operationLog = "AudioContext initialized" :: model.operationLog
-              , lastError = Nothing
-              }
-            , Cmd.none
-            )
-
-        AudioContextCreated (Err error) ->
-            ( { model
-              | status = "❌ AudioContext creation failed: " ++ capabilityErrorString error
-              , lastError = Just (capabilityErrorString error)
-              , operationLog = ("AudioContext error: " ++ capabilityErrorString error) :: model.operationLog
-              }
-            , Cmd.none
-            )
-
-        OscillatorCreated (Ok oscillator) ->
-            ( { model
-              | currentOscillator = Just oscillator
-              , status = "✅ Oscillator node created"
-              , operationLog = "OscillatorNode created" :: model.operationLog
-              }
-            , Cmd.none
-            )
-
-        OscillatorCreated (Err error) ->
-            ( { model
-              | status = "❌ Oscillator creation failed: " ++ capabilityErrorString error
-              , lastError = Just (capabilityErrorString error)
-              }
-            , Cmd.none
-            )
-
-        GainNodeCreated (Ok gainNode) ->
-            ( { model
-              | currentGainNode = Just gainNode
-              , status = "✅ Gain node created"
-              , operationLog = "GainNode created" :: model.operationLog
-              }
-            , connectAudioNodes gainNode model
-            )
-
-        GainNodeCreated (Err error) ->
-            ( { model
-              | status = "❌ Gain node creation failed: " ++ capabilityErrorString error
-              , lastError = Just (capabilityErrorString error)
-              }
-            , Cmd.none
-            )
-
-        NodesConnected (Ok _) ->
-            ( { model
-              | status = "✅ Audio nodes connected - ready to play"
-              , operationLog = "Audio graph connected" :: model.operationLog
-              }
-            , Cmd.none
-            )
-
-        NodesConnected (Err error) ->
-            ( { model
-              | status = "❌ Node connection failed: " ++ capabilityErrorString error
-              , lastError = Just (capabilityErrorString error)
-              }
-            , Cmd.none
-            )
-
-        AudioStarted (Ok _) ->
-            ( { model
-              | status = "🔊 Audio playing with type-safe interface!"
-              , isPlaying = True
-              , operationLog = "Audio playback started" :: model.operationLog
-              }
-            , Cmd.none
-            )
-
-        AudioStarted (Err error) ->
-            ( { model
-              | status = "❌ Audio start failed: " ++ capabilityErrorString error
-              , lastError = Just (capabilityErrorString error)
-              }
-            , Cmd.none
-            )
-
-        AudioStopped (Ok _) ->
-            ( { model
-              | status = "⏹️ Audio stopped"
-              , isPlaying = False
-              , currentOscillator = Nothing  -- Oscillators can't be reused after stopping
-              , operationLog = "Audio playback stopped" :: model.operationLog
-              }
-            , Cmd.none
-            )
-
-        AudioStopped (Err error) ->
-            ( { model
-              | status = "❌ Audio stop failed: " ++ capabilityErrorString error
-              , lastError = Just (capabilityErrorString error)
-              }
-            , Cmd.none
-            )
-
--- Helper function to connect audio nodes after both are created
-connectAudioNodes : AudioFFI.GainNode -> Model -> Cmd Msg
-connectAudioNodes gainNode model =
-    case (model.currentOscillator, model.audioContext) of
-        (Just oscillator, Just audioContext) ->
-            Cmd.batch
-                [ Task.attempt NodesConnected (AudioFFI.connectNodes oscillator gainNode)
-                , Task.attempt NodesConnected (AudioFFI.connectToDestination gainNode audioContext)
-                ]
-        _ ->
-            Cmd.none
 
 -- ============================================================================
 -- VIEW (User Interface)
@@ -432,7 +387,7 @@ view model =
                 , Attr.style "margin-bottom" "30px"
                 , Attr.style "opacity" "0.9"
                 ]
-                [ Html.text "Demonstrates both type-safe Task-based and simplified string-based FFI interfaces" ]
+                [ Html.text "Demonstrates both type-safe Result-based and simplified string-based FFI interfaces" ]
             ]
 
         -- Demo Mode Selection
@@ -559,12 +514,12 @@ typeSafeInterfaceDemo model =
         , Attr.style "border-radius" "10px"
         , Attr.style "margin-bottom" "20px"
         ]
-        [ Html.h3 [] [ Html.text "🛡️ Type-Safe Task-Based Interface" ]
+        [ Html.h3 [] [ Html.text "🛡️ Type-Safe Result-Based Interface" ]
         , Html.p
             [ Attr.style "margin-bottom" "20px"
             , Attr.style "opacity" "0.9"
             ]
-            [ Html.text "Production-ready interface with proper Task types, capability constraints, and error handling." ]
+            [ Html.text "Production-ready interface with proper Result types, capability constraints, and error handling." ]
 
         -- Step-by-step interface
         , Html.div []
@@ -623,7 +578,7 @@ comparisonModeDemo model =
                 ]
                 [ Html.h3 [] [ Html.text "🛡️ Type-Safe Interface" ]
                 , Html.p [ Attr.style "font-size" "14px", Attr.style "opacity" "0.8" ]
-                    [ Html.text "Task-based, production-ready" ]
+                    [ Html.text "Result-based, production-ready" ]
                 , controlButton "Initialize & Play (Safe)" InitializeAudioTypeSafe False
                 ]
             ]
@@ -813,10 +768,10 @@ advancedInfoSection model =
             , Attr.style "font-size" "11px"
             , Attr.style "overflow-x" "auto"
             ]
-            [ Html.text """createAudioContext : UserActivated -> Task CapabilityError (Initialized AudioContext)
-createOscillator : Initialized AudioContext -> Float -> String -> Task CapabilityError OscillatorNode
-connectNodes : a -> b -> Task CapabilityError ()
-startOscillator : OscillatorNode -> Float -> Task CapabilityError ()""" ]
+            [ Html.text """createAudioContext : UserActivated -> Result CapabilityError (Initialized AudioContext)
+createOscillator : Initialized AudioContext -> Float -> String -> Result CapabilityError OscillatorNode
+connectNodes : a -> b -> Result CapabilityError Int
+startOscillator : OscillatorNode -> Float -> Result CapabilityError Int""" ]
 
         , Html.h4 [] [ Html.text "Current State:" ]
         , Html.ul []

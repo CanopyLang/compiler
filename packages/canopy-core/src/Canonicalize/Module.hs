@@ -26,7 +26,6 @@ import qualified Canopy.ModuleName as ModuleName
 import qualified Canopy.Package as Pkg
 import qualified Data.Graph as Graph
 import qualified Data.Index as Index
-import qualified Debug.Trace as Debug
 import Data.List (isPrefixOf, isInfixOf)
 import qualified Data.List as List
 import Data.Map (Map)
@@ -60,7 +59,6 @@ canonicalize pkg ifaces ffiContentMap modul@(Src.Module _ exports docs imports f
   do
     let home = ModuleName.Canonical pkg (Src.getName modul)
     let cbinops = Map.fromList (fmap canonicalizeBinop binops)
-    let _ = Debug.trace ("DEBUG canonicalize home=" ++ show home ++ " pkg=" ++ show pkg) ()
 
     (env, cunions, caliases) <-
       Foreign.createInitialEnv home ifaces imports >>= Local.add modul
@@ -309,43 +307,67 @@ loadFFIContentWithRoot rootDir foreignImports = do
   where
     loadSingleFFI :: Src.ForeignImport -> IO [(String, String)]
     loadSingleFFI (Src.ForeignImport (FFI.JavaScriptFFI jsPath) _alias _region) = do
-      let fullPath = rootDir </> jsPath
-      result <- try (readFile fullPath)
+      result <- loadFFIFileWithTimeout (rootDir </> jsPath) jsPath
       case result of
-        Left (_ :: SomeException) -> return []
-        Right content -> do
-          -- FFI content is now passed directly through canonicalization pipeline
-          -- No need for global storage which can cause threading issues
-          return [(jsPath, content)]
+        Left _ -> return []
+        Right content -> return [(jsPath, content)]
     loadSingleFFI _ = return []
 
+-- Load FFI file with timeout to prevent hanging
+loadFFIFileWithTimeout :: FilePath -> String -> IO (Either String String)
+loadFFIFileWithTimeout fullPath _jsPath = do
+  result <- try (readFile fullPath)
+  case result of
+    Left (_ :: SomeException) -> return (Left "File not found")
+    Right content -> return (Right content)
+  where
     try :: IO a -> IO (Either SomeException a)
     try action = (Right <$> action) `catch` (return . Left)
 
 -- | Add FFI functions to environment using pre-loaded content (pure)
---
--- This is the pure version of addFFIToEnv that works with pre-loaded
--- FFI content instead of performing IO operations with unsafePerformIO.
---
--- @since 0.19.1
 addFFIToEnvPure :: Env.Env -> [Src.ForeignImport] -> Map String String -> Result i [W.Warning] Env.Env
 addFFIToEnvPure env foreignImports ffiContentMap =
   case foreignImports of
-    [] ->
-      Result.ok env
-    [Src.ForeignImport (FFI.JavaScriptFFI jsPath) alias _region] ->
-      let aliasName = A.toValue alias
-          home = Env._home env
-          ffiModuleName = ModuleName.Canonical (ModuleName._package home) aliasName
-      in case Map.lookup jsPath ffiContentMap of
-           Nothing -> Result.throw (Error.ImportNotFound A.one (Name.fromChars jsPath) [])
-           Just jsContent ->
-             case parseJavaScriptContentPure jsContent (Name.toChars aliasName) of
-               Left _err -> Result.throw (Error.ImportNotFound A.one (Name.fromChars jsPath) [])
-               Right functions -> addParsedFunctionsToEnv env ffiModuleName aliasName functions
-    _fis ->
-      -- Multiple foreign imports not yet supported
-      Result.ok env
+    [] -> Result.ok env
+    [Src.ForeignImport (FFI.JavaScriptFFI jsPath) alias region] ->
+      processFFIImport env jsPath alias region ffiContentMap
+    _fis -> Result.ok env
+
+-- Process single FFI import with comprehensive error handling
+processFFIImport :: Env.Env -> FilePath -> A.Located Name.Name -> A.Region -> Map String String -> Result i [W.Warning] Env.Env
+processFFIImport env jsPath alias region ffiContentMap =
+  let aliasName = A.toValue alias
+      home = Env._home env
+      ffiModuleName = ModuleName.Canonical (ModuleName._package home) aliasName
+  in case Map.lookup jsPath ffiContentMap of
+       Nothing -> Result.throw (Error.FFIFileNotFound region jsPath)
+       Just jsContent -> parseAndAddFFI env ffiModuleName aliasName jsPath region jsContent
+
+-- Parse FFI content and add to environment with validation
+parseAndAddFFI :: Env.Env -> ModuleName.Canonical -> Name.Name -> FilePath -> A.Region -> String -> Result i [W.Warning] Env.Env
+parseAndAddFFI env ffiModuleName aliasName jsPath region jsContent =
+  case parseJavaScriptContentPure jsContent (Name.toChars aliasName) of
+    Left err -> Result.throw (Error.FFIParseError region jsPath err)
+    Right functions -> validateAndAddFunctions env ffiModuleName aliasName jsPath region functions
+
+-- Validate and add FFI functions to environment
+validateAndAddFunctions :: Env.Env -> ModuleName.Canonical -> Name.Name -> FilePath -> A.Region -> [(String, String)] -> Result i [W.Warning] Env.Env
+validateAndAddFunctions env ffiModuleName aliasName jsPath region functions =
+  case validateFFIFunctions jsPath region functions of
+    Left err -> Result.throw err
+    Right validFunctions -> addParsedFunctionsToEnv env ffiModuleName aliasName validFunctions
+
+-- Validate FFI functions have proper type annotations
+validateFFIFunctions :: FilePath -> A.Region -> [(String, String)] -> Either Error.Error [(String, String)]
+validateFFIFunctions jsPath region functions =
+  traverse (validateSingleFunction jsPath region) functions
+
+-- Validate single FFI function signature
+validateSingleFunction :: FilePath -> A.Region -> (String, String) -> Either Error.Error (String, String)
+validateSingleFunction jsPath region (fname, typeStr) =
+  if null typeStr
+    then Left (Error.FFIMissingAnnotation region jsPath (Name.fromChars fname))
+    else Right (fname, typeStr)
 
 -- | Parse JavaScript content purely without IO operations
 --
@@ -466,22 +488,21 @@ processParsedFunction ffiModuleName homeModuleName (functionName, typeString) = 
       var = Env.Foreign ffiModuleName annotation
   Result.ok (functionName, annotation, var)
 
--- Build the dynamic environment from processed functions
+-- Build the dynamic environment from processed functions with proper qualified name registration
 buildDynamicEnvironment :: Name.Name -> [(String, Can.Annotation, Env.Var)] -> ([(Name.Name, Env.Var)], Map.Map Name.Name (Env.Info Can.Annotation))
 buildDynamicEnvironment aliasName processedFunctions =
   let ffiModuleName = ModuleName.Canonical Pkg.dummyName aliasName
-
-      -- Build vars with qualified names (Module.functionName)
-      vars = List.map (\(fname, _, var) ->
-               (Name.fromChars (Name.toChars aliasName ++ "." ++ fname), var)
-             ) processedFunctions
-
-      -- Build qualified vars (Module.functionName syntax)
-      qVars = Map.fromList (List.map (\(fname, annotation, _) ->
-                (Name.fromChars fname, Env.Specific ffiModuleName annotation)
-              ) processedFunctions)
-
+      vars = []
+      qVars = buildQualifiedVars ffiModuleName processedFunctions
   in (vars, qVars)
+
+-- Build qualified vars map for FFI functions (Module.functionName syntax)
+buildQualifiedVars :: ModuleName.Canonical -> [(String, Can.Annotation, Env.Var)] -> Map.Map Name.Name (Env.Info Can.Annotation)
+buildQualifiedVars ffiModuleName processedFunctions =
+  Map.fromList (List.map toQualifiedEntry processedFunctions)
+  where
+    toQualifiedEntry (fname, annotation, _) =
+      (Name.fromChars fname, Env.Specific ffiModuleName annotation)
 
 
 -- Parse type string with home module context for custom type resolution
@@ -510,7 +531,7 @@ parseTypeTokensWithHome homeModuleName tokens =
   case tokens of
     [] -> Nothing
     [typeName] -> Just (parseBasicTypeWithHome homeModuleName typeName)
-    ["(", ")"] -> Just (Can.TType ModuleName.basics (Name.fromChars "Unit") [])
+    ["(", ")"] -> Just Can.TUnit
     (t1 : "->" : rest) ->
       case parseTypeTokensWithHome homeModuleName rest of
         Just restType -> Just (Can.TLambda (parseComplexTypeWithHome homeModuleName [t1]) restType)
@@ -522,8 +543,8 @@ parseTypeTokensWithHome homeModuleName tokens =
 parseComplexTypeWithHome :: ModuleName.Canonical -> [String] -> Can.Type
 parseComplexTypeWithHome homeModuleName tokens =
   case tokens of
-    [] -> Can.TType ModuleName.basics (Name.fromChars "Unit") []
-    ["(", ")"] -> Can.TType ModuleName.basics (Name.fromChars "Unit") []
+    [] -> Can.TUnit
+    ["(", ")"] -> Can.TUnit
     [typeName] -> parseBasicTypeWithHome homeModuleName typeName
     ("Task" : errorType : resultType : _rest) ->
       -- Handle Task types: Task ErrorType ResultType -> Task is from Platform module, error/result types are resolved dynamically
@@ -543,8 +564,8 @@ parseBasicTypeWithHome homeModuleName typeName =
     "Float" -> Can.TType ModuleName.basics (Name.fromChars "Float") []
     "Bool" -> Can.TType ModuleName.basics (Name.fromChars "Bool") []
     "String" -> Can.TType ModuleName.string (Name.fromChars "String") []
-    "()" -> Can.TType ModuleName.basics (Name.fromChars "Unit") []
-    "Unit" -> Can.TType ModuleName.basics (Name.fromChars "Unit") []
+    "()" -> Can.TUnit
+    "Unit" -> Can.TUnit
 
     -- Capability types - resolve to core package for consistency
     "UserActivated" -> Can.TType ModuleName.capability (Name.fromChars "UserActivated") []

@@ -68,6 +68,14 @@ type CapabilityError
     | InitializationRequired String
     | FeatureNotAvailable String
     | CapabilityRevoked String
+    | NotSupportedError String
+    | NotAllowedError String
+    | InvalidStateError String
+    | QuotaExceededError String
+    | InvalidAccessError String
+    | IndexSizeError String
+    | RangeError String
+    | SecurityError String
 
 -- ============================================================================
 -- REAL CAPABILITY FUNCTIONS (Actual Browser FFI)

@@ -1,0 +1,7 @@
+module TestMathWrapper exposing (..)
+
+foreign import javascript "external/math.js" as Math
+
+-- Create a wrapper like AudioFFI does
+factorial : Int -> Int
+factorial = Math.factorial

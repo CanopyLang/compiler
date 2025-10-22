@@ -1,0 +1,38 @@
+module Views.CommentView exposing (viewComment, viewCommentList)
+
+-- Comment view components
+
+import Html exposing (Html, div, p, text, ul, li, button, span)
+import Html.Attributes exposing (class)
+import Models.Comment exposing (Comment)
+import Utils.DateUtils as DateUtils
+
+
+viewComment : Int -> Comment -> Html msg
+viewComment currentTime comment =
+    div [ class "comment" ]
+        [ p [] [ text comment.content ]
+        , div [ class "comment-meta" ]
+            [ span [] [ text (DateUtils.timeAgo currentTime comment.createdAt) ]
+            , viewLikes comment.likes comment.dislikes
+            , if Models.Comment.isEdited comment then
+                span [ class "edited" ] [ text "(edited)" ]
+
+              else
+                text ""
+            ]
+        ]
+
+
+viewCommentList : Int -> List Comment -> Html msg
+viewCommentList currentTime comments =
+    div [ class "comment-list" ]
+        [ div [] (List.map (viewComment currentTime) comments) ]
+
+
+viewLikes : Int -> Int -> Html msg
+viewLikes likes dislikes =
+    div [ class "comment-likes" ]
+        [ span [] [ text (String.fromInt likes ++ " likes") ]
+        , span [] [ text (String.fromInt dislikes ++ " dislikes") ]
+        ]

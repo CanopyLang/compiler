@@ -1,0 +1,20 @@
+module TestCapability exposing (main)
+
+import Capability exposing (UserActivated(..), CapabilityError(..))
+
+main : String
+main = 
+    case checkActivation Click of
+        UserActivationRequired msg -> "Need activation: " ++ msg
+        PermissionRequired msg -> "Need permission: " ++ msg
+        _ -> "Other error"
+
+checkActivation : UserActivated -> CapabilityError
+checkActivation userAct =
+    case userAct of
+        Click -> UserActivationRequired "Click detected"
+        Keypress -> UserActivationRequired "Keypress detected"
+        Touch -> UserActivationRequired "Touch detected"
+        Drag -> UserActivationRequired "Drag detected"
+        Focus -> UserActivationRequired "Focus detected"
+        Transient -> UserActivationRequired "Transient detected"

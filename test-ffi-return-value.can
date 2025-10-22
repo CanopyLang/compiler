@@ -1,0 +1,20 @@
+module TestFFIReturn exposing (testExplicitReturn, testImplicitReturn, testUseValue)
+
+foreign import javascript "test-ffi-return-value.js" as TestFFI
+
+-- Test: What does JavaScript actually return?
+testExplicitReturn : Int -> ()
+testExplicitReturn x =
+    TestFFI.explicitReturnZero x
+
+testImplicitReturn : Int -> ()
+testImplicitReturn x =
+    TestFFI.implicitReturn x
+
+-- Try to use the return value
+testUseValue : Int -> ()
+testUseValue x =
+    let
+        result = TestFFI.explicitReturnZero x
+    in
+    result

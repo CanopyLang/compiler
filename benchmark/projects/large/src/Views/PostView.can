@@ -1,0 +1,67 @@
+module Views.PostView exposing (viewPost, viewPostCard, viewPostList)
+
+-- Post view components
+
+import Html exposing (Html, div, h1, h2, h3, p, text, ul, li, article, span, button)
+import Html.Attributes exposing (class)
+import Models.Post exposing (Post, Category(..))
+import Utils.StringUtils as StringUtils
+import Utils.DateUtils as DateUtils
+
+
+viewPost : Int -> Post -> Html msg
+viewPost currentTime post =
+    article [ class "post" ]
+        [ h1 [] [ text post.title ]
+        , div [ class "post-meta" ]
+            [ viewCategory post.category
+            , span [] [ text (DateUtils.timeAgo currentTime post.createdAt) ]
+            , span [] [ text (String.fromInt post.views ++ " views") ]
+            ]
+        , div [ class "post-content" ]
+            [ p [] [ text post.content ] ]
+        , div [ class "post-stats" ]
+            [ span [] [ text (String.fromInt post.likes ++ " likes") ]
+            , span [] [ text (String.fromInt post.comments ++ " comments") ]
+            ]
+        , viewTags post.tags
+        ]
+
+
+viewPostCard : Post -> Html msg
+viewPostCard post =
+    div [ class "post-card" ]
+        [ h3 [] [ text post.title ]
+        , p [] [ text (StringUtils.ellipsis 150 post.excerpt) ]
+        , viewCategory post.category
+        , span [] [ text (String.fromInt post.likes ++ " likes") ]
+        ]
+
+
+viewPostList : List Post -> Html msg
+viewPostList posts =
+    div [ class "post-list" ]
+        [ h2 [] [ text "Posts" ]
+        , div [] (List.map viewPostCard posts)
+        ]
+
+
+viewCategory : Category -> Html msg
+viewCategory category =
+    let
+        categoryText =
+            Models.Post.categoryToString category
+    in
+    span [ class ("category category-" ++ String.toLower categoryText) ]
+        [ text categoryText ]
+
+
+viewTags : List String -> Html msg
+viewTags tags =
+    div [ class "tags" ]
+        (List.map viewTag tags)
+
+
+viewTag : String -> Html msg
+viewTag tag =
+    span [ class "tag" ] [ text tag ]

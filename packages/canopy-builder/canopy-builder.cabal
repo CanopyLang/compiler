@@ -28,6 +28,8 @@ build-type:     Simple
 library
   exposed-modules:
       Build.Artifacts
+      Build.Parallel
+      Build.Parallel.Instrumented
       Builder
       Builder.Graph
       Builder.Hash
