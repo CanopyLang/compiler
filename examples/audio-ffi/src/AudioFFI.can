@@ -39,6 +39,14 @@ type MessagePort = MessagePort
 type AudioParamMap = AudioParamMap
 type IIRFilterNode = IIRFilterNode
 type ConstantSourceNode = ConstantSourceNode
+type MediaElementAudioSourceNode = MediaElementAudioSourceNode
+type MediaStreamAudioSourceNode = MediaStreamAudioSourceNode
+type MediaStreamAudioDestinationNode = MediaStreamAudioDestinationNode
+type HTMLMediaElement = HTMLMediaElement
+type MediaStream = MediaStream
+type MediaStreamTrack = MediaStreamTrack
+type AudioDestinationNode = AudioDestinationNode
+type AudioNode = AudioNode
 
 -- ============================================================================
 -- TYPE-SAFE AUDIO CONTEXT OPERATIONS
@@ -193,3 +201,181 @@ createPeriodicWaveWithOptions =
 
 setOscillatorPeriodicWave =
     FFI.setOscillatorPeriodicWave
+-- ============================================================================
+-- PHASE 3A: AUDIO BUFFER OPERATIONS
+-- ============================================================================
+
+createSilentBuffer = FFI.createSilentBuffer
+cloneAudioBuffer = FFI.cloneAudioBuffer
+createMediaElementSource = FFI.createMediaElementSource
+
+decodeAudioData = FFI.decodeAudioData
+getChannelData = FFI.getChannelData
+copyToChannel = FFI.copyToChannel
+copyFromChannel = FFI.copyFromChannel
+
+-- ============================================================================
+-- PHASE 3A: OFFLINE RENDERING ASYNC
+-- ============================================================================
+
+startOfflineRenderingAsync = FFI.startOfflineRenderingAsync
+suspendOfflineContext = FFI.suspendOfflineContext
+resumeOfflineContext = FFI.resumeOfflineContext
+getOfflineContextLength = FFI.getOfflineContextLength
+getOfflineContextSampleRate = FFI.getOfflineContextSampleRate
+
+-- ============================================================================
+-- PHASE 3B: NODE PROPERTIES
+-- ============================================================================
+
+getNodeChannelCount = FFI.getNodeChannelCount
+setNodeChannelCount = FFI.setNodeChannelCount
+getNodeChannelCountMode = FFI.getNodeChannelCountMode
+setNodeChannelCountMode = FFI.setNodeChannelCountMode
+getNodeChannelInterpretation = FFI.getNodeChannelInterpretation
+setNodeChannelInterpretation = FFI.setNodeChannelInterpretation
+getNodeNumberOfInputs = FFI.getNodeNumberOfInputs
+getNodeNumberOfOutputs = FFI.getNodeNumberOfOutputs
+getNodeContext = FFI.getNodeContext
+
+getOscillatorType = FFI.getOscillatorType
+getOscillatorFrequencyParam = FFI.getOscillatorFrequencyParam
+getOscillatorDetuneParam = FFI.getOscillatorDetuneParam
+getDelayDelayTimeParam = FFI.getDelayDelayTimeParam
+getCompressorThresholdParam = FFI.getCompressorThresholdParam
+getCompressorKneeParam = FFI.getCompressorKneeParam
+getCompressorRatioParam = FFI.getCompressorRatioParam
+
+-- ============================================================================
+-- PHASE 3B: AUDIO PARAM ADVANCED
+-- ============================================================================
+
+setValueCurveAtTime = FFI.setValueCurveAtTime
+getAudioParamValue = FFI.getAudioParamValue
+getAudioParamDefaultValue = FFI.getAudioParamDefaultValue
+getAudioParamMinValue = FFI.getAudioParamMinValue
+getAudioParamMaxValue = FFI.getAudioParamMaxValue
+setAudioParamValue = FFI.setAudioParamValue
+getAudioParamAutomationRate = FFI.getAudioParamAutomationRate
+setAudioParamAutomationRate = FFI.setAudioParamAutomationRate
+
+-- ============================================================================
+-- PHASE 3B: CHANNEL ROUTING ADVANCED
+-- ============================================================================
+
+connectNodesWithChannels = FFI.connectNodesWithChannels
+disconnectNodeFromDestination = FFI.disconnectNodeFromDestination
+disconnectNodeOutput = FFI.disconnectNodeOutput
+disconnectNodeFromNodeChannel = FFI.disconnectNodeFromNodeChannel
+
+-- ============================================================================
+-- PHASE 3B: CONTEXT ADVANCED PROPERTIES
+-- ============================================================================
+
+getContextBaseLatency = FFI.getContextBaseLatency
+getContextOutputLatency = FFI.getContextOutputLatency
+getContextDestination = FFI.getContextDestination
+getContextAudioListener = FFI.getContextAudioListener
+
+-- ============================================================================
+-- PHASE 3C: ANALYSER ENHANCED
+-- ============================================================================
+
+setAnalyserMinDecibels = FFI.setAnalyserMinDecibels
+setAnalyserMaxDecibels = FFI.setAnalyserMaxDecibels
+getAnalyserMinDecibels = FFI.getAnalyserMinDecibels
+getAnalyserMaxDecibels = FFI.getAnalyserMaxDecibels
+setAnalyserSmoothingTimeConstant = FFI.setAnalyserSmoothingTimeConstant
+getAnalyserSmoothingTimeConstant = FFI.getAnalyserSmoothingTimeConstant
+
+-- ============================================================================
+-- PHASE 3C: COMPRESSOR ENHANCED
+-- ============================================================================
+
+getCompressorReduction = FFI.getCompressorReduction
+getCompressorAttackParam = FFI.getCompressorAttackParam
+getCompressorReleaseParam = FFI.getCompressorReleaseParam
+setCompressorAttackDirect = FFI.setCompressorAttackDirect
+setCompressorReleaseDirect = FFI.setCompressorReleaseDirect
+
+-- ============================================================================
+-- PHASE 3C: BUFFER SOURCE ENHANCED
+-- ============================================================================
+
+getBufferSourceBuffer = FFI.getBufferSourceBuffer
+getBufferSourceLoop = FFI.getBufferSourceLoop
+getBufferSourceLoopStart = FFI.getBufferSourceLoopStart
+getBufferSourceLoopEnd = FFI.getBufferSourceLoopEnd
+setBufferSourceLoopDirect = FFI.setBufferSourceLoopDirect
+
+-- ============================================================================
+-- PHASE 3C: PANNER 3D AUDIO
+-- ============================================================================
+
+getPannerPositionX = FFI.getPannerPositionX
+getPannerPositionY = FFI.getPannerPositionY
+getPannerPositionZ = FFI.getPannerPositionZ
+getPannerOrientationX = FFI.getPannerOrientationX
+setPannerOrientationDirect = FFI.setPannerOrientationDirect
+
+-- ============================================================================
+-- PHASE 3C: BIQUAD FILTER ENHANCED
+-- ============================================================================
+
+getBiquadFilterType = FFI.getBiquadFilterType
+setBiquadFilterTypeDirect = FFI.setBiquadFilterTypeDirect
+getBiquadFilterFrequencyParam = FFI.getBiquadFilterFrequencyParam
+getBiquadFilterQParam = FFI.getBiquadFilterQParam
+
+-- ============================================================================
+-- PHASE 3D: BUFFER UTILITIES
+-- ============================================================================
+
+reverseAudioBuffer = FFI.reverseAudioBuffer
+normalizeAudioBuffer = FFI.normalizeAudioBuffer
+mixAudioBuffers = FFI.mixAudioBuffers
+trimSilence = FFI.trimSilence
+getBufferPeak = FFI.getBufferPeak
+getBufferRMS = FFI.getBufferRMS
+createBufferFromSamples = FFI.createBufferFromSamples
+concatenateBuffers = FFI.concatenateBuffers
+
+-- ============================================================================
+-- PHASE 3D: MISC GETTERS
+-- ============================================================================
+
+getStereoPannerPan = FFI.getStereoPannerPan
+getGainNodeGainParam = FFI.getGainNodeGainParam
+getConvolverNormalize = FFI.getConvolverNormalize
+getWaveShaperOversample = FFI.getWaveShaperOversample
+getAnalyserFFTSize = FFI.getAnalyserFFTSize
+getAnalyserFrequencyBinCount = FFI.getAnalyserFrequencyBinCount
+getDelayMaxDelayTime = FFI.getDelayMaxDelayTime
+getBufferSourcePlaybackRate = FFI.getBufferSourcePlaybackRate
+getBufferSourceDetune = FFI.getBufferSourceDetune
+getPannerDistanceModel = FFI.getPannerDistanceModel
+getPannerPanningModel = FFI.getPannerPanningModel
+getPannerRefDistance = FFI.getPannerRefDistance
+getPannerMaxDistance = FFI.getPannerMaxDistance
+getPannerRolloffFactor = FFI.getPannerRolloffFactor
+getPannerConeInnerAngle = FFI.getPannerConeInnerAngle
+getPannerConeOuterAngle = FFI.getPannerConeOuterAngle
+getPannerConeOuterGain = FFI.getPannerConeOuterGain
+
+-- ============================================================================
+-- FINAL 13 FUNCTIONS
+-- ============================================================================
+
+getMediaElementSourceElement = FFI.getMediaElementSourceElement
+getMediaStreamTracks = FFI.getMediaStreamTracks
+getMediaStreamActive = FFI.getMediaStreamActive
+getMediaStreamId = FFI.getMediaStreamId
+getBiquadFilterGainParam = FFI.getBiquadFilterGainParam
+getBiquadFilterDetuneParam = FFI.getBiquadFilterDetuneParam
+getPannerOrientationY = FFI.getPannerOrientationY
+getPannerOrientationZ = FFI.getPannerOrientationZ
+getConstantSourceOffsetValue = FFI.getConstantSourceOffsetValue
+createEmptyBuffer = FFI.createEmptyBuffer
+getBufferAsArray = FFI.getBufferAsArray
+setOscillatorType = FFI.setOscillatorType
+getIIRFilterResponseAtFrequency = FFI.getIIRFilterResponseAtFrequency

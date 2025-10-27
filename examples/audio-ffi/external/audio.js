@@ -1110,6 +1110,56 @@ function copyFromChannel(audioBuffer, channelNumber, startInChannel, length) {
     }
 }
 
+/**
+ * Create silent audio buffer
+ * @name createSilentBuffer
+ * @canopy-type AudioContext -> Int -> Int -> Float -> AudioBuffer
+ */
+function createSilentBuffer(audioContext, channels, length, sampleRate) {
+    return audioContext.createBuffer(channels, length, sampleRate);
+}
+
+/**
+ * Clone audio buffer
+ * @name cloneAudioBuffer
+ * @canopy-type AudioBuffer -> Result.Result Capability.CapabilityError AudioBuffer
+ */
+function cloneAudioBuffer(sourceBuffer) {
+    try {
+        const clone = new AudioBuffer({
+            length: sourceBuffer.length,
+            numberOfChannels: sourceBuffer.numberOfChannels,
+            sampleRate: sourceBuffer.sampleRate
+        });
+        for (let ch = 0; ch < sourceBuffer.numberOfChannels; ch++) {
+            clone.copyToChannel(sourceBuffer.getChannelData(ch), ch);
+        }
+        return { $: 'Ok', a: clone };
+    } catch (e) {
+        return { $: 'Err', a: { $: 'InvalidAccessError', a: 'Failed to clone buffer: ' + e.message } };
+    }
+}
+
+/**
+ * Create media element source (HTML audio/video)
+ * @name createMediaElementSource
+ * @canopy-type AudioContext -> HTMLMediaElement -> Result.Result Capability.CapabilityError MediaElementAudioSourceNode
+ */
+function createMediaElementSource(audioContext, mediaElement) {
+    try {
+        const source = audioContext.createMediaElementSource(mediaElement);
+        return { $: 'Ok', a: source };
+    } catch (e) {
+        if (e.name === 'InvalidStateError') {
+            return { $: 'Err', a: { $: 'InvalidStateError', a: 'Element already connected: ' + e.message } };
+        } else if (e.name === 'NotSupportedError') {
+            return { $: 'Err', a: { $: 'NotSupportedError', a: 'Media element not supported: ' + e.message } };
+        } else {
+            return { $: 'Err', a: { $: 'InvalidAccessError', a: 'Failed to create media element source: ' + e.message } };
+        }
+    }
+}
+
 // ============================================================================
 // PERIODIC WAVE - Custom Waveforms
 // ============================================================================
@@ -1146,6 +1196,66 @@ function createOfflineAudioContext(channels, length, sampleRate) {
 function startOfflineRendering(offlineContext) {
     offlineContext.startRendering();
     return offlineContext;
+}
+
+/**
+ * Start offline rendering with Promise support (async)
+ * @name startOfflineRenderingAsync
+ * @canopy-type OfflineAudioContext -> Task.Task Capability.CapabilityError AudioBuffer
+ */
+function startOfflineRenderingAsync(offlineContext) {
+    return offlineContext.startRendering()
+        .then(renderedBuffer => ({ $: 'Ok', a: renderedBuffer }))
+        .catch(error => ({
+            $: 'Err',
+            a: { $: 'InvalidStateError', a: 'Offline rendering failed: ' + error.message }
+        }));
+}
+
+/**
+ * Suspend offline context at specified time
+ * @name suspendOfflineContext
+ * @canopy-type OfflineAudioContext -> Float -> Task.Task Capability.CapabilityError ()
+ */
+function suspendOfflineContext(offlineContext, suspendTime) {
+    return offlineContext.suspend(suspendTime)
+        .then(() => ({ $: 'Ok', a: 1 }))
+        .catch(error => ({
+            $: 'Err',
+            a: { $: 'InvalidStateError', a: 'Failed to suspend: ' + error.message }
+        }));
+}
+
+/**
+ * Resume suspended offline context
+ * @name resumeOfflineContext
+ * @canopy-type OfflineAudioContext -> Task.Task Capability.CapabilityError ()
+ */
+function resumeOfflineContext(offlineContext) {
+    return offlineContext.resume()
+        .then(() => ({ $: 'Ok', a: 1 }))
+        .catch(error => ({
+            $: 'Err',
+            a: { $: 'InvalidStateError', a: 'Failed to resume: ' + error.message }
+        }));
+}
+
+/**
+ * Get offline context render length
+ * @name getOfflineContextLength
+ * @canopy-type OfflineAudioContext -> Int
+ */
+function getOfflineContextLength(offlineContext) {
+    return offlineContext.length;
+}
+
+/**
+ * Get offline context sample rate
+ * @name getOfflineContextSampleRate
+ * @canopy-type OfflineAudioContext -> Float
+ */
+function getOfflineContextSampleRate(offlineContext) {
+    return offlineContext.sampleRate;
 }
 
 // ============================================================================
@@ -1744,3 +1854,1138 @@ function createPeriodicWaveWithOptions(audioContext, real, imag, disableNormaliz
 function setOscillatorPeriodicWave(oscillator, periodicWave) {
     oscillator.setPeriodicWave(periodicWave);
 }
+
+// ============================================================================
+// PHASE 3B: NODE PROPERTIES - Advanced Node Configuration
+// ============================================================================
+
+/**
+ * Get node channel count
+ * @name getNodeChannelCount
+ * @canopy-type AudioNode -> Int
+ */
+function getNodeChannelCount(node) {
+    return node.channelCount;
+}
+
+/**
+ * Set node channel count
+ * @name setNodeChannelCount
+ * @canopy-type AudioNode -> Int -> Result.Result Capability.CapabilityError ()
+ */
+function setNodeChannelCount(node, count) {
+    try {
+        node.channelCount = count;
+        return { $: 'Ok', a: 1 };
+    } catch (e) {
+        return { $: 'Err', a: { $: 'RangeError', a: 'Invalid channel count: ' + e.message } };
+    }
+}
+
+/**
+ * Get node channel count mode
+ * @name getNodeChannelCountMode
+ * @canopy-type AudioNode -> String
+ */
+function getNodeChannelCountMode(node) {
+    return node.channelCountMode;
+}
+
+/**
+ * Set node channel count mode
+ * @name setNodeChannelCountMode
+ * @canopy-type AudioNode -> String -> Result.Result Capability.CapabilityError ()
+ */
+function setNodeChannelCountMode(node, mode) {
+    try {
+        node.channelCountMode = mode;
+        return { $: 'Ok', a: 1 };
+    } catch (e) {
+        return { $: 'Err', a: { $: 'InvalidAccessError', a: 'Invalid mode: ' + e.message } };
+    }
+}
+
+/**
+ * Get node channel interpretation
+ * @name getNodeChannelInterpretation
+ * @canopy-type AudioNode -> String
+ */
+function getNodeChannelInterpretation(node) {
+    return node.channelInterpretation;
+}
+
+/**
+ * Set node channel interpretation
+ * @name setNodeChannelInterpretation
+ * @canopy-type AudioNode -> String -> Result.Result Capability.CapabilityError ()
+ */
+function setNodeChannelInterpretation(node, interpretation) {
+    try {
+        node.channelInterpretation = interpretation;
+        return { $: 'Ok', a: 1 };
+    } catch (e) {
+        return { $: 'Err', a: { $: 'InvalidAccessError', a: 'Invalid interpretation: ' + e.message } };
+    }
+}
+
+/**
+ * Get number of inputs
+ * @name getNodeNumberOfInputs
+ * @canopy-type AudioNode -> Int
+ */
+function getNodeNumberOfInputs(node) {
+    return node.numberOfInputs;
+}
+
+/**
+ * Get number of outputs
+ * @name getNodeNumberOfOutputs
+ * @canopy-type AudioNode -> Int
+ */
+function getNodeNumberOfOutputs(node) {
+    return node.numberOfOutputs;
+}
+
+/**
+ * Get node's audio context
+ * @name getNodeContext
+ * @canopy-type AudioNode -> AudioContext
+ */
+function getNodeContext(node) {
+    return node.context;
+}
+
+/**
+ * Get oscillator type
+ * @name getOscillatorType
+ * @canopy-type OscillatorNode -> String
+ */
+function getOscillatorType(oscillator) {
+    return oscillator.type;
+}
+
+/**
+ * Get oscillator frequency param
+ * @name getOscillatorFrequencyParam
+ * @canopy-type OscillatorNode -> AudioParam
+ */
+function getOscillatorFrequencyParam(oscillator) {
+    return oscillator.frequency;
+}
+
+/**
+ * Get oscillator detune param
+ * @name getOscillatorDetuneParam
+ * @canopy-type OscillatorNode -> AudioParam
+ */
+function getOscillatorDetuneParam(oscillator) {
+    return oscillator.detune;
+}
+
+/**
+ * Get delay time param
+ * @name getDelayDelayTimeParam
+ * @canopy-type DelayNode -> AudioParam
+ */
+function getDelayDelayTimeParam(delayNode) {
+    return delayNode.delayTime;
+}
+
+/**
+ * Get compressor threshold param
+ * @name getCompressorThresholdParam
+ * @canopy-type DynamicsCompressorNode -> AudioParam
+ */
+function getCompressorThresholdParam(compressor) {
+    return compressor.threshold;
+}
+
+/**
+ * Get compressor knee param
+ * @name getCompressorKneeParam
+ * @canopy-type DynamicsCompressorNode -> AudioParam
+ */
+function getCompressorKneeParam(compressor) {
+    return compressor.knee;
+}
+
+/**
+ * Get compressor ratio param
+ * @name getCompressorRatioParam
+ * @canopy-type DynamicsCompressorNode -> AudioParam
+ */
+function getCompressorRatioParam(compressor) {
+    return compressor.ratio;
+}
+
+// ============================================================================
+// AUDIO PARAM ADVANCED - Extended AudioParam Operations
+// ============================================================================
+
+/**
+ * Set value curve at time
+ * @name setValueCurveAtTime
+ * @canopy-type AudioParam -> List Float -> Float -> Float -> Result.Result Capability.CapabilityError ()
+ */
+function setValueCurveAtTime(param, values, startTime, duration) {
+    try {
+        const valuesArray = new Float32Array(values);
+        param.setValueCurveAtTime(valuesArray, startTime, duration);
+        return { $: 'Ok', a: 1 };
+    } catch (e) {
+        return { $: 'Err', a: { $: 'RangeError', a: 'Invalid curve: ' + e.message } };
+    }
+}
+
+/**
+ * Get audio param current value
+ * @name getAudioParamValue
+ * @canopy-type AudioParam -> Float
+ */
+function getAudioParamValue(param) {
+    return param.value;
+}
+
+/**
+ * Get audio param default value
+ * @name getAudioParamDefaultValue
+ * @canopy-type AudioParam -> Float
+ */
+function getAudioParamDefaultValue(param) {
+    return param.defaultValue;
+}
+
+/**
+ * Get audio param min value
+ * @name getAudioParamMinValue
+ * @canopy-type AudioParam -> Float
+ */
+function getAudioParamMinValue(param) {
+    return param.minValue;
+}
+
+/**
+ * Get audio param max value
+ * @name getAudioParamMaxValue
+ * @canopy-type AudioParam -> Float
+ */
+function getAudioParamMaxValue(param) {
+    return param.maxValue;
+}
+
+/**
+ * Set audio param value directly
+ * @name setAudioParamValue
+ * @canopy-type AudioParam -> Float -> Result.Result Capability.CapabilityError ()
+ */
+function setAudioParamValue(param, value) {
+    try {
+        param.value = value;
+        return { $: 'Ok', a: 1 };
+    } catch (e) {
+        return { $: 'Err', a: { $: 'RangeError', a: 'Invalid value: ' + e.message } };
+    }
+}
+
+/**
+ * Get audio param automation rate
+ * @name getAudioParamAutomationRate
+ * @canopy-type AudioParam -> String
+ */
+function getAudioParamAutomationRate(param) {
+    return param.automationRate || 'a-rate';
+}
+
+/**
+ * Set audio param automation rate
+ * @name setAudioParamAutomationRate
+ * @canopy-type AudioParam -> String -> Result.Result Capability.CapabilityError ()
+ */
+function setAudioParamAutomationRate(param, rate) {
+    try {
+        if (param.automationRate !== undefined) {
+            param.automationRate = rate;
+        }
+        return { $: 'Ok', a: 1 };
+    } catch (e) {
+        return { $: 'Err', a: { $: 'InvalidAccessError', a: 'Invalid rate: ' + e.message } };
+    }
+}
+
+// ============================================================================
+// CHANNEL ROUTING ADVANCED - Precise Channel Control
+// ============================================================================
+
+/**
+ * Connect nodes with specific channels
+ * @name connectNodesWithChannels
+ * @canopy-type AudioNode -> AudioNode -> Int -> Int -> Result.Result Capability.CapabilityError ()
+ */
+function connectNodesWithChannels(source, destination, outputChannel, inputChannel) {
+    try {
+        source.connect(destination, outputChannel, inputChannel);
+        return { $: 'Ok', a: 1 };
+    } catch (e) {
+        return { $: 'Err', a: { $: 'IndexSizeError', a: 'Invalid channel: ' + e.message } };
+    }
+}
+
+/**
+ * Disconnect node from specific destination
+ * @name disconnectNodeFromDestination
+ * @canopy-type AudioNode -> AudioNode -> Result.Result Capability.CapabilityError ()
+ */
+function disconnectNodeFromDestination(source, destination) {
+    try {
+        source.disconnect(destination);
+        return { $: 'Ok', a: 1 };
+    } catch (e) {
+        return { $: 'Err', a: { $: 'InvalidAccessError', a: 'Disconnect failed: ' + e.message } };
+    }
+}
+
+/**
+ * Disconnect specific output
+ * @name disconnectNodeOutput
+ * @canopy-type AudioNode -> Int -> Result.Result Capability.CapabilityError ()
+ */
+function disconnectNodeOutput(node, output) {
+    try {
+        node.disconnect(output);
+        return { $: 'Ok', a: 1 };
+    } catch (e) {
+        return { $: 'Err', a: { $: 'IndexSizeError', a: 'Invalid output: ' + e.message } };
+    }
+}
+
+/**
+ * Disconnect node from specific node and channel
+ * @name disconnectNodeFromNodeChannel
+ * @canopy-type AudioNode -> AudioNode -> Int -> Int -> Result.Result Capability.CapabilityError ()
+ */
+function disconnectNodeFromNodeChannel(source, destination, output, input) {
+    try {
+        source.disconnect(destination, output, input);
+        return { $: 'Ok', a: 1 };
+    } catch (e) {
+        return { $: 'Err', a: { $: 'InvalidAccessError', a: 'Disconnect failed: ' + e.message } };
+    }
+}
+
+// ============================================================================
+// CONTEXT ADVANCED PROPERTIES - Enhanced Context Info
+// ============================================================================
+
+/**
+ * Get context base latency
+ * @name getContextBaseLatency
+ * @canopy-type AudioContext -> Float
+ */
+function getContextBaseLatency(audioContext) {
+    return audioContext.baseLatency || 0.0;
+}
+
+/**
+ * Get context output latency
+ * @name getContextOutputLatency
+ * @canopy-type AudioContext -> Float
+ */
+function getContextOutputLatency(audioContext) {
+    return audioContext.outputLatency || 0.0;
+}
+
+/**
+ * Get context destination node
+ * @name getContextDestination
+ * @canopy-type AudioContext -> AudioDestinationNode
+ */
+function getContextDestination(audioContext) {
+    return audioContext.destination;
+}
+
+/**
+ * Get context listener
+ * @name getContextAudioListener
+ * @canopy-type AudioContext -> AudioListener
+ */
+function getContextAudioListener(audioContext) {
+    return audioContext.listener;
+}
+
+
+// ============================================================================
+// PHASE 3C: ENHANCED CONTROLS - Analyzer, Compressor, Buffer Source, Panner
+// ============================================================================
+
+// Analyzer Enhanced (6 functions)
+
+/**
+ * Set analyser min decibels
+ * @name setAnalyserMinDecibels
+ * @canopy-type AnalyserNode -> Float -> Result.Result Capability.CapabilityError ()
+ */
+function setAnalyserMinDecibels(analyser, minDecibels) {
+    try {
+        analyser.minDecibels = minDecibels;
+        return { $: 'Ok', a: 1 };
+    } catch (e) {
+        return { $: 'Err', a: { $: 'RangeError', a: 'Invalid value: ' + e.message } };
+    }
+}
+
+/**
+ * Set analyser max decibels
+ * @name setAnalyserMaxDecibels
+ * @canopy-type AnalyserNode -> Float -> Result.Result Capability.CapabilityError ()
+ */
+function setAnalyserMaxDecibels(analyser, maxDecibels) {
+    try {
+        analyser.maxDecibels = maxDecibels;
+        return { $: 'Ok', a: 1 };
+    } catch (e) {
+        return { $: 'Err', a: { $: 'RangeError', a: 'Invalid value: ' + e.message } };
+    }
+}
+
+/**
+ * Get analyser min decibels
+ * @name getAnalyserMinDecibels
+ * @canopy-type AnalyserNode -> Float
+ */
+function getAnalyserMinDecibels(analyser) {
+    return analyser.minDecibels;
+}
+
+/**
+ * Get analyser max decibels
+ * @name getAnalyserMaxDecibels
+ * @canopy-type AnalyserNode -> Float
+ */
+function getAnalyserMaxDecibels(analyser) {
+    return analyser.maxDecibels;
+}
+
+/**
+ * Set analyser smoothing time constant
+ * @name setAnalyserSmoothingTimeConstant
+ * @canopy-type AnalyserNode -> Float -> Result.Result Capability.CapabilityError ()
+ */
+function setAnalyserSmoothingTimeConstant(analyser, constant) {
+    try {
+        analyser.smoothingTimeConstant = constant;
+        return { $: 'Ok', a: 1 };
+    } catch (e) {
+        return { $: 'Err', a: { $: 'RangeError', a: 'Invalid value: ' + e.message } };
+    }
+}
+
+/**
+ * Get analyser smoothing time constant
+ * @name getAnalyserSmoothingTimeConstant
+ * @canopy-type AnalyserNode -> Float
+ */
+function getAnalyserSmoothingTimeConstant(analyser) {
+    return analyser.smoothingTimeConstant;
+}
+
+// Dynamics Compressor Enhanced (5 functions)
+
+/**
+ * Get compressor reduction meter
+ * @name getCompressorReduction
+ * @canopy-type DynamicsCompressorNode -> Float
+ */
+function getCompressorReduction(compressor) {
+    return compressor.reduction;
+}
+
+/**
+ * Get compressor attack param
+ * @name getCompressorAttackParam
+ * @canopy-type DynamicsCompressorNode -> AudioParam
+ */
+function getCompressorAttackParam(compressor) {
+    return compressor.attack;
+}
+
+/**
+ * Get compressor release param
+ * @name getCompressorReleaseParam
+ * @canopy-type DynamicsCompressorNode -> AudioParam
+ */
+function getCompressorReleaseParam(compressor) {
+    return compressor.release;
+}
+
+/**
+ * Set compressor attack time directly
+ * @name setCompressorAttackDirect
+ * @canopy-type DynamicsCompressorNode -> Float -> Result.Result Capability.CapabilityError ()
+ */
+function setCompressorAttackDirect(compressor, attack) {
+    try {
+        compressor.attack.value = attack;
+        return { $: 'Ok', a: 1 };
+    } catch (e) {
+        return { $: 'Err', a: { $: 'RangeError', a: 'Invalid attack: ' + e.message } };
+    }
+}
+
+/**
+ * Set compressor release time directly
+ * @name setCompressorReleaseDirect
+ * @canopy-type DynamicsCompressorNode -> Float -> Result.Result Capability.CapabilityError ()
+ */
+function setCompressorReleaseDirect(compressor, release) {
+    try {
+        compressor.release.value = release;
+        return { $: 'Ok', a: 1 };
+    } catch (e) {
+        return { $: 'Err', a: { $: 'RangeError', a: 'Invalid release: ' + e.message } };
+    }
+}
+
+// Buffer Source Enhanced (5 functions)
+
+/**
+ * Get buffer source assigned buffer
+ * @name getBufferSourceBuffer
+ * @canopy-type AudioBufferSourceNode -> AudioBuffer
+ */
+function getBufferSourceBuffer(source) {
+    return source.buffer;
+}
+
+/**
+ * Get buffer source loop state
+ * @name getBufferSourceLoop
+ * @canopy-type AudioBufferSourceNode -> Bool
+ */
+function getBufferSourceLoop(source) {
+    return source.loop;
+}
+
+/**
+ * Get buffer source loop start
+ * @name getBufferSourceLoopStart
+ * @canopy-type AudioBufferSourceNode -> Float
+ */
+function getBufferSourceLoopStart(source) {
+    return source.loopStart;
+}
+
+/**
+ * Get buffer source loop end
+ * @name getBufferSourceLoopEnd
+ * @canopy-type AudioBufferSourceNode -> Float
+ */
+function getBufferSourceLoopEnd(source) {
+    return source.loopEnd;
+}
+
+/**
+ * Set buffer source loop directly
+ * @name setBufferSourceLoopDirect
+ * @canopy-type AudioBufferSourceNode -> Bool -> Result.Result Capability.CapabilityError ()
+ */
+function setBufferSourceLoopDirect(source, loop) {
+    try {
+        source.loop = loop;
+        return { $: 'Ok', a: 1 };
+    } catch (e) {
+        return { $: 'Err', a: { $: 'InvalidAccessError', a: 'Failed to set loop: ' + e.message } };
+    }
+}
+
+// Panner Node 3D Audio (5 functions)
+
+/**
+ * Get panner position X param
+ * @name getPannerPositionX
+ * @canopy-type PannerNode -> AudioParam
+ */
+function getPannerPositionX(panner) {
+    return panner.positionX;
+}
+
+/**
+ * Get panner position Y param
+ * @name getPannerPositionY
+ * @canopy-type PannerNode -> AudioParam
+ */
+function getPannerPositionY(panner) {
+    return panner.positionY;
+}
+
+/**
+ * Get panner position Z param
+ * @name getPannerPositionZ
+ * @canopy-type PannerNode -> AudioParam
+ */
+function getPannerPositionZ(panner) {
+    return panner.positionZ;
+}
+
+/**
+ * Get panner orientation
+ * @name getPannerOrientationX
+ * @canopy-type PannerNode -> AudioParam
+ */
+function getPannerOrientationX(panner) {
+    return panner.orientationX;
+}
+
+/**
+ * Set panner orientation using params
+ * @name setPannerOrientationDirect
+ * @canopy-type PannerNode -> Float -> Float -> Float -> Result.Result Capability.CapabilityError ()
+ */
+function setPannerOrientationDirect(panner, x, y, z) {
+    try {
+        panner.orientationX.value = x;
+        panner.orientationY.value = y;
+        panner.orientationZ.value = z;
+        return { $: 'Ok', a: 1 };
+    } catch (e) {
+        return { $: 'Err', a: { $: 'InvalidAccessError', a: 'Failed to set orientation: ' + e.message } };
+    }
+}
+
+// BiquadFilter Enhanced (4 functions)
+
+/**
+ * Get biquad filter type
+ * @name getBiquadFilterType
+ * @canopy-type BiquadFilterNode -> String
+ */
+function getBiquadFilterType(filter) {
+    return filter.type;
+}
+
+/**
+ * Set biquad filter type directly
+ * @name setBiquadFilterTypeDirect
+ * @canopy-type BiquadFilterNode -> String -> Result.Result Capability.CapabilityError ()
+ */
+function setBiquadFilterTypeDirect(filter, filterType) {
+    try {
+        filter.type = filterType;
+        return { $: 'Ok', a: 1 };
+    } catch (e) {
+        return { $: 'Err', a: { $: 'InvalidAccessError', a: 'Invalid filter type: ' + e.message } };
+    }
+}
+
+/**
+ * Get biquad filter frequency param
+ * @name getBiquadFilterFrequencyParam
+ * @canopy-type BiquadFilterNode -> AudioParam
+ */
+function getBiquadFilterFrequencyParam(filter) {
+    return filter.frequency;
+}
+
+/**
+ * Get biquad filter Q param
+ * @name getBiquadFilterQParam
+ * @canopy-type BiquadFilterNode -> AudioParam
+ */
+function getBiquadFilterQParam(filter) {
+    return filter.Q;
+}
+
+
+// ============================================================================
+// PHASE 3D: UTILITIES & COMPLETENESS - Buffer Utils, Misc Getters
+// ============================================================================
+
+// Buffer Utilities (8 functions)
+
+/**
+ * Reverse audio buffer samples
+ * @name reverseAudioBuffer
+ * @canopy-type AudioBuffer -> Result.Result Capability.CapabilityError AudioBuffer
+ */
+function reverseAudioBuffer(sourceBuffer) {
+    try {
+        const reversed = new AudioBuffer({
+            length: sourceBuffer.length,
+            numberOfChannels: sourceBuffer.numberOfChannels,
+            sampleRate: sourceBuffer.sampleRate
+        });
+        for (let ch = 0; ch < sourceBuffer.numberOfChannels; ch++) {
+            const data = sourceBuffer.getChannelData(ch);
+            const reversedData = new Float32Array(data).reverse();
+            reversed.copyToChannel(reversedData, ch);
+        }
+        return { $: 'Ok', a: reversed };
+    } catch (e) {
+        return { $: 'Err', a: { $: 'InvalidAccessError', a: 'Failed to reverse: ' + e.message } };
+    }
+}
+
+/**
+ * Normalize audio buffer amplitude
+ * @name normalizeAudioBuffer
+ * @canopy-type AudioBuffer -> Float -> Result.Result Capability.CapabilityError AudioBuffer
+ */
+function normalizeAudioBuffer(sourceBuffer, targetPeak) {
+    try {
+        let maxAmp = 0.0;
+        for (let ch = 0; ch < sourceBuffer.numberOfChannels; ch++) {
+            const data = sourceBuffer.getChannelData(ch);
+            for (let i = 0; i < data.length; i++) {
+                maxAmp = Math.max(maxAmp, Math.abs(data[i]));
+            }
+        }
+        const gain = maxAmp > 0 ? targetPeak / maxAmp : 1.0;
+        const normalized = new AudioBuffer({
+            length: sourceBuffer.length,
+            numberOfChannels: sourceBuffer.numberOfChannels,
+            sampleRate: sourceBuffer.sampleRate
+        });
+        for (let ch = 0; ch < sourceBuffer.numberOfChannels; ch++) {
+            const data = sourceBuffer.getChannelData(ch);
+            const scaledData = new Float32Array(data.length);
+            for (let i = 0; i < data.length; i++) {
+                scaledData[i] = data[i] * gain;
+            }
+            normalized.copyToChannel(scaledData, ch);
+        }
+        return { $: 'Ok', a: normalized };
+    } catch (e) {
+        return { $: 'Err', a: { $: 'InvalidAccessError', a: 'Failed to normalize: ' + e.message } };
+    }
+}
+
+/**
+ * Mix two audio buffers
+ * @name mixAudioBuffers
+ * @canopy-type AudioBuffer -> AudioBuffer -> Float -> Result.Result Capability.CapabilityError AudioBuffer
+ */
+function mixAudioBuffers(buffer1, buffer2, mixRatio) {
+    try {
+        const length = Math.min(buffer1.length, buffer2.length);
+        const channels = Math.min(buffer1.numberOfChannels, buffer2.numberOfChannels);
+        const mixed = new AudioBuffer({
+            length: length,
+            numberOfChannels: channels,
+            sampleRate: buffer1.sampleRate
+        });
+        for (let ch = 0; ch < channels; ch++) {
+            const data1 = buffer1.getChannelData(ch);
+            const data2 = buffer2.getChannelData(ch);
+            const mixedData = new Float32Array(length);
+            for (let i = 0; i < length; i++) {
+                mixedData[i] = data1[i] * (1 - mixRatio) + data2[i] * mixRatio;
+            }
+            mixed.copyToChannel(mixedData, ch);
+        }
+        return { $: 'Ok', a: mixed };
+    } catch (e) {
+        return { $: 'Err', a: { $: 'InvalidAccessError', a: 'Failed to mix: ' + e.message } };
+    }
+}
+
+/**
+ * Trim silence from audio buffer
+ * @name trimSilence
+ * @canopy-type AudioBuffer -> Float -> Result.Result Capability.CapabilityError AudioBuffer
+ */
+function trimSilence(sourceBuffer, threshold) {
+    try {
+        let start = 0;
+        let end = sourceBuffer.length;
+        const data = sourceBuffer.getChannelData(0);
+        while (start < end && Math.abs(data[start]) < threshold) {
+            start++;
+        }
+        while (end > start && Math.abs(data[end - 1]) < threshold) {
+            end--;
+        }
+        const trimmedLength = end - start;
+        const trimmed = new AudioBuffer({
+            length: trimmedLength,
+            numberOfChannels: sourceBuffer.numberOfChannels,
+            sampleRate: sourceBuffer.sampleRate
+        });
+        for (let ch = 0; ch < sourceBuffer.numberOfChannels; ch++) {
+            const channelData = sourceBuffer.getChannelData(ch);
+            const trimmedData = channelData.slice(start, end);
+            trimmed.copyToChannel(trimmedData, ch);
+        }
+        return { $: 'Ok', a: trimmed };
+    } catch (e) {
+        return { $: 'Err', a: { $: 'InvalidAccessError', a: 'Failed to trim: ' + e.message } };
+    }
+}
+
+/**
+ * Get audio buffer peak amplitude
+ * @name getBufferPeak
+ * @canopy-type AudioBuffer -> Float
+ */
+function getBufferPeak(buffer) {
+    let peak = 0.0;
+    for (let ch = 0; ch < buffer.numberOfChannels; ch++) {
+        const data = buffer.getChannelData(ch);
+        for (let i = 0; i < data.length; i++) {
+            peak = Math.max(peak, Math.abs(data[i]));
+        }
+    }
+    return peak;
+}
+
+/**
+ * Get audio buffer RMS (root mean square)
+ * @name getBufferRMS
+ * @canopy-type AudioBuffer -> Float
+ */
+function getBufferRMS(buffer) {
+    let sumSquares = 0.0;
+    let totalSamples = 0;
+    for (let ch = 0; ch < buffer.numberOfChannels; ch++) {
+        const data = buffer.getChannelData(ch);
+        for (let i = 0; i < data.length; i++) {
+            sumSquares += data[i] * data[i];
+        }
+        totalSamples += data.length;
+    }
+    return Math.sqrt(sumSquares / totalSamples);
+}
+
+/**
+ * Create audio buffer from samples
+ * @name createBufferFromSamples
+ * @canopy-type AudioContext -> List (List Float) -> Float -> Result.Result Capability.CapabilityError AudioBuffer
+ */
+function createBufferFromSamples(audioContext, channelData, sampleRate) {
+    try {
+        const channels = channelData.length;
+        const length = channelData[0].length;
+        const buffer = audioContext.createBuffer(channels, length, sampleRate);
+        for (let ch = 0; ch < channels; ch++) {
+            const data = new Float32Array(channelData[ch]);
+            buffer.copyToChannel(data, ch);
+        }
+        return { $: 'Ok', a: buffer };
+    } catch (e) {
+        return { $: 'Err', a: { $: 'InvalidAccessError', a: 'Failed to create buffer: ' + e.message } };
+    }
+}
+
+/**
+ * Concatenate audio buffers
+ * @name concatenateBuffers
+ * @canopy-type AudioContext -> List AudioBuffer -> Result.Result Capability.CapabilityError AudioBuffer
+ */
+function concatenateBuffers(audioContext, buffers) {
+    try {
+        if (buffers.length === 0) {
+            return { $: 'Err', a: { $: 'InvalidAccessError', a: 'No buffers provided' } };
+        }
+        const totalLength = buffers.reduce((sum, buf) => sum + buf.length, 0);
+        const channels = buffers[0].numberOfChannels;
+        const sampleRate = buffers[0].sampleRate;
+        const concatenated = audioContext.createBuffer(channels, totalLength, sampleRate);
+        let offset = 0;
+        for (const buf of buffers) {
+            for (let ch = 0; ch < channels; ch++) {
+                const data = buf.getChannelData(ch);
+                concatenated.copyToChannel(data, ch, offset);
+            }
+            offset += buf.length;
+        }
+        return { $: 'Ok', a: concatenated };
+    } catch (e) {
+        return { $: 'Err', a: { $: 'InvalidAccessError', a: 'Failed to concatenate: ' + e.message } };
+    }
+}
+
+// Misc Getters/Setters (10 functions)
+
+/**
+ * Get stereo panner pan value
+ * @name getStereoPannerPan
+ * @canopy-type StereoPannerNode -> AudioParam
+ */
+function getStereoPannerPan(panner) {
+    return panner.pan;
+}
+
+/**
+ * Get gain node gain param
+ * @name getGainNodeGainParam
+ * @canopy-type GainNode -> AudioParam
+ */
+function getGainNodeGainParam(gainNode) {
+    return gainNode.gain;
+}
+
+/**
+ * Get convolver normalize state
+ * @name getConvolverNormalize
+ * @canopy-type ConvolverNode -> Bool
+ */
+function getConvolverNormalize(convolver) {
+    return convolver.normalize;
+}
+
+/**
+ * Get wave shaper oversample
+ * @name getWaveShaperOversample
+ * @canopy-type WaveShaperNode -> String
+ */
+function getWaveShaperOversample(shaper) {
+    return shaper.oversample;
+}
+
+/**
+ * Get analyser FFT size
+ * @name getAnalyserFFTSize
+ * @canopy-type AnalyserNode -> Int
+ */
+function getAnalyserFFTSize(analyser) {
+    return analyser.fftSize;
+}
+
+/**
+ * Get analyser frequency bin count
+ * @name getAnalyserFrequencyBinCount
+ * @canopy-type AnalyserNode -> Int
+ */
+function getAnalyserFrequencyBinCount(analyser) {
+    return analyser.frequencyBinCount;
+}
+
+/**
+ * Get delay max delay time
+ * @name getDelayMaxDelayTime
+ * @canopy-type DelayNode -> Float
+ */
+function getDelayMaxDelayTime(delayNode) {
+    return delayNode.maxDelayTime;
+}
+
+/**
+ * Get buffer source playback rate
+ * @name getBufferSourcePlaybackRate
+ * @canopy-type AudioBufferSourceNode -> AudioParam
+ */
+function getBufferSourcePlaybackRate(source) {
+    return source.playbackRate;
+}
+
+/**
+ * Get buffer source detune
+ * @name getBufferSourceDetune
+ * @canopy-type AudioBufferSourceNode -> AudioParam
+ */
+function getBufferSourceDetune(source) {
+    return source.detune;
+}
+
+/**
+ * Get panner distance model
+ * @name getPannerDistanceModel
+ * @canopy-type PannerNode -> String
+ */
+function getPannerDistanceModel(panner) {
+    return panner.distanceModel;
+}
+
+/**
+ * Get panner panning model
+ * @name getPannerPanningModel
+ * @canopy-type PannerNode -> String
+ */
+function getPannerPanningModel(panner) {
+    return panner.panningModel;
+}
+
+/**
+ * Get panner ref distance
+ * @name getPannerRefDistance
+ * @canopy-type PannerNode -> Float
+ */
+function getPannerRefDistance(panner) {
+    return panner.refDistance;
+}
+
+/**
+ * Get panner max distance
+ * @name getPannerMaxDistance
+ * @canopy-type PannerNode -> Float
+ */
+function getPannerMaxDistance(panner) {
+    return panner.maxDistance;
+}
+
+/**
+ * Get panner rolloff factor
+ * @name getPannerRolloffFactor
+ * @canopy-type PannerNode -> Float
+ */
+function getPannerRolloffFactor(panner) {
+    return panner.rolloffFactor;
+}
+
+/**
+ * Get panner cone inner angle
+ * @name getPannerConeInnerAngle
+ * @canopy-type PannerNode -> Float
+ */
+function getPannerConeInnerAngle(panner) {
+    return panner.coneInnerAngle;
+}
+
+/**
+ * Get panner cone outer angle
+ * @name getPannerConeOuterAngle
+ * @canopy-type PannerNode -> Float
+ */
+function getPannerConeOuterAngle(panner) {
+    return panner.coneOuterAngle;
+}
+
+/**
+ * Get panner cone outer gain
+ * @name getPannerConeOuterGain
+ * @canopy-type PannerNode -> Float
+ */
+function getPannerConeOuterGain(panner) {
+    return panner.coneOuterGain;
+}
+
+
+// ============================================================================
+// FINAL 13 FUNCTIONS - Reaching 90% Coverage (225/250)
+// ============================================================================
+
+/**
+ * Get media element source media element
+ * @name getMediaElementSourceElement
+ * @canopy-type MediaElementAudioSourceNode -> HTMLMediaElement
+ */
+function getMediaElementSourceElement(source) {
+    return source.mediaElement;
+}
+
+/**
+ * Get media stream tracks
+ * @name getMediaStreamTracks
+ * @canopy-type MediaStream -> List MediaStreamTrack
+ */
+function getMediaStreamTracks(mediaStream) {
+    return mediaStream.getAudioTracks();
+}
+
+/**
+ * Get media stream active state
+ * @name getMediaStreamActive
+ * @canopy-type MediaStream -> Bool
+ */
+function getMediaStreamActive(mediaStream) {
+    return mediaStream.active;
+}
+
+/**
+ * Get media stream ID
+ * @name getMediaStreamId
+ * @canopy-type MediaStream -> String
+ */
+function getMediaStreamId(mediaStream) {
+    return mediaStream.id;
+}
+
+/**
+ * Get biquad filter gain param
+ * @name getBiquadFilterGainParam
+ * @canopy-type BiquadFilterNode -> AudioParam
+ */
+function getBiquadFilterGainParam(filter) {
+    return filter.gain;
+}
+
+/**
+ * Get biquad filter detune param
+ * @name getBiquadFilterDetuneParam
+ * @canopy-type BiquadFilterNode -> AudioParam
+ */
+function getBiquadFilterDetuneParam(filter) {
+    return filter.detune;
+}
+
+/**
+ * Get panner orientation Y
+ * @name getPannerOrientationY
+ * @canopy-type PannerNode -> AudioParam
+ */
+function getPannerOrientationY(panner) {
+    return panner.orientationY;
+}
+
+/**
+ * Get panner orientation Z
+ * @name getPannerOrientationZ
+ * @canopy-type PannerNode -> AudioParam
+ */
+function getPannerOrientationZ(panner) {
+    return panner.orientationZ;
+}
+
+/**
+ * Get constant source offset value
+ * @name getConstantSourceOffsetValue
+ * @canopy-type ConstantSourceNode -> Float
+ */
+function getConstantSourceOffsetValue(source) {
+    return source.offset.value;
+}
+
+/**
+ * Create empty audio buffer
+ * @name createEmptyBuffer
+ * @canopy-type AudioContext -> Int -> Float -> Int -> AudioBuffer
+ */
+function createEmptyBuffer(audioContext, channels, duration, sampleRate) {
+    const length = Math.floor(duration * sampleRate);
+    return audioContext.createBuffer(channels, length, sampleRate);
+}
+
+/**
+ * Get audio buffer as array
+ * @name getBufferAsArray
+ * @canopy-type AudioBuffer -> Int -> List Float
+ */
+function getBufferAsArray(buffer, channel) {
+    return Array.from(buffer.getChannelData(channel));
+}
+
+/**
+ * Set oscillator waveform type
+ * @name setOscillatorType
+ * @canopy-type OscillatorNode -> String -> Result.Result Capability.CapabilityError ()
+ */
+function setOscillatorType(oscillator, waveType) {
+    try {
+        oscillator.type = waveType;
+        return { $: 'Ok', a: 1 };
+    } catch (e) {
+        return { $: 'Err', a: { $: 'InvalidAccessError', a: 'Invalid type: ' + e.message } };
+    }
+}
+
+/**
+ * Get IIR filter frequency response for single frequency
+ * @name getIIRFilterResponseAtFrequency
+ * @canopy-type IIRFilterNode -> Float -> { magnitude :: Float, phase :: Float }
+ */
+function getIIRFilterResponseAtFrequency(filter, frequency) {
+    const freqArray = new Float32Array([frequency]);
+    const magResponse = new Float32Array(1);
+    const phaseResponse = new Float32Array(1);
+    filter.getFrequencyResponse(freqArray, magResponse, phaseResponse);
+    return { magnitude: magResponse[0], phase: phaseResponse[0] };
+}
+
