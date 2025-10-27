@@ -125,6 +125,23 @@ function getContextState(audioContext) {
     return audioContext.state;
 }
 
+/**
+ * Decode audio data from ArrayBuffer (MP3, AAC, OGG, WAV)
+ * @name decodeAudioData
+ * @canopy-type AudioContext -> ArrayBuffer -> Task.Task Capability.CapabilityError AudioBuffer
+ */
+function decodeAudioData(audioContext, arrayBuffer) {
+    return audioContext.decodeAudioData(arrayBuffer)
+        .then(audioBuffer => ({ $: 'Ok', a: audioBuffer }))
+        .catch(error => ({
+            $: 'Err',
+            a: {
+                $: 'DecodeError',
+                a: 'Failed to decode audio: ' + error.message
+            }
+        }));
+}
+
 // ============================================================================
 // SOURCE NODES - Audio Generation
 // ============================================================================
@@ -238,6 +255,55 @@ function setOscillatorDetune(oscillator, detune, when) {
  */
 function createBufferSource(audioContext) {
     return audioContext.createBufferSource();
+}
+
+/**
+ * Create media stream source from microphone/getUserMedia
+ * @name createMediaStreamSource
+ * @canopy-type AudioContext -> MediaStream -> Result.Result Capability.CapabilityError MediaStreamAudioSourceNode
+ */
+function createMediaStreamSource(audioContext, mediaStream) {
+    try {
+        const source = audioContext.createMediaStreamSource(mediaStream);
+        return { $: 'Ok', a: source };
+    } catch (e) {
+        if (e.name === 'InvalidStateError') {
+            return { $: 'Err', a: { $: 'InvalidStateError', a: 'Context closed: ' + e.message } };
+        } else if (e.name === 'NotSupportedError') {
+            return { $: 'Err', a: { $: 'NotSupportedError', a: 'MediaStream not supported: ' + e.message } };
+        } else {
+            return { $: 'Err', a: { $: 'InvalidAccessError', a: 'Failed to create media stream source: ' + e.message } };
+        }
+    }
+}
+
+/**
+ * Create media stream destination for recording
+ * @name createMediaStreamDestination
+ * @canopy-type AudioContext -> Result.Result Capability.CapabilityError MediaStreamAudioDestinationNode
+ */
+function createMediaStreamDestination(audioContext) {
+    try {
+        const destination = audioContext.createMediaStreamDestination();
+        return { $: 'Ok', a: destination };
+    } catch (e) {
+        if (e.name === 'InvalidStateError') {
+            return { $: 'Err', a: { $: 'InvalidStateError', a: 'Context closed: ' + e.message } };
+        } else if (e.name === 'NotSupportedError') {
+            return { $: 'Err', a: { $: 'NotSupportedError', a: 'MediaStream destination not supported: ' + e.message } };
+        } else {
+            return { $: 'Err', a: { $: 'InvalidAccessError', a: 'Failed to create media stream destination: ' + e.message } };
+        }
+    }
+}
+
+/**
+ * Get media stream from destination node
+ * @name getMediaStream
+ * @canopy-type MediaStreamAudioDestinationNode -> MediaStream
+ */
+function getMediaStream(destinationNode) {
+    return destinationNode.stream;
 }
 
 /**
@@ -444,6 +510,43 @@ function createConvolver(audioContext) {
 }
 
 /**
+ * Set convolver impulse response buffer
+ * @name setConvolverBuffer
+ * @canopy-type ConvolverNode -> AudioBuffer -> Result.Result Capability.CapabilityError ()
+ */
+function setConvolverBuffer(convolver, audioBuffer) {
+    try {
+        convolver.buffer = audioBuffer;
+        return { $: 'Ok', a: 1 };
+    } catch (e) {
+        if (e.name === 'InvalidStateError') {
+            return { $: 'Err', a: { $: 'InvalidStateError', a: 'Cannot set buffer: ' + e.message } };
+        } else {
+            return { $: 'Err', a: { $: 'InvalidAccessError', a: 'Failed to set convolver buffer: ' + e.message } };
+        }
+    }
+}
+
+/**
+ * Set convolver normalization
+ * @name setConvolverNormalize
+ * @canopy-type ConvolverNode -> Bool -> ()
+ */
+function setConvolverNormalize(convolver, normalize) {
+    convolver.normalize = normalize;
+}
+
+/**
+ * Get convolver buffer
+ * @name getConvolverBuffer
+ * @canopy-type ConvolverNode -> Maybe AudioBuffer
+ */
+function getConvolverBuffer(convolver) {
+    const buffer = convolver.buffer;
+    return buffer ? { $: 'Just', a: buffer } : { $: 'Nothing' };
+}
+
+/**
  * Create dynamics compressor
  * @name createDynamicsCompressor
  * @canopy-type AudioContext -> DynamicsCompressorNode
@@ -504,6 +607,60 @@ function setCompressorRelease(compressor, release, when) {
  */
 function createWaveShaper(audioContext) {
     return audioContext.createWaveShaper();
+}
+
+/**
+ * Set wave shaper distortion curve
+ * @name setWaveShaperCurve
+ * @canopy-type WaveShaperNode -> List Float -> Result.Result Capability.CapabilityError ()
+ */
+function setWaveShaperCurve(shaper, curve) {
+    try {
+        shaper.curve = new Float32Array(curve);
+        return { $: 'Ok', a: 1 };
+    } catch (e) {
+        if (e.name === 'InvalidStateError') {
+            return { $: 'Err', a: { $: 'InvalidStateError', a: 'Cannot set curve: ' + e.message } };
+        } else {
+            return { $: 'Err', a: { $: 'InvalidAccessError', a: 'Failed to set curve: ' + e.message } };
+        }
+    }
+}
+
+/**
+ * Set wave shaper oversample mode
+ * @name setWaveShaperOversample
+ * @canopy-type WaveShaperNode -> String -> ()
+ */
+function setWaveShaperOversample(shaper, oversample) {
+    shaper.oversample = oversample;
+}
+
+/**
+ * Get wave shaper curve
+ * @name getWaveShaperCurve
+ * @canopy-type WaveShaperNode -> Maybe (List Float)
+ */
+function getWaveShaperCurve(shaper) {
+    const curve = shaper.curve;
+    return curve ? { $: 'Just', a: Array.from(curve) } : { $: 'Nothing' };
+}
+
+/**
+ * Generate distortion curve for wave shaper
+ * @name makeDistortionCurve
+ * @canopy-type Float -> Int -> List Float
+ */
+function makeDistortionCurve(amount, nSamples) {
+    const k = amount || 50;
+    const n = nSamples || 44100;
+    const curve = new Float32Array(n);
+    const deg = Math.PI / 180;
+    for (let i = 0; i < n; i++) {
+        const x = (i * 2 / n) - 1;
+        curve[i] = (3 + k) * x * 20 * deg / (Math.PI + k * Math.abs(x));
+    }
+    return Array.from(curve);
 }
 
 /**
@@ -897,6 +1054,62 @@ function getBufferChannels(buffer) {
     return buffer.numberOfChannels;
 }
 
+/**
+ * Get channel data from audio buffer
+ * @name getChannelData
+ * @canopy-type AudioBuffer -> Int -> Result.Result Capability.CapabilityError (List Float)
+ */
+function getChannelData(audioBuffer, channelNumber) {
+    try {
+        const data = audioBuffer.getChannelData(channelNumber);
+        return { $: 'Ok', a: Array.from(data) };
+    } catch (e) {
+        if (e.name === 'IndexSizeError') {
+            return { $: 'Err', a: { $: 'RangeError', a: 'Channel number out of range: ' + e.message } };
+        } else {
+            return { $: 'Err', a: { $: 'InvalidAccessError', a: 'Failed to get channel data: ' + e.message } };
+        }
+    }
+}
+
+/**
+ * Copy data to audio buffer channel
+ * @name copyToChannel
+ * @canopy-type AudioBuffer -> List Float -> Int -> Int -> Result.Result Capability.CapabilityError ()
+ */
+function copyToChannel(audioBuffer, source, channelNumber, startInChannel) {
+    try {
+        const sourceArray = new Float32Array(source);
+        audioBuffer.copyToChannel(sourceArray, channelNumber, startInChannel || 0);
+        return { $: 'Ok', a: 1 };
+    } catch (e) {
+        if (e.name === 'IndexSizeError') {
+            return { $: 'Err', a: { $: 'RangeError', a: 'Invalid channel or offset: ' + e.message } };
+        } else {
+            return { $: 'Err', a: { $: 'InvalidAccessError', a: 'Failed to copy to channel: ' + e.message } };
+        }
+    }
+}
+
+/**
+ * Copy data from audio buffer channel
+ * @name copyFromChannel
+ * @canopy-type AudioBuffer -> Int -> Int -> Int -> Result.Result Capability.CapabilityError (List Float)
+ */
+function copyFromChannel(audioBuffer, channelNumber, startInChannel, length) {
+    try {
+        const destination = new Float32Array(length);
+        audioBuffer.copyFromChannel(destination, channelNumber, startInChannel || 0);
+        return { $: 'Ok', a: Array.from(destination) };
+    } catch (e) {
+        if (e.name === 'IndexSizeError') {
+            return { $: 'Err', a: { $: 'RangeError', a: 'Invalid channel or offset: ' + e.message } };
+        } else {
+            return { $: 'Err', a: { $: 'InvalidAccessError', a: 'Failed to copy from channel: ' + e.message } };
+        }
+    }
+}
+
 // ============================================================================
 // PERIODIC WAVE - Custom Waveforms
 // ============================================================================
@@ -1029,47 +1242,47 @@ function cancelAndHoldAtTime(param, cancelTime) {
 // ============================================================================
 
 /**
- * Get byte time domain data
+ * Get byte time domain data as array
  * @name getByteTimeDomainData
- * @canopy-type AnalyserNode -> Int
+ * @canopy-type AnalyserNode -> List Int
  */
 function getByteTimeDomainData(analyser) {
     const dataArray = new Uint8Array(analyser.frequencyBinCount);
     analyser.getByteTimeDomainData(dataArray);
-    return dataArray[0];
+    return Array.from(dataArray);
 }
 
 /**
- * Get byte frequency data
+ * Get byte frequency data as array
  * @name getByteFrequencyData
- * @canopy-type AnalyserNode -> Int
+ * @canopy-type AnalyserNode -> List Int
  */
 function getByteFrequencyData(analyser) {
     const dataArray = new Uint8Array(analyser.frequencyBinCount);
     analyser.getByteFrequencyData(dataArray);
-    return dataArray[0];
+    return Array.from(dataArray);
 }
 
 /**
- * Get float time domain data
+ * Get float time domain data as array
  * @name getFloatTimeDomainData
- * @canopy-type AnalyserNode -> Float
+ * @canopy-type AnalyserNode -> List Float
  */
 function getFloatTimeDomainData(analyser) {
     const dataArray = new Float32Array(analyser.frequencyBinCount);
     analyser.getFloatTimeDomainData(dataArray);
-    return dataArray[0];
+    return Array.from(dataArray);
 }
 
 /**
- * Get float frequency data
+ * Get float frequency data as array
  * @name getFloatFrequencyData
- * @canopy-type AnalyserNode -> Float
+ * @canopy-type AnalyserNode -> List Float
  */
 function getFloatFrequencyData(analyser) {
     const dataArray = new Float32Array(analyser.frequencyBinCount);
     analyser.getFloatFrequencyData(dataArray);
-    return dataArray[0];
+    return Array.from(dataArray);
 }
 
 // ============================================================================
@@ -1285,4 +1498,249 @@ function updateWaveform(waveform) {
     } catch (error) {
         return "Error updating waveform: " + error.message;
     }
+}
+
+// ============================================================================
+// AUDIOWORKLET - Modern Low-Latency Audio Processing
+// ============================================================================
+
+/**
+ * Load AudioWorklet processor module from URL
+ * @name addAudioWorkletModule
+ * @canopy-type AudioContext -> String -> Task.Task Capability.CapabilityError ()
+ */
+function addAudioWorkletModule(audioContext, moduleURL) {
+    const ctx = audioContext.a;  // Unwrap Initialized AudioContext
+    return ctx.audioWorklet.addModule(moduleURL)
+        .then(() => ({ $: 'Ok', a: 1 }))
+        .catch(error => ({
+            $: 'Err',
+            a: error.name === 'NotSupportedError'
+                ? { $: 'NotSupportedError', a: 'AudioWorklet not supported: ' + error.message }
+                : { $: 'InitializationRequired', a: 'Failed to load worklet module: ' + error.message }
+        }));
+}
+
+/**
+ * Create AudioWorklet node with processor name
+ * @name createAudioWorkletNode
+ * @canopy-type AudioContext -> String -> Result.Result Capability.CapabilityError AudioWorkletNode
+ */
+function createAudioWorkletNode(audioContext, processorName) {
+    try {
+        const ctx = audioContext.a;  // Unwrap Initialized AudioContext
+        const node = new AudioWorkletNode(ctx, processorName);
+        return { $: 'Ok', a: node };
+    } catch (e) {
+        if (e.name === 'InvalidStateError') {
+            return { $: 'Err', a: { $: 'InvalidStateError', a: 'Processor not loaded: ' + e.message } };
+        } else if (e.name === 'NotSupportedError') {
+            return { $: 'Err', a: { $: 'NotSupportedError', a: 'AudioWorklet not supported: ' + e.message } };
+        } else {
+            return { $: 'Err', a: { $: 'InitializationRequired', a: 'Failed to create worklet node: ' + e.message } };
+        }
+    }
+}
+
+/**
+ * Get MessagePort for communicating with AudioWorklet processor
+ * @name getWorkletPort
+ * @canopy-type AudioWorkletNode -> MessagePort
+ */
+function getWorkletPort(workletNode) {
+    return workletNode.port;
+}
+
+/**
+ * Get AudioParamMap from AudioWorklet node
+ * @name getWorkletParameters
+ * @canopy-type AudioWorkletNode -> AudioParamMap
+ */
+function getWorkletParameters(workletNode) {
+    return workletNode.parameters;
+}
+
+/**
+ * Post message to AudioWorklet processor
+ * @name postMessageToWorklet
+ * @canopy-type MessagePort -> String -> ()
+ */
+function postMessageToWorklet(port, message) {
+    port.postMessage(message);
+}
+
+// ============================================================================
+// IIRFILTERNODE - Infinite Impulse Response Filters
+// ============================================================================
+
+/**
+ * Create IIR filter node with feedforward and feedback coefficients
+ * @name createIIRFilter
+ * @canopy-type AudioContext -> List Float -> List Float -> Result.Result Capability.CapabilityError IIRFilterNode
+ */
+function createIIRFilter(audioContext, feedforward, feedback) {
+    try {
+        const ctx = audioContext.a;  // Unwrap Initialized AudioContext
+        const ff = new Float32Array(feedforward);
+        const fb = new Float32Array(feedback);
+        const filter = ctx.createIIRFilter(ff, fb);
+        return { $: 'Ok', a: filter };
+    } catch (e) {
+        if (e.name === 'InvalidStateError') {
+            return { $: 'Err', a: { $: 'InvalidStateError', a: 'Context closed: ' + e.message } };
+        } else if (e.name === 'NotSupportedError') {
+            return { $: 'Err', a: { $: 'NotSupportedError', a: 'IIRFilter not supported: ' + e.message } };
+        } else {
+            return { $: 'Err', a: { $: 'InvalidAccessError', a: 'Invalid coefficients: ' + e.message } };
+        }
+    }
+}
+
+/**
+ * Get frequency response from IIR filter
+ * @name getIIRFilterResponse
+ * @canopy-type IIRFilterNode -> List Float -> Result.Result Capability.CapabilityError { magnitude : List Float, phase : List Float }
+ */
+function getIIRFilterResponse(filter, frequencyArray) {
+    try {
+        const frequencies = new Float32Array(frequencyArray);
+        const magResponse = new Float32Array(frequencies.length);
+        const phaseResponse = new Float32Array(frequencies.length);
+
+        filter.getFrequencyResponse(frequencies, magResponse, phaseResponse);
+
+        return {
+            $: 'Ok',
+            a: {
+                magnitude: Array.from(magResponse),
+                phase: Array.from(phaseResponse)
+            }
+        };
+    } catch (e) {
+        return { $: 'Err', a: { $: 'InvalidAccessError', a: 'Failed to get response: ' + e.message } };
+    }
+}
+
+// ============================================================================
+// CONSTANTSOURCENODE - Constant Audio Signal
+// ============================================================================
+
+/**
+ * Create constant source node
+ * @name createConstantSource
+ * @canopy-type AudioContext -> Result.Result Capability.CapabilityError ConstantSourceNode
+ */
+function createConstantSource(audioContext) {
+    try {
+        const ctx = audioContext.a;  // Unwrap Initialized AudioContext
+        const source = ctx.createConstantSource();
+        return { $: 'Ok', a: source };
+    } catch (e) {
+        if (e.name === 'InvalidStateError') {
+            return { $: 'Err', a: { $: 'InvalidStateError', a: 'Context closed: ' + e.message } };
+        } else {
+            return { $: 'Err', a: { $: 'InitializationRequired', a: 'Failed to create constant source: ' + e.message } };
+        }
+    }
+}
+
+/**
+ * Get offset AudioParam from constant source
+ * @name getConstantSourceOffset
+ * @canopy-type ConstantSourceNode -> AudioParam
+ */
+function getConstantSourceOffset(constantSource) {
+    return constantSource.offset;
+}
+
+/**
+ * Start constant source at specific time
+ * @name startConstantSource
+ * @canopy-type ConstantSourceNode -> Float -> Result.Result Capability.CapabilityError ()
+ */
+function startConstantSource(source, when) {
+    try {
+        source.start(when);
+        return { $: 'Ok', a: 1 };
+    } catch (e) {
+        if (e.name === 'InvalidStateError') {
+            return { $: 'Err', a: { $: 'InvalidStateError', a: 'Already started: ' + e.message } };
+        } else {
+            return { $: 'Err', a: { $: 'InvalidAccessError', a: 'Failed to start: ' + e.message } };
+        }
+    }
+}
+
+/**
+ * Stop constant source at specific time
+ * @name stopConstantSource
+ * @canopy-type ConstantSourceNode -> Float -> Result.Result Capability.CapabilityError ()
+ */
+function stopConstantSource(source, when) {
+    try {
+        source.stop(when);
+        return { $: 'Ok', a: 1 };
+    } catch (e) {
+        if (e.name === 'InvalidStateError') {
+            return { $: 'Err', a: { $: 'InvalidStateError', a: 'Not started or already stopped: ' + e.message } };
+        } else {
+            return { $: 'Err', a: { $: 'InvalidAccessError', a: 'Failed to stop: ' + e.message } };
+        }
+    }
+}
+
+// ============================================================================
+// PERIODICWAVE - Enhanced Custom Waveform Support
+// ============================================================================
+
+/**
+ * Create periodic wave with custom real and imaginary coefficients
+ * @name createPeriodicWaveWithCoefficients
+ * @canopy-type AudioContext -> List Float -> List Float -> Result.Result Capability.CapabilityError PeriodicWave
+ */
+function createPeriodicWaveWithCoefficients(audioContext, real, imag) {
+    try {
+        const ctx = audioContext.a;  // Unwrap Initialized AudioContext
+        const realArray = new Float32Array(real);
+        const imagArray = new Float32Array(imag);
+        const wave = ctx.createPeriodicWave(realArray, imagArray);
+        return { $: 'Ok', a: wave };
+    } catch (e) {
+        if (e.name === 'InvalidStateError') {
+            return { $: 'Err', a: { $: 'InvalidStateError', a: 'Context closed: ' + e.message } };
+        } else {
+            return { $: 'Err', a: { $: 'InvalidAccessError', a: 'Invalid coefficients: ' + e.message } };
+        }
+    }
+}
+
+/**
+ * Create periodic wave with normalization option
+ * @name createPeriodicWaveWithOptions
+ * @canopy-type AudioContext -> List Float -> List Float -> Bool -> Result.Result Capability.CapabilityError PeriodicWave
+ */
+function createPeriodicWaveWithOptions(audioContext, real, imag, disableNormalization) {
+    try {
+        const ctx = audioContext.a;  // Unwrap Initialized AudioContext
+        const realArray = new Float32Array(real);
+        const imagArray = new Float32Array(imag);
+        const options = { disableNormalization: disableNormalization };
+        const wave = ctx.createPeriodicWave(realArray, imagArray, options);
+        return { $: 'Ok', a: wave };
+    } catch (e) {
+        if (e.name === 'InvalidStateError') {
+            return { $: 'Err', a: { $: 'InvalidStateError', a: 'Context closed: ' + e.message } };
+        } else {
+            return { $: 'Err', a: { $: 'InvalidAccessError', a: 'Invalid coefficients: ' + e.message } };
+        }
+    }
+}
+
+/**
+ * Set periodic wave on oscillator
+ * @name setOscillatorPeriodicWave
+ * @canopy-type OscillatorNode -> PeriodicWave -> ()
+ */
+function setOscillatorPeriodicWave(oscillator, periodicWave) {
+    oscillator.setPeriodicWave(periodicWave);
 }

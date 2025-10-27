@@ -34,6 +34,11 @@ type AudioParam = AudioParam
 type PeriodicWave = PeriodicWave
 type OfflineAudioContext = OfflineAudioContext
 type AudioListener = AudioListener
+type AudioWorkletNode = AudioWorkletNode
+type MessagePort = MessagePort
+type AudioParamMap = AudioParamMap
+type IIRFilterNode = IIRFilterNode
+type ConstantSourceNode = ConstantSourceNode
 
 -- ============================================================================
 -- TYPE-SAFE AUDIO CONTEXT OPERATIONS
@@ -130,3 +135,61 @@ updateVolume =
 
 updateWaveform =
     FFI.updateWaveform
+
+-- ============================================================================
+-- AUDIOWORKLET OPERATIONS (Modern Low-Latency Processing)
+-- ============================================================================
+
+addAudioWorkletModule =
+    FFI.addAudioWorkletModule
+
+createAudioWorkletNode =
+    FFI.createAudioWorkletNode
+
+getWorkletPort =
+    FFI.getWorkletPort
+
+getWorkletParameters =
+    FFI.getWorkletParameters
+
+postMessageToWorklet =
+    FFI.postMessageToWorklet
+
+-- ============================================================================
+-- IIR FILTER NODE OPERATIONS
+-- ============================================================================
+
+createIIRFilter =
+    FFI.createIIRFilter
+
+getIIRFilterResponse =
+    FFI.getIIRFilterResponse
+
+-- ============================================================================
+-- CONSTANT SOURCE NODE OPERATIONS
+-- ============================================================================
+
+createConstantSource =
+    FFI.createConstantSource
+
+getConstantSourceOffset =
+    FFI.getConstantSourceOffset
+
+startConstantSource =
+    FFI.startConstantSource
+
+stopConstantSource =
+    FFI.stopConstantSource
+
+-- ============================================================================
+-- PERIODIC WAVE ENHANCED OPERATIONS
+-- ============================================================================
+
+createPeriodicWaveWithCoefficients =
+    FFI.createPeriodicWaveWithCoefficients
+
+createPeriodicWaveWithOptions =
+    FFI.createPeriodicWaveWithOptions
+
+setOscillatorPeriodicWave =
+    FFI.setOscillatorPeriodicWave
