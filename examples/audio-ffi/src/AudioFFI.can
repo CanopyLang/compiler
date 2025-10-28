@@ -1246,5 +1246,3 @@ getConstantSourceOffsetValue =
 getIIRFilterResponseAtFrequency : IIRFilterNode -> Float -> ( Float, Float )
 getIIRFilterResponseAtFrequency =
     FFI.getIIRFilterResponseAtFrequency
-
-
