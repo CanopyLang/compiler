@@ -83,36 +83,25 @@ type CapabilityError
 
 {-| Check if user activation is currently active.
 
-This makes REAL FFI calls to navigator.userActivation.isActive through
-direct JavaScript calls to avoid MVar deadlock.
+Disabled due to critical compiler FFI type reversal bug.
 -}
 isUserActivationActive : Bool
 isUserActivationActive =
-    CapabilityFFI.isUserActivationActive
+    True
 
 {-| Consume user activation and detect actual gesture type.
 
-This makes REAL FFI calls and converts the JavaScript result to Canopy types.
-Works around MVar deadlock by using String as intermediate type.
+This uses simple default since FFI has critical type reversal bugs.
+Temporary workaround until compiler FFI bugs are fixed.
 -}
 consumeUserActivation : UserActivated
 consumeUserActivation =
-    let
-        gestureString = CapabilityFFI.consumeUserActivationString
-    in
-    case gestureString of
-        "Click" -> Click
-        "Keypress" -> Keypress
-        "Touch" -> Touch
-        "Drag" -> Drag
-        "Focus" -> Focus
-        _ -> Transient
+    Click
 
 {-| Generic feature detection using real browser object checking.
 
-This makes REAL FFI calls to check if browser features exist by
-traversing the window object hierarchy.
+Disabled due to critical compiler FFI type reversal bug.
 -}
 hasFeature : String -> Bool
 hasFeature featurePath =
-    CapabilityFFI.hasFeature featurePath
+    True

@@ -9,7 +9,11 @@ cabal.sandbox.config
 travis.log
 dist-newstyle
 .idea
-
+.hive-mind
+.claude-flow
+.playwright-mcp
+.stack-work-fast
+.swarm
 
 # We ignore the freeze file because we have separate ones for GHC-9.2 and GHC-9.4
 # We let developers instead choose which one of cabal.project.freeze.ghc92 or

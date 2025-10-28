@@ -51,7 +51,7 @@ runDev tmp = do
       Left _ -> error "details failed"
       Right d -> pure d
   let srcFile = tmp </> "src" </> "Main.can"
-  artifactsE <- Build.fromPaths Reporting.silent tmp details (NE.List srcFile [])
+  artifactsE <- Build.fromPaths Reporting.silent tmp details [srcFile]
   case artifactsE of
     Left _ -> error "build failed"
     Right artifacts -> do

@@ -1,6 +1,6 @@
 module Integration.CompilerTest (tests) where
 
-import qualified Compile
+import qualified Compiler
 import System.Directory
 import System.FilePath
 import System.IO.Temp

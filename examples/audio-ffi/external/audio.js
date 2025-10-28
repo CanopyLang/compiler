@@ -15,7 +15,7 @@
 /**
  * Create audio context with error handling
  * @name createAudioContext
- * @canopy-type UserActivated -> Result Capability.CapabilityError (Initialized AudioContext)
+ * @canopy-type Capability.UserActivated -> Result Capability.CapabilityError (Capability.Initialized AudioContext)
  */
 function createAudioContext(userActivation) {
     try {
@@ -41,7 +41,7 @@ function createAudioContext(userActivation) {
 /**
  * Get current time from audio context
  * @name getCurrentTime
- * @canopy-type Initialized AudioContext -> Float
+ * @canopy-type (Capability.Initialized AudioContext) -> Float
  */
 function getCurrentTime(initializedContext) {
     const audioContext = initializedContext.a;
@@ -51,11 +51,11 @@ function getCurrentTime(initializedContext) {
 /**
  * Resume audio context with error handling
  * @name resumeAudioContext
- * @canopy-type Initialized AudioContext -> Result Capability.CapabilityError (Initialized AudioContext)
+ * @canopy-type (Capability.Initialized AudioContext) -> Result Capability.CapabilityError (Capability.Initialized AudioContext)
  */
 function resumeAudioContext(initializedContext) {
     try {
-        // Extract AudioContext from Initialized wrapper
+        // Extract AudioContext from Capability.Initialized wrapper
         const audioContext = initializedContext.a;
         audioContext.resume();
         // Return Task Ok with Running initialized context
@@ -92,7 +92,7 @@ function suspendAudioContext(audioContext) {
 /**
  * Close audio context with error handling
  * @name closeAudioContext
- * @canopy-type AudioContext -> Result Capability.CapabilityError Basics.Int
+ * @canopy-type AudioContext -> Result Capability.CapabilityError Int
  */
 function closeAudioContext(audioContext) {
     try {
@@ -128,7 +128,7 @@ function getContextState(audioContext) {
 /**
  * Decode audio data from ArrayBuffer (MP3, AAC, OGG, WAV)
  * @name decodeAudioData
- * @canopy-type AudioContext -> ArrayBuffer -> Task.Task Capability.CapabilityError AudioBuffer
+ * @canopy-type AudioContext -> ArrayBuffer -> Task Capability.CapabilityError AudioBuffer
  */
 function decodeAudioData(audioContext, arrayBuffer) {
     return audioContext.decodeAudioData(arrayBuffer)
@@ -149,11 +149,11 @@ function decodeAudioData(audioContext, arrayBuffer) {
 /**
  * Create oscillator node with error handling
  * @name createOscillator
- * @canopy-type Initialized AudioContext -> Float -> String -> Result Capability.CapabilityError OscillatorNode
+ * @canopy-type (Capability.Initialized AudioContext) -> Float -> String -> Result Capability.CapabilityError OscillatorNode
  */
 function createOscillator(initializedContext, frequency, waveType) {
     try {
-        // Extract AudioContext from Initialized wrapper
+        // Extract AudioContext from Capability.Initialized wrapper
         const audioContext = initializedContext.a;
 
         // Validate parameters
@@ -185,7 +185,7 @@ function createOscillator(initializedContext, frequency, waveType) {
 /**
  * Start oscillator at specific time with error handling
  * @name startOscillator
- * @canopy-type OscillatorNode -> Float -> Result Capability.CapabilityError Basics.Int
+ * @canopy-type OscillatorNode -> Float -> Result Capability.CapabilityError Int
  */
 function startOscillator(oscillator, when) {
     try {
@@ -209,7 +209,7 @@ function startOscillator(oscillator, when) {
 /**
  * Stop oscillator at specific time with error handling
  * @name stopOscillator
- * @canopy-type OscillatorNode -> Float -> Result Capability.CapabilityError Basics.Int
+ * @canopy-type OscillatorNode -> Float -> Result Capability.CapabilityError Int
  */
 function stopOscillator(oscillator, when) {
     try {
@@ -260,7 +260,7 @@ function createBufferSource(audioContext) {
 /**
  * Create media stream source from microphone/getUserMedia
  * @name createMediaStreamSource
- * @canopy-type AudioContext -> MediaStream -> Result.Result Capability.CapabilityError MediaStreamAudioSourceNode
+ * @canopy-type AudioContext -> MediaStream -> Result Capability.CapabilityError MediaStreamAudioSourceNode
  */
 function createMediaStreamSource(audioContext, mediaStream) {
     try {
@@ -280,7 +280,7 @@ function createMediaStreamSource(audioContext, mediaStream) {
 /**
  * Create media stream destination for recording
  * @name createMediaStreamDestination
- * @canopy-type AudioContext -> Result.Result Capability.CapabilityError MediaStreamAudioDestinationNode
+ * @canopy-type AudioContext -> Result Capability.CapabilityError MediaStreamAudioDestinationNode
  */
 function createMediaStreamDestination(audioContext) {
     try {
@@ -309,7 +309,7 @@ function getMediaStream(destinationNode) {
 /**
  * Start buffer source with error handling
  * @name startBufferSource
- * @canopy-type AudioBufferSourceNode -> Float -> Result Capability.CapabilityError Basics.Int
+ * @canopy-type AudioBufferSourceNode -> Float -> Result Capability.CapabilityError Int
  */
 function startBufferSource(source, when) {
     try {
@@ -332,7 +332,7 @@ function startBufferSource(source, when) {
 /**
  * Stop buffer source with error handling
  * @name stopBufferSource
- * @canopy-type AudioBufferSourceNode -> Float -> Result Capability.CapabilityError Basics.Int
+ * @canopy-type AudioBufferSourceNode -> Float -> Result Capability.CapabilityError Int
  */
 function stopBufferSource(source, when) {
     try {
@@ -359,11 +359,11 @@ function stopBufferSource(source, when) {
 /**
  * Create gain node for volume control with error handling
  * @name createGainNode
- * @canopy-type Initialized AudioContext -> Float -> Result Capability.CapabilityError GainNode
+ * @canopy-type (Capability.Initialized AudioContext) -> Float -> Result Capability.CapabilityError GainNode
  */
 function createGainNode(initializedContext, gain) {
     try {
-        // Extract AudioContext from Initialized wrapper
+        // Extract AudioContext from Capability.Initialized wrapper
         const audioContext = initializedContext.a;
 
         const gainNode = audioContext.createGain();
@@ -385,7 +385,7 @@ function createGainNode(initializedContext, gain) {
 /**
  * Set gain value with error handling
  * @name setGain
- * @canopy-type GainNode -> Float -> Float -> Result Capability.CapabilityError Basics.Int
+ * @canopy-type GainNode -> Float -> Float -> Result Capability.CapabilityError Int
  */
 function setGain(gainNode, value, when) {
     try {
@@ -406,7 +406,7 @@ function setGain(gainNode, value, when) {
 /**
  * Ramp gain linearly with error handling
  * @name rampGainLinear
- * @canopy-type GainNode -> Float -> Float -> Result Capability.CapabilityError Basics.Int
+ * @canopy-type GainNode -> Float -> Float -> Result Capability.CapabilityError Int
  */
 function rampGainLinear(gainNode, targetValue, endTime) {
     try {
@@ -424,7 +424,7 @@ function rampGainLinear(gainNode, targetValue, endTime) {
 /**
  * Ramp gain exponentially with error handling
  * @name rampGainExponential
- * @canopy-type GainNode -> Float -> Float -> Result Capability.CapabilityError Basics.Int
+ * @canopy-type GainNode -> Float -> Float -> Result Capability.CapabilityError Int
  */
 function rampGainExponential(gainNode, targetValue, endTime) {
     try {
@@ -512,7 +512,7 @@ function createConvolver(audioContext) {
 /**
  * Set convolver impulse response buffer
  * @name setConvolverBuffer
- * @canopy-type ConvolverNode -> AudioBuffer -> Result.Result Capability.CapabilityError ()
+ * @canopy-type ConvolverNode -> AudioBuffer -> Result Capability.CapabilityError ()
  */
 function setConvolverBuffer(convolver, audioBuffer) {
     try {
@@ -612,7 +612,7 @@ function createWaveShaper(audioContext) {
 /**
  * Set wave shaper distortion curve
  * @name setWaveShaperCurve
- * @canopy-type WaveShaperNode -> List Float -> Result.Result Capability.CapabilityError ()
+ * @canopy-type WaveShaperNode -> List Float -> Result Capability.CapabilityError ()
  */
 function setWaveShaperCurve(shaper, curve) {
     try {
@@ -639,7 +639,7 @@ function setWaveShaperOversample(shaper, oversample) {
 /**
  * Get wave shaper curve
  * @name getWaveShaperCurve
- * @canopy-type WaveShaperNode -> Maybe (List Float)
+ * @canopy-type WaveShaperNode -> Maybe List Float
  */
 function getWaveShaperCurve(shaper) {
     const curve = shaper.curve;
@@ -728,7 +728,7 @@ function getFrequencyBinCount(analyser) {
 /**
  * Connect audio nodes with error handling
  * @name connectNodes
- * @canopy-type OscillatorNode -> GainNode -> Result Capability.CapabilityError Basics.Int
+ * @canopy-type OscillatorNode -> GainNode -> Result Capability.CapabilityError Int
  */
 function connectNodes(sourceNode, destinationNode) {
     try {
@@ -750,11 +750,11 @@ function connectNodes(sourceNode, destinationNode) {
 /**
  * Connect to destination (speakers) with error handling
  * @name connectToDestination
- * @canopy-type GainNode -> Initialized AudioContext -> Result Capability.CapabilityError Basics.Int
+ * @canopy-type GainNode -> Capability.Initialized AudioContext -> Result Capability.CapabilityError Int
  */
 function connectToDestination(node, initializedContext) {
     try {
-        // Extract AudioContext from Initialized wrapper
+        // Extract AudioContext from Capability.Initialized wrapper
         const audioContext = initializedContext.a;
         node.connect(audioContext.destination);
         // Return Task Ok with unit value
@@ -1057,7 +1057,7 @@ function getBufferChannels(buffer) {
 /**
  * Get channel data from audio buffer
  * @name getChannelData
- * @canopy-type AudioBuffer -> Int -> Result.Result Capability.CapabilityError (List Float)
+ * @canopy-type AudioBuffer -> Int -> Result Capability.CapabilityError List Float
  */
 function getChannelData(audioBuffer, channelNumber) {
     try {
@@ -1075,7 +1075,7 @@ function getChannelData(audioBuffer, channelNumber) {
 /**
  * Copy data to audio buffer channel
  * @name copyToChannel
- * @canopy-type AudioBuffer -> List Float -> Int -> Int -> Result.Result Capability.CapabilityError ()
+ * @canopy-type AudioBuffer -> List Float -> Int -> Int -> Result Capability.CapabilityError ()
  */
 function copyToChannel(audioBuffer, source, channelNumber, startInChannel) {
     try {
@@ -1094,7 +1094,7 @@ function copyToChannel(audioBuffer, source, channelNumber, startInChannel) {
 /**
  * Copy data from audio buffer channel
  * @name copyFromChannel
- * @canopy-type AudioBuffer -> Int -> Int -> Int -> Result.Result Capability.CapabilityError (List Float)
+ * @canopy-type AudioBuffer -> Int -> Int -> Int -> Result Capability.CapabilityError List Float
  */
 function copyFromChannel(audioBuffer, channelNumber, startInChannel, length) {
     try {
@@ -1122,7 +1122,7 @@ function createSilentBuffer(audioContext, channels, length, sampleRate) {
 /**
  * Clone audio buffer
  * @name cloneAudioBuffer
- * @canopy-type AudioBuffer -> Result.Result Capability.CapabilityError AudioBuffer
+ * @canopy-type AudioBuffer -> Result Capability.CapabilityError AudioBuffer
  */
 function cloneAudioBuffer(sourceBuffer) {
     try {
@@ -1143,7 +1143,7 @@ function cloneAudioBuffer(sourceBuffer) {
 /**
  * Create media element source (HTML audio/video)
  * @name createMediaElementSource
- * @canopy-type AudioContext -> HTMLMediaElement -> Result.Result Capability.CapabilityError MediaElementAudioSourceNode
+ * @canopy-type AudioContext -> HTMLMediaElement -> Result Capability.CapabilityError MediaElementAudioSourceNode
  */
 function createMediaElementSource(audioContext, mediaElement) {
     try {
@@ -1201,7 +1201,7 @@ function startOfflineRendering(offlineContext) {
 /**
  * Start offline rendering with Promise support (async)
  * @name startOfflineRenderingAsync
- * @canopy-type OfflineAudioContext -> Task.Task Capability.CapabilityError AudioBuffer
+ * @canopy-type OfflineAudioContext -> Task Capability.CapabilityError AudioBuffer
  */
 function startOfflineRenderingAsync(offlineContext) {
     return offlineContext.startRendering()
@@ -1215,7 +1215,7 @@ function startOfflineRenderingAsync(offlineContext) {
 /**
  * Suspend offline context at specified time
  * @name suspendOfflineContext
- * @canopy-type OfflineAudioContext -> Float -> Task.Task Capability.CapabilityError ()
+ * @canopy-type OfflineAudioContext -> Float -> Task Capability.CapabilityError ()
  */
 function suspendOfflineContext(offlineContext, suspendTime) {
     return offlineContext.suspend(suspendTime)
@@ -1229,7 +1229,7 @@ function suspendOfflineContext(offlineContext, suspendTime) {
 /**
  * Resume suspended offline context
  * @name resumeOfflineContext
- * @canopy-type OfflineAudioContext -> Task.Task Capability.CapabilityError ()
+ * @canopy-type OfflineAudioContext -> Task Capability.CapabilityError ()
  */
 function resumeOfflineContext(offlineContext) {
     return offlineContext.resume()
@@ -1345,6 +1345,37 @@ function cancelAndHoldAtTime(param, cancelTime) {
     } else {
         param.cancelScheduledValues(cancelTime);
     }
+}
+
+// ============================================================================
+// AUDIOPARAM - Standard Web Audio API Function Names (Aliases)
+// ============================================================================
+
+/**
+ * Set value at time (Standard Web Audio API name)
+ * @name setValueAtTime
+ * @canopy-type AudioParam -> Float -> Float -> ()
+ */
+function setValueAtTime(param, value, time) {
+    param.setValueAtTime(value, time);
+}
+
+/**
+ * Linear ramp to value at time (Standard Web Audio API name)
+ * @name linearRampToValueAtTime
+ * @canopy-type AudioParam -> Float -> Float -> ()
+ */
+function linearRampToValueAtTime(param, value, endTime) {
+    param.linearRampToValueAtTime(value, endTime);
+}
+
+/**
+ * Exponential ramp to value at time (Standard Web Audio API name)
+ * @name exponentialRampToValueAtTime
+ * @canopy-type AudioParam -> Float -> Float -> ()
+ */
+function exponentialRampToValueAtTime(param, value, endTime) {
+    param.exponentialRampToValueAtTime(value, endTime);
 }
 
 // ============================================================================
@@ -1617,10 +1648,10 @@ function updateWaveform(waveform) {
 /**
  * Load AudioWorklet processor module from URL
  * @name addAudioWorkletModule
- * @canopy-type AudioContext -> String -> Task.Task Capability.CapabilityError ()
+ * @canopy-type AudioContext -> String -> Task Capability.CapabilityError ()
  */
 function addAudioWorkletModule(audioContext, moduleURL) {
-    const ctx = audioContext.a;  // Unwrap Initialized AudioContext
+    const ctx = audioContext.a;  // Unwrap Capability.Initialized AudioContext
     return ctx.audioWorklet.addModule(moduleURL)
         .then(() => ({ $: 'Ok', a: 1 }))
         .catch(error => ({
@@ -1634,11 +1665,11 @@ function addAudioWorkletModule(audioContext, moduleURL) {
 /**
  * Create AudioWorklet node with processor name
  * @name createAudioWorkletNode
- * @canopy-type AudioContext -> String -> Result.Result Capability.CapabilityError AudioWorkletNode
+ * @canopy-type AudioContext -> String -> Result Capability.CapabilityError AudioWorkletNode
  */
 function createAudioWorkletNode(audioContext, processorName) {
     try {
-        const ctx = audioContext.a;  // Unwrap Initialized AudioContext
+        const ctx = audioContext.a;  // Unwrap Capability.Initialized AudioContext
         const node = new AudioWorkletNode(ctx, processorName);
         return { $: 'Ok', a: node };
     } catch (e) {
@@ -1686,11 +1717,11 @@ function postMessageToWorklet(port, message) {
 /**
  * Create IIR filter node with feedforward and feedback coefficients
  * @name createIIRFilter
- * @canopy-type AudioContext -> List Float -> List Float -> Result.Result Capability.CapabilityError IIRFilterNode
+ * @canopy-type AudioContext -> List Float -> List Float -> Result Capability.CapabilityError IIRFilterNode
  */
 function createIIRFilter(audioContext, feedforward, feedback) {
     try {
-        const ctx = audioContext.a;  // Unwrap Initialized AudioContext
+        const ctx = audioContext.a;  // Unwrap Capability.Initialized AudioContext
         const ff = new Float32Array(feedforward);
         const fb = new Float32Array(feedback);
         const filter = ctx.createIIRFilter(ff, fb);
@@ -1707,9 +1738,9 @@ function createIIRFilter(audioContext, feedforward, feedback) {
 }
 
 /**
- * Get frequency response from IIR filter
+ * Get frequency response from IIR filter - returns tuple of (magnitude list, phase list)
  * @name getIIRFilterResponse
- * @canopy-type IIRFilterNode -> List Float -> Result.Result Capability.CapabilityError { magnitude : List Float, phase : List Float }
+ * @canopy-type IIRFilterNode -> List Float -> Result Capability.CapabilityError (List Float, List Float)
  */
 function getIIRFilterResponse(filter, frequencyArray) {
     try {
@@ -1722,8 +1753,9 @@ function getIIRFilterResponse(filter, frequencyArray) {
         return {
             $: 'Ok',
             a: {
-                magnitude: Array.from(magResponse),
-                phase: Array.from(phaseResponse)
+                $: 'Tuple2',
+                a: Array.from(magResponse),
+                b: Array.from(phaseResponse)
             }
         };
     } catch (e) {
@@ -1738,11 +1770,11 @@ function getIIRFilterResponse(filter, frequencyArray) {
 /**
  * Create constant source node
  * @name createConstantSource
- * @canopy-type AudioContext -> Result.Result Capability.CapabilityError ConstantSourceNode
+ * @canopy-type AudioContext -> Result Capability.CapabilityError ConstantSourceNode
  */
 function createConstantSource(audioContext) {
     try {
-        const ctx = audioContext.a;  // Unwrap Initialized AudioContext
+        const ctx = audioContext.a;  // Unwrap Capability.Initialized AudioContext
         const source = ctx.createConstantSource();
         return { $: 'Ok', a: source };
     } catch (e) {
@@ -1766,7 +1798,7 @@ function getConstantSourceOffset(constantSource) {
 /**
  * Start constant source at specific time
  * @name startConstantSource
- * @canopy-type ConstantSourceNode -> Float -> Result.Result Capability.CapabilityError ()
+ * @canopy-type ConstantSourceNode -> Float -> Result Capability.CapabilityError ()
  */
 function startConstantSource(source, when) {
     try {
@@ -1784,7 +1816,7 @@ function startConstantSource(source, when) {
 /**
  * Stop constant source at specific time
  * @name stopConstantSource
- * @canopy-type ConstantSourceNode -> Float -> Result.Result Capability.CapabilityError ()
+ * @canopy-type ConstantSourceNode -> Float -> Result Capability.CapabilityError ()
  */
 function stopConstantSource(source, when) {
     try {
@@ -1806,11 +1838,11 @@ function stopConstantSource(source, when) {
 /**
  * Create periodic wave with custom real and imaginary coefficients
  * @name createPeriodicWaveWithCoefficients
- * @canopy-type AudioContext -> List Float -> List Float -> Result.Result Capability.CapabilityError PeriodicWave
+ * @canopy-type AudioContext -> List Float -> List Float -> Result Capability.CapabilityError PeriodicWave
  */
 function createPeriodicWaveWithCoefficients(audioContext, real, imag) {
     try {
-        const ctx = audioContext.a;  // Unwrap Initialized AudioContext
+        const ctx = audioContext.a;  // Unwrap Capability.Initialized AudioContext
         const realArray = new Float32Array(real);
         const imagArray = new Float32Array(imag);
         const wave = ctx.createPeriodicWave(realArray, imagArray);
@@ -1827,11 +1859,11 @@ function createPeriodicWaveWithCoefficients(audioContext, real, imag) {
 /**
  * Create periodic wave with normalization option
  * @name createPeriodicWaveWithOptions
- * @canopy-type AudioContext -> List Float -> List Float -> Bool -> Result.Result Capability.CapabilityError PeriodicWave
+ * @canopy-type AudioContext -> List Float -> List Float -> Bool -> Result Capability.CapabilityError PeriodicWave
  */
 function createPeriodicWaveWithOptions(audioContext, real, imag, disableNormalization) {
     try {
-        const ctx = audioContext.a;  // Unwrap Initialized AudioContext
+        const ctx = audioContext.a;  // Unwrap Capability.Initialized AudioContext
         const realArray = new Float32Array(real);
         const imagArray = new Float32Array(imag);
         const options = { disableNormalization: disableNormalization };
@@ -1871,7 +1903,7 @@ function getNodeChannelCount(node) {
 /**
  * Set node channel count
  * @name setNodeChannelCount
- * @canopy-type AudioNode -> Int -> Result.Result Capability.CapabilityError ()
+ * @canopy-type AudioNode -> Int -> Result Capability.CapabilityError ()
  */
 function setNodeChannelCount(node, count) {
     try {
@@ -1894,7 +1926,7 @@ function getNodeChannelCountMode(node) {
 /**
  * Set node channel count mode
  * @name setNodeChannelCountMode
- * @canopy-type AudioNode -> String -> Result.Result Capability.CapabilityError ()
+ * @canopy-type AudioNode -> String -> Result Capability.CapabilityError ()
  */
 function setNodeChannelCountMode(node, mode) {
     try {
@@ -1917,7 +1949,7 @@ function getNodeChannelInterpretation(node) {
 /**
  * Set node channel interpretation
  * @name setNodeChannelInterpretation
- * @canopy-type AudioNode -> String -> Result.Result Capability.CapabilityError ()
+ * @canopy-type AudioNode -> String -> Result Capability.CapabilityError ()
  */
 function setNodeChannelInterpretation(node, interpretation) {
     try {
@@ -2025,7 +2057,7 @@ function getCompressorRatioParam(compressor) {
 /**
  * Set value curve at time
  * @name setValueCurveAtTime
- * @canopy-type AudioParam -> List Float -> Float -> Float -> Result.Result Capability.CapabilityError ()
+ * @canopy-type AudioParam -> List Float -> Float -> Float -> Result Capability.CapabilityError ()
  */
 function setValueCurveAtTime(param, values, startTime, duration) {
     try {
@@ -2076,7 +2108,7 @@ function getAudioParamMaxValue(param) {
 /**
  * Set audio param value directly
  * @name setAudioParamValue
- * @canopy-type AudioParam -> Float -> Result.Result Capability.CapabilityError ()
+ * @canopy-type AudioParam -> Float -> Result Capability.CapabilityError ()
  */
 function setAudioParamValue(param, value) {
     try {
@@ -2099,7 +2131,7 @@ function getAudioParamAutomationRate(param) {
 /**
  * Set audio param automation rate
  * @name setAudioParamAutomationRate
- * @canopy-type AudioParam -> String -> Result.Result Capability.CapabilityError ()
+ * @canopy-type AudioParam -> String -> Result Capability.CapabilityError ()
  */
 function setAudioParamAutomationRate(param, rate) {
     try {
@@ -2119,7 +2151,7 @@ function setAudioParamAutomationRate(param, rate) {
 /**
  * Connect nodes with specific channels
  * @name connectNodesWithChannels
- * @canopy-type AudioNode -> AudioNode -> Int -> Int -> Result.Result Capability.CapabilityError ()
+ * @canopy-type AudioNode -> AudioNode -> Int -> Int -> Result Capability.CapabilityError ()
  */
 function connectNodesWithChannels(source, destination, outputChannel, inputChannel) {
     try {
@@ -2133,7 +2165,7 @@ function connectNodesWithChannels(source, destination, outputChannel, inputChann
 /**
  * Disconnect node from specific destination
  * @name disconnectNodeFromDestination
- * @canopy-type AudioNode -> AudioNode -> Result.Result Capability.CapabilityError ()
+ * @canopy-type AudioNode -> AudioNode -> Result Capability.CapabilityError ()
  */
 function disconnectNodeFromDestination(source, destination) {
     try {
@@ -2147,7 +2179,7 @@ function disconnectNodeFromDestination(source, destination) {
 /**
  * Disconnect specific output
  * @name disconnectNodeOutput
- * @canopy-type AudioNode -> Int -> Result.Result Capability.CapabilityError ()
+ * @canopy-type AudioNode -> Int -> Result Capability.CapabilityError ()
  */
 function disconnectNodeOutput(node, output) {
     try {
@@ -2161,7 +2193,7 @@ function disconnectNodeOutput(node, output) {
 /**
  * Disconnect node from specific node and channel
  * @name disconnectNodeFromNodeChannel
- * @canopy-type AudioNode -> AudioNode -> Int -> Int -> Result.Result Capability.CapabilityError ()
+ * @canopy-type AudioNode -> AudioNode -> Int -> Int -> Result Capability.CapabilityError ()
  */
 function disconnectNodeFromNodeChannel(source, destination, output, input) {
     try {
@@ -2222,7 +2254,7 @@ function getContextAudioListener(audioContext) {
 /**
  * Set analyser min decibels
  * @name setAnalyserMinDecibels
- * @canopy-type AnalyserNode -> Float -> Result.Result Capability.CapabilityError ()
+ * @canopy-type AnalyserNode -> Float -> Result Capability.CapabilityError ()
  */
 function setAnalyserMinDecibels(analyser, minDecibels) {
     try {
@@ -2236,7 +2268,7 @@ function setAnalyserMinDecibels(analyser, minDecibels) {
 /**
  * Set analyser max decibels
  * @name setAnalyserMaxDecibels
- * @canopy-type AnalyserNode -> Float -> Result.Result Capability.CapabilityError ()
+ * @canopy-type AnalyserNode -> Float -> Result Capability.CapabilityError ()
  */
 function setAnalyserMaxDecibels(analyser, maxDecibels) {
     try {
@@ -2268,7 +2300,7 @@ function getAnalyserMaxDecibels(analyser) {
 /**
  * Set analyser smoothing time constant
  * @name setAnalyserSmoothingTimeConstant
- * @canopy-type AnalyserNode -> Float -> Result.Result Capability.CapabilityError ()
+ * @canopy-type AnalyserNode -> Float -> Result Capability.CapabilityError ()
  */
 function setAnalyserSmoothingTimeConstant(analyser, constant) {
     try {
@@ -2320,7 +2352,7 @@ function getCompressorReleaseParam(compressor) {
 /**
  * Set compressor attack time directly
  * @name setCompressorAttackDirect
- * @canopy-type DynamicsCompressorNode -> Float -> Result.Result Capability.CapabilityError ()
+ * @canopy-type DynamicsCompressorNode -> Float -> Result Capability.CapabilityError ()
  */
 function setCompressorAttackDirect(compressor, attack) {
     try {
@@ -2334,7 +2366,7 @@ function setCompressorAttackDirect(compressor, attack) {
 /**
  * Set compressor release time directly
  * @name setCompressorReleaseDirect
- * @canopy-type DynamicsCompressorNode -> Float -> Result.Result Capability.CapabilityError ()
+ * @canopy-type DynamicsCompressorNode -> Float -> Result Capability.CapabilityError ()
  */
 function setCompressorReleaseDirect(compressor, release) {
     try {
@@ -2386,7 +2418,7 @@ function getBufferSourceLoopEnd(source) {
 /**
  * Set buffer source loop directly
  * @name setBufferSourceLoopDirect
- * @canopy-type AudioBufferSourceNode -> Bool -> Result.Result Capability.CapabilityError ()
+ * @canopy-type AudioBufferSourceNode -> Bool -> Result Capability.CapabilityError ()
  */
 function setBufferSourceLoopDirect(source, loop) {
     try {
@@ -2438,7 +2470,7 @@ function getPannerOrientationX(panner) {
 /**
  * Set panner orientation using params
  * @name setPannerOrientationDirect
- * @canopy-type PannerNode -> Float -> Float -> Float -> Result.Result Capability.CapabilityError ()
+ * @canopy-type PannerNode -> Float -> Float -> Float -> Result Capability.CapabilityError ()
  */
 function setPannerOrientationDirect(panner, x, y, z) {
     try {
@@ -2465,7 +2497,7 @@ function getBiquadFilterType(filter) {
 /**
  * Set biquad filter type directly
  * @name setBiquadFilterTypeDirect
- * @canopy-type BiquadFilterNode -> String -> Result.Result Capability.CapabilityError ()
+ * @canopy-type BiquadFilterNode -> String -> Result Capability.CapabilityError ()
  */
 function setBiquadFilterTypeDirect(filter, filterType) {
     try {
@@ -2504,7 +2536,7 @@ function getBiquadFilterQParam(filter) {
 /**
  * Reverse audio buffer samples
  * @name reverseAudioBuffer
- * @canopy-type AudioBuffer -> Result.Result Capability.CapabilityError AudioBuffer
+ * @canopy-type AudioBuffer -> Result Capability.CapabilityError AudioBuffer
  */
 function reverseAudioBuffer(sourceBuffer) {
     try {
@@ -2527,7 +2559,7 @@ function reverseAudioBuffer(sourceBuffer) {
 /**
  * Normalize audio buffer amplitude
  * @name normalizeAudioBuffer
- * @canopy-type AudioBuffer -> Float -> Result.Result Capability.CapabilityError AudioBuffer
+ * @canopy-type AudioBuffer -> Float -> Result Capability.CapabilityError AudioBuffer
  */
 function normalizeAudioBuffer(sourceBuffer, targetPeak) {
     try {
@@ -2561,7 +2593,7 @@ function normalizeAudioBuffer(sourceBuffer, targetPeak) {
 /**
  * Mix two audio buffers
  * @name mixAudioBuffers
- * @canopy-type AudioBuffer -> AudioBuffer -> Float -> Result.Result Capability.CapabilityError AudioBuffer
+ * @canopy-type AudioBuffer -> AudioBuffer -> Float -> Result Capability.CapabilityError AudioBuffer
  */
 function mixAudioBuffers(buffer1, buffer2, mixRatio) {
     try {
@@ -2590,7 +2622,7 @@ function mixAudioBuffers(buffer1, buffer2, mixRatio) {
 /**
  * Trim silence from audio buffer
  * @name trimSilence
- * @canopy-type AudioBuffer -> Float -> Result.Result Capability.CapabilityError AudioBuffer
+ * @canopy-type AudioBuffer -> Float -> Result Capability.CapabilityError AudioBuffer
  */
 function trimSilence(sourceBuffer, threshold) {
     try {
@@ -2657,7 +2689,7 @@ function getBufferRMS(buffer) {
 /**
  * Create audio buffer from samples
  * @name createBufferFromSamples
- * @canopy-type AudioContext -> List (List Float) -> Float -> Result.Result Capability.CapabilityError AudioBuffer
+ * @canopy-type AudioContext -> List List Float -> Float -> Result Capability.CapabilityError AudioBuffer
  */
 function createBufferFromSamples(audioContext, channelData, sampleRate) {
     try {
@@ -2677,7 +2709,7 @@ function createBufferFromSamples(audioContext, channelData, sampleRate) {
 /**
  * Concatenate audio buffers
  * @name concatenateBuffers
- * @canopy-type AudioContext -> List AudioBuffer -> Result.Result Capability.CapabilityError AudioBuffer
+ * @canopy-type AudioContext -> List AudioBuffer -> Result Capability.CapabilityError AudioBuffer
  */
 function concatenateBuffers(audioContext, buffers) {
     try {
@@ -2965,7 +2997,7 @@ function getBufferAsArray(buffer, channel) {
 /**
  * Set oscillator waveform type
  * @name setOscillatorType
- * @canopy-type OscillatorNode -> String -> Result.Result Capability.CapabilityError ()
+ * @canopy-type OscillatorNode -> String -> Result Capability.CapabilityError ()
  */
 function setOscillatorType(oscillator, waveType) {
     try {
@@ -2977,15 +3009,248 @@ function setOscillatorType(oscillator, waveType) {
 }
 
 /**
- * Get IIR filter frequency response for single frequency
+ * Get IIR filter frequency response for single frequency - returns tuple of (magnitude, phase)
  * @name getIIRFilterResponseAtFrequency
- * @canopy-type IIRFilterNode -> Float -> { magnitude :: Float, phase :: Float }
+ * @canopy-type IIRFilterNode -> Float -> (Float, Float)
  */
 function getIIRFilterResponseAtFrequency(filter, frequency) {
     const freqArray = new Float32Array([frequency]);
     const magResponse = new Float32Array(1);
     const phaseResponse = new Float32Array(1);
     filter.getFrequencyResponse(freqArray, magResponse, phaseResponse);
-    return { magnitude: magResponse[0], phase: phaseResponse[0] };
+    return {
+        $: 'Tuple2',
+        a: magResponse[0],
+        b: phaseResponse[0]
+    };
 }
 
+// Generated exports for browser global scope
+window.createAudioContext = createAudioContext;
+window.getCurrentTime = getCurrentTime;
+window.resumeAudioContext = resumeAudioContext;
+window.suspendAudioContext = suspendAudioContext;
+window.closeAudioContext = closeAudioContext;
+window.getSampleRate = getSampleRate;
+window.getContextState = getContextState;
+window.decodeAudioData = decodeAudioData;
+window.createOscillator = createOscillator;
+window.startOscillator = startOscillator;
+window.stopOscillator = stopOscillator;
+window.setOscillatorFrequency = setOscillatorFrequency;
+window.setOscillatorDetune = setOscillatorDetune;
+window.createBufferSource = createBufferSource;
+window.createMediaStreamSource = createMediaStreamSource;
+window.createMediaStreamDestination = createMediaStreamDestination;
+window.getMediaStream = getMediaStream;
+window.startBufferSource = startBufferSource;
+window.stopBufferSource = stopBufferSource;
+window.createGainNode = createGainNode;
+window.setGain = setGain;
+window.rampGainLinear = rampGainLinear;
+window.rampGainExponential = rampGainExponential;
+window.createBiquadFilter = createBiquadFilter;
+window.setFilterFrequency = setFilterFrequency;
+window.setFilterQ = setFilterQ;
+window.setFilterGain = setFilterGain;
+window.createDelay = createDelay;
+window.setDelayTime = setDelayTime;
+window.createConvolver = createConvolver;
+window.setConvolverBuffer = setConvolverBuffer;
+window.setConvolverNormalize = setConvolverNormalize;
+window.getConvolverBuffer = getConvolverBuffer;
+window.createDynamicsCompressor = createDynamicsCompressor;
+window.setCompressorThreshold = setCompressorThreshold;
+window.setCompressorKnee = setCompressorKnee;
+window.setCompressorRatio = setCompressorRatio;
+window.setCompressorAttack = setCompressorAttack;
+window.setCompressorRelease = setCompressorRelease;
+window.createWaveShaper = createWaveShaper;
+window.setWaveShaperCurve = setWaveShaperCurve;
+window.setWaveShaperOversample = setWaveShaperOversample;
+window.getWaveShaperCurve = getWaveShaperCurve;
+window.makeDistortionCurve = makeDistortionCurve;
+window.createStereoPanner = createStereoPanner;
+window.setPan = setPan;
+window.createAnalyser = createAnalyser;
+window.setAnalyserFFTSize = setAnalyserFFTSize;
+window.setAnalyserSmoothing = setAnalyserSmoothing;
+window.getFrequencyBinCount = getFrequencyBinCount;
+window.connectNodes = connectNodes;
+window.connectToDestination = connectToDestination;
+window.disconnectNode = disconnectNode;
+window.checkWebAudioSupport = checkWebAudioSupport;
+window.simpleTest = simpleTest;
+window.createPanner = createPanner;
+window.setPannerPosition = setPannerPosition;
+window.setPannerOrientation = setPannerOrientation;
+window.setPanningModel = setPanningModel;
+window.setDistanceModel = setDistanceModel;
+window.setRefDistance = setRefDistance;
+window.setMaxDistance = setMaxDistance;
+window.setRolloffFactor = setRolloffFactor;
+window.setConeInnerAngle = setConeInnerAngle;
+window.setConeOuterAngle = setConeOuterAngle;
+window.setConeOuterGain = setConeOuterGain;
+window.getAudioListener = getAudioListener;
+window.setListenerPosition = setListenerPosition;
+window.setListenerForward = setListenerForward;
+window.setListenerUp = setListenerUp;
+window.createChannelSplitter = createChannelSplitter;
+window.createChannelMerger = createChannelMerger;
+window.createAudioBuffer = createAudioBuffer;
+window.getBufferLength = getBufferLength;
+window.getBufferDuration = getBufferDuration;
+window.getBufferSampleRate = getBufferSampleRate;
+window.getBufferChannels = getBufferChannels;
+window.getChannelData = getChannelData;
+window.copyToChannel = copyToChannel;
+window.copyFromChannel = copyFromChannel;
+window.createSilentBuffer = createSilentBuffer;
+window.cloneAudioBuffer = cloneAudioBuffer;
+window.createMediaElementSource = createMediaElementSource;
+window.createPeriodicWave = createPeriodicWave;
+window.createOfflineAudioContext = createOfflineAudioContext;
+window.startOfflineRendering = startOfflineRendering;
+window.startOfflineRenderingAsync = startOfflineRenderingAsync;
+window.suspendOfflineContext = suspendOfflineContext;
+window.resumeOfflineContext = resumeOfflineContext;
+window.getOfflineContextLength = getOfflineContextLength;
+window.getOfflineContextSampleRate = getOfflineContextSampleRate;
+window.getGainParam = getGainParam;
+window.getFrequencyParam = getFrequencyParam;
+window.getDetuneParam = getDetuneParam;
+window.setParamValueAtTime = setParamValueAtTime;
+window.linearRampToValue = linearRampToValue;
+window.exponentialRampToValue = exponentialRampToValue;
+window.setTargetAtTime = setTargetAtTime;
+window.cancelScheduledValues = cancelScheduledValues;
+window.cancelAndHoldAtTime = cancelAndHoldAtTime;
+window.setValueAtTime = setValueAtTime;
+window.linearRampToValueAtTime = linearRampToValueAtTime;
+window.exponentialRampToValueAtTime = exponentialRampToValueAtTime;
+window.getByteTimeDomainData = getByteTimeDomainData;
+window.getByteFrequencyData = getByteFrequencyData;
+window.getFloatTimeDomainData = getFloatTimeDomainData;
+window.getFloatFrequencyData = getFloatFrequencyData;
+window.setBufferSourceBuffer = setBufferSourceBuffer;
+window.setBufferSourceLoop = setBufferSourceLoop;
+window.setBufferSourceLoopStart = setBufferSourceLoopStart;
+window.setBufferSourceLoopEnd = setBufferSourceLoopEnd;
+window.setBufferSourcePlaybackRate = setBufferSourcePlaybackRate;
+window.setBufferSourceDetune = setBufferSourceDetune;
+window.createAudioContextSimplified = createAudioContextSimplified;
+window.playToneSimplified = playToneSimplified;
+window.stopAudioSimplified = stopAudioSimplified;
+window.updateFrequency = updateFrequency;
+window.updateVolume = updateVolume;
+window.updateWaveform = updateWaveform;
+window.addAudioWorkletModule = addAudioWorkletModule;
+window.createAudioWorkletNode = createAudioWorkletNode;
+window.getWorkletPort = getWorkletPort;
+window.getWorkletParameters = getWorkletParameters;
+window.postMessageToWorklet = postMessageToWorklet;
+window.createIIRFilter = createIIRFilter;
+window.getIIRFilterResponse = getIIRFilterResponse;
+window.createConstantSource = createConstantSource;
+window.getConstantSourceOffset = getConstantSourceOffset;
+window.startConstantSource = startConstantSource;
+window.stopConstantSource = stopConstantSource;
+window.createPeriodicWaveWithCoefficients = createPeriodicWaveWithCoefficients;
+window.createPeriodicWaveWithOptions = createPeriodicWaveWithOptions;
+window.setOscillatorPeriodicWave = setOscillatorPeriodicWave;
+window.getNodeChannelCount = getNodeChannelCount;
+window.setNodeChannelCount = setNodeChannelCount;
+window.getNodeChannelCountMode = getNodeChannelCountMode;
+window.setNodeChannelCountMode = setNodeChannelCountMode;
+window.getNodeChannelInterpretation = getNodeChannelInterpretation;
+window.setNodeChannelInterpretation = setNodeChannelInterpretation;
+window.getNodeNumberOfInputs = getNodeNumberOfInputs;
+window.getNodeNumberOfOutputs = getNodeNumberOfOutputs;
+window.getNodeContext = getNodeContext;
+window.getOscillatorType = getOscillatorType;
+window.getOscillatorFrequencyParam = getOscillatorFrequencyParam;
+window.getOscillatorDetuneParam = getOscillatorDetuneParam;
+window.getDelayDelayTimeParam = getDelayDelayTimeParam;
+window.getCompressorThresholdParam = getCompressorThresholdParam;
+window.getCompressorKneeParam = getCompressorKneeParam;
+window.getCompressorRatioParam = getCompressorRatioParam;
+window.setValueCurveAtTime = setValueCurveAtTime;
+window.getAudioParamValue = getAudioParamValue;
+window.getAudioParamDefaultValue = getAudioParamDefaultValue;
+window.getAudioParamMinValue = getAudioParamMinValue;
+window.getAudioParamMaxValue = getAudioParamMaxValue;
+window.setAudioParamValue = setAudioParamValue;
+window.getAudioParamAutomationRate = getAudioParamAutomationRate;
+window.setAudioParamAutomationRate = setAudioParamAutomationRate;
+window.connectNodesWithChannels = connectNodesWithChannels;
+window.disconnectNodeFromDestination = disconnectNodeFromDestination;
+window.disconnectNodeOutput = disconnectNodeOutput;
+window.disconnectNodeFromNodeChannel = disconnectNodeFromNodeChannel;
+window.getContextBaseLatency = getContextBaseLatency;
+window.getContextOutputLatency = getContextOutputLatency;
+window.getContextDestination = getContextDestination;
+window.getContextAudioListener = getContextAudioListener;
+window.setAnalyserMinDecibels = setAnalyserMinDecibels;
+window.setAnalyserMaxDecibels = setAnalyserMaxDecibels;
+window.getAnalyserMinDecibels = getAnalyserMinDecibels;
+window.getAnalyserMaxDecibels = getAnalyserMaxDecibels;
+window.setAnalyserSmoothingTimeConstant = setAnalyserSmoothingTimeConstant;
+window.getAnalyserSmoothingTimeConstant = getAnalyserSmoothingTimeConstant;
+window.getCompressorReduction = getCompressorReduction;
+window.getCompressorAttackParam = getCompressorAttackParam;
+window.getCompressorReleaseParam = getCompressorReleaseParam;
+window.setCompressorAttackDirect = setCompressorAttackDirect;
+window.setCompressorReleaseDirect = setCompressorReleaseDirect;
+window.getBufferSourceBuffer = getBufferSourceBuffer;
+window.getBufferSourceLoop = getBufferSourceLoop;
+window.getBufferSourceLoopStart = getBufferSourceLoopStart;
+window.getBufferSourceLoopEnd = getBufferSourceLoopEnd;
+window.setBufferSourceLoopDirect = setBufferSourceLoopDirect;
+window.getPannerPositionX = getPannerPositionX;
+window.getPannerPositionY = getPannerPositionY;
+window.getPannerPositionZ = getPannerPositionZ;
+window.getPannerOrientationX = getPannerOrientationX;
+window.setPannerOrientationDirect = setPannerOrientationDirect;
+window.getBiquadFilterType = getBiquadFilterType;
+window.setBiquadFilterTypeDirect = setBiquadFilterTypeDirect;
+window.getBiquadFilterFrequencyParam = getBiquadFilterFrequencyParam;
+window.getBiquadFilterQParam = getBiquadFilterQParam;
+window.reverseAudioBuffer = reverseAudioBuffer;
+window.normalizeAudioBuffer = normalizeAudioBuffer;
+window.mixAudioBuffers = mixAudioBuffers;
+window.trimSilence = trimSilence;
+window.getBufferPeak = getBufferPeak;
+window.getBufferRMS = getBufferRMS;
+window.createBufferFromSamples = createBufferFromSamples;
+window.concatenateBuffers = concatenateBuffers;
+window.getStereoPannerPan = getStereoPannerPan;
+window.getGainNodeGainParam = getGainNodeGainParam;
+window.getConvolverNormalize = getConvolverNormalize;
+window.getWaveShaperOversample = getWaveShaperOversample;
+window.getAnalyserFFTSize = getAnalyserFFTSize;
+window.getAnalyserFrequencyBinCount = getAnalyserFrequencyBinCount;
+window.getDelayMaxDelayTime = getDelayMaxDelayTime;
+window.getBufferSourcePlaybackRate = getBufferSourcePlaybackRate;
+window.getBufferSourceDetune = getBufferSourceDetune;
+window.getPannerDistanceModel = getPannerDistanceModel;
+window.getPannerPanningModel = getPannerPanningModel;
+window.getPannerRefDistance = getPannerRefDistance;
+window.getPannerMaxDistance = getPannerMaxDistance;
+window.getPannerRolloffFactor = getPannerRolloffFactor;
+window.getPannerConeInnerAngle = getPannerConeInnerAngle;
+window.getPannerConeOuterAngle = getPannerConeOuterAngle;
+window.getPannerConeOuterGain = getPannerConeOuterGain;
+window.getMediaElementSourceElement = getMediaElementSourceElement;
+window.getMediaStreamTracks = getMediaStreamTracks;
+window.getMediaStreamActive = getMediaStreamActive;
+window.getMediaStreamId = getMediaStreamId;
+window.getBiquadFilterGainParam = getBiquadFilterGainParam;
+window.getBiquadFilterDetuneParam = getBiquadFilterDetuneParam;
+window.getPannerOrientationY = getPannerOrientationY;
+window.getPannerOrientationZ = getPannerOrientationZ;
+window.getConstantSourceOffsetValue = getConstantSourceOffsetValue;
+window.createEmptyBuffer = createEmptyBuffer;
+window.getBufferAsArray = getBufferAsArray;
+window.setOscillatorType = setOscillatorType;
+window.getIIRFilterResponseAtFrequency = getIIRFilterResponseAtFrequency;

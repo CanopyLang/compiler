@@ -1,5 +1,0 @@
-module TestList exposing (main)
-
-import Html exposing (text)
-
-main = text (String.fromInt (List.length [1, 2, 3]))

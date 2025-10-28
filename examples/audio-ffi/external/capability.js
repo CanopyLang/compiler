@@ -23,7 +23,7 @@ function isUserActivationAvailable() {
 
 /**
  * Check if user activation is currently active (within gesture window)
- * @canopy-type Bool
+ * @canopy-type () -> Bool
  * @name isUserActivationActive
  */
 function isUserActivationActive() {
@@ -38,7 +38,7 @@ function isUserActivationActive() {
 
 /**
  * Consume user activation and detect gesture type
- * @canopy-type UserActivated
+ * @canopy-type Capability.UserActivated
  * @name consumeUserActivation
  */
 function consumeUserActivation() {
@@ -77,8 +77,45 @@ function consumeUserActivation() {
 }
 
 /**
+ * Consume user activation and return as integer (workaround for compiler type reversal bug)
+ * Returns: 1=Click, 2=Keypress, 3=Touch, 4=Drag, 5=Focus, 0=Transient
+ * @canopy-type () -> Int
+ * @name consumeUserActivationInt
+ */
+function consumeUserActivationInt() {
+	const now = Date.now();
+	const recentEvents = window.__canopyRecentEvents || [];
+
+	const recentEvent = recentEvents
+		.filter((event) => now - event.timestamp < 100)
+		.sort((a, b) => b.timestamp - a.timestamp)[0];
+
+	if (recentEvent) {
+		switch (recentEvent.type) {
+			case "click":
+				return 1;
+			case "keydown":
+			case "keyup":
+				return 2;
+			case "touchstart":
+			case "touchend":
+				return 3;
+			case "dragstart":
+			case "dragend":
+				return 4;
+			case "focus":
+				return 5;
+			default:
+				return 0;
+		}
+	}
+
+	return 0; // Transient
+}
+
+/**
  * Consume user activation and return as string (workaround for MVar deadlock)
- * @canopy-type String
+ * @canopy-type () -> String
  * @name consumeUserActivationString
  */
 function consumeUserActivationString() {
@@ -157,7 +194,7 @@ function detectAPISupport(detectionFunction) {
 
 /**
  * Generic feature detection helper
- * @canopy-type String -> Bool
+ * @canopy-type (String) -> Bool
  * @name hasFeature
  */
 function hasFeature(featurePath) {
@@ -362,6 +399,7 @@ if (typeof window !== "undefined") {
 		isUserActivationActive: isUserActivationActive,
 		consumeUserActivation: consumeUserActivation,
 		consumeUserActivationString: consumeUserActivationString,
+		consumeUserActivationInt: consumeUserActivationInt,
 		hasFeature: hasFeature,
 		detectAPISupport: detectAPISupport,
 		checkGenericPermission: checkGenericPermission,
@@ -380,6 +418,7 @@ if (typeof module !== "undefined") {
 		isUserActivationActive,
 		consumeUserActivation,
 		consumeUserActivationString,
+		consumeUserActivationInt,
 		hasFeature,
 		detectAPISupport,
 		checkGenericPermission,

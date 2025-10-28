@@ -1,6 +1,0 @@
-module SimpleTest exposing (..)
-
-import Debug
-import Process
-
-main = Debug.log "test" "hello"

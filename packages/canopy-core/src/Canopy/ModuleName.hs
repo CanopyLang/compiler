@@ -22,6 +22,7 @@ module Canopy.ModuleName
     array,
     dict,
     tuple,
+    task,
     platform,
     cmd,
     sub,
@@ -218,6 +219,10 @@ dict = Canonical Pkg.core Name.dict
 {-# NOINLINE tuple #-}
 tuple :: Canonical
 tuple = Canonical Pkg.core Name.tuple
+
+{-# NOINLINE task #-}
+task :: Canonical
+task = Canonical Pkg.core Name.task
 
 {-# NOINLINE platform #-}
 platform :: Canonical

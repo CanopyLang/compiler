@@ -1,3 +1,0 @@
-module TestCase exposing (test)
-foreign import javascript "test.js" as TestAlias
-test = TestAlias.func

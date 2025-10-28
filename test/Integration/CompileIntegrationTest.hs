@@ -15,7 +15,7 @@ import qualified Canopy.Interface as I
 import qualified Canopy.ModuleName as ModuleName
 import qualified Canopy.Package as Pkg
 import qualified Canopy.String as ES
-import qualified Compile
+import qualified Compiler
 import Control.Lens ((^.))
 import Data.Map (Map)
 import qualified Data.Map as Map

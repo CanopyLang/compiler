@@ -163,7 +163,7 @@ compileModuleWithStats ::
   UTCTime ->
   ModuleName.Raw ->
   IO ((ModuleName.Raw, a), ModuleStats)
-compileModuleWithStats compileOne statuses levelNum levelStart moduleName = do
+compileModuleWithStats compileOne statuses levelNum _levelStart moduleName = do
   threadId <- Concurrent.myThreadId
   startTime <- getCurrentTime
 

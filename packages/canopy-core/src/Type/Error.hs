@@ -28,6 +28,8 @@ import qualified Data.Name as Name
 import qualified Reporting.Doc as D
 import qualified Reporting.Render.Type as RT
 import qualified Reporting.Render.Type.Localizer as L
+import System.IO.Unsafe (unsafePerformIO)
+import qualified System.IO as IO
 
 -- ERROR TYPES
 
@@ -183,14 +185,18 @@ merge status1 status2 =
 
 toComparison :: L.Localizer -> Type -> Type -> (D.Doc, D.Doc, [Problem])
 toComparison localizer tipe1 tipe2 =
+  unsafePerformIO (IO.hPutStrLn IO.stderr ("[DEBUG toComparison CALLED] tipe1=" ++ show tipe1) >> IO.hPutStrLn IO.stderr ("[DEBUG toComparison CALLED] tipe2=" ++ show tipe2)) `seq`
   case toDiff localizer RT.None tipe1 tipe2 of
     Diff doc1 doc2 Similar ->
+      unsafePerformIO (IO.hPutStrLn IO.stderr "[DEBUG toComparison] Result: Similar") `seq`
       (doc1, doc2, [])
     Diff doc1 doc2 (Different problems) ->
+      unsafePerformIO (IO.hPutStrLn IO.stderr ("[DEBUG toComparison] Result: Different with " ++ show (length (Bag.toList problems)) ++ " problems")) `seq`
       (doc1, doc2, Bag.toList problems)
 
 toDiff :: L.Localizer -> RT.Context -> Type -> Type -> Diff D.Doc
 toDiff localizer ctx tipe1 tipe2 =
+  unsafePerformIO (IO.hPutStrLn IO.stderr ("[DEBUG toDiff CALLED] tipe1=" ++ show tipe1) >> IO.hPutStrLn IO.stderr ("[DEBUG toDiff CALLED] tipe2=" ++ show tipe2)) `seq`
   case (tipe1, tipe2) of
     (Unit, Unit) -> same localizer ctx tipe1
     (Error, Error) -> same localizer ctx tipe1

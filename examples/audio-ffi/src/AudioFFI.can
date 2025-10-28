@@ -59,6 +59,7 @@ type MediaStream = MediaStream
 type MediaStreamTrack = MediaStreamTrack
 type AudioDestinationNode = AudioDestinationNode
 type AudioNode = AudioNode
+type ArrayBuffer = ArrayBuffer
 
 -- ============================================================================
 -- FFI BINDINGS WITH TYPE SIGNATURES
@@ -70,7 +71,7 @@ type AudioNode = AudioNode
 -- ============================================================================
 
 -- | Create audio context with error handling
-createAudioContext : UserActivated -> Result Capability.CapabilityError (Initialized AudioContext)
+createAudioContext : UserActivated -> Result CapabilityError (Initialized AudioContext)
 createAudioContext =
     FFI.createAudioContext
 
@@ -80,17 +81,17 @@ getCurrentTime =
     FFI.getCurrentTime
 
 -- | Resume audio context with error handling
-resumeAudioContext : Initialized AudioContext -> Result Capability.CapabilityError (Initialized AudioContext)
+resumeAudioContext : Initialized AudioContext -> Result CapabilityError (Initialized AudioContext)
 resumeAudioContext =
     FFI.resumeAudioContext
 
 -- | Suspend audio context with error handling
-suspendAudioContext : AudioContext -> Result Capability.CapabilityError AudioContext
+suspendAudioContext : AudioContext -> Result CapabilityError AudioContext
 suspendAudioContext =
     FFI.suspendAudioContext
 
 -- | Close audio context with error handling
-closeAudioContext : AudioContext -> Result Capability.CapabilityError Basics.Int
+closeAudioContext : AudioContext -> Result CapabilityError Basics.Int
 closeAudioContext =
     FFI.closeAudioContext
 
@@ -110,17 +111,17 @@ getContextState =
 -- ============================================================================
 
 -- | Create oscillator node with error handling
-createOscillator : Initialized AudioContext -> Float -> String -> Result Capability.CapabilityError OscillatorNode
+createOscillator : Initialized AudioContext -> Float -> String -> Result CapabilityError OscillatorNode
 createOscillator =
     FFI.createOscillator
 
 -- | Start oscillator at specific time with error handling
-startOscillator : OscillatorNode -> Float -> Result Capability.CapabilityError Basics.Int
+startOscillator : OscillatorNode -> Float -> Result CapabilityError Basics.Int
 startOscillator =
     FFI.startOscillator
 
 -- | Stop oscillator at specific time with error handling
-stopOscillator : OscillatorNode -> Float -> Result Capability.CapabilityError Basics.Int
+stopOscillator : OscillatorNode -> Float -> Result CapabilityError Basics.Int
 stopOscillator =
     FFI.stopOscillator
 
@@ -150,7 +151,7 @@ getOscillatorDetuneParam =
     FFI.getOscillatorDetuneParam
 
 -- | Set oscillator waveform type
-setOscillatorType : OscillatorNode -> String -> Result.Result Capability.CapabilityError ()
+setOscillatorType : OscillatorNode -> String -> Result CapabilityError ()
 setOscillatorType =
     FFI.setOscillatorType
 
@@ -160,12 +161,12 @@ setOscillatorType =
 -- ============================================================================
 
 -- | Create gain node for volume control with error handling
-createGainNode : Initialized AudioContext -> Float -> Result Capability.CapabilityError GainNode
+createGainNode : Initialized AudioContext -> Float -> Result CapabilityError GainNode
 createGainNode =
     FFI.createGainNode
 
 -- | Set gain value with error handling
-setGain : GainNode -> Float -> Float -> Result Capability.CapabilityError Basics.Int
+setGain : GainNode -> Float -> Float -> Result CapabilityError Basics.Int
 setGain =
     FFI.setGain
 
@@ -185,12 +186,12 @@ createBufferSource =
     FFI.createBufferSource
 
 -- | Start buffer source with error handling
-startBufferSource : AudioBufferSourceNode -> Float -> Result Capability.CapabilityError Basics.Int
+startBufferSource : AudioBufferSourceNode -> Float -> Result CapabilityError Basics.Int
 startBufferSource =
     FFI.startBufferSource
 
 -- | Stop buffer source with error handling
-stopBufferSource : AudioBufferSourceNode -> Float -> Result Capability.CapabilityError Basics.Int
+stopBufferSource : AudioBufferSourceNode -> Float -> Result CapabilityError Basics.Int
 stopBufferSource =
     FFI.stopBufferSource
 
@@ -225,7 +226,7 @@ getBufferSourceLoopEnd =
     FFI.getBufferSourceLoopEnd
 
 -- | Set buffer source loop directly
-setBufferSourceLoopDirect : AudioBufferSourceNode -> Bool -> Result.Result Capability.CapabilityError ()
+setBufferSourceLoopDirect : AudioBufferSourceNode -> Bool -> Result CapabilityError ()
 setBufferSourceLoopDirect =
     FFI.setBufferSourceLoopDirect
 
@@ -250,47 +251,47 @@ createSilentBuffer =
     FFI.createSilentBuffer
 
 -- | Clone audio buffer
-cloneAudioBuffer : AudioBuffer -> Result.Result Capability.CapabilityError AudioBuffer
+cloneAudioBuffer : AudioBuffer -> Result CapabilityError AudioBuffer
 cloneAudioBuffer =
     FFI.cloneAudioBuffer
 
 -- | Decode audio data from ArrayBuffer (MP3, AAC, OGG, WAV)
-decodeAudioData : AudioContext -> ArrayBuffer -> Task.Task Capability.CapabilityError AudioBuffer
+decodeAudioData : AudioContext -> ArrayBuffer -> Task CapabilityError AudioBuffer
 decodeAudioData =
     FFI.decodeAudioData
 
 -- | Get channel data from audio buffer
-getChannelData : AudioBuffer -> Int -> Result.Result Capability.CapabilityError (List Float)
+getChannelData : AudioBuffer -> Int -> Result CapabilityError (List Float)
 getChannelData =
     FFI.getChannelData
 
 -- | Copy data to audio buffer channel
-copyToChannel : AudioBuffer -> List Float -> Int -> Int -> Result.Result Capability.CapabilityError ()
+copyToChannel : AudioBuffer -> List Float -> Int -> Int -> Result CapabilityError ()
 copyToChannel =
     FFI.copyToChannel
 
 -- | Copy data from audio buffer channel
-copyFromChannel : AudioBuffer -> Int -> Int -> Int -> Result.Result Capability.CapabilityError (List Float)
+copyFromChannel : AudioBuffer -> Int -> Int -> Int -> Result CapabilityError (List Float)
 copyFromChannel =
     FFI.copyFromChannel
 
 -- | Reverse audio buffer samples
-reverseAudioBuffer : AudioBuffer -> Result.Result Capability.CapabilityError AudioBuffer
+reverseAudioBuffer : AudioBuffer -> Result CapabilityError AudioBuffer
 reverseAudioBuffer =
     FFI.reverseAudioBuffer
 
 -- | Normalize audio buffer amplitude
-normalizeAudioBuffer : AudioBuffer -> Float -> Result.Result Capability.CapabilityError AudioBuffer
+normalizeAudioBuffer : AudioBuffer -> Float -> Result CapabilityError AudioBuffer
 normalizeAudioBuffer =
     FFI.normalizeAudioBuffer
 
 -- | Mix two audio buffers
-mixAudioBuffers : AudioBuffer -> AudioBuffer -> Float -> Result.Result Capability.CapabilityError AudioBuffer
+mixAudioBuffers : AudioBuffer -> AudioBuffer -> Float -> Result CapabilityError AudioBuffer
 mixAudioBuffers =
     FFI.mixAudioBuffers
 
 -- | Trim silence from audio buffer
-trimSilence : AudioBuffer -> Float -> Result.Result Capability.CapabilityError AudioBuffer
+trimSilence : AudioBuffer -> Float -> Result CapabilityError AudioBuffer
 trimSilence =
     FFI.trimSilence
 
@@ -305,14 +306,16 @@ getBufferRMS =
     FFI.getBufferRMS
 
 -- | Create audio buffer from samples
-createBufferFromSamples : AudioContext -> List (List Float) -> Float -> Result.Result Capability.CapabilityError AudioBuffer
+createBufferFromSamples : AudioContext -> List (List Float) -> Float -> Result CapabilityError AudioBuffer
 createBufferFromSamples =
     FFI.createBufferFromSamples
 
+{- TEMPORARILY DISABLED due to FFI parser issue
 -- | Concatenate audio buffers
-concatenateBuffers : AudioContext -> List AudioBuffer -> Result.Result Capability.CapabilityError AudioBuffer
+concatenateBuffers : AudioContext -> List AudioBuffer -> Result CapabilityError AudioBuffer
 concatenateBuffers =
     FFI.concatenateBuffers
+-}
 
 -- | Create empty audio buffer
 createEmptyBuffer : AudioContext -> Int -> Float -> Int -> AudioBuffer
@@ -330,12 +333,12 @@ getBufferAsArray =
 -- ============================================================================
 
 -- | Connect audio nodes with error handling
-connectNodes : OscillatorNode -> GainNode -> Result Capability.CapabilityError Basics.Int
+connectNodes : OscillatorNode -> GainNode -> Result CapabilityError Basics.Int
 connectNodes =
     FFI.connectNodes
 
 -- | Connect to destination (speakers) with error handling
-connectToDestination : GainNode -> Initialized AudioContext -> Result Capability.CapabilityError Basics.Int
+connectToDestination : GainNode -> Initialized AudioContext -> Result CapabilityError Basics.Int
 connectToDestination =
     FFI.connectToDestination
 
@@ -345,22 +348,22 @@ disconnectNode =
     FFI.disconnectNode
 
 -- | Connect nodes with specific channels
-connectNodesWithChannels : AudioNode -> AudioNode -> Int -> Int -> Result.Result Capability.CapabilityError ()
+connectNodesWithChannels : AudioNode -> AudioNode -> Int -> Int -> Result CapabilityError ()
 connectNodesWithChannels =
     FFI.connectNodesWithChannels
 
 -- | Disconnect node from specific destination
-disconnectNodeFromDestination : AudioNode -> AudioNode -> Result.Result Capability.CapabilityError ()
+disconnectNodeFromDestination : AudioNode -> AudioNode -> Result CapabilityError ()
 disconnectNodeFromDestination =
     FFI.disconnectNodeFromDestination
 
 -- | Disconnect specific output
-disconnectNodeOutput : AudioNode -> Int -> Result.Result Capability.CapabilityError ()
+disconnectNodeOutput : AudioNode -> Int -> Result CapabilityError ()
 disconnectNodeOutput =
     FFI.disconnectNodeOutput
 
 -- | Disconnect node from specific node and channel
-disconnectNodeFromNodeChannel : AudioNode -> AudioNode -> Int -> Int -> Result.Result Capability.CapabilityError ()
+disconnectNodeFromNodeChannel : AudioNode -> AudioNode -> Int -> Int -> Result CapabilityError ()
 disconnectNodeFromNodeChannel =
     FFI.disconnectNodeFromNodeChannel
 
@@ -400,12 +403,12 @@ setAnalyserFFTSize =
     FFI.setAnalyserFFTSize
 
 -- | Set analyser min decibels
-setAnalyserMinDecibels : AnalyserNode -> Float -> Result.Result Capability.CapabilityError ()
+setAnalyserMinDecibels : AnalyserNode -> Float -> Result CapabilityError ()
 setAnalyserMinDecibels =
     FFI.setAnalyserMinDecibels
 
 -- | Set analyser max decibels
-setAnalyserMaxDecibels : AnalyserNode -> Float -> Result.Result Capability.CapabilityError ()
+setAnalyserMaxDecibels : AnalyserNode -> Float -> Result CapabilityError ()
 setAnalyserMaxDecibels =
     FFI.setAnalyserMaxDecibels
 
@@ -420,7 +423,7 @@ getAnalyserMaxDecibels =
     FFI.getAnalyserMaxDecibels
 
 -- | Set analyser smoothing time constant
-setAnalyserSmoothingTimeConstant : AnalyserNode -> Float -> Result.Result Capability.CapabilityError ()
+setAnalyserSmoothingTimeConstant : AnalyserNode -> Float -> Result CapabilityError ()
 setAnalyserSmoothingTimeConstant =
     FFI.setAnalyserSmoothingTimeConstant
 
@@ -444,12 +447,12 @@ getAnalyserFrequencyBinCount =
 -- ============================================================================
 
 -- | Create media stream source from microphone/getUserMedia
-createMediaStreamSource : AudioContext -> MediaStream -> Result.Result Capability.CapabilityError MediaStreamAudioSourceNode
+createMediaStreamSource : AudioContext -> MediaStream -> Result CapabilityError MediaStreamAudioSourceNode
 createMediaStreamSource =
     FFI.createMediaStreamSource
 
 -- | Create media stream destination for recording
-createMediaStreamDestination : AudioContext -> Result.Result Capability.CapabilityError MediaStreamAudioDestinationNode
+createMediaStreamDestination : AudioContext -> Result CapabilityError MediaStreamAudioDestinationNode
 createMediaStreamDestination =
     FFI.createMediaStreamDestination
 
@@ -459,12 +462,12 @@ getMediaStream =
     FFI.getMediaStream
 
 -- | Ramp gain linearly with error handling
-rampGainLinear : GainNode -> Float -> Float -> Result Capability.CapabilityError Basics.Int
+rampGainLinear : GainNode -> Float -> Float -> Result CapabilityError Basics.Int
 rampGainLinear =
     FFI.rampGainLinear
 
 -- | Ramp gain exponentially with error handling
-rampGainExponential : GainNode -> Float -> Float -> Result Capability.CapabilityError Basics.Int
+rampGainExponential : GainNode -> Float -> Float -> Result CapabilityError Basics.Int
 rampGainExponential =
     FFI.rampGainExponential
 
@@ -504,7 +507,7 @@ createConvolver =
     FFI.createConvolver
 
 -- | Set convolver impulse response buffer
-setConvolverBuffer : ConvolverNode -> AudioBuffer -> Result.Result Capability.CapabilityError ()
+setConvolverBuffer : ConvolverNode -> AudioBuffer -> Result CapabilityError ()
 setConvolverBuffer =
     FFI.setConvolverBuffer
 
@@ -554,7 +557,7 @@ createWaveShaper =
     FFI.createWaveShaper
 
 -- | Set wave shaper distortion curve
-setWaveShaperCurve : WaveShaperNode -> List Float -> Result.Result Capability.CapabilityError ()
+setWaveShaperCurve : WaveShaperNode -> List Float -> Result CapabilityError ()
 setWaveShaperCurve =
     FFI.setWaveShaperCurve
 
@@ -714,7 +717,7 @@ getBufferChannels =
     FFI.getBufferChannels
 
 -- | Create media element source (HTML audio/video)
-createMediaElementSource : AudioContext -> HTMLMediaElement -> Result.Result Capability.CapabilityError MediaElementAudioSourceNode
+createMediaElementSource : AudioContext -> HTMLMediaElement -> Result CapabilityError MediaElementAudioSourceNode
 createMediaElementSource =
     FFI.createMediaElementSource
 
@@ -734,17 +737,17 @@ startOfflineRendering =
     FFI.startOfflineRendering
 
 -- | Start offline rendering with Promise support (async)
-startOfflineRenderingAsync : OfflineAudioContext -> Task.Task Capability.CapabilityError AudioBuffer
+startOfflineRenderingAsync : OfflineAudioContext -> Task CapabilityError AudioBuffer
 startOfflineRenderingAsync =
     FFI.startOfflineRenderingAsync
 
 -- | Suspend offline context at specified time
-suspendOfflineContext : OfflineAudioContext -> Float -> Task.Task Capability.CapabilityError ()
+suspendOfflineContext : OfflineAudioContext -> Float -> Task CapabilityError ()
 suspendOfflineContext =
     FFI.suspendOfflineContext
 
 -- | Resume suspended offline context
-resumeOfflineContext : OfflineAudioContext -> Task.Task Capability.CapabilityError ()
+resumeOfflineContext : OfflineAudioContext -> Task CapabilityError ()
 resumeOfflineContext =
     FFI.resumeOfflineContext
 
@@ -803,6 +806,21 @@ cancelAndHoldAtTime : AudioParam -> Float -> ()
 cancelAndHoldAtTime =
     FFI.cancelAndHoldAtTime
 
+-- | Set value at time (Standard Web Audio API name)
+setValueAtTime : AudioParam -> Float -> Float -> ()
+setValueAtTime =
+    FFI.setValueAtTime
+
+-- | Linear ramp to value at time (Standard Web Audio API name)
+linearRampToValueAtTime : AudioParam -> Float -> Float -> ()
+linearRampToValueAtTime =
+    FFI.linearRampToValueAtTime
+
+-- | Exponential ramp to value at time (Standard Web Audio API name)
+exponentialRampToValueAtTime : AudioParam -> Float -> Float -> ()
+exponentialRampToValueAtTime =
+    FFI.exponentialRampToValueAtTime
+
 -- | Set buffer source loop start
 setBufferSourceLoopStart : AudioBufferSourceNode -> Float -> ()
 setBufferSourceLoopStart =
@@ -854,12 +872,12 @@ updateWaveform =
     FFI.updateWaveform
 
 -- | Load AudioWorklet processor module from URL
-addAudioWorkletModule : AudioContext -> String -> Task.Task Capability.CapabilityError ()
+addAudioWorkletModule : AudioContext -> String -> Task CapabilityError ()
 addAudioWorkletModule =
     FFI.addAudioWorkletModule
 
 -- | Create AudioWorklet node with processor name
-createAudioWorkletNode : AudioContext -> String -> Result.Result Capability.CapabilityError AudioWorkletNode
+createAudioWorkletNode : AudioContext -> String -> Result CapabilityError AudioWorkletNode
 createAudioWorkletNode =
     FFI.createAudioWorkletNode
 
@@ -879,17 +897,17 @@ postMessageToWorklet =
     FFI.postMessageToWorklet
 
 -- | Create IIR filter node with feedforward and feedback coefficients
-createIIRFilter : AudioContext -> List Float -> List Float -> Result.Result Capability.CapabilityError IIRFilterNode
+createIIRFilter : AudioContext -> List Float -> List Float -> Result CapabilityError IIRFilterNode
 createIIRFilter =
     FFI.createIIRFilter
 
 -- | Get frequency response from IIR filter
-getIIRFilterResponse : IIRFilterNode -> List Float -> Result.Result Capability.CapabilityError { magnitude : List Float, phase : List Float }
+getIIRFilterResponse : IIRFilterNode -> List Float -> Result CapabilityError ( List Float, List Float )
 getIIRFilterResponse =
     FFI.getIIRFilterResponse
 
 -- | Create constant source node
-createConstantSource : AudioContext -> Result.Result Capability.CapabilityError ConstantSourceNode
+createConstantSource : AudioContext -> Result CapabilityError ConstantSourceNode
 createConstantSource =
     FFI.createConstantSource
 
@@ -899,22 +917,22 @@ getConstantSourceOffset =
     FFI.getConstantSourceOffset
 
 -- | Start constant source at specific time
-startConstantSource : ConstantSourceNode -> Float -> Result.Result Capability.CapabilityError ()
+startConstantSource : ConstantSourceNode -> Float -> Result CapabilityError ()
 startConstantSource =
     FFI.startConstantSource
 
 -- | Stop constant source at specific time
-stopConstantSource : ConstantSourceNode -> Float -> Result.Result Capability.CapabilityError ()
+stopConstantSource : ConstantSourceNode -> Float -> Result CapabilityError ()
 stopConstantSource =
     FFI.stopConstantSource
 
 -- | Create periodic wave with custom real and imaginary coefficients
-createPeriodicWaveWithCoefficients : AudioContext -> List Float -> List Float -> Result.Result Capability.CapabilityError PeriodicWave
+createPeriodicWaveWithCoefficients : AudioContext -> List Float -> List Float -> Result CapabilityError PeriodicWave
 createPeriodicWaveWithCoefficients =
     FFI.createPeriodicWaveWithCoefficients
 
 -- | Create periodic wave with normalization option
-createPeriodicWaveWithOptions : AudioContext -> List Float -> List Float -> Bool -> Result.Result Capability.CapabilityError PeriodicWave
+createPeriodicWaveWithOptions : AudioContext -> List Float -> List Float -> Bool -> Result CapabilityError PeriodicWave
 createPeriodicWaveWithOptions =
     FFI.createPeriodicWaveWithOptions
 
@@ -929,7 +947,7 @@ getNodeChannelCount =
     FFI.getNodeChannelCount
 
 -- | Set node channel count
-setNodeChannelCount : AudioNode -> Int -> Result.Result Capability.CapabilityError ()
+setNodeChannelCount : AudioNode -> Int -> Result CapabilityError ()
 setNodeChannelCount =
     FFI.setNodeChannelCount
 
@@ -939,7 +957,7 @@ getNodeChannelCountMode =
     FFI.getNodeChannelCountMode
 
 -- | Set node channel count mode
-setNodeChannelCountMode : AudioNode -> String -> Result.Result Capability.CapabilityError ()
+setNodeChannelCountMode : AudioNode -> String -> Result CapabilityError ()
 setNodeChannelCountMode =
     FFI.setNodeChannelCountMode
 
@@ -949,7 +967,7 @@ getNodeChannelInterpretation =
     FFI.getNodeChannelInterpretation
 
 -- | Set node channel interpretation
-setNodeChannelInterpretation : AudioNode -> String -> Result.Result Capability.CapabilityError ()
+setNodeChannelInterpretation : AudioNode -> String -> Result CapabilityError ()
 setNodeChannelInterpretation =
     FFI.setNodeChannelInterpretation
 
@@ -989,7 +1007,7 @@ getCompressorRatioParam =
     FFI.getCompressorRatioParam
 
 -- | Set value curve at time
-setValueCurveAtTime : AudioParam -> List Float -> Float -> Float -> Result.Result Capability.CapabilityError ()
+setValueCurveAtTime : AudioParam -> List Float -> Float -> Float -> Result CapabilityError ()
 setValueCurveAtTime =
     FFI.setValueCurveAtTime
 
@@ -1014,7 +1032,7 @@ getAudioParamMaxValue =
     FFI.getAudioParamMaxValue
 
 -- | Set audio param value directly
-setAudioParamValue : AudioParam -> Float -> Result.Result Capability.CapabilityError ()
+setAudioParamValue : AudioParam -> Float -> Result CapabilityError ()
 setAudioParamValue =
     FFI.setAudioParamValue
 
@@ -1024,7 +1042,7 @@ getAudioParamAutomationRate =
     FFI.getAudioParamAutomationRate
 
 -- | Set audio param automation rate
-setAudioParamAutomationRate : AudioParam -> String -> Result.Result Capability.CapabilityError ()
+setAudioParamAutomationRate : AudioParam -> String -> Result CapabilityError ()
 setAudioParamAutomationRate =
     FFI.setAudioParamAutomationRate
 
@@ -1064,12 +1082,12 @@ getCompressorReleaseParam =
     FFI.getCompressorReleaseParam
 
 -- | Set compressor attack time directly
-setCompressorAttackDirect : DynamicsCompressorNode -> Float -> Result.Result Capability.CapabilityError ()
+setCompressorAttackDirect : DynamicsCompressorNode -> Float -> Result CapabilityError ()
 setCompressorAttackDirect =
     FFI.setCompressorAttackDirect
 
 -- | Set compressor release time directly
-setCompressorReleaseDirect : DynamicsCompressorNode -> Float -> Result.Result Capability.CapabilityError ()
+setCompressorReleaseDirect : DynamicsCompressorNode -> Float -> Result CapabilityError ()
 setCompressorReleaseDirect =
     FFI.setCompressorReleaseDirect
 
@@ -1094,7 +1112,7 @@ getPannerOrientationX =
     FFI.getPannerOrientationX
 
 -- | Set panner orientation using params
-setPannerOrientationDirect : PannerNode -> Float -> Float -> Float -> Result.Result Capability.CapabilityError ()
+setPannerOrientationDirect : PannerNode -> Float -> Float -> Float -> Result CapabilityError ()
 setPannerOrientationDirect =
     FFI.setPannerOrientationDirect
 
@@ -1104,7 +1122,7 @@ getBiquadFilterType =
     FFI.getBiquadFilterType
 
 -- | Set biquad filter type directly
-setBiquadFilterTypeDirect : BiquadFilterNode -> String -> Result.Result Capability.CapabilityError ()
+setBiquadFilterTypeDirect : BiquadFilterNode -> String -> Result CapabilityError ()
 setBiquadFilterTypeDirect =
     FFI.setBiquadFilterTypeDirect
 
@@ -1224,7 +1242,8 @@ getConstantSourceOffsetValue =
     FFI.getConstantSourceOffsetValue
 
 -- | Get IIR filter frequency response for single frequency
-getIIRFilterResponseAtFrequency : IIRFilterNode -> Float -> { magnitude :: Float, phase :: Float }
+-- Returns tuple of (magnitude, phase)
+getIIRFilterResponseAtFrequency : IIRFilterNode -> Float -> ( Float, Float )
 getIIRFilterResponseAtFrequency =
     FFI.getIIRFilterResponseAtFrequency
 

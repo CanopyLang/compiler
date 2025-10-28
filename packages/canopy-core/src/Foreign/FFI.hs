@@ -334,7 +334,7 @@ parseCanopyTypeAnnotation :: Text -> Maybe FFIType
 parseCanopyTypeAnnotation typeText =
   parseFFIType (tokenizeType typeText)
 
--- | Tokenize type text, treating parentheses as separate tokens
+-- | Tokenize type text, treating parentheses and commas as separate tokens
 tokenizeType :: Text -> [Text]
 tokenizeType = go [] ""
   where
@@ -347,6 +347,9 @@ tokenizeType = go [] ""
       | Text.head text == ')' =
           let newAcc = if Text.null current then acc else acc ++ [current]
           in go (newAcc ++ [")"]) "" (Text.tail text)
+      | Text.head text == ',' =
+          let newAcc = if Text.null current then acc else acc ++ [current]
+          in go (newAcc ++ [","]) "" (Text.tail text)
       | Text.head text == ' ' =
           if Text.null current
             then go acc "" (Text.tail text)
@@ -457,13 +460,49 @@ parseFFIType tokens = parseFunction (stripOuterParens tokens)
 
       _ -> Nothing
 
-    -- Parse parenthesized types like (List User) or (Maybe String)
+    -- Parse parenthesized types like (List User), (Maybe String), or tuples like (Int, String)
     parseParenthesized :: [Text] -> Maybe FFIType
     parseParenthesized ts = case ts of
       "(" : rest -> case break (== ")") rest of
-        (innerTokens, ")" : _) -> parseBasicType innerTokens
+        (innerTokens, ")" : _) ->
+          if hasCommaAtTopLevel innerTokens
+            then parseTuple innerTokens
+            else parseBasicType innerTokens
         _ -> Nothing
       _ -> Nothing
+
+    -- Check if tokens contain comma at top level (not inside nested parens)
+    hasCommaAtTopLevel :: [Text] -> Bool
+    hasCommaAtTopLevel = go (0 :: Int)
+      where
+        go :: Int -> [Text] -> Bool
+        go _ [] = False
+        go depth (t:ts)
+          | t == "(" = go (depth + 1) ts
+          | t == ")" = go (depth - 1) ts
+          | t == "," && depth == 0 = True
+          | otherwise = go depth ts
+
+    -- Parse tuple types like (Int, String) or (Int, String, Bool)
+    parseTuple :: [Text] -> Maybe FFIType
+    parseTuple tupleTokens = do
+      let tupleElements = splitOnTopLevelComma tupleTokens
+      tupleTypes <- traverse parseBasicType tupleElements
+      case tupleTypes of
+        [] -> Nothing
+        [_] -> Nothing  -- Single element is not a tuple
+        _ -> Just (FFITuple tupleTypes)
+
+    -- Split tokens on commas that are at the top level (not nested in parens)
+    splitOnTopLevelComma :: [Text] -> [[Text]]
+    splitOnTopLevelComma = go [] [] (0 :: Int)
+      where
+        go acc current _ [] = reverse (reverse current : acc)
+        go acc current depth (t:ts)
+          | t == "(" = go acc (current ++ [t]) (depth + 1) ts
+          | t == ")" = go acc (current ++ [t]) (depth - 1) ts
+          | t == "," && depth == 0 = go (reverse current : acc) [] 0 ts
+          | otherwise = go acc (current ++ [t]) depth ts
 
     -- Parse Task types with proper parentheses handling
     parseTaskType :: [Text] -> Maybe FFIType
@@ -680,7 +719,7 @@ ffiTypeToCanopyType ffiType = case ffiType of
   FFIOpaque typeName -> Right (qualifyBasicType typeName)
   FFITuple types -> do
     typeTexts <- traverse ffiTypeToCanopyType types
-    Right $ "(" <> Text.intercalate ", " typeTexts <> ")"
+    Right $ "( " <> Text.intercalate ", " typeTexts <> " )"
   FFIRecord fields -> do
     fieldResults <- traverse (\(name, fieldType) -> do
       typeText <- ffiTypeToCanopyType fieldType

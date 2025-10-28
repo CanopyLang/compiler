@@ -1,5 +1,0 @@
-module NoFFITest exposing (main)
-
-main : Int
-main =
-    42

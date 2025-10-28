@@ -1,1 +1,0 @@
-import Basics exposing (Int)\n\nmain : Int\nmain = 42

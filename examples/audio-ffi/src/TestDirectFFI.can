@@ -1,9 +1,0 @@
-module TestDirectFFI exposing (main)
-
-import Html exposing (Html, text)
-
-foreign import javascript "external/audio.js" as AudioFFI
-
-main : Html Never
-main =
-    text AudioFFI.checkWebAudioSupport

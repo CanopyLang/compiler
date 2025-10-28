@@ -1,7 +1,0 @@
-module SimpleTest exposing (main)
-
-import AudioFFI
-
-main : Int
-main =
-    AudioFFI.simpleTest 42
