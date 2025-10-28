@@ -39,6 +39,10 @@ import qualified Reporting.Result as Result
 import qualified Reporting.Warning as W
 import Control.Exception (SomeException, catch)
 import System.FilePath ((</>))
+import Debug.Trace (trace)
+import System.IO.Unsafe (unsafePerformIO)
+import qualified System.IO as IO
+import qualified Data.ByteString.Char8 as BS
 
 -- RESULT
 
@@ -377,7 +381,9 @@ validateSingleFunction jsPath region (fname, typeStr) =
 -- @since 0.19.1
 parseJavaScriptContentPure :: String -> String -> Either String [(String, String)]
 parseJavaScriptContentPure jsContent _alias =
-  Right (extractFunctionsWithTypes (lines jsContent))
+  let extracted = extractFunctionsWithTypes (lines jsContent)
+      _ = unsafePerformIO (IO.hPutStrLn IO.stderr ("[DEBUG parseJS] extracted=" ++ show extracted))
+  in Right extracted
 
 
 -- Extract functions with their @canopy-type annotations
@@ -422,6 +428,7 @@ parseJSDocBlock :: [String] -> Maybe (String, String)
 parseJSDocBlock commentLines = do
   functionName <- findNameAnnotation commentLines
   canopyType <- findCanopyTypeAnnotation commentLines
+  let _ = unsafePerformIO (IO.hPutStrLn IO.stderr ("[DEBUG parseJSDocBlock] name=" ++ functionName ++ " type=" ++ canopyType))
   pure (functionName, canopyType)
 
 -- Find @name annotation in JSDoc block
@@ -458,9 +465,13 @@ strip = dropWhileEnd (`elem` (" \t\n\r" :: String)) . dropWhile (`elem` (" \t\n\
 parseCanopyTypeAnnotation :: String -> Maybe String
 parseCanopyTypeAnnotation line =
   let trimmed = dropWhile (`elem` (" *" :: String)) line
-  in if ("@canopy-type " :: String) `isPrefixOf` trimmed
-     then Just (drop (length ("@canopy-type " :: String)) trimmed)
-     else Nothing
+      result = if ("@canopy-type " :: String) `isPrefixOf` trimmed
+               then Just (drop (length ("@canopy-type " :: String)) trimmed)
+               else Nothing
+      _ = case result of
+            Just typeStr -> unsafePerformIO (IO.hPutStrLn IO.stderr ("[DEBUG parseCanopyTypeAnnotation] extracted: " ++ show typeStr))
+            Nothing -> ()
+  in result
 
 
 -- DYNAMIC FUNCTION ENVIRONMENT GENERATION
@@ -468,8 +479,8 @@ addParsedFunctionsToEnv :: Env.Env -> ModuleName.Canonical -> Name.Name -> [(Str
 addParsedFunctionsToEnv env ffiModuleName aliasName functions = do
   -- Get the home module for type resolution
   let homeModuleName = Env._home env
-  -- Dynamically process each parsed function
-  processedFunctions <- traverse (processParsedFunction ffiModuleName homeModuleName) functions
+  -- Dynamically process each parsed function, passing env for type lookup
+  processedFunctions <- traverse (processParsedFunction env ffiModuleName homeModuleName) functions
 
   -- Build environment dynamically
   let (vars, qVars) = buildDynamicEnvironment aliasName processedFunctions
@@ -480,13 +491,14 @@ addParsedFunctionsToEnv env ffiModuleName aliasName functions = do
   Result.ok newEnv
 
 -- Process a single parsed function (name, typeString) into Canopy types
-processParsedFunction :: ModuleName.Canonical -> ModuleName.Canonical -> (String, String) -> Result i [W.Warning] (String, Can.Annotation, Env.Var)
-processParsedFunction ffiModuleName homeModuleName (functionName, typeString) = do
-  -- Parse the type string into actual Canopy types
-  canopyType <- parseTypeStringWithHome homeModuleName typeString
-  let annotation = Can.Forall Map.empty canopyType
-      var = Env.Foreign ffiModuleName annotation
-  Result.ok (functionName, annotation, var)
+processParsedFunction :: Env.Env -> ModuleName.Canonical -> ModuleName.Canonical -> (String, String) -> Result i [W.Warning] (String, Can.Annotation, Env.Var)
+processParsedFunction env ffiModuleName homeModuleName (functionName, typeString) =
+  unsafePerformIO (IO.hPutStrLn IO.stderr ("[DEBUG processParsedFunction] name=" ++ functionName ++ " typeStr=" ++ show typeString)) `seq` do
+    -- Parse the type string into actual Canopy types, passing env for type lookup
+    canopyType <- parseTypeStringWithHome env homeModuleName typeString
+    let annotation = Can.Forall Map.empty canopyType
+        var = Env.Foreign ffiModuleName annotation
+    Result.ok (functionName, annotation, var)
 
 -- Build the dynamic environment from processed functions with proper qualified name registration
 buildDynamicEnvironment :: Name.Name -> [(String, Can.Annotation, Env.Var)] -> ([(Name.Name, Env.Var)], Map.Map Name.Name (Env.Info Can.Annotation))
@@ -506,59 +518,198 @@ buildQualifiedVars ffiModuleName processedFunctions =
 
 
 -- Parse type string with home module context for custom type resolution
-parseTypeStringWithHome :: ModuleName.Canonical -> String -> Result i [W.Warning] Can.Type
-parseTypeStringWithHome homeModuleName typeStr =
-  case parseTypeTokensWithHome homeModuleName (tokenizeCanopyType (Text.pack typeStr)) of
+parseTypeStringWithHome :: Env.Env -> ModuleName.Canonical -> String -> Result i [W.Warning] Can.Type
+parseTypeStringWithHome env homeModuleName typeStr =
+  case parseTypeTokensWithHome env homeModuleName (tokenizeCanopyType (Text.pack typeStr)) of
     Just canopyType -> Result.ok canopyType
     Nothing -> Result.throw (Error.ImportNotFound A.one (Name.fromChars typeStr) [])
 
 -- Tokenize Canopy type string correctly, handling multi-word types
--- First split by arrows, then handle each segment as a potentially multi-word type
+-- First split by arrows, then tokenize each segment into words
 tokenizeCanopyType :: Text.Text -> [String]
 tokenizeCanopyType typeText =
-  let arrowSegments = Text.splitOn "->" typeText
+  let _ = unsafePerformIO (IO.hPutStrLn IO.stderr ("[DEBUG tokenize] input=" ++ show typeText))
+      arrowSegments = Text.splitOn "->" typeText
       nonEmptySegments = filter (not . Text.null . Text.strip) arrowSegments
-      processedSegments = map (Text.unpack . Text.strip) nonEmptySegments
-  in case processedSegments of
-       [] -> []
-       [single] -> [single]  -- No arrows, just a single type
-       multiple -> List.intercalate ["->"] (map (:[]) multiple)  -- Insert arrows between segments
+      -- Tokenize each segment into words, preserving parenthesized types
+      tokenizedSegments = map (tokenizeTypeSegment . Text.strip) nonEmptySegments
+      -- Flatten and insert "->" between segments
+      result = case tokenizedSegments of
+                 [] -> []
+                 [singleSegment] -> singleSegment  -- No arrows, return tokens from single segment
+                 multipleSegments -> List.intercalate ["->"] multipleSegments  -- Insert arrows between segments
+      _ = trace ("[DEBUG tokenize] result=" ++ show result) ()
+  in result
 
+
+-- Tokenize a single type segment into words, preserving parenthesized expressions
+tokenizeTypeSegment :: Text.Text -> [String]
+tokenizeTypeSegment segment =
+  go [] "" (0 :: Int) (Text.unpack segment)
+  where
+    go acc current _depth [] =
+      if null current then reverse acc else reverse (current : acc)
+    go acc current depth (c:cs)
+      | c == '(' = go acc (current ++ "(") (depth + 1) cs
+      | c == ')' =
+          let newCurrent = current ++ ")"
+          in if depth == 1
+               then go (newCurrent : acc) "" (depth - 1) cs
+               else go acc newCurrent (depth - 1) cs
+      | c == ' ' && depth == 0 =
+          if null current
+            then go acc "" 0 cs
+            else go (current : acc) "" 0 cs
+      | otherwise = go acc (current ++ [c]) depth cs
+
+
+-- Split tokens at top-level arrow (not inside parentheses)
+splitAtArrow :: [String] -> Maybe ([String], [String])
+splitAtArrow tokens =
+  let result = go tokens 0 []
+      _ = unsafePerformIO (IO.hPutStrLn IO.stderr ("[DEBUG splitAtArrow] tokens=" ++ show tokens ++ " result=" ++ show result))
+  in result
+  where
+    go :: [String] -> Int -> [String] -> Maybe ([String], [String])
+    go [] _ _ = Nothing
+    go ("(" : rest) depth acc = go rest (depth + 1) (acc ++ ["("])
+    go (")" : rest) depth acc = go rest (depth - 1) (acc ++ [")"])
+    go ("->" : rest) 0 acc = Just (acc, rest)
+    go ("->" : rest) depth acc = go rest depth (acc ++ ["->"])
+    go (t : rest) depth acc = go rest depth (acc ++ [t])
 
 -- Parse type tokens with home module context for custom type resolution
-parseTypeTokensWithHome :: ModuleName.Canonical -> [String] -> Maybe Can.Type
-parseTypeTokensWithHome homeModuleName tokens =
+parseTypeTokensWithHome :: Env.Env -> ModuleName.Canonical -> [String] -> Maybe Can.Type
+parseTypeTokensWithHome env homeModuleName tokens =
   case tokens of
     [] -> Nothing
-    [typeName] -> Just (parseBasicTypeWithHome homeModuleName typeName)
+    [typeName] -> Just (parseBasicTypeWithHome env homeModuleName typeName)
     ["(", ")"] -> Just Can.TUnit
-    (t1 : "->" : rest) ->
-      case parseTypeTokensWithHome homeModuleName rest of
-        Just restType -> Just (Can.TLambda (parseComplexTypeWithHome homeModuleName [t1]) restType)
-        Nothing -> Nothing
-    _ -> Just (parseComplexTypeWithHome homeModuleName tokens)
+    _ -> case splitAtArrow tokens of
+      Just (leftTokens, rightTokens) ->
+        case parseTypeTokensWithHome env homeModuleName rightTokens of
+          Just restType -> Just (Can.TLambda (parseComplexTypeWithHome env homeModuleName leftTokens) restType)
+          Nothing -> Nothing
+      Nothing -> Just (parseComplexTypeWithHome env homeModuleName tokens)
 
+
+-- Parse one complete type from the beginning of the token list
+-- Returns (parsed type, remaining tokens)
+parseOneType :: Env.Env -> ModuleName.Canonical -> [String] -> Maybe (Can.Type, [String])
+parseOneType env homeModuleName [] = Nothing
+parseOneType env homeModuleName ["(", ")"] = Just (Can.TUnit, [])
+parseOneType env homeModuleName ("Task" : rest) = do
+  (errorType, rest1) <- parseOneType env homeModuleName rest
+  (resultType, rest2) <- parseOneType env homeModuleName rest1
+  let taskAlias = Can.TAlias
+        ModuleName.task
+        (Name.fromChars "Task")
+        [(Name.fromChars "x", errorType), (Name.fromChars "a", resultType)]
+        (Can.Filled (Can.TType ModuleName.platform (Name.fromChars "Task") [errorType, resultType]))
+  return (taskAlias, rest2)
+parseOneType env homeModuleName ("Result" : rest) = do
+  (errorType, rest1) <- parseOneType env homeModuleName rest
+  (valueType, rest2) <- parseOneType env homeModuleName rest1
+  let resultAlias = Can.TAlias
+        ModuleName.result
+        (Name.fromChars "Result")
+        [(Name.fromChars "e", errorType), (Name.fromChars "a", valueType)]
+        (Can.Filled (Can.TType ModuleName.result (Name.fromChars "Result") [errorType, valueType]))
+  return (resultAlias, rest2)
+parseOneType env homeModuleName ("List" : rest) = do
+  (elementType, rest1) <- parseOneType env homeModuleName rest
+  let listAlias = Can.TAlias
+        ModuleName.list
+        (Name.fromChars "List")
+        [(Name.fromChars "a", elementType)]
+        (Can.Filled (Can.TType ModuleName.list (Name.fromChars "List") [elementType]))
+  return (listAlias, rest1)
+parseOneType env homeModuleName ("Maybe" : rest) = do
+  (valueType, rest1) <- parseOneType env homeModuleName rest
+  let maybeAlias = Can.TAlias
+        ModuleName.maybe
+        (Name.fromChars "Maybe")
+        [(Name.fromChars "a", valueType)]
+        (Can.Filled (Can.TType ModuleName.maybe (Name.fromChars "Maybe") [valueType]))
+  return (maybeAlias, rest1)
+parseOneType env homeModuleName ("Capability.Initialized" : rest) = do
+  (paramType, rest1) <- parseOneType env homeModuleName rest
+  let capabilityModule = case homeModuleName of
+        ModuleName.Canonical pkg _ -> ModuleName.Canonical pkg (Name.fromChars "Capability")
+  return (Can.TType capabilityModule (Name.fromChars "Initialized") [paramType], rest1)
+-- NOTE: Capability.UserActivated is NOT included here because it's a simple enum type (not parameterized)
+-- It will be handled by the catch-all pattern and parseBasicTypeWithHome
+parseOneType env homeModuleName ("Capability.Permitted" : rest) = do
+  (paramType, rest1) <- parseOneType env homeModuleName rest
+  let capabilityModule = case homeModuleName of
+        ModuleName.Canonical pkg _ -> ModuleName.Canonical pkg (Name.fromChars "Capability")
+  return (Can.TType capabilityModule (Name.fromChars "Permitted") [paramType], rest1)
+parseOneType env homeModuleName ("Capability.Available" : rest) = do
+  (paramType, rest1) <- parseOneType env homeModuleName rest
+  let capabilityModule = case homeModuleName of
+        ModuleName.Canonical pkg _ -> ModuleName.Canonical pkg (Name.fromChars "Capability")
+  return (Can.TType capabilityModule (Name.fromChars "Available") [paramType], rest1)
+-- Handle tuples: ["(", ..., ",", ..., ")"]
+parseOneType env homeModuleName ("(" : rest) = do
+  let (tupleTokens, afterParen) = span (/= ")") rest
+      _ = unsafePerformIO (IO.hPutStrLn IO.stderr ("[DEBUG parseOneType TUPLE] tupleTokens=" ++ show tupleTokens ++ " afterParen=" ++ show (take 2 afterParen)))
+  case afterParen of
+    (")" : remaining) -> do
+      -- Parse tuple elements separated by commas
+      let elements = splitTupleTokens tupleTokens
+          _ = unsafePerformIO (IO.hPutStrLn IO.stderr ("[DEBUG parseOneType TUPLE] elements=" ++ show elements))
+      parsedElements <- mapM (parseOneType env homeModuleName) elements
+      let types = map fst parsedElements
+          _ = unsafePerformIO (IO.hPutStrLn IO.stderr ("[DEBUG parseOneType TUPLE] parsedTypes count=" ++ show (length types)))
+      case types of
+        [] -> Just (Can.TUnit, remaining)
+        [single] -> Just (single, remaining)
+        [first, second] -> Just (Can.TTuple first second Nothing, remaining)
+        [first, second, third] -> Just (Can.TTuple first second (Just third), remaining)
+        _ -> Nothing  -- More than 3 elements not supported
+    _ -> Nothing  -- No closing paren
+  where
+    -- Split tokens by comma at depth 0 (not inside nested parens)
+    splitTupleTokens :: [String] -> [[String]]
+    splitTupleTokens tokens =
+      let go [] _ acc result = if null acc then result else result ++ [reverse acc]
+          go ("," : ts) 0 acc result = go ts 0 [] (result ++ [reverse acc])
+          go ("(" : ts) depth acc result = go ts (depth + 1) ("(" : acc) result
+          go (")" : ts) depth acc result = go ts (depth - 1) (")" : acc) result
+          go (t : ts) depth acc result = go ts depth (t : acc) result
+      in go tokens 0 [] []
+parseOneType env homeModuleName (t : rest) = Just (parseBasicTypeWithHome env homeModuleName t, rest)
 
 -- Parse complex types with home module context
-parseComplexTypeWithHome :: ModuleName.Canonical -> [String] -> Can.Type
-parseComplexTypeWithHome homeModuleName tokens =
-  case tokens of
-    [] -> Can.TUnit
-    ["(", ")"] -> Can.TUnit
-    [typeName] -> parseBasicTypeWithHome homeModuleName typeName
-    ("Task" : errorType : resultType : _rest) ->
-      -- Handle Task types: Task ErrorType ResultType -> Task is from Platform module, error/result types are resolved dynamically
-      Can.TType ModuleName.platform (Name.fromChars "Task") [parseBasicTypeWithHome homeModuleName errorType, parseBasicTypeWithHome homeModuleName resultType]
-    multiWordTokens ->
-      -- Handle multi-word types like "Initialized AudioContext" as a single opaque type
-      let typeName = unwords multiWordTokens
-      in parseBasicTypeWithHome homeModuleName typeName
-
+parseComplexTypeWithHome :: Env.Env -> ModuleName.Canonical -> [String] -> Can.Type
+parseComplexTypeWithHome env homeModuleName tokens =
+  unsafePerformIO (IO.hPutStrLn IO.stderr ("[DEBUG parseComplexTypeWithHome] tokens=" ++ show tokens)) `seq`
+  case parseOneType env homeModuleName tokens of
+    Just (tipe, []) -> tipe
+    Just (tipe, _rest) -> tipe  -- Use only the first type, ignore rest
+    Nothing -> Can.TUnit  -- Fallback
 
 -- Parse basic type names with home module context for custom types
-parseBasicTypeWithHome :: ModuleName.Canonical -> String -> Can.Type
-parseBasicTypeWithHome homeModuleName typeName =
-  case typeName of
+-- Uses env to look up imported types and resolve them to their defining module
+parseBasicTypeWithHome :: Env.Env -> ModuleName.Canonical -> String -> Can.Type
+parseBasicTypeWithHome env homeModuleName typeName =
+  let trimmedName = dropWhileEnd (== ' ') (dropWhile (== ' ') typeName)
+      dropWhileEnd predicate xs = foldr (\x acc -> if predicate x && null acc then [] else x:acc) [] xs
+      -- Check for tuple FIRST using the original string (with parens)
+      isTuple = isTupleString trimmedName
+      -- Strip surrounding parentheses if present: "(String)" -> "String", but keep "()"
+      unparenthesized = case trimmedName of
+        "()" -> "()"
+        ('(' : rest) | not (null rest) && last rest == ')' -> init rest
+        other -> other
+      -- Check if unparenthesized string contains spaces (complex type) BUT NOT if it's a tuple
+      isComplexType = ' ' `elem` unparenthesized && unparenthesized /= "()" && not isTuple
+  in unsafePerformIO (BS.hPutStrLn IO.stderr (BS.pack ("[DEBUG parseBasicType] input=" ++ show typeName ++ " unparenthesized=" ++ show unparenthesized ++ " isTuple=" ++ show isTuple ++ " isComplex=" ++ show isComplexType)) >> return ()) `seq`
+     if isTuple
+       then parseTupleString env homeModuleName trimmedName
+       else if isComplexType
+         then parseComplexTypeWithHome env homeModuleName (tokenizeTypeSegment (Text.pack unparenthesized))
+         else case unparenthesized of
     -- Core basic types from standard library
     "Int" -> Can.TType ModuleName.basics (Name.fromChars "Int") []
     "Float" -> Can.TType ModuleName.basics (Name.fromChars "Float") []
@@ -567,22 +718,107 @@ parseBasicTypeWithHome homeModuleName typeName =
     "()" -> Can.TUnit
     "Unit" -> Can.TUnit
 
-    -- Capability types - resolve to core package for consistency
-    "UserActivated" -> Can.TType ModuleName.capability (Name.fromChars "UserActivated") []
-    "Initialized" -> Can.TType ModuleName.capability (Name.fromChars "Initialized") []
-    "Permitted" -> Can.TType ModuleName.capability (Name.fromChars "Permitted") []
-    "Available" -> Can.TType ModuleName.capability (Name.fromChars "Available") []
-    "CapabilityError" -> Can.TType ModuleName.capability (Name.fromChars "CapabilityError") []
+    -- Tuple types: "(Float, Float)" or "( Float, Float )"
+    tupleStr | isTupleString tupleStr -> parseTupleString env homeModuleName tupleStr
 
-    -- Task type (from Platform module in core package)
-    "Task" -> Can.TType ModuleName.platform (Name.fromChars "Task") []
+    -- Task type (from Task module in core package)
+    "Task" ->
+      let taskType = Can.TType ModuleName.task (Name.fromChars "Task") []
+          _ = trace ("[DEBUG Task Basic] Creating bare Task type: module=" ++ show ModuleName.task) ()
+      in taskType
+
+    -- Result type (from Result module in core package)
+    "Result" -> Can.TType ModuleName.result (Name.fromChars "Result") []
+
+    -- List type (from List module in core package)
+    "List" -> Can.TType ModuleName.list (Name.fromChars "List") []
+
+    -- Maybe type (from Maybe module in core package)
+    "Maybe" -> Can.TType ModuleName.maybe (Name.fromChars "Maybe") []
 
     -- Type variables (single lowercase letters) - treat as opaque for now
-    [ch] | ch >= 'a' && ch <= 'z' -> Can.TType homeModuleName (Name.fromChars typeName) []
+    [ch] | ch >= 'a' && ch <= 'z' -> Can.TType homeModuleName (Name.fromChars trimmedName) []
+
+    -- Module-qualified types: "Capability.CapabilityError" -> resolve module from homeModule's package
+    qualifiedType | '.' `elem` qualifiedType ->
+      let parts = splitOn '.' qualifiedType
+          moduleParts = init parts  -- ["Capability"]
+          typeNamePart = last parts      -- "CapabilityError"
+          moduleNameStr = intercalate "." moduleParts  -- "Capability"
+          -- Create a canonical module name in the same package as homeModule
+          resolvedModule = case homeModuleName of
+            ModuleName.Canonical pkg _ -> ModuleName.Canonical pkg (Name.fromChars moduleNameStr)
+          resultType = Can.TType resolvedModule (Name.fromChars typeNamePart) []
+          _ = unsafePerformIO (IO.hPutStrLn IO.stderr ("[DEBUG parseBasicType QUALIFIED] input=" ++ show qualifiedType ++ " typeNamePart=" ++ show typeNamePart ++ " resolvedModule=" ++ show resolvedModule))
+      in resultType
 
     -- Custom opaque types (AudioContext, OscillatorNode, GainNode, etc.)
-    -- These should resolve to the home module where they are defined
-    customType -> Can.TType homeModuleName (Name.fromChars customType) []
+    -- These should resolve to the module where they are defined, not the importing module
+    customType ->
+      if customType == "String"
+        then Can.TType ModuleName.string (Name.fromChars "String") []
+        else
+          let typeName = Name.fromChars customType
+              -- Look up the type in the environment to find its defining module
+              maybeTypeInfo = Map.lookup typeName (Env._types env)
+          in case maybeTypeInfo of
+               Just (Env.Specific definingModule _) ->
+                 -- Found the type in imports, use its defining module
+                 Can.TType definingModule typeName []
+               Nothing ->
+                 -- Type not found in imports, assume it's defined in homeModuleName
+                 Can.TType homeModuleName typeName []
+  where
+    splitOn :: Char -> String -> [String]
+    splitOn _ [] = []
+    splitOn delim str =
+      let (first, rest) = break (== delim) str
+      in first : case rest of
+                   [] -> []
+                   (_:xs) -> splitOn delim xs
+
+    intercalate :: String -> [String] -> String
+    intercalate _ [] = ""
+    intercalate _ [x] = x
+    intercalate sep (x:xs) = x ++ sep ++ intercalate sep xs
+
+
+-- Check if a type string represents a tuple
+isTupleString :: String -> Bool
+isTupleString str =
+  let trimmed = dropWhile (== ' ') str
+  in case trimmed of
+       ('(' : rest) ->
+         let inner = takeWhile (/= ')') rest
+         in ',' `elem` inner
+       _ -> False
+
+
+-- Parse a tuple string like "(Float, Float)" into a Can.TTuple
+parseTupleString :: Env.Env -> ModuleName.Canonical -> String -> Can.Type
+parseTupleString env homeModuleName str =
+  let trimmed = dropWhile (== ' ') str
+      withoutParens = case trimmed of
+                        ('(' : rest) -> takeWhile (/= ')') rest
+                        other -> other
+      elements = splitByComma withoutParens
+      parsedElements = map (parseBasicTypeWithHome env homeModuleName . trim) elements
+  in case parsedElements of
+       [] -> Can.TUnit
+       [single] -> single
+       (first : second : rest) ->
+         case rest of
+           [] -> Can.TTuple first second Nothing
+           [third] -> Can.TTuple first second (Just third)
+           _ -> Can.TUnit  -- More than 3 elements not supported, fallback to Unit
+  where
+    trim = dropWhile (== ' ') . reverse . dropWhile (== ' ') . reverse
+    splitByComma s = go [] [] s
+      where
+        go acc current [] = reverse (reverse current : acc)
+        go acc current (',' : cs) = go (reverse current : acc) [] cs
+        go acc current (c : cs) = go acc (c : current) cs
+
 
 {-
 addSingleFFI :: Env.Env -> Src.ForeignImport -> Result i [W.Warning] Env.Env
