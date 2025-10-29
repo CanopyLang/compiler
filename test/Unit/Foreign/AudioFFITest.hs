@@ -26,14 +26,14 @@ testFFIModuleAlias =
         let alias = Name.fromChars "AudioFFI"
         Name.toChars alias @?= "AudioFFI",
       testCase "qualified function name" $ do
-        let qualifiedName = "AudioFFI.createAudioContext"
+        let qualifiedName = "AudioFFI.createAudioContext" :: String
         let parts = splitOn '.' qualifiedName
         length parts @?= 2
         head parts @?= "AudioFFI"
         (parts !! 1) @?= "createAudioContext",
       testCase "multiple qualified functions share module" $ do
-        let func1 = "AudioFFI.createOscillator"
-        let func2 = "AudioFFI.createGainNode"
+        let func1 = "AudioFFI.createOscillator" :: String
+        let func2 = "AudioFFI.createGainNode" :: String
         let module1 = takeWhile (/= '.') func1
         let module2 = takeWhile (/= '.') func2
         module1 @?= module2
@@ -80,21 +80,21 @@ testFFITypeAnnotations =
   testGroup
     "FFI type annotation structure tests"
     [ testCase "simple type annotation" $ do
-        let typeString = "AudioContext"
+        let typeString = "AudioContext" :: String
         not (null typeString) @? "Type string should not be empty",
       testCase "function arrow type structure" $ do
-        let typeString = "Float -> String -> OscillatorNode"
+        let typeString = "Float -> String -> OscillatorNode" :: String
         List.isInfixOf "->" typeString @? "Should contain arrow operator",
       testCase "Task type structure" $ do
-        let typeString = "Task CapabilityError (Initialized AudioContext)"
+        let typeString = "Task CapabilityError (Initialized AudioContext)" :: String
         List.isInfixOf "Task" typeString @? "Should contain Task type"
         List.isInfixOf "CapabilityError" typeString @? "Should contain CapabilityError"
         List.isInfixOf "Initialized" typeString @? "Should contain Initialized",
       testCase "capability-constrained type structure" $ do
-        let typeString = "UserActivated -> Task CapabilityError AudioContext"
+        let typeString = "UserActivated -> Task CapabilityError AudioContext" :: String
         List.isInfixOf "UserActivated" typeString @? "Should contain UserActivated capability",
       testCase "multi-parameter function type" $ do
-        let typeString = "Initialized AudioContext -> Float -> String -> Task CapabilityError OscillatorNode"
+        let typeString = "Initialized AudioContext -> Float -> String -> Task CapabilityError OscillatorNode" :: String
         let arrowCount = length (filter (== '>') typeString)
         arrowCount >= 3 @? "Should have multiple arrow operators for multi-parameter function"
     ]

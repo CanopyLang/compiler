@@ -822,6 +822,42 @@ toReport source err =
                         D.indent 4 . D.hsep $ (["type", "alias", D.fromName typeName] <> (fmap D.fromName (filter (`notElem` unused) allVars) <> (fmap (D.green . D.fromName) unbound <> ["=", "..."])))
                       ]
                   )
+    FFIFileNotFound region filePath ->
+      Report.Report "FFI FILE NOT FOUND" region [] $
+        Code.toSnippet source region Nothing
+          ( D.reflow ("Cannot find FFI file: " <> filePath)
+          , D.reflow "Make sure the file exists and the path is correct."
+          )
+    FFIFileTimeout region filePath timeout ->
+      Report.Report "FFI FILE TIMEOUT" region [] $
+        Code.toSnippet source region Nothing
+          ( D.reflow ("Timeout reading FFI file: " <> filePath <> " after " <> show timeout <> "ms")
+          , D.reflow "The file may be too large or there may be a filesystem issue."
+          )
+    FFIParseError region filePath parseErr ->
+      Report.Report "FFI PARSE ERROR" region [] $
+        Code.toSnippet source region Nothing
+          ( D.reflow ("Error parsing FFI file: " <> filePath)
+          , D.reflow ("Parse error: " <> parseErr)
+          )
+    FFIInvalidType region filePath typeName typeErr ->
+      Report.Report "FFI INVALID TYPE" region [] $
+        Code.toSnippet source region Nothing
+          ( D.reflow ("Invalid type in FFI file: " <> filePath)
+          , D.reflow ("Type " <> Name.toChars typeName <> ": " <> typeErr)
+          )
+    FFIMissingAnnotation region filePath funcName ->
+      Report.Report "FFI MISSING ANNOTATION" region [] $
+        Code.toSnippet source region Nothing
+          ( D.reflow ("Missing type annotation in FFI file: " <> filePath)
+          , D.reflow ("Function " <> Name.toChars funcName <> " needs a type annotation.")
+          )
+    FFICircularDependency region filePath deps ->
+      Report.Report "FFI CIRCULAR DEPENDENCY" region [] $
+        Code.toSnippet source region Nothing
+          ( D.reflow ("Circular dependency detected in FFI file: " <> filePath)
+          , D.reflow ("Dependency chain: " <> show deps)
+          )
 
 -- BAD TYPE VARIABLES
 
@@ -1019,6 +1055,42 @@ varErrorToReport (VarError kind name problem suggestions) =
         (Just $ text $ "`" <> qualifier <> "` does not expose `" <> localName <> "`.")
         (map (\v -> qualifier <> "." <> v) suggestions)
 
+    FFIFileNotFound region filePath ->
+      Report.Report "FFI FILE NOT FOUND" region [] $
+        Code.toSnippet source region Nothing
+          ( D.reflow $ "Cannot find FFI file: " <> filePath
+          , D.reflow "Make sure the file exists and the path is correct."
+          )
+    FFIFileTimeout region filePath timeout ->
+      Report.Report "FFI FILE TIMEOUT" region [] $
+        Code.toSnippet source region Nothing
+          ( D.reflow $ "Timeout reading FFI file: " <> filePath <> " after " <> show timeout <> "ms"
+          , D.reflow "The file may be too large or there may be a filesystem issue."
+          )
+    FFIParseError region filePath parseErr ->
+      Report.Report "FFI PARSE ERROR" region [] $
+        Code.toSnippet source region Nothing
+          ( D.reflow $ "Error parsing FFI file: " <> filePath
+          , D.reflow $ "Parse error: " <> parseErr
+          )
+    FFIInvalidType region filePath typeName typeErr ->
+      Report.Report "FFI INVALID TYPE" region [] $
+        Code.toSnippet source region Nothing
+          ( D.reflow $ "Invalid type in FFI file: " <> filePath
+          , D.reflow $ "Type " <> Name.toChars typeName <> ": " <> typeErr
+          )
+    FFIMissingAnnotation region filePath funcName ->
+      Report.Report "FFI MISSING ANNOTATION" region [] $
+        Code.toSnippet source region Nothing
+          ( D.reflow $ "Missing type annotation in FFI file: " <> filePath
+          , D.reflow $ "Function " <> Name.toChars funcName <> " needs a type annotation."
+          )
+    FFICircularDependency region filePath deps ->
+      Report.Report "FFI CIRCULAR DEPENDENCY" region [] $
+        Code.toSnippet source region Nothing
+          ( D.reflow $ "Circular dependency detected in FFI file: " <> filePath
+          , D.reflow $ "Dependency chain: " <> show deps
+          )
     ExposedUnknown ->
       case name of
         "!="  -> specialNamingError (notEqualsHint name)

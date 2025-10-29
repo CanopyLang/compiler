@@ -596,8 +596,8 @@ parseTypeTokensWithHome env homeModuleName tokens =
 -- Parse one complete type from the beginning of the token list
 -- Returns (parsed type, remaining tokens)
 parseOneType :: Env.Env -> ModuleName.Canonical -> [String] -> Maybe (Can.Type, [String])
-parseOneType env homeModuleName [] = Nothing
-parseOneType env homeModuleName ["(", ")"] = Just (Can.TUnit, [])
+parseOneType _env _homeModuleName [] = Nothing
+parseOneType _env _homeModuleName ["(", ")"] = Just (Can.TUnit, [])
 parseOneType env homeModuleName ("Task" : rest) = do
   (errorType, rest1) <- parseOneType env homeModuleName rest
   (resultType, rest2) <- parseOneType env homeModuleName rest1
@@ -672,12 +672,13 @@ parseOneType env homeModuleName ("(" : rest) = do
     -- Split tokens by comma at depth 0 (not inside nested parens)
     splitTupleTokens :: [String] -> [[String]]
     splitTupleTokens tokens =
-      let go [] _ acc result = if null acc then result else result ++ [reverse acc]
+      let go :: [String] -> Int -> [String] -> [[String]] -> [[String]]
+          go [] _ acc result = if null acc then result else result ++ [reverse acc]
           go ("," : ts) 0 acc result = go ts 0 [] (result ++ [reverse acc])
           go ("(" : ts) depth acc result = go ts (depth + 1) ("(" : acc) result
           go (")" : ts) depth acc result = go ts (depth - 1) (")" : acc) result
           go (t : ts) depth acc result = go ts depth (t : acc) result
-      in go tokens 0 [] []
+      in go tokens (0 :: Int) [] []
 parseOneType env homeModuleName (t : rest) = Just (parseBasicTypeWithHome env homeModuleName t, rest)
 
 -- Parse complex types with home module context
@@ -758,17 +759,16 @@ parseBasicTypeWithHome env homeModuleName typeName =
       if customType == "String"
         then Can.TType ModuleName.string (Name.fromChars "String") []
         else
-          let typeName = Name.fromChars customType
+          let typeNameObj = Name.fromChars customType
               -- Look up the type in the environment to find its defining module
-              maybeTypeInfo = Map.lookup typeName (Env._types env)
-          in case maybeTypeInfo of
-               Just (Env.Specific definingModule _) ->
-                 -- Found the type in imports, use its defining module
-                 Can.TType definingModule typeName []
-               Nothing ->
-                 -- Type not found in imports, assume it's defined in homeModuleName
-                 Can.TType homeModuleName typeName []
+              maybeTypeInfo = Map.lookup typeNameObj (Env._types env)
+              resolvedModule = maybe homeModuleName extractModule maybeTypeInfo
+          in Can.TType resolvedModule typeNameObj []
   where
+    extractModule :: Env.Info Env.Type -> ModuleName.Canonical
+    extractModule (Env.Specific definingModule _) = definingModule
+    extractModule (Env.Ambiguous definingModule _) = definingModule
+
     splitOn :: Char -> String -> [String]
     splitOn _ [] = []
     splitOn delim str =

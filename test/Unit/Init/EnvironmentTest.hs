@@ -172,7 +172,7 @@ dependencyResolutionTests =
               Left other -> fail ("Unexpected error type: " <> show other)
           Left _ -> pure (),
       Test.testCase "dependency resolution error types are meaningful" $ do
-        let error1 = SolverFailure (Exit.SolverNonexistentPackage Pkg.core V.one)
+        let error1 = SolverFailure (Exit.SolverNoSolution "elm/core@1.0.0")
             error2 = NoSolution [Pkg.core, Pkg.browser]
             error3 = NoOfflineSolution [Pkg.html]
 
@@ -197,7 +197,7 @@ errorHandlingTests =
   Test.testGroup
     "Error Handling Tests"
     [ Test.testCase "environment errors preserve information" $ do
-        let registryError = RegistryFailure (Exit.RP_Data "Test error" "")
+        let registryError = RegistryFailure (Exit.RegistryBadData "Test error")
             fileSystemError = FileSystemError "Test message"
 
         case registryError of
@@ -208,7 +208,7 @@ errorHandlingTests =
           FileSystemError msg -> msg @?= "Test message"
           _ -> fail "Expected FileSystemError",
       Test.testCase "error types are distinct and comparable" $ do
-        let err1 = RegistryFailure (Exit.RP_Data "Test error" "")
+        let err1 = RegistryFailure (Exit.RegistryBadData "Test error")
             err2 = FileSystemError "error"
             err3 = NoSolution [Pkg.core]
 
@@ -290,7 +290,7 @@ validationTests =
           Left other -> fail ("Unexpected validation error: " <> show other),
       Test.testCase "validation provides actionable feedback" $ do
         let fsError = FileSystemError "Directory not writable: /tmp/test"
-            regError = RegistryFailure (Exit.RP_Data "Test error" "")
+            regError = RegistryFailure (Exit.RegistryBadData "Test error")
 
         case fsError of
           FileSystemError msg -> do

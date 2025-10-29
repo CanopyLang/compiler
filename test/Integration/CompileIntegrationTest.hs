@@ -46,7 +46,7 @@ testRealCompilationScenarios =
         let pkg = Pkg.core
             interfaces = Map.empty
             sourceModule = createSimpleValidModule
-        result <- Compile.compile pkg interfaces sourceModule
+        result <- Compiler.compile pkg interfaces sourceModule
 
         case result of
           Left err -> do
@@ -55,11 +55,11 @@ testRealCompilationScenarios =
             assertBool "error should be informative" (length errorStr > 0)
           Right artifacts -> do
             -- Verify all compilation artifacts are present
-            let module_ = artifacts ^. Compile.artifactsModule
+            let module_ = artifacts ^. Compiler.artifactsModule
             Can._name module_ @?= ModuleName.Canonical Pkg.core (Name.fromChars "SimpleValid")
-            let types = artifacts ^. Compile.artifactsTypes
+            let types = artifacts ^. Compiler.artifactsTypes
             assertBool "Types map should contain at least one type" (Map.size types >= 1)
-            let graph = artifacts ^. Compile.artifactsGraph
+            let graph = artifacts ^. Compiler.artifactsGraph
             case Opt._l_main graph of
               Nothing -> pure () -- Expected no main for simple module
               Just _ -> assertFailure "Simple module should not have main function",
@@ -67,47 +67,47 @@ testRealCompilationScenarios =
         let pkg = Pkg.core
             interfaces = createBasicInterfaces
             sourceModule = createModuleWithDependencies
-        result <- Compile.compile pkg interfaces sourceModule
+        result <- Compiler.compile pkg interfaces sourceModule
 
         case result of
           Left err -> do
             assertBool "dependency compilation error is informative" (length (show err) > 10)
           Right artifacts -> do
-            let types = artifacts ^. Compile.artifactsTypes
+            let types = artifacts ^. Compiler.artifactsTypes
             assertBool "Types map should contain at least one type" (Map.size types >= 1),
       testCase "compile application module" $ do
         let pkg = createApplicationPackage
             interfaces = createApplicationInterfaces
             sourceModule = createApplicationModule
-        result <- Compile.compile pkg interfaces sourceModule
+        result <- Compiler.compile pkg interfaces sourceModule
 
         case result of
           Left _ -> pure () -- application compilation may fail with mock data
           Right artifacts -> do
-            let module_ = artifacts ^. Compile.artifactsModule
+            let module_ = artifacts ^. Compiler.artifactsModule
             Can._name module_ @?= ModuleName.Canonical (createApplicationPackage) (Name.fromChars "Main"),
       testCase "compile library module" $ do
         let pkg = createLibraryPackage
             interfaces = createLibraryInterfaces
             sourceModule = createLibraryModule
-        result <- Compile.compile pkg interfaces sourceModule
+        result <- Compiler.compile pkg interfaces sourceModule
 
         case result of
           Left _ -> pure () -- library compilation may fail with mock data
           Right artifacts -> do
-            let module_ = artifacts ^. Compile.artifactsModule
+            let module_ = artifacts ^. Compiler.artifactsModule
             Can._name module_ @?= ModuleName.Canonical (createLibraryPackage) (Name.fromChars "Utils"),
       testCase "compile complex module with multiple functions" $ do
         let pkg = Pkg.core
             interfaces = createComplexInterfaces
             sourceModule = createComplexModule
-        result <- Compile.compile pkg interfaces sourceModule
+        result <- Compiler.compile pkg interfaces sourceModule
 
         case result of
           Left err -> do
             assertBool "complex module may have compilation errors" (length (show err) > 0)
           Right artifacts -> do
-            let types = artifacts ^. Compile.artifactsTypes
+            let types = artifacts ^. Compiler.artifactsTypes
             assertBool "Types map should contain at least one type" (Map.size types >= 1)
     ]
 
@@ -122,7 +122,7 @@ testCompilationPipeline =
         let pkg = Pkg.core
             interfaces = Map.empty
             sourceModule = createValidModule
-        result <- Compile.compile pkg interfaces sourceModule
+        result <- Compiler.compile pkg interfaces sourceModule
 
         case result of
           Left err -> do
@@ -130,11 +130,11 @@ testCompilationPipeline =
             assertBool "pipeline errors contain details" (length (show err) > 10)
           Right artifacts -> do
             -- Success means all phases completed successfully
-            let module_ = artifacts ^. Compile.artifactsModule
+            let module_ = artifacts ^. Compiler.artifactsModule
             Can._name module_ @?= ModuleName.Canonical Pkg.core (Name.fromChars "Valid")
-            let types = artifacts ^. Compile.artifactsTypes
+            let types = artifacts ^. Compiler.artifactsTypes
             assertBool "Types map should contain at least one type" (Map.size types >= 1)
-            let graph = artifacts ^. Compile.artifactsGraph
+            let graph = artifacts ^. Compiler.artifactsGraph
             case Opt._l_main graph of
               Nothing -> pure () -- Expected no main for valid module
               Just _ -> assertFailure "Valid module should not have main function",
@@ -142,7 +142,7 @@ testCompilationPipeline =
         let pkg = Pkg.core
             interfaces = Map.empty
             invalidModule = createInvalidModule
-        result <- Compile.compile pkg interfaces invalidModule
+        result <- Compiler.compile pkg interfaces invalidModule
 
         case result of
           Left err -> do
@@ -155,8 +155,8 @@ testCompilationPipeline =
             baseInterfaces = Map.empty
             extendedInterfaces = Map.insert (Name.fromChars "Base") mockInterface baseInterfaces
             sourceModule = createModuleWithImports
-        result1 <- Compile.compile pkg baseInterfaces sourceModule
-        result2 <- Compile.compile pkg extendedInterfaces sourceModule
+        result1 <- Compiler.compile pkg baseInterfaces sourceModule
+        result2 <- Compiler.compile pkg extendedInterfaces sourceModule
 
         -- Results may differ based on available interfaces
         case (result1, result2) of
@@ -167,13 +167,13 @@ testCompilationPipeline =
         let pkg = Pkg.core
             interfaces = Map.empty
             sourceModule = createConsistentModule
-        result <- Compile.compile pkg interfaces sourceModule
+        result <- Compiler.compile pkg interfaces sourceModule
 
         case result of
           Left _ -> pure () -- consistency errors may occur
           Right artifacts -> do
             -- Verify internal consistency of artifacts
-            let types = artifacts ^. Compile.artifactsTypes
+            let types = artifacts ^. Compiler.artifactsTypes
             assertBool "Types map should contain at least one type" (Map.size types >= 1)
     ]
 
@@ -186,7 +186,7 @@ testErrorIntegration =
         let pkg = Pkg.core
             interfaces = Map.empty
             moduleWithNameErrors = createModuleWithNameErrors
-        result <- Compile.compile pkg interfaces moduleWithNameErrors
+        result <- Compiler.compile pkg interfaces moduleWithNameErrors
 
         case result of
           Left err -> do
@@ -197,7 +197,7 @@ testErrorIntegration =
         let pkg = Pkg.core
             interfaces = Map.empty
             moduleWithTypeErrors = createModuleWithTypeErrors
-        result <- Compile.compile pkg interfaces moduleWithTypeErrors
+        result <- Compiler.compile pkg interfaces moduleWithTypeErrors
 
         case result of
           Left err -> do
@@ -208,7 +208,7 @@ testErrorIntegration =
         let pkg = Pkg.core
             interfaces = Map.empty
             moduleWithPatternErrors = createModuleWithPatternErrors
-        result <- Compile.compile pkg interfaces moduleWithPatternErrors
+        result <- Compiler.compile pkg interfaces moduleWithPatternErrors
 
         case result of
           Left err -> do
@@ -219,7 +219,7 @@ testErrorIntegration =
         let pkg = Pkg.core
             interfaces = Map.empty
             moduleWithOptimizationErrors = createModuleWithOptimizationErrors
-        result <- Compile.compile pkg interfaces moduleWithOptimizationErrors
+        result <- Compiler.compile pkg interfaces moduleWithOptimizationErrors
 
         case result of
           Left err -> do
@@ -230,7 +230,7 @@ testErrorIntegration =
         let pkg = Pkg.core
             interfaces = Map.empty
             multipleErrorsModule = createModuleWithMultipleErrors
-        result <- Compile.compile pkg interfaces multipleErrorsModule
+        result <- Compiler.compile pkg interfaces multipleErrorsModule
 
         case result of
           Left err -> do
@@ -249,40 +249,40 @@ testPerformanceCharacteristics =
         let pkg = Pkg.core
             interfaces = Map.empty
             smallModule = createSmallModule
-        result <- Compile.compile pkg interfaces smallModule
+        result <- Compiler.compile pkg interfaces smallModule
 
         case result of
           Left _ -> pure () -- small module compilation may fail
           Right artifacts -> do
-            let types = artifacts ^. Compile.artifactsTypes
+            let types = artifacts ^. Compiler.artifactsTypes
             assertBool "Types map should contain at least one type" (Map.size types >= 1),
       testCase "compilation with many interfaces" $ do
         let pkg = Pkg.core
             manyInterfaces = createManyInterfaces 50
             sourceModule = createModuleUsingManyInterfaces
-        result <- Compile.compile pkg manyInterfaces sourceModule
+        result <- Compiler.compile pkg manyInterfaces sourceModule
 
         case result of
           Left _ -> pure () -- many interfaces may cause issues
           Right artifacts -> do
-            let module_ = artifacts ^. Compile.artifactsModule
+            let module_ = artifacts ^. Compiler.artifactsModule
             Can._name module_ @?= ModuleName.Canonical Pkg.core (Name.fromChars "ManyInterfaces"),
       testCase "memory usage with complex types" $ do
         let pkg = Pkg.core
             interfaces = Map.empty
             complexTypesModule = createModuleWithComplexTypes
-        result <- Compile.compile pkg interfaces complexTypesModule
+        result <- Compiler.compile pkg interfaces complexTypesModule
 
         case result of
           Left _ -> pure () -- complex types may cause compilation issues
           Right artifacts -> do
-            let module_ = artifacts ^. Compile.artifactsModule
+            let module_ = artifacts ^. Compiler.artifactsModule
             Can._name module_ @?= ModuleName.Canonical Pkg.core (Name.fromChars "ComplexTypes"),
       testCase "compilation determinism under load" $ do
         let pkg = Pkg.core
             interfaces = Map.empty
             sourceModule = createDeterministicModule
-        results <- sequence (replicate 3 (Compile.compile pkg interfaces sourceModule))
+        results <- sequence (replicate 3 (Compiler.compile pkg interfaces sourceModule))
 
         -- All results should be identical
         case results of
@@ -295,8 +295,8 @@ testPerformanceCharacteristics =
               (Right art1, Right art2, Right art3) ->
                 assertBool
                   "successful compilations should be deterministic"
-                  ( Map.size (art1 ^. Compile.artifactsTypes) == Map.size (art2 ^. Compile.artifactsTypes)
-                      && Map.size (art2 ^. Compile.artifactsTypes) == Map.size (art3 ^. Compile.artifactsTypes)
+                  ( Map.size (art1 ^. Compiler.artifactsTypes) == Map.size (art2 ^. Compiler.artifactsTypes)
+                      && Map.size (art2 ^. Compiler.artifactsTypes) == Map.size (art3 ^. Compiler.artifactsTypes)
                   )
               _ -> assertFailure "compilation should be deterministic across runs"
           _ -> assertFailure "should have three results"
@@ -313,20 +313,20 @@ testSystemIntegration =
           let pkg = Pkg.core
               interfaces = Map.empty
               sourceModule = createFileSystemModule
-          result <- Compile.compile pkg interfaces sourceModule
+          result <- Compiler.compile pkg interfaces sourceModule
 
           case result of
             Left _ -> pure () -- file system integration may have issues
             Right artifacts -> do
-              let module_ = artifacts ^. Compile.artifactsModule
+              let module_ = artifacts ^. Compiler.artifactsModule
               Can._name module_ @?= ModuleName.Canonical Pkg.core (Name.fromChars "FileSystem"),
       testCase "integration with package system" $ do
         let corePackage = Pkg.core
             customPackage = createCustomPackage
             interfaces = Map.empty
             sourceModule = createPackageAwareModule
-        coreResult <- Compile.compile corePackage interfaces sourceModule
-        customResult <- Compile.compile customPackage interfaces sourceModule
+        coreResult <- Compiler.compile corePackage interfaces sourceModule
+        customResult <- Compiler.compile customPackage interfaces sourceModule
 
         -- Results may differ based on package context
         case (coreResult, customResult) of
@@ -338,8 +338,8 @@ testSystemIntegration =
             interfaces = createCrossModuleInterfaces
             module1 = createModule1
             module2 = createModule2
-        result1 <- Compile.compile pkg interfaces module1
-        result2 <- Compile.compile pkg interfaces module2
+        result1 <- Compiler.compile pkg interfaces module1
+        result2 <- Compiler.compile pkg interfaces module2
 
         -- Both modules should compile consistently in the same environment
         case (result1, result2) of
@@ -351,8 +351,8 @@ testSystemIntegration =
             interfaces1 = createEnvironment1Interfaces
             interfaces2 = createEnvironment2Interfaces
             sourceModule = createEnvironmentSensitiveModule
-        result1 <- Compile.compile pkg interfaces1 sourceModule
-        result2 <- Compile.compile pkg interfaces2 sourceModule
+        result1 <- Compiler.compile pkg interfaces1 sourceModule
+        result2 <- Compiler.compile pkg interfaces2 sourceModule
 
         -- Same module in different environments may produce different results
         case (result1, result2) of

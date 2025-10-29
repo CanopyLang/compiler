@@ -230,7 +230,7 @@ checkExpr (A.At region expression) errors =
       foldr checkExpr errors entries
     Can.Negate expr ->
       checkExpr expr errors
-    Can.Binop _ _ _ _ left right ->
+    Can.BinopOp _ _ left right ->
       checkExpr left $
         checkExpr right errors
     Can.Lambda args body ->

@@ -106,7 +106,7 @@ addEffects home effects graph@(Opt.LocalGraph main nodes fields) =
               Can.Cmd _ ->
                 Map.insert cmd link $
                   Map.insert fx (Opt.Manager Opt.Cmd) nodes
-              Can.Sub _ ->
+              Can.SubManager _ ->
                 Map.insert sub link $
                   Map.insert fx (Opt.Manager Opt.Sub) nodes
               Can.Fx _ _ ->

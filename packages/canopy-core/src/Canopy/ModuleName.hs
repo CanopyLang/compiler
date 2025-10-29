@@ -14,6 +14,7 @@ module Canopy.ModuleName
     --
     Canonical (..),
     basics,
+    isBasics,
     char,
     string,
     maybe,
@@ -187,6 +188,15 @@ instance Aeson.FromJSONKey Canonical where
 {-# NOINLINE basics #-}
 basics :: Canonical
 basics = Canonical Pkg.core Name.basics
+
+-- | Check if module is Basics.
+--
+-- Used to identify native arithmetic operators.
+--
+-- @since 0.19.2
+isBasics :: Canonical -> Bool
+isBasics (Canonical pkg moduleName) =
+  pkg == Pkg.core && moduleName == Name.basics
 
 {-# NOINLINE char #-}
 char :: Canonical

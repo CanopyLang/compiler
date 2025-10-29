@@ -151,7 +151,7 @@ errorFormattingTests =
         assertBool "Contains offline" ("offline" `isInfixOf` rendered)
         assertBool "Contains available" ("available" `isInfixOf` rendered),
       Test.testCase "formatErrorMessage handles RegistryFailure" $ do
-        let error = RegistryFailure (Exit.RP_Data "Test error" "")
+        let error = RegistryFailure (Exit.RegistryBadData "Test error")
             formatted = Display.formatErrorMessage error
             rendered = Doc.toString formatted
 
@@ -159,7 +159,7 @@ errorFormattingTests =
         assertBool "Contains network" ("network" `isInfixOf` rendered)
         assertBool "Contains connection" ("connection" `isInfixOf` rendered),
       Test.testCase "formatErrorMessage handles SolverFailure" $ do
-        let error = SolverFailure (Exit.SolverNonexistentPackage Pkg.core V.one)
+        let error = SolverFailure (Exit.SolverNoSolution "elm/core@1.0.0")
             formatted = Display.formatErrorMessage error
             rendered = Doc.toString formatted
 
@@ -242,8 +242,8 @@ integrationTests =
                 FileSystemError "Test error",
                 NoSolution [Pkg.core],
                 NoOfflineSolution [Pkg.browser],
-                RegistryFailure (Exit.RP_Data "Test error" ""),
-                SolverFailure (Exit.SolverNonexistentPackage Pkg.core V.one)
+                RegistryFailure (Exit.RegistryBadData "Test error"),
+                SolverFailure (Exit.SolverNoSolution "elm/core@1.0.0")
               ]
 
         let formatted = map Display.formatErrorMessage errors

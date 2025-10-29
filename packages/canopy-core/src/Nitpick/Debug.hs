@@ -45,6 +45,7 @@ hasDebug expression =
     Opt.List exprs -> any hasDebug exprs
     Opt.Function _ expr -> hasDebug expr
     Opt.Call e es -> hasDebug e || any hasDebug es
+    Opt.ArithBinop _ left right -> hasDebug left || hasDebug right
     Opt.TailCall _ args -> any (hasDebug . snd) args
     Opt.If conds finally -> any (\(c, e) -> hasDebug c || hasDebug e) conds || hasDebug finally
     Opt.Let def body -> defHasDebug def || hasDebug body

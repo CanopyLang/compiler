@@ -113,6 +113,8 @@ generate mode expression =
         else generateFunction (fmap JsName.fromLocal args) (generate mode body)
     Opt.Call func args ->
       JsExpr $ generateCall mode func args
+    Opt.ArithBinop op left right ->
+      generateArithBinop mode op left right
     Opt.TailCall name args ->
       generateTailCall mode name args
     Opt.If branches final ->
@@ -432,6 +434,111 @@ funcHelpers :: IntMap.IntMap JS.Expr
 funcHelpers =
   IntMap.fromList $
     fmap (\n -> (n, JS.Ref (JsName.makeF n))) [2 .. 9]
+
+-- ARITHMETIC BINOPS
+
+-- | Generate JavaScript for native arithmetic operator.
+--
+-- Compiles optimized arithmetic operations directly to JavaScript infix
+-- operators for maximum performance. Recursively generates code for both
+-- operands and constructs an infix expression.
+--
+-- This is the final code generation step that produces native JavaScript
+-- arithmetic operations without function call overhead.
+--
+-- ==== Generated Code
+--
+-- Arithmetic operators compile to their JavaScript equivalents:
+--
+-- * Add → @a + b@
+-- * Sub → @a - b@
+-- * Mul → @a * b@
+-- * Div → @a / b@
+--
+-- ==== Compilation Process
+--
+-- 1. **Generate left operand** - Recursively generate JavaScript for left expression
+-- 2. **Generate right operand** - Recursively generate JavaScript for right expression
+-- 3. **Map operator** - Convert 'Can.ArithOp' to 'JS.InfixOp'
+-- 4. **Construct infix** - Build JavaScript infix expression
+--
+-- ==== Examples
+--
+-- @
+-- -- Simple integer addition
+-- generateArithBinop mode Add (Int 1) (Int 2)
+-- -- JavaScript: 1 + 2
+--
+-- -- Variable multiplication
+-- generateArithBinop mode Mul (VarLocal "x") (Int 2)
+-- -- JavaScript: x * 2
+--
+-- -- Nested arithmetic
+-- generateArithBinop mode Add (ArithBinop Mul (VarLocal "x") (Int 2)) (Int 3)
+-- -- JavaScript: (x * 2) + 3
+-- @
+--
+-- ==== Optimization Integration
+--
+-- The generated code benefits from earlier optimization passes:
+--
+-- * **Constant folding** - Constants already evaluated at compile time
+-- * **Identity elimination** - Unnecessary operations already removed
+-- * **Dead code elimination** - Unused expressions already eliminated
+--
+-- ==== Performance
+--
+-- * **Time Complexity**: O(depth) for recursive generation
+-- * **Space Complexity**: O(depth) for expression tree
+-- * **Runtime**: Native JavaScript operators (fastest possible execution)
+--
+-- @since 0.19.2
+generateArithBinop :: Mode.Mode -> Can.ArithOp -> Opt.Expr -> Opt.Expr -> Code
+generateArithBinop mode op left right =
+  let leftExpr = codeToExpr (generate mode left)
+      rightExpr = codeToExpr (generate mode right)
+      jsOp = arithOpToJs op
+  in JsExpr (JS.Infix jsOp leftExpr rightExpr)
+
+-- | Map arithmetic operator to JavaScript infix operator.
+--
+-- Converts Canopy arithmetic operator types to their JavaScript equivalents.
+-- This is a simple mapping function that ensures correct operator precedence
+-- and associativity in generated code.
+--
+-- ==== Operator Mapping
+--
+-- * 'Can.Add' → 'JS.OpAdd' (+)
+-- * 'Can.Sub' → 'JS.OpSub' (-)
+-- * 'Can.Mul' → 'JS.OpMul' (*)
+-- * 'Can.Div' → 'JS.OpDiv' (/)
+--
+-- JavaScript handles operator precedence and associativity according to
+-- standard rules:
+--
+-- * Multiplication and division have higher precedence than addition/subtraction
+-- * All arithmetic operators are left-associative
+-- * Parentheses are inserted automatically by the JavaScript AST printer
+--
+-- ==== Examples
+--
+-- >>> arithOpToJs Can.Add
+-- JS.OpAdd
+--
+-- >>> arithOpToJs Can.Mul
+-- JS.OpMul
+--
+-- ==== Performance
+--
+-- * **Time Complexity**: O(1) constant-time pattern match
+-- * **Space Complexity**: O(1) no allocation
+--
+-- @since 0.19.2
+arithOpToJs :: Can.ArithOp -> JS.InfixOp
+arithOpToJs Can.Add = JS.OpAdd
+arithOpToJs Can.Sub = JS.OpSub
+arithOpToJs Can.Mul = JS.OpMul
+arithOpToJs Can.Div = JS.OpDiv
 
 -- CALLS
 

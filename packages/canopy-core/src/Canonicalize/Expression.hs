@@ -26,7 +26,6 @@ import qualified Data.Index as Index
 import qualified Data.List as List
 import qualified Data.Map.Strict as Map
 import qualified Data.Name as Name
-import Debug.Trace (trace)
 import qualified Reporting.Annotation as A
 import qualified Reporting.Error.Canonicalize as Error
 import qualified Reporting.Result as Result
@@ -224,9 +223,131 @@ toBinopStep makeBinop rootOp@(Env.Binop _ _ _ _ rootAssociativity rootPrecedence
               (_, _) ->
                 Error rootOp op
 
+-- | Convert binary operator to canonical expression.
+--
+-- Constructs a canonical binary operator expression by classifying the
+-- operator and merging source regions. The classification determines whether
+-- the operator will be compiled as a native JavaScript operator or remain
+-- as a function call.
+--
+-- The process:
+--
+-- 1. **Classify** - Determine if operator is native arithmetic or user-defined
+-- 2. **Merge Regions** - Combine source regions from left and right operands
+-- 3. **Construct** - Create 'Can.BinopOp' node with classification and annotation
+--
+-- ==== Examples
+--
+-- >>> toBinop (Env.Binop "+" ModuleName.basics "add" ann L N) leftExpr rightExpr
+-- Can.BinopOp (Can.NativeArith Can.Add) ann leftExpr rightExpr
+--
+-- >>> toBinop (Env.Binop "==" ModuleName.basics "eq" ann L N) leftExpr rightExpr
+-- Can.BinopOp (Can.UserDefined "eq" ModuleName.basics "eq") ann leftExpr rightExpr
+--
+-- ==== Performance
+--
+-- * **Time Complexity**: O(1) operator classification
+-- * **Space Complexity**: O(1) node allocation
+--
+-- @since 0.19.2
 toBinop :: Env.Binop -> Can.Expr -> Can.Expr -> Can.Expr
-toBinop (Env.Binop op home name annotation _ _) left right =
-  A.merge left right (Can.Binop op home name annotation left right)
+toBinop (Env.Binop op home _name annotation _ _) left right =
+  let kind = classifyBinop home op
+  in A.merge left right (Can.BinopOp kind annotation left right)
+
+-- | Classify a binary operator as native or custom.
+--
+-- Determines whether a binary operator from the Canonical AST should be
+-- compiled as a native JavaScript operator or remain as a function call.
+-- This classification drives the optimization and code generation strategy.
+--
+-- Native operators are identified by their home module (Basics) and their
+-- canonical names. All other operators are classified as custom, including
+-- user-defined operators and comparison operators.
+--
+-- **Native arithmetic operators:**
+--
+-- * @Basics.add@ → OpAdd (+)
+-- * @Basics.sub@ → OpSub (-)
+-- * @Basics.mul@ → OpMul (*)
+-- * @Basics.fdiv@ → OpDiv (/)
+--
+-- **Custom operators (examples):**
+--
+-- * @Basics.eq@ (==) - Comparison, not arithmetic
+-- * @Basics.append@ (++) - String/list operation
+-- * @List.cons@ (::) - List construction
+-- * User-defined operators from any module
+--
+-- ==== Examples
+--
+-- >>> classifyBinop ModuleName.basics (Name.fromChars "+")
+-- NativeArith Add
+--
+-- >>> classifyBinop ModuleName.basics (Name.fromChars "==")
+-- UserDefined "==" ModuleName.basics "=="
+--
+-- >>> classifyBinop userModule (Name.fromChars "<>")
+-- UserDefined "<>" userModule "<>"
+--
+-- ==== Algorithm
+--
+-- 1. **Module Check** - Verify operator home is Basics module
+-- 2. **Name Lookup** - Match operator canonical name against known arithmetic ops
+-- 3. **Classification** - Return Native with ArithOp or Custom
+--
+-- ==== Performance
+--
+-- * **Time Complexity**: O(1) map lookup
+-- * **Space Complexity**: O(1) no allocation
+-- * **Optimization Impact**: Determines entire optimization strategy
+--
+-- @since 0.19.2
+classifyBinop :: ModuleName.Canonical -> Name.Name -> Can.BinopKind
+classifyBinop home op
+  | ModuleName.isBasics home = classifyBasicsOp op
+  | otherwise = Can.UserDefined op home op
+
+-- | Classify Basics module operator.
+--
+-- Maps specific arithmetic operator names from the Basics module to their
+-- corresponding native arithmetic operation types. Operators not matching
+-- the native arithmetic set are classified as user-defined, allowing them
+-- to remain as function calls.
+--
+-- This function is called only after verifying the operator's home module
+-- is Basics, ensuring we only check operators from the standard library.
+--
+-- ==== Arithmetic Operator Mapping
+--
+-- * @"+"@ → 'Can.NativeArith' 'Can.Add'
+-- * @"-"@ → 'Can.NativeArith' 'Can.Sub'
+-- * @"*"@ → 'Can.NativeArith' 'Can.Mul'
+-- * @"/"@ → 'Can.NativeArith' 'Can.Div'
+--
+-- All other Basics operators (==, ++, <|, etc.) remain user-defined.
+--
+-- ==== Examples
+--
+-- >>> classifyBasicsOp (Name.fromChars "+")
+-- NativeArith Add
+--
+-- >>> classifyBasicsOp (Name.fromChars "==")
+-- UserDefined "==" ModuleName.basics "=="
+--
+-- ==== Performance
+--
+-- * **Time Complexity**: O(1) - constant-time name comparison
+-- * **Space Complexity**: O(1) - no allocation
+--
+-- @since 0.19.2
+classifyBasicsOp :: Name.Name -> Can.BinopKind
+classifyBasicsOp op
+  | op == Name.fromChars "+" = Can.NativeArith Can.Add
+  | op == Name.fromChars "-" = Can.NativeArith Can.Sub
+  | op == Name.fromChars "*" = Can.NativeArith Can.Mul
+  | op == Name.fromChars "/" = Can.NativeArith Can.Div
+  | otherwise = Can.UserDefined op ModuleName.basics op
 
 -- CANONICALIZE LET
 
@@ -573,11 +694,9 @@ findVar region (Env.Env localHome vs _ _ _ qvs _ _) name =
         Env.Local _ ->
           logVar name (Can.VarLocal name)
         Env.TopLevel _ ->
-          let _ = trace ("DEBUG CANONICALIZE: " ++ Name.toChars name ++ " classified as TopLevel with localHome=" ++ show localHome) ()
-          in logVar name (Can.VarTopLevel localHome name)
+          logVar name (Can.VarTopLevel localHome name)
         Env.Foreign home annotation ->
-          let _ = trace ("DEBUG CANONICALIZE: " ++ Name.toChars name ++ " classified as Foreign with home=" ++ show home) ()
-          in Result.ok $
+          Result.ok $
             if home == ModuleName.debug
               then Can.VarDebug localHome name annotation
               else Can.VarForeign home name annotation
@@ -588,13 +707,11 @@ findVar region (Env.Env localHome vs _ _ _ qvs _ _) name =
 
 findVarQual :: A.Region -> Env.Env -> Name.Name -> Name.Name -> Result FreeLocals w Can.Expr_
 findVarQual region (Env.Env localHome vs _ _ _ qvs _ _) prefix name =
-  let _ = trace ("DEBUG CANONICALIZE QUAL: Looking for " ++ Name.toChars prefix ++ "." ++ Name.toChars name ++ " with localHome=" ++ show localHome) ()
-  in case Map.lookup prefix qvs of
+  case Map.lookup prefix qvs of
     Just qualified ->
       case Map.lookup name qualified of
         Just (Env.Specific home annotation) ->
-          let _ = trace ("DEBUG CANONICALIZE QUAL: " ++ Name.toChars prefix ++ "." ++ Name.toChars name ++ " resolved to home=" ++ show home) ()
-          in Result.ok $
+          Result.ok $
             if home == ModuleName.debug
               then Can.VarDebug localHome name annotation
               else Can.VarForeign home name annotation

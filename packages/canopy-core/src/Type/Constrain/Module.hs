@@ -32,7 +32,7 @@ constrain (Can.Module home _ _ decls _ _ _ effects) =
       case manager of
         Can.Cmd cmdName ->
           (constrainEffects home r0 r1 r2 manager >>= constrainDecls decls) >>= letCmd home cmdName
-        Can.Sub subName ->
+        Can.SubManager subName ->
           (constrainEffects home r0 r1 r2 manager >>= constrainDecls decls) >>= letSub home subName
         Can.Fx cmdName subName ->
           ((constrainEffects home r0 r1 r2 manager >>= constrainDecls decls) >>= letSub home subName) >>= letCmd home cmdName
@@ -128,7 +128,7 @@ constrainEffects home r0 r1 r2 manager =
     let onEffects =
           case manager of
             Can.Cmd cmd -> router msg1 self1 ==> effectList home cmd msg1 ==> state1 ==> task state1
-            Can.Sub sub -> router msg1 self1 ==> effectList home sub msg1 ==> state1 ==> task state1
+            Can.SubManager sub -> router msg1 self1 ==> effectList home sub msg1 ==> state1 ==> task state1
             Can.Fx cmd sub -> router msg1 self1 ==> effectList home cmd msg1 ==> effectList home sub msg1 ==> state1 ==> task state1
 
     let effectCons =
@@ -145,7 +145,7 @@ constrainEffects home r0 r1 r2 manager =
       <$> case manager of
         Can.Cmd cmd ->
           checkMap "cmdMap" home cmd CSaveTheEnvironment
-        Can.Sub sub ->
+        Can.SubManager sub ->
           checkMap "subMap" home sub CSaveTheEnvironment
         Can.Fx cmd sub ->
           checkMap "subMap" home sub CSaveTheEnvironment >>= checkMap "cmdMap" home cmd

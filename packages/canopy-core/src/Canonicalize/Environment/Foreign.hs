@@ -72,7 +72,7 @@ isNormal (Src.Import (A.At _ name) maybeAlias _) =
   not (Name.isKernel name)
     || ( case maybeAlias of
            Nothing -> False
-           Just alias ->
+           Just _alias ->
              error "kernel imports cannot use `as`"
        )
 

@@ -115,6 +115,9 @@ module AST.Canonical
     CaseBranch (..),
     FieldUpdate (..),
     CtorOpts (..),
+    -- operators
+    ArithOp (..),
+    BinopKind (..),
     -- definitions
     Def (..),
     Decls (..),
@@ -138,7 +141,7 @@ module AST.Canonical
     Export (..),
     Effects (..),
     Port (..),
-    Manager (..),
+    Manager (Cmd, SubManager, Fx),  -- Renamed SubManager to avoid collision with ArithOp.Sub
   )
 where
 
@@ -185,6 +188,91 @@ import qualified Reporting.Annotation as A
 type Expr =
   A.Located Expr_
 
+-- | Arithmetic operator classification.
+--
+-- Represents the different kinds of arithmetic operators that can be
+-- compiled to native JavaScript operators. Each operator has specific
+-- semantics and optimization opportunities.
+--
+-- All operators follow JavaScript semantics for consistency with the
+-- runtime environment. Int and Float handling differ according to
+-- JavaScript number coercion rules.
+--
+-- @since 0.19.2
+data ArithOp
+  = -- | Addition operator (+).
+    --
+    -- Compiles to JavaScript '+' operator.
+    --
+    -- Semantics:
+    -- * Int + Int → Int
+    -- * Float + anything → Float
+    -- * Int + Float → Float
+    --
+    -- Identity: x + 0 = 0 + x = x
+    Add
+  | -- | Subtraction operator (-).
+    --
+    -- Compiles to JavaScript '-' operator.
+    --
+    -- Semantics:
+    -- * Int - Int → Int
+    -- * Float - anything → Float
+    -- * Int - Float → Float
+    --
+    -- Identity: x - 0 = x
+    Sub
+  | -- | Multiplication operator (*).
+    --
+    -- Compiles to JavaScript '*' operator.
+    --
+    -- Semantics:
+    -- * Int * Int → Int
+    -- * Float * anything → Float
+    -- * Int * Float → Float
+    --
+    -- Identity: x * 1 = 1 * x = x
+    -- Absorption: x * 0 = 0 * x = 0
+    Mul
+  | -- | Floating-point division operator (/).
+    --
+    -- Compiles to JavaScript '/' operator.
+    --
+    -- Semantics:
+    -- * Always produces Float result
+    -- * Int / Int → Float
+    -- * Division by zero → Infinity or -Infinity
+    --
+    -- Identity: x / 1 = x
+    -- Zero: 0 / x = 0 (for x ≠ 0)
+    Div
+  deriving (Eq, Ord, Show)
+
+-- | Binary operator kind classification.
+--
+-- Classifies binary operators into native arithmetic operators and
+-- custom (user-defined or library) operators. Used during canonicalization
+-- to determine whether to generate native operator nodes or function calls.
+--
+-- @since 0.19.2
+data BinopKind
+  = -- | Native arithmetic operator.
+    --
+    -- Operators that compile directly to JavaScript operators for efficiency.
+    -- These operators receive special treatment in optimization and code
+    -- generation phases.
+    --
+    -- Includes: +, -, *, /
+    NativeArith !ArithOp
+  | -- | Custom operator (user-defined or library function).
+    --
+    -- Operators that remain as function calls in the generated code.
+    -- These operators go through standard function call optimization.
+    --
+    -- Includes: (==), (++), (<|), (|>), (&&), (||), etc.
+    UserDefined !Name !ModuleName.Canonical !Name
+  deriving (Eq, Show)
+
 -- CACHE Annotations for type inference
 data Expr_
   = VarLocal Name
@@ -200,7 +288,17 @@ data Expr_
   | Float EF.Float
   | List [Expr]
   | Negate Expr
-  | Binop Name ModuleName.Canonical Name Annotation Expr Expr -- CACHE real name for optimization
+  | -- | Binary operator expression.
+    --
+    -- Represents binary operators with classification (native vs user-defined).
+    -- BinopKind determines compilation strategy, Annotation provides type info,
+    -- and the two Expr values are left and right operands.
+    --
+    -- Native arithmetic operators compile to JavaScript operators for efficiency.
+    -- User-defined operators remain as standard function calls.
+    --
+    -- @since 0.19.2
+    BinopOp BinopKind Annotation Expr Expr
   | Lambda [Pattern] Expr
   | Call Expr [Expr]
   | If [(Expr, Expr)] Expr
@@ -405,7 +503,7 @@ data Port
 
 data Manager
   = Cmd Name
-  | Sub Name
+  | SubManager Name  -- Renamed from Sub to avoid collision with ArithOp.Sub
   | Fx Name Name
 
 -- BINARY
@@ -547,6 +645,60 @@ instance Binary.Binary AliasType where
 instance Binary.Binary FieldType where
   get = Monad.liftM2 FieldType Binary.get Binary.get
   put (FieldType a b) = Binary.put a >> Binary.put b  -- Note: FieldType is a constructor, not a record
+
+-- | Binary serialization for ArithOp.
+--
+-- Compact encoding using Word8 tags for efficient serialization.
+--
+-- @since 0.19.2
+instance Binary.Binary ArithOp where
+  put = putArithOp
+  get = getArithOp
+
+-- | Encode ArithOp to Word8.
+--
+-- Maps arithmetic operators to compact numeric tags.
+--
+-- @since 0.19.2
+putArithOp :: ArithOp -> Binary.Put
+putArithOp Add = Binary.putWord8 0
+putArithOp Sub = Binary.putWord8 1
+putArithOp Mul = Binary.putWord8 2
+putArithOp Div = Binary.putWord8 3
+
+-- | Decode Word8 to ArithOp.
+--
+-- Handles deserialization with error checking for corrupted data.
+--
+-- @since 0.19.2
+getArithOp :: Binary.Get ArithOp
+getArithOp = do
+  w <- Binary.getWord8
+  case w of
+    0 -> pure Add
+    1 -> pure Sub
+    2 -> pure Mul
+    3 -> pure Div
+    _ -> fail ("binary encoding of ArithOp was corrupted: " ++ show w)
+
+-- | Binary serialization for BinopKind.
+--
+-- Distinguishes native arithmetic from user-defined operators
+-- with efficient tag-based encoding.
+--
+-- @since 0.19.2
+instance Binary.Binary BinopKind where
+  put kind = case kind of
+    NativeArith op -> Binary.putWord8 0 >> Binary.put op
+    UserDefined op home name ->
+      Binary.putWord8 1 >> Binary.put op >> Binary.put home >> Binary.put name
+
+  get = do
+    tag <- Binary.getWord8
+    case tag of
+      0 -> fmap NativeArith Binary.get
+      1 -> Monad.liftM3 UserDefined Binary.get Binary.get Binary.get
+      _ -> fail ("binary encoding of BinopKind was corrupted: " ++ show tag)
 
 -- AESON JSON INSTANCES
 

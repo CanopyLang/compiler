@@ -62,12 +62,8 @@ optimize cycle (A.At region expression) =
         func <- Names.registerGlobal ModuleName.basics Name.negate
         arg <- optimize cycle expr
         pure $ Opt.Call func [arg]
-    Can.Binop _ home name _ left right ->
-      do
-        optFunc <- Names.registerGlobal home name
-        optLeft <- optimize cycle left
-        optRight <- optimize cycle right
-        return (Opt.Call optFunc [optLeft, optRight])
+    Can.BinopOp kind _ left right ->
+      optimizeBinop cycle kind left right
     Can.Lambda args body ->
       do
         (argNames, destructors) <- destructArgs args
@@ -172,6 +168,178 @@ optimizeDefHelp cycle name args expr body =
           (argNames, destructors) <- destructArgs args
           let ofunc = Opt.Function argNames (foldr Opt.Destruct oexpr destructors)
           pure $ Opt.Let (Opt.Def name ofunc) body
+
+-- BINARY OPERATORS
+
+-- | Optimize binary operator expression.
+--
+-- Dispatches optimization based on operator classification. Native arithmetic
+-- operators are compiled to specialized 'ArithBinop' nodes for direct JavaScript
+-- operator generation, while user-defined operators remain as function calls.
+--
+-- This is the main entry point for binary operator optimization during the
+-- optimization phase of compilation.
+--
+-- ==== Optimization Strategy
+--
+-- **Native Arithmetic:**
+--
+-- * Creates 'Opt.ArithBinop' nodes
+-- * Enables constant folding in later passes
+-- * Generates direct JavaScript operators
+-- * No function call overhead
+--
+-- **User-Defined:**
+--
+-- * Remains as 'Opt.Call' nodes
+-- * Standard function call optimization applies
+-- * Supports arbitrary operator definitions
+-- * Maintains semantic flexibility
+--
+-- ==== Examples
+--
+-- @
+-- -- Native arithmetic optimization
+-- optimizeBinop cycle (NativeArith Add) (Int 1) (Int 2)
+-- -- Result: ArithBinop Add (Int 1) (Int 2)
+--
+-- -- User-defined operator optimization
+-- optimizeBinop cycle (UserDefined "++" home name) left right
+-- -- Result: Call (VarGlobal home "++") [left, right]
+-- @
+--
+-- ==== Performance
+--
+-- * **Time Complexity**: O(1) dispatch + recursive optimization cost
+-- * **Space Complexity**: O(1) for dispatch, O(depth) for recursion
+--
+-- @since 0.19.2
+optimizeBinop :: Cycle -> Can.BinopKind -> Can.Expr -> Can.Expr -> Names.Tracker Opt.Expr
+optimizeBinop cycle kind left right =
+  case kind of
+    Can.NativeArith op -> optimizeNativeArith cycle op left right
+    Can.UserDefined _ home name -> optimizeUserDefined cycle home name left right
+
+-- | Optimize native arithmetic operator.
+--
+-- Creates optimized 'ArithBinop' nodes that compile directly to JavaScript
+-- arithmetic operators. Recursively optimizes both operands before constructing
+-- the operator node.
+--
+-- The resulting 'ArithBinop' nodes enable:
+--
+-- * **Direct code generation** - No function call overhead
+-- * **Constant folding** - Compile-time evaluation of constant expressions
+-- * **Identity elimination** - Removal of operations with identity elements
+-- * **Performance** - Native JavaScript arithmetic operations
+--
+-- ==== Optimization Pipeline
+--
+-- 1. **Recursively optimize** left operand
+-- 2. **Recursively optimize** right operand
+-- 3. **Construct ArithBinop** with optimized operands
+-- 4. **Future passes** may apply constant folding or algebraic simplification
+--
+-- ==== Examples
+--
+-- @
+-- -- Simple arithmetic
+-- optimizeNativeArith cycle Add (Int 1) (Int 2)
+-- -- Result: ArithBinop Add (Int 1) (Int 2)
+-- -- Later pass: Int 3 (constant folding)
+--
+-- -- Variable arithmetic
+-- optimizeNativeArith cycle Mul (VarLocal "x") (Int 2)
+-- -- Result: ArithBinop Mul (VarLocal "x") (Int 2)
+--
+-- -- Nested arithmetic
+-- optimizeNativeArith cycle Add (Add (Int 1) (Int 2)) (Int 3)
+-- -- Result: ArithBinop Add (ArithBinop Add (Int 1) (Int 2)) (Int 3)
+-- -- Later pass: Int 6 (nested constant folding)
+-- @
+--
+-- ==== Code Generation
+--
+-- The 'ArithBinop' nodes generated here compile to:
+--
+-- * Add → JavaScript '+'
+-- * Sub → JavaScript '-'
+-- * Mul → JavaScript '*'
+-- * Div → JavaScript '/'
+--
+-- ==== Performance
+--
+-- * **Time Complexity**: O(depth) for recursive optimization
+-- * **Space Complexity**: O(depth) stack space for recursion
+--
+-- @since 0.19.2
+optimizeNativeArith :: Cycle -> Can.ArithOp -> Can.Expr -> Can.Expr -> Names.Tracker Opt.Expr
+optimizeNativeArith cycle op left right = do
+  optLeft <- optimize cycle left
+  optRight <- optimize cycle right
+  pure (Opt.ArithBinop op optLeft optRight)
+
+-- | Optimize user-defined operator.
+--
+-- Compiles user-defined operators to standard function calls. Registers the
+-- operator function as a global reference and optimizes both operands before
+-- constructing the call node.
+--
+-- This maintains the flexibility of user-defined operators while enabling
+-- standard function call optimizations:
+--
+-- * **Inline expansion** - Small operators may be inlined
+-- * **Tail call optimization** - Recursive operators may use TCO
+-- * **Dead code elimination** - Unused operators are eliminated
+--
+-- ==== Operator Resolution
+--
+-- User-defined operators include:
+--
+-- * Comparison operators (==, /=, <, >, <=, >=)
+-- * Logical operators (&&, ||)
+-- * List operators (++, ::)
+-- * Custom infix operators defined by users
+--
+-- All resolve to standard function calls with infix syntax sugar.
+--
+-- ==== Examples
+--
+-- @
+-- -- Comparison operator
+-- optimizeUserDefined cycle ModuleName.basics "eq" left right
+-- -- Result: Call (VarGlobal ModuleName.basics "eq") [left, right]
+--
+-- -- List append operator
+-- optimizeUserDefined cycle ModuleName.list "append" left right
+-- -- Result: Call (VarGlobal ModuleName.list "append") [left, right]
+--
+-- -- Custom user operator
+-- optimizeUserDefined cycle userModule "customOp" left right
+-- -- Result: Call (VarGlobal userModule "customOp") [left, right]
+-- @
+--
+-- ==== Code Generation
+--
+-- User-defined operators compile to standard function calls:
+--
+-- @
+-- a == b  →  F(Basics.eq, [a, b])
+-- a ++ b  →  F(List.append, [a, b])
+-- @
+--
+-- ==== Performance
+--
+-- * **Time Complexity**: O(depth) for recursive optimization
+-- * **Space Complexity**: O(depth) stack space + global registration
+--
+-- @since 0.19.2
+optimizeUserDefined :: Cycle -> ModuleName.Canonical -> Name.Name -> Can.Expr -> Can.Expr -> Names.Tracker Opt.Expr
+optimizeUserDefined cycle home name left right = do
+  optFunc <- Names.registerGlobal home name
+  optLeft <- optimize cycle left
+  optRight <- optimize cycle right
+  pure (Opt.Call optFunc [optLeft, optRight])
 
 -- DESTRUCTURING
 

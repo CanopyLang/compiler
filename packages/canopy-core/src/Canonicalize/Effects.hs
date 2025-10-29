@@ -56,7 +56,7 @@ canonicalize env values unions effects =
                   <$> verifyEffectType cmdType unions
                   <* verifyManager region dict "cmdMap"
               Src.Sub subType ->
-                Can.Sub
+                Can.SubManager
                   <$> verifyEffectType subType unions
                   <* verifyManager region dict "subMap"
               Src.Fx cmdType subType ->

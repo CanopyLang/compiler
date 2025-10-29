@@ -1,9 +1,0 @@
-module TestUnitVsTuple exposing (testUnit, unitValue)
-
--- Try with Basics.Unit
-testUnit : () -> ()
-testUnit _ = ()
-
--- Try returning unit literal  
-unitValue : ()
-unitValue = ()

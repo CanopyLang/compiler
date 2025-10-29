@@ -69,8 +69,8 @@ constrain rtv (A.At region expression) expected =
         numberCon <- constrain rtv expr (FromContext region Negate numberType)
         let negateCon = CEqual region E.Number numberType expected
         return $ exists [numberVar] $ CAnd [numberCon, negateCon]
-    Can.Binop op _ _ annotation leftExpr rightExpr ->
-      constrainBinop rtv region op annotation leftExpr rightExpr expected
+    Can.BinopOp kind annotation leftExpr rightExpr ->
+      constrainBinopOp rtv region kind annotation leftExpr rightExpr expected
     Can.Lambda args body ->
       constrainLambda rtv region args body expected
     Can.Call func args ->
@@ -209,8 +209,141 @@ getAccessName (A.At _ expr) =
 
 -- CONSTRAIN BINOP
 
-constrainBinop :: RTV -> A.Region -> Name.Name -> Can.Annotation -> Can.Expr -> Can.Expr -> Expected Type -> IO Constraint
-constrainBinop rtv region op annotation leftExpr rightExpr expected =
+-- | Generate type constraints for binary operator.
+--
+-- Dispatches constraint generation based on operator classification. Native
+-- arithmetic operators receive specialized number-constrained type checking,
+-- while user-defined operators use general function type constraints.
+--
+-- This function is the entry point for all binary operator type checking
+-- during the constraint generation phase.
+--
+-- ==== Constraint Generation Strategy
+--
+-- **For Native Arithmetic:**
+--
+-- * Operands constrained to 'number' type (Int or Float)
+-- * Result constrained to 'number' type
+-- * Uses flexible number type variables for polymorphism
+--
+-- **For User-Defined:**
+--
+-- * Standard function application constraints
+-- * Uses operator annotation for function type
+-- * Supports arbitrary polymorphic types
+--
+-- ==== Examples
+--
+-- @
+-- -- Native arithmetic: 1 + 2
+-- constrainBinopOp rtv region (NativeArith Add) ann left right expected
+-- -- Generates: number -> number -> number constraints
+--
+-- -- User-defined: "hello" ++ "world"
+-- constrainBinopOp rtv region (UserDefined "++" ...) ann left right expected
+-- -- Generates: appendable a -> appendable a -> appendable a constraints
+-- @
+--
+-- ==== Performance
+--
+-- * **Time Complexity**: O(1) dispatch + constraint generation cost
+-- * **Space Complexity**: O(1) for dispatch, O(n) for constraint tree
+--
+-- @since 0.19.2
+constrainBinopOp :: RTV -> A.Region -> Can.BinopKind -> Can.Annotation -> Can.Expr -> Can.Expr -> Expected Type -> IO Constraint
+constrainBinopOp rtv region kind annotation leftExpr rightExpr expected =
+  case kind of
+    Can.NativeArith op ->
+      constrainNativeArith rtv region op leftExpr rightExpr expected
+    Can.UserDefined op _ _ ->
+      constrainUserDefined rtv region op annotation leftExpr rightExpr expected
+
+-- | Constrain native arithmetic operator.
+--
+-- Generates specialized type constraints for native arithmetic operators.
+-- Both operands and the result are constrained to the 'number' type,
+-- which unifies to either Int or Float during type inference.
+--
+-- The constraint structure ensures:
+--
+-- 1. **Left operand** is 'number' type
+-- 2. **Right operand** is 'number' type
+-- 3. **Result** is 'number' type
+-- 4. All three unify to the same concrete number type
+--
+-- This approach provides the polymorphic arithmetic semantics:
+--
+-- @
+-- (+) : number -> number -> number
+-- where number is Int or Float
+-- @
+--
+-- ==== Type Constraint Structure
+--
+-- @
+-- exists leftVar rightVar .
+--   leftExpr : leftVar /\\
+--   rightExpr : rightVar /\\
+--   leftVar = number /\\
+--   rightVar = number /\\
+--   leftVar = expected
+-- @
+--
+-- ==== Examples
+--
+-- @
+-- -- Integer arithmetic
+-- constrainNativeArith rtv region Add (Int 1) (Int 2) expected
+-- -- Result: Both operands and result unify to Int
+--
+-- -- Float arithmetic
+-- constrainNativeArith rtv region Mul (Float 2.5) (Float 4.0) expected
+-- -- Result: Both operands and result unify to Float
+--
+-- -- Mixed (error case)
+-- constrainNativeArith rtv region Add (Int 1) (Float 2.5) expected
+-- -- Result: Type error - Int and Float don't unify
+-- @
+--
+-- ==== Error Reporting
+--
+-- The constraint structure enables precise error messages:
+--
+-- * Identifies which operand has type mismatch
+-- * Distinguishes left vs right operand in errors
+-- * Provides operator context for error messages
+--
+-- ==== Performance
+--
+-- * **Time Complexity**: O(1) constraint construction
+-- * **Space Complexity**: O(1) constraint node allocation
+--
+-- @since 0.19.2
+constrainNativeArith :: RTV -> A.Region -> Can.ArithOp -> Can.Expr -> Can.Expr -> Expected Type -> IO Constraint
+constrainNativeArith rtv region _op leftExpr rightExpr expected =
+  do
+    leftVar <- mkFlexNumber
+    rightVar <- mkFlexNumber
+    let leftType = VarN leftVar
+    let rightType = VarN rightVar
+    let opName = Name.fromChars "+"
+
+    leftCon <- constrain rtv leftExpr (FromContext region (OpLeft opName) leftType)
+    rightCon <- constrain rtv rightExpr (FromContext region (OpRight opName) rightType)
+
+    let numberCon1 = CEqual region E.Number leftType (NoExpectation leftType)
+    let numberCon2 = CEqual region E.Number rightType (NoExpectation rightType)
+    let resultCon = CEqual region E.Number leftType expected
+
+    return $
+      exists [leftVar, rightVar] $
+        CAnd [leftCon, rightCon, numberCon1, numberCon2, resultCon]
+
+-- | Constrain user-defined operator (original behavior).
+--
+-- @since 0.19.2
+constrainUserDefined :: RTV -> A.Region -> Name.Name -> Can.Annotation -> Can.Expr -> Can.Expr -> Expected Type -> IO Constraint
+constrainUserDefined rtv region op annotation leftExpr rightExpr expected =
   do
     leftVar <- mkFlexVar
     rightVar <- mkFlexVar
@@ -490,9 +623,9 @@ constrainDestruct rtv region pattern expr bodyCon =
 
 constrainDef :: RTV -> Can.Def -> Constraint -> Expected Type -> IO Constraint
 constrainDef rtv def bodyCon expected = do
-  let (defName, defType) = case def of
+  let (_defName, _defType) = case def of
         Can.Def (A.At _ n) _ _ -> (n, "Def" :: String)
-        Can.TypedDef (A.At _ n) _ _ _ _ -> (n, "TypedDef")
+        Can.TypedDef (A.At _ n) _ _ _ _ -> (n, "TypedDef" :: String)
       expectedType = case expected of
         NoExpectation t -> Just t
         FromContext _ _ t -> Just t

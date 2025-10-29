@@ -10,7 +10,7 @@ where
 import qualified AST.Canonical as Can
 import qualified Canopy.ModuleName as ModuleName
 import Control.Lens (makeLenses, (^.), (.~), (&), (%~))
-import Control.Monad (filterM, foldM, forM, liftM2, liftM3, when)
+import Control.Monad (filterM, foldM, forM, liftM2, liftM3)
 import Data.Foldable (for_, traverse_, maximumBy)
 import Data.Map.Strict (Map, (!))
 import qualified Data.Map.Strict as Map
@@ -233,15 +233,15 @@ solveLocal config region name expectation = do
       descriptor <- UF.get actualEnvType
       let envRank = case descriptor of
             Descriptor _ r _ _ -> r
-      let descContent = case descriptor of
+      let _descContent = case descriptor of
             Descriptor c _ _ _ -> case c of
-              FlexVar _ -> "FlexVar"
-              FlexSuper _ _ -> "FlexSuper"
-              RigidVar _ -> "RigidVar"
-              RigidSuper _ _ -> "RigidSuper"
-              Structure _ -> "Structure"
-              Alias _ _ _ _ -> "Alias"
-              Error -> "Error"
+              FlexVar _ -> ("FlexVar" :: String)
+              FlexSuper _ _ -> ("FlexSuper" :: String)
+              RigidVar _ -> ("RigidVar" :: String)
+              RigidSuper _ _ -> ("RigidSuper" :: String)
+              Structure _ -> ("Structure" :: String)
+              Alias _ _ _ _ -> ("Alias" :: String)
+              Error -> ("Error" :: String)
       if envRank == noRank
         then do
           -- Variable is generalized (polymorphic), instantiate it with makeCopy
@@ -263,7 +263,7 @@ solveLocal config region name expectation = do
           -- during previous instantiations, returning an already-unified type instead of
           -- the pristine generalized type. This causes phantom type bugs where the first
           -- use constrains subsequent uses.
-          (Descriptor content monoRank _ _) <- UF.get monoType
+          (Descriptor _content monoRank _ _) <- UF.get monoType
           if monoRank == noRank
             then do
               -- Variable was generalized, instantiate it
@@ -789,7 +789,7 @@ extractVarsFromUnifiedType var = do
 --            to avoid false positives from peer module-level functions
 checkAndGeneralizeWithParent :: Int -> Int -> [(Int, Variable)] -> Map Name.Name (A.Located Variable) -> [(Name.Name, Variable)] -> (Name.Name, A.Located Variable) -> IO [(Name.Name, Variable)]
 checkAndGeneralizeWithParent youngRank parentRank outerRigids locals acc (name, A.At _ var) = do
-  (Descriptor _ rank _ _) <- UF.get var
+  (Descriptor _ _rank _ _) <- UF.get var
   -- Follow links to get the representative variable
   actualVar <- UF.repr var
   (Descriptor _ actualRank _ _) <- UF.get actualVar

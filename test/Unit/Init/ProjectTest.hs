@@ -92,7 +92,7 @@ outlineConfigTests =
             let Outline.AppOutline _ sourceDirs directs indirects testDeps _ _ = appOutline
             -- Verify source directories
             case sourceDirs of
-              NE.List (Outline.RelativeSrcDir first) rest ->
+              (Outline.RelativeSrcDir first : _) ->
                 first @?= "src"
               _ -> fail "Expected source directory structure"
 
@@ -110,7 +110,7 @@ outlineConfigTests =
         case outline of
           Outline.App (Outline.AppOutline _ sourceDirs _ _ _ _ _) -> do
             case sourceDirs of
-              NE.List (Outline.RelativeSrcDir first) (Outline.RelativeSrcDir second : _) -> do
+              [Outline.RelativeSrcDir first, Outline.RelativeSrcDir second] -> do
                 first @?= "src"
                 second @?= "lib"
               _ -> fail "Expected two source directories"
@@ -239,9 +239,8 @@ sourceDirTests =
         case outline of
           Outline.App (Outline.AppOutline _ sourceDirs _ _ _ _ _) -> do
             case sourceDirs of
-              NE.List (Outline.RelativeSrcDir dir) rest -> do
+              [Outline.RelativeSrcDir dir] -> do
                 dir @?= "custom"
-                null rest @?= True
               _ -> fail "Expected single custom directory"
           _ -> fail "Expected App outline"
     ]
@@ -268,7 +267,7 @@ integrationTests =
 
             -- Should have default source directory
             case sourceDirs of
-              NE.List (Outline.RelativeSrcDir "src") [] -> pure ()
+              [Outline.RelativeSrcDir "src"] -> pure ()
               _ -> fail "Expected default src directory"
 
             -- Should include all default dependencies as direct
@@ -290,7 +289,7 @@ integrationTests =
           Outline.App (Outline.AppOutline _ sourceDirs _ _ testDeps _ _) -> do
             -- Should have custom source directories
             case sourceDirs of
-              NE.List (Outline.RelativeSrcDir "app") [Outline.RelativeSrcDir "shared"] -> pure ()
+              [Outline.RelativeSrcDir "app", Outline.RelativeSrcDir "shared"] -> pure ()
               _ -> fail "Expected custom source directories"
 
             -- Should have test dependencies
