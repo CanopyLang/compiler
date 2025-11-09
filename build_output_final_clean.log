@@ -1,0 +1,46 @@
+canopy-builder-0.19.1: unregistering (missing dependencies: canopy-core, canopy-driver,
+canopy-query)
+canopy-core-0.19.1: unregistering (local file changes: src/Canonicalize/Module.hs)
+canopy-driver-0.19.1: unregistering (missing dependencies: canopy-core, canopy-query)
+canopy-query-0.19.1: unregistering (missing dependencies: canopy-core)
+canopy-terminal-0.19.1: unregistering (missing dependencies: canopy-builder, canopy-core,
+canopy-driver, canopy-query)
+canopy-core    > build (lib) with ghc-9.8.4
+canopy-core    > Preprocessing library for canopy-core-0.19.1..
+canopy-core    > Building library for canopy-core-0.19.1..
+canopy-core    > [113 of 128] Compiling Canonicalize.Module [Source file changed]
+canopy-core    > 
+canopy-core    > /home/quinten/fh/canopy/packages/canopy-core/src/Canonicalize/Module.hs:765:32: error: [GHC-62161] [-Wincomplete-patterns, Werror=incomplete-patterns]
+canopy-core    >     Pattern match(es) are non-exhaustive
+canopy-core    >     In a case alternative:
+canopy-core    >         Patterns of type ‘Maybe (Env.Info Env.Type)’ not matched:
+canopy-core    >             Just _
+canopy-core    >             Just _
+canopy-core    >             Just _
+canopy-core    >             Just _
+canopy-core    >             ...
+canopy-core    >     |
+canopy-core    > 765 |               resolvedModule = case maybeTypeInfo of
+canopy-core    >     |                                ^^^^^^^^^^^^^^^^^^^^^...
+canopy-core    > 
+canopy-core    > /home/quinten/fh/canopy/packages/canopy-core/src/Canonicalize/Module.hs:765:32: error: [GHC-61505] [-Werror]
+canopy-core    >     Pattern match checker ran into -fmax-pmcheck-models=30 limit, so
+canopy-core    >       • Redundant clauses might not be reported at all
+canopy-core    >       • Redundant clauses might be reported as inaccessible
+canopy-core    >       • Patterns reported as unmatched might actually be matched
+canopy-core    >     Suggested fix:
+canopy-core    >       Increase the limit or resolve the warnings to suppress this message.
+canopy-core    >     |
+canopy-core    > 765 |               resolvedModule = case maybeTypeInfo of
+canopy-core    >     |                                ^^^^^^^^^^^^^^^^^^^^^...
+
+Error: [S-7282]
+       Stack failed to execute the build plan.
+       
+       While executing the build plan, Stack encountered the error:
+       
+       [S-7011]
+       While building package canopy-core-0.19.1 (scroll up to its section to see the error) using:
+       /home/quinten/.stack/setup-exe-cache/x86_64-linux-tinfo6/Cabal-simple_w2MFVN35_3.10.3.0_ghc-9.8.4 --verbose=1 --builddir=.stack-work/dist/x86_64-linux-tinfo6/ghc-9.8.4 build lib:canopy-core --ghc-options ""
+       Process exited with code: ExitFailure 1 
+make: *** [Makefile:22: build] Error 1

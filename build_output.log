@@ -1,0 +1,102 @@
+canopy-core    > build (lib) with ghc-9.8.4
+canopy-core    > Preprocessing library for canopy-core-0.19.1..
+canopy-core    > Building library for canopy-core-0.19.1..
+canopy-core    > [113 of 128] Compiling Canonicalize.Module
+canopy-core    > 
+canopy-core    > /home/quinten/fh/canopy/packages/canopy-core/src/Canonicalize/Module.hs:599:14: error: [GHC-40910] [-Wunused-matches, Werror=unused-matches]
+canopy-core    >     Defined but not used: ‘env’
+canopy-core    >     |
+canopy-core    > 599 | parseOneType env homeModuleName [] = Nothing
+canopy-core    >     |              ^^^
+canopy-core    > 
+canopy-core    > /home/quinten/fh/canopy/packages/canopy-core/src/Canonicalize/Module.hs:599:18: error: [GHC-40910] [-Wunused-matches, Werror=unused-matches]
+canopy-core    >     Defined but not used: ‘homeModuleName’
+canopy-core    >     |
+canopy-core    > 599 | parseOneType env homeModuleName [] = Nothing
+canopy-core    >     |                  ^^^^^^^^^^^^^^
+canopy-core    > 
+canopy-core    > /home/quinten/fh/canopy/packages/canopy-core/src/Canonicalize/Module.hs:600:14: error: [GHC-40910] [-Wunused-matches, Werror=unused-matches]
+canopy-core    >     Defined but not used: ‘env’
+canopy-core    >     |
+canopy-core    > 600 | parseOneType env homeModuleName ["(", ")"] = Just (Can.TUnit, [])
+canopy-core    >     |              ^^^
+canopy-core    > 
+canopy-core    > /home/quinten/fh/canopy/packages/canopy-core/src/Canonicalize/Module.hs:600:18: error: [GHC-40910] [-Wunused-matches, Werror=unused-matches]
+canopy-core    >     Defined but not used: ‘homeModuleName’
+canopy-core    >     |
+canopy-core    > 600 | parseOneType env homeModuleName ["(", ")"] = Just (Can.TUnit, [])
+canopy-core    >     |                  ^^^^^^^^^^^^^^
+canopy-core    > 
+canopy-core    > /home/quinten/fh/canopy/packages/canopy-core/src/Canonicalize/Module.hs:680:10: error: [GHC-18042] [-Wtype-defaults, Werror=type-defaults]
+canopy-core    >     • Defaulting the type variable ‘t0’ to type ‘Integer’ in the following constraints
+canopy-core    >         (Eq t0)
+canopy-core    >           arising from a use of ‘go’ at src/Canonicalize/Module.hs:680:10-11
+canopy-core    >         (Num t0)
+canopy-core    >           arising from a use of ‘go’ at src/Canonicalize/Module.hs:680:10-11
+canopy-core    >     • In the expression: go tokens 0 [] []
+canopy-core    >       In the expression:
+canopy-core    >         let
+canopy-core    >           go [] _ acc result = if null acc then result else result ++ ...
+canopy-core    >           go ("," : ts) 0 acc result = go ts 0 [] (result ++ [...])
+canopy-core    >           go ("(" : ts) depth acc result
+canopy-core    >             = go ts (depth + 1) ("(" : acc) result
+canopy-core    >           go (")" : ts) depth acc result
+canopy-core    >             = go ts (depth - 1) (")" : acc) result
+canopy-core    >           go (t : ts) depth acc result = go ts depth (t : acc) result
+canopy-core    >         in go tokens 0 [] []
+canopy-core    >       In an equation for ‘splitTupleTokens’:
+canopy-core    >           splitTupleTokens tokens
+canopy-core    >             = let
+canopy-core    >                 go [] _ acc result = ...
+canopy-core    >                 go ("," : ts) 0 acc result = go ts 0 [] (result ++ ...)
+canopy-core    >                 go ("(" : ts) depth acc result
+canopy-core    >                   = go ts (depth + 1) ("(" : acc) result
+canopy-core    >                 go (")" : ts) depth acc result
+canopy-core    >                   = go ts (depth - 1) (")" : acc) result
+canopy-core    >                 go (t : ts) depth acc result = go ts depth (t : acc) result
+canopy-core    >               in go tokens 0 [] []
+canopy-core    >     |
+canopy-core    > 680 |       in go tokens 0 [] []
+canopy-core    >     |          ^^
+canopy-core    > 
+canopy-core    > /home/quinten/fh/canopy/packages/canopy-core/src/Canonicalize/Module.hs:761:15: error: [GHC-63397] [-Wname-shadowing, Werror=name-shadowing]
+canopy-core    >     This binding for ‘typeName’ shadows the existing binding
+canopy-core    >       bound at src/Canonicalize/Module.hs:695:43
+canopy-core    >     |
+canopy-core    > 761 |           let typeName = Name.fromChars customType
+canopy-core    >     |               ^^^^^^^^
+canopy-core    > 
+canopy-core    > /home/quinten/fh/canopy/packages/canopy-core/src/Canonicalize/Module.hs:764:14: error: [GHC-62161] [-Wincomplete-patterns, Werror=incomplete-patterns]
+canopy-core    >     Pattern match(es) are non-exhaustive
+canopy-core    >     In a case alternative:
+canopy-core    >         Patterns of type ‘Maybe (Env.Info Env.Type)’ not matched:
+canopy-core    >             Just _
+canopy-core    >             Just _
+canopy-core    >             Just _
+canopy-core    >             Just _
+canopy-core    >             ...
+canopy-core    >     |
+canopy-core    > 764 |           in case maybeTypeInfo of
+canopy-core    >     |              ^^^^^^^^^^^^^^^^^^^^^...
+canopy-core    > 
+canopy-core    > /home/quinten/fh/canopy/packages/canopy-core/src/Canonicalize/Module.hs:764:14: error: [GHC-61505] [-Werror]
+canopy-core    >     Pattern match checker ran into -fmax-pmcheck-models=30 limit, so
+canopy-core    >       • Redundant clauses might not be reported at all
+canopy-core    >       • Redundant clauses might be reported as inaccessible
+canopy-core    >       • Patterns reported as unmatched might actually be matched
+canopy-core    >     Suggested fix:
+canopy-core    >       Increase the limit or resolve the warnings to suppress this message.
+canopy-core    >     |
+canopy-core    > 764 |           in case maybeTypeInfo of
+canopy-core    >     |              ^^^^^^^^^^^^^^^^^^^^^...
+
+Error: [S-7282]
+       Stack failed to execute the build plan.
+       
+       While executing the build plan, Stack encountered the error:
+       
+       [S-7011]
+       While building package canopy-core-0.19.1 (scroll up to its section to see the error) using:
+       /home/quinten/.stack/setup-exe-cache/x86_64-linux-tinfo6/Cabal-simple_w2MFVN35_3.10.3.0_ghc-9.8.4 --verbose=1 --builddir=.stack-work/dist/x86_64-linux-tinfo6/ghc-9.8.4 build lib:canopy-core --ghc-options ""
+       Process exited with code: ExitFailure 1 
+make: *** [Makefile:22: build] Error 1

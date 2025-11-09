@@ -1,0 +1,10 @@
+module Main exposing (main)
+
+-- Simple addition test
+result : Int
+result =
+    1 + 2
+
+main : Int
+main =
+    result

@@ -1,0 +1,147 @@
+canopy-core    > blocking for directory lock on
+/home/quinten/fh/canopy/packages/canopy-core/.stack-work/dist/x86_64-linux-tinfo6/ghc-9.8.4/build-lock
+canopy-core    > configure (lib)
+canopy-core    > Configuring canopy-core-0.19.1...
+canopy-core    > Warning: 'license-file: ../../LICENSE' is a relative path outside of the
+canopy-core    > source tree. This will not work when generating a tarball with 'sdist'.
+canopy-core    > build (lib) with ghc-9.8.4
+canopy-core    > Preprocessing library for canopy-core-0.19.1..
+canopy-core    > Building library for canopy-core-0.19.1..
+canopy-core    > [  1 of 128] Compiling AST.Utils.Binop [Flags changed]
+canopy-core    > [  2 of 128] Compiling Canopy.Magnitude [Flags changed]
+canopy-core    > [  3 of 128] Compiling Data.Bag [Flags changed]
+canopy-core    > [  4 of 128] Compiling Data.Index [Flags changed]
+canopy-core    > [  5 of 128] Compiling Data.NonEmptyList [Flags changed]
+canopy-core    > [  6 of 128] Compiling Data.Map.Utils [Flags changed]
+canopy-core    > [  7 of 128] Compiling Data.OneOrMore [Flags changed]
+canopy-core    > [  8 of 128] Compiling Data.Utf8.Types [Flags changed]
+canopy-core    > [  9 of 128] Compiling Data.Utf8.Creation [Flags changed]
+canopy-core    > [ 10 of 128] Compiling Data.Utf8.Manipulation [Flags changed]
+canopy-core    > [ 11 of 128] Compiling Data.Utf8.Core [Flags changed]
+canopy-core    > [ 12 of 128] Compiling Data.Utf8.Builder [Flags changed]
+canopy-core    > [ 13 of 128] Compiling Data.Utf8.Binary [Flags changed]
+canopy-core    > [ 14 of 128] Compiling FFI.Capability [Flags changed]
+canopy-core    > [ 15 of 128] Compiling FFI.Storage [Flags changed]
+canopy-core    > [ 16 of 128] Compiling File.Atomic [Flags changed]
+canopy-core    > [ 17 of 128] Compiling File.Binary [Flags changed]
+canopy-core    > [ 18 of 128] Compiling File.FileSystem [Flags changed]
+canopy-core    > [ 19 of 128] Compiling File.JSON [Flags changed]
+canopy-core    > [ 20 of 128] Compiling File.Time [Flags changed]
+canopy-core    > [ 21 of 128] Compiling File.Utf8 [Flags changed]
+canopy-core    > [ 22 of 128] Compiling Generate.JavaScript.Functions [Flags changed]
+canopy-core    > [ 23 of 128] Compiling Logging.Debug [Flags changed]
+canopy-core    > [ 24 of 128] Compiling Logging.Logger [Flags changed]
+canopy-core    > [ 25 of 128] Compiling File.Package [Flags changed]
+canopy-core    > [ 26 of 128] Compiling File.Archive [Flags changed]
+canopy-core    > [ 27 of 128] Compiling File [Flags changed]
+canopy-core    > [ 28 of 128] Compiling File.Cache [Flags changed]
+canopy-core    > [ 29 of 128] Compiling Paths_canopy_core [Flags changed]
+canopy-core    > [ 30 of 128] Compiling Reporting.Annotation [Flags changed]
+canopy-core    > [ 31 of 128] Compiling Parse.Primitives [Flags changed]
+canopy-core    > [ 32 of 128] Compiling Data.Utf8.Encoding [Flags changed]
+canopy-core    > [ 33 of 128] Compiling Data.Utf8 [Flags changed]
+canopy-core    > [ 34 of 128] Compiling Canopy.String [Flags changed]
+canopy-core    > [ 35 of 128] Compiling Data.Name.Core [Flags changed]
+canopy-core    > [ 36 of 128] Compiling Data.Name.TypeVariable [Flags changed]
+canopy-core    > [ 37 of 128] Compiling Data.Name.Kernel [Flags changed]
+canopy-core    > [ 38 of 128] Compiling Data.Name.Generation [Flags changed]
+canopy-core    > [ 39 of 128] Compiling Data.Name.Constants [Flags changed]
+canopy-core    > [ 40 of 128] Compiling Data.Name [Flags changed]
+canopy-core    > [ 41 of 128] Compiling Parse.Symbol [Flags changed]
+canopy-core    > [ 42 of 128] Compiling Json.String [Flags changed]
+canopy-core    > [ 43 of 128] Compiling Json.Encode [Flags changed]
+canopy-core    > [ 44 of 128] Compiling Generate.Html [Flags changed]
+canopy-core    > [ 45 of 128] Compiling AST.Utils.Shader [Flags changed]
+canopy-core    > [ 46 of 128] Compiling Canopy.Float [Flags changed]
+canopy-core    > [ 47 of 128] Compiling Foreign.FFI [Flags changed]
+canopy-core    > [ 48 of 128] Compiling Foreign.TestGeneratorNew [Flags changed]
+canopy-core    > [ 49 of 128] Compiling Foreign.TestGenerator [Flags changed]
+canopy-core    > [ 50 of 128] Compiling AST.Source [Flags changed]
+canopy-core    > [ 51 of 128] Compiling Parse.Variable [Flags changed]
+canopy-core    > [ 52 of 128] Compiling Parse.Keyword [Flags changed]
+canopy-core    > [ 53 of 128] Compiling Json.Decode [Flags changed]
+canopy-core    > [ 54 of 128] Compiling Canopy.Version [Flags changed]
+canopy-core    > [ 55 of 128] Compiling Canopy.Constraint [Flags changed]
+canopy-core    > [ 56 of 128] Compiling Reporting.Suggest [Flags changed]
+canopy-core    > [ 57 of 128] Compiling Canopy.Package [Flags changed]
+canopy-core    > [ 58 of 128] Compiling Reporting.Doc [Flags changed]
+canopy-core    > [ 59 of 128] Compiling Reporting.Report [Flags changed]
+canopy-core    > [ 60 of 128] Compiling Reporting.Render.Code [Flags changed]
+canopy-core    > [ 61 of 128] Compiling Canopy.ModuleName [Flags changed]
+canopy-core    > [ 62 of 128] Compiling Reporting.Render.Type.Localizer [Flags changed]
+canopy-core    > [ 63 of 128] Compiling Reporting.Error.Syntax [Flags changed]
+canopy-core    > [ 64 of 128] Compiling Reporting.Error.Docs [Flags changed]
+canopy-core    > [ 65 of 128] Compiling Parse.Space [Flags changed]
+canopy-core    > [ 66 of 128] Compiling Parse.Type [Flags changed]
+canopy-core    > [ 67 of 128] Compiling Parse.Shader [Flags changed]
+canopy-core    > [ 68 of 128] Compiling Parse.Number [Flags changed]
+canopy-core    > [ 69 of 128] Compiling Parse.String [Flags changed]
+canopy-core    > [ 70 of 128] Compiling Parse.Pattern [Flags changed]
+canopy-core    > [ 71 of 128] Compiling Parse.Expression [Flags changed]
+canopy-core    > [ 72 of 128] Compiling Parse.Declaration [Flags changed]
+canopy-core    > [ 73 of 128] Compiling Reporting.Error.Import [Flags changed]
+canopy-core    > [ 74 of 128] Compiling Generate.JavaScript.Name [Flags changed]
+canopy-core    > [ 75 of 128] Compiling Canopy.Compiler.Imports [Flags changed]
+canopy-core    > [ 76 of 128] Compiling Parse.Module [Flags changed]
+canopy-core    > [ 77 of 128] Compiling AST.Canonical [Source file changed]
+canopy-core    > [ 78 of 128] Compiling Reporting.Render.Type [Flags changed]
+canopy-core    > [ 79 of 128] Compiling Canopy.Compiler.Type [Flags changed]
+canopy-core    > [ 80 of 128] Compiling Reporting.Error.Canonicalize [Flags changed]
+canopy-core    > 
+canopy-core    > /home/quinten/fh/canopy/packages/canopy-core/src/Reporting/Error/Canonicalize.hs:142:3: error: [GHC-62161] [-Wincomplete-patterns, Werror=incomplete-patterns]
+canopy-core    >     Pattern match(es) are non-exhaustive
+canopy-core    >     In a case alternative:
+canopy-core    >         Patterns of type ‘Error’ not matched:
+canopy-core    >             FFIFileNotFound _ _
+canopy-core    >             FFIFileTimeout _ _ _
+canopy-core    >             FFIParseError _ _ _
+canopy-core    >             FFIInvalidType _ _ _ _
+canopy-core    >             ...
+canopy-core    >     |
+canopy-core    > 142 |   case err of
+canopy-core    >     |   ^^^^^^^^^^^...
+canopy-core    > [ 82 of 128] Compiling Optimize.DecisionTree [Flags changed]
+canopy-core    > [ 83 of 128] Compiling Nitpick.PatternMatches [Flags changed]
+canopy-core    > [ 84 of 128] Compiling Reporting.Error.Pattern [Flags changed]
+canopy-core    > [ 85 of 128] Compiling AST.Utils.Type [Flags changed]
+canopy-core    > [ 86 of 128] Compiling Canopy.Kernel.Discovery [Flags changed]
+canopy-core    > [ 87 of 128] Compiling Canopy.Kernel [Flags changed]
+canopy-core    > [ 88 of 128] Compiling Canopy.Interface [Flags changed]
+canopy-core    > [ 89 of 128] Compiling AST.Optimized [Flags changed]
+canopy-core    > [ 90 of 128] Compiling Optimize.Names [Flags changed]
+canopy-core    > [ 91 of 128] Compiling Optimize.Port [Flags changed]
+canopy-core    > [ 92 of 128] Compiling Optimize.Case [Flags changed]
+canopy-core    > [ 93 of 128] Compiling Optimize.Expression [Flags changed]
+canopy-core    > [ 94 of 128] Compiling Nitpick.Debug [Flags changed]
+canopy-core    > [ 95 of 128] Compiling Canopy.Compiler.Type.Extract [Flags changed]
+canopy-core    > [ 96 of 128] Compiling Generate.Mode [Flags changed]
+canopy-core    > [ 97 of 128] Compiling Generate.JavaScript.Builder [Flags changed]
+canopy-core    > [ 98 of 128] Compiling Generate.JavaScript.Expression [Flags changed]
+canopy-core    > [ 99 of 128] Compiling Generate.JavaScript [Flags changed]
+canopy-core    > [100 of 128] Compiling Canopy.Licenses [Flags changed]
+canopy-core    > [101 of 128] Compiling Reporting.Warning [Flags changed]
+canopy-core    > [102 of 128] Compiling Reporting.Result [Flags changed]
+canopy-core    > [103 of 128] Compiling Canopy.Docs [Flags changed]
+canopy-core    > [114 of 128] Compiling Type.Error [Flags changed]
+canopy-core    > [115 of 128] Compiling Reporting.Error.Type [Flags changed]
+canopy-core    > [119 of 128] Compiling Type.UnionFind [Flags changed]
+canopy-core    > [120 of 128] Compiling Type.Type [Flags changed]
+canopy-core    > [121 of 128] Compiling Type.Instantiate [Flags changed]
+canopy-core    > [122 of 128] Compiling Type.Constrain.Pattern [Flags changed]
+canopy-core    > [123 of 128] Compiling Type.Constrain.Expression [Flags changed]
+canopy-core    > [124 of 128] Compiling Type.Constrain.Module [Flags changed]
+canopy-core    > [125 of 128] Compiling Type.Capability [Flags changed]
+canopy-core    > [126 of 128] Compiling Type.Occurs [Flags changed]
+canopy-core    > [127 of 128] Compiling Type.Unify [Flags changed]
+canopy-core    > [128 of 128] Compiling Type.Solve [Flags changed]
+
+Error: [S-7282]
+       Stack failed to execute the build plan.
+       
+       While executing the build plan, Stack encountered the error:
+       
+       [S-7011]
+       While building package canopy-core-0.19.1 (scroll up to its section to see the error) using:
+       /home/quinten/.stack/setup-exe-cache/x86_64-linux-tinfo6/Cabal-simple_w2MFVN35_3.10.3.0_ghc-9.8.4 --verbose=1 --builddir=.stack-work/dist/x86_64-linux-tinfo6/ghc-9.8.4 build lib:canopy-core --ghc-options ""
+       Process exited with code: ExitFailure 1 
+make: *** [Makefile:22: build] Error 1

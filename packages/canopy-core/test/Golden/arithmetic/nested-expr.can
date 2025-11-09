@@ -1,0 +1,10 @@
+module Main exposing (main)
+
+-- Nested arithmetic expression with precedence
+result : Int
+result =
+    1 + 2 * 3
+
+main : Int
+main =
+    result
