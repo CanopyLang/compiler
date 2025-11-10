@@ -45,6 +45,7 @@ module Foreign.FFI
 
 import qualified Data.Text as Text
 import Data.Text (Text)
+import qualified Data.Char as Char
 import qualified Data.Name as Name
 import qualified Reporting.Annotation as A
 import qualified Data.Maybe as Maybe
@@ -387,6 +388,11 @@ parseFFIType tokens = parseFunction (stripOuterParens tokens)
           pure (t : inner, remaining)
 
     -- Parse function types (param -> param -> result)
+    -- This parser works RIGHT-TO-LEFT: For "A -> B -> C", it parses:
+    --   1. Find first arrow, split into "A" and "B -> C"
+    --   2. Recursively parse "B -> C" to get FFIFunctionType [B] C
+    --   3. Prepend A to get FFIFunctionType [A, B] C
+    -- This maintains correct parameter order [A, B] for the final type.
     parseFunction :: [Text] -> Maybe FFIType
     parseFunction ts = case findFunctionArrow ts of
       Nothing -> parseBasicType ts
@@ -413,6 +419,22 @@ parseFFIType tokens = parseFunction (stripOuterParens tokens)
           | otherwise = go (acc ++ [t]) parenCount rest
 
     -- Extend function with additional parameter
+    -- IMPORTANT: Prepend paramType to params list to maintain left-to-right parameter order.
+    -- The parser works left-to-right, finding the FIRST arrow and splitting the string.
+    -- It then recursively parses the right side (rest of the function type).
+    -- When we come back from recursion, we need to PREPEND the left parameter to maintain order.
+    --
+    -- Example: "A -> B -> C"
+    --   1. Split: paramType="A", rest="B -> C"
+    --   2. Recurse on "B -> C" → produces FFIFunctionType [B] C
+    --   3. PREPEND A to get FFIFunctionType [A, B] C ✓
+    --
+    -- If we APPEND instead, we get [B, A] which is backwards!
+    --
+    -- Test cases verify correct behavior:
+    -- - "A -> B -> C" should parse as FFIFunctionType [A, B] C
+    -- - "UserActivated -> Result E V" should parse as FFIFunctionType [UserActivated] (Result E V)
+    -- - "AudioContext -> ArrayBuffer -> Task E V" should parse as FFIFunctionType [AudioContext, ArrayBuffer] (Task E V)
     extendFunction :: FFIType -> FFIType -> FFIType
     extendFunction paramType (FFIFunctionType params returnType) =
       FFIFunctionType (paramType : params) returnType
@@ -575,7 +597,11 @@ parseFFIType tokens = parseFunction (stripOuterParens tokens)
                 (typeTokens@(_:_), remaining) -> Just (typeTokens, remaining)
                 ([], _) -> Just ([t], restTokens)
 
-        -- Take a multi-word type by collecting tokens until we hit a reserved word or parenthesis
+        -- Take a multi-word type by collecting tokens until we hit a reserved word, parenthesis,
+        -- or a capitalized word that starts a new type.
+        -- FIXED: Stop collecting when we hit a capitalized word after the first word,
+        -- as this likely starts a new type argument (e.g., "CapabilityError AudioContext" should
+        -- be TWO type arguments, not one multi-word type).
         takeMultiWordType :: [Text] -> ([Text], [Text])
         takeMultiWordType inputTokens = go [] inputTokens
           where
@@ -583,7 +609,16 @@ parseFFIType tokens = parseFunction (stripOuterParens tokens)
             go acc (t:remainingTokens)
               | t `elem` reservedTypes = (reverse acc, t:remainingTokens)
               | t `elem` ["(", ")"] = (reverse acc, t:remainingTokens)
+              -- Stop if we've collected at least one token and hit a capitalized word
+              -- (which likely starts a new type)
+              | not (null acc) && isCapitalized t = (reverse acc, t:remainingTokens)
               | otherwise = go (t:acc) remainingTokens
+
+        -- Check if a token starts with a capital letter (indicates a type name)
+        isCapitalized :: Text -> Bool
+        isCapitalized t = case Text.uncons t of
+          Just (c, _) -> Char.isUpper c
+          Nothing -> False
 
         -- Find matching parenthesis, returning inner tokens and remaining tokens
         findMatchingParen :: [Text] -> Int -> Maybe ([Text], [Text])

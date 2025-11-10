@@ -108,6 +108,8 @@ import qualified Unit.Query.EngineTest as QueryEngineTest
 import qualified Unit.Builder.PackageCacheTest as PackageCacheTest
 import qualified Unit.Worker.PoolTest as WorkerPoolTest
 import qualified Unit.Queries.ParseModuleTest as ParseModuleQueryTest
+import qualified Unit.Foreign.AudioFFITest as AudioFFITest
+import qualified Unit.Foreign.FFITypeParseTest as FFITypeParseTest
 
 main :: IO ()
 main = defaultMain tests
@@ -194,7 +196,9 @@ unitTests =
       QueryEngineTest.tests,
       PackageCacheTest.tests,
       WorkerPoolTest.tests,
-      ParseModuleQueryTest.tests
+      ParseModuleQueryTest.tests,
+      AudioFFITest.tests,
+      FFITypeParseTest.tests
     ]
 
 propertyTests :: TestTree
