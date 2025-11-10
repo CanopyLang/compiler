@@ -1,0 +1,3 @@
+# This canopy.json was removed to avoid package resolution conflicts
+# The core-packages/capability should be treated as pure source files
+# TODO: Restore proper package when canopy/capability is published

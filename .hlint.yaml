@@ -1,0 +1,139 @@
+# HLint configuration file
+# https://github.com/ndmitchell/hlint
+
+- arguments: [--color=auto, -XStrictData]
+
+# Replace a $ b $ c with a . b $ c
+- group: { name: dollar, enabled: true }
+
+# Generalise map to fmap, ++ to <>
+- group: { name: generalise, enabled: true }
+
+# Change the severity of the default group to warning
+- warn: { group: { name: default } }
+
+# Brackets generally improve readability
+- ignore: { name: Redundant bracket due to operator fixities }
+- ignore: { name: Redundant bracket }
+
+# Ignore hint to rewrite functions with infix notation as this is ofter a lot less readable
+- ignore: { name: Avoid lambda using `infix` }
+
+# Ignore the highly noisy module export list hint
+- ignore: { name: Use explicit module export list }
+
+# Ignore some builtin hints
+- ignore: { name: Redundant id } # Conflicts with entity.id via record dot syntax
+- ignore: { name: Use notElem }
+
+# Ignore suggestions that would break existing APIs
+- ignore: { name: Use String, within: [Canopy.String, Json.String] }
+- ignore: { name: Use fmap, within: [Data.Bag, Data.OneOrMore] }
+
+# Ignore restricted function warnings where they're used safely
+- ignore: { name: Avoid restricted function, within: [Compile, Json.String] }
+
+# Ignore specific cases where restricted functions are safe
+- ignore: { name: Avoid restricted function, within: [Data.NonEmptyList] }
+
+# Ignore newtype suggestions that would decrease laziness where it matters
+- ignore:
+    {
+      name: Use newtype instead of data,
+      within: [Generate.JavaScript, Develop, Deps.CustomRepositoryDataIO],
+    }
+
+# Functor law
+- warning:
+    { lhs: fmap f (fmap g x), rhs: fmap (f . g) x, name: "Functor law, use function comprehension" }
+- warning: { lhs: fmap id, rhs: id, name: "Functor law, use function comprehension" }
+- warning: { lhs: id <$> x, rhs: x, name: "Functor law, use function comprehension" }
+- warning: { lhs: x <&> id, rhs: x, name: "Functor law, use function comprehension" }
+- ignore: { name: Functor law }
+
+# Change the severity of hints we don’t want to fail CI for
+- suggest: { name: Eta reduce }
+
+- suggest: { name: Use lambda-case }
+
+# While I think DerivingStrategies is good, it's too noisy to suggest by default
+- ignore: { name: Use DerivingStrategies }
+
+# hlint has issues with QuantifiedConstraints (see https://github.com/ndmitchell/hlint/issues/759)
+# Once the above is fixed, we can drop this error.
+- ignore: { name: Parse error }
+
+# hlint suggests to use foldMap instead of maybe []. maybe [] is better to understand.
+- ignore: { name: Use foldMap }
+
+# hlint suggests to use mapMaybe instead of maybe []. maybe [] is better to understand.
+
+- ignore: { name: Use mapMaybe }
+
+# hlint suggests underscores in numbers.
+
+- ignore: { name: Use underscore }
+
+# hlint suggests to use tuple sections.
+
+- ignore: { name: Use tuple-section }
+
+# hlint suggests to use tuple sections.
+
+- ignore: { name: Use section }
+
+# hlint to just use pure for Traversable law
+
+- ignore: { name: Traversable law }
+
+- ignore: { name: Use <&> }
+# hlint suggests to use list comprehension. If then else is better to understand.
+- ignore: { name: Use list comprehension }
+
+# hlint and record dot syntax don't work nicely together:
+# hlint warns about TypeApplications being unused, but it is necessary for record
+# dot syntax to work
+- ignore: { name: Unused LANGUAGE pragma }
+
+# Functor law
+
+- warning:
+    { lhs: fmap f (fmap g x), rhs: fmap (f . g) x, name: "Functor law, use function comprehension" }
+- warning: { lhs: fmap id, rhs: id, name: "Functor law, use function comprehension" }
+- warning: { lhs: id <$> x, rhs: x, name: "Functor law, use function comprehension" }
+- warning: { lhs: x <&> id, rhs: x, name: "Functor law, use function comprehension" }
+- ignore: { name: Functor law }
+- ignore: { name: Redundant ^. }
+
+# Terms
+- warning: { lhs: termFAnnotation . unTerm, rhs: termAnnotation, name: Use termAnnotation }
+- warning: { lhs: termFOut . unTerm, rhs: termOut, name: Use termOut }
+- warning: { lhs: project . termOut, rhs: projectTerm, name: Use projectTerm }
+
+# Conveniences
+- warning: { lhs: either (const a) id, rhs: fromRight a, name: use fromRight }
+- warning: { lhs: either id (const a), rhs: fromLeft a, name: use fromLeft }
+
+# Readability
+- warning: { lhs: a =<< f, rhs: f >>= a, name: use >>= for readability }
+
+# Applicative style
+- warning: { lhs: f <$> pure a <*> b, rhs: f a <$> b, name: Avoid redundant pure }
+- warning: { lhs: f <$> pure a <* b, rhs: f a <$ b, name: Avoid redundant pure }
+
+# Code conventions
+- warning:
+    {
+      lhs: maybe (pure Nothing) a b,
+      rhs: fmap join (traverse a b),
+      name: Use fmap join (traverse a b),
+    }
+
+# Modules
+- modules:
+    - { name: [RIO, Prelude, ClassyPrelude], importStyle: unqualified }
+    - { name: [Flow], importStyle: explicit }
+    - { name: ["*"], importStyle: explicitOrQualified, asRequired: true }
+
+# Ignore camelCase violations in existing APIs to avoid breaking changes
+- ignore: { name: Use camelCase, within: [Reporting.Exit] }

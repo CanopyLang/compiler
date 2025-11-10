@@ -8,18 +8,20 @@ description: |
 homepage: "https://github.com/quinten/canopy"
 license: BSD-3-Clause
 license-file: LICENSE
-author: "Evan Czaplicki"
+author: "Quinten Kasteel"
 maintainer: "info@canopy-lang.org"
-copyright: "Copyright (c) 2011-present, Evan Czaplicki"
+copyright: "Copyright (c) 2025-present, Quinten Kasteel"
 category: Compiler, Language
 
 dependencies:
   - ansi-terminal
   - ansi-wl-pprint < 0.7
+  - async
   - base
   - binary
   - bytestring
   - containers
+  - deepseq
   - directory
   - edit-distance
   - file-embed
@@ -33,8 +35,11 @@ dependencies:
   - http-types
   - tls < 2
   - language-glsl
+  - language-javascript
+  - lens
   - mtl
   - network
+  - network-uri
   - crypton-connection
   - parsec
   - filepath
@@ -44,7 +49,9 @@ dependencies:
   - SHA
   - snap-core
   - snap-server
+  - stm
   - template-haskell
+  - text
   - time
   - unordered-containers
   - utf8-string
@@ -52,6 +59,7 @@ dependencies:
   - zip-archive
   - fsnotify
   - websockets
+
 default-extensions:
   - ConstraintKinds
   - DataKinds
@@ -80,9 +88,12 @@ default-extensions:
   - UndecidableInstances
 
 library:
-  source-dirs:
-    - compiler/src
-    - builder/src
+  dependencies:
+    - canopy-core
+    - canopy-query
+    - canopy-driver
+    - canopy-builder
+    - canopy-terminal
   ghc-options:
     - -Wall
     - -fwarn-tabs
@@ -91,16 +102,20 @@ library:
 executables:
   canopy:
     main: Main.hs
-    source-dirs:
-      - terminal/src
-      - terminal/impl
+    source-dirs: app
     ghc-options:
       - -rtsopts
       - -threaded
+      - -with-rtsopts=-N
       - -Werror=incomplete-patterns
       - -Werror=missing-fields
     dependencies:
       - canopy
+      - canopy-core
+      - canopy-query
+      - canopy-driver
+      - canopy-builder
+      - canopy-terminal
 
 tests:
   canopy-test:
@@ -112,6 +127,11 @@ tests:
       - -with-rtsopts=-N
     dependencies:
       - canopy
+      - canopy-core
+      - canopy-query
+      - canopy-driver
+      - canopy-builder
+      - canopy-terminal
       - tasty
       - tasty-hunit
       - tasty-quickcheck

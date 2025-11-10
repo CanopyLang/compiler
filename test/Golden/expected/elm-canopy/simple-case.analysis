@@ -1,0 +1,35 @@
+=== JavaScript AST Analysis Report ===
+File: test/Golden/expected/elm-canopy/simple-case.js
+Generated: 1531321 characters in AST
+
+=== Function Analysis ===
+Function count: 3
+Function names (sample): JSAstProgram, [JSExpressionStatement, 0
+
+
+=== Variable Analysis ===
+Variable count: 3
+Variable names (sample): JSAstProgram, [JSExpressionStatement, 0
+
+
+=== Structure Analysis ===
+Total AST lines: 1
+Contains closures: False
+Contains modules: True
+Contains exports: True
+
+
+=== Code Pattern Analysis ===
+=== Elm/Canopy Patterns ===
+Function currying: 0
+Virtual DOM: 0
+Message handling: 0
+Maybe/Result: 0
+
+
+=== Optimization Patterns ===
+Inlined functions: 0
+Dead code elimination: 0
+Tail call optimization: 0
+
+

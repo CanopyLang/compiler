@@ -1,0 +1,199 @@
+module Capability exposing
+    ( -- Re-export core capability types from Basics
+      UserActivated(..), Initialized(..), Permitted(..), Available(..)
+    , CapabilityError(..)
+
+    -- Capability Functions
+    , isUserActivationAvailable, isUserActivationActive
+    , consumeUserActivation, detectAPISupport, hasFeature
+    , checkGenericPermission, requestGenericPermission
+    , createGenericInitializer, validateCapability
+    )
+
+{-| Universal Capability System for Safe Web API Access
+
+This module provides a comprehensive capability-based type system that can be
+applied to ANY Web API to prevent runtime errors at compile time.
+
+The system uses rich enum types to encode browser constraints and state information:
+
+* **UserActivated**: Tracks different types of user gestures (Click, Keypress, Touch, etc.)
+* **Initialized**: Tracks API initialization state (Fresh, Running, Suspended, etc.)
+* **Permitted**: Tracks permission states (Granted, Denied, Prompt, etc.)
+* **Available**: Tracks feature availability (Supported, Prefixed, PartialSupport, etc.)
+
+This enables type-safe Web API access where runtime errors become compile-time errors.
+
+## Usage Examples
+
+```canopy
+-- User activation constraint
+playAudio : UserActivated -> Task CapabilityError ()
+
+-- Combined constraints
+startCamera : UserActivated -> Permitted () -> Available () -> Task CapabilityError Camera
+
+-- Rich state tracking
+handleAudioContext : Initialized AudioContext -> Task CapabilityError ()
+handleAudioContext audioContext =
+    case audioContext of
+        Running context -> -- Safe to use
+        Suspended context -> resumeContext context
+        Interrupted context -> waitForResume context
+        Fresh context -> startContext context
+        _ -> fail
+```
+
+@since 0.19.1
+-}
+
+import Task exposing (Task)
+
+-- Import the JavaScript FFI functions
+foreign import javascript "external/capability.js" as CapabilityFFI
+
+-- ============================================================================
+-- CORE CAPABILITY TYPES
+-- ============================================================================
+
+{-| User activation capability - prevents "user activation required" errors.
+
+Rich enum capturing different types of user gestures that can trigger activation.
+Different APIs may require different types of activation.
+-}
+type UserActivated
+    = Click         -- Mouse click gesture
+    | Keypress      -- Keyboard input gesture
+    | Touch         -- Touch/tap gesture
+    | Drag          -- Drag and drop gesture
+    | Focus         -- Element focus gesture
+    | Transient     -- Temporary/transient activation
+
+{-| Initialization capability - prevents "not initialized" errors.
+
+Rich enum tracking the complete lifecycle of initialized resources.
+Enables proper state management and error prevention.
+-}
+type Initialized a
+    = Fresh a           -- Just created, ready to use
+    | Running a         -- Active and running
+    | Suspended a       -- Suspended but can be resumed
+    | Interrupted a     -- Temporarily interrupted
+    | Restored a        -- Restored from previous session
+    | Closing a         -- In process of closing
+
+{-| Permission capability - prevents "permission denied" errors.
+
+Rich enum representing all possible permission states.
+Provides detailed information for proper UX handling.
+-}
+type Permitted a
+    = Granted a         -- Permission granted
+    | Prompt a          -- Permission needs user prompt
+    | Denied a          -- Permission explicitly denied
+    | Unknown a         -- Permission state unknown
+    | Revoked a         -- Previously granted but now revoked
+    | Restricted a      -- Restricted by policy/settings
+
+{-| Availability capability - prevents "feature not available" errors.
+
+Rich enum representing different levels of feature support.
+Enables graceful degradation and progressive enhancement.
+-}
+type Available a
+    = Supported a           -- Full native support
+    | Prefixed a String     -- Available with vendor prefix
+    | Polyfilled a          -- Available via polyfill
+    | Experimental a        -- Experimental/beta support
+    | PartialSupport a      -- Partial implementation
+    | LegacySupport a       -- Legacy/deprecated support
+
+{-| Capability errors that can occur with any API.
+
+Comprehensive error types for all capability violations.
+-}
+type CapabilityError
+    = UserActivationRequired String
+    | PermissionRequired String
+    | InitializationRequired String
+    | FeatureNotAvailable String
+    | CapabilityRevoked String
+
+-- ============================================================================
+-- CAPABILITY FUNCTIONS
+-- ============================================================================
+
+{-| Check if user activation API is available in this browser.
+-}
+isUserActivationAvailable : Bool
+isUserActivationAvailable =
+    hasFeature "navigator.userActivation"
+
+{-| Check if user activation is currently active.
+-}
+isUserActivationActive : Bool
+isUserActivationActive =
+    CapabilityFFI.isUserActivationActive
+
+{-| Consume user activation and detect gesture type.
+
+Returns the type of user gesture that triggered the activation.
+Should be called in direct response to user interaction.
+-}
+consumeUserActivation : UserActivated
+consumeUserActivation =
+    CapabilityFFI.consumeUserActivation
+
+{-| Generic API availability detection framework.
+
+Takes a detection function and returns availability information.
+Handles errors gracefully and provides fallback support levels.
+-}
+detectAPISupport : (() -> Available ()) -> Available ()
+detectAPISupport detectionFunction =
+    CapabilityFFI.detectAPISupport detectionFunction
+
+{-| Generic feature detection helper.
+
+Checks if a feature is available by navigating the window object path.
+Example: hasFeature "navigator.userActivation"
+-}
+hasFeature : String -> Bool
+hasFeature featurePath =
+    CapabilityFFI.hasFeature featurePath
+
+{-| Generic permission status checking framework.
+
+Checks the current permission state for a named permission.
+Returns a Task that resolves to the permission state.
+-}
+checkGenericPermission : String -> Task CapabilityError (Permitted ())
+checkGenericPermission permissionName =
+    CapabilityFFI.checkGenericPermission permissionName
+
+{-| Generic permission request framework.
+
+Requests permission using a provided request function.
+Handles the complexity of different permission APIs.
+-}
+requestGenericPermission : (() -> Task CapabilityError (Permitted ())) -> Task CapabilityError (Permitted ())
+requestGenericPermission requestFunction =
+    CapabilityFFI.requestGenericPermission requestFunction
+
+{-| Generic initialization framework with custom state detection.
+
+Creates an initializer that can detect and wrap initialization state.
+Provides rich lifecycle tracking for complex APIs.
+-}
+createGenericInitializer : String -> (() -> Task CapabilityError a) -> (a -> Initialized a) -> Task CapabilityError (Initialized a)
+createGenericInitializer contextType initFunction stateDetector =
+    CapabilityFFI.createGenericInitializer contextType initFunction stateDetector
+
+{-| Validate that a value has the correct capability type.
+
+Runtime validation helper for ensuring capability constraints are met.
+Returns a Task that fails if the capability is invalid.
+-}
+validateCapability : String -> a -> Task CapabilityError a
+validateCapability expectedType value =
+    CapabilityFFI.validateCapability expectedType value

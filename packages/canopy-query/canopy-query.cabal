@@ -1,0 +1,69 @@
+cabal-version: 2.2
+
+-- This file has been generated from package.yaml by hpack version 0.38.0.
+--
+-- see: https://github.com/sol/hpack
+
+name:           canopy-query
+version:        0.19.1
+synopsis:       Canopy query-based compilation system
+description:    Query-based compilation system following modern compiler architectures
+                (Rust Salsa, Swift 6.0, TypeScript). Features content-hash caching,
+                automatic invalidation, and zero STM (single IORef only).
+category:       Compiler, Language
+homepage:       https://github.com/quinten/canopy
+author:         Quinten Kasteel
+maintainer:     info@canopy-lang.org
+copyright:      Copyright (c) 2025-present, Quinten Kasteel
+license:        BSD-3-Clause
+license-file:   ../../LICENSE
+build-type:     Simple
+
+library
+  exposed-modules:
+      Debug.Logger
+      Parse.Cache
+      Query.Engine
+      Query.Simple
+  other-modules:
+      Paths_canopy_query
+  autogen-modules:
+      Paths_canopy_query
+  hs-source-dirs:
+      src
+  default-extensions:
+      ConstraintKinds
+      DataKinds
+      DerivingStrategies
+      DerivingVia
+      DeriveFunctor
+      DeriveGeneric
+      DeriveDataTypeable
+      DuplicateRecordFields
+      FlexibleContexts
+      FlexibleInstances
+      GADTs
+      KindSignatures
+      LambdaCase
+      MultiParamTypeClasses
+      NamedFieldPuns
+      OverloadedStrings
+      PolyKinds
+      RankNTypes
+      ScopedTypeVariables
+      StandaloneDeriving
+      TypeApplications
+      TypeFamilies
+      TypeOperators
+      ViewPatterns
+      UndecidableInstances
+  ghc-options: -Wall -fwarn-tabs -O2 -Wno-unused-do-bind
+  build-depends:
+      base
+    , bytestring
+    , canopy-core
+    , containers
+    , cryptohash-sha256
+    , text
+    , time
+  default-language: Haskell2010

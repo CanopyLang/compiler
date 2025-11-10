@@ -1,0 +1,4 @@
+module SimpleTest exposing (..)
+
+simpleFunction : String
+simpleFunction = "Hello World"

@@ -1,5 +1,5 @@
 elm-stuff
-zokka-stuff
+canopy-stuff
 dist
 cabal-dev
 .cabal-sandbox/
@@ -9,15 +9,27 @@ cabal.sandbox.config
 travis.log
 dist-newstyle
 .idea
+.hive-mind
+.claude-flow
+.playwright-mcp
+.stack-work-fast
+.swarm
 
 # We ignore the freeze file because we have separate ones for GHC-9.2 and GHC-9.4
 # We let developers instead choose which one of cabal.project.freeze.ghc92 or
 # cabal.project.freeze.ghc94 they want to use locally
 cabal.project.freeze
-
+canopy.cabal
 # Scratch files for easy personal use
 *.scratch.*
 .aider*
 .env
 node_modules
 .stack-work
+
+# Build artifacts and binaries
+# (No longer needed - executable now builds to proper location)
+*.hi
+*.o
+*.dyn_hi
+*.dyn_o

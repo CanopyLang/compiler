@@ -1,0 +1,42 @@
+module ArithmeticBench exposing (simpleAdd, simpleMul, complexExpr, nestedOps)
+
+-- Simple addition benchmark
+simpleAdd : Int -> Int -> Int
+simpleAdd a b =
+    a + b
+
+-- Simple multiplication benchmark
+simpleMul : Int -> Int -> Int
+simpleMul a b =
+    a * b
+
+-- Complex expression benchmark
+complexExpr : Int -> Int -> Int -> Int
+complexExpr a b c =
+    (a + b) * (c - 5) + (a * 2)
+
+-- Nested operations benchmark
+nestedOps : Int -> Int
+nestedOps x =
+    ((x + 1) * 2 - 3) / 4 + ((x * 2) + (x / 2))
+
+-- Array sum (fold)
+arraySum : List Int -> Int
+arraySum numbers =
+    List.foldl (+) 0 numbers
+
+-- Physics calculation (arithmetic heavy)
+updateVelocity : Float -> Float -> Float -> Float
+updateVelocity v dt acceleration =
+    v + (acceleration * dt)
+
+-- Multiple arithmetic operations
+calculate : Float -> Float -> Float -> Float
+calculate x y z =
+    let
+        a = x + y
+        b = y * z
+        c = a - b
+        d = c / 2.0
+    in
+    d * x + b - a

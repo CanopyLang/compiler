@@ -1,0 +1,6 @@
+Module: Shapes
+Exports: Open
+Values: area
+Aliases: Point(0)
+Unions: Shape(Circle,Rect)
+Imports: List exposing(explicit)

@@ -1,0 +1,5 @@
+module SimpleCapabilityTest exposing (main)
+import Html
+simpleFunction : Int -> Int  
+simpleFunction x = x + 1
+main = Html.text (String.fromInt (simpleFunction 42))

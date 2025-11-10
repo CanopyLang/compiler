@@ -24,18 +24,40 @@ build:
 clean:
 	@stack clean
 
+lint:
+	hlint -h .hlint.yaml --no-summary compiler builder terminal test -j && \
+	find compiler builder terminal test -name "*.hs" -print0 | \
+		xargs -P 8 -0 -I _ ormolu --ghc-opt=-XTypeApplications --mode=check _
+
 fix-lint:
-	@hlint -h .hlint.yaml --no-summary src -j | \
-	grep -oP '(?<=src/).*?(?=:)' | xargs -I _ \
-	hlint src/_ -h .hlint.yaml --refactor --refactor-options="--inplace" -j &>/dev/null
+	@for dir in compiler builder terminal test; do \
+		hlint -h .hlint.yaml --no-summary $$dir -j | \
+		grep -oP "(?<=$$dir/).*?(?=:)" | xargs -I _ \
+		hlint $$dir/_ -h .hlint.yaml --refactor --refactor-options="--inplace" -j &>/dev/null || true; \
+	done
 	@$(MAKE) format
 
+fix-lint-folder:
+	@if [ -z "$(FOLDER)" ]; then \
+		echo "Usage: make fix-lint-folder FOLDER=<folder>"; \
+		echo "Available folders: compiler, builder, terminal, test"; \
+		exit 1; \
+	fi
+	@hlint -h .hlint.yaml --no-summary $(FOLDER) -j | \
+	grep -oP "(?<=$(FOLDER)/).*?(?=:)" | xargs -I _ \
+	hlint $(FOLDER)/_ -h .hlint.yaml --refactor --refactor-options="--inplace" -j &>/dev/null || true
+	@find $(FOLDER) -name '*.hs' -exec ormolu --ghc-opt=-XTypeApplications --mode=inplace {} \;
+
 format:
-	@find src test -name '*.hs' -exec ormolu --ghc-opt=-XTypeApplications --mode=inplace {} \;
+	@find builder compiler terminal test -name '*.hs' -exec ormolu --ghc-opt=-XTypeApplications --mode=inplace {} \;
 
 test:
 	@echo "Running all tests..."
 	@stack test --fast canopy:canopy-test
+
+test-match:
+	@echo "Running specific tests..."
+	@stack test --fast canopy:canopy-test --test-arguments "--pattern \"${PATTERN}\""
 
 test-unit:
 	@echo "Running unit tests..."
@@ -65,3 +87,8 @@ test-build:
 test-deps:
 	@echo "Installing test dependencies..."
 	@stack build --test --only-dependencies
+
+example:
+	@make build
+	@cd example && canopy make src/Main.can --output=canopy.js --verbose
+	@cd ..

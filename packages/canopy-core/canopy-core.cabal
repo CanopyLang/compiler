@@ -1,0 +1,212 @@
+cabal-version: 2.2
+
+-- This file has been generated from package.yaml by hpack version 0.38.0.
+--
+-- see: https://github.com/sol/hpack
+
+name:           canopy-core
+version:        0.19.1
+synopsis:       Canopy compiler core components
+description:    Core compiler functionality including AST, parsing, type checking,
+                canonicalization, optimization, and code generation. This package
+                contains no STM/MVar/TVar usage - only pure functional code.
+category:       Compiler, Language
+homepage:       https://github.com/quinten/canopy
+author:         Quinten Kasteel
+maintainer:     info@canopy-lang.org
+copyright:      Copyright (c) 2025-present, Quinten Kasteel
+license:        BSD-3-Clause
+license-file:   ../../LICENSE
+build-type:     Simple
+
+library
+  exposed-modules:
+      AST.Canonical
+      AST.Optimized
+      AST.Source
+      AST.Utils.Binop
+      AST.Utils.Shader
+      AST.Utils.Type
+      Canonicalize.Effects
+      Canonicalize.Environment
+      Canonicalize.Environment.Dups
+      Canonicalize.Environment.Foreign
+      Canonicalize.Environment.Local
+      Canonicalize.Expression
+      Canonicalize.Module
+      Canonicalize.Pattern
+      Canonicalize.Type
+      Canopy.Compiler.Imports
+      Canopy.Compiler.Type
+      Canopy.Compiler.Type.Extract
+      Canopy.Constraint
+      Canopy.Docs
+      Canopy.Float
+      Canopy.Interface
+      Canopy.Kernel
+      Canopy.Kernel.Discovery
+      Canopy.Licenses
+      Canopy.Magnitude
+      Canopy.ModuleName
+      Canopy.Package
+      Canopy.String
+      Canopy.Version
+      Data.Bag
+      Data.Index
+      Data.Map.Utils
+      Data.Name
+      Data.Name.Constants
+      Data.Name.Core
+      Data.Name.Generation
+      Data.Name.Kernel
+      Data.Name.TypeVariable
+      Data.NonEmptyList
+      Data.OneOrMore
+      Data.Utf8
+      Data.Utf8.Binary
+      Data.Utf8.Builder
+      Data.Utf8.Core
+      Data.Utf8.Creation
+      Data.Utf8.Encoding
+      Data.Utf8.Manipulation
+      Data.Utf8.Types
+      FFI.Capability
+      FFI.Storage
+      File
+      File.Archive
+      File.Atomic
+      File.Binary
+      File.Cache
+      File.FileSystem
+      File.JSON
+      File.Package
+      File.Time
+      File.Utf8
+      Foreign.FFI
+      Foreign.TestGenerator
+      Foreign.TestGeneratorNew
+      Generate.Html
+      Generate.JavaScript
+      Generate.JavaScript.Builder
+      Generate.JavaScript.Expression
+      Generate.JavaScript.Functions
+      Generate.JavaScript.Name
+      Generate.Mode
+      Json.Decode
+      Json.Encode
+      Json.String
+      Logging.Debug
+      Logging.Logger
+      Nitpick.Debug
+      Nitpick.PatternMatches
+      Optimize.Case
+      Optimize.DecisionTree
+      Optimize.Expression
+      Optimize.Module
+      Optimize.Names
+      Optimize.Port
+      Parse.Declaration
+      Parse.Expression
+      Parse.Keyword
+      Parse.Module
+      Parse.Number
+      Parse.Pattern
+      Parse.Primitives
+      Parse.Shader
+      Parse.Space
+      Parse.String
+      Parse.Symbol
+      Parse.Type
+      Parse.Variable
+      Reporting.Annotation
+      Reporting.Doc
+      Reporting.Error
+      Reporting.Error.Canonicalize
+      Reporting.Error.Docs
+      Reporting.Error.Import
+      Reporting.Error.Json
+      Reporting.Error.Main
+      Reporting.Error.Pattern
+      Reporting.Error.Syntax
+      Reporting.Error.Type
+      Reporting.Exit.Help
+      Reporting.Render.Code
+      Reporting.Render.Type
+      Reporting.Render.Type.Localizer
+      Reporting.Report
+      Reporting.Result
+      Reporting.Suggest
+      Reporting.Warning
+      Type.Capability
+      Type.Constrain.Expression
+      Type.Constrain.Module
+      Type.Constrain.Pattern
+      Type.Error
+      Type.Instantiate
+      Type.Occurs
+      Type.Solve
+      Type.Type
+      Type.Unify
+      Type.UnionFind
+  other-modules:
+      Paths_canopy_core
+  autogen-modules:
+      Paths_canopy_core
+  hs-source-dirs:
+      src
+  default-extensions:
+      ConstraintKinds
+      DataKinds
+      DerivingStrategies
+      DerivingVia
+      DeriveFunctor
+      DeriveGeneric
+      DeriveDataTypeable
+      DuplicateRecordFields
+      FlexibleContexts
+      FlexibleInstances
+      GADTs
+      KindSignatures
+      LambdaCase
+      MultiParamTypeClasses
+      NamedFieldPuns
+      OverloadedStrings
+      PolyKinds
+      RankNTypes
+      ScopedTypeVariables
+      StandaloneDeriving
+      TypeApplications
+      TypeFamilies
+      TypeOperators
+      ViewPatterns
+      UndecidableInstances
+  ghc-options: -Wall -fwarn-tabs -O2 -Wno-unused-do-bind
+  build-depends:
+      SHA
+    , aeson
+    , aeson-pretty
+    , ansi-terminal-types
+    , ansi-wl-pprint
+    , base
+    , binary
+    , bytestring
+    , containers
+    , directory
+    , edit-distance
+    , filelock
+    , filepath
+    , ghc-prim
+    , language-glsl
+    , language-javascript
+    , lens
+    , mtl
+    , parsec
+    , raw-strings-qq
+    , scientific
+    , template-haskell
+    , text
+    , time
+    , utf8-string
+    , vector
+    , zip-archive
+  default-language: Haskell2010

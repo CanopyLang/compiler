@@ -1,0 +1,114 @@
+cabal-version: 2.2
+
+-- This file has been generated from package.yaml by hpack version 0.38.0.
+--
+-- see: https://github.com/sol/hpack
+
+name:           canopy-builder
+version:        0.19.1
+synopsis:       Canopy build system and package management
+description:    Build system for Canopy compiler including dependency resolution,
+                package management, artifact handling, and incremental compilation.
+                .
+                This package handles:
+                  * Dependency solving and constraint resolution
+                  * Package registry interaction
+                  * Build artifacts and caching
+                  * Project outline and configuration
+                  * File system operations for builds
+category:       Compiler, Language
+homepage:       https://github.com/quinten/canopy
+author:         Quinten Kasteel
+maintainer:     info@canopy-lang.org
+copyright:      Copyright (c) 2025-present, Quinten Kasteel
+license:        BSD-3-Clause
+license-file:   ../../LICENSE
+build-type:     Simple
+
+library
+  exposed-modules:
+      Build.Artifacts
+      Build.Parallel
+      Build.Parallel.Instrumented
+      Builder
+      Builder.Graph
+      Builder.Hash
+      Builder.Incremental
+      Builder.Solver
+      Builder.State
+      Compiler
+      Exit
+      Http
+      Interface.JSON
+      PackageCache
+  other-modules:
+      Paths_canopy_builder
+  autogen-modules:
+      Paths_canopy_builder
+  hs-source-dirs:
+      src
+  default-extensions:
+      ConstraintKinds
+      DataKinds
+      DerivingStrategies
+      DerivingVia
+      DeriveFunctor
+      DeriveGeneric
+      DeriveDataTypeable
+      DuplicateRecordFields
+      FlexibleContexts
+      FlexibleInstances
+      GADTs
+      KindSignatures
+      LambdaCase
+      MultiParamTypeClasses
+      NamedFieldPuns
+      OverloadedStrings
+      PolyKinds
+      RankNTypes
+      ScopedTypeVariables
+      StandaloneDeriving
+      TypeApplications
+      TypeFamilies
+      TypeOperators
+      ViewPatterns
+      UndecidableInstances
+  ghc-options: -Wall -fwarn-tabs -O2 -Wno-unused-do-bind
+  build-depends:
+      HTTP
+    , SHA
+    , aeson
+    , ansi-terminal
+    , ansi-wl-pprint
+    , async
+    , base
+    , binary
+    , bytestring
+    , canopy-core
+    , canopy-driver
+    , canopy-query
+    , containers
+    , crypton-connection
+    , directory
+    , edit-distance
+    , file-embed
+    , filelock
+    , filepath
+    , http-client
+    , http-client-tls
+    , http-types
+    , lens
+    , mtl
+    , network
+    , network-uri
+    , process
+    , snap-core
+    , snap-server
+    , stm
+    , text
+    , time
+    , unordered-containers
+    , utf8-string
+    , vector
+    , zip-archive
+  default-language: Haskell2010

@@ -1,0 +1,200 @@
+cabal-version: 2.2
+
+-- This file has been generated from package.yaml by hpack version 0.38.0.
+--
+-- see: https://github.com/sol/hpack
+
+name:           canopy-terminal
+version:        0.19.1
+synopsis:       Canopy command-line interface and tools
+description:    Command-line interface for Canopy compiler including commands like
+                make, repl, install, and development tools.
+                .
+                This package provides:
+                  * CLI command implementations
+                  * REPL interaction
+                  * Project scaffolding
+                  * Watch mode
+                  * Package management commands
+category:       Compiler, Language
+homepage:       https://github.com/quinten/canopy
+author:         Quinten Kasteel
+maintainer:     info@canopy-lang.org
+copyright:      Copyright (c) 2025-present, Quinten Kasteel
+license:        BSD-3-Clause
+license-file:   ../../LICENSE
+build-type:     Simple
+
+library
+  exposed-modules:
+      BackgroundWriter
+      Build
+      Bump
+      Bump.Analysis
+      Bump.Environment
+      Bump.Operations
+      Bump.Types
+      Bump.Validation
+      Canopy.CustomRepositoryData
+      Canopy.Details
+      Canopy.Outline
+      CLI.Commands
+      CLI.Documentation
+      CLI.Parsers
+      CLI.Types
+      Deps.Bump
+      Deps.CustomRepositoryDataIO
+      Deps.Diff
+      Deps.Registry
+      Deps.Solver
+      Deps.Website
+      Develop
+      Develop.Compilation
+      Develop.Environment
+      Develop.Generate.Help
+      Develop.Generate.Index
+      Develop.MimeTypes
+      Develop.Server
+      Develop.Socket
+      Develop.StaticFiles
+      Develop.StaticFiles.Build
+      Develop.Types
+      Diff
+      Diff.Documentation
+      Diff.Environment
+      Diff.Execution
+      Diff.Outline
+      Diff.Output
+      Diff.Types
+      Generate
+      Init
+      Init.Display
+      Init.Environment
+      Init.Project
+      Init.Types
+      Init.Validation
+      Install
+      Install.AppPlan
+      Install.Arguments
+      Install.Changes
+      Install.Display
+      Install.Execution
+      Install.PkgPlan
+      Install.Types
+      LocalPackage
+      Make
+      Make.Builder
+      Make.Environment
+      Make.Generation
+      Make.Output
+      Make.Parser
+      Make.Types
+      Publish
+      Publish.Environment
+      Publish.Git
+      Publish.Progress
+      Publish.Registry
+      Publish.Types
+      Publish.Validation
+      Repl
+      Repl.Commands
+      Repl.Eval
+      Repl.State
+      Repl.Types
+      Reporting
+      Reporting.Ask
+      Reporting.Exit
+      Reporting.Task
+      Stuff
+      Test.FFI
+      Watch
+      Terminal
+      Terminal.Application
+      Terminal.Chomp
+      Terminal.Chomp.Arguments
+      Terminal.Chomp.Flags
+      Terminal.Chomp.Parser
+      Terminal.Chomp.Processing
+      Terminal.Chomp.Suggestion
+      Terminal.Chomp.Types
+      Terminal.Command
+      Terminal.Completion
+      Terminal.Error
+      Terminal.Error.Display
+      Terminal.Error.Formatting
+      Terminal.Error.Help
+      Terminal.Error.Suggestions
+      Terminal.Error.Types
+      Terminal.Helpers
+      Terminal.Internal
+      Terminal.Parser
+      Terminal.Types
+  other-modules:
+      Paths_canopy_terminal
+  autogen-modules:
+      Paths_canopy_terminal
+  hs-source-dirs:
+      src
+      impl
+  default-extensions:
+      ConstraintKinds
+      DataKinds
+      DerivingStrategies
+      DerivingVia
+      DeriveFunctor
+      DeriveGeneric
+      DeriveDataTypeable
+      DuplicateRecordFields
+      FlexibleContexts
+      FlexibleInstances
+      GADTs
+      KindSignatures
+      LambdaCase
+      MultiParamTypeClasses
+      NamedFieldPuns
+      OverloadedStrings
+      PolyKinds
+      RankNTypes
+      ScopedTypeVariables
+      StandaloneDeriving
+      TypeApplications
+      TypeFamilies
+      TypeOperators
+      ViewPatterns
+      UndecidableInstances
+  ghc-options: -Wall -fwarn-tabs -O2 -Wno-unused-do-bind
+  build-depends:
+      SHA
+    , aeson
+    , ansi-terminal
+    , ansi-wl-pprint
+    , base
+    , bytestring
+    , canopy-builder
+    , canopy-core
+    , canopy-driver
+    , canopy-query
+    , case-insensitive
+    , containers
+    , directory
+    , file-embed
+    , filepath
+    , fsnotify
+    , haskeline
+    , http-client
+    , http-client-tls
+    , lens
+    , mtl
+    , process
+    , raw-strings-qq
+    , snap-core
+    , snap-server
+    , template-haskell
+    , text
+    , time
+    , transformers
+    , unordered-containers
+    , utf8-string
+    , websockets
+    , zip-archive
+  default-language: Haskell2010

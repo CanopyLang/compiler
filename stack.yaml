@@ -2,11 +2,21 @@ snapshot: lts-23.0
 
 packages:
   - .
+  - packages/canopy-core
+  - packages/canopy-query
+  - packages/canopy-driver
+  - packages/canopy-builder
+  - packages/canopy-terminal
 
-allow-newer: false
+allow-newer: true
+
+drop-packages:
+  - language-javascript
 
 extra-deps:
   - ansi-wl-pprint-0.6.9@sha256:fb737bc96e2aef34ad595d54ced7a73f648c521ebcb00fe0679aff45ccd49212,2448
   - ansi-terminal-1.0.2@sha256:1f90bb88e670ce63fbf2c9216d50857f2419582f1c6791e542c3eab97ecfd364,2897
   - ansi-terminal-types-0.11.5@sha256:f78440dfd95c4509e88855ac7cc2d9566ddf956a92c1290404cac93ad1a1b00a,1482
   - tls-1.9.0@sha256:8ad332dc0224decb1b137bf6c9678b4f786487b9aaa5c9068cd3ad19d42c39a7,5571
+  - git: https://github.com/quintenkasteel/language-javascript.git
+    commit: 9df069c47779901bfab3563bdd8a4381ced1bc50

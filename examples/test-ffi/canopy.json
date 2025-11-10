@@ -1,0 +1,19 @@
+{
+    "type": "application",
+    "canopy-version": "0.19.1",
+    "source-directories": [
+        "src"
+    ],
+    "dependencies": {
+        "direct": {
+            "elm/browser": "1.0.2",
+            "elm/core": "1.0.5",
+            "elm/html": "1.0.0"
+        },
+        "indirect": {}
+    },
+    "test-dependencies": {
+        "direct": {},
+        "indirect": {}
+    }
+}

@@ -1,0 +1,94 @@
+---
+name: canopy-terminal
+version: 0.19.1
+synopsis: "Canopy command-line interface and tools"
+description: |
+  Command-line interface for Canopy compiler including commands like
+  make, repl, install, and development tools.
+
+  This package provides:
+    * CLI command implementations
+    * REPL interaction
+    * Project scaffolding
+    * Watch mode
+    * Package management commands
+
+homepage: "https://github.com/quinten/canopy"
+license: BSD-3-Clause
+license-file: ../../LICENSE
+author: "Quinten Kasteel"
+maintainer: "info@canopy-lang.org"
+copyright: "Copyright (c) 2025-present, Quinten Kasteel"
+category: Compiler, Language
+
+dependencies:
+  - base
+  - aeson
+  - ansi-terminal
+  - ansi-wl-pprint
+  - bytestring
+  - case-insensitive
+  - containers
+  - directory
+  - file-embed
+  - filepath
+  - haskeline
+  - http-client
+  - http-client-tls
+  - lens
+  - mtl
+  - process
+  - raw-strings-qq
+  - SHA
+  - snap-core
+  - snap-server
+  - template-haskell
+  - text
+  - time
+  - transformers
+  - unordered-containers
+  - utf8-string
+  - fsnotify
+  - websockets
+  - zip-archive
+  - canopy-core
+  - canopy-query
+  - canopy-driver
+  - canopy-builder
+
+default-extensions:
+  - ConstraintKinds
+  - DataKinds
+  - DerivingStrategies
+  - DerivingVia
+  - DeriveFunctor
+  - DeriveGeneric
+  - DeriveDataTypeable
+  - DuplicateRecordFields
+  - FlexibleContexts
+  - FlexibleInstances
+  - GADTs
+  - KindSignatures
+  - LambdaCase
+  - MultiParamTypeClasses
+  - NamedFieldPuns
+  - OverloadedStrings
+  - PolyKinds
+  - RankNTypes
+  - ScopedTypeVariables
+  - StandaloneDeriving
+  - TypeApplications
+  - TypeFamilies
+  - TypeOperators
+  - ViewPatterns
+  - UndecidableInstances
+
+library:
+  source-dirs:
+    - src
+    - impl
+  ghc-options:
+    - -Wall
+    - -fwarn-tabs
+    - -O2
+    - -Wno-unused-do-bind

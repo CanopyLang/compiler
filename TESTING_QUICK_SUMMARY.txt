@@ -1,0 +1,320 @@
+================================================================================
+CANOPY COMPILER TESTING INFRASTRUCTURE - QUICK SUMMARY
+================================================================================
+
+KEY FINDING: No general "canopy test" command exists yet, though FFI testing 
+command is implemented and can serve as a blueprint.
+
+================================================================================
+1. TEST FRAMEWORK & TOOLS
+================================================================================
+
+Framework:        Tasty (HUnit + QuickCheck + Golden)
+Languages:        Haskell
+Organization:     100+ test files, 50+ test modules
+Current Status:   70+ Unit tests enabled, Property/Integration/Golden disabled
+Performance:      ~5 minutes (unit only), target 2.5 minutes
+
+================================================================================
+2. TEST ORGANIZATION
+================================================================================
+
+test/
+├── Unit/              70+ tests (ENABLED)
+│   ├── Parse/         Expression, Module, Pattern, Type
+│   ├── AST/           Source, Canonical, Optimized AST
+│   ├── Build*/        Builder, Solver, Incremental
+│   ├── CLI/           Commands, Parsers, Documentation
+│   ├── Develop/       Dev server, compilation
+│   ├── Init/          Project initialization
+│   ├── Foreign/       FFI type parsing (NEW)
+│   └── [17+ subdirectories]
+├── Property/          12 test suites (DISABLED - slow)
+├── Integration/       17+ test files (DISABLED - I/O intensive)
+├── Golden/            5 test files (DISABLED - brittle)
+└── benchmark/         ArithmeticBench, runtime analysis
+
+packages/canopy-core/test/   # Separate compiler tests
+├── Unit/
+├── Property/
+├── Golden/
+└── Benchmark/
+
+================================================================================
+3. CLI COMMAND STRUCTURE
+================================================================================
+
+Available Commands:
+  canopy init           # Project initialization
+  canopy repl           # Interactive programming
+  canopy reactor        # Dev server with hot reload
+  canopy make           # Compile to JS/HTML
+  canopy test-ffi       # FFI testing (EXISTING)
+  canopy install        # Package installation
+  canopy publish        # Package publishing
+  canopy bump           # Version management
+  canopy diff           # API change detection
+
+Command Implementation Pattern:
+  1. Define in CLI/Commands.hs
+  2. Create handler module (e.g., Make.hs, Test/FFI.hs)
+  3. Terminal.Command with args, flags, handler
+  4. Handler returns IO Exit.Code
+
+================================================================================
+4. TEST EXECUTION
+================================================================================
+
+Current Commands:
+  make test              # Run unit tests
+  make test-unit         # Unit tests only
+  make test-property     # Property tests (disabled)
+  make test-integration  # Integration tests (disabled)
+  make test-watch        # Watch mode
+  make test-coverage     # Coverage reports
+  make test-match PATTERN="Expression"  # Specific tests
+
+Stack Commands:
+  stack test --fast canopy:canopy-test
+  stack test --fast canopy:canopy-test --test-arguments "--pattern Unit"
+  stack test --fast canopy:canopy-test --file-watch
+  stack test --coverage --fast canopy:canopy-test
+
+Test Runner: test/Main.hs
+  - Imports all test modules
+  - Organizes hierarchically
+  - Pattern-based filtering via Tasty
+
+================================================================================
+5. EXISTING FFI TEST COMMAND (BLUEPRINT FOR "canopy test")
+================================================================================
+
+Command:  canopy test-ffi
+Module:   packages/canopy-terminal/src/Test/FFI.hs
+Location: test-ffi command in Main.hs -> CLI.Commands -> Test.FFI
+
+Configuration:
+  data FFITestConfig = FFITestConfig
+    { ffiTestGenerate :: Bool         -- Generate test files
+    , ffiTestOutput :: Maybe FilePath -- Output directory
+    , ffiTestWatch :: Bool            -- Watch mode
+    , ffiTestValidateOnly :: Bool     -- Validate contracts only
+    , ffiTestVerbose :: Bool
+    , ffiTestPropertyRuns :: Maybe Int
+    , ffiTestBrowser :: Bool          -- Run in browser
+    }
+
+Key Functions:
+  run :: FFITestConfig -> IO Exit.Code
+  generateTests :: FilePath -> IO ()
+  validateContracts :: FilePath -> IO ()
+  runWithWatch :: FilePath -> IO ()
+
+Integration:
+  - Uses Foreign.FFI for FFI definitions
+  - Uses Foreign.TestGeneratorNew for code generation
+  - Uses Make module for compilation
+  - Returns Exit.Code for CLI
+
+Flags:
+  --generate              # Generate test files
+  --output DIR            # Output directory
+  --watch PATH            # Watch for changes
+  --validate-only         # Only validate contracts
+  --verbose               # Verbose output
+  --property-runs N       # Property test runs
+  --browser               # Run in browser
+
+================================================================================
+6. TEST STATISTICS
+================================================================================
+
+Enabled Tests:
+  - 70+ Unit tests across 50+ files
+  - ~70 test groups
+
+Disabled Tests:
+  - 12 Property test suites (slow)
+  - 17+ Integration test files (I/O, real compilation)
+  - 5 Golden test files (brittle)
+
+Known Issues:
+  - 150+ anti-pattern violations in tests
+  - 8+ modules without tests
+  - Target coverage: 80%+
+
+Performance:
+  Unit tests only: ~5 minutes
+  Target: ~2.5 minutes (50% improvement needed)
+
+================================================================================
+7. TEST PATTERNS
+================================================================================
+
+Unit Test Pattern:
+  module Unit.Parse.ExpressionTest (tests) where
+  
+  tests :: TestTree
+  tests = testGroup "Parse.Expression"
+    [ testCase "int literal" $ parseExpr "42" @?= Right (Int 42)
+    , testCase "float literal" $ parseExpr "3.14" @?= Right (Float 3.14)
+    ]
+
+Property Test Pattern:
+  module Property.Canopy.VersionProps (tests) where
+  
+  tests :: TestTree
+  tests = testGroup "Version Properties"
+    [ testProperty "roundtrip" $ \v -> 
+        Version.fromChars (Version.toChars v) == Just v
+    ]
+
+Integration Test Pattern:
+  - Tests multiple components together
+  - File system operations
+  - Project initialization
+  - Build integration
+
+Golden Test Pattern:
+  - Compare output with expected files
+  - Input sources in test/Golden/sources/
+  - Expected output in test/Golden/expected/
+
+================================================================================
+8. CONFIGURATION
+================================================================================
+
+Project Config (canopy.json):
+  {
+    "type": "application",
+    "canopy-version": "0.19.1",
+    "dependencies": {...},
+    "test-dependencies": {
+      "direct": {},
+      "indirect": {}
+    }
+  }
+
+Note: No test configuration section exists yet in canopy.json
+
+================================================================================
+9. DEVELOPMENT WORKFLOW
+================================================================================
+
+Pre-commit:
+  1. make lint            # HLint + Ormolu
+  2. make test            # Unit tests
+  3. make test-coverage   # Coverage check (80%+)
+
+During development:
+  - make test             # Quick test run
+  - make test-watch       # Watch for changes
+  - make test-match PATTERN="NameOfTest"  # Specific tests
+
+Building:
+  - make build            # Compile project
+  - make test-build       # Build tests without running
+
+================================================================================
+10. DESIGN CONSIDERATIONS FOR "canopy test"
+================================================================================
+
+The new command should:
+
+1. Test Discovery
+   - Check for test/ or tests/ directory
+   - Support standard test file patterns
+   - Discover test suites in Canopy projects
+
+2. Test Organization Support
+   - Unit tests
+   - Property tests
+   - Integration tests
+   - Custom test groups
+
+3. Configuration
+   - Via canopy.json or test.toml
+   - Command-line overrides
+   - Environment variable support
+
+4. CLI Integration
+   - Use Terminal.Command infrastructure
+   - Follow CLI/Commands.hs pattern
+   - Consistent flag/arg parsing
+
+5. Output and Reporting
+   - Standard Tasty output
+   - Coverage reports
+   - CI-friendly formats (JSON, TAP)
+
+6. Integration with Build System
+   - Use existing Make module
+   - Leverage builder infrastructure
+   - Support incremental testing
+
+================================================================================
+11. FILE LOCATIONS (ABSOLUTE PATHS)
+================================================================================
+
+Test Framework:
+  /home/quinten/fh/canopy/test/Main.hs
+
+CLI Commands:
+  /home/quinten/fh/canopy/app/Main.hs
+  /home/quinten/fh/canopy/packages/canopy-terminal/src/CLI/Commands.hs
+
+Existing FFI Test Command:
+  /home/quinten/fh/canopy/packages/canopy-terminal/src/Test/FFI.hs
+
+Test Suites:
+  /home/quinten/fh/canopy/test/Unit/ (70+ tests)
+  /home/quinten/fh/canopy/test/Property/
+  /home/quinten/fh/canopy/test/Integration/
+  /home/quinten/fh/canopy/test/Golden/
+  /home/quinten/fh/canopy/packages/canopy-core/test/
+
+Makefile:
+  /home/quinten/fh/canopy/Makefile
+
+Project Config:
+  /home/quinten/fh/canopy/canopy.json
+
+Stack Config:
+  /home/quinten/fh/canopy/stack.yaml
+
+Build Configuration:
+  /home/quinten/fh/canopy/canopy.cabal
+
+================================================================================
+12. NEXT STEPS FOR IMPLEMENTATION
+================================================================================
+
+To implement "canopy test" command:
+
+1. Create Test handler module
+   - Location: packages/canopy-terminal/src/Test.hs (or Test/General.hs)
+   - Pattern: Follow Test/FFI.hs structure
+
+2. Register command in CLI.Commands.hs
+   - Add createTestCommand function
+   - Add to createAllCommands list
+
+3. Implement test discovery
+   - Scan for test/ or tests/ directory
+   - Discover .can test files or Haskell tests
+   - Support test filtering
+
+4. Configure via canopy.json
+   - Add test-configuration section
+   - Support test paths, patterns, options
+
+5. Integrate with test runner
+   - Use existing Tasty infrastructure
+   - Call make or stack test commands
+   - Parse and report results
+
+6. Add help and documentation
+   - Examples in CLI.Documentation
+   - Help text in CLI.Commands
+
+================================================================================

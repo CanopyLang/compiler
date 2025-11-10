@@ -1,0 +1,10 @@
+module Main exposing (main)
+
+-- Simple multiplication test
+result : Int
+result =
+    3 * 4
+
+main : Int
+main =
+    result

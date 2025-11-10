@@ -1,0 +1,87 @@
+canopy-core    > blocking for directory lock on
+/home/quinten/fh/canopy/packages/canopy-core/.stack-work/dist/x86_64-linux-tinfo6/ghc-9.8.4/build-lock
+canopy-core    > still blocking for directory lock on
+/home/quinten/fh/canopy/packages/canopy-core/.stack-work/dist/x86_64-linux-tinfo6/ghc-9.8.4/build-lock;
+maybe another Stack process is running?
+canopy-core    > still blocking for directory lock on
+/home/quinten/fh/canopy/packages/canopy-core/.stack-work/dist/x86_64-linux-tinfo6/ghc-9.8.4/build-lock;
+maybe another Stack process is running?
+canopy-core    > still blocking for directory lock on
+/home/quinten/fh/canopy/packages/canopy-core/.stack-work/dist/x86_64-linux-tinfo6/ghc-9.8.4/build-lock;
+maybe another Stack process is running?
+canopy-core    > still blocking for directory lock on
+/home/quinten/fh/canopy/packages/canopy-core/.stack-work/dist/x86_64-linux-tinfo6/ghc-9.8.4/build-lock;
+maybe another Stack process is running?
+canopy-core    > still blocking for directory lock on
+/home/quinten/fh/canopy/packages/canopy-core/.stack-work/dist/x86_64-linux-tinfo6/ghc-9.8.4/build-lock;
+maybe another Stack process is running?
+canopy-core    > configure (lib)
+canopy-core    > Configuring canopy-core-0.19.1...
+canopy-core    > Warning: 'license-file: ../../LICENSE' is a relative path outside of the
+canopy-core    > source tree. This will not work when generating a tarball with 'sdist'.
+canopy-core    > build (lib) with ghc-9.8.4
+canopy-core    > Preprocessing library for canopy-core-0.19.1..
+canopy-core    > Building library for canopy-core-0.19.1..
+canopy-core    > copy/register
+canopy-core    > Installing library in /home/quinten/fh/canopy/.stack-work/install/x86_64-linux-tinfo6/50c2bb46c9090f342bc27080578ec29c34061472daaa79653cf926cd7b589ab2/9.8.4/lib/x86_64-linux-ghc-9.8.4/canopy-core-0.19.1-2ani1e8Jn4RVVaUJk2OBV
+canopy-core    > Registering library for canopy-core-0.19.1..
+canopy-query   > configure (lib)
+canopy-query   > Configuring canopy-query-0.19.1...
+canopy-query   > Warning: 'license-file: ../../LICENSE' is a relative path outside of the
+canopy-query   > source tree. This will not work when generating a tarball with 'sdist'.
+canopy-query   > build (lib) with ghc-9.8.4
+canopy-query   > Preprocessing library for canopy-query-0.19.1..
+canopy-query   > Building library for canopy-query-0.19.1..
+canopy-query   > copy/register
+canopy-query   > Installing library in /home/quinten/fh/canopy/.stack-work/install/x86_64-linux-tinfo6/50c2bb46c9090f342bc27080578ec29c34061472daaa79653cf926cd7b589ab2/9.8.4/lib/x86_64-linux-ghc-9.8.4/canopy-query-0.19.1-97QdkvEO7RcBuuWQqgVWVm
+canopy-query   > Registering library for canopy-query-0.19.1..
+canopy-driver  > configure (lib)
+canopy-driver  > Configuring canopy-driver-0.19.1...
+canopy-driver  > Warning: 'license-file: ../../LICENSE' is a relative path outside of the
+canopy-driver  > source tree. This will not work when generating a tarball with 'sdist'.
+canopy-driver  > build (lib) with ghc-9.8.4
+canopy-driver  > Preprocessing library for canopy-driver-0.19.1..
+canopy-driver  > Building library for canopy-driver-0.19.1..
+canopy-driver  > copy/register
+canopy-driver  > Installing library in /home/quinten/fh/canopy/.stack-work/install/x86_64-linux-tinfo6/50c2bb46c9090f342bc27080578ec29c34061472daaa79653cf926cd7b589ab2/9.8.4/lib/x86_64-linux-ghc-9.8.4/canopy-driver-0.19.1-9CSDtyX1QWm5RIkCygnWdt
+canopy-driver  > Registering library for canopy-driver-0.19.1..
+canopy-builder > blocking for directory lock on
+/home/quinten/fh/canopy/packages/canopy-builder/.stack-work/dist/x86_64-linux-tinfo6/ghc-9.8.4/build-lock
+canopy-builder > configure (lib)
+canopy-builder > Configuring canopy-builder-0.19.1...
+canopy-builder > Warning: 'license-file: ../../LICENSE' is a relative path outside of the
+canopy-builder > source tree. This will not work when generating a tarball with 'sdist'.
+canopy-builder > build (lib) with ghc-9.8.4
+canopy-builder > Preprocessing library for canopy-builder-0.19.1..
+canopy-builder > Building library for canopy-builder-0.19.1..
+canopy-builder > copy/register
+canopy-builder > Installing library in /home/quinten/fh/canopy/.stack-work/install/x86_64-linux-tinfo6/50c2bb46c9090f342bc27080578ec29c34061472daaa79653cf926cd7b589ab2/9.8.4/lib/x86_64-linux-ghc-9.8.4/canopy-builder-0.19.1-63Z5d3gHLIx74NKx9YL7WS
+canopy-builder > Registering library for canopy-builder-0.19.1..
+canopy-terminal> blocking for directory lock on
+/home/quinten/fh/canopy/packages/canopy-terminal/.stack-work/dist/x86_64-linux-tinfo6/ghc-9.8.4/build-lock
+canopy-terminal> configure (lib)
+canopy-terminal> Configuring canopy-terminal-0.19.1...
+canopy-terminal> Warning: 'license-file: ../../LICENSE' is a relative path outside of the
+canopy-terminal> source tree. This will not work when generating a tarball with 'sdist'.
+canopy-terminal> build (lib) with ghc-9.8.4
+canopy-terminal> Preprocessing library for canopy-terminal-0.19.1..
+canopy-terminal> Building library for canopy-terminal-0.19.1..
+canopy-terminal> copy/register
+canopy-terminal> Installing library in /home/quinten/fh/canopy/.stack-work/install/x86_64-linux-tinfo6/50c2bb46c9090f342bc27080578ec29c34061472daaa79653cf926cd7b589ab2/9.8.4/lib/x86_64-linux-ghc-9.8.4/canopy-terminal-0.19.1-JKOe8zHuf1R3anIhjAyM3l
+canopy-terminal> Registering library for canopy-terminal-0.19.1..
+canopy         > configure (lib + exe)
+canopy         > Configuring canopy-0.19.1...
+canopy         > build (lib + exe) with ghc-9.8.4
+canopy         > Run the 'configure' command first.
+Completed 6 action(s).
+
+Error: [S-7282]
+       Stack failed to execute the build plan.
+       
+       While executing the build plan, Stack encountered the error:
+       
+       [S-7011]
+       While building package canopy-0.19.1 (scroll up to its section to see the error) using:
+       /home/quinten/.stack/setup-exe-cache/x86_64-linux-tinfo6/Cabal-simple_w2MFVN35_3.10.3.0_ghc-9.8.4 --verbose=1 --builddir=.stack-work/dist/x86_64-linux-tinfo6/ghc-9.8.4 build lib:canopy exe:canopy --ghc-options ""
+       Process exited with code: ExitFailure 1 
+make: *** [Makefile:22: build] Error 1
