@@ -225,7 +225,7 @@ generate mode (Opt.GlobalGraph graph _) mains ffiInfos =
       header = if Mode.isElmCompatible mode
                then "(function(scope){\n'use strict';\n"
                else "(function(scope){'use strict';\n"
-      -- Add missing debugger function stub (identity function)
+      -- Debugger identity shim: used by Debug.todo and Debug.log in non-debug builds.
       debuggerStub = "var _Debugger_unsafeCoerce = function(value) { return value; };\n"
    in header
         <> debuggerStub

@@ -63,6 +63,7 @@ import qualified Data.Maybe as Maybe
 import qualified Develop.Compilation as Compilation
 import qualified Develop.Generate.Help as Help
 import qualified Develop.Generate.Index as Index
+import qualified Develop.MimeTypes as MimeTypes
 import qualified Develop.StaticFiles as StaticFiles
 import Develop.Types (FileServeMode (..), ServerConfig, scPort, scVerbose)
 import Snap.Core hiding (path)
@@ -165,9 +166,10 @@ hasKnownMimeType :: FilePath -> Bool
 hasKnownMimeType path =
   Maybe.isJust (lookupMimeTypeForPath path)
 
--- | Lookup MIME type for file path.
+-- | Look up the MIME type for a file path using its extension.
 lookupMimeTypeForPath :: FilePath -> Maybe String
-lookupMimeTypeForPath _path = Nothing -- Placeholder implementation
+lookupMimeTypeForPath path =
+  fmap BS8.unpack (MimeTypes.determineContentType path)
 
 -- | Process file based on determined serving mode.
 processFileMode :: FileServeMode -> Snap.Snap ()

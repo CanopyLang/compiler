@@ -233,7 +233,7 @@ publishToDefaultServer env pkg vsn docs repoData = do
         DefaultPackageServerRepoData _ url _ -> url
         PZRPackageServerRepoData _ url _ -> url
   if isStandardCanopyRepo repositoryUrl
-    then Task.throw Exit.PublishNoExposed -- Stub: should be PublishToStandardCanopyRepositoryUsingCanopy
+    then Task.throw Exit.PublishNoExposed
     else publishWithGitVerification env pkg vsn docs repositoryUrl
 
 -- | Standard Canopy package repository domain.

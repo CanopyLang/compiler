@@ -229,19 +229,19 @@ data Init
   | InitBadDetails FilePath
   deriving (Show, Eq)
 
--- | Registry problem errors (stub).
+-- | Errors related to the package registry.
 data RegistryProblem
   = RegistryConnectionError String
   | RegistryBadData String
   deriving (Show, Eq)
 
--- | Solver errors (stub).
+-- | Errors from the dependency solver.
 data Solver
   = SolverNoSolution String
   | SolverConflict String
   deriving (Show, Eq)
 
--- | Reactor errors (stub for development server).
+-- | Errors from the development server (reactor).
 data Reactor
   = ReactorCompileError String
   | ReactorBuildError String
@@ -291,7 +291,7 @@ replToReport err = case err of
 toStderr :: Report -> IO ()
 toStderr report = hPutStrLn stderr (show report)
 
--- | Show new package overview (stub).
+-- | Message shown after successful package creation.
 newPackageOverview :: String
 newPackageOverview = "New package created successfully!"
 

@@ -1,16 +1,15 @@
 {-# LANGUAGE OverloadedStrings #-}
 {-# OPTIONS_GHC -Wall #-}
 
--- | Version bump operations for Terminal.
+-- | Version bump operations for semantic versioning.
 --
--- Handles automatic version incrementing based on API changes following
--- semantic versioning rules.
+-- Computes all valid version bumps (PATCH, MINOR, MAJOR) from a package's
+-- latest known version. Used by the @canopy bump@ and @canopy publish@
+-- commands to suggest or validate version increments.
 --
 -- @since 0.19.1
 module Deps.Bump
   ( -- * Bump Operations
-    bump,
-    getMagnitude,
     getPossibilities,
   )
 where
@@ -18,14 +17,6 @@ where
 import qualified Canopy.Magnitude as Magnitude
 import qualified Canopy.Version as V
 import Deps.Registry (KnownVersions (..))
-
--- | Bump package version (stub).
-bump :: a -> b -> IO (Either String ())
-bump _ _ = pure (Right ())
-
--- | Get version bump magnitude (stub).
-getMagnitude :: a -> b -> Magnitude.Magnitude
-getMagnitude _ _ = Magnitude.PATCH
 
 -- | Get bump possibilities from known versions.
 --

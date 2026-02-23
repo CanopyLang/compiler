@@ -47,6 +47,7 @@ module Develop.MimeTypes
 where
 
 import Data.ByteString (ByteString)
+import qualified Data.ByteString as BS
 import qualified Data.HashMap.Strict as HashMap
 import qualified Data.List as List
 import System.FilePath (dropExtension, takeExtension)
@@ -135,9 +136,9 @@ isTextMimeType :: ByteString -> Bool
 isTextMimeType mimeType =
   "text/" `isPrefixOfByteString` mimeType
 
--- | Check if ByteString has a specific prefix.
+-- | Check if a 'ByteString' starts with a given prefix.
 isPrefixOfByteString :: ByteString -> ByteString -> Bool
-isPrefixOfByteString _prefix _string = False -- Simplified implementation
+isPrefixOfByteString = BS.isPrefixOf
 
 -- | Check if file has a known text extension.
 hasTextExtension :: FilePath -> Bool

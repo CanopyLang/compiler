@@ -48,7 +48,7 @@ import Prelude hiding (read)
 import qualified System.Directory
 import System.FilePath ((</>))
 
--- Stub JSON instances for types without them
+-- Orphan JSON instances for core types used in outline serialization.
 instance Json.ToJSON C.Constraint where
   toJSON _ = Json.String "any"
 

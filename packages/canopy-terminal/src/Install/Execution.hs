@@ -124,11 +124,7 @@ createPromotionMessage :: String -> String -> Doc
 createPromotionMessage fromField toField =
   "Move from " <> Doc.fromChars fromField <> " to " <> Doc.fromChars toField <> "? [Y/n]: "
 
--- | Create a complex plan message for user display.
---
--- Generates a message for complex multi-package changes.
--- This is a placeholder - the full implementation would use
--- the Display module with proper formatting.
+-- | Create a confirmation prompt for complex multi-package changes.
 --
 -- @since 0.19.1
 createComplexPlanMessage :: Doc

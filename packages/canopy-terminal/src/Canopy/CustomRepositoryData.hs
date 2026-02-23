@@ -1,10 +1,11 @@
 {-# LANGUAGE OverloadedStrings #-}
 {-# OPTIONS_GHC -Wall #-}
 
--- | Custom repository data placeholder for Terminal.
+-- | Custom repository configuration types.
 --
--- Minimal stub for repository configuration. The OLD module handled
--- custom package repositories, but this is rarely used functionality.
+-- Defines the data model for custom package repositories beyond the
+-- standard Elm package registry. Each repository entry stores its URL,
+-- authentication credentials, and local display name.
 --
 -- @since 0.19.1
 module Canopy.CustomRepositoryData
@@ -43,5 +44,5 @@ data CustomSingleRepositoryData
       }
   deriving (Eq, Show)
 
--- | Custom repositories data type (stub).
+-- | Map from local repository names to their configuration.
 type CustomRepositoriesData = Map RepositoryLocalName CustomSingleRepositoryData

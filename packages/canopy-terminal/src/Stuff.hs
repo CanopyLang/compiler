@@ -31,13 +31,13 @@ where
 import qualified System.Directory as Dir
 import System.FilePath ((</>))
 
--- | Package cache type (stub).
+-- | Filesystem path to the shared package artifact cache (@~\/.canopy\/packages\/@).
 type PackageCache = FilePath
 
--- | Canopy-specific cache type (stub).
+-- | Filesystem path to the Canopy-specific cache directory (@~\/.canopy\/@).
 type CanopySpecificCache = FilePath
 
--- | Canopy custom repository config file path (stub).
+-- | Filesystem path to the custom repository configuration file.
 type CanopyCustomRepositoryConfigFilePath = FilePath
 
 -- | Find project root by looking for canopy.json.
@@ -87,7 +87,7 @@ getCanopyCache = do
 getPackageCache :: IO FilePath
 getPackageCache = getCanopyCache
 
--- | Get or create Canopy custom repository config (stub).
+-- | Get or create the Canopy custom repository configuration file path.
 getOrCreateCanopyCustomRepositoryConfig :: IO CanopyCustomRepositoryConfigFilePath
 getOrCreateCanopyCustomRepositoryConfig = do
   home <- Dir.getHomeDirectory
@@ -95,7 +95,7 @@ getOrCreateCanopyCustomRepositoryConfig = do
   Dir.createDirectoryIfMissing True (home </> ".canopy")
   pure configPath
 
--- | Get pre-publish directory for package staging (stub).
+-- | Get the pre-publish staging directory within a project root.
 prepublishDir :: FilePath -> FilePath
 prepublishDir root = root </> ".canopy" </> "prepublish"
 

@@ -6,8 +6,6 @@ module Develop.Generate.Index
   )
 where
 
-import qualified BackgroundWriter as BW
-import qualified Canopy.Details as Details
 import qualified Canopy.Outline as Outline
 import qualified Canopy.Package as Pkg
 import qualified Canopy.Version as V
@@ -18,7 +16,6 @@ import qualified Data.Map as Map
 import qualified Develop.Generate.Help as Help
 import Json.Encode ((==>))
 import qualified Json.Encode as E
-import qualified Reporting
 import qualified Stuff
 import qualified System.Directory as Dir
 import System.FilePath (splitDirectories, takeExtension, (</>))
@@ -120,37 +117,21 @@ getOutline =
 
 -- GET EXACT DEPS
 
--- This direct dependency extraction exists because the reactor needs
--- exact version information for the development server index page.
+-- | Extract exact dependency versions for the development server index page.
 --
+-- For application outlines, exact versions are available directly from
+-- the project configuration. For package outlines, only version constraints
+-- are stored so we return an empty map (exact versions would require
+-- running the dependency solver, which is too expensive for index generation).
 getExactDeps :: Maybe Outline.Outline -> IO (Map.Map Pkg.Name V.Version)
-getExactDeps maybeOutline =
-  case maybeOutline of
-    Nothing ->
-      return Map.empty
-    Just outline ->
-      case outline of
-        Outline.App _ ->
-          return Map.empty
-        Outline.Pkg _ ->
-          do
-            maybeRoot <- Stuff.findRoot
-            case maybeRoot of
-              Nothing ->
-                return Map.empty
-              Just root ->
-                BW.withScope $ \scope ->
-                  do
-                    result <- Details.load Reporting.silent scope root
-                    case result of
-                      Left _ ->
-                        return Map.empty
-                      Right (Details.Details _ validOutline _ _ _ _) ->
-                        case validOutline of
-                          Details.ValidApp _ ->
-                            return Map.empty
-                          Details.ValidPkg _ _ _ ->
-                            return Map.empty -- Stub: should extract dependencies from Details
+getExactDeps = maybe (pure Map.empty) extractFromOutline
+
+-- | Extract exact dependency versions from an outline.
+extractFromOutline :: Outline.Outline -> IO (Map.Map Pkg.Name V.Version)
+extractFromOutline (Outline.App appOutline) =
+  pure (Outline._appDepsDirect appOutline)
+extractFromOutline (Outline.Pkg _) =
+  pure Map.empty
 
 -- ENCODE
 

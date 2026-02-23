@@ -1,11 +1,14 @@
 {-# LANGUAGE OverloadedStrings #-}
 {-# OPTIONS_GHC -Wall #-}
 
--- | Background writer placeholder for Terminal.
+-- | Synchronous write scope for the Canopy build system.
 --
--- The OLD BackgroundWriter used STM for concurrent file writing.
--- Since we're using the NEW pure compiler, this is now a simple
--- placeholder that provides the same API without actual background writing.
+-- The original Elm compiler used STM-based concurrent file writing to flush
+-- artifact caches in the background. Canopy's pure build pipeline writes
+-- artifacts synchronously through the query-based compiler, making the
+-- background writer unnecessary. This module preserves the 'Scope' API
+-- so that call sites (e.g. 'Canopy.Details.load') can pass a unit scope
+-- without structural changes.
 --
 -- @since 0.19.1
 module BackgroundWriter
@@ -17,13 +20,14 @@ module BackgroundWriter
   )
 where
 
--- | Scope placeholder (no actual background writing).
+-- | Build scope token passed to operations that may write artifacts.
+--
+-- In the synchronous pipeline this is simply @()@.
 type Scope = ()
 
--- | Run action with scope (simplified, no background writing).
+-- | Run an action within a write scope.
 --
--- In the OLD system, this managed background file writing with STM.
--- Since the NEW compiler handles its own caching with JSON files,
--- we don't need this anymore.
+-- Executes the action directly since Canopy's build pipeline handles
+-- artifact persistence synchronously through the query engine.
 withScope :: (Scope -> IO a) -> IO a
 withScope action = action ()

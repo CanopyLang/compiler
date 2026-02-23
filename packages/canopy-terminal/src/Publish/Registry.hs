@@ -58,13 +58,15 @@ import qualified Reporting.Task as Task
 
 -- | Convert a registry key to custom repository data if applicable.
 --
--- Only repository URL keys contain the data we need; package URL keys are ignored.
--- Stub implementation - in full version would look up registry data.
+-- Currently returns 'Nothing' for all keys since Canopy uses the standard
+-- Elm package registry and does not yet support custom repositories.
+-- When custom repository support is added, 'RepositoryUrlKey' entries
+-- will be resolved to their full 'CustomSingleRepositoryData'.
 --
 -- @since 0.19.1
 convertRegistryKey :: RegistryKey -> Maybe CustomSingleRepositoryData
 convertRegistryKey = \case
-  Registry.RepositoryUrlKey _url -> Nothing  -- Stub: would look up full data
+  Registry.RepositoryUrlKey _url -> Nothing
   Registry.PackageUrlKey _ -> Nothing
 
 -- | Extract all custom repository data from the registries.

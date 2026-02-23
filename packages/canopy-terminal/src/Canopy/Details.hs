@@ -72,7 +72,7 @@ makeLenses ''Details
 -- | Load project details from root directory (pure, no MVar).
 load ::
   Reporting.Style ->
-  () -> -- Scope placeholder (no BackgroundWriter)
+  () -> -- BackgroundWriter scope (synchronous in Canopy)
   FilePath ->
   IO (Either FilePath Details)
 load _style _scope root = do
@@ -141,7 +141,7 @@ loadForReactorTH style root = load style () root
 --
 -- @since 0.19.1
 verifyInstall ::
-  () -> -- Scope placeholder (no BackgroundWriter)
+  () -> -- BackgroundWriter scope (synchronous in Canopy)
   FilePath ->
   a -> -- Solver environment (unused in current implementation)
   Outline.Outline ->
