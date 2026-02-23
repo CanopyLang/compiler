@@ -28,7 +28,9 @@ import qualified Parse.Space as Space
 import qualified Parse.Variable as Var
 import Parse.Primitives hiding (fromByteString)
 import qualified Parse.Primitives as P
+import qualified Data.Text as Text
 import qualified Reporting.Annotation as A
+import qualified Reporting.InternalError as InternalError
 
 
 
@@ -275,7 +277,10 @@ addImport pkg foreigns vtable (Src.Import (A.At _ importName) maybeAlias exposin
   if Name.isKernel importName then
     case maybeAlias of
       Just _ ->
-        error ("cannot use `as` with kernel import of: " <> Name.toChars importName)
+        InternalError.report
+          "Canopy.Kernel.addImport"
+          "cannot use `as` with kernel import"
+          (Text.pack ("Kernel module '" <> Name.toChars importName <> "' was imported with an `as` alias, which is not permitted for kernel imports. The parser should have rejected this."))
 
       Nothing ->
         let
@@ -303,7 +308,10 @@ toPrefix home maybeAlias =
 
     Nothing ->
       if Name.hasDot home then
-        error ("kernel imports with dots need an alias: " <> show (Name.toChars home))
+        InternalError.report
+          "Canopy.Kernel.toPrefix"
+          "kernel imports with dots need an alias"
+          (Text.pack ("Kernel module '" <> Name.toChars home <> "' contains dots and must be imported with an `as` alias so JavaScript generation can resolve names unambiguously."))
       else
         home
 
@@ -312,7 +320,10 @@ toNames :: Src.Exposing -> [Name.Name]
 toNames exposing =
   case exposing of
     Src.Open ->
-      error "cannot have `exposing (..)` in kernel code."
+      InternalError.report
+        "Canopy.Kernel.toNames"
+        "cannot have `exposing (..)` in kernel code"
+        "Kernel modules must explicitly list every exported name so the JavaScript generator can produce correct variable table entries. Open exports are not permitted in kernel source files."
 
     Src.Explicit exposedList ->
       fmap toName exposedList
@@ -328,10 +339,16 @@ toName exposed =
       name
 
     Src.Upper _ (Src.Public _) ->
-      error "cannot have Maybe(..) syntax in kernel code header"
+      InternalError.report
+        "Canopy.Kernel.toName"
+        "cannot have Maybe(..) syntax in kernel code header"
+        "Kernel code headers must not use public union exposure syntax (e.g. Maybe(..)). Only simple names are allowed in kernel exposing lists."
 
     Src.Operator _ _ ->
-      error "cannot use binops in kernel code"
+      InternalError.report
+        "Canopy.Kernel.toName"
+        "cannot use binops in kernel code"
+        "Kernel source files may only expose lower-case names and upper-case type names. Binary operator exposure is not supported in kernel code."
 
 
 
@@ -361,4 +378,7 @@ instance Binary Chunk where
           5 -> fmap  JsEnum get
           6 -> return Debug
           7 -> return Prod
-          _ -> error "problem deserializing Canopy.Kernel.Chunk"
+          _ -> InternalError.report
+            "Canopy.Kernel.Chunk.get"
+            "problem deserializing Canopy.Kernel.Chunk"
+            "Encountered an unknown tag while deserializing a Kernel Chunk. The binary data may be corrupted or from an incompatible compiler version."

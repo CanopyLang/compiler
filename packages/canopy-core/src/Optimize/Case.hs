@@ -8,11 +8,11 @@ where
 import qualified AST.Canonical as Can
 import qualified AST.Optimized as Opt
 import Control.Arrow (second)
-import Data.Map ((!))
 import qualified Data.Map as Map
 import qualified Data.Maybe as Maybe
 import qualified Data.Name as Name
 import qualified Optimize.DecisionTree as DT
+import qualified Reporting.InternalError as InternalError
 
 -- OPTIMIZE A CASE EXPRESSION
 
@@ -50,7 +50,7 @@ treeToDecider tree =
       Opt.Leaf target
     -- zero options
     DT.Decision _ [] Nothing ->
-      error "compiler bug, somehow created an empty decision tree"
+      InternalError.report "Optimize.Case.treeToDecider" "Empty decision tree — no edges and no fallback" "The pattern match compiler produced a decision node with no branches."
     -- one option
     DT.Decision _ [(_, subTree)] Nothing ->
       treeToDecider subTree
@@ -63,14 +63,17 @@ treeToDecider tree =
       toChain path test successTree failureTree
     -- many options
     DT.Decision path edges Nothing ->
-      let (necessaryTests, fallback) =
-            (init edges, snd (last edges))
+      let (necessaryTests, fallback) = splitEdges edges
        in Opt.FanOut
             path
             (map (second treeToDecider) necessaryTests)
             (treeToDecider fallback)
     DT.Decision path edges (Just fallback) ->
       Opt.FanOut path (map (second treeToDecider) edges) (treeToDecider fallback)
+
+splitEdges :: [(a, b)] -> ([(a, b)], b)
+splitEdges [] = InternalError.report "Optimize.Case.splitEdges" "Empty edges list" "Cannot split an empty edge list into init and last."
+splitEdges xs = (Prelude.init xs, snd (Prelude.last xs))
 
 toChain :: DT.Path -> DT.Test -> DT.DecisionTree -> DT.DecisionTree -> Opt.Decider Int
 toChain path test successTree failureTree =
@@ -103,15 +106,20 @@ createChoices ::
   (Int, Opt.Expr) ->
   ((Int, Opt.Choice), Maybe (Int, Opt.Expr))
 createChoices targetCounts (target, branch) =
-  if targetCounts ! target == 1
-    then
-      ( (target, Opt.Inline branch),
-        Nothing
-      )
-    else
-      ( (target, Opt.Jump target),
-        Just (target, branch)
-      )
+  let count =
+        maybe
+          (InternalError.report "Optimize.Case.createChoices" "Target index missing from count map" "All branch targets must appear in the count map built by countTargets.")
+          id
+          (Map.lookup target targetCounts)
+   in if count == 1
+        then
+          ( (target, Opt.Inline branch),
+            Nothing
+          )
+        else
+          ( (target, Opt.Jump target),
+            Just (target, branch)
+          )
 
 insertChoices ::
   Map.Map Int Opt.Choice ->
@@ -122,7 +130,12 @@ insertChoices choiceDict decider =
         insertChoices choiceDict
    in case decider of
         Opt.Leaf target ->
-          Opt.Leaf (choiceDict ! target)
+          Opt.Leaf
+            ( maybe
+                (InternalError.report "Optimize.Case.insertChoices" "Target missing from choice map" "All leaf targets must have a corresponding choice entry.")
+                id
+                (Map.lookup target choiceDict)
+            )
         Opt.Chain testChain success failure ->
           Opt.Chain testChain (go success) (go failure)
         Opt.FanOut path tests fallback ->

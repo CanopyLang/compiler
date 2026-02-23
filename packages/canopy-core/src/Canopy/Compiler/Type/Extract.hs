@@ -21,10 +21,11 @@ import qualified AST.Utils.Type as Type
 import qualified Canopy.Compiler.Type as T
 import qualified Canopy.Interface as I
 import qualified Canopy.ModuleName as ModuleName
-import Data.Map ((!))
 import qualified Data.Map as Map
 import qualified Data.Maybe as Maybe
 import qualified Data.Name as Name
+import qualified Data.Text as Text
+import qualified Reporting.InternalError as InternalError
 import qualified Data.Set as Set
 
 -- EXTRACTION
@@ -142,7 +143,16 @@ extractTransitive types (Deps seenAliases seenUnions) (Deps nextAliases nextUnio
 
 extractAlias :: Types -> Opt.Global -> Extractor T.Alias
 extractAlias (Types dict) (Opt.Global home name) =
-  let (Can.Alias args aliasType) = _alias_info (dict ! home) ! name
+  let types_ =
+        maybe
+          (InternalError.report "Canopy.Compiler.Type.Extract.extractAlias" ("Module missing from types dict: " <> Text.pack (show home)) "Every referenced module must be present in the transitively available Types.")
+          id
+          (Map.lookup home dict)
+      (Can.Alias args aliasType) =
+        maybe
+          (InternalError.report "Canopy.Compiler.Type.Extract.extractAlias" ("Alias missing from module types: " <> Text.pack (show name)) "Every referenced alias must be present in the module's alias info map.")
+          id
+          (Map.lookup name (_alias_info types_))
    in T.Alias (toPublicName home name) args <$> extract aliasType
 
 extractUnion :: Types -> Opt.Global -> Extractor T.Union
@@ -151,7 +161,16 @@ extractUnion (Types dict) (Opt.Global home name) =
     then return $ T.Union (toPublicName home name) ["a"] []
     else
       let pname = toPublicName home name
-          (Can.Union vars ctors _ _) = _union_info (dict ! home) ! name
+          types_ =
+            maybe
+              (InternalError.report "Canopy.Compiler.Type.Extract.extractUnion" ("Module missing from types dict: " <> Text.pack (show home)) "Every referenced module must be present in the transitively available Types.")
+              id
+              (Map.lookup home dict)
+          (Can.Union vars ctors _ _) =
+            maybe
+              (InternalError.report "Canopy.Compiler.Type.Extract.extractUnion" ("Union missing from module types: " <> Text.pack (show name)) "Every referenced union must be present in the module's union info map.")
+              id
+              (Map.lookup name (_union_info types_))
        in T.Union pname vars <$> traverse extractCtor ctors
 
 extractCtor :: Can.Ctor -> Extractor (Name.Name, [T.Type])

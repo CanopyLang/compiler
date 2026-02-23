@@ -43,6 +43,7 @@ import qualified Generate.JavaScript.Functions as Functions
 import qualified Generate.JavaScript.Name as JsName
 import qualified Generate.Mode as Mode
 import qualified Reporting.Doc as D
+import qualified Reporting.InternalError as InternalError
 import qualified Reporting.Render.Type as RT
 import qualified Reporting.Render.Type.Localizer as L
 import Prelude hiding (cycle, print)
@@ -512,7 +513,10 @@ continueAddGlobal mode graph currentGlobal state =
                Nothing ->
                  -- Check if this is an FFI module (author/project package)
                  if Pkg._author currentPkg == Pkg._author Pkg.dummyName && Pkg._project currentPkg == Pkg._project Pkg.dummyName
-                 then error "FFI function found - this should be handled by expression generation"
+                 then InternalError.report
+                   "Generate.JavaScript.checkedMerge"
+                   "FFI function found — this should be handled by expression generation"
+                   "A foreign-function global was encountered during graph merging, but FFI globals must be resolved during expression generation, not graph merging."
                  else let allKeys = Map.keys graph
                           listRelated = filter (\(Opt.Global home name) ->
                             let modName = ModuleName._module home
@@ -852,4 +856,7 @@ checkedMerge a b =
     (main, Nothing) ->
       main
     (Just _, Just _) ->
-      error "cannot have two modules with the same name"
+      InternalError.report
+        "Generate.JavaScript.checkedMerge"
+        "cannot have two modules with the same name"
+        "Module names must be unique across the entire compilation unit. This indicates a bug in the module graph construction."

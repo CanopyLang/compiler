@@ -73,6 +73,7 @@ module Terminal.Chomp.Types
 where
 
 import Control.Lens (makeLenses, (^.))
+import qualified Reporting.InternalError as InternalError
 import Terminal.Error (Error)
 
 -- | Core parsing monad with continuation-based design.
@@ -249,7 +250,10 @@ instance Monad (Chomper x) where
 -- @since 0.19.1
 createChunk :: Int -> String -> Chunk
 createChunk index content
-  | index <= 0 = error "Chunk index must be positive"
+  | index <= 0 = InternalError.report
+      "Terminal.Chomp.Types.createChunk"
+      "Chunk index must be positive"
+      "createChunk requires a strictly positive index. A non-positive index indicates a bug in the argument parser that generates chunk indices."
   | otherwise = Chunk index content
 
 -- | Create a suggestion target for the specified position.

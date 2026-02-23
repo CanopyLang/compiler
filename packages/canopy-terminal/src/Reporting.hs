@@ -27,8 +27,12 @@ module Reporting
 where
 
 import qualified Canopy.ModuleName as ModuleName
+import qualified Data.ByteString.Builder as B
+import qualified Data.ByteString.Lazy as LBS
 import Data.NonEmptyList (List)
 import qualified Data.NonEmptyList as NonEmptyList
+import qualified Json.Encode as Encode
+import qualified Json.String as Json
 import qualified Reporting.Ask as Ask
 import qualified Reporting.Doc as Doc
 import qualified Reporting.Exit as Exit
@@ -84,7 +88,7 @@ reportError style report =
   case style of
     Silent -> pure ()
     Terminal -> hPutStrLn stdout (show report)
-    Json -> hPutStrLn stdout (Doc.toString report) -- TODO: proper JSON formatting
+    Json -> outputJson (Doc.encode report)
 
 -- | Report successful generation.
 --
@@ -94,7 +98,22 @@ reportGenerate style moduleNames targetPath =
   case style of
     Silent -> pure ()
     Terminal -> printGenerationSuccess moduleNames targetPath
-    Json -> pure () -- TODO: proper JSON formatting
+    Json -> outputJson (buildGenerateJson moduleNames targetPath)
+
+-- | Output a JSON value to stdout.
+outputJson :: Encode.Value -> IO ()
+outputJson value =
+  LBS.hPut stdout (B.toLazyByteString (Encode.encode value))
+    >> hPutStrLn stdout ""
+
+-- | Build JSON value for generation success report.
+buildGenerateJson :: List ModuleName.Raw -> FilePath -> Encode.Value
+buildGenerateJson moduleNames targetPath =
+  Encode.object
+    [ (Json.fromChars "type", Encode.string (Json.fromChars "compile-success"))
+    , (Json.fromChars "target", Encode.string (Json.fromChars targetPath))
+    , (Json.fromChars "count", Encode.int (length (NonEmptyList.toList moduleNames)))
+    ]
 
 -- | Print generation success message.
 printGenerationSuccess :: List ModuleName.Raw -> FilePath -> IO ()

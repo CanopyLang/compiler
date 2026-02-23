@@ -20,6 +20,7 @@ import qualified Data.Maybe
 import qualified Data.Name as Name
 import qualified Reporting.Annotation as A
 import qualified Reporting.Error.Canonicalize as Error
+import qualified Reporting.InternalError as InternalError
 import qualified Reporting.Result as Result
 
 -- RESULT
@@ -73,7 +74,10 @@ isNormal (Src.Import (A.At _ name) maybeAlias _) =
     || ( case maybeAlias of
            Nothing -> False
            Just _alias ->
-             error "kernel imports cannot use `as`"
+             InternalError.report
+               "Canonicalize.Environment.Foreign.isNormal"
+               "kernel imports cannot use `as`"
+               "The parser should reject `as` aliases on kernel imports before they reach canonicalization. This indicates a bug in the parser or validation phase."
        )
 
 -- ADD IMPORTS

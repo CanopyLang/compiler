@@ -66,6 +66,8 @@ import qualified Data.Text as Text
 import Data.Text (Text)
 import qualified Data.Time.Clock as Time
 import qualified Data.Time.Format as TimeFormat
+import Data.IORef (IORef)
+import qualified Data.IORef as IORef
 import qualified System.Environment as Env
 import System.IO.Unsafe (unsafePerformIO)
 
@@ -112,14 +114,21 @@ data LogConfig = LogConfig
     configEnabled :: !Bool
   }
 
--- | Get logging configuration from environment.
+-- | Global mutable reference for logging configuration.
 --
--- Parses CANOPY_LOG and CANOPY_LOG_LEVEL environment variables.
+-- Initialized once from environment variables via 'unsafePerformIO'.
+-- Subsequent reads use the cached IORef value without re-parsing.
 --
 -- @since 0.19.1
-{-# NOINLINE logConfig #-}
+{-# NOINLINE logConfigRef #-}
+logConfigRef :: IORef LogConfig
+logConfigRef = unsafePerformIO (parseLogConfig >>= IORef.newIORef)
+
+-- | Get logging configuration from the cached IORef.
+--
+-- @since 0.19.1
 logConfig :: LogConfig
-logConfig = unsafePerformIO parseLogConfig
+logConfig = unsafePerformIO (IORef.readIORef logConfigRef)
 
 -- | Parse environment variables into configuration.
 parseLogConfig :: IO LogConfig

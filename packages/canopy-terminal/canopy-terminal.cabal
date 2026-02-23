@@ -29,6 +29,7 @@ library
   exposed-modules:
       BackgroundWriter
       Build
+      Build.Docs
       Bump
       Bump.Analysis
       Bump.Environment
@@ -169,6 +170,7 @@ library
     , ansi-terminal
     , ansi-wl-pprint
     , base
+    , binary
     , bytestring
     , canopy-builder
     , canopy-core

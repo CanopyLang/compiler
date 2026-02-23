@@ -28,7 +28,6 @@ import qualified Reporting.Error.Type as Error
 import qualified Reporting.Render.Code as Code
 import qualified Reporting.Render.Type.Localizer as L
 import qualified Reporting.Report as Report
-import System.IO.Unsafe (unsafePerformIO)
 import qualified Type.Constrain.Module as Constrain
 import qualified Type.Solve as Solve
 import Type.Type (Constraint)
@@ -55,7 +54,7 @@ typeCheckModuleQuery path canonical = do
     Left errors -> do
       Logger.debug TYPE ("Type checking failed: " ++ show (countErrors errors))
       logTypeErrors errors
-      return (Left (processErrors path errors))
+      Left <$> processErrors path errors
     Right typeMap -> do
       Logger.debug TYPE ("Type checking success: " ++ show (Map.size typeMap) ++ " bindings")
       logTypedBindings typeMap
@@ -116,25 +115,16 @@ logBinding name _ =
   Logger.debug TYPE ("  " ++ show name)
 
 -- | Convert type errors to QueryError with proper formatting.
-processErrors :: FilePath -> List Error.Error -> QueryError
+processErrors :: FilePath -> List Error.Error -> IO QueryError
 processErrors path errors =
-  TypeError (formatTypeError path (NE.head errors))
+  TypeError <$> formatTypeError path (NE.head errors)
 
 -- | Format a single type error using the proper Reporting infrastructure.
-formatTypeError :: FilePath -> Error.Error -> String
-formatTypeError path err = unsafePerformIO (do
-  -- Read source file
+formatTypeError :: FilePath -> Error.Error -> IO String
+formatTypeError path err = do
   sourceBytes <- BS.readFile path
   let source = Code.toSource sourceBytes
-
-  -- Create localizer for type rendering
       localizer = L.empty
-
-  -- Convert error to Report
       report = Error.toReport source localizer err
-
-  -- Extract and render the Doc
       doc = Report._message report
-      rendered = D.toString doc
-
-  return rendered)
+  pure (D.toString doc)

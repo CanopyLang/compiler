@@ -58,6 +58,7 @@ import qualified Debug.Logger as Logger
 import Debug.Logger (DebugCategory (..))
 import qualified Driver
 import qualified Exit
+import qualified Reporting.InternalError as InternalError
 import qualified Generate.JavaScript as JS
 import qualified Query.Engine as Engine
 import qualified Query.Simple as Query
@@ -168,7 +169,10 @@ discoverTransitiveDeps root srcDirs initialPaths depInterfaces projectType = do
     parseModuleFile projType path = do
       content <- BS.readFile path
       case Parse.fromByteString projType content of
-        Left err -> error ("Failed to parse: " ++ path ++ "\nError: " ++ show err)
+        Left err -> InternalError.report
+          "Compiler.discoverTransitiveDeps.parseModuleFile"
+          ("Failed to parse module: " <> Text.pack path)
+          ("Parse error while discovering transitive dependencies: " <> Text.pack (show err))
         Right m -> return m
 
 -- Helper: Recursively discover imports
@@ -214,11 +218,17 @@ parseModuleFromPath :: FilePath -> [SrcDir] -> Parse.ProjectType -> ModuleName.R
 parseModuleFromPath root srcDirs projectType modName = do
   maybePath <- findModulePath root srcDirs modName
   case maybePath of
-    Nothing -> error ("Module not found: " ++ Name.toChars modName)
+    Nothing -> InternalError.report
+      "Compiler.parseModuleFromPath"
+      ("Module not found: " <> Text.pack (Name.toChars modName))
+      "Failed to locate source file for imported module during transitive dependency discovery."
     Just path -> do
       content <- BS.readFile path
       case Parse.fromByteString projectType content of
-        Left err -> error ("Failed to parse: " ++ path ++ "\nError: " ++ show err)
+        Left err -> InternalError.report
+          "Compiler.parseModuleFromPath"
+          ("Failed to parse: " <> Text.pack path)
+          ("Parse error: " <> Text.pack (show err))
         Right m -> return m
 
 findModulePath :: FilePath -> [SrcDir] -> ModuleName.Raw -> IO (Maybe FilePath)

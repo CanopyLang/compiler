@@ -195,6 +195,7 @@ import qualified Parse.Keyword as K
 import Parse.Primitives (Col, Row)
 import qualified Parse.Primitives as P
 import qualified Reporting.Annotation as A
+import qualified Reporting.InternalError as InternalError
 
 -- MAIN DECODING INTERFACE
 
@@ -1079,7 +1080,10 @@ oneOf decoders =
               oneOfHelp ast ok err decoders e []
          in decodeA ast ok err'
       [] ->
-        error "Ran into (Json.Decode.oneOf [])"
+        InternalError.report
+          "Json.Decode.oneOf"
+          "oneOf called with empty list of decoders"
+          "Json.Decode.oneOf requires at least one decoder to try. Calling it with an empty list is a programming error — the caller must always provide at least one alternative decoder."
 
 oneOfHelp :: AST -> (a -> b) -> (Problem x -> b) -> [Decoder x a] -> Problem x -> [Problem x] -> b
 oneOfHelp ast ok err decoders p ps =

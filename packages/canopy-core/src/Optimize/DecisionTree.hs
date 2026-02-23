@@ -32,6 +32,7 @@ import qualified Data.Maybe as Maybe
 import qualified Data.Name as Name
 import qualified Data.Set as Set
 import qualified Reporting.Annotation as A
+import qualified Reporting.InternalError as InternalError
 
 -- COMPILE CASES
 
@@ -271,7 +272,10 @@ testAtPath selectedPath (Branch _ pathPatterns) =
         Can.PRecord _ ->
           Nothing
         Can.PAlias _ _ ->
-          error "aliases should never reach 'testAtPath' function"
+          InternalError.report
+            "Optimize.DecisionTree.testAtPath"
+            "aliases should never reach 'testAtPath' function"
+            "Pattern aliases (as-patterns) must be eliminated during canonicalization before the decision tree compiler runs. This indicates a bug in the canonicalization phase."
 
 -- BUILD EDGES
 
@@ -405,7 +409,10 @@ needsTests (A.At _ pattern) =
     Can.PInt _ -> True
     Can.PBool _ _ -> True
     Can.PAlias _ _ ->
-      error "aliases should never reach 'isIrrelevantTo' function"
+      InternalError.report
+        "Optimize.DecisionTree.isIrrelevantTo"
+        "aliases should never reach 'isIrrelevantTo' function"
+        "Pattern aliases (as-patterns) must be eliminated during canonicalization before the decision tree compiler runs. This indicates a bug in the canonicalization phase."
 
 -- PICK A PATH
 
@@ -418,7 +425,11 @@ pickPath branches =
           path
         tiedPaths ->
           case bests (addWeights (smallBranchingFactor branches) tiedPaths) of
-            [] -> error "No paths available in tiedPaths case"
+            [] ->
+              InternalError.report
+                "Optimize.DecisionTree.pickPath"
+                "No paths available in tiedPaths case"
+                "The bests function returned an empty list, which contradicts its invariant that it always returns at least one path when given a non-empty input."
             bestPath : _ -> bestPath
 
 isChoicePath :: (Path, Can.Pattern) -> Maybe Path
@@ -435,7 +446,10 @@ bests :: [(Path, Int)] -> [Path]
 bests allPaths =
   case allPaths of
     [] ->
-      error "Cannot choose the best of zero paths. This should never happen."
+      InternalError.report
+        "Optimize.DecisionTree.bests"
+        "Cannot choose the best of zero paths. This should never happen."
+        "The bests function requires at least one weighted path to compare. The caller pickPath must ensure allPaths is non-empty before invoking bests."
     (headPath, headWeight) : weightedPaths ->
       let gatherMinimum acc@(minWeight, paths) (path, weight) =
             if weight == minWeight

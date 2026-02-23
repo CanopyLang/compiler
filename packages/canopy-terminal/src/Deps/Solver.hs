@@ -1,10 +1,11 @@
 {-# LANGUAGE OverloadedStrings #-}
 {-# OPTIONS_GHC -Wall #-}
 
--- | Dependency solver stub for Terminal.
+-- | Dependency solver for Terminal.
 --
--- Minimal stub for dependency resolution. The OLD module handled
--- complex constraint solving for package dependencies.
+-- Handles dependency resolution for Canopy packages. Initializes the solver
+-- environment by fetching the latest package registry so that dependency
+-- queries have real package data to work with.
 --
 -- @since 0.19.1
 module Deps.Solver
@@ -32,7 +33,7 @@ import qualified Deps.Registry as Registry
 import qualified Http
 import qualified Stuff
 
--- | Connection type for solver (stub).
+-- | Connection type for solver.
 type Connection = ()
 
 -- | App solution with old and new dependency maps.
@@ -63,15 +64,19 @@ data SolverResult a
 -- | Legacy Err type for compatibility.
 type Err = String
 
--- | Initialize solver environment (stub).
+-- | Initialize the solver environment with the latest package registry.
+--
+-- Fetches the registry from the network (falling back to the disk cache
+-- or an empty registry on failure) so that dependency resolution has
+-- real package data available.
 initEnv :: IO (Either String Env)
 initEnv = do
   cache <- Stuff.getPackageCache
   manager <- Http.getManager
-  let connection = ()
-  let emptyRegistry = Registry.Registry 0 Map.empty
-  let registries = Registry.CanopyRegistries emptyRegistry [] Map.empty
-  pure (Right (Env cache manager connection registries Map.empty))
+  registryResult <- Registry.latest manager Map.empty cache cache
+  let registry = either (const (Registry.Registry 0 Map.empty)) id registryResult
+      registries = Registry.CanopyRegistries registry [] Map.empty
+  pure (Right (Env cache manager () registries Map.empty))
 
 -- | Verify solver details.
 verify :: a -> b -> c -> d -> IO (SolverResult (Map Pkg.Name Details))

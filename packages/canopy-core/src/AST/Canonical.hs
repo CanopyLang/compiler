@@ -169,6 +169,7 @@ import qualified AST.Utils.Binop as Binop
 import qualified AST.Utils.Shader as Shader
 import qualified Canopy.Float as EF
 import qualified Canopy.ModuleName as ModuleName
+import qualified Reporting.InternalError as InternalError
 import qualified Canopy.String as ES
 import qualified Control.Monad as Monad
 import qualified Data.Aeson as Aeson
@@ -569,7 +570,10 @@ putTypeComplex tipe = case tipe of
   TTuple a b c -> Binary.putWord8 4 >> Binary.put a >> Binary.put b >> Binary.put c
   TAlias a b c d -> Binary.putWord8 5 >> Binary.put a >> Binary.put b >> Binary.put c >> Binary.put d
   TType home name ts -> putTType home name ts
-  _ -> error "putTypeComplex: unexpected type"
+  _ -> InternalError.report
+    "AST.Canonical.putTypeComplex"
+    "unexpected type in putTypeComplex"
+    "putTypeComplex only handles TTuple, TAlias, and TType. Other type constructors (TLambda, TVar, TRecord, TUnit) must be serialized by their own Binary.put paths."
 
 -- | Serialize TType with optimization for small type lists.
 --

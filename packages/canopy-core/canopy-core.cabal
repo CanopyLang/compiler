@@ -1,6 +1,6 @@
 cabal-version: 2.2
 
--- This file has been generated from package.yaml by hpack version 0.38.0.
+-- This file has been generated from package.yaml by hpack version 0.38.1.
 --
 -- see: https://github.com/sol/hpack
 
@@ -130,6 +130,7 @@ library
       Reporting.Error.Syntax
       Reporting.Error.Type
       Reporting.Exit.Help
+      Reporting.InternalError
       Reporting.Render.Code
       Reporting.Render.Type
       Reporting.Render.Type.Localizer

@@ -12,7 +12,9 @@ import qualified Canopy.ModuleName as ModuleName
 import Control.Lens (makeLenses, (^.), (.~), (&), (%~))
 import Control.Monad (filterM, foldM, forM, liftM2, liftM3)
 import Data.Foldable (for_, traverse_, maximumBy)
-import Data.Map.Strict (Map, (!))
+import Data.Map.Strict (Map)
+import qualified Data.Text as Text
+import qualified Reporting.InternalError as InternalError
 import qualified Data.Map.Strict as Map
 import qualified Data.Name as Name
 import Data.NonEmptyList (List)
@@ -108,7 +110,9 @@ solve config constraint = case constraint of
     -- The identity bug and Domains.elm bug have DIFFERENT root causes:
     -- 1. Identity bug: Case branches pollute each other via Links (needs isolation)
     -- 2. Domains bug: Let binding generalized before outer constraints apply (different fix needed)
-    -- TODO: Implement selective isolation that fixes identity without breaking Domains
+    -- DESIGN NOTE: Selective case-branch isolation is deferred. Full isolation
+    -- fixes the identity bug (branches polluting each other via Links) but breaks
+    -- Domains.elm where let bindings need outer constraints applied first.
     foldM (solve . updateSolveState config) (config ^. solveState) constraints
   CLet [] flexs _ headerCon CTrue _ ->
     solveSimpleLet config flexs headerCon
@@ -201,15 +205,10 @@ isGeneric var = do
     then return ()
     else do
       tipe <- Type.toErrorType var
-      error (createCompilerBugMessage tipe rank)
-
-createCompilerBugMessage :: ET.Type -> Int -> String
-createCompilerBugMessage tipe rank =
-  "You ran into a compiler bug. Here are some details for the developers:\n\n"
-    <> "    " <> show (ET.toDoc L.empty RT.None tipe)
-    <> " [rank = " <> show rank <> "]\n\n"
-    <> "Please create an <http://sscce.org/> and then report it\n"
-    <> "at <https://github.com/canopy/compiler/issues>\n\n"
+      InternalError.report
+        "Type.Solve.isGeneric"
+        (Text.pack ("Non-generic type variable at rank " <> show rank <> ": " <> show (ET.toDoc L.empty RT.None tipe)))
+        "A type variable was expected to be generalized (rank=noRank) but still has a concrete rank. This indicates a bug in the constraint solver."
 
 updateSolveState :: SolveConfig -> State -> SolveConfig
 updateSolveState config newState = config & solveState .~ newState
@@ -997,7 +996,8 @@ adjustRank youngMark visitMark groupRank var =
           then return rank
           else do
             let minRank = min groupRank rank
-            -- TODO how can minRank ever be groupRank?
+            -- minRank equals groupRank when a variable was already at or below the
+            -- group's rank, meaning it doesn't need further adjustment.
             UF.set var $ Descriptor content minRank visitMark copy
             return minRank
 
@@ -1070,7 +1070,11 @@ typeToVar rank pools aliasDict tipe =
     AppN home name args -> convertAppType rank pools go home name args
     FunN a b -> convertFunType rank pools go a b
     AliasN home name args aliasType -> convertAliasType rank pools go home name args aliasType
-    PlaceHolder name -> return (aliasDict ! name)
+    PlaceHolder name ->
+      maybe
+        (InternalError.report "Type.Solve.typeToVar" (Text.pack ("Unknown placeholder: " <> show name)) "Alias dictionary missing expected type variable.")
+        return
+        (Map.lookup name aliasDict)
     RecordN fields ext -> convertRecordType rank pools go fields ext
     EmptyRecordN -> register rank pools emptyRecord1
     UnitN -> register rank pools unit1
@@ -1165,7 +1169,11 @@ srcTypeToVar rank pools flexVars srcType =
   let go = srcTypeToVar rank pools flexVars
   in case srcType of
     Can.TLambda argument result -> convertSrcLambdaType rank pools go argument result
-    Can.TVar name -> return (flexVars ! name)
+    Can.TVar name ->
+      maybe
+        (InternalError.report "Type.Solve.srcTypeToVar" (Text.pack ("Unknown type variable: " <> show name)) "Flex vars dictionary missing expected variable.")
+        return
+        (Map.lookup name flexVars)
     Can.TType home name args -> convertSrcAppType rank pools go home name args
     Can.TRecord fields maybeExt -> convertSrcRecordType rank pools flexVars fields maybeExt
     Can.TUnit -> register rank pools unit1
@@ -1188,7 +1196,11 @@ convertSrcRecordType rank pools flexVars fields maybeExt = do
   fieldVars <- traverse (srcFieldTypeToVar rank pools flexVars) fields
   extVar <- case maybeExt of
     Nothing -> register rank pools emptyRecord1
-    Just ext -> return (flexVars ! ext)
+    Just ext ->
+      maybe
+        (InternalError.report "Type.Solve.convertSrcRecordType" (Text.pack ("Unknown record extension: " <> show ext)) "Flex vars dictionary missing record extension variable.")
+        return
+        (Map.lookup ext flexVars)
   register rank pools (Structure (Record1 fieldVars extVar))
 
 convertSrcTupleType :: Int -> Pools -> (Can.Type -> IO Variable) -> Can.Type -> Can.Type -> Maybe Can.Type -> IO Variable

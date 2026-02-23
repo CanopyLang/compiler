@@ -97,7 +97,10 @@ isKernel :: Name -> Bool
 isKernel (Name author _) =
   author == elm || author == canopy || author == elmExplorations || author == canopyExplorations
 
--- FIXME: Need to think about how to make this better
+-- | Check whether a package is a core standard library.
+--
+-- Returns 'True' for both @elm\/core@ and @zokka\/core@ since Canopy
+-- supports both package ecosystems.
 isCore :: Name -> Bool
 isCore name = name == core || name == zokkaCore
 

@@ -25,7 +25,7 @@ import qualified Canopy.Version as V
 import qualified Data.Index as Index
 import qualified Data.IntMap as IntMap
 import qualified Data.List as List
-import Data.Map (Map, (!))
+import Data.Map (Map)
 import qualified Data.Map as Map
 import qualified Data.Name as Name
 import qualified Data.Set as Set
@@ -37,6 +37,7 @@ import Json.Encode ((==>))
 import qualified Json.Encode as Encode
 import qualified Optimize.DecisionTree as DT
 import qualified Reporting.Annotation as A
+import qualified Reporting.InternalError as InternalError
 
 -- EXPRESSIONS
 
@@ -312,7 +313,10 @@ generateField mode name =
     Mode.Dev _ _ ->
       JsName.fromLocal name
     Mode.Prod fields _ ->
-      fields ! name
+      maybe
+        (InternalError.report "Generate.JavaScript.Expression.generateField" "Unknown field name in production mode" "The field shortener map is missing an expected field.")
+        id
+        (Map.lookup name fields)
 
 -- | Generate large functions (>100 parameters) with chunking to avoid stack overflow
 generateLargeFunction :: Mode.Mode -> [JsName.Name] -> Code -> Code
@@ -803,7 +807,10 @@ getTailDefArgs def = case def of
 getTailDefBody :: Opt.Def -> Opt.Expr
 getTailDefBody def = case def of
   Opt.TailDef _ _ body -> body
-  _ -> error "getTailDefBody called on non-TailDef"
+  _ -> InternalError.report
+    "Generate.JavaScript.Expression.getTailDefBody"
+    "Called on non-TailDef"
+    "getTailDefBody must only be called on Opt.TailDef values. The caller must verify the definition is a TailDef before invoking this function."
 
 
 generateTailDefExpr :: Mode.Mode -> Name.Name -> [Name.Name] -> Opt.Expr -> JS.Expr
@@ -925,7 +932,10 @@ generateDecider mode label root decisionTree =
       [ JS.Switch
           ( case edges of
               firstEdge : _ -> generateCaseTest mode root path (fst firstEdge)
-              [] -> error "Empty edges list in FanOut - this should not happen"
+              [] -> InternalError.report
+                "Generate.JavaScript.Expression.generateDecider"
+                "Empty edges list in FanOut"
+                "A FanOut decision node must have at least one edge. The decision tree builder should never create a FanOut with zero edges."
           )
           ( foldr
               (\edge cases -> generateCaseBranch mode label root edge : cases)
@@ -970,7 +980,10 @@ generateIfTest mode root (path, test) =
           JS.Prefix JS.PrefixNot $
             JS.Access value (JsName.fromLocal "b")
         DT.IsTuple ->
-          error "COMPILER BUG - there should never be tests on a tuple"
+          InternalError.report
+            "Generate.JavaScript.Expression.generateBoolTest"
+            "COMPILER BUG - there should never be tests on a tuple"
+            "Tuples are structurally matched and should never appear as a test in the decision tree. This indicates a bug in the pattern match compiler."
 
 generateCaseBranch :: Mode.Mode -> Name.Name -> Name.Name -> (DT.Test, Opt.Decider Opt.Choice) -> JS.Case
 generateCaseBranch mode label root (test, subTree) =
@@ -992,13 +1005,25 @@ generateCaseValue mode test =
     DT.IsStr string ->
       JS.String (Utf8.toBuilder string)
     DT.IsBool _ ->
-      error "COMPILER BUG - there should never be three tests on a boolean"
+      InternalError.report
+        "Generate.JavaScript.Expression.generateCaseValue"
+        "COMPILER BUG - there should never be three tests on a boolean"
+        "Booleans only have two constructors (True/False) so at most two tests are ever needed. This indicates a bug in the decision tree builder."
     DT.IsCons ->
-      error "COMPILER BUG - there should never be three tests on a list"
+      InternalError.report
+        "Generate.JavaScript.Expression.generateCaseValue"
+        "COMPILER BUG - there should never be three tests on a list"
+        "Lists only have two structural cases (Cons/Nil) so at most two tests are ever needed. This indicates a bug in the decision tree builder."
     DT.IsNil ->
-      error "COMPILER BUG - there should never be three tests on a list"
+      InternalError.report
+        "Generate.JavaScript.Expression.generateCaseValue"
+        "COMPILER BUG - there should never be three tests on a list"
+        "Lists only have two structural cases (Cons/Nil) so at most two tests are ever needed. This indicates a bug in the decision tree builder."
     DT.IsTuple ->
-      error "COMPILER BUG - there should never be three tests on a tuple"
+      InternalError.report
+        "Generate.JavaScript.Expression.generateCaseValue"
+        "COMPILER BUG - there should never be three tests on a tuple"
+        "Tuples are structurally matched and should never appear as a case value in the decision tree. This indicates a bug in the pattern match compiler."
 
 generateCaseTest :: Mode.Mode -> Name.Name -> DT.Path -> DT.Test -> JS.Expr
 generateCaseTest mode root path exampleTest =
@@ -1029,13 +1054,25 @@ generateCaseTest mode root path exampleTest =
             Mode.Prod _ _ ->
               value
         DT.IsBool _ ->
-          error "COMPILER BUG - there should never be three tests on a list"
+          InternalError.report
+            "Generate.JavaScript.Expression.generateCaseTest"
+            "COMPILER BUG - there should never be three tests on a boolean"
+            "Booleans only have two constructors (True/False) so at most two tests are ever needed. This indicates a bug in the decision tree builder."
         DT.IsCons ->
-          error "COMPILER BUG - there should never be three tests on a list"
+          InternalError.report
+            "Generate.JavaScript.Expression.generateCaseTest"
+            "COMPILER BUG - there should never be three tests on a list"
+            "Lists only have two structural cases (Cons/Nil) so at most two tests are ever needed. This indicates a bug in the decision tree builder."
         DT.IsNil ->
-          error "COMPILER BUG - there should never be three tests on a list"
+          InternalError.report
+            "Generate.JavaScript.Expression.generateCaseTest"
+            "COMPILER BUG - there should never be three tests on a list"
+            "Lists only have two structural cases (Cons/Nil) so at most two tests are ever needed. This indicates a bug in the decision tree builder."
         DT.IsTuple ->
-          error "COMPILER BUG - there should never be three tests on a list"
+          InternalError.report
+            "Generate.JavaScript.Expression.generateCaseTest"
+            "COMPILER BUG - there should never be three tests on a tuple"
+            "Tuples are structurally matched and should never appear as a case test. This indicates a bug in the pattern match compiler."
 
 -- PATTERN PATHS
 

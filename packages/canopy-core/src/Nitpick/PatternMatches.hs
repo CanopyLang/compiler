@@ -28,6 +28,7 @@ import qualified Data.Maybe as Maybe
 import qualified Data.Name as Name
 import qualified Data.NonEmptyList as NE
 import qualified Reporting.Annotation as A
+import qualified Reporting.InternalError as InternalError
 
 -- PATTERN
 
@@ -311,7 +312,10 @@ checkPatterns region context patterns errors =
                 map
                   ( \patternList ->
                       case patternList of
-                        [] -> error "Empty pattern list in badPatterns - this should not happen"
+                        [] -> InternalError.report
+                          "Nitpick.PatternMatches.checkPatterns"
+                          "Empty pattern list in badPatterns"
+                          "isExhaustive returned a row with zero patterns, which violates the invariant that all rows have the same length as the initial column count."
                         p : _ -> p
                   )
                   badPatterns
@@ -440,11 +444,15 @@ specializeRowByCtor ctorName arity row =
     Anything : patterns ->
       Just (replicate arity Anything ++ patterns)
     Literal _ : _ ->
-      error $
-        "Compiler bug! After type checking, constructors and literals\
-        \ should never align in pattern match exhaustiveness checks."
+      InternalError.report
+        "Nitpick.PatternMatches.specializeRowByCtor"
+        "Compiler bug! After type checking, constructors and literals should never align in pattern match exhaustiveness checks."
+        "The type checker guarantees that constructors and literals occupy distinct branches. Finding them aligned here indicates a type checking invariant was violated."
     [] ->
-      error "Compiler error! Empty matrices should not get specialized."
+      InternalError.report
+        "Nitpick.PatternMatches.specializeRowByCtor"
+        "Compiler error! Empty matrices should not get specialized."
+        "The caller must ensure the pattern matrix is non-empty before calling specializeRowByCtor."
 
 -- INVARIANT: (length row == N) ==> (length result == N-1)
 specializeRowByLiteral :: Literal -> [Pattern] -> Maybe [Pattern]
@@ -457,11 +465,15 @@ specializeRowByLiteral literal row =
     Anything : patterns ->
       Just patterns
     Ctor _ _ _ : _ ->
-      error $
-        "Compiler bug! After type checking, constructors and literals\
-        \ should never align in pattern match exhaustiveness checks."
+      InternalError.report
+        "Nitpick.PatternMatches.specializeRowByLiteral"
+        "Compiler bug! After type checking, constructors and literals should never align in pattern match exhaustiveness checks."
+        "The type checker guarantees that constructors and literals occupy distinct branches. Finding them aligned here indicates a type checking invariant was violated."
     [] ->
-      error "Compiler error! Empty matrices should not get specialized."
+      InternalError.report
+        "Nitpick.PatternMatches.specializeRowByLiteral"
+        "Compiler error! Empty matrices should not get specialized."
+        "The caller must ensure the pattern matrix is non-empty before calling specializeRowByLiteral."
 
 -- INVARIANT: (length row == N) ==> (length result == N-1)
 specializeRowByAnything :: [Pattern] -> Maybe [Pattern]

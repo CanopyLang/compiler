@@ -28,6 +28,7 @@ import qualified Data.Version as Version
 import Data.Word (Word16, Word8)
 import Foreign.Ptr (Ptr, minusPtr, plusPtr)
 import qualified Json.Decode as D
+import qualified Reporting.InternalError as InternalError
 import qualified Json.Encode as E
 import Parse.Primitives (Col, Row)
 import qualified Parse.Primitives as P
@@ -61,7 +62,10 @@ compiler =
     [major] ->
       Version major 0 0
     [] ->
-      error "could not detect version of canopy-compiler you are using"
+      InternalError.report
+        "Canopy.Version.compiler"
+        "could not detect version of canopy-compiler you are using"
+        "The Paths_canopy_core package should always provide a version string. An empty version branch list indicates a broken or malformed package installation."
 
 -- BUMP
 

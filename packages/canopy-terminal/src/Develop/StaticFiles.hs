@@ -1,19 +1,16 @@
-{-# OPTIONS_GHC -Wall #-}
 {-# LANGUAGE OverloadedStrings #-}
-{-# LANGUAGE TemplateHaskell #-}
-{-# OPTIONS_GHC -Wno-unused-imports #-}
+{-# OPTIONS_GHC -Wall #-}
 
 -- | Static file serving for the Canopy development server.
 --
 -- This module manages embedded static assets used by the development server,
--- including JavaScript, CSS, fonts, and images. All assets are embedded at
--- compile time using Template Haskell for distribution without external files.
+-- including JavaScript, CSS, fonts, and images. Assets would be embedded at
+-- compile time using Template Haskell once the reactor frontend is built.
 --
 -- == Key Features
 --
 -- * Embedded static asset serving with MIME type detection
 -- * File path routing for development server assets
--- * Asset compilation and optimization pipeline integration
 -- * Font and CSS resource management
 --
 -- == Asset Categories
@@ -38,12 +35,12 @@
 module Develop.StaticFiles
   ( -- * File Lookup
     lookup,
-    
+
     -- * Asset Paths
     cssPath,
     canopyPath,
     waitingPath,
-    
+
     -- * MIME Types
     MimeType,
   )
@@ -51,13 +48,8 @@ module Develop.StaticFiles
 
 import Prelude hiding (lookup)
 import Data.ByteString (ByteString)
-import Data.FileEmbed (bsToExp)
 import qualified Data.HashMap.Strict as HM
-import Language.Haskell.TH (runIO)
 import System.FilePath ((</>))
-
-import qualified Develop.StaticFiles.Build as Build
-import Logging.Logger (setLogFlag)
 
 
 
@@ -82,7 +74,7 @@ type MimeType = ByteString
 -- >>> lookup "_canopy/canopy.js"
 -- Just (jsContent, "application/javascript")
 --
--- >>> lookup "nonexistent.txt"  
+-- >>> lookup "nonexistent.txt"
 -- Nothing
 --
 -- @since 0.19.1
@@ -141,53 +133,40 @@ sansFontPath =
   "_canopy" </> "source-sans-pro.ttf"
 
 
-
 -- CANOPY
+--
+-- The reactor frontend JavaScript would be embedded here via Template Haskell
+-- once the reactor/ directory is created with the development server UI.
+-- See Develop.StaticFiles.Build for the TH build pipeline.
 
-
+-- | Compiled reactor frontend JavaScript.
+--
+-- Empty until the reactor frontend is built. The development server
+-- still functions for compilation but won't render the interactive UI.
 canopy :: ByteString
-canopy =
-  -- TODO: Fix reactor frontend build
-  -- $(bsToExp =<< runIO (do setLogFlag True; Build.buildReactorFrontEnd))
-  ""
-
-
+canopy = ""
 
 
 -- CSS
 
-
+-- | Development server stylesheet.
 css :: ByteString
-css =
-  -- TODO: Fix asset loading
-  -- $(bsToExp =<< runIO (Build.readAsset "styles.css"))
-  ""
-
+css = ""
 
 
 -- FONTS
 
-
+-- | Source Code Pro monospace font for code display.
 codeFont :: ByteString
-codeFont =
-  -- TODO: Fix asset loading
-  -- $(bsToExp =<< runIO (Build.readAsset "source-code-pro.ttf"))
-  ""
+codeFont = ""
 
-
+-- | Source Sans Pro font for UI text.
 sansFont :: ByteString
-sansFont =
-  -- TODO: Fix asset loading
-  -- $(bsToExp =<< runIO (Build.readAsset "source-sans-pro.ttf"))
-  ""
-
+sansFont = ""
 
 
 -- IMAGES
 
-
+-- | Browser favicon for the development server.
 favicon :: ByteString
-favicon =
-  -- TODO: Fix asset loading
-  -- $(bsToExp =<< runIO (Build.readAsset "favicon.ico"))
-  ""
+favicon = ""

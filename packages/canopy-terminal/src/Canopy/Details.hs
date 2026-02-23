@@ -88,7 +88,7 @@ load _style _scope root = do
                 _detailsPlatform = root </> ".canopy",
                 _detailsRoot = root,
                 _detailsSrcDirs = getSrcDirs outline,
-                _detailsDeps = Map.empty -- TODO: load dependencies
+                _detailsDeps = extractDeps outline
               }
       pure (Right details)
 
@@ -100,12 +100,9 @@ validateOutline outline =
     Outline.Pkg (Outline.PkgOutline pkg _ _ _ exposed _ _ _) ->
       ValidPkg pkg (getExposedList exposed) []
 
--- | Get exposed modules list.
+-- | Get exposed modules list from either list or dict format.
 getExposedList :: Outline.Exposed -> [ModuleName.Raw]
-getExposedList exposed =
-  case exposed of
-    Outline.ExposedList mods -> mods
-    Outline.ExposedDict _ -> [] -- TODO: handle dict
+getExposedList = Outline.flattenExposed
 
 -- | Get source directories from outline.
 getSrcDirs :: Outline.Outline -> [FilePath]
@@ -117,6 +114,16 @@ getSrcDirs outline =
   where
     toAbsPath (Outline.AbsoluteSrcDir dir) = dir
     toAbsPath (Outline.RelativeSrcDir dir) = dir
+
+-- | Extract dependency package names from the project outline.
+extractDeps :: Outline.Outline -> Map Pkg.Name ()
+extractDeps outline =
+  case outline of
+    Outline.App appOutline ->
+      Map.map (const ()) (Outline._appDepsDirect appOutline)
+        `Map.union` Map.map (const ()) (Outline._appDepsIndirect appOutline)
+    Outline.Pkg pkgOutline ->
+      Map.map (const ()) (Outline._pkgDeps pkgOutline)
 
 -- | Load details for Reactor (development server).
 --

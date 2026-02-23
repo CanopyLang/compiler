@@ -6,12 +6,12 @@
 module Unit.New.Compiler.DriverTest (tests) where
 
 import qualified Canopy.Interface as I
-import qualified Canopy.ModuleName as ModuleName
 import qualified Canopy.Package as Pkg
 import qualified Data.Map as Map
 import qualified Driver
 import qualified PackageCache
 import qualified Parse.Module as Parse
+import qualified System.IO as IO
 import Test.Tasty (TestTree, testGroup)
 import Test.Tasty.HUnit (assertBool, assertFailure, testCase)
 
@@ -26,6 +26,10 @@ tests =
     ]
 
 -- | Test compiling a simple module without imports.
+--
+-- Creates a minimal valid Canopy module, compiles it through the full
+-- pipeline (parse, canonicalize, type check, optimize), and verifies
+-- that no errors are produced.
 testSimpleModule :: IO ()
 testSimpleModule = do
   -- Load elm/core interfaces for Basics, List, etc.
@@ -37,8 +41,12 @@ testSimpleModule = do
       -- Convert DependencyInterface to Interface for compilation
       let ifaces = Map.map extractPublicInterface depIfaces
 
-      -- Use minimal test file with no external dependencies
+      -- Write a minimal valid Canopy module to a temporary file.
+      -- The module is intentionally empty (no declarations) to avoid
+      -- dependency on any standard library functions.
       let testFile = "/tmp/test-minimal.can"
+      IO.writeFile testFile minimalModuleSource
+
       let pkg = Pkg.core
       let projectType = Parse.Package pkg
 
@@ -52,6 +60,18 @@ testSimpleModule = do
         Right _compileResult ->
           assertBool "Module compiled successfully" True
   where
+    -- Minimal valid Canopy module with a single custom type declaration.
+    -- The custom type has no dependencies on any imported modules, making
+    -- it safe to compile without default imports (as required for Package
+    -- project types where isCore = True).
+    minimalModuleSource :: String
+    minimalModuleSource =
+      unlines
+        [ "module CanopyTest exposing (..)"
+        , ""
+        , "type MinimalType = MinimalType"
+        ]
+
     -- Extract public interface from dependency interface
     extractPublicInterface :: I.DependencyInterface -> I.Interface
     extractPublicInterface (I.Public iface) = iface

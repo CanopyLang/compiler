@@ -50,7 +50,10 @@ import qualified Foreign.TestGeneratorNew as TestGen
 import qualified Make
 import qualified System.Process as Process
 import System.Directory (findExecutable)
-import Control.Monad (filterM, unless)
+import Control.Monad (filterM, unless, void)
+import qualified Control.Concurrent as Concurrent
+import qualified Control.Exception as Exception
+import qualified System.FSNotify as FSNotify
 import qualified Terminal
 import Text.Read (readMaybe)
 import Control.Exception (try, SomeException)
@@ -174,22 +177,52 @@ validateContracts _ = do
           mapM_ putStrLn violations
           return (Exit.ExitFailure violationCount)
 
--- | Run FFI tests with file watching
+-- | Run FFI tests with file watching.
+--
+-- Performs an initial test run, then watches @src\/@ and @external\/@ directories
+-- for changes to @.can@ and @.js@ files. Re-runs tests on each change.
+-- Blocks until interrupted with Ctrl+C.
 runWithWatch :: FFITestConfig -> IO Exit.ExitCode
 runWithWatch config = do
-  putStrLn "👀 Watching for FFI changes..."
+  putStrLn "Watching for FFI changes..."
   putStrLn "   Press Ctrl+C to stop"
-
-  -- Initial test run
   _ <- runTests config
+  watchAndRerun config
 
-  -- TODO: Implement file watching
-  putStrLn "🚧 File watching not yet implemented"
-  putStrLn "   Use: canopy test-ffi (without --watch) to run tests once"
+-- | Watch source and external directories, re-running tests on changes.
+--
+-- Uses FSNotify to monitor @src\/@ and @external\/@ for @.can@ and @.js@ files.
+-- Blocks indefinitely until the thread is killed (Ctrl+C).
+watchAndRerun :: FFITestConfig -> IO Exit.ExitCode
+watchAndRerun config =
+  FSNotify.withManager $ \mgr -> do
+    let watchDirs = ["src", "external"]
+    existingDirs <- filterM Dir.doesDirectoryExist watchDirs
+    mapM_ (watchDir mgr) existingDirs
+    keepAlive
+  where
+    watchDir mgr dir =
+      void (FSNotify.watchTree mgr dir isRelevantFile handleChange)
 
-  return Exit.ExitSuccess
+    isRelevantFile event =
+      let path = FSNotify.eventPath event
+      in FilePath.takeExtension path `elem` [".can", ".js"]
 
--- | Run FFI tests
+    handleChange _event = do
+      putStrLn "\n--- File changed, re-running FFI tests ---"
+      _ <- runTests config
+      pure ()
+
+    keepAlive =
+      Exception.handle handleInterrupt $
+        Concurrent.threadDelay 1000000 >> keepAlive
+
+    handleInterrupt :: Exception.AsyncException -> IO Exit.ExitCode
+    handleInterrupt Exception.ThreadKilled = pure Exit.ExitSuccess
+    handleInterrupt Exception.UserInterrupt = pure Exit.ExitSuccess
+    handleInterrupt ex = Exception.throwIO ex
+
+-- | Run FFI tests.
 runTests :: FFITestConfig -> IO Exit.ExitCode
 runTests config = do
   putStrLn "🚀 Running FFI tests..."

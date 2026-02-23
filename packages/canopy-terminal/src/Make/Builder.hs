@@ -51,8 +51,6 @@ import qualified Data.Maybe as Maybe
 import qualified Data.Name as Name
 import Data.NonEmptyList (List)
 import qualified Data.NonEmptyList as NonEmptyList
-import qualified Debug.Logger as Logger
-import Debug.Logger (DebugCategory (..))
 import qualified Generate.JavaScript as JS
 import qualified Generate.Mode as Mode
 import Make.Types
@@ -66,7 +64,6 @@ import Make.Types
   )
 import qualified Reporting.Exit as Exit
 import qualified Reporting.Task as Task
-import System.IO.Unsafe (unsafePerformIO)
 
 -- | Build project from exposed package modules.
 --
@@ -169,19 +166,9 @@ generateJS mode artifacts =
       ffiInfo = artifacts ^. Build.artifactsFFIInfo
    in JS.generate mode globalGraph mains ffiInfo
 
--- Helper: Extract GlobalGraph for optimization
+-- | Extract GlobalGraph from build artifacts.
 extractGlobalGraph :: Compiler.Artifacts -> Opt.GlobalGraph
-extractGlobalGraph artifacts =
-  -- Use the merged GlobalGraph from artifacts (includes dependencies)
-  let globalGraph = artifacts ^. Build.artifactsGlobalGraph
-   in unsafePerformIO $ do
-        let nodeCount = countGlobals globalGraph
-        Logger.debug CODEGEN ("Make.Builder: Extracted GlobalGraph with " ++ show nodeCount ++ " globals")
-        return globalGraph
-
--- Helper: Count globals in GlobalGraph
-countGlobals :: Opt.GlobalGraph -> Int
-countGlobals (Opt.GlobalGraph nodes _) = Map.size nodes
+extractGlobalGraph artifacts = artifacts ^. Build.artifactsGlobalGraph
 
 -- Helper: Extract mains from artifacts
 extractMains :: Compiler.Artifacts -> Map ModuleName.Canonical Opt.Main

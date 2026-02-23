@@ -139,6 +139,7 @@ import qualified Canopy.Float as EF
 import qualified Canopy.Kernel as K
 import qualified Canopy.ModuleName as ModuleName
 import qualified Canopy.Package as Pkg
+import qualified Reporting.InternalError as InternalError
 import qualified Canopy.String as ES
 import qualified Control.Monad as Monad
 import qualified Data.Binary as Binary
@@ -656,8 +657,7 @@ addKernelDepSimple chunk deps =
 -- @since 0.19.1
 toKernelGlobal :: Name.Name -> Global
 toKernelGlobal shortName =
-  let kernelModuleName = Name.fromChars ("Kernel." <> Name.toChars shortName)
-  in Global (ModuleName.Canonical Pkg.core kernelModuleName) Name.dollar
+  Global (ModuleName.Canonical Pkg.kernel shortName) Name.dollar
 
 -- INSTANCES
 
@@ -768,7 +768,10 @@ putExprRecord expr = case expr of
   Unit -> Binary.putWord8 24
   Tuple a b c -> Binary.putWord8 25 >> Binary.put a >> Binary.put b >> Binary.put c
   Shader a b c -> Binary.putWord8 26 >> Binary.put a >> Binary.put b >> Binary.put c
-  _ -> error "putExprRecord: unexpected expression"
+  _ -> InternalError.report
+    "AST.Optimized.putExprRecord"
+    "unexpected expression in putExprRecord"
+    "putExprRecord only handles optimized expression types up to Shader (tag 26). Encountering an unknown expression here indicates a new expression constructor was added without updating the Binary serialization."
 
 -- | Deserialize an expression from binary format.
 --
@@ -985,7 +988,10 @@ putNodeSpecial node = case node of
   Kernel a b -> Binary.putWord8 8 >> Binary.put a >> Binary.put b
   PortIncoming a b -> Binary.putWord8 9 >> Binary.put a >> Binary.put b
   PortOutgoing a b -> Binary.putWord8 10 >> Binary.put a >> Binary.put b
-  _ -> error "putNodeSpecial: unexpected node"
+  _ -> InternalError.report
+    "AST.Optimized.putNodeSpecial"
+    "unexpected node in putNodeSpecial"
+    "putNodeSpecial only handles Kernel, PortIncoming, and PortOutgoing nodes. Other node types must be serialized by the main putNode function."
 
 -- | Deserialize a node from binary format.
 --

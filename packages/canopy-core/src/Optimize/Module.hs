@@ -13,8 +13,9 @@ import qualified Canonicalize.Effects as Effects
 import qualified Canopy.ModuleName as ModuleName
 import Control.Monad (foldM)
 import qualified Data.List as List
-import Data.Map ((!))
 import qualified Data.Map as Map
+import qualified Data.Text as Text
+import qualified Reporting.InternalError as InternalError
 import qualified Data.Name as Name
 import qualified Data.Set as Set
 import qualified Optimize.Expression as Expr
@@ -176,7 +177,11 @@ addDef home annotations def graph =
   case def of
     Can.Def (A.At region name) args body ->
       do
-        let (Can.Forall _ tipe) = annotations ! name
+        let (Can.Forall _ tipe) =
+              maybe
+                (InternalError.report "Optimize.Module.addDef" ("Annotation missing for: " <> Text.pack (show name)) "All definitions must have annotations in the Annotations map by the time optimization runs.")
+                id
+                (Map.lookup name annotations)
         Result.warn $ W.MissingTypeAnnotation region name tipe
         addDefHelp region annotations home name args body graph
     Can.TypedDef (A.At region name) _ typedArgs body _ ->
@@ -187,7 +192,11 @@ addDefHelp region annotations home name args body graph@(Opt.LocalGraph _ nodes 
   if name /= Name._main
     then Result.ok (addDefNode home name args body Set.empty graph)
     else
-      let (Can.Forall _ tipe) = annotations ! name
+      let (Can.Forall _ tipe) =
+            maybe
+              (InternalError.report "Optimize.Module.addDefHelp" ("Annotation missing for main: " <> Text.pack (show name)) "The main definition must have a type annotation present in the Annotations map.")
+              id
+              (Map.lookup name annotations)
 
           addMain (deps, fields, main) =
             addDefNode home name args body deps $

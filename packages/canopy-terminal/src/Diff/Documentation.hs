@@ -50,13 +50,13 @@ where
 
 import qualified BackgroundWriter as BW
 import qualified Build
+import qualified Build.Docs as BuildDocs
 import qualified Canopy.Details as Details
 import Canopy.Docs (Documentation)
 import qualified Canopy.ModuleName as ModuleName
 import Canopy.Package (Name)
 import Canopy.Version (Version)
 import Control.Lens ((^.))
-import qualified Data.Map as Map
 import qualified Data.NonEmptyList as NE
 import qualified Deps.Diff as Diff
 import qualified Deps.Registry as Registry
@@ -170,9 +170,6 @@ validateExposed (e : es) = pure (NE.List e es)
 buildDocumentation :: FilePath -> Details.Details -> NE.List ModuleName.Raw -> Task Documentation
 buildDocumentation root details exposedModules = do
   result <- Task.io buildAction
-  case result of
-    Left err -> Task.throw (Exit.DiffBadBuild err)
-    Right _artifacts -> pure stubDocumentation
+  either (Task.throw . Exit.DiffBadBuild) (pure . BuildDocs.docsFromArtifacts) result
   where
     buildAction = Build.fromExposed (Build.ExposedBuildConfig Reporting.silent root details Build.IgnoreDocs) exposedModules
-    stubDocumentation = Map.empty -- Stub: should generate docs from artifacts

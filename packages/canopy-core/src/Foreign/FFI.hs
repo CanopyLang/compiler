@@ -251,14 +251,17 @@ parseJSDocTextManual jsFile jsDocText =
       functionName = extractNameManual jsDocLines
       canopyType = extractCanopyTypeManual jsDocLines
       description = extractDescriptionManual jsDocLines
+      params = extractParamsManual jsDocLines
+      throws = extractThrowsManual jsDocLines
+      capabilities = extractCapabilityManual jsDocLines
   in case (functionName, canopyType) of
     (Just name, Just ffiType) -> Just $ JSDocFunction
       { jsDocFuncName = name
       , jsDocFuncType = ffiType
       , jsDocFuncDescription = description
-      , jsDocFuncParams = []  -- TODO: implement parameter extraction
-      , jsDocFuncThrows = []  -- TODO: implement throws extraction
-      , jsDocFuncCapabilities = Nothing  -- TODO: implement capability extraction
+      , jsDocFuncParams = params
+      , jsDocFuncThrows = throws
+      , jsDocFuncCapabilities = capabilities
       , jsDocFuncFile = jsFile
       }
     _ -> Nothing
@@ -296,6 +299,59 @@ extractDescriptionManual jsDocLines =
   where
     isJSDocTag line = Text.isInfixOf "@" (Text.strip line)
 
+
+-- | Extract @param tags from JSDoc lines.
+--
+-- Parses lines like: @param {Type} name - description
+extractParamsManual :: [Text] -> [(Text, FFIType, Maybe Text)]
+extractParamsManual = foldr extractParam []
+  where
+    extractParam line acc
+      | Text.isInfixOf "@param" (Text.strip line) = parseParamLine line ++ acc
+      | otherwise = acc
+    parseParamLine line =
+      case Text.words (Text.strip line) of
+        ("*":"@param":rest) -> parseParamWords rest
+        _ -> []
+    parseParamWords (typeBraced:name:rest)
+      | Just ffiType <- parseCanopyTypeAnnotation (Text.dropAround isBrace typeBraced) =
+          [(name, ffiType, descFromRest rest)]
+    parseParamWords _ = []
+    isBrace c = c == '{' || c == '}'
+    descFromRest [] = Nothing
+    descFromRest ("-":ws) = Just (Text.unwords ws)
+    descFromRest ws = Just (Text.unwords ws)
+
+-- | Extract @throws tags from JSDoc lines.
+--
+-- Parses lines like: @throws {ErrorType} description
+extractThrowsManual :: [Text] -> [Text]
+extractThrowsManual = foldr extractThrow []
+  where
+    extractThrow line acc
+      | Text.isInfixOf "@throws" (Text.strip line) = parseThrowLine line ++ acc
+      | otherwise = acc
+    parseThrowLine line =
+      case Text.words (Text.strip line) of
+        ("*":"@throws":rest) -> [Text.unwords rest]
+        _ -> []
+
+-- | Extract @capability tag from JSDoc lines.
+--
+-- Parses lines like: @capability permission microphone
+extractCapabilityManual :: [Text] -> Maybe Capability.CapabilityConstraint
+extractCapabilityManual [] = Nothing
+extractCapabilityManual (line:rest)
+  | Text.isInfixOf "@capability" (Text.strip line) = parseCapabilityLine line
+  | otherwise = extractCapabilityManual rest
+  where
+    parseCapabilityLine l =
+      case Text.words (Text.strip l) of
+        ("*":"@capability":"permission":perm:_) -> Just (Capability.PermissionRequired perm)
+        ("*":"@capability":"user-activation":_) -> Just Capability.UserActivationRequired
+        ("*":"@capability":"init":resource:_) -> Just (Capability.InitializationRequired resource)
+        ("*":"@capability":"availability":feature:_) -> Just (Capability.AvailabilityRequired feature)
+        _ -> Nothing
 
 -- | Process a JSDoc comment and extract function information
 -- processJSDocComment :: FilePath -> JSDocComment -> Maybe JSDocFunction
@@ -800,17 +856,49 @@ generateFFIModule ffiDecl functions = do
 -- @since 0.19.1
 generateRuntimeWrapper :: JSDocFunction -> Text
 generateRuntimeWrapper jsFunc =
-  let funcName = jsDocFuncName jsFunc
-      wrapperName = funcName <> "_safe"
-  in Text.unlines
+  Text.unlines
     [ "// Auto-generated wrapper for " <> funcName
-    , "function " <> wrapperName <> "() {"
-    , "  // TODO: Add runtime type validation"
-    , "  // TODO: Add error conversion"
-    , "  // TODO: Call original function with checks"
-    , "  throw new Error('Not implemented yet');"
+    , "function " <> wrapperName <> "(" <> paramList <> ") {"
+    , "  try {"
+    , "    var result = " <> funcName <> "(" <> paramList <> ");"
+    , resultHandling
+    , "  } catch (e) {"
+    , "    return " <> errorWrapper <> ";"
+    , "  }"
     , "}"
     ]
+  where
+    funcName = jsDocFuncName jsFunc
+    wrapperName = funcName <> "_safe"
+    (inputTypes, outputType) = flattenFunctionTypeForWrapper (jsDocFuncType jsFunc)
+    paramNames = zipWith (\_ i -> "a" <> Text.pack (show (i :: Int))) inputTypes [0..]
+    paramList = Text.intercalate ", " paramNames
+
+    resultHandling = case outputType of
+      FFITask _ _ ->
+        "    if (result && typeof result.then === 'function') {\n"
+        <> "      return result.then(function(val) { return { $: 0, a: val }; })"
+        <> ".catch(function(err) { return { $: 1, a: String(err) }; });\n"
+        <> "    }\n"
+        <> "    return result;"
+      FFIResult _ _ ->
+        "    return { $: 0, a: result };"
+      FFIMaybe _ ->
+        "    return (result == null) ? { $: 1 } : { $: 0, a: result };"
+      _ ->
+        "    return result;"
+
+    errorWrapper = case outputType of
+      FFIResult _ _ -> "{ $: 1, a: String(e) }"
+      FFITask _ _   -> "Promise.reject(String(e))"
+      _             -> "null"
+
+    flattenFunctionTypeForWrapper :: FFIType -> ([FFIType], FFIType)
+    flattenFunctionTypeForWrapper ffiType = case ffiType of
+      FFIFunctionType params returnType ->
+        let (nestedParams, finalReturn) = flattenFunctionTypeForWrapper returnType
+        in (params ++ nestedParams, finalReturn)
+      other -> ([], other)
 
 -- | Simple FFI import representation to avoid circular dependencies
 data SimpleFFIImport = SimpleFFIImport

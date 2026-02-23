@@ -225,6 +225,7 @@ import qualified Data.Scientific as Sci
 import qualified Data.Utf8 as Utf8
 import qualified File
 import qualified Json.String as Json
+import qualified Reporting.InternalError as InternalError
 import Prelude hiding (null)
 
 -- CORE JSON VALUE TYPE
@@ -752,7 +753,10 @@ encodeSimpleValue value =
     Integer n -> B.intDec n
     Number scientific -> B.string7 (Sci.formatScientific Sci.Generic Nothing scientific)
     Null -> "null"
-    _ -> error "encodeSimpleValue: unexpected composite value"
+    _ -> InternalError.report
+      "Json.Encode.encodeSimpleValue"
+      "unexpected composite value"
+      "encodeSimpleValue only handles String, Boolean, Integer, Number, and Null. Arrays and Objects must be handled by encodeArray and encodeObject respectively."
 
 -- ARRAY AND OBJECT ENCODING
 

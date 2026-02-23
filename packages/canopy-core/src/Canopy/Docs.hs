@@ -7,6 +7,7 @@
 module Canopy.Docs
   ( Documentation,
     Module (..),
+    Comment,
     fromModule,
     Union (..),
     Alias (..),
@@ -28,8 +29,9 @@ import qualified Canopy.Compiler.Type.Extract as Extract
 import qualified Canopy.ModuleName as ModuleName
 import qualified Data.Coerce as Coerce
 import qualified Data.List as List
-import Data.Map ((!))
 import qualified Data.Map as Map
+import qualified Data.Text as Text
+import qualified Reporting.InternalError as InternalError
 import qualified Data.Map.Merge.Strict as Map
 import qualified Data.Name as Name
 import qualified Data.NonEmptyList as NE
@@ -436,26 +438,42 @@ checkExportIO info name (A.At region export) =
           pure $ \m -> m {_values = Map.insert name (Value comment tipe) (_values m)}
     Can.ExportBinop ->
       do
-        let (Can.Binop_ assoc prec realName) = _iBinops info ! name
+        let (Can.Binop_ assoc prec realName) =
+              maybe
+                (InternalError.report "Canopy.Docs.checkExportIO" ("Binop missing from info: " <> Text.pack (show name)) "Every exported binop must have a corresponding entry in the module's binop map.")
+                id
+                (Map.lookup name (_iBinops info))
         tipe <- getType realName info
         Result.ok $ do
           comment <- getCommentIO region realName info
           pure $ \m -> m {_binops = Map.insert name (Binop comment tipe assoc prec) (_binops m)}
     Can.ExportAlias ->
       do
-        let (Can.Alias tvars tipe) = _iAliases info ! name
+        let (Can.Alias tvars tipe) =
+              maybe
+                (InternalError.report "Canopy.Docs.checkExportIO" ("Alias missing from info: " <> Text.pack (show name)) "Every exported alias must have a corresponding entry in the module's alias map.")
+                id
+                (Map.lookup name (_iAliases info))
         Result.ok $ do
           comment <- getCommentIO region name info
           pure $ \m -> m {_aliases = Map.insert name (Alias comment tvars (Extract.fromType tipe)) (_aliases m)}
     Can.ExportUnionOpen ->
       do
-        let (Can.Union tvars ctors _ _) = _iUnions info ! name
+        let (Can.Union tvars ctors _ _) =
+              maybe
+                (InternalError.report "Canopy.Docs.checkExportIO" ("Open union missing from info: " <> Text.pack (show name)) "Every exported open union must have a corresponding entry in the module's union map.")
+                id
+                (Map.lookup name (_iUnions info))
         Result.ok $ do
           comment <- getCommentIO region name info
           pure $ \m -> m {_unions = Map.insert name (Union comment tvars (fmap dector ctors)) (_unions m)}
     Can.ExportUnionClosed ->
       do
-        let (Can.Union tvars _ _ _) = _iUnions info ! name
+        let (Can.Union tvars _ _ _) =
+              maybe
+                (InternalError.report "Canopy.Docs.checkExportIO" ("Closed union missing from info: " <> Text.pack (show name)) "Every exported closed union must have a corresponding entry in the module's union map.")
+                id
+                (Map.lookup name (_iUnions info))
         Result.ok $ do
           comment <- getCommentIO region name info
           pure $ \m -> m {_unions = Map.insert name (Union comment tvars []) (_unions m)}
@@ -472,13 +490,19 @@ getCommentIO :: A.Region -> Name.Name -> Info -> IO Comment
 getCommentIO _region name info =
   case Map.lookup name (_iComments info) of
     Nothing ->
-      error ("Missing comment for: " ++ show name)  -- This should be handled by Result system
+      InternalError.report
+        "Canopy.Docs.getCommentIO"
+        "missing comment for exported name"
+        (Text.pack ("Name '" <> show name <> "' was exported but has no associated documentation comment. Every exported declaration must have a Haddock comment before it reaches documentation generation."))
     Just (Src.Comment snippet) ->
       Json.fromComment snippet
 
 getType :: Name.Name -> Info -> Result.Result i w E.DefProblem Type.Type
 getType name info =
-  case _iValues info ! name of
+  case maybe
+    (InternalError.report "Canopy.Docs.getType" ("Value type missing from info: " <> Text.pack (show name)) "Every exported value must have a type entry (Left region or Right type) in the module's value map.")
+    id
+    (Map.lookup name (_iValues info)) of
     Left region ->
       Result.throw (E.NoAnnotation name region)
     Right tipe ->

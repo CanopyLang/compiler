@@ -65,6 +65,7 @@ import Install.Types
     nameWidth,
     rightWidth,
   )
+import qualified Reporting.Ask as Ask
 import Reporting.Doc (Doc, (<+>))
 import qualified Reporting.Doc as Doc
 
@@ -295,15 +296,13 @@ padRight width string =
 
 -- | Prompt user for installation approval.
 --
--- Presents a formatted question and waits for user response.
--- This is a placeholder - actual implementation would use Reporting.ask.
+-- Presents the change plan and waits for user Y\/N response.
+-- Uses 'Reporting.Ask.ask' for interactive terminal input.
 --
 -- @since 0.19.1
 promptForApproval :: Doc -> IO Bool
-promptForApproval _question = do
-  -- TODO: Implement actual user prompting
-  -- return Reporting.ask question
-  pure True
+promptForApproval question =
+  Ask.ask (Doc.toString question)
 
 -- | Report that a package is already installed.
 --

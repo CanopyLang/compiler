@@ -28,9 +28,11 @@ import qualified Data.Map as Map
 import qualified Data.Name as Name
 import qualified Data.Set as Set
 import qualified Data.Utf8 as Utf8
+import qualified Data.Text as Text
 import Data.Word (Word8)
 
 import qualified Data.Index as Index
+import qualified Reporting.InternalError as InternalError
 import qualified Canopy.ModuleName as ModuleName
 import qualified Canopy.Package as Pkg
 
@@ -247,7 +249,7 @@ toByte n
   | n == 52 = 95 {- _ -}
   | n == 53 = 36 {- $ -}
   | n < 64  = fromIntegral (48 + n - 54) {- digit -}
-  | otherwise    = error ("cannot convert int " <> (show n <> " to ASCII"))
+  | otherwise    = InternalError.report "Generate.JavaScript.Name.toByte" (Text.pack ("Cannot convert int " <> show n <> " to ASCII byte")) "The int-to-ASCII conversion received a value outside the valid range 0-63."
 
 
 

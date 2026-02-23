@@ -36,13 +36,10 @@ import qualified Foreign.FFI as FFI
 import qualified Reporting.Annotation as A
 import qualified Reporting.Error.Canonicalize as Error
 import qualified Reporting.Result as Result
+import qualified Reporting.InternalError as InternalError
 import qualified Reporting.Warning as W
 import Control.Exception (SomeException, catch)
 import System.FilePath ((</>))
-import Debug.Trace (trace)
-import System.IO.Unsafe (unsafePerformIO)
-import qualified System.IO as IO
-import qualified Data.ByteString.Char8 as BS
 
 -- RESULT
 
@@ -131,7 +128,7 @@ detectBadCycles scc =
     Graph.AcyclicSCC def ->
       Result.ok def
     Graph.CyclicSCC [] ->
-      error "The definition of Data.Graph.SCC should not allow empty CyclicSCC!"
+      InternalError.report "Canonicalize.Module.detectBadCycles" "Empty CyclicSCC from Data.Graph" "Data.Graph.SCC should never produce an empty CyclicSCC list."
     Graph.CyclicSCC (def : defs) ->
       let (A.At region name) = extractDefName def
           names = fmap (A.toValue . extractDefName) defs
@@ -381,9 +378,7 @@ validateSingleFunction jsPath region (fname, typeStr) =
 -- @since 0.19.1
 parseJavaScriptContentPure :: String -> String -> Either String [(String, String)]
 parseJavaScriptContentPure jsContent _alias =
-  let extracted = extractFunctionsWithTypes (lines jsContent)
-      _ = unsafePerformIO (IO.hPutStrLn IO.stderr ("[DEBUG parseJS] extracted=" ++ show extracted))
-  in Right extracted
+  Right (extractFunctionsWithTypes (lines jsContent))
 
 
 -- Extract functions with their @canopy-type annotations
@@ -428,7 +423,6 @@ parseJSDocBlock :: [String] -> Maybe (String, String)
 parseJSDocBlock commentLines = do
   functionName <- findNameAnnotation commentLines
   canopyType <- findCanopyTypeAnnotation commentLines
-  let _ = unsafePerformIO (IO.hPutStrLn IO.stderr ("[DEBUG parseJSDocBlock] name=" ++ functionName ++ " type=" ++ canopyType))
   pure (functionName, canopyType)
 
 -- Find @name annotation in JSDoc block
@@ -465,13 +459,9 @@ strip = dropWhileEnd (`elem` (" \t\n\r" :: String)) . dropWhile (`elem` (" \t\n\
 parseCanopyTypeAnnotation :: String -> Maybe String
 parseCanopyTypeAnnotation line =
   let trimmed = dropWhile (`elem` (" *" :: String)) line
-      result = if ("@canopy-type " :: String) `isPrefixOf` trimmed
-               then Just (drop (length ("@canopy-type " :: String)) trimmed)
-               else Nothing
-      _ = case result of
-            Just typeStr -> unsafePerformIO (IO.hPutStrLn IO.stderr ("[DEBUG parseCanopyTypeAnnotation] extracted: " ++ show typeStr))
-            Nothing -> ()
-  in result
+  in if ("@canopy-type " :: String) `isPrefixOf` trimmed
+     then Just (drop (length ("@canopy-type " :: String)) trimmed)
+     else Nothing
 
 
 -- DYNAMIC FUNCTION ENVIRONMENT GENERATION
@@ -492,13 +482,11 @@ addParsedFunctionsToEnv env ffiModuleName aliasName functions = do
 
 -- Process a single parsed function (name, typeString) into Canopy types
 processParsedFunction :: Env.Env -> ModuleName.Canonical -> ModuleName.Canonical -> (String, String) -> Result i [W.Warning] (String, Can.Annotation, Env.Var)
-processParsedFunction env ffiModuleName homeModuleName (functionName, typeString) =
-  unsafePerformIO (IO.hPutStrLn IO.stderr ("[DEBUG processParsedFunction] name=" ++ functionName ++ " typeStr=" ++ show typeString)) `seq` do
-    -- Parse the type string into actual Canopy types, passing env for type lookup
-    canopyType <- parseTypeStringWithHome env homeModuleName typeString
-    let annotation = Can.Forall Map.empty canopyType
-        var = Env.Foreign ffiModuleName annotation
-    Result.ok (functionName, annotation, var)
+processParsedFunction env ffiModuleName homeModuleName (functionName, typeString) = do
+  canopyType <- parseTypeStringWithHome env homeModuleName typeString
+  let annotation = Can.Forall Map.empty canopyType
+      var = Env.Foreign ffiModuleName annotation
+  Result.ok (functionName, annotation, var)
 
 -- Build the dynamic environment from processed functions with proper qualified name registration
 buildDynamicEnvironment :: Name.Name -> [(String, Can.Annotation, Env.Var)] -> ([(Name.Name, Env.Var)], Map.Map Name.Name (Env.Info Can.Annotation))
@@ -528,18 +516,13 @@ parseTypeStringWithHome env homeModuleName typeStr =
 -- First split by arrows, then tokenize each segment into words
 tokenizeCanopyType :: Text.Text -> [String]
 tokenizeCanopyType typeText =
-  let _ = unsafePerformIO (IO.hPutStrLn IO.stderr ("[DEBUG tokenize] input=" ++ show typeText))
-      arrowSegments = Text.splitOn "->" typeText
+  let arrowSegments = Text.splitOn "->" typeText
       nonEmptySegments = filter (not . Text.null . Text.strip) arrowSegments
-      -- Tokenize each segment into words, preserving parenthesized types
       tokenizedSegments = map (tokenizeTypeSegment . Text.strip) nonEmptySegments
-      -- Flatten and insert "->" between segments
-      result = case tokenizedSegments of
-                 [] -> []
-                 [singleSegment] -> singleSegment  -- No arrows, return tokens from single segment
-                 multipleSegments -> List.intercalate ["->"] multipleSegments  -- Insert arrows between segments
-      _ = trace ("[DEBUG tokenize] result=" ++ show result) ()
-  in result
+  in case tokenizedSegments of
+       [] -> []
+       [singleSegment] -> singleSegment
+       multipleSegments -> List.intercalate ["->"] multipleSegments
 
 
 -- Tokenize a single type segment into words, preserving parenthesized expressions
@@ -566,9 +549,7 @@ tokenizeTypeSegment segment =
 -- Split tokens at top-level arrow (not inside parentheses)
 splitAtArrow :: [String] -> Maybe ([String], [String])
 splitAtArrow tokens =
-  let result = go tokens 0 []
-      _ = unsafePerformIO (IO.hPutStrLn IO.stderr ("[DEBUG splitAtArrow] tokens=" ++ show tokens ++ " result=" ++ show result))
-  in result
+  go tokens 0 []
   where
     go :: [String] -> Int -> [String] -> Maybe ([String], [String])
     go [] _ _ = Nothing
@@ -652,15 +633,11 @@ parseOneType env homeModuleName ("Capability.Available" : rest) = do
 -- Handle tuples: ["(", ..., ",", ..., ")"]
 parseOneType env homeModuleName ("(" : rest) = do
   let (tupleTokens, afterParen) = span (/= ")") rest
-      _ = unsafePerformIO (IO.hPutStrLn IO.stderr ("[DEBUG parseOneType TUPLE] tupleTokens=" ++ show tupleTokens ++ " afterParen=" ++ show (take 2 afterParen)))
   case afterParen of
     (")" : remaining) -> do
-      -- Parse tuple elements separated by commas
       let elements = splitTupleTokens tupleTokens
-          _ = unsafePerformIO (IO.hPutStrLn IO.stderr ("[DEBUG parseOneType TUPLE] elements=" ++ show elements))
       parsedElements <- mapM (parseOneType env homeModuleName) elements
       let types = map fst parsedElements
-          _ = unsafePerformIO (IO.hPutStrLn IO.stderr ("[DEBUG parseOneType TUPLE] parsedTypes count=" ++ show (length types)))
       case types of
         [] -> Just (Can.TUnit, remaining)
         [single] -> Just (single, remaining)
@@ -684,7 +661,6 @@ parseOneType env homeModuleName (t : rest) = Just (parseBasicTypeWithHome env ho
 -- Parse complex types with home module context
 parseComplexTypeWithHome :: Env.Env -> ModuleName.Canonical -> [String] -> Can.Type
 parseComplexTypeWithHome env homeModuleName tokens =
-  unsafePerformIO (IO.hPutStrLn IO.stderr ("[DEBUG parseComplexTypeWithHome] tokens=" ++ show tokens)) `seq`
   case parseOneType env homeModuleName tokens of
     Just (tipe, []) -> tipe
     Just (tipe, _rest) -> tipe  -- Use only the first type, ignore rest
@@ -705,8 +681,7 @@ parseBasicTypeWithHome env homeModuleName typeName =
         other -> other
       -- Check if unparenthesized string contains spaces (complex type) BUT NOT if it's a tuple
       isComplexType = ' ' `elem` unparenthesized && unparenthesized /= "()" && not isTuple
-  in unsafePerformIO (BS.hPutStrLn IO.stderr (BS.pack ("[DEBUG parseBasicType] input=" ++ show typeName ++ " unparenthesized=" ++ show unparenthesized ++ " isTuple=" ++ show isTuple ++ " isComplex=" ++ show isComplexType)) >> return ()) `seq`
-     if isTuple
+  in if isTuple
        then parseTupleString env homeModuleName trimmedName
        else if isComplexType
          then parseComplexTypeWithHome env homeModuleName (tokenizeTypeSegment (Text.pack unparenthesized))
@@ -723,10 +698,7 @@ parseBasicTypeWithHome env homeModuleName typeName =
     tupleStr | isTupleString tupleStr -> parseTupleString env homeModuleName tupleStr
 
     -- Task type (from Task module in core package)
-    "Task" ->
-      let taskType = Can.TType ModuleName.task (Name.fromChars "Task") []
-          _ = trace ("[DEBUG Task Basic] Creating bare Task type: module=" ++ show ModuleName.task) ()
-      in taskType
+    "Task" -> Can.TType ModuleName.task (Name.fromChars "Task") []
 
     -- Result type (from Result module in core package)
     "Result" -> Can.TType ModuleName.result (Name.fromChars "Result") []
@@ -750,7 +722,6 @@ parseBasicTypeWithHome env homeModuleName typeName =
           resolvedModule = case homeModuleName of
             ModuleName.Canonical pkg _ -> ModuleName.Canonical pkg (Name.fromChars moduleNameStr)
           resultType = Can.TType resolvedModule (Name.fromChars typeNamePart) []
-          _ = unsafePerformIO (IO.hPutStrLn IO.stderr ("[DEBUG parseBasicType QUALIFIED] input=" ++ show qualifiedType ++ " typeNamePart=" ++ show typeNamePart ++ " resolvedModule=" ++ show resolvedModule))
       in resultType
 
     -- Custom opaque types (AudioContext, OscillatorNode, GainNode, etc.)

@@ -20,6 +20,7 @@ import qualified Text.Parsec.Error as Parsec
 
 import qualified AST.Source as Src
 import qualified AST.Utils.Shader as Shader
+import qualified Reporting.InternalError as InternalError
 import Parse.Primitives (Parser, Row, Col)
 import qualified Parse.Primitives as P
 import qualified Reporting.Annotation as A
@@ -150,7 +151,10 @@ addInput (qual, tipe, name) glDecls =
     GLS.Attribute -> glDecls { Shader._attribute = Map.insert (Name.fromChars name) tipe (Shader._attribute glDecls) }
     GLS.Uniform   -> glDecls { Shader._uniform = Map.insert (Name.fromChars name) tipe (Shader._uniform glDecls) }
     GLS.Varying   -> glDecls { Shader._varying = Map.insert (Name.fromChars name) tipe (Shader._varying glDecls) }
-    _             -> error "Should never happen due to `extractInputs` function"
+    _             -> InternalError.report
+      "Parse.Shader.addInput"
+      "unexpected storage qualifier in addInput"
+      "addInput only handles Attribute, Uniform, and Varying qualifiers. The extractInputs function should filter out all other qualifier types before reaching this point."
 
 
 extractInputs :: GLS.ExternalDeclaration -> [(GLS.StorageQualifier, Shader.Type, String)]

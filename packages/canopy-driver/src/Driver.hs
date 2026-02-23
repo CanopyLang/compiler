@@ -53,6 +53,7 @@ import qualified Queries.Type.Check as TypeQuery
 import qualified Query.Engine as Engine
 import Query.Simple
 import qualified Worker.Pool as Pool
+import qualified Debug.Trace
 import qualified Parse.Module as Parse
 import qualified Reporting.Annotation as A
 
@@ -220,13 +221,18 @@ buildFFIInfoList foreignImports contentMap =
   concatMap (buildSingleFFI contentMap) foreignImports
 
 -- | Build FFIInfo for a single import.
+--
+-- Uses 'Debug.Trace.trace' to emit a warning when the referenced JavaScript
+-- file is missing from the content map, rather than silently producing an
+-- empty result. This makes missing FFI files visible during compilation.
 buildSingleFFI :: Map String String -> Src.ForeignImport -> [(String, FFIInfo)]
 buildSingleFFI contentMap (Src.ForeignImport (FFI.JavaScriptFFI jsPath) alias _region) =
   case Map.lookup jsPath contentMap of
     Just content ->
       let aliasStr = Name.toChars (A.toValue alias)
        in [(jsPath, FFIInfo jsPath content aliasStr)]
-    Nothing -> []
+    Nothing ->
+      Debug.Trace.trace ("[WARNING] FFI file not found: " ++ jsPath ++ " — the foreign import will be ignored") []
 buildSingleFFI _ _ = []
 
 -- | Run canonicalize phase.

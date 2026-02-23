@@ -17,6 +17,7 @@ import qualified Data.Index as Index
 import qualified Data.Map as Map
 import qualified Data.Name as Name
 import qualified Optimize.Names as Names
+import qualified Reporting.InternalError as InternalError
 import Prelude hiding (maybe, null)
 
 -- ENCODE
@@ -27,9 +28,15 @@ toEncoder tipe =
     Can.TAlias _ _ args alias ->
       toEncoder (Type.dealias args alias)
     Can.TLambda _ _ ->
-      error "toEncoder: function"
+      InternalError.report
+        "Optimize.Port.toEncoder"
+        "function type reached port encoder"
+        "Functions cannot be serialized through ports. The type checker must reject function types in port signatures before optimization reaches this code."
     Can.TVar _ ->
-      error "toEncoder: type variable"
+      InternalError.report
+        "Optimize.Port.toEncoder"
+        "type variable reached port encoder"
+        "Unconstrained type variables cannot be serialized through ports. The type checker must fully resolve port types before optimization reaches this code."
     Can.TUnit ->
       Opt.Function [Name.dollar] <$> encode "null"
     Can.TTuple a b c ->
@@ -47,9 +54,15 @@ toEncoder tipe =
           | name == Name.list -> encodeList arg
           | name == Name.array -> encodeArray arg
         _ ->
-          error "toEncoder: bad custom type"
+          InternalError.report
+            "Optimize.Port.toEncoder"
+            "unsupported custom type reached port encoder"
+            "The port encoder only handles built-in types (Int, Float, Bool, String, Maybe, List, Array) and records. Custom type aliases or unexpected type applications should have been rejected by the type checker."
     Can.TRecord _ (Just _) ->
-      error "toEncoder: bad record"
+      InternalError.report
+        "Optimize.Port.toEncoder"
+        "extensible record type reached port encoder"
+        "Extensible records (records with a row variable) cannot be serialized through ports. The type checker must reject extensible record types in port signatures."
     Can.TRecord fields Nothing ->
       let encodeField (name, Can.FieldType _ fieldType) =
             do
@@ -126,9 +139,15 @@ toDecoder :: Can.Type -> Names.Tracker Opt.Expr
 toDecoder tipe =
   case tipe of
     Can.TLambda _ _ ->
-      error "functions should not be allowed through input ports"
+      InternalError.report
+        "Optimize.Port.toDecoder"
+        "function type reached port decoder"
+        "Functions cannot be received through input ports. The type checker must reject function types in port signatures before optimization reaches this code."
     Can.TVar _ ->
-      error "type variables should not be allowed through input ports"
+      InternalError.report
+        "Optimize.Port.toDecoder"
+        "type variable reached port decoder"
+        "Unconstrained type variables cannot be received through input ports. The type checker must fully resolve port types before optimization reaches this code."
     Can.TAlias _ _ args alias ->
       toDecoder (Type.dealias args alias)
     Can.TUnit ->
@@ -148,9 +167,15 @@ toDecoder tipe =
           | name == Name.list -> decodeList arg
           | name == Name.array -> decodeArray arg
         _ ->
-          error "toDecoder: bad type"
+          InternalError.report
+            "Optimize.Port.toDecoder"
+            "unsupported type reached port decoder"
+            "The port decoder only handles built-in types (Int, Float, Bool, String, Value, Maybe, List, Array) and records. Unexpected type applications should have been rejected by the type checker."
     Can.TRecord _ (Just _) ->
-      error "toDecoder: bad record"
+      InternalError.report
+        "Optimize.Port.toDecoder"
+        "extensible record type reached port decoder"
+        "Extensible records (records with a row variable) cannot be received through input ports. The type checker must reject extensible record types in port signatures."
     Can.TRecord fields Nothing ->
       decodeRecord fields
 

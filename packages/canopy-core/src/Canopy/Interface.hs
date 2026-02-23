@@ -26,9 +26,10 @@ import qualified Data.Aeson as Aeson
 import Data.Aeson.Types (Parser)
 import Data.Binary
 import qualified Data.Map.Merge.Strict as Map
-import Data.Map.Strict ((!))
 import qualified Data.Map.Strict as Map
 import qualified Data.Name as Name
+import qualified Data.Text as Text
+import qualified Reporting.InternalError as InternalError
 import qualified Reporting.Annotation as A
 
 -- INTERFACE
@@ -83,7 +84,15 @@ restrict exports dict =
 
 toOp :: Map.Map Name.Name Can.Annotation -> Can.Binop -> Binop
 toOp types (Can.Binop_ associativity precedence name) =
-  Binop name (types ! name) associativity precedence
+  Binop
+    name
+    ( maybe
+        (InternalError.report "Canopy.Interface.toOp" ("Annotation missing for binop: " <> Text.pack (show name)) "Every binary operator must have a type annotation in the values map.")
+        id
+        (Map.lookup name types)
+    )
+    associativity
+    precedence
 
 restrictUnions :: Can.Exports -> Map.Map Name.Name Can.Union -> Map.Map Name.Name Union
 restrictUnions exports unions =
@@ -99,7 +108,10 @@ restrictUnions exports unions =
           case export of
             Can.ExportUnionOpen -> OpenUnion union
             Can.ExportUnionClosed -> ClosedUnion union
-            _ -> error "impossible exports discovered in restrictUnions"
+            _ -> InternalError.report
+              "Canopy.Interface.restrictUnions"
+              "impossible exports discovered in restrictUnions"
+              "Expected ExportUnionOpen or ExportUnionClosed when zipping exports with unions, but found a non-union export type. This indicates a bug in the module exports analysis."
 
 restrictAliases :: Can.Exports -> Map.Map Name.Name Can.Alias -> Map.Map Name.Name Alias
 restrictAliases exports aliases =

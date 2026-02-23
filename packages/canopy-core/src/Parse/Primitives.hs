@@ -41,6 +41,7 @@ import Foreign.ForeignPtr.Unsafe (unsafeForeignPtrToPtr)
 import Foreign.Ptr (Ptr, plusPtr)
 import Foreign.Storable (peek)
 import qualified Reporting.Annotation as A
+import qualified Reporting.InternalError as InternalError
 import Prelude hiding (length)
 
 -- PARSER
@@ -322,8 +323,14 @@ isWord pos end word =
 getCharWidth :: Word8 -> Int
 getCharWidth word
   | word < 0x80 = 1
-  | word < 0xc0 = error "Need UTF-8 encoded input. Ran into unrecognized bits."
+  | word < 0xc0 = InternalError.report
+      "Parse.Primitives.getCharWidth"
+      "Need UTF-8 encoded input. Ran into unrecognized continuation byte."
+      "Byte values in range 0x80-0xBF are UTF-8 continuation bytes and cannot start a character. The input file may not be valid UTF-8."
   | word < 0xe0 = 2
   | word < 0xf0 = 3
   | word < 0xf8 = 4
-  | otherwise = error "Need UTF-8 encoded input. Ran into unrecognized bits."
+  | otherwise = InternalError.report
+      "Parse.Primitives.getCharWidth"
+      "Need UTF-8 encoded input. Ran into unrecognized leading byte."
+      "Byte values >= 0xF8 are not valid UTF-8 leading bytes. The input file may not be valid UTF-8."

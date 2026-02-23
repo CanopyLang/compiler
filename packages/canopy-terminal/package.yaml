@@ -25,6 +25,7 @@ dependencies:
   - base
   - aeson
   - ansi-terminal
+  - binary
   - ansi-wl-pprint
   - bytestring
   - case-insensitive

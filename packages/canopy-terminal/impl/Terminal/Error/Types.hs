@@ -52,6 +52,7 @@ module Terminal.Error.Types
 where
 
 import Control.Lens (makeLenses)
+import qualified Reporting.InternalError as InternalError
 import Terminal.Internal (CompleteArgs, Flags)
 
 -- | Top-level error type covering all Terminal parsing failures.
@@ -175,14 +176,20 @@ argErrorRank err =
 getTopArgError :: [(CompleteArgs a, ArgError)] -> ArgError
 getTopArgError argErrors =
   case argErrors of
-    [] -> error "getTopArgError: empty error list"
+    [] -> InternalError.report
+      "Terminal.Error.Types.getTopArgError"
+      "empty error list"
+      "getTopArgError requires a non-empty list of argument errors. The caller must ensure at least one error exists before invoking this function."
     _ ->
       let sortedErrors = map snd argErrors
           rankedErrors = map (\e -> (argErrorRank e, e)) sortedErrors
           sortedByRank = sortByRank rankedErrors
        in case sortedByRank of
             (_, topErr) : _ -> topErr
-            [] -> error "impossible: empty list after non-empty input"
+            [] -> InternalError.report
+              "Terminal.Error.Types.getTopArgError"
+              "empty list after non-empty input"
+              "After mapping and sorting a non-empty list of errors, the result should never be empty. This indicates a bug in the sorting logic."
   where
     sortByRank pairs = insertionSort pairs
     insertionSort [] = []

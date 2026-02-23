@@ -28,6 +28,7 @@ import qualified Data.Map.Strict as Map
 import qualified Data.Name as Name
 import qualified Reporting.Annotation as A
 import qualified Reporting.Error.Canonicalize as Error
+import qualified Reporting.InternalError as InternalError
 import qualified Reporting.Result as Result
 import qualified Reporting.Warning as W
 
@@ -538,7 +539,10 @@ gatherTypedArgs env name srcArgs tipe index revTypedArgs =
         _ ->
           let (A.At start _, A.At end _) = case (srcArgs, reverse srcArgs) of
                 (firstArg : _, lastArg : _) -> (firstArg, lastArg)
-                _ -> error "Expected non-empty srcArgs"
+                _ -> InternalError.report
+                  "Canonicalize.Expression.gatherTypedArgs"
+                  "Expected non-empty srcArgs"
+                  "gatherTypedArgs was called with a non-empty srcArgs list, but the (srcArgs, reverse srcArgs) pattern match failed to extract first and last elements. This should be impossible for a non-empty list."
            in Result.throw $
                 Error.AnnotationTooShort (A.mergeRegions start end) name index (length srcArgs)
 

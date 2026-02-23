@@ -26,6 +26,7 @@ import qualified Debug.Logger as Logger
 import Debug.Logger (DebugCategory (..))
 import Query.Simple
 import qualified Reporting.Error.Canonicalize as Error
+import qualified Reporting.InternalError as InternalError
 import qualified Reporting.Result as Result
 
 -- | Execute a canonicalize module query.
@@ -90,8 +91,17 @@ toEmptyWarnings ::
 toEmptyWarnings (Result.Result k) =
   Result.Result
     ( \() w bad good ->
-        k undefined undefined (\_ _ -> bad () w) (\_ _ -> good () w)
+        k phantomInfo phantomWarnings (\_ _ -> bad () w) (\_ _ -> good () w)
     )
+  where
+    phantomInfo = InternalError.report
+      "Queries.Canonicalize.Module.toEmptyWarnings"
+      "phantom info value evaluated"
+      "The initial info accumulator in toEmptyWarnings should never be evaluated. The CPS callbacks discard it. If this fires, it indicates a change in Result internals."
+    phantomWarnings = InternalError.report
+      "Queries.Canonicalize.Module.toEmptyWarnings"
+      "phantom warnings value evaluated"
+      "The initial warnings accumulator in toEmptyWarnings should never be evaluated. The CPS callbacks discard it. If this fires, it indicates a change in Result internals."
 
 -- | Convert canonicalization errors to QueryError.
 processErrors :: OneOrMore.OneOrMore Error.Error -> QueryError

@@ -96,6 +96,7 @@ import Terminal.Internal
     Parser (..),
     RequiredArgs (..),
   )
+import qualified Reporting.InternalError as InternalError
 import qualified Text.Read as Read
 
 -- | Create custom parser with validation and completion.
@@ -236,7 +237,10 @@ zeroOrMore parser = Args [Multiple (Done id) parser]
 oneOrMore :: Parser a -> Args (a, [a])
 oneOrMore parser = Args [Multiple (Done extractFirstAndRest) parser]
   where
-    extractFirstAndRest [] = error "oneOrMore: empty list should not occur in Multiple context"
+    extractFirstAndRest [] = InternalError.report
+      "Terminal.Parser.oneOrMore"
+      "empty list should not occur in Multiple context"
+      "The Multiple argument parser guarantees at least one element was parsed, so extractFirstAndRest should never receive an empty list."
     extractFirstAndRest (x : xs) = (x, xs)
 
 -- | Alternative argument patterns.

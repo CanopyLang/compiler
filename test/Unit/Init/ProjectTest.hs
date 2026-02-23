@@ -89,7 +89,7 @@ outlineConfigTests =
 
         case outline of
           Outline.App appOutline -> do
-            let Outline.AppOutline _ sourceDirs directs indirects testDeps _ _ = appOutline
+            let Outline.AppOutline _ sourceDirs _ _ directs _ testDeps = appOutline
             -- Verify source directories
             case sourceDirs of
               (Outline.RelativeSrcDir first : _) ->
@@ -126,7 +126,7 @@ outlineConfigTests =
             outline = Project.createOutlineConfig context allSolverDeps
 
         case outline of
-          Outline.App (Outline.AppOutline _ _ directs indirects _ _ _) -> do
+          Outline.App (Outline.AppOutline _ _ _ _ directs indirects _) -> do
             Map.member Pkg.core directs @?= True
             Map.member Pkg.browser indirects @?= True
             Map.member Pkg.browser directs @?= False
@@ -261,7 +261,7 @@ integrationTests =
             outline = Project.createOutlineConfig context solverDetails
 
         case outline of
-          Outline.App (Outline.AppOutline compiler sourceDirs directs _ testDeps _ _) -> do
+          Outline.App (Outline.AppOutline compiler sourceDirs _ _ directs _ testDeps) -> do
             -- Should use current compiler version
             compiler @?= V.compiler
 
@@ -286,7 +286,7 @@ integrationTests =
             outline = Project.createOutlineConfig customContext solverDetails
 
         case outline of
-          Outline.App (Outline.AppOutline _ sourceDirs _ _ testDeps _ _) -> do
+          Outline.App (Outline.AppOutline _ sourceDirs _ _ _ _ testDeps) -> do
             -- Should have custom source directories
             case sourceDirs of
               [Outline.RelativeSrcDir "app", Outline.RelativeSrcDir "shared"] -> pure ()
@@ -323,7 +323,7 @@ errorHandlingTests =
             outline = Project.createOutlineConfig context Map.empty
 
         case outline of
-          Outline.App (Outline.AppOutline _ _ directs indirects _ _ _) -> do
+          Outline.App (Outline.AppOutline _ _ _ _ directs indirects _) -> do
             -- Should have empty dependencies
             Map.null directs @?= True
             Map.null indirects @?= True

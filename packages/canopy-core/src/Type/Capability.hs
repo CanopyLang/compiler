@@ -116,28 +116,35 @@ data CapabilityRequirement = CapabilityRequirement
     -- ^ Capabilities that provide enhanced functionality but aren't required
   } deriving (Eq, Show)
 
--- | Check if capability constraints are satisfied in a given context
+-- | Check if capability constraints are satisfied in a given context.
+--
+-- Returns 'Right ()' if all required capabilities are available,
+-- or 'Left CapabilityError' with the first missing capability.
 checkCapabilityConstraints ::
-  Set Capability                    -- ^ Available capabilities in current context
+  Name.Name                         -- ^ Function name being checked
+  -> Set Capability                 -- ^ Available capabilities in current context
   -> CapabilityConstraint           -- ^ Required capabilities
   -> Either CapabilityError ()
-checkCapabilityConstraints availableCapabilities constraint =
+checkCapabilityConstraints funcName availableCapabilities constraint =
   let required = _constraintCapabilities constraint
       missing = Set.difference required availableCapabilities
   in if Set.null missing
      then Right ()
      else Left $ MissingCapability
-       { _missingCapability = Set.findMin missing  -- Report first missing capability
+       { _missingCapability = Set.findMin missing
        , _missingLocation = _constraintLocation constraint
-       , _missingFunction = Name.fromChars "unknown"  -- TODO: pass function name
+       , _missingFunction = funcName
        , _missingReason = _constraintReason constraint
        }
 
--- | Infer capability requirements from a function type signature
+-- | Infer capability requirements from a function type signature.
+--
+-- Currently returns empty requirements because Canopy's capability system
+-- uses JSDoc annotations (@capability) on FFI functions rather than
+-- encoding capabilities in the type system. Type-level capability
+-- inference may be added in a future version.
 inferCapabilityRequirements :: Type.Type -> CapabilityRequirement
 inferCapabilityRequirements _functionType =
-  -- TODO: Analyze function type to extract capability constraints
-  -- This would walk the type structure looking for capability annotations
   CapabilityRequirement
     { _reqCapabilities = Set.empty
     , _reqAcquisitionOrder = []

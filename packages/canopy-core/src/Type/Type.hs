@@ -50,6 +50,7 @@ import qualified Data.Name as Name
 import Data.Word (Word32)
 import qualified Reporting.Annotation as A
 import qualified Reporting.Error.Type as E
+import qualified Reporting.InternalError as InternalError
 import qualified Type.Error as ET
 import qualified Type.UnionFind as UF
 
@@ -313,7 +314,10 @@ variableToCanType variable =
           canType <- variableToCanType realVariable
           return (Can.TAlias home name canArgs (Can.Filled canType))
       Error ->
-        error "cannot handle Error types in variableToCanType"
+        InternalError.report
+          "Type.Type.variableToCanType"
+          "cannot handle Error types in variableToCanType"
+          "Error type variables should only appear after type checking has already reported errors. If variableToCanType is called on an Error variable, it means the caller is processing error-state types, which is not supported."
 
 termToCanType :: FlatType -> StateT NameState IO Can.Type
 termToCanType term =
@@ -337,7 +341,10 @@ termToCanType term =
             Can.TVar name ->
               Can.TRecord canFields (Just name)
             _ ->
-              error "Used toAnnotation on a type that is not well-formed"
+              InternalError.report
+                "Type.Type.termToCanType"
+                "Used toAnnotation on a type that is not well-formed"
+                "When converting a record type with an extension variable, the extension must unify to either a record, a flexible variable, or a rigid variable. Any other result indicates a type unification invariant was violated."
     Unit1 ->
       return Can.TUnit
     Tuple1 a b maybeC ->
@@ -446,7 +453,10 @@ termToErrorType term =
             ET.RigidVar ext ->
               ET.Record errFields (ET.RigidOpen ext)
             _ ->
-              error "Used toErrorType on a type that is not well-formed"
+              InternalError.report
+                "Type.Type.termToErrorType"
+                "Used toErrorType on a type that is not well-formed"
+                "When converting a record type with an extension variable to an error type, the extension must unify to either a record, a flexible variable, or a rigid variable. Any other result indicates a type unification invariant was violated."
     Unit1 ->
       return ET.Unit
     Tuple1 a b maybeC ->

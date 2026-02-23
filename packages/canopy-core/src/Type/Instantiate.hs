@@ -8,9 +8,11 @@ module Type.Instantiate
 where
 
 import qualified AST.Canonical as Can
-import Data.Map.Strict (Map, (!))
+import Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
 import qualified Data.Name as Name
+import qualified Data.Text as Text
+import qualified Reporting.InternalError as InternalError
 import Type.Type
 
 -- FREE VARS
@@ -28,7 +30,10 @@ fromSrcType freeVars sourceType =
         <$> fromSrcType freeVars arg
         <*> fromSrcType freeVars result
     Can.TVar name ->
-      return (freeVars ! name)
+      maybe
+        (InternalError.report "Type.Instantiate.fromSrcType" ("Free type variable not found: " <> Text.pack (show name)) "All type variables referenced in a type must be bound in the freeVars map at the point of instantiation.")
+        return
+        (Map.lookup name freeVars)
     Can.TType home name args ->
       AppN home name <$> traverse (fromSrcType freeVars) args
     Can.TAlias home name args aliasedType ->
@@ -54,7 +59,10 @@ fromSrcType freeVars sourceType =
           Nothing ->
             return EmptyRecordN
           Just ext ->
-            return (freeVars ! ext)
+            maybe
+              (InternalError.report "Type.Instantiate.fromSrcType" ("Extension variable not found: " <> Text.pack (show ext)) "All record extension variables must be bound in the freeVars map at the point of instantiation.")
+              return
+              (Map.lookup ext freeVars)
 
 fromSrcFieldType :: Map.Map Name.Name Type -> Can.FieldType -> IO Type
 fromSrcFieldType freeVars (Can.FieldType _ tipe) =

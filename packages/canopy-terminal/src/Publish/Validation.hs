@@ -35,6 +35,7 @@ where
 import BackgroundWriter (Scope)
 import qualified BackgroundWriter as BW
 import qualified Build
+import qualified Build.Docs as BuildDocs
 import Canopy.Details (Details)
 import qualified Canopy.Details as Details
 import Canopy.Docs (Documentation)
@@ -47,7 +48,6 @@ import Canopy.Version (Version)
 import qualified Canopy.Version as Version
 import Control.Lens ((^.))
 import Control.Monad (when)
-import qualified Data.Map as Map
 import Data.NonEmptyList (List)
 import qualified Data.NonEmptyList as NE
 import qualified Data.Text as Text
@@ -206,11 +206,7 @@ extractExposedModules (Details.Details _ outline _ _ _ _) =
 buildPackageWithDocs :: FilePath -> Details -> List Raw -> Task Publish Documentation
 buildPackageWithDocs projectRoot details exposed = do
   result <- Task.io (Build.fromExposed (Build.ExposedBuildConfig Reporting.silent projectRoot details Build.IgnoreDocs) exposed)
-  case result of
-    Left err -> Task.throw (Exit.PublishBuildProblem err)
-    Right _artifacts -> pure stubDocumentation
-  where
-    stubDocumentation = Map.empty -- Stub: should generate docs from artifacts
+  either (Task.throw . Exit.PublishBuildProblem) (pure . BuildDocs.docsFromArtifacts) result
 
 -- | Verify that the version follows semantic versioning rules.
 --
