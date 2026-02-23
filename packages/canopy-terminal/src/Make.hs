@@ -161,11 +161,12 @@ executeBuildStrategy ::
   Maybe FilePath ->
   Maybe Output ->
   Task ()
-executeBuildStrategy ctx [] maybeDocs _maybeOutput = do
+executeBuildStrategy ctx [] _maybeDocs maybeOutput = do
   Task.io (printLog "Building exposed modules (no paths provided)")
   exposed <- getExposedModules (ctx ^. bcDetails)
   let srcDirs = getSrcDirsFromDetails (ctx ^. bcDetails)
-  buildFromExposed ctx srcDirs exposed maybeDocs
+  artifacts <- buildFromExposed ctx srcDirs exposed
+  generateOutput ctx artifacts maybeOutput
 executeBuildStrategy ctx (p : ps) _maybeDocs maybeOutput = do
   Task.io (printLog ("Building from paths: " <> show (p : ps)))
   artifacts <- buildFromPaths ctx (NE.List p ps)

@@ -124,11 +124,11 @@ data LogConfig = LogConfig
 logConfigRef :: IORef LogConfig
 logConfigRef = unsafePerformIO (parseLogConfig >>= IORef.newIORef)
 
--- | Get logging configuration from the cached IORef.
+-- | Read logging configuration from the cached IORef.
 --
 -- @since 0.19.1
-logConfig :: LogConfig
-logConfig = unsafePerformIO (IORef.readIORef logConfigRef)
+readLogConfig :: IO LogConfig
+readLogConfig = IORef.readIORef logConfigRef
 
 -- | Parse environment variables into configuration.
 parseLogConfig :: IO LogConfig
@@ -226,34 +226,34 @@ parseCategory name =
     _ -> []
 
 -- | Check if logging is enabled globally.
-isLoggingEnabled :: Bool
-isLoggingEnabled = configEnabled logConfig
+isLoggingEnabled :: IO Bool
+isLoggingEnabled = configEnabled <$> readLogConfig
 
 -- | Get currently enabled categories.
-enabledCategories :: [DebugCategory]
-enabledCategories = configCategories logConfig
+enabledCategories :: IO [DebugCategory]
+enabledCategories = configCategories <$> readLogConfig
 
 -- | Get minimum log level.
-minimumLogLevel :: LogLevel
-minimumLogLevel = configLevel logConfig
+minimumLogLevel :: IO LogLevel
+minimumLogLevel = configLevel <$> readLogConfig
 
 -- | Check if a message should be logged.
 --
 -- Returns True if both:
 --   1. The log level meets the minimum threshold
 --   2. The category is enabled (or all categories are enabled)
-shouldLog :: LogLevel -> DebugCategory -> Bool
-shouldLog level category =
-  configEnabled logConfig
-    && level >= minimumLogLevel
-    && (List.null (configCategories logConfig) || category `elem` configCategories logConfig)
+shouldLog :: LogLevel -> DebugCategory -> IO Bool
+shouldLog level category = do
+  cfg <- readLogConfig
+  pure (configEnabled cfg
+    && level >= configLevel cfg
+    && (List.null (configCategories cfg) || category `elem` configCategories cfg))
 
 -- | Format a log message with timestamp and metadata.
-formatLogMessage :: LogLevel -> DebugCategory -> String -> String
-formatLogMessage level category message =
-  "[" ++ timestamp ++ "] [" ++ show level ++ "] [" ++ show category ++ "] " ++ message
-  where
-    timestamp = unsafePerformIO getCurrentTimestamp
+formatLogMessage :: LogLevel -> DebugCategory -> String -> IO String
+formatLogMessage level category message = do
+  ts <- getCurrentTimestamp
+  pure ("[" ++ ts ++ "] [" ++ show level ++ "] [" ++ show category ++ "] " ++ message)
 
 -- | Get current timestamp as formatted string.
 getCurrentTimestamp :: IO String
@@ -267,9 +267,7 @@ getCurrentTimestamp = do
 --
 -- @since 0.19.1
 trace :: DebugCategory -> String -> IO ()
-trace category message
-  | shouldLog TRACE category = putStrLn (formatLogMessage TRACE category message)
-  | otherwise = return ()
+trace = logAtLevel TRACE
 
 -- | Log a DEBUG message.
 --
@@ -277,9 +275,7 @@ trace category message
 --
 -- @since 0.19.1
 debug :: DebugCategory -> String -> IO ()
-debug category message
-  | shouldLog DEBUG category = putStrLn (formatLogMessage DEBUG category message)
-  | otherwise = return ()
+debug = logAtLevel DEBUG
 
 -- | Log an INFO message.
 --
@@ -287,9 +283,7 @@ debug category message
 --
 -- @since 0.19.1
 info :: DebugCategory -> String -> IO ()
-info category message
-  | shouldLog INFO category = putStrLn (formatLogMessage INFO category message)
-  | otherwise = return ()
+info = logAtLevel INFO
 
 -- | Log a WARN message.
 --
@@ -297,9 +291,7 @@ info category message
 --
 -- @since 0.19.1
 warn :: DebugCategory -> String -> IO ()
-warn category message
-  | shouldLog WARN category = putStrLn (formatLogMessage WARN category message)
-  | otherwise = return ()
+warn = logAtLevel WARN
 
 -- | Log an ERROR message.
 --
@@ -307,9 +299,15 @@ warn category message
 --
 -- @since 0.19.1
 errorMsg :: DebugCategory -> String -> IO ()
-errorMsg category message
-  | shouldLog ERROR category = putStrLn (formatLogMessage ERROR category message)
-  | otherwise = return ()
+errorMsg = logAtLevel ERROR
+
+-- | Log at a specific level if enabled.
+logAtLevel :: LogLevel -> DebugCategory -> String -> IO ()
+logAtLevel level category message = do
+  enabled <- shouldLog level category
+  if enabled
+    then formatLogMessage level category message >>= putStrLn
+    else pure ()
 
 -- ** Legacy Compatibility
 
@@ -319,9 +317,11 @@ errorMsg category message
 --
 -- @since 0.19.1
 printLog :: String -> IO ()
-printLog message
-  | isLoggingEnabled = putStrLn ("[LEGACY] " ++ message)
-  | otherwise = return ()
+printLog message = do
+  enabled <- isLoggingEnabled
+  if enabled
+    then putStrLn ("[LEGACY] " ++ message)
+    else pure ()
 
 -- | Legacy setLogFlag function for backward compatibility.
 --

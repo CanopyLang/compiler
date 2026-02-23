@@ -80,20 +80,15 @@ buildFromExposed ::
   BuildContext ->
   [Compiler.SrcDir] ->
   List ModuleName.Raw ->
-  Maybe FilePath ->
-  Task ()
-buildFromExposed ctx srcDirs exposedModules _maybeDocs = do
+  Task Compiler.Artifacts
+buildFromExposed ctx srcDirs exposedModules = do
   let pkg = ctx ^. bcPackage
       root = ctx ^. bcRoot
       details = ctx ^. bcDetails
-      isApp = case details ^. Details.detailsOutline of
-        Details.ValidApp _ -> True
-        Details.ValidPkg _ _ _ -> False
+      isApp = isAppOutline (details ^. Details.detailsOutline)
 
   result <- Task.io $ Compiler.compileFromExposed pkg isApp root srcDirs exposedModules
-  case result of
-    Left err -> Task.throw (Exit.MakeCannotBuild err)
-    Right _artifacts -> return ()
+  either (Task.throw . Exit.MakeCannotBuild) pure result
 
 -- | Build project from specific file paths.
 --
@@ -115,14 +110,10 @@ buildFromPaths ctx paths = do
       root = ctx ^. bcRoot
       details = ctx ^. bcDetails
       srcDirs = map Compiler.RelativeSrcDir (Details._detailsSrcDirs details)
-      isApp = case details ^. Details.detailsOutline of
-        Details.ValidApp _ -> True
-        Details.ValidPkg _ _ _ -> False
+      isApp = isAppOutline (details ^. Details.detailsOutline)
 
   result <- Task.io $ Compiler.compileFromPaths pkg isApp root srcDirs (NonEmptyList.toList paths)
-  case result of
-    Left err -> Task.throw (Exit.MakeCannotBuild err)
-    Right artifacts -> return artifacts
+  either (Task.throw . Exit.MakeCannotBuild) pure result
 
 -- | Create output builder from compiled artifacts.
 --
@@ -284,3 +275,8 @@ isMainModule targetName modul =
   case modul of
     Compiler.Fresh name _ (Opt.LocalGraph maybeMain _ _) ->
       Maybe.isJust maybeMain && name == targetName
+
+-- | Check whether a validated outline is for an application.
+isAppOutline :: Details.ValidOutline -> Bool
+isAppOutline (Details.ValidApp _) = True
+isAppOutline (Details.ValidPkg _ _ _) = False
