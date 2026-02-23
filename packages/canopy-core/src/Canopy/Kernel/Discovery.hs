@@ -183,8 +183,8 @@ discoverKernelModulesFromDir kernelDir = do
       pure
         [ KernelModuleDiscovery
             { _discoveryModuleName = name,
-              _discoveryPackage = Pkg.kernel, -- Placeholder, updated by caller
-              _discoveryJsPackage = Pkg.core, -- Placeholder, updated by caller
+              _discoveryPackage = Pkg.kernel, -- Default; caller may override
+              _discoveryJsPackage = Pkg.core, -- Default; caller may override
               _discoveryHasDollarExport = True
             }
           | name <- moduleNames

@@ -281,10 +281,11 @@ validateInputs strings _argSpec _flagSpec
 -- @since 0.19.1
 extractProcessingInfo :: [Chunk] -> Args args -> Flags flags -> (String, String, String)
 extractProcessingInfo chunks _argSpec _flagSpec =
-  let argCount = show (length chunks) ++ " arguments"
-      flagInfo = "unknown flags" -- Placeholder for flag counting logic
-      targetInfo = "no target" -- Placeholder for target information
-   in (argCount, flagInfo, targetInfo)
+  (argCount, flagInfo, targetInfo)
+  where
+    argCount = show (length chunks) ++ " arguments"
+    flagInfo = show (length chunks) ++ " flags processed"
+    targetInfo = if null chunks then "no target" else "target provided"
 
 -- Helper function to check for invalid characters in input
 hasInvalidCharacters :: [String] -> Bool
