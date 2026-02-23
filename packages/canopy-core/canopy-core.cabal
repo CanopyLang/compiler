@@ -85,6 +85,7 @@ library
       Foreign.FFI
       Foreign.TestGenerator
       Foreign.TestGeneratorNew
+      Format
       Generate.Html
       Generate.JavaScript
       Generate.JavaScript.Builder
