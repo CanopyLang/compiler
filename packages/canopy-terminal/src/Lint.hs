@@ -121,19 +121,28 @@ data LintRule
   | MissingTypeAnnotation
   deriving (Eq, Ord, Show)
 
--- | Description of an auto-fix as a text substitution.
+-- | Description of an auto-fix action.
 --
--- The fixer replaces @_fixOriginal@ with @_fixReplacement@ at the reported
--- region.  The terminal @--fix@ flag applies all fixes whose warnings have
+-- Two modes are supported:
+--
+-- * 'TextReplace' — search-and-replace a literal string with a replacement.
+-- * 'RemoveLines' — delete a contiguous range of lines (1-indexed, inclusive).
+--
+-- The terminal @--fix@ flag applies all fixes whose warnings have
 -- a populated 'LintFix'.
 --
 -- @since 0.19.1
-data LintFix = LintFix
-  { -- | The original text to replace.
-    _fixOriginal :: !String,
-    -- | The replacement text.
-    _fixReplacement :: !String
-  }
+data LintFix
+  = -- | Replace the first occurrence of @_fixOriginal@ with @_fixReplacement@.
+    TextReplace
+      { _fixOriginal :: !String,
+        _fixReplacement :: !String
+      }
+  | -- | Remove lines from @_fixStartLine@ to @_fixEndLine@ (inclusive, 1-indexed).
+    RemoveLines
+      { _fixStartLine :: !Int,
+        _fixEndLine :: !Int
+      }
   deriving (Eq, Show)
 
 -- ENTRY POINT
@@ -229,8 +238,22 @@ applyFixes path warnings = do
 
 -- | Apply a single fix to source text.
 applyOneFix :: String -> LintFix -> String
-applyOneFix source (LintFix original replacement) =
+applyOneFix source (TextReplace original replacement) =
   replaceFirst original replacement source
+applyOneFix source (RemoveLines startLine endLine) =
+  unlines kept
+  where
+    allLines = lines source
+    kept = removeRange startLine endLine allLines
+
+-- | Remove lines in a 1-indexed inclusive range from a list of lines.
+removeRange :: Int -> Int -> [String] -> [String]
+removeRange start end lns =
+  zipWith keepLine [1 ..] lns >>= id
+  where
+    keepLine i l
+      | i >= start && i <= end = []
+      | otherwise = [l]
 
 -- | Replace the first occurrence of @needle@ with @replacement@ in @haystack@.
 replaceFirst :: String -> String -> String -> String
@@ -401,6 +424,8 @@ collectNamesInType t =
     _ -> []
 
 -- | Build the unused-import warning for an import statement.
+--
+-- The auto-fix removes the entire import line range based on the AST region.
 unusedImportWarning :: Src.Import -> LintWarning
 unusedImportWarning (Src.Import (A.At region modName) _ _) =
   LintWarning
@@ -408,8 +433,15 @@ unusedImportWarning (Src.Import (A.At region modName) _ _) =
       _warnRule = UnusedImport,
       _warnMessage =
         "Import of `" ++ Name.toChars modName ++ "` is never used.",
-      _warnFix = Nothing
+      _warnFix = Just (RemoveLines startLine endLine)
     }
+  where
+    (startLine, endLine) = regionLineRange region
+
+-- | Extract the 1-indexed start and end lines from a region.
+regionLineRange :: A.Region -> (Int, Int)
+regionLineRange (A.Region (A.Position startRow _) (A.Position endRow _)) =
+  (fromIntegral startRow, fromIntegral endRow)
 
 -- | Rule: detect @case x of True -> a; False -> b@ patterns.
 --
@@ -686,8 +718,11 @@ printWarning w = do
 
 -- | Print the auto-fix hint for a warning.
 printFix :: LintFix -> IO ()
-printFix (LintFix orig repl) =
+printFix (TextReplace orig repl) =
   putStrLn ("  Fix: replace `" ++ orig ++ "` with `" ++ repl ++ "`")
+printFix (RemoveLines start end)
+  | start == end = putStrLn ("  Fix: remove line " ++ show start)
+  | otherwise = putStrLn ("  Fix: remove lines " ++ show start ++ "-" ++ show end)
 
 -- | Render a source region as a human-readable @line:col-line:col@ string.
 renderRegion :: A.Region -> String

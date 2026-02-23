@@ -1,29 +1,20 @@
 {-# LANGUAGE OverloadedStrings #-}
 {-# OPTIONS_GHC -Wall #-}
 
--- | Website integration stub for Terminal.
+-- | URL construction utilities for the package registry website.
 --
--- Minimal stub for package website operations. The OLD module handled
--- communication with package.elm-lang.org.
+-- Provides URL routing helpers for constructing API endpoints on
+-- @package.elm-lang.org@. Used by the publish and diff commands to
+-- build download and documentation URLs.
 --
 -- @since 0.19.1
 module Deps.Website
-  ( -- * Website Operations
-    getVersions,
-    publish,
+  ( -- * URL Construction
     route,
   )
 where
 
 import qualified Data.List as List
-
--- | Get package versions from website (stub).
-getVersions :: a -> IO (Either String ())
-getVersions _ = pure (Right ())
-
--- | Publish package to website (stub).
-publish :: a -> b -> c -> IO (Either String ())
-publish _ _ _ = pure (Right ())
 
 -- | Create a URL route with query parameters.
 --
@@ -31,10 +22,12 @@ publish _ _ _ = pure (Right ())
 --
 -- @since 0.19.1
 route :: String -> String -> [(String, String)] -> String
-route baseUrl path params =
-  let url = baseUrl ++ path
-      queryString = buildQueryString params
-   in if null queryString then url else url ++ "?" ++ queryString
+route baseUrl path params
+  | null queryString = url
+  | otherwise = url ++ "?" ++ queryString
+  where
+    url = baseUrl ++ path
+    queryString = buildQueryString params
 
 -- Helper: Build query string from parameters.
 buildQueryString :: [(String, String)] -> String
