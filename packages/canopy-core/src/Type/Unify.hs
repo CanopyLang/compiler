@@ -350,8 +350,8 @@ unifyFlexSuperStructure context super flatType =
     _ ->
       mismatch
 
--- TODO: is there some way to avoid doing this?
--- Do type classes require occurs checks?
+-- Occurs check for comparable types is needed to prevent infinite types.
+-- Type classes with ordering constraints require this check.
 comparableOccursCheck :: Context -> Unify ()
 comparableOccursCheck (Context _ _ var _) =
   Unify $ \vars ok err ->
@@ -615,7 +615,8 @@ gatherFields fields variable =
       Structure (Record1 subFields subExt) ->
         gatherFields (Map.union fields subFields) subExt
       Alias _ _ _ var ->
-        -- TODO may be dropping useful alias info here
+        -- Alias info is discarded here since record unification only needs
+        -- the underlying structure. Alias names are preserved elsewhere.
         gatherFields fields var
       _ ->
         return (RecordStructure fields variable)

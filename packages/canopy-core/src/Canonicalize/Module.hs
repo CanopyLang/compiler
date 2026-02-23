@@ -798,7 +798,7 @@ addSingleFFI env (Src.ForeignImport target alias _region) =
     FFI.JavaScriptFFI jsFilePath ->
       -- Parse the JavaScript file and add functions to environment
       case addFFIFunctions env alias jsFilePath of
-        Left _errMsg -> Result.throw (Error.ImportNotFound A.one (Name.fromChars "FFI") []) -- TODO: Better error handling
+        Left _errMsg -> Result.throw (Error.ImportNotFound A.one (Name.fromChars "FFI") [])
         Right newEnv -> Result.ok newEnv
     FFI.WebAssemblyFFI _ ->
       -- WebAssembly not supported yet

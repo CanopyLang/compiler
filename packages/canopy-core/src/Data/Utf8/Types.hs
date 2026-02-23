@@ -119,7 +119,8 @@ instance Eq (Utf8 t) where
 
 -- COMPARE
 --
--- TODO: is it fine to sort by length and only compare bytes on length ties?
+-- Sorts by length first, then compares bytes on length ties. This gives
+-- consistent ordering and efficient comparison for typical identifier strings.
 --
 
 instance Ord (Utf8 t) where

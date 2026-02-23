@@ -73,5 +73,6 @@ deciderHasDebug decider =
     Opt.Chain _ success failure -> deciderHasDebug success || deciderHasDebug failure
     Opt.FanOut _ tests fallback -> any (deciderHasDebug . snd) tests || deciderHasDebug fallback
 
--- TODO: FIND GLOBALLY UNUSED DEFINITIONS?
--- TODO: FIND PACKAGE USAGE STATS? (e.g. canopy/core = 142, author/project = 2, etc.)
+-- Future analysis opportunities:
+-- * Globally unused definition detection
+-- * Package usage statistics (e.g. canopy/core = 142 uses)

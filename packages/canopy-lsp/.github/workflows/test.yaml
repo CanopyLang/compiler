@@ -1,0 +1,52 @@
+name: Lint and test
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+
+jobs:
+  build:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macOS-latest]
+        node-version: [18, 20]
+
+    steps:
+      - uses: actions/checkout@v4
+      - name: Lint and test with ${{ matrix.node-version }}
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node-version }}
+      - name: npm ci, build, lint and test
+        run: |
+          npm ci
+          npm run compile
+          npm run lint
+          npm test
+        env:
+          CI: true
+      - name: Coveralls GitHub Action
+        uses: coverallsapp/github-action@v2.3.6
+        with:
+          parallel: true
+          github-token: ${{ secrets.github_token }}
+      - name: run and print version
+        run: |
+          npm link
+          elm-language-server --version
+
+  finish:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Close parallel build
+        uses: coverallsapp/github-action@v2.3.6
+        with:
+          parallel-finished: true
+          github-token: ${{ secrets.github_token }}

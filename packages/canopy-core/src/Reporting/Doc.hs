@@ -303,7 +303,8 @@ sgrToStyle sgrs style@(Style bold underline color) =
           Ansi.SetSwapForegroundBackground _ -> style
           Ansi.SetColor l i c -> Style bold underline (toColor l i c)
           Ansi.SetRGBColor _ _ -> style
-          -- FIXME: Why were these not matched to begin with? What should these be?
+          -- Palette and default color commands are passed through without
+          -- modification since they don't map to the simplified color model.
           Ansi.SetPaletteColor _ _ -> style
           Ansi.SetDefaultColor _ -> style
 

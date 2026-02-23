@@ -1,0 +1,223 @@
+{
+  "$schema": "./packages.schema.json",
+  "version": "1.0.0",
+  "description": "Configuration for generating Canopy packages from WebIDL",
+
+  "packages": {
+    "canopy/web-dom": {
+      "version": "1.0.0",
+      "summary": "Low-level DOM bindings generated from WebIDL",
+      "description": "Type-safe bindings to the DOM API, including Element, Node, Document, Events, and more. Generated from official W3C/WHATWG WebIDL specifications.",
+      "modulePrefix": "Dom",
+      "specs": ["dom", "html", "cssom-view", "uievents", "geometry"],
+      "interfaces": {
+        "include": [
+          "Node", "Element", "HTMLElement", "Document", "Window",
+          "Event", "EventTarget", "CustomEvent",
+          "MouseEvent", "KeyboardEvent", "FocusEvent", "InputEvent",
+          "DOMRect", "DOMRectReadOnly", "DOMMatrix",
+          "NodeList", "HTMLCollection", "NamedNodeMap",
+          "Attr", "Text", "Comment", "DocumentFragment",
+          "Range", "Selection", "TreeWalker", "NodeIterator",
+          "MutationObserver", "MutationRecord",
+          "IntersectionObserver", "IntersectionObserverEntry",
+          "ResizeObserver", "ResizeObserverEntry"
+        ],
+        "exclude": [
+          "HTMLUnknownElement"
+        ]
+      },
+      "typeMapping": {
+        "HTMLElement": "Element",
+        "HTMLDivElement": "Element",
+        "HTMLSpanElement": "Element",
+        "HTMLInputElement": "InputElement",
+        "HTMLButtonElement": "ButtonElement",
+        "HTMLFormElement": "FormElement",
+        "HTMLAnchorElement": "AnchorElement",
+        "HTMLImageElement": "ImageElement",
+        "HTMLCanvasElement": "CanvasElement",
+        "HTMLVideoElement": "VideoElement",
+        "HTMLAudioElement": "AudioElement"
+      }
+    },
+
+    "canopy/web-fetch": {
+      "version": "1.0.0",
+      "summary": "HTTP client using the Fetch API",
+      "description": "Modern HTTP client bindings based on the Fetch API. Provides Request, Response, Headers, and streaming support.",
+      "modulePrefix": "Fetch",
+      "specs": ["fetch", "streams"],
+      "interfaces": {
+        "include": [
+          "Request", "Response", "Headers", "Body",
+          "ReadableStream", "WritableStream", "TransformStream",
+          "ReadableStreamDefaultReader", "ReadableStreamBYOBReader",
+          "WritableStreamDefaultWriter",
+          "AbortController", "AbortSignal",
+          "Blob", "File", "FormData", "URLSearchParams"
+        ]
+      }
+    },
+
+    "canopy/web-audio": {
+      "version": "1.0.0",
+      "summary": "Web Audio API bindings",
+      "description": "Complete bindings for the Web Audio API, enabling audio processing, synthesis, and analysis.",
+      "modulePrefix": "Audio",
+      "specs": ["webaudio"],
+      "interfaces": {
+        "include": [
+          "AudioContext", "OfflineAudioContext", "BaseAudioContext",
+          "AudioNode", "AudioParam", "AudioBuffer", "AudioBufferSourceNode",
+          "GainNode", "DelayNode", "BiquadFilterNode", "WaveShaperNode",
+          "OscillatorNode", "AnalyserNode", "ConvolverNode", "DynamicsCompressorNode",
+          "PannerNode", "StereoPannerNode", "ChannelSplitterNode", "ChannelMergerNode",
+          "MediaElementAudioSourceNode", "MediaStreamAudioSourceNode",
+          "AudioDestinationNode", "AudioListener", "AudioWorklet", "AudioWorkletNode"
+        ]
+      }
+    },
+
+    "canopy/web-storage": {
+      "version": "1.0.0",
+      "summary": "Client-side storage APIs",
+      "description": "Bindings for localStorage, sessionStorage, IndexedDB, and the File API.",
+      "modulePrefix": "Storage",
+      "specs": ["storage", "indexeddb", "FileAPI"],
+      "interfaces": {
+        "include": [
+          "Storage", "StorageManager", "StorageEstimate",
+          "IDBFactory", "IDBDatabase", "IDBObjectStore", "IDBIndex",
+          "IDBCursor", "IDBTransaction", "IDBRequest", "IDBKeyRange",
+          "File", "FileList", "FileReader", "Blob"
+        ]
+      }
+    },
+
+    "canopy/web-canvas": {
+      "version": "1.0.0",
+      "summary": "Canvas 2D and WebGL bindings",
+      "description": "Bindings for 2D canvas drawing and WebGL graphics rendering.",
+      "modulePrefix": "Canvas",
+      "specs": ["html", "webgl1", "webgl2"],
+      "interfaces": {
+        "include": [
+          "CanvasRenderingContext2D", "OffscreenCanvas", "OffscreenCanvasRenderingContext2D",
+          "ImageData", "ImageBitmap", "Path2D", "CanvasGradient", "CanvasPattern",
+          "TextMetrics", "ImageBitmapRenderingContext",
+          "WebGLRenderingContext", "WebGL2RenderingContext",
+          "WebGLBuffer", "WebGLFramebuffer", "WebGLProgram", "WebGLRenderbuffer",
+          "WebGLShader", "WebGLTexture", "WebGLUniformLocation", "WebGLActiveInfo"
+        ]
+      }
+    },
+
+    "canopy/web-workers": {
+      "version": "1.0.0",
+      "summary": "Web Workers and Service Workers",
+      "description": "Bindings for background processing with Web Workers and Service Workers.",
+      "modulePrefix": "Worker",
+      "specs": ["html", "service-workers"],
+      "interfaces": {
+        "include": [
+          "Worker", "SharedWorker", "ServiceWorker", "ServiceWorkerContainer",
+          "ServiceWorkerRegistration", "ServiceWorkerGlobalScope",
+          "MessagePort", "MessageChannel", "BroadcastChannel",
+          "Cache", "CacheStorage"
+        ]
+      }
+    },
+
+    "canopy/web-geo": {
+      "version": "1.0.0",
+      "summary": "Geolocation API",
+      "description": "Bindings for accessing device location.",
+      "modulePrefix": "Geo",
+      "specs": ["geolocation"],
+      "interfaces": {
+        "include": [
+          "Geolocation", "GeolocationPosition", "GeolocationCoordinates",
+          "GeolocationPositionError"
+        ]
+      }
+    },
+
+    "canopy/web-notifications": {
+      "version": "1.0.0",
+      "summary": "Notifications and Push API",
+      "description": "Bindings for system notifications and push messaging.",
+      "modulePrefix": "Notify",
+      "specs": ["notifications", "push-api"],
+      "interfaces": {
+        "include": [
+          "Notification", "NotificationEvent",
+          "PushManager", "PushSubscription", "PushMessageData"
+        ]
+      }
+    },
+
+    "canopy/web-clipboard": {
+      "version": "1.0.0",
+      "summary": "Clipboard API",
+      "description": "Bindings for reading and writing to the system clipboard.",
+      "modulePrefix": "Clipboard",
+      "specs": ["clipboard-apis"],
+      "interfaces": {
+        "include": [
+          "Clipboard", "ClipboardItem", "ClipboardEvent"
+        ]
+      }
+    },
+
+    "canopy/web-performance": {
+      "version": "1.0.0",
+      "summary": "Performance measurement APIs",
+      "description": "Bindings for high-resolution timing and performance monitoring.",
+      "modulePrefix": "Perf",
+      "specs": ["hr-time", "performance-timeline", "resource-timing", "user-timing"],
+      "interfaces": {
+        "include": [
+          "Performance", "PerformanceEntry", "PerformanceObserver",
+          "PerformanceMark", "PerformanceMeasure",
+          "PerformanceResourceTiming", "PerformanceNavigationTiming"
+        ]
+      }
+    }
+  },
+
+  "globalConfig": {
+    "outputBase": "../../core-packages",
+    "kernelPrefix": "Canopy.Kernel",
+    "generateTests": true,
+    "includeDocumentation": true,
+
+    "typeMapping": {
+      "boolean": "Bool",
+      "byte": "Int",
+      "octet": "Int",
+      "short": "Int",
+      "unsigned short": "Int",
+      "long": "Int",
+      "unsigned long": "Int",
+      "long long": "Int",
+      "unsigned long long": "Int",
+      "float": "Float",
+      "unrestricted float": "Float",
+      "double": "Float",
+      "unrestricted double": "Float",
+      "DOMString": "String",
+      "USVString": "String",
+      "ByteString": "String",
+      "any": "Value",
+      "object": "Value",
+      "void": "()",
+      "undefined": "()"
+    },
+
+    "promiseMapping": "Task",
+    "nullableMapping": "Maybe",
+    "sequenceMapping": "List",
+    "recordMapping": "Dict"
+  }
+}

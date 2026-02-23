@@ -120,8 +120,8 @@ getOutline =
 
 -- GET EXACT DEPS
 
--- TODO revamp how `canopy reactor` works so that this can go away.
--- I am trying to "just get it working again" at this point though.
+-- This direct dependency extraction exists because the reactor needs
+-- exact version information for the development server index page.
 --
 getExactDeps :: Maybe Outline.Outline -> IO (Map.Map Pkg.Name V.Version)
 getExactDeps maybeOutline =

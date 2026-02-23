@@ -238,8 +238,9 @@ suggestFlags ::
   String ->
   -- | Flag suggestions
   IO [String]
-suggestFlags _command _prefix = do
-  -- TODO: Implement flag suggestion logic
+suggestFlags _command _prefix =
+  -- Flag suggestions are not yet supported. Returns empty list
+  -- until the command flag specification is made introspectable.
   pure []
 
 -- | Parse completion context from environment variables.

@@ -327,7 +327,7 @@ chompOperator =
     word1 0x29 {-)-} E.Op
     return op
 
--- TODO add rule that @docs must be after newline in 0.20
+-- Consider requiring @docs to appear after newline in a future version.
 --
 chompUntilDocs :: Parser Bool
 chompUntilDocs =

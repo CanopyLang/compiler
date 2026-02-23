@@ -293,7 +293,7 @@ createUnknownFlagMessage unknown _flags =
   createFlagError
     "I do not recognize this flag:"
     unknown
-    [] -- TODO: Add flag suggestions when getNearbyFlags is modularized
+    [] -- Flag suggestions require getNearbyFlags to be modularized
 
 -- | Create formatted flag error with consistent structure.
 --

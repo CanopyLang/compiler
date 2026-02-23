@@ -225,7 +225,7 @@ annotation = do
 
 -- | Remove legacy backslash continuation (for 0.19.0 compatibility).
 --
--- TODO: Remove in next major release.
+-- Kept for backward compatibility with 0.19.0 REPL input.
 --
 -- @since 0.19.1
 stripLegacyBackslash :: String -> String

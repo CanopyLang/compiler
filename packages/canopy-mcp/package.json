@@ -1,0 +1,36 @@
+{
+  "name": "@canopy/mcp-server",
+  "version": "0.19.2",
+  "description": "Model Context Protocol server for Canopy language",
+  "type": "module",
+  "main": "dist/index.js",
+  "bin": {
+    "canopy-mcp": "dist/index.js"
+  },
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsx watch src/index.ts",
+    "start": "node dist/index.js",
+    "typecheck": "tsc --noEmit"
+  },
+  "keywords": [
+    "canopy",
+    "mcp",
+    "model-context-protocol",
+    "ai",
+    "language-server"
+  ],
+  "author": "Canopy Authors",
+  "license": "BSD-3-Clause",
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.0.0"
+  },
+  "devDependencies": {
+    "@types/node": "^20.0.0",
+    "tsx": "^4.0.0",
+    "typescript": "^5.3.0"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}

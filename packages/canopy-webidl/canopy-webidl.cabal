@@ -1,0 +1,124 @@
+cabal-version: 2.2
+
+name:           canopy-webidl
+version:        0.20.0
+synopsis:       WebIDL parser and Canopy FFI generator
+description:    Parse WebIDL specifications and generate type-safe Canopy FFI bindings
+                for Web APIs. Automatically creates .can modules and JavaScript runtime
+                from W3C/WHATWG WebIDL definitions.
+category:       Compiler, Web, FFI
+homepage:       https://github.com/canopy-lang/canopy
+author:         Canopy Contributors
+maintainer:     info@canopy-lang.org
+copyright:      Copyright (c) 2025-present, Canopy Contributors
+license:        BSD-3-Clause
+license-file:   ../../LICENSE
+build-type:     Simple
+
+-- Include bundled WebIDL specifications
+data-files:
+    webidl/bundled/.gitkeep
+    config/*.json
+
+library
+  exposed-modules:
+      WebIDL
+      WebIDL.AST
+      WebIDL.Parser
+      WebIDL.Transform
+      WebIDL.Codegen
+      WebIDL.Codegen.Canopy
+      WebIDL.Codegen.JavaScript
+      WebIDL.Config
+      WebIDL.Sources
+      WebIDL.Fetch
+      WebIDL.Types
+  other-modules:
+      Paths_canopy_webidl
+  autogen-modules:
+      Paths_canopy_webidl
+  hs-source-dirs:
+      src
+  default-extensions:
+      ConstraintKinds
+      DataKinds
+      DerivingStrategies
+      DerivingVia
+      DeriveFunctor
+      DeriveGeneric
+      DeriveDataTypeable
+      FlexibleContexts
+      FlexibleInstances
+      GADTs
+      GeneralizedNewtypeDeriving
+      KindSignatures
+      LambdaCase
+      MultiParamTypeClasses
+      NamedFieldPuns
+      OverloadedStrings
+      RankNTypes
+      ScopedTypeVariables
+      StandaloneDeriving
+      TypeApplications
+      ViewPatterns
+  ghc-options: -Wall -fwarn-tabs -O2
+  build-depends:
+      base >= 4.12 && < 5
+    , containers >= 0.6
+    , text >= 1.2
+    , megaparsec >= 9.0
+    , parser-combinators >= 1.0
+    , mtl >= 2.2
+    , filepath >= 1.4
+    , directory >= 1.3
+    , bytestring >= 0.10
+    , aeson >= 2.0
+    , aeson-pretty >= 0.8
+    , unordered-containers >= 0.2
+    , vector >= 0.12
+    , http-conduit >= 2.3
+    , http-types >= 0.12
+    , hashable >= 1.4
+  default-language: Haskell2010
+
+executable canopy-webidl-gen
+  main-is: Main.hs
+  hs-source-dirs:
+      app
+  default-extensions:
+      OverloadedStrings
+      LambdaCase
+  ghc-options: -Wall -threaded -rtsopts -with-rtsopts=-N
+  build-depends:
+      base >= 4.12 && < 5
+    , canopy-webidl
+    , text
+    , containers
+    , directory
+    , filepath
+    , optparse-applicative >= 0.16
+  default-language: Haskell2010
+
+test-suite canopy-webidl-test
+  type: exitcode-stdio-1.0
+  main-is: Main.hs
+  other-modules:
+      Unit.WebIDL.CodegenTest
+      Unit.WebIDL.ParserTest
+      Unit.WebIDL.SourcesTest
+      Unit.WebIDL.TransformTest
+      Unit.WebIDL.TypesTest
+  hs-source-dirs:
+      test
+  default-extensions:
+      OverloadedStrings
+      LambdaCase
+  ghc-options: -Wall -threaded -rtsopts -with-rtsopts=-N
+  build-depends:
+      base >= 4.12 && < 5
+    , canopy-webidl
+    , tasty >= 1.4
+    , tasty-hunit >= 0.10
+    , text
+    , containers
+  default-language: Haskell2010
