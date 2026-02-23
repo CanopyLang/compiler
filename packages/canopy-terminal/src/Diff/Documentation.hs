@@ -172,4 +172,4 @@ buildDocumentation root details exposedModules = do
   result <- Task.io buildAction
   either (Task.throw . Exit.DiffBadBuild) (pure . BuildDocs.docsFromArtifacts) result
   where
-    buildAction = Build.fromExposed (Build.ExposedBuildConfig Reporting.silent root details Build.IgnoreDocs) exposedModules
+    buildAction = Build.fromExposed (Build.ExposedBuildConfig Reporting.silent root details) exposedModules

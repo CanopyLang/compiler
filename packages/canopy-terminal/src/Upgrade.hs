@@ -8,7 +8,7 @@
 --
 -- * Converting @elm.json@ to @canopy.json@
 -- * Renaming @.elm@ files to @.can@ files
--- * Updating module headers and import paths
+-- * Updating @.gitignore@ entries from @elm-stuff@ to @.canopy-stuff@
 -- * Reporting changes made for user review
 --
 -- == Usage
@@ -26,8 +26,9 @@ module Upgrade
   )
 where
 
-import Control.Lens (makeLenses, (^.))
+import qualified Data.ByteString as BS
 import qualified Data.ByteString.Lazy as LBS
+import Control.Lens (makeLenses, (^.))
 import qualified System.Directory as Dir
 import System.FilePath ((</>))
 import qualified System.FilePath as FilePath
@@ -46,9 +47,12 @@ makeLenses ''Flags
 
 -- | A migration action to perform.
 data MigrationAction
-  = RenameFile !FilePath !FilePath
-  | ConvertConfig !FilePath !FilePath
-  | UpdateContent !FilePath !String
+  = -- | Rename a file from old path to new path
+    RenameFile !FilePath !FilePath
+  | -- | Convert elm.json to canopy.json
+    ConvertConfig !FilePath !FilePath
+  | -- | Apply text replacements to a file
+    UpdateContent !FilePath !String ![(BS.ByteString, BS.ByteString)]
   deriving (Eq, Show)
 
 -- | Run the upgrade command.
@@ -70,7 +74,8 @@ discoverMigrationActions :: FilePath -> IO [MigrationAction]
 discoverMigrationActions root = do
   configActions <- discoverConfigMigration root
   fileActions <- discoverFileMigrations root
-  pure (configActions ++ fileActions)
+  contentActions <- discoverContentUpdates root
+  pure (configActions ++ fileActions ++ contentActions)
 
 -- | Check if elm.json exists and needs conversion.
 discoverConfigMigration :: FilePath -> IO [MigrationAction]
@@ -89,6 +94,34 @@ discoverFileMigrations root = do
   if srcExists
     then findElmFiles srcDir
     else pure []
+
+-- | Discover content updates for supporting files.
+--
+-- Checks for .gitignore and similar files that reference
+-- Elm-specific paths or terminology.
+discoverContentUpdates :: FilePath -> IO [MigrationAction]
+discoverContentUpdates root = do
+  gitignoreAction <- discoverGitignoreUpdate root
+  pure gitignoreAction
+
+-- | Check if .gitignore needs elm-stuff → .canopy-stuff update.
+discoverGitignoreUpdate :: FilePath -> IO [MigrationAction]
+discoverGitignoreUpdate root = do
+  let gitignorePath = root </> ".gitignore"
+  exists <- Dir.doesFileExist gitignorePath
+  if exists
+    then do
+      content <- BS.readFile gitignorePath
+      pure (if BS.isInfixOf "elm-stuff" content
+            then [UpdateContent gitignorePath "update elm-stuff references" gitignoreReplacements]
+            else [])
+    else pure []
+
+-- | Replacements for .gitignore content.
+gitignoreReplacements :: [(BS.ByteString, BS.ByteString)]
+gitignoreReplacements =
+  [ ("elm-stuff", ".canopy-stuff")
+  ]
 
 -- | Recursively find .elm files and create rename actions.
 findElmFiles :: FilePath -> IO [MigrationAction]
@@ -116,25 +149,22 @@ createRenameAction path
 -- | Execute all migration actions.
 executeMigration :: Flags -> [MigrationAction] -> IO ()
 executeMigration flags actions = do
-  if flags ^. upgradeVerbose
-    then IO.putStrLn ("Found " ++ show (length actions) ++ " changes to make (verbose mode):")
-    else IO.putStrLn ("Found " ++ show (length actions) ++ " changes to make:")
+  IO.putStrLn ("Found " ++ show (length actions) ++ " changes to make:")
   IO.putStrLn ""
-  mapM_ (reportAction flags) actions
+  mapM_ reportAction actions
+  verboseLog flags ("Processing " ++ show (length actions) ++ " migration actions")
   if flags ^. dryRun
     then reportDryRun
     else applyActions actions
 
 -- | Report a single migration action.
-reportAction :: Flags -> MigrationAction -> IO ()
-reportAction _flags action =
-  case action of
-    RenameFile from to ->
-      IO.putStrLn ("  Rename: " ++ from ++ " -> " ++ to)
-    ConvertConfig from to ->
-      IO.putStrLn ("  Convert: " ++ from ++ " -> " ++ to)
-    UpdateContent path desc ->
-      IO.putStrLn ("  Update: " ++ path ++ " (" ++ desc ++ ")")
+reportAction :: MigrationAction -> IO ()
+reportAction (RenameFile from to) =
+  IO.putStrLn ("  Rename: " ++ from ++ " -> " ++ to)
+reportAction (ConvertConfig from to) =
+  IO.putStrLn ("  Convert: " ++ from ++ " -> " ++ to)
+reportAction (UpdateContent path desc _) =
+  IO.putStrLn ("  Update: " ++ path ++ " (" ++ desc ++ ")")
 
 -- | Report dry-run mode.
 reportDryRun :: IO ()
@@ -152,11 +182,30 @@ applyActions actions = do
 
 -- | Apply a single migration action.
 applyAction :: MigrationAction -> IO ()
-applyAction action =
-  case action of
-    RenameFile from to -> Dir.renameFile from to
-    ConvertConfig from to -> convertElmJson from to
-    UpdateContent _path _desc -> pure ()
+applyAction (RenameFile from to) = Dir.renameFile from to
+applyAction (ConvertConfig from to) = convertElmJson from to
+applyAction (UpdateContent path _ replacements) = applyReplacements path replacements
+
+-- | Apply text replacements to a file.
+applyReplacements :: FilePath -> [(BS.ByteString, BS.ByteString)] -> IO ()
+applyReplacements path replacements = do
+  content <- BS.readFile path
+  let updated = foldl applyReplacement content replacements
+  BS.writeFile path updated
+
+-- | Apply a single replacement to ByteString content.
+applyReplacement :: BS.ByteString -> (BS.ByteString, BS.ByteString) -> BS.ByteString
+applyReplacement content (needle, replacement) =
+  replaceAll needle replacement content
+
+-- | Replace all occurrences of needle with replacement.
+replaceAll :: BS.ByteString -> BS.ByteString -> BS.ByteString -> BS.ByteString
+replaceAll needle replacement haystack =
+  case BS.breakSubstring needle haystack of
+    (before, after)
+      | BS.null after -> haystack
+      | otherwise ->
+          before <> replacement <> replaceAll needle replacement (BS.drop (BS.length needle) after)
 
 -- | Convert elm.json to canopy.json.
 --
@@ -165,16 +214,43 @@ applyAction action =
 convertElmJson :: FilePath -> FilePath -> IO ()
 convertElmJson elmPath canopyPath = do
   content <- LBS.readFile elmPath
-  let converted = convertJsonContent content
-  LBS.writeFile canopyPath converted
+  LBS.writeFile canopyPath (convertJsonContent content)
 
 -- | Convert elm.json content to canopy.json content.
 --
 -- Performs text-level transformations on the JSON:
--- * Replaces \"elm-version\" with \"canopy-version\"
--- * Updates package registry URLs
+--
+-- * Replaces @\"elm-version\"@ with @\"canopy-version\"@
+-- * Replaces @\"elm-explorations\"@ author with @\"canopy-explorations\"@
+-- * Updates package source URL references
 convertJsonContent :: LBS.ByteString -> LBS.ByteString
 convertJsonContent content =
-  -- For now, copy as-is. The JSON structure is compatible.
-  -- A more sophisticated approach would parse and transform.
-  content
+  foldl applyLazyReplacement content jsonReplacements
+
+-- | Replacements for elm.json → canopy.json conversion.
+jsonReplacements :: [(LBS.ByteString, LBS.ByteString)]
+jsonReplacements =
+  [ ("\"elm-version\"", "\"canopy-version\"")
+  , ("\"elm-explorations\"", "\"canopy-explorations\"")
+  , ("\"elm-stuff\"", "\".canopy-stuff\"")
+  ]
+
+-- | Apply a single replacement to lazy ByteString content.
+applyLazyReplacement :: LBS.ByteString -> (LBS.ByteString, LBS.ByteString) -> LBS.ByteString
+applyLazyReplacement content (needle, replacement) =
+  replaceLazyAll needle replacement content
+
+-- | Replace all occurrences in lazy ByteString.
+replaceLazyAll :: LBS.ByteString -> LBS.ByteString -> LBS.ByteString -> LBS.ByteString
+replaceLazyAll needle replacement haystack =
+  let strict = LBS.toStrict haystack
+      needleStrict = LBS.toStrict needle
+      replacementStrict = LBS.toStrict replacement
+   in LBS.fromStrict (replaceAll needleStrict replacementStrict strict)
+
+-- | Log a message if verbose mode is enabled.
+verboseLog :: Flags -> String -> IO ()
+verboseLog flags message =
+  if flags ^. upgradeVerbose
+    then IO.putStrLn ("  [verbose] " ++ message)
+    else pure ()

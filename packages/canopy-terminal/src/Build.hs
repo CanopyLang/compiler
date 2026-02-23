@@ -16,7 +16,6 @@ module Build
     Module (..)
   , Root (..)
   , Artifacts (..)
-  , DocsGoal (..)
 
   -- * Lenses
   , artifactsName
@@ -40,7 +39,6 @@ import Build.Artifacts
   ( Module (..)
   , Root (..)
   , Artifacts (..)
-  , DocsGoal (..)
   , artifactsName
   , artifactsDeps
   , artifactsRoots
@@ -62,7 +60,6 @@ data ExposedBuildConfig = ExposedBuildConfig
   !Reporting.Style
   !FilePath
   !Details.Details
-  !(DocsGoal ())
 
 -- | Build from specific file paths.
 fromPaths ::
@@ -88,7 +85,7 @@ fromExposed ::
   ExposedBuildConfig ->
   List ModuleName.Raw ->
   IO (Either BuildExit.BuildError Artifacts)
-fromExposed (ExposedBuildConfig _style root details _docsGoal) exposedModules = do
+fromExposed (ExposedBuildConfig _style root details) exposedModules = do
   let pkg = case details ^. Details.detailsOutline of
         Details.ValidApp _ -> Details.dummyPkgName
         Details.ValidPkg pkgName _ _ -> pkgName

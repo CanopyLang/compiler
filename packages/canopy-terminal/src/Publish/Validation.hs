@@ -205,7 +205,7 @@ extractExposedModules (Details.Details _ outline _ _ _ _) =
 -- @since 0.19.1
 buildPackageWithDocs :: FilePath -> Details -> List Raw -> Task Publish Documentation
 buildPackageWithDocs projectRoot details exposed = do
-  result <- Task.io (Build.fromExposed (Build.ExposedBuildConfig Reporting.silent projectRoot details Build.IgnoreDocs) exposed)
+  result <- Task.io (Build.fromExposed (Build.ExposedBuildConfig Reporting.silent projectRoot details) exposed)
   either (Task.throw . Exit.PublishBuildProblem) (pure . BuildDocs.docsFromArtifacts) result
 
 -- | Verify that the version follows semantic versioning rules.
