@@ -29,6 +29,9 @@ module CLI.Parsers
 
     -- * Network Parsers
     createPortParser,
+
+    -- * Integer Parsers
+    createIntParser,
   )
 where
 
@@ -122,3 +125,33 @@ suggestPorts _ = pure []
 -- port numbers for development servers.
 providePortExamples :: String -> IO [String]
 providePortExamples _ = pure ["3000", "8000"]
+
+-- | Create a parser for positive integer values.
+--
+-- Parses positive integers for use with numeric flags such as benchmark
+-- iteration counts. Rejects negative numbers and non-numeric input.
+--
+-- ==== Examples
+--
+-- @
+-- let parser = createIntParser
+-- -- Accepts: "1", "5", "100"
+-- -- Rejects: "-1", "abc", "0"
+-- @
+--
+-- @since 0.19.1
+createIntParser :: Parser Int
+createIntParser =
+  Terminal.Parser
+    { Terminal._singular = "number",
+      Terminal._plural = "numbers",
+      Terminal._parser = parsePositiveInt,
+      Terminal._suggest = \_ -> pure [],
+      Terminal._examples = \_ -> pure ["1", "3", "10"]
+    }
+
+-- | Parse and validate positive integer values.
+parsePositiveInt :: String -> Maybe Int
+parsePositiveInt input = do
+  n <- readMaybe input
+  if n > 0 then Just n else Nothing

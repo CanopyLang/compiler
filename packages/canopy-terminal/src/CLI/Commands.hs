@@ -14,6 +14,13 @@
 -- * 'createReplCommand' - Interactive REPL session
 -- * 'createReactorCommand' - Development server with hot reload
 -- * 'createMakeCommand' - Compile Canopy code
+-- * 'createCheckCommand' - Type-check without generating output
+-- * 'createFmtCommand' - Format source files
+-- * 'createLintCommand' - Static analysis (lint)
+-- * 'createTestCommand' - Run test suite
+-- * 'createAuditCommand' - Dependency audit
+-- * 'createUpgradeCommand' - Migrate Elm projects to Canopy
+-- * 'createBenchCommand' - Compilation benchmarking
 -- * 'createInstallCommand' - Package installation
 -- * 'createPublishCommand' - Package publishing
 -- * 'createBumpCommand' - Version bumping
@@ -37,6 +44,15 @@ module CLI.Commands
 
     -- * Build Commands
     createMakeCommand,
+    createCheckCommand,
+
+    -- * Developer Tools
+    createFmtCommand,
+    createLintCommand,
+    createTestCommand,
+    createAuditCommand,
+    createUpgradeCommand,
+    createBenchCommand,
 
     -- * Testing Commands
     createFFITestCommand,
@@ -49,20 +65,27 @@ module CLI.Commands
   )
 where
 
+import qualified Audit
+import qualified Bench
 import qualified Bump
+import qualified Check
 import CLI.Documentation (reflowText, stackDocuments)
-import CLI.Parsers (createInterpreterParser, createPortParser)
+import CLI.Parsers (createIntParser, createInterpreterParser, createPortParser)
 import CLI.Types (Command, (|--))
 import qualified Develop
 import qualified Diff
+import qualified Fmt
 import qualified Init
 import qualified Install
+import qualified Lint
 import qualified Make
 import qualified Publish
 import qualified Repl
 import qualified Terminal
 import qualified Terminal.Helpers as Terminal
+import qualified Test
 import qualified Test.FFI as FFI
+import qualified Upgrade
 import Text.PrettyPrint.ANSI.Leijen (Doc)
 import qualified Text.PrettyPrint.ANSI.Leijen as P
 
@@ -179,6 +202,111 @@ createDiffCommand =
     details = createDiffDetails
     example = createDiffExample
     args = createDiffArgs
+
+-- | Create the check command for type-checking without code generation.
+--
+-- The check command runs the full compilation pipeline (parse, canonicalize,
+-- type-check) but discards all code-generation artifacts. This provides the
+-- fastest possible feedback on type errors.
+--
+-- @since 0.19.1
+createCheckCommand :: Command
+createCheckCommand =
+  Terminal.Command "check" Terminal.Uncommon details example args flags Check.run
+  where
+    details = "The `check` command type-checks Canopy files without generating output:"
+    example = P.indent 4 (P.green "canopy check src/Main.can")
+    args = Terminal.zeroOrMore Terminal.canopyFile
+    flags = createCheckFlags
+
+-- | Create the fmt command for formatting source files.
+--
+-- The fmt command formats @.can@ files in-place using the canonical
+-- Canopy style. In check mode, it exits non-zero when any file needs
+-- formatting, suitable for CI gating.
+--
+-- @since 0.19.1
+createFmtCommand :: Command
+createFmtCommand =
+  Terminal.Command "fmt" Terminal.Uncommon details example args flags Fmt.run
+  where
+    details = "The `fmt` command formats Canopy source files:"
+    example = P.indent 4 (P.green "canopy fmt src/Main.can")
+    args = Terminal.zeroOrMore Terminal.canopyFile
+    flags = createFmtFlags
+
+-- | Create the lint command for static analysis.
+--
+-- The lint command performs static analysis on @.can@ files and reports
+-- style issues, potential bugs, and code quality improvements.
+--
+-- @since 0.19.1
+createLintCommand :: Command
+createLintCommand =
+  Terminal.Command "lint" Terminal.Uncommon details example args flags Lint.run
+  where
+    details = "The `lint` command runs static analysis on Canopy source files:"
+    example = P.indent 4 (P.green "canopy lint src/Main.can")
+    args = Terminal.zeroOrMore Terminal.canopyFile
+    flags = createLintFlags
+
+-- | Create the test command for running the test suite.
+--
+-- The test command discovers @.can@ test modules, compiles them to JavaScript,
+-- and executes them via Node.js. Supports both single-run and file-watch modes.
+--
+-- @since 0.19.1
+createTestCommand :: Command
+createTestCommand =
+  Terminal.Command "test" Terminal.Uncommon details example args flags Test.run
+  where
+    details = "The `test` command runs Canopy test files:"
+    example = P.indent 4 (P.green "canopy test tests/MyTest.can")
+    args = Terminal.zeroOrMore Terminal.canopyFile
+    flags = createTestFlags
+
+-- | Create the audit command for dependency analysis.
+--
+-- The audit command inspects project dependencies for known issues,
+-- outdated versions, and license compatibility.
+--
+-- @since 0.19.1
+createAuditCommand :: Command
+createAuditCommand =
+  Terminal.Command "audit" Terminal.Uncommon details example Terminal.noArgs flags Audit.run
+  where
+    details = "The `audit` command analyzes project dependencies:"
+    example = P.indent 4 (P.green "canopy audit")
+    flags = createAuditFlags
+
+-- | Create the upgrade command for Elm-to-Canopy migration.
+--
+-- The upgrade command automates the conversion of Elm projects to Canopy
+-- by renaming files and updating configuration.
+--
+-- @since 0.19.1
+createUpgradeCommand :: Command
+createUpgradeCommand =
+  Terminal.Command "upgrade" Terminal.Uncommon details example Terminal.noArgs flags Upgrade.run
+  where
+    details = "The `upgrade` command migrates Elm projects to Canopy:"
+    example = P.indent 4 (P.green "canopy upgrade")
+    flags = createUpgradeFlags
+
+-- | Create the bench command for compilation benchmarking.
+--
+-- The bench command measures and reports compilation performance metrics
+-- including timing over multiple iterations. Useful for identifying
+-- performance regressions.
+--
+-- @since 0.19.1
+createBenchCommand :: Command
+createBenchCommand =
+  Terminal.Command "bench" Terminal.Uncommon details example Terminal.noArgs flags Bench.run
+  where
+    details = "The `bench` command measures compilation performance:"
+    example = P.indent 4 (P.green "canopy bench")
+    flags = createBenchFlags
 
 -- | Create the test-ffi command for FFI testing and validation.
 --
@@ -398,3 +526,47 @@ createFFITestFlags =
     |-- Terminal.onOff "verbose" "Verbose output showing detailed progress"
     |-- Terminal.flag "property-runs" FFI.propertyRunsParser "Number of property test runs (default: 100)"
     |-- Terminal.onOff "browser" "Run tests in browser instead of Node.js"
+
+createCheckFlags :: Terminal.Flags Check.Flags
+createCheckFlags =
+  Terminal.flags Check.Flags
+    |-- Terminal.flag "report" Check.reportType "You can say --report=json to get error messages as JSON."
+    |-- Terminal.onOff "verbose" "Enable verbose compiler logging."
+
+createFmtFlags :: Terminal.Flags Fmt.Flags
+createFmtFlags =
+  Terminal.flags Fmt.Flags
+    |-- Terminal.onOff "check" "Report which files need formatting and exit non-zero; do not write files."
+    |-- Terminal.onOff "stdin" "Read from stdin and write formatted output to stdout."
+
+createLintFlags :: Terminal.Flags Lint.Flags
+createLintFlags =
+  Terminal.flags Lint.Flags
+    |-- Terminal.onOff "fix" "Apply auto-fixes for fixable warnings."
+    |-- Terminal.flag "report" Lint.reportFormatParser "Output format: use --report=json for machine-readable output."
+
+createTestFlags :: Terminal.Flags Test.Flags
+createTestFlags =
+  Terminal.flags Test.Flags
+    |-- Terminal.flag "filter" Test.filterParser "Only run tests whose names contain this pattern."
+    |-- Terminal.onOff "watch" "Watch for file changes and re-run tests automatically."
+    |-- Terminal.onOff "verbose" "Enable verbose output during test execution."
+
+createAuditFlags :: Terminal.Flags Audit.Flags
+createAuditFlags =
+  Terminal.flags Audit.Flags
+    |-- Terminal.onOff "json" "Output findings as JSON."
+    |-- Terminal.onOff "verbose" "Show verbose details."
+
+createUpgradeFlags :: Terminal.Flags Upgrade.Flags
+createUpgradeFlags =
+  Terminal.flags Upgrade.Flags
+    |-- Terminal.onOff "dry-run" "Preview changes without applying them."
+    |-- Terminal.onOff "verbose" "Show verbose output."
+
+createBenchFlags :: Terminal.Flags Bench.Flags
+createBenchFlags =
+  Terminal.flags Bench.Flags
+    |-- Terminal.flag "iterations" createIntParser "Number of iterations to run (default: 3)."
+    |-- Terminal.onOff "json" "Output results as JSON."
+    |-- Terminal.onOff "verbose" "Show verbose output."

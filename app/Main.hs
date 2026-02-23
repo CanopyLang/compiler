@@ -47,15 +47,22 @@ module Main
   ) where
 
 import CLI.Commands
-  ( createBumpCommand,
+  ( createAuditCommand,
+    createBenchCommand,
+    createBumpCommand,
+    createCheckCommand,
     createDiffCommand,
     createFFITestCommand,
+    createFmtCommand,
     createInitCommand,
     createInstallCommand,
+    createLintCommand,
     createMakeCommand,
     createPublishCommand,
     createReactorCommand,
     createReplCommand,
+    createTestCommand,
+    createUpgradeCommand,
   )
 import CLI.Documentation (createIntroduction, createOutro)
 import qualified Terminal
@@ -88,9 +95,11 @@ main =
 -- command discovery.
 --
 -- Command organization:
--- 
+--
 -- * Interactive commands (repl, init, reactor)
--- * Build commands (make)
+-- * Build commands (make, check)
+-- * Developer tools (fmt, lint, test, audit, upgrade, bench)
+-- * FFI testing (test-ffi)
 -- * Package management (install, bump, diff, publish)
 --
 -- @since 0.19.1
@@ -100,6 +109,13 @@ createAllCommands =
     createInitCommand,
     createReactorCommand,
     createMakeCommand,
+    createCheckCommand,
+    createFmtCommand,
+    createLintCommand,
+    createTestCommand,
+    createAuditCommand,
+    createUpgradeCommand,
+    createBenchCommand,
     createFFITestCommand,
     createInstallCommand,
     createBumpCommand,

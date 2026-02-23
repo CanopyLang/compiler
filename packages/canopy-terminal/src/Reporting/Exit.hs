@@ -23,6 +23,16 @@ module Reporting.Exit
       ),
     makeToReport,
 
+    -- * Check Errors
+    Check
+      ( CheckNoOutline,
+        CheckBadDetails,
+        CheckCannotBuild,
+        CheckAppNeedsFileNames,
+        CheckPkgNeedsExposing
+      ),
+    checkToReport,
+
     -- * REPL Errors
     Repl
       ( ReplBadDetails,
@@ -67,6 +77,42 @@ where
 import qualified Exit as BuildExit
 import qualified Reporting.Doc as Doc
 import System.IO (hPutStrLn, stderr)
+
+-- | Type-check errors (check command).
+--
+-- Raised when the @canopy check@ command encounters errors during
+-- project loading or compilation.
+--
+-- @since 0.19.1
+data Check
+  = -- | No @canopy.json@ found in the current directory tree.
+    CheckNoOutline
+  | -- | Project details could not be loaded from the given path.
+    CheckBadDetails FilePath
+  | -- | Compilation failed with the given build error.
+    CheckCannotBuild BuildExit.BuildError
+  | -- | Application projects require explicit file names.
+    CheckAppNeedsFileNames
+  | -- | Package project has no exposed modules to check.
+    CheckPkgNeedsExposing
+  deriving (Show, Eq)
+
+-- | Convert a 'Check' error to a human-readable 'Report'.
+--
+-- @since 0.19.1
+checkToReport :: Check -> Report
+checkToReport err =
+  case err of
+    CheckNoOutline ->
+      Doc.fromChars "ERROR: No canopy.json found. Run 'canopy init' to create a project."
+    CheckBadDetails path ->
+      Doc.fromChars ("ERROR: Cannot load project details from " ++ path)
+    CheckCannotBuild buildErr ->
+      BuildExit.toDoc buildErr
+    CheckAppNeedsFileNames ->
+      Doc.fromChars "ERROR: Application projects need file names. Try: canopy check src/Main.can"
+    CheckPkgNeedsExposing ->
+      Doc.fromChars "ERROR: Package has no exposed modules. Check your canopy.json."
 
 -- | Build/Make errors.
 data Make
