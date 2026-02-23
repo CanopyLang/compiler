@@ -111,6 +111,7 @@ library
       Reporting.Ask
       Reporting.Exit
       Reporting.Task
+      Setup
       Stuff
       Test
       Test.FFI

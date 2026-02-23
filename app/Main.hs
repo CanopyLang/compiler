@@ -61,6 +61,7 @@ import CLI.Commands
     createPublishCommand,
     createReactorCommand,
     createReplCommand,
+    createSetupCommand,
     createTestCommand,
     createUpgradeCommand,
   )
@@ -107,6 +108,7 @@ createAllCommands :: [Terminal.Command]
 createAllCommands =
   [ createReplCommand,
     createInitCommand,
+    createSetupCommand,
     createReactorCommand,
     createMakeCommand,
     createCheckCommand,

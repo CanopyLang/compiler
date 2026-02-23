@@ -62,6 +62,10 @@ module Reporting.Exit
     Init (..),
     initToReport,
 
+    -- * Setup Errors
+    Setup (..),
+    setupToReport,
+
     -- * Other Error Types
     RegistryProblem (..),
     Solver (..),
@@ -304,6 +308,20 @@ reactorToReport err = case err of
     Doc.fromChars (BuildExit.toString buildErr)
   ReactorBadGenerate msg ->
     Doc.fromChars ("GENERATE ERROR: " ++ msg)
+
+-- | Setup (bootstrap) errors.
+data Setup
+  = SetupRegistryFailed String
+  | SetupCacheFailed String
+  deriving (Show, Eq)
+
+-- | Convert Setup error to Report.
+setupToReport :: Setup -> Report
+setupToReport err = case err of
+  SetupRegistryFailed msg ->
+    Doc.fromChars ("SETUP ERROR: Could not fetch or read package registry: " ++ msg)
+  SetupCacheFailed msg ->
+    Doc.fromChars ("SETUP ERROR: Package cache error: " ++ msg)
 
 -- | Convert Init error to Report.
 initToReport :: Init -> Report

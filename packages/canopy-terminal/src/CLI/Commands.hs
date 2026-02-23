@@ -62,6 +62,9 @@ module CLI.Commands
     createPublishCommand,
     createBumpCommand,
     createDiffCommand,
+
+    -- * Setup Commands
+    createSetupCommand,
   )
 where
 
@@ -81,6 +84,7 @@ import qualified Lint
 import qualified Make
 import qualified Publish
 import qualified Repl
+import qualified Setup
 import qualified Terminal
 import qualified Terminal.Helpers as Terminal
 import qualified Test
@@ -307,6 +311,22 @@ createBenchCommand =
     details = "The `bench` command measures compilation performance:"
     example = P.indent 4 (P.green "canopy bench")
     flags = createBenchFlags
+
+-- | Create the setup command for package environment bootstrap.
+--
+-- The setup command initializes the Canopy package cache, downloads
+-- the package registry, and locates standard library packages from
+-- the Elm cache or online registry.
+--
+-- @since 0.19.1
+createSetupCommand :: Command
+createSetupCommand =
+  Terminal.Command "setup" (Terminal.Common summary) details example Terminal.noArgs flags Setup.run
+  where
+    summary = "Set up the Canopy package environment. Downloads the package registry and locates standard library packages."
+    details = "The `setup` command initializes your Canopy development environment:"
+    example = P.indent 4 (P.green "canopy setup")
+    flags = createSetupFlags
 
 -- | Create the test-ffi command for FFI testing and validation.
 --
@@ -570,3 +590,8 @@ createBenchFlags =
     |-- Terminal.flag "iterations" createIntParser "Number of iterations to run (default: 3)."
     |-- Terminal.onOff "json" "Output results as JSON."
     |-- Terminal.onOff "verbose" "Show verbose output."
+
+createSetupFlags :: Terminal.Flags Setup.Flags
+createSetupFlags =
+  Terminal.flags Setup.Flags
+    |-- Terminal.onOff "verbose" "Show verbose output during setup."
