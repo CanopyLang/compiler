@@ -18,6 +18,7 @@ import qualified Data.Map as Map
 import qualified Data.Name as Name
 import qualified Data.Set as Set
 import qualified Optimize.Case as Case
+import qualified Optimize.ConstantFold as ConstantFold
 import qualified Optimize.Names as Names
 import qualified Reporting.Annotation as A
 import Prelude hiding (cycle)
@@ -277,7 +278,7 @@ optimizeNativeArith :: Cycle -> Can.ArithOp -> Can.Expr -> Can.Expr -> Names.Tra
 optimizeNativeArith cycle op left right = do
   optLeft <- optimize cycle left
   optRight <- optimize cycle right
-  pure (Opt.ArithBinop op optLeft optRight)
+  pure (ConstantFold.foldArith op optLeft optRight)
 
 -- | Optimize user-defined operator.
 --

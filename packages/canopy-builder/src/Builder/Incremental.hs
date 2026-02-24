@@ -44,7 +44,7 @@ import qualified Data.ByteString.Lazy as BSL
 import Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
 import qualified Data.Name as Name
-import Data.Time.Clock (UTCTime, getCurrentTime)
+import Data.Time.Clock (UTCTime, addUTCTime, getCurrentTime)
 import GHC.Generics (Generic)
 import qualified Logging.Debug as Logger
 import Logging.Debug (DebugCategory (..))
@@ -222,11 +222,16 @@ pruneCache cache cutoff =
     isRecent cutoffTime entry = cacheTimestamp entry > cutoffTime
 
 -- | Get cache statistics.
+--
+-- Returns (total entries, valid entries, expired entries).
+-- Hit/miss tracking is handled externally via IORefs in the
+-- compilation pipeline (see Compiler.compileModulesInOrder).
 getCacheStats :: BuildCache -> IO (Int, Int, Int)
 getCacheStats cache = do
+  now <- getCurrentTime
   let entries = cacheEntries cache
       totalEntries = Map.size entries
-      -- These are simplified - real impl would track hits/misses
-      hitCount = 0
-      missCount = 0
-  return (totalEntries, hitCount, missCount)
+      recentCutoff = addUTCTime (-3600) now
+      validEntries = Map.size (Map.filter (\e -> cacheTimestamp e > recentCutoff) entries)
+      expiredEntries = totalEntries - validEntries
+  return (totalEntries, validEntries, expiredEntries)

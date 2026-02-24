@@ -77,6 +77,9 @@ import qualified Unit.Query.EngineTest as QueryEngineTest
 import qualified Unit.Builder.PackageCacheTest as PackageCacheTest
 import qualified Unit.Worker.PoolTest as WorkerPoolTest
 import qualified Unit.Queries.ParseModuleTest as ParseModuleQueryTest
+import qualified Unit.Generate.MinifyTest as MinifyTest
+import qualified Unit.Generate.StringPoolTest as StringPoolTest
+import qualified Unit.Optimize.ConstantFoldTest as ConstantFoldTest
 
 main :: IO ()
 main = defaultMain tests
@@ -149,7 +152,10 @@ unitTests =
       QueryEngineTest.tests,
       PackageCacheTest.tests,
       WorkerPoolTest.tests,
-      ParseModuleQueryTest.tests
+      ParseModuleQueryTest.tests,
+      ConstantFoldTest.tests,
+      MinifyTest.tests,
+      StringPoolTest.tests
     ]
 
 integrationTests :: TestTree

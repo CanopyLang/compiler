@@ -52,6 +52,7 @@ import qualified Data.Name as Name
 import Data.NonEmptyList (List)
 import qualified Data.NonEmptyList as NonEmptyList
 import qualified Generate.JavaScript as JS
+import qualified Generate.JavaScript.StringPool as StringPool
 import qualified Generate.Mode as Mode
 import Make.Types
   ( BuildContext,
@@ -145,7 +146,7 @@ generateForMode mode artifacts =
     case mode of
       Debug -> return $ generateJS (Mode.Dev Nothing False) artifacts
       Dev -> return $ generateJS (Mode.Dev Nothing False) artifacts
-      Prod -> return $ generateJS (Mode.Prod (Mode.shortenFieldNames globalGraph) False) artifacts
+      Prod -> return $ generateJS (Mode.Prod (Mode.shortenFieldNames globalGraph) False StringPool.emptyPool) artifacts
   where
     globalGraph = extractGlobalGraph artifacts
 

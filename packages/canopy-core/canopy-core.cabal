@@ -91,7 +91,9 @@ library
       Generate.JavaScript.Builder
       Generate.JavaScript.Expression
       Generate.JavaScript.Functions
+      Generate.JavaScript.Minify
       Generate.JavaScript.Name
+      Generate.JavaScript.StringPool
       Generate.Mode
       Json.Decode
       Json.Encode
@@ -101,6 +103,7 @@ library
       Nitpick.Debug
       Nitpick.PatternMatches
       Optimize.Case
+      Optimize.ConstantFold
       Optimize.DecisionTree
       Optimize.Expression
       Optimize.Module

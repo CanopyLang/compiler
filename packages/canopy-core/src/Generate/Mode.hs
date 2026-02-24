@@ -4,6 +4,7 @@ module Generate.Mode
   , isElmCompatible
   , ShortFieldNames
   , shortenFieldNames
+  , stringPool
   )
 where
 
@@ -15,19 +16,20 @@ import qualified Data.Map as Map
 import qualified Data.Maybe as Maybe
 import qualified Data.Name as Name
 import qualified Generate.JavaScript.Name as JsName
+import qualified Generate.JavaScript.StringPool as StringPool
 
 -- MODE
 
 data Mode
   = Dev (Maybe Extract.Types) Bool  -- Bool indicates elm-compatibility mode
-  | Prod ShortFieldNames Bool       -- Bool indicates elm-compatibility mode
+  | Prod ShortFieldNames Bool StringPool.StringPool
   deriving (Show)
 
 isDebug :: Mode -> Bool
 isDebug mode =
   case mode of
     Dev mi _ -> Maybe.isJust mi
-    Prod _ _ -> False
+    Prod {} -> False
 
 -- ELM COMPATIBILITY
 
@@ -35,7 +37,16 @@ isElmCompatible :: Mode -> Bool
 isElmCompatible mode =
   case mode of
     Dev _ elmCompat -> elmCompat
-    Prod _ elmCompat -> elmCompat
+    Prod _ elmCompat _ -> elmCompat
+
+-- STRING POOL
+
+-- | Extract the string pool from a mode (empty for Dev).
+stringPool :: Mode -> StringPool.StringPool
+stringPool mode =
+  case mode of
+    Dev {} -> StringPool.emptyPool
+    Prod _ _ pool -> pool
 
 -- SHORTEN FIELD NAMES
 

@@ -40,7 +40,9 @@ import qualified Data.Utf8 as Utf8
 import qualified Generate.JavaScript.Builder as JS
 import qualified Generate.JavaScript.Expression as Expr
 import qualified Generate.JavaScript.Functions as Functions
+import qualified Generate.JavaScript.Minify as Minify
 import qualified Generate.JavaScript.Name as JsName
+import qualified Generate.JavaScript.StringPool as StringPool
 import qualified Generate.Mode as Mode
 import qualified Reporting.Doc as D
 import qualified Reporting.InternalError as InternalError
@@ -214,10 +216,14 @@ tails [] = [[]]
 tails xs@(_:ys) = xs : tails ys
 
 generate :: Mode.Mode -> Opt.GlobalGraph -> Mains -> Map String FFIInfo -> Builder
-generate mode (Opt.GlobalGraph graph _) mains ffiInfos =
-  let baseState = Map.foldrWithKey (addMain mode graph) emptyState mains
-      -- Add ALL remaining globals from the graph that weren't reached from main
-      -- EXCEPT debugger modules in production mode (they're not needed)
+generate inputMode (Opt.GlobalGraph rawGraph _) mains ffiInfos =
+  let (graph, mode) = case inputMode of
+        Mode.Prod fields elmCompat _ ->
+          let minified = Minify.minifyGraph rawGraph
+              pool = StringPool.buildPool minified
+           in (minified, Mode.Prod fields elmCompat pool)
+        Mode.Dev _ _ -> (rawGraph, inputMode)
+      baseState = Map.foldrWithKey (addMain mode graph) emptyState mains
       shouldInclude global =
         not (isDebugger global && not (Mode.isDebug mode))
       filteredGraph = Map.filterWithKey (\global _ -> shouldInclude global) graph
@@ -225,14 +231,14 @@ generate mode (Opt.GlobalGraph graph _) mains ffiInfos =
       header = if Mode.isElmCompatible mode
                then "(function(scope){\n'use strict';\n"
                else "(function(scope){'use strict';\n"
-      -- Debugger identity shim: used by Debug.todo and Debug.log in non-debug builds.
       debuggerStub = "var _Debugger_unsafeCoerce = function(value) { return value; };\n"
+      poolDecls = StringPool.poolDeclarations (Mode.stringPool mode)
    in header
         <> debuggerStub
         <> generateFFIContent graph ffiInfos
         <> Functions.functions
         <> perfNote mode
-        <> mempty  -- comprehensiveRuntime mode DISABLED to debug dependency inclusion
+        <> poolDecls
         <> stateToBuilder state
         <> toMainExports mode mains
         <> "\n}(typeof window !== 'undefined' ? window : this));"
@@ -245,7 +251,7 @@ addMain mode graph home _ state =
 perfNote :: Mode.Mode -> Builder
 perfNote mode =
   case mode of
-    Mode.Prod _ _ ->
+    Mode.Prod {} ->
       mempty
     Mode.Dev Nothing elmCompatible ->
       -- Always include console.warn in dev mode to match Elm behavior
@@ -616,7 +622,7 @@ generateCycle mode (Opt.Global home _) names values functions =
         [] -> []
         realBlock@(_ : _) ->
           case mode of
-            Mode.Prod _ _ ->
+            Mode.Prod {} ->
               realBlock
             Mode.Dev _ _ ->
               [(JS.Try (JS.Block realBlock) JsName.dollar . JS.Throw) . JS.String $
@@ -687,7 +693,7 @@ addChunk mode chunk builder =
           if elmCompatible
             then builder               -- Elm dev: debug functions are used (clean)
             else builder               -- Canopy dev: use debug functions
-        Mode.Prod _ _ ->
+        Mode.Prod {} ->
           "_UNUSED" <> builder
     K.Prod ->
       case mode of
@@ -695,7 +701,7 @@ addChunk mode chunk builder =
           if elmCompatible
             then "_UNUSED" <> builder  -- Elm dev: prod functions marked unused
             else "_UNUSED" <> builder  -- Canopy dev: prod functions marked unused
-        Mode.Prod _ _ ->
+        Mode.Prod {} ->
           builder
 
 -- GENERATE ENUM
@@ -706,7 +712,7 @@ generateEnum mode global@(Opt.Global home name) index =
     case mode of
       Mode.Dev _ _ ->
         Expr.codeToExpr (Expr.generateCtor mode global index 0)
-      Mode.Prod _ _ ->
+      Mode.Prod {} ->
         JS.Int (Index.toMachine index)
 
 -- GENERATE BOX
@@ -717,7 +723,7 @@ generateBox mode global@(Opt.Global home name) =
     case mode of
       Mode.Dev _ _ ->
         Expr.codeToExpr (Expr.generateCtor mode global Index.first 1)
-      Mode.Prod _ _ ->
+      Mode.Prod {} ->
         JS.Ref (JsName.fromGlobal ModuleName.basics Name.identity)
 
 {-# NOINLINE identity #-}

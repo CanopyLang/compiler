@@ -36,6 +36,8 @@ import qualified Build.Artifacts as Build
 import Build.Artifacts
 import qualified Build.Parallel as Parallel
 import qualified Builder.Graph as Graph
+import qualified Builder.Hash as Hash
+import qualified Builder.Incremental as Incremental
 import qualified Canopy.Interface as I
 import qualified Canopy.ModuleName as ModuleName
 import qualified Canopy.Package as Pkg
@@ -43,10 +45,13 @@ import qualified Canopy.Version as V
 import qualified Data.Aeson as Json
 import qualified Data.Aeson.Key as Key
 import qualified Data.Aeson.KeyMap as KeyMap
+import qualified Data.Binary as Binary
 import qualified Data.ByteString.Lazy as LBS
 import qualified Data.Text as Text
+import Control.Exception (SomeException, try)
 import Control.Monad (filterM)
 import qualified Control.Concurrent.Async as Async
+import Data.IORef (IORef, newIORef, readIORef, atomicModifyIORef')
 import qualified Data.Maybe as Maybe
 import qualified Data.Map.Strict as Map
 import qualified Data.Name as Name
@@ -65,6 +70,7 @@ import qualified Query.Simple as Query
 import qualified PackageCache
 import qualified Parse.Module as Parse
 import qualified Reporting.Annotation as A
+import qualified Data.Time.Clock as Time
 import System.FilePath ((</>), normalise)
 import qualified System.Directory as Dir
 
@@ -98,16 +104,16 @@ compileFromPaths pkg isApp root srcDirs paths = do
   allModulePaths <- discoverTransitiveDeps root srcDirs paths depInterfaces projectType
   Logger.debug COMPILE_DEBUG ("Discovered " ++ show (Map.size allModulePaths) ++ " total modules to compile")
 
-  -- Compile in dependency order with growing interface map
+  -- Compile in dependency order with growing interface map and incremental caching
   compileResult <- compileModulesInOrder pkg projectType root depInterfaces allModulePaths
   case compileResult of
     Left err -> return (Left err)
-    Right (compiledModules, _finalInterfaces) -> do
-      -- Build artifacts with merged GlobalGraph
-      let modules = map driverResultToModule compiledModules
-          localGraphs = map extractLocalGraph compiledModules
+    Right (moduleResults, _finalInterfaces) -> do
+      -- Build artifacts from unified ModuleResults
+      let modules = map moduleResultToModule moduleResults
+          localGraphs = map mrLocalGraph moduleResults
           mergedGlobalGraph = mergeGraphs depGlobalGraph localGraphs
-          ffiInfoMap = collectFFIInfo compiledModules
+          ffiInfoMap = Map.unions (map mrFFIInfo moduleResults)
           artifacts = Build.Artifacts
             { Build._artifactsName = pkg
             , Build._artifactsDeps = Map.empty
@@ -118,14 +124,45 @@ compileFromPaths pkg isApp root srcDirs paths = do
             }
       return (Right artifacts)
 
--- | Compile from exposed modules using NEW compiler.
---
--- This is the NEW replacement for Build.fromExposed.
 -- | Source directory types (pure, no dependencies).
 data SrcDir
   = AbsoluteSrcDir FilePath
   | RelativeSrcDir FilePath
   deriving (Show, Eq)
+
+-- | Unified module compilation result.
+--
+-- Holds everything needed to build final artifacts, whether the module
+-- was freshly compiled or loaded from the incremental cache.
+data ModuleResult = ModuleResult
+  { mrModuleName :: !ModuleName.Raw
+  , mrInterface :: !I.Interface
+  , mrLocalGraph :: !Opt.LocalGraph
+  , mrFFIInfo :: !(Map.Map String JS.FFIInfo)
+  }
+
+-- | Convert a Driver.CompileResult into a ModuleResult.
+fromDriverResult :: Driver.CompileResult -> ModuleResult
+fromDriverResult result =
+  ModuleResult
+    { mrModuleName = extractModuleName (Driver.compileResultModule result)
+    , mrInterface = Driver.compileResultInterface result
+    , mrLocalGraph = Driver.compileResultLocalGraph result
+    , mrFFIInfo = Map.map convertFFIInfo (Driver.compileResultFFIInfo result)
+    }
+
+-- | Path to the build cache index file.
+cachePath :: FilePath -> FilePath
+cachePath root = root </> "canopy-stuff" </> "build-cache.json"
+
+-- | Path to a cached module artifact (Binary-encoded Interface + LocalGraph).
+cacheArtifactPath :: FilePath -> ModuleName.Raw -> FilePath
+cacheArtifactPath root modName =
+  root </> "canopy-stuff" </> "cache" </> Name.toChars modName ++ ".elco"
+
+-- | Compile from exposed modules using NEW compiler.
+--
+-- This is the NEW replacement for Build.fromExposed.
 
 compileFromExposed ::
   Pkg.Name ->
@@ -238,95 +275,94 @@ findModulePath root srcDirs modName = do
             [] -> Nothing
             (p:_) -> Just p)
 
--- Helper: Compile modules in dependency order with PARALLEL execution
+-- Helper: Compile modules in dependency order with PARALLEL execution and incremental caching.
 compileModulesInOrder ::
   Pkg.Name ->
   Parse.ProjectType ->
   FilePath ->
   Map.Map ModuleName.Raw I.Interface ->
   Map.Map ModuleName.Raw FilePath ->
-  IO (Either Exit.BuildError ([Driver.CompileResult], Map.Map ModuleName.Raw I.Interface))
-compileModulesInOrder pkg projectType _root initialInterfaces modulePaths = do
-  Logger.debug COMPILE_DEBUG ("====== PARALLEL COMPILATION STARTING ======")
+  IO (Either Exit.BuildError ([ModuleResult], Map.Map ModuleName.Raw I.Interface))
+compileModulesInOrder pkg projectType root initialInterfaces modulePaths = do
+  Logger.debug COMPILE_DEBUG "====== PARALLEL COMPILATION STARTING ======"
   Logger.debug COMPILE_DEBUG ("Total modules to compile: " ++ show (Map.size modulePaths))
+
+  -- Load incremental build cache
+  buildCache <- loadBuildCache root
+  cacheRef <- newIORef buildCache
+  hitRef <- newIORef (0 :: Int)
+  missRef <- newIORef (0 :: Int)
 
   -- Create shared query engine for all module compilations
   engine <- Engine.initEngine
 
   -- Build dependency graph for parallel compilation
-  -- Only include dependencies that are in modulePaths (i.e., modules we're compiling)
   moduleImports <- mapM (parseModuleImports projectType) (Map.toList modulePaths)
   let moduleNames = Map.keysSet modulePaths
-      -- Filter imports to only include modules we're actually compiling
       depList = [(modName, filter (`Set.member` moduleNames) imports) | (modName, _, imports) <- moduleImports]
       graph = Graph.buildGraph depList
 
   Logger.debug COMPILE_DEBUG ("Dependency graph built with " ++ show (length depList) ++ " modules")
 
-  -- Prepare module statuses (moduleName -> filepath)
-  let moduleStatuses = modulePaths
+  -- Compile in parallel with caching
+  result <- compileWithCache engine cacheRef hitRef missRef graph modulePaths initialInterfaces
 
-  -- Compile in parallel using Build.Parallel with dependency graph
-  -- We need to thread through interfaces as we compile, so we'll use a custom approach
-  -- that leverages the parallel infrastructure while maintaining interface state
-  result <- compileParallelWithInterfaces engine graph moduleStatuses initialInterfaces
+  -- Save updated cache and log stats
+  finalCache <- readIORef cacheRef
+  saveBuildCache root finalCache
+  logIncrementalStats hitRef missRef
 
-  -- Log cache statistics after all compilations
+  -- Log query engine cache statistics
   Driver.logCacheStats engine
 
   return result
   where
-    -- Compile modules in parallel while threading interfaces through each dependency level
-    compileParallelWithInterfaces ::
+    -- Compile with incremental cache integration
+    compileWithCache ::
       Engine.QueryEngine ->
+      IORef Incremental.BuildCache ->
+      IORef Int -> IORef Int ->
       Graph.DependencyGraph ->
       Map.Map ModuleName.Raw FilePath ->
       Map.Map ModuleName.Raw I.Interface ->
-      IO (Either Exit.BuildError ([Driver.CompileResult], Map.Map ModuleName.Raw I.Interface))
-    compileParallelWithInterfaces queryEngine graph statuses initialIfaces = do
+      IO (Either Exit.BuildError ([ModuleResult], Map.Map ModuleName.Raw I.Interface))
+    compileWithCache queryEngine cacheRef hitRef missRef graph statuses initialIfaces = do
       let plan = Parallel.groupByDependencyLevel graph
           levels = Parallel.planLevels plan
-
-      Logger.debug COMPILE_DEBUG ("PARALLEL COMPILATION: " ++ show (length levels) ++ " dependency levels identified")
-      Logger.debug COMPILE_DEBUG ("Level breakdown: " ++ show (map length levels) ++ " modules per level")
-
-      -- Compile each level sequentially, but within each level compile in parallel
-      compileLevels queryEngine levels initialIfaces [] statuses
+      Logger.debug COMPILE_DEBUG ("PARALLEL COMPILATION: " ++ show (length levels) ++ " dependency levels")
+      compileLevels queryEngine cacheRef hitRef missRef levels initialIfaces [] statuses
 
     -- Compile levels one by one, accumulating results and interfaces
     compileLevels ::
       Engine.QueryEngine ->
+      IORef Incremental.BuildCache ->
+      IORef Int -> IORef Int ->
       [[ModuleName.Raw]] ->
       Map.Map ModuleName.Raw I.Interface ->
-      [Driver.CompileResult] ->
+      [ModuleResult] ->
       Map.Map ModuleName.Raw FilePath ->
-      IO (Either Exit.BuildError ([Driver.CompileResult], Map.Map ModuleName.Raw I.Interface))
-    compileLevels _ [] ifaces compiled _ = return (Right (compiled, ifaces))
-    compileLevels queryEngine (level : restLevels) ifaces compiled statuses = do
-      -- Log parallel compilation level
-      Logger.debug COMPILE_DEBUG ("Compiling level with " ++ show (length level) ++ " modules in parallel: " ++ show (map Name.toChars level))
-      -- Compile all modules in this level in parallel
-      levelResult <- compileLevelInParallel queryEngine level ifaces statuses
+      IO (Either Exit.BuildError ([ModuleResult], Map.Map ModuleName.Raw I.Interface))
+    compileLevels _ _ _ _ [] ifaces compiled _ = return (Right (compiled, ifaces))
+    compileLevels queryEngine cacheRef hitRef missRef (level : restLevels) ifaces compiled statuses = do
+      levelResult <- compileLevelInParallel queryEngine cacheRef hitRef missRef level ifaces statuses
       case levelResult of
         Left err -> return (Left err)
         Right (levelCompiled, levelIfaces) -> do
-          -- Merge interfaces and continue with next level
           let newIfaces = Map.union levelIfaces ifaces
               newCompiled = compiled ++ levelCompiled
-          compileLevels queryEngine restLevels newIfaces newCompiled statuses
+          compileLevels queryEngine cacheRef hitRef missRef restLevels newIfaces newCompiled statuses
 
     -- Compile a single level (all modules in parallel)
     compileLevelInParallel ::
       Engine.QueryEngine ->
+      IORef Incremental.BuildCache ->
+      IORef Int -> IORef Int ->
       [ModuleName.Raw] ->
       Map.Map ModuleName.Raw I.Interface ->
       Map.Map ModuleName.Raw FilePath ->
-      IO (Either Exit.BuildError ([Driver.CompileResult], Map.Map ModuleName.Raw I.Interface))
-    compileLevelInParallel queryEngine modules ifaces statuses = do
-      -- Compile all modules in this level concurrently using Async
-      results <- Async.mapConcurrently (compileOneModule queryEngine ifaces statuses) modules
-
-      -- Check for errors
+      IO (Either Exit.BuildError ([ModuleResult], Map.Map ModuleName.Raw I.Interface))
+    compileLevelInParallel queryEngine cacheRef hitRef missRef modules ifaces statuses = do
+      results <- Async.mapConcurrently (compileOneModule queryEngine cacheRef hitRef missRef ifaces statuses) modules
       let (errors, successes) = partitionEithers results
       case errors of
         (err : _) -> return (Left err)
@@ -335,27 +371,51 @@ compileModulesInOrder pkg projectType _root initialInterfaces modulePaths = do
               newIfaces = Map.fromList [pair | (_, pair) <- successes]
           return (Right (compiled, newIfaces))
 
-    -- Compile a single module
+    -- Compile a single module with incremental cache check
     compileOneModule ::
       Engine.QueryEngine ->
+      IORef Incremental.BuildCache ->
+      IORef Int -> IORef Int ->
       Map.Map ModuleName.Raw I.Interface ->
       Map.Map ModuleName.Raw FilePath ->
       ModuleName.Raw ->
-      IO (Either Exit.BuildError (Driver.CompileResult, (ModuleName.Raw, I.Interface)))
-    compileOneModule queryEngine ifaces statuses modName = do
+      IO (Either Exit.BuildError (ModuleResult, (ModuleName.Raw, I.Interface)))
+    compileOneModule queryEngine cacheRef hitRef missRef ifaces statuses modName =
       case Map.lookup modName statuses of
-        Nothing -> do
-          -- This should not happen - module in dependency graph but not in paths
-          let errMsg = "Internal error: Module " ++ Name.toChars modName ++ " not found in module paths"
+        Nothing ->
           return (Left (Exit.BuildCannotCompile (Exit.CompileModuleNotFound errMsg)))
+          where errMsg = "Internal error: Module " ++ Name.toChars modName ++ " not found in module paths"
         Just path -> do
-          Logger.debug COMPILE_DEBUG ("Compiling module: " ++ Name.toChars modName)
-          compilationResult <- Driver.compileModuleWithEngine queryEngine pkg ifaces path projectType
-          case compilationResult of
-            Left err -> return (Left (Exit.BuildCannotCompile (queryErrorToCompileError path err)))
-            Right compiledResult -> do
-              let newIface = Driver.compileResultInterface compiledResult
-              return (Right (compiledResult, (modName, newIface)))
+          -- Check incremental cache
+          cached <- tryCacheHit cacheRef root modName path ifaces
+          case cached of
+            Just moduleResult -> do
+              atomicModifyIORef' hitRef (\n -> (n + 1, ()))
+              Logger.debug COMPILE_DEBUG ("CACHE HIT: " ++ Name.toChars modName)
+              return (Right (moduleResult, (modName, mrInterface moduleResult)))
+            Nothing -> do
+              atomicModifyIORef' missRef (\n -> (n + 1, ()))
+              Logger.debug COMPILE_DEBUG ("CACHE MISS: " ++ Name.toChars modName ++ " - compiling")
+              compileFresh queryEngine cacheRef root modName path ifaces
+
+    -- Attempt compilation from cache
+    compileFresh ::
+      Engine.QueryEngine ->
+      IORef Incremental.BuildCache ->
+      FilePath ->
+      ModuleName.Raw ->
+      FilePath ->
+      Map.Map ModuleName.Raw I.Interface ->
+      IO (Either Exit.BuildError (ModuleResult, (ModuleName.Raw, I.Interface)))
+    compileFresh queryEngine cacheRef projRoot modName path ifaces = do
+      compilationResult <- Driver.compileModuleWithEngine queryEngine pkg ifaces path projectType
+      case compilationResult of
+        Left err -> return (Left (Exit.BuildCannotCompile (queryErrorToCompileError path err)))
+        Right compiledResult -> do
+          let moduleResult = fromDriverResult compiledResult
+          -- Save to incremental cache
+          saveToCacheAsync cacheRef projRoot modName path ifaces moduleResult
+          return (Right (moduleResult, (modName, mrInterface moduleResult)))
 
     -- Helper to partition Either lists
     partitionEithers :: [Either a b] -> ([a], [b])
@@ -502,29 +562,11 @@ convertDependencyInterfaces = Map.mapMaybe extractInterface
       -- Convert Private to Interface by wrapping unions and aliases
       Just (I.Interface pkg Map.empty (Map.map I.PrivateUnion unions) (Map.map I.PrivateAlias aliases) Map.empty)
 
--- Helper: Convert Driver result to Build.Module
-driverResultToModule :: Driver.CompileResult -> Build.Module
-driverResultToModule result =
-  let modName = extractModuleName (Driver.compileResultModule result)
-      iface = Driver.compileResultInterface result
-      localGraph = Driver.compileResultLocalGraph result
-   in Build.Fresh modName iface localGraph
+-- | Convert a ModuleResult to Build.Module.
+moduleResultToModule :: ModuleResult -> Build.Module
+moduleResultToModule mr = Build.Fresh (mrModuleName mr) (mrInterface mr) (mrLocalGraph mr)
 
--- Helper: Extract LocalGraph from CompileResult
-extractLocalGraph :: Driver.CompileResult -> Opt.LocalGraph
-extractLocalGraph = Driver.compileResultLocalGraph
-
--- Helper: Collect FFI info from all compiled modules
-collectFFIInfo :: [Driver.CompileResult] -> Map.Map String JS.FFIInfo
-collectFFIInfo compiledModules =
-  Map.unions (map extractFFIInfo compiledModules)
-
--- Helper: Extract FFI info from single CompileResult
-extractFFIInfo :: Driver.CompileResult -> Map.Map String JS.FFIInfo
-extractFFIInfo result =
-  Map.map convertFFIInfo (Driver.compileResultFFIInfo result)
-
--- Helper: Convert Driver.FFIInfo to JS.FFIInfo
+-- | Convert Driver.FFIInfo to JS.FFIInfo.
 convertFFIInfo :: Driver.FFIInfo -> JS.FFIInfo
 convertFFIInfo driverInfo =
   JS.FFIInfo
@@ -532,6 +574,115 @@ convertFFIInfo driverInfo =
     , JS.ffiContent = Driver.ffiContent driverInfo
     , JS.ffiAlias = Driver.ffiAlias driverInfo
     }
+
+-- INCREMENTAL CACHE HELPERS
+
+-- | Load build cache from disk, returning empty cache on failure.
+loadBuildCache :: FilePath -> IO Incremental.BuildCache
+loadBuildCache root = do
+  maybeCache <- Incremental.loadCache (cachePath root)
+  maybe Incremental.emptyCache return maybeCache
+
+-- | Save build cache to disk.
+saveBuildCache :: FilePath -> Incremental.BuildCache -> IO ()
+saveBuildCache root cache = do
+  let cacheDir = root </> "canopy-stuff"
+  Dir.createDirectoryIfMissing True cacheDir
+  Incremental.saveCache (cachePath root) cache
+
+-- | Try to load a module from the incremental cache.
+--
+-- Checks source hash and dependency hash. If both match, loads
+-- the cached Interface and LocalGraph from the binary artifact file.
+tryCacheHit ::
+  IORef Incremental.BuildCache ->
+  FilePath ->
+  ModuleName.Raw ->
+  FilePath ->
+  Map.Map ModuleName.Raw I.Interface ->
+  IO (Maybe ModuleResult)
+tryCacheHit cacheRef root modName path ifaces = do
+  cache <- readIORef cacheRef
+  sourceHash <- Hash.hashFile path
+  let depsHash = computeDepsHash modName ifaces
+  if Incremental.needsRecompile cache modName sourceHash depsHash
+    then return Nothing
+    else loadCachedArtifact root modName
+
+-- | Load cached module artifact from disk.
+loadCachedArtifact :: FilePath -> ModuleName.Raw -> IO (Maybe ModuleResult)
+loadCachedArtifact root modName = do
+  let artifactFile = cacheArtifactPath root modName
+  exists <- Dir.doesFileExist artifactFile
+  if not exists
+    then return Nothing
+    else do
+      result <- try (decodeCachedModule artifactFile)
+      handleDecodeResult modName result
+
+-- | Decode a cached module from a binary file.
+decodeCachedModule :: FilePath -> IO (I.Interface, Opt.LocalGraph)
+decodeCachedModule artifactFile = do
+  decodeResult <- Binary.decodeFileOrFail artifactFile
+  case decodeResult of
+    Left (_offset, msg) -> fail ("decode error: " ++ msg)
+    Right pair -> return pair
+
+-- | Handle the result of attempting to decode a cached module.
+handleDecodeResult ::
+  ModuleName.Raw ->
+  Either SomeException (I.Interface, Opt.LocalGraph) ->
+  IO (Maybe ModuleResult)
+handleDecodeResult modName result =
+  case result of
+    Right (iface, localGraph) ->
+      return (Just (ModuleResult modName iface localGraph Map.empty))
+    Left _ex -> do
+      Logger.debug COMPILE_DEBUG ("Cache artifact decode failed for: " ++ Name.toChars modName)
+      return Nothing
+
+-- | Save module artifacts to cache (asynchronous, best-effort).
+saveToCacheAsync ::
+  IORef Incremental.BuildCache ->
+  FilePath ->
+  ModuleName.Raw ->
+  FilePath ->
+  Map.Map ModuleName.Raw I.Interface ->
+  ModuleResult ->
+  IO ()
+saveToCacheAsync cacheRef root modName path ifaces mr = do
+  sourceHash <- Hash.hashFile path
+  let depsHash = computeDepsHash modName ifaces
+      artifactFile = cacheArtifactPath root modName
+
+  -- Ensure cache directory exists
+  Dir.createDirectoryIfMissing True (root </> "canopy-stuff" </> "cache")
+
+  -- Write binary artifact (Interface + LocalGraph)
+  Binary.encodeFile artifactFile (mrInterface mr, mrLocalGraph mr)
+
+  -- Update cache index
+  now <- Time.getCurrentTime
+  let entry = Incremental.CacheEntry
+        { Incremental.cacheSourceHash = sourceHash
+        , Incremental.cacheDepsHash = depsHash
+        , Incremental.cacheArtifactPath = artifactFile
+        , Incremental.cacheTimestamp = now
+        }
+  atomicModifyIORef' cacheRef (\c -> (Incremental.insertCache c modName entry, ()))
+
+-- | Compute a combined hash of a module's dependencies.
+computeDepsHash :: ModuleName.Raw -> Map.Map ModuleName.Raw I.Interface -> Hash.ContentHash
+computeDepsHash _modName ifaces =
+  Hash.hashString (show (Map.keys ifaces))
+
+-- | Log incremental compilation statistics.
+logIncrementalStats :: IORef Int -> IORef Int -> IO ()
+logIncrementalStats hitRef missRef = do
+  hits <- readIORef hitRef
+  misses <- readIORef missRef
+  let total = hits + misses
+  Logger.debug COMPILE_DEBUG ("Incremental cache: " ++ show hits ++ " hits, " ++ show misses ++ " misses out of " ++ show total ++ " modules")
 
 -- Helper: Merge dependency GlobalGraph with compiled LocalGraphs
 mergeGraphs :: Opt.GlobalGraph -> [Opt.LocalGraph] -> Opt.GlobalGraph

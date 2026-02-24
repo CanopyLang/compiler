@@ -31,6 +31,7 @@ import qualified Data.Maybe as Maybe
 import qualified Data.Name as Name
 import qualified Data.NonEmptyList
 import qualified Generate.JavaScript as JS
+import qualified Generate.JavaScript.StringPool as StringPool
 import qualified Generate.Mode as Mode
 
 -- | Task monad for generation errors.
@@ -67,7 +68,7 @@ prod ::
   Task Builder
 prod _root _details artifacts = do
   let globalGraph = extractGlobalGraph artifacts
-  let mode = Mode.Prod (Mode.shortenFieldNames globalGraph) False
+  let mode = Mode.Prod (Mode.shortenFieldNames globalGraph) False StringPool.emptyPool
   pure (generateJS mode artifacts)
 
 -- | Generate REPL evaluation code.

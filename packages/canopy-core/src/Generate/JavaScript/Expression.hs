@@ -32,6 +32,7 @@ import qualified Data.Set as Set
 import qualified Data.Utf8 as Utf8
 import qualified Generate.JavaScript.Builder as JS
 import qualified Generate.JavaScript.Name as JsName
+import qualified Generate.JavaScript.StringPool as StringPool
 import qualified Generate.Mode as Mode
 import Json.Encode ((==>))
 import qualified Json.Encode as Encode
@@ -55,10 +56,12 @@ generate mode expression =
         case mode of
           Mode.Dev _ _ ->
             JS.Call toChar [JS.String (Utf8.toBuilder char)]
-          Mode.Prod _ _ ->
+          Mode.Prod {} ->
             JS.String (Utf8.toBuilder char)
     Opt.Str string ->
-      JsExpr $ JS.String (Utf8.toBuilder string)
+      case StringPool.lookupString (Mode.stringPool mode) string of
+        Just poolName -> JsExpr (JS.Ref poolName)
+        Nothing -> JsExpr (JS.String (Utf8.toBuilder string))
     Opt.Int int ->
       JsExpr $ JS.Int int
     Opt.Float float ->
@@ -82,13 +85,13 @@ generate mode expression =
       case mode of
         Mode.Dev _ _ ->
           JsExpr $ JS.Ref (JsName.fromGlobal home name)
-        Mode.Prod _ _ ->
+        Mode.Prod {} ->
           JsExpr $ JS.Int (Index.toMachine index)
     Opt.VarBox (Opt.Global home name) ->
       JsExpr . JS.Ref $
         ( case mode of
             Mode.Dev _ _ -> JsName.fromGlobal home name
-            Mode.Prod _ _ -> JsName.fromGlobal ModuleName.basics Name.identity
+            Mode.Prod {} -> JsName.fromGlobal ModuleName.basics Name.identity
         )
     Opt.VarCycle home name ->
       JsExpr $ JS.Call (JS.Ref (JsName.fromCycle home name)) []
@@ -179,7 +182,7 @@ generate mode expression =
       case mode of
         Mode.Dev _ _ ->
           JsExpr $ JS.Ref (JsName.fromKernel Name.utils "Tuple0")
-        Mode.Prod _ _ ->
+        Mode.Prod {} ->
           JsExpr $ JS.Int 0
     Opt.Tuple a b maybeC ->
       JsExpr $
@@ -290,7 +293,7 @@ generateCtor mode (Opt.Global home name) index arity =
       ctorTag =
         case mode of
           Mode.Dev _ _ -> JS.String (Name.toBuilder name)
-          Mode.Prod _ _ -> JS.Int (ctorToInt home name index)
+          Mode.Prod {} -> JS.Int (ctorToInt home name index)
    in ((generateFunction argNames . JsExpr) . JS.Object $ ((JsName.dollar, ctorTag) : fmap (\n -> (n, JS.Ref n)) argNames))
 
 ctorToInt :: ModuleName.Canonical -> Name.Name -> Index.ZeroBased -> Int
@@ -312,7 +315,7 @@ generateField mode name =
   case mode of
     Mode.Dev _ _ ->
       JsName.fromLocal name
-    Mode.Prod fields _ ->
+    Mode.Prod fields _ _ ->
       maybe
         (InternalError.report "Generate.JavaScript.Expression.generateField" "Unknown field name in production mode" "The field shortener map is missing an expected field.")
         id
@@ -556,7 +559,7 @@ generateCall mode func args =
       case mode of
         Mode.Dev _ _ ->
           generateCallHelp mode func args
-        Mode.Prod _ _ ->
+        Mode.Prod {} ->
           case args of
             [arg] ->
               generateJsExpr mode arg
@@ -849,7 +852,7 @@ generatePath mode path =
       case mode of
         Mode.Dev _ _ ->
           JS.Access (generatePath mode subPath) (JsName.fromIndex Index.first)
-        Mode.Prod _ _ ->
+        Mode.Prod {} ->
           generatePath mode subPath
 
 -- GENERATE IFS
@@ -952,7 +955,7 @@ generateIfTest mode root (path, test) =
           let tag =
                 case mode of
                   Mode.Dev _ _ -> JS.Access value JsName.dollar
-                  Mode.Prod _ _ ->
+                  Mode.Prod {} ->
                     case opts of
                       Can.Normal -> JS.Access value JsName.dollar
                       Can.Enum -> value
@@ -960,7 +963,7 @@ generateIfTest mode root (path, test) =
            in strictEq tag $
                 case mode of
                   Mode.Dev _ _ -> JS.String (Name.toBuilder name)
-                  Mode.Prod _ _ -> JS.Int (ctorToInt home name index)
+                  Mode.Prod {} -> JS.Int (ctorToInt home name index)
         DT.IsBool True ->
           value
         DT.IsBool False ->
@@ -971,7 +974,7 @@ generateIfTest mode root (path, test) =
           strictEq (JS.String (Utf8.toBuilder char)) $
             case mode of
               Mode.Dev _ _ -> JS.Call (JS.Access value (JsName.fromLocal "valueOf")) []
-              Mode.Prod _ _ -> value
+              Mode.Prod {} -> value
         DT.IsStr string ->
           strictEq value (JS.String (Utf8.toBuilder string))
         DT.IsCons ->
@@ -997,7 +1000,7 @@ generateCaseValue mode test =
     DT.IsCtor home name index _ _ ->
       case mode of
         Mode.Dev _ _ -> JS.String (Name.toBuilder name)
-        Mode.Prod _ _ -> JS.Int (ctorToInt home name index)
+        Mode.Prod {} -> JS.Int (ctorToInt home name index)
     DT.IsInt int ->
       JS.Int int
     DT.IsChr char ->
@@ -1035,7 +1038,7 @@ generateCaseTest mode root path exampleTest =
             else case mode of
               Mode.Dev _ _ ->
                 JS.Access value JsName.dollar
-              Mode.Prod _ _ ->
+              Mode.Prod {} ->
                 case opts of
                   Can.Normal ->
                     JS.Access value JsName.dollar
@@ -1051,7 +1054,7 @@ generateCaseTest mode root path exampleTest =
           case mode of
             Mode.Dev _ _ ->
               JS.Call (JS.Access value (JsName.fromLocal "valueOf")) []
-            Mode.Prod _ _ ->
+            Mode.Prod {} ->
               value
         DT.IsBool _ ->
           InternalError.report
@@ -1085,7 +1088,7 @@ pathToJsExpr mode root path =
       case mode of
         Mode.Dev _ _ ->
           JS.Access (pathToJsExpr mode root subPath) (JsName.fromIndex Index.first)
-        Mode.Prod _ _ ->
+        Mode.Prod {} ->
           pathToJsExpr mode root subPath
     DT.Empty ->
       JS.Ref (JsName.fromLocal root)
@@ -1112,7 +1115,7 @@ generateMain mode home main =
 toDebugMetadata :: Mode.Mode -> Can.Type -> JS.Expr
 toDebugMetadata mode msgType =
   case mode of
-    Mode.Prod _ _ ->
+    Mode.Prod {} ->
       -- Production mode: use simple 0 like Elm for compatibility
       JS.Int 0
     Mode.Dev Nothing _ ->
