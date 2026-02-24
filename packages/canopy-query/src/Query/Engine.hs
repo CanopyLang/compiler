@@ -29,6 +29,9 @@ module Query.Engine
     getCacheSize,
     getCacheHits,
     getCacheMisses,
+
+    -- * Phase Tracking
+    trackPhaseExecution,
   )
 where
 
@@ -214,3 +217,15 @@ getCacheMisses :: QueryEngine -> IO Int
 getCacheMisses (QueryEngine stateRef) = do
   state <- readIORef stateRef
   return (engineMisses state)
+
+-- | Track execution of a compilation phase through the query engine.
+--
+-- Records an uncached phase execution (canonicalization, type checking, etc.)
+-- in the engine's statistics. This ensures cache hit rate calculations
+-- accurately reflect all compilation work, not just parse queries.
+--
+-- @since 0.19.1
+trackPhaseExecution :: QueryEngine -> String -> IO ()
+trackPhaseExecution (QueryEngine stateRef) phaseName = do
+  Logger.debug QUERY_DEBUG ("Executing phase (uncached): " ++ phaseName)
+  modifyIORef' stateRef incrementMisses

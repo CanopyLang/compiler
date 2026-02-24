@@ -1,0 +1,46 @@
+{
+  "manifest_version": 3,
+  "name": "Canopy Time-Travel Debugger",
+  "version": "1.0.0",
+  "description": "Time-travel debugging for Canopy applications with state inspection and message replay",
+  "icons": {
+    "16": "public/icon16.png",
+    "48": "public/icon48.png",
+    "128": "public/icon128.png"
+  },
+  "action": {
+    "default_icon": {
+      "16": "public/icon16.png",
+      "48": "public/icon48.png"
+    },
+    "default_title": "Canopy Debugger",
+    "default_popup": "public/popup.html"
+  },
+  "devtools_page": "public/devtools.html",
+  "background": {
+    "service_worker": "dist/background.js",
+    "type": "module"
+  },
+  "content_scripts": [
+    {
+      "matches": ["<all_urls>"],
+      "js": ["dist/content.js"],
+      "run_at": "document_start"
+    }
+  ],
+  "permissions": [
+    "activeTab",
+    "storage",
+    "downloads"
+  ],
+  "host_permissions": [
+    "ws://localhost:*/*",
+    "wss://localhost:*/*"
+  ],
+  "web_accessible_resources": [
+    {
+      "resources": ["dist/injected.js"],
+      "matches": ["<all_urls>"]
+    }
+  ]
+}

@@ -1,0 +1,213 @@
+{
+  "$schema": "https://raw.githubusercontent.com/martinring/tmlanguage/master/tmlanguage.json",
+  "name": "Canopy",
+  "scopeName": "source.canopy",
+  "patterns": [
+    { "include": "#comments" },
+    { "include": "#strings" },
+    { "include": "#characters" },
+    { "include": "#numbers" },
+    { "include": "#keywords" },
+    { "include": "#types" },
+    { "include": "#operators" },
+    { "include": "#functions" },
+    { "include": "#module" },
+    { "include": "#import" }
+  ],
+  "repository": {
+    "comments": {
+      "patterns": [
+        {
+          "name": "comment.line.double-dash.canopy",
+          "match": "--.*$"
+        },
+        {
+          "name": "comment.block.documentation.canopy",
+          "begin": "\\{-\\|",
+          "end": "-\\}",
+          "patterns": [
+            { "include": "#comments" }
+          ]
+        },
+        {
+          "name": "comment.block.canopy",
+          "begin": "\\{-",
+          "end": "-\\}",
+          "patterns": [
+            { "include": "#comments" }
+          ]
+        }
+      ]
+    },
+    "strings": {
+      "patterns": [
+        {
+          "name": "string.quoted.triple.canopy",
+          "begin": "\"\"\"",
+          "end": "\"\"\"",
+          "patterns": [
+            { "include": "#string-escapes" }
+          ]
+        },
+        {
+          "name": "string.quoted.double.canopy",
+          "begin": "\"",
+          "end": "\"",
+          "patterns": [
+            { "include": "#string-escapes" }
+          ]
+        }
+      ]
+    },
+    "string-escapes": {
+      "name": "constant.character.escape.canopy",
+      "match": "\\\\(?:[nrt\\\\\"']|u\\{[0-9A-Fa-f]+\\})"
+    },
+    "characters": {
+      "name": "string.quoted.single.canopy",
+      "match": "'(?:[^'\\\\]|\\\\(?:[nrt\\\\\"']|u\\{[0-9A-Fa-f]+\\}))'"
+    },
+    "numbers": {
+      "patterns": [
+        {
+          "name": "constant.numeric.hex.canopy",
+          "match": "\\b0x[0-9A-Fa-f]+\\b"
+        },
+        {
+          "name": "constant.numeric.float.canopy",
+          "match": "\\b[0-9]+\\.[0-9]+(?:[eE][+-]?[0-9]+)?\\b"
+        },
+        {
+          "name": "constant.numeric.integer.canopy",
+          "match": "\\b[0-9]+\\b"
+        }
+      ]
+    },
+    "keywords": {
+      "patterns": [
+        {
+          "name": "keyword.control.canopy",
+          "match": "\\b(if|then|else|case|of|let|in)\\b"
+        },
+        {
+          "name": "keyword.declaration.canopy",
+          "match": "\\b(module|import|exposing|as|type|alias|port)\\b"
+        },
+        {
+          "name": "keyword.ffi.canopy",
+          "match": "\\b(foreign|javascript)\\b"
+        },
+        {
+          "name": "keyword.other.canopy",
+          "match": "\\b(where|infix|left|right|non)\\b"
+        }
+      ]
+    },
+    "types": {
+      "patterns": [
+        {
+          "name": "entity.name.type.canopy",
+          "match": "\\b[A-Z][a-zA-Z0-9_]*\\b"
+        }
+      ]
+    },
+    "operators": {
+      "patterns": [
+        {
+          "name": "keyword.operator.arrow.canopy",
+          "match": "->"
+        },
+        {
+          "name": "keyword.operator.pipe.canopy",
+          "match": "\\|>"
+        },
+        {
+          "name": "keyword.operator.composition.canopy",
+          "match": "<<|>>"
+        },
+        {
+          "name": "keyword.operator.append.canopy",
+          "match": "\\+\\+"
+        },
+        {
+          "name": "keyword.operator.cons.canopy",
+          "match": "::"
+        },
+        {
+          "name": "keyword.operator.comparison.canopy",
+          "match": "==|/=|<=|>=|<|>"
+        },
+        {
+          "name": "keyword.operator.logical.canopy",
+          "match": "&&|\\|\\|"
+        },
+        {
+          "name": "keyword.operator.arithmetic.canopy",
+          "match": "[+\\-*/^]"
+        },
+        {
+          "name": "keyword.operator.assignment.canopy",
+          "match": "="
+        },
+        {
+          "name": "keyword.operator.type.canopy",
+          "match": ":"
+        },
+        {
+          "name": "keyword.operator.lambda.canopy",
+          "match": "\\\\"
+        }
+      ]
+    },
+    "functions": {
+      "patterns": [
+        {
+          "name": "entity.name.function.canopy",
+          "match": "^([a-z_][a-zA-Z0-9_']*)\\s*(?=:)",
+          "captures": {
+            "1": { "name": "entity.name.function.canopy" }
+          }
+        },
+        {
+          "name": "entity.name.function.canopy",
+          "match": "^([a-z_][a-zA-Z0-9_']*)\\s+(?=[a-zA-Z_].*=)",
+          "captures": {
+            "1": { "name": "entity.name.function.canopy" }
+          }
+        }
+      ]
+    },
+    "module": {
+      "name": "meta.module.canopy",
+      "match": "^(module)\\s+([A-Z][a-zA-Z0-9_.]*)",
+      "captures": {
+        "1": { "name": "keyword.declaration.canopy" },
+        "2": { "name": "entity.name.namespace.canopy" }
+      }
+    },
+    "import": {
+      "patterns": [
+        {
+          "name": "meta.import.canopy",
+          "match": "^(import)\\s+([A-Z][a-zA-Z0-9_.]*)",
+          "captures": {
+            "1": { "name": "keyword.declaration.canopy" },
+            "2": { "name": "entity.name.namespace.canopy" }
+          }
+        },
+        {
+          "name": "meta.import.ffi.canopy",
+          "match": "^(foreign)\\s+(import)\\s+(javascript)\\s+\"([^\"]+)\"\\s+(as)\\s+([A-Z][a-zA-Z0-9_]*)",
+          "captures": {
+            "1": { "name": "keyword.ffi.canopy" },
+            "2": { "name": "keyword.declaration.canopy" },
+            "3": { "name": "keyword.ffi.canopy" },
+            "4": { "name": "string.quoted.double.canopy" },
+            "5": { "name": "keyword.declaration.canopy" },
+            "6": { "name": "entity.name.namespace.canopy" }
+          }
+        }
+      ]
+    }
+  }
+}

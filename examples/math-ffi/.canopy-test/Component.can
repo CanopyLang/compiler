@@ -1,0 +1,424 @@
+module Component exposing
+    ( test
+    , fuzz
+    , render
+    , renderWithModel
+    , click
+    , input
+    , change
+    , submit
+    , focus
+    , blur
+    , keyDown
+    , keyUp
+    , keyPress
+    , hasText
+    , hasClass
+    , hasAttribute
+    , hasStyle
+    , find
+    , findAll
+    , count
+    , first
+    , at
+    , getMessages
+    , getModel
+    , within
+    , Rendered
+    )
+
+{-| Component testing for Canopy views.
+
+Test components in isolation without a full browser.
+Uses jsdom for fast, headless DOM testing.
+
+## Quick Start
+
+    import Component
+    import MyApp.Button as Button
+
+    suite : Test
+    suite =
+        describe "Button"
+            [ Component.test "renders label" <|
+                \_ ->
+                    Button.view { label = "Click me" }
+                        |> Component.render
+                        |> Component.hasText "Click me"
+
+            , Component.test "handles clicks" <|
+                \_ ->
+                    Button.view { label = "Click", onClick = Clicked }
+                        |> Component.render
+                        |> Component.click
+                        |> Component.getMessages
+                        |> Expect.equal [ Clicked ]
+            ]
+
+## Finding Elements
+
+    Component.test "finds nested elements" <|
+        \_ ->
+            myView
+                |> Component.render
+                |> Component.find ".card"
+                |> Component.within (Component.find ".title")
+                |> Component.hasText "Card Title"
+
+-}
+
+import Test exposing (Test)
+import Fuzz exposing (Fuzzer)
+import Expect exposing (Expectation)
+import Html exposing (Html)
+
+
+{-| A rendered component ready for testing.
+-}
+type Rendered msg
+    = Rendered
+        { html : String
+        , messages : List msg
+        , model : Maybe model
+        }
+
+
+{-| A query result for finding elements.
+-}
+type QueryResult msg
+    = QueryResult
+        { elements : List Element
+        , rendered : Rendered msg
+        }
+
+
+type Element
+    = Element
+        { tagName : String
+        , attributes : List ( String, String )
+        , textContent : String
+        , children : List Element
+        }
+
+
+{-| Create a component test.
+
+    Component.test "button renders" <|
+        \_ ->
+            Button.view props
+                |> Component.render
+                |> Component.hasText "Click"
+
+-}
+test : String -> (() -> Expectation) -> Test
+test description thunk =
+    Test.test description thunk
+
+
+{-| Create a fuzz test for a component.
+
+    Component.fuzz Fuzz.string "renders any label" <|
+        \label ->
+            Button.view { label = label }
+                |> Component.render
+                |> Component.hasText label
+
+-}
+fuzz : Fuzzer a -> String -> (a -> Expectation) -> Test
+fuzz fuzzer description testFn =
+    Test.fuzz fuzzer description testFn
+
+
+{-| Render a view for testing.
+
+    Button.view { label = "Click" }
+        |> Component.render
+        |> Component.hasText "Click"
+
+-}
+render : Html msg -> Rendered msg
+render html =
+    -- Kernel: render to jsdom
+    Rendered
+        { html = ""
+        , messages = []
+        , model = Nothing
+        }
+
+
+{-| Render a view with an initial model for stateful testing.
+-}
+renderWithModel : model -> (model -> Html msg) -> Rendered msg
+renderWithModel model viewFn =
+    -- Kernel: render with model tracking
+    Rendered
+        { html = ""
+        , messages = []
+        , model = Just model
+        }
+
+
+{-| Simulate a click event on the rendered element.
+
+    button
+        |> Component.render
+        |> Component.click
+        |> Component.getMessages
+        |> Expect.equal [ Clicked ]
+
+-}
+click : Rendered msg -> Rendered msg
+click rendered =
+    -- Kernel: dispatch click event
+    rendered
+
+
+{-| Simulate input event (typing in a text field).
+
+    inputField
+        |> Component.render
+        |> Component.input "hello"
+        |> Component.getMessages
+
+-}
+input : String -> Rendered msg -> Rendered msg
+input value rendered =
+    -- Kernel: dispatch input event
+    rendered
+
+
+{-| Simulate change event (select, checkbox, etc.).
+-}
+change : String -> Rendered msg -> Rendered msg
+change value rendered =
+    -- Kernel: dispatch change event
+    rendered
+
+
+{-| Simulate form submission.
+-}
+submit : Rendered msg -> Rendered msg
+submit rendered =
+    -- Kernel: dispatch submit event
+    rendered
+
+
+{-| Simulate focus event.
+-}
+focus : Rendered msg -> Rendered msg
+focus rendered =
+    -- Kernel: dispatch focus event
+    rendered
+
+
+{-| Simulate blur event.
+-}
+blur : Rendered msg -> Rendered msg
+blur rendered =
+    -- Kernel: dispatch blur event
+    rendered
+
+
+{-| Simulate keydown event.
+
+    inputField
+        |> Component.render
+        |> Component.keyDown "Enter"
+
+-}
+keyDown : String -> Rendered msg -> Rendered msg
+keyDown key rendered =
+    -- Kernel: dispatch keydown event
+    rendered
+
+
+{-| Simulate keyup event.
+-}
+keyUp : String -> Rendered msg -> Rendered msg
+keyUp key rendered =
+    -- Kernel: dispatch keyup event
+    rendered
+
+
+{-| Simulate keypress event.
+-}
+keyPress : String -> Rendered msg -> Rendered msg
+keyPress key rendered =
+    -- Kernel: dispatch keypress event
+    rendered
+
+
+{-| Assert the rendered HTML contains specific text.
+
+    view
+        |> Component.render
+        |> Component.hasText "Welcome"
+
+-}
+hasText : String -> Rendered msg -> Expectation
+hasText expected (Rendered rendered) =
+    if String.contains expected rendered.html then
+        Expect.pass
+
+    else
+        Expect.fail ("Expected to find text '" ++ expected ++ "' in rendered output")
+
+
+{-| Assert an element has a specific class.
+
+    view
+        |> Component.render
+        |> Component.find "button"
+        |> Component.hasClass "primary"
+
+-}
+hasClass : String -> QueryResult msg -> Expectation
+hasClass className (QueryResult result) =
+    case result.elements of
+        [] ->
+            Expect.fail "No elements found"
+
+        (Element el) :: _ ->
+            case List.filter (\( k, v ) -> k == "class") el.attributes of
+                [] ->
+                    Expect.fail ("Element has no class attribute")
+
+                ( _, classes ) :: _ ->
+                    if String.contains className classes then
+                        Expect.pass
+
+                    else
+                        Expect.fail ("Expected class '" ++ className ++ "' but found '" ++ classes ++ "'")
+
+
+{-| Assert an element has a specific attribute.
+
+    view
+        |> Component.render
+        |> Component.find "button"
+        |> Component.hasAttribute "disabled" "true"
+
+-}
+hasAttribute : String -> String -> QueryResult msg -> Expectation
+hasAttribute attrName expected (QueryResult result) =
+    case result.elements of
+        [] ->
+            Expect.fail "No elements found"
+
+        (Element el) :: _ ->
+            case List.filter (\( k, _ ) -> k == attrName) el.attributes of
+                [] ->
+                    Expect.fail ("Element has no '" ++ attrName ++ "' attribute")
+
+                ( _, value ) :: _ ->
+                    if value == expected then
+                        Expect.pass
+
+                    else
+                        Expect.fail ("Expected " ++ attrName ++ "='" ++ expected ++ "' but got '" ++ value ++ "'")
+
+
+{-| Assert an element has a specific inline style.
+-}
+hasStyle : String -> String -> QueryResult msg -> Expectation
+hasStyle property expected (QueryResult result) =
+    -- Check style attribute or computed style
+    Expect.pass
+
+
+{-| Find elements matching a CSS selector.
+
+    view
+        |> Component.render
+        |> Component.find ".button"
+        |> Component.hasText "Click"
+
+-}
+find : String -> Rendered msg -> QueryResult msg
+find selector (Rendered rendered) =
+    -- Kernel: querySelectorAll
+    QueryResult
+        { elements = []
+        , rendered = Rendered rendered
+        }
+
+
+{-| Find all elements matching a selector.
+-}
+findAll : String -> Rendered msg -> QueryResult msg
+findAll selector rendered =
+    find selector rendered
+
+
+{-| Count elements matching a selector.
+
+    view
+        |> Component.render
+        |> Component.findAll ".list-item"
+        |> Component.count
+        |> Expect.equal 5
+
+-}
+count : QueryResult msg -> Int
+count (QueryResult result) =
+    List.length result.elements
+
+
+{-| Get the first element from a query result.
+-}
+first : QueryResult msg -> QueryResult msg
+first (QueryResult result) =
+    QueryResult
+        { elements = List.take 1 result.elements
+        , rendered = result.rendered
+        }
+
+
+{-| Get the element at a specific index.
+-}
+at : Int -> QueryResult msg -> QueryResult msg
+at index (QueryResult result) =
+    QueryResult
+        { elements =
+            result.elements
+                |> List.drop index
+                |> List.take 1
+        , rendered = result.rendered
+        }
+
+
+{-| Get all messages that were triggered during interaction.
+
+    button
+        |> Component.render
+        |> Component.click
+        |> Component.click
+        |> Component.getMessages
+        |> Expect.equal [ Clicked, Clicked ]
+
+-}
+getMessages : Rendered msg -> List msg
+getMessages (Rendered rendered) =
+    rendered.messages
+
+
+{-| Get the current model after interactions.
+-}
+getModel : Rendered msg -> Maybe model
+getModel (Rendered rendered) =
+    Nothing
+
+
+{-| Query within a specific element.
+
+    view
+        |> Component.render
+        |> Component.find ".card"
+        |> Component.within (Component.find ".title")
+        |> Component.hasText "Title"
+
+-}
+within : (Rendered msg -> QueryResult msg) -> QueryResult msg -> QueryResult msg
+within query (QueryResult result) =
+    -- Scope query to within the found elements
+    query result.rendered

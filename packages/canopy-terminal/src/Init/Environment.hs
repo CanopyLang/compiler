@@ -59,15 +59,12 @@ import qualified Canopy.Constraint as Con
 import Canopy.Package (Name)
 import Data.Map (Map)
 import qualified Data.Map as Map
-import qualified Deps.Registry as Registry
-import Deps.Solver (Connection)
 import qualified Deps.Solver as Solver
-import qualified Http
 import Init.Types
   ( InitError (..),
     ProjectContext,
   )
-import qualified Stuff
+import qualified System.Directory as Dir
 
 -- | Initialize the solver environment for package resolution.
 --
@@ -101,17 +98,14 @@ setupEnvironment = do
 
 -- | Validate solver environment is ready for dependency resolution.
 --
--- Performs basic checks on the solver environment to ensure it's
--- properly configured and can handle dependency resolution requests.
+-- Verifies the package cache directory exists, which is necessary
+-- for the solver to store and retrieve package information.
 validateSolverEnv :: Solver.Env -> IO (Either InitError Solver.Env)
-validateSolverEnv env@(Solver.Env cache manager connection registry _) =
-  if isValidSolverEnv cache manager connection registry
+validateSolverEnv env@(Solver.Env cache _manager _connection _registry _) = do
+  cacheExists <- Dir.doesDirectoryExist cache
+  if cacheExists
     then pure (Right env)
-    else pure (Left (FileSystemError "Invalid solver environment configuration"))
-
--- | Check if solver environment components are valid.
-isValidSolverEnv :: Stuff.PackageCache -> Http.Manager -> Connection -> Registry.CanopyRegistries -> Bool
-isValidSolverEnv _ _ _ _ = True -- Simplified validation for now
+    else pure (Left (FileSystemError ("Package cache directory not found: " ++ cache)))
 
 -- | Resolve default dependencies using the solver environment.
 --
@@ -179,11 +173,15 @@ validateEnvironment = do
     Right _env -> validateFileSystem
 
 -- | Validate file system is ready for project creation.
+--
+-- Checks that the current directory is writable, which is required
+-- for creating project files during initialization.
 validateFileSystem :: IO (Either InitError ())
 validateFileSystem = do
-  -- Check current directory is writable
-  -- For now, assume it's always valid
-  pure (Right ())
+  perms <- Dir.getPermissions "."
+  if Dir.writable perms
+    then pure (Right ())
+    else pure (Left (FileSystemError "Current directory is not writable"))
 
 -- | Initialize solver with default configuration.
 --
@@ -202,8 +200,8 @@ initializeSolver = setupEnvironment
 -- handling and dependency prioritization.
 --
 -- @since 0.19.1
+-- | The init solver uses the standard solver environment directly.
+-- Project-specific solver configuration (e.g., private registries)
+-- would be added here if needed in the future.
 createSolverContext :: ProjectContext -> Solver.Env -> IO (Either InitError Solver.Env)
-createSolverContext _context env =
-  -- For now, return the environment as-is
-  -- Future enhancement: customize solver based on project context
-  pure (Right env)
+createSolverContext _context env = pure (Right env)

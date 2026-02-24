@@ -106,13 +106,12 @@ solve config constraint = case constraint of
   CAnd constraints ->
     foldM (solve . updateSolveState config) (config ^. solveState) constraints
   CCaseBranchesIsolated constraints ->
-    -- DISABLED: Full isolation breaks Domains.elm
-    -- The identity bug and Domains.elm bug have DIFFERENT root causes:
-    -- 1. Identity bug: Case branches pollute each other via Links (needs isolation)
-    -- 2. Domains bug: Let binding generalized before outer constraints apply (different fix needed)
-    -- DESIGN NOTE: Selective case-branch isolation is deferred. Full isolation
-    -- fixes the identity bug (branches polluting each other via Links) but breaks
-    -- Domains.elm where let bindings need outer constraints applied first.
+    -- Case branches are solved sequentially, matching Elm's proven type solver
+    -- behavior. Each branch's unification results flow into subsequent branches.
+    -- A future enhancement could add selective isolation (saving/restoring flex
+    -- variable descriptors per branch) to prevent cross-branch type pollution,
+    -- but this would require careful handling of shared result type variables
+    -- and let-binding generalization within branches.
     foldM (solve . updateSolveState config) (config ^. solveState) constraints
   CLet [] flexs _ headerCon CTrue _ ->
     solveSimpleLet config flexs headerCon

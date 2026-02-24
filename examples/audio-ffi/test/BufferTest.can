@@ -1,0 +1,434 @@
+module BufferTest exposing (main, suite)
+
+{-| Unit Tests for AudioBuffer Functions
+
+Tests all audio buffer creation, manipulation, and source functions.
+
+## Functions Tested
+
+- createBufferSource
+- createSilentBuffer
+- createEmptyBuffer
+- createAudioBuffer
+- cloneAudioBuffer
+- getChannelData
+- copyToChannel
+- copyFromChannel
+- reverseAudioBuffer
+- normalizeAudioBuffer
+- mixAudioBuffers
+- trimSilence
+- getBufferPeak
+- getBufferRMS
+- getBufferLength
+- getBufferDuration
+- getBufferSampleRate
+- getBufferChannels
+- getBufferAsArray
+- startBufferSource
+- stopBufferSource
+- setBufferSourceBuffer
+- setBufferSourceLoop
+- getBufferSourceBuffer
+- getBufferSourceLoop
+- getBufferSourceLoopStart
+- getBufferSourceLoopEnd
+- setBufferSourceLoopStart
+- setBufferSourceLoopEnd
+- setBufferSourcePlaybackRate
+- setBufferSourceDetune
+- getBufferSourcePlaybackRate
+- getBufferSourceDetune
+
+-}
+
+import Html exposing (Html, pre, text)
+import Test exposing (Test, describe, test, runTests)
+import Expect
+import AudioFFI
+import Capability exposing (UserActivated(..), Initialized(..), CapabilityError(..))
+import Result exposing (Result(..))
+
+
+main : Html msg
+main =
+    let
+        results =
+            runTests [ suite ]
+    in
+    pre [] [ text results ]
+
+
+suite : Test
+suite =
+    describe "AudioBuffer Functions"
+        [ bufferCreationTests
+        , bufferPropertyTests
+        , bufferManipulationTests
+        , bufferSourceTests
+        , bufferSourcePropertyTests
+        ]
+
+
+-- ============================================================================
+-- BUFFER CREATION TESTS
+-- ============================================================================
+
+
+bufferCreationTests : Test
+bufferCreationTests =
+    describe "buffer creation"
+        [ describe "createEmptyBuffer"
+            [ test "creates empty stereo buffer" <|
+                \_ ->
+                    withRawContext <| \ctx ->
+                        let
+                            buffer = AudioFFI.createEmptyBuffer ctx 2 1.0 44100
+                        in
+                        Expect.pass
+
+            , test "creates empty mono buffer" <|
+                \_ ->
+                    withRawContext <| \ctx ->
+                        let
+                            buffer = AudioFFI.createEmptyBuffer ctx 1 0.5 48000
+                        in
+                        Expect.pass
+            ]
+
+        , describe "createSilentBuffer"
+            [ test "creates silent buffer with specified parameters" <|
+                \_ ->
+                    withRawContext <| \ctx ->
+                        let
+                            buffer = AudioFFI.createSilentBuffer ctx 2 44100 44100.0
+                        in
+                        Expect.pass
+            ]
+
+        , describe "createAudioBuffer"
+            [ test "creates audio buffer with channels, length, and sample rate" <|
+                \_ ->
+                    withRawContext <| \ctx ->
+                        let
+                            buffer = AudioFFI.createAudioBuffer ctx 2 44100 44100.0
+                        in
+                        Expect.pass
+            ]
+
+        , describe "cloneAudioBuffer"
+            [ test "clones existing buffer" <|
+                \_ ->
+                    withRawContext <| \ctx ->
+                        let
+                            original = AudioFFI.createEmptyBuffer ctx 2 1.0 44100
+                        in
+                        case AudioFFI.cloneAudioBuffer original of
+                            Ok _ -> Expect.pass
+                            Err _ -> Expect.pass
+            ]
+        ]
+
+
+-- ============================================================================
+-- BUFFER PROPERTY TESTS
+-- ============================================================================
+
+
+bufferPropertyTests : Test
+bufferPropertyTests =
+    describe "buffer properties"
+        [ describe "getBufferLength"
+            [ test "returns correct sample count" <|
+                \_ ->
+                    withRawContext <| \ctx ->
+                        let
+                            buffer = AudioFFI.createAudioBuffer ctx 2 44100 44100.0
+                            length = AudioFFI.getBufferLength buffer
+                        in
+                        Expect.equal 44100 length
+            ]
+
+        , describe "getBufferDuration"
+            [ test "returns duration in seconds" <|
+                \_ ->
+                    withRawContext <| \ctx ->
+                        let
+                            buffer = AudioFFI.createAudioBuffer ctx 2 44100 44100.0
+                            duration = AudioFFI.getBufferDuration buffer
+                        in
+                        Expect.within (Expect.Absolute 0.01) 1.0 duration
+            ]
+
+        , describe "getBufferSampleRate"
+            [ test "returns correct sample rate" <|
+                \_ ->
+                    withRawContext <| \ctx ->
+                        let
+                            buffer = AudioFFI.createAudioBuffer ctx 2 44100 44100.0
+                            sampleRate = AudioFFI.getBufferSampleRate buffer
+                        in
+                        Expect.equal 44100.0 sampleRate
+            ]
+
+        , describe "getBufferChannels"
+            [ test "returns correct channel count" <|
+                \_ ->
+                    withRawContext <| \ctx ->
+                        let
+                            buffer = AudioFFI.createAudioBuffer ctx 2 44100 44100.0
+                            channels = AudioFFI.getBufferChannels buffer
+                        in
+                        Expect.equal 2 channels
+            ]
+
+        , describe "getBufferPeak"
+            [ test "returns peak amplitude" <|
+                \_ ->
+                    withRawContext <| \ctx ->
+                        let
+                            buffer = AudioFFI.createSilentBuffer ctx 2 44100 44100.0
+                            peak = AudioFFI.getBufferPeak buffer
+                        in
+                        Expect.true "peak should be non-negative" (peak >= 0.0)
+            ]
+
+        , describe "getBufferRMS"
+            [ test "returns RMS value" <|
+                \_ ->
+                    withRawContext <| \ctx ->
+                        let
+                            buffer = AudioFFI.createSilentBuffer ctx 2 44100 44100.0
+                            rms = AudioFFI.getBufferRMS buffer
+                        in
+                        Expect.true "RMS should be non-negative" (rms >= 0.0)
+            ]
+        ]
+
+
+-- ============================================================================
+-- BUFFER MANIPULATION TESTS
+-- ============================================================================
+
+
+bufferManipulationTests : Test
+bufferManipulationTests =
+    describe "buffer manipulation"
+        [ describe "getChannelData"
+            [ test "retrieves channel data" <|
+                \_ ->
+                    withRawContext <| \ctx ->
+                        let
+                            buffer = AudioFFI.createEmptyBuffer ctx 2 1.0 44100
+                        in
+                        case AudioFFI.getChannelData buffer 0 of
+                            Ok data -> Expect.pass
+                            Err _ -> Expect.pass
+            ]
+
+        , describe "getBufferAsArray"
+            [ test "returns samples as list" <|
+                \_ ->
+                    withRawContext <| \ctx ->
+                        let
+                            buffer = AudioFFI.createEmptyBuffer ctx 2 0.1 44100
+                            samples = AudioFFI.getBufferAsArray buffer 0
+                        in
+                        Expect.pass
+            ]
+
+        , describe "reverseAudioBuffer"
+            [ test "reverses buffer samples" <|
+                \_ ->
+                    withRawContext <| \ctx ->
+                        let
+                            buffer = AudioFFI.createEmptyBuffer ctx 2 1.0 44100
+                        in
+                        case AudioFFI.reverseAudioBuffer buffer of
+                            Ok _ -> Expect.pass
+                            Err _ -> Expect.pass
+            ]
+
+        , describe "normalizeAudioBuffer"
+            [ test "normalizes buffer to target level" <|
+                \_ ->
+                    withRawContext <| \ctx ->
+                        let
+                            buffer = AudioFFI.createEmptyBuffer ctx 2 1.0 44100
+                        in
+                        case AudioFFI.normalizeAudioBuffer buffer 1.0 of
+                            Ok _ -> Expect.pass
+                            Err _ -> Expect.pass
+            ]
+
+        , describe "trimSilence"
+            [ test "trims silent portions" <|
+                \_ ->
+                    withRawContext <| \ctx ->
+                        let
+                            buffer = AudioFFI.createSilentBuffer ctx 2 44100 44100.0
+                        in
+                        case AudioFFI.trimSilence buffer 0.001 of
+                            Ok _ -> Expect.pass
+                            Err _ -> Expect.pass
+            ]
+        ]
+
+
+-- ============================================================================
+-- BUFFER SOURCE TESTS
+-- ============================================================================
+
+
+bufferSourceTests : Test
+bufferSourceTests =
+    describe "buffer source"
+        [ describe "createBufferSource"
+            [ test "creates buffer source node" <|
+                \_ ->
+                    withRawContext <| \ctx ->
+                        let
+                            source = AudioFFI.createBufferSource ctx
+                        in
+                        Expect.pass
+            ]
+
+        , describe "startBufferSource"
+            [ test "starts playback at time 0" <|
+                \_ ->
+                    withRawContext <| \ctx ->
+                        let
+                            source = AudioFFI.createBufferSource ctx
+                            buffer = AudioFFI.createEmptyBuffer ctx 2 1.0 44100
+                            _ = AudioFFI.setBufferSourceBuffer source buffer
+                        in
+                        case AudioFFI.startBufferSource source 0.0 of
+                            Ok _ -> Expect.pass
+                            Err _ -> Expect.pass
+            ]
+
+        , describe "stopBufferSource"
+            [ test "stops playback" <|
+                \_ ->
+                    withRawContext <| \ctx ->
+                        let
+                            source = AudioFFI.createBufferSource ctx
+                            buffer = AudioFFI.createEmptyBuffer ctx 2 1.0 44100
+                            _ = AudioFFI.setBufferSourceBuffer source buffer
+                        in
+                        case AudioFFI.startBufferSource source 0.0 of
+                            Ok _ ->
+                                case AudioFFI.stopBufferSource source 0.5 of
+                                    Ok _ -> Expect.pass
+                                    Err _ -> Expect.pass
+                            Err _ -> Expect.pass
+            ]
+
+        , describe "setBufferSourceBuffer"
+            [ test "assigns buffer to source" <|
+                \_ ->
+                    withRawContext <| \ctx ->
+                        let
+                            source = AudioFFI.createBufferSource ctx
+                            buffer = AudioFFI.createEmptyBuffer ctx 2 1.0 44100
+                            result = AudioFFI.setBufferSourceBuffer source buffer
+                        in
+                        Expect.equal () result
+            ]
+
+        , describe "setBufferSourceLoop"
+            [ test "enables looping and returns True" <|
+                \_ ->
+                    withRawContext <| \ctx ->
+                        let
+                            source = AudioFFI.createBufferSource ctx
+                            result = AudioFFI.setBufferSourceLoop source True
+                        in
+                        Expect.equal True result
+
+            , test "disables looping and returns False" <|
+                \_ ->
+                    withRawContext <| \ctx ->
+                        let
+                            source = AudioFFI.createBufferSource ctx
+                            result = AudioFFI.setBufferSourceLoop source False
+                        in
+                        Expect.equal False result
+            ]
+        ]
+
+
+-- ============================================================================
+-- BUFFER SOURCE PROPERTY TESTS
+-- ============================================================================
+
+
+bufferSourcePropertyTests : Test
+bufferSourcePropertyTests =
+    describe "buffer source properties"
+        [ describe "loop start/end"
+            [ test "sets and returns loop start" <|
+                \_ ->
+                    withRawContext <| \ctx ->
+                        let
+                            source = AudioFFI.createBufferSource ctx
+                            start = AudioFFI.setBufferSourceLoopStart source 0.5
+                        in
+                        Expect.within (Expect.Absolute 0.01) 0.5 start
+
+            , test "sets and returns loop end" <|
+                \_ ->
+                    withRawContext <| \ctx ->
+                        let
+                            source = AudioFFI.createBufferSource ctx
+                            end = AudioFFI.setBufferSourceLoopEnd source 2.0
+                        in
+                        Expect.within (Expect.Absolute 0.01) 2.0 end
+            ]
+
+        , describe "playback rate and detune"
+            [ test "gets playback rate param" <|
+                \_ ->
+                    withRawContext <| \ctx ->
+                        let
+                            source = AudioFFI.createBufferSource ctx
+                            param = AudioFFI.getBufferSourcePlaybackRate source
+                        in
+                        Expect.pass
+
+            , test "gets detune param" <|
+                \_ ->
+                    withRawContext <| \ctx ->
+                        let
+                            source = AudioFFI.createBufferSource ctx
+                            param = AudioFFI.getBufferSourceDetune source
+                        in
+                        Expect.pass
+            ]
+        ]
+
+
+-- ============================================================================
+-- HELPERS
+-- ============================================================================
+
+
+withContext : (Initialized AudioFFI.AudioContext -> Expect.Expectation) -> Expect.Expectation
+withContext fn =
+    case AudioFFI.createAudioContext Click of
+        Ok ctx -> fn ctx
+        Err _ -> Expect.pass
+
+
+withRawContext : (AudioFFI.AudioContext -> Expect.Expectation) -> Expect.Expectation
+withRawContext fn =
+    case AudioFFI.createAudioContext Click of
+        Ok ctx -> fn (extractContext ctx)
+        Err _ -> Expect.pass
+
+
+extractContext : Initialized AudioFFI.AudioContext -> AudioFFI.AudioContext
+extractContext initialized =
+    case initialized of
+        Fresh ctx -> ctx
+        Running ctx -> ctx

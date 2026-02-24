@@ -178,8 +178,7 @@ installInApplication :: InstallContext -> Pkg.Name -> Outline.AppOutline -> Task
 installInApplication context pkg outline = do
   let InstallContext _ env _ _ = context
   changes <- makeAppPlan env pkg outline
-  let updatedContext = updateContextWithChanges context changes
-  executeInstallation updatedContext changes V.toChars
+  executeInstallation context changes V.toChars
 
 -- | Install a package in a package project.
 --
@@ -191,14 +190,4 @@ installInPackage :: InstallContext -> Pkg.Name -> Outline.PkgOutline -> Task ()
 installInPackage context pkg outline = do
   let InstallContext _ env _ _ = context
   changes <- makePkgPlan env pkg outline
-  let updatedContext = updateContextWithChanges context changes
-  executeInstallation updatedContext changes C.toChars
-
--- | Update installation context with changes from planning.
---
--- Modifies the context to reflect the new outline that will be
--- written if the installation is approved and executed.
---
--- @since 0.19.1
-updateContextWithChanges :: InstallContext -> a -> InstallContext
-updateContextWithChanges context _changes = context
+  executeInstallation context changes C.toChars

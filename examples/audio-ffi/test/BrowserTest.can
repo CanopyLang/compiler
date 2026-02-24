@@ -1,0 +1,262 @@
+module BrowserTest exposing (main, suite)
+
+{-| Browser tests for the Audio FFI example application.
+
+This module demonstrates how to use canopy/test's browser testing capabilities
+to validate complex web applications with real browser interactions.
+
+## Test Coverage
+
+These tests validate:
+- FFI system initialization works correctly
+- UI renders properly
+- Audio controls respond to user interaction
+- Mode switching works
+- Error handling displays appropriately
+- Accessibility compliance
+
+-}
+
+import Html exposing (Html, pre, text)
+import Browser.Test exposing (..)
+import Test exposing (Test, describe, runTests)
+
+
+main : Html msg
+main =
+    let
+        results =
+            runTests [ suite ]
+    in
+    pre [] [ text results ]
+
+
+{-| All browser tests for the Audio FFI example.
+-}
+suite : Test
+suite =
+    runBrowserTests
+        [ describe "Audio FFI Application"
+            [ initialLoadTests
+            , simplifiedInterfaceTests
+            , typeSafeInterfaceTests
+            , audioControlTests
+            , responsiveTests
+            , accessibilityTests
+            ]
+        ]
+
+
+-- ============================================================================
+-- Initial Load Tests
+-- ============================================================================
+
+
+initialLoadTests : BrowserTest
+initialLoadTests =
+    describe "Initial Page Load"
+        [ browserTest "page loads with header"
+            [ visit "http://localhost:8000"
+            , seeText "Complete Audio FFI System"
+            , seeText "Interactive Demo"
+            ]
+
+        , browserTest "FFI validation section shows"
+            [ visit "http://localhost:8000"
+            , seeElement "#ffi-validation"
+            , seeText "FFI System Validation"
+            , seeText "simpleTest(42)"
+            ]
+
+        , browserTest "demo mode buttons are visible"
+            [ visit "http://localhost:8000"
+            , seeText "Simplified Interface"
+            , seeText "Type-Safe Interface"
+            , seeText "Comparison Mode"
+            ]
+
+        , browserTest "initial status message shows"
+            [ visit "http://localhost:8000"
+            , seeText "Ready - Click 'Initialize Audio' to begin"
+            ]
+        ]
+
+
+-- ============================================================================
+-- Simplified Interface Tests
+-- ============================================================================
+
+
+simplifiedInterfaceTests : BrowserTest
+simplifiedInterfaceTests =
+    describe "Simplified Interface"
+        [ scenario "User initializes audio with simplified interface"
+            [ given "user is on the page"
+                [ visit "http://localhost:8000"
+                , seeText "Simplified String-Based Interface"
+                ]
+            , when "user clicks initialize audio"
+                [ click "[data-test=init-audio-simple]"
+                ]
+            , then_ "status shows initialization result"
+                [ seeText "AudioContext"
+                ]
+            ]
+
+        , scenario "User plays audio with simplified interface"
+            [ given "audio is initialized"
+                [ visit "http://localhost:8000"
+                , click "[data-test=init-audio-simple]"
+                , waitFor "[data-test=play-audio-simple]"
+                ]
+            , when "user clicks play"
+                [ click "[data-test=play-audio-simple]"
+                ]
+            , then_ "audio status updates"
+                [ seeText "Playing"
+                ]
+            , and_ "stop button is available"
+                [ seeElement "[data-test=stop-audio-simple]"
+                ]
+            ]
+        ]
+
+
+-- ============================================================================
+-- Type-Safe Interface Tests
+-- ============================================================================
+
+
+typeSafeInterfaceTests : BrowserTest
+typeSafeInterfaceTests =
+    describe "Type-Safe Interface"
+        [ browserTest "type-safe interface shows step-by-step process"
+            [ visit "http://localhost:8000"
+            , click "[data-test=mode-type-safe]"
+            , seeText "Step 1: Initialize AudioContext"
+            , seeText "Step 2: Create Audio Nodes"
+            , seeText "Step 3: Audio Playback Control"
+            ]
+
+        , scenario "User completes type-safe audio workflow"
+            [ given "user is in type-safe mode"
+                [ visit "http://localhost:8000"
+                , click "[data-test=mode-type-safe]"
+                ]
+            , when "user initializes AudioContext"
+                [ click "[data-test=init-audio-type-safe]"
+                ]
+            , then_ "success indicator shows"
+                [ seeText "Ready"
+                , seeText "AudioContext created successfully"
+                ]
+            , and_ "user can create audio nodes"
+                [ click "[data-test=create-nodes]"
+                , seeText "Audio nodes created and connected"
+                ]
+            ]
+
+        , browserTest "error handling displays properly"
+            [ visit "http://localhost:8000"
+            , click "[data-test=mode-type-safe]"
+            , click "[data-test=create-nodes]"
+            , seeText "AudioContext must be created first"
+            ]
+        ]
+
+
+-- ============================================================================
+-- Audio Control Tests
+-- ============================================================================
+
+
+audioControlTests : BrowserTest
+audioControlTests =
+    describe "Real-Time Audio Controls"
+        [ browserTest "frequency slider is present"
+            [ visit "http://localhost:8000"
+            , seeElement "input[type=range][data-test=frequency]"
+            , seeText "440"
+            , seeText "Hz"
+            ]
+
+        , browserTest "volume slider is present"
+            [ visit "http://localhost:8000"
+            , seeElement "input[type=range][data-test=volume]"
+            , seeText "%"
+            ]
+
+        , browserTest "waveform buttons are present"
+            [ visit "http://localhost:8000"
+            , seeText "Sine"
+            , seeText "Square"
+            , seeText "Sawtooth"
+            , seeText "Triangle"
+            ]
+
+        , scenario "User changes waveform"
+            [ given "user is on the page"
+                [ visit "http://localhost:8000"
+                ]
+            , when "user clicks square waveform"
+                [ click "[data-test=waveform-square]"
+                ]
+            , then_ "waveform is updated in status"
+                [ seeText "Waveform set to square"
+                ]
+            ]
+        ]
+
+
+-- ============================================================================
+-- Responsive Tests
+-- ============================================================================
+
+
+responsiveTests : BrowserTest
+responsiveTests =
+    describe "Responsive Design"
+        [ browserTestWith (withMobile defaultConfig) "mobile layout works"
+            [ visit "http://localhost:8000"
+            , seeElement "header"
+            , seeText "Audio FFI"
+            ]
+
+        , browserTestWith (withTablet defaultConfig) "tablet layout works"
+            [ visit "http://localhost:8000"
+            , seeElement "header"
+            , seeText "Interactive Demo"
+            ]
+
+        , browserTestWith (withDesktop defaultConfig) "desktop layout works"
+            [ visit "http://localhost:8000"
+            , seeElement "header"
+            , seeText "Complete Audio FFI System"
+            ]
+        ]
+
+
+-- ============================================================================
+-- Accessibility Tests
+-- ============================================================================
+
+
+accessibilityTests : BrowserTest
+accessibilityTests =
+    describe "Accessibility"
+        [ browserTest "page passes accessibility audit"
+            [ visit "http://localhost:8000"
+            , assertAccessible
+            ]
+
+        , browserTest "buttons are keyboard accessible"
+            [ visit "http://localhost:8000"
+            , fill "body" ""
+            , waitFor "[data-test=init-audio-simple]:focus"
+            ]
+
+        , browserTest "visual contrast is sufficient"
+            [ visit "http://localhost:8000"
+            , assertVisualMatch "audio-ffi-homepage"
+            ]
+        ]

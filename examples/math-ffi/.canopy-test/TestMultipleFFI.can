@@ -1,0 +1,16 @@
+module TestMultipleFFI exposing (..)
+
+foreign import javascript "external/math.js" as Math
+
+-- Create multiple wrappers like AudioFFI does
+factorial : Int -> Int
+factorial = Math.factorial
+
+isPrime : Int -> Bool
+isPrime = Math.isPrime
+
+fibonacci : Int -> Int
+fibonacci = Math.fibonacci
+
+gcd : Int -> Int -> Int
+gcd = Math.gcd

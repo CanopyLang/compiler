@@ -63,7 +63,8 @@ testRealFileOperations =
           -- Create file first, then start watching
           writeFile filePath "initial content"
 
-          success <- withWatcher (recordEvent eventsRef) filePath 150000 $ do
+          -- Delay must exceed debounce window (200ms) + poll interval (50ms)
+          success <- withWatcher (recordEvent eventsRef) filePath 400000 $ do
             appendFile filePath "\nline 2"
             threadDelay 50000
             appendFile filePath "\nline 3"
@@ -81,7 +82,7 @@ testRealFileOperations =
           let path = dir </> "deleteme.txt"
           writeFile path "initial"
 
-          success <- withWatcher (recordEvent eventsRef) path 200000 $ do
+          success <- withWatcher (recordEvent eventsRef) path 400000 $ do
             Directory.removeFile path
             threadDelay 50000
             writeFile path "recreated"
@@ -99,7 +100,7 @@ testRealFileOperations =
 
           writeFile oldPath "content"
 
-          success <- withWatcher (recordEvent eventsRef) oldPath 200000 $ do
+          success <- withWatcher (recordEvent eventsRef) oldPath 400000 $ do
             Directory.renameFile oldPath newPath
 
           events <- IORef.readIORef eventsRef
@@ -114,7 +115,7 @@ testRealFileOperations =
           let largeContent = replicate 10000 'x' -- Smaller for faster tests
           writeFile path largeContent
 
-          success <- withWatcher (recordEvent eventsRef) path 200000 $ do
+          success <- withWatcher (recordEvent eventsRef) path 400000 $ do
             appendFile path "\nend marker"
 
           events <- IORef.readIORef eventsRef
@@ -144,20 +145,21 @@ testMultipleWatchers =
           writeFile file3 "content3"
 
           -- Start watchers with longer timeout for multi-watcher scenario
-          result1 <- timeout 600000 $ do
+          -- Need enough time for init + modifications + debounce (200ms+)
+          result1 <- timeout 1500000 $ do
             watcher1 <- forkIO (Watch.file (recordEvent eventsRef1) file1)
             watcher2 <- forkIO (Watch.file (recordEvent eventsRef2) file2)
             watcher3 <- forkIO (Watch.file (recordEvent eventsRef3) file3)
 
-            threadDelay 150000 -- Longer startup delay
+            threadDelay 200000 -- Startup delay
 
-            -- Modify each file with more time between operations
+            -- Modify each file with time between operations
             appendFile file1 " modified"
             threadDelay 100000
             appendFile file2 " updated"
             threadDelay 100000
             appendFile file3 " changed"
-            threadDelay 150000 -- More time for event detection
+            threadDelay 400000 -- Wait for debounce to fire
 
             -- Cancel all watchers
             killThread watcher1
@@ -238,11 +240,11 @@ testFileSystemIntegration =
           writeFile jsonFile "{\"key\": \"value\"}"
 
           -- Test watching text file
-          success1 <- withWatcher (recordEvent eventsRef) textFile 150000 $ do
+          success1 <- withWatcher (recordEvent eventsRef) textFile 400000 $ do
             appendFile textFile "\nAdditional paragraph"
 
           -- Test watching JSON file
-          success2 <- withWatcher (recordEvent eventsRef) jsonFile 150000 $ do
+          success2 <- withWatcher (recordEvent eventsRef) jsonFile 400000 $ do
             writeFile jsonFile "{\"key\": \"updated_value\"}"
 
           events <- IORef.readIORef eventsRef
@@ -260,10 +262,10 @@ testFileSystemIntegration =
           writeFile emptyFile ""
           writeFile binaryFile "\x00\x01\x02\x03\xFF\xFE\xFD"
 
-          success1 <- withWatcher (recordEvent eventsRef) emptyFile 150000 $ do
+          success1 <- withWatcher (recordEvent eventsRef) emptyFile 400000 $ do
             appendFile emptyFile "no longer empty"
 
-          success2 <- withWatcher (recordEvent eventsRef) binaryFile 150000 $ do
+          success2 <- withWatcher (recordEvent eventsRef) binaryFile 400000 $ do
             appendFile binaryFile "\x00\x00"
 
           events <- IORef.readIORef eventsRef
@@ -277,7 +279,7 @@ testFileSystemIntegration =
           let path = dir </> "crossplatform.txt"
           writeFile path "cross-platform content"
 
-          success <- withWatcher (recordEvent eventsRef) path 150000 $ do
+          success <- withWatcher (recordEvent eventsRef) path 400000 $ do
             appendFile path "\nPlatform-specific content"
 
           events <- IORef.readIORef eventsRef
@@ -298,7 +300,7 @@ testPerformanceCharacteristics =
           let path = dir </> "highfreq.txt"
           writeFile path "base"
 
-          success <- withWatcher (recordEvent eventsRef) path 300000 $ do
+          success <- withWatcher (recordEvent eventsRef) path 500000 $ do
             -- High frequency modifications (reduced for performance)
             sequence_ $
               replicate 10 $ do

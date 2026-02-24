@@ -228,7 +228,13 @@ suggestArguments _command context args = do
 
   suggestions
 
--- | Suggest flags for specific command.
+-- | Suggest flags for a command matching a given prefix.
+--
+-- This function works with the Terminal.Types.Command record, which
+-- stores flag metadata as unit type @()@. For actual shell completion
+-- with real flag introspection, use the COMP_LINE-based completion
+-- integrated directly into 'Terminal.app' and 'Terminal.singleCommand',
+-- which access the full 'Terminal.Internal.Flags' specification.
 --
 -- @since 0.19.1
 suggestFlags ::
@@ -239,8 +245,6 @@ suggestFlags ::
   -- | Flag suggestions
   IO [String]
 suggestFlags _command _prefix =
-  -- Flag suggestions are not yet supported. Returns empty list
-  -- until the command flag specification is made introspectable.
   pure []
 
 -- | Parse completion context from environment variables.

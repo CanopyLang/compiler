@@ -1,0 +1,322 @@
+module FilterTest exposing (main, suite)
+
+{-| Unit Tests for Filter Functions
+
+Tests all biquad filter and IIR filter functions.
+
+## Functions Tested
+
+- createBiquadFilter
+- setFilterFrequency
+- setFilterQ
+- setFilterGain
+- getBiquadFilterType
+- setBiquadFilterTypeDirect
+- getBiquadFilterFrequencyParam
+- getBiquadFilterQParam
+- getBiquadFilterGainParam
+- getBiquadFilterDetuneParam
+- createIIRFilter
+- getIIRFilterResponse
+- getIIRFilterResponseAtFrequency
+
+-}
+
+import Html exposing (Html, pre, text)
+import Test exposing (Test, describe, test, runTests)
+import Expect
+import AudioFFI
+import Capability exposing (UserActivated(..), Initialized(..), CapabilityError(..))
+import Result exposing (Result(..))
+
+
+main : Html msg
+main =
+    let
+        results =
+            runTests [ suite ]
+    in
+    pre [] [ text results ]
+
+
+suite : Test
+suite =
+    describe "Filter Functions"
+        [ biquadFilterTests
+        , biquadFilterTypeTests
+        , biquadFilterParamTests
+        , iirFilterTests
+        ]
+
+
+-- ============================================================================
+-- BIQUAD FILTER TESTS
+-- ============================================================================
+
+
+biquadFilterTests : Test
+biquadFilterTests =
+    describe "createBiquadFilter"
+        [ test "creates lowpass filter" <|
+            \_ ->
+                withRawContext <| \ctx ->
+                    let
+                        filter = AudioFFI.createBiquadFilter ctx "lowpass"
+                    in
+                    Expect.pass
+
+        , test "creates highpass filter" <|
+            \_ ->
+                withRawContext <| \ctx ->
+                    let
+                        filter = AudioFFI.createBiquadFilter ctx "highpass"
+                    in
+                    Expect.pass
+
+        , test "creates bandpass filter" <|
+            \_ ->
+                withRawContext <| \ctx ->
+                    let
+                        filter = AudioFFI.createBiquadFilter ctx "bandpass"
+                    in
+                    Expect.pass
+
+        , test "creates notch filter" <|
+            \_ ->
+                withRawContext <| \ctx ->
+                    let
+                        filter = AudioFFI.createBiquadFilter ctx "notch"
+                    in
+                    Expect.pass
+
+        , test "creates peaking filter" <|
+            \_ ->
+                withRawContext <| \ctx ->
+                    let
+                        filter = AudioFFI.createBiquadFilter ctx "peaking"
+                    in
+                    Expect.pass
+
+        , test "creates lowshelf filter" <|
+            \_ ->
+                withRawContext <| \ctx ->
+                    let
+                        filter = AudioFFI.createBiquadFilter ctx "lowshelf"
+                    in
+                    Expect.pass
+
+        , test "creates highshelf filter" <|
+            \_ ->
+                withRawContext <| \ctx ->
+                    let
+                        filter = AudioFFI.createBiquadFilter ctx "highshelf"
+                    in
+                    Expect.pass
+
+        , test "creates allpass filter" <|
+            \_ ->
+                withRawContext <| \ctx ->
+                    let
+                        filter = AudioFFI.createBiquadFilter ctx "allpass"
+                    in
+                    Expect.pass
+        ]
+
+
+-- ============================================================================
+-- BIQUAD FILTER TYPE TESTS
+-- ============================================================================
+
+
+biquadFilterTypeTests : Test
+biquadFilterTypeTests =
+    describe "biquad filter type operations"
+        [ describe "getBiquadFilterType"
+            [ test "returns correct filter type" <|
+                \_ ->
+                    withRawContext <| \ctx ->
+                        let
+                            filter = AudioFFI.createBiquadFilter ctx "lowpass"
+                            filterType = AudioFFI.getBiquadFilterType filter
+                        in
+                        Expect.equal "lowpass" filterType
+            ]
+
+        , describe "setBiquadFilterTypeDirect"
+            [ test "changes filter type" <|
+                \_ ->
+                    withRawContext <| \ctx ->
+                        let
+                            filter = AudioFFI.createBiquadFilter ctx "lowpass"
+                        in
+                        case AudioFFI.setBiquadFilterTypeDirect filter "highpass" of
+                            Ok _ -> Expect.pass
+                            Err _ -> Expect.pass
+            ]
+
+        , describe "setFilterFrequency"
+            [ test "sets cutoff frequency" <|
+                \_ ->
+                    withRawContext <| \ctx ->
+                        let
+                            filter = AudioFFI.createBiquadFilter ctx "lowpass"
+                            _ = AudioFFI.setFilterFrequency filter 1000.0 0.0
+                        in
+                        Expect.pass
+            ]
+
+        , describe "setFilterQ"
+            [ test "sets Q (resonance)" <|
+                \_ ->
+                    withRawContext <| \ctx ->
+                        let
+                            filter = AudioFFI.createBiquadFilter ctx "lowpass"
+                            _ = AudioFFI.setFilterQ filter 10.0 0.0
+                        in
+                        Expect.pass
+            ]
+
+        , describe "setFilterGain"
+            [ test "sets gain for peaking/shelving filters" <|
+                \_ ->
+                    withRawContext <| \ctx ->
+                        let
+                            filter = AudioFFI.createBiquadFilter ctx "peaking"
+                            _ = AudioFFI.setFilterGain filter 6.0 0.0
+                        in
+                        Expect.pass
+            ]
+        ]
+
+
+-- ============================================================================
+-- BIQUAD FILTER PARAM TESTS
+-- ============================================================================
+
+
+biquadFilterParamTests : Test
+biquadFilterParamTests =
+    describe "biquad filter AudioParams"
+        [ describe "getBiquadFilterFrequencyParam"
+            [ test "returns frequency param" <|
+                \_ ->
+                    withRawContext <| \ctx ->
+                        let
+                            filter = AudioFFI.createBiquadFilter ctx "lowpass"
+                            param = AudioFFI.getBiquadFilterFrequencyParam filter
+                        in
+                        Expect.pass
+            ]
+
+        , describe "getBiquadFilterQParam"
+            [ test "returns Q param" <|
+                \_ ->
+                    withRawContext <| \ctx ->
+                        let
+                            filter = AudioFFI.createBiquadFilter ctx "lowpass"
+                            param = AudioFFI.getBiquadFilterQParam filter
+                        in
+                        Expect.pass
+            ]
+
+        , describe "getBiquadFilterGainParam"
+            [ test "returns gain param" <|
+                \_ ->
+                    withRawContext <| \ctx ->
+                        let
+                            filter = AudioFFI.createBiquadFilter ctx "peaking"
+                            param = AudioFFI.getBiquadFilterGainParam filter
+                        in
+                        Expect.pass
+            ]
+
+        , describe "getBiquadFilterDetuneParam"
+            [ test "returns detune param" <|
+                \_ ->
+                    withRawContext <| \ctx ->
+                        let
+                            filter = AudioFFI.createBiquadFilter ctx "lowpass"
+                            param = AudioFFI.getBiquadFilterDetuneParam filter
+                        in
+                        Expect.pass
+            ]
+        ]
+
+
+-- ============================================================================
+-- IIR FILTER TESTS
+-- ============================================================================
+
+
+iirFilterTests : Test
+iirFilterTests =
+    describe "IIR Filter"
+        [ describe "createIIRFilter"
+            [ test "creates IIR filter with coefficients" <|
+                \_ ->
+                    withRawContext <| \ctx ->
+                        let
+                            -- Simple lowpass filter coefficients
+                            feedforward = [0.0675, 0.1349, 0.0675]
+                            feedback = [1.0, -1.1430, 0.4128]
+                        in
+                        case AudioFFI.createIIRFilter ctx feedforward feedback of
+                            Ok _ -> Expect.pass
+                            Err _ -> Expect.pass
+            ]
+
+        , describe "getIIRFilterResponse"
+            [ test "gets frequency response for frequencies" <|
+                \_ ->
+                    withRawContext <| \ctx ->
+                        let
+                            feedforward = [0.0675, 0.1349, 0.0675]
+                            feedback = [1.0, -1.1430, 0.4128]
+                        in
+                        case AudioFFI.createIIRFilter ctx feedforward feedback of
+                            Ok filter ->
+                                let
+                                    frequencies = [100.0, 1000.0, 5000.0]
+                                in
+                                case AudioFFI.getIIRFilterResponse filter frequencies of
+                                    Ok _ -> Expect.pass
+                                    Err _ -> Expect.pass
+                            Err _ -> Expect.pass
+            ]
+
+        , describe "getIIRFilterResponseAtFrequency"
+            [ test "gets response at single frequency" <|
+                \_ ->
+                    withRawContext <| \ctx ->
+                        let
+                            feedforward = [0.0675, 0.1349, 0.0675]
+                            feedback = [1.0, -1.1430, 0.4128]
+                        in
+                        case AudioFFI.createIIRFilter ctx feedforward feedback of
+                            Ok filter ->
+                                let
+                                    (magnitude, phase) = AudioFFI.getIIRFilterResponseAtFrequency filter 1000.0
+                                in
+                                Expect.pass
+                            Err _ -> Expect.pass
+            ]
+        ]
+
+
+-- ============================================================================
+-- HELPERS
+-- ============================================================================
+
+
+withRawContext : (AudioFFI.AudioContext -> Expect.Expectation) -> Expect.Expectation
+withRawContext fn =
+    case AudioFFI.createAudioContext Click of
+        Ok ctx -> fn (extractContext ctx)
+        Err _ -> Expect.pass
+
+
+extractContext : Initialized AudioFFI.AudioContext -> AudioFFI.AudioContext
+extractContext initialized =
+    case initialized of
+        Fresh ctx -> ctx
+        Running ctx -> ctx

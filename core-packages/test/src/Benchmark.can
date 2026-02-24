@@ -1,0 +1,128 @@
+{-| Performance benchmarking for Canopy.
+
+Run benchmarks to measure function performance with statistical analysis.
+Results include mean, standard deviation, median, and percentiles.
+
+    import Benchmark
+
+    main : Benchmark.Suite
+    main =
+        Benchmark.suite "List operations"
+            [ Benchmark.benchmark "sort 100" (\_ -> List.sort hundredItems)
+            , Benchmark.benchmark "sort 1000" (\_ -> List.sort thousandItems)
+            , Benchmark.compare "sort vs sortBy"
+                (\_ -> List.sort items)
+                (\_ -> List.sortBy identity items)
+            ]
+
+Run benchmarks with:
+
+    canopy bench
+    canopy bench --save baseline.json
+    canopy bench --compare baseline.json
+
+@since 0.20.0
+-}
+module Benchmark exposing
+    ( Benchmark
+    , Suite
+    , Result
+    , Comparison
+    , benchmark
+    , suite
+    , compare
+    )
+
+
+{-| A single benchmark measuring the performance of a function.
+-}
+type Benchmark
+    = Benchmark String (() -> ())
+
+
+{-| A collection of benchmarks grouped under a name.
+-}
+type Suite
+    = Suite String (List Benchmark)
+
+
+{-| Result of running a single benchmark.
+
+Contains statistical measures of timing:
+
+  - `mean` — average execution time in milliseconds
+  - `stddev` — standard deviation of timing
+  - `min` — fastest execution
+  - `max` — slowest execution
+  - `median` — middle value of sorted timings
+  - `p90` — 90th percentile
+  - `p99` — 99th percentile
+
+-}
+type alias Result =
+    { name : String
+    , iterations : Int
+    , mean : Float
+    , stddev : Float
+    , min : Float
+    , max : Float
+    , median : Float
+    , p90 : Float
+    , p99 : Float
+    }
+
+
+{-| Result of comparing two function implementations.
+
+Reports the performance ratio and percentage difference.
+A ratio > 1.0 means function B is slower than A.
+-}
+type alias Comparison =
+    { name : String
+    , a : Result
+    , b : Result
+    , ratio : Float
+    , percentDiff : Float
+    }
+
+
+{-| Create a benchmark for a single function.
+
+The function takes a unit argument to ensure it is re-evaluated
+on each iteration rather than being memoized.
+
+    Benchmark.benchmark "list sort" (\_ -> List.sort myList)
+
+-}
+benchmark : String -> (() -> a) -> Benchmark
+benchmark name fn =
+    Benchmark name (\_ -> fn () |> always ())
+
+
+{-| Create a benchmark suite from a list of benchmarks.
+
+    Benchmark.suite "String operations"
+        [ Benchmark.benchmark "concat" (\_ -> String.concat strings)
+        , Benchmark.benchmark "join" (\_ -> String.join "" strings)
+        ]
+
+-}
+suite : String -> List Benchmark -> Suite
+suite name benchmarks =
+    Suite name benchmarks
+
+
+{-| Compare two implementations of the same operation.
+
+Runs both functions with identical iterations and reports the
+relative performance difference.
+
+    Benchmark.compare "sort implementations"
+        (\_ -> List.sort items)
+        (\_ -> List.sortBy identity items)
+
+-}
+compare : String -> (() -> a) -> (() -> b) -> Benchmark
+compare name fnA fnB =
+    -- Represented as a special benchmark that runs both
+    Benchmark ("compare: " ++ name) (\_ -> fnA () |> always () |> always (fnB ()) |> always ())

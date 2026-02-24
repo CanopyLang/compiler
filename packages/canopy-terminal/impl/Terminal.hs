@@ -122,6 +122,7 @@ import Terminal.Internal
     toName,
   )
 import qualified Terminal.Chomp as Chomp
+import qualified Terminal.Chomp.Flags as ChompFlags
 import qualified Terminal.Error as Error
 import qualified Terminal.Parser as Parser
 
@@ -139,23 +140,37 @@ app ::
   IO ()
 app intro outro commands = do
   setLocaleEncoding utf8
+
+  -- Handle shell completion if COMP_LINE is set
+  maybeCompLine <- Environment.lookupEnv "COMP_LINE"
+  case maybeCompLine of
+    Just compLine -> handleAppCompletion commands compLine
+    Nothing -> runApp intro outro commands
+
+-- | Run the application normally (no completion).
+runApp ::
+  Doc.Doc ->
+  Doc.Doc ->
+  [Command] ->
+  IO ()
+runApp intro outro commands = do
   argStrings <- Environment.getArgs
   case argStrings of
     [] ->
       Error.exitWithOverview intro outro commands
-    
+
     ["--help"] ->
       Error.exitWithOverview intro outro commands
-      
+
     ["--version"] -> do
       hPutStrLn stdout (Version.toChars Version.compiler)
       Exit.exitSuccess
-      
-    commandName : chunks -> do
+
+    commandName : chunks ->
       case List.find (\cmd -> toName cmd == commandName) commands of
         Nothing ->
           Error.exitWithUnknown commandName (map toName commands)
-          
+
         Just (Command _ _ details example args_ flags_ callback) ->
           if elem "--help" chunks then
             Error.exitWithHelp (Just commandName) details example args_ flags_
@@ -165,6 +180,62 @@ app intro outro commands = do
                 callback argsValue flagsValue
               Left err ->
                 Error.exitWithError err
+
+-- | Handle shell completion for multi-command application.
+--
+-- Parses the COMP_LINE to determine the completion context and outputs
+-- appropriate suggestions: command names, flag names, or argument hints.
+handleAppCompletion :: [Command] -> String -> IO ()
+handleAppCompletion commands compLine = do
+  let chunks = words compLine
+      trailingSpace = not (null compLine) && last compLine == ' '
+      commandNames = map toName commands
+
+  case chunks of
+    -- Just the program name, suggest all commands
+    [_prog] ->
+      if trailingSpace
+        then outputSuggestions commandNames
+        else return ()
+
+    -- Partial command name or first arg after program
+    [_prog, partial] ->
+      if trailingSpace
+        then suggestForCommandChunks commands partial []
+        else outputSuggestions (filter (List.isPrefixOf partial) commandNames)
+
+    -- Command identified, suggest flags/args
+    (_prog : cmdName : rest) ->
+      suggestForCommandChunks commands cmdName rest
+
+    _ -> return ()
+
+  Exit.exitSuccess
+
+-- | Suggest completions for a specific command's arguments and flags.
+suggestForCommandChunks :: [Command] -> String -> [String] -> IO ()
+suggestForCommandChunks commands cmdName chunks =
+  case List.find (\cmd -> toName cmd == cmdName) commands of
+    Nothing -> return ()
+    Just (Command _ _ _ _ _ flags_ _) ->
+      suggestFlagsForChunks flags_ currentWord
+      where
+        currentWord = if null chunks then "" else last chunks
+
+-- | Suggest flags matching the current input prefix.
+--
+-- Uses 'getFlagNames' from the Chomp.Flags module to extract all
+-- defined flag names from the command's flag specification, then
+-- filters to those matching the current prefix.
+suggestFlagsForChunks :: Flags a -> String -> IO ()
+suggestFlagsForChunks flags_ prefix = do
+  let flagNames = ChompFlags.getFlagNames flags_ []
+      matching = filter (List.isPrefixOf prefix) flagNames
+  outputSuggestions matching
+
+-- | Output completion suggestions, one per line.
+outputSuggestions :: [String] -> IO ()
+outputSuggestions = mapM_ putStrLn
 
 -- | Run single-command application with details and examples.
 --
@@ -182,10 +253,49 @@ singleCommand ::
   (args -> flags -> IO ()) ->
   -- | Exits with appropriate status code
   IO ()
-singleCommand _details _examples _args _flags _handler = do
+singleCommand details examples args_ flags_ handler = do
   setLocaleEncoding utf8
-  putStrLn "Single command applications not yet fully implemented"
-  Exit.exitFailure
+
+  -- Handle shell completion if COMP_LINE is set
+  maybeCompLine <- Environment.lookupEnv "COMP_LINE"
+  case maybeCompLine of
+    Just compLine -> handleSingleCompletion flags_ compLine
+    Nothing -> runSingleCommand details examples args_ flags_ handler
+
+-- | Run single-command application normally.
+runSingleCommand ::
+  Doc.Doc ->
+  Doc.Doc ->
+  Args args ->
+  Flags flags ->
+  (args -> flags -> IO ()) ->
+  IO ()
+runSingleCommand details examples args_ flags_ handler = do
+  argStrings <- Environment.getArgs
+  case argStrings of
+    ["--help"] ->
+      Error.exitWithHelp Nothing (renderDoc details) examples args_ flags_
+
+    ["--version"] -> do
+      hPutStrLn stdout (Version.toChars Version.compiler)
+      Exit.exitSuccess
+
+    chunks ->
+      case snd (Chomp.chomp Nothing chunks args_ flags_) of
+        Right (argsValue, flagsValue) ->
+          handler argsValue flagsValue
+        Left err ->
+          Error.exitWithError err
+  where
+    renderDoc doc = Doc.displayS (Doc.renderPretty 0.8 80 doc) ""
+
+-- | Handle shell completion for single-command application.
+handleSingleCompletion :: Flags a -> String -> IO ()
+handleSingleCompletion flags_ compLine = do
+  let chunks = words compLine
+      currentWord = if length chunks > 1 then last chunks else ""
+  suggestFlagsForChunks flags_ currentWord
+  Exit.exitSuccess
 
 -- | Create command with metadata and handler.
 --

@@ -1,0 +1,311 @@
+{
+  "name": "canopy-language",
+  "displayName": "Canopy Language",
+  "description": "Full language support for Canopy: syntax highlighting, LSP integration, snippets, and build tools",
+  "version": "0.2.0",
+  "publisher": "canopy-lang",
+  "license": "BSD-3-Clause",
+  "icon": "images/canopy-icon.png",
+  "engines": {
+    "vscode": "^1.75.0"
+  },
+  "categories": [
+    "Programming Languages",
+    "Linters",
+    "Formatters",
+    "Snippets"
+  ],
+  "activationEvents": [
+    "onLanguage:canopy",
+    "workspaceContains:canopy.json"
+  ],
+  "main": "./out/extension.js",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/canopy-lang/canopy"
+  },
+  "bugs": {
+    "url": "https://github.com/canopy-lang/canopy/issues"
+  },
+  "homepage": "https://github.com/canopy-lang/canopy#readme",
+  "keywords": [
+    "canopy",
+    "elm",
+    "functional",
+    "frontend",
+    "lsp",
+    "language-server"
+  ],
+  "contributes": {
+    "languages": [
+      {
+        "id": "canopy",
+        "aliases": [
+          "Canopy",
+          "canopy"
+        ],
+        "extensions": [
+          ".can",
+          ".canopy"
+        ],
+        "configuration": "./language-configuration.json",
+        "icon": {
+          "light": "./images/canopy-file-icon.svg",
+          "dark": "./images/canopy-file-icon.svg"
+        }
+      }
+    ],
+    "grammars": [
+      {
+        "language": "canopy",
+        "scopeName": "source.canopy",
+        "path": "./syntaxes/canopy.tmLanguage.json"
+      }
+    ],
+    "snippets": [
+      {
+        "language": "canopy",
+        "path": "./snippets/canopy.json"
+      }
+    ],
+    "commands": [
+      {
+        "command": "canopy.restartServer",
+        "title": "Restart Language Server",
+        "category": "Canopy"
+      },
+      {
+        "command": "canopy.buildProject",
+        "title": "Build Project",
+        "category": "Canopy"
+      },
+      {
+        "command": "canopy.checkProject",
+        "title": "Check Project (Type Check Only)",
+        "category": "Canopy"
+      },
+      {
+        "command": "canopy.showServerOutput",
+        "title": "Show Language Server Output",
+        "category": "Canopy"
+      },
+      {
+        "command": "canopy.initProject",
+        "title": "Initialize New Project",
+        "category": "Canopy"
+      },
+      {
+        "command": "canopy.installPackage",
+        "title": "Install Package",
+        "category": "Canopy"
+      },
+      {
+        "command": "canopy.openDebugger",
+        "title": "Open Time-Travel Debugger",
+        "category": "Canopy"
+      }
+    ],
+    "configuration": {
+      "type": "object",
+      "title": "Canopy",
+      "properties": {
+        "canopy.serverPath": {
+          "type": "string",
+          "default": "",
+          "description": "Path to the canopy-language-server executable. Leave empty to use the one in PATH."
+        },
+        "canopy.serverArgs": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "default": [],
+          "description": "Additional arguments to pass to the language server."
+        },
+        "canopy.trace.server": {
+          "type": "string",
+          "enum": [
+            "off",
+            "messages",
+            "verbose"
+          ],
+          "default": "off",
+          "description": "Trace communication between VS Code and the language server."
+        },
+        "canopy.compiler.path": {
+          "type": "string",
+          "default": "",
+          "description": "Path to the canopy compiler. Leave empty to use the one in PATH."
+        },
+        "canopy.compiler.outputDirectory": {
+          "type": "string",
+          "default": "build",
+          "description": "Output directory for compiled files."
+        },
+        "canopy.compiler.optimize": {
+          "type": "boolean",
+          "default": false,
+          "description": "Enable optimizations when building."
+        },
+        "canopy.diagnostics.enable": {
+          "type": "boolean",
+          "default": true,
+          "description": "Enable real-time diagnostics from the language server."
+        },
+        "canopy.format.enable": {
+          "type": "boolean",
+          "default": true,
+          "description": "Enable automatic formatting support."
+        },
+        "canopy.hover.enable": {
+          "type": "boolean",
+          "default": true,
+          "description": "Enable hover information."
+        }
+      }
+    },
+    "keybindings": [
+      {
+        "command": "canopy.buildProject",
+        "key": "ctrl+shift+b",
+        "mac": "cmd+shift+b",
+        "when": "editorLangId == canopy"
+      },
+      {
+        "command": "canopy.checkProject",
+        "key": "ctrl+shift+c",
+        "mac": "cmd+shift+c",
+        "when": "editorLangId == canopy"
+      }
+    ],
+    "menus": {
+      "commandPalette": [
+        {
+          "command": "canopy.restartServer",
+          "when": "editorLangId == canopy || resourceExtname == .can || resourceExtname == .canopy"
+        },
+        {
+          "command": "canopy.buildProject",
+          "when": "editorLangId == canopy || resourceExtname == .can || resourceExtname == .canopy"
+        },
+        {
+          "command": "canopy.checkProject",
+          "when": "editorLangId == canopy || resourceExtname == .can || resourceExtname == .canopy"
+        }
+      ],
+      "editor/context": [
+        {
+          "command": "canopy.buildProject",
+          "when": "editorLangId == canopy",
+          "group": "canopy@1"
+        },
+        {
+          "command": "canopy.checkProject",
+          "when": "editorLangId == canopy",
+          "group": "canopy@2"
+        }
+      ]
+    },
+    "taskDefinitions": [
+      {
+        "type": "canopy",
+        "required": [
+          "command"
+        ],
+        "properties": {
+          "command": {
+            "type": "string",
+            "description": "The canopy command to run (make, check, repl, etc.)"
+          },
+          "file": {
+            "type": "string",
+            "description": "The file to compile (optional, defaults to Main.can)"
+          },
+          "output": {
+            "type": "string",
+            "description": "Output file path"
+          },
+          "optimize": {
+            "type": "boolean",
+            "description": "Enable optimizations"
+          }
+        }
+      }
+    ],
+    "problemMatchers": [
+      {
+        "name": "canopy",
+        "owner": "canopy",
+        "source": "canopy",
+        "fileLocation": [
+          "relative",
+          "${workspaceFolder}"
+        ],
+        "pattern": [
+          {
+            "regexp": "^-- ([A-Z ]+) -+ (.+)$",
+            "severity": 1,
+            "file": 2
+          },
+          {
+            "regexp": "^(\\d+)\\|(.*)$",
+            "line": 1,
+            "message": 2
+          }
+        ]
+      },
+      {
+        "name": "canopy-json",
+        "owner": "canopy",
+        "source": "canopy",
+        "fileLocation": [
+          "relative",
+          "${workspaceFolder}"
+        ],
+        "pattern": {
+          "regexp": "^\\{\"path\":\"([^\"]+)\",\"region\":\\{\"start\":\\{\"line\":(\\d+),\"column\":(\\d+)\\},\"end\":\\{\"line\":(\\d+),\"column\":(\\d+)\\}\\},\"type\":\"([^\"]+)\",\"title\":\"([^\"]+)\",\"message\":\"([^\"]+)\"\\}$",
+          "file": 1,
+          "line": 2,
+          "column": 3,
+          "endLine": 4,
+          "endColumn": 5,
+          "severity": 6,
+          "message": 8
+        }
+      }
+    ],
+    "problemPatterns": [
+      {
+        "name": "canopy-error",
+        "regexp": "^-- ([A-Z ]+) -+ (.+):(\\d+):(\\d+)$",
+        "severity": 1,
+        "file": 2,
+        "line": 3,
+        "column": 4
+      }
+    ]
+  },
+  "scripts": {
+    "vscode:prepublish": "npm run compile",
+    "compile": "tsc -p ./",
+    "watch": "tsc -watch -p ./",
+    "pretest": "npm run compile",
+    "test": "node ./out/test/runTest.js",
+    "lint": "eslint src --ext ts",
+    "package": "vsce package",
+    "publish": "vsce publish"
+  },
+  "dependencies": {
+    "vscode-languageclient": "^9.0.1"
+  },
+  "devDependencies": {
+    "@types/node": "^20.11.0",
+    "@types/vscode": "^1.75.0",
+    "@typescript-eslint/eslint-plugin": "^6.19.0",
+    "@typescript-eslint/parser": "^6.19.0",
+    "@vscode/test-electron": "^2.3.8",
+    "@vscode/vsce": "^2.22.0",
+    "eslint": "^8.56.0",
+    "typescript": "^5.3.3"
+  }
+}

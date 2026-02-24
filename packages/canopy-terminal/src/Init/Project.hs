@@ -181,13 +181,11 @@ attemptDirectoryCreation dirPath = do
 
 -- | Set up additional project directories.
 --
--- Creates any additional directories needed for the project structure
--- beyond the basic source directories.
+-- Extension point for creating directories beyond source directories.
+-- Currently no additional directories are needed; Canopy projects only
+-- require the source directories specified in canopy.json.
 setupAdditionalDirectories :: IO (Either InitError ())
-setupAdditionalDirectories = do
-  -- For now, no additional directories are created
-  -- Future enhancement: create tests/, docs/, etc. based on project type
-  pure (Right ())
+setupAdditionalDirectories = pure (Right ())
 
 -- | Generate canopy.json configuration file.
 --

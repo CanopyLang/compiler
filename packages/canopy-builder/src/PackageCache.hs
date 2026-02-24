@@ -145,15 +145,12 @@ loadCompleteArtifactsFile path = do
     Left _ ->
       return Nothing
 
--- | Load elm/core package interfaces.
+-- | Load elm\/core package interfaces.
 --
 -- Convenience function to load the core Elm package interfaces.
 -- This package contains Basics, List, Maybe, Result, String, etc.
---
--- >>> maybeCore <- loadElmCoreInterfaces
--- >>> case maybeCore of
--- ...   Just interfaces -> -- Basics, List, etc. available
--- ...   Nothing -> error "elm/core not installed"
+-- Returns 'Nothing' when the package is not installed or its
+-- artifact cache is missing.
 --
 -- @since 0.19.1
 loadElmCoreInterfaces :: IO (Maybe PackageInterfaces)

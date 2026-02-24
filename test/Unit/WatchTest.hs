@@ -87,7 +87,8 @@ testBasicFunctionality =
         Temp.withSystemTempDirectory "modifydir" $ \dir -> do
           let path = dir </> "modify.txt"
           writeFile path "initial"
-          success <- withWatcher (recordEvent eventsRef) path 100000 $ do
+          -- Delay must exceed debounce window (200ms) + poll interval (50ms)
+          success <- withWatcher (recordEvent eventsRef) path 400000 $ do
             appendFile path " modified"
 
           threadDelay 100000 -- Extra time for event detection
@@ -119,7 +120,8 @@ testFileSystemBoundaries =
         Temp.withSystemTempDirectory "emptydir" $ \dir -> do
           let path = dir </> "empty.txt"
           writeFile path ""
-          success <- withWatcher (recordEvent eventsRef) path 100000 $ do
+          -- Delay must exceed debounce window (200ms) + poll interval (50ms)
+          success <- withWatcher (recordEvent eventsRef) path 400000 $ do
             appendFile path "content"
 
           events <- IORef.readIORef eventsRef
@@ -266,7 +268,8 @@ testEdgeCases =
         Temp.withSystemTempDirectory "rapiddir" $ \dir -> do
           let path = dir </> "rapid.txt"
           writeFile path "base"
-          success <- withWatcher (recordEvent eventsRef) path 200000 $ do
+          -- Rapid modifications take ~50ms, then debounce needs 200ms + margin
+          success <- withWatcher (recordEvent eventsRef) path 500000 $ do
             -- Make rapid modifications
             sequence_ $
               replicate 5 $ do
@@ -299,7 +302,8 @@ testEdgeCases =
 
           writeFile oldPath "content"
 
-          success <- withWatcher (recordEvent eventsRef) oldPath 200000 $ do
+          -- Delay must exceed debounce window (200ms) + poll interval (50ms)
+          success <- withWatcher (recordEvent eventsRef) oldPath 500000 $ do
             Directory.renameFile oldPath newPath
 
           events <- IORef.readIORef eventsRef

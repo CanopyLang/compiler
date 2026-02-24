@@ -1,0 +1,20 @@
+module TestMain exposing (main)
+
+import Html exposing (Html, pre, text)
+import Test exposing (Test, runTests)
+import MathTest exposing (suite)
+import UtilsTest exposing (suite)
+
+
+main : Html msg
+main =
+    let
+        allSuites =
+            [ MathTest.suite
+            , UtilsTest.suite
+            ]
+
+        report =
+            runTests allSuites
+    in
+    pre [] [ text report ]

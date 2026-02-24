@@ -1,3 +1,4 @@
+{-# LANGUAGE DeriveGeneric #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE QuasiQuotes #-}
 
@@ -19,10 +20,11 @@ where
 
 import qualified AST.Canonical as Can
 import qualified AST.Optimized as Opt
+import qualified Data.Binary as Binary
+import GHC.Generics (Generic)
 import qualified Canopy.Kernel as K
 import qualified Canopy.ModuleName as ModuleName
 import qualified Canopy.Package as Pkg
-import Control.Exception (Exception)
 import Data.ByteString (ByteString)
 import Data.ByteString.Builder (Builder)
 import qualified Data.ByteString.Builder as B
@@ -65,7 +67,9 @@ data FFIInfo = FFIInfo
   { ffiFilePath :: !String    -- ^ Path to the JavaScript file
   , ffiContent  :: !String    -- ^ Content of the JavaScript file
   , ffiAlias    :: !String    -- ^ Alias used in the import statement
-  } deriving (Eq, Show)
+  } deriving (Eq, Show, Generic)
+
+instance Binary.Binary FFIInfo
 
 -- | Generate FFI JavaScript content to include in bundle
 --
@@ -122,7 +126,7 @@ extractCanopyTypeFunctions (line:rest) =
 -- Extract @canopy-type annotation from a line
 extractCanopyType :: String -> Maybe String
 extractCanopyType line =
-  if " * @canopy-type " `isInfixOf` line
+  if " * @canopy-type " `List.isInfixOf` line
     then case dropWhile (/= '@') line of
       ('@':'c':'a':'n':'o':'p':'y':'-':'t':'y':'p':'e':' ':typeStr) -> Just (trim typeStr)
       _ -> Nothing
@@ -132,13 +136,13 @@ extractCanopyType line =
 findFunctionName :: [String] -> Maybe String
 findFunctionName [] = Nothing
 findFunctionName (line:rest) =
-  if "function " `isPrefixOf` trim line
+  if "function " `List.isPrefixOf` trim line
     then case dropWhile (/= ' ') (trim line) of
       (' ':rest') -> case takeWhile (\c -> c /= '(' && c /= ' ') (trim rest') of
         "" -> findFunctionName rest
         name -> Just name
       _ -> findFunctionName rest
-    else if "*/" `isInfixOf` line
+    else if "*/" `List.isInfixOf` line
       then findFunctionName rest  -- Continue past comment end
       else findFunctionName rest
 
@@ -193,27 +197,11 @@ countArrows typeStr =
           | token == "->" && parenCount == 0 = go rest parenCount (arrowCount + 1)
           | otherwise = go rest parenCount arrowCount
 
--- Utility function to trim whitespace
+-- | Trim leading and trailing whitespace from a string.
 trim :: String -> String
-trim = dropWhile isSpace . dropWhileEnd isSpace
+trim = List.dropWhileEnd isSpace . dropWhile isSpace
   where
     isSpace c = c `elem` [' ', '\t', '\n', '\r']
-    dropWhileEnd p = reverse . dropWhile p . reverse
-
--- Check if a string contains a substring
-isInfixOf :: String -> String -> Bool
-isInfixOf needle haystack = any (isPrefixOf needle) (tails haystack)
-
--- Check if a string is a prefix of another
-isPrefixOf :: String -> String -> Bool
-isPrefixOf [] _ = True
-isPrefixOf _ [] = False
-isPrefixOf (x:xs) (y:ys) = x == y && isPrefixOf xs ys
-
--- Get all suffixes of a list
-tails :: [a] -> [[a]]
-tails [] = [[]]
-tails xs@(_:ys) = xs : tails ys
 
 generate :: Mode.Mode -> Opt.GlobalGraph -> Mains -> Map String FFIInfo -> Builder
 generate inputMode (Opt.GlobalGraph rawGraph _) mains ffiInfos =
@@ -451,19 +439,8 @@ addGlobal mode graph state@(State revKernels builders seen seenChunks) global =
   if Set.member global seen
     then state
     else
-      -- Skip FFI functions - they should be handled by expression generation
-      let Opt.Global globalHome _globalName = global
-          moduleName = ModuleName._module globalHome
-      in if Name.toChars moduleName == "Math"
-         then state  -- Skip FFI functions entirely
-         else
-           addGlobalHelp mode graph global $
-             State revKernels builders (Set.insert global seen) seenChunks
-
-data MyException = MyException String
-  deriving (Show)
-
-instance Exception MyException
+      addGlobalHelp mode graph global $
+        State revKernels builders (Set.insert global seen) seenChunks
 
 -- | Filter dependencies to exclude debugger modules in production mode
 filterEssentialDeps :: Mode.Mode -> Set Opt.Global -> Set Opt.Global
@@ -526,7 +503,7 @@ continueAddGlobal mode graph currentGlobal state =
                  else let allKeys = Map.keys graph
                           listRelated = filter (\(Opt.Global home name) ->
                             let modName = ModuleName._module home
-                            in "List" `isInfixOf` Name.toChars modName || "List" `isInfixOf` Name.toChars name) allKeys
+                            in "List" `List.isInfixOf` Name.toChars modName || "List" `List.isInfixOf` Name.toChars name) allKeys
                           dollarKeys = filter (\(Opt.Global _ name) -> Name.toChars name == "$") allKeys
                           elmCoreKeys = filter (\(Opt.Global home _) ->
                             let pkg = ModuleName._package home

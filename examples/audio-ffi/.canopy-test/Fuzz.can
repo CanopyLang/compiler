@@ -1,0 +1,424 @@
+module Fuzz exposing
+    ( Fuzzer
+    , int
+    , intRange
+    , float
+    , floatRange
+    , percentage
+    , string
+    , bool
+    , char
+    , unit
+    , maybe
+    , result
+    , list
+    , array
+    , pair
+    , triple
+    , map
+    , map2
+    , map3
+    , map4
+    , map5
+    , andMap
+    , andThen
+    , constant
+    , oneOf
+    , frequency
+    , filter
+    )
+
+{-| Fuzzers generate random values for property-based tests.
+
+## Primitive Fuzzers
+
+    Fuzz.int         -- generates random integers
+    Fuzz.float       -- generates random floats
+    Fuzz.string      -- generates random strings
+    Fuzz.bool        -- generates True or False
+
+## Combining Fuzzers
+
+    Fuzz.pair Fuzz.int Fuzz.string  -- generates (Int, String) tuples
+    Fuzz.list Fuzz.int               -- generates lists of integers
+
+## Custom Fuzzers
+
+    type alias Person =
+        { name : String
+        , age : Int
+        }
+
+    personFuzzer : Fuzzer Person
+    personFuzzer =
+        Fuzz.map2 Person
+            Fuzz.string
+            (Fuzz.intRange 0 120)
+
+-}
+
+import Random exposing (Generator)
+
+
+{-| A Fuzzer generates random values for fuzz testing.
+-}
+type Fuzzer a
+    = Fuzzer (Generator a)
+
+
+{-| Generate random integers.
+
+Generates values in a wide range including negative numbers.
+
+-}
+int : Fuzzer Int
+int =
+    Fuzzer (Random.int Random.minInt Random.maxInt)
+
+
+{-| Generate integers in a specific range (inclusive).
+
+    Fuzz.intRange 0 100  -- generates 0 to 100
+
+-}
+intRange : Int -> Int -> Fuzzer Int
+intRange lo hi =
+    Fuzzer (Random.int lo hi)
+
+
+{-| Generate random floats.
+-}
+float : Fuzzer Float
+float =
+    Fuzzer (Random.float -1000000 1000000)
+
+
+{-| Generate floats in a specific range.
+
+    Fuzz.floatRange 0 1  -- generates 0.0 to 1.0
+
+-}
+floatRange : Float -> Float -> Fuzzer Float
+floatRange lo hi =
+    Fuzzer (Random.float lo hi)
+
+
+{-| Generate floats between 0 and 1 inclusive.
+-}
+percentage : Fuzzer Float
+percentage =
+    floatRange 0 1
+
+
+{-| Generate random strings.
+
+Strings are ASCII printable characters with varying lengths.
+
+-}
+string : Fuzzer String
+string =
+    Fuzzer (stringGenerator 0 50)
+
+
+stringGenerator : Int -> Int -> Generator String
+stringGenerator minLen maxLen =
+    Random.int minLen maxLen
+        |> Random.andThen (\len ->
+            Random.list len charGenerator
+                |> Random.map String.fromList
+        )
+
+
+charGenerator : Generator Char
+charGenerator =
+    Random.int 32 126
+        |> Random.map Char.fromCode
+
+
+{-| Generate True or False with equal probability.
+-}
+bool : Fuzzer Bool
+bool =
+    Fuzzer (Random.uniform True [ False ])
+
+
+{-| Generate random printable ASCII characters.
+-}
+char : Fuzzer Char
+char =
+    Fuzzer charGenerator
+
+
+{-| Generate the unit value. Useful for tests that don't need input.
+-}
+unit : Fuzzer ()
+unit =
+    constant ()
+
+
+{-| Generate Maybe values. Roughly 1/4 Nothing, 3/4 Just.
+
+    Fuzz.maybe Fuzz.int  -- generates Nothing or Just <int>
+
+-}
+maybe : Fuzzer a -> Fuzzer (Maybe a)
+maybe (Fuzzer gen) =
+    Fuzzer (maybeGenerator gen)
+
+
+maybeGenerator : Generator a -> Generator (Maybe a)
+maybeGenerator gen =
+    Random.int 0 3
+        |> Random.andThen (\n ->
+            if n == 0 then
+                Random.constant Nothing
+            else
+                Random.map Just gen
+        )
+
+
+{-| Generate Result values.
+
+    Fuzz.result Fuzz.string Fuzz.int  -- generates Err <string> or Ok <int>
+
+-}
+result : Fuzzer err -> Fuzzer val -> Fuzzer (Result err val)
+result (Fuzzer errGen) (Fuzzer valGen) =
+    Fuzzer (resultGenerator errGen valGen)
+
+
+resultGenerator : Generator err -> Generator val -> Generator (Result err val)
+resultGenerator errGen valGen =
+    Random.uniform True [ False ]
+        |> Random.andThen (\isOk ->
+            if isOk then
+                Random.map Ok valGen
+            else
+                Random.map Err errGen
+        )
+
+
+{-| Generate lists of varying length.
+
+    Fuzz.list Fuzz.int  -- generates lists of integers
+
+-}
+list : Fuzzer a -> Fuzzer (List a)
+list (Fuzzer gen) =
+    Fuzzer (listGenerator 0 30 gen)
+
+
+listGenerator : Int -> Int -> Generator a -> Generator (List a)
+listGenerator minLen maxLen gen =
+    Random.int minLen maxLen
+        |> Random.andThen (\len -> Random.list len gen)
+
+
+{-| Generate arrays of varying length.
+
+    Fuzz.array Fuzz.int  -- generates arrays of integers
+
+-}
+array : Fuzzer a -> Fuzzer (Array a)
+array (Fuzzer gen) =
+    Fuzzer (Random.map Array.fromList (listGenerator 0 30 gen))
+
+
+{-| Generate pairs (2-tuples).
+
+    Fuzz.pair Fuzz.int Fuzz.string  -- generates (Int, String)
+
+-}
+pair : Fuzzer a -> Fuzzer b -> Fuzzer ( a, b )
+pair (Fuzzer genA) (Fuzzer genB) =
+    Fuzzer (Random.pair genA genB)
+
+
+{-| Generate triples (3-tuples).
+
+    Fuzz.triple Fuzz.int Fuzz.string Fuzz.bool
+
+-}
+triple : Fuzzer a -> Fuzzer b -> Fuzzer c -> Fuzzer ( a, b, c )
+triple (Fuzzer genA) (Fuzzer genB) (Fuzzer genC) =
+    Fuzzer (Random.map3 (\a b c -> ( a, b, c )) genA genB genC)
+
+
+{-| Transform the output of a fuzzer.
+
+    positiveInt : Fuzzer Int
+    positiveInt =
+        Fuzz.map abs Fuzz.int
+
+-}
+map : (a -> b) -> Fuzzer a -> Fuzzer b
+map f (Fuzzer gen) =
+    Fuzzer (Random.map f gen)
+
+
+{-| Combine two fuzzers.
+
+    type alias Point =
+        { x : Int, y : Int }
+
+    point : Fuzzer Point
+    point =
+        Fuzz.map2 Point Fuzz.int Fuzz.int
+
+-}
+map2 : (a -> b -> c) -> Fuzzer a -> Fuzzer b -> Fuzzer c
+map2 f (Fuzzer genA) (Fuzzer genB) =
+    Fuzzer (Random.map2 f genA genB)
+
+
+{-| Combine three fuzzers.
+-}
+map3 : (a -> b -> c -> d) -> Fuzzer a -> Fuzzer b -> Fuzzer c -> Fuzzer d
+map3 f (Fuzzer genA) (Fuzzer genB) (Fuzzer genC) =
+    Fuzzer (Random.map3 f genA genB genC)
+
+
+{-| Combine four fuzzers.
+-}
+map4 : (a -> b -> c -> d -> e) -> Fuzzer a -> Fuzzer b -> Fuzzer c -> Fuzzer d -> Fuzzer e
+map4 f (Fuzzer genA) (Fuzzer genB) (Fuzzer genC) (Fuzzer genD) =
+    Fuzzer (Random.map4 f genA genB genC genD)
+
+
+{-| Combine five fuzzers.
+-}
+map5 : (a -> b -> c -> d -> e -> f) -> Fuzzer a -> Fuzzer b -> Fuzzer c -> Fuzzer d -> Fuzzer e -> Fuzzer f
+map5 f (Fuzzer genA) (Fuzzer genB) (Fuzzer genC) (Fuzzer genD) (Fuzzer genE) =
+    Fuzzer (Random.map5 f genA genB genC genD genE)
+
+
+{-| Apply a fuzzer of functions to a fuzzer of values.
+Useful for building up fuzzers with many arguments.
+
+    type alias Person =
+        { name : String
+        , age : Int
+        , email : String
+        }
+
+    person : Fuzzer Person
+    person =
+        Fuzz.constant Person
+            |> Fuzz.andMap Fuzz.string
+            |> Fuzz.andMap (Fuzz.intRange 0 120)
+            |> Fuzz.andMap Fuzz.string
+
+-}
+andMap : Fuzzer a -> Fuzzer (a -> b) -> Fuzzer b
+andMap (Fuzzer gen) (Fuzzer fnGen) =
+    Fuzzer (Random.map2 (\f a -> f a) fnGen gen)
+
+
+{-| Create a fuzzer that depends on another fuzzer's value.
+
+    evenInt : Fuzzer Int
+    evenInt =
+        Fuzz.int
+            |> Fuzz.andThen (\n -> Fuzz.constant (n * 2))
+
+-}
+andThen : (a -> Fuzzer b) -> Fuzzer a -> Fuzzer b
+andThen f (Fuzzer gen) =
+    Fuzzer (Random.andThen (\a -> let (Fuzzer genB) = f a in genB) gen)
+
+
+{-| Create a fuzzer that always returns the same value.
+
+    Fuzz.constant "hello"
+
+-}
+constant : a -> Fuzzer a
+constant value =
+    Fuzzer (Random.constant value)
+
+
+{-| Choose randomly from a list of fuzzers with equal probability.
+
+    Fuzz.oneOf
+        [ Fuzz.constant "red"
+        , Fuzz.constant "green"
+        , Fuzz.constant "blue"
+        ]
+
+-}
+oneOf : List (Fuzzer a) -> Fuzzer a
+oneOf fuzzers =
+    case fuzzers of
+        [] ->
+            -- This should never happen, but we need a fallback
+            constant (Debug.todo "oneOf: empty list")
+
+        first :: rest ->
+            let
+                generators =
+                    List.map (\(Fuzzer gen) -> gen) fuzzers
+            in
+            case generators of
+                [] ->
+                    let (Fuzzer gen) = first in Fuzzer gen
+
+                g :: gs ->
+                    Fuzzer (Random.uniform g gs |> Random.andThen identity)
+
+
+{-| Choose from fuzzers with weighted probability.
+
+    Fuzz.frequency
+        [ ( 3, Fuzz.constant "common" )
+        , ( 1, Fuzz.constant "rare" )
+        ]
+
+The above generates "common" 75% of the time and "rare" 25% of the time.
+
+-}
+frequency : List ( Float, Fuzzer a ) -> Fuzzer a
+frequency options =
+    case options of
+        [] ->
+            constant (Debug.todo "frequency: empty list")
+
+        ( weight, Fuzzer gen ) :: rest ->
+            let
+                weighted =
+                    List.map (\( w, Fuzzer g ) -> ( w, g )) options
+            in
+            case weighted of
+                [] ->
+                    Fuzzer gen
+
+                w :: ws ->
+                    Fuzzer (Random.weighted w ws |> Random.andThen identity)
+
+
+{-| Filter out values that don't match a predicate.
+
+**Warning**: If the predicate rarely returns True, this can be slow
+or cause test timeouts.
+
+    positiveInt : Fuzzer Int
+    positiveInt =
+        Fuzz.filter (\n -> n > 0) Fuzz.int
+
+-}
+filter : (a -> Bool) -> Fuzzer a -> Fuzzer a
+filter predicate (Fuzzer gen) =
+    Fuzzer (filterGenerator 100 predicate gen)
+
+
+filterGenerator : Int -> (a -> Bool) -> Generator a -> Generator a
+filterGenerator tries predicate gen =
+    if tries <= 0 then
+        gen
+    else
+        gen
+            |> Random.andThen (\value ->
+                if predicate value then
+                    Random.constant value
+                else
+                    filterGenerator (tries - 1) predicate gen
+            )

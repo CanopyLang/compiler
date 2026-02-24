@@ -1,0 +1,59 @@
+module WebAudio.Effect exposing
+    ( Effect
+    , none
+    , playTone
+    , setVolume
+    , batch
+    )
+
+{-| Audio effects for managing side effects in Web Audio.
+
+This module provides an effect system for managing audio operations
+as first-class values.
+
+@docs Effect, none, playTone, setVolume, batch
+
+-}
+
+
+{-| An audio effect to be performed.
+-}
+type Effect
+    = None
+    | PlayTone Float Float
+    | SetVolume Float
+    | Batch (List Effect)
+
+
+{-| An effect that does nothing.
+-}
+none : Effect
+none =
+    None
+
+
+{-| Play a tone at the given frequency for the given duration.
+
+    playTone 440 1.0  -- Play A4 for 1 second
+
+-}
+playTone : Float -> Float -> Effect
+playTone frequency duration =
+    PlayTone frequency duration
+
+
+{-| Set the volume level (0.0 to 1.0).
+
+    setVolume 0.5  -- Half volume
+
+-}
+setVolume : Float -> Effect
+setVolume level =
+    SetVolume level
+
+
+{-| Combine multiple effects into one.
+-}
+batch : List Effect -> Effect
+batch effects =
+    Batch effects

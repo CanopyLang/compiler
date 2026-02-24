@@ -41,22 +41,22 @@ import Data.Text (Text)
 import qualified Data.Map.Strict as Map
 import qualified Data.Maybe as Maybe
 import qualified System.Directory as Dir
+import System.FilePath ((</>))
 import qualified System.FilePath as FilePath
 import qualified System.Exit as Exit
+import Data.Either (partitionEithers)
 import qualified Data.List as List
 
 import qualified Foreign.FFI as FFI
 import qualified Foreign.TestGeneratorNew as TestGen
-import qualified Make
 import qualified System.Process as Process
 import System.Directory (findExecutable)
-import Control.Monad (filterM, unless, void)
+import Control.Monad (filterM, void, when)
 import qualified Control.Concurrent as Concurrent
 import qualified Control.Exception as Exception
 import qualified System.FSNotify as FSNotify
 import qualified Terminal
 import Text.Read (readMaybe)
-import Control.Exception (try, SomeException)
 
 -- | Configuration for FFI testing
 data FFITestConfig = FFITestConfig
@@ -375,17 +375,25 @@ validateModule modulePath = do
       let violations = concatMap (validateFunction modulePath) (Map.toList ffiFunctions)
       return violations
 
--- | Validate a single FFI function
+-- | Validate a single FFI function's contract.
+--
+-- Checks that the function has valid type information:
+-- output type is not empty, and error types (if declared) are non-empty strings.
 validateFunction :: FilePath -> (Text, FFI.FFIFunction) -> [String]
-validateFunction _ (_, _) = do
-  -- Validate function contract
-  -- This would check:
-  -- - Type signatures match JSDoc
-  -- - All parameters are documented
-  -- - Return types are valid
-  -- - Error types are properly declared
-
-  [] -- No violations for now (mock implementation)
+validateFunction modulePath (funcName, ffiFunc) =
+  checkOutputType ++ checkErrorTypes
+  where
+    checkOutputType =
+      case FFI.ffiFuncOutputType ffiFunc of
+        FFI.FFIBasic "" ->
+          [modulePath ++ ": " ++ Text.unpack funcName ++ " has empty output type"]
+        _ -> []
+    checkErrorTypes =
+      [ modulePath ++ ": " ++ Text.unpack funcName
+          ++ " has empty error type declaration"
+      | errType <- FFI.ffiFuncErrorTypes ffiFunc
+      , Text.null errType
+      ]
 
 -- | Find all FFI modules in a directory
 findFFIModules :: FilePath -> IO [FilePath]
@@ -453,88 +461,17 @@ findTestFiles outputDir = do
       let testFiles = filter ("Tests.can" `List.isSuffixOf`) contents
       return (map (outputDir </>) testFiles)
 
--- | Compile .can test files to JavaScript using existing Make module
-_compileTestFiles :: [FilePath] -> IO (Either String [FilePath])
-_compileTestFiles [] = return (Right [])
-_compileTestFiles canFiles@(firstFile:_) = do
-  putStrLn "🔧 Compiling test files using Canopy compiler..."
 
-  -- Set up test project structure (use the directory of the first file)
-  setupResult <- _setupTestProject firstFile
-  case setupResult of
-    Left setupError -> do
-      putStrLn $ "❌ Failed to setup test project: " ++ setupError
-      return (Left setupError)
-    Right testDir -> do
-      -- Create default Make flags for compilation
-      let makeFlags = Make.Flags
-            { Make._debug = False
-            , Make._optimize = False
-            , Make._watch = False
-            , Make._output = Nothing
-            , Make._report = Nothing
-            , Make._docs = Nothing
-            , Make._verbose = False
-            }
-
-      -- Change to test directory for compilation
-      originalDir <- Dir.getCurrentDirectory
-      Dir.setCurrentDirectory testDir
-
-      results <- mapM (_compileCanFile makeFlags) canFiles
-      let (failures, successes) = partitionEithers results
-
-      -- Restore original directory
-      Dir.setCurrentDirectory originalDir
-
-      if null failures
-        then do
-          putStrLn $ "✅ Successfully compiled " ++ show (length successes) ++ " test files"
-          return (Right successes)
-        else do
-          putStrLn $ "❌ Failed to compile " ++ show (length failures) ++ " test files:"
-          mapM_ putStrLn failures
-          return (Left ("Compilation failed: " ++ unlines failures))
-
--- | Compile a single .can file to JavaScript
-_compileCanFile :: Make.Flags -> FilePath -> IO (Either String FilePath)
-_compileCanFile flags canFile = do
-  putStrLn $ "  Compiling " ++ canFile ++ "..."
-
-  -- Set up compilation flags with JavaScript output
-  let jsFile = FilePath.replaceExtension canFile ".js"
-  let outputFlags = flags { Make._output = Just (Make.JS jsFile) }
-
-  -- Use a custom exception handler to capture compilation errors
-  result <- try $ Make.run [canFile] outputFlags :: IO (Either SomeException ())
-
-  case result of
-    Left ex -> do
-      -- Convert any exceptions to error messages
-      let errorMsg = "Compilation failed: " ++ show ex
-      putStrLn $ "❌ " ++ errorMsg
-      return (Left errorMsg)
-    Right () -> do
-      -- Check if the output file was actually created
-      jsExists <- Dir.doesFileExist jsFile
-      if jsExists
-        then do
-          putStrLn $ "✅ Compiled successfully → " ++ jsFile
-          return (Right jsFile)
-        else do
-          let errorMsg = "Compilation completed but output file not found: " ++ jsFile
-          putStrLn $ "❌ " ++ errorMsg
-          return (Left errorMsg)
 
 -- | Create JavaScript test runners directly from .can test files
 createJavaScriptTestRunners :: FFITestConfig -> [FilePath] -> IO [FilePath]
 createJavaScriptTestRunners config testFiles = do
-  results <- mapM (_createJavaScriptTestRunner config) testFiles
+  results <- mapM (createSingleTestRunner config) testFiles
   return (Maybe.catMaybes results)
 
 -- | Create a JavaScript test runner for a single .can test file
-_createJavaScriptTestRunner :: FFITestConfig -> FilePath -> IO (Maybe FilePath)
-_createJavaScriptTestRunner _config canFile = do
+createSingleTestRunner :: FFITestConfig -> FilePath -> IO (Maybe FilePath)
+createSingleTestRunner _config canFile = do
   putStrLn $ "  📝 Creating JavaScript runner for " ++ canFile
 
   -- Read the .can test file to extract function information
@@ -570,9 +507,17 @@ generateJavaScriptTestRunner moduleName testFunctions = unlines $
   [ "// Auto-generated JavaScript test runner for " ++ moduleName
   , "// Generated by canopy test-ffi command"
   , ""
-  , "console.log('🧪 Running FFI tests for " ++ moduleName ++ "');"
+  , "// Import the compiled module"
+  , "let _module = {};"
+  , "try {"
+  , "  _module = require('./" ++ moduleName ++ "');"
+  , "} catch (e) {"
+  , "  console.error('Failed to import module " ++ moduleName ++ ": ' + e.message);"
+  , "}"
   , ""
-  , "// Mock FFI test framework"
+  , "console.log('Running FFI tests for " ++ moduleName ++ "');"
+  , ""
+  , "// Test framework"
   , "const Test = {"
   , "  passed: 0,"
   , "  failed: 0,"
@@ -641,23 +586,29 @@ generateTestFunctionsJS testFunctions =
       allTestsFunction = generateAllTestsJS testFunctions
   in individualTests ++ [""] ++ allTestsFunction
 
--- | Generate JavaScript for a single test function
+-- | Generate JavaScript for a single test function.
+--
+-- Generates tests that verify the function exists on the module,
+-- is callable, and does not throw when invoked. These are the
+-- minimum viable tests for any FFI function binding.
 generateSingleTestJS :: String -> [String]
 generateSingleTestJS functionName =
   [ "// Tests for " ++ functionName
   , "function test" ++ functionName ++ "() {"
   , "  return Test.describe('" ++ functionName ++ " FFI function', ["
-  , "    Test.test('" ++ functionName ++ " basic functionality', function() {"
-  , "      // Basic test that function exists and can be called"
-  , "      return Test.expect(true).toEqual(true);"
+  , "    Test.test('" ++ functionName ++ " exists on module', function() {"
+  , "      return Test.expect(typeof _module." ++ functionName ++ " !== 'undefined').toEqual(true);"
   , "    }),"
-  , "    Test.test('" ++ functionName ++ " type validation', function() {"
-  , "      // Test that function has correct type signature"
-  , "      return Test.expect(true).toEqual(true);"
+  , "    Test.test('" ++ functionName ++ " is callable', function() {"
+  , "      return Test.expect(typeof _module." ++ functionName ++ ").toEqual('function');"
   , "    }),"
-  , "    Test.test('" ++ functionName ++ " property test', function() {"
-  , "      // Property-based test with random inputs"
-  , "      return Test.expect(true).toEqual(true);"
+  , "    Test.test('" ++ functionName ++ " does not throw on invocation', function() {"
+  , "      try {"
+  , "        _module." ++ functionName ++ "();"
+  , "        return { status: 'PASS' };"
+  , "      } catch (e) {"
+  , "        return { status: 'FAIL', message: 'Threw: ' + e.message };"
+  , "      }"
   , "    })"
   , "  ]);"
   , "}"
@@ -675,103 +626,7 @@ generateAllTestsJS testFunctions =
   , "}"
   ]
 
--- | Set up a test project structure with canopy.json
-_setupTestProject :: FilePath -> IO (Either String FilePath)
-_setupTestProject testFile = do
-  let testDir = FilePath.takeDirectory testFile
-  let canopyJsonPath = testDir </> "canopy.json"
 
-  -- Check if canopy.json already exists
-  canopyJsonExists <- Dir.doesFileExist canopyJsonPath
-
-  unless canopyJsonExists $ do
-    putStrLn $ "📝 Creating test project structure in " ++ testDir
-
-    -- Create a minimal canopy.json for the test project
-    let canopyJsonContent = unlines
-          [ "{"
-          , "    \"type\": \"application\","
-          , "    \"source-directories\": ["
-          , "        \".\""
-          , "    ],"
-          , "    \"canopy-version\": \"0.19.1\","
-          , "    \"dependencies\": {"
-          , "        \"direct\": {},"
-          , "        \"indirect\": {}"
-          , "    },"
-          , "    \"test-dependencies\": {"
-          , "        \"direct\": {},"
-          , "        \"indirect\": {}"
-          , "    }"
-          , "}"
-          ]
-
-    writeFile canopyJsonPath canopyJsonContent
-    putStrLn $ "✅ Created " ++ canopyJsonPath
-
-    -- Copy the Test framework module
-    _copyTestFramework testDir
-
-  return (Right testDir)
-
--- | Copy Test framework and supporting modules to test directory
-_copyTestFramework :: FilePath -> IO ()
-_copyTestFramework testDir = do
-  putStrLn "📋 Copying Test framework modules..."
-
-  -- Copy Test.can from core-packages
-  let testSourcePath = "core-packages/test/src/Test.can"
-  let testDestPath = testDir </> "Test.can"
-
-  testExists <- Dir.doesFileExist testSourcePath
-  if testExists
-    then do
-      Dir.copyFile testSourcePath testDestPath
-      putStrLn $ "✅ Copied Test.can → " ++ testDestPath
-    else do
-      putStrLn "⚠️ Test.can not found, creating minimal version"
-      _createMinimalTestFramework testDestPath
-
--- | Create a minimal Test framework if the core version doesn't exist
-_createMinimalTestFramework :: FilePath -> IO ()
-_createMinimalTestFramework testPath = do
-  let testContent = unlines
-        [ "-- | Minimal Test framework for FFI testing"
-        , "module Test exposing"
-        , "  ( Test"
-        , "  , describe"
-        , "  , test"
-        , "  , Expectation"
-        , "  , expect"
-        , "  , equal"
-        , "  )"
-        , ""
-        , "type Test = Test String"
-        , "type Expectation = Pass | Fail String"
-        , ""
-        , "describe : String -> List Test -> Test"
-        , "describe name _ = Test name"
-        , ""
-        , "test : String -> (() -> Expectation) -> Test"
-        , "test name _ = Test name"
-        , ""
-        , "expect : a -> Expect a"
-        , "expect _ = Expect"
-        , ""
-        , "equal : a -> Expect a -> Expectation"
-        , "equal _ _ = Pass"
-        , ""
-        , "type Expect a = Expect"
-        ]
-  writeFile testPath testContent
-  putStrLn $ "✅ Created minimal Test framework → " ++ testPath
-
--- | Helper function to partition Either values
-partitionEithers :: [Either a b] -> ([a], [b])
-partitionEithers = foldr partition ([], [])
-  where
-    partition (Left a) (lefts, rights) = (a:lefts, rights)
-    partition (Right b) (lefts, rights) = (lefts, b:rights)
 
 -- | Generate a test runner that executes all test files
 generateTestRunner :: FFITestConfig -> [FilePath] -> IO ()
@@ -891,17 +746,6 @@ generateHTMLContent testFiles =
                 , "</html>"
                 ]
   in unlines (htmlStart ++ scriptTags ++ htmlEnd)
-
--- Helper functions
-
--- Helper function for file path operations
-(</>) :: FilePath -> FilePath -> FilePath
-(</>) = FilePath.combine
-
--- Helper function for verbose output
-when :: Bool -> IO () -> IO ()
-when True action = action
-when False _ = return ()
 
 -- Parser functions for CLI flags
 outputParser :: Terminal.Parser FilePath

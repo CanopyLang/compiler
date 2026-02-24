@@ -1,0 +1,306 @@
+module Browser exposing
+    ( Browser
+    , BrowserError(..)
+    , Config
+    , BrowserType(..)
+    , defaultConfig
+    , withHeadless
+    , withSlowMo
+    , withViewport
+    , withTimeout
+    , withBrowser
+    , withRecordVideo
+    , launch
+    , close
+    , test
+    , testWith
+    )
+
+{-| Browser automation testing for Canopy applications using Playwright.
+
+This module provides real browser testing capabilities including:
+- Multi-browser support (Chromium, Firefox, WebKit)
+- Automatic element waiting
+- Screenshots and visual regression
+- Accessibility testing
+- Network interception
+
+## Quick Start
+
+    import Browser
+    import Browser.Page as Page
+    import Browser.Element as Element
+    import Task
+
+    myTest : Task Browser.BrowserError ()
+    myTest =
+        Browser.launch Browser.defaultConfig
+            |> Task.andThen (Page.goto "http://localhost:3000")
+            |> Task.andThen (Element.click "#login")
+            |> Task.andThen (Element.fill "#email" "user@example.com")
+            |> Task.andThen (Element.fill "#password" "secret")
+            |> Task.andThen (Element.click "#submit")
+            |> Task.andThen (Page.waitForSelector "#dashboard")
+            |> Task.andThen Browser.close
+
+## Configuration
+
+    config =
+        Browser.defaultConfig
+            |> Browser.withHeadless False
+            |> Browser.withSlowMo 100
+            |> Browser.withBrowser Browser.Firefox
+
+## Test Integration
+
+    import Browser
+    import Test exposing (Test, describe)
+
+    suite : Test
+    suite =
+        describe "Login"
+            [ Browser.test "successful login" <|
+                \browser ->
+                    -- test code using browser handle
+                    Expect.pass
+            ]
+
+-}
+
+import Task exposing (Task)
+import Test exposing (Test)
+import Expect exposing (Expectation)
+
+-- FFI import for Playwright bindings
+foreign import javascript "external/playwright.js" as Playwright
+
+
+{-| Opaque browser handle.
+
+This represents an active browser session with a page.
+Use functions from Browser.Page and Browser.Element to interact with it.
+-}
+type Browser
+    = Browser
+
+
+{-| Errors that can occur during browser automation.
+-}
+type BrowserError
+    = LaunchError String
+    | NavigationError String
+    | ElementNotFound String
+    | TimeoutError String
+    | EvaluationError String
+    | ScreenshotError String
+    | NetworkError String
+
+
+{-| Browser engine selection.
+
+Playwright supports three browser engines:
+- Chromium (Chrome/Edge)
+- Firefox
+- WebKit (Safari)
+-}
+type BrowserType
+    = Chromium
+    | Firefox
+    | WebKit
+
+
+{-| Configuration for browser tests.
+-}
+type alias Config =
+    { browser : BrowserType
+    , headless : Bool
+    , slowMo : Int
+    , viewport : { width : Int, height : Int }
+    , timeout : Int
+    , recordVideo : Bool
+    }
+
+
+{-| Default browser configuration.
+
+    - Browser: Chromium
+    - Headless: True
+    - SlowMo: 0ms
+    - Viewport: 1280x720
+    - Timeout: 30000ms
+    - RecordVideo: False
+
+-}
+defaultConfig : Config
+defaultConfig =
+    { browser = Chromium
+    , headless = True
+    , slowMo = 0
+    , viewport = { width = 1280, height = 720 }
+    , timeout = 30000
+    , recordVideo = False
+    }
+
+
+{-| Set headless mode.
+
+    Browser.defaultConfig
+        |> Browser.withHeadless False  -- Show browser window
+
+-}
+withHeadless : Bool -> Config -> Config
+withHeadless headless config =
+    { config | headless = headless }
+
+
+{-| Add delay between actions for debugging.
+
+    Browser.defaultConfig
+        |> Browser.withSlowMo 100  -- 100ms delay between actions
+
+-}
+withSlowMo : Int -> Config -> Config
+withSlowMo ms config =
+    { config | slowMo = ms }
+
+
+{-| Set the browser viewport size.
+
+    Browser.defaultConfig
+        |> Browser.withViewport 375 667  -- iPhone SE size
+
+-}
+withViewport : Int -> Int -> Config -> Config
+withViewport width height config =
+    { config | viewport = { width = width, height = height } }
+
+
+{-| Set the default timeout for waiting operations.
+
+    Browser.defaultConfig
+        |> Browser.withTimeout 60000  -- 60 second timeout
+
+-}
+withTimeout : Int -> Config -> Config
+withTimeout ms config =
+    { config | timeout = ms }
+
+
+{-| Set the browser engine to use.
+
+    Browser.defaultConfig
+        |> Browser.withBrowser Browser.Firefox
+
+-}
+withBrowser : BrowserType -> Config -> Config
+withBrowser browserType config =
+    { config | browser = browserType }
+
+
+{-| Enable video recording of test.
+
+    Browser.defaultConfig
+        |> Browser.withRecordVideo True
+
+Videos are saved to test-output/videos/
+
+-}
+withRecordVideo : Bool -> Config -> Config
+withRecordVideo record config =
+    { config | recordVideo = record }
+
+
+{-| Launch a browser instance with the given configuration.
+
+    Browser.launch Browser.defaultConfig
+        |> Task.andThen (Page.goto "http://localhost:3000")
+        |> Task.andThen Browser.close
+
+-}
+launch : Config -> Task BrowserError Browser
+launch config =
+    Playwright.launch (configToJs config)
+
+
+{-| Close the browser and cleanup all resources.
+
+Always call this when done with browser testing to free resources.
+
+    Browser.launch config
+        |> Task.andThen doStuff
+        |> Task.andThen Browser.close
+
+-}
+close : Browser -> Task BrowserError ()
+close browser =
+    Playwright.close browser
+
+
+-- ============================================================================
+-- Test Integration
+-- ============================================================================
+
+
+{-| Create a browser test with default configuration.
+
+This creates a Test that launches a browser, runs your test function,
+and automatically closes the browser when done.
+
+    Browser.test "login works" <|
+        \browser ->
+            -- Your test using browser handle
+            Expect.pass
+
+-}
+test : String -> (Browser -> Expectation) -> Test
+test description testFn =
+    testWith defaultConfig description testFn
+
+
+{-| Create a browser test with custom configuration.
+
+    Browser.testWith
+        (Browser.defaultConfig
+            |> Browser.withHeadless False
+            |> Browser.withSlowMo 100
+        )
+        "debug test" <|
+        \browser ->
+            -- Your test code
+            Expect.pass
+
+-}
+testWith : Config -> String -> (Browser -> Expectation) -> Test
+testWith config description testFn =
+    Test.test description <|
+        \_ ->
+            Playwright.withBrowser (configToJs config) testFn
+
+
+-- ============================================================================
+-- Internal Helpers
+-- ============================================================================
+
+
+browserTypeToString : BrowserType -> String
+browserTypeToString bt =
+    case bt of
+        Chromium ->
+            "chromium"
+
+        Firefox ->
+            "firefox"
+
+        WebKit ->
+            "webkit"
+
+
+configToJs : Config -> { browser : String, headless : Bool, slowMo : Int, viewport : { width : Int, height : Int }, timeout : Int, recordVideo : Bool }
+configToJs config =
+    { browser = browserTypeToString config.browser
+    , headless = config.headless
+    , slowMo = config.slowMo
+    , viewport = config.viewport
+    , timeout = config.timeout
+    , recordVideo = config.recordVideo
+    }

@@ -1,0 +1,170 @@
+module BrowserTest exposing (main)
+
+{-| Browser Integration Tests for Math FFI
+
+This module tests the Math FFI application in a real browser environment
+using the canopy/test Playwright integration.
+
+## Test Coverage
+
+- Application loads correctly
+- FFI bindings work in browser context
+- UI displays calculation results
+- User interactions trigger calculations
+
+-}
+
+import Browser.Test exposing (..)
+import Test exposing (Test, describe)
+
+
+main : Test
+main =
+    runBrowserTests
+        [ describe "Math FFI Application"
+            [ pageLoadTests
+            , uiInteractionTests
+            , calculationDisplayTests
+            , responsiveTests
+            ]
+        ]
+
+
+-- ============================================================================
+-- PAGE LOAD TESTS
+-- ============================================================================
+
+
+pageLoadTests : BrowserTest
+pageLoadTests =
+    describe "Page Load"
+        [ browserTest "application loads with title"
+            [ visit "http://localhost:8000"
+            , seeText "Math FFI Example"
+            ]
+
+        , browserTest "description text is visible"
+            [ visit "http://localhost:8000"
+            , seeText "Mathematical operations through Canopy's FFI system"
+            ]
+
+        , browserTest "run calculations button is present"
+            [ visit "http://localhost:8000"
+            , seeText "Run Calculations"
+            ]
+
+        , browserTest "initial message is displayed"
+            [ visit "http://localhost:8000"
+            , seeText "Click the button to run mathematical calculations"
+            ]
+        ]
+
+
+-- ============================================================================
+-- UI INTERACTION TESTS
+-- ============================================================================
+
+
+uiInteractionTests : BrowserTest
+uiInteractionTests =
+    describe "UI Interactions"
+        [ scenario "User clicks run calculations button"
+            [ given "user is on the page"
+                [ visit "http://localhost:8000"
+                ]
+            , when "user clicks the run calculations button"
+                [ click "button"
+                ]
+            , then_ "calculations are displayed"
+                [ seeText "FACTORIAL CALCULATIONS"
+                ]
+            ]
+
+        , browserTest "button changes output on click"
+            [ visit "http://localhost:8000"
+            , click "button"
+            , seeText "5!"
+            , seeText "120"
+            ]
+        ]
+
+
+-- ============================================================================
+-- CALCULATION DISPLAY TESTS
+-- ============================================================================
+
+
+calculationDisplayTests : BrowserTest
+calculationDisplayTests =
+    describe "Calculation Results"
+        [ browserTest "factorial results are displayed"
+            [ visit "http://localhost:8000"
+            , click "button"
+            , seeText "5! = 120"
+            , seeText "7! = 5040"
+            ]
+
+        , browserTest "prime number results are displayed"
+            [ visit "http://localhost:8000"
+            , click "button"
+            , seeText "PRIME NUMBERS"
+            , seeText "Is 17 prime?"
+            , seeText "Yes"
+            , seeText "Is 18 prime?"
+            , seeText "No"
+            ]
+
+        , browserTest "fibonacci results are displayed"
+            [ visit "http://localhost:8000"
+            , click "button"
+            , seeText "FIBONACCI SEQUENCE"
+            , seeText "fib(10) = 55"
+            , seeText "fib(15) = 610"
+            ]
+
+        , browserTest "GCD results are displayed"
+            [ visit "http://localhost:8000"
+            , click "button"
+            , seeText "GCD"
+            , seeText "gcd(48, 18) = 6"
+            ]
+
+        , browserTest "power results are displayed"
+            [ visit "http://localhost:8000"
+            , click "button"
+            , seeText "POWER CALCULATIONS"
+            , seeText "2^8 = 256"
+            , seeText "3^4 = 81"
+            ]
+        ]
+
+
+-- ============================================================================
+-- RESPONSIVE TESTS
+-- ============================================================================
+
+
+responsiveTests : BrowserTest
+responsiveTests =
+    describe "Responsive Layout"
+        [ browserTestWith (withMobile defaultConfig) "works on mobile"
+            [ visit "http://localhost:8000"
+            , seeText "Math FFI Example"
+            , click "button"
+            , seeText "FACTORIAL"
+            ]
+
+        , browserTestWith (withTablet defaultConfig) "works on tablet"
+            [ visit "http://localhost:8000"
+            , seeText "Math FFI Example"
+            , click "button"
+            , seeText "FIBONACCI"
+            ]
+
+        , browserTestWith (withDesktop defaultConfig) "works on desktop"
+            [ visit "http://localhost:8000"
+            , seeText "Math FFI Example"
+            , click "button"
+            , seeText "POWER CALCULATIONS"
+            ]
+        ]

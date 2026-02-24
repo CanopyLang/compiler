@@ -58,6 +58,8 @@ where
 import Control.Concurrent (forkIO, threadDelay)
 import Control.Exception (SomeException, catch)
 import qualified Data.ByteString.Char8 as BS
+import Data.IORef (IORef, newIORef, readIORef, writeIORef)
+import qualified Data.Time.Clock as Time
 import qualified Network.WebSockets as WS
 import qualified System.FSNotify as Notify
 
@@ -109,22 +111,51 @@ startFileWatcher manager watchDir = do
   elmWatcher <- watchCanopyFiles manager watchDir ".elm"
   pure [canWatcher, canopyWatcher, elmWatcher]
 
--- | Watch Canopy source files with specific extension.
+-- | Watch Canopy source files with specific extension and debouncing.
 --
--- Creates a file system watcher for files with the specified extension,
--- triggering notifications when files are modified, created, or deleted.
+-- Creates a debounced file system watcher for files with the specified
+-- extension. Events within a 200ms window are coalesced so a single
+-- file save (which may produce multiple FS events) triggers only one
+-- notification. A background thread polls the debounce state.
 --
 -- @since 0.19.1
 watchCanopyFiles :: Notify.WatchManager -> FilePath -> String -> IO (IO ())
-watchCanopyFiles manager watchDir extension =
-  Notify.watchTree manager watchDir (matchesExtension extension) handleFileEvent
+watchCanopyFiles manager watchDir extension = do
+  lastEventRef <- newIORef Nothing
+  _ <- forkIO (runDebounceLoop lastEventRef)
+  Notify.watchTree manager watchDir (matchesExtension extension) (recordEvent lastEventRef)
   where
     matchesExtension ext event =
-      let eventPath = Notify.eventPath event
-       in takeExtension eventPath == ext
+      takeExtension (Notify.eventPath event) == ext
 
-    handleFileEvent _event =
-      putStrLn ("File changed: " ++ show _event)
+    recordEvent :: IORef (Maybe (Notify.Event, Time.UTCTime)) -> Notify.Event -> IO ()
+    recordEvent ref event = do
+      now <- Time.getCurrentTime
+      writeIORef ref (Just (event, now))
+
+    runDebounceLoop :: IORef (Maybe (Notify.Event, Time.UTCTime)) -> IO ()
+    runDebounceLoop ref = pollForever
+      where
+        pollForever = do
+          threadDelay debounceCheckMicros
+          maybeEvent <- readIORef ref
+          case maybeEvent of
+            Nothing -> pollForever
+            Just (event, eventTime) -> do
+              now <- Time.getCurrentTime
+              let elapsed = Time.diffUTCTime now eventTime
+              if elapsed >= debounceWindowSeconds
+                then do
+                  writeIORef ref Nothing
+                  putStrLn ("File changed: " ++ show event)
+                  pollForever
+                else pollForever
+
+    debounceWindowSeconds :: Time.NominalDiffTime
+    debounceWindowSeconds = 0.2
+
+    debounceCheckMicros :: Int
+    debounceCheckMicros = 50000
 
 -- | Extract file extension from path.
 takeExtension :: FilePath -> String

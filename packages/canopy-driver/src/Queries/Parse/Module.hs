@@ -34,13 +34,14 @@ logModuleInfo modul = do
   Logger.debug PARSE ("Foreign imports: " ++ show foreignCount)
 
 -- | Count declarations in a module.
+--
+-- Counts all top-level declarations: value definitions, union types,
+-- and type aliases. This provides an accurate count for debug logging.
 countDeclarations :: Src.Module -> Int
 countDeclarations modul =
-  case modul of
-    Src.Module {Src._docs = docs} -> length (extractDecls docs)
-  where
-    extractDecls :: Src.Docs -> [a]
-    extractDecls _ = []
+  length (Src._values modul)
+    + length (Src._unions modul)
+    + length (Src._aliases modul)
 
 -- | Execute a parse module query.
 parseModuleQuery ::

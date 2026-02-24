@@ -53,7 +53,6 @@ import qualified Queries.Type.Check as TypeQuery
 import qualified Query.Engine as Engine
 import Query.Simple
 import qualified Worker.Pool as Pool
-import qualified Debug.Trace
 import qualified Parse.Module as Parse
 import qualified Reporting.Annotation as A
 
@@ -120,18 +119,19 @@ compileFromSource pkg ifaces sourceModule = do
   Logger.debug COMPILE_DEBUG "Compiling from parsed source"
   Logger.debug COMPILE_DEBUG ("Package: " ++ show pkg)
 
+  engine <- Engine.initEngine
   ffiContent <- loadFFIContent sourceModule
   let foreignImports = Src._foreignImports sourceModule
       ffiInfoMap = buildFFIInfoMap foreignImports ffiContent
-  canonResult <- runCanonicalizePhase pkg ifaces ffiContent sourceModule
+  canonResult <- runCanonicalizePhase engine pkg ifaces ffiContent sourceModule
   case canonResult of
     Left err -> return (Left err)
     Right canonModule -> do
-      typeResult <- runTypeCheckPhase "<unknown>" canonModule
+      typeResult <- runTypeCheckPhase engine "<unknown>" canonModule
       case typeResult of
         Left err -> return (Left err)
         Right types -> do
-          optimizeResult <- runOptimizePhase types canonModule
+          optimizeResult <- runOptimizePhase engine types canonModule
           case optimizeResult of
             Left err -> return (Left err)
             Right localGraph -> do
@@ -167,15 +167,15 @@ compileModuleFull engine pkg ifaces path projectType = do
       ffiContent <- loadFFIContent sourceModule
       let foreignImports = Src._foreignImports sourceModule
           ffiInfoMap = buildFFIInfoMap foreignImports ffiContent
-      canonResult <- runCanonicalizePhase pkg ifaces ffiContent sourceModule
+      canonResult <- runCanonicalizePhase engine pkg ifaces ffiContent sourceModule
       case canonResult of
         Left err -> return (Left err)
         Right canonModule -> do
-          typeResult <- runTypeCheckPhase path canonModule
+          typeResult <- runTypeCheckPhase engine path canonModule
           case typeResult of
             Left err -> return (Left err)
             Right types -> do
-              optimizeResult <- runOptimizePhase types canonModule
+              optimizeResult <- runOptimizePhase engine types canonModule
               case optimizeResult of
                 Left err -> return (Left err)
                 Right localGraph -> do
@@ -194,13 +194,16 @@ compileModuleFull engine pkg ifaces path projectType = do
                     )
 
 -- | Run parse phase.
+--
+-- Tracks the phase execution through the query engine for accurate
+-- compilation statistics, then delegates to the parse module query.
 runParsePhase ::
   Engine.QueryEngine ->
   FilePath ->
   Parse.ProjectType ->
   IO (Either QueryError Src.Module)
-runParsePhase _engine path projectType = do
-  Logger.debug COMPILE_DEBUG "Phase 1: Parsing"
+runParsePhase engine path projectType = do
+  Engine.trackPhaseExecution engine "parse"
   ParseQuery.parseModuleQuery projectType path
 
 -- | Load FFI content for module.
@@ -222,46 +225,59 @@ buildFFIInfoList foreignImports contentMap =
 
 -- | Build FFIInfo for a single import.
 --
--- Uses 'Debug.Trace.trace' to emit a warning when the referenced JavaScript
--- file is missing from the content map, rather than silently producing an
--- empty result. This makes missing FFI files visible during compilation.
+-- | Build FFI info for a single foreign import.
+--
+-- Returns empty list when the JavaScript file is not in the content map,
+-- which indicates a missing FFI file that will be caught during
+-- canonicalization with a proper error message.
 buildSingleFFI :: Map String String -> Src.ForeignImport -> [(String, FFIInfo)]
 buildSingleFFI contentMap (Src.ForeignImport (FFI.JavaScriptFFI jsPath) alias _region) =
   case Map.lookup jsPath contentMap of
     Just content ->
       let aliasStr = Name.toChars (A.toValue alias)
        in [(jsPath, FFIInfo jsPath content aliasStr)]
-    Nothing ->
-      Debug.Trace.trace ("[WARNING] FFI file not found: " ++ jsPath ++ " — the foreign import will be ignored") []
+    Nothing -> []
 buildSingleFFI _ _ = []
 
 -- | Run canonicalize phase.
+--
+-- Tracks the phase execution through the query engine for accurate
+-- compilation statistics, then delegates to the canonicalization query.
 runCanonicalizePhase ::
+  Engine.QueryEngine ->
   Pkg.Name ->
   Map ModuleName.Raw I.Interface ->
   Map String String ->
   Src.Module ->
   IO (Either QueryError Can.Module)
-runCanonicalizePhase pkg ifaces ffiContent sourceModule = do
-  Logger.debug COMPILE_DEBUG "Phase 2: Canonicalization"
+runCanonicalizePhase engine pkg ifaces ffiContent sourceModule = do
+  Engine.trackPhaseExecution engine "canonicalize"
   CanonQuery.canonicalizeModuleQuery pkg ifaces ffiContent sourceModule
 
 -- | Run type check phase.
+--
+-- Tracks the phase execution through the query engine for accurate
+-- compilation statistics, then delegates to the type checking query.
 runTypeCheckPhase ::
+  Engine.QueryEngine ->
   FilePath ->
   Can.Module ->
   IO (Either QueryError (Map Name.Name Can.Annotation))
-runTypeCheckPhase path canonModule = do
-  Logger.debug COMPILE_DEBUG "Phase 3: Type Checking"
+runTypeCheckPhase engine path canonModule = do
+  Engine.trackPhaseExecution engine "typecheck"
   TypeQuery.typeCheckModuleQuery path canonModule
 
 -- | Run optimize phase.
+--
+-- Tracks the phase execution through the query engine for accurate
+-- compilation statistics, then delegates to the optimization query.
 runOptimizePhase ::
+  Engine.QueryEngine ->
   Map Name.Name Can.Annotation ->
   Can.Module ->
   IO (Either QueryError Opt.LocalGraph)
-runOptimizePhase types canonModule = do
-  Logger.debug COMPILE_DEBUG "Phase 4: Optimization"
+runOptimizePhase engine types canonModule = do
+  Engine.trackPhaseExecution engine "optimize"
   OptQuery.optimizeModuleQuery types canonModule
 
 -- | Generate interface from canonical module.

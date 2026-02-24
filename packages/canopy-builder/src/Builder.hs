@@ -66,13 +66,14 @@ import qualified Builder.Incremental as Incremental
 import qualified Builder.Solver as Solver
 import qualified Builder.State as State
 import qualified Canopy.ModuleName as ModuleName
--- import qualified Compile (MOVED TO old/ - OLD compilation pipeline)
+import qualified Canopy.Package as Pkg
 import qualified Data.ByteString as BS
 import Data.IORef (IORef, newIORef, readIORef, writeIORef)
 import Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
 import qualified Data.Set as Set
 import Data.Time.Clock (getCurrentTime)
+import qualified Driver
 import qualified File
 import qualified Logging.Debug as Logger
 import Logging.Debug (DebugCategory (..))
@@ -217,27 +218,30 @@ compileModuleInOrder builder _root moduleMap moduleName =
       return (BuildFailure (BuildErrorMissing [moduleName]))
 
     Just (path, _sourceModule) -> do
-      -- Compute source hash
       sourceHash <- Hash.hashFile path
-
-      -- Check cache
       cache <- readIORef (builderCache builder)
-      -- Dependencies hash is empty until dependency tracking is wired through
-      -- the query-based compiler. Module cache invalidation currently relies
-      -- on source hash alone, which is correct for single-module changes.
       let depsHash = Hash.hashString ""
 
-      -- The query-based Driver handles compilation. This path validates
-      -- cache freshness and delegates to the Driver when recompilation is needed.
       if Incremental.needsRecompile cache moduleName sourceHash depsHash
-        then do
-          Logger.debug BUILD ("Module needs compilation (not yet implemented): " ++ show moduleName)
-          -- Return success for now - actual compilation integration pending
-          now <- getCurrentTime
-          State.setModuleStatus (builderEngine builder) moduleName (State.StatusCompleted now)
-          State.setModuleResult (builderEngine builder) moduleName (State.ResultSuccess path now)
-          return (BuildSuccess 1)
+        then compileWithDriver builder moduleName path
         else useCache builder moduleName path
+
+-- | Compile a module via the query-based Driver.
+compileWithDriver :: PureBuilder -> ModuleName.Raw -> FilePath -> IO BuildResult
+compileWithDriver builder moduleName path = do
+  Logger.debug BUILD ("Compiling module via Driver: " ++ show moduleName)
+  result <- Driver.compileModule Pkg.dummyName Map.empty path Parse.Application
+  now <- getCurrentTime
+  case result of
+    Left err -> do
+      Logger.debug BUILD ("Compilation failed: " ++ show err)
+      State.setModuleStatus (builderEngine builder) moduleName (State.StatusFailed (show err) now)
+      return (BuildFailure (BuildErrorCompile (show err)))
+    Right _compiled -> do
+      Logger.debug BUILD ("Compilation succeeded: " ++ show moduleName)
+      State.setModuleStatus (builderEngine builder) moduleName (State.StatusCompleted now)
+      State.setModuleResult (builderEngine builder) moduleName (State.ResultSuccess path now)
+      return (BuildSuccess 1)
 
 -- | Check if build result is success.
 isSuccess :: BuildResult -> Bool

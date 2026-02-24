@@ -120,6 +120,10 @@ checkSingleDep pkg version =
   checkDeprecated pkg ++ checkOldVersion pkg version
 
 -- | Check if a package is known deprecated.
+--
+-- Returns findings for packages in the deprecation list. Currently empty
+-- as the Canopy package ecosystem has no deprecated packages yet.
+-- When packages are deprecated, their names should be added here.
 checkDeprecated :: Pkg.Name -> [Finding]
 checkDeprecated _pkg = []
 

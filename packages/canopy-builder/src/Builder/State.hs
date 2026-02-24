@@ -174,11 +174,12 @@ getFailedCount (BuilderEngine stateRef) = do
   state <- readIORef stateRef
   return (builderFailedCount state)
 
--- | Get compiled modules with their artifacts.
+-- | Get compiled modules with their source paths.
 --
--- Returns list of (ModuleName, ArtifactPath) for successfully compiled modules.
--- This is a placeholder that returns empty list - actual artifact extraction
--- will be implemented when Pure Builder integrates with NEW compiler.
+-- Returns list of (ModuleName, SourcePath) for successfully compiled modules.
+-- Note: returns the source path stored during compilation, not the artifact
+-- output path. The new Compiler module handles artifact path management
+-- separately via 'cacheArtifactPath'.
 getCompiledModules :: BuilderEngine -> IO [(ModuleName.Raw, FilePath)]
 getCompiledModules (BuilderEngine stateRef) = do
   state <- readIORef stateRef

@@ -1,0 +1,13 @@
+{
+  "mcpServers": {
+    "auto-claude": {
+      "command": "/home/quinten/.local/bin/uv",
+      "args": [
+        "--directory",
+        "/home/quinten/projects/auto-claude-mcp",
+        "run",
+        "auto-claude-mcp"
+      ]
+    }
+  }
+}

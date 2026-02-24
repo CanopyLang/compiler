@@ -1,0 +1,67 @@
+{-| Snapshot testing for Canopy.
+
+Snapshot tests capture the output of a function and compare it against
+a stored reference. This is useful for testing complex output like
+rendered HTML, formatted text, or serialized data.
+
+    import Snapshot
+    import Test exposing (Test)
+
+    suite : Test
+    suite =
+        Test.describe "rendering"
+            [ Snapshot.match "MyModule" "renders counter" (renderCounter 0)
+            , Snapshot.match "MyModule" "renders empty list" (renderList [])
+            ]
+
+Snapshots are stored in `tests/__snapshots__/` as `.snap` files.
+
+To update snapshots after intentional changes:
+
+    canopy test --update-snapshots
+
+@since 0.20.0
+-}
+module Snapshot exposing
+    ( match
+    , matchWith
+    )
+
+{-| Import Test framework -}
+import Expect exposing (Expectation)
+import Test
+
+-- FFI import for snapshot file operations
+foreign import javascript "external/snapshot.js" as SnapshotFFI
+
+
+{-| Assert that a string value matches its stored snapshot.
+
+The first argument is the module name (used as the snapshot filename),
+the second is the snapshot name (identifier within the file), and the
+third is the actual value to compare.
+
+On first run, the snapshot is created automatically. On subsequent runs,
+the value is compared against the stored snapshot.
+
+    Snapshot.match "MyModule" "counter HTML" (render counter)
+
+-}
+match : String -> String -> String -> Test
+match moduleName name value =
+    Test.test ("snapshot: " ++ name) <|
+        \_ ->
+            SnapshotFFI.match moduleName name value
+
+
+{-| Assert a snapshot match with a custom serializer.
+
+Useful when the value is not already a String. The serializer converts
+the value to a comparable string representation.
+
+    Snapshot.matchWith Debug.toString "MyModule" "model state" initialModel
+
+-}
+matchWith : (a -> String) -> String -> String -> a -> Test
+matchWith serialize moduleName name value =
+    match moduleName name (serialize value)

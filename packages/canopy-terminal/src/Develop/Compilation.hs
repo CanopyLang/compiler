@@ -145,14 +145,13 @@ generateJavaScriptCode root details artifacts =
 
 -- | Validate project structure for compilation.
 --
--- Ensures the project has the necessary structure and configuration
--- files required for successful compilation.
+-- Checks that canopy.json exists at the project root, which indicates
+-- a valid Canopy project that can be compiled.
 --
 -- @since 0.19.1
 validateProjectStructure :: FilePath -> IO Bool
-validateProjectStructure _root = do
-  -- Simple validation - could be expanded later
-  pure True
+validateProjectStructure root =
+  Directory.doesFileExist (root ++ "/canopy.json")
 
 -- | Generate HTML output with embedded JavaScript.
 --

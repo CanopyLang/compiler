@@ -1,0 +1,383 @@
+module Debug.History exposing
+    ( History
+    , Entry
+    , init
+    , push
+    , getAt
+    , length
+    , truncate
+    , toList
+    , filter
+    , search
+    , encode
+    , decoder
+    , Diff
+    , computeDiff
+    , renderDiff
+    )
+
+{-| Message History Tracking for Time-Travel Debugging
+
+This module provides data structures and functions for tracking the history
+of messages and state changes in a Canopy application.
+
+# History
+@docs History, Entry, init, push, getAt, length, truncate, toList
+
+# Filtering and Search
+@docs filter, search
+
+# Serialization
+@docs encode, decoder
+
+# State Diffing
+@docs Diff, computeDiff, renderDiff
+
+-}
+
+import Array exposing (Array)
+import Json.Decode as Decode exposing (Decoder)
+import Json.Encode as Encode
+
+
+{-| A single entry in the history, containing a message and the resulting model state.
+-}
+type alias Entry model msg =
+    { index : Int
+    , timestamp : Int
+    , message : msg
+    , messageString : String
+    , model : model
+    , modelString : String
+    }
+
+
+{-| The complete history of an application's state changes.
+
+Internally uses an Array for efficient random access and appends.
+-}
+type History model msg
+    = History
+        { entries : Array (Entry model msg)
+        , initialModel : model
+        }
+
+
+{-| Initialize a new empty history with the initial model state.
+
+    history = History.init myInitialModel
+
+-}
+init : model -> History model msg
+init initialModel =
+    History
+        { entries = Array.empty
+        , initialModel = initialModel
+        }
+
+
+{-| Push a new entry onto the history.
+
+    history
+        |> History.push MyMessage newModel
+
+-}
+push : msg -> model -> History model msg -> History model msg
+push msg model (History history) =
+    let
+        newIndex =
+            Array.length history.entries
+
+        entry =
+            { index = newIndex
+            , timestamp = getCurrentTimestamp ()
+            , message = msg
+            , messageString = Debug.toString msg
+            , model = model
+            , modelString = Debug.toString model
+            }
+    in
+    History
+        { history
+            | entries = Array.push entry history.entries
+        }
+
+
+{-| Get an entry at a specific index.
+
+    History.getAt 5 history
+    -- Returns Just entry if index 5 exists, Nothing otherwise
+
+-}
+getAt : Int -> History model msg -> Maybe (Entry model msg)
+getAt index (History history) =
+    if index < 0 then
+        Just
+            { index = -1
+            , timestamp = 0
+            , message = initialMessage
+            , messageString = "Initial State"
+            , model = history.initialModel
+            , modelString = Debug.toString history.initialModel
+            }
+
+    else
+        Array.get index history.entries
+
+
+{-| Get the length of the history.
+-}
+length : History model msg -> Int
+length (History history) =
+    Array.length history.entries
+
+
+{-| Truncate the history to a maximum number of entries.
+
+Removes the oldest entries when the limit is exceeded.
+
+    history
+        |> History.truncate 1000
+        -- Keeps only the most recent 1000 entries
+
+-}
+truncate : Int -> History model msg -> History model msg
+truncate maxEntries (History history) =
+    let
+        currentLength =
+            Array.length history.entries
+
+        excess =
+            currentLength - maxEntries
+    in
+    if excess > 0 then
+        History
+            { history
+                | entries =
+                    Array.slice excess currentLength history.entries
+                        |> Array.indexedMap (\i entry -> { entry | index = i })
+            }
+
+    else
+        History history
+
+
+{-| Convert the history to a list of entries.
+
+    History.toList history
+    -- Returns all entries as a list, oldest first
+
+-}
+toList : History model msg -> List (Entry model msg)
+toList (History history) =
+    Array.toList history.entries
+
+
+{-| Filter history entries by a predicate on the message string.
+
+    history
+        |> History.filter (\entry -> String.contains "Click" entry.messageString)
+
+-}
+filter : (Entry model msg -> Bool) -> History model msg -> List (Entry model msg)
+filter predicate (History history) =
+    Array.toList history.entries
+        |> List.filter predicate
+
+
+{-| Search history entries by a query string.
+
+Searches in both message strings and model strings.
+
+    history
+        |> History.search "user"
+        -- Returns entries where "user" appears in message or model
+
+-}
+search : String -> History model msg -> List (Entry model msg)
+search query (History history) =
+    let
+        lowerQuery =
+            String.toLower query
+
+        matches entry =
+            String.contains lowerQuery (String.toLower entry.messageString)
+                || String.contains lowerQuery (String.toLower entry.modelString)
+    in
+    Array.toList history.entries
+        |> List.filter matches
+
+
+{-| Encode the history to JSON for export.
+-}
+encode : History model msg -> Encode.Value
+encode (History history) =
+    Encode.object
+        [ ( "initialModel", Encode.string (Debug.toString history.initialModel) )
+        , ( "entries", Encode.array encodeEntry history.entries )
+        ]
+
+
+encodeEntry : Entry model msg -> Encode.Value
+encodeEntry entry =
+    Encode.object
+        [ ( "index", Encode.int entry.index )
+        , ( "timestamp", Encode.int entry.timestamp )
+        , ( "message", Encode.string entry.messageString )
+        , ( "model", Encode.string entry.modelString )
+        ]
+
+
+{-| Decoder for importing history from JSON.
+-}
+decoder : Decoder (History model msg)
+decoder =
+    Decode.map2
+        (\initialModelStr entries ->
+            History
+                { initialModel = unsafeFromString initialModelStr
+                , entries = entries
+                }
+        )
+        (Decode.field "initialModel" Decode.string)
+        (Decode.field "entries" (Decode.array entryDecoder))
+
+
+entryDecoder : Decoder (Entry model msg)
+entryDecoder =
+    Decode.map6
+        (\index timestamp msgStr modelStr ->
+            { index = index
+            , timestamp = timestamp
+            , message = unsafeFromString msgStr
+            , messageString = msgStr
+            , model = unsafeFromString modelStr
+            , modelString = modelStr
+            }
+        )
+        (Decode.field "index" Decode.int)
+        (Decode.field "timestamp" Decode.int)
+        (Decode.field "message" Decode.string)
+        (Decode.field "model" Decode.string)
+
+
+-- STATE DIFFING
+
+
+{-| Represents a difference between two states.
+-}
+type Diff
+    = Added String String
+    | Removed String String
+    | Changed String String String
+    | Unchanged String String
+
+
+{-| Compute the difference between two model states.
+
+Returns a list of differences that can be rendered for visualization.
+
+    let
+        oldModel = { count = 0, name = "test" }
+        newModel = { count = 1, name = "test" }
+    in
+    History.computeDiff (Debug.toString oldModel) (Debug.toString newModel)
+    -- Returns [Changed "count" "0" "1", Unchanged "name" "test"]
+
+-}
+computeDiff : String -> String -> List Diff
+computeDiff oldStr newStr =
+    let
+        oldLines =
+            String.lines oldStr
+
+        newLines =
+            String.lines newStr
+
+        pairs =
+            zipWithDefault "" "" oldLines newLines
+    in
+    List.map diffLine pairs
+
+
+diffLine : ( String, String ) -> Diff
+diffLine ( old, new ) =
+    if old == new then
+        Unchanged old new
+
+    else if String.isEmpty old then
+        Added "" new
+
+    else if String.isEmpty new then
+        Removed old ""
+
+    else
+        Changed "" old new
+
+
+zipWithDefault : a -> a -> List a -> List a -> List ( a, a )
+zipWithDefault defA defB listA listB =
+    case ( listA, listB ) of
+        ( [], [] ) ->
+            []
+
+        ( a :: restA, [] ) ->
+            ( a, defB ) :: zipWithDefault defA defB restA []
+
+        ( [], b :: restB ) ->
+            ( defA, b ) :: zipWithDefault defA defB [] restB
+
+        ( a :: restA, b :: restB ) ->
+            ( a, b ) :: zipWithDefault defA defB restA restB
+
+
+{-| Render a diff as a formatted string for display.
+-}
+renderDiff : List Diff -> String
+renderDiff diffs =
+    List.map renderDiffLine diffs
+        |> String.join "\n"
+
+
+renderDiffLine : Diff -> String
+renderDiffLine diff =
+    case diff of
+        Added _ new ->
+            "+ " ++ new
+
+        Removed old _ ->
+            "- " ++ old
+
+        Changed _ old new ->
+            "- " ++ old ++ "\n+ " ++ new
+
+        Unchanged _ value ->
+            "  " ++ value
+
+
+-- INTERNAL HELPERS
+
+
+{-| Placeholder for initial message type.
+This will be implemented by the JavaScript runtime.
+-}
+initialMessage : msg
+initialMessage =
+    Debug.todo "initialMessage"
+
+
+{-| Unsafe conversion from string representation.
+This is used for deserialization and requires JavaScript runtime support.
+-}
+unsafeFromString : String -> a
+unsafeFromString _ =
+    Debug.todo "unsafeFromString"
+
+
+{-| Get the current timestamp in milliseconds.
+Implemented via JavaScript FFI.
+-}
+getCurrentTimestamp : () -> Int
+getCurrentTimestamp _ =
+    -- This will be replaced by the JavaScript runtime
+    0

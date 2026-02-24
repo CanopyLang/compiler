@@ -353,39 +353,6 @@ extractCapabilityManual (line:rest)
         ("*":"@capability":"availability":feature:_) -> Just (Capability.AvailabilityRequired feature)
         _ -> Nothing
 
--- | Process a JSDoc comment and extract function information
--- processJSDocComment :: FilePath -> JSDocComment -> Maybe JSDocFunction
--- processJSDocComment jsFile jsDocComment =
---   let functionName = extractFunctionName jsDocComment
---       canopyType = extractCanopyType jsDocComment
---       description = jsDocDescription jsDocComment
---       params = extractParameters jsDocComment
---       throws = extractThrows jsDocComment
---   in case (functionName, canopyType) of
---     (Just name, Just ffiType) -> Just $ JSDocFunction
---       { jsDocFuncName = name
---       , jsDocFuncType = ffiType
---       , jsDocFuncDescription = description
---       , jsDocFuncParams = params
---       , jsDocFuncThrows = throws
---       , jsDocFuncFile = jsFile
---       }
---     _ -> Nothing
-
--- | Extract function name from JSDoc comment
--- extractFunctionName :: JSDocComment -> Maybe Text
--- extractFunctionName jsDoc =
---   case getJSDocTagsByName "name" jsDoc of
---     (tag:_) -> jsDocTagDescription tag
---     [] -> Nothing
-
--- | Extract @canopy-type annotation from JSDoc
--- extractCanopyType :: JSDocComment -> Maybe FFIType
--- extractCanopyType jsDoc =
---   case getJSDocTagsByName "canopy-type" jsDoc of
---     (tag:_) -> parseCanopyTypeAnnotation =<< jsDocTagDescription tag
---     [] -> Nothing
-
 -- | Parse Canopy type annotation from text
 parseCanopyTypeAnnotation :: Text -> Maybe FFIType
 parseCanopyTypeAnnotation typeText =
@@ -696,53 +663,6 @@ parseFFIType tokens = parseFunction (stripOuterParens tokens)
     -- Reserved type names that aren't opaque types
     reservedTypes :: [Text]
     reservedTypes = ["String", "Int", "Bool", "Float", "Task", "Maybe", "List", "Result", "->", "(", ")"]
-
--- | Extract parameter information from JSDoc
--- extractParameters :: JSDocComment -> [(Text, FFIType, Maybe Text)]
--- extractParameters jsDoc =
---   let paramTags = getJSDocTagsByName "param" jsDoc
---   in Maybe.mapMaybe extractParamInfo paramTags
---   where
---     extractParamInfo :: JSDocTag -> Maybe (Text, FFIType, Maybe Text)
---     extractParamInfo tag = do
---       paramName <- jsDocTagParamName tag
---       paramType <- convertJSDocTypeToFFI =<< jsDocTagType tag
---       let paramDesc = jsDocTagDescription tag
---       return (paramName, paramType, paramDesc)
-
--- | Extract @throws information from JSDoc
--- extractThrows :: JSDocComment -> [Text]
--- extractThrows jsDoc =
---   let throwsTags = getJSDocTagsByName "throws" jsDoc
---   in Maybe.mapMaybe jsDocTagDescription throwsTags
-
--- | Convert JSDoc type to FFI type
--- convertJSDocTypeToFFI :: JSDocType -> Maybe FFIType
--- convertJSDocTypeToFFI jsDocType =
---   case jsDocType of
---     JSDocBasicType "string" -> Just (FFIBasic "String")
---     JSDocBasicType "number" -> Just (FFIBasic "Int")
---     JSDocBasicType "boolean" -> Just (FFIBasic "Bool")
---     JSDocBasicType typeName -> Just (FFIOpaque typeName)
---     JSDocArrayType elementType -> do
---       elemFFI <- convertJSDocTypeToFFI elementType
---       return (FFIList elemFFI)
---     JSDocUnionType types ->
---       -- For now, just take the first type - this could be enhanced
---       case types of
---         (t:_) -> convertJSDocTypeToFFI t
---         [] -> Nothing
---     JSDocGenericType "Promise" [valueType] -> do
---       valueFFI <- convertJSDocTypeToFFI valueType
---       return (FFITask (FFIOpaque "Error") valueFFI)
---     JSDocGenericType "Array" [elementType] -> do
---       elemFFI <- convertJSDocTypeToFFI elementType
---       return (FFIList elemFFI)
---     JSDocFunctionType paramTypes returnType -> do
---       paramFFIs <- traverse convertJSDocTypeToFFI paramTypes
---       returnFFI <- convertJSDocTypeToFFI returnType
---       return (FFIFunctionType paramFFIs returnFFI)
---     _ -> Nothing
 
 -- | Generate FFI bindings from JSDoc functions
 --

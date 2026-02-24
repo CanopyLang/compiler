@@ -1,0 +1,74 @@
+module WebAudio.Node exposing
+    ( Node
+    , NodeType(..)
+    , oscillator
+    , gain
+    , connect
+    , disconnect
+    , nodeType
+    )
+
+{-| Audio nodes for building audio processing graphs.
+
+Audio nodes are the building blocks of Web Audio processing.
+They can be sources (oscillators), processors (filters, gains),
+or destinations (speakers).
+
+@docs Node, NodeType, oscillator, gain, connect, disconnect, nodeType
+
+-}
+
+
+{-| An audio processing node.
+-}
+type Node
+    = Node NodeType
+
+
+{-| Types of audio nodes.
+-}
+type NodeType
+    = Oscillator
+    | Gain
+    | Destination
+
+
+{-| Create an oscillator node.
+
+Oscillators generate periodic waveforms.
+-}
+oscillator : Node
+oscillator =
+    Node Oscillator
+
+
+{-| Create a gain node.
+
+Gain nodes control volume levels.
+-}
+gain : Node
+gain =
+    Node Gain
+
+
+{-| Connect two nodes together.
+
+Creates an audio connection from source to destination.
+-}
+connect : Node -> Node -> Node
+connect _ destination =
+    destination
+
+
+{-| Disconnect a node from its destination.
+-}
+disconnect : Node -> Node
+disconnect node =
+    node
+
+
+{-| Get the type of a node.
+-}
+nodeType : Node -> NodeType
+nodeType (Node t) =
+    t

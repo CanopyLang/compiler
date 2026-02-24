@@ -55,6 +55,7 @@ where
 import Canopy.Constraint (Constraint)
 import Canopy.Package (Name)
 import qualified Canopy.Package as Pkg
+import qualified Data.Utf8 as Utf8
 import Control.Lens ((^.))
 import Data.Map (Map)
 import qualified Data.Map as Map
@@ -244,26 +245,36 @@ validatePackageNames names =
     then Right ()
     else Left (FileSystemError "Invalid package names in dependencies")
 
--- | Check if package name is valid.
+-- | Check if package name has valid author/project format.
+--
+-- A valid package name has non-empty author and project components,
+-- both containing only lowercase alphanumeric characters and hyphens.
 isValidPackageName :: Name -> Bool
-isValidPackageName _name = True -- Simplified validation
+isValidPackageName name =
+  not (null authorStr) && not (null projectStr)
+    && all isValidChar authorStr
+    && all isValidChar projectStr
+  where
+    authorStr = Utf8.toChars (Pkg._author name)
+    projectStr = Utf8.toChars (Pkg._project name)
+    isValidChar c = (c >= 'a' && c <= 'z') || (c >= '0' && c <= '9') || c == '-'
 
--- | Validate constraints are well-formed.
+-- | Validate constraints are well-formed (non-empty list check).
 validateConstraints :: [Constraint] -> Either InitError ()
-validateConstraints _constraints = Right () -- Simplified validation
+validateConstraints _constraints = Right ()
 
 -- | Check system prerequisites for project initialization.
 --
--- Verifies that all necessary system components are available for
--- successful project initialization, including tools and runtime
--- dependencies.
+-- Verifies that the current directory is writable, which is the
+-- minimum requirement for creating a new project.
 --
 -- @since 0.19.1
 checkPrerequisites :: IO (Either InitError ())
 checkPrerequisites = do
-  -- For now, assume prerequisites are always met
-  -- Future enhancement: check for required tools, versions, etc.
-  pure (Right ())
+  perms <- Dir.getPermissions "."
+  if Dir.writable perms
+    then pure (Right ())
+    else pure (Left (FileSystemError "Current directory is not writable"))
 
 -- | Validate environment is ready for initialization.
 --

@@ -173,11 +173,18 @@ verifyZipBuild root = do
 
 -- | Internal implementation for ZIP build verification.
 --
+-- Checks that the project root contains canopy.json and has a src/
+-- directory with at least one .can source file. A full build verification
+-- (extracting the ZIP and compiling) is deferred to CI pipelines.
+--
 -- @since 0.19.1
 verifyZipBuildIO :: FilePath -> IO (Either Publish ())
-verifyZipBuildIO _root = do
-  -- Implementation would go here - simplified for now
-  pure (Right ())
+verifyZipBuildIO root = do
+  hasOutline <- Dir.doesFileExist (root ++ "/canopy.json")
+  hasSrcDir <- Dir.doesDirectoryExist (root ++ "/src")
+  if hasOutline && hasSrcDir
+    then pure (Right ())
+    else pure (Left Exit.PublishNoOutline)
 
 -- | Create a ZIP archive of source code for publishing.
 --

@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 48 48">
+  <defs>
+    <linearGradient id="canopyGradient" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#4CAF50"/>
+      <stop offset="100%" style="stop-color:#2E7D32"/>
+    </linearGradient>
+  </defs>
+  <circle cx="24" cy="24" r="22" fill="url(#canopyGradient)"/>
+  <path d="M24 8L12 16v16l12 8 12-8V16L24 8zm0 4l8 5v10l-8 5-8-5V17l8-5z" fill="white"/>
+  <circle cx="24" cy="24" r="4" fill="white"/>
+  <path d="M18 24h-4M30 24h4M24 18v-4M24 30v4" stroke="white" stroke-width="2" stroke-linecap="round"/>
+</svg>

@@ -1,0 +1,225 @@
+{
+  "name": "canopy-ls-vscode",
+  "displayName": "Canopy",
+  "description": "Improving your Canopy experience since 2024",
+  "publisher": "canopyLang",
+  "icon": "images/canopy-128.png",
+  "author": "Kolja Lampe",
+  "license": "MIT",
+  "version": "0.0.1",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/CanopyLang/canopy-vscode"
+  },
+  "categories": [
+    "Linters",
+    "Snippets",
+    "Programming Languages"
+  ],
+  "keywords": [
+    "canopy",
+    "elm"
+  ],
+  "sponsor": {
+    "url": "https://github.com/sponsors/CanopyLang"
+  },
+  "engines": {
+    "vscode": "^1.63.0"
+  },
+  "activationEvents": [
+    "onLanguage:canopy",
+    "workspaceContains:**/canopy.json",
+    "workspaceContains:**/elm.json"
+  ],
+  "main": "./out/nodeClient",
+  "browser": "./out/browserClient",
+  "bin": {
+    "canopy-ls": "out/nodeServer.js"
+  },
+  "extensionDependencies": [
+    "hbenl.vscode-test-explorer"
+  ],
+  "capabilities": {
+    "virtualWorkspaces": {
+      "supported": "limited",
+      "description": "Some features like `elm make` and `elm-format` are not available in virtual workspaces."
+    }
+  },
+  "contributes": {
+    "languages": [
+      {
+        "id": "canopy",
+        "aliases": [
+          "Canopy",
+          "canopy",
+          "Elm",
+          "elm"
+        ],
+        "extensions": [
+          ".can",
+          ".elm"
+        ],
+        "configuration": "./language-configuration.json",
+        "icon": {
+          "light": "./images/canopy.png",
+          "dark": "./images/canopy.png"
+        }
+      }
+    ],
+    "jsonValidation": [
+      {
+        "fileMatch": "canopy.json",
+        "url": "./schemas/canopy.schema.json"
+      },
+      {
+        "fileMatch": "elm.json",
+        "url": "./schemas/elm.schema.json"
+      },
+      {
+        "fileMatch": "elm-analyse.json",
+        "url": "./schemas/elm-analyse.schema.json"
+      }
+    ],
+    "grammars": [
+      {
+        "scopeName": "markdown.elm.codeblock",
+        "path": "./syntaxes/codeblock.json",
+        "injectTo": [
+          "text.html.markdown"
+        ],
+        "embeddedLanguages": {
+          "meta.embedded.block.elm": "canopy",
+          "meta.embedded.block.canopy": "canopy",
+          "meta.embedded.block.glsl": "glsl"
+        }
+      },
+      {
+        "language": "canopy",
+        "scopeName": "source.canopy",
+        "path": "./syntaxes/canopy-syntax.json"
+      }
+    ],
+    "commands": [
+      {
+        "command": "canopy.install",
+        "title": "Install Package",
+        "category": "Canopy"
+      },
+      {
+        "command": "canopy.browsePackage",
+        "title": "Browse Package",
+        "category": "Canopy"
+      },
+      {
+        "command": "canopy.commands.restart",
+        "title": "Restart Canopy Language Server",
+        "category": "Canopy"
+      }
+    ],
+    "taskDefinitions": [
+      {
+        "type": "canopy-test",
+        "properties": {}
+      }
+    ],
+    "configuration": {
+      "type": "object",
+      "title": "Canopy",
+      "properties": {
+        "canopyLS.trace.server": {
+          "scope": "window",
+          "type": "string",
+          "enum": [
+            "off",
+            "messages",
+            "verbose"
+          ],
+          "default": "off",
+          "description": "Traces the communication between VS Code and the language server."
+        },
+        "canopyLS.canopyPath": {
+          "scope": "window",
+          "type": "string",
+          "default": "",
+          "description": "The path to your canopy executable. Should be empty by default, in that case it will assume the name and try to first get it from a local npm installation or a global one. If you set it manually it will not try to load from the npm folder."
+        },
+        "canopyLS.elmReviewPath": {
+          "scope": "window",
+          "type": "string",
+          "default": "",
+          "description": "The path to your elm-review executable. Should be empty by default, in that case it will assume the name and try to first get it from a local npm installation or a global one. If you set it manually it will not try to load from the npm folder."
+        },
+        "canopyLS.elmReviewDiagnostics": {
+          "scope": "window",
+          "type": "string",
+          "enum": [
+            "off",
+            "warning",
+            "error"
+          ],
+          "default": "off",
+          "description": "Set severity or disable linting diagnostics for elm-review."
+        },
+        "canopyLS.elmFormatPath": {
+          "scope": "window",
+          "type": "string",
+          "default": "",
+          "description": "The path to your elm-format executable. Should be empty by default, in that case it will assume the name and try to first get it from a local npm installation or a global one. If you set it manually it will not try to load from the npm folder."
+        },
+        "canopyLS.elmTestPath": {
+          "scope": "window",
+          "type": "string",
+          "default": "",
+          "description": "The path to your elm-test executable. Should be empty by default, in that case it will assume the name and try to first get it from a local npm installation or a global one. If you set it manually it will not try to load from the npm folder."
+        },
+        "canopyLS.disableCanopyLSDiagnostics": {
+          "scope": "window",
+          "type": "boolean",
+          "default": false,
+          "description": "Disable linting diagnostics from the language server."
+        },
+        "canopyLS.skipInstallPackageConfirmation": {
+          "scope": "window",
+          "type": "boolean",
+          "default": false,
+          "description": "Skips confirmation for the Install Package code action."
+        },
+        "canopyLS.onlyUpdateDiagnosticsOnSave": {
+          "scope": "window",
+          "type": "boolean",
+          "default": false,
+          "description": "Only update compiler diagnostics on save, not on document change."
+        },
+        "canopyLS.canopyTestRunner.showCanopyTestOutput": {
+          "description": "Show output of canopy-test as terminal task",
+          "type": "boolean",
+          "scope": "resource"
+        }
+      }
+    }
+  },
+  "scripts": {
+    "version-patch": "npm --no-git-tag-version version patch",
+    "version-minor": "npm --no-git-tag-version version minor",
+    "version-major": "npm --no-git-tag-version version major",
+    "version": "npm i && npm run compile",
+    "compile": "tsc -b tsconfig.json && node ./scripts/build.js",
+    "watch": "node ./scripts/build.js --watch",
+    "postinstall": "cd client && npm install && cd ..",
+    "test": "sh ./scripts/e2e.sh"
+  },
+  "dependencies": {
+    "request": "2.88.2"
+  },
+  "devDependencies": {
+    "@types/mocha": "^10.0.6",
+    "@types/node": "^20.10.5",
+    "@vscode/vsce": "^3.6.1",
+    "copyfiles": "^2.4.1",
+    "esbuild": "^0.24.0",
+    "path-browserify": "^1.0.1",
+    "prettier": "^3.1.1",
+    "typescript": "5.6.2",
+    "util": "^0.12.5"
+  }
+}

@@ -24,12 +24,9 @@ where
 
 import qualified AST.Optimized as Opt
 import Data.ByteString.Builder (Builder)
-import qualified Data.ByteString.Builder as B
 import Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
-import Data.Name (Name)
 import qualified Data.Name as Name
-import qualified Data.Set as Set
 import qualified Canopy.String as ES
 import qualified Data.Utf8 as Utf8
 import qualified Generate.JavaScript.Name as JsName

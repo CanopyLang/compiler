@@ -26,6 +26,7 @@ import qualified Canopy.ModuleName as ModuleName
 import qualified Canopy.Package as Pkg
 import qualified Data.Graph as Graph
 import qualified Data.Index as Index
+import Data.Maybe (fromMaybe)
 import Data.List (isPrefixOf, isInfixOf)
 import qualified Data.List as List
 import Data.Map (Map)
@@ -325,14 +326,19 @@ loadFFIFileWithTimeout fullPath _jsPath = do
     try :: IO a -> IO (Either SomeException a)
     try action = (Right <$> action) `catch` (return . Left)
 
--- | Add FFI functions to environment using pre-loaded content (pure)
+-- | Add FFI functions to environment using pre-loaded content (pure).
+--
+-- Processes all FFI imports sequentially, threading the updated
+-- environment through each import so all foreign functions are available.
 addFFIToEnvPure :: Env.Env -> [Src.ForeignImport] -> Map String String -> Result i [W.Warning] Env.Env
-addFFIToEnvPure env foreignImports ffiContentMap =
-  case foreignImports of
-    [] -> Result.ok env
-    [Src.ForeignImport (FFI.JavaScriptFFI jsPath) alias region] ->
-      processFFIImport env jsPath alias region ffiContentMap
-    _fis -> Result.ok env
+addFFIToEnvPure env [] _ffiContentMap = Result.ok env
+addFFIToEnvPure env (fi : rest) ffiContentMap =
+  addOneFFI env fi >>= \updatedEnv -> addFFIToEnvPure updatedEnv rest ffiContentMap
+  where
+    addOneFFI currentEnv (Src.ForeignImport (FFI.JavaScriptFFI jsPath) alias region) =
+      processFFIImport currentEnv jsPath alias region ffiContentMap
+    addOneFFI _currentEnv (Src.ForeignImport (FFI.WebAssemblyFFI _wasmPath) _alias region) =
+      Result.throw (Error.FFIParseError region "WebAssembly" "WebAssembly FFI is not yet supported")
 
 -- Process single FFI import with comprehensive error handling
 processFFIImport :: Env.Env -> FilePath -> A.Located Name.Name -> A.Region -> Map String String -> Result i [W.Warning] Env.Env
@@ -568,10 +574,10 @@ parseTypeTokensWithHome env homeModuleName tokens =
     ["(", ")"] -> Just Can.TUnit
     _ -> case splitAtArrow tokens of
       Just (leftTokens, rightTokens) ->
-        case parseTypeTokensWithHome env homeModuleName rightTokens of
-          Just restType -> Just (Can.TLambda (parseComplexTypeWithHome env homeModuleName leftTokens) restType)
-          Nothing -> Nothing
-      Nothing -> Just (parseComplexTypeWithHome env homeModuleName tokens)
+        case (parseComplexTypeWithHome env homeModuleName leftTokens, parseTypeTokensWithHome env homeModuleName rightTokens) of
+          (Just leftType, Just restType) -> Just (Can.TLambda leftType restType)
+          _ -> Nothing
+      Nothing -> parseComplexTypeWithHome env homeModuleName tokens
 
 
 -- Parse one complete type from the beginning of the token list
@@ -658,13 +664,15 @@ parseOneType env homeModuleName ("(" : rest) = do
       in go tokens (0 :: Int) [] []
 parseOneType env homeModuleName (t : rest) = Just (parseBasicTypeWithHome env homeModuleName t, rest)
 
--- Parse complex types with home module context
-parseComplexTypeWithHome :: Env.Env -> ModuleName.Canonical -> [String] -> Can.Type
+-- | Parse complex types with home module context.
+--
+-- Returns Nothing when the tokens cannot be parsed into a valid type,
+-- allowing callers to report proper errors instead of silently degrading.
+parseComplexTypeWithHome :: Env.Env -> ModuleName.Canonical -> [String] -> Maybe Can.Type
 parseComplexTypeWithHome env homeModuleName tokens =
   case parseOneType env homeModuleName tokens of
-    Just (tipe, []) -> tipe
-    Just (tipe, _rest) -> tipe  -- Use only the first type, ignore rest
-    Nothing -> Can.TUnit  -- Fallback
+    Just (tipe, _) -> Just tipe
+    Nothing -> Nothing
 
 -- Parse basic type names with home module context for custom types
 -- Uses env to look up imported types and resolve them to their defining module
@@ -684,7 +692,8 @@ parseBasicTypeWithHome env homeModuleName typeName =
   in if isTuple
        then parseTupleString env homeModuleName trimmedName
        else if isComplexType
-         then parseComplexTypeWithHome env homeModuleName (tokenizeTypeSegment (Text.pack unparenthesized))
+         then fromMaybe (Can.TType homeModuleName (Name.fromChars trimmedName) [])
+                (parseComplexTypeWithHome env homeModuleName (tokenizeTypeSegment (Text.pack unparenthesized)))
          else case unparenthesized of
     -- Core basic types from standard library
     "Int" -> Can.TType ModuleName.basics (Name.fromChars "Int") []

@@ -1,0 +1,87 @@
+module WebAudio.Context exposing
+    ( AudioContext
+    , create
+    , suspend
+    , resume
+    , close
+    , state
+    , State(..)
+    )
+
+{-| Audio context management.
+
+An AudioContext represents an audio-processing graph built from audio modules
+linked together, each represented by an AudioNode.
+
+@docs AudioContext, create, suspend, resume, close, state, State
+
+-}
+
+import Capability exposing (Capability)
+
+
+{-| The audio context type.
+-}
+type AudioContext
+    = AudioContext State
+
+
+{-| The state of an audio context.
+-}
+type State
+    = Running
+    | Suspended
+    | Closed
+
+
+{-| Create a new audio context.
+
+Requires the appropriate capability to access audio resources.
+-}
+create : Capability -> AudioContext
+create _ =
+    AudioContext Running
+
+
+{-| Suspend audio processing.
+
+Temporarily halts all audio processing, preserving the current state.
+-}
+suspend : AudioContext -> AudioContext
+suspend (AudioContext s) =
+    case s of
+        Running ->
+            AudioContext Suspended
+
+        _ ->
+            AudioContext s
+
+
+{-| Resume audio processing.
+
+Resumes processing after suspension.
+-}
+resume : AudioContext -> AudioContext
+resume (AudioContext s) =
+    case s of
+        Suspended ->
+            AudioContext Running
+
+        _ ->
+            AudioContext s
+
+
+{-| Close the audio context.
+
+Releases all resources associated with the context.
+-}
+close : AudioContext -> AudioContext
+close _ =
+    AudioContext Closed
+
+
+{-| Get the current state of the audio context.
+-}
+state : AudioContext -> State
+state (AudioContext s) =
+    s

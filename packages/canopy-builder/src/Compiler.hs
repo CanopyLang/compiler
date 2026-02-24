@@ -212,7 +212,11 @@ discoverTransitiveDeps root srcDirs initialPaths depInterfaces projectType = do
           ("Parse error while discovering transitive dependencies: " <> Text.pack (show err))
         Right m -> return m
 
--- Helper: Recursively discover imports
+-- | Recursively discover imports using DFS traversal.
+--
+-- Uses DFS order (prepend new modules) instead of BFS (append) to avoid
+-- O(N) list append per step. Also reuses already-resolved paths to
+-- eliminate redundant file system lookups.
 discoverImports ::
   FilePath ->
   [SrcDir] ->
@@ -225,48 +229,38 @@ discoverImports ::
 discoverImports root srcDirs found visited modules depInterfaces projectType =
   case modules of
     [] -> do
-      Logger.debug COMPILE_DEBUG ("discoverImports: no more modules, returning found=" ++ show (Map.keys found))
+      Logger.debug COMPILE_DEBUG ("discoverImports: complete, found=" ++ show (Map.keys found))
       return found
     (modul : rest) -> do
       let modName = Src.getName modul
-      Logger.debug COMPILE_DEBUG ("discoverImports: processing module=" ++ Name.toChars modName)
       if Set.member modName visited || Map.member modName depInterfaces
-        then do
-          Logger.debug COMPILE_DEBUG ("discoverImports: skipping " ++ Name.toChars modName ++ " (already visited or dep)")
+        then
           discoverImports root srcDirs found (Set.insert modName visited) rest depInterfaces projectType
         else do
           let imports = [A.toValue (Src._importName imp) | imp <- Src._imports modul]
-          Logger.debug COMPILE_DEBUG ("discoverImports: found " ++ show (length imports) ++ " imports in " ++ Name.toChars modName)
-          Logger.debug COMPILE_DEBUG ("discoverImports: imports=" ++ show (map Name.toChars imports))
-          let newImports = filter (\imp -> not (Map.member imp found) && not (Map.member imp depInterfaces)) imports
-          Logger.debug COMPILE_DEBUG ("discoverImports: newImports=" ++ show (map Name.toChars newImports))
+              newImports = filter (\imp -> not (Map.member imp found) && not (Map.member imp depInterfaces)) imports
           -- Find paths for new imports
           newPaths <- mapM (findModulePath root srcDirs) newImports
-          Logger.debug COMPILE_DEBUG ("discoverImports: newPaths=" ++ show newPaths)
           let validPairs = [(imp, path) | (Just path, imp) <- zip newPaths newImports]
-          Logger.debug COMPILE_DEBUG ("discoverImports: validPairs count=" ++ show (length validPairs))
-          let newFound = foldr (\(imp, path) m -> Map.insert imp path m) found validPairs
-          -- Parse new modules
-          newModules <- mapM (parseModuleFromPath root srcDirs projectType) [imp | (imp, _) <- validPairs]
-          Logger.debug COMPILE_DEBUG ("discoverImports: parsed " ++ show (length newModules) ++ " new modules")
-          discoverImports root srcDirs newFound (Set.insert modName visited) (rest ++ newModules) depInterfaces projectType
+              newFound = foldr (\(imp, path) m -> Map.insert imp path m) found validPairs
+          -- Parse using already-resolved paths (no redundant findModulePath)
+          newModules <- mapM (parseModuleAtPath projectType) validPairs
+          -- DFS: prepend new modules (O(|newModules|) vs O(|rest|) for append)
+          discoverImports root srcDirs newFound (Set.insert modName visited) (newModules ++ rest) depInterfaces projectType
 
-parseModuleFromPath :: FilePath -> [SrcDir] -> Parse.ProjectType -> ModuleName.Raw -> IO Src.Module
-parseModuleFromPath root srcDirs projectType modName = do
-  maybePath <- findModulePath root srcDirs modName
-  case maybePath of
-    Nothing -> InternalError.report
-      "Compiler.parseModuleFromPath"
-      ("Module not found: " <> Text.pack (Name.toChars modName))
-      "Failed to locate source file for imported module during transitive dependency discovery."
-    Just path -> do
-      content <- BS.readFile path
-      case Parse.fromByteString projectType content of
-        Left err -> InternalError.report
-          "Compiler.parseModuleFromPath"
-          ("Failed to parse: " <> Text.pack path)
-          ("Parse error: " <> Text.pack (show err))
-        Right m -> return m
+-- | Parse a module at a known file path.
+--
+-- Unlike 'findModulePath' + parse, this skips path resolution since the
+-- caller already resolved the path during import discovery.
+parseModuleAtPath :: Parse.ProjectType -> (ModuleName.Raw, FilePath) -> IO Src.Module
+parseModuleAtPath projectType (_modName, path) = do
+  content <- BS.readFile path
+  case Parse.fromByteString projectType content of
+    Left err -> InternalError.report
+      "Compiler.parseModuleAtPath"
+      ("Failed to parse: " <> Text.pack path)
+      ("Parse error: " <> Text.pack (show err))
+    Right m -> return m
 
 findModulePath :: FilePath -> [SrcDir] -> ModuleName.Raw -> IO (Maybe FilePath)
 findModulePath root srcDirs modName = do
@@ -297,25 +291,31 @@ compileModulesInOrder pkg projectType root initialInterfaces modulePaths = do
   engine <- Engine.initEngine
 
   -- Build dependency graph for parallel compilation
-  moduleImports <- mapM (parseModuleImports projectType) (Map.toList modulePaths)
-  let moduleNames = Map.keysSet modulePaths
-      depList = [(modName, filter (`Set.member` moduleNames) imports) | (modName, _, imports) <- moduleImports]
-      graph = Graph.buildGraph depList
+  parseResults <- mapM (parseModuleImports projectType) (Map.toList modulePaths)
+  let (parseErrors, moduleImports) = partitionEithers parseResults
 
-  Logger.debug COMPILE_DEBUG ("Dependency graph built with " ++ show (length depList) ++ " modules")
+  case parseErrors of
+    (firstErr : _) -> return (Left firstErr)
+    [] -> do
+      let moduleNames = Map.keysSet modulePaths
+          depList = [(modName, filter (`Set.member` moduleNames) imports) | (modName, _, imports) <- moduleImports]
+          graph = Graph.buildGraph depList
+          importMap = Map.fromList [(modName, imports) | (modName, _, imports) <- moduleImports]
 
-  -- Compile in parallel with caching
-  result <- compileWithCache engine cacheRef hitRef missRef graph modulePaths initialInterfaces
+      Logger.debug COMPILE_DEBUG ("Dependency graph built with " ++ show (length depList) ++ " modules")
 
-  -- Save updated cache and log stats
-  finalCache <- readIORef cacheRef
-  saveBuildCache root finalCache
-  logIncrementalStats hitRef missRef
+      -- Compile in parallel with caching
+      result <- compileWithCache engine cacheRef hitRef missRef graph modulePaths initialInterfaces importMap
 
-  -- Log query engine cache statistics
-  Driver.logCacheStats engine
+      -- Save updated cache and log stats
+      finalCache <- readIORef cacheRef
+      saveBuildCache root finalCache
+      logIncrementalStats hitRef missRef
 
-  return result
+      -- Log query engine cache statistics
+      Driver.logCacheStats engine
+
+      return result
   where
     -- Compile with incremental cache integration
     compileWithCache ::
@@ -325,12 +325,13 @@ compileModulesInOrder pkg projectType root initialInterfaces modulePaths = do
       Graph.DependencyGraph ->
       Map.Map ModuleName.Raw FilePath ->
       Map.Map ModuleName.Raw I.Interface ->
+      Map.Map ModuleName.Raw [ModuleName.Raw] ->
       IO (Either Exit.BuildError ([ModuleResult], Map.Map ModuleName.Raw I.Interface))
-    compileWithCache queryEngine cacheRef hitRef missRef graph statuses initialIfaces = do
+    compileWithCache queryEngine cacheRef hitRef missRef graph statuses initialIfaces modImportMap = do
       let plan = Parallel.groupByDependencyLevel graph
           levels = Parallel.planLevels plan
       Logger.debug COMPILE_DEBUG ("PARALLEL COMPILATION: " ++ show (length levels) ++ " dependency levels")
-      compileLevels queryEngine cacheRef hitRef missRef levels initialIfaces [] statuses
+      compileLevels queryEngine cacheRef hitRef missRef levels initialIfaces [] statuses modImportMap
 
     -- Compile levels one by one, accumulating results and interfaces
     compileLevels ::
@@ -341,16 +342,18 @@ compileModulesInOrder pkg projectType root initialInterfaces modulePaths = do
       Map.Map ModuleName.Raw I.Interface ->
       [ModuleResult] ->
       Map.Map ModuleName.Raw FilePath ->
+      Map.Map ModuleName.Raw [ModuleName.Raw] ->
       IO (Either Exit.BuildError ([ModuleResult], Map.Map ModuleName.Raw I.Interface))
-    compileLevels _ _ _ _ [] ifaces compiled _ = return (Right (compiled, ifaces))
-    compileLevels queryEngine cacheRef hitRef missRef (level : restLevels) ifaces compiled statuses = do
-      levelResult <- compileLevelInParallel queryEngine cacheRef hitRef missRef level ifaces statuses
+    -- Accumulates results in reverse order for O(1) prepend, reverses at the end.
+    compileLevels _ _ _ _ [] ifaces compiled _ _ = return (Right (reverse compiled, ifaces))
+    compileLevels queryEngine cacheRef hitRef missRef (level : restLevels) ifaces compiled statuses modImportMap = do
+      levelResult <- compileLevelInParallel queryEngine cacheRef hitRef missRef level ifaces statuses modImportMap
       case levelResult of
         Left err -> return (Left err)
         Right (levelCompiled, levelIfaces) -> do
           let newIfaces = Map.union levelIfaces ifaces
-              newCompiled = compiled ++ levelCompiled
-          compileLevels queryEngine cacheRef hitRef missRef restLevels newIfaces newCompiled statuses
+              newCompiled = reverse levelCompiled ++ compiled
+          compileLevels queryEngine cacheRef hitRef missRef restLevels newIfaces newCompiled statuses modImportMap
 
     -- Compile a single level (all modules in parallel)
     compileLevelInParallel ::
@@ -360,9 +363,10 @@ compileModulesInOrder pkg projectType root initialInterfaces modulePaths = do
       [ModuleName.Raw] ->
       Map.Map ModuleName.Raw I.Interface ->
       Map.Map ModuleName.Raw FilePath ->
+      Map.Map ModuleName.Raw [ModuleName.Raw] ->
       IO (Either Exit.BuildError ([ModuleResult], Map.Map ModuleName.Raw I.Interface))
-    compileLevelInParallel queryEngine cacheRef hitRef missRef modules ifaces statuses = do
-      results <- Async.mapConcurrently (compileOneModule queryEngine cacheRef hitRef missRef ifaces statuses) modules
+    compileLevelInParallel queryEngine cacheRef hitRef missRef modules ifaces statuses modImportMap = do
+      results <- Async.mapConcurrently (compileOneModule queryEngine cacheRef hitRef missRef ifaces statuses modImportMap) modules
       let (errors, successes) = partitionEithers results
       case errors of
         (err : _) -> return (Left err)
@@ -378,16 +382,18 @@ compileModulesInOrder pkg projectType root initialInterfaces modulePaths = do
       IORef Int -> IORef Int ->
       Map.Map ModuleName.Raw I.Interface ->
       Map.Map ModuleName.Raw FilePath ->
+      Map.Map ModuleName.Raw [ModuleName.Raw] ->
       ModuleName.Raw ->
       IO (Either Exit.BuildError (ModuleResult, (ModuleName.Raw, I.Interface)))
-    compileOneModule queryEngine cacheRef hitRef missRef ifaces statuses modName =
+    compileOneModule queryEngine cacheRef hitRef missRef ifaces statuses modImportMap modName =
       case Map.lookup modName statuses of
         Nothing ->
           return (Left (Exit.BuildCannotCompile (Exit.CompileModuleNotFound errMsg)))
           where errMsg = "Internal error: Module " ++ Name.toChars modName ++ " not found in module paths"
         Just path -> do
+          let modImports = Maybe.fromMaybe [] (Map.lookup modName modImportMap)
           -- Check incremental cache
-          cached <- tryCacheHit cacheRef root modName path ifaces
+          cached <- tryCacheHit cacheRef root modName path modImports ifaces
           case cached of
             Just moduleResult -> do
               atomicModifyIORef' hitRef (\n -> (n + 1, ()))
@@ -396,7 +402,7 @@ compileModulesInOrder pkg projectType root initialInterfaces modulePaths = do
             Nothing -> do
               atomicModifyIORef' missRef (\n -> (n + 1, ()))
               Logger.debug COMPILE_DEBUG ("CACHE MISS: " ++ Name.toChars modName ++ " - compiling")
-              compileFresh queryEngine cacheRef root modName path ifaces
+              compileFresh queryEngine cacheRef root modName path modImports ifaces
 
     -- Attempt compilation from cache
     compileFresh ::
@@ -405,16 +411,17 @@ compileModulesInOrder pkg projectType root initialInterfaces modulePaths = do
       FilePath ->
       ModuleName.Raw ->
       FilePath ->
+      [ModuleName.Raw] ->
       Map.Map ModuleName.Raw I.Interface ->
       IO (Either Exit.BuildError (ModuleResult, (ModuleName.Raw, I.Interface)))
-    compileFresh queryEngine cacheRef projRoot modName path ifaces = do
+    compileFresh queryEngine cacheRef projRoot modName path modImports ifaces = do
       compilationResult <- Driver.compileModuleWithEngine queryEngine pkg ifaces path projectType
       case compilationResult of
         Left err -> return (Left (Exit.BuildCannotCompile (queryErrorToCompileError path err)))
         Right compiledResult -> do
           let moduleResult = fromDriverResult compiledResult
           -- Save to incremental cache
-          saveToCacheAsync cacheRef projRoot modName path ifaces moduleResult
+          saveToCacheAsync cacheRef projRoot modName path modImports ifaces moduleResult
           return (Right (moduleResult, (modName, mrInterface moduleResult)))
 
     -- Helper to partition Either lists
@@ -424,15 +431,18 @@ compileModulesInOrder pkg projectType root initialInterfaces modulePaths = do
         left a (l, r) = (a : l, r)
         right b (l, r) = (l, b : r)
 
--- Helper: Parse module to extract its imports
-parseModuleImports :: Parse.ProjectType -> (ModuleName.Raw, FilePath) -> IO (ModuleName.Raw, FilePath, [ModuleName.Raw])
+-- | Parse module to extract its imports for dependency graph construction.
+--
+-- Returns Left on parse failure so the caller can report a clear error
+-- rather than silently treating the module as having no dependencies.
+parseModuleImports :: Parse.ProjectType -> (ModuleName.Raw, FilePath) -> IO (Either Exit.BuildError (ModuleName.Raw, FilePath, [ModuleName.Raw]))
 parseModuleImports projectType (modName, path) = do
   content <- BS.readFile path
   case Parse.fromByteString projectType content of
-    Left _err -> return (modName, path, [])
+    Left err -> return (Left (Exit.BuildCannotCompile (Exit.CompileParseError path (show err))))
     Right modul -> do
       let imports = [A.toValue (Src._importName imp) | imp <- Src._imports modul]
-      return (modName, path, imports)
+      return (Right (modName, path, imports))
 
 -- Helper: Convert QueryError to CompileError with proper categorization
 queryErrorToCompileError :: FilePath -> Query.QueryError -> Exit.CompileError
@@ -599,12 +609,13 @@ tryCacheHit ::
   FilePath ->
   ModuleName.Raw ->
   FilePath ->
+  [ModuleName.Raw] ->
   Map.Map ModuleName.Raw I.Interface ->
   IO (Maybe ModuleResult)
-tryCacheHit cacheRef root modName path ifaces = do
+tryCacheHit cacheRef root modName path modImports ifaces = do
   cache <- readIORef cacheRef
   sourceHash <- Hash.hashFile path
-  let depsHash = computeDepsHash modName ifaces
+  let depsHash = computeDepsHash modImports ifaces
   if Incremental.needsRecompile cache modName sourceHash depsHash
     then return Nothing
     else loadCachedArtifact root modName
@@ -621,22 +632,32 @@ loadCachedArtifact root modName = do
       handleDecodeResult modName result
 
 -- | Decode a cached module from a binary file.
-decodeCachedModule :: FilePath -> IO (I.Interface, Opt.LocalGraph)
+--
+-- Decodes the full triple of (Interface, LocalGraph, FFIInfo) that was
+-- saved by 'saveToCacheAsync'. Falls back to decoding the legacy pair
+-- format (Interface, LocalGraph) for backwards compatibility with
+-- older cache artifacts.
+decodeCachedModule :: FilePath -> IO (I.Interface, Opt.LocalGraph, Map.Map String JS.FFIInfo)
 decodeCachedModule artifactFile = do
-  decodeResult <- Binary.decodeFileOrFail artifactFile
-  case decodeResult of
-    Left (_offset, msg) -> fail ("decode error: " ++ msg)
-    Right pair -> return pair
+  tripleResult <- Binary.decodeFileOrFail artifactFile
+  case tripleResult of
+    Right triple -> return triple
+    Left _ -> do
+      -- Fall back to legacy pair format (no FFI info)
+      pairResult <- Binary.decodeFileOrFail artifactFile
+      case pairResult of
+        Right (iface, localGraph) -> return (iface, localGraph, Map.empty)
+        Left (_offset, msg) -> fail ("decode error: " ++ msg)
 
 -- | Handle the result of attempting to decode a cached module.
 handleDecodeResult ::
   ModuleName.Raw ->
-  Either SomeException (I.Interface, Opt.LocalGraph) ->
+  Either SomeException (I.Interface, Opt.LocalGraph, Map.Map String JS.FFIInfo) ->
   IO (Maybe ModuleResult)
 handleDecodeResult modName result =
   case result of
-    Right (iface, localGraph) ->
-      return (Just (ModuleResult modName iface localGraph Map.empty))
+    Right (iface, localGraph, ffiInfo) ->
+      return (Just (ModuleResult modName iface localGraph ffiInfo))
     Left _ex -> do
       Logger.debug COMPILE_DEBUG ("Cache artifact decode failed for: " ++ Name.toChars modName)
       return Nothing
@@ -647,19 +668,20 @@ saveToCacheAsync ::
   FilePath ->
   ModuleName.Raw ->
   FilePath ->
+  [ModuleName.Raw] ->
   Map.Map ModuleName.Raw I.Interface ->
   ModuleResult ->
   IO ()
-saveToCacheAsync cacheRef root modName path ifaces mr = do
+saveToCacheAsync cacheRef root modName path modImports ifaces mr = do
   sourceHash <- Hash.hashFile path
-  let depsHash = computeDepsHash modName ifaces
+  let depsHash = computeDepsHash modImports ifaces
       artifactFile = cacheArtifactPath root modName
 
   -- Ensure cache directory exists
   Dir.createDirectoryIfMissing True (root </> "canopy-stuff" </> "cache")
 
-  -- Write binary artifact (Interface + LocalGraph)
-  Binary.encodeFile artifactFile (mrInterface mr, mrLocalGraph mr)
+  -- Write binary artifact (Interface + LocalGraph + FFIInfo)
+  Binary.encodeFile artifactFile (mrInterface mr, mrLocalGraph mr, mrFFIInfo mr)
 
   -- Update cache index
   now <- Time.getCurrentTime
@@ -671,10 +693,18 @@ saveToCacheAsync cacheRef root modName path ifaces mr = do
         }
   atomicModifyIORef' cacheRef (\c -> (Incremental.insertCache c modName entry, ()))
 
--- | Compute a combined hash of a module's dependencies.
-computeDepsHash :: ModuleName.Raw -> Map.Map ModuleName.Raw I.Interface -> Hash.ContentHash
-computeDepsHash _modName ifaces =
-  Hash.hashString (show (Map.keys ifaces))
+-- | Compute a combined hash of a module's actual dependency interfaces.
+--
+-- Only hashes the interfaces of modules this module actually imports,
+-- not the entire interface map. This ensures cache invalidation occurs
+-- only when a direct dependency changes, preventing excessive recompilation.
+computeDepsHash :: [ModuleName.Raw] -> Map.Map ModuleName.Raw I.Interface -> Hash.ContentHash
+computeDepsHash modImports ifaces =
+  Hash.hashDependencies ifaceHashes
+  where
+    relevantIfaces = Map.restrictKeys ifaces (Set.fromList modImports)
+    ifaceHashes = Map.map hashInterface relevantIfaces
+    hashInterface iface = Hash.hashBytes (LBS.toStrict (Binary.encode iface))
 
 -- | Log incremental compilation statistics.
 logIncrementalStats :: IORef Int -> IORef Int -> IO ()

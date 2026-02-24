@@ -1,0 +1,15 @@
+module Main exposing (..)
+
+
+{-| This is a sample module.
+
+Replace this with your actual implementation.
+
+-}
+
+
+{-| A sample function.
+-}
+hello : String
+hello =
+    "Hello, World!"

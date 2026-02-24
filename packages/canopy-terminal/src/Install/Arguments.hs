@@ -32,6 +32,8 @@ where
 import Install.Types (Args (..))
 import qualified Reporting.Exit as Exit
 import qualified Stuff
+import qualified System.Directory as Dir
+import System.FilePath ((</>))
 
 -- | Validate install command arguments and project context.
 --
@@ -88,14 +90,13 @@ validateArgsWithRoot root args = do
 
 -- | Check if project has valid structure for installation.
 --
--- Verifies that all required files and directories are present
--- for a successful installation operation.
+-- Verifies that canopy.json exists in the project root, which is
+-- the minimum requirement for a valid Canopy project.
 --
 -- @since 0.19.1
 checkProjectStructure :: FilePath -> IO Bool
-checkProjectStructure _root =
-  -- Implementation would check for canopy.json, etc.
-  pure True
+checkProjectStructure root =
+  Dir.doesFileExist (root </> "canopy.json")
 
 -- | Validate specific argument patterns.
 --

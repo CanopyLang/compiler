@@ -1,0 +1,56 @@
+module Utils exposing
+    ( randomInt
+    , getCurrentTimestamp
+    , consoleLog
+    )
+
+{-| Utility FFI Functions
+
+This module provides utility functions through Canopy's FFI system.
+
+## Random Numbers
+
+    randomInt 100  -- returns a random integer between 0 and 99
+
+## Time
+
+    getCurrentTimestamp  -- returns current Unix timestamp in milliseconds
+
+## Debugging
+
+    consoleLog "Hello"  -- prints to browser console
+
+-}
+
+foreign import javascript "external/utils.js" as FFI
+
+
+{-| Generate a random integer from 0 to max-1.
+
+    randomInt 10  -- returns 0-9
+    randomInt 100 -- returns 0-99
+
+-}
+randomInt : Int -> Int
+randomInt =
+    FFI.randomInt
+
+
+{-| Get the current Unix timestamp in milliseconds.
+
+This is a snapshot taken when the module loads.
+
+-}
+getCurrentTimestamp : Int
+getCurrentTimestamp =
+    FFI.getCurrentTimestamp
+
+
+{-| Log a message to the browser console.
+
+    consoleLog "Debug message"
+
+-}
+consoleLog : String -> ()
+consoleLog =
+    FFI.consoleLog
