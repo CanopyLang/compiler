@@ -1,6 +1,5 @@
-{-# LANGUAGE DeriveGeneric #-}
 {-# LANGUAGE OverloadedStrings #-}
-{-# LANGUAGE QuasiQuotes #-}
+{-# LANGUAGE TemplateHaskell #-}
 
 -- | JavaScript generation for the Canopy compiler
 --
@@ -15,13 +14,16 @@ module Generate.JavaScript
     generateForRepl,
     generateForReplEndpoint,
     FFIInfo(..),
+    ffiFilePath,
+    ffiContent,
+    ffiAlias,
   )
 where
 
 import qualified AST.Canonical as Can
 import qualified AST.Optimized as Opt
+import Control.Lens (makeLenses)
 import qualified Data.Binary as Binary
-import GHC.Generics (Generic)
 import qualified Canopy.Kernel as K
 import qualified Canopy.ModuleName as ModuleName
 import qualified Canopy.Package as Pkg
@@ -51,7 +53,6 @@ import qualified Reporting.InternalError as InternalError
 import qualified Reporting.Render.Type as RT
 import qualified Reporting.Render.Type.Localizer as L
 import Prelude hiding (cycle, print)
--- import Text.RawString.QQ (r)  -- Removed: no longer using raw strings
 
 -- GENERATE
 
@@ -59,58 +60,76 @@ type Graph = Map Opt.Global Opt.Node
 
 type Mains = Map ModuleName.Canonical Opt.Main
 
--- | FFI information for JavaScript generation
+-- | FFI information for JavaScript generation.
 --
--- This type contains the information needed to generate FFI JavaScript code
--- without relying on global storage.
+-- Carries everything needed to emit FFI JavaScript code in the bundle
+-- without relying on global storage.  'FilePath' clarifies path semantics,
+-- 'Text' captures Unicode source content, and 'Name.Name' preserves the
+-- alias that appeared in the @foreign import@ declaration.
 data FFIInfo = FFIInfo
-  { ffiFilePath :: !String    -- ^ Path to the JavaScript file
-  , ffiContent  :: !String    -- ^ Content of the JavaScript file
-  , ffiAlias    :: !String    -- ^ Alias used in the import statement
-  } deriving (Eq, Show, Generic)
+  { _ffiFilePath :: !FilePath     -- ^ Path to the JavaScript file
+  , _ffiContent  :: !Text.Text    -- ^ Content of the JavaScript file
+  , _ffiAlias    :: !Name.Name    -- ^ Alias used in the import statement
+  } deriving (Eq, Show)
 
-instance Binary.Binary FFIInfo
+-- | Manual 'Binary' instance to avoid depending on orphan instances for
+-- 'Text' and to use the project-standard 'Utf8' serialisation for 'Name'.
+instance Binary.Binary FFIInfo where
+  put (FFIInfo path content alias) = do
+    Binary.put path
+    Binary.put (Text.unpack content)
+    Binary.put alias
+  get = do
+    path <- Binary.get
+    contentStr <- Binary.get
+    alias <- Binary.get
+    return (FFIInfo path (Text.pack contentStr) alias)
 
--- | Generate FFI JavaScript content to include in bundle
+makeLenses ''FFIInfo
+
+-- | Generate FFI JavaScript content to include in bundle.
 --
--- This function now receives FFI information directly through the compilation
--- pipeline instead of using global storage, eliminating MVar deadlock issues.
+-- Receives FFI information directly through the compilation pipeline
+-- instead of using global storage, eliminating MVar deadlock issues.
 generateFFIContent :: Graph -> Map String FFIInfo -> Builder
 generateFFIContent graph ffiInfos =
   if Map.null ffiInfos
      then mempty
-     else mconcat . map B.stringUtf8 $
-            [ "\n// FFI JavaScript content from external files\n" ] ++
-            Map.foldrWithKey formatFFIFileFromInfo [] ffiInfos ++
-            [ "\n// FFI function bindings\n" ] ++
-            Map.foldrWithKey (generateFFIBindingsFromInfo graph) [] ffiInfos
+     else mconcat (map B.stringUtf8 parts)
+  where
+    parts =
+      [ "\n// FFI JavaScript content from external files\n" ]
+        ++ Map.foldrWithKey formatFFIFileFromInfo [] ffiInfos
+        ++ [ "\n// FFI function bindings\n" ]
+        ++ Map.foldrWithKey (generateFFIBindingsFromInfo graph) [] ffiInfos
 
--- Format FFI file content for inclusion using FFIInfo
+-- | Format FFI file content for inclusion using FFIInfo.
 formatFFIFileFromInfo :: String -> FFIInfo -> [String] -> [String]
-formatFFIFileFromInfo _key ffiInfo acc =
-  let filePath = ffiFilePath ffiInfo
-      content = ffiContent ffiInfo
-  in [ "\n// From " ++ filePath ++ "\n"
-     , content
-     , "\n"
-     ] ++ acc
+formatFFIFileFromInfo _key info acc =
+  [ "\n// From " ++ _ffiFilePath info ++ "\n"
+  , Text.unpack (_ffiContent info)
+  , "\n"
+  ] ++ acc
 
--- Generate JavaScript variable bindings for FFI functions using FFIInfo with proper aliases
+-- | Generate JavaScript variable bindings for FFI functions using FFIInfo with proper aliases.
 generateFFIBindingsFromInfo :: Graph -> String -> FFIInfo -> [String] -> [String]
-generateFFIBindingsFromInfo graph _key ffiInfo acc =
-  let filePath = ffiFilePath ffiInfo
-      content = ffiContent ffiInfo
-      alias = ffiAlias ffiInfo
-  in case extractFFIFunctionBindings graph filePath content alias of
+generateFFIBindingsFromInfo graph _key info acc =
+  let path = _ffiFilePath info
+      content = Text.unpack (_ffiContent info)
+      alias = Name.toChars (_ffiAlias info)
+  in case extractFFIFunctionBindings graph path content alias of
     [] -> acc
-    bindings -> ("\n// Bindings for " ++ filePath ++ "\n") : ("var " ++ alias ++ " = " ++ alias ++ " || {};\n") : (map (++ "\n") bindings) ++ ["\n"] ++ acc
+    bindings ->
+      ("\n// Bindings for " ++ path ++ "\n")
+        : ("var " ++ alias ++ " = " ++ alias ++ " || {};\n")
+        : map (++ "\n") bindings ++ ["\n"] ++ acc
 
--- Extract and generate bindings for FFI functions from JavaScript content
+-- | Extract and generate bindings for FFI functions from JavaScript content.
 extractFFIFunctionBindings :: Graph -> String -> String -> String -> [String]
-extractFFIFunctionBindings graph filePath content alias =
-  let contentLines = lines content
-      functions = extractCanopyTypeFunctions contentLines
-  in concatMap (generateFunctionBinding graph filePath alias) functions
+extractFFIFunctionBindings graph path content alias =
+  concatMap (generateFunctionBinding graph path alias) functions
+  where
+    functions = extractCanopyTypeFunctions (lines content)
 
 -- Extract functions that have @canopy-type annotations
 extractCanopyTypeFunctions :: [String] -> [(String, String)]  -- [(functionName, canopyType)]
@@ -469,24 +488,28 @@ continueAddGlobal mode graph currentGlobal state =
       globalInGraph = case Map.lookup currentGlobal graph of
         Just x -> x
         Nothing ->
-          -- Try alternative package/module name (elm/core Kernel.* vs elm/kernel *)
+          -- Try alternative package/module name (elm/core Kernel.* vs elm/kernel * vs canopy/kernel *)
           let Opt.Global globalHome globalName = currentGlobal
               currentPkg = ModuleName._package globalHome
               moduleName = ModuleName._module globalHome
 
               -- Check if this is a Kernel.* module in elm/core
               isKernelModule = "Kernel." `List.isPrefixOf` Name.toChars moduleName
+              isKernelPkg = Pkg._project currentPkg == Pkg._project Pkg.kernel
 
               (altPkg, altModuleName) =
                 if Pkg._author currentPkg == Pkg.elm && Pkg._project currentPkg == Pkg._project Pkg.core && isKernelModule
                 then -- Map elm/core Kernel.* -> elm/kernel *
-                     let kernelName = drop 7 (Name.toChars moduleName)  -- Remove "Kernel." prefix
+                     let kernelName = drop 7 (Name.toChars moduleName)
                          kernelPkg = Pkg.Name Pkg.elm (Pkg._project Pkg.kernel)
                      in (kernelPkg, Name.fromChars kernelName)
-                else if Pkg._author currentPkg == Pkg.elm && Pkg._project currentPkg == Pkg._project Pkg.kernel
+                else if isKernelPkg && Pkg._author currentPkg == Pkg.elm
                 then -- Map elm/kernel * -> elm/core Kernel.*
                      let kernelModuleName = "Kernel." ++ Name.toChars moduleName
                      in (Pkg.core, Name.fromChars kernelModuleName)
+                else if isKernelPkg && Pkg._author currentPkg == Pkg.canopy
+                then -- Map canopy/kernel * -> elm/kernel * (Canopy kernel references resolve to elm kernel artifacts)
+                     (Pkg.Name Pkg.elm (Pkg._project Pkg.kernel), moduleName)
                 else (currentPkg, moduleName)
 
               altGlobalHome = ModuleName.Canonical altPkg altModuleName

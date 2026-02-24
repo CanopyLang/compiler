@@ -130,7 +130,10 @@ toSyntaxProblemDiagnostic source problem =
     Comma row col ->
       syntaxDiagnostic source row col "I was expecting to see a comma next."
     BadEnd row col ->
-      syntaxDiagnostic source row col "I am not really sure what I am getting stuck on though."
+      syntaxDiagnostic source row col
+        "I reached an unexpected point while parsing the @docs block. Check that\
+        \ every entry is a valid exposed name separated by commas, and that the\
+        \ block is properly terminated."
 
 syntaxDiagnostic :: Code.Source -> Row -> Col -> String -> Diagnostic
 syntaxDiagnostic source row col details =

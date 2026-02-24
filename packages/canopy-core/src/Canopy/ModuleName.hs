@@ -172,16 +172,14 @@ instance Aeson.ToJSONKey Canonical where
         Text.pack (Pkg.toChars pkg) <> "@" <> Text.pack (Name.toChars modName)
 
 instance Aeson.FromJSONKey Canonical where
-  fromJSONKey = Aeson.FromJSONKeyText parseCanonicalKey
-    where
-      parseCanonicalKey txt =
-        case Text.breakOn "@" txt of
-          (pkgText, modText) | not (Text.null modText) ->
-            let modStr = Text.unpack (Text.drop 1 modText)  -- drop the @ symbol
-             in case P.fromByteString Pkg.parser (,) (TextEnc.encodeUtf8 pkgText) of
-                  Right pkg -> Canonical pkg (Name.fromChars modStr)
-                  Left _ -> error ("Invalid package in canonical key: " ++ Text.unpack pkgText)
-          _ -> error ("Invalid canonical module name key format: " ++ Text.unpack txt)
+  fromJSONKey = Aeson.FromJSONKeyTextParser $ \txt ->
+    case Text.breakOn "@" txt of
+      (pkgText, modText) | not (Text.null modText) ->
+        let modStr = Text.unpack (Text.drop 1 modText)
+         in case P.fromByteString Pkg.parser (,) (TextEnc.encodeUtf8 pkgText) of
+              Right pkg -> pure (Canonical pkg (Name.fromChars modStr))
+              Left _ -> fail ("Invalid package in canonical key: " ++ Text.unpack pkgText)
+      _ -> fail ("Invalid canonical module name key format: " ++ Text.unpack txt)
 
 -- CORE
 

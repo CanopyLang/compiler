@@ -258,9 +258,14 @@ parseErrorToReport path source parseError reason =
             row
             col
             ( "I was partway through parsing some JSON when I got stuck here:",
-              D.reflow
-                "I am not really sure what is wrong. This sometimes means there is extra\
-                \ stuff after a valid JSON value?"
+              D.stack
+                [ D.reflow
+                    "I reached an unexpected point in the JSON. This usually means there is\
+                    \ extra content after a complete JSON value, or a missing comma or bracket.",
+                  D.toSimpleHint
+                    "Check that every `{` has a matching `}`, every `[` has a matching `]`,\
+                    \ and that there are commas between array elements and object fields."
+                ]
             )
 
 objectNote :: D.Doc

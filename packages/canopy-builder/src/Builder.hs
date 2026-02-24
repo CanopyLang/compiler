@@ -59,16 +59,18 @@ module Builder
   )
 where
 
+import qualified AST.Canonical as Can
 import qualified AST.Source as Src
 import qualified Builder.Graph as Graph
 import qualified Builder.Hash as Hash
 import qualified Builder.Incremental as Incremental
 import qualified Builder.Solver as Solver
 import qualified Builder.State as State
+import qualified Canopy.Interface as I
 import qualified Canopy.ModuleName as ModuleName
 import qualified Canopy.Package as Pkg
 import qualified Data.ByteString as BS
-import Data.IORef (IORef, newIORef, readIORef, writeIORef)
+import Data.IORef (IORef, modifyIORef', newIORef, readIORef, writeIORef)
 import Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
 import qualified Data.Set as Set
@@ -78,6 +80,7 @@ import qualified File
 import qualified Data.Text as Text
 import Logging.Event (LogEvent (..), Duration (..), Phase (..), CompileStats (..))
 import qualified Logging.Logger as Log
+import qualified PackageCache
 import qualified Parse.Module as Parse
 import System.FilePath (takeDirectory, (</>))
 
@@ -85,7 +88,8 @@ import System.FilePath (takeDirectory, (</>))
 data PureBuilder = PureBuilder
   { builderEngine :: !State.BuilderEngine,
     builderCache :: !(IORef Incremental.BuildCache),
-    builderGraph :: !(IORef Graph.DependencyGraph)
+    builderGraph :: !(IORef Graph.DependencyGraph),
+    builderInterfaces :: !(IORef (Map ModuleName.Raw I.Interface))
   }
 
 -- | Build error.
@@ -103,6 +107,11 @@ data BuildResult
   deriving (Show, Eq)
 
 -- | Initialize pure builder.
+--
+-- Loads elm\/core package interfaces at startup so that compiled modules
+-- can resolve default imports (Basics, List, etc.). If elm\/core is not
+-- installed, compilation of application modules will fail with import
+-- errors.
 initPureBuilder :: IO PureBuilder
 initPureBuilder = do
   Log.logEvent (BuildStarted (Text.pack "pure builder"))
@@ -110,13 +119,44 @@ initPureBuilder = do
   engine <- State.initBuilder
   cache <- Incremental.emptyCache >>= newIORef
   graph <- newIORef Graph.emptyGraph
+  coreIfaces <- loadCoreInterfaces
+  ifacesRef <- newIORef coreIfaces
 
   return
     PureBuilder
       { builderEngine = engine,
         builderCache = cache,
-        builderGraph = graph
+        builderGraph = graph,
+        builderInterfaces = ifacesRef
       }
+
+-- | Load elm\/core interfaces for the builder.
+--
+-- Converts 'DependencyInterface' values to 'Interface' values suitable
+-- for use during canonicalization. Public dependencies expose their full
+-- interface; private dependencies expose only type information.
+loadCoreInterfaces :: IO (Map ModuleName.Raw I.Interface)
+loadCoreInterfaces = do
+  maybeCoreIfaces <- PackageCache.loadElmCoreInterfaces
+  case maybeCoreIfaces of
+    Nothing -> do
+      Log.logEvent (BuildFailed (Text.pack "elm/core not installed — imports will fail"))
+      return Map.empty
+    Just depIfaces -> do
+      Log.logEvent (BuildModuleQueued (Text.pack ("loaded " ++ show (Map.size depIfaces) ++ " elm/core interfaces")))
+      return (Map.map extractPublicInterface depIfaces)
+
+-- | Extract a public interface from a dependency interface.
+extractPublicInterface :: I.DependencyInterface -> I.Interface
+extractPublicInterface (I.Public iface) = iface
+extractPublicInterface (I.Private pkg unions aliases) =
+  I.Interface
+    { I._home = pkg,
+      I._values = Map.empty,
+      I._unions = Map.map I.PrivateUnion unions,
+      I._aliases = Map.map I.PrivateAlias aliases,
+      I._binops = Map.empty
+    }
 
 -- | Build from file paths with dependency resolution.
 buildFromPaths :: PureBuilder -> [FilePath] -> IO BuildResult
@@ -148,13 +188,19 @@ buildFromPaths builder paths = do
           return (BuildFailure (BuildErrorCycle (Graph.getAllModules graph)))
 
         Just buildOrder -> do
-          Log.logEvent (BuildModuleQueued (Text.pack ("build order: " ++ show (length buildOrder) ++ " modules")))
+          -- Filter to only modules we have source files for.
+          -- Library modules (Basics, List, etc.) come from loaded
+          -- interfaces and must not enter the compile queue.
+          let moduleMap = Map.fromList [(Src.getName m, (p, m)) | (p, m) <- modules]
+              localBuildOrder = filter (`Map.member` moduleMap) buildOrder
+
+          Log.logEvent (BuildModuleQueued (Text.pack ("build order: " ++ show (length localBuildOrder) ++ " modules")))
 
           -- Compile modules in dependency order
-          results <- compileInOrder builder root modules buildOrder
+          results <- compileInOrder builder root modules localBuildOrder
           let successCount = length (filter isSuccess results)
 
-          if successCount == length buildOrder
+          if successCount == length localBuildOrder
             then do
               Log.logEvent (BuildCompleted successCount (Duration 0))
               return (BuildSuccess successCount)
@@ -228,21 +274,41 @@ compileModuleInOrder builder _root moduleMap moduleName =
         else useCache builder moduleName path
 
 -- | Compile a module via the query-based Driver.
+--
+-- Uses the accumulated interface map (elm\/core + previously compiled
+-- project modules) so that imports resolve correctly during
+-- canonicalization. On success, adds the new module's interface to the
+-- accumulator for downstream dependents.
 compileWithDriver :: PureBuilder -> ModuleName.Raw -> FilePath -> IO BuildResult
 compileWithDriver builder moduleName path = do
   Log.logEvent (CompileStarted path)
-  result <- Driver.compileModule Pkg.dummyName Map.empty path Parse.Application
+  ifaces <- readIORef (builderInterfaces builder)
+  result <- Driver.compileModule Pkg.dummyName ifaces path Parse.Application
   now <- getCurrentTime
   case result of
     Left err -> do
-      Log.logEvent (CompileFailed path PhaseBuild (Text.pack (show err)))
-      State.setModuleStatus (builderEngine builder) moduleName (State.StatusFailed (show err) now)
-      return (BuildFailure (BuildErrorCompile (show err)))
-    Right _compiled -> do
+      let errStr = show err
+      Log.logEvent (CompileFailed path PhaseBuild (Text.pack errStr))
+      State.setModuleStatus (builderEngine builder) moduleName (State.StatusFailed errStr now)
+      return (BuildFailure (BuildErrorCompile errStr))
+    Right compiled -> do
       Log.logEvent (CompileCompleted path (CompileStats 1 (Duration 0)))
+      accumulateInterface builder compiled
       State.setModuleStatus (builderEngine builder) moduleName (State.StatusCompleted now)
       State.setModuleResult (builderEngine builder) moduleName (State.ResultSuccess path now)
       return (BuildSuccess 1)
+
+-- | Add a compiled module's interface to the accumulator.
+--
+-- After a module compiles successfully, its interface is stored so that
+-- downstream modules (which import it) can resolve names during their
+-- own canonicalization phase.
+accumulateInterface :: PureBuilder -> Driver.CompileResult -> IO ()
+accumulateInterface builder compiled = do
+  let Can.Module canonName _ _ _ _ _ _ _ = Driver.compileResultModule compiled
+      rawName = ModuleName._module canonName
+      iface = Driver.compileResultInterface compiled
+  modifyIORef' (builderInterfaces builder) (Map.insert rawName iface)
 
 -- | Check if build result is success.
 isSuccess :: BuildResult -> Bool

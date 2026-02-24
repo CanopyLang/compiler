@@ -23,6 +23,7 @@ module Build
   , artifactsRoots
   , artifactsModules
   , artifactsFFIInfo
+  , artifactsGlobalGraph
 
   -- * Build Configuration
   , ExposedBuildConfig (..)
@@ -44,6 +45,7 @@ import Build.Artifacts
   , artifactsRoots
   , artifactsModules
   , artifactsFFIInfo
+  , artifactsGlobalGraph
   )
 import qualified Canopy.Details as Details
 import qualified Canopy.ModuleName as ModuleName

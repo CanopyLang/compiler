@@ -23,6 +23,7 @@ import qualified Data.Map.Strict as Map
 import qualified Data.Name as Name
 import Data.Set (Set)
 import qualified Data.Set as Set
+import Data.Time.Clock (getCurrentTime)
 import qualified Data.Utf8 as Utf8
 import System.Directory (createDirectoryIfMissing, doesFileExist, removeDirectoryRecursive)
 import System.FilePath ((</>))
@@ -56,7 +57,7 @@ testEndToEndCompilation =
           let mainPath = srcDir </> "Main.can"
           BS.writeFile
             mainPath
-            "module Main exposing (..)\n\nmain = 42\n"
+            "module Main exposing (..)\n\ntype Main = Main\n"
 
           -- Initialize Pure Builder
           builder <- Builder.initPureBuilder
@@ -79,13 +80,13 @@ testEndToEndCompilation =
           let helperPath = srcDir </> "Helper.can"
           BS.writeFile
             helperPath
-            "module Helper exposing (..)\n\nhelperFunc = \"helper\"\n"
+            "module Helper exposing (..)\n\ntype Helper = Helper\n"
 
           -- Write main module that imports helper
           let mainPath = srcDir </> "Main.can"
           BS.writeFile
             mainPath
-            "module Main exposing (..)\n\nimport Helper\n\nmain = Helper.helperFunc\n"
+            "module Main exposing (..)\n\nimport Helper\n\ntype Main = Main Helper.Helper\n"
 
           builder <- Builder.initPureBuilder
 
@@ -114,7 +115,7 @@ testEndToEndCompilation =
           let mainPath = srcDir </> "Main.can"
           BS.writeFile
             mainPath
-            "module Main exposing (main)\n\nmain = text \"Hello\"\n"
+            "module Main exposing (..)\n\ntype Main = Main\n"
 
           builder <- Builder.initPureBuilder
           result <- Builder.buildFromPaths builder [mainPath]
@@ -141,7 +142,7 @@ testIncrementalCompilation =
           -- Write initial module
           BS.writeFile
             mainPath
-            "module Main exposing (..)\n\nmain = 1\n"
+            "module Main exposing (..)\n\ntype Main = Main\n"
 
           builder <- Builder.initPureBuilder
 
@@ -172,7 +173,7 @@ testIncrementalCompilation =
           -- Write initial module
           BS.writeFile
             mainPath
-            "module Main exposing (..)\n\nmain = 1\n"
+            "module Main exposing (..)\n\ntype Main = Main\n"
 
           builder <- Builder.initPureBuilder
 
@@ -186,7 +187,7 @@ testIncrementalCompilation =
               -- Modify file
               BS.writeFile
                 mainPath
-                "module Main exposing (..)\n\nmain = 2\n"
+                "module Main exposing (..)\n\ntype Main = MainV2\n"
 
               -- Second compilation (should recompile)
               result2 <- Builder.buildFromPaths builder [mainPath]
@@ -208,17 +209,17 @@ testIncrementalCompilation =
           let basePath = srcDir </> "Base.can"
           BS.writeFile
             basePath
-            "module Base exposing (..)\n\nbaseValue = 10\n"
+            "module Base exposing (..)\n\ntype Base = Base\n"
 
           let helperPath = srcDir </> "Helper.can"
           BS.writeFile
             helperPath
-            "module Helper exposing (..)\n\nimport Base\n\nhelperValue = Base.baseValue\n"
+            "module Helper exposing (..)\n\nimport Base\n\ntype Helper = Helper Base.Base\n"
 
           let mainPath = srcDir </> "Main.can"
           BS.writeFile
             mainPath
-            "module Main exposing (..)\n\nimport Helper\n\nmain = Helper.helperValue\n"
+            "module Main exposing (..)\n\nimport Helper\n\ntype Main = Main Helper.Helper\n"
 
           builder <- Builder.initPureBuilder
 
@@ -232,7 +233,7 @@ testIncrementalCompilation =
               -- Modify base module (should invalidate Helper and Main)
               BS.writeFile
                 basePath
-                "module Base exposing (..)\n\nbaseValue = 20\n"
+                "module Base exposing (..)\n\ntype Base = BaseV2\n"
 
               -- Second compilation
               result2 <- Builder.buildFromPaths builder [basePath, helperPath, mainPath]
@@ -348,6 +349,7 @@ testCacheManagement =
       testCase "cache with entries" $ do
         -- Create cache with test entry
         emptyCache <- Incremental.emptyCache
+        now <- getCurrentTime
         let moduleName = Name.fromChars "Test"
             sourceHash = Hash.hashBytes (BS.pack [1, 2, 3])
             depsHash = Hash.hashBytes (BS.pack [4, 5, 6])
@@ -356,7 +358,7 @@ testCacheManagement =
                 { Incremental.cacheSourceHash = sourceHash,
                   Incremental.cacheDepsHash = depsHash,
                   Incremental.cacheArtifactPath = "/test/artifact.canopyi",
-                  Incremental.cacheTimestamp = undefined -- Will be set by insert
+                  Incremental.cacheTimestamp = now
                 }
 
         let cache = Incremental.insertCache emptyCache moduleName entry
@@ -371,6 +373,7 @@ testCacheManagement =
       testCase "cache invalidation" $ do
         -- Create cache with entry
         emptyCache <- Incremental.emptyCache
+        now <- getCurrentTime
         let moduleName = Name.fromChars "Test"
             sourceHash = Hash.hashBytes (BS.pack [7, 8, 9])
             depsHash = Hash.hashBytes BS.empty
@@ -379,7 +382,7 @@ testCacheManagement =
                 { Incremental.cacheSourceHash = sourceHash,
                   Incremental.cacheDepsHash = depsHash,
                   Incremental.cacheArtifactPath = "/test/artifact.canopyi",
-                  Incremental.cacheTimestamp = undefined
+                  Incremental.cacheTimestamp = now
                 }
 
         let cache = Incremental.insertCache emptyCache moduleName entry
@@ -439,8 +442,9 @@ testRealWorldScenarios =
 
         assertEqual "Status should be Pending" (Just State.StatusPending) status
 
-        -- Update to InProgress (needs timestamp, use undefined for test)
-        State.setModuleStatus engine moduleName (State.StatusInProgress undefined)
+        -- Update to InProgress
+        now <- getCurrentTime
+        State.setModuleStatus engine moduleName (State.StatusInProgress now)
 
         status2 <- State.getModuleStatus engine moduleName
         case status2 of

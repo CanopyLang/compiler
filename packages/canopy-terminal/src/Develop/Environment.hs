@@ -61,6 +61,8 @@ import Develop.Types
   )
 import Reporting.Doc.ColorQQ (c)
 import qualified Stuff
+import qualified System.Exit as Exit
+import qualified System.IO as IO
 import qualified Terminal.Print as Print
 
 -- | Setup complete server configuration from flags.
@@ -134,10 +136,14 @@ validateConfiguration config = do
   validateProjectRoot (_scRoot config)
 
 -- | Validate port number is in acceptable range.
+--
+-- Exits with a helpful error message if the port is outside the
+-- valid TCP port range of 1-65535.
 validatePortRange :: Int -> IO ()
 validatePortRange port
-  | port < 1 || port > 65535 =
-    error ("Invalid port number: " ++ show port)
+  | port < 1 || port > 65535 = do
+    IO.hPutStrLn IO.stderr ("Invalid port number: " ++ show port ++ ". Must be 1-65535.")
+    Exit.exitFailure
   | otherwise = pure ()
 
 -- | Validate project root directory if specified.

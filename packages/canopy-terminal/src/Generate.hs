@@ -92,23 +92,31 @@ generateJS mode artifacts =
       ffiInfo = artifacts ^. Build.artifactsFFIInfo
    in JS.generate mode globalGraph mains ffiInfo
 
--- Helper: Extract GlobalGraph for optimization.
+-- | Extract the GlobalGraph from build artifacts.
+--
+-- Uses the pre-built global graph stored in the artifacts, which already
+-- contains merged dependency package objects (kernel modules, etc.) and
+-- locally compiled module objects. The Compiler merges these at build
+-- time so code generation can look up any referenced node.
 extractGlobalGraph :: Build.Artifacts -> Opt.GlobalGraph
 extractGlobalGraph artifacts =
-  let modules = artifacts ^. Build.artifactsModules
-      nodes = combineModuleGraphs modules
-   in Opt.GlobalGraph nodes mempty
+  mergeLocalIntoGlobal (artifacts ^. Build.artifactsGlobalGraph) localModuleNodes
+  where
+    localModuleNodes = combineModuleGraphs (artifacts ^. Build.artifactsModules)
 
--- Helper: Combine module graphs into global nodes.
+-- | Merge locally compiled module nodes into the dependency global graph.
+--
+-- The stored global graph from 'Compiler.hs' may already contain these,
+-- but merging again ensures freshly compiled modules override stale
+-- entries.
+mergeLocalIntoGlobal :: Opt.GlobalGraph -> Map.Map Opt.Global Opt.Node -> Opt.GlobalGraph
+mergeLocalIntoGlobal (Opt.GlobalGraph depNodes depFields) localNodes =
+  Opt.GlobalGraph (Map.union localNodes depNodes) depFields
+
+-- | Combine module graphs into global nodes.
 combineModuleGraphs :: [Build.Module] -> Map.Map Opt.Global Opt.Node
 combineModuleGraphs modules =
-  let graphs = [localGraphToGlobal graph | Build.Fresh _name _iface graph <- modules]
-      combined = Map.unions graphs
-   in combined
-
--- Helper: Extract graph
-localGraphToGlobal :: Opt.LocalGraph -> Map.Map Opt.Global Opt.Node
-localGraphToGlobal (Opt.LocalGraph _ nodes _) = nodes
+  Map.unions [nodes | Build.Fresh _name _iface (Opt.LocalGraph _ nodes _) <- modules]
 
 -- Helper: Extract mains from artifacts.
 extractMains :: Build.Artifacts -> Map.Map ModuleName.Canonical Opt.Main

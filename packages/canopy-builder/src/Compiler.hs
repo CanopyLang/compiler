@@ -145,7 +145,7 @@ fromDriverResult result =
     { mrModuleName = extractModuleName (Driver.compileResultModule result)
     , mrInterface = Driver.compileResultInterface result
     , mrLocalGraph = Driver.compileResultLocalGraph result
-    , mrFFIInfo = Map.map convertFFIInfo (Driver.compileResultFFIInfo result)
+    , mrFFIInfo = Driver.compileResultFFIInfo result
     }
 
 -- | Path to the build cache index file.
@@ -571,15 +571,6 @@ convertDependencyInterfaces = Map.mapMaybe extractInterface
 -- | Convert a ModuleResult to Build.Module.
 moduleResultToModule :: ModuleResult -> Build.Module
 moduleResultToModule mr = Build.Fresh (mrModuleName mr) (mrInterface mr) (mrLocalGraph mr)
-
--- | Convert Driver.FFIInfo to JS.FFIInfo.
-convertFFIInfo :: Driver.FFIInfo -> JS.FFIInfo
-convertFFIInfo driverInfo =
-  JS.FFIInfo
-    { JS.ffiFilePath = Driver.ffiFilePath driverInfo
-    , JS.ffiContent = Driver.ffiContent driverInfo
-    , JS.ffiAlias = Driver.ffiAlias driverInfo
-    }
 
 -- INCREMENTAL CACHE HELPERS
 

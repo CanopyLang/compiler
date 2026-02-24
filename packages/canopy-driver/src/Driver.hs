@@ -16,7 +16,6 @@
 module Driver
   ( -- * Driver Types
     CompileResult (..),
-    FFIInfo (..),
 
     -- * Single Module Compilation
     compileModule,
@@ -45,6 +44,7 @@ import Data.Map (Map)
 import qualified Data.Map as Map
 import qualified Data.Name as Name
 import qualified Data.Text as Text
+import qualified Generate.JavaScript as JS
 import Logging.Event (LogEvent (..), CompileStats (..), Duration (..))
 import qualified Logging.Logger as Log
 import qualified Queries.Canonicalize.Module as CanonQuery
@@ -63,16 +63,8 @@ data CompileResult = CompileResult
     compileResultTypes :: !(Map Name.Name Can.Annotation),
     compileResultInterface :: !I.Interface,
     compileResultLocalGraph :: !Opt.LocalGraph,
-    compileResultFFIInfo :: !(Map String FFIInfo)
+    compileResultFFIInfo :: !(Map String JS.FFIInfo)
   }
-
--- | FFI information for JavaScript generation
-data FFIInfo = FFIInfo
-  { ffiFilePath :: !String,
-    ffiContent :: !String,
-    ffiAlias :: !String
-  }
-  deriving (Eq, Show)
 
 -- | Compile a module from file path (simplified).
 compileModule ::
@@ -212,28 +204,25 @@ loadFFIContent sourceModule = do
   Canonicalize.loadFFIContent foreignImports
 
 -- | Build FFIInfo map from foreign imports and content.
-buildFFIInfoMap :: [Src.ForeignImport] -> Map String String -> Map String FFIInfo
+buildFFIInfoMap :: [Src.ForeignImport] -> Map String String -> Map String JS.FFIInfo
 buildFFIInfoMap foreignImports contentMap =
   Map.fromList (buildFFIInfoList foreignImports contentMap)
 
 -- | Build list of FFIInfo from imports and content.
-buildFFIInfoList :: [Src.ForeignImport] -> Map String String -> [(String, FFIInfo)]
+buildFFIInfoList :: [Src.ForeignImport] -> Map String String -> [(String, JS.FFIInfo)]
 buildFFIInfoList foreignImports contentMap =
   concatMap (buildSingleFFI contentMap) foreignImports
 
--- | Build FFIInfo for a single import.
---
 -- | Build FFI info for a single foreign import.
 --
 -- Returns empty list when the JavaScript file is not in the content map,
 -- which indicates a missing FFI file that will be caught during
 -- canonicalization with a proper error message.
-buildSingleFFI :: Map String String -> Src.ForeignImport -> [(String, FFIInfo)]
+buildSingleFFI :: Map String String -> Src.ForeignImport -> [(String, JS.FFIInfo)]
 buildSingleFFI contentMap (Src.ForeignImport (FFI.JavaScriptFFI jsPath) alias _region) =
   case Map.lookup jsPath contentMap of
     Just content ->
-      let aliasStr = Name.toChars (A.toValue alias)
-       in [(jsPath, FFIInfo jsPath content aliasStr)]
+      [(jsPath, JS.FFIInfo jsPath (Text.pack content) (A.toValue alias))]
     Nothing -> []
 buildSingleFFI _ _ = []
 

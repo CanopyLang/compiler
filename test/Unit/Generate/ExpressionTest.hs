@@ -1,0 +1,226 @@
+{-# OPTIONS_GHC -Wall #-}
+
+-- | Tests for JavaScript expression generation.
+--
+-- Validates that the Expression module correctly converts optimized AST
+-- expressions into JavaScript AST nodes. Tests cover literal generation,
+-- Code chunk conversions (codeToExpr, codeToStmtList), function wrapping
+-- with F-helpers, constructor generation, and field generation in Dev mode.
+--
+-- @since 0.19.2
+module Unit.Generate.ExpressionTest (tests) where
+
+import qualified AST.Optimized as Opt
+import qualified Canopy.ModuleName as ModuleName
+import qualified Canopy.Package as Pkg
+import qualified Data.ByteString.Builder as B
+import qualified Data.ByteString.Lazy.Char8 as LChar8
+import qualified Data.Index as Index
+import Data.Name (Name)
+import qualified Data.Name as Name
+import qualified Data.Utf8 as Utf8
+import qualified Generate.JavaScript.Builder as JS
+import qualified Generate.JavaScript.Expression as Expr
+import qualified Generate.JavaScript.Name as JsName
+import qualified Generate.Mode as Mode
+import Test.Tasty
+import Test.Tasty.HUnit
+
+tests :: TestTree
+tests =
+  testGroup
+    "Generate.JavaScript.Expression"
+    [ codeToExprTests,
+      codeToStmtListTests,
+      generateLiteralTests,
+      generateVarLocalTests,
+      generateFunctionTests,
+      generateFieldTests,
+      generateCtorTests
+    ]
+
+-- HELPERS
+
+devMode :: Mode.Mode
+devMode = Mode.Dev Nothing False
+
+nameStr :: String -> Name
+nameStr = Name.fromChars
+
+jsNameToString :: JsName.Name -> String
+jsNameToString = LChar8.unpack . B.toLazyByteString . JsName.toBuilder
+
+showExpr :: JS.Expr -> String
+showExpr = show
+
+showStmt :: JS.Stmt -> String
+showStmt = show
+
+-- CODE TO EXPR TESTS
+
+codeToExprTests :: TestTree
+codeToExprTests =
+  testGroup
+    "codeToExpr"
+    [ testCase "JsExpr wrapping passes expression through" $
+        showExpr (Expr.codeToExpr (Expr.JsExpr (JS.Int 42)))
+          @?= showExpr (JS.Int 42),
+      testCase "JsStmt with Return unwraps the expression" $
+        showExpr (Expr.codeToExpr (Expr.JsStmt (JS.Return (JS.Int 7))))
+          @?= showExpr (JS.Int 7),
+      testCase "JsStmt with non-Return wraps in IIFE" $
+        let stmt = JS.Var (JsName.fromLocal (nameStr "x")) (JS.Int 1)
+            result = Expr.codeToExpr (Expr.JsStmt stmt)
+        in assertShowContains "Function" (showExpr result),
+      testCase "JsBlock with single Return unwraps the expression" $
+        showExpr (Expr.codeToExpr (Expr.JsBlock [JS.Return (JS.Bool True)]))
+          @?= showExpr (JS.Bool True),
+      testCase "JsBlock with multiple stmts wraps in IIFE" $
+        let stmts = [JS.Var (JsName.fromLocal (nameStr "a")) (JS.Int 1), JS.Return (JS.Int 2)]
+            result = Expr.codeToExpr (Expr.JsBlock stmts)
+        in assertShowContains "Function" (showExpr result)
+    ]
+
+-- CODE TO STMT LIST TESTS
+
+codeToStmtListTests :: TestTree
+codeToStmtListTests =
+  testGroup
+    "codeToStmtList"
+    [ testCase "JsExpr with simple value becomes Return statement" $
+        let result = Expr.codeToStmtList (Expr.JsExpr (JS.Int 5))
+        in do
+          assertEqual "exactly one statement" 1 (length result)
+          assertShowContains "Return" (showStmt (head result)),
+      testCase "JsStmt passes through as single-element list" $
+        let stmt = JS.Return (JS.Bool False)
+            result = Expr.codeToStmtList (Expr.JsStmt stmt)
+        in assertEqual "single statement" [showStmt stmt] (fmap showStmt result),
+      testCase "JsBlock flattens nested blocks" $
+        let stmts = [JS.Block [JS.Return (JS.Int 1)]]
+            result = Expr.codeToStmtList (Expr.JsBlock stmts)
+        in assertEqual "flattened to one statement" 1 (length result)
+    ]
+
+-- GENERATE LITERAL TESTS
+
+generateLiteralTests :: TestTree
+generateLiteralTests =
+  testGroup
+    "generate literals"
+    [ testCase "Bool True generates JS.Bool True" $
+        showExpr (Expr.codeToExpr (Expr.generate devMode (Opt.Bool True)))
+          @?= showExpr (JS.Bool True),
+      testCase "Bool False generates JS.Bool False" $
+        showExpr (Expr.codeToExpr (Expr.generate devMode (Opt.Bool False)))
+          @?= showExpr (JS.Bool False),
+      testCase "Int 42 generates JS.Int 42" $
+        showExpr (Expr.codeToExpr (Expr.generate devMode (Opt.Int 42)))
+          @?= showExpr (JS.Int 42),
+      testCase "Int 0 generates JS.Int 0" $
+        showExpr (Expr.codeToExpr (Expr.generate devMode (Opt.Int 0)))
+          @?= showExpr (JS.Int 0),
+      testCase "Int -1 generates JS.Int -1" $
+        showExpr (Expr.codeToExpr (Expr.generate devMode (Opt.Int (-1))))
+          @?= showExpr (JS.Int (-1)),
+      testCase "Str generates JS.String with correct content" $
+        let strExpr = Expr.codeToExpr (Expr.generate devMode (Opt.Str (Utf8.fromChars "hello")))
+        in assertShowContains "String" (showExpr strExpr)
+    ]
+
+-- GENERATE VAR LOCAL TESTS
+
+generateVarLocalTests :: TestTree
+generateVarLocalTests =
+  testGroup
+    "generate VarLocal"
+    [ testCase "VarLocal generates JS.Ref with local name" $
+        let result = Expr.codeToExpr (Expr.generate devMode (Opt.VarLocal (nameStr "myVar")))
+        in assertShowContains "Ref" (showExpr result),
+      testCase "VarLocal with reserved word gets escaped" $
+        let result = Expr.codeToExpr (Expr.generate devMode (Opt.VarLocal (nameStr "var")))
+            rendered = LChar8.unpack (B.toLazyByteString (JS.exprToBuilder result))
+        in assertBool "escaped var reference contains _var" ("_var" `isInfixOfStr` rendered)
+    ]
+
+-- GENERATE FUNCTION TESTS
+
+generateFunctionTests :: TestTree
+generateFunctionTests =
+  testGroup
+    "generateFunction"
+    [ testCase "single-arg function produces plain JS function" $
+        let args = [JsName.fromLocal (nameStr "x")]
+            body = Expr.JsExpr (JS.Ref (JsName.fromLocal (nameStr "x")))
+            result = Expr.codeToExpr (Expr.generateFunction args body)
+        in assertShowContains "Function" (showExpr result),
+      testCase "two-arg function uses F2 helper" $
+        let args = [JsName.fromLocal (nameStr "a"), JsName.fromLocal (nameStr "b")]
+            body = Expr.JsExpr (JS.Ref (JsName.fromLocal (nameStr "a")))
+            result = Expr.codeToExpr (Expr.generateFunction args body)
+            rendered = LChar8.unpack (B.toLazyByteString (JS.exprToBuilder result))
+        in assertBool "two-arg function uses F2" ("F2" `isInfixOfStr` rendered),
+      testCase "nine-arg function uses F9 helper" $
+        let argNames = fmap (\c -> JsName.fromLocal (nameStr [c])) ['a' .. 'i']
+            body = Expr.JsExpr (JS.Int 0)
+            result = Expr.codeToExpr (Expr.generateFunction argNames body)
+            rendered = LChar8.unpack (B.toLazyByteString (JS.exprToBuilder result))
+        in assertBool "nine-arg function uses F9" ("F9" `isInfixOfStr` rendered)
+    ]
+
+-- GENERATE FIELD TESTS
+
+generateFieldTests :: TestTree
+generateFieldTests =
+  testGroup
+    "generateField"
+    [ testCase "Dev mode field uses original name" $
+        jsNameToString (Expr.generateField devMode (nameStr "name"))
+          @?= "name",
+      testCase "Dev mode field with multi-word name" $
+        jsNameToString (Expr.generateField devMode (nameStr "firstName"))
+          @?= "firstName"
+    ]
+
+-- GENERATE CTOR TESTS
+
+generateCtorTests :: TestTree
+generateCtorTests =
+  testGroup
+    "generateCtor"
+    [ testCase "zero-arity ctor in Dev mode produces object with tag" $
+        let home = ModuleName.Canonical Pkg.core (nameStr "Maybe")
+            global = Opt.Global home (nameStr "Nothing")
+            result = Expr.codeToExpr (Expr.generateCtor devMode global Index.first 0)
+            rendered = LChar8.unpack (B.toLazyByteString (JS.exprToBuilder result))
+        in assertBool "ctor contains Nothing tag string" ("Nothing" `isInfixOfStr` rendered),
+      testCase "arity-1 ctor in Dev mode produces function returning tagged object" $
+        let home = ModuleName.Canonical Pkg.core (nameStr "Maybe")
+            global = Opt.Global home (nameStr "Just")
+            result = Expr.codeToExpr (Expr.generateCtor devMode global Index.first 1)
+            rendered = LChar8.unpack (B.toLazyByteString (JS.exprToBuilder result))
+        in do
+          assertBool "ctor contains Just tag" ("Just" `isInfixOfStr` rendered)
+          assertBool "ctor contains function" ("function" `isInfixOfStr` rendered)
+    ]
+
+-- STRING HELPERS
+
+assertShowContains :: String -> String -> Assertion
+assertShowContains needle haystack =
+  assertBool
+    ("expected Show output to contain " ++ show needle ++ " but got: " ++ haystack)
+    (needle `isInfixOfStr` haystack)
+
+isInfixOfStr :: String -> String -> Bool
+isInfixOfStr needle haystack =
+  any (isPrefixOfStr needle) (tailsOf haystack)
+
+isPrefixOfStr :: String -> String -> Bool
+isPrefixOfStr [] _ = True
+isPrefixOfStr _ [] = False
+isPrefixOfStr (x : xs) (y : ys) = x == y && isPrefixOfStr xs ys
+
+tailsOf :: [a] -> [[a]]
+tailsOf [] = [[]]
+tailsOf xs@(_ : rest) = xs : tailsOf rest

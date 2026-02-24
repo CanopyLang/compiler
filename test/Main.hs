@@ -9,6 +9,7 @@ import qualified Golden.ParseModuleGolden as ParseModuleGolden
 import qualified Golden.ParseTypeGolden as ParseTypeGolden
 import qualified Integration.CanExtensionTest as CanExtensionIT
 import qualified Integration.DevelopTest as DevelopIT
+import qualified Integration.EndToEndTest as EndToEndIT
 import qualified Integration.InitTest as InitIT
 import qualified Integration.InstallTest as InstallIT
 import qualified Integration.MakeTest as MakeIT
@@ -77,9 +78,14 @@ import qualified Unit.Query.EngineTest as QueryEngineTest
 import qualified Unit.Builder.PackageCacheTest as PackageCacheTest
 import qualified Unit.Worker.PoolTest as WorkerPoolTest
 import qualified Unit.Queries.ParseModuleTest as ParseModuleQueryTest
+import qualified Unit.Generate.ExpressionTest as ExpressionTest
 import qualified Unit.Generate.MinifyTest as MinifyTest
+import qualified Unit.Generate.NameTest as GenerateNameTest
 import qualified Unit.Generate.StringPoolTest as StringPoolTest
+import qualified Unit.Optimize.CaseTest as CaseTest
 import qualified Unit.Optimize.ConstantFoldTest as ConstantFoldTest
+import qualified Unit.Optimize.DecisionTreeTest as DecisionTreeTest
+import qualified Unit.Optimize.NamesTest as NamesTest
 import qualified Unit.Logging.ConfigTest as LoggingConfigTest
 import qualified Unit.Logging.EventTest as LoggingEventTest
 import qualified Unit.Logging.SinkTest as LoggingSinkTest
@@ -87,6 +93,17 @@ import qualified Unit.Reporting.DiagnosticJsonTest as DiagnosticJsonTest
 import qualified Unit.Reporting.DiagnosticTest as DiagnosticTest
 import qualified Unit.Reporting.Doc.ColorQQTest as ColorQQTest
 import qualified Unit.Reporting.ErrorCodeTest as ErrorCodeTest
+import qualified Unit.Type.InstantiateTest as InstantiateTest
+import qualified Unit.Type.OccursTest as OccursTest
+import qualified Unit.Type.SolveTest as SolveTest
+import qualified Unit.Type.UnifyTest as UnifyTest
+import qualified Unit.Canonicalize.DupsTest as CanonicalizeDupsTest
+import qualified Unit.Canonicalize.ModuleTest as CanonicalizeModuleTest
+import qualified Unit.Canonicalize.PatternTest as CanonicalizePatternTest
+import qualified Unit.Type.UnionFindTest as UnionFindTest
+import qualified Property.Type.UnifyProperties as UnifyProperties
+import qualified Property.Type.UnionFindProperties as UnionFindProperties
+import qualified Property.Data.NameProperties as NameProperties
 
 main :: IO ()
 main = defaultMain tests
@@ -95,7 +112,10 @@ tests :: TestTree
 tests =
   testGroup
     "Canopy Tests"
-    [ unitTests
+    [ unitTests,
+      propertyTests,
+      integrationTests,
+      goldenTests
     ]
 
 unitTests :: TestTree
@@ -160,8 +180,13 @@ unitTests =
       PackageCacheTest.tests,
       WorkerPoolTest.tests,
       ParseModuleQueryTest.tests,
+      CaseTest.tests,
       ConstantFoldTest.tests,
+      DecisionTreeTest.tests,
+      NamesTest.tests,
       MinifyTest.tests,
+      GenerateNameTest.tests,
+      ExpressionTest.tests,
       StringPoolTest.tests,
       ColorQQTest.tests,
       LoggingEventTest.tests,
@@ -169,7 +194,24 @@ unitTests =
       LoggingSinkTest.tests,
       DiagnosticTest.tests,
       DiagnosticJsonTest.tests,
-      ErrorCodeTest.tests
+      ErrorCodeTest.tests,
+      InstantiateTest.tests,
+      OccursTest.tests,
+      SolveTest.tests,
+      UnifyTest.tests,
+      UnionFindTest.tests,
+      CanonicalizeDupsTest.tests,
+      CanonicalizePatternTest.tests,
+      CanonicalizeModuleTest.tests
+    ]
+
+propertyTests :: TestTree
+propertyTests =
+  testGroup
+    "Property Tests"
+    [ UnifyProperties.tests,
+      UnionFindProperties.tests,
+      NameProperties.tests
     ]
 
 integrationTests :: TestTree
@@ -178,7 +220,8 @@ integrationTests =
     "Integration Tests"
     [ CanExtensionIT.tests,
       InitIT.tests,
-      PureBuilderIT.tests
+      PureBuilderIT.tests,
+      EndToEndIT.tests
     ]
 
 goldenTests :: TestTree
