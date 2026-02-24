@@ -37,6 +37,7 @@ import qualified Reporting.Ask as Ask
 import qualified Reporting.Doc as Doc
 import qualified Reporting.Exit as Exit
 import System.IO (hPutStrLn, stdout)
+import qualified Terminal.Output as Output
 
 -- | Reporting style for error output.
 data Style
@@ -119,8 +120,7 @@ buildGenerateJson moduleNames targetPath =
 printGenerationSuccess :: List ModuleName.Raw -> FilePath -> IO ()
 printGenerationSuccess moduleNames targetPath = do
   let count = length (NonEmptyList.toList moduleNames)
-      modulesWord = if count == 1 then "module" else "modules"
-  hPutStrLn stdout ("Success! Compiled " ++ show count ++ " " ++ modulesWord ++ " to " ++ targetPath)
+  hPutStrLn stdout ("Success! Compiled " ++ Output.showCount count "module" ++ " to " ++ targetPath)
 
 -- | Ask user a question.
 ask :: String -> IO Bool

@@ -72,6 +72,7 @@ import qualified System.FSNotify as FSNotify
 import qualified System.IO as IO
 import qualified System.Process as Process
 import qualified Terminal
+import qualified Terminal.Output as Output
 import Text.Read (readMaybe)
 import qualified Stuff
 
@@ -226,8 +227,8 @@ reportNoProject = do
 compileAndRunWithRoot :: FilePath -> [FilePath] -> Flags -> IO ExitCode
 compileAndRunWithRoot root testFiles flags = do
   if flags ^. testVerbose
-    then putStrLn ("Running " ++ show (length testFiles) ++ " test file(s) from " ++ root ++ "...")
-    else putStrLn ("Running " ++ show (length testFiles) ++ " test file(s)...")
+    then putStrLn ("Running " ++ Output.showCount (length testFiles) "test file" ++ " from " ++ root ++ "...")
+    else putStrLn ("Running " ++ Output.showCount (length testFiles) "test file" ++ "...")
   maybeJs <- compileTestFiles root testFiles
   case maybeJs of
     Nothing -> do

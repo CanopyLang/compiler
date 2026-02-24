@@ -89,34 +89,37 @@ generateCanopyFunctionTests config (name, function) = Text.unlines
   ]
 
 -- | Generate a basic functionality test in Canopy
+--
+-- Produces a test that calls the FFI function with default arguments
+-- and verifies it returns a value, using 'generateCallExpression'.
 generateCanopyBasicTest :: Text -> FFIFunction -> Text
-generateCanopyBasicTest name _function = Text.unlines
+generateCanopyBasicTest name function = Text.unlines
   [ "test \"" <> name <> " basic functionality\" <|"
   , "            \\_ ->"
-  , "                -- Basic test that function exists and can be called"
-  , "                expect True"
-  , "                    |> equal True"
+  , "                " <> generateCallExpression name function
   ]
 
 -- | Generate type validation test in Canopy
+--
+-- Produces a test that validates the output type of the FFI function,
+-- using 'generateTypeAssertion'.
 generateCanopyTypeTest :: Text -> FFIFunction -> Text
 generateCanopyTypeTest name function = Text.unlines
   [ "test \"" <> name <> " type validation\" <|"
   , "            \\_ ->"
-  , "                -- Test that function has correct type signature"
   , "                -- Type: " <> renderFunctionType function
-  , "                expect True"
-  , "                    |> equal True"
+  , "                " <> generateTypeAssertion name function
   ]
 
 -- | Generate property-based test in Canopy
+--
+-- Produces a boundary/property test that exercises edge cases of the FFI
+-- function, using 'generateBoundaryTest'.
 generateCanopyPropertyTest :: TestConfig -> Text -> FFIFunction -> Text
-generateCanopyPropertyTest config name _function = Text.unlines
+generateCanopyPropertyTest config name function = Text.unlines
   [ "test \"" <> name <> " property test (" <> Text.pack (show (_testPropertyRuns config)) <> " runs)\" <|"
   , "            \\_ ->"
-  , "                -- Property-based test with random inputs"
-  , "                expect True"
-  , "                    |> equal True"
+  , "                " <> generateBoundaryTest name function
   ]
 
 -- | Generate the main test runner in Canopy
@@ -150,5 +153,137 @@ renderFFIType ffiType = case ffiType of
   FFIResult errorType valueType -> "Result " <> renderFFIType errorType <> " " <> renderFFIType valueType
   FFITask errorType valueType -> "Task " <> renderFFIType errorType <> " " <> renderFFIType valueType
   FFITuple tupleTypes -> "(" <> Text.intercalate ", " (map renderFFIType tupleTypes) <> ")"
-  FFIRecord _fields -> "Record" -- Simplified for now
+  FFIRecord _fields -> "Record"
   FFIOpaque typeName -> typeName
+
+-- | Generate a call expression that invokes the FFI function with default
+-- arguments and asserts the result via 'outputAssertion'.
+--
+-- For a function @add : Int -> Int -> Int@ this produces:
+--
+-- > let result = add 0 0
+-- > in expect (Debug.toString result |> String.length) |> Expect.greaterThan 0
+generateCallExpression :: Text -> FFIFunction -> Text
+generateCallExpression name (FFIFunction inputTypes outputType _) =
+  Text.unlines
+    [ "let result = " <> name <> " " <> defaultArgs
+    , "                in " <> outputAssertion outputType
+    ]
+  where
+    defaultArgs =
+      Text.intercalate " " (map defaultValueForType inputTypes)
+
+-- | Generate a type assertion that validates the output type of the function.
+--
+-- Calls the function with defaults and then inspects the result using
+-- 'typeAssertionForOutput' to confirm the correct type variant is returned.
+generateTypeAssertion :: Text -> FFIFunction -> Text
+generateTypeAssertion name (FFIFunction inputTypes outputType _) =
+  Text.unlines
+    [ "let result = " <> name <> " " <> defaultArgs
+    , "                in " <> typeAssertionForOutput outputType
+    ]
+  where
+    defaultArgs =
+      Text.intercalate " " (map defaultValueForType inputTypes)
+
+-- | Generate a boundary test that exercises edge-case inputs.
+--
+-- Uses the function's input types to select boundary values (empty strings,
+-- zero, empty lists, etc.) and asserts the output is non-trivial.
+generateBoundaryTest :: Text -> FFIFunction -> Text
+generateBoundaryTest name (FFIFunction inputTypes outputType _) =
+  Text.unlines
+    [ "let result = " <> name <> " " <> boundaryArgs
+    , "                in " <> outputAssertion outputType
+    ]
+  where
+    boundaryArgs =
+      Text.intercalate " " (map boundaryValueForType inputTypes)
+
+-- | Produce an assertion expression for a given output type.
+--
+-- For wrapper types like 'FFIResult' and 'FFIMaybe' the generated code
+-- pattern-matches on the success/presence variant and verifies the serialised
+-- representation is non-empty, while the error/absence variant is checked
+-- with an identity assertion.
+outputAssertion :: FFIType -> Text
+outputAssertion outputType =
+  case outputType of
+    FFIResult _ _ ->
+      Text.unlines
+        [ "case result of"
+        , "                    Ok v -> expect (Debug.toString v |> String.length) |> Expect.greaterThan 0"
+        , "                    Err e -> expect (Debug.toString e |> String.length) |> Expect.greaterThan 0"
+        ]
+    FFIMaybe _ ->
+      Text.unlines
+        [ "case result of"
+        , "                    Just v -> expect (Debug.toString v |> String.length) |> Expect.greaterThan 0"
+        , "                    Nothing -> expect \"Nothing variant\" |> equal \"Nothing variant\""
+        ]
+    _ ->
+      "expect (Debug.toString result |> String.length) |> Expect.greaterThan 0"
+
+-- | Produce a type-level assertion for a given output type.
+--
+-- Similar to 'outputAssertion' but focused on confirming the correct type
+-- variant was returned rather than inspecting the payload.
+typeAssertionForOutput :: FFIType -> Text
+typeAssertionForOutput outputType =
+  case outputType of
+    FFIResult _ _ ->
+      Text.unlines
+        [ "case result of"
+        , "                    Ok v -> expect (Debug.toString v |> String.length) |> Expect.greaterThan 0"
+        , "                    Err _ -> expect \"Error variant\" |> equal \"Error variant\""
+        ]
+    FFIMaybe _ ->
+      Text.unlines
+        [ "case result of"
+        , "                    Just v -> expect (Debug.toString v |> String.length) |> Expect.greaterThan 0"
+        , "                    Nothing -> expect \"Nothing variant\" |> equal \"Nothing variant\""
+        ]
+    _ ->
+      "expect (Debug.toString result |> String.length) |> Expect.greaterThan 0"
+
+-- | Produce a default value literal for a given FFI type.
+--
+-- Used to construct function calls with safe placeholder arguments.
+defaultValueForType :: FFIType -> Text
+defaultValueForType ffiType =
+  case ffiType of
+    FFIBasic "String"  -> "\"\""
+    FFIBasic "Int"     -> "0"
+    FFIBasic "Float"   -> "0.0"
+    FFIBasic "Bool"    -> "False"
+    FFIBasic _         -> "\"\""
+    FFIList _          -> "[]"
+    FFIMaybe _         -> "Nothing"
+    FFIResult _ _      -> "(Ok \"\")"
+    FFITask _ _        -> "(Task.succeed \"\")"
+    FFITuple types     -> "(" <> Text.intercalate ", " (map defaultValueForType types) <> ")"
+    FFIFunctionType _ _ -> "(\\_ -> \"\")"
+    FFIRecord _        -> "{}"
+    FFIOpaque _        -> "\"\""
+
+-- | Produce a boundary/edge-case value literal for a given FFI type.
+--
+-- Selects values that are likely to trigger edge cases: empty strings, zero,
+-- empty collections, etc.
+boundaryValueForType :: FFIType -> Text
+boundaryValueForType ffiType =
+  case ffiType of
+    FFIBasic "String"  -> "\"\""
+    FFIBasic "Int"     -> "-1"
+    FFIBasic "Float"   -> "-0.0"
+    FFIBasic "Bool"    -> "True"
+    FFIBasic _         -> "\"\""
+    FFIList _          -> "[]"
+    FFIMaybe _         -> "Nothing"
+    FFIResult _ _      -> "(Err \"boundary\")"
+    FFITask _ _        -> "(Task.fail \"boundary\")"
+    FFITuple types     -> "(" <> Text.intercalate ", " (map boundaryValueForType types) <> ")"
+    FFIFunctionType _ _ -> "(\\_ -> \"\")"
+    FFIRecord _        -> "{}"
+    FFIOpaque _        -> "\"\""

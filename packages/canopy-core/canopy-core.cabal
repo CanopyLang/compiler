@@ -124,6 +124,7 @@ library
       Parse.Variable
       Reporting.Annotation
       Reporting.Doc
+      Reporting.Doc.ColorQQ
       Reporting.Error
       Reporting.Error.Canonicalize
       Reporting.Error.Docs

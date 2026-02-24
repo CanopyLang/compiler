@@ -57,6 +57,7 @@ import qualified Control.Exception as Exception
 import qualified System.FSNotify as FSNotify
 import qualified Terminal
 import Text.Read (readMaybe)
+import qualified Terminal.Output as Output
 
 -- | Configuration for FFI testing
 data FFITestConfig = FFITestConfig
@@ -125,7 +126,7 @@ generateTests config = do
       putStrLn "   Make sure you have foreign import declarations in your Canopy files"
       return (Exit.ExitFailure 1)
     else do
-      putStrLn $ "✅ Found " ++ show (length ffiModules) ++ " FFI modules"
+      putStrLn $ "✅ Found " ++ Output.showCount (length ffiModules) "FFI module"
 
       -- Process each FFI module
       results <- mapM (generateTestsForModule config) ffiModules
@@ -135,8 +136,8 @@ generateTests config = do
 
       putStrLn ""
       putStrLn $ "📊 Test generation complete:"
-      putStrLn $ "  ✅ Generated: " ++ show successes ++ " test files"
-      putStrLn $ "  ❌ Failed: " ++ show failures ++ " test files"
+      putStrLn $ "  ✅ Generated: " ++ Output.showCount successes "test file"
+      putStrLn $ "  ❌ Failed: " ++ Output.showCount failures "test file"
 
       if failures == 0
         then do
@@ -160,7 +161,7 @@ validateContracts _ = do
       putStrLn "❌ No FFI modules found"
       return (Exit.ExitFailure 1)
     else do
-      putStrLn $ "📄 Validating " ++ show (length ffiModules) ++ " FFI modules"
+      putStrLn $ "📄 Validating " ++ Output.showCount (length ffiModules) "FFI module"
 
       -- Validate each module
       results <- mapM validateModule ffiModules
@@ -173,7 +174,7 @@ validateContracts _ = do
           putStrLn "✅ All FFI contracts are valid"
           return Exit.ExitSuccess
         else do
-          putStrLn $ "❌ Found " ++ show violationCount ++ " contract violations:"
+          putStrLn $ "❌ Found " ++ Output.showCount violationCount "contract violation" ++ ":"
           mapM_ putStrLn violations
           return (Exit.ExitFailure violationCount)
 
@@ -277,7 +278,7 @@ generateTestsForModule config modulePath = do
           writeFile outputFile (Text.unpack testSuite)
 
           let functionCount = Map.size ffiFunctions
-          putStrLn $ "  ✅ Generated " ++ show functionCount ++ " tests → " ++ outputFile
+          putStrLn $ "  ✅ Generated " ++ Output.showCount functionCount "test" ++ " → " ++ outputFile
 
           return True
 
@@ -352,7 +353,7 @@ parseJavaScriptFile jsFile = do
                 [ (FFI.jsDocFuncName jsDocFunc, convertJSDocToFFIFunction jsDocFunc)
                 | jsDocFunc <- jsDocFunctions
                 ]
-          putStrLn $ "    ✅ Found " ++ show (Map.size functionMap) ++ " FFI functions"
+          putStrLn $ "    ✅ Found " ++ Output.showCount (Map.size functionMap) "FFI function"
           return (Right functionMap)
 
 -- | Convert JSDocFunction to FFIFunction
@@ -433,13 +434,13 @@ runGeneratedTests config = do
       putStrLn "❌ No test files found to run"
       return (Exit.ExitFailure 1)
     else do
-      putStrLn $ "🧪 Found " ++ show (length testFiles) ++ " test files"
+      putStrLn $ "🧪 Found " ++ Output.showCount (length testFiles) "test file"
       putStrLn "📄 Creating standalone JavaScript test runners..."
 
       -- Create JavaScript test runners directly (bypassing compilation issues)
       jsFiles <- createJavaScriptTestRunners config testFiles
 
-      putStrLn $ "✅ Created " ++ show (length jsFiles) ++ " JavaScript test runners"
+      putStrLn $ "✅ Created " ++ Output.showCount (length jsFiles) "JavaScript test runner"
       putStrLn "🧪 Running tests..."
 
       -- Generate master test runner

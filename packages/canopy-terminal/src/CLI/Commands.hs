@@ -558,6 +558,8 @@ createFmtFlags =
   Terminal.flags Fmt.Flags
     |-- Terminal.onOff "check" "Report which files need formatting and exit non-zero; do not write files."
     |-- Terminal.onOff "stdin" "Read from stdin and write formatted output to stdout."
+    |-- Terminal.flag "indent" createIntParser "Number of spaces per indentation level (default: 4)."
+    |-- Terminal.flag "line-width" createIntParser "Target maximum line width (default: 80)."
 
 createLintFlags :: Terminal.Flags Lint.Flags
 createLintFlags =

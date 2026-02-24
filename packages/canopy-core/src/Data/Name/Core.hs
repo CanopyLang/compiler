@@ -64,7 +64,6 @@ import GHC.Exts
   )
 import GHC.Word (Word8)
 import Prelude hiding (length, maybe, negate)
-import Debug.Trace (trace)
 
 -- NAME
 
@@ -122,13 +121,8 @@ fromPtr =
   Utf8.fromPtr
 
 fromChars :: String -> Name
-fromChars input =
-  let result = Utf8.fromChars input
-      roundtrip = Utf8.toChars result
-      _ = trace ("[DEBUG Name.fromChars] input=" ++ show input ++ " roundtrip=" ++ show roundtrip) ()
-  in if roundtrip /= input
-     then trace ("[BUG FOUND!] Name.fromChars input=" ++ show input ++ " but roundtrip=" ++ show roundtrip) result
-     else result
+fromChars =
+  Utf8.fromChars
 
 -- HAS DOT
 

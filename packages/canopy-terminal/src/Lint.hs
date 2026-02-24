@@ -42,6 +42,12 @@ module Lint
     LintRule (..),
     LintFix (..),
     ReportFormat (..),
+    Severity (..),
+    RuleConfig (..),
+    LintConfig (..),
+
+    -- * Configuration
+    defaultLintConfig,
 
     -- * Parsers
     reportFormatParser,
@@ -53,8 +59,11 @@ import qualified Data.ByteString as BS
 import qualified Data.ByteString.Builder as BB
 import qualified Data.ByteString.Lazy as LBS
 import qualified Data.List as List
+import Data.Map.Strict (Map)
+import qualified Data.Map.Strict as Map
 import Data.Maybe (mapMaybe)
 import qualified Data.Name as Name
+import Data.Ord (Down (..))
 import qualified Data.Set as Set
 import qualified Data.Word as Word
 import qualified Json.Encode as Encode
@@ -81,6 +90,50 @@ data Flags = Flags
   }
   deriving (Eq, Show)
 
+-- | Severity level for lint rules.
+--
+-- Controls how a lint rule violation is reported and whether it blocks
+-- the build.  'Off' disables the rule entirely, 'SevInfo' and 'SevWarning'
+-- are non-blocking, and 'SevError' is treated as a build failure.
+--
+-- @since 0.19.1
+data Severity = Off | SevInfo | SevWarning | SevError
+  deriving (Eq, Ord, Show)
+
+-- | Per-rule configuration specifying the severity at which to report.
+--
+-- @since 0.19.1
+data RuleConfig = RuleConfig
+  { _rcSeverity :: !Severity
+  } deriving (Eq, Show)
+
+-- | Complete lint configuration mapping each rule to its severity.
+--
+-- Rules absent from the map are treated as disabled.
+--
+-- @since 0.19.1
+data LintConfig = LintConfig
+  { _lcRules :: !(Map LintRule RuleConfig)
+  } deriving (Eq, Show)
+
+-- | The default lint configuration with all built-in rules enabled.
+--
+-- Style-oriented rules ('UnnecessaryParens', 'UseConsOverConcat') default
+-- to 'SevInfo'; all others default to 'SevWarning'.
+--
+-- @since 0.19.1
+defaultLintConfig :: LintConfig
+defaultLintConfig = LintConfig
+  { _lcRules = Map.fromList
+      [ (UnusedImport, RuleConfig SevWarning)
+      , (BooleanCase, RuleConfig SevWarning)
+      , (UnnecessaryParens, RuleConfig SevInfo)
+      , (DropConcatOfLists, RuleConfig SevWarning)
+      , (UseConsOverConcat, RuleConfig SevInfo)
+      , (MissingTypeAnnotation, RuleConfig SevWarning)
+      ]
+  }
+
 -- | Output format for lint results.
 --
 -- @since 0.19.1
@@ -102,6 +155,8 @@ data LintWarning = LintWarning
     _warnRegion :: !A.Region,
     -- | Short identifier for the rule (e.g. \"UnusedImport\").
     _warnRule :: !LintRule,
+    -- | Severity at which this warning was reported.
+    _warnSeverity :: !Severity,
     -- | Human-readable description of the issue.
     _warnMessage :: !String,
     -- | Optional auto-fix description.
@@ -158,7 +213,8 @@ data LintFix
 run :: [FilePath] -> Flags -> IO ()
 run paths flags = do
   files <- resolveTargetFiles paths
-  results <- mapM (lintFile flags) files
+  let config = defaultLintConfig
+  results <- mapM (lintFile config flags) files
   let allWarnings = concat results
   case _reportFormat flags of
     Just JsonFormat -> reportJson allWarnings
@@ -199,14 +255,14 @@ isCanopyFile p =
 --
 -- Parse errors are reported as a single synthesised warning so that
 -- the linter can continue processing other files.
-lintFile :: Flags -> FilePath -> IO [LintWarning]
-lintFile flags path = do
+lintFile :: LintConfig -> Flags -> FilePath -> IO [LintWarning]
+lintFile config flags path = do
   source <- BS.readFile path
   case Parse.fromByteString Parse.Application source of
     Left _parseErr ->
       pure [parseErrorWarning path]
     Right modul ->
-      applyFixesIfRequested flags path (lintModule modul)
+      applyFixesIfRequested flags path (lintModule config modul)
 
 -- | Synthesise a warning for an unparseable file.
 parseErrorWarning :: FilePath -> LintWarning
@@ -214,6 +270,7 @@ parseErrorWarning path =
   LintWarning
     { _warnRegion = A.zero,
       _warnRule = MissingTypeAnnotation,
+      _warnSeverity = SevWarning,
       _warnMessage = "Could not parse file: " ++ path,
       _warnFix = Nothing
     }
@@ -228,13 +285,43 @@ applyFixesIfRequested flags path warnings
   | otherwise = pure warnings
 
 -- | Apply all auto-fixable warnings to a file.
+--
+-- Line removals are applied bottom-to-top (descending line order) so that
+-- earlier line numbers remain valid.  Text replacements are applied
+-- afterwards since they operate on string content rather than line indices.
+-- After writing the fixed file, the result is re-parsed to verify validity.
 applyFixes :: FilePath -> [LintWarning] -> IO ()
 applyFixes path warnings = do
   source <- readFile path
-  let fixed = foldl applyOneFix source fixable
+  let (lineRemoves, textReplaces) = partitionFixes (mapMaybe _warnFix warnings)
+      sortedRemoves = List.sortOn (Down . _fixStartLine) lineRemoves
+      afterRemoves = foldl applyOneFix source sortedRemoves
+      fixed = foldl applyOneFix afterRemoves textReplaces
   writeFile path fixed
+  validateFixedFile path source
+
+-- | Partition fixes into line removals and text replacements.
+--
+-- Line removals must be applied in reverse order to preserve line indices;
+-- text replacements are order-independent.
+partitionFixes :: [LintFix] -> ([LintFix], [LintFix])
+partitionFixes = foldr classify ([], [])
   where
-    fixable = mapMaybe _warnFix warnings
+    classify fix@(RemoveLines _ _) (removes, replaces) = (fix : removes, replaces)
+    classify fix@(TextReplace _ _) (removes, replaces) = (removes, fix : replaces)
+
+-- | Re-parse the fixed file to verify it is still valid.
+--
+-- If the fixed file fails to parse, the original content is restored
+-- and a message is printed to stderr.
+validateFixedFile :: FilePath -> String -> IO ()
+validateFixedFile path originalSource = do
+  fixedBytes <- BS.readFile path
+  case Parse.fromByteString Parse.Application fixedBytes of
+    Left _ -> do
+      writeFile path originalSource
+      putStrLn ("Warning: auto-fix produced invalid syntax in " ++ path ++ "; reverted.")
+    Right _ -> pure ()
 
 -- | Apply a single fix to source text.
 applyOneFix :: String -> LintFix -> String
@@ -270,25 +357,48 @@ replaceFirstStep needle replacement (c : rest) =
 
 -- LINT ENGINE
 
--- | Run all lint rules over a parsed module.
+-- | Run all enabled lint rules over a parsed module.
 --
 -- Each rule is independent; results are concatenated in rule order.
+-- The 'LintConfig' controls which rules are active and at what severity.
 --
 -- @since 0.19.1
-lintModule :: Src.Module -> [LintWarning]
-lintModule modul =
-  concatMap ($ modul) allRules
+lintModule :: LintConfig -> Src.Module -> [LintWarning]
+lintModule config modul =
+  concatMap (runRule modul) (enabledRules config)
 
--- | Complete list of all active lint rules.
-allRules :: [Src.Module -> [LintWarning]]
-allRules =
-  [ checkUnusedImport,
-    checkBooleanCase,
-    checkUnnecessaryParens,
-    checkDropConcatOfLists,
-    checkUseConsOverConcat,
-    checkMissingTypeAnnotation
+-- | Execute a single lint rule at the given severity, stamping each
+-- resulting warning with that severity.
+runRule :: Src.Module -> (Severity, Src.Module -> [LintWarning]) -> [LintWarning]
+runRule modul (sev, check) = map (setSeverity sev) (check modul)
+
+-- | Override the severity field of a warning.
+setSeverity :: Severity -> LintWarning -> LintWarning
+setSeverity sev w = w {_warnSeverity = sev}
+
+-- | Registry mapping each rule identifier to its check function.
+--
+-- New rules are registered here to be picked up by the config-driven engine.
+ruleRegistry :: [(LintRule, Src.Module -> [LintWarning])]
+ruleRegistry =
+  [ (UnusedImport, checkUnusedImport),
+    (BooleanCase, checkBooleanCase),
+    (UnnecessaryParens, checkUnnecessaryParens),
+    (DropConcatOfLists, checkDropConcatOfLists),
+    (UseConsOverConcat, checkUseConsOverConcat),
+    (MissingTypeAnnotation, checkMissingTypeAnnotation)
   ]
+
+-- | Filter the rule registry to only those rules that are enabled
+-- (severity greater than 'Off') in the given config.
+enabledRules :: LintConfig -> [(Severity, Src.Module -> [LintWarning])]
+enabledRules config =
+  mapMaybe lookupEnabled ruleRegistry
+  where
+    lookupEnabled (rule, check) =
+      case Map.lookup rule (_lcRules config) of
+        Just (RuleConfig sev) | sev > Off -> Just (sev, check)
+        _ -> Nothing
 
 -- LINT RULES
 
@@ -431,6 +541,7 @@ unusedImportWarning (Src.Import (A.At region modName) _ _) =
   LintWarning
     { _warnRegion = region,
       _warnRule = UnusedImport,
+      _warnSeverity = SevWarning,
       _warnMessage =
         "Import of `" ++ Name.toChars modName ++ "` is never used.",
       _warnFix = Just (RemoveLines startLine endLine)
@@ -474,6 +585,7 @@ isBooleanCase region (Src.Case _ branches)
         LintWarning
           { _warnRegion = region,
             _warnRule = BooleanCase,
+            _warnSeverity = SevWarning,
             _warnMessage =
               "This `case` on a Bool can be rewritten as an `if` expression.",
             _warnFix = Nothing
@@ -562,6 +674,7 @@ unnecessaryParenWarning region _ (Src.Tuple e1 _ [])
         LintWarning
           { _warnRegion = region,
             _warnRule = UnnecessaryParens,
+            _warnSeverity = SevInfo,
             _warnMessage = "Unnecessary parentheses around a simple expression.",
             _warnFix = Nothing
           }
@@ -609,6 +722,7 @@ dropConcatWarning region (Src.Binops pairs _)
         LintWarning
           { _warnRegion = region,
             _warnRule = DropConcatOfLists,
+            _warnSeverity = SevWarning,
             _warnMessage =
               "`[a] ++ [b]` can be simplified to `[a, b]`.",
             _warnFix = Nothing
@@ -657,6 +771,7 @@ useConsWarning region (Src.Binops pairs rhs)
         LintWarning
           { _warnRegion = region,
             _warnRule = UseConsOverConcat,
+            _warnSeverity = SevInfo,
             _warnMessage =
               "`[a] ++ list` can be simplified to `a :: list`.",
             _warnFix = Nothing
@@ -691,6 +806,7 @@ checkAnnotation (Src.Value (A.At region name_) _patterns _body Nothing) =
     LintWarning
       { _warnRegion = region,
         _warnRule = MissingTypeAnnotation,
+        _warnSeverity = SevWarning,
         _warnMessage =
           "Top-level definition `"
             ++ Name.toChars name_
@@ -709,10 +825,10 @@ reportTerminal :: [LintWarning] -> IO ()
 reportTerminal [] = putStrLn "No lint warnings found."
 reportTerminal warnings = mapM_ printWarning warnings
 
--- | Print a single warning in terminal format.
+-- | Print a single warning in terminal format, including its severity.
 printWarning :: LintWarning -> IO ()
 printWarning w = do
-  putStrLn (renderRegion (_warnRegion w) ++ " [" ++ ruleName (_warnRule w) ++ "]")
+  putStrLn (renderRegion (_warnRegion w) ++ " [" ++ severityName (_warnSeverity w) ++ "] [" ++ ruleName (_warnRule w) ++ "]")
   putStrLn ("  " ++ _warnMessage w)
   maybe (pure ()) printFix (_warnFix w)
 
@@ -741,11 +857,12 @@ reportJson warnings =
   LBS.putStr (BB.toLazyByteString (Encode.encode (Encode.list encodeWarning warnings)))
     >> putStrLn ""
 
--- | Encode a single warning as a JSON object.
+-- | Encode a single warning as a JSON object, including its severity.
 encodeWarning :: LintWarning -> Encode.Value
 encodeWarning w =
   Encode.object
     [ (JsonString.fromChars "rule", Encode.string (JsonString.fromChars (ruleName (_warnRule w)))),
+      (JsonString.fromChars "severity", Encode.string (JsonString.fromChars (severityName (_warnSeverity w)))),
       (JsonString.fromChars "message", Encode.string (JsonString.fromChars (_warnMessage w))),
       (JsonString.fromChars "region", encodeRegion (_warnRegion w))
     ]
@@ -766,16 +883,29 @@ encodePosition line col =
       (JsonString.fromChars "column", Encode.int (fromIntegral col))
     ]
 
--- | Print a summary line and exit with a non-zero code when warnings exist.
+-- | Print a summary line.
+--
+-- Only warnings at 'SevError' severity are considered blocking.
+-- Info and warning-level issues are reported but do not cause a
+-- non-zero exit summary.
 reportExitSummary :: [LintWarning] -> IO ()
 reportExitSummary [] = pure ()
 reportExitSummary warnings =
-  putStrLn
-    ( show (length warnings)
-        ++ " warning"
-        ++ (if length warnings == 1 then "" else "s")
-        ++ " found."
-    )
+  putStrLn (summaryLine ++ errorSuffix)
+  where
+    total = length warnings
+    errors = length (filter (\w -> _warnSeverity w == SevError) warnings)
+    summaryLine =
+      show total
+        ++ " issue"
+        ++ (if total == 1 then "" else "s")
+        ++ " found"
+    errorSuffix
+      | errors > 0 =
+          " (" ++ show errors ++ " error"
+            ++ (if errors == 1 then "" else "s")
+            ++ ")."
+      | otherwise = "."
 
 -- | Return the canonical string name for a lint rule.
 ruleName :: LintRule -> String
@@ -785,6 +915,13 @@ ruleName UnnecessaryParens = "UnnecessaryParens"
 ruleName DropConcatOfLists = "DropConcatOfLists"
 ruleName UseConsOverConcat = "UseConsOverConcat"
 ruleName MissingTypeAnnotation = "MissingTypeAnnotation"
+
+-- | Return the human-readable name for a severity level.
+severityName :: Severity -> String
+severityName Off = "off"
+severityName SevInfo = "info"
+severityName SevWarning = "warning"
+severityName SevError = "error"
 
 -- PARSER
 

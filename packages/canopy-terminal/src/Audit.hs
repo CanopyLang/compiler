@@ -28,8 +28,11 @@ import qualified Canopy.Outline as Outline
 import qualified Canopy.Package as Pkg
 import qualified Canopy.Version as V
 import Control.Lens (makeLenses, (^.))
+import qualified Data.ByteString.Builder as BB
+import qualified Data.ByteString.Lazy as LBS
 import Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
+import qualified Json.Encode as Encode
 import qualified Stuff
 import qualified System.IO as IO
 
@@ -165,36 +168,57 @@ reportFindingsTerminal findings =
     printFinding (Finding sev pkg msg) =
       IO.putStrLn (severityPrefix sev ++ " " ++ pkg ++ ": " ++ msg)
 
--- | Report findings in JSON format.
+-- | Report findings in JSON format using the Json.Encode infrastructure.
+--
+-- Produces well-formed, properly escaped JSON output via 'Encode.encodeUgly'.
 reportFindingsJson :: [Finding] -> IO ()
 reportFindingsJson findings =
-  IO.putStrLn ("{\"findings\":" ++ showFindingsJson findings ++ "}")
+  LBS.putStr (BB.toLazyByteString builder) >> putStrLn ""
   where
-    showFindingsJson fs = "[" ++ concatWithComma (map findingToJson fs) ++ "]"
-    findingToJson (Finding sev pkg msg) =
-      "{\"severity\":\"" ++ show sev ++ "\",\"package\":\"" ++ pkg ++ "\",\"message\":\"" ++ escapeJson msg ++ "\"}"
-    concatWithComma = foldr joinComma ""
-    joinComma x "" = x
-    joinComma x acc = x ++ "," ++ acc
-    escapeJson = concatMap escapeChar
-    escapeChar '"' = "\\\""
-    escapeChar '\\' = "\\\\"
-    escapeChar c = [c]
+    builder = Encode.encodeUgly (encodeFindingsPayload findings)
+
+-- | Encode the top-level JSON payload wrapping the findings list.
+encodeFindingsPayload :: [Finding] -> Encode.Value
+encodeFindingsPayload findings =
+  Encode.object
+    [ "findings" Encode.==> Encode.list encodeFinding findings
+    ]
+
+-- | Encode a single 'Finding' as a JSON object.
+encodeFinding :: Finding -> Encode.Value
+encodeFinding (Finding sev pkg msg) =
+  Encode.object
+    [ "severity" Encode.==> Encode.chars (severityLabel sev)
+    , "package" Encode.==> Encode.chars pkg
+    , "message" Encode.==> Encode.chars msg
+    ]
 
 -- | Report summary line.
 reportSummary :: [Finding] -> IO ()
 reportSummary findings = do
-  let critCount = length (filter isCritical findings)
-      warnCount = length (filter isWarning findings)
-      infoCount = length (filter isInfo findings)
   IO.putStrLn ""
-  IO.putStrLn ("Audit complete: " ++ show critCount ++ " critical, " ++ show warnCount ++ " warnings, " ++ show infoCount ++ " info")
+  IO.putStrLn (formatSummary critCount warnCount infoCount)
+  where
+    critCount = length (filter isCritical findings)
+    warnCount = length (filter isWarning findings)
+    infoCount = length (filter isInfo findings)
+
+-- | Format the summary line.
+formatSummary :: Int -> Int -> Int -> String
+formatSummary crits warns infos =
+  "Audit complete: " ++ show crits ++ " critical, " ++ show warns ++ " warnings, " ++ show infos ++ " info"
 
 -- | Severity helpers.
 severityPrefix :: Severity -> String
 severityPrefix Info = "[info]"
 severityPrefix Warning = "[warn]"
 severityPrefix Critical = "[CRITICAL]"
+
+-- | Machine-readable severity label for JSON output.
+severityLabel :: Severity -> String
+severityLabel Info = "info"
+severityLabel Warning = "warning"
+severityLabel Critical = "critical"
 
 isCritical :: Finding -> Bool
 isCritical (Finding Critical _ _) = True

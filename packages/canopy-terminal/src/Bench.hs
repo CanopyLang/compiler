@@ -28,7 +28,10 @@ where
 import qualified Canopy.Details as Details
 import qualified Compiler
 import Control.Lens (makeLenses, (^.))
+import qualified Data.ByteString.Builder as BB
+import qualified Data.ByteString.Lazy as LBS
 import qualified Data.Time.Clock as Clock
+import qualified Json.Encode as Encode
 import qualified Reporting
 import qualified System.Directory as Dir
 import qualified System.FilePath as FP
@@ -54,7 +57,6 @@ data BenchResult = BenchResult
     _brIteration :: !Int
   }
   deriving (Eq, Show)
-
 
 -- | Run the bench command.
 --
@@ -89,8 +91,7 @@ runIteration root flags iter = do
   start <- Clock.getCurrentTime
   compileProject root
   end <- Clock.getCurrentTime
-  let elapsed = realToFrac (Clock.diffUTCTime end start) :: Double
-  pure (BenchResult elapsed iter)
+  pure (BenchResult (realToFrac (Clock.diffUTCTime end start)) iter)
   where
     when True action = action
     when False _ = pure ()
@@ -159,33 +160,46 @@ reportResults flags results =
 -- | Report results in terminal format.
 reportResultsTerminal :: [BenchResult] -> IO ()
 reportResultsTerminal results = do
-  let times = map _brTotal results
-      avg = sum times / fromIntegral (length times)
-      minTime = minimum times
-      maxTime = maximum times
   IO.putStrLn "Results:"
   IO.putStrLn ("  Iterations: " ++ show (length results))
   IO.putStrLn ("  Average:    " ++ formatTime avg)
   IO.putStrLn ("  Min:        " ++ formatTime minTime)
   IO.putStrLn ("  Max:        " ++ formatTime maxTime)
   mapM_ reportIteration results
+  where
+    times = map _brTotal results
+    avg = sum times / fromIntegral (length times)
+    minTime = minimum times
+    maxTime = maximum times
 
 -- | Report a single iteration.
 reportIteration :: BenchResult -> IO ()
 reportIteration result =
   IO.putStrLn ("  Run " ++ show (_brIteration result) ++ ":      " ++ formatTime (_brTotal result))
 
--- | Report results in JSON format.
+-- | Report results in JSON format using the Json.Encode infrastructure.
+--
+-- Produces well-formed, properly escaped JSON output via 'Encode.encodeUgly'.
 reportResultsJson :: [BenchResult] -> IO ()
-reportResultsJson results = do
-  let times = map _brTotal results
-      avg = sum times / fromIntegral (length times)
-  IO.putStrLn ("{\"iterations\":" ++ show (length results) ++ ",\"average_ms\":" ++ show (avg * 1000) ++ ",\"runs\":[" ++ runsJson results ++ "]}")
+reportResultsJson results =
+  LBS.putStr (BB.toLazyByteString builder) >> putStrLn ""
   where
-    runsJson rs = foldr joinComma "" (map runJson rs)
-    runJson r = show (_brTotal r * 1000)
-    joinComma x "" = x
-    joinComma x acc = x ++ "," ++ acc
+    builder = Encode.encodeUgly (encodeResultsPayload results)
+
+-- | Encode the complete benchmark results payload.
+encodeResultsPayload :: [BenchResult] -> Encode.Value
+encodeResultsPayload results =
+  Encode.object
+    [ "iterations" Encode.==> Encode.int (length results)
+    , "average_ms" Encode.==> Encode.int (round (avg * 1000))
+    , "runs" Encode.==> Encode.list encodeRunMs results
+    ]
+  where
+    avg = sum (map _brTotal results) / fromIntegral (length results)
+
+-- | Encode a single benchmark run's time as integer milliseconds.
+encodeRunMs :: BenchResult -> Encode.Value
+encodeRunMs result = Encode.int (round (_brTotal result * 1000))
 
 -- | Format a time value in human-readable form.
 formatTime :: Double -> String

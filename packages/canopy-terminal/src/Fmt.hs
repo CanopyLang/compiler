@@ -17,6 +17,8 @@
 -- canopy fmt                        -- format every .can file under src\/
 -- canopy fmt --check src\/Main.can  -- CI mode: fail if file is not formatted
 -- canopy fmt --stdin < src\/Foo.can -- pipe mode
+-- canopy fmt --indent=2             -- use 2-space indentation
+-- canopy fmt --line-width=100       -- target 100-column lines
 -- @
 --
 -- == Architecture
@@ -37,8 +39,10 @@ where
 
 import qualified Data.ByteString as BS
 import qualified Data.List as List
+import qualified Data.Maybe as Maybe
 import qualified Data.Text as Text
 import qualified Data.Text.Encoding as Text
+import Format (FormatConfig (..))
 import qualified Format
 import qualified System.Directory as Dir
 import qualified System.Exit as Exit
@@ -62,8 +66,25 @@ data Flags = Flags
   , _stdin :: !Bool
   -- ^ When 'True', read source from stdin and write formatted output to
   -- stdout; ignore any file-path arguments.
+  , _indent :: !(Maybe Int)
+  -- ^ Number of spaces per indentation level. Defaults to 4 when 'Nothing'.
+  , _lineWidth :: !(Maybe Int)
+  -- ^ Target maximum line width. Defaults to 80 when 'Nothing'.
   }
   deriving (Eq, Show)
+
+-- ---------------------------------------------------------------------------
+-- Configuration
+-- ---------------------------------------------------------------------------
+
+-- | Build a 'FormatConfig' from the CLI flags, using sensible defaults.
+--
+-- @since 0.19.1
+buildConfig :: Flags -> FormatConfig
+buildConfig flags = FormatConfig
+  { _fmtIndent = Maybe.fromMaybe 4 (_indent flags)
+  , _fmtLineWidth = Maybe.fromMaybe 80 (_lineWidth flags)
+  }
 
 -- ---------------------------------------------------------------------------
 -- Entry point
@@ -77,9 +98,11 @@ data Flags = Flags
 -- @since 0.19.1
 run :: [FilePath] -> Flags -> IO ()
 run paths flags
-  | _stdin flags = runStdin
-  | _check flags = runCheckMode paths
-  | otherwise = runFormatMode paths
+  | _stdin flags = runStdin config
+  | _check flags = runCheckMode config paths
+  | otherwise = runFormatMode config paths
+  where
+    config = buildConfig flags
 
 -- ---------------------------------------------------------------------------
 -- Stdin mode
@@ -89,14 +112,15 @@ run paths flags
 --
 -- Reports a parse error to stderr and exits non-zero when the input is
 -- syntactically invalid.
-runStdin :: IO ()
-runStdin = do
+runStdin :: FormatConfig -> IO ()
+runStdin config = do
   bytes <- BS.getContents
-  case Format.formatBytes bytes of
-    Left err -> do
+  either reportParseError writeFormatted (Format.formatBytes config bytes)
+  where
+    reportParseError err = do
       IO.hPutStrLn IO.stderr ("canopy fmt: parse error: " ++ show err)
       Exit.exitWith (Exit.ExitFailure 1)
-    Right formatted ->
+    writeFormatted formatted =
       BS.putStr (Text.encodeUtf8 formatted)
 
 -- ---------------------------------------------------------------------------
@@ -106,12 +130,11 @@ runStdin = do
 -- | Check whether any file needs formatting; exit non-zero if so.
 --
 -- Does not modify any files. Reports each file that would change to stderr.
-runCheckMode :: [FilePath] -> IO ()
-runCheckMode paths = do
+runCheckMode :: FormatConfig -> [FilePath] -> IO ()
+runCheckMode config paths = do
   targets <- resolveTargets paths
-  results <- mapM checkFile targets
-  let unformatted = [p | (p, NeedsFormatting) <- results]
-  reportCheckResults unformatted
+  results <- mapM (checkFile config) targets
+  reportCheckResults [p | (p, NeedsFormatting) <- results]
 
 -- | Report check results and exit appropriately.
 reportCheckResults :: [FilePath] -> IO ()
@@ -126,20 +149,17 @@ data CheckResult = AlreadyFormatted | NeedsFormatting
   deriving (Eq)
 
 -- | Determine whether a single file is already formatted.
-checkFile :: FilePath -> IO (FilePath, CheckResult)
-checkFile path = do
+checkFile :: FormatConfig -> FilePath -> IO (FilePath, CheckResult)
+checkFile config path = do
   original <- BS.readFile path
-  case Format.formatBytes original of
-    Left _ -> pure (path, AlreadyFormatted)
-    Right formatted ->
-      pure (path, classifyChange original formatted)
+  pure (path, classifyResult original (Format.formatBytes config original))
 
 -- | Classify whether formatted output differs from the original.
-classifyChange :: BS.ByteString -> Text.Text -> CheckResult
-classifyChange original formatted =
-  if original == Text.encodeUtf8 formatted
-    then AlreadyFormatted
-    else NeedsFormatting
+classifyResult :: BS.ByteString -> Either e Text.Text -> CheckResult
+classifyResult _ (Left _) = AlreadyFormatted
+classifyResult original (Right formatted)
+  | original == Text.encodeUtf8 formatted = AlreadyFormatted
+  | otherwise = NeedsFormatting
 
 -- ---------------------------------------------------------------------------
 -- Format mode
@@ -148,21 +168,21 @@ classifyChange original formatted =
 -- | Format files in-place.
 --
 -- Reports parse errors to stderr but continues processing remaining files.
-runFormatMode :: [FilePath] -> IO ()
-runFormatMode paths = do
+runFormatMode :: FormatConfig -> [FilePath] -> IO ()
+runFormatMode config paths = do
   targets <- resolveTargets paths
-  mapM_ formatFileInPlace targets
+  mapM_ (formatFileInPlace config) targets
 
 -- | Format a single file in-place, writing back only when the output differs.
-formatFileInPlace :: FilePath -> IO ()
-formatFileInPlace path = do
+formatFileInPlace :: FormatConfig -> FilePath -> IO ()
+formatFileInPlace config path = do
   original <- BS.readFile path
-  case Format.formatBytes original of
-    Left err ->
-      IO.hPutStrLn IO.stderr ("canopy fmt: " ++ path ++ ": " ++ show err)
-    Right formatted -> do
-      let formattedBytes = Text.encodeUtf8 formatted
-      writeWhenChanged path original formattedBytes
+  either (reportError path) (writeIfChanged path original) (Format.formatBytes config original)
+  where
+    reportError p err =
+      IO.hPutStrLn IO.stderr ("canopy fmt: " ++ p ++ ": " ++ show err)
+    writeIfChanged p orig formatted =
+      writeWhenChanged p orig (Text.encodeUtf8 formatted)
 
 -- | Write new content only if it differs from the current file content.
 writeWhenChanged :: FilePath -> BS.ByteString -> BS.ByteString -> IO ()

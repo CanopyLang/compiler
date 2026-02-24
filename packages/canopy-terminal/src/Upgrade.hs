@@ -33,6 +33,7 @@ import qualified System.Directory as Dir
 import System.FilePath ((</>))
 import qualified System.FilePath as FilePath
 import qualified System.IO as IO
+import qualified Terminal.Output as Output
 
 -- | Upgrade command flags.
 data Flags = Flags
@@ -149,10 +150,10 @@ createRenameAction path
 -- | Execute all migration actions.
 executeMigration :: Flags -> [MigrationAction] -> IO ()
 executeMigration flags actions = do
-  IO.putStrLn ("Found " ++ show (length actions) ++ " changes to make:")
+  IO.putStrLn ("Found " ++ Output.showCount (length actions) "change" ++ " to make:")
   IO.putStrLn ""
   mapM_ reportAction actions
-  verboseLog flags ("Processing " ++ show (length actions) ++ " migration actions")
+  verboseLog flags ("Processing " ++ Output.showCount (length actions) "migration action")
   if flags ^. dryRun
     then reportDryRun
     else applyActions actions
@@ -178,7 +179,7 @@ applyActions :: [MigrationAction] -> IO ()
 applyActions actions = do
   mapM_ applyAction actions
   IO.putStrLn ""
-  IO.putStrLn ("Successfully applied " ++ show (length actions) ++ " changes.")
+  IO.putStrLn ("Successfully applied " ++ Output.showCount (length actions) "change" ++ ".")
 
 -- | Apply a single migration action.
 applyAction :: MigrationAction -> IO ()

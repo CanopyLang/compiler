@@ -26,6 +26,12 @@ module Reporting.Doc
     P.dullred,
     P.dullcyan,
     P.dullyellow,
+    P.dullgreen,
+    P.dullblue,
+    P.dullmagenta,
+    P.bold,
+    P.underline,
+    P.white,
     --
     fromChars,
     fromName,

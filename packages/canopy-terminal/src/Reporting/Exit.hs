@@ -78,6 +78,7 @@ module Reporting.Exit
   )
 where
 
+import qualified Data.List as List
 import qualified Exit as BuildExit
 import qualified Reporting.Doc as Doc
 import System.IO (hPutStrLn, stderr)
@@ -333,9 +334,9 @@ initToReport err = case err of
   InitSolverProblem msg ->
     Doc.fromChars ("SOLVER ERROR: " ++ msg)
   InitNoSolution pkgs ->
-    Doc.fromChars ("ERROR: No dependency solution found for packages: " ++ show pkgs)
+    Doc.fromChars ("ERROR: No dependency solution found for packages: " ++ List.intercalate ", " pkgs)
   InitNoOfflineSolution pkgs ->
-    Doc.fromChars ("ERROR: No offline solution found for packages: " ++ show pkgs)
+    Doc.fromChars ("ERROR: No offline solution found for packages: " ++ List.intercalate ", " pkgs)
   InitCannotCreateDirectory path ->
     Doc.fromChars ("ERROR: Cannot create directory: " ++ path)
   InitCannotWriteFile path ->
@@ -399,7 +400,7 @@ publishToReport err = case err of
   PublishWithNoRepositoryLocalName ->
     Doc.fromChars "ERROR: Must specify repository local name for publishing"
   PublishUsingRepositoryLocalNameThatDoesntExistInCustomRepositoryConfig name suggestions ->
-    Doc.fromChars ("ERROR: Repository '" ++ name ++ "' not found. Available: " ++ show suggestions)
+    Doc.fromChars ("ERROR: Repository '" ++ name ++ "' not found. Available: " ++ List.intercalate ", " suggestions)
   PublishToStandardCanopyRepositoryUsingCanopy ->
     Doc.fromChars "ERROR: Use 'elm publish' to publish to standard Canopy repository"
 
@@ -417,7 +418,7 @@ diffToReport err = case err of
   DiffMustHaveLatestRegistry ->
     Doc.fromChars "ERROR: Must have latest registry"
   DiffUnknownPackage pkg suggestions ->
-    Doc.fromChars ("ERROR: Unknown package '" ++ pkg ++ "'. Suggestions: " ++ show suggestions)
+    Doc.fromChars ("ERROR: Unknown package '" ++ pkg ++ "'. Suggestions: " ++ List.intercalate ", " suggestions)
   DiffUnknownVersion msg ->
     Doc.fromChars ("ERROR: Unknown version: " ++ msg)
   DiffDocsProblem msg ->
@@ -439,7 +440,7 @@ bumpToReport err = case err of
   BumpApplication ->
     Doc.fromChars "ERROR: Cannot bump applications, only packages"
   BumpUnexpectedVersion current suggestions ->
-    Doc.fromChars ("ERROR: Unexpected version '" ++ current ++ "'. Expected: " ++ show suggestions)
+    Doc.fromChars ("ERROR: Unexpected version '" ++ current ++ "'. Expected: " ++ List.intercalate ", " suggestions)
   BumpCustomRepositoryDataProblem ->
     Doc.fromChars "ERROR: Custom repository data problem"
   BumpMustHaveLatestRegistry ->
@@ -467,9 +468,9 @@ installToReport err = case err of
   InstallBadDetails path ->
     Doc.fromChars ("ERROR: Cannot load project details from " ++ path)
   InstallUnknownPackageOnline pkg suggestions ->
-    Doc.fromChars ("ERROR: Unknown package '" ++ pkg ++ "'. Suggestions: " ++ show suggestions)
+    Doc.fromChars ("ERROR: Unknown package '" ++ pkg ++ "'. Suggestions: " ++ List.intercalate ", " suggestions)
   InstallUnknownPackageOffline pkg suggestions ->
-    Doc.fromChars ("ERROR: Unknown package '" ++ pkg ++ "' (offline). Suggestions: " ++ show suggestions)
+    Doc.fromChars ("ERROR: Unknown package '" ++ pkg ++ "' (offline). Suggestions: " ++ List.intercalate ", " suggestions)
   InstallNoOnlinePkgSolution pkg ->
     Doc.fromChars ("ERROR: No dependency solution found for package: " ++ pkg)
   InstallNoOfflinePkgSolution pkg ->
