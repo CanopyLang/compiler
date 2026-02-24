@@ -9,7 +9,7 @@ module Reporting.Error.Canonicalize
     DuplicatePatternContext (..),
     PossibleNames (..),
     VarKind (..),
-    toReport,
+    toDiagnostic,
   )
 where
 
@@ -30,6 +30,10 @@ import qualified Reporting.Render.Code as Code
 import qualified Reporting.Render.Type as RT
 import qualified Reporting.Report as Report
 import qualified Reporting.Suggest as Suggest
+import qualified Data.Text as Text
+import Reporting.Diagnostic (Diagnostic, LabeledSpan (..), SpanStyle (..), Suggestion (..), Confidence (..))
+import qualified Reporting.Diagnostic as Diag
+import qualified Reporting.ErrorCode as EC
 
 -- CANONICALIZATION ERRORS
 
@@ -858,6 +862,674 @@ toReport source err =
           ( D.reflow ("Circular dependency detected in FFI file: " <> filePath)
           , D.reflow ("Dependency chain: " <> show deps)
           )
+
+-- TO DIAGNOSTIC
+
+-- | Convert a canonicalization error to a structured 'Diagnostic'.
+--
+-- Error code mapping (E03xx range):
+--
+-- @
+-- AnnotationTooShort       -> E0300
+-- AmbiguousVar             -> E0301
+-- AmbiguousType            -> E0302
+-- AmbiguousVariant         -> E0303
+-- AmbiguousBinop           -> E0304
+-- BadArity                 -> E0305
+-- Binop                    -> E0306
+-- DuplicateDecl            -> E0307
+-- DuplicateType            -> E0308
+-- DuplicateCtor            -> E0309
+-- DuplicateBinop           -> E0310
+-- DuplicateField           -> E0311
+-- DuplicateAliasArg        -> E0312
+-- DuplicateUnionArg        -> E0313
+-- DuplicatePattern         -> E0314
+-- EffectNotFound           -> E0315
+-- EffectFunctionNotFound   -> E0316
+-- ExportDuplicate          -> E0317
+-- ExportNotFound           -> E0318
+-- ExportOpenAlias          -> E0319
+-- ImportCtorByName         -> E0320
+-- ImportNotFound           -> E0321
+-- ImportOpenAlias          -> E0322
+-- ImportExposingNotFound   -> E0323
+-- NotFoundVar              -> E0324
+-- NotFoundType             -> E0325
+-- NotFoundVariant          -> E0326
+-- NotFoundBinop            -> E0327
+-- PatternHasRecordCtor     -> E0328
+-- PortPayloadInvalid       -> E0329
+-- PortTypeInvalid          -> E0330
+-- RecursiveAlias           -> E0331
+-- RecursiveDecl            -> E0332
+-- RecursiveLet             -> E0333
+-- Shadowing                -> E0334
+-- TupleLargerThanThree     -> E0335
+-- TypeVarsUnboundInUnion   -> E0336
+-- TypeVarsMessedUpInAlias  -> E0337
+-- FFIFileNotFound          -> E0338
+-- FFIFileTimeout           -> E0339
+-- FFIParseError            -> E0340
+-- FFIInvalidType           -> E0341
+-- FFIMissingAnnotation     -> E0342
+-- FFICircularDependency    -> E0343
+-- @
+toDiagnostic :: Code.Source -> Error -> Diagnostic
+toDiagnostic source err =
+  case err of
+    AnnotationTooShort region name index leftovers ->
+      annotationTooShortDiagnostic source region name index leftovers
+    AmbiguousVar region maybePrefix name h hs ->
+      ambiguousNameDiagnostic source region maybePrefix name h hs "variable" (EC.canonError 1)
+    AmbiguousType region maybePrefix name h hs ->
+      ambiguousNameDiagnostic source region maybePrefix name h hs "type" (EC.canonError 2)
+    AmbiguousVariant region maybePrefix name h hs ->
+      ambiguousNameDiagnostic source region maybePrefix name h hs "variant" (EC.canonError 3)
+    AmbiguousBinop region name h hs ->
+      ambiguousNameDiagnostic source region Nothing name h hs "operator" (EC.canonError 4)
+    BadArity region badArityContext name expected actual ->
+      badArityDiagnostic source region badArityContext name expected actual
+    Binop region op1 op2 ->
+      binopDiagnostic source region op1 op2
+    DuplicateDecl name r1 r2 ->
+      nameClashDiagnostic source r1 r2 (EC.canonError 7) ("This file has multiple `" <> Name.toChars name <> "` declarations.")
+    DuplicateType name r1 r2 ->
+      nameClashDiagnostic source r1 r2 (EC.canonError 8) ("This file defines multiple `" <> Name.toChars name <> "` types.")
+    DuplicateCtor name r1 r2 ->
+      nameClashDiagnostic source r1 r2 (EC.canonError 9) ("This file defines multiple `" <> Name.toChars name <> "` type constructors.")
+    DuplicateBinop name r1 r2 ->
+      nameClashDiagnostic source r1 r2 (EC.canonError 10) ("This file defines multiple (" <> Name.toChars name <> ") operators.")
+    DuplicateField name r1 r2 ->
+      nameClashDiagnostic source r1 r2 (EC.canonError 11) ("This record has multiple `" <> Name.toChars name <> "` fields.")
+    DuplicateAliasArg typeName name r1 r2 ->
+      nameClashDiagnostic source r1 r2 (EC.canonError 12) ("The `" <> Name.toChars typeName <> "` type alias has multiple `" <> Name.toChars name <> "` type variables.")
+    DuplicateUnionArg typeName name r1 r2 ->
+      nameClashDiagnostic source r1 r2 (EC.canonError 13) ("The `" <> Name.toChars typeName <> "` type has multiple `" <> Name.toChars name <> "` type variables.")
+    DuplicatePattern context name r1 r2 ->
+      nameClashDiagnostic source r1 r2 (EC.canonError 14) (duplicatePatternMessage context name)
+    EffectNotFound region name ->
+      effectNotFoundDiagnostic source region name
+    EffectFunctionNotFound region name ->
+      effectFunctionNotFoundDiagnostic source region name
+    ExportDuplicate name r1 r2 ->
+      exportDuplicateDiagnostic source name r1 r2
+    ExportNotFound region kind rawName possibleNames ->
+      exportNotFoundDiagnostic source region kind rawName possibleNames
+    ExportOpenAlias region name ->
+      exportOpenAliasDiagnostic source region name
+    ImportCtorByName region ctor tipe ->
+      importCtorByNameDiagnostic source region ctor tipe
+    ImportNotFound region name _ ->
+      importNotFoundDiagnostic source region name
+    ImportOpenAlias region name ->
+      importOpenAliasDiagnostic source region name
+    ImportExposingNotFound region home value possibleNames ->
+      importExposingNotFoundDiagnostic source region home value possibleNames
+    NotFoundVar region prefix name possibleNames ->
+      notFoundDiagnostic source region prefix name "variable" possibleNames (EC.canonError 24)
+    NotFoundType region prefix name possibleNames ->
+      notFoundDiagnostic source region prefix name "type" possibleNames (EC.canonError 25)
+    NotFoundVariant region prefix name possibleNames ->
+      notFoundDiagnostic source region prefix name "variant" possibleNames (EC.canonError 26)
+    NotFoundBinop region op locals ->
+      notFoundBinopDiagnostic source region op locals
+    PatternHasRecordCtor region name ->
+      patternHasRecordCtorDiagnostic source region name
+    PortPayloadInvalid region portName _badType invalidPayload ->
+      portPayloadInvalidDiagnostic source region portName invalidPayload
+    PortTypeInvalid region name portProblem ->
+      portTypeInvalidDiagnostic source region name portProblem
+    RecursiveAlias region name args tipe others ->
+      recursiveAliasDiagnostic source region name args tipe others
+    RecursiveDecl region name names ->
+      recursiveDeclDiagnostic source region name names
+    RecursiveLet (A.At region name) names ->
+      recursiveLetDiagnostic source region name names
+    Shadowing name r1 r2 ->
+      shadowingDiagnostic source name r1 r2
+    TupleLargerThanThree region ->
+      tupleLargerThanThreeDiagnostic source region
+    TypeVarsUnboundInUnion unionRegion typeName allVars unbound unbounds ->
+      typeVarsUnboundInUnionDiagnostic source unionRegion typeName allVars unbound unbounds
+    TypeVarsMessedUpInAlias aliasRegion typeName allVars unusedVars unboundVars ->
+      typeVarsMessedUpInAliasDiagnostic source aliasRegion typeName allVars unusedVars unboundVars
+    FFIFileNotFound region filePath ->
+      ffiFileNotFoundDiagnostic source region filePath
+    FFIFileTimeout region filePath timeout ->
+      ffiFileTimeoutDiagnostic source region filePath timeout
+    FFIParseError region filePath parseErr ->
+      ffiParseErrorDiagnostic source region filePath parseErr
+    FFIInvalidType region filePath typeName typeErr ->
+      ffiInvalidTypeDiagnostic source region filePath typeName typeErr
+    FFIMissingAnnotation region filePath funcName ->
+      ffiMissingAnnotationDiagnostic source region filePath funcName
+    FFICircularDependency region filePath deps ->
+      ffiCircularDependencyDiagnostic source region filePath deps
+
+-- | Extract the message 'D.Doc' from a 'Report.Report'.
+--
+-- Allows diagnostic helpers to reuse the message-building logic already
+-- present in 'toReport' without duplicating complex Doc construction.
+extractReportMessage :: Report.Report -> D.Doc
+extractReportMessage (Report.Report _ _ _ msg) = msg
+
+-- | Build a diagnostic for a type annotation argument count mismatch.
+annotationTooShortDiagnostic :: Code.Source -> A.Region -> Name.Name -> Index.ZeroBased -> Int -> Diagnostic
+annotationTooShortDiagnostic source region name index leftovers =
+  Diag.makeDiagnostic
+    (EC.canonError 0)
+    Diag.SError
+    Diag.PhaseCanon
+    "BAD TYPE ANNOTATION"
+    (Text.pack ("Type annotation for `" <> Name.toChars name <> "` has too few arguments"))
+    (LabeledSpan region "annotation argument count mismatch" SpanPrimary)
+    (Code.toSnippet source region Nothing (annotationTooShortMessage name numTypeArgs numDefArgs, annotationTooShortHint leftovers))
+  where
+    numTypeArgs = Index.toMachine index
+    numDefArgs = numTypeArgs + leftovers
+
+-- | Format the primary message for an annotation-too-short error.
+annotationTooShortMessage :: Name.Name -> Int -> Int -> D.Doc
+annotationTooShortMessage name numTypeArgs numDefArgs =
+  D.reflow ("The type annotation for `" <> Name.toChars name <> "` says it can accept " <> D.args numTypeArgs <> ", but the definition says it has " <> D.args numDefArgs <> ":")
+
+-- | Format the hint for an annotation-too-short error.
+annotationTooShortHint :: Int -> D.Doc
+annotationTooShortHint leftovers =
+  D.reflow ("Is the type annotation missing something? Should some argument" <> (if leftovers == 1 then "" else "s") <> " be deleted? Maybe some parentheses are missing?")
+
+-- | Build a diagnostic for an ambiguous name (variable, type, variant, or operator).
+--
+-- Delegates the complex message Doc to the existing 'ambiguousName' helper.
+ambiguousNameDiagnostic :: Code.Source -> A.Region -> Maybe Name.Name -> Name.Name -> ModuleName.Canonical -> OneOrMore.OneOrMore ModuleName.Canonical -> String -> Diag.ErrorCode -> Diagnostic
+ambiguousNameDiagnostic source region maybePrefix name h hs thing code =
+  Diag.makeDiagnostic
+    code
+    Diag.SError
+    Diag.PhaseCanon
+    "AMBIGUOUS NAME"
+    (Text.pack ("Ambiguous " <> thing <> " `" <> Name.toChars name <> "`"))
+    (LabeledSpan region (Text.pack ("ambiguous " <> thing)) SpanPrimary)
+    (extractReportMessage (ambiguousName source region maybePrefix name h hs thing))
+
+-- | Build a diagnostic for an arity mismatch (too few or too many arguments).
+badArityDiagnostic :: Code.Source -> A.Region -> BadArityContext -> Name.Name -> Int -> Int -> Diagnostic
+badArityDiagnostic source region badArityContext name expected actual =
+  Diag.makeDiagnostic
+    (EC.canonError 5)
+    Diag.SError
+    Diag.PhaseCanon
+    (if actual < expected then "TOO FEW ARGS" else "TOO MANY ARGS")
+    (Text.pack (badArityContextThing badArityContext <> " `" <> Name.toChars name <> "` given wrong number of arguments"))
+    (LabeledSpan region "wrong number of arguments" SpanPrimary)
+    (badArityMessage source region badArityContext name expected actual)
+
+-- | Produce the kind label for a 'BadArityContext'.
+badArityContextThing :: BadArityContext -> String
+badArityContextThing badArityContext =
+  case badArityContext of
+    TypeArity -> "Type"
+    PatternArity -> "Variant"
+
+-- | Build the message Doc for a bad-arity error.
+badArityMessage :: Code.Source -> A.Region -> BadArityContext -> Name.Name -> Int -> Int -> D.Doc
+badArityMessage source region badArityContext name expected actual =
+  let thing = case badArityContext of
+                TypeArity -> "type"
+                PatternArity -> "variant"
+      base = D.reflow ("The `" <> Name.toChars name <> "` " <> thing <> " needs " <> D.args expected <> ", but I see " <> show actual <> " instead:")
+  in if actual < expected
+    then Code.toSnippet source region Nothing (base, D.reflow "What is missing? Are some parentheses misplaced?")
+    else Code.toSnippet source region Nothing (base, if actual - expected == 1 then "Which is the extra one? Maybe some parentheses are missing?" else "Which are the extra ones? Maybe some parentheses are missing?")
+
+-- | Build a diagnostic for mixed infix operators without parentheses.
+binopDiagnostic :: Code.Source -> A.Region -> Name.Name -> Name.Name -> Diagnostic
+binopDiagnostic source region op1 op2 =
+  Diag.makeDiagnostic
+    (EC.canonError 6)
+    Diag.SError
+    Diag.PhaseCanon
+    "INFIX PROBLEM"
+    (Text.pack ("Cannot mix (" <> Name.toChars op1 <> ") and (" <> Name.toChars op2 <> ") without parentheses"))
+    (LabeledSpan region "mixed operators" SpanPrimary)
+    (Code.toSnippet source region Nothing (D.reflow ("You cannot mix (" <> Name.toChars op1 <> ") and (" <> Name.toChars op2 <> ") without parentheses."), D.reflow "I do not know how to group these expressions. Add parentheses for me!"))
+
+-- | Build a diagnostic for a name clash (duplicate declaration, type, ctor, etc.).
+--
+-- Delegates the message Doc to the existing 'nameClash' helper.
+nameClashDiagnostic :: Code.Source -> A.Region -> A.Region -> Diag.ErrorCode -> String -> Diagnostic
+nameClashDiagnostic source r1 r2 code message =
+  Diag.makeDiagnostic
+    code
+    Diag.SError
+    Diag.PhaseCanon
+    "NAME CLASH"
+    (Text.pack message)
+    (LabeledSpan r2 "duplicate definition" SpanPrimary)
+    (extractReportMessage (nameClash source r1 r2 message))
+
+-- | Produce the clash message for a duplicate pattern variable.
+duplicatePatternMessage :: DuplicatePatternContext -> Name.Name -> String
+duplicatePatternMessage context name =
+  case context of
+    DPLambdaArgs -> "This anonymous function has multiple `" <> Name.toChars name <> "` arguments."
+    DPFuncArgs funcName -> "The `" <> Name.toChars funcName <> "` function has multiple `" <> Name.toChars name <> "` arguments."
+    DPCaseBranch -> "This `case` pattern has multiple `" <> Name.toChars name <> "` variables."
+    DPLetBinding -> "This `let` expression defines `" <> Name.toChars name <> "` more than once!"
+    DPDestruct -> "This pattern contains multiple `" <> Name.toChars name <> "` variables."
+
+-- | Build a diagnostic for a missing effect type declaration.
+effectNotFoundDiagnostic :: Code.Source -> A.Region -> Name.Name -> Diagnostic
+effectNotFoundDiagnostic source region name =
+  Diag.makeDiagnostic
+    (EC.canonError 15)
+    Diag.SError
+    Diag.PhaseCanon
+    "EFFECT PROBLEM"
+    (Text.pack ("Effect type `" <> Name.toChars name <> "` not found in this file"))
+    (LabeledSpan region "effect type not found" SpanPrimary)
+    (Code.toSnippet source region Nothing (D.reflow ("You have declared that `" <> (Name.toChars name <> "` is an effect type:")), D.reflow ("But I cannot find a custom type named `" <> (Name.toChars name <> "` in this file!"))))
+
+-- | Build a diagnostic for a missing effect function declaration.
+effectFunctionNotFoundDiagnostic :: Code.Source -> A.Region -> Name.Name -> Diagnostic
+effectFunctionNotFoundDiagnostic source region name =
+  Diag.makeDiagnostic
+    (EC.canonError 16)
+    Diag.SError
+    Diag.PhaseCanon
+    "EFFECT PROBLEM"
+    (Text.pack ("Effect function `" <> Name.toChars name <> "` not defined in this file"))
+    (LabeledSpan region "effect function not found" SpanPrimary)
+    (Code.toSnippet source region Nothing (D.reflow ("This kind of effect module must define a `" <> (Name.toChars name <> "` function.")), D.reflow ("But I cannot find `" <> (Name.toChars name <> "` in this file!"))))
+
+-- | Build a diagnostic for a duplicated export.
+exportDuplicateDiagnostic :: Code.Source -> Name.Name -> A.Region -> A.Region -> Diagnostic
+exportDuplicateDiagnostic source name r1 r2 =
+  Diag.makeDiagnostic
+    (EC.canonError 17)
+    Diag.SError
+    Diag.PhaseCanon
+    "REDUNDANT EXPORT"
+    (Text.pack msg)
+    (LabeledSpan r2 "duplicate export" SpanPrimary)
+    (Code.toPair source r1 r2 (D.reflow msg, "Remove one of them and you should be all set!") (D.reflow (msg <> " Once here:"), "And again right here:", "Remove one of them and you should be all set!"))
+  where
+    msg = "You are trying to expose `" <> Name.toChars name <> "` multiple times!"
+
+-- | Build a diagnostic for an export that references an unknown name.
+--
+-- Delegates the message Doc to 'toReport' to reuse suggestion-formatting logic.
+exportNotFoundDiagnostic :: Code.Source -> A.Region -> VarKind -> Name.Name -> [Name.Name] -> Diagnostic
+exportNotFoundDiagnostic source region kind rawName possibleNames =
+  Diag.makeDiagnostic
+    (EC.canonError 18)
+    Diag.SError
+    Diag.PhaseCanon
+    "UNKNOWN EXPORT"
+    (Text.pack ("Cannot find definition for exported name `" <> Name.toChars rawName <> "`"))
+    (LabeledSpan region "unknown export" SpanPrimary)
+    (extractReportMessage (toReport source (ExportNotFound region kind rawName possibleNames)))
+
+-- | Build a diagnostic for exposing (..) on a type alias in an export.
+exportOpenAliasDiagnostic :: Code.Source -> A.Region -> Name.Name -> Diagnostic
+exportOpenAliasDiagnostic source region name =
+  Diag.makeDiagnostic
+    (EC.canonError 19)
+    Diag.SError
+    Diag.PhaseCanon
+    "BAD EXPORT"
+    (Text.pack ("Cannot use (..) with type alias `" <> Name.toChars name <> "`"))
+    (LabeledSpan region "open alias in export" SpanPrimary)
+    (Code.toSnippet source region Nothing (D.reflow ("The (..) syntax is for exposing variants of a custom type. It cannot be used with a type alias like `" <> (Name.toChars name <> "` though.")), D.reflow "Remove the (..) and you should be fine!"))
+
+-- | Build a diagnostic for importing a variant constructor by name directly.
+importCtorByNameDiagnostic :: Code.Source -> A.Region -> Name.Name -> Name.Name -> Diagnostic
+importCtorByNameDiagnostic source region ctor tipe =
+  Diag.makeDiagnostic
+    (EC.canonError 20)
+    Diag.SError
+    Diag.PhaseCanon
+    "BAD IMPORT"
+    (Text.pack ("Cannot import variant `" <> Name.toChars ctor <> "` by name; import via its type"))
+    (LabeledSpan region "variant imported by name" SpanPrimary)
+    (extractReportMessage (toReport source (ImportCtorByName region ctor tipe)))
+
+-- | Build a diagnostic for an unknown module import.
+importNotFoundDiagnostic :: Code.Source -> A.Region -> Name.Name -> Diagnostic
+importNotFoundDiagnostic source region name =
+  Diag.makeDiagnostic
+    (EC.canonError 21)
+    Diag.SError
+    Diag.PhaseCanon
+    "UNKNOWN IMPORT"
+    (Text.pack ("Cannot find module `" <> Name.toChars name <> "`"))
+    (LabeledSpan region "module not found" SpanPrimary)
+    (Code.toSnippet source region Nothing (D.reflow ("I could not find a `" <> Name.toChars name <> "` module to import!"), mempty))
+
+-- | Build a diagnostic for using (..) with a type alias in an import.
+importOpenAliasDiagnostic :: Code.Source -> A.Region -> Name.Name -> Diagnostic
+importOpenAliasDiagnostic source region name =
+  Diag.makeDiagnostic
+    (EC.canonError 22)
+    Diag.SError
+    Diag.PhaseCanon
+    "BAD IMPORT"
+    (Text.pack ("Cannot use (..) with type alias `" <> Name.toChars name <> "` in import"))
+    (LabeledSpan region "open alias in import" SpanPrimary)
+    (Code.toSnippet source region Nothing (D.reflow ("The `" <> Name.toChars name <> "` type alias cannot be followed by (..) like this:"), D.reflow "Remove the (..) and it should work."))
+
+-- | Build a diagnostic for an exposing clause that references an unknown name.
+--
+-- Delegates the message Doc to 'toReport' to reuse suggestion-formatting logic.
+importExposingNotFoundDiagnostic :: Code.Source -> A.Region -> ModuleName.Canonical -> Name.Name -> [Name.Name] -> Diagnostic
+importExposingNotFoundDiagnostic source region home value possibleNames =
+  Diag.makeDiagnostic
+    (EC.canonError 23)
+    Diag.SError
+    Diag.PhaseCanon
+    "BAD IMPORT"
+    (Text.pack ("Module `" <> Name.toChars homeName <> "` does not expose `" <> Name.toChars value <> "`"))
+    (LabeledSpan region "unexposed name" SpanPrimary)
+    (extractReportMessage (toReport source (ImportExposingNotFound region home value possibleNames)))
+  where
+    (ModuleName.Canonical _ homeName) = home
+
+-- | Build a diagnostic for a name that cannot be resolved.
+--
+-- Delegates the message Doc to the existing 'notFound' helper.
+notFoundDiagnostic :: Code.Source -> A.Region -> Maybe Name.Name -> Name.Name -> String -> PossibleNames -> Diag.ErrorCode -> Diagnostic
+notFoundDiagnostic source region maybePrefix name thing possibleNames code =
+  addNameSuggestions region name possibleNames
+    ( Diag.makeDiagnostic
+        code
+        Diag.SError
+        Diag.PhaseCanon
+        "NAMING ERROR"
+        (Text.pack ("Cannot find `" <> givenName <> "` " <> thing))
+        (LabeledSpan region (Text.pack (thing <> " not found")) SpanPrimary)
+        (extractReportMessage (notFound source region maybePrefix name thing possibleNames))
+    )
+  where
+    givenName = maybe Name.toChars toQualString maybePrefix name
+
+-- | Add structured suggestions from PossibleNames to a diagnostic.
+addNameSuggestions :: A.Region -> Name.Name -> PossibleNames -> Diagnostic -> Diagnostic
+addNameSuggestions region name (PossibleNames locals quals) diag =
+  foldr Diag.addSuggestion diag (take 3 (fmap (toNameSuggestion region) sorted))
+  where
+    allNames = Set.toList locals <> concatMap Set.toList (Map.elems quals)
+    sorted = Suggest.sort (Name.toChars name) Name.toChars allNames
+
+-- | Convert a suggested name into a structured Suggestion.
+toNameSuggestion :: A.Region -> Name.Name -> Suggestion
+toNameSuggestion region suggested =
+  Suggestion
+    region
+    (Text.pack (Name.toChars suggested))
+    (Text.pack ("Did you mean `" <> Name.toChars suggested <> "`?"))
+    Likely
+
+-- | Build a diagnostic for an unknown binary operator.
+--
+-- Delegates the message Doc to 'toReport' to reuse the operator-specific hints.
+notFoundBinopDiagnostic :: Code.Source -> A.Region -> Name.Name -> Set.Set Name.Name -> Diagnostic
+notFoundBinopDiagnostic source region op locals =
+  addBinopSuggestions region op locals
+    ( Diag.makeDiagnostic
+        (EC.canonError 27)
+        Diag.SError
+        Diag.PhaseCanon
+        "UNKNOWN OPERATOR"
+        (Text.pack ("Unknown operator (" <> Name.toChars op <> ")"))
+        (LabeledSpan region "unknown operator" SpanPrimary)
+        (extractReportMessage (toReport source (NotFoundBinop region op locals)))
+    )
+
+-- | Add structured suggestions for operators.
+addBinopSuggestions :: A.Region -> Name.Name -> Set.Set Name.Name -> Diagnostic -> Diagnostic
+addBinopSuggestions region op locals diag =
+  foldr Diag.addSuggestion diag (take 2 (fmap (toNameSuggestion region) sorted))
+  where
+    sorted = Suggest.sort (Name.toChars op) Name.toChars (Set.toList locals)
+
+-- | Build a diagnostic for using a record constructor in a pattern.
+patternHasRecordCtorDiagnostic :: Code.Source -> A.Region -> Name.Name -> Diagnostic
+patternHasRecordCtorDiagnostic source region name =
+  Diag.makeDiagnostic
+    (EC.canonError 28)
+    Diag.SError
+    Diag.PhaseCanon
+    "BAD PATTERN"
+    (Text.pack ("Record constructor `" <> Name.toChars name <> "` cannot be used in a pattern"))
+    (LabeledSpan region "record ctor in pattern" SpanPrimary)
+    (Code.toSnippet source region Nothing (D.reflow ("You can construct records by using `" <> Name.toChars name <> "` as a function, but it is not available in pattern matching like this:"), D.reflow "I recommend matching the record as a variable and unpacking it later."))
+
+-- | Build a diagnostic for an invalid port payload type.
+--
+-- Delegates the message Doc to 'toReport' to reuse the payload-kind message logic.
+portPayloadInvalidDiagnostic :: Code.Source -> A.Region -> Name.Name -> InvalidPayload -> Diagnostic
+portPayloadInvalidDiagnostic source region portName invalidPayload =
+  Diag.makeDiagnostic
+    (EC.canonError 29)
+    Diag.SError
+    Diag.PhaseCanon
+    "PORT ERROR"
+    (Text.pack ("Port `" <> Name.toChars portName <> "` has an invalid payload type"))
+    (LabeledSpan region "invalid port payload" SpanPrimary)
+    (portPayloadMessage source region portName invalidPayload)
+
+-- | Build the message Doc for a port payload error.
+portPayloadMessage :: Code.Source -> A.Region -> Name.Name -> InvalidPayload -> D.Doc
+portPayloadMessage source region portName invalidPayload =
+  Code.toSnippet source region Nothing
+    ( D.reflow ("The `" <> Name.toChars portName <> "` port is trying to transmit " <> portPayloadKind invalidPayload <> ":"),
+      D.stack [portPayloadElaboration invalidPayload, D.link "Hint" "Ports are not a traditional FFI, so if you have tons of annoying ports, definitely read" "ports" "to learn how they are meant to work. They require a different mindset!"]
+    )
+
+-- | Name the kind of invalid payload for use in the error message.
+portPayloadKind :: InvalidPayload -> String
+portPayloadKind invalidPayload =
+  case invalidPayload of
+    ExtendedRecord -> "an extended record"
+    Function -> "a function"
+    TypeVariable _ -> "an unspecified type"
+    UnsupportedType name -> "a `" <> Name.toChars name <> "` value"
+
+-- | Provide the elaboration sentence for an invalid payload type.
+portPayloadElaboration :: InvalidPayload -> D.Doc
+portPayloadElaboration invalidPayload =
+  case invalidPayload of
+    ExtendedRecord ->
+      D.reflow "But the exact shape of the record must be known at compile time. No type variables!"
+    Function ->
+      D.reflow "But functions cannot be sent in and out ports. If we allowed functions in from JS they may perform some side-effects. If we let functions out, they could produce incorrect results because Canopy optimizations assume there are no side-effects."
+    TypeVariable name ->
+      D.reflow ("But type variables like `" <> Name.toChars name <> "` cannot flow through ports. I need to know exactly what type of data I am getting, so I can guarantee that unexpected data cannot sneak in and crash the Canopy program.")
+    UnsupportedType _ ->
+      D.stack [D.reflow "I cannot handle that. The types that CAN flow in and out of Canopy include:", D.indent 4 (D.reflow "Ints, Floats, Bools, Strings, Maybes, Lists, Arrays, tuples, records, and JSON values."), D.reflow "Since JSON values can flow through, you can use JSON encoders and decoders to allow other types through as well. More advanced users often just do everything with encoders and decoders for more control and better errors."]
+
+-- | Build a diagnostic for an invalid port type structure.
+--
+-- Delegates the message Doc to 'toReport' to reuse the port-problem hints.
+portTypeInvalidDiagnostic :: Code.Source -> A.Region -> Name.Name -> PortProblem -> Diagnostic
+portTypeInvalidDiagnostic source region name portProblem =
+  Diag.makeDiagnostic
+    (EC.canonError 30)
+    Diag.SError
+    Diag.PhaseCanon
+    "BAD PORT"
+    (Text.pack ("Port `" <> Name.toChars name <> "` has an invalid type structure"))
+    (LabeledSpan region "invalid port type" SpanPrimary)
+    (extractReportMessage (toReport source (PortTypeInvalid region name portProblem)))
+
+-- | Build a diagnostic for a recursive type alias.
+--
+-- Delegates the message Doc to the existing 'aliasRecursionReport' helper.
+recursiveAliasDiagnostic :: Code.Source -> A.Region -> Name.Name -> [Name.Name] -> Src.Type -> [Name.Name] -> Diagnostic
+recursiveAliasDiagnostic source region name args tipe others =
+  Diag.makeDiagnostic
+    (EC.canonError 31)
+    Diag.SError
+    Diag.PhaseCanon
+    "ALIAS PROBLEM"
+    (Text.pack ("Type alias `" <> Name.toChars name <> "` is recursive"))
+    (LabeledSpan region "recursive alias" SpanPrimary)
+    (extractReportMessage (aliasRecursionReport source region name args tipe others))
+
+-- | Build a diagnostic for a recursive value or function declaration.
+--
+-- Delegates the message Doc to 'toReport' to reuse the cycle explanation.
+recursiveDeclDiagnostic :: Code.Source -> A.Region -> Name.Name -> [Name.Name] -> Diagnostic
+recursiveDeclDiagnostic source region name names =
+  Diag.makeDiagnostic
+    (EC.canonError 32)
+    Diag.SError
+    Diag.PhaseCanon
+    "CYCLIC DEFINITION"
+    (Text.pack ("Value `" <> Name.toChars name <> "` is defined in terms of itself"))
+    (LabeledSpan region "cyclic definition" SpanPrimary)
+    (extractReportMessage (toReport source (RecursiveDecl region name names)))
+
+-- | Build a diagnostic for a cyclic value in a let expression.
+--
+-- Delegates the message Doc to 'toReport' to reuse the cycle explanation.
+recursiveLetDiagnostic :: Code.Source -> A.Region -> Name.Name -> [Name.Name] -> Diagnostic
+recursiveLetDiagnostic source region name names =
+  Diag.makeDiagnostic
+    (EC.canonError 33)
+    Diag.SError
+    Diag.PhaseCanon
+    "CYCLIC VALUE"
+    (Text.pack ("Let binding `" <> Name.toChars name <> "` is defined in terms of itself"))
+    (LabeledSpan region "cyclic let binding" SpanPrimary)
+    (extractReportMessage (toReport source (RecursiveLet (A.At region name) names)))
+
+-- | Build a diagnostic for a shadowed variable binding.
+--
+-- Delegates the message Doc to 'toReport' to reuse the shadowing advice link.
+shadowingDiagnostic :: Code.Source -> Name.Name -> A.Region -> A.Region -> Diagnostic
+shadowingDiagnostic source name r1 r2 =
+  Diag.makeDiagnostic
+    (EC.canonError 34)
+    Diag.SError
+    Diag.PhaseCanon
+    "SHADOWING"
+    (Text.pack ("Variable `" <> Name.toChars name <> "` shadows an outer binding"))
+    (LabeledSpan r2 "shadowing binding" SpanPrimary)
+    (extractReportMessage (toReport source (Shadowing name r1 r2)))
+
+-- | Build a diagnostic for a tuple with more than three elements.
+tupleLargerThanThreeDiagnostic :: Code.Source -> A.Region -> Diagnostic
+tupleLargerThanThreeDiagnostic source region =
+  Diag.makeDiagnostic
+    (EC.canonError 35)
+    Diag.SError
+    Diag.PhaseCanon
+    "BAD TUPLE"
+    "Tuples can have at most three items"
+    (LabeledSpan region "tuple too large" SpanPrimary)
+    (extractReportMessage (toReport source (TupleLargerThanThree region)))
+
+-- | Build a diagnostic for unbound type variables in a union type.
+--
+-- Delegates the message Doc to the existing 'unboundTypeVars' helper.
+typeVarsUnboundInUnionDiagnostic :: Code.Source -> A.Region -> Name.Name -> [Name.Name] -> (Name.Name, A.Region) -> [(Name.Name, A.Region)] -> Diagnostic
+typeVarsUnboundInUnionDiagnostic source unionRegion typeName allVars unbound unbounds =
+  Diag.makeDiagnostic
+    (EC.canonError 36)
+    Diag.SError
+    Diag.PhaseCanon
+    "UNBOUND TYPE VARIABLE"
+    (Text.pack ("Type `" <> Name.toChars typeName <> "` uses unbound type variables"))
+    (LabeledSpan unionRegion "unbound type variable" SpanPrimary)
+    (extractReportMessage (unboundTypeVars source unionRegion ["type"] typeName allVars unbound unbounds))
+
+-- | Build a diagnostic for type variable problems in a type alias.
+--
+-- Delegates the message Doc to 'toReport' to reuse the complex alias-variable logic.
+typeVarsMessedUpInAliasDiagnostic :: Code.Source -> A.Region -> Name.Name -> [Name.Name] -> [(Name.Name, A.Region)] -> [(Name.Name, A.Region)] -> Diagnostic
+typeVarsMessedUpInAliasDiagnostic source aliasRegion typeName allVars unusedVars unboundVars =
+  Diag.makeDiagnostic
+    (EC.canonError 37)
+    Diag.SError
+    Diag.PhaseCanon
+    "TYPE VARIABLE PROBLEMS"
+    (Text.pack ("Type alias `" <> Name.toChars typeName <> "` has type variable problems"))
+    (LabeledSpan aliasRegion "type variable problem" SpanPrimary)
+    (extractReportMessage (toReport source (TypeVarsMessedUpInAlias aliasRegion typeName allVars unusedVars unboundVars)))
+
+-- | Build a diagnostic for a missing FFI file.
+ffiFileNotFoundDiagnostic :: Code.Source -> A.Region -> FilePath -> Diagnostic
+ffiFileNotFoundDiagnostic source region filePath =
+  Diag.makeDiagnostic
+    (EC.canonError 38)
+    Diag.SError
+    Diag.PhaseCanon
+    "FFI FILE NOT FOUND"
+    (Text.pack ("Cannot find FFI file: " <> filePath))
+    (LabeledSpan region "FFI file not found" SpanPrimary)
+    (Code.toSnippet source region Nothing (D.reflow ("Cannot find FFI file: " <> filePath), D.reflow "Make sure the file exists and the path is correct."))
+
+-- | Build a diagnostic for an FFI file that took too long to read.
+ffiFileTimeoutDiagnostic :: Code.Source -> A.Region -> FilePath -> Int -> Diagnostic
+ffiFileTimeoutDiagnostic source region filePath timeout =
+  Diag.makeDiagnostic
+    (EC.canonError 39)
+    Diag.SError
+    Diag.PhaseCanon
+    "FFI FILE TIMEOUT"
+    (Text.pack ("Timeout reading FFI file: " <> filePath))
+    (LabeledSpan region "FFI file timeout" SpanPrimary)
+    (Code.toSnippet source region Nothing (D.reflow ("Timeout reading FFI file: " <> filePath <> " after " <> show timeout <> "ms"), D.reflow "The file may be too large or there may be a filesystem issue."))
+
+-- | Build a diagnostic for an FFI file that failed to parse.
+ffiParseErrorDiagnostic :: Code.Source -> A.Region -> FilePath -> String -> Diagnostic
+ffiParseErrorDiagnostic source region filePath parseErr =
+  Diag.makeDiagnostic
+    (EC.canonError 40)
+    Diag.SError
+    Diag.PhaseCanon
+    "FFI PARSE ERROR"
+    (Text.pack ("Error parsing FFI file: " <> filePath))
+    (LabeledSpan region "FFI parse error" SpanPrimary)
+    (Code.toSnippet source region Nothing (D.reflow ("Error parsing FFI file: " <> filePath), D.reflow ("Parse error: " <> parseErr)))
+
+-- | Build a diagnostic for an invalid type in an FFI file.
+ffiInvalidTypeDiagnostic :: Code.Source -> A.Region -> FilePath -> Name.Name -> String -> Diagnostic
+ffiInvalidTypeDiagnostic source region filePath typeName typeErr =
+  Diag.makeDiagnostic
+    (EC.canonError 41)
+    Diag.SError
+    Diag.PhaseCanon
+    "FFI INVALID TYPE"
+    (Text.pack ("Invalid type in FFI file: " <> filePath))
+    (LabeledSpan region "FFI invalid type" SpanPrimary)
+    (Code.toSnippet source region Nothing (D.reflow ("Invalid type in FFI file: " <> filePath), D.reflow ("Type " <> Name.toChars typeName <> ": " <> typeErr)))
+
+-- | Build a diagnostic for a missing type annotation in an FFI file.
+ffiMissingAnnotationDiagnostic :: Code.Source -> A.Region -> FilePath -> Name.Name -> Diagnostic
+ffiMissingAnnotationDiagnostic source region filePath funcName =
+  Diag.makeDiagnostic
+    (EC.canonError 42)
+    Diag.SError
+    Diag.PhaseCanon
+    "FFI MISSING ANNOTATION"
+    (Text.pack ("Missing type annotation in FFI file: " <> filePath))
+    (LabeledSpan region "FFI missing annotation" SpanPrimary)
+    (Code.toSnippet source region Nothing (D.reflow ("Missing type annotation in FFI file: " <> filePath), D.reflow ("Function " <> Name.toChars funcName <> " needs a type annotation.")))
+
+-- | Build a diagnostic for a circular dependency in FFI files.
+ffiCircularDependencyDiagnostic :: Code.Source -> A.Region -> FilePath -> [FilePath] -> Diagnostic
+ffiCircularDependencyDiagnostic source region filePath deps =
+  Diag.makeDiagnostic
+    (EC.canonError 43)
+    Diag.SError
+    Diag.PhaseCanon
+    "FFI CIRCULAR DEPENDENCY"
+    (Text.pack ("Circular dependency in FFI file: " <> filePath))
+    (LabeledSpan region "FFI circular dependency" SpanPrimary)
+    (Code.toSnippet source region Nothing (D.reflow ("Circular dependency detected in FFI file: " <> filePath), D.reflow ("Dependency chain: " <> show deps)))
 
 -- BAD TYPE VARIABLES
 

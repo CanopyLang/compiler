@@ -28,6 +28,9 @@ import Data.ByteString (ByteString)
 import Data.IORef (IORef, newIORef, readIORef, writeIORef)
 import qualified Parse.Cache
 import qualified Parse.Module as Parse
+import Reporting.Diagnostic (Diagnostic)
+import qualified Reporting.Error.Syntax as Syntax
+import qualified Reporting.Render.Code as Code
 import System.IO.Unsafe (unsafePerformIO)
 
 -- | Global parse cache (module-level IORef for sharing across queries).
@@ -55,12 +58,18 @@ computeContentHash :: ByteString -> ContentHash
 computeContentHash = ContentHash . SHA256.hash
 
 -- | Query errors.
+--
+-- 'DiagnosticError' carries structured 'Diagnostic' values from the
+-- compiler phases. These provide rich error output with error codes,
+-- source spans, and suggestions. The legacy string-based constructors
+-- are retained for backwards compatibility.
 data QueryError
   = ParseError FilePath String
   | TypeError String
   | FileNotFound FilePath
   | OtherError String
-  deriving (Show, Eq)
+  | DiagnosticError FilePath [Diagnostic]
+  deriving (Show)
 
 -- | Query results (existential type).
 data QueryResult
@@ -93,6 +102,9 @@ instance Ord Query where
     compare (f1, h1) (f2, h2)
 
 -- | Execute a query with parse caching.
+--
+-- Parse errors are converted to structured 'DiagnosticError' values
+-- using the source bytes for proper snippet rendering.
 executeQuery :: Query -> IO (Either QueryError QueryResult)
 executeQuery query = case query of
   ParseModuleQuery path _ projectType -> do
@@ -101,5 +113,8 @@ executeQuery query = case query of
     let (result, newCache) = Parse.Cache.cacheLookupOrParse path projectType content cache
     writeIORef globalParseCache newCache
     case result of
-      Left err -> return $ Left $ ParseError path (show err)
-      Right modul -> return $ Right $ ParsedModule modul
+      Left err ->
+        let source = Code.toSource content
+            diag = Syntax.toDiagnostic source err
+         in return (Left (DiagnosticError path [diag]))
+      Right modul -> return (Right (ParsedModule modul))

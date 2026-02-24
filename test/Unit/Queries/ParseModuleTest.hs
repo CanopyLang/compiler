@@ -88,6 +88,7 @@ testParseErrors =
           result <- executeQuery query
 
           case result of
+            Left (DiagnosticError _ (_:_)) -> return ()
             Left (ParseError _ _) -> return ()
             Left err -> assertFailure ("Wrong error type: " ++ show err)
             Right _ -> assertFailure "Expected parse error",
@@ -113,6 +114,7 @@ testParseErrors =
           result <- executeQuery query
 
           case result of
+            Left (DiagnosticError _ (_:_)) -> return ()
             Left (ParseError _ _) -> return ()
             Left err -> assertFailure ("Wrong error type: " ++ show err)
             Right _ -> assertFailure "Expected parse error for empty file"

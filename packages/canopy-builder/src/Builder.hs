@@ -75,8 +75,9 @@ import qualified Data.Set as Set
 import Data.Time.Clock (getCurrentTime)
 import qualified Driver
 import qualified File
-import qualified Logging.Debug as Logger
-import Logging.Debug (DebugCategory (..))
+import qualified Data.Text as Text
+import Logging.Event (LogEvent (..), Duration (..), Phase (..), CompileStats (..))
+import qualified Logging.Logger as Log
 import qualified Parse.Module as Parse
 import System.FilePath (takeDirectory, (</>))
 
@@ -104,7 +105,7 @@ data BuildResult
 -- | Initialize pure builder.
 initPureBuilder :: IO PureBuilder
 initPureBuilder = do
-  Logger.debug BUILD "Initializing pure builder"
+  Log.logEvent (BuildStarted (Text.pack "pure builder"))
 
   engine <- State.initBuilder
   cache <- Incremental.emptyCache >>= newIORef
@@ -120,7 +121,7 @@ initPureBuilder = do
 -- | Build from file paths with dependency resolution.
 buildFromPaths :: PureBuilder -> [FilePath] -> IO BuildResult
 buildFromPaths builder paths = do
-  Logger.debug BUILD ("Building from paths: " ++ show (length paths) ++ " files")
+  Log.logEvent (BuildStarted (Text.pack ("from paths: " ++ show (length paths) ++ " files")))
 
   -- Get project root (parent of first source file)
   let root = case paths of
@@ -133,7 +134,7 @@ buildFromPaths builder paths = do
   case parsedModules of
     Left err -> return (BuildFailure (BuildErrorCompile err))
     Right modules -> do
-      Logger.debug BUILD ("Parsed " ++ show (length modules) ++ " modules")
+      Log.logEvent (BuildModuleQueued (Text.pack ("parsed " ++ show (length modules) ++ " modules")))
 
       -- Build dependency graph
       let deps = extractDependencies modules
@@ -143,11 +144,11 @@ buildFromPaths builder paths = do
       -- Check for cycles
       case Graph.topologicalSort graph of
         Nothing -> do
-          Logger.debug BUILD "Dependency graph contains cycles"
+          Log.logEvent (BuildFailed (Text.pack "dependency graph contains cycles"))
           return (BuildFailure (BuildErrorCycle (Graph.getAllModules graph)))
 
         Just buildOrder -> do
-          Logger.debug BUILD ("Build order: " ++ show (length buildOrder) ++ " modules")
+          Log.logEvent (BuildModuleQueued (Text.pack ("build order: " ++ show (length buildOrder) ++ " modules")))
 
           -- Compile modules in dependency order
           results <- compileInOrder builder root modules buildOrder
@@ -155,11 +156,11 @@ buildFromPaths builder paths = do
 
           if successCount == length buildOrder
             then do
-              Logger.debug BUILD ("All modules compiled successfully: " ++ show successCount)
+              Log.logEvent (BuildCompleted successCount (Duration 0))
               return (BuildSuccess successCount)
             else do
               let failures = filter (not . isSuccess) results
-              Logger.debug BUILD ("Build failed: " ++ show (length failures) ++ " errors")
+              Log.logEvent (BuildFailed (Text.pack (show (length failures) ++ " modules failed")))
               return (BuildFailure (BuildErrorCompile (show (length failures) ++ " modules failed")))
 
 -- | Parse all modules from file paths.
@@ -214,7 +215,7 @@ compileModuleInOrder ::
 compileModuleInOrder builder _root moduleMap moduleName =
   case Map.lookup moduleName moduleMap of
     Nothing -> do
-      Logger.debug BUILD ("Module not found in map: " ++ show moduleName)
+      Log.logEvent (BuildFailed (Text.pack ("module not found in map: " ++ show moduleName)))
       return (BuildFailure (BuildErrorMissing [moduleName]))
 
     Just (path, _sourceModule) -> do
@@ -229,16 +230,16 @@ compileModuleInOrder builder _root moduleMap moduleName =
 -- | Compile a module via the query-based Driver.
 compileWithDriver :: PureBuilder -> ModuleName.Raw -> FilePath -> IO BuildResult
 compileWithDriver builder moduleName path = do
-  Logger.debug BUILD ("Compiling module via Driver: " ++ show moduleName)
+  Log.logEvent (CompileStarted path)
   result <- Driver.compileModule Pkg.dummyName Map.empty path Parse.Application
   now <- getCurrentTime
   case result of
     Left err -> do
-      Logger.debug BUILD ("Compilation failed: " ++ show err)
+      Log.logEvent (CompileFailed path PhaseBuild (Text.pack (show err)))
       State.setModuleStatus (builderEngine builder) moduleName (State.StatusFailed (show err) now)
       return (BuildFailure (BuildErrorCompile (show err)))
     Right _compiled -> do
-      Logger.debug BUILD ("Compilation succeeded: " ++ show moduleName)
+      Log.logEvent (CompileCompleted path (CompileStats 1 (Duration 0)))
       State.setModuleStatus (builderEngine builder) moduleName (State.StatusCompleted now)
       State.setModuleResult (builderEngine builder) moduleName (State.ResultSuccess path now)
       return (BuildSuccess 1)
@@ -266,24 +267,23 @@ buildFromExposed ::
   [ModuleName.Raw] ->
   IO BuildResult
 buildFromExposed builder root srcDirs exposedModules = do
-  Logger.debug BUILD ("Building from exposed modules: " ++ show (length exposedModules))
-  Logger.debug BUILD ("Source directories: " ++ show srcDirs)
+  Log.logEvent (BuildStarted (Text.pack ("from exposed: " ++ show (length exposedModules) ++ " modules")))
 
   -- Discover source files for exposed modules
   modulePaths <- discoverModulePaths root srcDirs exposedModules
 
   case modulePaths of
     [] -> do
-      Logger.debug BUILD "No source files found for exposed modules"
+      Log.logEvent (BuildFailed (Text.pack "no source files found for exposed modules"))
       return (BuildFailure (BuildErrorMissing exposedModules))
 
     paths -> do
-      Logger.debug BUILD ("Found " ++ show (length paths) ++ " source files")
+      Log.logEvent (BuildModuleQueued (Text.pack ("found " ++ show (length paths) ++ " source files")))
 
       -- Parse all modules to discover transitive dependencies
       allPaths <- discoverTransitiveDeps root srcDirs paths
 
-      Logger.debug BUILD ("Building " ++ show (length allPaths) ++ " modules (including dependencies)")
+      Log.logEvent (BuildModuleQueued (Text.pack ("building " ++ show (length allPaths) ++ " modules (including dependencies)")))
 
       -- Build all modules using buildFromPaths
       buildFromPaths builder allPaths
@@ -367,7 +367,7 @@ getModuleDependencies root srcDirs path = do
 -- | Use cached artifacts.
 useCache :: PureBuilder -> ModuleName.Raw -> FilePath -> IO BuildResult
 useCache builder moduleName path = do
-  Logger.debug BUILD ("Using cached artifacts for: " ++ show moduleName)
+  Log.logEvent (CacheHit PhaseBuild (Text.pack (show moduleName)))
   now <- getCurrentTime
   State.setModuleStatus (builderEngine builder) moduleName
     (State.StatusCompleted now)

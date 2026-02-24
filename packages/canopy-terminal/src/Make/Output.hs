@@ -48,7 +48,8 @@ import qualified Data.NonEmptyList as NonEmptyList
 import qualified Data.Text as Text
 import qualified Data.Text.Encoding as Text
 import qualified Generate.Html as Html
-import Logging.Logger (printLog)
+import Logging.Event (LogEvent (..))
+import qualified Logging.Logger as Log
 import Make.Builder (createBuilder, extractMainModules, hasExactlyOneMain)
 import Make.Generation (writeOutputFile)
 import Make.Types
@@ -113,7 +114,7 @@ generateJavaScript ::
   FilePath ->
   Task ()
 generateJavaScript ctx artifacts target = do
-  Task.io (printLog ("Generating JavaScript to: " <> target))
+  Task.io (Log.logEvent (BuildStarted (Text.pack ("Generating JavaScript to: " <> target))))
   builder <- createBuilder ctx artifacts
   let rootNames = Build.getRootNames artifacts
   writeOutputFile (ctx ^. bcStyle) target builder rootNames
@@ -128,7 +129,7 @@ generateHtml ::
   FilePath ->
   Task ()
 generateHtml ctx artifacts target = do
-  Task.io (printLog ("Generating HTML to: " <> target))
+  Task.io (Log.logEvent (BuildStarted (Text.pack ("Generating HTML to: " <> target))))
   mainName <- hasExactlyOneMain artifacts
   builder <- createBuilder ctx artifacts
   -- Apply JavaScript spacing fixes to embedded JS before HTML wrapping
@@ -142,7 +143,7 @@ generateHtml ctx artifacts target = do
 -- Simply logs the action and returns without generating anything.
 generateDevNull :: Task ()
 generateDevNull =
-  Task.io (printLog "Output target is /dev/null - generating nothing")
+  Task.io (Log.logEvent (BuildStarted (Text.pack "Output target is /dev/null - generating nothing")))
 
 -- | Generate no output for library builds.
 --
@@ -150,7 +151,7 @@ generateDevNull =
 -- that doesn't produce executable output.
 generateNoOutput :: Task ()
 generateNoOutput =
-  Task.io (printLog "No main functions found - generating nothing")
+  Task.io (Log.logEvent (BuildStarted (Text.pack "No main functions found - generating nothing")))
 
 -- | Generate HTML for single-application build.
 --
@@ -162,7 +163,7 @@ generateSingleAppHtml ::
   ModuleName.Raw ->
   Task ()
 generateSingleAppHtml ctx artifacts mainName = do
-  Task.io (printLog ("Found single main function - generating HTML: " <> Name.toChars mainName))
+  Task.io (Log.logEvent (BuildStarted (Text.pack ("Found single main function - generating HTML: " <> Name.toChars mainName))))
   builder <- createBuilder ctx artifacts
   -- Apply JavaScript spacing fixes to embedded JS before HTML wrapping
   let fixedBuilder = fixEmbeddedJavaScript builder
@@ -184,7 +185,7 @@ generateMultiAppJs ctx artifacts mainNames =
     [] -> generateNoOutput
     name : rest -> do
       let nameStrs = fmap Name.toChars mainNames
-      Task.io (printLog ("Found multiple main functions - generating JS: " <> show nameStrs))
+      Task.io (Log.logEvent (BuildStarted (Text.pack ("Found multiple main functions - generating JS: " <> show nameStrs))))
       builder <- createBuilder ctx artifacts
       let target = "canopy.js"
       writeOutputFile (ctx ^. bcStyle) target builder (NonEmptyList.List name rest)

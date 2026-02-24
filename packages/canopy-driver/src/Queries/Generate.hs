@@ -24,8 +24,9 @@ import Data.Map (Map)
 import qualified Data.Map as Map
 import qualified Generate.JavaScript as JS
 import qualified Generate.Mode as Mode
-import qualified Debug.Logger as Logger
-import Debug.Logger (DebugCategory (..))
+import qualified Data.Text as Text
+import Logging.Event (LogEvent (..), GenStats (..))
+import qualified Logging.Logger as Log
 import Query.Simple
 
 -- | Generate JavaScript code from optimized AST.
@@ -39,28 +40,14 @@ generateJavaScriptQuery ::
   Map String JS.FFIInfo ->
   IO (Either QueryError Builder)
 generateJavaScriptQuery mode globalGraph mains ffiInfos = do
-  Logger.debug CODEGEN ("Generate: Starting JavaScript generation")
-  Logger.debug CODEGEN ("Generate: Mode: " ++ show mode)
-  Logger.debug CODEGEN ("Generate: Mains count: " ++ show (Map.size mains))
-  Logger.debug CODEGEN ("Generate: FFI count: " ++ show (Map.size ffiInfos))
+  let modNameText = Text.pack ("js:" ++ show (Map.size mains) ++ " mains")
+  Log.logEvent (GenerateStarted modNameText)
 
-  logGlobalGraphStats globalGraph
-
-  -- Generate JavaScript using existing generator
   let jsBuilder = JS.generate mode globalGraph mains ffiInfos
 
-  -- Log generation statistics
-  Logger.debug CODEGEN "Generate: JavaScript generated successfully"
-  Logger.debug CODEGEN "Generate: Success"
+  Log.logEvent (GenerateCompleted modNameText (GenStats 0 0))
 
   return (Right jsBuilder)
-
--- | Log global graph statistics.
-logGlobalGraphStats :: Opt.GlobalGraph -> IO ()
-logGlobalGraphStats (Opt.GlobalGraph graph foreigns) = do
-  Logger.debug CODEGEN ("Generate: Global graph statistics:")
-  Logger.debug CODEGEN ("  - Globals: " ++ show (Map.size graph))
-  Logger.debug CODEGEN ("  - Foreigns: " ++ show (Map.size foreigns))
 
 -- | Build complete GlobalGraph including ALL dependencies.
 --

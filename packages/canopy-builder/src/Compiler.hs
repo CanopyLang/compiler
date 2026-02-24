@@ -59,8 +59,8 @@ import qualified Data.NonEmptyList as NE
 import qualified Data.Set as Set
 import qualified Data.ByteString as BS
 import qualified Data.Utf8 as Utf8
-import qualified Debug.Logger as Logger
-import Debug.Logger (DebugCategory (..))
+import Logging.Event (LogEvent (..), Phase (..))
+import qualified Logging.Logger as Log
 import qualified Driver
 import qualified Exit
 import qualified Reporting.InternalError as InternalError
@@ -86,10 +86,7 @@ compileFromPaths ::
   [FilePath] ->
   IO (Either Exit.BuildError Build.Artifacts)
 compileFromPaths pkg isApp root srcDirs paths = do
-  Logger.debug COMPILE_DEBUG "Compiler: compileFromPaths (NEW pure compiler)"
-  Logger.debug COMPILE_DEBUG ("Package: " ++ show pkg)
-  Logger.debug COMPILE_DEBUG ("IsApplication: " ++ show isApp)
-  Logger.debug COMPILE_DEBUG ("Paths: " ++ show paths)
+  Log.logEvent (BuildStarted (Text.pack "compileFromPaths"))
 
   -- Load dependency artifacts (interfaces + GlobalGraph)
   maybeArtifacts <- loadDependencyArtifacts root
@@ -97,12 +94,12 @@ compileFromPaths pkg isApp root srcDirs paths = do
         Just (ifaces, globalGraph) -> (ifaces, globalGraph)
         Nothing -> (Map.empty, Opt.empty)
 
-  Logger.debug COMPILE_DEBUG ("Loaded dependency interfaces: " ++ show (Map.size depInterfaces))
+  Log.logEvent (BuildModuleQueued (Text.pack ("loaded " ++ show (Map.size depInterfaces) ++ " dependency interfaces")))
 
   -- Discover transitive dependencies
   let projectType = if isApp then Parse.Application else Parse.Package pkg
   allModulePaths <- discoverTransitiveDeps root srcDirs paths depInterfaces projectType
-  Logger.debug COMPILE_DEBUG ("Discovered " ++ show (Map.size allModulePaths) ++ " total modules to compile")
+  Log.logEvent (BuildModuleQueued (Text.pack ("discovered " ++ show (Map.size allModulePaths) ++ " total modules")))
 
   -- Compile in dependency order with growing interface map and incremental caching
   compileResult <- compileModulesInOrder pkg projectType root depInterfaces allModulePaths
@@ -172,9 +169,7 @@ compileFromExposed ::
   NE.List ModuleName.Raw ->
   IO (Either Exit.BuildError Build.Artifacts)
 compileFromExposed pkg isApp root srcDirs exposedModules = do
-  Logger.debug COMPILE_DEBUG "Compiler: compileFromExposed (NEW pure compiler)"
-  Logger.debug COMPILE_DEBUG ("Package: " ++ show pkg)
-  Logger.debug COMPILE_DEBUG ("Exposed: " ++ show (NE.toList exposedModules))
+  Log.logEvent (BuildStarted (Text.pack "compileFromExposed"))
 
   -- Discover module paths
   paths <- discoverModulePaths root srcDirs (NE.toList exposedModules)
@@ -190,17 +185,15 @@ discoverTransitiveDeps ::
   Parse.ProjectType ->
   IO (Map.Map ModuleName.Raw FilePath)
 discoverTransitiveDeps root srcDirs initialPaths depInterfaces projectType = do
-  Logger.debug COMPILE_DEBUG ("discoverTransitiveDeps: root=" ++ root)
-  Logger.debug COMPILE_DEBUG ("discoverTransitiveDeps: srcDirs=" ++ show srcDirs)
-  Logger.debug COMPILE_DEBUG ("discoverTransitiveDeps: initialPaths=" ++ show initialPaths)
+  Log.logEvent (BuildStarted (Text.pack ("discoverTransitiveDeps: " ++ root)))
   -- Parse initial modules to get their names and imports
   initialModules <- mapM (parseModuleFile projectType) initialPaths
-  Logger.debug COMPILE_DEBUG ("discoverTransitiveDeps: parsed " ++ show (length initialModules) ++ " initial modules")
+  Log.logEvent (BuildModuleQueued (Text.pack ("parsed " ++ show (length initialModules) ++ " initial modules")))
   let initialMap = Map.fromList [(Src.getName m, p) | (m, p) <- zip initialModules initialPaths]
-  Logger.debug COMPILE_DEBUG ("discoverTransitiveDeps: initialMap keys=" ++ show (Map.keys initialMap))
+  Log.logEvent (BuildModuleQueued (Text.pack ("initialMap: " ++ show (Map.size initialMap) ++ " entries")))
   -- Recursively discover imports
   result <- discoverImports root srcDirs initialMap Set.empty initialModules depInterfaces projectType
-  Logger.debug COMPILE_DEBUG ("discoverTransitiveDeps: final result keys=" ++ show (Map.keys result))
+  Log.logEvent (BuildModuleQueued (Text.pack ("discovered " ++ show (Map.size result) ++ " modules total")))
   return result
   where
     parseModuleFile projType path = do
@@ -229,7 +222,7 @@ discoverImports ::
 discoverImports root srcDirs found visited modules depInterfaces projectType =
   case modules of
     [] -> do
-      Logger.debug COMPILE_DEBUG ("discoverImports: complete, found=" ++ show (Map.keys found))
+      Log.logEvent (BuildModuleQueued (Text.pack ("discoverImports complete: " ++ show (Map.size found) ++ " modules")))
       return found
     (modul : rest) -> do
       let modName = Src.getName modul
@@ -278,8 +271,7 @@ compileModulesInOrder ::
   Map.Map ModuleName.Raw FilePath ->
   IO (Either Exit.BuildError ([ModuleResult], Map.Map ModuleName.Raw I.Interface))
 compileModulesInOrder pkg projectType root initialInterfaces modulePaths = do
-  Logger.debug COMPILE_DEBUG "====== PARALLEL COMPILATION STARTING ======"
-  Logger.debug COMPILE_DEBUG ("Total modules to compile: " ++ show (Map.size modulePaths))
+  Log.logEvent (BuildStarted (Text.pack ("parallel compilation: " ++ show (Map.size modulePaths) ++ " modules")))
 
   -- Load incremental build cache
   buildCache <- loadBuildCache root
@@ -302,7 +294,7 @@ compileModulesInOrder pkg projectType root initialInterfaces modulePaths = do
           graph = Graph.buildGraph depList
           importMap = Map.fromList [(modName, imports) | (modName, _, imports) <- moduleImports]
 
-      Logger.debug COMPILE_DEBUG ("Dependency graph built with " ++ show (length depList) ++ " modules")
+      Log.logEvent (BuildModuleQueued (Text.pack ("dependency graph: " ++ show (length depList) ++ " modules")))
 
       -- Compile in parallel with caching
       result <- compileWithCache engine cacheRef hitRef missRef graph modulePaths initialInterfaces importMap
@@ -330,7 +322,7 @@ compileModulesInOrder pkg projectType root initialInterfaces modulePaths = do
     compileWithCache queryEngine cacheRef hitRef missRef graph statuses initialIfaces modImportMap = do
       let plan = Parallel.groupByDependencyLevel graph
           levels = Parallel.planLevels plan
-      Logger.debug COMPILE_DEBUG ("PARALLEL COMPILATION: " ++ show (length levels) ++ " dependency levels")
+      Log.logEvent (BuildModuleQueued (Text.pack (show (length levels) ++ " dependency levels")))
       compileLevels queryEngine cacheRef hitRef missRef levels initialIfaces [] statuses modImportMap
 
     -- Compile levels one by one, accumulating results and interfaces
@@ -397,11 +389,11 @@ compileModulesInOrder pkg projectType root initialInterfaces modulePaths = do
           case cached of
             Just moduleResult -> do
               atomicModifyIORef' hitRef (\n -> (n + 1, ()))
-              Logger.debug COMPILE_DEBUG ("CACHE HIT: " ++ Name.toChars modName)
+              Log.logEvent (CacheHit PhaseBuild (Text.pack (Name.toChars modName)))
               return (Right (moduleResult, (modName, mrInterface moduleResult)))
             Nothing -> do
               atomicModifyIORef' missRef (\n -> (n + 1, ()))
-              Logger.debug COMPILE_DEBUG ("CACHE MISS: " ++ Name.toChars modName ++ " - compiling")
+              Log.logEvent (CacheMiss PhaseBuild (Text.pack (Name.toChars modName)))
               compileFresh queryEngine cacheRef root modName path modImports ifaces
 
     -- Attempt compilation from cache
@@ -444,7 +436,10 @@ parseModuleImports projectType (modName, path) = do
       let imports = [A.toValue (Src._importName imp) | imp <- Src._imports modul]
       return (Right (modName, path, imports))
 
--- Helper: Convert QueryError to CompileError with proper categorization
+-- Helper: Convert QueryError to CompileError with proper categorization.
+--
+-- 'DiagnosticError' passes through directly for rich structured output.
+-- Legacy string-based errors are wrapped in their respective constructors.
 queryErrorToCompileError :: FilePath -> Query.QueryError -> Exit.CompileError
 queryErrorToCompileError path qErr =
   case qErr of
@@ -452,6 +447,7 @@ queryErrorToCompileError path qErr =
     Query.TypeError msg -> Exit.CompileTypeError path msg
     Query.FileNotFound fpath -> Exit.CompileModuleNotFound fpath
     Query.OtherError msg -> Exit.CompileCanonicalizeError path msg
+    Query.DiagnosticError diagPath diags -> Exit.CompileDiagnosticError diagPath diags
 
 -- Helper: Load all dependency artifacts (interfaces + GlobalGraph)
 -- Uses parallel loading for optimal performance
@@ -459,11 +455,11 @@ loadDependencyArtifacts :: FilePath -> IO (Maybe (Map.Map ModuleName.Raw I.Inter
 loadDependencyArtifacts root = do
   -- Read project dependencies from elm.json/canopy.json
   deps <- readProjectDependencies root
-  Logger.debug COMPILE_DEBUG ("Loading " ++ show (length deps) ++ " dependencies in parallel...")
+  Log.logEvent (BuildModuleQueued (Text.pack ("loading " ++ show (length deps) ++ " dependencies")))
 
   case deps of
     [] -> do
-      Logger.debug COMPILE_DEBUG "No dependencies found"
+      Log.logEvent (BuildModuleQueued (Text.pack "no dependencies found"))
       return (Just (Map.empty, Opt.empty))
     _ -> do
       -- Load all packages in parallel with async
@@ -471,13 +467,13 @@ loadDependencyArtifacts root = do
       maybeArtifacts <- PackageCache.loadAllPackageArtifacts deps
       case maybeArtifacts of
         Nothing -> do
-          Logger.debug COMPILE_DEBUG "No valid packages loaded"
+          Log.logEvent (BuildModuleQueued (Text.pack "no valid packages loaded"))
           return (Just (Map.empty, Opt.empty))
         Just artifacts -> do
           let depInterfaces = PackageCache.artifactInterfaces artifacts
               convertedInterfaces = convertDependencyInterfaces depInterfaces
               globalGraph = PackageCache.artifactObjects artifacts
-          Logger.debug COMPILE_DEBUG ("Successfully loaded " ++ show (Map.size convertedInterfaces) ++ " module interfaces")
+          Log.logEvent (BuildModuleQueued (Text.pack ("loaded " ++ show (Map.size convertedInterfaces) ++ " module interfaces")))
           return (Just (convertedInterfaces, globalGraph))
 
 -- Helper: Read project dependencies from elm.json or canopy.json
@@ -494,18 +490,18 @@ readProjectDependencies root = do
 
   if null jsonPath
     then do
-      Logger.debug COMPILE_DEBUG "No project file found"
+      Log.logEvent (BuildFailed (Text.pack "no project file found"))
       return []
     else do
-      Logger.debug COMPILE_DEBUG ("Reading dependencies from: " ++ jsonPath)
+      Log.logEvent (BuildModuleQueued (Text.pack ("reading deps from: " ++ jsonPath)))
       content <- LBS.readFile jsonPath
       case Json.decode content of
         Nothing -> do
-          Logger.debug COMPILE_DEBUG "Failed to parse project file"
+          Log.logEvent (BuildFailed (Text.pack "failed to parse project file"))
           return []
         Just (Json.Object obj) -> do
           let deps = extractDepsFromJson obj
-          Logger.debug COMPILE_DEBUG ("Extracted " ++ show (length deps) ++ " dependencies")
+          Log.logEvent (BuildModuleQueued (Text.pack ("extracted " ++ show (length deps) ++ " dependencies")))
           return deps
         _ -> return []
 
@@ -659,7 +655,7 @@ handleDecodeResult modName result =
     Right (iface, localGraph, ffiInfo) ->
       return (Just (ModuleResult modName iface localGraph ffiInfo))
     Left _ex -> do
-      Logger.debug COMPILE_DEBUG ("Cache artifact decode failed for: " ++ Name.toChars modName)
+      Log.logEvent (CacheMiss PhaseCache (Text.pack ("decode failed: " ++ Name.toChars modName)))
       return Nothing
 
 -- | Save module artifacts to cache (asynchronous, best-effort).
@@ -711,8 +707,7 @@ logIncrementalStats :: IORef Int -> IORef Int -> IO ()
 logIncrementalStats hitRef missRef = do
   hits <- readIORef hitRef
   misses <- readIORef missRef
-  let total = hits + misses
-  Logger.debug COMPILE_DEBUG ("Incremental cache: " ++ show hits ++ " hits, " ++ show misses ++ " misses out of " ++ show total ++ " modules")
+  Log.logEvent (BuildIncremental hits misses)
 
 -- Helper: Merge dependency GlobalGraph with compiled LocalGraphs
 mergeGraphs :: Opt.GlobalGraph -> [Opt.LocalGraph] -> Opt.GlobalGraph

@@ -68,7 +68,8 @@ import Data.List (isInfixOf)
 import qualified Data.Text as Text
 import qualified Data.Utf8 as Utf8
 import qualified Deps.Registry as Registry
-import Logging.Logger (printLog)
+import Logging.Event (LogEvent (..))
+import qualified Logging.Logger as Log
 import Publish.Environment (getEnv, initGit)
 import Publish.Git
   ( createZipArchive,
@@ -297,7 +298,7 @@ createAndReportZipArchive = do
   Task.io (Print.println [c|Beginning to create in-memory ZIP archive of source code...|])
   archive <- createZipArchive
   Task.io (Print.println [c|{green|Finished} creating in-memory ZIP archive of source code!|])
-  Task.io (printLog ("All files in ZIP archive: " <> show (Zip.filesInArchive archive)))
+  Task.io (Log.logEvent (PackageOperation (Text.pack "archive-list") (Text.pack (show (Zip.filesInArchive archive)))))
   pure archive
 
 -- | Get available versions for a package.

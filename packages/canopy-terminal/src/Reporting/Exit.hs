@@ -144,7 +144,7 @@ data Check
   | CheckCannotBuild BuildExit.BuildError
   | CheckAppNeedsFileNames
   | CheckPkgNeedsExposing
-  deriving (Show, Eq)
+  deriving (Show)
 
 -- | Convert a 'Check' error to a structured 'Report'.
 checkToReport :: Check -> Report
@@ -168,7 +168,7 @@ data Make
   | MakeMultipleFilesIntoHtml
   | MakeCannotBuild BuildExit.BuildError
   | MakeCannotOptimizeAndDebug
-  deriving (Show, Eq)
+  deriving (Show)
 
 -- | Convert a 'Make' error to a structured 'Report'.
 makeToReport :: Make -> Report
@@ -190,7 +190,7 @@ data Repl
   = ReplBadDetails FilePath
   | ReplBadGenerate String
   | ReplCannotBuild BuildExit.BuildError
-  deriving (Show, Eq)
+  deriving (Show)
 
 -- | Convert a 'Repl' error to a structured 'Report'.
 replToReport :: Repl -> Report
@@ -214,7 +214,7 @@ data Install
   | InstallNoOfflineAppSolution String
   | InstallHadSolverTrouble String
   | InstallNoArgs FilePath
-  deriving (Show, Eq)
+  deriving (Show)
 
 -- | Convert an 'Install' error to a structured 'Report'.
 installToReport :: Install -> Report
@@ -263,7 +263,7 @@ data Publish
   | PublishWithNoRepositoryLocalName
   | PublishUsingRepositoryLocalNameThatDoesntExistInCustomRepositoryConfig String [String]
   | PublishToStandardCanopyRepositoryUsingCanopy
-  deriving (Show, Eq)
+  deriving (Show)
 
 -- | Convert a 'Publish' error to a structured 'Report'.
 publishToReport :: Publish -> Report
@@ -322,7 +322,7 @@ data Diff
   | DiffBadDetails FilePath
   | DiffBadBuild BuildExit.BuildError
   | DiffNoExposed
-  deriving (Show, Eq)
+  deriving (Show)
 
 -- | Convert a 'Diff' error to a structured 'Report'.
 diffToReport :: Diff -> Report
@@ -353,7 +353,7 @@ data Bump
   | BumpBuildProblem BuildExit.BuildError
   | BumpBadBuild BuildExit.BuildError
   | BumpNoExposed
-  deriving (Show, Eq)
+  deriving (Show)
 
 -- | Convert a 'Bump' error to a structured 'Report'.
 bumpToReport :: Bump -> Report
@@ -381,7 +381,7 @@ data Init
   | InitCannotCreateDirectory FilePath
   | InitCannotWriteFile FilePath
   | InitBadDetails FilePath
-  deriving (Show, Eq)
+  deriving (Show)
 
 -- | Convert an 'Init' error to a structured 'Report'.
 initToReport :: Init -> Report
@@ -400,19 +400,19 @@ initToReport (InitBadDetails path) = badDetailsError path
 data RegistryProblem
   = RegistryConnectionError String
   | RegistryBadData String
-  deriving (Show, Eq)
+  deriving (Show)
 
 -- | Errors from the dependency solver.
 data Solver
   = SolverNoSolution String
   | SolverConflict String
-  deriving (Show, Eq)
+  deriving (Show)
 
 -- | Setup (bootstrap) errors.
 data Setup
   = SetupRegistryFailed String
   | SetupCacheFailed String
-  deriving (Show, Eq)
+  deriving (Show)
 
 -- | Convert a 'Setup' error to a structured 'Report'.
 setupToReport :: Setup -> Report
@@ -428,7 +428,7 @@ data Reactor
   | ReactorBadDetails FilePath
   | ReactorBadBuild BuildExit.BuildError
   | ReactorBadGenerate String
-  deriving (Show, Eq)
+  deriving (Show)
 
 -- | Convert a 'Reactor' error to a structured 'Report'.
 reactorToReport :: Reactor -> Report

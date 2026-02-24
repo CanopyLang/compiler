@@ -10,7 +10,7 @@ where
 import qualified AST.Canonical as Can
 import qualified Canopy.ModuleName as ModuleName
 import Control.Lens (makeLenses, (^.), (.~), (&), (%~))
-import Control.Monad (filterM, foldM, forM, liftM2, liftM3)
+import Control.Monad (filterM, foldM, forM, liftM2, liftM3, when)
 import Data.Foldable (for_, traverse_, maximumBy)
 import Data.Map.Strict (Map)
 import qualified Data.Text as Text
@@ -31,6 +31,8 @@ import qualified Type.Occurs as Occurs
 import Type.Type as Type
 import qualified Type.Unify as Unify
 import qualified Type.UnionFind as UF
+import Logging.Event (LogEvent (..), ConstraintKind (..))
+import qualified Logging.Logger as Log
 
 -- TYPES
 
@@ -92,33 +94,32 @@ createSolveConfig env rank pools state = SolveConfig
 -- SOLVER
 
 solve :: SolveConfig -> Constraint -> IO State
-solve config constraint = case constraint of
-  CTrue -> return (config ^. solveState)
-  CSaveTheEnvironment -> return $ config ^. solveState & stateEnv .~ (config ^. solveEnv)
-  CEqual region category tipe expectation ->
-    solveEqual config region category tipe expectation
-  CLocal region name expectation ->
-    solveLocal config region name expectation
-  CForeign region name forAll expectation ->
-    solveForeign config region name forAll expectation
-  CPattern region category tipe expectation ->
-    solvePattern config region category tipe expectation
-  CAnd constraints ->
-    foldM (solve . updateSolveState config) (config ^. solveState) constraints
-  CCaseBranchesIsolated constraints ->
-    -- Case branches are solved sequentially, matching Elm's proven type solver
-    -- behavior. Each branch's unification results flow into subsequent branches.
-    -- A future enhancement could add selective isolation (saving/restoring flex
-    -- variable descriptors per branch) to prevent cross-branch type pollution,
-    -- but this would require careful handling of shared result type variables
-    -- and let-binding generalization within branches.
-    foldM (solve . updateSolveState config) (config ^. solveState) constraints
-  CLet [] flexs _ headerCon CTrue _ ->
-    solveSimpleLet config flexs headerCon
-  CLet [] [] header headerCon subCon _ ->
-    solveEmptyLet config header headerCon subCon
-  CLet rigids flexs header headerCon subCon expectedType ->
-    solveFullLet config rigids flexs header headerCon subCon expectedType
+solve config constraint = do
+  enabled <- Log.isEnabled
+  when enabled (logConstraintKind constraint)
+  case constraint of
+    CTrue -> return (config ^. solveState)
+    CSaveTheEnvironment -> return $ config ^. solveState & stateEnv .~ (config ^. solveEnv)
+    CEqual region category tipe expectation ->
+      solveEqual config region category tipe expectation
+    CLocal region name expectation ->
+      solveLocal config region name expectation
+    CForeign region name forAll expectation ->
+      solveForeign config region name forAll expectation
+    CPattern region category tipe expectation ->
+      solvePattern config region category tipe expectation
+    CAnd constraints ->
+      foldM (solve . updateSolveState config) (config ^. solveState) constraints
+    CCaseBranchesIsolated constraints ->
+      -- Case branches are solved sequentially, matching Elm's proven type solver
+      -- behavior. Each branch's unification results flow into subsequent branches.
+      foldM (solve . updateSolveState config) (config ^. solveState) constraints
+    CLet [] flexs _ headerCon CTrue _ ->
+      solveSimpleLet config flexs headerCon
+    CLet [] [] header headerCon subCon _ ->
+      solveEmptyLet config header headerCon subCon
+    CLet rigids flexs header headerCon subCon expectedType ->
+      solveFullLet config rigids flexs header headerCon subCon expectedType
 
 -- | Reset a rigid variable to noRank after generalization
 -- IMPORTANT: Reset BOTH RigidVar and RigidSuper!
@@ -209,6 +210,19 @@ isGeneric var = do
         (Text.pack ("Non-generic type variable at rank " <> show rank <> ": " <> show (ET.toDoc L.empty RT.None tipe)))
         "A type variable was expected to be generalized (rank=noRank) but still has a concrete rank. This indicates a bug in the constraint solver."
 
+-- | Emit a TRACE event for the constraint kind being solved.
+logConstraintKind :: Constraint -> IO ()
+logConstraintKind = \case
+  CTrue -> pure ()
+  CSaveTheEnvironment -> pure ()
+  CEqual {} -> Log.logEvent (TypeConstraintSolved "solver" CKEqual)
+  CLocal {} -> Log.logEvent (TypeConstraintSolved "solver" CKLocal)
+  CForeign {} -> Log.logEvent (TypeConstraintSolved "solver" CKForeign)
+  CPattern {} -> Log.logEvent (TypeConstraintSolved "solver" CKPattern)
+  CLet {} -> Log.logEvent (TypeConstraintSolved "solver" CKLet)
+  CAnd {} -> Log.logEvent (TypeConstraintSolved "solver" CKAnd)
+  CCaseBranchesIsolated {} -> Log.logEvent (TypeConstraintSolved "solver" CKCase)
+
 updateSolveState :: SolveConfig -> State -> SolveConfig
 updateSolveState config newState = config & solveState .~ newState
 
@@ -298,9 +312,13 @@ handleUnifyResult config actual expected errorFunc = do
   answer <- Unify.unify actual expected
   case answer of
     Unify.Ok vars -> do
+      enabled <- Log.isEnabled
+      when enabled (Log.logEvent (TypeUnified "solver" "actual" "expected"))
       introduce (config ^. solveRank) (config ^. solvePools) vars
       return (config ^. solveState)
     Unify.Err vars actualType expectedType -> do
+      enabled <- Log.isEnabled
+      when enabled (Log.logEvent (TypeUnifyFailed "solver" (Text.pack (show actualType)) (Text.pack (show expectedType))))
       introduce (config ^. solveRank) (config ^. solvePools) vars
       return $ addError (config ^. solveState) (errorFunc actualType expectedType)
 
@@ -472,6 +490,8 @@ solveEmptyLet config header headerCon subCon = do
 
 solveFullLet :: SolveConfig -> [Variable] -> [Variable] -> Map Name.Name (A.Located Type) -> Constraint -> Constraint -> Maybe Type -> IO State
 solveFullLet config rigids flexs header headerCon subCon expectedType = do
+  enabled <- Log.isEnabled
+  when enabled (Log.logEvent (TypeLetGeneralized "solver" "let-binding" (length flexs)))
   nextPools <- prepareNextPools config
   let nextRank = (config ^. solveRank) + 1
   nextConfig <- introduceLetVariables config rigids flexs nextRank nextPools

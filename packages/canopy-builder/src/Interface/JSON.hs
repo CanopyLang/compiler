@@ -42,10 +42,11 @@ import qualified Canopy.Interface as I
 import Control.Monad (unless)
 import Data.Aeson (FromJSON, ToJSON, eitherDecode, encode)
 import qualified Data.ByteString.Lazy as BL
+import qualified Data.Text as Text
 import Data.Time.Clock (UTCTime, getCurrentTime)
 import GHC.Generics (Generic)
-import qualified Logging.Debug as Logger
-import Logging.Debug (DebugCategory (..))
+import Logging.Event (LogEvent (..))
+import qualified Logging.Logger as Log
 import System.Directory (doesFileExist)
 
 -- | Interface file with metadata.
@@ -98,7 +99,7 @@ writeInterface basePath iface sourceHash depsHash = do
   -- Write JSON format only
   let jsonPath = basePath ++ ".cani.json"
   BL.writeFile jsonPath (encode ifFile)
-  Logger.debug BUILD ("Wrote JSON interface: " ++ jsonPath)
+  Log.logEvent (InterfaceSaved jsonPath)
 
 -- | Read interface from JSON file.
 --
@@ -118,7 +119,7 @@ readInterfaceJSON path = do
   content <- BL.readFile path
   case eitherDecode content of
     Right ifFile -> do
-      Logger.debug BUILD ("Read JSON interface: " ++ path)
+      Log.logEvent (InterfaceLoaded path)
       validateVersion (ifVersion ifFile)
       return (Right (ifModule ifFile))
     Left err -> return (Left ("JSON decode error: " ++ err))
@@ -127,4 +128,4 @@ readInterfaceJSON path = do
 validateVersion :: String -> IO ()
 validateVersion version =
   unless (version == "1.0.0") $ do
-    Logger.debug BUILD ("Warning: Interface version mismatch: " ++ version)
+    Log.logEvent (BuildFailed (Text.pack ("Interface version mismatch: " ++ version)))

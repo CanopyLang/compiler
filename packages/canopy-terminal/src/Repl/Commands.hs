@@ -44,9 +44,9 @@ import Repl.Types
   )
 import qualified Reporting.Annotation as A
 import qualified Reporting.Doc as D
+import qualified Reporting.Diagnostic as Diag
 import qualified Reporting.Error.Syntax as ES
 import qualified Reporting.Render.Code as Code
-import qualified Reporting.Report as Report
 
 -- | Categorize user input into appropriate action.
 --
@@ -204,8 +204,8 @@ toDeclPosition src decl r c =
   (row, col)
   where
     err = ES.ParseError (ES.Declarations decl r c)
-    report = ES.toReport (Code.toSource src) err
-    Report.Report _ (A.Region (A.Position row col) _) _ _ = report
+    diag = ES.toDiagnostic (Code.toSource src) err
+    A.Region (A.Position row col) _ = Diag._spanRegion (Diag._diagPrimary diag)
 
 -- | Parse type annotation.
 --

@@ -49,7 +49,9 @@ import qualified Compiler
 import Control.Lens ((^.))
 import Data.NonEmptyList (List)
 import qualified Data.NonEmptyList as NE
-import Logging.Logger (printLog, setLogFlag)
+import qualified Data.Text as Text
+import Logging.Event (LogEvent (..))
+import qualified Logging.Logger as Log
 import Make.Builder (buildFromExposed, buildFromPaths)
 import Make.Environment (createBuildContext, getDesiredMode, getReportingStyle, setupEnvironment)
 import Make.Output (generateOutput)
@@ -65,7 +67,6 @@ import Make.Types
     docs,
     optimize,
     report,
-    verbose,
     watch,
   )
 import qualified Make.Types as Types
@@ -114,11 +115,12 @@ runSingleBuild paths flags = do
 
 -- | Enable verbose logging if requested.
 --
--- Configures the logger based on the verbose flag from command line.
--- Must be called before any logging operations.
+-- Previously configured the logger via 'setLogFlag'. The new logging
+-- system uses environment variables exclusively, so this is a no-op
+-- retained for call-site compatibility.
 enableVerboseLogging :: Flags -> IO ()
-enableVerboseLogging flags =
-  setLogFlag (flags ^. verbose)
+enableVerboseLogging _flags =
+  pure ()
 
 -- | Execute the complete build process with root path.
 --
@@ -136,7 +138,7 @@ executeBuildWithRoot root paths flags style =
 -- appropriate build strategy based on input paths.
 coordinateBuildWithRoot :: FilePath -> [FilePath] -> Flags -> Reporting.Style -> BW.Scope -> Task ()
 coordinateBuildWithRoot root paths flags style scope = do
-  Task.io (printLog "Loading project details")
+  Task.io (Log.logEvent (BuildStarted (Text.pack "Loading project details")))
   details <- loadProjectDetailsFromRoot style scope root
   mode <- getDesiredMode (flags ^. debug) (flags ^. optimize)
   let ctx = createBuildContext style root details mode
@@ -162,13 +164,13 @@ executeBuildStrategy ::
   Maybe Output ->
   Task ()
 executeBuildStrategy ctx [] _maybeDocs maybeOutput = do
-  Task.io (printLog "Building exposed modules (no paths provided)")
+  Task.io (Log.logEvent (BuildStarted (Text.pack "Building exposed modules (no paths provided)")))
   exposed <- getExposedModules (ctx ^. bcDetails)
   let srcDirs = getSrcDirsFromDetails (ctx ^. bcDetails)
   artifacts <- buildFromExposed ctx srcDirs exposed
   generateOutput ctx artifacts maybeOutput
 executeBuildStrategy ctx (p : ps) _maybeDocs maybeOutput = do
-  Task.io (printLog ("Building from paths: " <> show (p : ps)))
+  Task.io (Log.logEvent (BuildStarted (Text.pack ("Building from paths: " <> show (p : ps)))))
   artifacts <- buildFromPaths ctx (NE.List p ps)
   generateOutput ctx artifacts maybeOutput
 

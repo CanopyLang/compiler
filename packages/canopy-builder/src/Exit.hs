@@ -5,6 +5,8 @@
 --
 -- Clean, minimal exit codes and error types for the NEW builder.
 -- Provides beautiful colored error output using the Reporting infrastructure.
+-- 'CompileDiagnosticError' carries structured 'Diagnostic' values from
+-- the compiler phases for rich terminal and JSON output.
 --
 -- @since 0.19.1
 module Exit
@@ -21,7 +23,10 @@ module Exit
   )
 where
 
+import Reporting.Diagnostic (Diagnostic)
+import qualified Reporting.Diagnostic as Diag
 import qualified Reporting.Doc as D
+import qualified Reporting.Error as Error
 
 -- | Build-level errors.
 data BuildError
@@ -30,16 +35,21 @@ data BuildError
   | BuildInvalidOutline String
   | BuildDependencyError String
   | BuildBadArgs String
-  deriving (Show, Eq)
+  deriving (Show)
 
 -- | Compilation errors.
+--
+-- 'CompileDiagnosticError' carries structured diagnostics from the
+-- compiler phases (parse, canonicalize, type check). These provide
+-- error codes, source spans, suggestions, and colored output.
 data CompileError
   = CompileParseError FilePath String
   | CompileTypeError FilePath String
   | CompileCanonicalizeError FilePath String
   | CompileOptimizeError FilePath String
   | CompileModuleNotFound FilePath
-  deriving (Show, Eq)
+  | CompileDiagnosticError FilePath [Diagnostic]
+  deriving (Show)
 
 -- | Make command errors.
 data MakeError
@@ -47,11 +57,11 @@ data MakeError
   | MakeBadGenerate String
   | MakeNoMain
   | MakeMultipleFilesIntoHtml
-  deriving (Show, Eq)
+  deriving (Show)
 
 -- | Convert error to string for display.
 toString :: BuildError -> String
-toString err = case err of
+toString = \case
   BuildCannotCompile compileErr ->
     "BUILD ERROR: " ++ compileErrorToString compileErr
   BuildProjectNotFound path ->
@@ -64,7 +74,7 @@ toString err = case err of
     "BUILD ERROR: Bad arguments: " ++ msg
 
 compileErrorToString :: CompileError -> String
-compileErrorToString err = case err of
+compileErrorToString = \case
   CompileParseError path msg ->
     "Parse error in " ++ path ++ ": " ++ msg
   CompileTypeError path msg ->
@@ -75,98 +85,106 @@ compileErrorToString err = case err of
     "Optimization error in " ++ path ++ ": " ++ msg
   CompileModuleNotFound path ->
     "Module not found: " ++ path
+  CompileDiagnosticError path diags ->
+    "Compile error in " ++ path ++ ": " ++ show (length diags) ++ " diagnostic(s)"
 
 -- | Convert make error to string.
 makeErrorToString :: MakeError -> String
-makeErrorToString err = case err of
-  MakeBuildError msg ->
-    "BUILD ERROR: " ++ msg
-  MakeBadGenerate msg ->
-    "GENERATE ERROR: " ++ msg
-  MakeNoMain ->
-    "ERROR: No main function found"
-  MakeMultipleFilesIntoHtml ->
-    "ERROR: Cannot generate HTML from multiple files"
+makeErrorToString = \case
+  MakeBuildError msg -> "BUILD ERROR: " ++ msg
+  MakeBadGenerate msg -> "GENERATE ERROR: " ++ msg
+  MakeNoMain -> "ERROR: No main function found"
+  MakeMultipleFilesIntoHtml -> "ERROR: Cannot generate HTML from multiple files"
 
 -- BEAUTIFUL ERROR OUTPUT
 
 -- | Convert error to beautiful colored Doc.
 toDoc :: BuildError -> D.Doc
-toDoc err = case err of
+toDoc = \case
   BuildCannotCompile compileErr ->
-    D.vcat
-      [ D.dullred (D.fromChars "-- BUILD ERROR ") <> D.fromChars "----------"
-      , D.empty
-      , compileErrorToDoc compileErr
-      ]
+    compileErrorToDoc compileErr
   BuildProjectNotFound path ->
-    D.vcat
-      [ D.dullred (D.fromChars "-- PROJECT NOT FOUND ") <> D.fromChars "----------"
-      , D.empty
-      , D.reflow ("I cannot find a project at: " ++ path)
-      , D.empty
-      , D.reflow
-          "Make sure you are running this command from a directory with a \
-          \canopy.json or elm.json file."
-      ]
+    structuredError "PROJECT NOT FOUND"
+      (D.reflow ("I cannot find a project at: " ++ path))
+      (D.reflow "Make sure you are running this command from a directory with a canopy.json or elm.json file.")
   BuildInvalidOutline msg ->
-    D.vcat
-      [ D.dullred (D.fromChars "-- INVALID PROJECT ") <> D.fromChars "----------"
-      , D.empty
-      , D.reflow "There is a problem with your project configuration:"
-      , D.empty
-      , D.indent 4 (D.dullyellow (D.fromChars msg))
-      ]
+    structuredError "INVALID PROJECT"
+      (D.reflow "There is a problem with your project configuration:")
+      (D.indent 4 (D.dullyellow (D.fromChars msg)))
   BuildDependencyError msg ->
-    D.vcat
-      [ D.dullred (D.fromChars "-- DEPENDENCY ERROR ") <> D.fromChars "----------"
-      , D.empty
-      , D.reflow msg
-      ]
+    structuredErrorNoFix "DEPENDENCY ERROR" (D.reflow msg)
   BuildBadArgs msg ->
-    D.vcat
-      [ D.dullred (D.fromChars "-- BAD ARGUMENTS ") <> D.fromChars "----------"
-      , D.empty
-      , D.reflow msg
-      ]
+    structuredErrorNoFix "BAD ARGUMENTS" (D.reflow msg)
 
 -- | Convert compile error to beautiful colored Doc.
+--
+-- 'CompileDiagnosticError' renders using the structured diagnostic
+-- system with error codes, source snippets, and suggestions.
 compileErrorToDoc :: CompileError -> D.Doc
-compileErrorToDoc err = case err of
+compileErrorToDoc = \case
   CompileParseError path msg ->
-    D.vcat
-      [ D.reflow ("Parse error in " ++ path ++ ":")
-      , D.empty
-      , D.indent 4 (D.dullyellow (D.fromChars msg))
-      , D.empty
-      , D.toSimpleHint
-          "Check for missing parentheses, commas, or other syntax issues."
-      ]
+    legacyErrorDoc "Parse error" path msg
   CompileTypeError path msg ->
-    D.vcat
-      [ D.reflow ("Type error in " ++ path ++ ":")
-      , D.empty
-      , D.indent 4 (D.dullyellow (D.fromChars msg))
-      ]
+    legacyErrorDoc "Type error" path msg
   CompileCanonicalizeError path msg ->
-    D.vcat
-      [ D.reflow ("Error in " ++ path ++ ":")
-      , D.empty
-      , D.indent 4 (D.dullyellow (D.fromChars msg))
-      ]
+    legacyErrorDoc "Error" path msg
   CompileOptimizeError path msg ->
-    D.vcat
-      [ D.reflow ("Optimization error in " ++ path ++ ":")
-      , D.empty
-      , D.indent 4 (D.dullyellow (D.fromChars msg))
-      ]
+    legacyErrorDoc "Optimization error" path msg
   CompileModuleNotFound path ->
-    D.vcat
-      [ D.reflow "I cannot find a module:"
-      , D.empty
-      , D.indent 4 (D.dullyellow (D.fromChars path))
-      , D.empty
-      , D.toSimpleHint
-          "Check the \"source-directories\" in your canopy.json or elm.json \
-          \to make sure the module is in one of the listed directories."
-      ]
+    structuredError "MODULE NOT FOUND"
+      (D.indent 4 (D.dullyellow (D.fromChars path)))
+      (D.toSimpleHint "Check the \"source-directories\" in your canopy.json or elm.json to make sure the module is in one of the listed directories.")
+  CompileDiagnosticError path diags ->
+    renderDiagnostics path diags
+
+-- | Render structured diagnostics using the Diagnostic rendering system.
+--
+-- Each diagnostic is rendered with its error code, title bar, message,
+-- suggestions, and notes. This produces the same high-quality output
+-- as the core compiler's error reporting.
+renderDiagnostics :: FilePath -> [Diagnostic] -> D.Doc
+renderDiagnostics path diags =
+  D.vcat (fmap (renderOneDiagnostic path) (Error.filterCascadeList diags))
+
+-- | Render a single diagnostic.
+renderOneDiagnostic :: FilePath -> Diagnostic -> D.Doc
+renderOneDiagnostic path diag =
+  Diag.diagnosticToDoc path diag
+
+-- | Render a legacy string-based error with colored formatting.
+legacyErrorDoc :: String -> FilePath -> String -> D.Doc
+legacyErrorDoc label path msg =
+  D.vcat
+    [ D.reflow (label ++ " in " ++ path ++ ":"),
+      "",
+      D.indent 4 (D.dullyellow (D.fromChars msg))
+    ]
+
+-- | Build a structured error with title bar, explanation, and fix.
+structuredError :: String -> D.Doc -> D.Doc -> D.Doc
+structuredError title explanation fix =
+  D.vcat
+    [ errorBar title,
+      "",
+      explanation,
+      "",
+      fix,
+      ""
+    ]
+
+-- | Build a structured error without a fix suggestion.
+structuredErrorNoFix :: String -> D.Doc -> D.Doc
+structuredErrorNoFix title explanation =
+  D.vcat
+    [ errorBar title,
+      "",
+      explanation,
+      ""
+    ]
+
+-- | Render the colored error title bar.
+errorBar :: String -> D.Doc
+errorBar title =
+  D.dullred ("--" <> " " <> D.fromChars title <> " " <> D.fromChars dashes)
+  where
+    dashes = replicate (max 1 (80 - 4 - length title)) '-'

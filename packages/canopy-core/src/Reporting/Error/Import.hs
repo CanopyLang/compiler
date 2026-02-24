@@ -3,7 +3,7 @@
 module Reporting.Error.Import
   ( Error (..),
     Problem (..),
-    toReport,
+    toDiagnostic,
   )
 where
 
@@ -11,10 +11,13 @@ import qualified Canopy.ModuleName as ModuleName
 import qualified Canopy.Package as Pkg
 import qualified Data.Map as Map
 import qualified Data.Set as Set
+import qualified Data.Text as Text
 import qualified Reporting.Annotation as A
+import Reporting.Diagnostic (Diagnostic, LabeledSpan (..), SpanStyle (..), Suggestion (..), Confidence (..))
+import qualified Reporting.Diagnostic as Diag
 import qualified Reporting.Doc as D
+import qualified Reporting.ErrorCode as EC
 import qualified Reporting.Render.Code as Code
-import qualified Reporting.Report as Report
 import qualified Reporting.Suggest as Suggest
 
 -- ERROR
@@ -34,132 +37,167 @@ data Problem
   | AmbiguousForeign Pkg.Name Pkg.Name [Pkg.Name]
   deriving (Show)
 
--- TO REPORT
+-- TO DIAGNOSTIC
 
-toReport :: Code.Source -> Error -> Report.Report
-toReport source (Error region name unimportedModules problem) =
+-- | Convert an import error to a structured 'Diagnostic'.
+--
+-- Each import error problem maps to a specific error code:
+--
+-- @
+-- NotFound       -> E0200
+-- Ambiguous      -> E0201
+-- AmbiguousLocal -> E0202
+-- AmbiguousForeign -> E0203
+-- @
+toDiagnostic :: Code.Source -> Error -> Diagnostic
+toDiagnostic source (Error region name unimportedModules problem) =
   case problem of
     NotFound ->
-      Report.Report "MODULE NOT FOUND" region [] $
-        Code.toSnippet
-          source
-          region
-          Nothing
-          ( D.reflow ("You are trying to import a `" <> (ModuleName.toChars name <> "` module:")),
-            D.stack
-              [ D.reflow
-                  "I checked the \"dependencies\" and \"source-directories\" listed in your canopy.json,\
-                  \ but I cannot find it! Maybe it is a typo for one of these names?",
-                (D.dullyellow . D.indent 4) . D.vcat $ fmap D.fromName (toSuggestions name unimportedModules),
-                case Map.lookup name Pkg.suggestions of
-                  Nothing ->
-                    D.toSimpleHint
-                      "If it is not a typo, check the \"dependencies\" and \"source-directories\"\
-                      \ of your canopy.json to make sure all the packages you need are listed there!"
-                  Just dependency ->
-                    D.toFancyHint
-                      [ "Maybe",
-                        "you",
-                        "want",
-                        "the",
-                        "`" <> D.fromName name <> "`",
-                        "module",
-                        "defined",
-                        "in",
-                        "the",
-                        D.fromChars (Pkg.toChars dependency),
-                        "package?",
-                        "Running",
-                        D.green (D.fromChars ("canopy install " <> Pkg.toChars dependency)),
-                        "should",
-                        "make",
-                        "it",
-                        "available!"
-                      ]
-              ]
-          )
+      notFoundDiagnostic source region name unimportedModules
     Ambiguous path _ pkg _ ->
-      Report.Report "AMBIGUOUS IMPORT" region [] $
-        Code.toSnippet
-          source
-          region
-          Nothing
-          ( D.reflow ("You are trying to import a `" <> (ModuleName.toChars name <> "` module:")),
-            D.stack
-              [ D.fillSep
-                  [ "But",
-                    "I",
-                    "found",
-                    "multiple",
-                    "modules",
-                    "with",
-                    "that",
-                    "name.",
-                    "One",
-                    "in",
-                    "the",
-                    D.dullyellow (D.fromChars (Pkg.toChars pkg)),
-                    "package,",
-                    "and",
-                    "another",
-                    "defined",
-                    "locally",
-                    "in",
-                    "the",
-                    D.dullyellow (D.fromChars path),
-                    "file.",
-                    "I",
-                    "do",
-                    "not",
-                    "have",
-                    "a",
-                    "way",
-                    "to",
-                    "choose",
-                    "between",
-                    "them."
-                  ],
-                D.reflow "Try changing the name of the locally defined module to clear up the ambiguity?"
-              ]
-          )
+      ambiguousDiagnostic region name path pkg
     AmbiguousLocal path1 path2 paths ->
-      Report.Report "AMBIGUOUS IMPORT" region [] $
-        Code.toSnippet
-          source
-          region
-          Nothing
-          ( D.reflow ("You are trying to import a `" <> (ModuleName.toChars name <> "` module:")),
-            D.stack
-              [ D.reflow "But I found multiple files in your \"source-directories\" with that name:",
-                (D.dullyellow . D.indent 4) . D.vcat $ fmap D.fromChars (path1 : path2 : paths),
-                D.reflow "Change the module names to be distinct!"
-              ]
-          )
+      ambiguousLocalDiagnostic region name path1 path2 paths
     AmbiguousForeign pkg1 pkg2 pkgs ->
-      Report.Report "AMBIGUOUS IMPORT" region [] $
-        Code.toSnippet
-          source
-          region
-          Nothing
-          ( D.reflow ("You are trying to import a `" <> (ModuleName.toChars name <> "` module:")),
-            D.stack
-              [ D.reflow "But multiple packages in your \"dependencies\" that expose a module that name:",
-                (D.dullyellow . D.indent 4) . D.vcat $ fmap (D.fromChars . Pkg.toChars) (pkg1 : pkg2 : pkgs),
-                D.reflow
-                  "There is no way to disambiguate in cases like this right now. Of the known name\
-                  \ clashes, they are usually for packages with similar purposes, so the current\
-                  \ recommendation is to pick just one of them.",
-                D.toSimpleNote
-                  "It seems possible to resolve this with new syntax in imports, but that is\
-                  \ more complicated than it sounds. Right now, our module names are tied to GitHub\
-                  \ repos, but we may want to get rid of that dependency for a variety of reasons.\
-                  \ That would in turn have implications for our package infrastructure, hosting\
-                  \ costs, and possibly on how package names are specified. The particular syntax\
-                  \ chosen seems like it would interact with all these factors in ways that are\
-                  \ difficult to predict, potentially leading to harder problems later on. So more\
-                  \ design work and planning is needed on these topics."
-              ]
-          )
+      ambiguousForeignDiagnostic region name pkg1 pkg2 pkgs
+
+notFoundDiagnostic :: Code.Source -> A.Region -> ModuleName.Raw -> Set.Set ModuleName.Raw -> Diagnostic
+notFoundDiagnostic source region name unimportedModules =
+  Diag.makeDiagnostic
+    (EC.importError 0)
+    Diag.SError
+    Diag.PhaseImport
+    "MODULE NOT FOUND"
+    (Text.pack ("Cannot find module `" <> ModuleName.toChars name <> "`"))
+    (LabeledSpan region (Text.pack ("module `" <> ModuleName.toChars name <> "` not found")) SpanPrimary)
+    ( Code.toSnippet
+        source
+        region
+        Nothing
+        ( D.reflow ("You are trying to import a `" <> (ModuleName.toChars name <> "` module:")),
+          D.stack
+            [ D.reflow
+                "I checked the \"dependencies\" and \"source-directories\" listed in your canopy.json,\
+                \ but I cannot find it! Maybe it is a typo for one of these names?",
+              (D.dullyellow . D.indent 4) . D.vcat $ fmap D.fromName suggestions,
+              installHint name
+            ]
+        )
+    )
+    & addSuggestions name suggestions
+  where
+    suggestions = toSuggestions name unimportedModules
+
+    addSuggestions :: ModuleName.Raw -> [ModuleName.Raw] -> Diagnostic -> Diagnostic
+    addSuggestions _ [] diag = diag
+    addSuggestions _modName (best : _) diag =
+      Diag.addSuggestion
+        (Suggestion region (Text.pack (ModuleName.toChars best)) (Text.pack ("Did you mean `" <> ModuleName.toChars best <> "`?")) Likely)
+        diag
+
+    installHint :: ModuleName.Raw -> D.Doc
+    installHint modName =
+      case Map.lookup modName Pkg.suggestions of
+        Nothing ->
+          D.toSimpleHint
+            "If it is not a typo, check the \"dependencies\" and \"source-directories\"\
+            \ of your canopy.json to make sure all the packages you need are listed there!"
+        Just dependency ->
+          D.toFancyHint
+            [ "Maybe",
+              "you",
+              "want",
+              "the",
+              "`" <> D.fromName modName <> "`",
+              "module",
+              "defined",
+              "in",
+              "the",
+              D.fromChars (Pkg.toChars dependency),
+              "package?",
+              "Running",
+              D.green (D.fromChars ("canopy install " <> Pkg.toChars dependency)),
+              "should",
+              "make",
+              "it",
+              "available!"
+            ]
+
+    (&) = flip ($)
+
+ambiguousDiagnostic :: A.Region -> ModuleName.Raw -> FilePath -> Pkg.Name -> Diagnostic
+ambiguousDiagnostic region name path pkg =
+  Diag.makeDiagnostic
+    (EC.importError 1)
+    Diag.SError
+    Diag.PhaseImport
+    "AMBIGUOUS IMPORT"
+    (Text.pack ("Module `" <> ModuleName.toChars name <> "` found in multiple locations"))
+    (LabeledSpan region (Text.pack ("ambiguous module `" <> ModuleName.toChars name <> "`")) SpanPrimary)
+    ( D.stack
+        [ D.reflow ("You are trying to import a `" <> (ModuleName.toChars name <> "` module:")),
+          D.fillSep
+            [ "But",
+              "I",
+              "found",
+              "multiple",
+              "modules",
+              "with",
+              "that",
+              "name.",
+              "One",
+              "in",
+              "the",
+              D.dullyellow (D.fromChars (Pkg.toChars pkg)),
+              "package,",
+              "and",
+              "another",
+              "defined",
+              "locally",
+              "in",
+              "the",
+              D.dullyellow (D.fromChars path),
+              "file."
+            ],
+          D.reflow "Try changing the name of the locally defined module to clear up the ambiguity?"
+        ]
+    )
+
+ambiguousLocalDiagnostic :: A.Region -> ModuleName.Raw -> FilePath -> FilePath -> [FilePath] -> Diagnostic
+ambiguousLocalDiagnostic region name path1 path2 paths =
+  Diag.makeDiagnostic
+    (EC.importError 2)
+    Diag.SError
+    Diag.PhaseImport
+    "AMBIGUOUS IMPORT"
+    (Text.pack ("Module `" <> ModuleName.toChars name <> "` found in multiple source directories"))
+    (LabeledSpan region (Text.pack ("ambiguous module `" <> ModuleName.toChars name <> "`")) SpanPrimary)
+    ( D.stack
+        [ D.reflow ("You are trying to import a `" <> (ModuleName.toChars name <> "` module:")),
+          D.reflow "But I found multiple files in your \"source-directories\" with that name:",
+          (D.dullyellow . D.indent 4) . D.vcat $ fmap D.fromChars (path1 : path2 : paths),
+          D.reflow "Change the module names to be distinct!"
+        ]
+    )
+
+ambiguousForeignDiagnostic :: A.Region -> ModuleName.Raw -> Pkg.Name -> Pkg.Name -> [Pkg.Name] -> Diagnostic
+ambiguousForeignDiagnostic region name pkg1 pkg2 pkgs =
+  Diag.makeDiagnostic
+    (EC.importError 3)
+    Diag.SError
+    Diag.PhaseImport
+    "AMBIGUOUS IMPORT"
+    (Text.pack ("Module `" <> ModuleName.toChars name <> "` found in multiple packages"))
+    (LabeledSpan region (Text.pack ("ambiguous module `" <> ModuleName.toChars name <> "`")) SpanPrimary)
+    ( D.stack
+        [ D.reflow ("You are trying to import a `" <> (ModuleName.toChars name <> "` module:")),
+          D.reflow "But multiple packages in your \"dependencies\" expose a module with that name:",
+          (D.dullyellow . D.indent 4) . D.vcat $ fmap (D.fromChars . Pkg.toChars) (pkg1 : pkg2 : pkgs),
+          D.reflow "The current recommendation is to pick just one of them."
+        ]
+    )
+
+-- HELPERS
 
 toSuggestions :: ModuleName.Raw -> Set.Set ModuleName.Raw -> [ModuleName.Raw]
 toSuggestions name unimportedModules =

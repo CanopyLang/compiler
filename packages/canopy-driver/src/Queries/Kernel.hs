@@ -28,8 +28,6 @@ module Queries.Kernel
   )
 where
 
-import qualified AST.Source as Src
-import qualified Reporting.Annotation as A
 import qualified Canopy.Kernel as Kernel
 import Canopy.Kernel (Chunk (..), Content (..))
 import qualified Canopy.ModuleName as ModuleName
@@ -37,8 +35,9 @@ import qualified Canopy.Package as Pkg
 import Data.ByteString (ByteString)
 import qualified Data.ByteString as BS
 import Data.Map (Map)
-import qualified Debug.Logger as Logger
-import Debug.Logger (DebugCategory (..))
+import qualified Data.Text as Text
+import Logging.Event (LogEvent (..))
+import qualified Logging.Logger as Log
 import Query.Simple
 
 -- | Query for analyzing a kernel module file.
@@ -53,8 +52,7 @@ kernelFileQuery ::
   FilePath ->
   IO (Either QueryError Content)
 kernelFileQuery pkg foreigns kernelFile = do
-  Logger.debug KERNEL_DEBUG ("Analyzing kernel file: " ++ kernelFile)
-  Logger.debug KERNEL_DEBUG ("Package: " ++ show pkg)
+  Log.logEvent (KernelStarted kernelFile)
 
   contentBytes <- BS.readFile kernelFile
 
@@ -71,45 +69,10 @@ kernelContentQuery ::
   ByteString ->
   IO (Either QueryError Content)
 kernelContentQuery pkg foreigns contentBytes = do
-  Logger.debug KERNEL_DEBUG ("Parsing kernel content (" ++ show (BS.length contentBytes) ++ " bytes)")
-
   case Kernel.fromByteString pkg foreigns contentBytes of
     Nothing -> do
-      Logger.debug KERNEL_DEBUG "Kernel parse failed"
+      Log.logEvent (KernelFailed "<kernel>" (Text.pack "Failed to parse kernel module"))
       return (Left (ParseError "<kernel>" "Failed to parse kernel module"))
-    Just content -> do
-      logKernelContent content
-      Logger.debug KERNEL_DEBUG "Kernel parse succeeded"
+    Just content@(Content _imports chunks) -> do
+      Log.logEvent (KernelCompleted "<kernel>" (length chunks))
       return (Right content)
-
--- | Log kernel content details.
-logKernelContent :: Content -> IO ()
-logKernelContent (Content imports chunks) = do
-  Logger.debug KERNEL_DEBUG ("Kernel imports: " ++ show (length imports))
-  Logger.debug KERNEL_DEBUG ("Kernel chunks: " ++ show (length chunks))
-
-  mapM_ logImport imports
-  mapM_ logChunk chunks
-  where
-    logImport :: Src.Import -> IO ()
-    logImport (Src.Import (A.At _ name) _ _) =
-      Logger.debug KERNEL_DEBUG ("  Import: " ++ show name)
-
-    logChunk :: Chunk -> IO ()
-    logChunk chunk = case chunk of
-      JS bs ->
-        Logger.debug KERNEL_DEBUG ("  JS chunk: " ++ show (BS.length bs) ++ " bytes")
-      CanopyVar modName varName ->
-        Logger.debug KERNEL_DEBUG ("  Canopy var: " ++ show modName ++ "." ++ show varName)
-      JsVar name1 name2 ->
-        Logger.debug KERNEL_DEBUG ("  JS var: " ++ show name1 ++ " -> " ++ show name2)
-      CanopyField name ->
-        Logger.debug KERNEL_DEBUG ("  Canopy field: " ++ show name)
-      JsField idx ->
-        Logger.debug KERNEL_DEBUG ("  JS field: " ++ show idx)
-      JsEnum idx ->
-        Logger.debug KERNEL_DEBUG ("  JS enum: " ++ show idx)
-      Debug ->
-        Logger.debug KERNEL_DEBUG "  Debug marker"
-      Prod ->
-        Logger.debug KERNEL_DEBUG "  Prod marker"

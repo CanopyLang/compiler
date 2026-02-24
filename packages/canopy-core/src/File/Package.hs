@@ -56,7 +56,9 @@ import qualified Control.Monad as Monad
 import qualified Data.Foldable as Foldable
 import qualified Data.ByteString.Lazy as LBS
 import qualified Data.List as List
-import qualified Logging.Logger as Logger
+import qualified Data.Text as Text
+import Logging.Event (LogEvent (..))
+import qualified Logging.Logger as Log
 import qualified System.Directory as Dir
 import qualified Control.Exception as Exception
 import qualified Data.Time.Clock.POSIX as Time
@@ -89,15 +91,15 @@ createPackageZip packageDir outputPath = do
   logPackageCreation packageDir outputPath
   archive <- createPackageArchive packageDir
   LBS.writeFile outputPath (Zip.fromArchive archive)
-  Logger.printLog ("Created ZIP archive: " <> outputPath)
+  Log.logEvent . PackageOperation "create" . Text.pack $ ("Created ZIP archive: " <> outputPath)
 
 -- | Log package creation operation.
 logPackageCreation :: FilePath -> FilePath -> IO ()
 logPackageCreation packageDir outputPath = do
-  Logger.printLog ("Creating package ZIP from: " <> packageDir)
-  Logger.printLog ("Output ZIP file: " <> outputPath)
+  Log.logEvent . PackageOperation "create" . Text.pack $ ("Creating package ZIP from: " <> packageDir)
+  Log.logEvent . PackageOperation "create" . Text.pack $ ("Output ZIP file: " <> outputPath)
   packageDirExists <- Dir.doesDirectoryExist packageDir
-  Logger.printLog ("Package directory exists: " <> show packageDirExists)
+  Log.logEvent . PackageOperation "create" . Text.pack $ ("Package directory exists: " <> show packageDirExists)
 
 -- | Create a ZIP archive from a package directory.
 --
@@ -263,7 +265,7 @@ createZipEntry packageDir filePath = do
   content <- Exception.catch
     (LBS.readFile filePath)
     (\e -> do
-      Logger.printLog ("Error reading file " <> filePath <> ": " <> show (e :: Exception.IOException))
+      Log.logEvent . PackageOperation "create" . Text.pack $ ("Error reading file " <> filePath <> ": " <> show (e :: Exception.IOException))
       pure LBS.empty)
   currentTime <- Time.getPOSIXTime
   pure $ Zip.toEntry relativePath (round currentTime) content
@@ -275,7 +277,7 @@ createZipEntry packageDir filePath = do
 addFileToArchive :: Zip.Archive -> FilePath -> FilePath -> IO Zip.Archive
 addFileToArchive archive packageDir filePath = do
   entry <- createZipEntry packageDir filePath
-  Logger.printLog ("Adding file to archive: " <> filePath)
+  Log.logEvent . PackageOperation "create" . Text.pack $ ("Adding file to archive: " <> filePath)
   pure (Zip.addEntryToArchive entry archive)
 
 -- | Add all files from a directory to an archive.
@@ -285,5 +287,5 @@ addFileToArchive archive packageDir filePath = do
 addDirectoryToArchive :: Zip.Archive -> FilePath -> FilePath -> IO Zip.Archive
 addDirectoryToArchive archive packageDir dirPath = do
   files <- collectPackageFiles dirPath
-  Logger.printLog ("Adding directory to archive: " <> dirPath <> " (" <> show (List.length files) <> " files)")
+  Log.logEvent . PackageOperation "create" . Text.pack $ ("Adding directory to archive: " <> dirPath <> " (" <> show (List.length files) <> " files)")
   Monad.foldM (\acc file -> addFileToArchive acc packageDir file) archive files

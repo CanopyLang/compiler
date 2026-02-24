@@ -21,7 +21,6 @@ build-type:     Simple
 
 library
   exposed-modules:
-      Debug.Logger
       Parse.Cache
       Query.Engine
       Query.Simple

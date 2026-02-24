@@ -4,8 +4,11 @@
 module Reporting.Error
   ( Module (..),
     Error (..),
-    toDoc,
-    toJson,
+    toDiagnostics,
+    toDiagnosticDoc,
+    toDiagnosticJson,
+    filterCascades,
+    filterCascadeList,
   )
 where
 
@@ -25,9 +28,10 @@ import qualified Reporting.Error.Main as Main
 import qualified Reporting.Error.Pattern as Pattern
 import qualified Reporting.Error.Syntax as Syntax
 import qualified Reporting.Error.Type as Type
+import Reporting.Diagnostic (Diagnostic)
+import qualified Reporting.Diagnostic as Diag
 import qualified Reporting.Render.Code as Code
 import qualified Reporting.Render.Type.Localizer as L
-import qualified Reporting.Report as Report
 import qualified System.FilePath as FP
 
 -- MODULE
@@ -52,115 +56,104 @@ data Error
   | BadDocs Docs.Error
   deriving (Show)
 
--- TO REPORT
+-- TO DIAGNOSTICS
 
-toReports :: Code.Source -> Error -> NE.List Report.Report
-toReports source err =
+-- | Convert an 'Error' to structured 'Diagnostic' values.
+--
+-- Dispatches to the per-phase @toDiagnostic@ functions.
+toDiagnostics :: Code.Source -> Error -> NE.List Diagnostic
+toDiagnostics source err =
   case err of
     BadSyntax syntaxError ->
-      NE.List (Syntax.toReport source syntaxError) []
+      NE.List (Syntax.toDiagnostic source syntaxError) []
     BadImports errs ->
-      fmap (Import.toReport source) errs
+      fmap (Import.toDiagnostic source) errs
     BadNames errs ->
-      fmap (Canonicalize.toReport source) (OneOrMore.destruct NE.List errs)
+      fmap (Canonicalize.toDiagnostic source) (OneOrMore.destruct NE.List errs)
     BadTypes localizer errs ->
-      fmap (Type.toReport source localizer) errs
+      fmap (Type.toDiagnostic localizer source) errs
     BadMains localizer errs ->
-      fmap (Main.toReport localizer source) (OneOrMore.destruct NE.List errs)
+      fmap (Main.toDiagnostic localizer source) (OneOrMore.destruct NE.List errs)
     BadPatterns errs ->
-      fmap (Pattern.toReport source) errs
+      fmap (Pattern.toDiagnostic source) errs
     BadDocs docsErr ->
-      Docs.toReports source docsErr
+      Docs.toDiagnostics source docsErr
 
--- TO DOC
+-- | Render a module's diagnostics as a 'D.Doc'.
+toDiagnosticDoc :: FilePath -> Module -> D.Doc
+toDiagnosticDoc root (Module _ absolutePath _ source err) =
+  D.vcat (fmap (renderDiag relativePath) (NE.toList filtered))
+  where
+    diagnostics = toDiagnostics (Code.toSource source) err
+    filtered = filterCascades diagnostics
+    relativePath = FP.makeRelative root absolutePath
 
-toDoc :: FilePath -> Module -> [Module] -> D.Doc
-toDoc root err errs =
-  let (NE.List m ms) = NE.sortBy _modificationTime (NE.List err errs)
-   in D.vcat (toDocHelp root m ms)
-
-toDocHelp :: FilePath -> Module -> [Module] -> [D.Doc]
-toDocHelp root module1 modules =
-  case modules of
-    [] ->
-      [ moduleToDoc root module1,
-        ""
-      ]
-    module2 : otherModules ->
-      moduleToDoc root module1 :
-      toSeparator module1 module2 :
-      toDocHelp root module2 otherModules
-
-toSeparator :: Module -> Module -> D.Doc
-toSeparator beforeModule afterModule =
-  let before = (ModuleName.toChars (_name beforeModule) <> "  ↑    ")
-      after = ("    ↓  " <> ModuleName.toChars (_name afterModule))
-   in ( D.dullred . D.vcat $
-          [ D.indent (80 - length before) (D.fromChars before),
-            "====o======================================================================o====",
-            D.fromChars after,
-            "",
-            ""
-          ]
-      )
-
--- MODULE TO DOC
-
-moduleToDoc :: FilePath -> Module -> D.Doc
-moduleToDoc root (Module _ absolutePath _ source err) =
-  let reports =
-        toReports (Code.toSource source) err
-
-      relativePath =
-        FP.makeRelative root absolutePath
-   in D.vcat $ fmap (reportToDoc relativePath) (NE.toList reports)
-
-reportToDoc :: FilePath -> Report.Report -> D.Doc
-reportToDoc relativePath (Report.Report title _ _ message) =
+renderDiag :: FilePath -> Diagnostic -> D.Doc
+renderDiag relativePath diag =
   D.vcat
-    [ toMessageBar title relativePath,
-      "",
-      message,
+    [ Diag.diagnosticToDoc relativePath diag,
       ""
     ]
 
-toMessageBar :: String -> FilePath -> D.Doc
-toMessageBar title filePath =
-  let usedSpace =
-        4 + length title + 1 + length filePath
-   in (D.dullcyan . D.fromChars $ ("-- " <> (title <> (" " <> (replicate (max 1 (80 - usedSpace)) '-' <> (" " <> filePath))))))
-
--- TO JSON
-
-toJson :: Module -> E.Value
-toJson (Module name path _ source err) =
-  let reports =
-        toReports (Code.toSource source) err
-   in E.object
-        [ "path" ==> E.chars path,
-          "name" ==> E.name name,
-          "problems" ==> E.array (fmap reportToJson (NE.toList reports))
-        ]
-
-reportToJson :: Report.Report -> E.Value
-reportToJson (Report.Report title region _sgstns message) =
+-- | Encode a module's diagnostics as JSON.
+toDiagnosticJson :: Module -> E.Value
+toDiagnosticJson (Module name path _ source err) =
   E.object
-    [ "title" ==> E.chars title,
-      "region" ==> encodeRegion region,
-      "message" ==> D.encode message
+    [ "path" ==> E.chars path,
+      "name" ==> E.name name,
+      "problems" ==> E.array (fmap Diag.diagnosticToJson (NE.toList filtered))
     ]
+  where
+    diagnostics = toDiagnostics (Code.toSource source) err
+    filtered = filterCascades diagnostics
 
-encodeRegion :: A.Region -> E.Value
-encodeRegion (A.Region (A.Position sr sc) (A.Position er ec)) =
-  E.object
-    [ "start"
-        ==> E.object
-          [ "line" ==> E.int (fromIntegral sr),
-            "column" ==> E.int (fromIntegral sc)
-          ],
-      "end"
-        ==> E.object
-          [ "line" ==> E.int (fromIntegral er),
-            "column" ==> E.int (fromIntegral ec)
-          ]
-    ]
+-- CASCADE PREVENTION
+
+-- | Filter cascading errors from a diagnostic list.
+--
+-- When a single root cause produces many downstream errors (e.g., a
+-- missing import causing dozens of name-not-found and type-mismatch
+-- errors), this function limits the output to the most relevant
+-- diagnostics. It deduplicates by error code within overlapping
+-- regions and limits errors per phase.
+filterCascades :: NE.List Diagnostic -> NE.List Diagnostic
+filterCascades (NE.List first rest) =
+  NE.List first (dedup [first] rest)
+
+-- | Filter cascading diagnostics from a plain list.
+--
+-- Convenience wrapper around 'filterCascades' for the common case
+-- where diagnostics are stored in a regular list rather than 'NE.List'.
+filterCascadeList :: [Diagnostic] -> [Diagnostic]
+filterCascadeList [] = []
+filterCascadeList (d : ds) = NE.toList (filterCascades (NE.List d ds))
+
+-- | Remove diagnostics with duplicate error codes at overlapping regions.
+dedup :: [Diagnostic] -> [Diagnostic] -> [Diagnostic]
+dedup _seen [] = []
+dedup seen (d : ds)
+  | isDuplicate seen d = dedup seen ds
+  | otherwise = d : dedup (d : seen) ds
+
+-- | Check if a diagnostic duplicates one already seen.
+isDuplicate :: [Diagnostic] -> Diagnostic -> Bool
+isDuplicate seen diag =
+  any (sameCodeAndRegion diag) seen
+
+-- | Two diagnostics are considered duplicates if they share an error
+-- code and their primary spans overlap.
+sameCodeAndRegion :: Diagnostic -> Diagnostic -> Bool
+sameCodeAndRegion d1 d2 =
+  Diag._diagCode d1 == Diag._diagCode d2
+    && regionsOverlap (Diag._spanRegion (Diag._diagPrimary d1)) (Diag._spanRegion (Diag._diagPrimary d2))
+
+-- | Check if two regions overlap.
+regionsOverlap :: A.Region -> A.Region -> Bool
+regionsOverlap (A.Region s1 e1) (A.Region s2 e2) =
+  posLe s1 e2 && posLe s2 e1
+
+-- | Position less-than-or-equal comparison.
+posLe :: A.Position -> A.Position -> Bool
+posLe (A.Position r1 c1) (A.Position r2 c2) =
+  r1 < r2 || (r1 == r2 && c1 <= c2)
+

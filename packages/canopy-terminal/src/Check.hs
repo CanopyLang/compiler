@@ -43,7 +43,6 @@ import qualified Canopy.ModuleName as ModuleName
 import qualified Compiler
 import Data.NonEmptyList (List)
 import qualified Data.NonEmptyList as NE
-import Logging.Logger (setLogFlag)
 import qualified Reporting
 import qualified Reporting.Exit as Exit
 import qualified Reporting.Task as Task
@@ -98,13 +97,13 @@ resolveReportingStyle maybeReport =
     Nothing -> pure Reporting.terminal
     Just Json -> pure Reporting.json
 
--- | Find the project root directory, enabling verbose logging first.
+-- | Find the project root directory.
 --
 -- Returns 'Nothing' when no @canopy.json@ (or @elm.json@) is found in the
--- current directory or any of its ancestors.
+-- current directory or any of its ancestors. Logging is now controlled
+-- by environment variables, so the verbose parameter is ignored.
 locateProjectRoot :: Bool -> IO (Maybe FilePath)
-locateProjectRoot verbose = do
-  setLogFlag verbose
+locateProjectRoot _verbose =
   Stuff.findRoot
 
 -- | Execute the full type-check pipeline from a known project root.

@@ -15,8 +15,7 @@ module Reporting.Error.Type
     PCategory (..),
     typeReplace,
     ptypeReplace,
-    -- make reports
-    toReport,
+    toDiagnostic,
   )
 where
 
@@ -24,8 +23,12 @@ import qualified AST.Canonical as Can
 import qualified Data.Index as Index
 import qualified Data.Map as Map
 import qualified Data.Name as Name
+import qualified Data.Text as Text
 import qualified Reporting.Annotation as A
+import qualified Reporting.Diagnostic as Diag
+import Reporting.Diagnostic (Diagnostic, LabeledSpan (..), SpanStyle (..))
 import qualified Reporting.Doc as D
+import qualified Reporting.ErrorCode as EC
 import qualified Reporting.Render.Code as Code
 import qualified Reporting.Render.Type as RT
 import qualified Reporting.Render.Type.Localizer as L
@@ -150,15 +153,117 @@ ptypeReplace expectation tipe =
 
 -- TO REPORT
 
-toReport :: Code.Source -> L.Localizer -> Error -> Report.Report
-toReport source localizer err =
+-- TO DIAGNOSTIC
+
+-- | Convert a type error to a structured 'Diagnostic'.
+--
+-- Wraps the error in the 'Diagnostic' type with structured metadata:
+-- error code, severity, phase, summary text, and labeled source spans.
+toDiagnostic :: L.Localizer -> Code.Source -> Error -> Diagnostic
+toDiagnostic localizer source err =
   case err of
-    BadExpr region category actualType expected ->
-      toExprReport source localizer region category actualType expected
+    BadExpr region category tipe expected ->
+      badExprDiagnostic localizer source region category tipe expected
     BadPattern region category tipe expected ->
-      toPatternReport source localizer region category tipe expected
-    InfiniteType region name overallType ->
-      toInfiniteReport source localizer region name overallType
+      badPatternDiagnostic localizer source region category tipe expected
+    InfiniteType region name tipe ->
+      infiniteTypeDiagnostic localizer source region name tipe
+
+-- | Produce a diagnostic for a 'BadExpr' type error.
+--
+-- Delegates message generation to 'toExprReport' to avoid duplicating the
+-- complex dispatch logic, then wraps the result with structured metadata.
+badExprDiagnostic :: L.Localizer -> Code.Source -> A.Region -> Category -> T.Type -> Expected T.Type -> Diagnostic
+badExprDiagnostic localizer source region category tipe expected =
+  Diag.makeDiagnostic
+    (EC.typeError 0)
+    Diag.SError
+    Diag.PhaseType
+    (Text.pack (categoryTitle category))
+    (Text.pack (categorySummary category))
+    (LabeledSpan region "type mismatch here" SpanPrimary)
+    (Report._message (toExprReport source localizer region category tipe expected))
+
+-- | Produce a diagnostic for a 'BadPattern' type error.
+--
+-- Delegates message generation to 'toPatternReport' to avoid duplicating
+-- the complex dispatch logic, then wraps the result with structured metadata.
+badPatternDiagnostic :: L.Localizer -> Code.Source -> A.Region -> PCategory -> T.Type -> PExpected T.Type -> Diagnostic
+badPatternDiagnostic localizer source region category tipe expected =
+  Diag.makeDiagnostic
+    (EC.typeError 1)
+    Diag.SError
+    Diag.PhaseType
+    "TYPE MISMATCH IN PATTERN"
+    (Text.pack (patternCategorySummary category))
+    (LabeledSpan region "pattern type mismatch here" SpanPrimary)
+    (Report._message (toPatternReport source localizer region category tipe expected))
+
+-- | Produce a diagnostic for an 'InfiniteType' error.
+--
+-- Constructs the message doc directly from the existing 'toInfiniteReport'
+-- helper to keep message content consistent.
+infiniteTypeDiagnostic :: L.Localizer -> Code.Source -> A.Region -> Name.Name -> T.Type -> Diagnostic
+infiniteTypeDiagnostic localizer source region name tipe =
+  Diag.makeDiagnostic
+    (EC.typeError 2)
+    Diag.SError
+    Diag.PhaseType
+    "INFINITE TYPE"
+    (Text.pack ("Infinite type inferred for " <> Name.toChars name))
+    (LabeledSpan region "infinite type here" SpanPrimary)
+    (Report._message (toInfiniteReport source localizer region name tipe))
+
+-- | Map a 'Category' to a display title for diagnostic output.
+--
+-- The title is used as the diagnostic header shown to the user. All
+-- Category-level mismatches use "TYPE MISMATCH"; arity errors are
+-- signalled at the Context level inside 'toExprReport'.
+categoryTitle :: Category -> String
+categoryTitle _ = "TYPE MISMATCH"
+
+-- | Map a 'Category' to a one-line summary for diagnostic output.
+--
+-- The summary is shown below the title to orient the user before the
+-- detailed message body.
+categorySummary :: Category -> String
+categorySummary category =
+  case category of
+    List -> "A list element has the wrong type."
+    Number -> "A number has the wrong type."
+    Float -> "A float has the wrong type."
+    String -> "A string has the wrong type."
+    Char -> "A character has the wrong type."
+    If -> "An if expression branch has the wrong type."
+    Case -> "A case expression branch has the wrong type."
+    CallResult _ -> "A function call returns the wrong type."
+    Lambda -> "An anonymous function has the wrong type."
+    Accessor _ -> "A field accessor has the wrong type."
+    Access _ -> "A field access has the wrong type."
+    Record -> "A record has the wrong type."
+    Tuple -> "A tuple has the wrong type."
+    Unit -> "A unit value has the wrong type."
+    Shader -> "A shader has the wrong type."
+    Effects -> "An effects value has the wrong type."
+    Local name -> "The value `" <> Name.toChars name <> "` has the wrong type."
+    Foreign name -> "The value `" <> Name.toChars name <> "` has the wrong type."
+
+-- | Map a 'PCategory' to a one-line summary for diagnostic output.
+--
+-- Used in 'badPatternDiagnostic' to orient the user to which kind of
+-- pattern is mismatched.
+patternCategorySummary :: PCategory -> String
+patternCategorySummary category =
+  case category of
+    PRecord -> "A record pattern has the wrong type."
+    PUnit -> "A unit pattern has the wrong type."
+    PTuple -> "A tuple pattern has the wrong type."
+    PList -> "A list pattern has the wrong type."
+    PCtor name -> "The `" <> Name.toChars name <> "` constructor pattern has the wrong type."
+    PInt -> "An integer pattern has the wrong type."
+    PStr -> "A string pattern has the wrong type."
+    PChr -> "A character pattern has the wrong type."
+    PBool -> "A boolean pattern has the wrong type."
 
 -- TO PATTERN REPORT
 

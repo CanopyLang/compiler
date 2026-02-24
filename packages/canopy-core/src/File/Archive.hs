@@ -61,7 +61,9 @@ import qualified Data.Traversable as Traversable
 import qualified Data.ByteString as BS
 import qualified Data.ByteString.Lazy as LBS
 import qualified Data.List as List
-import qualified Logging.Logger as Logger
+import qualified Data.Text as Text
+import Logging.Event (LogEvent (..))
+import qualified Logging.Logger as Log
 import qualified System.Directory as Dir
 import qualified File.Atomic as Atomic
 
@@ -135,10 +137,9 @@ writePackageReturnCanopyJson destination archive = do
 -- | Log package extraction operation.
 logPackageWrite :: FilePath -> IO ()
 logPackageWrite destination = do
-  Logger.printLog ("writePackageReturnCanopyJson to " <> destination)
+  Log.logEvent (ArchiveOperation "extract" (Text.pack ("writePackageReturnCanopyJson to " <> destination)))
   destinationExists <- Dir.doesDirectoryExist destination
-  let existsMessage = destination <> " exists: " <> show destinationExists
-  Logger.printLog ("writePackageReturnCanopyJson destination: " <> existsMessage)
+  Log.logEvent (ArchiveOperation "extract" (Text.pack (destination <> " exists: " <> show destinationExists)))
 
 -- | Extract a single ZIP entry to the destination.
 --
@@ -151,10 +152,10 @@ writeEntry destination rootDepth entry = do
   Monad.when allowed $ do
     if isDirectoryPath relativePath
       then do
-        Logger.printLog ("EXTRACT_DIRECTORY: " <> relativePath)
+        Log.logEvent . ArchiveOperation "extract" . Text.pack $ ("EXTRACT_DIRECTORY: " <> relativePath)
         createEntryDirectory destination relativePath
       else do
-        Logger.printLog ("EXTRACT_FILE: " <> relativePath)
+        Log.logEvent . ArchiveOperation "extract" . Text.pack $ ("EXTRACT_FILE: " <> relativePath)
         writeEntryFile destination relativePath entry
 
 -- | Extract relative path from ZIP entry.
@@ -229,7 +230,7 @@ isCriticalFile path =
 -- Handles nested directory creation automatically.
 createEntryDirectory :: FilePath -> FilePath -> IO ()
 createEntryDirectory destination relativePath = do
-  Logger.printLog ("writeEntry 0: " <> relativePath)
+  Log.logEvent . ArchiveOperation "extract" . Text.pack $ ("writeEntry 0: " <> relativePath)
   Dir.createDirectoryIfMissing True (destination </> relativePath)
 
 -- | Write a file from a ZIP entry.
@@ -238,7 +239,7 @@ createEntryDirectory destination relativePath = do
 -- Uses atomic writes for critical files to prevent corruption.
 writeEntryFile :: FilePath -> FilePath -> Zip.Entry -> IO ()
 writeEntryFile destination relativePath entry = do
-  Logger.printLog ("writeEntry 1: " <> relativePath)
+  Log.logEvent . ArchiveOperation "extract" . Text.pack $ ("writeEntry 1: " <> relativePath)
   let fullPath = destination </> relativePath
       fileContent = Zip.fromEntry entry
   -- Create parent directories if they don't exist
@@ -275,7 +276,7 @@ processAllowedEntry destination relativePath entry =
 -- | Create directory for JSON extraction operation.
 createEntryDirectoryForJson :: FilePath -> FilePath -> IO ()
 createEntryDirectoryForJson destination relativePath = do
-  Logger.printLog ("writeEntryReturnCanopyJson 0: " <> relativePath)
+  Log.logEvent . ArchiveOperation "extract" . Text.pack $ ("writeEntryReturnCanopyJson 0: " <> relativePath)
   Dir.createDirectoryIfMissing True (destination </> relativePath)
 
 -- | Write file and return content if it's a config file.
@@ -285,13 +286,13 @@ createEntryDirectoryForJson destination relativePath = do
 -- Uses atomic writes for critical files to prevent corruption.
 writeEntryFileForJson :: FilePath -> FilePath -> Zip.Entry -> IO (Maybe BS.ByteString)
 writeEntryFileForJson destination relativePath entry = do
-  Logger.printLog ("writeEntryReturnCanopyJson 1: " <> relativePath)
+  Log.logEvent . ArchiveOperation "extract" . Text.pack $ ("writeEntryReturnCanopyJson 1: " <> relativePath)
   let fileContent = Zip.fromEntry entry
       fullPath = destination </> relativePath
       contentSize = LBS.length fileContent
 
   -- Log detailed extraction information
-  Logger.printLog ("EXTRACT: " <> relativePath <> " -> " <> fullPath <> " (size: " <> show contentSize <> " bytes)")
+  Log.logEvent . ArchiveOperation "extract" . Text.pack $ ("EXTRACT: " <> relativePath <> " -> " <> fullPath <> " (size: " <> show contentSize <> " bytes)")
 
   -- Create parent directories if they don't exist
   Dir.createDirectoryIfMissing True (FP.takeDirectory fullPath)
@@ -299,39 +300,39 @@ writeEntryFileForJson destination relativePath entry = do
   -- Use atomic writes for critical package files
   if isCriticalFile relativePath
     then do
-      Logger.printLog ("ATOMIC_WRITE: " <> fullPath <> " (critical file)")
+      Log.logEvent . ArchiveOperation "extract" . Text.pack $ ("ATOMIC_WRITE: " <> fullPath <> " (critical file)")
       Atomic.writeLazyBytesAtomic fullPath fileContent
-      Logger.printLog ("ATOMIC_WRITE_COMPLETE: " <> fullPath)
+      Log.logEvent . ArchiveOperation "extract" . Text.pack $ ("ATOMIC_WRITE_COMPLETE: " <> fullPath)
     else do
-      Logger.printLog ("REGULAR_WRITE: " <> fullPath <> " (non-critical file)")
+      Log.logEvent . ArchiveOperation "extract" . Text.pack $ ("REGULAR_WRITE: " <> fullPath <> " (non-critical file)")
       LBS.writeFile fullPath fileContent
-      Logger.printLog ("REGULAR_WRITE_COMPLETE: " <> fullPath)
+      Log.logEvent . ArchiveOperation "extract" . Text.pack $ ("REGULAR_WRITE_COMPLETE: " <> fullPath)
 
   -- Return content for JSON files with detailed logging and integrity validation
   if relativePath == "canopy.json" || relativePath == "elm.json"
     then do
       let strictContent = BS.toStrict fileContent
           strictSize = BS.length strictContent
-      Logger.printLog ("JSON_RETURN: " <> relativePath <> " returning content (size: " <> show strictSize <> " bytes)")
+      Log.logEvent . ArchiveOperation "extract" . Text.pack $ ("JSON_RETURN: " <> relativePath <> " returning content (size: " <> show strictSize <> " bytes)")
       -- Log first 100 chars for debugging
       let preview = BS.take 100 strictContent
           previewText = show preview
-      Logger.printLog ("JSON_PREVIEW: " <> relativePath <> " content preview: " <> previewText)
+      Log.logEvent . ArchiveOperation "extract" . Text.pack $ ("JSON_PREVIEW: " <> relativePath <> " content preview: " <> previewText)
 
       -- Verify file integrity by reading back what was written
       if isCriticalFile relativePath
         then do
-          Logger.printLog ("INTEGRITY_CHECK: Verifying " <> fullPath)
+          Log.logEvent . ArchiveOperation "extract" . Text.pack $ ("INTEGRITY_CHECK: Verifying " <> fullPath)
           writtenContent <- BS.readFile fullPath
           if writtenContent == strictContent
             then do
-              Logger.printLog ("INTEGRITY_SUCCESS: " <> fullPath <> " matches extracted content")
+              Log.logEvent . ArchiveOperation "extract" . Text.pack $ ("INTEGRITY_SUCCESS: " <> fullPath <> " matches extracted content")
               pure (Just strictContent)
             else do
-              Logger.printLog ("INTEGRITY_FAILURE: " <> fullPath <> " does not match extracted content!")
-              Logger.printLog ("WRITTEN_SIZE: " <> show (BS.length writtenContent) <> " bytes")
-              Logger.printLog ("EXPECTED_SIZE: " <> show strictSize <> " bytes")
-              Logger.printLog ("WRITTEN_PREVIEW: " <> show (BS.take 100 writtenContent))
+              Log.logEvent . ArchiveOperation "extract" . Text.pack $ ("INTEGRITY_FAILURE: " <> fullPath <> " does not match extracted content!")
+              Log.logEvent . ArchiveOperation "extract" . Text.pack $ ("WRITTEN_SIZE: " <> show (BS.length writtenContent) <> " bytes")
+              Log.logEvent . ArchiveOperation "extract" . Text.pack $ ("EXPECTED_SIZE: " <> show strictSize <> " bytes")
+              Log.logEvent . ArchiveOperation "extract" . Text.pack $ ("WRITTEN_PREVIEW: " <> show (BS.take 100 writtenContent))
               pure (Just strictContent) -- Return original content, let parser handle corruption
         else pure (Just strictContent)
     else pure Nothing

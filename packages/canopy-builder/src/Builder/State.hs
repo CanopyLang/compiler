@@ -47,8 +47,9 @@ import Data.IORef (IORef, modifyIORef', newIORef, readIORef)
 import Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
 import Data.Time.Clock (UTCTime, getCurrentTime)
-import qualified Logging.Debug as Logger
-import Logging.Debug (DebugCategory (..))
+import qualified Data.Text as Text
+import Logging.Event (LogEvent (..))
+import qualified Logging.Logger as Log
 
 -- | Status of a module in the build process.
 data ModuleStatus
@@ -96,7 +97,7 @@ emptyState = do
 -- | Initialize a new builder engine.
 initBuilder :: IO BuilderEngine
 initBuilder = do
-  Logger.debug BUILD "Initializing pure builder engine"
+  Log.logEvent (BuildStarted (Text.pack "pure builder engine"))
   state <- emptyState
   stateRef <- newIORef state
   return (BuilderEngine stateRef)
@@ -110,7 +111,7 @@ getModuleStatus (BuilderEngine stateRef) moduleName = do
 -- | Set status of a module.
 setModuleStatus :: BuilderEngine -> ModuleName.Raw -> ModuleStatus -> IO ()
 setModuleStatus (BuilderEngine stateRef) moduleName status = do
-  Logger.debug BUILD ("Setting module status: " ++ show moduleName ++ " -> " ++ show status)
+  Log.logEvent (BuildModuleQueued (Text.pack (show moduleName ++ " -> " ++ show status)))
   modifyIORef' stateRef updateStatus
   where
     updateStatus state =
@@ -125,7 +126,7 @@ getModuleResult (BuilderEngine stateRef) moduleName = do
 -- | Set result of a module.
 setModuleResult :: BuilderEngine -> ModuleName.Raw -> ModuleResult -> IO ()
 setModuleResult (BuilderEngine stateRef) moduleName result = do
-  Logger.debug BUILD ("Setting module result: " ++ show moduleName)
+  Log.logEvent (BuildModuleQueued (Text.pack (show moduleName)))
   modifyIORef' stateRef updateResult
   where
     updateResult state =

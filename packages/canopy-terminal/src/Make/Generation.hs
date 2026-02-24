@@ -39,7 +39,8 @@ import qualified Data.Text as Text
 import Data.Text (Text)
 import qualified Data.Text.Encoding as Text
 import qualified File
-import Logging.Logger (printLog)
+import Logging.Event (LogEvent (..))
+import qualified Logging.Logger as Log
 import Make.Types (Task)
 import qualified Reporting
 import qualified Reporting.Task as Task
@@ -72,7 +73,7 @@ writeOutputFile style targetPath builder moduleNames = do
 -- This prevents write failures due to missing directory structure.
 prepareOutputPath :: FilePath -> IO ()
 prepareOutputPath targetPath = do
-  printLog "Preparing output directory"
+  Log.logEvent (BuildStarted (Text.pack "Preparing output directory"))
   let parentDir = FilePath.takeDirectory targetPath
   Dir.createDirectoryIfMissing True parentDir
 
@@ -82,7 +83,7 @@ prepareOutputPath targetPath = do
 -- applies post-processing to fix spacing issues before writing.
 writeBuilderContent :: FilePath -> Builder -> IO ()
 writeBuilderContent targetPath builder = do
-  printLog "Writing builder content"
+  Log.logEvent (BuildStarted (Text.pack "Writing builder content"))
   if FilePath.takeExtension targetPath == ".js"
     then writeJavaScriptWithPostProcessing targetPath builder
     else File.writeBuilder targetPath builder
@@ -131,7 +132,7 @@ reportGeneration ::
   FilePath ->
   IO ()
 reportGeneration style moduleNames targetPath = do
-  printLog "Reporting generation success"
+  Log.logEvent (BuildStarted (Text.pack "Reporting generation success"))
   Reporting.reportGenerate style moduleNames targetPath
 
 -- | Ensure directory exists for file path.

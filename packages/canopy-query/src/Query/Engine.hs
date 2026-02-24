@@ -40,9 +40,11 @@ import Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
 import Data.Set (Set)
 import qualified Data.Set as Set
+import Data.Text (Text)
+import qualified Data.Text as Text
 import Data.Time.Clock (UTCTime, getCurrentTime)
-import qualified Debug.Logger as Logger
-import Debug.Logger (DebugCategory (..))
+import Logging.Event (LogEvent (..), Phase (..))
+import qualified Logging.Logger as Log
 import Query.Simple
 
 -- | Cache entry with result and metadata.
@@ -81,24 +83,22 @@ emptyState =
 -- | Initialize a new query engine.
 initEngine :: IO QueryEngine
 initEngine = do
-  Logger.debug QUERY_DEBUG "Initializing query engine"
+  Log.logEvent (BuildStarted "query-engine-init")
   stateRef <- newIORef emptyState
   return (QueryEngine stateRef)
 
 -- | Run a query with caching.
 runQuery :: QueryEngine -> Query -> IO (Either QueryError QueryResult)
 runQuery (QueryEngine stateRef) query = do
-  Logger.debug QUERY_DEBUG ("Running query: " ++ show query)
-
   state <- readIORef stateRef
   case checkCache state query of
     Just entry -> do
-      Logger.debug CACHE_DEBUG ("Cache hit: " ++ show query)
+      Log.logEvent (CacheHit PhaseCache (showQuery query))
       modifyIORef' stateRef incrementHits
       modifyIORef' stateRef (updateCacheHitCount query)
       return (Right (cacheEntryResult entry))
     Nothing -> do
-      Logger.debug CACHE_DEBUG ("Cache miss: " ++ show query)
+      Log.logEvent (CacheMiss PhaseCache (showQuery query))
       modifyIORef' stateRef incrementMisses
       executeAndCache stateRef query
 
@@ -133,8 +133,6 @@ executeAndCache ::
   Query ->
   IO (Either QueryError QueryResult)
 executeAndCache stateRef query = do
-  Logger.debug QUERY_DEBUG ("Executing query: " ++ show query)
-
   modifyIORef' stateRef (markRunning query)
 
   result <- executeQuery query
@@ -142,11 +140,9 @@ executeAndCache stateRef query = do
   modifyIORef' stateRef (unmarkRunning query)
 
   case result of
-    Left err -> do
-      Logger.debug QUERY_DEBUG ("Query failed: " ++ show err)
+    Left err ->
       return (Left err)
     Right queryResult -> do
-      Logger.debug QUERY_DEBUG "Query succeeded"
       currentTime <- getCurrentTime
       let hash = getQueryHash query
       modifyIORef' stateRef (cacheResult query queryResult hash currentTime)
@@ -188,7 +184,7 @@ getQueryHash (ParseModuleQuery _ hash _) = hash
 -- | Invalidate a query in the cache.
 invalidateQuery :: QueryEngine -> Query -> IO ()
 invalidateQuery (QueryEngine stateRef) query = do
-  Logger.debug CACHE_DEBUG ("Invalidating query: " ++ show query)
+  Log.logEvent (CacheMiss PhaseCache (showQuery query))
   modifyIORef' stateRef removeFromCache
   where
     removeFromCache state =
@@ -197,7 +193,7 @@ invalidateQuery (QueryEngine stateRef) query = do
 -- | Clear entire cache.
 clearCache :: QueryEngine -> IO ()
 clearCache (QueryEngine stateRef) = do
-  Logger.debug CACHE_DEBUG "Clearing entire cache"
+  Log.logEvent (CacheMiss PhaseCache "clear-all")
   modifyIORef' stateRef (\s -> s {engineCache = Map.empty})
 
 -- | Get cache size.
@@ -227,5 +223,13 @@ getCacheMisses (QueryEngine stateRef) = do
 -- @since 0.19.1
 trackPhaseExecution :: QueryEngine -> String -> IO ()
 trackPhaseExecution (QueryEngine stateRef) phaseName = do
-  Logger.debug QUERY_DEBUG ("Executing phase (uncached): " ++ phaseName)
+  Log.logEvent (CompilePhaseEnter PhaseBuild (showText phaseName))
   modifyIORef' stateRef incrementMisses
+
+-- | Convert a Query to Text for logging.
+showQuery :: Query -> Text
+showQuery = Text.pack . show
+
+-- | Convert a String to Text.
+showText :: String -> Text
+showText = Text.pack

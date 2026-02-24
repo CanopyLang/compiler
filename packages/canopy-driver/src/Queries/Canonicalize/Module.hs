@@ -19,69 +19,58 @@ import qualified Canonicalize.Module as Canonicalize
 import qualified Canopy.Interface as I
 import qualified Canopy.ModuleName as ModuleName
 import qualified Canopy.Package as Pkg
+import Control.Monad (when)
+import qualified Data.ByteString as BS
 import Data.Map (Map)
 import qualified Data.Map as Map
 import qualified Data.OneOrMore as OneOrMore
-import qualified Debug.Logger as Logger
-import Debug.Logger (DebugCategory (..))
+import qualified Data.Text as Text
+import Logging.Event (LogEvent (..), CanonStats (..), VarResolution (..))
+import qualified Logging.Logger as Log
 import Query.Simple
 import qualified Reporting.Error.Canonicalize as Error
 import qualified Reporting.InternalError as InternalError
+import qualified Reporting.Render.Code as Code
 import qualified Reporting.Result as Result
 
 -- | Execute a canonicalize module query.
+--
+-- Accepts the file path for source reading in the error path,
+-- producing structured 'DiagnosticError' values on failure.
 canonicalizeModuleQuery ::
+  FilePath ->
   Pkg.Name ->
   Map ModuleName.Raw I.Interface ->
   Map String String ->
   Src.Module ->
   IO (Either QueryError Can.Module)
-canonicalizeModuleQuery pkg ifaces ffiContent modul = do
+canonicalizeModuleQuery path pkg ifaces ffiContent modul = do
   let modName = Src.getName modul
-  Logger.debug TYPE ("Starting canonicalization for: " ++ show modName)
-  Logger.debug TYPE ("Package: " ++ show pkg)
-  Logger.debug TYPE ("Interfaces available: " ++ show (Map.size ifaces))
+      modNameText = Text.pack (show modName)
 
-  logModuleStructure modul
+  Log.logEvent (CanonStarted modNameText)
 
   let result = Canonicalize.canonicalize pkg ifaces ffiContent modul
   case processResult result of
-    Left err -> do
-      Logger.debug TYPE ("Canonicalization failed: " ++ show err)
-      return (Left err)
+    Left errors -> do
+      Log.logEvent (CanonFailed modNameText (Text.pack (show (length errors))))
+      queryErr <- toDiagnosticQueryError path errors
+      return (Left queryErr)
     Right canonical -> do
-      Logger.debug TYPE ("Canonicalization success: " ++ show (Can._name canonical))
-      logCanonicalInfo canonical
+      let bindings = Map.size (Can._binops canonical)
+      Log.logEvent (CanonCompleted modNameText (CanonStats bindings 0 0))
+      enabled <- Log.isEnabled
+      when enabled (emitCanonTraceEvents modNameText canonical)
       return (Right canonical)
 
--- | Log source module structure.
-logModuleStructure :: Src.Module -> IO ()
-logModuleStructure modul = do
-  let importCount = length (Src._imports modul)
-      foreignCount = length (Src._foreignImports modul)
-
-  Logger.debug TYPE ("Source imports: " ++ show importCount)
-  Logger.debug TYPE ("Foreign imports: " ++ show foreignCount)
-
--- | Log canonical module information.
-logCanonicalInfo :: Can.Module -> IO ()
-logCanonicalInfo canonical = do
-  let unionCount = Map.size (Can._unions canonical)
-      aliasCount = Map.size (Can._aliases canonical)
-      binopCount = Map.size (Can._binops canonical)
-
-  Logger.debug TYPE ("Unions: " ++ show unionCount)
-  Logger.debug TYPE ("Aliases: " ++ show aliasCount)
-  Logger.debug TYPE ("Binops: " ++ show binopCount)
-
--- | Process Result type into Either QueryError.
+-- | Process Result type, extracting errors or the canonical module.
 processResult ::
   Result.Result i w Error.Error Can.Module ->
-  Either QueryError Can.Module
+  Either [Error.Error] Can.Module
 processResult result =
   let (_, output) = Result.run (toEmptyWarnings result)
    in case output of
-        Left errors -> Left (processErrors errors)
+        Left errors -> Left (OneOrMore.destruct (:) errors)
         Right canonical -> Right canonical
 
 -- | Convert Result to empty warnings type.
@@ -103,7 +92,25 @@ toEmptyWarnings (Result.Result k) =
       "phantom warnings value evaluated"
       "The initial warnings accumulator in toEmptyWarnings should never be evaluated. The CPS callbacks discard it. If this fires, it indicates a change in Result internals."
 
--- | Convert canonicalization errors to QueryError.
-processErrors :: OneOrMore.OneOrMore Error.Error -> QueryError
-processErrors errors =
-  TypeError (show (OneOrMore.destruct (\h _ -> h) errors))
+-- | Convert canonicalization errors to 'DiagnosticError'.
+--
+-- Reads source bytes from the file path to enable proper snippet
+-- rendering in the structured diagnostic output.
+toDiagnosticQueryError :: FilePath -> [Error.Error] -> IO QueryError
+toDiagnosticQueryError path errors = do
+  sourceBytes <- BS.readFile path
+  let source = Code.toSource sourceBytes
+      diagnostics = fmap (Error.toDiagnostic source) errors
+  pure (DiagnosticError path diagnostics)
+
+-- | Emit TRACE-level resolution events from a canonicalized module.
+--
+-- Walks the canonical module to extract aggregate resolution statistics
+-- and emits CanonVarResolved events. This avoids modifying the pure
+-- Result monad used during canonicalization.
+emitCanonTraceEvents :: Text.Text -> Can.Module -> IO ()
+emitCanonTraceEvents modNameText canonical = do
+  let unionCount = Map.size (Can._unions canonical)
+  let aliasCount = Map.size (Can._aliases canonical)
+  Log.logEvent (CanonVarResolved modNameText (Text.pack ("unions:" <> show unionCount)) ResToplevel)
+  Log.logEvent (CanonVarResolved modNameText (Text.pack ("aliases:" <> show aliasCount)) ResToplevel)

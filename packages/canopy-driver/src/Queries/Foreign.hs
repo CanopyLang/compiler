@@ -37,8 +37,8 @@ import Foreign.FFI
     FFIType (..),
     JSDocFunction (..),
   )
-import qualified Debug.Logger as Logger
-import Debug.Logger (DebugCategory (..))
+import Logging.Event (LogEvent (..))
+import qualified Logging.Logger as Log
 import Query.Simple
 
 -- | Query for analyzing a single JavaScript file.
@@ -49,22 +49,17 @@ import Query.Simple
 -- @since 0.19.1
 foreignFileQuery :: FilePath -> IO (Either QueryError [JSDocFunction])
 foreignFileQuery jsFile = do
-  Logger.debug FFI_DEBUG ("Analyzing FFI file: " ++ jsFile)
+  Log.logEvent (FFILoading jsFile)
 
   result <- FFI.parseJSDocFromFile jsFile
 
   case result of
     Left ffiErr -> do
-      Logger.debug FFI_DEBUG ("FFI parse error: " ++ show ffiErr)
+      Log.logEvent (FFIMissing jsFile)
       return (Left (convertFFIError jsFile ffiErr))
     Right functions -> do
-      Logger.debug FFI_DEBUG ("Extracted " ++ show (length functions) ++ " FFI functions")
-      mapM_ logFunction functions
+      Log.logEvent (FFILoaded jsFile (length functions))
       return (Right functions)
-  where
-    logFunction func = do
-      let name = FFI.jsDocFuncName func
-      Logger.debug FFI_DEBUG ("  - " ++ Text.unpack name)
 
 -- | Query for processing multiple foreign imports.
 --
@@ -76,16 +71,16 @@ foreignImportsQuery ::
   [FFI.SimpleFFIImport] ->
   IO (Either QueryError [(Text, [JSDocFunction])])
 foreignImportsQuery imports = do
-  Logger.debug FFI_DEBUG ("Processing " ++ show (length imports) ++ " foreign imports")
+  Log.logEvent (FFILoading "<imports>")
 
   result <- FFI.processForeignImports imports
 
   case result of
     Left ffiErr -> do
-      Logger.debug FFI_DEBUG ("Foreign imports error: " ++ show ffiErr)
+      Log.logEvent (FFIMissing "<imports>")
       return (Left (convertFFIError "<imports>" ffiErr))
     Right bindings -> do
-      Logger.debug FFI_DEBUG ("Processed " ++ show (length bindings) ++ " import bindings")
+      Log.logEvent (FFILoaded "<imports>" (length bindings))
       return (Right bindings)
 
 -- | Convert FFI errors to query errors.

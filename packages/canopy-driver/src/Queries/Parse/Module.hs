@@ -15,28 +15,17 @@ where
 
 import qualified AST.Source as Src
 import qualified Data.ByteString as BS
-import qualified Debug.Logger as Logger
-import Debug.Logger (DebugCategory (..))
+import Logging.Event (LogEvent (..), ParseStats (..))
+import qualified Logging.Logger as Log
 import Query.Simple
 import qualified Parse.Module as Parse
 
 
 
--- | Log detailed module information.
-logModuleInfo :: Src.Module -> IO ()
-logModuleInfo modul = do
-  let declCount = countDeclarations modul
-      importCount = length (Src._imports modul)
-      foreignCount = length (Src._foreignImports modul)
-
-  Logger.debug PARSE ("Declarations: " ++ show declCount)
-  Logger.debug PARSE ("Imports: " ++ show importCount)
-  Logger.debug PARSE ("Foreign imports: " ++ show foreignCount)
-
 -- | Count declarations in a module.
 --
 -- Counts all top-level declarations: value definitions, union types,
--- and type aliases. This provides an accurate count for debug logging.
+-- and type aliases. This provides an accurate count for parse statistics.
 countDeclarations :: Src.Module -> Int
 countDeclarations modul =
   length (Src._values modul)
@@ -49,19 +38,20 @@ parseModuleQuery ::
   FilePath ->
   IO (Either QueryError Src.Module)
 parseModuleQuery projectType path = do
-  Logger.debug PARSE ("Starting parse query for: " ++ path)
-
   content <- BS.readFile path
-  Logger.debug PARSE ("File size: " ++ show (BS.length content) ++ " bytes")
+  let fileSize = BS.length content
+  Log.logEvent (ParseStarted path fileSize)
 
   let hash = computeContentHash content
   let query = ParseModuleQuery path hash projectType
 
   result <- executeQuery query
   case result of
-    Left err -> return $ Left err
+    Left err -> return (Left err)
     Right (ParsedModule modul) -> do
-      Logger.debug PARSE ("Parse success: module " ++ show (Src._name modul))
-      logModuleInfo modul
-      return $ Right modul
-    Right _ -> return $ Left $ OtherError "Unexpected query result type"
+      let declCount = countDeclarations modul
+          importCount = length (Src._imports modul)
+          hasFFI = not (null (Src._foreignImports modul))
+      Log.logEvent (ParseCompleted path (ParseStats declCount importCount hasFFI))
+      return (Right modul)
+    Right _ -> return (Left (OtherError "Unexpected query result type"))

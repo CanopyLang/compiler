@@ -31,7 +31,6 @@ where
 
 import qualified Canopy.Details as Details
 import Control.Lens ((^.))
-import Logging.Logger (setLogFlag)
 import Make.Types
   ( BuildContext (..),
     DesiredMode (..),
@@ -41,7 +40,6 @@ import Make.Types
     bcDesiredMode,
     bcDetails,
     bcRoot,
-    verbose,
   )
 import qualified Reporting
 import qualified Reporting.Exit as Exit
@@ -67,14 +65,12 @@ setupEnvironment flags = do
 
 -- | Configure logging based on verbosity flag.
 --
--- Enables detailed logging output when verbose flag is set.
--- This must be called before any logging operations.
+-- Previously enabled detailed logging output via 'setLogFlag'. The new
+-- logging system uses environment variables exclusively, so this is a
+-- no-op retained for call-site compatibility.
 configureLogging :: Flags -> IO ()
-configureLogging flags =
-  when (flags ^. verbose) (setLogFlag True)
-  where
-    when True action = action
-    when False _ = pure ()
+configureLogging _flags =
+  pure ()
 
 -- | Create build context from validated environment.
 --

@@ -1,9 +1,10 @@
+{-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# OPTIONS_GHC -Wall #-}
 
 module Reporting.Error.Syntax
   ( Error (..),
-    toReport,
+    toDiagnostic,
     --
     Module (..),
     Exposing (..),
@@ -54,6 +55,10 @@ import Parse.Primitives (Col, Row)
 import Parse.Symbol (BadOperator (..))
 import qualified Reporting.Annotation as A
 import qualified Reporting.Doc as D
+import qualified Data.Text as Text
+import Reporting.Diagnostic (Diagnostic, LabeledSpan (..), SpanStyle (..))
+import qualified Reporting.Diagnostic as Diag
+import qualified Reporting.ErrorCode as EC
 import qualified Reporting.Render.Code as Code
 import qualified Reporting.Report as Report
 import Prelude hiding (Char, String)
@@ -640,6 +645,61 @@ toReport source err =
           )
     ParseError modul ->
       toParseErrorReport source modul
+
+-- | Convert a syntax error to a structured 'Diagnostic'.
+--
+-- @
+-- ModuleNameUnspecified   -> E0100
+-- ModuleNameMismatch      -> E0101
+-- UnexpectedPort          -> E0102
+-- NoPorts                 -> E0103
+-- NoPortsInPackage        -> E0104
+-- NoPortModulesInPackage  -> E0105
+-- NoFFIModulesInPackage   -> E0106
+-- NoEffectsOutsideKernel  -> E0107
+-- ParseError              -> E0110
+-- @
+toDiagnostic :: Code.Source -> Error -> Diagnostic
+toDiagnostic source err =
+  wrapReport (errorCode err) (errorRegion err) (toReport source err)
+
+-- | Extract the error code for a syntax error.
+errorCode :: Error -> Diag.ErrorCode
+errorCode = \case
+  ModuleNameUnspecified _ -> EC.parseError 0
+  ModuleNameMismatch _ _ -> EC.parseError 1
+  UnexpectedPort _ -> EC.parseError 2
+  NoPorts _ -> EC.parseError 3
+  NoPortsInPackage _ -> EC.parseError 4
+  NoPortModulesInPackage _ -> EC.parseError 5
+  NoFFIModulesInPackage _ -> EC.parseError 6
+  NoEffectsOutsideKernel _ -> EC.parseError 7
+  ParseError _ -> EC.parseError 10
+
+-- | Extract the source region for a syntax error.
+errorRegion :: Error -> A.Region
+errorRegion = \case
+  ModuleNameUnspecified _ -> toRegion 1 1
+  ModuleNameMismatch _ (A.At region _) -> region
+  UnexpectedPort region -> region
+  NoPorts region -> region
+  NoPortsInPackage (A.At region _) -> region
+  NoPortModulesInPackage region -> region
+  NoFFIModulesInPackage region -> region
+  NoEffectsOutsideKernel region -> region
+  ParseError _ -> toRegion 1 1
+
+-- | Wrap a 'Report.Report' into a 'Diagnostic' with structured metadata.
+wrapReport :: Diag.ErrorCode -> A.Region -> Report.Report -> Diagnostic
+wrapReport code _region report =
+  Diag.makeDiagnostic
+    code
+    Diag.SError
+    Diag.PhaseParse
+    (Text.pack (Report._title report))
+    (Text.pack ("Parse error: " <> Report._title report))
+    (LabeledSpan (Report._region report) "error here" SpanPrimary)
+    (Report._message report)
 
 noteForPortsInPackage :: D.Doc
 noteForPortsInPackage =

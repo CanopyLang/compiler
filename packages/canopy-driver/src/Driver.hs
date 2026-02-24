@@ -44,8 +44,9 @@ import qualified Foreign.FFI as FFI
 import Data.Map (Map)
 import qualified Data.Map as Map
 import qualified Data.Name as Name
-import qualified Debug.Logger as Logger
-import Debug.Logger (DebugCategory (..))
+import qualified Data.Text as Text
+import Logging.Event (LogEvent (..), CompileStats (..), Duration (..))
+import qualified Logging.Logger as Log
 import qualified Queries.Canonicalize.Module as CanonQuery
 import qualified Queries.Optimize as OptQuery
 import qualified Queries.Parse.Module as ParseQuery
@@ -81,8 +82,7 @@ compileModule ::
   Parse.ProjectType ->
   IO (Either QueryError CompileResult)
 compileModule pkg ifaces path projectType = do
-  Logger.debug COMPILE_DEBUG ("Compiling module: " ++ path)
-  Logger.debug COMPILE_DEBUG ("Package: " ++ show pkg)
+  Log.logEvent (CompileStarted path)
 
   engine <- Engine.initEngine
   result <- compileModuleFull engine pkg ifaces path projectType
@@ -101,8 +101,7 @@ compileModuleWithEngine ::
   Parse.ProjectType ->
   IO (Either QueryError CompileResult)
 compileModuleWithEngine engine pkg ifaces path projectType = do
-  Logger.debug COMPILE_DEBUG ("Compiling module: " ++ path)
-  Logger.debug COMPILE_DEBUG ("Package: " ++ show pkg)
+  Log.logEvent (CompileStarted path)
 
   compileModuleFull engine pkg ifaces path projectType
 
@@ -116,14 +115,13 @@ compileFromSource ::
   Src.Module ->
   IO (Either QueryError CompileResult)
 compileFromSource pkg ifaces sourceModule = do
-  Logger.debug COMPILE_DEBUG "Compiling from parsed source"
-  Logger.debug COMPILE_DEBUG ("Package: " ++ show pkg)
+  Log.logEvent (CompileStarted "<source>")
 
   engine <- Engine.initEngine
   ffiContent <- loadFFIContent sourceModule
   let foreignImports = Src._foreignImports sourceModule
       ffiInfoMap = buildFFIInfoMap foreignImports ffiContent
-  canonResult <- runCanonicalizePhase engine pkg ifaces ffiContent sourceModule
+  canonResult <- runCanonicalizePhase engine "<source>" pkg ifaces ffiContent sourceModule
   case canonResult of
     Left err -> return (Left err)
     Right canonModule -> do
@@ -136,7 +134,7 @@ compileFromSource pkg ifaces sourceModule = do
             Left err -> return (Left err)
             Right localGraph -> do
               iface <- generateInterface pkg canonModule types
-              Logger.debug COMPILE_DEBUG "Compilation complete"
+              Log.logEvent (CompileCompleted "<source>" (CompileStats 1 (Duration 0)))
               return
                 ( Right
                     ( CompileResult
@@ -158,7 +156,7 @@ compileModuleFull ::
   Parse.ProjectType ->
   IO (Either QueryError CompileResult)
 compileModuleFull engine pkg ifaces path projectType = do
-  Logger.debug COMPILE_DEBUG "Starting compilation pipeline"
+  Log.logEvent (CompileStarted path)
 
   parseResult <- runParsePhase engine path projectType
   case parseResult of
@@ -167,7 +165,7 @@ compileModuleFull engine pkg ifaces path projectType = do
       ffiContent <- loadFFIContent sourceModule
       let foreignImports = Src._foreignImports sourceModule
           ffiInfoMap = buildFFIInfoMap foreignImports ffiContent
-      canonResult <- runCanonicalizePhase engine pkg ifaces ffiContent sourceModule
+      canonResult <- runCanonicalizePhase engine path pkg ifaces ffiContent sourceModule
       case canonResult of
         Left err -> return (Left err)
         Right canonModule -> do
@@ -180,7 +178,7 @@ compileModuleFull engine pkg ifaces path projectType = do
                 Left err -> return (Left err)
                 Right localGraph -> do
                   iface <- generateInterface pkg canonModule types
-                  Logger.debug COMPILE_DEBUG "Compilation complete"
+                  Log.logEvent (CompileCompleted path (CompileStats 1 (Duration 0)))
                   return
                     ( Right
                         ( CompileResult
@@ -210,7 +208,7 @@ runParsePhase engine path projectType = do
 loadFFIContent :: Src.Module -> IO (Map String String)
 loadFFIContent sourceModule = do
   let foreignImports = Src._foreignImports sourceModule
-  Logger.debug FFI_DEBUG ("Loading FFI content for " ++ show (length foreignImports) ++ " imports")
+  Log.logEvent (FFILoading "ffi-content")
   Canonicalize.loadFFIContent foreignImports
 
 -- | Build FFIInfo map from foreign imports and content.
@@ -245,14 +243,15 @@ buildSingleFFI _ _ = []
 -- compilation statistics, then delegates to the canonicalization query.
 runCanonicalizePhase ::
   Engine.QueryEngine ->
+  FilePath ->
   Pkg.Name ->
   Map ModuleName.Raw I.Interface ->
   Map String String ->
   Src.Module ->
   IO (Either QueryError Can.Module)
-runCanonicalizePhase engine pkg ifaces ffiContent sourceModule = do
+runCanonicalizePhase engine path pkg ifaces ffiContent sourceModule = do
   Engine.trackPhaseExecution engine "canonicalize"
-  CanonQuery.canonicalizeModuleQuery pkg ifaces ffiContent sourceModule
+  CanonQuery.canonicalizeModuleQuery path pkg ifaces ffiContent sourceModule
 
 -- | Run type check phase.
 --
@@ -287,9 +286,8 @@ generateInterface ::
   Map Name.Name Can.Annotation ->
   IO I.Interface
 generateInterface pkg canonModule@(Can.Module modName _ _ _ _ _ _ _) types = do
-  Logger.debug COMPILE_DEBUG ("Generating interface for: " ++ show modName)
+  Log.logEvent (InterfaceSaved (show modName))
   let iface = I.fromModule pkg canonModule types
-  Logger.debug COMPILE_DEBUG "Interface generated"
   return iface
 
 -- | Compile multiple modules in parallel.
@@ -300,7 +298,7 @@ compileModulesParallel ::
   [(FilePath, Parse.ProjectType)] ->
   IO [Either QueryError CompileResult]
 compileModulesParallel config pkg ifaces modules = do
-  Logger.debug COMPILE_DEBUG ("Compiling " ++ show (length modules) ++ " modules in parallel")
+  Log.logEvent (BuildStarted (Text.pack ("parallel:" ++ show (length modules))))
 
   pool <- Pool.createPool config compileTaskFn
 
@@ -309,7 +307,7 @@ compileModulesParallel config pkg ifaces modules = do
 
   Pool.shutdownPool pool
 
-  Logger.debug COMPILE_DEBUG "Parallel compilation complete"
+  Log.logEvent (BuildCompleted (length modules) (Duration 0))
   return results
 
 -- | Compile modules with progress tracking.
@@ -321,7 +319,7 @@ compileModulesWithProgress ::
   (Pool.Progress -> IO ()) ->
   IO [Either QueryError CompileResult]
 compileModulesWithProgress config pkg ifaces modules progressCallback = do
-  Logger.debug COMPILE_DEBUG ("Compiling " ++ show (length modules) ++ " modules with progress tracking")
+  Log.logEvent (BuildStarted (Text.pack ("parallel:" ++ show (length modules))))
 
   pool <- Pool.createPool config compileTaskFn
 
@@ -330,7 +328,7 @@ compileModulesWithProgress config pkg ifaces modules progressCallback = do
 
   Pool.shutdownPool pool
 
-  Logger.debug COMPILE_DEBUG "Parallel compilation complete"
+  Log.logEvent (BuildCompleted (length modules) (Duration 0))
   return results
 
 -- | Create compile task from module info.
@@ -359,13 +357,6 @@ logCacheStats engine = do
   cacheSize <- Engine.getCacheSize engine
   hits <- Engine.getCacheHits engine
   misses <- Engine.getCacheMisses engine
-  let total = hits + misses
-      hitRate =
-        if total > 0
-          then (fromIntegral hits / fromIntegral total * 100 :: Double)
-          else 0.0
 
-  Logger.debug CACHE_DEBUG ("Cache size: " ++ show cacheSize)
-  Logger.debug CACHE_DEBUG ("Cache hits: " ++ show hits)
-  Logger.debug CACHE_DEBUG ("Cache misses: " ++ show misses)
-  Logger.debug CACHE_DEBUG ("Hit rate: " ++ show hitRate ++ "%")
+  Log.logEvent (CacheStored "stats" cacheSize)
+  Log.logEvent (BuildIncremental hits misses)

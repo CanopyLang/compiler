@@ -80,7 +80,13 @@ import qualified Unit.Queries.ParseModuleTest as ParseModuleQueryTest
 import qualified Unit.Generate.MinifyTest as MinifyTest
 import qualified Unit.Generate.StringPoolTest as StringPoolTest
 import qualified Unit.Optimize.ConstantFoldTest as ConstantFoldTest
+import qualified Unit.Logging.ConfigTest as LoggingConfigTest
+import qualified Unit.Logging.EventTest as LoggingEventTest
+import qualified Unit.Logging.SinkTest as LoggingSinkTest
+import qualified Unit.Reporting.DiagnosticJsonTest as DiagnosticJsonTest
+import qualified Unit.Reporting.DiagnosticTest as DiagnosticTest
 import qualified Unit.Reporting.Doc.ColorQQTest as ColorQQTest
+import qualified Unit.Reporting.ErrorCodeTest as ErrorCodeTest
 
 main :: IO ()
 main = defaultMain tests
@@ -157,7 +163,13 @@ unitTests =
       ConstantFoldTest.tests,
       MinifyTest.tests,
       StringPoolTest.tests,
-      ColorQQTest.tests
+      ColorQQTest.tests,
+      LoggingEventTest.tests,
+      LoggingConfigTest.tests,
+      LoggingSinkTest.tests,
+      DiagnosticTest.tests,
+      DiagnosticJsonTest.tests,
+      ErrorCodeTest.tests
     ]
 
 integrationTests :: TestTree

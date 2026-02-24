@@ -41,8 +41,8 @@ import qualified Data.ByteString.Lazy as BSL
 import Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
 import qualified Canopy.ModuleName as ModuleName
-import qualified Logging.Debug as Logger
-import Logging.Debug (DebugCategory (..))
+import Logging.Event (LogEvent (..))
+import qualified Logging.Logger as Log
 
 -- | Hash value (SHA-256 digest).
 type HashValue = String
@@ -65,7 +65,7 @@ emptyHash =
 -- | Hash a file's contents.
 hashFile :: FilePath -> IO ContentHash
 hashFile path = do
-  Logger.debug BUILD ("Hashing file: " ++ path)
+  Log.logEvent (BuildHashComputed path)
   contents <- BS.readFile path
   return
     ContentHash

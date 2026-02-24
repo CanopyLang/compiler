@@ -53,8 +53,9 @@ import qualified Data.IORef as IORef
 import Data.IORef (IORef)
 import Data.Map (Map)
 import qualified GHC.Conc as GHC
-import qualified Debug.Logger as Logger
-import Debug.Logger (DebugCategory (..))
+import qualified Data.Text as Text
+import Logging.Event (LogEvent (..), Duration (..))
+import qualified Logging.Logger as Log
 import Query.Simple
 import qualified Query.Engine as Engine
 import qualified Parse.Module as Parse
@@ -122,15 +123,13 @@ createPool ::
   (Engine.QueryEngine -> CompileTask -> IO (Either QueryError result)) ->
   IO (WorkerPool result)
 createPool config compileFn = do
-  Logger.debug WORKER_DEBUG ("Creating worker pool with " ++ show workerCount ++ " workers")
-
   queue <- Chan.newChan
   engine <- Engine.initEngine
   progressRef <- IORef.newIORef (Progress 0 0 0)
 
   workers <- mapM (startWorker queue engine progressRef compileFn) [1 .. workerCount]
 
-  Logger.debug WORKER_DEBUG ("Worker pool created with " ++ show (length workers) ++ " workers")
+  mapM_ (\wid -> Log.logEvent (WorkerSpawned wid)) [1 .. workerCount]
 
   return
     ( WorkerPool
@@ -164,14 +163,14 @@ workerLoop ::
   (Engine.QueryEngine -> CompileTask -> IO (Either QueryError result)) ->
   IO ()
 workerLoop workerId queue engine progressRef compileFn = do
-  Logger.debug WORKER_DEBUG ("Worker " ++ show workerId ++ " started")
+  Log.logEvent (WorkerSpawned workerId)
   loop
   where
     loop = do
       msg <- Chan.readChan queue
       case msg of
         Shutdown -> do
-          Logger.debug WORKER_DEBUG ("Worker " ++ show workerId ++ " shutting down")
+          Log.logEvent (WorkerCompleted workerId (Duration 0))
         CompileModule task resultChan -> do
           handleTask workerId engine progressRef compileFn task resultChan
           loop
@@ -186,22 +185,19 @@ handleTask ::
   Chan (TaskResult result) ->
   IO ()
 handleTask workerId engine progressRef compileFn task resultChan = do
-  let path = taskFilePath task
-  Logger.debug WORKER_DEBUG ("Worker " ++ show workerId ++ " compiling: " ++ path)
-
   result <- Exception.try (compileFn engine task)
 
   case result of
     Left (err :: Exception.SomeException) -> do
-      Logger.debug WORKER_DEBUG ("Worker " ++ show workerId ++ " exception: " ++ show err)
+      Log.logEvent (WorkerFailed workerId (Text.pack (show err)))
       updateProgress progressRef False
       Chan.writeChan resultChan (TaskFailure (OtherError ("Exception: " ++ show err)))
     Right (Left queryErr) -> do
-      Logger.debug WORKER_DEBUG ("Worker " ++ show workerId ++ " compile error: " ++ show queryErr)
+      Log.logEvent (WorkerFailed workerId (Text.pack (show queryErr)))
       updateProgress progressRef False
       Chan.writeChan resultChan (TaskFailure queryErr)
     Right (Right compileResult) -> do
-      Logger.debug WORKER_DEBUG ("Worker " ++ show workerId ++ " compile success: " ++ path)
+      Log.logEvent (WorkerCompleted workerId (Duration 0))
       updateProgress progressRef True
       Chan.writeChan resultChan (TaskSuccess compileResult)
 
@@ -222,14 +218,10 @@ getProgress pool = IORef.readIORef (poolProgress pool)
 -- | Compile multiple modules in parallel.
 compileModules :: WorkerPool result -> [CompileTask] -> IO [Either QueryError result]
 compileModules pool tasks = do
-  Logger.debug WORKER_DEBUG ("Compiling " ++ show (length tasks) ++ " modules in parallel")
-
   setTotalProgress pool (length tasks)
 
   resultChans <- mapM (submitTask pool) tasks
   results <- mapM Chan.readChan resultChans
-
-  Logger.debug WORKER_DEBUG ("Parallel compilation complete")
 
   return (map resultToEither results)
   where
@@ -255,7 +247,6 @@ compileModulesWithProgress ::
   (Progress -> IO ()) ->
   IO [Either QueryError result]
 compileModulesWithProgress pool tasks progressCallback = do
-  Logger.debug WORKER_DEBUG ("Starting parallel compilation with progress tracking")
 
   setTotalProgress pool (length tasks)
 
@@ -283,10 +274,6 @@ progressLoop pool callback = loop
 -- | Shutdown the worker pool.
 shutdownPool :: WorkerPool result -> IO ()
 shutdownPool pool = do
-  Logger.debug WORKER_DEBUG ("Shutting down worker pool with " ++ show (length (poolWorkers pool)) ++ " workers")
-
   mapM_ (\_ -> Chan.writeChan (poolQueue pool) Shutdown) (poolWorkers pool)
 
   mapM_ Concurrent.killThread (poolWorkers pool)
-
-  Logger.debug WORKER_DEBUG "Worker pool shutdown complete"

@@ -5,7 +5,7 @@ module Reporting.Exit.Help
     report,
     docReport,
     jsonReport,
-    compilerReport,
+    compilerDiagnosticReport,
     reportToDoc,
     reportToJson,
     toString,
@@ -25,7 +25,7 @@ import System.IO (Handle, hPutStr, stderr, stdout)
 -- REPORT
 
 data Report
-  = CompilerReport FilePath Error.Module [Error.Module]
+  = DiagnosticReport FilePath Error.Module [Error.Module]
   | Report
       { _title :: String,
         _path :: Maybe FilePath,
@@ -34,52 +34,56 @@ data Report
 
 report :: String -> Maybe FilePath -> String -> [D.Doc] -> Report
 report title path startString others =
-  Report title path $ D.stack (D.reflow startString : others)
+  Report title path (D.stack (D.reflow startString : others))
 
 docReport :: String -> Maybe FilePath -> D.Doc -> [D.Doc] -> Report
 docReport title path startDoc others =
-  Report title path $ D.stack (startDoc : others)
+  Report title path (D.stack (startDoc : others))
 
 jsonReport :: String -> Maybe FilePath -> D.Doc -> Report
 jsonReport =
   Report
 
-compilerReport :: FilePath -> Error.Module -> [Error.Module] -> Report
-compilerReport =
-  CompilerReport
+-- | Create a compiler error report using the structured diagnostic system.
+--
+-- Produces 'Diagnostic' values for rich output including error codes,
+-- source spans, and suggestions.
+compilerDiagnosticReport :: FilePath -> Error.Module -> [Error.Module] -> Report
+compilerDiagnosticReport =
+  DiagnosticReport
 
 -- TO DOC
 
 reportToDoc :: Report -> D.Doc
 reportToDoc report_ =
   case report_ of
-    CompilerReport root e es ->
-      Error.toDoc root e es
+    DiagnosticReport root e es ->
+      diagnosticModuleDocs root (e : es)
     Report title maybePath message ->
-      let makeDashes n =
-            replicate (max 1 (80 - n)) '-'
+      formatReportBar title maybePath message
 
-          errorBarEnd =
-            case maybePath of
-              Nothing ->
-                makeDashes (4 + length title)
-              Just path ->
-                makeDashes (5 + length title + length path) <> " " <> path
+diagnosticModuleDocs :: FilePath -> [Error.Module] -> D.Doc
+diagnosticModuleDocs root modules =
+  D.vcat (fmap (Error.toDiagnosticDoc root) modules)
 
-          errorBar =
-            D.dullcyan $
-              "--" <+> D.fromChars title <+> D.fromChars errorBarEnd
-       in D.stack [errorBar, message, ""]
+formatReportBar :: String -> Maybe FilePath -> D.Doc -> D.Doc
+formatReportBar title maybePath message =
+  D.stack [errorBar, message, ""]
+  where
+    errorBar = D.dullcyan ("--" <+> D.fromChars title <+> D.fromChars errorBarEnd)
+    errorBarEnd = maybe (makeDashes (4 + length title)) pathDashes maybePath
+    pathDashes path = makeDashes (5 + length title + length path) <> " " <> path
+    makeDashes n = replicate (max 1 (80 - n)) '-'
 
 -- TO JSON
 
 reportToJson :: Report -> E.Value
 reportToJson report_ =
   case report_ of
-    CompilerReport _ e es ->
+    DiagnosticReport _ e es ->
       E.object
         [ "type" ==> E.chars "compile-errors",
-          "errors" ==> E.list Error.toJson (e : es)
+          "errors" ==> E.list Error.toDiagnosticJson (e : es)
         ]
     Report title maybePath message ->
       E.object

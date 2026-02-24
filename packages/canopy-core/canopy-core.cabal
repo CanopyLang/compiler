@@ -98,8 +98,10 @@ library
       Json.Decode
       Json.Encode
       Json.String
-      Logging.Debug
+      Logging.Config
+      Logging.Event
       Logging.Logger
+      Logging.Sink
       Nitpick.Debug
       Nitpick.PatternMatches
       Optimize.Case
@@ -123,6 +125,7 @@ library
       Parse.Type
       Parse.Variable
       Reporting.Annotation
+      Reporting.Diagnostic
       Reporting.Doc
       Reporting.Doc.ColorQQ
       Reporting.Error
@@ -134,6 +137,7 @@ library
       Reporting.Error.Pattern
       Reporting.Error.Syntax
       Reporting.Error.Type
+      Reporting.ErrorCode
       Reporting.Exit.Help
       Reporting.InternalError
       Reporting.Render.Code

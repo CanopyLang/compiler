@@ -46,8 +46,9 @@ import qualified Data.Map.Strict as Map
 import qualified Data.Name as Name
 import Data.Time.Clock (UTCTime, addUTCTime, getCurrentTime)
 import GHC.Generics (Generic)
-import qualified Logging.Debug as Logger
-import Logging.Debug (DebugCategory (..))
+import qualified Data.Text as Text
+import Logging.Event (LogEvent (..), Phase (..))
+import qualified Logging.Logger as Log
 import qualified System.Directory as Dir
 
 -- | Cache entry for a module.
@@ -137,30 +138,29 @@ emptyCache = do
 -- | Load cache from disk using JSON deserialization.
 loadCache :: FilePath -> IO (Maybe BuildCache)
 loadCache path = do
-  Logger.debug BUILD ("Loading cache from: " ++ path)
+  Log.logEvent (CacheMiss PhaseCache (Text.pack ("loading from: " ++ path)))
   exists <- Dir.doesFileExist path
   if exists
     then do
       contents <- BSL.readFile path
       case Aeson.eitherDecode contents of
         Left err -> do
-          Logger.debug BUILD ("Cache decode error: " ++ err)
+          Log.logEvent (BuildFailed (Text.pack ("Cache decode error: " ++ err)))
           return Nothing
         Right cache -> do
-          Logger.debug BUILD ("Cache loaded successfully: " ++ show (Map.size (cacheEntries cache)) ++ " entries")
+          Log.logEvent (CacheHit PhaseCache (Text.pack (show (Map.size (cacheEntries cache)) ++ " entries loaded")))
           return (Just cache)
     else do
-      Logger.debug BUILD "No cache file found"
+      Log.logEvent (CacheMiss PhaseCache (Text.pack "no cache file found"))
       return Nothing
 
 -- | Save cache to disk using JSON serialization.
 saveCache :: FilePath -> BuildCache -> IO ()
 saveCache path cache = do
-  Logger.debug BUILD ("Saving cache to: " ++ path)
-  Logger.debug BUILD ("Cache entries: " ++ show (Map.size (cacheEntries cache)))
+  Log.logEvent (CacheStored (Text.pack path) (Map.size (cacheEntries cache)))
   let json = Aeson.encode cache
   BSL.writeFile path json
-  Logger.debug BUILD "Cache saved successfully"
+  Log.logEvent (InterfaceSaved path)
 
 -- | Lookup module in cache.
 lookupCache :: BuildCache -> ModuleName.Raw -> Maybe CacheEntry
