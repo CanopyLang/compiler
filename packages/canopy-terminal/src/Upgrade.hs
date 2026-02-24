@@ -1,4 +1,5 @@
 {-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE QuasiQuotes #-}
 {-# LANGUAGE TemplateHaskell #-}
 {-# OPTIONS_GHC -Wall #-}
 
@@ -29,11 +30,12 @@ where
 import qualified Data.ByteString as BS
 import qualified Data.ByteString.Lazy as LBS
 import Control.Lens (makeLenses, (^.))
+import Reporting.Doc.ColorQQ (c)
 import qualified System.Directory as Dir
 import System.FilePath ((</>))
 import qualified System.FilePath as FilePath
-import qualified System.IO as IO
 import qualified Terminal.Output as Output
+import qualified Terminal.Print as Print
 
 -- | Upgrade command flags.
 data Flags = Flags
@@ -67,7 +69,7 @@ run () flags = do
   cwd <- Dir.getCurrentDirectory
   actions <- discoverMigrationActions cwd
   if null actions
-    then IO.putStrLn "No Elm artifacts found to upgrade."
+    then Print.println [c|No Elm artifacts found to upgrade.|]
     else executeMigration flags actions
 
 -- | Discover all migration actions needed.
@@ -150,8 +152,9 @@ createRenameAction path
 -- | Execute all migration actions.
 executeMigration :: Flags -> [MigrationAction] -> IO ()
 executeMigration flags actions = do
-  IO.putStrLn ("Found " ++ Output.showCount (length actions) "change" ++ " to make:")
-  IO.putStrLn ""
+  let countStr = Output.showCount (length actions) "change"
+  Print.println [c|Found {bold|#{countStr}} to make:|]
+  Print.newline
   mapM_ reportAction actions
   verboseLog flags ("Processing " ++ Output.showCount (length actions) "migration action")
   if flags ^. dryRun
@@ -161,25 +164,26 @@ executeMigration flags actions = do
 -- | Report a single migration action.
 reportAction :: MigrationAction -> IO ()
 reportAction (RenameFile from to) =
-  IO.putStrLn ("  Rename: " ++ from ++ " -> " ++ to)
+  Print.println [c|  {cyan|Rename:} #{from} -> #{to}|]
 reportAction (ConvertConfig from to) =
-  IO.putStrLn ("  Convert: " ++ from ++ " -> " ++ to)
+  Print.println [c|  {cyan|Convert:} #{from} -> #{to}|]
 reportAction (UpdateContent path desc _) =
-  IO.putStrLn ("  Update: " ++ path ++ " (" ++ desc ++ ")")
+  Print.println [c|  {cyan|Update:} #{path} (#{desc})|]
 
 -- | Report dry-run mode.
 reportDryRun :: IO ()
 reportDryRun = do
-  IO.putStrLn ""
-  IO.putStrLn "Dry run complete. No changes were made."
-  IO.putStrLn "Run without --dry-run to apply changes."
+  Print.newline
+  Print.println [c|{yellow|Dry run complete.} No changes were made.|]
+  Print.println [c|Run without {bold|--dry-run} to apply changes.|]
 
 -- | Apply all migration actions.
 applyActions :: [MigrationAction] -> IO ()
 applyActions actions = do
   mapM_ applyAction actions
-  IO.putStrLn ""
-  IO.putStrLn ("Successfully applied " ++ Output.showCount (length actions) "change" ++ ".")
+  Print.newline
+  let countStr = Output.showCount (length actions) "change"
+  Print.println [c|{green|Successfully applied} #{countStr}.|]
 
 -- | Apply a single migration action.
 applyAction :: MigrationAction -> IO ()
@@ -253,5 +257,5 @@ replaceLazyAll needle replacement haystack =
 verboseLog :: Flags -> String -> IO ()
 verboseLog flags message =
   if flags ^. upgradeVerbose
-    then IO.putStrLn ("  [verbose] " ++ message)
+    then Print.println [c|  {dullcyan|[verbose]} #{message}|]
     else pure ()

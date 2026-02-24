@@ -1,4 +1,5 @@
 {-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE QuasiQuotes #-}
 {-# LANGUAGE TemplateHaskell #-}
 {-# OPTIONS_GHC -Wall #-}
 
@@ -33,8 +34,10 @@ import qualified Data.ByteString.Lazy as LBS
 import Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
 import qualified Json.Encode as Encode
+import Reporting.Doc.ColorQQ (c)
 import qualified Stuff
 import qualified System.IO as IO
+import qualified Terminal.Print as Print
 
 -- | Audit command flags.
 data Flags = Flags
@@ -78,17 +81,17 @@ run () flags = do
 -- | Report that no project was found.
 reportNoProject :: IO ()
 reportNoProject =
-  IO.hPutStrLn IO.stderr "Error: No canopy.json found. Run this from a Canopy project directory."
+  Print.printErrLn [c|{red|Error:} No canopy.json found. Run this from a Canopy project directory.|]
 
 -- | Audit a project at the given root.
 auditProject :: FilePath -> Flags -> IO ()
 auditProject root flags = do
   if flags ^. auditVerbose
-    then IO.putStrLn ("Auditing project at: " ++ root)
+    then Print.println [c|  {dullcyan|[verbose]} Auditing project at: {cyan|#{root}}|]
     else pure ()
   maybeOutline <- Outline.read root
   case maybeOutline of
-    Nothing -> IO.hPutStrLn IO.stderr "Error: Could not read canopy.json"
+    Nothing -> Print.printErrLn [c|{red|Error:} Could not read canopy.json|]
     Just outline -> reportFindings flags (analyzeOutline outline)
 
 -- | Analyze an outline for audit findings.
@@ -166,14 +169,15 @@ reportFindingsTerminal findings =
   mapM_ printFinding findings
   where
     printFinding (Finding sev pkg msg) =
-      IO.putStrLn (severityPrefix sev ++ " " ++ pkg ++ ": " ++ msg)
+      let prefix = severityPrefix sev
+       in Print.println [c|#{prefix} #{pkg}: #{msg}|]
 
 -- | Report findings in JSON format using the Json.Encode infrastructure.
 --
 -- Produces well-formed, properly escaped JSON output via 'Encode.encodeUgly'.
 reportFindingsJson :: [Finding] -> IO ()
 reportFindingsJson findings =
-  LBS.putStr (BB.toLazyByteString builder) >> putStrLn ""
+  LBS.putStr (BB.toLazyByteString builder) >> IO.hPutStrLn IO.stdout ""
   where
     builder = Encode.encodeUgly (encodeFindingsPayload findings)
 
@@ -196,8 +200,9 @@ encodeFinding (Finding sev pkg msg) =
 -- | Report summary line.
 reportSummary :: [Finding] -> IO ()
 reportSummary findings = do
-  IO.putStrLn ""
-  IO.putStrLn (formatSummary critCount warnCount infoCount)
+  Print.newline
+  let summaryText = formatSummary critCount warnCount infoCount
+  Print.println [c|#{summaryText}|]
   where
     critCount = length (filter isCritical findings)
     warnCount = length (filter isWarning findings)

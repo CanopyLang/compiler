@@ -1,4 +1,5 @@
 {-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE QuasiQuotes #-}
 {-# OPTIONS_GHC -Wall #-}
 
 -- | User interaction and display formatting for Init system.
@@ -72,7 +73,10 @@ import Init.Types
 import qualified Reporting
 import Reporting.Doc (Doc)
 import qualified Reporting.Doc as Doc
+import Reporting.Doc.ColorQQ (c)
 import qualified Reporting.Exit as Exit
+import qualified Reporting.Exit.Help as Help
+import qualified Terminal.Print as Print
 
 -- | Prompt user for confirmation to proceed with initialization.
 --
@@ -115,8 +119,8 @@ askUserConfirmation = do
 -- Shows the user comprehensive information about what the initialization
 -- process will do, including project structure, dependencies, and next steps.
 displayInitMessage :: IO ()
-displayInitMessage = do
-  putStrLn $ Doc.toString welcomeMessage
+displayInitMessage =
+  Help.toStdout welcomeMessage >> Print.newline
 
 -- | Create welcome message for initialization.
 --
@@ -125,16 +129,16 @@ displayInitMessage = do
 welcomeMessage :: Doc
 welcomeMessage =
   Doc.vcat
-    [ Doc.fromChars "Welcome to Canopy project initialization!",
-      Doc.fromChars "",
-      Doc.fromChars "This will create a new Canopy project with:",
-      Doc.indent 2 $
-        Doc.vcat
-          [ Doc.fromChars "• canopy.json configuration file",
-            Doc.fromChars "• src/ directory for source code",
-            Doc.fromChars "• Standard dependency setup"
-          ],
-      Doc.fromChars ""
+    [ Doc.bold "Welcome to Canopy project initialization!"
+    , ""
+    , "This will create a new Canopy project with:"
+    , Doc.indent 2
+        (Doc.vcat
+          [ "• " <> Doc.green "canopy.json" <> " configuration file"
+          , "• " <> Doc.cyan "src/" <> " directory for source code"
+          , "• Standard dependency setup"
+          ])
+    , ""
     ]
 
 -- | Show confirmation prompt to user.
@@ -211,29 +215,29 @@ confirmationText =
 -- system is working.
 displayProgress :: String -> IO ()
 displayProgress message =
-  putStrLn ("Initializing: " <> message)
+  Print.println [c|Initializing: #{message}|]
 
 -- | Show success message after completion.
 --
 -- Displays a success message to the user after successful project
 -- initialization, including next steps and helpful information.
 showSuccessMessage :: IO ()
-showSuccessMessage = do
-  putStrLn $ Doc.toString successMessage
+showSuccessMessage =
+  Help.toStdout successMessage >> Print.newline
 
 -- | Create success message content.
 successMessage :: Doc
 successMessage =
   Doc.vcat
-    [ Doc.fromChars "Project initialized successfully!",
-      Doc.fromChars "",
-      Doc.fromChars "Your new Canopy project is ready. Next steps:",
-      Doc.indent 2 $
-        Doc.vcat
-          [ Doc.fromChars "1. Add your source files to src/",
-            Doc.fromChars "2. Run 'canopy make' to build your project",
-            Doc.fromChars "3. Check out the documentation for more information"
-          ]
+    [ Doc.green "Project initialized successfully!"
+    , ""
+    , "Your new Canopy project is ready. Next steps:"
+    , Doc.indent 2
+        (Doc.vcat
+          [ "1. Add your source files to " <> Doc.cyan "src/"
+          , "2. Run " <> Doc.bold "'canopy make'" <> " to build your project"
+          , "3. Check out the documentation for more information"
+          ])
     ]
 
 -- | Report completion with specific details.
@@ -241,8 +245,8 @@ successMessage =
 -- Provides detailed completion information including what was created
 -- and any important notes for the user.
 reportCompletion :: IO ()
-reportCompletion = do
-  putStrLn "Okay, I created it. Now read that link!"
+reportCompletion =
+  Print.println [c|{green|Okay, I created it.} Now read that link!|]
 
 -- | Format error message for user display.
 --
@@ -276,48 +280,60 @@ formatErrorMessage initError = case initError of
 formatProjectExistsError :: FilePath -> Doc
 formatProjectExistsError path =
   Doc.vcat
-    [ Doc.fromChars ("Project already exists: " <> path),
-      Doc.fromChars "Use --force to override existing project."
+    [ Doc.dullred "-- PROJECT ALREADY EXISTS"
+    , ""
+    , Doc.reflow ("There is already a project at " <> path <> ".")
+    , Doc.reflow "Use --force to override, or work in a different directory."
     ]
 
 -- | Format registry failure error message.
 formatRegistryError :: Exit.RegistryProblem -> Doc
 formatRegistryError _problem =
   Doc.vcat
-    [ Doc.fromChars "Failed to connect to package registry.",
-      Doc.fromChars "Check your network connection and try again."
+    [ Doc.dullred "-- REGISTRY ERROR"
+    , ""
+    , Doc.reflow "Failed to connect to the package registry."
+    , Doc.reflow "Check your network connection and try again."
     ]
 
 -- | Format solver failure error message.
 formatSolverError :: Exit.Solver -> Doc
 formatSolverError _solverExit =
   Doc.vcat
-    [ Doc.fromChars "Dependency resolution failed.",
-      Doc.fromChars "Please check package constraints and try again."
+    [ Doc.dullred "-- SOLVER ERROR"
+    , ""
+    , Doc.reflow "Dependency resolution failed."
+    , Doc.reflow "Check package constraints and try again."
     ]
 
 -- | Format no solution error message.
 formatNoSolutionError :: [Name] -> Doc
 formatNoSolutionError packages =
   Doc.vcat
-    [ Doc.fromChars "No valid dependency solution found for:",
-      Doc.indent 2 $ Doc.vcat $ map (Doc.fromChars . show) packages
+    [ Doc.dullred "-- NO SOLUTION"
+    , ""
+    , Doc.reflow "No valid dependency solution found for:"
+    , Doc.indent 4 (Doc.vcat (map (Doc.yellow . Doc.fromChars . show) packages))
     ]
 
 -- | Format offline solution error message.
 formatOfflineError :: [Name] -> Doc
 formatOfflineError packages =
   Doc.vcat
-    [ Doc.fromChars "No offline solution available for:",
-      Doc.indent 2 $ Doc.vcat $ map (Doc.fromChars . show) packages
+    [ Doc.dullred "-- NO OFFLINE SOLUTION"
+    , ""
+    , Doc.reflow "No offline solution available for:"
+    , Doc.indent 4 (Doc.vcat (map (Doc.yellow . Doc.fromChars . show) packages))
     ]
 
 -- | Format file system error message.
 formatFileSystemError :: String -> Doc
 formatFileSystemError message =
   Doc.vcat
-    [ Doc.fromChars ("File system error: " <> message),
-      Doc.fromChars "Check directory permissions and disk space."
+    [ Doc.dullred "-- FILE SYSTEM ERROR"
+    , ""
+    , Doc.reflow ("File system error: " <> message)
+    , Doc.reflow "Check directory permissions and disk space."
     ]
 
 -- | Display error to user with formatting.
@@ -325,8 +341,8 @@ formatFileSystemError message =
 -- Takes an InitError and displays it to the user using appropriate
 -- formatting and helpful context information.
 displayError :: InitError -> IO ()
-displayError initError = do
-  putStrLn $ Doc.toString $ formatErrorMessage initError
+displayError initError =
+  Help.toStdout (formatErrorMessage initError) >> Print.newline
 
 -- | Show detailed error information.
 --
@@ -334,5 +350,5 @@ displayError initError = do
 -- specific information, and suggested remediation steps.
 showErrorDetails :: InitError -> IO ()
 showErrorDetails initError = do
-  putStrLn "Initialization failed:"
+  Print.println [c|{red|Initialization failed:}|]
   displayError initError

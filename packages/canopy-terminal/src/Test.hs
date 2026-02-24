@@ -1,4 +1,5 @@
 {-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE QuasiQuotes #-}
 {-# LANGUAGE TemplateHaskell #-}
 {-# OPTIONS_GHC -Wall #-}
 
@@ -73,6 +74,8 @@ import qualified System.IO as IO
 import qualified System.Process as Process
 import qualified Terminal
 import qualified Terminal.Output as Output
+import Reporting.Doc.ColorQQ (c)
+import qualified Terminal.Print as Print
 import Text.Read (readMaybe)
 import qualified Stuff
 
@@ -120,7 +123,7 @@ runOnce paths flags = do
 -- Blocks until interrupted with Ctrl+C.
 runWithWatch :: [FilePath] -> Flags -> IO ()
 runWithWatch paths flags = do
-  putStrLn "Watching for changes... Press Ctrl+C to stop."
+  Print.println [c|{bold|Watching for changes...} Press Ctrl+C to stop.|]
   testFiles <- discoverTestFiles paths
   _ <- compileAndRunTests testFiles flags
   watchDirsForRerun paths flags
@@ -150,7 +153,7 @@ isCanopyFile event =
 -- | Handle a file change event by re-running tests.
 onFileChange :: [FilePath] -> Flags -> FSNotify.Event -> IO ()
 onFileChange paths flags _event = do
-  putStrLn "\n--- File changed, re-running tests ---"
+  Print.println [c|{bold|--- File changed, re-running tests ---}|]
   testFiles <- discoverTestFiles paths
   _ <- compileAndRunTests testFiles flags
   pure ()
@@ -208,8 +211,8 @@ findCanopyFilesIn dir = do
 -- wraps them in a test harness, executes via @node@, and reports results.
 compileAndRunTests :: [FilePath] -> Flags -> IO ExitCode
 compileAndRunTests [] _ = do
-  putStrLn "No test files found."
-  putStrLn "Create .can files in a tests/ directory to get started."
+  Print.println [c|{yellow|No test files found.}|]
+  Print.println [c|Create .can files in a {cyan|tests/} directory to get started.|]
   pure ExitSuccess
 compileAndRunTests testFiles flags = do
   maybeRoot <- Stuff.findRoot
@@ -220,19 +223,20 @@ compileAndRunTests testFiles flags = do
 -- | Report that no canopy.json was found in the current directory tree.
 reportNoProject :: IO ExitCode
 reportNoProject = do
-  putStrLn "Error: No canopy.json found. Run canopy test from a Canopy project."
+  Print.printErrLn [c|{red|Error:} No canopy.json found. Run {green|canopy test} from a Canopy project.|]
   pure (ExitFailure 1)
 
 -- | Compile and run tests when the project root is known.
 compileAndRunWithRoot :: FilePath -> [FilePath] -> Flags -> IO ExitCode
 compileAndRunWithRoot root testFiles flags = do
+  let countStr = Output.showCount (length testFiles) "test file"
   if flags ^. testVerbose
-    then putStrLn ("Running " ++ Output.showCount (length testFiles) "test file" ++ " from " ++ root ++ "...")
-    else putStrLn ("Running " ++ Output.showCount (length testFiles) "test file" ++ "...")
+    then Print.println [c|Running #{countStr} from {cyan|#{root}}...|]
+    else Print.println [c|Running #{countStr}...|]
   maybeJs <- compileTestFiles root testFiles
   case maybeJs of
     Nothing -> do
-      putStrLn "Compilation failed."
+      Print.printErrLn [c|{red|Compilation failed.}|]
       pure (ExitFailure 1)
     Just jsContent -> executeTestRunner jsContent flags
 
@@ -248,7 +252,8 @@ compileTestFiles root testFiles = do
   result <- Compiler.compileFromPaths pkg True root srcDirs testFiles
   case result of
     Left err -> do
-      putStrLn ("Compilation error: " ++ show err)
+      let errStr = show err
+      Print.printErrLn [c|{red|Compilation error:} #{errStr}|]
       pure Nothing
     Right artifacts -> pure (Just (artifactsToJavaScript artifacts))
 
@@ -362,7 +367,7 @@ runNodeAndReport runnerPath = do
   nodeExists <- Dir.findExecutable "node"
   case nodeExists of
     Nothing -> do
-      putStrLn "Error: 'node' not found. Install Node.js to run Canopy tests."
+      Print.printErrLn [c|{red|Error:} 'node' not found. Install Node.js to run Canopy tests.|]
       pure (ExitFailure 1)
     Just nodePath -> executeNode nodePath runnerPath
 
@@ -374,11 +379,11 @@ executeNode nodePath runnerPath = do
   IO.hPutStr IO.stdout stdout
   case exitCode of
     ExitSuccess -> do
-      putStrLn "Tests passed."
+      Print.println [c|{green|Tests passed.}|]
       pure ExitSuccess
     ExitFailure _ -> do
       unless (null stderr) (IO.hPutStr IO.stderr stderr)
-      putStrLn "Tests failed."
+      Print.println [c|{red|Tests failed.}|]
       pure (ExitFailure 1)
 
 -- | Conditional action: skip execution when the condition is 'True'.

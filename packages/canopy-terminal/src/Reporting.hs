@@ -1,4 +1,5 @@
 {-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE QuasiQuotes #-}
 {-# OPTIONS_GHC -Wall #-}
 
 -- | Pure reporting and error display for Terminal.
@@ -35,9 +36,11 @@ import qualified Json.Encode as Encode
 import qualified Json.String as Json
 import qualified Reporting.Ask as Ask
 import qualified Reporting.Doc as Doc
+import Reporting.Doc.ColorQQ (c)
 import qualified Reporting.Exit as Exit
 import System.IO (hPutStrLn, stdout)
 import qualified Terminal.Output as Output
+import qualified Terminal.Print as Print
 
 -- | Reporting style for error output.
 data Style
@@ -85,11 +88,11 @@ attemptWithStyle style toReport action = do
 
 -- | Report error using specified style.
 reportError :: Style -> Exit.Report -> IO ()
-reportError style report =
+reportError style report_ =
   case style of
     Silent -> pure ()
-    Terminal -> hPutStrLn stdout (show report)
-    Json -> outputJson (Doc.encode report)
+    Terminal -> Print.printErrLn report_
+    Json -> outputJson (Doc.encode report_)
 
 -- | Report successful generation.
 --
@@ -118,9 +121,10 @@ buildGenerateJson moduleNames targetPath =
 
 -- | Print generation success message.
 printGenerationSuccess :: List ModuleName.Raw -> FilePath -> IO ()
-printGenerationSuccess moduleNames targetPath = do
-  let count = length (NonEmptyList.toList moduleNames)
-  hPutStrLn stdout ("Success! Compiled " ++ Output.showCount count "module" ++ " to " ++ targetPath)
+printGenerationSuccess moduleNames targetPath =
+  Print.println [c|{green|Success!} Compiled #{countStr} to {cyan|#{targetPath}}|]
+  where
+    countStr = Output.showCount (length (NonEmptyList.toList moduleNames)) "module"
 
 -- | Ask user a question.
 ask :: String -> IO Bool

@@ -114,6 +114,7 @@ library
       Setup
       Stuff
       Terminal.Output
+      Terminal.Print
       Test
       Test.FFI
       Upgrade

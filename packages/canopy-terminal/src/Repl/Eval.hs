@@ -1,3 +1,4 @@
+{-# LANGUAGE QuasiQuotes #-}
 {-# OPTIONS_GHC -Wall #-}
 
 -- | REPL evaluation engine and JavaScript execution.
@@ -48,6 +49,7 @@ import Repl.Types
     toPrintName,
   )
 import qualified Reporting
+import Reporting.Doc.ColorQQ (c)
 import qualified Reporting.Exit as Exit
 import qualified Reporting.Task as Task
 import qualified Stuff
@@ -58,6 +60,7 @@ import qualified System.Exit as Exit
 import System.FilePath ((</>))
 import qualified System.IO as IO
 import qualified System.Process as Proc
+import qualified Terminal.Print as Print
 
 -- | Main evaluation function for REPL input.
 --
@@ -70,7 +73,7 @@ eval :: Env -> State -> Input -> IO Outcome
 eval env state input =
   Repl.handleInterrupt handleInterrupt (processInput env state input)
   where
-    handleInterrupt = putStrLn "<cancelled>" >> pure (Loop state)
+    handleInterrupt = Print.println [c|{yellow|<cancelled>}|] >> pure (Loop state)
 
 -- | Process different types of input.
 --
@@ -78,11 +81,13 @@ eval env state input =
 processInput :: Env -> State -> Input -> IO Outcome
 processInput _ state Skip = pure (Loop state)
 processInput _ _ Exit = pure (End Exit.ExitSuccess)
-processInput _ _ Reset = putStrLn "<reset>" >> pure (Loop initialState)
+processInput _ _ Reset = Print.println [c|{yellow|<reset>}|] >> pure (Loop initialState)
 processInput _ state (Help maybeCmd) =
-  putStrLn (Commands.toHelpMessage maybeCmd) >> pure (Loop state)
+  Print.println [c|#{helpMsg}|] >> pure (Loop state)
+  where
+    helpMsg = Commands.toHelpMessage maybeCmd
 processInput _ state Port =
-  putStrLn "I cannot handle port declarations." >> pure (Loop state)
+  Print.println [c|{yellow|I cannot handle port declarations.}|] >> pure (Loop state)
 processInput env oldState (Import name src) =
   Loop <$> attemptEval env oldState (addImport name src oldState) OutputNothing
 processInput env oldState (Type name src) =
@@ -233,7 +238,8 @@ getInterpreterHelp name findExe = do
   case maybePath of
     Just path -> pure path
     Nothing -> do
-      IO.hPutStrLn IO.stderr (exeNotFound name)
+      let errMsg = exeNotFound name
+      Print.printErrLn [c|#{errMsg}|]
       Exit.exitFailure
 
 -- | Error message for missing interpreter.

@@ -1,5 +1,6 @@
-{-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE LambdaCase #-}
+{-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE QuasiQuotes #-}
 {-# OPTIONS_GHC -Wall #-}
 
 -- | Project initialization system for Canopy.
@@ -79,7 +80,9 @@ import Init.Types
   )
 import qualified Init.Validation as Validation
 import qualified Reporting
+import Reporting.Doc.ColorQQ (c)
 import qualified Reporting.Exit as Exit
+import qualified Terminal.Print as Print
 
 -- | Main initialization entry point.
 --
@@ -158,7 +161,7 @@ createProjectWithEnvironment context env = do
 -- | Cancel initialization with user message.
 cancelInitialization :: IO (Either InitError ())
 cancelInitialization = do
-  putStrLn "Okay, I did not make any changes!"
+  Print.println [c|Okay, I did not make any changes!|]
   pure (Right ())
 
 -- | Initialize project with default settings.

@@ -1,4 +1,5 @@
 {-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE QuasiQuotes #-}
 {-# OPTIONS_GHC -Wall #-}
 
 -- | Static analysis (lint) command for Canopy source files.
@@ -70,9 +71,12 @@ import qualified Json.Encode as Encode
 import qualified Json.String as JsonString
 import qualified Parse.Module as Parse
 import qualified Reporting.Annotation as A
+import Reporting.Doc.ColorQQ (c)
 import qualified System.Directory as Dir
 import qualified System.FilePath as FilePath
+import qualified System.IO as IO
 import Terminal (Parser (..))
+import qualified Terminal.Print as Print
 
 -- TYPES
 
@@ -320,7 +324,7 @@ validateFixedFile path originalSource = do
   case Parse.fromByteString Parse.Application fixedBytes of
     Left _ -> do
       writeFile path originalSource
-      putStrLn ("Warning: auto-fix produced invalid syntax in " ++ path ++ "; reverted.")
+      Print.println [c|{yellow|Warning:} auto-fix produced invalid syntax in {cyan|#{path}}; reverted.|]
     Right _ -> pure ()
 
 -- | Apply a single fix to source text.
@@ -352,8 +356,8 @@ replaceFirst needle replacement haystack =
 -- | Advance one character and retry the replacement.
 replaceFirstStep :: String -> String -> String -> String
 replaceFirstStep _ _ [] = []
-replaceFirstStep needle replacement (c : rest) =
-  c : replaceFirst needle replacement rest
+replaceFirstStep needle replacement (ch : rest) =
+  ch : replaceFirst needle replacement rest
 
 -- LINT ENGINE
 
@@ -616,7 +620,7 @@ childExprs expr =
   case expr of
     Src.Call f args -> f : args
     Src.If branches elseBranch ->
-      concatMap (\(c, b) -> [c, b]) branches ++ [elseBranch]
+      concatMap (\(cond, body) -> [cond, body]) branches ++ [elseBranch]
     Src.Let defs body ->
       concatMap defExprs (map A.toValue defs) ++ [body]
     Src.Case scrutinee branches ->
@@ -822,23 +826,36 @@ checkAnnotation _ = Nothing
 -- Warnings are grouped by rule and printed with their source region and
 -- message.  An empty list produces no output (silent success).
 reportTerminal :: [LintWarning] -> IO ()
-reportTerminal [] = putStrLn "No lint warnings found."
+reportTerminal [] = Print.println [c|{green|No lint warnings found.}|]
 reportTerminal warnings = mapM_ printWarning warnings
 
 -- | Print a single warning in terminal format, including its severity.
 printWarning :: LintWarning -> IO ()
 printWarning w = do
-  putStrLn (renderRegion (_warnRegion w) ++ " [" ++ severityName (_warnSeverity w) ++ "] [" ++ ruleName (_warnRule w) ++ "]")
-  putStrLn ("  " ++ _warnMessage w)
+  let region = renderRegion (_warnRegion w)
+      severity = severityName (_warnSeverity w)
+      rule = ruleName (_warnRule w)
+      msg = _warnMessage w
+      sevColor = case _warnSeverity w of
+        SevError -> [c|{red|#{severity}}|]
+        SevWarning -> [c|{yellow|#{severity}}|]
+        _ -> [c|{cyan|#{severity}}|]
+  Print.print [c|{cyan|#{region}} [|]
+  Print.print sevColor
+  Print.println [c|] [#{rule}]|]
+  Print.println [c|  #{msg}|]
   maybe (pure ()) printFix (_warnFix w)
 
 -- | Print the auto-fix hint for a warning.
 printFix :: LintFix -> IO ()
 printFix (TextReplace orig repl) =
-  putStrLn ("  Fix: replace `" ++ orig ++ "` with `" ++ repl ++ "`")
+  Print.println [c|  {green|Fix:} replace `#{orig}` with `#{repl}`|]
 printFix (RemoveLines start end)
-  | start == end = putStrLn ("  Fix: remove line " ++ show start)
-  | otherwise = putStrLn ("  Fix: remove lines " ++ show start ++ "-" ++ show end)
+  | start == end = Print.println [c|  {green|Fix:} remove line #{startStr}|]
+  | otherwise = Print.println [c|  {green|Fix:} remove lines #{startStr}-#{endStr}|]
+  where
+    startStr = show start
+    endStr = show end
 
 -- | Render a source region as a human-readable @line:col-line:col@ string.
 renderRegion :: A.Region -> String
@@ -855,7 +872,7 @@ showWord16 = show
 reportJson :: [LintWarning] -> IO ()
 reportJson warnings =
   LBS.putStr (BB.toLazyByteString (Encode.encode (Encode.list encodeWarning warnings)))
-    >> putStrLn ""
+    >> IO.hPutStrLn IO.stdout ""
 
 -- | Encode a single warning as a JSON object, including its severity.
 encodeWarning :: LintWarning -> Encode.Value
@@ -891,10 +908,11 @@ encodePosition line col =
 reportExitSummary :: [LintWarning] -> IO ()
 reportExitSummary [] = pure ()
 reportExitSummary warnings =
-  putStrLn (summaryLine ++ errorSuffix)
+  Print.println [c|#{summaryText}|]
   where
     total = length warnings
     errors = length (filter (\w -> _warnSeverity w == SevError) warnings)
+    summaryText = summaryLine ++ errorSuffix
     summaryLine =
       show total
         ++ " issue"

@@ -1,4 +1,5 @@
 {-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE QuasiQuotes #-}
 {-# OPTIONS_GHC -Wall #-}
 
 -- | Project creation and structure setup for Init system.
@@ -81,7 +82,9 @@ import Init.Types
     contextSourceDirs,
     contextTestDeps,
   )
+import Reporting.Doc.ColorQQ (c)
 import qualified System.Directory as Dir
+import qualified Terminal.Print as Print
 
 -- | Create complete project directory structure.
 --
@@ -292,7 +295,7 @@ createProjectFiles _context = do
 -- | Create success message for completed initialization.
 attemptSuccessMessage :: IO (Maybe String)
 attemptSuccessMessage = do
-  putStrLn "Okay, I created it. Now read that link!"
+  Print.println [c|{green|Okay, I created it.} Now read that link!|]
   pure Nothing
 
 -- | Create test directory structure.

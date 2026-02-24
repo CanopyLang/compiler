@@ -1,4 +1,5 @@
 {-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE QuasiQuotes #-}
 {-# OPTIONS_GHC -Wall #-}
 
 -- | User interaction and file operations for version bumping.
@@ -38,7 +39,9 @@ import qualified Deps.Diff as Diff
 import qualified Reporting
 import Reporting.Doc (Doc, (<+>))
 import qualified Reporting.Doc as Doc
+import Reporting.Doc.ColorQQ (c)
 import qualified Reporting.Exit.Help as Help
+import qualified Terminal.Print as Print
 
 -- | Prompts user for version update confirmation.
 --
@@ -162,7 +165,7 @@ applyVersionChange root outline targetVersion = do
 --
 -- @since 0.19.1
 reportNoChange :: IO ()
-reportNoChange = putStrLn "Okay, I did not change anything!"
+reportNoChange = Print.println [c|Okay, I did not change anything!|]
 
 -- | Reports successful version change.
 --

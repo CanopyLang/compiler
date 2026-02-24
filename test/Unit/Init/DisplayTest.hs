@@ -126,7 +126,7 @@ errorFormattingTests =
 
         assertBool "Contains the path" ("/home/user/project/canopy.json" `isInfixOf` rendered)
         assertBool "Contains force option" ("--force" `isInfixOf` rendered)
-        assertBool "Contains already exists" ("exists" `isInfixOf` rendered),
+        assertBool "Contains PROJECT ALREADY EXISTS title" ("PROJECT ALREADY EXISTS" `isInfixOf` rendered),
       Test.testCase "formatErrorMessage handles FileSystemError" $ do
         let error = FileSystemError "Permission denied"
             formatted = Display.formatErrorMessage error

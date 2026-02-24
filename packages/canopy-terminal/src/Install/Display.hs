@@ -1,4 +1,5 @@
 {-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE QuasiQuotes #-}
 {-# OPTIONS_GHC -Wall #-}
 
 -- | User interface and display formatting for install operations.
@@ -68,6 +69,8 @@ import Install.Types
 import qualified Reporting.Ask as Ask
 import Reporting.Doc (Doc, (<+>))
 import qualified Reporting.Doc as Doc
+import Reporting.Doc.ColorQQ (c)
+import qualified Terminal.Print as Print
 
 -- | Display formatting context for consistent width calculations.
 --
@@ -311,7 +314,7 @@ promptForApproval question =
 --
 -- @since 0.19.1
 reportAlreadyInstalled :: IO ()
-reportAlreadyInstalled = putStrLn "It is already installed!"
+reportAlreadyInstalled = Print.println [c|{green|It is already installed!}|]
 
 -- | Report successful installation completion.
 --
@@ -319,7 +322,7 @@ reportAlreadyInstalled = putStrLn "It is already installed!"
 --
 -- @since 0.19.1
 reportSuccess :: IO ()
-reportSuccess = putStrLn "Success!"
+reportSuccess = Print.println [c|{green|Success!}|]
 
 -- | Report installation cancellation.
 --
@@ -327,4 +330,4 @@ reportSuccess = putStrLn "Success!"
 --
 -- @since 0.19.1
 reportCancellation :: IO ()
-reportCancellation = putStrLn "Okay, I did not change anything!"
+reportCancellation = Print.println [c|Okay, I did not change anything!|]

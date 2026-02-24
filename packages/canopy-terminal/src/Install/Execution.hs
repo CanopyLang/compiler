@@ -1,4 +1,5 @@
 {-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE QuasiQuotes #-}
 {-# OPTIONS_GHC -Wall #-}
 
 -- | Installation execution and file operations.
@@ -58,8 +59,10 @@ import Install.Types
 import qualified Reporting
 import Reporting.Doc (Doc)
 import qualified Reporting.Doc as Doc
+import Reporting.Doc.ColorQQ (c)
 import qualified Reporting.Exit as Exit
 import qualified Reporting.Task as Task
+import qualified Terminal.Print as Print
 
 -- | Execute an installation based on the determined changes.
 --
@@ -228,4 +231,4 @@ reportInstallationStatus :: Either Exit.Install () -> IO ()
 reportInstallationStatus result =
   case result of
     Right () -> Display.reportSuccess
-    Left _err -> putStrLn "Installation failed. See error details above."
+    Left _err -> Print.printErrLn [c|{red|Installation failed.} See error details above.|]

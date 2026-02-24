@@ -1,5 +1,6 @@
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE LambdaCase #-}
+{-# LANGUAGE QuasiQuotes #-}
 {-# OPTIONS_GHC -Wall #-}
 
 -- | Package bootstrap and environment setup for Canopy.
@@ -52,9 +53,12 @@ import qualified Deps.Registry as Registry
 import qualified Http
 import qualified Reporting
 import qualified Reporting.Exit as Exit
+import Reporting.Doc.ColorQQ (c)
 import qualified Stuff
 import qualified System.Directory as Dir
 import System.FilePath ((</>))
+import qualified Terminal.Print as Print
+import qualified Text.PrettyPrint.ANSI.Leijen as P
 
 -- | Configuration flags for the setup command.
 data Flags = Flags
@@ -98,11 +102,12 @@ run () flags =
 -- | Execute the setup workflow.
 setup :: Flags -> IO (Either Exit.Setup ())
 setup flags = do
-  putStrLn "Setting up Canopy package environment...\n"
+  Print.println [c|{bold|Setting up Canopy package environment...}|]
+  Print.newline
 
   -- Step 1: Create package cache
   cache <- Stuff.getPackageCache
-  verboseLog flags ("Package cache: " <> cache)
+  verboseLog flags [c|Package cache: {cyan|#{cache}}|]
 
   -- Step 2: Fetch registry
   registryResult <- fetchRegistry cache flags
@@ -117,26 +122,26 @@ setup flags = do
           missing = length standardPackages - located
 
       -- Step 4: Report summary
-      putStrLn ""
+      Print.newline
       reportSummary located missing
       pure (Right ())
 
 -- | Fetch the package registry from the network, falling back to cache.
 fetchRegistry :: FilePath -> Flags -> IO (Either Exit.Setup Registry.Registry)
 fetchRegistry cache flags = do
-  verboseLog flags "Fetching package registry..."
+  verboseLog flags [c|Fetching package registry...|]
   manager <- Http.getManager
   result <- Registry.latest manager Map.empty cache cache
   case result of
     Right registry -> do
-      putStrLn "  Registry: cached"
+      Print.println [c|  Registry: {green|cached}|]
       pure (Right registry)
     Left err -> do
-      putStrLn ("  Registry: fetch failed (" <> err <> ")")
+      Print.println [c|  Registry: {red|fetch failed (#{err})}|]
       cached <- Registry.read cache
       case cached of
         Just registry -> do
-          putStrLn "  Registry: using cached version"
+          Print.println [c|  Registry: {yellow|using cached version}|]
           pure (Right registry)
         Nothing ->
           pure (Left (Exit.SetupRegistryFailed err))
@@ -144,7 +149,8 @@ fetchRegistry cache flags = do
 -- | Report how many packages the registry knows about.
 reportRegistryStatus :: Registry.Registry -> IO ()
 reportRegistryStatus (Registry.Registry count _) =
-  putStrLn ("  Registry: " <> show count <> " packages indexed")
+  let countStr = show count
+  in Print.println [c|  Registry: #{countStr} packages indexed|]
 
 -- | Locate a package's artifacts, copying from Elm cache if necessary.
 --
@@ -164,7 +170,7 @@ locatePackage _cache flags (pkg, version) = do
   canopyExists <- Dir.doesFileExist canopyArtifacts
   if canopyExists
     then do
-      putStrLn ("  " <> label <> ": ready")
+      Print.println [c|  #{label}: {green|ready}|]
       pure True
     else do
       -- Check Elm cache
@@ -172,15 +178,15 @@ locatePackage _cache flags (pkg, version) = do
       if elmExists
         then copyFromElmCache flags label canopyDir canopyArtifacts elmDir
         else do
-          putStrLn ("  " <> label <> ": not found")
-          verboseLog flags ("    Checked: " <> canopyArtifacts)
-          verboseLog flags ("    Checked: " <> elmArtifacts)
+          Print.println [c|  #{label}: {red|not found}|]
+          verboseLog flags [c|    Checked: {cyan|#{canopyArtifacts}}|]
+          verboseLog flags [c|    Checked: {cyan|#{elmArtifacts}}|]
           pure False
 
 -- | Copy package artifacts from the Elm cache to the Canopy cache.
 copyFromElmCache :: Flags -> String -> FilePath -> FilePath -> FilePath -> IO Bool
 copyFromElmCache flags label canopyDir canopyArtifacts elmDir = do
-  verboseLog flags ("    Copying from Elm cache: " <> elmDir)
+  verboseLog flags [c|    Copying from Elm cache: {cyan|#{elmDir}}|]
   Dir.createDirectoryIfMissing True canopyDir
   let elmArtifacts = elmDir </> "artifacts.dat"
   copyResult <- safeCopyFile elmArtifacts canopyArtifacts
@@ -188,10 +194,10 @@ copyFromElmCache flags label canopyDir canopyArtifacts elmDir = do
     Right () -> do
       -- Also copy source files if present
       copyPackageSource flags elmDir canopyDir
-      putStrLn ("  " <> label <> ": copied from Elm cache")
+      Print.println [c|  #{label}: {yellow|copied from Elm cache}|]
       pure True
     Left err -> do
-      putStrLn ("  " <> label <> ": copy failed (" <> err <> ")")
+      Print.println [c|  #{label}: {red|copy failed (#{err})}|]
       pure False
 
 -- | Copy package source files (src/, elm.json) from one directory to another.
@@ -204,7 +210,7 @@ copyPackageSource flags srcDir destDir = do
   srcExists <- Dir.doesDirectoryExist srcSrcDir
   if srcExists
     then do
-      verboseLog flags ("    Copying source: " <> srcSrcDir)
+      verboseLog flags [c|    Copying source: {cyan|#{srcSrcDir}}|]
       copyDirectoryRecursive srcSrcDir (destDir </> "src")
     else pure ()
 
@@ -214,7 +220,7 @@ copyIfExists flags src dest = do
   exists <- Dir.doesFileExist src
   if exists
     then do
-      verboseLog flags ("    Copying: " <> src)
+      verboseLog flags [c|    Copying: {cyan|#{src}}|]
       _ <- safeCopyFile src dest
       pure ()
     else pure ()
@@ -247,29 +253,31 @@ copyEntry srcBase destBase name = do
 -- | Report the final setup summary.
 reportSummary :: Int -> Int -> IO ()
 reportSummary located missing = do
-  putStrLn "Setup complete."
-  putStrLn ("  " <> show located <> " packages ready")
+  let locatedStr = show located
+      missingStr = show missing
+  Print.println [c|{green|Setup complete.}|]
+  Print.println [c|  {green|#{locatedStr}} packages ready|]
   if missing > 0
     then do
-      putStrLn ("  " <> show missing <> " packages not found")
-      putStrLn ""
-      putStrLn "To install missing packages, either:"
-      putStrLn "  1. Install Elm (https://elm-lang.org) and run 'elm make' on any project"
-      putStrLn "     Canopy will use Elm's cached artifacts automatically."
-      putStrLn "  2. Run 'canopy install elm/core' to add packages to your project."
-    else
-      putStrLn "\n  All standard library packages are available."
+      Print.println [c|  #{missingStr} packages not found|]
+      Print.newline
+      Print.println [c|To install missing packages:|]
+      Print.println [c|  1. If you previously used Elm, Canopy can import cached artifacts from ~/.elm/|]
+      Print.println [c|  2. Otherwise, run '{green|canopy install elm/core}' to fetch packages directly.|]
+    else do
+      Print.newline
+      Print.println [c|  All standard library packages are available.|]
 
 -- | Extract author and project strings from a package name.
 pkgStrings :: Pkg.Name -> (String, String)
 pkgStrings (Pkg.Name author project) =
   (Utf8.toChars author, Utf8.toChars project)
 
--- | Print a message when verbose mode is enabled.
-verboseLog :: Flags -> String -> IO ()
-verboseLog flags msg =
+-- | Print a 'P.Doc' message when verbose mode is enabled.
+verboseLog :: Flags -> P.Doc -> IO ()
+verboseLog flags doc =
   if _setupVerbose flags
-    then putStrLn msg
+    then Print.println doc
     else pure ()
 
 -- | Try an IO action, catching IOExceptions.

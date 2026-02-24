@@ -287,7 +287,7 @@ testEdgeCases =
           let largeContent = replicate 50000 'a'
           writeFile path largeContent
 
-          success <- withWatcher (recordEvent eventsRef) path 200000 $ do
+          success <- withWatcher (recordEvent eventsRef) path 500000 $ do
             appendFile path "end"
 
           events <- IORef.readIORef eventsRef

@@ -1,4 +1,5 @@
 {-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE QuasiQuotes #-}
 {-# OPTIONS_GHC -Wall #-}
 
 -- | Package publishing functionality for the Canopy compiler.
@@ -112,10 +113,12 @@ import Publish.Validation
     verifyVersion,
   )
 import qualified Reporting
+import Reporting.Doc.ColorQQ (c)
 import Reporting.Exit (Publish)
 import qualified Reporting.Exit as Exit
 import Reporting.Task (Task)
 import qualified Reporting.Task as Task
+import qualified Terminal.Print as Print
 
 -- | Main entry point for the publish command.
 --
@@ -201,7 +204,7 @@ runPublishChecks env pkg vsn = do
   performFileChecks (env ^. envRoot)
   docs <- reportBuildCheck (Task.run (verifyBuild (env ^. envRoot)))
   _ <- reportSemverCheck vsn (checkVersionValidityIO env pkg vsn docs maybeKnownVersions)
-  Task.io (putStrLn "")
+  Task.io Print.newline
   pure docs
 
 -- | Perform file validation checks.
@@ -283,7 +286,7 @@ publishToPZRServer env pkg vsn docs repoData = do
             vsn
             docs
             zipArchive
-          Task.io (putStrLn "Success!")
+          Task.io (Print.println [c|{green|Success!}|])
     _ -> Task.throw (Exit.PublishCustomRepositoryConfigDataError "publishToPZRServer called with non-PZR repository data")
 
 -- | Create and report ZIP archive creation.
@@ -291,9 +294,9 @@ publishToPZRServer env pkg vsn docs repoData = do
 -- @since 0.19.1
 createAndReportZipArchive :: Task Publish Zip.Archive
 createAndReportZipArchive = do
-  Task.io (putStrLn "Beginning to create in-memory ZIP archive of source code...")
+  Task.io (Print.println [c|Beginning to create in-memory ZIP archive of source code...|])
   archive <- createZipArchive
-  Task.io (putStrLn "Finished creating in-memory ZIP archive of source code!")
+  Task.io (Print.println [c|{green|Finished} creating in-memory ZIP archive of source code!|])
   Task.io (printLog ("All files in ZIP archive: " <> show (Zip.filesInArchive archive)))
   pure archive
 

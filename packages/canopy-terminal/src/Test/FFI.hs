@@ -1,4 +1,5 @@
 {-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE QuasiQuotes #-}
 {-# OPTIONS_GHC -Wall #-}
 
 {-|
@@ -58,6 +59,8 @@ import qualified System.FSNotify as FSNotify
 import qualified Terminal
 import Text.Read (readMaybe)
 import qualified Terminal.Output as Output
+import Reporting.Doc.ColorQQ (c)
+import qualified Terminal.Print as Print
 
 -- | Configuration for FFI testing
 data FFITestConfig = FFITestConfig
@@ -100,8 +103,8 @@ getPropertyRuns config = maybe 100 id (ffiTestPropertyRuns config)
 -- | Main entry point for FFI testing commands
 run :: () -> FFITestConfig -> IO ()
 run _args config = do
-  putStrLn "🧪 Canopy FFI Test Suite"
-  putStrLn ""
+  Print.println [c|{bold|🧪 Canopy FFI Test Suite}|]
+  Print.newline
 
   _ <- if ffiTestValidateOnly config
     then validateContracts config
@@ -115,67 +118,73 @@ run _args config = do
 -- | Generate FFI test files
 generateTests :: FFITestConfig -> IO Exit.ExitCode
 generateTests config = do
-  putStrLn "🔧 Generating FFI test files..."
+  Print.println [c|{cyan|🔧} Generating FFI test files...|]
 
   -- Find all FFI modules in the project
   ffiModules <- findFFIModules "."
 
   if null ffiModules
     then do
-      putStrLn "❌ No FFI modules found in project"
-      putStrLn "   Make sure you have foreign import declarations in your Canopy files"
+      Print.println [c|{red|❌} No FFI modules found in project|]
+      Print.println [c|   Make sure you have foreign import declarations in your Canopy files|]
       return (Exit.ExitFailure 1)
     else do
-      putStrLn $ "✅ Found " ++ Output.showCount (length ffiModules) "FFI module"
+      let ffiModuleCount = Output.showCount (length ffiModules) "FFI module"
+      Print.println [c|{green|✅} Found #{ffiModuleCount}|]
 
       -- Process each FFI module
       results <- mapM (generateTestsForModule config) ffiModules
 
-      let successes = length (filter id results)
-      let failures = length results - successes
+      let successes    = length (filter id results)
+          failures     = length results - successes
+          successCount = Output.showCount successes "test file"
+          failureCount = Output.showCount failures "test file"
+          outputDir    = getOutputDir config
 
-      putStrLn ""
-      putStrLn $ "📊 Test generation complete:"
-      putStrLn $ "  ✅ Generated: " ++ Output.showCount successes "test file"
-      putStrLn $ "  ❌ Failed: " ++ Output.showCount failures "test file"
+      Print.newline
+      Print.println [c|{bold|📊 Test generation complete:}|]
+      Print.println [c|  {green|✅} Generated: #{successCount}|]
+      Print.println [c|  {red|❌} Failed: #{failureCount}|]
 
       if failures == 0
         then do
-          putStrLn ""
-          putStrLn "🚀 To run the tests:"
-          putStrLn $ "  cd " ++ getOutputDir config
-          putStrLn "  node run-all-tests.js"
+          Print.newline
+          Print.println [c|{bold|🚀 To run the tests:}|]
+          Print.println [c|  cd {cyan|#{outputDir}}|]
+          Print.println [c|  node run-all-tests.js|]
           return Exit.ExitSuccess
         else return (Exit.ExitFailure failures)
 
 -- | Validate FFI contracts without running tests
 validateContracts :: FFITestConfig -> IO Exit.ExitCode
 validateContracts _ = do
-  putStrLn "🔍 Validating FFI contracts..."
+  Print.println [c|{cyan|🔍} Validating FFI contracts...|]
 
   -- Find all FFI modules
   ffiModules <- findFFIModules "."
 
   if null ffiModules
     then do
-      putStrLn "❌ No FFI modules found"
+      Print.println [c|{red|❌} No FFI modules found|]
       return (Exit.ExitFailure 1)
     else do
-      putStrLn $ "📄 Validating " ++ Output.showCount (length ffiModules) "FFI module"
+      let validateCount = Output.showCount (length ffiModules) "FFI module"
+      Print.println [c|{cyan|📄} Validating #{validateCount}|]
 
       -- Validate each module
       results <- mapM validateModule ffiModules
 
-      let violations = concat results
-      let violationCount = length violations
+      let violations     = concat results
+          violationCount = length violations
+          violationStr   = Output.showCount violationCount "contract violation"
 
       if violationCount == 0
         then do
-          putStrLn "✅ All FFI contracts are valid"
+          Print.println [c|{green|✅} All FFI contracts are valid|]
           return Exit.ExitSuccess
         else do
-          putStrLn $ "❌ Found " ++ Output.showCount violationCount "contract violation" ++ ":"
-          mapM_ putStrLn violations
+          Print.println [c|{red|❌} Found #{violationStr}:|]
+          mapM_ (\violation -> Print.println [c|#{violation}|]) violations
           return (Exit.ExitFailure violationCount)
 
 -- | Run FFI tests with file watching.
@@ -185,8 +194,8 @@ validateContracts _ = do
 -- Blocks until interrupted with Ctrl+C.
 runWithWatch :: FFITestConfig -> IO Exit.ExitCode
 runWithWatch config = do
-  putStrLn "Watching for FFI changes..."
-  putStrLn "   Press Ctrl+C to stop"
+  Print.println [c|Watching for FFI changes...|]
+  Print.println [c|   Press Ctrl+C to stop|]
   _ <- runTests config
   watchAndRerun config
 
@@ -210,7 +219,8 @@ watchAndRerun config =
       in FilePath.takeExtension path `elem` [".can", ".js"]
 
     handleChange _event = do
-      putStrLn "\n--- File changed, re-running FFI tests ---"
+      Print.newline
+      Print.println [c|--- File changed, re-running FFI tests ---|]
       _ <- runTests config
       pure ()
 
@@ -226,7 +236,7 @@ watchAndRerun config =
 -- | Run FFI tests.
 runTests :: FFITestConfig -> IO Exit.ExitCode
 runTests config = do
-  putStrLn "🚀 Running FFI tests..."
+  Print.println [c|{bold|🚀} Running FFI tests...|]
 
   -- Generate tests first
   generateResult <- generateTests config { ffiTestGenerate = True }
@@ -235,8 +245,8 @@ runTests config = do
     Exit.ExitFailure _ -> return generateResult
     Exit.ExitSuccess -> do
       -- Run the generated tests
-      putStrLn ""
-      putStrLn "▶️ Executing generated tests..."
+      Print.newline
+      Print.println [c|{bold|▶️ Executing generated tests...}|]
 
       runGeneratedTests config
 
@@ -244,20 +254,21 @@ runTests config = do
 generateTestsForModule :: FFITestConfig -> FilePath -> IO Bool
 generateTestsForModule config modulePath = do
   when (ffiTestVerbose config) $
-    putStrLn $ "  📄 Processing: " ++ modulePath
+    Print.println [c|  {cyan|📄} Processing: {cyan|#{modulePath}}|]
 
   -- Parse FFI functions from the module's JavaScript file
   ffiFunctionsResult <- parseForeignImports modulePath
 
   case ffiFunctionsResult of
     Left err -> do
-      putStrLn $ "❌ Failed to parse " ++ modulePath ++ ": " ++ Text.unpack err
+      let errStr = Text.unpack err
+      Print.println [c|{red|❌} Failed to parse {cyan|#{modulePath}}: #{errStr}|]
       return False
     Right ffiFunctions -> do
       if Map.null ffiFunctions
         then do
           when (ffiTestVerbose config) $
-            putStrLn $ "⚠️ No FFI functions found in " ++ modulePath
+            Print.println [c|{yellow|⚠️} No FFI functions found in {cyan|#{modulePath}}|]
           return True
         else do
           -- Generate test suite
@@ -277,8 +288,8 @@ generateTestsForModule config modulePath = do
           Dir.createDirectoryIfMissing True (FilePath.takeDirectory outputFile)
           writeFile outputFile (Text.unpack testSuite)
 
-          let functionCount = Map.size ffiFunctions
-          putStrLn $ "  ✅ Generated " ++ Output.showCount functionCount "test" ++ " → " ++ outputFile
+          let testCount = Output.showCount (Map.size ffiFunctions) "test"
+          Print.println [c|  {green|✅} Generated #{testCount} -> {cyan|#{outputFile}}|]
 
           return True
 
@@ -326,34 +337,35 @@ extractJavaScriptPath line =
       jsTokens = dropWhile (/= "javascript") tokens
   in case jsTokens of
     ("javascript":quotedPath:_) ->
-      let cleanPath = filter (\c -> c /= '"' && c /= '\'') quotedPath
+      let cleanPath = filter (\ch -> ch /= '"' && ch /= '\'') quotedPath
       in cleanPath
     _ -> "unknown.js"
 
 -- | Parse JavaScript file to extract FFI functions
 parseJavaScriptFile :: FilePath -> IO (Either Text (Map.Map Text FFI.FFIFunction))
 parseJavaScriptFile jsFile = do
-  putStrLn $ "  🔍 Parsing JavaScript file: " ++ jsFile
+  Print.println [c|  {cyan|🔍} Parsing JavaScript file: {cyan|#{jsFile}}|]
 
   -- Check if file exists first
   jsExists <- Dir.doesFileExist jsFile
   if not jsExists
     then do
-      putStrLn $ "    ❌ File not found: " ++ jsFile
-      return (Left (Text.pack $ "JavaScript file not found: " ++ jsFile))
+      Print.println [c|    {red|❌} File not found: {cyan|#{jsFile}}|]
+      return (Left (Text.pack ("JavaScript file not found: " ++ jsFile)))
     else do
       result <- FFI.parseJSDocFromFile jsFile
       case result of
         Left ffiError -> do
           let errorMsg = "Failed to parse " ++ jsFile ++ ": " ++ show ffiError
-          putStrLn $ "    ❌ " ++ errorMsg
+          Print.println [c|    {red|❌} #{errorMsg}|]
           return (Left (Text.pack errorMsg))
         Right jsDocFunctions -> do
           let functionMap = Map.fromList
                 [ (FFI.jsDocFuncName jsDocFunc, convertJSDocToFFIFunction jsDocFunc)
                 | jsDocFunc <- jsDocFunctions
                 ]
-          putStrLn $ "    ✅ Found " ++ Output.showCount (Map.size functionMap) "FFI function"
+              funcCount = Output.showCount (Map.size functionMap) "FFI function"
+          Print.println [c|    {green|✅} Found #{funcCount}|]
           return (Right functionMap)
 
 -- | Convert JSDocFunction to FFIFunction
@@ -431,17 +443,19 @@ runGeneratedTests config = do
 
   if null testFiles
     then do
-      putStrLn "❌ No test files found to run"
+      Print.println [c|{red|❌} No test files found to run|]
       return (Exit.ExitFailure 1)
     else do
-      putStrLn $ "🧪 Found " ++ Output.showCount (length testFiles) "test file"
-      putStrLn "📄 Creating standalone JavaScript test runners..."
+      let testFileCount = Output.showCount (length testFiles) "test file"
+      Print.println [c|{bold|🧪} Found #{testFileCount}|]
+      Print.println [c|{cyan|📄} Creating standalone JavaScript test runners...|]
 
       -- Create JavaScript test runners directly (bypassing compilation issues)
       jsFiles <- createJavaScriptTestRunners config testFiles
 
-      putStrLn $ "✅ Created " ++ Output.showCount (length jsFiles) "JavaScript test runner"
-      putStrLn "🧪 Running tests..."
+      let jsRunnerCount = Output.showCount (length jsFiles) "JavaScript test runner"
+      Print.println [c|{green|✅} Created #{jsRunnerCount}|]
+      Print.println [c|{bold|🧪} Running tests...|]
 
       -- Generate master test runner
       generateTestRunner config jsFiles
@@ -473,7 +487,7 @@ createJavaScriptTestRunners config testFiles = do
 -- | Create a JavaScript test runner for a single .can test file
 createSingleTestRunner :: FFITestConfig -> FilePath -> IO (Maybe FilePath)
 createSingleTestRunner _config canFile = do
-  putStrLn $ "  📝 Creating JavaScript runner for " ++ canFile
+  Print.println [c|  {cyan|📝} Creating JavaScript runner for {cyan|#{canFile}}|]
 
   -- Read the .can test file to extract function information
   testContent <- readFile canFile
@@ -482,7 +496,7 @@ createSingleTestRunner _config canFile = do
       jsContent = generateJavaScriptTestRunner (FilePath.takeBaseName canFile) testFunctions
 
   writeFile jsFile jsContent
-  putStrLn $ "    ✅ Created " ++ jsFile
+  Print.println [c|    {green|✅} Created {cyan|#{jsFile}}|]
   return (Just jsFile)
 
 -- | Extract test function names from .can file content
@@ -632,10 +646,10 @@ generateAllTestsJS testFunctions =
 -- | Generate a test runner that executes all test files
 generateTestRunner :: FFITestConfig -> [FilePath] -> IO ()
 generateTestRunner config testFiles = do
-  let runnerPath = getOutputDir config </> "run-all-tests.js"
-  let runnerContent = generateTestRunnerContent testFiles
+  let runnerPath    = getOutputDir config </> "run-all-tests.js"
+      runnerContent = generateTestRunnerContent testFiles
   writeFile runnerPath runnerContent
-  putStrLn $ "📝 Generated test runner: " ++ runnerPath
+  Print.println [c|{cyan|📝} Generated test runner: {cyan|#{runnerPath}}|]
 
 -- | Generate content for the test runner
 generateTestRunnerContent :: [FilePath] -> String
@@ -678,21 +692,22 @@ runTestsInNode config = do
   nodeExists <- findExecutable "node"
   case nodeExists of
     Nothing -> do
-      putStrLn "❌ Node.js not found. Please install Node.js to run FFI tests."
-      putStrLn "   Or use --browser flag to run tests in browser"
+      Print.println [c|{red|❌} Node.js not found. Please install Node.js to run FFI tests.|]
+      Print.println [c|   Or use --browser flag to run tests in browser|]
       return (Exit.ExitFailure 1)
     Just nodePath -> do
-      putStrLn $ "▶️ Running tests with Node.js..."
+      Print.println [c|{bold|▶️ Running tests with Node.js...}|]
 
       -- Execute the test runner
       exitCode <- Process.waitForProcess =<< Process.spawnProcess nodePath [runnerPath]
 
       case exitCode of
         Exit.ExitSuccess -> do
-          putStrLn "🎉 All FFI tests passed!"
+          Print.println [c|{green|🎉 All FFI tests passed!}|]
           return Exit.ExitSuccess
         Exit.ExitFailure code -> do
-          putStrLn $ "❌ FFI tests failed with exit code " ++ show code
+          let codeStr = show code
+          Print.println [c|{red|❌} FFI tests failed with exit code #{codeStr}|]
           return (Exit.ExitFailure code)
 
 -- | Run tests in browser
@@ -701,8 +716,8 @@ runTestsInBrowser config = do
   let htmlPath = getOutputDir config </> "test-runner.html"
   generateTestHTML config htmlPath
 
-  putStrLn $ "🌐 Generated browser test runner: " ++ htmlPath
-  putStrLn "   Open this file in a web browser to run the tests"
+  Print.println [c|{cyan|🌐} Generated browser test runner: {cyan|#{htmlPath}}|]
+  Print.println [c|   Open this file in a web browser to run the tests|]
 
   return Exit.ExitSuccess
 

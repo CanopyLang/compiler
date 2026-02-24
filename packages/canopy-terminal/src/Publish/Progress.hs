@@ -1,5 +1,6 @@
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE LambdaCase #-}
+{-# LANGUAGE QuasiQuotes #-}
 {-# OPTIONS_GHC -Wall #-}
 
 -- | Progress reporting for Canopy package publishing.
@@ -45,23 +46,31 @@ import Publish.Types (GoodVersion)
 import qualified Publish.Types as Types
 import Reporting.Doc (Doc, (<+>))
 import qualified Reporting.Doc as Doc
+import Reporting.Doc.ColorQQ (c)
 import qualified Reporting.Exit as Exit
 import qualified Reporting.Exit.Help as Help
 import Reporting.Task (Task)
 import qualified Reporting.Task as Task
 import qualified System.IO as IO
 import qualified System.Info as Info
+import qualified Terminal.Print as Print
 
 -- | Report the start of the publishing process.
 --
 -- @since 0.19.1
 reportPublishStart :: Name -> Version -> Maybe KnownVersions -> Task x ()
 reportPublishStart pkg vsn maybeKnownVersions =
-  Task.io $
-    maybe
-      (putStrLn (Exit.newPackageOverview <> "\nI will now verify that everything is in order...\n"))
-      (\_ -> putStrLn ("Verifying " <> Pkg.toChars pkg <> " " <> Version.toChars vsn <> " ...\n"))
-      maybeKnownVersions
+  Task.io $ maybe reportNewPackage reportExistingPackage maybeKnownVersions
+  where
+    reportNewPackage = do
+      Help.toStdout Exit.newPackageOverview
+      Print.newline
+      Print.println [c|I will now verify that everything is in order...|]
+      Print.newline
+    reportExistingPackage _ =
+      Print.println [c|Verifying #{pkgStr} #{vsnStr} ...|]
+    pkgStr = Pkg.toChars pkg
+    vsnStr = Version.toChars vsn
 
 -- | Report README.md validation progress.
 --

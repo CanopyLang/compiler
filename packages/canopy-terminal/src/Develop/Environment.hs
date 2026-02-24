@@ -1,4 +1,5 @@
 {-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE QuasiQuotes #-}
 {-# OPTIONS_GHC -Wall #-}
 
 -- | Environment setup and configuration for the development server.
@@ -58,7 +59,9 @@ import Develop.Types
     flagsPort,
     scPort,
   )
+import Reporting.Doc.ColorQQ (c)
 import qualified Stuff
+import qualified Terminal.Print as Print
 
 -- | Setup complete server configuration from flags.
 --
@@ -150,7 +153,6 @@ validateProjectRoot (Just _) = pure () -- Assume valid if found by Stuff.findRoo
 -- @since 0.19.1
 displayStartupMessage :: ServerConfig -> IO ()
 displayStartupMessage config =
-  putStrLn $
-    "Go to http://localhost:"
-      ++ show (config ^. scPort)
-      ++ " to see your project dashboard."
+  Print.println [c|Go to {cyan|http://localhost:#{portStr}} to see your project dashboard.|]
+  where
+    portStr = show (config ^. scPort)

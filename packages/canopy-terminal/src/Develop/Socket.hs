@@ -1,4 +1,5 @@
 {-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE QuasiQuotes #-}
 {-# OPTIONS_GHC -Wall #-}
 
 -- | WebSocket-based file watching for development server hot reloading.
@@ -61,7 +62,9 @@ import qualified Data.ByteString.Char8 as BS
 import Data.IORef (IORef, newIORef, readIORef, writeIORef)
 import qualified Data.Time.Clock as Time
 import qualified Network.WebSockets as WS
+import Reporting.Doc.ColorQQ (c)
 import qualified System.FSNotify as Notify
+import qualified Terminal.Print as Print
 
 -- | Handle WebSocket connection for file watching.
 --
@@ -147,7 +150,8 @@ watchCanopyFiles manager watchDir extension = do
               if elapsed >= debounceWindowSeconds
                 then do
                   writeIORef ref Nothing
-                  putStrLn ("File changed: " ++ show event)
+                  let eventStr = show event
+                  Print.println [c|{dullcyan|[watch]} File changed: #{eventStr}|]
                   pollForever
                 else pollForever
 

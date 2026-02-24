@@ -1,4 +1,5 @@
 {-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE QuasiQuotes #-}
 {-# OPTIONS_GHC -Wall #-}
 
 -- | Version validation and checking for bump operations.
@@ -38,9 +39,12 @@ import qualified Data.List as List
 import qualified Data.Maybe as Maybe
 import qualified Deps.Bump as Bump
 import qualified Deps.Registry as Registry
+import Reporting.Doc.ColorQQ (c)
 import qualified Reporting.Exit as Exit
+import qualified Reporting.Exit.Help as Help
 import Reporting.Task (Task)
 import qualified Reporting.Task as Task
+import qualified Terminal.Print as Print
 
 -- | Validates version for new packages that haven't been published.
 --
@@ -58,9 +62,7 @@ import qualified Reporting.Task as Task
 -- @since 0.19.1
 checkNewPackage :: Version -> IO ()
 checkNewPackage version =
-  showNewPackageInfo >> validateInitialVersion version
-  where
-    showNewPackageInfo = putStrLn Exit.newPackageOverview
+  Help.toStdout Exit.newPackageOverview >> Print.newline >> validateInitialVersion version
 
 -- | Validates that new package starts with version 1.0.0.
 --
@@ -79,10 +81,8 @@ checkNewPackage version =
 validateInitialVersion :: Version -> IO ()
 validateInitialVersion version =
   if version == Version.one
-    then putStrLn "The version number in canopy.json is correct so you are all set!"
-    else putStrLn versionGuidance
-  where
-    versionGuidance = "The version in canopy.json should be 1.0.0 for new packages."
+    then Print.println [c|{green|The version number in canopy.json is correct so you are all set!}|]
+    else Print.println [c|The version in canopy.json should be {bold|1.0.0} for new packages.|]
 
 -- | Handles version bumping for packages that exist in the registry.
 --

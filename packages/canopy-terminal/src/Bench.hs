@@ -1,4 +1,5 @@
 {-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE QuasiQuotes #-}
 {-# LANGUAGE TemplateHaskell #-}
 {-# OPTIONS_GHC -Wall #-}
 
@@ -33,10 +34,12 @@ import qualified Data.ByteString.Lazy as LBS
 import qualified Data.Time.Clock as Clock
 import qualified Json.Encode as Encode
 import qualified Reporting
+import Reporting.Doc.ColorQQ (c)
 import qualified System.Directory as Dir
 import qualified System.FilePath as FP
 import qualified Stuff
 import qualified System.IO as IO
+import qualified Terminal.Print as Print
 
 -- | Bench command flags.
 data Flags = Flags
@@ -73,21 +76,24 @@ run () flags = do
 -- | Report that no project was found.
 reportNoProject :: IO ()
 reportNoProject =
-  IO.hPutStrLn IO.stderr "Error: No canopy.json found. Run this from a Canopy project directory."
+  Print.printErrLn [c|{red|Error:} No canopy.json found. Run this from a Canopy project directory.|]
 
 -- | Benchmark a project.
 benchProject :: FilePath -> Flags -> IO ()
 benchProject root flags = do
   let iters = maybe 3 id (flags ^. iterations)
-  IO.putStrLn ("Benchmarking compilation (" ++ show iters ++ " iterations)...")
-  IO.putStrLn ""
+      itersStr = show iters
+  Print.println [c|{bold|Benchmarking compilation} (#{itersStr} iterations)...|]
+  Print.newline
   results <- mapM (runIteration root flags) [1 .. iters]
   reportResults flags results
 
 -- | Run a single benchmark iteration.
 runIteration :: FilePath -> Flags -> Int -> IO BenchResult
 runIteration root flags iter = do
-  when (flags ^. benchVerbose) (IO.putStrLn ("  Iteration " ++ show iter ++ "..."))
+  when (flags ^. benchVerbose) $ do
+    let iterStr = show iter
+    Print.println [c|  Iteration #{iterStr}...|]
   start <- Clock.getCurrentTime
   compileProject root
   end <- Clock.getCurrentTime
@@ -101,7 +107,7 @@ compileProject :: FilePath -> IO ()
 compileProject root = do
   detailsResult <- Details.load Reporting.silent () root
   case detailsResult of
-    Left _ -> IO.hPutStrLn IO.stderr "  Warning: Could not load project details"
+    Left _ -> Print.printErrLn [c|  {yellow|Warning:} Could not load project details|]
     Right details -> compileWithDetails root details
 
 -- | Compile with loaded details.
@@ -116,7 +122,7 @@ compileWithDetails root details = do
   canFiles <- fmap concat (mapM findCanFiles absSrcDirs)
   result <- Compiler.compileFromPaths pkg True root srcDirs canFiles
   case result of
-    Left _ -> IO.hPutStrLn IO.stderr "  Warning: Compilation failed during benchmark"
+    Left _ -> Print.printErrLn [c|  {yellow|Warning:} Compilation failed during benchmark|]
     Right _ -> pure ()
 
 -- | Resolve a 'Compiler.SrcDir' to an absolute path.
@@ -160,11 +166,15 @@ reportResults flags results =
 -- | Report results in terminal format.
 reportResultsTerminal :: [BenchResult] -> IO ()
 reportResultsTerminal results = do
-  IO.putStrLn "Results:"
-  IO.putStrLn ("  Iterations: " ++ show (length results))
-  IO.putStrLn ("  Average:    " ++ formatTime avg)
-  IO.putStrLn ("  Min:        " ++ formatTime minTime)
-  IO.putStrLn ("  Max:        " ++ formatTime maxTime)
+  let itersStr = show (length results)
+      avgStr = formatTime avg
+      minStr = formatTime minTime
+      maxStr = formatTime maxTime
+  Print.println [c|{bold|Results:}|]
+  Print.println [c|  Iterations: #{itersStr}|]
+  Print.println [c|  Average:    {cyan|#{avgStr}}|]
+  Print.println [c|  Min:        {green|#{minStr}}|]
+  Print.println [c|  Max:        {yellow|#{maxStr}}|]
   mapM_ reportIteration results
   where
     times = map _brTotal results
@@ -175,14 +185,17 @@ reportResultsTerminal results = do
 -- | Report a single iteration.
 reportIteration :: BenchResult -> IO ()
 reportIteration result =
-  IO.putStrLn ("  Run " ++ show (_brIteration result) ++ ":      " ++ formatTime (_brTotal result))
+  Print.println [c|  Run #{iterStr}:      #{timeStr}|]
+  where
+    iterStr = show (_brIteration result)
+    timeStr = formatTime (_brTotal result)
 
 -- | Report results in JSON format using the Json.Encode infrastructure.
 --
 -- Produces well-formed, properly escaped JSON output via 'Encode.encodeUgly'.
 reportResultsJson :: [BenchResult] -> IO ()
 reportResultsJson results =
-  LBS.putStr (BB.toLazyByteString builder) >> putStrLn ""
+  LBS.putStr (BB.toLazyByteString builder) >> IO.hPutStrLn IO.stdout ""
   where
     builder = Encode.encodeUgly (encodeResultsPayload results)
 

@@ -1,4 +1,5 @@
 {-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE QuasiQuotes #-}
 {-# OPTIONS_GHC -Wall #-}
 
 -- | Fmt - CLI handler for the @canopy format@ / @canopy fmt@ command.
@@ -45,9 +46,10 @@ import qualified Data.Text.Encoding as Text
 import Format (FormatConfig (..))
 import qualified Format
 import qualified System.Directory as Dir
+import Reporting.Doc.ColorQQ (c)
 import qualified System.Exit as Exit
 import qualified System.FilePath as FP
-import qualified System.IO as IO
+import qualified Terminal.Print as Print
 
 -- ---------------------------------------------------------------------------
 -- Flags
@@ -118,7 +120,8 @@ runStdin config = do
   either reportParseError writeFormatted (Format.formatBytes config bytes)
   where
     reportParseError err = do
-      IO.hPutStrLn IO.stderr ("canopy fmt: parse error: " ++ show err)
+      let errStr = show err
+      Print.printErrLn [c|{red|canopy fmt:} parse error: #{errStr}|]
       Exit.exitWith (Exit.ExitFailure 1)
     writeFormatted formatted =
       BS.putStr (Text.encodeUtf8 formatted)
@@ -138,10 +141,10 @@ runCheckMode config paths = do
 
 -- | Report check results and exit appropriately.
 reportCheckResults :: [FilePath] -> IO ()
-reportCheckResults [] = putStrLn "All files are formatted."
+reportCheckResults [] = Print.println [c|{green|All files are formatted.}|]
 reportCheckResults unformatted = do
-  IO.hPutStrLn IO.stderr "The following files are not formatted:"
-  mapM_ (\p -> IO.hPutStrLn IO.stderr ("  " ++ p)) unformatted
+  Print.printErrLn [c|{red|The following files are not formatted:}|]
+  mapM_ (\p -> Print.printErrLn [c|  {cyan|#{p}}|]) unformatted
   Exit.exitWith (Exit.ExitFailure 1)
 
 -- | Outcome of checking whether a single file needs formatting.
@@ -179,8 +182,9 @@ formatFileInPlace config path = do
   original <- BS.readFile path
   either (reportError path) (writeIfChanged path original) (Format.formatBytes config original)
   where
-    reportError p err =
-      IO.hPutStrLn IO.stderr ("canopy fmt: " ++ p ++ ": " ++ show err)
+    reportError p err = do
+      let errStr = show err
+      Print.printErrLn [c|{red|canopy fmt:} {cyan|#{p}}: #{errStr}|]
     writeIfChanged p orig formatted =
       writeWhenChanged p orig (Text.encodeUtf8 formatted)
 
@@ -190,7 +194,7 @@ writeWhenChanged path original new
   | original == new = pure ()
   | otherwise = do
       BS.writeFile path new
-      putStrLn ("Formatted: " ++ path)
+      Print.println [c|{green|Formatted:} {cyan|#{path}}|]
 
 -- ---------------------------------------------------------------------------
 -- Target resolution

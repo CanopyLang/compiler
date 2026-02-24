@@ -1,4 +1,5 @@
 {-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE QuasiQuotes #-}
 {-# OPTIONS_GHC -Wall #-}
 
 -- | Local package management for canopy-package-overrides.
@@ -42,9 +43,11 @@ import qualified Control.Monad as Monad
 import qualified Data.ByteString.Lazy as LBS
 import qualified Data.Digest.Pure.SHA as SHA
 import qualified File.Package as Package
+import Reporting.Doc.ColorQQ (c)
 import qualified System.Directory as Dir
 import qualified System.Exit as SysExit
 import qualified System.FilePath as FP
+import qualified Terminal.Print as Print
 
 -- | Command arguments for local package management.
 data Args
@@ -71,14 +74,14 @@ setupLocalPackageOverrides :: IO ()
 setupLocalPackageOverrides = do
   let overridesDir = "canopy-package-overrides"
 
-  putStrLn ("Setting up " <> overridesDir <> " directory...")
+  Print.println [c|Setting up {cyan|#{overridesDir}} directory...|]
 
   exists <- Dir.doesDirectoryExist overridesDir
   if exists
-    then putStrLn ("Directory " <> overridesDir <> " already exists.")
+    then Print.println [c|Directory {cyan|#{overridesDir}} already exists.|]
     else do
       Dir.createDirectory overridesDir
-      putStrLn ("Created " <> overridesDir <> " directory.")
+      Print.println [c|{green|Created} {cyan|#{overridesDir}} directory.|]
 
       -- Create README explaining the structure
       let readmeContent = unlines
@@ -97,7 +100,7 @@ setupLocalPackageOverrides = do
             , "Use `canopy package add-local` to add packages to this directory."
             ]
       writeFile (overridesDir FP.</> "README.md") readmeContent
-      putStrLn "Created README.md explaining the directory structure."
+      Print.println [c|{green|Created} README.md explaining the directory structure.|]
 
 -- | Add a local package to the overrides directory.
 --
@@ -109,8 +112,8 @@ addLocalPackage packageName version sourcePath = do
       packageDir = overridesDir FP.</> packageName <> "-" <> version
       zipPath = packageDir <> ".zip"
 
-  putStrLn ("Adding local package: " <> packageName <> "@" <> version)
-  putStrLn ("Source path: " <> sourcePath)
+  Print.println [c|Adding local package: {bold|#{packageName}@#{version}}|]
+  Print.println [c|Source path: {cyan|#{sourcePath}}|]
 
   -- Ensure overrides directory exists
   Dir.createDirectoryIfMissing True overridesDir
@@ -118,54 +121,58 @@ addLocalPackage packageName version sourcePath = do
   -- Check if source directory exists
   sourceExists <- Dir.doesDirectoryExist sourcePath
   Monad.unless sourceExists $ do
-    putStrLn ("Error: Source directory does not exist: " <> sourcePath)
+    Print.printErrLn [c|{red|Error:} Source directory does not exist: {cyan|#{sourcePath}}|]
     SysExit.exitWith (SysExit.ExitFailure 1)
 
   -- Create package directory if it doesn't exist
   Dir.createDirectoryIfMissing True packageDir
 
   -- Copy source files to package directory
-  putStrLn ("Copying source files to: " <> packageDir)
+  Print.println [c|Copying source files to: {cyan|#{packageDir}}|]
   copyPackageFiles sourcePath packageDir
 
   -- Create ZIP archive
-  putStrLn ("Creating ZIP archive: " <> zipPath)
+  Print.println [c|Creating ZIP archive: {cyan|#{zipPath}}|]
   Package.createPackageZip packageDir zipPath
 
   -- Calculate SHA-1 hash
   zipContent <- LBS.readFile zipPath
   let sha1Hash = SHA.showDigest (SHA.sha1 zipContent)
-  putStrLn ("SHA-1 hash: " <> sha1Hash)
+  Print.println [c|SHA-1 hash: {cyan|#{sha1Hash}}|]
 
   -- Write hash file
   let hashPath = zipPath <> ".sha1"
   writeFile hashPath sha1Hash
-  putStrLn ("Saved hash to: " <> hashPath)
+  Print.println [c|Saved hash to: {cyan|#{hashPath}}|]
 
-  putStrLn ""
-  putStrLn "Package added successfully!"
-  putStrLn ("Add this to your canopy.json canopy-package-overrides:")
-  putStrLn ("  {")
-  putStrLn ("    \"original-package-name\": \"" <> packageName <> "\",")
-  putStrLn ("    \"original-package-version\": \"" <> version <> "\",")
-  putStrLn ("    \"override-package-name\": \"" <> packageName <> "\",")
-  putStrLn ("    \"override-package-version\": \"" <> version <> "\"")
-  putStrLn ("  }")
+  Print.newline
+  Print.println [c|{green|Package added successfully!}|]
+  Print.println [c|Add this to your canopy.json canopy-package-overrides:|]
+  let jsonSnippet =
+        unlines
+          [ "  {"
+          , "    \"original-package-name\": \"" ++ packageName ++ "\","
+          , "    \"original-package-version\": \"" ++ version ++ "\","
+          , "    \"override-package-name\": \"" ++ packageName ++ "\","
+          , "    \"override-package-version\": \"" ++ version ++ "\""
+          , "  }"
+          ]
+  Print.println [c|#{jsonSnippet}|]
 
 -- | Create a ZIP package from source directory.
 createLocalPackage :: FilePath -> FilePath -> IO ()
 createLocalPackage sourcePath outputPath = do
-  putStrLn ("Creating package ZIP from: " <> sourcePath)
-  putStrLn ("Output: " <> outputPath)
+  Print.println [c|Creating package ZIP from: {cyan|#{sourcePath}}|]
+  Print.println [c|Output: {cyan|#{outputPath}}|]
 
   Package.createPackageZip sourcePath outputPath
 
   -- Calculate and display SHA-1 hash
   zipContent <- LBS.readFile outputPath
   let sha1Hash = SHA.showDigest (SHA.sha1 zipContent)
-  putStrLn ("SHA-1 hash: " <> sha1Hash)
+  Print.println [c|SHA-1 hash: {cyan|#{sha1Hash}}|]
 
-  putStrLn "Package created successfully!"
+  Print.println [c|{green|Package created successfully!}|]
 
 -- | Copy package files from source to destination directory.
 --
