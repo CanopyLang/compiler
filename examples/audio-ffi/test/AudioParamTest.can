@@ -123,8 +123,8 @@ paramRampTests =
                             Ok gain ->
                                 let
                                     param = AudioFFI.getGainParam gain
-                                    _ = AudioFFI.setValueAtTime param 1.0 0.0
-                                    _ = AudioFFI.linearRampToValue param 0.0 1.0
+                                    _1 = AudioFFI.setValueAtTime param 1.0 0.0
+                                    _2 = AudioFFI.linearRampToValue param 0.0 1.0
                                 in
                                 Expect.pass
                             Err _ -> Expect.pass
@@ -138,8 +138,8 @@ paramRampTests =
                             Ok gain ->
                                 let
                                     param = AudioFFI.getGainParam gain
-                                    _ = AudioFFI.setValueAtTime param 1.0 0.0
-                                    _ = AudioFFI.linearRampToValueAtTime param 0.5 2.0
+                                    _1 = AudioFFI.setValueAtTime param 1.0 0.0
+                                    _2 = AudioFFI.linearRampToValueAtTime param 0.5 2.0
                                 in
                                 Expect.pass
                             Err _ -> Expect.pass
@@ -153,8 +153,8 @@ paramRampTests =
                             Ok gain ->
                                 let
                                     param = AudioFFI.getGainParam gain
-                                    _ = AudioFFI.setValueAtTime param 1.0 0.0
-                                    _ = AudioFFI.exponentialRampToValue param 0.01 1.0
+                                    _1 = AudioFFI.setValueAtTime param 1.0 0.0
+                                    _2 = AudioFFI.exponentialRampToValue param 0.01 1.0
                                 in
                                 Expect.pass
                             Err _ -> Expect.pass
@@ -168,8 +168,8 @@ paramRampTests =
                             Ok gain ->
                                 let
                                     param = AudioFFI.getGainParam gain
-                                    _ = AudioFFI.setValueAtTime param 1.0 0.0
-                                    _ = AudioFFI.exponentialRampToValueAtTime param 0.1 2.0
+                                    _1 = AudioFFI.setValueAtTime param 1.0 0.0
+                                    _2 = AudioFFI.exponentialRampToValueAtTime param 0.1 2.0
                                 in
                                 Expect.pass
                             Err _ -> Expect.pass
@@ -223,9 +223,9 @@ paramCurveTests =
                             Ok gain ->
                                 let
                                     param = AudioFFI.getGainParam gain
-                                    _ = AudioFFI.setValueAtTime param 1.0 0.0
-                                    _ = AudioFFI.linearRampToValue param 0.0 1.0
-                                    _ = AudioFFI.cancelScheduledValues param 0.5
+                                    _1 = AudioFFI.setValueAtTime param 1.0 0.0
+                                    _2 = AudioFFI.linearRampToValue param 0.0 1.0
+                                    _3 = AudioFFI.cancelScheduledValues param 0.5
                                 in
                                 Expect.pass
                             Err _ -> Expect.pass
@@ -239,9 +239,9 @@ paramCurveTests =
                             Ok gain ->
                                 let
                                     param = AudioFFI.getGainParam gain
-                                    _ = AudioFFI.setValueAtTime param 1.0 0.0
-                                    _ = AudioFFI.linearRampToValue param 0.0 2.0
-                                    _ = AudioFFI.cancelAndHoldAtTime param 1.0
+                                    _1 = AudioFFI.setValueAtTime param 1.0 0.0
+                                    _2 = AudioFFI.linearRampToValue param 0.0 2.0
+                                    _3 = AudioFFI.cancelAndHoldAtTime param 1.0
                                 in
                                 Expect.pass
                             Err _ -> Expect.pass

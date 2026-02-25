@@ -1,0 +1,253 @@
+module BrowserAudioTest exposing (main, suite)
+
+{-| Browser Tests for Audio FFI System
+
+These tests verify the Audio FFI functionality in a real browser environment
+where the Web Audio API is available.
+
+## Tested Features
+
+- FFI system validation (simpleTest function)
+- Web Audio API availability detection
+- Simplified audio interface functions
+- Status reporting and error handling
+
+To run these tests:
+1. Build: canopy make test/BrowserAudioTest.can --output=browser-test.html
+2. Serve: python3 -m http.server 8000
+3. Open: http://localhost:8000/browser-test.html
+
+-}
+
+import Html exposing (Html, div, h1, h2, h3, pre, text, span)
+import Html.Attributes as Attr
+import Test exposing (Test, describe, test, runTests)
+import Expect
+import AudioFFI
+import Capability exposing (UserActivated(..), Initialized(..), CapabilityError(..))
+
+
+main : Html msg
+main =
+    let
+        results =
+            runTests [ suite ]
+    in
+    div
+        [ Attr.style "font-family" "system-ui, -apple-system, sans-serif"
+        , Attr.style "padding" "20px"
+        , Attr.style "max-width" "800px"
+        , Attr.style "margin" "0 auto"
+        , Attr.attribute "data-testid" "browser-test-results"
+        ]
+        [ h1
+            [ Attr.style "color" "#333"
+            , Attr.attribute "data-testid" "test-header"
+            ]
+            [ text "Audio FFI Browser Tests" ]
+        , h2 [ Attr.style "color" "#666" ]
+            [ text "Test Results:" ]
+        , pre
+            [ Attr.style "background" "#f5f5f5"
+            , Attr.style "padding" "15px"
+            , Attr.style "border-radius" "5px"
+            , Attr.style "overflow-x" "auto"
+            , Attr.attribute "data-testid" "test-output"
+            ]
+            [ text results ]
+        , h2 [ Attr.style "color" "#666" ]
+            [ text "Live FFI Validation:" ]
+        , liveValidation
+        ]
+
+
+liveValidation : Html msg
+liveValidation =
+    div
+        [ Attr.style "background" "#f0f7ff"
+        , Attr.style "padding" "15px"
+        , Attr.style "border-radius" "5px"
+        , Attr.attribute "data-testid" "live-validation"
+        ]
+        [ validationRow "simpleTest(42)" (String.fromInt (AudioFFI.simpleTest 42)) "84"
+        , validationRow "simpleTest(0)" (String.fromInt (AudioFFI.simpleTest 0)) "0"
+        , validationRow "simpleTest(-5)" (String.fromInt (AudioFFI.simpleTest -5)) "-10"
+        , validationRow "Web Audio Support" (AudioFFI.checkWebAudioSupport ()) "supported"
+        ]
+
+
+validationRow : String -> String -> String -> Html msg
+validationRow label actual expected =
+    let
+        passed =
+            String.contains expected actual || actual == expected
+
+        statusColor =
+            if passed then "#28a745" else "#dc3545"
+
+        statusText =
+            if passed then "PASS" else "FAIL"
+    in
+    div
+        [ Attr.style "display" "flex"
+        , Attr.style "justify-content" "space-between"
+        , Attr.style "padding" "8px 0"
+        , Attr.style "border-bottom" "1px solid #ddd"
+        , Attr.attribute "data-testid" ("validation-" ++ label)
+        ]
+        [ span [ Attr.style "font-weight" "bold" ] [ text label ]
+        , span []
+            [ text (actual ++ " ")
+            , span
+                [ Attr.style "color" statusColor
+                , Attr.style "font-weight" "bold"
+                ]
+                [ text ("[" ++ statusText ++ "]") ]
+            ]
+        ]
+
+
+suite : Test
+suite =
+    describe "Browser Audio FFI Tests"
+        [ ffiBasicTests
+        , webAudioTests
+        , simplifiedInterfaceTests
+        ]
+
+
+-- ============================================================================
+-- FFI BASIC TESTS
+-- ============================================================================
+
+
+ffiBasicTests : Test
+ffiBasicTests =
+    describe "FFI System Validation"
+        [ test "simpleTest returns doubled value for 42" <|
+            \_ ->
+                Expect.equal 84 (AudioFFI.simpleTest 42)
+
+        , test "simpleTest returns 0 for 0" <|
+            \_ ->
+                Expect.equal 0 (AudioFFI.simpleTest 0)
+
+        , test "simpleTest handles negative numbers" <|
+            \_ ->
+                Expect.equal (-10) (AudioFFI.simpleTest (-5))
+
+        , test "simpleTest handles large numbers" <|
+            \_ ->
+                Expect.equal 2000 (AudioFFI.simpleTest 1000)
+        ]
+
+
+-- ============================================================================
+-- WEB AUDIO SUPPORT TESTS
+-- ============================================================================
+
+
+webAudioTests : Test
+webAudioTests =
+    describe "Web Audio API Detection"
+        [ test "checkWebAudioSupport returns non-empty string" <|
+            \_ ->
+                let
+                    result = AudioFFI.checkWebAudioSupport ()
+                in
+                Expect.true "should return non-empty string" (String.length result > 0)
+
+        , test "checkWebAudioSupport indicates support in browser" <|
+            \_ ->
+                let
+                    result = AudioFFI.checkWebAudioSupport ()
+                in
+                -- In a browser, Web Audio should be supported
+                Expect.true "should indicate support"
+                    (String.contains "supported" (String.toLower result) ||
+                     String.contains "available" (String.toLower result))
+        ]
+
+
+-- ============================================================================
+-- SIMPLIFIED INTERFACE TESTS
+-- ============================================================================
+
+
+simplifiedInterfaceTests : Test
+simplifiedInterfaceTests =
+    describe "Simplified Audio Interface"
+        [ describe "createAudioContextSimplified"
+            [ test "returns status string" <|
+                \_ ->
+                    let
+                        result = AudioFFI.createAudioContextSimplified ()
+                    in
+                    Expect.true "should return non-empty status"
+                        (String.length result > 0)
+            ]
+
+        , describe "playToneSimplified"
+            [ test "returns status for 440Hz sine" <|
+                \_ ->
+                    let
+                        result = AudioFFI.playToneSimplified 440.0 "sine"
+                    in
+                    Expect.true "should return non-empty status"
+                        (String.length result > 0)
+
+            , test "returns status for different waveforms" <|
+                \_ ->
+                    let
+                        sineResult = AudioFFI.playToneSimplified 440.0 "sine"
+                        squareResult = AudioFFI.playToneSimplified 440.0 "square"
+                        sawResult = AudioFFI.playToneSimplified 440.0 "sawtooth"
+                        triangleResult = AudioFFI.playToneSimplified 440.0 "triangle"
+                    in
+                    Expect.true "all waveforms should return status"
+                        (String.length sineResult > 0 &&
+                         String.length squareResult > 0 &&
+                         String.length sawResult > 0 &&
+                         String.length triangleResult > 0)
+            ]
+
+        , describe "stopAudioSimplified"
+            [ test "returns status string" <|
+                \_ ->
+                    let
+                        result = AudioFFI.stopAudioSimplified ()
+                    in
+                    Expect.true "should return non-empty status"
+                        (String.length result > 0)
+            ]
+
+        , describe "updateFrequency"
+            [ test "returns status for 440Hz" <|
+                \_ ->
+                    let
+                        result = AudioFFI.updateFrequency 440.0
+                    in
+                    Expect.true "should return non-empty status"
+                        (String.length result > 0)
+            ]
+
+        , describe "updateVolume"
+            [ test "returns status for 50%" <|
+                \_ ->
+                    let
+                        result = AudioFFI.updateVolume 50.0
+                    in
+                    Expect.true "should return non-empty status"
+                        (String.length result > 0)
+            ]
+
+        , describe "updateWaveform"
+            [ test "returns status for sine" <|
+                \_ ->
+                    let
+                        result = AudioFFI.updateWaveform "sine"
+                    in
+                    Expect.true "should return non-empty status"
+                        (String.length result > 0)
+            ]
+        ]

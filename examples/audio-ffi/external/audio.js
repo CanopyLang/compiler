@@ -18,6 +18,10 @@
  * @canopy-type Capability.UserActivated -> Result Capability.CapabilityError (Capability.Initialized AudioContext)
  */
 function createAudioContext(userActivation) {
+    // Check if we're in a browser environment
+    if (typeof window === 'undefined') {
+        return { $: 'Err', a: { $: 'FeatureNotAvailable', a: 'Web Audio API not available in Node.js environment' } };
+    }
     try {
         const ctx = new (window.AudioContext || window.webkitAudioContext)();
         // Return Task Ok with Fresh initialized context
@@ -789,6 +793,10 @@ function disconnectNode(node) {
  * @canopy-type () -> String
  */
 function checkWebAudioSupport() {
+    // Check if we're in a browser environment
+    if (typeof window === 'undefined') {
+        return "NotSupported (Node.js environment)";
+    }
     if (window.AudioContext) {
         return "Supported";
     } else if (window.webkitAudioContext) {
@@ -808,7 +816,7 @@ function checkWebAudioSupport() {
  * @canopy-type Int -> Int
  */
 function simpleTest(x) {
-    return x + 1;
+    return x * 2;
 }
 
 // ============================================================================
@@ -1502,6 +1510,10 @@ let currentVolume = 0.3;
  * @canopy-type () -> String
  */
 function createAudioContextSimplified() {
+    // Check if we're in a browser environment
+    if (typeof window === 'undefined') {
+        return "Error: Web Audio API not available in Node.js environment";
+    }
     try {
         audioContext = new (window.AudioContext || window.webkitAudioContext)();
         return "AudioContext created successfully (Sample rate: " + audioContext.sampleRate + " Hz)";
@@ -3026,6 +3038,8 @@ function getIIRFilterResponseAtFrequency(filter, frequency) {
 }
 
 // Generated exports for browser global scope
+// Check if window exists (for Node.js compatibility in tests)
+if (typeof window !== 'undefined') {
 window.createAudioContext = createAudioContext;
 window.getCurrentTime = getCurrentTime;
 window.resumeAudioContext = resumeAudioContext;
@@ -3254,3 +3268,18 @@ window.createEmptyBuffer = createEmptyBuffer;
 window.getBufferAsArray = getBufferAsArray;
 window.setOscillatorType = setOscillatorType;
 window.getIIRFilterResponseAtFrequency = getIIRFilterResponseAtFrequency;
+}
+
+// Node.js module exports for testing
+if (typeof module !== 'undefined' && module.exports) {
+    module.exports = {
+        simpleTest,
+        checkWebAudioSupport,
+        createAudioContextSimplified,
+        playToneSimplified,
+        stopAudioSimplified,
+        updateFrequency,
+        updateVolume,
+        updateWaveform
+    };
+}
