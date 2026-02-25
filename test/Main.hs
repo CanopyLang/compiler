@@ -81,6 +81,7 @@ import qualified Unit.Queries.ParseModuleTest as ParseModuleQueryTest
 import qualified Unit.Generate.ExpressionTest as ExpressionTest
 import qualified Unit.Generate.MinifyTest as MinifyTest
 import qualified Unit.Generate.NameTest as GenerateNameTest
+import qualified Unit.Generate.SourceMapTest as SourceMapTest
 import qualified Unit.Generate.StringPoolTest as StringPoolTest
 import qualified Unit.Optimize.CaseTest as CaseTest
 import qualified Unit.Optimize.ConstantFoldTest as ConstantFoldTest
@@ -104,6 +105,7 @@ import qualified Unit.Type.UnionFindTest as UnionFindTest
 import qualified Property.Type.UnifyProperties as UnifyProperties
 import qualified Property.Type.UnionFindProperties as UnionFindProperties
 import qualified Property.Data.NameProperties as NameProperties
+import qualified Property.Generate.SourceMapProperties as SourceMapProperties
 
 main :: IO ()
 main = defaultMain tests
@@ -187,6 +189,7 @@ unitTests =
       MinifyTest.tests,
       GenerateNameTest.tests,
       ExpressionTest.tests,
+      SourceMapTest.tests,
       StringPoolTest.tests,
       ColorQQTest.tests,
       LoggingEventTest.tests,
@@ -211,7 +214,8 @@ propertyTests =
     "Property Tests"
     [ UnifyProperties.tests,
       UnionFindProperties.tests,
-      NameProperties.tests
+      NameProperties.tests,
+      SourceMapProperties.tests
     ]
 
 integrationTests :: TestTree

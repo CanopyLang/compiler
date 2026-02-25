@@ -440,7 +440,9 @@ data GlobalGraph = GlobalGraph
   { -- | Mapping from global names to their definitions
     _g_nodes :: Map Global Node,
     -- | Field usage counts for optimization
-    _g_fields :: Map Name Int
+    _g_fields :: Map Name Int,
+    -- | Source locations for each global, used for source map generation
+    _g_sourceLocations :: Map Global A.Region
   }
   deriving (Show)
 
@@ -457,7 +459,9 @@ data LocalGraph = LocalGraph
     -- PERF: Consider switching Global to Name for better performance
     _l_nodes :: Map Global Node,
     -- | Field usage counts for optimization
-    _l_fields :: Map Name Int
+    _l_fields :: Map Name Int,
+    -- | Source locations for each global, used for source map generation
+    _l_sourceLocations :: Map Global A.Region
   }
   deriving (Show)
 
@@ -579,7 +583,7 @@ data EffectsType
 {-# NOINLINE empty #-}
 empty :: GlobalGraph
 empty =
-  GlobalGraph Map.empty Map.empty
+  GlobalGraph Map.empty Map.empty Map.empty
 
 -- | Combine two global dependency graphs.
 --
@@ -588,10 +592,11 @@ empty =
 --
 -- @since 0.19.1
 addGlobalGraph :: GlobalGraph -> GlobalGraph -> GlobalGraph
-addGlobalGraph (GlobalGraph nodes1 fields1) (GlobalGraph nodes2 fields2) =
+addGlobalGraph (GlobalGraph nodes1 fields1 locs1) (GlobalGraph nodes2 fields2 locs2) =
   GlobalGraph
     { _g_nodes = Map.union nodes1 nodes2,
-      _g_fields = Map.union fields1 fields2
+      _g_fields = Map.union fields1 fields2,
+      _g_sourceLocations = Map.union locs1 locs2
     }
 
 -- | Add local graph information to global graph.
@@ -602,10 +607,11 @@ addGlobalGraph (GlobalGraph nodes1 fields1) (GlobalGraph nodes2 fields2) =
 --
 -- @since 0.19.1
 addLocalGraph :: LocalGraph -> GlobalGraph -> GlobalGraph
-addLocalGraph (LocalGraph _ nodes1 fields1) (GlobalGraph nodes2 fields2) =
+addLocalGraph (LocalGraph _ nodes1 fields1 locs1) (GlobalGraph nodes2 fields2 locs2) =
   GlobalGraph
     { _g_nodes = Map.union nodes1 nodes2,
-      _g_fields = Map.union fields1 fields2
+      _g_fields = Map.union fields1 fields2,
+      _g_sourceLocations = Map.union locs1 locs2
     }
 
 -- | Add kernel function to global dependency graph.
@@ -616,12 +622,13 @@ addLocalGraph (LocalGraph _ nodes1 fields1) (GlobalGraph nodes2 fields2) =
 --
 -- @since 0.19.1
 addKernel :: Name.Name -> [K.Chunk] -> GlobalGraph -> GlobalGraph
-addKernel shortName chunks (GlobalGraph nodes fields) =
+addKernel shortName chunks (GlobalGraph nodes fields locs) =
   let global = toKernelGlobal shortName
       node = Kernel chunks (foldr addKernelDep Set.empty chunks)
    in GlobalGraph
         { _g_nodes = Map.insert global node nodes,
-          _g_fields = Map.union (K.countFields chunks) fields
+          _g_fields = Map.union (K.countFields chunks) fields,
+          _g_sourceLocations = locs
         }
 
 addKernelDep :: K.Chunk -> Set Global -> Set Global
@@ -924,12 +931,12 @@ instance Binary.Binary Choice where
         _ -> fail "problem getting Opt.Choice binary"
 
 instance Binary.Binary GlobalGraph where
-  get = Monad.liftM2 GlobalGraph Binary.get Binary.get
-  put (GlobalGraph a b) = Binary.put a >> Binary.put b
+  get = Monad.liftM3 GlobalGraph Binary.get Binary.get Binary.get
+  put (GlobalGraph a b c) = Binary.put a >> Binary.put b >> Binary.put c
 
 instance Binary.Binary LocalGraph where
-  get = Monad.liftM3 LocalGraph Binary.get Binary.get Binary.get
-  put (LocalGraph a b c) = Binary.put a >> Binary.put b >> Binary.put c
+  get = Monad.liftM4 LocalGraph Binary.get Binary.get Binary.get Binary.get
+  put (LocalGraph a b c d) = Binary.put a >> Binary.put b >> Binary.put c >> Binary.put d
 
 instance Binary.Binary Main where
   put main =

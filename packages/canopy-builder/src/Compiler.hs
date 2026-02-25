@@ -723,7 +723,7 @@ detectRoots modules =
     findMainModules = Maybe.mapMaybe moduleToRootIfMain
 
     moduleToRootIfMain :: Build.Module -> Maybe Build.Root
-    moduleToRootIfMain (Build.Fresh modName iface localGraph@(Opt.LocalGraph maybeMain _ _)) =
+    moduleToRootIfMain (Build.Fresh modName iface localGraph@(Opt.LocalGraph maybeMain _ _ _)) =
       case maybeMain of
         Just _ -> Just (Build.Outside modName iface localGraph)
         Nothing -> Nothing

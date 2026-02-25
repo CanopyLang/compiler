@@ -9,7 +9,7 @@ import qualified Data.Map.Utils as Map
 -- HAS DEBUG USES
 
 hasDebugUses :: Opt.LocalGraph -> Bool
-hasDebugUses (Opt.LocalGraph _ graph _) =
+hasDebugUses (Opt.LocalGraph _ graph _ _) =
   Map.any nodeHasDebug graph
 
 nodeHasDebug :: Opt.Node -> Bool

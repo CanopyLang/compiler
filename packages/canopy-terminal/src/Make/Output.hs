@@ -47,7 +47,9 @@ import qualified Data.Name as Name
 import qualified Data.NonEmptyList as NonEmptyList
 import qualified Data.Text as Text
 import qualified Data.Text.Encoding as Text
+import qualified File
 import qualified Generate.Html as Html
+import qualified Generate.JavaScript.SourceMap as SourceMap
 import Logging.Event (LogEvent (..))
 import qualified Logging.Logger as Log
 import Make.Builder (createBuilder, extractMainModules, hasExactlyOneMain)
@@ -59,6 +61,7 @@ import Make.Types
     bcStyle,
   )
 import qualified Reporting.Task as Task
+import qualified System.FilePath as FilePath
 
 -- | Generate output based on artifacts and optional target.
 --
@@ -106,8 +109,8 @@ generateForTarget ctx artifacts (Html target) =
 
 -- | Generate JavaScript output to specified file.
 --
--- Creates JavaScript output from artifacts. Supports main functions
--- for creating executable JavaScript applications.
+-- Creates JavaScript output from artifacts, including source map in dev mode.
+-- Appends @\/\/# sourceMappingURL@ comment and writes @.js.map@ alongside.
 generateJavaScript ::
   BuildContext ->
   Build.Artifacts ->
@@ -115,9 +118,11 @@ generateJavaScript ::
   Task ()
 generateJavaScript ctx artifacts target = do
   Task.io (Log.logEvent (BuildStarted (Text.pack ("Generating JavaScript to: " <> target))))
-  builder <- createBuilder ctx artifacts
+  (builder, maybeSourceMap) <- createBuilder ctx artifacts
   let rootNames = Build.getRootNames artifacts
-  writeOutputFile (ctx ^. bcStyle) target builder rootNames
+      jsWithRef = appendSourceMapRef target builder maybeSourceMap
+  writeOutputFile (ctx ^. bcStyle) target jsWithRef rootNames
+  Task.io (writeSourceMapFile target maybeSourceMap)
 
 -- | Generate HTML output to specified file.
 --
@@ -131,7 +136,7 @@ generateHtml ::
 generateHtml ctx artifacts target = do
   Task.io (Log.logEvent (BuildStarted (Text.pack ("Generating HTML to: " <> target))))
   mainName <- hasExactlyOneMain artifacts
-  builder <- createBuilder ctx artifacts
+  (builder, _sourceMap) <- createBuilder ctx artifacts
   -- Apply JavaScript spacing fixes to embedded JS before HTML wrapping
   let fixedBuilder = fixEmbeddedJavaScript builder
   let htmlBuilder = Html.sandwich mainName fixedBuilder
@@ -164,7 +169,7 @@ generateSingleAppHtml ::
   Task ()
 generateSingleAppHtml ctx artifacts mainName = do
   Task.io (Log.logEvent (BuildStarted (Text.pack ("Found single main function - generating HTML: " <> Name.toChars mainName))))
-  builder <- createBuilder ctx artifacts
+  (builder, _sourceMap) <- createBuilder ctx artifacts
   -- Apply JavaScript spacing fixes to embedded JS before HTML wrapping
   let fixedBuilder = fixEmbeddedJavaScript builder
   let htmlBuilder = Html.sandwich mainName fixedBuilder
@@ -186,9 +191,11 @@ generateMultiAppJs ctx artifacts mainNames =
     name : rest -> do
       let nameStrs = fmap Name.toChars mainNames
       Task.io (Log.logEvent (BuildStarted (Text.pack ("Found multiple main functions - generating JS: " <> show nameStrs))))
-      builder <- createBuilder ctx artifacts
+      (builder, maybeSourceMap) <- createBuilder ctx artifacts
       let target = "canopy.js"
-      writeOutputFile (ctx ^. bcStyle) target builder (NonEmptyList.List name rest)
+          jsWithRef = appendSourceMapRef target builder maybeSourceMap
+      writeOutputFile (ctx ^. bcStyle) target jsWithRef (NonEmptyList.List name rest)
+      Task.io (writeSourceMapFile target maybeSourceMap)
 
 
 -- | Select output format automatically based on artifacts.
@@ -228,3 +235,25 @@ fixJavaScriptSpacing content =
     & Text.replace "elsevar" "else var"
     & Text.replace "elsefor" "else for"
     & Text.replace "elsewhile" "else while"
+
+-- | Append sourceMappingURL comment to JS output when a source map exists.
+--
+-- Adds the standard @\/\/# sourceMappingURL=filename.js.map@ comment
+-- that browsers use to locate the source map file.
+appendSourceMapRef :: FilePath -> Builder -> Maybe SourceMap.SourceMap -> Builder
+appendSourceMapRef _target builder Nothing = builder
+appendSourceMapRef target builder (Just _) =
+  builder <> Builder.stringUtf8 ("\n//# sourceMappingURL=" <> mapFilename <> "\n")
+  where
+    mapFilename = FilePath.takeFileName target <> ".map"
+
+-- | Write source map JSON file alongside the JavaScript output.
+--
+-- Creates a @.js.map@ file containing Source Map V3 JSON when the
+-- compiler produces source map data (dev mode only).
+writeSourceMapFile :: FilePath -> Maybe SourceMap.SourceMap -> IO ()
+writeSourceMapFile _target Nothing = pure ()
+writeSourceMapFile target (Just sm) =
+  File.writeBuilder mapPath (SourceMap.toBuilder sm)
+  where
+    mapPath = target <> ".map"

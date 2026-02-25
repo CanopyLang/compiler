@@ -504,7 +504,7 @@ testCaseWithWildcard =
       assertBool
         "sound function has type"
         (Map.member (Name.fromChars "sound") types)
-      let Opt.LocalGraph _ nodes _ = Driver.compileResultLocalGraph result
+      let Opt.LocalGraph _ nodes _ _ = Driver.compileResultLocalGraph result
       assertBool
         "optimized graph has nodes"
         (not (Map.null nodes))

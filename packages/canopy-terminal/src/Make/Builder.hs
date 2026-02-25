@@ -52,6 +52,7 @@ import qualified Data.Name as Name
 import Data.NonEmptyList (List)
 import qualified Data.NonEmptyList as NonEmptyList
 import qualified Generate.JavaScript as JS
+import qualified Generate.JavaScript.SourceMap as SourceMap
 import qualified Generate.JavaScript.StringPool as StringPool
 import qualified Generate.Mode as Mode
 import Make.Types
@@ -119,7 +120,7 @@ buildFromPaths ctx paths = do
 -- | Create output builder from compiled artifacts.
 --
 -- Generates the appropriate code builder based on the desired build mode.
--- The builder contains the final JavaScript or other target code.
+-- Returns both JavaScript builder and optional source map (dev mode only).
 --
 -- Build modes:
 --   * 'Debug' - Includes debug information and readable output
@@ -128,7 +129,7 @@ buildFromPaths ctx paths = do
 createBuilder ::
   BuildContext ->
   Compiler.Artifacts ->
-  Task Builder
+  Task (Builder, Maybe SourceMap.SourceMap)
 createBuilder ctx artifacts = do
   let mode = ctx ^. bcDesiredMode
   generateForMode mode artifacts
@@ -140,18 +141,18 @@ createBuilder ctx artifacts = do
 generateForMode ::
   DesiredMode ->
   Compiler.Artifacts ->
-  Task Builder
+  Task (Builder, Maybe SourceMap.SourceMap)
 generateForMode mode artifacts =
   Task.mapError Exit.MakeBadGenerate $
     case mode of
-      Debug -> return $ generateJS (Mode.Dev Nothing False) artifacts
-      Dev -> return $ generateJS (Mode.Dev Nothing False) artifacts
-      Prod -> return $ generateJS (Mode.Prod (Mode.shortenFieldNames globalGraph) False StringPool.emptyPool) artifacts
+      Debug -> return (generateJS (Mode.Dev Nothing False) artifacts)
+      Dev -> return (generateJS (Mode.Dev Nothing False) artifacts)
+      Prod -> return (generateJS (Mode.Prod (Mode.shortenFieldNames globalGraph) False StringPool.emptyPool) artifacts)
   where
     globalGraph = extractGlobalGraph artifacts
 
 -- Helper: Generate JavaScript from artifacts
-generateJS :: Mode.Mode -> Compiler.Artifacts -> Builder
+generateJS :: Mode.Mode -> Compiler.Artifacts -> (Builder, Maybe SourceMap.SourceMap)
 generateJS mode artifacts =
   let globalGraph = extractGlobalGraph artifacts
       mains = extractMains artifacts
@@ -187,7 +188,7 @@ extractMainFromRoot ::
   Maybe (ModuleName.Canonical, Opt.Main)
 extractMainFromRoot pkg root = case root of
   Compiler.Inside _name -> Nothing
-  Compiler.Outside name _iface (Opt.LocalGraph maybeMain _ _) ->
+  Compiler.Outside name _iface (Opt.LocalGraph maybeMain _ _ _) ->
     case maybeMain of
       Just main -> Just (ModuleName.Canonical pkg name, main)
       Nothing -> Nothing
@@ -246,7 +247,7 @@ getModuleMain modules root =
       if any (isMainModule name) modules
         then Just name
         else Nothing
-    Compiler.Outside name _ (Opt.LocalGraph maybeMain _ _) ->
+    Compiler.Outside name _ (Opt.LocalGraph maybeMain _ _ _) ->
       case maybeMain of
         Just _ -> Just name
         Nothing -> Nothing
@@ -262,7 +263,7 @@ getNonMainModule modules root =
       if any (isMainModule name) modules || Name.toChars name == "Main"
         then Nothing
         else Just name
-    Compiler.Outside name _ (Opt.LocalGraph maybeMain _ _) ->
+    Compiler.Outside name _ (Opt.LocalGraph maybeMain _ _ _) ->
       case maybeMain of
         Just _ -> Nothing
         Nothing -> Just name
@@ -274,7 +275,7 @@ getNonMainModule modules root =
 isMainModule :: ModuleName.Raw -> Compiler.Module -> Bool
 isMainModule targetName modul =
   case modul of
-    Compiler.Fresh name _ (Opt.LocalGraph maybeMain _ _) ->
+    Compiler.Fresh name _ (Opt.LocalGraph maybeMain _ _ _) ->
       Maybe.isJust maybeMain && name == targetName
 
 -- | Check whether a validated outline is for an application.

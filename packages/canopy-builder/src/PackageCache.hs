@@ -262,9 +262,10 @@ loadAllPackageArtifacts deps = do
 
     mergeGlobalGraphs :: [Opt.GlobalGraph] -> Opt.GlobalGraph
     mergeGlobalGraphs graphs =
-      let allGraphs = map (\(Opt.GlobalGraph g _) -> g) graphs
-          allFields = map (\(Opt.GlobalGraph _ f) -> f) graphs
-      in Opt.GlobalGraph (Map.unions allGraphs) (Map.unionsWith (+) allFields)
+      let allGraphs = map (\(Opt.GlobalGraph g _ _) -> g) graphs
+          allFields = map (\(Opt.GlobalGraph _ f _) -> f) graphs
+          allLocs = map (\(Opt.GlobalGraph _ _ l) -> l) graphs
+      in Opt.GlobalGraph (Map.unions allGraphs) (Map.unionsWith (+) allFields) (Map.unions allLocs)
 
 -- | Load a single module interface from JSON or binary format.
 --

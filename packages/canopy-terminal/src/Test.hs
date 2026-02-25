@@ -266,7 +266,7 @@ artifactsToJavaScript artifacts =
   let globalGraph = artifacts ^. Build.artifactsGlobalGraph
       ffiInfo = artifacts ^. Build.artifactsFFIInfo
       mains = collectMains artifacts
-      builder = JS.generate (Mode.Dev Nothing False) globalGraph mains ffiInfo
+      (builder, _sourceMap) = JS.generate (Mode.Dev Nothing False) globalGraph mains ffiInfo
   in builderToString builder
 
 -- | Collect main entries from all roots of the artifacts.
@@ -284,7 +284,7 @@ extractMain :: Pkg.Name -> Build.Root -> Maybe (ModuleName.Canonical, Opt.Main)
 extractMain pkg root =
   case root of
     Build.Inside _ -> Nothing
-    Build.Outside name _ (Opt.LocalGraph maybeMain _ _) ->
+    Build.Outside name _ (Opt.LocalGraph maybeMain _ _ _) ->
       fmap (\m -> (ModuleName.Canonical pkg name, m)) maybeMain
 
 -- | Convert a 'Builder.Builder' to a plain 'String'.

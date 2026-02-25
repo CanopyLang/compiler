@@ -41,7 +41,7 @@ optimizeModuleQuery annotations canonModule@(Can.Module modName _ _ _ _ _ _ _) =
     (_warnings, Left err) -> do
       Log.logEvent (OptimizeFailed modNameText (Text.pack (show err)))
       return (Left (OtherError ("Optimization error: " ++ show err)))
-    (_warnings, Right localGraph@(Opt.LocalGraph _maybeMain nodes _fields)) -> do
+    (_warnings, Right localGraph@(Opt.LocalGraph _maybeMain nodes _fields _locs)) -> do
       let nodeCount = Map.size nodes
       Log.logEvent (OptimizeCompleted modNameText (OptStats nodeCount 0 0))
       enabled <- Log.isEnabled
@@ -53,6 +53,6 @@ optimizeModuleQuery annotations canonModule@(Can.Module modName _ _ _ _ _ _ _) =
 -- Analyzes the optimized graph to emit decision tree and branch
 -- statistics without modifying the pure optimization pipeline.
 emitOptTraceEvents :: Text.Text -> Opt.LocalGraph -> IO ()
-emitOptTraceEvents modNameText (Opt.LocalGraph _main nodes _fields) = do
+emitOptTraceEvents modNameText (Opt.LocalGraph _main nodes _fields _locs) = do
   let nodeCount = Map.size nodes
   Log.logEvent (OptimizeDecisionTree modNameText nodeCount 0)

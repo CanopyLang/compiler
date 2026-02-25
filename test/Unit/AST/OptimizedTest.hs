@@ -48,7 +48,7 @@ testEmptyGlobalGraph =
   testCase "empty creates empty GlobalGraph" $ do
     let graph = Opt.empty
     case graph of
-      Opt.GlobalGraph nodes fields ->
+      Opt.GlobalGraph nodes fields _ ->
         do
           Map.null nodes @?= True
           Map.null fields @?= True
@@ -61,28 +61,28 @@ testAddGlobalGraph =
     [ testCase "combining empty graphs results in empty" $ do
         let result = Opt.addGlobalGraph Opt.empty Opt.empty
         case result of
-          Opt.GlobalGraph nodes fields ->
+          Opt.GlobalGraph nodes fields _ ->
             do
               Map.null nodes @?= True
               Map.null fields @?= True,
       testCase "combining with non-empty graph preserves nodes" $ do
         let global1 = Opt.Global ModuleName.basics Name.true
             node1 = Opt.Define (Opt.Bool True) Set.empty
-            graph1 = Opt.GlobalGraph (Map.singleton global1 node1) Map.empty
+            graph1 = Opt.GlobalGraph (Map.singleton global1 node1) Map.empty Map.empty
             result = Opt.addGlobalGraph Opt.empty graph1
         case result of
-          Opt.GlobalGraph nodes _ ->
+          Opt.GlobalGraph nodes _ _ ->
             Map.member global1 nodes @?= True,
       testCase "combining two non-empty graphs includes both" $ do
         let global1 = Opt.Global ModuleName.basics Name.true
             global2 = Opt.Global ModuleName.basics Name.false
             node1 = Opt.Define (Opt.Bool True) Set.empty
             node2 = Opt.Define (Opt.Bool False) Set.empty
-            graph1 = Opt.GlobalGraph (Map.singleton global1 node1) Map.empty
-            graph2 = Opt.GlobalGraph (Map.singleton global2 node2) Map.empty
+            graph1 = Opt.GlobalGraph (Map.singleton global1 node1) Map.empty Map.empty
+            graph2 = Opt.GlobalGraph (Map.singleton global2 node2) Map.empty Map.empty
             result = Opt.addGlobalGraph graph1 graph2
         case result of
-          Opt.GlobalGraph nodes _ ->
+          Opt.GlobalGraph nodes _ _ ->
             do
               Map.member global1 nodes @?= True
               Map.member global2 nodes @?= True
@@ -94,10 +94,10 @@ testAddLocalGraph =
   testGroup
     "addLocalGraph"
     [ testCase "adding empty local graph to empty global" $ do
-        let localGraph = Opt.LocalGraph Nothing Map.empty Map.empty
+        let localGraph = Opt.LocalGraph Nothing Map.empty Map.empty Map.empty
             result = Opt.addLocalGraph localGraph Opt.empty
         case result of
-          Opt.GlobalGraph nodes fields ->
+          Opt.GlobalGraph nodes fields _ ->
             do
               Map.null nodes @?= True
               Map.null fields @?= True,
@@ -105,10 +105,10 @@ testAddLocalGraph =
         let global1 = Opt.Global ModuleName.basics Name.true
             node1 = Opt.Define (Opt.Bool True) Set.empty
             localGraph =
-              Opt.LocalGraph Nothing (Map.singleton global1 node1) Map.empty
+              Opt.LocalGraph Nothing (Map.singleton global1 node1) Map.empty Map.empty
             result = Opt.addLocalGraph localGraph Opt.empty
         case result of
-          Opt.GlobalGraph nodes _ ->
+          Opt.GlobalGraph nodes _ _ ->
             Map.member global1 nodes @?= True
     ]
 
@@ -123,7 +123,7 @@ testAddKernel =
             result = Opt.addKernel shortName chunks Opt.empty
             expectedGlobal = Opt.toKernelGlobal shortName
         case result of
-          Opt.GlobalGraph nodes _ ->
+          Opt.GlobalGraph nodes _ _ ->
             Map.member expectedGlobal nodes @?= True,
       testCase "adding kernel with Canopy variable" $ do
         let shortName = Name.fromChars "test"
@@ -131,7 +131,7 @@ testAddKernel =
             result = Opt.addKernel shortName chunks Opt.empty
             expectedGlobal = Opt.toKernelGlobal shortName
         case result of
-          Opt.GlobalGraph nodes _ ->
+          Opt.GlobalGraph nodes _ _ ->
             Map.member expectedGlobal nodes @?= True
     ]
 

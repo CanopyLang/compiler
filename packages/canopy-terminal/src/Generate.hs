@@ -90,7 +90,8 @@ generateJS mode artifacts =
   let globalGraph = extractGlobalGraph artifacts
       mains = extractMains artifacts
       ffiInfo = artifacts ^. Build.artifactsFFIInfo
-   in JS.generate mode globalGraph mains ffiInfo
+      (jsBuilder, _sourceMap) = JS.generate mode globalGraph mains ffiInfo
+   in jsBuilder
 
 -- | Extract the GlobalGraph from build artifacts.
 --
@@ -110,13 +111,13 @@ extractGlobalGraph artifacts =
 -- but merging again ensures freshly compiled modules override stale
 -- entries.
 mergeLocalIntoGlobal :: Opt.GlobalGraph -> Map.Map Opt.Global Opt.Node -> Opt.GlobalGraph
-mergeLocalIntoGlobal (Opt.GlobalGraph depNodes depFields) localNodes =
-  Opt.GlobalGraph (Map.union localNodes depNodes) depFields
+mergeLocalIntoGlobal (Opt.GlobalGraph depNodes depFields depLocs) localNodes =
+  Opt.GlobalGraph (Map.union localNodes depNodes) depFields depLocs
 
 -- | Combine module graphs into global nodes.
 combineModuleGraphs :: [Build.Module] -> Map.Map Opt.Global Opt.Node
 combineModuleGraphs modules =
-  Map.unions [nodes | Build.Fresh _name _iface (Opt.LocalGraph _ nodes _) <- modules]
+  Map.unions [nodes | Build.Fresh _name _iface (Opt.LocalGraph _ nodes _ _) <- modules]
 
 -- Helper: Extract mains from artifacts.
 extractMains :: Build.Artifacts -> Map.Map ModuleName.Canonical Opt.Main
@@ -144,7 +145,7 @@ extractMainFromRoot ::
   Maybe (ModuleName.Canonical, Opt.Main)
 extractMainFromRoot pkg _modules root = case root of
   Build.Inside _name -> Nothing
-  Build.Outside name _iface (Opt.LocalGraph maybeMain _ _) ->
+  Build.Outside name _iface (Opt.LocalGraph maybeMain _ _ _) ->
     case maybeMain of
       Just main -> Just (ModuleName.Canonical pkg name, main)
       Nothing -> Nothing
