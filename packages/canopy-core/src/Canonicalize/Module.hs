@@ -456,7 +456,7 @@ validateAndAddFunctions :: Env.Env -> ModuleName.Canonical -> Name.Name -> FileP
 validateAndAddFunctions env ffiModuleName aliasName jsPath region functions =
   case validateFFIFunctions jsPath region functions of
     Left err -> Result.throw err
-    Right validFunctions -> addParsedFunctionsToEnv env ffiModuleName aliasName validFunctions
+    Right validFunctions -> addParsedFunctionsToEnv env ffiModuleName aliasName jsPath region validFunctions
 
 -- Validate FFI functions have proper type annotations
 validateFFIFunctions :: FilePath -> A.Region -> [(String, String)] -> Either Error.Error [(String, String)]
@@ -565,12 +565,12 @@ parseCanopyTypeAnnotation line =
 
 
 -- DYNAMIC FUNCTION ENVIRONMENT GENERATION
-addParsedFunctionsToEnv :: Env.Env -> ModuleName.Canonical -> Name.Name -> [(String, String)] -> Result i [W.Warning] Env.Env
-addParsedFunctionsToEnv env ffiModuleName aliasName functions = do
+addParsedFunctionsToEnv :: Env.Env -> ModuleName.Canonical -> Name.Name -> FilePath -> A.Region -> [(String, String)] -> Result i [W.Warning] Env.Env
+addParsedFunctionsToEnv env ffiModuleName aliasName jsPath region functions = do
   -- Get the home module for type resolution
   let homeModuleName = Env._home env
   -- Dynamically process each parsed function, passing env for type lookup
-  processedFunctions <- traverse (processParsedFunction env ffiModuleName homeModuleName) functions
+  processedFunctions <- traverse (processParsedFunction env ffiModuleName homeModuleName jsPath region) functions
 
   -- Build environment dynamically
   let (vars, qVars) = buildDynamicEnvironment aliasName processedFunctions
@@ -581,9 +581,9 @@ addParsedFunctionsToEnv env ffiModuleName aliasName functions = do
   Result.ok newEnv
 
 -- Process a single parsed function (name, typeString) into Canopy types
-processParsedFunction :: Env.Env -> ModuleName.Canonical -> ModuleName.Canonical -> (String, String) -> Result i [W.Warning] (String, Can.Annotation, Env.Var)
-processParsedFunction env ffiModuleName homeModuleName (functionName, typeString) = do
-  canopyType <- parseTypeStringWithHome env homeModuleName typeString
+processParsedFunction :: Env.Env -> ModuleName.Canonical -> ModuleName.Canonical -> FilePath -> A.Region -> (String, String) -> Result i [W.Warning] (String, Can.Annotation, Env.Var)
+processParsedFunction env ffiModuleName homeModuleName jsPath region (functionName, typeString) = do
+  canopyType <- parseTypeStringWithHome env ffiModuleName homeModuleName jsPath region functionName typeString
   let annotation = Can.Forall Map.empty canopyType
       var = Env.Foreign ffiModuleName annotation
   Result.ok (functionName, annotation, var)
@@ -606,11 +606,12 @@ buildQualifiedVars ffiModuleName processedFunctions =
 
 
 -- Parse type string with home module context for custom type resolution
-parseTypeStringWithHome :: Env.Env -> ModuleName.Canonical -> String -> Result i [W.Warning] Can.Type
-parseTypeStringWithHome env homeModuleName typeStr =
-  case parseTypeTokensWithHome env homeModuleName (tokenizeCanopyType (Text.pack typeStr)) of
+-- ffiModuleName is used as fallback for unknown opaque types (FFI-specific types)
+parseTypeStringWithHome :: Env.Env -> ModuleName.Canonical -> ModuleName.Canonical -> FilePath -> A.Region -> String -> String -> Result i [W.Warning] Can.Type
+parseTypeStringWithHome env ffiModuleName homeModuleName jsPath region functionName typeStr =
+  case parseTypeTokensWithHome env ffiModuleName homeModuleName (tokenizeCanopyType (Text.pack typeStr)) of
     Just canopyType -> Result.ok canopyType
-    Nothing -> Result.throw (Error.ImportNotFound A.one (Name.fromChars typeStr) [])
+    Nothing -> Result.throw (Error.FFIInvalidType region jsPath (Name.fromChars functionName) ("Failed to parse type: " ++ typeStr))
 
 -- Tokenize Canopy type string correctly, handling multi-word types
 -- First split by arrows, then tokenize each segment into words
@@ -660,83 +661,85 @@ splitAtArrow tokens =
     go (t : rest) depth acc = go rest depth (acc ++ [t])
 
 -- Parse type tokens with home module context for custom type resolution
-parseTypeTokensWithHome :: Env.Env -> ModuleName.Canonical -> [String] -> Maybe Can.Type
-parseTypeTokensWithHome env homeModuleName tokens =
+-- ffiModuleName is used as fallback for unknown opaque types (FFI-specific types)
+parseTypeTokensWithHome :: Env.Env -> ModuleName.Canonical -> ModuleName.Canonical -> [String] -> Maybe Can.Type
+parseTypeTokensWithHome env ffiModuleName homeModuleName tokens =
   case tokens of
     [] -> Nothing
-    [typeName] -> Just (parseBasicTypeWithHome env homeModuleName typeName)
+    [typeName] -> Just (parseBasicTypeWithHome env ffiModuleName homeModuleName typeName)
     ["(", ")"] -> Just Can.TUnit
     _ -> case splitAtArrow tokens of
       Just (leftTokens, rightTokens) ->
-        case (parseComplexTypeWithHome env homeModuleName leftTokens, parseTypeTokensWithHome env homeModuleName rightTokens) of
+        case (parseComplexTypeWithHome env ffiModuleName homeModuleName leftTokens, parseTypeTokensWithHome env ffiModuleName homeModuleName rightTokens) of
           (Just leftType, Just restType) -> Just (Can.TLambda leftType restType)
           _ -> Nothing
-      Nothing -> parseComplexTypeWithHome env homeModuleName tokens
+      Nothing -> parseComplexTypeWithHome env ffiModuleName homeModuleName tokens
 
 
 -- Parse one complete type from the beginning of the token list
 -- Returns (parsed type, remaining tokens)
-parseOneType :: Env.Env -> ModuleName.Canonical -> [String] -> Maybe (Can.Type, [String])
-parseOneType _env _homeModuleName [] = Nothing
-parseOneType _env _homeModuleName ["(", ")"] = Just (Can.TUnit, [])
-parseOneType env homeModuleName ("Task" : rest) = do
-  (errorType, rest1) <- parseOneType env homeModuleName rest
-  (resultType, rest2) <- parseOneType env homeModuleName rest1
+-- ffiModuleName is used as fallback for unknown opaque types
+parseOneType :: Env.Env -> ModuleName.Canonical -> ModuleName.Canonical -> [String] -> Maybe (Can.Type, [String])
+parseOneType _env _ffiModuleName _homeModuleName [] = Nothing
+parseOneType _env _ffiModuleName _homeModuleName ["(", ")"] = Just (Can.TUnit, [])
+parseOneType env ffiModuleName homeModuleName ("Task" : rest) = do
+  (errorType, rest1) <- parseOneType env ffiModuleName homeModuleName rest
+  (resultType, rest2) <- parseOneType env ffiModuleName homeModuleName rest1
   let taskAlias = Can.TAlias
         ModuleName.task
         (Name.fromChars "Task")
         [(Name.fromChars "x", errorType), (Name.fromChars "a", resultType)]
         (Can.Filled (Can.TType ModuleName.platform (Name.fromChars "Task") [errorType, resultType]))
   return (taskAlias, rest2)
-parseOneType env homeModuleName ("Result" : rest) = do
-  (errorType, rest1) <- parseOneType env homeModuleName rest
-  (valueType, rest2) <- parseOneType env homeModuleName rest1
+parseOneType env ffiModuleName homeModuleName ("Result" : rest) = do
+  (errorType, rest1) <- parseOneType env ffiModuleName homeModuleName rest
+  (valueType, rest2) <- parseOneType env ffiModuleName homeModuleName rest1
   let resultAlias = Can.TAlias
         ModuleName.result
         (Name.fromChars "Result")
         [(Name.fromChars "e", errorType), (Name.fromChars "a", valueType)]
         (Can.Filled (Can.TType ModuleName.result (Name.fromChars "Result") [errorType, valueType]))
   return (resultAlias, rest2)
-parseOneType env homeModuleName ("List" : rest) = do
-  (elementType, rest1) <- parseOneType env homeModuleName rest
+parseOneType env ffiModuleName homeModuleName ("List" : rest) = do
+  (elementType, rest1) <- parseOneType env ffiModuleName homeModuleName rest
   let listAlias = Can.TAlias
         ModuleName.list
         (Name.fromChars "List")
         [(Name.fromChars "a", elementType)]
         (Can.Filled (Can.TType ModuleName.list (Name.fromChars "List") [elementType]))
   return (listAlias, rest1)
-parseOneType env homeModuleName ("Maybe" : rest) = do
-  (valueType, rest1) <- parseOneType env homeModuleName rest
+parseOneType env ffiModuleName homeModuleName ("Maybe" : rest) = do
+  (valueType, rest1) <- parseOneType env ffiModuleName homeModuleName rest
   let maybeAlias = Can.TAlias
         ModuleName.maybe
         (Name.fromChars "Maybe")
         [(Name.fromChars "a", valueType)]
         (Can.Filled (Can.TType ModuleName.maybe (Name.fromChars "Maybe") [valueType]))
   return (maybeAlias, rest1)
-parseOneType env homeModuleName ("Capability.Initialized" : rest) = do
-  (paramType, rest1) <- parseOneType env homeModuleName rest
+parseOneType env ffiModuleName homeModuleName ("Capability.Initialized" : rest) = do
+  (paramType, rest1) <- parseOneType env ffiModuleName homeModuleName rest
   let capabilityModule = case homeModuleName of
         ModuleName.Canonical pkg _ -> ModuleName.Canonical pkg (Name.fromChars "Capability")
   return (Can.TType capabilityModule (Name.fromChars "Initialized") [paramType], rest1)
 -- NOTE: Capability.UserActivated is NOT included here because it's a simple enum type (not parameterized)
 -- It will be handled by the catch-all pattern and parseBasicTypeWithHome
-parseOneType env homeModuleName ("Capability.Permitted" : rest) = do
-  (paramType, rest1) <- parseOneType env homeModuleName rest
+parseOneType env ffiModuleName homeModuleName ("Capability.Permitted" : rest) = do
+  (paramType, rest1) <- parseOneType env ffiModuleName homeModuleName rest
   let capabilityModule = case homeModuleName of
         ModuleName.Canonical pkg _ -> ModuleName.Canonical pkg (Name.fromChars "Capability")
   return (Can.TType capabilityModule (Name.fromChars "Permitted") [paramType], rest1)
-parseOneType env homeModuleName ("Capability.Available" : rest) = do
-  (paramType, rest1) <- parseOneType env homeModuleName rest
+parseOneType env ffiModuleName homeModuleName ("Capability.Available" : rest) = do
+  (paramType, rest1) <- parseOneType env ffiModuleName homeModuleName rest
   let capabilityModule = case homeModuleName of
         ModuleName.Canonical pkg _ -> ModuleName.Canonical pkg (Name.fromChars "Capability")
   return (Can.TType capabilityModule (Name.fromChars "Available") [paramType], rest1)
 -- Handle tuples: ["(", ..., ",", ..., ")"]
-parseOneType env homeModuleName ("(" : rest) = do
+parseOneType env ffiModuleName homeModuleName ("(" : rest) = do
   let (tupleTokens, afterParen) = span (/= ")") rest
   case afterParen of
     (")" : remaining) -> do
       let elements = splitTupleTokens tupleTokens
-      parsedElements <- mapM (parseOneType env homeModuleName) elements
+      parsedElements <- mapM (parseOneType env ffiModuleName homeModuleName) elements
       let types = map fst parsedElements
       case types of
         [] -> Just (Can.TUnit, remaining)
@@ -756,22 +759,24 @@ parseOneType env homeModuleName ("(" : rest) = do
           go (")" : ts) depth acc result = go ts (depth - 1) (")" : acc) result
           go (t : ts) depth acc result = go ts depth (t : acc) result
       in go tokens (0 :: Int) [] []
-parseOneType env homeModuleName (t : rest) = Just (parseBasicTypeWithHome env homeModuleName t, rest)
+parseOneType env ffiModuleName homeModuleName (t : rest) = Just (parseBasicTypeWithHome env ffiModuleName homeModuleName t, rest)
 
 -- | Parse complex types with home module context.
 --
 -- Returns Nothing when the tokens cannot be parsed into a valid type,
 -- allowing callers to report proper errors instead of silently degrading.
-parseComplexTypeWithHome :: Env.Env -> ModuleName.Canonical -> [String] -> Maybe Can.Type
-parseComplexTypeWithHome env homeModuleName tokens =
-  case parseOneType env homeModuleName tokens of
+-- ffiModuleName is used as fallback for unknown opaque types
+parseComplexTypeWithHome :: Env.Env -> ModuleName.Canonical -> ModuleName.Canonical -> [String] -> Maybe Can.Type
+parseComplexTypeWithHome env ffiModuleName homeModuleName tokens =
+  case parseOneType env ffiModuleName homeModuleName tokens of
     Just (tipe, _) -> Just tipe
     Nothing -> Nothing
 
 -- Parse basic type names with home module context for custom types
 -- Uses env to look up imported types and resolve them to their defining module
-parseBasicTypeWithHome :: Env.Env -> ModuleName.Canonical -> String -> Can.Type
-parseBasicTypeWithHome env homeModuleName typeName =
+-- ffiModuleName is used as fallback for unknown opaque types (FFI-specific types)
+parseBasicTypeWithHome :: Env.Env -> ModuleName.Canonical -> ModuleName.Canonical -> String -> Can.Type
+parseBasicTypeWithHome env ffiModuleName homeModuleName typeName =
   let trimmedName = dropWhileEnd (== ' ') (dropWhile (== ' ') typeName)
       dropWhileEnd predicate xs = foldr (\x acc -> if predicate x && null acc then [] else x:acc) [] xs
       -- Check for tuple FIRST using the original string (with parens)
@@ -784,10 +789,10 @@ parseBasicTypeWithHome env homeModuleName typeName =
       -- Check if unparenthesized string contains spaces (complex type) BUT NOT if it's a tuple
       isComplexType = ' ' `elem` unparenthesized && unparenthesized /= "()" && not isTuple
   in if isTuple
-       then parseTupleString env homeModuleName trimmedName
+       then parseTupleString env ffiModuleName homeModuleName trimmedName
        else if isComplexType
-         then fromMaybe (Can.TType homeModuleName (Name.fromChars trimmedName) [])
-                (parseComplexTypeWithHome env homeModuleName (tokenizeTypeSegment (Text.pack unparenthesized)))
+         then fromMaybe (Can.TType ffiModuleName (Name.fromChars trimmedName) [])
+                (parseComplexTypeWithHome env ffiModuleName homeModuleName (tokenizeTypeSegment (Text.pack unparenthesized)))
          else case unparenthesized of
     -- Core basic types from standard library
     "Int" -> Can.TType ModuleName.basics (Name.fromChars "Int") []
@@ -798,7 +803,7 @@ parseBasicTypeWithHome env homeModuleName typeName =
     "Unit" -> Can.TUnit
 
     -- Tuple types: "(Float, Float)" or "( Float, Float )"
-    tupleStr | isTupleString tupleStr -> parseTupleString env homeModuleName tupleStr
+    tupleStr | isTupleString tupleStr -> parseTupleString env ffiModuleName homeModuleName tupleStr
 
     -- Task type (from Task module in core package)
     "Task" -> Can.TType ModuleName.task (Name.fromChars "Task") []
@@ -815,20 +820,29 @@ parseBasicTypeWithHome env homeModuleName typeName =
     -- Type variables (single lowercase letters) - treat as opaque for now
     [ch] | ch >= 'a' && ch <= 'z' -> Can.TType homeModuleName (Name.fromChars trimmedName) []
 
-    -- Module-qualified types: "Capability.CapabilityError" -> resolve module from homeModule's package
+    -- Module-qualified types: "Capability.CapabilityError" -> resolve module from environment
     qualifiedType | '.' `elem` qualifiedType ->
       let parts = splitOn '.' qualifiedType
           moduleParts = init parts  -- ["Capability"]
           typeNamePart = last parts      -- "CapabilityError"
           moduleNameStr = intercalate "." moduleParts  -- "Capability"
-          -- Create a canonical module name in the same package as homeModule
-          resolvedModule = case homeModuleName of
-            ModuleName.Canonical pkg _ -> ModuleName.Canonical pkg (Name.fromChars moduleNameStr)
-          resultType = Can.TType resolvedModule (Name.fromChars typeNamePart) []
+          qualifierName = Name.fromChars moduleNameStr
+          typeNameObj = Name.fromChars typeNamePart
+          -- First try to look up the qualified type in the environment
+          maybeQualifiedType = do
+            innerMap <- Map.lookup qualifierName (Env._q_types env)
+            typeInfo <- Map.lookup typeNameObj innerMap
+            pure (extractModule typeInfo)
+          -- Fall back to same package as homeModule if not found in environment
+          resolvedModule = case maybeQualifiedType of
+            Just foundModule -> foundModule
+            Nothing -> case homeModuleName of
+              ModuleName.Canonical pkg _ -> ModuleName.Canonical pkg qualifierName
+          resultType = Can.TType resolvedModule typeNameObj []
       in resultType
 
     -- Custom opaque types (AudioContext, OscillatorNode, GainNode, etc.)
-    -- These should resolve to the module where they are defined, not the importing module
+    -- These should resolve to the FFI module where they are defined
     customType ->
       if customType == "String"
         then Can.TType ModuleName.string (Name.fromChars "String") []
@@ -836,7 +850,8 @@ parseBasicTypeWithHome env homeModuleName typeName =
           let typeNameObj = Name.fromChars customType
               -- Look up the type in the environment to find its defining module
               maybeTypeInfo = Map.lookup typeNameObj (Env._types env)
-              resolvedModule = maybe homeModuleName extractModule maybeTypeInfo
+              -- Use ffiModuleName for unknown opaque types (they're FFI-specific)
+              resolvedModule = maybe ffiModuleName extractModule maybeTypeInfo
           in Can.TType resolvedModule typeNameObj []
   where
     extractModule :: Env.Info Env.Type -> ModuleName.Canonical
@@ -869,22 +884,17 @@ isTupleString str =
 
 
 -- Parse a tuple string like "(Float, Float)" into a Can.TTuple
-parseTupleString :: Env.Env -> ModuleName.Canonical -> String -> Can.Type
-parseTupleString env homeModuleName str =
+-- For 4+ element tuples, constructs nested pairs: (a,b,c,d) -> ((a,b),(c,d))
+-- ffiModuleName is used as fallback for unknown opaque types
+parseTupleString :: Env.Env -> ModuleName.Canonical -> ModuleName.Canonical -> String -> Can.Type
+parseTupleString env ffiModuleName homeModuleName str =
   let trimmed = dropWhile (== ' ') str
       withoutParens = case trimmed of
                         ('(' : rest) -> takeWhile (/= ')') rest
                         other -> other
       elements = splitByComma withoutParens
-      parsedElements = map (parseBasicTypeWithHome env homeModuleName . trim) elements
-  in case parsedElements of
-       [] -> Can.TUnit
-       [single] -> single
-       (first : second : rest) ->
-         case rest of
-           [] -> Can.TTuple first second Nothing
-           [third] -> Can.TTuple first second (Just third)
-           _ -> Can.TUnit  -- More than 3 elements not supported, fallback to Unit
+      parsedElements = map (parseBasicTypeWithHome env ffiModuleName homeModuleName . trim) elements
+  in buildTupleType parsedElements
   where
     trim = dropWhile (== ' ') . reverse . dropWhile (== ' ') . reverse
     splitByComma s = go [] [] s
@@ -892,6 +902,20 @@ parseTupleString env homeModuleName str =
         go acc current [] = reverse (reverse current : acc)
         go acc current (',' : cs) = go (reverse current : acc) [] cs
         go acc current (c : cs) = go acc (c : current) cs
+
+    -- Build tuple type, handling 4+ elements with nested pairs
+    buildTupleType :: [Can.Type] -> Can.Type
+    buildTupleType [] = Can.TUnit
+    buildTupleType [single] = single
+    buildTupleType [first, second] = Can.TTuple first second Nothing
+    buildTupleType [first, second, third] = Can.TTuple first second (Just third)
+    buildTupleType types =
+      -- For 4+ elements, split into two halves and nest
+      let midpoint = length types `div` 2
+          (leftTypes, rightTypes) = splitAt midpoint types
+          leftTuple = buildTupleType leftTypes
+          rightTuple = buildTupleType rightTypes
+      in Can.TTuple leftTuple rightTuple Nothing
 
 
 {-

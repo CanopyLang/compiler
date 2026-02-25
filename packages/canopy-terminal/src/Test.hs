@@ -266,7 +266,7 @@ artifactsToJavaScript artifacts =
   let globalGraph = artifacts ^. Build.artifactsGlobalGraph
       ffiInfo = artifacts ^. Build.artifactsFFIInfo
       mains = collectMains artifacts
-      (builder, _sourceMap) = JS.generate (Mode.Dev Nothing False) globalGraph mains ffiInfo
+      (builder, _sourceMap) = JS.generate (Mode.Dev Nothing False False) globalGraph mains ffiInfo
   in builderToString builder
 
 -- | Collect main entries from all roots of the artifacts.

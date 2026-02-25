@@ -2,6 +2,7 @@ module Generate.Mode
   ( Mode(..)
   , isDebug
   , isElmCompatible
+  , isFFIStrict
   , ShortFieldNames
   , shortenFieldNames
   , stringPool
@@ -20,24 +21,46 @@ import qualified Generate.JavaScript.StringPool as StringPool
 
 -- MODE
 
+-- | Compilation mode with associated configuration.
+--
+-- @since 0.19.1
 data Mode
-  = Dev (Maybe Extract.Types) Bool  -- Bool indicates elm-compatibility mode
-  | Prod ShortFieldNames Bool StringPool.StringPool
+  = Dev (Maybe Extract.Types) Bool Bool
+    -- ^ Development mode: (debug types, elm-compatibility, ffi-strict)
+  | Prod ShortFieldNames Bool Bool StringPool.StringPool
+    -- ^ Production mode: (short names, elm-compatibility, ffi-strict, string pool)
   deriving (Show)
 
+-- | Check if debug mode is enabled.
 isDebug :: Mode -> Bool
 isDebug mode =
   case mode of
-    Dev mi _ -> Maybe.isJust mi
+    Dev mi _ _ -> Maybe.isJust mi
     Prod {} -> False
 
 -- ELM COMPATIBILITY
 
+-- | Check if Elm compatibility mode is enabled.
 isElmCompatible :: Mode -> Bool
 isElmCompatible mode =
   case mode of
-    Dev _ elmCompat -> elmCompat
-    Prod _ elmCompat _ -> elmCompat
+    Dev _ elmCompat _ -> elmCompat
+    Prod _ elmCompat _ _ -> elmCompat
+
+-- FFI STRICT MODE
+
+-- | Check if FFI strict validation mode is enabled.
+--
+-- When enabled, the compiler generates runtime validators for FFI function
+-- return values. This helps catch type mismatches at the JavaScript boundary
+-- during development.
+--
+-- @since 0.19.1
+isFFIStrict :: Mode -> Bool
+isFFIStrict mode =
+  case mode of
+    Dev _ _ ffiStrict -> ffiStrict
+    Prod _ _ ffiStrict _ -> ffiStrict
 
 -- STRING POOL
 
@@ -46,7 +69,7 @@ stringPool :: Mode -> StringPool.StringPool
 stringPool mode =
   case mode of
     Dev {} -> StringPool.emptyPool
-    Prod _ _ pool -> pool
+    Prod _ _ _ pool -> pool
 
 -- SHORTEN FIELD NAMES
 

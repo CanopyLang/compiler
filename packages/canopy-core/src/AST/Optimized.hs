@@ -141,6 +141,7 @@ import qualified Canopy.ModuleName as ModuleName
 import qualified Canopy.Package as Pkg
 import qualified Reporting.InternalError as InternalError
 import qualified Canopy.String as ES
+import Control.Applicative ((<|>))
 import qualified Control.Monad as Monad
 import qualified Data.Binary as Binary
 import Data.Word (Word8)
@@ -931,7 +932,13 @@ instance Binary.Binary Choice where
         _ -> fail "problem getting Opt.Choice binary"
 
 instance Binary.Binary GlobalGraph where
-  get = Monad.liftM3 GlobalGraph Binary.get Binary.get Binary.get
+  -- Backwards compatible get: old format has 2 fields, new has 3
+  -- The sourceLocations field was added for source map support
+  get = do
+    nodes <- Binary.get
+    fields <- Binary.get
+    locs <- Binary.get <|> pure Map.empty
+    pure (GlobalGraph nodes fields locs)
   put (GlobalGraph a b c) = Binary.put a >> Binary.put b >> Binary.put c
 
 instance Binary.Binary LocalGraph where

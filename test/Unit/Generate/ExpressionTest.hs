@@ -42,7 +42,7 @@ tests =
 -- HELPERS
 
 devMode :: Mode.Mode
-devMode = Mode.Dev Nothing False
+devMode = Mode.Dev Nothing False False
 
 nameStr :: String -> Name
 nameStr = Name.fromChars

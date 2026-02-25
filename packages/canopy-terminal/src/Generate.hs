@@ -54,7 +54,7 @@ dev ::
   Build.Artifacts ->
   Task Builder
 dev _root _details artifacts = do
-  let mode = Mode.Dev Nothing False
+  let mode = Mode.Dev Nothing False False
   pure (generateJS mode artifacts)
 
 -- | Generate production build.
@@ -68,7 +68,7 @@ prod ::
   Task Builder
 prod _root _details artifacts = do
   let globalGraph = extractGlobalGraph artifacts
-  let mode = Mode.Prod (Mode.shortenFieldNames globalGraph) False StringPool.emptyPool
+  let mode = Mode.Prod (Mode.shortenFieldNames globalGraph) False False StringPool.emptyPool
   pure (generateJS mode artifacts)
 
 -- | Generate REPL evaluation code.
@@ -81,7 +81,7 @@ repl ::
   Build.Artifacts ->
   Task Builder
 repl _root _details _config artifacts = do
-  let mode = Mode.Dev Nothing False
+  let mode = Mode.Dev Nothing False False
   pure (generateJS mode artifacts)
 
 -- Helper: Generate JavaScript from artifacts.

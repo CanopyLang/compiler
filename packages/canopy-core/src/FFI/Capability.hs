@@ -2,10 +2,35 @@
 {-# LANGUAGE OverloadedStrings #-}
 {-# OPTIONS_GHC -Wall #-}
 
--- | Capability constraints for FFI functions - minimal version to avoid circular imports
+-- | Capability constraints for FFI functions - lightweight parsing types
 --
--- This module provides basic capability constraint types for the FFI system
--- without heavy dependencies that could cause circular imports.
+-- This module provides simple capability constraint types used during JSDoc
+-- parsing in Foreign.FFI. These types represent the parsed @capability
+-- annotations from JavaScript files.
+--
+-- = Module Design
+--
+-- There are two capability-related modules in canopy-core:
+--
+-- * 'FFI.Capability' (this module) - Lightweight types for parsing @capability
+--   annotations from JSDoc. Used by 'Foreign.FFI' during FFI processing.
+--   These types are simple sum types representing parsed constraints.
+--
+-- * 'Type.Capability' - Comprehensive capability infrastructure including
+--   validation, runtime check generation, and built-in capability definitions.
+--   Intended for future runtime validation features.
+--
+-- = Usage
+--
+-- This module is imported by 'Foreign.FFI' to store capability information
+-- parsed from JSDoc annotations like:
+--
+-- @
+-- \/**
+--  * \@capability user-activation
+--  * \@capability permission microphone
+--  *\/
+-- @
 --
 -- @since 0.19.1
 module FFI.Capability

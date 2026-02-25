@@ -66,6 +66,7 @@ import Make.Types
     Task,
     bcDesiredMode,
     bcDetails,
+    bcFfiStrict,
     bcPackage,
     bcRoot,
   )
@@ -137,7 +138,8 @@ createBuilder ::
   Task (Builder, Maybe SourceMap.SourceMap)
 createBuilder ctx artifacts = do
   let mode = ctx ^. bcDesiredMode
-  generateForMode mode artifacts
+  let ffiStrictFlag = ctx ^. bcFfiStrict
+  generateForMode mode ffiStrictFlag artifacts
 
 -- | Check whether code splitting should be used for the given artifacts.
 --
@@ -163,9 +165,10 @@ createSplitBuilder ::
   Task Split.SplitOutput
 createSplitBuilder ctx artifacts =
   Task.mapError Exit.MakeBadGenerate $
-    return (generateSplit (desiredToMode mode globalGraph) artifacts)
+    return (generateSplit (desiredToMode mode ffiStrictFlag globalGraph) artifacts)
   where
     mode = ctx ^. bcDesiredMode
+    ffiStrictFlag = ctx ^. bcFfiStrict
     globalGraph = extractGlobalGraph artifacts
 
 -- | Generate split output for artifacts using the code splitting pipeline.
@@ -187,11 +190,11 @@ buildSplitConfig artifacts =
     }
 
 -- | Convert DesiredMode to Mode.Mode for code generation.
-desiredToMode :: DesiredMode -> Opt.GlobalGraph -> Mode.Mode
-desiredToMode Debug _ = Mode.Dev Nothing False
-desiredToMode Dev _ = Mode.Dev Nothing False
-desiredToMode Prod globalGraph =
-  Mode.Prod (Mode.shortenFieldNames globalGraph) False StringPool.emptyPool
+desiredToMode :: DesiredMode -> Bool -> Opt.GlobalGraph -> Mode.Mode
+desiredToMode Debug ffiStrictFlag _ = Mode.Dev Nothing False ffiStrictFlag
+desiredToMode Dev ffiStrictFlag _ = Mode.Dev Nothing False ffiStrictFlag
+desiredToMode Prod ffiStrictFlag globalGraph =
+  Mode.Prod (Mode.shortenFieldNames globalGraph) False ffiStrictFlag StringPool.emptyPool
 
 -- | Generate builder for specific build mode.
 --
@@ -199,14 +202,15 @@ desiredToMode Prod globalGraph =
 -- Each mode has different optimization and output characteristics.
 generateForMode ::
   DesiredMode ->
+  Bool ->
   Compiler.Artifacts ->
   Task (Builder, Maybe SourceMap.SourceMap)
-generateForMode mode artifacts =
+generateForMode mode ffiStrictFlag artifacts =
   Task.mapError Exit.MakeBadGenerate $
     case mode of
-      Debug -> return (generateJS (Mode.Dev Nothing False) artifacts)
-      Dev -> return (generateJS (Mode.Dev Nothing False) artifacts)
-      Prod -> return (generateJS (Mode.Prod (Mode.shortenFieldNames globalGraph) False StringPool.emptyPool) artifacts)
+      Debug -> return (generateJS (Mode.Dev Nothing False ffiStrictFlag) artifacts)
+      Dev -> return (generateJS (Mode.Dev Nothing False ffiStrictFlag) artifacts)
+      Prod -> return (generateJS (Mode.Prod (Mode.shortenFieldNames globalGraph) False ffiStrictFlag StringPool.emptyPool) artifacts)
   where
     globalGraph = extractGlobalGraph artifacts
 

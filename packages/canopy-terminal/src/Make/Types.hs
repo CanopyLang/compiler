@@ -38,6 +38,7 @@ module Make.Types
     docs,
     verbose,
     noSplit,
+    ffiStrict,
 
     -- ** BuildContext Lenses
     bcStyle,
@@ -45,6 +46,7 @@ module Make.Types
     bcDetails,
     bcDesiredMode,
     bcPackage,
+    bcFfiStrict,
 
     -- * Type Aliases
     Task,
@@ -84,7 +86,9 @@ data Flags = Flags
     -- | Enable verbose logging
     _verbose :: !Bool,
     -- | Disable code splitting even when lazy imports are present
-    _noSplit :: !Bool
+    _noSplit :: !Bool,
+    -- | Enable FFI strict mode for runtime type validation
+    _ffiStrict :: !Bool
   }
   deriving (Eq, Show)
 
@@ -109,7 +113,9 @@ data BuildContext = BuildContext
     -- | Target build mode
     _bcDesiredMode :: !DesiredMode,
     -- | Package name
-    _bcPackage :: !Details.PkgName
+    _bcPackage :: !Details.PkgName,
+    -- | FFI strict mode for runtime validation
+    _bcFfiStrict :: !Bool
   }
 
 -- | Output format and target file.

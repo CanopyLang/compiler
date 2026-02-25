@@ -71,6 +71,7 @@ library
       Data.Utf8.Manipulation
       Data.Utf8.Types
       FFI.Capability
+      FFI.Validator
       File
       File.Archive
       File.Atomic
@@ -83,7 +84,6 @@ library
       File.Utf8
       Foreign.FFI
       Foreign.TestGenerator
-      Foreign.TestGeneratorNew
       Format
       Generate.Html
       Generate.JavaScript
@@ -94,6 +94,7 @@ library
       Generate.JavaScript.CodeSplit.Runtime
       Generate.JavaScript.CodeSplit.Types
       Generate.JavaScript.Expression
+      Generate.JavaScript.FFIRuntime
       Generate.JavaScript.Functions
       Generate.JavaScript.Minify
       Generate.JavaScript.Name
@@ -152,7 +153,6 @@ library
       Reporting.Result
       Reporting.Suggest
       Reporting.Warning
-      Type.Capability
       Type.Constrain.Expression
       Type.Constrain.Module
       Type.Constrain.Pattern

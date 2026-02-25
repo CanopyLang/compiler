@@ -49,7 +49,7 @@ import Data.Either (partitionEithers)
 import qualified Data.List as List
 
 import qualified Foreign.FFI as FFI
-import qualified Foreign.TestGeneratorNew as TestGen
+import qualified Foreign.TestGenerator as TestGen
 import qualified System.Process as Process
 import System.Directory (findExecutable)
 import Control.Monad (filterM, void, when)

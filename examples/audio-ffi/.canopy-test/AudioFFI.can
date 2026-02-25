@@ -310,12 +310,10 @@ createBufferFromSamples : AudioContext -> List (List Float) -> Float -> Result C
 createBufferFromSamples =
     FFI.createBufferFromSamples
 
-{- TEMPORARILY DISABLED due to FFI parser issue
 -- | Concatenate audio buffers
 concatenateBuffers : AudioContext -> List AudioBuffer -> Result CapabilityError AudioBuffer
 concatenateBuffers =
     FFI.concatenateBuffers
--}
 
 -- | Create empty audio buffer
 createEmptyBuffer : AudioContext -> Int -> Float -> Int -> AudioBuffer
