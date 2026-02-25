@@ -38,6 +38,8 @@ import qualified Build.Parallel as Parallel
 import qualified Builder.Graph as Graph
 import qualified Builder.Hash as Hash
 import qualified Builder.Incremental as Incremental
+import Control.Applicative ((<|>))
+import qualified Data.Char as Char
 import qualified Canopy.Interface as I
 import qualified Canopy.ModuleName as ModuleName
 import qualified Canopy.Package as Pkg
@@ -548,8 +550,16 @@ parsePackageName key =
         _ -> Nothing
 
 -- Helper: Parse version from JSON value
+-- Handles both exact versions ("1.0.5") and version constraints ("1.0.0 <= v < 2.0.0")
 parseVersion :: Json.Value -> Maybe V.Version
 parseVersion (Json.String versionStr) =
+  parseExactVersion versionStr
+    <|> parseVersionConstraint versionStr
+parseVersion _ = Nothing
+
+-- Parse an exact version like "1.0.5"
+parseExactVersion :: Text.Text -> Maybe V.Version
+parseExactVersion versionStr =
   let parts = Text.splitOn "." versionStr
    in case parts of
         [majorStr, minorStr, patchStr] ->
@@ -557,7 +567,18 @@ parseVersion (Json.String versionStr) =
             (Just major, Just minor, Just patch) -> Just (V.Version major minor patch)
             _ -> Nothing
         _ -> Nothing
-parseVersion _ = Nothing
+
+-- Parse a version constraint like "1.0.0 <= v < 2.0.0" and extract the minimum version
+parseVersionConstraint :: Text.Text -> Maybe V.Version
+parseVersionConstraint constraintStr =
+  -- Look for pattern: "X.Y.Z <= v" - extract the first version number
+  let parts = Text.words constraintStr
+   in case filter isVersionLike parts of
+        (firstVersion : _) -> parseExactVersion firstVersion
+        [] -> Nothing
+  where
+    isVersionLike txt = Text.any (== '.') txt && Text.all isVersionChar txt
+    isVersionChar c = Char.isDigit c || c == '.'
 
 readMaybe :: Read a => String -> Maybe a
 readMaybe s = case reads s of

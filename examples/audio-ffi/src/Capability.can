@@ -83,25 +83,28 @@ type CapabilityError
 
 {-| Check if user activation is currently active.
 
-Disabled due to critical compiler FFI type reversal bug.
+Uses navigator.userActivation.isActive to detect if a user gesture is
+currently active within the gesture handling window.
 -}
 isUserActivationActive : Bool
 isUserActivationActive =
-    True
+    CapabilityFFI.isUserActivationActive
 
 {-| Consume user activation and detect actual gesture type.
 
-This uses simple default since FFI has critical type reversal bugs.
-Temporary workaround until compiler FFI bugs are fixed.
+Detects the most recent user gesture type (click, keypress, touch, etc.)
+and returns the corresponding UserActivated value.
 -}
 consumeUserActivation : UserActivated
 consumeUserActivation =
-    Click
+    CapabilityFFI.consumeUserActivation
 
 {-| Generic feature detection using real browser object checking.
 
-Disabled due to critical compiler FFI type reversal bug.
+Checks if a feature is available by testing for its presence in the
+browser's window object. Use dot notation for nested features,
+e.g., "AudioContext" or "navigator.userActivation".
 -}
 hasFeature : String -> Bool
 hasFeature featurePath =
-    True
+    CapabilityFFI.hasFeature featurePath

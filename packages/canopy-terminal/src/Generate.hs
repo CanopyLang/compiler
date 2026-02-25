@@ -30,6 +30,7 @@ import qualified Data.Map.Strict as Map
 import qualified Data.Maybe as Maybe
 import qualified Data.Name as Name
 import qualified Data.NonEmptyList
+import qualified Data.Set as Set
 import qualified Generate.JavaScript as JS
 import qualified Generate.JavaScript.StringPool as StringPool
 import qualified Generate.Mode as Mode
@@ -54,7 +55,7 @@ dev ::
   Build.Artifacts ->
   Task Builder
 dev _root _details artifacts = do
-  let mode = Mode.Dev Nothing False False
+  let mode = Mode.Dev Nothing False False Set.empty
   pure (generateJS mode artifacts)
 
 -- | Generate production build.
@@ -68,7 +69,7 @@ prod ::
   Task Builder
 prod _root _details artifacts = do
   let globalGraph = extractGlobalGraph artifacts
-  let mode = Mode.Prod (Mode.shortenFieldNames globalGraph) False False StringPool.emptyPool
+  let mode = Mode.Prod (Mode.shortenFieldNames globalGraph) False False StringPool.emptyPool Set.empty
   pure (generateJS mode artifacts)
 
 -- | Generate REPL evaluation code.
@@ -81,7 +82,7 @@ repl ::
   Build.Artifacts ->
   Task Builder
 repl _root _details _config artifacts = do
-  let mode = Mode.Dev Nothing False False
+  let mode = Mode.Dev Nothing False False Set.empty
   pure (generateJS mode artifacts)
 
 -- Helper: Generate JavaScript from artifacts.

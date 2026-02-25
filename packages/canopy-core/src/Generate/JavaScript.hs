@@ -93,6 +93,16 @@ instance Binary.Binary FFIInfo where
 
 makeLenses ''FFIInfo
 
+-- | Extract FFI alias names from FFI info map.
+--
+-- Used to identify which module names correspond to FFI modules vs application modules.
+-- FFI modules use direct JavaScript access, while application modules use qualified names.
+--
+-- @since 0.19.1
+extractFFIAliases :: Map String FFIInfo -> Set Name.Name
+extractFFIAliases ffiInfos =
+  Set.fromList (map _ffiAlias (Map.elems ffiInfos))
+
 -- | Generate FFI JavaScript content to include in bundle.
 --
 -- Receives FFI information directly through the compilation pipeline
@@ -248,13 +258,14 @@ generateValidatedBinding jsVarName alias funcName arity canopyType callPath =
     intercalate sep (x:xs) = x ++ sep ++ intercalate sep xs
 
 -- | Extract return type from a function type signature
+-- For "Int -> Int -> Int", this returns "Int" (the final return type)
 extractReturnType :: String -> String
 extractReturnType typeStr =
   let tokens = words typeStr
       arrowIndices = findArrowIndices tokens 0 []
   in if null arrowIndices
        then typeStr  -- No arrows, entire thing is the type
-       else unwords (drop (last arrowIndices + 1) tokens)
+       else unwords (drop (maximum arrowIndices + 1) tokens)
   where
     findArrowIndices :: [String] -> Int -> [Int] -> [Int]
     findArrowIndices [] _ acc = acc
@@ -339,12 +350,14 @@ trim = List.dropWhileEnd isSpace . dropWhile isSpace
 
 generate :: Mode.Mode -> Opt.GlobalGraph -> Mains -> Map String FFIInfo -> (Builder, Maybe SourceMap.SourceMap)
 generate inputMode (Opt.GlobalGraph rawGraph _ sourceLocs) mains ffiInfos =
-  let (graph, mode) = case inputMode of
-        Mode.Prod fields elmCompat ffiStrict _ ->
+  let ffiAliases = extractFFIAliases ffiInfos
+      (graph, mode) = case inputMode of
+        Mode.Prod fields elmCompat ffiUnsafe _ _ ->
           let minified = Minify.minifyGraph rawGraph
               pool = StringPool.buildPool minified
-           in (minified, Mode.Prod fields elmCompat ffiStrict pool)
-        Mode.Dev _ _ _ -> (rawGraph, inputMode)
+           in (minified, Mode.Prod fields elmCompat ffiUnsafe pool ffiAliases)
+        Mode.Dev debugTypes elmCompat ffiUnsafe _ ->
+          (rawGraph, Mode.Dev debugTypes elmCompat ffiUnsafe ffiAliases)
       baseState = Map.foldrWithKey (addMain mode graph) (emptyState sourceLocs) mains
       shouldInclude global =
         not (isDebugger global && not (Mode.isDebug mode))
@@ -365,6 +378,7 @@ generate inputMode (Opt.GlobalGraph rawGraph _ sourceLocs) mains ffiInfos =
           <> poolDecls
           <> stateToBuilder state
           <> toMainExports mode mains
+          <> "\nif (typeof global !== 'undefined') { global.Canopy = scope['Canopy']; global.Elm = scope['Elm']; }"
           <> "\n}(typeof window !== 'undefined' ? window : this));"
       sourceMap = buildSourceMap mode state
    in (jsBuilder, sourceMap)
@@ -379,7 +393,7 @@ perfNote mode =
   case mode of
     Mode.Prod {} ->
       mempty
-    Mode.Dev Nothing elmCompatible _ ->
+    Mode.Dev Nothing elmCompatible _ _ ->
       -- Always include console.warn in dev mode to match Elm behavior
       -- Use explicit semicolon annotation to ensure semicolon is added
       let optimizeUrl = if elmCompatible
@@ -394,7 +408,7 @@ perfNote mode =
                      <> B.stringUtf8 optimizeUrl
                      <> " for better performance and smaller assets."
                ]
-    Mode.Dev (Just _) elmCompatible _ ->
+    Mode.Dev (Just _) elmCompatible _ _ ->
       -- Always include console.warn in dev mode to match Elm behavior
       -- Use explicit semicolon annotation to ensure semicolon is added
       let optimizeUrl = if elmCompatible
@@ -416,7 +430,7 @@ perfNote mode =
 -- GENERATE FOR REPL
 generateForRepl :: Bool -> L.Localizer -> Opt.GlobalGraph -> ModuleName.Canonical -> Name.Name -> Can.Annotation -> Builder
 generateForRepl ansi localizer (Opt.GlobalGraph graph _ _) home name (Can.Forall _ tipe) =
-  let mode = Mode.Dev Nothing True False  -- Default to elm-compatible for REPL, no FFI strict
+  let mode = Mode.Dev Nothing True False Set.empty  -- Default to elm-compatible for REPL, no FFI strict, no FFI aliases
       debugState = addGlobal mode graph (emptyState Map.empty) (Opt.Global ModuleName.debug "toString")
       evalState = addGlobal mode graph debugState (Opt.Global home name)
       processExceptionHandler = JS.stmtToBuilder $
@@ -518,7 +532,7 @@ print ansi localizer home name tipe =
 generateForReplEndpoint :: L.Localizer -> Opt.GlobalGraph -> ModuleName.Canonical -> Maybe Name.Name -> Can.Annotation -> Builder
 generateForReplEndpoint localizer (Opt.GlobalGraph graph _ _) home maybeName (Can.Forall _ tipe) =
   let name = Data.Maybe.fromMaybe Name.replValueToPrint maybeName
-      mode = Mode.Dev Nothing True False  -- Default to elm-compatible for REPL, no FFI strict
+      mode = Mode.Dev Nothing True False Set.empty  -- Default to elm-compatible for REPL, no FFI strict, no FFI aliases
       debugState = addGlobal mode graph (emptyState Map.empty) (Opt.Global ModuleName.debug "toString")
       evalState = addGlobal mode graph debugState (Opt.Global home name)
    in Functions.functions
@@ -595,11 +609,16 @@ addGlobalHelp :: Mode.Mode -> Graph -> Opt.Global -> State -> State
 addGlobalHelp mode graph currentGlobal state =
   let Opt.Global globalHome _ = currentGlobal
       pkg = ModuleName._package globalHome
+      -- Check if this is an FFI module that's not in the graph
+      -- FFI modules (identified by dummyName package) that aren't in the graph
+      -- are handled by expression generation, not here
+      isFFIModule = Pkg._author pkg == Pkg._author Pkg.dummyName
+                 && Pkg._project pkg == Pkg._project Pkg.dummyName
+                 && Map.notMember currentGlobal graph
   in if isDebugger currentGlobal && not (Mode.isDebug mode)
      then state
-     -- Skip FFI functions - they're handled by expression generation
-     else if Pkg._author pkg == Pkg._author Pkg.dummyName && Pkg._project pkg == Pkg._project Pkg.dummyName
-     then state
+     else if isFFIModule
+     then state  -- Skip FFI modules - handled by expression generation
      else continueAddGlobal mode graph currentGlobal state
 
 continueAddGlobal :: Mode.Mode -> Graph -> Opt.Global -> State -> State
@@ -639,30 +658,24 @@ continueAddGlobal mode graph currentGlobal state =
           in case Map.lookup altGlobal graph of
                Just x -> x
                Nothing ->
-                 -- Check if this is an FFI module (author/project package)
-                 if Pkg._author currentPkg == Pkg._author Pkg.dummyName && Pkg._project currentPkg == Pkg._project Pkg.dummyName
-                 then InternalError.report
-                   "Generate.JavaScript.checkedMerge"
-                   "FFI function found — this should be handled by expression generation"
-                   "A foreign-function global was encountered during graph merging, but FFI globals must be resolved during expression generation, not graph merging."
-                 else let allKeys = Map.keys graph
-                          listRelated = filter (\(Opt.Global home name) ->
-                            let modName = ModuleName._module home
-                            in "List" `List.isInfixOf` Name.toChars modName || "List" `List.isInfixOf` Name.toChars name) allKeys
-                          dollarKeys = filter (\(Opt.Global _ name) -> Name.toChars name == "$") allKeys
-                          elmCoreKeys = filter (\(Opt.Global home _) ->
-                            let pkg = ModuleName._package home
-                            in Pkg._author pkg == Pkg.elm && Pkg._project pkg == Pkg._project Pkg.core) allKeys
-                          errorMsg = "\n=== GLOBALHELP DEBUG ===\n" <>
-                                   "Missing: " <> show currentGlobal <> "\n" <>
-                                   "Also tried: " <> show altGlobal <> "\n" <>
-                                   "Total keys: " <> show (length allKeys) <> "\n" <>
-                                   "List-related: " <> show listRelated <> "\n" <>
-                                   "$ globals: " <> show dollarKeys <> "\n" <>
-                                   "elm/core count: " <> show (length elmCoreKeys) <> "\n" <>
-                                   "First 20: " <> show (take 20 allKeys) <> "\n" <>
-                                   "========================"
-                      in error errorMsg
+                 let allKeys = Map.keys graph
+                     listRelated = filter (\(Opt.Global home name) ->
+                       let modName = ModuleName._module home
+                       in "List" `List.isInfixOf` Name.toChars modName || "List" `List.isInfixOf` Name.toChars name) allKeys
+                     dollarKeys = filter (\(Opt.Global _ name) -> Name.toChars name == "$") allKeys
+                     elmCoreKeys = filter (\(Opt.Global home _) ->
+                       let pkg = ModuleName._package home
+                       in Pkg._author pkg == Pkg.elm && Pkg._project pkg == Pkg._project Pkg.core) allKeys
+                     errorMsg = "\n=== GLOBALHELP DEBUG ===\n" <>
+                              "Missing: " <> show currentGlobal <> "\n" <>
+                              "Also tried: " <> show altGlobal <> "\n" <>
+                              "Total keys: " <> show (length allKeys) <> "\n" <>
+                              "List-related: " <> show listRelated <> "\n" <>
+                              "$ globals: " <> show dollarKeys <> "\n" <>
+                              "elm/core count: " <> show (length elmCoreKeys) <> "\n" <>
+                              "First 20: " <> show (take 20 allKeys) <> "\n" <>
+                              "========================"
+                 in error errorMsg
    in case globalInGraph of
         Opt.Define expr deps ->
           addStmt
@@ -760,7 +773,7 @@ buildSourceMap :: Mode.Mode -> State -> Maybe SourceMap.SourceMap
 buildSourceMap mode state =
   case mode of
     Mode.Prod {} -> Nothing
-    Mode.Dev _ _ _ ->
+    Mode.Dev _ _ _ _ ->
       let sm = SourceMap.empty "canopy.js"
        in Just sm { SourceMap._smMappings = _sourceMapMappings state }
 
@@ -784,7 +797,7 @@ generateCycle mode (Opt.Global home _) names values functions =
           case mode of
             Mode.Prod {} ->
               realBlock
-            Mode.Dev _ _ _ ->
+            Mode.Dev _ _ _ _ ->
               [(JS.Try (JS.Block realBlock) JsName.dollar . JS.Throw) . JS.String $
                 ( "Some top-level definitions from `" <> Name.toBuilder (ModuleName._module home) <> "` are causing infinite recursion:\\n"
                     <> drawCycle names
@@ -849,7 +862,7 @@ addChunk mode chunk builder =
       B.intDec int <> builder
     K.Debug ->
       case mode of
-        Mode.Dev _ elmCompatible _ ->
+        Mode.Dev _ elmCompatible _ _ ->
           if elmCompatible
             then builder               -- Elm dev: debug functions are used (clean)
             else builder               -- Canopy dev: use debug functions
@@ -857,7 +870,7 @@ addChunk mode chunk builder =
           "_UNUSED" <> builder
     K.Prod ->
       case mode of
-        Mode.Dev _ elmCompatible _ ->
+        Mode.Dev _ elmCompatible _ _ ->
           if elmCompatible
             then "_UNUSED" <> builder  -- Elm dev: prod functions marked unused
             else "_UNUSED" <> builder  -- Canopy dev: prod functions marked unused
@@ -870,7 +883,7 @@ generateEnum :: Mode.Mode -> Opt.Global -> Index.ZeroBased -> JS.Stmt
 generateEnum mode global@(Opt.Global home name) index =
   JS.Var (JsName.fromGlobal home name) $
     case mode of
-      Mode.Dev _ _ _ ->
+      Mode.Dev _ _ _ _ ->
         Expr.codeToExpr (Expr.generateCtor mode global index 0)
       Mode.Prod {} ->
         JS.Int (Index.toMachine index)
@@ -881,7 +894,7 @@ generateBox :: Mode.Mode -> Opt.Global -> JS.Stmt
 generateBox mode global@(Opt.Global home name) =
   JS.Var (JsName.fromGlobal home name) $
     case mode of
-      Mode.Dev _ _ _ ->
+      Mode.Dev _ _ _ _ ->
         Expr.codeToExpr (Expr.generateCtor mode global Index.first 1)
       Mode.Prod {} ->
         JS.Ref (JsName.fromGlobal ModuleName.basics Name.identity)

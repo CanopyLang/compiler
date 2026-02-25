@@ -1,41 +1,71 @@
-module MathTest exposing (main, suite)
+module MathTest exposing (main)
 
 {-| Comprehensive Unit Tests for Math FFI
 
 This module provides 100% test coverage for all Math FFI functions.
+Exports a test suite that can be run by `canopy test`.
 
 -}
 
-import Html exposing (Html, div, text, pre)
-import Test exposing (Test, describe, test, runTests)
+import Html exposing (Html, pre, text)
+import Test exposing (Test, describe, test, toRunner, RunnerResult)
 import Expect
 import Result exposing (Result(..))
 
 foreign import javascript "external/math.js" as FFI
 
 
+-- | Main renders test results that the harness will capture
 main : Html msg
 main =
     let
-        results =
-            runTests [ suite ]
+        results = toRunner allTests
+        output = formatResults results
     in
-    pre [] [ text results ]
+    pre [] [ text output ]
 
 
-suite : Test
-suite =
-    describe "Math FFI Complete Test Suite"
-        [ factorialTests
-        , fibonacciTests
-        , gcdTests
-        , lcmTests
-        , primeTests
-        , powerTests
-        , sqrtTests
-        , angleConversionTests
-        , distanceTests
-        ]
+-- | All test cases
+allTests : List Test
+allTests =
+    [ factorialTests
+    , fibonacciTests
+    , gcdTests
+    , lcmTests
+    , primeTests
+    , powerTests
+    , sqrtTests
+    , angleConversionTests
+    , distanceTests
+    ]
+
+
+-- | Format test results for console output
+formatResults : List RunnerResult -> String
+formatResults results =
+    let
+        passed = List.filter .passed results
+        failed = List.filter (\r -> not r.passed) results
+        passedCount = List.length passed
+        failedCount = List.length failed
+        total = List.length results
+    in
+    String.join "\n"
+        (List.map formatResult results
+            ++ [ ""
+               , String.fromInt total ++ " test(s) total, "
+                   ++ String.fromInt passedCount ++ " passed, "
+                   ++ String.fromInt failedCount ++ " failed."
+               ]
+        )
+
+
+formatResult : RunnerResult -> String
+formatResult r =
+    if r.passed then
+        "  PASS  " ++ r.name
+    else
+        "  FAIL  " ++ r.name ++ "\n        " ++ r.reason
 
 
 -- ============================================================================

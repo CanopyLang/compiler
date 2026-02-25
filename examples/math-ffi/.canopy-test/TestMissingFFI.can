@@ -1,7 +1,0 @@
-module TestMissingFFI exposing (main)
-
-import Html exposing (text)
-
-foreign import javascript "external/nonexistent.js" as Missing
-
-main = text "Testing missing FFI file"

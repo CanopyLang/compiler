@@ -5,68 +5,23 @@ module Test exposing
   ( Test
   , describe
   , test
+  , toRunner
   , run
-  , Expectation
-  , expect
-  , equal
-  , pass
-  , fail
+  , runTests
+  , TestResult
+  , RunnerResult
   )
+
+import Expect exposing (Expectation)
+
 
 -- | A Test is a collection of expectations or other tests
 type Test
   = UnitTest String (() -> Expectation)
   | TestGroup String (List Test)
 
--- | An Expectation is the result of testing something
-type Expectation
-  = Pass
-  | Fail String
 
--- | Create a group of tests with a description
-describe : String -> List Test -> Test
-describe description tests =
-  TestGroup description tests
-
--- | Create a single test with a description and expectation
-test : String -> (() -> Expectation) -> Test
-test description expectationFn =
-  UnitTest description expectationFn
-
--- | Run a test and get the results
-run : Test -> TestResult
-run testCase =
-  case testCase of
-    UnitTest description expectationFn ->
-      let
-        result = expectationFn ()
-      in
-      case result of
-        Pass ->
-          { description = description
-          , status = "PASS"
-          , message = ""
-          , duration = 0
-          }
-        Fail message ->
-          { description = description
-          , status = "FAIL"
-          , message = message
-          , duration = 0
-          }
-
-    TestGroup description tests ->
-      let
-        results = List.map run tests
-        failures = List.filter (.status >> (==) "FAIL") results
-      in
-      { description = description
-      , status = if List.isEmpty failures then "PASS" else "FAIL"
-      , message = String.fromInt (List.length failures) ++ " of " ++ String.fromInt (List.length results) ++ " tests failed"
-      , duration = 0
-      }
-
--- | Test result type
+-- | Test result type for internal use
 type alias TestResult =
   { description : String
   , status : String
@@ -74,29 +29,102 @@ type alias TestResult =
   , duration : Int
   }
 
--- | Create an expectation (basic assertion framework)
-expect : a -> Expect a
-expect actual =
-  Expect actual
 
--- | Expectation builder type
-type Expect a = Expect a
+-- | Result format expected by the test harness
+-- The test harness expects { name, passed, reason }
+type alias RunnerResult =
+  { name : String
+  , passed : Bool
+  , reason : String
+  }
 
--- | Check if two values are equal
-equal : a -> Expect a -> Expectation
-equal expected (Expect actual) =
-  if actual == expected then
-    Pass
-  else
-    Fail ("Expected: " ++ Debug.toString expected ++ ", but got: " ++ Debug.toString actual)
 
--- | An expectation that always passes
-pass : Expectation
-pass = Pass
+-- | Create a group of tests with a description
+describe : String -> List Test -> Test
+describe description tests =
+  TestGroup description tests
 
--- | An expectation that always fails with a message
-fail : String -> Expectation
-fail message = Fail message
+
+-- | Create a single test with a description and expectation
+test : String -> (() -> Expectation) -> Test
+test description expectationFn =
+  UnitTest description expectationFn
+
+
+-- | Convert tests to the runner format expected by the test harness
+-- Returns a list of { name, passed, reason } results
+toRunner : List Test -> List RunnerResult
+toRunner tests =
+  List.concatMap runToRunnerResults tests
+
+
+-- | Run a test and convert to RunnerResult format
+runToRunnerResults : Test -> List RunnerResult
+runToRunnerResults testCase =
+  case testCase of
+    UnitTest description expectationFn ->
+      [ expectationToRunnerResult description (expectationFn ()) ]
+
+    TestGroup _groupDescription tests ->
+      List.concatMap runToRunnerResults tests
+
+
+-- | Convert an expectation to the RunnerResult format
+expectationToRunnerResult : String -> Expectation -> RunnerResult
+expectationToRunnerResult name expectation =
+  case expectation of
+    Expect.Pass ->
+      { name = name
+      , passed = True
+      , reason = ""
+      }
+    Expect.Fail reason ->
+      { name = name
+      , passed = False
+      , reason = Expect.reasonToString reason
+      }
+
+
+-- | Run a test and get the results (for internal/legacy use)
+run : Test -> TestResult
+run testCase =
+  case testCase of
+    UnitTest description expectationFn ->
+      runUnitTest description (expectationFn ())
+
+    TestGroup description tests ->
+      runTestGroup description tests
+
+
+runUnitTest : String -> Expectation -> TestResult
+runUnitTest description result =
+  case result of
+    Expect.Pass ->
+      { description = description
+      , status = "PASS"
+      , message = ""
+      , duration = 0
+      }
+    Expect.Fail reason ->
+      { description = description
+      , status = "FAIL"
+      , message = Expect.reasonToString reason
+      , duration = 0
+      }
+
+
+runTestGroup : String -> List Test -> TestResult
+runTestGroup description tests =
+  let
+    results = List.map run tests
+    failures = List.filter (\r -> r.status == "FAIL") results
+  in
+  { description = description
+  , status = if List.isEmpty failures then "PASS" else "FAIL"
+  , message = String.fromInt (List.length failures) ++ " of " ++ String.fromInt (List.length results) ++ " tests failed"
+  , duration = 0
+  }
+
 
 -- | Test runner that outputs to console (will be called from generated JavaScript)
 runTests : List Test -> String
@@ -104,19 +132,30 @@ runTests tests =
   let
     results = List.map run tests
     totalTests = List.length results
-    passedTests = List.length (List.filter (.status >> (==) "PASS") results)
+    passedTests = List.length (List.filter (\r -> r.status == "PASS") results)
     failedTests = totalTests - passedTests
   in
+  formatTestSummary totalTests passedTests failedTests results
+
+
+formatTestSummary : Int -> Int -> Int -> List TestResult -> String
+formatTestSummary total passed failed results =
   "Test Results:\n" ++
-  "Total: " ++ String.fromInt totalTests ++ "\n" ++
-  "Passed: " ++ String.fromInt passedTests ++ "\n" ++
-  "Failed: " ++ String.fromInt failedTests ++ "\n" ++
-  (if failedTests > 0 then
+  "Total: " ++ String.fromInt total ++ "\n" ++
+  "Passed: " ++ String.fromInt passed ++ "\n" ++
+  "Failed: " ++ String.fromInt failed ++ "\n" ++
+  formatFailures failed results
+
+
+formatFailures : Int -> List TestResult -> String
+formatFailures failedCount results =
+  if failedCount > 0 then
     "\nFailures:\n" ++
-    String.join "\n" (List.map formatFailure (List.filter (.status >> (==) "FAIL") results))
-   else
-    "\nAll tests passed!")
+    String.join "\n" (List.map formatFailure (List.filter (\r -> r.status == "FAIL") results))
+  else
+    "\nAll tests passed!"
+
 
 formatFailure : TestResult -> String
 formatFailure result =
-  "❌ " ++ result.description ++ ": " ++ result.message
+  "X " ++ result.description ++ ": " ++ result.message

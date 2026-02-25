@@ -43,14 +43,21 @@ module Setup
   )
 where
 
+import qualified Build.Artifacts as Build
+import qualified Canopy.Interface as I
+import qualified Canopy.ModuleName as ModuleName
+import qualified Canopy.Outline as Outline
 import qualified Canopy.Package as Pkg
 import qualified Canopy.Version as V
+import qualified Compiler
 import Control.Exception (IOException)
 import qualified Control.Exception as Exception
 import qualified Data.Map.Strict as Map
+import qualified Data.NonEmptyList as NE
 import qualified Data.Utf8 as Utf8
 import qualified Deps.Registry as Registry
 import qualified Http
+import qualified PackageCache
 import qualified Reporting
 import qualified Reporting.Exit as Exit
 import Reporting.Doc.ColorQQ (c)
@@ -121,9 +128,15 @@ setup flags = do
       let located = length (filter id results)
           missing = length standardPackages - located
 
-      -- Step 4: Report summary
+      -- Step 4: Compile local Canopy packages
       Print.newline
-      reportSummary located missing
+      Print.println [c|{bold|Checking local Canopy packages...}|]
+      localResults <- compileLocalPackages flags
+      let localCompiled = length (filter id localResults)
+
+      -- Step 5: Report summary
+      Print.newline
+      reportSummary located missing localCompiled
       pure (Right ())
 
 -- | Fetch the package registry from the network, falling back to cache.
@@ -250,13 +263,133 @@ copyEntry srcBase destBase name = do
       _ <- safeCopyFile srcPath destPath
       pure ()
 
+-- | Compile all local Canopy packages that have source but no artifacts.
+--
+-- Scans @~/.canopy/packages/canopy/@ for packages with source directories
+-- but missing artifacts.dat, compiles them, and writes the artifacts.
+compileLocalPackages :: Flags -> IO [Bool]
+compileLocalPackages flags = do
+  homeDir <- Dir.getHomeDirectory
+  let canopyPkgDir = homeDir </> ".canopy" </> "packages" </> "canopy"
+
+  -- Check if canopy packages directory exists
+  exists <- Dir.doesDirectoryExist canopyPkgDir
+  if not exists
+    then pure []
+    else do
+      -- List all packages in canopy/
+      packages <- Dir.listDirectory canopyPkgDir
+      results <- mapM (compileLocalPackage flags canopyPkgDir) packages
+      pure (concat results)
+
+-- | Compile a single local Canopy package if needed.
+compileLocalPackage :: Flags -> FilePath -> String -> IO [Bool]
+compileLocalPackage flags canopyPkgDir packageName = do
+  let pkgDir = canopyPkgDir </> packageName
+
+  -- List all versions
+  versionDirs <- tryListDirectory pkgDir
+  mapM (compilePackageVersion flags packageName pkgDir) versionDirs
+
+-- | Try to list a directory, returning empty list on failure.
+tryListDirectory :: FilePath -> IO [FilePath]
+tryListDirectory dir = do
+  isDir <- Dir.doesDirectoryExist dir
+  if isDir
+    then Dir.listDirectory dir
+    else pure []
+
+-- | Compile a specific version of a package if it has source but no artifacts.
+compilePackageVersion :: Flags -> String -> FilePath -> String -> IO Bool
+compilePackageVersion flags packageName pkgDir versionStr = do
+  let versionDir = pkgDir </> versionStr
+      artifactsPath = versionDir </> "artifacts.dat"
+      canopyJsonPath = versionDir </> "canopy.json"
+      srcDir = versionDir </> "src"
+      label = "canopy/" <> packageName <> " " <> versionStr
+
+  -- Check if artifacts already exist
+  artifactsExist <- Dir.doesFileExist artifactsPath
+  if artifactsExist
+    then do
+      Print.println [c|  #{label}: {green|ready}|]
+      pure True
+    else do
+      -- Check if source exists
+      canopyJsonExists <- Dir.doesFileExist canopyJsonPath
+      srcExists <- Dir.doesDirectoryExist srcDir
+      if canopyJsonExists && srcExists
+        then do
+          Print.println [c|  #{label}: {yellow|compiling from source...}|]
+          result <- compilePackageFromSource flags "canopy" packageName versionStr versionDir
+          case result of
+            Right () -> do
+              Print.println [c|  #{label}: {green|compiled}|]
+              pure True
+            Left err -> do
+              Print.println [c|  #{label}: {red|compilation failed}|]
+              verboseLog flags [c|    Error: #{err}|]
+              pure False
+        else do
+          Print.println [c|  #{label}: {red|no source found}|]
+          pure False
+
+-- | Compile a package from source and write its artifacts.
+compilePackageFromSource :: Flags -> String -> String -> String -> FilePath -> IO (Either String ())
+compilePackageFromSource _flags author packageName versionStr pkgDir = do
+  -- Read canopy.json to get exposed modules using proper Aeson parsing
+  maybeOutline <- Outline.read pkgDir
+  case maybeOutline of
+    Nothing -> pure (Left "Failed to read or parse canopy.json")
+    Just outline ->
+      case outline of
+        Outline.App _ -> pure (Left "Expected package outline, found application outline")
+        Outline.Pkg pkgOutline ->
+          case exposedToNonEmpty (Outline._pkgExposed pkgOutline) of
+            Nothing -> pure (Left "No exposed modules found in canopy.json")
+            Just exposedModules -> do
+              -- Compile the package
+              let pkg = mkPkg author packageName
+                  srcDir = pkgDir </> "src"
+              compileResult <- Compiler.compileFromExposed pkg False pkgDir [Compiler.AbsoluteSrcDir srcDir] exposedModules
+              case compileResult of
+                Left err -> pure (Left (show err))
+                Right artifacts -> do
+                  -- Convert Build.Artifacts to PackageInterfaces
+                  let interfaces = buildArtifactsToInterfaces artifacts
+                      globalGraph = Build._artifactsGlobalGraph artifacts
+                  -- Write artifacts
+                  PackageCache.writePackageArtifacts author packageName versionStr interfaces globalGraph
+                  pure (Right ())
+
+-- | Convert Build.Artifacts to PackageInterfaces (Map ModuleName.Raw I.DependencyInterface).
+buildArtifactsToInterfaces :: Build.Artifacts -> PackageCache.PackageInterfaces
+buildArtifactsToInterfaces artifacts =
+  Map.fromList
+    [ (name, I.Public iface)
+    | Build.Fresh name iface _ <- Build._artifactsModules artifacts
+    ]
+
+-- | Convert Exposed to NonEmpty list of module names.
+--
+-- Flattens ExposedList or ExposedDict into a non-empty list.
+exposedToNonEmpty :: Outline.Exposed -> Maybe (NE.List ModuleName.Raw)
+exposedToNonEmpty exposed =
+  case Outline.flattenExposed exposed of
+    [] -> Nothing
+    (x:xs) -> Just (NE.List x xs)
+
 -- | Report the final setup summary.
-reportSummary :: Int -> Int -> IO ()
-reportSummary located missing = do
+reportSummary :: Int -> Int -> Int -> IO ()
+reportSummary located missing localCompiled = do
   let locatedStr = show located
       missingStr = show missing
+      localStr = show localCompiled
   Print.println [c|{green|Setup complete.}|]
-  Print.println [c|  {green|#{locatedStr}} packages ready|]
+  Print.println [c|  {green|#{locatedStr}} standard packages ready|]
+  if localCompiled > 0
+    then Print.println [c|  {green|#{localStr}} local packages compiled|]
+    else pure ()
   if missing > 0
     then do
       Print.println [c|  #{missingStr} packages not found|]

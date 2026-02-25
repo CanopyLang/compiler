@@ -252,8 +252,8 @@ toBinopStep makeBinop rootOp@(Env.Binop _ _ _ _ rootAssociativity rootPrecedence
 --
 -- @since 0.19.2
 toBinop :: Env.Binop -> Can.Expr -> Can.Expr -> Can.Expr
-toBinop (Env.Binop op home _name annotation _ _) left right =
-  let kind = classifyBinop home op
+toBinop (Env.Binop op home name annotation _ _) left right =
+  let kind = classifyBinop home op name
   in A.merge left right (Can.BinopOp kind annotation left right)
 
 -- | Classify a binary operator as native or custom.
@@ -304,10 +304,10 @@ toBinop (Env.Binop op home _name annotation _ _) left right =
 -- * **Optimization Impact**: Determines entire optimization strategy
 --
 -- @since 0.19.2
-classifyBinop :: ModuleName.Canonical -> Name.Name -> Can.BinopKind
-classifyBinop home op
-  | ModuleName.isBasics home = classifyBasicsOp op
-  | otherwise = Can.UserDefined op home op
+classifyBinop :: ModuleName.Canonical -> Name.Name -> Name.Name -> Can.BinopKind
+classifyBinop home op name
+  | ModuleName.isBasics home = classifyBasicsOp op name
+  | otherwise = Can.UserDefined op home name
 
 -- | Classify Basics module operator.
 --
@@ -342,13 +342,13 @@ classifyBinop home op
 -- * **Space Complexity**: O(1) - no allocation
 --
 -- @since 0.19.2
-classifyBasicsOp :: Name.Name -> Can.BinopKind
-classifyBasicsOp op
+classifyBasicsOp :: Name.Name -> Name.Name -> Can.BinopKind
+classifyBasicsOp op name
   | op == Name.fromChars "+" = Can.NativeArith Can.Add
   | op == Name.fromChars "-" = Can.NativeArith Can.Sub
   | op == Name.fromChars "*" = Can.NativeArith Can.Mul
   | op == Name.fromChars "/" = Can.NativeArith Can.Div
-  | otherwise = Can.UserDefined op ModuleName.basics op
+  | otherwise = Can.UserDefined op ModuleName.basics name
 
 -- CANONICALIZE LET
 

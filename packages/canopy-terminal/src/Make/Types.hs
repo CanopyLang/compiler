@@ -38,7 +38,7 @@ module Make.Types
     docs,
     verbose,
     noSplit,
-    ffiStrict,
+    ffiUnsafe,
 
     -- ** BuildContext Lenses
     bcStyle,
@@ -46,7 +46,7 @@ module Make.Types
     bcDetails,
     bcDesiredMode,
     bcPackage,
-    bcFfiStrict,
+    bcFfiUnsafe,
 
     -- * Type Aliases
     Task,
@@ -87,8 +87,8 @@ data Flags = Flags
     _verbose :: !Bool,
     -- | Disable code splitting even when lazy imports are present
     _noSplit :: !Bool,
-    -- | Enable FFI strict mode for runtime type validation
-    _ffiStrict :: !Bool
+    -- | Disable FFI runtime type validation (unsafe mode)
+    _ffiUnsafe :: !Bool
   }
   deriving (Eq, Show)
 
@@ -114,8 +114,8 @@ data BuildContext = BuildContext
     _bcDesiredMode :: !DesiredMode,
     -- | Package name
     _bcPackage :: !Details.PkgName,
-    -- | FFI strict mode for runtime validation
-    _bcFfiStrict :: !Bool
+    -- | FFI unsafe mode (disables runtime validation)
+    _bcFfiUnsafe :: !Bool
   }
 
 -- | Output format and target file.

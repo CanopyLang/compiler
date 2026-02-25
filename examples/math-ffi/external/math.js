@@ -139,16 +139,15 @@ function power(base, exponent) {
  * @canopy-type Float -> Result MathError Float
  * @name sqrt
  * @param {number} x - Non-negative number
- * @returns {number} Square root of x
- * @throws {MathError} When x is negative
+ * @returns {Object} Result containing square root or error
  */
 function sqrt(x) {
     if (typeof x !== 'number' || x < 0) {
-        throw new MathError(`sqrt: input must be a non-negative number, got ${x}`);
+        return $canopy.Err({ $: 'NegativeInput', a: `sqrt: input must be a non-negative number, got ${x}` });
     }
 
-    if (x === 0) return 0;
-    if (x === 1) return 1;
+    if (x === 0) return $canopy.Ok(0);
+    if (x === 1) return $canopy.Ok(1);
 
     // Newton's method for better precision than Math.sqrt
     let guess = x / 2;
@@ -157,7 +156,7 @@ function sqrt(x) {
     while (true) {
         const newGuess = (guess + x / guess) / 2;
         if (Math.abs(guess - newGuess) < epsilon) {
-            return newGuess;
+            return $canopy.Ok(newGuess);
         }
         guess = newGuess;
     }

@@ -17,6 +17,7 @@ module Expect exposing
     , fail
     , within
     , FloatingPointTolerance(..)
+    , reasonToString
     )
 
 {-| Expectations for testing values.
@@ -46,6 +47,8 @@ module Expect exposing
         value
 
 -}
+
+import Debug
 
 
 {-| The result of an expectation. Either it passed or it failed with a reason.

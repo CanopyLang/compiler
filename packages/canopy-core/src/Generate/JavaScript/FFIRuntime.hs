@@ -94,18 +94,19 @@ runtimeFooter = B.stringUtf8 [r|
 
 -- | Conditional runtime based on compilation mode.
 --
--- In production mode with optimization, we include a minimal runtime.
--- In development mode, we include the full runtime with smart validation.
+-- By default, FFI validation is enabled. Use --ffi-unsafe to disable.
+-- - ffiUnsafe=False (default): Include full runtime with smart validation
+-- - ffiUnsafe=True (--ffi-unsafe): Include minimal runtime without validation
 embeddedRuntimeForMode :: Mode.Mode -> Builder
 embeddedRuntimeForMode mode =
   case mode of
-    Mode.Dev _ _ True ->  -- ffiStrict enabled
+    Mode.Dev _ _ False _ ->  -- ffiUnsafe=False, validation ENABLED (default)
       embeddedRuntime
-    Mode.Dev _ _ False ->
+    Mode.Dev _ _ True _ ->  -- ffiUnsafe=True, validation DISABLED
       embeddedMarshal <> embeddedEnvironment  -- Basic runtime in dev
-    Mode.Prod _ _ True _ ->  -- ffiStrict in prod
+    Mode.Prod _ _ False _ _ ->  -- ffiUnsafe=False, validation ENABLED (default)
       embeddedRuntime
-    Mode.Prod _ _ False _ ->
+    Mode.Prod _ _ True _ _ ->  -- ffiUnsafe=True, validation DISABLED
       embeddedMarshal  -- Minimal runtime in prod
 
 -- | Marshalling helpers ($canopy)

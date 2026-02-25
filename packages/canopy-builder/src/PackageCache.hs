@@ -32,6 +32,9 @@ module PackageCache
     -- * Loading Complete Artifacts
   , loadPackageArtifacts
   , loadAllPackageArtifacts
+    -- * Writing Artifacts
+  , writePackageArtifacts
+  , getPackageArtifactPath
     -- * Types
   , PackageInterfaces
   , PackageArtifacts(..)
@@ -50,6 +53,7 @@ import qualified Interface.JSON as IFace
 import Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
 import Data.Set (Set)
+import qualified Data.Set as Set
 import qualified Data.Utf8 as Utf8
 import qualified System.Directory as Dir
 import System.FilePath ((</>))
@@ -294,3 +298,49 @@ loadModuleInterface root moduleName = do
 
   -- Try JSON first, fall back to binary
   IFace.readInterface basePath
+
+-- | Get the path where a package's artifacts.dat should be stored.
+--
+-- Returns the path at @~/.canopy/packages/{author}/{project}/{version}/artifacts.dat@
+--
+-- @since 0.19.1
+getPackageArtifactPath ::
+  -- | Package author
+  String ->
+  -- | Package name
+  String ->
+  -- | Package version
+  String ->
+  IO FilePath
+getPackageArtifactPath author package version = do
+  homeDir <- Dir.getHomeDirectory
+  return (homeDir </> ".canopy" </> "packages" </> author </> package </> version </> "artifacts.dat")
+
+-- | Write package artifacts to the cache.
+--
+-- Serializes the given interfaces and GlobalGraph into an artifacts.dat file
+-- at the appropriate cache location for the specified package.
+--
+-- This is used by the setup command to compile local packages and cache
+-- their artifacts for faster subsequent loads.
+--
+-- >>> writePackageArtifacts "canopy" "test" "1.0.0" interfaces globalGraph
+--
+-- @since 0.19.1
+writePackageArtifacts ::
+  -- | Package author
+  String ->
+  -- | Package name
+  String ->
+  -- | Package version
+  String ->
+  -- | Compiled module interfaces
+  PackageInterfaces ->
+  -- | Optimized global graph
+  Opt.GlobalGraph ->
+  IO ()
+writePackageArtifacts author package version interfaces globalGraph = do
+  artifactPath <- getPackageArtifactPath author package version
+  let artifacts = Artifacts interfaces globalGraph
+      cache = ArtifactCache Set.empty artifacts
+  Binary.encodeFile artifactPath cache

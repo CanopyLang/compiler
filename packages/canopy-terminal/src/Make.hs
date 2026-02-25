@@ -65,7 +65,7 @@ import Make.Types
     bcDetails,
     debug,
     docs,
-    ffiStrict,
+    ffiUnsafe,
     noSplit,
     optimize,
     report,
@@ -144,7 +144,7 @@ coordinateBuildWithRoot root paths flags style scope = do
   Task.io (Log.logEvent (BuildStarted (Text.pack "Loading project details")))
   details <- loadProjectDetailsFromRoot style scope root
   mode <- getDesiredMode (flags ^. debug) (flags ^. optimize)
-  let ctx = createBuildContext style root details mode (flags ^. ffiStrict)
+  let ctx = createBuildContext style root details mode (flags ^. ffiUnsafe)
   executeBuildStrategy ctx paths (flags ^. docs) (flags ^. Types.output) (flags ^. noSplit)
 
 -- | Load project details from root directory.

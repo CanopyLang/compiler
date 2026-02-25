@@ -427,7 +427,7 @@ createMakeFlags =
     |-- Terminal.flag "docs" Make.docsFile "Generate a JSON file of documentation for a package. Eventually it will be possible to preview docs with `reactor` because it is quite hard to deal with these JSON files directly."
     |-- Terminal.onOff "verbose" "Turn on verbose logging when compiling. Useful for debugging errors in the Canopy compiler itself."
     |-- Terminal.onOff "no-split" "Force single-file output even when lazy imports are present. Useful for debugging code splitting issues."
-    |-- Terminal.onOff "ffi-strict" "Enable runtime type validation at FFI boundaries. Useful for catching JavaScript type mismatches during development."
+    |-- Terminal.onOff "ffi-unsafe" "Disable runtime type validation at FFI boundaries. Use only when you are confident FFI types are correct and need maximum performance."
 
 createInstallDetails :: String
 createInstallDetails =
