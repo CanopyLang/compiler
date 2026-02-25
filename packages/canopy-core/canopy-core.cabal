@@ -88,6 +88,11 @@ library
       Generate.Html
       Generate.JavaScript
       Generate.JavaScript.Builder
+      Generate.JavaScript.CodeSplit.Analyze
+      Generate.JavaScript.CodeSplit.Generate
+      Generate.JavaScript.CodeSplit.Manifest
+      Generate.JavaScript.CodeSplit.Runtime
+      Generate.JavaScript.CodeSplit.Types
       Generate.JavaScript.Expression
       Generate.JavaScript.Functions
       Generate.JavaScript.Minify

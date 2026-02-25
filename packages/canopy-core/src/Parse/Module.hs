@@ -405,6 +405,7 @@ chompImports is =
 chompImport :: Parser E.Module Src.Import
 chompImport =
   do
+    isLazy <- chompLazyKeyword
     Keyword.import_ E.ImportStart
     Space.chompAndCheckIndent E.ModuleSpace E.ImportIndentName
     name@(A.At (A.Region _ end) _) <- addLocation (Var.moduleName E.ImportName)
@@ -413,18 +414,28 @@ chompImport =
       E.ImportEnd
       [ do
           Space.checkFreshLine E.ImportEnd
-          return $ Src.Import name Nothing (Src.Explicit []),
+          return $ Src.Import name Nothing (Src.Explicit []) isLazy,
         do
           Space.checkIndent end E.ImportEnd
           oneOf
             E.ImportAs
-            [ chompAs name,
-              chompExposing name Nothing
+            [ chompAs name isLazy,
+              chompExposing name Nothing isLazy
             ]
       ]
 
-chompAs :: A.Located Name.Name -> Parser E.Module Src.Import
-chompAs name =
+chompLazyKeyword :: Parser E.Module Bool
+chompLazyKeyword =
+  oneOfWithFallback
+    [ do
+        Keyword.lazy_ E.ImportStart
+        Space.chompAndCheckIndent E.ModuleSpace E.ImportIndentName
+        return True
+    ]
+    False
+
+chompAs :: A.Located Name.Name -> Bool -> Parser E.Module Src.Import
+chompAs name isLazy =
   do
     Keyword.as_ E.ImportAs
     Space.chompAndCheckIndent E.ModuleSpace E.ImportIndentAlias
@@ -435,20 +446,20 @@ chompAs name =
       E.ImportEnd
       [ do
           Space.checkFreshLine E.ImportEnd
-          return $ Src.Import name (Just alias) (Src.Explicit []),
+          return $ Src.Import name (Just alias) (Src.Explicit []) isLazy,
         do
           Space.checkIndent end E.ImportEnd
-          chompExposing name (Just alias)
+          chompExposing name (Just alias) isLazy
       ]
 
-chompExposing :: A.Located Name.Name -> Maybe Name.Name -> Parser E.Module Src.Import
-chompExposing name maybeAlias =
+chompExposing :: A.Located Name.Name -> Maybe Name.Name -> Bool -> Parser E.Module Src.Import
+chompExposing name maybeAlias isLazy =
   do
     Keyword.exposing_ E.ImportExposing
     Space.chompAndCheckIndent E.ModuleSpace E.ImportIndentExposingList
     exposed <- specialize E.ImportExposingList exposing
     freshLine E.ImportEnd
-    return $ Src.Import name maybeAlias exposed
+    return $ Src.Import name maybeAlias exposed isLazy
 
 -- FOREIGN IMPORTS
 

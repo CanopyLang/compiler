@@ -17,6 +17,7 @@ import qualified Integration.Terminal.ChompIntegrationTest as ChompIT
 import qualified Integration.TerminalIntegrationTest as TerminalIT
 import qualified Integration.WatchIntegrationTest as WatchIT
 import qualified Integration.JsonIntegrationTest as JsonIT
+import qualified Integration.CodeSplitIntegrationTest as CodeSplitIT
 import qualified Integration.PureBuilderIntegrationTest as PureBuilderIT
 import Test.Tasty
 import Test.Tasty.Runners
@@ -63,6 +64,7 @@ import qualified Unit.Json.StringTest as JsonStringTest
 import qualified Unit.MainTest as MainTest
 import qualified Unit.MakeTest as MakeTest
 import qualified Unit.Parse.ExpressionTest as ParseExpressionTest
+import qualified Unit.Parse.LazyImportTest as LazyImportTest
 import qualified Unit.Parse.ModuleTest as ParseModuleTest
 import qualified Unit.Parse.PatternTest as ParsePatternTest
 import qualified Unit.Parse.TypeTest as ParseTypeTest
@@ -78,6 +80,10 @@ import qualified Unit.Query.EngineTest as QueryEngineTest
 import qualified Unit.Builder.PackageCacheTest as PackageCacheTest
 import qualified Unit.Worker.PoolTest as WorkerPoolTest
 import qualified Unit.Queries.ParseModuleTest as ParseModuleQueryTest
+import qualified Unit.Generate.CodeSplit.AnalyzeTest as CodeSplitAnalyzeTest
+import qualified Unit.Generate.CodeSplit.ManifestTest as CodeSplitManifestTest
+import qualified Unit.Generate.CodeSplit.RuntimeTest as CodeSplitRuntimeTest
+import qualified Unit.Generate.CodeSplit.TypesTest as CodeSplitTypesTest
 import qualified Unit.Generate.ExpressionTest as ExpressionTest
 import qualified Unit.Generate.MinifyTest as MinifyTest
 import qualified Unit.Generate.NameTest as GenerateNameTest
@@ -99,12 +105,14 @@ import qualified Unit.Type.OccursTest as OccursTest
 import qualified Unit.Type.SolveTest as SolveTest
 import qualified Unit.Type.UnifyTest as UnifyTest
 import qualified Unit.Canonicalize.DupsTest as CanonicalizeDupsTest
+import qualified Unit.Canonicalize.LazyImportValidationTest as LazyImportValidationTest
 import qualified Unit.Canonicalize.ModuleTest as CanonicalizeModuleTest
 import qualified Unit.Canonicalize.PatternTest as CanonicalizePatternTest
 import qualified Unit.Type.UnionFindTest as UnionFindTest
 import qualified Property.Type.UnifyProperties as UnifyProperties
 import qualified Property.Type.UnionFindProperties as UnionFindProperties
 import qualified Property.Data.NameProperties as NameProperties
+import qualified Property.Generate.CodeSplitProperties as CodeSplitProperties
 import qualified Property.Generate.SourceMapProperties as SourceMapProperties
 
 main :: IO ()
@@ -141,6 +149,7 @@ unitTests =
       ParsePatternTest.tests,
       ParseTypeTest.tests,
       ParseModuleTest.tests,
+      LazyImportTest.tests,
       MakeTest.tests,
       MainTest.tests,
       InstallTest.tests,
@@ -191,6 +200,10 @@ unitTests =
       ExpressionTest.tests,
       SourceMapTest.tests,
       StringPoolTest.tests,
+      CodeSplitAnalyzeTest.tests,
+      CodeSplitManifestTest.tests,
+      CodeSplitRuntimeTest.tests,
+      CodeSplitTypesTest.tests,
       ColorQQTest.tests,
       LoggingEventTest.tests,
       LoggingConfigTest.tests,
@@ -205,7 +218,8 @@ unitTests =
       UnionFindTest.tests,
       CanonicalizeDupsTest.tests,
       CanonicalizePatternTest.tests,
-      CanonicalizeModuleTest.tests
+      CanonicalizeModuleTest.tests,
+      LazyImportValidationTest.tests
     ]
 
 propertyTests :: TestTree
@@ -215,7 +229,8 @@ propertyTests =
     [ UnifyProperties.tests,
       UnionFindProperties.tests,
       NameProperties.tests,
-      SourceMapProperties.tests
+      SourceMapProperties.tests,
+      CodeSplitProperties.tests
     ]
 
 integrationTests :: TestTree
@@ -224,6 +239,7 @@ integrationTests =
     "Integration Tests"
     [ CanExtensionIT.tests,
       InitIT.tests,
+      CodeSplitIT.tests,
       PureBuilderIT.tests,
       EndToEndIT.tests
     ]

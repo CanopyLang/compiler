@@ -111,6 +111,7 @@ compileFromPaths pkg isApp root srcDirs paths = do
           localGraphs = map mrLocalGraph moduleResults
           mergedGlobalGraph = mergeGraphs depGlobalGraph localGraphs
           ffiInfoMap = Map.unions (map mrFFIInfo moduleResults)
+          allLazyModules = Set.unions (map mrLazyImports moduleResults)
           artifacts = Build.Artifacts
             { Build._artifactsName = pkg
             , Build._artifactsDeps = Map.empty
@@ -118,6 +119,7 @@ compileFromPaths pkg isApp root srcDirs paths = do
             , Build._artifactsModules = modules
             , Build._artifactsFFIInfo = ffiInfoMap
             , Build._artifactsGlobalGraph = mergedGlobalGraph
+            , Build._artifactsLazyModules = allLazyModules
             }
       return (Right artifacts)
 
@@ -136,17 +138,21 @@ data ModuleResult = ModuleResult
   , mrInterface :: !I.Interface
   , mrLocalGraph :: !Opt.LocalGraph
   , mrFFIInfo :: !(Map.Map String JS.FFIInfo)
+  , mrLazyImports :: !(Set.Set ModuleName.Canonical)
   }
 
 -- | Convert a Driver.CompileResult into a ModuleResult.
 fromDriverResult :: Driver.CompileResult -> ModuleResult
 fromDriverResult result =
   ModuleResult
-    { mrModuleName = extractModuleName (Driver.compileResultModule result)
+    { mrModuleName = extractModuleName canMod
     , mrInterface = Driver.compileResultInterface result
     , mrLocalGraph = Driver.compileResultLocalGraph result
     , mrFFIInfo = Driver.compileResultFFIInfo result
+    , mrLazyImports = Can._lazyImports canMod
     }
+  where
+    canMod = Driver.compileResultModule result
 
 -- | Path to the build cache index file.
 cachePath :: FilePath -> FilePath
@@ -644,7 +650,7 @@ handleDecodeResult ::
 handleDecodeResult modName result =
   case result of
     Right (iface, localGraph, ffiInfo) ->
-      return (Just (ModuleResult modName iface localGraph ffiInfo))
+      return (Just (ModuleResult modName iface localGraph ffiInfo Set.empty))
     Left _ex -> do
       Log.logEvent (CacheMiss PhaseCache (Text.pack ("decode failed: " ++ Name.toChars modName)))
       return Nothing

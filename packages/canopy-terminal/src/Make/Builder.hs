@@ -25,6 +25,8 @@ module Make.Builder
 
     -- * Builder Creation
     createBuilder,
+    createSplitBuilder,
+    shouldSplitOutput,
 
     -- * Module Analysis
     extractMainModules,
@@ -51,7 +53,10 @@ import qualified Data.Maybe as Maybe
 import qualified Data.Name as Name
 import Data.NonEmptyList (List)
 import qualified Data.NonEmptyList as NonEmptyList
+import qualified Data.Set as Set
 import qualified Generate.JavaScript as JS
+import qualified Generate.JavaScript.CodeSplit.Generate as Split
+import qualified Generate.JavaScript.CodeSplit.Types as Split
 import qualified Generate.JavaScript.SourceMap as SourceMap
 import qualified Generate.JavaScript.StringPool as StringPool
 import qualified Generate.Mode as Mode
@@ -134,6 +139,60 @@ createBuilder ctx artifacts = do
   let mode = ctx ^. bcDesiredMode
   generateForMode mode artifacts
 
+-- | Check whether code splitting should be used for the given artifacts.
+--
+-- Returns True when lazy import boundaries exist in the compiled modules.
+-- The caller should use 'createSplitBuilder' instead of 'createBuilder'
+-- when this returns True (unless @--no-split@ is active).
+--
+-- @since 0.19.2
+shouldSplitOutput :: Compiler.Artifacts -> Bool
+shouldSplitOutput artifacts =
+  not (Set.null (artifacts ^. Build.artifactsLazyModules))
+
+-- | Create code-split output from compiled artifacts.
+--
+-- Runs the full code splitting pipeline: analysis, per-chunk generation,
+-- content hashing, and manifest creation. Returns a 'Split.SplitOutput'
+-- containing all chunk builders and the JSON manifest.
+--
+-- @since 0.19.2
+createSplitBuilder ::
+  BuildContext ->
+  Compiler.Artifacts ->
+  Task Split.SplitOutput
+createSplitBuilder ctx artifacts =
+  Task.mapError Exit.MakeBadGenerate $
+    return (generateSplit (desiredToMode mode globalGraph) artifacts)
+  where
+    mode = ctx ^. bcDesiredMode
+    globalGraph = extractGlobalGraph artifacts
+
+-- | Generate split output for artifacts using the code splitting pipeline.
+generateSplit :: Mode.Mode -> Compiler.Artifacts -> Split.SplitOutput
+generateSplit mode artifacts =
+  Split.generateChunks mode globalGraph mains ffiInfo config
+  where
+    globalGraph = extractGlobalGraph artifacts
+    mains = extractMains artifacts
+    ffiInfo = artifacts ^. Build.artifactsFFIInfo
+    config = buildSplitConfig artifacts
+
+-- | Build split configuration from artifacts' lazy module set.
+buildSplitConfig :: Compiler.Artifacts -> Split.SplitConfig
+buildSplitConfig artifacts =
+  Split.SplitConfig
+    { Split._scLazyModules = artifacts ^. Build.artifactsLazyModules
+    , Split._scMinSharedRefs = 2
+    }
+
+-- | Convert DesiredMode to Mode.Mode for code generation.
+desiredToMode :: DesiredMode -> Opt.GlobalGraph -> Mode.Mode
+desiredToMode Debug _ = Mode.Dev Nothing False
+desiredToMode Dev _ = Mode.Dev Nothing False
+desiredToMode Prod globalGraph =
+  Mode.Prod (Mode.shortenFieldNames globalGraph) False StringPool.emptyPool
+
 -- | Generate builder for specific build mode.
 --
 -- Delegates to JavaScript generation based on mode.
@@ -206,7 +265,7 @@ extractMainFromRoot pkg root = case root of
 --   mains -> generateMultiApp mains artifacts
 -- @
 extractMainModules :: Compiler.Artifacts -> [ModuleName.Raw]
-extractMainModules (Compiler.Artifacts _ _ roots modules _ _) =
+extractMainModules (Compiler.Artifacts _ _ roots modules _ _ _) =
   Maybe.mapMaybe (getModuleMain modules) (NonEmptyList.toList roots)
 
 -- | Extract modules that do not contain main functions.
@@ -215,7 +274,7 @@ extractMainModules (Compiler.Artifacts _ _ roots modules _ _) =
 -- JavaScript output validation - ensures no main functions are
 -- accidentally included in library builds.
 extractNonMainModules :: Compiler.Artifacts -> [ModuleName.Raw]
-extractNonMainModules (Compiler.Artifacts _ _ roots modules _ _) =
+extractNonMainModules (Compiler.Artifacts _ _ roots modules _ _ _) =
   Maybe.mapMaybe (getNonMainModule modules) (NonEmptyList.toList roots)
 
 -- | Check if artifacts contain exactly one main module.
@@ -227,7 +286,7 @@ extractNonMainModules (Compiler.Artifacts _ _ roots modules _ _) =
 --   * No main functions found
 --   * Multiple main functions found (invalid for HTML)
 hasExactlyOneMain :: Compiler.Artifacts -> Task ModuleName.Raw
-hasExactlyOneMain (Compiler.Artifacts _ _ roots modules _ _) =
+hasExactlyOneMain (Compiler.Artifacts _ _ roots modules _ _ _) =
   case roots of
     NonEmptyList.List root [] ->
       case getModuleMain modules root of

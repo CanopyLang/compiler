@@ -22,11 +22,13 @@ module Build.Artifacts
   , artifactsModules
   , artifactsFFIInfo
   , artifactsGlobalGraph
+  , artifactsLazyModules
   )
 where
 
 import Control.Lens (makeLenses)
 import Data.Map.Strict (Map)
+import Data.Set (Set)
 import Data.NonEmptyList (List)
 import qualified AST.Optimized as Opt
 import qualified Canopy.Docs as Docs
@@ -60,6 +62,7 @@ data Artifacts = Artifacts
   , _artifactsModules :: ![Module]
   , _artifactsFFIInfo :: !(Map String JS.FFIInfo)
   , _artifactsGlobalGraph :: !Opt.GlobalGraph
+  , _artifactsLazyModules :: !(Set ModuleName.Canonical)
   }
   deriving (Show)
 

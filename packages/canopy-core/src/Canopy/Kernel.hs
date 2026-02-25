@@ -273,7 +273,7 @@ toVarTable pkg foreigns = List.foldl' (addImport pkg foreigns) Map.empty
 
 
 addImport :: Pkg.Name -> Foreigns -> VarTable -> Src.Import -> VarTable
-addImport pkg foreigns vtable (Src.Import (A.At _ importName) maybeAlias exposing) =
+addImport pkg foreigns vtable (Src.Import (A.At _ importName) maybeAlias exposing _isLazy) =
   if Name.isKernel importName then
     case maybeAlias of
       Just _ ->

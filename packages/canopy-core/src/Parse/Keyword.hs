@@ -27,6 +27,7 @@ module Parse.Keyword
     subscription_,
     foreign_,
     javascript_,
+    lazy_,
     k4,
     k5,
   )
@@ -138,6 +139,11 @@ subscription_ toError =
           && Var.getInnerWidth pos12 end == 0
           then let !s = P.State src pos12 end indent row (col + 12) in cok () s
           else eerr row col toError
+
+-- LAZY IMPORTS
+
+lazy_ :: (Row -> Col -> x) -> Parser x ()
+lazy_ = k4 0x6C 0x61 0x7A 0x79
 
 -- FFI KEYWORDS
 

@@ -20,6 +20,7 @@ import qualified Canopy.Interface as I
 import qualified Canopy.ModuleName as ModuleName
 import qualified Canopy.Package as Pkg
 import Control.Monad (when)
+import qualified Parse.Module as Parse
 import qualified Data.ByteString as BS
 import Data.Map (Map)
 import qualified Data.Map as Map
@@ -40,17 +41,18 @@ import qualified Reporting.Result as Result
 canonicalizeModuleQuery ::
   FilePath ->
   Pkg.Name ->
+  Parse.ProjectType ->
   Map ModuleName.Raw I.Interface ->
   Map String String ->
   Src.Module ->
   IO (Either QueryError Can.Module)
-canonicalizeModuleQuery path pkg ifaces ffiContent modul = do
+canonicalizeModuleQuery path pkg projectType ifaces ffiContent modul = do
   let modName = Src.getName modul
       modNameText = Text.pack (show modName)
 
   Log.logEvent (CanonStarted modNameText)
 
-  let result = Canonicalize.canonicalize pkg ifaces ffiContent modul
+  let result = Canonicalize.canonicalize pkg projectType ifaces ffiContent modul
   case processResult result of
     Left errors -> do
       Log.logEvent (CanonFailed modNameText (Text.pack (show (length errors))))

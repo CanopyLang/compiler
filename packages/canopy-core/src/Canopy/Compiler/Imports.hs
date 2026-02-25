@@ -29,7 +29,7 @@ defaults =
   ]
 
 import_ :: ModuleName.Canonical -> Maybe Name.Name -> Src.Exposing -> Src.Import
-import_ (ModuleName.Canonical _ name) = Src.Import (A.At A.zero name)
+import_ (ModuleName.Canonical _ name) maybeAlias expo = Src.Import (A.At A.zero name) maybeAlias expo False
 
 -- EXPOSING
 

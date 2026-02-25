@@ -82,6 +82,11 @@ data Error
   | FFIInvalidType A.Region FilePath Name.Name String
   | FFIMissingAnnotation A.Region FilePath Name.Name
   | FFICircularDependency A.Region FilePath [FilePath]
+  | LazyImportNotFound A.Region Name.Name [Name.Name]
+  | LazyImportCoreModule A.Region Name.Name
+  | LazyImportInPackage A.Region Name.Name
+  | LazyImportSelf A.Region Name.Name
+  | LazyImportKernel A.Region Name.Name
   deriving (Show)
 
 data BadArityContext
@@ -862,6 +867,41 @@ toReport source err =
           ( D.reflow ("Circular dependency detected in FFI file: " <> filePath)
           , D.reflow ("Dependency chain: " <> show deps)
           )
+    LazyImportNotFound region name suggestions ->
+      let nearbyNames =
+            fmap Name.toChars (take 4 (Suggest.sort (Name.toChars name) Name.toChars suggestions))
+       in Report.Report "LAZY IMPORT NOT FOUND" region nearbyNames $
+            Code.toSnippet source region Nothing
+              ( D.reflow ("I cannot find a `" <> Name.toChars name <> "` module for this lazy import:")
+              , case fmap D.fromChars nearbyNames of
+                  [] -> D.reflow "I cannot find any similar module names. Is the module missing from your dependencies?"
+                  [alt] -> D.fillSep ["Maybe", "you", "want", D.dullyellow alt, "instead?"]
+                  alts -> D.stack ["These names seem close though:", D.indent 4 (D.vcat (fmap D.dullyellow alts))]
+              )
+    LazyImportCoreModule region name ->
+      Report.Report "BAD LAZY IMPORT" region [] $
+        Code.toSnippet source region Nothing
+          ( D.reflow ("The `" <> Name.toChars name <> "` module is a core library module:")
+          , D.reflow "Core modules like Basics, List, Maybe, Result, String, and Platform are always loaded eagerly. They cannot be lazy-imported because they are required for every Canopy program."
+          )
+    LazyImportInPackage region name ->
+      Report.Report "BAD LAZY IMPORT" region [] $
+        Code.toSnippet source region Nothing
+          ( D.reflow ("You are using `lazy import " <> Name.toChars name <> "` inside a package:")
+          , D.reflow "Lazy imports enable code splitting, which only works in applications. Packages must use regular imports so their code can be bundled by the application that depends on them."
+          )
+    LazyImportSelf region name ->
+      Report.Report "BAD LAZY IMPORT" region [] $
+        Code.toSnippet source region Nothing
+          ( D.reflow ("The module `" <> Name.toChars name <> "` is trying to lazy-import itself:")
+          , D.reflow "A module cannot lazily load itself. Remove the `lazy` keyword from this import."
+          )
+    LazyImportKernel region name ->
+      Report.Report "BAD LAZY IMPORT" region [] $
+        Code.toSnippet source region Nothing
+          ( D.reflow ("The `" <> Name.toChars name <> "` module is an internal kernel module:")
+          , D.reflow "Kernel modules are internal to the compiler runtime and cannot be lazy-imported. They are always loaded eagerly as part of the runtime system."
+          )
 
 -- TO DIAGNOSTIC
 
@@ -914,6 +954,11 @@ toReport source err =
 -- FFIInvalidType           -> E0341
 -- FFIMissingAnnotation     -> E0342
 -- FFICircularDependency    -> E0343
+-- LazyImportNotFound       -> E0344
+-- LazyImportCoreModule     -> E0345
+-- LazyImportInPackage      -> E0346
+-- LazyImportSelf           -> E0347
+-- LazyImportKernel         -> E0348
 -- @
 toDiagnostic :: Code.Source -> Error -> Diagnostic
 toDiagnostic source err =
@@ -1006,6 +1051,16 @@ toDiagnostic source err =
       ffiMissingAnnotationDiagnostic source region filePath funcName
     FFICircularDependency region filePath deps ->
       ffiCircularDependencyDiagnostic source region filePath deps
+    LazyImportNotFound region name suggestions ->
+      lazyImportNotFoundDiagnostic source region name suggestions
+    LazyImportCoreModule region name ->
+      lazyImportCoreModuleDiagnostic source region name
+    LazyImportInPackage region name ->
+      lazyImportInPackageDiagnostic source region name
+    LazyImportSelf region name ->
+      lazyImportSelfDiagnostic source region name
+    LazyImportKernel region name ->
+      lazyImportKernelDiagnostic source region name
 
 -- | Extract the message 'D.Doc' from a 'Report.Report'.
 --
@@ -1530,6 +1585,66 @@ ffiCircularDependencyDiagnostic source region filePath deps =
     (Text.pack ("Circular dependency in FFI file: " <> filePath))
     (LabeledSpan region "FFI circular dependency" SpanPrimary)
     (Code.toSnippet source region Nothing (D.reflow ("Circular dependency detected in FFI file: " <> filePath), D.reflow ("Dependency chain: " <> show deps)))
+
+-- | Build a diagnostic for a lazy import referencing a non-existent module.
+lazyImportNotFoundDiagnostic :: Code.Source -> A.Region -> Name.Name -> [Name.Name] -> Diagnostic
+lazyImportNotFoundDiagnostic source region name suggestions =
+  Diag.makeDiagnostic
+    (EC.canonError 44)
+    Diag.SError
+    Diag.PhaseCanon
+    "LAZY IMPORT NOT FOUND"
+    (Text.pack ("Cannot find module `" <> Name.toChars name <> "` for lazy import"))
+    (LabeledSpan region "module not found" SpanPrimary)
+    (extractReportMessage (toReport source (LazyImportNotFound region name suggestions)))
+
+-- | Build a diagnostic for a lazy import of a core/stdlib module.
+lazyImportCoreModuleDiagnostic :: Code.Source -> A.Region -> Name.Name -> Diagnostic
+lazyImportCoreModuleDiagnostic source region name =
+  Diag.makeDiagnostic
+    (EC.canonError 45)
+    Diag.SError
+    Diag.PhaseCanon
+    "BAD LAZY IMPORT"
+    (Text.pack ("Core module `" <> Name.toChars name <> "` cannot be lazy-imported"))
+    (LabeledSpan region "core module" SpanPrimary)
+    (extractReportMessage (toReport source (LazyImportCoreModule region name)))
+
+-- | Build a diagnostic for a lazy import inside a package context.
+lazyImportInPackageDiagnostic :: Code.Source -> A.Region -> Name.Name -> Diagnostic
+lazyImportInPackageDiagnostic source region name =
+  Diag.makeDiagnostic
+    (EC.canonError 46)
+    Diag.SError
+    Diag.PhaseCanon
+    "BAD LAZY IMPORT"
+    (Text.pack ("Lazy import of `" <> Name.toChars name <> "` is not allowed in packages"))
+    (LabeledSpan region "lazy import in package" SpanPrimary)
+    (extractReportMessage (toReport source (LazyImportInPackage region name)))
+
+-- | Build a diagnostic for a module lazy-importing itself.
+lazyImportSelfDiagnostic :: Code.Source -> A.Region -> Name.Name -> Diagnostic
+lazyImportSelfDiagnostic source region name =
+  Diag.makeDiagnostic
+    (EC.canonError 47)
+    Diag.SError
+    Diag.PhaseCanon
+    "BAD LAZY IMPORT"
+    (Text.pack ("Module `" <> Name.toChars name <> "` cannot lazy-import itself"))
+    (LabeledSpan region "self lazy import" SpanPrimary)
+    (extractReportMessage (toReport source (LazyImportSelf region name)))
+
+-- | Build a diagnostic for a lazy import of an internal kernel module.
+lazyImportKernelDiagnostic :: Code.Source -> A.Region -> Name.Name -> Diagnostic
+lazyImportKernelDiagnostic source region name =
+  Diag.makeDiagnostic
+    (EC.canonError 48)
+    Diag.SError
+    Diag.PhaseCanon
+    "BAD LAZY IMPORT"
+    (Text.pack ("Kernel module `" <> Name.toChars name <> "` cannot be lazy-imported"))
+    (LabeledSpan region "kernel module" SpanPrimary)
+    (extractReportMessage (toReport source (LazyImportKernel region name)))
 
 -- BAD TYPE VARIABLES
 

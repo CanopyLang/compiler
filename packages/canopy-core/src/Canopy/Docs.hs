@@ -256,7 +256,7 @@ precDecoder =
 -- FROM MODULE
 
 fromModule :: Can.Module -> IO (Either E.Error Module)
-fromModule modul@(Can.Module _ exports docs _ _ _ _ _) =
+fromModule modul@(Can.Module _ exports docs _ _ _ _ _ _) =
   case exports of
     Can.ExportEverything region ->
       pure (Left (E.ImplicitExposing region))
@@ -400,7 +400,7 @@ onlyInExports name (A.At region _) =
 
 -- | Thread-safe version of checkDefs that handles IO for comment processing
 checkDefsIO :: Map.Map Name.Name (A.Located Can.Export) -> Src.Comment -> Map.Map Name.Name Src.Comment -> Can.Module -> IO (Either E.Error Module)
-checkDefsIO exportDict overview comments (Can.Module name _ _ decls unions aliases infixes effects) = do
+checkDefsIO exportDict overview comments (Can.Module name _ _ decls unions aliases infixes effects _) = do
   let types = gatherTypes decls Map.empty
       info = Info comments types unions aliases infixes effects
   case Result.run (Map.traverseWithKey (checkExportIO info) exportDict) of

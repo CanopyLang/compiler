@@ -427,7 +427,7 @@ checkOneImport usedNames imp
 
 -- | Check whether at least one name from the import appears in the module.
 isImportUsed :: Set.Set String -> Src.Import -> Bool
-isImportUsed usedNames (Src.Import (A.At _ modName) alias exposing) =
+isImportUsed usedNames (Src.Import (A.At _ modName) alias exposing _isLazy) =
   qualifierUsed || exposedNamesUsed
   where
     qualifier = maybe (Name.toChars modName) Name.toChars alias
@@ -541,7 +541,7 @@ collectNamesInType t =
 --
 -- The auto-fix removes the entire import line range based on the AST region.
 unusedImportWarning :: Src.Import -> LintWarning
-unusedImportWarning (Src.Import (A.At region modName) _ _) =
+unusedImportWarning (Src.Import (A.At region modName) _ _ _) =
   LintWarning
     { _warnRegion = region,
       _warnRule = UnusedImport,

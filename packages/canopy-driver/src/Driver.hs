@@ -113,7 +113,7 @@ compileFromSource pkg ifaces sourceModule = do
   ffiContent <- loadFFIContent sourceModule
   let foreignImports = Src._foreignImports sourceModule
       ffiInfoMap = buildFFIInfoMap foreignImports ffiContent
-  canonResult <- runCanonicalizePhase engine "<source>" pkg ifaces ffiContent sourceModule
+  canonResult <- runCanonicalizePhase engine "<source>" pkg Parse.Application ifaces ffiContent sourceModule
   case canonResult of
     Left err -> return (Left err)
     Right canonModule -> do
@@ -157,7 +157,7 @@ compileModuleFull engine pkg ifaces path projectType = do
       ffiContent <- loadFFIContent sourceModule
       let foreignImports = Src._foreignImports sourceModule
           ffiInfoMap = buildFFIInfoMap foreignImports ffiContent
-      canonResult <- runCanonicalizePhase engine path pkg ifaces ffiContent sourceModule
+      canonResult <- runCanonicalizePhase engine path pkg projectType ifaces ffiContent sourceModule
       case canonResult of
         Left err -> return (Left err)
         Right canonModule -> do
@@ -234,13 +234,14 @@ runCanonicalizePhase ::
   Engine.QueryEngine ->
   FilePath ->
   Pkg.Name ->
+  Parse.ProjectType ->
   Map ModuleName.Raw I.Interface ->
   Map String String ->
   Src.Module ->
   IO (Either QueryError Can.Module)
-runCanonicalizePhase engine path pkg ifaces ffiContent sourceModule = do
+runCanonicalizePhase engine path pkg projectType ifaces ffiContent sourceModule = do
   Engine.trackPhaseExecution engine "canonicalize"
-  CanonQuery.canonicalizeModuleQuery path pkg ifaces ffiContent sourceModule
+  CanonQuery.canonicalizeModuleQuery path pkg projectType ifaces ffiContent sourceModule
 
 -- | Run type check phase.
 --
@@ -274,7 +275,7 @@ generateInterface ::
   Can.Module ->
   Map Name.Name Can.Annotation ->
   IO I.Interface
-generateInterface pkg canonModule@(Can.Module modName _ _ _ _ _ _ _) types = do
+generateInterface pkg canonModule@(Can.Module modName _ _ _ _ _ _ _ _) types = do
   Log.logEvent (InterfaceSaved (show modName))
   let iface = I.fromModule pkg canonModule types
   return iface

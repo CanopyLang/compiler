@@ -27,6 +27,7 @@ import Test.Tasty.HUnit
 import qualified AST.Source as Src
 import qualified Canonicalize.Module as Module
 import qualified Canopy.Package as Pkg
+import Parse.Module (ProjectType (..))
 import qualified Data.Map.Strict as Map
 import qualified Data.Name as Name
 import qualified Data.OneOrMore as OneOrMore
@@ -65,7 +66,7 @@ runCanonicalize modul =
   Result.run (canonicalizeResult modul)
   where
     canonicalizeResult m =
-      fmap (const ()) (Module.canonicalize Pkg.core Map.empty Map.empty m)
+      fmap (const ()) (Module.canonicalize Pkg.core Application Map.empty Map.empty m)
 
 -- | A minimal empty source module with no declarations.
 emptyModule :: Src.Module

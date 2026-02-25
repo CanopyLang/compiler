@@ -182,6 +182,7 @@ import qualified Data.List as List
 import Data.Map (Map)
 import qualified Data.Map as Map
 import Data.Name (Name)
+import Data.Set (Set)
 import qualified Reporting.Annotation as A
 
 -- EXPRESSIONS
@@ -426,7 +427,8 @@ data Module = Module
     _unions :: Map Name Union,
     _aliases :: Map Name Alias,
     _binops :: Map Name Binop,
-    _effects :: Effects
+    _effects :: Effects,
+    _lazyImports :: !(Set ModuleName.Canonical)
   }
 
 data Alias = Alias [Name] Type

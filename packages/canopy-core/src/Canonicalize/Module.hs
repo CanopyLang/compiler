@@ -21,9 +21,11 @@ import qualified Canonicalize.Environment.Local as Local
 import qualified Canonicalize.Expression as Expr
 import qualified Canonicalize.Pattern as Pattern
 import qualified Canonicalize.Type as Type
+import qualified Canopy.Compiler.Imports as Imports
 import qualified Canopy.Interface as I
 import qualified Canopy.ModuleName as ModuleName
 import qualified Canopy.Package as Pkg
+import Parse.Module (ProjectType (..))
 import qualified Data.Graph as Graph
 import qualified Data.Index as Index
 import Data.Maybe (fromMaybe)
@@ -32,6 +34,8 @@ import qualified Data.List as List
 import Data.Map (Map)
 import qualified Data.Map as Map
 import qualified Data.Name as Name
+import Data.Set (Set)
+import qualified Data.Set as Set
 import qualified Data.Text as Text
 import qualified Foreign.FFI as FFI
 import qualified Reporting.Annotation as A
@@ -56,14 +60,20 @@ type Result i w a =
 -- in the IO monad and passed through the compilation pipeline.
 --
 -- @since 0.19.1
-canonicalize :: Pkg.Name -> Map ModuleName.Raw I.Interface -> Map String String -> Src.Module -> Result i [W.Warning] Can.Module
-canonicalize pkg ifaces ffiContentMap modul@(Src.Module _ exports docs imports foreignImports values _ _ binops effects) =
+canonicalize :: Pkg.Name -> ProjectType -> Map ModuleName.Raw I.Interface -> Map String String -> Src.Module -> Result i [W.Warning] Can.Module
+canonicalize pkg projectType ifaces ffiContentMap modul@(Src.Module _ exports docs imports foreignImports values _ _ binops effects) =
   do
     let home = ModuleName.Canonical pkg (Src.getName modul)
     let cbinops = Map.fromList (fmap canonicalizeBinop binops)
 
+    -- Validate lazy imports before environment creation (they are excluded
+    -- from Foreign.createInitialEnv to avoid spurious ImportNotFound errors)
+    lazySet <- validateAndCollectLazyImports pkg projectType home ifaces imports
+
+    let eagerImports = filter (not . Src._importLazy) imports
+
     (env, cunions, caliases) <-
-      Foreign.createInitialEnv home ifaces imports >>= Local.add modul
+      Foreign.createInitialEnv home ifaces eagerImports >>= Local.add modul
 
     -- Process FFI imports and add to environment using pre-loaded content
     envWithFFI <- addFFIToEnvPure env foreignImports ffiContentMap
@@ -72,7 +82,7 @@ canonicalize pkg ifaces ffiContentMap modul@(Src.Module _ exports docs imports f
     ceffects <- Effects.canonicalize envWithFFI values cunions effects
     cexports <- canonicalizeExports values cunions caliases cbinops ceffects exports
 
-    return $ Can.Module home cexports docs cvalues cunions caliases cbinops ceffects
+    return $ Can.Module home cexports docs cvalues cunions caliases cbinops ceffects lazySet
 
 -- | Legacy canonicalize function for backward compatibility
 --
@@ -85,7 +95,91 @@ canonicalizeWithIO :: Pkg.Name -> Map ModuleName.Raw I.Interface -> Src.Module -
 canonicalizeWithIO pkg ifaces modul@(Src.Module _ _ _ _ foreignImports _ _ _ _ _) = do
   -- Pre-load FFI content
   ffiContentMap <- loadFFIContent foreignImports
-  return $ canonicalize pkg ifaces ffiContentMap modul
+  return $ canonicalize pkg Application ifaces ffiContentMap modul
+
+-- LAZY IMPORT VALIDATION
+
+-- | Validate and collect lazy imports from source imports.
+--
+-- Each lazy import is checked against five rules:
+--
+--   1. Must not be inside a package (code splitting is app-only)
+--   2. Must not be a self-import
+--   3. Must not target a kernel package module
+--   4. Must not target a core/stdlib default import
+--   5. Must exist in the available interfaces
+--
+-- Returns the set of validated canonical lazy module names, or
+-- throws errors for each invalid lazy import encountered.
+--
+-- @since 0.19.2
+validateAndCollectLazyImports ::
+  Pkg.Name ->
+  ProjectType ->
+  ModuleName.Canonical ->
+  Map ModuleName.Raw I.Interface ->
+  [Src.Import] ->
+  Result i w (Set ModuleName.Canonical)
+validateAndCollectLazyImports pkg projectType home ifaces imports =
+  fmap Set.fromList (traverse (validateOneLazy pkg projectType home ifaces) lazyImports)
+  where
+    lazyImports = filter Src._importLazy imports
+
+-- | Validate a single lazy import and resolve to its canonical name.
+validateOneLazy ::
+  Pkg.Name ->
+  ProjectType ->
+  ModuleName.Canonical ->
+  Map ModuleName.Raw I.Interface ->
+  Src.Import ->
+  Result i w ModuleName.Canonical
+validateOneLazy pkg projectType home ifaces (Src.Import (A.At region name) _ _ _) =
+  checkNotPackage region name projectType
+    >> checkNotSelf region name home
+    >> checkNotKernel region name
+    >> checkNotCore region name
+    >> checkExists region name ifaces
+    >> Result.ok (ModuleName.Canonical pkg name)
+
+-- | Reject lazy imports in package context.
+checkNotPackage :: A.Region -> Name.Name -> ProjectType -> Result i w ()
+checkNotPackage region name projectType =
+  case projectType of
+    Package _ -> Result.throw (Error.LazyImportInPackage region name)
+    Application -> Result.ok ()
+
+-- | Reject a module lazily importing itself.
+checkNotSelf :: A.Region -> Name.Name -> ModuleName.Canonical -> Result i w ()
+checkNotSelf region name (ModuleName.Canonical _ selfName)
+  | name == selfName = Result.throw (Error.LazyImportSelf region name)
+  | otherwise = Result.ok ()
+
+-- | Reject lazy imports of internal kernel modules.
+checkNotKernel :: A.Region -> Name.Name -> Result i w ()
+checkNotKernel region name
+  | Name.isKernel name = Result.throw (Error.LazyImportKernel region name)
+  | otherwise = Result.ok ()
+
+-- | Reject lazy imports of core/stdlib default modules.
+checkNotCore :: A.Region -> Name.Name -> Result i w ()
+checkNotCore region name
+  | Set.member name coreModuleNames =
+      Result.throw (Error.LazyImportCoreModule region name)
+  | otherwise = Result.ok ()
+
+-- | Reject lazy imports of modules not found in available interfaces.
+checkExists :: A.Region -> Name.Name -> Map ModuleName.Raw I.Interface -> Result i w ()
+checkExists region name ifaces
+  | Map.member name ifaces = Result.ok ()
+  | otherwise =
+      Result.throw (Error.LazyImportNotFound region name (Map.keys ifaces))
+
+-- | The set of module names that are default core imports.
+--
+-- Derived from 'Imports.defaults' so it stays in sync automatically.
+coreModuleNames :: Set Name.Name
+coreModuleNames =
+  Set.fromList (fmap Src.getImportName Imports.defaults)
 
 -- CANONICALIZE BINOP
 

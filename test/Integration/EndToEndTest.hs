@@ -124,7 +124,7 @@ testSimpleValueDefinition :: TestTree
 testSimpleValueDefinition =
   testCase "simple value definition compiles" $
     assertCompileSuccess "/tmp/canopy-e2e-value.can" valueSource $ \result -> do
-      let Can.Module canonName _ _ _ unions _ _ _ = Driver.compileResultModule result
+      let Can.Module canonName _ _ _ unions _ _ _ _ = Driver.compileResultModule result
       assertModuleName canonName "SimpleValue"
       assertBool
         "canonical module has the SimpleVal union"
@@ -150,7 +150,7 @@ testFunctionWithParameters :: TestTree
 testFunctionWithParameters =
   testCase "function with parameters compiles" $
     assertCompileSuccess "/tmp/canopy-e2e-func.can" funcSource $ \result -> do
-      let Can.Module canonName _ _ _ unions _ _ _ = Driver.compileResultModule result
+      let Can.Module canonName _ _ _ unions _ _ _ _ = Driver.compileResultModule result
       assertModuleName canonName "FuncParams"
       assertBool
         "canonical module has Wrapper union"
@@ -180,7 +180,7 @@ testCaseExpression :: TestTree
 testCaseExpression =
   testCase "case expression compiles" $
     assertCompileSuccess "/tmp/canopy-e2e-case.can" caseSource $ \result -> do
-      let Can.Module canonName _ _ _ unions _ _ _ = Driver.compileResultModule result
+      let Can.Module canonName _ _ _ unions _ _ _ _ = Driver.compileResultModule result
       assertModuleName canonName "CaseExpr"
       assertBool
         "canonical module has Color union"
@@ -218,7 +218,7 @@ testRecordDefinition :: TestTree
 testRecordDefinition =
   testCase "record definition compiles" $
     assertCompileSuccess "/tmp/canopy-e2e-record.can" recordSource $ \result -> do
-      let Can.Module canonName _ _ _ unions aliases _ _ = Driver.compileResultModule result
+      let Can.Module canonName _ _ _ unions aliases _ _ _ = Driver.compileResultModule result
       assertModuleName canonName "RecordDef"
       assertBool
         "canonical module has Coord alias"
@@ -252,7 +252,7 @@ testTypeAnnotation :: TestTree
 testTypeAnnotation =
   testCase "type annotation compiles" $
     assertCompileSuccess "/tmp/canopy-e2e-annot.can" annotSource $ \result -> do
-      let Can.Module canonName _ _ _ unions _ _ _ = Driver.compileResultModule result
+      let Can.Module canonName _ _ _ unions _ _ _ _ = Driver.compileResultModule result
       assertModuleName canonName "TypeAnnot"
       assertBool
         "canonical module has MyType union"
@@ -282,7 +282,7 @@ testModuleWithMultipleConstructors :: TestTree
 testModuleWithMultipleConstructors =
   testCase "module with multiple constructors compiles" $
     assertCompileSuccess "/tmp/canopy-e2e-multi-ctor.can" multiCtorSource $ \result -> do
-      let Can.Module canonName _ _ _ unions _ _ _ = Driver.compileResultModule result
+      let Can.Module canonName _ _ _ unions _ _ _ _ = Driver.compileResultModule result
       assertModuleName canonName "MultiCtor"
       assertBool
         "canonical module has Direction union"
@@ -320,7 +320,7 @@ testCustomTypeDefinition :: TestTree
 testCustomTypeDefinition =
   testCase "custom type definition compiles" $
     assertCompileSuccess "/tmp/canopy-e2e-custom.can" customSource $ \result -> do
-      let Can.Module canonName _ _ _ unions _ _ _ = Driver.compileResultModule result
+      let Can.Module canonName _ _ _ unions _ _ _ _ = Driver.compileResultModule result
       assertModuleName canonName "CustomType"
       assertBool
         "canonical module has Tree union"
@@ -349,7 +349,7 @@ testLetExpression :: TestTree
 testLetExpression =
   testCase "let expression compiles" $
     assertCompileSuccess "/tmp/canopy-e2e-let.can" letSource $ \result -> do
-      let Can.Module canonName _ _ _ unions _ _ _ = Driver.compileResultModule result
+      let Can.Module canonName _ _ _ unions _ _ _ _ = Driver.compileResultModule result
       assertModuleName canonName "LetExpr"
       assertBool
         "canonical module has Pair union"
@@ -383,7 +383,7 @@ testMultipleDeclarations :: TestTree
 testMultipleDeclarations =
   testCase "multiple declarations compile" $
     assertCompileSuccess "/tmp/canopy-e2e-multi.can" multiSource $ \result -> do
-      let Can.Module canonName _ _ _ unions aliases _ _ = Driver.compileResultModule result
+      let Can.Module canonName _ _ _ unions aliases _ _ _ = Driver.compileResultModule result
       assertModuleName canonName "MultiDecl"
       assertBool
         "has Shape union"
@@ -425,7 +425,7 @@ testNestedFunctionCalls :: TestTree
 testNestedFunctionCalls =
   testCase "nested function calls compile" $
     assertCompileSuccess "/tmp/canopy-e2e-nested.can" nestedSource $ \result -> do
-      let Can.Module canonName _ _ _ unions _ _ _ = Driver.compileResultModule result
+      let Can.Module canonName _ _ _ unions _ _ _ _ = Driver.compileResultModule result
       assertModuleName canonName "NestedExpr"
       assertBool
         "has Box union"
@@ -463,7 +463,7 @@ testTupleExpression :: TestTree
 testTupleExpression =
   testCase "tuple expression compiles" $
     assertCompileSuccess "/tmp/canopy-e2e-tuple.can" tupleSource $ \result -> do
-      let Can.Module canonName _ _ _ _ _ _ _ = Driver.compileResultModule result
+      let Can.Module canonName _ _ _ _ _ _ _ _ = Driver.compileResultModule result
       assertModuleName canonName "TupleExpr"
       let types = Driver.compileResultTypes result
       assertBool
@@ -492,7 +492,7 @@ testCaseWithWildcard :: TestTree
 testCaseWithWildcard =
   testCase "case with wildcard compiles" $
     assertCompileSuccess "/tmp/canopy-e2e-wildcard.can" wildcardSource $ \result -> do
-      let Can.Module canonName _ _ _ unions _ _ _ = Driver.compileResultModule result
+      let Can.Module canonName _ _ _ unions _ _ _ _ = Driver.compileResultModule result
       assertModuleName canonName "WildcardCase"
       assertBool
         "has Animal union"

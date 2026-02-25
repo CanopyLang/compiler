@@ -78,7 +78,7 @@ attemptImport inputLines =
     parser = P.specialize (\_ _ _ -> ()) PM.chompImport
     parseResult = P.fromByteString parser (\_ _ -> ()) src
 
-    successHandler (Src.Import (A.At _ name) _ _) = Done (Import name src)
+    successHandler (Src.Import (A.At _ name) _ _ _) = Done (Import name src)
     failHandler () = ifFail inputLines (Import (N.fromChars "ERR") src)
 
 -- | Handle parsing failure with continuation logic.

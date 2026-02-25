@@ -426,6 +426,7 @@ createMakeFlags =
     |-- Terminal.flag "report" Make.reportType "You can say --report=json to get error messages as JSON. This is only really useful if you are an editor plugin. Humans should avoid it!"
     |-- Terminal.flag "docs" Make.docsFile "Generate a JSON file of documentation for a package. Eventually it will be possible to preview docs with `reactor` because it is quite hard to deal with these JSON files directly."
     |-- Terminal.onOff "verbose" "Turn on verbose logging when compiling. Useful for debugging errors in the Canopy compiler itself."
+    |-- Terminal.onOff "no-split" "Force single-file output even when lazy imports are present. Useful for debugging code splitting issues."
 
 createInstallDetails :: String
 createInstallDetails =

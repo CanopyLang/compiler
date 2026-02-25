@@ -69,7 +69,7 @@ toSafeImports (ModuleName.Canonical pkg _) imports =
     else imports
 
 isNormal :: Src.Import -> Bool
-isNormal (Src.Import (A.At _ name) maybeAlias _) =
+isNormal (Src.Import (A.At _ name) maybeAlias _ _) =
   not (Name.isKernel name)
     || ( case maybeAlias of
            Nothing -> False
@@ -83,7 +83,7 @@ isNormal (Src.Import (A.At _ name) maybeAlias _) =
 -- ADD IMPORTS
 
 addImport :: Map.Map ModuleName.Raw I.Interface -> State -> Src.Import -> Result i w State
-addImport ifaces state@(State vs ts cs bs qvs qts qcs) (Src.Import (A.At _ name) maybeAlias exposing) =
+addImport ifaces state@(State vs ts cs bs qvs qts qcs) (Src.Import (A.At _ name) maybeAlias exposing _isLazy) =
   -- FIXED: Handle kernel imports by bypassing interface lookup
   if Name.isKernel name
     then Result.ok state  -- Kernel imports don't need interface resolution

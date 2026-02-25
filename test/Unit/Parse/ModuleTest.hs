@@ -51,7 +51,7 @@ testSimpleModule = testCase "parse simple module structure" $ case parseModule M
       _ -> assertFailure "expected NoEffects"
     -- default imports are added automatically; ensure our explicit import exists
     assertBool "List import present" $
-      any (\(Src.Import (A.At _ name) _ _) -> name == Name.list) (Src._imports modul)
+      any (\(Src.Import (A.At _ name) _ _ _) -> name == Name.list) (Src._imports modul)
     length (Src._values modul) @?= 2
     length (Src._aliases modul) @?= 1
     length (Src._unions modul) @?= 1
@@ -61,7 +61,7 @@ testImportsAndExports :: TestTree
 testImportsAndExports = testCase "imports and exports parsed" $ case parseModule M.Application simpleModuleSrc of
   Right m -> do
     let isListImport = \case
-          Src.Import (A.At _ name) (Just alias) _ -> name == Name.list || alias == Name.fromChars "L"
+          Src.Import (A.At _ name) (Just alias) _ _ -> name == Name.list || alias == Name.fromChars "L"
           _ -> False
     assertBool "has List import with alias" (any isListImport (Src._imports m))
     case Src._exports m of

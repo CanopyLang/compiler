@@ -546,7 +546,7 @@ getName (Module maybeName _ _ _ _ _ _ _ _ _) =
 --
 -- @since 0.19.1
 getImportName :: Import -> Name
-getImportName (Import (A.At _ impName) _ _) =
+getImportName (Import (A.At _ impName) _ _ _) =
   impName
 
 -- | Import declaration in source code.
@@ -565,7 +565,8 @@ getImportName (Import (A.At _ impName) _ _) =
 data Import = Import
   { _importName :: A.Located Name,
     _importAlias :: Maybe Name,
-    _importExposing :: Exposing
+    _importExposing :: Exposing,
+    _importLazy :: !Bool
   }
   deriving (Show)
 

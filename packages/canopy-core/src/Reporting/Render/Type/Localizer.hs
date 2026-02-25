@@ -77,7 +77,7 @@ fromModule modul@(Src.Module _ _ _ imports _ _ _ _ _ _) =
   Localizer . Map.fromList $ ((Src.getName modul, Import Nothing All) : fmap toPair imports)
 
 toPair :: Src.Import -> (Name.Name, Import)
-toPair (Src.Import (A.At _ name) alias exposing) =
+toPair (Src.Import (A.At _ name) alias exposing _isLazy) =
   ( name,
     Import alias (toExposing exposing)
   )

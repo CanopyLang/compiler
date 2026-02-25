@@ -58,7 +58,7 @@ showUnion (A.At _ (Src.Union (A.At _ n) _ ctors)) =
 
 showListImport :: [Src.Import] -> String
 showListImport is =
-  let lists = [i | i@(Src.Import (A.At _ n) _ _) <- is, n == Name.list]
+  let lists = [i | i@(Src.Import (A.At _ n) _ _ _) <- is, n == Name.list]
       pick =
         case filter hasAlias lists of
           (x : _) -> x
@@ -67,12 +67,12 @@ showListImport is =
             [] -> case lists of
               (x : _) -> x
               [] -> error "no List import"
-      hasAlias (Src.Import _ alias _) = Maybe.isJust alias
-      hasExplicit (Src.Import _ _ exposing) = case exposing of
+      hasAlias (Src.Import _ alias _ _) = Maybe.isJust alias
+      hasExplicit (Src.Import _ _ exposing _) = case exposing of
         Src.Open -> False
         Src.Explicit _ -> True
    in case pick of
-        Src.Import (A.At _ _) alias exposing ->
+        Src.Import (A.At _ _) alias exposing _ ->
           let aliasStr = maybe "" (\a -> " as " <> Name.toChars a) alias
               expoStr = case exposing of
                 Src.Open -> " exposing(..)"

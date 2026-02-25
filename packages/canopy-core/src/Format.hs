@@ -237,11 +237,12 @@ compareImports a b =
 --
 -- @since 0.19.1
 formatImport :: Src.Import -> P.Doc
-formatImport (Src.Import locName maybeAlias exposing) =
+formatImport (Src.Import locName maybeAlias exposing isLazy) =
   P.hsep (List.filter notEmpty parts)
   where
     parts =
-      [ P.text "import"
+      [ if isLazy then P.text "lazy" else P.empty
+      , P.text "import"
       , locNameDoc locName
       , maybe P.empty renderAlias maybeAlias
       , exposingClause exposing

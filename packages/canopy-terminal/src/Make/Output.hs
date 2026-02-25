@@ -25,6 +25,7 @@ module Make.Output
 
     -- * Specific Generators
     generateJavaScript,
+    generateSplitJavaScript,
     generateHtml,
     generateDevNull,
 
@@ -42,6 +43,7 @@ import Control.Lens ((^.))
 import Data.ByteString.Builder (Builder)
 import qualified Data.ByteString.Builder as Builder
 import qualified Data.ByteString as ByteString
+import qualified Data.ByteString.Lazy as ByteString.Lazy
 import Data.Function ((&))
 import qualified Data.Name as Name
 import qualified Data.NonEmptyList as NonEmptyList
@@ -49,6 +51,7 @@ import qualified Data.Text as Text
 import qualified Data.Text.Encoding as Text
 import qualified File
 import qualified Generate.Html as Html
+import qualified Generate.JavaScript.CodeSplit.Types as Split
 import qualified Generate.JavaScript.SourceMap as SourceMap
 import Logging.Event (LogEvent (..))
 import qualified Logging.Logger as Log
@@ -61,6 +64,7 @@ import Make.Types
     bcStyle,
   )
 import qualified Reporting.Task as Task
+import qualified System.Directory as Dir
 import qualified System.FilePath as FilePath
 
 -- | Generate output based on artifacts and optional target.
@@ -123,6 +127,83 @@ generateJavaScript ctx artifacts target = do
       jsWithRef = appendSourceMapRef target builder maybeSourceMap
   writeOutputFile (ctx ^. bcStyle) target jsWithRef rootNames
   Task.io (writeSourceMapFile target maybeSourceMap)
+
+-- | Generate code-split JavaScript output to a directory.
+--
+-- Writes each chunk as a separate file in the output directory,
+-- plus a @manifest.json@ for server-side tooling. The entry chunk
+-- is always @entry.js@; lazy and shared chunks have content-hashed
+-- filenames for cache-busting.
+--
+-- @since 0.19.2
+generateSplitJavaScript ::
+  BuildContext ->
+  Split.SplitOutput ->
+  FilePath ->
+  Task ()
+generateSplitJavaScript _ctx splitOutput targetDir = do
+  Task.io (Log.logEvent (BuildStarted (Text.pack ("Generating split JS to: " <> targetDir))))
+  Task.io (Dir.createDirectoryIfMissing True targetDir)
+  Task.io (writeChunks targetDir chunks)
+  Task.io (writeManifest targetDir (splitOutput ^. Split.soManifest))
+  Task.io (reportChunkSizes chunks)
+  where
+    chunks = splitOutput ^. Split.soChunks
+
+-- | Write all chunk files to the output directory.
+writeChunks :: FilePath -> [Split.ChunkOutput] -> IO ()
+writeChunks dir = mapM_ (writeChunk dir)
+
+-- | Write a single chunk file to the output directory.
+writeChunk :: FilePath -> Split.ChunkOutput -> IO ()
+writeChunk dir co = do
+  let path = dir FilePath.</> Split._coFilename co
+  File.writeBuilder path (Split._coBuilder co)
+  Log.logEvent (BuildStarted (Text.pack ("  wrote chunk: " <> Split._coFilename co)))
+
+-- | Write the JSON manifest file to the output directory.
+writeManifest :: FilePath -> Builder -> IO ()
+writeManifest dir manifest =
+  File.writeBuilder (dir FilePath.</> "manifest.json") manifest
+
+-- | Report chunk sizes to the build log.
+--
+-- Logs each chunk's filename and approximate byte size, plus the
+-- total across all chunks. Provides visibility into the split output
+-- so developers can assess whether lazy boundaries are effective.
+--
+-- @since 0.19.2
+reportChunkSizes :: [Split.ChunkOutput] -> IO ()
+reportChunkSizes chunks = do
+  Log.logEvent (BuildStarted (Text.pack "Code splitting:"))
+  mapM_ reportOneChunk chunks
+  Log.logEvent (BuildStarted (Text.pack (totalLine chunks)))
+
+-- | Report a single chunk's size.
+reportOneChunk :: Split.ChunkOutput -> IO ()
+reportOneChunk co =
+  Log.logEvent (BuildStarted (Text.pack ("  " <> padFilename <> formatKB size)))
+  where
+    filename = Split._coFilename co
+    size = chunkBuilderSize (Split._coBuilder co)
+    padFilename = filename <> replicate (35 - length filename) ' '
+
+-- | Compute the byte size of a builder.
+chunkBuilderSize :: Builder -> Int
+chunkBuilderSize =
+  fromIntegral . ByteString.Lazy.length . Builder.toLazyByteString
+
+-- | Format a byte count as a human-readable KB string.
+formatKB :: Int -> String
+formatKB bytes =
+  show (fromIntegral bytes / (1024.0 :: Double) :: Double) <> " KB"
+
+-- | Build the summary total line for chunk size reporting.
+totalLine :: [Split.ChunkOutput] -> String
+totalLine chunks =
+  "  Total: " <> formatKB total <> " (" <> show (length chunks) <> " chunks)"
+  where
+    total = sum (map (chunkBuilderSize . Split._coBuilder) chunks)
 
 -- | Generate HTML output to specified file.
 --

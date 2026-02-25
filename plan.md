@@ -1,735 +1,672 @@
-# Canopy Compiler Runtime & Type-Safe FFI Modernization Plan
+# Canopy Compiler — Code Splitting & Lazy Loading (Revised Plan)
 
-## 🎯 Executive Summary
+## Why Not `canopy.json` Configuration?
 
-This plan outlines a comprehensive redesign of Canopy's runtime architecture, moving from unsafe external dependencies to a modern, type-safe system comprising:
+Configuration-driven splitting is the wrong abstraction. It separates the intent (this module is lazy) from the code that expresses the dependency. Developers must maintain a separate config file, it drifts out of sync, and it makes the laziness invisible at the call site. Every modern language that has solved this well — ES modules (`import()`), ReScript (`Js.import`), TypeScript (dynamic `import()`) — puts the split point in the source code where the dependency lives.
 
-1. **Built-in Runtime**: Core elm/core functionality embedded in the compiler
-2. **Type-Safe FFI**: Revolutionary foreign function interface with compile-time verification
-3. **Security Model**: Sandboxed execution with capability-based permissions
-4. **Migration Strategy**: Smooth transition path for existing ecosystem
-
-**Goal**: Transform Canopy from a "hope it works" system to a production-ready, secure, type-safe compiler that rivals Rust and Go in reliability.
+Canopy has a unique advantage: **full control over the parser, AST, type system, and code generator**. Since all Canopy code is pure and side-effect-free, cross-module code motion is always safe. We should build first-class language-level lazy imports — the best approach for a greenfield compiler.
 
 ---
 
-## 🏗️ Part 1: Embed elm/core in Compiler
+## Design: Language-Level `lazy import`
 
-### Phase 1: Core Runtime Integration (3-4 months)
+### Syntax
 
-#### 1.1 Essential Primitives (Built into Compiler)
-```haskell
--- Type System Primitives (Zero Dependencies)
-data RuntimePrimitive =
-  | TupleConstructor Int        -- _Utils_Tuple2, _Utils_Tuple3
-  | EqualityOperator           -- _Utils_eq (type-safe)
-  | ComparisonOperator         -- _Utils_cmp (type-safe)
-  | ArithmeticOp BinaryOp      -- add, sub, mul, div
-  | ListConstructor            -- _List_Cons, _List_Nil
-  | StringOperation StringOp   -- concat, slice, etc.
-  | PlatformExport            -- _Platform_export (secure)
+```elm
+-- Eager (existing behavior, unchanged)
+import Dashboard
+import Settings exposing (Settings)
 
--- Generated as inline JavaScript, not function calls
-compileAdd :: Expr -> Expr -> JSExpr
-compileAdd left right = JSBinary JSAdd (exprToJS left) (exprToJS right)
--- Result: Direct `x + y` instead of `_Basics_add(x, y)`
+-- Lazy: entire module loaded on demand
+lazy import Dashboard
+lazy import Settings exposing (Settings)
+
+-- Lazy with alias
+lazy import Analytics.Dashboard as Dashboard
 ```
 
-#### 1.2 Compiler-Generated Runtime
-```javascript
-// OLD (elm/core dependency):
-var result = _Basics_add(x, y);  // External function call
+### Semantics
 
-// NEW (compiler-generated):
-var result = x + y;              // Direct JavaScript operation
+1. **Types are always eagerly resolved.** `lazy import` does NOT change type checking. All types, type aliases, and constructors from a lazy module are available at compile time exactly as before. The compiler still validates everything statically.
+
+2. **Values are loaded on demand.** When code references a function or value from a lazy-imported module, the generated JavaScript loads the chunk containing that module (if not already loaded). Since all Canopy functions are pure, the timing of loading has no observable effect on program behavior.
+
+3. **Loading is synchronous-first.** If the chunk is already loaded (e.g., via a `<script>` tag or a previous load), access is instant. If the chunk must be fetched over the network, the runtime returns a `Promise` and the Canopy runtime scheduler handles the async continuation — this is invisible to Canopy code because the effect system already manages async operations.
+
+4. **Backward compatible.** Without any `lazy` keywords, behavior is identical to today's single-file output. No existing code breaks.
+
+### Why This Is Best-in-Class
+
+| Approach | Split point visible at call site | Type-safe | Zero config | Compiler-optimized |
+|----------|--------------------------------|-----------|-------------|-------------------|
+| canopy.json config | No | N/A | No | Yes |
+| ES `import()` | Yes | No (returns `any`) | Yes | No |
+| ReScript `Js.import` | Yes | Yes | Yes | Partial |
+| **Canopy `lazy import`** | **Yes** | **Yes** | **Yes** | **Yes** |
+
+Canopy's purity guarantee means the compiler can:
+- Automatically extract shared chunks (Closure Compiler-style cross-module code motion)
+- Merge tiny chunks based on size heuristics
+- Move pure definitions between chunks freely
+- Guarantee no behavioral difference between eager and lazy loading
+
+---
+
+## Architecture Overview
+
 ```
-
-#### 1.3 Security Model
-```haskell
--- Capability-based runtime permissions
-data RuntimeCapability =
-  | SafeArithmetic    -- +, -, *, / operations
-  | SafeComparison    -- ==, <, > operations
-  | SafeDataAccess    -- Record/list access
-  | ConsoleOutput     -- console.log (dev mode only)
-  | NoNetworkAccess   -- Explicitly forbidden
-  | NoDOMAccess       -- Explicitly forbidden (use FFI)
-  | NoFileSystemAccess -- Explicitly forbidden
-
--- Runtime functions ONLY have access to their declared capabilities
-```
-
-#### 1.4 Implementation Strategy
-```haskell
--- In compiler/src/Generate/Runtime.hs (NEW)
-generateRuntimePrimitive :: RuntimePrimitive -> Mode -> JSExpr
-generateRuntimePrimitive TupleConstructor 2 mode =
-  -- Generate: { $: '#2', a: a, b: b }
-  JSObject [("$", JSString "#2"), ("a", JSIdent "a"), ("b", JSIdent "b")]
-
-generateRuntimePrimitive EqualityOperator mode =
-  -- Generate type-safe equality with compile-time verification
-  generateTypeSafeEquality mode
-
--- NO external JavaScript dependencies for core operations
+Source: `lazy import Foo`
+    | parse (new keyword in import parser)
+    v
+Src.Import with _importLazy = True
+    | canonicalize (type-check as normal, track lazy set)
+    v
+Can.Module with _lazyImports :: Set ModuleName.Canonical
+    | optimize (propagate lazy info into GlobalGraph)
+    v
+Opt.GlobalGraph + lazy boundary set
+    | analyze (partition globals into chunks)
+    v
+ChunkGraph (entry chunk, lazy chunks, shared chunks)
+    | generate (per-chunk JS emission)
+    v
+Multiple Builders + Manifest
+    | output
+    v
+dist/entry.js + dist/chunk-<hash>.js + dist/manifest.json
 ```
 
 ---
 
-## 🌟 Part 2: Pragmatic Type-Safe FFI System
+## Phase 1: Parser & AST — `lazy import` Syntax
 
-### 2.1 Lessons from Other Languages
+### 1A. Extend `Src.Import` with lazy flag
 
-**Gleam's Approach:**
-```gleam
-@external(javascript, "./my_module.mjs", "doThing")
-pub fn do_thing(x: Int) -> String
-```
+**File**: `packages/canopy-core/src/AST/Source.hs`
 
-**Canopy's Refined Approach (Explicit and Safe):**
-```elm
--- Method 1: Explicit Foreign Declarations (Primary)
-foreign import javascript "./dom.js" as DOM
-
--- Explicit type signatures with runtime validation
-createElement : String -> Result DOMError DOMElement
-createElement = DOM.createElement
-
--- Method 2: WebAssembly Integration (Future)
-foreign import wasm "./crypto.wasm" as Crypto
-hash : String -> Bytes
-hash = Crypto.sha256
-
--- Method 3: Gradual TypeScript Integration (When Mature)
-foreign import typescript "./api.d.ts" as API
--- Only for well-typed, mature TypeScript libraries
-```
-
-### 2.2 Controlled JSDoc Type Integration (Primary Approach)
-
-#### 2.2.1 JavaScript Side (JSDoc + Runtime Validation)
-```javascript
-// external/dom.js
-// We control the JSDoc annotations to match our Canopy functions exactly
-
-/**
- * Creates a DOM element with the specified tag name
- * @canopy-type String -> Result DOMError DOMElement
- * @param {string} tagName - HTML tag name (must be valid HTML tag)
- * @returns {Element} The created DOM element
- * @throws {TypeError} When tagName is not a string
- * @throws {DOMException} When tagName is invalid HTML
- */
-export function createElement(tagName) {
-    // Runtime validation matches JSDoc contract
-    if (typeof tagName !== 'string') {
-        throw new TypeError('createElement: tagName must be a string');
-    }
-    try {
-        return document.createElement(tagName);
-    } catch (e) {
-        throw new DOMException(`Invalid tag name: ${tagName}`);
-    }
-}
-
-/**
- * Finds the first element matching the CSS selector
- * @canopy-type String -> Maybe DOMElement
- * @param {string} selector - CSS selector string
- * @returns {Element|null} The found element or null
- * @throws {TypeError} When selector is not a string
- * @throws {DOMException} When selector is invalid CSS
- */
-export function querySelector(selector) {
-    if (typeof selector !== 'string') {
-        throw new TypeError('querySelector: selector must be a string');
-    }
-    try {
-        return document.querySelector(selector);
-    } catch (e) {
-        throw new DOMException(`Invalid CSS selector: ${selector}`);
-    }
-}
-
-/**
- * Fetch with timeout support
- * @canopy-type String -> Int -> Task HttpError Response
- * @param {string} url - The URL to fetch
- * @param {number} timeoutMs - Timeout in milliseconds
- * @returns {Promise<Response>} The fetch response
- * @throws {TypeError} When parameters have wrong types
- * @throws {TimeoutError} When request times out
- * @throws {NetworkError} When network fails
- */
-export async function fetchWithTimeout(url, timeoutMs) {
-    if (typeof url !== 'string') {
-        throw new TypeError('fetchWithTimeout: url must be a string');
-    }
-    if (typeof timeoutMs !== 'number') {
-        throw new TypeError('fetchWithTimeout: timeoutMs must be a number');
-    }
-
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
-
-    try {
-        const response = await fetch(url, { signal: controller.signal });
-        clearTimeout(timeoutId);
-        return response;
-    } catch (e) {
-        clearTimeout(timeoutId);
-        if (e.name === 'AbortError') {
-            throw new TimeoutError(`Request timed out after ${timeoutMs}ms`);
-        }
-        throw new NetworkError(`Network error: ${e.message}`);
-    }
-}
-```
-
-#### 2.2.2 Canopy Side (Auto-Generated from JSDoc)
-```elm
--- src/External/DOM.can
-foreign import javascript "./external/dom.js" exposing (..)
-
--- Compiler automatically generates these types from @canopy-type annotations:
--- createElement : String -> Result DOMError DOMElement
--- querySelector : String -> Maybe DOMElement
--- fetchWithTimeout : String -> Int -> Task HttpError Response
-
--- Generated wrapper functions handle error conversion:
-createDivElement : Result DOMError DOMElement
-createDivElement = createElement "div"
-
-findAppElement : Maybe DOMElement
-findAppElement = querySelector "#app"
-
-loadUserData : String -> Task HttpError Response
-loadUserData userId = fetchWithTimeout ("/api/users/" ++ userId) 5000
-
--- Usage is completely type-safe!
-main =
-    case createDivElement of
-        Ok element ->
-            case findAppElement of
-                Just container ->
-                    div [] [ text "Both operations succeeded!" ]
-                Nothing ->
-                    div [] [ text "Container not found" ]
-        Err (DOMError.InvalidTag msg) ->
-            div [] [ text ("DOM Error: " ++ msg) ]
-```
-
-#### 2.2.3 Compiler JSDoc Processing
 ```haskell
--- In compiler/src/Foreign/JSDoc.hs (NEW)
-data JSDocAnnotation = JSDocAnnotation
-  { jsDocCanopyType :: !Text        -- @canopy-type String -> Result Error Value
-  , jsDocParams :: ![JSDocParam]    -- @param annotations
-  , jsDocReturns :: !Text           -- @returns annotation
-  , jsDocThrows :: ![Text]          -- @throws annotations
+data Import = Import
+  { _importName :: A.Located Name
+  , _importAlias :: Maybe Name
+  , _importExposing :: Exposing
+  , _importLazy :: !Bool          -- NEW
   }
-
-parseJSDocFromFile :: FilePath -> IO [JSDocFunction]
-parseJSDocFromFile jsFile = do
-  content <- Text.readFile jsFile
-  return $ extractJSDocFunctions content
-
--- Parse @canopy-type annotation into Canopy type
-parseCanopyType :: Text -> Either ParseError Type
-parseCanopyType "String -> Result DOMError DOMElement" =
-  Right $ TFunc TString (TApp (TConstructor "Result") [TConstructor "DOMError", TConstructor "DOMElement"])
-
--- Generate Canopy wrapper function
-generateFFIWrapper :: JSDocFunction -> CanopyFunction
-generateFFIWrapper jsFunc = CanopyFunction
-  { canopyName = jsFunc.name
-  , canopyType = parseCanopyType jsFunc.canopyType
-  , canopyImplementation = generateErrorHandlingWrapper jsFunc
-  }
-
--- CONTROLLED APPROACH: We write both JSDoc and Canopy sides!
 ```
 
-### 2.3 Advanced FFI Features
+Update `getImportName`, `Show` instance, and any pattern matches on `Import`.
 
-#### 2.3.1 Static Security Analysis (Compile-Time Only)
-```elm
--- Security through static analysis, not runtime overhead
-module MyApp exposing (main)
+### 1B. Parse `lazy` keyword before `import`
 
--- Static analysis detects potentially dangerous patterns
-foreign import javascript "./api.js" as API
+**File**: `packages/canopy-core/src/Parse/Module.hs`
 
--- Compiler warnings for risky operations:
--- ⚠️  Warning: Function 'eval' detected in ./api.js
--- ⚠️  Warning: Global access 'window' detected in ./api.js
--- ⚠️  Warning: Network request without timeout detected
+Modify `chompImport` to optionally consume a `lazy` keyword before `import`:
 
-sendRequest : String -> Task HttpError Response
-sendRequest = API.sendRequest
-```
-
-#### 2.3.2 Explicit Error Handling Patterns
-```javascript
-// external/api.js
-// Clear error handling without magic annotations
-
-export async function fetchData(url) {
-    if (typeof url !== 'string') {
-        throw new TypeError('fetchData: url must be a string');
-    }
-
-    try {
-        const response = await fetch(url);
-        if (!response.ok) {
-            throw new Error(`HTTP ${response.status}: ${response.statusText}`);
-        }
-        return response;
-    } catch (error) {
-        // Normalize error types
-        if (error instanceof TypeError) {
-            throw new Error(`Network error: ${error.message}`);
-        }
-        throw error;
-    }
-}
-```
-
-```elm
--- Explicit error handling in Canopy
-fetchData : String -> Task HttpError Response
-fetchData url =
-    API.fetchData url
-    |> Task.mapError parseHttpError
-
-parseHttpError : String -> HttpError
-parseHttpError message =
-    if String.startsWith "HTTP " message then
-        HttpError.BadStatus (extractStatusCode message)
-    else if String.contains "Network" message then
-        HttpError.NetworkError
-    else
-        HttpError.BadUrl message
-```
-
-#### 2.3.3 WebAssembly Integration
-```elm
--- Future: Direct WebAssembly imports
-foreign import wasm "./crypto.wasm" as Crypto
-
-hash : String -> Bytes
-hash = Crypto.sha256  -- Direct WASM call, maximum performance
-```
-
----
-
-## 🚀 Part 3: Implementation Strategies
-
-### 3.1 Strategy A: JSDoc + Runtime Validation (Recommended)
-
-**Advantages:**
-- ✅ Leverage existing JavaScript ecosystem
-- ✅ Compile-time AND runtime type checking
-- ✅ Gradual adoption possible
-- ✅ Excellent error messages
-- ✅ IDE integration potential
-
-**Implementation:**
 ```haskell
--- 1. Parse JSDoc comments from JavaScript files
-parseJSDocTypes :: FilePath -> IO [JSDocFunction]
+chompImport :: Parser E.Module Src.Import
+chompImport = do
+  isLazy <- chompLazyKeyword
+  Keyword.import_ E.ImportStart
+  -- ... existing parsing ...
+  pure (Src.Import name alias exposing isLazy)
 
--- 2. Generate Canopy type signatures
-jsDocToCanopyType :: JSDocType -> CanopyType
-
--- 3. Generate runtime type validation
-generateRuntimeChecks :: JSDocFunction -> JSExpr
-
--- 4. Compile-time verification
-verifyFFIUsage :: CanopyExpr -> JSDocFunction -> Either TypeError ()
-```
-
-### 3.2 Strategy B: TypeScript Declaration Integration
-
-**For Maximum Ecosystem Compatibility:**
-```elm
--- Import existing TypeScript definitions
-foreign import typescript "@types/node/fs.d.ts" as FS
-foreign import typescript "@types/react/index.d.ts" as React
-
--- Automatic conversion of TypeScript types to Canopy types
-readFile : String -> Task FileError String
-readFile = FS.readFile
-
--- Access to ENTIRE TypeScript ecosystem!
-```
-
-**Implementation:**
-```haskell
--- compiler/src/Foreign/TypeScript.hs
-parseTypeScriptDeclaration :: FilePath -> IO [TSDeclaration]
-tsTypeToCanopyType :: TSType -> CanopyType
-generateFFIBindings :: [TSDeclaration] -> [CanopyBinding]
-```
-
-### 3.3 Strategy C: Rust-Style Extern Blocks
-
-**For Maximum Control:**
-```elm
--- Explicit foreign declarations with full type control
-foreign block "DOM" "./dom.js" exposing
-    createElement : String -> DOMElement
-    querySelector : String -> Maybe DOMElement
-    addEventListener : DOMElement -> String -> (DOMEvent -> msg) -> Cmd msg
-
--- Compiler verifies JavaScript implementations match signatures
-```
-
----
-
-## 🛡️ Part 4: Security & Reliability Model
-
-### 4.1 Capability System
-```elm
--- Each module declares required capabilities
-module WebApp exposing (main)
-
-capabilities
-    [ DOM_ACCESS      -- Can manipulate DOM
-    , HTTP_CLIENT     -- Can make HTTP requests
-    , LOCAL_STORAGE   -- Can access localStorage
-    -- NOT: FILE_SYSTEM, NATIVE_CODE, EVAL
+chompLazyKeyword :: Parser E.Module Bool
+chompLazyKeyword =
+  oneOfWithFallback
+    [ do Keyword.lazy_ E.ImportStart
+         pure True
     ]
-
--- Capabilities are:
--- 1. Explicitly declared (no hidden dependencies)
--- 2. Compile-time verified (no runtime surprises)
--- 3. Minimal by default (principle of least privilege)
--- 4. Auditable (security review possible)
+    False
 ```
 
-### 4.2 Runtime Sandboxing
+Add `lazy_` to `Parse/Keyword.hs` (or equivalent keyword module). Since `lazy` is a new keyword, verify it doesn't conflict with any existing identifiers in the language.
+
+### 1C. Add error reporting for invalid lazy imports
+
+**File**: `packages/canopy-core/src/Reporting/Error/Syntax.hs`
+
+Add error case for `lazy import` on kernel/default modules (which cannot be lazily loaded).
+
+### 1D. Propagate through Binary serialization
+
+**File**: `packages/canopy-core/src/AST/Source.hs`
+
+If `Import` has a `Binary` instance, update it to include the `_importLazy` field.
+
+**Files to modify**:
+- `packages/canopy-core/src/AST/Source.hs` — type change
+- `packages/canopy-core/src/Parse/Module.hs` — parser change
+- `packages/canopy-core/src/Parse/Keyword.hs` (or wherever keywords live) — add `lazy`
+- `packages/canopy-core/src/Reporting/Error/Syntax.hs` — error for invalid lazy usage
+
+---
+
+## Phase 2: Canonicalization — Track Lazy Boundaries
+
+### 2A. Add lazy import tracking to Canonical module
+
+**File**: `packages/canopy-core/src/AST/Canonical.hs`
+
+```haskell
+data Module = Module
+  { ... existing fields ...
+  , _lazyImports :: !(Set ModuleName.Canonical)  -- NEW
+  }
+```
+
+### 2B. Collect lazy imports during canonicalization
+
+**File**: `packages/canopy-core/src/Canonicalize/Module.hs`
+
+During `canonicalize`, when processing imports:
+- For each import with `_importLazy = True`, resolve it to `ModuleName.Canonical` and add to the lazy set
+- Validate: kernel modules, `Basics`, `Platform`, and default imports cannot be lazy (emit error)
+- All name resolution proceeds identically — lazy only affects code generation
+
+### 2C. Propagate through Binary serialization
+
+Update the `Binary` instance for `Can.Module` to include `_lazyImports`.
+
+**Files to modify**:
+- `packages/canopy-core/src/AST/Canonical.hs` — type change + Binary
+- `packages/canopy-core/src/Canonicalize/Module.hs` — collect lazy set
+
+---
+
+## Phase 3: Core Types for Code Splitting
+
+### 3A. Create types module
+
+**New file**: `packages/canopy-core/src/Generate/JavaScript/CodeSplit/Types.hs`
+
+```haskell
+module Generate.JavaScript.CodeSplit.Types where
+
+-- | Unique identifier for a generated chunk.
+newtype ChunkId = ChunkId Text
+
+-- | Classification of a chunk.
+data ChunkKind
+  = EntryChunk      -- Contains runtime + initial code
+  | LazyChunk       -- Loaded on demand
+  | SharedChunk     -- Extracted common code between 2+ chunks
+
+-- | A single chunk of code to be emitted.
+data Chunk = Chunk
+  { _chunkId :: !ChunkId
+  , _chunkKind :: !ChunkKind
+  , _chunkGlobals :: !(Set Opt.Global)
+  , _chunkDeps :: !(Set ChunkId)
+  , _chunkModule :: !(Maybe ModuleName.Canonical)  -- For lazy chunks: trigger module
+  }
+
+-- | Complete chunk graph after analysis.
+data ChunkGraph = ChunkGraph
+  { _cgEntry :: !Chunk
+  , _cgLazy :: ![Chunk]
+  , _cgShared :: ![Chunk]
+  , _cgGlobalToChunk :: !(Map Opt.Global ChunkId)
+  }
+
+-- | Configuration derived from source-level lazy imports.
+data SplitConfig = SplitConfig
+  { _scLazyModules :: !(Set ModuleName.Canonical)
+  , _scMinSharedRefs :: !Int  -- Default: 2
+  }
+
+-- | Final output of the code splitting pipeline.
+data SplitOutput = SplitOutput
+  { _soChunks :: ![ChunkOutput]
+  , _soManifest :: !Builder
+  }
+
+-- | Output for a single chunk.
+data ChunkOutput = ChunkOutput
+  { _coChunkId :: !ChunkId
+  , _coKind :: !ChunkKind
+  , _coBuilder :: !Builder
+  , _coHash :: !Text
+  , _coFilename :: !FilePath
+  , _coSourceMap :: !(Maybe SourceMap.SourceMap)
+  }
+```
+
+Generate lenses for all record types.
+
+**Files**:
+- `packages/canopy-core/src/Generate/JavaScript/CodeSplit/Types.hs` — **NEW**
+- `packages/canopy-core/canopy-core.cabal` — add to exposed-modules
+
+---
+
+## Phase 4: Dependency Graph Analysis
+
+### 4A. Create analysis module
+
+**New file**: `packages/canopy-core/src/Generate/JavaScript/CodeSplit/Analyze.hs`
+
+**Algorithm** (5 steps):
+
+**Step 1 — Reachability from mains**: Starting from each main entry point, compute the full set of reachable globals using the same depth-first traversal as existing `addGlobal`. Collect sets instead of building JS.
+
+**Step 2 — Identify lazy boundaries**: For each module in the lazy set (from `SplitConfig`), find all globals whose `ModuleName` matches. These globals and their transitive dependencies that are NOT reachable from mains without crossing a lazy boundary form lazy chunks.
+
+**Step 3 — Extract shared globals**: Globals reachable from 2+ chunks get extracted into shared chunks. Uses `_scMinSharedRefs` threshold.
+
+**Step 4 — Cross-module code motion** (Closure Compiler-inspired): Since all Canopy code is pure, move definitions DOWN the chunk graph to the deepest chunk that needs them. A definition used only by lazy chunk A should live in chunk A, not shared. A definition used by lazy chunks A and B goes to their LCA in the loading tree (shared chunk).
+
+**Step 5 — Build ChunkGraph**: Assign every reachable global to exactly one chunk. Compute inter-chunk dependency edges. Verify: union of all chunk globals equals full reachable set.
+
+```haskell
+analyze :: SplitConfig -> Opt.GlobalGraph -> Mains -> ChunkGraph
+
+reachableFrom :: Graph -> Set Opt.Global -> Set Opt.Global
+
+identifyLazyGlobals :: Set ModuleName.Canonical -> Graph -> Set Opt.Global
+    -> Map ModuleName.Canonical (Set Opt.Global)
+
+extractShared :: Int -> Map ChunkId (Set Opt.Global)
+    -> (Set Opt.Global, Map ChunkId (Set Opt.Global))
+
+codeMotion :: ChunkGraph -> Graph -> ChunkGraph
+
+buildChunkGraph :: Chunk -> [Chunk] -> [Chunk] -> Map Opt.Global ChunkId -> ChunkGraph
+```
+
+**Edge cases**:
+- **Circular dependencies between lazy modules**: Merge into single lazy chunk
+- **Kernel globals**: Always stay in entry chunk (shared runtime)
+- **FFI functions**: Go into the chunk that first references them
+- **Constructors/Enums**: Go with their defining module's chunk
+- **No lazy imports**: Returns single entry chunk (degenerate case, no splitting)
+
+**Files**:
+- `packages/canopy-core/src/Generate/JavaScript/CodeSplit/Analyze.hs` — **NEW**
+- `packages/canopy-core/canopy-core.cabal` — add module
+
+---
+
+## Phase 5: Chunk-Aware Code Generation
+
+### 5A. Create chunk generation module
+
+**New file**: `packages/canopy-core/src/Generate/JavaScript/CodeSplit/Generate.hs`
+
+Reuses existing `Generate.JavaScript` traversal machinery but operates per-chunk.
+
+```haskell
+generateChunks :: Mode.Mode -> Opt.GlobalGraph -> Mains
+    -> Map String FFIInfo -> ChunkGraph -> SplitOutput
+
+generateChunk :: Mode.Mode -> Graph -> ChunkGraph -> Chunk -> ChunkOutput
+```
+
+**Entry chunk structure** (same IIFE pattern, plus runtime):
 ```javascript
-// Generated runtime wrapper (automatic)
-const secureFFI = {
-    // Only allowed capabilities are exposed
-    createElement: window.document ? dom.createElement : throwCapabilityError,
-    fetch: navigator.onLine ? api.fetch : throwCapabilityError,
-    // File system access: NEVER exposed to web targets
-    readFile: undefined, // Compile-time error if used
-};
-
-// No access to global scope, eval, or dangerous APIs
+(function(scope){'use strict';
+// Runtime (F2-F9, A2-A9)
+// Chunk registry & loader runtime
+var __canopy_chunks = {};
+var __canopy_loaded = {};
+function __canopy_register(id, factory) { __canopy_chunks[id] = factory; }
+function __canopy_load(id) {
+  if (__canopy_loaded[id]) return __canopy_loaded[id];
+  if (__canopy_chunks[id]) {
+    __canopy_loaded[id] = __canopy_chunks[id]();
+    return __canopy_loaded[id];
+  }
+  return new Promise(function(resolve, reject) {
+    var s = document.createElement('script');
+    s.src = __canopy_manifest[id];
+    s.onload = function() {
+      __canopy_loaded[id] = __canopy_chunks[id]();
+      resolve(__canopy_loaded[id]);
+    };
+    s.onerror = reject;
+    document.head.appendChild(s);
+  });
+}
+var __canopy_manifest = { /* chunk-id: filename pairs */ };
+// Entry point code (all non-lazy globals)
+// Main exports
+}(typeof window !== 'undefined' ? window : this));
 ```
 
-### 4.3 Type Safety Guarantees
+**Lazy chunk structure**:
+```javascript
+__canopy_register("lazy-Dashboard-a1b2c3d4", function() {
+  // All globals assigned to this chunk
+  var $author$project$Dashboard$view = ...;
+  return { '$author$project$Dashboard$view': $author$project$Dashboard$view, ... };
+});
+```
+
+### 5B. Add `generateForChunk` to Generate.JavaScript
+
+**File**: `packages/canopy-core/src/Generate/JavaScript.hs`
+
+New entry point that traverses only globals assigned to a specific chunk:
+
 ```haskell
--- Compile-time guarantees:
-data FFISafety =
-  | TypesVerified        -- Input/output types match exactly
-  | ErrorsExplicit       -- All error cases are handled
-  | CapabilitiesMinimal  -- Only required capabilities granted
-  | NoArbitraryJS        -- No eval, Function(), or dynamic code
-  | SandboxedExecution   -- No access to global scope
-  | MemorySafe          -- No buffer overflows or memory corruption
-
--- Runtime guarantees:
--- 1. Type assertions on all FFI boundaries
--- 2. Capability enforcement
--- 3. Error isolation (FFI errors don't crash runtime)
--- 4. Resource limits (prevent DoS attacks)
+generateForChunk :: Mode.Mode -> Graph -> Set Opt.Global
+    -> Map Opt.Global A.Region -> (Builder, [SourceMap.Mapping])
 ```
+
+This uses the same `addGlobal`/`continueAddGlobal` machinery but skips globals that belong to other chunks (they'll be accessed via `__canopy_load`).
+
+### 5C. Chunk-aware cross-references in Expression.hs
+
+**File**: `packages/canopy-core/src/Generate/JavaScript/Expression.hs`
+
+When generating a `VarGlobal` reference, check if the target global is in a different chunk:
+- **Same chunk**: emit direct reference (existing behavior)
+- **Different chunk**: emit `__canopy_load("chunk-id").$global_name`
+
+This requires threading a `ChunkContext` through expression generation:
+
+```haskell
+data ChunkContext
+  = ChunkContext
+      { _ccCurrentChunk :: !ChunkId
+      , _ccGlobalToChunk :: !(Map Opt.Global ChunkId)
+      }
+  | NoSplitting  -- Default: no code splitting active
+```
+
+The `generate` function in Expression.hs gains an optional `ChunkContext` parameter. When `NoSplitting`, behavior is identical to today.
+
+### 5D. Content hashing
+
+SHA-256, truncated to 8 hex chars, for cache-busting filenames:
+```
+entry.js
+chunk-Dashboard-a1b2c3d4.js
+chunk-Settings-e5f6g7h8.js
+shared-i9j0k1l2.js
+```
+
+**Files to modify**:
+- `packages/canopy-core/src/Generate/JavaScript/CodeSplit/Generate.hs` — **NEW**
+- `packages/canopy-core/src/Generate/JavaScript.hs` — add `generateForChunk`
+- `packages/canopy-core/src/Generate/JavaScript/Expression.hs` — chunk-aware references
+- `packages/canopy-core/canopy-core.cabal` — add module
 
 ---
 
-## 📋 Part 5: Implementation Timeline
+## Phase 6: Manifest & Runtime
 
-### Phase 1: Foundation (Months 1-4)
-```
-Week 1-2:   Architecture design and RFC
-Week 3-6:   Core runtime primitives implementation
-Week 7-10:  Basic FFI infrastructure (JSDoc parsing)
-Week 11-16: Security model and capability system
-```
+### 6A. Manifest module
 
-### Phase 2: FFI System (Months 5-8)
-```
-Week 17-20: JSDoc type conversion system
-Week 21-24: Runtime type validation generation
-Week 25-28: TypeScript declaration support
-Week 29-32: Comprehensive testing and validation
-```
+**New file**: `packages/canopy-core/src/Generate/JavaScript/CodeSplit/Manifest.hs`
 
-### Phase 3: Ecosystem Integration (Months 9-12)
-```
-Week 33-36: Migration tools for existing packages
-Week 37-40: IDE integration and tooling
-Week 41-44: Documentation and tutorials
-Week 45-48: Community feedback and refinement
-```
-
-### Phase 4: Advanced Features (Months 13+)
-```
-- WebAssembly integration
-- Advanced security features
-- Performance optimizations
-- Browser/Node.js specific optimizations
-```
-
----
-
-## 🔄 Part 6: Automatic Migration Strategy (Zero Breaking Changes)
-
-### 6.1 Smart Runtime Detection (Revolutionary Backwards Compatibility)
-
-**The Key Insight**: Automatically detect project type and choose appropriate runtime strategy.
-
-#### 6.1.1 Elm Project Detection
-```bash
-# Canopy automatically detects Elm projects
-canopy make src/Main.elm
-
-# Compiler checks:
-# 1. Does elm.json exist?
-# 2. Does canopy.json contain elm/core dependency?
-# 3. Are there kernel imports in source files?
-
-# IF YES: Use legacy elm/core kernel approach (100% compatibility)
-# IF NO:  Use new built-in runtime (automatic optimization)
-```
-
-#### 6.1.2 Implementation in Compiler
 ```haskell
--- In compiler/src/Build/ProjectType.hs (NEW)
-data ProjectType =
-  | ElmProject        -- Has elm/core dependency, use kernel code
-  | CanopyProject     -- Pure Canopy, use built-in runtime
-  | HybridProject     -- Mixed, user choice required
-
-detectProjectType :: FilePath -> IO ProjectType
-detectProjectType projectRoot = do
-  elmJson <- doesFileExist (projectRoot </> "elm.json")
-  canopyJson <- doesFileExist (projectRoot </> "canopy.json")
-
-  case (elmJson, canopyJson) of
-    (True, False) -> checkElmDependencies projectRoot
-    (False, True) -> checkCanopyDependencies projectRoot
-    (True, True)  -> return HybridProject  -- User must choose
-    (False, False) -> return CanopyProject -- Default to new runtime
-
-checkElmDependencies :: FilePath -> IO ProjectType
-checkElmDependencies root = do
-  deps <- parseElmJson (root </> "elm.json")
-  return $ if "elm/core" `elem` deps
-           then ElmProject
-           else CanopyProject
-
--- AUTOMATIC: No user intervention required!
+generateManifest :: [ChunkOutput] -> Builder
+generateRuntime :: [ChunkOutput] -> Builder
 ```
 
-#### 6.1.3 Runtime Selection Logic
-```haskell
--- In compiler/src/Generate.hs
-generateWithProjectType :: ProjectType -> Artifacts -> Builder
-generateWithProjectType projectType artifacts = case projectType of
-
-  ElmProject -> do
-    -- Use legacy elm/core kernel approach (existing code path)
-    -- Include external elm/core dependencies
-    -- Support all existing kernel imports
-    generateLegacyElmRuntime artifacts
-
-  CanopyProject -> do
-    -- Use new built-in runtime (revolutionary approach)
-    -- Automatically include core primitives
-    -- Enable new FFI system
-    generateBuiltInRuntime artifacts
-
-  HybridProject -> do
-    -- Provide clear migration guidance
-    -- Allow user to choose approach
-    promptUserForRuntimeChoice artifacts
-```
-
-### 6.2 Zero-Friction Elm Compatibility
-
-#### 6.2.1 Existing Elm Projects (100% Compatible)
-```bash
-# Existing Elm project
-elm make src/Main.elm --output=main.js
-
-# Switch to Canopy (ZERO code changes required)
-canopy make src/Main.elm --output=main.js
-# ✅ Identical output, identical behavior
-# ✅ All elm/core kernel functions work exactly the same
-# ✅ All existing packages work without modification
-```
-
-#### 6.2.2 New Canopy Projects (Automatic Optimization)
-```bash
-# New Canopy project (no elm.json)
-canopy init my-app
-canopy make src/Main.can --output=main.js
-
-# ✅ Automatically uses built-in runtime
-# ✅ No elm/core dependency needed
-# ✅ Type-safe FFI available immediately
-# ✅ Security model enabled by default
-# ✅ Performance optimizations active
-```
-
-### 6.3 Gradual Migration Path
-
-#### 6.3.1 Migration by Dependency Removal
+Manifest format:
 ```json
-// elm.json (Elm project - uses legacy runtime)
 {
-  "dependencies": {
-    "direct": {
-      "elm/core": "1.0.5",    // ← Remove this line
-      "elm/html": "1.0.0"
-    }
-  }
-}
-
-// canopy.json (Canopy project - uses built-in runtime)
-{
-  "dependencies": {
-    "direct": {
-      "elm/html": "1.0.0"     // ← elm/core automatically provided
-    }
+  "entry": "entry.js",
+  "chunks": {
+    "lazy-Dashboard-a1b2c3d4": "chunk-Dashboard-a1b2c3d4.js",
+    "shared-0-i9j0k1l2": "shared-i9j0k1l2.js"
   }
 }
 ```
 
-#### 6.3.2 Migration Command
-```bash
-# Automatic migration tool
-canopy migrate-to-builtin ./
-# ✅ Removes elm/core from dependencies
-# ✅ Updates import statements if needed
-# ✅ Validates compatibility
-# ✅ Shows performance improvements
+### 6B. Runtime module
 
-# Migration is REVERSIBLE
-canopy migrate-to-legacy ./
-# ✅ Adds elm/core back to dependencies
-# ✅ Ensures 100% backwards compatibility
-```
+**New file**: `packages/canopy-core/src/Generate/JavaScript/CodeSplit/Runtime.hs`
 
-### 6.2 Migration Tools
-```bash
-# Automatic migration tool
-canopy migrate-ffi ./src/MyPackage.elm
-# Converts old kernel code to new FFI syntax
+~40 lines of JavaScript providing:
+- `__canopy_register(id, factory)` — register a chunk's factory function
+- `__canopy_load(id)` — sync load (if registered) or async load (script tag)
+- `__canopy_prefetch(id)` — preload a chunk without executing
+- `__canopy_manifest` — embedded chunk-to-URL mapping
 
-# FFI validation tool
-canopy validate-ffi ./external/api.js
-# Verifies JavaScript matches JSDoc type annotations
+Emitted as raw string builder (using `raw-strings-qq` like `Functions.hs`).
 
-# Capability analyzer
-canopy analyze-capabilities ./src/
-# Shows what capabilities are actually used vs declared
-```
+**Files**:
+- `packages/canopy-core/src/Generate/JavaScript/CodeSplit/Manifest.hs` — **NEW**
+- `packages/canopy-core/src/Generate/JavaScript/CodeSplit/Runtime.hs` — **NEW**
+- `packages/canopy-core/canopy-core.cabal` — add modules
 
 ---
 
-## 🎯 Part 7: Revolutionary Advantages
+## Phase 7: Output Pipeline Integration
 
-### 7.1 vs Current Elm Approach
-```
-Current Elm:     Unchecked kernel code, "hope it works"
-Canopy:         Compile-time verified, runtime-safe FFI
+### 7A. Wire code splitting into Make pipeline
 
-Current Elm:     Limited foreign function capabilities
-Canopy:         Full JavaScript/WASM ecosystem access
+**File**: `packages/canopy-terminal/src/Make.hs` (and related)
 
-Current Elm:     No security model
-Canopy:         Capability-based security with sandboxing
+When lazy imports are detected in the compiled modules, the build pipeline switches from single-file output to split output automatically. No `--split` flag needed — the presence of `lazy import` in source code is the trigger.
 
-Current Elm:     Difficult to debug FFI issues
-Canopy:         Rich error messages and type checking
-```
+Add an escape hatch `--no-split` flag to force single-file output even when lazy imports are present (useful for debugging).
 
-### 7.2 vs Other Languages
-```
-Rust:           Unsafe blocks, manual memory management
-Canopy:         Type-safe FFI with automatic memory management
-
-PureScript:     Complex FFI syntax, limited tooling
-Canopy:         Simple syntax with excellent tooling
-
-ReScript:       No type safety at FFI boundaries
-Canopy:         Full type safety everywhere
-
-JavaScript:     No type safety anywhere
-Canopy:         Type safety with JavaScript ecosystem access
-```
-
-### 7.3 Unique Innovations
-```
-1. JSDoc type integration (first of its kind)
-2. Capability-based security for web languages
-3. Compile-time FFI verification with runtime safety
-4. Seamless TypeScript ecosystem integration
-5. WebAssembly-first foreign function design
-```
-
----
-
-## ⚡ Part 8: Performance Benefits
-
-### 8.1 Built-in Runtime
-```javascript
-// OLD: Function call overhead
-var result = _Basics_add(_Basics_mul(x, 2), y);
-
-// NEW: Direct JavaScript operations
-var result = (x * 2) + y;
-
-// Performance improvement: 2-5x faster for arithmetic
-```
-
-### 8.2 Optimized FFI
-```javascript
-// OLD: Generic runtime wrapper
-function callFFI(funcName, args) {
-    return window[funcName].apply(null, args);
-}
-
-// NEW: Direct function calls with inline type checks
-function createElement_checked(tagName) {
-    if (typeof tagName !== 'string') throw new TypeError('Expected string');
-    return createElement(tagName);  // Direct call
-}
-
-// Performance improvement: 10-20x faster FFI calls
-```
-
-### 8.3 Dead Code Elimination
 ```haskell
--- Compiler knows exactly what's used
--- Only includes necessary runtime functions
--- Tree-shaking at the primitive level
--- Smaller bundle sizes: 50-80% reduction possible
+-- In Make pipeline, after compilation:
+if Set.null allLazyImports
+  then generateSingleFile ...    -- existing path
+  else generateSplitFiles ...    -- new path
+```
+
+### 7B. Extend output to handle multiple files
+
+**File**: `packages/canopy-terminal/src/Make/Output.hs`
+
+```haskell
+generateSplitOutput :: BuildContext -> SplitConfig
+    -> Compiler.Artifacts -> FilePath -> Task ()
+```
+
+Writes:
+1. `entry.js` — the entry chunk
+2. `chunk-<name>-<hash>.js` — each lazy chunk
+3. `shared-<hash>.js` — each shared chunk
+4. `manifest.json` — the chunk manifest
+5. `*.js.map` — source maps per chunk (dev mode)
+
+### 7C. Add `--no-split` CLI flag
+
+**File**: `packages/canopy-terminal/src/Make/Types.hs`
+
+```haskell
+data Flags = Flags
+  { ... existing ...
+  , _noSplit :: !Bool  -- --no-split to disable automatic splitting
+  }
+```
+
+**Files to modify**:
+- `packages/canopy-terminal/src/Make.hs` — routing logic
+- `packages/canopy-terminal/src/Make/Output.hs` — split output
+- `packages/canopy-terminal/src/Make/Types.hs` — flag
+- `packages/canopy-terminal/src/Make/Environment.hs` — parse flag
+
+---
+
+## Phase 8: Comprehensive Test Suite
+
+### 8A. Parser tests (~15 tests)
+
+**New file**: `test/Unit/Parse/LazyImportTest.hs`
+
+- `lazy import Foo` parses with `_importLazy = True`
+- `import Foo` parses with `_importLazy = False`
+- `lazy import Foo exposing (bar)` works
+- `lazy import Foo as F` works
+- `lazy import Foo as F exposing (bar, Baz)` works
+- `lazy` as variable name still works in expressions (not a reserved word in expression context)
+- Error: `lazy import Basics` rejected
+- Error: `lazy foreign import` rejected
+- Round-trip: parse then show preserves lazy flag
+
+### 8B. Analysis tests (~30 tests)
+
+**New file**: `test/Unit/Generate/CodeSplit/AnalyzeTest.hs`
+
+- No lazy imports -> single entry chunk, no splitting
+- Single lazy module -> entry + lazy chunk
+- Multiple lazy modules -> entry + N lazy chunks
+- Shared globals extracted when referenced by 2+ chunks
+- Kernel globals always in entry chunk
+- Circular lazy deps merged into single chunk
+- `minSharedRefs` threshold respected
+- Every reachable global assigned to exactly one chunk
+- Inter-chunk deps computed correctly
+- Code motion pushes definitions to deepest possible chunk
+- Empty lazy module handled gracefully
+- Lazy module with only type exports -> no chunk generated
+
+### 8C. Generation tests (~25 tests)
+
+**New file**: `test/Unit/Generate/CodeSplit/GenerateTest.hs`
+
+- Entry chunk contains runtime code
+- Entry chunk contains manifest
+- Lazy chunks wrapped in `__canopy_register`
+- Cross-chunk references use `__canopy_load`
+- Content hashes are deterministic
+- Dev mode generates source maps per chunk
+- Prod mode applies string pool per chunk
+- Same-chunk references remain direct (no unnecessary load)
+
+### 8D. Manifest & runtime tests (~15 tests)
+
+**New file**: `test/Unit/Generate/CodeSplit/ManifestTest.hs`
+
+- Manifest JSON is valid
+- All chunks present in manifest
+- Hashes in filenames match content
+- Runtime includes all required functions
+- Runtime handles missing chunks gracefully
+
+### 8E. Integration tests (~15 tests)
+
+**New file**: `test/Integration/CodeSplitIntegrationTest.hs`
+
+- Compile with lazy imports produces multiple JS files
+- Entry chunk loads standalone
+- Lazy chunks register correctly
+- Manifest matches actual files on disk
+- Production mode splits correctly
+- No lazy imports produces single file (backward compat)
+- Invalid lazy module name produces helpful error
+- `--no-split` forces single file even with lazy imports
+
+### 8F. Property tests (~10 tests)
+
+**New file**: `test/Property/Generate/CodeSplitProperties.hs`
+
+- Every reachable global appears in exactly one chunk
+- Chunk dependency graph is acyclic
+- Entry chunk has no incoming chunk dependencies
+- Union of all chunk globals equals full reachable set
+- Content hashes are deterministic (same input -> same hash)
+- Code motion never increases total chunk count
+- Shared extraction never duplicates globals
+
+---
+
+## Phase 9: Performance & Polish
+
+### 9A. Chunk size reporting
+
+In verbose/dev mode, report chunk sizes after compilation:
+```
+Code splitting:
+  entry.js          42.3 KB
+  chunk-Dashboard-a1b2.js  18.7 KB
+  chunk-Settings-e5f6.js   12.1 KB
+  shared-i9j0.js     8.4 KB
+  Total: 81.5 KB (4 chunks)
+```
+
+### 9B. Prefetch hints in HTML
+
+When generating HTML output, emit `<link rel="prefetch">` tags for lazy chunks:
+```html
+<link rel="prefetch" href="chunk-Dashboard-a1b2c3d4.js">
+```
+
+### 9C. Incremental analysis caching
+
+Cache the `ChunkGraph` alongside existing build caches. Only re-analyze when the dependency graph or lazy import set changes.
+
+---
+
+## Files Summary
+
+| File | Change |
+|------|--------|
+| `packages/canopy-core/src/AST/Source.hs` | Add `_importLazy` field to `Import` |
+| `packages/canopy-core/src/AST/Canonical.hs` | Add `_lazyImports` to `Module` |
+| `packages/canopy-core/src/Parse/Module.hs` | Parse `lazy` keyword before `import` |
+| `packages/canopy-core/src/Parse/Keyword.hs` | Add `lazy_` keyword |
+| `packages/canopy-core/src/Canonicalize/Module.hs` | Collect lazy import set |
+| `packages/canopy-core/src/Reporting/Error/Syntax.hs` | Error for invalid lazy imports |
+| `packages/canopy-core/src/Generate/JavaScript/CodeSplit/Types.hs` | **NEW** Core types |
+| `packages/canopy-core/src/Generate/JavaScript/CodeSplit/Analyze.hs` | **NEW** Graph partitioning |
+| `packages/canopy-core/src/Generate/JavaScript/CodeSplit/Generate.hs` | **NEW** Per-chunk JS gen |
+| `packages/canopy-core/src/Generate/JavaScript/CodeSplit/Manifest.hs` | **NEW** Manifest JSON |
+| `packages/canopy-core/src/Generate/JavaScript/CodeSplit/Runtime.hs` | **NEW** Chunk loader JS |
+| `packages/canopy-core/src/Generate/JavaScript.hs` | Add `generateForChunk` entry point |
+| `packages/canopy-core/src/Generate/JavaScript/Expression.hs` | Chunk-aware cross-references |
+| `packages/canopy-core/canopy-core.cabal` | Add 5 new modules |
+| `packages/canopy-terminal/src/Make.hs` | Route to split pipeline |
+| `packages/canopy-terminal/src/Make/Output.hs` | Split output handling |
+| `packages/canopy-terminal/src/Make/Types.hs` | Add `--no-split` flag |
+| `packages/canopy-terminal/src/Make/Environment.hs` | Parse flag |
+| 6 new test files | ~110 tests total |
+
+---
+
+## Execution Order
+
+| Phase | Description | Risk | Dependencies |
+|-------|------------|------|-------------|
+| 1 | Parser & AST (`lazy import`) | Low | None — purely additive |
+| 2 | Canonicalization (lazy tracking) | Low | Phase 1 |
+| 3 | Core types | Low | None — standalone |
+| 4 | Graph analysis | High | Phases 2, 3 — core algorithm |
+| 5 | Chunk-aware codegen | High | Phases 3, 4 — most invasive |
+| 6 | Manifest & runtime | Low | Phase 3 — standalone |
+| 7 | Output pipeline | Medium | Phases 4, 5, 6 |
+| 8 | Tests | Low | Phases 1-7 |
+| 9 | Performance & polish | Low | Phase 7 |
+
+Phases 1+3 and 2+6 can run in parallel. Phase 4 is high-risk because the partitioning + code motion algorithm must handle all edge cases. Phase 5 is high-risk because threading chunk context into expression generation is the most invasive change to existing code.
+
+---
+
+## Verification Protocol
+
+After each phase:
+```bash
+make build    # zero warnings
+make test     # all existing tests pass
+```
+
+After Phase 8:
+```bash
+make test     # all tests including new code splitting tests
+
+# Manual: compile a test app with lazy imports
+echo 'lazy import Dashboard' > test-app/src/Main.can
+canopy make src/Main.can --output=dist/
+ls dist/          # entry.js, chunk-Dashboard-*.js, manifest.json
+node dist/entry.js  # entry chunk runs standalone
 ```
 
 ---
 
-## 🎉 Conclusion: The Future of Type-Safe Compilation
+## Key Design Decisions
 
-This plan transforms Canopy from an Elm clone into a **revolutionary compiler** that:
-
-1. **Eliminates "hope it works" programming** with compile-time verified FFI
-2. **Provides security guarantees** through capability-based permissions
-3. **Delivers performance benefits** with built-in optimized runtime
-4. **Enables JavaScript ecosystem access** while maintaining type safety
-5. **Sets new standards** for what a modern compiler should provide
-
-**This isn't just an improvement - it's a paradigm shift that makes Canopy competitive with Rust, Go, and other modern languages while retaining the simplicity and safety of functional programming.**
-
-The combination of built-in runtime + type-safe FFI creates a **unique value proposition** that no other language currently offers:
-
-> **"All the safety of Haskell, all the ecosystem of JavaScript, with the performance of native compilation."**
-
-This is the future of web development, and Canopy can lead the way.
+1. **`lazy import` in source code, not config** — intent lives where the dependency is expressed
+2. **Types always eager** — no change to type checking or inference; lazy is purely a codegen concern
+3. **Automatic shared extraction** — compiler analyzes cross-chunk sharing; developer never manually configures shared chunks
+4. **Cross-module code motion** — Canopy's purity guarantee enables Closure Compiler-style optimization that JavaScript bundlers cannot safely do
+5. **Synchronous-first loading** — if already loaded, zero overhead; async only for network fetch
+6. **No `--split` flag needed** — presence of `lazy import` triggers splitting automatically
+7. **Backward compatible** — no lazy imports = identical output to today
+8. **Source maps per chunk** — each chunk gets its own `.js.map` in dev mode

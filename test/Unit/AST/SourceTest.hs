@@ -33,7 +33,7 @@ testGetNameExplicit = testCase "getName returns explicit module name" $ do
 
 testGetImportName :: TestTree
 testGetImportName = testCase "getImportName extracts base name" $ do
-  let imp = Src.Import (A.At A.one (Name.fromChars "Html")) Nothing Src.Open
+  let imp = Src.Import (A.At A.one (Name.fromChars "Html")) Nothing Src.Open False
   Src.getImportName imp @?= Name.fromChars "Html"
 
 testExprConstructors :: TestTree
@@ -123,7 +123,7 @@ testModuleConstruction :: TestTree
 testModuleConstruction = testCase "module with values, unions, aliases, infix, effects" $ do
   let exportAll = A.At A.one Src.Open
   let docs = Src.NoDocs A.one
-  let imports = [Src.Import (A.At A.one (Name.fromChars "List")) (Just (Name.fromChars "L")) Src.Open]
+  let imports = [Src.Import (A.At A.one (Name.fromChars "List")) (Just (Name.fromChars "L")) Src.Open False]
   let val = A.At A.one (Src.Value (A.At A.one (Name.fromChars "x")) [] (A.At A.one (Src.Int 1)) Nothing)
   let union = A.At A.one (Src.Union (A.At A.one (Name.fromChars "U")) [] [(A.At A.one (Name.fromChars "C"), [])])
   let alias = A.At A.one (Src.Alias (A.At A.one (Name.fromChars "Alias")) [] (A.At A.one (Src.TUnit)))
@@ -131,7 +131,7 @@ testModuleConstruction = testCase "module with values, unions, aliases, infix, e
   let m = Src.Module Nothing exportAll docs imports [] [val] [union] [alias] [_binop] Src.NoEffects
   -- Validate import alias and effects
   case imports of
-    [Src.Import _ (Just aliasName) _] -> aliasName @?= Name.fromChars "L"
+    [Src.Import _ (Just aliasName) _ _] -> aliasName @?= Name.fromChars "L"
     _ -> assertFailure "expected one import with alias"
   case Src._effects m of
     Src.NoEffects -> return ()

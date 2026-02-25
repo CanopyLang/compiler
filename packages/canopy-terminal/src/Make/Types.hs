@@ -37,6 +37,7 @@ module Make.Types
     report,
     docs,
     verbose,
+    noSplit,
 
     -- ** BuildContext Lenses
     bcStyle,
@@ -81,7 +82,9 @@ data Flags = Flags
     -- | Documentation output file
     _docs :: !(Maybe FilePath),
     -- | Enable verbose logging
-    _verbose :: !Bool
+    _verbose :: !Bool,
+    -- | Disable code splitting even when lazy imports are present
+    _noSplit :: !Bool
   }
   deriving (Eq, Show)
 

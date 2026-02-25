@@ -412,5 +412,50 @@ errorCatalog =
           "NO PORT MODULES IN PACKAGE"
           "A port module appears in a published package."
           "Port modules are not allowed in published packages."
+      ),
+      -- Lazy import errors
+      ( canonError 44,
+        ErrorInfo
+          "LAZY IMPORT NOT FOUND"
+          "A lazy import references a module that does not exist."
+          "The module specified in a `lazy import` declaration cannot be found\n\
+          \in your dependencies or source directories. Check that:\n\
+          \  1. The module name is spelled correctly\n\
+          \  2. The package containing the module is listed in dependencies\n\
+          \  3. The source file exists in one of your source-directories"
+      ),
+      ( canonError 45,
+        ErrorInfo
+          "BAD LAZY IMPORT"
+          "A core/stdlib module cannot be lazy-imported."
+          "Core modules like Basics, List, Maybe, Result, String, Char, Tuple,\n\
+          \Platform, Cmd, and Sub are always loaded eagerly because they are\n\
+          \required by every Canopy program. Remove the `lazy` keyword from\n\
+          \this import."
+      ),
+      ( canonError 46,
+        ErrorInfo
+          "BAD LAZY IMPORT"
+          "Lazy imports are not allowed in packages."
+          "Lazy imports enable code splitting, which only works in applications.\n\
+          \Packages must use regular imports so their code can be bundled\n\
+          \correctly by the application that depends on them. Remove the\n\
+          \`lazy` keyword from this import."
+      ),
+      ( canonError 47,
+        ErrorInfo
+          "BAD LAZY IMPORT"
+          "A module cannot lazy-import itself."
+          "A module cannot lazily load itself because it is already being loaded.\n\
+          \Self-imports are nonsensical. Remove the `lazy` keyword or remove\n\
+          \the import entirely."
+      ),
+      ( canonError 48,
+        ErrorInfo
+          "BAD LAZY IMPORT"
+          "An internal kernel module cannot be lazy-imported."
+          "Kernel modules are internal to the Canopy runtime and are always\n\
+          \loaded eagerly. They cannot be lazy-imported. Remove the `lazy`\n\
+          \keyword from this import."
       )
     ]
