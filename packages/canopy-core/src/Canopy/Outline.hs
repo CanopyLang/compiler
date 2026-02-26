@@ -24,6 +24,7 @@ module Canopy.Outline
 
     -- * Utilities
     flattenExposed,
+    allDeps,
 
     -- * Defaults
     defaultSummary,
@@ -279,3 +280,17 @@ encodeSrcDir (RelativeSrcDir path) = E.chars path
 flattenExposed :: Exposed -> [ModuleName.Raw]
 flattenExposed (ExposedList mods) = mods
 flattenExposed (ExposedDict dict) = concatMap snd dict
+
+-- | Extract all dependency packages with resolved versions.
+--
+-- For applications: merges direct, indirect, and test-direct deps.
+-- For packages: extracts 'C.lowerBound' from each constraint in deps and test-deps.
+--
+-- @since 0.19.1
+allDeps :: Outline -> [(Pkg.Name, V.Version)]
+allDeps (App o) =
+  Map.toList (_appDepsDirect o)
+    ++ Map.toList (_appDepsIndirect o)
+    ++ Map.toList (_appTestDepsDirect o)
+allDeps (Pkg o) =
+  Map.toList (Map.map C.lowerBound (Map.union (_pkgDeps o) (_pkgTestDeps o)))

@@ -404,13 +404,13 @@ runBrowserTestsWithServer jsContent flags runner executor playwright appDir = do
       let portStr = show (unServerPort port)
       Print.println [c|Starting test server on port {cyan|#{portStr}}...|]
       server <- Server.startTestServer appDir port
-      result <- generateAndRun flags runner executor playwright (JsContent (Text.pack jsContent)) (Just port)
+      result <- generateAndRun flags runner executor playwright (JsContent (Text.pack jsContent)) (Just port) appDir
       Server.stopTestServer server
       pure result
 
 -- | Generate the harness and execute it via Node.js.
-generateAndRun :: Flags -> JsContent -> JsContent -> JsContent -> JsContent -> Maybe ServerPort -> IO ExitCode
-generateAndRun flags runner executor playwright tests maybePort = do
+generateAndRun :: Flags -> JsContent -> JsContent -> JsContent -> JsContent -> Maybe ServerPort -> FilePath -> IO ExitCode
+generateAndRun flags runner executor playwright tests maybePort projectDir = do
   tmpDir <- Dir.getTemporaryDirectory
   let runnerPath = tmpDir </> "canopy-browser-test-runner.js"
       port = Maybe.fromMaybe (ServerPort 0) maybePort
@@ -422,7 +422,7 @@ generateAndRun flags runner executor playwright tests maybePort = do
           }
       harness = Harness.generateBrowserHarness config runner executor playwright tests
   writeFile runnerPath (Text.unpack (unHarnessContent harness))
-  runNodeForBrowserTests runnerPath (flags ^. testVerbose)
+  runNodeForBrowserTests runnerPath projectDir (flags ^. testVerbose)
 
 -- | Report external module loading errors.
 reportExternalError :: ExternalModuleError -> IO ExitCode
@@ -451,17 +451,16 @@ runNodeAndReport runnerPath verbose = do
     Just nodePath -> executeNode nodePath [runnerPath] verbose
 
 -- | Run @node@ for browser tests with @NODE_PATH@ set so
--- @require('playwright')@ resolves from the global npm install.
-runNodeForBrowserTests :: FilePath -> Bool -> IO ExitCode
-runNodeForBrowserTests runnerPath verbose = do
+-- @require('playwright')@ resolves from local or global installs.
+runNodeForBrowserTests :: FilePath -> FilePath -> Bool -> IO ExitCode
+runNodeForBrowserTests runnerPath projectDir verbose = do
   nodeExists <- Dir.findExecutable "node"
   case nodeExists of
     Nothing -> reportNodeMissing
     Just nodePath -> do
       npmRoot <- getNpmGlobalRoot
-      case npmRoot of
-        Nothing -> executeNode nodePath [runnerPath] verbose
-        Just root -> executeNode nodePath ["--require", "module", "-e", nodePathWrapper root runnerPath] verbose
+      let paths = buildNodePaths projectDir npmRoot
+      executeNode nodePath ["-e", nodePathWrapper paths runnerPath] verbose
 
 -- | Report that the @node@ executable is not found.
 reportNodeMissing :: IO ExitCode
@@ -481,11 +480,17 @@ getNpmGlobalRoot =
     ignoreException :: Exception.SomeException -> IO (Maybe FilePath)
     ignoreException _ = pure Nothing
 
+-- | Build the @NODE_PATH@ search list from the project's local
+-- @node_modules@ and the optional global npm root.
+buildNodePaths :: FilePath -> Maybe FilePath -> [FilePath]
+buildNodePaths projectDir maybeGlobal =
+  (projectDir </> "node_modules") : maybe [] pure maybeGlobal
+
 -- | Generate a Node.js wrapper script that sets @NODE_PATH@ before
 -- requiring the actual harness file.
-nodePathWrapper :: FilePath -> FilePath -> String
-nodePathWrapper npmRoot harnessPath =
-  "process.env.NODE_PATH=" ++ show npmRoot ++ ";"
+nodePathWrapper :: [FilePath] -> FilePath -> String
+nodePathWrapper paths harnessPath =
+  "process.env.NODE_PATH=" ++ show (List.intercalate ":" paths) ++ ";"
     ++ "require('module').Module._initPaths();"
     ++ "require(" ++ show harnessPath ++ ");"
 

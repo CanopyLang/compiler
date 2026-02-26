@@ -38,15 +38,10 @@ import qualified Build.Parallel as Parallel
 import qualified Builder.Graph as Graph
 import qualified Builder.Hash as Hash
 import qualified Builder.Incremental as Incremental
-import Control.Applicative ((<|>))
-import qualified Data.Char as Char
 import qualified Canopy.Interface as I
 import qualified Canopy.ModuleName as ModuleName
+import qualified Canopy.Outline as Outline
 import qualified Canopy.Package as Pkg
-import qualified Canopy.Version as V
-import qualified Data.Aeson as Json
-import qualified Data.Aeson.Key as Key
-import qualified Data.Aeson.KeyMap as KeyMap
 import qualified Data.Binary as Binary
 import qualified Data.ByteString.Lazy as LBS
 import qualified Data.Text as Text
@@ -60,7 +55,6 @@ import qualified Data.Name as Name
 import qualified Data.NonEmptyList as NE
 import qualified Data.Set as Set
 import qualified Data.ByteString as BS
-import qualified Data.Utf8 as Utf8
 import Logging.Event (LogEvent (..), Phase (..))
 import qualified Logging.Logger as Log
 import qualified Driver
@@ -457,12 +451,14 @@ queryErrorToCompileError path qErr =
     Query.OtherError msg -> Exit.CompileCanonicalizeError path msg
     Query.DiagnosticError diagPath diags -> Exit.CompileDiagnosticError diagPath diags
 
--- Helper: Load all dependency artifacts (interfaces + GlobalGraph + FFI info)
--- Uses parallel loading for optimal performance
+-- | Load all dependency artifacts (interfaces, GlobalGraph, FFI info).
+--
+-- Reads project dependencies from canopy.json/elm.json using 'Outline.read',
+-- then loads cached package artifacts in parallel.
 loadDependencyArtifacts :: FilePath -> IO (Maybe (Map.Map ModuleName.Raw I.Interface, Opt.GlobalGraph, Map.Map String JS.FFIInfo))
 loadDependencyArtifacts root = do
-  -- Read project dependencies from elm.json/canopy.json
-  deps <- readProjectDependencies root
+  maybeOutline <- Outline.read root
+  let deps = maybe [] Outline.allDeps maybeOutline
   Log.logEvent (BuildModuleQueued (Text.pack ("loading " ++ show (length deps) ++ " dependencies")))
 
   case deps of
@@ -470,8 +466,6 @@ loadDependencyArtifacts root = do
       Log.logEvent (BuildModuleQueued (Text.pack "no dependencies found"))
       return (Just (Map.empty, Opt.empty, Map.empty))
     _ -> do
-      -- Load all packages in parallel with async
-      -- Packages that fail to load are silently skipped
       maybeArtifacts <- PackageCache.loadAllPackageArtifacts deps
       case maybeArtifacts of
         Nothing -> do
@@ -484,110 +478,6 @@ loadDependencyArtifacts root = do
               ffiInfo = PackageCache.artifactFFIInfo artifacts
           Log.logEvent (BuildModuleQueued (Text.pack ("loaded " ++ show (Map.size convertedInterfaces) ++ " module interfaces")))
           return (Just (convertedInterfaces, globalGraph, ffiInfo))
-
--- Helper: Read project dependencies from elm.json or canopy.json
-readProjectDependencies :: FilePath -> IO [(Pkg.Name, V.Version)]
-readProjectDependencies root = do
-  let canopyPath = root </> "canopy.json"
-      elmPath = root </> "elm.json"
-
-  -- Try canopy.json first, then elm.json
-  canopyExists <- Dir.doesFileExist canopyPath
-  elmExists <- Dir.doesFileExist elmPath
-
-  let jsonPath = if canopyExists then canopyPath else if elmExists then elmPath else ""
-
-  if null jsonPath
-    then do
-      Log.logEvent (BuildFailed (Text.pack "no project file found"))
-      return []
-    else do
-      Log.logEvent (BuildModuleQueued (Text.pack ("reading deps from: " ++ jsonPath)))
-      content <- LBS.readFile jsonPath
-      case Json.decode content of
-        Nothing -> do
-          Log.logEvent (BuildFailed (Text.pack "failed to parse project file"))
-          return []
-        Just (Json.Object obj) -> do
-          let deps = extractDepsFromJson obj
-          Log.logEvent (BuildModuleQueued (Text.pack ("extracted " ++ show (length deps) ++ " dependencies")))
-          return deps
-        _ -> return []
-
--- Helper: Extract dependencies from parsed JSON object
---
--- Includes both regular dependencies and test-dependencies so that
--- test modules (e.g. canopy\/test) are available during compilation.
-extractDepsFromJson :: Json.Object -> [(Pkg.Name, V.Version)]
-extractDepsFromJson obj =
-  extractSection "dependencies" ++ extractSection "test-dependencies"
-  where
-    extractSection key =
-      case KeyMap.lookup key obj of
-        Just (Json.Object depsObj) ->
-          case (KeyMap.lookup "direct" depsObj, KeyMap.lookup "indirect" depsObj) of
-            (Just (Json.Object directObj), Just (Json.Object indirectObj)) ->
-              parseDepsMap directObj ++ parseDepsMap indirectObj
-            _ -> parseDepsMap depsObj
-        _ -> []
-
--- Helper: Parse dependencies map from JSON
-parseDepsMap :: Json.Object -> [(Pkg.Name, V.Version)]
-parseDepsMap depsMap =
-  foldr extractDep [] (KeyMap.toList depsMap)
-  where
-    extractDep (pkgNameKey, versionValue) acc =
-      case (parsePackageName pkgNameKey, parseVersion versionValue) of
-        (Just pkgName, Just version) -> (pkgName, version) : acc
-        _ -> acc
-
--- Helper: Parse package name from JSON key
-parsePackageName :: Json.Key -> Maybe Pkg.Name
-parsePackageName key =
-  let keyText = Key.toText key
-      parts = Text.splitOn "/" keyText
-   in case parts of
-        [authorText, projectText] ->
-          let author = Utf8.fromChars (Text.unpack authorText)
-              project = Utf8.fromChars (Text.unpack projectText)
-           in Just (Pkg.Name author project)
-        _ -> Nothing
-
--- Helper: Parse version from JSON value
--- Handles both exact versions ("1.0.5") and version constraints ("1.0.0 <= v < 2.0.0")
-parseVersion :: Json.Value -> Maybe V.Version
-parseVersion (Json.String versionStr) =
-  parseExactVersion versionStr
-    <|> parseVersionConstraint versionStr
-parseVersion _ = Nothing
-
--- Parse an exact version like "1.0.5"
-parseExactVersion :: Text.Text -> Maybe V.Version
-parseExactVersion versionStr =
-  let parts = Text.splitOn "." versionStr
-   in case parts of
-        [majorStr, minorStr, patchStr] ->
-          case (readMaybe (Text.unpack majorStr), readMaybe (Text.unpack minorStr), readMaybe (Text.unpack patchStr)) of
-            (Just major, Just minor, Just patch) -> Just (V.Version major minor patch)
-            _ -> Nothing
-        _ -> Nothing
-
--- Parse a version constraint like "1.0.0 <= v < 2.0.0" and extract the minimum version
-parseVersionConstraint :: Text.Text -> Maybe V.Version
-parseVersionConstraint constraintStr =
-  -- Look for pattern: "X.Y.Z <= v" - extract the first version number
-  let parts = Text.words constraintStr
-   in case filter isVersionLike parts of
-        (firstVersion : _) -> parseExactVersion firstVersion
-        [] -> Nothing
-  where
-    isVersionLike txt = Text.any (== '.') txt && Text.all isVersionChar txt
-    isVersionChar c = Char.isDigit c || c == '.'
-
-readMaybe :: Read a => String -> Maybe a
-readMaybe s = case reads s of
-  [(val, "")] -> Just val
-  _ -> Nothing
 
 -- Helper: Convert DependencyInterface map to Interface map
 convertDependencyInterfaces :: Map.Map ModuleName.Raw I.DependencyInterface -> Map.Map ModuleName.Raw I.Interface

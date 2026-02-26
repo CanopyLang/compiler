@@ -48,6 +48,7 @@ library
       Canopy.Licenses
       Canopy.Magnitude
       Canopy.ModuleName
+      Canopy.Outline
       Canopy.Package
       Canopy.String
       Canopy.Version

@@ -40,7 +40,6 @@ library
       Bump.Validation
       Canopy.CustomRepositoryData
       Canopy.Details
-      Canopy.Outline
       Check
       CLI.Commands
       CLI.Documentation
