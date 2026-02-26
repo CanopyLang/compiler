@@ -226,6 +226,26 @@ findCanopyFilesIn dir = do
       nested <- mapM findCanopyFilesIn visibleDirs
       pure (canFiles ++ concat nested)
 
+-- ── Header Bar ──────────────────────────────────────────────────────
+
+-- | Format a dullcyan header bar in the Elm report style.
+--
+-- Single file:    @-- TEST RESULTS ---------- test\/PlaywrightTest.can@
+-- Multiple files: @-- TEST RESULTS ----------------------- 3 files@
+--
+-- Follows the pattern from 'Reporting.Exit.Help.formatReportBar'.
+testBar :: [FilePath] -> String
+testBar [single] = barWithSuffix single
+testBar files = barWithSuffix (Output.showCount (length files) "file")
+
+-- | Build the bar string given the right-hand suffix.
+barWithSuffix :: String -> String
+barWithSuffix suffix =
+  "-- TEST RESULTS " ++ dashes ++ " " ++ suffix
+  where
+    usedCols = 17 + 1 + length suffix
+    dashes = replicate (max 1 (80 - usedCols)) '-'
+
 -- ── Compilation ──────────────────────────────────────────────────────
 
 -- | Compile test files and run them, returning the overall exit code.
@@ -249,10 +269,11 @@ reportNoProject = do
 -- | Compile and run tests when the project root is known.
 compileAndRunWithRoot :: FilePath -> [FilePath] -> Flags -> IO ExitCode
 compileAndRunWithRoot root testFiles flags = do
-  let countStr = Output.showCount (length testFiles) "test file"
-  if flags ^. testVerbose
-    then Print.println [c|Running #{countStr} from {cyan|#{root}}...|]
-    else Print.println [c|Running #{countStr}...|]
+  let bar = testBar testFiles
+  Print.println [c|{dullcyan|#{bar}}|]
+  when (flags ^. testVerbose) $
+    Print.println [c|  Project root: {cyan|#{root}}|]
+  Print.newline
   maybeResult <- compileTestFiles root testFiles
   case maybeResult of
     Nothing -> do
@@ -365,6 +386,7 @@ executeUnitTests jsContent flags = do
 executeBrowserTests :: String -> [FilePath] -> Flags -> IO ExitCode
 executeBrowserTests jsContent testFiles flags = do
   Print.println [c|{cyan|Browser tests detected.} Setting up test infrastructure...|]
+  Print.newline
   runBrowserPipeline jsContent testFiles flags
     `Exception.catch` handleBrowserError
 
@@ -415,6 +437,9 @@ runBrowserTestsWithServer jsContent flags runner executor playwright appDir = do
       pure (ExitFailure 1)
     Right port -> do
       server <- Server.startTestServer appDir port
+      when (flags ^. testVerbose) $ do
+        let portStr = show (unServerPort port)
+        Print.println [c|  Listening on {cyan|http://127.0.0.1:#{portStr}}|]
       result <- generateAndRun flags runner executor playwright (JsContent (Text.pack jsContent)) (Just port) appDir
       Server.stopTestServer server
       pure result
@@ -593,12 +618,14 @@ isSummaryEvent _ = False
 -- | Report exit status, printing stderr and verbose info on failure.
 reportExitCode :: ExitCode -> Concurrent.MVar [String] -> Bool -> [String] -> IO ExitCode
 reportExitCode ExitSuccess _ _ _ = do
+  Print.newline
   Print.println [c|{green|Tests passed.}|]
   pure ExitSuccess
 reportExitCode (ExitFailure _) stderrVar verbose args = do
   stderrLines <- Concurrent.readMVar stderrVar
   mapM_ (IO.hPutStrLn IO.stderr) stderrLines
   when verbose (printVerboseInfo args)
+  Print.newline
   Print.println [c|{red|Tests failed.}|]
   pure (ExitFailure 1)
 
