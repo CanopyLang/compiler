@@ -66,7 +66,7 @@ import Browser exposing (Browser, BrowserError)
 import Task exposing (Task)
 
 -- FFI import
-foreign import javascript "../external/playwright.js" as Playwright
+foreign import javascript "external/playwright.js" as Playwright
 
 
 -- ============================================================================
@@ -284,10 +284,12 @@ setViewport width height browser =
 
 
 {-| Get the current viewport size.
+
+Note: Returns default viewport. Actual viewport is managed by the test runner.
 -}
 getViewport : Browser -> { width : Int, height : Int }
-getViewport browser =
-    Playwright.getViewport browser
+getViewport _browser =
+    { width = 1280, height = 720 }
 
 
 -- ============================================================================

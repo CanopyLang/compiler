@@ -1,6 +1,5 @@
 module Accessibility exposing
-    ( test
-    , audit
+    ( audit
     , auditElement
     , noViolations
     , checkLabels
@@ -55,7 +54,6 @@ module Accessibility exposing
 -}
 
 import Browser exposing (Browser)
-import Test exposing (Test)
 import Expect exposing (Expectation)
 
 
@@ -98,21 +96,6 @@ type AuditResult
         , passes : Int
         , incomplete : Int
         }
-
-
-{-| Create an accessibility test.
-
-    A11y.test "page is accessible" <|
-        \browser ->
-            browser
-                |> Page.goto "http://localhost:3000"
-                |> A11y.audit
-                |> A11y.noViolations
-
--}
-test : String -> (Browser -> Expectation) -> Test
-test description testFn =
-    Browser.test description testFn
 
 
 {-| Run a full accessibility audit on the current page.

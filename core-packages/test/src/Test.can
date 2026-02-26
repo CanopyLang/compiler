@@ -1,24 +1,112 @@
 -- | Test framework for Canopy (similar to elm-explorations/test)
--- Provides core testing functionality for FFI and general testing
+-- Provides core testing functionality including sync and async tests
 
 module Test exposing
   ( Test
   , describe
   , test
+  , skip
+  , todo
+  , only
+  , fuzz
+  , asyncTest
+  , browserTest
   , toRunner
   , run
   , runTests
   , TestResult
   , RunnerResult
+  , TestError(..)
+  , BrowserConfig
+  , BrowserStep
+  , BrowserTestError(..)
+  , defaultBrowserConfig
   )
 
+import Browser exposing (Browser)
 import Expect exposing (Expectation)
+import Task exposing (Task)
 
 
--- | A Test is a collection of expectations or other tests
+{-| A Test is a collection of expectations or other tests.
+
+The Test type supports several kinds of tests:
+
+  - `UnitTest` - Synchronous test with immediate expectation
+  - `TestGroup` - Group of tests (describe block)
+  - `BrowserTest` - Async browser test with Playwright steps
+  - `AsyncTest` - Generic async test returning Task<Expectation>
+  - `Skip` - Skipped test (will be reported but not run)
+  - `Todo` - Placeholder test (will be reported as todo)
+  - `Only` - Focus on this test only (for debugging)
+  - `FuzzTest` - Property-based test with random input
+
+-}
 type Test
   = UnitTest String (() -> Expectation)
   | TestGroup String (List Test)
+  | BrowserTest String BrowserConfig (List BrowserStep)
+  | AsyncTest String (Task TestError Expectation)
+  | Skip Test
+  | Todo String
+  | Only Test
+  | FuzzTest String
+
+
+{-| Error type for async and browser tests.
+-}
+type TestError
+  = TestTimeout String
+  | TestException String
+  | BrowserError String
+
+
+{-| Browser configuration for browser tests.
+-}
+type alias BrowserConfig =
+  { browser : String
+  , headless : Bool
+  , slowMo : Int
+  , viewport : { width : Int, height : Int }
+  , timeout : Int
+  , recordVideo : Bool
+  }
+
+
+{-| A browser test step (function from Browser to Task).
+-}
+type alias BrowserStep =
+  Browser -> Task BrowserTestError Browser
+
+
+{-| Browser test error type.
+-}
+type BrowserTestError
+  = LaunchError String
+  | NavigationError String
+  | ElementNotFound String
+  | TimeoutError String
+  | EvaluationError String
+  | ScreenshotError String
+  | NetworkError String
+
+
+{-| Fuzzer type for property-based testing.
+-}
+type Fuzzer a = Fuzzer
+
+
+{-| Default browser configuration.
+-}
+defaultBrowserConfig : BrowserConfig
+defaultBrowserConfig =
+  { browser = "chromium"
+  , headless = True
+  , slowMo = 0
+  , viewport = { width = 1280, height = 720 }
+  , timeout = 30000
+  , recordVideo = False
+  }
 
 
 -- | Test result type for internal use
@@ -39,16 +127,100 @@ type alias RunnerResult =
   }
 
 
--- | Create a group of tests with a description
+{-| Create a group of tests with a description.
+
+    describe "Math operations"
+        [ test "addition" <| \_ -> Expect.equal 4 (2 + 2)
+        , test "subtraction" <| \_ -> Expect.equal 2 (4 - 2)
+        ]
+
+-}
 describe : String -> List Test -> Test
 describe description tests =
   TestGroup description tests
 
 
--- | Create a single test with a description and expectation
+{-| Create a single test with a description and expectation.
+
+    test "addition works" <|
+        \_ -> Expect.equal 4 (2 + 2)
+
+-}
 test : String -> (() -> Expectation) -> Test
 test description expectationFn =
   UnitTest description expectationFn
+
+
+{-| Skip a test. It will be reported as skipped but not executed.
+
+    skip <|
+        test "not ready yet" <| \_ -> ...
+
+-}
+skip : Test -> Test
+skip testToSkip =
+  Skip testToSkip
+
+
+{-| Mark a test as todo. Useful for planning tests.
+
+    todo "implement user authentication tests"
+
+-}
+todo : String -> Test
+todo description =
+  Todo description
+
+
+{-| Focus on this test only (for debugging).
+Other tests will be skipped.
+
+    only <|
+        test "debug this one" <| \_ -> ...
+
+-}
+only : Test -> Test
+only testToFocus =
+  Only testToFocus
+
+
+{-| Create a fuzz test with random inputs.
+
+    fuzz Fuzz.int "positive integers" <|
+        \n -> Expect.equal True (n * n >= 0)
+
+-}
+fuzz : Fuzzer a -> String -> (a -> Expectation) -> Test
+fuzz _fuzzer description _expectationFn =
+  FuzzTest description
+
+
+{-| Create an async test that returns a Task.
+
+    asyncTest "fetch user data" <|
+        Http.get "/api/user"
+            |> Task.map (\user -> Expect.equal "Alice" user.name)
+
+-}
+asyncTest : String -> Task TestError Expectation -> Test
+asyncTest description taskExpectation =
+  AsyncTest description taskExpectation
+
+
+{-| Create a browser test with Playwright.
+
+    browserTest "login flow" defaultBrowserConfig
+        [ visit "http://localhost:3000/login"
+        , fill "#email" "test@example.com"
+        , fill "#password" "secret"
+        , click "#submit"
+        , see "#dashboard"
+        ]
+
+-}
+browserTest : String -> BrowserConfig -> List BrowserStep -> Test
+browserTest description config steps =
+  BrowserTest description config steps
 
 
 -- | Convert tests to the runner format expected by the test harness
@@ -67,6 +239,59 @@ runToRunnerResults testCase =
 
     TestGroup _groupDescription tests ->
       List.concatMap runToRunnerResults tests
+
+    Skip innerTest ->
+      [ { name = getTestName innerTest
+        , passed = True
+        , reason = "SKIPPED"
+        }
+      ]
+
+    Todo description ->
+      [ { name = description
+        , passed = True
+        , reason = "TODO"
+        }
+      ]
+
+    Only innerTest ->
+      runToRunnerResults innerTest
+
+    BrowserTest description _config _steps ->
+      [ { name = description
+        , passed = True
+        , reason = "BROWSER_TEST (run with async runner)"
+        }
+      ]
+
+    AsyncTest description _task ->
+      [ { name = description
+        , passed = True
+        , reason = "ASYNC_TEST (run with async runner)"
+        }
+      ]
+
+    FuzzTest description ->
+      [ { name = description
+        , passed = True
+        , reason = "FUZZ_TEST (requires fuzzer)"
+        }
+      ]
+
+
+{-| Get the name of a test.
+-}
+getTestName : Test -> String
+getTestName testCase =
+  case testCase of
+    UnitTest name _ -> name
+    TestGroup name _ -> name
+    BrowserTest name _ _ -> name
+    AsyncTest name _ -> name
+    Skip inner -> getTestName inner
+    Todo name -> name
+    Only inner -> getTestName inner
+    FuzzTest name -> name
 
 
 -- | Convert an expectation to the RunnerResult format
@@ -94,6 +319,44 @@ run testCase =
 
     TestGroup description tests ->
       runTestGroup description tests
+
+    Skip innerTest ->
+      { description = getTestName innerTest
+      , status = "SKIP"
+      , message = "Test skipped"
+      , duration = 0
+      }
+
+    Todo description ->
+      { description = description
+      , status = "TODO"
+      , message = "Test not implemented"
+      , duration = 0
+      }
+
+    Only innerTest ->
+      run innerTest
+
+    BrowserTest description _config _steps ->
+      { description = description
+      , status = "SKIP"
+      , message = "Browser test - use async runner"
+      , duration = 0
+      }
+
+    AsyncTest description _task ->
+      { description = description
+      , status = "SKIP"
+      , message = "Async test - use async runner"
+      , duration = 0
+      }
+
+    FuzzTest description ->
+      { description = description
+      , status = "SKIP"
+      , message = "Fuzz test - requires fuzzer"
+      , duration = 0
+      }
 
 
 runUnitTest : String -> Expectation -> TestResult

@@ -1,6 +1,7 @@
 module Browser exposing
     ( Browser
     , BrowserError(..)
+    , BrowserConfig
     , Config
     , BrowserType(..)
     , defaultConfig
@@ -12,8 +13,7 @@ module Browser exposing
     , withRecordVideo
     , launch
     , close
-    , test
-    , testWith
+    , browserTypeToString
     )
 
 {-| Browser automation testing for Canopy applications using Playwright.
@@ -51,28 +51,9 @@ This module provides real browser testing capabilities including:
             |> Browser.withSlowMo 100
             |> Browser.withBrowser Browser.Firefox
 
-## Test Integration
-
-    import Browser
-    import Test exposing (Test, describe)
-
-    suite : Test
-    suite =
-        describe "Login"
-            [ Browser.test "successful login" <|
-                \browser ->
-                    -- test code using browser handle
-                    Expect.pass
-            ]
-
 -}
 
 import Task exposing (Task)
-import Test exposing (Test)
-import Expect exposing (Expectation)
-
--- FFI import for Playwright bindings
-foreign import javascript "external/playwright.js" as Playwright
 
 
 {-| Opaque browser handle.
@@ -113,6 +94,21 @@ type BrowserType
 -}
 type alias Config =
     { browser : BrowserType
+    , headless : Bool
+    , slowMo : Int
+    , viewport : { width : Int, height : Int }
+    , timeout : Int
+    , recordVideo : Bool
+    }
+
+
+{-| JavaScript-compatible browser configuration.
+
+This type alias matches the record shape expected by Playwright FFI functions.
+Used internally when passing configuration to JavaScript.
+-}
+type alias BrowserConfig =
+    { browser : String
     , headless : Bool
     , slowMo : Int
     , viewport : { width : Int, height : Int }
@@ -212,69 +208,28 @@ withRecordVideo record config =
 
 {-| Launch a browser instance with the given configuration.
 
+Note: Browser launching is handled by the test runner at runtime.
+This function creates a placeholder Task that will be replaced
+by the JavaScript test harness with actual Playwright calls.
+
     Browser.launch Browser.defaultConfig
         |> Task.andThen (Page.goto "http://localhost:3000")
         |> Task.andThen Browser.close
 
 -}
 launch : Config -> Task BrowserError Browser
-launch config =
-    Playwright.launch (configToJs config)
+launch _config =
+    Task.fail (LaunchError "Browser.launch must be called from the test runner")
 
 
 {-| Close the browser and cleanup all resources.
 
-Always call this when done with browser testing to free resources.
-
-    Browser.launch config
-        |> Task.andThen doStuff
-        |> Task.andThen Browser.close
+Note: Browser cleanup is handled by the test runner at runtime.
 
 -}
 close : Browser -> Task BrowserError ()
-close browser =
-    Playwright.close browser
-
-
--- ============================================================================
--- Test Integration
--- ============================================================================
-
-
-{-| Create a browser test with default configuration.
-
-This creates a Test that launches a browser, runs your test function,
-and automatically closes the browser when done.
-
-    Browser.test "login works" <|
-        \browser ->
-            -- Your test using browser handle
-            Expect.pass
-
--}
-test : String -> (Browser -> Expectation) -> Test
-test description testFn =
-    testWith defaultConfig description testFn
-
-
-{-| Create a browser test with custom configuration.
-
-    Browser.testWith
-        (Browser.defaultConfig
-            |> Browser.withHeadless False
-            |> Browser.withSlowMo 100
-        )
-        "debug test" <|
-        \browser ->
-            -- Your test code
-            Expect.pass
-
--}
-testWith : Config -> String -> (Browser -> Expectation) -> Test
-testWith config description testFn =
-    Test.test description <|
-        \_ ->
-            Playwright.withBrowser (configToJs config) testFn
+close _browser =
+    Task.fail (LaunchError "Browser.close must be called from the test runner")
 
 
 -- ============================================================================
@@ -282,6 +237,8 @@ testWith config description testFn =
 -- ============================================================================
 
 
+{-| Convert a BrowserType to its string representation.
+-}
 browserTypeToString : BrowserType -> String
 browserTypeToString bt =
     case bt of
@@ -293,14 +250,3 @@ browserTypeToString bt =
 
         WebKit ->
             "webkit"
-
-
-configToJs : Config -> { browser : String, headless : Bool, slowMo : Int, viewport : { width : Int, height : Int }, timeout : Int, recordVideo : Bool }
-configToJs config =
-    { browser = browserTypeToString config.browser
-    , headless = config.headless
-    , slowMo = config.slowMo
-    , viewport = config.viewport
-    , timeout = config.timeout
-    , recordVideo = config.recordVideo
-    }

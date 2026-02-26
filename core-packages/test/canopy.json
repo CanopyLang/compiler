@@ -7,7 +7,13 @@
     "exposed-modules": [
         "Test",
         "Expect",
-        "Fuzz"
+        "Fuzz",
+        "Browser",
+        "Browser.Test",
+        "Browser.Page",
+        "Browser.Element",
+        "Browser.Expect",
+        "Accessibility"
     ],
     "canopy-version": "0.19.0 <= v < 0.20.0",
     "dependencies": {

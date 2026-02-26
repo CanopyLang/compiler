@@ -1,6 +1,5 @@
 module Visual exposing
-    ( test
-    , snapshot
+    ( snapshot
     , snapshotElement
     , matchesBaseline
     , matchesBaselineWithThreshold
@@ -58,7 +57,6 @@ module Visual exposing
 -}
 
 import Browser exposing (Browser)
-import Test exposing (Test)
 import Expect exposing (Expectation)
 
 
@@ -92,13 +90,6 @@ type ComparisonResult
         , diffPercentage : Float
         }
     | NoBaseline
-
-
-{-| Create a visual regression test.
--}
-test : String -> (Browser -> Expectation) -> Test
-test description testFn =
-    Browser.test description testFn
 
 
 {-| Take a full-page screenshot.

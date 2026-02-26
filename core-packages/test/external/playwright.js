@@ -98,16 +98,45 @@ async function close(browser) {
 // ============================================================================
 
 /**
- * Navigate to URL and wait for load
+ * Navigate to URL and wait for load.
+ *
+ * Relative URLs (starting with "/" or not containing "://") are resolved
+ * against TEST_CONFIG.serverUrl when available, so tests can use
+ * `visit "/index.html"` without hardcoding a port.
+ *
  * @canopy-type String -> Browser -> Task BrowserError Browser
  * @name goto
- * @param {string} url - URL to navigate to
+ * @param {string} url - URL to navigate to (absolute or relative)
  * @param {Object} browser - Browser handle
  * @returns {Promise<Object>} Browser handle
  */
 async function goto(url, browser) {
-    await browser._page.goto(url, { waitUntil: 'networkidle' });
+    var resolvedUrl = resolveTestUrl(url);
+    await browser._page.goto(resolvedUrl, { waitUntil: 'networkidle' });
     return browser;
+}
+
+/**
+ * Resolve a URL against the test server base URL.
+ *
+ * Absolute URLs (http://, https://, file://) are returned as-is.
+ * Relative paths are prepended with TEST_CONFIG.serverUrl.
+ *
+ * @param {string} url - URL to resolve
+ * @returns {string} Resolved absolute URL
+ */
+function resolveTestUrl(url) {
+    if (url.indexOf('://') !== -1) {
+        return url;
+    }
+    var baseUrl = (typeof TEST_CONFIG !== 'undefined' && TEST_CONFIG.serverUrl)
+        ? TEST_CONFIG.serverUrl
+        : '';
+    if (!baseUrl) {
+        return url;
+    }
+    var separator = (url.charAt(0) === '/') ? '' : '/';
+    return baseUrl + separator + url;
 }
 
 /**
@@ -1019,84 +1048,132 @@ async function scrollToBottom(browser) {
 // ============================================================================
 
 /**
- * Launch a browser, run a test function, and close the browser.
+ * Execute a browser test with proper async lifecycle.
  *
- * This handles the full lifecycle: launch -> test -> close.
- * If the test throws, the browser is still properly closed.
- * Returns a Canopy Expectation value.
+ * This is the primary async test execution function. It:
+ * 1. Launches a browser with the given config
+ * 2. Executes all test steps sequentially
+ * 3. Closes the browser (even on failure)
+ * 4. Returns an Expectation
  *
- * @canopy-type BrowserConfig -> (Browser -> Expectation) -> Expectation
- * @name withBrowser
+ * @canopy-type BrowserConfig -> List (Browser -> Task BrowserError Browser) -> Task TestError Expectation
+ * @name withBrowserAsync
  * @param {Object} config - Browser configuration
- * @param {Function} testFn - Test function receiving the browser handle
- * @returns {Object} Canopy Expectation (Pass or Fail)
+ * @param {Array<Function>} steps - Array of step functions
+ * @returns {Promise<Object>} Promise resolving to Canopy Expectation
  */
-function withBrowser(config, testFn) {
+async function withBrowserAsync(config, steps) {
+    let browser = null;
+
     try {
-        var browser = launchSync(config);
-        var result = testFn(browser);
-        closeSync(browser);
-        return result;
+        browser = await launch(config);
+
+        for (const step of steps) {
+            const stepTask = step(browser);
+            browser = await executeTaskInternal(stepTask);
+        }
+
+        return { $: 'Pass' };
     } catch (e) {
+        const errorMessage = e && e.message ? e.message : String(e);
         return {
             $: 'Fail',
             a: {
                 $: 'Custom',
-                a: 'Browser test error: ' + e.message
+                a: 'Browser test error: ' + errorMessage
             }
         };
+    } finally {
+        if (browser) {
+            try {
+                await close(browser);
+            } catch (closeErr) {
+                // Ignore close errors
+            }
+        }
     }
 }
 
 /**
- * Synchronous browser launch for use in test contexts.
- * Falls back to returning a mock browser if Playwright is not available.
+ * Internal task executor for browser step tasks.
+ * Handles the Canopy Task representation.
  */
-function launchSync(config) {
-    try {
-        var playwright = require('playwright');
-        var browserType = config.browser || 'chromium';
-        var browserEngine = playwright[browserType];
+async function executeTaskInternal(task) {
+    if (!task) {
+        throw new Error('Task is null or undefined');
+    }
 
-        if (!browserEngine) {
-            throw new Error('Unknown browser type: ' + browserType);
-        }
+    if (typeof task.$ !== 'number') {
+        return task;
+    }
 
-        // Use synchronous-like pattern with Playwright's sync API
-        // In Node.js test context, we use the browser handle directly
-        var handle = {
-            _browser: null,
-            _context: null,
-            _page: null,
-            _config: config,
-            $: 'Browser'
-        };
+    const SUCCEED = 0;
+    const FAIL = 1;
+    const BINDING = 2;
+    const AND_THEN = 3;
+    const ON_ERROR = 4;
 
-        return handle;
-    } catch (e) {
-        // Return a handle that indicates Playwright is not available
-        return {
-            _browser: null,
-            _context: null,
-            _page: null,
-            _config: config,
-            _error: e.message,
-            $: 'Browser'
-        };
+    switch (task.$) {
+        case SUCCEED:
+            return task.a;
+
+        case FAIL:
+            throw task.a;
+
+        case BINDING:
+            return new Promise((resolve, reject) => {
+                try {
+                    task.b(function(resultTask) {
+                        if (resultTask.$ === SUCCEED) {
+                            resolve(resultTask.a);
+                        } else if (resultTask.$ === FAIL) {
+                            reject(resultTask.a);
+                        } else {
+                            executeTaskInternal(resultTask)
+                                .then(resolve)
+                                .catch(reject);
+                        }
+                    });
+                } catch (e) {
+                    reject(e);
+                }
+            });
+
+        case AND_THEN:
+            const innerResult = await executeTaskInternal(task.d);
+            const nextTask = task.b(innerResult);
+            return await executeTaskInternal(nextTask);
+
+        case ON_ERROR:
+            try {
+                return await executeTaskInternal(task.d);
+            } catch (error) {
+                const recoveryTask = task.b(error);
+                return await executeTaskInternal(recoveryTask);
+            }
+
+        default:
+            throw new Error('Unknown Task constructor: ' + task.$);
     }
 }
 
 /**
- * Synchronous browser close.
+ * Legacy synchronous withBrowser for backwards compatibility.
+ * Note: This returns a mock result since true sync browser automation
+ * is not possible. Use withBrowserAsync for real browser testing.
+ *
+ * @canopy-type BrowserConfig -> (Browser -> Expectation) -> Expectation
+ * @name withBrowser
+ * @deprecated Use withBrowserAsync instead
  */
-function closeSync(browser) {
-    if (browser._browser) {
-        try {
-            browser._browser.close();
-        } catch (e) {
-            // Ignore close errors
+function withBrowser(config, testFn) {
+    return {
+        $: 'Fail',
+        a: {
+            $: 'Custom',
+            a: 'Synchronous browser tests are not supported. Use async browser tests with withBrowserAsync.'
         }
-    }
+    };
 }
 
 // ============================================================================
@@ -1204,5 +1281,12 @@ module.exports = {
     scrollToBottom,
 
     // Test integration
-    withBrowser
+    withBrowser,
+    withBrowserAsync,
+    executeTaskInternal
 };
+
+// Browser global for bundled execution
+if (typeof window !== 'undefined') {
+    window.CanopyPlaywright = module.exports;
+}

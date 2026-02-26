@@ -1106,6 +1106,14 @@ generateMain mode home main =
       JS.Ref (JsName.fromGlobal home "main")
         # generateJsExpr mode decoder
         # toDebugMetadata mode msgType
+    Opt.TestMain ->
+      JS.Function Nothing []
+        [ JS.Return
+            ( JS.Object
+                [ (JsName.fromLocal "_testMain", JS.Ref (JsName.fromGlobal home "main"))
+                ]
+            )
+        ]
 
 (#) :: JS.Expr -> JS.Expr -> JS.Expr
 (#) func arg =

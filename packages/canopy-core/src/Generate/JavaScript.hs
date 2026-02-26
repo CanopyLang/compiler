@@ -203,19 +203,29 @@ extractCanopyType line =
       _ -> Nothing
     else Nothing
 
--- Find the function name in the following lines
+-- Find the function name in the following lines.
+-- Handles both @function name(...)@ and @async function name(...)@.
 findFunctionName :: [String] -> Maybe String
 findFunctionName [] = Nothing
 findFunctionName (line:rest) =
-  if "function " `List.isPrefixOf` trim line
-    then case dropWhile (/= ' ') (trim line) of
-      (' ':rest') -> case takeWhile (\c -> c /= '(' && c /= ' ') (trim rest') of
-        "" -> findFunctionName rest
-        name -> Just name
-      _ -> findFunctionName rest
-    else if "*/" `List.isInfixOf` line
-      then findFunctionName rest  -- Continue past comment end
-      else findFunctionName rest
+  let trimmed = trim line
+      stripped = stripAsyncPrefix trimmed
+  in if "function " `List.isPrefixOf` stripped
+       then extractNameAfterFunction stripped
+       else if "*/" `List.isInfixOf` line
+         then findFunctionName rest
+         else findFunctionName rest
+  where
+    stripAsyncPrefix s
+      | "async " `List.isPrefixOf` s = trim (drop 6 s)
+      | otherwise = s
+    extractNameAfterFunction s =
+      case dropWhile (/= ' ') s of
+        (' ':after) ->
+          case takeWhile (\c -> c /= '(' && c /= ' ') (trim after) of
+            "" -> findFunctionName rest
+            name -> Just name
+        _ -> findFunctionName rest
 
 -- Generate JavaScript binding for a single function
 -- When FFI strict mode is enabled, wraps return value with validation

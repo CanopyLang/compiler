@@ -1,4 +1,4 @@
-module AudioContextTest exposing (main, suite)
+module AudioContextTest exposing (main)
 
 {-| Unit Tests for AudioContext Functions
 
@@ -20,25 +20,15 @@ Tests all AudioContext lifecycle and management functions.
 
 -}
 
-import Html exposing (Html, pre, text)
-import Test exposing (Test, describe, test, runTests)
+import Test exposing (Test, describe, test)
 import Expect
 import AudioFFI
 import Capability exposing (UserActivated(..), Initialized(..), CapabilityError(..))
 import Result exposing (Result(..))
 
 
-main : Html msg
+main : Test
 main =
-    let
-        results =
-            runTests [ suite ]
-    in
-    pre [] [ text results ]
-
-
-suite : Test
-suite =
     describe "AudioContext Functions"
         [ createContextTests
         , contextPropertyTests

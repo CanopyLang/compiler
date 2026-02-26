@@ -287,10 +287,17 @@ var $validate = {
       if (typeof v !== 'object' || v === null || typeof v.then !== 'function') {
         throw new Error('FFI type error at ' + p + ': expected Promise');
       }
-      return v.then(
-        function(ok) { return { $: 'Ok', a: okV(ok, p + '.then') }; },
-        function(err) { return { $: 'Err', a: errV(err, p + '.catch') }; }
-      );
+      return {
+        $: 2,
+        b: function(callback) {
+          v.then(
+            function(ok) { callback({ $: 0, a: okV(ok, p + '.then') }); },
+            function(err) { callback({ $: 1, a: errV(err, p + '.catch') }); }
+          );
+          return null;
+        },
+        c: null
+      };
     };
   },
 

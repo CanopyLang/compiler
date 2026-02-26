@@ -2,19 +2,85 @@
  * Canopy Test Framework - JavaScript Test Runner
  *
  * This module provides the JavaScript implementation for the Canopy test framework.
- * It uses the FFI system with @canopy-type annotations instead of kernel code.
+ * It supports both synchronous unit tests and asynchronous browser tests.
+ *
+ * Test Types:
+ *   - UnitTest: Synchronous test with immediate expectation
+ *   - TestGroup: Group of tests (describe block)
+ *   - BrowserTest: Async browser test with Playwright steps
+ *   - AsyncTest: Generic async test returning Task<Expectation>
+ *   - Skip: Skipped test
+ *   - Todo: Placeholder test
  *
  * @module test-runner
  */
 
+// Import task executor for async tests
+var taskExecutor;
+try {
+    taskExecutor = require('./task-executor.js');
+} catch (e) {
+    // Will be set later if in browser
+    taskExecutor = null;
+}
+
+// Import playwright bindings for browser tests
+var playwrightBindings;
+try {
+    playwrightBindings = require('./playwright.js');
+} catch (e) {
+    playwrightBindings = null;
+}
+
 /**
- * Execute a test suite and return results
+ * Check if a test suite contains async tests.
+ *
+ * @param {Object} testSuite - Canopy Test value
+ * @returns {boolean} True if suite contains BrowserTest or AsyncTest
+ */
+function hasAsyncTests(testSuite) {
+    if (!testSuite) return false;
+
+    switch (testSuite.$) {
+        case 'BrowserTest':
+        case 'AsyncTest':
+            return true;
+
+        case 'TestGroup':
+            var subTests = listToArray(testSuite.b);
+            return subTests.some(hasAsyncTests);
+
+        case 'Skip':
+            return hasAsyncTests(testSuite.a);
+
+        default:
+            return false;
+    }
+}
+
+/**
+ * Execute a test suite and return results.
+ * Automatically detects if async execution is needed.
+ *
  * @canopy-type Test -> Report
  * @name runTests
  * @param {Object} testSuite - The Canopy test suite to execute
- * @returns {Object} Report with results, summary, and duration
+ * @returns {Object|Promise<Object>} Report with results, summary, and duration
  */
 function runTests(testSuite) {
+    if (hasAsyncTests(testSuite)) {
+        return runTestsAsync(testSuite);
+    }
+    return runTestsSync(testSuite);
+}
+
+/**
+ * Run tests synchronously (for unit tests only).
+ *
+ * @param {Object} testSuite - Test suite
+ * @returns {Object} Report
+ */
+function runTestsSync(testSuite) {
     var results = [];
     var startTime = performance.now();
 
@@ -24,10 +90,8 @@ function runTests(testSuite) {
         try {
             switch (test.$) {
                 case 'UnitTest':
-                    // test.a = description (String)
-                    // test.b = expectation function (() -> Expectation)
                     var testName = path.concat([test.a]).join(' > ');
-                    var result = test.b(); // Run the thunk
+                    var result = test.b();
                     var duration = performance.now() - testStart;
 
                     if (result.$ === 'Pass') {
@@ -47,8 +111,6 @@ function runTests(testSuite) {
                     break;
 
                 case 'TestGroup':
-                    // test.a = description (String)
-                    // test.b = list of tests (List Test)
                     var subTests = listToArray(test.b);
                     var groupPath = path.concat([test.a]);
                     for (var i = 0; i < subTests.length; i++) {
@@ -57,7 +119,6 @@ function runTests(testSuite) {
                     break;
 
                 case 'Skip':
-                    // test.a = inner test to skip
                     var skippedName = getSkippedTestName(test.a, path);
                     results.push({
                         $: 'Skipped',
@@ -66,7 +127,6 @@ function runTests(testSuite) {
                     break;
 
                 case 'Todo':
-                    // test.a = description (String)
                     results.push({
                         $: 'Todo',
                         a: path.concat([test.a]).join(' > ')
@@ -74,8 +134,7 @@ function runTests(testSuite) {
                     break;
 
                 default:
-                    // Unknown test type - log and treat as passed for forward compatibility
-                    console.warn('Unknown test type: ' + test.$);
+                    console.warn('Unknown test type (sync): ' + test.$);
                     results.push({
                         $: 'Passed',
                         a: path.join(' > ') + ' (unknown type: ' + test.$ + ')',
@@ -93,12 +152,254 @@ function runTests(testSuite) {
         }
     }
 
-    // Run all tests
     runTest(testSuite, []);
 
+    return buildReport(results, startTime);
+}
+
+/**
+ * Run tests asynchronously (for browser and async tests).
+ *
+ * @param {Object} testSuite - Test suite
+ * @returns {Promise<Object>} Promise of Report
+ */
+async function runTestsAsync(testSuite) {
+    var results = [];
+    var startTime = performance.now();
+
+    async function runTest(test, path) {
+        var testStart = performance.now();
+
+        try {
+            switch (test.$) {
+                case 'UnitTest':
+                    // Sync test in async context
+                    var testName = path.concat([test.a]).join(' > ');
+                    var result = test.b();
+                    var duration = performance.now() - testStart;
+
+                    if (result.$ === 'Pass') {
+                        results.push({ $: 'Passed', a: testName, b: duration });
+                    } else {
+                        results.push({ $: 'Failed', a: testName, b: formatFailure(result), c: duration });
+                    }
+                    break;
+
+                case 'TestGroup':
+                    var subTests = listToArray(test.b);
+                    var groupPath = path.concat([test.a]);
+                    for (var i = 0; i < subTests.length; i++) {
+                        await runTest(subTests[i], groupPath);
+                    }
+                    break;
+
+                case 'BrowserTest':
+                    // test.a = name (String)
+                    // test.b = config (BrowserConfig)
+                    // test.c = steps (List Step)
+                    await runBrowserTest(test, path, results);
+                    break;
+
+                case 'AsyncTest':
+                    // test.a = name (String)
+                    // test.b = task (Task TestError Expectation)
+                    await runAsyncTest(test, path, results);
+                    break;
+
+                case 'Skip':
+                    var skippedName = getSkippedTestName(test.a, path);
+                    results.push({ $: 'Skipped', a: skippedName });
+                    break;
+
+                case 'Todo':
+                    results.push({ $: 'Todo', a: path.concat([test.a]).join(' > ') });
+                    break;
+
+                default:
+                    console.warn('Unknown test type (async): ' + test.$);
+                    results.push({
+                        $: 'Passed',
+                        a: path.join(' > ') + ' (unknown: ' + test.$ + ')',
+                        b: performance.now() - testStart
+                    });
+            }
+        } catch (e) {
+            var errorName = path.length > 0 ? path.join(' > ') : 'Test';
+            results.push({
+                $: 'Failed',
+                a: errorName,
+                b: 'Exception: ' + e.message + '\n' + (e.stack || ''),
+                c: performance.now() - testStart
+            });
+        }
+    }
+
+    await runTest(testSuite, []);
+
+    return buildReport(results, startTime);
+}
+
+/**
+ * Run a browser test with Playwright.
+ *
+ * @param {Object} test - BrowserTest value
+ * @param {Array} path - Test path
+ * @param {Array} results - Results array to push to
+ */
+async function runBrowserTest(test, path, results) {
+    var testStart = performance.now();
+    var testName = path.concat([test.a]).join(' > ');
+
+    // Check if Playwright is available
+    if (!playwrightBindings) {
+        results.push({
+            $: 'Failed',
+            a: testName,
+            b: 'Playwright not available. Install with: npm install playwright',
+            c: performance.now() - testStart
+        });
+        return;
+    }
+
+    var browser = null;
+    try {
+        // Launch browser
+        var config = test.b || getDefaultBrowserConfig();
+        browser = await playwrightBindings.launch(config);
+
+        // Execute steps
+        var steps = listToArray(test.c || []);
+        for (var i = 0; i < steps.length; i++) {
+            var step = steps[i];
+            // Each step is a function: Browser -> Task BrowserError Browser
+            var stepTask = step(browser);
+            browser = await taskExecutor.executeTask(stepTask);
+        }
+
+        // Test passed
+        results.push({
+            $: 'Passed',
+            a: testName,
+            b: performance.now() - testStart
+        });
+    } catch (e) {
+        results.push({
+            $: 'Failed',
+            a: testName,
+            b: formatBrowserError(e),
+            c: performance.now() - testStart
+        });
+    } finally {
+        // Always close browser
+        if (browser && playwrightBindings) {
+            try {
+                await playwrightBindings.close(browser);
+            } catch (e) {
+                // Ignore close errors
+            }
+        }
+    }
+}
+
+/**
+ * Run an async test (Task-based).
+ *
+ * @param {Object} test - AsyncTest value
+ * @param {Array} path - Test path
+ * @param {Array} results - Results array to push to
+ */
+async function runAsyncTest(test, path, results) {
+    var testStart = performance.now();
+    var testName = path.concat([test.a]).join(' > ');
+
+    if (!taskExecutor) {
+        results.push({
+            $: 'Failed',
+            a: testName,
+            b: 'Task executor not available',
+            c: performance.now() - testStart
+        });
+        return;
+    }
+
+    try {
+        // test.b is Task TestError Expectation
+        var expectation = await taskExecutor.executeTask(test.b);
+        var duration = performance.now() - testStart;
+
+        if (expectation.$ === 'Pass') {
+            results.push({ $: 'Passed', a: testName, b: duration });
+        } else {
+            results.push({ $: 'Failed', a: testName, b: formatFailure(expectation), c: duration });
+        }
+    } catch (e) {
+        results.push({
+            $: 'Failed',
+            a: testName,
+            b: 'Async test error: ' + (e.message || String(e)),
+            c: performance.now() - testStart
+        });
+    }
+}
+
+/**
+ * Get default browser configuration.
+ */
+function getDefaultBrowserConfig() {
+    return {
+        browser: 'chromium',
+        headless: true,
+        slowMo: 0,
+        viewport: { width: 1280, height: 720 },
+        timeout: 30000,
+        recordVideo: false
+    };
+}
+
+/**
+ * Format a browser error into a readable message.
+ */
+function formatBrowserError(error) {
+    if (typeof error === 'string') {
+        return error;
+    }
+
+    // Handle Canopy BrowserError type
+    if (error && error.$) {
+        switch (error.$) {
+            case 'LaunchError':
+                return 'Browser launch failed: ' + error.a;
+            case 'NavigationError':
+                return 'Navigation failed: ' + error.a;
+            case 'ElementNotFound':
+                return 'Element not found: ' + error.a;
+            case 'TimeoutError':
+                return 'Timeout: ' + error.a;
+            case 'EvaluationError':
+                return 'JavaScript evaluation failed: ' + error.a;
+            case 'ScreenshotError':
+                return 'Screenshot failed: ' + error.a;
+            case 'NetworkError':
+                return 'Network error: ' + error.a;
+            default:
+                return 'Browser error (' + error.$ + '): ' + (error.a || JSON.stringify(error));
+        }
+    }
+
+    // Handle JavaScript Error
+    if (error instanceof Error) {
+        return error.message + (error.stack ? '\n' + error.stack : '');
+    }
+
+    return String(error);
+}
+
+/**
+ * Build a report from results.
+ */
+function buildReport(results, startTime) {
     var totalDuration = performance.now() - startTime;
 
-    // Build summary
     var passed = results.filter(function(r) { return r.$ === 'Passed'; }).length;
     var failed = results.filter(function(r) { return r.$ === 'Failed'; }).length;
     var skipped = results.filter(function(r) { return r.$ === 'Skipped'; }).length;
@@ -118,9 +419,7 @@ function runTests(testSuite) {
 }
 
 /**
- * Format a failure result into a readable string
- * @param {Object} result - The failure result
- * @returns {string} Formatted failure message
+ * Format a failure result into a readable string.
  */
 function formatFailure(result) {
     if (!result.a) return 'Unknown failure';
@@ -140,13 +439,11 @@ function formatFailure(result) {
 }
 
 /**
- * Get the test name from a test node
- * @param {Object} test - Test node
- * @param {Array} path - Path to the test
- * @returns {string} Full test name
+ * Get the test name from a test node.
  */
 function getTestName(test, path) {
-    if (test && (test.$ === 'UnitTest' || test.$ === 'FuzzTest' || test.$ === 'Todo')) {
+    if (test && (test.$ === 'UnitTest' || test.$ === 'FuzzTest' || test.$ === 'Todo' ||
+                 test.$ === 'BrowserTest' || test.$ === 'AsyncTest')) {
         return path.concat([test.a]).join(' > ');
     }
     if (test && test.$ === 'TestGroup') {
@@ -156,16 +453,15 @@ function getTestName(test, path) {
 }
 
 /**
- * Get the name of a skipped test
- * @param {Object} test - The inner test that was skipped
- * @param {Array} path - Path to the test
- * @returns {string} Full test name
+ * Get the name of a skipped test.
  */
 function getSkippedTestName(test, path) {
     if (!test) return path.join(' > ') + ' (skipped)';
 
     switch (test.$) {
         case 'UnitTest':
+        case 'BrowserTest':
+        case 'AsyncTest':
             return path.concat([test.a]).join(' > ');
         case 'TestGroup':
             return path.concat([test.a]).join(' > ');
@@ -179,11 +475,10 @@ function getSkippedTestName(test, path) {
 }
 
 /**
- * Format report for console output
+ * Format report for console output.
+ *
  * @canopy-type Report -> String
  * @name formatConsole
- * @param {Object} report - Test report
- * @returns {string} Formatted console output
  */
 function formatConsole(report) {
     var output = [];
@@ -229,11 +524,10 @@ function formatConsole(report) {
 }
 
 /**
- * Format report as JSON
+ * Format report as JSON.
+ *
  * @canopy-type Report -> String
  * @name formatJson
- * @param {Object} report - Test report
- * @returns {string} JSON formatted output
  */
 function formatJson(report) {
     var results = listToArray(report.results);
@@ -260,10 +554,10 @@ function formatJson(report) {
 }
 
 /**
- * Print results to console and exit with appropriate code
+ * Print results to console and exit with appropriate code.
+ *
  * @canopy-type Report -> ()
  * @name reportAndExit
- * @param {Object} report - Test report
  */
 function reportAndExit(report) {
     var output = formatConsole(report);
@@ -274,24 +568,30 @@ function reportAndExit(report) {
     }
 }
 
+/**
+ * Run tests and report (async-aware).
+ * This is the main entry point for test execution.
+ *
+ * @canopy-type Test -> Task Never ()
+ * @name runAndReport
+ */
+async function runAndReport(testSuite) {
+    var report = await runTests(testSuite);
+    reportAndExit(report);
+}
+
 // Helper functions
 
-/**
- * Convert Canopy List to JavaScript Array
- */
 function listToArray(list) {
     var result = [];
     var current = list;
-    while (current.$ === '::' || current.$ === 'Cons') {
+    while (current && (current.$ === '::' || current.$ === 'Cons')) {
         result.push(current.a);
         current = current.b;
     }
     return result;
 }
 
-/**
- * Convert JavaScript Array to Canopy List
- */
 function arrayToList(arr) {
     var result = { $: '[]' };
     for (var i = arr.length - 1; i >= 0; i--) {
@@ -300,9 +600,6 @@ function arrayToList(arr) {
     return result;
 }
 
-/**
- * Repeat a string n times
- */
 function repeat(str, n) {
     return new Array(n + 1).join(str);
 }
@@ -311,9 +608,13 @@ function repeat(str, n) {
 if (typeof module !== 'undefined' && module.exports) {
     module.exports = {
         runTests: runTests,
+        runTestsSync: runTestsSync,
+        runTestsAsync: runTestsAsync,
+        hasAsyncTests: hasAsyncTests,
         formatConsole: formatConsole,
         formatJson: formatJson,
-        reportAndExit: reportAndExit
+        reportAndExit: reportAndExit,
+        runAndReport: runAndReport
     };
 }
 
@@ -321,8 +622,22 @@ if (typeof module !== 'undefined' && module.exports) {
 if (typeof window !== 'undefined') {
     window.CanopyTestRunner = {
         runTests: runTests,
+        runTestsSync: runTestsSync,
+        runTestsAsync: runTestsAsync,
+        hasAsyncTests: hasAsyncTests,
         formatConsole: formatConsole,
         formatJson: formatJson,
-        reportAndExit: reportAndExit
+        reportAndExit: reportAndExit,
+        runAndReport: runAndReport
     };
+
+    // Also set task executor if available globally
+    if (window.CanopyTaskExecutor && !taskExecutor) {
+        taskExecutor = window.CanopyTaskExecutor;
+    }
+
+    // Also set playwright bindings if available globally
+    if (window.CanopyPlaywright && !playwrightBindings) {
+        playwrightBindings = window.CanopyPlaywright;
+    }
 }

@@ -1,0 +1,205 @@
+module PlaywrightTest exposing (main)
+
+{-| Browser tests for the Audio FFI example using Playwright.
+
+These tests verify that the audio-ffi application works correctly in a real browser
+environment with actual Web Audio API support.
+
+Run with:
+    canopy test test/PlaywrightTest.can
+
+Or with visible browser for debugging:
+    canopy test test/PlaywrightTest.can --headed
+
+-}
+
+import Browser.Test exposing (..)
+import Test exposing (Test)
+
+
+{-| Main test entry point.
+-}
+main : Test
+main =
+    runBrowserTests
+        [ uiInteractionTests
+        , simplifiedInterfaceTests
+        , typeSafeInterfaceTests
+        , audioControlTests
+        , modeSelectionTests
+        ]
+
+
+{-| Test data-testid elements are visible and functional.
+-}
+uiInteractionTests : BrowserTest
+uiInteractionTests =
+    describe "UI Interaction Tests"
+        [ browserTest "page loads with all sections"
+            [ visit "/index.html"
+            , waitFor "[data-testid=ffi-validation]"
+            , see "[data-testid=status-section]"
+            , see "[data-testid=mode-simplified]"
+            , see "[data-testid=mode-typesafe]"
+            , see "[data-testid=mode-comparison]"
+            ]
+
+        , browserTest "simplified interface is visible by default"
+            [ visit "/index.html"
+            , waitFor "[data-testid=simplified-interface]"
+            , see "[data-testid=init-audio-simple]"
+            , see "[data-testid=play-audio-simple]"
+            , see "[data-testid=stop-audio-simple]"
+            ]
+
+        , browserTest "FFI validation shows correct values"
+            [ visit "/index.html"
+            , waitFor "[data-testid=ffi-simple-test]"
+            , seeText "simpleTest(42) = 84"
+            ]
+        ]
+
+
+{-| Tests for the simplified string-based interface.
+-}
+simplifiedInterfaceTests : BrowserTest
+simplifiedInterfaceTests =
+    describe "Simplified Interface Tests"
+        [ browserTest "initialize audio shows success status"
+            [ visit "/index.html"
+            , waitFor "[data-testid=init-audio-simple]"
+            , click "[data-testid=init-audio-simple]"
+            , waitFor "[data-testid=status]"
+            ]
+
+        , browserTest "play audio after initialization"
+            [ visit "/index.html"
+            , waitFor "[data-testid=init-audio-simple]"
+            , click "[data-testid=init-audio-simple]"
+            , waitFor "[data-testid=status]"
+            , click "[data-testid=play-audio-simple]"
+            , waitFor "[data-testid=status]"
+            ]
+
+        , browserTest "stop audio works"
+            [ visit "/index.html"
+            , click "[data-testid=init-audio-simple]"
+            , click "[data-testid=play-audio-simple]"
+            , click "[data-testid=stop-audio-simple]"
+            , waitFor "[data-testid=status]"
+            ]
+        ]
+
+
+{-| Tests for the type-safe Result-based interface.
+-}
+typeSafeInterfaceTests : BrowserTest
+typeSafeInterfaceTests =
+    describe "Type-Safe Interface Tests"
+        [ browserTest "switch to type-safe mode"
+            [ visit "/index.html"
+            , click "[data-testid=mode-typesafe]"
+            , waitFor "[data-testid=typesafe-interface]"
+            , see "[data-testid=init-audio-typesafe]"
+            , see "[data-testid=create-nodes-typesafe]"
+            ]
+
+        , browserTest "initialize AudioContext in type-safe mode"
+            [ visit "/index.html"
+            , click "[data-testid=mode-typesafe]"
+            , waitFor "[data-testid=init-audio-typesafe]"
+            , click "[data-testid=init-audio-typesafe]"
+            , waitFor "[data-testid=status]"
+            , seeText "AudioContext"
+            ]
+
+        , browserTest "create audio nodes requires initialization"
+            [ visit "/index.html"
+            , click "[data-testid=mode-typesafe]"
+            , waitFor "[data-testid=typesafe-interface]"
+            , click "[data-testid=init-audio-typesafe]"
+            , waitFor "[data-testid=status]"
+            , click "[data-testid=create-nodes-typesafe]"
+            , waitFor "[data-testid=status]"
+            ]
+
+        , browserTest "complete type-safe audio playback flow"
+            [ visit "/index.html"
+            , click "[data-testid=mode-typesafe]"
+            , waitFor "[data-testid=typesafe-interface]"
+            , click "[data-testid=init-audio-typesafe]"
+            , waitFor "[data-testid=status]"
+            , click "[data-testid=create-nodes-typesafe]"
+            , waitFor "[data-testid=status]"
+            , click "[data-testid=play-audio-typesafe]"
+            , waitFor "[data-testid=status]"
+            , click "[data-testid=stop-audio-typesafe]"
+            ]
+        ]
+
+
+{-| Tests for real-time audio controls.
+-}
+audioControlTests : BrowserTest
+audioControlTests =
+    describe "Audio Control Tests"
+        [ browserTest "frequency slider is interactive"
+            [ visit "/index.html"
+            , waitFor "[data-testid=frequency-slider]"
+            , see "[data-testid=frequency-value]"
+            , seeText "440"
+            ]
+
+        , browserTest "volume slider is interactive"
+            [ visit "/index.html"
+            , waitFor "[data-testid=volume-slider]"
+            , see "[data-testid=volume-value]"
+            , seeText "30%"
+            ]
+
+        , browserTest "waveform buttons are visible"
+            [ visit "/index.html"
+            , waitFor "[data-testid=waveform-controls]"
+            , see "[data-testid=waveform-sine]"
+            , see "[data-testid=waveform-square]"
+            , see "[data-testid=waveform-sawtooth]"
+            , see "[data-testid=waveform-triangle]"
+            ]
+
+        , browserTest "change waveform to square"
+            [ visit "/index.html"
+            , click "[data-testid=init-audio-simple]"
+            , waitFor "[data-testid=waveform-square]"
+            , click "[data-testid=waveform-square]"
+            , waitFor "[data-testid=status]"
+            ]
+        ]
+
+
+{-| Tests for demo mode selection.
+-}
+modeSelectionTests : BrowserTest
+modeSelectionTests =
+    describe "Mode Selection Tests"
+        [ browserTest "can switch to comparison mode"
+            [ visit "/index.html"
+            , click "[data-testid=mode-comparison]"
+            , waitFor "[data-testid=status]"
+            , seeText "Comparison Mode"
+            ]
+
+        , browserTest "toggle advanced information"
+            [ visit "/index.html"
+            , waitFor "[data-testid=toggle-advanced]"
+            , click "[data-testid=toggle-advanced]"
+            , waitFor "[data-testid=advanced-section]"
+            , seeText "Type Signatures Used"
+            ]
+
+        , browserTest "clear operation log"
+            [ visit "/index.html"
+            , click "[data-testid=init-audio-simple]"
+            , see "[data-testid=operation-log]"
+            , click "[data-testid=clear-log]"
+            ]
+        ]

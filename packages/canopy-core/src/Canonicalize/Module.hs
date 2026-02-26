@@ -614,16 +614,40 @@ parseTypeStringWithHome env ffiModuleName homeModuleName jsPath region functionN
     Nothing -> Result.throw (Error.FFIInvalidType region jsPath (Name.fromChars functionName) ("Failed to parse type: " ++ typeStr))
 
 -- Tokenize Canopy type string correctly, handling multi-word types
--- First split by arrows, then tokenize each segment into words
+-- Splits by top-level arrows (respecting parentheses and braces), then tokenizes each segment
 tokenizeCanopyType :: Text.Text -> [String]
 tokenizeCanopyType typeText =
-  let arrowSegments = Text.splitOn "->" typeText
+  let arrowSegments = splitArrowsRespectingParens typeText
       nonEmptySegments = filter (not . Text.null . Text.strip) arrowSegments
       tokenizedSegments = map (tokenizeTypeSegment . Text.strip) nonEmptySegments
   in case tokenizedSegments of
        [] -> []
        [singleSegment] -> singleSegment
        multipleSegments -> List.intercalate ["->"] multipleSegments
+
+
+-- | Split a type string by @->@ arrows at the top level only.
+--
+-- Parenthesized and braced groups are treated as atomic, so arrows
+-- inside @(Browser -> Expectation)@ or @{ a : Int -> String }@ are preserved.
+splitArrowsRespectingParens :: Text.Text -> [Text.Text]
+splitArrowsRespectingParens input = go [] "" (0 :: Int) (Text.unpack input)
+  where
+    go :: [Text.Text] -> String -> Int -> String -> [Text.Text]
+    go acc current _ [] =
+      reverse (Text.pack current : acc)
+    go acc current depth ('(' : cs) =
+      go acc (current ++ "(") (depth + 1) cs
+    go acc current depth ('{' : cs) =
+      go acc (current ++ "{") (depth + 1) cs
+    go acc current depth (')' : cs) =
+      go acc (current ++ ")") (max 0 (depth - 1)) cs
+    go acc current depth ('}' : cs) =
+      go acc (current ++ "}") (max 0 (depth - 1)) cs
+    go acc current 0 ('-' : '>' : cs) =
+      go (Text.pack current : acc) "" 0 cs
+    go acc current depth (c : cs) =
+      go acc (current ++ [c]) depth cs
 
 
 -- Tokenize a single type segment into words, preserving parenthesized expressions
@@ -823,40 +847,41 @@ parseBasicTypeWithHome env ffiModuleName homeModuleName typeName =
     -- Module-qualified types: "Capability.CapabilityError" -> resolve module from environment
     qualifiedType | '.' `elem` qualifiedType ->
       let parts = splitOn '.' qualifiedType
-          moduleParts = init parts  -- ["Capability"]
-          typeNamePart = last parts      -- "CapabilityError"
-          moduleNameStr = intercalate "." moduleParts  -- "Capability"
+          moduleParts = init parts
+          typeNamePart = last parts
+          moduleNameStr = intercalate "." moduleParts
           qualifierName = Name.fromChars moduleNameStr
           typeNameObj = Name.fromChars typeNamePart
           -- First try to look up the qualified type in the environment
-          maybeQualifiedType = do
+          maybeQualifiedTypeInfo = do
             innerMap <- Map.lookup qualifierName (Env._q_types env)
-            typeInfo <- Map.lookup typeNameObj innerMap
-            pure (extractModule typeInfo)
+            Map.lookup typeNameObj innerMap
           -- Fall back to same package as homeModule if not found in environment
-          resolvedModule = case maybeQualifiedType of
-            Just foundModule -> foundModule
-            Nothing -> case homeModuleName of
-              ModuleName.Canonical pkg _ -> ModuleName.Canonical pkg qualifierName
-          resultType = Can.TType resolvedModule typeNameObj []
-      in resultType
+          fallbackModule = case homeModuleName of
+            ModuleName.Canonical pkg _ -> ModuleName.Canonical pkg qualifierName
+      in case maybeQualifiedTypeInfo of
+           Just info -> resolveTypeFromInfo env fallbackModule typeNameObj (Just info)
+           Nothing -> Can.TType fallbackModule typeNameObj []
 
-    -- Custom opaque types (AudioContext, OscillatorNode, GainNode, etc.)
-    -- These should resolve to the FFI module where they are defined
+    -- Custom types (AudioContext, OscillatorNode, GainNode, AuditResult, etc.)
+    -- Resolve using the environment to distinguish aliases from union types
     customType ->
       if customType == "String"
         then Can.TType ModuleName.string (Name.fromChars "String") []
         else
           let typeNameObj = Name.fromChars customType
-              -- Look up the type in the environment to find its defining module
               maybeTypeInfo = Map.lookup typeNameObj (Env._types env)
-              -- Use ffiModuleName for unknown opaque types (they're FFI-specific)
-              resolvedModule = maybe ffiModuleName extractModule maybeTypeInfo
-          in Can.TType resolvedModule typeNameObj []
+          in resolveTypeFromInfo env ffiModuleName typeNameObj maybeTypeInfo
   where
-    extractModule :: Env.Info Env.Type -> ModuleName.Canonical
-    extractModule (Env.Specific definingModule _) = definingModule
-    extractModule (Env.Ambiguous definingModule _) = definingModule
+    resolveTypeFromInfo :: Env.Env -> ModuleName.Canonical -> Name.Name -> Maybe (Env.Info Env.Type) -> Can.Type
+    resolveTypeFromInfo _env' fallback tname Nothing =
+      Can.TType fallback tname []
+    resolveTypeFromInfo _env' _fallback tname (Just (Env.Specific _defMod (Env.Alias _arity home argNames aliasedType))) =
+      Can.TAlias home tname (zip argNames []) (Can.Holey aliasedType)
+    resolveTypeFromInfo _env' _fallback tname (Just (Env.Specific _defMod (Env.Union _arity home))) =
+      Can.TType home tname []
+    resolveTypeFromInfo _env' _fallback tname (Just (Env.Ambiguous defMod _)) =
+      Can.TType defMod tname []
 
     splitOn :: Char -> String -> [String]
     splitOn _ [] = []

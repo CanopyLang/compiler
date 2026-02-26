@@ -476,7 +476,7 @@ data Main
   = -- | Static application without runtime messages.
     --
     -- Represents applications that don't use the Elm Architecture
-    -- and have a simple static main function.
+    -- and have a simple static main function (e.g. @main : Html msg@).
     Static
   | -- | Dynamic application with message handling.
     --
@@ -488,6 +488,12 @@ data Main
         -- | JSON decoder for initialization flags
         _decoder :: Expr
       }
+  | -- | Test or non-visual main that should be exported as a raw value.
+    --
+    -- The main value is exported directly without wrapping in
+    -- @_VirtualDom_init@, allowing test harnesses to access the
+    -- data structure and execute it with the appropriate runner.
+    TestMain
   deriving (Show)
 
 -- | Dependency graph node representing definitions.
@@ -950,6 +956,7 @@ instance Binary.Binary Main where
     case main of
       Static -> Binary.putWord8 0
       Dynamic a b -> Binary.putWord8 1 >> Binary.put a >> Binary.put b
+      TestMain -> Binary.putWord8 2
 
   get =
     do
@@ -957,6 +964,7 @@ instance Binary.Binary Main where
       case word of
         0 -> return Static
         1 -> Monad.liftM2 Dynamic Binary.get Binary.get
+        2 -> return TestMain
         _ -> fail "problem getting Opt.Main binary"
 
 instance Binary.Binary Node where

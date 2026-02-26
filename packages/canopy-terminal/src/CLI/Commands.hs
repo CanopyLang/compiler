@@ -264,8 +264,13 @@ createTestCommand :: Command
 createTestCommand =
   Terminal.Command "test" Terminal.Uncommon details example args flags Test.run
   where
-    details = "The `test` command runs Canopy test files:"
-    example = P.indent 4 (P.green "canopy test tests/MyTest.can")
+    details = "The `test` command runs Canopy test files. Browser tests are auto-detected and run with Playwright:"
+    example =
+      P.vcat
+        [ P.indent 4 (P.green "canopy test tests/MyTest.can"),
+          P.indent 4 (P.green "canopy test --headed test/BrowserTests.can"),
+          P.indent 4 (P.green "canopy test --app src/Main.can test/BrowserTests.can")
+        ]
     args = Terminal.zeroOrMore Terminal.canopyFile
     flags = createTestFlags
 
@@ -575,6 +580,9 @@ createTestFlags =
     |-- Terminal.flag "filter" Test.filterParser "Only run tests whose names contain this pattern."
     |-- Terminal.onOff "watch" "Watch for file changes and re-run tests automatically."
     |-- Terminal.onOff "verbose" "Enable verbose output during test execution."
+    |-- Terminal.onOff "headed" "Show the browser window when running browser tests (non-headless mode)."
+    |-- Terminal.flag "app" Test.appParser "Application entry point for browser tests (e.g. src/Main.can). Can also be set via @browser-app annotation in test files."
+    |-- Terminal.flag "slowmo" Test.slowMoParser "Slow down Playwright browser actions by N milliseconds. Useful for debugging browser tests."
 
 createAuditFlags :: Terminal.Flags Audit.Flags
 createAuditFlags =

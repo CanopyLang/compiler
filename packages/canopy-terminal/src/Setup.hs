@@ -348,18 +348,20 @@ compilePackageFromSource _flags author packageName versionStr pkgDir = do
           case exposedToNonEmpty (Outline._pkgExposed pkgOutline) of
             Nothing -> pure (Left "No exposed modules found in canopy.json")
             Just exposedModules -> do
-              -- Compile the package
+              -- Compile the package from its own directory so FFI paths resolve
               let pkg = mkPkg author packageName
                   srcDir = pkgDir </> "src"
-              compileResult <- Compiler.compileFromExposed pkg False pkgDir [Compiler.AbsoluteSrcDir srcDir] exposedModules
+              compileResult <- Dir.withCurrentDirectory pkgDir
+                (Compiler.compileFromExposed pkg False pkgDir [Compiler.AbsoluteSrcDir srcDir] exposedModules)
               case compileResult of
                 Left err -> pure (Left (show err))
                 Right artifacts -> do
                   -- Convert Build.Artifacts to PackageInterfaces
                   let interfaces = buildArtifactsToInterfaces artifacts
                       globalGraph = Build._artifactsGlobalGraph artifacts
-                  -- Write artifacts
-                  PackageCache.writePackageArtifacts author packageName versionStr interfaces globalGraph
+                      ffiInfo = Build._artifactsFFIInfo artifacts
+                  -- Write artifacts (including FFI info for dependency packages)
+                  PackageCache.writePackageArtifacts author packageName versionStr interfaces globalGraph ffiInfo
                   pure (Right ())
 
 -- | Convert Build.Artifacts to PackageInterfaces (Map ModuleName.Raw I.DependencyInterface).

@@ -213,8 +213,10 @@ addDefHelp region annotations home name args body graph@(Opt.LocalGraph _ nodes 
                   (Result.ok . addMain) . Names.run $ (Opt.Dynamic message <$> Port.toFlagsDecoder flags)
                 Left (subType, invalidPayload) ->
                   Result.throw (E.BadFlags region subType invalidPayload)
+            -- For non-standard main types (e.g., Test, custom types),
+            -- export the raw value without VirtualDom rendering.
             _ ->
-              Result.throw (E.BadType region tipe)
+              (Result.ok . addMain) . Names.run $ pure Opt.TestMain
 
 addDefNode :: ModuleName.Canonical -> Name.Name -> A.Region -> [Can.Pattern] -> Can.Expr -> Set.Set Opt.Global -> Opt.LocalGraph -> Opt.LocalGraph
 addDefNode home name region args body mainDeps graph =

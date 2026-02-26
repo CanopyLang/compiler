@@ -90,11 +90,11 @@ compileFromPaths ::
 compileFromPaths pkg isApp root srcDirs paths = do
   Log.logEvent (BuildStarted (Text.pack "compileFromPaths"))
 
-  -- Load dependency artifacts (interfaces + GlobalGraph)
+  -- Load dependency artifacts (interfaces + GlobalGraph + FFI info)
   maybeArtifacts <- loadDependencyArtifacts root
-  let (depInterfaces, depGlobalGraph) = case maybeArtifacts of
-        Just (ifaces, globalGraph) -> (ifaces, globalGraph)
-        Nothing -> (Map.empty, Opt.empty)
+  let (depInterfaces, depGlobalGraph, depFFIInfo) = case maybeArtifacts of
+        Just (ifaces, globalGraph, ffi) -> (ifaces, globalGraph, ffi)
+        Nothing -> (Map.empty, Opt.empty, Map.empty)
 
   Log.logEvent (BuildModuleQueued (Text.pack ("loaded " ++ show (Map.size depInterfaces) ++ " dependency interfaces")))
 
@@ -112,7 +112,7 @@ compileFromPaths pkg isApp root srcDirs paths = do
       let modules = map moduleResultToModule moduleResults
           localGraphs = map mrLocalGraph moduleResults
           mergedGlobalGraph = mergeGraphs depGlobalGraph localGraphs
-          ffiInfoMap = Map.unions (map mrFFIInfo moduleResults)
+          ffiInfoMap = Map.union (Map.unions (map mrFFIInfo moduleResults)) depFFIInfo
           allLazyModules = Set.unions (map mrLazyImports moduleResults)
           artifacts = Build.Artifacts
             { Build._artifactsName = pkg
@@ -457,9 +457,9 @@ queryErrorToCompileError path qErr =
     Query.OtherError msg -> Exit.CompileCanonicalizeError path msg
     Query.DiagnosticError diagPath diags -> Exit.CompileDiagnosticError diagPath diags
 
--- Helper: Load all dependency artifacts (interfaces + GlobalGraph)
+-- Helper: Load all dependency artifacts (interfaces + GlobalGraph + FFI info)
 -- Uses parallel loading for optimal performance
-loadDependencyArtifacts :: FilePath -> IO (Maybe (Map.Map ModuleName.Raw I.Interface, Opt.GlobalGraph))
+loadDependencyArtifacts :: FilePath -> IO (Maybe (Map.Map ModuleName.Raw I.Interface, Opt.GlobalGraph, Map.Map String JS.FFIInfo))
 loadDependencyArtifacts root = do
   -- Read project dependencies from elm.json/canopy.json
   deps <- readProjectDependencies root
@@ -468,7 +468,7 @@ loadDependencyArtifacts root = do
   case deps of
     [] -> do
       Log.logEvent (BuildModuleQueued (Text.pack "no dependencies found"))
-      return (Just (Map.empty, Opt.empty))
+      return (Just (Map.empty, Opt.empty, Map.empty))
     _ -> do
       -- Load all packages in parallel with async
       -- Packages that fail to load are silently skipped
@@ -476,13 +476,14 @@ loadDependencyArtifacts root = do
       case maybeArtifacts of
         Nothing -> do
           Log.logEvent (BuildModuleQueued (Text.pack "no valid packages loaded"))
-          return (Just (Map.empty, Opt.empty))
+          return (Just (Map.empty, Opt.empty, Map.empty))
         Just artifacts -> do
           let depInterfaces = PackageCache.artifactInterfaces artifacts
               convertedInterfaces = convertDependencyInterfaces depInterfaces
               globalGraph = PackageCache.artifactObjects artifacts
+              ffiInfo = PackageCache.artifactFFIInfo artifacts
           Log.logEvent (BuildModuleQueued (Text.pack ("loaded " ++ show (Map.size convertedInterfaces) ++ " module interfaces")))
-          return (Just (convertedInterfaces, globalGraph))
+          return (Just (convertedInterfaces, globalGraph, ffiInfo))
 
 -- Helper: Read project dependencies from elm.json or canopy.json
 readProjectDependencies :: FilePath -> IO [(Pkg.Name, V.Version)]
@@ -514,18 +515,21 @@ readProjectDependencies root = do
         _ -> return []
 
 -- Helper: Extract dependencies from parsed JSON object
+--
+-- Includes both regular dependencies and test-dependencies so that
+-- test modules (e.g. canopy\/test) are available during compilation.
 extractDepsFromJson :: Json.Object -> [(Pkg.Name, V.Version)]
 extractDepsFromJson obj =
-  case KeyMap.lookup "dependencies" obj of
-    Nothing -> []
-    Just (Json.Object depsObj) ->
-      -- Handle both application format (dependencies.direct + dependencies.indirect)
-      -- and package format (dependencies is a flat map)
-      case (KeyMap.lookup "direct" depsObj, KeyMap.lookup "indirect" depsObj) of
-        (Just (Json.Object directObj), Just (Json.Object indirectObj)) ->
-          parseDepsMap directObj ++ parseDepsMap indirectObj
-        _ -> parseDepsMap depsObj
-    _ -> []
+  extractSection "dependencies" ++ extractSection "test-dependencies"
+  where
+    extractSection key =
+      case KeyMap.lookup key obj of
+        Just (Json.Object depsObj) ->
+          case (KeyMap.lookup "direct" depsObj, KeyMap.lookup "indirect" depsObj) of
+            (Just (Json.Object directObj), Just (Json.Object indirectObj)) ->
+              parseDepsMap directObj ++ parseDepsMap indirectObj
+            _ -> parseDepsMap depsObj
+        _ -> []
 
 -- Helper: Parse dependencies map from JSON
 parseDepsMap :: Json.Object -> [(Pkg.Name, V.Version)]
