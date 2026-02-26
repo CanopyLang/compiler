@@ -213,6 +213,9 @@ addDefHelp region annotations home name args body graph@(Opt.LocalGraph _ nodes 
                   (Result.ok . addMain) . Names.run $ (Opt.Dynamic message <$> Port.toFlagsDecoder flags)
                 Left (subType, invalidPayload) ->
                   Result.throw (E.BadFlags region subType invalidPayload)
+            Can.TType hm nm []
+              | hm == ModuleName.test && nm == Name.browserTest ->
+                (Result.ok . addMain) . Names.run $ pure Opt.BrowserTestMain
             -- For non-standard main types (e.g., Test, custom types),
             -- export the raw value without VirtualDom rendering.
             _ ->

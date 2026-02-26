@@ -25,21 +25,16 @@ Tests all analyser node creation and analysis functions.
 
 -}
 
-import Html exposing (Html, pre, text)
-import Test exposing (Test, describe, test, runTests)
+import Test exposing (Test, describe, test, BrowserTest, inBrowser)
 import Expect
 import AudioFFI
 import Capability exposing (UserActivated(..), Initialized(..), CapabilityError(..))
 import Result exposing (Result(..))
 
 
-main : Html msg
+main : BrowserTest
 main =
-    let
-        results =
-            runTests [ suite ]
-    in
-    pre [] [ text results ]
+    inBrowser [ suite ]
 
 
 suite : Test
@@ -60,13 +55,14 @@ suite =
 createAnalyserTests : Test
 createAnalyserTests =
     describe "createAnalyser"
-        [ test "creates analyser node" <|
+        [ test "creates analyser with default FFT size 2048" <|
             \_ ->
                 withRawContext <| \ctx ->
                     let
                         analyser = AudioFFI.createAnalyser ctx
+                        fftSize = AudioFFI.getAnalyserFFTSize analyser
                     in
-                    Expect.pass
+                    Expect.equal 2048 fftSize
         ]
 
 
@@ -79,47 +75,47 @@ analyserDataTests : Test
 analyserDataTests =
     describe "analyser data retrieval"
         [ describe "getByteTimeDomainData"
-            [ test "returns time domain data" <|
+            [ test "returns list with fftSize elements" <|
                 \_ ->
                     withRawContext <| \ctx ->
                         let
                             analyser = AudioFFI.createAnalyser ctx
-                            data = AudioFFI.getByteTimeDomainData analyser
+                            dataList = AudioFFI.getByteTimeDomainData analyser
                         in
-                        Expect.true "should return list" (True)
+                        Expect.equal 2048 (List.length dataList)
             ]
 
         , describe "getByteFrequencyData"
-            [ test "returns frequency data" <|
+            [ test "returns list with frequencyBinCount elements" <|
                 \_ ->
                     withRawContext <| \ctx ->
                         let
                             analyser = AudioFFI.createAnalyser ctx
-                            data = AudioFFI.getByteFrequencyData analyser
+                            dataList = AudioFFI.getByteFrequencyData analyser
                         in
-                        Expect.true "should return list" (True)
+                        Expect.equal 1024 (List.length dataList)
             ]
 
         , describe "getFloatTimeDomainData"
-            [ test "returns float time domain data" <|
+            [ test "returns list with fftSize elements" <|
                 \_ ->
                     withRawContext <| \ctx ->
                         let
                             analyser = AudioFFI.createAnalyser ctx
-                            data = AudioFFI.getFloatTimeDomainData analyser
+                            dataList = AudioFFI.getFloatTimeDomainData analyser
                         in
-                        Expect.true "should return list" (True)
+                        Expect.equal 2048 (List.length dataList)
             ]
 
         , describe "getFloatFrequencyData"
-            [ test "returns float frequency data" <|
+            [ test "returns list with frequencyBinCount elements" <|
                 \_ ->
                     withRawContext <| \ctx ->
                         let
                             analyser = AudioFFI.createAnalyser ctx
-                            data = AudioFFI.getFloatFrequencyData analyser
+                            dataList = AudioFFI.getFloatFrequencyData analyser
                         in
-                        Expect.true "should return list" (True)
+                        Expect.equal 1024 (List.length dataList)
             ]
         ]
 
@@ -163,7 +159,7 @@ analyserConfigTests =
                         in
                         Expect.equal 4096 fftSize
 
-            , test "handles FFT size setting" <|
+            , test "sets FFT size to 1024" <|
                 \_ ->
                     withRawContext <| \ctx ->
                         let
@@ -171,31 +167,35 @@ analyserConfigTests =
                             _ = AudioFFI.setAnalyserFFTSize analyser 1024
                             fftSize = AudioFFI.getAnalyserFFTSize analyser
                         in
-                        Expect.true "FFT size should be positive" (fftSize > 0)
+                        Expect.equal 1024 fftSize
             ]
 
         , describe "setAnalyserMinDecibels"
-            [ test "sets min decibels" <|
+            [ test "sets min decibels to -100" <|
                 \_ ->
                     withRawContext <| \ctx ->
                         let
                             analyser = AudioFFI.createAnalyser ctx
                         in
-                        case AudioFFI.setAnalyserMinDecibels analyser (-100.0) of
-                            Ok _ -> Expect.pass
-                            Err _ -> Expect.pass
+                        expectOk "setAnalyserMinDecibels" (AudioFFI.setAnalyserMinDecibels analyser (-100.0)) <| \_ ->
+                            let
+                                minDb = AudioFFI.getAnalyserMinDecibels analyser
+                            in
+                            Expect.within (Expect.Absolute 0.01) (-100.0) minDb
             ]
 
         , describe "setAnalyserMaxDecibels"
-            [ test "sets max decibels" <|
+            [ test "sets max decibels to -30" <|
                 \_ ->
                     withRawContext <| \ctx ->
                         let
                             analyser = AudioFFI.createAnalyser ctx
                         in
-                        case AudioFFI.setAnalyserMaxDecibels analyser (-30.0) of
-                            Ok _ -> Expect.pass
-                            Err _ -> Expect.pass
+                        expectOk "setAnalyserMaxDecibels" (AudioFFI.setAnalyserMaxDecibels analyser (-30.0)) <| \_ ->
+                            let
+                                maxDb = AudioFFI.getAnalyserMaxDecibels analyser
+                            in
+                            Expect.within (Expect.Absolute 0.01) (-30.0) maxDb
             ]
 
         , describe "setAnalyserSmoothingTimeConstant"
@@ -205,9 +205,8 @@ analyserConfigTests =
                         let
                             analyser = AudioFFI.createAnalyser ctx
                         in
-                        case AudioFFI.setAnalyserSmoothingTimeConstant analyser 0.8 of
-                            Ok _ -> Expect.pass
-                            Err _ -> Expect.pass
+                        expectOk "setAnalyserSmoothingTimeConstant" (AudioFFI.setAnalyserSmoothingTimeConstant analyser 0.8) <| \_ ->
+                            Expect.pass
             ]
 
         , describe "setAnalyserSmoothing"
@@ -241,15 +240,14 @@ analyserConfigTests =
                         in
                         Expect.within (Expect.Absolute 0.1) 1.0 smoothing
 
-            , test "smoothing values are clamped to valid range" <|
+            , test "smoothing default is 0.8" <|
                 \_ ->
                     withRawContext <| \ctx ->
                         let
                             analyser = AudioFFI.createAnalyser ctx
-                            _ = AudioFFI.setAnalyserSmoothing analyser 0.8
                             smoothing = AudioFFI.getAnalyserSmoothingTimeConstant analyser
                         in
-                        Expect.true "smoothing should be in 0-1 range" (smoothing >= 0 && smoothing <= 1)
+                        Expect.within (Expect.Absolute 0.01) 0.8 smoothing
             ]
         ]
 
@@ -263,12 +261,11 @@ analyserPropertyTests : Test
 analyserPropertyTests =
     describe "analyser properties"
         [ describe "getAnalyserFFTSize"
-            [ test "returns FFT size" <|
+            [ test "returns FFT size 2048 by default" <|
                 \_ ->
                     withRawContext <| \ctx ->
                         let
                             analyser = AudioFFI.createAnalyser ctx
-                            _ = AudioFFI.setAnalyserFFTSize analyser 2048
                             fftSize = AudioFFI.getAnalyserFFTSize analyser
                         in
                         Expect.equal 2048 fftSize
@@ -287,47 +284,47 @@ analyserPropertyTests =
             ]
 
         , describe "getFrequencyBinCount"
-            [ test "returns frequency bin count" <|
+            [ test "returns 1024 for default 2048 FFT" <|
                 \_ ->
                     withRawContext <| \ctx ->
                         let
                             analyser = AudioFFI.createAnalyser ctx
                             binCount = AudioFFI.getFrequencyBinCount analyser
                         in
-                        Expect.true "bin count should be positive" (binCount > 0)
+                        Expect.equal 1024 binCount
             ]
 
         , describe "getAnalyserMinDecibels"
-            [ test "returns min decibels value" <|
+            [ test "returns default -100" <|
                 \_ ->
                     withRawContext <| \ctx ->
                         let
                             analyser = AudioFFI.createAnalyser ctx
                             minDb = AudioFFI.getAnalyserMinDecibels analyser
                         in
-                        Expect.true "min dB should be negative" (minDb < 0)
+                        Expect.within (Expect.Absolute 0.01) (-100.0) minDb
             ]
 
         , describe "getAnalyserMaxDecibels"
-            [ test "returns max decibels value" <|
+            [ test "returns default -30" <|
                 \_ ->
                     withRawContext <| \ctx ->
                         let
                             analyser = AudioFFI.createAnalyser ctx
                             maxDb = AudioFFI.getAnalyserMaxDecibels analyser
                         in
-                        Expect.true "max dB should be less than 0" (maxDb <= 0)
+                        Expect.within (Expect.Absolute 0.01) (-30.0) maxDb
             ]
 
         , describe "getAnalyserSmoothingTimeConstant"
-            [ test "returns smoothing value" <|
+            [ test "returns default 0.8" <|
                 \_ ->
                     withRawContext <| \ctx ->
                         let
                             analyser = AudioFFI.createAnalyser ctx
                             smoothing = AudioFFI.getAnalyserSmoothingTimeConstant analyser
                         in
-                        Expect.true "smoothing should be 0-1" (smoothing >= 0 && smoothing <= 1)
+                        Expect.within (Expect.Absolute 0.01) 0.8 smoothing
             ]
         ]
 
@@ -341,7 +338,7 @@ withRawContext : (AudioFFI.AudioContext -> Expect.Expectation) -> Expect.Expecta
 withRawContext fn =
     case AudioFFI.createAudioContext Click of
         Ok ctx -> fn (extractContext ctx)
-        Err _ -> Expect.pass
+        Err err -> Expect.fail ("withRawContext: createAudioContext failed: " ++ errorToString err)
 
 
 extractContext : Initialized AudioFFI.AudioContext -> AudioFFI.AudioContext
@@ -349,3 +346,22 @@ extractContext initialized =
     case initialized of
         Fresh ctx -> ctx
         Running ctx -> ctx
+
+
+expectOk : String -> Result CapabilityError a -> (a -> Expect.Expectation) -> Expect.Expectation
+expectOk label result fn =
+    case result of
+        Ok value -> fn value
+        Err err -> Expect.fail (label ++ ": " ++ errorToString err)
+
+
+errorToString : CapabilityError -> String
+errorToString err =
+    case err of
+        UserActivationRequired msg -> "UserActivationRequired: " ++ msg
+        InitializationRequired msg -> "InitializationRequired: " ++ msg
+        FeatureNotAvailable msg -> "FeatureNotAvailable: " ++ msg
+        NotSupportedError msg -> "NotSupportedError: " ++ msg
+        InvalidStateError msg -> "InvalidStateError: " ++ msg
+        RangeError msg -> "RangeError: " ++ msg
+        _ -> "Unknown error"

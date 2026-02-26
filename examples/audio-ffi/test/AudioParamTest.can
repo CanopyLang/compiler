@@ -26,21 +26,16 @@ Tests all audio parameter manipulation functions.
 
 -}
 
-import Html exposing (Html, pre, text)
-import Test exposing (Test, describe, test, runTests)
+import Test exposing (Test, describe, test, runTests, BrowserTest, inBrowser)
 import Expect
 import AudioFFI
 import Capability exposing (UserActivated(..), Initialized(..), CapabilityError(..))
 import Result exposing (Result(..))
 
 
-main : Html msg
+main : BrowserTest
 main =
-    let
-        results =
-            runTests [ suite ]
-    in
-    pre [] [ text results ]
+    inBrowser [ suite ]
 
 
 suite : Test
@@ -66,43 +61,36 @@ paramValueTests =
             [ test "sets value at time" <|
                 \_ ->
                     withContext <| \ctx ->
-                        case AudioFFI.createGainNode ctx 1.0 of
-                            Ok gain ->
-                                let
-                                    param = AudioFFI.getGainParam gain
-                                    _ = AudioFFI.setValueAtTime param 0.5 0.0
-                                in
-                                Expect.pass
-                            Err _ -> Expect.pass
+                        expectOk "createGainNode" (AudioFFI.createGainNode ctx 1.0) <| \gain ->
+                            let
+                                param = AudioFFI.getGainParam gain
+                                _ = AudioFFI.setValueAtTime param 0.5 0.0
+                            in
+                            Expect.pass
             ]
 
         , describe "setParamValueAtTime"
             [ test "sets param value at time" <|
                 \_ ->
                     withContext <| \ctx ->
-                        case AudioFFI.createGainNode ctx 1.0 of
-                            Ok gain ->
-                                let
-                                    param = AudioFFI.getGainParam gain
-                                    _ = AudioFFI.setParamValueAtTime param 0.75 0.0
-                                in
-                                Expect.pass
-                            Err _ -> Expect.pass
+                        expectOk "createGainNode" (AudioFFI.createGainNode ctx 1.0) <| \gain ->
+                            let
+                                param = AudioFFI.getGainParam gain
+                                _ = AudioFFI.setParamValueAtTime param 0.75 0.0
+                            in
+                            Expect.pass
             ]
 
         , describe "setAudioParamValue"
-            [ test "sets param value directly" <|
+            [ test "sets param value directly and verifies" <|
                 \_ ->
                     withContext <| \ctx ->
-                        case AudioFFI.createGainNode ctx 1.0 of
-                            Ok gain ->
-                                let
-                                    param = AudioFFI.getGainParam gain
-                                in
-                                case AudioFFI.setAudioParamValue param 0.5 of
-                                    Ok _ -> Expect.pass
-                                    Err _ -> Expect.pass
-                            Err _ -> Expect.pass
+                        expectOk "createGainNode" (AudioFFI.createGainNode ctx 1.0) <| \gain ->
+                            let
+                                param = AudioFFI.getGainParam gain
+                            in
+                            expectOk "setAudioParamValue" (AudioFFI.setAudioParamValue param 0.5) <| \_ ->
+                                Expect.within (Expect.Absolute 0.01) 0.5 (AudioFFI.getAudioParamValue param)
             ]
         ]
 
@@ -119,74 +107,64 @@ paramRampTests =
             [ test "ramps linearly to target" <|
                 \_ ->
                     withContext <| \ctx ->
-                        case AudioFFI.createGainNode ctx 1.0 of
-                            Ok gain ->
-                                let
-                                    param = AudioFFI.getGainParam gain
-                                    _1 = AudioFFI.setValueAtTime param 1.0 0.0
-                                    _2 = AudioFFI.linearRampToValue param 0.0 1.0
-                                in
-                                Expect.pass
-                            Err _ -> Expect.pass
+                        expectOk "createGainNode" (AudioFFI.createGainNode ctx 1.0) <| \gain ->
+                            let
+                                param = AudioFFI.getGainParam gain
+                                _1 = AudioFFI.setValueAtTime param 1.0 0.0
+                                _2 = AudioFFI.linearRampToValue param 0.0 1.0
+                            in
+                            Expect.pass
             ]
 
         , describe "linearRampToValueAtTime"
             [ test "ramps linearly to value at time" <|
                 \_ ->
                     withContext <| \ctx ->
-                        case AudioFFI.createGainNode ctx 1.0 of
-                            Ok gain ->
-                                let
-                                    param = AudioFFI.getGainParam gain
-                                    _1 = AudioFFI.setValueAtTime param 1.0 0.0
-                                    _2 = AudioFFI.linearRampToValueAtTime param 0.5 2.0
-                                in
-                                Expect.pass
-                            Err _ -> Expect.pass
+                        expectOk "createGainNode" (AudioFFI.createGainNode ctx 1.0) <| \gain ->
+                            let
+                                param = AudioFFI.getGainParam gain
+                                _1 = AudioFFI.setValueAtTime param 1.0 0.0
+                                _2 = AudioFFI.linearRampToValueAtTime param 0.5 2.0
+                            in
+                            Expect.pass
             ]
 
         , describe "exponentialRampToValue"
             [ test "ramps exponentially to target" <|
                 \_ ->
                     withContext <| \ctx ->
-                        case AudioFFI.createGainNode ctx 1.0 of
-                            Ok gain ->
-                                let
-                                    param = AudioFFI.getGainParam gain
-                                    _1 = AudioFFI.setValueAtTime param 1.0 0.0
-                                    _2 = AudioFFI.exponentialRampToValue param 0.01 1.0
-                                in
-                                Expect.pass
-                            Err _ -> Expect.pass
+                        expectOk "createGainNode" (AudioFFI.createGainNode ctx 1.0) <| \gain ->
+                            let
+                                param = AudioFFI.getGainParam gain
+                                _1 = AudioFFI.setValueAtTime param 1.0 0.0
+                                _2 = AudioFFI.exponentialRampToValue param 0.01 1.0
+                            in
+                            Expect.pass
             ]
 
         , describe "exponentialRampToValueAtTime"
             [ test "ramps exponentially to value at time" <|
                 \_ ->
                     withContext <| \ctx ->
-                        case AudioFFI.createGainNode ctx 1.0 of
-                            Ok gain ->
-                                let
-                                    param = AudioFFI.getGainParam gain
-                                    _1 = AudioFFI.setValueAtTime param 1.0 0.0
-                                    _2 = AudioFFI.exponentialRampToValueAtTime param 0.1 2.0
-                                in
-                                Expect.pass
-                            Err _ -> Expect.pass
+                        expectOk "createGainNode" (AudioFFI.createGainNode ctx 1.0) <| \gain ->
+                            let
+                                param = AudioFFI.getGainParam gain
+                                _1 = AudioFFI.setValueAtTime param 1.0 0.0
+                                _2 = AudioFFI.exponentialRampToValueAtTime param 0.1 2.0
+                            in
+                            Expect.pass
             ]
 
         , describe "setTargetAtTime"
             [ test "sets exponential approach to target" <|
                 \_ ->
                     withContext <| \ctx ->
-                        case AudioFFI.createGainNode ctx 1.0 of
-                            Ok gain ->
-                                let
-                                    param = AudioFFI.getGainParam gain
-                                    _ = AudioFFI.setTargetAtTime param 0.0 0.0 0.5
-                                in
-                                Expect.pass
-                            Err _ -> Expect.pass
+                        expectOk "createGainNode" (AudioFFI.createGainNode ctx 1.0) <| \gain ->
+                            let
+                                param = AudioFFI.getGainParam gain
+                                _ = AudioFFI.setTargetAtTime param 0.0 0.0 0.5
+                            in
+                            Expect.pass
             ]
         ]
 
@@ -203,48 +181,41 @@ paramCurveTests =
             [ test "sets value curve" <|
                 \_ ->
                     withContext <| \ctx ->
-                        case AudioFFI.createGainNode ctx 1.0 of
-                            Ok gain ->
-                                let
-                                    param = AudioFFI.getGainParam gain
-                                    curve = [0.0, 0.5, 1.0, 0.5, 0.0]
-                                in
-                                case AudioFFI.setValueCurveAtTime param curve 0.0 1.0 of
-                                    Ok _ -> Expect.pass
-                                    Err _ -> Expect.pass
-                            Err _ -> Expect.pass
+                        expectOk "createGainNode" (AudioFFI.createGainNode ctx 1.0) <| \gain ->
+                            let
+                                param = AudioFFI.getGainParam gain
+                                curve = [0.0, 0.5, 1.0, 0.5, 0.0]
+                            in
+                            expectOk "setValueCurveAtTime" (AudioFFI.setValueCurveAtTime param curve 0.0 1.0) <| \_ ->
+                                Expect.pass
             ]
 
         , describe "cancelScheduledValues"
             [ test "cancels scheduled automation" <|
                 \_ ->
                     withContext <| \ctx ->
-                        case AudioFFI.createGainNode ctx 1.0 of
-                            Ok gain ->
-                                let
-                                    param = AudioFFI.getGainParam gain
-                                    _1 = AudioFFI.setValueAtTime param 1.0 0.0
-                                    _2 = AudioFFI.linearRampToValue param 0.0 1.0
-                                    _3 = AudioFFI.cancelScheduledValues param 0.5
-                                in
-                                Expect.pass
-                            Err _ -> Expect.pass
+                        expectOk "createGainNode" (AudioFFI.createGainNode ctx 1.0) <| \gain ->
+                            let
+                                param = AudioFFI.getGainParam gain
+                                _1 = AudioFFI.setValueAtTime param 1.0 0.0
+                                _2 = AudioFFI.linearRampToValue param 0.0 1.0
+                                _3 = AudioFFI.cancelScheduledValues param 0.5
+                            in
+                            Expect.pass
             ]
 
         , describe "cancelAndHoldAtTime"
             [ test "cancels and holds at time" <|
                 \_ ->
                     withContext <| \ctx ->
-                        case AudioFFI.createGainNode ctx 1.0 of
-                            Ok gain ->
-                                let
-                                    param = AudioFFI.getGainParam gain
-                                    _1 = AudioFFI.setValueAtTime param 1.0 0.0
-                                    _2 = AudioFFI.linearRampToValue param 0.0 2.0
-                                    _3 = AudioFFI.cancelAndHoldAtTime param 1.0
-                                in
-                                Expect.pass
-                            Err _ -> Expect.pass
+                        expectOk "createGainNode" (AudioFFI.createGainNode ctx 1.0) <| \gain ->
+                            let
+                                param = AudioFFI.getGainParam gain
+                                _1 = AudioFFI.setValueAtTime param 1.0 0.0
+                                _2 = AudioFFI.linearRampToValue param 0.0 2.0
+                                _3 = AudioFFI.cancelAndHoldAtTime param 1.0
+                            in
+                            Expect.pass
             ]
         ]
 
@@ -258,59 +229,51 @@ paramPropertyTests : Test
 paramPropertyTests =
     describe "param properties"
         [ describe "getAudioParamValue"
-            [ test "returns current value" <|
+            [ test "returns 0.75 for gain node created with 0.75" <|
                 \_ ->
                     withContext <| \ctx ->
-                        case AudioFFI.createGainNode ctx 0.75 of
-                            Ok gain ->
-                                let
-                                    param = AudioFFI.getGainParam gain
-                                    value = AudioFFI.getAudioParamValue param
-                                in
-                                Expect.within (Expect.Absolute 0.01) 0.75 value
-                            Err _ -> Expect.pass
+                        expectOk "createGainNode" (AudioFFI.createGainNode ctx 0.75) <| \gain ->
+                            let
+                                param = AudioFFI.getGainParam gain
+                                value = AudioFFI.getAudioParamValue param
+                            in
+                            Expect.within (Expect.Absolute 0.01) 0.75 value
             ]
 
         , describe "getAudioParamDefaultValue"
-            [ test "returns default value" <|
+            [ test "returns default value 1.0 for gain" <|
                 \_ ->
                     withContext <| \ctx ->
-                        case AudioFFI.createGainNode ctx 1.0 of
-                            Ok gain ->
-                                let
-                                    param = AudioFFI.getGainParam gain
-                                    defaultVal = AudioFFI.getAudioParamDefaultValue param
-                                in
-                                Expect.within (Expect.Absolute 0.01) 1.0 defaultVal
-                            Err _ -> Expect.pass
+                        expectOk "createGainNode" (AudioFFI.createGainNode ctx 1.0) <| \gain ->
+                            let
+                                param = AudioFFI.getGainParam gain
+                                defaultVal = AudioFFI.getAudioParamDefaultValue param
+                            in
+                            Expect.within (Expect.Absolute 0.01) 1.0 defaultVal
             ]
 
         , describe "getAudioParamMinValue"
-            [ test "returns minimum value" <|
+            [ test "returns min value <= 0" <|
                 \_ ->
                     withContext <| \ctx ->
-                        case AudioFFI.createGainNode ctx 1.0 of
-                            Ok gain ->
-                                let
-                                    param = AudioFFI.getGainParam gain
-                                    minVal = AudioFFI.getAudioParamMinValue param
-                                in
-                                Expect.true "min should be very small or negative" (minVal <= 0)
-                            Err _ -> Expect.pass
+                        expectOk "createGainNode" (AudioFFI.createGainNode ctx 1.0) <| \gain ->
+                            let
+                                param = AudioFFI.getGainParam gain
+                                minVal = AudioFFI.getAudioParamMinValue param
+                            in
+                            Expect.true "min should be very small or negative" (minVal <= 0)
             ]
 
         , describe "getAudioParamMaxValue"
-            [ test "returns maximum value" <|
+            [ test "returns max value > 1" <|
                 \_ ->
                     withContext <| \ctx ->
-                        case AudioFFI.createGainNode ctx 1.0 of
-                            Ok gain ->
-                                let
-                                    param = AudioFFI.getGainParam gain
-                                    maxVal = AudioFFI.getAudioParamMaxValue param
-                                in
-                                Expect.true "max should be large" (maxVal > 1)
-                            Err _ -> Expect.pass
+                        expectOk "createGainNode" (AudioFFI.createGainNode ctx 1.0) <| \gain ->
+                            let
+                                param = AudioFFI.getGainParam gain
+                                maxVal = AudioFFI.getAudioParamMaxValue param
+                            in
+                            Expect.true "max should be large" (maxVal > 1)
             ]
         ]
 
@@ -324,46 +287,37 @@ paramAutomationTests : Test
 paramAutomationTests =
     describe "param automation rate"
         [ describe "getAudioParamAutomationRate"
-            [ test "returns automation rate" <|
+            [ test "returns a-rate by default" <|
                 \_ ->
                     withContext <| \ctx ->
-                        case AudioFFI.createGainNode ctx 1.0 of
-                            Ok gain ->
-                                let
-                                    param = AudioFFI.getGainParam gain
-                                    rate = AudioFFI.getAudioParamAutomationRate param
-                                in
-                                Expect.true "should be valid rate"
-                                    (rate == "a-rate" || rate == "k-rate")
-                            Err _ -> Expect.pass
+                        expectOk "createGainNode" (AudioFFI.createGainNode ctx 1.0) <| \gain ->
+                            let
+                                param = AudioFFI.getGainParam gain
+                                rate = AudioFFI.getAudioParamAutomationRate param
+                            in
+                            Expect.equal "a-rate" rate
             ]
 
         , describe "setAudioParamAutomationRate"
             [ test "sets automation rate to a-rate" <|
                 \_ ->
                     withContext <| \ctx ->
-                        case AudioFFI.createGainNode ctx 1.0 of
-                            Ok gain ->
-                                let
-                                    param = AudioFFI.getGainParam gain
-                                in
-                                case AudioFFI.setAudioParamAutomationRate param "a-rate" of
-                                    Ok _ -> Expect.pass
-                                    Err _ -> Expect.pass
-                            Err _ -> Expect.pass
+                        expectOk "createGainNode" (AudioFFI.createGainNode ctx 1.0) <| \gain ->
+                            let
+                                param = AudioFFI.getGainParam gain
+                            in
+                            expectOk "setAudioParamAutomationRate" (AudioFFI.setAudioParamAutomationRate param "a-rate") <| \_ ->
+                                Expect.equal "a-rate" (AudioFFI.getAudioParamAutomationRate param)
 
             , test "sets automation rate to k-rate" <|
                 \_ ->
                     withContext <| \ctx ->
-                        case AudioFFI.createGainNode ctx 1.0 of
-                            Ok gain ->
-                                let
-                                    param = AudioFFI.getGainParam gain
-                                in
-                                case AudioFFI.setAudioParamAutomationRate param "k-rate" of
-                                    Ok _ -> Expect.pass
-                                    Err _ -> Expect.pass
-                            Err _ -> Expect.pass
+                        expectOk "createGainNode" (AudioFFI.createGainNode ctx 1.0) <| \gain ->
+                            let
+                                param = AudioFFI.getGainParam gain
+                            in
+                            expectOk "setAudioParamAutomationRate" (AudioFFI.setAudioParamAutomationRate param "k-rate") <| \_ ->
+                                Expect.equal "k-rate" (AudioFFI.getAudioParamAutomationRate param)
             ]
         ]
 
@@ -377,4 +331,23 @@ withContext : (Initialized AudioFFI.AudioContext -> Expect.Expectation) -> Expec
 withContext fn =
     case AudioFFI.createAudioContext Click of
         Ok ctx -> fn ctx
-        Err _ -> Expect.pass
+        Err err -> Expect.fail ("withContext: createAudioContext failed: " ++ errorToString err)
+
+
+expectOk : String -> Result CapabilityError a -> (a -> Expect.Expectation) -> Expect.Expectation
+expectOk label result fn =
+    case result of
+        Ok value -> fn value
+        Err err -> Expect.fail (label ++ ": " ++ errorToString err)
+
+
+errorToString : CapabilityError -> String
+errorToString err =
+    case err of
+        UserActivationRequired msg -> "UserActivationRequired: " ++ msg
+        InitializationRequired msg -> "InitializationRequired: " ++ msg
+        FeatureNotAvailable msg -> "FeatureNotAvailable: " ++ msg
+        NotSupportedError msg -> "NotSupportedError: " ++ msg
+        InvalidStateError msg -> "InvalidStateError: " ++ msg
+        RangeError msg -> "RangeError: " ++ msg
+        _ -> "Unknown error"

@@ -2,7 +2,7 @@
 -- Provides core testing functionality including sync, async, and browser tests
 
 module Test exposing
-  ( Test
+  ( Test(..)
   , PlaywrightAction(..)
   , BrowserTest(..)
   , inBrowser

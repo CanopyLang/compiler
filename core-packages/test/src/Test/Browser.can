@@ -29,7 +29,7 @@ module Test.Browser exposing
     , screenshot
     )
 
-import Test exposing (Test, PlaywrightAction(..))
+import Test exposing (Test(..), PlaywrightAction(..))
 
 
 {-| Navigate the test iframe to the given URL.
@@ -39,7 +39,7 @@ import Test exposing (Test, PlaywrightAction(..))
 -}
 visit : String -> Test
 visit url =
-    Test.PlaywrightStep (Visit url)
+    PlaywrightStep (Visit url)
 
 
 {-| Click an element matching the CSS selector.
@@ -49,7 +49,7 @@ visit url =
 -}
 click : String -> Test
 click selector =
-    Test.PlaywrightStep (Click selector)
+    PlaywrightStep (Click selector)
 
 
 {-| Fill an input matching the CSS selector with a value.
@@ -59,7 +59,7 @@ click selector =
 -}
 fill : String -> String -> Test
 fill selector value =
-    Test.PlaywrightStep (Fill selector value)
+    PlaywrightStep (Fill selector value)
 
 
 {-| Check a checkbox matching the CSS selector.
@@ -69,7 +69,7 @@ fill selector value =
 -}
 check : String -> Test
 check selector =
-    Test.PlaywrightStep (Check selector)
+    PlaywrightStep (Check selector)
 
 
 {-| Assert that the given text is visible on the page.
@@ -79,7 +79,7 @@ check selector =
 -}
 seeText : String -> Test
 seeText text =
-    Test.PlaywrightStep (SeeText text)
+    PlaywrightStep (SeeText text)
 
 
 {-| Assert that an element matching the CSS selector is visible.
@@ -89,7 +89,7 @@ seeText text =
 -}
 seeElement : String -> Test
 seeElement selector =
-    Test.PlaywrightStep (SeeElement selector)
+    PlaywrightStep (SeeElement selector)
 
 
 {-| Assert that the given text is NOT visible on the page.
@@ -99,7 +99,7 @@ seeElement selector =
 -}
 dontSee : String -> Test
 dontSee text =
-    Test.PlaywrightStep (DontSee text)
+    PlaywrightStep (DontSee text)
 
 
 {-| Assert that an element matching the CSS selector is NOT visible.
@@ -109,7 +109,7 @@ dontSee text =
 -}
 dontSeeElement : String -> Test
 dontSeeElement selector =
-    Test.PlaywrightStep (DontSeeElement selector)
+    PlaywrightStep (DontSeeElement selector)
 
 
 {-| Wait for an element matching the CSS selector to become visible.
@@ -119,7 +119,7 @@ dontSeeElement selector =
 -}
 waitFor : String -> Test
 waitFor selector =
-    Test.PlaywrightStep (WaitFor selector)
+    PlaywrightStep (WaitFor selector)
 
 
 {-| Take a screenshot with the given name.
@@ -131,4 +131,4 @@ Screenshots are saved to test-output/screenshots/{name}.png.
 -}
 screenshot : String -> Test
 screenshot name =
-    Test.PlaywrightStep (Screenshot name)
+    PlaywrightStep (Screenshot name)

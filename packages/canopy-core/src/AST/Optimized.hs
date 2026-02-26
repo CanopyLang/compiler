@@ -494,6 +494,12 @@ data Main
     -- @_VirtualDom_init@, allowing test harnesses to access the
     -- data structure and execute it with the appropriate runner.
     TestMain
+  | -- | Browser test main that runs in a real browser via Playwright.
+    --
+    -- The main value is exported as @_browserTestMain@ so the HTML
+    -- harness can extract the test list and execute it with real
+    -- browser APIs (Web Audio, Canvas, WebGL, etc.).
+    BrowserTestMain
   deriving (Show)
 
 -- | Dependency graph node representing definitions.
@@ -957,6 +963,7 @@ instance Binary.Binary Main where
       Static -> Binary.putWord8 0
       Dynamic a b -> Binary.putWord8 1 >> Binary.put a >> Binary.put b
       TestMain -> Binary.putWord8 2
+      BrowserTestMain -> Binary.putWord8 3
 
   get =
     do
@@ -965,6 +972,7 @@ instance Binary.Binary Main where
         0 -> return Static
         1 -> Monad.liftM2 Dynamic Binary.get Binary.get
         2 -> return TestMain
+        3 -> return BrowserTestMain
         _ -> fail "problem getting Opt.Main binary"
 
 instance Binary.Binary Node where

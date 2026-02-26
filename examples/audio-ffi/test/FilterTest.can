@@ -23,20 +23,18 @@ Tests all biquad filter and IIR filter functions.
 -}
 
 import Html exposing (Html, pre, text)
-import Test exposing (Test, describe, test, runTests)
+import Test exposing (Test, describe, test, runTests, BrowserTest, inBrowser)
 import Expect
 import AudioFFI
 import Capability exposing (UserActivated(..), Initialized(..), CapabilityError(..))
 import Result exposing (Result(..))
 
 
-main : Html msg
+main : BrowserTest
 main =
-    let
-        results =
-            runTests [ suite ]
-    in
-    pre [] [ text results ]
+    inBrowser
+        [ suite
+        ]
 
 
 suite : Test
@@ -63,7 +61,7 @@ biquadFilterTests =
                     let
                         filter = AudioFFI.createBiquadFilter ctx "lowpass"
                     in
-                    Expect.pass
+                    Expect.equal "lowpass" (AudioFFI.getBiquadFilterType filter)
 
         , test "creates highpass filter" <|
             \_ ->
@@ -71,7 +69,7 @@ biquadFilterTests =
                     let
                         filter = AudioFFI.createBiquadFilter ctx "highpass"
                     in
-                    Expect.pass
+                    Expect.equal "highpass" (AudioFFI.getBiquadFilterType filter)
 
         , test "creates bandpass filter" <|
             \_ ->
@@ -79,7 +77,7 @@ biquadFilterTests =
                     let
                         filter = AudioFFI.createBiquadFilter ctx "bandpass"
                     in
-                    Expect.pass
+                    Expect.equal "bandpass" (AudioFFI.getBiquadFilterType filter)
 
         , test "creates notch filter" <|
             \_ ->
@@ -87,7 +85,7 @@ biquadFilterTests =
                     let
                         filter = AudioFFI.createBiquadFilter ctx "notch"
                     in
-                    Expect.pass
+                    Expect.equal "notch" (AudioFFI.getBiquadFilterType filter)
 
         , test "creates peaking filter" <|
             \_ ->
@@ -95,7 +93,7 @@ biquadFilterTests =
                     let
                         filter = AudioFFI.createBiquadFilter ctx "peaking"
                     in
-                    Expect.pass
+                    Expect.equal "peaking" (AudioFFI.getBiquadFilterType filter)
 
         , test "creates lowshelf filter" <|
             \_ ->
@@ -103,7 +101,7 @@ biquadFilterTests =
                     let
                         filter = AudioFFI.createBiquadFilter ctx "lowshelf"
                     in
-                    Expect.pass
+                    Expect.equal "lowshelf" (AudioFFI.getBiquadFilterType filter)
 
         , test "creates highshelf filter" <|
             \_ ->
@@ -111,7 +109,7 @@ biquadFilterTests =
                     let
                         filter = AudioFFI.createBiquadFilter ctx "highshelf"
                     in
-                    Expect.pass
+                    Expect.equal "highshelf" (AudioFFI.getBiquadFilterType filter)
 
         , test "creates allpass filter" <|
             \_ ->
@@ -119,7 +117,7 @@ biquadFilterTests =
                     let
                         filter = AudioFFI.createBiquadFilter ctx "allpass"
                     in
-                    Expect.pass
+                    Expect.equal "allpass" (AudioFFI.getBiquadFilterType filter)
         ]
 
 
@@ -137,21 +135,19 @@ biquadFilterTypeTests =
                     withRawContext <| \ctx ->
                         let
                             filter = AudioFFI.createBiquadFilter ctx "lowpass"
-                            filterType = AudioFFI.getBiquadFilterType filter
                         in
-                        Expect.equal "lowpass" filterType
+                        Expect.equal "lowpass" (AudioFFI.getBiquadFilterType filter)
             ]
 
         , describe "setBiquadFilterTypeDirect"
-            [ test "changes filter type" <|
+            [ test "changes filter type to highpass" <|
                 \_ ->
                     withRawContext <| \ctx ->
                         let
                             filter = AudioFFI.createBiquadFilter ctx "lowpass"
                         in
-                        case AudioFFI.setBiquadFilterTypeDirect filter "highpass" of
-                            Ok _ -> Expect.pass
-                            Err _ -> Expect.pass
+                        expectOk "setBiquadFilterTypeDirect" (AudioFFI.setBiquadFilterTypeDirect filter "highpass") <| \_ ->
+                            Expect.equal "highpass" (AudioFFI.getBiquadFilterType filter)
             ]
 
         , describe "setFilterFrequency"
@@ -177,7 +173,7 @@ biquadFilterTypeTests =
             ]
 
         , describe "setFilterGain"
-            [ test "sets gain for peaking/shelving filters" <|
+            [ test "sets gain for peaking filters" <|
                 \_ ->
                     withRawContext <| \ctx ->
                         let
@@ -198,47 +194,51 @@ biquadFilterParamTests : Test
 biquadFilterParamTests =
     describe "biquad filter AudioParams"
         [ describe "getBiquadFilterFrequencyParam"
-            [ test "returns frequency param" <|
+            [ test "returns frequency param with value" <|
                 \_ ->
                     withRawContext <| \ctx ->
                         let
                             filter = AudioFFI.createBiquadFilter ctx "lowpass"
                             param = AudioFFI.getBiquadFilterFrequencyParam filter
+                            value = AudioFFI.getAudioParamValue param
                         in
-                        Expect.pass
+                        Expect.true "frequency param should be positive" (value > 0)
             ]
 
         , describe "getBiquadFilterQParam"
-            [ test "returns Q param" <|
+            [ test "returns Q param with value" <|
                 \_ ->
                     withRawContext <| \ctx ->
                         let
                             filter = AudioFFI.createBiquadFilter ctx "lowpass"
                             param = AudioFFI.getBiquadFilterQParam filter
+                            value = AudioFFI.getAudioParamValue param
                         in
-                        Expect.pass
+                        Expect.within (Expect.Absolute 0.01) 1.0 value
             ]
 
         , describe "getBiquadFilterGainParam"
-            [ test "returns gain param" <|
+            [ test "returns gain param with value 0" <|
                 \_ ->
                     withRawContext <| \ctx ->
                         let
                             filter = AudioFFI.createBiquadFilter ctx "peaking"
                             param = AudioFFI.getBiquadFilterGainParam filter
+                            value = AudioFFI.getAudioParamValue param
                         in
-                        Expect.pass
+                        Expect.within (Expect.Absolute 0.01) 0.0 value
             ]
 
         , describe "getBiquadFilterDetuneParam"
-            [ test "returns detune param" <|
+            [ test "returns detune param with value 0" <|
                 \_ ->
                     withRawContext <| \ctx ->
                         let
                             filter = AudioFFI.createBiquadFilter ctx "lowpass"
                             param = AudioFFI.getBiquadFilterDetuneParam filter
+                            value = AudioFFI.getAudioParamValue param
                         in
-                        Expect.pass
+                        Expect.within (Expect.Absolute 0.01) 0.0 value
             ]
         ]
 
@@ -256,13 +256,11 @@ iirFilterTests =
                 \_ ->
                     withRawContext <| \ctx ->
                         let
-                            -- Simple lowpass filter coefficients
                             feedforward = [0.0675, 0.1349, 0.0675]
                             feedback = [1.0, -1.1430, 0.4128]
                         in
-                        case AudioFFI.createIIRFilter ctx feedforward feedback of
-                            Ok _ -> Expect.pass
-                            Err _ -> Expect.pass
+                        expectOk "createIIRFilter" (AudioFFI.createIIRFilter ctx feedforward feedback) <| \_ ->
+                            Expect.pass
             ]
 
         , describe "getIIRFilterResponse"
@@ -273,15 +271,12 @@ iirFilterTests =
                             feedforward = [0.0675, 0.1349, 0.0675]
                             feedback = [1.0, -1.1430, 0.4128]
                         in
-                        case AudioFFI.createIIRFilter ctx feedforward feedback of
-                            Ok filter ->
-                                let
-                                    frequencies = [100.0, 1000.0, 5000.0]
-                                in
-                                case AudioFFI.getIIRFilterResponse filter frequencies of
-                                    Ok _ -> Expect.pass
-                                    Err _ -> Expect.pass
-                            Err _ -> Expect.pass
+                        expectOk "createIIRFilter" (AudioFFI.createIIRFilter ctx feedforward feedback) <| \filter ->
+                            let
+                                frequencies = [100.0, 1000.0, 5000.0]
+                            in
+                            expectOk "getIIRFilterResponse" (AudioFFI.getIIRFilterResponse filter frequencies) <| \_ ->
+                                Expect.pass
             ]
 
         , describe "getIIRFilterResponseAtFrequency"
@@ -292,13 +287,11 @@ iirFilterTests =
                             feedforward = [0.0675, 0.1349, 0.0675]
                             feedback = [1.0, -1.1430, 0.4128]
                         in
-                        case AudioFFI.createIIRFilter ctx feedforward feedback of
-                            Ok filter ->
-                                let
-                                    (magnitude, phase) = AudioFFI.getIIRFilterResponseAtFrequency filter 1000.0
-                                in
-                                Expect.pass
-                            Err _ -> Expect.pass
+                        expectOk "createIIRFilter" (AudioFFI.createIIRFilter ctx feedforward feedback) <| \filter ->
+                            let
+                                (magnitude, phase) = AudioFFI.getIIRFilterResponseAtFrequency filter 1000.0
+                            in
+                            Expect.true "magnitude should be positive" (magnitude > 0)
             ]
         ]
 
@@ -312,7 +305,7 @@ withRawContext : (AudioFFI.AudioContext -> Expect.Expectation) -> Expect.Expecta
 withRawContext fn =
     case AudioFFI.createAudioContext Click of
         Ok ctx -> fn (extractContext ctx)
-        Err _ -> Expect.pass
+        Err err -> Expect.fail ("withRawContext: createAudioContext failed: " ++ errorToString err)
 
 
 extractContext : Initialized AudioFFI.AudioContext -> AudioFFI.AudioContext
@@ -320,3 +313,22 @@ extractContext initialized =
     case initialized of
         Fresh ctx -> ctx
         Running ctx -> ctx
+
+
+expectOk : String -> Result CapabilityError a -> (a -> Expect.Expectation) -> Expect.Expectation
+expectOk label result fn =
+    case result of
+        Ok value -> fn value
+        Err err -> Expect.fail (label ++ ": " ++ errorToString err)
+
+
+errorToString : CapabilityError -> String
+errorToString err =
+    case err of
+        UserActivationRequired msg -> "UserActivationRequired: " ++ msg
+        InitializationRequired msg -> "InitializationRequired: " ++ msg
+        FeatureNotAvailable msg -> "FeatureNotAvailable: " ++ msg
+        NotSupportedError msg -> "NotSupportedError: " ++ msg
+        InvalidStateError msg -> "InvalidStateError: " ++ msg
+        RangeError msg -> "RangeError: " ++ msg
+        _ -> "Unknown error"

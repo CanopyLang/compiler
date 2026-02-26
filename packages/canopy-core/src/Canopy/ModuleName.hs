@@ -29,6 +29,7 @@ module Canopy.ModuleName
     sub,
     debug,
     capability,
+    test,
     virtualDom,
     jsonDecode,
     jsonEncode,
@@ -251,6 +252,12 @@ debug = Canonical Pkg.core Name.debug
 {-# NOINLINE capability #-}
 capability :: Canonical
 capability = Canonical Pkg.core Name.capability
+
+-- TEST
+
+{-# NOINLINE test #-}
+test :: Canonical
+test = Canonical Pkg.test (Name.fromChars "Test")
 
 -- HTML
 

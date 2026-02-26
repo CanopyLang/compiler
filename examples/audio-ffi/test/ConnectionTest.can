@@ -20,20 +20,22 @@ Tests all node connection and disconnection functions.
 -}
 
 import Html exposing (Html, pre, text)
-import Test exposing (Test, describe, test, runTests)
+import Test exposing (Test, BrowserTest, describe, test, runTests, inBrowser)
 import Expect
 import AudioFFI
 import Capability exposing (UserActivated(..), Initialized(..), CapabilityError(..))
 import Result exposing (Result(..))
 
 
-main : Html msg
+main : BrowserTest
 main =
-    let
-        results =
-            runTests [ suite ]
-    in
-    pre [] [ text results ]
+    inBrowser
+        [ describe "Connection Functions"
+            [ basicConnectionTests
+            , disconnectionTests
+            , channelTests
+            ]
+        ]
 
 
 suite : Test
@@ -57,27 +59,19 @@ basicConnectionTests =
             [ test "connects oscillator to gain" <|
                 \_ ->
                     withContext <| \ctx ->
-                        case AudioFFI.createOscillator ctx 440.0 "sine" of
-                            Ok osc ->
-                                case AudioFFI.createGainNode ctx 1.0 of
-                                    Ok gain ->
-                                        case AudioFFI.connectNodes osc gain of
-                                            Ok _ -> Expect.pass
-                                            Err _ -> Expect.pass
-                                    Err _ -> Expect.pass
-                            Err _ -> Expect.pass
+                        expectOk "createOscillator" (AudioFFI.createOscillator ctx 440.0 "sine") <| \osc ->
+                            expectOk "createGainNode" (AudioFFI.createGainNode ctx 1.0) <| \gain ->
+                                expectOk "connectNodes" (AudioFFI.connectNodes osc gain) <| \_ ->
+                                    Expect.pass
             ]
 
         , describe "connectToDestination"
             [ test "connects gain to destination" <|
                 \_ ->
                     withContext <| \ctx ->
-                        case AudioFFI.createGainNode ctx 1.0 of
-                            Ok gain ->
-                                case AudioFFI.connectToDestination gain ctx of
-                                    Ok _ -> Expect.pass
-                                    Err _ -> Expect.pass
-                            Err _ -> Expect.pass
+                        expectOk "createGainNode" (AudioFFI.createGainNode ctx 1.0) <| \gain ->
+                            expectOk "connectToDestination" (AudioFFI.connectToDestination gain ctx) <| \_ ->
+                                Expect.pass
             ]
 
         , describe "getContextDestination"
@@ -104,13 +98,11 @@ disconnectionTests =
             [ test "disconnects gain node" <|
                 \_ ->
                     withContext <| \ctx ->
-                        case AudioFFI.createGainNode ctx 1.0 of
-                            Ok gain ->
-                                let
-                                    _ = AudioFFI.disconnectNode gain
-                                in
-                                Expect.pass
-                            Err _ -> Expect.pass
+                        expectOk "createGainNode" (AudioFFI.createGainNode ctx 1.0) <| \gain ->
+                            let
+                                _ = AudioFFI.disconnectNode gain
+                            in
+                            Expect.pass
             ]
         ]
 
@@ -170,14 +162,14 @@ withContext : (Initialized AudioFFI.AudioContext -> Expect.Expectation) -> Expec
 withContext fn =
     case AudioFFI.createAudioContext Click of
         Ok ctx -> fn ctx
-        Err _ -> Expect.pass
+        Err err -> Expect.fail ("withContext: createAudioContext failed: " ++ errorToString err)
 
 
 withRawContext : (AudioFFI.AudioContext -> Expect.Expectation) -> Expect.Expectation
 withRawContext fn =
     case AudioFFI.createAudioContext Click of
         Ok ctx -> fn (extractContext ctx)
-        Err _ -> Expect.pass
+        Err err -> Expect.fail ("withRawContext: createAudioContext failed: " ++ errorToString err)
 
 
 extractContext : Initialized AudioFFI.AudioContext -> AudioFFI.AudioContext
@@ -185,3 +177,22 @@ extractContext initialized =
     case initialized of
         Fresh ctx -> ctx
         Running ctx -> ctx
+
+
+expectOk : String -> Result CapabilityError a -> (a -> Expect.Expectation) -> Expect.Expectation
+expectOk label result fn =
+    case result of
+        Ok value -> fn value
+        Err err -> Expect.fail (label ++ ": " ++ errorToString err)
+
+
+errorToString : CapabilityError -> String
+errorToString err =
+    case err of
+        UserActivationRequired msg -> "UserActivationRequired: " ++ msg
+        InitializationRequired msg -> "InitializationRequired: " ++ msg
+        FeatureNotAvailable msg -> "FeatureNotAvailable: " ++ msg
+        NotSupportedError msg -> "NotSupportedError: " ++ msg
+        InvalidStateError msg -> "InvalidStateError: " ++ msg
+        RangeError msg -> "RangeError: " ++ msg
+        _ -> "Unknown error"

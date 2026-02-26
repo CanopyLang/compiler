@@ -38,6 +38,7 @@ import qualified Canopy.Package as Pkg
 import qualified Canopy.Version as V
 import Control.Applicative ((<|>))
 import Data.Aeson ((.=))
+import Data.Aeson.Types (Parser)
 import qualified Data.Aeson as Json
 import qualified Data.ByteString.Lazy as LBS
 import Data.Map.Strict (Map)
@@ -54,7 +55,15 @@ instance Json.ToJSON C.Constraint where
   toJSON _ = Json.String "any"
 
 instance Json.FromJSON C.Constraint where
-  parseJSON _ = pure C.anything
+  parseJSON = Json.withText "Constraint" $ \txt ->
+    fmap C.exactly (versionFromText txt) <|> pure C.anything
+
+-- | Parse a version string via the Aeson instance for 'V.Version'.
+versionFromText :: Text.Text -> Parser V.Version
+versionFromText txt =
+  case Json.fromJSON (Json.String txt) of
+    Json.Success v -> pure v
+    Json.Error _ -> fail "not a version"
 
 instance Json.ToJSON Licenses.License where
   toJSON _ = Json.String "BSD-3-Clause"

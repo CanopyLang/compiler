@@ -1114,6 +1114,14 @@ generateMain mode home main =
                 ]
             )
         ]
+    Opt.BrowserTestMain ->
+      JS.Function Nothing []
+        [ JS.Return
+            ( JS.Object
+                [ (JsName.fromLocal "_browserTestMain", JS.Ref (JsName.fromGlobal home "main"))
+                ]
+            )
+        ]
 
 (#) :: JS.Expr -> JS.Expr -> JS.Expr
 (#) func arg =

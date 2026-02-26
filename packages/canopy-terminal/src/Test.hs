@@ -53,14 +53,19 @@ where
 
 import qualified AST.Optimized as Opt
 import qualified Build.Artifacts as Build
+import qualified Canopy.Interface as I
 import qualified Canopy.ModuleName as ModuleName
+import qualified Canopy.Constraint as C
+import qualified Canopy.Outline as Outline
 import qualified Canopy.Package as Pkg
+import qualified Canopy.Version as V
 import qualified Compiler
 import Control.Lens ((^.))
 import Control.Lens.TH (makeLenses)
 import qualified Control.Concurrent as Concurrent
 import qualified Control.Exception as Exception
 import Control.Monad (filterM, void)
+import qualified Data.Utf8 as Utf8
 import qualified Data.Aeson as Aeson
 import Data.Aeson (Object)
 import qualified Data.Aeson.Types as AesonTypes
@@ -89,6 +94,7 @@ import qualified Terminal.Output as Output
 import Reporting.Doc.ColorQQ (c)
 import qualified Terminal.Print as Print
 import Text.Read (readMaybe)
+import qualified PackageCache
 import qualified Stuff
 
 import Test.Browser (AppEntryPoint (..))
@@ -282,8 +288,19 @@ compileAndRunWithRoot root testFiles flags = do
     Just (jsContent, mains) -> dispatchByTestType jsContent mains testFiles flags
 
 -- | Compile test files to a JavaScript string and main type info.
+--
+-- Before compiling user test files, ensures that all test-dependency
+-- packages have @artifacts.dat@.  Packages with source but no artifacts
+-- (e.g. locally symlinked @canopy\/test@ during development) are compiled
+-- just-in-time so they receive their correct package identity in the
+-- optimizer.  This is critical for type-based dispatch (e.g.
+-- @BrowserTestMain@ detection requires the @Test@ module to be
+-- canonicalised under @Pkg.test@, not @Pkg.dummyName@).
+--
+-- @since 0.19.1
 compileTestFiles :: FilePath -> [FilePath] -> IO (Maybe (String, Map.Map ModuleName.Canonical Opt.Main))
 compileTestFiles root testFiles = do
+  ensureTestDepArtifacts root
   let pkg = Pkg.dummyName
       srcDirs =
         [ Compiler.RelativeSrcDir "src",
@@ -297,6 +314,124 @@ compileTestFiles root testFiles = do
       Print.printErrLn [c|{red|Compilation error:} #{errStr}|]
       pure Nothing
     Right artifacts -> pure (Just (artifactsToJavaScript artifacts, collectMains artifacts))
+
+-- | Ensure all test-dependency packages have compiled artifacts.
+--
+-- Reads the project outline, extracts test dependencies, and for each
+-- package that has source files but no @artifacts.dat@, compiles the
+-- package from source with its real package identity and writes the
+-- artifacts to the cache.  Subsequent compilation then loads them via
+-- the normal @PackageCache@ pipeline with correct canonical names.
+--
+-- @since 0.19.1
+ensureTestDepArtifacts :: FilePath -> IO ()
+ensureTestDepArtifacts root = do
+  maybeOutline <- Outline.read root
+  case maybeOutline of
+    Nothing -> pure ()
+    Just outline -> do
+      cacheDir <- Stuff.getPackageCache
+      mapM_ (ensureOneTestDep cacheDir) (extractTestDeps outline)
+
+-- | Extract test-dependency (name, version) pairs from an outline.
+extractTestDeps :: Outline.Outline -> [(Pkg.Name, V.Version)]
+extractTestDeps (Outline.App o) = Map.toList (Outline._appTestDepsDirect o)
+extractTestDeps (Outline.Pkg o) =
+  Map.toList (Map.map C.lowerBound (Outline._pkgTestDeps o))
+
+-- | Compile a single test-dependency package if it lacks artifacts.
+--
+-- When @artifacts.dat@ exists, this is a no-op.  Otherwise, reads the
+-- package's @canopy.json@, compiles all exposed modules with the real
+-- package identity, and writes @artifacts.dat@ to the cache.
+--
+-- Compiles from the package's own directory so that
+-- @loadDependencyArtifacts@ reads the package's @canopy.json@ and
+-- resolves its dependencies independently.
+--
+-- @since 0.19.1
+ensureOneTestDep :: FilePath -> (Pkg.Name, V.Version) -> IO ()
+ensureOneTestDep cacheDir (pkgName, version) = do
+  let pkgDir = testDepDir cacheDir pkgName version
+      artifactsPath = pkgDir </> "artifacts.dat"
+  hasArtifacts <- Dir.doesFileExist artifactsPath
+  if hasArtifacts
+    then pure ()
+    else compileTestDepFromSource pkgName version pkgDir
+
+-- | Compile a test-dependency package from source and write artifacts.
+--
+-- @since 0.19.1
+compileTestDepFromSource :: Pkg.Name -> V.Version -> FilePath -> IO ()
+compileTestDepFromSource pkgName version pkgDir = do
+  let srcPath = pkgDir </> "src"
+  hasSrc <- Dir.doesDirectoryExist srcPath
+  if not hasSrc
+    then pure ()
+    else do
+      maybeOutline <- Outline.read pkgDir
+      maybe (pure ()) (compileTestDepOutline pkgName version pkgDir srcPath) maybeOutline
+
+-- | Compile a test-dependency package given its parsed outline.
+--
+-- Uses @withCurrentDirectory@ to set the working directory to the
+-- package root so that FFI kernel paths resolve correctly.
+--
+-- @since 0.19.1
+compileTestDepOutline :: Pkg.Name -> V.Version -> FilePath -> FilePath -> Outline.Outline -> IO ()
+compileTestDepOutline _ _ _ _ (Outline.App _) = pure ()
+compileTestDepOutline pkgName version pkgDir srcPath (Outline.Pkg pkgOutline) =
+  case flattenExposedToNonEmpty (Outline._pkgExposed pkgOutline) of
+    Nothing -> pure ()
+    Just exposedModules -> do
+      compileResult <- Dir.withCurrentDirectory pkgDir
+        (Compiler.compileFromExposed pkgName False pkgDir [Compiler.AbsoluteSrcDir srcPath] exposedModules)
+      either reportTestDepError (writeTestDepArtifacts pkgName version) compileResult
+  where
+    reportTestDepError err = do
+      let errStr = show err
+      Print.printErrLn [c|{yellow|Warning:} Could not compile test dependency: #{errStr}|]
+
+-- | Write compiled artifacts for a test-dependency package.
+--
+-- @since 0.19.1
+writeTestDepArtifacts :: Pkg.Name -> V.Version -> Compiler.Artifacts -> IO ()
+writeTestDepArtifacts (Pkg.Name author project) version artifacts =
+  PackageCache.writePackageArtifacts
+    (Utf8.toChars author)
+    (Utf8.toChars project)
+    (V.toChars version)
+    interfaces
+    globalGraph
+    ffiInfo
+  where
+    interfaces = buildArtifactsToInterfaces artifacts
+    globalGraph = artifacts ^. Build.artifactsGlobalGraph
+    ffiInfo = artifacts ^. Build.artifactsFFIInfo
+
+-- | Convert compiled artifacts to package interface map.
+--
+-- @since 0.19.1
+buildArtifactsToInterfaces :: Compiler.Artifacts -> PackageCache.PackageInterfaces
+buildArtifactsToInterfaces artifacts =
+  Map.fromList
+    [ (name, I.Public iface)
+    | Build.Fresh name iface _ <- Build._artifactsModules artifacts
+    ]
+
+-- | Flatten exposed modules to a non-empty list.
+--
+-- @since 0.19.1
+flattenExposedToNonEmpty :: Outline.Exposed -> Maybe (NE.List ModuleName.Raw)
+flattenExposedToNonEmpty exposed =
+  case Outline.flattenExposed exposed of
+    [] -> Nothing
+    (x : xs) -> Just (NE.List x xs)
+
+-- | Build the package directory path inside the cache.
+testDepDir :: FilePath -> Pkg.Name -> V.Version -> FilePath
+testDepDir cacheDir (Pkg.Name author project) version =
+  cacheDir </> Utf8.toChars author </> Utf8.toChars project </> V.toChars version
 
 -- | Generate a JavaScript string from compiled artifacts.
 artifactsToJavaScript :: Compiler.Artifacts -> String

@@ -8,13 +8,7 @@
         "Test",
         "Test.Browser",
         "Expect",
-        "Fuzz",
-        "Browser",
-        "Browser.Test",
-        "Browser.Page",
-        "Browser.Element",
-        "Browser.Expect",
-        "Accessibility"
+        "Fuzz"
     ],
     "canopy-version": "0.19.0 <= v < 0.20.0",
     "dependencies": {

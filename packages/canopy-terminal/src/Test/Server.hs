@@ -130,6 +130,7 @@ runServer appDir (ServerPort port) =
       Config.setPort (fromIntegral port)
         . Config.setAccessLog Config.ConfigNoLog
         . Config.setErrorLog Config.ConfigNoLog
+        . Config.setVerbose False
         . Config.setBind "127.0.0.1"
         $ Config.defaultConfig
 
