@@ -263,8 +263,9 @@ async function runBrowserTest(test, path, results) {
 
     var browser = null;
     try {
-        // Launch browser
+        // Launch browser, applying runtime overrides from TEST_CONFIG
         var config = test.b || getDefaultBrowserConfig();
+        config = applyRuntimeConfig(config);
         browser = await playwrightBindings.launch(config);
 
         // Execute steps
@@ -354,6 +355,24 @@ function getDefaultBrowserConfig() {
         timeout: 30000,
         recordVideo: false
     };
+}
+
+/**
+ * Apply runtime configuration from TEST_CONFIG (set by --headed, --slowmo flags).
+ *
+ * TEST_CONFIG.headed=true means show the browser, which maps to headless=false.
+ * Runtime flags override compile-time defaults from the Canopy test definition.
+ */
+function applyRuntimeConfig(config) {
+    if (typeof TEST_CONFIG === 'undefined') return config;
+    var result = Object.assign({}, config);
+    if (TEST_CONFIG.headed) {
+        result.headless = false;
+    }
+    if (TEST_CONFIG.slowMo) {
+        result.slowMo = TEST_CONFIG.slowMo;
+    }
+    return result;
 }
 
 /**
