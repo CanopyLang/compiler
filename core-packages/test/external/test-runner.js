@@ -9,9 +9,12 @@
  * side reads line-by-line and formats with ColorQQ for TTY-aware output.
  *
  * Browser reuse: when a test suite contains BrowserTest nodes, a single
- * Playwright browser instance is launched before the tree walk and closed
- * after all tests complete. Each BrowserTest gets a fresh context + page
- * for full state isolation (cookies, local storage, routes).
+ * Playwright browser + context + page is launched via playwrightBindings.launch()
+ * before the tree walk and closed after all tests complete. Every
+ * BrowserTest reuses the same page — since each test starts with `visit`
+ * (full navigation with `waitUntil: 'networkidle'`), DOM and JS state are
+ * reset automatically. Route handlers are cleaned up via `unrouteAll()`
+ * between tests.
  *
  * Test Types:
  *   - UnitTest: Synchronous test with immediate expectation
@@ -23,6 +26,9 @@
  *
  * @module test-runner
  */
+
+// Synchronous file descriptor writes for unbuffered NDJSON output
+var _fs = require('fs');
 
 // Import task executor for async tests
 var taskExecutor;
@@ -119,7 +125,7 @@ function emitResult(result) {
             obj.name = result.a;
             break;
     }
-    console.log(JSON.stringify(obj));
+    _fs.writeSync(1, JSON.stringify(obj) + '\n');
 }
 
 /**
@@ -128,7 +134,7 @@ function emitResult(result) {
  * @param {Object} report - Report object with summary and duration
  */
 function emitSummary(report) {
-    console.log(JSON.stringify({
+    _fs.writeSync(1, JSON.stringify({
         event: 'summary',
         passed: report.summary.passed,
         failed: report.summary.failed,
@@ -136,7 +142,7 @@ function emitSummary(report) {
         todo: report.summary.todo,
         total: report.summary.total,
         duration: report.duration
-    }));
+    }) + '\n');
 }
 
 /**
@@ -240,7 +246,7 @@ function runTestsSync(testSuite) {
 async function runTestsAsync(testSuite) {
     var results = [];
     var startTime = performance.now();
-    var sharedBrowser = null;
+    var sharedHandle = null;
 
     function pushAndEmit(result) {
         results.push(result);
@@ -249,16 +255,11 @@ async function runTestsAsync(testSuite) {
 
     if (hasBrowserTests(testSuite) && playwrightBindings) {
         try {
-            var launchConfig = getDefaultBrowserConfig();
-            launchConfig = applyRuntimeConfig(launchConfig);
-            var playwright = require('playwright');
-            var browserType = launchConfig.browser || 'chromium';
-            sharedBrowser = await playwright[browserType].launch({
-                headless: launchConfig.headless !== false,
-                slowMo: launchConfig.slowMo || 0
-            });
+            sharedHandle = await playwrightBindings.launch(
+                applyRuntimeConfig(getDefaultBrowserConfig())
+            );
         } catch (e) {
-            console.warn('Failed to launch shared browser: ' + e.message);
+            process.stderr.write('Failed to launch shared browser: ' + e.message + '\n');
         }
     }
 
@@ -288,7 +289,7 @@ async function runTestsAsync(testSuite) {
                     break;
 
                 case 'BrowserTest':
-                    await runBrowserTest(test, path, pushAndEmit, sharedBrowser);
+                    await runBrowserTest(test, path, pushAndEmit, sharedHandle);
                     break;
 
                 case 'AsyncTest':
@@ -326,9 +327,9 @@ async function runTestsAsync(testSuite) {
     try {
         await runTest(testSuite, []);
     } finally {
-        if (sharedBrowser) {
+        if (sharedHandle) {
             try {
-                await sharedBrowser.close();
+                await playwrightBindings.close(sharedHandle);
             } catch (e) {
                 // Ignore close errors
             }
@@ -340,16 +341,18 @@ async function runTestsAsync(testSuite) {
 
 /**
  * Run a browser test with Playwright.
- * Uses a shared browser instance when available, creating a fresh context + page
- * per test for full state isolation (cookies, local storage, routes).
- * Falls back to launching its own browser if no shared instance is provided.
+ * When a shared handle is provided, reuses its existing page — every
+ * browser test starts with `visit` which does a full navigation
+ * (`waitUntil: 'networkidle'`), resetting DOM and JS state. Route
+ * handlers are cleaned up via `unrouteAll()` after each test. Falls
+ * back to launching a dedicated browser when no shared handle exists.
  *
  * @param {Object} test - BrowserTest value
  * @param {Array} path - Test path
  * @param {Function} pushAndEmit - Callback to record and emit a result
- * @param {Object|null} sharedBrowser - Shared Playwright browser instance, or null
+ * @param {Object|null} sharedHandle - Shared Playwright handle from playwrightBindings.launch(), or null
  */
-async function runBrowserTest(test, path, pushAndEmit, sharedBrowser) {
+async function runBrowserTest(test, path, pushAndEmit, sharedHandle) {
     var testStart = performance.now();
     var testName = path.concat([test.a]).join(' > ');
 
@@ -366,31 +369,21 @@ async function runBrowserTest(test, path, pushAndEmit, sharedBrowser) {
     var config = test.b || getDefaultBrowserConfig();
     config = applyRuntimeConfig(config);
 
-    var ownBrowser = null;
-    var context = null;
     var browserHandle = null;
+    var ownHandle = false;
 
     try {
-        if (sharedBrowser) {
-            var contextOptions = {
-                viewport: config.viewport || { width: 1280, height: 720 }
-            };
-            if (config.recordVideo) {
-                var fs = require('fs');
-                fs.mkdirSync('test-output/videos', { recursive: true });
-                contextOptions.recordVideo = { dir: 'test-output/videos' };
-            }
-            context = await sharedBrowser.newContext(contextOptions);
-            var page = await context.newPage();
-            page.setDefaultTimeout(config.timeout || 30000);
+        if (sharedHandle) {
+            sharedHandle._page.setDefaultTimeout(config.timeout || 30000);
             browserHandle = {
-                _browser: sharedBrowser,
-                _context: context,
-                _page: page,
+                _browser: sharedHandle._browser,
+                _context: sharedHandle._context,
+                _page: sharedHandle._page,
                 _config: config
             };
         } else {
             browserHandle = await playwrightBindings.launch(config);
+            ownHandle = true;
         }
 
         var steps = listToArray(test.c || []);
@@ -413,13 +406,13 @@ async function runBrowserTest(test, path, pushAndEmit, sharedBrowser) {
             c: performance.now() - testStart
         });
     } finally {
-        if (sharedBrowser && context) {
+        if (sharedHandle && browserHandle) {
             try {
-                await context.close();
+                await browserHandle._page.unrouteAll();
             } catch (e) {
-                // Ignore close errors
+                // Ignore cleanup errors
             }
-        } else if (!sharedBrowser && browserHandle) {
+        } else if (ownHandle && browserHandle) {
             try {
                 await playwrightBindings.close(browserHandle);
             } catch (e) {

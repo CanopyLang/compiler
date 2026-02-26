@@ -414,8 +414,6 @@ runBrowserTestsWithServer jsContent flags runner executor playwright appDir = do
       Print.printErrLn [c|{red|Error:} Could not find an available port (8000-9000).|]
       pure (ExitFailure 1)
     Right port -> do
-      let portStr = show (unServerPort port)
-      Print.println [c|Starting test server on port {cyan|#{portStr}}...|]
       server <- Server.startTestServer appDir port
       result <- generateAndRun flags runner executor playwright (JsContent (Text.pack jsContent)) (Just port) appDir
       Server.stopTestServer server
@@ -530,8 +528,10 @@ executeNode nodePath args verbose =
           IO.hSetBinaryMode hErr True
           stderrVar <- Concurrent.newMVar []
           _ <- Concurrent.forkIO (drainStderr hErr stderrVar)
-          streamStdout hOut
+          sawSummary <- streamStdout hOut
           exitCode <- Process.waitForProcess procHandle
+          when (not sawSummary) $
+            Print.printErrLn [c|{yellow|Warning: test process exited without summary.}|]
           reportExitCode exitCode stderrVar verbose args
         _ -> do
           exitCode <- Process.waitForProcess procHandle
@@ -551,24 +551,44 @@ drainStderr hErr var = go
           go
 
 -- | Read stdout line-by-line, parsing NDJSON events and formatting them.
-streamStdout :: IO.Handle -> IO ()
-streamStdout hOut = go
+--
+-- Returns 'True' if a summary event was received, 'False' otherwise.
+-- The caller uses this to detect when the JS process crashed or was
+-- killed before emitting its summary.
+streamStdout :: IO.Handle -> IO Bool
+streamStdout hOut = go False
   where
-    go = do
+    go sawSummary = do
       eof <- IO.hIsEOF hOut
       if eof
-        then pure ()
+        then pure sawSummary
         else do
           line <- BS.hGetLine hOut
-          handleOutputLine line
-          go
+          isSummary <- handleOutputLine line
+          go (sawSummary || isSummary)
 
 -- | Parse a single stdout line as NDJSON or pass through as plain text.
-handleOutputLine :: BS.ByteString -> IO ()
+--
+-- Returns 'True' when the line was a summary event, 'False' otherwise.
+-- Non-JSON lines are written to stderr so they do not corrupt formatted
+-- test output on stdout. Flushes after each line so results appear
+-- immediately, even when stdout is a pipe.
+handleOutputLine :: BS.ByteString -> IO Bool
 handleOutputLine line =
   case Aeson.decodeStrict' line of
-    Just event -> formatTestEvent event
-    Nothing -> IO.hPutStrLn IO.stdout (Text.unpack (TextEnc.decodeUtf8 line))
+    Just event -> do
+      formatTestEvent event
+      IO.hFlush IO.stdout
+      pure (isSummaryEvent event)
+    Nothing -> do
+      IO.hPutStrLn IO.stderr (Text.unpack (TextEnc.decodeUtf8 line))
+      IO.hFlush IO.stderr
+      pure False
+
+-- | Check if a 'TestEvent' is a summary event.
+isSummaryEvent :: TestEvent -> Bool
+isSummaryEvent (SummaryEvent {}) = True
+isSummaryEvent _ = False
 
 -- | Report exit status, printing stderr and verbose info on failure.
 reportExitCode :: ExitCode -> Concurrent.MVar [String] -> Bool -> [String] -> IO ExitCode

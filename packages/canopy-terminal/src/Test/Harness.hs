@@ -95,6 +95,9 @@ generateBrowserHarness config runner executor playwright tests =
         "// --- DOM Shim for Node.js ---",
         domShim,
         "",
+        "// --- Stdout Guard (redirect console.log to stderr) ---",
+        stdoutGuard,
+        "",
         "// --- Task Executor ---",
         unJsContent executor,
         "",
@@ -176,6 +179,25 @@ domShim =
       "  if (typeof window === 'undefined') {",
       "    globalThis.window = { document: doc, addEventListener: function(){}, removeEventListener: function(){}, location: doc.location, navigator: { userAgent: 'node' } };",
       "  }",
+      "})();"
+    ]
+
+-- | Redirect @process.stdout.write@ to stderr.
+--
+-- User test code and Node.js warnings can @console.log@ to stdout,
+-- corrupting the NDJSON stream. Our NDJSON output uses
+-- @_fs.writeSync(1, ...)@ which bypasses @process.stdout.write@
+-- entirely (direct fd syscall), so redirecting @process.stdout.write@
+-- to stderr is safe and keeps the JSON stream clean.
+--
+-- @since 0.19.1
+stdoutGuard :: Text
+stdoutGuard =
+  Text.unlines
+    [ "(function() {",
+      "  process.stdout.write = function(chunk, encoding, callback) {",
+      "    return process.stderr.write(chunk, encoding, callback);",
+      "  };",
       "})();"
     ]
 
