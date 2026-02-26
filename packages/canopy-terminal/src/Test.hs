@@ -9,6 +9,14 @@
 -- test modules, compiles them to JavaScript, generates a Node.js test runner,
 -- executes the tests via @node@, and reports pass\/fail results.
 --
+-- == Output Protocol
+--
+-- The JavaScript test runner emits NDJSON (newline-delimited JSON) on stdout.
+-- Each line is either a @result@ event (one per test) or a @summary@ event
+-- (after all tests). This module reads stdout line-by-line, parses each JSON
+-- object, and formats it with 'Terminal.Print' + 'Reporting.Doc.ColorQQ' for
+-- TTY-aware, streaming output.
+--
 -- == Test Types
 --
 -- The command auto-detects three kinds of tests:
@@ -53,6 +61,10 @@ import Control.Lens.TH (makeLenses)
 import qualified Control.Concurrent as Concurrent
 import qualified Control.Exception as Exception
 import Control.Monad (filterM, void)
+import qualified Data.Aeson as Aeson
+import Data.Aeson (Object)
+import qualified Data.Aeson.Types as AesonTypes
+import qualified Data.ByteString.Char8 as BS
 import qualified Data.ByteString.Builder as Builder
 import qualified Data.ByteString.Lazy as LBS
 import qualified Data.List as List
@@ -61,6 +73,7 @@ import qualified Data.Maybe as Maybe
 import qualified Data.NonEmptyList as NE
 import qualified Data.Set as Set
 import qualified Data.Text as Text
+import qualified Data.Text.Encoding as TextEnc
 import qualified Generate.JavaScript as JS
 import qualified Generate.Mode as Mode
 import qualified System.Directory as Dir
@@ -494,21 +507,80 @@ nodePathWrapper paths harnessPath =
     ++ "require('module').Module._initPaths();"
     ++ "require(" ++ show harnessPath ++ ");"
 
--- | Execute @node@ with given arguments and print captured output.
+-- | Execute @node@ with streaming NDJSON output.
+--
+-- Launches the node process with piped stdout\/stderr. Reads stdout
+-- line-by-line, parsing each line as an NDJSON test event and formatting
+-- it with 'Terminal.Print' + 'Reporting.Doc.ColorQQ'. Non-JSON lines are
+-- passed through as-is. Stderr is drained in a background thread and
+-- printed on failure.
 executeNode :: FilePath -> [String] -> Bool -> IO ExitCode
-executeNode nodePath args verbose = do
-  (exitCode, stdout, stderr) <-
-    Process.readProcessWithExitCode nodePath args ""
-  IO.hPutStr IO.stdout stdout
-  case exitCode of
-    ExitSuccess -> do
-      Print.println [c|{green|Tests passed.}|]
-      pure ExitSuccess
-    ExitFailure _ -> do
-      unless (null stderr) (IO.hPutStr IO.stderr stderr)
-      when verbose (printVerboseInfo args)
-      Print.println [c|{red|Tests failed.}|]
-      pure (ExitFailure 1)
+executeNode nodePath args verbose =
+  Process.withCreateProcess procSpec handleStreams
+  where
+    procSpec =
+      (Process.proc nodePath args)
+        { Process.std_out = Process.CreatePipe,
+          Process.std_err = Process.CreatePipe
+        }
+    handleStreams _stdin mStdout mStderr procHandle =
+      case (mStdout, mStderr) of
+        (Just hOut, Just hErr) -> do
+          IO.hSetBinaryMode hOut True
+          IO.hSetBinaryMode hErr True
+          stderrVar <- Concurrent.newMVar []
+          _ <- Concurrent.forkIO (drainStderr hErr stderrVar)
+          streamStdout hOut
+          exitCode <- Process.waitForProcess procHandle
+          reportExitCode exitCode stderrVar verbose args
+        _ -> do
+          exitCode <- Process.waitForProcess procHandle
+          pure exitCode
+
+-- | Read stderr lines into a MVar for later display.
+drainStderr :: IO.Handle -> Concurrent.MVar [String] -> IO ()
+drainStderr hErr var = go
+  where
+    go = do
+      eof <- IO.hIsEOF hErr
+      if eof
+        then pure ()
+        else do
+          line <- IO.hGetLine hErr
+          Concurrent.modifyMVar_ var (\ls -> pure (ls ++ [line]))
+          go
+
+-- | Read stdout line-by-line, parsing NDJSON events and formatting them.
+streamStdout :: IO.Handle -> IO ()
+streamStdout hOut = go
+  where
+    go = do
+      eof <- IO.hIsEOF hOut
+      if eof
+        then pure ()
+        else do
+          line <- BS.hGetLine hOut
+          handleOutputLine line
+          go
+
+-- | Parse a single stdout line as NDJSON or pass through as plain text.
+handleOutputLine :: BS.ByteString -> IO ()
+handleOutputLine line =
+  case Aeson.decodeStrict' line of
+    Just event -> formatTestEvent event
+    Nothing -> IO.hPutStrLn IO.stdout (Text.unpack (TextEnc.decodeUtf8 line))
+
+-- | Report exit status, printing stderr and verbose info on failure.
+reportExitCode :: ExitCode -> Concurrent.MVar [String] -> Bool -> [String] -> IO ExitCode
+reportExitCode ExitSuccess _ _ _ = do
+  Print.println [c|{green|Tests passed.}|]
+  pure ExitSuccess
+reportExitCode (ExitFailure _) stderrVar verbose args = do
+  stderrLines <- Concurrent.readMVar stderrVar
+  mapM_ (IO.hPutStrLn IO.stderr) stderrLines
+  when verbose (printVerboseInfo args)
+  Print.println [c|{red|Tests failed.}|]
+  pure (ExitFailure 1)
 
 -- | Print debugging info when verbose mode is on.
 printVerboseInfo :: [String] -> IO ()
@@ -517,12 +589,118 @@ printVerboseInfo args =
     [path] -> Print.println [c|Test runner written to: {cyan|#{path}}|]
     _ -> pure ()
 
--- ── Utilities ────────────────────────────────────────────────────────
+-- ── NDJSON Event Types ──────────────────────────────────────────────
 
--- | Conditional action: skip execution when the condition is 'True'.
-unless :: Bool -> IO () -> IO ()
-unless True _ = pure ()
-unless False action = action
+-- | A test event emitted by the JavaScript test runner as NDJSON.
+data TestEvent
+  = ResultEvent !ResultStatus !Text.Text !Double !(Maybe Text.Text)
+  | SummaryEvent !Int !Int !Int !Int !Int !Double
+  deriving (Eq, Show)
+
+-- | Status of a single test result.
+data ResultStatus = Passed | Failed | Skipped | Todo
+  deriving (Eq, Show)
+
+instance Aeson.FromJSON TestEvent where
+  parseJSON = Aeson.withObject "TestEvent" $ \obj -> do
+    eventType <- obj Aeson..: "event"
+    case (eventType :: Text.Text) of
+      "result" -> parseResultEvent obj
+      "summary" -> parseSummaryEvent obj
+      _ -> fail ("Unknown event type: " ++ Text.unpack eventType)
+
+-- | Parse a result event from a JSON object.
+parseResultEvent :: Object -> AesonTypes.Parser TestEvent
+parseResultEvent obj = do
+  statusStr <- obj Aeson..: "status"
+  name <- obj Aeson..: "name"
+  duration <- obj Aeson..:? "duration" Aeson..!= 0
+  message <- obj Aeson..:? "message"
+  status <- parseStatus statusStr
+  pure (ResultEvent status name duration message)
+
+-- | Parse a summary event from a JSON object.
+parseSummaryEvent :: Object -> AesonTypes.Parser TestEvent
+parseSummaryEvent obj =
+  SummaryEvent
+    <$> obj Aeson..: "passed"
+    <*> obj Aeson..: "failed"
+    <*> obj Aeson..: "skipped"
+    <*> obj Aeson..: "todo"
+    <*> obj Aeson..: "total"
+    <*> obj Aeson..: "duration"
+
+-- | Parse a status string into a 'ResultStatus'.
+parseStatus :: Text.Text -> AesonTypes.Parser ResultStatus
+parseStatus "passed" = pure Passed
+parseStatus "failed" = pure Failed
+parseStatus "skipped" = pure Skipped
+parseStatus "todo" = pure Todo
+parseStatus other = fail ("Unknown status: " ++ Text.unpack other)
+
+-- ── NDJSON Formatting ───────────────────────────────────────────────
+
+-- | Format and print a test event using ColorQQ.
+formatTestEvent :: TestEvent -> IO ()
+formatTestEvent (ResultEvent status name duration message) =
+  formatResult status name duration message
+formatTestEvent (SummaryEvent passed failed skipped todo total duration) =
+  formatSummary passed failed skipped todo total duration
+
+-- | Format a single test result line.
+formatResult :: ResultStatus -> Text.Text -> Double -> Maybe Text.Text -> IO ()
+formatResult Passed name duration _ =
+  Print.println [c|  {green|✓} #{nameStr} {dullcyan|#{durationStr}}|]
+  where
+    nameStr = Text.unpack name
+    durationStr = formatDuration duration
+formatResult Failed name duration message = do
+  Print.println [c|  {red|✗} #{nameStr} {dullcyan|#{durationStr}}|]
+  maybe (pure ()) printFailureMessage message
+  where
+    nameStr = Text.unpack name
+    durationStr = formatDuration duration
+formatResult Skipped name _ _ =
+  Print.println [c|  {yellow|○} #{nameStr} {dullcyan|(skipped)}|]
+  where
+    nameStr = Text.unpack name
+formatResult Todo name _ _ =
+  Print.println [c|  {cyan|◌} #{nameStr} {dullcyan|(todo)}|]
+  where
+    nameStr = Text.unpack name
+
+-- | Print a failure message indented under the test name.
+printFailureMessage :: Text.Text -> IO ()
+printFailureMessage msg =
+  mapM_ printIndentedLine (Text.lines msg)
+  where
+    printIndentedLine line =
+      Print.println [c|    {red|#{lineStr}}|]
+      where
+        lineStr = Text.unpack line
+
+-- | Format the test suite summary line.
+formatSummary :: Int -> Int -> Int -> Int -> Int -> Double -> IO ()
+formatSummary passed failed skipped todo total duration = do
+  Print.newline
+  Print.println [c|  {green|#{passedStr} passed}, {red|#{failedStr} failed}#{extraStr} (#{totalStr} total)|]
+  Print.println [c|  Duration: #{durationStr}|]
+  where
+    passedStr = show passed
+    failedStr = show failed
+    totalStr = show total
+    durationStr = formatDuration duration
+    skippedPart = if skipped > 0 then ", " ++ show skipped ++ " skipped" else ""
+    todoPart = if todo > 0 then ", " ++ show todo ++ " todo" else ""
+    extraStr = skippedPart ++ todoPart
+
+-- | Format a duration in milliseconds for display.
+formatDuration :: Double -> String
+formatDuration ms
+  | ms < 1000 = show (round ms :: Int) ++ "ms"
+  | otherwise = show (fromIntegral (round (ms / 100) :: Int) / 10 :: Double) ++ "s"
+
+-- ── Utilities ────────────────────────────────────────────────────────
 
 -- | Conditional action: execute only when the condition is 'True'.
 when :: Bool -> IO () -> IO ()

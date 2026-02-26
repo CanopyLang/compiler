@@ -4,6 +4,15 @@
  * This module provides the JavaScript implementation for the Canopy test framework.
  * It supports both synchronous unit tests and asynchronous browser tests.
  *
+ * Output protocol: NDJSON (newline-delimited JSON). Each test result and the
+ * final summary are emitted as one JSON object per line on stdout. The Haskell
+ * side reads line-by-line and formats with ColorQQ for TTY-aware output.
+ *
+ * Browser reuse: when a test suite contains BrowserTest nodes, a single
+ * Playwright browser instance is launched before the tree walk and closed
+ * after all tests complete. Each BrowserTest gets a fresh context + page
+ * for full state isolation (cookies, local storage, routes).
+ *
  * Test Types:
  *   - UnitTest: Synchronous test with immediate expectation
  *   - TestGroup: Group of tests (describe block)
@@ -20,7 +29,6 @@ var taskExecutor;
 try {
     taskExecutor = require('./task-executor.js');
 } catch (e) {
-    // Will be set later if in browser
     taskExecutor = null;
 }
 
@@ -59,6 +67,79 @@ function hasAsyncTests(testSuite) {
 }
 
 /**
+ * Check if a test suite contains browser tests (BrowserTest nodes).
+ *
+ * @param {Object} testSuite - Canopy Test value
+ * @returns {boolean} True if suite contains at least one BrowserTest
+ */
+function hasBrowserTests(testSuite) {
+    if (!testSuite) return false;
+
+    switch (testSuite.$) {
+        case 'BrowserTest':
+            return true;
+
+        case 'TestGroup':
+            var subTests = listToArray(testSuite.b);
+            return subTests.some(hasBrowserTests);
+
+        case 'Skip':
+            return hasBrowserTests(testSuite.a);
+
+        default:
+            return false;
+    }
+}
+
+/**
+ * Emit a single test result as NDJSON to stdout.
+ *
+ * @param {Object} result - Internal result object ({$, a, b, c})
+ */
+function emitResult(result) {
+    var obj = { event: 'result' };
+    switch (result.$) {
+        case 'Passed':
+            obj.status = 'passed';
+            obj.name = result.a;
+            obj.duration = result.b;
+            break;
+        case 'Failed':
+            obj.status = 'failed';
+            obj.name = result.a;
+            obj.message = result.b;
+            obj.duration = result.c;
+            break;
+        case 'Skipped':
+            obj.status = 'skipped';
+            obj.name = result.a;
+            break;
+        case 'Todo':
+            obj.status = 'todo';
+            obj.name = result.a;
+            break;
+    }
+    console.log(JSON.stringify(obj));
+}
+
+/**
+ * Emit the final summary as NDJSON to stdout.
+ *
+ * @param {Object} report - Report object with summary and duration
+ */
+function emitSummary(report) {
+    console.log(JSON.stringify({
+        event: 'summary',
+        passed: report.summary.passed,
+        failed: report.summary.failed,
+        skipped: report.summary.skipped,
+        todo: report.summary.todo,
+        total: report.summary.total,
+        duration: report.duration
+    }));
+}
+
+/**
  * Execute a test suite and return results.
  * Automatically detects if async execution is needed.
  *
@@ -76,6 +157,7 @@ function runTests(testSuite) {
 
 /**
  * Run tests synchronously (for unit tests only).
+ * Emits NDJSON result events as each test completes.
  *
  * @param {Object} testSuite - Test suite
  * @returns {Object} Report
@@ -83,6 +165,11 @@ function runTests(testSuite) {
 function runTestsSync(testSuite) {
     var results = [];
     var startTime = performance.now();
+
+    function pushAndEmit(result) {
+        results.push(result);
+        emitResult(result);
+    }
 
     function runTest(test, path) {
         var testStart = performance.now();
@@ -95,18 +182,9 @@ function runTestsSync(testSuite) {
                     var duration = performance.now() - testStart;
 
                     if (result.$ === 'Pass') {
-                        results.push({
-                            $: 'Passed',
-                            a: testName,
-                            b: duration
-                        });
+                        pushAndEmit({ $: 'Passed', a: testName, b: duration });
                     } else {
-                        results.push({
-                            $: 'Failed',
-                            a: testName,
-                            b: formatFailure(result),
-                            c: duration
-                        });
+                        pushAndEmit({ $: 'Failed', a: testName, b: formatFailure(result), c: duration });
                     }
                     break;
 
@@ -120,22 +198,16 @@ function runTestsSync(testSuite) {
 
                 case 'Skip':
                     var skippedName = getSkippedTestName(test.a, path);
-                    results.push({
-                        $: 'Skipped',
-                        a: skippedName
-                    });
+                    pushAndEmit({ $: 'Skipped', a: skippedName });
                     break;
 
                 case 'Todo':
-                    results.push({
-                        $: 'Todo',
-                        a: path.concat([test.a]).join(' > ')
-                    });
+                    pushAndEmit({ $: 'Todo', a: path.concat([test.a]).join(' > ') });
                     break;
 
                 default:
                     console.warn('Unknown test type (sync): ' + test.$);
-                    results.push({
+                    pushAndEmit({
                         $: 'Passed',
                         a: path.join(' > ') + ' (unknown type: ' + test.$ + ')',
                         b: performance.now() - testStart
@@ -143,7 +215,7 @@ function runTestsSync(testSuite) {
             }
         } catch (e) {
             var errorName = path.length > 0 ? path.join(' > ') : 'Test';
-            results.push({
+            pushAndEmit({
                 $: 'Failed',
                 a: errorName,
                 b: 'Exception: ' + e.message + '\n' + (e.stack || ''),
@@ -159,6 +231,8 @@ function runTestsSync(testSuite) {
 
 /**
  * Run tests asynchronously (for browser and async tests).
+ * Launches a single shared browser when the suite contains BrowserTest nodes.
+ * Emits NDJSON result events as each test completes.
  *
  * @param {Object} testSuite - Test suite
  * @returns {Promise<Object>} Promise of Report
@@ -166,6 +240,27 @@ function runTestsSync(testSuite) {
 async function runTestsAsync(testSuite) {
     var results = [];
     var startTime = performance.now();
+    var sharedBrowser = null;
+
+    function pushAndEmit(result) {
+        results.push(result);
+        emitResult(result);
+    }
+
+    if (hasBrowserTests(testSuite) && playwrightBindings) {
+        try {
+            var launchConfig = getDefaultBrowserConfig();
+            launchConfig = applyRuntimeConfig(launchConfig);
+            var playwright = require('playwright');
+            var browserType = launchConfig.browser || 'chromium';
+            sharedBrowser = await playwright[browserType].launch({
+                headless: launchConfig.headless !== false,
+                slowMo: launchConfig.slowMo || 0
+            });
+        } catch (e) {
+            console.warn('Failed to launch shared browser: ' + e.message);
+        }
+    }
 
     async function runTest(test, path) {
         var testStart = performance.now();
@@ -173,15 +268,14 @@ async function runTestsAsync(testSuite) {
         try {
             switch (test.$) {
                 case 'UnitTest':
-                    // Sync test in async context
                     var testName = path.concat([test.a]).join(' > ');
                     var result = test.b();
                     var duration = performance.now() - testStart;
 
                     if (result.$ === 'Pass') {
-                        results.push({ $: 'Passed', a: testName, b: duration });
+                        pushAndEmit({ $: 'Passed', a: testName, b: duration });
                     } else {
-                        results.push({ $: 'Failed', a: testName, b: formatFailure(result), c: duration });
+                        pushAndEmit({ $: 'Failed', a: testName, b: formatFailure(result), c: duration });
                     }
                     break;
 
@@ -194,30 +288,25 @@ async function runTestsAsync(testSuite) {
                     break;
 
                 case 'BrowserTest':
-                    // test.a = name (String)
-                    // test.b = config (BrowserConfig)
-                    // test.c = steps (List Step)
-                    await runBrowserTest(test, path, results);
+                    await runBrowserTest(test, path, pushAndEmit, sharedBrowser);
                     break;
 
                 case 'AsyncTest':
-                    // test.a = name (String)
-                    // test.b = task (Task TestError Expectation)
-                    await runAsyncTest(test, path, results);
+                    await runAsyncTest(test, path, pushAndEmit);
                     break;
 
                 case 'Skip':
                     var skippedName = getSkippedTestName(test.a, path);
-                    results.push({ $: 'Skipped', a: skippedName });
+                    pushAndEmit({ $: 'Skipped', a: skippedName });
                     break;
 
                 case 'Todo':
-                    results.push({ $: 'Todo', a: path.concat([test.a]).join(' > ') });
+                    pushAndEmit({ $: 'Todo', a: path.concat([test.a]).join(' > ') });
                     break;
 
                 default:
                     console.warn('Unknown test type (async): ' + test.$);
-                    results.push({
+                    pushAndEmit({
                         $: 'Passed',
                         a: path.join(' > ') + ' (unknown: ' + test.$ + ')',
                         b: performance.now() - testStart
@@ -225,7 +314,7 @@ async function runTestsAsync(testSuite) {
             }
         } catch (e) {
             var errorName = path.length > 0 ? path.join(' > ') : 'Test';
-            results.push({
+            pushAndEmit({
                 $: 'Failed',
                 a: errorName,
                 b: 'Exception: ' + e.message + '\n' + (e.stack || ''),
@@ -234,25 +323,38 @@ async function runTestsAsync(testSuite) {
         }
     }
 
-    await runTest(testSuite, []);
+    try {
+        await runTest(testSuite, []);
+    } finally {
+        if (sharedBrowser) {
+            try {
+                await sharedBrowser.close();
+            } catch (e) {
+                // Ignore close errors
+            }
+        }
+    }
 
     return buildReport(results, startTime);
 }
 
 /**
  * Run a browser test with Playwright.
+ * Uses a shared browser instance when available, creating a fresh context + page
+ * per test for full state isolation (cookies, local storage, routes).
+ * Falls back to launching its own browser if no shared instance is provided.
  *
  * @param {Object} test - BrowserTest value
  * @param {Array} path - Test path
- * @param {Array} results - Results array to push to
+ * @param {Function} pushAndEmit - Callback to record and emit a result
+ * @param {Object|null} sharedBrowser - Shared Playwright browser instance, or null
  */
-async function runBrowserTest(test, path, results) {
+async function runBrowserTest(test, path, pushAndEmit, sharedBrowser) {
     var testStart = performance.now();
     var testName = path.concat([test.a]).join(' > ');
 
-    // Check if Playwright is available
     if (!playwrightBindings) {
-        results.push({
+        pushAndEmit({
             $: 'Failed',
             a: testName,
             b: 'Playwright not available. Install with: npm install playwright',
@@ -261,40 +363,65 @@ async function runBrowserTest(test, path, results) {
         return;
     }
 
-    var browser = null;
-    try {
-        // Launch browser, applying runtime overrides from TEST_CONFIG
-        var config = test.b || getDefaultBrowserConfig();
-        config = applyRuntimeConfig(config);
-        browser = await playwrightBindings.launch(config);
+    var config = test.b || getDefaultBrowserConfig();
+    config = applyRuntimeConfig(config);
 
-        // Execute steps
+    var ownBrowser = null;
+    var context = null;
+    var browserHandle = null;
+
+    try {
+        if (sharedBrowser) {
+            var contextOptions = {
+                viewport: config.viewport || { width: 1280, height: 720 }
+            };
+            if (config.recordVideo) {
+                var fs = require('fs');
+                fs.mkdirSync('test-output/videos', { recursive: true });
+                contextOptions.recordVideo = { dir: 'test-output/videos' };
+            }
+            context = await sharedBrowser.newContext(contextOptions);
+            var page = await context.newPage();
+            page.setDefaultTimeout(config.timeout || 30000);
+            browserHandle = {
+                _browser: sharedBrowser,
+                _context: context,
+                _page: page,
+                _config: config
+            };
+        } else {
+            browserHandle = await playwrightBindings.launch(config);
+        }
+
         var steps = listToArray(test.c || []);
         for (var i = 0; i < steps.length; i++) {
             var step = steps[i];
-            // Each step is a function: Browser -> Task BrowserError Browser
-            var stepTask = step(browser);
-            browser = await taskExecutor.executeTask(stepTask);
+            var stepTask = step(browserHandle);
+            browserHandle = await taskExecutor.executeTask(stepTask);
         }
 
-        // Test passed
-        results.push({
+        pushAndEmit({
             $: 'Passed',
             a: testName,
             b: performance.now() - testStart
         });
     } catch (e) {
-        results.push({
+        pushAndEmit({
             $: 'Failed',
             a: testName,
             b: formatBrowserError(e),
             c: performance.now() - testStart
         });
     } finally {
-        // Always close browser
-        if (browser && playwrightBindings) {
+        if (sharedBrowser && context) {
             try {
-                await playwrightBindings.close(browser);
+                await context.close();
+            } catch (e) {
+                // Ignore close errors
+            }
+        } else if (!sharedBrowser && browserHandle) {
+            try {
+                await playwrightBindings.close(browserHandle);
             } catch (e) {
                 // Ignore close errors
             }
@@ -307,14 +434,14 @@ async function runBrowserTest(test, path, results) {
  *
  * @param {Object} test - AsyncTest value
  * @param {Array} path - Test path
- * @param {Array} results - Results array to push to
+ * @param {Function} pushAndEmit - Callback to record and emit a result
  */
-async function runAsyncTest(test, path, results) {
+async function runAsyncTest(test, path, pushAndEmit) {
     var testStart = performance.now();
     var testName = path.concat([test.a]).join(' > ');
 
     if (!taskExecutor) {
-        results.push({
+        pushAndEmit({
             $: 'Failed',
             a: testName,
             b: 'Task executor not available',
@@ -324,17 +451,16 @@ async function runAsyncTest(test, path, results) {
     }
 
     try {
-        // test.b is Task TestError Expectation
         var expectation = await taskExecutor.executeTask(test.b);
         var duration = performance.now() - testStart;
 
         if (expectation.$ === 'Pass') {
-            results.push({ $: 'Passed', a: testName, b: duration });
+            pushAndEmit({ $: 'Passed', a: testName, b: duration });
         } else {
-            results.push({ $: 'Failed', a: testName, b: formatFailure(expectation), c: duration });
+            pushAndEmit({ $: 'Failed', a: testName, b: formatFailure(expectation), c: duration });
         }
     } catch (e) {
-        results.push({
+        pushAndEmit({
             $: 'Failed',
             a: testName,
             b: 'Async test error: ' + (e.message || String(e)),
@@ -383,7 +509,6 @@ function formatBrowserError(error) {
         return error;
     }
 
-    // Handle Canopy BrowserError type
     if (error && error.$) {
         switch (error.$) {
             case 'LaunchError':
@@ -405,7 +530,6 @@ function formatBrowserError(error) {
         }
     }
 
-    // Handle JavaScript Error
     if (error instanceof Error) {
         return error.message + (error.stack ? '\n' + error.stack : '');
     }
@@ -495,6 +619,7 @@ function getSkippedTestName(test, path) {
 
 /**
  * Format report for console output.
+ * Kept for backwards compatibility.
  *
  * @canopy-type Report -> String
  * @name formatConsole
@@ -544,6 +669,7 @@ function formatConsole(report) {
 
 /**
  * Format report as JSON.
+ * Kept for backwards compatibility.
  *
  * @canopy-type Report -> String
  * @name formatJson
@@ -574,6 +700,7 @@ function formatJson(report) {
 
 /**
  * Print results to console and exit with appropriate code.
+ * Kept for backwards compatibility.
  *
  * @canopy-type Report -> ()
  * @name reportAndExit
@@ -588,15 +715,22 @@ function reportAndExit(report) {
 }
 
 /**
- * Run tests and report (async-aware).
+ * Run tests and report via NDJSON streaming.
  * This is the main entry point for test execution.
+ *
+ * Individual result events are emitted during the tree walk (via pushAndEmit).
+ * After all tests complete, a summary event is emitted and the process exits.
  *
  * @canopy-type Test -> Task Never ()
  * @name runAndReport
  */
 async function runAndReport(testSuite) {
     var report = await runTests(testSuite);
-    reportAndExit(report);
+    emitSummary(report);
+
+    if (typeof process !== 'undefined' && process.exit) {
+        process.exit(report.summary.failed > 0 ? 1 : 0);
+    }
 }
 
 // Helper functions
@@ -630,6 +764,7 @@ if (typeof module !== 'undefined' && module.exports) {
         runTestsSync: runTestsSync,
         runTestsAsync: runTestsAsync,
         hasAsyncTests: hasAsyncTests,
+        hasBrowserTests: hasBrowserTests,
         formatConsole: formatConsole,
         formatJson: formatJson,
         reportAndExit: reportAndExit,
@@ -644,18 +779,17 @@ if (typeof window !== 'undefined') {
         runTestsSync: runTestsSync,
         runTestsAsync: runTestsAsync,
         hasAsyncTests: hasAsyncTests,
+        hasBrowserTests: hasBrowserTests,
         formatConsole: formatConsole,
         formatJson: formatJson,
         reportAndExit: reportAndExit,
         runAndReport: runAndReport
     };
 
-    // Also set task executor if available globally
     if (window.CanopyTaskExecutor && !taskExecutor) {
         taskExecutor = window.CanopyTaskExecutor;
     }
 
-    // Also set playwright bindings if available globally
     if (window.CanopyPlaywright && !playwrightBindings) {
         playwrightBindings = window.CanopyPlaywright;
     }
