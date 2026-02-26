@@ -98,26 +98,38 @@ createGainNodeTests =
 gainControlTests : Test
 gainControlTests =
     describe "setGain"
-        [ test "sets gain to 0.5" <|
+        [ test "sets gain to 0.5 and reads back" <|
             \_ ->
                 withContext <| \ctx ->
                     expectOk "createGainNode" (AudioFFI.createGainNode ctx 1.0) <| \gainNode ->
                         expectOk "setGain" (AudioFFI.setGain gainNode 0.5 0.0) <| \_ ->
-                            Expect.pass
+                            let
+                                param = AudioFFI.getGainParam gainNode
+                                value = AudioFFI.getAudioParamValue param
+                            in
+                            Expect.within (Expect.Absolute 0.01) 0.5 value
 
-        , test "sets gain to 0 (mute)" <|
+        , test "sets gain to 0 (mute) and reads back" <|
             \_ ->
                 withContext <| \ctx ->
                     expectOk "createGainNode" (AudioFFI.createGainNode ctx 1.0) <| \gainNode ->
                         expectOk "setGain" (AudioFFI.setGain gainNode 0.0 0.0) <| \_ ->
-                            Expect.pass
+                            let
+                                param = AudioFFI.getGainParam gainNode
+                                value = AudioFFI.getAudioParamValue param
+                            in
+                            Expect.within (Expect.Absolute 0.01) 0.0 value
 
-        , test "sets gain at future time" <|
+        , test "sets gain to 0.75 at time 0 and reads back" <|
             \_ ->
                 withContext <| \ctx ->
                     expectOk "createGainNode" (AudioFFI.createGainNode ctx 1.0) <| \gainNode ->
-                        expectOk "setGain" (AudioFFI.setGain gainNode 0.5 1.0) <| \_ ->
-                            Expect.pass
+                        expectOk "setGain" (AudioFFI.setGain gainNode 0.75 0.0) <| \_ ->
+                            let
+                                param = AudioFFI.getGainParam gainNode
+                                value = AudioFFI.getAudioParamValue param
+                            in
+                            Expect.within (Expect.Absolute 0.01) 0.75 value
         ]
 
 
@@ -130,14 +142,18 @@ gainRampTests : Test
 gainRampTests =
     describe "gain ramping"
         [ describe "rampGainLinear"
-            [ test "ramps gain linearly to target" <|
+            [ test "ramps gain linearly to 0.0 at endTime 0.0 and reads back" <|
                 \_ ->
                     withContext <| \ctx ->
                         expectOk "createGainNode" (AudioFFI.createGainNode ctx 1.0) <| \gainNode ->
-                            expectOk "rampGainLinear" (AudioFFI.rampGainLinear gainNode 0.0 1.0) <| \_ ->
-                                Expect.pass
+                            expectOk "rampGainLinear" (AudioFFI.rampGainLinear gainNode 0.0 0.0) <| \_ ->
+                                let
+                                    param = AudioFFI.getGainParam gainNode
+                                    value = AudioFFI.getAudioParamValue param
+                                in
+                                Expect.within (Expect.Absolute 0.01) 0.0 value
 
-            , test "ramps gain linearly from low to high" <|
+            , test "ramps gain linearly to future time (invocation only)" <|
                 \_ ->
                     withContext <| \ctx ->
                         expectOk "createGainNode" (AudioFFI.createGainNode ctx 0.1) <| \gainNode ->
@@ -146,20 +162,23 @@ gainRampTests =
             ]
 
         , describe "rampGainExponential"
-            [ test "ramps gain exponentially to target" <|
+            [ test "ramps gain exponentially to target (future time)" <|
                 \_ ->
                     withContext <| \ctx ->
                         expectOk "createGainNode" (AudioFFI.createGainNode ctx 1.0) <| \gainNode ->
                             expectOk "rampGainExponential" (AudioFFI.rampGainExponential gainNode 0.01 1.0) <| \_ ->
                                 Expect.pass
 
-            , test "exponential ramp to zero may fail" <|
+            , test "exponential ramp to zero returns Err" <|
                 \_ ->
                     withContext <| \ctx ->
                         expectOk "createGainNode" (AudioFFI.createGainNode ctx 1.0) <| \gainNode ->
                             case AudioFFI.rampGainExponential gainNode 0.0 1.0 of
-                                Ok _ -> Expect.pass
-                                Err _ -> Expect.pass
+                                Ok _ ->
+                                    Expect.fail "expected Err for exponential ramp to 0"
+
+                                Err _ ->
+                                    Expect.pass
             ]
         ]
 

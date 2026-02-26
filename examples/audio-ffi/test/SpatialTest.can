@@ -76,6 +76,54 @@ pannerCreationTests =
                         panner = AudioFFI.createPanner ctx
                     in
                     Expect.equal "equalpower" (AudioFFI.getPannerPanningModel panner)
+
+        , test "creates panner with default inverse distance model" <|
+            \_ ->
+                withRawContext <| \ctx ->
+                    let
+                        panner = AudioFFI.createPanner ctx
+                    in
+                    Expect.equal "inverse" (AudioFFI.getPannerDistanceModel panner)
+
+        , test "creates panner with default orientation X=1" <|
+            \_ ->
+                withRawContext <| \ctx ->
+                    let
+                        panner = AudioFFI.createPanner ctx
+                    in
+                    Expect.within (Expect.Absolute 0.01) 1.0 (AudioFFI.getAudioParamValue (AudioFFI.getPannerOrientationX panner))
+
+        , test "creates panner with default cone inner angle 360" <|
+            \_ ->
+                withRawContext <| \ctx ->
+                    let
+                        panner = AudioFFI.createPanner ctx
+                    in
+                    Expect.within (Expect.Absolute 0.01) 360.0 (AudioFFI.getPannerConeInnerAngle panner)
+
+        , test "creates panner with default cone outer angle 360" <|
+            \_ ->
+                withRawContext <| \ctx ->
+                    let
+                        panner = AudioFFI.createPanner ctx
+                    in
+                    Expect.within (Expect.Absolute 0.01) 360.0 (AudioFFI.getPannerConeOuterAngle panner)
+
+        , test "creates panner with default cone outer gain 0" <|
+            \_ ->
+                withRawContext <| \ctx ->
+                    let
+                        panner = AudioFFI.createPanner ctx
+                    in
+                    Expect.within (Expect.Absolute 0.01) 0.0 (AudioFFI.getPannerConeOuterGain panner)
+
+        , test "creates panner with default rolloff factor 1" <|
+            \_ ->
+                withRawContext <| \ctx ->
+                    let
+                        panner = AudioFFI.createPanner ctx
+                    in
+                    Expect.within (Expect.Absolute 0.01) 1.0 (AudioFFI.getPannerRolloffFactor panner)
         ]
 
 
@@ -88,50 +136,55 @@ pannerPositionTests : Test
 pannerPositionTests =
     describe "panner position"
         [ describe "setPannerPosition"
-            [ test "sets position at origin" <|
+            [ test "sets position at origin and reads back X=0" <|
                 \_ ->
                     withRawContext <| \ctx ->
                         let
                             panner = AudioFFI.createPanner ctx
-                            _ = AudioFFI.setPannerPosition panner 0.0 0.0 0.0
                         in
-                        Expect.pass
+                        case AudioFFI.setPannerPosition panner 0.0 0.0 0.0 of
+                            _ ->
+                                Expect.within (Expect.Absolute 0.01) 0.0 (AudioFFI.getAudioParamValue (AudioFFI.getPannerPositionX panner))
 
-            , test "sets position to the left" <|
+            , test "sets position left and reads back X=-5" <|
                 \_ ->
                     withRawContext <| \ctx ->
                         let
                             panner = AudioFFI.createPanner ctx
-                            _ = AudioFFI.setPannerPosition panner (-5.0) 0.0 0.0
                         in
-                        Expect.pass
+                        case AudioFFI.setPannerPosition panner (-5.0) 0.0 0.0 of
+                            _ ->
+                                Expect.within (Expect.Absolute 0.01) (-5.0) (AudioFFI.getAudioParamValue (AudioFFI.getPannerPositionX panner))
 
-            , test "sets position to the right" <|
+            , test "sets position right and reads back X=5" <|
                 \_ ->
                     withRawContext <| \ctx ->
                         let
                             panner = AudioFFI.createPanner ctx
-                            _ = AudioFFI.setPannerPosition panner 5.0 0.0 0.0
                         in
-                        Expect.pass
+                        case AudioFFI.setPannerPosition panner 5.0 0.0 0.0 of
+                            _ ->
+                                Expect.within (Expect.Absolute 0.01) 5.0 (AudioFFI.getAudioParamValue (AudioFFI.getPannerPositionX panner))
 
-            , test "sets position above" <|
+            , test "sets position above and reads back Y=5" <|
                 \_ ->
                     withRawContext <| \ctx ->
                         let
                             panner = AudioFFI.createPanner ctx
-                            _ = AudioFFI.setPannerPosition panner 0.0 5.0 0.0
                         in
-                        Expect.pass
+                        case AudioFFI.setPannerPosition panner 0.0 5.0 0.0 of
+                            _ ->
+                                Expect.within (Expect.Absolute 0.01) 5.0 (AudioFFI.getAudioParamValue (AudioFFI.getPannerPositionY panner))
 
-            , test "sets position in front" <|
+            , test "sets position in front and reads back Z=-5" <|
                 \_ ->
                     withRawContext <| \ctx ->
                         let
                             panner = AudioFFI.createPanner ctx
-                            _ = AudioFFI.setPannerPosition panner 0.0 0.0 (-5.0)
                         in
-                        Expect.pass
+                        case AudioFFI.setPannerPosition panner 0.0 0.0 (-5.0) of
+                            _ ->
+                                Expect.within (Expect.Absolute 0.01) (-5.0) (AudioFFI.getAudioParamValue (AudioFFI.getPannerPositionZ panner))
             ]
 
         , describe "getPannerPositionX/Y/Z"
@@ -167,23 +220,24 @@ pannerPositionTests =
             ]
 
         , describe "panner orientation"
-            [ test "sets orientation" <|
+            [ test "sets orientation and reads back X=0 Y=1 Z=0" <|
                 \_ ->
                     withRawContext <| \ctx ->
                         let
                             panner = AudioFFI.createPanner ctx
-                            _ = AudioFFI.setPannerOrientation panner 1.0 0.0 0.0
                         in
-                        Expect.pass
+                        case AudioFFI.setPannerOrientation panner 0.0 1.0 0.0 of
+                            _ ->
+                                Expect.within (Expect.Absolute 0.01) 1.0 (AudioFFI.getAudioParamValue (AudioFFI.getPannerOrientationY panner))
 
-            , test "sets orientation direct" <|
+            , test "sets orientation direct and reads back Z=-1" <|
                 \_ ->
                     withRawContext <| \ctx ->
                         let
                             panner = AudioFFI.createPanner ctx
                         in
                         expectOk "setPannerOrientationDirect" (AudioFFI.setPannerOrientationDirect panner 0.0 0.0 (-1.0)) <| \_ ->
-                            Expect.pass
+                            Expect.within (Expect.Absolute 0.01) (-1.0) (AudioFFI.getAudioParamValue (AudioFFI.getPannerOrientationZ panner))
 
             , test "gets orientation X param with default 1" <|
                 \_ ->

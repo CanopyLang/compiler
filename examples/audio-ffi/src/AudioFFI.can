@@ -979,6 +979,26 @@ getNodeNumberOfOutputs : AudioNode -> Int
 getNodeNumberOfOutputs =
     FFI.getNodeNumberOfOutputs
 
+-- | Get number of outputs from a channel splitter node
+getSplitterNumberOfOutputs : ChannelSplitterNode -> Int
+getSplitterNumberOfOutputs =
+    FFI.getSplitterNumberOfOutputs
+
+-- | Get number of inputs from a channel merger node
+getMergerNumberOfInputs : ChannelMergerNode -> Int
+getMergerNumberOfInputs =
+    FFI.getMergerNumberOfInputs
+
+-- | Get number of outputs from an audio destination node
+getDestinationNumberOfOutputs : AudioDestinationNode -> Int
+getDestinationNumberOfOutputs =
+    FFI.getDestinationNumberOfOutputs
+
+-- | Get channel count of a gain node
+getGainNodeChannelCount : GainNode -> Int
+getGainNodeChannelCount =
+    FFI.getGainNodeChannelCount
+
 -- | Get node's audio context
 getNodeContext : AudioNode -> AudioContext
 getNodeContext =

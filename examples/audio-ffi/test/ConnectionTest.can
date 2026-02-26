@@ -2,25 +2,24 @@ module ConnectionTest exposing (main, suite)
 
 {-| Unit Tests for Audio Node Connection Functions
 
-Tests all node connection and disconnection functions.
+Tests node connection, disconnection, and channel routing functions.
 
 ## Functions Tested
 
 - connectNodes
 - connectToDestination
 - disconnectNode
-- connectNodesWithChannels
-- disconnectNodeFromDestination
-- disconnectNodeOutput
-- disconnectNodeFromNodeChannel
 - createChannelSplitter
 - createChannelMerger
 - getContextDestination
+- getSplitterNumberOfOutputs
+- getMergerNumberOfInputs
+- getDestinationNumberOfOutputs
+- getGainNodeChannelCount
 
 -}
 
-import Html exposing (Html, pre, text)
-import Test exposing (Test, BrowserTest, describe, test, runTests, inBrowser)
+import Test exposing (Test, BrowserTest, describe, test, inBrowser)
 import Expect
 import AudioFFI
 import Capability exposing (UserActivated(..), Initialized(..), CapabilityError(..))
@@ -75,13 +74,21 @@ basicConnectionTests =
             ]
 
         , describe "getContextDestination"
-            [ test "returns destination node" <|
+            [ test "destination has 0 outputs (it is a sink)" <|
                 \_ ->
                     withRawContext <| \ctx ->
                         let
                             dest = AudioFFI.getContextDestination ctx
                         in
-                        Expect.pass
+                        Expect.equal 0 (AudioFFI.getDestinationNumberOfOutputs dest)
+            ]
+
+        , describe "getGainNodeChannelCount"
+            [ test "gain node has default channel count of 2" <|
+                \_ ->
+                    withContext <| \ctx ->
+                        expectOk "createGainNode" (AudioFFI.createGainNode ctx 1.0) <| \gain ->
+                            Expect.equal 2 (AudioFFI.getGainNodeChannelCount gain)
             ]
         ]
 
@@ -95,14 +102,13 @@ disconnectionTests : Test
 disconnectionTests =
     describe "disconnection"
         [ describe "disconnectNode"
-            [ test "disconnects gain node" <|
+            [ test "disconnects gain node without error" <|
                 \_ ->
                     withContext <| \ctx ->
                         expectOk "createGainNode" (AudioFFI.createGainNode ctx 1.0) <| \gain ->
-                            let
-                                _ = AudioFFI.disconnectNode gain
-                            in
-                            Expect.pass
+                            case AudioFFI.disconnectNode gain of
+                                _ ->
+                                    Expect.pass
             ]
         ]
 
@@ -116,39 +122,39 @@ channelTests : Test
 channelTests =
     describe "channel operations"
         [ describe "createChannelSplitter"
-            [ test "creates splitter with 2 channels" <|
+            [ test "creates splitter with 2 outputs" <|
                 \_ ->
                     withRawContext <| \ctx ->
                         let
                             splitter = AudioFFI.createChannelSplitter ctx 2
                         in
-                        Expect.pass
+                        Expect.equal 2 (AudioFFI.getSplitterNumberOfOutputs splitter)
 
-            , test "creates splitter with 6 channels" <|
+            , test "creates splitter with 6 outputs" <|
                 \_ ->
                     withRawContext <| \ctx ->
                         let
                             splitter = AudioFFI.createChannelSplitter ctx 6
                         in
-                        Expect.pass
+                        Expect.equal 6 (AudioFFI.getSplitterNumberOfOutputs splitter)
             ]
 
         , describe "createChannelMerger"
-            [ test "creates merger with 2 channels" <|
+            [ test "creates merger with 2 inputs" <|
                 \_ ->
                     withRawContext <| \ctx ->
                         let
                             merger = AudioFFI.createChannelMerger ctx 2
                         in
-                        Expect.pass
+                        Expect.equal 2 (AudioFFI.getMergerNumberOfInputs merger)
 
-            , test "creates merger with 6 channels" <|
+            , test "creates merger with 6 inputs" <|
                 \_ ->
                     withRawContext <| \ctx ->
                         let
                             merger = AudioFFI.createChannelMerger ctx 6
                         in
-                        Expect.pass
+                        Expect.equal 6 (AudioFFI.getMergerNumberOfInputs merger)
             ]
         ]
 

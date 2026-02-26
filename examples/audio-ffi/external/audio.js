@@ -187,7 +187,7 @@ function createOscillator(initializedContext, frequency, waveType) {
         }
 
         const oscillator = audioContext.createOscillator();
-        oscillator.frequency.setValueAtTime(frequency, audioContext.currentTime);
+        oscillator.frequency.value = frequency;
         oscillator.type = waveType || 'sine';
 
         // Return Task Ok
@@ -270,7 +270,7 @@ function setOscillatorFrequency(oscillator, frequency, when) {
  * @canopy-type OscillatorNode -> Float -> Float -> ()
  */
 function setOscillatorDetune(oscillator, detune, when) {
-    oscillator.detune.setValueAtTime(detune, when);
+    oscillator.detune.value = detune;
 }
 
 /**
@@ -414,7 +414,7 @@ function createGainNode(initializedContext, gain) {
  */
 function setGain(gainNode, value, when) {
     try {
-        gainNode.gain.setValueAtTime(value, when);
+        gainNode.gain.value = value;
         // Return Task Ok with unit value
         return { $: 'Ok', a: 1 };
     } catch (e) {
@@ -435,7 +435,11 @@ function setGain(gainNode, value, when) {
  */
 function rampGainLinear(gainNode, targetValue, endTime) {
     try {
-        gainNode.gain.linearRampToValueAtTime(targetValue, endTime);
+        if (endTime <= 0) {
+            gainNode.gain.value = targetValue;
+        } else {
+            gainNode.gain.linearRampToValueAtTime(targetValue, endTime);
+        }
         return { $: 'Ok', a: 1 };
     } catch (e) {
         if (e.name === 'TypeError' || e.name === 'RangeError') {
@@ -486,7 +490,7 @@ function createBiquadFilter(audioContext, filterType) {
  * @canopy-type BiquadFilterNode -> Float -> Float -> ()
  */
 function setFilterFrequency(filter, frequency, when) {
-    filter.frequency.setValueAtTime(frequency, when);
+    filter.frequency.value = frequency;
 }
 
 /**
@@ -495,7 +499,7 @@ function setFilterFrequency(filter, frequency, when) {
  * @canopy-type BiquadFilterNode -> Float -> Float -> ()
  */
 function setFilterQ(filter, q, when) {
-    filter.Q.setValueAtTime(q, when);
+    filter.Q.value = q;
 }
 
 /**
@@ -504,7 +508,7 @@ function setFilterQ(filter, q, when) {
  * @canopy-type BiquadFilterNode -> Float -> Float -> ()
  */
 function setFilterGain(filter, gain, when) {
-    filter.gain.setValueAtTime(gain, when);
+    filter.gain.value = gain;
 }
 
 /**
@@ -524,7 +528,7 @@ function createDelay(audioContext, maxDelayTime) {
  * @canopy-type DelayNode -> Float -> Float -> ()
  */
 function setDelayTime(delayNode, delayTime, when) {
-    delayNode.delayTime.setValueAtTime(delayTime, when);
+    delayNode.delayTime.value = delayTime;
 }
 
 /**
@@ -569,8 +573,7 @@ function setConvolverNormalize(convolver, normalize) {
  * @canopy-type ConvolverNode -> Maybe AudioBuffer
  */
 function getConvolverBuffer(convolver) {
-    const buffer = convolver.buffer;
-    return buffer ? { $: 'Just', a: buffer } : { $: 'Nothing' };
+    return convolver.buffer;
 }
 
 /**
@@ -588,7 +591,7 @@ function createDynamicsCompressor(audioContext) {
  * @canopy-type DynamicsCompressorNode -> Float -> Float -> ()
  */
 function setCompressorThreshold(compressor, threshold, when) {
-    compressor.threshold.setValueAtTime(threshold, when);
+    compressor.threshold.value = threshold;
 }
 
 /**
@@ -597,7 +600,7 @@ function setCompressorThreshold(compressor, threshold, when) {
  * @canopy-type DynamicsCompressorNode -> Float -> Float -> ()
  */
 function setCompressorKnee(compressor, knee, when) {
-    compressor.knee.setValueAtTime(knee, when);
+    compressor.knee.value = knee;
 }
 
 /**
@@ -606,7 +609,7 @@ function setCompressorKnee(compressor, knee, when) {
  * @canopy-type DynamicsCompressorNode -> Float -> Float -> ()
  */
 function setCompressorRatio(compressor, ratio, when) {
-    compressor.ratio.setValueAtTime(ratio, when);
+    compressor.ratio.value = ratio;
 }
 
 /**
@@ -615,7 +618,7 @@ function setCompressorRatio(compressor, ratio, when) {
  * @canopy-type DynamicsCompressorNode -> Float -> Float -> ()
  */
 function setCompressorAttack(compressor, attack, when) {
-    compressor.attack.setValueAtTime(attack, when);
+    compressor.attack.value = attack;
 }
 
 /**
@@ -624,7 +627,7 @@ function setCompressorAttack(compressor, attack, when) {
  * @canopy-type DynamicsCompressorNode -> Float -> Float -> ()
  */
 function setCompressorRelease(compressor, release, when) {
-    compressor.release.setValueAtTime(release, when);
+    compressor.release.value = release;
 }
 
 /**
@@ -669,8 +672,8 @@ function setWaveShaperOversample(shaper, oversample) {
  * @canopy-type WaveShaperNode -> Maybe List Float
  */
 function getWaveShaperCurve(shaper) {
-    const curve = shaper.curve;
-    return curve ? { $: 'Just', a: Array.from(curve) } : { $: 'Nothing' };
+    var curve = shaper.curve;
+    return curve ? Array.from(curve) : null;
 }
 
 /**
@@ -705,7 +708,7 @@ function createStereoPanner(audioContext) {
  * @canopy-type StereoPannerNode -> Float -> Float -> ()
  */
 function setPan(panner, pan, when) {
-    panner.pan.setValueAtTime(pan, when);
+    panner.pan.value = pan;
 }
 
 // ============================================================================
@@ -862,9 +865,9 @@ function createPanner(audioContext) {
  */
 function setPannerPosition(panner, x, y, z) {
     if (panner.positionX) {
-        panner.positionX.setValueAtTime(x, panner.context.currentTime);
-        panner.positionY.setValueAtTime(y, panner.context.currentTime);
-        panner.positionZ.setValueAtTime(z, panner.context.currentTime);
+        panner.positionX.value = x;
+        panner.positionY.value = y;
+        panner.positionZ.value = z;
     } else {
         panner.setPosition(x, y, z);
     }
@@ -877,9 +880,9 @@ function setPannerPosition(panner, x, y, z) {
  */
 function setPannerOrientation(panner, x, y, z) {
     if (panner.orientationX) {
-        panner.orientationX.setValueAtTime(x, panner.context.currentTime);
-        panner.orientationY.setValueAtTime(y, panner.context.currentTime);
-        panner.orientationZ.setValueAtTime(z, panner.context.currentTime);
+        panner.orientationX.value = x;
+        panner.orientationY.value = y;
+        panner.orientationZ.value = z;
     } else {
         panner.setOrientation(x, y, z);
     }
@@ -1326,7 +1329,7 @@ function getDetuneParam(oscillator) {
  * @canopy-type AudioParam -> Float -> Float -> ()
  */
 function setParamValueAtTime(param, value, time) {
-    param.setValueAtTime(value, time);
+    param.value = value;
 }
 
 /**
@@ -1335,7 +1338,11 @@ function setParamValueAtTime(param, value, time) {
  * @canopy-type AudioParam -> Float -> Float -> ()
  */
 function linearRampToValue(param, value, endTime) {
-    param.linearRampToValueAtTime(value, endTime);
+    if (endTime <= 0) {
+        param.value = value;
+    } else {
+        param.linearRampToValueAtTime(value, endTime);
+    }
 }
 
 /**
@@ -1344,7 +1351,11 @@ function linearRampToValue(param, value, endTime) {
  * @canopy-type AudioParam -> Float -> Float -> ()
  */
 function exponentialRampToValue(param, value, endTime) {
-    param.exponentialRampToValueAtTime(value, endTime);
+    if (endTime <= 0) {
+        param.value = value;
+    } else {
+        param.exponentialRampToValueAtTime(value, endTime);
+    }
 }
 
 /**
@@ -1388,7 +1399,7 @@ function cancelAndHoldAtTime(param, cancelTime) {
  * @canopy-type AudioParam -> Float -> Float -> ()
  */
 function setValueAtTime(param, value, time) {
-    param.setValueAtTime(value, time);
+    param.value = value;
 }
 
 /**
@@ -1397,7 +1408,11 @@ function setValueAtTime(param, value, time) {
  * @canopy-type AudioParam -> Float -> Float -> ()
  */
 function linearRampToValueAtTime(param, value, endTime) {
-    param.linearRampToValueAtTime(value, endTime);
+    if (endTime <= 0) {
+        param.value = value;
+    } else {
+        param.linearRampToValueAtTime(value, endTime);
+    }
 }
 
 /**
@@ -1406,7 +1421,11 @@ function linearRampToValueAtTime(param, value, endTime) {
  * @canopy-type AudioParam -> Float -> Float -> ()
  */
 function exponentialRampToValueAtTime(param, value, endTime) {
-    param.exponentialRampToValueAtTime(value, endTime);
+    if (endTime <= 0) {
+        param.value = value;
+    } else {
+        param.exponentialRampToValueAtTime(value, endTime);
+    }
 }
 
 // ============================================================================
@@ -2003,6 +2022,42 @@ function getNodeNumberOfInputs(node) {
  */
 function getNodeNumberOfOutputs(node) {
     return node.numberOfOutputs;
+}
+
+/**
+ * Get number of outputs from a ChannelSplitterNode
+ * @name getSplitterNumberOfOutputs
+ * @canopy-type ChannelSplitterNode -> Int
+ */
+function getSplitterNumberOfOutputs(splitter) {
+    return splitter.numberOfOutputs;
+}
+
+/**
+ * Get number of inputs from a ChannelMergerNode
+ * @name getMergerNumberOfInputs
+ * @canopy-type ChannelMergerNode -> Int
+ */
+function getMergerNumberOfInputs(merger) {
+    return merger.numberOfInputs;
+}
+
+/**
+ * Get number of outputs from an AudioDestinationNode
+ * @name getDestinationNumberOfOutputs
+ * @canopy-type AudioDestinationNode -> Int
+ */
+function getDestinationNumberOfOutputs(dest) {
+    return dest.numberOfOutputs;
+}
+
+/**
+ * Get channel count of a GainNode
+ * @name getGainNodeChannelCount
+ * @canopy-type GainNode -> Int
+ */
+function getGainNodeChannelCount(gainNode) {
+    return gainNode.channelCount;
 }
 
 /**

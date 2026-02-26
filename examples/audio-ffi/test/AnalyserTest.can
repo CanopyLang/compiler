@@ -199,14 +199,38 @@ analyserConfigTests =
             ]
 
         , describe "setAnalyserSmoothingTimeConstant"
-            [ test "sets smoothing to 0.8" <|
+            [ test "sets smoothing to 0.8 and reads back" <|
                 \_ ->
                     withRawContext <| \ctx ->
                         let
                             analyser = AudioFFI.createAnalyser ctx
                         in
                         expectOk "setAnalyserSmoothingTimeConstant" (AudioFFI.setAnalyserSmoothingTimeConstant analyser 0.8) <| \_ ->
-                            Expect.pass
+                            Expect.within (Expect.Absolute 0.01) 0.8 (AudioFFI.getAnalyserSmoothingTimeConstant analyser)
+
+            , test "sets smoothing to 0.5 and reads back" <|
+                \_ ->
+                    withRawContext <| \ctx ->
+                        let
+                            analyser = AudioFFI.createAnalyser ctx
+                        in
+                        expectOk "setAnalyserSmoothingTimeConstant" (AudioFFI.setAnalyserSmoothingTimeConstant analyser 0.5) <| \_ ->
+                            Expect.within (Expect.Absolute 0.01) 0.5 (AudioFFI.getAnalyserSmoothingTimeConstant analyser)
+            ]
+
+        , describe "error cases"
+            [ test "setAnalyserMinDecibels above maxDecibels returns Err" <|
+                \_ ->
+                    withRawContext <| \ctx ->
+                        let
+                            analyser = AudioFFI.createAnalyser ctx
+                        in
+                        case AudioFFI.setAnalyserMinDecibels analyser 0.0 of
+                            Ok _ ->
+                                Expect.fail "expected Err when minDecibels >= maxDecibels"
+
+                            Err _ ->
+                                Expect.pass
             ]
 
         , describe "setAnalyserSmoothing"

@@ -119,32 +119,47 @@ contextLifecycleTests : Test
 contextLifecycleTests =
     describe "context lifecycle"
         [ describe "resumeAudioContext"
-            [ test "returns Ok with Running context" <|
+            [ test "resume yields running state" <|
                 \_ ->
                     withContext <| \ctx ->
                         case AudioFFI.resumeAudioContext ctx of
-                            Ok (Running _) -> Expect.pass
-                            Ok _ -> Expect.fail "expected Running after resume"
-                            Err err -> Expect.fail ("resumeAudioContext failed: " ++ errorToString err)
+                            Ok resumed ->
+                                Expect.equal "running" (AudioFFI.getContextState (extractContext resumed))
+
+                            Err err ->
+                                Expect.fail ("resumeAudioContext failed: " ++ errorToString err)
             ]
 
         , describe "suspendAudioContext"
-            [ test "returns Ok after suspend" <|
+            [ test "suspend yields suspended state" <|
                 \_ ->
                     withContext <| \ctx ->
-                        case AudioFFI.suspendAudioContext (extractContext ctx) of
-                            Ok _ -> Expect.pass
-                            Err err -> Expect.fail ("suspendAudioContext failed: " ++ errorToString err)
+                        let
+                            raw = extractContext ctx
+                        in
+                        case AudioFFI.suspendAudioContext raw of
+                            Ok suspendedCtx ->
+                                Expect.equal "suspended" (AudioFFI.getContextState suspendedCtx)
+
+                            Err err ->
+                                Expect.fail ("suspendAudioContext failed: " ++ errorToString err)
             ]
 
         , describe "closeAudioContext"
-            [ test "returns Ok after close" <|
+            [ test "close yields closed state" <|
                 \_ ->
                     withContext <| \ctx ->
-                        case AudioFFI.closeAudioContext (extractContext ctx) of
-                            Ok _ -> Expect.pass
-                            Err err -> Expect.fail ("closeAudioContext failed: " ++ errorToString err)
+                        let
+                            raw = extractContext ctx
+                        in
+                        case AudioFFI.closeAudioContext raw of
+                            Ok _ ->
+                                Expect.equal "closed" (AudioFFI.getContextState raw)
+
+                            Err err ->
+                                Expect.fail ("closeAudioContext failed: " ++ errorToString err)
             ]
+
         ]
 
 

@@ -211,58 +211,72 @@ bufferManipulationTests : Test
 bufferManipulationTests =
     describe "buffer manipulation"
         [ describe "getChannelData"
-            [ test "retrieves channel data successfully" <|
+            [ test "retrieves channel 0 data with correct length" <|
                 \_ ->
                     withRawContext <| \ctx ->
                         let
                             buffer = AudioFFI.createEmptyBuffer ctx 2 1.0 44100
                         in
-                        expectOk "getChannelData" (AudioFFI.getChannelData buffer 0) <| \_ ->
-                            Expect.pass
+                        expectOk "getChannelData" (AudioFFI.getChannelData buffer 0) <| \channelData ->
+                            Expect.equal 44100 (List.length channelData)
             ]
 
         , describe "getBufferAsArray"
-            [ test "returns samples as list" <|
+            [ test "returns exact sample count for 44100 samples" <|
                 \_ ->
                     withRawContext <| \ctx ->
                         let
-                            buffer = AudioFFI.createEmptyBuffer ctx 2 0.1 44100
+                            buffer = AudioFFI.createSilentBuffer ctx 1 44100 44100.0
                             samples = AudioFFI.getBufferAsArray buffer 0
                         in
-                        Expect.true "should have samples" (List.length samples > 0)
+                        Expect.equal 44100 (List.length samples)
+
+            , test "silent buffer first sample is 0.0" <|
+                \_ ->
+                    withRawContext <| \ctx ->
+                        let
+                            buffer = AudioFFI.createSilentBuffer ctx 1 100 44100.0
+                            samples = AudioFFI.getBufferAsArray buffer 0
+                        in
+                        case samples of
+                            first :: _ ->
+                                Expect.within (Expect.Absolute 0.001) 0.0 first
+
+                            [] ->
+                                Expect.fail "expected non-empty sample list"
             ]
 
         , describe "reverseAudioBuffer"
-            [ test "reverses buffer successfully" <|
+            [ test "reversed buffer preserves length and channels" <|
                 \_ ->
                     withRawContext <| \ctx ->
                         let
                             buffer = AudioFFI.createEmptyBuffer ctx 2 1.0 44100
                         in
-                        expectOk "reverseAudioBuffer" (AudioFFI.reverseAudioBuffer buffer) <| \_ ->
-                            Expect.pass
+                        expectOk "reverseAudioBuffer" (AudioFFI.reverseAudioBuffer buffer) <| \reversed ->
+                            Expect.equal (AudioFFI.getBufferLength buffer) (AudioFFI.getBufferLength reversed)
             ]
 
         , describe "normalizeAudioBuffer"
-            [ test "normalizes buffer successfully" <|
+            [ test "normalized buffer preserves length and channels" <|
                 \_ ->
                     withRawContext <| \ctx ->
                         let
                             buffer = AudioFFI.createEmptyBuffer ctx 2 1.0 44100
                         in
-                        expectOk "normalizeAudioBuffer" (AudioFFI.normalizeAudioBuffer buffer 1.0) <| \_ ->
-                            Expect.pass
+                        expectOk "normalizeAudioBuffer" (AudioFFI.normalizeAudioBuffer buffer 1.0) <| \normalized ->
+                            Expect.equal (AudioFFI.getBufferChannels buffer) (AudioFFI.getBufferChannels normalized)
             ]
 
         , describe "trimSilence"
-            [ test "trims silent buffer" <|
+            [ test "trimming all-silent buffer yields minimum length" <|
                 \_ ->
                     withRawContext <| \ctx ->
                         let
                             buffer = AudioFFI.createSilentBuffer ctx 2 44100 44100.0
                         in
-                        expectOk "trimSilence" (AudioFFI.trimSilence buffer 0.001) <| \_ ->
-                            Expect.pass
+                        expectOk "trimSilence" (AudioFFI.trimSilence buffer 0.001) <| \trimmed ->
+                            Expect.equal 1 (AudioFFI.getBufferLength trimmed)
             ]
         ]
 
@@ -276,13 +290,49 @@ bufferSourceTests : Test
 bufferSourceTests =
     describe "buffer source"
         [ describe "createBufferSource"
-            [ test "creates buffer source node" <|
+            [ test "creates buffer source with loop default False" <|
                 \_ ->
                     withRawContext <| \ctx ->
                         let
                             source = AudioFFI.createBufferSource ctx
                         in
-                        Expect.pass
+                        Expect.equal False (AudioFFI.getBufferSourceLoop source)
+
+            , test "creates buffer source with playback rate default 1.0" <|
+                \_ ->
+                    withRawContext <| \ctx ->
+                        let
+                            source = AudioFFI.createBufferSource ctx
+                            param = AudioFFI.getBufferSourcePlaybackRate source
+                            value = AudioFFI.getAudioParamValue param
+                        in
+                        Expect.within (Expect.Absolute 0.01) 1.0 value
+
+            , test "creates buffer source with detune default 0.0" <|
+                \_ ->
+                    withRawContext <| \ctx ->
+                        let
+                            source = AudioFFI.createBufferSource ctx
+                            param = AudioFFI.getBufferSourceDetune source
+                            value = AudioFFI.getAudioParamValue param
+                        in
+                        Expect.within (Expect.Absolute 0.01) 0.0 value
+
+            , test "creates buffer source with loopStart default 0.0" <|
+                \_ ->
+                    withRawContext <| \ctx ->
+                        let
+                            source = AudioFFI.createBufferSource ctx
+                        in
+                        Expect.within (Expect.Absolute 0.01) 0.0 (AudioFFI.getBufferSourceLoopStart source)
+
+            , test "creates buffer source with loopEnd default 0.0" <|
+                \_ ->
+                    withRawContext <| \ctx ->
+                        let
+                            source = AudioFFI.createBufferSource ctx
+                        in
+                        Expect.within (Expect.Absolute 0.01) 0.0 (AudioFFI.getBufferSourceLoopEnd source)
             ]
 
         , describe "startBufferSource"
@@ -313,15 +363,19 @@ bufferSourceTests =
             ]
 
         , describe "setBufferSourceBuffer"
-            [ test "assigns buffer to source" <|
+            [ test "assigns buffer and reads back matching length" <|
                 \_ ->
                     withRawContext <| \ctx ->
                         let
                             source = AudioFFI.createBufferSource ctx
                             buffer = AudioFFI.createEmptyBuffer ctx 2 1.0 44100
-                            _ = AudioFFI.setBufferSourceBuffer source buffer
                         in
-                        Expect.pass
+                        case AudioFFI.setBufferSourceBuffer source buffer of
+                            _ ->
+                                let
+                                    readBack = AudioFFI.getBufferSourceBuffer source
+                                in
+                                Expect.equal (AudioFFI.getBufferLength buffer) (AudioFFI.getBufferLength readBack)
             ]
 
         , describe "setBufferSourceLoop"
