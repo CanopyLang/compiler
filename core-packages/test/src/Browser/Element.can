@@ -64,7 +64,7 @@ import Browser exposing (Browser, BrowserError)
 import Task exposing (Task)
 
 -- FFI import
-foreign import javascript "../external/playwright.js" as Playwright
+foreign import javascript "external/playwright.js" as Playwright
 
 
 -- ============================================================================

@@ -18,6 +18,7 @@ import qualified Data.ByteString.Lazy.Char8 as LChar8
 import qualified Data.Index as Index
 import Data.Name (Name)
 import qualified Data.Name as Name
+import qualified Data.Set as Set
 import qualified Data.Utf8 as Utf8
 import qualified Generate.JavaScript.Builder as JS
 import qualified Generate.JavaScript.Expression as Expr
@@ -42,7 +43,7 @@ tests =
 -- HELPERS
 
 devMode :: Mode.Mode
-devMode = Mode.Dev Nothing False
+devMode = Mode.Dev Nothing False False Set.empty
 
 nameStr :: String -> Name
 nameStr = Name.fromChars

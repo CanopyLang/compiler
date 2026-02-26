@@ -8,7 +8,7 @@
 
 /**
  * Check if user activation is currently available
- * @canopy-type () -> Bool
+ * @canopy-type Bool
  * @name isUserActivationAvailable
  */
 function isUserActivationAvailable() {
@@ -23,7 +23,7 @@ function isUserActivationAvailable() {
 
 /**
  * Check if user activation is currently active (within gesture window)
- * @canopy-type () -> Bool
+ * @canopy-type Bool
  * @name isUserActivationActive
  */
 function isUserActivationActive() {
@@ -79,7 +79,7 @@ function consumeUserActivation() {
 /**
  * Consume user activation and return as integer (workaround for compiler type reversal bug)
  * Returns: 1=Click, 2=Keypress, 3=Touch, 4=Drag, 5=Focus, 0=Transient
- * @canopy-type () -> Int
+ * @canopy-type Int
  * @name consumeUserActivationInt
  */
 function consumeUserActivationInt() {
@@ -115,7 +115,7 @@ function consumeUserActivationInt() {
 
 /**
  * Consume user activation and return as string (workaround for MVar deadlock)
- * @canopy-type () -> String
+ * @canopy-type String
  * @name consumeUserActivationString
  */
 function consumeUserActivationString() {

@@ -18,7 +18,9 @@
       }
   },
   "test-dependencies": {
-      "direct": {},
+      "direct": {
+          "canopy/test": "1.0.0"
+      },
       "indirect": {}
   }
 }

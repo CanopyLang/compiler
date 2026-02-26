@@ -23,6 +23,8 @@ module Browser.Expect exposing
     , meetsWcagA
     , meetsWcagAA
     , noConsoleErrors
+    , AuditResult
+    , CompareResult
     )
 
 {-| Browser-specific expectations for integration testing.
@@ -68,9 +70,34 @@ import Expect exposing (Expectation)
 import Task exposing (Task)
 
 -- FFI imports
-foreign import javascript "../external/playwright.js" as Playwright
-foreign import javascript "../external/accessibility.js" as Accessibility
-foreign import javascript "../external/visual.js" as Visual
+foreign import javascript "external/playwright.js" as Playwright
+foreign import javascript "external/accessibility.js" as Accessibility
+foreign import javascript "external/visual.js" as Visual
+
+
+-- ============================================================================
+-- FFI Return Type Aliases
+-- ============================================================================
+
+
+{-| Result from an accessibility audit.
+The JavaScript FFI returns an object matching this record shape.
+-}
+type alias AuditResult =
+    { violations : List String
+    , passes : Int
+    , incomplete : Int
+    }
+
+
+{-| Result from a visual comparison.
+The JavaScript FFI returns an object matching this record shape.
+-}
+type alias CompareResult =
+    { type_ : String
+    , diffPercent : Float
+    , diffPath : String
+    }
 
 
 -- ============================================================================
@@ -445,15 +472,12 @@ screenshotMatches name browser =
                     Expect.pass
 
                 "BaselineCreated" ->
-                    Expect.pass  -- First run, baseline created
+                    Expect.pass
 
                 "Mismatch" ->
-                    let
-                        pct = String.fromFloat (result.diffPercent * 100)
-                    in
                     Expect.fail
                         ("Screenshot mismatch: " ++ name
-                        ++ "\nDifference: " ++ pct ++ "%"
+                        ++ "\nDifference: " ++ String.fromFloat (result.diffPercent * 100) ++ "%"
                         ++ "\nDiff image: " ++ result.diffPath)
 
                 "DimensionMismatch" ->
@@ -487,12 +511,9 @@ screenshotMatchesStrict name browser =
                     Expect.pass
 
                 "Mismatch" ->
-                    let
-                        pct = String.fromFloat (result.diffPercent * 100)
-                    in
                     Expect.fail
                         ("Screenshot mismatch (strict): " ++ name
-                        ++ "\nDifference: " ++ pct ++ "%")
+                        ++ "\nDifference: " ++ String.fromFloat (result.diffPercent * 100) ++ "%")
 
                 _ ->
                     Expect.fail ("Comparison failed: " ++ name)
@@ -519,13 +540,10 @@ isAccessible browser =
             if result.violations == [] then
                 Expect.pass
             else
-                let
-                    count = List.length result.violations
-                    formatted = Accessibility.formatViolations result
-                in
                 Expect.fail
-                    ("Found " ++ String.fromInt count ++ " accessibility violations:\n"
-                    ++ formatted)
+                    ("Found " ++ String.fromInt (List.length result.violations)
+                    ++ " accessibility violations:\n"
+                    ++ String.join "\n" result.violations)
         )
 
 

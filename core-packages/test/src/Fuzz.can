@@ -79,6 +79,7 @@ all primitive types. For custom types, compose shrinkers using
 
 -}
 
+import Array exposing (Array)
 import Random exposing (Generator)
 
 

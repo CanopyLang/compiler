@@ -76,6 +76,9 @@ module Data.Name.Constants
     basics,
     capability,
 
+    -- * Test Types
+    browserTest,
+
     -- * Special Names
     utils,
     negate,
@@ -201,6 +204,12 @@ basics = fromChars "Basics"
 {-# NOINLINE capability #-}
 capability :: Name
 capability = fromChars "Capability"
+
+-- TEST TYPES
+
+{-# NOINLINE browserTest #-}
+browserTest :: Name
+browserTest = fromChars "BrowserTest"
 
 -- SPECIAL NAMES
 

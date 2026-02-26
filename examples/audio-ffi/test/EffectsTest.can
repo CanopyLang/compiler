@@ -42,20 +42,18 @@ Tests delay, convolver, compressor, wave shaper, and stereo panner.
 -}
 
 import Html exposing (Html, pre, text)
-import Test exposing (Test, describe, test, runTests)
+import Test exposing (Test, BrowserTest, describe, test, runTests, inBrowser)
 import Expect
 import AudioFFI
 import Capability exposing (UserActivated(..), Initialized(..), CapabilityError(..))
 import Result exposing (Result(..))
 
 
-main : Html msg
+main : BrowserTest
 main =
-    let
-        results =
-            runTests [ suite ]
-    in
-    pre [] [ text results ]
+    inBrowser
+        [ suite
+        ]
 
 
 suite : Test
@@ -78,32 +76,39 @@ delayTests : Test
 delayTests =
     describe "Delay Node"
         [ describe "createDelay"
-            [ test "creates delay with max time" <|
+            [ test "creates delay with 1 second max" <|
                 \_ ->
                     withRawContext <| \ctx ->
                         let
                             delay = AudioFFI.createDelay ctx 1.0
+                            maxTime = AudioFFI.getDelayMaxDelayTime delay
                         in
-                        Expect.pass
+                        Expect.within (Expect.Absolute 0.01) 1.0 maxTime
 
             , test "creates delay with 5 second max" <|
                 \_ ->
                     withRawContext <| \ctx ->
                         let
                             delay = AudioFFI.createDelay ctx 5.0
+                            maxTime = AudioFFI.getDelayMaxDelayTime delay
                         in
-                        Expect.pass
+                        Expect.within (Expect.Absolute 0.01) 5.0 maxTime
             ]
 
         , describe "setDelayTime"
-            [ test "sets delay time" <|
+            [ test "sets delay time to 0.5 and reads back" <|
                 \_ ->
                     withRawContext <| \ctx ->
                         let
                             delay = AudioFFI.createDelay ctx 1.0
-                            _ = AudioFFI.setDelayTime delay 0.5 0.0
                         in
-                        Expect.pass
+                        case AudioFFI.setDelayTime delay 0.5 0.0 of
+                            _ ->
+                                let
+                                    param = AudioFFI.getDelayDelayTimeParam delay
+                                    value = AudioFFI.getAudioParamValue param
+                                in
+                                Expect.within (Expect.Absolute 0.01) 0.5 value
             ]
 
         , describe "getDelayDelayTimeParam"
@@ -113,8 +118,9 @@ delayTests =
                         let
                             delay = AudioFFI.createDelay ctx 1.0
                             param = AudioFFI.getDelayDelayTimeParam delay
+                            value = AudioFFI.getAudioParamValue param
                         in
-                        Expect.pass
+                        Expect.within (Expect.Absolute 0.01) 0.0 value
             ]
 
         ]
@@ -129,46 +135,52 @@ convolverTests : Test
 convolverTests =
     describe "Convolver Node"
         [ describe "createConvolver"
-            [ test "creates convolver node" <|
+            [ test "creates convolver with normalize true by default" <|
                 \_ ->
                     withRawContext <| \ctx ->
                         let
                             convolver = AudioFFI.createConvolver ctx
                         in
-                        Expect.pass
+                        Expect.equal True (AudioFFI.getConvolverNormalize convolver)
             ]
 
         , describe "setConvolverBuffer"
-            [ test "sets impulse response buffer" <|
+            [ test "sets impulse response buffer and reads back" <|
                 \_ ->
                     withRawContext <| \ctx ->
                         let
                             convolver = AudioFFI.createConvolver ctx
                             buffer = AudioFFI.createEmptyBuffer ctx 2 1.0 44100
                         in
-                        case AudioFFI.setConvolverBuffer convolver buffer of
-                            Ok _ -> Expect.pass
-                            Err _ -> Expect.pass
+                        expectOk "setConvolverBuffer" (AudioFFI.setConvolverBuffer convolver buffer) <| \_ ->
+                            case AudioFFI.getConvolverBuffer convolver of
+                                Just b ->
+                                    Expect.equal (AudioFFI.getBufferLength buffer) (AudioFFI.getBufferLength b)
+
+                                Nothing ->
+                                    Expect.fail "expected convolver buffer to be set"
             ]
 
         , describe "setConvolverNormalize"
-            [ test "enables normalization and returns True" <|
+            [ test "enables normalization" <|
                 \_ ->
                     withRawContext <| \ctx ->
                         let
                             convolver = AudioFFI.createConvolver ctx
-                            normalize = AudioFFI.setConvolverNormalize convolver True
                         in
-                        Expect.equal True normalize
+                        case AudioFFI.setConvolverNormalize convolver True of
+                            _ ->
+                                Expect.equal True (AudioFFI.getConvolverNormalize convolver)
 
-            , test "disables normalization and returns False" <|
+            , test "disables normalization" <|
                 \_ ->
                     withRawContext <| \ctx ->
                         let
                             convolver = AudioFFI.createConvolver ctx
-                            normalize = AudioFFI.setConvolverNormalize convolver False
                         in
-                        Expect.equal False normalize
+                        case AudioFFI.setConvolverNormalize convolver False of
+                            _ ->
+                                Expect.equal False (AudioFFI.getConvolverNormalize convolver)
             ]
         ]
 
@@ -182,98 +194,143 @@ compressorTests : Test
 compressorTests =
     describe "Dynamics Compressor"
         [ describe "createDynamicsCompressor"
-            [ test "creates compressor node" <|
-                \_ ->
-                    withRawContext <| \ctx ->
-                        let
-                            compressor = AudioFFI.createDynamicsCompressor ctx
-                        in
-                        Expect.pass
-            ]
-
-        , describe "compressor settings"
-            [ test "sets threshold" <|
-                \_ ->
-                    withRawContext <| \ctx ->
-                        let
-                            compressor = AudioFFI.createDynamicsCompressor ctx
-                            _ = AudioFFI.setCompressorThreshold compressor (-24.0) 0.0
-                        in
-                        Expect.pass
-
-            , test "sets knee" <|
-                \_ ->
-                    withRawContext <| \ctx ->
-                        let
-                            compressor = AudioFFI.createDynamicsCompressor ctx
-                            _ = AudioFFI.setCompressorKnee compressor 30.0 0.0
-                        in
-                        Expect.pass
-
-            , test "sets ratio" <|
-                \_ ->
-                    withRawContext <| \ctx ->
-                        let
-                            compressor = AudioFFI.createDynamicsCompressor ctx
-                            _ = AudioFFI.setCompressorRatio compressor 12.0 0.0
-                        in
-                        Expect.pass
-
-            , test "sets attack" <|
-                \_ ->
-                    withRawContext <| \ctx ->
-                        let
-                            compressor = AudioFFI.createDynamicsCompressor ctx
-                            _ = AudioFFI.setCompressorAttack compressor 0.003 0.0
-                        in
-                        Expect.pass
-
-            , test "sets release" <|
-                \_ ->
-                    withRawContext <| \ctx ->
-                        let
-                            compressor = AudioFFI.createDynamicsCompressor ctx
-                            _ = AudioFFI.setCompressorRelease compressor 0.25 0.0
-                        in
-                        Expect.pass
-            ]
-
-        , describe "compressor params"
-            [ test "gets threshold param" <|
+            [ test "creates compressor with default threshold" <|
                 \_ ->
                     withRawContext <| \ctx ->
                         let
                             compressor = AudioFFI.createDynamicsCompressor ctx
                             param = AudioFFI.getCompressorThresholdParam compressor
+                            value = AudioFFI.getAudioParamValue param
                         in
-                        Expect.pass
+                        Expect.within (Expect.Absolute 0.01) (-24.0) value
+            ]
 
-            , test "gets knee param" <|
+        , describe "compressor settings"
+            [ test "sets threshold to -30 and reads back" <|
+                \_ ->
+                    withRawContext <| \ctx ->
+                        let
+                            compressor = AudioFFI.createDynamicsCompressor ctx
+                        in
+                        case AudioFFI.setCompressorThreshold compressor (-30.0) 0.0 of
+                            _ ->
+                                let
+                                    param = AudioFFI.getCompressorThresholdParam compressor
+                                in
+                                Expect.within (Expect.Absolute 0.01) (-30.0) (AudioFFI.getAudioParamValue param)
+
+            , test "sets knee to 20 and reads back" <|
+                \_ ->
+                    withRawContext <| \ctx ->
+                        let
+                            compressor = AudioFFI.createDynamicsCompressor ctx
+                        in
+                        case AudioFFI.setCompressorKnee compressor 20.0 0.0 of
+                            _ ->
+                                let
+                                    param = AudioFFI.getCompressorKneeParam compressor
+                                in
+                                Expect.within (Expect.Absolute 0.01) 20.0 (AudioFFI.getAudioParamValue param)
+
+            , test "sets ratio to 8 and reads back" <|
+                \_ ->
+                    withRawContext <| \ctx ->
+                        let
+                            compressor = AudioFFI.createDynamicsCompressor ctx
+                        in
+                        case AudioFFI.setCompressorRatio compressor 8.0 0.0 of
+                            _ ->
+                                let
+                                    param = AudioFFI.getCompressorRatioParam compressor
+                                in
+                                Expect.within (Expect.Absolute 0.01) 8.0 (AudioFFI.getAudioParamValue param)
+
+            , test "sets attack to 0.01 and reads back" <|
+                \_ ->
+                    withRawContext <| \ctx ->
+                        let
+                            compressor = AudioFFI.createDynamicsCompressor ctx
+                        in
+                        case AudioFFI.setCompressorAttack compressor 0.01 0.0 of
+                            _ ->
+                                let
+                                    param = AudioFFI.getCompressorAttackParam compressor
+                                in
+                                Expect.within (Expect.Absolute 0.001) 0.01 (AudioFFI.getAudioParamValue param)
+
+            , test "sets release to 0.1 and reads back" <|
+                \_ ->
+                    withRawContext <| \ctx ->
+                        let
+                            compressor = AudioFFI.createDynamicsCompressor ctx
+                        in
+                        case AudioFFI.setCompressorRelease compressor 0.1 0.0 of
+                            _ ->
+                                let
+                                    param = AudioFFI.getCompressorReleaseParam compressor
+                                in
+                                Expect.within (Expect.Absolute 0.01) 0.1 (AudioFFI.getAudioParamValue param)
+            ]
+
+        , describe "compressor params"
+            [ test "gets threshold param with default -24" <|
+                \_ ->
+                    withRawContext <| \ctx ->
+                        let
+                            compressor = AudioFFI.createDynamicsCompressor ctx
+                            param = AudioFFI.getCompressorThresholdParam compressor
+                            value = AudioFFI.getAudioParamValue param
+                        in
+                        Expect.within (Expect.Absolute 0.01) (-24.0) value
+
+            , test "gets knee param with default 30" <|
                 \_ ->
                     withRawContext <| \ctx ->
                         let
                             compressor = AudioFFI.createDynamicsCompressor ctx
                             param = AudioFFI.getCompressorKneeParam compressor
+                            value = AudioFFI.getAudioParamValue param
                         in
-                        Expect.pass
+                        Expect.within (Expect.Absolute 0.01) 30.0 value
 
-            , test "gets ratio param" <|
+            , test "gets ratio param with default 12" <|
                 \_ ->
                     withRawContext <| \ctx ->
                         let
                             compressor = AudioFFI.createDynamicsCompressor ctx
                             param = AudioFFI.getCompressorRatioParam compressor
+                            value = AudioFFI.getAudioParamValue param
                         in
-                        Expect.pass
+                        Expect.within (Expect.Absolute 0.01) 12.0 value
 
-            , test "gets reduction meter" <|
+            , test "gets attack param with default 0.003" <|
+                \_ ->
+                    withRawContext <| \ctx ->
+                        let
+                            compressor = AudioFFI.createDynamicsCompressor ctx
+                            param = AudioFFI.getCompressorAttackParam compressor
+                            value = AudioFFI.getAudioParamValue param
+                        in
+                        Expect.within (Expect.Absolute 0.001) 0.003 value
+
+            , test "gets release param with default 0.25" <|
+                \_ ->
+                    withRawContext <| \ctx ->
+                        let
+                            compressor = AudioFFI.createDynamicsCompressor ctx
+                            param = AudioFFI.getCompressorReleaseParam compressor
+                            value = AudioFFI.getAudioParamValue param
+                        in
+                        Expect.within (Expect.Absolute 0.01) 0.25 value
+
+            , test "gets reduction meter at 0" <|
                 \_ ->
                     withRawContext <| \ctx ->
                         let
                             compressor = AudioFFI.createDynamicsCompressor ctx
                             reduction = AudioFFI.getCompressorReduction compressor
                         in
-                        Expect.true "reduction should be <= 0" (reduction <= 0)
+                        Expect.within (Expect.Absolute 0.01) 0.0 reduction
             ]
         ]
 
@@ -287,64 +344,71 @@ waveShaperTests : Test
 waveShaperTests =
     describe "Wave Shaper"
         [ describe "createWaveShaper"
-            [ test "creates wave shaper node" <|
+            [ test "creates wave shaper with oversample none" <|
                 \_ ->
                     withRawContext <| \ctx ->
                         let
                             shaper = AudioFFI.createWaveShaper ctx
                         in
-                        Expect.pass
+                        Expect.equal "none" (AudioFFI.getWaveShaperOversample shaper)
             ]
 
         , describe "setWaveShaperCurve"
-            [ test "sets distortion curve" <|
+            [ test "sets distortion curve and reads back length" <|
                 \_ ->
                     withRawContext <| \ctx ->
                         let
                             shaper = AudioFFI.createWaveShaper ctx
                             curve = [-1.0, -0.5, 0.0, 0.5, 1.0]
                         in
-                        case AudioFFI.setWaveShaperCurve shaper curve of
-                            Ok _ -> Expect.pass
-                            Err _ -> Expect.pass
+                        expectOk "setWaveShaperCurve" (AudioFFI.setWaveShaperCurve shaper curve) <| \_ ->
+                            case AudioFFI.getWaveShaperCurve shaper of
+                                Just readCurve ->
+                                    Expect.equal 5 (List.length readCurve)
+
+                                Nothing ->
+                                    Expect.fail "expected wave shaper curve to be set"
             ]
 
         , describe "setWaveShaperOversample"
-            [ test "sets oversample to none and returns value" <|
+            [ test "sets oversample to none" <|
                 \_ ->
                     withRawContext <| \ctx ->
                         let
                             shaper = AudioFFI.createWaveShaper ctx
-                            oversample = AudioFFI.setWaveShaperOversample shaper "none"
                         in
-                        Expect.equal "none" oversample
+                        case AudioFFI.setWaveShaperOversample shaper "none" of
+                            _ ->
+                                Expect.equal "none" (AudioFFI.getWaveShaperOversample shaper)
 
-            , test "sets oversample to 2x and returns value" <|
+            , test "sets oversample to 2x" <|
                 \_ ->
                     withRawContext <| \ctx ->
                         let
                             shaper = AudioFFI.createWaveShaper ctx
-                            oversample = AudioFFI.setWaveShaperOversample shaper "2x"
                         in
-                        Expect.equal "2x" oversample
+                        case AudioFFI.setWaveShaperOversample shaper "2x" of
+                            _ ->
+                                Expect.equal "2x" (AudioFFI.getWaveShaperOversample shaper)
 
-            , test "sets oversample to 4x and returns value" <|
+            , test "sets oversample to 4x" <|
                 \_ ->
                     withRawContext <| \ctx ->
                         let
                             shaper = AudioFFI.createWaveShaper ctx
-                            oversample = AudioFFI.setWaveShaperOversample shaper "4x"
                         in
-                        Expect.equal "4x" oversample
+                        case AudioFFI.setWaveShaperOversample shaper "4x" of
+                            _ ->
+                                Expect.equal "4x" (AudioFFI.getWaveShaperOversample shaper)
             ]
 
         , describe "makeDistortionCurve"
-            [ test "generates distortion curve" <|
+            [ test "generates curve with 256 samples" <|
                 \_ ->
                     let
                         curve = AudioFFI.makeDistortionCurve 50.0 256
                     in
-                    Expect.true "curve should have samples" (List.length curve > 0)
+                    Expect.equal 256 (List.length curve)
             ]
         ]
 
@@ -358,53 +422,71 @@ stereoPannerTests : Test
 stereoPannerTests =
     describe "Stereo Panner"
         [ describe "createStereoPanner"
-            [ test "creates stereo panner node" <|
-                \_ ->
-                    withRawContext <| \ctx ->
-                        let
-                            panner = AudioFFI.createStereoPanner ctx
-                        in
-                        Expect.pass
-            ]
-
-        , describe "setPan"
-            [ test "pans to center" <|
-                \_ ->
-                    withRawContext <| \ctx ->
-                        let
-                            panner = AudioFFI.createStereoPanner ctx
-                            _ = AudioFFI.setPan panner 0.0 0.0
-                        in
-                        Expect.pass
-
-            , test "pans to left" <|
-                \_ ->
-                    withRawContext <| \ctx ->
-                        let
-                            panner = AudioFFI.createStereoPanner ctx
-                            _ = AudioFFI.setPan panner (-1.0) 0.0
-                        in
-                        Expect.pass
-
-            , test "pans to right" <|
-                \_ ->
-                    withRawContext <| \ctx ->
-                        let
-                            panner = AudioFFI.createStereoPanner ctx
-                            _ = AudioFFI.setPan panner 1.0 0.0
-                        in
-                        Expect.pass
-            ]
-
-        , describe "getStereoPannerPan"
-            [ test "returns pan param" <|
+            [ test "creates stereo panner with pan at 0" <|
                 \_ ->
                     withRawContext <| \ctx ->
                         let
                             panner = AudioFFI.createStereoPanner ctx
                             param = AudioFFI.getStereoPannerPan panner
+                            value = AudioFFI.getAudioParamValue param
                         in
-                        Expect.pass
+                        Expect.within (Expect.Absolute 0.01) 0.0 value
+            ]
+
+        , describe "setPan"
+            [ test "pans to center and reads back 0.0" <|
+                \_ ->
+                    withRawContext <| \ctx ->
+                        let
+                            panner = AudioFFI.createStereoPanner ctx
+                        in
+                        case AudioFFI.setPan panner 0.0 0.0 of
+                            _ ->
+                                let
+                                    param = AudioFFI.getStereoPannerPan panner
+                                    value = AudioFFI.getAudioParamValue param
+                                in
+                                Expect.within (Expect.Absolute 0.01) 0.0 value
+
+            , test "pans to left and reads back -1.0" <|
+                \_ ->
+                    withRawContext <| \ctx ->
+                        let
+                            panner = AudioFFI.createStereoPanner ctx
+                        in
+                        case AudioFFI.setPan panner (-1.0) 0.0 of
+                            _ ->
+                                let
+                                    param = AudioFFI.getStereoPannerPan panner
+                                    value = AudioFFI.getAudioParamValue param
+                                in
+                                Expect.within (Expect.Absolute 0.01) (-1.0) value
+
+            , test "pans to right and reads back 1.0" <|
+                \_ ->
+                    withRawContext <| \ctx ->
+                        let
+                            panner = AudioFFI.createStereoPanner ctx
+                        in
+                        case AudioFFI.setPan panner 1.0 0.0 of
+                            _ ->
+                                let
+                                    param = AudioFFI.getStereoPannerPan panner
+                                    value = AudioFFI.getAudioParamValue param
+                                in
+                                Expect.within (Expect.Absolute 0.01) 1.0 value
+            ]
+
+        , describe "getStereoPannerPan"
+            [ test "returns pan param with default 0" <|
+                \_ ->
+                    withRawContext <| \ctx ->
+                        let
+                            panner = AudioFFI.createStereoPanner ctx
+                            param = AudioFFI.getStereoPannerPan panner
+                            value = AudioFFI.getAudioParamValue param
+                        in
+                        Expect.within (Expect.Absolute 0.01) 0.0 value
             ]
         ]
 
@@ -418,7 +500,7 @@ withRawContext : (AudioFFI.AudioContext -> Expect.Expectation) -> Expect.Expecta
 withRawContext fn =
     case AudioFFI.createAudioContext Click of
         Ok ctx -> fn (extractContext ctx)
-        Err _ -> Expect.pass
+        Err err -> Expect.fail ("withRawContext: createAudioContext failed: " ++ errorToString err)
 
 
 extractContext : Initialized AudioFFI.AudioContext -> AudioFFI.AudioContext
@@ -426,3 +508,22 @@ extractContext initialized =
     case initialized of
         Fresh ctx -> ctx
         Running ctx -> ctx
+
+
+expectOk : String -> Result CapabilityError a -> (a -> Expect.Expectation) -> Expect.Expectation
+expectOk label result fn =
+    case result of
+        Ok value -> fn value
+        Err err -> Expect.fail (label ++ ": " ++ errorToString err)
+
+
+errorToString : CapabilityError -> String
+errorToString err =
+    case err of
+        UserActivationRequired msg -> "UserActivationRequired: " ++ msg
+        InitializationRequired msg -> "InitializationRequired: " ++ msg
+        FeatureNotAvailable msg -> "FeatureNotAvailable: " ++ msg
+        NotSupportedError msg -> "NotSupportedError: " ++ msg
+        InvalidStateError msg -> "InvalidStateError: " ++ msg
+        RangeError msg -> "RangeError: " ++ msg
+        _ -> "Unknown error"

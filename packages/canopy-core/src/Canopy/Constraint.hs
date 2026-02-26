@@ -5,6 +5,7 @@ module Canopy.Constraint
   ( Constraint,
     exactly,
     anything,
+    lowerBound,
     toChars,
     satisfies,
     check,
@@ -41,6 +42,12 @@ data Op
   deriving (Eq, Show)
 
 -- COMMON CONSTRAINTS
+
+-- | Extract the lower bound version from a constraint.
+--
+-- For a constraint like @1.0.0 <= v < 2.0.0@, returns @1.0.0@.
+lowerBound :: Constraint -> V.Version
+lowerBound (Range lower _ _ _) = lower
 
 exactly :: V.Version -> Constraint
 exactly version =

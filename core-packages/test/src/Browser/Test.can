@@ -89,12 +89,12 @@ that read like specifications.
 
 -}
 
-import Browser exposing (Browser, BrowserError, Config)
+import Browser exposing (Browser, BrowserError, Config, BrowserType)
 import Browser.Page as Page
 import Browser.Element as Element
 import Browser.Expect as Expect
 import Task exposing (Task)
-import Test exposing (Test)
+import Test exposing (Test, BrowserConfig, BrowserStep, BrowserTestError(..))
 
 
 -- ============================================================================
@@ -548,24 +548,80 @@ runBrowserTests tests =
     Test.describe "Browser Tests" (List.map toTest tests)
 
 
+{-| Convert a BrowserTest to the Test.BrowserTest type for execution.
+
+This creates a Test that the async test runner can execute properly.
+-}
 toTest : BrowserTest -> Test
 toTest browserTestDef =
     case browserTestDef of
         BrowserTest name config steps ->
-            Browser.testWith config name (\browser ->
-                runSteps browser steps
-            )
+            Test.browserTest name (browserConfigToTestConfig config) (List.map convertStep steps)
 
         BrowserTestGroup name tests ->
             Test.describe name (List.map toTest tests)
 
 
+{-| Convert a Browser.Config to Test.BrowserConfig format.
+-}
+browserConfigToTestConfig : Config -> Test.BrowserConfig
+browserConfigToTestConfig config =
+    { browser = browserTypeToString config.browser
+    , headless = config.headless
+    , slowMo = config.slowMo
+    , viewport = config.viewport
+    , timeout = config.timeout
+    , recordVideo = config.recordVideo
+    }
+
+
+{-| Convert browser type to string.
+-}
+browserTypeToString : Browser.BrowserType -> String
+browserTypeToString bt =
+    case bt of
+        Browser.Chromium -> "chromium"
+        Browser.Firefox -> "firefox"
+        Browser.WebKit -> "webkit"
+
+
+{-| Convert a Browser.Test step to a Test.BrowserStep.
+
+The step types are compatible - both are (Browser -> Task error Browser).
+We just need to map the error type from BrowserError to BrowserTestError.
+-}
+convertStep : Step -> Test.BrowserStep
+convertStep stepFn browser =
+    stepFn browser
+        |> Task.mapError browserErrorToTestError
+
+
+{-| Convert Browser.BrowserError to Test.BrowserTestError.
+-}
+browserErrorToTestError : BrowserError -> Test.BrowserTestError
+browserErrorToTestError err =
+    case err of
+        Browser.LaunchError msg -> Test.LaunchError msg
+        Browser.NavigationError msg -> Test.NavigationError msg
+        Browser.ElementNotFound msg -> Test.ElementNotFound msg
+        Browser.TimeoutError msg -> Test.TimeoutError msg
+        Browser.EvaluationError msg -> Test.EvaluationError msg
+        Browser.ScreenshotError msg -> Test.ScreenshotError msg
+        Browser.NetworkError msg -> Test.NetworkError msg
+
+
+{-| Execute all steps in sequence, threading the browser through.
+-}
 runSteps : Browser -> List Step -> Task BrowserError Browser
 runSteps browser steps =
-    List.foldl (\theStep task -> task |> Task.andThen theStep) (Task.succeed browser) steps
-        |> Task.map (\_ -> ())
-        |> Task.mapError (\err -> err)
-        |> (\_ -> Task.succeed browser)
+    List.foldl chainStep (Task.succeed browser) steps
+
+
+{-| Chain a step onto an existing task.
+-}
+chainStep : Step -> Task BrowserError Browser -> Task BrowserError Browser
+chainStep stepFn task =
+    Task.andThen stepFn task
 
 
 -- ============================================================================

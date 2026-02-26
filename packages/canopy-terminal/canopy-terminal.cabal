@@ -40,7 +40,6 @@ library
       Bump.Validation
       Canopy.CustomRepositoryData
       Canopy.Details
-      Canopy.Outline
       Check
       CLI.Commands
       CLI.Documentation
@@ -116,7 +115,12 @@ library
       Terminal.Output
       Terminal.Print
       Test
+      Test.Browser
+      Test.External
       Test.FFI
+      Test.Harness
+      Test.Playwright
+      Test.Server
       Upgrade
       Watch
       Terminal
@@ -197,6 +201,7 @@ library
     , http-client-tls
     , lens
     , mtl
+    , network
     , process
     , raw-strings-qq
     , snap-core

@@ -82,6 +82,7 @@ data Error
   | FFIInvalidType A.Region FilePath Name.Name String
   | FFIMissingAnnotation A.Region FilePath Name.Name
   | FFICircularDependency A.Region FilePath [FilePath]
+  | FFITypeNotFound A.Region FilePath Name.Name String [Name.Name]
   | LazyImportNotFound A.Region Name.Name [Name.Name]
   | LazyImportCoreModule A.Region Name.Name
   | LazyImportInPackage A.Region Name.Name
@@ -867,6 +868,20 @@ toReport source err =
           ( D.reflow ("Circular dependency detected in FFI file: " <> filePath)
           , D.reflow ("Dependency chain: " <> show deps)
           )
+    FFITypeNotFound region filePath typeName typeErr suggestions ->
+      let nearbyNames =
+            fmap Name.toChars (take 4 (Suggest.sort (Name.toChars typeName) Name.toChars suggestions))
+       in Report.Report "FFI TYPE NOT FOUND" region nearbyNames $
+            Code.toSnippet source region Nothing
+              ( D.reflow ("Unknown type in FFI file: " <> filePath)
+              , D.stack
+                  [ D.reflow ("The type `" <> Name.toChars typeName <> "` is not in scope: " <> typeErr)
+                  , case fmap D.fromChars nearbyNames of
+                      [] -> D.reflow "Make sure this type is imported or defined in your module."
+                      [alt] -> D.fillSep ["Maybe", "you", "want", D.dullyellow alt, "instead?"]
+                      alts -> D.stack ["These types seem close though:", D.indent 4 (D.vcat (fmap D.dullyellow alts))]
+                  ]
+              )
     LazyImportNotFound region name suggestions ->
       let nearbyNames =
             fmap Name.toChars (take 4 (Suggest.sort (Name.toChars name) Name.toChars suggestions))
@@ -954,9 +969,10 @@ toReport source err =
 -- FFIInvalidType           -> E0341
 -- FFIMissingAnnotation     -> E0342
 -- FFICircularDependency    -> E0343
--- LazyImportNotFound       -> E0344
--- LazyImportCoreModule     -> E0345
--- LazyImportInPackage      -> E0346
+-- FFITypeNotFound          -> E0344
+-- LazyImportNotFound       -> E0345
+-- LazyImportCoreModule     -> E0346
+-- LazyImportInPackage      -> E0347
 -- LazyImportSelf           -> E0347
 -- LazyImportKernel         -> E0348
 -- @
@@ -1051,6 +1067,8 @@ toDiagnostic source err =
       ffiMissingAnnotationDiagnostic source region filePath funcName
     FFICircularDependency region filePath deps ->
       ffiCircularDependencyDiagnostic source region filePath deps
+    FFITypeNotFound region filePath typeName typeErr suggestions ->
+      ffiTypeNotFoundDiagnostic source region filePath typeName typeErr suggestions
     LazyImportNotFound region name suggestions ->
       lazyImportNotFoundDiagnostic source region name suggestions
     LazyImportCoreModule region name ->
@@ -1586,11 +1604,32 @@ ffiCircularDependencyDiagnostic source region filePath deps =
     (LabeledSpan region "FFI circular dependency" SpanPrimary)
     (Code.toSnippet source region Nothing (D.reflow ("Circular dependency detected in FFI file: " <> filePath), D.reflow ("Dependency chain: " <> show deps)))
 
+-- | Build a diagnostic for an FFI type that is not in scope.
+ffiTypeNotFoundDiagnostic :: Code.Source -> A.Region -> FilePath -> Name.Name -> String -> [Name.Name] -> Diagnostic
+ffiTypeNotFoundDiagnostic source region filePath typeName typeErr suggestions =
+  Diag.makeDiagnostic
+    (EC.canonError 44)
+    Diag.SError
+    Diag.PhaseCanon
+    "FFI TYPE NOT FOUND"
+    (Text.pack ("Unknown type `" <> Name.toChars typeName <> "` in FFI file: " <> filePath))
+    (LabeledSpan region "FFI type not found" SpanPrimary)
+    (Code.toSnippet source region Nothing (D.reflow ("Unknown type in FFI file: " <> filePath), hintDoc))
+  where
+    nearbyNames = fmap Name.toChars (take 4 (Suggest.sort (Name.toChars typeName) Name.toChars suggestions))
+    hintDoc = D.stack
+      [ D.reflow ("The type `" <> Name.toChars typeName <> "` is not in scope: " <> typeErr)
+      , case fmap D.fromChars nearbyNames of
+          [] -> D.reflow "Make sure this type is imported or defined in your module."
+          [alt] -> D.fillSep ["Maybe", "you", "want", D.dullyellow alt, "instead?"]
+          alts -> D.stack ["These types seem close though:", D.indent 4 (D.vcat (fmap D.dullyellow alts))]
+      ]
+
 -- | Build a diagnostic for a lazy import referencing a non-existent module.
 lazyImportNotFoundDiagnostic :: Code.Source -> A.Region -> Name.Name -> [Name.Name] -> Diagnostic
 lazyImportNotFoundDiagnostic source region name suggestions =
   Diag.makeDiagnostic
-    (EC.canonError 44)
+    (EC.canonError 45)
     Diag.SError
     Diag.PhaseCanon
     "LAZY IMPORT NOT FOUND"
@@ -1602,7 +1641,7 @@ lazyImportNotFoundDiagnostic source region name suggestions =
 lazyImportCoreModuleDiagnostic :: Code.Source -> A.Region -> Name.Name -> Diagnostic
 lazyImportCoreModuleDiagnostic source region name =
   Diag.makeDiagnostic
-    (EC.canonError 45)
+    (EC.canonError 46)
     Diag.SError
     Diag.PhaseCanon
     "BAD LAZY IMPORT"
@@ -1614,7 +1653,7 @@ lazyImportCoreModuleDiagnostic source region name =
 lazyImportInPackageDiagnostic :: Code.Source -> A.Region -> Name.Name -> Diagnostic
 lazyImportInPackageDiagnostic source region name =
   Diag.makeDiagnostic
-    (EC.canonError 46)
+    (EC.canonError 47)
     Diag.SError
     Diag.PhaseCanon
     "BAD LAZY IMPORT"
@@ -1626,7 +1665,7 @@ lazyImportInPackageDiagnostic source region name =
 lazyImportSelfDiagnostic :: Code.Source -> A.Region -> Name.Name -> Diagnostic
 lazyImportSelfDiagnostic source region name =
   Diag.makeDiagnostic
-    (EC.canonError 47)
+    (EC.canonError 48)
     Diag.SError
     Diag.PhaseCanon
     "BAD LAZY IMPORT"
@@ -1638,7 +1677,7 @@ lazyImportSelfDiagnostic source region name =
 lazyImportKernelDiagnostic :: Code.Source -> A.Region -> Name.Name -> Diagnostic
 lazyImportKernelDiagnostic source region name =
   Diag.makeDiagnostic
-    (EC.canonError 48)
+    (EC.canonError 49)
     Diag.SError
     Diag.PhaseCanon
     "BAD LAZY IMPORT"

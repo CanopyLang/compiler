@@ -425,9 +425,9 @@ demoModeSelector model =
             , Attr.style "gap" "10px"
             , Attr.style "flex-wrap" "wrap"
             ]
-            [ modeButton "Simplified Interface" SimplifiedInterface model.demoMode
-            , modeButton "Type-Safe Interface" TypeSafeInterface model.demoMode
-            , modeButton "Comparison Mode" ComparisonMode model.demoMode
+            [ modeButtonWithTestId "Simplified Interface" SimplifiedInterface model.demoMode "mode-simplified"
+            , modeButtonWithTestId "Type-Safe Interface" TypeSafeInterface model.demoMode "mode-typesafe"
+            , modeButtonWithTestId "Comparison Mode" ComparisonMode model.demoMode "mode-comparison"
             ]
         ]
 
@@ -445,6 +445,22 @@ modeButton label mode currentMode =
         ]
         [ Html.text label ]
 
+
+modeButtonWithTestId : String -> DemoMode -> DemoMode -> String -> Html Msg
+modeButtonWithTestId label mode currentMode testId =
+    Html.button
+        [ Events.onClick (SetDemoMode mode)
+        , Attr.attribute "data-testid" testId
+        , Attr.style "background" (if mode == currentMode then "#ffd700" else "rgba(255,255,255,0.2)")
+        , Attr.style "color" (if mode == currentMode then "#000" else "#fff")
+        , Attr.style "border" "2px solid #ffd700"
+        , Attr.style "padding" "10px 15px"
+        , Attr.style "border-radius" "5px"
+        , Attr.style "cursor" "pointer"
+        , Attr.style "font-weight" "bold"
+        ]
+        [ Html.text label ]
+
 ffiValidationSection : Model -> Html Msg
 ffiValidationSection model =
     Html.div
@@ -452,6 +468,7 @@ ffiValidationSection model =
         , Attr.style "padding" "20px"
         , Attr.style "border-radius" "10px"
         , Attr.style "margin-bottom" "20px"
+        , Attr.attribute "data-testid" "ffi-validation"
         ]
         [ Html.h3 [] [ Html.text "🔧 FFI System Validation" ]
         , Html.div
@@ -459,8 +476,8 @@ ffiValidationSection model =
             , Attr.style "grid-template-columns" "1fr 1fr"
             , Attr.style "gap" "15px"
             ]
-            [ validationItem "Basic FFI Test" ("simpleTest(42) = " ++ String.fromInt (AudioFFI.simpleTest 42))
-            , validationItem "Web Audio Support" (AudioFFI.checkWebAudioSupport ())
+            [ validationItemWithTestId "Basic FFI Test" ("simpleTest(42) = " ++ String.fromInt (AudioFFI.simpleTest 42)) "ffi-simple-test"
+            , validationItemWithTestId "Web Audio Support" (AudioFFI.checkWebAudioSupport ()) "ffi-web-audio"
             ]
         ]
 
@@ -475,6 +492,19 @@ validationItem label result =
         , Html.span [ Attr.style "color" "#90EE90" ] [ Html.text result ]
         ]
 
+
+validationItemWithTestId : String -> String -> String -> Html Msg
+validationItemWithTestId label result testId =
+    Html.div
+        [ Attr.style "background" "rgba(0,0,0,0.2)"
+        , Attr.style "padding" "10px"
+        , Attr.style "border-radius" "5px"
+        , Attr.attribute "data-testid" testId
+        ]
+        [ Html.strong [] [ Html.text (label ++ ": ") ]
+        , Html.span [ Attr.style "color" "#90EE90" ] [ Html.text result ]
+        ]
+
 simplifiedInterfaceDemo : Model -> Html Msg
 simplifiedInterfaceDemo model =
     Html.div
@@ -482,6 +512,7 @@ simplifiedInterfaceDemo model =
         , Attr.style "padding" "25px"
         , Attr.style "border-radius" "10px"
         , Attr.style "margin-bottom" "20px"
+        , Attr.attribute "data-testid" "simplified-interface"
         ]
         [ Html.h3 [] [ Html.text "🌊 Simplified String-Based Interface" ]
         , Html.p
@@ -497,9 +528,9 @@ simplifiedInterfaceDemo model =
             , Attr.style "gap" "10px"
             , Attr.style "margin-bottom" "20px"
             ]
-            [ controlButton "🎛️ Initialize Audio" InitializeAudioSimple False
-            , controlButton "▶️ Play Audio" PlayAudioSimple False
-            , controlButton "⏹️ Stop Audio" StopAudioSimple False
+            [ controlButtonWithTestId "🎛️ Initialize Audio" InitializeAudioSimple False "init-audio-simple"
+            , controlButtonWithTestId "▶️ Play Audio" PlayAudioSimple False "play-audio-simple"
+            , controlButtonWithTestId "⏹️ Stop Audio" StopAudioSimple False "stop-audio-simple"
             ]
 
         -- Real-time Controls
@@ -513,6 +544,7 @@ typeSafeInterfaceDemo model =
         , Attr.style "padding" "25px"
         , Attr.style "border-radius" "10px"
         , Attr.style "margin-bottom" "20px"
+        , Attr.attribute "data-testid" "typesafe-interface"
         ]
         [ Html.h3 [] [ Html.text "🛡️ Type-Safe Result-Based Interface" ]
         , Html.p
@@ -526,7 +558,7 @@ typeSafeInterfaceDemo model =
             [ Html.h4 [] [ Html.text "Step 1: Initialize AudioContext (requires user activation)" ]
             , Html.div
                 [ Attr.style "margin-bottom" "20px" ]
-                [ controlButton "🎛️ Create AudioContext" InitializeAudioTypeSafe (model.audioContext /= Nothing)
+                [ controlButtonWithTestId "🎛️ Create AudioContext" InitializeAudioTypeSafe (model.audioContext /= Nothing) "init-audio-typesafe"
                 , Html.span
                     [ Attr.style "margin-left" "10px"
                     , Attr.style "opacity" "0.8"
@@ -537,7 +569,7 @@ typeSafeInterfaceDemo model =
             , Html.h4 [] [ Html.text "Step 2: Create Audio Nodes" ]
             , Html.div
                 [ Attr.style "margin-bottom" "20px" ]
-                [ controlButton "🎵 Create Oscillator & Gain" CreateAudioNodesTypeSafe (model.audioContext == Nothing || (model.currentOscillator /= Nothing && model.currentGainNode /= Nothing))
+                [ controlButtonWithTestId "🎵 Create Oscillator & Gain" CreateAudioNodesTypeSafe (model.audioContext == Nothing || (model.currentOscillator /= Nothing && model.currentGainNode /= Nothing)) "create-nodes-typesafe"
                 , Html.span
                     [ Attr.style "margin-left" "10px"
                     , Attr.style "opacity" "0.8"
@@ -547,8 +579,8 @@ typeSafeInterfaceDemo model =
 
             , Html.h4 [] [ Html.text "Step 3: Audio Playback Control" ]
             , Html.div []
-                [ controlButton "▶️ Start Audio" PlayAudioTypeSafe (model.currentOscillator == Nothing || model.isPlaying)
-                , controlButton "⏹️ Stop Audio" StopAudioTypeSafe (not model.isPlaying)
+                [ controlButtonWithTestId "▶️ Start Audio" PlayAudioTypeSafe (model.currentOscillator == Nothing || model.isPlaying) "play-audio-typesafe"
+                , controlButtonWithTestId "⏹️ Stop Audio" StopAudioTypeSafe (not model.isPlaying) "stop-audio-typesafe"
                 ]
             ]
         ]
@@ -586,7 +618,7 @@ comparisonModeDemo model =
 
 audioControlsSection : Model -> Html Msg
 audioControlsSection model =
-    Html.div []
+    Html.div [ Attr.attribute "data-testid" "audio-controls" ]
         [ Html.h4 [] [ Html.text "🎚️ Real-Time Audio Controls" ]
 
         -- Frequency Control
@@ -603,12 +635,14 @@ audioControlsSection model =
                     , Attr.step "10"
                     , Attr.value (String.fromFloat model.frequency)
                     , Events.onInput SetFrequency
+                    , Attr.attribute "data-testid" "frequency-slider"
                     , sliderStyle
                     ] []
                 , Html.span
                     [ Attr.style "min-width" "80px"
                     , Attr.style "font-weight" "bold"
                     , Attr.style "color" "#ffd700"
+                    , Attr.attribute "data-testid" "frequency-value"
                     ]
                     [ Html.text (String.fromFloat model.frequency ++ " Hz") ]
                 ]
@@ -628,12 +662,14 @@ audioControlsSection model =
                     , Attr.step "5"
                     , Attr.value (String.fromFloat model.volume)
                     , Events.onInput SetVolume
+                    , Attr.attribute "data-testid" "volume-slider"
                     , sliderStyle
                     ] []
                 , Html.span
                     [ Attr.style "min-width" "50px"
                     , Attr.style "font-weight" "bold"
                     , Attr.style "color" "#ffd700"
+                    , Attr.attribute "data-testid" "volume-value"
                     ]
                     [ Html.text (String.fromFloat model.volume ++ "%") ]
                 ]
@@ -644,11 +680,12 @@ audioControlsSection model =
             [ Html.div
                 [ Attr.style "display" "flex"
                 , Attr.style "gap" "10px"
+                , Attr.attribute "data-testid" "waveform-controls"
                 ]
-                [ waveformButton "🌊 Sine" "sine" model.waveform
-                , waveformButton "⬜ Square" "square" model.waveform
-                , waveformButton "🪚 Sawtooth" "sawtooth" model.waveform
-                , waveformButton "🔺 Triangle" "triangle" model.waveform
+                [ waveformButtonWithTestId "🌊 Sine" "sine" model.waveform "waveform-sine"
+                , waveformButtonWithTestId "⬜ Square" "square" model.waveform "waveform-square"
+                , waveformButtonWithTestId "🪚 Sawtooth" "sawtooth" model.waveform "waveform-sawtooth"
+                , waveformButtonWithTestId "🔺 Triangle" "triangle" model.waveform "waveform-triangle"
                 ]
             ]
         ]
@@ -678,6 +715,23 @@ waveformButton label waveType currentWave =
         ]
         [ Html.text label ]
 
+
+waveformButtonWithTestId : String -> String -> String -> String -> Html Msg
+waveformButtonWithTestId label waveType currentWave testId =
+    Html.button
+        [ Events.onClick (SetWaveform waveType)
+        , Attr.attribute "data-testid" testId
+        , Attr.style "background" (if currentWave == waveType then "#ffd700" else "rgba(255,255,255,0.2)")
+        , Attr.style "color" (if currentWave == waveType then "#000" else "#fff")
+        , Attr.style "border" "2px solid #ffd700"
+        , Attr.style "padding" "8px 12px"
+        , Attr.style "border-radius" "5px"
+        , Attr.style "cursor" "pointer"
+        , Attr.style "font-size" "12px"
+        , Attr.style "font-weight" "bold"
+        ]
+        [ Html.text label ]
+
 statusSection : Model -> Html Msg
 statusSection model =
     Html.div
@@ -685,6 +739,7 @@ statusSection model =
         , Attr.style "padding" "20px"
         , Attr.style "border-radius" "10px"
         , Attr.style "margin-bottom" "20px"
+        , Attr.attribute "data-testid" "status-section"
         ]
         [ Html.h3 [] [ Html.text "📊 System Status" ]
         , Html.div
@@ -693,6 +748,7 @@ statusSection model =
             , Attr.style "border-radius" "5px"
             , Attr.style "margin-bottom" "15px"
             , Attr.style "font-family" "monospace"
+            , Attr.attribute "data-testid" "status"
             ]
             [ Html.text model.status ]
 
@@ -704,6 +760,7 @@ statusSection model =
                     , Attr.style "padding" "10px"
                     , Attr.style "border-radius" "5px"
                     , Attr.style "margin-bottom" "15px"
+                    , Attr.attribute "data-testid" "last-error"
                     ]
                     [ Html.strong [] [ Html.text "❌ Last Error: " ]
                     , Html.text error
@@ -718,9 +775,10 @@ statusSection model =
             ]
             [ Html.h4 [] [ Html.text "🔍 Operation Log" ]
             , Html.div []
-                [ controlButton "🧹 Clear Log" ClearLog False
+                [ controlButtonWithTestId "🧹 Clear Log" ClearLog False "clear-log"
                 , Html.button
                     [ Events.onClick ToggleAdvancedMode
+                    , Attr.attribute "data-testid" "toggle-advanced"
                     , Attr.style "background" "rgba(255,255,255,0.2)"
                     , Attr.style "color" "white"
                     , Attr.style "border" "1px solid rgba(255,255,255,0.3)"
@@ -741,6 +799,7 @@ statusSection model =
             , Attr.style "overflow-y" "auto"
             , Attr.style "font-family" "monospace"
             , Attr.style "font-size" "12px"
+            , Attr.attribute "data-testid" "operation-log"
             ]
             (List.map (\log ->
                 Html.div
@@ -757,6 +816,7 @@ advancedInfoSection model =
         [ Attr.style "background" "rgba(0,0,0,0.3)"
         , Attr.style "padding" "20px"
         , Attr.style "border-radius" "10px"
+        , Attr.attribute "data-testid" "advanced-section"
         ]
         [ Html.h3 [] [ Html.text "🔬 Advanced Information" ]
 
@@ -789,6 +849,23 @@ controlButton label msg disabled =
     Html.button
         [ Events.onClick msg
         , Attr.disabled disabled
+        , Attr.style "background" (if disabled then "rgba(100,100,100,0.5)" else "rgba(40,167,69,0.8)")
+        , Attr.style "color" "white"
+        , Attr.style "border" "none"
+        , Attr.style "padding" "10px 15px"
+        , Attr.style "border-radius" "5px"
+        , Attr.style "cursor" (if disabled then "not-allowed" else "pointer")
+        , Attr.style "font-weight" "bold"
+        ]
+        [ Html.text label ]
+
+
+controlButtonWithTestId : String -> Msg -> Bool -> String -> Html Msg
+controlButtonWithTestId label msg disabled testId =
+    Html.button
+        [ Events.onClick msg
+        , Attr.disabled disabled
+        , Attr.attribute "data-testid" testId
         , Attr.style "background" (if disabled then "rgba(100,100,100,0.5)" else "rgba(40,167,69,0.8)")
         , Attr.style "color" "white"
         , Attr.style "border" "none"

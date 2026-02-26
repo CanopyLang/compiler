@@ -54,7 +54,7 @@ generate mode expression =
     Opt.Chr char ->
       JsExpr $
         case mode of
-          Mode.Dev _ _ ->
+          Mode.Dev _ _ _ _ ->
             JS.Call toChar [JS.String (Utf8.toBuilder char)]
           Mode.Prod {} ->
             JS.String (Utf8.toBuilder char)
@@ -69,10 +69,9 @@ generate mode expression =
     Opt.VarLocal name ->
       JsExpr $ JS.Ref (JsName.fromLocal name)
     Opt.VarGlobal (Opt.Global home name) ->
-      -- Check if this is an FFI module (identified by author/project package)
-      let pkg = ModuleName._package home
-          moduleName = ModuleName._module home
-      in if Pkg._author pkg == Pkg._author Pkg.dummyName && Pkg._project pkg == Pkg._project Pkg.dummyName
+      -- Check if this is an FFI module by checking if the module name is an FFI alias
+      let moduleName = ModuleName._module home
+      in if Mode.isFFIAlias mode moduleName
          then -- This is an FFI function - generate direct JavaScript access
               -- Create JavaScript: Math.add, AudioFFI.createContext, etc.
               let moduleStr = Name.toChars moduleName
@@ -83,14 +82,14 @@ generate mode expression =
               JsExpr $ JS.Ref (JsName.fromGlobal home name)
     Opt.VarEnum (Opt.Global home name) index ->
       case mode of
-        Mode.Dev _ _ ->
+        Mode.Dev _ _ _ _ ->
           JsExpr $ JS.Ref (JsName.fromGlobal home name)
         Mode.Prod {} ->
           JsExpr $ JS.Int (Index.toMachine index)
     Opt.VarBox (Opt.Global home name) ->
       JsExpr . JS.Ref $
         ( case mode of
-            Mode.Dev _ _ -> JsName.fromGlobal home name
+            Mode.Dev _ _ _ _ -> JsName.fromGlobal home name
             Mode.Prod {} -> JsName.fromGlobal ModuleName.basics Name.identity
         )
     Opt.VarCycle home name ->
@@ -180,7 +179,7 @@ generate mode expression =
       JsExpr $ generateRecord mode fields
     Opt.Unit ->
       case mode of
-        Mode.Dev _ _ ->
+        Mode.Dev _ _ _ _ ->
           JsExpr $ JS.Ref (JsName.fromKernel Name.utils "Tuple0")
         Mode.Prod {} ->
           JsExpr $ JS.Int 0
@@ -292,7 +291,7 @@ generateCtor mode (Opt.Global home name) index arity =
 
       ctorTag =
         case mode of
-          Mode.Dev _ _ -> JS.String (Name.toBuilder name)
+          Mode.Dev _ _ _ _ -> JS.String (Name.toBuilder name)
           Mode.Prod {} -> JS.Int (ctorToInt home name index)
    in ((generateFunction argNames . JsExpr) . JS.Object $ ((JsName.dollar, ctorTag) : fmap (\n -> (n, JS.Ref n)) argNames))
 
@@ -313,9 +312,9 @@ generateRecord mode fields =
 generateField :: Mode.Mode -> Name.Name -> JsName.Name
 generateField mode name =
   case mode of
-    Mode.Dev _ _ ->
+    Mode.Dev _ _ _ _ ->
       JsName.fromLocal name
-    Mode.Prod fields _ _ ->
+    Mode.Prod fields _ _ _ _ ->
       maybe
         (InternalError.report "Generate.JavaScript.Expression.generateField" "Unknown field name in production mode" "The field shortener map is missing an expected field.")
         id
@@ -557,7 +556,7 @@ generateCall mode func args =
         generateCoreCall mode global args
     Opt.VarBox _ ->
       case mode of
-        Mode.Dev _ _ ->
+        Mode.Dev _ _ _ _ ->
           generateCallHelp mode func args
         Mode.Prod {} ->
           case args of
@@ -850,7 +849,7 @@ generatePath mode path =
       JS.Access (generatePath mode subPath) (generateField mode field)
     Opt.Unbox subPath ->
       case mode of
-        Mode.Dev _ _ ->
+        Mode.Dev _ _ _ _ ->
           JS.Access (generatePath mode subPath) (JsName.fromIndex Index.first)
         Mode.Prod {} ->
           generatePath mode subPath
@@ -954,7 +953,7 @@ generateIfTest mode root (path, test) =
         DT.IsCtor home name index _ opts ->
           let tag =
                 case mode of
-                  Mode.Dev _ _ -> JS.Access value JsName.dollar
+                  Mode.Dev _ _ _ _ -> JS.Access value JsName.dollar
                   Mode.Prod {} ->
                     case opts of
                       Can.Normal -> JS.Access value JsName.dollar
@@ -962,7 +961,7 @@ generateIfTest mode root (path, test) =
                       Can.Unbox -> value
            in strictEq tag $
                 case mode of
-                  Mode.Dev _ _ -> JS.String (Name.toBuilder name)
+                  Mode.Dev _ _ _ _ -> JS.String (Name.toBuilder name)
                   Mode.Prod {} -> JS.Int (ctorToInt home name index)
         DT.IsBool True ->
           value
@@ -973,7 +972,7 @@ generateIfTest mode root (path, test) =
         DT.IsChr char ->
           strictEq (JS.String (Utf8.toBuilder char)) $
             case mode of
-              Mode.Dev _ _ -> JS.Call (JS.Access value (JsName.fromLocal "valueOf")) []
+              Mode.Dev _ _ _ _ -> JS.Call (JS.Access value (JsName.fromLocal "valueOf")) []
               Mode.Prod {} -> value
         DT.IsStr string ->
           strictEq value (JS.String (Utf8.toBuilder string))
@@ -999,7 +998,7 @@ generateCaseValue mode test =
   case test of
     DT.IsCtor home name index _ _ ->
       case mode of
-        Mode.Dev _ _ -> JS.String (Name.toBuilder name)
+        Mode.Dev _ _ _ _ -> JS.String (Name.toBuilder name)
         Mode.Prod {} -> JS.Int (ctorToInt home name index)
     DT.IsInt int ->
       JS.Int int
@@ -1036,7 +1035,7 @@ generateCaseTest mode root path exampleTest =
           if name == Name.bool && home == ModuleName.basics
             then value
             else case mode of
-              Mode.Dev _ _ ->
+              Mode.Dev _ _ _ _ ->
                 JS.Access value JsName.dollar
               Mode.Prod {} ->
                 case opts of
@@ -1052,7 +1051,7 @@ generateCaseTest mode root path exampleTest =
           value
         DT.IsChr _ ->
           case mode of
-            Mode.Dev _ _ ->
+            Mode.Dev _ _ _ _ ->
               JS.Call (JS.Access value (JsName.fromLocal "valueOf")) []
             Mode.Prod {} ->
               value
@@ -1086,7 +1085,7 @@ pathToJsExpr mode root path =
       JS.Access (pathToJsExpr mode root subPath) (JsName.fromIndex index)
     DT.Unbox subPath ->
       case mode of
-        Mode.Dev _ _ ->
+        Mode.Dev _ _ _ _ ->
           JS.Access (pathToJsExpr mode root subPath) (JsName.fromIndex Index.first)
         Mode.Prod {} ->
           pathToJsExpr mode root subPath
@@ -1107,6 +1106,22 @@ generateMain mode home main =
       JS.Ref (JsName.fromGlobal home "main")
         # generateJsExpr mode decoder
         # toDebugMetadata mode msgType
+    Opt.TestMain ->
+      JS.Function Nothing []
+        [ JS.Return
+            ( JS.Object
+                [ (JsName.fromLocal "_testMain", JS.Ref (JsName.fromGlobal home "main"))
+                ]
+            )
+        ]
+    Opt.BrowserTestMain ->
+      JS.Function Nothing []
+        [ JS.Return
+            ( JS.Object
+                [ (JsName.fromLocal "_browserTestMain", JS.Ref (JsName.fromGlobal home "main"))
+                ]
+            )
+        ]
 
 (#) :: JS.Expr -> JS.Expr -> JS.Expr
 (#) func arg =
@@ -1118,10 +1133,10 @@ toDebugMetadata mode msgType =
     Mode.Prod {} ->
       -- Production mode: use simple 0 like Elm for compatibility
       JS.Int 0
-    Mode.Dev Nothing _ ->
+    Mode.Dev Nothing _ _ _ ->
       -- Dev mode without interfaces: use simple 0 like Elm
       JS.Int 0
-    Mode.Dev (Just interfaces) _ ->
+    Mode.Dev (Just interfaces) _ _ _ ->
       -- Dev mode with interfaces: full type metadata
       JS.Json . Encode.object $
         [ "versions" ==> Encode.object ["canopy" ==> V.encode V.compiler],

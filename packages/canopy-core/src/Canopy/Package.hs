@@ -28,6 +28,7 @@ module Canopy.Package
     url,
     webgl,
     linearAlgebra,
+    test,
     --
     elm,
     canopy,
@@ -184,6 +185,11 @@ webgl =
 linearAlgebra :: Name
 linearAlgebra =
   toName elmExplorations "linear-algebra"
+
+{-# NOINLINE test #-}
+test :: Name
+test =
+  toName canopy "test"
 
 {-# NOINLINE elm #-}
 elm :: Author

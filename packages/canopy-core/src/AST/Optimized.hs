@@ -141,6 +141,7 @@ import qualified Canopy.ModuleName as ModuleName
 import qualified Canopy.Package as Pkg
 import qualified Reporting.InternalError as InternalError
 import qualified Canopy.String as ES
+import Control.Applicative ((<|>))
 import qualified Control.Monad as Monad
 import qualified Data.Binary as Binary
 import Data.Word (Word8)
@@ -475,7 +476,7 @@ data Main
   = -- | Static application without runtime messages.
     --
     -- Represents applications that don't use the Elm Architecture
-    -- and have a simple static main function.
+    -- and have a simple static main function (e.g. @main : Html msg@).
     Static
   | -- | Dynamic application with message handling.
     --
@@ -487,6 +488,18 @@ data Main
         -- | JSON decoder for initialization flags
         _decoder :: Expr
       }
+  | -- | Test or non-visual main that should be exported as a raw value.
+    --
+    -- The main value is exported directly without wrapping in
+    -- @_VirtualDom_init@, allowing test harnesses to access the
+    -- data structure and execute it with the appropriate runner.
+    TestMain
+  | -- | Browser test main that runs in a real browser via Playwright.
+    --
+    -- The main value is exported as @_browserTestMain@ so the HTML
+    -- harness can extract the test list and execute it with real
+    -- browser APIs (Web Audio, Canvas, WebGL, etc.).
+    BrowserTestMain
   deriving (Show)
 
 -- | Dependency graph node representing definitions.
@@ -931,7 +944,13 @@ instance Binary.Binary Choice where
         _ -> fail "problem getting Opt.Choice binary"
 
 instance Binary.Binary GlobalGraph where
-  get = Monad.liftM3 GlobalGraph Binary.get Binary.get Binary.get
+  -- Backwards compatible get: old format has 2 fields, new has 3
+  -- The sourceLocations field was added for source map support
+  get = do
+    nodes <- Binary.get
+    fields <- Binary.get
+    locs <- Binary.get <|> pure Map.empty
+    pure (GlobalGraph nodes fields locs)
   put (GlobalGraph a b c) = Binary.put a >> Binary.put b >> Binary.put c
 
 instance Binary.Binary LocalGraph where
@@ -943,6 +962,8 @@ instance Binary.Binary Main where
     case main of
       Static -> Binary.putWord8 0
       Dynamic a b -> Binary.putWord8 1 >> Binary.put a >> Binary.put b
+      TestMain -> Binary.putWord8 2
+      BrowserTestMain -> Binary.putWord8 3
 
   get =
     do
@@ -950,6 +971,8 @@ instance Binary.Binary Main where
       case word of
         0 -> return Static
         1 -> Monad.liftM2 Dynamic Binary.get Binary.get
+        2 -> return TestMain
+        3 -> return BrowserTestMain
         _ -> fail "problem getting Opt.Main binary"
 
 instance Binary.Binary Node where

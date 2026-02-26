@@ -32,6 +32,9 @@ module PackageCache
     -- * Loading Complete Artifacts
   , loadPackageArtifacts
   , loadAllPackageArtifacts
+    -- * Writing Artifacts
+  , writePackageArtifacts
+  , getPackageArtifactPath
     -- * Types
   , PackageInterfaces
   , PackageArtifacts(..)
@@ -43,13 +46,15 @@ import qualified Canopy.ModuleName as ModuleName
 import qualified Canopy.Package as Pkg
 import qualified Canopy.Version as V
 import Control.Concurrent.Async (mapConcurrently)
-import Control.Monad (liftM2)
+import Control.Monad (liftM2, liftM3)
 import Data.Binary (Binary)
 import qualified Data.Binary as Binary
+import qualified Generate.JavaScript as JS
 import qualified Interface.JSON as IFace
 import Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
 import Data.Set (Set)
+import qualified Data.Set as Set
 import qualified Data.Utf8 as Utf8
 import qualified System.Directory as Dir
 import System.FilePath ((</>))
@@ -57,10 +62,11 @@ import System.FilePath ((</>))
 -- | Map of module names to their dependency interfaces.
 type PackageInterfaces = Map ModuleName.Raw I.DependencyInterface
 
--- | Complete package artifacts including interfaces and optimized code.
+-- | Complete package artifacts including interfaces, optimized code, and FFI info.
 data PackageArtifacts = PackageArtifacts
   { artifactInterfaces :: !PackageInterfaces
   , artifactObjects :: !Opt.GlobalGraph
+  , artifactFFIInfo :: !(Map String JS.FFIInfo)
   }
   deriving (Show)
 
@@ -77,15 +83,68 @@ instance Binary ArtifactCache where
   get = liftM2 ArtifactCache Binary.get Binary.get
   put (ArtifactCache fps arts) = Binary.put fps >> Binary.put arts
 
--- | Compiled artifacts for a package.
+-- | Compiled artifacts for a package (new format with FFI info).
 data Artifacts = Artifacts
   { _ifaces :: !PackageInterfaces
   , _objects :: !Opt.GlobalGraph
+  , _ffiInfo :: !(Map String JS.FFIInfo)
   }
 
 instance Binary Artifacts where
-  get = liftM2 Artifacts Binary.get Binary.get
-  put (Artifacts ifaces objs) = Binary.put ifaces >> Binary.put objs
+  get = liftM3 Artifacts Binary.get Binary.get Binary.get
+  put (Artifacts ifaces objs ffi) = Binary.put ifaces >> Binary.put objs >> Binary.put ffi
+
+-- | Legacy artifacts format (no FFI info) for backward-compatible decoding.
+data LegacyArtifacts = LegacyArtifacts !PackageInterfaces !Opt.GlobalGraph
+
+instance Binary LegacyArtifacts where
+  get = liftM2 LegacyArtifacts Binary.get Binary.get
+  put (LegacyArtifacts ifaces objs) = Binary.put ifaces >> Binary.put objs
+
+-- | Legacy artifact cache for backward-compatible decoding.
+data LegacyArtifactCache = LegacyArtifactCache !(Set Fingerprint) !LegacyArtifacts
+
+instance Binary LegacyArtifactCache where
+  get = liftM2 LegacyArtifactCache Binary.get Binary.get
+  put (LegacyArtifactCache fps arts) = Binary.put fps >> Binary.put arts
+
+-- | Map legacy elm package references to canopy equivalents.
+--
+-- When looking up @elm\/core@, also try @canopy\/core@ since Canopy provides
+-- its own drop-in replacement packages with additional features (FFI runtime, etc.).
+--
+-- @since 0.19.1
+canopyMappedAuthor :: String -> Maybe String
+canopyMappedAuthor "elm" = Just "canopy"
+canopyMappedAuthor _ = Nothing
+
+-- | Build the search paths for loading package artifacts.
+--
+-- Returns paths in priority order:
+--
+-- 1. @~\/.canopy\/packages\/{author}\/{package}\/{version}\/artifacts.dat@
+-- 2. @~\/.canopy\/packages\/canopy\/{package}\/{version}\/artifacts.dat@ (if author is @elm@)
+-- 3. @~\/.elm\/0.19.1\/packages\/{author}\/{package}\/{version}\/artifacts.dat@
+--
+-- @since 0.19.1
+packageArtifactPaths :: FilePath -> String -> String -> String -> [FilePath]
+packageArtifactPaths homeDir author package version =
+  [homeDir </> ".canopy" </> "packages" </> author </> package </> version </> "artifacts.dat"]
+  ++ maybe [] (\mapped -> [homeDir </> ".canopy" </> "packages" </> mapped </> package </> version </> "artifacts.dat"]) (canopyMappedAuthor author)
+  ++ [homeDir </> ".elm" </> "0.19.1" </> "packages" </> author </> package </> version </> "artifacts.dat"]
+
+-- | Try loading from a list of paths, returning the first successful result.
+--
+-- @since 0.19.1
+tryLoadFirst :: (FilePath -> IO (Maybe a)) -> [FilePath] -> IO (Maybe a)
+tryLoadFirst _ [] = return Nothing
+tryLoadFirst loader (path : rest) = do
+  exists <- Dir.doesFileExist path
+  if exists
+    then do
+      result <- loader path
+      maybe (tryLoadFirst loader rest) (return . Just) result
+    else tryLoadFirst loader rest
 
 -- | Load package interfaces from artifact cache.
 --
@@ -98,7 +157,8 @@ instance Binary Artifacts where
 -- ==== Search Order
 --
 -- 1. @~/.canopy/packages/author/package/version/artifacts.dat@
--- 2. @~/.elm/0.19.1/packages/author/package/version/artifacts.dat@
+-- 2. @~/.canopy/packages/canopy/package/version/artifacts.dat@ (if author is @elm@)
+-- 3. @~/.elm/0.19.1/packages/author/package/version/artifacts.dat@
 --
 -- @since 0.19.1
 loadPackageInterfaces ::
@@ -111,39 +171,43 @@ loadPackageInterfaces ::
   IO (Maybe PackageInterfaces)
 loadPackageInterfaces author package version = do
   homeDir <- Dir.getHomeDirectory
-
-  let canopyPath = homeDir </> ".canopy" </> "packages" </> author </> package </> version </> "artifacts.dat"
-      elmPath = homeDir </> ".elm" </> "0.19.1" </> "packages" </> author </> package </> version </> "artifacts.dat"
-
-  -- Try Canopy cache first, then Elm cache
-  canopyExists <- Dir.doesFileExist canopyPath
-  if canopyExists
-    then loadArtifactsFile canopyPath
-    else do
-      elmExists <- Dir.doesFileExist elmPath
-      if elmExists
-        then loadArtifactsFile elmPath
-        else return Nothing
+  tryLoadFirst loadArtifactsFile (packageArtifactPaths homeDir author package version)
 
 -- | Load artifacts from a specific file path.
+--
+-- Tries the new format (with FFI info) first, falling back to the legacy
+-- format for backward compatibility with old @artifacts.dat@ files.
 loadArtifactsFile :: FilePath -> IO (Maybe PackageInterfaces)
 loadArtifactsFile path = do
   result <- Binary.decodeFileOrFail path
   case result of
     Right (ArtifactCache _fingerprints artifacts) ->
       return (Just (_ifaces artifacts))
-    Left _ ->
-      return Nothing
+    Left _ -> do
+      legacyResult <- Binary.decodeFileOrFail path
+      case legacyResult of
+        Right (LegacyArtifactCache _fingerprints (LegacyArtifacts ifaces _)) ->
+          return (Just ifaces)
+        Left _ ->
+          return Nothing
 
--- | Load complete artifacts (interfaces + objects) from a specific file path.
+-- | Load complete artifacts (interfaces + objects + FFI info) from a specific file path.
+--
+-- Tries the new format first, falling back to the legacy format with
+-- empty FFI info for backward compatibility.
 loadCompleteArtifactsFile :: FilePath -> IO (Maybe PackageArtifacts)
 loadCompleteArtifactsFile path = do
   result <- Binary.decodeFileOrFail path
   case result of
     Right (ArtifactCache _fingerprints artifacts) ->
-      return (Just (PackageArtifacts (_ifaces artifacts) (_objects artifacts)))
-    Left _ ->
-      return Nothing
+      return (Just (PackageArtifacts (_ifaces artifacts) (_objects artifacts) (_ffiInfo artifacts)))
+    Left _ -> do
+      legacyResult <- Binary.decodeFileOrFail path
+      case legacyResult of
+        Right (LegacyArtifactCache _fingerprints (LegacyArtifacts ifaces objs)) ->
+          return (Just (PackageArtifacts ifaces objs Map.empty))
+        Left _ ->
+          return Nothing
 
 -- | Load elm\/core package interfaces.
 --
@@ -208,19 +272,7 @@ loadPackageArtifacts ::
   IO (Maybe PackageArtifacts)
 loadPackageArtifacts author package version = do
   homeDir <- Dir.getHomeDirectory
-
-  let canopyPath = homeDir </> ".canopy" </> "packages" </> author </> package </> version </> "artifacts.dat"
-      elmPath = homeDir </> ".elm" </> "0.19.1" </> "packages" </> author </> package </> version </> "artifacts.dat"
-
-  -- Try Canopy cache first, then Elm cache
-  canopyExists <- Dir.doesFileExist canopyPath
-  if canopyExists
-    then loadCompleteArtifactsFile canopyPath
-    else do
-      elmExists <- Dir.doesFileExist elmPath
-      if elmExists
-        then loadCompleteArtifactsFile elmPath
-        else return Nothing
+  tryLoadFirst loadCompleteArtifactsFile (packageArtifactPaths homeDir author package version)
 
 -- | Load all package artifacts for multiple packages.
 --
@@ -258,6 +310,7 @@ loadAllPackageArtifacts deps = do
       PackageArtifacts
         { artifactInterfaces = Map.unions (map artifactInterfaces artifacts)
         , artifactObjects = mergeGlobalGraphs (map artifactObjects artifacts)
+        , artifactFFIInfo = Map.unions (map artifactFFIInfo artifacts)
         }
 
     mergeGlobalGraphs :: [Opt.GlobalGraph] -> Opt.GlobalGraph
@@ -294,3 +347,52 @@ loadModuleInterface root moduleName = do
 
   -- Try JSON first, fall back to binary
   IFace.readInterface basePath
+
+-- | Get the path where a package's artifacts.dat should be stored.
+--
+-- Returns the path at @~/.canopy/packages/{author}/{project}/{version}/artifacts.dat@
+--
+-- @since 0.19.1
+getPackageArtifactPath ::
+  -- | Package author
+  String ->
+  -- | Package name
+  String ->
+  -- | Package version
+  String ->
+  IO FilePath
+getPackageArtifactPath author package version = do
+  homeDir <- Dir.getHomeDirectory
+  return (homeDir </> ".canopy" </> "packages" </> author </> package </> version </> "artifacts.dat")
+
+-- | Write package artifacts to the cache.
+--
+-- Serializes the given interfaces, GlobalGraph, and FFI info into an
+-- @artifacts.dat@ file at the appropriate cache location for the
+-- specified package.
+--
+-- This is used by the setup command to compile local packages and cache
+-- their artifacts for faster subsequent loads.
+--
+-- >>> writePackageArtifacts "canopy" "test" "1.0.0" interfaces globalGraph ffiInfo
+--
+-- @since 0.19.1
+writePackageArtifacts ::
+  -- | Package author
+  String ->
+  -- | Package name
+  String ->
+  -- | Package version
+  String ->
+  -- | Compiled module interfaces
+  PackageInterfaces ->
+  -- | Optimized global graph
+  Opt.GlobalGraph ->
+  -- | FFI info from foreign import declarations
+  Map String JS.FFIInfo ->
+  IO ()
+writePackageArtifacts author package version interfaces globalGraph ffiInfo = do
+  artifactPath <- getPackageArtifactPath author package version
+  let artifacts = Artifacts interfaces globalGraph ffiInfo
+      cache = ArtifactCache Set.empty artifacts
+  Binary.encodeFile artifactPath cache

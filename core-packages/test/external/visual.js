@@ -28,7 +28,7 @@ const SCREENSHOT_DIR = 'test-output/screenshots';
 
 /**
  * Compare screenshot against baseline
- * @canopy-type String -> String -> Float -> Task CompareError CompareResult
+ * @canopy-type String -> String -> Float -> Task BrowserError CompareResult
  * @name compare
  * @param {string} name - Baseline name
  * @param {string} screenshotPath - Path to current screenshot
@@ -106,7 +106,7 @@ async function compare(name, screenshotPath, threshold) {
 
 /**
  * Compare with default threshold (1%)
- * @canopy-type String -> String -> Task CompareError CompareResult
+ * @canopy-type String -> String -> Task BrowserError CompareResult
  * @name compareDefault
  * @param {string} name - Baseline name
  * @param {string} screenshotPath - Path to current screenshot
@@ -118,7 +118,7 @@ async function compareDefault(name, screenshotPath) {
 
 /**
  * Compare with strict threshold (0.1%)
- * @canopy-type String -> String -> Task CompareError CompareResult
+ * @canopy-type String -> String -> Task BrowserError CompareResult
  * @name compareStrict
  * @param {string} name - Baseline name
  * @param {string} screenshotPath - Path to current screenshot
@@ -130,7 +130,7 @@ async function compareStrict(name, screenshotPath) {
 
 /**
  * Compare with lenient threshold (5%)
- * @canopy-type String -> String -> Task CompareError CompareResult
+ * @canopy-type String -> String -> Task BrowserError CompareResult
  * @name compareLenient
  * @param {string} name - Baseline name
  * @param {string} screenshotPath - Path to current screenshot
@@ -146,7 +146,7 @@ async function compareLenient(name, screenshotPath) {
 
 /**
  * Update baseline with current screenshot
- * @canopy-type String -> String -> Task UpdateError ()
+ * @canopy-type String -> String -> Task BrowserError ()
  * @name updateBaseline
  * @param {string} name - Baseline name
  * @param {string} screenshotPath - Path to current screenshot
@@ -160,7 +160,7 @@ async function updateBaseline(name, screenshotPath) {
 
 /**
  * Delete a baseline
- * @canopy-type String -> Task DeleteError ()
+ * @canopy-type String -> Task BrowserError ()
  * @name deleteBaseline
  * @param {string} name - Baseline name
  * @returns {Promise<void>}
@@ -201,7 +201,7 @@ function listBaselines() {
 
 /**
  * Clean all diffs
- * @canopy-type () -> Task CleanError ()
+ * @canopy-type () -> Task BrowserError ()
  * @name cleanDiffs
  * @returns {Promise<void>}
  */
@@ -220,7 +220,7 @@ async function cleanDiffs() {
 
 /**
  * Take screenshot and compare to baseline (combined operation)
- * @canopy-type String -> Browser -> Float -> Task VisualError VisualResult
+ * @canopy-type String -> Browser -> Float -> Task BrowserError VisualResult
  * @name snapshot
  * @param {string} name - Snapshot name
  * @param {Object} browser - Browser handle from playwright.js
@@ -239,7 +239,7 @@ async function snapshot(name, browser, threshold) {
 
 /**
  * Take element screenshot and compare to baseline
- * @canopy-type String -> String -> Browser -> Float -> Task VisualError VisualResult
+ * @canopy-type String -> String -> Browser -> Float -> Task BrowserError VisualResult
  * @name snapshotElement
  * @param {string} selector - CSS selector
  * @param {string} name - Snapshot name
@@ -265,7 +265,7 @@ async function snapshotElement(selector, name, browser, threshold) {
 
 /**
  * Snapshot with default threshold
- * @canopy-type String -> Browser -> Task VisualError VisualResult
+ * @canopy-type String -> Browser -> Task BrowserError VisualResult
  * @name snapshotDefault
  * @param {string} name - Snapshot name
  * @param {Object} browser - Browser handle
@@ -334,7 +334,7 @@ function viewportDesktopLarge() {
 
 /**
  * Snapshot at multiple viewports
- * @canopy-type String -> Browser -> Float -> Task VisualError (List VisualResult)
+ * @canopy-type String -> Browser -> Float -> Task BrowserError (List VisualResult)
  * @name snapshotResponsive
  * @param {string} name - Base snapshot name
  * @param {Object} browser - Browser handle

@@ -93,6 +93,7 @@ module Data.Name
     bitwise,
     basics,
     capability,
+    browserTest,
     utils,
     negate,
     true,

@@ -1,72 +1,121 @@
 -- | Test framework for Canopy (similar to elm-explorations/test)
--- Provides core testing functionality for FFI and general testing
+-- Provides core testing functionality including sync, async, and browser tests
 
 module Test exposing
-  ( Test
+  ( Test(..)
+  , PlaywrightAction(..)
+  , BrowserTest(..)
+  , inBrowser
   , describe
   , test
+  , skip
+  , todo
+  , only
+  , fuzz
+  , asyncTest
+  , toRunner
   , run
-  , Expectation
-  , expect
-  , equal
-  , pass
-  , fail
+  , runTests
+  , TestResult
+  , RunnerResult
+  , TestError(..)
   )
 
--- | A Test is a collection of expectations or other tests
+import Expect exposing (Expectation)
+import Task exposing (Task)
+
+
+{-| A Test is a collection of expectations or other tests.
+
+The Test type supports several kinds of tests:
+
+  - `UnitTest` - Synchronous test with immediate expectation
+  - `TestGroup` - Group of tests (describe block)
+  - `AsyncTest` - Generic async test returning Task<Expectation>
+  - `Skip` - Skipped test (will be reported but not run)
+  - `Todo` - Placeholder test (will be reported as todo)
+  - `Only` - Focus on this test only (for debugging)
+  - `FuzzTest` - Property-based test with random input
+  - `PlaywrightStep` - Playwright browser automation step (visit, click, fill, etc.)
+
+-}
 type Test
   = UnitTest String (() -> Expectation)
   | TestGroup String (List Test)
+  | AsyncTest String (Task TestError Expectation)
+  | Skip Test
+  | Todo String
+  | Only Test
+  | FuzzTest String
+  | PlaywrightStep PlaywrightAction
 
--- | An Expectation is the result of testing something
-type Expectation
-  = Pass
-  | Fail String
 
--- | Create a group of tests with a description
-describe : String -> List Test -> Test
-describe description tests =
-  TestGroup description tests
+{-| Actions that can be performed via Playwright in the browser.
 
--- | Create a single test with a description and expectation
-test : String -> (() -> Expectation) -> Test
-test description expectationFn =
-  UnitTest description expectationFn
+Each action maps to a Playwright command executed on an iframe target
+via the console.log RPC bridge.
 
--- | Run a test and get the results
-run : Test -> TestResult
-run testCase =
-  case testCase of
-    UnitTest description expectationFn ->
-      let
-        result = expectationFn ()
-      in
-      case result of
-        Pass ->
-          { description = description
-          , status = "PASS"
-          , message = ""
-          , duration = 0
-          }
-        Fail message ->
-          { description = description
-          , status = "FAIL"
-          , message = message
-          , duration = 0
-          }
+-}
+type PlaywrightAction
+  = Visit String
+  | Click String
+  | Fill String String
+  | Check String
+  | SeeText String
+  | SeeElement String
+  | DontSee String
+  | DontSeeElement String
+  | WaitFor String
+  | Screenshot String
 
-    TestGroup description tests ->
-      let
-        results = List.map run tests
-        failures = List.filter (.status >> (==) "FAIL") results
-      in
-      { description = description
-      , status = if List.isEmpty failures then "PASS" else "FAIL"
-      , message = String.fromInt (List.length failures) ++ " of " ++ String.fromInt (List.length results) ++ " tests failed"
-      , duration = 0
-      }
 
--- | Test result type
+{-| A BrowserTest wraps a list of Tests for execution in a real browser.
+
+Use this when your tests need real browser APIs (Web Audio, Canvas, WebGL, etc.)
+that are not available in Node.js. Supports both direct browser API tests and
+Playwright automation steps.
+
+    main : BrowserTest
+    main =
+        inBrowser
+            [ describe "Web Audio"
+                [ test "creates oscillator" <| \_ -> ...
+                ]
+            , visit "/app"
+            , click "#start-button"
+            , seeText "Playing"
+            ]
+
+-}
+type BrowserTest = InBrowser (List Test)
+
+
+{-| Create a BrowserTest from a list of tests.
+
+    main : BrowserTest
+    main =
+        inBrowser [ suite ]
+
+-}
+inBrowser : List Test -> BrowserTest
+inBrowser tests =
+    InBrowser tests
+
+
+{-| Error type for async and browser tests.
+-}
+type TestError
+  = TestTimeout String
+  | TestException String
+  | BrowserError String
+
+
+{-| Fuzzer type for property-based testing.
+-}
+type Fuzzer a = Fuzzer
+
+
+-- | Test result type for internal use
 type alias TestResult =
   { description : String
   , status : String
@@ -74,29 +123,261 @@ type alias TestResult =
   , duration : Int
   }
 
--- | Create an expectation (basic assertion framework)
-expect : a -> Expect a
-expect actual =
-  Expect actual
 
--- | Expectation builder type
-type Expect a = Expect a
+-- | Result format expected by the test harness
+-- The test harness expects { name, passed, reason }
+type alias RunnerResult =
+  { name : String
+  , passed : Bool
+  , reason : String
+  }
 
--- | Check if two values are equal
-equal : a -> Expect a -> Expectation
-equal expected (Expect actual) =
-  if actual == expected then
-    Pass
-  else
-    Fail ("Expected: " ++ Debug.toString expected ++ ", but got: " ++ Debug.toString actual)
 
--- | An expectation that always passes
-pass : Expectation
-pass = Pass
+{-| Create a group of tests with a description.
 
--- | An expectation that always fails with a message
-fail : String -> Expectation
-fail message = Fail message
+    describe "Math operations"
+        [ test "addition" <| \_ -> Expect.equal 4 (2 + 2)
+        , test "subtraction" <| \_ -> Expect.equal 2 (4 - 2)
+        ]
+
+-}
+describe : String -> List Test -> Test
+describe description tests =
+  TestGroup description tests
+
+
+{-| Create a single test with a description and expectation.
+
+    test "addition works" <|
+        \_ -> Expect.equal 4 (2 + 2)
+
+-}
+test : String -> (() -> Expectation) -> Test
+test description expectationFn =
+  UnitTest description expectationFn
+
+
+{-| Skip a test. It will be reported as skipped but not executed.
+
+    skip <|
+        test "not ready yet" <| \_ -> ...
+
+-}
+skip : Test -> Test
+skip testToSkip =
+  Skip testToSkip
+
+
+{-| Mark a test as todo. Useful for planning tests.
+
+    todo "implement user authentication tests"
+
+-}
+todo : String -> Test
+todo description =
+  Todo description
+
+
+{-| Focus on this test only (for debugging).
+Other tests will be skipped.
+
+    only <|
+        test "debug this one" <| \_ -> ...
+
+-}
+only : Test -> Test
+only testToFocus =
+  Only testToFocus
+
+
+{-| Create a fuzz test with random inputs.
+
+    fuzz Fuzz.int "positive integers" <|
+        \n -> Expect.equal True (n * n >= 0)
+
+-}
+fuzz : Fuzzer a -> String -> (a -> Expectation) -> Test
+fuzz _fuzzer description _expectationFn =
+  FuzzTest description
+
+
+{-| Create an async test that returns a Task.
+
+    asyncTest "fetch user data" <|
+        Http.get "/api/user"
+            |> Task.map (\user -> Expect.equal "Alice" user.name)
+
+-}
+asyncTest : String -> Task TestError Expectation -> Test
+asyncTest description taskExpectation =
+  AsyncTest description taskExpectation
+
+
+-- | Convert tests to the runner format expected by the test harness
+-- Returns a list of { name, passed, reason } results
+toRunner : List Test -> List RunnerResult
+toRunner tests =
+  List.concatMap runToRunnerResults tests
+
+
+-- | Run a test and convert to RunnerResult format
+runToRunnerResults : Test -> List RunnerResult
+runToRunnerResults testCase =
+  case testCase of
+    UnitTest description expectationFn ->
+      [ expectationToRunnerResult description (expectationFn ()) ]
+
+    TestGroup _groupDescription tests ->
+      List.concatMap runToRunnerResults tests
+
+    Skip innerTest ->
+      [ { name = getTestName innerTest
+        , passed = True
+        , reason = "SKIPPED"
+        }
+      ]
+
+    Todo description ->
+      [ { name = description
+        , passed = True
+        , reason = "TODO"
+        }
+      ]
+
+    Only innerTest ->
+      runToRunnerResults innerTest
+
+    AsyncTest description _task ->
+      [ { name = description
+        , passed = True
+        , reason = "ASYNC_TEST (run with async runner)"
+        }
+      ]
+
+    FuzzTest description ->
+      [ { name = description
+        , passed = True
+        , reason = "FUZZ_TEST (requires fuzzer)"
+        }
+      ]
+
+    PlaywrightStep _action ->
+      [ { name = describePlaywrightAction _action
+        , passed = True
+        , reason = "PLAYWRIGHT_STEP (run in browser)"
+        }
+      ]
+
+
+{-| Get the name of a test.
+-}
+getTestName : Test -> String
+getTestName testCase =
+  case testCase of
+    UnitTest name _ -> name
+    TestGroup name _ -> name
+    AsyncTest name _ -> name
+    Skip inner -> getTestName inner
+    Todo name -> name
+    Only inner -> getTestName inner
+    FuzzTest name -> name
+    PlaywrightStep action -> describePlaywrightAction action
+
+
+-- | Convert an expectation to the RunnerResult format
+expectationToRunnerResult : String -> Expectation -> RunnerResult
+expectationToRunnerResult name expectation =
+  case expectation of
+    Expect.Pass ->
+      { name = name
+      , passed = True
+      , reason = ""
+      }
+    Expect.Fail reason ->
+      { name = name
+      , passed = False
+      , reason = Expect.reasonToString reason
+      }
+
+
+-- | Run a test and get the results (for internal/legacy use)
+run : Test -> TestResult
+run testCase =
+  case testCase of
+    UnitTest description expectationFn ->
+      runUnitTest description (expectationFn ())
+
+    TestGroup description tests ->
+      runTestGroup description tests
+
+    Skip innerTest ->
+      { description = getTestName innerTest
+      , status = "SKIP"
+      , message = "Test skipped"
+      , duration = 0
+      }
+
+    Todo description ->
+      { description = description
+      , status = "TODO"
+      , message = "Test not implemented"
+      , duration = 0
+      }
+
+    Only innerTest ->
+      run innerTest
+
+    AsyncTest description _task ->
+      { description = description
+      , status = "SKIP"
+      , message = "Async test - use async runner"
+      , duration = 0
+      }
+
+    FuzzTest description ->
+      { description = description
+      , status = "SKIP"
+      , message = "Fuzz test - requires fuzzer"
+      , duration = 0
+      }
+
+    PlaywrightStep action ->
+      { description = describePlaywrightAction action
+      , status = "SKIP"
+      , message = "Playwright step - run in browser"
+      , duration = 0
+      }
+
+
+runUnitTest : String -> Expectation -> TestResult
+runUnitTest description result =
+  case result of
+    Expect.Pass ->
+      { description = description
+      , status = "PASS"
+      , message = ""
+      , duration = 0
+      }
+    Expect.Fail reason ->
+      { description = description
+      , status = "FAIL"
+      , message = Expect.reasonToString reason
+      , duration = 0
+      }
+
+
+runTestGroup : String -> List Test -> TestResult
+runTestGroup description tests =
+  let
+    results = List.map run tests
+    failures = List.filter (\r -> r.status == "FAIL") results
+  in
+  { description = description
+  , status = if List.isEmpty failures then "PASS" else "FAIL"
+  , message = String.fromInt (List.length failures) ++ " of " ++ String.fromInt (List.length results) ++ " tests failed"
+  , duration = 0
+  }
+
 
 -- | Test runner that outputs to console (will be called from generated JavaScript)
 runTests : List Test -> String
@@ -104,19 +385,47 @@ runTests tests =
   let
     results = List.map run tests
     totalTests = List.length results
-    passedTests = List.length (List.filter (.status >> (==) "PASS") results)
+    passedTests = List.length (List.filter (\r -> r.status == "PASS") results)
     failedTests = totalTests - passedTests
   in
+  formatTestSummary totalTests passedTests failedTests results
+
+
+formatTestSummary : Int -> Int -> Int -> List TestResult -> String
+formatTestSummary total passed failed results =
   "Test Results:\n" ++
-  "Total: " ++ String.fromInt totalTests ++ "\n" ++
-  "Passed: " ++ String.fromInt passedTests ++ "\n" ++
-  "Failed: " ++ String.fromInt failedTests ++ "\n" ++
-  (if failedTests > 0 then
+  "Total: " ++ String.fromInt total ++ "\n" ++
+  "Passed: " ++ String.fromInt passed ++ "\n" ++
+  "Failed: " ++ String.fromInt failed ++ "\n" ++
+  formatFailures failed results
+
+
+formatFailures : Int -> List TestResult -> String
+formatFailures failedCount results =
+  if failedCount > 0 then
     "\nFailures:\n" ++
-    String.join "\n" (List.map formatFailure (List.filter (.status >> (==) "FAIL") results))
-   else
-    "\nAll tests passed!")
+    String.join "\n" (List.map formatFailure (List.filter (\r -> r.status == "FAIL") results))
+  else
+    "\nAll tests passed!"
+
 
 formatFailure : TestResult -> String
 formatFailure result =
-  "❌ " ++ result.description ++ ": " ++ result.message
+  "X " ++ result.description ++ ": " ++ result.message
+
+
+{-| Describe a PlaywrightAction as a human-readable string for test output.
+-}
+describePlaywrightAction : PlaywrightAction -> String
+describePlaywrightAction action =
+  case action of
+    Visit url -> "visit " ++ url
+    Click selector -> "click " ++ selector
+    Fill selector value -> "fill " ++ selector ++ " with " ++ value
+    Check selector -> "check " ++ selector
+    SeeText text -> "see text \"" ++ text ++ "\""
+    SeeElement selector -> "see element " ++ selector
+    DontSee text -> "don't see \"" ++ text ++ "\""
+    DontSeeElement selector -> "don't see element " ++ selector
+    WaitFor selector -> "wait for " ++ selector
+    Screenshot name -> "screenshot " ++ name

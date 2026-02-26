@@ -78,10 +78,13 @@ termHelp start =
     ]
 
 -- WILDCARD
+--
+-- A bare underscore `_` is a wildcard pattern (PAnything).
+-- An underscore followed by letters like `_description` is a regular variable (PVar).
 
 wildcard :: Parser E.Pattern ()
 wildcard =
-  P.Parser $ \(P.State src pos end indent row col) cok _ cerr eerr ->
+  P.Parser $ \(P.State src pos end indent row col) cok _ _ eerr ->
     if pos == end || P.unsafeIndex pos /= 0x5F {- _ -}
       then eerr row col E.PStart
       else
@@ -89,8 +92,8 @@ wildcard =
             !newCol = col + 1
          in if Var.getInnerWidth newPos end > 0
               then
-                let (# badPos, badCol #) = Var.chompInnerChars newPos end newCol
-                 in cerr row col (E.PWildcardNotVar (Name.fromPtr pos badPos) (fromIntegral (badCol - col)))
+                -- Has characters after underscore - not a wildcard, let Var.lower handle it
+                eerr row col E.PStart
               else
                 let !newState = P.State src newPos end indent row newCol
                  in cok () newState

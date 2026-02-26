@@ -20,20 +20,23 @@ Tests all oscillator node creation and manipulation functions.
 -}
 
 import Html exposing (Html, pre, text)
-import Test exposing (Test, describe, test, runTests)
+import Test exposing (Test, BrowserTest, describe, test, inBrowser)
 import Expect
 import AudioFFI
 import Capability exposing (UserActivated(..), Initialized(..), CapabilityError(..))
 import Result exposing (Result(..))
 
 
-main : Html msg
+main : BrowserTest
 main =
-    let
-        results =
-            runTests [ suite ]
-    in
-    pre [] [ text results ]
+    inBrowser
+        [ describe "Oscillator Functions"
+            [ createOscillatorTests
+            , oscillatorControlTests
+            , oscillatorPropertyTests
+            , oscillatorWaveformTests
+            ]
+        ]
 
 
 suite : Test
@@ -54,37 +57,37 @@ suite =
 createOscillatorTests : Test
 createOscillatorTests =
     describe "createOscillator"
-        [ test "creates oscillator with valid frequency" <|
+        [ test "creates oscillator with 440Hz sine" <|
             \_ ->
                 withContext <| \ctx ->
-                    case AudioFFI.createOscillator ctx 440.0 "sine" of
-                        Ok _ -> Expect.pass
-                        Err _ -> Expect.pass
+                    expectOk "createOscillator 440 sine" (AudioFFI.createOscillator ctx 440.0 "sine") <| \osc ->
+                        Expect.equal "sine" (AudioFFI.getOscillatorType osc)
 
-        , test "creates oscillator with minimum frequency" <|
+        , test "creates oscillator with 0Hz sine and verifies frequency" <|
             \_ ->
                 withContext <| \ctx ->
-                    case AudioFFI.createOscillator ctx 0.0 "sine" of
-                        Ok _ -> Expect.pass
-                        Err _ -> Expect.pass
+                    expectOk "createOscillator 0 sine" (AudioFFI.createOscillator ctx 0.0 "sine") <| \osc ->
+                        let
+                            param = AudioFFI.getOscillatorFrequencyParam osc
+                            value = AudioFFI.getAudioParamValue param
+                        in
+                        Expect.within (Expect.Absolute 0.01) 0.0 value
 
-        , test "creates oscillator with high frequency" <|
+        , test "creates oscillator with 20000Hz sine and verifies frequency" <|
             \_ ->
                 withContext <| \ctx ->
-                    case AudioFFI.createOscillator ctx 20000.0 "sine" of
-                        Ok _ -> Expect.pass
-                        Err _ -> Expect.pass
+                    expectOk "createOscillator 20000 sine" (AudioFFI.createOscillator ctx 20000.0 "sine") <| \osc ->
+                        let
+                            param = AudioFFI.getOscillatorFrequencyParam osc
+                            value = AudioFFI.getAudioParamValue param
+                        in
+                        Expect.within (Expect.Absolute 0.01) 20000.0 value
 
         , test "creates oscillator with different waveforms" <|
             \_ ->
                 withContext <| \ctx ->
-                    let
-                        sineResult = AudioFFI.createOscillator ctx 440.0 "sine"
-                        squareResult = AudioFFI.createOscillator ctx 440.0 "square"
-                        sawtoothResult = AudioFFI.createOscillator ctx 440.0 "sawtooth"
-                        triangleResult = AudioFFI.createOscillator ctx 440.0 "triangle"
-                    in
-                    Expect.pass
+                    expectOk "createOscillator square" (AudioFFI.createOscillator ctx 440.0 "square") <| \osc ->
+                        Expect.equal "square" (AudioFFI.getOscillatorType osc)
         ]
 
 
@@ -100,63 +103,54 @@ oscillatorControlTests =
             [ test "starts oscillator at time 0" <|
                 \_ ->
                     withContext <| \ctx ->
-                        case AudioFFI.createOscillator ctx 440.0 "sine" of
-                            Ok osc ->
-                                case AudioFFI.startOscillator osc 0.0 of
-                                    Ok _ -> Expect.pass
-                                    Err _ -> Expect.pass
-                            Err _ -> Expect.pass
+                        expectOk "createOscillator" (AudioFFI.createOscillator ctx 440.0 "sine") <| \osc ->
+                            expectOk "startOscillator" (AudioFFI.startOscillator osc 0.0) <| \_ ->
+                                Expect.pass
 
             , test "starts oscillator at future time" <|
                 \_ ->
                     withContext <| \ctx ->
-                        case AudioFFI.createOscillator ctx 440.0 "sine" of
-                            Ok osc ->
-                                case AudioFFI.startOscillator osc 1.0 of
-                                    Ok _ -> Expect.pass
-                                    Err _ -> Expect.pass
-                            Err _ -> Expect.pass
+                        expectOk "createOscillator" (AudioFFI.createOscillator ctx 440.0 "sine") <| \osc ->
+                            expectOk "startOscillator" (AudioFFI.startOscillator osc 1.0) <| \_ ->
+                                Expect.pass
             ]
 
         , describe "stopOscillator"
             [ test "stops oscillator at specified time" <|
                 \_ ->
                     withContext <| \ctx ->
-                        case AudioFFI.createOscillator ctx 440.0 "sine" of
-                            Ok osc ->
-                                case AudioFFI.startOscillator osc 0.0 of
-                                    Ok _ ->
-                                        case AudioFFI.stopOscillator osc 1.0 of
-                                            Ok _ -> Expect.pass
-                                            Err _ -> Expect.pass
-                                    Err _ -> Expect.pass
-                            Err _ -> Expect.pass
+                        expectOk "createOscillator" (AudioFFI.createOscillator ctx 440.0 "sine") <| \osc ->
+                            expectOk "startOscillator" (AudioFFI.startOscillator osc 0.0) <| \_ ->
+                                expectOk "stopOscillator" (AudioFFI.stopOscillator osc 1.0) <| \_ ->
+                                    Expect.pass
             ]
 
         , describe "setOscillatorFrequency"
-            [ test "sets frequency to new value" <|
+            [ test "sets frequency to 880 and reads back" <|
                 \_ ->
                     withContext <| \ctx ->
-                        case AudioFFI.createOscillator ctx 440.0 "sine" of
-                            Ok osc ->
-                                let
-                                    _ = AudioFFI.setOscillatorFrequency osc 880.0 0.0
-                                in
-                                Expect.pass
-                            Err _ -> Expect.pass
+                        expectOk "createOscillator" (AudioFFI.createOscillator ctx 440.0 "sine") <| \osc ->
+                            case AudioFFI.setOscillatorFrequency osc 880.0 0.0 of
+                                _ ->
+                                    let
+                                        param = AudioFFI.getOscillatorFrequencyParam osc
+                                        value = AudioFFI.getAudioParamValue param
+                                    in
+                                    Expect.within (Expect.Absolute 0.01) 880.0 value
             ]
 
         , describe "setOscillatorDetune"
-            [ test "sets detune in cents" <|
+            [ test "sets detune to 100 cents and reads back" <|
                 \_ ->
                     withContext <| \ctx ->
-                        case AudioFFI.createOscillator ctx 440.0 "sine" of
-                            Ok osc ->
-                                let
-                                    _ = AudioFFI.setOscillatorDetune osc 100.0 0.0
-                                in
-                                Expect.pass
-                            Err _ -> Expect.pass
+                        expectOk "createOscillator" (AudioFFI.createOscillator ctx 440.0 "sine") <| \osc ->
+                            case AudioFFI.setOscillatorDetune osc 100.0 0.0 of
+                                _ ->
+                                    let
+                                        param = AudioFFI.getOscillatorDetuneParam osc
+                                        value = AudioFFI.getAudioParamValue param
+                                    in
+                                    Expect.within (Expect.Absolute 0.01) 100.0 value
             ]
         ]
 
@@ -170,47 +164,41 @@ oscillatorPropertyTests : Test
 oscillatorPropertyTests =
     describe "oscillator properties"
         [ describe "getOscillatorType"
-            [ test "returns correct waveform type" <|
+            [ test "returns sine for sine oscillator" <|
                 \_ ->
                     withContext <| \ctx ->
-                        case AudioFFI.createOscillator ctx 440.0 "sine" of
-                            Ok osc ->
-                                Expect.equal "sine" (AudioFFI.getOscillatorType osc)
-                            Err _ -> Expect.pass
+                        expectOk "createOscillator" (AudioFFI.createOscillator ctx 440.0 "sine") <| \osc ->
+                            Expect.equal "sine" (AudioFFI.getOscillatorType osc)
 
             , test "returns square for square oscillator" <|
                 \_ ->
                     withContext <| \ctx ->
-                        case AudioFFI.createOscillator ctx 440.0 "square" of
-                            Ok osc ->
-                                Expect.equal "square" (AudioFFI.getOscillatorType osc)
-                            Err _ -> Expect.pass
+                        expectOk "createOscillator" (AudioFFI.createOscillator ctx 440.0 "square") <| \osc ->
+                            Expect.equal "square" (AudioFFI.getOscillatorType osc)
             ]
 
         , describe "getOscillatorFrequencyParam"
-            [ test "returns valid audio param" <|
+            [ test "returns param with frequency value" <|
                 \_ ->
                     withContext <| \ctx ->
-                        case AudioFFI.createOscillator ctx 440.0 "sine" of
-                            Ok osc ->
-                                let
-                                    param = AudioFFI.getOscillatorFrequencyParam osc
-                                in
-                                Expect.pass
-                            Err _ -> Expect.pass
+                        expectOk "createOscillator" (AudioFFI.createOscillator ctx 440.0 "sine") <| \osc ->
+                            let
+                                param = AudioFFI.getOscillatorFrequencyParam osc
+                                value = AudioFFI.getAudioParamValue param
+                            in
+                            Expect.within (Expect.Absolute 0.01) 440.0 value
             ]
 
         , describe "getOscillatorDetuneParam"
-            [ test "returns valid audio param" <|
+            [ test "returns param with detune value 0" <|
                 \_ ->
                     withContext <| \ctx ->
-                        case AudioFFI.createOscillator ctx 440.0 "sine" of
-                            Ok osc ->
-                                let
-                                    param = AudioFFI.getOscillatorDetuneParam osc
-                                in
-                                Expect.pass
-                            Err _ -> Expect.pass
+                        expectOk "createOscillator" (AudioFFI.createOscillator ctx 440.0 "sine") <| \osc ->
+                            let
+                                param = AudioFFI.getOscillatorDetuneParam osc
+                                value = AudioFFI.getAudioParamValue param
+                            in
+                            Expect.within (Expect.Absolute 0.01) 0.0 value
             ]
         ]
 
@@ -226,41 +214,35 @@ oscillatorWaveformTests =
         [ test "sine waveform creates successfully" <|
             \_ ->
                 withContext <| \ctx ->
-                    case AudioFFI.createOscillator ctx 440.0 "sine" of
-                        Ok _ -> Expect.pass
-                        Err _ -> Expect.pass
+                    expectOk "sine" (AudioFFI.createOscillator ctx 440.0 "sine") <| \osc ->
+                        Expect.equal "sine" (AudioFFI.getOscillatorType osc)
 
         , test "square waveform creates successfully" <|
             \_ ->
                 withContext <| \ctx ->
-                    case AudioFFI.createOscillator ctx 440.0 "square" of
-                        Ok _ -> Expect.pass
-                        Err _ -> Expect.pass
+                    expectOk "square" (AudioFFI.createOscillator ctx 440.0 "square") <| \osc ->
+                        Expect.equal "square" (AudioFFI.getOscillatorType osc)
 
         , test "sawtooth waveform creates successfully" <|
             \_ ->
                 withContext <| \ctx ->
-                    case AudioFFI.createOscillator ctx 440.0 "sawtooth" of
-                        Ok _ -> Expect.pass
-                        Err _ -> Expect.pass
+                    expectOk "sawtooth" (AudioFFI.createOscillator ctx 440.0 "sawtooth") <| \osc ->
+                        Expect.equal "sawtooth" (AudioFFI.getOscillatorType osc)
 
         , test "triangle waveform creates successfully" <|
             \_ ->
                 withContext <| \ctx ->
-                    case AudioFFI.createOscillator ctx 440.0 "triangle" of
-                        Ok _ -> Expect.pass
-                        Err _ -> Expect.pass
+                    expectOk "triangle" (AudioFFI.createOscillator ctx 440.0 "triangle") <| \osc ->
+                        Expect.equal "triangle" (AudioFFI.getOscillatorType osc)
 
         , describe "setOscillatorType"
-            [ test "changes waveform type" <|
+            [ test "changes waveform type from sine to square" <|
                 \_ ->
                     withContext <| \ctx ->
-                        case AudioFFI.createOscillator ctx 440.0 "sine" of
-                            Ok osc ->
-                                case AudioFFI.setOscillatorType osc "square" of
-                                    Ok _ -> Expect.pass
-                                    Err _ -> Expect.pass
-                            Err _ -> Expect.pass
+                        expectOk "createOscillator" (AudioFFI.createOscillator ctx 440.0 "sine") <| \osc ->
+                            expectOk "setOscillatorType" (AudioFFI.setOscillatorType osc "square") <| \_ ->
+                                Expect.equal "square" (AudioFFI.getOscillatorType osc)
+
             ]
         ]
 
@@ -274,4 +256,23 @@ withContext : (Initialized AudioFFI.AudioContext -> Expect.Expectation) -> Expec
 withContext fn =
     case AudioFFI.createAudioContext Click of
         Ok ctx -> fn ctx
-        Err _ -> Expect.pass
+        Err err -> Expect.fail ("withContext: createAudioContext failed: " ++ errorToString err)
+
+
+expectOk : String -> Result CapabilityError a -> (a -> Expect.Expectation) -> Expect.Expectation
+expectOk label result fn =
+    case result of
+        Ok value -> fn value
+        Err err -> Expect.fail (label ++ ": " ++ errorToString err)
+
+
+errorToString : CapabilityError -> String
+errorToString err =
+    case err of
+        UserActivationRequired msg -> "UserActivationRequired: " ++ msg
+        InitializationRequired msg -> "InitializationRequired: " ++ msg
+        FeatureNotAvailable msg -> "FeatureNotAvailable: " ++ msg
+        NotSupportedError msg -> "NotSupportedError: " ++ msg
+        InvalidStateError msg -> "InvalidStateError: " ++ msg
+        RangeError msg -> "RangeError: " ++ msg
+        _ -> "Unknown error"

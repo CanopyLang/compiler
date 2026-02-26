@@ -38,9 +38,6 @@ module Foreign.FFI
   , FFIError(..)
   , validateFFIDeclaration
 
-    -- * Code Generation
-  , generateFFIModule
-  , generateRuntimeWrapper
   ) where
 
 import qualified Data.Text as Text
@@ -683,7 +680,8 @@ generateFFIBindings functions = do
       pure $ description <> funcName <> " : " <> canopyType
 
 -- | Qualify basic types appropriately
--- Built-in types remain unqualified, custom types get qualified
+-- Built-in types remain unqualified, custom types are passed through
+-- and validated by the type system
 qualifyBasicType :: Text -> Text
 qualifyBasicType typeName = case typeName of
   "String" -> "String"
@@ -693,13 +691,9 @@ qualifyBasicType typeName = case typeName of
   "()" -> "()"
   "Unit" -> "()"  -- Convert Unit to () for consistency
   "Never" -> "Never"
-  -- Capability types should be unqualified (like core types)
-  "UserActivated" -> "UserActivated"
-  "Initialized" -> "Initialized"
-  "Permitted" -> "Permitted"
-  "Available" -> "Available"
-  "CapabilityError" -> "CapabilityError"
-  customType -> customType  -- Custom types remain as-is for now
+  -- All other types (including capabilities) are passed through
+  -- The type system validates whether they exist
+  customType -> customType
 
 -- | Convert FFI type to Canopy type syntax
 -- Uses qualified type names for maximum safety and consistency
@@ -749,77 +743,6 @@ validateFFIDeclaration ffiDecl = do
     JavaScriptFFI jsFile -> parseJSDocFromFile jsFile
     WebAssemblyFFI _ -> return $ Left $ UnsupportedJSType "WebAssembly not yet supported"
 
--- | Generate a complete FFI module
---
--- Creates a Canopy module with all bindings from a JavaScript file.
---
--- @since 0.19.1
-generateFFIModule :: FFIDeclaration -> [JSDocFunction] -> Either FFIError Text
-generateFFIModule ffiDecl functions = do
-  bindings <- generateFFIBindings functions
-  let aliasName = case ffiAlias ffiDecl of
-        A.At _ name -> Name.toChars name
-
-  -- Create module text representation
-  pure $ Text.unlines
-    [ "-- Auto-generated FFI module for " <> Text.pack aliasName
-    , "module " <> Text.pack aliasName <> " exposing (..)"
-    , ""
-    , bindings
-    ]
-
--- | Generate runtime wrapper code
---
--- Creates JavaScript wrapper functions that provide runtime
--- type checking and error conversion for FFI calls.
---
--- @since 0.19.1
-generateRuntimeWrapper :: JSDocFunction -> Text
-generateRuntimeWrapper jsFunc =
-  Text.unlines
-    [ "// Auto-generated wrapper for " <> funcName
-    , "function " <> wrapperName <> "(" <> paramList <> ") {"
-    , "  try {"
-    , "    var result = " <> funcName <> "(" <> paramList <> ");"
-    , resultHandling
-    , "  } catch (e) {"
-    , "    return " <> errorWrapper <> ";"
-    , "  }"
-    , "}"
-    ]
-  where
-    funcName = jsDocFuncName jsFunc
-    wrapperName = funcName <> "_safe"
-    (inputTypes, outputType) = flattenFunctionTypeForWrapper (jsDocFuncType jsFunc)
-    paramNames = zipWith (\_ i -> "a" <> Text.pack (show (i :: Int))) inputTypes [0..]
-    paramList = Text.intercalate ", " paramNames
-
-    resultHandling = case outputType of
-      FFITask _ _ ->
-        "    if (result && typeof result.then === 'function') {\n"
-        <> "      return result.then(function(val) { return { $: 0, a: val }; })"
-        <> ".catch(function(err) { return { $: 1, a: String(err) }; });\n"
-        <> "    }\n"
-        <> "    return result;"
-      FFIResult _ _ ->
-        "    return { $: 0, a: result };"
-      FFIMaybe _ ->
-        "    return (result == null) ? { $: 1 } : { $: 0, a: result };"
-      _ ->
-        "    return result;"
-
-    errorWrapper = case outputType of
-      FFIResult _ _ -> "{ $: 1, a: String(e) }"
-      FFITask _ _   -> "Promise.reject(String(e))"
-      _             -> "null"
-
-    flattenFunctionTypeForWrapper :: FFIType -> ([FFIType], FFIType)
-    flattenFunctionTypeForWrapper ffiType = case ffiType of
-      FFIFunctionType params returnType ->
-        let (nestedParams, finalReturn) = flattenFunctionTypeForWrapper returnType
-        in (params ++ nestedParams, finalReturn)
-      other -> ([], other)
-
 -- | Simple FFI import representation to avoid circular dependencies
 data SimpleFFIImport = SimpleFFIImport
   { simpleFfiTarget :: !FFITarget
@@ -855,19 +778,16 @@ parseJavaScriptFile jsFile content = do
       (inputTypes, outputType) -> FFIFunction inputTypes outputType (jsDocFuncThrows jsDoc)
 
     -- Flatten nested function types into parameter list and return type
+    --
+    -- This function takes potentially nested FFIFunctionType structures and
+    -- flattens them into a single parameter list and return type.
+    -- Example: FFIFunctionType [A] (FFIFunctionType [B] C) becomes ([A, B], C)
     flattenFunctionType :: FFIType -> ([FFIType], FFIType)
-    flattenFunctionType ffiType = case ffiType of
+    flattenFunctionType = \case
       FFIFunctionType params returnType ->
         let (nestedParams, finalReturn) = flattenFunctionType returnType
         in (params ++ nestedParams, finalReturn)
-      otherType ->
-        -- For debugging: if this is reached for complex types, they're not being parsed as functions
-        case otherType of
-          FFIBasic typeName | Text.isInfixOf "->" typeName ->
-            -- This indicates the entire function type is being treated as a basic type!
-            -- This is the bug - the parsing isn't working correctly
-            ([], otherType)
-          _ -> ([], otherType)
+      otherType -> ([], otherType)
 
 -- | Process foreign imports from a module
 --

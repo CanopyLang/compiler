@@ -234,6 +234,7 @@ getLowerWidth pos end =
 getLowerWidthHelp :: Ptr Word8 -> Ptr Word8 -> Word8 -> Int
 getLowerWidthHelp pos _ word
   | 0x61 {- a -} <= word && word <= 0x7A {- z -} = 1
+  | word == 0x5F {- _ -} = 1  -- Allow underscore-prefixed names like _description
   | word < 0xc0 = 0
   | word < 0xe0 = if Char.isLower (chr2 pos word) then 2 else 0
   | word < 0xf0 = if Char.isLower (chr3 pos word) then 3 else 0

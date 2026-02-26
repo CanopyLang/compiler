@@ -101,11 +101,11 @@ generateChunks inputMode globalGraph@(Opt.GlobalGraph rawGraph _ _) mains _ffiIn
 prepareGraph :: Mode.Mode -> Graph -> (Graph, Mode.Mode)
 prepareGraph inputMode rawGraph =
   case inputMode of
-    Mode.Prod fields elmCompat _ ->
+    Mode.Prod fields elmCompat ffiUnsafe _ ffiAliases ->
       let minified = Minify.minifyGraph rawGraph
           pool = StringPool.buildPool minified
-       in (minified, Mode.Prod fields elmCompat pool)
-    Mode.Dev _ _ -> (rawGraph, inputMode)
+       in (minified, Mode.Prod fields elmCompat ffiUnsafe pool ffiAliases)
+    Mode.Dev _ _ _ _ -> (rawGraph, inputMode)
 
 -- | Generate JavaScript for the globals in a single chunk.
 --
@@ -434,14 +434,14 @@ addKernelChunk mode chunk builder =
 handleDebugChunk :: Mode.Mode -> Builder -> Builder
 handleDebugChunk mode builder =
   case mode of
-    Mode.Dev _ _ -> builder
+    Mode.Dev _ _ _ _ -> builder
     Mode.Prod {} -> "_UNUSED" <> builder
 
 -- | Handle prod kernel chunk.
 handleProdChunk :: Mode.Mode -> Builder -> Builder
 handleProdChunk mode builder =
   case mode of
-    Mode.Dev _ _ -> "_UNUSED" <> builder
+    Mode.Dev _ _ _ _ -> "_UNUSED" <> builder
     Mode.Prod {} -> builder
 
 -- | Emit enum statement.
@@ -449,7 +449,7 @@ emitEnum :: Mode.Mode -> Opt.Global -> Index.ZeroBased -> JS.Stmt
 emitEnum mode global@(Opt.Global home name) index =
   JS.Var (JsName.fromGlobal home name) $
     case mode of
-      Mode.Dev _ _ -> Expr.codeToExpr (Expr.generateCtor mode global index 0)
+      Mode.Dev _ _ _ _ -> Expr.codeToExpr (Expr.generateCtor mode global index 0)
       Mode.Prod {} -> JS.Int (Index.toMachine index)
 
 -- | Emit box statement.
@@ -457,7 +457,7 @@ emitBox :: Mode.Mode -> Opt.Global -> JS.Stmt
 emitBox mode global@(Opt.Global home name) =
   JS.Var (JsName.fromGlobal home name) $
     case mode of
-      Mode.Dev _ _ -> Expr.codeToExpr (Expr.generateCtor mode global Index.first 1)
+      Mode.Dev _ _ _ _ -> Expr.codeToExpr (Expr.generateCtor mode global Index.first 1)
       Mode.Prod {} -> JS.Ref (JsName.fromGlobal ModuleName.basics Name.identity)
 
 -- | Emit port statement.

@@ -1,0 +1,134 @@
+-- | Convenience functions for Playwright browser automation steps.
+--
+-- These functions create PlaywrightStep values that can be mixed directly
+-- into test lists alongside describe/test/skip/etc inside inBrowser.
+--
+-- Playwright steps are executed via a console.log RPC bridge: the browser
+-- test runner sends a JSON request, the Node.js Playwright launcher
+-- executes the command on an iframe target, and resolves the promise.
+--
+--     main : BrowserTest
+--     main =
+--         inBrowser
+--             [ visit "/app"
+--             , click "#start-button"
+--             , seeText "Playing"
+--             , screenshot "audio-playing"
+--             ]
+
+module Test.Browser exposing
+    ( visit
+    , click
+    , fill
+    , check
+    , seeText
+    , seeElement
+    , dontSee
+    , dontSeeElement
+    , waitFor
+    , screenshot
+    )
+
+import Test exposing (Test(..), PlaywrightAction(..))
+
+
+{-| Navigate the test iframe to the given URL.
+
+    visit "/login"
+
+-}
+visit : String -> Test
+visit url =
+    PlaywrightStep (Visit url)
+
+
+{-| Click an element matching the CSS selector.
+
+    click "#submit-button"
+
+-}
+click : String -> Test
+click selector =
+    PlaywrightStep (Click selector)
+
+
+{-| Fill an input matching the CSS selector with a value.
+
+    fill "#email" "user@example.com"
+
+-}
+fill : String -> String -> Test
+fill selector value =
+    PlaywrightStep (Fill selector value)
+
+
+{-| Check a checkbox matching the CSS selector.
+
+    check "#terms-checkbox"
+
+-}
+check : String -> Test
+check selector =
+    PlaywrightStep (Check selector)
+
+
+{-| Assert that the given text is visible on the page.
+
+    seeText "Welcome back"
+
+-}
+seeText : String -> Test
+seeText text =
+    PlaywrightStep (SeeText text)
+
+
+{-| Assert that an element matching the CSS selector is visible.
+
+    seeElement "#dashboard"
+
+-}
+seeElement : String -> Test
+seeElement selector =
+    PlaywrightStep (SeeElement selector)
+
+
+{-| Assert that the given text is NOT visible on the page.
+
+    dontSee "Error"
+
+-}
+dontSee : String -> Test
+dontSee text =
+    PlaywrightStep (DontSee text)
+
+
+{-| Assert that an element matching the CSS selector is NOT visible.
+
+    dontSeeElement "#error-banner"
+
+-}
+dontSeeElement : String -> Test
+dontSeeElement selector =
+    PlaywrightStep (DontSeeElement selector)
+
+
+{-| Wait for an element matching the CSS selector to become visible.
+
+    waitFor "#loading-complete"
+
+-}
+waitFor : String -> Test
+waitFor selector =
+    PlaywrightStep (WaitFor selector)
+
+
+{-| Take a screenshot with the given name.
+
+Screenshots are saved to test-output/screenshots/{name}.png.
+
+    screenshot "after-login"
+
+-}
+screenshot : String -> Test
+screenshot name =
+    PlaywrightStep (Screenshot name)

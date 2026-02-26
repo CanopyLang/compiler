@@ -3,6 +3,7 @@
 module Terminal.Helpers
   ( version,
     canopyFile,
+    canopyFileOrDir,
     repositoryLocalName,
     package,
   )
@@ -95,6 +96,30 @@ parseCanopyFile chars =
 exampleCanopyFiles :: String -> IO [String]
 exampleCanopyFiles _ =
   return ["Main.can", "src/Main.can"]
+
+-- CANOPY FILE OR DIRECTORY
+
+-- | Parser that accepts Canopy source files OR directories (for the test command).
+canopyFileOrDir :: Parser FilePath
+canopyFileOrDir =
+  Parser
+    { _singular = "Canopy source file or directory",
+      _plural = "Canopy source files or directories",
+      _parser = parseCanopyFileOrDir,
+      _suggest = \_ -> return [],
+      _examples = exampleCanopyFileOrDir
+    }
+
+parseCanopyFileOrDir :: String -> Maybe FilePath
+parseCanopyFileOrDir chars =
+  let ext = FilePath.takeExtension chars
+   in if ext == ".can" || ext == ".canopy" || ext == ".elm" || null ext
+        then Just chars
+        else Nothing
+
+exampleCanopyFileOrDir :: String -> IO [String]
+exampleCanopyFileOrDir _ =
+  return ["Main.can", "src/Main.can", "test/"]
 
 -- PACKAGE
 

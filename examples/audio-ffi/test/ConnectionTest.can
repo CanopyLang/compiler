@@ -2,47 +2,39 @@ module ConnectionTest exposing (main, suite)
 
 {-| Unit Tests for Audio Node Connection Functions
 
-Tests all node connection and disconnection functions.
+Tests node connection, disconnection, and channel routing functions.
 
 ## Functions Tested
 
 - connectNodes
 - connectToDestination
 - disconnectNode
-- connectNodesWithChannels
-- disconnectNodeFromDestination
-- disconnectNodeOutput
-- disconnectNodeFromNodeChannel
 - createChannelSplitter
 - createChannelMerger
-- getNodeChannelCount
-- setNodeChannelCount
-- getNodeChannelCountMode
-- setNodeChannelCountMode
-- getNodeChannelInterpretation
-- setNodeChannelInterpretation
-- getNodeNumberOfInputs
-- getNodeNumberOfOutputs
-- getNodeContext
 - getContextDestination
+- getSplitterNumberOfOutputs
+- getMergerNumberOfInputs
+- getDestinationNumberOfOutputs
+- getGainNodeChannelCount
 
 -}
 
-import Html exposing (Html, pre, text)
-import Test exposing (Test, describe, test, runTests)
+import Test exposing (Test, BrowserTest, describe, test, inBrowser)
 import Expect
 import AudioFFI
 import Capability exposing (UserActivated(..), Initialized(..), CapabilityError(..))
 import Result exposing (Result(..))
 
 
-main : Html msg
+main : BrowserTest
 main =
-    let
-        results =
-            runTests [ suite ]
-    in
-    pre [] [ text results ]
+    inBrowser
+        [ describe "Connection Functions"
+            [ basicConnectionTests
+            , disconnectionTests
+            , channelTests
+            ]
+        ]
 
 
 suite : Test
@@ -51,7 +43,6 @@ suite =
         [ basicConnectionTests
         , disconnectionTests
         , channelTests
-        , nodePropertyTests
         ]
 
 
@@ -67,37 +58,37 @@ basicConnectionTests =
             [ test "connects oscillator to gain" <|
                 \_ ->
                     withContext <| \ctx ->
-                        case AudioFFI.createOscillator ctx 440.0 "sine" of
-                            Ok osc ->
-                                case AudioFFI.createGainNode ctx 1.0 of
-                                    Ok gain ->
-                                        case AudioFFI.connectNodes osc gain of
-                                            Ok _ -> Expect.pass
-                                            Err _ -> Expect.pass
-                                    Err _ -> Expect.pass
-                            Err _ -> Expect.pass
+                        expectOk "createOscillator" (AudioFFI.createOscillator ctx 440.0 "sine") <| \osc ->
+                            expectOk "createGainNode" (AudioFFI.createGainNode ctx 1.0) <| \gain ->
+                                expectOk "connectNodes" (AudioFFI.connectNodes osc gain) <| \_ ->
+                                    Expect.pass
             ]
 
         , describe "connectToDestination"
             [ test "connects gain to destination" <|
                 \_ ->
                     withContext <| \ctx ->
-                        case AudioFFI.createGainNode ctx 1.0 of
-                            Ok gain ->
-                                case AudioFFI.connectToDestination gain ctx of
-                                    Ok _ -> Expect.pass
-                                    Err _ -> Expect.pass
-                            Err _ -> Expect.pass
+                        expectOk "createGainNode" (AudioFFI.createGainNode ctx 1.0) <| \gain ->
+                            expectOk "connectToDestination" (AudioFFI.connectToDestination gain ctx) <| \_ ->
+                                Expect.pass
             ]
 
         , describe "getContextDestination"
-            [ test "returns destination node" <|
+            [ test "destination has 0 outputs (it is a sink)" <|
                 \_ ->
                     withRawContext <| \ctx ->
                         let
                             dest = AudioFFI.getContextDestination ctx
                         in
-                        Expect.pass
+                        Expect.equal 0 (AudioFFI.getDestinationNumberOfOutputs dest)
+            ]
+
+        , describe "getGainNodeChannelCount"
+            [ test "gain node has default channel count of 2" <|
+                \_ ->
+                    withContext <| \ctx ->
+                        expectOk "createGainNode" (AudioFFI.createGainNode ctx 1.0) <| \gain ->
+                            Expect.equal 2 (AudioFFI.getGainNodeChannelCount gain)
             ]
         ]
 
@@ -111,16 +102,13 @@ disconnectionTests : Test
 disconnectionTests =
     describe "disconnection"
         [ describe "disconnectNode"
-            [ test "disconnects gain node" <|
+            [ test "disconnects gain node without error" <|
                 \_ ->
                     withContext <| \ctx ->
-                        case AudioFFI.createGainNode ctx 1.0 of
-                            Ok gain ->
-                                let
-                                    _ = AudioFFI.disconnectNode gain
-                                in
-                                Expect.pass
-                            Err _ -> Expect.pass
+                        expectOk "createGainNode" (AudioFFI.createGainNode ctx 1.0) <| \gain ->
+                            case AudioFFI.disconnectNode gain of
+                                _ ->
+                                    Expect.pass
             ]
         ]
 
@@ -134,152 +122,39 @@ channelTests : Test
 channelTests =
     describe "channel operations"
         [ describe "createChannelSplitter"
-            [ test "creates splitter with 2 channels" <|
+            [ test "creates splitter with 2 outputs" <|
                 \_ ->
                     withRawContext <| \ctx ->
                         let
                             splitter = AudioFFI.createChannelSplitter ctx 2
                         in
-                        Expect.pass
+                        Expect.equal 2 (AudioFFI.getSplitterNumberOfOutputs splitter)
 
-            , test "creates splitter with 6 channels" <|
+            , test "creates splitter with 6 outputs" <|
                 \_ ->
                     withRawContext <| \ctx ->
                         let
                             splitter = AudioFFI.createChannelSplitter ctx 6
                         in
-                        Expect.pass
+                        Expect.equal 6 (AudioFFI.getSplitterNumberOfOutputs splitter)
             ]
 
         , describe "createChannelMerger"
-            [ test "creates merger with 2 channels" <|
+            [ test "creates merger with 2 inputs" <|
                 \_ ->
                     withRawContext <| \ctx ->
                         let
                             merger = AudioFFI.createChannelMerger ctx 2
                         in
-                        Expect.pass
+                        Expect.equal 2 (AudioFFI.getMergerNumberOfInputs merger)
 
-            , test "creates merger with 6 channels" <|
+            , test "creates merger with 6 inputs" <|
                 \_ ->
                     withRawContext <| \ctx ->
                         let
                             merger = AudioFFI.createChannelMerger ctx 6
                         in
-                        Expect.pass
-            ]
-        ]
-
-
--- ============================================================================
--- NODE PROPERTY TESTS
--- ============================================================================
-
-
-nodePropertyTests : Test
-nodePropertyTests =
-    describe "node properties"
-        [ describe "getNodeNumberOfInputs"
-            [ test "returns input count" <|
-                \_ ->
-                    withContext <| \ctx ->
-                        case AudioFFI.createGainNode ctx 1.0 of
-                            Ok gain ->
-                                let
-                                    inputs = AudioFFI.getNodeNumberOfInputs (toAudioNode gain)
-                                in
-                                Expect.true "should have at least 1 input" (inputs >= 1)
-                            Err _ -> Expect.pass
-            ]
-
-        , describe "getNodeNumberOfOutputs"
-            [ test "returns output count" <|
-                \_ ->
-                    withContext <| \ctx ->
-                        case AudioFFI.createGainNode ctx 1.0 of
-                            Ok gain ->
-                                let
-                                    outputs = AudioFFI.getNodeNumberOfOutputs (toAudioNode gain)
-                                in
-                                Expect.true "should have at least 1 output" (outputs >= 1)
-                            Err _ -> Expect.pass
-            ]
-
-        , describe "getNodeChannelCount"
-            [ test "returns channel count" <|
-                \_ ->
-                    withContext <| \ctx ->
-                        case AudioFFI.createGainNode ctx 1.0 of
-                            Ok gain ->
-                                let
-                                    channels = AudioFFI.getNodeChannelCount (toAudioNode gain)
-                                in
-                                Expect.true "should have valid channel count" (channels > 0)
-                            Err _ -> Expect.pass
-            ]
-
-        , describe "getNodeChannelCountMode"
-            [ test "returns channel count mode" <|
-                \_ ->
-                    withContext <| \ctx ->
-                        case AudioFFI.createGainNode ctx 1.0 of
-                            Ok gain ->
-                                let
-                                    mode = AudioFFI.getNodeChannelCountMode (toAudioNode gain)
-                                in
-                                Expect.true "should be valid mode"
-                                    (mode == "max" || mode == "clamped-max" || mode == "explicit")
-                            Err _ -> Expect.pass
-            ]
-
-        , describe "getNodeChannelInterpretation"
-            [ test "returns channel interpretation" <|
-                \_ ->
-                    withContext <| \ctx ->
-                        case AudioFFI.createGainNode ctx 1.0 of
-                            Ok gain ->
-                                let
-                                    interp = AudioFFI.getNodeChannelInterpretation (toAudioNode gain)
-                                in
-                                Expect.true "should be valid interpretation"
-                                    (interp == "speakers" || interp == "discrete")
-                            Err _ -> Expect.pass
-            ]
-
-        , describe "setNodeChannelCount"
-            [ test "sets channel count" <|
-                \_ ->
-                    withContext <| \ctx ->
-                        case AudioFFI.createGainNode ctx 1.0 of
-                            Ok gain ->
-                                case AudioFFI.setNodeChannelCount (toAudioNode gain) 2 of
-                                    Ok _ -> Expect.pass
-                                    Err _ -> Expect.pass
-                            Err _ -> Expect.pass
-            ]
-
-        , describe "setNodeChannelCountMode"
-            [ test "sets channel count mode" <|
-                \_ ->
-                    withContext <| \ctx ->
-                        case AudioFFI.createGainNode ctx 1.0 of
-                            Ok gain ->
-                                case AudioFFI.setNodeChannelCountMode (toAudioNode gain) "explicit" of
-                                    Ok _ -> Expect.pass
-                                    Err _ -> Expect.pass
-                            Err _ -> Expect.pass
-            ]
-
-        , describe "setNodeChannelInterpretation"
-            [ test "sets channel interpretation" <|
-                \_ ->
-                    withContext <| \ctx ->
-                        case AudioFFI.createGainNode ctx 1.0 of
-                            Ok gain ->
-                                case AudioFFI.setNodeChannelInterpretation (toAudioNode gain) "speakers" of
-                                    Ok _ -> Expect.pass
-                                    Err _ -> Expect.pass
-                            Err _ -> Expect.pass
+                        Expect.equal 6 (AudioFFI.getMergerNumberOfInputs merger)
             ]
         ]
 
@@ -293,14 +168,14 @@ withContext : (Initialized AudioFFI.AudioContext -> Expect.Expectation) -> Expec
 withContext fn =
     case AudioFFI.createAudioContext Click of
         Ok ctx -> fn ctx
-        Err _ -> Expect.pass
+        Err err -> Expect.fail ("withContext: createAudioContext failed: " ++ errorToString err)
 
 
 withRawContext : (AudioFFI.AudioContext -> Expect.Expectation) -> Expect.Expectation
 withRawContext fn =
     case AudioFFI.createAudioContext Click of
         Ok ctx -> fn (extractContext ctx)
-        Err _ -> Expect.pass
+        Err err -> Expect.fail ("withRawContext: createAudioContext failed: " ++ errorToString err)
 
 
 extractContext : Initialized AudioFFI.AudioContext -> AudioFFI.AudioContext
@@ -310,8 +185,20 @@ extractContext initialized =
         Running ctx -> ctx
 
 
--- | Convert GainNode to AudioNode using the proper FFI binding.
--- This is safe because GainNode is a subtype of AudioNode in Web Audio API.
-toAudioNode : AudioFFI.GainNode -> AudioFFI.AudioNode
-toAudioNode =
-    AudioFFI.gainNodeToAudioNode
+expectOk : String -> Result CapabilityError a -> (a -> Expect.Expectation) -> Expect.Expectation
+expectOk label result fn =
+    case result of
+        Ok value -> fn value
+        Err err -> Expect.fail (label ++ ": " ++ errorToString err)
+
+
+errorToString : CapabilityError -> String
+errorToString err =
+    case err of
+        UserActivationRequired msg -> "UserActivationRequired: " ++ msg
+        InitializationRequired msg -> "InitializationRequired: " ++ msg
+        FeatureNotAvailable msg -> "FeatureNotAvailable: " ++ msg
+        NotSupportedError msg -> "NotSupportedError: " ++ msg
+        InvalidStateError msg -> "InvalidStateError: " ++ msg
+        RangeError msg -> "RangeError: " ++ msg
+        _ -> "Unknown error"

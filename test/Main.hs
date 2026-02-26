@@ -109,6 +109,7 @@ import qualified Unit.Canonicalize.LazyImportValidationTest as LazyImportValidat
 import qualified Unit.Canonicalize.ModuleTest as CanonicalizeModuleTest
 import qualified Unit.Canonicalize.PatternTest as CanonicalizePatternTest
 import qualified Unit.Type.UnionFindTest as UnionFindTest
+import qualified Unit.FFI.ValidatorTest as FFIValidatorTest
 import qualified Property.Type.UnifyProperties as UnifyProperties
 import qualified Property.Type.UnionFindProperties as UnionFindProperties
 import qualified Property.Data.NameProperties as NameProperties
@@ -219,7 +220,8 @@ unitTests =
       CanonicalizeDupsTest.tests,
       CanonicalizePatternTest.tests,
       CanonicalizeModuleTest.tests,
-      LazyImportValidationTest.tests
+      LazyImportValidationTest.tests,
+      FFIValidatorTest.tests
     ]
 
 propertyTests :: TestTree

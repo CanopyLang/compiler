@@ -47,8 +47,9 @@ import System.FilePath ((</>))
 type PkgName = Pkg.Name
 
 -- | Dummy package name for applications.
+-- NOTE: Must match Pkg.dummyName in canopy-core to ensure consistent JS naming.
 dummyPkgName :: Pkg.Name
-dummyPkgName = Pkg.Name (Utf8.fromChars "user") (Utf8.fromChars "project")
+dummyPkgName = Pkg.Name (Utf8.fromChars "author") (Utf8.fromChars "project")
 
 -- | Project details and configuration (pure, no MVar).
 data Details = Details

@@ -19,7 +19,7 @@
 
 /**
  * Run full accessibility audit on current page
- * @canopy-type Browser -> Task AuditError AuditResult
+ * @canopy-type Browser -> Task BrowserError AuditResult
  * @name audit
  * @param {Object} browser - Browser handle from playwright.js
  * @returns {Promise<Object>} Audit results with violations, passes, incomplete
@@ -38,7 +38,7 @@ async function audit(browser) {
 
 /**
  * Run accessibility audit on specific element
- * @canopy-type String -> Browser -> Task AuditError AuditResult
+ * @canopy-type String -> Browser -> Task BrowserError AuditResult
  * @name auditElement
  * @param {string} selector - CSS selector for element to audit
  * @param {Object} browser - Browser handle
@@ -60,7 +60,7 @@ async function auditElement(selector, browser) {
 
 /**
  * Run accessibility audit with specific rules only
- * @canopy-type List String -> Browser -> Task AuditError AuditResult
+ * @canopy-type List String -> Browser -> Task BrowserError AuditResult
  * @name auditWithRules
  * @param {string[]} rules - List of rule IDs to run (e.g., ["color-contrast", "label"])
  * @param {Object} browser - Browser handle
@@ -83,7 +83,7 @@ async function auditWithRules(rules, browser) {
 
 /**
  * Run accessibility audit excluding specific rules
- * @canopy-type List String -> Browser -> Task AuditError AuditResult
+ * @canopy-type List String -> Browser -> Task BrowserError AuditResult
  * @name auditExcluding
  * @param {string[]} rules - List of rule IDs to exclude
  * @param {Object} browser - Browser handle
@@ -110,7 +110,7 @@ async function auditExcluding(rules, browser) {
 
 /**
  * Check WCAG 2.1 Level A compliance
- * @canopy-type Browser -> Task AuditError AuditResult
+ * @canopy-type Browser -> Task BrowserError AuditResult
  * @name checkWcagA
  * @param {Object} browser - Browser handle
  * @returns {Promise<Object>} Audit results for Level A
@@ -132,7 +132,7 @@ async function checkWcagA(browser) {
 
 /**
  * Check WCAG 2.1 Level AA compliance
- * @canopy-type Browser -> Task AuditError AuditResult
+ * @canopy-type Browser -> Task BrowserError AuditResult
  * @name checkWcagAA
  * @param {Object} browser - Browser handle
  * @returns {Promise<Object>} Audit results for Level AA
@@ -154,7 +154,7 @@ async function checkWcagAA(browser) {
 
 /**
  * Check WCAG 2.1 Level AAA compliance
- * @canopy-type Browser -> Task AuditError AuditResult
+ * @canopy-type Browser -> Task BrowserError AuditResult
  * @name checkWcagAAA
  * @param {Object} browser - Browser handle
  * @returns {Promise<Object>} Audit results for Level AAA
@@ -180,7 +180,7 @@ async function checkWcagAAA(browser) {
 
 /**
  * Check form labels accessibility
- * @canopy-type Browser -> Task AuditError AuditResult
+ * @canopy-type Browser -> Task BrowserError AuditResult
  * @name checkLabels
  * @param {Object} browser - Browser handle
  * @returns {Promise<Object>} Audit results for label-related rules
@@ -191,7 +191,7 @@ async function checkLabels(browser) {
 
 /**
  * Check color contrast accessibility
- * @canopy-type Browser -> Task AuditError AuditResult
+ * @canopy-type Browser -> Task BrowserError AuditResult
  * @name checkContrast
  * @param {Object} browser - Browser handle
  * @returns {Promise<Object>} Audit results for contrast rules
@@ -202,7 +202,7 @@ async function checkContrast(browser) {
 
 /**
  * Check heading structure
- * @canopy-type Browser -> Task AuditError AuditResult
+ * @canopy-type Browser -> Task BrowserError AuditResult
  * @name checkHeadings
  * @param {Object} browser - Browser handle
  * @returns {Promise<Object>} Audit results for heading rules
@@ -213,7 +213,7 @@ async function checkHeadings(browser) {
 
 /**
  * Check landmark regions
- * @canopy-type Browser -> Task AuditError AuditResult
+ * @canopy-type Browser -> Task BrowserError AuditResult
  * @name checkLandmarks
  * @param {Object} browser - Browser handle
  * @returns {Promise<Object>} Audit results for landmark rules
@@ -234,7 +234,7 @@ async function checkLandmarks(browser) {
 
 /**
  * Check ARIA attributes
- * @canopy-type Browser -> Task AuditError AuditResult
+ * @canopy-type Browser -> Task BrowserError AuditResult
  * @name checkAria
  * @param {Object} browser - Browser handle
  * @returns {Promise<Object>} Audit results for ARIA rules
@@ -264,7 +264,7 @@ async function checkAria(browser) {
 
 /**
  * Check keyboard accessibility
- * @canopy-type Browser -> Task AuditError AuditResult
+ * @canopy-type Browser -> Task BrowserError AuditResult
  * @name checkKeyboard
  * @param {Object} browser - Browser handle
  * @returns {Promise<Object>} Audit results for keyboard rules
@@ -284,7 +284,7 @@ async function checkKeyboard(browser) {
 
 /**
  * Check image accessibility (alt text, etc.)
- * @canopy-type Browser -> Task AuditError AuditResult
+ * @canopy-type Browser -> Task BrowserError AuditResult
  * @name checkImages
  * @param {Object} browser - Browser handle
  * @returns {Promise<Object>} Audit results for image rules
@@ -301,7 +301,7 @@ async function checkImages(browser) {
 
 /**
  * Check link accessibility
- * @canopy-type Browser -> Task AuditError AuditResult
+ * @canopy-type Browser -> Task BrowserError AuditResult
  * @name checkLinks
  * @param {Object} browser - Browser handle
  * @returns {Promise<Object>} Audit results for link rules
@@ -316,7 +316,7 @@ async function checkLinks(browser) {
 
 /**
  * Check table accessibility
- * @canopy-type Browser -> Task AuditError AuditResult
+ * @canopy-type Browser -> Task BrowserError AuditResult
  * @name checkTables
  * @param {Object} browser - Browser handle
  * @returns {Promise<Object>} Audit results for table rules
