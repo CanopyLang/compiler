@@ -30,6 +30,7 @@ module Test.Harness
 
     -- * Generation
     generateBrowserHarness,
+    generateBrowserTestHarness,
     generateUnitHarness,
 
     -- * Lenses
@@ -246,6 +247,80 @@ executeSection =
       "",
       "  console.error('No test modules found.');",
       "  process.exit(1);",
+      "})();"
+    ]
+
+-- | Generate an HTML page for BrowserTest execution.
+--
+-- Produces a self-contained HTML file that:
+--
+-- 1. Includes the compiled Canopy test code (with FFI externals)
+-- 2. Includes the browser-side test runner
+-- 3. Initializes the test module and extracts @_browserTestMain@
+-- 4. Runs all tests with real browser APIs
+-- 5. Emits NDJSON results via @console.log@
+-- 6. Sets @window.__canopyTestsDone@ and @window.__canopyExitCode@
+--
+-- The Playwright launcher script navigates to this page and collects
+-- the console.log output as NDJSON.
+--
+-- @since 0.19.1
+generateBrowserTestHarness ::
+  JsContent ->
+  JsContent ->
+  HarnessContent
+generateBrowserTestHarness tests browserRunner =
+  HarnessContent (Text.unlines sections)
+  where
+    sections =
+      [ "<!DOCTYPE html>",
+        "<html>",
+        "<head><title>Canopy Browser Tests</title></head>",
+        "<body>",
+        "  <div id=\"test-root\"></div>",
+        "  <iframe id=\"test-target\" style=\"width:100%;height:0;border:none;position:absolute;\"></iframe>",
+        "  <script>",
+        unJsContent tests,
+        "  </script>",
+        "  <script>",
+        unJsContent browserRunner,
+        "  </script>",
+        "  <script>",
+        browserTestExecuteSection,
+        "  </script>",
+        "</body>",
+        "</html>"
+      ]
+
+-- | JavaScript execution block for the browser test HTML page.
+--
+-- Finds the compiled Canopy module, calls @init()@, extracts the
+-- @_browserTestMain@ value, and passes it to the async browser test runner.
+-- The runner is async because PlaywrightStep nodes send RPC requests
+-- and await responses from the Node.js Playwright launcher.
+browserTestExecuteSection :: Text
+browserTestExecuteSection =
+  Text.unlines
+    [ "(async function() {",
+      "  var scope = window.Canopy || window.Elm || {};",
+      "  var moduleNames = Object.keys(scope);",
+      "  for (var i = 0; i < moduleNames.length; i++) {",
+      "    var mod = scope[moduleNames[i]];",
+      "    if (mod && typeof mod.init === 'function') {",
+      "      try {",
+      "        var app = mod.init();",
+      "        if (app && app._browserTestMain) {",
+      "          await window.__canopyBrowserTestRunner.run(app._browserTestMain);",
+      "          return;",
+      "        }",
+      "      } catch (e) {",
+      "        console.log(JSON.stringify({event:'result',status:'failed',name:'Module init',duration:0,message:'Init failed: ' + e.message}));",
+      "      }",
+      "    }",
+      "  }",
+      "  console.log(JSON.stringify({event:'summary',passed:0,failed:1,skipped:0,todo:0,total:1,duration:0}));",
+      "  window.__canopyTestsDone = true;",
+      "  window.__canopyExitCode = 1;",
       "})();"
     ]
 

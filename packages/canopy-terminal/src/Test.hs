@@ -347,12 +347,21 @@ builderToString b =
 -- | Detect test type and dispatch to the appropriate execution pipeline.
 --
 -- Uses the 'Opt.Main' type from compilation artifacts for reliable detection:
--- 'Opt.TestMain' indicates a non-visual program (test or async), while
+-- 'Opt.BrowserTestMain' runs tests in a real browser via Playwright.
+-- 'Opt.TestMain' indicates a non-visual program (test or async).
 -- 'Opt.Static' indicates a standard HTML program (unit test with DOM output).
 dispatchByTestType :: String -> Map.Map ModuleName.Canonical Opt.Main -> [FilePath] -> Flags -> IO ExitCode
 dispatchByTestType jsContent mains testFiles flags
+  | hasBrowserTestMain mains = executeBrowserExecutionTests jsContent testFiles flags
   | hasTestMain mains = executeBrowserTests jsContent testFiles flags
   | otherwise = executeUnitTests jsContent flags
+
+-- | Check if any main entry is a 'BrowserTestMain' (real browser test).
+hasBrowserTestMain :: Map.Map ModuleName.Canonical Opt.Main -> Bool
+hasBrowserTestMain = any isBrowserTestMain . Map.elems
+  where
+    isBrowserTestMain Opt.BrowserTestMain = True
+    isBrowserTestMain _ = False
 
 -- | Check if any main entry is a 'TestMain' (non-visual test program).
 hasTestMain :: Map.Map ModuleName.Canonical Opt.Main -> Bool
@@ -360,6 +369,102 @@ hasTestMain = any isTestMain . Map.elems
   where
     isTestMain Opt.TestMain = True
     isTestMain _ = False
+
+-- ── Browser Execution Tests (BrowserTestMain) ───────────────────────
+
+-- | Execute tests in a real browser via Playwright.
+--
+-- For @main : BrowserTest@ programs. Generates an HTML page with the
+-- compiled tests and browser-test-runner.js, serves it via an embedded
+-- HTTP server, launches Playwright to navigate to the page, and collects
+-- NDJSON results from console.log events.
+--
+-- @since 0.19.1
+executeBrowserExecutionTests :: String -> [FilePath] -> Flags -> IO ExitCode
+executeBrowserExecutionTests jsContent testFiles flags = do
+  Print.println [c|{cyan|Browser execution tests detected.} Setting up real browser environment...|]
+  Print.newline
+  runBrowserExecutionPipeline jsContent testFiles flags
+    `Exception.catch` handleBrowserError
+
+-- | Run the browser execution pipeline.
+runBrowserExecutionPipeline :: String -> [FilePath] -> Flags -> IO ExitCode
+runBrowserExecutionPipeline jsContent _testFiles flags = do
+  playwrightReady <- Playwright.ensurePlaywrightInstalled
+  if not playwrightReady
+    then pure (ExitFailure 1)
+    else do
+      bundleResult <- External.loadBrowserTestBundle
+      case bundleResult of
+        Left err -> reportExternalError err
+        Right (browserRunner, rpcModule) ->
+          runBrowserExecutionWithServer jsContent flags browserRunner rpcModule
+
+-- | Start server, write HTML harness, launch Playwright, collect results.
+runBrowserExecutionWithServer :: String -> Flags -> JsContent -> JsContent -> IO ExitCode
+runBrowserExecutionWithServer jsContent flags browserRunner rpcModule = do
+  portResult <- Server.findAvailablePort
+  case portResult of
+    Left _ -> do
+      Print.printErrLn [c|{red|Error:} Could not find an available port (8000-9000).|]
+      pure (ExitFailure 1)
+    Right port -> do
+      tmpDir <- Dir.getTemporaryDirectory
+      let htmlPath = tmpDir </> "canopy-browser-test.html"
+          rpcPath = tmpDir </> "canopy-playwright-rpc.js"
+          harness = Harness.generateBrowserTestHarness (JsContent (Text.pack jsContent)) browserRunner
+      writeFile htmlPath (Text.unpack (unHarnessContent harness))
+      writeFile rpcPath (Text.unpack (unJsContent rpcModule))
+      server <- Server.startTestServer tmpDir port
+      when (flags ^. testVerbose) $ do
+        let portStr = show (unServerPort port)
+        Print.println [c|  Serving tests at {cyan|http://127.0.0.1:#{portStr}/canopy-browser-test.html}|]
+      result <- launchPlaywrightForBrowserTests port flags tmpDir
+      Server.stopTestServer server
+      pure result
+
+-- | Generate and execute a Node.js Playwright launcher script.
+--
+-- The launcher loads @playwright-rpc.js@, sets up the RPC bridge,
+-- navigates to the HTML harness, intercepts console.log events
+-- (forwarding NDJSON and handling RPC requests), and waits for
+-- @window.__canopyTestsDone@.
+launchPlaywrightForBrowserTests :: ServerPort -> Flags -> FilePath -> IO ExitCode
+launchPlaywrightForBrowserTests port flags tmpDir = do
+  let launcherPath = tmpDir </> "canopy-browser-launcher.js"
+      rpcPath = tmpDir </> "canopy-playwright-rpc.js"
+      headless = not (flags ^. testHeaded)
+      portStr = show (unServerPort port)
+      headlessStr = if headless then "true" else "false"
+      escapedRpcPath = Text.replace "\\" "\\\\" (Text.pack rpcPath)
+      launcher = Text.unlines
+        [ "const { chromium } = require('playwright');",
+          "const _fs = require('fs');",
+          "const rpc = require('" <> escapedRpcPath <> "');",
+          "(async () => {",
+          "  const browser = await chromium.launch({",
+          "    headless: " <> Text.pack headlessStr <> ",",
+          "    args: ['--autoplay-policy=no-user-gesture-required']",
+          "  });",
+          "  const page = await browser.newPage();",
+          "  const forward = (text) => _fs.writeSync(1, text + '\\n');",
+          "  rpc.setup(page, forward);",
+          "  page.on('pageerror', err => {",
+          "    _fs.writeSync(2, 'Page error: ' + err.message + '\\n');",
+          "  });",
+          "  await page.goto('http://127.0.0.1:" <> Text.pack portStr <> "/canopy-browser-test.html');",
+          "  await page.waitForFunction(() => window.__canopyTestsDone === true, { timeout: 60000 });",
+          "  const exitCode = await page.evaluate(() => window.__canopyExitCode || 0);",
+          "  await browser.close();",
+          "  process.exit(exitCode);",
+          "})().catch(err => {",
+          "  _fs.writeSync(2, 'Playwright error: ' + err.message + '\\n');",
+          "  process.exit(1);",
+          "});"
+        ]
+  writeFile launcherPath (Text.unpack launcher)
+  cwd <- Dir.getCurrentDirectory
+  runNodeForBrowserTests launcherPath cwd (flags ^. testVerbose)
 
 -- ── Unit Test Execution ──────────────────────────────────────────────
 

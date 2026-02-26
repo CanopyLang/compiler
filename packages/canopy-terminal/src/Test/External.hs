@@ -24,6 +24,9 @@ module Test.External
     -- * Loading
     loadExternalModule,
     loadTestRunnerBundle,
+    loadBrowserTestRunner,
+    loadPlaywrightRpc,
+    loadBrowserTestBundle,
   )
 where
 
@@ -43,6 +46,10 @@ data ExternalModule
     TaskExecutor
   | -- | Playwright browser automation bindings
     PlaywrightBindings
+  | -- | Browser-side test runner for BrowserTest execution
+    BrowserTestRunner
+  | -- | Node.js RPC dispatcher bridging console.log to Playwright commands
+    PlaywrightRpc
   deriving (Eq, Show)
 
 -- | Errors when loading external modules.
@@ -143,8 +150,41 @@ loadFromDir modType pkgVersionDir = do
     then fmap (Right . JsContent) (TextIO.readFile path)
     else pure (Left (ModuleFileNotFound modType path))
 
+-- | Load the browser-side test runner for BrowserTest execution.
+--
+-- @since 0.19.1
+loadBrowserTestRunner :: IO (Either ExternalModuleError JsContent)
+loadBrowserTestRunner = loadExternalModule BrowserTestRunner
+
+-- | Load the Node.js Playwright RPC dispatcher.
+--
+-- @since 0.19.1
+loadPlaywrightRpc :: IO (Either ExternalModuleError JsContent)
+loadPlaywrightRpc = loadExternalModule PlaywrightRpc
+
+-- | Load both the browser test runner and Playwright RPC module.
+--
+-- Returns @(browser-test-runner.js, playwright-rpc.js)@.
+--
+-- @since 0.19.1
+loadBrowserTestBundle :: IO (Either ExternalModuleError (JsContent, JsContent))
+loadBrowserTestBundle = do
+  maybeDir <- findTestPackageDir
+  case maybeDir of
+    Left err -> pure (Left err)
+    Right dir -> do
+      runnerResult <- loadFromDir BrowserTestRunner dir
+      rpcResult <- loadFromDir PlaywrightRpc dir
+      pure (combineTwo runnerResult rpcResult)
+  where
+    combineTwo (Right r) (Right p) = Right (r, p)
+    combineTwo (Left err) _ = Left err
+    combineTwo _ (Left err) = Left err
+
 -- | Map a module type to its filename.
 moduleFileName :: ExternalModule -> FilePath
 moduleFileName TestRunner = "test-runner.js"
 moduleFileName TaskExecutor = "task-executor.js"
 moduleFileName PlaywrightBindings = "playwright.js"
+moduleFileName BrowserTestRunner = "browser-test-runner.js"
+moduleFileName PlaywrightRpc = "playwright-rpc.js"

@@ -1,8 +1,11 @@
 -- | Test framework for Canopy (similar to elm-explorations/test)
--- Provides core testing functionality including sync and async tests
+-- Provides core testing functionality including sync, async, and browser tests
 
 module Test exposing
   ( Test
+  , PlaywrightAction(..)
+  , BrowserTest(..)
+  , inBrowser
   , describe
   , test
   , skip
@@ -10,20 +13,14 @@ module Test exposing
   , only
   , fuzz
   , asyncTest
-  , browserTest
   , toRunner
   , run
   , runTests
   , TestResult
   , RunnerResult
   , TestError(..)
-  , BrowserConfig
-  , BrowserStep
-  , BrowserTestError(..)
-  , defaultBrowserConfig
   )
 
-import Browser exposing (Browser)
 import Expect exposing (Expectation)
 import Task exposing (Task)
 
@@ -34,23 +31,75 @@ The Test type supports several kinds of tests:
 
   - `UnitTest` - Synchronous test with immediate expectation
   - `TestGroup` - Group of tests (describe block)
-  - `BrowserTest` - Async browser test with Playwright steps
   - `AsyncTest` - Generic async test returning Task<Expectation>
   - `Skip` - Skipped test (will be reported but not run)
   - `Todo` - Placeholder test (will be reported as todo)
   - `Only` - Focus on this test only (for debugging)
   - `FuzzTest` - Property-based test with random input
+  - `PlaywrightStep` - Playwright browser automation step (visit, click, fill, etc.)
 
 -}
 type Test
   = UnitTest String (() -> Expectation)
   | TestGroup String (List Test)
-  | BrowserTest String BrowserConfig (List BrowserStep)
   | AsyncTest String (Task TestError Expectation)
   | Skip Test
   | Todo String
   | Only Test
   | FuzzTest String
+  | PlaywrightStep PlaywrightAction
+
+
+{-| Actions that can be performed via Playwright in the browser.
+
+Each action maps to a Playwright command executed on an iframe target
+via the console.log RPC bridge.
+
+-}
+type PlaywrightAction
+  = Visit String
+  | Click String
+  | Fill String String
+  | Check String
+  | SeeText String
+  | SeeElement String
+  | DontSee String
+  | DontSeeElement String
+  | WaitFor String
+  | Screenshot String
+
+
+{-| A BrowserTest wraps a list of Tests for execution in a real browser.
+
+Use this when your tests need real browser APIs (Web Audio, Canvas, WebGL, etc.)
+that are not available in Node.js. Supports both direct browser API tests and
+Playwright automation steps.
+
+    main : BrowserTest
+    main =
+        inBrowser
+            [ describe "Web Audio"
+                [ test "creates oscillator" <| \_ -> ...
+                ]
+            , visit "/app"
+            , click "#start-button"
+            , seeText "Playing"
+            ]
+
+-}
+type BrowserTest = InBrowser (List Test)
+
+
+{-| Create a BrowserTest from a list of tests.
+
+    main : BrowserTest
+    main =
+        inBrowser [ suite ]
+
+-}
+inBrowser : List Test -> BrowserTest
+inBrowser tests =
+    InBrowser tests
 
 
 {-| Error type for async and browser tests.
@@ -61,52 +110,9 @@ type TestError
   | BrowserError String
 
 
-{-| Browser configuration for browser tests.
--}
-type alias BrowserConfig =
-  { browser : String
-  , headless : Bool
-  , slowMo : Int
-  , viewport : { width : Int, height : Int }
-  , timeout : Int
-  , recordVideo : Bool
-  }
-
-
-{-| A browser test step (function from Browser to Task).
--}
-type alias BrowserStep =
-  Browser -> Task BrowserTestError Browser
-
-
-{-| Browser test error type.
--}
-type BrowserTestError
-  = LaunchError String
-  | NavigationError String
-  | ElementNotFound String
-  | TimeoutError String
-  | EvaluationError String
-  | ScreenshotError String
-  | NetworkError String
-
-
 {-| Fuzzer type for property-based testing.
 -}
 type Fuzzer a = Fuzzer
-
-
-{-| Default browser configuration.
--}
-defaultBrowserConfig : BrowserConfig
-defaultBrowserConfig =
-  { browser = "chromium"
-  , headless = True
-  , slowMo = 0
-  , viewport = { width = 1280, height = 720 }
-  , timeout = 30000
-  , recordVideo = False
-  }
 
 
 -- | Test result type for internal use
@@ -207,22 +213,6 @@ asyncTest description taskExpectation =
   AsyncTest description taskExpectation
 
 
-{-| Create a browser test with Playwright.
-
-    browserTest "login flow" defaultBrowserConfig
-        [ visit "http://localhost:3000/login"
-        , fill "#email" "test@example.com"
-        , fill "#password" "secret"
-        , click "#submit"
-        , see "#dashboard"
-        ]
-
--}
-browserTest : String -> BrowserConfig -> List BrowserStep -> Test
-browserTest description config steps =
-  BrowserTest description config steps
-
-
 -- | Convert tests to the runner format expected by the test harness
 -- Returns a list of { name, passed, reason } results
 toRunner : List Test -> List RunnerResult
@@ -257,13 +247,6 @@ runToRunnerResults testCase =
     Only innerTest ->
       runToRunnerResults innerTest
 
-    BrowserTest description _config _steps ->
-      [ { name = description
-        , passed = True
-        , reason = "BROWSER_TEST (run with async runner)"
-        }
-      ]
-
     AsyncTest description _task ->
       [ { name = description
         , passed = True
@@ -278,6 +261,13 @@ runToRunnerResults testCase =
         }
       ]
 
+    PlaywrightStep _action ->
+      [ { name = describePlaywrightAction _action
+        , passed = True
+        , reason = "PLAYWRIGHT_STEP (run in browser)"
+        }
+      ]
+
 
 {-| Get the name of a test.
 -}
@@ -286,12 +276,12 @@ getTestName testCase =
   case testCase of
     UnitTest name _ -> name
     TestGroup name _ -> name
-    BrowserTest name _ _ -> name
     AsyncTest name _ -> name
     Skip inner -> getTestName inner
     Todo name -> name
     Only inner -> getTestName inner
     FuzzTest name -> name
+    PlaywrightStep action -> describePlaywrightAction action
 
 
 -- | Convert an expectation to the RunnerResult format
@@ -337,13 +327,6 @@ run testCase =
     Only innerTest ->
       run innerTest
 
-    BrowserTest description _config _steps ->
-      { description = description
-      , status = "SKIP"
-      , message = "Browser test - use async runner"
-      , duration = 0
-      }
-
     AsyncTest description _task ->
       { description = description
       , status = "SKIP"
@@ -355,6 +338,13 @@ run testCase =
       { description = description
       , status = "SKIP"
       , message = "Fuzz test - requires fuzzer"
+      , duration = 0
+      }
+
+    PlaywrightStep action ->
+      { description = describePlaywrightAction action
+      , status = "SKIP"
+      , message = "Playwright step - run in browser"
       , duration = 0
       }
 
@@ -422,3 +412,20 @@ formatFailures failedCount results =
 formatFailure : TestResult -> String
 formatFailure result =
   "X " ++ result.description ++ ": " ++ result.message
+
+
+{-| Describe a PlaywrightAction as a human-readable string for test output.
+-}
+describePlaywrightAction : PlaywrightAction -> String
+describePlaywrightAction action =
+  case action of
+    Visit url -> "visit " ++ url
+    Click selector -> "click " ++ selector
+    Fill selector value -> "fill " ++ selector ++ " with " ++ value
+    Check selector -> "check " ++ selector
+    SeeText text -> "see text \"" ++ text ++ "\""
+    SeeElement selector -> "see element " ++ selector
+    DontSee text -> "don't see \"" ++ text ++ "\""
+    DontSeeElement selector -> "don't see element " ++ selector
+    WaitFor selector -> "wait for " ++ selector
+    Screenshot name -> "screenshot " ++ name
