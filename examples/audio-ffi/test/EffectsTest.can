@@ -157,18 +157,20 @@ convolverTests =
                     withRawContext <| \ctx ->
                         let
                             convolver = AudioFFI.createConvolver ctx
-                            _ = AudioFFI.setConvolverNormalize convolver True
                         in
-                        Expect.equal True (AudioFFI.getConvolverNormalize convolver)
+                        case AudioFFI.setConvolverNormalize convolver True of
+                            _ ->
+                                Expect.equal True (AudioFFI.getConvolverNormalize convolver)
 
             , test "disables normalization" <|
                 \_ ->
                     withRawContext <| \ctx ->
                         let
                             convolver = AudioFFI.createConvolver ctx
-                            _ = AudioFFI.setConvolverNormalize convolver False
                         in
-                        Expect.equal False (AudioFFI.getConvolverNormalize convolver)
+                        case AudioFFI.setConvolverNormalize convolver False of
+                            _ ->
+                                Expect.equal False (AudioFFI.getConvolverNormalize convolver)
             ]
         ]
 
@@ -319,27 +321,30 @@ waveShaperTests =
                     withRawContext <| \ctx ->
                         let
                             shaper = AudioFFI.createWaveShaper ctx
-                            _ = AudioFFI.setWaveShaperOversample shaper "none"
                         in
-                        Expect.equal "none" (AudioFFI.getWaveShaperOversample shaper)
+                        case AudioFFI.setWaveShaperOversample shaper "none" of
+                            _ ->
+                                Expect.equal "none" (AudioFFI.getWaveShaperOversample shaper)
 
             , test "sets oversample to 2x" <|
                 \_ ->
                     withRawContext <| \ctx ->
                         let
                             shaper = AudioFFI.createWaveShaper ctx
-                            _ = AudioFFI.setWaveShaperOversample shaper "2x"
                         in
-                        Expect.equal "2x" (AudioFFI.getWaveShaperOversample shaper)
+                        case AudioFFI.setWaveShaperOversample shaper "2x" of
+                            _ ->
+                                Expect.equal "2x" (AudioFFI.getWaveShaperOversample shaper)
 
             , test "sets oversample to 4x" <|
                 \_ ->
                     withRawContext <| \ctx ->
                         let
                             shaper = AudioFFI.createWaveShaper ctx
-                            _ = AudioFFI.setWaveShaperOversample shaper "4x"
                         in
-                        Expect.equal "4x" (AudioFFI.getWaveShaperOversample shaper)
+                        case AudioFFI.setWaveShaperOversample shaper "4x" of
+                            _ ->
+                                Expect.equal "4x" (AudioFFI.getWaveShaperOversample shaper)
             ]
 
         , describe "makeDistortionCurve"

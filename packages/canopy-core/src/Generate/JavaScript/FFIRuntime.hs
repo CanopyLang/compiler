@@ -254,7 +254,12 @@ var $validate = {
       if (!Array.isArray(v)) {
         throw new Error('FFI type error at ' + p + ': expected Array, got ' + typeof v);
       }
-      return v.map(function(e, i) { return f(e, p + '[' + i + ']'); });
+      var validated = v.map(function(e, i) { return f(e, p + '[' + i + ']'); });
+      var list = { $: '[]' };
+      for (var i = validated.length - 1; i >= 0; i--) {
+        list = { $: '::', a: validated[i], b: list };
+      }
+      return list;
     };
   },
 
@@ -310,7 +315,10 @@ var $validate = {
       if (v.length !== validators.length) {
         throw new Error('FFI type error at ' + p + ': expected Tuple of ' + validators.length + ' elements, got ' + v.length);
       }
-      return validators.map(function(f, i) { return f(v[i], p + '[' + i + ']'); });
+      var validated = validators.map(function(f, i) { return f(v[i], p + '[' + i + ']'); });
+      if (validated.length === 2) { return { a: validated[0], b: validated[1] }; }
+      if (validated.length === 3) { return { a: validated[0], b: validated[1], c: validated[2] }; }
+      return validated;
     };
   },
 

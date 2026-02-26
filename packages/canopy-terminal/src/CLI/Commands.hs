@@ -271,7 +271,7 @@ createTestCommand =
           P.indent 4 (P.green "canopy test --headed test/BrowserTests.can"),
           P.indent 4 (P.green "canopy test --app src/Main.can test/BrowserTests.can")
         ]
-    args = Terminal.zeroOrMore Terminal.canopyFile
+    args = Terminal.zeroOrMore Terminal.canopyFileOrDir
     flags = createTestFlags
 
 -- | Create the audit command for dependency analysis.

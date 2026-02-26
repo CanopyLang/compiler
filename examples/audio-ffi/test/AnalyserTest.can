@@ -134,40 +134,40 @@ analyserConfigTests =
                     withRawContext <| \ctx ->
                         let
                             analyser = AudioFFI.createAnalyser ctx
-                            _ = AudioFFI.setAnalyserFFTSize analyser 2048
-                            fftSize = AudioFFI.getAnalyserFFTSize analyser
                         in
-                        Expect.equal 2048 fftSize
+                        case AudioFFI.setAnalyserFFTSize analyser 2048 of
+                            _ ->
+                                Expect.equal 2048 (AudioFFI.getAnalyserFFTSize analyser)
 
             , test "sets FFT size to 256" <|
                 \_ ->
                     withRawContext <| \ctx ->
                         let
                             analyser = AudioFFI.createAnalyser ctx
-                            _ = AudioFFI.setAnalyserFFTSize analyser 256
-                            fftSize = AudioFFI.getAnalyserFFTSize analyser
                         in
-                        Expect.equal 256 fftSize
+                        case AudioFFI.setAnalyserFFTSize analyser 256 of
+                            _ ->
+                                Expect.equal 256 (AudioFFI.getAnalyserFFTSize analyser)
 
             , test "sets FFT size to 4096" <|
                 \_ ->
                     withRawContext <| \ctx ->
                         let
                             analyser = AudioFFI.createAnalyser ctx
-                            _ = AudioFFI.setAnalyserFFTSize analyser 4096
-                            fftSize = AudioFFI.getAnalyserFFTSize analyser
                         in
-                        Expect.equal 4096 fftSize
+                        case AudioFFI.setAnalyserFFTSize analyser 4096 of
+                            _ ->
+                                Expect.equal 4096 (AudioFFI.getAnalyserFFTSize analyser)
 
             , test "sets FFT size to 1024" <|
                 \_ ->
                     withRawContext <| \ctx ->
                         let
                             analyser = AudioFFI.createAnalyser ctx
-                            _ = AudioFFI.setAnalyserFFTSize analyser 1024
-                            fftSize = AudioFFI.getAnalyserFFTSize analyser
                         in
-                        Expect.equal 1024 fftSize
+                        case AudioFFI.setAnalyserFFTSize analyser 1024 of
+                            _ ->
+                                Expect.equal 1024 (AudioFFI.getAnalyserFFTSize analyser)
             ]
 
         , describe "setAnalyserMinDecibels"
@@ -215,30 +215,30 @@ analyserConfigTests =
                     withRawContext <| \ctx ->
                         let
                             analyser = AudioFFI.createAnalyser ctx
-                            _ = AudioFFI.setAnalyserSmoothing analyser 0.5
-                            smoothing = AudioFFI.getAnalyserSmoothingTimeConstant analyser
                         in
-                        Expect.within (Expect.Absolute 0.1) 0.5 smoothing
+                        case AudioFFI.setAnalyserSmoothing analyser 0.5 of
+                            _ ->
+                                Expect.within (Expect.Absolute 0.1) 0.5 (AudioFFI.getAnalyserSmoothingTimeConstant analyser)
 
             , test "sets smoothing to 0.0" <|
                 \_ ->
                     withRawContext <| \ctx ->
                         let
                             analyser = AudioFFI.createAnalyser ctx
-                            _ = AudioFFI.setAnalyserSmoothing analyser 0.0
-                            smoothing = AudioFFI.getAnalyserSmoothingTimeConstant analyser
                         in
-                        Expect.within (Expect.Absolute 0.1) 0.0 smoothing
+                        case AudioFFI.setAnalyserSmoothing analyser 0.0 of
+                            _ ->
+                                Expect.within (Expect.Absolute 0.1) 0.0 (AudioFFI.getAnalyserSmoothingTimeConstant analyser)
 
             , test "sets smoothing to 1.0" <|
                 \_ ->
                     withRawContext <| \ctx ->
                         let
                             analyser = AudioFFI.createAnalyser ctx
-                            _ = AudioFFI.setAnalyserSmoothing analyser 1.0
-                            smoothing = AudioFFI.getAnalyserSmoothingTimeConstant analyser
                         in
-                        Expect.within (Expect.Absolute 0.1) 1.0 smoothing
+                        case AudioFFI.setAnalyserSmoothing analyser 1.0 of
+                            _ ->
+                                Expect.within (Expect.Absolute 0.1) 1.0 (AudioFFI.getAnalyserSmoothingTimeConstant analyser)
 
             , test "smoothing default is 0.8" <|
                 \_ ->
@@ -277,10 +277,10 @@ analyserPropertyTests =
                     withRawContext <| \ctx ->
                         let
                             analyser = AudioFFI.createAnalyser ctx
-                            _ = AudioFFI.setAnalyserFFTSize analyser 2048
-                            binCount = AudioFFI.getAnalyserFrequencyBinCount analyser
                         in
-                        Expect.equal 1024 binCount
+                        case AudioFFI.setAnalyserFFTSize analyser 2048 of
+                            _ ->
+                                Expect.equal 1024 (AudioFFI.getAnalyserFrequencyBinCount analyser)
             ]
 
         , describe "getFrequencyBinCount"

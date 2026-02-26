@@ -330,20 +330,20 @@ bufferSourceTests =
                     withRawContext <| \ctx ->
                         let
                             source = AudioFFI.createBufferSource ctx
-                            _ = AudioFFI.setBufferSourceLoop source True
-                            loop = AudioFFI.getBufferSourceLoop source
                         in
-                        Expect.equal True loop
+                        case AudioFFI.setBufferSourceLoop source True of
+                            _ ->
+                                Expect.equal True (AudioFFI.getBufferSourceLoop source)
 
             , test "disables looping" <|
                 \_ ->
                     withRawContext <| \ctx ->
                         let
                             source = AudioFFI.createBufferSource ctx
-                            _ = AudioFFI.setBufferSourceLoop source False
-                            loop = AudioFFI.getBufferSourceLoop source
                         in
-                        Expect.equal False loop
+                        case AudioFFI.setBufferSourceLoop source False of
+                            _ ->
+                                Expect.equal False (AudioFFI.getBufferSourceLoop source)
             ]
         ]
 
@@ -362,20 +362,20 @@ bufferSourcePropertyTests =
                     withRawContext <| \ctx ->
                         let
                             source = AudioFFI.createBufferSource ctx
-                            _ = AudioFFI.setBufferSourceLoopStart source 0.5
-                            loopStart = AudioFFI.getBufferSourceLoopStart source
                         in
-                        Expect.within (Expect.Absolute 0.01) 0.5 loopStart
+                        case AudioFFI.setBufferSourceLoopStart source 0.5 of
+                            _ ->
+                                Expect.within (Expect.Absolute 0.01) 0.5 (AudioFFI.getBufferSourceLoopStart source)
 
             , test "sets and gets loop end" <|
                 \_ ->
                     withRawContext <| \ctx ->
                         let
                             source = AudioFFI.createBufferSource ctx
-                            _ = AudioFFI.setBufferSourceLoopEnd source 2.0
-                            loopEnd = AudioFFI.getBufferSourceLoopEnd source
                         in
-                        Expect.within (Expect.Absolute 0.01) 2.0 loopEnd
+                        case AudioFFI.setBufferSourceLoopEnd source 2.0 of
+                            _ ->
+                                Expect.within (Expect.Absolute 0.01) 2.0 (AudioFFI.getBufferSourceLoopEnd source)
             ]
 
         , describe "playback rate and detune"

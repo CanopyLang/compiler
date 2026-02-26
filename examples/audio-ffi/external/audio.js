@@ -9,6 +9,27 @@
  */
 
 // ============================================================================
+// ELM LIST <-> JS ARRAY CONVERSION HELPERS
+// ============================================================================
+
+function elmListToArray(list) {
+    var arr = [];
+    while (list.$ === '::') {
+        arr.push(list.a);
+        list = list.b;
+    }
+    return arr;
+}
+
+function arrayToElmList(arr) {
+    var list = { $: '[]' };
+    for (var i = arr.length - 1; i >= 0; i--) {
+        list = { $: '::', a: arr[i], b: list };
+    }
+    return list;
+}
+
+// ============================================================================
 // AUDIO CONTEXT MANAGEMENT
 // ============================================================================
 
@@ -492,7 +513,9 @@ function setFilterGain(filter, gain, when) {
  * @canopy-type AudioContext -> Float -> DelayNode
  */
 function createDelay(audioContext, maxDelayTime) {
-    return audioContext.createDelay(maxDelayTime);
+    var delay = audioContext.createDelay(maxDelayTime);
+    delay._canopyMaxDelayTime = maxDelayTime;
+    return delay;
 }
 
 /**
@@ -620,7 +643,7 @@ function createWaveShaper(audioContext) {
  */
 function setWaveShaperCurve(shaper, curve) {
     try {
-        shaper.curve = new Float32Array(curve);
+        shaper.curve = new Float32Array(elmListToArray(curve));
         return { $: 'Ok', a: 1 };
     } catch (e) {
         if (e.name === 'InvalidStateError') {
@@ -1087,7 +1110,7 @@ function getChannelData(audioBuffer, channelNumber) {
  */
 function copyToChannel(audioBuffer, source, channelNumber, startInChannel) {
     try {
-        const sourceArray = new Float32Array(source);
+        const sourceArray = new Float32Array(elmListToArray(source));
         audioBuffer.copyToChannel(sourceArray, channelNumber, startInChannel || 0);
         return { $: 'Ok', a: 1 };
     } catch (e) {
@@ -1396,7 +1419,7 @@ function exponentialRampToValueAtTime(param, value, endTime) {
  * @canopy-type AnalyserNode -> List Int
  */
 function getByteTimeDomainData(analyser) {
-    const dataArray = new Uint8Array(analyser.frequencyBinCount);
+    const dataArray = new Uint8Array(analyser.fftSize);
     analyser.getByteTimeDomainData(dataArray);
     return Array.from(dataArray);
 }
@@ -1418,7 +1441,7 @@ function getByteFrequencyData(analyser) {
  * @canopy-type AnalyserNode -> List Float
  */
 function getFloatTimeDomainData(analyser) {
-    const dataArray = new Float32Array(analyser.frequencyBinCount);
+    const dataArray = new Float32Array(analyser.fftSize);
     analyser.getFloatTimeDomainData(dataArray);
     return Array.from(dataArray);
 }
@@ -1733,10 +1756,9 @@ function postMessageToWorklet(port, message) {
  */
 function createIIRFilter(audioContext, feedforward, feedback) {
     try {
-        const ctx = audioContext.a;  // Unwrap Capability.Initialized AudioContext
-        const ff = new Float32Array(feedforward);
-        const fb = new Float32Array(feedback);
-        const filter = ctx.createIIRFilter(ff, fb);
+        const ff = new Float32Array(elmListToArray(feedforward));
+        const fb = new Float32Array(elmListToArray(feedback));
+        const filter = audioContext.createIIRFilter(ff, fb);
         return { $: 'Ok', a: filter };
     } catch (e) {
         if (e.name === 'InvalidStateError') {
@@ -1756,7 +1778,7 @@ function createIIRFilter(audioContext, feedforward, feedback) {
  */
 function getIIRFilterResponse(filter, frequencyArray) {
     try {
-        const frequencies = new Float32Array(frequencyArray);
+        const frequencies = new Float32Array(elmListToArray(frequencyArray));
         const magResponse = new Float32Array(frequencies.length);
         const phaseResponse = new Float32Array(frequencies.length);
 
@@ -1764,11 +1786,7 @@ function getIIRFilterResponse(filter, frequencyArray) {
 
         return {
             $: 'Ok',
-            a: {
-                $: 'Tuple2',
-                a: Array.from(magResponse),
-                b: Array.from(phaseResponse)
-            }
+            a: [Array.from(magResponse), Array.from(phaseResponse)]
         };
     } catch (e) {
         return { $: 'Err', a: { $: 'InvalidAccessError', a: 'Failed to get response: ' + e.message } };
@@ -1786,8 +1804,7 @@ function getIIRFilterResponse(filter, frequencyArray) {
  */
 function createConstantSource(audioContext) {
     try {
-        const ctx = audioContext.a;  // Unwrap Capability.Initialized AudioContext
-        const source = ctx.createConstantSource();
+        const source = audioContext.createConstantSource();
         return { $: 'Ok', a: source };
     } catch (e) {
         if (e.name === 'InvalidStateError') {
@@ -1854,10 +1871,9 @@ function stopConstantSource(source, when) {
  */
 function createPeriodicWaveWithCoefficients(audioContext, real, imag) {
     try {
-        const ctx = audioContext.a;  // Unwrap Capability.Initialized AudioContext
-        const realArray = new Float32Array(real);
-        const imagArray = new Float32Array(imag);
-        const wave = ctx.createPeriodicWave(realArray, imagArray);
+        const realArray = new Float32Array(elmListToArray(real));
+        const imagArray = new Float32Array(elmListToArray(imag));
+        const wave = audioContext.createPeriodicWave(realArray, imagArray);
         return { $: 'Ok', a: wave };
     } catch (e) {
         if (e.name === 'InvalidStateError') {
@@ -1875,11 +1891,10 @@ function createPeriodicWaveWithCoefficients(audioContext, real, imag) {
  */
 function createPeriodicWaveWithOptions(audioContext, real, imag, disableNormalization) {
     try {
-        const ctx = audioContext.a;  // Unwrap Capability.Initialized AudioContext
-        const realArray = new Float32Array(real);
-        const imagArray = new Float32Array(imag);
+        const realArray = new Float32Array(elmListToArray(real));
+        const imagArray = new Float32Array(elmListToArray(imag));
         const options = { disableNormalization: disableNormalization };
-        const wave = ctx.createPeriodicWave(realArray, imagArray, options);
+        const wave = audioContext.createPeriodicWave(realArray, imagArray, options);
         return { $: 'Ok', a: wave };
     } catch (e) {
         if (e.name === 'InvalidStateError') {
@@ -2073,7 +2088,7 @@ function getCompressorRatioParam(compressor) {
  */
 function setValueCurveAtTime(param, values, startTime, duration) {
     try {
-        const valuesArray = new Float32Array(values);
+        const valuesArray = new Float32Array(elmListToArray(values));
         param.setValueCurveAtTime(valuesArray, startTime, duration);
         return { $: 'Ok', a: 1 };
     } catch (e) {
@@ -2648,6 +2663,14 @@ function trimSilence(sourceBuffer, threshold) {
             end--;
         }
         const trimmedLength = end - start;
+        if (trimmedLength === 0) {
+            var minBuffer = new AudioBuffer({
+                length: 1,
+                numberOfChannels: sourceBuffer.numberOfChannels,
+                sampleRate: sourceBuffer.sampleRate
+            });
+            return { $: 'Ok', a: minBuffer };
+        }
         const trimmed = new AudioBuffer({
             length: trimmedLength,
             numberOfChannels: sourceBuffer.numberOfChannels,
@@ -2808,7 +2831,7 @@ function getAnalyserFrequencyBinCount(analyser) {
  * @canopy-type DelayNode -> Float
  */
 function getDelayMaxDelayTime(delayNode) {
-    return delayNode.maxDelayTime;
+    return (delayNode._canopyMaxDelayTime !== undefined) ? delayNode._canopyMaxDelayTime : delayNode.delayTime.maxValue;
 }
 
 /**
@@ -3030,11 +3053,7 @@ function getIIRFilterResponseAtFrequency(filter, frequency) {
     const magResponse = new Float32Array(1);
     const phaseResponse = new Float32Array(1);
     filter.getFrequencyResponse(freqArray, magResponse, phaseResponse);
-    return {
-        $: 'Tuple2',
-        a: magResponse[0],
-        b: phaseResponse[0]
-    };
+    return [magResponse[0], phaseResponse[0]];
 }
 
 // Generated exports for browser global scope

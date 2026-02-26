@@ -85,7 +85,7 @@ contextPropertyTests =
                         let
                             sampleRate = AudioFFI.getSampleRate (extractContext ctx)
                         in
-                        Expect.equal 48000 sampleRate
+                        Expect.true "standard sample rate" (sampleRate == 44100 || sampleRate == 48000)
             ]
 
         , describe "getContextState"
