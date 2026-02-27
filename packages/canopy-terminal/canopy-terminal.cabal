@@ -116,10 +116,12 @@ library
       Terminal.Print
       Test
       Test.Browser
+      Test.Event
       Test.External
       Test.FFI
       Test.Harness
       Test.Playwright
+      Test.Runner
       Test.Server
       Upgrade
       Watch

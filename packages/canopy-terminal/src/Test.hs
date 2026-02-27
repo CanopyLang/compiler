@@ -35,6 +35,11 @@
 -- canopy test --app src\/Main.can     -- Specify app entry for browser tests
 -- @
 --
+-- Sub-modules:
+--
+-- * "Test.Event" - NDJSON event types and formatting
+-- * "Test.Runner" - Node.js process execution
+--
 -- @since 0.19.1
 module Test
   ( -- * Main Interface
@@ -65,10 +70,6 @@ import qualified Control.Concurrent as Concurrent
 import qualified Control.Exception as Exception
 import Control.Monad (filterM, void)
 import qualified Canopy.Data.Utf8 as Utf8
-import qualified Data.Aeson as Aeson
-import Data.Aeson (Object)
-import qualified Data.Aeson.Types as AesonTypes
-import qualified Data.ByteString.Char8 as BS
 import qualified Data.ByteString.Builder as Builder
 import qualified Data.ByteString.Lazy as LBS
 import qualified Data.List as List
@@ -77,7 +78,6 @@ import qualified Data.Maybe as Maybe
 import qualified Canopy.Data.NonEmptyList as NE
 import qualified Data.Set as Set
 import qualified Data.Text as Text
-import qualified Data.Text.Encoding as TextEnc
 import qualified Generate.JavaScript as JS
 import qualified Generate.Mode as Mode
 import qualified System.Directory as Dir
@@ -86,8 +86,6 @@ import qualified System.Exit as Exit
 import System.FilePath ((</>))
 import qualified System.FilePath as FilePath
 import qualified System.FSNotify as FSNotify
-import qualified System.IO as IO
-import qualified System.Process as Process
 import qualified Terminal
 import qualified Terminal.Output as Output
 import Reporting.Doc.ColorQQ (c)
@@ -105,6 +103,7 @@ import qualified Test.Harness as Harness
 import qualified Test.Playwright as Playwright
 import Test.Server (ServerPort (..))
 import qualified Test.Server as Server
+import qualified Test.Runner as Runner
 
 -- | Flags for the test command.
 --
@@ -343,10 +342,6 @@ extractTestDeps (Outline.Pkg o) =
 -- When @artifacts.dat@ exists, this is a no-op.  Otherwise, reads the
 -- package's @canopy.json@, compiles all exposed modules with the real
 -- package identity, and writes @artifacts.dat@ to the cache.
---
--- Compiles from the package's own directory so that
--- @loadDependencyArtifacts@ reads the package's @canopy.json@ and
--- resolves its dependencies independently.
 --
 -- @since 0.19.1
 ensureOneTestDep :: FilePath -> (Pkg.Name, Version.Version) -> IO ()
@@ -598,7 +593,7 @@ launchPlaywrightForBrowserTests port flags tmpDir = do
         ]
   writeFile launcherPath (Text.unpack launcher)
   cwd <- Dir.getCurrentDirectory
-  runNodeForBrowserTests launcherPath cwd (flags ^. testVerbose)
+  Runner.runNodeForBrowserTests launcherPath cwd (flags ^. testVerbose)
 
 -- ── Unit Test Execution ──────────────────────────────────────────────
 
@@ -609,7 +604,7 @@ executeUnitTests jsContent flags = do
   let runnerPath = tmpDir </> "canopy-test-runner.js"
       harness = Harness.generateUnitHarness (JsContent (Text.pack jsContent))
   writeFile runnerPath (Text.unpack (unHarnessContent harness))
-  runNodeAndReport runnerPath (flags ^. testVerbose)
+  Runner.runNodeAndReport runnerPath (flags ^. testVerbose)
 
 -- ── Browser Test Execution ───────────────────────────────────────────
 
@@ -697,7 +692,7 @@ generateAndRun flags runner executor playwright tests maybePort projectDir = do
           }
       harness = Harness.generateBrowserHarness config runner executor playwright tests
   writeFile runnerPath (Text.unpack (unHarnessContent harness))
-  runNodeForBrowserTests runnerPath projectDir (flags ^. testVerbose)
+  Runner.runNodeForBrowserTests runnerPath projectDir (flags ^. testVerbose)
 
 -- | Report external module loading errors.
 reportExternalError :: ExternalModuleError -> IO ExitCode
@@ -714,277 +709,6 @@ handleBrowserError err = do
   let errStr = show err
   Print.printErrLn [c|{red|Browser test setup failed:} #{errStr}|]
   pure (ExitFailure 1)
-
--- ── Node Execution ───────────────────────────────────────────────────
-
--- | Find the @node@ executable and execute the runner script.
-runNodeAndReport :: FilePath -> Bool -> IO ExitCode
-runNodeAndReport runnerPath verbose = do
-  nodeExists <- Dir.findExecutable "node"
-  case nodeExists of
-    Nothing -> reportNodeMissing
-    Just nodePath -> executeNode nodePath [runnerPath] verbose
-
--- | Run @node@ for browser tests with @NODE_PATH@ set so
--- @require('playwright')@ resolves from local or global installs.
-runNodeForBrowserTests :: FilePath -> FilePath -> Bool -> IO ExitCode
-runNodeForBrowserTests runnerPath projectDir verbose = do
-  nodeExists <- Dir.findExecutable "node"
-  case nodeExists of
-    Nothing -> reportNodeMissing
-    Just nodePath -> do
-      npmRoot <- getNpmGlobalRoot
-      let paths = buildNodePaths projectDir npmRoot
-      executeNode nodePath ["-e", nodePathWrapper paths runnerPath] verbose
-
--- | Report that the @node@ executable is not found.
-reportNodeMissing :: IO ExitCode
-reportNodeMissing = do
-  Print.printErrLn [c|{red|Error:} 'node' not found. Install Node.js to run Canopy tests.|]
-  pure (ExitFailure 1)
-
--- | Discover the global npm @node_modules@ directory via @npm root -g@.
-getNpmGlobalRoot :: IO (Maybe FilePath)
-getNpmGlobalRoot =
-  fmap extractPath (Process.readProcessWithExitCode "npm" ["root", "-g"] "")
-    `Exception.catch` ignoreException
-  where
-    extractPath (ExitSuccess, out, _) = Just (filter (/= '\n') out)
-    extractPath _ = Nothing
-
-    ignoreException :: Exception.SomeException -> IO (Maybe FilePath)
-    ignoreException _ = pure Nothing
-
--- | Build the @NODE_PATH@ search list from the project's local
--- @node_modules@ and the optional global npm root.
-buildNodePaths :: FilePath -> Maybe FilePath -> [FilePath]
-buildNodePaths projectDir maybeGlobal =
-  (projectDir </> "node_modules") : maybe [] pure maybeGlobal
-
--- | Generate a Node.js wrapper script that sets @NODE_PATH@ before
--- requiring the actual harness file.
-nodePathWrapper :: [FilePath] -> FilePath -> String
-nodePathWrapper paths harnessPath =
-  "process.env.NODE_PATH=" ++ show (List.intercalate ":" paths) ++ ";"
-    ++ "require('module').Module._initPaths();"
-    ++ "require(" ++ show harnessPath ++ ");"
-
--- | Execute @node@ with streaming NDJSON output.
---
--- Launches the node process with piped stdout\/stderr. Reads stdout
--- line-by-line, parsing each line as an NDJSON test event and formatting
--- it with 'Terminal.Print' + 'Reporting.Doc.ColorQQ'. Non-JSON lines are
--- passed through as-is. Stderr is drained in a background thread and
--- printed on failure.
-executeNode :: FilePath -> [String] -> Bool -> IO ExitCode
-executeNode nodePath args verbose =
-  Process.withCreateProcess procSpec handleStreams
-  where
-    procSpec =
-      (Process.proc nodePath args)
-        { Process.std_out = Process.CreatePipe,
-          Process.std_err = Process.CreatePipe
-        }
-    handleStreams _stdin mStdout mStderr procHandle =
-      case (mStdout, mStderr) of
-        (Just hOut, Just hErr) -> do
-          IO.hSetBinaryMode hOut True
-          IO.hSetBinaryMode hErr True
-          stderrVar <- Concurrent.newMVar []
-          _ <- Concurrent.forkIO (drainStderr hErr stderrVar)
-          sawSummary <- streamStdout hOut
-          exitCode <- Process.waitForProcess procHandle
-          when (not sawSummary) $
-            Print.printErrLn [c|{yellow|Warning: test process exited without summary.}|]
-          reportExitCode exitCode stderrVar verbose args
-        _ -> do
-          exitCode <- Process.waitForProcess procHandle
-          pure exitCode
-
--- | Read stderr lines into a MVar for later display.
-drainStderr :: IO.Handle -> Concurrent.MVar [String] -> IO ()
-drainStderr hErr var = go
-  where
-    go = do
-      eof <- IO.hIsEOF hErr
-      if eof
-        then pure ()
-        else do
-          line <- IO.hGetLine hErr
-          Concurrent.modifyMVar_ var (\ls -> pure (ls ++ [line]))
-          go
-
--- | Read stdout line-by-line, parsing NDJSON events and formatting them.
---
--- Returns 'True' if a summary event was received, 'False' otherwise.
--- The caller uses this to detect when the JS process crashed or was
--- killed before emitting its summary.
-streamStdout :: IO.Handle -> IO Bool
-streamStdout hOut = go False
-  where
-    go sawSummary = do
-      eof <- IO.hIsEOF hOut
-      if eof
-        then pure sawSummary
-        else do
-          line <- BS.hGetLine hOut
-          isSummary <- handleOutputLine line
-          go (sawSummary || isSummary)
-
--- | Parse a single stdout line as NDJSON or pass through as plain text.
---
--- Returns 'True' when the line was a summary event, 'False' otherwise.
--- Non-JSON lines are written to stderr so they do not corrupt formatted
--- test output on stdout. Flushes after each line so results appear
--- immediately, even when stdout is a pipe.
-handleOutputLine :: BS.ByteString -> IO Bool
-handleOutputLine line =
-  case Aeson.decodeStrict' line of
-    Just event -> do
-      formatTestEvent event
-      IO.hFlush IO.stdout
-      pure (isSummaryEvent event)
-    Nothing -> do
-      IO.hPutStrLn IO.stderr (Text.unpack (TextEnc.decodeUtf8 line))
-      IO.hFlush IO.stderr
-      pure False
-
--- | Check if a 'TestEvent' is a summary event.
-isSummaryEvent :: TestEvent -> Bool
-isSummaryEvent (SummaryEvent {}) = True
-isSummaryEvent _ = False
-
--- | Report exit status, printing stderr and verbose info on failure.
-reportExitCode :: ExitCode -> Concurrent.MVar [String] -> Bool -> [String] -> IO ExitCode
-reportExitCode ExitSuccess _ _ _ = do
-  Print.newline
-  Print.println [c|{green|Tests passed.}|]
-  pure ExitSuccess
-reportExitCode (ExitFailure _) stderrVar verbose args = do
-  stderrLines <- Concurrent.readMVar stderrVar
-  mapM_ (IO.hPutStrLn IO.stderr) stderrLines
-  when verbose (printVerboseInfo args)
-  Print.newline
-  Print.println [c|{red|Tests failed.}|]
-  pure (ExitFailure 1)
-
--- | Print debugging info when verbose mode is on.
-printVerboseInfo :: [String] -> IO ()
-printVerboseInfo args =
-  case args of
-    [path] -> Print.println [c|Test runner written to: {cyan|#{path}}|]
-    _ -> pure ()
-
--- ── NDJSON Event Types ──────────────────────────────────────────────
-
--- | A test event emitted by the JavaScript test runner as NDJSON.
-data TestEvent
-  = ResultEvent !ResultStatus !Text.Text !Double !(Maybe Text.Text)
-  | SummaryEvent !Int !Int !Int !Int !Int !Double
-  deriving (Eq, Show)
-
--- | Status of a single test result.
-data ResultStatus = Passed | Failed | Skipped | Todo
-  deriving (Eq, Show)
-
-instance Aeson.FromJSON TestEvent where
-  parseJSON = Aeson.withObject "TestEvent" $ \obj -> do
-    eventType <- obj Aeson..: "event"
-    case (eventType :: Text.Text) of
-      "result" -> parseResultEvent obj
-      "summary" -> parseSummaryEvent obj
-      _ -> fail ("Unknown event type: " ++ Text.unpack eventType)
-
--- | Parse a result event from a JSON object.
-parseResultEvent :: Object -> AesonTypes.Parser TestEvent
-parseResultEvent obj = do
-  statusStr <- obj Aeson..: "status"
-  name <- obj Aeson..: "name"
-  duration <- obj Aeson..:? "duration" Aeson..!= 0
-  message <- obj Aeson..:? "message"
-  status <- parseStatus statusStr
-  pure (ResultEvent status name duration message)
-
--- | Parse a summary event from a JSON object.
-parseSummaryEvent :: Object -> AesonTypes.Parser TestEvent
-parseSummaryEvent obj =
-  SummaryEvent
-    <$> obj Aeson..: "passed"
-    <*> obj Aeson..: "failed"
-    <*> obj Aeson..: "skipped"
-    <*> obj Aeson..: "todo"
-    <*> obj Aeson..: "total"
-    <*> obj Aeson..: "duration"
-
--- | Parse a status string into a 'ResultStatus'.
-parseStatus :: Text.Text -> AesonTypes.Parser ResultStatus
-parseStatus "passed" = pure Passed
-parseStatus "failed" = pure Failed
-parseStatus "skipped" = pure Skipped
-parseStatus "todo" = pure Todo
-parseStatus other = fail ("Unknown status: " ++ Text.unpack other)
-
--- ── NDJSON Formatting ───────────────────────────────────────────────
-
--- | Format and print a test event using ColorQQ.
-formatTestEvent :: TestEvent -> IO ()
-formatTestEvent (ResultEvent status name duration message) =
-  formatResult status name duration message
-formatTestEvent (SummaryEvent passed failed skipped todo total duration) =
-  formatSummary passed failed skipped todo total duration
-
--- | Format a single test result line.
-formatResult :: ResultStatus -> Text.Text -> Double -> Maybe Text.Text -> IO ()
-formatResult Passed name duration _ =
-  Print.println [c|  {green|✓} #{nameStr} {dullcyan|#{durationStr}}|]
-  where
-    nameStr = Text.unpack name
-    durationStr = formatDuration duration
-formatResult Failed name duration message = do
-  Print.println [c|  {red|✗} #{nameStr} {dullcyan|#{durationStr}}|]
-  maybe (pure ()) printFailureMessage message
-  where
-    nameStr = Text.unpack name
-    durationStr = formatDuration duration
-formatResult Skipped name _ _ =
-  Print.println [c|  {yellow|○} #{nameStr} {dullcyan|(skipped)}|]
-  where
-    nameStr = Text.unpack name
-formatResult Todo name _ _ =
-  Print.println [c|  {cyan|◌} #{nameStr} {dullcyan|(todo)}|]
-  where
-    nameStr = Text.unpack name
-
--- | Print a failure message indented under the test name.
-printFailureMessage :: Text.Text -> IO ()
-printFailureMessage msg =
-  mapM_ printIndentedLine (Text.lines msg)
-  where
-    printIndentedLine line =
-      Print.println [c|    {red|#{lineStr}}|]
-      where
-        lineStr = Text.unpack line
-
--- | Format the test suite summary line.
-formatSummary :: Int -> Int -> Int -> Int -> Int -> Double -> IO ()
-formatSummary passed failed skipped todo total duration = do
-  Print.newline
-  Print.println [c|  {green|#{passedStr} passed}, {red|#{failedStr} failed}#{extraStr} (#{totalStr} total)|]
-  Print.println [c|  Duration: #{durationStr}|]
-  where
-    passedStr = show passed
-    failedStr = show failed
-    totalStr = show total
-    durationStr = formatDuration duration
-    skippedPart = if skipped > 0 then ", " ++ show skipped ++ " skipped" else ""
-    todoPart = if todo > 0 then ", " ++ show todo ++ " todo" else ""
-    extraStr = skippedPart ++ todoPart
-
--- | Format a duration in milliseconds for display.
-formatDuration :: Double -> String
-formatDuration ms
-  | ms < 1000 = show (round ms :: Int) ++ "ms"
-  | otherwise = show (fromIntegral (round (ms / 100) :: Int) / 10 :: Double) ++ "s"
 
 -- ── Utilities ────────────────────────────────────────────────────────
 
@@ -1072,4 +796,3 @@ _suppressUnusedFilter f = f ^. testFilter
 
 _unusedReadMaybe :: String -> Maybe Int
 _unusedReadMaybe = readMaybe
-

@@ -23,6 +23,8 @@ library
   exposed-modules:
       AST.Canonical
       AST.Optimized
+      AST.Optimized.Expr
+      AST.Optimized.Graph
       AST.Source
       AST.Utils.Binop
       AST.Utils.Shader
@@ -96,6 +98,8 @@ library
       Generate.JavaScript.CodeSplit.Runtime
       Generate.JavaScript.CodeSplit.Types
       Generate.JavaScript.Expression
+      Generate.JavaScript.Expression.Call
+      Generate.JavaScript.Expression.Case
       Generate.JavaScript.FFIRuntime
       Generate.JavaScript.Functions
       Generate.JavaScript.Minify
@@ -104,6 +108,8 @@ library
       Generate.JavaScript.StringPool
       Generate.Mode
       Json.Decode
+      Json.Decode.AST
+      Json.Decode.Parser
       Json.Encode
       Json.String
       Logging.Config
@@ -147,6 +153,12 @@ library
       Reporting.Error.Syntax
       Reporting.Error.Syntax.Declaration
       Reporting.Error.Syntax.Expression
+      Reporting.Error.Syntax.Expression.Case
+      Reporting.Error.Syntax.Expression.Function
+      Reporting.Error.Syntax.Expression.If
+      Reporting.Error.Syntax.Expression.Let
+      Reporting.Error.Syntax.Expression.Record
+      Reporting.Error.Syntax.Expression.Sequence
       Reporting.Error.Syntax.Helpers
       Reporting.Error.Syntax.Literal
       Reporting.Error.Syntax.Module
