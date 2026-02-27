@@ -16,6 +16,7 @@ import qualified Data.Text as Text
 import qualified Reporting.InternalError as InternalError
 import qualified Data.Map.Strict as Map
 import qualified Data.Name as Name
+import qualified Data.Set as Set
 import Data.NonEmptyList (List)
 import qualified Data.NonEmptyList as NE
 import qualified Data.Vector as Vector
@@ -509,7 +510,7 @@ finalizeLetSolving config locals solvedState rigids subCon nextRank nextPools ex
       let currentMonoEnv = solvedState ^. stateMonoEnv
       let newMonoEnv = Map.union (Map.map A.toValue locals) currentMonoEnv
       -- Track which variables are NEW at this level (not from outer scope)
-      let newVarsThisLevel = Map.keys (Map.map A.toValue locals)
+      let newVarsThisLevel = Map.keysSet (Map.map A.toValue locals)
       let tempState = solvedState
             & stateMark .~ (solvedState ^. stateMark)
             & stateMonoEnv .~ newMonoEnv
@@ -587,7 +588,7 @@ finalizeLetSolving config locals solvedState rigids subCon nextRank nextPools ex
           -- Don't check variables inherited from outer scopes that happen to be in monoEnv
           varsFromMonoEnv <- forM (Map.toList finalMonoEnv) $ \(name, var) -> do
             -- Only include if this variable was added at THIS level (in newVarsThisLevel)
-            if name `elem` newVarsThisLevel
+            if Set.member name newVarsThisLevel
               then do
                 actualVar <- UF.repr var
                 (Descriptor _ actualRank _ _) <- UF.get actualVar
@@ -657,27 +658,19 @@ finalizeLetSolving config locals solvedState rigids subCon nextRank nextPools ex
       let finalConfig = config & solveEnv .~ newEnv & solveState .~ tempState & solveRank .~ (config ^. solveRank)
       solve finalConfig subCon
 
--- Extract all type variables from a Type
+-- Extract all type variables from a Type.
+-- Uses traverse + concat for O(n) total instead of foldM with (<>) which is O(n^2).
 extractTypeVars :: Type -> IO [Variable]
 extractTypeVars tipe = case tipe of
   VarN v -> return [v]
-  AppN _ _ args -> foldM (\acc arg -> do
-    vars <- extractTypeVars arg
-    return (acc <> vars)) [] args
-  FunN arg result -> do
-    argVars <- extractTypeVars arg
-    resultVars <- extractTypeVars result
-    return (argVars <> resultVars)
+  AppN _ _ args -> concat <$> traverse extractTypeVars args
+  FunN arg result -> liftM2 (<>) (extractTypeVars arg) (extractTypeVars result)
   AliasN _ _ args realType -> do
-    argVars <- foldM (\acc (_, arg) -> do
-      vars <- extractTypeVars arg
-      return (acc <> vars)) [] args
+    argVars <- concat <$> traverse (extractTypeVars . snd) args
     realVars <- extractTypeVars realType
     return (argVars <> realVars)
   RecordN fields ext -> do
-    fieldVars <- foldM (\acc (_, fieldType) -> do
-      vars <- extractTypeVars fieldType
-      return (acc <> vars)) [] (Map.toList fields)
+    fieldVars <- concat <$> traverse extractTypeVars (Map.elems fields)
     extVars <- extractTypeVars ext
     return (fieldVars <> extVars)
   EmptyRecordN -> return []
@@ -699,29 +692,23 @@ extractVarsFromFlatType flatType = case flatType of
   Unit1 -> []
   Tuple1 a b maybeC -> [a, b] <> maybe [] pure maybeC
 
--- Extract all variables from a variable's unified Type by following union-find links RECURSIVELY
+-- Extract all variables from a variable's unified Type by following union-find links RECURSIVELY.
+-- Uses traverse + concat for O(n) total instead of foldM with (<>) which is O(n^2).
 extractVarsFromUnifiedType :: Variable -> IO [Variable]
 extractVarsFromUnifiedType var = do
   actualVar <- UF.repr var
   (Descriptor content _ _ _) <- UF.get actualVar
   case content of
     Structure flatType -> do
-      -- Get immediate child variables from the flat type
       let childVars = extractVarsFromFlatType flatType
-      -- Recursively extract from each child variable
-      nestedVars <- foldM (\acc childVar -> do
-        vars <- extractVarsFromUnifiedType childVar
-        return (acc <> vars)) [] childVars
-      -- Include both the child variables themselves AND their nested variables
+      nestedVars <- concat <$> traverse extractVarsFromUnifiedType childVars
       return (childVars <> nestedVars)
     FlexVar _ -> return [actualVar]
     FlexSuper _ _ -> return [actualVar]
     RigidVar _ -> return [actualVar]
     RigidSuper _ _ -> return [actualVar]
     Alias _ _ args realVar -> do
-      argVars <- foldM (\acc (_, argVar) -> do
-        vars <- extractVarsFromUnifiedType argVar
-        return (acc <> vars)) [] args
+      argVars <- concat <$> traverse (extractVarsFromUnifiedType . snd) args
       realVars <- extractVarsFromUnifiedType realVar
       return (argVars <> realVars)
     Error -> return []

@@ -538,18 +538,20 @@ decodeCachedModule artifactFile = do
   bytes <- LBS.readFile artifactFile
   case decodeVersioned bytes of
     Right triple -> return triple
-    Left _msg -> decodeLegacy artifactFile
+    Left _msg -> decodeLegacyBytes bytes
 
-decodeLegacy :: FilePath -> IO (I.Interface, Opt.LocalGraph, Map.Map String JS.FFIInfo)
-decodeLegacy artifactFile = do
-  tripleResult <- Binary.decodeFileOrFail artifactFile
-  case tripleResult of
-    Right triple -> return triple
-    Left _ -> do
-      pairResult <- Binary.decodeFileOrFail artifactFile
-      case pairResult of
-        Right (iface, localGraph) -> return (iface, localGraph, Map.empty)
-        Left (_offset, msg) -> fail ("decode error: " ++ msg)
+-- | Attempt legacy (unversioned) decoding from already-read bytes.
+--
+-- Tries triple format first, falls back to pair format (pre-FFI).
+-- Avoids re-reading the file by operating on the in-memory bytes.
+decodeLegacyBytes :: LBS.ByteString -> IO (I.Interface, Opt.LocalGraph, Map.Map String JS.FFIInfo)
+decodeLegacyBytes bytes =
+  case Binary.decodeOrFail bytes of
+    Right (_, _, triple) -> return triple
+    Left _ ->
+      case Binary.decodeOrFail bytes of
+        Right (_, _, (iface, localGraph)) -> return (iface, localGraph, Map.empty)
+        Left (_, _, msg) -> fail ("decode error: " ++ msg)
 
 -- | Handle the result of attempting to decode a cached module.
 handleDecodeResult ::

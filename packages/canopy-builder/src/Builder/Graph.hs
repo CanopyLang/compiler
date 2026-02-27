@@ -28,6 +28,7 @@ module Builder.Graph
     getModuleDeps,
     getAllModules,
     hasCycle,
+    findCycle,
     topologicalSort,
 
     -- * Graph Operations
@@ -37,8 +38,10 @@ module Builder.Graph
 where
 
 import qualified Canopy.ModuleName as ModuleName
+import qualified Data.Graph as Graph
 import Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
+import qualified Data.Maybe as Maybe
 import Data.Set (Set)
 import qualified Data.Set as Set
 
@@ -107,42 +110,40 @@ getModuleDeps graph moduleName = do
 getAllModules :: DependencyGraph -> [ModuleName.Raw]
 getAllModules graph = Map.keys (graphNodes graph)
 
--- | Check if graph contains cycles.
+-- | Check if graph contains cycles using Tarjan's SCC algorithm.
+--
+-- Single-pass O(V + E) cycle detection via 'Data.Graph.stronglyConnComp'.
 hasCycle :: DependencyGraph -> Bool
-hasCycle graph =
-  any (hasCycleFrom Set.empty) (getAllModules graph)
+hasCycle = Maybe.isJust . findCycle
+
+-- | Find a cycle in the graph, if one exists.
+--
+-- Returns the list of module names forming the first cycle found,
+-- or 'Nothing' if the graph is acyclic. Uses Tarjan's strongly
+-- connected components algorithm for O(V + E) complexity.
+findCycle :: DependencyGraph -> Maybe [ModuleName.Raw]
+findCycle graph =
+  case filter isCyclic (Graph.stronglyConnComp edges) of
+    (Graph.CyclicSCC names : _) -> Just names
+    _ -> Nothing
   where
-    hasCycleFrom visited current
-      | Set.member current visited = True
-      | otherwise =
-          case getModuleDeps graph current of
-            Nothing -> False
-            Just deps ->
-              let visited' = Set.insert current visited
-               in any (hasCycleFrom visited') (Set.toList deps)
+    edges = map toEdge (Map.toList (graphNodes graph))
+    toEdge (name, node) = (name, name, Set.toList (nodeDeps node))
+    isCyclic (Graph.CyclicSCC _) = True
+    isCyclic _ = False
 
 -- | Topological sort for build order.
 --
--- Returns Nothing if graph contains cycles.
+-- Returns Nothing if graph contains cycles. Uses 'Data.Graph.stronglyConnComp'
+-- for a single-pass O(V + E) sort that also detects cycles.
 topologicalSort :: DependencyGraph -> Maybe [ModuleName.Raw]
 topologicalSort graph =
-  if hasCycle graph
-    then Nothing
-    else Just (sort' Set.empty [] (getAllModules graph))
+  traverse extractAcyclic (Graph.stronglyConnComp edges)
   where
-    sort' _ result [] = reverse result
-    sort' visited result (m : ms)
-      | Set.member m visited = sort' visited result ms
-      | otherwise =
-          case getModuleDeps graph m of
-            Nothing -> sort' (Set.insert m visited) (m : result) ms
-            Just deps ->
-              let unvisitedDeps = filter (`Set.notMember` visited) (Set.toList deps)
-                  visited' = Set.insert m visited
-                  result' = m : result
-               in if null unvisitedDeps
-                    then sort' visited' result' ms
-                    else sort' visited result (unvisitedDeps ++ [m] ++ ms)
+    edges = map toEdge (Map.toList (graphNodes graph))
+    toEdge (name, node) = (name, name, Set.toList (nodeDeps node))
+    extractAcyclic (Graph.AcyclicSCC name) = Just name
+    extractAcyclic (Graph.CyclicSCC _) = Nothing
 
 -- | Get transitive dependencies of a module.
 transitiveDeps :: DependencyGraph -> ModuleName.Raw -> Set ModuleName.Raw

@@ -10,11 +10,15 @@
 -- Uses SHA-256 hashing for reliable change detection following the
 -- NEW query engine pattern.
 --
+-- Hash digests are stored as raw 32-byte 'ShortByteString' values
+-- instead of 64-character hex strings, reducing per-hash memory
+-- from ~1KB (linked list of Char) to 32 bytes.
+--
 -- @since 0.19.1
 module Builder.Hash
   ( -- * Hash Types
     ContentHash (..),
-    HashValue,
+    HashValue (..),
 
     -- * Hashing Functions
     hashFile,
@@ -29,12 +33,17 @@ module Builder.Hash
     -- * Hash Utilities
     showHash,
     emptyHash,
+    toHexString,
+    fromHexString,
   )
 where
 
 import qualified Data.ByteString as BS
 import Data.ByteString (ByteString)
 import qualified Data.ByteString.Char8 as BSC
+import qualified Data.ByteString.Short as SBS
+import qualified Data.Char as Char
+import Data.Bits (shiftR, (.&.))
 import qualified Data.Digest.Pure.SHA as SHA
 import qualified Data.ByteString.Lazy as BSL
 import Data.Map.Strict (Map)
@@ -43,8 +52,15 @@ import qualified Canopy.ModuleName as ModuleName
 import Logging.Event (LogEvent (..))
 import qualified Logging.Logger as Log
 
--- | Hash value (SHA-256 digest).
-type HashValue = String
+-- | SHA-256 digest stored as raw bytes (32 bytes).
+--
+-- Uses 'ShortByteString' for compact storage: 32 bytes + GHC overhead
+-- instead of 64 'Char' heap cells (~1KB on 64-bit).
+newtype HashValue = HashValue { unHashValue :: SBS.ShortByteString }
+  deriving (Eq, Ord)
+
+instance Show HashValue where
+  show hv = "HashValue " ++ show (toHexString hv)
 
 -- | Content hash with metadata.
 data ContentHash = ContentHash
@@ -57,7 +73,7 @@ data ContentHash = ContentHash
 emptyHash :: ContentHash
 emptyHash =
   ContentHash
-    { hashValue = "",
+    { hashValue = HashValue SBS.empty,
       hashSource = "empty"
     }
 
@@ -99,12 +115,12 @@ hashDependencies deps =
         }
   where
     formatDep (moduleName, hash) =
-      show moduleName ++ ":" ++ hashValue hash
+      show moduleName ++ ":" ++ toHexString (hashValue hash)
 
--- | Compute SHA-256 hash of bytes.
+-- | Compute SHA-256 hash of bytes, returning raw digest.
 computeHash :: ByteString -> HashValue
 computeHash bytes =
-  SHA.showDigest (SHA.sha256 (BSL.fromStrict bytes))
+  HashValue (SBS.toShort (BSL.toStrict (SHA.bytestringDigest (SHA.sha256 (BSL.fromStrict bytes)))))
 
 -- | Check if two hashes are equal.
 hashesEqual :: ContentHash -> ContentHash -> Bool
@@ -117,4 +133,37 @@ hashChanged h1 h2 = not (hashesEqual h1 h2)
 -- | Show hash in readable format.
 showHash :: ContentHash -> String
 showHash hash =
-  take 8 (hashValue hash) ++ "... (" ++ hashSource hash ++ ")"
+  take 8 (toHexString (hashValue hash)) ++ "... (" ++ hashSource hash ++ ")"
+
+-- | Convert a raw hash digest to a hex string for display or JSON serialization.
+toHexString :: HashValue -> String
+toHexString (HashValue sbs) =
+  concatMap byteToHex (SBS.unpack sbs)
+  where
+    byteToHex b = [hexDigit (fromIntegral (shiftR b 4)), hexDigit (fromIntegral (b .&. 0x0F))]
+    hexDigit n
+      | n < 10    = Char.chr (Char.ord '0' + n)
+      | otherwise = Char.chr (Char.ord 'a' + n - 10)
+
+-- | Parse a hex string back into a raw hash digest.
+--
+-- Returns 'Nothing' if the string contains non-hex characters
+-- or has odd length.
+fromHexString :: String -> Maybe HashValue
+fromHexString [] = Just (HashValue SBS.empty)
+fromHexString hexStr
+  | odd (length hexStr) = Nothing
+  | otherwise = HashValue . SBS.pack <$> go hexStr
+  where
+    go [] = Just []
+    go (hi:lo:rest) = do
+      hiByte <- hexVal hi
+      loByte <- hexVal lo
+      restBytes <- go rest
+      Just (fromIntegral (hiByte * 16 + loByte) : restBytes)
+    go [_] = Nothing
+    hexVal c
+      | '0' <= c && c <= '9' = Just (Char.ord c - Char.ord '0')
+      | 'a' <= c && c <= 'f' = Just (Char.ord c - Char.ord 'a' + 10)
+      | 'A' <= c && c <= 'F' = Just (Char.ord c - Char.ord 'A' + 10)
+      | otherwise = Nothing

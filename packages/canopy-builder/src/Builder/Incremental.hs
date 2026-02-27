@@ -43,6 +43,7 @@ import qualified Data.ByteString.Lazy as BSL
 import Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
 import qualified Data.Name as Name
+import qualified Data.Set as Set
 import Data.Time.Clock (UTCTime, addUTCTime, getCurrentTime)
 import GHC.Generics (Generic)
 import qualified Data.Text as Text
@@ -62,8 +63,8 @@ data CacheEntry = CacheEntry
 instance ToJSON CacheEntry where
   toJSON entry =
     Aeson.object
-      [ "sourceHash" .= Hash.hashValue (cacheSourceHash entry),
-        "depsHash" .= Hash.hashValue (cacheDepsHash entry),
+      [ "sourceHash" .= Hash.toHexString (Hash.hashValue (cacheSourceHash entry)),
+        "depsHash" .= Hash.toHexString (Hash.hashValue (cacheDepsHash entry)),
         "artifactPath" .= cacheArtifactPath entry,
         "timestamp" .= cacheTimestamp entry
       ]
@@ -74,9 +75,11 @@ instance FromJSON CacheEntry where
     depsHashStr <- obj .: "depsHash"
     artifactPath <- obj .: "artifactPath"
     timestamp <- obj .: "timestamp"
+    let srcHash = maybe (Hash.HashValue mempty) id (Hash.fromHexString sourceHashStr)
+        depsHash = maybe (Hash.HashValue mempty) id (Hash.fromHexString depsHashStr)
     return CacheEntry
-      { cacheSourceHash = Hash.ContentHash sourceHashStr "loaded",
-        cacheDepsHash = Hash.ContentHash depsHashStr "loaded",
+      { cacheSourceHash = Hash.ContentHash srcHash "loaded",
+        cacheDepsHash = Hash.ContentHash depsHash "loaded",
         cacheArtifactPath = artifactPath,
         cacheTimestamp = timestamp
       })
@@ -196,21 +199,28 @@ invalidateModule cache moduleName =
   cache {cacheEntries = Map.delete moduleName (cacheEntries cache)}
 
 -- | Invalidate module and all transitive dependents.
+--
+-- Uses a Set-based work queue for O(V + E) traversal instead of
+-- the previous list-append approach which was O(V^2).
 invalidateTransitive ::
   BuildCache ->
   ModuleName.Raw ->
   Map ModuleName.Raw [ModuleName.Raw] -> -- ^ Reverse dependency map
   BuildCache
 invalidateTransitive cache moduleName reverseDeps =
-  let toInvalidate = collectTransitive [moduleName]
-      newEntries = foldr Map.delete (cacheEntries cache) toInvalidate
+  let toInvalidate = collectTransitive (Set.singleton moduleName) Set.empty
+      newEntries = Set.foldl' (flip Map.delete) (cacheEntries cache) toInvalidate
    in cache {cacheEntries = newEntries}
   where
-    collectTransitive [] = []
-    collectTransitive (m : ms) =
-      let deps = maybe [] id (Map.lookup m reverseDeps)
-          rest = collectTransitive (ms ++ deps)
-       in m : rest
+    collectTransitive pending visited
+      | Set.null pending = visited
+      | otherwise =
+          let (current, rest) = Set.deleteFindMin pending
+           in if Set.member current visited
+                then collectTransitive rest visited
+                else
+                  let deps = Set.fromList (maybe [] id (Map.lookup current reverseDeps))
+                   in collectTransitive (Set.union rest deps) (Set.insert current visited)
 
 -- | Prune old entries from cache.
 pruneCache :: BuildCache -> UTCTime -> BuildCache

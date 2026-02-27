@@ -39,7 +39,7 @@ testEmptyHash =
   testGroup
     "empty hash tests"
     [ testCase "empty hash has empty value" $
-        Hash.hashValue Hash.emptyHash @?= "",
+        Hash.toHexString (Hash.hashValue Hash.emptyHash) @?= "",
       testCase "empty hash has correct source" $
         Hash.hashSource Hash.emptyHash @?= "empty"
     ]
@@ -50,10 +50,10 @@ testStringHashing =
     "string hashing tests"
     [ testCase "hash empty string" $ do
         let h = Hash.hashString ""
-        Hash.hashValue h @?= "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        Hash.toHexString (Hash.hashValue h) @?= "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
       testCase "hash simple string" $ do
         let h = Hash.hashString "hello"
-        Hash.hashValue h @?= "2cf24dba5fb0a30e26e83b2ac5b9e29e1b161e5c1fa7425e73043362938b9824",
+        Hash.toHexString (Hash.hashValue h) @?= "2cf24dba5fb0a30e26e83b2ac5b9e29e1b161e5c1fa7425e73043362938b9824",
       testCase "hash different strings produce different hashes" $ do
         let h1 = Hash.hashString "hello"
         let h2 = Hash.hashString "world"
@@ -72,7 +72,7 @@ testBytesHashing =
     "bytes hashing tests"
     [ testCase "hash empty bytes" $ do
         let h = Hash.hashBytes (BSC.pack "")
-        Hash.hashValue h @?= "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        Hash.toHexString (Hash.hashValue h) @?= "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
       testCase "hash bytes produces same hash as string" $ do
         let hBytes = Hash.hashBytes (BSC.pack "hello")
         let hString = Hash.hashString "hello"
@@ -161,7 +161,7 @@ testHashComparison =
       testCase "showHash truncates and includes source" $ do
         let h = Hash.hashString "test"
         let shown = Hash.showHash h
-        length shown < length (Hash.hashValue h) @? "showHash should truncate",
+        length shown < length (Hash.toHexString (Hash.hashValue h)) @? "showHash should truncate",
       testCase "showHash includes source description" $ do
         let h = Hash.hashString "test"
         let shown = Hash.showHash h
