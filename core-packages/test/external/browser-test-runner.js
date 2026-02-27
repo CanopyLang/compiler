@@ -244,9 +244,19 @@
 
       case 'FuzzTest': {
         var fuzzName = path.concat([test.a]).join(' > ');
-        report.skipped++;
+        var fuzzStart = performance.now();
+        var fuzzSeed = Math.floor(Math.random() * 2147483647);
+        var outcome = test.b(fuzzSeed)(100);
+        var fuzzTime = performance.now() - fuzzStart;
         report.total++;
-        emitResult('skipped', fuzzName, 0, 'Fuzz tests not supported in browser');
+
+        if (outcome.$ === 'FuzzPassed') {
+          report.passed++;
+          emitResult('passed', fuzzName + ' (' + outcome.a + ' runs)', fuzzTime);
+        } else {
+          report.failed++;
+          emitResult('failed', fuzzName, fuzzTime, 'Counterexample: ' + outcome.a + '\n' + outcome.b);
+        }
         break;
       }
 

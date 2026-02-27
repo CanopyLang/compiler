@@ -17,6 +17,9 @@ help:
 	@echo "test-coverage: Run tests with coverage report"
 	@echo "test-build: Build tests without running them"
 	@echo "test-deps: Install test dependencies"
+	@echo "bench: Run compilation benchmarks (HTML report)"
+	@echo "bench-quick: Run quick benchmarks (1s time limit)"
+	@echo "bench-csv: Run benchmarks with CSV output"
 
 build:
 	@stack install --fast --pedantic --ghc-options "-j +RTS -A128m -n2m -RTS"
@@ -89,6 +92,18 @@ test-build:
 test-deps:
 	@echo "Installing test dependencies..."
 	@stack build --test --only-dependencies
+
+bench:
+	@echo "Running benchmarks..."
+	@stack bench canopy:canopy-bench --benchmark-arguments '--output bench/report.html'
+
+bench-quick:
+	@echo "Running quick benchmarks..."
+	@stack bench canopy:canopy-bench --benchmark-arguments '--time-limit 1'
+
+bench-csv:
+	@echo "Running benchmarks with CSV output..."
+	@stack bench canopy:canopy-bench --benchmark-arguments '--csv bench/results.csv'
 
 example:
 	@make build

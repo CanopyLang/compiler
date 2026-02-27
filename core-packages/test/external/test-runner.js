@@ -202,6 +202,25 @@ function runTestsSync(testSuite) {
                     }
                     break;
 
+                case 'FuzzTest':
+                    var fuzzName = path.concat([test.a]).join(' > ');
+                    var fuzzSeed = Math.floor(Math.random() * 2147483647);
+                    var fuzzRuns = 100;
+                    var outcome = test.b(fuzzSeed)(fuzzRuns);
+                    var fuzzDuration = performance.now() - testStart;
+
+                    if (outcome.$ === 'FuzzPassed') {
+                        pushAndEmit({ $: 'Passed', a: fuzzName + ' (' + outcome.a + ' runs)', b: fuzzDuration });
+                    } else {
+                        pushAndEmit({
+                            $: 'Failed',
+                            a: fuzzName,
+                            b: 'Counterexample: ' + outcome.a + '\n' + outcome.b,
+                            c: fuzzDuration
+                        });
+                    }
+                    break;
+
                 case 'Skip':
                     var skippedName = getSkippedTestName(test.a, path);
                     pushAndEmit({ $: 'Skipped', a: skippedName });
@@ -294,6 +313,25 @@ async function runTestsAsync(testSuite) {
 
                 case 'AsyncTest':
                     await runAsyncTest(test, path, pushAndEmit);
+                    break;
+
+                case 'FuzzTest':
+                    var fuzzName = path.concat([test.a]).join(' > ');
+                    var fuzzSeed = Math.floor(Math.random() * 2147483647);
+                    var fuzzRuns = 100;
+                    var outcome = test.b(fuzzSeed)(fuzzRuns);
+                    var fuzzDuration = performance.now() - testStart;
+
+                    if (outcome.$ === 'FuzzPassed') {
+                        pushAndEmit({ $: 'Passed', a: fuzzName + ' (' + outcome.a + ' runs)', b: fuzzDuration });
+                    } else {
+                        pushAndEmit({
+                            $: 'Failed',
+                            a: fuzzName,
+                            b: 'Counterexample: ' + outcome.a + '\n' + outcome.b,
+                            c: fuzzDuration
+                        });
+                    }
                     break;
 
                 case 'Skip':

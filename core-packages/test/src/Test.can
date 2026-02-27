@@ -3,6 +3,7 @@
 
 module Test exposing
   ( Test(..)
+  , FuzzOutcome(..)
   , PlaywrightAction(..)
   , BrowserTest(..)
   , inBrowser
@@ -22,6 +23,8 @@ module Test exposing
   )
 
 import Expect exposing (Expectation)
+import Fuzz exposing (Fuzzer)
+import Random
 import Task exposing (Task)
 
 
@@ -46,8 +49,15 @@ type Test
   | Skip Test
   | Todo String
   | Only Test
-  | FuzzTest String
+  | FuzzTest String (Int -> Int -> FuzzOutcome)
   | PlaywrightStep PlaywrightAction
+
+
+{-| Outcome of running a fuzz test.
+-}
+type FuzzOutcome
+  = FuzzPassed Int
+  | FuzzFailed String String
 
 
 {-| Actions that can be performed via Playwright in the browser.
@@ -108,11 +118,6 @@ type TestError
   = TestTimeout String
   | TestException String
   | BrowserError String
-
-
-{-| Fuzzer type for property-based testing.
--}
-type Fuzzer a = Fuzzer
 
 
 -- | Test result type for internal use
@@ -197,8 +202,10 @@ only testToFocus =
 
 -}
 fuzz : Fuzzer a -> String -> (a -> Expectation) -> Test
-fuzz _fuzzer description _expectationFn =
-  FuzzTest description
+fuzz (Fuzz.Fuzzer generator shrinker toString) description testFn =
+  FuzzTest description (\seed numRuns ->
+    executeFuzz generator shrinker toString testFn seed numRuns
+  )
 
 
 {-| Create an async test that returns a Task.
@@ -254,12 +261,24 @@ runToRunnerResults testCase =
         }
       ]
 
-    FuzzTest description ->
-      [ { name = description
-        , passed = True
-        , reason = "FUZZ_TEST (requires fuzzer)"
-        }
-      ]
+    FuzzTest description runFuzz ->
+      let
+        outcome = runFuzz 42 100
+      in
+      case outcome of
+        FuzzPassed count ->
+          [ { name = description
+            , passed = True
+            , reason = "passed " ++ String.fromInt count ++ " fuzz iterations"
+            }
+          ]
+
+        FuzzFailed valueStr message ->
+          [ { name = description
+            , passed = False
+            , reason = "Counterexample: " ++ valueStr ++ "\n" ++ message
+            }
+          ]
 
     PlaywrightStep _action ->
       [ { name = describePlaywrightAction _action
@@ -280,7 +299,7 @@ getTestName testCase =
     Skip inner -> getTestName inner
     Todo name -> name
     Only inner -> getTestName inner
-    FuzzTest name -> name
+    FuzzTest name _ -> name
     PlaywrightStep action -> describePlaywrightAction action
 
 
@@ -334,12 +353,21 @@ run testCase =
       , duration = 0
       }
 
-    FuzzTest description ->
-      { description = description
-      , status = "SKIP"
-      , message = "Fuzz test - requires fuzzer"
-      , duration = 0
-      }
+    FuzzTest description runFuzz ->
+      case runFuzz 42 100 of
+        FuzzPassed count ->
+          { description = description
+          , status = "PASS"
+          , message = "passed " ++ String.fromInt count ++ " fuzz iterations"
+          , duration = 0
+          }
+
+        FuzzFailed valueStr message ->
+          { description = description
+          , status = "FAIL"
+          , message = "Counterexample: " ++ valueStr ++ "\n" ++ message
+          , duration = 0
+          }
 
     PlaywrightStep action ->
       { description = describePlaywrightAction action
@@ -429,3 +457,74 @@ describePlaywrightAction action =
     DontSeeElement selector -> "don't see element " ++ selector
     WaitFor selector -> "wait for " ++ selector
     Screenshot name -> "screenshot " ++ name
+
+
+-- ============================================================================
+-- Fuzz Test Execution
+-- ============================================================================
+
+
+{-| Execute a fuzz test: generate random values, test them, shrink on failure.
+-}
+executeFuzz : Random.Generator a -> (a -> List a) -> (a -> String) -> (a -> Expectation) -> Int -> Int -> FuzzOutcome
+executeFuzz generator shrinker toString testFn seedInt numRuns =
+  let
+    seed = Random.initialSeed seedInt
+  in
+  fuzzLoop generator shrinker toString testFn seed numRuns 0
+
+
+fuzzLoop : Random.Generator a -> (a -> List a) -> (a -> String) -> (a -> Expectation) -> Random.Seed -> Int -> Int -> FuzzOutcome
+fuzzLoop generator shrinker toString testFn seed remaining passed =
+  if remaining <= 0 then
+    FuzzPassed passed
+  else
+    let
+      ( value, nextSeed ) = Random.step generator seed
+      result = testFn value
+    in
+    case result of
+      Expect.Pass ->
+        fuzzLoop generator shrinker toString testFn nextSeed (remaining - 1) (passed + 1)
+
+      Expect.Fail reason ->
+        let
+          shrunk = shrinkLoop shrinker testFn value 100
+          message = Expect.reasonToString reason
+        in
+        FuzzFailed (toString shrunk) message
+
+
+{-| Shrink a failing value to find the minimal counterexample.
+-}
+shrinkLoop : (a -> List a) -> (a -> Expectation) -> a -> Int -> a
+shrinkLoop shrinker testFn value attemptsLeft =
+  if attemptsLeft <= 0 then
+    value
+  else
+    let
+      candidates = shrinker value
+    in
+    case findSmallerFailure testFn candidates of
+      Nothing ->
+        value
+
+      Just smaller ->
+        shrinkLoop shrinker testFn smaller (attemptsLeft - 1)
+
+
+{-| Find the first candidate that still fails the test.
+-}
+findSmallerFailure : (a -> Expectation) -> List a -> Maybe a
+findSmallerFailure testFn candidates =
+  case candidates of
+    [] ->
+      Nothing
+
+    candidate :: rest ->
+      case testFn candidate of
+        Expect.Fail _ ->
+          Just candidate
+
+        Expect.Pass ->
+          findSmallerFailure testFn rest

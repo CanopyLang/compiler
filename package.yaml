@@ -146,3 +146,19 @@ tests:
     when:
       - condition: false
         other-modules: Paths_canopy
+
+benchmarks:
+  canopy-bench:
+    main: Main.hs
+    source-dirs: bench
+    ghc-options:
+      - -Wall
+      - -fwarn-tabs
+      - -rtsopts
+      - -threaded
+      - -with-rtsopts=-N
+      - -O2
+    dependencies:
+      - canopy-core
+      - canopy-builder
+      - criterion

@@ -83,15 +83,14 @@ import Array exposing (Array)
 import Random exposing (Generator)
 
 
-{-| A Fuzzer generates random values for fuzz testing.
+{-| A Fuzzer generates random values and provides shrinking for fuzz tests.
 
-The test framework automatically applies type-appropriate shrinking
-when a fuzz test fails. Primitive types (Int, Float, String, Bool,
-Char, List) are shrunk automatically toward minimal values.
+Contains a random value generator, a shrinker for counterexample
+minimization, and a toString function for error reporting.
 
 -}
 type Fuzzer a
-    = Fuzzer (Generator a)
+    = Fuzzer (Generator a) (Shrinker a) (a -> String)
 
 
 {-| A Shrinker produces candidate smaller values from a given value.
@@ -120,7 +119,7 @@ Shrinks toward 0 via binary search.
 -}
 int : Fuzzer Int
 int =
-    Fuzzer (Random.int Random.minInt Random.maxInt)
+    Fuzzer (Random.int Random.minInt Random.maxInt) shrinkInt String.fromInt
 
 
 {-| Generate integers in a specific range (inclusive).
@@ -130,7 +129,7 @@ int =
 -}
 intRange : Int -> Int -> Fuzzer Int
 intRange lo hi =
-    Fuzzer (Random.int lo hi)
+    Fuzzer (Random.int lo hi) shrinkInt String.fromInt
 
 
 {-| Generate random floats.
@@ -140,7 +139,7 @@ Shrinks toward 0.0 via binary search.
 -}
 float : Fuzzer Float
 float =
-    Fuzzer (Random.float -1000000 1000000)
+    Fuzzer (Random.float -1000000 1000000) shrinkFloat String.fromFloat
 
 
 {-| Generate floats in a specific range.
@@ -150,7 +149,7 @@ float =
 -}
 floatRange : Float -> Float -> Fuzzer Float
 floatRange lo hi =
-    Fuzzer (Random.float lo hi)
+    Fuzzer (Random.float lo hi) shrinkFloat String.fromFloat
 
 
 {-| Generate floats between 0 and 1 inclusive.
@@ -168,7 +167,12 @@ Shrinks by removing characters and simplifying individual characters.
 -}
 string : Fuzzer String
 string =
-    Fuzzer (stringGenerator 0 50)
+    Fuzzer (stringGenerator 0 50) shrinkString showString
+
+
+showString : String -> String
+showString s =
+    "\"" ++ s ++ "\""
 
 
 stringGenerator : Int -> Int -> Generator String
@@ -193,7 +197,12 @@ True shrinks to False.
 -}
 bool : Fuzzer Bool
 bool =
-    Fuzzer (Random.uniform True [ False ])
+    Fuzzer (Random.uniform True [ False ]) shrinkBool showBool
+
+
+showBool : Bool -> String
+showBool b =
+    if b then "True" else "False"
 
 
 {-| Generate random printable ASCII characters.
@@ -203,14 +212,14 @@ Shrinks toward 'a'.
 -}
 char : Fuzzer Char
 char =
-    Fuzzer charGenerator
+    Fuzzer charGenerator shrinkChar String.fromChar
 
 
 {-| Generate the unit value. Useful for tests that don't need input.
 -}
 unit : Fuzzer ()
 unit =
-    constant ()
+    Fuzzer (Random.constant ()) noShrink (\_ -> "()")
 
 
 {-| Generate Maybe values. Roughly 1/4 Nothing, 3/4 Just.
@@ -219,8 +228,28 @@ unit =
 
 -}
 maybe : Fuzzer a -> Fuzzer (Maybe a)
-maybe (Fuzzer gen) =
-    Fuzzer (maybeGenerator gen)
+maybe (Fuzzer gen shrink show) =
+    Fuzzer (maybeGenerator gen) (shrinkMaybe shrink) (showMaybe show)
+
+
+shrinkMaybe : Shrinker a -> Shrinker (Maybe a)
+shrinkMaybe shrinkInner m =
+    case m of
+        Nothing ->
+            []
+
+        Just a ->
+            Nothing :: List.map Just (shrinkInner a)
+
+
+showMaybe : (a -> String) -> Maybe a -> String
+showMaybe showInner m =
+    case m of
+        Nothing ->
+            "Nothing"
+
+        Just a ->
+            "Just (" ++ showInner a ++ ")"
 
 
 maybeGenerator : Generator a -> Generator (Maybe a)
@@ -240,8 +269,28 @@ maybeGenerator gen =
 
 -}
 result : Fuzzer err -> Fuzzer val -> Fuzzer (Result err val)
-result (Fuzzer errGen) (Fuzzer valGen) =
-    Fuzzer (resultGenerator errGen valGen)
+result (Fuzzer errGen shrinkErr showErr) (Fuzzer valGen shrinkVal showVal) =
+    Fuzzer (resultGenerator errGen valGen) (shrinkResult shrinkErr shrinkVal) (showResult showErr showVal)
+
+
+shrinkResult : Shrinker err -> Shrinker val -> Shrinker (Result err val)
+shrinkResult shrinkErr shrinkVal r =
+    case r of
+        Ok v ->
+            List.map Ok (shrinkVal v)
+
+        Err e ->
+            List.map Err (shrinkErr e)
+
+
+showResult : (err -> String) -> (val -> String) -> Result err val -> String
+showResult showErr showVal r =
+    case r of
+        Ok v ->
+            "Ok (" ++ showVal v ++ ")"
+
+        Err e ->
+            "Err (" ++ showErr e ++ ")"
 
 
 resultGenerator : Generator err -> Generator val -> Generator (Result err val)
@@ -263,8 +312,13 @@ Shrinks by removing elements and shrinking remaining elements.
 
 -}
 list : Fuzzer a -> Fuzzer (List a)
-list (Fuzzer gen) =
-    Fuzzer (listGenerator 0 30 gen)
+list (Fuzzer gen shrink show) =
+    Fuzzer (listGenerator 0 30 gen) (shrinkList shrink) (showList show)
+
+
+showList : (a -> String) -> List a -> String
+showList showInner items =
+    "[" ++ String.join ", " (List.map showInner items) ++ "]"
 
 
 listGenerator : Int -> Int -> Generator a -> Generator (List a)
@@ -279,8 +333,8 @@ listGenerator minLen maxLen gen =
 
 -}
 array : Fuzzer a -> Fuzzer (Array a)
-array (Fuzzer gen) =
-    Fuzzer (Random.map Array.fromList (listGenerator 0 30 gen))
+array (Fuzzer gen shrink show) =
+    Fuzzer (Random.map Array.fromList (listGenerator 0 30 gen)) noShrink (showList show << Array.toList)
 
 
 {-| Generate pairs (2-tuples).
@@ -289,8 +343,19 @@ array (Fuzzer gen) =
 
 -}
 pair : Fuzzer a -> Fuzzer b -> Fuzzer ( a, b )
-pair (Fuzzer genA) (Fuzzer genB) =
-    Fuzzer (Random.pair genA genB)
+pair (Fuzzer genA shrinkA showA) (Fuzzer genB shrinkB showB) =
+    Fuzzer (Random.pair genA genB) (shrinkPair shrinkA shrinkB) (showPair showA showB)
+
+
+shrinkPair : Shrinker a -> Shrinker b -> Shrinker ( a, b )
+shrinkPair shrinkA shrinkB ( a, b ) =
+    List.map (\sa -> ( sa, b )) (shrinkA a)
+        ++ List.map (\sb -> ( a, sb )) (shrinkB b)
+
+
+showPair : (a -> String) -> (b -> String) -> ( a, b ) -> String
+showPair showA showB ( a, b ) =
+    "(" ++ showA a ++ ", " ++ showB b ++ ")"
 
 
 {-| Generate triples (3-tuples).
@@ -299,8 +364,23 @@ pair (Fuzzer genA) (Fuzzer genB) =
 
 -}
 triple : Fuzzer a -> Fuzzer b -> Fuzzer c -> Fuzzer ( a, b, c )
-triple (Fuzzer genA) (Fuzzer genB) (Fuzzer genC) =
-    Fuzzer (Random.map3 (\a b c -> ( a, b, c )) genA genB genC)
+triple (Fuzzer genA shrinkA showA) (Fuzzer genB shrinkB showB) (Fuzzer genC shrinkC showC) =
+    Fuzzer
+        (Random.map3 (\a b c -> ( a, b, c )) genA genB genC)
+        (shrinkTriple shrinkA shrinkB shrinkC)
+        (showTriple showA showB showC)
+
+
+shrinkTriple : Shrinker a -> Shrinker b -> Shrinker c -> Shrinker ( a, b, c )
+shrinkTriple shrinkA shrinkB shrinkC ( a, b, c ) =
+    List.map (\sa -> ( sa, b, c )) (shrinkA a)
+        ++ List.map (\sb -> ( a, sb, c )) (shrinkB b)
+        ++ List.map (\sc -> ( a, b, sc )) (shrinkC c)
+
+
+showTriple : (a -> String) -> (b -> String) -> (c -> String) -> ( a, b, c ) -> String
+showTriple showA showB showC ( a, b, c ) =
+    "(" ++ showA a ++ ", " ++ showB b ++ ", " ++ showC c ++ ")"
 
 
 {-| Transform the output of a fuzzer.
@@ -311,8 +391,8 @@ triple (Fuzzer genA) (Fuzzer genB) (Fuzzer genC) =
 
 -}
 map : (a -> b) -> Fuzzer a -> Fuzzer b
-map f (Fuzzer gen) =
-    Fuzzer (Random.map f gen)
+map f (Fuzzer gen shrink show) =
+    Fuzzer (Random.map f gen) noShrink (\b -> "<mapped>")
 
 
 {-| Combine two fuzzers.
@@ -326,29 +406,29 @@ map f (Fuzzer gen) =
 
 -}
 map2 : (a -> b -> c) -> Fuzzer a -> Fuzzer b -> Fuzzer c
-map2 f (Fuzzer genA) (Fuzzer genB) =
-    Fuzzer (Random.map2 f genA genB)
+map2 f (Fuzzer genA _ _) (Fuzzer genB _ _) =
+    Fuzzer (Random.map2 f genA genB) noShrink (\_ -> "<mapped>")
 
 
 {-| Combine three fuzzers.
 -}
 map3 : (a -> b -> c -> d) -> Fuzzer a -> Fuzzer b -> Fuzzer c -> Fuzzer d
-map3 f (Fuzzer genA) (Fuzzer genB) (Fuzzer genC) =
-    Fuzzer (Random.map3 f genA genB genC)
+map3 f (Fuzzer genA _ _) (Fuzzer genB _ _) (Fuzzer genC _ _) =
+    Fuzzer (Random.map3 f genA genB genC) noShrink (\_ -> "<mapped>")
 
 
 {-| Combine four fuzzers.
 -}
 map4 : (a -> b -> c -> d -> e) -> Fuzzer a -> Fuzzer b -> Fuzzer c -> Fuzzer d -> Fuzzer e
-map4 f (Fuzzer genA) (Fuzzer genB) (Fuzzer genC) (Fuzzer genD) =
-    Fuzzer (Random.map4 f genA genB genC genD)
+map4 f (Fuzzer genA _ _) (Fuzzer genB _ _) (Fuzzer genC _ _) (Fuzzer genD _ _) =
+    Fuzzer (Random.map4 f genA genB genC genD) noShrink (\_ -> "<mapped>")
 
 
 {-| Combine five fuzzers.
 -}
 map5 : (a -> b -> c -> d -> e -> f) -> Fuzzer a -> Fuzzer b -> Fuzzer c -> Fuzzer d -> Fuzzer e -> Fuzzer f
-map5 f (Fuzzer genA) (Fuzzer genB) (Fuzzer genC) (Fuzzer genD) (Fuzzer genE) =
-    Fuzzer (Random.map5 f genA genB genC genD genE)
+map5 f (Fuzzer genA _ _) (Fuzzer genB _ _) (Fuzzer genC _ _) (Fuzzer genD _ _) (Fuzzer genE _ _) =
+    Fuzzer (Random.map5 f genA genB genC genD genE) noShrink (\_ -> "<mapped>")
 
 
 {-| Apply a fuzzer of functions to a fuzzer of values.
@@ -369,8 +449,8 @@ Useful for building up fuzzers with many arguments.
 
 -}
 andMap : Fuzzer a -> Fuzzer (a -> b) -> Fuzzer b
-andMap (Fuzzer gen) (Fuzzer fnGen) =
-    Fuzzer (Random.map2 (\f a -> f a) fnGen gen)
+andMap (Fuzzer gen _ _) (Fuzzer fnGen _ _) =
+    Fuzzer (Random.map2 (\f a -> f a) fnGen gen) noShrink (\_ -> "<mapped>")
 
 
 {-| Create a fuzzer that depends on another fuzzer's value.
@@ -382,8 +462,8 @@ andMap (Fuzzer gen) (Fuzzer fnGen) =
 
 -}
 andThen : (a -> Fuzzer b) -> Fuzzer a -> Fuzzer b
-andThen f (Fuzzer gen) =
-    Fuzzer (Random.andThen (\a -> let (Fuzzer genB) = f a in genB) gen)
+andThen f (Fuzzer gen _ _) =
+    Fuzzer (Random.andThen (\a -> let (Fuzzer genB _ _) = f a in genB) gen) noShrink (\_ -> "<andThen>")
 
 
 {-| Create a fuzzer that always returns the same value.
@@ -393,7 +473,7 @@ andThen f (Fuzzer gen) =
 -}
 constant : a -> Fuzzer a
 constant value =
-    Fuzzer (Random.constant value)
+    Fuzzer (Random.constant value) noShrink (\_ -> "<constant>")
 
 
 {-| Choose randomly from a list of fuzzers with equal probability.
@@ -409,20 +489,19 @@ oneOf : List (Fuzzer a) -> Fuzzer a
 oneOf fuzzers =
     case fuzzers of
         [] ->
-            -- This should never happen, but we need a fallback
             constant (Debug.todo "oneOf: empty list")
 
         first :: rest ->
             let
                 generators =
-                    List.map (\(Fuzzer gen) -> gen) fuzzers
+                    List.map (\(Fuzzer gen _ _) -> gen) fuzzers
             in
             case generators of
                 [] ->
-                    let (Fuzzer gen) = first in Fuzzer gen
+                    let (Fuzzer gen shrink show) = first in Fuzzer gen shrink show
 
                 g :: gs ->
-                    Fuzzer (Random.uniform g gs |> Random.andThen identity)
+                    Fuzzer (Random.uniform g gs |> Random.andThen identity) noShrink (\_ -> "<oneOf>")
 
 
 {-| Choose from fuzzers with weighted probability.
@@ -441,17 +520,17 @@ frequency options =
         [] ->
             constant (Debug.todo "frequency: empty list")
 
-        ( weight, Fuzzer gen ) :: rest ->
+        ( weight, Fuzzer gen shrink show ) :: rest ->
             let
                 weighted =
-                    List.map (\( w, Fuzzer g ) -> ( w, g )) options
+                    List.map (\( w, Fuzzer g _ _ ) -> ( w, g )) options
             in
             case weighted of
                 [] ->
-                    Fuzzer gen
+                    Fuzzer gen shrink show
 
                 w :: ws ->
-                    Fuzzer (Random.weighted w ws |> Random.andThen identity)
+                    Fuzzer (Random.weighted w ws |> Random.andThen identity) noShrink (\_ -> "<frequency>")
 
 
 {-| Filter out values that don't match a predicate.
@@ -465,8 +544,13 @@ or cause test timeouts.
 
 -}
 filter : (a -> Bool) -> Fuzzer a -> Fuzzer a
-filter predicate (Fuzzer gen) =
-    Fuzzer (filterGenerator 100 predicate gen)
+filter predicate (Fuzzer gen shrink show) =
+    Fuzzer (filterGenerator 100 predicate gen) (filterShrinker predicate shrink) show
+
+
+filterShrinker : (a -> Bool) -> Shrinker a -> Shrinker a
+filterShrinker predicate shrink value =
+    List.filter predicate (shrink value)
 
 
 filterGenerator : Int -> (a -> Bool) -> Generator a -> Generator a
