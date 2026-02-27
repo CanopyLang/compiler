@@ -203,7 +203,7 @@ renderSetter func = Text.unlines
     attrName = Text.drop 3 (cfJsName func)  -- Remove "set" prefix
     valueType = case cfParams func of
       [_, (_, vt)] -> vt
-      _ -> "Any"  -- Setter always has 2 params (validated by isSetter)
+      _ -> CTValue  -- Setter always has 2 params (validated by isSetter)
 
 
 -- | Render a constructor

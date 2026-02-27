@@ -10,22 +10,30 @@ module Unit.WebIDL.TypesTest
   ( tests
   ) where
 
+import Data.Text (Text)
 import Test.Tasty
 import Test.Tasty.HUnit
 
 import WebIDL.Types
-  ( mkSpecName
+  ( SpecName
+  , mkSpecName
   , specNameToText
+  , InterfaceName
   , mkInterfaceName
   , interfaceNameToText
+  , GroupName
   , mkGroupName
   , groupNameToText
+  , PackageName
   , mkPackageName
   , packageNameToText
+  , ModuleName
   , mkModuleName
   , moduleNameToText
+  , SpecUrl
   , mkSpecUrl
   , specUrlToText
+  , WebIdlPath
   , mkWebIdlPath
   , webIdlPathToText
   , validateName

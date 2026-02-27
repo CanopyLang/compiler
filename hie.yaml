@@ -16,3 +16,7 @@ cradle:
       component: "canopy-query:lib"
     - path: "./packages/canopy-terminal/src"
       component: "canopy-terminal:lib"
+    - path: "./packages/canopy-webidl/src"
+      component: "canopy-webidl:lib"
+    - path: "./packages/canopy-webidl/test"
+      component: "canopy-webidl:test:canopy-webidl-test"

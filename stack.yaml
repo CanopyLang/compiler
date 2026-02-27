@@ -7,6 +7,7 @@ packages:
   - packages/canopy-driver
   - packages/canopy-builder
   - packages/canopy-terminal
+  - packages/canopy-webidl
 
 # IMPORTANT: Do not add allow-newer: true
 # All version bounds must be explicitly managed.
