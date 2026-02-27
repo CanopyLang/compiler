@@ -16,6 +16,7 @@ module Canonicalize.Module.FFI
   ( loadFFIContent,
     loadFFIContentWithRoot,
     addFFIToEnvPure,
+    extractCapabilityWarnings,
   )
 where
 
@@ -27,14 +28,17 @@ import qualified Canopy.ModuleName as ModuleName
 import qualified Canopy.Package as Pkg
 import Control.Exception (SomeException, catch)
 import Data.List (intercalate, isPrefixOf, isInfixOf)
+import Data.Maybe (mapMaybe)
 import Data.Map (Map)
 import qualified Data.Map as Map
 import qualified Data.List as List
 import qualified Data.Text as Text
+import FFI.Types (JsSourcePath (..), JsSource (..))
 import qualified Foreign.FFI as FFI
 import qualified Reporting.Annotation as Ann
 import qualified Reporting.Error.Canonicalize as Error
 import qualified Reporting.Result as Result
+import qualified Reporting.Warning as Warning
 import qualified System.FilePath as FP
 import System.FilePath ((</>))
 
@@ -50,24 +54,24 @@ type Result i w a =
 -- before canonicalization to avoid threading issues.
 --
 -- @since 0.19.1
-loadFFIContent :: [Src.ForeignImport] -> IO (Map String String)
+loadFFIContent :: [Src.ForeignImport] -> IO (Map JsSourcePath JsSource)
 loadFFIContent = loadFFIContentWithRoot "."
 
 -- | Load FFI content with explicit root directory for path resolution.
 --
 -- Validates paths before reading to prevent path traversal attacks.
-loadFFIContentWithRoot :: FilePath -> [Src.ForeignImport] -> IO (Map String String)
+loadFFIContentWithRoot :: FilePath -> [Src.ForeignImport] -> IO (Map JsSourcePath JsSource)
 loadFFIContentWithRoot rootDir foreignImports = do
   results <- traverse loadSingleFFI foreignImports
   return $ Map.fromList (concat results)
   where
-    loadSingleFFI :: Src.ForeignImport -> IO [(String, String)]
+    loadSingleFFI :: Src.ForeignImport -> IO [(JsSourcePath, JsSource)]
     loadSingleFFI (Src.ForeignImport (FFI.JavaScriptFFI jsPath) _alias _region) =
       case validateFFIPath jsPath of
         Left _ -> return []
         Right validPath -> do
           result <- loadFFIFileWithTimeout (rootDir </> validPath) validPath
-          either (const (return [])) (\c -> return [(validPath, c)]) result
+          either (const (return [])) (\c -> return [(JsSourcePath validPath, JsSource c)]) result
     loadSingleFFI _ = return []
 
 -- | Validate an FFI source file path for safety.
@@ -101,7 +105,7 @@ loadFFIFileWithTimeout fullPath _jsPath = do
 --
 -- Processes all FFI imports sequentially, threading the updated
 -- environment through each import so all foreign functions are available.
-addFFIToEnvPure :: Env.Env -> [Src.ForeignImport] -> Map String String -> Result i [w] Env.Env
+addFFIToEnvPure :: Env.Env -> [Src.ForeignImport] -> Map JsSourcePath JsSource -> Result i [w] Env.Env
 addFFIToEnvPure env [] _ffiContentMap = Result.ok env
 addFFIToEnvPure env (fi : rest) ffiContentMap =
   addOneFFI env fi >>= \updatedEnv -> addFFIToEnvPure updatedEnv rest ffiContentMap
@@ -114,14 +118,14 @@ addFFIToEnvPure env (fi : rest) ffiContentMap =
       Result.throw (Error.FFIParseError region "WebAssembly" "WebAssembly FFI is not yet supported")
 
 -- Process single FFI import with comprehensive error handling
-processFFIImport :: Env.Env -> FilePath -> Ann.Located Name.Name -> Ann.Region -> Map String String -> Result i [w] Env.Env
+processFFIImport :: Env.Env -> FilePath -> Ann.Located Name.Name -> Ann.Region -> Map JsSourcePath JsSource -> Result i [w] Env.Env
 processFFIImport env jsPath alias region ffiContentMap =
   let aliasName = Ann.toValue alias
       home = Env._home env
       ffiModuleName = ModuleName.Canonical (ModuleName._package home) aliasName
-  in case Map.lookup jsPath ffiContentMap of
+  in case Map.lookup (JsSourcePath jsPath) ffiContentMap of
        Nothing -> Result.throw (Error.FFIFileNotFound region jsPath)
-       Just jsContent -> parseAndAddFFI env ffiModuleName aliasName jsPath region jsContent
+       Just (JsSource jsContent) -> parseAndAddFFI env ffiModuleName aliasName jsPath region jsContent
 
 -- Parse FFI content and add to environment with validation
 parseAndAddFFI :: Env.Env -> ModuleName.Canonical -> Name.Name -> FilePath -> Ann.Region -> String -> Result i [w] Env.Env
@@ -592,3 +596,59 @@ buildTupleType types =
       leftTuple = buildTupleType leftTypes
       rightTuple = buildTupleType rightTypes
   in Can.TTuple leftTuple rightTuple Nothing
+
+-- CAPABILITY WARNING EXTRACTION
+
+-- | Extract capability warnings from pre-loaded FFI content.
+--
+-- Scans each FFI file's JSDoc blocks for @capability annotations and
+-- produces a 'Warning.CapabilityNotice' for each function that declares
+-- required capabilities. This gives users compile-time feedback about
+-- which browser permissions or resources their FFI imports require.
+--
+-- @since 0.19.2
+extractCapabilityWarnings :: Name.Name -> Map JsSourcePath JsSource -> [Warning.Warning]
+extractCapabilityWarnings aliasName ffiContentMap =
+  concatMap (extractFromFile moduleName) (Map.toList ffiContentMap)
+  where
+    moduleName = Text.pack (Name.toChars aliasName)
+
+-- | Extract capability warnings from a single FFI file.
+extractFromFile :: Text.Text -> (JsSourcePath, JsSource) -> [Warning.Warning]
+extractFromFile moduleName (_, JsSource content) =
+  concatMap (blockToWarning moduleName) (parseCapabilityBlocks (lines content))
+
+-- | Parse JSDoc blocks that contain both @name and @capability annotations.
+parseCapabilityBlocks :: [String] -> [(String, [String])]
+parseCapabilityBlocks [] = []
+parseCapabilityBlocks (line:rest)
+  | isJSDocStart line =
+      let (commentBlock, remaining) = takeJSDocBlock (line:rest)
+      in case parseCapabilityBlock commentBlock of
+           Just cap -> cap : parseCapabilityBlocks remaining
+           Nothing -> parseCapabilityBlocks remaining
+  | otherwise = parseCapabilityBlocks rest
+
+-- | Parse a JSDoc block for function name and capability annotations.
+parseCapabilityBlock :: [String] -> Maybe (String, [String])
+parseCapabilityBlock commentLines = do
+  functionName <- findNameAnnotation commentLines
+  let capabilities = findAllCapabilities commentLines
+  if null capabilities then Nothing else Just (functionName, capabilities)
+
+-- | Find all @capability annotations in a JSDoc block.
+findAllCapabilities :: [String] -> [String]
+findAllCapabilities = mapMaybe parseCapabilityAnnotation
+
+-- | Parse a @capability annotation from a single line.
+parseCapabilityAnnotation :: String -> Maybe String
+parseCapabilityAnnotation line =
+  let trimmed = dropWhile (`elem` (" *" :: String)) line
+  in if ("@capability " :: String) `isPrefixOf` trimmed
+     then Just (strip (drop (length ("@capability " :: String)) trimmed))
+     else Nothing
+
+-- | Convert a parsed capability block into a warning.
+blockToWarning :: Text.Text -> (String, [String]) -> [Warning.Warning]
+blockToWarning moduleName (funcName, capabilities) =
+  [Warning.CapabilityNotice moduleName (Text.pack funcName) (map Text.pack capabilities)]

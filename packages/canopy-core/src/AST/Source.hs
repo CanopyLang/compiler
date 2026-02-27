@@ -106,6 +106,7 @@ module AST.Source
   ( Expr,
     Expr_ (..),
     VarType (..),
+    InterpolationSegment (..),
     Def (..),
     Pattern,
     Pattern_ (..),
@@ -277,6 +278,13 @@ data Expr_
     -- Represents embedded GLSL shader code with type information.
     -- Used for WebGL shader integration in Canopy applications.
     Shader Shader.Source Shader.Types
+  | -- | String interpolation expression.
+    --
+    -- Represents interpolated strings like @[i|Hello #{name}!|]@.
+    -- Contains a list of segments that are either literal text or
+    -- embedded expressions. Desugared to @Basics.append@ chains
+    -- during canonicalization.
+    Interpolation [InterpolationSegment]
   deriving (Show)
 
 -- | Variable type classification for parsing.
@@ -296,6 +304,28 @@ data VarType
     -- Represents type constructors and module names that start with
     -- uppercase letters. These refer to types and constructors.
     CapVar
+  deriving (Show)
+
+-- | Segment of a string interpolation expression.
+--
+-- Represents either a literal text fragment or an embedded expression
+-- within a @[i|...|]@ interpolation block. Literal segments contain
+-- raw text, while expression segments contain arbitrary Canopy expressions
+-- that must evaluate to @String@.
+--
+-- ==== Examples
+--
+-- @
+-- -- [i|Hello #{name}!|] has segments:
+-- -- [IStr "Hello ", IExpr (Var LowVar "name"), IStr "!"]
+-- @
+--
+-- @since 0.19.2
+data InterpolationSegment
+  = -- | Literal text segment within interpolation.
+    IStr ES.String
+  | -- | Embedded expression segment @#{expr}@ within interpolation.
+    IExpr Expr
   deriving (Show)
 
 -- DEFINITIONS

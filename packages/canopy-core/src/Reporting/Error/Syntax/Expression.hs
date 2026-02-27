@@ -110,6 +110,12 @@ toExprReport source context expr startRow startCol =
       toShaderProblemReport source problem row col
     IndentOperatorRight op row col ->
       toIndentOperatorRightReport source op startRow startCol row col
+    EndlessInterpolation row col ->
+      toEndlessInterpolationReport source row col
+    InterpolationExpr expr row col ->
+      toExprReport source context expr row col
+    InterpolationClose row col ->
+      toInterpolationCloseReport source row col
 
 -- | Render a let expression parse error.
 toLetReport :: Code.Source -> Context -> Let -> Row -> Col -> Report.Report
@@ -377,6 +383,43 @@ toShaderProblemReport source problem row col =
                 Doc.indent 4 $
                   Doc.vcat $
                     map Doc.fromChars (filter (/= "") (lines problem))
+              ]
+          )
+
+toEndlessInterpolationReport :: Code.Source -> Row -> Col -> Report.Report
+toEndlessInterpolationReport source row col =
+  let region = toWiderRegion row col 3
+   in Report.Report "ENDLESS INTERPOLATION" region [] $
+        Code.toSnippet
+          source
+          region
+          Nothing
+          ( Doc.reflow "I cannot find the end of this string interpolation:",
+            Doc.stack
+              [ Doc.reflow "Add a |] somewhere after this to end the interpolation.",
+                Doc.toSimpleNote
+                  "String interpolation starts with [i| and ends with |]. For example:"
+              , Doc.indent 4 $
+                  Doc.dullyellow (Doc.fromChars "[i|Hello #{name}!|]")
+              ]
+          )
+
+toInterpolationCloseReport :: Code.Source -> Row -> Col -> Report.Report
+toInterpolationCloseReport source row col =
+  let region = toRegion row col
+   in Report.Report "MISSING CLOSING BRACE" region [] $
+        Code.toSnippet
+          source
+          region
+          Nothing
+          ( Doc.reflow
+              "I was expecting a } to close this interpolation expression:",
+            Doc.stack
+              [ Doc.reflow "Every #{ must have a matching }.",
+                Doc.toSimpleNote
+                  "String interpolation expressions look like this:"
+              , Doc.indent 4 $
+                  Doc.dullyellow (Doc.fromChars "[i|Hello #{name}!|]")
               ]
           )
 

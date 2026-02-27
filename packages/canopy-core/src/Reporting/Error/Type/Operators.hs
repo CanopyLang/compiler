@@ -62,6 +62,8 @@ import qualified Canopy.Data.Name as Name
 import qualified Reporting.Doc as Doc
 import qualified Reporting.Render.Type.Localizer as Localizer
 import qualified Type.Error as TypeErr
+import Reporting.Error.Type.Hint (problemsToHint)
+import Reporting.Error.Type.Render (loneType, typeComparison)
 
 -- ---------------------------------------------------------------------------
 -- Category / MaybeName / PCategory types
@@ -749,47 +751,3 @@ badEquality localizer op tipe expected =
         ]
     )
 
--- ---------------------------------------------------------------------------
--- Internal doc helpers
--- ---------------------------------------------------------------------------
-
--- | Side-by-side type comparison doc.
-typeComparison :: Localizer.Localizer -> TypeErr.Type -> TypeErr.Type -> String -> String -> [Doc.Doc] -> Doc.Doc
-typeComparison localizer actual expected iAmSeeing insteadOf contextHints =
-  let (actualDoc, expectedDoc, problems) = TypeErr.toComparison localizer actual expected
-   in Doc.stack
-        ( [Doc.reflow iAmSeeing, Doc.indent 4 actualDoc, Doc.reflow insteadOf, Doc.indent 4 expectedDoc]
-            <> (contextHints <> problemsToHint problems)
-        )
-
--- | Show only the actual type with a custom heading.
-loneType :: Localizer.Localizer -> TypeErr.Type -> TypeErr.Type -> Doc.Doc -> [Doc.Doc] -> Doc.Doc
-loneType localizer actual expected iAmSeeing furtherDetails =
-  let (actualDoc, _, problems) = TypeErr.toComparison localizer actual expected
-   in Doc.stack
-        ([iAmSeeing, Doc.indent 4 actualDoc] <> (furtherDetails <> problemsToHint problems))
-
--- | Minimal 'problemsToHint' to break potential import cycles.
---
--- Only the IntFloat hint is needed inside operator messages; all other
--- hints are handled by the parent module via 'Reporting.Error.Type.Hint'.
-problemsToHint :: [TypeErr.Problem] -> [Doc.Doc]
-problemsToHint problems =
-  case problems of
-    [] -> []
-    problem : _ -> problemToHint problem
-
-problemToHint :: TypeErr.Problem -> [Doc.Doc]
-problemToHint problem =
-  case problem of
-    TypeErr.IntFloat ->
-      [ Doc.fancyLink
-          "Note"
-          ["Read"]
-          "implicit-casts"
-          [ "to", "learn", "why", "Canopy", "does", "not", "implicitly", "convert",
-            "Ints", "to", "Floats.", "Use", Doc.green "toFloat", "and", Doc.green "round",
-            "to", "do", "explicit", "conversions."
-          ]
-      ]
-    _ -> []

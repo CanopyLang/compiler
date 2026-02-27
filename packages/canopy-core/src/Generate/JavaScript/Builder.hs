@@ -14,6 +14,11 @@ module Generate.JavaScript.Builder
 
 -- Using language-javascript 0.8.0.0 with modern JavaScript support
 -- https://github.com/quintenkasteel/language-javascript
+--
+-- NOTE: String intermediates in nameToString/builderToString are required
+-- because language-javascript's AST types (JSDecimal, JSIdentifier,
+-- JSStringLiteral) all take String arguments. Eliminating these allocations
+-- would require forking language-javascript to accept Builder directly.
 
 import qualified Data.ByteString.Lazy.Char8 as LBS
 import Data.ByteString.Builder as B

@@ -18,6 +18,7 @@ import qualified Canonicalize.Module as Canonicalize
 import qualified Canopy.Interface as Interface
 import qualified Canopy.ModuleName as ModuleName
 import qualified Canopy.Package as Pkg
+import FFI.Types (JsSourcePath, JsSource)
 import Control.Monad (when)
 import qualified Parse.Module as Parse
 import qualified Data.ByteString as BS
@@ -42,7 +43,7 @@ canonicalizeModuleQuery ::
   Pkg.Name ->
   Parse.ProjectType ->
   Map ModuleName.Raw Interface.Interface ->
-  Map String String ->
+  Map JsSourcePath JsSource ->
   Src.Module ->
   IO (Either QueryError Can.Module)
 canonicalizeModuleQuery path pkg projectType ifaces ffiContent modul = do

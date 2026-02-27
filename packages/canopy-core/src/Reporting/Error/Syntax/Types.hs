@@ -224,6 +224,9 @@ data Expr
   | EndlessShader Row Col
   | ShaderProblem [Char.Char] Row Col
   | IndentOperatorRight Name.Name Row Col
+  | EndlessInterpolation Row Col
+  | InterpolationExpr Expr Row Col
+  | InterpolationClose Row Col
   deriving (Show)
 
 data Record

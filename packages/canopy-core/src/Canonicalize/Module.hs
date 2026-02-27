@@ -19,6 +19,7 @@ where
 
 import qualified AST.Canonical as Can
 import qualified AST.Source as Src
+import Data.Foldable (traverse_)
 import qualified Canonicalize.Effects as Effects
 import qualified Canonicalize.Environment as Env
 import qualified Canonicalize.Environment.Dups as Dups
@@ -27,6 +28,7 @@ import qualified Canonicalize.Environment.Local as Local
 import qualified Canonicalize.Expression as Expr
 import qualified Canonicalize.Module.FFI as FFI
 import qualified Canonicalize.Pattern as Pattern
+import FFI.Types (JsSourcePath, JsSource)
 import qualified Canonicalize.Type as Type
 import qualified Canopy.Compiler.Imports as Imports
 import qualified Canopy.Interface as Interface
@@ -56,11 +58,11 @@ type Result i w a =
 -- | Load FFI content from foreign imports in the IO monad.
 --
 -- @since 0.19.1
-loadFFIContent :: [Src.ForeignImport] -> IO (Map String String)
+loadFFIContent :: [Src.ForeignImport] -> IO (Map JsSourcePath JsSource)
 loadFFIContent = FFI.loadFFIContent
 
 -- | Load FFI content with explicit root directory for path resolution.
-loadFFIContentWithRoot :: FilePath -> [Src.ForeignImport] -> IO (Map String String)
+loadFFIContentWithRoot :: FilePath -> [Src.ForeignImport] -> IO (Map JsSourcePath JsSource)
 loadFFIContentWithRoot = FFI.loadFFIContentWithRoot
 
 -- MODULES
@@ -72,7 +74,7 @@ loadFFIContentWithRoot = FFI.loadFFIContentWithRoot
 -- in the IO monad and passed through the compilation pipeline.
 --
 -- @since 0.19.1
-canonicalize :: Pkg.Name -> ProjectType -> Map ModuleName.Raw Interface.Interface -> Map String String -> Src.Module -> Result i [Warning.Warning] Can.Module
+canonicalize :: Pkg.Name -> ProjectType -> Map ModuleName.Raw Interface.Interface -> Map JsSourcePath JsSource -> Src.Module -> Result i [Warning.Warning] Can.Module
 canonicalize pkg projectType ifaces ffiContentMap modul@(Src.Module _ exports docs imports foreignImports values _ _ binops effects) =
   do
     let home = ModuleName.Canonical pkg (Src.getName modul)
@@ -89,6 +91,10 @@ canonicalize pkg projectType ifaces ffiContentMap modul@(Src.Module _ exports do
 
     -- Process FFI imports and add to environment using pre-loaded content
     envWithFFI <- FFI.addFFIToEnvPure env foreignImports ffiContentMap
+
+    -- Emit capability warnings for FFI functions with @capability annotations
+    let capWarnings = concatMap (emitCapabilityWarnings ffiContentMap) foreignImports
+    traverse_ Result.warn capWarnings
 
     cvalues <- canonicalizeValues envWithFFI values
     ceffects <- Effects.canonicalize envWithFFI values cunions effects
@@ -192,6 +198,13 @@ checkExists region name ifaces
 coreModuleNames :: Set Name.Name
 coreModuleNames =
   Set.fromList (fmap Src.getImportName Imports.defaults)
+
+-- CAPABILITY WARNINGS
+
+-- | Emit capability warnings for a single foreign import.
+emitCapabilityWarnings :: Map JsSourcePath JsSource -> Src.ForeignImport -> [Warning.Warning]
+emitCapabilityWarnings ffiContentMap (Src.ForeignImport _ (Ann.At _ aliasName) _) =
+  FFI.extractCapabilityWarnings aliasName ffiContentMap
 
 -- CANONICALIZE BINOP
 

@@ -30,6 +30,7 @@ import Parse.Module (ProjectType (..))
 import qualified Data.Map.Strict as Map
 import qualified Canopy.Data.Name as Name
 import qualified Canopy.Data.OneOrMore as OneOrMore
+import FFI.Types (JsSourcePath (..), JsSource (..))
 import qualified Foreign.FFI as FFI
 import qualified Reporting.Annotation as Ann
 import qualified Reporting.Error.Canonicalize as Error
@@ -123,7 +124,7 @@ loadFFIContentWithRootTests = testGroup "loadFFIContentWithRoot"
                   (Ann.At Ann.one (Name.fromChars "TestFFI"))
                   Ann.one
       result <- Module.loadFFIContentWithRoot tmpDir [ffi]
-      Map.lookup "test.js" result @?= Just "function hello() { return 42; }"
+      Map.lookup (JsSourcePath "test.js") result @?= Just (JsSource "function hello() { return 42; }")
       cleanupTmpDir tmpDir
   , testCase "multiple FFI imports with mixed existence" $ do
       let tmpDir = "/tmp/canopy-module-test-ffi-mixed"
@@ -138,8 +139,8 @@ loadFFIContentWithRootTests = testGroup "loadFFIContentWithRoot"
                    (Ann.At Ann.one (Name.fromChars "Missing"))
                    Ann.one
       result <- Module.loadFFIContentWithRoot tmpDir [ffi1, ffi2]
-      Map.member "exists.js" result @?= True
-      Map.member "missing.js" result @?= False
+      Map.member (JsSourcePath "exists.js") result @?= True
+      Map.member (JsSourcePath "missing.js") result @?= False
       Map.size result @?= 1
       cleanupTmpDir tmpDir
   , testCase "empty foreign imports list returns empty map" $ do

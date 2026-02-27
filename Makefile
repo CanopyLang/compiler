@@ -20,6 +20,8 @@ help:
 	@echo "bench: Run compilation benchmarks (HTML report)"
 	@echo "bench-quick: Run quick benchmarks (1s time limit)"
 	@echo "bench-csv: Run benchmarks with CSV output"
+	@echo "build-webidl: Build the canopy-webidl package"
+	@echo "test-webidl: Run canopy-webidl tests"
 
 build:
 	@stack install --fast --pedantic --ghc-options "-j +RTS -A128m -n2m -RTS"
@@ -27,7 +29,7 @@ build:
 clean:
 	@stack clean
 
-PACKAGE_DIRS = packages/canopy-core/src packages/canopy-builder/src packages/canopy-driver/src packages/canopy-query/src packages/canopy-terminal/src packages/canopy-terminal/impl test
+PACKAGE_DIRS = packages/canopy-core/src packages/canopy-builder/src packages/canopy-driver/src packages/canopy-query/src packages/canopy-terminal/src packages/canopy-terminal/impl packages/canopy-webidl/src test
 
 lint:
 	hlint -h .hlint.yaml --no-summary $(PACKAGE_DIRS) -j && \
@@ -104,6 +106,12 @@ bench-quick:
 bench-csv:
 	@echo "Running benchmarks with CSV output..."
 	@stack bench canopy:canopy-bench --benchmark-arguments '--csv bench/results.csv'
+
+build-webidl:
+	@stack build canopy-webidl
+
+test-webidl:
+	@stack test canopy-webidl
 
 example:
 	@make build

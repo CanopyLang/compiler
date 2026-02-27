@@ -15,6 +15,10 @@ module FFI.Types
   , JsFunctionName(..)
   , PermissionName(..)
   , ResourceName(..)
+
+    -- * Domain newtypes for FFI content
+  , JsSourcePath(..)
+  , JsSource(..)
   )
 where
 
@@ -82,3 +86,21 @@ newtype PermissionName = PermissionName { unPermissionName :: Text }
 -- @since 0.19.2
 newtype ResourceName = ResourceName { unResourceName :: Text }
   deriving (Eq, Ord, Show)
+
+-- | Path to a JavaScript FFI source file.
+--
+-- Wraps the relative file path to prevent confusion with file content
+-- or other string values in the FFI pipeline.
+--
+-- @since 0.19.2
+newtype JsSourcePath = JsSourcePath { unJsSourcePath :: String }
+  deriving (Eq, Ord, Show)
+
+-- | Content of a JavaScript FFI source file.
+--
+-- Wraps the raw file content to prevent confusion with file paths
+-- or other string values in the FFI pipeline.
+--
+-- @since 0.19.2
+newtype JsSource = JsSource { unJsSource :: String }
+  deriving (Eq, Show)

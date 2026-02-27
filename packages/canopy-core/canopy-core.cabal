@@ -22,6 +22,11 @@ build-type:     Simple
 library
   exposed-modules:
       AST.Canonical
+      AST.Canonical.Binary
+      AST.Canonical.Expr
+      AST.Canonical.Json
+      AST.Canonical.Module
+      AST.Canonical.Types
       AST.Optimized
       AST.Optimized.Expr
       AST.Optimized.Graph
@@ -175,8 +180,13 @@ library
       Reporting.Error.Syntax.Type
       Reporting.Error.Syntax.Types
       Reporting.Error.Type
+      Reporting.Error.Type.Expression
       Reporting.Error.Type.Hint
       Reporting.Error.Type.Operators
+      Reporting.Error.Type.Pattern
+      Reporting.Error.Type.Record
+      Reporting.Error.Type.Render
+      Reporting.Error.Type.Types
       Reporting.ErrorCode
       Reporting.Exit.Help
       Reporting.InternalError
@@ -188,6 +198,10 @@ library
       Reporting.Suggest
       Reporting.Warning
       Type.Constrain.Expression
+      Type.Constrain.Expression.Control
+      Type.Constrain.Expression.Definition
+      Type.Constrain.Expression.Operator
+      Type.Constrain.Expression.Record
       Type.Constrain.Module
       Type.Constrain.Pattern
       Type.Error

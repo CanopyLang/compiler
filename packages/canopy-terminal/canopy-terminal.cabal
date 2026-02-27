@@ -86,6 +86,10 @@ library
       Install.PkgPlan
       Install.Types
       Lint
+      Lint.Fix
+      Lint.Report
+      Lint.Rules
+      Lint.Types
       LocalPackage
       Make
       Make.Builder

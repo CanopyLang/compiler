@@ -38,6 +38,7 @@ import qualified Canonicalize.Module as Canonicalize
 import qualified Canopy.Interface as Interface
 import qualified Canopy.ModuleName as ModuleName
 import qualified Canopy.Package as Pkg
+import FFI.Types (JsSourcePath (..), JsSource (..))
 import qualified Foreign.FFI as FFI
 import Data.Map (Map)
 import qualified Data.Map as Map
@@ -196,19 +197,19 @@ runParsePhase engine path projectType = do
   ParseQuery.parseModuleQuery projectType path
 
 -- | Load FFI content for module.
-loadFFIContent :: Src.Module -> IO (Map String String)
+loadFFIContent :: Src.Module -> IO (Map JsSourcePath JsSource)
 loadFFIContent sourceModule = do
   let foreignImports = Src._foreignImports sourceModule
   Log.logEvent (FFILoading "ffi-content")
   Canonicalize.loadFFIContent foreignImports
 
 -- | Build FFIInfo map from foreign imports and content.
-buildFFIInfoMap :: [Src.ForeignImport] -> Map String String -> Map String JS.FFIInfo
+buildFFIInfoMap :: [Src.ForeignImport] -> Map JsSourcePath JsSource -> Map String JS.FFIInfo
 buildFFIInfoMap foreignImports contentMap =
   Map.fromList (buildFFIInfoList foreignImports contentMap)
 
 -- | Build list of FFIInfo from imports and content.
-buildFFIInfoList :: [Src.ForeignImport] -> Map String String -> [(String, JS.FFIInfo)]
+buildFFIInfoList :: [Src.ForeignImport] -> Map JsSourcePath JsSource -> [(String, JS.FFIInfo)]
 buildFFIInfoList foreignImports contentMap =
   concatMap (buildSingleFFI contentMap) foreignImports
 
@@ -217,10 +218,10 @@ buildFFIInfoList foreignImports contentMap =
 -- Returns empty list when the JavaScript file is not in the content map,
 -- which indicates a missing FFI file that will be caught during
 -- canonicalization with a proper error message.
-buildSingleFFI :: Map String String -> Src.ForeignImport -> [(String, JS.FFIInfo)]
+buildSingleFFI :: Map JsSourcePath JsSource -> Src.ForeignImport -> [(String, JS.FFIInfo)]
 buildSingleFFI contentMap (Src.ForeignImport (FFI.JavaScriptFFI jsPath) alias _region) =
-  case Map.lookup jsPath contentMap of
-    Just content ->
+  case Map.lookup (JsSourcePath jsPath) contentMap of
+    Just (JsSource content) ->
       [(jsPath, JS.FFIInfo jsPath (Text.pack content) (Ann.toValue alias))]
     Nothing -> []
 buildSingleFFI _ _ = []
@@ -235,7 +236,7 @@ runCanonicalizePhase ::
   Pkg.Name ->
   Parse.ProjectType ->
   Map ModuleName.Raw Interface.Interface ->
-  Map String String ->
+  Map JsSourcePath JsSource ->
   Src.Module ->
   IO (Either QueryError Can.Module)
 runCanonicalizePhase engine path pkg projectType ifaces ffiContent sourceModule = do
