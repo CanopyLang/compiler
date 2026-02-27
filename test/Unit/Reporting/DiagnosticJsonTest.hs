@@ -10,7 +10,6 @@ module Unit.Reporting.DiagnosticJsonTest (tests) where
 
 import qualified Data.ByteString.Builder as BB
 import qualified Data.ByteString.Lazy.Char8 as BL
-import qualified Data.List as List
 import qualified Json.Encode as Encode
 import qualified Reporting.Annotation as Ann
 import qualified Reporting.Diagnostic as Diag
@@ -31,49 +30,39 @@ diagnosticJsonTests :: TestTree
 diagnosticJsonTests =
   testGroup
     "diagnosticToJson"
-    [ testCase "encodes error code" $
-        assertJsonContains (Diag.diagnosticToJson testDiag) "E0401",
-      testCase "encodes severity" $
-        assertJsonContains (Diag.diagnosticToJson testDiag) "error",
-      testCase "encodes title" $
-        assertJsonContains (Diag.diagnosticToJson testDiag) "TYPE MISMATCH",
-      testCase "encodes summary" $
-        assertJsonContains (Diag.diagnosticToJson testDiag) "Expression type mismatch",
-      testCase "encodes phase" $
-        assertJsonContains (Diag.diagnosticToJson testDiag) "type",
-      testCase "encodes primary span label" $
-        assertJsonContains (Diag.diagnosticToJson testDiag) "type mismatch",
+    [ testCase "encodes diagnostic fields correctly" $
+        render (Diag.diagnosticToJson testDiag)
+          @?= "{\n    \"code\": \"E0401\",\n    \"severity\": \"error\",\n    \"title\": \"TYPE MISMATCH\",\n    \"summary\": \"Expression type mismatch\",\n    \"primary\": {\n        \"region\": {\n            \"start\": {\n                \"line\": 5,\n                \"column\": 10\n            },\n            \"end\": {\n                \"line\": 5,\n                \"column\": 20\n            }\n        },\n        \"label\": \"type mismatch\",\n        \"style\": \"primary\"\n    },\n    \"secondary\": [],\n    \"suggestions\": [],\n    \"notes\": [],\n    \"phase\": \"type\",\n    \"message\": [\n        \"The type does not match.\"\n    ]\n}",
       testCase "encodes suggestion when added" $ do
         let diag = Diag.addSuggestion testSuggestion testDiag
-        assertJsonContains (Diag.diagnosticToJson diag) "String.fromInt",
+            rendered = render (Diag.diagnosticToJson diag)
+        rendered @?= "{\n    \"code\": \"E0401\",\n    \"severity\": \"error\",\n    \"title\": \"TYPE MISMATCH\",\n    \"summary\": \"Expression type mismatch\",\n    \"primary\": {\n        \"region\": {\n            \"start\": {\n                \"line\": 5,\n                \"column\": 10\n            },\n            \"end\": {\n                \"line\": 5,\n                \"column\": 20\n            }\n        },\n        \"label\": \"type mismatch\",\n        \"style\": \"primary\"\n    },\n    \"secondary\": [],\n    \"suggestions\": [\n        {\n            \"region\": {\n                \"start\": {\n                    \"line\": 5,\n                    \"column\": 10\n                },\n                \"end\": {\n                    \"line\": 5,\n                    \"column\": 20\n                }\n            },\n            \"replacement\": \"String.fromInt x\",\n            \"message\": \"Convert with String.fromInt\",\n            \"confidence\": \"likely\"\n        }\n    ],\n    \"notes\": [],\n    \"phase\": \"type\",\n    \"message\": [\n        \"The type does not match.\"\n    ]\n}",
       testCase "encodes note when added" $ do
         let diag = Diag.addNote "Check your types" testDiag
-        assertJsonContains (Diag.diagnosticToJson diag) "Check your types"
+            rendered = render (Diag.diagnosticToJson diag)
+        rendered @?= "{\n    \"code\": \"E0401\",\n    \"severity\": \"error\",\n    \"title\": \"TYPE MISMATCH\",\n    \"summary\": \"Expression type mismatch\",\n    \"primary\": {\n        \"region\": {\n            \"start\": {\n                \"line\": 5,\n                \"column\": 10\n            },\n            \"end\": {\n                \"line\": 5,\n                \"column\": 20\n            }\n        },\n        \"label\": \"type mismatch\",\n        \"style\": \"primary\"\n    },\n    \"secondary\": [],\n    \"suggestions\": [],\n    \"notes\": [\n        \"Check your types\"\n    ],\n    \"phase\": \"type\",\n    \"message\": [\n        \"The type does not match.\"\n    ]\n}"
     ]
 
 labeledSpanJsonTests :: TestTree
 labeledSpanJsonTests =
   testGroup
     "labeledSpanToJson"
-    [ testCase "encodes label text" $
-        assertJsonContains (Diag.labeledSpanToJson testSpan) "type mismatch",
-      testCase "encodes style" $
-        assertJsonContains (Diag.labeledSpanToJson testSpan) "primary",
-      testCase "encodes secondary style" $ do
+    [ testCase "encodes primary span correctly" $
+        render (Diag.labeledSpanToJson testSpan)
+          @?= "{\n    \"region\": {\n        \"start\": {\n            \"line\": 5,\n            \"column\": 10\n        },\n        \"end\": {\n            \"line\": 5,\n            \"column\": 20\n        }\n    },\n    \"label\": \"type mismatch\",\n    \"style\": \"primary\"\n}",
+      testCase "encodes secondary span correctly" $ do
         let span_ = Diag.LabeledSpan testRegion "context" Diag.SpanSecondary
-        assertJsonContains (Diag.labeledSpanToJson span_) "secondary"
+        render (Diag.labeledSpanToJson span_)
+          @?= "{\n    \"region\": {\n        \"start\": {\n            \"line\": 5,\n            \"column\": 10\n        },\n        \"end\": {\n            \"line\": 5,\n            \"column\": 20\n        }\n    },\n    \"label\": \"context\",\n    \"style\": \"secondary\"\n}"
     ]
 
 suggestionJsonTests :: TestTree
 suggestionJsonTests =
   testGroup
     "suggestionToJson"
-    [ testCase "encodes replacement" $
-        assertJsonContains (Diag.suggestionToJson testSuggestion) "String.fromInt x",
-      testCase "encodes message" $
-        assertJsonContains (Diag.suggestionToJson testSuggestion) "Convert with String.fromInt",
-      testCase "encodes confidence" $
-        assertJsonContains (Diag.suggestionToJson testSuggestion) "likely"
+    [ testCase "encodes suggestion correctly" $
+        render (Diag.suggestionToJson testSuggestion)
+          @?= "{\n    \"region\": {\n        \"start\": {\n            \"line\": 5,\n            \"column\": 10\n        },\n        \"end\": {\n            \"line\": 5,\n            \"column\": 20\n        }\n    },\n    \"replacement\": \"String.fromInt x\",\n    \"message\": \"Convert with String.fromInt\",\n    \"confidence\": \"likely\"\n}"
     ]
 
 -- HELPERS
@@ -99,11 +88,6 @@ testSuggestion :: Diag.Suggestion
 testSuggestion =
   Diag.Suggestion testRegion "String.fromInt x" "Convert with String.fromInt" Diag.Likely
 
--- | Assert that encoding a JSON value produces output containing a substring.
-assertJsonContains :: Encode.Value -> String -> Assertion
-assertJsonContains value substr =
-  assertBool
-    ("JSON should contain " <> show substr <> " but got: " <> rendered)
-    (List.isInfixOf substr rendered)
-  where
-    rendered = BL.unpack (BB.toLazyByteString (Encode.encode value))
+-- | Render a JSON value to a String for assertion.
+render :: Encode.Value -> String
+render = BL.unpack . BB.toLazyByteString . Encode.encode

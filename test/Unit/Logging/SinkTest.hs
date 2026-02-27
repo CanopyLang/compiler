@@ -60,21 +60,21 @@ cliSinkTests =
           Sink.runSink sink (BuildStarted "test-label")
           IO.hSeek output IO.AbsoluteSeek 0
           content <- TextIO.hGetContents output
-          assertBool "contains INFO" (Text.isInfixOf "INFO" content),
+          Text.isInfixOf "INFO" content @?= True,
       testCase "CLI output contains phase" $
         withCapturedOutput $ \output -> do
           let sink = Sink.cliSink output
           Sink.runSink sink (ParseStarted "/tmp/test.can" 100)
           IO.hSeek output IO.AbsoluteSeek 0
           content <- TextIO.hGetContents output
-          assertBool "contains PARSE" (Text.isInfixOf "PARSE" content),
+          Text.isInfixOf "PARSE" content @?= True,
       testCase "CLI output contains message" $
         withCapturedOutput $ \output -> do
           let sink = Sink.cliSink output
           Sink.runSink sink (BuildStarted "my-unique-label")
           IO.hSeek output IO.AbsoluteSeek 0
           content <- TextIO.hGetContents output
-          assertBool "contains label" (Text.isInfixOf "my-unique-label" content)
+          Text.isInfixOf "my-unique-label" content @?= True
     ]
 
 jsonSinkTests :: TestTree
@@ -87,30 +87,29 @@ jsonSinkTests =
           Sink.runSink sink (BuildStarted "json-test")
           IO.hSeek output IO.AbsoluteSeek 0
           content <- TextIO.hGetContents output
-          assertBool "starts with {" (Text.isPrefixOf "{" (Text.stripStart content))
-          assertBool "contains closing }" (Text.isInfixOf "}" content),
+          Text.isPrefixOf "{" (Text.stripStart content) @?= True,
       testCase "JSON output contains event type" $
         withCapturedOutput $ \output -> do
           let sink = Sink.jsonSink output
           Sink.runSink sink (BuildStarted "json-test")
           IO.hSeek output IO.AbsoluteSeek 0
           content <- TextIO.hGetContents output
-          assertBool "contains event key" (Text.isInfixOf "\"event\"" content)
-          assertBool "contains event value" (Text.isInfixOf "build_started" content),
+          Text.isInfixOf "\"event\"" content @?= True
+          Text.isInfixOf "build_started" content @?= True,
       testCase "JSON output contains level" $
         withCapturedOutput $ \output -> do
           let sink = Sink.jsonSink output
           Sink.runSink sink (ParseFailed "/tmp" "error")
           IO.hSeek output IO.AbsoluteSeek 0
           content <- TextIO.hGetContents output
-          assertBool "contains ERROR" (Text.isInfixOf "ERROR" content),
+          Text.isInfixOf "ERROR" content @?= True,
       testCase "JSON output contains phase" $
         withCapturedOutput $ \output -> do
           let sink = Sink.jsonSink output
           Sink.runSink sink (TypeSolveStarted "Main" 5)
           IO.hSeek output IO.AbsoluteSeek 0
           content <- TextIO.hGetContents output
-          assertBool "contains TYPE" (Text.isInfixOf "TYPE" content)
+          Text.isInfixOf "TYPE" content @?= True
     ]
 
 fileSinkTests :: TestTree

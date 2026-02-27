@@ -10,7 +10,6 @@ module Unit.Generate.SourceMapTest (tests) where
 
 import qualified Data.ByteString.Builder as BB
 import qualified Data.ByteString.Lazy.Char8 as LChar8
-import qualified Data.List as List
 import qualified Generate.JavaScript.SourceMap as SourceMap
 import Test.Tasty
 import Test.Tasty.HUnit
@@ -64,10 +63,9 @@ vlqTests =
     , testCase "encodeVLQ uses only Base64 characters" $
         let result = renderBuilder (SourceMap.encodeVLQ 12345)
          in all (`elem` base64Chars) result @?= True
-    , testCase "encodeVLQ large value 1000 encodes correctly" $
-        let result = renderBuilder (SourceMap.encodeVLQ 1000)
-         in length result > 1 @?= True
-    , testCase "positive and negative of same magnitude differ by 1 char" $ do
+    , testCase "encodeVLQ large value 1000 produces w+B" $
+        renderBuilder (SourceMap.encodeVLQ 1000) @?= "w+B"
+    , testCase "positive and negative of same magnitude have equal length" $ do
         let pos = renderBuilder (SourceMap.encodeVLQ 5)
             neg = renderBuilder (SourceMap.encodeVLQ (-5))
         length pos @?= length neg
@@ -85,34 +83,28 @@ mappingTests =
     [ testCase "empty source map produces empty mappings string" $
         let sm = SourceMap.empty "test.js"
             json = renderBuilder (SourceMap.toBuilder sm)
-         in assertBool "mappings should be empty string" ("\"mappings\":\"\"" `List.isInfixOf` json)
-    , testCase "single mapping on line 0 produces non-empty mappings" $
+         in json @?= "{\"version\":3,\"file\":\"test.js\",\"sources\":[],\"sourcesContent\":[],\"names\":[],\"mappings\":\"\"}"
+    , testCase "single mapping on line 0 produces AAAA mappings" $
         let sm = SourceMap.addMapping (SourceMap.Mapping 0 0 0 0 0 Nothing) (SourceMap.empty "test.js")
             json = renderBuilder (SourceMap.toBuilder sm)
-         in assertBool "mappings should contain AAAA" ("\"mappings\":\"AAAA\"" `List.isInfixOf` json)
+         in json @?= "{\"version\":3,\"file\":\"test.js\",\"sources\":[],\"sourcesContent\":[],\"names\":[],\"mappings\":\"AAAA\"}"
     , testCase "mappings on different lines separated by semicolons" $
         let m1 = SourceMap.Mapping 0 0 0 0 0 Nothing
             m2 = SourceMap.Mapping 2 0 0 2 0 Nothing
             sm = SourceMap.addMapping m2 (SourceMap.addMapping m1 (SourceMap.empty "test.js"))
             json = renderBuilder (SourceMap.toBuilder sm)
-            -- Line 0 has m1, line 1 is empty (;), line 2 has m2
-         in assertBool "should have semicolons for line separation"
-              ("\"mappings\":\"AAAA;;AAEA\"" `List.isInfixOf` json)
+         in json @?= "{\"version\":3,\"file\":\"test.js\",\"sources\":[],\"sourcesContent\":[],\"names\":[],\"mappings\":\"AAAA;;AAEA\"}"
     , testCase "multiple mappings on same line separated by commas" $
         let m1 = SourceMap.Mapping 0 0 0 0 0 Nothing
             m2 = SourceMap.Mapping 0 10 0 0 5 Nothing
             sm = SourceMap.addMapping m2 (SourceMap.addMapping m1 (SourceMap.empty "test.js"))
             json = renderBuilder (SourceMap.toBuilder sm)
-            mappingsStr = extractMappingsField json
-         in assertBool ("should have comma between segments on same line, got: " ++ mappingsStr)
-              ("," `List.isInfixOf` mappingsStr)
+         in json @?= "{\"version\":3,\"file\":\"test.js\",\"sources\":[],\"sourcesContent\":[],\"names\":[],\"mappings\":\"AAAA,UAAK\"}"
     , testCase "mapping with source column offset" $
         let m = SourceMap.Mapping 0 0 0 5 10 Nothing
             sm = SourceMap.addMapping m (SourceMap.empty "test.js")
             json = renderBuilder (SourceMap.toBuilder sm)
-            mappingsStr = extractMappingsField json
-         in assertBool ("mappings should not be empty, got: " ++ mappingsStr)
-              (mappingsStr /= "")
+         in json @?= "{\"version\":3,\"file\":\"test.js\",\"sources\":[],\"sourcesContent\":[],\"names\":[],\"mappings\":\"AAKU\"}"
     ]
 
 -- SOURCE REGISTRATION TESTS
@@ -156,47 +148,33 @@ jsonSerializationTests =
     "JSON Serialization"
     [ testCase "version field is 3" $
         let json = renderBuilder (SourceMap.toBuilder (SourceMap.empty "test.js"))
-         in assertBool "should contain version:3" ("\"version\":3" `List.isInfixOf` json)
+         in json @?= "{\"version\":3,\"file\":\"test.js\",\"sources\":[],\"sourcesContent\":[],\"names\":[],\"mappings\":\"\"}"
     , testCase "file field matches output filename" $
         let json = renderBuilder (SourceMap.toBuilder (SourceMap.empty "output.js"))
-         in assertBool "should contain file:output.js" ("\"file\":\"output.js\"" `List.isInfixOf` json)
+         in json @?= "{\"version\":3,\"file\":\"output.js\",\"sources\":[],\"sourcesContent\":[],\"names\":[],\"mappings\":\"\"}"
     , testCase "sources field is array" $
         let (_, sm) = SourceMap.addSource "src/Main.can" Nothing (SourceMap.empty "test.js")
             json = renderBuilder (SourceMap.toBuilder sm)
-         in assertBool "should contain sources array" ("\"sources\":[\"src/Main.can\"]" `List.isInfixOf` json)
+         in json @?= "{\"version\":3,\"file\":\"test.js\",\"sources\":[\"src/Main.can\"],\"sourcesContent\":[\"\"],\"names\":[],\"mappings\":\"\"}"
     , testCase "empty sources produces empty array" $
         let json = renderBuilder (SourceMap.toBuilder (SourceMap.empty "test.js"))
-         in assertBool "should contain empty sources" ("\"sources\":[]" `List.isInfixOf` json)
+         in json @?= "{\"version\":3,\"file\":\"test.js\",\"sources\":[],\"sourcesContent\":[],\"names\":[],\"mappings\":\"\"}"
     , testCase "names field is empty array" $
         let json = renderBuilder (SourceMap.toBuilder (SourceMap.empty "test.js"))
-         in assertBool "should contain empty names" ("\"names\":[]" `List.isInfixOf` json)
-    , testCase "JSON output is valid structure" $
+         in json @?= "{\"version\":3,\"file\":\"test.js\",\"sources\":[],\"sourcesContent\":[],\"names\":[],\"mappings\":\"\"}"
+    , testCase "JSON output starts with { and ends with }" $
         let json = renderBuilder (SourceMap.toBuilder (SourceMap.empty "test.js"))
-         in do
-              assertBool "starts with {" (head json == '{')
-              assertBool "ends with }" (last json == '}')
+         in (head json, last json) @?= ('{', '}')
     , testCase "multiple sources in array" $
         let (_, sm1) = SourceMap.addSource "a.can" Nothing (SourceMap.empty "test.js")
             (_, sm2) = SourceMap.addSource "b.can" Nothing sm1
             json = renderBuilder (SourceMap.toBuilder sm2)
-         in assertBool "should contain both sources" ("\"sources\":[\"a.can\",\"b.can\"]" `List.isInfixOf` json)
-    , testCase "special characters in file path are escaped" $
+         in json @?= "{\"version\":3,\"file\":\"test.js\",\"sources\":[\"a.can\",\"b.can\"],\"sourcesContent\":[\"\",\"\"],\"names\":[],\"mappings\":\"\"}"
+    , testCase "special characters in file path are included verbatim" $
         let json = renderBuilder (SourceMap.toBuilder (SourceMap.empty "path/to/file\"special.js"))
-         in assertBool "should contain escaped quote" ("\\\"" `List.isInfixOf` json)
+         in json @?= "{\"version\":3,\"file\":\"path/to/file\\\"special.js\",\"sources\":[],\"sourcesContent\":[],\"names\":[],\"mappings\":\"\"}"
     , testCase "sourcesContent matches sources" $
         let (_, sm) = SourceMap.addSource "src/Main.can" (Just "module Main exposing (..)") (SourceMap.empty "test.js")
             json = renderBuilder (SourceMap.toBuilder sm)
-         in assertBool "should contain source content" ("module Main exposing" `List.isInfixOf` json)
+         in json @?= "{\"version\":3,\"file\":\"test.js\",\"sources\":[\"src/Main.can\"],\"sourcesContent\":[\"module Main exposing (..)\"],\"names\":[],\"mappings\":\"\"}"
     ]
-
--- | Extract the mappings field value from JSON output.
-extractMappingsField :: String -> String
-extractMappingsField json =
-  extractAfter "\"mappings\":\"" json
-  where
-    extractAfter :: String -> String -> String
-    extractAfter _needle [] = ""
-    extractAfter needle haystack
-      | needle `List.isPrefixOf` haystack =
-          takeWhile (/= '"') (drop (length needle) haystack)
-      | otherwise = extractAfter needle (drop 1 haystack)

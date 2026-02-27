@@ -7,7 +7,6 @@
 -- @since 0.19.1
 module Unit.Logging.EventTest (tests) where
 
-import qualified Data.Text as Text
 import Logging.Event
 import Test.Tasty
 import Test.Tasty.HUnit
@@ -109,15 +108,15 @@ renderTests =
   testGroup
     "CLI rendering"
     [ testCase "ParseStarted rendering" $
-        assertBool "contains path" (Text.isInfixOf "/tmp/test.can" (renderCLI (ParseStarted "/tmp/test.can" 100))),
-      testCase "ParseCompleted rendering" $ do
-        let msg = renderCLI (ParseCompleted "/tmp/test.can" (ParseStats 5 3 False))
-        assertBool "contains path" (Text.isInfixOf "/tmp/test.can" msg)
-        assertBool "contains decl count" (Text.isInfixOf "5" msg),
+        renderCLI (ParseStarted "/tmp/test.can" 100)
+          @?= "Parsing /tmp/test.can (100 bytes)",
+      testCase "ParseCompleted rendering" $
+        renderCLI (ParseCompleted "/tmp/test.can" (ParseStats 5 3 False))
+          @?= "Parsed /tmp/test.can (5 decls, 3 imports)",
       testCase "BuildStarted rendering" $
         renderCLI (BuildStarted "test-build") @?= "Build started: test-build",
       testCase "CacheHit rendering" $
-        assertBool "contains key" (Text.isInfixOf "my-key" (renderCLI (CacheHit PhaseBuild "my-key"))),
+        renderCLI (CacheHit PhaseBuild "my-key") @?= "Cache hit: BUILD my-key",
       testCase "renderPhase PhaseParse" $
         renderPhase PhaseParse @?= "PARSE",
       testCase "renderPhase PhaseType" $
@@ -132,15 +131,13 @@ renderTests =
         renderLevel INFO @?= "INFO ",
       testCase "renderLevel ERROR" $
         renderLevel ERROR @?= "ERROR",
-      testCase "TypeUnified rendering" $ do
-        let msg = renderCLI (TypeUnified "Main" "Int" "String")
-        assertBool "contains types" (Text.isInfixOf "Int" msg && Text.isInfixOf "String" msg),
-      testCase "WorkerFailed rendering" $ do
-        let msg = renderCLI (WorkerFailed 42 "timeout")
-        assertBool "contains worker id" (Text.isInfixOf "42" msg)
-        assertBool "contains error" (Text.isInfixOf "timeout" msg),
-      testCase "CompileCompleted rendering" $ do
-        let msg = renderCLI (CompileCompleted "/tmp/proj" (CompileStats 10 (Duration 5000)))
-        assertBool "contains path" (Text.isInfixOf "/tmp/proj" msg)
-        assertBool "contains module count" (Text.isInfixOf "10" msg)
+      testCase "TypeUnified rendering" $
+        renderCLI (TypeUnified "Main" "Int" "String")
+          @?= "Unified Int ~ String in Main",
+      testCase "WorkerFailed rendering" $
+        renderCLI (WorkerFailed 42 "timeout")
+          @?= "Worker failed: 42 \8212 timeout",
+      testCase "CompileCompleted rendering" $
+        renderCLI (CompileCompleted "/tmp/proj" (CompileStats 10 (Duration 5000)))
+          @?= "Compiled /tmp/proj (10 modules, 5ms)"
     ]

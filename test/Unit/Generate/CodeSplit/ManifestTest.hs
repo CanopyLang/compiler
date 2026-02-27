@@ -73,7 +73,7 @@ contentHashTests =
     , testCase "hash is hex characters" $ do
         let hash = contentHash (BB.stringUtf8 "some content")
             isHexChar c = c `elem` ("0123456789abcdef" :: String)
-        assertBool "all hex chars" (all isHexChar (Text.unpack hash))
+        all isHexChar (Text.unpack hash) @?= True
     , testCase "empty input produces valid hash" $ do
         let hash = contentHash mempty
         Text.length hash @?= 8
@@ -106,49 +106,40 @@ manifestTests :: TestTree
 manifestTests =
   testGroup
     "generateManifest"
-    [ testCase "manifest contains entry field" $ do
+    [ testCase "entry-only manifest has correct structure" $ do
         let outputs = [mkChunkOutput EntryChunk "entry" "abc" "entry.js"]
             manifest = renderBuilder (generateManifest outputs)
-        assertBool "contains entry" ("\"entry\":" `isSubsequenceOf` manifest)
-    , testCase "manifest contains chunks field" $ do
+        manifest @?= "{\"entry\":\"entry.js\",\"chunks\":{}}"
+    , testCase "entry plus lazy chunk manifest includes chunk" $ do
         let outputs =
               [ mkChunkOutput EntryChunk "entry" "abc" "entry.js"
               , mkChunkOutput LazyChunk "lazy-Dash" "def" "chunk-Dash-def.js"
               ]
             manifest = renderBuilder (generateManifest outputs)
-        assertBool "contains chunks" ("\"chunks\":" `isSubsequenceOf` manifest)
+        manifest @?= "{\"entry\":\"entry.js\",\"chunks\":{,\"lazy-Dash\":\"chunk-Dash-def.js\"}}"
     , testCase "manifest starts with open brace" $ do
         let outputs = [mkChunkOutput EntryChunk "entry" "abc" "entry.js"]
             manifest = renderBuilder (generateManifest outputs)
-        case manifest of
-          (c : _) -> c @?= '{'
-          [] -> assertFailure "empty manifest"
+        head manifest @?= '{'
     , testCase "manifest ends with close brace" $ do
         let outputs = [mkChunkOutput EntryChunk "entry" "abc" "entry.js"]
             manifest = renderBuilder (generateManifest outputs)
-        assertBool "ends with }" (not (null manifest) && Prelude.last manifest == '}')
-    , testCase "manifest includes all lazy chunk filenames" $ do
+        last manifest @?= '}'
+    , testCase "manifest includes two lazy chunk filenames" $ do
         let outputs =
               [ mkChunkOutput EntryChunk "entry" "abc" "entry.js"
               , mkChunkOutput LazyChunk "lazy-A" "111" "chunk-A-111.js"
               , mkChunkOutput LazyChunk "lazy-B" "222" "chunk-B-222.js"
               ]
             manifest = renderBuilder (generateManifest outputs)
-        assertBool "contains chunk-A" ("chunk-A-111.js" `isSubsequenceOf` manifest)
-        assertBool "contains chunk-B" ("chunk-B-222.js" `isSubsequenceOf` manifest)
+        manifest
+          @?= "{\"entry\":\"entry.js\",\"chunks\":{,\"lazy-A\":\"chunk-A-111.js\",\
+              \,\"lazy-B\":\"chunk-B-222.js\"}}"
     , testCase "entry-only manifest has empty chunks" $ do
         let outputs = [mkChunkOutput EntryChunk "entry" "abc" "entry.js"]
             manifest = renderBuilder (generateManifest outputs)
-        assertBool "has chunks field" ("\"chunks\":{}" `isSubsequenceOf` manifest)
+        manifest @?= "{\"entry\":\"entry.js\",\"chunks\":{}}"
     ]
-
--- | Check if all characters of needle appear in order in haystack.
-isSubsequenceOf :: String -> String -> Bool
-isSubsequenceOf [] _ = True
-isSubsequenceOf _ [] = False
-isSubsequenceOf (x:xs) (y:ys)
-  | x == y = isSubsequenceOf xs ys
-  | otherwise = isSubsequenceOf (x:xs) ys
 
 -- MANIFEST ASSIGNMENT TESTS
 
@@ -156,20 +147,19 @@ manifestAssignmentTests :: TestTree
 manifestAssignmentTests =
   testGroup
     "generateManifestAssignment"
-    [ testCase "starts with __canopy_manifest =" $ do
+    [ testCase "entry-only produces empty object assignment" $ do
+        let outputs = [mkChunkOutput EntryChunk "entry" "abc" "entry.js"]
+            assignment = renderBuilder (generateManifestAssignment outputs)
+        assignment @?= "__canopy_manifest = {};\n"
+    , testCase "entry plus lazy chunk assignment includes chunk mapping" $ do
         let outputs =
               [ mkChunkOutput EntryChunk "entry" "abc" "entry.js"
               , mkChunkOutput LazyChunk "lazy-X" "def" "chunk-X-def.js"
               ]
             assignment = renderBuilder (generateManifestAssignment outputs)
-        assertBool "starts with manifest assignment"
-          ("__canopy_manifest = " `isSubsequenceOf` assignment)
-    , testCase "ends with semicolon and newline" $ do
+        assignment @?= "__canopy_manifest = {\"lazy-X\":\"chunk-X-def.js\"};\n"
+    , testCase "assignment starts with __canopy_manifest =" $ do
         let outputs = [mkChunkOutput EntryChunk "entry" "abc" "entry.js"]
             assignment = renderBuilder (generateManifestAssignment outputs)
-        assertBool "ends with semicolon" (";\n" `isSubsequenceOf` assignment)
-    , testCase "entry-only has empty manifest object" $ do
-        let outputs = [mkChunkOutput EntryChunk "entry" "abc" "entry.js"]
-            assignment = renderBuilder (generateManifestAssignment outputs)
-        assertBool "empty object" ("= {};" `isSubsequenceOf` assignment)
+        take 23 assignment @?= "__canopy_manifest = {};"
     ]

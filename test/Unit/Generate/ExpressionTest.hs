@@ -71,14 +71,16 @@ codeToExprTests =
       testCase "JsStmt with non-Return wraps in IIFE" $
         let stmt = JS.Var (JsName.fromLocal (nameStr "x")) (JS.Int 1)
             result = Expr.codeToExpr (Expr.JsStmt stmt)
-        in assertShowContains "Function" (showExpr result),
+        in showExpr result
+             @?= "Call (Function Nothing [] [Var (Name {toBuilder = \"x\"}) (Int 1)]) []",
       testCase "JsBlock with single Return unwraps the expression" $
         showExpr (Expr.codeToExpr (Expr.JsBlock [JS.Return (JS.Bool True)]))
           @?= showExpr (JS.Bool True),
       testCase "JsBlock with multiple stmts wraps in IIFE" $
         let stmts = [JS.Var (JsName.fromLocal (nameStr "a")) (JS.Int 1), JS.Return (JS.Int 2)]
             result = Expr.codeToExpr (Expr.JsBlock stmts)
-        in assertShowContains "Function" (showExpr result)
+        in showExpr result
+             @?= "Call (Function Nothing [] [Var (Name {toBuilder = \"a\"}) (Int 1),Return (Int 2)]) []"
     ]
 
 -- CODE TO STMT LIST TESTS
@@ -90,16 +92,16 @@ codeToStmtListTests =
     [ testCase "JsExpr with simple value becomes Return statement" $
         let result = Expr.codeToStmtList (Expr.JsExpr (JS.Int 5))
         in do
-          assertEqual "exactly one statement" 1 (length result)
-          assertShowContains "Return" (showStmt (head result)),
+          length result @?= 1
+          showStmt (head result) @?= "Return (Int 5)",
       testCase "JsStmt passes through as single-element list" $
         let stmt = JS.Return (JS.Bool False)
             result = Expr.codeToStmtList (Expr.JsStmt stmt)
-        in assertEqual "single statement" [showStmt stmt] (fmap showStmt result),
+        in [showStmt stmt] @?= fmap showStmt result,
       testCase "JsBlock flattens nested blocks" $
         let stmts = [JS.Block [JS.Return (JS.Int 1)]]
             result = Expr.codeToStmtList (Expr.JsBlock stmts)
-        in assertEqual "flattened to one statement" 1 (length result)
+        in length result @?= 1
     ]
 
 -- GENERATE LITERAL TESTS
@@ -125,7 +127,7 @@ generateLiteralTests =
           @?= showExpr (JS.Int (-1)),
       testCase "Str generates JS.String with correct content" $
         let strExpr = Expr.codeToExpr (Expr.generate devMode (Opt.Str (Utf8.fromChars "hello")))
-        in assertShowContains "String" (showExpr strExpr)
+        in showExpr strExpr @?= "String \"hello\""
     ]
 
 -- GENERATE VAR LOCAL TESTS
@@ -136,11 +138,11 @@ generateVarLocalTests =
     "generate VarLocal"
     [ testCase "VarLocal generates JS.Ref with local name" $
         let result = Expr.codeToExpr (Expr.generate devMode (Opt.VarLocal (nameStr "myVar")))
-        in assertShowContains "Ref" (showExpr result),
+        in showExpr result @?= "Ref (Name {toBuilder = \"myVar\"})",
       testCase "VarLocal with reserved word gets escaped" $
         let result = Expr.codeToExpr (Expr.generate devMode (Opt.VarLocal (nameStr "var")))
             rendered = LChar8.unpack (BB.toLazyByteString (JS.exprToBuilder result))
-        in assertBool "escaped var reference contains _var" ("_var" `isInfixOfStr` rendered)
+        in rendered @?= " _var"
     ]
 
 -- GENERATE FUNCTION TESTS
@@ -153,19 +155,20 @@ generateFunctionTests =
         let args = [JsName.fromLocal (nameStr "x")]
             body = Expr.JsExpr (JS.Ref (JsName.fromLocal (nameStr "x")))
             result = Expr.codeToExpr (Expr.generateFunction args body)
-        in assertShowContains "Function" (showExpr result),
+        in showExpr result
+             @?= "Function Nothing [Name {toBuilder = \"x\"}] [Return (Ref (Name {toBuilder = \"x\"}))]",
       testCase "two-arg function uses F2 helper" $
         let args = [JsName.fromLocal (nameStr "a"), JsName.fromLocal (nameStr "b")]
             body = Expr.JsExpr (JS.Ref (JsName.fromLocal (nameStr "a")))
             result = Expr.codeToExpr (Expr.generateFunction args body)
             rendered = LChar8.unpack (BB.toLazyByteString (JS.exprToBuilder result))
-        in assertBool "two-arg function uses F2" ("F2" `isInfixOfStr` rendered),
+        in rendered @?= " F2( function(a,b){ return ( a);})",
       testCase "nine-arg function uses F9 helper" $
         let argNames = fmap (\c -> JsName.fromLocal (nameStr [c])) ['a' .. 'i']
             body = Expr.JsExpr (JS.Int 0)
             result = Expr.codeToExpr (Expr.generateFunction argNames body)
             rendered = LChar8.unpack (BB.toLazyByteString (JS.exprToBuilder result))
-        in assertBool "nine-arg function uses F9" ("F9" `isInfixOfStr` rendered)
+        in rendered @?= " F9( function(a,b,c,d,e,f,g,h,i){ return 0;})"
     ]
 
 -- GENERATE FIELD TESTS
@@ -193,34 +196,11 @@ generateCtorTests =
             global = Opt.Global home (nameStr "Nothing")
             result = Expr.codeToExpr (Expr.generateCtor devMode global Index.first 0)
             rendered = LChar8.unpack (BB.toLazyByteString (JS.exprToBuilder result))
-        in assertBool "ctor contains Nothing tag string" ("Nothing" `isInfixOfStr` rendered),
+        in rendered @?= "{$ :'Nothing'}",
       testCase "arity-1 ctor in Dev mode produces function returning tagged object" $
         let home = ModuleName.Canonical Pkg.core (nameStr "Maybe")
             global = Opt.Global home (nameStr "Just")
             result = Expr.codeToExpr (Expr.generateCtor devMode global Index.first 1)
             rendered = LChar8.unpack (BB.toLazyByteString (JS.exprToBuilder result))
-        in do
-          assertBool "ctor contains Just tag" ("Just" `isInfixOfStr` rendered)
-          assertBool "ctor contains function" ("function" `isInfixOfStr` rendered)
+        in rendered @?= " function(a){ return ({a : a,$ :'Just'});}"
     ]
-
--- STRING HELPERS
-
-assertShowContains :: String -> String -> Assertion
-assertShowContains needle haystack =
-  assertBool
-    ("expected Show output to contain " ++ show needle ++ " but got: " ++ haystack)
-    (needle `isInfixOfStr` haystack)
-
-isInfixOfStr :: String -> String -> Bool
-isInfixOfStr needle haystack =
-  any (isPrefixOfStr needle) (tailsOf haystack)
-
-isPrefixOfStr :: String -> String -> Bool
-isPrefixOfStr [] _ = True
-isPrefixOfStr _ [] = False
-isPrefixOfStr (x : xs) (y : ys) = x == y && isPrefixOfStr xs ys
-
-tailsOf :: [a] -> [[a]]
-tailsOf [] = [[]]
-tailsOf xs@(_ : rest) = xs : tailsOf rest

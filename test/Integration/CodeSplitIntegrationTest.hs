@@ -228,8 +228,8 @@ outputContentTests :: TestTree
 outputContentTests =
   testGroup
     "Output content"
-    [ testCase "entry chunk contains IIFE wrapper" $
-        assertEntryContains "(function(scope)" entryOutput
+    [ testCase "entry chunk starts with IIFE wrapper" $
+        assertEntryStartsWithIIFE entryOutput
     , testCase "entry chunk contains chunk runtime" $
         assertEntryContains "__canopy_register" entryOutput
     , testCase "entry chunk contains manifest assignment" $
@@ -250,6 +250,16 @@ outputContentTests =
       , (mkGlobal "Dashboard" "view", mkDefineNode)
       ]
 
+-- | Assert that the entry chunk starts with the IIFE wrapper.
+assertEntryStartsWithIIFE :: SplitOutput -> IO ()
+assertEntryStartsWithIIFE output = do
+  let chunks = output ^. soChunks
+      entryChunks = filter (\c -> c ^. coKind == EntryChunk) chunks
+  case entryChunks of
+    [entry] ->
+      take 17 (renderBuilder (entry ^. coBuilder)) @?= "(function(scope){"
+    _ -> assertFailure "expected exactly one entry chunk"
+
 -- | Assert that the entry chunk contains a given string.
 assertEntryContains :: String -> SplitOutput -> IO ()
 assertEntryContains needle output = do
@@ -257,8 +267,7 @@ assertEntryContains needle output = do
       entryChunks = filter (\c -> c ^. coKind == EntryChunk) chunks
   case entryChunks of
     [entry] ->
-      assertBool ("entry contains: " ++ needle)
-        (containsStr needle (renderBuilder (entry ^. coBuilder)))
+      containsStr needle (renderBuilder (entry ^. coBuilder)) @?= True
     _ -> assertFailure "expected exactly one entry chunk"
 
 -- | Assert that lazy chunks are wrapped in __canopy_register.
@@ -266,12 +275,12 @@ assertLazyChunkWrapped :: SplitOutput -> IO ()
 assertLazyChunkWrapped output = do
   let chunks = output ^. soChunks
       lazyChunks = filter (\c -> c ^. coKind == LazyChunk) chunks
-  assertBool "at least one lazy chunk" (not (null lazyChunks))
-  mapM_ checkRegisterWrapper lazyChunks
+  case lazyChunks of
+    [] -> assertFailure "expected at least one lazy chunk"
+    _ -> mapM_ checkRegisterWrapper lazyChunks
   where
     checkRegisterWrapper c =
-      assertBool ("lazy chunk wrapped in register: " ++ show (c ^. coFilename))
-        (containsStr "__canopy_register" (renderBuilder (c ^. coBuilder)))
+      take 18 (renderBuilder (c ^. coBuilder)) @?= "__canopy_register("
 
 -- | Assert that all chunks have unique content hashes.
 assertUniqueHashes :: SplitOutput -> IO ()
@@ -319,15 +328,15 @@ assertManifestStructure :: SplitOutput -> IO ()
 assertManifestStructure output = do
   let manifest = renderBuilder (output ^. soManifest)
   case manifest of
-    ('{' : _) -> assertBool "ends with }" (last manifest == '}')
+    ('{' : _) -> last manifest @?= '}'
     _ -> assertFailure ("manifest should start with '{', got: " ++ take 20 manifest)
 
 -- | Assert that manifest contains a given string.
 assertManifestContains :: String -> SplitOutput -> IO ()
 assertManifestContains needle output = do
   let manifest = renderBuilder (output ^. soManifest)
-  assertBool ("manifest contains: " ++ needle)
-    (containsStr needle manifest)
+      needlePresent = containsStr needle manifest
+  needlePresent @?= True
 
 -- | Assert that manifest references all lazy chunk filenames.
 assertManifestReferencesChunks :: SplitOutput -> IO ()
@@ -335,12 +344,12 @@ assertManifestReferencesChunks output = do
   let manifest = renderBuilder (output ^. soManifest)
       chunks = output ^. soChunks
       lazyChunks = filter (\c -> c ^. coKind == LazyChunk) chunks
-  assertBool "has lazy chunks" (not (null lazyChunks))
-  mapM_ (checkFilenameInManifest manifest) lazyChunks
+  case lazyChunks of
+    [] -> assertFailure "expected at least one lazy chunk in manifest test"
+    _ -> mapM_ (checkFilenameInManifest manifest) lazyChunks
   where
     checkFilenameInManifest manifest c =
-      assertBool ("manifest references: " ++ c ^. coFilename)
-        (containsStr (c ^. coFilename) manifest)
+      containsStr (c ^. coFilename) manifest @?= True
 
 -- BACKWARD COMPATIBILITY TESTS
 
@@ -364,13 +373,13 @@ backwardCompatTests =
     , testCase "no lazy imports manifest has empty chunks" $ do
         let output = runPipeline noSplitConfig singleGraph "Main"
             manifest = renderBuilder (output ^. soManifest)
-        assertBool "empty chunks object" (containsStr "\"chunks\":{}" manifest)
+        manifest @?= "{\"entry\":\"entry.js\",\"chunks\":{}}"
     , testCase "entry chunk always present regardless of config" $ do
         let outputNoSplit = runPipeline noSplitConfig singleGraph "Main"
             outputWithSplit = runPipeline (lazyConfig ["Dashboard"]) lazyGraph "Main"
             hasEntry chunks = any (\c -> c ^. coKind == EntryChunk) chunks
-        assertBool "no-split has entry" (hasEntry (outputNoSplit ^. soChunks))
-        assertBool "split has entry" (hasEntry (outputWithSplit ^. soChunks))
+        hasEntry (outputNoSplit ^. soChunks) @?= True
+        hasEntry (outputWithSplit ^. soChunks) @?= True
     ]
   where
     singleGraph = Map.fromList
@@ -436,25 +445,25 @@ prefetchHintTests =
     "Prefetch hints"
     [ testCase "sandwichWithPrefetch includes prefetch link tags" $ do
         let html = renderBuilder (Html.sandwichWithPrefetch (Name.fromChars "Main") mempty chunkFiles)
-        assertBool "contains prefetch tag for Dashboard" (containsStr "rel=\"prefetch\"" html)
-        assertBool "references Dashboard chunk" (containsStr "chunk-Dashboard-abc.js" html)
+        containsStr "rel=\"prefetch\"" html @?= True
+        containsStr "chunk-Dashboard-abc.js" html @?= True
     , testCase "sandwichWithPrefetch with no chunks matches sandwich" $ do
         let htmlWithPrefetch = renderBuilder (Html.sandwichWithPrefetch (Name.fromChars "Main") mempty [])
             htmlWithout = renderBuilder (Html.sandwich (Name.fromChars "Main") mempty)
-        assertBool "both contain DOCTYPE"
-          (containsStr "<!DOCTYPE HTML>" htmlWithPrefetch && containsStr "<!DOCTYPE HTML>" htmlWithout)
-        assertBool "both contain Canopy init"
-          (containsStr "Canopy.Main.init" htmlWithPrefetch && containsStr "Canopy.Main.init" htmlWithout)
+        containsStr "<!DOCTYPE HTML>" htmlWithPrefetch @?= True
+        containsStr "<!DOCTYPE HTML>" htmlWithout @?= True
+        containsStr "Canopy.Main.init" htmlWithPrefetch @?= True
+        containsStr "Canopy.Main.init" htmlWithout @?= True
     , testCase "prefetch tags appear in head section" $ do
         let html = renderBuilder (Html.sandwichWithPrefetch (Name.fromChars "Main") mempty chunkFiles)
-        assertBool "prefetch before </head>" (containsStr "prefetch" html)
-        assertBool "contains head close" (containsStr "</head>" html)
+        containsStr "prefetch" html @?= True
+        containsStr "</head>" html @?= True
     , testCase "multiple prefetch tags for multiple chunks" $ do
         let files = ["chunk-A-111.js", "chunk-B-222.js", "shared-0-333.js"]
             html = renderBuilder (Html.sandwichWithPrefetch (Name.fromChars "Main") mempty files)
-        assertBool "contains chunk-A" (containsStr "chunk-A-111.js" html)
-        assertBool "contains chunk-B" (containsStr "chunk-B-222.js" html)
-        assertBool "contains shared-0" (containsStr "shared-0-333.js" html)
+        containsStr "chunk-A-111.js" html @?= True
+        containsStr "chunk-B-222.js" html @?= True
+        containsStr "shared-0-333.js" html @?= True
     ]
   where
     chunkFiles = ["chunk-Dashboard-abc.js", "shared-0-def.js"]

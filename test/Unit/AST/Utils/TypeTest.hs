@@ -303,10 +303,10 @@ edgeCaseTests = testGroup "Edge Case Tests"
           holeyAlias = Holey varType
           result = dealias manySubsts holeyAlias
       in result @?= intType
-  , testCase "deepDealias with nested structures" $
+  , testCase "deepDealias with nested structures returns unchanged non-alias type" $
       let nestedType = buildNestedType 5
           result = deepDealias nestedType
-      in length (show result) > 0 @?= True  -- Should complete without error
+      in result @?= nestedType
   , testCase "empty record dealias" $
       let emptyRecord = TRecord Map.empty Nothing
           result = deepDealias emptyRecord

@@ -191,8 +191,7 @@ testConversionFunctions =
             jsonStr = JsonStr.fromChars original
             builder = JsonStr.toBuilder jsonStr
             result = BB.toLazyByteString builder
-        -- Should produce non-zero output for unicode
-        assertBool "Should produce non-empty output for unicode" (BSL.length result > 0)
+        BSL.length result @?= 20
     ]
 
 testSpecializedConstruction :: TestTree

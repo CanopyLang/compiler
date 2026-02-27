@@ -148,5 +148,5 @@ errorConditionTests = testGroup "Error Condition Tests"
       result <- Exception.try (FileSystem.listAllCanopyFilesRecursively "/proc/1")
       case result of
         Left (_ :: Exception.IOException) -> pure ()  -- Expected permission error
-        Right files -> length files >= 0 @?= True  -- If successful, should return valid list
+        Right files -> files @?= []  -- /proc/1 contains no .can files
   ]

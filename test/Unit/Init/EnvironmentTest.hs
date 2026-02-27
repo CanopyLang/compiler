@@ -37,7 +37,6 @@ import qualified Canopy.Constraint as Con
 import Canopy.Package (Name)
 import qualified Canopy.Package as Pkg
 import qualified Canopy.Version as Version
-import Data.List (isInfixOf)
 import qualified Data.Map as Map
 import qualified Deps.Solver as Solver
 import qualified Init.Environment as Environment
@@ -49,7 +48,7 @@ import Init.Types
 import qualified Reporting.Exit as Exit
 import Test.Tasty (TestTree)
 import qualified Test.Tasty as Test
-import Test.Tasty.HUnit (assertBool, (@?=))
+import Test.Tasty.HUnit ((@?=))
 import qualified Test.Tasty.HUnit as Test
 
 -- | Main test suite for Init.Environment module.
@@ -292,10 +291,8 @@ validationTests =
             regError = RegistryFailure (Exit.RegistryBadData "Test error")
 
         case fsError of
-          FileSystemError msg -> do
-            -- Error message should be informative
-            assertBool "Contains Directory" ("Directory" `isInfixOf` msg)
-            assertBool "Contains writable" ("writable" `isInfixOf` msg)
+          FileSystemError msg ->
+            msg @?= "Directory not writable: /tmp/test"
           _ -> fail "Expected FileSystemError"
 
         case regError of

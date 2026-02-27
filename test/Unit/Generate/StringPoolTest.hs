@@ -13,7 +13,6 @@ import qualified Canopy.ModuleName as ModuleName
 import qualified Canopy.Package as Pkg
 import qualified Data.ByteString.Builder as BB
 import qualified Data.ByteString.Lazy.Char8 as LChar8
-import qualified Data.List as List
 import qualified Data.Map.Strict as Map
 import qualified Data.Maybe as Maybe
 import qualified Data.Name as Name
@@ -64,25 +63,18 @@ buildPoolTests =
   testGroup
     "buildPool"
     [ testCase "strings appearing 2+ times are pooled" $
-        assertBool "hello should be in pool"
-          (Maybe.isJust (StringPool.lookupString pool1 (Utf8.fromChars "hello"))),
+        Maybe.isJust (StringPool.lookupString pool1 (Utf8.fromChars "hello")) @?= True,
       testCase "strings appearing once are NOT pooled" $
-        assertBool "unique should not be in pool"
-          (Maybe.isNothing (StringPool.lookupString pool1 (Utf8.fromChars "unique"))),
-      testCase "multiple repeated strings are all pooled" $
+        Maybe.isNothing (StringPool.lookupString pool1 (Utf8.fromChars "unique")) @?= True,
+      testCase "alpha and beta are pooled, gamma is not" $
         do
-          assertBool "alpha should be pooled"
-            (Maybe.isJust (StringPool.lookupString pool2 (Utf8.fromChars "alpha")))
-          assertBool "beta should be pooled"
-            (Maybe.isJust (StringPool.lookupString pool2 (Utf8.fromChars "beta")))
-          assertBool "gamma should not be pooled"
-            (Maybe.isNothing (StringPool.lookupString pool2 (Utf8.fromChars "gamma"))),
+          Maybe.isJust (StringPool.lookupString pool2 (Utf8.fromChars "alpha")) @?= True
+          Maybe.isJust (StringPool.lookupString pool2 (Utf8.fromChars "beta")) @?= True
+          Maybe.isNothing (StringPool.lookupString pool2 (Utf8.fromChars "gamma")) @?= True,
       testCase "strings in nested expressions are counted" $
-        assertBool "nested string in function body should be counted"
-          (Maybe.isJust (StringPool.lookupString pool3 (Utf8.fromChars "nested"))),
+        Maybe.isJust (StringPool.lookupString pool3 (Utf8.fromChars "nested")) @?= True,
       testCase "empty graph produces empty pool" $
-        assertBool "empty graph gives empty pool"
-          (Maybe.isNothing (StringPool.lookupString emptyGraphPool (Utf8.fromChars "anything")))
+        Maybe.isNothing (StringPool.lookupString emptyGraphPool (Utf8.fromChars "anything")) @?= True
     ]
   where
     pool1 = StringPool.buildPool (mkGraph
@@ -109,15 +101,15 @@ lookupTests :: TestTree
 lookupTests =
   testGroup
     "lookupString"
-    [ testCase "pooled strings get distinct variable names" $
-        do
-          assertBool "foo should be pooled" (Maybe.isJust fooName)
-          assertBool "bar should be pooled" (Maybe.isJust barName)
-          assertBool "foo and bar should have different names"
-            (show fooName /= show barName),
+    [ testCase "foo pool variable name is _s1" $
+        show (StringPool.lookupString pool (Utf8.fromChars "foo"))
+          @?= "Just (Name {toBuilder = \"_s1\"})",
+      testCase "bar pool variable name is _s0" $
+        show (StringPool.lookupString pool (Utf8.fromChars "bar"))
+          @?= "Just (Name {toBuilder = \"_s0\"})",
       testCase "looking up unpooled string returns Nothing" $
-        assertBool "empty pool returns Nothing"
-          (Maybe.isNothing (StringPool.lookupString StringPool.emptyPool (Utf8.fromChars "missing")))
+        show (StringPool.lookupString StringPool.emptyPool (Utf8.fromChars "missing"))
+          @?= "Nothing"
     ]
   where
     pool = StringPool.buildPool (mkGraph
@@ -126,8 +118,6 @@ lookupTests =
         ("c", mkStr "bar"),
         ("d", mkStr "bar")
       ])
-    fooName = StringPool.lookupString pool (Utf8.fromChars "foo")
-    barName = StringPool.lookupString pool (Utf8.fromChars "bar")
 
 -- DECLARATION TESTS
 
@@ -136,24 +126,15 @@ declarationTests =
   testGroup
     "poolDeclarations"
     [ testCase "empty pool produces no declarations" $
-        assertEqual "empty pool gives empty builder"
-          ""
-          (builderToString (StringPool.poolDeclarations StringPool.emptyPool)),
-      testCase "pooled strings produce var declarations" $
-        do
-          assertBool "declarations should contain var keyword"
-            ("var " `List.isInfixOf` declStr)
-          assertBool "declarations should contain the string literal"
-            ("repeated" `List.isInfixOf` declStr)
-          assertBool "declarations should end with semicolon-newline"
-            (";\n" `List.isInfixOf` declStr)
+        builderToString (StringPool.poolDeclarations StringPool.emptyPool) @?= "",
+      testCase "pooled strings produce var declarations with correct format" $
+        let pool = StringPool.buildPool (mkGraph
+              [ ("a", mkStr "repeated"),
+                ("b", mkStr "repeated")
+              ])
+            declStr = builderToString (StringPool.poolDeclarations pool)
+        in declStr @?= "var _s0 = \"repeated\";\n"
     ]
-  where
-    pool = StringPool.buildPool (mkGraph
-      [ ("a", mkStr "repeated"),
-        ("b", mkStr "repeated")
-      ])
-    declStr = builderToString (StringPool.poolDeclarations pool)
 
 -- EMPTY POOL TESTS
 
@@ -162,10 +143,8 @@ emptyPoolTests =
   testGroup
     "emptyPool"
     [ testCase "empty pool has no declarations" $
-        assertEqual "empty pool decls should be empty string"
-          ""
-          (builderToString (StringPool.poolDeclarations StringPool.emptyPool)),
+        builderToString (StringPool.poolDeclarations StringPool.emptyPool) @?= "",
       testCase "empty pool never matches any string" $
-        assertBool "lookup always returns Nothing"
-          (Maybe.isNothing (StringPool.lookupString StringPool.emptyPool (Utf8.fromChars "test")))
+        Maybe.isNothing (StringPool.lookupString StringPool.emptyPool (Utf8.fromChars "test"))
+          @?= True
     ]

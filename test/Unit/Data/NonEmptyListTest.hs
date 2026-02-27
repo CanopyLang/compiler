@@ -82,8 +82,8 @@ unitTests = testGroup "Unit Tests"
       , testCase "toList always non-empty" $ do
           let nel1 = NEL.singleton "test"
               nel2 = List 1 [2, 3]
-          (not . null . NEL.toList) nel1 @?= True
-          (not . null . NEL.toList) nel2 @?= True
+          NEL.toList nel1 @?= ["test"]
+          NEL.toList nel2 @?= [1, 2, 3]
       ]
   , testGroup "Combination"
       [ testCase "append two singletons" $ do
@@ -302,10 +302,8 @@ errorConditionTests = testGroup "Error Condition Tests"
       , testCase "toList always produces non-empty result" $ do
           let nel1 = NEL.singleton 42
               nel2 = List "a" ["b", "c"]
-          (not . null . NEL.toList) nel1 @?= True
-          (not . null . NEL.toList) nel2 @?= True
-          length (NEL.toList nel1) @?= 1
-          length (NEL.toList nel2) @?= 3
+          NEL.toList nel1 @?= [42]
+          NEL.toList nel2 @?= ["a", "b", "c"]
       ]
   , testGroup "Memory and Performance Bounds"
       [ testCase "very large lists handle correctly" $ do

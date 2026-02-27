@@ -79,7 +79,7 @@ sourceMapProperties =
         forAll (chooseInt (0, 5)) $ \n ->
           let sm = addNMappings n (SourceMap.empty "test.js")
               json = renderBuilder (SourceMap.toBuilder sm)
-           in "\"version\":3" `List.isInfixOf` json
+           in "{\"version\":3" `List.isPrefixOf` json
     , testProperty "all source indices in mappings are non-negative" $
         forAll (listOf arbitraryMapping) $ \mappings ->
           all (\m -> SourceMap._mSrcIndex m >= 0) mappings

@@ -3,7 +3,6 @@
 -- | Tests for the @[c|...|]@ color quasi-quoter.
 module Unit.Reporting.Doc.ColorQQTest (tests) where
 
-import Data.List (isInfixOf)
 import Reporting.Doc.ColorQQ (c)
 import qualified Reporting.Doc as Doc
 import Test.Tasty
@@ -106,7 +105,7 @@ colorTests =
           @?= "ERROR: No canopy.json found.",
       testCase "color preserves in encode" $
         let encoded = show (Doc.encode [c|{red|ERROR}|])
-         in assertBool "encode output should contain RED (vivid)" ("RED" `isInfixOf` encoded)
+         in encoded @?= "Array [String \"\\\"\\\"\",Object [(bold,Boolean False),(underline,Boolean False),(color,String \"\\\"RED\\\"\"),(string,String \"\\\"ERROR\\\"\")],String \"\\\"\\\"\"]"
     ]
 
 multilineTests :: TestTree

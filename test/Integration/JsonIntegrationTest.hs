@@ -250,11 +250,10 @@ performanceTests = testGroup "Performance Tests"
 testLargeArrayPerformance :: TestTree
 testLargeArrayPerformance = testGroup "Large Array Performance"
   [ testCase "encode large array" $ do
-      let largeArray = [1..10000]
+      let largeArray = [1..10000] :: [Int]
           values = map Encode.int largeArray
           encoded = Encode.encodeUgly (Encode.array values)
-      -- Should complete without timeout and produce reasonable output
-      LBS.length (BB.toLazyByteString encoded) > 10000 @?= True -- Rough size check
+      LBS.length (BB.toLazyByteString encoded) @?= 48895
   
   , testCase "decode large array" $ do
       let largeArray = [1..5000]
@@ -276,10 +275,9 @@ testLargeArrayPerformance = testGroup "Large Array Performance"
 testLargeObjectPerformance :: TestTree
 testLargeObjectPerformance = testGroup "Large Object Performance"
   [ testCase "encode large object" $ do
-      let pairs = [("key" ++ show i) Encode.==> Encode.int i | i <- [1..1000]]
+      let pairs = [("key" ++ show (i::Int)) Encode.==> Encode.int i | i <- [1..1000]]
           encoded = Encode.encodeUgly (Encode.object pairs)
-      -- Should complete and produce substantial output
-      LBS.length (BB.toLazyByteString encoded) > 10000 @?= True
+      LBS.length (BB.toLazyByteString encoded) @?= 12787
   
   , testCase "decode large object fields" $ do
       let pairs = [("field" ++ show i) Encode.==> Encode.int (i * 10) | i <- [1..100]]
@@ -294,11 +292,10 @@ testLargeObjectPerformance = testGroup "Large Object Performance"
 testDeepNestingPerformance :: TestTree
 testDeepNestingPerformance = testGroup "Deep Nesting Performance"
   [ testCase "encode deeply nested arrays" $ do
-      let depth = 100
+      let depth = 100 :: Int
           deeplyNested = foldr (\_ acc -> Encode.array [acc]) (Encode.int 42) [1..depth]
           encoded = Encode.encodeUgly deeplyNested
-      -- Should handle deep nesting
-      LBS.length (BB.toLazyByteString encoded) > fromIntegral depth @?= True
+      LBS.length (BB.toLazyByteString encoded) @?= 202
   
   , testCase "decode deeply nested array structure" $ do
       let depth = 10  -- Reduced depth for simpler testing
@@ -469,23 +466,19 @@ testDataExchange = testGroup "Data Exchange"
             [ "timestamp" Encode.==> Encode.string (JsonStr.fromChars "2024-01-01T12:00:00Z")
             , "format_version" Encode.==> Encode.string (JsonStr.fromChars "1.0")
             , "records" Encode.==> Encode.array
-                [ Encode.object 
+                [ Encode.object
                     [ "type" Encode.==> Encode.string (JsonStr.fromChars "user")
                     , "data" Encode.==> Encode.object ["name" Encode.==> Encode.string (JsonStr.fromChars "Alice")]
                     ]
                 , Encode.object
-                    [ "type" Encode.==> Encode.string (JsonStr.fromChars "post") 
+                    [ "type" Encode.==> Encode.string (JsonStr.fromChars "post")
                     , "data" Encode.==> Encode.object ["title" Encode.==> Encode.string (JsonStr.fromChars "Hello")]
                     ]
                 ]
             ]
           encoded = Encode.encode exportData
           encodedStr = LBS.unpack (BB.toLazyByteString encoded)
-      -- Test pretty format has proper structure
-      "timestamp" `isSubsequenceOf` encodedStr @?= True
-      "records" `isSubsequenceOf` encodedStr @?= True
-      -- Should be formatted with newlines and indentation
-      '\n' `elem` encodedStr @?= True
+      encodedStr @?= "{\n    \"timestamp\": \"2024-01-01T12:00:00Z\",\n    \"format_version\": \"1.0\",\n    \"records\": [\n        {\n            \"type\": \"user\",\n            \"data\": {\n                \"name\": \"Alice\"\n            }\n        },\n        {\n            \"type\": \"post\",\n            \"data\": {\n                \"title\": \"Hello\"\n            }\n        }\n    ]\n}"
   ]
 
 testErrorMessages :: TestTree
@@ -567,21 +560,19 @@ testEncodingConsistency = testGroup "Encoding Consistency"
       let value = Encode.object ["key" Encode.==> Encode.int 42]
           pretty = LBS.unpack $ BB.toLazyByteString $ Encode.encode value
           ugly = LBS.unpack $ BB.toLazyByteString $ Encode.encodeUgly value
-      -- Both should parse to same structure
-      "key" `isSubsequenceOf` pretty @?= True
-      "key" `isSubsequenceOf` ugly @?= True
-      "42" `isSubsequenceOf` pretty @?= True
-      "42" `isSubsequenceOf` ugly @?= True
-  
-  , testCase "different Value constructors" $ do
+      pretty @?= "{\n    \"key\": 42\n}"
+      ugly @?= "{\"key\":42}"
+
+  , testCase "different Value constructors produce JSON strings" $ do
       let stringValue = Encode.string (JsonStr.fromChars "test")
           charsValue = Encode.chars "test"
           nameValue = Encode.name (Name.fromChars "test")
           stringEncoded = LBS.unpack $ BB.toLazyByteString $ Encode.encodeUgly stringValue
           charsEncoded = LBS.unpack $ BB.toLazyByteString $ Encode.encodeUgly charsValue
           nameEncoded = LBS.unpack $ BB.toLazyByteString $ Encode.encodeUgly nameValue
-      -- All should produce valid JSON strings
-      all (\s -> head s == '"' && last s == '"') [stringEncoded, charsEncoded, nameEncoded] @?= True
+      stringEncoded @?= "\"test\""
+      charsEncoded @?= "\"test\""
+      nameEncoded @?= "\"test\""
   ]
 
 testDecodingConsistency :: TestTree
@@ -769,10 +760,3 @@ configDecoder = do
   features <- Decode.field "features" (Decode.list Decode.string)
   return (JsonStr.toChars host, port, map JsonStr.toChars features)
 
--- | Check if first list is a subsequence of second list
-isSubsequenceOf :: Eq a => [a] -> [a] -> Bool
-isSubsequenceOf [] _ = True
-isSubsequenceOf _ [] = False
-isSubsequenceOf (x:xs) (y:ys)
-  | x == y = isSubsequenceOf xs ys
-  | otherwise = isSubsequenceOf (x:xs) ys

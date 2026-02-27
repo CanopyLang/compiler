@@ -19,7 +19,7 @@ import CLI.Commands
 import qualified Terminal
 import Terminal.Internal (toName)
 import Test.Tasty (TestTree, testGroup)
-import Test.Tasty.HUnit (testCase, (@?=))
+import Test.Tasty.HUnit (assertFailure, testCase, (@?=))
 
 -- | All unit tests for CLI command creation functionality.
 tests :: TestTree
@@ -44,11 +44,11 @@ testInitCommand =
     [ testCase "command has correct name" $ do
         let cmd = createInitCommand
         toName cmd @?= "init",
-      testCase "command has summary" $ do
+      testCase "command has correct summary text" $ do
         let cmd = createInitCommand
             Terminal.Command _ summary _ _ _ _ _ = cmd
         case summary of
-          Terminal.Common s -> length s > 0 @?= True
+          Terminal.Common s -> s @?= "Start a Canopy project. It creates a starter canopy.json file and provides a link explaining what to do from there."
           _ -> False @?= True
     ]
 
@@ -60,11 +60,11 @@ testReplCommand =
     [ testCase "command has correct name" $ do
         let cmd = createReplCommand
         toName cmd @?= "repl",
-      testCase "command has summary" $ do
+      testCase "command has correct summary text" $ do
         let cmd = createReplCommand
             Terminal.Command _ summary _ _ _ _ _ = cmd
         case summary of
-          Terminal.Common s -> length s > 0 @?= True
+          Terminal.Common s -> s @?= "Open up an interactive programming session. Type in Canopy expressions like (2 + 2) or (String.length \"test\") and see if they equal four!"
           _ -> False @?= True
     ]
 
@@ -76,11 +76,11 @@ testReactorCommand =
     [ testCase "command has correct name" $ do
         let cmd = createReactorCommand
         toName cmd @?= "reactor",
-      testCase "command has summary" $ do
+      testCase "command has correct summary text" $ do
         let cmd = createReactorCommand
             Terminal.Command _ summary _ _ _ _ _ = cmd
         case summary of
-          Terminal.Common s -> length s > 0 @?= True
+          Terminal.Common s -> s @?= "Compile code with a click. It opens a file viewer in your browser, and when you click on a Canopy file, it compiles and you see the result."
           _ -> False @?= True
     ]
 
@@ -96,8 +96,8 @@ testMakeCommand =
         let cmd = createMakeCommand
             Terminal.Command _ summary _ _ _ _ _ = cmd
         case summary of
-          Terminal.Uncommon -> True @?= True
-          _ -> False @?= True
+          Terminal.Uncommon -> pure ()
+          Terminal.Common s -> assertFailure ("Expected Uncommon but got Common " ++ show s)
     ]
 
 -- | Test install command creation.
@@ -112,8 +112,8 @@ testInstallCommand =
         let cmd = createInstallCommand
             Terminal.Command _ summary _ _ _ _ _ = cmd
         case summary of
-          Terminal.Uncommon -> True @?= True
-          _ -> False @?= True
+          Terminal.Uncommon -> pure ()
+          Terminal.Common s -> assertFailure ("Expected Uncommon but got Common " ++ show s)
     ]
 
 -- | Test publish command creation.
@@ -128,8 +128,8 @@ testPublishCommand =
         let cmd = createPublishCommand
             Terminal.Command _ summary _ _ _ _ _ = cmd
         case summary of
-          Terminal.Uncommon -> True @?= True
-          _ -> False @?= True
+          Terminal.Uncommon -> pure ()
+          Terminal.Common s -> assertFailure ("Expected Uncommon but got Common " ++ show s)
     ]
 
 -- | Test bump command creation.
@@ -144,8 +144,8 @@ testBumpCommand =
         let cmd = createBumpCommand
             Terminal.Command _ summary _ _ _ _ _ = cmd
         case summary of
-          Terminal.Uncommon -> True @?= True
-          _ -> False @?= True
+          Terminal.Uncommon -> pure ()
+          Terminal.Common s -> assertFailure ("Expected Uncommon but got Common " ++ show s)
     ]
 
 -- | Test diff command creation.
@@ -160,6 +160,6 @@ testDiffCommand =
         let cmd = createDiffCommand
             Terminal.Command _ summary _ _ _ _ _ = cmd
         case summary of
-          Terminal.Uncommon -> True @?= True
-          _ -> False @?= True
+          Terminal.Uncommon -> pure ()
+          Terminal.Common s -> assertFailure ("Expected Uncommon but got Common " ++ show s)
     ]

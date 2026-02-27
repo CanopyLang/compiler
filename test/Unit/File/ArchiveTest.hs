@@ -309,8 +309,8 @@ errorConditionTests = testGroup "Error Condition Tests"
       let entry = Zip.toEntry "package/src/Main.can" 0 "content"
           -- This tests the internal function behavior with edge case input
           extracted = FileArchive.extractRelativePath (-1) entry
-      -- Should handle negative depth gracefully (implementation detail)
-      length extracted >= 0 @?= True
+      -- Negative depth falls back to the full path (same as depth 0)
+      extracted @?= "package/src/Main.can"
   , testCase "writeEntry handles entries with empty content" $ do
       Temp.withSystemTempDirectory "empty_content_test" $ \tempDir -> do
         let emptyEntry = Zip.toEntry "package/src/Empty.can" 0 LBS.empty

@@ -251,9 +251,6 @@ errorHandlingIntegrationTests =
               ]
 
         let formatted = map Display.formatErrorMessage errors
-
-        -- All should produce non-empty, informative messages
-        all (not . null . show) formatted @?= True
         length formatted @?= 3,
       Test.testCase "error types preserve information across boundaries" $ do
         let originalPath = "/specific/path/canopy.json"

@@ -21,8 +21,10 @@ import qualified Integration.CodeSplitIntegrationTest as CodeSplitIT
 import qualified Integration.PureBuilderIntegrationTest as PureBuilderIT
 import Test.Tasty
 import Test.Tasty.Runners
+import qualified Unit.AST.CanonicalArithmeticTest as CanonicalArithmeticTest
 import qualified Unit.AST.CanonicalTypeTest as CanonicalTypeTest
 import qualified Unit.AST.OptimizedTest as OptimizedTest
+import qualified Unit.AST.SourceArithmeticTest as SourceArithmeticTest
 import qualified Unit.AST.SourceTest as SourceAstTest
 import qualified Unit.AST.Utils.BinopTest as ASTUtilsBinopTest
 import qualified Unit.AST.Utils.ShaderTest as ASTUtilsShaderTest
@@ -63,6 +65,8 @@ import qualified Unit.Json.EncodeTest as JsonEncodeTest
 import qualified Unit.Json.StringTest as JsonStringTest
 import qualified Unit.MainTest as MainTest
 import qualified Unit.MakeTest as MakeTest
+import qualified Unit.NameReversalTest as NameReversalTest
+import qualified Unit.Parse.ExpressionArithmeticTest as ParseExpressionArithmeticTest
 import qualified Unit.Parse.ExpressionTest as ParseExpressionTest
 import qualified Unit.Parse.LazyImportTest as LazyImportTest
 import qualified Unit.Parse.ModuleTest as ParseModuleTest
@@ -85,6 +89,7 @@ import qualified Unit.Generate.CodeSplit.ManifestTest as CodeSplitManifestTest
 import qualified Unit.Generate.CodeSplit.RuntimeTest as CodeSplitRuntimeTest
 import qualified Unit.Generate.CodeSplit.TypesTest as CodeSplitTypesTest
 import qualified Unit.Generate.ExpressionTest as ExpressionTest
+import qualified Unit.Generate.JavaScript.ExpressionArithmeticTest as JSExpressionArithmeticTest
 import qualified Unit.Generate.MinifyTest as MinifyTest
 import qualified Unit.Generate.NameTest as GenerateNameTest
 import qualified Unit.Generate.SourceMapTest as SourceMapTest
@@ -92,6 +97,7 @@ import qualified Unit.Generate.StringPoolTest as StringPoolTest
 import qualified Unit.Optimize.CaseTest as CaseTest
 import qualified Unit.Optimize.ConstantFoldTest as ConstantFoldTest
 import qualified Unit.Optimize.DecisionTreeTest as DecisionTreeTest
+import qualified Unit.Optimize.ExpressionArithmeticTest as OptExpressionArithmeticTest
 import qualified Unit.Optimize.NamesTest as NamesTest
 import qualified Unit.Logging.ConfigTest as LoggingConfigTest
 import qualified Unit.Logging.EventTest as LoggingEventTest
@@ -105,11 +111,13 @@ import qualified Unit.Type.OccursTest as OccursTest
 import qualified Unit.Type.SolveTest as SolveTest
 import qualified Unit.Type.UnifyTest as UnifyTest
 import qualified Unit.Canonicalize.DupsTest as CanonicalizeDupsTest
+import qualified Unit.Canonicalize.ExpressionArithmeticTest as CanonicalizeExpressionArithmeticTest
 import qualified Unit.Canonicalize.LazyImportValidationTest as LazyImportValidationTest
 import qualified Unit.Canonicalize.ModuleTest as CanonicalizeModuleTest
 import qualified Unit.Canonicalize.PatternTest as CanonicalizePatternTest
 import qualified Unit.Type.UnionFindTest as UnionFindTest
 import qualified Unit.FFI.ValidatorTest as FFIValidatorTest
+import qualified Property.ArithmeticLawsTest as ArithmeticLawsTest
 import qualified Property.Type.UnifyProperties as UnifyProperties
 import qualified Property.Type.UnionFindProperties as UnionFindProperties
 import qualified Property.Data.NameProperties as NameProperties
@@ -146,6 +154,7 @@ unitTests =
       JsonStringTest.tests,
       DevelopMainTest.tests,
       DiffTest.tests,
+      ParseExpressionArithmeticTest.tests,
       ParseExpressionTest.tests,
       ParsePatternTest.tests,
       ParseTypeTest.tests,
@@ -153,6 +162,7 @@ unitTests =
       LazyImportTest.tests,
       MakeTest.tests,
       MainTest.tests,
+      NameReversalTest.tests,
       InstallTest.tests,
       InitTest.tests,
       InitTypesTest.tests,
@@ -172,8 +182,10 @@ unitTests =
       BuilderStateTest.tests,
       BuilderIncrementalTest.tests,
       BuilderSolverTest.tests,
+      CanonicalArithmeticTest.tests,
       CanonicalTypeTest.tests,
       OptimizedTest.tests,
+      SourceArithmeticTest.tests,
       TerminalTest.tests,
       ChompTest.tests,
       TerminalErrorTest.tests,
@@ -195,7 +207,9 @@ unitTests =
       CaseTest.tests,
       ConstantFoldTest.tests,
       DecisionTreeTest.tests,
+      OptExpressionArithmeticTest.tests,
       NamesTest.tests,
+      JSExpressionArithmeticTest.tests,
       MinifyTest.tests,
       GenerateNameTest.tests,
       ExpressionTest.tests,
@@ -218,6 +232,7 @@ unitTests =
       UnifyTest.tests,
       UnionFindTest.tests,
       CanonicalizeDupsTest.tests,
+      CanonicalizeExpressionArithmeticTest.tests,
       CanonicalizePatternTest.tests,
       CanonicalizeModuleTest.tests,
       LazyImportValidationTest.tests,
@@ -228,7 +243,8 @@ propertyTests :: TestTree
 propertyTests =
   testGroup
     "Property Tests"
-    [ UnifyProperties.tests,
+    [ ArithmeticLawsTest.tests,
+      UnifyProperties.tests,
       UnionFindProperties.tests,
       NameProperties.tests,
       SourceMapProperties.tests,

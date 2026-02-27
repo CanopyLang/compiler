@@ -8,7 +8,6 @@
 -- @since 0.19.2
 module Unit.Reporting.ErrorCodeTest (tests) where
 
-import qualified Data.List as List
 import qualified Data.Maybe as Maybe
 import qualified Reporting.Diagnostic as Diag
 import qualified Reporting.Doc as Doc
@@ -76,16 +75,16 @@ catalogTests =
         Maybe.isJust (EC.lookupInfo (EC.docsError 0)) @?= True,
       testCase "undocumented code returns Nothing" $
         EC.lookupInfo (Diag.ErrorCode 9999) @?= Nothing,
-      testCase "catalog entry has non-empty title" $ do
+      testCase "catalog entry has correct title" $ do
         let info = EC.lookupInfo (EC.parseError 0)
         case info of
           Nothing -> assertFailure "E0100 should be documented"
-          Just i -> assertBool "title non-empty" (EC._infoTitle i /= ""),
-      testCase "catalog entry has non-empty explanation" $ do
+          Just i -> EC._infoTitle i @?= "MODULE NAME UNSPECIFIED",
+      testCase "catalog entry has correct explanation" $ do
         let info = EC.lookupInfo (EC.typeError 0)
         case info of
           Nothing -> assertFailure "E0400 should be documented"
-          Just i -> assertBool "explanation non-empty" (EC._infoExplanation i /= "")
+          Just i -> EC._infoTitle i @?= "TYPE MISMATCH"
     ]
 
 explanationTests :: TestTree
@@ -94,17 +93,13 @@ explanationTests =
     "explanation formatting"
     [ testCase "documented code renders with error code" $ do
         let rendered = Doc.toString (EC.formatExplanation (EC.parseError 0))
-        assertBool "contains error code" (List.isInfixOf "E0100" rendered),
-      testCase "documented code renders with title" $ do
-        let rendered = Doc.toString (EC.formatExplanation (EC.parseError 0))
-        assertBool "contains title" (List.isInfixOf "MODULE NAME UNSPECIFIED" rendered),
-      testCase "documented code renders with explanation" $ do
+        rendered @?= "-- MODULE NAME UNSPECIFIED [E0100]\n\n\n\nA module file is missing its module declaration.\n\n\n\nEvery Canopy file must start with a module declaration that matches its file path.\nFor example, a file at src/Main.can should start with:\n\n    module Main exposing (..)\n\nThe module name must match the file path exactly.",
+      testCase "documented code renders with type error" $ do
         let rendered = Doc.toString (EC.formatExplanation (EC.typeError 0))
-        assertBool "contains explanation" (List.isInfixOf "type mismatch" rendered),
+        rendered @?= "-- TYPE MISMATCH [E0400]\n\n\n\nAn expression has a different type than expected.\n\n\n\nThe compiler found a type mismatch between what was expected\nand what was actually provided. Common causes:\n  - Wrong argument type to a function\n  - Branches of if/case returning different types\n  - Annotation doesn't match implementation\n\nRead the expected and actual types carefully. The error will\npoint to the specific location of the mismatch.",
       testCase "undocumented code renders fallback" $ do
         let rendered = Doc.toString (EC.formatExplanation (Diag.ErrorCode 9999))
-        assertBool "contains error code" (List.isInfixOf "E9999" rendered)
-        assertBool "contains report link" (List.isInfixOf "github.com" rendered)
+        rendered @?= "-- E9999\n\n\n\nError E9999 is not yet documented.\n\nPlease report this at https://github.com/quinten/canopy/issues"
     ]
 
 -- | Remove duplicates from a list.

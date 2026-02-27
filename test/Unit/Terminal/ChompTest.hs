@@ -119,7 +119,7 @@ testChompInterface =
                 noFlags = FDone ()
                 (suggestions, result) = Chomp.chomp Nothing [] noArgs noFlags
             suggestionList <- suggestions
-            assertBool "Empty suggestions for empty args" (null suggestionList)
+            suggestionList @?= []
             case result of
               Left _ -> assertFailure "Should succeed with empty args and empty input"
               Right ((), ()) -> pure () -- Expected success with empty args and empty input

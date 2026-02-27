@@ -38,7 +38,6 @@ import qualified Canopy.Package as Pkg
 import qualified Canopy.Version as Version
 import Control.Lens ((&), (.~), (^.))
 import qualified Control.Lens as Lens
-import Data.List (isInfixOf)
 import qualified Data.Map as Map
 import Init.Types
   ( InitConfig (..),
@@ -61,7 +60,7 @@ import Init.Validation
 import qualified System.Directory as Dir
 import Test.Tasty (TestTree)
 import qualified Test.Tasty as Test
-import Test.Tasty.HUnit (assertBool, (@?=))
+import Test.Tasty.HUnit ((@?=))
 import qualified Test.Tasty.HUnit as Test
 
 -- | Main test suite for Init.Validation module.
@@ -207,9 +206,8 @@ fileSystemTests =
         result <- validateSourceDirectories sourceDirs currentDir
         -- Should fail due to empty directory name
         case result of
-          Left (FileSystemError msg) -> do
-            -- Error message should mention invalid names
-            assertBool "Error mentions invalid names" ("Invalid" `isInfixOf` msg)
+          Left (FileSystemError msg) ->
+            msg @?= "Invalid source directory names: [\"\"]"
           Left _ -> fail "Expected FileSystemError for invalid directory names"
           Right () -> fail "Should have failed with empty directory name"
     ]

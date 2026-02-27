@@ -162,8 +162,7 @@ pathDataTypeTests =
       testCase "Empty path shows correctly" $
         show Empty @?= "Empty",
       testCase "Index path shows correctly" $
-        assertBool "Index show contains Index"
-          ("Index" `elem` words (show (Index Index.first Empty)))
+        show (Index Index.first Empty) @?= "Index (ZeroBased 0) Empty"
     ]
 
 -- TEST DATA TYPE TESTS

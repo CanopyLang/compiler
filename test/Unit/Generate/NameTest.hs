@@ -99,26 +99,18 @@ fromGlobalTests :: TestTree
 fromGlobalTests =
   testGroup
     "fromGlobal"
-    [ testCase "global name contains module path and function name" $
+    [ testCase "global name for elm/core List.map has correct structure" $
         let home = ModuleName.Canonical Pkg.core (name "List")
             result = nameToString (JsName.fromGlobal home (name "map"))
-        in assertBool "should contain map" ("map" `isInfixOfString` result),
-      testCase "global name for elm/core List.map has correct structure" $
-        let home = ModuleName.Canonical Pkg.core (name "List")
-            result = nameToString (JsName.fromGlobal home (name "map"))
-        in do
-          assertBool "starts with $" (isPrefixOfString "$" result)
-          assertBool "contains elm" ("elm" `isInfixOfString` result)
-          assertBool "contains core" ("core" `isInfixOfString` result)
-          assertBool "ends with map" ("map" `isSuffixOfString` result),
+        in result @?= "$elm$core$List$map",
       testCase "global name for dotted module escapes dots to dollar signs" $
         let home = ModuleName.Canonical Pkg.core (name "Dict.Helper")
             result = nameToString (JsName.fromGlobal home (name "get"))
-        in assertBool "module dots become dollar signs" ("Dict$Helper" `isInfixOfString` result),
+        in result @?= "$elm$core$Dict$Helper$get",
       testCase "global name for package with dashes escapes to underscores" $
         let home = ModuleName.Canonical Pkg.virtualDom (name "VirtualDom")
             result = nameToString (JsName.fromGlobal home (name "node"))
-        in assertBool "package dashes become underscores" ("virtual_dom" `isInfixOfString` result)
+        in result @?= "$elm$virtual_dom$VirtualDom$node"
     ]
 
 -- FROM KERNEL TESTS
@@ -147,14 +139,10 @@ fromCycleTests :: TestTree
 fromCycleTests =
   testGroup
     "fromCycle"
-    [ testCase "cycle name contains cyclic marker" $
+    [ testCase "cycle name has $cyclic$ marker and module prefix" $
         let home = ModuleName.Canonical Pkg.core (name "Main")
             result = nameToString (JsName.fromCycle home (name "myVal"))
-        in assertBool "contains $cyclic$" ("$cyclic$" `isInfixOfString` result),
-      testCase "cycle name ends with the value name" $
-        let home = ModuleName.Canonical Pkg.core (name "Main")
-            result = nameToString (JsName.fromCycle home (name "myVal"))
-        in assertBool "ends with myVal" ("myVal" `isSuffixOfString` result)
+        in result @?= "$elm$core$Main$cyclic$myVal"
     ]
 
 -- FROM INT TESTS
@@ -205,11 +193,9 @@ makeLabelTests =
   testGroup
     "makeLabel"
     [ testCase "label combines name with dollar and index" $
-        let result = nameToString (JsName.makeLabel (name "branch") 0)
-        in assertBool "contains branch" ("branch" `isInfixOfString` result),
-      testCase "label index 3 contains 3" $
-        let result = nameToString (JsName.makeLabel (name "x") 3)
-        in assertBool "contains 3" ("3" `isInfixOfString` result)
+        nameToString (JsName.makeLabel (name "branch") 0) @?= "branch$0",
+      testCase "label index 3 is appended with dollar separator" $
+        nameToString (JsName.makeLabel (name "x") 3) @?= "x$3"
     ]
 
 -- MAKE TEMP TESTS
@@ -256,21 +242,3 @@ dollarTests =
         nameToString JsName.dollar @?= "$"
     ]
 
--- STRING HELPERS
-
-isInfixOfString :: String -> String -> Bool
-isInfixOfString needle haystack =
-  any (isPrefixOfString needle) (tails haystack)
-
-isSuffixOfString :: String -> String -> Bool
-isSuffixOfString needle haystack =
-  isPrefixOfString (reverse needle) (reverse haystack)
-
-isPrefixOfString :: String -> String -> Bool
-isPrefixOfString [] _ = True
-isPrefixOfString _ [] = False
-isPrefixOfString (x : xs) (y : ys) = x == y && isPrefixOfString xs ys
-
-tails :: [a] -> [[a]]
-tails [] = [[]]
-tails xs@(_ : rest) = xs : tails rest

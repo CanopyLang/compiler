@@ -9,7 +9,6 @@ module Unit.Builder.HashTest (tests) where
 
 import qualified Builder.Hash as Hash
 import qualified Data.ByteString.Char8 as BSC
-import qualified Data.List
 import qualified Data.Map.Strict as Map
 import qualified Data.Name as Name
 import qualified System.IO
@@ -165,11 +164,8 @@ testHashComparison =
       testCase "showHash includes source description" $ do
         let h = Hash.hashString "test"
         let shown = Hash.showHash h
-        "(string)" `isInfixOf` shown @? "showHash should include source"
+        shown @?= "9f86d081... (string)"
     ]
 
 hClose :: Handle -> IO ()
 hClose = System.IO.hClose
-
-isInfixOf :: Eq a => [a] -> [a] -> Bool
-isInfixOf = Data.List.isInfixOf

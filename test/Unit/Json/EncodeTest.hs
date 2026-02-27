@@ -18,7 +18,6 @@ import qualified Control.Arrow as Arrow
 import qualified Data.ByteString.Builder as BB
 import qualified Data.ByteString.Lazy as BSL
 import qualified Data.ByteString.Lazy.Char8 as LBS
-import Data.List (isInfixOf)
 import qualified Data.Map as Map
 import qualified Data.Name as Name
 import qualified Data.Scientific as Sci
@@ -239,10 +238,7 @@ testUtilityFunctions =
           Encode.String builder -> do
             let output = BSL.unpack (BB.toLazyByteString builder)
                 outputStr = map (toEnum . fromIntegral) output
-            -- Should contain quotes and escaped sequences
-            assertBool "Should start with quote" (head outputStr == '"')
-            assertBool "Should end with quote" (last outputStr == '"')
-            assertBool "Should contain escaped newline" ("\\n" `isInfixOf` outputStr)
+            outputStr @?= "\"hello\\nworld\\\"test\\\\\""
           _ -> assertFailure "chars should produce String value"
     ]
 
@@ -411,32 +407,32 @@ testSpecialCharacters =
         let input = "line1\nline2"
             value = Encode.chars input
             result = LBS.unpack $ BB.toLazyByteString $ Encode.encodeUgly value
-        assertBool "Should contain escaped newline" ("\\n" `isInfixOf` result),
+        result @?= "\"line1\\nline2\"",
       testCase "chars function handles quotes" $ do
         let input = "say \"hello\""
             value = Encode.chars input
             result = LBS.unpack $ BB.toLazyByteString $ Encode.encodeUgly value
-        assertBool "Should contain escaped quotes" ("\\\"" `isInfixOf` result),
+        result @?= "\"say \\\"hello\\\"\"",
       testCase "chars function handles backslashes" $ do
         let input = "path\\to\\file"
             value = Encode.chars input
             result = LBS.unpack $ BB.toLazyByteString $ Encode.encodeUgly value
-        assertBool "Should contain escaped backslashes" ("\\\\" `isInfixOf` result),
+        result @?= "\"path\\\\to\\\\file\"",
       testCase "chars function handles carriage returns" $ do
         let input = "line1\rline2"
             value = Encode.chars input
             result = LBS.unpack $ BB.toLazyByteString $ Encode.encodeUgly value
-        assertBool "Should contain escaped carriage return" ("\\r" `isInfixOf` result),
+        result @?= "\"line1\\rline2\"",
       testCase "chars function handles all special chars together" $ do
         let input = "\n\r\"\\"
             value = Encode.chars input
             result = LBS.unpack $ BB.toLazyByteString $ Encode.encodeUgly value
-        assertBool "Should contain all escaped characters" ("\\n" `isInfixOf` result && "\\r" `isInfixOf` result && "\\\"" `isInfixOf` result && "\\\\" `isInfixOf` result),
+        result @?= "\"\\n\\r\\\"\\\\\"",
       testCase "chars function produces String value with proper escaping" $ do
         let input = "test\nstring"
             value = Encode.chars input
             result = LBS.unpack $ BB.toLazyByteString $ Encode.encodeUgly value
-        assertBool "Should contain escaped newline" ("\\n" `isInfixOf` result)
+        result @?= "\"test\\nstring\""
     ]
 
 -- ERROR CONDITION TESTS
@@ -448,11 +444,10 @@ testInvalidInputs =
     [ testCase "encoding handles extreme integer values" $ do
         let maxValue = Encode.int maxBound
             minValue = Encode.int minBound
-            maxResult = BB.toLazyByteString (Encode.encodeUgly maxValue)
-            minResult = BB.toLazyByteString (Encode.encodeUgly minValue)
-        -- Should not crash and produce some output
-        assertBool "Max value should produce output" (BSL.length maxResult > 0)
-        assertBool "Min value should produce output" (BSL.length minResult > 0)
+            maxResult = LBS.unpack $ BB.toLazyByteString (Encode.encodeUgly maxValue)
+            minResult = LBS.unpack $ BB.toLazyByteString (Encode.encodeUgly minValue)
+        maxResult @?= "9223372036854775807"
+        minResult @?= "-9223372036854775808"
     ]
 
 testMemoryConstraints :: TestTree
@@ -465,8 +460,7 @@ testMemoryConstraints =
         case value of
           Encode.String builder -> do
             let result = BB.toLazyByteString builder
-            -- Should succeed without memory errors
-            assertBool "Should produce output" (BSL.length result > 1000)
+            BSL.length result @?= 1002
           _ -> assertFailure "Should produce String value"
     ]
 

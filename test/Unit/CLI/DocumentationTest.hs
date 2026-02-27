@@ -7,7 +7,6 @@
 module Unit.CLI.DocumentationTest (tests) where
 
 import CLI.Documentation (createIntroduction, createOutro, reflowText, stackDocuments)
-import qualified Data.List as List
 import Test.Tasty (TestTree, testGroup)
 import Test.Tasty.HUnit (testCase, (@?=))
 import qualified Text.PrettyPrint.ANSI.Leijen as PP
@@ -79,15 +78,9 @@ testIntroductionStructure :: TestTree
 testIntroductionStructure =
   testGroup
     "createIntroduction function"
-    [ testCase "introduction is not empty" $ do
+    [ testCase "introduction has correct exact rendered text" $ do
         let intro = show createIntroduction
-        length intro > 0 @?= True,
-      testCase "introduction contains Canopy reference" $ do
-        let intro = show createIntroduction
-        "Canopy" `List.isInfixOf` intro @?= True,
-      testCase "introduction contains guide reference" $ do
-        let intro = show createIntroduction
-        "guide.canopy-lang.org" `List.isInfixOf` intro @?= True
+        intro @?= "Hi, thank you for trying out\n\ESC[92mCanopy\ESC[0m \ESC[92m0.19.1\ESC[0m.\nI hope you like it!\n\n\ESC[90m-------------------------------------------------------------------------------\ESC[0m\n\ESC[90mI highly recommend working through <https://guide.canopy-lang.org> to get started.\ESC[0m\n\ESC[90mIt teaches many important concepts, including how to use `canopy` in the terminal.\ESC[0m\n\ESC[90m-------------------------------------------------------------------------------\ESC[0m"
     ]
 
 -- | Test outro message content.
@@ -95,13 +88,7 @@ testOutroContent :: TestTree
 testOutroContent =
   testGroup
     "createOutro function"
-    [ testCase "outro is not empty" $ do
+    [ testCase "outro has correct exact rendered text" $ do
         let outro = show createOutro
-        length outro > 0 @?= True,
-      testCase "outro contains slack reference" $ do
-        let outro = show createOutro
-        "slack" `elem` words outro @?= True,
-      testCase "outro contains friendly message" $ do
-        let outro = show createOutro
-        "friendly" `elem` words outro @?= True
+        outro @?= "Be sure to ask on the Canopy\nslack if you run into trouble!\nFolks are friendly and happy to\nhelp out. They hang out there\nbecause it is fun, so be kind to\nget the best results!"
     ]

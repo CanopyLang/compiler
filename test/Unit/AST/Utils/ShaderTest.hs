@@ -126,8 +126,7 @@ fromCharsTests = testGroup "fromChars Tests"
   [ testCase "fromChars with simple shader source" $
       let source = fromChars "void main() { gl_Position = vec4(0.0); }"
           result = toJsStringBuilder source
-          builderBytes = BL.toStrict (BB.toLazyByteString result)
-      in BL.length (BB.toLazyByteString result) > 0 @?= True
+      in BL.length (BB.toLazyByteString result) @?= 40
   , testCase "fromChars with empty string" $
       let source = fromChars ""
           result = toJsStringBuilder source
@@ -135,45 +134,40 @@ fromCharsTests = testGroup "fromChars Tests"
   , testCase "fromChars handles newlines correctly" $
       let source = fromChars "line1\nline2"
           result = toJsStringBuilder source
-          builderBytes = BL.toStrict (BB.toLazyByteString result)
-          containsEscapedNewline = "\\n" `elem` words (show builderBytes)
-      in BL.length (BB.toLazyByteString result) > 0 @?= True
+      in BL.length (BB.toLazyByteString result) @?= 12
   , testCase "fromChars handles double quotes" $
       let source = fromChars "uniform float \"quoted\";"
           result = toJsStringBuilder source
-          builderBytes = BL.toStrict (BB.toLazyByteString result)
-      in BL.length (BB.toLazyByteString result) > 0 @?= True
+      in BL.length (BB.toLazyByteString result) @?= 25
   , testCase "fromChars handles single quotes" $
       let source = fromChars "uniform float 'quoted';"
           result = toJsStringBuilder source
-          builderBytes = BL.toStrict (BB.toLazyByteString result)
-      in BL.length (BB.toLazyByteString result) > 0 @?= True
+      in BL.length (BB.toLazyByteString result) @?= 25
   , testCase "fromChars handles backslashes" $
       let source = fromChars "path\\to\\shader"
           result = toJsStringBuilder source
-          builderBytes = BL.toStrict (BB.toLazyByteString result)
-      in BL.length (BB.toLazyByteString result) > 0 @?= True
+      in BL.length (BB.toLazyByteString result) @?= 16
   ]
 
 -- | toJsStringBuilder function behavior tests.
 toJsStringBuilderTests :: TestTree
 toJsStringBuilderTests = testGroup "toJsStringBuilder Tests"
-  [ testCase "toJsStringBuilder produces non-empty result for non-empty input" $
+  [ testCase "toJsStringBuilder produces correct length for non-empty input" $
       let source = fromChars "attribute vec3 position;"
           result = toJsStringBuilder source
           resultLength = BL.length (BB.toLazyByteString result)
-      in resultLength > 0 @?= True
+      in resultLength @?= 24
   , testCase "toJsStringBuilder produces empty result for empty input" $
       let source = fromChars ""
           result = toJsStringBuilder source
           resultLength = BL.length (BB.toLazyByteString result)
       in resultLength @?= 0
-  , testCase "toJsStringBuilder preserves content length relationship" $
+  , testCase "toJsStringBuilder produces correct lengths for short and long inputs" $
       let shortSource = fromChars "short"
           longSource = fromChars "this is a much longer shader source string"
           shortResult = BB.toLazyByteString (toJsStringBuilder shortSource)
           longResult = BB.toLazyByteString (toJsStringBuilder longSource)
-      in BL.length longResult > BL.length shortResult @?= True
+      in (BL.length shortResult, BL.length longResult) @?= (5, 42)
   ]
 
 -- | Property-based tests for mathematical and logical invariants.
@@ -250,18 +244,18 @@ edgeCaseTests = testGroup "Edge Case Tests"
   , testCase "shader source with only whitespace" $
       let source = fromChars "   \n\t  "
           result = toJsStringBuilder source
-      in BL.length (BB.toLazyByteString result) > 0 @?= True
+      in BL.length (BB.toLazyByteString result) @?= 8
   , testCase "shader source with special characters" $
       let source = fromChars "!@#$%^&*(){}[]|\\:;\"'<>?,./"
           result = toJsStringBuilder source
-      in BL.length (BB.toLazyByteString result) > 0 @?= True
+      in BL.length (BB.toLazyByteString result) @?= 29
   , testCase "very long shader source" $
       let longString = replicate 10000 'a'
           source = fromChars longString
           result = toJsStringBuilder source
-      in BL.length (BB.toLazyByteString result) > 5000 @?= True
+      in BL.length (BB.toLazyByteString result) @?= 10000
   , testCase "Types with large maps" $
-      let largeMap = Map.fromList [(Name.fromChars ("var" ++ show i), V3) | i <- [1..100]]
+      let largeMap = Map.fromList [(Name.fromChars ("var" ++ show i), V3) | i <- [1..100 :: Int]]
           types = Types largeMap largeMap largeMap
       in Map.size (_attribute types) @?= 100
   ]
@@ -280,11 +274,11 @@ errorConditionTests = testGroup "Error Condition Tests"
   , testCase "shader with Unicode characters" $
       let source = fromChars "// Comment with Unicode: こんにちは"
           result = toJsStringBuilder source
-      in BL.length (BB.toLazyByteString result) > 0 @?= True
+      in BL.length (BB.toLazyByteString result) @?= 40
   , testCase "malformed shader source preserves content" $
       let source = fromChars "invalid GLSL syntax @#$%"
           result = toJsStringBuilder source
-      in BL.length (BB.toLazyByteString result) > 0 @?= True
+      in BL.length (BB.toLazyByteString result) @?= 24
   ]
 
 -- QuickCheck Arbitrary instances for property testing

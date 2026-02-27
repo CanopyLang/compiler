@@ -144,7 +144,7 @@ testSuggestionGeneration =
             flags = FDone ()
             (suggestions, _) = Chomp.chomp (Just 1) ["dev"] args flags
         suggestionList <- suggestions
-        assertBool "Enum suggestions include development" (any ("development" `isInfixOf`) suggestionList)
+        filter ("development" `isPrefixOf`) suggestionList @?= ["development"]
     ]
 
 -- | Test complex argument patterns
@@ -301,10 +301,6 @@ createEnumParser options =
       _suggest = \prefix -> return [opt | opt <- options, prefix `isPrefixOf` opt],
       _examples = \_ -> return options
     }
-
--- Helper function for checking string containment
-isInfixOf :: String -> String -> Bool
-isInfixOf needle haystack = needle `elem` words haystack || any (needle `isPrefixOf`) (words haystack)
 
 isPrefixOf :: String -> String -> Bool
 isPrefixOf = Data.List.isPrefixOf
