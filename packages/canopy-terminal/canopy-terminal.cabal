@@ -109,6 +109,8 @@ library
       Reporting
       Reporting.Ask
       Reporting.Exit
+      Reporting.Exit.Install
+      Reporting.Exit.Publish
       Reporting.Task
       Setup
       Stuff

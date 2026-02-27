@@ -36,6 +36,7 @@ library
       Canonicalize.Environment.Local
       Canonicalize.Expression
       Canonicalize.Module
+      Canonicalize.Module.FFI
       Canonicalize.Pattern
       Canonicalize.Type
       Canopy.Compiler.Imports
@@ -102,6 +103,7 @@ library
       Generate.JavaScript.Expression.Case
       Generate.JavaScript.FFIRuntime
       Generate.JavaScript.Functions
+      Generate.JavaScript.Kernel
       Generate.JavaScript.Minify
       Generate.JavaScript.Name
       Generate.JavaScript.SourceMap
@@ -109,6 +111,8 @@ library
       Generate.Mode
       Json.Decode
       Json.Decode.AST
+      Json.Decode.Combinators
+      Json.Decode.Core
       Json.Decode.Parser
       Json.Encode
       Json.String
@@ -144,6 +148,8 @@ library
       Reporting.Error
       Reporting.Error.Canonicalize
       Reporting.Error.Canonicalize.Diagnostics
+      Reporting.Error.Canonicalize.Diagnostics.Core
+      Reporting.Error.Canonicalize.Diagnostics.Extended
       Reporting.Error.Canonicalize.Helpers
       Reporting.Error.Docs
       Reporting.Error.Import
@@ -152,6 +158,8 @@ library
       Reporting.Error.Pattern
       Reporting.Error.Syntax
       Reporting.Error.Syntax.Declaration
+      Reporting.Error.Syntax.Declaration.DeclBody
+      Reporting.Error.Syntax.Declaration.DeclStart
       Reporting.Error.Syntax.Expression
       Reporting.Error.Syntax.Expression.Case
       Reporting.Error.Syntax.Expression.Function

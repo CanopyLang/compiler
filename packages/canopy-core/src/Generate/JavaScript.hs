@@ -4,7 +4,7 @@
 
 -- | JavaScript generation for the Canopy compiler
 --
--- ⚠️  CRITICAL RULE: NO HARDCODING OF FFI FILE PATHS! ⚠️
+-- WARNING: NO HARDCODING OF FFI FILE PATHS!
 -- All FFI file paths MUST come from the actual foreign import statements
 -- in the source code, NOT hardcoded values. This allows the FFI system
 -- to work with ANY project structure and ANY file paths.
@@ -33,7 +33,6 @@ import Data.ByteString.Builder (Builder)
 import qualified Data.ByteString.Builder as BB
 import qualified Data.ByteString.Lazy as BL
 import Data.Word (Word8)
-import qualified Canopy.Data.Index as Index
 import qualified Data.List as List
 import Data.Map (Map)
 import qualified Data.Map as Map
@@ -42,12 +41,12 @@ import qualified Canopy.Data.Name as Name
 import Data.Set (Set)
 import qualified Data.Set as Set
 import qualified Data.Text as Text
-import qualified Canopy.Data.Utf8 as Utf8
 import qualified FFI.Validator as Validator
 import qualified Generate.JavaScript.Builder as JS
 import qualified Generate.JavaScript.Expression as Expr
 import qualified Generate.JavaScript.FFIRuntime as FFIRuntime
 import qualified Generate.JavaScript.Functions as Functions
+import qualified Generate.JavaScript.Kernel as Kernel_
 import qualified Generate.JavaScript.Minify as Minify
 import qualified Generate.JavaScript.Name as JsName
 import qualified Generate.JavaScript.SourceMap as SourceMap
@@ -55,7 +54,6 @@ import qualified Generate.JavaScript.StringPool as StringPool
 import qualified Generate.Mode as Mode
 import qualified Reporting.Annotation as Ann
 import qualified Reporting.Doc as Doc
-import qualified Reporting.InternalError as InternalError
 import qualified Reporting.Render.Type as RT
 import qualified Reporting.Render.Type.Localizer as Localizer
 import Prelude hiding (cycle, print)
@@ -126,10 +124,6 @@ generateFFIContent mode graph ffiInfos =
 
 -- | Generate FFI validators for all function return types.
 --
--- This generates JavaScript validator functions that can be used to validate
--- FFI function return values at runtime. Validators are included when the
--- --ffi-strict flag is enabled.
---
 -- @since 0.19.1
 generateFFIValidators :: Map String FFIInfo -> Builder
 generateFFIValidators ffiInfos =
@@ -184,7 +178,7 @@ extractFFIFunctionBindings mode graph path content alias =
     functions = extractCanopyTypeFunctions (lines content)
 
 -- Extract functions that have @canopy-type annotations
-extractCanopyTypeFunctions :: [String] -> [(String, String)]  -- [(functionName, canopyType)]
+extractCanopyTypeFunctions :: [String] -> [(String, String)]
 extractCanopyTypeFunctions [] = []
 extractCanopyTypeFunctions (line:rest) =
   case extractCanopyType line of
@@ -228,7 +222,6 @@ findFunctionName (line:rest) =
         _ -> findFunctionName rest
 
 -- | Generate JavaScript binding for a single function as Builders.
--- When FFI strict mode is enabled, wraps return value with validation.
 generateFunctionBinding :: Mode.Mode -> Graph -> String -> String -> (String, String) -> [Builder]
 generateFunctionBinding mode _graph _filePath alias (funcName, canopyType) =
   let arity = countArrows canopyType
@@ -238,7 +231,7 @@ generateFunctionBinding mode _graph _filePath alias (funcName, canopyType) =
        then generateValidatedBinding jsVarName alias funcName arity canopyType callPath
        else generateSimpleBinding jsVarName alias funcName arity
 
--- | Generate simple binding without validation, producing Builders directly.
+-- | Generate simple binding without validation.
 generateSimpleBinding :: String -> String -> String -> Int -> [Builder]
 generateSimpleBinding jsVarName alias funcName arity =
   let jsVarB = BB.stringUtf8 jsVarName
@@ -249,7 +242,7 @@ generateSimpleBinding jsVarName alias funcName arity =
       namespaceBinding = aliasB <> "." <> funcNameB <> " = " <> wrapper <> funcNameB <> closing <> ";"
   in ["var " <> jsVarB <> " = " <> wrapper <> funcNameB <> closing <> ";", namespaceBinding]
 
--- | Generate binding with runtime validation wrapper, producing Builders directly.
+-- | Generate binding with runtime validation wrapper.
 generateValidatedBinding :: String -> String -> String -> Int -> String -> String -> [Builder]
 generateValidatedBinding jsVarName alias funcName arity canopyType callPath =
   let jsVarB = BB.stringUtf8 jsVarName
@@ -269,14 +262,13 @@ generateValidatedBinding jsVarName alias funcName arity canopyType callPath =
       namespaceBinding = aliasB <> "." <> funcNameB <> " = " <> jsVarB <> ";"
   in [binding, namespaceBinding]
 
--- | Extract return type from a function type signature
--- For "Int -> Int -> Int", this returns "Int" (the final return type)
+-- | Extract return type from a function type signature.
 extractReturnType :: String -> String
 extractReturnType typeStr =
   let tokens = words typeStr
       arrowIndices = findArrowIndices tokens 0 []
   in if null arrowIndices
-       then typeStr  -- No arrows, entire thing is the type
+       then typeStr
        else unwords (drop (maximum arrowIndices + 1) tokens)
   where
     findArrowIndices :: [String] -> Int -> [Int] -> [Int]
@@ -293,9 +285,6 @@ typeToValidator typeStr =
     Nothing -> "$validate.Any"
 
 -- | Convert FFIType to $validate expression as a Builder.
---
--- Uses Builder concatenation instead of String (++) to avoid
--- O(n^2) intermediate allocations in recursive type structures.
 ffiTypeToValidator :: Validator.FFIType -> Builder
 ffiTypeToValidator ffiType = case ffiType of
   Validator.FFIInt -> "$validate.Int"
@@ -320,15 +309,13 @@ ffiTypeToValidator ffiType = case ffiType of
   Validator.FFIRecord _ ->
     "$validate.Record"
 
--- Count arrows in a type signature to determine arity (only function parameter arrows)
--- Uses the same tokenization logic as the FFI parser to handle multi-word types correctly
+-- Count arrows in a type signature to determine arity.
 countArrows :: String -> Int
 countArrows typeStr =
   let tokens = tokenizeCanopyType (Text.pack typeStr)
       result = countFunctionArrows tokens
   in result
   where
-    -- Tokenize the same way as the FFI parser to handle multi-word types
     tokenizeCanopyType :: Text.Text -> [Text.Text]
     tokenizeCanopyType typeText = filter (not . Text.null) (go [] "" typeText)
       where
@@ -348,7 +335,6 @@ countArrows typeStr =
           | otherwise =
               go acc (current <> Text.take 1 text) (Text.tail text)
 
-    -- Count arrows that represent function parameters (not arrows inside types)
     countFunctionArrows :: [Text.Text] -> Int
     countFunctionArrows tokens = go tokens (0 :: Int) (0 :: Int)
       where
@@ -377,7 +363,7 @@ generate inputMode (Opt.GlobalGraph rawGraph _ sourceLocs) mains ffiInfos =
           (rawGraph, Mode.Dev debugTypes elmCompat ffiUnsafe ffiAliases)
       baseState = Map.foldrWithKey (addMain mode graph) (emptyState sourceLocs) mains
       shouldInclude global =
-        not (isDebugger global && not (Mode.isDebug mode))
+        not (Kernel_.isDebugger global && not (Mode.isDebug mode))
       filteredGraph = Map.filterWithKey (\global _ -> shouldInclude global) graph
       state = Map.foldlWithKey' (\s global _ -> addGlobal mode graph s global) baseState filteredGraph
       header = if Mode.isElmCompatible mode
@@ -394,7 +380,7 @@ generate inputMode (Opt.GlobalGraph rawGraph _ sourceLocs) mains ffiInfos =
           <> perfNote mode
           <> poolDecls
           <> stateToBuilder state
-          <> toMainExports mode mains
+          <> Kernel_.toMainExports mode mains
           <> "\nif (typeof global !== 'undefined') { global.Canopy = scope['Canopy']; global.Elm = scope['Elm']; }"
           <> "\n}(typeof window !== 'undefined' ? window : this));"
       sourceMap = buildSourceMap mode state
@@ -411,8 +397,6 @@ perfNote mode =
     Mode.Prod {} ->
       mempty
     Mode.Dev Nothing elmCompatible _ _ ->
-      -- Always include console.warn in dev mode to match Elm behavior
-      -- Use explicit semicolon annotation to ensure semicolon is added
       let optimizeUrl = if elmCompatible
                         then "https://elm-lang.org/0.19.1/optimize"
                         else Doc.makeNakedLink "optimize"
@@ -426,8 +410,6 @@ perfNote mode =
                      <> " for better performance and smaller assets."
                ]
     Mode.Dev (Just _) elmCompatible _ _ ->
-      -- Always include console.warn in dev mode to match Elm behavior
-      -- Use explicit semicolon annotation to ensure semicolon is added
       let optimizeUrl = if elmCompatible
                         then "https://elm-lang.org/0.19.1/optimize"
                         else Doc.makeNakedLink "optimize"
@@ -441,13 +423,10 @@ perfNote mode =
                      <> " for better performance and smaller assets."
                ]
 
--- Note: Comprehensive runtime functions removed due to unused warnings.
--- These can be re-added when actually needed for Elm compatibility.
-
 -- GENERATE FOR REPL
 generateForRepl :: Bool -> Localizer.Localizer -> Opt.GlobalGraph -> ModuleName.Canonical -> Name.Name -> Can.Annotation -> Builder
 generateForRepl ansi localizer (Opt.GlobalGraph graph _ _) home name (Can.Forall _ tipe) =
-  let mode = Mode.Dev Nothing True False Set.empty  -- Default to elm-compatible for REPL, no FFI strict, no FFI aliases
+  let mode = Mode.Dev Nothing True False Set.empty
       debugState = addGlobal mode graph (emptyState Map.empty) (Opt.Global ModuleName.debug "toString")
       evalState = addGlobal mode graph debugState (Opt.Global home name)
       processExceptionHandler = JS.stmtToBuilder $
@@ -482,16 +461,10 @@ print ansi localizer home name tipe =
       toString = JS.Ref (JsName.fromKernel Name.debug "toAnsiString")
       tipeDoc = RT.canToDoc localizer RT.None tipe
       boolValue = if ansi then JS.Bool True else JS.Bool False
-
-      -- var _value = toString(bool, value);
       valueVar = JS.Var (JsName.fromLocal "_value") $
         JS.Call toString [boolValue, value]
-
-      -- var _type = "type string";
       typeVar = JS.Var (JsName.fromLocal "_type") $
         JS.String $ BB.stringUtf8 (show (Doc.toString tipeDoc))
-
-      -- function _print(t) { console.log(_value + (ansi ? '\x1b[90m' + t + '\x1b[0m' : t)); }
       printFunc = JS.FunctionStmt (JsName.fromLocal "_print") [JsName.fromLocal "t"] [
         JS.ExprStmt $ JS.Call
           (JS.Access (JS.Ref (JsName.fromLocal "console")) (JsName.fromLocal "log"))
@@ -504,8 +477,6 @@ print ansi localizer home name tipe =
                 (JS.Ref (JsName.fromLocal "t")))
           ]
         ]
-
-      -- Condition: _value.length + 3 + _type.length >= 80 || _type.indexOf('\n') >= 0
       lengthCondition = JS.Infix JS.OpGe
         (JS.Infix JS.OpAdd
           (JS.Infix JS.OpAdd
@@ -513,18 +484,13 @@ print ansi localizer home name tipe =
             (JS.Int 3))
           (JS.Access (JS.Ref (JsName.fromLocal "_type")) (JsName.fromLocal "length")))
         (JS.Int 80)
-
       newlineCondition = JS.Infix JS.OpGe
         (JS.Call
           (JS.Access (JS.Ref (JsName.fromLocal "_type")) (JsName.fromLocal "indexOf"))
           [JS.String "\\n"])
         (JS.Int 0)
-
       condition = JS.Infix JS.OpOr lengthCondition newlineCondition
-
-      -- if/else statement
       ifStmt = JS.IfStmt condition
-        -- _print('\n    : ' + _type.split('\n').join('\n      '));
         (JS.ExprStmt $ JS.Call
           (JS.Ref (JsName.fromLocal "_print"))
           [ JS.Infix JS.OpAdd
@@ -537,7 +503,6 @@ print ansi localizer home name tipe =
                   (JsName.fromLocal "join"))
                 [JS.String "\\n      "])
           ])
-        -- _print(' : ' + _type);
         (JS.ExprStmt $ JS.Call
           (JS.Ref (JsName.fromLocal "_print"))
           [ JS.Infix JS.OpAdd (JS.String " : ") (JS.Ref (JsName.fromLocal "_type")) ]
@@ -549,7 +514,7 @@ print ansi localizer home name tipe =
 generateForReplEndpoint :: Localizer.Localizer -> Opt.GlobalGraph -> ModuleName.Canonical -> Maybe Name.Name -> Can.Annotation -> Builder
 generateForReplEndpoint localizer (Opt.GlobalGraph graph _ _) home maybeName (Can.Forall _ tipe) =
   let name = Data.Maybe.fromMaybe Name.replValueToPrint maybeName
-      mode = Mode.Dev Nothing True False Set.empty  -- Default to elm-compatible for REPL, no FFI strict, no FFI aliases
+      mode = Mode.Dev Nothing True False Set.empty
       debugState = addGlobal mode graph (emptyState Map.empty) (Opt.Global ModuleName.debug "toString")
       evalState = addGlobal mode graph debugState (Opt.Global home name)
    in Functions.functions
@@ -562,22 +527,18 @@ postMessage localizer home maybeName tipe =
       value = JS.Ref (JsName.fromGlobal home name)
       toString = JS.Ref (JsName.fromKernel Name.debug "toAnsiString")
       tipeDoc = RT.canToDoc localizer RT.None tipe
-
       nameField = case maybeName of
         Nothing -> JS.Null
         Just n -> JS.String (Name.toBuilder n)
-
       messageObj = JS.Object
         [ (JsName.fromLocal "name", nameField),
           (JsName.fromLocal "value", JS.Call toString [JS.Bool True, value]),
           (JsName.fromLocal "type", JS.String $ BB.stringUtf8 (show (Doc.toString tipeDoc)))
         ]
-
       postMessageCall = JS.ExprStmt $
         JS.Call
           (JS.Access (JS.Ref (JsName.fromLocal "self")) (JsName.fromLocal "postMessage"))
           [messageObj]
-
    in JS.stmtToBuilder postMessageCall
 
 -- GRAPH TRAVERSAL STATE
@@ -614,28 +575,23 @@ addGlobal mode graph state@(State revKernels builders seen seenChunks outLine sm
       addGlobalHelp mode graph global $
         State revKernels builders (Set.insert global seen) seenChunks outLine smMappings srcLocs
 
--- | Filter dependencies to exclude debugger modules in production mode
 filterEssentialDeps :: Mode.Mode -> Set Opt.Global -> Set Opt.Global
 filterEssentialDeps mode deps =
   if Mode.isDebug mode
     then deps
-    else Set.filter (not . isDebugger) deps
-
+    else Set.filter (not . Kernel_.isDebugger) deps
 
 addGlobalHelp :: Mode.Mode -> Graph -> Opt.Global -> State -> State
 addGlobalHelp mode graph currentGlobal state =
   let Opt.Global globalHome _ = currentGlobal
       pkg = ModuleName._package globalHome
-      -- Check if this is an FFI module that's not in the graph
-      -- FFI modules (identified by dummyName package) that aren't in the graph
-      -- are handled by expression generation, not here
       isFFIModule = Pkg._author pkg == Pkg._author Pkg.dummyName
                  && Pkg._project pkg == Pkg._project Pkg.dummyName
                  && Map.notMember currentGlobal graph
-  in if isDebugger currentGlobal && not (Mode.isDebug mode)
+  in if Kernel_.isDebugger currentGlobal && not (Mode.isDebug mode)
      then state
      else if isFFIModule
-     then state  -- Skip FFI modules - handled by expression generation
+     then state
      else continueAddGlobal mode graph currentGlobal state
 
 continueAddGlobal :: Mode.Mode -> Graph -> Opt.Global -> State -> State
@@ -643,110 +599,93 @@ continueAddGlobal mode graph currentGlobal state =
   let addDeps deps someState =
         let filteredDeps = filterEssentialDeps mode deps
         in Set.foldl' (addGlobal mode graph) someState filteredDeps
-      globalInGraph = case Map.lookup currentGlobal graph of
-        Just x -> x
-        Nothing ->
-          -- Try alternative package/module name (elm/core Kernel.* vs elm/kernel * vs canopy/kernel *)
-          let Opt.Global globalHome globalName = currentGlobal
-              currentPkg = ModuleName._package globalHome
-              moduleName = ModuleName._module globalHome
+      globalInGraph = resolveGlobal graph currentGlobal
+  in dispatchNode mode graph currentGlobal addDeps globalInGraph state
 
-              -- Check if this is a Kernel.* module in elm/core
-              isKernelModule = "Kernel." `List.isPrefixOf` Name.toChars moduleName
-              isKernelPkg = Pkg._project currentPkg == Pkg._project Pkg.kernel
+resolveGlobal :: Graph -> Opt.Global -> Opt.Node
+resolveGlobal graph currentGlobal =
+  case Map.lookup currentGlobal graph of
+    Just x -> x
+    Nothing -> resolveAltGlobal graph currentGlobal
 
-              (altPkg, altModuleName) =
-                if Pkg._author currentPkg == Pkg.elm && Pkg._project currentPkg == Pkg._project Pkg.core && isKernelModule
-                then -- Map elm/core Kernel.* -> elm/kernel *
-                     let kernelName = drop 7 (Name.toChars moduleName)
-                         kernelPkg = Pkg.Name Pkg.elm (Pkg._project Pkg.kernel)
-                     in (kernelPkg, Name.fromChars kernelName)
-                else if isKernelPkg && Pkg._author currentPkg == Pkg.elm
-                then -- Map elm/kernel * -> elm/core Kernel.*
-                     let kernelModuleName = "Kernel." ++ Name.toChars moduleName
-                     in (Pkg.core, Name.fromChars kernelModuleName)
-                else if isKernelPkg && Pkg._author currentPkg == Pkg.canopy
-                then -- Map canopy/kernel * -> elm/kernel * (Canopy kernel references resolve to elm kernel artifacts)
-                     (Pkg.Name Pkg.elm (Pkg._project Pkg.kernel), moduleName)
-                else (currentPkg, moduleName)
+resolveAltGlobal :: Graph -> Opt.Global -> Opt.Node
+resolveAltGlobal graph currentGlobal =
+  let Opt.Global globalHome globalName = currentGlobal
+      currentPkg = ModuleName._package globalHome
+      moduleName = ModuleName._module globalHome
+      isKernelModule = "Kernel." `List.isPrefixOf` Name.toChars moduleName
+      isKernelPkg = Pkg._project currentPkg == Pkg._project Pkg.kernel
+      (altPkg, altModuleName) = computeAltPkg currentPkg moduleName isKernelModule isKernelPkg
+      altGlobalHome = ModuleName.Canonical altPkg altModuleName
+      altGlobal = Opt.Global altGlobalHome globalName
+  in case Map.lookup altGlobal graph of
+       Just x -> x
+       Nothing -> reportMissingGlobal graph currentGlobal altGlobal
 
-              altGlobalHome = ModuleName.Canonical altPkg altModuleName
-              altGlobal = Opt.Global altGlobalHome globalName
-          in case Map.lookup altGlobal graph of
-               Just x -> x
-               Nothing ->
-                 let allKeys = Map.keys graph
-                     listRelated = filter (\(Opt.Global home name) ->
-                       let modName = ModuleName._module home
-                       in "List" `List.isInfixOf` Name.toChars modName || "List" `List.isInfixOf` Name.toChars name) allKeys
-                     dollarKeys = filter (\(Opt.Global _ name) -> Name.toChars name == "$") allKeys
-                     elmCoreKeys = filter (\(Opt.Global home _) ->
-                       let pkg = ModuleName._package home
-                       in Pkg._author pkg == Pkg.elm && Pkg._project pkg == Pkg._project Pkg.core) allKeys
-                     errorMsg = "\n=== GLOBALHELP DEBUG ===\n" <>
-                              "Missing: " <> show currentGlobal <> "\n" <>
-                              "Also tried: " <> show altGlobal <> "\n" <>
-                              "Total keys: " <> show (length allKeys) <> "\n" <>
-                              "List-related: " <> show listRelated <> "\n" <>
-                              "$ globals: " <> show dollarKeys <> "\n" <>
-                              "elm/core count: " <> show (length elmCoreKeys) <> "\n" <>
-                              "First 20: " <> show (take 20 allKeys) <> "\n" <>
-                              "========================"
-                 in error errorMsg
-   in case globalInGraph of
-        Opt.Define expr deps ->
-          addStmt
-            (emitMapping currentGlobal (addDeps deps state))
-            ( var currentGlobal (Expr.generate mode expr)
-            )
-        Opt.DefineTailFunc argNames body deps ->
-          addStmt
-            (emitMapping currentGlobal (addDeps deps state))
-            ( let (Opt.Global _ name) = currentGlobal
-               in JS.Var (JsName.fromGlobal (case currentGlobal of Opt.Global home _ -> home) name) (Expr.generateTailDefExpr mode name argNames body)
-            )
-        Opt.Ctor index arity ->
-          addStmt
-            (emitMapping currentGlobal state)
-            ( var currentGlobal (Expr.generateCtor mode currentGlobal index arity)
-            )
-        Opt.Link linkedGlobal ->
-          addGlobal mode graph state linkedGlobal
-        Opt.Cycle names values functions deps ->
-          let cycleStmt = generateCycle mode currentGlobal names values functions
-              baseState = emitMapping currentGlobal (addDeps deps state)
-          in case cycleStmt of
-               JS.Block stmts -> List.foldl' addStmt baseState stmts
-               stmt -> addStmt baseState stmt
-        Opt.Manager effectsType ->
-          generateManager mode graph currentGlobal effectsType state
-        Opt.Kernel chunks deps ->
-          let State revKernels revBuilders seen seenChunks outLine smMappings srcLocs = addDeps deps state
-              kernelCode = generateKernel mode chunks
-              kernelBytes = BL.toStrict (BB.toLazyByteString kernelCode)
-          in if Set.member kernelBytes seenChunks
-             then State revKernels revBuilders (Set.insert currentGlobal seen) seenChunks outLine smMappings srcLocs
-             else State (kernelCode : revKernels) revBuilders (Set.insert currentGlobal seen) (Set.insert kernelBytes seenChunks) (outLine + countNewlines kernelCode) smMappings srcLocs
-        Opt.Enum index ->
-          addStmt
-            (emitMapping currentGlobal state)
-            ( generateEnum mode currentGlobal index
-            )
-        Opt.Box ->
-          addStmt
-            (emitMapping currentGlobal (addGlobal mode graph state identity))
-            ( generateBox mode currentGlobal
-            )
-        Opt.PortIncoming decoder deps ->
-          addStmt
-            (emitMapping currentGlobal (addDeps deps state))
-            ( generatePort mode currentGlobal "incomingPort" decoder
-            )
-        Opt.PortOutgoing encoder deps ->
-          addStmt
-            (emitMapping currentGlobal (addDeps deps state))
-            ( generatePort mode currentGlobal "outgoingPort" encoder
-            )
+computeAltPkg :: Pkg.Name -> Name.Name -> Bool -> Bool -> (Pkg.Name, Name.Name)
+computeAltPkg currentPkg moduleName isKernelModule isKernelPkg
+  | Pkg._author currentPkg == Pkg.elm && Pkg._project currentPkg == Pkg._project Pkg.core && isKernelModule =
+      let kernelName = drop 7 (Name.toChars moduleName)
+          kernelPkg = Pkg.Name Pkg.elm (Pkg._project Pkg.kernel)
+      in (kernelPkg, Name.fromChars kernelName)
+  | isKernelPkg && Pkg._author currentPkg == Pkg.elm =
+      let kernelModuleName = "Kernel." ++ Name.toChars moduleName
+      in (Pkg.core, Name.fromChars kernelModuleName)
+  | isKernelPkg && Pkg._author currentPkg == Pkg.canopy =
+      (Pkg.Name Pkg.elm (Pkg._project Pkg.kernel), moduleName)
+  | otherwise = (currentPkg, moduleName)
+
+reportMissingGlobal :: Graph -> Opt.Global -> Opt.Global -> Opt.Node
+reportMissingGlobal graph currentGlobal altGlobal =
+  let allKeys = Map.keys graph
+      errorMsg = "\n=== GLOBALHELP DEBUG ===\n" <>
+               "Missing: " <> show currentGlobal <> "\n" <>
+               "Also tried: " <> show altGlobal <> "\n" <>
+               "Total keys: " <> show (length allKeys) <> "\n" <>
+               "First 20: " <> show (take 20 allKeys) <> "\n" <>
+               "========================"
+  in error errorMsg
+
+dispatchNode :: Mode.Mode -> Graph -> Opt.Global -> (Set Opt.Global -> State -> State) -> Opt.Node -> State -> State
+dispatchNode mode graph currentGlobal addDeps globalInGraph state =
+  case globalInGraph of
+    Opt.Define expr deps ->
+      addStmt (emitMapping currentGlobal (addDeps deps state)) (var currentGlobal (Expr.generate mode expr))
+    Opt.DefineTailFunc argNames body deps ->
+      addStmt (emitMapping currentGlobal (addDeps deps state))
+        (let (Opt.Global _ name) = currentGlobal
+             home = case currentGlobal of Opt.Global h _ -> h
+         in JS.Var (JsName.fromGlobal home name) (Expr.generateTailDefExpr mode name argNames body))
+    Opt.Ctor index arity ->
+      addStmt (emitMapping currentGlobal state) (var currentGlobal (Expr.generateCtor mode currentGlobal index arity))
+    Opt.Link linkedGlobal ->
+      addGlobal mode graph state linkedGlobal
+    Opt.Cycle names values functions deps ->
+      let cycleStmt = Kernel_.generateCycle mode currentGlobal names values functions
+          baseState = emitMapping currentGlobal (addDeps deps state)
+      in case cycleStmt of
+           JS.Block stmts -> List.foldl' addStmt baseState stmts
+           stmt -> addStmt baseState stmt
+    Opt.Manager effectsType ->
+      generateManager mode graph currentGlobal effectsType state
+    Opt.Kernel chunks deps ->
+      addKernelChunks mode currentGlobal (addDeps deps state) chunks
+    Opt.Enum index ->
+      addStmt (emitMapping currentGlobal state) (Kernel_.generateEnum mode currentGlobal index)
+    Opt.Box ->
+      addStmt (emitMapping currentGlobal (addGlobal mode graph state Kernel_.identity)) (Kernel_.generateBox mode currentGlobal)
+    Opt.PortIncoming decoder deps ->
+      addStmt (emitMapping currentGlobal (addDeps deps state)) (Kernel_.generatePort mode currentGlobal "incomingPort" decoder)
+    Opt.PortOutgoing encoder deps ->
+      addStmt (emitMapping currentGlobal (addDeps deps state)) (Kernel_.generatePort mode currentGlobal "outgoingPort" encoder)
+
+addKernelChunks :: Mode.Mode -> Opt.Global -> State -> [Kernel.Chunk] -> State
+addKernelChunks mode currentGlobal (State revKernels revBuilders seen seenChunks outLine smMappings srcLocs) chunks =
+  let kernelCode = Kernel_.generateKernel mode chunks
+      kernelBytes = BL.toStrict (BB.toLazyByteString kernelCode)
+  in if Set.member kernelBytes seenChunks
+     then State revKernels revBuilders (Set.insert currentGlobal seen) seenChunks outLine smMappings srcLocs
+     else State (kernelCode : revKernels) revBuilders (Set.insert currentGlobal seen) (Set.insert kernelBytes seenChunks) (outLine + countNewlines kernelCode) smMappings srcLocs
 
 addStmt :: State -> JS.Stmt -> State
 addStmt state stmt =
@@ -798,140 +737,6 @@ var :: Opt.Global -> Expr.Code -> JS.Stmt
 var (Opt.Global home name) code =
   JS.Var (JsName.fromGlobal home name) (Expr.codeToExpr code)
 
-isDebugger :: Opt.Global -> Bool
-isDebugger (Opt.Global (ModuleName.Canonical _ home) _) =
-  home == Name.debugger
-
--- GENERATE CYCLES
-
-generateCycle :: Mode.Mode -> Opt.Global -> [Name.Name] -> [(Name.Name, Opt.Expr)] -> [Opt.Def] -> JS.Stmt
-generateCycle mode (Opt.Global home _) names values functions =
-  let functionStmts = fmap (generateCycleFunc mode home) functions
-      safeStmts = fmap (generateSafeCycle mode home) values
-      realStmts = case fmap (generateRealCycle home) values of
-        [] -> []
-        realBlock@(_ : _) ->
-          case mode of
-            Mode.Prod {} ->
-              realBlock
-            Mode.Dev _ _ _ _ ->
-              [(JS.Try (JS.Block realBlock) JsName.dollar . JS.Throw) . JS.String $
-                ( "Some top-level definitions from `" <> Name.toBuilder (ModuleName._module home) <> "` are causing infinite recursion:\\n"
-                    <> drawCycle names
-                    <> "\\n\\nThese errors are very tricky, so read "
-                    <> BB.stringUtf8 (Doc.makeNakedLink "bad-recursion")
-                    <> " to learn how to fix it!"
-                )]
-      allStmts = functionStmts ++ safeStmts ++ realStmts
-  in case allStmts of
-       [singleStmt] -> singleStmt
-       _ -> JS.Block allStmts
-
-generateCycleFunc :: Mode.Mode -> ModuleName.Canonical -> Opt.Def -> JS.Stmt
-generateCycleFunc mode home def =
-  case def of
-    Opt.Def name expr ->
-      JS.Var (JsName.fromGlobal home name) (Expr.codeToExpr (Expr.generate mode expr))
-    Opt.TailDef name args expr ->
-      JS.Var (JsName.fromGlobal home name) (Expr.generateTailDefExpr mode name args expr)
-
-generateSafeCycle :: Mode.Mode -> ModuleName.Canonical -> (Name.Name, Opt.Expr) -> JS.Stmt
-generateSafeCycle mode home (name, expr) =
-  JS.FunctionStmt (JsName.fromCycle home name) [] $
-    Expr.codeToStmtList (Expr.generate mode expr)
-
-generateRealCycle :: ModuleName.Canonical -> (Name.Name, expr) -> JS.Stmt
-generateRealCycle home (name, _) =
-  let safeName = JsName.fromCycle home name
-      realName = JsName.fromGlobal home name
-   in JS.Block
-        [ JS.Var realName (JS.Call (JS.Ref safeName) []),
-          JS.ExprStmt . JS.Assign (JS.LRef safeName) $ JS.Function Nothing [] [JS.Return (JS.Ref realName)]
-        ]
-
-drawCycle :: [Name.Name] -> Builder
-drawCycle names =
-  let topLine = "\\n  ┌─────┐"
-      nameLine name = "\\n  │    " <> Name.toBuilder name
-      midLine = "\\n  │     ↓"
-      bottomLine = "\\n  └─────┘"
-   in mconcat (topLine : (List.intersperse midLine (fmap nameLine names) <> [bottomLine]))
-
--- GENERATE KERNEL
-
-generateKernel :: Mode.Mode -> [Kernel.Chunk] -> Builder
-generateKernel mode = List.foldr (addChunk mode) mempty
-
-addChunk :: Mode.Mode -> Kernel.Chunk -> Builder -> Builder
-addChunk mode chunk builder =
-  case chunk of
-    Kernel.JS javascript ->
-      BB.byteString javascript <> builder
-    Kernel.CanopyVar home name ->
-      JsName.toBuilder (JsName.fromGlobal home name) <> builder
-    Kernel.JsVar home name ->
-      JsName.toBuilder (JsName.fromKernel home name) <> builder
-    Kernel.CanopyField name ->
-      JsName.toBuilder (Expr.generateField mode name) <> builder
-    Kernel.JsField int ->
-      JsName.toBuilder (JsName.fromInt int) <> builder
-    Kernel.JsEnum int ->
-      BB.intDec int <> builder
-    Kernel.Debug ->
-      case mode of
-        Mode.Dev _ elmCompatible _ _ ->
-          if elmCompatible
-            then builder               -- Elm dev: debug functions are used (clean)
-            else builder               -- Canopy dev: use debug functions
-        Mode.Prod {} ->
-          "_UNUSED" <> builder
-    Kernel.Prod ->
-      case mode of
-        Mode.Dev _ elmCompatible _ _ ->
-          if elmCompatible
-            then "_UNUSED" <> builder  -- Elm dev: prod functions marked unused
-            else "_UNUSED" <> builder  -- Canopy dev: prod functions marked unused
-        Mode.Prod {} ->
-          builder
-
--- GENERATE ENUM
-
-generateEnum :: Mode.Mode -> Opt.Global -> Index.ZeroBased -> JS.Stmt
-generateEnum mode global@(Opt.Global home name) index =
-  JS.Var (JsName.fromGlobal home name) $
-    case mode of
-      Mode.Dev _ _ _ _ ->
-        Expr.codeToExpr (Expr.generateCtor mode global index 0)
-      Mode.Prod {} ->
-        JS.Int (Index.toMachine index)
-
--- GENERATE BOX
-
-generateBox :: Mode.Mode -> Opt.Global -> JS.Stmt
-generateBox mode global@(Opt.Global home name) =
-  JS.Var (JsName.fromGlobal home name) $
-    case mode of
-      Mode.Dev _ _ _ _ ->
-        Expr.codeToExpr (Expr.generateCtor mode global Index.first 1)
-      Mode.Prod {} ->
-        JS.Ref (JsName.fromGlobal ModuleName.basics Name.identity)
-
-{-# NOINLINE identity #-}
-identity :: Opt.Global
-identity =
-  Opt.Global ModuleName.basics Name.identity
-
--- GENERATE PORTS
-
-generatePort :: Mode.Mode -> Opt.Global -> Name.Name -> Opt.Expr -> JS.Stmt
-generatePort mode (Opt.Global home name) makePort converter =
-  JS.Var (JsName.fromGlobal home name) $
-    JS.Call
-      (JS.Ref (JsName.fromKernel Name.platform makePort))
-      [ JS.String (Name.toBuilder name),
-        Expr.codeToExpr (Expr.generate mode converter)
-      ]
-
 -- GENERATE MANAGER
 
 generateManager :: Mode.Mode -> Graph -> Opt.Global -> Opt.EffectsType -> State -> State
@@ -940,119 +745,8 @@ generateManager mode graph (Opt.Global home@(ModuleName.Canonical _ moduleName) 
         JS.LBracket
           (JS.Ref (JsName.fromKernel Name.platform "effectManagers"))
           (JS.String (Name.toBuilder moduleName))
-
       (deps, args, stmts) =
-        generateManagerHelp home effectsType
-
+        Kernel_.generateManagerHelp home effectsType
       createManager =
         (JS.ExprStmt . JS.Assign managerLVar $ JS.Call (JS.Ref (JsName.fromKernel Name.platform "createManager")) args)
    in List.foldl' addStmt (List.foldl' (addGlobal mode graph) state deps) (createManager : stmts)
-
-generateLeaf :: ModuleName.Canonical -> Name.Name -> JS.Stmt
-generateLeaf home@(ModuleName.Canonical _ moduleName) name =
-  JS.Var (JsName.fromGlobal home name) $
-    JS.Call leaf [JS.String (Name.toBuilder moduleName)]
-
-{-# NOINLINE leaf #-}
-leaf :: JS.Expr
-leaf =
-  JS.Ref (JsName.fromKernel Name.platform "leaf")
-
-generateManagerHelp :: ModuleName.Canonical -> Opt.EffectsType -> ([Opt.Global], [JS.Expr], [JS.Stmt])
-generateManagerHelp home effectsType =
-  let ref name = JS.Ref (JsName.fromGlobal home name)
-      dep = Opt.Global home
-   in case effectsType of
-        Opt.Cmd ->
-          ( [dep "init", dep "onEffects", dep "onSelfMsg", dep "cmdMap"],
-            [ref "init", ref "onEffects", ref "onSelfMsg", ref "cmdMap"],
-            [generateLeaf home "command"]
-          )
-        Opt.Sub ->
-          ( [dep "init", dep "onEffects", dep "onSelfMsg", dep "subMap"],
-            [ref "init", ref "onEffects", ref "onSelfMsg", JS.Int 0, ref "subMap"],
-            [generateLeaf home "subscription"]
-          )
-        Opt.Fx ->
-          ( [dep "init", dep "onEffects", dep "onSelfMsg", dep "cmdMap", dep "subMap"],
-            [ref "init", ref "onEffects", ref "onSelfMsg", ref "cmdMap", ref "subMap"],
-            [ generateLeaf home "command",
-              generateLeaf home "subscription"
-            ]
-          )
-
--- MAIN EXPORTS
-
-toMainExports :: Mode.Mode -> Mains -> Builder
-toMainExports mode mains =
-  let export = JsName.fromKernel Name.platform "export"
-      exports = generateExports mode (Map.foldrWithKey addToTrie emptyTrie mains)
-   in JsName.toBuilder export <> "(" <> exports <> ");"
-        <> "scope['Canopy'] = scope['Elm'];"
-
-generateExports :: Mode.Mode -> Trie -> Builder
-generateExports mode (Trie maybeMain subs) =
-  let starter end =
-        case maybeMain of
-          Nothing ->
-            "{"
-          Just (home, main) ->
-            "{'init':"
-              <> JS.exprToBuilder (Expr.generateMain mode home main)
-              <> end
-   in case Map.toList subs of
-        [] ->
-          starter "" <> "}"
-        (name, subTrie) : otherSubTries ->
-          starter ","
-            <> "'"
-            <> Utf8.toBuilder name
-            <> "':"
-            <> generateExports mode subTrie
-            <> List.foldl' (addSubTrie mode) "}" otherSubTries
-
-addSubTrie :: Mode.Mode -> Builder -> (Name.Name, Trie) -> Builder
-addSubTrie mode end (name, trie) =
-  ",'" <> Utf8.toBuilder name <> "':" <> generateExports mode trie <> end
-
--- BUILD TRIES
-
-data Trie = Trie
-  { _main :: Maybe (ModuleName.Canonical, Opt.Main),
-    _subs :: Map Name.Name Trie
-  }
-
-emptyTrie :: Trie
-emptyTrie =
-  Trie Nothing Map.empty
-
-addToTrie :: ModuleName.Canonical -> Opt.Main -> Trie -> Trie
-addToTrie home@(ModuleName.Canonical _ moduleName) main trie =
-  merge trie $ segmentsToTrie home (Name.splitDots moduleName) main
-
-segmentsToTrie :: ModuleName.Canonical -> [Name.Name] -> Opt.Main -> Trie
-segmentsToTrie home segments main =
-  case segments of
-    [] ->
-      Trie (Just (home, main)) Map.empty
-    segment : otherSegments ->
-      Trie Nothing (Map.singleton segment (segmentsToTrie home otherSegments main))
-
-merge :: Trie -> Trie -> Trie
-merge (Trie main1 subs1) (Trie main2 subs2) =
-  Trie
-    (checkedMerge main1 main2)
-    (Map.unionWith merge subs1 subs2)
-
-checkedMerge :: Maybe a -> Maybe a -> Maybe a
-checkedMerge a b =
-  case (a, b) of
-    (Nothing, main) ->
-      main
-    (main, Nothing) ->
-      main
-    (Just _, Just _) ->
-      InternalError.report
-        "Generate.JavaScript.checkedMerge"
-        "cannot have two modules with the same name"
-        "Module names must be unique across the entire compilation unit. This indicates a bug in the module graph construction."
