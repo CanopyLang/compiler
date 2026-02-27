@@ -24,13 +24,15 @@ build:
 clean:
 	@stack clean
 
+PACKAGE_DIRS = packages/canopy-core/src packages/canopy-builder/src packages/canopy-driver/src packages/canopy-query/src packages/canopy-terminal/src packages/canopy-terminal/impl test
+
 lint:
-	hlint -h .hlint.yaml --no-summary compiler builder terminal test -j && \
-	find compiler builder terminal test -name "*.hs" -print0 | \
+	hlint -h .hlint.yaml --no-summary $(PACKAGE_DIRS) -j && \
+	find $(PACKAGE_DIRS) -name "*.hs" -print0 | \
 		xargs -P 8 -0 -I _ ormolu --ghc-opt=-XTypeApplications --mode=check _
 
 fix-lint:
-	@for dir in compiler builder terminal test; do \
+	@for dir in $(PACKAGE_DIRS); do \
 		hlint -h .hlint.yaml --no-summary $$dir -j | \
 		grep -oP "(?<=$$dir/).*?(?=:)" | xargs -I _ \
 		hlint $$dir/_ -h .hlint.yaml --refactor --refactor-options="--inplace" -j &>/dev/null || true; \
@@ -40,7 +42,7 @@ fix-lint:
 fix-lint-folder:
 	@if [ -z "$(FOLDER)" ]; then \
 		echo "Usage: make fix-lint-folder FOLDER=<folder>"; \
-		echo "Available folders: compiler, builder, terminal, test"; \
+		echo "Available folders: packages/canopy-core/src, packages/canopy-builder/src, etc."; \
 		exit 1; \
 	fi
 	@hlint -h .hlint.yaml --no-summary $(FOLDER) -j | \
@@ -49,7 +51,7 @@ fix-lint-folder:
 	@find $(FOLDER) -name '*.hs' -exec ormolu --ghc-opt=-XTypeApplications --mode=inplace {} \;
 
 format:
-	@find builder compiler terminal test -name '*.hs' -exec ormolu --ghc-opt=-XTypeApplications --mode=inplace {} \;
+	@find $(PACKAGE_DIRS) -name '*.hs' -exec ormolu --ghc-opt=-XTypeApplications --mode=inplace {} \;
 
 test:
 	@echo "Running all tests..."

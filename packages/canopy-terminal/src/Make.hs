@@ -50,6 +50,7 @@ import Control.Lens ((^.))
 import Data.NonEmptyList (List)
 import qualified Data.NonEmptyList as NE
 import qualified Data.Text as Text
+import qualified Logging.Config as Config
 import Logging.Event (LogEvent (..))
 import qualified Logging.Logger as Log
 import Make.Builder (buildFromExposed, buildFromPaths, createSplitBuilder, shouldSplitOutput)
@@ -69,6 +70,7 @@ import Make.Types
     noSplit,
     optimize,
     report,
+    verbose,
     watch,
   )
 import qualified Make.Types as Types
@@ -116,14 +118,15 @@ runSingleBuild paths flags = do
       Just root -> executeBuildWithRoot root paths flags style
       Nothing -> pure (Left Exit.MakeNoOutline)
 
--- | Enable verbose logging if requested.
+-- | Enable verbose logging if the @--verbose@ flag is set.
 --
--- Previously configured the logger via 'setLogFlag'. The new logging
--- system uses environment variables exclusively, so this is a no-op
--- retained for call-site compatibility.
+-- Activates DEBUG-level structured logging for all compiler phases,
+-- bridging the CLI flag to the environment-variable-based logging system.
 enableVerboseLogging :: Flags -> IO ()
-enableVerboseLogging _flags =
-  pure ()
+enableVerboseLogging flags =
+  if flags ^. verbose
+    then Config.enableVerbose
+    else pure ()
 
 -- | Execute the complete build process with root path.
 --

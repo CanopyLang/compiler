@@ -109,7 +109,6 @@ library
       Logging.Event
       Logging.Logger
       Logging.Sink
-      Nitpick.Debug
       Nitpick.PatternMatches
       Optimize.Case
       Optimize.ConstantFold

@@ -206,7 +206,7 @@ helpfulLinksText =
 -- | Final confirmation question text.
 confirmationText :: Doc
 confirmationText =
-  "Knowing all that, would you like me to create an canopy.json file now? [Y/n]: "
+  "Knowing all that, would you like me to create a canopy.json file now? [Y/n]: "
 
 -- | Display progress indicator during initialization.
 --

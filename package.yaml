@@ -104,6 +104,8 @@ executables:
     main: Main.hs
     source-dirs: app
     ghc-options:
+      - -Wall
+      - -fwarn-tabs
       - -rtsopts
       - -threaded
       - -with-rtsopts=-N
@@ -122,6 +124,8 @@ tests:
     main: Main.hs
     source-dirs: test
     ghc-options:
+      - -Wall
+      - -fwarn-tabs
       - -rtsopts
       - -threaded
       - -with-rtsopts=-N

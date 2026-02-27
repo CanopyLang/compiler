@@ -706,7 +706,7 @@ noteForPortsInPackage =
   D.stack
     [ D.toSimpleNote $
         "One of the major goals of the package ecosystem is to be completely written\
-        \ in Canopy. This means when you install an Canopy package, you can be sure you are safe\
+        \ in Canopy. This means when you install a Canopy package, you can be sure you are safe\
         \ from security issues on install and that you are not going to get any runtime\
         \ exceptions coming from your new dependency. This design also sets the ecosystem\
         \ up to target other platforms more easily (like mobile phones, WebAssembly, etc.)\
@@ -907,7 +907,7 @@ toParseErrorReport source modul =
                       "I got stuck here:",
                     D.stack
                       [ D.reflow $
-                          "I am not sure what is going on, but I recommend starting an Canopy\
+                          "I am not sure what is going on, but I recommend starting a Canopy\
                           \ file with the following lines:",
                         D.indent 4 $
                           D.vcat $

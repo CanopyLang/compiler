@@ -22,6 +22,7 @@ module Logging.Config
     OutputFormat (..),
     readConfig,
     shouldEmit,
+    enableVerbose,
   )
 where
 
@@ -185,3 +186,15 @@ allPhases =
     PhaseKernel,
     PhasePackage
   ]
+
+-- | Programmatically enable verbose logging at DEBUG level for all phases.
+--
+-- Overwrites the cached config so that subsequent 'logEvent' calls emit
+-- DEBUG-level messages. This is called by the @--verbose@ CLI flag to
+-- bridge the gap between the flag and the environment-variable-based
+-- logging system.
+--
+-- @since 0.19.1
+enableVerbose :: IO ()
+enableVerbose =
+  IORef.writeIORef configRef (LogConfig True DEBUG [] FormatCLI Nothing)

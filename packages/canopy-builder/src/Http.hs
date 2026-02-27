@@ -143,6 +143,9 @@ import qualified Codec.Archive.Zip as Zip
 import Control.Exception (SomeException)
 import qualified Control.Exception as Exception
 import Control.Lens (makeLenses, (&), (.~), (^.))
+import qualified Data.Text as Text
+import Logging.Event (LogEvent (..))
+import qualified Logging.Logger as Log
 import qualified Data.Binary as Binary
 import qualified Data.Binary.Get as Binary
 import Data.ByteString (ByteString)
@@ -382,31 +385,43 @@ post =
 fetch :: Method -> Manager -> String -> [Header] -> (Error -> e) -> (ByteString -> IO (Either e a)) -> IO (Either e a)
 fetch methodVerb manager url headers onError onSuccess =
   if isFileUrl url
-    then -- Handle file:// URLs by reading from local filesystem
+    then fetchLocal
+    else fetchRemote
+  where
+    urlText = Text.pack url
+    verb = Text.pack (BS.unpack methodVerb)
+
+    fetchLocal =
       Exception.handle (handleSomeException url onError) $
         case fileUrlToPath url of
           Just filePath -> do
             fileExists <- Directory.doesFileExist filePath
             if fileExists
               then do
+                Log.logEvent (PackageOperation "local-read" (Text.pack filePath))
                 content <- BS.readFile filePath
                 onSuccess content
-              else return (Left (onError (BadUrl url "File not found")))
-          Nothing -> return (Left (onError (BadUrl url "Invalid file:// URL format")))
-    else -- Handle http:// and https:// URLs with standard HTTP client
+              else do
+                Log.logEvent (PackageOperation "local-not-found" (Text.pack filePath))
+                return (Left (onError (BadUrl url "File not found")))
+          Nothing -> do
+            Log.logEvent (PackageOperation "invalid-file-url" urlText)
+            return (Left (onError (BadUrl url "Invalid file:// URL format")))
+
+    fetchRemote =
       Exception.handle (handleSomeException url onError) . Exception.handle (handleHttpException url onError) $
-        ( do
-            req0 <- parseUrlThrow url
-            let req1 =
-                  req0
-                    { Client.method = methodVerb,
-                      Client.requestHeaders = addDefaultHeaders headers
-                    }
-            withResponse req1 manager $ \response ->
-              do
-                chunks <- brConsume (responseBody response)
-                onSuccess (BS.concat chunks)
-        )
+        do
+          Log.logEvent (PackageOperation verb urlText)
+          req0 <- parseUrlThrow url
+          let req1 =
+                req0
+                  { Client.method = methodVerb,
+                    Client.requestHeaders = addDefaultHeaders headers
+                  }
+          withResponse req1 manager $ \response -> do
+            Log.logEvent (PackageOperation (verb <> "-response") urlText)
+            chunks <- brConsume (responseBody response)
+            onSuccess (BS.concat chunks)
 
 addDefaultHeaders :: [Header] -> [Header]
 addDefaultHeaders headers =
@@ -530,7 +545,8 @@ data Error
   deriving (Show)
 
 handleHttpException :: String -> (Error -> e) -> HttpException -> IO (Either e a)
-handleHttpException url onError httpException =
+handleHttpException url onError httpException = do
+  Log.logEvent (PackageOperation "http-error" (Text.pack url <> " " <> Text.pack (show httpException)))
   case httpException of
     InvalidUrlException _ reason ->
       return (Left (onError (BadUrl url reason)))
@@ -538,7 +554,8 @@ handleHttpException url onError httpException =
       return (Left (onError (BadHttp url content)))
 
 handleSomeException :: String -> (Error -> e) -> SomeException -> IO (Either e a)
-handleSomeException url onError exception =
+handleSomeException url onError exception = do
+  Log.logEvent (PackageOperation "exception" (Text.pack url <> " " <> Text.pack (show exception)))
   return (Left (onError (BadMystery url exception)))
 
 -- SHA
@@ -677,46 +694,50 @@ getArchiveWithHeaders ::
   ((Sha, Zip.Archive) -> IO (Either e a)) ->
   -- | Result containing processed data or error
   IO (Either e a)
-getArchiveWithHeaders manager url headers onError err onSuccess = do
-  putStrLn ("HTTP_DEBUG: Starting archive download from " <> url)
+getArchiveWithHeaders manager url headers onError err onSuccess =
   if isFileUrl url
-    then -- Handle file:// URLs by reading from local filesystem
+    then fetchLocalArchive
+    else fetchRemoteArchive
+  where
+    urlText = Text.pack url
+
+    fetchLocalArchive =
       Exception.handle (handleSomeException url onError) $
         case fileUrlToPath url of
           Just filePath -> do
-            putStrLn ("HTTP_DEBUG: Reading local archive from " <> filePath)
+            Log.logEvent (ArchiveOperation "local-read" (Text.pack filePath))
             result <- readLocalArchive filePath
             case result of
               Nothing -> do
-                putStrLn ("HTTP_DEBUG: Failed to read local archive " <> filePath)
+                Log.logEvent (ArchiveOperation "local-read-failed" (Text.pack filePath))
                 return (Left err)
               Just shaAndArchive -> do
-                putStrLn ("HTTP_DEBUG: Successfully read local archive, calling onSuccess")
+                Log.logEvent (ArchiveOperation "local-read-ok" (Text.pack filePath))
                 onSuccess shaAndArchive
           Nothing -> do
-            putStrLn ("HTTP_DEBUG: Invalid file URL format " <> url)
+            Log.logEvent (ArchiveOperation "invalid-file-url" urlText)
             return (Left (onError (BadUrl url "Invalid file:// URL format")))
-    else -- Handle http:// and https:// URLs with standard HTTP client
+
+    fetchRemoteArchive =
       Exception.handle (handleSomeException url onError) . Exception.handle (handleHttpException url onError) $
-          ( do
-              putStrLn ("HTTP_DEBUG: Downloading HTTP archive from " <> url)
-              req0 <- parseUrlThrow url
-              let req1 =
-                    req0
-                      { Client.method = methodGet,
-                        Client.requestHeaders = addDefaultHeaders headers
-                      }
-              withResponse req1 manager $ \response -> do
-                putStrLn ("HTTP_DEBUG: Got HTTP response, reading archive content")
-                result <- readArchive (responseBody response)
-                case result of
-                  Nothing -> do
-                    putStrLn ("HTTP_DEBUG: Failed to parse archive from response")
-                    return (Left err)
-                  Just shaAndArchive -> do
-                    putStrLn ("HTTP_DEBUG: Successfully parsed archive, calling onSuccess callback")
-                    onSuccess shaAndArchive
-          )
+        do
+          Log.logEvent (PackageOperation "http-get" urlText)
+          req0 <- parseUrlThrow url
+          let req1 =
+                req0
+                  { Client.method = methodGet,
+                    Client.requestHeaders = addDefaultHeaders headers
+                  }
+          withResponse req1 manager $ \response -> do
+            Log.logEvent (PackageOperation "http-response" urlText)
+            result <- readArchive (responseBody response)
+            case result of
+              Nothing -> do
+                Log.logEvent (ArchiveOperation "parse-failed" urlText)
+                return (Left err)
+              Just shaAndArchive -> do
+                Log.logEvent (ArchiveOperation "parse-ok" urlText)
+                onSuccess shaAndArchive
 
 -- | Download ZIP archive with integrity verification.
 --
@@ -786,11 +807,13 @@ getWithFallback :: Manager -> String -> [Header] -> (Error -> e) -> (ByteString 
 getWithFallback manager url headers onError onSuccess = do
   result <- get manager url headers onError onSuccess
   case result of
-    Left err -> do
+    Left networkErr -> do
       let fallbackUrl = fallbackToElmUrl url
       if fallbackUrl /= url
-        then get manager fallbackUrl headers onError onSuccess
-        else pure (Left err)
+        then do
+          Log.logEvent (PackageOperation "fallback" (Text.pack fallbackUrl))
+          get manager fallbackUrl headers onError onSuccess
+        else pure (Left networkErr)
     Right success -> pure (Right success)
 
 -- | Download ZIP archive with automatic fallback from canopy-lang.org to elm-lang.org.
@@ -818,7 +841,9 @@ getArchiveWithFallback manager url onError err onSuccess = do
     Left networkErr -> do
       let fallbackUrl = fallbackToElmUrl url
       if fallbackUrl /= url
-        then getArchive manager fallbackUrl onError err onSuccess
+        then do
+          Log.logEvent (PackageOperation "archive-fallback" (Text.pack fallbackUrl))
+          getArchive manager fallbackUrl onError err onSuccess
         else pure (Left networkErr)
     Right success -> pure (Right success)
 
@@ -849,7 +874,9 @@ getArchiveWithHeadersAndFallback manager url headers onError err onSuccess = do
     Left networkErr -> do
       let fallbackUrl = fallbackToElmUrl url
       if fallbackUrl /= url
-        then getArchiveWithHeaders manager fallbackUrl headers onError err onSuccess
+        then do
+          Log.logEvent (PackageOperation "fallback" (Text.pack fallbackUrl))
+          getArchiveWithHeaders manager fallbackUrl headers onError err onSuccess
         else pure (Left networkErr)
     Right success -> pure (Right success)
 
@@ -907,18 +934,19 @@ getArchiveWithHeadersAndFallback manager url headers onError err onSuccess = do
 uploadWithHeaders :: Manager -> String -> [Multi.Part] -> [Header] -> IO (Either Error ())
 uploadWithHeaders manager url parts headers =
   Exception.handle (handleSomeException url id) . Exception.handle (handleHttpException url id) $
-    ( do
-        req0 <- parseUrlThrow url
-        req1 <-
-          Multi.formDataBody parts $
-            req0
-              { Client.method = methodPost,
-                Client.requestHeaders = addDefaultHeaders headers,
-                Client.responseTimeout = responseTimeoutNone
-              }
-        withResponse req1 manager $ \_ ->
-          return (Right ())
-    )
+    do
+      Log.logEvent (PackageOperation "upload" (Text.pack url))
+      req0 <- parseUrlThrow url
+      req1 <-
+        Multi.formDataBody parts $
+          req0
+            { Client.method = methodPost,
+              Client.requestHeaders = addDefaultHeaders headers,
+              Client.responseTimeout = responseTimeoutNone
+            }
+      withResponse req1 manager $ \_ -> do
+        Log.logEvent (PackageOperation "upload-ok" (Text.pack url))
+        return (Right ())
 
 -- | Upload multipart form data without custom headers.
 --

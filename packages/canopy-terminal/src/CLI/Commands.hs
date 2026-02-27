@@ -351,7 +351,7 @@ createFFITestCommand =
 
 createInitSummary :: String
 createInitSummary =
-  "Start an Canopy project. It creates a starter canopy.json file and\
+  "Start a Canopy project. It creates a starter canopy.json file and\
   \ provides a link explaining what to do from there."
 
 createInitDetails :: String
@@ -361,7 +361,7 @@ createInitDetails =
 createInitExample :: Doc
 createInitExample =
   reflowText
-    "It will ask permission to create an canopy.json file, the one thing common\
+    "It will ask permission to create a canopy.json file, the one thing common\
     \ to all Canopy projects. It also provides a link explaining what to do from there."
 
 createReplSummary :: String
@@ -389,7 +389,7 @@ createReplFlags =
 createReactorSummary :: String
 createReactorSummary =
   "Compile code with a click. It opens a file viewer in your browser, and\
-  \ when you click on an Canopy file, it compiles and you see the result."
+  \ when you click on a Canopy file, it compiles and you see the result."
 
 createReactorDetails :: String
 createReactorDetails =
@@ -400,7 +400,7 @@ createReactorExample =
   reflowText
     "After running that command, you would have a server at <http://localhost:8000>\
     \ that helps with development. It shows your files like a file viewer. If you\
-    \ click on an Canopy file, it will compile it for you! And you can just press\
+    \ click on a Canopy file, it will compile it for you! And you can just press\
     \ the refresh button in the browser to recompile things."
 
 createReactorFlags :: Terminal.Flags Develop.Flags
