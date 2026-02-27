@@ -31,6 +31,7 @@ Compared to the Haskell implementation, the major changes here include:
 import Control.Monad (when)
 import Data.IORef (IORef, modifyIORef', newIORef, readIORef, writeIORef)
 import Data.Word (Word32)
+import qualified Reporting.InternalError as InternalError
 
 -- POINT
 
@@ -126,26 +127,29 @@ union p1 p2 newDesc =
     point1@(Pt ref1) <- repr p1
     point2@(Pt ref2) <- repr p2
 
-    Info w1 d1 <- readIORef ref1
-    Info w2 d2 <- readIORef ref2
+    desc1 <- readIORef ref1
+    desc2 <- readIORef ref2
 
-    if point1 == point2
-      then writeIORef d1 newDesc
-      else do
-        weight1 <- readIORef w1
-        weight2 <- readIORef w2
-
-        let !newWeight = weight1 + weight2
-
-        if weight1 >= weight2
-          then do
-            writeIORef ref2 (Link point1)
-            writeIORef w1 newWeight
-            writeIORef d1 newDesc
+    case (desc1, desc2) of
+      (Info w1 d1, Info w2 d2) ->
+        if point1 == point2
+          then writeIORef d1 newDesc
           else do
-            writeIORef ref1 (Link point2)
-            writeIORef w2 newWeight
-            writeIORef d2 newDesc
+            weight1 <- readIORef w1
+            weight2 <- readIORef w2
+            let !newWeight = weight1 + weight2
+            if weight1 >= weight2
+              then do
+                writeIORef ref2 (Link point1)
+                writeIORef w1 newWeight
+                writeIORef d1 newDesc
+              else do
+                writeIORef ref1 (Link point2)
+                writeIORef w2 newWeight
+                writeIORef d2 newDesc
+      _ ->
+        InternalError.report "Type.UnionFind" "repr returned a Link node in union"
+          "The repr function should always resolve to an Info node. A Link node here indicates a bug in the union-find implementation."
 
 equivalent :: Point a -> Point a -> IO Bool
 equivalent p1 p2 =

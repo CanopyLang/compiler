@@ -40,14 +40,15 @@ module FFI.Capability
   ) where
 
 import Data.Text (Text)
+import FFI.Types (PermissionName, ResourceName)
 
 -- | Basic capability constraint types
 data CapabilityConstraint
   = UserActivationRequired
     -- ^ Function requires user activation (click, keypress, etc.)
-  | PermissionRequired !Text
+  | PermissionRequired !PermissionName
     -- ^ Function requires browser permission (geolocation, microphone, etc.)
-  | InitializationRequired !Text
+  | InitializationRequired !ResourceName
     -- ^ Function requires initialized resource (AudioContext, WebGL context, etc.)
   | AvailabilityRequired !Text
     -- ^ Function requires feature availability check
@@ -59,9 +60,9 @@ data CapabilityConstraint
 data CapabilityError
   = UserActivationRequiredError !Text
     -- ^ User activation was required but not present
-  | PermissionRequiredError !Text
+  | PermissionRequiredError !PermissionName
     -- ^ Permission was required but not granted
-  | InitializationRequiredError !Text
+  | InitializationRequiredError !ResourceName
     -- ^ Resource initialization was required but not done
   | FeatureNotAvailableError !Text
     -- ^ Required feature is not available in browser
@@ -71,9 +72,9 @@ data CapabilityError
 data Capability
   = UserActivationCapability
     -- ^ User has performed a gesture (click, keypress, etc.)
-  | PermissionCapability !Text
+  | PermissionCapability !PermissionName
     -- ^ Browser permission has been granted
-  | InitializationCapability !Text
+  | InitializationCapability !ResourceName
     -- ^ Resource has been properly initialized
   | AvailabilityCapability !Text
     -- ^ Feature is available in the browser

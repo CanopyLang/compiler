@@ -78,6 +78,7 @@ data Error
   | FFIFileNotFound A.Region FilePath
   | FFIFileTimeout A.Region FilePath Int
   | FFIParseError A.Region FilePath String
+  | FFIPathTraversal A.Region FilePath String
   | FFIInvalidType A.Region FilePath Name.Name String
   | FFIMissingAnnotation A.Region FilePath Name.Name
   | FFICircularDependency A.Region FilePath [FilePath]
@@ -849,6 +850,15 @@ toReport source err =
           ( D.reflow ("Error parsing FFI file: " <> filePath)
           , D.reflow ("Parse error: " <> parseErr)
           )
+    FFIPathTraversal region filePath reason ->
+      Report.Report "FFI PATH ERROR" region [] $
+        Code.toSnippet source region Nothing
+          ( D.reflow ("The foreign import path is not allowed: " <> filePath)
+          , D.stack
+              [ D.reflow reason
+              , D.reflow "FFI source paths must be relative paths within your project directory, ending in .js or .mjs, without '..' components."
+              ]
+          )
     FFIInvalidType region filePath typeName typeErr ->
       Report.Report "FFI INVALID TYPE" region [] $
         Code.toSnippet source region Nothing
@@ -965,6 +975,7 @@ toReport source err =
 -- FFIFileNotFound          -> E0338
 -- FFIFileTimeout           -> E0339
 -- FFIParseError            -> E0340
+-- FFIPathTraversal         -> E0349
 -- FFIInvalidType           -> E0341
 -- FFIMissingAnnotation     -> E0342
 -- FFICircularDependency    -> E0343
@@ -1060,6 +1071,8 @@ toDiagnostic source err =
       ffiFileTimeoutDiagnostic source region filePath timeout
     FFIParseError region filePath parseErr ->
       ffiParseErrorDiagnostic source region filePath parseErr
+    FFIPathTraversal region filePath reason ->
+      ffiPathTraversalDiagnostic source region filePath reason
     FFIInvalidType region filePath typeName typeErr ->
       ffiInvalidTypeDiagnostic source region filePath typeName typeErr
     FFIMissingAnnotation region filePath funcName ->
@@ -1567,6 +1580,18 @@ ffiParseErrorDiagnostic source region filePath parseErr =
     (LabeledSpan region "FFI parse error" SpanPrimary)
     (Code.toSnippet source region Nothing (D.reflow ("Error parsing FFI file: " <> filePath), D.reflow ("Parse error: " <> parseErr)))
 
+-- | Build a diagnostic for an FFI path traversal attempt.
+ffiPathTraversalDiagnostic :: Code.Source -> A.Region -> FilePath -> String -> Diagnostic
+ffiPathTraversalDiagnostic source region filePath reason =
+  Diag.makeDiagnostic
+    (EC.canonError 49)
+    Diag.SError
+    Diag.PhaseCanon
+    "FFI PATH ERROR"
+    (Text.pack ("FFI path not allowed: " <> filePath))
+    (LabeledSpan region "invalid FFI path" SpanPrimary)
+    (Code.toSnippet source region Nothing (D.reflow ("The foreign import path is not allowed: " <> filePath), D.reflow reason))
+
 -- | Build a diagnostic for an invalid type in an FFI file.
 ffiInvalidTypeDiagnostic :: Code.Source -> A.Region -> FilePath -> Name.Name -> String -> Diagnostic
 ffiInvalidTypeDiagnostic source region filePath typeName typeErr =
@@ -1897,6 +1922,15 @@ varErrorToReport (VarError kind name problem suggestions) =
         Code.toSnippet source region Nothing
           ( D.reflow $ "Error parsing FFI file: " <> filePath
           , D.reflow $ "Parse error: " <> parseErr
+          )
+    FFIPathTraversal region filePath reason ->
+      Report.Report "FFI PATH ERROR" region [] $
+        Code.toSnippet source region Nothing
+          ( D.reflow $ "The foreign import path is not allowed: " <> filePath
+          , D.stack
+              [ D.reflow reason
+              , D.reflow "FFI source paths must be relative paths within your project directory, ending in .js or .mjs, without '..' components."
+              ]
           )
     FFIInvalidType region filePath typeName typeErr ->
       Report.Report "FFI INVALID TYPE" region [] $

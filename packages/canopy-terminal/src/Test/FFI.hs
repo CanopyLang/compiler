@@ -360,7 +360,7 @@ parseJavaScriptFile jsFile = do
           return (Left (Text.pack errorMsg))
         Right jsDocFunctions -> do
           let functionMap = Map.fromList
-                [ (FFI.jsDocFuncName jsDocFunc, convertJSDocToFFIFunction jsDocFunc)
+                [ (FFI.unJsFunctionName (FFI.jsDocFuncName jsDocFunc), convertJSDocToFFIFunction jsDocFunc)
                 | jsDocFunc <- jsDocFunctions
                 ]
               funcCount = Output.showCount (Map.size functionMap) "FFI function"
@@ -397,7 +397,7 @@ validateFunction modulePath (funcName, ffiFunc) =
   where
     checkOutputType =
       case FFI.ffiFuncOutputType ffiFunc of
-        FFI.FFIBasic "" ->
+        FFI.FFIOpaque "" ->
           [modulePath ++ ": " ++ Text.unpack funcName ++ " has empty output type"]
         _ -> []
     checkErrorTypes =

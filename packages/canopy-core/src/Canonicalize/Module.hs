@@ -43,6 +43,7 @@ import qualified Reporting.Result as Result
 import qualified Reporting.InternalError as InternalError
 import qualified Reporting.Warning as W
 import Control.Exception (SomeException, catch)
+import qualified System.FilePath as FP
 import System.FilePath ((</>))
 
 -- RESULT
@@ -394,21 +395,40 @@ ok name region export =
 loadFFIContent :: [Src.ForeignImport] -> IO (Map String String)
 loadFFIContent = loadFFIContentWithRoot "."
 
--- | Load FFI content with explicit root directory for path resolution
+-- | Load FFI content with explicit root directory for path resolution.
+--
+-- Validates paths before reading to prevent path traversal attacks.
 loadFFIContentWithRoot :: FilePath -> [Src.ForeignImport] -> IO (Map String String)
 loadFFIContentWithRoot rootDir foreignImports = do
   results <- traverse loadSingleFFI foreignImports
   return $ Map.fromList (concat results)
   where
     loadSingleFFI :: Src.ForeignImport -> IO [(String, String)]
-    loadSingleFFI (Src.ForeignImport (FFI.JavaScriptFFI jsPath) _alias _region) = do
-      result <- loadFFIFileWithTimeout (rootDir </> jsPath) jsPath
-      case result of
+    loadSingleFFI (Src.ForeignImport (FFI.JavaScriptFFI jsPath) _alias _region) =
+      case validateFFIPath jsPath of
         Left _ -> return []
-        Right content -> return [(jsPath, content)]
+        Right validPath -> do
+          result <- loadFFIFileWithTimeout (rootDir </> validPath) validPath
+          either (const (return [])) (\c -> return [(validPath, c)]) result
     loadSingleFFI _ = return []
 
--- Load FFI file with timeout to prevent hanging
+-- | Validate an FFI source file path for safety.
+--
+-- Rejects absolute paths, path traversal (..), null bytes,
+-- and non-JavaScript extensions.
+validateFFIPath :: FilePath -> Either String FilePath
+validateFFIPath path
+  | FP.isAbsolute path =
+      Left "FFI source path must be relative"
+  | ".." `elem` FP.splitDirectories path =
+      Left "FFI source path cannot contain '..'"
+  | '\0' `elem` path =
+      Left "FFI source path contains null byte"
+  | not (FP.takeExtension path `elem` [".js", ".mjs"]) =
+      Left "FFI source path must end in .js or .mjs"
+  | otherwise = Right (FP.normalise path)
+
+-- | Load FFI file with error handling.
 loadFFIFileWithTimeout :: FilePath -> String -> IO (Either String String)
 loadFFIFileWithTimeout fullPath _jsPath = do
   result <- try (readFile fullPath)
@@ -429,7 +449,9 @@ addFFIToEnvPure env (fi : rest) ffiContentMap =
   addOneFFI env fi >>= \updatedEnv -> addFFIToEnvPure updatedEnv rest ffiContentMap
   where
     addOneFFI currentEnv (Src.ForeignImport (FFI.JavaScriptFFI jsPath) alias region) =
-      processFFIImport currentEnv jsPath alias region ffiContentMap
+      case validateFFIPath jsPath of
+        Left reason -> Result.throw (Error.FFIPathTraversal region jsPath reason)
+        Right validPath -> processFFIImport currentEnv validPath alias region ffiContentMap
     addOneFFI _currentEnv (Src.ForeignImport (FFI.WebAssemblyFFI _wasmPath) _alias region) =
       Result.throw (Error.FFIParseError region "WebAssembly" "WebAssembly FFI is not yet supported")
 

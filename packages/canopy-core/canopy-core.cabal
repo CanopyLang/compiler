@@ -72,6 +72,7 @@ library
       Data.Utf8.Manipulation
       Data.Utf8.Types
       FFI.Capability
+      FFI.Types
       FFI.Validator
       File
       File.Archive

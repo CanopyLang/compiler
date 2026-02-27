@@ -20,6 +20,9 @@ module Foreign.FFI
   , FFIType(..)
   , FFIFunction(..)
   , SimpleFFIImport(..)
+  , JsFunctionName(..)
+  , PermissionName(..)
+  , ResourceName(..)
 
     -- * JSDoc Integration
   , JSDocFunction(..)
@@ -55,6 +58,7 @@ import Language.JavaScript.Parser.AST
   , JSStatement(..)
   )
 import qualified FFI.Capability as Capability
+import FFI.Types (FFIType (..), JsFunctionName(..), PermissionName(..), ResourceName(..))
 
 -- | FFI declaration in Canopy source code
 --
@@ -85,31 +89,7 @@ data FFITarget
     -- ^ WebAssembly file path (future extension)
   deriving (Eq, Show)
 
--- | FFI-specific type representation
---
--- Maps JSDoc types to Canopy types for foreign function bindings.
---
--- @since 0.19.1
-data FFIType
-  = FFIBasic !Text
-    -- ^ Basic type (String, Int, Bool, etc.)
-  | FFIResult !FFIType !FFIType
-    -- ^ Result Error Value type for fallible operations
-  | FFITask !FFIType !FFIType
-    -- ^ Task Error Value type for async operations
-  | FFIMaybe !FFIType
-    -- ^ Maybe Value type for nullable values
-  | FFIList !FFIType
-    -- ^ List Value type for arrays
-  | FFIFunctionType ![FFIType] !FFIType
-    -- ^ Function type with parameters and return type
-  | FFIOpaque !Text
-    -- ^ Opaque type (DOMElement, etc.)
-  | FFITuple ![FFIType]
-    -- ^ Tuple type with multiple values
-  | FFIRecord ![(Text, FFIType)]
-    -- ^ Record type with named fields
-  deriving (Eq, Show)
+-- FFIType is imported from FFI.Types (single source of truth)
 
 -- | FFI function with complete type information
 --
@@ -131,7 +111,7 @@ data FFIFunction = FFIFunction
 --
 -- @since 0.19.1
 data JSDocFunction = JSDocFunction
-  { jsDocFuncName :: !Text
+  { jsDocFuncName :: !JsFunctionName
     -- ^ Function name in JavaScript
   , jsDocFuncType :: !FFIType
     -- ^ Canopy type signature from @canopy-type annotation
@@ -252,7 +232,7 @@ parseJSDocTextManual jsFile jsDocText =
       capabilities = extractCapabilityManual jsDocLines
   in case (functionName, canopyType) of
     (Just name, Just ffiType) -> Just $ JSDocFunction
-      { jsDocFuncName = name
+      { jsDocFuncName = JsFunctionName name
       , jsDocFuncType = ffiType
       , jsDocFuncDescription = description
       , jsDocFuncParams = params
@@ -343,9 +323,9 @@ extractCapabilityManual (line:rest)
   where
     parseCapabilityLine l =
       case Text.words (Text.strip l) of
-        ("*":"@capability":"permission":perm:_) -> Just (Capability.PermissionRequired perm)
+        ("*":"@capability":"permission":perm:_) -> Just (Capability.PermissionRequired (PermissionName perm))
         ("*":"@capability":"user-activation":_) -> Just Capability.UserActivationRequired
-        ("*":"@capability":"init":resource:_) -> Just (Capability.InitializationRequired resource)
+        ("*":"@capability":"init":resource:_) -> Just (Capability.InitializationRequired (ResourceName resource))
         ("*":"@capability":"availability":feature:_) -> Just (Capability.AvailabilityRequired feature)
         _ -> Nothing
 
@@ -409,8 +389,8 @@ parseFFIType tokens = parseFunction (stripOuterParens tokens)
     -- Parse function types (param -> param -> result)
     -- This parser works RIGHT-TO-LEFT: For "A -> B -> C", it parses:
     --   1. Find first arrow, split into "A" and "B -> C"
-    --   2. Recursively parse "B -> C" to get FFIFunctionType [B] C
-    --   3. Prepend A to get FFIFunctionType [A, B] C
+    --   2. Recursively parse "B -> C" to get FFIFunction [B] C
+    --   3. Prepend A to get FFIFunction [A, B] C
     -- This maintains correct parameter order [A, B] for the final type.
     parseFunction :: [Text] -> Maybe FFIType
     parseFunction ts = case findFunctionArrow ts of
@@ -445,15 +425,15 @@ parseFFIType tokens = parseFunction (stripOuterParens tokens)
     --
     -- Example: "A -> B -> C"
     --   1. Split: paramType="A", rest="B -> C"
-    --   2. Recurse on "B -> C" → produces FFIFunctionType [B] C
-    --   3. PREPEND A to get FFIFunctionType [A, B] C ✓
+    --   2. Recurse on "B -> C" → produces FFIFunction [B] C
+    --   3. PREPEND A to get FFIFunction [A, B] C ✓
     --
     -- If we APPEND instead, we get [B, A] which is backwards!
     --
     -- Test cases verify correct behavior:
-    -- - "A -> B -> C" should parse as FFIFunctionType [A, B] C
-    -- - "UserActivated -> Result E V" should parse as FFIFunctionType [UserActivated] (Result E V)
-    -- - "AudioContext -> ArrayBuffer -> Task E V" should parse as FFIFunctionType [AudioContext, ArrayBuffer] (Task E V)
+    -- - "A -> B -> C" should parse as FFIFunction [A, B] C
+    -- - "UserActivated -> Result E V" should parse as FFIFunction [UserActivated] (Result E V)
+    -- - "AudioContext -> ArrayBuffer -> Task E V" should parse as FFIFunction [AudioContext, ArrayBuffer] (Task E V)
     extendFunction :: FFIType -> FFIType -> FFIType
     extendFunction paramType (FFIFunctionType params returnType) =
       FFIFunctionType (paramType : params) returnType
@@ -464,12 +444,12 @@ parseFFIType tokens = parseFunction (stripOuterParens tokens)
     parseBasicType :: [Text] -> Maybe FFIType
     parseBasicType ts = case ts of
       [] -> Nothing
-      ["String"] -> Just (FFIBasic "String")
-      ["Int"] -> Just (FFIBasic "Int")
-      ["Bool"] -> Just (FFIBasic "Bool")
-      ["Float"] -> Just (FFIBasic "Float")
-      ["()"] -> Just (FFIBasic "()")
-      ["(", ")"] -> Just (FFIBasic "Unit")  -- Handle tokenized unit type
+      ["String"] -> Just FFIString
+      ["Int"] -> Just FFIInt
+      ["Bool"] -> Just FFIBool
+      ["Float"] -> Just FFIFloat
+      ["()"] -> Just FFIUnit
+      ["(", ")"] -> Just FFIUnit
 
       -- Task types: Task ErrorType ValueType (handle parenthesized types)
       ("Task" : rest) -> parseTaskType rest
@@ -674,7 +654,7 @@ generateFFIBindings functions = do
     generateValueBinding :: JSDocFunction -> Either FFIError Text
     generateValueBinding jsFunc = do
       canopyType <- ffiTypeToCanopyType (jsDocFuncType jsFunc)
-      let funcName = jsDocFuncName jsFunc
+      let funcName = unJsFunctionName (jsDocFuncName jsFunc)
           description = maybe "" (\desc -> "-- | " <> desc <> "\n") (jsDocFuncDescription jsFunc)
       pure $ description <> funcName <> " : " <> canopyType
 
@@ -698,7 +678,11 @@ qualifyBasicType typeName = case typeName of
 -- Uses qualified type names for maximum safety and consistency
 ffiTypeToCanopyType :: FFIType -> Either FFIError Text
 ffiTypeToCanopyType ffiType = case ffiType of
-  FFIBasic typeName -> Right (qualifyBasicType typeName)
+  FFIInt -> Right "Basics.Int"
+  FFIFloat -> Right "Basics.Float"
+  FFIString -> Right "String.String"
+  FFIBool -> Right "Basics.Bool"
+  FFIUnit -> Right "()"
   FFIResult errorType valueType -> do
     errType <- ffiTypeToCanopyType errorType
     valType <- ffiTypeToCanopyType valueType
@@ -768,7 +752,7 @@ parseJavaScriptFile jsFile content = do
   let ffiFunctions = map jsDocToFFIFunction jsDocFunctions
 
   -- Create map of function names to FFI functions
-  let functionMap = Map.fromList [(jsDocFuncName jsFunc, ffiFunc) | (jsFunc, ffiFunc) <- zip jsDocFunctions ffiFunctions]
+  let functionMap = Map.fromList [(unJsFunctionName (jsDocFuncName jsFunc), ffiFunc) | (jsFunc, ffiFunc) <- zip jsDocFunctions ffiFunctions]
 
   Right functionMap
   where
@@ -778,9 +762,9 @@ parseJavaScriptFile jsFile content = do
 
     -- Flatten nested function types into parameter list and return type
     --
-    -- This function takes potentially nested FFIFunctionType structures and
+    -- This function takes potentially nested FFIFunction structures and
     -- flattens them into a single parameter list and return type.
-    -- Example: FFIFunctionType [A] (FFIFunctionType [B] C) becomes ([A, B], C)
+    -- Example: FFIFunction [A] (FFIFunction [B] C) becomes ([A, B], C)
     flattenFunctionType :: FFIType -> ([FFIType], FFIType)
     flattenFunctionType = \case
       FFIFunctionType params returnType ->

@@ -115,7 +115,7 @@ testChompInterface =
     "Chomp Interface Tests"
     [ testCase "chomp with empty arguments" $
         ( do
-            let noArgs = Args []
+            let noArgs = Args [Exactly (Done ())]
                 noFlags = FDone ()
                 (suggestions, result) = Chomp.chomp Nothing [] noArgs noFlags
             suggestionList <- suggestions
@@ -126,7 +126,7 @@ testChompInterface =
         ),
       testCase "chomp with simple flag" $
         ( do
-            let noArgs = Args []
+            let noArgs = Args [Exactly (Done ())]
                 flagSpec = FDone True -- Simple boolean flag
                 (suggestions, _) = Chomp.chomp Nothing ["--test"] noArgs flagSpec
             suggestionList <- suggestions
@@ -134,7 +134,7 @@ testChompInterface =
         ),
       testCase "chomp with suggestion index" $
         ( do
-            let noArgs = Args []
+            let noArgs = Args [Exactly (Done ())]
                 noFlags = FDone ()
                 (suggestions, _) = Chomp.chomp (Just 1) [""] noArgs noFlags
             suggestionList <- suggestions

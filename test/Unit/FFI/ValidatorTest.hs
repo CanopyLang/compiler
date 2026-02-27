@@ -57,11 +57,11 @@ parseFFITypeTests =
       testCase "parses tuple (Int, String, Bool)" $
         V.parseFFIType "(Int, String, Bool)" @?= Just (V.FFITuple [V.FFIInt, V.FFIString, V.FFIBool]),
       testCase "parses function Int -> String" $
-        V.parseFFIType "Int -> String" @?= Just (V.FFIFunction [V.FFIInt] V.FFIString),
+        V.parseFFIType "Int -> String" @?= Just (V.FFIFunctionType [V.FFIInt] V.FFIString),
       testCase "parses function Int -> String -> Bool" $
-        V.parseFFIType "Int -> String -> Bool" @?= Just (V.FFIFunction [V.FFIInt, V.FFIString] V.FFIBool),
+        V.parseFFIType "Int -> String -> Bool" @?= Just (V.FFIFunctionType [V.FFIInt, V.FFIString] V.FFIBool),
       testCase "parses function with complex return" $
-        V.parseFFIType "Int -> Result String Bool" @?= Just (V.FFIFunction [V.FFIInt] (V.FFIResult V.FFIString V.FFIBool)),
+        V.parseFFIType "Int -> Result String Bool" @?= Just (V.FFIFunctionType [V.FFIInt] (V.FFIResult V.FFIString V.FFIBool)),
       testCase "handles whitespace" $
         V.parseFFIType "  Int  " @?= Just V.FFIInt,
       testCase "handles whitespace in List" $
@@ -115,7 +115,7 @@ generateValidatorNameTests =
       testCase "generates name for Opaque type" $
         V.generateValidatorName (V.FFIOpaque "AudioContext") @?= "_validate_Opaque_AudioContext",
       testCase "generates name for Function" $
-        V.generateValidatorName (V.FFIFunction [V.FFIInt] V.FFIString) @?= "_validate_Fn_String"
+        V.generateValidatorName (V.FFIFunctionType [V.FFIInt] V.FFIString) @?= "_validate_Fn_String"
     ]
 
 generateValidatorTests :: TestTree
@@ -156,7 +156,7 @@ generateValidatorTests =
         let validator = V.generateValidator V.defaultConfig (V.FFITuple [V.FFIInt, V.FFIString])
          in Text.isInfixOf "v.length !== 2" validator @?= True,
       testCase "generates Function validator with typeof check" $
-        let validator = V.generateValidator V.defaultConfig (V.FFIFunction [V.FFIInt] V.FFIString)
+        let validator = V.generateValidator V.defaultConfig (V.FFIFunctionType [V.FFIInt] V.FFIString)
          in Text.isInfixOf "typeof v !== 'function'" validator @?= True,
       testCase "generates validator that throws in strict mode" $
         let config = V.defaultConfig {V._configStrictMode = True}

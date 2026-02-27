@@ -310,8 +310,10 @@ ffiTypeToValidator ffiType = case ffiType of
     "$validate.Tuple(" ++ List.intercalate ", " (map ffiTypeToValidator types) ++ ")"
   Validator.FFIOpaque name ->
     "$validate.Opaque('" ++ Text.unpack name ++ "')"
-  Validator.FFIFunction _ _ ->
+  Validator.FFIFunctionType _ _ ->
     "$validate.Function"
+  Validator.FFIRecord _ ->
+    "$validate.Record"
 
 -- Count arrows in a type signature to determine arity (only function parameter arrows)
 -- Uses the same tokenization logic as the FFI parser to handle multi-word types correctly

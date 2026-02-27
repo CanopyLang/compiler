@@ -269,16 +269,15 @@ lazyBoundedReach ::
   Set Opt.Global ->
   Set Opt.Global
 lazyBoundedReach graph lazyModules seeds =
-  Set.foldl' (lazyDfs graph lazyModules homeModule) Set.empty seeds
-  where
-    homeModule = inferHome seeds
+  case inferHome seeds of
+    Nothing -> Set.empty
+    Just homeModule ->
+      Set.foldl' (lazyDfs graph lazyModules homeModule) Set.empty seeds
 
 -- | Infer the home module from a set of globals (all should share the same home).
-inferHome :: Set Opt.Global -> ModuleName.Canonical
+inferHome :: Set Opt.Global -> Maybe ModuleName.Canonical
 inferHome globals =
-  case Set.lookupMin globals of
-    Just (Opt.Global home _) -> home
-    Nothing -> ModuleName.Canonical (error "inferHome: empty set") "empty"
+  fmap (\(Opt.Global home _) -> home) (Set.lookupMin globals)
 
 -- | DFS that stays within a lazy boundary.
 --

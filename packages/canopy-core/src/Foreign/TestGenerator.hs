@@ -143,7 +143,11 @@ renderFunctionType (FFIFunction inputTypes outputType _) =
 -- | Helper function to render FFI types with correct qualified namespaces
 renderFFIType :: FFIType -> Text
 renderFFIType ffiType = case ffiType of
-  FFIBasic typeName -> typeName
+  FFIInt -> "Int"
+  FFIFloat -> "Float"
+  FFIString -> "String"
+  FFIBool -> "Bool"
+  FFIUnit -> "()"
   FFIFunctionType params returnType ->
     "(" <> Text.intercalate " -> " (map renderFFIType params) <> " -> " <> renderFFIType returnType <> ")"
   FFIList elementType -> "List " <> renderFFIType elementType
@@ -251,11 +255,11 @@ typeAssertionForOutput outputType =
 defaultValueForType :: FFIType -> Text
 defaultValueForType ffiType =
   case ffiType of
-    FFIBasic "String"  -> "\"\""
-    FFIBasic "Int"     -> "0"
-    FFIBasic "Float"   -> "0.0"
-    FFIBasic "Bool"    -> "False"
-    FFIBasic _         -> "\"\""
+    FFIString          -> "\"\""
+    FFIInt             -> "0"
+    FFIFloat           -> "0.0"
+    FFIBool            -> "False"
+    FFIUnit            -> "()"
     FFIList _          -> "[]"
     FFIMaybe _         -> "Nothing"
     FFIResult _ _      -> "(Ok \"\")"
@@ -272,11 +276,11 @@ defaultValueForType ffiType =
 boundaryValueForType :: FFIType -> Text
 boundaryValueForType ffiType =
   case ffiType of
-    FFIBasic "String"  -> "\"\""
-    FFIBasic "Int"     -> "-1"
-    FFIBasic "Float"   -> "-0.0"
-    FFIBasic "Bool"    -> "True"
-    FFIBasic _         -> "\"\""
+    FFIString          -> "\"\""
+    FFIInt             -> "-1"
+    FFIFloat           -> "-0.0"
+    FFIBool            -> "True"
+    FFIUnit            -> "()"
     FFIList _          -> "[]"
     FFIMaybe _         -> "Nothing"
     FFIResult _ _      -> "(Err \"boundary\")"

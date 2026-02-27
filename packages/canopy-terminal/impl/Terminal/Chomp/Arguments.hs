@@ -79,7 +79,7 @@ import Terminal.Internal
     Parser (..),
     RequiredArgs (..),
   )
-import Unsafe.Coerce (unsafeCoerce)
+import qualified Reporting.InternalError as InternalError
 
 -- | Parse complete argument specification with error handling.
 --
@@ -384,7 +384,7 @@ parseArgumentsWithFallback suggest chunks completeArgsList revSuggest revArgErro
     [] ->
       -- If no argument patterns remain, check for success conditions
       if null chunks && null revArgErrors
-        then (combineCompletions (map generateCompletions revSuggest), Right (unsafeCoerce ()))
+        then (combineCompletions (map generateCompletions revSuggest), Left (BadArgs []))
         else (combineCompletions (map generateCompletions revSuggest), Left (BadArgs revArgErrors))
     completeArgs : others ->
       case parseCompleteArgs suggest chunks completeArgs of

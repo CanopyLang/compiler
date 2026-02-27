@@ -38,7 +38,7 @@ module FFI.Validator
   , ValidatorConfig(..)
   , defaultConfig
 
-    -- * FFI type representation (for validation)
+    -- * FFI type representation (re-exported from FFI.Types)
   , FFIType(..)
 
     -- * Type string parsing
@@ -49,6 +49,7 @@ module FFI.Validator
 import qualified Data.Char as Char
 import qualified Data.Text as Text
 import Data.Text (Text)
+import FFI.Types (FFIType (..))
 
 -- | Configuration for validator generation
 data ValidatorConfig = ValidatorConfig
@@ -68,21 +69,7 @@ defaultConfig = ValidatorConfig
   , _configDebugMode = False
   }
 
--- | FFI type representation for validation
-data FFIType
-  = FFIInt
-  | FFIFloat
-  | FFIString
-  | FFIBool
-  | FFIUnit
-  | FFIList !FFIType
-  | FFIMaybe !FFIType
-  | FFIResult !FFIType !FFIType
-  | FFITask !FFIType !FFIType
-  | FFITuple ![FFIType]
-  | FFIOpaque !Text
-  | FFIFunction ![FFIType] !FFIType
-  deriving (Eq, Show)
+-- FFIType is imported from FFI.Types (single source of truth)
 
 -- | Generate a unique validator name for a type
 generateValidatorName :: FFIType -> Text
@@ -101,7 +88,8 @@ generateValidatorName ffiType = "_validate_" <> typeToSuffix ffiType
       FFITask e v -> "Task_" <> typeToSuffix e <> "_" <> typeToSuffix v
       FFITuple types -> "Tuple_" <> Text.intercalate "_" (map typeToSuffix types)
       FFIOpaque name -> "Opaque_" <> sanitizeName name
-      FFIFunction _ ret -> "Fn_" <> typeToSuffix ret
+      FFIFunctionType _ ret -> "Fn_" <> typeToSuffix ret
+      FFIRecord fields -> "Rec_" <> Text.intercalate "_" (map (sanitizeName . fst) fields)
 
     sanitizeName :: Text -> Text
     sanitizeName = Text.filter (\c -> c >= 'a' && c <= 'z' || c >= 'A' && c <= 'Z' || c >= '0' && c <= '9')
@@ -199,13 +187,22 @@ generateValidatorBody config ffiType = case ffiType of
            <> indent <> "return v;"
       else indent <> "return v; // Opaque type: " <> typeName
 
-  FFIFunction _ _ ->
+  FFIFunctionType _ _ ->
     indent <> "if (typeof v !== 'function') {\n"
     <> indent <> "  " <> throwError config "Function" <> "\n"
     <> indent <> "}\n"
     <> indent <> "return v;"
 
+  FFIRecord fields ->
+    indent <> "if (typeof v !== 'object' || v === null) {\n"
+    <> indent <> "  " <> throwError config "Record" <> "\n"
+    <> indent <> "}\n"
+    <> Text.concat (map validateField fields)
+    <> indent <> "return v;"
+
   where
+    validateField (name, fieldType) =
+      indent <> generateValidatorName fieldType <> "(v." <> name <> ", ctx + '." <> name <> "');\n"
     indent = "  "
 
 -- | Generate error throwing statement
@@ -232,7 +229,8 @@ generateAllValidators config ffiType =
       FFIResult e v -> [e, v]
       FFITask e v -> [e, v]
       FFITuple types -> types
-      FFIFunction args ret -> args ++ [ret]
+      FFIFunctionType args ret -> args ++ [ret]
+      FFIRecord fields -> map snd fields
       _ -> []
 
 -- | Parse a type string into FFIType
@@ -376,7 +374,7 @@ parseFunctionType tokens =
       let argParts = init parts
           retPart = last parts
       in case (traverseMaybe parseTokens argParts, parseTokens retPart) of
-        (Just args, Just ret) -> Just (FFIFunction args ret)
+        (Just args, Just ret) -> Just (FFIFunctionType args ret)
         _ -> Nothing
 
 -- | Take one type argument from token list
