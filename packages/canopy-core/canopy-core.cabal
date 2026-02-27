@@ -75,6 +75,7 @@ library
       Canopy.String
       Canopy.Version
       FFI.Capability
+      FFI.Manifest
       FFI.Types
       FFI.Validator
       File

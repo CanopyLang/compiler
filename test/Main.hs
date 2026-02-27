@@ -32,6 +32,7 @@ import qualified Unit.AST.Utils.TypeTest as ASTUtilsTypeTest
 import qualified Unit.Builder.GraphTest as BuilderGraphTest
 import qualified Unit.Builder.HashTest as BuilderHashTest
 import qualified Unit.Builder.IncrementalTest as BuilderIncrementalTest
+import qualified Unit.Builder.LockFileTest as BuilderLockFileTest
 import qualified Unit.Builder.SolverTest as BuilderSolverTest
 import qualified Unit.Builder.StateTest as BuilderStateTest
 import qualified Unit.CLI.CommandsTest as CLICommandsTest
@@ -116,6 +117,7 @@ import qualified Unit.Canonicalize.LazyImportValidationTest as LazyImportValidat
 import qualified Unit.Canonicalize.ModuleTest as CanonicalizeModuleTest
 import qualified Unit.Canonicalize.PatternTest as CanonicalizePatternTest
 import qualified Unit.Type.UnionFindTest as UnionFindTest
+import qualified Unit.FFI.ManifestTest as FFIManifestTest
 import qualified Unit.FFI.ValidatorTest as FFIValidatorTest
 import qualified Property.ArithmeticLawsTest as ArithmeticLawsTest
 import qualified Property.Type.UnifyProperties as UnifyProperties
@@ -179,6 +181,7 @@ unitTests =
       ASTUtilsTypeTest.tests,
       BuilderHashTest.tests,
       BuilderGraphTest.tests,
+      BuilderLockFileTest.tests,
       BuilderStateTest.tests,
       BuilderIncrementalTest.tests,
       BuilderSolverTest.tests,
@@ -236,6 +239,7 @@ unitTests =
       CanonicalizePatternTest.tests,
       CanonicalizeModuleTest.tests,
       LazyImportValidationTest.tests,
+      FFIManifestTest.tests,
       FFIValidatorTest.tests
     ]
 

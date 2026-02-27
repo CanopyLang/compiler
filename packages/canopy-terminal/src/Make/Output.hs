@@ -46,9 +46,12 @@ import qualified Data.ByteString.Lazy as ByteString.Lazy
 import Data.Function ((&))
 import qualified Canopy.Data.Name as Name
 import qualified Canopy.Data.NonEmptyList as NonEmptyList
+import qualified Data.Map.Strict as Map
 import qualified Data.Text as Text
 import qualified Data.Text.Encoding as Text
+import qualified FFI.Manifest as Manifest
 import qualified File
+import qualified Foreign.FFI as FFI
 import qualified Generate.Html as Html
 import qualified Generate.JavaScript.CodeSplit.Types as Split
 import qualified Generate.JavaScript.SourceMap as SourceMap
@@ -126,6 +129,7 @@ generateJavaScript ctx artifacts target = do
       jsWithRef = appendSourceMapRef target builder maybeSourceMap
   writeOutputFile (ctx ^. bcStyle) target jsWithRef rootNames
   Task.io (writeSourceMapFile target maybeSourceMap)
+  Task.io (writeCapabilitiesManifest target artifacts)
 
 -- | Generate code-split JavaScript output to a directory.
 --
@@ -337,3 +341,38 @@ writeSourceMapFile target (Just sm) =
   File.writeBuilder mapPath (SourceMap.toBuilder sm)
   where
     mapPath = target <> ".map"
+
+-- | Write capabilities manifest alongside the JavaScript output.
+--
+-- Scans FFI info from build artifacts for @capability annotations
+-- and writes a @capabilities.json@ file in the same directory as the
+-- JavaScript output. The manifest is only written when FFI content
+-- contains capability annotations.
+--
+-- @since 0.19.1
+writeCapabilitiesManifest :: FilePath -> Build.Artifacts -> IO ()
+writeCapabilitiesManifest target artifacts = do
+  let ffiInfoMap = artifacts ^. Build.artifactsFFIInfo
+  moduleFunctions <- parseFFICapabilities ffiInfoMap
+  let manifest = Manifest.collectCapabilities moduleFunctions
+  if hasCapabilities manifest
+    then Manifest.writeManifest manifestPath manifest
+    else pure ()
+  where
+    manifestPath = FilePath.replaceExtension target ".capabilities.json"
+
+-- | Check whether a manifest contains any capabilities.
+hasCapabilities :: Manifest.CapabilityManifest -> Bool
+hasCapabilities m =
+  Manifest._manifestUserActivation m
+    || not (null (Manifest._manifestModules m))
+
+-- | Parse FFI content for capability annotations.
+parseFFICapabilities :: Map.Map String a -> IO [(Text.Text, [FFI.JSDocFunction])]
+parseFFICapabilities ffiInfoMap =
+  traverse parseOne (Map.keys ffiInfoMap)
+  where
+    parseOne path = do
+      result <- FFI.parseJSDocFromFile path
+      let functions = either (const []) id result
+      pure (Text.pack path, functions)

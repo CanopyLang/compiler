@@ -42,9 +42,15 @@ module Install.Execution
 where
 
 import qualified BackgroundWriter as BackgroundWriter
+import qualified Builder.LockFile as LockFile
+import qualified Canopy.Constraint as Constraint
 import qualified Canopy.Details as Details
 import qualified Canopy.Outline as Outline
+import qualified Canopy.Package as Pkg
+import qualified Canopy.Version as Version
 import Control.Lens ((&), (.~), (^.))
+import Data.Map.Strict (Map)
+import qualified Data.Map.Strict as Map
 import qualified Install.Display as Display
 import Install.Types
   ( Changes (..),
@@ -187,7 +193,9 @@ performInstallation ctx scope = do
   result <- Details.verifyInstall scope root env newOutline
   case result of
     Left exit -> rollbackInstallation root oldOutline (Exit.InstallBadDetails exit)
-    Right () -> confirmInstallation
+    Right () -> do
+      generateLockFileFromOutline root newOutline
+      confirmInstallation
 
 -- | Rollback installation changes after failure.
 --
@@ -219,6 +227,25 @@ cancelInstallation :: IO (Either Exit.Install ())
 cancelInstallation = do
   Display.reportCancellation
   return (Right ())
+
+-- | Generate a lock file from the resolved outline dependencies.
+--
+-- Extracts the resolved dependency versions from the outline and
+-- writes them to @canopy.lock@ for reproducible builds.
+--
+-- @since 0.19.1
+generateLockFileFromOutline :: FilePath -> Outline.Outline -> IO ()
+generateLockFileFromOutline root outline =
+  LockFile.generateLockFile root (extractResolvedDeps outline)
+
+-- | Extract resolved dependency versions from an outline.
+extractResolvedDeps :: Outline.Outline -> Map Pkg.Name Version.Version
+extractResolvedDeps (Outline.App appOutline) =
+  Map.union
+    (Outline._appDepsDirect appOutline)
+    (Outline._appDepsIndirect appOutline)
+extractResolvedDeps (Outline.Pkg pkgOutline) =
+  Map.map Constraint.lowerBound (Outline._pkgDeps pkgOutline)
 
 -- | Report installation status to the user.
 --

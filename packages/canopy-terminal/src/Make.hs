@@ -42,6 +42,7 @@ module Make
 where
 
 import qualified BackgroundWriter as BW
+import qualified Builder.LockFile as LockFile
 import qualified Canopy.Details as Details
 import qualified Canopy.ModuleName as ModuleName
 import qualified Compiler
@@ -144,6 +145,7 @@ executeBuildWithRoot root paths flags style =
 coordinateBuildWithRoot :: FilePath -> [FilePath] -> Flags -> Reporting.Style -> BW.Scope -> Task ()
 coordinateBuildWithRoot root paths flags style scope = do
   Task.io (Log.logEvent (BuildStarted (Text.pack "Loading project details")))
+  Task.io (checkLockFileStaleness root)
   details <- loadProjectDetailsFromRoot style scope root
   mode <- getDesiredMode (flags ^. debug) (flags ^. optimize)
   let ctx = createBuildContext style root details mode (flags ^. ffiUnsafe)
@@ -220,6 +222,24 @@ isSplittableTarget _ = False
 splitTargetDir :: Maybe Output -> FilePath
 splitTargetDir (Just (JS target)) = FilePath.takeDirectory target
 splitTargetDir _ = "."
+
+-- | Check whether the lock file is stale with respect to @canopy.json@.
+--
+-- Emits a warning log event when the lock file exists but its stored hash
+-- does not match the current @canopy.json@ content.  This warns users that
+-- their build may not be reproducible without re-running @canopy install@.
+--
+-- @since 0.19.1
+checkLockFileStaleness :: FilePath -> IO ()
+checkLockFileStaleness root = do
+  maybeLock <- LockFile.readLockFile root
+  case maybeLock of
+    Nothing -> pure ()
+    Just lf -> do
+      current <- LockFile.isLockFileCurrent lf root
+      if current
+        then Log.logEvent (PackageOperation "lock-ok" "canopy.lock is current")
+        else Log.logEvent (PackageOperation "lock-stale" "canopy.lock is stale — run 'canopy install' to update")
 
 -- | Extract exposed modules from project details.
 --
