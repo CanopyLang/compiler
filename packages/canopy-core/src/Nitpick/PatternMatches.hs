@@ -268,6 +268,8 @@ checkExpr (Ann.At region expression) errors =
               checkExpr c errors
     Can.Shader _ _ ->
       errors
+    Can.StringConcat parts ->
+      foldr checkExpr errors parts
 
 -- CHECK FIELD
 

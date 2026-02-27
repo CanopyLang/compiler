@@ -508,6 +508,18 @@ formatExpr_ _      Src.Unit = PP.text "()"
 formatExpr_ config (Src.Tuple a b rest) =
   PP.text "( " <> commaSepDocs (map (formatExpr config) (a : b : rest)) <> PP.text " )"
 formatExpr_ _      (Src.Shader _ _) = PP.text "[glsl| ... |]"
+formatExpr_ config (Src.Interpolation segments) = formatInterpolation config segments
+
+-- | Format a string interpolation expression.
+formatInterpolation :: FormatConfig -> [Src.InterpolationSegment] -> PP.Doc
+formatInterpolation config segments =
+  PP.text "[i|" <> PP.hcat (map (formatSegment config) segments) <> PP.text "|]"
+
+-- | Format an interpolation segment.
+formatSegment :: FormatConfig -> Src.InterpolationSegment -> PP.Doc
+formatSegment _config (Src.IStr s) = PP.text (ES.toChars s)
+formatSegment config (Src.IExpr expr) =
+  PP.text "#{" <> formatExpr config expr <> PP.text "}"
 
 -- | Render a float literal to a Doc via its builder representation.
 floatDoc :: EF.Float -> PP.Doc

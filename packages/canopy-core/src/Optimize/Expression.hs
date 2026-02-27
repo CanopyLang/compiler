@@ -10,11 +10,12 @@ where
 import qualified AST.Canonical as Can
 import qualified AST.Optimized as Opt
 import qualified AST.Utils.Shader as Shader
+import qualified Canopy.Data.Index as Index
+import qualified Canopy.Data.Name as Name
+import qualified Canopy.Data.Utf8 as Utf8
 import qualified Canopy.ModuleName as ModuleName
 import Control.Monad (foldM)
-import qualified Canopy.Data.Index as Index
 import qualified Data.Map as Map
-import qualified Canopy.Data.Name as Name
 import qualified Data.Set as Set
 import qualified Optimize.Case as Case
 import qualified Optimize.ConstantFold as ConstantFold
@@ -139,6 +140,24 @@ optimize cycle (Ann.At region expression) =
         <*> traverse (optimize cycle) maybeC
     Can.Shader src (Shader.Types attributes uniforms _varyings) ->
       pure (Opt.Shader src (Map.keysSet attributes) (Map.keysSet uniforms))
+    Can.StringConcat parts ->
+      optimizeStringConcat cycle parts
+
+-- STRING CONCAT
+
+optimizeStringConcat :: Cycle -> [Can.Expr] -> Names.Tracker Opt.Expr
+optimizeStringConcat cycle parts =
+  do
+    optParts <- traverse (optimize cycle) parts
+    appendFunc <- Names.registerGlobal ModuleName.basics Name.append
+    pure (buildAppendChain appendFunc optParts)
+
+buildAppendChain :: Opt.Expr -> [Opt.Expr] -> Opt.Expr
+buildAppendChain appendFunc = go
+  where
+    go [x] = x
+    go (x : rest) = Opt.Call appendFunc [x, go rest]
+    go [] = Opt.Str Utf8.empty
 
 -- UPDATE
 

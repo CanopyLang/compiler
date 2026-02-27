@@ -208,6 +208,8 @@ contextDispatch mismatch badType custom source localizer exprRegion category tip
       recordUpdateValueReport mismatch exprRegion field
     Destructure ->
       destructureReport mismatch
+    Interpolation index ->
+      interpolationReport badType exprRegion index
 
 -- ---------------------------------------------------------------------------
 -- Per-context helpers
@@ -405,3 +407,32 @@ destructureReport mismatch =
       "But then trying to destructure it as:",
       []
     )
+
+-- | Report for a string interpolation expression that is not a String.
+interpolationReport ::
+  ((Maybe Ann.Region, String, String, [Doc.Doc]) -> Report.Report) ->
+  Ann.Region ->
+  Index.ZeroBased ->
+  Report.Report
+interpolationReport badType exprRegion index =
+  badType
+    ( Just exprRegion,
+      "The " <> ith <> " expression in this string interpolation is not a String:",
+      "It is",
+      [ Doc.fillSep
+          [ "Every",
+            "expression",
+            "inside",
+            Doc.dullyellow "#{...}",
+            "must",
+            "be",
+            "a",
+            Doc.green "String" <> "."
+          ],
+        Doc.toSimpleHint
+          "To convert other types to strings, use String.fromInt, String.fromFloat,\
+          \ or write a custom function that returns a String."
+      ]
+    )
+  where
+    ith = Doc.ordinal index

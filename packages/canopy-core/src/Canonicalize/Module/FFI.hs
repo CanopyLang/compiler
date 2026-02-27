@@ -511,7 +511,7 @@ resolveBasicType env ffiModuleName homeModuleName trimmedName unparenthesized =
 
 -- Resolve a module-qualified type like "Capability.CapabilityError"
 resolveQualifiedType :: Env.Env -> ModuleName.Canonical -> ModuleName.Canonical -> String -> Can.Type
-resolveQualifiedType env ffiModuleName homeModuleName qualifiedType =
+resolveQualifiedType env _ffiModuleName homeModuleName qualifiedType =
   let parts = splitOn '.' qualifiedType
       moduleParts = init parts
       typeNamePart = last parts

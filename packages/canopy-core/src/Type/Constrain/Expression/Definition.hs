@@ -60,7 +60,7 @@ constrainDef doConstrain rtv def bodyCon expected = do
 
 -- | Constrain an unannotated definition.
 constrainUnannotatedDef :: Constrain -> Map Name.Name Type -> Region -> Name.Name -> [Can.Pattern] -> Can.Expr -> Constraint -> Maybe Type -> IO Constraint
-constrainUnannotatedDef doConstrain rtv region name args expr bodyCon expectedType =
+constrainUnannotatedDef doConstrain _rtv region name args expr bodyCon expectedType =
   do
     (Args vars tipe resultType (Pattern.State headers pvars revCons)) <-
       constrainArgs args
@@ -250,7 +250,7 @@ recDefsHelpTyped doConstrain rtv otherDefs bodyCon rigidInfo flexInfo region nam
 -- The pattern is matched against the expression type, and any bindings
 -- introduced by the pattern are made available in the body constraint.
 constrainDestruct :: Constrain -> Map Name.Name Type -> Region -> Can.Pattern -> Can.Expr -> Constraint -> IO Constraint
-constrainDestruct doConstrain rtv region pattern expr bodyCon =
+constrainDestruct doConstrain _rtv region pattern expr bodyCon =
   do
     patternVar <- mkFlexVar
     let patternType = VarN patternVar

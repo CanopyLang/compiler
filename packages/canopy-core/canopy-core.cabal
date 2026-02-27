@@ -136,6 +136,7 @@ library
       Optimize.Port
       Parse.Declaration
       Parse.Expression
+      Parse.Interpolation
       Parse.Keyword
       Parse.Module
       Parse.Number

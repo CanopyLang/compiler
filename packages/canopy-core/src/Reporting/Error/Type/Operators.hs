@@ -62,7 +62,6 @@ import qualified Canopy.Data.Name as Name
 import qualified Reporting.Doc as Doc
 import qualified Reporting.Render.Type.Localizer as Localizer
 import qualified Type.Error as TypeErr
-import Reporting.Error.Type.Hint (problemsToHint)
 import Reporting.Error.Type.Render (loneType, typeComparison)
 
 -- ---------------------------------------------------------------------------

@@ -82,6 +82,7 @@ module Canopy.Data.Name.Constants
     -- * Special Names
     utils,
     negate,
+    append,
     true,
     false,
     value,
@@ -220,6 +221,10 @@ utils = fromChars "Utils"
 {-# NOINLINE negate #-}
 negate :: Name
 negate = fromChars "negate"
+
+{-# NOINLINE append #-}
+append :: Name
+append = fromChars "append"
 
 {-# NOINLINE true #-}
 true :: Name

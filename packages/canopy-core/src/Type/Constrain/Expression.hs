@@ -141,6 +141,8 @@ constrain rtv (Ann.At region expression) expected =
       Record.constrainTuple (constrain rtv) region a b maybeC expected
     Can.Shader _src types ->
       Record.constrainShader region types expected
+    Can.StringConcat parts ->
+      constrainStringConcat rtv region parts expected
 
 -- CONSTRAIN LAMBDA
 
@@ -245,6 +247,23 @@ constrainList rtv region entries expected =
 constrainListEntry :: RTV -> Ann.Region -> Type -> Index.ZeroBased -> Can.Expr -> IO Constraint
 constrainListEntry rtv region tipe index expr =
   constrain rtv expr (FromContext region (ListEntry index) tipe)
+
+-- CONSTRAIN STRING CONCAT
+
+constrainStringConcat :: RTV -> Ann.Region -> [Can.Expr] -> Expected Type -> IO Constraint
+constrainStringConcat rtv region parts expected =
+  do
+    partCons <-
+      Index.indexedTraverse (constrainStringPart rtv region) parts
+    return $
+      CAnd
+        [ CAnd partCons,
+          CEqual region String Type.string expected
+        ]
+
+constrainStringPart :: RTV -> Ann.Region -> Index.ZeroBased -> Can.Expr -> IO Constraint
+constrainStringPart rtv region index expr =
+  constrain rtv expr (FromContext region (Interpolation index) Type.string)
 
 -- CONSTRAIN DEF (public API delegates to Definition sub-module)
 

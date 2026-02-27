@@ -16,7 +16,11 @@ tests =
   testGroup
     "Golden.ParseExpr"
     [ goldenExpr "LambdaTupleMap" "List.map (\\(x,y) -> x) [ (1,2), (3,4) ]" "test/Golden/expected/Expr_LambdaTupleMap.golden",
-      goldenExpr "RecordUpdate" "{ r | a = 1, b = 2 }" "test/Golden/expected/Expr_RecordUpdate.golden"
+      goldenExpr "RecordUpdate" "{ r | a = 1, b = 2 }" "test/Golden/expected/Expr_RecordUpdate.golden",
+      goldenExpr "InterpSimple" "[i|Hello #{name}!|]" "test/Golden/expected/Expr_InterpSimple.golden",
+      goldenExpr "InterpMulti" "[i|#{a} and #{b}|]" "test/Golden/expected/Expr_InterpMulti.golden",
+      goldenExpr "InterpPlain" "[i|just text|]" "test/Golden/expected/Expr_InterpPlain.golden",
+      goldenExpr "InterpEmpty" "[i||]" "test/Golden/expected/Expr_InterpEmpty.golden"
     ]
 
 goldenExpr :: String -> String -> FilePath -> TestTree
@@ -38,4 +42,12 @@ exprSummary (Ann.At _ e) = go e
       Src.Tuple _ _ rest -> "Tuple/len=" <> show (2 + length rest)
       Src.Binops ops _ -> "Binops/ops=" <> show (length ops)
       Src.Call _ args -> "Call/args=" <> show (length args)
+      Src.Interpolation segs -> "Interpolation/segs=" <> show (length segs) <> segDetails segs
       other -> take 16 (show other)
+
+segDetails :: [Src.InterpolationSegment] -> String
+segDetails segs = "[" <> List.intercalate "," (map segSummary segs) <> "]"
+
+segSummary :: Src.InterpolationSegment -> String
+segSummary (Src.IStr _) = "str"
+segSummary (Src.IExpr _) = "expr"

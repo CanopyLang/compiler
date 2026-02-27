@@ -13,7 +13,6 @@ module Reporting.Exit.Install
   )
 where
 
-import qualified Exit as BuildExit
 import Reporting.Doc ((<+>))
 import qualified Reporting.Doc as Doc
 

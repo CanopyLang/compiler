@@ -80,6 +80,7 @@ data Context
   | RecordUpdateKeys Name.Name (Map.Map Name.Name Can.FieldUpdate)
   | RecordUpdateValue Name.Name
   | Destructure
+  | Interpolation Index.ZeroBased
   deriving (Show)
 
 -- | The sub-context within a type-annotated definition.

@@ -17,6 +17,7 @@ import qualified Canonicalize.Environment as Env
 import qualified Canonicalize.Environment.Dups as Dups
 import qualified Canonicalize.Pattern as Pattern
 import qualified Canonicalize.Type as Type
+import qualified Canopy.Data.Utf8 as Utf8
 import qualified Canopy.ModuleName as ModuleName
 import qualified Canopy.Package as Pkg
 import Control.Monad (foldM)
@@ -129,6 +130,8 @@ canonicalize env (Ann.At region expression) =
           <*> canonicalizeTupleExtras region env cs
       Src.Shader src tipe ->
         Result.ok (Can.Shader src tipe)
+      Src.Interpolation segments ->
+        canonicalizeInterpolation env region segments
 
 -- CANONICALIZE TUPLE EXTRAS
 
@@ -141,6 +144,33 @@ canonicalizeTupleExtras region env extras =
       Just <$> canonicalize env three
     _ ->
       Result.throw (Error.TupleLargerThanThree region)
+
+-- CANONICALIZE INTERPOLATION
+
+canonicalizeInterpolation ::
+  Env.Env ->
+  Ann.Region ->
+  [Src.InterpolationSegment] ->
+  Result FreeLocals [Warning.Warning] Can.Expr_
+canonicalizeInterpolation env region segments =
+  case segmentsToExprs region segments of
+    [] ->
+      Result.ok (Can.Str Utf8.empty)
+    [single] ->
+      Ann.toValue <$> canonicalize env single
+    exprs ->
+      Can.StringConcat <$> traverse (canonicalize env) exprs
+
+segmentsToExprs :: Ann.Region -> [Src.InterpolationSegment] -> [Src.Expr]
+segmentsToExprs region = concatMap (segmentToExpr region)
+
+segmentToExpr :: Ann.Region -> Src.InterpolationSegment -> [Src.Expr]
+segmentToExpr region segment =
+  case segment of
+    Src.IStr str
+      | Utf8.isEmpty str -> []
+      | otherwise -> [Ann.At region (Src.Str str)]
+    Src.IExpr expr -> [expr]
 
 -- CANONICALIZE IF BRANCH
 

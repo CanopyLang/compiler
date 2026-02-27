@@ -112,8 +112,8 @@ toExprReport source context expr startRow startCol =
       toIndentOperatorRightReport source op startRow startCol row col
     EndlessInterpolation row col ->
       toEndlessInterpolationReport source row col
-    InterpolationExpr expr row col ->
-      toExprReport source context expr row col
+    InterpolationExpr innerExpr row col ->
+      toExprReport source context innerExpr row col
     InterpolationClose row col ->
       toInterpolationCloseReport source row col
 

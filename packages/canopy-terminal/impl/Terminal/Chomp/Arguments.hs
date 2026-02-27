@@ -79,7 +79,6 @@ import Terminal.Internal
     Parser (..),
     RequiredArgs (..),
   )
-import qualified Reporting.InternalError as InternalError
 
 -- | Parse complete argument specification with error handling.
 --

@@ -6,6 +6,7 @@ import qualified Canopy.Details as Details
 import qualified Data.ByteString.Builder as BB
 import qualified Data.ByteString.Lazy.Char8 as BL8
 import qualified Canopy.Data.NonEmptyList as NE
+import qualified Data.List as List
 import qualified Generate
 import qualified Reporting
 import qualified Reporting.Task as Task
@@ -19,18 +20,18 @@ tests :: TestTree
 tests =
   testGroup
     "Golden.JsGen"
-    [ goldenJs "DevMulti" sampleModule "test/Golden/expected/JsDevMulti.js"
+    [ goldenJs "DevMulti" simplifyHeader sampleModule "test/Golden/expected/JsDevMulti.js",
+      goldenJs "Interpolation" extractUserDefs interpModule "test/Golden/expected/JsInterpolation.js"
     ]
 
-goldenJs :: String -> String -> FilePath -> TestTree
-goldenJs name src expectedPath =
+goldenJs :: String -> (BL8.ByteString -> BL8.ByteString) -> String -> FilePath -> TestTree
+goldenJs name extract src expectedPath =
   goldenVsString name expectedPath
     . withSystemTempDirectory "can-js-golden"
     $ \tmp -> do
       setupPkgProject tmp src
       builder <- runDev tmp
-      -- Compare only a stable header to avoid brittle diffs
-      pure (simplifyHeader (BB.toLazyByteString builder))
+      pure (extract (BB.toLazyByteString builder))
 
 -- Extract only the stable structural parts for comparison
 simplifyHeader :: BL8.ByteString -> BL8.ByteString
@@ -42,6 +43,18 @@ simplifyHeader bs =
         then BL8.unlines ["(function(scope){", "'use strict';", ")}"]
         else BL8.unlines [l1, l2, ")}"]
     _ -> bs
+
+-- Extract lines containing user-defined functions (var $author$project$Main$...)
+extractUserDefs :: BL8.ByteString -> BL8.ByteString
+extractUserDefs bs =
+  BL8.unlines (filter isUserDef (BL8.lines bs))
+  where
+    needle = BL8.pack "$author$project$Main$"
+    isUserDef line = needle `isInfixOfLazy` line
+
+isInfixOfLazy :: BL8.ByteString -> BL8.ByteString -> Bool
+isInfixOfLazy needle haystack =
+  any (BL8.isPrefixOf needle) (BL8.tails haystack)
 
 runDev :: FilePath -> IO BB.Builder
 runDev tmp = do
@@ -104,4 +117,23 @@ sampleModule =
       "compose f g x = f (g x)",
       "",
       "main = text (String.fromInt (compose (add 1) (mul 2) 3))"
+    ]
+
+interpModule :: String
+interpModule =
+  unlines
+    [ "module Main exposing (main, greeting, plain)",
+      "",
+      "import Html exposing (text)",
+      "",
+      "greeting : String -> String -> String",
+      "greeting first last =",
+      "    [i|Hello #{first} #{last}!|]",
+      "",
+      "plain : String",
+      "plain =",
+      "    [i|just a string|]",
+      "",
+      "main =",
+      "    text (greeting \"World\" \"!\")"
     ]

@@ -216,6 +216,19 @@ data Expr_
   | Unit
   | Tuple Expr Expr (Maybe Expr)
   | Shader Shader.Source Shader.Types
+  | -- | String interpolation concatenation.
+    --
+    -- Represents a string interpolation expression like @[i|Hello #{name}!|]@.
+    -- Each sub-expression must be a @String@. The optimizer converts this to
+    -- a chain of @Basics.append@ calls, producing the same JS as manual @++@.
+    --
+    -- Unlike the @++@ operator (which uses @appendable@ and accepts both
+    -- @String@ and @List@), @StringConcat@ constrains every part to exactly
+    -- @String@, providing clearer error messages when non-String values are
+    -- used in interpolation holes.
+    --
+    -- @since 0.19.2
+    StringConcat [Expr]
   deriving (Show)
 
 data CaseBranch

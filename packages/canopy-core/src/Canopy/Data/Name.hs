@@ -96,6 +96,7 @@ module Canopy.Data.Name
     browserTest,
     utils,
     negate,
+    append,
     true,
     false,
     value,
