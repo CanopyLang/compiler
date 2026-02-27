@@ -137,6 +137,8 @@ library
       Reporting.Doc.ColorQQ
       Reporting.Error
       Reporting.Error.Canonicalize
+      Reporting.Error.Canonicalize.Diagnostics
+      Reporting.Error.Canonicalize.Helpers
       Reporting.Error.Docs
       Reporting.Error.Import
       Reporting.Error.Json
@@ -152,6 +154,8 @@ library
       Reporting.Error.Syntax.Type
       Reporting.Error.Syntax.Types
       Reporting.Error.Type
+      Reporting.Error.Type.Hint
+      Reporting.Error.Type.Operators
       Reporting.ErrorCode
       Reporting.Exit.Help
       Reporting.InternalError
@@ -169,6 +173,7 @@ library
       Type.Instantiate
       Type.Occurs
       Type.Solve
+      Type.Solve.Pool
       Type.Type
       Type.Unify
       Type.UnionFind

@@ -39,6 +39,9 @@ library
       Compiler
       Exit
       Http
+      Http.Archive
+      Http.Error
+      Http.Upload
       Interface.JSON
       PackageCache
   other-modules:
