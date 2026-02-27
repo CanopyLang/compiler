@@ -9,7 +9,7 @@ module Unit.Builder.StateTest (tests) where
 
 import qualified Builder.State as State
 import qualified Data.Map.Strict as Map
-import qualified Data.Name as Name
+import qualified Canopy.Data.Name as Name
 import Test.Tasty
 import Test.Tasty.HUnit
 

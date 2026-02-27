@@ -28,8 +28,8 @@ import qualified Canonicalize.Module as Module
 import qualified Canopy.Package as Pkg
 import Parse.Module (ProjectType (..))
 import qualified Data.Map.Strict as Map
-import qualified Data.Name as Name
-import qualified Data.OneOrMore as OneOrMore
+import qualified Canopy.Data.Name as Name
+import qualified Canopy.Data.OneOrMore as OneOrMore
 import qualified Foreign.FFI as FFI
 import qualified Reporting.Annotation as Ann
 import qualified Reporting.Error.Canonicalize as Error

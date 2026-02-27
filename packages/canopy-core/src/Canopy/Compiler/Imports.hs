@@ -7,7 +7,7 @@ where
 
 import qualified AST.Source as Src
 import qualified Canopy.ModuleName as ModuleName
-import qualified Data.Name as Name
+import qualified Canopy.Data.Name as Name
 import qualified Reporting.Annotation as Ann
 
 -- DEFAULTS

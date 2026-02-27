@@ -10,8 +10,8 @@ module Unit.Optimize.CaseTest (tests) where
 
 import qualified AST.Canonical as Can
 import qualified AST.Optimized as Opt
-import qualified Data.Index as Index
-import qualified Data.Name as Name
+import qualified Canopy.Data.Index as Index
+import qualified Canopy.Data.Name as Name
 import qualified Optimize.Case as Case
 import qualified Reporting.Annotation as Ann
 import Test.Tasty

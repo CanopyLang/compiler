@@ -11,7 +11,7 @@ import qualified Canopy.ModuleName as ModuleName
 import Data.Foldable (forM_)
 import Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
-import qualified Data.Name as Name
+import qualified Canopy.Data.Name as Name
 import qualified Type.Error as Error
 import qualified Type.Occurs as Occurs
 import Type.Type as Type

@@ -17,7 +17,7 @@ module Reporting.Error.Syntax.Literal
 where
 
 import qualified Data.Char as Char
-import qualified Data.Name as Name
+import qualified Canopy.Data.Name as Name
 import Numeric (showHex)
 import Parse.Primitives (Col, Row)
 import Parse.Symbol (BadOperator (..))

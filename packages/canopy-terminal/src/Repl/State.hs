@@ -29,7 +29,7 @@ import qualified Data.ByteString.Lazy as LBS
 import qualified Data.List as List
 import Data.Map (Map)
 import qualified Data.Map as Map
-import qualified Data.Name as Name
+import qualified Canopy.Data.Name as Name
 import Repl.Types (M, Output (..), State (..), outputToBuilder)
 import System.Console.Haskeline (Completion)
 import qualified System.Console.Haskeline as Repl

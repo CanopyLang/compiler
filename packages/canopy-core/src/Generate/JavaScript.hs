@@ -33,16 +33,16 @@ import Data.ByteString.Builder (Builder)
 import qualified Data.ByteString.Builder as BB
 import qualified Data.ByteString.Lazy as BL
 import Data.Word (Word8)
-import qualified Data.Index as Index
+import qualified Canopy.Data.Index as Index
 import qualified Data.List as List
 import Data.Map (Map)
 import qualified Data.Map as Map
 import qualified Data.Maybe
-import qualified Data.Name as Name
+import qualified Canopy.Data.Name as Name
 import Data.Set (Set)
 import qualified Data.Set as Set
 import qualified Data.Text as Text
-import qualified Data.Utf8 as Utf8
+import qualified Canopy.Data.Utf8 as Utf8
 import qualified FFI.Validator as Validator
 import qualified Generate.JavaScript.Builder as JS
 import qualified Generate.JavaScript.Expression as Expr

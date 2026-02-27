@@ -63,7 +63,7 @@ import qualified Data.Binary as Binary
 import qualified Data.ByteString as BS
 import qualified Data.List as List
 import qualified Data.Map.Strict as Map
-import qualified Data.Name as Name
+import qualified Canopy.Data.Name as Name
 import qualified System.Directory as Dir
 import qualified System.FilePath as FP
 import System.FilePath ((</>))

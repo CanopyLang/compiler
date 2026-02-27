@@ -31,7 +31,7 @@
 -- @
 --
 -- @since 0.19.1
-module Data.Name.Kernel
+module Canopy.Data.Name.Kernel
   ( -- * Kernel Operations
     getKernel,
     isKernel,
@@ -45,8 +45,8 @@ module Data.Name.Kernel
 where
 
 import Control.Exception (assert)
-import Data.Name.Core (Name)
-import qualified Data.Utf8 as Utf8
+import Canopy.Data.Name.Core (Name)
+import qualified Canopy.Data.Utf8 as Utf8
 import GHC.Prim
 import GHC.ST (ST (ST), runST)
 

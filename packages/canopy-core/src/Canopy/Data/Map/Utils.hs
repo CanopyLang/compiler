@@ -1,7 +1,7 @@
 {-# LANGUAGE TupleSections #-}
 
 -- |
--- Module: Data.Map.Utils
+-- Module: Canopy.Data.Map.Utils
 -- Description: Utility functions for Map operations in the Canopy compiler
 -- Copyright: (c) 2024 Canopy Contributors
 -- License: BSD-3-Clause
@@ -75,7 +75,7 @@
 -- * **Optimization analysis** - Test for optimization opportunities efficiently
 --
 -- @since 0.19.1
-module Data.Map.Utils
+module Canopy.Data.Map.Utils
   ( -- * Map Construction
     fromKeys,
     fromKeysA,
@@ -93,7 +93,7 @@ where
 import Control.Monad (join)
 import qualified Data.Map as Map
 import Data.Map.Internal (Map (..))
-import qualified Data.NonEmptyList as NE
+import qualified Canopy.Data.NonEmptyList as NE
 import Prelude hiding (any)
 
 -- | Build a map from a list of keys using a value generation function.

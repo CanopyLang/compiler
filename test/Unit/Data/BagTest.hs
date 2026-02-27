@@ -23,8 +23,8 @@ import Test.Tasty
 import Test.Tasty.HUnit
 import Test.Tasty.QuickCheck
 
-import qualified Data.Bag as Bag
-import Data.Bag (Bag(..))
+import qualified Canopy.Data.Bag as Bag
+import Canopy.Data.Bag (Bag(..))
 import qualified Data.List as List
 
 -- | Main test tree containing all Data.Bag tests.

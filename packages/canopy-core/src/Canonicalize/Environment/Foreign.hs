@@ -16,7 +16,7 @@ import Control.Monad (foldM)
 import qualified Data.List as List
 import qualified Data.Map.Strict as Map
 import qualified Data.Maybe
-import qualified Data.Name as Name
+import qualified Canopy.Data.Name as Name
 import qualified Reporting.Annotation as Ann
 import qualified Reporting.Error.Canonicalize as Error
 import qualified Reporting.InternalError as InternalError

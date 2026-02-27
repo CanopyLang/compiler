@@ -23,8 +23,8 @@ module Unit.AST.SourceArithmeticTest
 
 import Test.Tasty
 import Test.Tasty.HUnit
-import qualified Data.Name as Name
-import qualified Data.Utf8 as Utf8
+import qualified Canopy.Data.Name as Name
+import qualified Canopy.Data.Utf8 as Utf8
 import qualified AST.Source as Src
 import qualified Canopy.Float as EF
 import qualified Reporting.Annotation as A

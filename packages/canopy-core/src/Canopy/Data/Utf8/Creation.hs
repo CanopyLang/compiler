@@ -14,7 +14,7 @@
 -- * Low-level memory allocation for string building
 --
 -- @since 0.19.1
-module Data.Utf8.Creation
+module Canopy.Data.Utf8.Creation
   ( -- * String Creation
     fromChars,
     toChars,
@@ -29,7 +29,7 @@ where
 
 import Data.Bits (shiftR, (.&.))
 import qualified Data.Char as Char
-import Data.Utf8.Types (Utf8 (..))
+import Canopy.Data.Utf8.Types (Utf8 (..))
 import GHC.Exts
   ( Char (C#),
     Int (I#),

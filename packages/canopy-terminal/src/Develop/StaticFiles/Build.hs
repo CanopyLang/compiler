@@ -13,7 +13,7 @@ import Data.ByteString (ByteString)
 import qualified Data.ByteString as BS
 import qualified Data.ByteString.Builder as BB
 import qualified Data.ByteString.Lazy as LBS
-import qualified Data.NonEmptyList as NE
+import qualified Canopy.Data.NonEmptyList as NE
 import qualified Generate
 import qualified Reporting
 import qualified Reporting.Exit as Exit

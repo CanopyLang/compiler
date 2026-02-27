@@ -64,7 +64,7 @@ import Control.Lens.TH (makeLenses)
 import qualified Control.Concurrent as Concurrent
 import qualified Control.Exception as Exception
 import Control.Monad (filterM, void)
-import qualified Data.Utf8 as Utf8
+import qualified Canopy.Data.Utf8 as Utf8
 import qualified Data.Aeson as Aeson
 import Data.Aeson (Object)
 import qualified Data.Aeson.Types as AesonTypes
@@ -74,7 +74,7 @@ import qualified Data.ByteString.Lazy as LBS
 import qualified Data.List as List
 import qualified Data.Map.Strict as Map
 import qualified Data.Maybe as Maybe
-import qualified Data.NonEmptyList as NE
+import qualified Canopy.Data.NonEmptyList as NE
 import qualified Data.Set as Set
 import qualified Data.Text as Text
 import qualified Data.Text.Encoding as TextEnc

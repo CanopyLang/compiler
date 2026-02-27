@@ -19,10 +19,10 @@ where
 import qualified AST.Canonical as Can
 import qualified AST.Optimized as Opt
 import qualified Canopy.ModuleName as ModuleName
-import qualified Data.Index as Index
+import qualified Canopy.Data.Index as Index
 import Data.Map (Map)
 import qualified Data.Map as Map
-import qualified Data.Name as Name
+import qualified Canopy.Data.Name as Name
 import Data.Set (Set)
 import qualified Data.Set as Set
 import qualified Reporting.Annotation as Ann

@@ -37,7 +37,7 @@ import qualified Canopy.Docs as Docs
 import qualified Canopy.Interface as Interface
 import qualified Canopy.ModuleName as ModuleName
 import qualified Data.Map.Strict as Map
-import qualified Data.Name as Name
+import qualified Canopy.Data.Name as Name
 import qualified Json.String as Json
 
 -- | Extract full documentation from compiled build artifacts.

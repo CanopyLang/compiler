@@ -9,7 +9,7 @@ where
 
 import Data.ByteString.Builder (Builder)
 import qualified Data.ByteString.Builder as BB
-import qualified Data.Name as Name
+import qualified Canopy.Data.Name as Name
 import Text.RawString.QQ (r)
 
 -- SANDWICH

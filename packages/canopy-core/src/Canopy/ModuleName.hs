@@ -50,8 +50,8 @@ import qualified Data.Aeson.Key as AesonKey
 import Data.Binary (Binary (..))
 import qualified Data.Text as Text
 import qualified Data.Text.Encoding as TextEnc
-import qualified Data.Name as Name
-import qualified Data.Utf8 as Utf8
+import qualified Canopy.Data.Name as Name
+import qualified Canopy.Data.Utf8 as Utf8
 import Data.Word (Word8)
 import Foreign.Ptr (Ptr, minusPtr, plusPtr)
 import qualified Json.Decode as Decode

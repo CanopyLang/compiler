@@ -25,8 +25,8 @@ import Test.Tasty.HUnit
 import Test.Tasty.QuickCheck
 import Test.QuickCheck (forAll, listOf, listOf1, choose)
 
-import qualified Data.Utf8 as Utf8
-import Data.Utf8 (Utf8)
+import qualified Canopy.Data.Utf8 as Utf8
+import Canopy.Data.Utf8 (Utf8)
 import Data.Word (Word8)
 import qualified Data.ByteString.Builder as Builder
 import Data.ByteString.Lazy (toStrict)

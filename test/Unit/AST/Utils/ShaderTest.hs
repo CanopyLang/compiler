@@ -24,7 +24,7 @@ import Data.Binary (decode, encode)
 import qualified Data.ByteString.Builder as BB
 import qualified Data.ByteString.Lazy as BL
 import qualified Data.Map as Map
-import qualified Data.Name as Name
+import qualified Canopy.Data.Name as Name
 
 -- | Main test tree containing all AST.Utils.Shader tests.
 --

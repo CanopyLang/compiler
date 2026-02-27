@@ -56,8 +56,8 @@ import qualified Data.ByteString as BS
 import qualified Data.ByteString.Builder as BB
 import qualified Data.ByteString.Lazy as BL
 import qualified Data.List as List
-import Data.Name (Name)
-import qualified Data.Name as Name
+import Canopy.Data.Name (Name)
+import qualified Canopy.Data.Name as Name
 import Data.Text (Text)
 import qualified Data.Text as Text
 import qualified Data.Text.Encoding as TE

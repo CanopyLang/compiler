@@ -16,7 +16,7 @@ import qualified Data.List as List
 import Data.Map (Map)
 import qualified Data.Map as Map
 import qualified Data.Maybe as Maybe
-import qualified Data.Name as Name
+import qualified Canopy.Data.Name as Name
 import Data.Set (Set)
 import qualified Data.Set as Set
 import qualified Generate.JavaScript.Name as JsName

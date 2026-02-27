@@ -38,7 +38,7 @@
 -- @
 --
 -- @since 0.19.1
-module Data.Name.TypeVariable
+module Canopy.Data.Name.TypeVariable
   ( -- * Type Variable Generation
     fromTypeVariable,
     fromTypeVariableScheme,
@@ -46,8 +46,8 @@ module Data.Name.TypeVariable
   )
 where
 
-import Data.Name.Core (Name)
-import qualified Data.Utf8 as Utf8
+import Canopy.Data.Name.Core (Name)
+import qualified Canopy.Data.Utf8 as Utf8
 import GHC.Exts
   ( Int (I#),
     isTrue#,

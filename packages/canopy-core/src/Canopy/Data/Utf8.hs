@@ -35,7 +35,7 @@
 -- @
 --
 -- @since 0.19.1
-module Data.Utf8
+module Canopy.Data.Utf8
   ( -- * Core Types and Operations
     Utf8 (..),
     isEmpty,
@@ -82,7 +82,7 @@ where
 
 -- Re-export all functionality from sub-modules
 
-import Data.Utf8.Binary
-import Data.Utf8.Builder
-import Data.Utf8.Core
-import Data.Utf8.Encoding
+import Canopy.Data.Utf8.Binary
+import Canopy.Data.Utf8.Builder
+import Canopy.Data.Utf8.Core
+import Canopy.Data.Utf8.Encoding

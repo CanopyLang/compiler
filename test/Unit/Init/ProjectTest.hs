@@ -42,7 +42,7 @@ import qualified Canopy.Version as Version
 import Control.Lens ((&), (.~), (^.))
 import qualified Control.Lens as Lens
 import qualified Data.Map as Map
-import qualified Data.NonEmptyList as NE
+import qualified Canopy.Data.NonEmptyList as NE
 import qualified Deps.Solver as Solver
 import qualified Init.Project as Project
 import Init.Types

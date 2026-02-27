@@ -48,7 +48,7 @@ import qualified Data.ByteString.Builder as BB
 import qualified Data.ByteString.Char8 as BSC
 import qualified Data.ByteString.UTF8 as BS_UTF8
 import Data.Map (Map)
-import qualified Data.Name as Name
+import qualified Canopy.Data.Name as Name
 import System.Exit (ExitCode)
 
 -- | REPL command line flags and configuration options.

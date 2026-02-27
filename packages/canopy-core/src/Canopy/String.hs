@@ -15,8 +15,8 @@ where
 import Data.Binary (Binary, get, put)
 import Data.Bits (shiftR, (.&.))
 import qualified Data.ByteString.Builder as BB
-import Data.Utf8 (MBA, copyFromPtr, freeze, newByteArray, writeWord8)
-import qualified Data.Utf8 as Utf8
+import Canopy.Data.Utf8 (MBA, copyFromPtr, freeze, newByteArray, writeWord8)
+import qualified Canopy.Data.Utf8 as Utf8
 import GHC.Exts (Ptr, RealWorld)
 import GHC.IO (stToIO, unsafeDupablePerformIO)
 import GHC.ST (ST)

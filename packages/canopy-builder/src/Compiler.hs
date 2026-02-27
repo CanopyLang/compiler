@@ -51,8 +51,8 @@ import qualified Control.Concurrent.Async as Async
 import Data.IORef (IORef, newIORef, readIORef, atomicModifyIORef')
 import qualified Data.Maybe as Maybe
 import qualified Data.Map.Strict as Map
-import qualified Data.Name as Name
-import qualified Data.NonEmptyList as NE
+import qualified Canopy.Data.Name as Name
+import qualified Canopy.Data.NonEmptyList as NE
 import qualified Data.Set as Set
 import qualified Data.ByteString as BS
 import Logging.Event (LogEvent (..), Phase (..))

@@ -11,7 +11,7 @@ import qualified Canopy.ModuleName as ModuleName
 import qualified Canopy.Package as Pkg
 import qualified Canopy.Version as Version
 import qualified Data.Map.Strict as Map
-import qualified Data.Utf8 as Utf8
+import qualified Canopy.Data.Utf8 as Utf8
 import qualified PackageCache
 import Test.Tasty
 import Test.Tasty.HUnit

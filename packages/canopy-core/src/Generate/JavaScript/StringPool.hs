@@ -25,9 +25,9 @@ import qualified AST.Optimized as Opt
 import Data.ByteString.Builder (Builder)
 import Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
-import qualified Data.Name as Name
+import qualified Canopy.Data.Name as Name
 import qualified Canopy.String as ES
-import qualified Data.Utf8 as Utf8
+import qualified Canopy.Data.Utf8 as Utf8
 import qualified Generate.JavaScript.Name as JsName
 
 -- | Pool of deduplicated string literals for production builds.

@@ -13,9 +13,9 @@ import qualified Canopy.ModuleName as ModuleName
 import qualified Canopy.Package as Pkg
 import Control.Lens ((^.))
 import qualified Data.Map.Strict as Map
-import qualified Data.Name as Name
+import qualified Canopy.Data.Name as Name
 import qualified Data.Set as Set
-import qualified Data.Utf8 as Utf8
+import qualified Canopy.Data.Utf8 as Utf8
 import Generate.JavaScript.CodeSplit.Analyze (analyze, reachableFrom)
 import Generate.JavaScript.CodeSplit.Types
   ( ChunkGraph,

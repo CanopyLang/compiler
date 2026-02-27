@@ -35,7 +35,7 @@ import qualified Canopy.ModuleName as ModuleName
 import qualified Canopy.Outline as Outline
 import qualified Canopy.Package as Pkg
 import Control.Lens (makeLenses)
-import qualified Data.Utf8 as Utf8
+import qualified Canopy.Data.Utf8 as Utf8
 import Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
 import qualified Data.Time as Time

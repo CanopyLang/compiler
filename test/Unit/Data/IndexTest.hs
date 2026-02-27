@@ -23,8 +23,8 @@ import Test.Tasty
 import Test.Tasty.HUnit
 import Test.Tasty.QuickCheck
 
-import qualified Data.Index as Index
-import Data.Index (ZeroBased, VerifiedList(..))
+import qualified Canopy.Data.Index as Index
+import Canopy.Data.Index (ZeroBased, VerifiedList(..))
 
 -- | Main test tree containing all Data.Index tests.
 --

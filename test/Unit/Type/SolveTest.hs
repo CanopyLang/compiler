@@ -15,7 +15,7 @@ import qualified AST.Canonical as Can
 import qualified Canopy.ModuleName as ModuleName
 import Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
-import qualified Data.Name as Name
+import qualified Canopy.Data.Name as Name
 import qualified Reporting.Annotation as Ann
 import qualified Reporting.Error.Type as Error
 import Test.Tasty

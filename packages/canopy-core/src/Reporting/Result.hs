@@ -10,7 +10,7 @@ module Reporting.Result
   )
 where
 
-import qualified Data.OneOrMore as OneOrMore
+import qualified Canopy.Data.OneOrMore as OneOrMore
 import qualified Reporting.Warning as Warning
 
 -- RESULT

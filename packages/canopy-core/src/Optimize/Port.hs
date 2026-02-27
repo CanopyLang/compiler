@@ -12,9 +12,9 @@ import qualified AST.Optimized as Opt
 import qualified AST.Utils.Type as Type
 import qualified Canopy.ModuleName as ModuleName
 import Control.Monad (foldM)
-import qualified Data.Index as Index
+import qualified Canopy.Data.Index as Index
 import qualified Data.Map as Map
-import qualified Data.Name as Name
+import qualified Canopy.Data.Name as Name
 import qualified Optimize.Names as Names
 import qualified Reporting.InternalError as InternalError
 import Prelude hiding (maybe, null)

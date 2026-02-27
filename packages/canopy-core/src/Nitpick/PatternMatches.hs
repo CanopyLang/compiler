@@ -19,13 +19,13 @@ http://moscova.inria.fr/~maranget/papers/warn/warn.pdf
 import qualified AST.Canonical as Can
 import qualified Canopy.ModuleName as ModuleName
 import qualified Canopy.String as ES
-import qualified Data.Index as Index
+import qualified Canopy.Data.Index as Index
 import qualified Data.List as List
 import Data.Map (Map)
 import qualified Data.Map as Map
 import qualified Data.Maybe as Maybe
-import qualified Data.Name as Name
-import qualified Data.NonEmptyList as NE
+import qualified Canopy.Data.Name as Name
+import qualified Canopy.Data.NonEmptyList as NE
 import qualified Reporting.Annotation as Ann
 import qualified Reporting.InternalError as InternalError
 

@@ -25,10 +25,10 @@ import qualified Canopy.String as ES
 import Control.Arrow (second)
 import Control.Monad (liftM, liftM2, liftM5)
 import Data.Binary
-import qualified Data.Index as Index
+import qualified Canopy.Data.Index as Index
 import qualified Data.List as List
 import qualified Data.Maybe as Maybe
-import qualified Data.Name as Name
+import qualified Canopy.Data.Name as Name
 import qualified Data.Set as Set
 import qualified Reporting.Annotation as Ann
 import qualified Reporting.InternalError as InternalError

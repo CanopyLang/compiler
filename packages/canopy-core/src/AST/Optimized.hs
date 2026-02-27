@@ -144,11 +144,11 @@ import Control.Applicative ((<|>))
 import qualified Control.Monad as Monad
 import qualified Data.Binary as Binary
 import Data.Word (Word8)
-import qualified Data.Index as Index
+import qualified Canopy.Data.Index as Index
 import Data.Map (Map)
 import qualified Data.Map as Map
-import Data.Name (Name)
-import qualified Data.Name as Name
+import Canopy.Data.Name (Name)
+import qualified Canopy.Data.Name as Name
 import Data.Set (Set)
 import qualified Data.Set as Set
 import qualified Optimize.DecisionTree as DT

@@ -2,7 +2,7 @@ module Unit.AST.SourceTest (tests) where
 
 import qualified AST.Source as Src
 import qualified AST.Utils.Binop as Binop
-import qualified Data.Name as Name
+import qualified Canopy.Data.Name as Name
 import qualified Reporting.Annotation as Ann
 import Test.Tasty
 import Test.Tasty.HUnit

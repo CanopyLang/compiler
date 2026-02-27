@@ -9,7 +9,7 @@ module Unit.Query.EngineTest (tests) where
 
 import qualified Canopy.Package as Pkg
 import qualified Data.ByteString as BS
-import qualified Data.Utf8 as Utf8
+import qualified Canopy.Data.Utf8 as Utf8
 import qualified Parse.Module as Parse
 import qualified Query.Engine as Engine
 import Query.Simple

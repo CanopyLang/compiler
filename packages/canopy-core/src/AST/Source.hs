@@ -135,8 +135,8 @@ import qualified AST.Utils.Binop as Binop
 import qualified AST.Utils.Shader as Shader
 import qualified Canopy.Float as EF
 import qualified Canopy.String as ES
-import Data.Name (Name)
-import qualified Data.Name as Name
+import Canopy.Data.Name (Name)
+import qualified Canopy.Data.Name as Name
 import qualified Parse.Primitives as Parse
 import qualified Reporting.Annotation as Ann
 

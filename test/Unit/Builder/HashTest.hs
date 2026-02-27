@@ -10,7 +10,7 @@ module Unit.Builder.HashTest (tests) where
 import qualified Builder.Hash as Hash
 import qualified Data.ByteString.Char8 as BSC
 import qualified Data.Map.Strict as Map
-import qualified Data.Name as Name
+import qualified Canopy.Data.Name as Name
 import qualified System.IO
 import System.IO (Handle)
 import System.IO.Temp (withSystemTempFile)

@@ -7,7 +7,7 @@ module Reporting.Warning
 where
 
 import qualified AST.Canonical as Can
-import qualified Data.Name as Name
+import qualified Canopy.Data.Name as Name
 import qualified Reporting.Annotation as Ann
 
 -- ALL POSSIBLE WARNINGS

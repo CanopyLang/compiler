@@ -32,9 +32,9 @@ import qualified Data.Map as Map
 import qualified Data.Text as Text
 import qualified Reporting.InternalError as InternalError
 import qualified Data.Map.Merge.Strict as Map
-import qualified Data.Name as Name
-import qualified Data.NonEmptyList as NE
-import qualified Data.OneOrMore as OneOrMore
+import qualified Canopy.Data.Name as Name
+import qualified Canopy.Data.NonEmptyList as NE
+import qualified Canopy.Data.OneOrMore as OneOrMore
 import Data.Word (Word8)
 import Foreign.Ptr (Ptr, plusPtr)
 import qualified Json.Decode as Decode

@@ -23,11 +23,11 @@ import Test.Tasty
 import Test.Tasty.HUnit
 import Test.Tasty.QuickCheck (testProperty, Fun(..))
 
-import qualified Data.Map.Utils as MapUtils
+import qualified Canopy.Data.Map.Utils as MapUtils
 import qualified Data.Map as Map
 import Data.Map (Map)
-import qualified Data.NonEmptyList as NE
-import Data.NonEmptyList (List(..))
+import qualified Canopy.Data.NonEmptyList as NE
+import Canopy.Data.NonEmptyList (List(..))
 
 -- | Main test tree containing all Data.Map.Utils tests.
 --

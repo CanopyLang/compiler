@@ -5,8 +5,8 @@ import qualified AST.Optimized as Opt
 import qualified Canopy.ModuleName as ModuleName
 import qualified Canopy.Package as Pkg
 import qualified Data.Map.Strict as Map
-import Data.Name (Name)
-import qualified Data.Name as Name
+import Canopy.Data.Name (Name)
+import qualified Canopy.Data.Name as Name
 import qualified Data.Set as Set
 import qualified Generate.JavaScript.Minify as Minify
 import Test.Tasty

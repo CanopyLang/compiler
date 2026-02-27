@@ -28,7 +28,7 @@ where
 import Control.Lens (makeLenses)
 import Data.Map.Strict (Map)
 import Data.Set (Set)
-import Data.NonEmptyList (List)
+import Canopy.Data.NonEmptyList (List)
 import qualified AST.Optimized as Opt
 import qualified Canopy.Docs as Docs
 import qualified Canopy.Interface as Interface

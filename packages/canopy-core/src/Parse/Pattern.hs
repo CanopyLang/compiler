@@ -10,8 +10,8 @@ where
 
 import qualified AST.Source as Src
 import qualified Data.List as List
-import qualified Data.Name as Name
-import qualified Data.Utf8 as Utf8
+import qualified Canopy.Data.Name as Name
+import qualified Canopy.Data.Utf8 as Utf8
 import Foreign.Ptr (plusPtr)
 import qualified Parse.Keyword as Keyword
 import qualified Parse.Number as Number

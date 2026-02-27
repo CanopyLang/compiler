@@ -17,7 +17,7 @@ module Reporting.Error.Syntax.Pattern
 where
 
 import qualified Data.Char as Char
-import qualified Data.Name as Name
+import qualified Canopy.Data.Name as Name
 import Parse.Primitives (Col, Row)
 import qualified Reporting.Annotation as Ann
 import qualified Reporting.Doc as Doc

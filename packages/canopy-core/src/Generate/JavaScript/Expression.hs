@@ -21,14 +21,14 @@ import qualified Canopy.Compiler.Type.Extract as Extract
 import qualified Canopy.ModuleName as ModuleName
 import qualified Canopy.Package as Pkg
 import qualified Canopy.Version as Version
-import qualified Data.Index as Index
+import qualified Canopy.Data.Index as Index
 import qualified Data.IntMap as IntMap
 import qualified Data.List as List
 import Data.Map (Map)
 import qualified Data.Map as Map
-import qualified Data.Name as Name
+import qualified Canopy.Data.Name as Name
 import qualified Data.Set as Set
-import qualified Data.Utf8 as Utf8
+import qualified Canopy.Data.Utf8 as Utf8
 import qualified Generate.JavaScript.Builder as JS
 import qualified Generate.JavaScript.Name as JsName
 import qualified Generate.JavaScript.StringPool as StringPool

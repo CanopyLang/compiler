@@ -13,8 +13,8 @@ import qualified Canopy.ModuleName as ModuleName
 import qualified Canopy.Package as Pkg
 import qualified Data.ByteString.Builder as BB
 import qualified Data.ByteString.Lazy.Char8 as LChar8
-import Data.Name (Name)
-import qualified Data.Name as Name
+import Canopy.Data.Name (Name)
+import qualified Canopy.Data.Name as Name
 import qualified Generate.JavaScript.Name as JsName
 import Test.Tasty
 import Test.Tasty.HUnit

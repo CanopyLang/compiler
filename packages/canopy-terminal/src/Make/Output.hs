@@ -44,8 +44,8 @@ import qualified Data.ByteString.Builder as Builder
 import qualified Data.ByteString as ByteString
 import qualified Data.ByteString.Lazy as ByteString.Lazy
 import Data.Function ((&))
-import qualified Data.Name as Name
-import qualified Data.NonEmptyList as NonEmptyList
+import qualified Canopy.Data.Name as Name
+import qualified Canopy.Data.NonEmptyList as NonEmptyList
 import qualified Data.Text as Text
 import qualified Data.Text.Encoding as Text
 import qualified File

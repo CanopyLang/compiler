@@ -10,7 +10,7 @@ where
 
 import qualified Data.Char as Char
 import qualified Data.IntSet as IntSet
-import qualified Data.Name as Name
+import qualified Canopy.Data.Name as Name
 import qualified Data.Vector as Vector
 import Foreign.Ptr (Ptr, minusPtr, plusPtr)
 import GHC.Word (Word8)

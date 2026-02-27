@@ -9,7 +9,7 @@ import qualified AST.Canonical as Can
 import qualified Canopy.ModuleName as ModuleName
 import Control.Monad (forM)
 import qualified Data.Map.Strict as Map
-import qualified Data.Name as Name
+import qualified Canopy.Data.Name as Name
 import qualified Reporting.Annotation as Ann
 import qualified Reporting.Error.Type as TypeError
 import qualified Type.Constrain.Expression as Expr

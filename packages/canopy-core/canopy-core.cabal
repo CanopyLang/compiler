@@ -40,6 +40,25 @@ library
       Canopy.Compiler.Type
       Canopy.Compiler.Type.Extract
       Canopy.Constraint
+      Canopy.Data.Bag
+      Canopy.Data.Index
+      Canopy.Data.Map.Utils
+      Canopy.Data.Name
+      Canopy.Data.Name.Constants
+      Canopy.Data.Name.Core
+      Canopy.Data.Name.Generation
+      Canopy.Data.Name.Kernel
+      Canopy.Data.Name.TypeVariable
+      Canopy.Data.NonEmptyList
+      Canopy.Data.OneOrMore
+      Canopy.Data.Utf8
+      Canopy.Data.Utf8.Binary
+      Canopy.Data.Utf8.Builder
+      Canopy.Data.Utf8.Core
+      Canopy.Data.Utf8.Creation
+      Canopy.Data.Utf8.Encoding
+      Canopy.Data.Utf8.Manipulation
+      Canopy.Data.Utf8.Types
       Canopy.Docs
       Canopy.Float
       Canopy.Interface
@@ -52,25 +71,6 @@ library
       Canopy.Package
       Canopy.String
       Canopy.Version
-      Data.Bag
-      Data.Index
-      Data.Map.Utils
-      Data.Name
-      Data.Name.Constants
-      Data.Name.Core
-      Data.Name.Generation
-      Data.Name.Kernel
-      Data.Name.TypeVariable
-      Data.NonEmptyList
-      Data.OneOrMore
-      Data.Utf8
-      Data.Utf8.Binary
-      Data.Utf8.Builder
-      Data.Utf8.Core
-      Data.Utf8.Creation
-      Data.Utf8.Encoding
-      Data.Utf8.Manipulation
-      Data.Utf8.Types
       FFI.Capability
       FFI.Types
       FFI.Validator

@@ -33,7 +33,7 @@ import Codec.Archive.Zip (Archive)
 import qualified Codec.Archive.Zip as Zip
 import Control.Exception (bracket)
 import Control.Lens ((^.))
-import qualified Data.Utf8 as Utf8
+import qualified Canopy.Data.Utf8 as Utf8
 import qualified File
 import Http (Manager, Sha)
 import qualified Http

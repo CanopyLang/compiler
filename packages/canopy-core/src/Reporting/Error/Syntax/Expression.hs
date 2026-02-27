@@ -24,7 +24,7 @@ module Reporting.Error.Syntax.Expression
   )
 where
 
-import qualified Data.Name as Name
+import qualified Canopy.Data.Name as Name
 import Parse.Primitives (Col, Row)
 import Parse.Symbol (BadOperator (..))
 import qualified Reporting.Annotation as Ann

@@ -56,7 +56,7 @@ import qualified Canopy.ModuleName as ModuleName
 import Canopy.Package (Name)
 import Canopy.Version (Version)
 import Control.Lens ((^.))
-import qualified Data.NonEmptyList as NE
+import qualified Canopy.Data.NonEmptyList as NE
 import qualified Deps.Diff as Diff
 import qualified Deps.Registry as Registry
 import Diff.Types (Env, Task, envCache, envManager, envMaybeRoot)

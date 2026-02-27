@@ -45,7 +45,7 @@ import qualified Control.Monad.State.Strict as State
 import Data.Foldable (foldrM)
 import Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
-import qualified Data.Name as Name
+import qualified Canopy.Data.Name as Name
 import Data.Word (Word32)
 import qualified Reporting.Annotation as Ann
 import qualified Reporting.Error.Type as TypeError

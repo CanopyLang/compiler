@@ -14,11 +14,11 @@ import qualified Canopy.ModuleName as ModuleName
 import qualified Canopy.Package as Pkg
 import qualified Data.ByteString.Builder as BB
 import qualified Data.ByteString.Lazy.Char8 as LChar8
-import qualified Data.Index as Index
-import Data.Name (Name)
-import qualified Data.Name as Name
+import qualified Canopy.Data.Index as Index
+import Canopy.Data.Name (Name)
+import qualified Canopy.Data.Name as Name
 import qualified Data.Set as Set
-import qualified Data.Utf8 as Utf8
+import qualified Canopy.Data.Utf8 as Utf8
 import qualified Generate.JavaScript.Builder as JS
 import qualified Generate.JavaScript.Expression as Expr
 import qualified Generate.JavaScript.Name as JsName

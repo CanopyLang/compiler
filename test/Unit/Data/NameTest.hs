@@ -1,6 +1,6 @@
 module Unit.Data.NameTest (tests) where
 
-import qualified Data.Name as Name
+import qualified Canopy.Data.Name as Name
 import Test.Tasty
 import Test.Tasty.HUnit
 

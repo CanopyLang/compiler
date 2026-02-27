@@ -25,8 +25,8 @@ import Test.Tasty.HUnit
 
 import qualified Canonicalize.Environment.Dups as Dups
 import qualified Data.Map.Strict as Map
-import qualified Data.Name as Name
-import qualified Data.OneOrMore as OneOrMore
+import qualified Canopy.Data.Name as Name
+import qualified Canopy.Data.OneOrMore as OneOrMore
 import qualified Reporting.Annotation as Ann
 import qualified Reporting.Error.Canonicalize as Error
 import qualified Reporting.Result as Result

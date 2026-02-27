@@ -1,7 +1,7 @@
 {-# LANGUAGE StandaloneDeriving #-}
 
 -- |
--- Module: Data.OneOrMore
+-- Module: Canopy.Data.OneOrMore
 -- Description: Tree-based non-empty collection for the Canopy compiler
 -- Copyright: (c) 2024 Canopy Contributors
 -- License: BSD-3-Clause
@@ -79,7 +79,7 @@
 -- * Order preservation is critical
 --
 -- @since 0.19.1
-module Data.OneOrMore
+module Canopy.Data.OneOrMore
   ( -- * OneOrMore Type
     OneOrMore (..),
 

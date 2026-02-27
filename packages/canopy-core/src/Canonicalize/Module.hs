@@ -26,13 +26,13 @@ import qualified Canopy.ModuleName as ModuleName
 import qualified Canopy.Package as Pkg
 import Parse.Module (ProjectType (..))
 import qualified Data.Graph as Graph
-import qualified Data.Index as Index
+import qualified Canopy.Data.Index as Index
 import Data.Maybe (fromMaybe)
 import Data.List (isPrefixOf, isInfixOf)
 import qualified Data.List as List
 import Data.Map (Map)
 import qualified Data.Map as Map
-import qualified Data.Name as Name
+import qualified Canopy.Data.Name as Name
 import Data.Set (Set)
 import qualified Data.Set as Set
 import qualified Data.Text as Text

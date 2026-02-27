@@ -15,7 +15,7 @@ import qualified Canopy.ModuleName as ModuleName
 import qualified Data.Foldable as Foldable
 import Data.Map (Map)
 import qualified Data.Map as Map
-import qualified Data.Name as Name
+import qualified Canopy.Data.Name as Name
 import qualified Reporting.Annotation as Ann
 import qualified Reporting.Error.Canonicalize as Error
 import qualified Reporting.Result as Result

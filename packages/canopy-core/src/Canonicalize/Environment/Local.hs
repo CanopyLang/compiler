@@ -13,10 +13,10 @@ import qualified Canonicalize.Type as Type
 import qualified Canopy.ModuleName as ModuleName
 import Control.Monad (foldM)
 import qualified Data.Graph as Graph
-import qualified Data.Index as Index
+import qualified Canopy.Data.Index as Index
 import qualified Data.List as List
 import qualified Data.Map.Strict as Map
-import qualified Data.Name as Name
+import qualified Canopy.Data.Name as Name
 import qualified Reporting.Annotation as Ann
 import qualified Reporting.Error.Canonicalize as Error
 import qualified Reporting.Result as Result

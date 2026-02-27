@@ -13,7 +13,7 @@
 -- * Low-level memory operations for string building
 --
 -- @since 0.19.1
-module Data.Utf8.Manipulation
+module Canopy.Data.Utf8.Manipulation
   ( -- * String Operations
     split,
     join,
@@ -26,8 +26,8 @@ module Data.Utf8.Manipulation
 where
 
 import qualified Data.List as List
-import Data.Utf8.Creation (MBA (MBA#), freeze, newByteArray, writeWord8)
-import Data.Utf8.Types (Utf8 (..), empty, size)
+import Canopy.Data.Utf8.Creation (MBA (MBA#), freeze, newByteArray, writeWord8)
+import Canopy.Data.Utf8.Types (Utf8 (..), empty, size)
 import Foreign.Ptr (Ptr)
 import GHC.Exts
   ( Int (I#),

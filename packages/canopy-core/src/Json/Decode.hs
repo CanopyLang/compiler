@@ -183,7 +183,7 @@ where
 
 import qualified Data.ByteString.Internal as BSI
 import qualified Data.Map as Map
-import qualified Data.NonEmptyList as NE
+import qualified Canopy.Data.NonEmptyList as NE
 import Data.Word (Word8)
 import qualified Foreign.ForeignPtr.Unsafe as ForeignPtr
 import Foreign.Ptr (Ptr)

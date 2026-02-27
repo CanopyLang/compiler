@@ -6,7 +6,7 @@ module Parse.Type
   where
 
 
-import qualified Data.Name as Name
+import qualified Canopy.Data.Name as Name
 
 import qualified AST.Source as Src
 import Parse.Primitives (Parser, addLocation, addEnd, getPosition, inContext, specialize, oneOf, oneOfWithFallback, word1, word2)

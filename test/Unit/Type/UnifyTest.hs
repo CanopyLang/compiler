@@ -12,7 +12,7 @@ module Unit.Type.UnifyTest (tests) where
 
 import qualified Canopy.ModuleName as ModuleName
 import qualified Data.Map.Strict as Map
-import qualified Data.Name as Name
+import qualified Canopy.Data.Name as Name
 import Test.Tasty
 import Test.Tasty.HUnit
 import qualified Type.Unify as Unify

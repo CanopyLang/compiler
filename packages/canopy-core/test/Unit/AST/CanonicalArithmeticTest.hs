@@ -38,7 +38,7 @@ import Test.Tasty
 import Test.Tasty.HUnit
 import qualified Data.Binary as Binary
 import qualified Data.ByteString.Lazy as BL
-import qualified Data.Name as Name
+import qualified Canopy.Data.Name as Name
 import qualified Data.Word
 import qualified AST.Canonical as Can
 import qualified Canopy.ModuleName as ModuleName

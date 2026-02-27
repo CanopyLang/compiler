@@ -10,7 +10,7 @@ module Parse.String
 where
 
 import qualified Canopy.String as ES
-import qualified Data.Utf8 as Utf8
+import qualified Canopy.Data.Utf8 as Utf8
 import Data.Word (Word16, Word8)
 import Foreign.Ptr (Ptr, minusPtr, plusPtr)
 import qualified Parse.Number as Number

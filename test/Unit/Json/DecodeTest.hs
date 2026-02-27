@@ -16,7 +16,7 @@ where
 
 import qualified Data.ByteString as BS
 import qualified Data.Map as Map
-import qualified Data.NonEmptyList as NE
+import qualified Canopy.Data.NonEmptyList as NE
 import qualified Json.Decode as Decode
 import qualified Json.String as JsonStr
 import qualified Parse.Primitives as Parse

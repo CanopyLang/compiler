@@ -24,13 +24,13 @@ module Unit.Generate.JavaScript.ExpressionArithmeticTest
 
 import Test.Tasty
 import Test.Tasty.HUnit
-import qualified Data.Name as Name
+import qualified Canopy.Data.Name as Name
 import qualified Generate.JavaScript.Expression as Gen
 import qualified Generate.JavaScript.Builder as JS
 import qualified Generate.Mode as Mode
 import qualified AST.Optimized as Opt
 import qualified Canopy.ModuleName as ModuleName
-import qualified Data.Index as Index
+import qualified Canopy.Data.Index as Index
 
 -- | Main test tree containing all Generate.JavaScript.Expression arithmetic tests.
 tests :: TestTree

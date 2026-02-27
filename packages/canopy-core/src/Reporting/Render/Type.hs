@@ -16,7 +16,7 @@ where
 import qualified AST.Canonical as Can
 import qualified AST.Source as Src
 import qualified Data.Maybe as Maybe
-import qualified Data.Name as Name
+import qualified Canopy.Data.Name as Name
 import qualified Reporting.Annotation as Ann
 import Reporting.Doc (Doc, (<+>))
 import qualified Reporting.Doc as Doc

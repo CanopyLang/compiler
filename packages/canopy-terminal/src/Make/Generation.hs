@@ -33,7 +33,7 @@ import Data.ByteString.Builder (Builder)
 import qualified Data.ByteString.Builder as Builder
 import qualified Data.ByteString as ByteString
 import Data.Function ((&))
-import Data.NonEmptyList (List)
+import Canopy.Data.NonEmptyList (List)
 import qualified Data.Text as Text
 import Data.Text (Text)
 import qualified Data.Text.Encoding as Text

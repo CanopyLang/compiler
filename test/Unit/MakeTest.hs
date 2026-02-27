@@ -14,7 +14,7 @@ module Unit.MakeTest (tests) where
 import qualified Canopy.ModuleName as ModuleName
 import qualified Canopy.Package as Package
 import qualified Canopy.Version as Version
-import qualified Data.Name as Name
+import qualified Canopy.Data.Name as Name
 import Test.Tasty (TestTree, testGroup)
 import Test.Tasty.HUnit (testCase, (@?=))
 

@@ -23,7 +23,7 @@ import qualified AST.Source as Src
 import Data.ByteString (ByteString)
 import qualified Data.Char as Char
 import qualified Data.List as List
-import qualified Data.Name as Name
+import qualified Canopy.Data.Name as Name
 import qualified Parse.Declaration as PD
 import qualified Parse.Expression as PE
 import qualified Parse.Module as PM

@@ -219,9 +219,9 @@ import qualified Data.ByteString.Builder as BB
 import qualified Data.ByteString.Char8 as BSC
 import Data.Map (Map)
 import qualified Data.Map as Map
-import qualified Data.Name as Name
+import qualified Canopy.Data.Name as Name
 import qualified Data.Scientific as Sci
-import qualified Data.Utf8 as Utf8
+import qualified Canopy.Data.Utf8 as Utf8
 import qualified File
 import qualified Json.String as Json
 import qualified Reporting.InternalError as InternalError

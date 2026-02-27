@@ -9,7 +9,7 @@ where
 import qualified AST.Canonical as Can
 import Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
-import qualified Data.Name as Name
+import qualified Canopy.Data.Name as Name
 import qualified Data.Text as Text
 import qualified Reporting.InternalError as InternalError
 import Type.Type

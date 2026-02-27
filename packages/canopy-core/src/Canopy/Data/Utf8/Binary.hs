@@ -32,7 +32,7 @@
 -- @
 --
 -- @since 0.19.1
-module Data.Utf8.Binary
+module Canopy.Data.Utf8.Binary
   ( -- * Short String Serialization (< 256 bytes)
     putUnder256,
     getUnder256,
@@ -47,8 +47,8 @@ import Data.Binary (Get, Put, get, getWord8, put, putWord8)
 import Data.Binary.Get.Internal (readN)
 import Data.Binary.Put (putBuilder)
 import qualified Data.ByteString.Internal as BSI
-import Data.Utf8.Builder (toBuilder)
-import Data.Utf8.Core (Utf8 (..), copyFromPtr, empty, freeze, newByteArray, size)
+import Canopy.Data.Utf8.Builder (toBuilder)
+import Canopy.Data.Utf8.Core (Utf8 (..), copyFromPtr, empty, freeze, newByteArray, size)
 import Foreign.ForeignPtr (touchForeignPtr)
 import Foreign.ForeignPtr.Unsafe (unsafeForeignPtrToPtr)
 import Foreign.Ptr (plusPtr)

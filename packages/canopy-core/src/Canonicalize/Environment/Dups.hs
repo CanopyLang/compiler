@@ -14,8 +14,8 @@ module Canonicalize.Environment.Dups
 where
 
 import qualified Data.Map as Map
-import qualified Data.Name as Name
-import qualified Data.OneOrMore as OneOrMore
+import qualified Canopy.Data.Name as Name
+import qualified Canopy.Data.OneOrMore as OneOrMore
 import qualified Reporting.Annotation as Ann
 import qualified Reporting.Error.Canonicalize as Error
 import qualified Reporting.Result as Result

@@ -7,7 +7,7 @@ module Reporting.Error.Main
 where
 
 import qualified AST.Canonical as Can
-import qualified Data.Name as Name
+import qualified Canopy.Data.Name as Name
 import qualified Data.Text as Text
 import Data.Text (Text)
 import qualified Reporting.Annotation as Ann

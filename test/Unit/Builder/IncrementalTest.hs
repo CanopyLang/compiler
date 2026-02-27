@@ -10,7 +10,7 @@ module Unit.Builder.IncrementalTest (tests) where
 import qualified Builder.Hash as Hash
 import qualified Builder.Incremental as Incremental
 import qualified Data.Map.Strict as Map
-import qualified Data.Name as Name
+import qualified Canopy.Data.Name as Name
 import Data.Time.Clock (UTCTime, addUTCTime, getCurrentTime)
 import qualified System.IO
 import System.IO (Handle)

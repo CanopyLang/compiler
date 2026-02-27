@@ -52,9 +52,9 @@ import qualified Canopy.Details as Details
 import qualified Canopy.ModuleName as ModuleName
 import qualified Compiler
 import Control.Lens ((^.))
-import qualified Data.Name as Name
-import Data.NonEmptyList (List)
-import qualified Data.NonEmptyList as NonEmptyList
+import qualified Canopy.Data.Name as Name
+import Canopy.Data.NonEmptyList (List)
+import qualified Canopy.Data.NonEmptyList as NonEmptyList
 import qualified Exit as BuildExit
 import qualified Reporting
 

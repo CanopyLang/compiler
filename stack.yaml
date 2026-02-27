@@ -8,7 +8,9 @@ packages:
   - packages/canopy-builder
   - packages/canopy-terminal
 
-allow-newer: true
+# IMPORTANT: Do not add allow-newer: true
+# All version bounds must be explicitly managed.
+# If a dependency conflict arises, fix the bound or pin the version.
 
 drop-packages:
   - language-javascript

@@ -13,7 +13,7 @@ import qualified AST.Source as Src
 import qualified Canopy.Compiler.Imports as Imports
 import qualified Canopy.Package as Pkg
 import qualified Data.ByteString as BS
-import qualified Data.Name as Name
+import qualified Canopy.Data.Name as Name
 import qualified Parse.Declaration as Decl
 import qualified Parse.Keyword as Keyword
 import Parse.Primitives hiding (State, fromByteString)

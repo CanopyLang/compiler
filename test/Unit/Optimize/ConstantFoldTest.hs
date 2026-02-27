@@ -3,7 +3,7 @@ module Unit.Optimize.ConstantFoldTest (tests) where
 
 import qualified AST.Canonical as Can
 import qualified AST.Optimized as Opt
-import qualified Data.Name as Name
+import qualified Canopy.Data.Name as Name
 import qualified Optimize.ConstantFold as ConstantFold
 import Test.Tasty
 import Test.Tasty.HUnit

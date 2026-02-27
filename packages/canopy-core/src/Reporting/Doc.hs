@@ -69,9 +69,9 @@ where
 
 import qualified Canopy.Package as Pkg
 import qualified Canopy.Version as Version
-import qualified Data.Index as Index
+import qualified Canopy.Data.Index as Index
 import qualified Data.List as List
-import qualified Data.Name as Name
+import qualified Canopy.Data.Name as Name
 import Json.Encode ((==>))
 import qualified Json.Encode as Encode
 import qualified Json.String as Json

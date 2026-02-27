@@ -65,7 +65,7 @@ import qualified Codec.Archive.Zip as Zip
 import Control.Lens ((^.))
 import Data.List (isInfixOf)
 import qualified Data.Text as Text
-import qualified Data.Utf8 as Utf8
+import qualified Canopy.Data.Utf8 as Utf8
 import qualified Deps.Registry as Registry
 import Logging.Event (LogEvent (..))
 import qualified Logging.Logger as Log

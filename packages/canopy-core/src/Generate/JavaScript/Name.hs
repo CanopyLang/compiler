@@ -24,13 +24,13 @@ module Generate.JavaScript.Name
 import Data.ByteString.Builder (Builder)
 import qualified Data.ByteString.Builder as BB
 import qualified Data.Map as Map
-import qualified Data.Name as Name
+import qualified Canopy.Data.Name as Name
 import qualified Data.Set as Set
-import qualified Data.Utf8 as Utf8
+import qualified Canopy.Data.Utf8 as Utf8
 import qualified Data.Text as Text
 import Data.Word (Word8)
 
-import qualified Data.Index as Index
+import qualified Canopy.Data.Index as Index
 import qualified Reporting.InternalError as InternalError
 import qualified Canopy.ModuleName as ModuleName
 import qualified Canopy.Package as Pkg

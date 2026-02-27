@@ -24,7 +24,7 @@ import Test.Tasty
 import Test.Tasty.HUnit
 import qualified Data.Map.Strict as Map
 import qualified Data.Set as Set
-import qualified Data.Name as Name
+import qualified Canopy.Data.Name as Name
 import qualified AST.Canonical as Can
 import qualified AST.Optimized as Opt
 import qualified Canopy.ModuleName as ModuleName

@@ -35,14 +35,14 @@
 -- input is already validated by the parser.
 --
 -- @since 0.19.1
-module Data.Utf8.Encoding
+module Canopy.Data.Utf8.Encoding
   ( -- * Pointer-based Construction
     fromPtr,
     fromSnippet,
   )
 where
 
-import Data.Utf8.Core (Utf8 (..), copyFromPtr, freeze, newByteArray)
+import Canopy.Data.Utf8.Core (Utf8 (..), copyFromPtr, freeze, newByteArray)
 import Foreign.ForeignPtr.Unsafe (unsafeForeignPtrToPtr)
 import Foreign.Ptr (minusPtr, plusPtr)
 import GHC.Exts

@@ -13,7 +13,7 @@ module Unit.NameReversalTest
 
 import Test.Tasty
 import Test.Tasty.HUnit
-import qualified Data.Name as Name
+import qualified Canopy.Data.Name as Name
 
 -- | All name character-order tests.
 tests :: TestTree

@@ -46,8 +46,8 @@ import qualified Canopy.Details as Details
 import qualified Canopy.ModuleName as ModuleName
 import qualified Compiler
 import Control.Lens ((^.))
-import Data.NonEmptyList (List)
-import qualified Data.NonEmptyList as NE
+import Canopy.Data.NonEmptyList (List)
+import qualified Canopy.Data.NonEmptyList as NE
 import qualified Data.Text as Text
 import qualified Logging.Config as Config
 import Logging.Event (LogEvent (..))

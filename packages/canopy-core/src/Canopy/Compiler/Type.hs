@@ -14,7 +14,7 @@ module Canopy.Compiler.Type
 where
 
 import qualified AST.Source as Src
-import qualified Data.Name as Name
+import qualified Canopy.Data.Name as Name
 import qualified Json.Decode as Decode
 import Json.Encode ((==>))
 import qualified Json.Encode as Encode

@@ -39,7 +39,7 @@ import qualified Canopy.Outline as Outline
 import Canopy.Package (Name)
 import Canopy.Version (Version)
 import Control.Lens ((^.))
-import qualified Data.NonEmptyList as NonEmptyList
+import qualified Canopy.Data.NonEmptyList as NonEmptyList
 import qualified Deps.Diff as Diff
 import qualified Exit as BuildExit
 import qualified Reporting

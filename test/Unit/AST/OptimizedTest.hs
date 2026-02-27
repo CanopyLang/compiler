@@ -8,12 +8,12 @@ import qualified Canopy.Kernel as Kernel
 import qualified Canopy.ModuleName as ModuleName
 import qualified Canopy.Package as Pkg
 import qualified Canopy.String as ES
-import qualified Data.Index as Index
+import qualified Canopy.Data.Index as Index
 import Data.Map (Map)
 import qualified Data.Map as Map
 import Data.Maybe (isJust)
-import Data.Name (Name)
-import qualified Data.Name as Name
+import Canopy.Data.Name (Name)
+import qualified Canopy.Data.Name as Name
 import Data.Set (Set)
 import qualified Data.Set as Set
 import qualified Optimize.DecisionTree as DT

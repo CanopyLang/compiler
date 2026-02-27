@@ -14,7 +14,7 @@
 -- * Comparison and equality instances
 --
 -- @since 0.19.1
-module Data.Utf8.Types
+module Canopy.Data.Utf8.Types
   ( -- * Core Types
     Utf8 (..),
 

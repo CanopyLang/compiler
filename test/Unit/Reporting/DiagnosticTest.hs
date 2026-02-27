@@ -8,7 +8,7 @@
 -- @since 0.19.2
 module Unit.Reporting.DiagnosticTest (tests) where
 
-import qualified Data.NonEmptyList as NE
+import qualified Canopy.Data.NonEmptyList as NE
 import qualified Data.Text as Text
 import qualified Reporting.Annotation as Ann
 import qualified Reporting.Diagnostic as Diag

@@ -3,7 +3,7 @@ module Unit.Parse.ModuleTest (tests) where
 import qualified AST.Source as Src
 import qualified Canopy.Package as Pkg
 import qualified Data.ByteString.Char8 as C8
-import qualified Data.Name as Name
+import qualified Canopy.Data.Name as Name
 import qualified Parse.Module as ParseModule
 import qualified Reporting.Annotation as Ann
 import qualified Reporting.Error.Syntax as SyntaxError

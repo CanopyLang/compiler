@@ -43,7 +43,7 @@
 -- @
 --
 -- @since 0.19.1
-module Data.Name.Constants
+module Canopy.Data.Name.Constants
   ( -- * Basic Types
     int,
     float,
@@ -98,7 +98,7 @@ module Data.Name.Constants
   )
 where
 
-import Data.Name.Core (Name, fromChars)
+import Canopy.Data.Name.Core (Name, fromChars)
 import Prelude hiding (maybe, negate)
 
 -- BASIC TYPES

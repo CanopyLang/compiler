@@ -22,7 +22,7 @@ module Property.Data.NameProperties
 import Test.Tasty
 import Test.Tasty.QuickCheck
 import qualified Data.List as List
-import qualified Data.Name as Name
+import qualified Canopy.Data.Name as Name
 
 -- | Main test tree containing all Name property tests.
 tests :: TestTree

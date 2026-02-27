@@ -9,7 +9,7 @@ import qualified AST.Optimized as Opt
 import Control.Arrow (second)
 import qualified Data.Map as Map
 import qualified Data.Maybe as Maybe
-import qualified Data.Name as Name
+import qualified Canopy.Data.Name as Name
 import qualified Optimize.DecisionTree as DT
 import qualified Reporting.InternalError as InternalError
 

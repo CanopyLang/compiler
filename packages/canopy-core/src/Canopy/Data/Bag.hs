@@ -1,6 +1,6 @@
 
 -- |
--- Module: Data.Bag
+-- Module: Canopy.Data.Bag
 -- Description: Efficient bag (multiset) data structure for the Canopy compiler
 -- Copyright: (c) 2024 Canopy Contributors
 -- License: BSD-3-Clause
@@ -74,7 +74,7 @@
 -- * Compatibility with standard list functions required
 --
 -- @since 0.19.1
-module Data.Bag
+module Canopy.Data.Bag
   ( -- * Bag Type
     Bag (..),
 

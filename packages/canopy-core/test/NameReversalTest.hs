@@ -1,7 +1,7 @@
 {-# LANGUAGE OverloadedStrings #-}
 module NameReversalTest where
 
-import qualified Data.Name as Name
+import qualified Canopy.Data.Name as Name
 import qualified Data.ByteString as BS
 import Test.HUnit
 

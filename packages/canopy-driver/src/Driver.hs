@@ -41,7 +41,7 @@ import qualified Canopy.Package as Pkg
 import qualified Foreign.FFI as FFI
 import Data.Map (Map)
 import qualified Data.Map as Map
-import qualified Data.Name as Name
+import qualified Canopy.Data.Name as Name
 import qualified Data.Text as Text
 import qualified Generate.JavaScript as JS
 import Logging.Event (LogEvent (..), CompileStats (..), Duration (..))

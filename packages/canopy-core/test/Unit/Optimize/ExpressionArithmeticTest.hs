@@ -36,7 +36,7 @@ module Unit.Optimize.ExpressionArithmeticTest
 
 import Test.Tasty
 import Test.Tasty.HUnit
-import qualified Data.Name as Name
+import qualified Canopy.Data.Name as Name
 import qualified AST.Canonical as Can
 import qualified AST.Optimized as Opt
 import qualified Canopy.ModuleName as ModuleName

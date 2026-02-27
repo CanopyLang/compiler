@@ -29,8 +29,8 @@ where
 import qualified Canopy.ModuleName as ModuleName
 import qualified Data.ByteString.Builder as BB
 import qualified Data.ByteString.Lazy as LBS
-import Data.NonEmptyList (List)
-import qualified Data.NonEmptyList as NonEmptyList
+import Canopy.Data.NonEmptyList (List)
+import qualified Canopy.Data.NonEmptyList as NonEmptyList
 import qualified Json.Encode as Encode
 import qualified Json.String as Json
 import qualified Reporting.Ask as Ask

@@ -19,7 +19,7 @@ import qualified Data.ByteString.Builder as BB
 import qualified Data.ByteString.Lazy as BSL
 import qualified Data.ByteString.Lazy.Char8 as LBS
 import qualified Data.Map as Map
-import qualified Data.Name as Name
+import qualified Canopy.Data.Name as Name
 import qualified Data.Scientific as Sci
 import qualified Json.Encode as Encode
 import qualified Json.String as JsonStr

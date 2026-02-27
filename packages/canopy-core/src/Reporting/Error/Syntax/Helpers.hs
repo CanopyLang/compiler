@@ -29,7 +29,7 @@ module Reporting.Error.Syntax.Helpers
 where
 
 import qualified Data.Char as Char
-import qualified Data.Name as Name
+import qualified Canopy.Data.Name as Name
 import qualified Data.Text as Text
 import Data.Word (Word16)
 import Parse.Primitives (Col, Row)

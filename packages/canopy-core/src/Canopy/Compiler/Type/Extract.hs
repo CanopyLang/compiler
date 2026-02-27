@@ -22,7 +22,7 @@ import qualified Canopy.Interface as Interface
 import qualified Canopy.ModuleName as ModuleName
 import qualified Data.Map as Map
 import qualified Data.Maybe as Maybe
-import qualified Data.Name as Name
+import qualified Canopy.Data.Name as Name
 import qualified Data.Text as Text
 import qualified Reporting.InternalError as InternalError
 import qualified Data.Set as Set

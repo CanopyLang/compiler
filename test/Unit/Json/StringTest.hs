@@ -16,8 +16,8 @@ where
 
 import qualified Data.ByteString.Builder as BB
 import qualified Data.ByteString.Lazy as BSL
-import qualified Data.Name as Name
-import qualified Data.Utf8 as Utf8
+import qualified Canopy.Data.Name as Name
+import qualified Canopy.Data.Utf8 as Utf8
 import Data.Word (Word8)
 import qualified Foreign.ForeignPtr as ForeignPtr
 import Foreign.Ptr (Ptr)

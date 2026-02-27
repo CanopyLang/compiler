@@ -37,7 +37,7 @@ import qualified Data.Binary as Binary
 import qualified AST.Canonical as Can
 import qualified Canopy.ModuleName as ModuleName
 import qualified Canopy.Package as Package
-import qualified Data.Name as Name
+import qualified Canopy.Data.Name as Name
 
 -- | Main test tree containing all property-based arithmetic tests.
 --

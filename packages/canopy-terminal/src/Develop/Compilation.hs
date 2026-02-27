@@ -50,8 +50,8 @@ import qualified System.Directory as Directory
 import qualified Canopy.Details as Details
 import qualified Canopy.ModuleName as ModuleName
 import Data.ByteString.Builder (Builder)
-import qualified Data.Name as Name
-import qualified Data.NonEmptyList as NE
+import qualified Canopy.Data.Name as Name
+import qualified Canopy.Data.NonEmptyList as NE
 import qualified Generate
 import qualified Generate.Html as Html
 import qualified Reporting

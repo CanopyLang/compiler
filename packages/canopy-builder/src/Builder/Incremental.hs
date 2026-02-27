@@ -42,7 +42,7 @@ import qualified Data.Aeson as Aeson
 import qualified Data.ByteString.Lazy as BSL
 import Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
-import qualified Data.Name as Name
+import qualified Canopy.Data.Name as Name
 import qualified Data.Set as Set
 import Data.Time.Clock (UTCTime, addUTCTime, getCurrentTime)
 import GHC.Generics (Generic)

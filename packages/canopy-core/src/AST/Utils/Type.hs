@@ -98,7 +98,7 @@ where
 
 import AST.Canonical (AliasType (..), FieldType (..), Type (..))
 import qualified Data.Map as Map
-import qualified Data.Name as Name
+import qualified Canopy.Data.Name as Name
 
 -- DELAMBDA
 

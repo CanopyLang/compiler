@@ -10,7 +10,7 @@ where
 
 import Data.Binary (Binary, get, put)
 import qualified Data.ByteString.Builder as BB
-import qualified Data.Utf8 as Utf8
+import qualified Canopy.Data.Utf8 as Utf8
 import Data.Word (Word8)
 import Foreign.Ptr (Ptr)
 import Prelude hiding (Float)

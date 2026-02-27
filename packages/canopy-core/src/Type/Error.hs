@@ -19,11 +19,11 @@ where
 
 import qualified Canopy.ModuleName as ModuleName
 import Control.Monad (zipWithM)
-import qualified Data.Bag as Bag
+import qualified Canopy.Data.Bag as Bag
 import Data.Map (Map)
 import qualified Data.Map as Map
 import qualified Data.Maybe as Maybe
-import qualified Data.Name as Name
+import qualified Canopy.Data.Name as Name
 import qualified Reporting.Doc as Doc
 import qualified Reporting.Render.Type as RT
 import qualified Reporting.Render.Type.Localizer as Localizer

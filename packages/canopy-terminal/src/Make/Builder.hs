@@ -49,9 +49,9 @@ import Data.ByteString.Builder (Builder)
 import Data.Map (Map)
 import qualified Data.Map as Map
 import qualified Data.Maybe as Maybe
-import qualified Data.Name as Name
-import Data.NonEmptyList (List)
-import qualified Data.NonEmptyList as NonEmptyList
+import qualified Canopy.Data.Name as Name
+import Canopy.Data.NonEmptyList (List)
+import qualified Canopy.Data.NonEmptyList as NonEmptyList
 import qualified Data.Set as Set
 import qualified Generate.JavaScript as JS
 import qualified Generate.JavaScript.CodeSplit.Generate as Split

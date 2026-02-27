@@ -2,7 +2,7 @@ module Unit.Parse.PatternTest (tests) where
 
 import qualified AST.Source as Src
 import qualified Data.ByteString.Char8 as C8
-import qualified Data.Name as Name
+import qualified Canopy.Data.Name as Name
 import qualified Parse.Pattern as Pat
 import qualified Parse.Primitives as Parse
 import qualified Reporting.Annotation as Ann

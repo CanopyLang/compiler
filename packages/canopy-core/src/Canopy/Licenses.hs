@@ -10,7 +10,7 @@ module Canopy.Licenses
 where
 
 import qualified Data.Map as Map
-import qualified Data.Utf8 as Utf8
+import qualified Canopy.Data.Utf8 as Utf8
 import qualified Json.Decode as Decode
 import qualified Json.Encode as Encode
 import qualified Json.String as Json

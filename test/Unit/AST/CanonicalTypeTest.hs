@@ -3,7 +3,7 @@ module Unit.AST.CanonicalTypeTest (tests) where
 import qualified AST.Canonical as Can
 import qualified Canopy.ModuleName as ModuleName
 import qualified Data.Map as Map
-import qualified Data.Name as Name
+import qualified Canopy.Data.Name as Name
 import qualified Reporting.Annotation as Ann
 import Test.Tasty
 import Test.Tasty.HUnit

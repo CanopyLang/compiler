@@ -15,10 +15,10 @@ import Data.Map.Strict (Map)
 import qualified Data.Text as Text
 import qualified Reporting.InternalError as InternalError
 import qualified Data.Map.Strict as Map
-import qualified Data.Name as Name
+import qualified Canopy.Data.Name as Name
 import qualified Data.Set as Set
-import Data.NonEmptyList (List)
-import qualified Data.NonEmptyList as NE
+import Canopy.Data.NonEmptyList (List)
+import qualified Canopy.Data.NonEmptyList as NE
 import qualified Data.Vector as Vector
 import qualified Data.Vector.Mutable as MVector
 import Data.IORef

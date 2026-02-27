@@ -45,7 +45,7 @@ module Foreign.FFI
 import qualified Data.Text as Text
 import Data.Text (Text)
 import qualified Data.Char as Char
-import qualified Data.Name as Name
+import qualified Canopy.Data.Name as Name
 import qualified Reporting.Annotation as Ann
 import qualified Data.Maybe as Maybe
 import qualified Data.Map.Strict as Map

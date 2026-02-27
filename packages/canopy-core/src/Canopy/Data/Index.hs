@@ -1,5 +1,5 @@
 -- |
--- Module: Data.Index
+-- Module: Canopy.Data.Index
 -- Description: Zero-based indexing operations for the Canopy compiler
 -- Copyright: (c) 2024 Canopy Contributors
 -- License: BSD-3-Clause
@@ -62,7 +62,7 @@
 -- cases with detailed length information.
 --
 -- @since 0.19.1
-module Data.Index
+module Canopy.Data.Index
   ( -- * Zero-based Index Type
     ZeroBased,
 

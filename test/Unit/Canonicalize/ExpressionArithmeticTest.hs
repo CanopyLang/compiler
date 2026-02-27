@@ -22,8 +22,8 @@ module Unit.Canonicalize.ExpressionArithmeticTest
 import Test.Tasty
 import Test.Tasty.HUnit
 import qualified Data.Map.Strict as Map
-import qualified Data.Name as Name
-import qualified Data.Utf8 as Utf8
+import qualified Canopy.Data.Name as Name
+import qualified Canopy.Data.Utf8 as Utf8
 import qualified AST.Source as Src
 import qualified AST.Canonical as Can
 import qualified AST.Utils.Binop as Binop

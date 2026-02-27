@@ -37,7 +37,7 @@
 -- @
 --
 -- @since 0.19.1
-module Data.Name
+module Canopy.Data.Name
   ( Name,
     CANOPY_NAME,
 
@@ -112,9 +112,9 @@ where
 
 -- Re-export all functionality from sub-modules
 
-import Data.Name.Constants
-import Data.Name.Core
-import Data.Name.Generation
-import Data.Name.Kernel
-import Data.Name.TypeVariable
+import Canopy.Data.Name.Constants
+import Canopy.Data.Name.Core
+import Canopy.Data.Name.Generation
+import Canopy.Data.Name.Kernel
+import Canopy.Data.Name.TypeVariable
 import Prelude hiding (maybe, negate)

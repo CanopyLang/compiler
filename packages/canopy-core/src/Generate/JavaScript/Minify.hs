@@ -20,8 +20,8 @@ where
 import qualified AST.Optimized as Opt
 import Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
-import Data.Name (Name)
-import qualified Data.Name as Name
+import Canopy.Data.Name (Name)
+import qualified Canopy.Data.Name as Name
 
 -- | Rename all local variables in a global graph to short names.
 --

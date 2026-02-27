@@ -40,8 +40,8 @@ import qualified BackgroundWriter as BW
 import qualified Canopy.Details as Details
 import qualified Canopy.ModuleName as ModuleName
 import qualified Compiler
-import Data.NonEmptyList (List)
-import qualified Data.NonEmptyList as NE
+import Canopy.Data.NonEmptyList (List)
+import qualified Canopy.Data.NonEmptyList as NE
 import qualified Reporting
 import qualified Reporting.Exit as Exit
 import qualified Reporting.Task as Task

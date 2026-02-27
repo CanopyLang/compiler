@@ -19,9 +19,9 @@ module Reporting.Error.Type
 where
 
 import qualified AST.Canonical as Can
-import qualified Data.Index as Index
+import qualified Canopy.Data.Index as Index
 import qualified Data.Map as Map
-import qualified Data.Name as Name
+import qualified Canopy.Data.Name as Name
 import qualified Data.Text as Text
 import qualified Reporting.Annotation as Ann
 import qualified Reporting.Diagnostic as Diag

@@ -5,7 +5,7 @@ import qualified Build
 import qualified Canopy.Details as Details
 import qualified Data.ByteString.Builder as BB
 import qualified Data.ByteString.Lazy.Char8 as BL8
-import qualified Data.NonEmptyList as NE
+import qualified Canopy.Data.NonEmptyList as NE
 import qualified Generate
 import qualified Reporting
 import qualified Reporting.Task as Task

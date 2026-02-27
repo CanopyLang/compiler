@@ -38,7 +38,7 @@
 -- @
 --
 -- @since 0.19.1
-module Data.Name.Generation
+module Canopy.Data.Name.Generation
   ( -- * Multi-Name Generation
     fromManyNames,
 
@@ -51,8 +51,8 @@ module Data.Name.Generation
 where
 
 import qualified Data.List as List
-import Data.Name.Core (Name)
-import qualified Data.Utf8 as Utf8
+import Canopy.Data.Name.Core (Name)
+import qualified Canopy.Data.Utf8 as Utf8
 import GHC.Exts
   ( Int (I#),
   )

@@ -12,9 +12,9 @@ import qualified AST.Optimized as Opt
 import qualified AST.Utils.Shader as Shader
 import qualified Canopy.ModuleName as ModuleName
 import Control.Monad (foldM)
-import qualified Data.Index as Index
+import qualified Canopy.Data.Index as Index
 import qualified Data.Map as Map
-import qualified Data.Name as Name
+import qualified Canopy.Data.Name as Name
 import qualified Data.Set as Set
 import qualified Optimize.Case as Case
 import qualified Optimize.ConstantFold as ConstantFold

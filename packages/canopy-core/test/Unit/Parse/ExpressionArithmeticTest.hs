@@ -25,7 +25,7 @@ module Unit.Parse.ExpressionArithmeticTest
 
 import Test.Tasty
 import Test.Tasty.HUnit
-import qualified Data.Name as Name
+import qualified Canopy.Data.Name as Name
 import qualified AST.Source as Src
 import qualified Parse.Expression as Parse
 import qualified Reporting.Annotation as A

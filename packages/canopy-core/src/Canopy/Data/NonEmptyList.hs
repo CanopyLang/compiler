@@ -1,5 +1,5 @@
 -- |
--- Module: Data.NonEmptyList
+-- Module: Canopy.Data.NonEmptyList
 -- Description: Non-empty list data structure for the Canopy compiler
 -- Copyright: (c) 2024 Canopy Contributors
 -- License: BSD-3-Clause
@@ -68,7 +68,7 @@
 -- that would fail on empty lists (like 'head') are safe by construction.
 --
 -- @since 0.19.1
-module Data.NonEmptyList
+module Canopy.Data.NonEmptyList
   ( -- * Non-empty List Type
     List (..),
 

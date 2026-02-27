@@ -9,8 +9,8 @@ module Reporting.Error.Docs
   )
 where
 
-import qualified Data.Name as Name
-import qualified Data.NonEmptyList as NE
+import qualified Canopy.Data.Name as Name
+import qualified Canopy.Data.NonEmptyList as NE
 import qualified Data.Text as Text
 import Parse.Primitives (Col, Row)
 import Parse.Symbol (BadOperator (..))

@@ -18,10 +18,10 @@ import qualified Canopy.Package as Pkg
 import Control.Lens ((^.))
 import qualified Data.ByteString.Builder as BB
 import qualified Data.Map.Strict as Map
-import qualified Data.Name as Name
+import qualified Canopy.Data.Name as Name
 import qualified Data.Set as Set
 import qualified Data.Text as Text
-import qualified Data.Utf8 as Utf8
+import qualified Canopy.Data.Utf8 as Utf8
 import Generate.JavaScript.CodeSplit.Analyze (analyze)
 import Generate.JavaScript.CodeSplit.Manifest (contentHash)
 import Generate.JavaScript.CodeSplit.Types

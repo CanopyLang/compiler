@@ -54,7 +54,7 @@ where
 
 import qualified Canopy.ModuleName as ModuleName
 import qualified Data.Char as Char
-import qualified Data.Name as Name
+import qualified Canopy.Data.Name as Name
 import Data.Word (Word16)
 import Parse.Primitives (Col, Row)
 import Parse.Symbol (BadOperator (..))

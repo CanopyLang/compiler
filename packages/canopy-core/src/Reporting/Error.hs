@@ -13,8 +13,8 @@ where
 
 import qualified Canopy.ModuleName as ModuleName
 import qualified Data.ByteString as BS
-import qualified Data.NonEmptyList as NE
-import qualified Data.OneOrMore as OneOrMore
+import qualified Canopy.Data.NonEmptyList as NE
+import qualified Canopy.Data.OneOrMore as OneOrMore
 import qualified File
 import Json.Encode ((==>))
 import qualified Json.Encode as Encode

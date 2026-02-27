@@ -30,7 +30,7 @@
 -- @
 --
 -- @since 0.19.1
-module Data.Name.Core
+module Canopy.Data.Name.Core
   ( Name,
     CANOPY_NAME,
 
@@ -58,7 +58,7 @@ import Data.ByteString.Builder (Builder)
 import qualified Data.Coerce as Coerce
 import qualified Data.String as Chars
 import qualified Data.Text as Text
-import qualified Data.Utf8 as Utf8
+import qualified Canopy.Data.Utf8 as Utf8
 import GHC.Exts
   ( Ptr,
   )

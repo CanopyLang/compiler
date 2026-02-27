@@ -10,7 +10,7 @@ where
 
 import qualified Data.ByteString as BS
 import qualified Data.ByteString.UTF8 as BS_UTF8
-import qualified Data.NonEmptyList as NE
+import qualified Canopy.Data.NonEmptyList as NE
 import Json.Decode (DecodeExpectation (..), Error (..), ParseError (..), Problem (..), StringProblem (..))
 import qualified Reporting.Annotation as Ann
 import qualified Reporting.Doc as Doc

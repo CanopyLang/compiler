@@ -20,7 +20,7 @@ where
 
 import qualified AST.Source as Src
 import qualified Data.Char as Char
-import qualified Data.Name as Name
+import qualified Canopy.Data.Name as Name
 import qualified Data.Set as Set
 import Data.Word (Word8)
 import Foreign.Ptr (Ptr, plusPtr)

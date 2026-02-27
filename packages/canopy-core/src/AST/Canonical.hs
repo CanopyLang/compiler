@@ -176,11 +176,11 @@ import Data.Aeson.Types (Parser)
 import qualified Data.Binary as Binary
 import Data.Word (Word8, Word16)
 import qualified Data.Foldable as Foldable
-import qualified Data.Index as Index
+import qualified Canopy.Data.Index as Index
 import qualified Data.List as List
 import Data.Map (Map)
 import qualified Data.Map as Map
-import Data.Name (Name)
+import Canopy.Data.Name (Name)
 import Data.Set (Set)
 import qualified Reporting.Annotation as Ann
 

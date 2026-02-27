@@ -8,7 +8,7 @@
 module Unit.Builder.GraphTest (tests) where
 
 import qualified Builder.Graph as Graph
-import qualified Data.Name as Name
+import qualified Canopy.Data.Name as Name
 import qualified Data.Set as Set
 import Test.Tasty
 import Test.Tasty.HUnit

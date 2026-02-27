@@ -23,7 +23,7 @@ import qualified Parse.Module as Parse
 import qualified Data.ByteString as BS
 import Data.Map (Map)
 import qualified Data.Map as Map
-import qualified Data.OneOrMore as OneOrMore
+import qualified Canopy.Data.OneOrMore as OneOrMore
 import qualified Data.Text as Text
 import Logging.Event (LogEvent (..), CanonStats (..), VarResolution (..))
 import qualified Logging.Logger as Log

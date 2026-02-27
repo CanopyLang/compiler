@@ -47,8 +47,8 @@ import Canopy.Version (Version)
 import qualified Canopy.Version as Version
 import Control.Lens ((^.))
 import Control.Monad (when)
-import Data.NonEmptyList (List)
-import qualified Data.NonEmptyList as NE
+import Canopy.Data.NonEmptyList (List)
+import qualified Canopy.Data.NonEmptyList as NE
 import qualified Data.Text as Text
 import qualified Deps.Bump as Bump
 import qualified Deps.Diff as Diff

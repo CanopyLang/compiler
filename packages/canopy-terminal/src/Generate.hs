@@ -27,8 +27,8 @@ import Control.Monad.Trans.Except (ExceptT)
 import Data.ByteString.Builder (Builder)
 import qualified Data.Map.Strict as Map
 import qualified Data.Maybe as Maybe
-import qualified Data.Name as Name
-import qualified Data.NonEmptyList
+import qualified Canopy.Data.Name as Name
+import qualified Canopy.Data.NonEmptyList as NonEmptyList
 import qualified Data.Set as Set
 import qualified Generate.JavaScript as JS
 import qualified Generate.JavaScript.StringPool as StringPool
@@ -131,7 +131,7 @@ extractMains artifacts =
 gatherMains ::
   Pkg.Name ->
   [Build.Module] ->
-  Data.NonEmptyList.List Build.Root ->
+  NonEmptyList.List Build.Root ->
   Map.Map ModuleName.Canonical Opt.Main
 gatherMains pkg modules roots =
   let mainList = Maybe.mapMaybe (extractMainFromRoot pkg modules) (toList roots)
@@ -150,5 +150,5 @@ extractMainFromRoot pkg _modules root = case root of
       Just main -> Just (ModuleName.Canonical pkg name, main)
       Nothing -> Nothing
 
-toList :: Data.NonEmptyList.List a -> [a]
-toList (Data.NonEmptyList.List x xs) = x : xs
+toList :: NonEmptyList.List a -> [a]
+toList (NonEmptyList.List x xs) = x : xs

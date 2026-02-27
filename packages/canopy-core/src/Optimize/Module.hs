@@ -15,7 +15,7 @@ import qualified Data.List as List
 import qualified Data.Map as Map
 import qualified Data.Text as Text
 import qualified Reporting.InternalError as InternalError
-import qualified Data.Name as Name
+import qualified Canopy.Data.Name as Name
 import qualified Data.Set as Set
 import qualified Optimize.Expression as Expr
 import qualified Optimize.Names as Names

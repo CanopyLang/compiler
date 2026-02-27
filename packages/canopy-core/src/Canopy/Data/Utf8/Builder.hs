@@ -30,7 +30,7 @@
 -- @
 --
 -- @since 0.19.1
-module Data.Utf8.Builder
+module Canopy.Data.Utf8.Builder
   ( -- * Builder Operations
     toBuilder,
     toEscapedBuilder,
@@ -39,7 +39,7 @@ where
 
 import Control.Monad (when)
 import qualified Data.ByteString.Builder.Internal as BBI
-import Data.Utf8.Core (Utf8 (..))
+import Canopy.Data.Utf8.Core (Utf8 (..))
 import Foreign.Ptr (minusPtr, plusPtr)
 import GHC.Exts
   ( Int (I#),

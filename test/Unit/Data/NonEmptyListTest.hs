@@ -23,8 +23,8 @@ import Test.Tasty
 import Test.Tasty.HUnit
 import Test.Tasty.QuickCheck
 
-import qualified Data.NonEmptyList as NEL
-import Data.NonEmptyList (List(..))
+import qualified Canopy.Data.NonEmptyList as NEL
+import Canopy.Data.NonEmptyList (List(..))
 import qualified Data.List as List
 
 -- | Main test tree containing all Data.NonEmptyList tests.

@@ -13,7 +13,7 @@ import Data.Binary (Binary, get, put, getWord8, putWord8)
 import qualified Data.ByteString.Internal as BSI
 import qualified Data.List as List
 import qualified Data.Map as Map
-import qualified Data.Name as Name
+import qualified Canopy.Data.Name as Name
 import Data.Word (Word8)
 import Foreign.Ptr (Ptr, plusPtr, minusPtr)
 import Foreign.ForeignPtr (ForeignPtr)

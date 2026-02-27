@@ -52,8 +52,8 @@ import qualified Compiler
 import Control.Exception (IOException)
 import qualified Control.Exception as Exception
 import qualified Data.Map.Strict as Map
-import qualified Data.NonEmptyList as NE
-import qualified Data.Utf8 as Utf8
+import qualified Canopy.Data.NonEmptyList as NE
+import qualified Canopy.Data.Utf8 as Utf8
 import qualified Deps.Registry as Registry
 import qualified Http
 import qualified PackageCache

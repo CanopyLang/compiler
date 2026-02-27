@@ -62,7 +62,7 @@ import qualified Data.List as List
 import Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
 import Data.Maybe (mapMaybe)
-import qualified Data.Name as Name
+import qualified Canopy.Data.Name as Name
 import Data.Ord (Down (..))
 import qualified Data.Set as Set
 import qualified Data.Word as Word

@@ -21,7 +21,7 @@ import qualified Generate.JavaScript.Name as Name
 import Generate.JavaScript.Name (Name)
 import qualified Json.Encode as Json
 import qualified Canopy.String as ES
-import qualified Data.Utf8 as Utf8
+import qualified Canopy.Data.Utf8 as Utf8
 import qualified GHC.Word
 import qualified Generate.Mode as Mode
 

@@ -53,7 +53,7 @@ import Control.Lens ((^.))
 import qualified Data.List as List
 import qualified Data.Map as Map
 import qualified Data.Maybe as Maybe
-import qualified Data.Name as Name
+import qualified Canopy.Data.Name as Name
 import Deps.Diff (Changes (..), ModuleChanges (..), PackageChanges (..))
 import qualified Deps.Diff as Diff
 import Diff.Types (Chunk (..), chunkDetails, chunkMagnitude, chunkTitle)

@@ -8,9 +8,9 @@
 module Unit.Optimize.DecisionTreeTest (tests) where
 
 import qualified AST.Canonical as Can
-import qualified Data.Index as Index
-import qualified Data.Name as Name
-import qualified Data.Utf8 as Utf8
+import qualified Canopy.Data.Index as Index
+import qualified Canopy.Data.Name as Name
+import qualified Canopy.Data.Utf8 as Utf8
 import Optimize.DecisionTree (DecisionTree (..), Path (..), Test (..))
 import qualified Optimize.DecisionTree as DT
 import qualified Reporting.Annotation as Ann

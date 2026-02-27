@@ -22,12 +22,12 @@ where
 import qualified AST.Canonical as Can
 import qualified AST.Utils.Binop as Binop
 import qualified Canopy.ModuleName as ModuleName
-import qualified Data.Index as Index
+import qualified Canopy.Data.Index as Index
 import qualified Data.Map.Merge.Strict as Map
 import Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
-import qualified Data.Name as Name
-import qualified Data.OneOrMore as OneOrMore
+import qualified Canopy.Data.Name as Name
+import qualified Canopy.Data.OneOrMore as OneOrMore
 import qualified Reporting.Annotation as Ann
 import qualified Reporting.Error.Canonicalize as Error
 import qualified Reporting.Result as Result

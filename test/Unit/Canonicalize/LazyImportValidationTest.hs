@@ -20,8 +20,8 @@ import qualified Canopy.ModuleName as ModuleName
 import qualified Canopy.Package as Pkg
 import Data.Map (Map)
 import qualified Data.Map.Strict as Map
-import qualified Data.Name as Name
-import qualified Data.OneOrMore as OneOrMore
+import qualified Canopy.Data.Name as Name
+import qualified Canopy.Data.OneOrMore as OneOrMore
 import qualified Data.Set as Set
 import Parse.Module (ProjectType (..))
 import qualified Reporting.Annotation as Ann

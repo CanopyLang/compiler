@@ -23,8 +23,8 @@ import Test.Tasty
 import Test.Tasty.HUnit
 import Test.Tasty.QuickCheck
 
-import qualified Data.OneOrMore as OOM
-import Data.OneOrMore (OneOrMore(..))
+import qualified Canopy.Data.OneOrMore as OOM
+import Canopy.Data.OneOrMore (OneOrMore(..))
 
 -- | Main test tree containing all Data.OneOrMore tests.
 --

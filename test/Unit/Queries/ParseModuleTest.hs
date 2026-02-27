@@ -11,8 +11,8 @@ import qualified AST.Source as Src
 import qualified Canopy.Package as Pkg
 import qualified Control.Exception as Exception
 import qualified Data.ByteString as BS
-import qualified Data.Name as Name
-import qualified Data.Utf8 as Utf8
+import qualified Canopy.Data.Name as Name
+import qualified Canopy.Data.Utf8 as Utf8
 import qualified Parse.Module as Parse
 import qualified Query.Engine as Engine
 import Query.Simple

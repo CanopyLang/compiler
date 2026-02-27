@@ -32,7 +32,7 @@ import Data.Function (on)
 import qualified Data.List as List
 import Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
-import qualified Data.Name as Name
+import qualified Canopy.Data.Name as Name
 import qualified Data.Set as Set
 import qualified Deps.Website as Website
 import qualified File.FileSystem as File

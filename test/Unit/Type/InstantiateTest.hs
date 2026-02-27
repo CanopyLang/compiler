@@ -13,7 +13,7 @@ module Unit.Type.InstantiateTest (tests) where
 import qualified AST.Canonical as Can
 import qualified Canopy.ModuleName as ModuleName
 import qualified Data.Map.Strict as Map
-import qualified Data.Name as Name
+import qualified Canopy.Data.Name as Name
 import qualified Type.Instantiate as Instantiate
 import Type.Type (Type (..))
 import qualified Type.Type as Type

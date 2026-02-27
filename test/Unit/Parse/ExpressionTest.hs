@@ -2,7 +2,7 @@ module Unit.Parse.ExpressionTest (tests) where
 
 import qualified AST.Source as Src
 import qualified Data.ByteString.Char8 as C8
-import qualified Data.Name as Name
+import qualified Canopy.Data.Name as Name
 import qualified Parse.Expression as Expr
 import qualified Parse.Primitives as Parse
 import qualified Reporting.Annotation as Ann

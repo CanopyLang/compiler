@@ -23,8 +23,8 @@ module Unit.Parse.ExpressionArithmeticTest
 import Test.Tasty
 import Test.Tasty.HUnit
 import qualified Data.ByteString.Char8 as C8
-import qualified Data.Name as Name
-import qualified Data.Utf8 as Utf8
+import qualified Canopy.Data.Name as Name
+import qualified Canopy.Data.Utf8 as Utf8
 import qualified AST.Source as Src
 import qualified Parse.Expression as Parse
 import qualified Parse.Primitives as Primitives

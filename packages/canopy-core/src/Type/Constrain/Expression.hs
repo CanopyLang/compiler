@@ -9,10 +9,10 @@ where
 import qualified AST.Canonical as Can
 import qualified AST.Utils.Shader as Shader
 import qualified Canopy.ModuleName as ModuleName
-import qualified Data.Index as Index
+import qualified Canopy.Data.Index as Index
 import Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
-import qualified Data.Name as Name
+import qualified Canopy.Data.Name as Name
 import qualified Reporting.Annotation as Ann
 import Reporting.Error.Type (Category (..), Context (..), Expected (..), MaybeName (..), PContext (..), PExpected (..), SubContext (..))
 import qualified Reporting.Error.Type as TypeError

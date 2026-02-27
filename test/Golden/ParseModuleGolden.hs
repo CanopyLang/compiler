@@ -6,7 +6,7 @@ import qualified Data.ByteString as BS
 import qualified Data.ByteString.Lazy.Char8 as BL8
 import qualified Data.List as List
 import qualified Data.Maybe as Maybe
-import qualified Data.Name as Name
+import qualified Canopy.Data.Name as Name
 import qualified Parse.Module as ParseModule
 import qualified Reporting.Annotation as Ann
 import Test.Tasty

@@ -16,11 +16,11 @@ import qualified AST.Canonical as Can
 import qualified AST.Source as Src
 import qualified Canopy.ModuleName as ModuleName
 import qualified Data.Char as Char
-import qualified Data.Index as Index
+import qualified Canopy.Data.Index as Index
 import qualified Data.List as List
 import qualified Data.Map as Map
-import qualified Data.Name as Name
-import qualified Data.OneOrMore as OneOrMore
+import qualified Canopy.Data.Name as Name
+import qualified Canopy.Data.OneOrMore as OneOrMore
 import qualified Data.Set as Set
 import qualified Reporting.Annotation as Ann
 import Reporting.Doc (Doc, (<+>))

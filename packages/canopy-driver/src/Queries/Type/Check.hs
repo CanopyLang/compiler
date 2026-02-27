@@ -16,9 +16,9 @@ import qualified AST.Canonical as Can
 import qualified Data.ByteString as BS
 import Data.Map (Map)
 import qualified Data.Map as Map
-import qualified Data.Name as Name
-import Data.NonEmptyList (List)
-import qualified Data.NonEmptyList as NE
+import qualified Canopy.Data.Name as Name
+import Canopy.Data.NonEmptyList (List)
+import qualified Canopy.Data.NonEmptyList as NE
 import qualified Data.Text as Text
 import Logging.Event (LogEvent (..), TypeStats (..))
 import qualified Logging.Logger as Log

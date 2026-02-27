@@ -26,7 +26,7 @@ import Data.Aeson.Types (Parser)
 import Data.Binary
 import qualified Data.Map.Merge.Strict as Map
 import qualified Data.Map.Strict as Map
-import qualified Data.Name as Name
+import qualified Canopy.Data.Name as Name
 import qualified Data.Text as Text
 import qualified Reporting.InternalError as InternalError
 import qualified Reporting.Annotation as Ann
