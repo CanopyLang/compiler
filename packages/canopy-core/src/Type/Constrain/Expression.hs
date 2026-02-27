@@ -13,9 +13,9 @@ import qualified Data.Index as Index
 import Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
 import qualified Data.Name as Name
-import qualified Reporting.Annotation as A
+import qualified Reporting.Annotation as Ann
 import Reporting.Error.Type (Category (..), Context (..), Expected (..), MaybeName (..), PContext (..), PExpected (..), SubContext (..))
-import qualified Reporting.Error.Type as E
+import qualified Reporting.Error.Type as TypeError
 import qualified Type.Constrain.Pattern as Pattern
 import qualified Type.Instantiate as Instantiate
 import Type.Type as Type hiding (Descriptor (..))
@@ -33,7 +33,7 @@ type RTV =
   Map Name.Name Type
 
 constrain :: RTV -> Can.Expr -> Expected Type -> IO Constraint
-constrain rtv (A.At region expression) expected =
+constrain rtv (Ann.At region expression) expected =
   case expression of
     Can.VarLocal name ->
       return (CLocal region name expected)
@@ -56,7 +56,7 @@ constrain rtv (A.At region expression) expected =
     Can.Int _ ->
       do
         var <- mkFlexNumber
-        return $ exists [var] $ CEqual region E.Number (VarN var) expected
+        return $ exists [var] $ CEqual region TypeError.Number (VarN var) expected
     Can.Float _ ->
       return $ CEqual region Float Type.float expected
     Can.List elements ->
@@ -66,7 +66,7 @@ constrain rtv (A.At region expression) expected =
         numberVar <- mkFlexNumber
         let numberType = VarN numberVar
         numberCon <- constrain rtv expr (FromContext region Negate numberType)
-        let negateCon = CEqual region E.Number numberType expected
+        let negateCon = CEqual region TypeError.Number numberType expected
         return $ exists [numberVar] $ CAnd [numberCon, negateCon]
     Can.BinopOp kind annotation leftExpr rightExpr ->
       constrainBinopOp rtv region kind annotation leftExpr rightExpr expected
@@ -97,7 +97,7 @@ constrain rtv (A.At region expression) expected =
         return $
           exists [fieldVar, extVar] $
             CEqual region (Accessor field) (FunN recordType fieldType) expected
-    Can.Access expr (A.At accessRegion field) ->
+    Can.Access expr (Ann.At accessRegion field) ->
       do
         extVar <- mkFlexVar
         fieldVar <- mkFlexVar
@@ -105,7 +105,7 @@ constrain rtv (A.At region expression) expected =
         let fieldType = VarN fieldVar
         let recordType = RecordN (Map.singleton field fieldType) extType
 
-        let context = RecordAccess (A.toRegion expr) (getAccessName expr) accessRegion field
+        let context = RecordAccess (Ann.toRegion expr) (getAccessName expr) accessRegion field
         recordCon <- constrain rtv expr (FromContext region context recordType)
 
         return $
@@ -127,7 +127,7 @@ constrain rtv (A.At region expression) expected =
 
 -- CONSTRAIN LAMBDA
 
-constrainLambda :: RTV -> A.Region -> [Can.Pattern] -> Can.Expr -> Expected Type -> IO Constraint
+constrainLambda :: RTV -> Ann.Region -> [Can.Pattern] -> Can.Expr -> Expected Type -> IO Constraint
 constrainLambda rtv region args body expected =
   do
     (Args vars tipe resultType (Pattern.State headers pvars revCons)) <-
@@ -152,8 +152,8 @@ constrainLambda rtv region args body expected =
 
 -- CONSTRAIN CALL
 
-constrainCall :: RTV -> A.Region -> Can.Expr -> [Can.Expr] -> Expected Type -> IO Constraint
-constrainCall rtv region func@(A.At funcRegion _) args expected =
+constrainCall :: RTV -> Ann.Region -> Can.Expr -> [Can.Expr] -> Expected Type -> IO Constraint
+constrainCall rtv region func@(Ann.At funcRegion _) args expected =
   do
     let maybeName = getName func
 
@@ -179,7 +179,7 @@ constrainCall rtv region func@(A.At funcRegion _) args expected =
             CEqual region category resultType expected
           ]
 
-constrainArg :: RTV -> A.Region -> MaybeName -> Index.ZeroBased -> Can.Expr -> IO (Variable, Type, Constraint)
+constrainArg :: RTV -> Ann.Region -> MaybeName -> Index.ZeroBased -> Can.Expr -> IO (Variable, Type, Constraint)
 constrainArg rtv region maybeName index arg =
   do
     argVar <- mkFlexVar
@@ -188,7 +188,7 @@ constrainArg rtv region maybeName index arg =
     return (argVar, argType, argCon)
 
 getName :: Can.Expr -> MaybeName
-getName (A.At _ expr) =
+getName (Ann.At _ expr) =
   case expr of
     Can.VarLocal name -> FuncName name
     Can.VarTopLevel _ name -> FuncName name
@@ -199,7 +199,7 @@ getName (A.At _ expr) =
     _ -> NoName
 
 getAccessName :: Can.Expr -> Maybe Name.Name
-getAccessName (A.At _ expr) =
+getAccessName (Ann.At _ expr) =
   case expr of
     Can.VarLocal name -> Just name
     Can.VarTopLevel _ name -> Just name
@@ -249,7 +249,7 @@ getAccessName (A.At _ expr) =
 -- * **Space Complexity**: O(1) for dispatch, O(n) for constraint tree
 --
 -- @since 0.19.2
-constrainBinopOp :: RTV -> A.Region -> Can.BinopKind -> Can.Annotation -> Can.Expr -> Can.Expr -> Expected Type -> IO Constraint
+constrainBinopOp :: RTV -> Ann.Region -> Can.BinopKind -> Can.Annotation -> Can.Expr -> Can.Expr -> Expected Type -> IO Constraint
 constrainBinopOp rtv region kind annotation leftExpr rightExpr expected =
   case kind of
     Can.NativeArith op ->
@@ -318,7 +318,7 @@ constrainBinopOp rtv region kind annotation leftExpr rightExpr expected =
 -- * **Space Complexity**: O(1) constraint node allocation
 --
 -- @since 0.19.2
-constrainNativeArith :: RTV -> A.Region -> Can.ArithOp -> Can.Expr -> Can.Expr -> Expected Type -> IO Constraint
+constrainNativeArith :: RTV -> Ann.Region -> Can.ArithOp -> Can.Expr -> Can.Expr -> Expected Type -> IO Constraint
 constrainNativeArith rtv region _op leftExpr rightExpr expected =
   do
     leftVar <- mkFlexNumber
@@ -330,9 +330,9 @@ constrainNativeArith rtv region _op leftExpr rightExpr expected =
     leftCon <- constrain rtv leftExpr (FromContext region (OpLeft opName) leftType)
     rightCon <- constrain rtv rightExpr (FromContext region (OpRight opName) rightType)
 
-    let numberCon1 = CEqual region E.Number leftType (NoExpectation leftType)
-    let numberCon2 = CEqual region E.Number rightType (NoExpectation rightType)
-    let resultCon = CEqual region E.Number leftType expected
+    let numberCon1 = CEqual region TypeError.Number leftType (NoExpectation leftType)
+    let numberCon2 = CEqual region TypeError.Number rightType (NoExpectation rightType)
+    let resultCon = CEqual region TypeError.Number leftType expected
 
     return $
       exists [leftVar, rightVar] $
@@ -341,7 +341,7 @@ constrainNativeArith rtv region _op leftExpr rightExpr expected =
 -- | Constrain user-defined operator (original behavior).
 --
 -- @since 0.19.2
-constrainUserDefined :: RTV -> A.Region -> Name.Name -> Can.Annotation -> Can.Expr -> Can.Expr -> Expected Type -> IO Constraint
+constrainUserDefined :: RTV -> Ann.Region -> Name.Name -> Can.Annotation -> Can.Expr -> Can.Expr -> Expected Type -> IO Constraint
 constrainUserDefined rtv region op annotation leftExpr rightExpr expected =
   do
     leftVar <- mkFlexVar
@@ -368,7 +368,7 @@ constrainUserDefined rtv region op annotation leftExpr rightExpr expected =
 
 -- CONSTRAIN LISTS
 
-constrainList :: RTV -> A.Region -> [Can.Expr] -> Expected Type -> IO Constraint
+constrainList :: RTV -> Ann.Region -> [Can.Expr] -> Expected Type -> IO Constraint
 constrainList rtv region entries expected =
   do
     entryVar <- mkFlexVar
@@ -385,13 +385,13 @@ constrainList rtv region entries expected =
             CEqual region List listType expected
           ]
 
-constrainListEntry :: RTV -> A.Region -> Type -> Index.ZeroBased -> Can.Expr -> IO Constraint
+constrainListEntry :: RTV -> Ann.Region -> Type -> Index.ZeroBased -> Can.Expr -> IO Constraint
 constrainListEntry rtv region tipe index expr =
   constrain rtv expr (FromContext region (ListEntry index) tipe)
 
 -- CONSTRAIN IF EXPRESSIONS
 
-constrainIf :: RTV -> A.Region -> [(Can.Expr, Can.Expr)] -> Can.Expr -> Expected Type -> IO Constraint
+constrainIf :: RTV -> Ann.Region -> [(Can.Expr, Can.Expr)] -> Can.Expr -> Expected Type -> IO Constraint
 constrainIf rtv region branches final expected =
   do
     let boolExpect = FromContext region IfCondition Type.bool
@@ -428,7 +428,7 @@ constrainIf rtv region branches final expected =
 
 -- CONSTRAIN CASE EXPRESSIONS
 
-constrainCase :: RTV -> A.Region -> Can.Expr -> [Can.CaseBranch] -> Expected Type -> IO Constraint
+constrainCase :: RTV -> Ann.Region -> Can.Expr -> [Can.CaseBranch] -> Expected Type -> IO Constraint
 constrainCase rtv region expr branches expected =
   do
     ptrnVar <- mkFlexVar
@@ -478,7 +478,7 @@ constrainCaseBranch rtv (Can.CaseBranch pattern expr) pExpect bExpect =
 
 -- CONSTRAIN RECORD
 
-constrainRecord :: RTV -> A.Region -> Map Name.Name Can.Expr -> Expected Type -> IO Constraint
+constrainRecord :: RTV -> Ann.Region -> Map Name.Name Can.Expr -> Expected Type -> IO Constraint
 constrainRecord rtv region fields expected =
   do
     dict <- traverse (constrainField rtv) fields
@@ -502,7 +502,7 @@ constrainField rtv expr =
 
 -- CONSTRAIN RECORD UPDATE
 
-constrainUpdate :: RTV -> A.Region -> Name.Name -> Can.Expr -> Map Name.Name Can.FieldUpdate -> Expected Type -> IO Constraint
+constrainUpdate :: RTV -> Ann.Region -> Name.Name -> Can.Expr -> Map Name.Name Can.FieldUpdate -> Expected Type -> IO Constraint
 constrainUpdate rtv region name expr fields expected =
   do
     extVar <- mkFlexVar
@@ -523,7 +523,7 @@ constrainUpdate rtv region name expr fields expected =
 
     return $ exists vars $ CAnd (fieldsCon : con : cons)
 
-constrainUpdateField :: RTV -> A.Region -> Name.Name -> Can.FieldUpdate -> IO (Variable, Type, Constraint)
+constrainUpdateField :: RTV -> Ann.Region -> Name.Name -> Can.FieldUpdate -> IO (Variable, Type, Constraint)
 constrainUpdateField rtv region field (Can.FieldUpdate _ expr) =
   do
     var <- mkFlexVar
@@ -533,7 +533,7 @@ constrainUpdateField rtv region field (Can.FieldUpdate _ expr) =
 
 -- CONSTRAIN TUPLE
 
-constrainTuple :: RTV -> A.Region -> Can.Expr -> Can.Expr -> Maybe Can.Expr -> Expected Type -> IO Constraint
+constrainTuple :: RTV -> Ann.Region -> Can.Expr -> Can.Expr -> Maybe Can.Expr -> Expected Type -> IO Constraint
 constrainTuple rtv region a b maybeC expected =
   do
     aVar <- mkFlexVar
@@ -564,7 +564,7 @@ constrainTuple rtv region a b maybeC expected =
 
 -- CONSTRAIN SHADER
 
-constrainShader :: A.Region -> Shader.Types -> Expected Type -> IO Constraint
+constrainShader :: Ann.Region -> Shader.Types -> Expected Type -> IO Constraint
 constrainShader region (Shader.Types attributes uniforms varyings) expected =
   do
     attrVar <- mkFlexVar
@@ -604,7 +604,7 @@ glToType glType =
 
 -- CONSTRAIN DESTRUCTURES
 
-constrainDestruct :: RTV -> A.Region -> Can.Pattern -> Can.Expr -> Constraint -> IO Constraint
+constrainDestruct :: RTV -> Ann.Region -> Can.Pattern -> Can.Expr -> Constraint -> IO Constraint
 constrainDestruct rtv region pattern expr bodyCon =
   do
     patternVar <- mkFlexVar
@@ -623,14 +623,14 @@ constrainDestruct rtv region pattern expr bodyCon =
 constrainDef :: RTV -> Can.Def -> Constraint -> Expected Type -> IO Constraint
 constrainDef rtv def bodyCon expected = do
   let (_defName, _defType) = case def of
-        Can.Def (A.At _ n) _ _ -> (n, "Def" :: String)
-        Can.TypedDef (A.At _ n) _ _ _ _ -> (n, "TypedDef" :: String)
+        Can.Def (Ann.At _ n) _ _ -> (n, "Def" :: String)
+        Can.TypedDef (Ann.At _ n) _ _ _ _ -> (n, "TypedDef" :: String)
       expectedType = case expected of
         NoExpectation t -> Just t
         FromContext _ _ t -> Just t
         FromAnnotation _ _ _ t -> Just t
   case def of
-    Can.Def (A.At region name) args expr ->
+    Can.Def (Ann.At region name) args expr ->
       do
         (Args vars tipe resultType (Pattern.State headers pvars revCons)) <-
           constrainArgs args
@@ -642,7 +642,7 @@ constrainDef rtv def bodyCon expected = do
           CLet
             { _rigidVars = [],  -- Don't re-introduce rigids from RTV
               _flexVars = vars,
-              _header = Map.singleton name (A.At region tipe),
+              _header = Map.singleton name (Ann.At region tipe),
               _headerCon =
                 CLet
                   { _rigidVars = [],  -- Don't re-introduce rigids from RTV
@@ -655,7 +655,7 @@ constrainDef rtv def bodyCon expected = do
               _bodyCon = bodyCon,
               _expectedType = expectedType
             }
-    Can.TypedDef (A.At region name) freeVars typedArgs expr srcResultType ->
+    Can.TypedDef (Ann.At region name) freeVars typedArgs expr srcResultType ->
       do
         let newNames = Map.difference freeVars rtv
         newRigids <- Map.traverseWithKey (\n _ -> nameToRigid n) newNames
@@ -676,7 +676,7 @@ constrainDef rtv def bodyCon expected = do
           CLet
             { _rigidVars = allRigids,
               _flexVars = [],
-              _header = Map.singleton name (A.At region tipe),
+              _header = Map.singleton name (Ann.At region tipe),
               _headerCon =
                 CLet
                   { _rigidVars = [],
@@ -695,7 +695,7 @@ constrainDef rtv def bodyCon expected = do
 data Info = Info
   { _vars :: [Variable],
     _cons :: [Constraint],
-    _headers :: Map Name.Name (A.Located Type)
+    _headers :: Map Name.Name (Ann.Located Type)
   }
 
 {-# NOINLINE emptyInfo #-}
@@ -723,7 +723,7 @@ recDefsHelp rtv defs bodyCon rigidInfo flexInfo =
             Nothing
     def : otherDefs ->
       case def of
-        Can.Def (A.At region name) args expr ->
+        Can.Def (Ann.At region name) args expr ->
           do
             let (Info flexVars flexCons flexHeaders) = flexInfo
 
@@ -747,9 +747,9 @@ recDefsHelp rtv defs bodyCon rigidInfo flexInfo =
               Info
                 { _vars = newFlexVars,
                   _cons = defCon : flexCons,
-                  _headers = Map.insert name (A.At region tipe) flexHeaders
+                  _headers = Map.insert name (Ann.At region tipe) flexHeaders
                 }
-        Can.TypedDef (A.At region name) freeVars typedArgs expr srcResultType ->
+        Can.TypedDef (Ann.At region name) freeVars typedArgs expr srcResultType ->
           do
             let newNames = Map.difference freeVars rtv
             newRigids <- Map.traverseWithKey (\n _ -> nameToRigid n) newNames
@@ -784,7 +784,7 @@ recDefsHelp rtv defs bodyCon rigidInfo flexInfo =
               ( Info
                   { _vars = foldr (:) rigidVars allRigids,
                     _cons = CLet allRigids [] Map.empty defCon CTrue Nothing : rigidCons,
-                    _headers = Map.insert name (A.At region tipe) rigidHeaders
+                    _headers = Map.insert name (Ann.At region tipe) rigidHeaders
                   }
               )
               flexInfo
@@ -840,7 +840,7 @@ typedArgsHelp rtv name index args srcResultType state =
       do
         resultType <- Instantiate.fromSrcType rtv srcResultType
         return $ TypedArgs resultType resultType state
-    (pattern@(A.At region _), srcType) : otherArgs ->
+    (pattern@(Ann.At region _), srcType) : otherArgs ->
       do
         argType <- Instantiate.fromSrcType rtv srcType
         let expected = PFromContext region (PTypedArg name index) argType

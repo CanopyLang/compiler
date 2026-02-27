@@ -25,7 +25,7 @@ import qualified Canopy.Compiler.Type as Type
 import qualified Canopy.Docs as Docs
 import qualified Canopy.Magnitude as Magnitude
 import qualified Canopy.Package as Pkg
-import qualified Canopy.Version as V
+import qualified Canopy.Version as Version
 import qualified Json.String as Json
 import Control.Monad (zipWithM)
 import Data.Function (on)
@@ -38,7 +38,7 @@ import qualified Deps.Website as Website
 import qualified File.FileSystem as File
 import qualified File.Utf8 as File
 import qualified Http
-import qualified Json.Decode as D
+import qualified Json.Decode as Decode
 import qualified System.Directory as Dir
 import System.FilePath ((</>))
 
@@ -240,12 +240,12 @@ categorizeVar name
 -- MAGNITUDE CALCULATION
 
 -- | Bump version based on package changes.
-bump :: PackageChanges -> V.Version -> V.Version
+bump :: PackageChanges -> Version.Version -> Version.Version
 bump changes version =
   case toMagnitude changes of
-    Magnitude.PATCH -> V.bumpPatch version
-    Magnitude.MINOR -> V.bumpMinor version
-    Magnitude.MAJOR -> V.bumpMajor version
+    Magnitude.PATCH -> Version.bumpPatch version
+    Magnitude.MINOR -> Version.bumpMinor version
+    Magnitude.MAJOR -> Version.bumpMajor version
 
 -- | Compute magnitude of package changes.
 toMagnitude :: PackageChanges -> Magnitude.Magnitude
@@ -275,9 +275,9 @@ changeMagnitude (Changes added changed removed)
 -- GET DOCUMENTATION
 
 -- | Download and cache package documentation.
-getDocs :: FilePath -> Http.Manager -> Pkg.Name -> V.Version -> IO (Either String Docs.Documentation)
+getDocs :: FilePath -> Http.Manager -> Pkg.Name -> Version.Version -> IO (Either String Docs.Documentation)
 getDocs cache manager name version = do
-  let home = cache </> Pkg.toChars name </> V.toChars version
+  let home = cache </> Pkg.toChars name </> Version.toChars version
       path = home </> "docs.json"
   exists <- File.exists path
   if exists
@@ -288,18 +288,18 @@ getDocs cache manager name version = do
 readCachedDocs :: FilePath -> IO (Either String Docs.Documentation)
 readCachedDocs path = do
   bytes <- File.readUtf8 path
-  case D.fromByteString Docs.decoder bytes of
+  case Decode.fromByteString Docs.decoder bytes of
     Right docs -> pure (Right docs)
     Left _ -> do
       File.remove path
       pure (Left "Cached docs corrupted")
 
 -- | Download documentation from registry and cache it.
-downloadAndCacheDocs :: Http.Manager -> Pkg.Name -> V.Version -> FilePath -> FilePath -> IO (Either String Docs.Documentation)
+downloadAndCacheDocs :: Http.Manager -> Pkg.Name -> Version.Version -> FilePath -> FilePath -> IO (Either String Docs.Documentation)
 downloadAndCacheDocs manager name version home path = do
-  let url = Website.route "https://package.elm-lang.org" ("/packages/" <> Pkg.toUrl name <> "/" <> V.toChars version) [("file", "docs.json")]
+  let url = Website.route "https://package.elm-lang.org" ("/packages/" <> Pkg.toUrl name <> "/" <> Version.toChars version) [("file", "docs.json")]
   Http.getWithFallback manager url [] show $ \body ->
-    case D.fromByteString Docs.decoder body of
+    case Decode.fromByteString Docs.decoder body of
       Right docs -> do
         Dir.createDirectoryIfMissing True home
         File.writeUtf8 path body

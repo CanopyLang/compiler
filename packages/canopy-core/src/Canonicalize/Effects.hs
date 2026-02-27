@@ -12,11 +12,11 @@ import qualified AST.Utils.Type as Type
 import qualified Canonicalize.Environment as Env
 import qualified Canonicalize.Type as Type
 import qualified Canopy.ModuleName as ModuleName
-import qualified Data.Foldable as F
+import qualified Data.Foldable as Foldable
 import Data.Map (Map)
 import qualified Data.Map as Map
 import qualified Data.Name as Name
-import qualified Reporting.Annotation as A
+import qualified Reporting.Annotation as Ann
 import qualified Reporting.Error.Canonicalize as Error
 import qualified Reporting.Result as Result
 
@@ -29,7 +29,7 @@ type Result i w a =
 
 canonicalize ::
   Env.Env ->
-  [A.Located Src.Value] ->
+  [Ann.Located Src.Value] ->
   Map Name.Name union ->
   Src.Effects ->
   Result i w Can.Effects
@@ -68,7 +68,7 @@ canonicalize env values unions effects =
 -- CANONICALIZE PORT
 
 canonicalizePort :: Env.Env -> Src.Port -> Result i w (Name.Name, Can.Port)
-canonicalizePort env (Src.Port (A.At region portName) tipe) =
+canonicalizePort env (Src.Port (Ann.At region portName) tipe) =
   do
     (Can.Forall freeVars ctipe) <- Type.toAnnotation env tipe
     case reverse (Type.delambda (Type.deepDealias ctipe)) of
@@ -115,17 +115,17 @@ canonicalizePort env (Src.Port (A.At region portName) tipe) =
 
 -- VERIFY MANAGER
 
-verifyEffectType :: A.Located Name.Name -> Map Name.Name a -> Result i w Name.Name
-verifyEffectType (A.At region name) unions =
+verifyEffectType :: Ann.Located Name.Name -> Map Name.Name a -> Result i w Name.Name
+verifyEffectType (Ann.At region name) unions =
   if Map.member name unions
     then Result.ok name
     else Result.throw (Error.EffectNotFound region name)
 
-toNameRegion :: A.Located Src.Value -> (Name.Name, A.Region)
-toNameRegion (A.At _ (Src.Value (A.At region name) _ _ _)) =
+toNameRegion :: Ann.Located Src.Value -> (Name.Name, Ann.Region)
+toNameRegion (Ann.At _ (Src.Value (Ann.At region name) _ _ _)) =
   (name, region)
 
-verifyManager :: A.Region -> Map Name.Name A.Region -> Name.Name -> Result i w A.Region
+verifyManager :: Ann.Region -> Map Name.Name Ann.Region -> Name.Name -> Result i w Ann.Region
 verifyManager tagRegion values name =
   case Map.lookup name values of
     Just region ->
@@ -170,7 +170,7 @@ checkPayload tipe =
     Can.TRecord _ (Just _) ->
       Left (tipe, Error.ExtendedRecord)
     Can.TRecord fields Nothing ->
-      F.traverse_ checkFieldPayload fields
+      Foldable.traverse_ checkFieldPayload fields
 
 checkFieldPayload :: Can.FieldType -> Either (Can.Type, Error.InvalidPayload) ()
 checkFieldPayload (Can.FieldType _ tipe) =

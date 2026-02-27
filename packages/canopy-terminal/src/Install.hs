@@ -45,10 +45,10 @@ module Install
   )
 where
 
-import qualified Canopy.Constraint as C
+import qualified Canopy.Constraint as Constraint
 import qualified Canopy.Outline as Outline
 import qualified Canopy.Package as Pkg
-import qualified Canopy.Version as V
+import qualified Canopy.Version as Version
 import qualified Deps.Solver as Solver
 import Install.AppPlan (makeAppPlan)
 import Install.Arguments (validateArgs)
@@ -140,8 +140,8 @@ installPackageInProject :: FilePath -> Pkg.Name -> Task ()
 installPackageInProject root pkg = do
   envResult <- Task.io Solver.initEnv
   env <- either (Task.throw . Exit.InstallBadRegistry) pure envResult
-  maybeOutline <- Task.io (Outline.read root)
-  oldOutline <- maybe (Task.throw (Exit.InstallBadOutline "No canopy.json found")) pure maybeOutline
+  eitherOutline <- Task.io (Outline.read root)
+  oldOutline <- either (Task.throw . Exit.InstallBadOutline) pure eitherOutline
   context <- createInstallContext root env oldOutline
   planAndExecuteInstall context pkg oldOutline
 
@@ -177,7 +177,7 @@ installInApplication :: InstallContext -> Pkg.Name -> Outline.AppOutline -> Task
 installInApplication context pkg outline = do
   let InstallContext _ env _ _ = context
   changes <- makeAppPlan env pkg outline
-  executeInstallation context changes V.toChars
+  executeInstallation context changes Version.toChars
 
 -- | Install a package in a package project.
 --
@@ -189,4 +189,4 @@ installInPackage :: InstallContext -> Pkg.Name -> Outline.PkgOutline -> Task ()
 installInPackage context pkg outline = do
   let InstallContext _ env _ _ = context
   changes <- makePkgPlan env pkg outline
-  executeInstallation context changes C.toChars
+  executeInstallation context changes Constraint.toChars

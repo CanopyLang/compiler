@@ -3,10 +3,10 @@ module Golden.ParseTypeGolden (tests) where
 import qualified AST.Source as Src
 import qualified Data.ByteString.Char8 as C8
 import qualified Data.ByteString.Lazy.Char8 as BL8
-import qualified Parse.Primitives as P
+import qualified Parse.Primitives as Parse
 import qualified Parse.Type as Ty
-import qualified Reporting.Annotation as A
-import qualified Reporting.Error.Syntax as E
+import qualified Reporting.Annotation as Ann
+import qualified Reporting.Error.Syntax as SyntaxError
 import Test.Tasty
 import Test.Tasty.Golden
 
@@ -21,12 +21,12 @@ goldenType :: String -> String -> FilePath -> TestTree
 goldenType name src path =
   goldenVsString name path $ do
     let bs = C8.pack src
-    case P.fromByteString Ty.expression E.TIndentStart bs of
+    case Parse.fromByteString Ty.expression SyntaxError.TIndentStart bs of
       Left err -> pure (BL8.pack ("Parse error: " <> (show err <> "\n")))
       Right (tipe, _) -> pure (BL8.pack (typeSummary tipe <> "\n"))
 
 typeSummary :: Src.Type -> String
-typeSummary (A.At _ t) = go t
+typeSummary (Ann.At _ t) = go t
   where
     go v = case v of
       Src.TLambda _ _ -> "TLambda"

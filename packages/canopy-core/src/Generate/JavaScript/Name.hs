@@ -22,7 +22,7 @@ module Generate.JavaScript.Name
 
 
 import Data.ByteString.Builder (Builder)
-import qualified Data.ByteString.Builder as B
+import qualified Data.ByteString.Builder as BB
 import qualified Data.Map as Map
 import qualified Data.Name as Name
 import qualified Data.Set as Set
@@ -98,17 +98,17 @@ homeToBuilder (ModuleName.Canonical (Pkg.Name author project) home) =
 
 makeF :: Int -> Name
 makeF n =
-  Name ("F" <> B.intDec n)
+  Name ("F" <> BB.intDec n)
 
 
 makeA :: Int -> Name
 makeA n =
-  Name ("A" <> B.intDec n)
+  Name ("A" <> BB.intDec n)
 
 
 makeLabel :: Name.Name -> Int -> Name
 makeLabel name index =
-  Name (Name.toBuilder name <> usd <> B.intDec index)
+  Name (Name.toBuilder name <> usd <> BB.intDec index)
 
 
 makeTemp :: Name.Name -> Name

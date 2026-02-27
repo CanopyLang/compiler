@@ -10,7 +10,7 @@
 module Unit.InstallTest (tests) where
 
 import qualified Canopy.Package as Pkg
-import qualified Canopy.Version as V
+import qualified Canopy.Version as Version
 import Control.Lens ((^.))
 import Install (Args (..))
 import qualified Install.Types as Types
@@ -113,9 +113,9 @@ testInstallTypes =
   testGroup
     "Install.Types behavior"
     [ testCase "Change types represent different operations" $ do
-        let version = V.one
+        let version = Version.one
         let insert = Types.Insert version
-        let change = Types.Change version V.one
+        let change = Types.Change version Version.one
         let remove = Types.Remove version
         -- Test that different constructors can be distinguished
         case insert of
@@ -124,7 +124,7 @@ testInstallTypes =
         case change of
           Types.Change v1 v2 -> do
             v1 @?= version
-            v2 @?= V.one
+            v2 @?= Version.one
           _ -> assertFailure "Change should match Change pattern"
         case remove of
           Types.Remove v -> v @?= version
@@ -143,7 +143,7 @@ testChangesType =
           Types.AlreadyInstalled -> pure () -- Successfully pattern matched AlreadyInstalled
           _ -> assertFailure "AlreadyInstalled should match pattern",
       testCase "Change operations carry version information" $ do
-        let version = V.one
+        let version = Version.one
         case Types.Insert version of
           Types.Insert v -> v @?= version
         case Types.Remove version of
@@ -169,7 +169,7 @@ testDisplayTypes =
                 + length (docs ^. Types.docRemoves)
         0 @?= totalChanges, -- Empty docs should have 0 total changes
       testCase "ExistingDep distinguishes dependency contexts" $ do
-        let deps = [Types.IndirectDep V.one, Types.TestDirectDep V.one, Types.TestIndirectDep V.one]
+        let deps = [Types.IndirectDep Version.one, Types.TestDirectDep Version.one, Types.TestIndirectDep Version.one]
         -- Test that we can distinguish different dependency contexts
         assertBool "Should have different dependency types" (length deps == 3)
     ]

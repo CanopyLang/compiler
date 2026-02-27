@@ -37,7 +37,7 @@ import qualified Canopy.Constraint as Con
 import qualified Canopy.Outline as Outline
 import Canopy.Package (Name)
 import qualified Canopy.Package as Pkg
-import qualified Canopy.Version as V
+import qualified Canopy.Version as Version
 import Control.Lens ((&), (.~), (^.))
 import qualified Control.Lens as Lens
 import qualified Data.Map as Map
@@ -213,7 +213,7 @@ projectCreationIntegrationTests =
           Left other -> fail ("Unexpected setup error: " <> show other),
       Test.testCase "outline config integrates with solver details" $ do
         let context = defaultContext
-            solverDetails = Map.fromList [(Pkg.core, Solver.Details V.one Map.empty)]
+            solverDetails = Map.fromList [(Pkg.core, Solver.Details Version.one Map.empty)]
             outline = Project.createOutlineConfig context solverDetails
 
         -- Outline should reflect context and solver details

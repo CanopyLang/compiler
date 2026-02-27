@@ -41,7 +41,7 @@ module Worker.Pool
   )
 where
 
-import qualified Canopy.Interface as I
+import qualified Canopy.Interface as Interface
 import qualified Canopy.ModuleName as ModuleName
 import qualified Canopy.Package as Pkg
 import qualified Control.Concurrent as Concurrent
@@ -79,7 +79,7 @@ data CompileResult
 -- | Compilation task for a single module.
 data CompileTask = CompileTask
   { taskPackage :: !Pkg.Name,
-    taskInterfaces :: !(Map ModuleName.Raw I.Interface),
+    taskInterfaces :: !(Map ModuleName.Raw Interface.Interface),
     taskFilePath :: !FilePath,
     taskProjectType :: !Parse.ProjectType
   }

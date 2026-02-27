@@ -69,7 +69,7 @@ import qualified Data.Word as Word
 import qualified Json.Encode as Encode
 import qualified Json.String as JsonString
 import qualified Parse.Module as Parse
-import qualified Reporting.Annotation as A
+import qualified Reporting.Annotation as Ann
 import Reporting.Doc.ColorQQ (c)
 import qualified System.Directory as Dir
 import qualified System.FilePath as FilePath
@@ -155,7 +155,7 @@ data ReportFormat
 -- @since 0.19.1
 data LintWarning = LintWarning
   { -- | Source region where the issue was detected.
-    _warnRegion :: !A.Region,
+    _warnRegion :: !Ann.Region,
     -- | Short identifier for the rule (e.g. \"UnusedImport\").
     _warnRule :: !LintRule,
     -- | Severity at which this warning was reported.
@@ -271,7 +271,7 @@ lintFile config flags path = do
 parseErrorWarning :: FilePath -> LintWarning
 parseErrorWarning path =
   LintWarning
-    { _warnRegion = A.zero,
+    { _warnRegion = Ann.zero,
       _warnRule = MissingTypeAnnotation,
       _warnSeverity = SevWarning,
       _warnMessage = "Could not parse file: " ++ path,
@@ -426,7 +426,7 @@ checkOneImport usedNames imp
 
 -- | Check whether at least one name from the import appears in the module.
 isImportUsed :: Set.Set String -> Src.Import -> Bool
-isImportUsed usedNames (Src.Import (A.At _ modName) alias exposing _isLazy) =
+isImportUsed usedNames (Src.Import (Ann.At _ modName) alias exposing _isLazy) =
   qualifierUsed || exposedNamesUsed
   where
     qualifier = maybe (Name.toChars modName) Name.toChars alias
@@ -440,22 +440,22 @@ exposedNames (Src.Explicit items) = mapMaybe exposedItemName items
 
 -- | Extract the string representation of a single exposed item.
 exposedItemName :: Src.Exposed -> Maybe String
-exposedItemName (Src.Lower (A.At _ n)) = Just (Name.toChars n)
-exposedItemName (Src.Upper (A.At _ n) _) = Just (Name.toChars n)
+exposedItemName (Src.Lower (Ann.At _ n)) = Just (Name.toChars n)
+exposedItemName (Src.Upper (Ann.At _ n) _) = Just (Name.toChars n)
 exposedItemName (Src.Operator _ n) = Just (Name.toChars n)
 
 -- | Build the set of all name tokens that appear in the module body.
 collectUsedNames :: Src.Module -> Set.Set String
 collectUsedNames modul =
   Set.fromList $
-    concatMap collectNamesInValue (map A.toValue (Src._values modul))
-      ++ concatMap collectNamesInUnion (map A.toValue (Src._unions modul))
-      ++ concatMap collectNamesInAlias (map A.toValue (Src._aliases modul))
+    concatMap collectNamesInValue (map Ann.toValue (Src._values modul))
+      ++ concatMap collectNamesInUnion (map Ann.toValue (Src._unions modul))
+      ++ concatMap collectNamesInAlias (map Ann.toValue (Src._aliases modul))
 
 -- | Collect all name tokens from a value definition.
 collectNamesInValue :: Src.Value -> [String]
 collectNamesInValue (Src.Value _ _ expr _) =
-  collectNamesInExpr (A.toValue expr)
+  collectNamesInExpr (Ann.toValue expr)
 
 -- | Collect all name tokens from a union type definition.
 collectNamesInUnion :: Src.Union -> [String]
@@ -463,14 +463,14 @@ collectNamesInUnion (Src.Union _ _ ctors) =
   concatMap collectNamesInCtor ctors
 
 -- | Collect names from a constructor definition.
-collectNamesInCtor :: (A.Located Name.Name, [Src.Type]) -> [String]
+collectNamesInCtor :: (Ann.Located Name.Name, [Src.Type]) -> [String]
 collectNamesInCtor (_, types) =
-  concatMap collectNamesInType (map A.toValue types)
+  concatMap collectNamesInType (map Ann.toValue types)
 
 -- | Collect names from a type alias definition.
 collectNamesInAlias :: Src.Alias -> [String]
 collectNamesInAlias (Src.Alias _ _ t) =
-  collectNamesInType (A.toValue t)
+  collectNamesInType (Ann.toValue t)
 
 -- | Collect all identifier tokens used in an expression.
 collectNamesInExpr :: Src.Expr_ -> [String]
@@ -479,68 +479,68 @@ collectNamesInExpr expr =
     Src.Var _ n -> [Name.toChars n]
     Src.VarQual _ modN n -> [Name.toChars modN, Name.toChars n]
     Src.Call f args ->
-      collectNamesInExpr (A.toValue f)
-        ++ concatMap (collectNamesInExpr . A.toValue) args
+      collectNamesInExpr (Ann.toValue f)
+        ++ concatMap (collectNamesInExpr . Ann.toValue) args
     Src.If branches elseBranch ->
       concatMap collectBranchNames branches
-        ++ collectNamesInExpr (A.toValue elseBranch)
+        ++ collectNamesInExpr (Ann.toValue elseBranch)
     Src.Let defs body ->
-      concatMap (collectNamesInDef . A.toValue) defs
-        ++ collectNamesInExpr (A.toValue body)
+      concatMap (collectNamesInDef . Ann.toValue) defs
+        ++ collectNamesInExpr (Ann.toValue body)
     Src.Case scrutinee branches ->
-      collectNamesInExpr (A.toValue scrutinee)
-        ++ concatMap (collectNamesInExpr . A.toValue . snd) branches
-    Src.Lambda _ body -> collectNamesInExpr (A.toValue body)
-    Src.List items -> concatMap (collectNamesInExpr . A.toValue) items
+      collectNamesInExpr (Ann.toValue scrutinee)
+        ++ concatMap (collectNamesInExpr . Ann.toValue . snd) branches
+    Src.Lambda _ body -> collectNamesInExpr (Ann.toValue body)
+    Src.List items -> concatMap (collectNamesInExpr . Ann.toValue) items
     Src.Binops pairs last_ ->
-      concatMap (collectNamesInExpr . A.toValue . fst) pairs
-        ++ collectNamesInExpr (A.toValue last_)
-    Src.Negate e -> collectNamesInExpr (A.toValue e)
-    Src.Access e _ -> collectNamesInExpr (A.toValue e)
-    Src.Update (A.At _ n) fields ->
-      Name.toChars n : concatMap (collectNamesInExpr . A.toValue . snd) fields
+      concatMap (collectNamesInExpr . Ann.toValue . fst) pairs
+        ++ collectNamesInExpr (Ann.toValue last_)
+    Src.Negate e -> collectNamesInExpr (Ann.toValue e)
+    Src.Access e _ -> collectNamesInExpr (Ann.toValue e)
+    Src.Update (Ann.At _ n) fields ->
+      Name.toChars n : concatMap (collectNamesInExpr . Ann.toValue . snd) fields
     Src.Record fields ->
-      concatMap (collectNamesInExpr . A.toValue . snd) fields
+      concatMap (collectNamesInExpr . Ann.toValue . snd) fields
     Src.Tuple e1 e2 rest ->
-      collectNamesInExpr (A.toValue e1)
-        ++ collectNamesInExpr (A.toValue e2)
-        ++ concatMap (collectNamesInExpr . A.toValue) rest
+      collectNamesInExpr (Ann.toValue e1)
+        ++ collectNamesInExpr (Ann.toValue e2)
+        ++ concatMap (collectNamesInExpr . Ann.toValue) rest
     _ -> []
 
 -- | Collect names from a branch pair.
 collectBranchNames :: (Src.Expr, Src.Expr) -> [String]
 collectBranchNames (cond, body) =
-  collectNamesInExpr (A.toValue cond)
-    ++ collectNamesInExpr (A.toValue body)
+  collectNamesInExpr (Ann.toValue cond)
+    ++ collectNamesInExpr (Ann.toValue body)
 
 -- | Collect names in a local definition.
 collectNamesInDef :: Src.Def -> [String]
-collectNamesInDef (Src.Define _ _ body _) = collectNamesInExpr (A.toValue body)
-collectNamesInDef (Src.Destruct _ body) = collectNamesInExpr (A.toValue body)
+collectNamesInDef (Src.Define _ _ body _) = collectNamesInExpr (Ann.toValue body)
+collectNamesInDef (Src.Destruct _ body) = collectNamesInExpr (Ann.toValue body)
 
 -- | Collect names referenced in a type expression.
 collectNamesInType :: Src.Type_ -> [String]
 collectNamesInType t =
   case t of
     Src.TType _ n args ->
-      Name.toChars n : concatMap (collectNamesInType . A.toValue) args
+      Name.toChars n : concatMap (collectNamesInType . Ann.toValue) args
     Src.TTypeQual _ modN n args ->
-      Name.toChars modN : Name.toChars n : concatMap (collectNamesInType . A.toValue) args
+      Name.toChars modN : Name.toChars n : concatMap (collectNamesInType . Ann.toValue) args
     Src.TLambda a b ->
-      collectNamesInType (A.toValue a) ++ collectNamesInType (A.toValue b)
+      collectNamesInType (Ann.toValue a) ++ collectNamesInType (Ann.toValue b)
     Src.TRecord fields _ ->
-      concatMap (collectNamesInType . A.toValue . snd) fields
+      concatMap (collectNamesInType . Ann.toValue . snd) fields
     Src.TTuple a b rest ->
-      collectNamesInType (A.toValue a)
-        ++ collectNamesInType (A.toValue b)
-        ++ concatMap (collectNamesInType . A.toValue) rest
+      collectNamesInType (Ann.toValue a)
+        ++ collectNamesInType (Ann.toValue b)
+        ++ concatMap (collectNamesInType . Ann.toValue) rest
     _ -> []
 
 -- | Build the unused-import warning for an import statement.
 --
 -- The auto-fix removes the entire import line range based on the AST region.
 unusedImportWarning :: Src.Import -> LintWarning
-unusedImportWarning (Src.Import (A.At region modName) _ _ _) =
+unusedImportWarning (Src.Import (Ann.At region modName) _ _ _) =
   LintWarning
     { _warnRegion = region,
       _warnRule = UnusedImport,
@@ -553,8 +553,8 @@ unusedImportWarning (Src.Import (A.At region modName) _ _ _) =
     (startLine, endLine) = regionLineRange region
 
 -- | Extract the 1-indexed start and end lines from a region.
-regionLineRange :: A.Region -> (Int, Int)
-regionLineRange (A.Region (A.Position startRow _) (A.Position endRow _)) =
+regionLineRange :: Ann.Region -> (Int, Int)
+regionLineRange (Ann.Region (Ann.Position startRow _) (Ann.Position endRow _)) =
   (fromIntegral startRow, fromIntegral endRow)
 
 -- | Rule: detect @case x of True -> a; False -> b@ patterns.
@@ -565,7 +565,7 @@ regionLineRange (A.Region (A.Position startRow _) (A.Position endRow _)) =
 -- @since 0.19.1
 checkBooleanCase :: Src.Module -> [LintWarning]
 checkBooleanCase modul =
-  concatMap (checkBooleanCaseInValue . A.toValue) (Src._values modul)
+  concatMap (checkBooleanCaseInValue . Ann.toValue) (Src._values modul)
 
 -- | Search a value definition for boolean case expressions.
 checkBooleanCaseInValue :: Src.Value -> [LintWarning]
@@ -574,14 +574,14 @@ checkBooleanCaseInValue (Src.Value _ _ expr _) =
 
 -- | Walk an expression tree looking for boolean case expressions.
 checkBooleanCaseInExpr :: Src.Expr -> [LintWarning]
-checkBooleanCaseInExpr (A.At region expr_) =
+checkBooleanCaseInExpr (Ann.At region expr_) =
   caseWarning ++ subWarnings
   where
     caseWarning = maybe [] pure (isBooleanCase region expr_)
     subWarnings = concatMap checkBooleanCaseInExpr (childExprs expr_)
 
 -- | Determine whether an expression is a boolean case; produce a warning if so.
-isBooleanCase :: A.Region -> Src.Expr_ -> Maybe LintWarning
+isBooleanCase :: Ann.Region -> Src.Expr_ -> Maybe LintWarning
 isBooleanCase region (Src.Case _ branches)
   | isBooleanBranches branches =
       Just
@@ -599,8 +599,8 @@ isBooleanCase _ _ = Nothing
 isBooleanBranches :: [(Src.Pattern, Src.Expr)] -> Bool
 isBooleanBranches branches =
   length branches == 2
-    && all (isBoolPattern . A.toValue . fst) branches
-    && Set.fromList (map (patternCtorName . A.toValue . fst) branches)
+    && all (isBoolPattern . Ann.toValue . fst) branches
+    && Set.fromList (map (patternCtorName . Ann.toValue . fst) branches)
       == Set.fromList ["True", "False"]
 
 -- | Check if a pattern is a bare @True@ or @False@ constructor.
@@ -621,7 +621,7 @@ childExprs expr =
     Src.If branches elseBranch ->
       concatMap (\(cond, body) -> [cond, body]) branches ++ [elseBranch]
     Src.Let defs body ->
-      concatMap defExprs (map A.toValue defs) ++ [body]
+      concatMap defExprs (map Ann.toValue defs) ++ [body]
     Src.Case scrutinee branches ->
       scrutinee : map snd branches
     Src.Lambda _ body -> [body]
@@ -648,7 +648,7 @@ defExprs (Src.Destruct _ body) = [body]
 -- @since 0.19.1
 checkUnnecessaryParens :: Src.Module -> [LintWarning]
 checkUnnecessaryParens modul =
-  concatMap (checkParensInValue . A.toValue) (Src._values modul)
+  concatMap (checkParensInValue . Ann.toValue) (Src._values modul)
 
 -- | Search a value definition for unnecessary parentheses.
 checkParensInValue :: Src.Value -> [LintWarning]
@@ -657,7 +657,7 @@ checkParensInValue (Src.Value _ _ expr _) =
 
 -- | Walk an expression looking for parenthesised atomic sub-expressions.
 checkParensInExpr :: Src.Expr -> [LintWarning]
-checkParensInExpr located@(A.At region expr_) =
+checkParensInExpr located@(Ann.At region expr_) =
   parenWarnings ++ subWarnings
   where
     parenWarnings = maybe [] pure (unnecessaryParenWarning region located expr_)
@@ -670,9 +670,9 @@ checkParensInExpr located@(A.At region expr_) =
 -- element – but the parser prevents that.  We therefore detect the most common
 -- hand-written pattern: @(variable)@ represented as a @Call@ on nothing with
 -- an atomic argument.
-unnecessaryParenWarning :: A.Region -> Src.Expr -> Src.Expr_ -> Maybe LintWarning
+unnecessaryParenWarning :: Ann.Region -> Src.Expr -> Src.Expr_ -> Maybe LintWarning
 unnecessaryParenWarning region _ (Src.Tuple e1 _ [])
-  | isAtomic (A.toValue e1) =
+  | isAtomic (Ann.toValue e1) =
       Just
         LintWarning
           { _warnRegion = region,
@@ -702,7 +702,7 @@ isAtomic _ = False
 -- @since 0.19.1
 checkDropConcatOfLists :: Src.Module -> [LintWarning]
 checkDropConcatOfLists modul =
-  concatMap (checkConcatInValue . A.toValue) (Src._values modul)
+  concatMap (checkConcatInValue . Ann.toValue) (Src._values modul)
 
 -- | Search a value definition for @[x] ++ [y]@ patterns.
 checkConcatInValue :: Src.Value -> [LintWarning]
@@ -711,14 +711,14 @@ checkConcatInValue (Src.Value _ _ expr _) =
 
 -- | Walk an expression looking for @[a] ++ [b]@ binop chains.
 checkConcatInExpr :: Src.Expr -> [LintWarning]
-checkConcatInExpr (A.At region expr_) =
+checkConcatInExpr (Ann.At region expr_) =
   concatWarnings ++ subWarnings
   where
     concatWarnings = maybe [] pure (dropConcatWarning region expr_)
     subWarnings = concatMap checkConcatInExpr (childExprs expr_)
 
 -- | Detect @[a] ++ [b]@ and produce a warning.
-dropConcatWarning :: A.Region -> Src.Expr_ -> Maybe LintWarning
+dropConcatWarning :: Ann.Region -> Src.Expr_ -> Maybe LintWarning
 dropConcatWarning region (Src.Binops pairs _)
   | any isListConcatPair pairs =
       Just
@@ -733,9 +733,9 @@ dropConcatWarning region (Src.Binops pairs _)
 dropConcatWarning _ _ = Nothing
 
 -- | Check whether a binop pair is a @++ [...]@ applied to a @[...]@ left-hand side.
-isListConcatPair :: (Src.Expr, A.Located Name.Name) -> Bool
-isListConcatPair (lhs, A.At _ op) =
-  Name.toChars op == "++" && isList (A.toValue lhs)
+isListConcatPair :: (Src.Expr, Ann.Located Name.Name) -> Bool
+isListConcatPair (lhs, Ann.At _ op) =
+  Name.toChars op == "++" && isList (Ann.toValue lhs)
 
 -- | Check whether an expression is a list literal.
 isList :: Src.Expr_ -> Bool
@@ -750,7 +750,7 @@ isList _ = False
 -- @since 0.19.1
 checkUseConsOverConcat :: Src.Module -> [LintWarning]
 checkUseConsOverConcat modul =
-  concatMap (checkConsInValue . A.toValue) (Src._values modul)
+  concatMap (checkConsInValue . Ann.toValue) (Src._values modul)
 
 -- | Search a value definition for @[a] ++ list@ patterns.
 checkConsInValue :: Src.Value -> [LintWarning]
@@ -759,17 +759,17 @@ checkConsInValue (Src.Value _ _ expr _) =
 
 -- | Walk an expression looking for @[a] ++ list@ binop chains.
 checkConsInExpr :: Src.Expr -> [LintWarning]
-checkConsInExpr (A.At region expr_) =
+checkConsInExpr (Ann.At region expr_) =
   consWarnings ++ subWarnings
   where
     consWarnings = maybe [] pure (useConsWarning region expr_)
     subWarnings = concatMap checkConsInExpr (childExprs expr_)
 
 -- | Detect @[a] ++ list@ where the right-hand side is not a literal.
-useConsWarning :: A.Region -> Src.Expr_ -> Maybe LintWarning
+useConsWarning :: Ann.Region -> Src.Expr_ -> Maybe LintWarning
 useConsWarning region (Src.Binops pairs rhs)
   | any isSingletonConcatPair pairs
-      && not (isList (A.toValue rhs)) =
+      && not (isList (Ann.toValue rhs)) =
       Just
         LintWarning
           { _warnRegion = region,
@@ -782,9 +782,9 @@ useConsWarning region (Src.Binops pairs rhs)
 useConsWarning _ _ = Nothing
 
 -- | Check whether the left-hand side of a @++@ is a single-element list literal.
-isSingletonConcatPair :: (Src.Expr, A.Located Name.Name) -> Bool
-isSingletonConcatPair (lhs, A.At _ op) =
-  Name.toChars op == "++" && isSingleton (A.toValue lhs)
+isSingletonConcatPair :: (Src.Expr, Ann.Located Name.Name) -> Bool
+isSingletonConcatPair (lhs, Ann.At _ op) =
+  Name.toChars op == "++" && isSingleton (Ann.toValue lhs)
 
 -- | Check whether an expression is a list literal with exactly one element.
 isSingleton :: Src.Expr_ -> Bool
@@ -800,11 +800,11 @@ isSingleton _ = False
 -- @since 0.19.1
 checkMissingTypeAnnotation :: Src.Module -> [LintWarning]
 checkMissingTypeAnnotation modul =
-  mapMaybe (checkAnnotation . A.toValue) (Src._values modul)
+  mapMaybe (checkAnnotation . Ann.toValue) (Src._values modul)
 
 -- | Produce a warning for a value without a type annotation.
 checkAnnotation :: Src.Value -> Maybe LintWarning
-checkAnnotation (Src.Value (A.At region name_) _patterns _body Nothing) =
+checkAnnotation (Src.Value (Ann.At region name_) _patterns _body Nothing) =
   Just
     LintWarning
       { _warnRegion = region,
@@ -857,8 +857,8 @@ printFix (RemoveLines start end)
     endStr = show end
 
 -- | Render a source region as a human-readable @line:col-line:col@ string.
-renderRegion :: A.Region -> String
-renderRegion (A.Region (A.Position startLine startCol) (A.Position endLine endCol)) =
+renderRegion :: Ann.Region -> String
+renderRegion (Ann.Region (Ann.Position startLine startCol) (Ann.Position endLine endCol)) =
   showWord16 startLine ++ ":" ++ showWord16 startCol
     ++ "-"
     ++ showWord16 endLine ++ ":" ++ showWord16 endCol
@@ -884,8 +884,8 @@ encodeWarning w =
     ]
 
 -- | Encode a source region as a JSON object.
-encodeRegion :: A.Region -> Encode.Value
-encodeRegion (A.Region (A.Position sl sc) (A.Position el ec)) =
+encodeRegion :: Ann.Region -> Encode.Value
+encodeRegion (Ann.Region (Ann.Position sl sc) (Ann.Position el ec)) =
   Encode.object
     [ (JsonString.fromChars "start", encodePosition sl sc),
       (JsonString.fromChars "end", encodePosition el ec)

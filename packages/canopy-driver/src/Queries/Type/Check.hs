@@ -25,7 +25,7 @@ import qualified Logging.Logger as Log
 import Query.Simple
 import qualified Reporting.Error.Type as Error
 import qualified Reporting.Render.Code as Code
-import qualified Reporting.Render.Type.Localizer as L
+import qualified Reporting.Render.Type.Localizer as Localizer
 import qualified Type.Constrain.Module as Constrain
 import qualified Type.Solve as Solve
 
@@ -63,6 +63,6 @@ processErrors :: FilePath -> List Error.Error -> IO QueryError
 processErrors path errors = do
   sourceBytes <- BS.readFile path
   let source = Code.toSource sourceBytes
-      localizer = L.empty
+      localizer = Localizer.empty
       diagnostics = fmap (Error.toDiagnostic localizer source) (NE.toList errors)
   pure (DiagnosticError path diagnostics)

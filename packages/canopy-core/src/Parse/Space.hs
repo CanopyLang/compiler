@@ -20,9 +20,9 @@ import Foreign.ForeignPtr.Unsafe (unsafeForeignPtrToPtr)
 
 import qualified AST.Source as Src
 import Parse.Primitives (Row, Col)
-import qualified Parse.Primitives as P
-import qualified Reporting.Annotation as A
-import qualified Reporting.Error.Syntax as E
+import qualified Parse.Primitives as Parse
+import qualified Reporting.Annotation as Ann
+import qualified Reporting.Error.Syntax as SyntaxError
 
 
 
@@ -30,53 +30,53 @@ import qualified Reporting.Error.Syntax as E
 
 
 type Parser x a =
-  P.Parser x (a, A.Position)
+  Parse.Parser x (a, Ann.Position)
 
 
 
 -- CHOMP
 
 
-chomp :: (E.Space -> Row -> Col -> x) -> P.Parser x ()
+chomp :: (SyntaxError.Space -> Row -> Col -> x) -> Parse.Parser x ()
 chomp toError =
-  P.Parser $ \(P.State src pos end indent row col) cok _ cerr _ ->
+  Parse.Parser $ \(Parse.State src pos end indent row col) cok _ cerr _ ->
     let
       (# status, newPos, newRow, newCol #) = eatSpaces pos end row col
     in
     case status of
       Good ->
         let
-          !newState = P.State src newPos end indent newRow newCol
+          !newState = Parse.State src newPos end indent newRow newCol
         in
         cok () newState
 
-      HasTab               -> cerr newRow newCol (toError E.HasTab)
-      EndlessMultiComment  -> cerr newRow newCol (toError E.EndlessMultiComment)
+      HasTab               -> cerr newRow newCol (toError SyntaxError.HasTab)
+      EndlessMultiComment  -> cerr newRow newCol (toError SyntaxError.EndlessMultiComment)
 
 
 
 -- CHECKS -- to be called right after a `chomp`
 
 
-checkIndent :: A.Position -> (Row -> Col -> x) -> P.Parser x ()
-checkIndent (A.Position endRow endCol) toError =
-  P.Parser $ \state@(P.State _ _ _ indent _ col) _ eok _ eerr ->
+checkIndent :: Ann.Position -> (Row -> Col -> x) -> Parse.Parser x ()
+checkIndent (Ann.Position endRow endCol) toError =
+  Parse.Parser $ \state@(Parse.State _ _ _ indent _ col) _ eok _ eerr ->
     if col > indent && col > 1
     then eok () state
     else eerr endRow endCol toError
 
 
-checkAligned :: (Word16 -> Row -> Col -> x) -> P.Parser x ()
+checkAligned :: (Word16 -> Row -> Col -> x) -> Parse.Parser x ()
 checkAligned toError =
-  P.Parser $ \state@(P.State _ _ _ indent row col) _ eok _ eerr ->
+  Parse.Parser $ \state@(Parse.State _ _ _ indent row col) _ eok _ eerr ->
     if col == indent
     then eok () state
     else eerr row col (toError indent)
 
 
-checkFreshLine :: (Row -> Col -> x) -> P.Parser x ()
+checkFreshLine :: (Row -> Col -> x) -> Parse.Parser x ()
 checkFreshLine toError =
-  P.Parser $ \state@(P.State _ _ _ _ row col) _ eok _ eerr ->
+  Parse.Parser $ \state@(Parse.State _ _ _ _ row col) _ eok _ eerr ->
     if col == 1
     then eok () state
     else eerr row col toError
@@ -86,9 +86,9 @@ checkFreshLine toError =
 -- CHOMP AND CHECK
 
 
-chompAndCheckIndent :: (E.Space -> Row -> Col -> x) -> (Row -> Col -> x) -> P.Parser x ()
+chompAndCheckIndent :: (SyntaxError.Space -> Row -> Col -> x) -> (Row -> Col -> x) -> Parse.Parser x ()
 chompAndCheckIndent toSpaceError toIndentError =
-  P.Parser $ \(P.State src pos end indent row col) cok _ cerr _ ->
+  Parse.Parser $ \(Parse.State src pos end indent row col) cok _ cerr _ ->
     let
       (# status, newPos, newRow, newCol #) = eatSpaces pos end row col
     in
@@ -98,15 +98,15 @@ chompAndCheckIndent toSpaceError toIndentError =
         then
 
           let
-            !newState = P.State src newPos end indent newRow newCol
+            !newState = Parse.State src newPos end indent newRow newCol
           in
           cok () newState
 
         else
           cerr row col toIndentError
 
-      HasTab               -> cerr newRow newCol (toSpaceError E.HasTab)
-      EndlessMultiComment  -> cerr newRow newCol (toSpaceError E.EndlessMultiComment)
+      HasTab               -> cerr newRow newCol (toSpaceError SyntaxError.HasTab)
+      EndlessMultiComment  -> cerr newRow newCol (toSpaceError SyntaxError.EndlessMultiComment)
 
 
 
@@ -125,7 +125,7 @@ eatSpaces pos end row col =
     (# Good, pos, row, col #)
 
   else
-    case P.unsafeIndex pos of
+    case Parse.unsafeIndex pos of
       0x20 {-   -} ->
         eatSpaces (plusPtr pos 1) end row (col + 1)
 
@@ -137,7 +137,7 @@ eatSpaces pos end row col =
 
       0x2D {- - -} ->
         let !pos1 = plusPtr pos 1 in
-        if pos1 < end && P.unsafeIndex pos1 == 0x2D {- - -} then
+        if pos1 < end && Parse.unsafeIndex pos1 == 0x2D {- - -} then
           eatLineComment (plusPtr pos 2) end row (col + 2)
         else
           (# Good, pos, row, col #)
@@ -162,11 +162,11 @@ eatLineComment pos end row col =
     (# Good, pos, row, col #)
 
   else
-    let !word = P.unsafeIndex pos in
+    let !word = Parse.unsafeIndex pos in
     if word == 0x0A {- \n -} then
       eatSpaces (plusPtr pos 1) end (row + 1) 1
     else
-      let !newPos = plusPtr pos (P.getCharWidth word) in
+      let !newPos = plusPtr pos (Parse.getCharWidth word) in
       eatLineComment newPos end row (col + 1)
 
 
@@ -183,9 +183,9 @@ eatMultiComment pos end row col =
   if pos2 >= end then
     (# Good, pos, row, col #)
 
-  else if P.unsafeIndex pos1 == 0x2D {- - -} then
+  else if Parse.unsafeIndex pos1 == 0x2D {- - -} then
 
-    if P.unsafeIndex pos2 == 0x7C {- | -} then
+    if Parse.unsafeIndex pos2 == 0x7C {- | -} then
       (# Good, pos, row, col #)
     else
       let
@@ -213,24 +213,24 @@ eatMultiCommentHelp pos end row col openComments =
     (# MultiEndless, pos, row, col #)
 
   else
-    let !word = P.unsafeIndex pos in
+    let !word = Parse.unsafeIndex pos in
     if word == 0x0A {- \n -} then
       eatMultiCommentHelp (plusPtr pos 1) end (row + 1) 1 openComments
 
     else if word == 0x09 {- \t -} then
       (# MultiTab, pos, row, col #)
 
-    else if word == 0x2D {- - -} && P.isWord (plusPtr pos 1) end 0x7D {- } -} then
+    else if word == 0x2D {- - -} && Parse.isWord (plusPtr pos 1) end 0x7D {- } -} then
       if openComments == 1 then
         (# MultiGood, plusPtr pos 2, row, col + 2 #)
       else
         eatMultiCommentHelp (plusPtr pos 2) end row (col + 2) (openComments - 1)
 
-    else if word == 0x7B {- { -} && P.isWord (plusPtr pos 1) end 0x2D {- - -} then
+    else if word == 0x7B {- { -} && Parse.isWord (plusPtr pos 1) end 0x2D {- - -} then
       eatMultiCommentHelp (plusPtr pos 2) end row (col + 2) (openComments + 1)
 
     else
-      let !newPos = plusPtr pos (P.getCharWidth word) in
+      let !newPos = plusPtr pos (Parse.getCharWidth word) in
       eatMultiCommentHelp newPos end row (col + 1) openComments
 
 
@@ -238,16 +238,16 @@ eatMultiCommentHelp pos end row col openComments =
 -- DOCUMENTATION COMMENT
 
 
-docComment :: (Row -> Col -> x) -> (E.Space -> Row -> Col -> x) -> P.Parser x Src.Comment
+docComment :: (Row -> Col -> x) -> (SyntaxError.Space -> Row -> Col -> x) -> Parse.Parser x Src.Comment
 docComment toExpectation toSpaceError =
-  P.Parser $ \(P.State src pos end indent row col) cok _ cerr eerr ->
+  Parse.Parser $ \(Parse.State src pos end indent row col) cok _ cerr eerr ->
     let
       !pos3 = plusPtr pos 3
     in
     if pos3 <= end
-      && P.unsafeIndex (        pos  ) == 0x7B {- { -}
-      && P.unsafeIndex (plusPtr pos 1) == 0x2D {- - -}
-      && P.unsafeIndex (plusPtr pos 2) == 0x7C {- | -}
+      && Parse.unsafeIndex (        pos  ) == 0x7B {- { -}
+      && Parse.unsafeIndex (plusPtr pos 1) == 0x2D {- - -}
+      && Parse.unsafeIndex (plusPtr pos 2) == 0x7C {- | -}
     then
       let
         !col3 = col + 3
@@ -260,13 +260,13 @@ docComment toExpectation toSpaceError =
           let
             !off = minusPtr pos3 (unsafeForeignPtrToPtr src)
             !len = minusPtr newPos pos3 - 2
-            !snippet = P.Snippet src off len row col3
+            !snippet = Parse.Snippet src off len row col3
             !comment = Src.Comment snippet
-            !newState = P.State src newPos end indent newRow newCol
+            !newState = Parse.State src newPos end indent newRow newCol
           in
           cok comment newState
 
-        MultiTab -> cerr newRow newCol (toSpaceError E.HasTab)
-        MultiEndless -> cerr row col (toSpaceError E.EndlessMultiComment)
+        MultiTab -> cerr newRow newCol (toSpaceError SyntaxError.HasTab)
+        MultiEndless -> cerr row col (toSpaceError SyntaxError.EndlessMultiComment)
     else
       eerr row col toExpectation

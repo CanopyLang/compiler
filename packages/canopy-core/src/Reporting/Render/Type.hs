@@ -17,10 +17,10 @@ import qualified AST.Canonical as Can
 import qualified AST.Source as Src
 import qualified Data.Maybe as Maybe
 import qualified Data.Name as Name
-import qualified Reporting.Annotation as A
+import qualified Reporting.Annotation as Ann
 import Reporting.Doc (Doc, (<+>))
-import qualified Reporting.Doc as D
-import qualified Reporting.Render.Type.Localizer as L
+import qualified Reporting.Doc as Doc
+import qualified Reporting.Render.Type.Localizer as Localizer
 
 -- TO DOC
 
@@ -32,11 +32,11 @@ data Context
 lambda :: Context -> Doc -> Doc -> [Doc] -> Doc
 lambda context arg1 arg2 args =
   let lambdaDoc =
-        D.align $ D.sep (arg1 : fmap ("->" <+>) (arg2 : args))
+        Doc.align $ Doc.sep (arg1 : fmap ("->" <+>) (arg2 : args))
    in case context of
         None -> lambdaDoc
-        Func -> D.cat ["(", lambdaDoc, ")"]
-        App -> D.cat ["(", lambdaDoc, ")"]
+        Func -> Doc.cat ["(", lambdaDoc, ")"]
+        App -> Doc.cat ["(", lambdaDoc, ")"]
 
 apply :: Context -> Doc -> [Doc] -> Doc
 apply context name args =
@@ -45,9 +45,9 @@ apply context name args =
       name
     _ : _ ->
       let applyDoc =
-            D.hang 4 (D.sep (name : args))
+            Doc.hang 4 (Doc.sep (name : args))
        in case context of
-            App -> D.cat ["(", applyDoc, ")"]
+            App -> Doc.cat ["(", applyDoc, ")"]
             Func -> applyDoc
             None -> applyDoc
 
@@ -55,7 +55,7 @@ tuple :: Doc -> Doc -> [Doc] -> Doc
 tuple a b cs =
   let entries =
         zipWith (<+>) ("(" : repeat ",") (a : b : cs)
-   in D.align $ D.sep [D.cat entries, ")"]
+   in Doc.align $ Doc.sep [Doc.cat entries, ")"]
 
 record :: [(Doc, Doc)] -> Maybe Doc -> Doc
 record entries maybeExt =
@@ -63,28 +63,28 @@ record entries maybeExt =
     ([], Nothing) ->
       "{}"
     (fields, Nothing) ->
-      D.align . D.sep $
-        [ D.cat (zipWith (<+>) ("{" : repeat ",") fields),
+      Doc.align . Doc.sep $
+        [ Doc.cat (zipWith (<+>) ("{" : repeat ",") fields),
           "}"
         ]
     (fields, Just ext) ->
-      D.align . D.sep $
-        [ D.hang 4 . D.sep $
+      Doc.align . Doc.sep $
+        [ Doc.hang 4 . Doc.sep $
             [ "{" <+> ext,
-              D.cat (zipWith (<+>) ("|" : repeat ",") fields)
+              Doc.cat (zipWith (<+>) ("|" : repeat ",") fields)
             ],
           "}"
         ]
 
 entryToDoc :: (Doc, Doc) -> Doc
 entryToDoc (fieldName, fieldType) =
-  D.hang 4 (D.sep [fieldName <+> ":", fieldType])
+  Doc.hang 4 (Doc.sep [fieldName <+> ":", fieldType])
 
 vrecordSnippet :: (Doc, Doc) -> [(Doc, Doc)] -> Doc
 vrecordSnippet entry entries =
   let field = "{" <+> entryToDoc entry
       fields = fmap (((<+>)) ",") (fmap entryToDoc entries <> ["..."])
-   in D.vcat (field : (fields <> ["}"]))
+   in Doc.vcat (field : (fields <> ["}"]))
 
 vrecord :: [(Doc, Doc)] -> Maybe Doc -> Doc
 vrecord entries maybeExt =
@@ -92,12 +92,12 @@ vrecord entries maybeExt =
     ([], Nothing) ->
       "{}"
     (fields, Nothing) ->
-      D.vcat (zipWith (<+>) ("{" : repeat ",") fields <> ["}"])
+      Doc.vcat (zipWith (<+>) ("{" : repeat ",") fields <> ["}"])
     (fields, Just ext) ->
-      D.vcat
-        [ D.hang 4 . D.vcat $
+      Doc.vcat
+        [ Doc.hang 4 . Doc.vcat $
             [ "{" <+> ext,
-              D.cat (zipWith (<+>) ("|" : repeat ",") fields)
+              Doc.cat (zipWith (<+>) ("|" : repeat ",") fields)
             ],
           "}"
         ]
@@ -105,7 +105,7 @@ vrecord entries maybeExt =
 -- SOURCE TYPE TO DOC
 
 srcToDoc :: Context -> Src.Type -> Doc
-srcToDoc context (A.At _ tipe) =
+srcToDoc context (Ann.At _ tipe) =
   case tipe of
     Src.TLambda arg1 result ->
       let (arg2, rest) = collectSrcArgs result
@@ -115,21 +115,21 @@ srcToDoc context (A.At _ tipe) =
             (srcToDoc Func arg2)
             (fmap (srcToDoc Func) rest)
     Src.TVar name ->
-      D.fromName name
+      Doc.fromName name
     Src.TType _ name args ->
       apply
         context
-        (D.fromName name)
+        (Doc.fromName name)
         (fmap (srcToDoc App) args)
     Src.TTypeQual _ home name args ->
       apply
         context
-        (D.fromName home <> "." <> D.fromName name)
+        (Doc.fromName home <> "." <> Doc.fromName name)
         (fmap (srcToDoc App) args)
     Src.TRecord fields ext ->
       record
         (fmap srcFieldToDocs fields)
-        (fmap (D.fromName . A.toValue) ext)
+        (fmap (Doc.fromName . Ann.toValue) ext)
     Src.TUnit ->
       "()"
     Src.TTuple a b cs ->
@@ -138,16 +138,16 @@ srcToDoc context (A.At _ tipe) =
         (srcToDoc None b)
         (fmap (srcToDoc None) cs)
 
-srcFieldToDocs :: (A.Located Name.Name, Src.Type) -> (Doc, Doc)
-srcFieldToDocs (A.At _ fieldName, fieldType) =
-  ( D.fromName fieldName,
+srcFieldToDocs :: (Ann.Located Name.Name, Src.Type) -> (Doc, Doc)
+srcFieldToDocs (Ann.At _ fieldName, fieldType) =
+  ( Doc.fromName fieldName,
     srcToDoc None fieldType
   )
 
 collectSrcArgs :: Src.Type -> (Src.Type, [Src.Type])
 collectSrcArgs tipe =
   case tipe of
-    A.At _ (Src.TLambda a result) ->
+    Ann.At _ (Src.TLambda a result) ->
       let (b, cs) = collectSrcArgs result
        in (a, b : cs)
     _ ->
@@ -155,7 +155,7 @@ collectSrcArgs tipe =
 
 -- CANONICAL TYPE TO DOC
 
-canToDoc :: L.Localizer -> Context -> Can.Type -> Doc
+canToDoc :: Localizer.Localizer -> Context -> Can.Type -> Doc
 canToDoc localizer context tipe =
   case tipe of
     Can.TLambda arg1 result ->
@@ -166,16 +166,16 @@ canToDoc localizer context tipe =
             (canToDoc localizer Func arg2)
             (fmap (canToDoc localizer Func) rest)
     Can.TVar name ->
-      D.fromName name
+      Doc.fromName name
     Can.TType home name args ->
       apply
         context
-        (L.toDoc localizer home name)
+        (Localizer.toDoc localizer home name)
         (fmap (canToDoc localizer App) args)
     Can.TRecord fields ext ->
       record
         (fmap (canFieldToDoc localizer) (Can.fieldsToList fields))
-        (fmap D.fromName ext)
+        (fmap Doc.fromName ext)
     Can.TUnit ->
       "()"
     Can.TTuple a b maybeC ->
@@ -186,12 +186,12 @@ canToDoc localizer context tipe =
     Can.TAlias home name args _ ->
       apply
         context
-        (L.toDoc localizer home name)
+        (Localizer.toDoc localizer home name)
         (fmap (canToDoc localizer App . snd) args)
 
-canFieldToDoc :: L.Localizer -> (Name.Name, Can.Type) -> (Doc, Doc)
+canFieldToDoc :: Localizer.Localizer -> (Name.Name, Can.Type) -> (Doc, Doc)
 canFieldToDoc localizer (name, tipe) =
-  ( D.fromName name,
+  ( Doc.fromName name,
     canToDoc localizer None tipe
   )
 

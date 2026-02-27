@@ -189,23 +189,23 @@ testHeaderCreation = testGroup "Header Creation Tests"
 
 testShaOperations :: TestTree
 testShaOperations = testGroup "SHA Operations Tests"
-  [ testCase "shaToChars produces 40-character hex string" $ do
-      -- Create a known SHA1 digest from empty content
-      let emptyHash = SHA.sha1 LBS.empty
+  [ testCase "shaToChars produces 64-character hex string" $ do
+      -- Create a known SHA-256 digest from empty content
+      let emptyHash = SHA.sha256 LBS.empty
       let result = Http.shaToChars emptyHash
-      
-      length result @?= 40
+
+      length result @?= 64
       all (\c -> c `elem` ("0123456789abcdef" :: String)) result @?= True
-  
+
   , testCase "shaToChars different inputs produce different outputs" $ do
-      let hash1 = SHA.sha1 "test1"
-      let hash2 = SHA.sha1 "test2"
+      let hash1 = SHA.sha256 "test1"
+      let hash2 = SHA.sha256 "test2"
       let result1 = Http.shaToChars hash1
       let result2 = Http.shaToChars hash2
-      
+
       result1 /= result2 @?= True
-      length result1 @?= 40
-      length result2 @?= 40
+      length result1 @?= 64
+      length result2 @?= 64
   ]
 
 testMultipartParts :: TestTree
@@ -320,24 +320,24 @@ testUrlProperties = testGroup "URL Properties"
 
 testShaProperties :: TestTree
 testShaProperties = testGroup "SHA Properties"
-  [ testProperty "shaToChars always produces 40 characters" $ \bytes ->
-      let hash = SHA.sha1 (LBS.pack (take 1000 bytes))  -- Limit input size and use lazy ByteString
+  [ testProperty "shaToChars always produces 64 characters" $ \bytes ->
+      let hash = SHA.sha256 (LBS.pack (take 1000 bytes))
           result = Http.shaToChars hash
-      in length result == 40
-  
+      in length result == 64
+
   , testProperty "shaToChars is deterministic" $ \bytes ->
-      let input = LBS.pack (take 100 bytes)  -- Limit input size and use lazy ByteString
-          hash1 = SHA.sha1 input
-          hash2 = SHA.sha1 input
+      let input = LBS.pack (take 100 bytes)
+          hash1 = SHA.sha256 input
+          hash2 = SHA.sha256 input
           result1 = Http.shaToChars hash1
           result2 = Http.shaToChars hash2
       in result1 == result2
-  
+
   , testProperty "different inputs produce different SHA strings" $ \bytes1 bytes2 ->
       let input1 = LBS.pack (take 50 bytes1)
           input2 = LBS.pack (take 50 bytes2)
       in input1 /= input2 ==>
-           Http.shaToChars (SHA.sha1 input1) /= Http.shaToChars (SHA.sha1 input2)
+           Http.shaToChars (SHA.sha256 input1) /= Http.shaToChars (SHA.sha256 input2)
   ]
 
 testHeaderProperties :: TestTree
@@ -472,10 +472,10 @@ testSequentialOperations = testGroup "Sequential Operations"
   
   , testCase "multiple SHA operations" $ do
       let inputs = [LBS.fromStrict (BS.pack ("test" ++ show i)) | i <- [1..5]]
-      let results = map (\input -> Http.shaToChars (SHA.sha1 input)) inputs
-      
+      let results = map (\input -> Http.shaToChars (SHA.sha256 input)) inputs
+
       length results @?= 5
-      all (\result -> length result == 40) results @?= True
+      all (\result -> length result == 64) results @?= True
   ]
 
 testMalformedInputs :: TestTree

@@ -8,7 +8,7 @@
 -- @since 0.19.2
 module Unit.Generate.CodeSplit.RuntimeTest (tests) where
 
-import qualified Data.ByteString.Builder as B
+import qualified Data.ByteString.Builder as BB
 import qualified Data.ByteString.Lazy.Char8 as LChar8
 import Generate.JavaScript.CodeSplit.Runtime (chunkRuntime)
 import Test.Tasty
@@ -25,7 +25,7 @@ tests =
 
 -- | Render the runtime to a string for assertions.
 runtimeStr :: String
-runtimeStr = LChar8.unpack (B.toLazyByteString chunkRuntime)
+runtimeStr = LChar8.unpack (BB.toLazyByteString chunkRuntime)
 
 -- | Check if a string is contained in another.
 contains :: String -> String -> Bool

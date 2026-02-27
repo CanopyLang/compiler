@@ -21,8 +21,8 @@ where
 import qualified Data.Char as Char
 import qualified Data.Name as Name
 import Parse.Primitives (Col, Row)
-import qualified Reporting.Annotation as A
-import qualified Reporting.Doc as D
+import qualified Reporting.Annotation as Ann
+import qualified Reporting.Doc as Doc
 import Reporting.Error.Syntax.Expression
   ( declDefNote,
     toExprReport,
@@ -74,8 +74,8 @@ toDeclarationsReport source decl =
               source
               region
               Nothing
-              ( D.reflow "I just saw a doc comment, but then I got stuck here:",
-                D.reflow $
+              ( Doc.reflow "I just saw a doc comment, but then I got stuck here:",
+                Doc.reflow $
                   "I was expecting to see the corresponding declaration next, starting on a fresh\
                   \ line with no indentation."
               )
@@ -91,8 +91,8 @@ toDeclStartReport source row col =
               source
               region
               Nothing
-              ( D.reflow ("I was not expecting to see a " ++ term ++ " here:"),
-                D.reflow $
+              ( Doc.reflow ("I was not expecting to see a " ++ term ++ " here:"),
+                Doc.reflow $
                   "This " ++ bracket : " does not match up with an earlier open " ++ term ++ ". Try deleting it?"
               )
     Code.Keyword keyword ->
@@ -113,61 +113,61 @@ toDeclStartKeywordReport source row col keyword =
           source
           region
           Nothing
-          ( D.reflow ("I was not expecting to run into the `" ++ keyword ++ "` keyword here:"),
+          ( Doc.reflow ("I was not expecting to run into the `" ++ keyword ++ "` keyword here:"),
             toDeclStartKeywordHint keyword
           )
 
-toDeclStartKeywordHint :: String -> D.Doc
+toDeclStartKeywordHint :: String -> Doc.Doc
 toDeclStartKeywordHint keyword =
   case keyword of
     "import" ->
-      D.reflow $
+      Doc.reflow $
         "It is reserved for declaring imports at the top of your module. If you want\
         \ another import, try moving it up top with the other imports. If you want to\
         \ define a value or function, try changing the name to something else!"
     "case" ->
-      D.stack
-        [ D.reflow "It is reserved for writing `case` expressions. Try using a different name?",
-          D.toSimpleNote $
+      Doc.stack
+        [ Doc.reflow "It is reserved for writing `case` expressions. Try using a different name?",
+          Doc.toSimpleNote $
             "If you are trying to write a `case` expression, it needs to be part of a\
             \ definition. So you could write something like this instead:",
-          D.indent 4 $
-            D.vcat
-              [ D.indent 0 $ D.fillSep ["getWidth", "maybeWidth", "="],
-                D.indent 2 $ D.fillSep [D.cyan "case", "maybeWidth", D.cyan "of"],
-                D.indent 4 $ D.fillSep [D.blue "Just", "width", "->"],
-                D.indent 6 $ D.fillSep ["width", "+", D.dullyellow "200"],
+          Doc.indent 4 $
+            Doc.vcat
+              [ Doc.indent 0 $ Doc.fillSep ["getWidth", "maybeWidth", "="],
+                Doc.indent 2 $ Doc.fillSep [Doc.cyan "case", "maybeWidth", Doc.cyan "of"],
+                Doc.indent 4 $ Doc.fillSep [Doc.blue "Just", "width", "->"],
+                Doc.indent 6 $ Doc.fillSep ["width", "+", Doc.dullyellow "200"],
                 "",
-                D.indent 4 $ D.fillSep [D.blue "Nothing", "->"],
-                D.indent 6 $ D.fillSep [D.dullyellow "400"]
+                Doc.indent 4 $ Doc.fillSep [Doc.blue "Nothing", "->"],
+                Doc.indent 6 $ Doc.fillSep [Doc.dullyellow "400"]
               ],
-          D.reflow "This defines a `getWidth` function that you can use elsewhere in your program."
+          Doc.reflow "This defines a `getWidth` function that you can use elsewhere in your program."
         ]
     "if" ->
-      D.stack
-        [ D.reflow "It is reserved for writing `if` expressions. Try using a different name?",
-          D.toSimpleNote $
+      Doc.stack
+        [ Doc.reflow "It is reserved for writing `if` expressions. Try using a different name?",
+          Doc.toSimpleNote $
             "If you are trying to write an `if` expression, it needs to be part of a\
             \ definition. So you could write something like this instead:",
-          D.indent 4 $
-            D.vcat
+          Doc.indent 4 $
+            Doc.vcat
               [ "greet name =",
-                D.fillSep
+                Doc.fillSep
                   [ " ",
-                    D.cyan "if",
+                    Doc.cyan "if",
                     "name",
                     "==",
-                    D.dullyellow "\"Abraham Lincoln\"",
-                    D.cyan "then",
-                    D.dullyellow "\"Greetings Mr. President.\"",
-                    D.cyan "else",
-                    D.dullyellow "\"Hey!\""
+                    Doc.dullyellow "\"Abraham Lincoln\"",
+                    Doc.cyan "then",
+                    Doc.dullyellow "\"Greetings Mr. President.\"",
+                    Doc.cyan "else",
+                    Doc.dullyellow "\"Hey!\""
                   ]
               ],
-          D.reflow "This defines a `reviewPowerLevel` function that you can use elsewhere in your program."
+          Doc.reflow "This defines a `reviewPowerLevel` function that you can use elsewhere in your program."
         ]
     _ ->
-      D.reflow "It is a reserved word. Try changing the name to something else?"
+      Doc.reflow "It is a reserved word. Try changing the name to something else?"
 
 toDeclStartUpperReport :: Code.Source -> Row -> Col -> Char.Char -> String -> Report.Report
 toDeclStartUpperReport source row col c cs =
@@ -177,26 +177,26 @@ toDeclStartUpperReport source row col c cs =
           source
           region
           Nothing
-          ( D.reflow "Declarations always start with a lower-case letter, so I am getting stuck here:",
-            D.stack
-              [ D.fillSep
+          ( Doc.reflow "Declarations always start with a lower-case letter, so I am getting stuck here:",
+            Doc.stack
+              [ Doc.fillSep
                   [ "Try",
                     "a",
                     "name",
                     "like",
-                    D.green (D.fromChars (Char.toLower c : cs)),
+                    Doc.green (Doc.fromChars (Char.toLower c : cs)),
                     "instead?"
                   ],
-                D.toSimpleNote "Here are a couple valid declarations for reference:",
-                D.indent 4 $
-                  D.vcat
+                Doc.toSimpleNote "Here are a couple valid declarations for reference:",
+                Doc.indent 4 $
+                  Doc.vcat
                     [ "greet : String -> String",
                       "greet name =",
-                      "  " <> D.dullyellow "\"Hello \"" <> " ++ name ++ " <> D.dullyellow "\"!\"",
+                      "  " <> Doc.dullyellow "\"Hello \"" <> " ++ name ++ " <> Doc.dullyellow "\"!\"",
                       "",
-                      D.cyan "type" <> " User = Anonymous | LoggedIn String"
+                      Doc.cyan "type" <> " User = Anonymous | LoggedIn String"
                     ],
-                D.reflow "Notice that they always start with a lower-case letter. Capitalization matters!"
+                Doc.reflow "Notice that they always start with a lower-case letter. Capitalization matters!"
               ]
           )
 
@@ -208,18 +208,18 @@ toDeclStartSymbolReport source row col char =
           source
           region
           Nothing
-          ( D.reflow ("I am getting stuck because this line starts with the " ++ [char] ++ " symbol:"),
-            D.stack
-              [ D.reflow "When a line has no spaces at the beginning, I expect it to be a declaration like one of these:",
-                D.indent 4 $
-                  D.vcat
+          ( Doc.reflow ("I am getting stuck because this line starts with the " ++ [char] ++ " symbol:"),
+            Doc.stack
+              [ Doc.reflow "When a line has no spaces at the beginning, I expect it to be a declaration like one of these:",
+                Doc.indent 4 $
+                  Doc.vcat
                     [ "greet : String -> String",
                       "greet name =",
-                      "  " <> D.dullyellow "\"Hello \"" <> " ++ name ++ " <> D.dullyellow "\"!\"",
+                      "  " <> Doc.dullyellow "\"Hello \"" <> " ++ name ++ " <> Doc.dullyellow "\"!\"",
                       "",
-                      D.cyan "type" <> " User = Anonymous | LoggedIn String"
+                      Doc.cyan "type" <> " User = Anonymous | LoggedIn String"
                     ],
-                D.reflow "If this is not supposed to be a declaration, try adding some spaces before it?"
+                Doc.reflow "If this is not supposed to be a declaration, try adding some spaces before it?"
               ]
           )
 
@@ -231,18 +231,18 @@ toDeclStartWeirdReport source row col =
           source
           region
           Nothing
-          ( D.reflow "I am trying to parse a declaration, but I am getting stuck here:",
-            D.stack
-              [ D.reflow "When a line has no spaces at the beginning, I expect it to be a declaration like one of these:",
-                D.indent 4 $
-                  D.vcat
+          ( Doc.reflow "I am trying to parse a declaration, but I am getting stuck here:",
+            Doc.stack
+              [ Doc.reflow "When a line has no spaces at the beginning, I expect it to be a declaration like one of these:",
+                Doc.indent 4 $
+                  Doc.vcat
                     [ "greet : String -> String",
                       "greet name =",
-                      "  " <> D.dullyellow "\"Hello \"" <> " ++ name ++ " <> D.dullyellow "\"!\"",
+                      "  " <> Doc.dullyellow "\"Hello \"" <> " ++ name ++ " <> Doc.dullyellow "\"!\"",
                       "",
-                      D.cyan "type" <> " User = Anonymous | LoggedIn String"
+                      Doc.cyan "type" <> " User = Anonymous | LoggedIn String"
                     ],
-                D.reflow $
+                Doc.reflow $
                   "Try to make your declaration look like one of those? Or if this is not\
                   \ supposed to be a declaration, try adding some spaces before it?"
               ]
@@ -271,29 +271,29 @@ toPortNameReport :: Code.Source -> Row -> Col -> Row -> Col -> Report.Report
 toPortNameReport source startRow startCol row col =
   case Code.whatIsNext source row col of
     Code.Keyword keyword ->
-      let surroundings = A.Region (A.Position startRow startCol) (A.Position row col)
+      let surroundings = Ann.Region (Ann.Position startRow startCol) (Ann.Position row col)
           region = toKeywordRegion row col keyword
        in Report.Report "RESERVED WORD" region [] $
             Code.toSnippet
               source
               surroundings
               (Just region)
-              ( D.reflow "I cannot handle ports with names like this:",
-                D.reflow ("You are trying to make a port named `" ++ keyword ++ "` but that is a reserved word. Try using some other name?")
+              ( Doc.reflow "I cannot handle ports with names like this:",
+                Doc.reflow ("You are trying to make a port named `" ++ keyword ++ "` but that is a reserved word. Try using some other name?")
               )
     _ ->
-      let surroundings = A.Region (A.Position startRow startCol) (A.Position row col)
+      let surroundings = Ann.Region (Ann.Position startRow startCol) (Ann.Position row col)
           region = toRegion row col
        in Report.Report "PORT PROBLEM" region [] $
             Code.toSnippet
               source
               surroundings
               (Just region)
-              ( D.reflow "I just saw the start of a `port` declaration, but then I got stuck here:",
-                D.stack
-                  [ D.fillSep
+              ( Doc.reflow "I just saw the start of a `port` declaration, but then I got stuck here:",
+                Doc.stack
+                  [ Doc.fillSep
                       [ "I", "was", "expecting", "to", "see", "a", "name", "like",
-                        D.dullyellow "send", "or", D.dullyellow "receive", "next.",
+                        Doc.dullyellow "send", "or", Doc.dullyellow "receive", "next.",
                         "Something", "that", "starts", "with", "a", "lower-case", "letter."
                       ],
                     portNote
@@ -302,16 +302,16 @@ toPortNameReport source startRow startCol row col =
 
 toPortColonReport :: Code.Source -> Row -> Col -> Row -> Col -> Report.Report
 toPortColonReport source startRow startCol row col =
-  let surroundings = A.Region (A.Position startRow startCol) (A.Position row col)
+  let surroundings = Ann.Region (Ann.Position startRow startCol) (Ann.Position row col)
       region = toRegion row col
    in Report.Report "PORT PROBLEM" region [] $
         Code.toSnippet
           source
           surroundings
           (Just region)
-          ( D.reflow "I just saw the start of a `port` declaration, but then I got stuck here:",
-            D.stack
-              [ D.reflow $
+          ( Doc.reflow "I just saw the start of a `port` declaration, but then I got stuck here:",
+            Doc.stack
+              [ Doc.reflow $
                   "I was expecting to see a colon next. And then a type that tells me\
                   \ what type of values are going to flow through.",
                 portNote
@@ -320,18 +320,18 @@ toPortColonReport source startRow startCol row col =
 
 toPortIndentNameReport :: Code.Source -> Row -> Col -> Row -> Col -> Report.Report
 toPortIndentNameReport source startRow startCol row col =
-  let surroundings = A.Region (A.Position startRow startCol) (A.Position row col)
+  let surroundings = Ann.Region (Ann.Position startRow startCol) (Ann.Position row col)
       region = toRegion row col
    in Report.Report "UNFINISHED PORT" region [] $
         Code.toSnippet
           source
           surroundings
           (Just region)
-          ( D.reflow "I just saw the start of a `port` declaration, but then I got stuck here:",
-            D.stack
-              [ D.fillSep
+          ( Doc.reflow "I just saw the start of a `port` declaration, but then I got stuck here:",
+            Doc.stack
+              [ Doc.fillSep
                   [ "I", "was", "expecting", "to", "see", "a", "name", "like",
-                    D.dullyellow "send", "or", D.dullyellow "receive", "next.",
+                    Doc.dullyellow "send", "or", Doc.dullyellow "receive", "next.",
                     "Something", "that", "starts", "with", "a", "lower-case", "letter."
                   ],
                 portNote
@@ -340,16 +340,16 @@ toPortIndentNameReport source startRow startCol row col =
 
 toPortIndentColonReport :: Code.Source -> Row -> Col -> Row -> Col -> Report.Report
 toPortIndentColonReport source startRow startCol row col =
-  let surroundings = A.Region (A.Position startRow startCol) (A.Position row col)
+  let surroundings = Ann.Region (Ann.Position startRow startCol) (Ann.Position row col)
       region = toRegion row col
    in Report.Report "UNFINISHED PORT" region [] $
         Code.toSnippet
           source
           surroundings
           (Just region)
-          ( D.reflow "I just saw the start of a `port` declaration, but then I got stuck here:",
-            D.stack
-              [ D.reflow $
+          ( Doc.reflow "I just saw the start of a `port` declaration, but then I got stuck here:",
+            Doc.stack
+              [ Doc.reflow $
                   "I was expecting to see a colon next. And then a type that tells me\
                   \ what type of values are going to flow through.",
                 portNote
@@ -358,24 +358,24 @@ toPortIndentColonReport source startRow startCol row col =
 
 toPortIndentTypeReport :: Code.Source -> Row -> Col -> Row -> Col -> Report.Report
 toPortIndentTypeReport source startRow startCol row col =
-  let surroundings = A.Region (A.Position startRow startCol) (A.Position row col)
+  let surroundings = Ann.Region (Ann.Position startRow startCol) (Ann.Position row col)
       region = toRegion row col
    in Report.Report "UNFINISHED PORT" region [] $
         Code.toSnippet
           source
           surroundings
           (Just region)
-          ( D.reflow "I just saw the start of a `port` declaration, but then I got stuck here:",
-            D.stack
-              [ D.reflow $
+          ( Doc.reflow "I just saw the start of a `port` declaration, but then I got stuck here:",
+            Doc.stack
+              [ Doc.reflow $
                   "I was expecting to see a type next. Here are examples of outgoing and\
                   \ incoming ports for reference:",
-                D.indent 4 $
-                  D.vcat
-                    [ D.fillSep [D.cyan "port", "send", ":", "String -> Cmd msg"],
-                      D.fillSep [D.cyan "port", "receive", ":", "(String -> msg) -> Sub msg"]
+                Doc.indent 4 $
+                  Doc.vcat
+                    [ Doc.fillSep [Doc.cyan "port", "send", ":", "String -> Cmd msg"],
+                      Doc.fillSep [Doc.cyan "port", "receive", ":", "(String -> msg) -> Sub msg"]
                     ],
-                D.reflow $
+                Doc.reflow $
                   "The first line defines a `send` port so you can send strings out to JavaScript.\
                   \ Maybe you send them on a WebSocket or put them into IndexedDB. The second line\
                   \ defines a `receive` port so you can receive strings from JavaScript. Maybe you\
@@ -384,16 +384,16 @@ toPortIndentTypeReport source startRow startCol row col =
               ]
           )
 
-portNote :: D.Doc
+portNote :: Doc.Doc
 portNote =
-  D.stack
-    [ D.toSimpleNote "Here are some example `port` declarations for reference:",
-      D.indent 4 $
-        D.vcat
-          [ D.fillSep [D.cyan "port", "send", ":", "String -> Cmd msg"],
-            D.fillSep [D.cyan "port", "receive", ":", "(String -> msg) -> Sub msg"]
+  Doc.stack
+    [ Doc.toSimpleNote "Here are some example `port` declarations for reference:",
+      Doc.indent 4 $
+        Doc.vcat
+          [ Doc.fillSep [Doc.cyan "port", "send", ":", "String -> Cmd msg"],
+            Doc.fillSep [Doc.cyan "port", "receive", ":", "(String -> msg) -> Sub msg"]
           ],
-      D.reflow $
+      Doc.reflow $
         "The first line defines a `send` port so you can send strings out to JavaScript.\
         \ Maybe you send them on a WebSocket or put them into IndexedDB. The second line\
         \ defines a `receive` port so you can receive strings from JavaScript. Maybe you\
@@ -418,18 +418,18 @@ toDeclTypeReport source declType startRow startCol =
 
 toDTNameReport :: Code.Source -> Row -> Col -> Row -> Col -> Report.Report
 toDTNameReport source startRow startCol row col =
-  let surroundings = A.Region (A.Position startRow startCol) (A.Position row col)
+  let surroundings = Ann.Region (Ann.Position startRow startCol) (Ann.Position row col)
       region = toRegion row col
    in Report.Report "EXPECTING TYPE NAME" region [] $
         Code.toSnippet
           source
           surroundings
           (Just region)
-          ( D.reflow "I think I am parsing a type declaration, but I got stuck here:",
-            D.stack
-              [ D.fillSep
+          ( Doc.reflow "I think I am parsing a type declaration, but I got stuck here:",
+            Doc.stack
+              [ Doc.fillSep
                   [ "I", "was", "expecting", "a", "name", "like",
-                    D.dullyellow "Status", "or", D.dullyellow "Style", "next.",
+                    Doc.dullyellow "Status", "or", Doc.dullyellow "Style", "next.",
                     "Just", "make", "sure", "it", "is", "a", "name", "that",
                     "starts", "with", "a", "capital", "letter!"
                   ],
@@ -439,18 +439,18 @@ toDTNameReport source startRow startCol row col =
 
 toDTIndentNameReport :: Code.Source -> Row -> Col -> Row -> Col -> Report.Report
 toDTIndentNameReport source startRow startCol row col =
-  let surroundings = A.Region (A.Position startRow startCol) (A.Position row col)
+  let surroundings = Ann.Region (Ann.Position startRow startCol) (Ann.Position row col)
       region = toRegion row col
    in Report.Report "EXPECTING TYPE NAME" region [] $
         Code.toSnippet
           source
           surroundings
           (Just region)
-          ( D.reflow "I think I am parsing a type declaration, but I got stuck here:",
-            D.stack
-              [ D.fillSep
+          ( Doc.reflow "I think I am parsing a type declaration, but I got stuck here:",
+            Doc.stack
+              [ Doc.fillSep
                   [ "I", "was", "expecting", "a", "name", "like",
-                    D.dullyellow "Status", "or", D.dullyellow "Style", "next.",
+                    Doc.dullyellow "Status", "or", Doc.dullyellow "Style", "next.",
                     "Just", "make", "sure", "it", "is", "a", "name", "that",
                     "starts", "with", "a", "capital", "letter!"
                   ],
@@ -477,18 +477,18 @@ toTypeAliasReport source typeAlias startRow startCol =
 
 toAliasNameReport :: Code.Source -> Row -> Col -> Row -> Col -> Report.Report
 toAliasNameReport source startRow startCol row col =
-  let surroundings = A.Region (A.Position startRow startCol) (A.Position row col)
+  let surroundings = Ann.Region (Ann.Position startRow startCol) (Ann.Position row col)
       region = toRegion row col
    in Report.Report "EXPECTING TYPE ALIAS NAME" region [] $
         Code.toSnippet
           source
           surroundings
           (Just region)
-          ( D.reflow "I am partway through parsing a type alias, but I got stuck here:",
-            D.stack
-              [ D.fillSep
+          ( Doc.reflow "I am partway through parsing a type alias, but I got stuck here:",
+            Doc.stack
+              [ Doc.fillSep
                   [ "I", "was", "expecting", "a", "name", "like",
-                    D.dullyellow "Person", "or", D.dullyellow "Point", "next.",
+                    Doc.dullyellow "Person", "or", Doc.dullyellow "Point", "next.",
                     "Just", "make", "sure", "it", "is", "a", "name", "that",
                     "starts", "with", "a", "capital", "letter!"
                   ],
@@ -500,87 +500,87 @@ toAliasEqualsReport :: Code.Source -> Row -> Col -> Row -> Col -> Report.Report
 toAliasEqualsReport source startRow startCol row col =
   case Code.whatIsNext source row col of
     Code.Keyword keyword ->
-      let surroundings = A.Region (A.Position startRow startCol) (A.Position row col)
+      let surroundings = Ann.Region (Ann.Position startRow startCol) (Ann.Position row col)
           region = toKeywordRegion row col keyword
        in Report.Report "RESERVED WORD" region [] $
             Code.toSnippet
               source
               surroundings
               (Just region)
-              ( D.reflow "I ran into a reserved word unexpectedly while parsing this type alias:",
-                D.stack
-                  [ D.reflow $
+              ( Doc.reflow "I ran into a reserved word unexpectedly while parsing this type alias:",
+                Doc.stack
+                  [ Doc.reflow $
                       "It looks like you are trying use `" ++ keyword
                         ++ "` as a type variable, but it is a reserved word. Try using a different name?",
                     typeAliasNote
                   ]
               )
     _ ->
-      let surroundings = A.Region (A.Position startRow startCol) (A.Position row col)
+      let surroundings = Ann.Region (Ann.Position startRow startCol) (Ann.Position row col)
           region = toRegion row col
        in Report.Report "PROBLEM IN TYPE ALIAS" region [] $
             Code.toSnippet
               source
               surroundings
               (Just region)
-              ( D.reflow "I am partway through parsing a type alias, but I got stuck here:",
-                D.stack
-                  [ D.reflow "I was expecting to see a type variable or an equals sign next.",
+              ( Doc.reflow "I am partway through parsing a type alias, but I got stuck here:",
+                Doc.stack
+                  [ Doc.reflow "I was expecting to see a type variable or an equals sign next.",
                     typeAliasNote
                   ]
               )
 
 toAliasIndentEqualsReport :: Code.Source -> Row -> Col -> Row -> Col -> Report.Report
 toAliasIndentEqualsReport source startRow startCol row col =
-  let surroundings = A.Region (A.Position startRow startCol) (A.Position row col)
+  let surroundings = Ann.Region (Ann.Position startRow startCol) (Ann.Position row col)
       region = toRegion row col
    in Report.Report "UNFINISHED TYPE ALIAS" region [] $
         Code.toSnippet
           source
           surroundings
           (Just region)
-          ( D.reflow "I am partway through parsing a type alias, but I got stuck here:",
-            D.stack
-              [ D.reflow "I was expecting to see a type variable or an equals sign next.",
+          ( Doc.reflow "I am partway through parsing a type alias, but I got stuck here:",
+            Doc.stack
+              [ Doc.reflow "I was expecting to see a type variable or an equals sign next.",
                 typeAliasNote
               ]
           )
 
 toAliasIndentBodyReport :: Code.Source -> Row -> Col -> Row -> Col -> Report.Report
 toAliasIndentBodyReport source startRow startCol row col =
-  let surroundings = A.Region (A.Position startRow startCol) (A.Position row col)
+  let surroundings = Ann.Region (Ann.Position startRow startCol) (Ann.Position row col)
       region = toRegion row col
    in Report.Report "UNFINISHED TYPE ALIAS" region [] $
         Code.toSnippet
           source
           surroundings
           (Just region)
-          ( D.reflow "I am partway through parsing a type alias, but I got stuck here:",
-            D.stack
-              [ D.fillSep
+          ( Doc.reflow "I am partway through parsing a type alias, but I got stuck here:",
+            Doc.stack
+              [ Doc.fillSep
                   [ "I", "was", "expecting", "to", "see", "a", "type", "next.",
                     "Something", "as", "simple", "as",
-                    D.dullyellow "Int", "or", D.dullyellow "Float", "would", "work!"
+                    Doc.dullyellow "Int", "or", Doc.dullyellow "Float", "would", "work!"
                   ],
                 typeAliasNote
               ]
           )
 
-typeAliasNote :: D.Doc
+typeAliasNote :: Doc.Doc
 typeAliasNote =
-  D.stack
-    [ D.toSimpleNote "Here is an example of a valid `type alias` for reference:",
-      D.vcat
-        [ D.indent 4 $ D.fillSep [D.cyan "type", D.cyan "alias", "Person", "="],
-          D.indent 6 $
-            D.vcat
+  Doc.stack
+    [ Doc.toSimpleNote "Here is an example of a valid `type alias` for reference:",
+      Doc.vcat
+        [ Doc.indent 4 $ Doc.fillSep [Doc.cyan "type", Doc.cyan "alias", "Person", "="],
+          Doc.indent 6 $
+            Doc.vcat
               [ "{ name : String",
                 ", age : Int",
                 ", height : Float",
                 "}"
               ]
         ],
-      D.reflow $
+      Doc.reflow $
         "This would let us use `Person` as a shorthand for that record type. Using this\
         \ shorthand makes type annotations much easier to read, and makes changing code\
         \ easier if you decide later that there is more to a person than age and height!"
@@ -613,18 +613,18 @@ toCustomTypeReport source customType startRow startCol =
 
 toCTNameReport :: Code.Source -> Row -> Col -> Row -> Col -> Report.Report
 toCTNameReport source startRow startCol row col =
-  let surroundings = A.Region (A.Position startRow startCol) (A.Position row col)
+  let surroundings = Ann.Region (Ann.Position startRow startCol) (Ann.Position row col)
       region = toRegion row col
    in Report.Report "EXPECTING TYPE NAME" region [] $
         Code.toSnippet
           source
           surroundings
           (Just region)
-          ( D.reflow "I think I am parsing a type declaration, but I got stuck here:",
-            D.stack
-              [ D.fillSep
+          ( Doc.reflow "I think I am parsing a type declaration, but I got stuck here:",
+            Doc.stack
+              [ Doc.fillSep
                   [ "I", "was", "expecting", "a", "name", "like",
-                    D.dullyellow "Status", "or", D.dullyellow "Style", "next.",
+                    Doc.dullyellow "Status", "or", Doc.dullyellow "Style", "next.",
                     "Just", "make", "sure", "it", "is", "a", "name", "that",
                     "starts", "with", "a", "capital", "letter!"
                   ],
@@ -636,67 +636,67 @@ toCTEqualsReport :: Code.Source -> Row -> Col -> Row -> Col -> Report.Report
 toCTEqualsReport source startRow startCol row col =
   case Code.whatIsNext source row col of
     Code.Keyword keyword ->
-      let surroundings = A.Region (A.Position startRow startCol) (A.Position row col)
+      let surroundings = Ann.Region (Ann.Position startRow startCol) (Ann.Position row col)
           region = toKeywordRegion row col keyword
        in Report.Report "RESERVED WORD" region [] $
             Code.toSnippet
               source
               surroundings
               (Just region)
-              ( D.reflow "I ran into a reserved word unexpectedly while parsing this custom type:",
-                D.stack
-                  [ D.reflow $
+              ( Doc.reflow "I ran into a reserved word unexpectedly while parsing this custom type:",
+                Doc.stack
+                  [ Doc.reflow $
                       "It looks like you are trying use `" ++ keyword
                         ++ "` as a type variable, but it is a reserved word. Try using a different name?",
                     customTypeNote
                   ]
               )
     _ ->
-      let surroundings = A.Region (A.Position startRow startCol) (A.Position row col)
+      let surroundings = Ann.Region (Ann.Position startRow startCol) (Ann.Position row col)
           region = toRegion row col
        in Report.Report "PROBLEM IN CUSTOM TYPE" region [] $
             Code.toSnippet
               source
               surroundings
               (Just region)
-              ( D.reflow "I am partway through parsing a custom type, but I got stuck here:",
-                D.stack
-                  [ D.reflow "I was expecting to see a type variable or an equals sign next.",
+              ( Doc.reflow "I am partway through parsing a custom type, but I got stuck here:",
+                Doc.stack
+                  [ Doc.reflow "I was expecting to see a type variable or an equals sign next.",
                     customTypeNote
                   ]
               )
 
 toCTBarReport :: Code.Source -> Row -> Col -> Row -> Col -> Report.Report
 toCTBarReport source startRow startCol row col =
-  let surroundings = A.Region (A.Position startRow startCol) (A.Position row col)
+  let surroundings = Ann.Region (Ann.Position startRow startCol) (Ann.Position row col)
       region = toRegion row col
    in Report.Report "PROBLEM IN CUSTOM TYPE" region [] $
         Code.toSnippet
           source
           surroundings
           (Just region)
-          ( D.reflow "I am partway through parsing a custom type, but I got stuck here:",
-            D.stack
-              [ D.reflow "I was expecting to see a vertical bar like | next.",
+          ( Doc.reflow "I am partway through parsing a custom type, but I got stuck here:",
+            Doc.stack
+              [ Doc.reflow "I was expecting to see a vertical bar like | next.",
                 customTypeNote
               ]
           )
 
 toCTVariantReport :: Code.Source -> Row -> Col -> Row -> Col -> Report.Report
 toCTVariantReport source startRow startCol row col =
-  let surroundings = A.Region (A.Position startRow startCol) (A.Position row col)
+  let surroundings = Ann.Region (Ann.Position startRow startCol) (Ann.Position row col)
       region = toRegion row col
    in Report.Report "PROBLEM IN CUSTOM TYPE" region [] $
         Code.toSnippet
           source
           surroundings
           (Just region)
-          ( D.reflow "I am partway through parsing a custom type, but I got stuck here:",
-            D.stack
-              [ D.fillSep
+          ( Doc.reflow "I am partway through parsing a custom type, but I got stuck here:",
+            Doc.stack
+              [ Doc.fillSep
                   [ "I", "was", "expecting", "to", "see", "a", "variant", "name", "next.",
                     "Something", "like",
-                    D.dullyellow "Success", "or", D.dullyellow "Sandwich" <> ".",
+                    Doc.dullyellow "Success", "or", Doc.dullyellow "Sandwich" <> ".",
                     "Any", "name", "that", "starts", "with", "a", "capital", "letter", "really!"
                   ],
                 customTypeNote
@@ -705,79 +705,79 @@ toCTVariantReport source startRow startCol row col =
 
 toCTIndentEqualsReport :: Code.Source -> Row -> Col -> Row -> Col -> Report.Report
 toCTIndentEqualsReport source startRow startCol row col =
-  let surroundings = A.Region (A.Position startRow startCol) (A.Position row col)
+  let surroundings = Ann.Region (Ann.Position startRow startCol) (Ann.Position row col)
       region = toRegion row col
    in Report.Report "UNFINISHED CUSTOM TYPE" region [] $
         Code.toSnippet
           source
           surroundings
           (Just region)
-          ( D.reflow "I am partway through parsing a custom type, but I got stuck here:",
-            D.stack
-              [ D.reflow "I was expecting to see a type variable or an equals sign next.",
+          ( Doc.reflow "I am partway through parsing a custom type, but I got stuck here:",
+            Doc.stack
+              [ Doc.reflow "I was expecting to see a type variable or an equals sign next.",
                 customTypeNote
               ]
           )
 
 toCTIndentBarReport :: Code.Source -> Row -> Col -> Row -> Col -> Report.Report
 toCTIndentBarReport source startRow startCol row col =
-  let surroundings = A.Region (A.Position startRow startCol) (A.Position row col)
+  let surroundings = Ann.Region (Ann.Position startRow startCol) (Ann.Position row col)
       region = toRegion row col
    in Report.Report "UNFINISHED CUSTOM TYPE" region [] $
         Code.toSnippet
           source
           surroundings
           (Just region)
-          ( D.reflow "I am partway through parsing a custom type, but I got stuck here:",
-            D.stack
-              [ D.reflow "I was expecting to see a vertical bar like | next.",
+          ( Doc.reflow "I am partway through parsing a custom type, but I got stuck here:",
+            Doc.stack
+              [ Doc.reflow "I was expecting to see a vertical bar like | next.",
                 customTypeNote
               ]
           )
 
 toCTIndentAfterBarReport :: Code.Source -> Row -> Col -> Row -> Col -> Report.Report
 toCTIndentAfterBarReport source startRow startCol row col =
-  let surroundings = A.Region (A.Position startRow startCol) (A.Position row col)
+  let surroundings = Ann.Region (Ann.Position startRow startCol) (Ann.Position row col)
       region = toRegion row col
    in Report.Report "UNFINISHED CUSTOM TYPE" region [] $
         Code.toSnippet
           source
           surroundings
           (Just region)
-          ( D.reflow "I am partway through parsing a custom type, but I got stuck here:",
-            D.stack
-              [ D.reflow "I just saw a vertical bar, so I was expecting to see another variant defined next.",
+          ( Doc.reflow "I am partway through parsing a custom type, but I got stuck here:",
+            Doc.stack
+              [ Doc.reflow "I just saw a vertical bar, so I was expecting to see another variant defined next.",
                 customTypeNote
               ]
           )
 
 toCTIndentAfterEqualsReport :: Code.Source -> Row -> Col -> Row -> Col -> Report.Report
 toCTIndentAfterEqualsReport source startRow startCol row col =
-  let surroundings = A.Region (A.Position startRow startCol) (A.Position row col)
+  let surroundings = Ann.Region (Ann.Position startRow startCol) (Ann.Position row col)
       region = toRegion row col
    in Report.Report "UNFINISHED CUSTOM TYPE" region [] $
         Code.toSnippet
           source
           surroundings
           (Just region)
-          ( D.reflow "I am partway through parsing a custom type, but I got stuck here:",
-            D.stack
-              [ D.reflow "I just saw an equals sign, so I was expecting to see the first variant defined next.",
+          ( Doc.reflow "I am partway through parsing a custom type, but I got stuck here:",
+            Doc.stack
+              [ Doc.reflow "I just saw an equals sign, so I was expecting to see the first variant defined next.",
                 customTypeNote
               ]
           )
 
-customTypeNote :: D.Doc
+customTypeNote :: Doc.Doc
 customTypeNote =
-  D.stack
-    [ D.toSimpleNote "Here is an example of a valid `type` declaration for reference:",
-      D.vcat
-        [ D.indent 4 $ D.fillSep [D.cyan "type", "Status"],
-          D.indent 6 $ D.fillSep ["=", "Failure"],
-          D.indent 6 $ D.fillSep ["|", "Waiting"],
-          D.indent 6 $ D.fillSep ["|", "Success", "String"]
+  Doc.stack
+    [ Doc.toSimpleNote "Here is an example of a valid `type` declaration for reference:",
+      Doc.vcat
+        [ Doc.indent 4 $ Doc.fillSep [Doc.cyan "type", "Status"],
+          Doc.indent 6 $ Doc.fillSep ["=", "Failure"],
+          Doc.indent 6 $ Doc.fillSep ["|", "Waiting"],
+          Doc.indent 6 $ Doc.fillSep ["|", "Success", "String"]
         ],
-      D.reflow $
+      Doc.reflow $
         "This defines a new `Status` type with three variants. This could be useful if\
         \ we are waiting for an HTTP request. Maybe we start with `Waiting` and then\
         \ switch to `Failure` or `Success \"message from server\"` depending on how\
@@ -814,119 +814,119 @@ toDeclDefEqualsReport :: Code.Source -> Name.Name -> Row -> Col -> Row -> Col ->
 toDeclDefEqualsReport source name startRow startCol row col =
   case Code.whatIsNext source row col of
     Code.Keyword keyword ->
-      let surroundings = A.Region (A.Position startRow startCol) (A.Position row col)
+      let surroundings = Ann.Region (Ann.Position startRow startCol) (Ann.Position row col)
           region = toKeywordRegion row col keyword
        in Report.Report "RESERVED WORD" region [] $
             Code.toSnippet
               source
               surroundings
               (Just region)
-              ( D.fillSep
+              ( Doc.fillSep
                   [ "The", "name",
-                    "`" <> D.cyan (D.fromChars keyword) <> "`",
+                    "`" <> Doc.cyan (Doc.fromChars keyword) <> "`",
                     "is", "reserved", "in", "Canopy,", "so", "it", "cannot",
                     "be", "used", "as", "an", "argument", "here:"
                   ],
-                D.stack
-                  [ D.reflow "Try renaming it to something else.",
+                Doc.stack
+                  [ Doc.reflow "Try renaming it to something else.",
                     toDeclDefEqualsKeywordNote keyword
                   ]
               )
     Code.Operator "->" ->
-      let surroundings = A.Region (A.Position startRow startCol) (A.Position row col)
+      let surroundings = Ann.Region (Ann.Position startRow startCol) (Ann.Position row col)
           region = toWiderRegion row col 2
        in Report.Report "MISSING COLON?" region [] $
             Code.toSnippet
               source
               surroundings
               (Just region)
-              ( D.reflow "I was not expecting to see an arrow here:",
-                D.stack
-                  [ D.fillSep
-                      [ "This", "usually", "means", "a", D.green ":", "is", "missing", "a", "bit",
+              ( Doc.reflow "I was not expecting to see an arrow here:",
+                Doc.stack
+                  [ Doc.fillSep
+                      [ "This", "usually", "means", "a", Doc.green ":", "is", "missing", "a", "bit",
                         "earlier", "in", "a", "type", "annotation.", "It", "could", "be", "something",
                         "else", "though,", "so", "here", "is", "a", "valid", "definition", "for", "reference:"
                       ],
-                    D.indent 4 $
-                      D.vcat
+                    Doc.indent 4 $
+                      Doc.vcat
                         [ "greet : String -> String",
                           "greet name =",
-                          "  " <> D.dullyellow "\"Hello \"" <> " ++ name ++ " <> D.dullyellow "\"!\""
+                          "  " <> Doc.dullyellow "\"Hello \"" <> " ++ name ++ " <> Doc.dullyellow "\"!\""
                         ],
-                    D.reflow ("Try to use that format with your `" ++ Name.toChars name ++ "` definition!")
+                    Doc.reflow ("Try to use that format with your `" ++ Name.toChars name ++ "` definition!")
                   ]
               )
     Code.Operator op ->
-      let surroundings = A.Region (A.Position startRow startCol) (A.Position row col)
+      let surroundings = Ann.Region (Ann.Position startRow startCol) (Ann.Position row col)
           region = toKeywordRegion row col op
        in Report.Report "UNEXPECTED SYMBOL" region [] $
             Code.toSnippet
               source
               surroundings
               (Just region)
-              ( D.reflow "I was not expecting to see this symbol here:",
-                D.stack
-                  [ D.reflow $
+              ( Doc.reflow "I was not expecting to see this symbol here:",
+                Doc.stack
+                  [ Doc.reflow $
                       "I am not sure what is going wrong exactly, so here is a valid\
                       \ definition (with an optional type annotation) for reference:",
-                    D.indent 4 $
-                      D.vcat
+                    Doc.indent 4 $
+                      Doc.vcat
                         [ "greet : String -> String",
                           "greet name =",
-                          "  " <> D.dullyellow "\"Hello \"" <> " ++ name ++ " <> D.dullyellow "\"!\""
+                          "  " <> Doc.dullyellow "\"Hello \"" <> " ++ name ++ " <> Doc.dullyellow "\"!\""
                         ],
-                    D.reflow ("Try to use that format with your `" ++ Name.toChars name ++ "` definition!")
+                    Doc.reflow ("Try to use that format with your `" ++ Name.toChars name ++ "` definition!")
                   ]
               )
     _ ->
-      let surroundings = A.Region (A.Position startRow startCol) (A.Position row col)
+      let surroundings = Ann.Region (Ann.Position startRow startCol) (Ann.Position row col)
           region = toRegion row col
        in Report.Report "PROBLEM IN DEFINITION" region [] $
             Code.toSnippet
               source
               surroundings
               (Just region)
-              ( D.reflow ("I got stuck while parsing the `" ++ Name.toChars name ++ "` definition:"),
-                D.stack
-                  [ D.reflow $
+              ( Doc.reflow ("I got stuck while parsing the `" ++ Name.toChars name ++ "` definition:"),
+                Doc.stack
+                  [ Doc.reflow $
                       "I am not sure what is going wrong exactly, so here is a valid\
                       \ definition (with an optional type annotation) for reference:",
-                    D.indent 4 $
-                      D.vcat
+                    Doc.indent 4 $
+                      Doc.vcat
                         [ "greet : String -> String",
                           "greet name =",
-                          "  " <> D.dullyellow "\"Hello \"" <> " ++ name ++ " <> D.dullyellow "\"!\""
+                          "  " <> Doc.dullyellow "\"Hello \"" <> " ++ name ++ " <> Doc.dullyellow "\"!\""
                         ],
-                    D.reflow "Try to use that format!"
+                    Doc.reflow "Try to use that format!"
                   ]
               )
 
-toDeclDefEqualsKeywordNote :: String -> D.Doc
+toDeclDefEqualsKeywordNote :: String -> Doc.Doc
 toDeclDefEqualsKeywordNote keyword =
   case keyword of
     "as" ->
-      D.toFancyNote
+      Doc.toFancyNote
         [ "This", "keyword", "is", "reserved", "for", "pattern", "matches", "like",
-          "((x,y)", D.cyan "as", "point)", "where", "you", "want", "to", "name", "a",
+          "((x,y)", Doc.cyan "as", "point)", "where", "you", "want", "to", "name", "a",
           "tuple", "and", "the", "values", "it", "contains."
         ]
     _ ->
-      D.toSimpleNote ("The `" ++ keyword ++ "` keyword has a special meaning in Canopy, so it can only be used in certain situations.")
+      Doc.toSimpleNote ("The `" ++ keyword ++ "` keyword has a special meaning in Canopy, so it can only be used in certain situations.")
 
 toDeclDefNameRepeatReport :: Code.Source -> Name.Name -> Row -> Col -> Row -> Col -> Report.Report
 toDeclDefNameRepeatReport source name startRow startCol row col =
-  let surroundings = A.Region (A.Position startRow startCol) (A.Position row col)
+  let surroundings = Ann.Region (Ann.Position startRow startCol) (Ann.Position row col)
       region = toRegion row col
    in Report.Report "EXPECTING DEFINITION" region [] $
         Code.toSnippet
           source
           surroundings
           (Just region)
-          ( D.reflow $
+          ( Doc.reflow $
               "I just saw the type annotation for `" ++ Name.toChars name
                 ++ "` so I was expecting to see its definition here:",
-            D.stack
-              [ D.reflow $
+            Doc.stack
+              [ Doc.reflow $
                   "Type annotations always appear directly above the relevant\
                   \ definition, without anything else in between. (Not even doc comments!)",
                 declDefNote
@@ -935,67 +935,67 @@ toDeclDefNameRepeatReport source name startRow startCol row col =
 
 toDeclDefNameMatchReport :: Code.Source -> Name.Name -> Name.Name -> Row -> Col -> Row -> Col -> Report.Report
 toDeclDefNameMatchReport source name defName startRow startCol row col =
-  let surroundings = A.Region (A.Position startRow startCol) (A.Position row col)
+  let surroundings = Ann.Region (Ann.Position startRow startCol) (Ann.Position row col)
       region = toRegion row col
    in Report.Report "NAME MISMATCH" region [] $
         Code.toSnippet
           source
           surroundings
           (Just region)
-          ( D.reflow $
+          ( Doc.reflow $
               "I just saw a type annotation for `" ++ Name.toChars name
                 ++ "`, but it is followed by a definition for `" ++ Name.toChars defName ++ "`:",
-            D.stack
-              [ D.reflow "These names do not match! Is there a typo?",
-                D.indent 4 $
-                  D.fillSep [D.dullyellow (D.fromName defName), "->", D.green (D.fromName name)]
+            Doc.stack
+              [ Doc.reflow "These names do not match! Is there a typo?",
+                Doc.indent 4 $
+                  Doc.fillSep [Doc.dullyellow (Doc.fromName defName), "->", Doc.green (Doc.fromName name)]
               ]
           )
 
 toDeclDefIndentTypeReport :: Code.Source -> Name.Name -> Row -> Col -> Row -> Col -> Report.Report
 toDeclDefIndentTypeReport source name startRow startCol row col =
-  let surroundings = A.Region (A.Position startRow startCol) (A.Position row col)
+  let surroundings = Ann.Region (Ann.Position startRow startCol) (Ann.Position row col)
       region = toRegion row col
    in Report.Report "UNFINISHED DEFINITION" region [] $
         Code.toSnippet
           source
           surroundings
           (Just region)
-          ( D.reflow ("I got stuck while parsing the `" ++ Name.toChars name ++ "` type annotation:"),
-            D.stack
-              [ D.reflow "I just saw a colon, so I am expecting to see a type next.",
+          ( Doc.reflow ("I got stuck while parsing the `" ++ Name.toChars name ++ "` type annotation:"),
+            Doc.stack
+              [ Doc.reflow "I just saw a colon, so I am expecting to see a type next.",
                 declDefNote
               ]
           )
 
 toDeclDefIndentEqualsReport :: Code.Source -> Name.Name -> Row -> Col -> Row -> Col -> Report.Report
 toDeclDefIndentEqualsReport source name startRow startCol row col =
-  let surroundings = A.Region (A.Position startRow startCol) (A.Position row col)
+  let surroundings = Ann.Region (Ann.Position startRow startCol) (Ann.Position row col)
       region = toRegion row col
    in Report.Report "UNFINISHED DEFINITION" region [] $
         Code.toSnippet
           source
           surroundings
           (Just region)
-          ( D.reflow ("I got stuck while parsing the `" ++ Name.toChars name ++ "` definition:"),
-            D.stack
-              [ D.reflow "I was expecting to see an argument or an equals sign next.",
+          ( Doc.reflow ("I got stuck while parsing the `" ++ Name.toChars name ++ "` definition:"),
+            Doc.stack
+              [ Doc.reflow "I was expecting to see an argument or an equals sign next.",
                 declDefNote
               ]
           )
 
 toDeclDefIndentBodyReport :: Code.Source -> Name.Name -> Row -> Col -> Row -> Col -> Report.Report
 toDeclDefIndentBodyReport source name startRow startCol row col =
-  let surroundings = A.Region (A.Position startRow startCol) (A.Position row col)
+  let surroundings = Ann.Region (Ann.Position startRow startCol) (Ann.Position row col)
       region = toRegion row col
    in Report.Report "UNFINISHED DEFINITION" region [] $
         Code.toSnippet
           source
           surroundings
           (Just region)
-          ( D.reflow ("I got stuck while parsing the `" ++ Name.toChars name ++ "` definition:"),
-            D.stack
-              [ D.reflow "I was expecting to see an expression next. What is it equal to?",
+          ( Doc.reflow ("I got stuck while parsing the `" ++ Name.toChars name ++ "` definition:"),
+            Doc.stack
+              [ Doc.reflow "I was expecting to see an expression next. What is it equal to?",
                 declDefNote
               ]
           )

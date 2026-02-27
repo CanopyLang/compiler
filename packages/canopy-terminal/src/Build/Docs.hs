@@ -3,7 +3,7 @@
 -- | Documentation extraction from build artifacts.
 --
 -- This module generates 'Canopy.Docs.Documentation' from build artifacts by
--- extracting type information stored in each compiled module's 'I.Interface'.
+-- extracting type information stored in each compiled module's 'Interface.Interface'.
 -- Since interfaces contain all exported types, unions, aliases, and binops,
 -- they contain everything needed to produce structural documentation.
 --
@@ -34,7 +34,7 @@ import qualified Build.Artifacts as Build
 import qualified Canopy.Compiler.Type.Extract as Extract
 import qualified Canopy.Compiler.Type as Type
 import qualified Canopy.Docs as Docs
-import qualified Canopy.Interface as I
+import qualified Canopy.Interface as Interface
 import qualified Canopy.ModuleName as ModuleName
 import qualified Data.Map.Strict as Map
 import qualified Data.Name as Name
@@ -43,7 +43,7 @@ import qualified Json.String as Json
 -- | Extract full documentation from compiled build artifacts.
 --
 -- Iterates over all 'Build.Fresh' modules in the artifact set and
--- constructs a 'Docs.Module' for each one from its 'I.Interface'.
+-- constructs a 'Docs.Module' for each one from its 'Interface.Interface'.
 -- The resulting map is keyed by the raw module name.
 --
 -- @since 0.19.1
@@ -60,12 +60,12 @@ moduleToDocsPair (Build.Fresh modName iface _) =
 
 -- | Build a 'Docs.Module' from a module name and its interface.
 --
--- All documentation comments are left blank because the 'I.Interface'
+-- All documentation comments are left blank because the 'Interface.Interface'
 -- representation does not carry source-level comment text.
 --
 -- @since 0.19.1
-docsModuleFromInterface :: ModuleName.Raw -> I.Interface -> Docs.Module
-docsModuleFromInterface modName (I.Interface _ values unions aliases binops) =
+docsModuleFromInterface :: ModuleName.Raw -> Interface.Interface -> Docs.Module
+docsModuleFromInterface modName (Interface.Interface _ values unions aliases binops) =
   Docs.Module
     { Docs._name = modName
     , Docs._comment = emptyComment
@@ -75,15 +75,15 @@ docsModuleFromInterface modName (I.Interface _ values unions aliases binops) =
     , Docs._binops = Map.map binopToDocs binops
     }
 
--- | Convert an 'I.Union' to a 'Docs.Union', discarding private unions.
+-- | Convert an 'Interface.Union' to a 'Docs.Union', discarding private unions.
 --
 -- Returns 'Nothing' for 'PrivateUnion' entries, which are filtered
 -- from the documentation output.
 --
 -- @since 0.19.1
-unionToDocs :: I.Union -> Maybe Docs.Union
+unionToDocs :: Interface.Union -> Maybe Docs.Union
 unionToDocs iUnion =
-  fmap buildDocsUnion (I.toPublicUnion iUnion)
+  fmap buildDocsUnion (Interface.toPublicUnion iUnion)
 
 -- | Construct a 'Docs.Union' from a canonical union.
 --
@@ -99,15 +99,15 @@ ctorPair :: Can.Ctor -> (Name.Name, [Type.Type])
 ctorPair (Can.Ctor name _ _ args) =
   (name, map Extract.fromType args)
 
--- | Convert an 'I.Alias' to a 'Docs.Alias', discarding private aliases.
+-- | Convert an 'Interface.Alias' to a 'Docs.Alias', discarding private aliases.
 --
 -- Returns 'Nothing' for 'PrivateAlias' entries, which are filtered
 -- from the documentation output.
 --
 -- @since 0.19.1
-aliasToDocs :: I.Alias -> Maybe Docs.Alias
+aliasToDocs :: Interface.Alias -> Maybe Docs.Alias
 aliasToDocs iAlias =
-  fmap buildDocsAlias (I.toPublicAlias iAlias)
+  fmap buildDocsAlias (Interface.toPublicAlias iAlias)
 
 -- | Construct a 'Docs.Alias' from a canonical alias.
 --
@@ -123,11 +123,11 @@ annotationToValue :: Can.Annotation -> Docs.Value
 annotationToValue annotation =
   Docs.Value emptyComment (Extract.fromAnnotation annotation)
 
--- | Convert an 'I.Binop' to a 'Docs.Binop'.
+-- | Convert an 'Interface.Binop' to a 'Docs.Binop'.
 --
 -- @since 0.19.1
-binopToDocs :: I.Binop -> Docs.Binop
-binopToDocs (I.Binop _ annotation assoc prec) =
+binopToDocs :: Interface.Binop -> Docs.Binop
+binopToDocs (Interface.Binop _ annotation assoc prec) =
   Docs.Binop emptyComment (Extract.fromAnnotation annotation) assoc prec
 
 -- | An empty documentation comment.

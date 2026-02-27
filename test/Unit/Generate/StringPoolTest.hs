@@ -11,7 +11,7 @@ module Unit.Generate.StringPoolTest (tests) where
 import qualified AST.Optimized as Opt
 import qualified Canopy.ModuleName as ModuleName
 import qualified Canopy.Package as Pkg
-import qualified Data.ByteString.Builder as B
+import qualified Data.ByteString.Builder as BB
 import qualified Data.ByteString.Lazy.Char8 as LChar8
 import qualified Data.List as List
 import qualified Data.Map.Strict as Map
@@ -54,8 +54,8 @@ mkGraph entries =
   Map.fromList [(mkGlobal name, mkDefineNode expr) | (name, expr) <- entries]
 
 -- | Convert a Builder to a String for assertion checks.
-builderToString :: B.Builder -> String
-builderToString = LChar8.unpack . B.toLazyByteString
+builderToString :: BB.Builder -> String
+builderToString = LChar8.unpack . BB.toLazyByteString
 
 -- BUILD POOL TESTS
 

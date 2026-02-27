@@ -4,7 +4,7 @@
 -- @since 0.19.1
 module Unit.New.Compiler.DriverTest (tests) where
 
-import qualified Canopy.Interface as I
+import qualified Canopy.Interface as Interface
 import qualified Canopy.Package as Pkg
 import qualified Data.Map as Map
 import qualified Driver
@@ -72,14 +72,14 @@ testSimpleModule = do
         ]
 
     -- Extract public interface from dependency interface
-    extractPublicInterface :: I.DependencyInterface -> I.Interface
-    extractPublicInterface (I.Public iface) = iface
-    extractPublicInterface (I.Private pkg unions aliases) =
+    extractPublicInterface :: Interface.DependencyInterface -> Interface.Interface
+    extractPublicInterface (Interface.Public iface) = iface
+    extractPublicInterface (Interface.Private pkg unions aliases) =
       -- Create minimal interface from private data
-      I.Interface
-        { I._home = pkg
-        , I._values = Map.empty
-        , I._unions = Map.map I.PrivateUnion unions
-        , I._aliases = Map.map I.PrivateAlias aliases
-        , I._binops = Map.empty
+      Interface.Interface
+        { Interface._home = pkg
+        , Interface._values = Map.empty
+        , Interface._unions = Map.map Interface.PrivateUnion unions
+        , Interface._aliases = Map.map Interface.PrivateAlias aliases
+        , Interface._binops = Map.empty
         }

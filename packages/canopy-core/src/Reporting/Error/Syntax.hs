@@ -28,8 +28,8 @@ module Reporting.Error.Syntax
 where
 
 import qualified Canopy.ModuleName as ModuleName
-import qualified Reporting.Annotation as A
-import qualified Reporting.Doc as D
+import qualified Reporting.Annotation as Ann
+import qualified Reporting.Doc as Doc
 import Reporting.Diagnostic (Diagnostic)
 import qualified Reporting.Diagnostic as Diag
 import qualified Reporting.ErrorCode as EC
@@ -53,13 +53,13 @@ toReport source err =
   case err of
     ModuleNameUnspecified name ->
       toModuleNameUnspecifiedReport name
-    ModuleNameMismatch expectedName (A.At region actualName) ->
+    ModuleNameMismatch expectedName (Ann.At region actualName) ->
       toModuleNameMismatchReport source expectedName region actualName
     UnexpectedPort region ->
       toUnexpectedPortReport source region
     NoPorts region ->
       toNoPortsReport source region
-    NoPortsInPackage (A.At region _) ->
+    NoPortsInPackage (Ann.At region _) ->
       toNoPortsInPackageReport source region
     NoPortModulesInPackage region ->
       toNoPortModulesInPackageReport source region
@@ -74,14 +74,14 @@ toModuleNameUnspecifiedReport :: ModuleName.Raw -> Report.Report
 toModuleNameUnspecifiedReport name =
   let region = toRegion 1 1
    in Report.Report "MODULE NAME MISSING" region [] $
-        D.stack
-          [ D.reflow $
+        Doc.stack
+          [ Doc.reflow $
               "I need the module name to be declared at the top of this file, like this:",
-            D.indent 4 $
-              D.fillSep
-                [D.cyan "module", D.fromName name, D.cyan "exposing", "(..)"],
-            D.reflow "Try adding that as the first line of your file!",
-            D.toSimpleNote $
+            Doc.indent 4 $
+              Doc.fillSep
+                [Doc.cyan "module", Doc.fromName name, Doc.cyan "exposing", "(..)"],
+            Doc.reflow "Try adding that as the first line of your file!",
+            Doc.toSimpleNote $
               "It is best to replace (..) with an explicit list of types and\
               \ functions you want to expose. When you know a value is only used\
               \ within this module, you can refactor without worrying about uses\
@@ -90,7 +90,7 @@ toModuleNameUnspecifiedReport name =
               \ has not changed."
           ]
 
-toModuleNameMismatchReport :: Code.Source -> ModuleName.Raw -> A.Region -> ModuleName.Raw -> Report.Report
+toModuleNameMismatchReport :: Code.Source -> ModuleName.Raw -> Ann.Region -> ModuleName.Raw -> Report.Report
 toModuleNameMismatchReport source expectedName region actualName =
   Report.Report "MODULE NAME MISMATCH" region [ModuleName.toChars expectedName] $
     Code.toSnippet
@@ -98,35 +98,35 @@ toModuleNameMismatchReport source expectedName region actualName =
       region
       Nothing
       ( "It looks like this module name is out of sync:",
-        D.stack
-          [ D.reflow $
+        Doc.stack
+          [ Doc.reflow $
               "I need it to match the file path, so I was expecting to see `"
                 ++ ModuleName.toChars expectedName
                 ++ "` here. Make the following change, and you should be all set!",
-            D.indent 4 $
-              D.dullyellow (D.fromName actualName) <> " -> " <> D.green (D.fromName expectedName),
-            D.toSimpleNote $
+            Doc.indent 4 $
+              Doc.dullyellow (Doc.fromName actualName) <> " -> " <> Doc.green (Doc.fromName expectedName),
+            Doc.toSimpleNote $
               "I require that module names correspond to file paths. This makes it much\
               \ easier to explore unfamiliar codebases! So if you want to keep the current\
               \ module name, try renaming the file instead."
           ]
       )
 
-toUnexpectedPortReport :: Code.Source -> A.Region -> Report.Report
+toUnexpectedPortReport :: Code.Source -> Ann.Region -> Report.Report
 toUnexpectedPortReport source region =
   Report.Report "UNEXPECTED PORTS" region [] $
     Code.toSnippet
       source
       region
       Nothing
-      ( D.reflow "You are declaring ports in a normal module.",
-        D.stack
-          [ D.fillSep
+      ( Doc.reflow "You are declaring ports in a normal module.",
+        Doc.stack
+          [ Doc.fillSep
               [ "Switch", "this", "to", "say",
-                D.cyan "port module",
+                Doc.cyan "port module",
                 "instead,", "marking", "that", "this", "module", "contains", "port", "declarations."
               ],
-            D.link
+            Doc.link
               "Note"
               "Ports are not a traditional FFI for calling JS functions directly. They need a different mindset! Read"
               "ports"
@@ -134,74 +134,74 @@ toUnexpectedPortReport source region =
           ]
       )
 
-toNoPortsReport :: Code.Source -> A.Region -> Report.Report
+toNoPortsReport :: Code.Source -> Ann.Region -> Report.Report
 toNoPortsReport source region =
   Report.Report "NO PORTS" region [] $
     Code.toSnippet
       source
       region
       Nothing
-      ( D.reflow "This module does not declare any ports, but it says it will:",
-        D.fillSep
-          [ "Switch", "this", "to", D.cyan "module", "and", "you", "should", "be", "all", "set!"
+      ( Doc.reflow "This module does not declare any ports, but it says it will:",
+        Doc.fillSep
+          [ "Switch", "this", "to", Doc.cyan "module", "and", "you", "should", "be", "all", "set!"
           ]
       )
 
-toNoPortsInPackageReport :: Code.Source -> A.Region -> Report.Report
+toNoPortsInPackageReport :: Code.Source -> Ann.Region -> Report.Report
 toNoPortsInPackageReport source region =
   Report.Report "PACKAGES CANNOT HAVE PORTS" region [] $
     Code.toSnippet
       source
       region
       Nothing
-      ( D.reflow "Packages cannot declare any ports, so I am getting stuck here:",
-        D.stack
-          [ D.reflow "Remove this port declaration.",
+      ( Doc.reflow "Packages cannot declare any ports, so I am getting stuck here:",
+        Doc.stack
+          [ Doc.reflow "Remove this port declaration.",
             noteForPortsInPackage
           ]
       )
 
-toNoPortModulesInPackageReport :: Code.Source -> A.Region -> Report.Report
+toNoPortModulesInPackageReport :: Code.Source -> Ann.Region -> Report.Report
 toNoPortModulesInPackageReport source region =
   Report.Report "PACKAGES CANNOT HAVE PORTS" region [] $
     Code.toSnippet
       source
       region
       Nothing
-      ( D.reflow "Packages cannot have `port module` declarations.",
-        D.reflow "Try using a regular `module` declaration instead. Ports are only allowed in applications."
+      ( Doc.reflow "Packages cannot have `port module` declarations.",
+        Doc.reflow "Try using a regular `module` declaration instead. Ports are only allowed in applications."
       )
 
-toNoFFIModulesInPackageReport :: Code.Source -> A.Region -> Report.Report
+toNoFFIModulesInPackageReport :: Code.Source -> Ann.Region -> Report.Report
 toNoFFIModulesInPackageReport source region =
   Report.Report "PACKAGES CANNOT HAVE FFI MODULES" region [] $
     Code.toSnippet
       source
       region
       Nothing
-      ( D.reflow "Packages cannot have `ffi module` declarations, so I am getting stuck here:",
-        D.stack
-          [ D.fillSep
-              [ "Remove", "the", D.cyan "ffi", "keyword", "and", "I",
+      ( Doc.reflow "Packages cannot have `ffi module` declarations, so I am getting stuck here:",
+        Doc.stack
+          [ Doc.fillSep
+              [ "Remove", "the", Doc.cyan "ffi", "keyword", "and", "I",
                 "should", "be", "able", "to", "continue."
               ],
-            D.reflow "FFI modules are only allowed in applications, not in packages that other people can install."
+            Doc.reflow "FFI modules are only allowed in applications, not in packages that other people can install."
           ]
       )
 
-toNoEffectsOutsideKernelReport :: Code.Source -> A.Region -> Report.Report
+toNoEffectsOutsideKernelReport :: Code.Source -> Ann.Region -> Report.Report
 toNoEffectsOutsideKernelReport source region =
   Report.Report "INVALID EFFECT MODULE" region [] $
     Code.toSnippet
       source
       region
       Nothing
-      ( D.reflow $
+      ( Doc.reflow $
           "It is not possible to declare an `effect module` outside the @canopy organization,\
           \ so I am getting stuck here:",
-        D.stack
-          [ D.reflow "Switch to a normal module declaration.",
-            D.toSimpleNote $
+        Doc.stack
+          [ Doc.reflow "Switch to a normal module declaration.",
+            Doc.toSimpleNote $
               "Effect modules are designed to allow certain core functionality to be\
               \ defined separately from the compiler. So the @canopy organization has access to\
               \ this so that certain changes, extensions, and fixes can be introduced without\
@@ -243,13 +243,13 @@ errorCode = \case
   ParseError _ -> EC.parseError 10
 
 -- | Extract the source region for a syntax error.
-errorRegion :: Error -> A.Region
+errorRegion :: Error -> Ann.Region
 errorRegion = \case
   ModuleNameUnspecified _ -> toRegion 1 1
-  ModuleNameMismatch _ (A.At region _) -> region
+  ModuleNameMismatch _ (Ann.At region _) -> region
   UnexpectedPort region -> region
   NoPorts region -> region
-  NoPortsInPackage (A.At region _) -> region
+  NoPortsInPackage (Ann.At region _) -> region
   NoPortModulesInPackage region -> region
   NoFFIModulesInPackage region -> region
   NoEffectsOutsideKernel region -> region

@@ -21,7 +21,7 @@ module Generate.JavaScript.CodeSplit.Manifest
   )
 where
 
-import qualified Data.ByteString.Builder as B
+import qualified Data.ByteString.Builder as BB
 import Data.ByteString.Builder (Builder)
 import qualified Data.Digest.Pure.SHA as SHA
 import qualified Data.Text as Text
@@ -80,7 +80,7 @@ contentHash :: Builder -> Text.Text
 contentHash builder =
   Text.take 8 (Text.pack (SHA.showDigest digest))
   where
-    digest = SHA.sha256 (B.toLazyByteString builder)
+    digest = SHA.sha256 (BB.toLazyByteString builder)
 
 -- | Compute the filename for a chunk based on its kind, ID, and content hash.
 --
@@ -111,26 +111,26 @@ isEntry co = _coKind co == EntryChunk
 entryFilename :: [ChunkOutput] -> Builder
 entryFilename outputs =
   case filter isEntry outputs of
-    (co : _) -> B.stringUtf8 (_coFilename co)
+    (co : _) -> BB.stringUtf8 (_coFilename co)
     [] -> "entry.js"
 
 -- | Format a single chunk entry for the JSON manifest.
 chunkEntry :: ChunkOutput -> Builder
 chunkEntry co =
-  jsonField (chunkIdText co) (B.stringUtf8 (_coFilename co)) False
+  jsonField (chunkIdText co) (BB.stringUtf8 (_coFilename co)) False
 
 -- | Format a manifest entry for the inline JS object.
 manifestEntry :: ChunkOutput -> Builder
 manifestEntry co =
-  "\"" <> B.stringUtf8 (Text.unpack (chunkIdText' co)) <> "\":\""
-    <> B.stringUtf8 (_coFilename co)
+  "\"" <> BB.stringUtf8 (Text.unpack (chunkIdText' co)) <> "\":\""
+    <> BB.stringUtf8 (_coFilename co)
     <> "\""
 
 -- | Extract chunk ID text from a ChunkOutput.
 chunkIdText :: ChunkOutput -> Builder
 chunkIdText co =
   let ChunkId cid = _coChunkId co
-   in B.stringUtf8 (Text.unpack cid)
+   in BB.stringUtf8 (Text.unpack cid)
 
 -- | Extract chunk ID as Text.
 chunkIdText' :: ChunkOutput -> Text.Text

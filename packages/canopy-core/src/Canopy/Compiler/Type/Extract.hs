@@ -17,8 +17,8 @@ where
 import qualified AST.Canonical as Can
 import qualified AST.Optimized as Opt
 import qualified AST.Utils.Type as Type
-import qualified Canopy.Compiler.Type as T
-import qualified Canopy.Interface as I
+import qualified Canopy.Compiler.Type as CompilerType
+import qualified Canopy.Interface as Interface
 import qualified Canopy.ModuleName as ModuleName
 import qualified Data.Map as Map
 import qualified Data.Maybe as Maybe
@@ -29,34 +29,34 @@ import qualified Data.Set as Set
 
 -- EXTRACTION
 
-fromAnnotation :: Can.Annotation -> T.Type
+fromAnnotation :: Can.Annotation -> CompilerType.Type
 fromAnnotation (Can.Forall _ astType) =
   fromType astType
 
-fromType :: Can.Type -> T.Type
+fromType :: Can.Type -> CompilerType.Type
 fromType astType =
   snd (run (extract astType))
 
-extract :: Can.Type -> Extractor T.Type
+extract :: Can.Type -> Extractor CompilerType.Type
 extract astType =
   case astType of
     Can.TLambda arg result ->
-      T.Lambda
+      CompilerType.Lambda
         <$> extract arg
         <*> extract result
     Can.TVar x ->
-      pure (T.Var x)
+      pure (CompilerType.Var x)
     Can.TType home name args ->
-      addUnion (Opt.Global home name) (T.Type (toPublicName home name))
+      addUnion (Opt.Global home name) (CompilerType.Type (toPublicName home name))
         <*> traverse extract args
     Can.TRecord fields ext ->
       do
         efields <- traverse (traverse extract) (Can.fieldsToList fields)
-        pure (T.Record efields ext)
+        pure (CompilerType.Record efields ext)
     Can.TUnit ->
-      pure T.Unit
+      pure CompilerType.Unit
     Can.TTuple a b maybeC ->
-      T.Tuple
+      CompilerType.Tuple
         <$> extract a
         <*> extract b
         <*> traverse extract (Maybe.maybeToList maybeC)
@@ -64,7 +64,7 @@ extract astType =
       do
         addAlias (Opt.Global home name) ()
         _ <- extract (Type.dealias args aliasType)
-        T.Type (toPublicName home name)
+        CompilerType.Type (toPublicName home name)
           <$> traverse (extract . snd) args
 
 toPublicName :: ModuleName.Canonical -> Name.Name -> Name.Name
@@ -95,32 +95,32 @@ merge :: Types -> Types -> Types
 merge (Types types1) (Types types2) =
   Types (Map.union types1 types2)
 
-fromInterface :: ModuleName.Raw -> I.Interface -> Types
-fromInterface name (I.Interface pkg _ unions aliases _) =
-  Types . Map.singleton (ModuleName.Canonical pkg name) $ Types_ (Map.map I.extractUnion unions) (Map.map I.extractAlias aliases)
+fromInterface :: ModuleName.Raw -> Interface.Interface -> Types
+fromInterface name (Interface.Interface pkg _ unions aliases _) =
+  Types . Map.singleton (ModuleName.Canonical pkg name) $ Types_ (Map.map Interface.extractUnion unions) (Map.map Interface.extractAlias aliases)
 
-fromDependencyInterface :: ModuleName.Canonical -> I.DependencyInterface -> Types
+fromDependencyInterface :: ModuleName.Canonical -> Interface.DependencyInterface -> Types
 fromDependencyInterface home di =
   Types . Map.singleton home $
     ( case di of
-        I.Public (I.Interface _ _ unions aliases _) ->
-          Types_ (Map.map I.extractUnion unions) (Map.map I.extractAlias aliases)
-        I.Private _ unions aliases ->
+        Interface.Public (Interface.Interface _ _ unions aliases _) ->
+          Types_ (Map.map Interface.extractUnion unions) (Map.map Interface.extractAlias aliases)
+        Interface.Private _ unions aliases ->
           Types_ unions aliases
     )
 
 -- EXTRACT MODEL, MSG, AND ANY TRANSITIVE DEPENDENCIES
 
-fromMsg :: Types -> Can.Type -> T.DebugMetadata
+fromMsg :: Types -> Can.Type -> CompilerType.DebugMetadata
 fromMsg types message =
   let (msgDeps, msgType) =
         run (extract message)
 
       (aliases, unions) =
         extractTransitive types noDeps msgDeps
-   in T.DebugMetadata msgType aliases unions
+   in CompilerType.DebugMetadata msgType aliases unions
 
-extractTransitive :: Types -> Deps -> Deps -> ([T.Alias], [T.Union])
+extractTransitive :: Types -> Deps -> Deps -> ([CompilerType.Alias], [CompilerType.Union])
 extractTransitive types (Deps seenAliases seenUnions) (Deps nextAliases nextUnions) =
   let aliases = Set.difference nextAliases seenAliases
       unions = Set.difference nextUnions seenUnions
@@ -140,7 +140,7 @@ extractTransitive types (Deps seenAliases seenUnions) (Deps nextAliases nextUnio
                 extractTransitive types oldDeps newDeps
            in mappend result remainingResult
 
-extractAlias :: Types -> Opt.Global -> Extractor T.Alias
+extractAlias :: Types -> Opt.Global -> Extractor CompilerType.Alias
 extractAlias (Types dict) (Opt.Global home name) =
   let types_ =
         maybe
@@ -152,12 +152,12 @@ extractAlias (Types dict) (Opt.Global home name) =
           (InternalError.report "Canopy.Compiler.Type.Extract.extractAlias" ("Alias missing from module types: " <> Text.pack (show name)) "Every referenced alias must be present in the module's alias info map.")
           id
           (Map.lookup name (_alias_info types_))
-   in T.Alias (toPublicName home name) args <$> extract aliasType
+   in CompilerType.Alias (toPublicName home name) args <$> extract aliasType
 
-extractUnion :: Types -> Opt.Global -> Extractor T.Union
+extractUnion :: Types -> Opt.Global -> Extractor CompilerType.Union
 extractUnion (Types dict) (Opt.Global home name) =
   if name == Name.list && home == ModuleName.list
-    then return $ T.Union (toPublicName home name) ["a"] []
+    then return $ CompilerType.Union (toPublicName home name) ["a"] []
     else
       let pname = toPublicName home name
           types_ =
@@ -170,9 +170,9 @@ extractUnion (Types dict) (Opt.Global home name) =
               (InternalError.report "Canopy.Compiler.Type.Extract.extractUnion" ("Union missing from module types: " <> Text.pack (show name)) "Every referenced union must be present in the module's union info map.")
               id
               (Map.lookup name (_union_info types_))
-       in T.Union pname vars <$> traverse extractCtor ctors
+       in CompilerType.Union pname vars <$> traverse extractCtor ctors
 
-extractCtor :: Can.Ctor -> Extractor (Name.Name, [T.Type])
+extractCtor :: Can.Ctor -> Extractor (Name.Name, [CompilerType.Type])
 extractCtor (Can.Ctor ctor _ _ args) =
   (,) ctor <$> traverse extract args
 

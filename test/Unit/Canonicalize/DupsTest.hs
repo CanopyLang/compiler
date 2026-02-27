@@ -27,7 +27,7 @@ import qualified Canonicalize.Environment.Dups as Dups
 import qualified Data.Map.Strict as Map
 import qualified Data.Name as Name
 import qualified Data.OneOrMore as OneOrMore
-import qualified Reporting.Annotation as A
+import qualified Reporting.Annotation as Ann
 import qualified Reporting.Error.Canonicalize as Error
 import qualified Reporting.Result as Result
 
@@ -58,18 +58,18 @@ expectLeft (_, Left errs) = return errs
 expectLeft (_, Right _) = assertFailure "Expected Left, got Right" >> error "unreachable"
 
 -- | A toError function that produces DuplicateDecl errors for detect.
-toError :: Name.Name -> A.Region -> A.Region -> Error.Error
+toError :: Name.Name -> Ann.Region -> Ann.Region -> Error.Error
 toError = Error.DuplicateDecl
 
 -- | Convenience region constructors for test data.
-region1 :: A.Region
-region1 = A.Region (A.Position 1 1) (A.Position 1 5)
+region1 :: Ann.Region
+region1 = Ann.Region (Ann.Position 1 1) (Ann.Position 1 5)
 
-region2 :: A.Region
-region2 = A.Region (A.Position 2 1) (A.Position 2 5)
+region2 :: Ann.Region
+region2 = Ann.Region (Ann.Position 2 1) (Ann.Position 2 5)
 
-region3 :: A.Region
-region3 = A.Region (A.Position 3 1) (A.Position 3 5)
+region3 :: Ann.Region
+region3 = Ann.Region (Ann.Position 3 1) (Ann.Position 3 5)
 
 -- NONE TESTS
 
@@ -221,39 +221,39 @@ detectTests = testGroup "detect"
 checkFieldsTests :: TestTree
 checkFieldsTests = testGroup "checkFields"
   [ testCase "checkFields with no fields returns empty map" $ do
-      result <- expectRight (runResult (Dups.checkFields ([] :: [(A.Located Name.Name, Int)])))
+      result <- expectRight (runResult (Dups.checkFields ([] :: [(Ann.Located Name.Name, Int)])))
       result @?= Map.empty
   , testCase "checkFields with unique fields returns all values" $ do
       let fields =
-            [ (A.At region1 (Name.fromChars "name"), 1 :: Int)
-            , (A.At region2 (Name.fromChars "age"), 2)
+            [ (Ann.At region1 (Name.fromChars "name"), 1 :: Int)
+            , (Ann.At region2 (Name.fromChars "age"), 2)
             ]
       result <- expectRight (runResult (Dups.checkFields fields))
       result @?= Map.fromList [(Name.fromChars "name", 1), (Name.fromChars "age", 2)]
   , testCase "checkFields with duplicate field names returns error" $ do
       let fields =
-            [ (A.At region1 (Name.fromChars "name"), 1 :: Int)
-            , (A.At region2 (Name.fromChars "name"), 2)
+            [ (Ann.At region1 (Name.fromChars "name"), 1 :: Int)
+            , (Ann.At region2 (Name.fromChars "name"), 2)
             ]
       _ <- expectLeft (runResult (Dups.checkFields fields))
       return ()
   , testCase "checkFields duplicate error is DuplicateField" $ do
       let name = Name.fromChars "x"
           fields =
-            [ (A.At region1 name, 1 :: Int)
-            , (A.At region2 name, 2)
+            [ (Ann.At region1 name, 1 :: Int)
+            , (Ann.At region2 name, 2)
             ]
       errs <- expectLeft (runResult (Dups.checkFields fields))
       verifyDuplicateFieldError errs name
   , testCase "checkFields with single field returns singleton map" $ do
-      let fields = [(A.At region1 (Name.fromChars "only"), 42 :: Int)]
+      let fields = [(Ann.At region1 (Name.fromChars "only"), 42 :: Int)]
       result <- expectRight (runResult (Dups.checkFields fields))
       result @?= Map.singleton (Name.fromChars "only") 42
   , testCase "checkFields with three unique fields returns all" $ do
       let fields =
-            [ (A.At region1 (Name.fromChars "x"), 10 :: Int)
-            , (A.At region2 (Name.fromChars "y"), 20)
-            , (A.At region3 (Name.fromChars "z"), 30)
+            [ (Ann.At region1 (Name.fromChars "x"), 10 :: Int)
+            , (Ann.At region2 (Name.fromChars "y"), 20)
+            , (Ann.At region3 (Name.fromChars "z"), 30)
             ]
       result <- expectRight (runResult (Dups.checkFields fields))
       Map.size result @?= 3
@@ -262,8 +262,8 @@ checkFieldsTests = testGroup "checkFields"
 -- HELPERS
 
 -- | Create a region at a given line number.
-mkRegion :: Int -> A.Region
-mkRegion n = A.Region (A.Position (fromIntegral n) 1) (A.Position (fromIntegral n) 5)
+mkRegion :: Int -> Ann.Region
+mkRegion n = Ann.Region (Ann.Position (fromIntegral n) 1) (Ann.Position (fromIntegral n) 5)
 
 -- | Verify that an error collection contains a DuplicateDecl error for the given name.
 verifyDuplicateDeclError :: OneOrMore.OneOrMore Error.Error -> Name.Name -> Assertion

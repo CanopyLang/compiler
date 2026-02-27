@@ -11,7 +11,7 @@ module Unit.Generate.NameTest (tests) where
 
 import qualified Canopy.ModuleName as ModuleName
 import qualified Canopy.Package as Pkg
-import qualified Data.ByteString.Builder as B
+import qualified Data.ByteString.Builder as BB
 import qualified Data.ByteString.Lazy.Char8 as LChar8
 import Data.Name (Name)
 import qualified Data.Name as Name
@@ -40,7 +40,7 @@ tests =
 -- HELPERS
 
 nameToString :: JsName.Name -> String
-nameToString = LChar8.unpack . B.toLazyByteString . JsName.toBuilder
+nameToString = LChar8.unpack . BB.toLazyByteString . JsName.toBuilder
 
 name :: String -> Name
 name = Name.fromChars

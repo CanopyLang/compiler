@@ -4,9 +4,9 @@ import qualified AST.Source as Src
 import qualified Canopy.Package as Pkg
 import qualified Data.ByteString.Char8 as C8
 import qualified Data.Name as Name
-import qualified Parse.Module as M
-import qualified Reporting.Annotation as A
-import qualified Reporting.Error.Syntax as E
+import qualified Parse.Module as ParseModule
+import qualified Reporting.Annotation as Ann
+import qualified Reporting.Error.Syntax as SyntaxError
 import Test.Tasty
 import Test.Tasty.HUnit
 
@@ -25,8 +25,8 @@ tests =
       testAliasGenerics
     ]
 
-parseModule :: M.ProjectType -> String -> Either E.Error Src.Module
-parseModule pt s = M.fromByteString pt (C8.pack s)
+parseModule :: ParseModule.ProjectType -> String -> Either SyntaxError.Error Src.Module
+parseModule pt s = ParseModule.fromByteString pt (C8.pack s)
 
 simpleModuleSrc :: String
 simpleModuleSrc =
@@ -43,7 +43,7 @@ simpleModuleSrc =
     ]
 
 testSimpleModule :: TestTree
-testSimpleModule = testCase "parse simple module structure" $ case parseModule M.Application simpleModuleSrc of
+testSimpleModule = testCase "parse simple module structure" $ case parseModule ParseModule.Application simpleModuleSrc of
   Right modul -> do
     Src.getName modul @?= Name.fromChars "Utils"
     case Src._effects modul of
@@ -51,21 +51,21 @@ testSimpleModule = testCase "parse simple module structure" $ case parseModule M
       _ -> assertFailure "expected NoEffects"
     -- default imports are added automatically; ensure our explicit import exists
     assertBool "List import present" $
-      any (\(Src.Import (A.At _ name) _ _ _) -> name == Name.list) (Src._imports modul)
+      any (\(Src.Import (Ann.At _ name) _ _ _) -> name == Name.list) (Src._imports modul)
     length (Src._values modul) @?= 2
     length (Src._aliases modul) @?= 1
     length (Src._unions modul) @?= 1
   other -> assertFailure ("unexpected: " <> show other)
 
 testImportsAndExports :: TestTree
-testImportsAndExports = testCase "imports and exports parsed" $ case parseModule M.Application simpleModuleSrc of
+testImportsAndExports = testCase "imports and exports parsed" $ case parseModule ParseModule.Application simpleModuleSrc of
   Right m -> do
     let isListImport = \case
-          Src.Import (A.At _ name) (Just alias) _ _ -> name == Name.list || alias == Name.fromChars "L"
+          Src.Import (Ann.At _ name) (Just alias) _ _ -> name == Name.list || alias == Name.fromChars "L"
           _ -> False
     assertBool "has List import with alias" (any isListImport (Src._imports m))
     case Src._exports m of
-      A.At _ Src.Open -> return ()
+      Ann.At _ Src.Open -> return ()
       _ -> assertFailure "expected Open exports"
   _ -> assertFailure "parse failed"
 
@@ -76,8 +76,8 @@ testPortsDisallowedInPackage = testCase "ports disallowed in package" $ do
           [ "module Utils exposing (..)",
             "port p : Int"
           ]
-  case parseModule (M.Package Pkg.core) src of
-    Left (E.NoPortsInPackage (A.At _ _)) -> return ()
+  case parseModule (ParseModule.Package Pkg.core) src of
+    Left (SyntaxError.NoPortsInPackage (Ann.At _ _)) -> return ()
     other -> assertFailure ("expected NoPortsInPackage, got: " <> show other)
 
 testExplicitExposing :: TestTree
@@ -88,9 +88,9 @@ testExplicitExposing = testCase "explicit exposing list with values and types" $
             "x = 1",
             "type Pair a = Pair a"
           ]
-  case parseModule M.Application src of
+  case parseModule ParseModule.Application src of
     Right m -> case Src._exports m of
-      A.At _ (Src.Explicit items) -> length items @?= 2
+      Ann.At _ (Src.Explicit items) -> length items @?= 2
       _ -> assertFailure "expected explicit exports"
     other -> assertFailure ("unexpected: " <> show other)
 
@@ -101,9 +101,9 @@ testOperatorExposing = testCase "explicit operator exposing" $ do
           [ "module M exposing ((:+), x)",
             "x = 1"
           ]
-  case parseModule M.Application src of
+  case parseModule ParseModule.Application src of
     Right m -> case Src._exports m of
-      A.At _ (Src.Explicit items) -> do
+      Ann.At _ (Src.Explicit items) -> do
         let hasOp =
               any
                 ( \case
@@ -123,7 +123,7 @@ testPortModuleApplication = testCase "port module with ports under Application" 
             "",
             "port p : Int"
           ]
-  case parseModule M.Application src of
+  case parseModule ParseModule.Application src of
     Right m -> case Src._effects m of
       Src.Ports ports -> length ports @?= 1
       _ -> assertFailure "expected Ports effects"
@@ -137,7 +137,7 @@ testEffectModuleKernel = testCase "effect module allowed only for kernel package
             "",
             "f = 1"
           ]
-  case parseModule (M.Package Pkg.kernel) src of
+  case parseModule (ParseModule.Package Pkg.kernel) src of
     Right m -> case Src._effects m of
       Src.Manager _ _ -> return ()
       _ -> assertFailure "expected Manager effects"
@@ -151,8 +151,8 @@ testEffectModuleDisallowedInApp = testCase "effect module disallowed outside ker
             "",
             "f = 1"
           ]
-  case parseModule M.Application src of
-    Left (E.NoEffectsOutsideKernel _) -> return ()
+  case parseModule ParseModule.Application src of
+    Left (SyntaxError.NoEffectsOutsideKernel _) -> return ()
     other -> assertFailure ("expected NoEffectsOutsideKernel, got: " <> show other)
 
 testAliasGenerics :: TestTree
@@ -163,17 +163,17 @@ testAliasGenerics = testCase "type alias generics referenced in field types" $ d
             "",
             "type alias Box a = { value : a }"
           ]
-  case parseModule M.Application src of
+  case parseModule ParseModule.Application src of
     Right m -> case Src._aliases m of
-      [A.At _ (Src.Alias (A.At _ name) typeVars tipe)] -> do
+      [Ann.At _ (Src.Alias (Ann.At _ name) typeVars tipe)] -> do
         name @?= Name.fromChars "Box"
         -- ensure one type var named 'a'
         case typeVars of
-          [A.At _ tv] -> tv @?= Name.fromChars "a"
+          [Ann.At _ tv] -> tv @?= Name.fromChars "a"
           _ -> assertFailure "expected single type variable 'a'"
         -- ensure record field refers to TVar 'a'
         case tipe of
-          A.At _ (Src.TRecord [(A.At _ field, A.At _ (Src.TVar v))] Nothing) -> do
+          Ann.At _ (Src.TRecord [(Ann.At _ field, Ann.At _ (Src.TVar v))] Nothing) -> do
             field @?= Name.fromChars "value"
             v @?= Name.fromChars "a"
           other -> assertFailure ("unexpected alias body: " <> show other)

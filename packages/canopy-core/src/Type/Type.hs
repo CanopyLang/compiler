@@ -47,8 +47,8 @@ import Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
 import qualified Data.Name as Name
 import Data.Word (Word32)
-import qualified Reporting.Annotation as A
-import qualified Reporting.Error.Type as E
+import qualified Reporting.Annotation as Ann
+import qualified Reporting.Error.Type as TypeError
 import qualified Reporting.InternalError as InternalError
 import qualified Type.Error as ET
 import qualified Type.UnionFind as UF
@@ -58,16 +58,16 @@ import qualified Type.UnionFind as UF
 data Constraint
   = CTrue
   | CSaveTheEnvironment
-  | CEqual A.Region E.Category Type (E.Expected Type)
-  | CLocal A.Region Name.Name (E.Expected Type)
-  | CForeign A.Region Name.Name Can.Annotation (E.Expected Type)
-  | CPattern A.Region E.PCategory Type (E.PExpected Type)
+  | CEqual Ann.Region TypeError.Category Type (TypeError.Expected Type)
+  | CLocal Ann.Region Name.Name (TypeError.Expected Type)
+  | CForeign Ann.Region Name.Name Can.Annotation (TypeError.Expected Type)
+  | CPattern Ann.Region TypeError.PCategory Type (TypeError.PExpected Type)
   | CAnd [Constraint]
   | CCaseBranchesIsolated [Constraint]
   | CLet
       { _rigidVars :: [Variable],
         _flexVars :: [Variable],
-        _header :: Map Name.Name (A.Located Type),
+        _header :: Map Name.Name (Ann.Located Type),
         _headerCon :: Constraint,
         _bodyCon :: Constraint,
         _expectedType :: Maybe Type

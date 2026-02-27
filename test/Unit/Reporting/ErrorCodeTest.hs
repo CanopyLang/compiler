@@ -11,7 +11,7 @@ module Unit.Reporting.ErrorCodeTest (tests) where
 import qualified Data.List as List
 import qualified Data.Maybe as Maybe
 import qualified Reporting.Diagnostic as Diag
-import qualified Reporting.Doc as D
+import qualified Reporting.Doc as Doc
 import qualified Reporting.ErrorCode as EC
 import Test.Tasty
 import Test.Tasty.HUnit
@@ -93,16 +93,16 @@ explanationTests =
   testGroup
     "explanation formatting"
     [ testCase "documented code renders with error code" $ do
-        let rendered = D.toString (EC.formatExplanation (EC.parseError 0))
+        let rendered = Doc.toString (EC.formatExplanation (EC.parseError 0))
         assertBool "contains error code" (List.isInfixOf "E0100" rendered),
       testCase "documented code renders with title" $ do
-        let rendered = D.toString (EC.formatExplanation (EC.parseError 0))
+        let rendered = Doc.toString (EC.formatExplanation (EC.parseError 0))
         assertBool "contains title" (List.isInfixOf "MODULE NAME UNSPECIFIED" rendered),
       testCase "documented code renders with explanation" $ do
-        let rendered = D.toString (EC.formatExplanation (EC.typeError 0))
+        let rendered = Doc.toString (EC.formatExplanation (EC.typeError 0))
         assertBool "contains explanation" (List.isInfixOf "type mismatch" rendered),
       testCase "undocumented code renders fallback" $ do
-        let rendered = D.toString (EC.formatExplanation (Diag.ErrorCode 9999))
+        let rendered = Doc.toString (EC.formatExplanation (Diag.ErrorCode 9999))
         assertBool "contains error code" (List.isInfixOf "E9999" rendered)
         assertBool "contains report link" (List.isInfixOf "github.com" rendered)
     ]

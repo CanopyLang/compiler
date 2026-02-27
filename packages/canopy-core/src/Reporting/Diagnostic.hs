@@ -46,9 +46,9 @@ import qualified Data.Text as Text
 import Data.Text (Text)
 import Data.Word (Word16)
 import Json.Encode ((==>))
-import qualified Json.Encode as E
-import qualified Reporting.Annotation as A
-import qualified Reporting.Doc as D
+import qualified Json.Encode as Encode
+import qualified Reporting.Annotation as Ann
+import qualified Reporting.Doc as Doc
 
 -- | Severity level of a diagnostic.
 --
@@ -120,7 +120,7 @@ data SpanStyle
 -- Used for multi-span error rendering. Each span points to a
 -- specific source location and explains its role in the diagnostic.
 data LabeledSpan = LabeledSpan
-  { _spanRegion :: !A.Region,
+  { _spanRegion :: !Ann.Region,
     _spanLabel :: !Text,
     _spanStyle :: !SpanStyle
   }
@@ -143,7 +143,7 @@ data Confidence
 -- Contains enough information for IDEs to produce quick-fix code
 -- actions, and for terminal rendering to show concrete fix text.
 data Suggestion = Suggestion
-  { _sugSpan :: !A.Region,
+  { _sugSpan :: !Ann.Region,
     _sugReplacement :: !Text,
     _sugMessage :: !Text,
     _sugConfidence :: !Confidence
@@ -164,7 +164,7 @@ data Diagnostic = Diagnostic
     _diagSummary :: !Text,
     _diagPrimary :: !LabeledSpan,
     _diagSecondary :: ![LabeledSpan],
-    _diagMessage :: !D.Doc,
+    _diagMessage :: !Doc.Doc,
     _diagSuggestions :: ![Suggestion],
     _diagNotes :: ![Text],
     _diagPhase :: !Phase
@@ -187,7 +187,7 @@ makeDiagnostic ::
   Text ->
   Text ->
   LabeledSpan ->
-  D.Doc ->
+  Doc.Doc ->
   Diagnostic
 makeDiagnostic code severity phase title summary primary message =
   Diagnostic
@@ -208,8 +208,8 @@ makeSimpleDiagnostic ::
   ErrorCode ->
   Phase ->
   Text ->
-  A.Region ->
-  D.Doc ->
+  Ann.Region ->
+  Doc.Doc ->
   Diagnostic
 makeSimpleDiagnostic code phase title region message =
   Diagnostic
@@ -264,9 +264,9 @@ addNote note diag =
 --
 -- Learn more: canopy explain E0401
 -- @
-diagnosticToDoc :: FilePath -> Diagnostic -> D.Doc
+diagnosticToDoc :: FilePath -> Diagnostic -> Doc.Doc
 diagnosticToDoc relativePath diag =
-  D.vcat
+  Doc.vcat
     [ toMessageBar (Text.unpack (_diagTitle diag)) (Text.unpack (errorCodeToText (_diagCode diag))) relativePath,
       "",
       _diagMessage diag,
@@ -277,46 +277,46 @@ diagnosticToDoc relativePath diag =
     ]
 
 -- | Render the colored message bar with error code.
-toMessageBar :: String -> String -> FilePath -> D.Doc
+toMessageBar :: String -> String -> FilePath -> Doc.Doc
 toMessageBar title code filePath =
   let usedSpace = 4 + length title + 1 + length code + 2 + 1 + length filePath
       dashes = replicate (max 1 (80 - usedSpace)) '-'
-   in D.dullcyan . D.fromChars $
+   in Doc.dullcyan . Doc.fromChars $
         "-- " <> title <> " [" <> code <> "] " <> dashes <> " " <> filePath
 
 -- | Render structured suggestions.
-renderSuggestions :: [Suggestion] -> D.Doc
-renderSuggestions [] = D.empty
+renderSuggestions :: [Suggestion] -> Doc.Doc
+renderSuggestions [] = Doc.empty
 renderSuggestions sugs =
-  D.vcat ("" : fmap renderOneSuggestion sugs)
+  Doc.vcat ("" : fmap renderOneSuggestion sugs)
 
-renderOneSuggestion :: Suggestion -> D.Doc
+renderOneSuggestion :: Suggestion -> Doc.Doc
 renderOneSuggestion sug =
-  D.vcat
-    [ D.fillSep
-        ( D.green (D.underline "Try") <> ":" :
-          fmap D.fromChars (words (Text.unpack (_sugMessage sug)))
+  Doc.vcat
+    [ Doc.fillSep
+        ( Doc.green (Doc.underline "Try") <> ":" :
+          fmap Doc.fromChars (words (Text.unpack (_sugMessage sug)))
         ),
       "",
-      D.indent 4 (D.green (D.fromChars (Text.unpack (_sugReplacement sug))))
+      Doc.indent 4 (Doc.green (Doc.fromChars (Text.unpack (_sugReplacement sug))))
     ]
 
 -- | Render notes.
-renderNotes :: [Text] -> D.Doc
-renderNotes [] = D.empty
+renderNotes :: [Text] -> Doc.Doc
+renderNotes [] = Doc.empty
 renderNotes notes =
-  D.vcat ("" : fmap renderOneNote notes)
+  Doc.vcat ("" : fmap renderOneNote notes)
 
-renderOneNote :: Text -> D.Doc
+renderOneNote :: Text -> Doc.Doc
 renderOneNote note =
-  D.fillSep (D.underline "Note" <> ":" : fmap D.fromChars (words (Text.unpack note)))
+  Doc.fillSep (Doc.underline "Note" <> ":" : fmap Doc.fromChars (words (Text.unpack note)))
 
 -- | Render the "Learn more" link.
-renderLearnMore :: ErrorCode -> D.Doc
+renderLearnMore :: ErrorCode -> Doc.Doc
 renderLearnMore code =
-  D.vcat
+  Doc.vcat
     [ "",
-      D.fromChars ("Learn more: canopy explain " <> Text.unpack (errorCodeToText code))
+      Doc.fromChars ("Learn more: canopy explain " <> Text.unpack (errorCodeToText code))
     ]
 
 -- JSON ENCODING
@@ -326,83 +326,83 @@ renderLearnMore code =
 -- The output contains all semantic information needed for IDE integration:
 -- error code, severity, spans with labels, suggestions with confidence,
 -- and phase information.
-diagnosticToJson :: Diagnostic -> E.Value
+diagnosticToJson :: Diagnostic -> Encode.Value
 diagnosticToJson diag =
-  E.object
-    [ "code" ==> E.chars (Text.unpack (errorCodeToText (_diagCode diag))),
+  Encode.object
+    [ "code" ==> Encode.chars (Text.unpack (errorCodeToText (_diagCode diag))),
       "severity" ==> encodeSeverity (_diagSeverity diag),
-      "title" ==> E.chars (Text.unpack (_diagTitle diag)),
-      "summary" ==> E.chars (Text.unpack (_diagSummary diag)),
+      "title" ==> Encode.chars (Text.unpack (_diagTitle diag)),
+      "summary" ==> Encode.chars (Text.unpack (_diagSummary diag)),
       "primary" ==> labeledSpanToJson (_diagPrimary diag),
-      "secondary" ==> E.list labeledSpanToJson (_diagSecondary diag),
-      "suggestions" ==> E.list suggestionToJson (_diagSuggestions diag),
-      "notes" ==> E.list (E.chars . Text.unpack) (_diagNotes diag),
+      "secondary" ==> Encode.list labeledSpanToJson (_diagSecondary diag),
+      "suggestions" ==> Encode.list suggestionToJson (_diagSuggestions diag),
+      "notes" ==> Encode.list (Encode.chars . Text.unpack) (_diagNotes diag),
       "phase" ==> encodePhase (_diagPhase diag),
-      "message" ==> D.encode (_diagMessage diag)
+      "message" ==> Doc.encode (_diagMessage diag)
     ]
 
 -- | Encode a labeled span as JSON.
-labeledSpanToJson :: LabeledSpan -> E.Value
+labeledSpanToJson :: LabeledSpan -> Encode.Value
 labeledSpanToJson (LabeledSpan region label style) =
-  E.object
+  Encode.object
     [ "region" ==> encodeRegion region,
-      "label" ==> E.chars (Text.unpack label),
+      "label" ==> Encode.chars (Text.unpack label),
       "style" ==> encodeSpanStyle style
     ]
 
 -- | Encode a suggestion as JSON.
-suggestionToJson :: Suggestion -> E.Value
+suggestionToJson :: Suggestion -> Encode.Value
 suggestionToJson (Suggestion region replacement message confidence) =
-  E.object
+  Encode.object
     [ "region" ==> encodeRegion region,
-      "replacement" ==> E.chars (Text.unpack replacement),
-      "message" ==> E.chars (Text.unpack message),
+      "replacement" ==> Encode.chars (Text.unpack replacement),
+      "message" ==> Encode.chars (Text.unpack message),
       "confidence" ==> encodeConfidence confidence
     ]
 
 -- | Encode a region as JSON.
-encodeRegion :: A.Region -> E.Value
-encodeRegion (A.Region (A.Position sr sc) (A.Position er ec)) =
-  E.object
+encodeRegion :: Ann.Region -> Encode.Value
+encodeRegion (Ann.Region (Ann.Position sr sc) (Ann.Position er ec)) =
+  Encode.object
     [ "start"
-        ==> E.object
-          [ "line" ==> E.int (fromIntegral sr),
-            "column" ==> E.int (fromIntegral sc)
+        ==> Encode.object
+          [ "line" ==> Encode.int (fromIntegral sr),
+            "column" ==> Encode.int (fromIntegral sc)
           ],
       "end"
-        ==> E.object
-          [ "line" ==> E.int (fromIntegral er),
-            "column" ==> E.int (fromIntegral ec)
+        ==> Encode.object
+          [ "line" ==> Encode.int (fromIntegral er),
+            "column" ==> Encode.int (fromIntegral ec)
           ]
     ]
 
-encodeSeverity :: Severity -> E.Value
+encodeSeverity :: Severity -> Encode.Value
 encodeSeverity = \case
-  SError -> E.chars "error"
-  SWarning -> E.chars "warning"
-  SInfo -> E.chars "info"
+  SError -> Encode.chars "error"
+  SWarning -> Encode.chars "warning"
+  SInfo -> Encode.chars "info"
 
-encodePhase :: Phase -> E.Value
+encodePhase :: Phase -> Encode.Value
 encodePhase = \case
-  PhaseParse -> E.chars "parse"
-  PhaseImport -> E.chars "import"
-  PhaseCanon -> E.chars "canonicalize"
-  PhaseType -> E.chars "type"
-  PhasePattern -> E.chars "pattern"
-  PhaseMain -> E.chars "main"
-  PhaseDocs -> E.chars "docs"
-  PhaseOptimize -> E.chars "optimize"
-  PhaseGenerate -> E.chars "generate"
-  PhaseBuild -> E.chars "build"
+  PhaseParse -> Encode.chars "parse"
+  PhaseImport -> Encode.chars "import"
+  PhaseCanon -> Encode.chars "canonicalize"
+  PhaseType -> Encode.chars "type"
+  PhasePattern -> Encode.chars "pattern"
+  PhaseMain -> Encode.chars "main"
+  PhaseDocs -> Encode.chars "docs"
+  PhaseOptimize -> Encode.chars "optimize"
+  PhaseGenerate -> Encode.chars "generate"
+  PhaseBuild -> Encode.chars "build"
 
-encodeSpanStyle :: SpanStyle -> E.Value
+encodeSpanStyle :: SpanStyle -> Encode.Value
 encodeSpanStyle = \case
-  SpanPrimary -> E.chars "primary"
-  SpanSecondary -> E.chars "secondary"
-  SpanNote -> E.chars "note"
+  SpanPrimary -> Encode.chars "primary"
+  SpanSecondary -> Encode.chars "secondary"
+  SpanNote -> Encode.chars "note"
 
-encodeConfidence :: Confidence -> E.Value
+encodeConfidence :: Confidence -> Encode.Value
 encodeConfidence = \case
-  Definite -> E.chars "definite"
-  Likely -> E.chars "likely"
-  Possible -> E.chars "possible"
+  Definite -> Encode.chars "definite"
+  Likely -> Encode.chars "likely"
+  Possible -> Encode.chars "possible"

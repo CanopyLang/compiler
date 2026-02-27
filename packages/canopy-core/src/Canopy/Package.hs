@@ -43,7 +43,7 @@ module Canopy.Package
   )
 where
 
-import qualified Canopy.Version as V
+import qualified Canopy.Version as Version
 import Control.Monad (liftM2)
 import qualified Data.Aeson as Aeson
 import qualified Data.Aeson.Encoding as AesonEnc
@@ -61,11 +61,11 @@ import qualified Data.Utf8 as Utf8
 import Data.Word (Word8)
 import Foreign.Ptr (Ptr, minusPtr, plusPtr)
 import Json.Decode (Decoder, KeyDecoder)
-import qualified Json.Decode as D
-import qualified Json.Encode as E
+import qualified Json.Decode as Decode
+import qualified Json.Encode as Encode
 import qualified Json.String as Json
 import Parse.Primitives (Col, Parser, Row)
-import qualified Parse.Primitives as P
+import qualified Parse.Primitives as Parse
 import qualified Reporting.Suggest as Suggest
 import System.FilePath ((</>))
 
@@ -87,7 +87,7 @@ data PROJECT
 
 data Canonical = Canonical
   { _name :: !Name,
-    _version :: !V.Version
+    _version :: !Version.Version
   }
   deriving (Ord)
 
@@ -291,7 +291,7 @@ instance Aeson.ToJSON Name where
 
 instance Aeson.FromJSON Name where
   parseJSON = Aeson.withText "Package.Name" $ \txt ->
-    case P.fromByteString parser (,) (TextEnc.encodeUtf8 txt) of
+    case Parse.fromByteString parser (,) (TextEnc.encodeUtf8 txt) of
       Right pkgName -> pure pkgName
       Left _ -> fail ("Invalid package name: " ++ Text.unpack txt)
 
@@ -302,7 +302,7 @@ instance Aeson.ToJSONKey Name where
 
 instance Aeson.FromJSONKey Name where
   fromJSONKey = Aeson.FromJSONKeyTextParser $ \txt ->
-    case P.fromByteString parser (,) (TextEnc.encodeUtf8 txt) of
+    case Parse.fromByteString parser (,) (TextEnc.encodeUtf8 txt) of
       Right pkgName -> pure pkgName
       Left _ -> fail ("Invalid package name: " ++ Text.unpack txt)
 
@@ -323,17 +323,17 @@ instance Aeson.FromJSON Canonical where
 
 decoder :: Decoder (Row, Col) Name
 decoder =
-  D.customString parser (,)
+  Decode.customString parser (,)
 
-encode :: Name -> E.Value
+encode :: Name -> Encode.Value
 encode name =
-  E.chars (toChars name)
+  Encode.chars (toChars name)
 
 keyDecoder :: (Row -> Col -> x) -> KeyDecoder x Name
 keyDecoder toError =
   let keyParser =
-        P.specialize (\(r, c) _ _ -> toError r c) parser
-   in D.KeyDecoder keyParser toError
+        Parse.specialize (\(r, c) _ _ -> toError r c) parser
+   in Decode.KeyDecoder keyParser toError
 
 -- PARSER
 
@@ -341,17 +341,17 @@ parser :: Parser (Row, Col) Name
 parser =
   do
     author <- parseName isAlphaOrDigit isAlphaOrDigit
-    P.word1 0x2F {-/-} (,)
+    Parse.word1 0x2F {-/-} (,)
     project <- parseName isLower isLowerOrDigit
     return (Name author project)
 
 parseName :: (Word8 -> Bool) -> (Word8 -> Bool) -> Parser (Row, Col) (Utf8 t)
 parseName isGoodStart isGoodInner =
-  P.Parser $ \(P.State src pos end indent row col) cok _ cerr eerr ->
+  Parse.Parser $ \(Parse.State src pos end indent row col) cok _ cerr eerr ->
     if pos >= end
       then eerr row col (,)
       else
-        let !word = P.unsafeIndex pos
+        let !word = Parse.unsafeIndex pos
          in if not (isGoodStart word)
               then eerr row col (,)
               else
@@ -360,7 +360,7 @@ parseName isGoodStart isGoodInner =
                     !newCol = col + len
                  in if isGood && len < 256
                       then
-                        let !newState = P.State src newPos end indent row newCol
+                        let !newState = Parse.State src newPos end indent row newCol
                          in cok (Utf8.fromPtr pos newPos) newState
                       else cerr row newCol (,)
 
@@ -384,7 +384,7 @@ chompName isGoodChar pos end prevWasDash =
   if pos >= end
     then (# not prevWasDash, pos #)
     else
-      let !word = P.unsafeIndex pos
+      let !word = Parse.unsafeIndex pos
        in if isGoodChar word
             then chompName isGoodChar (plusPtr pos 1) end False
             else

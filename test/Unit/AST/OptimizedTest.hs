@@ -4,7 +4,7 @@ module Unit.AST.OptimizedTest (tests) where
 
 import qualified AST.Canonical as Can
 import qualified AST.Optimized as Opt
-import qualified Canopy.Kernel as K
+import qualified Canopy.Kernel as Kernel
 import qualified Canopy.ModuleName as ModuleName
 import qualified Canopy.Package as Pkg
 import qualified Canopy.String as ES
@@ -118,7 +118,7 @@ testAddKernel =
     "addKernel"
     [ testCase "adding kernel with JS chunk" $ do
         let shortName = Name.fromChars "test"
-            chunks = [K.JS "console.log('test')"]
+            chunks = [Kernel.JS "console.log('test')"]
             result = Opt.addKernel shortName chunks Opt.empty
             expectedGlobal = Opt.toKernelGlobal shortName
         case result of
@@ -126,7 +126,7 @@ testAddKernel =
             Map.member expectedGlobal nodes @?= True,
       testCase "adding kernel with Canopy variable" $ do
         let shortName = Name.fromChars "test"
-            chunks = [K.CanopyVar ModuleName.basics Name.true]
+            chunks = [Kernel.CanopyVar ModuleName.basics Name.true]
             result = Opt.addKernel shortName chunks Opt.empty
             expectedGlobal = Opt.toKernelGlobal shortName
         case result of

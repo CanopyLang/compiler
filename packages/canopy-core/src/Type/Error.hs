@@ -24,9 +24,9 @@ import Data.Map (Map)
 import qualified Data.Map as Map
 import qualified Data.Maybe as Maybe
 import qualified Data.Name as Name
-import qualified Reporting.Doc as D
+import qualified Reporting.Doc as Doc
 import qualified Reporting.Render.Type as RT
-import qualified Reporting.Render.Type.Localizer as L
+import qualified Reporting.Render.Type.Localizer as Localizer
 -- ERROR TYPES
 
 data Type
@@ -67,7 +67,7 @@ iteratedDealias tipe =
 
 -- TO DOC
 
-toDoc :: L.Localizer -> RT.Context -> Type -> D.Doc
+toDoc :: Localizer.Localizer -> RT.Context -> Type -> Doc.Doc
 toDoc localizer ctx tipe =
   case tipe of
     Lambda a b cs ->
@@ -81,17 +81,17 @@ toDoc localizer ctx tipe =
     Error ->
       "?"
     FlexVar name ->
-      D.fromName name
+      Doc.fromName name
     FlexSuper _ name ->
-      D.fromName name
+      Doc.fromName name
     RigidVar name ->
-      D.fromName name
+      Doc.fromName name
     RigidSuper _ name ->
-      D.fromName name
+      Doc.fromName name
     Type home name args ->
       RT.apply
         ctx
-        (L.toDoc localizer home name)
+        (Localizer.toDoc localizer home name)
         (fmap (toDoc localizer RT.App) args)
     Record fields ext ->
       RT.record (fieldsToDocs localizer fields) (extToDoc ext)
@@ -105,28 +105,28 @@ toDoc localizer ctx tipe =
     Alias home name args _ ->
       aliasToDoc localizer ctx home name args
 
-aliasToDoc :: L.Localizer -> RT.Context -> ModuleName.Canonical -> Name.Name -> [(Name.Name, Type)] -> D.Doc
+aliasToDoc :: Localizer.Localizer -> RT.Context -> ModuleName.Canonical -> Name.Name -> [(Name.Name, Type)] -> Doc.Doc
 aliasToDoc localizer ctx home name args =
   RT.apply
     ctx
-    (L.toDoc localizer home name)
+    (Localizer.toDoc localizer home name)
     (fmap (toDoc localizer RT.App . snd) args)
 
-fieldsToDocs :: L.Localizer -> Map Name.Name Type -> [(D.Doc, D.Doc)]
+fieldsToDocs :: Localizer.Localizer -> Map Name.Name Type -> [(Doc.Doc, Doc.Doc)]
 fieldsToDocs localizer = Map.foldrWithKey (addField localizer) []
 
-addField :: L.Localizer -> Name.Name -> Type -> [(D.Doc, D.Doc)] -> [(D.Doc, D.Doc)]
+addField :: Localizer.Localizer -> Name.Name -> Type -> [(Doc.Doc, Doc.Doc)] -> [(Doc.Doc, Doc.Doc)]
 addField localizer fieldName fieldType docs =
-  let f = D.fromName fieldName
+  let f = Doc.fromName fieldName
       t = toDoc localizer RT.None fieldType
    in (f, t) : docs
 
-extToDoc :: Extension -> Maybe D.Doc
+extToDoc :: Extension -> Maybe Doc.Doc
 extToDoc ext =
   case ext of
     Closed -> Nothing
-    FlexOpen x -> Just (D.fromName x)
-    RigidOpen x -> Just (D.fromName x)
+    FlexOpen x -> Just (Doc.fromName x)
+    RigidOpen x -> Just (Doc.fromName x)
 
 -- DIFF
 
@@ -179,7 +179,7 @@ merge status1 status2 =
 
 -- COMPARISON
 
-toComparison :: L.Localizer -> Type -> Type -> (D.Doc, D.Doc, [Problem])
+toComparison :: Localizer.Localizer -> Type -> Type -> (Doc.Doc, Doc.Doc, [Problem])
 toComparison localizer tipe1 tipe2 =
   case toDiff localizer RT.None tipe1 tipe2 of
     Diff doc1 doc2 Similar ->
@@ -187,7 +187,7 @@ toComparison localizer tipe1 tipe2 =
     Diff doc1 doc2 (Different problems) ->
       (doc1, doc2, Bag.toList problems)
 
-toDiff :: L.Localizer -> RT.Context -> Type -> Type -> Diff D.Doc
+toDiff :: Localizer.Localizer -> RT.Context -> Type -> Type -> Diff Doc.Doc
 toDiff localizer ctx tipe1 tipe2 =
   case (tipe1, tipe2) of
     (Unit, Unit) -> same localizer ctx tipe1
@@ -211,8 +211,8 @@ toDiff localizer ctx tipe1 tipe2 =
         else
           let f = toDoc localizer RT.Func
            in different
-                (D.dullyellow (RT.lambda ctx (f a) (f b) (fmap f cs)))
-                (D.dullyellow (RT.lambda ctx (f x) (f y) (fmap f zs)))
+                (Doc.dullyellow (RT.lambda ctx (f a) (f b) (fmap f cs)))
+                (Doc.dullyellow (RT.lambda ctx (f x) (f y) (fmap f zs)))
                 (Bag.one (ArityMismatch (2 + length cs) (2 + length zs)))
     (Tuple a b Nothing, Tuple x y Nothing) ->
       RT.tuple
@@ -228,16 +228,16 @@ toDiff localizer ctx tipe1 tipe2 =
       diffRecord localizer fields1 ext1 fields2 ext2
     (Type home1 name1 args1, Type home2 name2 args2)
       | home1 == home2 && name1 == name2 ->
-        RT.apply ctx (L.toDoc localizer home1 name1)
+        RT.apply ctx (Localizer.toDoc localizer home1 name1)
           <$> zipWithM (toDiff localizer RT.App) args1 args2
     (Alias home1 name1 args1 _, Alias home2 name2 args2 _)
       | home1 == home2 && name1 == name2 ->
-        RT.apply ctx (L.toDoc localizer home1 name1)
+        RT.apply ctx (Localizer.toDoc localizer home1 name1)
           <$> zipWithM (toDiff localizer RT.App) (fmap snd args1) (fmap snd args2)
     -- start trying to find specific problems
 
     (Type home1 name1 args1, Type home2 name2 args2)
-      | L.toChars localizer home1 name1 == L.toChars localizer home2 name2 ->
+      | Localizer.toChars localizer home1 name1 == Localizer.toChars localizer home2 name2 ->
         different
           (nameClashToDoc ctx localizer home1 name1 args1)
           (nameClashToDoc ctx localizer home2 name2 args2)
@@ -245,52 +245,52 @@ toDiff localizer ctx tipe1 tipe2 =
     (Type home name [t1], t2)
       | isMaybe home name && isSimilar (toDiff localizer ctx t1 t2) ->
         different
-          (RT.apply ctx (D.dullyellow (L.toDoc localizer home name)) [toDoc localizer RT.App t1])
+          (RT.apply ctx (Doc.dullyellow (Localizer.toDoc localizer home name)) [toDoc localizer RT.App t1])
           (toDoc localizer ctx t2)
           (Bag.one AnythingFromMaybe)
     (t1, Type home name [t2])
       | isList home name && isSimilar (toDiff localizer ctx t1 t2) ->
         different
           (toDoc localizer ctx t1)
-          (RT.apply ctx (D.dullyellow (L.toDoc localizer home name)) [toDoc localizer RT.App t2])
+          (RT.apply ctx (Doc.dullyellow (Localizer.toDoc localizer home name)) [toDoc localizer RT.App t2])
           Bag.empty
     (Alias home1 name1 args1 t1, t2) ->
       case diffAliasedRecord localizer t1 t2 of
         Just (Diff _ doc2 status) ->
-          Diff (D.dullyellow (aliasToDoc localizer ctx home1 name1 args1)) doc2 status
+          Diff (Doc.dullyellow (aliasToDoc localizer ctx home1 name1 args1)) doc2 status
         Nothing ->
           case t2 of
             Type home2 name2 args2
-              | L.toChars localizer home1 name1 == L.toChars localizer home2 name2 ->
+              | Localizer.toChars localizer home1 name1 == Localizer.toChars localizer home2 name2 ->
                 different
                   (nameClashToDoc ctx localizer home1 name1 (fmap snd args1))
                   (nameClashToDoc ctx localizer home2 name2 args2)
                   Bag.empty
             _ ->
               different
-                (D.dullyellow (toDoc localizer ctx tipe1))
-                (D.dullyellow (toDoc localizer ctx tipe2))
+                (Doc.dullyellow (toDoc localizer ctx tipe1))
+                (Doc.dullyellow (toDoc localizer ctx tipe2))
                 Bag.empty
     (t1, Alias home2 name2 args2 t2) ->
       case diffAliasedRecord localizer t1 t2 of
         Just (Diff doc1 _ status) ->
-          Diff doc1 (D.dullyellow (aliasToDoc localizer ctx home2 name2 args2)) status
+          Diff doc1 (Doc.dullyellow (aliasToDoc localizer ctx home2 name2 args2)) status
         Nothing ->
           case t1 of
             Type home1 name1 args1
-              | L.toChars localizer home1 name1 == L.toChars localizer home2 name2 ->
+              | Localizer.toChars localizer home1 name1 == Localizer.toChars localizer home2 name2 ->
                 different
                   (nameClashToDoc ctx localizer home1 name1 args1)
                   (nameClashToDoc ctx localizer home2 name2 (fmap snd args2))
                   Bag.empty
             _ ->
               different
-                (D.dullyellow (toDoc localizer ctx tipe1))
-                (D.dullyellow (toDoc localizer ctx tipe2))
+                (Doc.dullyellow (toDoc localizer ctx tipe1))
+                (Doc.dullyellow (toDoc localizer ctx tipe2))
                 Bag.empty
     pair ->
-      let doc1 = D.dullyellow (toDoc localizer ctx tipe1)
-          doc2 = D.dullyellow (toDoc localizer ctx tipe2)
+      let doc1 = Doc.dullyellow (toDoc localizer ctx tipe1)
+          doc2 = Doc.dullyellow (toDoc localizer ctx tipe2)
        in different doc1 doc2 $
             case pair of
               (RigidVar x, other) -> Bag.one $ BadRigidVar x other
@@ -312,12 +312,12 @@ toDiff localizer ctx tipe1 tipe2 =
 
 -- DIFF HELPERS
 
-same :: L.Localizer -> RT.Context -> Type -> Diff D.Doc
+same :: Localizer.Localizer -> RT.Context -> Type -> Diff Doc.Doc
 same localizer ctx tipe =
   let doc = toDoc localizer ctx tipe
    in Diff doc doc Similar
 
-similar :: L.Localizer -> RT.Context -> Type -> Type -> Diff D.Doc
+similar :: Localizer.Localizer -> RT.Context -> Type -> Type -> Diff Doc.Doc
 similar localizer ctx t1 t2 =
   Diff (toDoc localizer ctx t1) (toDoc localizer ctx t2) Similar
 
@@ -383,16 +383,16 @@ isSuper super tipe =
 
 -- NAME CLASH
 
-nameClashToDoc :: RT.Context -> L.Localizer -> ModuleName.Canonical -> Name.Name -> [Type] -> D.Doc
+nameClashToDoc :: RT.Context -> Localizer.Localizer -> ModuleName.Canonical -> Name.Name -> [Type] -> Doc.Doc
 nameClashToDoc ctx localizer (ModuleName.Canonical _ home) name args =
   RT.apply
     ctx
-    (D.yellow (D.fromName home) <> D.dullyellow ("." <> D.fromName name))
+    (Doc.yellow (Doc.fromName home) <> Doc.dullyellow ("." <> Doc.fromName name))
     (fmap (toDoc localizer RT.App) args)
 
 -- DIFF ALIASED RECORD
 
-diffAliasedRecord :: L.Localizer -> Type -> Type -> Maybe (Diff D.Doc)
+diffAliasedRecord :: Localizer.Localizer -> Type -> Type -> Maybe (Diff Doc.Doc)
 diffAliasedRecord localizer t1 t2 =
   case (iteratedDealias t1, iteratedDealias t2) of
     (Record fields1 ext1, Record fields2 ext2) ->
@@ -402,13 +402,13 @@ diffAliasedRecord localizer t1 t2 =
 
 -- RECORD DIFFS
 
-diffRecord :: L.Localizer -> Map Name.Name Type -> Extension -> Map Name.Name Type -> Extension -> Diff D.Doc
+diffRecord :: Localizer.Localizer -> Map Name.Name Type -> Extension -> Map Name.Name Type -> Extension -> Diff Doc.Doc
 diffRecord localizer fields1 ext1 fields2 ext2 =
   let toUnknownDocs field tipe =
-        (D.dullyellow (D.fromName field), toDoc localizer RT.None tipe)
+        (Doc.dullyellow (Doc.fromName field), toDoc localizer RT.None tipe)
 
       toOverlapDocs field t1 t2 =
-        (,) (D.fromName field) <$> toDiff localizer RT.None t1 t2
+        (,) (Doc.fromName field) <$> toDiff localizer RT.None t1 t2
 
       left = Map.mapWithKey toUnknownDocs (Map.difference fields1 fields2)
       both = Map.intersectionWithKey toOverlapDocs fields1 fields2
@@ -458,7 +458,7 @@ hasFixedFields ext =
 
 -- DIFF RECORD EXTENSION
 
-extToDiff :: Extension -> Extension -> Diff (Maybe D.Doc)
+extToDiff :: Extension -> Extension -> Diff (Maybe Doc.Doc)
 extToDiff ext1 ext2 =
   let status = extToStatus ext1 ext2
       extDoc1 = extToDoc ext1
@@ -467,7 +467,7 @@ extToDiff ext1 ext2 =
         Similar ->
           Diff extDoc1 extDoc2 status
         Different _ ->
-          Diff (D.dullyellow <$> extDoc1) (D.dullyellow <$> extDoc2) status
+          Diff (Doc.dullyellow <$> extDoc1) (Doc.dullyellow <$> extDoc2) status
 
 extToStatus :: Extension -> Extension -> Status
 extToStatus ext1 ext2 =

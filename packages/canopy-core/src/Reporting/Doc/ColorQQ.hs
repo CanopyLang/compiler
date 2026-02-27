@@ -1,8 +1,8 @@
 {-# LANGUAGE TemplateHaskell #-}
 
--- | Quasi-quoter for colorized 'P.Doc' values with inline interpolation.
+-- | Quasi-quoter for colorized 'PP.Doc' values with inline interpolation.
 --
--- Provides the @[c|...|]@ quasi-quoter that produces 'P.Doc' values with
+-- Provides the @[c|...|]@ quasi-quoter that produces 'PP.Doc' values with
 -- embedded color markup and variable interpolation, making error messages
 -- readable at a glance.
 --
@@ -52,7 +52,7 @@ import qualified Data.Char as Char
 import Language.Haskell.TH (Exp, Q)
 import Language.Haskell.TH.Quote (QuasiQuoter (..))
 import qualified Language.Haskell.TH as TH
-import qualified Text.PrettyPrint.ANSI.Leijen as P
+import qualified Text.PrettyPrint.ANSI.Leijen as PP
 
 -- FRAGMENT AST
 
@@ -87,7 +87,7 @@ data StyleName
 
 -- QUASI-QUOTER
 
--- | Quasi-quoter that produces 'P.Doc' values with color markup and interpolation.
+-- | Quasi-quoter that produces 'PP.Doc' values with color markup and interpolation.
 --
 -- Only expression splicing is supported. Pattern, type, and declaration
 -- contexts produce compile-time errors.
@@ -248,7 +248,7 @@ coalesce (f : rest) = f : coalesce rest
 
 -- CODE GENERATOR
 
--- | Compile a list of fragments into a TH expression producing a 'P.Doc'.
+-- | Compile a list of fragments into a TH expression producing a 'PP.Doc'.
 fragmentsToExp :: [Fragment] -> Q Exp
 fragmentsToExp [] = [|pEmpty|]
 fragmentsToExp [frag] = fragmentToExp frag
@@ -290,7 +290,7 @@ resolveVarName name =
 wrapText :: Q Exp -> Q Exp
 wrapText expr = [|pText $expr|]
 
--- | Apply a style function to a 'P.Doc' expression.
+-- | Apply a style function to a 'PP.Doc' expression.
 applyStyle :: StyleName -> Q Exp -> Q Exp
 applyStyle Red e = [|pRed $e|]
 applyStyle Green e = [|pGreen $e|]
@@ -316,78 +316,78 @@ applyStyle Underline e = [|pUnderline $e|]
 -- code resolves correctly at any splice site without requiring the user to
 -- import Text.PrettyPrint.ANSI.Leijen.
 
--- | Wrap 'P.text' for TH splice resolution.
-pText :: String -> P.Doc
-pText = P.text
+-- | Wrap 'PP.text' for TH splice resolution.
+pText :: String -> PP.Doc
+pText = PP.text
 
--- | Wrap 'P.line' for TH splice resolution.
-pLine :: P.Doc
-pLine = P.line
+-- | Wrap 'PP.line' for TH splice resolution.
+pLine :: PP.Doc
+pLine = PP.line
 
--- | Wrap 'P.empty' for TH splice resolution.
-pEmpty :: P.Doc
-pEmpty = P.empty
+-- | Wrap 'PP.empty' for TH splice resolution.
+pEmpty :: PP.Doc
+pEmpty = PP.empty
 
--- | Wrap 'P.red' for TH splice resolution.
-pRed :: P.Doc -> P.Doc
-pRed = P.red
+-- | Wrap 'PP.red' for TH splice resolution.
+pRed :: PP.Doc -> PP.Doc
+pRed = PP.red
 
--- | Wrap 'P.green' for TH splice resolution.
-pGreen :: P.Doc -> P.Doc
-pGreen = P.green
+-- | Wrap 'PP.green' for TH splice resolution.
+pGreen :: PP.Doc -> PP.Doc
+pGreen = PP.green
 
--- | Wrap 'P.blue' for TH splice resolution.
-pBlue :: P.Doc -> P.Doc
-pBlue = P.blue
+-- | Wrap 'PP.blue' for TH splice resolution.
+pBlue :: PP.Doc -> PP.Doc
+pBlue = PP.blue
 
--- | Wrap 'P.cyan' for TH splice resolution.
-pCyan :: P.Doc -> P.Doc
-pCyan = P.cyan
+-- | Wrap 'PP.cyan' for TH splice resolution.
+pCyan :: PP.Doc -> PP.Doc
+pCyan = PP.cyan
 
--- | Wrap 'P.magenta' for TH splice resolution.
-pMagenta :: P.Doc -> P.Doc
-pMagenta = P.magenta
+-- | Wrap 'PP.magenta' for TH splice resolution.
+pMagenta :: PP.Doc -> PP.Doc
+pMagenta = PP.magenta
 
--- | Wrap 'P.yellow' for TH splice resolution.
-pYellow :: P.Doc -> P.Doc
-pYellow = P.yellow
+-- | Wrap 'PP.yellow' for TH splice resolution.
+pYellow :: PP.Doc -> PP.Doc
+pYellow = PP.yellow
 
--- | Wrap 'P.black' for TH splice resolution.
-pBlack :: P.Doc -> P.Doc
-pBlack = P.black
+-- | Wrap 'PP.black' for TH splice resolution.
+pBlack :: PP.Doc -> PP.Doc
+pBlack = PP.black
 
--- | Wrap 'P.white' for TH splice resolution.
-pWhite :: P.Doc -> P.Doc
-pWhite = P.white
+-- | Wrap 'PP.white' for TH splice resolution.
+pWhite :: PP.Doc -> PP.Doc
+pWhite = PP.white
 
--- | Wrap 'P.dullred' for TH splice resolution.
-pDullred :: P.Doc -> P.Doc
-pDullred = P.dullred
+-- | Wrap 'PP.dullred' for TH splice resolution.
+pDullred :: PP.Doc -> PP.Doc
+pDullred = PP.dullred
 
--- | Wrap 'P.dullgreen' for TH splice resolution.
-pDullgreen :: P.Doc -> P.Doc
-pDullgreen = P.dullgreen
+-- | Wrap 'PP.dullgreen' for TH splice resolution.
+pDullgreen :: PP.Doc -> PP.Doc
+pDullgreen = PP.dullgreen
 
--- | Wrap 'P.dullblue' for TH splice resolution.
-pDullblue :: P.Doc -> P.Doc
-pDullblue = P.dullblue
+-- | Wrap 'PP.dullblue' for TH splice resolution.
+pDullblue :: PP.Doc -> PP.Doc
+pDullblue = PP.dullblue
 
--- | Wrap 'P.dullcyan' for TH splice resolution.
-pDullcyan :: P.Doc -> P.Doc
-pDullcyan = P.dullcyan
+-- | Wrap 'PP.dullcyan' for TH splice resolution.
+pDullcyan :: PP.Doc -> PP.Doc
+pDullcyan = PP.dullcyan
 
--- | Wrap 'P.dullmagenta' for TH splice resolution.
-pDullmagenta :: P.Doc -> P.Doc
-pDullmagenta = P.dullmagenta
+-- | Wrap 'PP.dullmagenta' for TH splice resolution.
+pDullmagenta :: PP.Doc -> PP.Doc
+pDullmagenta = PP.dullmagenta
 
--- | Wrap 'P.dullyellow' for TH splice resolution.
-pDullyellow :: P.Doc -> P.Doc
-pDullyellow = P.dullyellow
+-- | Wrap 'PP.dullyellow' for TH splice resolution.
+pDullyellow :: PP.Doc -> PP.Doc
+pDullyellow = PP.dullyellow
 
--- | Wrap 'P.bold' for TH splice resolution.
-pBold :: P.Doc -> P.Doc
-pBold = P.bold
+-- | Wrap 'PP.bold' for TH splice resolution.
+pBold :: PP.Doc -> PP.Doc
+pBold = PP.bold
 
--- | Wrap 'P.underline' for TH splice resolution.
-pUnderline :: P.Doc -> P.Doc
-pUnderline = P.underline
+-- | Wrap 'PP.underline' for TH splice resolution.
+pUnderline :: PP.Doc -> PP.Doc
+pUnderline = PP.underline

@@ -17,7 +17,7 @@
       "package-name": "canopy/core",
       "version": "1.0.0",
       "url": "file:///home/quinten/fh/canopy-core-1.0.0.zip",
-      "hash-type": "sha-1",
+      "hash-type": "sha-256",
       "hash": "fa1714671c127dfa6f8965d58bc2cb60f87463f6"
     },
     {
@@ -25,7 +25,7 @@
       "package-name": "canopy/browser",
       "version": "1.0.2",
       "url": "file:///home/quinten/fh/canopy/canopy-package-overrides/canopy-browser-1.0.2.zip",
-      "hash-type": "sha-1",
+      "hash-type": "sha-256",
       "hash": "generated"
     },
     {
@@ -33,7 +33,7 @@
       "package-name": "canopy/html",
       "version": "1.0.0",
       "url": "file:///home/quinten/fh/canopy/canopy-package-overrides/canopy-html-1.0.0.zip",
-      "hash-type": "sha-1",
+      "hash-type": "sha-256",
       "hash": "generated"
     },
     {
@@ -41,7 +41,7 @@
       "package-name": "canopy/json",
       "version": "1.1.4",
       "url": "file:///home/quinten/fh/canopy/canopy-package-overrides/canopy-json-1.1.4.zip",
-      "hash-type": "sha-1",
+      "hash-type": "sha-256",
       "hash": "generated"
     },
     {
@@ -49,7 +49,7 @@
       "package-name": "canopy/time",
       "version": "1.0.0",
       "url": "file:///home/quinten/fh/canopy/canopy-package-overrides/canopy-time-1.0.0.zip",
-      "hash-type": "sha-1",
+      "hash-type": "sha-256",
       "hash": "generated"
     },
     {
@@ -57,7 +57,7 @@
       "package-name": "canopy/url",
       "version": "1.0.0",
       "url": "file:///home/quinten/fh/canopy/canopy-package-overrides/canopy-url-1.0.0.zip",
-      "hash-type": "sha-1",
+      "hash-type": "sha-256",
       "hash": "generated"
     },
     {
@@ -65,7 +65,7 @@
       "package-name": "canopy/virtual-dom",
       "version": "1.0.4",
       "url": "file:///home/quinten/fh/canopy/canopy-package-overrides/canopy-virtual-dom-1.0.4.zip",
-      "hash-type": "sha-1",
+      "hash-type": "sha-256",
       "hash": "generated"
     },
     {
@@ -73,7 +73,7 @@
       "package-name": "canopy/capability",
       "version": "1.0.0",
       "url": "file:///home/quinten/fh/canopy/canopy-package-overrides/canopy-capability-1.0.0.zip",
-      "hash-type": "sha-1",
+      "hash-type": "sha-256",
       "hash": "generated"
     }
   ]

@@ -56,7 +56,7 @@ import Control.Monad (guard)
 import Control.Monad.Trans (MonadIO (liftIO))
 import qualified Data.ByteString as BS
 import Data.ByteString.Builder (Builder)
-import qualified Data.ByteString.Builder as B
+import qualified Data.ByteString.Builder as BB
 import qualified Data.ByteString.Char8 as BS8
 import qualified Data.Maybe as Maybe
 import qualified Develop.Compilation as Compilation
@@ -202,7 +202,7 @@ serveCompilationError _exitCode _path = do
 serveCodeFile :: FilePath -> Snap.Snap ()
 serveCodeFile path = do
   content <- liftIO (BS.readFile path)
-  let highlightedContent = Help.makeCodeHtml ('~' : '/' : path) (B.byteString content)
+  let highlightedContent = Help.makeCodeHtml ('~' : '/' : path) (BB.byteString content)
   modifyResponse (setContentType "text/html")
   writeBuilder highlightedContent
 

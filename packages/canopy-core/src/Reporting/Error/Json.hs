@@ -12,8 +12,8 @@ import qualified Data.ByteString as BS
 import qualified Data.ByteString.UTF8 as BS_UTF8
 import qualified Data.NonEmptyList as NE
 import Json.Decode (DecodeExpectation (..), Error (..), ParseError (..), Problem (..), StringProblem (..))
-import qualified Reporting.Annotation as A
-import qualified Reporting.Doc as D
+import qualified Reporting.Annotation as Ann
+import qualified Reporting.Doc as Doc
 import qualified Reporting.Exit.Help as Help
 import qualified Reporting.Render.Code as Code
 
@@ -39,15 +39,15 @@ because (ExplicitReason iNeedThings) problem =
 parseErrorToReport :: FilePath -> Code.Source -> ParseError -> Reason -> Help.Report
 parseErrorToReport path source parseError reason =
   let toSnippet title row col (problem, details) =
-        let pos = A.Position row col
-            surroundings = A.Region (A.Position (max 1 (row - 2)) 1) pos
-            region = A.Region pos pos
+        let pos = Ann.Position row col
+            surroundings = Ann.Region (Ann.Position (max 1 (row - 2)) 1) pos
+            region = Ann.Region pos pos
          in Help.jsonReport title (Just path) $
               Code.toSnippet
                 source
                 surroundings
                 (Just region)
-                ( D.reflow (because reason problem),
+                ( Doc.reflow (because reason problem),
                   details
                 )
    in case parseError of
@@ -57,14 +57,14 @@ parseErrorToReport path source parseError reason =
             row
             col
             ( "I was expecting to see a JSON value next:",
-              D.stack
-                [ D.fillSep
+              Doc.stack
+                [ Doc.fillSep
                     [ "Try",
                       "something",
                       "like",
-                      D.dullyellow "\"this\"",
+                      Doc.dullyellow "\"this\"",
                       "or",
-                      D.dullyellow "42",
+                      Doc.dullyellow "42",
                       "to",
                       "move",
                       "on",
@@ -72,7 +72,7 @@ parseErrorToReport path source parseError reason =
                       "better",
                       "hints!"
                     ],
-                  D.toSimpleNote
+                  Doc.toSimpleNote
                     "The JSON specification does not allow trailing commas, so you can sometimes\
                     \ get this error in arrays that have an extra comma at the end. In that case,\
                     \ remove that last comma or add another array entry after it!"
@@ -84,8 +84,8 @@ parseErrorToReport path source parseError reason =
             row
             col
             ( "I was partway through parsing a JSON object when I got stuck here:",
-              D.stack
-                [ D.fillSep
+              Doc.stack
+                [ Doc.fillSep
                     [ "I",
                       "saw",
                       "a",
@@ -106,12 +106,12 @@ parseErrorToReport path source parseError reason =
                       "field",
                       "name",
                       "like",
-                      D.dullyellow "\"type\"",
+                      Doc.dullyellow "\"type\"",
                       "or",
-                      D.dullyellow "\"dependencies\"",
+                      Doc.dullyellow "\"dependencies\"",
                       "next."
                     ],
-                  D.reflow
+                  Doc.reflow
                     "This error is commonly caused by trailing commas in JSON objects. Those are\
                     \ actually disallowed by <https://json.org> so check the previous line for a\
                     \ trailing comma that may need to be deleted.",
@@ -124,8 +124,8 @@ parseErrorToReport path source parseError reason =
             row
             col
             ( "I was partway through parsing a JSON object when I got stuck here:",
-              D.stack
-                [ D.reflow "I was expecting to see a colon next.",
+              Doc.stack
+                [ Doc.reflow "I was expecting to see a colon next.",
                   objectNote
                 ]
             )
@@ -135,9 +135,9 @@ parseErrorToReport path source parseError reason =
             row
             col
             ( "I was partway through parsing a JSON object when I got stuck here:",
-              D.stack
-                [ D.reflow "I was expecting to see a comma or a closing curly brace next.",
-                  D.reflow
+              Doc.stack
+                [ Doc.reflow "I was expecting to see a comma or a closing curly brace next.",
+                  Doc.reflow
                     "Is a comma missing on the previous line? Is an array missing a closing square\
                     \ bracket? It is often something tricky like that!",
                   objectNote
@@ -149,9 +149,9 @@ parseErrorToReport path source parseError reason =
             row
             col
             ( "I was partway through parsing a JSON array when I got stuck here:",
-              D.stack
-                [ D.reflow "I was expecting to see a comma or a closing square bracket next.",
-                  D.reflow "Is a comma missing on the previous line? It is often something like that!"
+              Doc.stack
+                [ Doc.reflow "I was expecting to see a comma or a closing square bracket next.",
+                  Doc.reflow "Is a comma missing on the previous line? It is often something like that!"
                 ]
             )
         StringProblem stringProblem row col ->
@@ -162,11 +162,11 @@ parseErrorToReport path source parseError reason =
                 row
                 col
                 ( "I got to the end of the line without seeing the closing double quote:",
-                  D.fillSep
+                  Doc.fillSep
                     [ "Strings",
                       "look",
                       "like",
-                      D.green "\"this\"",
+                      Doc.green "\"this\"",
                       "with",
                       "double",
                       "quotes",
@@ -190,7 +190,7 @@ parseErrorToReport path source parseError reason =
                 row
                 col
                 ( "I ran into a control character unexpectedly:",
-                  D.reflow
+                  Doc.reflow
                     "These are characters that represent tabs, backspaces, newlines, and\
                     \ a bunch of other invisible characters. They all come before 20 in the\
                     \ ASCII range, and they are disallowed by the JSON specificaiton. Maybe\
@@ -202,10 +202,10 @@ parseErrorToReport path source parseError reason =
                 row
                 col
                 ( "Backslashes always start escaped characters, but I do not recognize this one:",
-                  D.stack
-                    [ D.reflow "Valid escape characters include:",
-                      (D.dullyellow . D.indent 4) . D.vcat $ ["\\\"", "\\\\", "\\/", "\\b", "\\f", "\\n", "\\r", "\\t", "\\u003D"],
-                      D.reflow "Do you want one of those instead? Maybe you need \\\\ to escape a backslash?"
+                  Doc.stack
+                    [ Doc.reflow "Valid escape characters include:",
+                      (Doc.dullyellow . Doc.indent 4) . Doc.vcat $ ["\\\"", "\\\\", "\\/", "\\b", "\\f", "\\n", "\\r", "\\t", "\\u003D"],
+                      Doc.reflow "Do you want one of those instead? Maybe you need \\\\ to escape a backslash?"
                     ]
                 )
             BadStringEscapeHex ->
@@ -214,7 +214,7 @@ parseErrorToReport path source parseError reason =
                 row
                 col
                 ( "This is not a valid hex escape:",
-                  D.fillSep
+                  Doc.fillSep
                     [ "Valid",
                       "hex",
                       "escapes",
@@ -222,9 +222,9 @@ parseErrorToReport path source parseError reason =
                       "JSON",
                       "are",
                       "between",
-                      D.green "\\u0000",
+                      Doc.green "\\u0000",
                       "and",
-                      D.green "\\uFFFF",
+                      Doc.green "\\uFFFF",
                       "and",
                       "always",
                       "have",
@@ -239,7 +239,7 @@ parseErrorToReport path source parseError reason =
             row
             col
             ( "Numbers cannot start with zeros like this:",
-              D.reflow "Try deleting the leading zeros?"
+              Doc.reflow "Try deleting the leading zeros?"
             )
         NoFloats row col ->
           toSnippet
@@ -247,7 +247,7 @@ parseErrorToReport path source parseError reason =
             row
             col
             ( "I got stuck while trying to parse this number:",
-              D.reflow
+              Doc.reflow
                 "I do not accept floating point numbers like 3.1415 right now. That kind\
                 \ of JSON value is not needed for any of the uses that Canopy has for now."
             )
@@ -257,27 +257,27 @@ parseErrorToReport path source parseError reason =
             row
             col
             ( "I was partway through parsing some JSON when I got stuck here:",
-              D.stack
-                [ D.reflow
+              Doc.stack
+                [ Doc.reflow
                     "I reached an unexpected point in the JSON. This usually means there is\
                     \ extra content after a complete JSON value, or a missing comma or bracket.",
-                  D.toSimpleHint
+                  Doc.toSimpleHint
                     "Check that every `{` has a matching `}`, every `[` has a matching `]`,\
                     \ and that there are commas between array elements and object fields."
                 ]
             )
 
-objectNote :: D.Doc
+objectNote :: Doc.Doc
 objectNote =
-  D.stack
-    [ D.toSimpleNote "Here is an example of a valid JSON object for reference:",
-      D.vcat
-        [ D.indent 4 "{",
-          D.indent 6 $ D.dullyellow "\"name\"" <> ": " <> D.dullyellow "\"Tom\"" <> ",",
-          D.indent 6 $ D.dullyellow "\"age\"" <> ": " <> D.dullyellow "42",
-          D.indent 4 "}"
+  Doc.stack
+    [ Doc.toSimpleNote "Here is an example of a valid JSON object for reference:",
+      Doc.vcat
+        [ Doc.indent 4 "{",
+          Doc.indent 6 $ Doc.dullyellow "\"name\"" <> ": " <> Doc.dullyellow "\"Tom\"" <> ",",
+          Doc.indent 6 $ Doc.dullyellow "\"age\"" <> ": " <> Doc.dullyellow "42",
+          Doc.indent 4 "}"
         ],
-      D.reflow
+      Doc.reflow
         "Notice that (1) the field names are in double quotes and (2) there is no\
         \ trailing comma after the last entry. Both are strict requirements in JSON!"
     ]
@@ -315,15 +315,15 @@ getMaxDepth problem =
     Failure _ _ -> 0
     Expecting _ _ -> 0
 
-newtype FailureToReport x = FailureToReport {_failureToReport :: FilePath -> Code.Source -> Context -> A.Region -> x -> Help.Report}
+newtype FailureToReport x = FailureToReport {_failureToReport :: FilePath -> Code.Source -> Context -> Ann.Region -> x -> Help.Report}
 
-expectationToReport :: FilePath -> Code.Source -> Context -> A.Region -> DecodeExpectation -> Reason -> Help.Report
-expectationToReport path source context (A.Region start end) expectation reason =
-  let (A.Position sr _) = start
-      (A.Position er _) = end
+expectationToReport :: FilePath -> Code.Source -> Context -> Ann.Region -> DecodeExpectation -> Reason -> Help.Report
+expectationToReport path source context (Ann.Region start end) expectation reason =
+  let (Ann.Position sr _) = start
+      (Ann.Position er _) = end
 
       region =
-        if sr == er then region else A.Region start start
+        if sr == er then region else Ann.Region start start
 
       introduction =
         case context of
@@ -332,9 +332,9 @@ expectationToReport path source context (A.Region start end) expectation reason 
           CField field _ ->
             "I ran into trouble with the value of the \"" <> (BS_UTF8.toString field <> "\" field:")
           CIndex index (CField field _) ->
-            "When looking at the \"" <> (BS_UTF8.toString field <> ("\" field, I ran into trouble with the " <> (D.intToOrdinal index <> " entry:")))
+            "When looking at the \"" <> (BS_UTF8.toString field <> ("\" field, I ran into trouble with the " <> (Doc.intToOrdinal index <> " entry:")))
           CIndex index _ ->
-            "I ran into trouble with the " <> (D.intToOrdinal index <> " index of this array:")
+            "I ran into trouble with the " <> (Doc.intToOrdinal index <> " index of this array:")
 
       toSnippet title aThing =
         Help.jsonReport title (Just path) $
@@ -342,41 +342,41 @@ expectationToReport path source context (A.Region start end) expectation reason 
             source
             region
             Nothing
-            ( D.reflow (because reason introduction),
-              D.fillSep (["I", "was", "expecting", "to", "run", "into"] <> aThing)
+            ( Doc.reflow (because reason introduction),
+              Doc.fillSep (["I", "was", "expecting", "to", "run", "into"] <> aThing)
             )
    in case expectation of
         TObject ->
-          toSnippet "EXPECTING OBJECT" ["an", D.green "OBJECT" <> "."]
+          toSnippet "EXPECTING OBJECT" ["an", Doc.green "OBJECT" <> "."]
         TArray ->
-          toSnippet "EXPECTING ARRAY" ["an", D.green "ARRAY" <> "."]
+          toSnippet "EXPECTING ARRAY" ["an", Doc.green "ARRAY" <> "."]
         TString ->
-          toSnippet "EXPECTING STRING" ["a", D.green "STRING" <> "."]
+          toSnippet "EXPECTING STRING" ["a", Doc.green "STRING" <> "."]
         TBool ->
-          toSnippet "EXPECTING BOOL" ["a", D.green "BOOLEAN" <> "."]
+          toSnippet "EXPECTING BOOL" ["a", Doc.green "BOOLEAN" <> "."]
         TInt ->
-          toSnippet "EXPECTING INT" ["an", D.green "INT" <> "."]
+          toSnippet "EXPECTING INT" ["an", Doc.green "INT" <> "."]
         TObjectWith field ->
           toSnippet
             "MISSING FIELD"
             [ "an",
-              D.green "OBJECT",
+              Doc.green "OBJECT",
               "with",
               "a",
-              D.green ("\"" <> D.fromChars (BS_UTF8.toString field) <> "\""),
+              Doc.green ("\"" <> Doc.fromChars (BS_UTF8.toString field) <> "\""),
               "field."
             ]
         TArrayPair len ->
           toSnippet
             "EXPECTING PAIR"
             [ "an",
-              D.green "ARRAY",
+              Doc.green "ARRAY",
               "with",
-              D.green "TWO",
+              Doc.green "TWO",
               "entries.",
               "This",
               "array",
               "has",
-              D.fromInt len,
+              Doc.fromInt len,
               if len == 1 then "element." else "elements."
             ]

@@ -46,7 +46,7 @@ import qualified Data.Text as Text
 import Data.Text (Text)
 import qualified Data.Char as Char
 import qualified Data.Name as Name
-import qualified Reporting.Annotation as A
+import qualified Reporting.Annotation as Ann
 import qualified Data.Maybe as Maybe
 import qualified Data.Map.Strict as Map
 import qualified System.Directory as Dir
@@ -71,9 +71,9 @@ import FFI.Types (FFIType (..), JsFunctionName(..), PermissionName(..), Resource
 data FFIDeclaration = FFIDeclaration
   { ffiTarget :: !FFITarget
     -- ^ Target language and file path
-  , ffiAlias :: !(A.Located Name.Name)
+  , ffiAlias :: !(Ann.Located Name.Name)
     -- ^ Module alias for imported functions
-  , ffiLocation :: !A.Region
+  , ffiLocation :: !Ann.Region
     -- ^ Source location of the declaration
   } deriving (Show)
 
@@ -730,7 +730,7 @@ validateFFIDeclaration ffiDecl = do
 data SimpleFFIImport = SimpleFFIImport
   { simpleFfiTarget :: !FFITarget
   , simpleFfiAlias :: !Text
-  , simpleFfiRegion :: !A.Region
+  , simpleFfiRegion :: !Ann.Region
   } deriving (Show)
 
 -- | Parse JavaScript file and extract FFI functions

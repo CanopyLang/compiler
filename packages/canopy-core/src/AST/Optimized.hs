@@ -135,7 +135,7 @@ where
 import qualified AST.Canonical as Can
 import qualified AST.Utils.Shader as Shader
 import qualified Canopy.Float as EF
-import qualified Canopy.Kernel as K
+import qualified Canopy.Kernel as Kernel
 import qualified Canopy.ModuleName as ModuleName
 import qualified Canopy.Package as Pkg
 import qualified Reporting.InternalError as InternalError
@@ -152,7 +152,7 @@ import qualified Data.Name as Name
 import Data.Set (Set)
 import qualified Data.Set as Set
 import qualified Optimize.DecisionTree as DT
-import qualified Reporting.Annotation as A
+import qualified Reporting.Annotation as Ann
 
 -- EXPRESSIONS
 
@@ -213,7 +213,7 @@ data Expr
     --
     -- References to debug-only variables with source location information.
     -- Includes original name for debugging and error reporting.
-    VarDebug Name ModuleName.Canonical A.Region (Maybe Name)
+    VarDebug Name ModuleName.Canonical Ann.Region (Maybe Name)
   | -- | Kernel function reference.
     --
     -- Direct references to built-in kernel functions for maximum efficiency.
@@ -442,7 +442,7 @@ data GlobalGraph = GlobalGraph
     -- | Field usage counts for optimization
     _g_fields :: Map Name Int,
     -- | Source locations for each global, used for source map generation
-    _g_sourceLocations :: Map Global A.Region
+    _g_sourceLocations :: Map Global Ann.Region
   }
   deriving (Show)
 
@@ -461,7 +461,7 @@ data LocalGraph = LocalGraph
     -- | Field usage counts for optimization
     _l_fields :: Map Name Int,
     -- | Source locations for each global, used for source map generation
-    _l_sourceLocations :: Map Global A.Region
+    _l_sourceLocations :: Map Global Ann.Region
   }
   deriving (Show)
 
@@ -552,7 +552,7 @@ data Node
     --
     -- Built-in kernel functions with their implementation chunks
     -- and dependencies for efficient runtime integration.
-    Kernel [K.Chunk] (Set Global)
+    Kernel [Kernel.Chunk] (Set Global)
   | -- | Incoming port definition.
     --
     -- JavaScript-to-Canopy port with decoder expression and dependencies.
@@ -633,21 +633,21 @@ addLocalGraph (LocalGraph _ nodes1 fields1 locs1) (GlobalGraph nodes2 fields2 lo
 -- functions that provide core language functionality.
 --
 -- @since 0.19.1
-addKernel :: Name.Name -> [K.Chunk] -> GlobalGraph -> GlobalGraph
+addKernel :: Name.Name -> [Kernel.Chunk] -> GlobalGraph -> GlobalGraph
 addKernel shortName chunks (GlobalGraph nodes fields locs) =
   let global = toKernelGlobal shortName
       node = Kernel chunks (foldr addKernelDep Set.empty chunks)
    in GlobalGraph
         { _g_nodes = Map.insert global node nodes,
-          _g_fields = Map.union (K.countFields chunks) fields,
+          _g_fields = Map.union (Kernel.countFields chunks) fields,
           _g_sourceLocations = locs
         }
 
-addKernelDep :: K.Chunk -> Set Global -> Set Global
+addKernelDep :: Kernel.Chunk -> Set Global -> Set Global
 addKernelDep chunk deps =
   case chunk of
-    K.CanopyVar home name -> Set.insert (Global home name) deps
-    K.JsVar shortName _ -> Set.insert (toKernelGlobal shortName) deps
+    Kernel.CanopyVar home name -> Set.insert (Global home name) deps
+    Kernel.JsVar shortName _ -> Set.insert (toKernelGlobal shortName) deps
     _ -> addKernelDepSimple chunk deps
 
 -- | Handle simple kernel dependency chunks.
@@ -656,15 +656,15 @@ addKernelDep chunk deps =
 -- and returns the dependency set unchanged.
 --
 -- @since 0.19.1
-addKernelDepSimple :: K.Chunk -> Set Global -> Set Global
+addKernelDepSimple :: Kernel.Chunk -> Set Global -> Set Global
 addKernelDepSimple chunk deps =
   case chunk of
-    K.JS _ -> deps
-    K.CanopyField _ -> deps
-    K.JsField _ -> deps
-    K.JsEnum _ -> deps
-    K.Debug -> deps
-    K.Prod -> deps
+    Kernel.JS _ -> deps
+    Kernel.CanopyField _ -> deps
+    Kernel.JsField _ -> deps
+    Kernel.JsEnum _ -> deps
+    Kernel.Debug -> deps
+    Kernel.Prod -> deps
     _ -> deps  -- Handle any remaining cases
 
 -- | Convert kernel name to global reference.

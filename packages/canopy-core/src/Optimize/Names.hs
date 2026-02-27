@@ -25,7 +25,7 @@ import qualified Data.Map as Map
 import qualified Data.Name as Name
 import Data.Set (Set)
 import qualified Data.Set as Set
-import qualified Reporting.Annotation as A
+import qualified Reporting.Annotation as Ann
 
 -- GENERATOR
 
@@ -69,7 +69,7 @@ registerFFI home name =
     let global = Opt.Global home name
      in ok uid (Set.insert global deps) fields (Opt.VarGlobal global)
 
-registerDebug :: Name.Name -> ModuleName.Canonical -> A.Region -> Tracker Opt.Expr
+registerDebug :: Name.Name -> ModuleName.Canonical -> Ann.Region -> Tracker Opt.Expr
 registerDebug name home region =
   Tracker $ \uid deps fields ok ->
     let global = Opt.Global ModuleName.debug name

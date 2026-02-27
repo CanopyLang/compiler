@@ -19,16 +19,16 @@ module Integration.JsonIntegrationTest
 
 import qualified Control.Exception as Exception
 import qualified Data.ByteString as BS
-import qualified Data.ByteString.Builder as B
+import qualified Data.ByteString.Builder as BB
 import qualified Data.ByteString.Lazy.Char8 as LBS
 import qualified Data.Map as Map
 import qualified Data.Name as Name
 import qualified Data.NonEmptyList as NE
 import qualified Data.Scientific as Sci
-import qualified Json.Decode as D
-import qualified Json.Encode as E
+import qualified Json.Decode as Decode
+import qualified Json.Encode as Encode
 import qualified Json.String as JsonStr
-import qualified Parse.Primitives as P
+import qualified Parse.Primitives as Parse
 import System.IO.Temp (withSystemTempDirectory)
 import Test.Tasty
 import Test.Tasty.HUnit
@@ -39,23 +39,23 @@ data TestError = TestError String
   deriving (Show, Eq)
 
 -- Helper functions to avoid type ambiguity
-decodeInt :: BS.ByteString -> Either (D.Error TestError) Int
-decodeInt = D.fromByteString (D.int :: D.Decoder TestError Int)
+decodeInt :: BS.ByteString -> Either (Decode.Error TestError) Int
+decodeInt = Decode.fromByteString (Decode.int :: Decode.Decoder TestError Int)
 
-decodeBool :: BS.ByteString -> Either (D.Error TestError) Bool
-decodeBool = D.fromByteString (D.bool :: D.Decoder TestError Bool)
+decodeBool :: BS.ByteString -> Either (Decode.Error TestError) Bool
+decodeBool = Decode.fromByteString (Decode.bool :: Decode.Decoder TestError Bool)
 
-decodeString :: BS.ByteString -> Either (D.Error TestError) JsonStr.String
-decodeString = D.fromByteString (D.string :: D.Decoder TestError JsonStr.String)
+decodeString :: BS.ByteString -> Either (Decode.Error TestError) JsonStr.String
+decodeString = Decode.fromByteString (Decode.string :: Decode.Decoder TestError JsonStr.String)
 
-decodeIntList :: BS.ByteString -> Either (D.Error TestError) [Int]
-decodeIntList = D.fromByteString (D.list D.int :: D.Decoder TestError [Int])
+decodeIntList :: BS.ByteString -> Either (Decode.Error TestError) [Int]
+decodeIntList = Decode.fromByteString (Decode.list Decode.int :: Decode.Decoder TestError [Int])
 
-decodeStringField :: BS.ByteString -> BS.ByteString -> Either (D.Error TestError) JsonStr.String
-decodeStringField fieldName = D.fromByteString (D.field fieldName D.string :: D.Decoder TestError JsonStr.String)
+decodeStringField :: BS.ByteString -> BS.ByteString -> Either (Decode.Error TestError) JsonStr.String
+decodeStringField fieldName = Decode.fromByteString (Decode.field fieldName Decode.string :: Decode.Decoder TestError JsonStr.String)
 
-decodeIntField :: BS.ByteString -> BS.ByteString -> Either (D.Error TestError) Int  
-decodeIntField fieldName = D.fromByteString (D.field fieldName D.int :: D.Decoder TestError Int)
+decodeIntField :: BS.ByteString -> BS.ByteString -> Either (Decode.Error TestError) Int  
+decodeIntField fieldName = Decode.fromByteString (Decode.field fieldName Decode.int :: Decode.Decoder TestError Int)
 
 -- | Main test tree containing all JSON integration tests.
 --
@@ -89,24 +89,24 @@ testPrimitiveRoundtrips :: TestTree
 testPrimitiveRoundtrips = testGroup "Primitive Roundtrips"
   [ testCase "int roundtrip" $ do
       let original = 42
-          encoded = E.encodeUgly (E.int original)
-          decoded = decodeInt (LBS.toStrict $ B.toLazyByteString encoded)
+          encoded = Encode.encodeUgly (Encode.int original)
+          decoded = decodeInt (LBS.toStrict $ BB.toLazyByteString encoded)
       case decoded of
         Right result -> result @?= original
         Left err -> assertFailure $ "Int roundtrip failed: " ++ show err
   
   , testCase "bool roundtrip - True" $ do
       let original = True
-          encoded = E.encodeUgly (E.bool original)
-          decoded = decodeBool (LBS.toStrict $ B.toLazyByteString encoded)
+          encoded = Encode.encodeUgly (Encode.bool original)
+          decoded = decodeBool (LBS.toStrict $ BB.toLazyByteString encoded)
       case decoded of
         Right result -> result @?= original
         Left err -> assertFailure $ "Bool True roundtrip failed: " ++ show err
   
   , testCase "bool roundtrip - False" $ do
       let original = False
-          encoded = E.encodeUgly (E.bool original)
-          decoded = decodeBool (LBS.toStrict $ B.toLazyByteString encoded)
+          encoded = Encode.encodeUgly (Encode.bool original)
+          decoded = decodeBool (LBS.toStrict $ BB.toLazyByteString encoded)
       case decoded of
         Right result -> result @?= original
         Left err -> assertFailure $ "Bool False roundtrip failed: " ++ show err
@@ -114,59 +114,59 @@ testPrimitiveRoundtrips = testGroup "Primitive Roundtrips"
   , testCase "string roundtrip" $ do
       let originalChars = "hello world"
           originalJson = JsonStr.fromChars originalChars
-          encoded = E.encodeUgly (E.string originalJson)
-          decoded = decodeString (LBS.toStrict $ B.toLazyByteString encoded)
+          encoded = Encode.encodeUgly (Encode.string originalJson)
+          decoded = decodeString (LBS.toStrict $ BB.toLazyByteString encoded)
       case decoded of
         Right result -> JsonStr.toChars result @?= originalChars
         Left err -> assertFailure $ "String roundtrip failed: " ++ show err
   
   , testCase "null roundtrip" $ do
-      let encoded = E.encodeUgly E.null
+      let encoded = Encode.encodeUgly Encode.null
           -- Since we can't decode null directly, test the encoding
-      LBS.unpack (B.toLazyByteString encoded) @?= "null"
+      LBS.unpack (BB.toLazyByteString encoded) @?= "null"
   ]
 
 testComplexRoundtrips :: TestTree
 testComplexRoundtrips = testGroup "Complex Roundtrips"
   [ testCase "array roundtrip" $ do
       let original = [1, 2, 3, 4, 5]
-          encoded = E.encodeUgly (E.array (map E.int original))
-          decoded = D.fromByteString (D.list D.int) (LBS.toStrict $ B.toLazyByteString encoded)
+          encoded = Encode.encodeUgly (Encode.array (map Encode.int original))
+          decoded = Decode.fromByteString (Decode.list Decode.int) (LBS.toStrict $ BB.toLazyByteString encoded)
       case decoded of
         Right result -> result @?= original
-        Left err -> assertFailure $ "Array roundtrip failed: " ++ show (err :: D.Error ())
+        Left err -> assertFailure $ "Array roundtrip failed: " ++ show (err :: Decode.Error ())
   
   , testCase "object roundtrip" $ do
       let originalData = [("name", "Alice"), ("city", "Wonderland")]
-          jsonPairs = [(JsonStr.fromChars k, E.string (JsonStr.fromChars v)) | (k, v) <- originalData]
-          encoded = E.encodeUgly (E.object jsonPairs)
-          nameDecoder = D.field "name" D.string
-          cityDecoder = D.field "city" D.string
+          jsonPairs = [(JsonStr.fromChars k, Encode.string (JsonStr.fromChars v)) | (k, v) <- originalData]
+          encoded = Encode.encodeUgly (Encode.object jsonPairs)
+          nameDecoder = Decode.field "name" Decode.string
+          cityDecoder = Decode.field "city" Decode.string
           decoder = (,) <$> nameDecoder <*> cityDecoder
-          decoded = D.fromByteString decoder (LBS.toStrict $ B.toLazyByteString encoded)
+          decoded = Decode.fromByteString decoder (LBS.toStrict $ BB.toLazyByteString encoded)
       case decoded of
         Right (name, city) -> do
           JsonStr.toChars name @?= "Alice"
           JsonStr.toChars city @?= "Wonderland"
-        Left err -> assertFailure $ "Object roundtrip failed: " ++ show (err :: D.Error ())
+        Left err -> assertFailure $ "Object roundtrip failed: " ++ show (err :: Decode.Error ())
   
   , testCase "pair roundtrip" $ do
       let original = (42, "hello")
-          encoded = E.encodeUgly (E.array [E.int (fst original), E.string (JsonStr.fromChars (snd original))])
-          decoded = D.fromByteString (D.pair D.int D.string) (LBS.toStrict $ B.toLazyByteString encoded)
+          encoded = Encode.encodeUgly (Encode.array [Encode.int (fst original), Encode.string (JsonStr.fromChars (snd original))])
+          decoded = Decode.fromByteString (Decode.pair Decode.int Decode.string) (LBS.toStrict $ BB.toLazyByteString encoded)
       case decoded of
         Right (num, str) -> do
           num @?= fst original
           JsonStr.toChars str @?= snd original
-        Left err -> assertFailure $ "Pair roundtrip failed: " ++ show (err :: D.Error ())
+        Left err -> assertFailure $ "Pair roundtrip failed: " ++ show (err :: Decode.Error ())
   
   , testCase "map roundtrip" $ do
       let originalMap = Map.fromList [("key1", 100), ("key2", 200)]
           keyEncoder = JsonStr.fromChars
-          valueEncoder = E.int
-          encoded = E.encodeUgly (E.dict keyEncoder valueEncoder originalMap)
+          valueEncoder = Encode.int
+          encoded = Encode.encodeUgly (Encode.dict keyEncoder valueEncoder originalMap)
           -- Simplified test - verify encoding produces valid JSON structure
-          result = B.toLazyByteString encoded
+          result = BB.toLazyByteString encoded
       case LBS.unpack result of
         output | '{' `elem` output && '}' `elem` output -> return () -- Valid object structure  
         _ -> assertFailure "Map encoding should produce valid JSON object"
@@ -175,50 +175,50 @@ testComplexRoundtrips = testGroup "Complex Roundtrips"
 testNestedRoundtrips :: TestTree
 testNestedRoundtrips = testGroup "Nested Roundtrips"
   [ testCase "nested objects roundtrip" $ do
-      let innerObj = E.object ["value" E.==> E.int 42]
-          outerObj = E.object ["inner" E.==> innerObj]
-          encoded = E.encodeUgly outerObj
-          decoder = D.field "inner" (D.field "value" D.int)
-          decoded = D.fromByteString decoder (LBS.toStrict $ B.toLazyByteString encoded)
+      let innerObj = Encode.object ["value" Encode.==> Encode.int 42]
+          outerObj = Encode.object ["inner" Encode.==> innerObj]
+          encoded = Encode.encodeUgly outerObj
+          decoder = Decode.field "inner" (Decode.field "value" Decode.int)
+          decoded = Decode.fromByteString decoder (LBS.toStrict $ BB.toLazyByteString encoded)
       case decoded of
         Right result -> result @?= 42
-        Left err -> assertFailure $ "Nested objects roundtrip failed: " ++ show (err :: D.Error ())
+        Left err -> assertFailure $ "Nested objects roundtrip failed: " ++ show (err :: Decode.Error ())
   
   , testCase "nested arrays roundtrip" $ do
       let original = [[1, 2], [3, 4], [5, 6]]
-          encoded = E.encodeUgly (E.array [E.array (map E.int row) | row <- original])
-          decoded = D.fromByteString (D.list (D.list D.int)) (LBS.toStrict $ B.toLazyByteString encoded)
+          encoded = Encode.encodeUgly (Encode.array [Encode.array (map Encode.int row) | row <- original])
+          decoded = Decode.fromByteString (Decode.list (Decode.list Decode.int)) (LBS.toStrict $ BB.toLazyByteString encoded)
       case decoded of
         Right result -> result @?= original
-        Left err -> assertFailure $ "Nested arrays roundtrip failed: " ++ show (err :: D.Error ())
+        Left err -> assertFailure $ "Nested arrays roundtrip failed: " ++ show (err :: Decode.Error ())
   
   , testCase "mixed nested structures" $ do
-      let userObject = E.object 
-            [ "name" E.==> E.string (JsonStr.fromChars "Alice")
-            , "scores" E.==> E.array [E.int 95, E.int 87, E.int 92]
-            , "active" E.==> E.bool True
+      let userObject = Encode.object 
+            [ "name" Encode.==> Encode.string (JsonStr.fromChars "Alice")
+            , "scores" Encode.==> Encode.array [Encode.int 95, Encode.int 87, Encode.int 92]
+            , "active" Encode.==> Encode.bool True
             ]
-          encoded = E.encodeUgly userObject
+          encoded = Encode.encodeUgly userObject
           decoder = do
-            name <- D.field "name" D.string
-            scores <- D.field "scores" (D.list D.int)
-            active <- D.field "active" D.bool
+            name <- Decode.field "name" Decode.string
+            scores <- Decode.field "scores" (Decode.list Decode.int)
+            active <- Decode.field "active" Decode.bool
             return (JsonStr.toChars name, scores, active)
-          decoded = D.fromByteString decoder (LBS.toStrict $ B.toLazyByteString encoded)
+          decoded = Decode.fromByteString decoder (LBS.toStrict $ BB.toLazyByteString encoded)
       case decoded of
         Right (name, scores, active) -> do
           name @?= "Alice"
           scores @?= [95, 87, 92]
           active @?= True
-        Left err -> assertFailure $ "Mixed structures roundtrip failed: " ++ show (err :: D.Error ())
+        Left err -> assertFailure $ "Mixed structures roundtrip failed: " ++ show (err :: Decode.Error ())
   ]
 
 testUnicodeRoundtrips :: TestTree
 testUnicodeRoundtrips = testGroup "Unicode Roundtrips"
   [ testCase "unicode string roundtrip" $ do
       let originalText = "Hello 世界 🌍 αβγ"
-          encoded = E.encodeUgly (E.string (JsonStr.fromChars originalText))
-          decoded = decodeString (LBS.toStrict $ B.toLazyByteString encoded)
+          encoded = Encode.encodeUgly (Encode.string (JsonStr.fromChars originalText))
+          decoded = decodeString (LBS.toStrict $ BB.toLazyByteString encoded)
       case decoded of
         Right result -> JsonStr.toChars result @?= originalText
         Left err -> assertFailure $ "Unicode string roundtrip failed: " ++ show err
@@ -226,11 +226,11 @@ testUnicodeRoundtrips = testGroup "Unicode Roundtrips"
   , testCase "unicode object keys roundtrip" $ do
       let unicodeKey = "test_key"  -- Simplified to ASCII for now
           originalValue = "test value"
-          encoded = E.encodeUgly (E.object [unicodeKey E.==> E.string (JsonStr.fromChars originalValue)])
-          decoded = D.fromByteString (D.field (BS.pack $ map (fromIntegral . fromEnum) unicodeKey) D.string) (LBS.toStrict $ B.toLazyByteString encoded)
+          encoded = Encode.encodeUgly (Encode.object [unicodeKey Encode.==> Encode.string (JsonStr.fromChars originalValue)])
+          decoded = Decode.fromByteString (Decode.field (BS.pack $ map (fromIntegral . fromEnum) unicodeKey) Decode.string) (LBS.toStrict $ BB.toLazyByteString encoded)
       case decoded of
         Right result -> JsonStr.toChars result @?= originalValue
-        Left err -> assertFailure $ "Unicode keys roundtrip failed: " ++ show (err :: D.Error ())
+        Left err -> assertFailure $ "Unicode keys roundtrip failed: " ++ show (err :: Decode.Error ())
   ]
 
 -- PERFORMANCE TESTS
@@ -251,76 +251,76 @@ testLargeArrayPerformance :: TestTree
 testLargeArrayPerformance = testGroup "Large Array Performance"
   [ testCase "encode large array" $ do
       let largeArray = [1..10000]
-          values = map E.int largeArray
-          encoded = E.encodeUgly (E.array values)
+          values = map Encode.int largeArray
+          encoded = Encode.encodeUgly (Encode.array values)
       -- Should complete without timeout and produce reasonable output
-      LBS.length (B.toLazyByteString encoded) > 10000 @?= True -- Rough size check
+      LBS.length (BB.toLazyByteString encoded) > 10000 @?= True -- Rough size check
   
   , testCase "decode large array" $ do
       let largeArray = [1..5000]
-          encoded = E.encodeUgly (E.array (map E.int largeArray))
-          decoded = D.fromByteString (D.list D.int) (LBS.toStrict $ B.toLazyByteString encoded)
+          encoded = Encode.encodeUgly (Encode.array (map Encode.int largeArray))
+          decoded = Decode.fromByteString (Decode.list Decode.int) (LBS.toStrict $ BB.toLazyByteString encoded)
       case decoded of
         Right result -> length result @?= 5000
-        Left err -> assertFailure $ "Large array decode failed: " ++ show (err :: D.Error ())
+        Left err -> assertFailure $ "Large array decode failed: " ++ show (err :: Decode.Error ())
   
   , testCase "roundtrip large array" $ do
       let original = [1..1000]
-          encoded = E.encodeUgly (E.array (map E.int original))
-          decoded = D.fromByteString (D.list D.int) (LBS.toStrict $ B.toLazyByteString encoded)
+          encoded = Encode.encodeUgly (Encode.array (map Encode.int original))
+          decoded = Decode.fromByteString (Decode.list Decode.int) (LBS.toStrict $ BB.toLazyByteString encoded)
       case decoded of
         Right result -> result @?= original
-        Left err -> assertFailure $ "Large array roundtrip failed: " ++ show (err :: D.Error ())
+        Left err -> assertFailure $ "Large array roundtrip failed: " ++ show (err :: Decode.Error ())
   ]
 
 testLargeObjectPerformance :: TestTree
 testLargeObjectPerformance = testGroup "Large Object Performance"
   [ testCase "encode large object" $ do
-      let pairs = [("key" ++ show i) E.==> E.int i | i <- [1..1000]]
-          encoded = E.encodeUgly (E.object pairs)
+      let pairs = [("key" ++ show i) Encode.==> Encode.int i | i <- [1..1000]]
+          encoded = Encode.encodeUgly (Encode.object pairs)
       -- Should complete and produce substantial output
-      LBS.length (B.toLazyByteString encoded) > 10000 @?= True
+      LBS.length (BB.toLazyByteString encoded) > 10000 @?= True
   
   , testCase "decode large object fields" $ do
-      let pairs = [("field" ++ show i) E.==> E.int (i * 10) | i <- [1..100]]
-          encoded = E.encodeUgly (E.object pairs)
+      let pairs = [("field" ++ show i) Encode.==> Encode.int (i * 10) | i <- [1..100]]
+          encoded = Encode.encodeUgly (Encode.object pairs)
           -- Test decoding specific field
-          decoded = D.fromByteString (D.field "field50" D.int) (LBS.toStrict $ B.toLazyByteString encoded)
+          decoded = Decode.fromByteString (Decode.field "field50" Decode.int) (LBS.toStrict $ BB.toLazyByteString encoded)
       case decoded of
         Right result -> result @?= 500
-        Left err -> assertFailure $ "Large object field decode failed: " ++ show (err :: D.Error ())
+        Left err -> assertFailure $ "Large object field decode failed: " ++ show (err :: Decode.Error ())
   ]
 
 testDeepNestingPerformance :: TestTree
 testDeepNestingPerformance = testGroup "Deep Nesting Performance"
   [ testCase "encode deeply nested arrays" $ do
       let depth = 100
-          deeplyNested = foldr (\_ acc -> E.array [acc]) (E.int 42) [1..depth]
-          encoded = E.encodeUgly deeplyNested
+          deeplyNested = foldr (\_ acc -> Encode.array [acc]) (Encode.int 42) [1..depth]
+          encoded = Encode.encodeUgly deeplyNested
       -- Should handle deep nesting
-      LBS.length (B.toLazyByteString encoded) > fromIntegral depth @?= True
+      LBS.length (BB.toLazyByteString encoded) > fromIntegral depth @?= True
   
   , testCase "decode deeply nested array structure" $ do
       let depth = 10  -- Reduced depth for simpler testing
-          deeplyNested = foldr (\_ acc -> E.array [acc]) (E.int 999) [1..depth]
-          encoded = E.encodeUgly deeplyNested
+          deeplyNested = foldr (\_ acc -> Encode.array [acc]) (Encode.int 999) [1..depth]
+          encoded = Encode.encodeUgly deeplyNested
           -- Create decoder that expects nested single-element arrays
-          simpleDecoder = D.list D.int -- Just test that we can decode the structure
-          decoded = D.fromByteString simpleDecoder (LBS.toStrict $ B.toLazyByteString $ E.encodeUgly (E.array [E.int 999]))
+          simpleDecoder = Decode.list Decode.int -- Just test that we can decode the structure
+          decoded = Decode.fromByteString simpleDecoder (LBS.toStrict $ BB.toLazyByteString $ Encode.encodeUgly (Encode.array [Encode.int 999]))
       case decoded of
         Right result -> result @?= [999]
-        Left err -> assertFailure $ "Deep nesting decode failed: " ++ show (err :: D.Error ())
+        Left err -> assertFailure $ "Deep nesting decode failed: " ++ show (err :: Decode.Error ())
   ]
 
 testRepeatedOperations :: TestTree
 testRepeatedOperations = testGroup "Repeated Operations"
   [ testCase "repeated small encodings" $ do
-      let operations = replicate 1000 (E.encodeUgly (E.int 42))
-          results = map (LBS.unpack . B.toLazyByteString) operations
+      let operations = replicate 1000 (Encode.encodeUgly (Encode.int 42))
+          results = map (LBS.unpack . BB.toLazyByteString) operations
       all (== "42") results @?= True
   
   , testCase "repeated small decodings" $ do
-      let jsonData = LBS.toStrict $ B.toLazyByteString $ E.encodeUgly (E.int 123)
+      let jsonData = LBS.toStrict $ BB.toLazyByteString $ Encode.encodeUgly (Encode.int 123)
           operations = replicate 1000 (decodeInt jsonData)
           results = [x | Right x <- operations]
       length results @?= 1000
@@ -344,24 +344,24 @@ realWorldTests = testGroup "Real-world Tests"
 testConfigurationFiles :: TestTree
 testConfigurationFiles = testGroup "Configuration Files"
   [ testCase "application config" $ do
-      let config = E.object
-            [ "server" E.==> E.object
-                [ "host" E.==> E.string (JsonStr.fromChars "localhost")
-                , "port" E.==> E.int 8080
-                , "ssl" E.==> E.bool True
+      let config = Encode.object
+            [ "server" Encode.==> Encode.object
+                [ "host" Encode.==> Encode.string (JsonStr.fromChars "localhost")
+                , "port" Encode.==> Encode.int 8080
+                , "ssl" Encode.==> Encode.bool True
                 ]
-            , "database" E.==> E.object
-                [ "url" E.==> E.string (JsonStr.fromChars "postgresql://localhost/app")
-                , "pool_size" E.==> E.int 10
+            , "database" Encode.==> Encode.object
+                [ "url" Encode.==> Encode.string (JsonStr.fromChars "postgresql://localhost/app")
+                , "pool_size" Encode.==> Encode.int 10
                 ]
-            , "features" E.==> E.array
-                [ E.string (JsonStr.fromChars "auth")
-                , E.string (JsonStr.fromChars "logging")
-                , E.string (JsonStr.fromChars "metrics")
+            , "features" Encode.==> Encode.array
+                [ Encode.string (JsonStr.fromChars "auth")
+                , Encode.string (JsonStr.fromChars "logging")
+                , Encode.string (JsonStr.fromChars "metrics")
                 ]
             ]
-          encoded = E.encode config
-          decoded = D.fromByteString configDecoder (LBS.toStrict $ B.toLazyByteString encoded)
+          encoded = Encode.encode config
+          decoded = Decode.fromByteString configDecoder (LBS.toStrict $ BB.toLazyByteString encoded)
       case decoded of
         Right (host, port, features) -> do
           host @?= "localhost"
@@ -370,57 +370,57 @@ testConfigurationFiles = testGroup "Configuration Files"
         Left err -> assertFailure $ "Config parsing failed: " ++ show err
   
   , testCase "build configuration" $ do
-      let buildConfig = E.object
-            [ "name" E.==> E.string (JsonStr.fromChars "my-project")
-            , "version" E.==> E.string (JsonStr.fromChars "1.2.3")
-            , "dependencies" E.==> E.object
-                [ "lodash" E.==> E.string (JsonStr.fromChars "^4.17.0")
-                , "react" E.==> E.string (JsonStr.fromChars "^18.0.0")
+      let buildConfig = Encode.object
+            [ "name" Encode.==> Encode.string (JsonStr.fromChars "my-project")
+            , "version" Encode.==> Encode.string (JsonStr.fromChars "1.2.3")
+            , "dependencies" Encode.==> Encode.object
+                [ "lodash" Encode.==> Encode.string (JsonStr.fromChars "^4.17.0")
+                , "react" Encode.==> Encode.string (JsonStr.fromChars "^18.0.0")
                 ]
-            , "scripts" E.==> E.object
-                [ "build" E.==> E.string (JsonStr.fromChars "webpack build")
-                , "test" E.==> E.string (JsonStr.fromChars "jest")
+            , "scripts" Encode.==> Encode.object
+                [ "build" Encode.==> Encode.string (JsonStr.fromChars "webpack build")
+                , "test" Encode.==> Encode.string (JsonStr.fromChars "jest")
                 ]
             ]
-          encoded = E.encodeUgly buildConfig
-          nameDecoder = D.field "name" D.string
-          versionDecoder = D.field "version" D.string
+          encoded = Encode.encodeUgly buildConfig
+          nameDecoder = Decode.field "name" Decode.string
+          versionDecoder = Decode.field "version" Decode.string
           decoder = (,) <$> nameDecoder <*> versionDecoder
-          decoded = D.fromByteString decoder (LBS.toStrict $ B.toLazyByteString encoded)
+          decoded = Decode.fromByteString decoder (LBS.toStrict $ BB.toLazyByteString encoded)
       case decoded of
         Right (name, version) -> do
           JsonStr.toChars name @?= "my-project"
           JsonStr.toChars version @?= "1.2.3"
-        Left err -> assertFailure $ "Build config parsing failed: " ++ show (err :: D.Error ())
+        Left err -> assertFailure $ "Build config parsing failed: " ++ show (err :: Decode.Error ())
   ]
 
 testAPIResponses :: TestTree
 testAPIResponses = testGroup "API Responses"
   [ testCase "user profile response" $ do
-      let userProfile = E.object
-            [ "id" E.==> E.int 12345
-            , "username" E.==> E.string (JsonStr.fromChars "alice_wonderland")
-            , "email" E.==> E.string (JsonStr.fromChars "alice@example.com")
-            , "profile" E.==> E.object
-                [ "first_name" E.==> E.string (JsonStr.fromChars "Alice")
-                , "last_name" E.==> E.string (JsonStr.fromChars "Wonderland")
-                , "bio" E.==> E.string (JsonStr.fromChars "Curious explorer")
+      let userProfile = Encode.object
+            [ "id" Encode.==> Encode.int 12345
+            , "username" Encode.==> Encode.string (JsonStr.fromChars "alice_wonderland")
+            , "email" Encode.==> Encode.string (JsonStr.fromChars "alice@example.com")
+            , "profile" Encode.==> Encode.object
+                [ "first_name" Encode.==> Encode.string (JsonStr.fromChars "Alice")
+                , "last_name" Encode.==> Encode.string (JsonStr.fromChars "Wonderland")
+                , "bio" Encode.==> Encode.string (JsonStr.fromChars "Curious explorer")
                 ]
-            , "settings" E.==> E.object
-                [ "notifications" E.==> E.bool True
-                , "privacy" E.==> E.string (JsonStr.fromChars "public")
+            , "settings" Encode.==> Encode.object
+                [ "notifications" Encode.==> Encode.bool True
+                , "privacy" Encode.==> Encode.string (JsonStr.fromChars "public")
                 ]
-            , "followers" E.==> E.array [E.int 101, E.int 102, E.int 103]
+            , "followers" Encode.==> Encode.array [Encode.int 101, Encode.int 102, Encode.int 103]
             ]
-          encoded = E.encodeUgly userProfile
+          encoded = Encode.encodeUgly userProfile
           decoder = do
-            userId <- D.field "id" D.int
-            username <- D.field "username" D.string
-            firstName <- D.field "profile" (D.field "first_name" D.string)
-            notifications <- D.field "settings" (D.field "notifications" D.bool)
-            followers <- D.field "followers" (D.list D.int)
+            userId <- Decode.field "id" Decode.int
+            username <- Decode.field "username" Decode.string
+            firstName <- Decode.field "profile" (Decode.field "first_name" Decode.string)
+            notifications <- Decode.field "settings" (Decode.field "notifications" Decode.bool)
+            followers <- Decode.field "followers" (Decode.list Decode.int)
             return (userId, JsonStr.toChars username, JsonStr.toChars firstName, notifications, followers)
-          decoded = D.fromByteString decoder (LBS.toStrict $ B.toLazyByteString encoded)
+          decoded = Decode.fromByteString decoder (LBS.toStrict $ BB.toLazyByteString encoded)
       case decoded of
         Right (userId, username, firstName, notifications, followers) -> do
           userId @?= 12345
@@ -428,59 +428,59 @@ testAPIResponses = testGroup "API Responses"
           firstName @?= "Alice"
           notifications @?= True
           followers @?= [101, 102, 103]
-        Left err -> assertFailure $ "User profile parsing failed: " ++ show (err :: D.Error ())
+        Left err -> assertFailure $ "User profile parsing failed: " ++ show (err :: Decode.Error ())
   
   , testCase "paginated API response" $ do
-      let paginatedResponse = E.object
-            [ "data" E.==> E.array
-                [ E.object ["id" E.==> E.int 1, "title" E.==> E.string (JsonStr.fromChars "First")]
-                , E.object ["id" E.==> E.int 2, "title" E.==> E.string (JsonStr.fromChars "Second")]
+      let paginatedResponse = Encode.object
+            [ "data" Encode.==> Encode.array
+                [ Encode.object ["id" Encode.==> Encode.int 1, "title" Encode.==> Encode.string (JsonStr.fromChars "First")]
+                , Encode.object ["id" Encode.==> Encode.int 2, "title" Encode.==> Encode.string (JsonStr.fromChars "Second")]
                 ]
-            , "pagination" E.==> E.object
-                [ "page" E.==> E.int 1
-                , "per_page" E.==> E.int 10
-                , "total" E.==> E.int 25
-                , "total_pages" E.==> E.int 3
+            , "pagination" Encode.==> Encode.object
+                [ "page" Encode.==> Encode.int 1
+                , "per_page" Encode.==> Encode.int 10
+                , "total" Encode.==> Encode.int 25
+                , "total_pages" Encode.==> Encode.int 3
                 ]
             ]
-          encoded = E.encodeUgly paginatedResponse
+          encoded = Encode.encodeUgly paginatedResponse
           itemDecoder = do
-            itemId <- D.field "id" D.int
-            title <- D.field "title" D.string
+            itemId <- Decode.field "id" Decode.int
+            title <- Decode.field "title" Decode.string
             return (itemId, JsonStr.toChars title)
           decoder = do
-            items <- D.field "data" (D.list itemDecoder)
-            total <- D.field "pagination" (D.field "total" D.int)
+            items <- Decode.field "data" (Decode.list itemDecoder)
+            total <- Decode.field "pagination" (Decode.field "total" Decode.int)
             return (items, total)
-          decoded = D.fromByteString decoder (LBS.toStrict $ B.toLazyByteString encoded)
+          decoded = Decode.fromByteString decoder (LBS.toStrict $ BB.toLazyByteString encoded)
       case decoded of
         Right (items, total) -> do
           length items @?= 2
           total @?= 25
           fst (head items) @?= 1
           snd (head items) @?= "First"
-        Left err -> assertFailure $ "Paginated response parsing failed: " ++ show (err :: D.Error ())
+        Left err -> assertFailure $ "Paginated response parsing failed: " ++ show (err :: Decode.Error ())
   ]
 
 testDataExchange :: TestTree
 testDataExchange = testGroup "Data Exchange"
   [ testCase "export/import data" $ do
-      let exportData = E.object
-            [ "timestamp" E.==> E.string (JsonStr.fromChars "2024-01-01T12:00:00Z")
-            , "format_version" E.==> E.string (JsonStr.fromChars "1.0")
-            , "records" E.==> E.array
-                [ E.object 
-                    [ "type" E.==> E.string (JsonStr.fromChars "user")
-                    , "data" E.==> E.object ["name" E.==> E.string (JsonStr.fromChars "Alice")]
+      let exportData = Encode.object
+            [ "timestamp" Encode.==> Encode.string (JsonStr.fromChars "2024-01-01T12:00:00Z")
+            , "format_version" Encode.==> Encode.string (JsonStr.fromChars "1.0")
+            , "records" Encode.==> Encode.array
+                [ Encode.object 
+                    [ "type" Encode.==> Encode.string (JsonStr.fromChars "user")
+                    , "data" Encode.==> Encode.object ["name" Encode.==> Encode.string (JsonStr.fromChars "Alice")]
                     ]
-                , E.object
-                    [ "type" E.==> E.string (JsonStr.fromChars "post") 
-                    , "data" E.==> E.object ["title" E.==> E.string (JsonStr.fromChars "Hello")]
+                , Encode.object
+                    [ "type" Encode.==> Encode.string (JsonStr.fromChars "post") 
+                    , "data" Encode.==> Encode.object ["title" Encode.==> Encode.string (JsonStr.fromChars "Hello")]
                     ]
                 ]
             ]
-          encoded = E.encode exportData
-          encodedStr = LBS.unpack (B.toLazyByteString encoded)
+          encoded = Encode.encode exportData
+          encodedStr = LBS.unpack (BB.toLazyByteString encoded)
       -- Test pretty format has proper structure
       "timestamp" `isSubsequenceOf` encodedStr @?= True
       "records" `isSubsequenceOf` encodedStr @?= True
@@ -491,29 +491,29 @@ testDataExchange = testGroup "Data Exchange"
 testErrorMessages :: TestTree
 testErrorMessages = testGroup "Error Messages"
   [ testCase "structured error response" $ do
-      let errorResponse = E.object
-            [ "error" E.==> E.object
-                [ "code" E.==> E.int 404
-                , "message" E.==> E.string (JsonStr.fromChars "Resource not found")
-                , "details" E.==> E.object
-                    [ "resource" E.==> E.string (JsonStr.fromChars "user")
-                    , "id" E.==> E.int 12345
+      let errorResponse = Encode.object
+            [ "error" Encode.==> Encode.object
+                [ "code" Encode.==> Encode.int 404
+                , "message" Encode.==> Encode.string (JsonStr.fromChars "Resource not found")
+                , "details" Encode.==> Encode.object
+                    [ "resource" Encode.==> Encode.string (JsonStr.fromChars "user")
+                    , "id" Encode.==> Encode.int 12345
                     ]
                 ]
             ]
-          encoded = E.encodeUgly errorResponse
-          decoder = D.field "error" $ do
-            code <- D.field "code" D.int
-            message <- D.field "message" D.string
-            resourceId <- D.field "details" (D.field "id" D.int)
+          encoded = Encode.encodeUgly errorResponse
+          decoder = Decode.field "error" $ do
+            code <- Decode.field "code" Decode.int
+            message <- Decode.field "message" Decode.string
+            resourceId <- Decode.field "details" (Decode.field "id" Decode.int)
             return (code, JsonStr.toChars message, resourceId)
-          decoded = D.fromByteString decoder (LBS.toStrict $ B.toLazyByteString encoded)
+          decoded = Decode.fromByteString decoder (LBS.toStrict $ BB.toLazyByteString encoded)
       case decoded of
         Right (code, message, resourceId) -> do
           code @?= 404
           message @?= "Resource not found"
           resourceId @?= 12345
-        Left err -> assertFailure $ "Error response parsing failed: " ++ show (err :: D.Error ())
+        Left err -> assertFailure $ "Error response parsing failed: " ++ show (err :: Decode.Error ())
   ]
 
 -- INTEROPERABILITY TESTS
@@ -534,8 +534,8 @@ testStringModuleIntegration = testGroup "String Module Integration"
   [ testCase "JsonStr with Encode/Decode" $ do
       let originalChars = "integration test"
           jsonStr = JsonStr.fromChars originalChars
-          encoded = E.encodeUgly (E.string jsonStr)
-          decoded = decodeString (LBS.toStrict $ B.toLazyByteString encoded)
+          encoded = Encode.encodeUgly (Encode.string jsonStr)
+          decoded = decodeString (LBS.toStrict $ BB.toLazyByteString encoded)
       case decoded of
         Right result -> do
           JsonStr.toChars result @?= originalChars
@@ -545,8 +545,8 @@ testStringModuleIntegration = testGroup "String Module Integration"
   , testCase "Name integration" $ do
       let name = Name.fromChars "testName"
           jsonStr = JsonStr.fromName name
-          encoded = E.encodeUgly (E.name name)
-          decoded = decodeString (LBS.toStrict $ B.toLazyByteString encoded)
+          encoded = Encode.encodeUgly (Encode.name name)
+          decoded = decodeString (LBS.toStrict $ BB.toLazyByteString encoded)
       case decoded of
         Right result -> JsonStr.toChars result @?= Name.toChars name
         Left err -> assertFailure $ "Name integration failed: " ++ show err
@@ -554,7 +554,7 @@ testStringModuleIntegration = testGroup "String Module Integration"
   , testCase "Builder integration" $ do
       let jsonStr = JsonStr.fromChars "builder test"
           builder = JsonStr.toBuilder jsonStr
-          builderJson = LBS.toStrict $ B.toLazyByteString $ B.char7 '"' <> builder <> B.char7 '"'
+          builderJson = LBS.toStrict $ BB.toLazyByteString $ BB.char7 '"' <> builder <> BB.char7 '"'
           decoded = decodeString builderJson
       case decoded of
         Right result -> JsonStr.toChars result @?= "builder test"
@@ -564,9 +564,9 @@ testStringModuleIntegration = testGroup "String Module Integration"
 testEncodingConsistency :: TestTree
 testEncodingConsistency = testGroup "Encoding Consistency"
   [ testCase "encode vs encodeUgly structure" $ do
-      let value = E.object ["key" E.==> E.int 42]
-          pretty = LBS.unpack $ B.toLazyByteString $ E.encode value
-          ugly = LBS.unpack $ B.toLazyByteString $ E.encodeUgly value
+      let value = Encode.object ["key" Encode.==> Encode.int 42]
+          pretty = LBS.unpack $ BB.toLazyByteString $ Encode.encode value
+          ugly = LBS.unpack $ BB.toLazyByteString $ Encode.encodeUgly value
       -- Both should parse to same structure
       "key" `isSubsequenceOf` pretty @?= True
       "key" `isSubsequenceOf` ugly @?= True
@@ -574,12 +574,12 @@ testEncodingConsistency = testGroup "Encoding Consistency"
       "42" `isSubsequenceOf` ugly @?= True
   
   , testCase "different Value constructors" $ do
-      let stringValue = E.string (JsonStr.fromChars "test")
-          charsValue = E.chars "test"
-          nameValue = E.name (Name.fromChars "test")
-          stringEncoded = LBS.unpack $ B.toLazyByteString $ E.encodeUgly stringValue
-          charsEncoded = LBS.unpack $ B.toLazyByteString $ E.encodeUgly charsValue
-          nameEncoded = LBS.unpack $ B.toLazyByteString $ E.encodeUgly nameValue
+      let stringValue = Encode.string (JsonStr.fromChars "test")
+          charsValue = Encode.chars "test"
+          nameValue = Encode.name (Name.fromChars "test")
+          stringEncoded = LBS.unpack $ BB.toLazyByteString $ Encode.encodeUgly stringValue
+          charsEncoded = LBS.unpack $ BB.toLazyByteString $ Encode.encodeUgly charsValue
+          nameEncoded = LBS.unpack $ BB.toLazyByteString $ Encode.encodeUgly nameValue
       -- All should produce valid JSON strings
       all (\s -> head s == '"' && last s == '"') [stringEncoded, charsEncoded, nameEncoded] @?= True
   ]
@@ -587,15 +587,15 @@ testEncodingConsistency = testGroup "Encoding Consistency"
 testDecodingConsistency :: TestTree
 testDecodingConsistency = testGroup "Decoding Consistency"
   [ testCase "same JSON different decoders" $ do
-      let jsonData = LBS.toStrict $ B.toLazyByteString $ E.encodeUgly (E.array [E.int 1, E.int 2])
-          listDecoded = D.fromByteString (D.list D.int) jsonData
-          pairDecoded = D.fromByteString (D.pair D.int D.int) jsonData
+      let jsonData = LBS.toStrict $ BB.toLazyByteString $ Encode.encodeUgly (Encode.array [Encode.int 1, Encode.int 2])
+          listDecoded = Decode.fromByteString (Decode.list Decode.int) jsonData
+          pairDecoded = Decode.fromByteString (Decode.pair Decode.int Decode.int) jsonData
       case (listDecoded, pairDecoded) of
         (Right [1, 2], Right (1, 2)) -> return ()
         _ -> assertFailure "Decoder consistency failed"
   
   , testCase "error consistency" $ do
-      let jsonData = LBS.toStrict $ B.toLazyByteString $ E.encodeUgly (E.string (JsonStr.fromChars "not a number"))
+      let jsonData = LBS.toStrict $ BB.toLazyByteString $ Encode.encodeUgly (Encode.string (JsonStr.fromChars "not a number"))
           intDecoded = decodeInt jsonData
           boolDecoded = decodeBool jsonData
       case (intDecoded, boolDecoded) of
@@ -621,27 +621,27 @@ testFileWriteRead = testGroup "File Write/Read"
   [ testCase "write and read back" $ do
       withSystemTempDirectory "json-integration" $ \tempDir -> do
         let filepath = tempDir ++ "/test.json"
-            originalData = E.object 
-              [ "message" E.==> E.string (JsonStr.fromChars "Hello File!")
-              , "number" E.==> E.int 42
+            originalData = Encode.object 
+              [ "message" Encode.==> Encode.string (JsonStr.fromChars "Hello File!")
+              , "number" Encode.==> Encode.int 42
               ]
-        E.write filepath originalData
+        Encode.write filepath originalData
         content <- BS.readFile filepath
-        let decoded = D.fromByteString (D.field "message" D.string) content
+        let decoded = Decode.fromByteString (Decode.field "message" Decode.string) content
         case decoded of
           Right result -> JsonStr.toChars result @?= "Hello File!"
-          Left err -> assertFailure $ "File roundtrip failed: " ++ show (err :: D.Error ())
+          Left err -> assertFailure $ "File roundtrip failed: " ++ show (err :: Decode.Error ())
   
   , testCase "writeUgly and read back" $ do
       withSystemTempDirectory "json-integration" $ \tempDir -> do
         let filepath = tempDir ++ "/test-ugly.json"
-            originalData = E.object ["compact" E.==> E.bool True]
-        E.writeUgly filepath originalData
+            originalData = Encode.object ["compact" Encode.==> Encode.bool True]
+        Encode.writeUgly filepath originalData
         content <- BS.readFile filepath
-        let decoded = D.fromByteString (D.field "compact" D.bool) content
+        let decoded = Decode.fromByteString (Decode.field "compact" Decode.bool) content
         case decoded of
           Right result -> result @?= True
-          Left err -> assertFailure $ "Ugly file roundtrip failed: " ++ show (err :: D.Error ())
+          Left err -> assertFailure $ "Ugly file roundtrip failed: " ++ show (err :: Decode.Error ())
   ]
 
 testFileFormatting :: TestTree
@@ -649,8 +649,8 @@ testFileFormatting = testGroup "File Formatting"
   [ testCase "pretty format has newlines" $ do
       withSystemTempDirectory "json-integration" $ \tempDir -> do
         let filepath = tempDir ++ "/pretty.json"
-            data_ = E.object ["test" E.==> E.bool True]
-        E.write filepath data_
+            data_ = Encode.object ["test" Encode.==> Encode.bool True]
+        Encode.write filepath data_
         content <- readFile filepath
         '\n' `elem` content @?= True
         last content @?= '\n' -- Should end with newline
@@ -658,8 +658,8 @@ testFileFormatting = testGroup "File Formatting"
   , testCase "ugly format is compact" $ do
       withSystemTempDirectory "json-integration" $ \tempDir -> do
         let filepath = tempDir ++ "/ugly.json"
-            data_ = E.object ["test" E.==> E.bool True]
-        E.writeUgly filepath data_
+            data_ = Encode.object ["test" Encode.==> Encode.bool True]
+        Encode.writeUgly filepath data_
         content <- readFile filepath
         '\n' `notElem` content @?= True -- Should not have newlines
   ]
@@ -667,7 +667,7 @@ testFileFormatting = testGroup "File Formatting"
 testFileErrors :: TestTree
 testFileErrors = testGroup "File Error Handling"
   [ testCase "write to readonly directory fails gracefully" $ do
-      result <- Exception.try $ E.write "/root/readonly.json" (E.object [])
+      result <- Exception.try $ Encode.write "/root/readonly.json" (Encode.object [])
       case result of
         Left (_ :: Exception.IOException) -> return () -- Expected
         Right _ -> assertFailure "Should fail on readonly directory"
@@ -698,7 +698,7 @@ testMalformedJSON = testGroup "Malformed JSON"
   
   , testCase "invalid JSON syntax" $ do
       let malformed = "{key: value}" -- Missing quotes
-          decoded = D.fromByteString (D.field "key" D.string) (BS.pack $ map (fromIntegral . fromEnum) malformed)
+          decoded = Decode.fromByteString (Decode.field "key" Decode.string) (BS.pack $ map (fromIntegral . fromEnum) malformed)
       case decoded of
         Left _ -> return () -- Expected failure
         Right _ -> assertFailure "Should fail on invalid syntax"
@@ -707,15 +707,15 @@ testMalformedJSON = testGroup "Malformed JSON"
 testTypeErrors :: TestTree
 testTypeErrors = testGroup "Type Errors"
   [ testCase "decode string as int" $ do
-      let jsonData = LBS.toStrict $ B.toLazyByteString $ E.encodeUgly (E.string (JsonStr.fromChars "not a number"))
+      let jsonData = LBS.toStrict $ BB.toLazyByteString $ Encode.encodeUgly (Encode.string (JsonStr.fromChars "not a number"))
           decoded = decodeInt jsonData
       case decoded of
         Left _ -> return () -- Expected failure
         Right _ -> assertFailure "Should fail to decode string as int"
   
   , testCase "decode array as object" $ do
-      let jsonData = LBS.toStrict $ B.toLazyByteString $ E.encodeUgly (E.array [E.int 1, E.int 2])
-          decoded = D.fromByteString (D.field "key" D.string) jsonData
+      let jsonData = LBS.toStrict $ BB.toLazyByteString $ Encode.encodeUgly (Encode.array [Encode.int 1, Encode.int 2])
+          decoded = Decode.fromByteString (Decode.field "key" Decode.string) jsonData
       case decoded of
         Left _ -> return () -- Expected failure
         Right _ -> assertFailure "Should fail to decode array as object"
@@ -724,15 +724,15 @@ testTypeErrors = testGroup "Type Errors"
 testStructuralErrors :: TestTree
 testStructuralErrors = testGroup "Structural Errors"
   [ testCase "missing required field" $ do
-      let jsonData = LBS.toStrict $ B.toLazyByteString $ E.encodeUgly (E.object ["other" E.==> E.int 42])
-          decoded = D.fromByteString (D.field "required" D.string) jsonData
+      let jsonData = LBS.toStrict $ BB.toLazyByteString $ Encode.encodeUgly (Encode.object ["other" Encode.==> Encode.int 42])
+          decoded = Decode.fromByteString (Decode.field "required" Decode.string) jsonData
       case decoded of
         Left _ -> return () -- Expected failure
         Right _ -> assertFailure "Should fail on missing field"
   
   , testCase "wrong array length for pair" $ do
-      let jsonData = LBS.toStrict $ B.toLazyByteString $ E.encodeUgly (E.array [E.int 1, E.int 2, E.int 3])
-          decoded = D.fromByteString (D.pair D.int D.int) jsonData
+      let jsonData = LBS.toStrict $ BB.toLazyByteString $ Encode.encodeUgly (Encode.array [Encode.int 1, Encode.int 2, Encode.int 3])
+          decoded = Decode.fromByteString (Decode.pair Decode.int Decode.int) jsonData
       case decoded of
         Left _ -> return () -- Expected failure
         Right _ -> assertFailure "Should fail on wrong array length"
@@ -741,32 +741,32 @@ testStructuralErrors = testGroup "Structural Errors"
 testRecoveryScenarios :: TestTree
 testRecoveryScenarios = testGroup "Recovery Scenarios"
   [ testCase "oneOf provides fallback" $ do
-      let jsonData = LBS.toStrict $ B.toLazyByteString $ E.encodeUgly (E.string (JsonStr.fromChars "42"))
-          decoder = D.oneOf [fmap show D.int, fmap JsonStr.toChars D.string]
-          decoded = D.fromByteString decoder jsonData
+      let jsonData = LBS.toStrict $ BB.toLazyByteString $ Encode.encodeUgly (Encode.string (JsonStr.fromChars "42"))
+          decoder = Decode.oneOf [fmap show Decode.int, fmap JsonStr.toChars Decode.string]
+          decoded = Decode.fromByteString decoder jsonData
       case decoded of
         Right result -> result @?= "42"
-        Left err -> assertFailure $ "oneOf should provide fallback: " ++ show (err :: D.Error ())
+        Left err -> assertFailure $ "oneOf should provide fallback: " ++ show (err :: Decode.Error ())
   
   , testCase "partial decoding success" $ do
-      let jsonData = LBS.toStrict $ B.toLazyByteString $ E.encodeUgly (E.object 
-            [ "valid" E.==> E.int 42
-            , "invalid" E.==> E.string (JsonStr.fromChars "not decoded")
+      let jsonData = LBS.toStrict $ BB.toLazyByteString $ Encode.encodeUgly (Encode.object 
+            [ "valid" Encode.==> Encode.int 42
+            , "invalid" Encode.==> Encode.string (JsonStr.fromChars "not decoded")
             ])
-          decoded = D.fromByteString (D.field "valid" D.int) jsonData
+          decoded = Decode.fromByteString (Decode.field "valid" Decode.int) jsonData
       case decoded of
         Right result -> result @?= 42
-        Left err -> assertFailure $ "Should decode valid field: " ++ show (err :: D.Error ())
+        Left err -> assertFailure $ "Should decode valid field: " ++ show (err :: Decode.Error ())
   ]
 
 -- HELPER FUNCTIONS
 
 -- | Configuration decoder for real-world tests
-configDecoder :: D.Decoder () (String, Int, [String])
+configDecoder :: Decode.Decoder () (String, Int, [String])
 configDecoder = do
-  host <- D.field "server" (D.field "host" D.string)
-  port <- D.field "server" (D.field "port" D.int)
-  features <- D.field "features" (D.list D.string)
+  host <- Decode.field "server" (Decode.field "host" Decode.string)
+  port <- Decode.field "server" (Decode.field "port" Decode.int)
+  features <- Decode.field "features" (Decode.list Decode.string)
   return (JsonStr.toChars host, port, map JsonStr.toChars features)
 
 -- | Check if first list is a subsequence of second list

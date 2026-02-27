@@ -90,7 +90,7 @@ import qualified Test
 import qualified Test.FFI as FFI
 import qualified Upgrade
 import Text.PrettyPrint.ANSI.Leijen (Doc)
-import qualified Text.PrettyPrint.ANSI.Leijen as P
+import qualified Text.PrettyPrint.ANSI.Leijen as PP
 
 -- | Create the init command for starting new Canopy projects.
 --
@@ -218,7 +218,7 @@ createCheckCommand =
   Terminal.Command "check" Terminal.Uncommon details example args flags Check.run
   where
     details = "The `check` command type-checks Canopy files without generating output:"
-    example = P.indent 4 (P.green "canopy check src/Main.can")
+    example = PP.indent 4 (PP.green "canopy check src/Main.can")
     args = Terminal.zeroOrMore Terminal.canopyFile
     flags = createCheckFlags
 
@@ -234,7 +234,7 @@ createFmtCommand =
   Terminal.Command "fmt" Terminal.Uncommon details example args flags Fmt.run
   where
     details = "The `fmt` command formats Canopy source files:"
-    example = P.indent 4 (P.green "canopy fmt src/Main.can")
+    example = PP.indent 4 (PP.green "canopy fmt src/Main.can")
     args = Terminal.zeroOrMore Terminal.canopyFile
     flags = createFmtFlags
 
@@ -249,7 +249,7 @@ createLintCommand =
   Terminal.Command "lint" Terminal.Uncommon details example args flags Lint.run
   where
     details = "The `lint` command runs static analysis on Canopy source files:"
-    example = P.indent 4 (P.green "canopy lint src/Main.can")
+    example = PP.indent 4 (PP.green "canopy lint src/Main.can")
     args = Terminal.zeroOrMore Terminal.canopyFile
     flags = createLintFlags
 
@@ -265,10 +265,10 @@ createTestCommand =
   where
     details = "The `test` command runs Canopy test files. Browser tests are auto-detected and run with Playwright:"
     example =
-      P.vcat
-        [ P.indent 4 (P.green "canopy test tests/MyTest.can"),
-          P.indent 4 (P.green "canopy test --headed test/BrowserTests.can"),
-          P.indent 4 (P.green "canopy test --app src/Main.can test/BrowserTests.can")
+      PP.vcat
+        [ PP.indent 4 (PP.green "canopy test tests/MyTest.can"),
+          PP.indent 4 (PP.green "canopy test --headed test/BrowserTests.can"),
+          PP.indent 4 (PP.green "canopy test --app src/Main.can test/BrowserTests.can")
         ]
     args = Terminal.zeroOrMore Terminal.canopyFileOrDir
     flags = createTestFlags
@@ -284,7 +284,7 @@ createAuditCommand =
   Terminal.Command "audit" Terminal.Uncommon details example Terminal.noArgs flags Audit.run
   where
     details = "The `audit` command analyzes project dependencies:"
-    example = P.indent 4 (P.green "canopy audit")
+    example = PP.indent 4 (PP.green "canopy audit")
     flags = createAuditFlags
 
 -- | Create the upgrade command for Elm-to-Canopy migration.
@@ -298,7 +298,7 @@ createUpgradeCommand =
   Terminal.Command "upgrade" Terminal.Uncommon details example Terminal.noArgs flags Upgrade.run
   where
     details = "The `upgrade` command migrates Elm projects to Canopy:"
-    example = P.indent 4 (P.green "canopy upgrade")
+    example = PP.indent 4 (PP.green "canopy upgrade")
     flags = createUpgradeFlags
 
 -- | Create the bench command for compilation benchmarking.
@@ -313,7 +313,7 @@ createBenchCommand =
   Terminal.Command "bench" Terminal.Uncommon details example Terminal.noArgs flags Bench.run
   where
     details = "The `bench` command measures compilation performance:"
-    example = P.indent 4 (P.green "canopy bench")
+    example = PP.indent 4 (PP.green "canopy bench")
     flags = createBenchFlags
 
 -- | Create the setup command for package environment bootstrap.
@@ -329,7 +329,7 @@ createSetupCommand =
   where
     summary = "Set up the Canopy package environment. Downloads the package registry and locates standard library packages."
     details = "The `setup` command initializes your Canopy development environment:"
-    example = P.indent 4 (P.green "canopy setup")
+    example = PP.indent 4 (PP.green "canopy setup")
     flags = createSetupFlags
 
 -- | Create the test-ffi command for FFI testing and validation.
@@ -415,7 +415,7 @@ createMakeExample :: Doc
 createMakeExample =
   stackDocuments
     [ reflowText "For example:",
-      P.indent 4 $ P.green "canopy make src/Main.can",
+      PP.indent 4 $ PP.green "canopy make src/Main.can",
       reflowText
         "This tries to compile a Canopy file named src/Main.can (also accepts .canopy), generating an index.html file if possible."
     ]
@@ -443,8 +443,8 @@ createInstallExample =
   stackDocuments
     [ reflowText
         "For example, if you want to get packages for HTTP and JSON, you would say:",
-      P.indent 4 . P.green $
-        P.vcat
+      PP.indent 4 . PP.green $
+        PP.vcat
           [ "canopy install canopy/http",
             "canopy install canopy/json"
           ],
@@ -473,8 +473,8 @@ createPublishExample =
   stackDocuments
     [ reflowText
         "For example, if you have a custom repository located at https://www.example.com/my-custom-repo you can run the following command",
-      P.indent 4 . P.green $
-        P.vcat
+      PP.indent 4 . PP.green $
+        PP.vcat
           [ "Canopy publish https://www.example.com/my-custom-repo"
           ]
     ]
@@ -508,7 +508,7 @@ createDiffExample =
     [ reflowText
         "For example, to see what changed in the HTML package between\
         \ versions 1.0.0 and 2.0.0, you can say:",
-      P.indent 4 (P.green "canopy diff canopy/html 1.0.0 2.0.0"),
+      PP.indent 4 (PP.green "canopy diff canopy/html 1.0.0 2.0.0"),
       reflowText
         "Sometimes a MAJOR change is not actually very big, so\
         \ this can help you plan your upgrade timelines."
@@ -531,13 +531,13 @@ createFFITestExample :: Doc
 createFFITestExample =
   stackDocuments
     [ reflowText "For example:",
-      P.indent 4 $ P.green "canopy test-ffi",
+      PP.indent 4 $ PP.green "canopy test-ffi",
       reflowText
         "This runs all FFI tests in your project, validating contracts and testing function behavior.",
-      P.indent 4 $ P.green "canopy test-ffi --generate --output test-generation/",
+      PP.indent 4 $ PP.green "canopy test-ffi --generate --output test-generation/",
       reflowText
         "This generates test files without running them, useful for CI integration.",
-      P.indent 4 $ P.green "canopy test-ffi --watch",
+      PP.indent 4 $ PP.green "canopy test-ffi --watch",
       reflowText
         "This watches for changes and re-runs tests automatically."
     ]

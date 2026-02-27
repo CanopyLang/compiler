@@ -27,7 +27,7 @@ module Reporting
 where
 
 import qualified Canopy.ModuleName as ModuleName
-import qualified Data.ByteString.Builder as B
+import qualified Data.ByteString.Builder as BB
 import qualified Data.ByteString.Lazy as LBS
 import Data.NonEmptyList (List)
 import qualified Data.NonEmptyList as NonEmptyList
@@ -106,7 +106,7 @@ reportGenerate style moduleNames targetPath =
 -- | Output a JSON value to stdout.
 outputJson :: Encode.Value -> IO ()
 outputJson value =
-  LBS.hPut stdout (B.toLazyByteString (Encode.encode value))
+  LBS.hPut stdout (BB.toLazyByteString (Encode.encode value))
     >> hPutStrLn stdout ""
 
 -- | Build JSON value for generation success report.

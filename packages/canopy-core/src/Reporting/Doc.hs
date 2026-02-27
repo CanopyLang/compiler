@@ -1,36 +1,36 @@
 {-# LANGUAGE OverloadedStrings #-}
 
 module Reporting.Doc
-  ( P.Doc,
-    (P.<+>),
+  ( PP.Doc,
+    (PP.<+>),
     (<>),
-    P.align,
-    P.cat,
-    P.empty,
-    P.fill,
-    P.fillSep,
-    P.hang,
-    P.hcat,
-    P.hsep,
-    P.indent,
-    P.sep,
-    P.vcat,
-    P.red,
-    P.cyan,
-    P.magenta,
-    P.green,
-    P.blue,
-    P.black,
-    P.yellow,
-    P.dullred,
-    P.dullcyan,
-    P.dullyellow,
-    P.dullgreen,
-    P.dullblue,
-    P.dullmagenta,
-    P.bold,
-    P.underline,
-    P.white,
+    PP.align,
+    PP.cat,
+    PP.empty,
+    PP.fill,
+    PP.fillSep,
+    PP.hang,
+    PP.hcat,
+    PP.hsep,
+    PP.indent,
+    PP.sep,
+    PP.vcat,
+    PP.red,
+    PP.cyan,
+    PP.magenta,
+    PP.green,
+    PP.blue,
+    PP.black,
+    PP.yellow,
+    PP.dullred,
+    PP.dullcyan,
+    PP.dullyellow,
+    PP.dullgreen,
+    PP.dullblue,
+    PP.dullmagenta,
+    PP.bold,
+    PP.underline,
+    PP.white,
     --
     fromChars,
     fromName,
@@ -68,66 +68,66 @@ module Reporting.Doc
 where
 
 import qualified Canopy.Package as Pkg
-import qualified Canopy.Version as V
+import qualified Canopy.Version as Version
 import qualified Data.Index as Index
 import qualified Data.List as List
 import qualified Data.Name as Name
 import Json.Encode ((==>))
-import qualified Json.Encode as E
+import qualified Json.Encode as Encode
 import qualified Json.String as Json
 import qualified System.Console.ANSI.Types as Ansi
 import System.IO (Handle)
 import qualified System.Info as Info
-import qualified Text.PrettyPrint.ANSI.Leijen as P
+import qualified Text.PrettyPrint.ANSI.Leijen as PP
 import Prelude hiding (cycle)
 
 -- FROM
 
-fromChars :: String -> P.Doc
+fromChars :: String -> PP.Doc
 fromChars =
-  P.text
+  PP.text
 
-fromName :: Name.Name -> P.Doc
+fromName :: Name.Name -> PP.Doc
 fromName name =
-  P.text (Name.toChars name)
+  PP.text (Name.toChars name)
 
-fromVersion :: V.Version -> P.Doc
+fromVersion :: Version.Version -> PP.Doc
 fromVersion vsn =
-  P.text (V.toChars vsn)
+  PP.text (Version.toChars vsn)
 
-fromPackage :: Pkg.Name -> P.Doc
+fromPackage :: Pkg.Name -> PP.Doc
 fromPackage pkg =
-  P.text (Pkg.toChars pkg)
+  PP.text (Pkg.toChars pkg)
 
-fromInt :: Int -> P.Doc
+fromInt :: Int -> PP.Doc
 fromInt n =
-  P.text (show n)
+  PP.text (show n)
 
 -- TO STRING
 
-toAnsi :: Handle -> P.Doc -> IO ()
+toAnsi :: Handle -> PP.Doc -> IO ()
 toAnsi handle doc =
-  P.displayIO handle (P.renderPretty 1 80 doc)
+  PP.displayIO handle (PP.renderPretty 1 80 doc)
 
-toString :: P.Doc -> String
+toString :: PP.Doc -> String
 toString doc =
-  P.displayS (P.renderPretty 1 80 (P.plain doc)) ""
+  PP.displayS (PP.renderPretty 1 80 (PP.plain doc)) ""
 
-toLine :: P.Doc -> String
+toLine :: PP.Doc -> String
 toLine doc =
-  P.displayS (P.renderPretty 1 (div maxBound 2) (P.plain doc)) ""
+  PP.displayS (PP.renderPretty 1 (div maxBound 2) (PP.plain doc)) ""
 
 -- FORMATTING
 
-stack :: [P.Doc] -> P.Doc
+stack :: [PP.Doc] -> PP.Doc
 stack docs =
-  P.vcat (List.intersperse "" docs)
+  PP.vcat (List.intersperse "" docs)
 
-reflow :: String -> P.Doc
+reflow :: String -> PP.Doc
 reflow paragraph =
-  P.fillSep (fmap P.text (words paragraph))
+  PP.fillSep (fmap PP.text (words paragraph))
 
-commaSep :: P.Doc -> (P.Doc -> P.Doc) -> [P.Doc] -> [P.Doc]
+commaSep :: PP.Doc -> (PP.Doc -> PP.Doc) -> [PP.Doc] -> [PP.Doc]
 commaSep conjunction addStyle names =
   case names of
     [name] ->
@@ -142,55 +142,55 @@ commaSep conjunction addStyle names =
 
 -- NOTES
 
-toSimpleNote :: String -> P.Doc
+toSimpleNote :: String -> PP.Doc
 toSimpleNote message =
-  toFancyNote (fmap P.text (words message))
+  toFancyNote (fmap PP.text (words message))
 
-toFancyNote :: [P.Doc] -> P.Doc
+toFancyNote :: [PP.Doc] -> PP.Doc
 toFancyNote chunks =
-  P.fillSep (P.underline "Note" <> ":" : chunks)
+  PP.fillSep (PP.underline "Note" <> ":" : chunks)
 
 -- HINTS
 
-toSimpleHint :: String -> P.Doc
+toSimpleHint :: String -> PP.Doc
 toSimpleHint message =
-  toFancyHint (fmap P.text (words message))
+  toFancyHint (fmap PP.text (words message))
 
-toFancyHint :: [P.Doc] -> P.Doc
+toFancyHint :: [PP.Doc] -> PP.Doc
 toFancyHint chunks =
-  P.fillSep (P.underline "Hint" <> ":" : chunks)
+  PP.fillSep (PP.underline "Hint" <> ":" : chunks)
 
 -- LINKS
 
-link :: String -> String -> String -> String -> P.Doc
+link :: String -> String -> String -> String -> PP.Doc
 link word before fileName after =
-  P.fillSep $
-    (P.underline (P.text word) <> ":") :
-    ( fmap P.text (words before)
-        <> ( P.text (makeLink fileName) :
-             fmap P.text (words after)
+  PP.fillSep $
+    (PP.underline (PP.text word) <> ":") :
+    ( fmap PP.text (words before)
+        <> ( PP.text (makeLink fileName) :
+             fmap PP.text (words after)
            )
     )
 
-fancyLink :: String -> [P.Doc] -> String -> [P.Doc] -> P.Doc
+fancyLink :: String -> [PP.Doc] -> String -> [PP.Doc] -> PP.Doc
 fancyLink word before fileName after =
-  P.fillSep $
-    (P.underline (P.text word) <> ":") : (before <> (P.text (makeLink fileName) : after))
+  PP.fillSep $
+    (PP.underline (PP.text word) <> ":") : (before <> (PP.text (makeLink fileName) : after))
 
 makeLink :: String -> String
 makeLink fileName =
-  "<https://canopy-lang.org/" <> V.toChars V.compiler <> "/" <> fileName <> ">"
+  "<https://canopy-lang.org/" <> Version.toChars Version.compiler <> "/" <> fileName <> ">"
 
 makeNakedLink :: String -> String
 makeNakedLink fileName =
-  "https://canopy-lang.org/" <> V.toChars V.compiler <> "/" <> fileName
+  "https://canopy-lang.org/" <> Version.toChars Version.compiler <> "/" <> fileName
 
-reflowLink :: String -> String -> String -> P.Doc
+reflowLink :: String -> String -> String -> PP.Doc
 reflowLink before fileName after =
-  P.fillSep
-    ( fmap P.text (words before)
-        <> ( P.text (makeLink fileName) :
-             fmap P.text (words after)
+  PP.fillSep
+    ( fmap PP.text (words before)
+        <> ( PP.text (makeLink fileName) :
+             fmap PP.text (words after)
            )
     )
 
@@ -224,12 +224,12 @@ intToOrdinal number =
         | otherwise = "th"
    in show number <> ending
 
-cycle :: Int -> Name.Name -> [Name.Name] -> P.Doc
+cycle :: Int -> Name.Name -> [Name.Name] -> PP.Doc
 cycle indent name names =
-  let toLn n = cycleLn <> P.dullyellow (fromName n)
-   in (P.indent indent . P.vcat $ (cycleTop : (List.intersperse cycleMid (toLn name : fmap toLn names) <> [cycleEnd])))
+  let toLn n = cycleLn <> PP.dullyellow (fromName n)
+   in (PP.indent indent . PP.vcat $ (cycleTop : (List.intersperse cycleMid (toLn name : fmap toLn names) <> [cycleEnd])))
 
-cycleTop, cycleLn, cycleMid, cycleEnd :: P.Doc
+cycleTop, cycleLn, cycleMid, cycleEnd :: PP.Doc
 cycleTop = if isWindows then "+-----+" else "┌─────┐"
 cycleLn = if isWindows then "|    " else "│    "
 cycleMid = if isWindows then "|     |" else "│     ↓"
@@ -241,9 +241,9 @@ isWindows =
 
 -- JSON
 
-encode :: P.Doc -> E.Value
+encode :: PP.Doc -> Encode.Value
 encode doc =
-  E.array (toJsonHelp noStyle [] (P.renderPretty 1 80 doc))
+  Encode.array (toJsonHelp noStyle [] (PP.renderPretty 1 80 doc))
 
 data Style = Style
   { _bold :: Bool,
@@ -273,22 +273,22 @@ data Color
   | White
   | WHITE
 
-toJsonHelp :: Style -> [String] -> P.SimpleDoc -> [E.Value]
+toJsonHelp :: Style -> [String] -> PP.SimpleDoc -> [Encode.Value]
 toJsonHelp style revChunks simpleDoc =
   case simpleDoc of
-    P.SFail ->
+    PP.SFail ->
       error
         "according to the main implementation, @SFail@ can not\
         \ appear uncaught in a rendered @SimpleDoc@"
-    P.SEmpty ->
+    PP.SEmpty ->
       [encodeChunks style revChunks]
-    P.SChar char rest ->
+    PP.SChar char rest ->
       toJsonHelp style ([char] : revChunks) rest
-    P.SText _ string rest ->
+    PP.SText _ string rest ->
       toJsonHelp style (string : revChunks) rest
-    P.SLine indent rest ->
+    PP.SLine indent rest ->
       toJsonHelp style (replicate indent ' ' : "\n" : revChunks) rest
-    P.SSGR sgrs rest ->
+    PP.SSGR sgrs rest ->
       encodeChunks style revChunks : toJsonHelp (sgrToStyle sgrs style) [] rest
 
 sgrToStyle :: [Ansi.SGR] -> Style -> Style
@@ -348,24 +348,24 @@ toColor layer intensity color =
               Ansi.White -> pick White WHITE
               Ansi.Black -> pick Black BLACK
 
-encodeChunks :: Style -> [String] -> E.Value
+encodeChunks :: Style -> [String] -> Encode.Value
 encodeChunks (Style bold underline color) revChunks =
   let chars = concat (reverse revChunks)
    in case color of
         Nothing
           | not bold && not underline ->
-            E.chars chars
+            Encode.chars chars
         _ ->
-          E.object
-            [ "bold" ==> E.bool bold,
-              "underline" ==> E.bool underline,
-              "color" ==> maybe E.null encodeColor color,
-              "string" ==> E.chars chars
+          Encode.object
+            [ "bold" ==> Encode.bool bold,
+              "underline" ==> Encode.bool underline,
+              "color" ==> maybe Encode.null encodeColor color,
+              "string" ==> Encode.chars chars
             ]
 
-encodeColor :: Color -> E.Value
+encodeColor :: Color -> Encode.Value
 encodeColor color =
-  E.string . Json.fromChars $
+  Encode.string . Json.fromChars $
     ( case color of
         Red -> "red"
         RED -> "RED"

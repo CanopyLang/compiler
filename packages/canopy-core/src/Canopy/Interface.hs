@@ -29,7 +29,7 @@ import qualified Data.Map.Strict as Map
 import qualified Data.Name as Name
 import qualified Data.Text as Text
 import qualified Reporting.InternalError as InternalError
-import qualified Reporting.Annotation as A
+import qualified Reporting.Annotation as Ann
 
 -- INTERFACE
 
@@ -103,7 +103,7 @@ restrictUnions exports unions =
       where
         onLeft = Map.dropMissing
         onRight = Map.mapMissing (\_ union -> PrivateUnion union)
-        onBoth = Map.zipWithMatched $ \_ (A.At _ export) union ->
+        onBoth = Map.zipWithMatched $ \_ (Ann.At _ export) union ->
           case export of
             Can.ExportUnionOpen -> OpenUnion union
             Can.ExportUnionClosed -> ClosedUnion union

@@ -29,7 +29,7 @@ import qualified Data.Text as Text
 import Data.Void (Void)
 import Text.Megaparsec
 import Text.Megaparsec.Char
-import qualified Text.Megaparsec.Char.Lexer as L
+import qualified Text.Megaparsec.Char.Lexer as Lexer
 
 import WebIDL.AST
 
@@ -58,20 +58,20 @@ parseDefinition input =
 
 -- | Space consumer (including comments)
 sc :: Parser ()
-sc = L.space space1 lineComment blockComment
+sc = Lexer.space space1 lineComment blockComment
   where
-    lineComment = L.skipLineComment "//"
-    blockComment = L.skipBlockComment "/*" "*/"
+    lineComment = Lexer.skipLineComment "//"
+    blockComment = Lexer.skipBlockComment "/*" "*/"
 
 
 -- | Lexeme parser
 lexeme :: Parser a -> Parser a
-lexeme = L.lexeme sc
+lexeme = Lexer.lexeme sc
 
 
 -- | Symbol parser
 symbol :: Text -> Parser Text
-symbol = L.symbol sc
+symbol = Lexer.symbol sc
 
 
 -- | Parse between braces
@@ -124,19 +124,19 @@ identifier = lexeme (Text.pack <$> ident)
 
 -- | Parse a string literal
 stringLiteral :: Parser Text
-stringLiteral = lexeme (Text.pack <$> (char '"' *> manyTill L.charLiteral (char '"')))
+stringLiteral = lexeme (Text.pack <$> (char '"' *> manyTill Lexer.charLiteral (char '"')))
 
 
 -- | Parse an integer literal
 integerLiteral :: Parser Integer
-integerLiteral = lexeme (hexLiteral <|> L.signed sc L.decimal)
+integerLiteral = lexeme (hexLiteral <|> Lexer.signed sc Lexer.decimal)
   where
-    hexLiteral = string "0x" *> L.hexadecimal
+    hexLiteral = string "0x" *> Lexer.hexadecimal
 
 
 -- | Parse a float literal
 floatLiteral :: Parser Double
-floatLiteral = lexeme (try L.float <|> specialFloat)
+floatLiteral = lexeme (try Lexer.float <|> specialFloat)
   where
     specialFloat = choice
       [ infinity <$ (string "Infinity" <|> string "+Infinity")

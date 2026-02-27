@@ -306,19 +306,19 @@ ensureAtomicDirectory targetPath = do
   Monad.when (dir /= ".") $ do
     Dir.createDirectoryIfMissing True dir
 
--- | Verify file integrity using SHA1 checksum.
+-- | Verify file integrity using SHA-256 checksum.
 --
--- Reads the file and computes a SHA1 hash for integrity verification.
+-- Reads the file and computes a SHA-256 hash for integrity verification.
 -- Can be used to verify atomic writes completed successfully.
 --
 -- >>> hash <- checksumFile "package/canopy.json"
 -- >>> Monad.when (hash /= expectedHash) $ error "File corrupted"
 --
 -- @since 0.19.1
-checksumFile :: FilePath -> IO (SHA.Digest SHA.SHA1State)
+checksumFile :: FilePath -> IO (SHA.Digest SHA.SHA256State)
 checksumFile filePath = do
   content <- LBS.readFile filePath
-  pure (SHA.sha1 content)
+  pure (SHA.sha256 content)
 
 -- | Verify file integrity by comparing checksums.
 --
@@ -329,7 +329,7 @@ checksumFile filePath = do
 -- >>> Monad.unless isIntact $ error "File integrity check failed"
 --
 -- @since 0.19.1
-verifyFileIntegrity :: FilePath -> SHA.Digest SHA.SHA1State -> IO Bool
+verifyFileIntegrity :: FilePath -> SHA.Digest SHA.SHA256State -> IO Bool
 verifyFileIntegrity filePath expectedHash = do
   actualHash <- checksumFile filePath
   pure (actualHash == expectedHash)

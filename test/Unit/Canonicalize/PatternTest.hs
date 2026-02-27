@@ -29,7 +29,7 @@ import qualified Canonicalize.Pattern as Pattern
 import qualified Data.Map.Strict as Map
 import qualified Data.Name as Name
 import qualified Data.OneOrMore as OneOrMore
-import qualified Reporting.Annotation as A
+import qualified Reporting.Annotation as Ann
 import qualified Reporting.Error.Canonicalize as Error
 import qualified Reporting.Result as Result
 
@@ -54,27 +54,27 @@ expectLeft (_, Left errs) = return errs
 expectLeft (_, Right _) = assertFailure "Expected Left, got Right" >> error "unreachable"
 
 -- | Convenience region constructors for test data.
-region1 :: A.Region
-region1 = A.Region (A.Position 1 1) (A.Position 1 5)
+region1 :: Ann.Region
+region1 = Ann.Region (Ann.Position 1 1) (Ann.Position 1 5)
 
-region2 :: A.Region
-region2 = A.Region (A.Position 2 1) (A.Position 2 5)
+region2 :: Ann.Region
+region2 = Ann.Region (Ann.Position 2 1) (Ann.Position 2 5)
 
-region3 :: A.Region
-region3 = A.Region (A.Position 3 1) (A.Position 3 5)
+region3 :: Ann.Region
+region3 = Ann.Region (Ann.Position 3 1) (Ann.Position 3 5)
 
 -- | Build a Result that logs a single variable binding into the DupsDict.
 --
 -- This simulates what Pattern.canonicalize does internally when it encounters
 -- a PVar pattern: it logs the variable name and region into the accumulated
 -- DupsDict, then returns the given value.
-logVar :: Name.Name -> A.Region -> a -> Result.Result Pattern.DupsDict w Error.Error a
+logVar :: Name.Name -> Ann.Region -> a -> Result.Result Pattern.DupsDict w Error.Error a
 logVar name region value =
   Result.Result (\bindings warnings _bad ok ->
     ok (Dups.insert name region region bindings) warnings value)
 
 -- | Build a Result that logs multiple variable bindings and returns the final value.
-logVars :: [(Name.Name, A.Region)] -> a -> Result.Result Pattern.DupsDict w Error.Error a
+logVars :: [(Name.Name, Ann.Region)] -> a -> Result.Result Pattern.DupsDict w Error.Error a
 logVars [] value = Result.ok value
 logVars ((name, region) : rest) value =
   logVar name region () *> logVars rest value

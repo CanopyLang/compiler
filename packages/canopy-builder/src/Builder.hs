@@ -65,7 +65,7 @@ import qualified Builder.Hash as Hash
 import qualified Builder.Incremental as Incremental
 import qualified Builder.Solver as Solver
 import qualified Builder.State as State
-import qualified Canopy.Interface as I
+import qualified Canopy.Interface as Interface
 import qualified Canopy.ModuleName as ModuleName
 import qualified Canopy.Package as Pkg
 import qualified Data.ByteString as BS
@@ -88,7 +88,7 @@ data PureBuilder = PureBuilder
   { builderEngine :: !State.BuilderEngine,
     builderCache :: !(IORef Incremental.BuildCache),
     builderGraph :: !(IORef Graph.DependencyGraph),
-    builderInterfaces :: !(IORef (Map ModuleName.Raw I.Interface))
+    builderInterfaces :: !(IORef (Map ModuleName.Raw Interface.Interface))
   }
 
 -- | Build error.
@@ -134,7 +134,7 @@ initPureBuilder = do
 -- Converts 'DependencyInterface' values to 'Interface' values suitable
 -- for use during canonicalization. Public dependencies expose their full
 -- interface; private dependencies expose only type information.
-loadCoreInterfaces :: IO (Map ModuleName.Raw I.Interface)
+loadCoreInterfaces :: IO (Map ModuleName.Raw Interface.Interface)
 loadCoreInterfaces = do
   maybeCoreIfaces <- PackageCache.loadElmCoreInterfaces
   case maybeCoreIfaces of
@@ -146,15 +146,15 @@ loadCoreInterfaces = do
       return (Map.map extractPublicInterface depIfaces)
 
 -- | Extract a public interface from a dependency interface.
-extractPublicInterface :: I.DependencyInterface -> I.Interface
-extractPublicInterface (I.Public iface) = iface
-extractPublicInterface (I.Private pkg unions aliases) =
-  I.Interface
-    { I._home = pkg,
-      I._values = Map.empty,
-      I._unions = Map.map I.PrivateUnion unions,
-      I._aliases = Map.map I.PrivateAlias aliases,
-      I._binops = Map.empty
+extractPublicInterface :: Interface.DependencyInterface -> Interface.Interface
+extractPublicInterface (Interface.Public iface) = iface
+extractPublicInterface (Interface.Private pkg unions aliases) =
+  Interface.Interface
+    { Interface._home = pkg,
+      Interface._values = Map.empty,
+      Interface._unions = Map.map Interface.PrivateUnion unions,
+      Interface._aliases = Map.map Interface.PrivateAlias aliases,
+      Interface._binops = Map.empty
     }
 
 -- | Build from file paths with dependency resolution.

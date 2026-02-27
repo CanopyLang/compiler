@@ -42,7 +42,7 @@ module Generate.JavaScript.SourceMap
 
 import Data.Bits ((.&.), (.|.), shiftL, shiftR)
 import Data.ByteString.Builder (Builder)
-import qualified Data.ByteString.Builder as B
+import qualified Data.ByteString.Builder as BB
 import qualified Data.List as List
 import qualified Data.Text as Text
 import Data.Word (Word8)
@@ -126,17 +126,17 @@ addSource path maybeContent sm =
 -- @since 0.19.2
 toBuilder :: SourceMap -> Builder
 toBuilder sm =
-  B.stringUtf8 "{\"version\":3,\"file\":"
+  BB.stringUtf8 "{\"version\":3,\"file\":"
     <> jsonString (_smFile sm)
-    <> B.stringUtf8 ",\"sources\":"
+    <> BB.stringUtf8 ",\"sources\":"
     <> jsonStringArray (_smSources sm)
-    <> B.stringUtf8 ",\"sourcesContent\":"
+    <> BB.stringUtf8 ",\"sourcesContent\":"
     <> jsonTextArray (_smSourcesContent sm)
-    <> B.stringUtf8 ",\"names\":"
+    <> BB.stringUtf8 ",\"names\":"
     <> jsonTextArray (_smNames sm)
-    <> B.stringUtf8 ",\"mappings\":\""
+    <> BB.stringUtf8 ",\"mappings\":\""
     <> encodeMappings (List.sortOn _mGenLine (reverse (_smMappings sm)))
-    <> B.stringUtf8 "\"}"
+    <> BB.stringUtf8 "\"}"
 
 -- MAPPINGS ENCODING
 
@@ -160,9 +160,9 @@ encodeOneLine :: Int -> VLQState -> [Mapping] -> [Mapping] -> Builder
 encodeOneLine currentLine st lineMs rest =
   case lineMs of
     [] ->
-      B.char7 ';' <> encodeMappingsFrom (currentLine + 1) st rest
+      BB.char7 ';' <> encodeMappingsFrom (currentLine + 1) st rest
     _ ->
-      let prefix = if currentLine > 0 then B.char7 ';' else mempty
+      let prefix = if currentLine > 0 then BB.char7 ';' else mempty
           (segBuilder, st') = encodeLineSegments st lineMs
        in prefix <> segBuilder <> encodeMappingsFrom (currentLine + 1) st' rest
 
@@ -192,7 +192,7 @@ encodeLineSegments st [m] = encodeSegment st m
 encodeLineSegments st (m : ms) =
   let (seg, st') = encodeSegment st m
       (rest, st'') = encodeLineSegments st' ms
-   in (seg <> B.char7 ',' <> rest, st'')
+   in (seg <> BB.char7 ',' <> rest, st'')
 
 -- | Encode a single segment as relative VLQ fields.
 --
@@ -278,7 +278,7 @@ emitVLQGroups value
 -- | Map a 6-bit value (0–63) to its Base64 character.
 encodeBase64Digit :: Int -> Builder
 encodeBase64Digit n =
-  B.word8 (base64Alphabet !! n)
+  BB.word8 (base64Alphabet !! n)
 
 -- | The Base64 encoding alphabet used by VLQ.
 base64Alphabet :: [Word8]
@@ -291,32 +291,32 @@ base64Alphabet =
 -- | Encode a string as a JSON string with proper escaping.
 jsonString :: String -> Builder
 jsonString s =
-  B.char7 '"' <> foldMap escapeJsonChar s <> B.char7 '"'
+  BB.char7 '"' <> foldMap escapeJsonChar s <> BB.char7 '"'
 
 -- | Escape a single character for JSON string encoding.
 escapeJsonChar :: Char -> Builder
-escapeJsonChar '"' = B.stringUtf8 "\\\""
-escapeJsonChar '\\' = B.stringUtf8 "\\\\"
-escapeJsonChar '\n' = B.stringUtf8 "\\n"
-escapeJsonChar '\r' = B.stringUtf8 "\\r"
-escapeJsonChar '\t' = B.stringUtf8 "\\t"
-escapeJsonChar c = B.charUtf8 c
+escapeJsonChar '"' = BB.stringUtf8 "\\\""
+escapeJsonChar '\\' = BB.stringUtf8 "\\\\"
+escapeJsonChar '\n' = BB.stringUtf8 "\\n"
+escapeJsonChar '\r' = BB.stringUtf8 "\\r"
+escapeJsonChar '\t' = BB.stringUtf8 "\\t"
+escapeJsonChar c = BB.charUtf8 c
 
 -- | Encode a list of strings as a JSON string array.
 jsonStringArray :: [String] -> Builder
 jsonStringArray xs =
-  B.char7 '['
-    <> mconcat (List.intersperse (B.char7 ',') (map jsonString xs))
-    <> B.char7 ']'
+  BB.char7 '['
+    <> mconcat (List.intersperse (BB.char7 ',') (map jsonString xs))
+    <> BB.char7 ']'
 
 -- | Encode a list of Text values as a JSON string array.
 jsonTextArray :: [Text.Text] -> Builder
 jsonTextArray xs =
-  B.char7 '['
-    <> mconcat (List.intersperse (B.char7 ',') (map jsonText xs))
-    <> B.char7 ']'
+  BB.char7 '['
+    <> mconcat (List.intersperse (BB.char7 ',') (map jsonText xs))
+    <> BB.char7 ']'
 
 -- | Encode a Text value as a JSON string.
 jsonText :: Text.Text -> Builder
 jsonText t =
-  B.char7 '"' <> foldMap escapeJsonChar (Text.unpack t) <> B.char7 '"'
+  BB.char7 '"' <> foldMap escapeJsonChar (Text.unpack t) <> BB.char7 '"'

@@ -18,19 +18,19 @@ import qualified Parse.Type as Type
 import qualified Parse.String as String
 import qualified Parse.Variable as Var
 import Parse.Primitives hiding (State)
-import qualified Parse.Primitives as P
-import qualified Reporting.Annotation as A
-import qualified Reporting.Error.Syntax as E
+import qualified Parse.Primitives as Parse
+import qualified Reporting.Annotation as Ann
+import qualified Reporting.Error.Syntax as SyntaxError
 
 
 
 -- TERMS
 
 
-term :: Parser E.Expr Src.Expr
+term :: Parser SyntaxError.Expr Src.Expr
 term =
   do  start <- getPosition
-      oneOf E.Start
+      oneOf SyntaxError.Start
         [ variable start >>= accessible start
         , string start
         , number start
@@ -43,49 +43,49 @@ term =
         ]
 
 
-string :: A.Position -> Parser E.Expr Src.Expr
+string :: Ann.Position -> Parser SyntaxError.Expr Src.Expr
 string start =
-  do  str <- String.string E.Start E.String
+  do  str <- String.string SyntaxError.Start SyntaxError.String
       addEnd start (Src.Str str)
 
 
-character :: A.Position -> Parser E.Expr Src.Expr
+character :: Ann.Position -> Parser SyntaxError.Expr Src.Expr
 character start =
-  do  chr <- String.character E.Start E.Char
+  do  chr <- String.character SyntaxError.Start SyntaxError.Char
       addEnd start (Src.Chr chr)
 
 
-number :: A.Position -> Parser E.Expr Src.Expr
+number :: Ann.Position -> Parser SyntaxError.Expr Src.Expr
 number start =
-  do  nmbr <- Number.number E.Start E.Number
+  do  nmbr <- Number.number SyntaxError.Start SyntaxError.Number
       addEnd start $
         case nmbr of
           Number.Int int -> Src.Int int
           Number.Float float -> Src.Float float
 
 
-accessor :: A.Position -> Parser E.Expr Src.Expr
+accessor :: Ann.Position -> Parser SyntaxError.Expr Src.Expr
 accessor start =
-  do  word1 0x2E {-.-} E.Dot
-      field <- Var.lower E.Access
+  do  word1 0x2E {-.-} SyntaxError.Dot
+      field <- Var.lower SyntaxError.Access
       addEnd start (Src.Accessor field)
 
 
-variable :: A.Position -> Parser E.Expr Src.Expr
+variable :: Ann.Position -> Parser SyntaxError.Expr Src.Expr
 variable start =
-  do  var <- Var.foreignAlpha E.Start
+  do  var <- Var.foreignAlpha SyntaxError.Start
       addEnd start var
 
 
-accessible :: A.Position -> Src.Expr -> Parser E.Expr Src.Expr
+accessible :: Ann.Position -> Src.Expr -> Parser SyntaxError.Expr Src.Expr
 accessible start expr =
   oneOfWithFallback
-    [ do  word1 0x2E {-.-} E.Dot
+    [ do  word1 0x2E {-.-} SyntaxError.Dot
           pos <- getPosition
-          field <- Var.lower E.Access
+          field <- Var.lower SyntaxError.Access
           end <- getPosition
           accessible start $
-            A.at start end (Src.Access expr (A.at pos end field))
+            Ann.at start end (Src.Access expr (Ann.at pos end field))
     ]
     expr
 
@@ -94,28 +94,28 @@ accessible start expr =
 -- LISTS
 
 
-list :: A.Position -> Parser E.Expr Src.Expr
+list :: Ann.Position -> Parser SyntaxError.Expr Src.Expr
 list start =
-  inContext E.List (word1 0x5B {-[-} E.Start) $
-    do  Space.chompAndCheckIndent E.ListSpace E.ListIndentOpen
-        oneOf E.ListOpen
-          [ do  (entry, end) <- specialize E.ListExpr expression
-                Space.checkIndent end E.ListIndentEnd
+  inContext SyntaxError.List (word1 0x5B {-[-} SyntaxError.Start) $
+    do  Space.chompAndCheckIndent SyntaxError.ListSpace SyntaxError.ListIndentOpen
+        oneOf SyntaxError.ListOpen
+          [ do  (entry, end) <- specialize SyntaxError.ListExpr expression
+                Space.checkIndent end SyntaxError.ListIndentEnd
                 chompListEnd start [entry]
-          , do  word1 0x5D {-]-} E.ListOpen
+          , do  word1 0x5D {-]-} SyntaxError.ListOpen
                 addEnd start (Src.List [])
           ]
 
 
-chompListEnd :: A.Position -> [Src.Expr] -> Parser E.List Src.Expr
+chompListEnd :: Ann.Position -> [Src.Expr] -> Parser SyntaxError.List Src.Expr
 chompListEnd start entries =
-  oneOf E.ListEnd
-    [ do  word1 0x2C {-,-} E.ListEnd
-          Space.chompAndCheckIndent E.ListSpace E.ListIndentExpr
-          (entry, end) <- specialize E.ListExpr expression
-          Space.checkIndent end E.ListIndentEnd
+  oneOf SyntaxError.ListEnd
+    [ do  word1 0x2C {-,-} SyntaxError.ListEnd
+          Space.chompAndCheckIndent SyntaxError.ListSpace SyntaxError.ListIndentExpr
+          (entry, end) <- specialize SyntaxError.ListExpr expression
+          Space.checkIndent end SyntaxError.ListIndentEnd
           chompListEnd start (entry:entries)
-    , do  word1 0x5D {-]-} E.ListEnd
+    , do  word1 0x5D {-]-} SyntaxError.ListEnd
           addEnd start (Src.List (reverse entries))
     ]
 
@@ -124,60 +124,60 @@ chompListEnd start entries =
 -- TUPLES
 
 
-tuple :: A.Position -> Parser E.Expr Src.Expr
-tuple start@(A.Position row col) =
-  inContext E.Tuple (word1 0x28 {-(-} E.Start) $
+tuple :: Ann.Position -> Parser SyntaxError.Expr Src.Expr
+tuple start@(Ann.Position row col) =
+  inContext SyntaxError.Tuple (word1 0x28 {-(-} SyntaxError.Start) $
     do  before <- getPosition
-        Space.chompAndCheckIndent E.TupleSpace E.TupleIndentExpr1
+        Space.chompAndCheckIndent SyntaxError.TupleSpace SyntaxError.TupleIndentExpr1
         after <- getPosition
         if before /= after
           then
-            do  (entry, end) <- specialize E.TupleExpr expression
-                Space.checkIndent end E.TupleIndentEnd
+            do  (entry, end) <- specialize SyntaxError.TupleExpr expression
+                Space.checkIndent end SyntaxError.TupleIndentEnd
                 chompTupleEnd start entry []
           else
-            oneOf E.TupleIndentExpr1
+            oneOf SyntaxError.TupleIndentExpr1
               [
-                do  op <- Symbol.operator E.TupleIndentExpr1 E.TupleOperatorReserved
+                do  op <- Symbol.operator SyntaxError.TupleIndentExpr1 SyntaxError.TupleOperatorReserved
                     if op == "-"
                       then
-                        oneOf E.TupleOperatorClose
+                        oneOf SyntaxError.TupleOperatorClose
                           [
-                            do  word1 0x29 {-)-} E.TupleOperatorClose
+                            do  word1 0x29 {-)-} SyntaxError.TupleOperatorClose
                                 addEnd start (Src.Op op)
                           ,
                             do  (entry, end) <-
-                                  specialize E.TupleExpr $
-                                    do  negatedExpr@(A.At (A.Region _ end) _) <- term
-                                        Space.chomp E.Space
-                                        let exprStart = A.Position row (col + 2)
-                                        let expr = A.at exprStart end (Src.Negate negatedExpr)
+                                  specialize SyntaxError.TupleExpr $
+                                    do  negatedExpr@(Ann.At (Ann.Region _ end) _) <- term
+                                        Space.chomp SyntaxError.Space
+                                        let exprStart = Ann.Position row (col + 2)
+                                        let expr = Ann.at exprStart end (Src.Negate negatedExpr)
                                         chompExprEnd exprStart (State [] expr [] end)
-                                Space.checkIndent end E.TupleIndentEnd
+                                Space.checkIndent end SyntaxError.TupleIndentEnd
                                 chompTupleEnd start entry []
                           ]
                       else
-                        do  word1 0x29 {-)-} E.TupleOperatorClose
+                        do  word1 0x29 {-)-} SyntaxError.TupleOperatorClose
                             addEnd start (Src.Op op)
               ,
-                do  word1 0x29 {-)-} E.TupleIndentExpr1
+                do  word1 0x29 {-)-} SyntaxError.TupleIndentExpr1
                     addEnd start Src.Unit
               ,
-                do  (entry, end) <- specialize E.TupleExpr expression
-                    Space.checkIndent end E.TupleIndentEnd
+                do  (entry, end) <- specialize SyntaxError.TupleExpr expression
+                    Space.checkIndent end SyntaxError.TupleIndentEnd
                     chompTupleEnd start entry []
               ]
 
 
-chompTupleEnd :: A.Position -> Src.Expr -> [Src.Expr] -> Parser E.Tuple Src.Expr
+chompTupleEnd :: Ann.Position -> Src.Expr -> [Src.Expr] -> Parser SyntaxError.Tuple Src.Expr
 chompTupleEnd start firstExpr revExprs =
-  oneOf E.TupleEnd
-    [ do  word1 0x2C {-,-} E.TupleEnd
-          Space.chompAndCheckIndent E.TupleSpace E.TupleIndentExprN
-          (entry, end) <- specialize E.TupleExpr expression
-          Space.checkIndent end E.TupleIndentEnd
+  oneOf SyntaxError.TupleEnd
+    [ do  word1 0x2C {-,-} SyntaxError.TupleEnd
+          Space.chompAndCheckIndent SyntaxError.TupleSpace SyntaxError.TupleIndentExprN
+          (entry, end) <- specialize SyntaxError.TupleExpr expression
+          Space.checkIndent end SyntaxError.TupleIndentEnd
           chompTupleEnd start firstExpr (entry : revExprs)
-    , do  word1 0x29 {-)-} E.TupleEnd
+    , do  word1 0x29 {-)-} SyntaxError.TupleEnd
           case reverse revExprs of
             [] ->
               return firstExpr
@@ -191,54 +191,54 @@ chompTupleEnd start firstExpr revExprs =
 -- RECORDS
 
 
-record :: A.Position -> Parser E.Expr Src.Expr
+record :: Ann.Position -> Parser SyntaxError.Expr Src.Expr
 record start =
-  inContext E.Record (word1 0x7B {- { -} E.Start) $
-    do  Space.chompAndCheckIndent E.RecordSpace E.RecordIndentOpen
-        oneOf E.RecordOpen
-          [ do  word1 0x7D {-}-} E.RecordOpen
+  inContext SyntaxError.Record (word1 0x7B {- { -} SyntaxError.Start) $
+    do  Space.chompAndCheckIndent SyntaxError.RecordSpace SyntaxError.RecordIndentOpen
+        oneOf SyntaxError.RecordOpen
+          [ do  word1 0x7D {-}-} SyntaxError.RecordOpen
                 addEnd start (Src.Record [])
-          , do  starter <- addLocation (Var.lower E.RecordField)
-                Space.chompAndCheckIndent E.RecordSpace E.RecordIndentEquals
-                oneOf E.RecordEquals
-                  [ do  word1 0x7C {-|-} E.RecordEquals
-                        Space.chompAndCheckIndent E.RecordSpace E.RecordIndentField
+          , do  starter <- addLocation (Var.lower SyntaxError.RecordField)
+                Space.chompAndCheckIndent SyntaxError.RecordSpace SyntaxError.RecordIndentEquals
+                oneOf SyntaxError.RecordEquals
+                  [ do  word1 0x7C {-|-} SyntaxError.RecordEquals
+                        Space.chompAndCheckIndent SyntaxError.RecordSpace SyntaxError.RecordIndentField
                         firstField <- chompField
                         fields <- chompFields [firstField]
                         addEnd start (Src.Update starter fields)
-                  , do  word1 0x3D {-=-} E.RecordEquals
-                        Space.chompAndCheckIndent E.RecordSpace E.RecordIndentExpr
-                        (value, end) <- specialize E.RecordExpr expression
-                        Space.checkIndent end E.RecordIndentEnd
+                  , do  word1 0x3D {-=-} SyntaxError.RecordEquals
+                        Space.chompAndCheckIndent SyntaxError.RecordSpace SyntaxError.RecordIndentExpr
+                        (value, end) <- specialize SyntaxError.RecordExpr expression
+                        Space.checkIndent end SyntaxError.RecordIndentEnd
                         fields <- chompFields [(starter, value)]
                         addEnd start (Src.Record fields)
                   ]
           ]
 
 
-type Field = ( A.Located Name.Name, Src.Expr )
+type Field = ( Ann.Located Name.Name, Src.Expr )
 
 
-chompFields :: [Field] -> Parser E.Record [Field]
+chompFields :: [Field] -> Parser SyntaxError.Record [Field]
 chompFields fields =
-  oneOf E.RecordEnd
-    [ do  word1 0x2C {-,-} E.RecordEnd
-          Space.chompAndCheckIndent E.RecordSpace E.RecordIndentField
+  oneOf SyntaxError.RecordEnd
+    [ do  word1 0x2C {-,-} SyntaxError.RecordEnd
+          Space.chompAndCheckIndent SyntaxError.RecordSpace SyntaxError.RecordIndentField
           f <- chompField
           chompFields (f : fields)
-    , do  word1 0x7D {-}-} E.RecordEnd
+    , do  word1 0x7D {-}-} SyntaxError.RecordEnd
           return (reverse fields)
     ]
 
 
-chompField :: Parser E.Record Field
+chompField :: Parser SyntaxError.Record Field
 chompField =
-  do  key <- addLocation (Var.lower E.RecordField)
-      Space.chompAndCheckIndent E.RecordSpace E.RecordIndentEquals
-      word1 0x3D {-=-} E.RecordEquals
-      Space.chompAndCheckIndent E.RecordSpace E.RecordIndentExpr
-      (value, end) <- specialize E.RecordExpr expression
-      Space.checkIndent end E.RecordIndentEnd
+  do  key <- addLocation (Var.lower SyntaxError.RecordField)
+      Space.chompAndCheckIndent SyntaxError.RecordSpace SyntaxError.RecordIndentEquals
+      word1 0x3D {-=-} SyntaxError.RecordEquals
+      Space.chompAndCheckIndent SyntaxError.RecordSpace SyntaxError.RecordIndentExpr
+      (value, end) <- specialize SyntaxError.RecordExpr expression
+      Space.checkIndent end SyntaxError.RecordIndentEnd
       return (key, value)
 
 
@@ -246,60 +246,60 @@ chompField =
 -- EXPRESSIONS
 
 
-expression :: Space.Parser E.Expr Src.Expr
+expression :: Space.Parser SyntaxError.Expr Src.Expr
 expression =
   do  start <- getPosition
-      oneOf E.Start
+      oneOf SyntaxError.Start
         [ let_ start
         , if_ start
         , case_ start
         , function start
         , do  expr <- possiblyNegativeTerm start
               end <- getPosition
-              Space.chomp E.Space
+              Space.chomp SyntaxError.Space
               chompExprEnd start (State [] expr [] end)
         ]
 
 
 data State =
   State
-    { _ops  :: ![(Src.Expr, A.Located Name.Name)]
+    { _ops  :: ![(Src.Expr, Ann.Located Name.Name)]
     , _expr :: !Src.Expr
     , _args :: ![Src.Expr]
-    , _end  :: !A.Position
+    , _end  :: !Ann.Position
     }
 
 
-chompExprEnd :: A.Position -> State -> Space.Parser E.Expr Src.Expr
+chompExprEnd :: Ann.Position -> State -> Space.Parser SyntaxError.Expr Src.Expr
 chompExprEnd start (State ops expr args end) =
   oneOfWithFallback
     [ -- argument
-      do  Space.checkIndent end E.Start
+      do  Space.checkIndent end SyntaxError.Start
           arg <- term
           newEnd <- getPosition
-          Space.chomp E.Space
+          Space.chomp SyntaxError.Space
           chompExprEnd start (State ops expr (arg:args) newEnd)
 
     , -- operator
-      do  Space.checkIndent end E.Start
-          op@(A.At (A.Region opStart opEnd) opName) <- addLocation (Symbol.operator E.Start E.OperatorReserved)
-          Space.chompAndCheckIndent E.Space (E.IndentOperatorRight opName)
+      do  Space.checkIndent end SyntaxError.Start
+          op@(Ann.At (Ann.Region opStart opEnd) opName) <- addLocation (Symbol.operator SyntaxError.Start SyntaxError.OperatorReserved)
+          Space.chompAndCheckIndent SyntaxError.Space (SyntaxError.IndentOperatorRight opName)
           newStart <- getPosition
           if "-" == opName && end /= opStart && opEnd == newStart
             then
               -- negative terms
               do  negatedExpr <- term
                   newEnd <- getPosition
-                  Space.chomp E.Space
-                  let arg = A.at opStart newEnd (Src.Negate negatedExpr)
+                  Space.chomp SyntaxError.Space
+                  let arg = Ann.at opStart newEnd (Src.Negate negatedExpr)
                   chompExprEnd start (State ops expr (arg:args) newEnd)
             else
-              let err = E.OperatorRight opName in
+              let err = SyntaxError.OperatorRight opName in
               oneOf err
                 [ -- term
                   do  newExpr <- possiblyNegativeTerm newStart
                       newEnd <- getPosition
-                      Space.chomp E.Space
+                      Space.chomp SyntaxError.Space
                       let newOps = (toCall expr args, op) : ops
                       chompExprEnd start (State newOps newExpr [] newEnd)
 
@@ -313,7 +313,7 @@ chompExprEnd start (State ops expr args end) =
                           ]
                       let newOps = (toCall expr args, op) : ops
                       let finalExpr = Src.Binops (reverse newOps) newLast
-                      return ( A.at start newEnd finalExpr, newEnd )
+                      return ( Ann.at start newEnd finalExpr, newEnd )
                 ]
 
     ]
@@ -326,16 +326,16 @@ chompExprEnd start (State ops expr args end) =
           )
 
         _ ->
-          ( A.at start end (Src.Binops (reverse ops) (toCall expr args))
+          ( Ann.at start end (Src.Binops (reverse ops) (toCall expr args))
           , end
           )
     )
 
 
-possiblyNegativeTerm :: A.Position -> Parser E.Expr Src.Expr
+possiblyNegativeTerm :: Ann.Position -> Parser SyntaxError.Expr Src.Expr
 possiblyNegativeTerm start =
-  oneOf E.Start
-    [ do  word1 0x2D {---} E.Start
+  oneOf SyntaxError.Start
+    [ do  word1 0x2D {---} SyntaxError.Start
           expr <- term
           addEnd start (Src.Negate expr)
     , term
@@ -349,39 +349,39 @@ toCall func revArgs =
       func
 
     lastArg : _ ->
-      A.merge func lastArg (Src.Call func (reverse revArgs))
+      Ann.merge func lastArg (Src.Call func (reverse revArgs))
 
 
 
 -- IF EXPRESSION
 
 
-if_ :: A.Position -> Space.Parser E.Expr Src.Expr
+if_ :: Ann.Position -> Space.Parser SyntaxError.Expr Src.Expr
 if_ start =
-  inContext E.If (Keyword.if_ E.Start) $
+  inContext SyntaxError.If (Keyword.if_ SyntaxError.Start) $
     chompIfEnd start []
 
 
-chompIfEnd :: A.Position -> [(Src.Expr, Src.Expr)] -> Space.Parser E.If Src.Expr
+chompIfEnd :: Ann.Position -> [(Src.Expr, Src.Expr)] -> Space.Parser SyntaxError.If Src.Expr
 chompIfEnd start branches =
-  do  Space.chompAndCheckIndent E.IfSpace E.IfIndentCondition
-      (condition, condEnd) <- specialize E.IfCondition expression
-      Space.checkIndent condEnd E.IfIndentThen
-      Keyword.then_ E.IfThen
-      Space.chompAndCheckIndent E.IfSpace E.IfIndentThenBranch
-      (thenBranch, thenEnd) <- specialize E.IfThenBranch expression
-      Space.checkIndent thenEnd E.IfIndentElse
-      Keyword.else_ E.IfElse
-      Space.chompAndCheckIndent E.IfSpace E.IfIndentElseBranch
+  do  Space.chompAndCheckIndent SyntaxError.IfSpace SyntaxError.IfIndentCondition
+      (condition, condEnd) <- specialize SyntaxError.IfCondition expression
+      Space.checkIndent condEnd SyntaxError.IfIndentThen
+      Keyword.then_ SyntaxError.IfThen
+      Space.chompAndCheckIndent SyntaxError.IfSpace SyntaxError.IfIndentThenBranch
+      (thenBranch, thenEnd) <- specialize SyntaxError.IfThenBranch expression
+      Space.checkIndent thenEnd SyntaxError.IfIndentElse
+      Keyword.else_ SyntaxError.IfElse
+      Space.chompAndCheckIndent SyntaxError.IfSpace SyntaxError.IfIndentElseBranch
       let newBranches = (condition, thenBranch) : branches
-      oneOf E.IfElseBranchStart
+      oneOf SyntaxError.IfElseBranchStart
         [
-          do  Keyword.if_ E.IfElseBranchStart
+          do  Keyword.if_ SyntaxError.IfElseBranchStart
               chompIfEnd start newBranches
         ,
-          do  (elseBranch, elseEnd) <- specialize E.IfElseBranch expression
+          do  (elseBranch, elseEnd) <- specialize SyntaxError.IfElseBranch expression
               let ifExpr = Src.If (reverse newBranches) elseBranch
-              return ( A.at start elseEnd ifExpr, elseEnd )
+              return ( Ann.at start elseEnd ifExpr, elseEnd )
         ]
 
 
@@ -389,26 +389,26 @@ chompIfEnd start branches =
 -- LAMBDA EXPRESSION
 
 
-function :: A.Position -> Space.Parser E.Expr Src.Expr
+function :: Ann.Position -> Space.Parser SyntaxError.Expr Src.Expr
 function start =
-  inContext E.Func (word1 0x5C {-\-} E.Start) $
-    do  Space.chompAndCheckIndent E.FuncSpace E.FuncIndentArg
-        arg <- specialize E.FuncArg Pattern.term
-        Space.chompAndCheckIndent E.FuncSpace E.FuncIndentArrow
+  inContext SyntaxError.Func (word1 0x5C {-\-} SyntaxError.Start) $
+    do  Space.chompAndCheckIndent SyntaxError.FuncSpace SyntaxError.FuncIndentArg
+        arg <- specialize SyntaxError.FuncArg Pattern.term
+        Space.chompAndCheckIndent SyntaxError.FuncSpace SyntaxError.FuncIndentArrow
         revArgs <- chompArgs [arg]
-        Space.chompAndCheckIndent E.FuncSpace E.FuncIndentBody
-        (body, end) <- specialize E.FuncBody expression
+        Space.chompAndCheckIndent SyntaxError.FuncSpace SyntaxError.FuncIndentBody
+        (body, end) <- specialize SyntaxError.FuncBody expression
         let funcExpr = Src.Lambda (reverse revArgs) body
-        return (A.at start end funcExpr, end)
+        return (Ann.at start end funcExpr, end)
 
 
-chompArgs :: [Src.Pattern] -> Parser E.Func [Src.Pattern]
+chompArgs :: [Src.Pattern] -> Parser SyntaxError.Func [Src.Pattern]
 chompArgs revArgs =
-  oneOf E.FuncArrow
-    [ do  arg <- specialize E.FuncArg Pattern.term
-          Space.chompAndCheckIndent E.FuncSpace E.FuncIndentArrow
+  oneOf SyntaxError.FuncArrow
+    [ do  arg <- specialize SyntaxError.FuncArg Pattern.term
+          Space.chompAndCheckIndent SyntaxError.FuncSpace SyntaxError.FuncIndentArrow
           chompArgs (arg:revArgs)
-    , do  word2 0x2D 0x3E {-->-} E.FuncArrow
+    , do  word2 0x2D 0x3E {-->-} SyntaxError.FuncArrow
           return revArgs
     ]
 
@@ -417,37 +417,37 @@ chompArgs revArgs =
 -- CASE EXPRESSIONS
 
 
-case_ :: A.Position -> Space.Parser E.Expr Src.Expr
+case_ :: Ann.Position -> Space.Parser SyntaxError.Expr Src.Expr
 case_ start =
-  inContext E.Case (Keyword.case_ E.Start) $
-    do  Space.chompAndCheckIndent E.CaseSpace E.CaseIndentExpr
-        (expr, exprEnd) <- specialize E.CaseExpr expression
-        Space.checkIndent exprEnd E.CaseIndentOf
-        Keyword.of_ E.CaseOf
-        Space.chompAndCheckIndent E.CaseSpace E.CaseIndentPattern
+  inContext SyntaxError.Case (Keyword.case_ SyntaxError.Start) $
+    do  Space.chompAndCheckIndent SyntaxError.CaseSpace SyntaxError.CaseIndentExpr
+        (expr, exprEnd) <- specialize SyntaxError.CaseExpr expression
+        Space.checkIndent exprEnd SyntaxError.CaseIndentOf
+        Keyword.of_ SyntaxError.CaseOf
+        Space.chompAndCheckIndent SyntaxError.CaseSpace SyntaxError.CaseIndentPattern
         withIndent $
           do  (firstBranch, firstEnd) <- chompBranch
               (branches, end) <- chompCaseEnd [firstBranch] firstEnd
               return
-                ( A.at start end (Src.Case expr branches)
+                ( Ann.at start end (Src.Case expr branches)
                 , end
                 )
 
 
-chompBranch :: Space.Parser E.Case (Src.Pattern, Src.Expr)
+chompBranch :: Space.Parser SyntaxError.Case (Src.Pattern, Src.Expr)
 chompBranch =
-  do  (pattern, patternEnd) <- specialize E.CasePattern Pattern.expression
-      Space.checkIndent patternEnd E.CaseIndentArrow
-      word2 0x2D 0x3E {-->-} E.CaseArrow
-      Space.chompAndCheckIndent E.CaseSpace E.CaseIndentBranch
-      (branchExpr, end) <- specialize E.CaseBranch expression
+  do  (pattern, patternEnd) <- specialize SyntaxError.CasePattern Pattern.expression
+      Space.checkIndent patternEnd SyntaxError.CaseIndentArrow
+      word2 0x2D 0x3E {-->-} SyntaxError.CaseArrow
+      Space.chompAndCheckIndent SyntaxError.CaseSpace SyntaxError.CaseIndentBranch
+      (branchExpr, end) <- specialize SyntaxError.CaseBranch expression
       return ( (pattern, branchExpr), end )
 
 
-chompCaseEnd :: [(Src.Pattern, Src.Expr)] -> A.Position -> Space.Parser E.Case [(Src.Pattern, Src.Expr)]
+chompCaseEnd :: [(Src.Pattern, Src.Expr)] -> Ann.Position -> Space.Parser SyntaxError.Case [(Src.Pattern, Src.Expr)]
 chompCaseEnd branches end =
   oneOfWithFallback
-    [ do  Space.checkAligned E.CasePatternAlignment
+    [ do  Space.checkAligned SyntaxError.CasePatternAlignment
           (branch, newEnd) <- chompBranch
           chompCaseEnd (branch:branches) newEnd
     ]
@@ -458,30 +458,30 @@ chompCaseEnd branches end =
 -- LET EXPRESSION
 
 
-let_ :: A.Position -> Space.Parser E.Expr Src.Expr
+let_ :: Ann.Position -> Space.Parser SyntaxError.Expr Src.Expr
 let_ start =
-  inContext E.Let (Keyword.let_ E.Start) $
+  inContext SyntaxError.Let (Keyword.let_ SyntaxError.Start) $
     do  (defs, defsEnd) <-
           withBacksetIndent 3 $
-            do  Space.chompAndCheckIndent E.LetSpace E.LetIndentDef
+            do  Space.chompAndCheckIndent SyntaxError.LetSpace SyntaxError.LetIndentDef
                 withIndent $
                   do  (def, end) <- chompLetDef
                       chompLetDefs [def] end
 
-        Space.checkIndent defsEnd E.LetIndentIn
-        Keyword.in_ E.LetIn
-        Space.chompAndCheckIndent E.LetSpace E.LetIndentBody
-        (body, end) <- specialize E.LetBody expression
+        Space.checkIndent defsEnd SyntaxError.LetIndentIn
+        Keyword.in_ SyntaxError.LetIn
+        Space.chompAndCheckIndent SyntaxError.LetSpace SyntaxError.LetIndentBody
+        (body, end) <- specialize SyntaxError.LetBody expression
         return
-          ( A.at start end (Src.Let defs body)
+          ( Ann.at start end (Src.Let defs body)
           , end
           )
 
 
-chompLetDefs :: [A.Located Src.Def] -> A.Position -> Space.Parser E.Let [A.Located Src.Def]
+chompLetDefs :: [Ann.Located Src.Def] -> Ann.Position -> Space.Parser SyntaxError.Let [Ann.Located Src.Def]
 chompLetDefs revDefs end =
   oneOfWithFallback
-    [ do  Space.checkAligned E.LetDefAlignment
+    [ do  Space.checkAligned SyntaxError.LetDefAlignment
           (def, newEnd) <- chompLetDef
           chompLetDefs (def:revDefs) newEnd
     ]
@@ -492,9 +492,9 @@ chompLetDefs revDefs end =
 -- LET DEFINITIONS
 
 
-chompLetDef :: Space.Parser E.Let (A.Located Src.Def)
+chompLetDef :: Space.Parser SyntaxError.Let (Ann.Located Src.Def)
 chompLetDef =
-  oneOf E.LetDefName
+  oneOf SyntaxError.LetDefName
     [ definition
     , destructure
     ]
@@ -504,57 +504,57 @@ chompLetDef =
 -- DEFINITION
 
 
-definition :: Space.Parser E.Let (A.Located Src.Def)
+definition :: Space.Parser SyntaxError.Let (Ann.Located Src.Def)
 definition =
-  do  aname@(A.At (A.Region start _) name) <- addLocation (Var.lower E.LetDefName)
-      specialize (E.LetDef name) $
-        do  Space.chompAndCheckIndent E.DefSpace E.DefIndentEquals
-            oneOf E.DefEquals
+  do  aname@(Ann.At (Ann.Region start _) name) <- addLocation (Var.lower SyntaxError.LetDefName)
+      specialize (SyntaxError.LetDef name) $
+        do  Space.chompAndCheckIndent SyntaxError.DefSpace SyntaxError.DefIndentEquals
+            oneOf SyntaxError.DefEquals
               [
-                do  word1 0x3A {-:-} E.DefEquals
-                    Space.chompAndCheckIndent E.DefSpace E.DefIndentType
-                    (tipe, _) <- specialize E.DefType Type.expression
-                    Space.checkAligned E.DefAlignment
+                do  word1 0x3A {-:-} SyntaxError.DefEquals
+                    Space.chompAndCheckIndent SyntaxError.DefSpace SyntaxError.DefIndentType
+                    (tipe, _) <- specialize SyntaxError.DefType Type.expression
+                    Space.checkAligned SyntaxError.DefAlignment
                     defName <- chompMatchingName name
-                    Space.chompAndCheckIndent E.DefSpace E.DefIndentEquals
+                    Space.chompAndCheckIndent SyntaxError.DefSpace SyntaxError.DefIndentEquals
                     chompDefArgsAndBody start defName (Just tipe) []
               ,
                 chompDefArgsAndBody start aname Nothing []
               ]
 
 
-chompDefArgsAndBody :: A.Position -> A.Located Name.Name -> Maybe Src.Type -> [Src.Pattern] -> Space.Parser E.Def (A.Located Src.Def)
+chompDefArgsAndBody :: Ann.Position -> Ann.Located Name.Name -> Maybe Src.Type -> [Src.Pattern] -> Space.Parser SyntaxError.Def (Ann.Located Src.Def)
 chompDefArgsAndBody start name tipe revArgs =
-  oneOf E.DefEquals
-    [ do  arg <- specialize E.DefArg Pattern.term
-          Space.chompAndCheckIndent E.DefSpace E.DefIndentEquals
+  oneOf SyntaxError.DefEquals
+    [ do  arg <- specialize SyntaxError.DefArg Pattern.term
+          Space.chompAndCheckIndent SyntaxError.DefSpace SyntaxError.DefIndentEquals
           chompDefArgsAndBody start name tipe (arg : revArgs)
-    , do  word1 0x3D {-=-} E.DefEquals
-          Space.chompAndCheckIndent E.DefSpace E.DefIndentBody
-          (body, end) <- specialize E.DefBody expression
+    , do  word1 0x3D {-=-} SyntaxError.DefEquals
+          Space.chompAndCheckIndent SyntaxError.DefSpace SyntaxError.DefIndentBody
+          (body, end) <- specialize SyntaxError.DefBody expression
           return
-            ( A.at start end (Src.Define name (reverse revArgs) body tipe)
+            ( Ann.at start end (Src.Define name (reverse revArgs) body tipe)
             , end
             )
     ]
 
 
-chompMatchingName :: Name.Name -> Parser E.Def (A.Located Name.Name)
+chompMatchingName :: Name.Name -> Parser SyntaxError.Def (Ann.Located Name.Name)
 chompMatchingName expectedName =
   let
-    (P.Parser parserL) = Var.lower E.DefNameRepeat
+    (Parse.Parser parserL) = Var.lower SyntaxError.DefNameRepeat
   in
-  P.Parser $ \state@(P.State _ _ _ _ sr sc) cok eok cerr eerr ->
+  Parse.Parser $ \state@(Parse.State _ _ _ _ sr sc) cok eok cerr eerr ->
     let
-      cokL name newState@(P.State _ _ _ _ er ec) =
+      cokL name newState@(Parse.State _ _ _ _ er ec) =
         if expectedName == name
-        then cok (A.At (A.Region (A.Position sr sc) (A.Position er ec)) name) newState
-        else cerr sr sc (E.DefNameMatch name)
+        then cok (Ann.At (Ann.Region (Ann.Position sr sc) (Ann.Position er ec)) name) newState
+        else cerr sr sc (SyntaxError.DefNameMatch name)
 
-      eokL name newState@(P.State _ _ _ _ er ec) =
+      eokL name newState@(Parse.State _ _ _ _ er ec) =
         if expectedName == name
-        then eok (A.At (A.Region (A.Position sr sc) (A.Position er ec)) name) newState
-        else eerr sr sc (E.DefNameMatch name)
+        then eok (Ann.At (Ann.Region (Ann.Position sr sc) (Ann.Position er ec)) name) newState
+        else eerr sr sc (SyntaxError.DefNameMatch name)
     in
     parserL state cokL eokL cerr eerr
 
@@ -564,13 +564,13 @@ chompMatchingName expectedName =
 -- DESTRUCTURE
 
 
-destructure :: Space.Parser E.Let (A.Located Src.Def)
+destructure :: Space.Parser SyntaxError.Let (Ann.Located Src.Def)
 destructure =
-  specialize E.LetDestruct $
+  specialize SyntaxError.LetDestruct $
   do  start <- getPosition
-      pattern <- specialize E.DestructPattern Pattern.term
-      Space.chompAndCheckIndent E.DestructSpace E.DestructIndentEquals
-      word1 0x3D {-=-} E.DestructEquals
-      Space.chompAndCheckIndent E.DestructSpace E.DestructIndentBody
-      (expr, end) <- specialize E.DestructBody expression
-      return ( A.at start end (Src.Destruct pattern expr), end )
+      pattern <- specialize SyntaxError.DestructPattern Pattern.term
+      Space.chompAndCheckIndent SyntaxError.DestructSpace SyntaxError.DestructIndentEquals
+      word1 0x3D {-=-} SyntaxError.DestructEquals
+      Space.chompAndCheckIndent SyntaxError.DestructSpace SyntaxError.DestructIndentBody
+      (expr, end) <- specialize SyntaxError.DestructBody expression
+      return ( Ann.at start end (Src.Destruct pattern expr), end )

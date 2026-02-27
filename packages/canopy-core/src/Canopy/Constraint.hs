@@ -21,18 +21,18 @@ module Canopy.Constraint
   )
 where
 
-import qualified Canopy.Version as V
+import qualified Canopy.Version as Version
 import Control.Monad (liftM4)
 import Data.Binary (Binary, get, getWord8, put, putWord8)
-import qualified Json.Decode as D
-import qualified Json.Encode as E
+import qualified Json.Decode as Decode
+import qualified Json.Encode as Encode
 import Parse.Primitives (Col, Row)
-import qualified Parse.Primitives as P
+import qualified Parse.Primitives as Parse
 
 -- CONSTRAINTS
 
 data Constraint
-  = Range V.Version Op Op V.Version
+  = Range Version.Version Op Op Version.Version
   deriving (Eq, Show)
 
 data Op
@@ -45,16 +45,16 @@ data Op
 -- | Extract the lower bound version from a constraint.
 --
 -- For a constraint like @1.0.0 <= v < 2.0.0@, returns @1.0.0@.
-lowerBound :: Constraint -> V.Version
+lowerBound :: Constraint -> Version.Version
 lowerBound (Range lower _ _ _) = lower
 
-exactly :: V.Version -> Constraint
+exactly :: Version.Version -> Constraint
 exactly version =
   Range version LessOrEqual LessOrEqual version
 
 anything :: Constraint
 anything =
-  Range V.one LessOrEqual LessOrEqual V.max
+  Range Version.one LessOrEqual LessOrEqual Version.max
 
 -- TO CHARS
 
@@ -62,7 +62,7 @@ toChars :: Constraint -> String
 toChars constraint =
   case constraint of
     Range lower lowerOp upperOp upper ->
-      V.toChars lower <> (opToChars lowerOp <> ("v" <> (opToChars upperOp <> V.toChars upper)))
+      Version.toChars lower <> (opToChars lowerOp <> ("v" <> (opToChars upperOp <> Version.toChars upper)))
 
 opToChars :: Op -> String
 opToChars op =
@@ -72,7 +72,7 @@ opToChars op =
 
 -- IS SATISFIED
 
-satisfies :: Constraint -> V.Version -> Bool
+satisfies :: Constraint -> Version.Version -> Bool
 satisfies constraint version =
   case constraint of
     Range lower lowerOp upperOp upper ->
@@ -87,7 +87,7 @@ isLess op =
     LessOrEqual ->
       (<=)
 
-check :: Constraint -> V.Version -> Ordering
+check :: Constraint -> Version.Version -> Ordering
 check constraint version =
   case constraint of
     Range lower lowerOp upperOp upper ->
@@ -121,42 +121,42 @@ intersect (Range lo lop hop hi) (Range lo_ lop_ hop_ hi_) =
 
 goodCanopy :: Constraint -> Bool
 goodCanopy constraint =
-  satisfies constraint V.compiler
+  satisfies constraint Version.compiler
 
 defaultCanopy :: Constraint
 defaultCanopy =
-  if V._major V.compiler > 0
-    then untilNextMajor V.compiler
-    else untilNextMinor V.compiler
+  if Version._major Version.compiler > 0
+    then untilNextMajor Version.compiler
+    else untilNextMinor Version.compiler
 
 -- CREATE CONSTRAINTS
 
-untilNextMajor :: V.Version -> Constraint
+untilNextMajor :: Version.Version -> Constraint
 untilNextMajor version =
-  Range version LessOrEqual Less (V.bumpMajor version)
+  Range version LessOrEqual Less (Version.bumpMajor version)
 
-untilNextMinor :: V.Version -> Constraint
+untilNextMinor :: Version.Version -> Constraint
 untilNextMinor version =
-  Range version LessOrEqual Less (V.bumpMinor version)
+  Range version LessOrEqual Less (Version.bumpMinor version)
 
-expand :: Constraint -> V.Version -> Constraint
+expand :: Constraint -> Version.Version -> Constraint
 expand constraint@(Range lower lowerOp upperOp upper) version
   | version < lower =
     Range version LessOrEqual upperOp upper
   | version > upper =
-    Range lower lowerOp Less (V.bumpMajor version)
+    Range lower lowerOp Less (Version.bumpMajor version)
   | otherwise =
     constraint
 
 -- JSON
 
-encode :: Constraint -> E.Value
+encode :: Constraint -> Encode.Value
 encode constraint =
-  E.chars (toChars constraint)
+  Encode.chars (toChars constraint)
 
-decoder :: D.Decoder Error Constraint
+decoder :: Decode.Decoder Error Constraint
 decoder =
-  D.customString parser BadFormat
+  Decode.customString parser BadFormat
 
 -- BINARY
 
@@ -182,37 +182,37 @@ instance Binary Op where
 
 data Error
   = BadFormat Row Col
-  | InvalidRange V.Version V.Version
+  | InvalidRange Version.Version Version.Version
   deriving (Show)
 
-parser :: P.Parser Error Constraint
+parser :: Parse.Parser Error Constraint
 parser =
   do
     lower <- parseVersion
-    P.word1 0x20 {- -} BadFormat
+    Parse.word1 0x20 {- -} BadFormat
     loOp <- parseOp
-    P.word1 0x20 {- -} BadFormat
-    P.word1 0x76 {-v-} BadFormat
-    P.word1 0x20 {- -} BadFormat
+    Parse.word1 0x20 {- -} BadFormat
+    Parse.word1 0x76 {-v-} BadFormat
+    Parse.word1 0x20 {- -} BadFormat
     hiOp <- parseOp
-    P.word1 0x20 {- -} BadFormat
+    Parse.word1 0x20 {- -} BadFormat
     higher <- parseVersion
-    P.Parser $ \state@(P.State _ _ _ _ row col) _ eok _ eerr ->
+    Parse.Parser $ \state@(Parse.State _ _ _ _ row col) _ eok _ eerr ->
       if lower < higher
         then eok (Range lower loOp hiOp higher) state
         else eerr row col (\_ _ -> InvalidRange lower higher)
 
-parseVersion :: P.Parser Error V.Version
+parseVersion :: Parse.Parser Error Version.Version
 parseVersion =
-  P.specialize (\(r, c) _ _ -> BadFormat r c) V.parser
+  Parse.specialize (\(r, c) _ _ -> BadFormat r c) Version.parser
 
-parseOp :: P.Parser Error Op
+parseOp :: Parse.Parser Error Op
 parseOp =
   do
-    P.word1 0x3C {-<-} BadFormat
-    P.oneOfWithFallback
+    Parse.word1 0x3C {-<-} BadFormat
+    Parse.oneOfWithFallback
       [ do
-          P.word1 0x3D {-=-} BadFormat
+          Parse.word1 0x3D {-=-} BadFormat
           return LessOrEqual
       ]
       Less

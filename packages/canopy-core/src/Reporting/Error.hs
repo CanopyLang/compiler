@@ -12,14 +12,14 @@ module Reporting.Error
 where
 
 import qualified Canopy.ModuleName as ModuleName
-import qualified Data.ByteString as B
+import qualified Data.ByteString as BS
 import qualified Data.NonEmptyList as NE
 import qualified Data.OneOrMore as OneOrMore
 import qualified File
 import Json.Encode ((==>))
-import qualified Json.Encode as E
-import qualified Reporting.Annotation as A
-import qualified Reporting.Doc as D
+import qualified Json.Encode as Encode
+import qualified Reporting.Annotation as Ann
+import qualified Reporting.Doc as Doc
 import qualified Reporting.Error.Canonicalize as Canonicalize
 import qualified Reporting.Error.Docs as Docs
 import qualified Reporting.Error.Import as Import
@@ -30,7 +30,7 @@ import qualified Reporting.Error.Type as Type
 import Reporting.Diagnostic (Diagnostic)
 import qualified Reporting.Diagnostic as Diag
 import qualified Reporting.Render.Code as Code
-import qualified Reporting.Render.Type.Localizer as L
+import qualified Reporting.Render.Type.Localizer as Localizer
 import qualified System.FilePath as FP
 
 -- MODULE
@@ -39,7 +39,7 @@ data Module = Module
   { _name :: ModuleName.Raw,
     _absolutePath :: FilePath,
     _modificationTime :: File.Time,
-    _source :: B.ByteString,
+    _source :: BS.ByteString,
     _error :: Error
   }
 
@@ -49,8 +49,8 @@ data Error
   = BadSyntax Syntax.Error
   | BadImports (NE.List Import.Error)
   | BadNames (OneOrMore.OneOrMore Canonicalize.Error)
-  | BadTypes L.Localizer (NE.List Type.Error)
-  | BadMains L.Localizer (OneOrMore.OneOrMore Main.Error)
+  | BadTypes Localizer.Localizer (NE.List Type.Error)
+  | BadMains Localizer.Localizer (OneOrMore.OneOrMore Main.Error)
   | BadPatterns (NE.List Pattern.Error)
   | BadDocs Docs.Error
   deriving (Show)
@@ -78,29 +78,29 @@ toDiagnostics source err =
     BadDocs docsErr ->
       Docs.toDiagnostics source docsErr
 
--- | Render a module's diagnostics as a 'D.Doc'.
-toDiagnosticDoc :: FilePath -> Module -> D.Doc
+-- | Render a module's diagnostics as a 'Doc.Doc'.
+toDiagnosticDoc :: FilePath -> Module -> Doc.Doc
 toDiagnosticDoc root (Module _ absolutePath _ source err) =
-  D.vcat (fmap (renderDiag relativePath) (NE.toList filtered))
+  Doc.vcat (fmap (renderDiag relativePath) (NE.toList filtered))
   where
     diagnostics = toDiagnostics (Code.toSource source) err
     filtered = filterCascades diagnostics
     relativePath = FP.makeRelative root absolutePath
 
-renderDiag :: FilePath -> Diagnostic -> D.Doc
+renderDiag :: FilePath -> Diagnostic -> Doc.Doc
 renderDiag relativePath diag =
-  D.vcat
+  Doc.vcat
     [ Diag.diagnosticToDoc relativePath diag,
       ""
     ]
 
 -- | Encode a module's diagnostics as JSON.
-toDiagnosticJson :: Module -> E.Value
+toDiagnosticJson :: Module -> Encode.Value
 toDiagnosticJson (Module name path _ source err) =
-  E.object
-    [ "path" ==> E.chars path,
-      "name" ==> E.name name,
-      "problems" ==> E.array (fmap Diag.diagnosticToJson (NE.toList filtered))
+  Encode.object
+    [ "path" ==> Encode.chars path,
+      "name" ==> Encode.name name,
+      "problems" ==> Encode.array (fmap Diag.diagnosticToJson (NE.toList filtered))
     ]
   where
     diagnostics = toDiagnostics (Code.toSource source) err
@@ -147,12 +147,12 @@ sameCodeAndRegion d1 d2 =
     && regionsOverlap (Diag._spanRegion (Diag._diagPrimary d1)) (Diag._spanRegion (Diag._diagPrimary d2))
 
 -- | Check if two regions overlap.
-regionsOverlap :: A.Region -> A.Region -> Bool
-regionsOverlap (A.Region s1 e1) (A.Region s2 e2) =
+regionsOverlap :: Ann.Region -> Ann.Region -> Bool
+regionsOverlap (Ann.Region s1 e1) (Ann.Region s2 e2) =
   posLe s1 e2 && posLe s2 e1
 
 -- | Position less-than-or-equal comparison.
-posLe :: A.Position -> A.Position -> Bool
-posLe (A.Position r1 c1) (A.Position r2 c2) =
+posLe :: Ann.Position -> Ann.Position -> Bool
+posLe (Ann.Position r1 c1) (Ann.Position r2 c2) =
   r1 < r2 || (r1 == r2 && c1 <= c2)
 

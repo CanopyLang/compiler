@@ -20,7 +20,7 @@ import qualified Canopy.Compiler.Type as Type
 import qualified Canopy.Compiler.Type.Extract as Extract
 import qualified Canopy.ModuleName as ModuleName
 import qualified Canopy.Package as Pkg
-import qualified Canopy.Version as V
+import qualified Canopy.Version as Version
 import qualified Data.Index as Index
 import qualified Data.IntMap as IntMap
 import qualified Data.List as List
@@ -36,7 +36,7 @@ import qualified Generate.Mode as Mode
 import Json.Encode ((==>))
 import qualified Json.Encode as Encode
 import qualified Optimize.DecisionTree as DT
-import qualified Reporting.Annotation as A
+import qualified Reporting.Annotation as Ann
 import qualified Reporting.InternalError as InternalError
 
 -- EXPRESSIONS
@@ -339,7 +339,7 @@ chunkList n xs =
 
 -- DEBUG
 
-generateDebug :: Mode.Mode -> Name.Name -> ModuleName.Canonical -> A.Region -> Maybe Name.Name -> JS.Expr
+generateDebug :: Mode.Mode -> Name.Name -> ModuleName.Canonical -> Ann.Region -> Maybe Name.Name -> JS.Expr
 generateDebug mode name (ModuleName.Canonical _ home) region unhandledValueName =
   if name /= "todo"
     then JS.Ref (JsName.fromGlobal ModuleName.debug name)
@@ -358,8 +358,8 @@ generateDebug mode name (ModuleName.Canonical _ home) region unhandledValueName 
             JS.Ref (JsName.fromLocal valueName)
           ]
 
-regionToJsExpr :: Mode.Mode -> A.Region -> JS.Expr
-regionToJsExpr mode (A.Region start end) =
+regionToJsExpr :: Mode.Mode -> Ann.Region -> JS.Expr
+regionToJsExpr mode (Ann.Region start end) =
   if Mode.isElmCompatible mode
     then  -- Elm-compatible mode
       JS.Object
@@ -372,8 +372,8 @@ regionToJsExpr mode (A.Region start end) =
           (JsName.fromLocal "end", positionToJsExpr mode end)
         ]
 
-positionToJsExpr :: Mode.Mode -> A.Position -> JS.Expr
-positionToJsExpr mode (A.Position line column) =
+positionToJsExpr :: Mode.Mode -> Ann.Position -> JS.Expr
+positionToJsExpr mode (Ann.Position line column) =
   if Mode.isElmCompatible mode
     then  -- Elm-compatible mode
       JS.Object
@@ -1138,6 +1138,6 @@ toDebugMetadata mode msgType =
     Mode.Dev (Just interfaces) _ _ _ ->
       -- Dev mode with interfaces: full type metadata
       JS.Json . Encode.object $
-        [ "versions" ==> Encode.object ["canopy" ==> V.encode V.compiler],
+        [ "versions" ==> Encode.object ["canopy" ==> Version.encode Version.compiler],
           "types" ==> Type.encodeMetadata (Extract.fromMsg interfaces msgType)
         ]

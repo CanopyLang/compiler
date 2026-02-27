@@ -15,7 +15,7 @@ import qualified Builder.Solver as Solver
 import qualified Builder.State as State
 import qualified Canopy.ModuleName as ModuleName
 import qualified Canopy.Package as Pkg
-import qualified Canopy.Version as V
+import qualified Canopy.Version as Version
 import Control.Monad (forM_)
 import qualified Data.ByteString as BS
 import qualified Data.Map.Strict as Map
@@ -410,8 +410,8 @@ testRealWorldScenarios =
         case (constraint1, constraint2) of
           (Just (Solver.MinVersion v1), Just (Solver.MaxVersion v2)) -> do
             -- Verify version parsing
-            assertEqual "Min version major" 1 (V._major v1)
-            assertEqual "Max version major" 2 (V._major v2)
+            assertEqual "Min version major" 1 (Version._major v1)
+            assertEqual "Max version major" 2 (Version._major v2)
             putStrLn "✅ Version constraint parsing works"
           _ -> assertFailure "Failed to parse version constraints",
       testCase "content hash stability" $ do

@@ -20,9 +20,9 @@ import qualified Parse.Symbol as Symbol
 import qualified Parse.Type as Type
 import qualified Parse.Variable as Var
 import Parse.Primitives hiding (State)
-import qualified Parse.Primitives as P
-import qualified Reporting.Annotation as A
-import qualified Reporting.Error.Syntax as E
+import qualified Parse.Primitives as Parse
+import qualified Reporting.Annotation as Ann
+import qualified Reporting.Error.Syntax as SyntaxError
 
 
 
@@ -30,17 +30,17 @@ import qualified Reporting.Error.Syntax as E
 
 
 data Decl
-  = Value (Maybe Src.Comment) (A.Located Src.Value)
-  | Union (Maybe Src.Comment) (A.Located Src.Union)
-  | Alias (Maybe Src.Comment) (A.Located Src.Alias)
+  = Value (Maybe Src.Comment) (Ann.Located Src.Value)
+  | Union (Maybe Src.Comment) (Ann.Located Src.Union)
+  | Alias (Maybe Src.Comment) (Ann.Located Src.Alias)
   | Port (Maybe Src.Comment) Src.Port
 
 
-declaration :: Space.Parser E.Decl Decl
+declaration :: Space.Parser SyntaxError.Decl Decl
 declaration =
   do  maybeDocs <- chompDocComment
       start <- getPosition
-      oneOf E.DeclStart
+      oneOf SyntaxError.DeclStart
         [ typeDecl maybeDocs start
         , portDecl maybeDocs
         , valueDecl maybeDocs start
@@ -51,13 +51,13 @@ declaration =
 -- DOC COMMENT
 
 
-chompDocComment :: Parser E.Decl (Maybe Src.Comment)
+chompDocComment :: Parser SyntaxError.Decl (Maybe Src.Comment)
 chompDocComment =
   oneOfWithFallback
     [
-      do  docComment <- Space.docComment E.DeclStart E.DeclSpace
-          Space.chomp E.DeclSpace
-          Space.checkFreshLine E.DeclFreshLineAfterDocComment
+      do  docComment <- Space.docComment SyntaxError.DeclStart SyntaxError.DeclSpace
+          Space.chomp SyntaxError.DeclSpace
+          Space.checkFreshLine SyntaxError.DeclFreshLineAfterDocComment
           return (Just docComment)
     ]
     Nothing
@@ -68,57 +68,57 @@ chompDocComment =
 
 
 {-# INLINE valueDecl #-}
-valueDecl :: Maybe Src.Comment -> A.Position -> Space.Parser E.Decl Decl
+valueDecl :: Maybe Src.Comment -> Ann.Position -> Space.Parser SyntaxError.Decl Decl
 valueDecl maybeDocs start =
-  do  name <- Var.lower E.DeclStart
+  do  name <- Var.lower SyntaxError.DeclStart
       end <- getPosition
-      specialize (E.DeclDef name) $
-        do  Space.chompAndCheckIndent E.DeclDefSpace E.DeclDefIndentEquals
-            oneOf E.DeclDefEquals
+      specialize (SyntaxError.DeclDef name) $
+        do  Space.chompAndCheckIndent SyntaxError.DeclDefSpace SyntaxError.DeclDefIndentEquals
+            oneOf SyntaxError.DeclDefEquals
               [
-                do  word1 0x3A {-:-} E.DeclDefEquals
-                    Space.chompAndCheckIndent E.DeclDefSpace E.DeclDefIndentType
-                    (tipe, _) <- specialize E.DeclDefType Type.expression
-                    Space.checkFreshLine E.DeclDefNameRepeat
+                do  word1 0x3A {-:-} SyntaxError.DeclDefEquals
+                    Space.chompAndCheckIndent SyntaxError.DeclDefSpace SyntaxError.DeclDefIndentType
+                    (tipe, _) <- specialize SyntaxError.DeclDefType Type.expression
+                    Space.checkFreshLine SyntaxError.DeclDefNameRepeat
                     defName <- chompMatchingName name
-                    Space.chompAndCheckIndent E.DeclDefSpace E.DeclDefIndentEquals
+                    Space.chompAndCheckIndent SyntaxError.DeclDefSpace SyntaxError.DeclDefIndentEquals
                     chompDefArgsAndBody maybeDocs start defName (Just tipe) []
               ,
-                chompDefArgsAndBody maybeDocs start (A.at start end name) Nothing []
+                chompDefArgsAndBody maybeDocs start (Ann.at start end name) Nothing []
               ]
 
 
-chompDefArgsAndBody :: Maybe Src.Comment -> A.Position -> A.Located Name.Name -> Maybe Src.Type -> [Src.Pattern] -> Space.Parser E.DeclDef Decl
+chompDefArgsAndBody :: Maybe Src.Comment -> Ann.Position -> Ann.Located Name.Name -> Maybe Src.Type -> [Src.Pattern] -> Space.Parser SyntaxError.DeclDef Decl
 chompDefArgsAndBody maybeDocs start name tipe revArgs =
-  oneOf E.DeclDefEquals
-    [ do  arg <- specialize E.DeclDefArg Pattern.term
-          Space.chompAndCheckIndent E.DeclDefSpace E.DeclDefIndentEquals
+  oneOf SyntaxError.DeclDefEquals
+    [ do  arg <- specialize SyntaxError.DeclDefArg Pattern.term
+          Space.chompAndCheckIndent SyntaxError.DeclDefSpace SyntaxError.DeclDefIndentEquals
           chompDefArgsAndBody maybeDocs start name tipe (arg : revArgs)
-    , do  word1 0x3D {-=-} E.DeclDefEquals
-          Space.chompAndCheckIndent E.DeclDefSpace E.DeclDefIndentBody
-          (body, end) <- specialize E.DeclDefBody Expr.expression
+    , do  word1 0x3D {-=-} SyntaxError.DeclDefEquals
+          Space.chompAndCheckIndent SyntaxError.DeclDefSpace SyntaxError.DeclDefIndentBody
+          (body, end) <- specialize SyntaxError.DeclDefBody Expr.expression
           let value = Src.Value name (reverse revArgs) body tipe
-          let avalue = A.at start end value
+          let avalue = Ann.at start end value
           return (Value maybeDocs avalue, end)
     ]
 
 
-chompMatchingName :: Name.Name -> Parser E.DeclDef (A.Located Name.Name)
+chompMatchingName :: Name.Name -> Parser SyntaxError.DeclDef (Ann.Located Name.Name)
 chompMatchingName expectedName =
   let
-    (P.Parser parserL) = Var.lower E.DeclDefNameRepeat
+    (Parse.Parser parserL) = Var.lower SyntaxError.DeclDefNameRepeat
   in
-  P.Parser $ \state@(P.State _ _ _ _ sr sc) cok eok cerr eerr ->
+  Parse.Parser $ \state@(Parse.State _ _ _ _ sr sc) cok eok cerr eerr ->
     let
-      cokL name newState@(P.State _ _ _ _ er ec) =
+      cokL name newState@(Parse.State _ _ _ _ er ec) =
         if expectedName == name
-        then cok (A.At (A.Region (A.Position sr sc) (A.Position er ec)) name) newState
-        else cerr sr sc (E.DeclDefNameMatch name)
+        then cok (Ann.At (Ann.Region (Ann.Position sr sc) (Ann.Position er ec)) name) newState
+        else cerr sr sc (SyntaxError.DeclDefNameMatch name)
 
-      eokL name newState@(P.State _ _ _ _ er ec) =
+      eokL name newState@(Parse.State _ _ _ _ er ec) =
         if expectedName == name
-        then eok (A.At (A.Region (A.Position sr sc) (A.Position er ec)) name) newState
-        else eerr sr sc (E.DeclDefNameMatch name)
+        then eok (Ann.At (Ann.Region (Ann.Position sr sc) (Ann.Position er ec)) name) newState
+        else eerr sr sc (SyntaxError.DeclDefNameMatch name)
     in
     parserL state cokL eokL cerr eerr
 
@@ -128,24 +128,24 @@ chompMatchingName expectedName =
 
 
 {-# INLINE typeDecl #-}
-typeDecl :: Maybe Src.Comment -> A.Position -> Space.Parser E.Decl Decl
+typeDecl :: Maybe Src.Comment -> Ann.Position -> Space.Parser SyntaxError.Decl Decl
 typeDecl maybeDocs start =
-  inContext E.DeclType (Keyword.type_ E.DeclStart) $
-    do  Space.chompAndCheckIndent E.DT_Space E.DT_IndentName
-        oneOf E.DT_Name
+  inContext SyntaxError.DeclType (Keyword.type_ SyntaxError.DeclStart) $
+    do  Space.chompAndCheckIndent SyntaxError.DT_Space SyntaxError.DT_IndentName
+        oneOf SyntaxError.DT_Name
           [
-            inContext E.DT_Alias (Keyword.alias_ E.DT_Name) $
-              do  Space.chompAndCheckIndent E.AliasSpace E.AliasIndentEquals
+            inContext SyntaxError.DT_Alias (Keyword.alias_ SyntaxError.DT_Name) $
+              do  Space.chompAndCheckIndent SyntaxError.AliasSpace SyntaxError.AliasIndentEquals
                   (name, args) <- chompAliasNameToEquals
-                  (tipe, end) <- specialize E.AliasBody Type.expression
-                  let alias = A.at start end (Src.Alias name args tipe)
+                  (tipe, end) <- specialize SyntaxError.AliasBody Type.expression
+                  let alias = Ann.at start end (Src.Alias name args tipe)
                   return (Alias maybeDocs alias, end)
           ,
-            specialize E.DT_Union $
+            specialize SyntaxError.DT_Union $
               do  (name, args) <- chompCustomNameToEquals
                   (firstVariant, firstEnd) <- Type.variant
                   (variants, end) <- chompVariants [firstVariant] firstEnd
-                  let union = A.at start end (Src.Union name args variants)
+                  let union = Ann.at start end (Src.Union name args variants)
                   return (Union maybeDocs union, end)
           ]
 
@@ -154,21 +154,21 @@ typeDecl maybeDocs start =
 -- TYPE ALIASES
 
 
-chompAliasNameToEquals :: Parser E.TypeAlias (A.Located Name.Name, [A.Located Name.Name])
+chompAliasNameToEquals :: Parser SyntaxError.TypeAlias (Ann.Located Name.Name, [Ann.Located Name.Name])
 chompAliasNameToEquals =
-  do  name <- addLocation (Var.upper E.AliasName)
-      Space.chompAndCheckIndent E.AliasSpace E.AliasIndentEquals
+  do  name <- addLocation (Var.upper SyntaxError.AliasName)
+      Space.chompAndCheckIndent SyntaxError.AliasSpace SyntaxError.AliasIndentEquals
       chompAliasNameToEqualsHelp name []
 
 
-chompAliasNameToEqualsHelp :: A.Located Name.Name -> [A.Located Name.Name] -> Parser E.TypeAlias (A.Located Name.Name, [A.Located Name.Name])
+chompAliasNameToEqualsHelp :: Ann.Located Name.Name -> [Ann.Located Name.Name] -> Parser SyntaxError.TypeAlias (Ann.Located Name.Name, [Ann.Located Name.Name])
 chompAliasNameToEqualsHelp name args =
-  oneOf E.AliasEquals
-    [ do  arg <- addLocation (Var.lower E.AliasEquals)
-          Space.chompAndCheckIndent E.AliasSpace E.AliasIndentEquals
+  oneOf SyntaxError.AliasEquals
+    [ do  arg <- addLocation (Var.lower SyntaxError.AliasEquals)
+          Space.chompAndCheckIndent SyntaxError.AliasSpace SyntaxError.AliasIndentEquals
           chompAliasNameToEqualsHelp name (arg:args)
-    , do  word1 0x3D {-=-} E.AliasEquals
-          Space.chompAndCheckIndent E.AliasSpace E.AliasIndentBody
+    , do  word1 0x3D {-=-} SyntaxError.AliasEquals
+          Space.chompAndCheckIndent SyntaxError.AliasSpace SyntaxError.AliasIndentBody
           return ( name, reverse args )
     ]
 
@@ -177,31 +177,31 @@ chompAliasNameToEqualsHelp name args =
 -- CUSTOM TYPES
 
 
-chompCustomNameToEquals :: Parser E.CustomType (A.Located Name.Name, [A.Located Name.Name])
+chompCustomNameToEquals :: Parser SyntaxError.CustomType (Ann.Located Name.Name, [Ann.Located Name.Name])
 chompCustomNameToEquals =
-  do  name <- addLocation (Var.upper E.CT_Name)
-      Space.chompAndCheckIndent E.CT_Space E.CT_IndentEquals
+  do  name <- addLocation (Var.upper SyntaxError.CT_Name)
+      Space.chompAndCheckIndent SyntaxError.CT_Space SyntaxError.CT_IndentEquals
       chompCustomNameToEqualsHelp name []
 
 
-chompCustomNameToEqualsHelp :: A.Located Name.Name -> [A.Located Name.Name] -> Parser E.CustomType (A.Located Name.Name, [A.Located Name.Name])
+chompCustomNameToEqualsHelp :: Ann.Located Name.Name -> [Ann.Located Name.Name] -> Parser SyntaxError.CustomType (Ann.Located Name.Name, [Ann.Located Name.Name])
 chompCustomNameToEqualsHelp name args =
-  oneOf E.CT_Equals
-    [ do  arg <- addLocation (Var.lower E.CT_Equals)
-          Space.chompAndCheckIndent E.CT_Space E.CT_IndentEquals
+  oneOf SyntaxError.CT_Equals
+    [ do  arg <- addLocation (Var.lower SyntaxError.CT_Equals)
+          Space.chompAndCheckIndent SyntaxError.CT_Space SyntaxError.CT_IndentEquals
           chompCustomNameToEqualsHelp name (arg:args)
-    , do  word1 0x3D {-=-} E.CT_Equals
-          Space.chompAndCheckIndent E.CT_Space E.CT_IndentAfterEquals
+    , do  word1 0x3D {-=-} SyntaxError.CT_Equals
+          Space.chompAndCheckIndent SyntaxError.CT_Space SyntaxError.CT_IndentAfterEquals
           return ( name, reverse args )
     ]
 
 
-chompVariants :: [(A.Located Name.Name, [Src.Type])] -> A.Position -> Space.Parser E.CustomType [(A.Located Name.Name, [Src.Type])]
+chompVariants :: [(Ann.Located Name.Name, [Src.Type])] -> Ann.Position -> Space.Parser SyntaxError.CustomType [(Ann.Located Name.Name, [Src.Type])]
 chompVariants variants end =
   oneOfWithFallback
-    [ do  Space.checkIndent end E.CT_IndentBar
-          word1 0x7C {-|-} E.CT_Bar
-          Space.chompAndCheckIndent E.CT_Space E.CT_IndentAfterBar
+    [ do  Space.checkIndent end SyntaxError.CT_IndentBar
+          word1 0x7C {-|-} SyntaxError.CT_Bar
+          Space.chompAndCheckIndent SyntaxError.CT_Space SyntaxError.CT_IndentAfterBar
           (variant, newEnd) <- Type.variant
           chompVariants (variant:variants) newEnd
     ]
@@ -213,15 +213,15 @@ chompVariants variants end =
 
 
 {-# INLINE portDecl #-}
-portDecl :: Maybe Src.Comment -> Space.Parser E.Decl Decl
+portDecl :: Maybe Src.Comment -> Space.Parser SyntaxError.Decl Decl
 portDecl maybeDocs =
-  inContext E.Port (Keyword.port_ E.DeclStart) $
-    do  Space.chompAndCheckIndent E.PortSpace E.PortIndentName
-        name <- addLocation (Var.lower E.PortName)
-        Space.chompAndCheckIndent E.PortSpace E.PortIndentColon
-        word1 0x3A {-:-} E.PortColon
-        Space.chompAndCheckIndent E.PortSpace E.PortIndentType
-        (tipe, end) <- specialize E.PortType Type.expression
+  inContext SyntaxError.Port (Keyword.port_ SyntaxError.DeclStart) $
+    do  Space.chompAndCheckIndent SyntaxError.PortSpace SyntaxError.PortIndentName
+        name <- addLocation (Var.lower SyntaxError.PortName)
+        Space.chompAndCheckIndent SyntaxError.PortSpace SyntaxError.PortIndentColon
+        word1 0x3A {-:-} SyntaxError.PortColon
+        Space.chompAndCheckIndent SyntaxError.PortSpace SyntaxError.PortIndentType
+        (tipe, end) <- specialize SyntaxError.PortType Type.expression
         return
           ( Port maybeDocs (Src.Port name tipe)
           , end
@@ -234,11 +234,11 @@ portDecl maybeDocs =
 
 -- INVARIANT: always chomps to a freshline
 --
-infix_ :: Parser E.Module (A.Located Src.Infix)
+infix_ :: Parser SyntaxError.Module (Ann.Located Src.Infix)
 infix_ =
   let
-    err = E.Infix
-    _err _ = E.Infix
+    err = SyntaxError.Infix
+    _err _ = SyntaxError.Infix
   in
   do  start <- getPosition
       Keyword.infix_ err
@@ -262,4 +262,4 @@ infix_ =
       end <- getPosition
       Space.chomp _err
       Space.checkFreshLine err
-      return (A.at start end (Src.Infix op associativity precedence name))
+      return (Ann.at start end (Src.Infix op associativity precedence name))

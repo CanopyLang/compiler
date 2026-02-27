@@ -24,15 +24,15 @@ where
 
 import qualified BackgroundWriter as BW
 import qualified Build
-import qualified Canopy.Constraint as C
+import qualified Canopy.Constraint as Constraint
 import qualified Canopy.Details as Details
 import qualified Canopy.Licenses as Licenses
 import qualified Canopy.Outline as Outline
 import qualified Canopy.Package as Pkg
-import qualified Canopy.Version as V
+import qualified Canopy.Version as Version
 import Control.Applicative ((<|>))
 import Data.ByteString.Builder (Builder)
-import qualified Data.ByteString.Builder as B
+import qualified Data.ByteString.Builder as BB
 import Data.Map (Map)
 import qualified Data.Map as Map
 import qualified Generate
@@ -157,7 +157,7 @@ interpret interpreter javascript =
   where
     createProcess = (Proc.proc interpreter []) {Proc.std_in = Proc.CreatePipe}
     executeCode (Just stdin) _ _ handle = do
-      B.hPutBuilder stdin javascript
+      BB.hPutBuilder stdin javascript
       IO.hClose stdin
       Proc.waitForProcess handle
     executeCode _ _ _ _ = pure (Exit.ExitFailure 1)
@@ -192,22 +192,22 @@ getRoot = do
             Pkg.dummyName
             Outline.defaultSummary
             Licenses.bsd3
-            V.one
+            Version.one
             (Outline.ExposedList [])
             defaultDeps
             Map.empty
-            C.defaultCanopy
+            Constraint.defaultCanopy
         )
 
 -- | Default package dependencies for REPL.
 --
 -- @since 0.19.1
-defaultDeps :: Map Pkg.Name C.Constraint
+defaultDeps :: Map Pkg.Name Constraint.Constraint
 defaultDeps =
   Map.fromList
-    [ (Pkg.core, C.anything),
-      (Pkg.json, C.anything),
-      (Pkg.html, C.anything)
+    [ (Pkg.core, Constraint.anything),
+      (Pkg.json, Constraint.anything),
+      (Pkg.html, Constraint.anything)
     ]
 
 -- | Find JavaScript interpreter executable.

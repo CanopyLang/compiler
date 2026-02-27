@@ -12,24 +12,24 @@ import qualified AST.Source as Src
 import Parse.Primitives (Parser, addLocation, addEnd, getPosition, inContext, specialize, oneOf, oneOfWithFallback, word1, word2)
 import qualified Parse.Space as Space
 import qualified Parse.Variable as Var
-import qualified Reporting.Annotation as A
-import qualified Reporting.Error.Syntax as E
+import qualified Reporting.Annotation as Ann
+import qualified Reporting.Error.Syntax as SyntaxError
 
 
 
 -- TYPE TERMS
 
 
-term :: Parser E.Type Src.Type
+term :: Parser SyntaxError.Type Src.Type
 term =
   do  start <- getPosition
-      oneOf E.TStart
+      oneOf SyntaxError.TStart
         [
           -- types with no arguments (Int, Float, etc.)
-          do  upper <- Var.foreignUpper E.TStart
+          do  upper <- Var.foreignUpper SyntaxError.TStart
               end <- getPosition
-              let region = A.Region start end
-              return . A.At region $ (case upper of
+              let region = Ann.Region start end
+              return . Ann.At region $ (case upper of
                   Var.Unqualified name ->
                     Src.TType region name []
 
@@ -37,38 +37,38 @@ term =
                     Src.TTypeQual region home name [])
         ,
           -- type variables
-          do  var <- Var.lower E.TStart
+          do  var <- Var.lower SyntaxError.TStart
               addEnd start (Src.TVar var)
         ,
           -- tuples
-          inContext E.TTuple (word1 0x28 {-(-} E.TStart) $
-            oneOf E.TTupleOpen
-              [ do  word1 0x29 {-)-} E.TTupleOpen
+          inContext SyntaxError.TTuple (word1 0x28 {-(-} SyntaxError.TStart) $
+            oneOf SyntaxError.TTupleOpen
+              [ do  word1 0x29 {-)-} SyntaxError.TTupleOpen
                     addEnd start Src.TUnit
-              , do  Space.chompAndCheckIndent E.TTupleSpace E.TTupleIndentType1
-                    (tipe, end) <- specialize E.TTupleType expression
-                    Space.checkIndent end E.TTupleIndentEnd
+              , do  Space.chompAndCheckIndent SyntaxError.TTupleSpace SyntaxError.TTupleIndentType1
+                    (tipe, end) <- specialize SyntaxError.TTupleType expression
+                    Space.checkIndent end SyntaxError.TTupleIndentEnd
                     chompTupleEnd start tipe []
               ]
         ,
           -- records
-          inContext E.TRecord (word1 0x7B {- { -} E.TStart) $
-            do  Space.chompAndCheckIndent E.TRecordSpace E.TRecordIndentOpen
-                oneOf E.TRecordOpen
-                  [ do  word1 0x7D {-}-} E.TRecordEnd
+          inContext SyntaxError.TRecord (word1 0x7B {- { -} SyntaxError.TStart) $
+            do  Space.chompAndCheckIndent SyntaxError.TRecordSpace SyntaxError.TRecordIndentOpen
+                oneOf SyntaxError.TRecordOpen
+                  [ do  word1 0x7D {-}-} SyntaxError.TRecordEnd
                         addEnd start (Src.TRecord [] Nothing)
-                  , do  name <- addLocation (Var.lower E.TRecordField)
-                        Space.chompAndCheckIndent E.TRecordSpace E.TRecordIndentColon
-                        oneOf E.TRecordColon
-                          [ do  word1 0x7C {-|-} E.TRecordColon
-                                Space.chompAndCheckIndent E.TRecordSpace E.TRecordIndentField
+                  , do  name <- addLocation (Var.lower SyntaxError.TRecordField)
+                        Space.chompAndCheckIndent SyntaxError.TRecordSpace SyntaxError.TRecordIndentColon
+                        oneOf SyntaxError.TRecordColon
+                          [ do  word1 0x7C {-|-} SyntaxError.TRecordColon
+                                Space.chompAndCheckIndent SyntaxError.TRecordSpace SyntaxError.TRecordIndentField
                                 field <- chompField
                                 fields <- chompRecordEnd [field]
                                 addEnd start (Src.TRecord fields (Just name))
-                          , do  word1 0x3A {-:-} E.TRecordColon
-                                Space.chompAndCheckIndent E.TRecordSpace E.TRecordIndentType
-                                (tipe, end) <- specialize E.TRecordType expression
-                                Space.checkIndent end E.TRecordIndentEnd
+                          , do  word1 0x3A {-:-} SyntaxError.TRecordColon
+                                Space.chompAndCheckIndent SyntaxError.TRecordSpace SyntaxError.TRecordIndentType
+                                (tipe, end) <- specialize SyntaxError.TRecordType expression
+                                Space.checkIndent end SyntaxError.TRecordIndentEnd
                                 fields <- chompRecordEnd [(name, tipe)]
                                 addEnd start (Src.TRecord fields Nothing)
                           ]
@@ -80,23 +80,23 @@ term =
 -- TYPE EXPRESSIONS
 
 
-expression :: Space.Parser E.Type Src.Type
+expression :: Space.Parser SyntaxError.Type Src.Type
 expression =
   do  start <- getPosition
       term1@(tipe1, end1) <-
-        oneOf E.TStart
+        oneOf SyntaxError.TStart
           [ app start
           , do  eterm <- term
                 end <- getPosition
-                Space.chomp E.TSpace
+                Space.chomp SyntaxError.TSpace
                 return (eterm, end)
           ]
       oneOfWithFallback
-        [ do  Space.checkIndent end1 E.TIndentStart -- should never trigger
-              word2 0x2D 0x3E {-->-} E.TStart -- could just be another type instead
-              Space.chompAndCheckIndent E.TSpace E.TIndentStart
+        [ do  Space.checkIndent end1 SyntaxError.TIndentStart -- should never trigger
+              word2 0x2D 0x3E {-->-} SyntaxError.TStart -- could just be another type instead
+              Space.chompAndCheckIndent SyntaxError.TSpace SyntaxError.TIndentStart
               (tipe2, end2) <- expression
-              let tipe = A.at start end2 (Src.TLambda tipe1 tipe2)
+              let tipe = Ann.at start end2 (Src.TLambda tipe1 tipe2)
               return ( tipe, end2 )
         ]
         term1
@@ -106,14 +106,14 @@ expression =
 -- TYPE CONSTRUCTORS
 
 
-app :: A.Position -> Space.Parser E.Type Src.Type
+app :: Ann.Position -> Space.Parser SyntaxError.Type Src.Type
 app start =
-  do  upper <- Var.foreignUpper E.TStart
+  do  upper <- Var.foreignUpper SyntaxError.TStart
       upperEnd <- getPosition
-      Space.chomp E.TSpace
+      Space.chomp SyntaxError.TSpace
       (args, end) <- chompArgs [] upperEnd
 
-      let region = A.Region start upperEnd
+      let region = Ann.Region start upperEnd
       let tipe =
             case upper of
               Var.Unqualified name ->
@@ -122,16 +122,16 @@ app start =
               Var.Qualified home name ->
                 Src.TTypeQual region home name args
 
-      return ( A.at start end tipe, end )
+      return ( Ann.at start end tipe, end )
 
 
-chompArgs :: [Src.Type] -> A.Position -> Space.Parser E.Type [Src.Type]
+chompArgs :: [Src.Type] -> Ann.Position -> Space.Parser SyntaxError.Type [Src.Type]
 chompArgs args end =
   oneOfWithFallback
-    [ do  Space.checkIndent end E.TIndentStart
+    [ do  Space.checkIndent end SyntaxError.TIndentStart
           arg <- term
           newEnd <- getPosition
-          Space.chomp E.TSpace
+          Space.chomp SyntaxError.TSpace
           chompArgs (arg:args) newEnd
     ]
     (reverse args, end)
@@ -141,15 +141,15 @@ chompArgs args end =
 -- TUPLES
 
 
-chompTupleEnd :: A.Position -> Src.Type -> [Src.Type] -> Parser E.TTuple Src.Type
+chompTupleEnd :: Ann.Position -> Src.Type -> [Src.Type] -> Parser SyntaxError.TTuple Src.Type
 chompTupleEnd start firstType revTypes =
-  oneOf E.TTupleEnd
-    [ do  word1 0x2C {-,-} E.TTupleEnd
-          Space.chompAndCheckIndent E.TTupleSpace E.TTupleIndentTypeN
-          (tipe, end) <- specialize E.TTupleType expression
-          Space.checkIndent end E.TTupleIndentEnd
+  oneOf SyntaxError.TTupleEnd
+    [ do  word1 0x2C {-,-} SyntaxError.TTupleEnd
+          Space.chompAndCheckIndent SyntaxError.TTupleSpace SyntaxError.TTupleIndentTypeN
+          (tipe, end) <- specialize SyntaxError.TTupleType expression
+          Space.checkIndent end SyntaxError.TTupleIndentEnd
           chompTupleEnd start firstType (tipe : revTypes)
-    , do  word1 0x29 {-)-} E.TTupleEnd
+    , do  word1 0x29 {-)-} SyntaxError.TTupleEnd
           case reverse revTypes of
             [] ->
               return firstType
@@ -163,29 +163,29 @@ chompTupleEnd start firstType revTypes =
 -- RECORD
 
 
-type Field = ( A.Located Name.Name, Src.Type )
+type Field = ( Ann.Located Name.Name, Src.Type )
 
 
-chompRecordEnd :: [Field] -> Parser E.TRecord [Field]
+chompRecordEnd :: [Field] -> Parser SyntaxError.TRecord [Field]
 chompRecordEnd fields =
-  oneOf E.TRecordEnd
-    [ do  word1 0x2C {-,-} E.TRecordEnd
-          Space.chompAndCheckIndent E.TRecordSpace E.TRecordIndentField
+  oneOf SyntaxError.TRecordEnd
+    [ do  word1 0x2C {-,-} SyntaxError.TRecordEnd
+          Space.chompAndCheckIndent SyntaxError.TRecordSpace SyntaxError.TRecordIndentField
           field <- chompField
           chompRecordEnd (field : fields)
-    , do  word1 0x7D {-}-} E.TRecordEnd
+    , do  word1 0x7D {-}-} SyntaxError.TRecordEnd
           return (reverse fields)
     ]
 
 
-chompField :: Parser E.TRecord Field
+chompField :: Parser SyntaxError.TRecord Field
 chompField =
-  do  name <- addLocation (Var.lower E.TRecordField)
-      Space.chompAndCheckIndent E.TRecordSpace E.TRecordIndentColon
-      word1 0x3A {-:-} E.TRecordColon
-      Space.chompAndCheckIndent E.TRecordSpace E.TRecordIndentType
-      (tipe, end) <- specialize E.TRecordType expression
-      Space.checkIndent end E.TRecordIndentEnd
+  do  name <- addLocation (Var.lower SyntaxError.TRecordField)
+      Space.chompAndCheckIndent SyntaxError.TRecordSpace SyntaxError.TRecordIndentColon
+      word1 0x3A {-:-} SyntaxError.TRecordColon
+      Space.chompAndCheckIndent SyntaxError.TRecordSpace SyntaxError.TRecordIndentType
+      (tipe, end) <- specialize SyntaxError.TRecordType expression
+      Space.checkIndent end SyntaxError.TRecordIndentEnd
       return (name, tipe)
 
 
@@ -193,9 +193,9 @@ chompField =
 -- VARIANT
 
 
-variant :: Space.Parser E.CustomType (A.Located Name.Name, [Src.Type])
+variant :: Space.Parser SyntaxError.CustomType (Ann.Located Name.Name, [Src.Type])
 variant =
-  do  name@(A.At (A.Region _ nameEnd) _) <- addLocation (Var.upper E.CT_Variant)
-      Space.chomp E.CT_Space
-      (args, end) <- specialize E.CT_VariantArg (chompArgs [] nameEnd)
+  do  name@(Ann.At (Ann.Region _ nameEnd) _) <- addLocation (Var.upper SyntaxError.CT_Variant)
+      Space.chomp SyntaxError.CT_Space
+      (args, end) <- specialize SyntaxError.CT_VariantArg (chompArgs [] nameEnd)
       return ( (name, args), end )

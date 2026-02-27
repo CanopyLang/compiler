@@ -43,11 +43,11 @@ module Setup
 where
 
 import qualified Build.Artifacts as Build
-import qualified Canopy.Interface as I
+import qualified Canopy.Interface as Interface
 import qualified Canopy.ModuleName as ModuleName
 import qualified Canopy.Outline as Outline
 import qualified Canopy.Package as Pkg
-import qualified Canopy.Version as V
+import qualified Canopy.Version as Version
 import qualified Compiler
 import Control.Exception (IOException)
 import qualified Control.Exception as Exception
@@ -64,7 +64,7 @@ import qualified Stuff
 import qualified System.Directory as Dir
 import System.FilePath ((</>))
 import qualified Terminal.Print as Print
-import qualified Text.PrettyPrint.ANSI.Leijen as P
+import qualified Text.PrettyPrint.ANSI.Leijen as PP
 
 -- | Configuration flags for the setup command.
 data Flags = Flags
@@ -75,17 +75,17 @@ data Flags = Flags
 --
 -- Listed in dependency order so that packages with zero dependencies
 -- are processed first. Each entry is @(package, version)@.
-standardPackages :: [(Pkg.Name, V.Version)]
+standardPackages :: [(Pkg.Name, Version.Version)]
 standardPackages =
-  [ (Pkg.core, V.Version 1 0 5)
-  , (mkPkg "elm" "json", V.Version 1 1 3)
-  , (mkPkg "elm" "virtual-dom", V.Version 1 0 3)
-  , (mkPkg "elm" "html", V.Version 1 0 0)
-  , (mkPkg "elm" "browser", V.Version 1 0 2)
-  , (mkPkg "elm" "url", V.Version 1 0 0)
-  , (mkPkg "elm" "http", V.Version 2 0 0)
-  , (mkPkg "elm" "time", V.Version 1 0 0)
-  , (mkPkg "elm" "random", V.Version 1 0 0)
+  [ (Pkg.core, Version.Version 1 0 5)
+  , (mkPkg "elm" "json", Version.Version 1 1 3)
+  , (mkPkg "elm" "virtual-dom", Version.Version 1 0 3)
+  , (mkPkg "elm" "html", Version.Version 1 0 0)
+  , (mkPkg "elm" "browser", Version.Version 1 0 2)
+  , (mkPkg "elm" "url", Version.Version 1 0 0)
+  , (mkPkg "elm" "http", Version.Version 2 0 0)
+  , (mkPkg "elm" "time", Version.Version 1 0 0)
+  , (mkPkg "elm" "random", Version.Version 1 0 0)
   ]
 
 -- | Construct a package name from author and project strings.
@@ -167,11 +167,11 @@ reportRegistryStatus (Registry.Registry count _) =
 -- | Locate a package's artifacts, copying from Elm cache if necessary.
 --
 -- Returns True if artifacts are available after this call.
-locatePackage :: FilePath -> Flags -> (Pkg.Name, V.Version) -> IO Bool
+locatePackage :: FilePath -> Flags -> (Pkg.Name, Version.Version) -> IO Bool
 locatePackage _cache flags (pkg, version) = do
   homeDir <- Dir.getHomeDirectory
   let (author, project) = pkgStrings pkg
-      versionStr = V.toChars version
+      versionStr = Version.toChars version
       canopyDir = homeDir </> ".canopy" </> "packages" </> author </> project </> versionStr
       canopyArtifacts = canopyDir </> "artifacts.dat"
       elmDir = homeDir </> ".elm" </> "0.19.1" </> "packages" </> author </> project </> versionStr
@@ -337,10 +337,10 @@ compilePackageVersion flags packageName pkgDir versionStr = do
 compilePackageFromSource :: Flags -> String -> String -> String -> FilePath -> IO (Either String ())
 compilePackageFromSource _flags author packageName versionStr pkgDir = do
   -- Read canopy.json to get exposed modules using proper Aeson parsing
-  maybeOutline <- Outline.read pkgDir
-  case maybeOutline of
-    Nothing -> pure (Left "Failed to read or parse canopy.json")
-    Just outline ->
+  eitherOutline <- Outline.read pkgDir
+  case eitherOutline of
+    Left err -> pure (Left err)
+    Right outline ->
       case outline of
         Outline.App _ -> pure (Left "Expected package outline, found application outline")
         Outline.Pkg pkgOutline ->
@@ -363,11 +363,11 @@ compilePackageFromSource _flags author packageName versionStr pkgDir = do
                   PackageCache.writePackageArtifacts author packageName versionStr interfaces globalGraph ffiInfo
                   pure (Right ())
 
--- | Convert Build.Artifacts to PackageInterfaces (Map ModuleName.Raw I.DependencyInterface).
+-- | Convert Build.Artifacts to PackageInterfaces (Map ModuleName.Raw Interface.DependencyInterface).
 buildArtifactsToInterfaces :: Build.Artifacts -> PackageCache.PackageInterfaces
 buildArtifactsToInterfaces artifacts =
   Map.fromList
-    [ (name, I.Public iface)
+    [ (name, Interface.Public iface)
     | Build.Fresh name iface _ <- Build._artifactsModules artifacts
     ]
 
@@ -407,8 +407,8 @@ pkgStrings :: Pkg.Name -> (String, String)
 pkgStrings (Pkg.Name author project) =
   (Utf8.toChars author, Utf8.toChars project)
 
--- | Print a 'P.Doc' message when verbose mode is enabled.
-verboseLog :: Flags -> P.Doc -> IO ()
+-- | Print a 'PP.Doc' message when verbose mode is enabled.
+verboseLog :: Flags -> PP.Doc -> IO ()
 verboseLog flags doc =
   if _setupVerbose flags
     then Print.println doc

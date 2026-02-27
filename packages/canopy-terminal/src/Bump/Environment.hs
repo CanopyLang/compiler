@@ -100,10 +100,8 @@ loadEnvironmentData root = do
   cache <- Task.io Stuff.getPackageCache
   manager <- Task.io Http.getManager
   registry <- loadRegistry manager
-  maybeOutline <- Task.io (Outline.read root)
-  outline <- case maybeOutline of
-    Nothing -> Task.throw (Exit.BumpBadOutline "Failed to read canopy.json")
-    Just o -> pure o
+  eitherOutline <- Task.io (Outline.read root)
+  outline <- either (Task.throw . Exit.BumpBadOutline) pure eitherOutline
   pure (root, cache, manager, registry, outline)
 
 -- | Loads registry configuration with custom repositories.

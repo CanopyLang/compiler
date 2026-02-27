@@ -5,8 +5,8 @@ import qualified Data.ByteString as BS
 import qualified Data.ByteString.Lazy.Char8 as BL8
 import qualified Data.List as List
 import qualified Data.Name as Name
-import qualified Parse.Module as M
-import qualified Reporting.Annotation as A
+import qualified Parse.Module as ParseModule
+import qualified Reporting.Annotation as Ann
 import Test.Tasty
 import Test.Tasty.Golden
 
@@ -20,7 +20,7 @@ goldenAlias :: String -> FilePath -> FilePath -> TestTree
 goldenAlias name srcPath goldenPath =
   goldenVsString name goldenPath $ do
     src <- BS.readFile srcPath
-    case M.fromByteString M.Application src of
+    case ParseModule.fromByteString ParseModule.Application src of
       Left err -> pure (BL8.pack ("Parse error: " <> (show err <> "\n")))
       Right modul -> pure (BL8.pack (aliasSummary modul <> "\n"))
 
@@ -29,13 +29,13 @@ aliasSummary modul =
   let items = fmap summarize (Src._aliases modul)
    in List.intercalate "\n" (List.sort items)
 
-summarize :: A.Located Src.Alias -> String
-summarize (A.At _ (Src.Alias (A.At _ n) tvars tipe)) =
+summarize :: Ann.Located Src.Alias -> String
+summarize (Ann.At _ (Src.Alias (Ann.At _ n) tvars tipe)) =
   let header = (Name.toChars n <> ("/vars=" <> show (length tvars)))
    in (header <> (" " <> body tipe))
 
 body :: Src.Type -> String
-body (A.At _ t) =
+body (Ann.At _ t) =
   case t of
     Src.TRecord fields ext ->
       "fields=[" <> (List.intercalate "," (fmap field fields) <> ("]" <> maybe "" (const " ext") ext))
@@ -48,11 +48,11 @@ body (A.At _ t) =
 argsS :: [Src.Type] -> String
 argsS args = if null args then "" else "<" <> (show (length args) <> ">")
 
-field :: (A.Located Name.Name, Src.Type) -> String
-field (A.At _ n, t) = Name.toChars n <> (":" <> fieldType t)
+field :: (Ann.Located Name.Name, Src.Type) -> String
+field (Ann.At _ n, t) = Name.toChars n <> (":" <> fieldType t)
 
 fieldType :: Src.Type -> String
-fieldType (A.At _ t) =
+fieldType (Ann.At _ t) =
   case t of
     Src.TVar v -> Name.toChars v
     Src.TType _ name _ -> Name.toChars name

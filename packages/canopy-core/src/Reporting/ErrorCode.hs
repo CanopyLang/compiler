@@ -48,7 +48,7 @@ import Data.Text (Text)
 import qualified Data.Text as Text
 import Reporting.Diagnostic (ErrorCode (..))
 import qualified Reporting.Diagnostic as Diag
-import qualified Reporting.Doc as D
+import qualified Reporting.Doc as Doc
 
 -- | Construct a parse error code (E01xx).
 parseError :: Int -> ErrorCode
@@ -102,25 +102,25 @@ lookupInfo code = Map.lookup code errorCatalog
 
 -- | Format the full explanation for @canopy explain E0xxx@.
 --
--- Produces a colored 'D.Doc' with the error title, code, summary,
+-- Produces a colored 'Doc.Doc' with the error title, code, summary,
 -- and extended explanation using the Reporting.Doc color system.
-formatExplanation :: ErrorCode -> D.Doc
+formatExplanation :: ErrorCode -> Doc.Doc
 formatExplanation code =
   case lookupInfo code of
     Nothing ->
-      D.stack
-        [ D.dullcyan (D.fromChars ("-- " <> codeStr)),
+      Doc.stack
+        [ Doc.dullcyan (Doc.fromChars ("-- " <> codeStr)),
           "",
-          D.reflow ("Error " <> codeStr <> " is not yet documented."),
-          D.reflow "Please report this at https://github.com/quinten/canopy/issues"
+          Doc.reflow ("Error " <> codeStr <> " is not yet documented."),
+          Doc.reflow "Please report this at https://github.com/quinten/canopy/issues"
         ]
     Just info ->
-      D.stack
-        [ D.dullcyan (D.fromChars ("-- " <> Text.unpack (_infoTitle info) <> " [" <> codeStr <> "]")),
+      Doc.stack
+        [ Doc.dullcyan (Doc.fromChars ("-- " <> Text.unpack (_infoTitle info) <> " [" <> codeStr <> "]")),
           "",
-          D.reflow (Text.unpack (_infoSummary info)),
+          Doc.reflow (Text.unpack (_infoSummary info)),
           "",
-          D.fromChars (Text.unpack (_infoExplanation info))
+          Doc.fromChars (Text.unpack (_infoExplanation info))
         ]
   where
     codeStr = Text.unpack (Diag.errorCodeToText code)

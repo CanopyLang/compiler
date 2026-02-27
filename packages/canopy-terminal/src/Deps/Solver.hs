@@ -25,7 +25,7 @@ where
 
 import qualified Canopy.Outline as Outline
 import qualified Canopy.Package as Pkg
-import qualified Canopy.Version as V
+import qualified Canopy.Version as Version
 import Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
 import qualified Deps.Registry as Registry
@@ -37,17 +37,17 @@ type Connection = ()
 
 -- | App solution with old and new dependency maps.
 data AppSolution = AppSolution
-  { appSolutionOld :: !(Map Pkg.Name V.Version)
-  , appSolutionNew :: !(Map Pkg.Name V.Version)
+  { appSolutionOld :: !(Map Pkg.Name Version.Version)
+  , appSolutionNew :: !(Map Pkg.Name Version.Version)
   , appSolutionOutline :: !Outline.AppOutline
   }
   deriving (Show)
 
 -- | Solver environment.
-data Env = Env !Stuff.PackageCache !Http.Manager !Connection !Registry.CanopyRegistries !(Map Pkg.Name V.Version)
+data Env = Env !Stuff.PackageCache !Http.Manager !Connection !Registry.CanopyRegistries !(Map Pkg.Name Version.Version)
 
 -- | Package details with version and direct dependencies.
-data Details = Details !V.Version !(Map Pkg.Name V.Version)
+data Details = Details !Version.Version !(Map Pkg.Name Version.Version)
   deriving (Show, Eq)
 
 -- | Solver result.
@@ -99,9 +99,9 @@ addToApp _cache _connection _registry newPkg outline =
   let oldDeps = Outline._appDepsDirect outline
       oldIndirect = Outline._appDepsIndirect outline
       oldCombined = Map.union oldDeps oldIndirect
-      newDeps = Map.insert newPkg V.one oldDeps
+      newDeps = Map.insert newPkg Version.one oldDeps
       newIndirect = oldIndirect
-      newCombined = Map.insert newPkg V.one oldCombined
+      newCombined = Map.insert newPkg Version.one oldCombined
       newOutline =
         outline
           { Outline._appDepsDirect = newDeps,

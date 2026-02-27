@@ -138,7 +138,7 @@ module Http
   )
 where
 
-import qualified Canopy.Version as V
+import qualified Canopy.Version as Version
 import qualified Codec.Archive.Zip as Zip
 import Control.Exception (SomeException)
 import qualified Control.Exception as Exception
@@ -149,7 +149,7 @@ import qualified Logging.Logger as Log
 import qualified Data.Binary as Binary
 import qualified Data.Binary.Get as Binary
 import Data.ByteString (ByteString)
-import qualified Data.ByteString.Builder as B
+import qualified Data.ByteString.Builder as BB
 import qualified Data.ByteString.Char8 as BS
 import qualified Data.ByteString.Lazy as LBS
 import qualified Data.Digest.Pure.SHA as SHA
@@ -272,14 +272,14 @@ fileUrlToPath url =
     Just uri | URI.uriScheme uri == "file:" -> Just (URI.uriPath uri)
     _ -> Nothing
 
--- | Read a local ZIP file and compute its SHA1 hash
+-- | Read a local ZIP file and compute its SHA-256 hash
 readLocalArchive :: FilePath -> IO (Maybe (Sha, Zip.Archive))
 readLocalArchive filePath = do
   fileExists <- Directory.doesFileExist filePath
   if fileExists
     then do
       content <- LBS.readFile filePath
-      let sha = SHA.sha1 content
+      let sha = SHA.sha256 content
       case Binary.decodeOrFail content of
         Right (_, _, archive) -> return $ Just (sha, archive)
         Left _ -> return Nothing
@@ -430,7 +430,7 @@ addDefaultHeaders headers =
 {-# NOINLINE userAgent #-}
 userAgent :: ByteString
 userAgent =
-  BS.pack ("canopy/" <> V.toChars V.compiler)
+  BS.pack ("canopy/" <> Version.toChars Version.compiler)
 
 -- | Create Accept header for content type negotiation.
 --
@@ -560,35 +560,35 @@ handleSomeException url onError exception = do
 
 -- SHA
 
--- | SHA1 digest type for archive integrity verification.
+-- | SHA-256 digest type for archive integrity verification.
 --
--- Represents a SHA1 cryptographic hash used to verify the integrity
+-- Represents a SHA-256 cryptographic hash used to verify the integrity
 -- of downloaded archives. The hash is computed incrementally during
 -- download to minimize memory usage while ensuring data integrity.
 --
 -- @since 0.19.1
-type Sha = SHA.Digest SHA.SHA1State
+type Sha = SHA.Digest SHA.SHA256State
 
--- | Convert SHA1 digest to hexadecimal string representation.
+-- | Convert SHA-256 digest to hexadecimal string representation.
 --
--- Converts a SHA1 hash digest to its standard 40-character hexadecimal
+-- Converts a SHA-256 hash digest to its standard 64-character hexadecimal
 -- string representation. This format is commonly used for displaying
 -- and comparing hash values in logs and user interfaces.
 --
 -- ==== Examples
 --
--- >>> sha <- computeFileSHA1 "package.zip"
+-- >>> sha <- computeFileSHA256 "package.zip"
 -- >>> shaToChars sha
--- "da39a3ee5e6b4b0d3255bfef95601890afd80709"
+-- "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
 --
--- >>> putStrLn ("Archive SHA1: " <> shaToChars archiveSha)
--- Archive SHA1: a94a8fe5ccb19ba61c4c0873d391e987982fbbd3
+-- >>> putStrLn ("Archive SHA-256: " <> shaToChars archiveSha)
+-- Archive SHA-256: a94a8fe5ccb19ba61c4c0873d391e987982fbbd3...
 --
 -- ==== Format
 --
--- * **Length**: Always 40 characters
+-- * **Length**: Always 64 characters
 -- * **Characters**: Lowercase hexadecimal (0-9, a-f)
--- * **Standard**: Complies with RFC 3174 SHA1 specification
+-- * **Standard**: Complies with FIPS 180-4 SHA-256 specification
 --
 -- @since 0.19.1
 shaToChars :: Sha -> String
@@ -599,7 +599,7 @@ shaToChars =
 
 data ArchiveState = AS
   { _len :: !Int,
-    _sha :: !(Binary.Decoder SHA.SHA1State),
+    _sha :: !(Binary.Decoder SHA.SHA256State),
     _zip :: !(Binary.Decoder Zip.Archive)
   }
 
@@ -610,7 +610,7 @@ readArchive body =
   readArchiveHelp body $
     AS
       { _len = 0,
-        _sha = SHA.sha1Incremental,
+        _sha = SHA.sha256Incremental,
         _zip = Binary.runGetIncremental Binary.get
       }
 
@@ -630,7 +630,7 @@ readArchiveHelp body archiveState =
             & sha .~ Binary.pushChunk currentSha chunk
             & zip .~ k (if BS.null chunk then Nothing else Just chunk)
     Binary.Done _ _ archive ->
-      return $ Just (SHA.completeSha1Incremental (archiveState ^. sha) (archiveState ^. len), archive)
+      return $ Just (SHA.completeSha256Incremental (archiveState ^. sha) (archiveState ^. len), archive)
 
 -- | Download ZIP archive with custom headers and integrity verification.
 --
@@ -1037,7 +1037,7 @@ filePart name = Multi.partFileSource (String.fromString name)
 jsonPart :: String -> FilePath -> Encode.Value -> Multi.Part
 jsonPart name filePath value =
   let body =
-        (Client.RequestBodyLBS . B.toLazyByteString $ Encode.encodeUgly value)
+        (Client.RequestBodyLBS . BB.toLazyByteString $ Encode.encodeUgly value)
    in Multi.partFileRequestBody (String.fromString name) filePath body
 
 -- | Create multipart form part with string data.

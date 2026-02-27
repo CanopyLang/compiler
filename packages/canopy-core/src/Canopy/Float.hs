@@ -9,7 +9,7 @@ module Canopy.Float
 where
 
 import Data.Binary (Binary, get, put)
-import qualified Data.ByteString.Builder as B
+import qualified Data.ByteString.Builder as BB
 import qualified Data.Utf8 as Utf8
 import Data.Word (Word8)
 import Foreign.Ptr (Ptr)
@@ -29,7 +29,7 @@ fromPtr =
   Utf8.fromPtr
 
 {-# INLINE toBuilder #-}
-toBuilder :: Float -> B.Builder
+toBuilder :: Float -> BB.Builder
 toBuilder =
   Utf8.toBuilder
 

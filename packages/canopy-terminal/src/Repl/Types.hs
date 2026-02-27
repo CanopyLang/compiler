@@ -44,11 +44,11 @@ import Control.Monad.State.Strict (StateT)
 import Data.ByteString (ByteString)
 import qualified Data.ByteString as BS
 import Data.ByteString.Builder (Builder)
-import qualified Data.ByteString.Builder as B
+import qualified Data.ByteString.Builder as BB
 import qualified Data.ByteString.Char8 as BSC
 import qualified Data.ByteString.UTF8 as BS_UTF8
 import Data.Map (Map)
-import qualified Data.Name as N
+import qualified Data.Name as Name
 import System.Exit (ExitCode)
 
 -- | REPL command line flags and configuration options.
@@ -87,11 +87,11 @@ data Input
   = -- | Import statement
     Import !ModuleName.Raw !BS.ByteString
   | -- | Type definition (union or alias)
-    Type !N.Name !BS.ByteString
+    Type !Name.Name !BS.ByteString
   | -- | Port declaration (not supported)
     Port
   | -- | Function or value declaration
-    Decl !N.Name !BS.ByteString
+    Decl !Name.Name !BS.ByteString
   | -- | Expression to evaluate
     Expr !BS.ByteString
   | -- | Reset REPL state
@@ -125,7 +125,7 @@ data Prefill
   = -- | Add standard indentation
     Indent
   | -- | Start of a definition with the given name
-    DefStart !N.Name
+    DefStart !Name.Name
   deriving (Eq, Show)
 
 -- | Result of input categorization.
@@ -146,11 +146,11 @@ data CategorizedInput
 -- @since 0.19.1
 data State = State
   { -- | Module imports
-    _imports :: !(Map N.Name Builder),
+    _imports :: !(Map Name.Name Builder),
     -- | Type definitions
-    _types :: !(Map N.Name Builder),
+    _types :: !(Map Name.Name Builder),
     -- | Value and function declarations
-    _decls :: !(Map N.Name Builder)
+    _decls :: !(Map Name.Name Builder)
   }
 
 -- | Output type for evaluation results.
@@ -160,7 +160,7 @@ data Output
   = -- | No output expected
     OutputNothing
   | -- | Declaration was processed
-    OutputDecl !N.Name
+    OutputDecl !Name.Name
   | -- | Expression result to display
     OutputExpr !ByteString
   deriving (Eq, Show)
@@ -229,19 +229,19 @@ getFirstLine (Lines x xs) =
 -- @since 0.19.1
 outputToBuilder :: Output -> Builder
 outputToBuilder output =
-  N.toBuilder N.replValueToPrint <> B.stringUtf8 " ="
+  Name.toBuilder Name.replValueToPrint <> BB.stringUtf8 " ="
     <> case output of
-      OutputNothing -> B.stringUtf8 " ()\n"
-      OutputDecl _ -> B.stringUtf8 " ()\n"
+      OutputNothing -> BB.stringUtf8 " ()\n"
+      OutputDecl _ -> BB.stringUtf8 " ()\n"
       OutputExpr expr ->
-        foldr (\line rest -> B.stringUtf8 "\n  " <> B.byteString line <> rest) (B.stringUtf8 "\n") (BSC.lines expr)
+        foldr (\line rest -> BB.stringUtf8 "\n  " <> BB.byteString line <> rest) (BB.stringUtf8 "\n") (BSC.lines expr)
 
 -- | Extract the name to print from output.
 --
 -- @since 0.19.1
-toPrintName :: Output -> Maybe N.Name
+toPrintName :: Output -> Maybe Name.Name
 toPrintName output =
   case output of
     OutputNothing -> Nothing
     OutputDecl name -> Just name
-    OutputExpr _ -> Just N.replValueToPrint
+    OutputExpr _ -> Just Name.replValueToPrint

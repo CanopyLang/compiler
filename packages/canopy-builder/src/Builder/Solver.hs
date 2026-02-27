@@ -35,7 +35,7 @@ module Builder.Solver
 where
 
 import qualified Canopy.Package as Pkg
-import qualified Canopy.Version as V
+import qualified Canopy.Version as Version
 import Data.List (intercalate)
 import Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
@@ -43,15 +43,15 @@ import Data.Word (Word16)
 
 -- | Package version constraint.
 data Constraint
-  = ExactVersion !V.Version
-  | MinVersion !V.Version
-  | MaxVersion !V.Version
-  | RangeVersion !V.Version !V.Version
+  = ExactVersion !Version.Version
+  | MinVersion !Version.Version
+  | MaxVersion !Version.Version
+  | RangeVersion !Version.Version !Version.Version
   | AnyVersion
   deriving (Show, Eq)
 
 -- | Solution mapping packages to versions.
-type Solution = Map Pkg.Name V.Version
+type Solution = Map Pkg.Name Version.Version
 
 -- | Solver error.
 data SolverError
@@ -97,7 +97,7 @@ findSolution solution ((pkg, constraints) : rest) =
             else Nothing
 
 -- | Select a version satisfying constraints.
-selectVersion :: Pkg.Name -> [Constraint] -> Maybe V.Version
+selectVersion :: Pkg.Name -> [Constraint] -> Maybe Version.Version
 selectVersion pkg constraints =
   case combineConstraints constraints of
     Nothing -> Nothing
@@ -132,8 +132,8 @@ mergeConstraints (RangeVersion min1 max1) (RangeVersion min2 max2) =
 mergeConstraints _ _ = Nothing -- Incompatible
 
 -- | Pick a version satisfying constraint.
-pickVersion :: Pkg.Name -> Constraint -> Maybe V.Version
-pickVersion _ AnyVersion = Just V.one -- Default to 1.0.0
+pickVersion :: Pkg.Name -> Constraint -> Maybe Version.Version
+pickVersion _ AnyVersion = Just Version.one -- Default to 1.0.0
 pickVersion _ (ExactVersion v) = Just v
 pickVersion _ (MinVersion v) = Just v
 pickVersion _ (MaxVersion v) = Just v
@@ -150,7 +150,7 @@ isCompatible solution constraints =
         Just version -> all (satisfiesConstraint version) cons
 
 -- | Check if version satisfies constraint.
-satisfiesConstraint :: V.Version -> Constraint -> Bool
+satisfiesConstraint :: Version.Version -> Constraint -> Bool
 satisfiesConstraint _ AnyVersion = True
 satisfiesConstraint v (ExactVersion target) = v == target
 satisfiesConstraint v (MinVersion minV) = v >= minV
@@ -206,7 +206,7 @@ parseConstraint str =
           major <- readMaybeWord16 majorStr
           minor <- readMaybeWord16 minorStr
           patch <- readMaybeWord16 patchStr
-          Just (V.Version major minor patch)
+          Just (Version.Version major minor patch)
         _ -> Nothing
 
     splitOn :: Char -> String -> [String]
@@ -239,4 +239,4 @@ showSolution solution =
   intercalate ", " (map showEntry (Map.toList solution))
   where
     showEntry (pkg, version) =
-      Pkg.toChars pkg ++ "@" ++ V.toChars version
+      Pkg.toChars pkg ++ "@" ++ Version.toChars version

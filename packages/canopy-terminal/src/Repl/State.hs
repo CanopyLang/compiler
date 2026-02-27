@@ -24,12 +24,12 @@ where
 
 import qualified Control.Monad.State.Strict as State
 import Data.ByteString (ByteString)
-import qualified Data.ByteString.Builder as B
+import qualified Data.ByteString.Builder as BB
 import qualified Data.ByteString.Lazy as LBS
 import qualified Data.List as List
 import Data.Map (Map)
 import qualified Data.Map as Map
-import qualified Data.Name as N
+import qualified Data.Name as Name
 import Repl.Types (M, Output (..), State (..), outputToBuilder)
 import System.Console.Haskeline (Completion)
 import qualified System.Console.Haskeline as Repl
@@ -48,7 +48,7 @@ initialState = State Map.empty Map.empty Map.empty
 -- @since 0.19.1
 toByteString :: State -> Output -> ByteString
 toByteString (State imports types decls) output =
-  LBS.toStrict (B.toLazyByteString moduleBuilder)
+  LBS.toStrict (BB.toLazyByteString moduleBuilder)
   where
     moduleBuilder =
       mconcat
@@ -61,31 +61,31 @@ toByteString (State imports types decls) output =
 
     moduleHeader =
       mconcat
-        [ B.stringUtf8 "module ",
-          N.toBuilder N.replModule,
-          B.stringUtf8 " exposing (..)\n"
+        [ BB.stringUtf8 "module ",
+          Name.toBuilder Name.replModule,
+          BB.stringUtf8 " exposing (..)\n"
         ]
 
 -- | Add an import to the REPL state.
 --
 -- @since 0.19.1
-addImport :: N.Name -> ByteString -> State -> State
+addImport :: Name.Name -> ByteString -> State -> State
 addImport name src state =
-  state {_imports = Map.insert name (B.byteString src) (_imports state)}
+  state {_imports = Map.insert name (BB.byteString src) (_imports state)}
 
 -- | Add a type definition to the REPL state.
 --
 -- @since 0.19.1
-addType :: N.Name -> ByteString -> State -> State
+addType :: Name.Name -> ByteString -> State -> State
 addType name src state =
-  state {_types = Map.insert name (B.byteString src) (_types state)}
+  state {_types = Map.insert name (BB.byteString src) (_types state)}
 
 -- | Add a declaration to the REPL state.
 --
 -- @since 0.19.1
-addDecl :: N.Name -> ByteString -> State -> State
+addDecl :: Name.Name -> ByteString -> State -> State
 addDecl name src state =
-  state {_decls = Map.insert name (B.byteString src) (_decls state)}
+  state {_decls = Map.insert name (BB.byteString src) (_decls state)}
 
 -- | Generate auto-completion suggestions.
 --
@@ -118,29 +118,29 @@ lookupCompletions string = do
 -- | REPL command completions.
 --
 -- @since 0.19.1
-commands :: Map N.Name ()
+commands :: Map Name.Name ()
 commands =
   Map.fromList
-    [ (N.fromChars ":exit", ()),
-      (N.fromChars ":quit", ()),
-      (N.fromChars ":reset", ()),
-      (N.fromChars ":help", ())
+    [ (Name.fromChars ":exit", ()),
+      (Name.fromChars ":quit", ()),
+      (Name.fromChars ":reset", ()),
+      (Name.fromChars ":help", ())
     ]
 
 -- | Add matching completions from a name map.
 --
 -- @since 0.19.1
-addMatches :: String -> Bool -> Map N.Name v -> [Completion] -> [Completion]
+addMatches :: String -> Bool -> Map Name.Name v -> [Completion] -> [Completion]
 addMatches string isFinished dict completions =
   Map.foldrWithKey (addMatch string isFinished) completions dict
 
 -- | Add a single completion if it matches the prefix.
 --
 -- @since 0.19.1
-addMatch :: String -> Bool -> N.Name -> v -> [Completion] -> [Completion]
+addMatch :: String -> Bool -> Name.Name -> v -> [Completion] -> [Completion]
 addMatch string isFinished name _ completions =
   if string `List.isPrefixOf` suggestion
     then Repl.Completion suggestion suggestion isFinished : completions
     else completions
   where
-    suggestion = N.toChars name
+    suggestion = Name.toChars name

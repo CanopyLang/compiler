@@ -50,7 +50,7 @@ import GHC.Exts
   )
 import GHC.IO (stToIO, unsafeDupablePerformIO)
 import GHC.Word (Word8)
-import qualified Parse.Primitives as P
+import qualified Parse.Primitives as Parse
 
 -- FROM PTR
 
@@ -68,8 +68,8 @@ fromPtr pos end =
 
 -- FROM SNIPPET
 
-fromSnippet :: P.Snippet -> Utf8 t
-fromSnippet (P.Snippet fptr off len _ _) =
+fromSnippet :: Parse.Snippet -> Utf8 t
+fromSnippet (Parse.Snippet fptr off len _ _) =
   unsafeDupablePerformIO
     ( stToIO
         ( do

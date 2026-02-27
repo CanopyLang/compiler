@@ -27,25 +27,25 @@ import Foreign.Ptr (Ptr, plusPtr)
 import GHC.Exts (Char (C#), Int#, chr#, uncheckedIShiftL#, word2Int#, word8ToWord#, (+#), (-#))
 import GHC.Word (Word8 (W8#))
 import Parse.Primitives (Col, Parser, Row, unsafeIndex)
-import qualified Parse.Primitives as P
+import qualified Parse.Primitives as Parse
 
 -- LOCAL UPPER
 
 upper :: (Row -> Col -> x) -> Parser x Name.Name
 upper toError =
-  P.Parser $ \(P.State src pos end indent row col) cok _ _ eerr ->
+  Parse.Parser $ \(Parse.State src pos end indent row col) cok _ _ eerr ->
     let (# newPos, newCol #) = chompUpper pos end col
      in if pos == newPos
           then eerr row col toError
           else
             let !name = Name.fromPtr pos newPos
-             in cok name (P.State src newPos end indent row newCol)
+             in cok name (Parse.State src newPos end indent row newCol)
 
 -- LOCAL LOWER
 
 lower :: (Row -> Col -> x) -> Parser x Name.Name
 lower toError =
-  P.Parser $ \(P.State src pos end indent row col) cok _ _ eerr ->
+  Parse.Parser $ \(Parse.State src pos end indent row col) cok _ _ eerr ->
     let (# newPos, newCol #) = chompLower pos end col
      in if pos == newPos
           then eerr row col toError
@@ -55,7 +55,7 @@ lower toError =
                   then eerr row col toError
                   else
                     let !newState =
-                          P.State src newPos end indent row newCol
+                          Parse.State src newPos end indent row newCol
                      in cok name newState
 
 {-# NOINLINE reservedWords #-}
@@ -82,7 +82,7 @@ reservedWords =
 
 moduleName :: (Row -> Col -> x) -> Parser x Name.Name
 moduleName toError =
-  P.Parser $ \(P.State src pos end indent row col) cok _ cerr eerr ->
+  Parse.Parser $ \(Parse.State src pos end indent row col) cok _ cerr eerr ->
     let (# pos1, col1 #) = chompUpper pos end col
      in if pos == pos1
           then eerr row col toError
@@ -91,7 +91,7 @@ moduleName toError =
              in case status of
                   Good ->
                     let !name = Name.fromPtr pos newPos
-                        !newState = P.State src newPos end indent row newCol
+                        !newState = Parse.State src newPos end indent row newCol
                      in cok name newState
                   Bad ->
                     cerr row newCol toError
@@ -119,12 +119,12 @@ data Upper
 
 foreignUpper :: (Row -> Col -> x) -> Parser x Upper
 foreignUpper toError =
-  P.Parser $ \(P.State src pos end indent row col) cok _ _ eerr ->
+  Parse.Parser $ \(Parse.State src pos end indent row col) cok _ _ eerr ->
     let (# upperStart, upperEnd, newCol #) = foreignUpperHelp pos end col
      in if upperStart == upperEnd
           then eerr row newCol toError
           else
-            let !newState = P.State src upperEnd end indent row newCol
+            let !newState = Parse.State src upperEnd end indent row newCol
                 !name = Name.fromPtr upperStart upperEnd
                 !upperName =
                   if upperStart == pos
@@ -148,12 +148,12 @@ foreignUpperHelp pos end col =
 
 foreignAlpha :: (Row -> Col -> x) -> Parser x Src.Expr_
 foreignAlpha toError =
-  P.Parser $ \(P.State src pos end indent row col) cok _ _ eerr ->
+  Parse.Parser $ \(Parse.State src pos end indent row col) cok _ _ eerr ->
     let (# alphaStart, alphaEnd, newCol, varType #) = foreignAlphaHelp pos end col
      in if alphaStart == alphaEnd
           then eerr row newCol toError
           else
-            let !newState = P.State src alphaEnd end indent row newCol
+            let !newState = Parse.State src alphaEnd end indent row newCol
                 !name = Name.fromPtr alphaStart alphaEnd
              in if alphaStart == pos
                   then

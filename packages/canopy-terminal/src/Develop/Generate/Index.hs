@@ -7,14 +7,14 @@ where
 
 import qualified Canopy.Outline as Outline
 import qualified Canopy.Package as Pkg
-import qualified Canopy.Version as V
+import qualified Canopy.Version as Version
 import Control.Monad (filterM)
 import Data.ByteString.Builder (Builder)
 import qualified Data.List as List
 import qualified Data.Map as Map
 import qualified Develop.Generate.Help as Help
 import Json.Encode ((==>))
-import qualified Json.Encode as E
+import qualified Json.Encode as Encode
 import qualified Stuff
 import qualified System.Directory as Dir
 import System.FilePath (splitDirectories, takeExtension, (</>))
@@ -36,7 +36,7 @@ data Flags = Flags
     _files :: [File],
     _readme :: Maybe String,
     _outline :: Maybe Outline.Outline,
-    _exactDeps :: Map.Map Pkg.Name V.Version
+    _exactDeps :: Map.Map Pkg.Name Version.Version
   }
 
 data File = File
@@ -112,7 +112,7 @@ getOutline =
       Just root ->
         do
           result <- Outline.read root
-          return result
+          return (either (const Nothing) Just result)
 
 -- GET EXACT DEPS
 
@@ -122,11 +122,11 @@ getOutline =
 -- the project configuration. For package outlines, only version constraints
 -- are stored so we return an empty map (exact versions would require
 -- running the dependency solver, which is too expensive for index generation).
-getExactDeps :: Maybe Outline.Outline -> IO (Map.Map Pkg.Name V.Version)
+getExactDeps :: Maybe Outline.Outline -> IO (Map.Map Pkg.Name Version.Version)
 getExactDeps = maybe (pure Map.empty) extractFromOutline
 
 -- | Extract exact dependency versions from an outline.
-extractFromOutline :: Outline.Outline -> IO (Map.Map Pkg.Name V.Version)
+extractFromOutline :: Outline.Outline -> IO (Map.Map Pkg.Name Version.Version)
 extractFromOutline (Outline.App appOutline) =
   pure (Outline._appDepsDirect appOutline)
 extractFromOutline (Outline.Pkg _) =
@@ -134,24 +134,24 @@ extractFromOutline (Outline.Pkg _) =
 
 -- ENCODE
 
-encode :: Flags -> E.Value
+encode :: Flags -> Encode.Value
 encode (Flags root pwd dirs files readme outline exactDeps) =
-  E.object
+  Encode.object
     [ "root" ==> encodeFilePath root,
-      "pwd" ==> E.list encodeFilePath pwd,
-      "dirs" ==> E.list encodeFilePath dirs,
-      "files" ==> E.list encodeFile files,
-      "readme" ==> maybe E.null E.chars readme,
-      "outline" ==> maybe E.null Outline.encode outline,
-      "exactDeps" ==> E.dict Pkg.toJsonString V.encode exactDeps
+      "pwd" ==> Encode.list encodeFilePath pwd,
+      "dirs" ==> Encode.list encodeFilePath dirs,
+      "files" ==> Encode.list encodeFile files,
+      "readme" ==> maybe Encode.null Encode.chars readme,
+      "outline" ==> maybe Encode.null Outline.encode outline,
+      "exactDeps" ==> Encode.dict Pkg.toJsonString Version.encode exactDeps
     ]
 
-encodeFilePath :: FilePath -> E.Value
-encodeFilePath = E.chars
+encodeFilePath :: FilePath -> Encode.Value
+encodeFilePath = Encode.chars
 
-encodeFile :: File -> E.Value
+encodeFile :: File -> Encode.Value
 encodeFile (File path hasMain) =
-  E.object
+  Encode.object
     [ "name" ==> encodeFilePath path,
-      "runnable" ==> E.bool hasMain
+      "runnable" ==> Encode.bool hasMain
     ]

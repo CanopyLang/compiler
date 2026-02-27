@@ -4,7 +4,7 @@ import qualified AST.Canonical as Can
 import qualified Canopy.ModuleName as ModuleName
 import qualified Data.Map as Map
 import qualified Data.Name as Name
-import qualified Reporting.Annotation as A
+import qualified Reporting.Annotation as Ann
 import Test.Tasty
 import Test.Tasty.HUnit
 
@@ -53,7 +53,7 @@ testAliasAndRecord = testCase "alias and record types" $ do
 
 testExportsAndPorts :: TestTree
 testExportsAndPorts = testCase "exports and ports data constructors" $ do
-  let ex = Can.ExportEverything A.one
+  let ex = Can.ExportEverything Ann.one
   case ex of
     Can.ExportEverything _ -> return ()
   let incoming = Can.Incoming Map.empty (Can.TUnit) (Can.TUnit)

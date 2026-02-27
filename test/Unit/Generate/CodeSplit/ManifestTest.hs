@@ -8,7 +8,7 @@
 -- @since 0.19.2
 module Unit.Generate.CodeSplit.ManifestTest (tests) where
 
-import qualified Data.ByteString.Builder as B
+import qualified Data.ByteString.Builder as BB
 import qualified Data.ByteString.Lazy.Char8 as LChar8
 import qualified Data.Text as Text
 import Generate.JavaScript.CodeSplit.Manifest
@@ -38,8 +38,8 @@ tests =
 -- HELPER
 
 -- | Render a builder to a string.
-renderBuilder :: B.Builder -> String
-renderBuilder = LChar8.unpack . B.toLazyByteString
+renderBuilder :: BB.Builder -> String
+renderBuilder = LChar8.unpack . BB.toLazyByteString
 
 -- | Create a test chunk output.
 mkChunkOutput :: ChunkKind -> String -> String -> String -> ChunkOutput
@@ -47,7 +47,7 @@ mkChunkOutput kind chunkIdStr hashStr filename =
   ChunkOutput
     { _coChunkId = ChunkId (Text.pack chunkIdStr)
     , _coKind = kind
-    , _coBuilder = B.stringUtf8 "test content"
+    , _coBuilder = BB.stringUtf8 "test content"
     , _coHash = Text.pack hashStr
     , _coFilename = filename
     }
@@ -59,19 +59,19 @@ contentHashTests =
   testGroup
     "contentHash"
     [ testCase "produces 8-character hash" $ do
-        let hash = contentHash (B.stringUtf8 "hello world")
+        let hash = contentHash (BB.stringUtf8 "hello world")
         Text.length hash @?= 8
     , testCase "deterministic: same input same hash" $ do
-        let input = B.stringUtf8 "test content for hashing"
+        let input = BB.stringUtf8 "test content for hashing"
             hash1 = contentHash input
             hash2 = contentHash input
         hash1 @?= hash2
     , testCase "different inputs produce different hashes" $ do
-        let hash1 = contentHash (B.stringUtf8 "input A")
-            hash2 = contentHash (B.stringUtf8 "input B")
+        let hash1 = contentHash (BB.stringUtf8 "input A")
+            hash2 = contentHash (BB.stringUtf8 "input B")
         assertBool "different hashes for different inputs" (hash1 /= hash2)
     , testCase "hash is hex characters" $ do
-        let hash = contentHash (B.stringUtf8 "some content")
+        let hash = contentHash (BB.stringUtf8 "some content")
             isHexChar c = c `elem` ("0123456789abcdef" :: String)
         assertBool "all hex chars" (all isHexChar (Text.unpack hash))
     , testCase "empty input produces valid hash" $ do

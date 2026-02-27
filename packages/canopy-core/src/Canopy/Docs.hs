@@ -37,17 +37,17 @@ import qualified Data.NonEmptyList as NE
 import qualified Data.OneOrMore as OneOrMore
 import Data.Word (Word8)
 import Foreign.Ptr (Ptr, plusPtr)
-import qualified Json.Decode as D
+import qualified Json.Decode as Decode
 import Json.Encode ((==>))
-import qualified Json.Encode as E
+import qualified Json.Encode as Encode
 import qualified Json.String as Json
 import Parse.Primitives (Col, Row, word1)
-import qualified Parse.Primitives as P
+import qualified Parse.Primitives as Parse
 import qualified Parse.Space as Space
 import qualified Parse.Symbol as Symbol
 import qualified Parse.Variable as Var
-import qualified Reporting.Annotation as A
-import qualified Reporting.Error.Docs as E
+import qualified Reporting.Annotation as Ann
+import qualified Reporting.Error.Docs as DocsError
 import qualified Reporting.Result as Result
 
 -- DOCUMENTATION
@@ -76,19 +76,19 @@ data Binop = Binop Comment Type.Type Binop.Associativity Binop.Precedence
 
 -- JSON
 
-encode :: Documentation -> E.Value
+encode :: Documentation -> Encode.Value
 encode docs =
-  E.list encodeModule (Map.elems docs)
+  Encode.list encodeModule (Map.elems docs)
 
-encodeModule :: Module -> E.Value
+encodeModule :: Module -> Encode.Value
 encodeModule (Module name comment unions aliases values binops) =
-  E.object
+  Encode.object
     [ "name" ==> ModuleName.encode name,
-      "comment" ==> E.string comment,
-      "unions" ==> E.list encodeUnion (Map.toList unions),
-      "aliases" ==> E.list encodeAlias (Map.toList aliases),
-      "values" ==> E.list encodeValue (Map.toList values),
-      "binops" ==> E.list encodeBinop (Map.toList binops)
+      "comment" ==> Encode.string comment,
+      "unions" ==> Encode.list encodeUnion (Map.toList unions),
+      "aliases" ==> Encode.list encodeAlias (Map.toList aliases),
+      "values" ==> Encode.list encodeValue (Map.toList values),
+      "binops" ==> Encode.list encodeBinop (Map.toList binops)
     ]
 
 data Error
@@ -96,9 +96,9 @@ data Error
   | BadModuleName
   | BadType
 
-decoder :: D.Decoder Error Documentation
+decoder :: Decode.Decoder Error Documentation
 decoder =
-  toDict <$> D.list moduleDecoder
+  toDict <$> Decode.list moduleDecoder
 
 toDict :: [Module] -> Documentation
 toDict modules =
@@ -108,161 +108,161 @@ toDictHelp :: Module -> (Name.Name, Module)
 toDictHelp modul@(Module name _ _ _ _ _) =
   (name, modul)
 
-moduleDecoder :: D.Decoder Error Module
+moduleDecoder :: Decode.Decoder Error Module
 moduleDecoder =
   Module
-    <$> D.field "name" moduleNameDecoder
-    <*> D.field "comment" D.string
-    <*> D.field "unions" (dictDecoder union)
-    <*> D.field "aliases" (dictDecoder alias)
-    <*> D.field "values" (dictDecoder value)
-    <*> D.field "binops" (dictDecoder binop)
+    <$> Decode.field "name" moduleNameDecoder
+    <*> Decode.field "comment" Decode.string
+    <*> Decode.field "unions" (dictDecoder union)
+    <*> Decode.field "aliases" (dictDecoder alias)
+    <*> Decode.field "values" (dictDecoder value)
+    <*> Decode.field "binops" (dictDecoder binop)
 
-dictDecoder :: D.Decoder Error a -> D.Decoder Error (Map.Map Name.Name a)
+dictDecoder :: Decode.Decoder Error a -> Decode.Decoder Error (Map.Map Name.Name a)
 dictDecoder entryDecoder =
-  Map.fromList <$> D.list (named entryDecoder)
+  Map.fromList <$> Decode.list (named entryDecoder)
 
-named :: D.Decoder Error a -> D.Decoder Error (Name.Name, a)
+named :: Decode.Decoder Error a -> Decode.Decoder Error (Name.Name, a)
 named entryDecoder =
   (,)
-    <$> D.field "name" nameDecoder
+    <$> Decode.field "name" nameDecoder
     <*> entryDecoder
 
-nameDecoder :: D.Decoder e Name.Name
+nameDecoder :: Decode.Decoder e Name.Name
 nameDecoder =
-  fmap Coerce.coerce D.string
+  fmap Coerce.coerce Decode.string
 
-moduleNameDecoder :: D.Decoder Error ModuleName.Raw
+moduleNameDecoder :: Decode.Decoder Error ModuleName.Raw
 moduleNameDecoder =
-  D.mapError (const BadModuleName) ModuleName.decoder
+  Decode.mapError (const BadModuleName) ModuleName.decoder
 
-typeDecoder :: D.Decoder Error Type.Type
+typeDecoder :: Decode.Decoder Error Type.Type
 typeDecoder =
-  D.mapError (const BadType) Type.decoder
+  Decode.mapError (const BadType) Type.decoder
 
 -- UNION JSON
 
-encodeUnion :: (Name.Name, Union) -> E.Value
+encodeUnion :: (Name.Name, Union) -> Encode.Value
 encodeUnion (name, Union comment args cases) =
-  E.object
-    [ "name" ==> E.name name,
-      "comment" ==> E.string comment,
-      "args" ==> E.list E.name args,
-      "cases" ==> E.list encodeCase cases
+  Encode.object
+    [ "name" ==> Encode.name name,
+      "comment" ==> Encode.string comment,
+      "args" ==> Encode.list Encode.name args,
+      "cases" ==> Encode.list encodeCase cases
     ]
 
-union :: D.Decoder Error Union
+union :: Decode.Decoder Error Union
 union =
   Union
-    <$> D.field "comment" D.string
-    <*> D.field "args" (D.list nameDecoder)
-    <*> D.field "cases" (D.list caseDecoder)
+    <$> Decode.field "comment" Decode.string
+    <*> Decode.field "args" (Decode.list nameDecoder)
+    <*> Decode.field "cases" (Decode.list caseDecoder)
 
-encodeCase :: (Name.Name, [Type.Type]) -> E.Value
+encodeCase :: (Name.Name, [Type.Type]) -> Encode.Value
 encodeCase (tag, args) =
-  E.list id [E.name tag, E.list Type.encode args]
+  Encode.list id [Encode.name tag, Encode.list Type.encode args]
 
-caseDecoder :: D.Decoder Error (Name.Name, [Type.Type])
+caseDecoder :: Decode.Decoder Error (Name.Name, [Type.Type])
 caseDecoder =
-  D.pair nameDecoder (D.list typeDecoder)
+  Decode.pair nameDecoder (Decode.list typeDecoder)
 
 -- ALIAS JSON
 
-encodeAlias :: (Name.Name, Alias) -> E.Value
+encodeAlias :: (Name.Name, Alias) -> Encode.Value
 encodeAlias (name, Alias comment args tipe) =
-  E.object
-    [ "name" ==> E.name name,
-      "comment" ==> E.string comment,
-      "args" ==> E.list E.name args,
+  Encode.object
+    [ "name" ==> Encode.name name,
+      "comment" ==> Encode.string comment,
+      "args" ==> Encode.list Encode.name args,
       "type" ==> Type.encode tipe
     ]
 
-alias :: D.Decoder Error Alias
+alias :: Decode.Decoder Error Alias
 alias =
   Alias
-    <$> D.field "comment" D.string
-    <*> D.field "args" (D.list nameDecoder)
-    <*> D.field "type" typeDecoder
+    <$> Decode.field "comment" Decode.string
+    <*> Decode.field "args" (Decode.list nameDecoder)
+    <*> Decode.field "type" typeDecoder
 
 -- VALUE JSON
 
-encodeValue :: (Name.Name, Value) -> E.Value
+encodeValue :: (Name.Name, Value) -> Encode.Value
 encodeValue (name, Value comment tipe) =
-  E.object
-    [ "name" ==> E.name name,
-      "comment" ==> E.string comment,
+  Encode.object
+    [ "name" ==> Encode.name name,
+      "comment" ==> Encode.string comment,
       "type" ==> Type.encode tipe
     ]
 
-value :: D.Decoder Error Value
+value :: Decode.Decoder Error Value
 value =
   Value
-    <$> D.field "comment" D.string
-    <*> D.field "type" typeDecoder
+    <$> Decode.field "comment" Decode.string
+    <*> Decode.field "type" typeDecoder
 
 -- BINOP JSON
 
-encodeBinop :: (Name.Name, Binop) -> E.Value
+encodeBinop :: (Name.Name, Binop) -> Encode.Value
 encodeBinop (name, Binop comment tipe assoc prec) =
-  E.object
-    [ "name" ==> E.name name,
-      "comment" ==> E.string comment,
+  Encode.object
+    [ "name" ==> Encode.name name,
+      "comment" ==> Encode.string comment,
       "type" ==> Type.encode tipe,
       "associativity" ==> encodeAssoc assoc,
       "precedence" ==> encodePrec prec
     ]
 
-binop :: D.Decoder Error Binop
+binop :: Decode.Decoder Error Binop
 binop =
   Binop
-    <$> D.field "comment" D.string
-    <*> D.field "type" typeDecoder
-    <*> D.field "associativity" assocDecoder
-    <*> D.field "precedence" precDecoder
+    <$> Decode.field "comment" Decode.string
+    <*> Decode.field "type" typeDecoder
+    <*> Decode.field "associativity" assocDecoder
+    <*> Decode.field "precedence" precDecoder
 
 -- ASSOCIATIVITY JSON
 
-encodeAssoc :: Binop.Associativity -> E.Value
+encodeAssoc :: Binop.Associativity -> Encode.Value
 encodeAssoc assoc =
   case assoc of
-    Binop.Left -> E.chars "left"
-    Binop.Non -> E.chars "non"
-    Binop.Right -> E.chars "right"
+    Binop.Left -> Encode.chars "left"
+    Binop.Non -> Encode.chars "non"
+    Binop.Right -> Encode.chars "right"
 
-assocDecoder :: D.Decoder Error Binop.Associativity
+assocDecoder :: Decode.Decoder Error Binop.Associativity
 assocDecoder =
   let left = Json.fromChars "left"
       non = Json.fromChars "non"
       right = Json.fromChars "right"
    in do
-        str <- D.string
+        str <- Decode.string
         if
             | str == left -> return Binop.Left
             | str == non -> return Binop.Non
             | str == right -> return Binop.Right
-            | otherwise -> D.failure BadAssociativity
+            | otherwise -> Decode.failure BadAssociativity
 
 -- PRECEDENCE JSON
 
-encodePrec :: Binop.Precedence -> E.Value
+encodePrec :: Binop.Precedence -> Encode.Value
 encodePrec (Binop.Precedence n) =
-  E.int n
+  Encode.int n
 
-precDecoder :: D.Decoder Error Binop.Precedence
+precDecoder :: Decode.Decoder Error Binop.Precedence
 precDecoder =
-  Binop.Precedence <$> D.int
+  Binop.Precedence <$> Decode.int
 
 -- FROM MODULE
 
-fromModule :: Can.Module -> IO (Either E.Error Module)
+fromModule :: Can.Module -> IO (Either DocsError.Error Module)
 fromModule modul@(Can.Module _ exports docs _ _ _ _ _ _) =
   case exports of
     Can.ExportEverything region ->
-      pure (Left (E.ImplicitExposing region))
+      pure (Left (DocsError.ImplicitExposing region))
     Can.Export exportDict ->
       case docs of
         Src.NoDocs region ->
-          pure (Left (E.NoDocs region))
+          pure (Left (DocsError.NoDocs region))
         Src.YesDocs overview comments ->
           case parseOverview overview of
             Left err -> pure (Left err)
@@ -273,47 +273,47 @@ fromModule modul@(Can.Module _ exports docs _ _ _ _ _ _) =
 
 -- PARSE OVERVIEW
 
-parseOverview :: Src.Comment -> Either E.Error [A.Located Name.Name]
+parseOverview :: Src.Comment -> Either DocsError.Error [Ann.Located Name.Name]
 parseOverview (Src.Comment snippet) =
-  case P.fromSnippet (chompOverview []) E.BadEnd snippet of
+  case Parse.fromSnippet (chompOverview []) DocsError.BadEnd snippet of
     Left err ->
-      Left (E.SyntaxProblem err)
+      Left (DocsError.SyntaxProblem err)
     Right names ->
       Right names
 
 type Parser a =
-  P.Parser E.SyntaxProblem a
+  Parse.Parser DocsError.SyntaxProblem a
 
-chompOverview :: [A.Located Name.Name] -> Parser [A.Located Name.Name]
+chompOverview :: [Ann.Located Name.Name] -> Parser [Ann.Located Name.Name]
 chompOverview names =
   do
     isDocs <- chompUntilDocs
     if isDocs
       then do
-        Space.chomp E.Space
+        Space.chomp DocsError.Space
         chompDocs names >>= chompOverview
       else return names
 
-chompDocs :: [A.Located Name.Name] -> Parser [A.Located Name.Name]
+chompDocs :: [Ann.Located Name.Name] -> Parser [Ann.Located Name.Name]
 chompDocs names =
   do
     name <-
-      P.addLocation $
-        P.oneOf
-          E.Name
-          [ Var.lower E.Name,
-            Var.upper E.Name,
+      Parse.addLocation $
+        Parse.oneOf
+          DocsError.Name
+          [ Var.lower DocsError.Name,
+            Var.upper DocsError.Name,
             chompOperator
           ]
 
-    Space.chomp E.Space
+    Space.chomp DocsError.Space
 
-    P.oneOfWithFallback
+    Parse.oneOfWithFallback
       [ do
-          pos <- P.getPosition
-          Space.checkIndent pos E.Comma
-          word1 0x2C {-,-} E.Comma
-          Space.chomp E.Space
+          pos <- Parse.getPosition
+          Space.checkIndent pos DocsError.Comma
+          word1 0x2C {-,-} DocsError.Comma
+          Space.chomp DocsError.Space
           chompDocs (name : names)
       ]
       (name : names)
@@ -321,18 +321,18 @@ chompDocs names =
 chompOperator :: Parser Name.Name
 chompOperator =
   do
-    word1 0x28 {-(-} E.Op
-    op <- Symbol.operator E.Op E.OpBad
-    word1 0x29 {-)-} E.Op
+    word1 0x28 {-(-} DocsError.Op
+    op <- Symbol.operator DocsError.Op DocsError.OpBad
+    word1 0x29 {-)-} DocsError.Op
     return op
 
 -- Consider requiring @docs to appear after newline in a future version.
 --
 chompUntilDocs :: Parser Bool
 chompUntilDocs =
-  P.Parser $ \(P.State src pos end indent row col) cok _ _ _ ->
+  Parse.Parser $ \(Parse.State src pos end indent row col) cok _ _ _ ->
     let (# isDocs, newPos, newRow, newCol #) = untilDocs pos end row col
-        !newState = P.State src newPos end indent newRow newCol
+        !newState = Parse.State src newPos end indent newRow newCol
      in cok isDocs newState
 
 untilDocs :: Ptr Word8 -> Ptr Word8 -> Row -> Col -> (# Bool, Ptr Word8, Row, Col #)
@@ -340,26 +340,26 @@ untilDocs pos end row col =
   if pos >= end
     then (# False, pos, row, col #)
     else
-      let !word = P.unsafeIndex pos
+      let !word = Parse.unsafeIndex pos
        in if word == 0x0A {-\n-}
             then untilDocs (plusPtr pos 1) end (row + 1) 1
             else
               let !pos5 = plusPtr pos 5
                in if pos5 <= end
-                    && P.unsafeIndex (pos) == 0x40 {-@-}
-                    && P.unsafeIndex (plusPtr pos 1) == 0x64 {-d-}
-                    && P.unsafeIndex (plusPtr pos 2) == 0x6F {-o-}
-                    && P.unsafeIndex (plusPtr pos 3) == 0x63 {-c-}
-                    && P.unsafeIndex (plusPtr pos 4) == 0x73 {-s-}
+                    && Parse.unsafeIndex (pos) == 0x40 {-@-}
+                    && Parse.unsafeIndex (plusPtr pos 1) == 0x64 {-d-}
+                    && Parse.unsafeIndex (plusPtr pos 2) == 0x6F {-o-}
+                    && Parse.unsafeIndex (plusPtr pos 3) == 0x63 {-c-}
+                    && Parse.unsafeIndex (plusPtr pos 4) == 0x73 {-s-}
                     && Var.getInnerWidth pos5 end == 0
                     then (# True, pos5, row, col + 5 #)
                     else
-                      let !newPos = plusPtr pos (P.getCharWidth word)
+                      let !newPos = plusPtr pos (Parse.getCharWidth word)
                        in untilDocs newPos end row (col + 1)
 
 -- CHECK NAMES
 
-checkNames :: Map.Map Name.Name (A.Located Can.Export) -> [A.Located Name.Name] -> Either E.Error ()
+checkNames :: Map.Map Name.Name (Ann.Located Can.Export) -> [Ann.Located Name.Name] -> Either DocsError.Error ()
 checkNames exports names =
   let docs = List.foldl' addName Map.empty names
       loneDoc = Map.traverseMissing onlyInDocs
@@ -367,43 +367,43 @@ checkNames exports names =
       checkBoth = Map.zipWithAMatched (\n _ r -> isUnique n r)
    in case Result.run (Map.mergeA loneExport loneDoc checkBoth exports docs) of
         (_, Right _) -> Right ()
-        (_, Left es) -> Left (E.NameProblems (OneOrMore.destruct NE.List es))
+        (_, Left es) -> Left (DocsError.NameProblems (OneOrMore.destruct NE.List es))
 
 type DocNameRegions =
-  Map.Map Name.Name (OneOrMore.OneOrMore A.Region)
+  Map.Map Name.Name (OneOrMore.OneOrMore Ann.Region)
 
-addName :: DocNameRegions -> A.Located Name.Name -> DocNameRegions
-addName dict (A.At region name) =
+addName :: DocNameRegions -> Ann.Located Name.Name -> DocNameRegions
+addName dict (Ann.At region name) =
   Map.insertWith OneOrMore.more name (OneOrMore.one region) dict
 
-isUnique :: Name.Name -> OneOrMore.OneOrMore A.Region -> Result.Result i w E.NameProblem A.Region
+isUnique :: Name.Name -> OneOrMore.OneOrMore Ann.Region -> Result.Result i w DocsError.NameProblem Ann.Region
 isUnique name regions =
   case regions of
     OneOrMore.One region ->
       Result.ok region
     OneOrMore.More left right ->
       let (r1, r2) = OneOrMore.getFirstTwo left right
-       in Result.throw (E.NameDuplicate name r1 r2)
+       in Result.throw (DocsError.NameDuplicate name r1 r2)
 
-onlyInDocs :: Name.Name -> OneOrMore.OneOrMore A.Region -> Result.Result i w E.NameProblem a
+onlyInDocs :: Name.Name -> OneOrMore.OneOrMore Ann.Region -> Result.Result i w DocsError.NameProblem a
 onlyInDocs name regions =
   do
     region <- isUnique name regions
-    Result.throw $ E.NameOnlyInDocs name region
+    Result.throw $ DocsError.NameOnlyInDocs name region
 
-onlyInExports :: Name.Name -> A.Located Can.Export -> Result.Result i w E.NameProblem a
-onlyInExports name (A.At region _) =
-  Result.throw $ E.NameOnlyInExports name region
+onlyInExports :: Name.Name -> Ann.Located Can.Export -> Result.Result i w DocsError.NameProblem a
+onlyInExports name (Ann.At region _) =
+  Result.throw $ DocsError.NameOnlyInExports name region
 
 -- CHECK DEFS (DEPRECATED - use checkDefsIO)
 
 -- | Thread-safe version of checkDefs that handles IO for comment processing
-checkDefsIO :: Map.Map Name.Name (A.Located Can.Export) -> Src.Comment -> Map.Map Name.Name Src.Comment -> Can.Module -> IO (Either E.Error Module)
+checkDefsIO :: Map.Map Name.Name (Ann.Located Can.Export) -> Src.Comment -> Map.Map Name.Name Src.Comment -> Can.Module -> IO (Either DocsError.Error Module)
 checkDefsIO exportDict overview comments (Can.Module name _ _ decls unions aliases infixes effects _) = do
   let types = gatherTypes decls Map.empty
       info = Info comments types unions aliases infixes effects
   case Result.run (Map.traverseWithKey (checkExportIO info) exportDict) of
-    (_, Left problems) -> pure $ Left $ E.DefProblems (OneOrMore.destruct NE.List problems)
+    (_, Left problems) -> pure $ Left $ DocsError.DefProblems (OneOrMore.destruct NE.List problems)
     (_, Right ioInserters) -> do
       inserters <- sequence ioInserters
       emptyMod <- emptyModule name overview
@@ -417,7 +417,7 @@ emptyModule (ModuleName.Canonical _ name) (Src.Comment overview) = do
 
 data Info = Info
   { _iComments :: Map.Map Name.Name Src.Comment,
-    _iValues :: Map.Map Name.Name (Either A.Region Can.Type),
+    _iValues :: Map.Map Name.Name (Either Ann.Region Can.Type),
     _iUnions :: Map.Map Name.Name Can.Union,
     _iAliases :: Map.Map Name.Name Can.Alias,
     _iBinops :: Map.Map Name.Name Can.Binop,
@@ -426,8 +426,8 @@ data Info = Info
 
 
 -- | Thread-safe version of checkExport that handles IO for comment processing
-checkExportIO :: Info -> Name.Name -> A.Located Can.Export -> Result.Result i w E.DefProblem (IO (Module -> Module))
-checkExportIO info name (A.At region export) =
+checkExportIO :: Info -> Name.Name -> Ann.Located Can.Export -> Result.Result i w DocsError.DefProblem (IO (Module -> Module))
+checkExportIO info name (Ann.At region export) =
   case export of
     Can.ExportValue ->
       do
@@ -485,7 +485,7 @@ checkExportIO info name (A.At region export) =
 
 
 -- | Thread-safe version of getComment that handles IO for comment processing
-getCommentIO :: A.Region -> Name.Name -> Info -> IO Comment
+getCommentIO :: Ann.Region -> Name.Name -> Info -> IO Comment
 getCommentIO _region name info =
   case Map.lookup name (_iComments info) of
     Nothing ->
@@ -496,14 +496,14 @@ getCommentIO _region name info =
     Just (Src.Comment snippet) ->
       Json.fromComment snippet
 
-getType :: Name.Name -> Info -> Result.Result i w E.DefProblem Type.Type
+getType :: Name.Name -> Info -> Result.Result i w DocsError.DefProblem Type.Type
 getType name info =
   case maybe
     (InternalError.report "Canopy.Docs.getType" ("Value type missing from info: " <> Text.pack (show name)) "Every exported value must have a type entry (Left region or Right type) in the module's value map.")
     id
     (Map.lookup name (_iValues info)) of
     Left region ->
-      Result.throw (E.NoAnnotation name region)
+      Result.throw (DocsError.NoAnnotation name region)
     Right tipe ->
       Result.ok (Extract.fromType tipe)
 
@@ -514,7 +514,7 @@ dector (Can.Ctor name _ _ args) =
 -- GATHER TYPES
 
 type Types =
-  Map.Map Name.Name (Either A.Region Can.Type)
+  Map.Map Name.Name (Either Ann.Region Can.Type)
 
 gatherTypes :: Can.Decls -> Types -> Types
 gatherTypes decls types =
@@ -529,8 +529,8 @@ gatherTypes decls types =
 addDef :: Types -> Can.Def -> Types
 addDef types def =
   case def of
-    Can.Def (A.At region name) _ _ ->
+    Can.Def (Ann.At region name) _ _ ->
       Map.insert name (Left region) types
-    Can.TypedDef (A.At _ name) _ typedArgs _ resultType ->
+    Can.TypedDef (Ann.At _ name) _ typedArgs _ resultType ->
       let tipe = foldr (Can.TLambda . snd) resultType typedArgs
        in Map.insert name (Right tipe) types

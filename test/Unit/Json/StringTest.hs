@@ -14,7 +14,7 @@ module Unit.Json.StringTest
   )
 where
 
-import qualified Data.ByteString.Builder as B
+import qualified Data.ByteString.Builder as BB
 import qualified Data.ByteString.Lazy as BSL
 import qualified Data.Name as Name
 import qualified Data.Utf8 as Utf8
@@ -23,7 +23,7 @@ import qualified Foreign.ForeignPtr as ForeignPtr
 import Foreign.Ptr (Ptr)
 import qualified Foreign.Ptr as Ptr
 import qualified Json.String as JsonStr
-import qualified Parse.Primitives as P
+import qualified Parse.Primitives as Parse
 import Test.Tasty
 import Test.Tasty.HUnit
 import Test.Tasty.QuickCheck
@@ -179,18 +179,18 @@ testConversionFunctions =
         let original = "builder test"
             jsonStr = JsonStr.fromChars original
             builder = JsonStr.toBuilder jsonStr
-            result = map (toEnum . fromIntegral) $ BSL.unpack $ B.toLazyByteString builder
+            result = map (toEnum . fromIntegral) $ BSL.unpack $ BB.toLazyByteString builder
         result @?= original,
       testCase "toBuilder handles empty string" $ do
         let jsonStr = JsonStr.fromChars ""
             builder = JsonStr.toBuilder jsonStr
-            result = BSL.length $ B.toLazyByteString builder
+            result = BSL.length $ BB.toLazyByteString builder
         result @?= 0,
       testCase "toBuilder preserves unicode content" $ do
         let original = "unicode: ñ, é, 中"
             jsonStr = JsonStr.fromChars original
             builder = JsonStr.toBuilder jsonStr
-            result = B.toLazyByteString builder
+            result = BB.toLazyByteString builder
         -- Should produce non-zero output for unicode
         assertBool "Should produce non-empty output for unicode" (BSL.length result > 0)
     ]
@@ -201,7 +201,7 @@ testSpecializedConstruction =
     "Specialized Construction"
     [ testCase "fromComment processes simple comment" $ do
         -- Create a simple snippet for testing
-        -- Note: This test is limited due to the complexity of creating P.Snippet values
+        -- Note: This test is limited due to the complexity of creating Parse.Snippet values
         let testStr = JsonStr.fromChars "test comment"
         -- We can't easily test fromComment without complex setup,
         -- so we test that the basic string operations work
@@ -257,7 +257,7 @@ testBuilderProperties =
             limitedChars = take 100 nonEmptyChars
             jsonStr = JsonStr.fromChars limitedChars
             builder = JsonStr.toBuilder jsonStr
-            result = B.toLazyByteString builder
+            result = BB.toLazyByteString builder
          in BSL.length result > 0,
       testProperty "toBuilder length is reasonable for ASCII" $ \asciiChars ->
         let validAscii = filter (\c -> c >= ' ' && c <= '~') asciiChars
@@ -267,7 +267,7 @@ testBuilderProperties =
               else
                 let jsonStr = JsonStr.fromChars limitedChars
                     builder = JsonStr.toBuilder jsonStr
-                    result = B.toLazyByteString builder
+                    result = BB.toLazyByteString builder
                  in BSL.length result >= fromIntegral (length limitedChars)
     ]
 
@@ -284,7 +284,7 @@ testEmptyStrings =
       testCase "empty builder from empty string" $ do
         let emptyStr = JsonStr.fromChars ""
             builder = JsonStr.toBuilder emptyStr
-            result = B.toLazyByteString builder
+            result = BB.toLazyByteString builder
         BSL.length result @?= 0,
       testCase "empty name creates empty string" $ do
         let emptyName = Name.fromChars ""
@@ -311,7 +311,7 @@ testLargeStrings =
         let largeString = replicate 200 'b'
             jsonStr = JsonStr.fromChars largeString
             builder = JsonStr.toBuilder jsonStr
-            result = B.toLazyByteString builder
+            result = BB.toLazyByteString builder
         BSL.length result @?= 200
     ]
 
@@ -338,7 +338,7 @@ testUnicodeHandling =
         let unicodeStr = "tëst"
             jsonStr = JsonStr.fromChars unicodeStr
             builder = JsonStr.toBuilder jsonStr
-            result = B.toLazyByteString builder
+            result = BB.toLazyByteString builder
         -- Unicode should produce more bytes than characters
         assertBool "Unicode should produce output" (BSL.length result > 0),
       testCase "complex unicode characters" $ do

@@ -14,7 +14,7 @@ module Deps.Bump
 where
 
 import qualified Canopy.Magnitude as Magnitude
-import qualified Canopy.Version as V
+import qualified Canopy.Version as Version
 import Deps.Registry (KnownVersions (..))
 
 -- | Get bump possibilities from known versions.
@@ -25,13 +25,13 @@ import Deps.Registry (KnownVersions (..))
 -- - MAJOR bump (increment major, reset minor and patch)
 --
 -- Returns bump possibilities as (old version, new version, magnitude) tuples.
-getPossibilities :: KnownVersions -> [(V.Version, V.Version, Magnitude.Magnitude)]
+getPossibilities :: KnownVersions -> [(Version.Version, Version.Version, Magnitude.Magnitude)]
 getPossibilities (KnownVersions latest _previous) =
   [ (latest, bumpPatch latest, Magnitude.PATCH)
   , (latest, bumpMinor latest, Magnitude.MINOR)
   , (latest, bumpMajor latest, Magnitude.MAJOR)
   ]
   where
-    bumpPatch (V.Version major minor patch) = V.Version major minor (patch + 1)
-    bumpMinor (V.Version major minor _) = V.Version major (minor + 1) 0
-    bumpMajor (V.Version major _ _) = V.Version (major + 1) 0 0
+    bumpPatch (Version.Version major minor patch) = Version.Version major minor (patch + 1)
+    bumpMinor (Version.Version major minor _) = Version.Version major (minor + 1) 0
+    bumpMajor (Version.Version major _ _) = Version.Version (major + 1) 0 0

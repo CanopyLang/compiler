@@ -21,7 +21,7 @@ import qualified Data.Name as Name
 import Numeric (showHex)
 import Parse.Primitives (Col, Row)
 import Parse.Symbol (BadOperator (..))
-import qualified Reporting.Doc as D
+import qualified Reporting.Doc as Doc
 import Reporting.Error.Syntax.Helpers
   ( Context,
     Node (NBranch, NCase, NRecord),
@@ -53,10 +53,10 @@ toCharReport source char row col =
               source
               region
               Nothing
-              ( D.reflow $
+              ( Doc.reflow $
                   "I thought I was parsing a character, but I got to the end of\
                   \ the line without seeing the closing single quote:",
-                D.reflow $
+                Doc.reflow $
                   "Add a closing single quote here!"
               )
     CharEscape escape ->
@@ -69,11 +69,11 @@ toCharReport source char row col =
               region
               Nothing
               ( "The following string uses single quotes:",
-                D.stack
+                Doc.stack
                   [ "Please switch to double quotes instead:",
-                    D.indent 4 $
-                      D.dullyellow "'this'" <> " => " <> D.green "\"this\"",
-                    D.toSimpleNote $
+                    Doc.indent 4 $
+                      Doc.dullyellow "'this'" <> " => " <> Doc.green "\"this\"",
+                    Doc.toSimpleNote $
                       "Canopy uses double quotes for strings like \"hello\", whereas it uses single\
                       \ quotes for individual characters like 'a' and 'ø'. This distinction helps with\
                       \ code like (String.any (\\c -> c == 'X') \"90210\") where you are inspecting\
@@ -92,14 +92,14 @@ toStringReport source string row col =
               source
               region
               Nothing
-              ( D.reflow $
+              ( Doc.reflow $
                   "I got to the end of the line without seeing the closing double quote:",
-                D.stack
-                  [ D.fillSep $
+                Doc.stack
+                  [ Doc.fillSep $
                       [ "Strings",
                         "look",
                         "like",
-                        D.green "\"this\"",
+                        Doc.green "\"this\"",
                         "with",
                         "double",
                         "quotes",
@@ -116,12 +116,12 @@ toStringReport source string row col =
                         "your",
                         "code?"
                       ],
-                    D.toSimpleNote $
+                    Doc.toSimpleNote $
                       "For a string that spans multiple lines, you can use the multi-line string\
                       \ syntax like this:",
-                    D.dullyellow $
-                      D.indent 4 $
-                        D.vcat $
+                    Doc.dullyellow $
+                      Doc.indent 4 $
+                        Doc.vcat $
                           [ "\"\"\"",
                             "# Multi-line Strings",
                             "",
@@ -140,15 +140,15 @@ toStringReport source string row col =
               source
               region
               Nothing
-              ( D.reflow $
+              ( Doc.reflow $
                   "I cannot find the end of this multi-line string:",
-                D.stack
-                  [ D.reflow "Add a \"\"\" somewhere after this to end the string.",
-                    D.toSimpleNote $
+                Doc.stack
+                  [ Doc.reflow "Add a \"\"\" somewhere after this to end the string.",
+                    Doc.toSimpleNote $
                       "Here is a valid multi-line string for reference:",
-                    D.dullyellow $
-                      D.indent 4 $
-                        D.vcat $
+                    Doc.dullyellow $
+                      Doc.indent 4 $
+                        Doc.vcat $
                           [ "\"\"\"",
                             "# Multi-line Strings",
                             "",
@@ -174,14 +174,14 @@ toEscapeReport source escape row col =
               source
               region
               Nothing
-              ( D.reflow $
+              ( Doc.reflow $
                   "Backslashes always start escaped characters, but I do not recognize this one:",
-                D.stack
-                  [ D.reflow $
+                Doc.stack
+                  [ Doc.reflow $
                       "Valid escape characters include:",
-                    D.dullyellow $
-                      D.indent 4 $
-                        D.vcat $
+                    Doc.dullyellow $
+                      Doc.indent 4 $
+                        Doc.vcat $
                           [ "\\n",
                             "\\r",
                             "\\t",
@@ -190,9 +190,9 @@ toEscapeReport source escape row col =
                             "\\\\",
                             "\\u{003D}"
                           ],
-                    D.reflow $
+                    Doc.reflow $
                       "Do you want one of those instead? Maybe you need \\\\ to escape a backslash?",
-                    D.toSimpleNote $
+                    Doc.toSimpleNote $
                       "The last style lets encode ANY character by its Unicode code\
                       \ point. That means \\u{0009} and \\t are the same. You can use\
                       \ that style for anything not covered by the other six escapes!"
@@ -205,20 +205,20 @@ toEscapeReport source escape row col =
               source
               region
               Nothing
-              ( D.reflow $
+              ( Doc.reflow $
                   "I ran into an invalid Unicode escape:",
-                D.stack
-                  [ D.reflow $
+                Doc.stack
+                  [ Doc.reflow $
                       "Here are some examples of valid Unicode escapes:",
-                    D.dullyellow $
-                      D.indent 4 $
-                        D.vcat $
+                    Doc.dullyellow $
+                      Doc.indent 4 $
+                        Doc.vcat $
                           [ "\\u{0041}",
                             "\\u{03BB}",
                             "\\u{6728}",
                             "\\u{1F60A}"
                           ],
-                    D.reflow $
+                    Doc.reflow $
                       "Notice that the code point is always surrounded by curly braces.\
                       \ Maybe you are missing the opening or closing curly brace?"
                   ]
@@ -230,9 +230,9 @@ toEscapeReport source escape row col =
               source
               region
               Nothing
-              ( D.reflow $
+              ( Doc.reflow $
                   "This is not a valid code point:",
-                D.reflow $
+                Doc.reflow $
                   "The valid code points are between 0 and 10FFFF inclusive."
               )
     BadUnicodeLength width numDigits badCode ->
@@ -241,24 +241,24 @@ toEscapeReport source escape row col =
             Code.toSnippet source region Nothing $
               if numDigits < 4
                 then
-                  ( D.reflow $
+                  ( Doc.reflow $
                       "Every code point needs at least four digits:",
                     let goodCode = replicate (4 - numDigits) '0' ++ map Char.toUpper (showHex badCode "")
-                        suggestion = "\\u{" <> D.fromChars goodCode <> "}"
-                     in D.fillSep ["Try", D.green suggestion, "instead?"]
+                        suggestion = "\\u{" <> Doc.fromChars goodCode <> "}"
+                     in Doc.fillSep ["Try", Doc.green suggestion, "instead?"]
                   )
                 else
-                  ( D.reflow $
+                  ( Doc.reflow $
                       "This code point has too many digits:",
-                    D.fillSep $
+                    Doc.fillSep $
                       [ "Valid",
                         "code",
                         "points",
                         "are",
                         "between",
-                        D.green "\\u{0000}",
+                        Doc.green "\\u{0000}",
                         "and",
-                        D.green "\\u{10FFFF}" <> ",",
+                        Doc.green "\\u{10FFFF}" <> ",",
                         "so",
                         "try",
                         "trimming",
@@ -287,13 +287,13 @@ toNumberReport source number row col =
               source
               region
               Nothing
-              ( D.reflow $
+              ( Doc.reflow $
                   "I thought I was reading a number, but I ran into some weird stuff here:",
-                D.stack
-                  [ D.reflow $
+                Doc.stack
+                  [ Doc.reflow $
                       "I recognize numbers in the following formats:",
-                    D.indent 4 $ D.vcat ["42", "3.14", "6.022e23", "0x002B"],
-                    D.reflow $
+                    Doc.indent 4 $ Doc.vcat ["42", "3.14", "6.022e23", "0x002B"],
+                    Doc.reflow $
                       "So is there a way to write it like one of those?"
                   ]
               )
@@ -303,14 +303,14 @@ toNumberReport source number row col =
               source
               region
               Nothing
-              ( D.reflow $
+              ( Doc.reflow $
                   "Numbers cannot end with a dot like this:",
-                D.fillSep
+                Doc.fillSep
                   [ "Switching",
                     "to",
-                    D.green (D.fromChars (show int)),
+                    Doc.green (Doc.fromChars (show int)),
                     "or",
-                    D.green (D.fromChars (show int ++ ".0")),
+                    Doc.green (Doc.fromChars (show int ++ ".0")),
                     "will",
                     "work",
                     "though!"
@@ -322,13 +322,13 @@ toNumberReport source number row col =
               source
               region
               Nothing
-              ( D.reflow $
+              ( Doc.reflow $
                   "I thought I was reading a hexidecimal number until I got here:",
-                D.stack
-                  [ D.reflow $
+                Doc.stack
+                  [ Doc.reflow $
                       "Valid hexidecimal digits include 0123456789abcdefABCDEF, so I can\
                       \ only recognize things like this:",
-                    D.indent 4 $ D.vcat ["0x2B", "0x002B", "0x00ffb3"]
+                    Doc.indent 4 $ Doc.vcat ["0x2B", "0x002B", "0x00ffb3"]
                   ]
               )
         NumberNoLeadingZero ->
@@ -337,12 +337,12 @@ toNumberReport source number row col =
               source
               region
               Nothing
-              ( D.reflow $
+              ( Doc.reflow $
                   "I do not accept numbers with leading zeros:",
-                D.stack
-                  [ D.reflow $
+                Doc.stack
+                  [ Doc.reflow $
                       "Just delete the leading zeros and it should work!",
-                    D.toSimpleNote $
+                    Doc.toSimpleNote $
                       "Some languages let you to specify octal numbers by adding a leading zero.\
                       \ So in C, writing 0111 is the same as writing 73. Some people are used to\
                       \ that, but others probably want it to equal 111. Either path is going to\
@@ -363,7 +363,7 @@ toOperatorReport source context operator row col =
               region
               Nothing
               ( "I was not expecting this dot:",
-                D.reflow $
+                Doc.reflow $
                   "Dots are for record access and decimal points, so\
                   \ they cannot float around on their own. Maybe\
                   \ there is some extra whitespace?"
@@ -375,9 +375,9 @@ toOperatorReport source context operator row col =
               source
               region
               Nothing
-              ( D.reflow $
+              ( Doc.reflow $
                   "I was not expecting this vertical bar:",
-                D.reflow $
+                Doc.reflow $
                   "Vertical bars should only appear in custom type declarations. Maybe you want || instead?"
               )
     BadArrow ->
@@ -386,31 +386,31 @@ toOperatorReport source context operator row col =
             Code.toSnippet source region Nothing $
               if isWithin NCase context
                 then
-                  ( D.reflow $
+                  ( Doc.reflow $
                       "I am parsing a `case` expression right now, but this arrow is confusing me:",
-                    D.stack
-                      [ D.reflow "Maybe the `of` keyword is missing on a previous line?",
+                    Doc.stack
+                      [ Doc.reflow "Maybe the `of` keyword is missing on a previous line?",
                         noteForCaseError
                       ]
                   )
                 else
                   if isWithin NBranch context
                     then
-                      ( D.reflow $
+                      ( Doc.reflow $
                           "I am parsing a `case` expression right now, but this arrow is confusing me:",
-                        D.stack
-                          [ D.reflow $
+                        Doc.stack
+                          [ Doc.reflow $
                               "It makes sense to see arrows around here, so I suspect it is something earlier. Maybe this pattern is indented a bit farther than the previous patterns?",
                             noteForCaseIndentError
                           ]
                       )
                     else
-                      ( D.reflow $
+                      ( Doc.reflow $
                           "I was partway through parsing an expression when I got stuck on this arrow:",
-                        D.stack
+                        Doc.stack
                           [ "Arrows should only appear in `case` expressions and anonymous functions.\n\
                             \Maybe it was supposed to be a > sign instead?",
-                            D.toSimpleNote $
+                            Doc.toSimpleNote $
                               "The syntax for anonymous functions is (\\x -> x + 1) so the arguments all appear\
                               \ after the backslash and before the arrow. Maybe a backslash is missing earlier?"
                           ]
@@ -422,11 +422,11 @@ toOperatorReport source context operator row col =
               source
               region
               Nothing
-              ( D.reflow $
+              ( Doc.reflow $
                   "I was not expecting to see this equals sign:",
-                D.stack
-                  [ D.reflow "Maybe you want == instead? To check if two values are equal?",
-                    D.toSimpleNote $
+                Doc.stack
+                  [ Doc.reflow "Maybe you want == instead? To check if two values are equal?",
+                    Doc.toSimpleNote $
                       if isWithin NRecord context
                         then
                           "Records look like { x = 3, y = 4 } with the equals sign right\
@@ -449,15 +449,15 @@ toOperatorReport source context operator row col =
       let region = toRegion row col
        in Report.Report "UNEXPECTED SYMBOL" region [] $
             Code.toSnippet source region Nothing $
-              ( D.reflow $
+              ( Doc.reflow $
                   "I was not expecting to run into the \"has type\" symbol here:",
                 case getDefName context of
                   Nothing ->
-                    D.fillSep
+                    Doc.fillSep
                       [ "Maybe",
                         "you",
                         "want",
-                        D.green "::",
+                        Doc.green "::",
                         "instead?",
                         "To",
                         "put",
@@ -470,12 +470,12 @@ toOperatorReport source context operator row col =
                         "list?"
                       ]
                   Just name ->
-                    D.stack
-                      [ D.fillSep
+                    Doc.stack
+                      [ Doc.fillSep
                           [ "Maybe",
                             "you",
                             "want",
-                            D.green "::",
+                            Doc.green "::",
                             "instead?",
                             "To",
                             "put",
@@ -487,12 +487,12 @@ toOperatorReport source context operator row col =
                             "a",
                             "list?"
                           ],
-                        D.toSimpleNote $
+                        Doc.toSimpleNote $
                           "The single colon is reserved for type annotations and record types, but I think\
                           \ I am parsing the definition of `"
                             ++ Name.toChars name
                             ++ "` right now.",
-                        D.toSimpleNote $
+                        Doc.toSimpleNote $
                           "I may be getting confused by your indentation. Is this supposed to be part of\
                           \ a type annotation AFTER the `"
                             ++ Name.toChars name

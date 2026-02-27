@@ -14,17 +14,17 @@ import qualified Data.NonEmptyList as NE
 import qualified Data.Text as Text
 import Parse.Primitives (Col, Row)
 import Parse.Symbol (BadOperator (..))
-import qualified Reporting.Annotation as A
+import qualified Reporting.Annotation as Ann
 import Reporting.Diagnostic (Diagnostic, LabeledSpan (..), SpanStyle (..))
 import qualified Reporting.Diagnostic as Diag
-import qualified Reporting.Doc as D
-import qualified Reporting.Error.Syntax as E
+import qualified Reporting.Doc as Doc
+import qualified Reporting.Error.Syntax as SyntaxError
 import qualified Reporting.ErrorCode as EC
 import qualified Reporting.Render.Code as Code
 
 data Error
-  = NoDocs A.Region
-  | ImplicitExposing A.Region
+  = NoDocs Ann.Region
+  | ImplicitExposing Ann.Region
   | SyntaxProblem SyntaxProblem
   | NameProblems (NE.List NameProblem)
   | DefProblems (NE.List DefProblem)
@@ -34,20 +34,20 @@ data SyntaxProblem
   = Op Row Col
   | OpBad BadOperator Row Col
   | Name Row Col
-  | Space E.Space Row Col
+  | Space SyntaxError.Space Row Col
   | Comma Row Col
   | BadEnd Row Col
   deriving (Show)
 
 data NameProblem
-  = NameDuplicate Name.Name A.Region A.Region
-  | NameOnlyInDocs Name.Name A.Region
-  | NameOnlyInExports Name.Name A.Region
+  = NameDuplicate Name.Name Ann.Region Ann.Region
+  | NameOnlyInDocs Name.Name Ann.Region
+  | NameOnlyInExports Name.Name Ann.Region
   deriving (Show)
 
 data DefProblem
-  = NoComment Name.Name A.Region
-  | NoAnnotation Name.Name A.Region
+  = NoComment Name.Name Ann.Region
+  | NoAnnotation Name.Name Ann.Region
   deriving (Show)
 
 -- TO DIAGNOSTICS
@@ -75,7 +75,7 @@ toDiagnostics source err =
     DefProblems problems ->
       fmap (toDefProblemDiagnostic source) problems
 
-noDocsDiagnostic :: Code.Source -> A.Region -> Diagnostic
+noDocsDiagnostic :: Code.Source -> Ann.Region -> Diagnostic
 noDocsDiagnostic source region =
   Diag.makeDiagnostic
     (EC.docsError 0)
@@ -85,15 +85,15 @@ noDocsDiagnostic source region =
     "Module documentation is missing"
     (LabeledSpan region "documentation required here" SpanPrimary)
     ( Code.toSnippet source region Nothing
-        ( D.reflow
+        ( Doc.reflow
             "You must have a documentation comment between the module\
             \ declaration and the imports.",
-          D.reflow
+          Doc.reflow
             "Learn more at <https://package.canopy-lang.org/help/documentation-format>"
         )
     )
 
-implicitExposingDiagnostic :: Code.Source -> A.Region -> Diagnostic
+implicitExposingDiagnostic :: Code.Source -> Ann.Region -> Diagnostic
 implicitExposingDiagnostic source region =
   Diag.makeDiagnostic
     (EC.docsError 1)
@@ -103,8 +103,8 @@ implicitExposingDiagnostic source region =
     "Module uses implicit exposing"
     (LabeledSpan region "implicit exposing list" SpanPrimary)
     ( Code.toSnippet source region Nothing
-        ( D.reflow "I need you to be explicit about what this module exposes:",
-          D.reflow
+        ( Doc.reflow "I need you to be explicit about what this module exposes:",
+          Doc.reflow
             "A great API usually hides some implementation details, so it is rare that\
             \ everything in the file should be exposed. And requiring package authors\
             \ to be explicit about this is a way of adding another quality check before\
@@ -144,10 +144,10 @@ syntaxDiagnostic source row col details =
     "Documentation has a syntax problem"
     (LabeledSpan region "syntax error here" SpanPrimary)
     ( Code.toSnippet source region Nothing
-        ( D.reflow "I was partway through parsing your module documentation, but I got stuck here:",
-          D.stack
-            [ D.reflow details,
-              D.toSimpleHint
+        ( Doc.reflow "I was partway through parsing your module documentation, but I got stuck here:",
+          Doc.stack
+            [ Doc.reflow details,
+              Doc.toSimpleHint
                 "Read through <https://package.canopy-lang.org/help/documentation-format> for\
                 \ tips on how to write module documentation!"
             ]
@@ -167,8 +167,8 @@ toNameProblemDiagnostic _source problem =
         "DUPLICATE DOCS"
         (Text.pack ("Duplicate documentation for `" <> Name.toChars name <> "`"))
         (LabeledSpan r2 (Text.pack ("duplicate `" <> Name.toChars name <> "`")) SpanPrimary)
-        ( D.stack
-            [ D.reflow
+        ( Doc.stack
+            [ Doc.reflow
                 ( "There can only be one `" <> Name.toChars name
                     <> "` in your module documentation, but it is listed twice:"
                 ),
@@ -183,12 +183,12 @@ toNameProblemDiagnostic _source problem =
         "DOCS MISTAKE"
         (Text.pack ("`" <> Name.toChars name <> "` is documented but not exported"))
         (LabeledSpan region (Text.pack ("`" <> Name.toChars name <> "` not in exposing list")) SpanPrimary)
-        ( D.stack
-            [ D.reflow
+        ( Doc.stack
+            [ Doc.reflow
                 ( "I do not see `" <> Name.toChars name
                     <> "` in the `exposing` list, but it is in your module documentation:"
                 ),
-              D.reflow
+              Doc.reflow
                 ( "Does it need to be added to the `exposing` list as well? Or maybe you removed `"
                     <> Name.toChars name
                     <> "` and forgot to delete it here?"
@@ -203,14 +203,14 @@ toNameProblemDiagnostic _source problem =
         "DOCS MISTAKE"
         (Text.pack ("`" <> Name.toChars name <> "` is exported but not documented"))
         (LabeledSpan region (Text.pack ("`" <> Name.toChars name <> "` not documented")) SpanPrimary)
-        ( D.stack
-            [ D.reflow
+        ( Doc.stack
+            [ Doc.reflow
                 ( "I do not see `" <> Name.toChars name
                     <> "` in your module documentation, but it is in your `exposing` list:"
                 ),
-              D.reflow
+              Doc.reflow
                 ("Add a line like `@docs " <> Name.toChars name <> "` to your module documentation!"),
-              D.link "Note" "See" "docs" "for more guidance on writing high quality docs."
+              Doc.link "Note" "See" "docs" "for more guidance on writing high quality docs."
             ]
         )
 
@@ -226,11 +226,11 @@ toDefProblemDiagnostic source problem =
         (Text.pack ("The `" <> Name.toChars name <> "` definition has no documentation"))
         (LabeledSpan region (Text.pack ("`" <> Name.toChars name <> "` needs documentation")) SpanPrimary)
         ( Code.toSnippet source region Nothing
-            ( D.reflow
+            ( Doc.reflow
                 ("The `" <> Name.toChars name <> "` definition does not have a documentation comment."),
-              D.stack
-                [ D.reflow "Add documentation with nice examples of how to use it!",
-                  D.link "Note" "Read" "docs" "for more advice on writing great docs. There are a couple important tricks!"
+              Doc.stack
+                [ Doc.reflow "Add documentation with nice examples of how to use it!",
+                  Doc.link "Note" "Read" "docs" "for more advice on writing great docs. There are a couple important tricks!"
                 ]
             )
         )
@@ -243,21 +243,21 @@ toDefProblemDiagnostic source problem =
         (Text.pack ("The `" <> Name.toChars name <> "` definition has no type annotation"))
         (LabeledSpan region (Text.pack ("`" <> Name.toChars name <> "` needs a type annotation")) SpanPrimary)
         ( Code.toSnippet source region Nothing
-            ( D.reflow
+            ( Doc.reflow
                 ("The `" <> Name.toChars name <> "` definition does not have a type annotation."),
-              D.stack
-                [ D.reflow
+              Doc.stack
+                [ Doc.reflow
                     "I use the type variable names from your annotations when generating docs. So if\
                     \ you say `Html msg` in your type annotation, I can use `msg` in the docs and make\
                     \ them a bit clearer. So add an annotation and try to use nice type variables!",
-                  D.link "Note" "Read" "docs" "for more advice on writing great docs. There are a couple important tricks!"
+                  Doc.link "Note" "Read" "docs" "for more advice on writing great docs. There are a couple important tricks!"
                 ]
             )
         )
 
 -- HELPERS
 
-toRegion :: Row -> Col -> A.Region
+toRegion :: Row -> Col -> Ann.Region
 toRegion row col =
-  let pos = A.Position row col
-   in A.Region pos pos
+  let pos = Ann.Position row col
+   in Ann.Region pos pos

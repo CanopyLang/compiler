@@ -10,22 +10,22 @@ import qualified AST.Canonical as Can
 import qualified Data.Name as Name
 import qualified Data.Text as Text
 import Data.Text (Text)
-import qualified Reporting.Annotation as A
+import qualified Reporting.Annotation as Ann
 import Reporting.Diagnostic (Diagnostic, LabeledSpan (..), SpanStyle (..))
 import qualified Reporting.Diagnostic as Diag
-import qualified Reporting.Doc as D
-import qualified Reporting.Error.Canonicalize as E
+import qualified Reporting.Doc as Doc
+import qualified Reporting.Error.Canonicalize as CanonicalizeError
 import qualified Reporting.ErrorCode as EC
 import qualified Reporting.Render.Code as Code
 import qualified Reporting.Render.Type as RT
-import qualified Reporting.Render.Type.Localizer as L
+import qualified Reporting.Render.Type.Localizer as Localizer
 
 -- ERROR
 
 data Error
-  = BadType A.Region Can.Type
-  | BadCycle A.Region Name.Name [Name.Name]
-  | BadFlags A.Region Can.Type E.InvalidPayload
+  = BadType Ann.Region Can.Type
+  | BadCycle Ann.Region Name.Name [Name.Name]
+  | BadFlags Ann.Region Can.Type CanonicalizeError.InvalidPayload
   deriving (Show)
 
 -- TO DIAGNOSTIC
@@ -37,7 +37,7 @@ data Error
 -- BadCycle -> E0601
 -- BadFlags -> E0602
 -- @
-toDiagnostic :: L.Localizer -> Code.Source -> Error -> Diagnostic
+toDiagnostic :: Localizer.Localizer -> Code.Source -> Error -> Diagnostic
 toDiagnostic localizer source err =
   case err of
     BadType region tipe ->
@@ -47,7 +47,7 @@ toDiagnostic localizer source err =
     BadFlags region _badType invalidPayload ->
       badFlagsDiagnostic source region invalidPayload
 
-badTypeDiagnostic :: L.Localizer -> Code.Source -> A.Region -> Can.Type -> Diagnostic
+badTypeDiagnostic :: Localizer.Localizer -> Code.Source -> Ann.Region -> Can.Type -> Diagnostic
 badTypeDiagnostic localizer source region tipe =
   Diag.makeDiagnostic
     (EC.mainError 0)
@@ -61,17 +61,17 @@ badTypeDiagnostic localizer source region tipe =
         region
         Nothing
         ( "I cannot handle this type of `main` value:",
-          D.stack
+          Doc.stack
             [ "The type of `main` value I am seeing is:",
-              D.indent 4 . D.dullyellow $ RT.canToDoc localizer RT.None tipe,
-              D.reflow
+              Doc.indent 4 . Doc.dullyellow $ RT.canToDoc localizer RT.None tipe,
+              Doc.reflow
                 "I only know how to handle Html, Svg, and Programs\
                 \ though. Modify `main` to be one of those types of values!"
             ]
         )
     )
 
-badCycleDiagnostic :: Code.Source -> A.Region -> Name.Name -> [Name.Name] -> Diagnostic
+badCycleDiagnostic :: Code.Source -> Ann.Region -> Name.Name -> [Name.Name] -> Diagnostic
 badCycleDiagnostic source region name names =
   Diag.makeDiagnostic
     (EC.mainError 1)
@@ -85,16 +85,16 @@ badCycleDiagnostic source region name names =
         region
         Nothing
         ( "A `main` definition cannot be defined in terms of itself.",
-          D.stack
-            [ D.reflow
+          Doc.stack
+            [ Doc.reflow
                 "It should be a boring value with no recursion. But\
                 \ instead it is involved in this cycle of definitions:",
-              D.cycle 4 name names
+              Doc.cycle 4 name names
             ]
         )
     )
 
-badFlagsDiagnostic :: Code.Source -> A.Region -> E.InvalidPayload -> Diagnostic
+badFlagsDiagnostic :: Code.Source -> Ann.Region -> CanonicalizeError.InvalidPayload -> Diagnostic
 badFlagsDiagnostic source region invalidPayload =
   Diag.makeDiagnostic
     (EC.mainError 2)
@@ -110,28 +110,28 @@ badFlagsDiagnostic source region invalidPayload =
         (payloadDetails invalidPayload)
     )
 
-payloadSummary :: E.InvalidPayload -> Text
+payloadSummary :: CanonicalizeError.InvalidPayload -> Text
 payloadSummary = \case
-  E.ExtendedRecord -> "Flags cannot use extended records"
-  E.Function -> "Flags cannot use functions"
-  E.TypeVariable _ -> "Flags cannot use unspecified types"
-  E.UnsupportedType name -> Text.pack ("Flags cannot use `" <> Name.toChars name <> "` values")
+  CanonicalizeError.ExtendedRecord -> "Flags cannot use extended records"
+  CanonicalizeError.Function -> "Flags cannot use functions"
+  CanonicalizeError.TypeVariable _ -> "Flags cannot use unspecified types"
+  CanonicalizeError.UnsupportedType name -> Text.pack ("Flags cannot use `" <> Name.toChars name <> "` values")
 
-payloadDetails :: E.InvalidPayload -> (D.Doc, D.Doc)
+payloadDetails :: CanonicalizeError.InvalidPayload -> (Doc.Doc, Doc.Doc)
 payloadDetails = \case
-  E.ExtendedRecord ->
+  CanonicalizeError.ExtendedRecord ->
     ( "Your `main` program wants an extended record from JavaScript.",
-      D.reflow "But the exact shape of the record must be known at compile time. No type variables!"
+      Doc.reflow "But the exact shape of the record must be known at compile time. No type variables!"
     )
-  E.Function ->
+  CanonicalizeError.Function ->
     ( "Your `main` program wants a function from JavaScript.",
-      D.reflow
+      Doc.reflow
         "But if I allowed functions from JS, it would be possible to sneak\
         \ side-effects and runtime exceptions into Canopy!"
     )
-  E.TypeVariable name ->
-    ( D.fromChars ("Your `main` program wants an unspecified type from JavaScript."),
-      D.reflow
+  CanonicalizeError.TypeVariable name ->
+    ( Doc.fromChars ("Your `main` program wants an unspecified type from JavaScript."),
+      Doc.reflow
         ( "But type variables like `"
             <> ( Name.toChars name
                    <> "` cannot be given as flags.\
@@ -140,14 +140,14 @@ payloadDetails = \case
                )
         )
     )
-  E.UnsupportedType name ->
-    ( D.fromChars ("Your `main` program wants a `" <> (Name.toChars name <> "` value from JavaScript.")),
-      D.stack
-        [ D.reflow "I cannot handle that. The types that CAN be in flags include:",
-          D.indent 4 . D.reflow $
+  CanonicalizeError.UnsupportedType name ->
+    ( Doc.fromChars ("Your `main` program wants a `" <> (Name.toChars name <> "` value from JavaScript.")),
+      Doc.stack
+        [ Doc.reflow "I cannot handle that. The types that CAN be in flags include:",
+          Doc.indent 4 . Doc.reflow $
             "Ints, Floats, Bools, Strings, Maybes, Lists, Arrays,\
             \ tuples, records, and JSON values.",
-          D.reflow
+          Doc.reflow
             "Since JSON values can flow through, you can use JSON encoders and decoders\
             \ to allow other types through as well."
         ]

@@ -23,7 +23,7 @@ module Integration.EndToEndTest (tests) where
 
 import qualified AST.Canonical as Can
 import qualified AST.Optimized as Opt
-import qualified Canopy.Interface as I
+import qualified Canopy.Interface as Interface
 import Canopy.ModuleName (Canonical)
 import qualified Canopy.ModuleName as ModuleName
 import qualified Canopy.Package as Pkg
@@ -83,15 +83,15 @@ compileSource path source = do
 -- dependencies expose only their union and alias type information with
 -- empty value and binop maps, which is sufficient for type checking
 -- but not for direct value references.
-extractPublicInterface :: I.DependencyInterface -> I.Interface
-extractPublicInterface (I.Public iface) = iface
-extractPublicInterface (I.Private pkg unions aliases) =
-  I.Interface
-    { I._home = pkg,
-      I._values = Map.empty,
-      I._unions = Map.map I.PrivateUnion unions,
-      I._aliases = Map.map I.PrivateAlias aliases,
-      I._binops = Map.empty
+extractPublicInterface :: Interface.DependencyInterface -> Interface.Interface
+extractPublicInterface (Interface.Public iface) = iface
+extractPublicInterface (Interface.Private pkg unions aliases) =
+  Interface.Interface
+    { Interface._home = pkg,
+      Interface._values = Map.empty,
+      Interface._unions = Map.map Interface.PrivateUnion unions,
+      Interface._aliases = Map.map Interface.PrivateAlias aliases,
+      Interface._binops = Map.empty
     }
 
 -- | Assert that compilation succeeded and run assertions on the result.
@@ -130,7 +130,7 @@ testSimpleValueDefinition =
         (Map.member (Name.fromChars "SimpleVal") unions)
       assertBool
         "interface has unions"
-        (not (Map.null (I._unions (Driver.compileResultInterface result))))
+        (not (Map.null (Interface._unions (Driver.compileResultInterface result))))
   where
     valueSource :: String
     valueSource =

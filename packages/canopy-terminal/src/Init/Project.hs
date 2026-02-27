@@ -68,7 +68,7 @@ where
 
 import qualified Canopy.Outline as Outline
 import Canopy.Package (Name)
-import qualified Canopy.Version as V
+import qualified Canopy.Version as Version
 import Control.Lens ((^.))
 import Data.Map (Map)
 import qualified Data.Map as Map
@@ -230,7 +230,7 @@ createOutlineConfig context solverDetails =
       testDepsConstraints = context ^. contextTestDeps
    in Outline.App $
         Outline.AppOutline
-          V.compiler
+          Version.compiler
           sourceDirs
           depsConstraints
           testDepsConstraints
@@ -239,7 +239,7 @@ createOutlineConfig context solverDetails =
           testDeps
 
 -- | Extract version information from solver details.
-extractVersions :: Map Name Solver.Details -> Map Name V.Version
+extractVersions :: Map Name Solver.Details -> Map Name Version.Version
 extractVersions = Map.map (\(Solver.Details version _) -> version)
 
 -- | Create source directory list for outline.
@@ -274,7 +274,7 @@ attemptOutlineWrite outline = do
 --
 -- Formats resolved dependencies into the structure expected by
 -- canopy.json configuration file.
-formatDependencies :: Map Name Solver.Details -> Map Name V.Version
+formatDependencies :: Map Name Solver.Details -> Map Name Version.Version
 formatDependencies = Map.map extractVersionFromDetails
   where
     extractVersionFromDetails (Solver.Details version _) = version

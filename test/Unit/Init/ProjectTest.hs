@@ -38,7 +38,7 @@ import qualified Canopy.Constraint as Con
 import qualified Canopy.Outline as Outline
 import Canopy.Package (Name)
 import qualified Canopy.Package as Pkg
-import qualified Canopy.Version as V
+import qualified Canopy.Version as Version
 import Control.Lens ((&), (.~), (^.))
 import qualified Control.Lens as Lens
 import qualified Data.Map as Map
@@ -80,9 +80,9 @@ outlineConfigTests =
         let context = defaultContext
             solverDetails =
               Map.fromList
-                [ (Pkg.core, Solver.Details V.one Map.empty),
-                  (Pkg.browser, Solver.Details V.one Map.empty),
-                  (Pkg.html, Solver.Details V.one Map.empty)
+                [ (Pkg.core, Solver.Details Version.one Map.empty),
+                  (Pkg.browser, Solver.Details Version.one Map.empty),
+                  (Pkg.html, Solver.Details Version.one Map.empty)
                 ]
             outline = Project.createOutlineConfig context solverDetails
 
@@ -103,7 +103,7 @@ outlineConfigTests =
           Outline.Pkg _ -> fail "Expected App outline, got Pkg",
       Test.testCase "createOutlineConfig handles custom source directories" $ do
         let context = defaultContext & contextSourceDirs Lens..~ ["src", "lib"]
-            solverDetails = Map.fromList [(Pkg.core, Solver.Details V.one Map.empty)]
+            solverDetails = Map.fromList [(Pkg.core, Solver.Details Version.one Map.empty)]
             outline = Project.createOutlineConfig context solverDetails
 
         case outline of
@@ -118,8 +118,8 @@ outlineConfigTests =
         let directDeps = Map.fromList [(Pkg.core, Con.anything)]
             allSolverDeps =
               Map.fromList
-                [ (Pkg.core, Solver.Details V.one Map.empty),
-                  (Pkg.browser, Solver.Details V.one Map.empty) -- indirect
+                [ (Pkg.core, Solver.Details Version.one Map.empty),
+                  (Pkg.browser, Solver.Details Version.one Map.empty) -- indirect
                 ]
             context = defaultContext & contextDependencies Lens..~ directDeps
             outline = Project.createOutlineConfig context allSolverDeps
@@ -175,22 +175,22 @@ dependencyFormattingTests =
     [ Test.testCase "formatDependencies extracts versions correctly" $ do
         let solverDetails =
               Map.fromList
-                [ (Pkg.core, Solver.Details V.one Map.empty),
-                  (Pkg.browser, Solver.Details (V.Version 2 0 0) Map.empty)
+                [ (Pkg.core, Solver.Details Version.one Map.empty),
+                  (Pkg.browser, Solver.Details (Version.Version 2 0 0) Map.empty)
                 ]
             formatted = Project.formatDependencies solverDetails
 
-        Map.lookup Pkg.core formatted @?= Just V.one
-        Map.lookup Pkg.browser formatted @?= Just (V.Version 2 0 0),
+        Map.lookup Pkg.core formatted @?= Just Version.one
+        Map.lookup Pkg.browser formatted @?= Just (Version.Version 2 0 0),
       Test.testCase "formatDependencies works on empty map" $ do
         let result = Project.formatDependencies Map.empty
         Map.null result @?= True,
       Test.testCase "formatDependencies preserves all packages" $ do
         let solverDetails =
               Map.fromList
-                [ (Pkg.core, Solver.Details V.one Map.empty),
-                  (Pkg.browser, Solver.Details V.one Map.empty),
-                  (Pkg.html, Solver.Details V.one Map.empty)
+                [ (Pkg.core, Solver.Details Version.one Map.empty),
+                  (Pkg.browser, Solver.Details Version.one Map.empty),
+                  (Pkg.html, Solver.Details Version.one Map.empty)
                 ]
             versions = Project.formatDependencies solverDetails
 
@@ -199,7 +199,7 @@ dependencyFormattingTests =
         Map.member Pkg.browser versions @?= True
         Map.member Pkg.html versions @?= True,
       Test.testCase "dependency formatting is deterministic" $ do
-        let details = Solver.Details V.one Map.empty
+        let details = Solver.Details Version.one Map.empty
             solverDetails = Map.fromList [(Pkg.core, details)]
             formatted1 = Project.formatDependencies solverDetails
             formatted2 = Project.formatDependencies solverDetails
@@ -232,7 +232,7 @@ sourceDirTests =
           Left other -> fail ("Unexpected error: " <> show other),
       Test.testCase "createOutlineConfig uses source directories correctly" $ do
         let context = defaultContext & contextSourceDirs Lens..~ ["custom"]
-            solverDetails = Map.fromList [(Pkg.core, Solver.Details V.one Map.empty)]
+            solverDetails = Map.fromList [(Pkg.core, Solver.Details Version.one Map.empty)]
             outline = Project.createOutlineConfig context solverDetails
 
         case outline of
@@ -253,16 +253,16 @@ integrationTests =
         let context = defaultContext
             solverDetails =
               Map.fromList
-                [ (Pkg.core, Solver.Details V.one Map.empty),
-                  (Pkg.browser, Solver.Details V.one Map.empty),
-                  (Pkg.html, Solver.Details V.one Map.empty)
+                [ (Pkg.core, Solver.Details Version.one Map.empty),
+                  (Pkg.browser, Solver.Details Version.one Map.empty),
+                  (Pkg.html, Solver.Details Version.one Map.empty)
                 ]
             outline = Project.createOutlineConfig context solverDetails
 
         case outline of
           Outline.App (Outline.AppOutline compiler sourceDirs _ _ directs _ testDeps) -> do
             -- Should use current compiler version
-            compiler @?= V.compiler
+            compiler @?= Version.compiler
 
             -- Should have default source directory
             case sourceDirs of
@@ -281,7 +281,7 @@ integrationTests =
               defaultContext
                 & contextSourceDirs Lens..~ ["app", "shared"]
                 & contextTestDeps Lens..~ Map.fromList [(Pkg.core, Con.anything)]
-            solverDetails = Map.fromList [(Pkg.core, Solver.Details V.one Map.empty)]
+            solverDetails = Map.fromList [(Pkg.core, Solver.Details Version.one Map.empty)]
             outline = Project.createOutlineConfig customContext solverDetails
 
         case outline of

@@ -10,9 +10,9 @@ module Unit.Reporting.DiagnosticTest (tests) where
 
 import qualified Data.NonEmptyList as NE
 import qualified Data.Text as Text
-import qualified Reporting.Annotation as A
+import qualified Reporting.Annotation as Ann
 import qualified Reporting.Diagnostic as Diag
-import qualified Reporting.Doc as D
+import qualified Reporting.Doc as Doc
 import qualified Reporting.Error as Error
 import Test.Tasty
 import Test.Tasty.HUnit
@@ -115,9 +115,9 @@ constructionTests =
     phase = Diag.PhaseType
     title = "TYPE MISMATCH"
     summary = "Type mismatch in expression"
-    region = A.Region (A.Position 5 10) (A.Position 5 20)
+    region = Ann.Region (Ann.Position 5 10) (Ann.Position 5 20)
     primary = Diag.LabeledSpan region "this is String" Diag.SpanPrimary
-    msg = D.reflow "The type does not match."
+    msg = Doc.reflow "The type does not match."
 
 modificationTests :: TestTree
 modificationTests =
@@ -151,15 +151,15 @@ modificationTests =
         length (Diag._diagNotes modified) @?= 1
     ]
   where
-    region = A.Region (A.Position 5 10) (A.Position 5 20)
-    region2 = A.Region (A.Position 3 1) (A.Position 3 30)
+    region = Ann.Region (Ann.Position 5 10) (Ann.Position 5 20)
+    region2 = Ann.Region (Ann.Position 3 1) (Ann.Position 3 30)
     baseDiag =
       Diag.makeSimpleDiagnostic
         (Diag.ErrorCode 401)
         Diag.PhaseType
         "TYPE MISMATCH"
         region
-        (D.reflow "test message")
+        (Doc.reflow "test message")
 
 cascadeTests :: TestTree
 cascadeTests =
@@ -190,14 +190,14 @@ cascadeTests =
         Diag._diagCode first @?= Diag.ErrorCode 400
     ]
   where
-    region1 = A.Region (A.Position 5 10) (A.Position 5 20)
-    region3 = A.Region (A.Position 50 1) (A.Position 50 10)
+    region1 = Ann.Region (Ann.Position 5 10) (Ann.Position 5 20)
+    region3 = Ann.Region (Ann.Position 50 1) (Ann.Position 50 10)
     diag1 = makeDiag (Diag.ErrorCode 400) region1
     diag2 = makeDiag (Diag.ErrorCode 500) region1
 
-makeDiag :: Diag.ErrorCode -> A.Region -> Diag.Diagnostic
+makeDiag :: Diag.ErrorCode -> Ann.Region -> Diag.Diagnostic
 makeDiag code region =
-  Diag.makeSimpleDiagnostic code Diag.PhaseType "TEST" region (D.reflow "test")
+  Diag.makeSimpleDiagnostic code Diag.PhaseType "TEST" region (Doc.reflow "test")
 
 -- | Remove duplicates from a list, preserving order.
 removeDuplicates :: (Eq a) => [a] -> [a]

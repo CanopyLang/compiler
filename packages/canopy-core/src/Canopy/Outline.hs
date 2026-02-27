@@ -31,11 +31,11 @@ module Canopy.Outline
   )
 where
 
-import qualified Canopy.Constraint as C
+import qualified Canopy.Constraint as Constraint
 import qualified Canopy.Licenses as Licenses
 import qualified Canopy.ModuleName as ModuleName
 import qualified Canopy.Package as Pkg
-import qualified Canopy.Version as V
+import qualified Canopy.Version as Version
 import Control.Applicative ((<|>))
 import Data.Aeson ((.=))
 import Data.Aeson.Types (Parser)
@@ -44,22 +44,23 @@ import qualified Data.ByteString.Lazy as LBS
 import Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
 import qualified Data.Text as Text
+import qualified Json.String as JsonStr
 import Json.Encode ((==>))
-import qualified Json.Encode as E
+import qualified Json.Encode as Encode
 import Prelude hiding (read)
 import qualified System.Directory
 import System.FilePath ((</>))
 
 -- Orphan JSON instances for core types used in outline serialization.
-instance Json.ToJSON C.Constraint where
+instance Json.ToJSON Constraint.Constraint where
   toJSON _ = Json.String "any"
 
-instance Json.FromJSON C.Constraint where
+instance Json.FromJSON Constraint.Constraint where
   parseJSON = Json.withText "Constraint" $ \txt ->
-    fmap C.exactly (versionFromText txt) <|> pure C.anything
+    fmap Constraint.exactly (versionFromText txt) <|> pure Constraint.anything
 
--- | Parse a version string via the Aeson instance for 'V.Version'.
-versionFromText :: Text.Text -> Parser V.Version
+-- | Parse a version string via the Aeson instance for 'Version.Version'.
+versionFromText :: Text.Text -> Parser Version.Version
 versionFromText txt =
   case Json.fromJSON (Json.String txt) of
     Json.Success v -> pure v
@@ -69,7 +70,10 @@ instance Json.ToJSON Licenses.License where
   toJSON _ = Json.String "BSD-3-Clause"
 
 instance Json.FromJSON Licenses.License where
-  parseJSON _ = pure Licenses.bsd3
+  parseJSON = Json.withText "License" $ \txt ->
+    case Licenses.check (JsonStr.fromChars (Text.unpack txt)) of
+      Right license -> pure license
+      Left _ -> fail ("Invalid SPDX license identifier: " ++ Text.unpack txt)
 
 -- | Project outline (App or Pkg).
 data Outline
@@ -79,13 +83,13 @@ data Outline
 
 -- | Application outline.
 data AppOutline = AppOutline
-  { _appCanopy :: !V.Version,
+  { _appCanopy :: !Version.Version,
     _appSrcDirs :: ![SrcDir],
-    _appDeps :: !(Map Pkg.Name C.Constraint),
-    _appTestDeps :: !(Map Pkg.Name C.Constraint),
-    _appDepsDirect :: !(Map Pkg.Name V.Version),
-    _appDepsIndirect :: !(Map Pkg.Name V.Version),
-    _appTestDepsDirect :: !(Map Pkg.Name V.Version)
+    _appDeps :: !(Map Pkg.Name Constraint.Constraint),
+    _appTestDeps :: !(Map Pkg.Name Constraint.Constraint),
+    _appDepsDirect :: !(Map Pkg.Name Version.Version),
+    _appDepsIndirect :: !(Map Pkg.Name Version.Version),
+    _appTestDepsDirect :: !(Map Pkg.Name Version.Version)
   }
   deriving (Show)
 
@@ -94,11 +98,11 @@ data PkgOutline = PkgOutline
   { _pkgName :: !Pkg.Name,
     _pkgSummary :: !Text.Text,
     _pkgLicense :: !Licenses.License,
-    _pkgVersion :: !V.Version,
+    _pkgVersion :: !Version.Version,
     _pkgExposed :: !Exposed,
-    _pkgDeps :: !(Map Pkg.Name C.Constraint),
-    _pkgTestDeps :: !(Map Pkg.Name C.Constraint),
-    _pkgCanopy :: !C.Constraint
+    _pkgDeps :: !(Map Pkg.Name Constraint.Constraint),
+    _pkgTestDeps :: !(Map Pkg.Name Constraint.Constraint),
+    _pkgCanopy :: !Constraint.Constraint
   }
   deriving (Show)
 
@@ -115,19 +119,28 @@ data SrcDir
   deriving (Show, Eq)
 
 -- | Read outline from project root.
+--
 -- Checks for canopy.json first, then elm.json as fallback.
-read :: FilePath -> IO (Maybe Outline)
+-- Returns a detailed error when a file is present but malformed,
+-- rather than silently returning 'Nothing'.
+--
+-- @since 0.19.1
+read :: FilePath -> IO (Either String Outline)
 read root = do
   let canopyPath = root </> "canopy.json"
       elmPath = root </> "elm.json"
   maybeCanopy <- safeReadFile canopyPath
   case maybeCanopy of
-    Just content -> pure (Json.decode content)
+    Just content ->
+      pure (either (Left . decorateError canopyPath) Right (Json.eitherDecode content))
     Nothing -> do
       maybeElm <- safeReadFile elmPath
       case maybeElm of
-        Nothing -> pure Nothing
-        Just content -> pure (Json.decode content)
+        Nothing -> pure (Left ("No canopy.json or elm.json found in " ++ root))
+        Just content ->
+          pure (either (Left . decorateError elmPath) Right (Json.eitherDecode content))
+  where
+    decorateError path msg = "Failed to parse " ++ path ++ ": " ++ msg
 
 -- | Write outline to project root.
 write :: FilePath -> Outline -> IO ()
@@ -236,49 +249,49 @@ instance Json.FromJSON SrcDir where
 -- Used primarily by the development server's index generation.
 --
 -- @since 0.19.1
-encode :: Outline -> E.Value
+encode :: Outline -> Encode.Value
 encode (App appOutline) = encodeAppOutline appOutline
 encode (Pkg pkgOutline) = encodePkgOutline pkgOutline
 
 -- | Encode application outline.
-encodeAppOutline :: AppOutline -> E.Value
+encodeAppOutline :: AppOutline -> Encode.Value
 encodeAppOutline (AppOutline canopy srcDirs deps testDeps depsDirect depsIndirect testDepsDirect) =
-  E.object
-    [ "type" ==> E.chars "application",
-      "canopy-version" ==> V.encode canopy,
-      "source-directories" ==> E.list encodeSrcDir srcDirs,
-      "dependencies" ==> E.dict Pkg.toJsonString C.encode deps,
-      "test-dependencies" ==> E.dict Pkg.toJsonString C.encode testDeps,
-      "dependencies-direct" ==> E.dict Pkg.toJsonString V.encode depsDirect,
-      "dependencies-indirect" ==> E.dict Pkg.toJsonString V.encode depsIndirect,
-      "test-dependencies-direct" ==> E.dict Pkg.toJsonString V.encode testDepsDirect
+  Encode.object
+    [ "type" ==> Encode.chars "application",
+      "canopy-version" ==> Version.encode canopy,
+      "source-directories" ==> Encode.list encodeSrcDir srcDirs,
+      "dependencies" ==> Encode.dict Pkg.toJsonString Constraint.encode deps,
+      "test-dependencies" ==> Encode.dict Pkg.toJsonString Constraint.encode testDeps,
+      "dependencies-direct" ==> Encode.dict Pkg.toJsonString Version.encode depsDirect,
+      "dependencies-indirect" ==> Encode.dict Pkg.toJsonString Version.encode depsIndirect,
+      "test-dependencies-direct" ==> Encode.dict Pkg.toJsonString Version.encode testDepsDirect
     ]
 
 -- | Encode package outline.
-encodePkgOutline :: PkgOutline -> E.Value
+encodePkgOutline :: PkgOutline -> Encode.Value
 encodePkgOutline (PkgOutline name summary license version exposed deps testDeps canopy) =
-  E.object
-    [ "type" ==> E.chars "package",
+  Encode.object
+    [ "type" ==> Encode.chars "package",
       "name" ==> Pkg.encode name,
-      "summary" ==> E.chars (Text.unpack summary),
+      "summary" ==> Encode.chars (Text.unpack summary),
       "license" ==> Licenses.encode license,
-      "version" ==> V.encode version,
+      "version" ==> Version.encode version,
       "exposed-modules" ==> encodeExposed exposed,
-      "dependencies" ==> E.dict Pkg.toJsonString C.encode deps,
-      "test-dependencies" ==> E.dict Pkg.toJsonString C.encode testDeps,
-      "canopy-version" ==> C.encode canopy
+      "dependencies" ==> Encode.dict Pkg.toJsonString Constraint.encode deps,
+      "test-dependencies" ==> Encode.dict Pkg.toJsonString Constraint.encode testDeps,
+      "canopy-version" ==> Constraint.encode canopy
     ]
 
 -- | Encode exposed modules.
-encodeExposed :: Exposed -> E.Value
-encodeExposed (ExposedList mods) = E.list ModuleName.encode mods
+encodeExposed :: Exposed -> Encode.Value
+encodeExposed (ExposedList mods) = Encode.list ModuleName.encode mods
 encodeExposed (ExposedDict dict) =
-  E.object (map (\(category, mods) -> Text.unpack category ==> E.list ModuleName.encode mods) dict)
+  Encode.object (map (\(category, mods) -> Text.unpack category ==> Encode.list ModuleName.encode mods) dict)
 
 -- | Encode source directory.
-encodeSrcDir :: SrcDir -> E.Value
-encodeSrcDir (AbsoluteSrcDir path) = E.chars path
-encodeSrcDir (RelativeSrcDir path) = E.chars path
+encodeSrcDir :: SrcDir -> Encode.Value
+encodeSrcDir (AbsoluteSrcDir path) = Encode.chars path
+encodeSrcDir (RelativeSrcDir path) = Encode.chars path
 
 -- | Flatten exposed modules to a simple list.
 --
@@ -293,13 +306,13 @@ flattenExposed (ExposedDict dict) = concatMap snd dict
 -- | Extract all dependency packages with resolved versions.
 --
 -- For applications: merges direct, indirect, and test-direct deps.
--- For packages: extracts 'C.lowerBound' from each constraint in deps and test-deps.
+-- For packages: extracts 'Constraint.lowerBound' from each constraint in deps and test-deps.
 --
 -- @since 0.19.1
-allDeps :: Outline -> [(Pkg.Name, V.Version)]
+allDeps :: Outline -> [(Pkg.Name, Version.Version)]
 allDeps (App o) =
   Map.toList (_appDepsDirect o)
     ++ Map.toList (_appDepsIndirect o)
     ++ Map.toList (_appTestDepsDirect o)
 allDeps (Pkg o) =
-  Map.toList (Map.map C.lowerBound (Map.union (_pkgDeps o) (_pkgTestDeps o)))
+  Map.toList (Map.map Constraint.lowerBound (Map.union (_pkgDeps o) (_pkgTestDeps o)))

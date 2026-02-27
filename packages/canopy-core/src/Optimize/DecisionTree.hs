@@ -30,7 +30,7 @@ import qualified Data.List as List
 import qualified Data.Maybe as Maybe
 import qualified Data.Name as Name
 import qualified Data.Set as Set
-import qualified Reporting.Annotation as A
+import qualified Reporting.Annotation as Ann
 import qualified Reporting.InternalError as InternalError
 
 -- COMPILE CASES
@@ -142,7 +142,7 @@ flattenPatterns (Branch goal pathPatterns) =
   Branch goal (foldr flatten [] pathPatterns)
 
 flatten :: (Path, Can.Pattern) -> [(Path, Can.Pattern)] -> [(Path, Can.Pattern)]
-flatten pathPattern@(path, A.At region pattern) otherPathPatterns =
+flatten pathPattern@(path, Ann.At region pattern) otherPathPatterns =
   case pattern of
     Can.PVar _ ->
       pathPattern : otherPathPatterns
@@ -168,7 +168,7 @@ flatten pathPattern@(path, A.At region pattern) otherPathPatterns =
       otherPathPatterns
     Can.PAlias realPattern alias ->
       flatten (path, realPattern) $
-        (path, A.At region (Can.PVar alias)) : otherPathPatterns
+        (path, Ann.At region (Can.PVar alias)) : otherPathPatterns
     Can.PRecord _ ->
       pathPattern : otherPathPatterns
     Can.PList _ ->
@@ -244,7 +244,7 @@ testAtPath selectedPath (Branch _ pathPatterns) =
   case List.lookup selectedPath pathPatterns of
     Nothing ->
       Nothing
-    Just (A.At _ pattern) ->
+    Just (Ann.At _ pattern) ->
       case pattern of
         Can.PCtor home _ (Can.Union _ _ numAlts opts) name index _ ->
           Just (IsCtor home name index numAlts opts)
@@ -287,7 +287,7 @@ edgesFor path branches test =
 toRelevantBranch :: Test -> Path -> Branch -> Maybe Branch
 toRelevantBranch test path branch@(Branch goal pathPatterns) =
   case extract path pathPatterns of
-    Found start (A.At region pattern) end ->
+    Found start (Ann.At region pattern) end ->
       case pattern of
         Can.PCtor _ _ (Can.Union _ _ numAlts _) name _ ctorArgs ->
           case test of
@@ -311,7 +311,7 @@ toRelevantBranch test path branch@(Branch goal pathPatterns) =
         Can.PList (hd : tl) ->
           case test of
             IsCons ->
-              let tl' = A.At region (Can.PList tl)
+              let tl' = Ann.At region (Can.PList tl)
                in Just (Branch goal (start ++ subPositions path [hd, tl'] ++ end))
             _ ->
               Nothing
@@ -393,7 +393,7 @@ isIrrelevantTo selectedPath (Branch _ pathPatterns) =
       not (needsTests pattern)
 
 needsTests :: Can.Pattern -> Bool
-needsTests (A.At _ pattern) =
+needsTests (Ann.At _ pattern) =
   case pattern of
     Can.PVar _ -> False
     Can.PAnything -> False

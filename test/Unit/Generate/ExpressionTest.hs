@@ -12,7 +12,7 @@ module Unit.Generate.ExpressionTest (tests) where
 import qualified AST.Optimized as Opt
 import qualified Canopy.ModuleName as ModuleName
 import qualified Canopy.Package as Pkg
-import qualified Data.ByteString.Builder as B
+import qualified Data.ByteString.Builder as BB
 import qualified Data.ByteString.Lazy.Char8 as LChar8
 import qualified Data.Index as Index
 import Data.Name (Name)
@@ -48,7 +48,7 @@ nameStr :: String -> Name
 nameStr = Name.fromChars
 
 jsNameToString :: JsName.Name -> String
-jsNameToString = LChar8.unpack . B.toLazyByteString . JsName.toBuilder
+jsNameToString = LChar8.unpack . BB.toLazyByteString . JsName.toBuilder
 
 showExpr :: JS.Expr -> String
 showExpr = show
@@ -139,7 +139,7 @@ generateVarLocalTests =
         in assertShowContains "Ref" (showExpr result),
       testCase "VarLocal with reserved word gets escaped" $
         let result = Expr.codeToExpr (Expr.generate devMode (Opt.VarLocal (nameStr "var")))
-            rendered = LChar8.unpack (B.toLazyByteString (JS.exprToBuilder result))
+            rendered = LChar8.unpack (BB.toLazyByteString (JS.exprToBuilder result))
         in assertBool "escaped var reference contains _var" ("_var" `isInfixOfStr` rendered)
     ]
 
@@ -158,13 +158,13 @@ generateFunctionTests =
         let args = [JsName.fromLocal (nameStr "a"), JsName.fromLocal (nameStr "b")]
             body = Expr.JsExpr (JS.Ref (JsName.fromLocal (nameStr "a")))
             result = Expr.codeToExpr (Expr.generateFunction args body)
-            rendered = LChar8.unpack (B.toLazyByteString (JS.exprToBuilder result))
+            rendered = LChar8.unpack (BB.toLazyByteString (JS.exprToBuilder result))
         in assertBool "two-arg function uses F2" ("F2" `isInfixOfStr` rendered),
       testCase "nine-arg function uses F9 helper" $
         let argNames = fmap (\c -> JsName.fromLocal (nameStr [c])) ['a' .. 'i']
             body = Expr.JsExpr (JS.Int 0)
             result = Expr.codeToExpr (Expr.generateFunction argNames body)
-            rendered = LChar8.unpack (B.toLazyByteString (JS.exprToBuilder result))
+            rendered = LChar8.unpack (BB.toLazyByteString (JS.exprToBuilder result))
         in assertBool "nine-arg function uses F9" ("F9" `isInfixOfStr` rendered)
     ]
 
@@ -192,13 +192,13 @@ generateCtorTests =
         let home = ModuleName.Canonical Pkg.core (nameStr "Maybe")
             global = Opt.Global home (nameStr "Nothing")
             result = Expr.codeToExpr (Expr.generateCtor devMode global Index.first 0)
-            rendered = LChar8.unpack (B.toLazyByteString (JS.exprToBuilder result))
+            rendered = LChar8.unpack (BB.toLazyByteString (JS.exprToBuilder result))
         in assertBool "ctor contains Nothing tag string" ("Nothing" `isInfixOfStr` rendered),
       testCase "arity-1 ctor in Dev mode produces function returning tagged object" $
         let home = ModuleName.Canonical Pkg.core (nameStr "Maybe")
             global = Opt.Global home (nameStr "Just")
             result = Expr.codeToExpr (Expr.generateCtor devMode global Index.first 1)
-            rendered = LChar8.unpack (B.toLazyByteString (JS.exprToBuilder result))
+            rendered = LChar8.unpack (BB.toLazyByteString (JS.exprToBuilder result))
         in do
           assertBool "ctor contains Just tag" ("Just" `isInfixOfStr` rendered)
           assertBool "ctor contains function" ("function" `isInfixOfStr` rendered)

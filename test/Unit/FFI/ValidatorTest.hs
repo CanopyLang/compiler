@@ -1,7 +1,7 @@
 module Unit.FFI.ValidatorTest (tests) where
 
 import qualified Data.Text as Text
-import qualified FFI.Validator as V
+import qualified FFI.Validator as Validator
 import Test.Tasty
 import Test.Tasty.HUnit
 
@@ -21,53 +21,53 @@ parseFFITypeTests =
   testGroup
     "parseFFIType"
     [ testCase "parses Int" $
-        V.parseFFIType "Int" @?= Just V.FFIInt,
+        Validator.parseFFIType "Int" @?= Just Validator.FFIInt,
       testCase "parses Float" $
-        V.parseFFIType "Float" @?= Just V.FFIFloat,
+        Validator.parseFFIType "Float" @?= Just Validator.FFIFloat,
       testCase "parses String" $
-        V.parseFFIType "String" @?= Just V.FFIString,
+        Validator.parseFFIType "String" @?= Just Validator.FFIString,
       testCase "parses Bool" $
-        V.parseFFIType "Bool" @?= Just V.FFIBool,
+        Validator.parseFFIType "Bool" @?= Just Validator.FFIBool,
       testCase "parses Unit" $
-        V.parseFFIType "()" @?= Just V.FFIUnit,
+        Validator.parseFFIType "()" @?= Just Validator.FFIUnit,
       testCase "parses opaque type" $
-        V.parseFFIType "AudioContext" @?= Just (V.FFIOpaque "AudioContext"),
+        Validator.parseFFIType "AudioContext" @?= Just (Validator.FFIOpaque "AudioContext"),
       testCase "parses List Int" $
-        V.parseFFIType "List Int" @?= Just (V.FFIList V.FFIInt),
+        Validator.parseFFIType "List Int" @?= Just (Validator.FFIList Validator.FFIInt),
       testCase "parses List Float" $
-        V.parseFFIType "List Float" @?= Just (V.FFIList V.FFIFloat),
+        Validator.parseFFIType "List Float" @?= Just (Validator.FFIList Validator.FFIFloat),
       testCase "parses Maybe Int" $
-        V.parseFFIType "Maybe Int" @?= Just (V.FFIMaybe V.FFIInt),
+        Validator.parseFFIType "Maybe Int" @?= Just (Validator.FFIMaybe Validator.FFIInt),
       testCase "parses Maybe String" $
-        V.parseFFIType "Maybe String" @?= Just (V.FFIMaybe V.FFIString),
+        Validator.parseFFIType "Maybe String" @?= Just (Validator.FFIMaybe Validator.FFIString),
       testCase "parses Result String Int" $
-        V.parseFFIType "Result String Int" @?= Just (V.FFIResult V.FFIString V.FFIInt),
+        Validator.parseFFIType "Result String Int" @?= Just (Validator.FFIResult Validator.FFIString Validator.FFIInt),
       testCase "parses Result Error Value" $
-        V.parseFFIType "Result Error Value" @?= Just (V.FFIResult (V.FFIOpaque "Error") (V.FFIOpaque "Value")),
+        Validator.parseFFIType "Result Error Value" @?= Just (Validator.FFIResult (Validator.FFIOpaque "Error") (Validator.FFIOpaque "Value")),
       testCase "parses Task String Int" $
-        V.parseFFIType "Task String Int" @?= Just (V.FFITask V.FFIString V.FFIInt),
+        Validator.parseFFIType "Task String Int" @?= Just (Validator.FFITask Validator.FFIString Validator.FFIInt),
       testCase "parses Task Error Value" $
-        V.parseFFIType "Task Error Value" @?= Just (V.FFITask (V.FFIOpaque "Error") (V.FFIOpaque "Value")),
+        Validator.parseFFIType "Task Error Value" @?= Just (Validator.FFITask (Validator.FFIOpaque "Error") (Validator.FFIOpaque "Value")),
       testCase "parses nested List Maybe Int" $
-        V.parseFFIType "List (Maybe Int)" @?= Just (V.FFIList (V.FFIMaybe V.FFIInt)),
+        Validator.parseFFIType "List (Maybe Int)" @?= Just (Validator.FFIList (Validator.FFIMaybe Validator.FFIInt)),
       testCase "parses nested Maybe (List String)" $
-        V.parseFFIType "Maybe (List String)" @?= Just (V.FFIMaybe (V.FFIList V.FFIString)),
+        Validator.parseFFIType "Maybe (List String)" @?= Just (Validator.FFIMaybe (Validator.FFIList Validator.FFIString)),
       testCase "parses tuple (Int, String)" $
-        V.parseFFIType "(Int, String)" @?= Just (V.FFITuple [V.FFIInt, V.FFIString]),
+        Validator.parseFFIType "(Int, String)" @?= Just (Validator.FFITuple [Validator.FFIInt, Validator.FFIString]),
       testCase "parses tuple (Int, String, Bool)" $
-        V.parseFFIType "(Int, String, Bool)" @?= Just (V.FFITuple [V.FFIInt, V.FFIString, V.FFIBool]),
+        Validator.parseFFIType "(Int, String, Bool)" @?= Just (Validator.FFITuple [Validator.FFIInt, Validator.FFIString, Validator.FFIBool]),
       testCase "parses function Int -> String" $
-        V.parseFFIType "Int -> String" @?= Just (V.FFIFunctionType [V.FFIInt] V.FFIString),
+        Validator.parseFFIType "Int -> String" @?= Just (Validator.FFIFunctionType [Validator.FFIInt] Validator.FFIString),
       testCase "parses function Int -> String -> Bool" $
-        V.parseFFIType "Int -> String -> Bool" @?= Just (V.FFIFunctionType [V.FFIInt, V.FFIString] V.FFIBool),
+        Validator.parseFFIType "Int -> String -> Bool" @?= Just (Validator.FFIFunctionType [Validator.FFIInt, Validator.FFIString] Validator.FFIBool),
       testCase "parses function with complex return" $
-        V.parseFFIType "Int -> Result String Bool" @?= Just (V.FFIFunctionType [V.FFIInt] (V.FFIResult V.FFIString V.FFIBool)),
+        Validator.parseFFIType "Int -> Result String Bool" @?= Just (Validator.FFIFunctionType [Validator.FFIInt] (Validator.FFIResult Validator.FFIString Validator.FFIBool)),
       testCase "handles whitespace" $
-        V.parseFFIType "  Int  " @?= Just V.FFIInt,
+        Validator.parseFFIType "  Int  " @?= Just Validator.FFIInt,
       testCase "handles whitespace in List" $
-        V.parseFFIType "List   Int" @?= Just (V.FFIList V.FFIInt),
+        Validator.parseFFIType "List   Int" @?= Just (Validator.FFIList Validator.FFIInt),
       testCase "returns Nothing for empty string" $
-        V.parseFFIType "" @?= Nothing
+        Validator.parseFFIType "" @?= Nothing
     ]
 
 parseReturnTypeTests :: TestTree
@@ -75,17 +75,17 @@ parseReturnTypeTests =
   testGroup
     "parseReturnType"
     [ testCase "extracts return type from simple function" $
-        V.parseReturnType "Int -> String" @?= Just V.FFIString,
+        Validator.parseReturnType "Int -> String" @?= Just Validator.FFIString,
       testCase "extracts return type from multi-arg function" $
-        V.parseReturnType "Int -> String -> Bool" @?= Just V.FFIBool,
+        Validator.parseReturnType "Int -> String -> Bool" @?= Just Validator.FFIBool,
       testCase "extracts Result return type" $
-        V.parseReturnType "Int -> Result Error Value" @?= Just (V.FFIResult (V.FFIOpaque "Error") (V.FFIOpaque "Value")),
+        Validator.parseReturnType "Int -> Result Error Value" @?= Just (Validator.FFIResult (Validator.FFIOpaque "Error") (Validator.FFIOpaque "Value")),
       testCase "extracts Task return type" $
-        V.parseReturnType "String -> Task Error Value" @?= Just (V.FFITask (V.FFIOpaque "Error") (V.FFIOpaque "Value")),
+        Validator.parseReturnType "String -> Task Error Value" @?= Just (Validator.FFITask (Validator.FFIOpaque "Error") (Validator.FFIOpaque "Value")),
       testCase "returns Nothing for empty string" $
-        V.parseReturnType "" @?= Nothing,
+        Validator.parseReturnType "" @?= Nothing,
       testCase "returns type for non-function" $
-        V.parseReturnType "Int" @?= Just V.FFIInt
+        Validator.parseReturnType "Int" @?= Just Validator.FFIInt
     ]
 
 generateValidatorNameTests :: TestTree
@@ -93,29 +93,29 @@ generateValidatorNameTests =
   testGroup
     "generateValidatorName"
     [ testCase "generates name for Int" $
-        V.generateValidatorName V.FFIInt @?= "_validate_Int",
+        Validator.generateValidatorName Validator.FFIInt @?= "_validate_Int",
       testCase "generates name for Float" $
-        V.generateValidatorName V.FFIFloat @?= "_validate_Float",
+        Validator.generateValidatorName Validator.FFIFloat @?= "_validate_Float",
       testCase "generates name for String" $
-        V.generateValidatorName V.FFIString @?= "_validate_String",
+        Validator.generateValidatorName Validator.FFIString @?= "_validate_String",
       testCase "generates name for Bool" $
-        V.generateValidatorName V.FFIBool @?= "_validate_Bool",
+        Validator.generateValidatorName Validator.FFIBool @?= "_validate_Bool",
       testCase "generates name for Unit" $
-        V.generateValidatorName V.FFIUnit @?= "_validate_Unit",
+        Validator.generateValidatorName Validator.FFIUnit @?= "_validate_Unit",
       testCase "generates name for List Int" $
-        V.generateValidatorName (V.FFIList V.FFIInt) @?= "_validate_List_Int",
+        Validator.generateValidatorName (Validator.FFIList Validator.FFIInt) @?= "_validate_List_Int",
       testCase "generates name for Maybe String" $
-        V.generateValidatorName (V.FFIMaybe V.FFIString) @?= "_validate_Maybe_String",
+        Validator.generateValidatorName (Validator.FFIMaybe Validator.FFIString) @?= "_validate_Maybe_String",
       testCase "generates name for Result String Int" $
-        V.generateValidatorName (V.FFIResult V.FFIString V.FFIInt) @?= "_validate_Result_String_Int",
+        Validator.generateValidatorName (Validator.FFIResult Validator.FFIString Validator.FFIInt) @?= "_validate_Result_String_Int",
       testCase "generates name for Task Error Value" $
-        V.generateValidatorName (V.FFITask (V.FFIOpaque "Error") (V.FFIOpaque "Value")) @?= "_validate_Task_Opaque_Error_Opaque_Value",
+        Validator.generateValidatorName (Validator.FFITask (Validator.FFIOpaque "Error") (Validator.FFIOpaque "Value")) @?= "_validate_Task_Opaque_Error_Opaque_Value",
       testCase "generates name for Tuple" $
-        V.generateValidatorName (V.FFITuple [V.FFIInt, V.FFIString]) @?= "_validate_Tuple_Int_String",
+        Validator.generateValidatorName (Validator.FFITuple [Validator.FFIInt, Validator.FFIString]) @?= "_validate_Tuple_Int_String",
       testCase "generates name for Opaque type" $
-        V.generateValidatorName (V.FFIOpaque "AudioContext") @?= "_validate_Opaque_AudioContext",
+        Validator.generateValidatorName (Validator.FFIOpaque "AudioContext") @?= "_validate_Opaque_AudioContext",
       testCase "generates name for Function" $
-        V.generateValidatorName (V.FFIFunctionType [V.FFIInt] V.FFIString) @?= "_validate_Fn_String"
+        Validator.generateValidatorName (Validator.FFIFunctionType [Validator.FFIInt] Validator.FFIString) @?= "_validate_Fn_String"
     ]
 
 generateValidatorTests :: TestTree
@@ -123,60 +123,60 @@ generateValidatorTests =
   testGroup
     "generateValidator"
     [ testCase "generates Int validator with Number.isInteger check" $
-        let validator = V.generateValidator V.defaultConfig V.FFIInt
+        let validator = Validator.generateValidator Validator.defaultConfig Validator.FFIInt
          in Text.isInfixOf "Number.isInteger" validator @?= True,
       testCase "generates Float validator with typeof check" $
-        let validator = V.generateValidator V.defaultConfig V.FFIFloat
+        let validator = Validator.generateValidator Validator.defaultConfig Validator.FFIFloat
          in Text.isInfixOf "typeof v !== 'number'" validator @?= True,
       testCase "generates String validator with typeof check" $
-        let validator = V.generateValidator V.defaultConfig V.FFIString
+        let validator = Validator.generateValidator Validator.defaultConfig Validator.FFIString
          in Text.isInfixOf "typeof v !== 'string'" validator @?= True,
       testCase "generates Bool validator with typeof check" $
-        let validator = V.generateValidator V.defaultConfig V.FFIBool
+        let validator = Validator.generateValidator Validator.defaultConfig Validator.FFIBool
          in Text.isInfixOf "typeof v !== 'boolean'" validator @?= True,
       testCase "generates Unit validator that returns v" $
-        let validator = V.generateValidator V.defaultConfig V.FFIUnit
+        let validator = Validator.generateValidator Validator.defaultConfig Validator.FFIUnit
          in Text.isInfixOf "return v;" validator @?= True,
       testCase "generates List validator with Array.isArray check" $
-        let validator = V.generateValidator V.defaultConfig (V.FFIList V.FFIInt)
+        let validator = Validator.generateValidator Validator.defaultConfig (Validator.FFIList Validator.FFIInt)
          in Text.isInfixOf "Array.isArray" validator @?= True,
       testCase "generates Maybe validator with null check" $
-        let validator = V.generateValidator V.defaultConfig (V.FFIMaybe V.FFIInt)
+        let validator = Validator.generateValidator Validator.defaultConfig (Validator.FFIMaybe Validator.FFIInt)
          in (Text.isInfixOf "v == null" validator && Text.isInfixOf "'Nothing'" validator) @?= True,
       testCase "generates Maybe validator with Just construction" $
-        let validator = V.generateValidator V.defaultConfig (V.FFIMaybe V.FFIInt)
+        let validator = Validator.generateValidator Validator.defaultConfig (Validator.FFIMaybe Validator.FFIInt)
          in Text.isInfixOf "'Just'" validator @?= True,
       testCase "generates Result validator with string tags" $
-        let validator = V.generateValidator V.defaultConfig (V.FFIResult V.FFIString V.FFIInt)
+        let validator = Validator.generateValidator Validator.defaultConfig (Validator.FFIResult Validator.FFIString Validator.FFIInt)
          in (Text.isInfixOf "'Ok'" validator && Text.isInfixOf "'Err'" validator) @?= True,
       testCase "generates Task validator with Promise check" $
-        let validator = V.generateValidator V.defaultConfig (V.FFITask V.FFIString V.FFIInt)
+        let validator = Validator.generateValidator Validator.defaultConfig (Validator.FFITask Validator.FFIString Validator.FFIInt)
          in (Text.isInfixOf "typeof v.then !== 'function'" validator) @?= True,
       testCase "generates Tuple validator with length check" $
-        let validator = V.generateValidator V.defaultConfig (V.FFITuple [V.FFIInt, V.FFIString])
+        let validator = Validator.generateValidator Validator.defaultConfig (Validator.FFITuple [Validator.FFIInt, Validator.FFIString])
          in Text.isInfixOf "v.length !== 2" validator @?= True,
       testCase "generates Function validator with typeof check" $
-        let validator = V.generateValidator V.defaultConfig (V.FFIFunctionType [V.FFIInt] V.FFIString)
+        let validator = Validator.generateValidator Validator.defaultConfig (Validator.FFIFunctionType [Validator.FFIInt] Validator.FFIString)
          in Text.isInfixOf "typeof v !== 'function'" validator @?= True,
       testCase "generates validator that throws in strict mode" $
-        let config = V.defaultConfig {V._configStrictMode = True}
-            validator = V.generateValidator config V.FFIInt
+        let config = Validator.defaultConfig {Validator._configStrictMode = True}
+            validator = Validator.generateValidator config Validator.FFIInt
          in Text.isInfixOf "throw new Error" validator @?= True,
       testCase "generates validator that warns in non-strict mode" $
-        let config = V.defaultConfig {V._configStrictMode = False}
-            validator = V.generateValidator config V.FFIInt
+        let config = Validator.defaultConfig {Validator._configStrictMode = False}
+            validator = Validator.generateValidator config Validator.FFIInt
          in Text.isInfixOf "console.warn" validator @?= True,
       testCase "includes debug info in debug mode" $
-        let config = V.defaultConfig {V._configDebugMode = True}
-            validator = V.generateValidator config V.FFIInt
+        let config = Validator.defaultConfig {Validator._configDebugMode = True}
+            validator = Validator.generateValidator config Validator.FFIInt
          in Text.isInfixOf "JSON.stringify" validator @?= True,
       testCase "validates opaque types when configured" $
-        let config = V.defaultConfig {V._configValidateOpaque = True}
-            validator = V.generateValidator config (V.FFIOpaque "AudioContext")
+        let config = Validator.defaultConfig {Validator._configValidateOpaque = True}
+            validator = Validator.generateValidator config (Validator.FFIOpaque "AudioContext")
          in Text.isInfixOf "instanceof AudioContext" validator @?= True,
       testCase "skips opaque validation when not configured" $
-        let config = V.defaultConfig {V._configValidateOpaque = False}
-            validator = V.generateValidator config (V.FFIOpaque "AudioContext")
+        let config = Validator.defaultConfig {Validator._configValidateOpaque = False}
+            validator = Validator.generateValidator config (Validator.FFIOpaque "AudioContext")
          in Text.isInfixOf "instanceof" validator @?= False
     ]
 
@@ -185,16 +185,16 @@ generateAllValidatorsTests =
   testGroup
     "generateAllValidators"
     [ testCase "generates validator for type and nested types" $
-        let validators = V.generateAllValidators V.defaultConfig (V.FFIList V.FFIInt)
+        let validators = Validator.generateAllValidators Validator.defaultConfig (Validator.FFIList Validator.FFIInt)
          in (Text.isInfixOf "_validate_List_Int" validators && Text.isInfixOf "_validate_Int" validators) @?= True,
       testCase "generates validators for Result type" $
-        let validators = V.generateAllValidators V.defaultConfig (V.FFIResult V.FFIString V.FFIInt)
+        let validators = Validator.generateAllValidators Validator.defaultConfig (Validator.FFIResult Validator.FFIString Validator.FFIInt)
          in (Text.isInfixOf "_validate_Result_String_Int" validators
                && Text.isInfixOf "_validate_String" validators
                && Text.isInfixOf "_validate_Int" validators)
               @?= True,
       testCase "generates validators for deeply nested types" $
-        let validators = V.generateAllValidators V.defaultConfig (V.FFIMaybe (V.FFIList V.FFIInt))
+        let validators = Validator.generateAllValidators Validator.defaultConfig (Validator.FFIMaybe (Validator.FFIList Validator.FFIInt))
          in (Text.isInfixOf "_validate_Maybe_List_Int" validators
                && Text.isInfixOf "_validate_List_Int" validators
                && Text.isInfixOf "_validate_Int" validators)

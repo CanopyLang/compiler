@@ -9,7 +9,7 @@ where
 import qualified AST.Canonical as Can
 import qualified AST.Source as Src
 import qualified Canonicalize.Environment as Env
-import qualified Canopy.Interface as I
+import qualified Canopy.Interface as Interface
 import qualified Canopy.ModuleName as ModuleName
 import qualified Canopy.Package as Pkg
 import Control.Monad (foldM)
@@ -17,7 +17,7 @@ import qualified Data.List as List
 import qualified Data.Map.Strict as Map
 import qualified Data.Maybe
 import qualified Data.Name as Name
-import qualified Reporting.Annotation as A
+import qualified Reporting.Annotation as Ann
 import qualified Reporting.Error.Canonicalize as Error
 import qualified Reporting.InternalError as InternalError
 import qualified Reporting.Result as Result
@@ -27,7 +27,7 @@ import qualified Reporting.Result as Result
 type Result i w a =
   Result.Result i w Error.Error a
 
-createInitialEnv :: ModuleName.Canonical -> Map.Map ModuleName.Raw I.Interface -> [Src.Import] -> Result i w Env.Env
+createInitialEnv :: ModuleName.Canonical -> Map.Map ModuleName.Raw Interface.Interface -> [Src.Import] -> Result i w Env.Env
 createInitialEnv home ifaces imports =
   do
     (State vs ts cs bs qvs qts qcs) <- foldM (addImport ifaces) emptyState (toSafeImports home imports)
@@ -68,7 +68,7 @@ toSafeImports (ModuleName.Canonical pkg _) imports =
     else imports
 
 isNormal :: Src.Import -> Bool
-isNormal (Src.Import (A.At _ name) maybeAlias _ _) =
+isNormal (Src.Import (Ann.At _ name) maybeAlias _ _) =
   not (Name.isKernel name)
     || ( case maybeAlias of
            Nothing -> False
@@ -81,16 +81,16 @@ isNormal (Src.Import (A.At _ name) maybeAlias _ _) =
 
 -- ADD IMPORTS
 
-addImport :: Map.Map ModuleName.Raw I.Interface -> State -> Src.Import -> Result i w State
-addImport ifaces state@(State vs ts cs bs qvs qts qcs) (Src.Import (A.At _ name) maybeAlias exposing _isLazy) =
+addImport :: Map.Map ModuleName.Raw Interface.Interface -> State -> Src.Import -> Result i w State
+addImport ifaces state@(State vs ts cs bs qvs qts qcs) (Src.Import (Ann.At _ name) maybeAlias exposing _isLazy) =
   -- FIXED: Handle kernel imports by bypassing interface lookup
   if Name.isKernel name
     then Result.ok state  -- Kernel imports don't need interface resolution
     else case Map.lookup name ifaces of
       Nothing ->
         -- Missing interface - module not found
-        Result.throw (Error.ImportNotFound A.one (Name.fromChars (ModuleName.toChars name)) [])
-      Just (I.Interface pkg defs unions aliases binops) ->
+        Result.throw (Error.ImportNotFound Ann.one (Name.fromChars (ModuleName.toChars name)) [])
+      Just (Interface.Interface pkg defs unions aliases binops) ->
         let !prefix = Data.Maybe.fromMaybe name maybeAlias
             !home = ModuleName.Canonical pkg name
             !isAliased = Data.Maybe.isJust maybeAlias
@@ -136,9 +136,9 @@ addQualified _ prefix exposed qualified =
 
 -- UNION
 
-unionToType :: ModuleName.Canonical -> Name.Name -> I.Union -> Maybe (Env.Type, Env.Exposed Env.Ctor)
+unionToType :: ModuleName.Canonical -> Name.Name -> Interface.Union -> Maybe (Env.Type, Env.Exposed Env.Ctor)
 unionToType home name union =
-  unionToTypeHelp home name <$> I.toPublicUnion union
+  unionToTypeHelp home name <$> Interface.toPublicUnion union
 
 unionToTypeHelp :: ModuleName.Canonical -> Name.Name -> Can.Union -> (Env.Type, Env.Exposed Env.Ctor)
 unionToTypeHelp home name union@(Can.Union vars ctors _ _) =
@@ -150,9 +150,9 @@ unionToTypeHelp home name union@(Can.Union vars ctors _ _) =
 
 -- ALIAS
 
-aliasToType :: ModuleName.Canonical -> Name.Name -> I.Alias -> Maybe (Env.Type, Env.Exposed Env.Ctor)
+aliasToType :: ModuleName.Canonical -> Name.Name -> Interface.Alias -> Maybe (Env.Type, Env.Exposed Env.Ctor)
 aliasToType home name alias =
-  aliasToTypeHelp home name <$> I.toPublicAlias alias
+  aliasToTypeHelp home name <$> Interface.toPublicAlias alias
 
 aliasToTypeHelp :: ModuleName.Canonical -> Name.Name -> Can.Alias -> (Env.Type, Env.Exposed Env.Ctor)
 aliasToTypeHelp home name (Can.Alias vars tipe) =
@@ -172,8 +172,8 @@ aliasToTypeHelp home name (Can.Alias vars tipe) =
 
 -- BINOP
 
-binopToBinop :: ModuleName.Canonical -> Name.Name -> I.Binop -> Env.Info Env.Binop
-binopToBinop home op (I.Binop name annotation associativity precedence) =
+binopToBinop :: ModuleName.Canonical -> Name.Name -> Interface.Binop -> Env.Info Env.Binop
+binopToBinop home op (Interface.Binop name annotation associativity precedence) =
   Env.Specific home (Env.Binop op home name annotation associativity precedence)
 
 -- ADD EXPOSED VALUE
@@ -182,19 +182,19 @@ addExposedValue ::
   ModuleName.Canonical ->
   Env.Exposed Can.Annotation ->
   Map.Map Name.Name (Env.Type, Env.Exposed Env.Ctor) ->
-  Map.Map Name.Name I.Binop ->
+  Map.Map Name.Name Interface.Binop ->
   State ->
   Src.Exposed ->
   Result i w State
 addExposedValue home vars types binops (State vs ts cs bs qvs qts qcs) exposed =
   case exposed of
-    Src.Lower (A.At region name) ->
+    Src.Lower (Ann.At region name) ->
       case Map.lookup name vars of
         Just info ->
           Result.ok (State (Map.insertWith Env.mergeInfo name info vs) ts cs bs qvs qts qcs)
         Nothing ->
           Result.throw (Error.ImportExposingNotFound region home name (Map.keys vars))
-    Src.Upper (A.At region name) privacy ->
+    Src.Upper (Ann.At region name) privacy ->
       case privacy of
         Src.Private ->
           case Map.lookup name types of

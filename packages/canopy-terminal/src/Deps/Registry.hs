@@ -9,7 +9,7 @@
 --
 -- == Design
 --
--- The 'Registry' type maps each 'Pkg.Name' to all known 'V.Version' values.
+-- The 'Registry' type maps each 'Pkg.Name' to all known 'Version.Version' values.
 -- On disk, it is persisted using 'Data.Binary' serialization so reads are
 -- fast and do not require JSON parsing. Network fetches use the JSON
 -- endpoint at 'registryUrl' and fall back to returning the cached (or empty)
@@ -40,7 +40,7 @@ where
 
 import qualified Canopy.CustomRepositoryData as CustomRepo
 import qualified Canopy.Package as Pkg
-import qualified Canopy.Version as V
+import qualified Canopy.Version as Version
 import qualified Control.Exception as Exception
 import Control.Exception (SomeException)
 import qualified Data.Aeson as Aeson
@@ -65,7 +65,7 @@ import Prelude hiding (read)
 -- The 'Int' field records the total number of packages at last fetch,
 -- used as a cheap staleness signal. The map stores every known version
 -- for every known package.
-data Registry = Registry !Int !(Map Pkg.Name (Map V.Version ()))
+data Registry = Registry !Int !(Map Pkg.Name (Map Version.Version ()))
   deriving (Show, Eq)
 
 -- | Registry key types for authentication and package lookup.
@@ -86,7 +86,7 @@ data CanopyRegistries = CanopyRegistries
 --
 -- The first field is the highest (latest) version; the list contains
 -- all older versions.
-data KnownVersions = KnownVersions !V.Version ![V.Version]
+data KnownVersions = KnownVersions !Version.Version ![Version.Version]
   deriving (Show, Eq)
 
 -- BINARY INSTANCES
@@ -242,7 +242,7 @@ buildRegistry obj =
    in Registry (length entries) (Map.fromList entries)
 
 -- | Parse a single registry entry (key = "author/project", value = versions array).
-parseEntry :: (AesonKey.Key, Aeson.Value) -> Maybe (Pkg.Name, Map V.Version ())
+parseEntry :: (AesonKey.Key, Aeson.Value) -> Maybe (Pkg.Name, Map Version.Version ())
 parseEntry (key, val) = do
   name <- parsePkgName (AesonKey.toText key)
   versions <- parseVersionMap val
@@ -257,15 +257,15 @@ parsePkgName txt =
     _ -> Nothing
 
 -- | Parse an array of version strings from a JSON value into a version map.
-parseVersionMap :: Aeson.Value -> Maybe (Map V.Version ())
+parseVersionMap :: Aeson.Value -> Maybe (Map Version.Version ())
 parseVersionMap val =
   case Aeson.fromJSON val of
     Aeson.Success (strs :: [Text.Text]) ->
       Just (Map.fromList [(v, ()) | Just v <- map parseVersionText strs])
     _ -> Nothing
 
--- | Parse a single version string using the 'Aeson.FromJSON' instance for 'V.Version'.
-parseVersionText :: Text.Text -> Maybe V.Version
+-- | Parse a single version string using the 'Aeson.FromJSON' instance for 'Version.Version'.
+parseVersionText :: Text.Text -> Maybe Version.Version
 parseVersionText txt =
   case Aeson.fromJSON (Aeson.String txt) of
     Aeson.Success v -> Just v
@@ -298,7 +298,7 @@ lookupInRegistry pkg (Registry _ pkgs) =
 -- | Convert a non-empty version map to 'KnownVersions'.
 --
 -- Returns 'Nothing' for an empty map since there is no meaningful latest version.
-toKnownVersions :: Map V.Version () -> Maybe KnownVersions
+toKnownVersions :: Map Version.Version () -> Maybe KnownVersions
 toKnownVersions versions =
   case Map.keys versions of
     [] -> Nothing

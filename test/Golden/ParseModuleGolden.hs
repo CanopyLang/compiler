@@ -7,8 +7,8 @@ import qualified Data.ByteString.Lazy.Char8 as BL8
 import qualified Data.List as List
 import qualified Data.Maybe as Maybe
 import qualified Data.Name as Name
-import qualified Parse.Module as M
-import qualified Reporting.Annotation as A
+import qualified Parse.Module as ParseModule
+import qualified Reporting.Annotation as Ann
 import Test.Tasty
 import Test.Tasty.Golden
 
@@ -25,7 +25,7 @@ goldenModule :: String -> FilePath -> FilePath -> TestTree
 goldenModule name srcPath goldenPath =
   goldenVsString name goldenPath $ do
     src <- BS.readFile srcPath
-    case M.fromByteString M.Application src of
+    case ParseModule.fromByteString ParseModule.Application src of
       Left err -> pure (BL8.pack ("Parse error: " <> show err))
       Right modul -> pure (BL8.pack (summary modul))
 
@@ -45,20 +45,20 @@ summary modul =
 comma :: [String] -> String
 comma = List.intercalate ","
 
-getValName :: A.Located Src.Value -> Name.Name
-getValName (A.At _ (Src.Value (A.At _ n) _ _ _)) = n
+getValName :: Ann.Located Src.Value -> Name.Name
+getValName (Ann.At _ (Src.Value (Ann.At _ n) _ _ _)) = n
 
-aliasWithVars :: A.Located Src.Alias -> String
-aliasWithVars (A.At _ (Src.Alias (A.At _ n) tvars _)) =
+aliasWithVars :: Ann.Located Src.Alias -> String
+aliasWithVars (Ann.At _ (Src.Alias (Ann.At _ n) tvars _)) =
   Name.toChars n <> ("(" <> (show (length tvars) <> ")"))
 
-showUnion :: A.Located Src.Union -> String
-showUnion (A.At _ (Src.Union (A.At _ n) _ ctors)) =
-  Name.toChars n <> ("(" <> (comma (fmap (\(A.At _ cn, _) -> Name.toChars cn) ctors) <> ")"))
+showUnion :: Ann.Located Src.Union -> String
+showUnion (Ann.At _ (Src.Union (Ann.At _ n) _ ctors)) =
+  Name.toChars n <> ("(" <> (comma (fmap (\(Ann.At _ cn, _) -> Name.toChars cn) ctors) <> ")"))
 
 showListImport :: [Src.Import] -> String
 showListImport is =
-  let lists = [i | i@(Src.Import (A.At _ n) _ _ _) <- is, n == Name.list]
+  let lists = [i | i@(Src.Import (Ann.At _ n) _ _ _) <- is, n == Name.list]
       pick =
         case filter hasAlias lists of
           (x : _) -> x
@@ -72,7 +72,7 @@ showListImport is =
         Src.Open -> False
         Src.Explicit _ -> True
    in case pick of
-        Src.Import (A.At _ _) alias exposing _ ->
+        Src.Import (Ann.At _ _) alias exposing _ ->
           let aliasStr = maybe "" (\a -> " as " <> Name.toChars a) alias
               expoStr = case exposing of
                 Src.Open -> " exposing(..)"
@@ -82,8 +82,8 @@ showListImport is =
 exportsSummary :: Src.Module -> String
 exportsSummary m =
   case Src._exports m of
-    A.At _ Src.Open -> "Open"
-    A.At _ (Src.Explicit xs) ->
+    Ann.At _ Src.Open -> "Open"
+    Ann.At _ (Src.Explicit xs) ->
       let lowers = length [() | Src.Lower _ <- xs]
           uppOpen = length [() | Src.Upper _ (Src.Public _) <- xs]
           uppClosed = length [() | Src.Upper _ Src.Private <- xs]

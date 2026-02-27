@@ -26,11 +26,11 @@ import qualified Data.Text.Encoding as TextEnc
 import qualified Data.Version as Version
 import Data.Word (Word16, Word8)
 import Foreign.Ptr (Ptr, minusPtr, plusPtr)
-import qualified Json.Decode as D
+import qualified Json.Decode as Decode
 import qualified Reporting.InternalError as InternalError
-import qualified Json.Encode as E
+import qualified Json.Encode as Encode
 import Parse.Primitives (Col, Row)
-import qualified Parse.Primitives as P
+import qualified Parse.Primitives as Parse
 import qualified Paths_canopy_core as Paths_canopy
 import Prelude hiding (max)
 
@@ -88,13 +88,13 @@ toChars (Version major minor patch) =
 
 -- JSON
 
-decoder :: D.Decoder (Row, Col) Version
+decoder :: Decode.Decoder (Row, Col) Version
 decoder =
-  D.customString parser (,)
+  Decode.customString parser (,)
 
-encode :: Version -> E.Value
+encode :: Version -> Encode.Value
 encode version =
-  E.chars (toChars version)
+  Encode.chars (toChars version)
 
 -- BINARY
 
@@ -127,37 +127,37 @@ instance Aeson.ToJSON Version where
 
 instance Aeson.FromJSON Version where
   parseJSON = Aeson.withText "Version" $ \txt ->
-    case P.fromByteString parser (,) (TextEnc.encodeUtf8 txt) of
+    case Parse.fromByteString parser (,) (TextEnc.encodeUtf8 txt) of
       Right version -> pure version
       Left _ -> fail ("Invalid version: " ++ Text.unpack txt)
 
 -- PARSER
 
-parser :: P.Parser (Row, Col) Version
+parser :: Parse.Parser (Row, Col) Version
 parser =
   do
     major <- numberParser
-    P.word1 0x2E {-.-} (,)
+    Parse.word1 0x2E {-.-} (,)
     minor <- numberParser
-    P.word1 0x2E {-.-} (,)
+    Parse.word1 0x2E {-.-} (,)
     Version major minor <$> numberParser
 
-numberParser :: P.Parser (Row, Col) Word16
+numberParser :: Parse.Parser (Row, Col) Word16
 numberParser =
-  P.Parser $ \(P.State src pos end indent row col) cok _ _ eerr ->
+  Parse.Parser $ \(Parse.State src pos end indent row col) cok _ _ eerr ->
     if pos >= end
       then eerr row col (,)
       else
-        let !word = P.unsafeIndex pos
+        let !word = Parse.unsafeIndex pos
          in if word == 0x30 {-0-}
               then
-                let !newState = P.State src (plusPtr pos 1) end indent row (col + 1)
+                let !newState = Parse.State src (plusPtr pos 1) end indent row (col + 1)
                  in cok 0 newState
               else
                 if isDigit word
                   then
                     let (# total, newPos #) = chompWord16 (plusPtr pos 1) end (fromIntegral (word - 0x30))
-                        !newState = P.State src newPos end indent row (col + fromIntegral (minusPtr newPos pos))
+                        !newState = Parse.State src newPos end indent row (col + fromIntegral (minusPtr newPos pos))
                      in cok total newState
                   else eerr row col (,)
 
@@ -166,7 +166,7 @@ chompWord16 pos end total =
   if pos >= end
     then (# total, pos #)
     else
-      let !word = P.unsafeIndex pos
+      let !word = Parse.unsafeIndex pos
        in if isDigit word
             then chompWord16 (plusPtr pos 1) end (10 * total + fromIntegral (word - 0x30))
             else (# total, pos #)

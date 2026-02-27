@@ -22,7 +22,7 @@ import qualified AST.Optimized as Opt
 import qualified Canopy.ModuleName as ModuleName
 import qualified Canopy.Package as Pkg
 import Control.Lens ((^.))
-import qualified Data.ByteString.Builder as B
+import qualified Data.ByteString.Builder as BB
 import qualified Data.ByteString.Lazy.Char8 as LChar8
 import qualified Data.Map.Strict as Map
 import qualified Data.Name as Name
@@ -115,8 +115,8 @@ devMode :: Mode.Mode
 devMode = Mode.Dev Nothing False False Set.empty
 
 -- | Render a builder to a string.
-renderBuilder :: B.Builder -> String
-renderBuilder = LChar8.unpack . B.toLazyByteString
+renderBuilder :: BB.Builder -> String
+renderBuilder = LChar8.unpack . BB.toLazyByteString
 
 -- | Check if needle is contained in haystack.
 containsStr :: String -> String -> Bool

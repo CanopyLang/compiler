@@ -26,7 +26,7 @@ where
 
 import qualified Canopy.Outline as Outline
 import qualified Canopy.Package as Pkg
-import qualified Canopy.Version as V
+import qualified Canopy.Version as Version
 import Control.Lens (makeLenses, (^.))
 import qualified Data.ByteString.Builder as BB
 import qualified Data.ByteString.Lazy as LBS
@@ -88,10 +88,10 @@ auditProject root flags = do
   if flags ^. auditVerbose
     then Print.println [c|  {dullcyan|[verbose]} Auditing project at: {cyan|#{root}}|]
     else pure ()
-  maybeOutline <- Outline.read root
-  case maybeOutline of
-    Nothing -> Print.printErrLn [c|{red|Error:} Could not read canopy.json|]
-    Just outline -> reportFindings flags (analyzeOutline outline)
+  eitherOutline <- Outline.read root
+  case eitherOutline of
+    Left err -> Print.printErrLn [c|{red|Error:} Could not read canopy.json: #{err}|]
+    Right outline -> reportFindings flags (analyzeOutline outline)
 
 -- | Analyze an outline for audit findings.
 analyzeOutline :: Outline.Outline -> [Finding]
@@ -112,7 +112,7 @@ analyzePkgDeps pkgOutline =
   checkConstraintDeps (Outline._pkgDeps pkgOutline)
 
 -- | Check direct dependencies for issues.
-checkDirectDeps :: Map Pkg.Name V.Version -> [Finding]
+checkDirectDeps :: Map Pkg.Name Version.Version -> [Finding]
 checkDirectDeps deps =
   Map.foldlWithKey' checkDep [] deps
   where
@@ -120,7 +120,7 @@ checkDirectDeps deps =
       acc ++ checkSingleDep pkg version
 
 -- | Check a single dependency for known issues.
-checkSingleDep :: Pkg.Name -> V.Version -> [Finding]
+checkSingleDep :: Pkg.Name -> Version.Version -> [Finding]
 checkSingleDep pkg version =
   checkDeprecated pkg ++ checkOldVersion pkg version
 
@@ -133,14 +133,14 @@ checkDeprecated :: Pkg.Name -> [Finding]
 checkDeprecated _pkg = []
 
 -- | Check if a version is very old.
-checkOldVersion :: Pkg.Name -> V.Version -> [Finding]
+checkOldVersion :: Pkg.Name -> Version.Version -> [Finding]
 checkOldVersion pkg version
-  | V._major version == 0 =
+  | Version._major version == 0 =
       [Finding Info (Pkg.toChars pkg) "Pre-1.0 version — API may be unstable"]
   | otherwise = []
 
 -- | Check indirect dependencies.
-checkIndirectDeps :: Map Pkg.Name V.Version -> [Finding]
+checkIndirectDeps :: Map Pkg.Name Version.Version -> [Finding]
 checkIndirectDeps deps
   | Map.size deps > 20 =
       [Finding Warning "project" ("Large transitive dependency tree: " ++ show (Map.size deps) ++ " indirect dependencies")]

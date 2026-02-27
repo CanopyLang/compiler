@@ -16,8 +16,8 @@ import qualified Data.Map as Map
 import qualified Data.Maybe
 import qualified Data.Name as Name
 import qualified Data.Set as Set
-import qualified Reporting.Annotation as A
-import qualified Reporting.Doc as D
+import qualified Reporting.Annotation as Ann
+import qualified Reporting.Doc as Doc
 
 -- LOCALIZER
 
@@ -42,9 +42,9 @@ empty =
 
 -- LOCALIZE
 
-toDoc :: Localizer -> ModuleName.Canonical -> Name.Name -> D.Doc
+toDoc :: Localizer -> ModuleName.Canonical -> Name.Name -> Doc.Doc
 toDoc localizer home name =
-  D.fromChars (toChars localizer home name)
+  Doc.fromChars (toChars localizer home name)
 
 toChars :: Localizer -> ModuleName.Canonical -> Name.Name -> String
 toChars (Localizer localizer) moduleName@(ModuleName.Canonical _ home) name =
@@ -76,7 +76,7 @@ fromModule modul@(Src.Module _ _ _ imports _ _ _ _ _ _) =
   Localizer . Map.fromList $ ((Src.getName modul, Import Nothing All) : fmap toPair imports)
 
 toPair :: Src.Import -> (Name.Name, Import)
-toPair (Src.Import (A.At _ name) alias exposing _isLazy) =
+toPair (Src.Import (Ann.At _ name) alias exposing _isLazy) =
   ( name,
     Import alias (toExposing exposing)
   )
@@ -93,5 +93,5 @@ addType :: Src.Exposed -> Set.Set Name.Name -> Set.Set Name.Name
 addType exposed types =
   case exposed of
     Src.Lower _ -> types
-    Src.Upper (A.At _ name) _ -> Set.insert name types
+    Src.Upper (Ann.At _ name) _ -> Set.insert name types
     Src.Operator _ _ -> types

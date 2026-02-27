@@ -20,8 +20,8 @@ where
 import qualified Data.Char as Char
 import qualified Data.Name as Name
 import Parse.Primitives (Col, Row)
-import qualified Reporting.Annotation as A
-import qualified Reporting.Doc as D
+import qualified Reporting.Annotation as Ann
+import qualified Reporting.Doc as Doc
 import Reporting.Error.Syntax.Helpers
   ( toKeywordRegion,
     toRegion,
@@ -54,22 +54,22 @@ toTypeReport source context tipe startRow startCol =
     TStart row col ->
       case Code.whatIsNext source row col of
         Code.Keyword keyword ->
-          let surroundings = A.Region (A.Position startRow startCol) (A.Position row col)
+          let surroundings = Ann.Region (Ann.Position startRow startCol) (Ann.Position row col)
               region = toKeywordRegion row col keyword
            in Report.Report "RESERVED WORD" region [] $
                 Code.toSnippet
                   source
                   surroundings
                   (Just region)
-                  ( D.reflow $
+                  ( Doc.reflow $
                       "I was expecting to see a type next, but I got stuck on this reserved word:",
-                    D.reflow $
+                    Doc.reflow $
                       "It looks like you are trying to use `" ++ keyword
                         ++ "` as a type variable, but \
                            \ it is a reserved word. Try using a different name!"
                   )
         _ ->
-          let surroundings = A.Region (A.Position startRow startCol) (A.Position row col)
+          let surroundings = Ann.Region (Ann.Position startRow startCol) (Ann.Position row col)
               region = toRegion row col
 
               thing =
@@ -90,9 +90,9 @@ toTypeReport source context tipe startRow startCol =
                   source
                   surroundings
                   (Just region)
-                  ( D.reflow $
+                  ( Doc.reflow $
                       "I was partway through parsing " ++ something ++ ", but I got stuck here:",
-                    D.fillSep $
+                    Doc.fillSep $
                       [ "I",
                         "was",
                         "expecting",
@@ -103,9 +103,9 @@ toTypeReport source context tipe startRow startCol =
                         "next.",
                         "Try",
                         "putting",
-                        D.dullyellow "Int",
+                        Doc.dullyellow "Int",
                         "or",
-                        D.dullyellow "String",
+                        Doc.dullyellow "String",
                         "for",
                         "now?"
                       ]
@@ -113,7 +113,7 @@ toTypeReport source context tipe startRow startCol =
     TSpace space row col ->
       toSpaceReport source space row col
     TIndentStart row col ->
-      let surroundings = A.Region (A.Position startRow startCol) (A.Position row col)
+      let surroundings = Ann.Region (Ann.Position startRow startCol) (Ann.Position row col)
           region = toRegion row col
 
           thing =
@@ -127,10 +127,10 @@ toTypeReport source context tipe startRow startCol =
               source
               surroundings
               (Just region)
-              ( D.reflow $
+              ( Doc.reflow $
                   "I was partway through parsing a " ++ thing ++ ", but I got stuck here:",
-                D.stack
-                  [ D.fillSep $
+                Doc.stack
+                  [ Doc.fillSep $
                       [ "I",
                         "was",
                         "expecting",
@@ -141,13 +141,13 @@ toTypeReport source context tipe startRow startCol =
                         "next.",
                         "Try",
                         "putting",
-                        D.dullyellow "Int",
+                        Doc.dullyellow "Int",
                         "or",
-                        D.dullyellow "String",
+                        Doc.dullyellow "String",
                         "for",
                         "now?"
                       ],
-                    D.toSimpleNote $
+                    Doc.toSimpleNote $
                       "I can get confused by indentation. If you think there is already a type\
                       \ next, maybe it is not indented enough?"
                   ]
@@ -160,36 +160,36 @@ toTRecordReport source context record startRow startCol =
     TRecordOpen row col ->
       case Code.whatIsNext source row col of
         Code.Keyword keyword ->
-          let surroundings = A.Region (A.Position startRow startCol) (A.Position row col)
+          let surroundings = Ann.Region (Ann.Position startRow startCol) (Ann.Position row col)
               region = toKeywordRegion row col keyword
            in Report.Report "RESERVED WORD" region [] $
                 Code.toSnippet
                   source
                   surroundings
                   (Just region)
-                  ( D.reflow $
+                  ( Doc.reflow $
                       "I just started parsing a record type, but I got stuck on this field name:",
-                    D.reflow $
+                    Doc.reflow $
                       "It looks like you are trying to use `" ++ keyword
                         ++ "` as a field name, but \
                            \ that is a reserved word. Try using a different name!"
                   )
         _ ->
-          let surroundings = A.Region (A.Position startRow startCol) (A.Position row col)
+          let surroundings = Ann.Region (Ann.Position startRow startCol) (Ann.Position row col)
               region = toRegion row col
            in Report.Report "UNFINISHED RECORD TYPE" region [] $
                 Code.toSnippet
                   source
                   surroundings
                   (Just region)
-                  ( D.reflow $
+                  ( Doc.reflow $
                       "I just started parsing a record type, but I got stuck here:",
-                    D.fillSep
+                    Doc.fillSep
                       [ "Record",
                         "types",
                         "look",
                         "like",
-                        D.dullyellow "{ name : String, age : Int },",
+                        Doc.dullyellow "{ name : String, age : Int },",
                         "so",
                         "I",
                         "was",
@@ -203,17 +203,17 @@ toTRecordReport source context record startRow startCol =
                       ]
                   )
     TRecordEnd row col ->
-      let surroundings = A.Region (A.Position startRow startCol) (A.Position row col)
+      let surroundings = Ann.Region (Ann.Position startRow startCol) (Ann.Position row col)
           region = toRegion row col
        in Report.Report "UNFINISHED RECORD TYPE" region [] $
             Code.toSnippet
               source
               surroundings
               (Just region)
-              ( D.reflow $
+              ( Doc.reflow $
                   "I am partway through parsing a record type, but I got stuck here:",
-                D.stack
-                  [ D.fillSep
+                Doc.stack
+                  [ Doc.fillSep
                       [ "I",
                         "was",
                         "expecting",
@@ -229,14 +229,14 @@ toTRecordReport source context record startRow startCol =
                         "try",
                         "adding",
                         "a",
-                        D.dullyellow "}",
+                        Doc.dullyellow "}",
                         "and",
                         "see",
                         "if",
                         "that",
                         "helps?"
                       ],
-                    D.toSimpleNote $
+                    Doc.toSimpleNote $
                       "When I get stuck like this, it usually means that there is a missing parenthesis\
                       \ or bracket somewhere earlier. It could also be a stray keyword or operator."
                   ]
@@ -244,67 +244,67 @@ toTRecordReport source context record startRow startCol =
     TRecordField row col ->
       case Code.whatIsNext source row col of
         Code.Keyword keyword ->
-          let surroundings = A.Region (A.Position startRow startCol) (A.Position row col)
+          let surroundings = Ann.Region (Ann.Position startRow startCol) (Ann.Position row col)
               region = toKeywordRegion row col keyword
            in Report.Report "RESERVED WORD" region [] $
                 Code.toSnippet
                   source
                   surroundings
                   (Just region)
-                  ( D.reflow $
+                  ( Doc.reflow $
                       "I am partway through parsing a record type, but I got stuck on this field name:",
-                    D.reflow $
+                    Doc.reflow $
                       "It looks like you are trying to use `" ++ keyword
                         ++ "` as a field name, but \
                            \ that is a reserved word. Try using a different name!"
                   )
         Code.Other (Just ',') ->
-          let surroundings = A.Region (A.Position startRow startCol) (A.Position row col)
+          let surroundings = Ann.Region (Ann.Position startRow startCol) (Ann.Position row col)
               region = toRegion row col
            in Report.Report "EXTRA COMMA" region [] $
                 Code.toSnippet
                   source
                   surroundings
                   (Just region)
-                  ( D.reflow $
+                  ( Doc.reflow $
                       "I am partway through parsing a record type, but I got stuck here:",
-                    D.stack
-                      [ D.reflow $
+                    Doc.stack
+                      [ Doc.reflow $
                           "I am seeing two commas in a row. This is the second one!",
-                        D.reflow $
+                        Doc.reflow $
                           "Just delete one of the commas and you should be all set!",
                         noteForRecordTypeError
                       ]
                   )
         Code.Close _ '}' ->
-          let surroundings = A.Region (A.Position startRow startCol) (A.Position row col)
+          let surroundings = Ann.Region (Ann.Position startRow startCol) (Ann.Position row col)
               region = toRegion row col
            in Report.Report "EXTRA COMMA" region [] $
                 Code.toSnippet
                   source
                   surroundings
                   (Just region)
-                  ( D.reflow $
+                  ( Doc.reflow $
                       "I am partway through parsing a record type, but I got stuck here:",
-                    D.stack
-                      [ D.reflow $
+                    Doc.stack
+                      [ Doc.reflow $
                           "Trailing commas are not allowed in record types. Try deleting the comma that\
                           \ appears before this closing curly brace.",
                         noteForRecordTypeError
                       ]
                   )
         _ ->
-          let surroundings = A.Region (A.Position startRow startCol) (A.Position row col)
+          let surroundings = Ann.Region (Ann.Position startRow startCol) (Ann.Position row col)
               region = toRegion row col
            in Report.Report "PROBLEM IN RECORD TYPE" region [] $
                 Code.toSnippet
                   source
                   surroundings
                   (Just region)
-                  ( D.reflow $
+                  ( Doc.reflow $
                       "I am partway through parsing a record type, but I got stuck here:",
-                    D.stack
-                      [ D.fillSep
+                    Doc.stack
+                      [ Doc.fillSep
                           [ "I",
                             "was",
                             "expecting",
@@ -323,25 +323,25 @@ toTRecordReport source context record startRow startCol =
                             "a",
                             "name",
                             "like",
-                            D.dullyellow "userName",
+                            Doc.dullyellow "userName",
                             "or",
-                            D.dullyellow "plantHeight" <> "."
+                            Doc.dullyellow "plantHeight" <> "."
                           ],
                         noteForRecordTypeError
                       ]
                   )
     TRecordColon row col ->
-      let surroundings = A.Region (A.Position startRow startCol) (A.Position row col)
+      let surroundings = Ann.Region (Ann.Position startRow startCol) (Ann.Position row col)
           region = toRegion row col
        in Report.Report "UNFINISHED RECORD TYPE" region [] $
             Code.toSnippet
               source
               surroundings
               (Just region)
-              ( D.reflow $
+              ( Doc.reflow $
                   "I am partway through parsing a record type, but I got stuck here:",
-                D.stack
-                  [ D.fillSep $
+                Doc.stack
+                  [ Doc.fillSep $
                       [ "I",
                         "just",
                         "saw",
@@ -361,7 +361,7 @@ toTRecordReport source context record startRow startCol =
                         "try",
                         "putting",
                         "an",
-                        D.green ":",
+                        Doc.green ":",
                         "sign",
                         "here?"
                       ],
@@ -373,24 +373,24 @@ toTRecordReport source context record startRow startCol =
     TRecordSpace space row col ->
       toSpaceReport source space row col
     TRecordIndentOpen row col ->
-      let surroundings = A.Region (A.Position startRow startCol) (A.Position row col)
+      let surroundings = Ann.Region (Ann.Position startRow startCol) (Ann.Position row col)
           region = toRegion row col
        in Report.Report "UNFINISHED RECORD TYPE" region [] $
             Code.toSnippet
               source
               surroundings
               (Just region)
-              ( D.reflow $
+              ( Doc.reflow $
                   "I just saw the opening curly brace of a record type, but then I got stuck here:",
-                D.stack
-                  [ D.fillSep $
+                Doc.stack
+                  [ Doc.fillSep $
                       [ "I",
                         "am",
                         "expecting",
                         "a",
                         "record",
                         "like",
-                        D.dullyellow "{ name : String, age : Int }",
+                        Doc.dullyellow "{ name : String, age : Int }",
                         "here.",
                         "Try",
                         "defining",
@@ -406,33 +406,33 @@ toTRecordReport source context record startRow startCol =
     TRecordIndentEnd row col ->
       case Code.nextLineStartsWithCloseCurly source row of
         Just (curlyRow, curlyCol) ->
-          let surroundings = A.Region (A.Position startRow startCol) (A.Position curlyRow curlyCol)
+          let surroundings = Ann.Region (Ann.Position startRow startCol) (Ann.Position curlyRow curlyCol)
               region = toRegion curlyRow curlyCol
            in Report.Report "NEED MORE INDENTATION" region [] $
                 Code.toSnippet
                   source
                   surroundings
                   (Just region)
-                  ( D.reflow $
+                  ( Doc.reflow $
                       "I was partway through parsing a record type, but I got stuck here:",
-                    D.stack
-                      [ D.reflow $
+                    Doc.stack
+                      [ Doc.reflow $
                           "I need this curly brace to be indented more. Try adding some spaces before it!",
                         noteForRecordTypeError
                       ]
                   )
         Nothing ->
-          let surroundings = A.Region (A.Position startRow startCol) (A.Position row col)
+          let surroundings = Ann.Region (Ann.Position startRow startCol) (Ann.Position row col)
               region = toRegion row col
            in Report.Report "UNFINISHED RECORD TYPE" region [] $
                 Code.toSnippet
                   source
                   surroundings
                   (Just region)
-                  ( D.reflow $
+                  ( Doc.reflow $
                       "I was partway through parsing a record type, but I got stuck here:",
-                    D.stack
-                      [ D.fillSep $
+                    Doc.stack
+                      [ Doc.fillSep $
                           [ "I",
                             "was",
                             "expecting",
@@ -446,7 +446,7 @@ toTRecordReport source context record startRow startCol =
                             "Try",
                             "putting",
                             "a",
-                            D.green "}",
+                            Doc.green "}",
                             "next",
                             "and",
                             "see",
@@ -458,17 +458,17 @@ toTRecordReport source context record startRow startCol =
                       ]
                   )
     TRecordIndentField row col ->
-      let surroundings = A.Region (A.Position startRow startCol) (A.Position row col)
+      let surroundings = Ann.Region (Ann.Position startRow startCol) (Ann.Position row col)
           region = toRegion row col
        in Report.Report "UNFINISHED RECORD TYPE" region [] $
             Code.toSnippet
               source
               surroundings
               (Just region)
-              ( D.reflow $
+              ( Doc.reflow $
                   "I am partway through parsing a record type, but I got stuck after that last comma:",
-                D.stack
-                  [ D.reflow $
+                Doc.stack
+                  [ Doc.reflow $
                       "Trailing commas are not allowed in record types, so the fix may be to\
                       \ delete that last comma? Or maybe you were in the middle of defining\
                       \ an additional field?",
@@ -476,22 +476,22 @@ toTRecordReport source context record startRow startCol =
                   ]
               )
     TRecordIndentColon row col ->
-      let surroundings = A.Region (A.Position startRow startCol) (A.Position row col)
+      let surroundings = Ann.Region (Ann.Position startRow startCol) (Ann.Position row col)
           region = toRegion row col
        in Report.Report "UNFINISHED RECORD TYPE" region [] $
             Code.toSnippet
               source
               surroundings
               (Just region)
-              ( D.reflow $
+              ( Doc.reflow $
                   "I am partway through parsing a record type. I just saw a record\
                   \ field, so I was expecting to see a colon next:",
-                D.stack
-                  [ D.fillSep $
+                Doc.stack
+                  [ Doc.fillSep $
                       [ "Try",
                         "putting",
                         "an",
-                        D.green ":",
+                        Doc.green ":",
                         "followed",
                         "by",
                         "a",
@@ -501,24 +501,24 @@ toTRecordReport source context record startRow startCol =
                   ]
               )
     TRecordIndentType row col ->
-      let surroundings = A.Region (A.Position startRow startCol) (A.Position row col)
+      let surroundings = Ann.Region (Ann.Position startRow startCol) (Ann.Position row col)
           region = toRegion row col
        in Report.Report "UNFINISHED RECORD TYPE" region [] $
             Code.toSnippet
               source
               surroundings
               (Just region)
-              ( D.reflow $
+              ( Doc.reflow $
                   "I am partway through parsing a record type, and I was expecting to run into a type next:",
-                D.stack
-                  [ D.fillSep $
+                Doc.stack
+                  [ Doc.fillSep $
                       [ "Try",
                         "putting",
                         "something",
                         "like",
-                        D.dullyellow "Int",
+                        Doc.dullyellow "Int",
                         "or",
-                        D.dullyellow "String",
+                        Doc.dullyellow "String",
                         "for",
                         "now?"
                       ],
@@ -527,38 +527,38 @@ toTRecordReport source context record startRow startCol =
               )
 
 -- | Documentation note for record type formatting errors.
-noteForRecordTypeError :: D.Doc
+noteForRecordTypeError :: Doc.Doc
 noteForRecordTypeError =
-  D.stack $
-    [ D.toSimpleNote
+  Doc.stack $
+    [ Doc.toSimpleNote
         "If you are trying to define a record type across multiple lines, I recommend using this format:",
-      D.indent 4 $
-        D.vcat $
+      Doc.indent 4 $
+        Doc.vcat $
           [ "{ name : String",
             ", age : Int",
             ", height : Float",
             "}"
           ],
-      D.reflow $
+      Doc.reflow $
         "Notice that each line starts with some indentation. Usually two or four spaces.\
         \ This is the stylistic convention in the Canopy ecosystem."
     ]
 
 -- | Documentation note for record type indentation errors.
-noteForRecordTypeIndentError :: D.Doc
+noteForRecordTypeIndentError :: Doc.Doc
 noteForRecordTypeIndentError =
-  D.stack $
-    [ D.toSimpleNote
+  Doc.stack $
+    [ Doc.toSimpleNote
         "I may be confused by indentation. For example, if you are trying to define\
         \ a record type across multiple lines, I recommend using this format:",
-      D.indent 4 $
-        D.vcat $
+      Doc.indent 4 $
+        Doc.vcat $
           [ "{ name : String",
             ", age : Int",
             ", height : Float",
             "}"
           ],
-      D.reflow $
+      Doc.reflow $
         "Notice that each line starts with some indentation. Usually two or four spaces.\
         \ This is the stylistic convention in the Canopy ecosystem."
     ]
@@ -570,36 +570,36 @@ toTTupleReport source context tuple startRow startCol =
     TTupleOpen row col ->
       case Code.whatIsNext source row col of
         Code.Keyword keyword ->
-          let surroundings = A.Region (A.Position startRow startCol) (A.Position row col)
+          let surroundings = Ann.Region (Ann.Position startRow startCol) (Ann.Position row col)
               region = toKeywordRegion row col keyword
            in Report.Report "RESERVED WORD" region [] $
                 Code.toSnippet
                   source
                   surroundings
                   (Just region)
-                  ( D.reflow $
+                  ( Doc.reflow $
                       "I ran into a reserved word unexpectedly:",
-                    D.reflow $
+                    Doc.reflow $
                       "It looks like you are trying to use `" ++ keyword
                         ++ "` as a variable name, but \
                            \ it is a reserved word. Try using a different name!"
                   )
         _ ->
-          let surroundings = A.Region (A.Position startRow startCol) (A.Position row col)
+          let surroundings = Ann.Region (Ann.Position startRow startCol) (Ann.Position row col)
               region = toRegion row col
            in Report.Report "UNFINISHED PARENTHESES" region [] $
                 Code.toSnippet
                   source
                   surroundings
                   (Just region)
-                  ( D.reflow $
+                  ( Doc.reflow $
                       "I just saw an open parenthesis, so I was expecting to see a type next.",
-                    D.fillSep $
+                    Doc.fillSep $
                       [ "Something",
                         "like",
-                        D.dullyellow "(Maybe Int)",
+                        Doc.dullyellow "(Maybe Int)",
                         "or",
-                        D.dullyellow "(List Person)" <> ".",
+                        Doc.dullyellow "(List Person)" <> ".",
                         "Anything",
                         "where",
                         "you",
@@ -612,18 +612,18 @@ toTTupleReport source context tuple startRow startCol =
                       ]
                   )
     TTupleEnd row col ->
-      let surroundings = A.Region (A.Position startRow startCol) (A.Position row col)
+      let surroundings = Ann.Region (Ann.Position startRow startCol) (Ann.Position row col)
           region = toRegion row col
        in Report.Report "UNFINISHED PARENTHESES" region [] $
             Code.toSnippet
               source
               surroundings
               (Just region)
-              ( D.reflow $
+              ( Doc.reflow $
                   "I was expecting to see a closing parenthesis next, but I got stuck here:",
-                D.stack
-                  [ D.fillSep ["Try", "adding", "a", D.dullyellow ")", "to", "see", "if", "that", "helps?"],
-                    D.toSimpleNote $
+                Doc.stack
+                  [ Doc.fillSep ["Try", "adding", "a", Doc.dullyellow ")", "to", "see", "if", "that", "helps?"],
+                    Doc.toSimpleNote $
                       "I can get stuck when I run into keywords, operators, parentheses, or brackets\
                       \ unexpectedly. So there may be some earlier syntax trouble (like extra parenthesis\
                       \ or missing brackets) that is confusing me."
@@ -634,22 +634,22 @@ toTTupleReport source context tuple startRow startCol =
     TTupleSpace space row col ->
       toSpaceReport source space row col
     TTupleIndentType1 row col ->
-      let surroundings = A.Region (A.Position startRow startCol) (A.Position row col)
+      let surroundings = Ann.Region (Ann.Position startRow startCol) (Ann.Position row col)
           region = toRegion row col
        in Report.Report "UNFINISHED PARENTHESES" region [] $
             Code.toSnippet
               source
               surroundings
               (Just region)
-              ( D.reflow $
+              ( Doc.reflow $
                   "I just saw an open parenthesis, so I was expecting to see a type next.",
-                D.stack
-                  [ D.fillSep $
+                Doc.stack
+                  [ Doc.fillSep $
                       [ "Something",
                         "like",
-                        D.dullyellow "(Maybe Int)",
+                        Doc.dullyellow "(Maybe Int)",
                         "or",
-                        D.dullyellow "(List Person)" <> ".",
+                        Doc.dullyellow "(List Person)" <> ".",
                         "Anything",
                         "where",
                         "you",
@@ -660,31 +660,31 @@ toTTupleReport source context tuple startRow startCol =
                         "normal",
                         "types."
                       ],
-                    D.toSimpleNote $
+                    Doc.toSimpleNote $
                       "I can get confused by indentation in cases like this, so\
                       \ maybe you have a type but it is not indented enough?"
                   ]
               )
     TTupleIndentTypeN row col ->
-      let surroundings = A.Region (A.Position startRow startCol) (A.Position row col)
+      let surroundings = Ann.Region (Ann.Position startRow startCol) (Ann.Position row col)
           region = toRegion row col
        in Report.Report "UNFINISHED TUPLE TYPE" region [] $
             Code.toSnippet
               source
               surroundings
               (Just region)
-              ( D.reflow $
+              ( Doc.reflow $
                   "I think I am in the middle of parsing a tuple type. I just saw a comma, so I was expecting to see a type next.",
-                D.stack
-                  [ D.fillSep $
+                Doc.stack
+                  [ Doc.fillSep $
                       [ "A",
                         "tuple",
                         "type",
                         "looks",
                         "like",
-                        D.dullyellow "(Float,Float)",
+                        Doc.dullyellow "(Float,Float)",
                         "or",
-                        D.dullyellow "(String,Int)" <> ",",
+                        Doc.dullyellow "(String,Int)" <> ",",
                         "so",
                         "I",
                         "think",
@@ -695,24 +695,24 @@ toTTupleReport source context tuple startRow startCol =
                         "missing",
                         "here?"
                       ],
-                    D.toSimpleNote $
+                    Doc.toSimpleNote $
                       "I can get confused by indentation in cases like this, so\
                       \ maybe you have an expression but it is not indented enough?"
                   ]
               )
     TTupleIndentEnd row col ->
-      let surroundings = A.Region (A.Position startRow startCol) (A.Position row col)
+      let surroundings = Ann.Region (Ann.Position startRow startCol) (Ann.Position row col)
           region = toRegion row col
        in Report.Report "UNFINISHED PARENTHESES" region [] $
             Code.toSnippet
               source
               surroundings
               (Just region)
-              ( D.reflow $
+              ( Doc.reflow $
                   "I was expecting to see a closing parenthesis next:",
-                D.stack
-                  [ D.fillSep ["Try", "adding", "a", D.dullyellow ")", "to", "see", "if", "that", "helps!"],
-                    D.toSimpleNote $
+                Doc.stack
+                  [ Doc.fillSep ["Try", "adding", "a", Doc.dullyellow ")", "to", "see", "if", "that", "helps!"],
+                    Doc.toSimpleNote $
                       "I can get confused by indentation in cases like this, so\
                       \ maybe you have a closing parenthesis but it is not indented enough?"
                   ]

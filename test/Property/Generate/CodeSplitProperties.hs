@@ -16,7 +16,7 @@ import qualified AST.Optimized as Opt
 import qualified Canopy.ModuleName as ModuleName
 import qualified Canopy.Package as Pkg
 import Control.Lens ((^.))
-import qualified Data.ByteString.Builder as B
+import qualified Data.ByteString.Builder as BB
 import qualified Data.Map.Strict as Map
 import qualified Data.Name as Name
 import qualified Data.Set as Set
@@ -79,15 +79,15 @@ hashDeterminismTests =
   testGroup
     "Content hash determinism"
     [ testProperty "same input always produces same hash" $ \(input :: String) ->
-        let builder = B.stringUtf8 input
+        let builder = BB.stringUtf8 input
             h1 = contentHash builder
             h2 = contentHash builder
          in h1 == h2
     , testProperty "hash is always 8 characters" $ \(input :: String) ->
-        let hash = contentHash (B.stringUtf8 input)
+        let hash = contentHash (BB.stringUtf8 input)
          in Text.length hash == 8
     , testProperty "hash contains only hex characters" $ \(input :: String) ->
-        let hash = contentHash (B.stringUtf8 input)
+        let hash = contentHash (BB.stringUtf8 input)
             isHex c = c `elem` ("0123456789abcdef" :: String)
          in all isHex (Text.unpack hash)
     ]

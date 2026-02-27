@@ -36,7 +36,7 @@ import Canopy.Constraint (Constraint)
 import qualified Canopy.Constraint as Con
 import Canopy.Package (Name)
 import qualified Canopy.Package as Pkg
-import qualified Canopy.Version as V
+import qualified Canopy.Version as Version
 import Data.List (isInfixOf)
 import qualified Data.Map as Map
 import qualified Deps.Solver as Solver

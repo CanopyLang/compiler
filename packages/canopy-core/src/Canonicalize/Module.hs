@@ -21,7 +21,7 @@ import qualified Canonicalize.Expression as Expr
 import qualified Canonicalize.Pattern as Pattern
 import qualified Canonicalize.Type as Type
 import qualified Canopy.Compiler.Imports as Imports
-import qualified Canopy.Interface as I
+import qualified Canopy.Interface as Interface
 import qualified Canopy.ModuleName as ModuleName
 import qualified Canopy.Package as Pkg
 import Parse.Module (ProjectType (..))
@@ -37,11 +37,11 @@ import Data.Set (Set)
 import qualified Data.Set as Set
 import qualified Data.Text as Text
 import qualified Foreign.FFI as FFI
-import qualified Reporting.Annotation as A
+import qualified Reporting.Annotation as Ann
 import qualified Reporting.Error.Canonicalize as Error
 import qualified Reporting.Result as Result
 import qualified Reporting.InternalError as InternalError
-import qualified Reporting.Warning as W
+import qualified Reporting.Warning as Warning
 import Control.Exception (SomeException, catch)
 import qualified System.FilePath as FP
 import System.FilePath ((</>))
@@ -60,7 +60,7 @@ type Result i w a =
 -- in the IO monad and passed through the compilation pipeline.
 --
 -- @since 0.19.1
-canonicalize :: Pkg.Name -> ProjectType -> Map ModuleName.Raw I.Interface -> Map String String -> Src.Module -> Result i [W.Warning] Can.Module
+canonicalize :: Pkg.Name -> ProjectType -> Map ModuleName.Raw Interface.Interface -> Map String String -> Src.Module -> Result i [Warning.Warning] Can.Module
 canonicalize pkg projectType ifaces ffiContentMap modul@(Src.Module _ exports docs imports foreignImports values _ _ binops effects) =
   do
     let home = ModuleName.Canonical pkg (Src.getName modul)
@@ -91,7 +91,7 @@ canonicalize pkg projectType ifaces ffiContentMap modul@(Src.Module _ exports do
 -- that takes pre-loaded FFI content.
 --
 -- @deprecated Use canonicalize with pre-loaded FFI content instead
-canonicalizeWithIO :: Pkg.Name -> Map ModuleName.Raw I.Interface -> Src.Module -> IO (Result i [W.Warning] Can.Module)
+canonicalizeWithIO :: Pkg.Name -> Map ModuleName.Raw Interface.Interface -> Src.Module -> IO (Result i [Warning.Warning] Can.Module)
 canonicalizeWithIO pkg ifaces modul@(Src.Module _ _ _ _ foreignImports _ _ _ _ _) = do
   -- Pre-load FFI content
   ffiContentMap <- loadFFIContent foreignImports
@@ -117,7 +117,7 @@ validateAndCollectLazyImports ::
   Pkg.Name ->
   ProjectType ->
   ModuleName.Canonical ->
-  Map ModuleName.Raw I.Interface ->
+  Map ModuleName.Raw Interface.Interface ->
   [Src.Import] ->
   Result i w (Set ModuleName.Canonical)
 validateAndCollectLazyImports pkg projectType home ifaces imports =
@@ -130,10 +130,10 @@ validateOneLazy ::
   Pkg.Name ->
   ProjectType ->
   ModuleName.Canonical ->
-  Map ModuleName.Raw I.Interface ->
+  Map ModuleName.Raw Interface.Interface ->
   Src.Import ->
   Result i w ModuleName.Canonical
-validateOneLazy pkg projectType home ifaces (Src.Import (A.At region name) _ _ _) =
+validateOneLazy pkg projectType home ifaces (Src.Import (Ann.At region name) _ _ _) =
   checkNotPackage region name projectType
     >> checkNotSelf region name home
     >> checkNotKernel region name
@@ -142,33 +142,33 @@ validateOneLazy pkg projectType home ifaces (Src.Import (A.At region name) _ _ _
     >> Result.ok (ModuleName.Canonical pkg name)
 
 -- | Reject lazy imports in package context.
-checkNotPackage :: A.Region -> Name.Name -> ProjectType -> Result i w ()
+checkNotPackage :: Ann.Region -> Name.Name -> ProjectType -> Result i w ()
 checkNotPackage region name projectType =
   case projectType of
     Package _ -> Result.throw (Error.LazyImportInPackage region name)
     Application -> Result.ok ()
 
 -- | Reject a module lazily importing itself.
-checkNotSelf :: A.Region -> Name.Name -> ModuleName.Canonical -> Result i w ()
+checkNotSelf :: Ann.Region -> Name.Name -> ModuleName.Canonical -> Result i w ()
 checkNotSelf region name (ModuleName.Canonical _ selfName)
   | name == selfName = Result.throw (Error.LazyImportSelf region name)
   | otherwise = Result.ok ()
 
 -- | Reject lazy imports of internal kernel modules.
-checkNotKernel :: A.Region -> Name.Name -> Result i w ()
+checkNotKernel :: Ann.Region -> Name.Name -> Result i w ()
 checkNotKernel region name
   | Name.isKernel name = Result.throw (Error.LazyImportKernel region name)
   | otherwise = Result.ok ()
 
 -- | Reject lazy imports of core/stdlib default modules.
-checkNotCore :: A.Region -> Name.Name -> Result i w ()
+checkNotCore :: Ann.Region -> Name.Name -> Result i w ()
 checkNotCore region name
   | Set.member name coreModuleNames =
       Result.throw (Error.LazyImportCoreModule region name)
   | otherwise = Result.ok ()
 
 -- | Reject lazy imports of modules not found in available interfaces.
-checkExists :: A.Region -> Name.Name -> Map ModuleName.Raw I.Interface -> Result i w ()
+checkExists :: Ann.Region -> Name.Name -> Map ModuleName.Raw Interface.Interface -> Result i w ()
 checkExists region name ifaces
   | Map.member name ifaces = Result.ok ()
   | otherwise =
@@ -183,8 +183,8 @@ coreModuleNames =
 
 -- CANONICALIZE BINOP
 
-canonicalizeBinop :: A.Located Src.Infix -> (Name.Name, Can.Binop)
-canonicalizeBinop (A.At _ (Src.Infix op associativity precedence func)) =
+canonicalizeBinop :: Ann.Located Src.Infix -> (Name.Name, Can.Binop)
+canonicalizeBinop (Ann.At _ (Src.Infix op associativity precedence func)) =
   (op, Can.Binop_ associativity precedence func)
 
 -- DECLARATIONS / CYCLE DETECTION
@@ -195,7 +195,7 @@ canonicalizeBinop (A.At _ (Src.Infix op associativity precedence func)) =
 -- 2. Detect cycles using DIRECT dependencies => nonterminating recursion
 --
 
-canonicalizeValues :: Env.Env -> [A.Located Src.Value] -> Result i [W.Warning] Can.Decls
+canonicalizeValues :: Env.Env -> [Ann.Located Src.Value] -> Result i [Warning.Warning] Can.Decls
 canonicalizeValues env values =
   do
     nodes <- traverse (toNodeOne env) values
@@ -225,11 +225,11 @@ detectBadCycles scc =
     Graph.CyclicSCC [] ->
       InternalError.report "Canonicalize.Module.detectBadCycles" "Empty CyclicSCC from Data.Graph" "Data.Graph.SCC should never produce an empty CyclicSCC list."
     Graph.CyclicSCC (def : defs) ->
-      let (A.At region name) = extractDefName def
-          names = fmap (A.toValue . extractDefName) defs
+      let (Ann.At region name) = extractDefName def
+          names = fmap (Ann.toValue . extractDefName) defs
        in Result.throw (Error.RecursiveDecl region name names)
 
-extractDefName :: Can.Def -> A.Located Name.Name
+extractDefName :: Can.Def -> Ann.Located Name.Name
 extractDefName def =
   case def of
     Can.Def name _ _ -> name
@@ -250,8 +250,8 @@ type NodeOne =
 type NodeTwo =
   (Can.Def, Name.Name, [Name.Name])
 
-toNodeOne :: Env.Env -> A.Located Src.Value -> Result i [W.Warning] NodeOne
-toNodeOne env (A.At _ (Src.Value aname@(A.At _ name) srcArgs body maybeType)) =
+toNodeOne :: Env.Env -> Ann.Located Src.Value -> Result i [Warning.Warning] NodeOne
+toNodeOne env (Ann.At _ (Src.Value aname@(Ann.At _ name) srcArgs body maybeType)) =
   case maybeType of
     Nothing ->
       do
@@ -263,7 +263,7 @@ toNodeOne env (A.At _ (Src.Value aname@(A.At _ name) srcArgs body maybeType)) =
           Env.addLocals argBindings env
 
         (cbody, freeLocals) <-
-          Expr.verifyBindings W.Pattern argBindings (Expr.canonicalize newEnv body)
+          Expr.verifyBindings Warning.Pattern argBindings (Expr.canonicalize newEnv body)
 
         let def = Can.Def aname args cbody
         return
@@ -283,7 +283,7 @@ toNodeOne env (A.At _ (Src.Value aname@(A.At _ name) srcArgs body maybeType)) =
           Env.addLocals argBindings env
 
         (cbody, freeLocals) <-
-          Expr.verifyBindings W.Pattern argBindings (Expr.canonicalize newEnv body)
+          Expr.verifyBindings Warning.Pattern argBindings (Expr.canonicalize newEnv body)
 
         let def = Can.TypedDef aname freeVars args cbody resultType
         return
@@ -309,14 +309,14 @@ addDirects name (Expr.Uses directUses _) directDeps =
 -- CANONICALIZE EXPORTS
 
 canonicalizeExports ::
-  [A.Located Src.Value] ->
+  [Ann.Located Src.Value] ->
   Map.Map Name.Name union ->
   Map.Map Name.Name alias ->
   Map.Map Name.Name binop ->
   Can.Effects ->
-  A.Located Src.Exposing ->
+  Ann.Located Src.Exposing ->
   Result i w Can.Exports
-canonicalizeExports values unions aliases binops effects (A.At region exposing) =
+canonicalizeExports values unions aliases binops effects (Ann.At region exposing) =
   case exposing of
     Src.Open ->
       Result.ok (Can.ExportEverything region)
@@ -326,8 +326,8 @@ canonicalizeExports values unions aliases binops effects (A.At region exposing) 
         infos <- traverse (checkExposed names unions aliases binops effects) exposeds
         Can.Export <$> Dups.detect Error.ExportDuplicate (Dups.unions infos)
 
-valueToName :: A.Located Src.Value -> (Name.Name, ())
-valueToName (A.At _ (Src.Value (A.At _ name) _ _ _)) =
+valueToName :: Ann.Located Src.Value -> (Name.Name, ())
+valueToName (Ann.At _ (Src.Value (Ann.At _ name) _ _ _)) =
   (name, ())
 
 checkExposed ::
@@ -337,10 +337,10 @@ checkExposed ::
   Map Name.Name binop ->
   Can.Effects ->
   Src.Exposed ->
-  Result i w (Dups.Dict (A.Located Can.Export))
+  Result i w (Dups.Dict (Ann.Located Can.Export))
 checkExposed values unions aliases binops effects exposed =
   case exposed of
-    Src.Lower (A.At region name) ->
+    Src.Lower (Ann.At region name) ->
       if Map.member name values
         then ok name region Can.ExportValue
         else case checkPorts effects name of
@@ -352,14 +352,14 @@ checkExposed values unions aliases binops effects exposed =
       if Map.member name binops
         then ok name region Can.ExportBinop
         else Result.throw . Error.ExportNotFound region Error.BadOp name $ Map.keys binops
-    Src.Upper (A.At region name) (Src.Public dotDotRegion) ->
+    Src.Upper (Ann.At region name) (Src.Public dotDotRegion) ->
       if Map.member name unions
         then ok name region Can.ExportUnionOpen
         else
           if Map.member name aliases
             then Result.throw $ Error.ExportOpenAlias dotDotRegion name
             else Result.throw . Error.ExportNotFound region Error.BadType name $ (Map.keys unions <> Map.keys aliases)
-    Src.Upper (A.At region name) Src.Private ->
+    Src.Upper (Ann.At region name) Src.Private ->
       if Map.member name unions
         then ok name region Can.ExportUnionClosed
         else
@@ -379,9 +379,9 @@ checkPorts effects name =
     Can.Manager {} ->
       Just []
 
-ok :: Name.Name -> A.Region -> Can.Export -> Result i w (Dups.Dict (A.Located Can.Export))
+ok :: Name.Name -> Ann.Region -> Can.Export -> Result i w (Dups.Dict (Ann.Located Can.Export))
 ok name region export =
-  Result.ok $ Dups.one name region (A.At region export)
+  Result.ok $ Dups.one name region (Ann.At region export)
 
 -- FFI SUPPORT
 
@@ -443,7 +443,7 @@ loadFFIFileWithTimeout fullPath _jsPath = do
 --
 -- Processes all FFI imports sequentially, threading the updated
 -- environment through each import so all foreign functions are available.
-addFFIToEnvPure :: Env.Env -> [Src.ForeignImport] -> Map String String -> Result i [W.Warning] Env.Env
+addFFIToEnvPure :: Env.Env -> [Src.ForeignImport] -> Map String String -> Result i [Warning.Warning] Env.Env
 addFFIToEnvPure env [] _ffiContentMap = Result.ok env
 addFFIToEnvPure env (fi : rest) ffiContentMap =
   addOneFFI env fi >>= \updatedEnv -> addFFIToEnvPure updatedEnv rest ffiContentMap
@@ -456,9 +456,9 @@ addFFIToEnvPure env (fi : rest) ffiContentMap =
       Result.throw (Error.FFIParseError region "WebAssembly" "WebAssembly FFI is not yet supported")
 
 -- Process single FFI import with comprehensive error handling
-processFFIImport :: Env.Env -> FilePath -> A.Located Name.Name -> A.Region -> Map String String -> Result i [W.Warning] Env.Env
+processFFIImport :: Env.Env -> FilePath -> Ann.Located Name.Name -> Ann.Region -> Map String String -> Result i [Warning.Warning] Env.Env
 processFFIImport env jsPath alias region ffiContentMap =
-  let aliasName = A.toValue alias
+  let aliasName = Ann.toValue alias
       home = Env._home env
       ffiModuleName = ModuleName.Canonical (ModuleName._package home) aliasName
   in case Map.lookup jsPath ffiContentMap of
@@ -466,26 +466,26 @@ processFFIImport env jsPath alias region ffiContentMap =
        Just jsContent -> parseAndAddFFI env ffiModuleName aliasName jsPath region jsContent
 
 -- Parse FFI content and add to environment with validation
-parseAndAddFFI :: Env.Env -> ModuleName.Canonical -> Name.Name -> FilePath -> A.Region -> String -> Result i [W.Warning] Env.Env
+parseAndAddFFI :: Env.Env -> ModuleName.Canonical -> Name.Name -> FilePath -> Ann.Region -> String -> Result i [Warning.Warning] Env.Env
 parseAndAddFFI env ffiModuleName aliasName jsPath region jsContent =
   case parseJavaScriptContentPure jsContent (Name.toChars aliasName) of
     Left err -> Result.throw (Error.FFIParseError region jsPath err)
     Right functions -> validateAndAddFunctions env ffiModuleName aliasName jsPath region functions
 
 -- Validate and add FFI functions to environment
-validateAndAddFunctions :: Env.Env -> ModuleName.Canonical -> Name.Name -> FilePath -> A.Region -> [(String, String)] -> Result i [W.Warning] Env.Env
+validateAndAddFunctions :: Env.Env -> ModuleName.Canonical -> Name.Name -> FilePath -> Ann.Region -> [(String, String)] -> Result i [Warning.Warning] Env.Env
 validateAndAddFunctions env ffiModuleName aliasName jsPath region functions =
   case validateFFIFunctions jsPath region functions of
     Left err -> Result.throw err
     Right validFunctions -> addParsedFunctionsToEnv env ffiModuleName aliasName jsPath region validFunctions
 
 -- Validate FFI functions have proper type annotations
-validateFFIFunctions :: FilePath -> A.Region -> [(String, String)] -> Either Error.Error [(String, String)]
+validateFFIFunctions :: FilePath -> Ann.Region -> [(String, String)] -> Either Error.Error [(String, String)]
 validateFFIFunctions jsPath region functions =
   traverse (validateSingleFunction jsPath region) functions
 
 -- Validate single FFI function signature
-validateSingleFunction :: FilePath -> A.Region -> (String, String) -> Either Error.Error (String, String)
+validateSingleFunction :: FilePath -> Ann.Region -> (String, String) -> Either Error.Error (String, String)
 validateSingleFunction jsPath region (fname, typeStr) =
   if null typeStr
     then Left (Error.FFIMissingAnnotation region jsPath (Name.fromChars fname))
@@ -586,7 +586,7 @@ parseCanopyTypeAnnotation line =
 
 
 -- DYNAMIC FUNCTION ENVIRONMENT GENERATION
-addParsedFunctionsToEnv :: Env.Env -> ModuleName.Canonical -> Name.Name -> FilePath -> A.Region -> [(String, String)] -> Result i [W.Warning] Env.Env
+addParsedFunctionsToEnv :: Env.Env -> ModuleName.Canonical -> Name.Name -> FilePath -> Ann.Region -> [(String, String)] -> Result i [Warning.Warning] Env.Env
 addParsedFunctionsToEnv env ffiModuleName aliasName jsPath region functions = do
   -- Get the home module for type resolution
   let homeModuleName = Env._home env
@@ -602,7 +602,7 @@ addParsedFunctionsToEnv env ffiModuleName aliasName jsPath region functions = do
   Result.ok newEnv
 
 -- Process a single parsed function (name, typeString) into Canopy types
-processParsedFunction :: Env.Env -> ModuleName.Canonical -> ModuleName.Canonical -> FilePath -> A.Region -> (String, String) -> Result i [W.Warning] (String, Can.Annotation, Env.Var)
+processParsedFunction :: Env.Env -> ModuleName.Canonical -> ModuleName.Canonical -> FilePath -> Ann.Region -> (String, String) -> Result i [Warning.Warning] (String, Can.Annotation, Env.Var)
 processParsedFunction env ffiModuleName homeModuleName jsPath region (functionName, typeString) = do
   canopyType <- parseTypeStringWithHome env ffiModuleName homeModuleName jsPath region functionName typeString
   let annotation = Can.Forall Map.empty canopyType
@@ -628,7 +628,7 @@ buildQualifiedVars ffiModuleName processedFunctions =
 
 -- Parse type string with home module context for custom type resolution
 -- ffiModuleName is used as fallback for unknown opaque types (FFI-specific types)
-parseTypeStringWithHome :: Env.Env -> ModuleName.Canonical -> ModuleName.Canonical -> FilePath -> A.Region -> String -> String -> Result i [W.Warning] Can.Type
+parseTypeStringWithHome :: Env.Env -> ModuleName.Canonical -> ModuleName.Canonical -> FilePath -> Ann.Region -> String -> String -> Result i [Warning.Warning] Can.Type
 parseTypeStringWithHome env ffiModuleName homeModuleName jsPath region functionName typeStr =
   case parseTypeTokensWithHome env ffiModuleName homeModuleName (tokenizeCanopyType (Text.pack typeStr)) of
     Just canopyType -> Result.ok canopyType
@@ -965,13 +965,13 @@ parseTupleString env ffiModuleName homeModuleName str =
 
 
 {-
-addSingleFFI :: Env.Env -> Src.ForeignImport -> Result i [W.Warning] Env.Env
+addSingleFFI :: Env.Env -> Src.ForeignImport -> Result i [Warning.Warning] Env.Env
 addSingleFFI env (Src.ForeignImport target alias _region) =
   case target of
     FFI.JavaScriptFFI jsFilePath ->
       -- Parse the JavaScript file and add functions to environment
       case addFFIFunctions env alias jsFilePath of
-        Left _errMsg -> Result.throw (Error.ImportNotFound A.one (Name.fromChars "FFI") [])
+        Left _errMsg -> Result.throw (Error.ImportNotFound Ann.one (Name.fromChars "FFI") [])
         Right newEnv -> Result.ok newEnv
     FFI.WebAssemblyFFI _ ->
       -- WebAssembly not supported yet

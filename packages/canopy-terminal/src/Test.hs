@@ -52,12 +52,12 @@ where
 
 import qualified AST.Optimized as Opt
 import qualified Build.Artifacts as Build
-import qualified Canopy.Interface as I
+import qualified Canopy.Interface as Interface
 import qualified Canopy.ModuleName as ModuleName
-import qualified Canopy.Constraint as C
+import qualified Canopy.Constraint as Constraint
 import qualified Canopy.Outline as Outline
 import qualified Canopy.Package as Pkg
-import qualified Canopy.Version as V
+import qualified Canopy.Version as Version
 import qualified Compiler
 import Control.Lens ((^.))
 import Control.Lens.TH (makeLenses)
@@ -325,18 +325,18 @@ compileTestFiles root testFiles = do
 -- @since 0.19.1
 ensureTestDepArtifacts :: FilePath -> IO ()
 ensureTestDepArtifacts root = do
-  maybeOutline <- Outline.read root
-  case maybeOutline of
-    Nothing -> pure ()
-    Just outline -> do
+  eitherOutline <- Outline.read root
+  case eitherOutline of
+    Left _ -> pure ()
+    Right outline -> do
       cacheDir <- Stuff.getPackageCache
       mapM_ (ensureOneTestDep cacheDir) (extractTestDeps outline)
 
 -- | Extract test-dependency (name, version) pairs from an outline.
-extractTestDeps :: Outline.Outline -> [(Pkg.Name, V.Version)]
+extractTestDeps :: Outline.Outline -> [(Pkg.Name, Version.Version)]
 extractTestDeps (Outline.App o) = Map.toList (Outline._appTestDepsDirect o)
 extractTestDeps (Outline.Pkg o) =
-  Map.toList (Map.map C.lowerBound (Outline._pkgTestDeps o))
+  Map.toList (Map.map Constraint.lowerBound (Outline._pkgTestDeps o))
 
 -- | Compile a single test-dependency package if it lacks artifacts.
 --
@@ -349,7 +349,7 @@ extractTestDeps (Outline.Pkg o) =
 -- resolves its dependencies independently.
 --
 -- @since 0.19.1
-ensureOneTestDep :: FilePath -> (Pkg.Name, V.Version) -> IO ()
+ensureOneTestDep :: FilePath -> (Pkg.Name, Version.Version) -> IO ()
 ensureOneTestDep cacheDir (pkgName, version) = do
   let pkgDir = testDepDir cacheDir pkgName version
       artifactsPath = pkgDir </> "artifacts.dat"
@@ -361,15 +361,15 @@ ensureOneTestDep cacheDir (pkgName, version) = do
 -- | Compile a test-dependency package from source and write artifacts.
 --
 -- @since 0.19.1
-compileTestDepFromSource :: Pkg.Name -> V.Version -> FilePath -> IO ()
+compileTestDepFromSource :: Pkg.Name -> Version.Version -> FilePath -> IO ()
 compileTestDepFromSource pkgName version pkgDir = do
   let srcPath = pkgDir </> "src"
   hasSrc <- Dir.doesDirectoryExist srcPath
   if not hasSrc
     then pure ()
     else do
-      maybeOutline <- Outline.read pkgDir
-      maybe (pure ()) (compileTestDepOutline pkgName version pkgDir srcPath) maybeOutline
+      eitherOutline <- Outline.read pkgDir
+      either (const (pure ())) (compileTestDepOutline pkgName version pkgDir srcPath) eitherOutline
 
 -- | Compile a test-dependency package given its parsed outline.
 --
@@ -377,7 +377,7 @@ compileTestDepFromSource pkgName version pkgDir = do
 -- package root so that FFI kernel paths resolve correctly.
 --
 -- @since 0.19.1
-compileTestDepOutline :: Pkg.Name -> V.Version -> FilePath -> FilePath -> Outline.Outline -> IO ()
+compileTestDepOutline :: Pkg.Name -> Version.Version -> FilePath -> FilePath -> Outline.Outline -> IO ()
 compileTestDepOutline _ _ _ _ (Outline.App _) = pure ()
 compileTestDepOutline pkgName version pkgDir srcPath (Outline.Pkg pkgOutline) =
   case flattenExposedToNonEmpty (Outline._pkgExposed pkgOutline) of
@@ -394,12 +394,12 @@ compileTestDepOutline pkgName version pkgDir srcPath (Outline.Pkg pkgOutline) =
 -- | Write compiled artifacts for a test-dependency package.
 --
 -- @since 0.19.1
-writeTestDepArtifacts :: Pkg.Name -> V.Version -> Compiler.Artifacts -> IO ()
+writeTestDepArtifacts :: Pkg.Name -> Version.Version -> Compiler.Artifacts -> IO ()
 writeTestDepArtifacts (Pkg.Name author project) version artifacts =
   PackageCache.writePackageArtifacts
     (Utf8.toChars author)
     (Utf8.toChars project)
-    (V.toChars version)
+    (Version.toChars version)
     interfaces
     globalGraph
     ffiInfo
@@ -414,7 +414,7 @@ writeTestDepArtifacts (Pkg.Name author project) version artifacts =
 buildArtifactsToInterfaces :: Compiler.Artifacts -> PackageCache.PackageInterfaces
 buildArtifactsToInterfaces artifacts =
   Map.fromList
-    [ (name, I.Public iface)
+    [ (name, Interface.Public iface)
     | Build.Fresh name iface _ <- Build._artifactsModules artifacts
     ]
 
@@ -428,9 +428,9 @@ flattenExposedToNonEmpty exposed =
     (x : xs) -> Just (NE.List x xs)
 
 -- | Build the package directory path inside the cache.
-testDepDir :: FilePath -> Pkg.Name -> V.Version -> FilePath
+testDepDir :: FilePath -> Pkg.Name -> Version.Version -> FilePath
 testDepDir cacheDir (Pkg.Name author project) version =
-  cacheDir </> Utf8.toChars author </> Utf8.toChars project </> V.toChars version
+  cacheDir </> Utf8.toChars author </> Utf8.toChars project </> Version.toChars version
 
 -- | Generate a JavaScript string from compiled artifacts.
 artifactsToJavaScript :: Compiler.Artifacts -> String

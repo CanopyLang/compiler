@@ -28,7 +28,7 @@ import Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
 import qualified Data.Name as Name
 import qualified Data.OneOrMore as OneOrMore
-import qualified Reporting.Annotation as A
+import qualified Reporting.Annotation as Ann
 import qualified Reporting.Error.Canonicalize as Error
 import qualified Reporting.Result as Result
 
@@ -77,8 +77,8 @@ mergeInfo info1 info2 =
 -- VARIABLES
 
 data Var
-  = Local A.Region
-  | TopLevel A.Region
+  = Local Ann.Region
+  | TopLevel Ann.Region
   | Foreign ModuleName.Canonical Can.Annotation
   | Foreigns ModuleName.Canonical (OneOrMore.OneOrMore ModuleName.Canonical)
 
@@ -113,7 +113,7 @@ data Binop = Binop
 
 -- VARIABLE -- ADD LOCALS
 
-addLocals :: Map Name.Name A.Region -> Env -> Result i w Env
+addLocals :: Map Name.Name Ann.Region -> Env -> Result i w Env
 addLocals names (Env home vars ts cs bs qvs qts qcs) =
   do
     newVars <-
@@ -126,11 +126,11 @@ addLocals names (Env home vars ts cs bs qvs qts qcs) =
 
     Result.ok (Env home newVars ts cs bs qvs qts qcs)
 
-addLocalLeft :: Name.Name -> A.Region -> Var
+addLocalLeft :: Name.Name -> Ann.Region -> Var
 addLocalLeft _ region =
   Local region
 
-addLocalBoth :: Name.Name -> A.Region -> Var -> Result i w Var
+addLocalBoth :: Name.Name -> Ann.Region -> Var -> Result i w Var
 addLocalBoth name region var =
   case var of
     Foreign _ _ ->
@@ -144,7 +144,7 @@ addLocalBoth name region var =
 
 -- FIND TYPE
 
-findType :: A.Region -> Env -> Name.Name -> Result i w Type
+findType :: Ann.Region -> Env -> Name.Name -> Result i w Type
 findType region (Env _ _ ts _ _ _ qts _) name =
   case Map.lookup name ts of
     Just (Specific _ tipe) ->
@@ -154,7 +154,7 @@ findType region (Env _ _ ts _ _ _ qts _) name =
     Nothing ->
       Result.throw (Error.NotFoundType region Nothing name (toPossibleNames ts qts))
 
-findTypeQual :: A.Region -> Env -> Name.Name -> Name.Name -> Result i w Type
+findTypeQual :: Ann.Region -> Env -> Name.Name -> Name.Name -> Result i w Type
 findTypeQual region (Env _ _ ts _ _ _ qts _) prefix name =
   case Map.lookup prefix qts of
     Just qualified ->
@@ -170,7 +170,7 @@ findTypeQual region (Env _ _ ts _ _ _ qts _) prefix name =
 
 -- FIND CTOR
 
-findCtor :: A.Region -> Env -> Name.Name -> Result i w Ctor
+findCtor :: Ann.Region -> Env -> Name.Name -> Result i w Ctor
 findCtor region (Env _ _ _ cs _ _ _ qcs) name =
   case Map.lookup name cs of
     Just (Specific _ ctor) ->
@@ -180,7 +180,7 @@ findCtor region (Env _ _ _ cs _ _ _ qcs) name =
     Nothing ->
       Result.throw (Error.NotFoundVariant region Nothing name (toPossibleNames cs qcs))
 
-findCtorQual :: A.Region -> Env -> Name.Name -> Name.Name -> Result i w Ctor
+findCtorQual :: Ann.Region -> Env -> Name.Name -> Name.Name -> Result i w Ctor
 findCtorQual region (Env _ _ _ cs _ _ _ qcs) prefix name =
   case Map.lookup prefix qcs of
     Just qualified ->
@@ -196,7 +196,7 @@ findCtorQual region (Env _ _ _ cs _ _ _ qcs) prefix name =
 
 -- FIND BINOP
 
-findBinop :: A.Region -> Env -> Name.Name -> Result i w Binop
+findBinop :: Ann.Region -> Env -> Name.Name -> Result i w Binop
 findBinop region (Env _ _ _ _ binops _ _ _) name =
   case Map.lookup name binops of
     Just (Specific _ binop) ->

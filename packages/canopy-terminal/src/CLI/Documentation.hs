@@ -38,7 +38,7 @@ where
 import qualified Canopy.Version as Version
 import qualified Data.List as List
 import Text.PrettyPrint.ANSI.Leijen (Doc)
-import qualified Text.PrettyPrint.ANSI.Leijen as P
+import qualified Text.PrettyPrint.ANSI.Leijen as PP
 
 -- | Create the application introduction message.
 --
@@ -56,7 +56,7 @@ import qualified Text.PrettyPrint.ANSI.Leijen as P
 -- @since 0.19.1
 createIntroduction :: Doc
 createIntroduction =
-  P.vcat
+  PP.vcat
     [ createWelcomeGreeting,
       "",
       createSeparatorLine,
@@ -92,7 +92,7 @@ createOutro =
 -- @since 0.19.1
 stackDocuments :: [Doc] -> Doc
 stackDocuments docs =
-  P.vcat $ List.intersperse "" docs
+  PP.vcat $ List.intersperse "" docs
 
 -- | Reflow text into a formatted document.
 --
@@ -110,7 +110,7 @@ stackDocuments docs =
 -- @since 0.19.1
 reflowText :: String -> Doc
 reflowText text =
-  P.fillSep . fmap P.text $ words text
+  PP.fillSep . fmap PP.text $ words text
 
 -- | Create the welcome greeting section.
 --
@@ -118,15 +118,15 @@ reflowText text =
 -- Uses appropriate styling and highlights the Canopy brand.
 createWelcomeGreeting :: Doc
 createWelcomeGreeting =
-  P.fillSep
+  PP.fillSep
     [ "Hi,",
       "thank",
       "you",
       "for",
       "trying",
       "out",
-      P.green "Canopy",
-      P.green (P.text (Version.toChars Version.compiler)) <> ".",
+      PP.green "Canopy",
+      PP.green (PP.text (Version.toChars Version.compiler)) <> ".",
       "I hope you like it!"
     ]
 
@@ -136,7 +136,7 @@ createWelcomeGreeting =
 -- throughout the introduction to organize information visually.
 createSeparatorLine :: Doc
 createSeparatorLine =
-  P.black "-------------------------------------------------------------------------------"
+  PP.black "-------------------------------------------------------------------------------"
 
 -- | Create the getting started information section.
 --
@@ -144,7 +144,7 @@ createSeparatorLine =
 -- with links to documentation and learning resources.
 createGettingStartedInfo :: Doc
 createGettingStartedInfo =
-  P.vcat
-    [ P.black "I highly recommend working through <https://guide.canopy-lang.org> to get started.",
-      P.black "It teaches many important concepts, including how to use `canopy` in the terminal."
+  PP.vcat
+    [ PP.black "I highly recommend working through <https://guide.canopy-lang.org> to get started.",
+      PP.black "It teaches many important concepts, including how to use `canopy` in the terminal."
     ]

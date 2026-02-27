@@ -92,7 +92,7 @@ setupLocalPackageOverrides = do
             , ""
             , "- Each package should be in its own subdirectory named `author/package-version`"
             , "- ZIP files are created automatically and should have .zip extension"
-            , "- SHA-1 hashes are calculated for package validation"
+            , "- SHA-256 hashes are calculated for package validation"
             , ""
             , "## Usage"
             , ""
@@ -134,14 +134,14 @@ addLocalPackage packageName version sourcePath = do
   Print.println [c|Creating ZIP archive: {cyan|#{zipPath}}|]
   Package.createPackageZip packageDir zipPath
 
-  -- Calculate SHA-1 hash
+  -- Calculate SHA-256 hash
   zipContent <- LBS.readFile zipPath
-  let sha1Hash = SHA.showDigest (SHA.sha1 zipContent)
-  Print.println [c|SHA-1 hash: {cyan|#{sha1Hash}}|]
+  let sha256Hash = SHA.showDigest (SHA.sha256 zipContent)
+  Print.println [c|SHA-256 hash: {cyan|#{sha256Hash}}|]
 
   -- Write hash file
-  let hashPath = zipPath <> ".sha1"
-  writeFile hashPath sha1Hash
+  let hashPath = zipPath <> ".sha256"
+  writeFile hashPath sha256Hash
   Print.println [c|Saved hash to: {cyan|#{hashPath}}|]
 
   Print.newline
@@ -166,10 +166,10 @@ createLocalPackage sourcePath outputPath = do
 
   Package.createPackageZip sourcePath outputPath
 
-  -- Calculate and display SHA-1 hash
+  -- Calculate and display SHA-256 hash
   zipContent <- LBS.readFile outputPath
-  let sha1Hash = SHA.showDigest (SHA.sha1 zipContent)
-  Print.println [c|SHA-1 hash: {cyan|#{sha1Hash}}|]
+  let sha256Hash = SHA.showDigest (SHA.sha256 zipContent)
+  Print.println [c|SHA-256 hash: {cyan|#{sha256Hash}}|]
 
   Print.println [c|{green|Package created successfully!}|]
 

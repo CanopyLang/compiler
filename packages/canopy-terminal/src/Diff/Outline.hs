@@ -44,11 +44,11 @@ validateRoot env =
     Just root -> pure root
 
 -- | Process outline loading result.
-processOutlineResult :: Maybe Outline.Outline -> Task Outline.Outline
+processOutlineResult :: Either String Outline.Outline -> Task Outline.Outline
 processOutlineResult result =
   case result of
-    Nothing -> Task.throw Exit.DiffNoOutline
-    Just outline -> validateOutlineType outline
+    Left _ -> Task.throw Exit.DiffNoOutline
+    Right outline -> validateOutlineType outline
 
 -- | Validate outline represents a package, not application.
 validateOutlineType :: Outline.Outline -> Task Outline.Outline

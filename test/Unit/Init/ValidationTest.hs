@@ -35,7 +35,7 @@ import Canopy.Constraint (Constraint)
 import qualified Canopy.Constraint as Con
 import Canopy.Package (Name)
 import qualified Canopy.Package as Pkg
-import qualified Canopy.Version as V
+import qualified Canopy.Version as Version
 import Control.Lens ((&), (.~), (^.))
 import qualified Control.Lens as Lens
 import Data.List (isInfixOf)

@@ -15,7 +15,7 @@ where
 import qualified AST.Canonical as Can
 import qualified AST.Source as Src
 import qualified Canonicalize.Module as Module
-import qualified Canopy.Interface as I
+import qualified Canopy.Interface as Interface
 import qualified Canopy.ModuleName as ModuleName
 import qualified Canopy.Package as Pkg
 import Data.Map (Map)
@@ -24,10 +24,10 @@ import qualified Data.Name as Name
 import qualified Data.OneOrMore as OneOrMore
 import qualified Data.Set as Set
 import Parse.Module (ProjectType (..))
-import qualified Reporting.Annotation as A
+import qualified Reporting.Annotation as Ann
 import qualified Reporting.Error.Canonicalize as Error
 import qualified Reporting.Result as Result
-import qualified Reporting.Warning as W
+import qualified Reporting.Warning as Warning
 import Test.Tasty
 import Test.Tasty.HUnit
 
@@ -193,7 +193,7 @@ moduleWithLazyImport importName =
 moduleWithLazyImportNamed :: String -> String -> Src.Module
 moduleWithLazyImportNamed moduleName importName =
   emptyModule
-    { Src._name = Just (A.At A.one (Name.fromChars moduleName)),
+    { Src._name = Just (Ann.At Ann.one (Name.fromChars moduleName)),
       Src._imports = [mkLazyImport (Name.fromChars importName)]
     }
 
@@ -201,7 +201,7 @@ moduleWithLazyImportNamed moduleName importName =
 moduleWithLazyImportRaw :: Name.Name -> Src.Module
 moduleWithLazyImportRaw importName =
   emptyModule
-    { Src._name = Just (A.At A.one (Name.fromChars "Main")),
+    { Src._name = Just (Ann.At Ann.one (Name.fromChars "Main")),
       Src._imports = [mkLazyImport importName]
     }
 
@@ -209,7 +209,7 @@ moduleWithLazyImportRaw importName =
 moduleWithMultipleLazyImports :: [String] -> Src.Module
 moduleWithMultipleLazyImports importNames =
   emptyModule
-    { Src._name = Just (A.At A.one (Name.fromChars "Main")),
+    { Src._name = Just (Ann.At Ann.one (Name.fromChars "Main")),
       Src._imports = fmap (mkLazyImport . Name.fromChars) importNames
     }
 
@@ -217,7 +217,7 @@ moduleWithMultipleLazyImports importNames =
 moduleWithNonLazyImport :: String -> Src.Module
 moduleWithNonLazyImport importName =
   emptyModule
-    { Src._name = Just (A.At A.one (Name.fromChars "Main")),
+    { Src._name = Just (Ann.At Ann.one (Name.fromChars "Main")),
       Src._imports = [mkNonLazyImport (Name.fromChars importName)]
     }
 
@@ -226,8 +226,8 @@ emptyModule :: Src.Module
 emptyModule =
   Src.Module
     { Src._name = Nothing,
-      Src._exports = A.At A.one Src.Open,
-      Src._docs = Src.NoDocs A.one,
+      Src._exports = Ann.At Ann.one Src.Open,
+      Src._docs = Src.NoDocs Ann.one,
       Src._imports = [],
       Src._foreignImports = [],
       Src._values = [],
@@ -240,39 +240,39 @@ emptyModule =
 -- | Create a lazy import.
 mkLazyImport :: Name.Name -> Src.Import
 mkLazyImport name =
-  Src.Import (A.At A.one name) Nothing (Src.Explicit []) True
+  Src.Import (Ann.At Ann.one name) Nothing (Src.Explicit []) True
 
 -- | Create a non-lazy import.
 mkNonLazyImport :: Name.Name -> Src.Import
 mkNonLazyImport name =
-  Src.Import (A.At A.one name) Nothing (Src.Explicit []) False
+  Src.Import (Ann.At Ann.one name) Nothing (Src.Explicit []) False
 
 -- | A minimal empty interface for testing module existence.
-emptyInterface :: I.Interface
+emptyInterface :: Interface.Interface
 emptyInterface =
-  I.Interface Pkg.core Map.empty Map.empty Map.empty Map.empty
+  Interface.Interface Pkg.core Map.empty Map.empty Map.empty Map.empty
 
 -- HELPERS: RUNNING CANONICALIZATION
 
 -- | Run canonicalize with the given project type, interfaces, and module.
 runCanonicalize ::
   ProjectType ->
-  Map Name.Name I.Interface ->
+  Map Name.Name Interface.Interface ->
   Src.Module ->
-  ([W.Warning], Either (OneOrMore.OneOrMore Error.Error) Can.Module)
+  ([Warning.Warning], Either (OneOrMore.OneOrMore Error.Error) Can.Module)
 runCanonicalize projectType ifaces modul =
   Result.run (Module.canonicalize Pkg.core projectType ifaces Map.empty modul)
 
 -- | Extract errors from a Result run, failing if it succeeded.
 expectErrors ::
-  ([W.Warning], Either (OneOrMore.OneOrMore Error.Error) Can.Module) ->
+  ([Warning.Warning], Either (OneOrMore.OneOrMore Error.Error) Can.Module) ->
   IO [Error.Error]
 expectErrors (_, Left errs) = return (OneOrMore.destruct (:) errs)
 expectErrors (_, Right _) = assertFailure "Expected errors, got success" >> error "unreachable"
 
 -- | Extract success from a Result run, failing if it errored.
 expectSuccess ::
-  ([W.Warning], Either (OneOrMore.OneOrMore Error.Error) Can.Module) ->
+  ([Warning.Warning], Either (OneOrMore.OneOrMore Error.Error) Can.Module) ->
   IO Can.Module
 expectSuccess (_, Right val) = return val
 expectSuccess (_, Left errs) =

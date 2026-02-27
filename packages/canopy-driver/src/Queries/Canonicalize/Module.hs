@@ -15,7 +15,7 @@ where
 import qualified AST.Canonical as Can
 import qualified AST.Source as Src
 import qualified Canonicalize.Module as Canonicalize
-import qualified Canopy.Interface as I
+import qualified Canopy.Interface as Interface
 import qualified Canopy.ModuleName as ModuleName
 import qualified Canopy.Package as Pkg
 import Control.Monad (when)
@@ -41,7 +41,7 @@ canonicalizeModuleQuery ::
   FilePath ->
   Pkg.Name ->
   Parse.ProjectType ->
-  Map ModuleName.Raw I.Interface ->
+  Map ModuleName.Raw Interface.Interface ->
   Map String String ->
   Src.Module ->
   IO (Either QueryError Can.Module)

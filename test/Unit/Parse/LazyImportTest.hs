@@ -12,8 +12,8 @@ module Unit.Parse.LazyImportTest (tests) where
 import qualified AST.Source as Src
 import qualified Data.ByteString.Char8 as C8
 import qualified Data.Name as Name
-import qualified Parse.Module as M
-import qualified Reporting.Annotation as A
+import qualified Parse.Module as ParseModule
+import qualified Reporting.Annotation as Ann
 import Test.Tasty
 import Test.Tasty.HUnit
 
@@ -37,22 +37,22 @@ tests =
     ]
 
 -- | Helper to parse a module string.
-parseModule :: M.ProjectType -> String -> Either a Src.Module
+parseModule :: ParseModule.ProjectType -> String -> Either a Src.Module
 parseModule pt s =
-  case M.fromByteString pt (C8.pack s) of
+  case ParseModule.fromByteString pt (C8.pack s) of
     Right m -> Right m
     Left _ -> Left undefined
 
 -- | Helper to parse as application.
 parseApp :: String -> Either a Src.Module
-parseApp = parseModule M.Application
+parseApp = parseModule ParseModule.Application
 
 -- | Find an import by name in a module's imports.
 findImport :: Name.Name -> [Src.Import] -> Maybe Src.Import
 findImport target = go
   where
     go [] = Nothing
-    go (imp@(Src.Import (A.At _ n) _ _ _) : rest)
+    go (imp@(Src.Import (Ann.At _ n) _ _ _) : rest)
       | n == target = Just imp
       | otherwise = go rest
 
@@ -221,7 +221,7 @@ testLazyImportPreservesModuleName =
     case parseApp src of
       Right modul ->
         case findImport (Name.fromChars "My.Long.Module") (Src._imports modul) of
-          Just (Src.Import (A.At _ name) _ _ isLazy) -> do
+          Just (Src.Import (Ann.At _ name) _ _ isLazy) -> do
             isLazy @?= True
             name @?= Name.fromChars "My.Long.Module"
           Nothing -> assertFailure "My.Long.Module import not found"

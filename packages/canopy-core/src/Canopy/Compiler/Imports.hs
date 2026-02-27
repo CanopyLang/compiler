@@ -8,7 +8,7 @@ where
 import qualified AST.Source as Src
 import qualified Canopy.ModuleName as ModuleName
 import qualified Data.Name as Name
-import qualified Reporting.Annotation as A
+import qualified Reporting.Annotation as Ann
 
 -- DEFAULTS
 
@@ -28,7 +28,7 @@ defaults =
   ]
 
 import_ :: ModuleName.Canonical -> Maybe Name.Name -> Src.Exposing -> Src.Import
-import_ (ModuleName.Canonical _ name) maybeAlias expo = Src.Import (A.At A.zero name) maybeAlias expo False
+import_ (ModuleName.Canonical _ name) maybeAlias expo = Src.Import (Ann.At Ann.zero name) maybeAlias expo False
 
 -- EXPOSING
 
@@ -38,12 +38,12 @@ closed =
 
 typeOpen :: Name.Name -> Src.Exposing
 typeOpen name =
-  Src.Explicit [Src.Upper (A.At A.zero name) (Src.Public A.zero)]
+  Src.Explicit [Src.Upper (Ann.At Ann.zero name) (Src.Public Ann.zero)]
 
 typeClosed :: Name.Name -> Src.Exposing
 typeClosed name =
-  Src.Explicit [Src.Upper (A.At A.zero name) Src.Private]
+  Src.Explicit [Src.Upper (Ann.At Ann.zero name) Src.Private]
 
 operator :: Name.Name -> Src.Exposing
 operator op =
-  Src.Explicit [Src.Operator A.zero op]
+  Src.Explicit [Src.Operator Ann.zero op]

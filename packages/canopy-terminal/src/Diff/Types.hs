@@ -50,13 +50,13 @@ module Diff.Types
   )
 where
 
-import qualified Canopy.Magnitude as M
+import qualified Canopy.Magnitude as Magnitude
 import Canopy.Package (Name)
 import Canopy.Version (Version)
 import Control.Lens (makeLenses)
 import qualified Deps.Registry as Registry
 import qualified Http
-import qualified Reporting.Doc as D
+import qualified Reporting.Doc as Doc
 import qualified Reporting.Exit as Exit
 import qualified Reporting.Task as Task
 import qualified Stuff
@@ -106,8 +106,8 @@ data Env = Env
 -- @since 0.19.1
 data Chunk = Chunk
   { _chunkTitle :: !String,
-    _chunkMagnitude :: !M.Magnitude,
-    _chunkDetails :: !D.Doc
+    _chunkMagnitude :: !Magnitude.Magnitude,
+    _chunkDetails :: !Doc.Doc
   }
 
 -- | Specialized task monad for diff operations.

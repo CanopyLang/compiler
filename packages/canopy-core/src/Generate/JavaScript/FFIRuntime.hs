@@ -54,7 +54,7 @@ module Generate.JavaScript.FFIRuntime
   ) where
 
 import Data.ByteString.Builder (Builder)
-import qualified Data.ByteString.Builder as B
+import qualified Data.ByteString.Builder as BB
 import qualified Generate.Mode as Mode
 import Text.RawString.QQ (r)
 
@@ -73,7 +73,7 @@ embeddedRuntime =
 
 -- | Runtime header comment
 runtimeHeader :: Builder
-runtimeHeader = B.stringUtf8 [r|
+runtimeHeader = BB.stringUtf8 [r|
 
 // ============================================================
 // Canopy FFI Runtime (embedded - no npm install required)
@@ -83,7 +83,7 @@ runtimeHeader = B.stringUtf8 [r|
 
 -- | Runtime footer
 runtimeFooter :: Builder
-runtimeFooter = B.stringUtf8 [r|
+runtimeFooter = BB.stringUtf8 [r|
 
 // ============================================================
 // End Canopy FFI Runtime
@@ -113,7 +113,7 @@ embeddedRuntimeForMode mode =
 -- Type-safe constructors for Canopy algebraic data types.
 -- Eliminates manual construction of @{$:'Ok',a:v}@ objects.
 embeddedMarshal :: Builder
-embeddedMarshal = B.stringUtf8 [r|
+embeddedMarshal = BB.stringUtf8 [r|
 // $canopy - Type marshalling helpers
 var $canopy = {
   // Result constructors
@@ -206,7 +206,7 @@ var $canopy = {
 -- Runtime type checking at FFI boundaries.
 -- Used when --ffi-strict is enabled.
 embeddedValidate :: Builder
-embeddedValidate = B.stringUtf8 [r|
+embeddedValidate = BB.stringUtf8 [r|
 // $validate - Runtime type validators
 var $validate = {
   // Primitive validators
@@ -352,7 +352,7 @@ var $validate = {
 --
 -- Detects JavaScript type coercion issues like "5" + 3 = "53".
 embeddedSmart :: Builder
-embeddedSmart = B.stringUtf8 [r|
+embeddedSmart = BB.stringUtf8 [r|
 // $smart - Smart validation with coercion detection
 var $smart = {
   // Validation level: 'disabled', 'permissive', 'strict', 'smart', 'paranoid'
@@ -464,7 +464,7 @@ var $smart = {
 --
 -- Detects runtime environment and checks for browser capabilities.
 embeddedEnvironment :: Builder
-embeddedEnvironment = B.stringUtf8 [r|
+embeddedEnvironment = BB.stringUtf8 [r|
 // $env - Environment and capability detection
 var $env = {
   // Runtime detection

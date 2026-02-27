@@ -25,12 +25,12 @@ import qualified AST.Canonical as Can
 import qualified AST.Optimized as Opt
 import Control.Lens (makeLenses)
 import qualified Data.Binary as Binary
-import qualified Canopy.Kernel as K
+import qualified Canopy.Kernel as Kernel
 import qualified Canopy.ModuleName as ModuleName
 import qualified Canopy.Package as Pkg
 import Data.ByteString (ByteString)
 import Data.ByteString.Builder (Builder)
-import qualified Data.ByteString.Builder as B
+import qualified Data.ByteString.Builder as BB
 import qualified Data.ByteString.Lazy as BL
 import Data.Word (Word8)
 import qualified Data.Index as Index
@@ -53,11 +53,11 @@ import qualified Generate.JavaScript.Name as JsName
 import qualified Generate.JavaScript.SourceMap as SourceMap
 import qualified Generate.JavaScript.StringPool as StringPool
 import qualified Generate.Mode as Mode
-import qualified Reporting.Annotation as A
-import qualified Reporting.Doc as D
+import qualified Reporting.Annotation as Ann
+import qualified Reporting.Doc as Doc
 import qualified Reporting.InternalError as InternalError
 import qualified Reporting.Render.Type as RT
-import qualified Reporting.Render.Type.Localizer as L
+import qualified Reporting.Render.Type.Localizer as Localizer
 import Prelude hiding (cycle, print)
 
 -- GENERATE
@@ -152,14 +152,14 @@ generateFFIValidators ffiInfos =
     generateValidatorForFunction (_funcName, typeStr) =
       case Validator.parseReturnType (Text.pack typeStr) of
         Just returnType ->
-          [B.stringUtf8 (Text.unpack (Validator.generateAllValidators Validator.defaultConfig returnType))]
+          [BB.stringUtf8 (Text.unpack (Validator.generateAllValidators Validator.defaultConfig returnType))]
         Nothing -> []
 
 -- | Format FFI file content for inclusion using FFIInfo.
 formatFFIFileFromInfo :: String -> FFIInfo -> [Builder] -> [Builder]
 formatFFIFileFromInfo _key info acc =
-  ("\n// From " <> B.stringUtf8 (_ffiFilePath info) <> "\n")
-    : B.stringUtf8 (Text.unpack (_ffiContent info))
+  ("\n// From " <> BB.stringUtf8 (_ffiFilePath info) <> "\n")
+    : BB.stringUtf8 (Text.unpack (_ffiContent info))
     : "\n"
     : acc
 
@@ -172,8 +172,8 @@ generateFFIBindingsFromInfo mode graph _key info acc =
   in case extractFFIFunctionBindings mode graph path content alias of
     [] -> acc
     bindings ->
-      ("\n// Bindings for " <> B.stringUtf8 path <> "\n")
-        : ("var " <> B.stringUtf8 alias <> " = " <> B.stringUtf8 alias <> " || {};\n")
+      ("\n// Bindings for " <> BB.stringUtf8 path <> "\n")
+        : ("var " <> BB.stringUtf8 alias <> " = " <> BB.stringUtf8 alias <> " || {};\n")
         : map (<> "\n") bindings ++ ["\n"] ++ acc
 
 -- | Extract and generate bindings for FFI functions from JavaScript content.
@@ -241,10 +241,10 @@ generateFunctionBinding mode _graph _filePath alias (funcName, canopyType) =
 -- | Generate simple binding without validation, producing Builders directly.
 generateSimpleBinding :: String -> String -> String -> Int -> [Builder]
 generateSimpleBinding jsVarName alias funcName arity =
-  let jsVarB = B.stringUtf8 jsVarName
-      aliasB = B.stringUtf8 alias
-      funcNameB = B.stringUtf8 funcName
-      wrapper = if arity <= 1 then mempty else "F" <> B.intDec arity <> "("
+  let jsVarB = BB.stringUtf8 jsVarName
+      aliasB = BB.stringUtf8 alias
+      funcNameB = BB.stringUtf8 funcName
+      wrapper = if arity <= 1 then mempty else "F" <> BB.intDec arity <> "("
       closing = if arity <= 1 then mempty else ")"
       namespaceBinding = aliasB <> "." <> funcNameB <> " = " <> wrapper <> funcNameB <> closing <> ";"
   in ["var " <> jsVarB <> " = " <> wrapper <> funcNameB <> closing <> ";", namespaceBinding]
@@ -252,18 +252,18 @@ generateSimpleBinding jsVarName alias funcName arity =
 -- | Generate binding with runtime validation wrapper, producing Builders directly.
 generateValidatedBinding :: String -> String -> String -> Int -> String -> String -> [Builder]
 generateValidatedBinding jsVarName alias funcName arity canopyType callPath =
-  let jsVarB = B.stringUtf8 jsVarName
-      aliasB = B.stringUtf8 alias
-      funcNameB = B.stringUtf8 funcName
-      callPathB = B.stringUtf8 callPath
-      args = if arity <= 0 then [] else map (\i -> "_" <> B.intDec i) [0 .. arity - 1]
+  let jsVarB = BB.stringUtf8 jsVarName
+      aliasB = BB.stringUtf8 alias
+      funcNameB = BB.stringUtf8 funcName
+      callPathB = BB.stringUtf8 callPath
+      args = if arity <= 0 then [] else map (\i -> "_" <> BB.intDec i) [0 .. arity - 1]
       argList = mconcat (List.intersperse ", " args)
       returnType = extractReturnType canopyType
       validatorExpr = typeToValidator returnType
       wrappedCall = funcNameB <> "(" <> argList <> ")"
       validatedCall = validatorExpr <> "(" <> wrappedCall <> ", " <> callPathB <> ")"
       funcBody = "function(" <> argList <> ") { return " <> validatedCall <> "; }"
-      wrapper = if arity <= 1 then mempty else "F" <> B.intDec arity <> "("
+      wrapper = if arity <= 1 then mempty else "F" <> BB.intDec arity <> "("
       closing = if arity <= 1 then mempty else ")"
       binding = "var " <> jsVarB <> " = " <> wrapper <> funcBody <> closing <> ";"
       namespaceBinding = aliasB <> "." <> funcNameB <> " = " <> jsVarB <> ";"
@@ -314,7 +314,7 @@ ffiTypeToValidator ffiType = case ffiType of
   Validator.FFITuple types ->
     "$validate.Tuple(" <> mconcat (List.intersperse ", " (map ffiTypeToValidator types)) <> ")"
   Validator.FFIOpaque name ->
-    "$validate.Opaque('" <> B.stringUtf8 (Text.unpack name) <> "')"
+    "$validate.Opaque('" <> BB.stringUtf8 (Text.unpack name) <> "')"
   Validator.FFIFunctionType _ _ ->
     "$validate.Function"
   Validator.FFIRecord _ ->
@@ -415,14 +415,14 @@ perfNote mode =
       -- Use explicit semicolon annotation to ensure semicolon is added
       let optimizeUrl = if elmCompatible
                         then "https://elm-lang.org/0.19.1/optimize"
-                        else D.makeNakedLink "optimize"
+                        else Doc.makeNakedLink "optimize"
       in JS.stmtToBuilder $
            JS.ExprStmtWithSemi $
              JS.Call
                (JS.Access (JS.Ref (JsName.fromLocal "console")) (JsName.fromLocal "warn"))
                [ JS.String $
                    "Compiled in DEV mode. Follow the advice at "
-                     <> B.stringUtf8 optimizeUrl
+                     <> BB.stringUtf8 optimizeUrl
                      <> " for better performance and smaller assets."
                ]
     Mode.Dev (Just _) elmCompatible _ _ ->
@@ -430,14 +430,14 @@ perfNote mode =
       -- Use explicit semicolon annotation to ensure semicolon is added
       let optimizeUrl = if elmCompatible
                         then "https://elm-lang.org/0.19.1/optimize"
-                        else D.makeNakedLink "optimize"
+                        else Doc.makeNakedLink "optimize"
       in JS.stmtToBuilder $
            JS.ExprStmtWithSemi $
              JS.Call
                (JS.Access (JS.Ref (JsName.fromLocal "console")) (JsName.fromLocal "warn"))
                [ JS.String $
                    "Compiled in DEBUG mode. Follow the advice at "
-                     <> B.stringUtf8 optimizeUrl
+                     <> BB.stringUtf8 optimizeUrl
                      <> " for better performance and smaller assets."
                ]
 
@@ -445,7 +445,7 @@ perfNote mode =
 -- These can be re-added when actually needed for Elm compatibility.
 
 -- GENERATE FOR REPL
-generateForRepl :: Bool -> L.Localizer -> Opt.GlobalGraph -> ModuleName.Canonical -> Name.Name -> Can.Annotation -> Builder
+generateForRepl :: Bool -> Localizer.Localizer -> Opt.GlobalGraph -> ModuleName.Canonical -> Name.Name -> Can.Annotation -> Builder
 generateForRepl ansi localizer (Opt.GlobalGraph graph _ _) home name (Can.Forall _ tipe) =
   let mode = Mode.Dev Nothing True False Set.empty  -- Default to elm-compatible for REPL, no FFI strict, no FFI aliases
       debugState = addGlobal mode graph (emptyState Map.empty) (Opt.Global ModuleName.debug "toString")
@@ -476,7 +476,7 @@ generateForRepl ansi localizer (Opt.GlobalGraph graph _ _) home name (Can.Forall
         <> stateToBuilder evalState
         <> print ansi localizer home name tipe
 
-print :: Bool -> L.Localizer -> ModuleName.Canonical -> Name.Name -> Can.Type -> Builder
+print :: Bool -> Localizer.Localizer -> ModuleName.Canonical -> Name.Name -> Can.Type -> Builder
 print ansi localizer home name tipe =
   let value = JS.Ref (JsName.fromGlobal home name)
       toString = JS.Ref (JsName.fromKernel Name.debug "toAnsiString")
@@ -489,7 +489,7 @@ print ansi localizer home name tipe =
 
       -- var _type = "type string";
       typeVar = JS.Var (JsName.fromLocal "_type") $
-        JS.String $ B.stringUtf8 (show (D.toString tipeDoc))
+        JS.String $ BB.stringUtf8 (show (Doc.toString tipeDoc))
 
       -- function _print(t) { console.log(_value + (ansi ? '\x1b[90m' + t + '\x1b[0m' : t)); }
       printFunc = JS.FunctionStmt (JsName.fromLocal "_print") [JsName.fromLocal "t"] [
@@ -546,7 +546,7 @@ print ansi localizer home name tipe =
 
 -- GENERATE FOR REPL ENDPOINT
 
-generateForReplEndpoint :: L.Localizer -> Opt.GlobalGraph -> ModuleName.Canonical -> Maybe Name.Name -> Can.Annotation -> Builder
+generateForReplEndpoint :: Localizer.Localizer -> Opt.GlobalGraph -> ModuleName.Canonical -> Maybe Name.Name -> Can.Annotation -> Builder
 generateForReplEndpoint localizer (Opt.GlobalGraph graph _ _) home maybeName (Can.Forall _ tipe) =
   let name = Data.Maybe.fromMaybe Name.replValueToPrint maybeName
       mode = Mode.Dev Nothing True False Set.empty  -- Default to elm-compatible for REPL, no FFI strict, no FFI aliases
@@ -556,7 +556,7 @@ generateForReplEndpoint localizer (Opt.GlobalGraph graph _ _) home maybeName (Ca
         <> stateToBuilder evalState
         <> postMessage localizer home maybeName tipe
 
-postMessage :: L.Localizer -> ModuleName.Canonical -> Maybe Name.Name -> Can.Type -> Builder
+postMessage :: Localizer.Localizer -> ModuleName.Canonical -> Maybe Name.Name -> Can.Type -> Builder
 postMessage localizer home maybeName tipe =
   let name = Data.Maybe.fromMaybe Name.replValueToPrint maybeName
       value = JS.Ref (JsName.fromGlobal home name)
@@ -570,7 +570,7 @@ postMessage localizer home maybeName tipe =
       messageObj = JS.Object
         [ (JsName.fromLocal "name", nameField),
           (JsName.fromLocal "value", JS.Call toString [JS.Bool True, value]),
-          (JsName.fromLocal "type", JS.String $ B.stringUtf8 (show (D.toString tipeDoc)))
+          (JsName.fromLocal "type", JS.String $ BB.stringUtf8 (show (Doc.toString tipeDoc)))
         ]
 
       postMessageCall = JS.ExprStmt $
@@ -589,10 +589,10 @@ data State = State
     _seenKernelChunks :: Set ByteString,
     _outputLine :: !Int,
     _sourceMapMappings :: ![SourceMap.Mapping],
-    _sourceLocations :: Map Opt.Global A.Region
+    _sourceLocations :: Map Opt.Global Ann.Region
   }
 
-emptyState :: Map Opt.Global A.Region -> State
+emptyState :: Map Opt.Global Ann.Region -> State
 emptyState locs =
   State mempty [] Set.empty Set.empty 0 [] locs
 
@@ -723,7 +723,7 @@ continueAddGlobal mode graph currentGlobal state =
         Opt.Kernel chunks deps ->
           let State revKernels revBuilders seen seenChunks outLine smMappings srcLocs = addDeps deps state
               kernelCode = generateKernel mode chunks
-              kernelBytes = BL.toStrict (B.toLazyByteString kernelCode)
+              kernelBytes = BL.toStrict (BB.toLazyByteString kernelCode)
           in if Set.member kernelBytes seenChunks
              then State revKernels revBuilders (Set.insert currentGlobal seen) seenChunks outLine smMappings srcLocs
              else State (kernelCode : revKernels) revBuilders (Set.insert currentGlobal seen) (Set.insert kernelBytes seenChunks) (outLine + countNewlines kernelCode) smMappings srcLocs
@@ -759,7 +759,7 @@ addBuilder (State revKernels revBuilders seen seenChunks outLine smMappings srcL
 -- | Count newline bytes in a Builder.
 countNewlines :: Builder -> Int
 countNewlines b =
-  BL.foldl' countNL 0 (B.toLazyByteString b)
+  BL.foldl' countNL 0 (BB.toLazyByteString b)
   where
     countNL :: Int -> Word8 -> Int
     countNL !acc 0x0A = acc + 1
@@ -773,8 +773,8 @@ emitMapping global state =
     Just region -> emitMappingForRegion region state
 
 -- | Build a mapping from a source region.
-emitMappingForRegion :: A.Region -> State -> State
-emitMappingForRegion (A.Region (A.Position srcLine srcCol) _) state =
+emitMappingForRegion :: Ann.Region -> State -> State
+emitMappingForRegion (Ann.Region (Ann.Position srcLine srcCol) _) state =
   let mapping = SourceMap.Mapping
         { SourceMap._mGenLine = _outputLine state
         , SourceMap._mGenCol = 0
@@ -819,7 +819,7 @@ generateCycle mode (Opt.Global home _) names values functions =
                 ( "Some top-level definitions from `" <> Name.toBuilder (ModuleName._module home) <> "` are causing infinite recursion:\\n"
                     <> drawCycle names
                     <> "\\n\\nThese errors are very tricky, so read "
-                    <> B.stringUtf8 (D.makeNakedLink "bad-recursion")
+                    <> BB.stringUtf8 (Doc.makeNakedLink "bad-recursion")
                     <> " to learn how to fix it!"
                 )]
       allStmts = functionStmts ++ safeStmts ++ realStmts
@@ -859,25 +859,25 @@ drawCycle names =
 
 -- GENERATE KERNEL
 
-generateKernel :: Mode.Mode -> [K.Chunk] -> Builder
+generateKernel :: Mode.Mode -> [Kernel.Chunk] -> Builder
 generateKernel mode = List.foldr (addChunk mode) mempty
 
-addChunk :: Mode.Mode -> K.Chunk -> Builder -> Builder
+addChunk :: Mode.Mode -> Kernel.Chunk -> Builder -> Builder
 addChunk mode chunk builder =
   case chunk of
-    K.JS javascript ->
-      B.byteString javascript <> builder
-    K.CanopyVar home name ->
+    Kernel.JS javascript ->
+      BB.byteString javascript <> builder
+    Kernel.CanopyVar home name ->
       JsName.toBuilder (JsName.fromGlobal home name) <> builder
-    K.JsVar home name ->
+    Kernel.JsVar home name ->
       JsName.toBuilder (JsName.fromKernel home name) <> builder
-    K.CanopyField name ->
+    Kernel.CanopyField name ->
       JsName.toBuilder (Expr.generateField mode name) <> builder
-    K.JsField int ->
+    Kernel.JsField int ->
       JsName.toBuilder (JsName.fromInt int) <> builder
-    K.JsEnum int ->
-      B.intDec int <> builder
-    K.Debug ->
+    Kernel.JsEnum int ->
+      BB.intDec int <> builder
+    Kernel.Debug ->
       case mode of
         Mode.Dev _ elmCompatible _ _ ->
           if elmCompatible
@@ -885,7 +885,7 @@ addChunk mode chunk builder =
             else builder               -- Canopy dev: use debug functions
         Mode.Prod {} ->
           "_UNUSED" <> builder
-    K.Prod ->
+    Kernel.Prod ->
       case mode of
         Mode.Dev _ elmCompatible _ _ ->
           if elmCompatible

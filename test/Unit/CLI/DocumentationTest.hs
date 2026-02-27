@@ -10,7 +10,7 @@ import CLI.Documentation (createIntroduction, createOutro, reflowText, stackDocu
 import qualified Data.List as List
 import Test.Tasty (TestTree, testGroup)
 import Test.Tasty.HUnit (testCase, (@?=))
-import qualified Text.PrettyPrint.ANSI.Leijen as P
+import qualified Text.PrettyPrint.ANSI.Leijen as PP
 
 -- | All unit tests for CLI documentation functionality.
 tests :: TestTree
@@ -31,20 +31,20 @@ testReflowText =
     [ testCase "reflows simple text correctly" $ do
         let input = "This is a simple test"
             result = show (reflowText input)
-            expected = show (P.fillSep [P.text "This", P.text "is", P.text "a", P.text "simple", P.text "test"])
+            expected = show (PP.fillSep [PP.text "This", PP.text "is", PP.text "a", PP.text "simple", PP.text "test"])
         result @?= expected,
       testCase "handles empty string" $ do
         let result = show (reflowText "")
-            expected = show (P.fillSep [])
+            expected = show (PP.fillSep [])
         result @?= expected,
       testCase "handles single word" $ do
         let result = show (reflowText "word")
-            expected = show (P.fillSep [P.text "word"])
+            expected = show (PP.fillSep [PP.text "word"])
         result @?= expected,
       testCase "handles multiple spaces correctly" $ do
         let input = "word1    word2     word3"
             result = show (reflowText input)
-            expected = show (P.fillSep [P.text "word1", P.text "word2", P.text "word3"])
+            expected = show (PP.fillSep [PP.text "word1", PP.text "word2", PP.text "word3"])
         result @?= expected
     ]
 
@@ -55,22 +55,22 @@ testStackDocuments =
     "stackDocuments function"
     [ testCase "stacks empty list correctly" $ do
         let result = show (stackDocuments [])
-            expected = show (P.vcat [])
+            expected = show (PP.vcat [])
         result @?= expected,
       testCase "stacks single document" $ do
-        let docs = [P.text "single"]
+        let docs = [PP.text "single"]
             result = show (stackDocuments docs)
-            expected = show (P.vcat [P.text "single"])
+            expected = show (PP.vcat [PP.text "single"])
         result @?= expected,
       testCase "stacks multiple documents with spacing" $ do
-        let docs = [P.text "first", P.text "second"]
+        let docs = [PP.text "first", PP.text "second"]
             result = show (stackDocuments docs)
-            expected = show (P.vcat [P.text "first", "", P.text "second"])
+            expected = show (PP.vcat [PP.text "first", "", PP.text "second"])
         result @?= expected,
       testCase "stacks three documents correctly" $ do
-        let docs = [P.text "one", P.text "two", P.text "three"]
+        let docs = [PP.text "one", PP.text "two", PP.text "three"]
             result = show (stackDocuments docs)
-            expected = show (P.vcat [P.text "one", "", P.text "two", "", P.text "three"])
+            expected = show (PP.vcat [PP.text "one", "", PP.text "two", "", PP.text "three"])
         result @?= expected
     ]
 

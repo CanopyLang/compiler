@@ -5,9 +5,9 @@ import qualified Data.ByteString.Char8 as C8
 import qualified Data.ByteString.Lazy.Char8 as BL8
 import qualified Data.List as List
 import qualified Parse.Expression as Expr
-import qualified Parse.Primitives as P
-import qualified Reporting.Annotation as A
-import qualified Reporting.Error.Syntax as E
+import qualified Parse.Primitives as Parse
+import qualified Reporting.Annotation as Ann
+import qualified Reporting.Error.Syntax as SyntaxError
 import Test.Tasty
 import Test.Tasty.Golden
 
@@ -23,12 +23,12 @@ goldenExpr :: String -> String -> FilePath -> TestTree
 goldenExpr name src path =
   goldenVsString name path $ do
     let bs = C8.pack src
-    case P.fromByteString Expr.expression E.Start bs of
+    case Parse.fromByteString Expr.expression SyntaxError.Start bs of
       Left err -> pure (BL8.pack ("Parse error: " <> (show err <> "\n")))
       Right (expr, _) -> pure (BL8.pack (exprSummary expr <> "\n"))
 
 exprSummary :: Src.Expr -> String
-exprSummary (A.At _ e) = go e
+exprSummary (Ann.At _ e) = go e
   where
     go v = case v of
       Src.Lambda ps _ -> "Lambda/args=" <> show (length ps)

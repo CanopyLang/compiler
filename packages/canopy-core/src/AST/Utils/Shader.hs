@@ -117,7 +117,7 @@ where
 
 import Data.Binary (Binary, get, put)
 import qualified Data.ByteString as BS
-import qualified Data.ByteString.Builder as B
+import qualified Data.ByteString.Builder as BB
 import qualified Data.ByteString.UTF8 as BS_UTF8
 import qualified Data.Map as Map
 import qualified Data.Name as Name
@@ -219,9 +219,9 @@ data Type
 -- -- Result: Builder containing the shader source as bytes
 --
 -- @since 0.19.1
-toJsStringBuilder :: Source -> B.Builder
+toJsStringBuilder :: Source -> BB.Builder
 toJsStringBuilder (Source src) =
-  B.byteString src
+  BB.byteString src
 
 -- FROM CHARS
 

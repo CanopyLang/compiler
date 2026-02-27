@@ -5,14 +5,14 @@ module Reporting.Report
   )
 where
 
-import qualified Reporting.Annotation as A
-import qualified Reporting.Doc as D
+import qualified Reporting.Annotation as Ann
+import qualified Reporting.Doc as Doc
 
 -- BUILD REPORTS
 
 data Report = Report
   { _title :: String,
-    _region :: A.Region,
+    _region :: Ann.Region,
     _sgstns :: [String],
-    _message :: D.Doc
+    _message :: Doc.Doc
   }

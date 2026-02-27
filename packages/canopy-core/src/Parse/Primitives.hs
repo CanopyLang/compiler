@@ -33,13 +33,13 @@ module Parse.Primitives
 where
 
 import qualified Control.Applicative as Applicative (Applicative (..))
-import qualified Data.ByteString.Internal as B
+import qualified Data.ByteString.Internal as BSI
 import Data.Word (Word16, Word8)
 import Foreign.ForeignPtr (ForeignPtr, touchForeignPtr)
 import Foreign.ForeignPtr.Unsafe (unsafeForeignPtrToPtr)
 import Foreign.Ptr (Ptr, plusPtr)
 import Foreign.Storable (peek)
-import qualified Reporting.Annotation as A
+import qualified Reporting.Annotation as Ann
 import qualified Reporting.InternalError as InternalError
 import Prelude hiding (length)
 
@@ -173,9 +173,9 @@ instance Monad (Parser x) where
 
 -- FROM BYTESTRING
 
-fromByteString :: Parser x a -> (Row -> Col -> x) -> B.ByteString -> Either x a
-fromByteString (Parser parser) toBadEnd (B.PS fptr offset length) =
-  B.accursedUnutterablePerformIO $
+fromByteString :: Parser x a -> (Row -> Col -> x) -> BSI.ByteString -> Either x a
+fromByteString (Parser parser) toBadEnd (BSI.PS fptr offset length) =
+  BSI.accursedUnutterablePerformIO $
     let toOk' = toOk toBadEnd
         !pos = plusPtr (unsafeForeignPtrToPtr fptr) offset
         !end = plusPtr pos length
@@ -207,7 +207,7 @@ data Snippet = Snippet
 
 fromSnippet :: Parser x a -> (Row -> Col -> x) -> Snippet -> Either x a
 fromSnippet (Parser parser) toBadEnd (Snippet fptr offset length row col) =
-  B.accursedUnutterablePerformIO $
+  BSI.accursedUnutterablePerformIO $
     let toOk' = toOk toBadEnd
         !pos = plusPtr (unsafeForeignPtrToPtr fptr) offset
         !end = plusPtr pos length
@@ -224,22 +224,22 @@ getCol =
     eok col state
 
 {-# INLINE getPosition #-}
-getPosition :: Parser x A.Position
+getPosition :: Parser x Ann.Position
 getPosition =
   Parser $ \state@(State _ _ _ _ row col) _ eok _ _ ->
-    eok (A.Position row col) state
+    eok (Ann.Position row col) state
 
-addLocation :: Parser x a -> Parser x (A.Located a)
+addLocation :: Parser x a -> Parser x (Ann.Located a)
 addLocation (Parser parser) =
   Parser $ \state@(State _ _ _ _ sr sc) cok eok cerr eerr ->
-    let cok' a s@(State _ _ _ _ er ec) = cok (A.At (A.Region (A.Position sr sc) (A.Position er ec)) a) s
-        eok' a s@(State _ _ _ _ er ec) = eok (A.At (A.Region (A.Position sr sc) (A.Position er ec)) a) s
+    let cok' a s@(State _ _ _ _ er ec) = cok (Ann.At (Ann.Region (Ann.Position sr sc) (Ann.Position er ec)) a) s
+        eok' a s@(State _ _ _ _ er ec) = eok (Ann.At (Ann.Region (Ann.Position sr sc) (Ann.Position er ec)) a) s
      in parser state cok' eok' cerr eerr
 
-addEnd :: A.Position -> a -> Parser x (A.Located a)
+addEnd :: Ann.Position -> a -> Parser x (Ann.Located a)
 addEnd start value =
   Parser $ \state@(State _ _ _ _ row col) _ eok _ _ ->
-    eok (A.at start (A.Position row col) value) state
+    eok (Ann.at start (Ann.Position row col) value) state
 
 -- INDENT
 
@@ -312,7 +312,7 @@ word2 w1 w2 toError =
 
 unsafeIndex :: Ptr Word8 -> Word8
 unsafeIndex ptr =
-  B.accursedUnutterablePerformIO (peek ptr)
+  BSI.accursedUnutterablePerformIO (peek ptr)
 
 {-# INLINE isWord #-}
 isWord :: Ptr Word8 -> Ptr Word8 -> Word8 -> Bool

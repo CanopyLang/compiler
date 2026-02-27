@@ -8,7 +8,7 @@
 -- @since 0.19.2
 module Property.Generate.SourceMapProperties (tests) where
 
-import qualified Data.ByteString.Builder as B
+import qualified Data.ByteString.Builder as BB
 import qualified Data.ByteString.Lazy.Char8 as LChar8
 import qualified Data.List as List
 import qualified Generate.JavaScript.SourceMap as SourceMap
@@ -24,8 +24,8 @@ tests =
     ]
 
 -- | Helper to render a Builder to a String for assertions.
-renderBuilder :: B.Builder -> String
-renderBuilder = LChar8.unpack . B.toLazyByteString
+renderBuilder :: BB.Builder -> String
+renderBuilder = LChar8.unpack . BB.toLazyByteString
 
 -- VLQ PROPERTIES
 

@@ -38,7 +38,7 @@ module Data.Utf8.Builder
 where
 
 import Control.Monad (when)
-import qualified Data.ByteString.Builder.Internal as B
+import qualified Data.ByteString.Builder.Internal as BBI
 import Data.Utf8.Core (Utf8 (..))
 import Foreign.Ptr (minusPtr, plusPtr)
 import GHC.Exts
@@ -53,53 +53,53 @@ import GHC.Word (Word8 (W8#))
 -- TO BUILDER
 
 {-# INLINE toBuilder #-}
-toBuilder :: Utf8 t -> B.Builder
-toBuilder bytes = B.builder (toBuilderHelp bytes)
+toBuilder :: Utf8 t -> BBI.Builder
+toBuilder bytes = BBI.builder (toBuilderHelp bytes)
 
 {-# INLINE toBuilderHelp #-}
-toBuilderHelp :: Utf8 t -> B.BuildStep a -> B.BuildStep a
+toBuilderHelp :: Utf8 t -> BBI.BuildStep a -> BBI.BuildStep a
 toBuilderHelp bytes@(Utf8 ba#) k =
   go 0 (I# (sizeofByteArray# ba#))
   where
-    go !offset !end (B.BufferRange bOffset bEnd) =
+    go !offset !end (BBI.BufferRange bOffset bEnd) =
       let !bLen = minusPtr bEnd bOffset
           !len = end - offset
        in if len <= bLen
             then do
               copyToPtr bytes offset bOffset len
-              let !br' = B.BufferRange (plusPtr bOffset len) bEnd
+              let !br' = BBI.BufferRange (plusPtr bOffset len) bEnd
               k br'
             else do
               copyToPtr bytes offset bOffset bLen
               let !offset' = offset + bLen
-              return $ B.bufferFull 1 bEnd (go offset' end)
+              return $ BBI.bufferFull 1 bEnd (go offset' end)
 
 -- TO ESCAPED BUILDER
 
 {-# INLINE toEscapedBuilder #-}
-toEscapedBuilder :: Word8 -> Word8 -> Utf8 t -> B.Builder
-toEscapedBuilder before after name = B.builder (toEscapedBuilderHelp before after name)
+toEscapedBuilder :: Word8 -> Word8 -> Utf8 t -> BBI.Builder
+toEscapedBuilder before after name = BBI.builder (toEscapedBuilderHelp before after name)
 
 {-# INLINE toEscapedBuilderHelp #-}
-toEscapedBuilderHelp :: Word8 -> Word8 -> Utf8 t -> B.BuildStep a -> B.BuildStep a
+toEscapedBuilderHelp :: Word8 -> Word8 -> Utf8 t -> BBI.BuildStep a -> BBI.BuildStep a
 toEscapedBuilderHelp before after name@(Utf8 ba#) k =
   go 0 (I# (sizeofByteArray# ba#))
   where
-    go !offset !len (B.BufferRange bOffset bEnd) =
+    go !offset !len (BBI.BufferRange bOffset bEnd) =
       let !bLen = minusPtr bEnd bOffset
        in if len <= bLen
             then do
               -- PERF test if writing word-by-word is faster
               copyToPtr name offset bOffset len
               escape before after bOffset name offset len 0
-              let !newBufferRange = B.BufferRange (plusPtr bOffset len) bEnd
+              let !newBufferRange = BBI.BufferRange (plusPtr bOffset len) bEnd
               k newBufferRange
             else do
               copyToPtr name offset bOffset bLen
               escape before after bOffset name offset bLen 0
               let !newOffset = offset + bLen
               let !newLength = len - bLen
-              return $ B.bufferFull 1 bEnd (go newOffset newLength)
+              return $ BBI.bufferFull 1 bEnd (go newOffset newLength)
 
 escape :: Word8 -> Word8 -> Ptr a -> Utf8 t -> Int -> Int -> Int -> IO ()
 escape before@(W8# before#) after ptr name@(Utf8 ba#) offset@(I# offset#) len@(I# len#) i@(I# i#) =

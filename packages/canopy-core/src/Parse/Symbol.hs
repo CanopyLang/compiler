@@ -15,7 +15,7 @@ import qualified Data.Vector as Vector
 import Foreign.Ptr (Ptr, minusPtr, plusPtr)
 import GHC.Word (Word8)
 import Parse.Primitives (Col, Parser, Row)
-import qualified Parse.Primitives as P
+import qualified Parse.Primitives as Parse
 
 -- OPERATOR
 
@@ -29,7 +29,7 @@ data BadOperator
 
 operator :: (Row -> Col -> x) -> (BadOperator -> Row -> Col -> x) -> Parser x Name.Name
 operator toExpectation toError =
-  P.Parser $ \(P.State src pos end indent row col) cok _ cerr eerr ->
+  Parse.Parser $ \(Parse.State src pos end indent row col) cok _ cerr eerr ->
     let !newPos = chompOps pos end
      in if pos == newPos
           then eerr row col toExpectation
@@ -41,12 +41,12 @@ operator toExpectation toError =
             ":" -> cerr row col (toError BadHasType)
             op ->
               let !newCol = col + fromIntegral (minusPtr newPos pos)
-                  !newState = P.State src newPos end indent row newCol
+                  !newState = Parse.State src newPos end indent row newCol
                in cok op newState
 
 chompOps :: Ptr Word8 -> Ptr Word8 -> Ptr Word8
 chompOps pos end =
-  if pos < end && isBinopCharHelp (P.unsafeIndex pos)
+  if pos < end && isBinopCharHelp (Parse.unsafeIndex pos)
     then chompOps (plusPtr pos 1) end
     else pos
 

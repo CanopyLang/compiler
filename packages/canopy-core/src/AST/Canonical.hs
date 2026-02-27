@@ -182,12 +182,12 @@ import Data.Map (Map)
 import qualified Data.Map as Map
 import Data.Name (Name)
 import Data.Set (Set)
-import qualified Reporting.Annotation as A
+import qualified Reporting.Annotation as Ann
 
 -- EXPRESSIONS
 
 type Expr =
-  A.Located Expr_
+  Ann.Located Expr_
 
 -- | Arithmetic operator classification.
 --
@@ -308,7 +308,7 @@ data Expr_
   | LetDestruct Pattern Expr Expr
   | Case Expr [CaseBranch]
   | Accessor Name
-  | Access Expr (A.Located Name)
+  | Access Expr (Ann.Located Name)
   | Update Name Expr (Map Name FieldUpdate)
   | Record (Map Name Expr)
   | Unit
@@ -321,14 +321,14 @@ data CaseBranch
   deriving (Show)
 
 data FieldUpdate
-  = FieldUpdate A.Region Expr
+  = FieldUpdate Ann.Region Expr
   deriving (Show)
 
 -- DEFS
 
 data Def
-  = Def (A.Located Name) [Pattern] Expr
-  | TypedDef (A.Located Name) FreeVars [(Pattern, Type)] Expr Type
+  = Def (Ann.Located Name) [Pattern] Expr
+  | TypedDef (Ann.Located Name) FreeVars [(Pattern, Type)] Expr Type
   deriving (Show)
 
 -- DECLARATIONS
@@ -342,7 +342,7 @@ data Decls
 -- PATTERNS
 
 type Pattern =
-  A.Located Pattern_
+  Ann.Located Pattern_
 
 data Pattern_
   = PAnything
@@ -456,8 +456,8 @@ data Ctor = Ctor Name Index.ZeroBased Int [Type] -- CACHE length args
 -- EXPORTS
 
 data Exports
-  = ExportEverything A.Region
-  | Export (Map Name (A.Located Export))
+  = ExportEverything Ann.Region
+  | Export (Map Name (Ann.Located Export))
 
 -- | Individual export item type.
 --
@@ -496,7 +496,7 @@ data Export
 data Effects
   = NoEffects
   | Ports (Map Name Port)
-  | Manager A.Region A.Region A.Region Manager
+  | Manager Ann.Region Ann.Region Ann.Region Manager
   | FFI
 
 data Port

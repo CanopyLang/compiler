@@ -215,7 +215,7 @@ module Json.Encode
 where
 
 import qualified Control.Arrow as Arrow
-import qualified Data.ByteString.Builder as B
+import qualified Data.ByteString.Builder as BB
 import qualified Data.ByteString.Char8 as BSC
 import Data.Map (Map)
 import qualified Data.Map as Map
@@ -256,7 +256,7 @@ import Prelude hiding (null)
 --
 -- @
 -- -- Simple values
--- textVal = String (B.char7 '\"' <> B.stringUtf8 "hello" <> B.char7 '\"')
+-- textVal = String (BB.char7 '\"' <> BB.stringUtf8 "hello" <> BB.char7 '\"')
 -- numVal = Integer 42
 -- flagVal = Boolean True
 -- emptyVal = Null
@@ -297,7 +297,7 @@ data Value
     --
     -- Stores strings as 'ByteString.Builder' including quotes and escaping
     -- for optimal serialization performance. Avoids string rebuilding during output.
-    String B.Builder
+    String BB.Builder
   | -- | JSON boolean values.
     --
     -- Direct mapping from Haskell 'Bool' to JSON @true@/@false@ literals.
@@ -328,11 +328,11 @@ object =
 
 string :: Json.String -> Value
 string str =
-  String (B.char7 '"' <> Json.toBuilder str <> B.char7 '"')
+  String (BB.char7 '"' <> Json.toBuilder str <> BB.char7 '"')
 
 name :: Name.Name -> Value
 name nm =
-  String (B.char7 '"' <> Name.toBuilder nm <> B.char7 '"')
+  String (BB.char7 '"' <> Name.toBuilder nm <> BB.char7 '"')
 
 bool :: Bool -> Value
 bool =
@@ -362,7 +362,7 @@ list encodeEntry entries =
 
 chars :: String -> Value -- PERF can this be done better? Look for examples.
 chars chrs =
-  String (B.char7 '"' <> B.stringUtf8 (escape chrs) <> B.char7 '"')
+  String (BB.char7 '"' <> BB.stringUtf8 (escape chrs) <> BB.char7 '"')
 
 -- | Escape special characters in a string for JSON encoding.
 --
@@ -626,29 +626,29 @@ writeUgly path value =
 -- * **Encoding Speed**: Faster than pretty encoding (no formatting logic)
 --
 -- @since 0.19.1
-encodeUgly :: Value -> B.Builder
+encodeUgly :: Value -> BB.Builder
 encodeUgly value =
   case value of
     Array [] ->
-      B.string7 "[]"
+      BB.string7 "[]"
     Array (first : rest) ->
       let encodeEntry entry =
-            B.char7 ',' <> encodeUgly entry
-       in B.char7 '[' <> encodeUgly first <> mconcat (fmap encodeEntry rest) <> B.char7 ']'
+            BB.char7 ',' <> encodeUgly entry
+       in BB.char7 '[' <> encodeUgly first <> mconcat (fmap encodeEntry rest) <> BB.char7 ']'
     Object [] ->
-      B.string7 "{}"
+      BB.string7 "{}"
     Object (first : rest) ->
       let encodeEntry char (key, entry) =
-            B.char7 char <> B.char7 '"' <> Utf8.toBuilder key <> B.string7 "\":" <> encodeUgly entry
-       in encodeEntry '{' first <> mconcat (fmap (encodeEntry ',') rest) <> B.char7 '}'
+            BB.char7 char <> BB.char7 '"' <> Utf8.toBuilder key <> BB.string7 "\":" <> encodeUgly entry
+       in encodeEntry '{' first <> mconcat (fmap (encodeEntry ',') rest) <> BB.char7 '}'
     String builder ->
       builder
     Boolean boolean ->
-      B.string7 (if boolean then "true" else "false")
+      BB.string7 (if boolean then "true" else "false")
     Integer n ->
-      B.intDec n
+      BB.intDec n
     Number scientific ->
-      B.string7 (Sci.formatScientific Sci.Generic Nothing scientific)
+      BB.string7 (Sci.formatScientific Sci.Generic Nothing scientific)
     Null ->
       "null"
 
@@ -708,10 +708,10 @@ encodeUgly value =
 -- * **Readability**: Optimized for human consumption
 --
 -- @since 0.19.1
-encode :: Value -> B.Builder
+encode :: Value -> BB.Builder
 encode = encodeHelp ""
 
-encodeHelp :: BSC.ByteString -> Value -> B.Builder
+encodeHelp :: BSC.ByteString -> Value -> BB.Builder
 encodeHelp indent value =
   case value of
     Array values -> encodeArrayValue indent values
@@ -724,8 +724,8 @@ encodeHelp indent value =
 -- with empty array optimization.
 --
 -- @since 0.19.1
-encodeArrayValue :: BSC.ByteString -> [Value] -> B.Builder
-encodeArrayValue _ [] = B.string7 "[]"
+encodeArrayValue :: BSC.ByteString -> [Value] -> BB.Builder
+encodeArrayValue _ [] = BB.string7 "[]"
 encodeArrayValue indent (first : rest) = encodeArray indent first rest
 
 -- | Encode object pairs with proper formatting.
@@ -734,8 +734,8 @@ encodeArrayValue indent (first : rest) = encodeArray indent first rest
 -- with empty object optimization.
 --
 -- @since 0.19.1
-encodeObjectValue :: BSC.ByteString -> [(Json.String, Value)] -> B.Builder
-encodeObjectValue _ [] = B.string7 "{}"
+encodeObjectValue :: BSC.ByteString -> [(Json.String, Value)] -> BB.Builder
+encodeObjectValue _ [] = BB.string7 "{}"
 encodeObjectValue indent (first : rest) = encodeObject indent first rest
 
 -- | Encode simple (non-composite) JSON values.
@@ -744,13 +744,13 @@ encodeObjectValue indent (first : rest) = encodeObject indent first rest
 -- including strings, booleans, numbers, and null.
 --
 -- @since 0.19.1
-encodeSimpleValue :: Value -> B.Builder
+encodeSimpleValue :: Value -> BB.Builder
 encodeSimpleValue value =
   case value of
     String builder -> builder
-    Boolean boolean -> B.string7 (if boolean then "true" else "false")
-    Integer n -> B.intDec n
-    Number scientific -> B.string7 (Sci.formatScientific Sci.Generic Nothing scientific)
+    Boolean boolean -> BB.string7 (if boolean then "true" else "false")
+    Integer n -> BB.intDec n
+    Number scientific -> BB.string7 (Sci.formatScientific Sci.Generic Nothing scientific)
     Null -> "null"
     _ -> InternalError.report
       "Json.Encode.encodeSimpleValue"
@@ -759,40 +759,40 @@ encodeSimpleValue value =
 
 -- ARRAY AND OBJECT ENCODING
 
-encodeArray :: BSC.ByteString -> Value -> [Value] -> B.Builder
+encodeArray :: BSC.ByteString -> Value -> [Value] -> BB.Builder
 encodeArray indent first rest =
   let newIndent = indent <> "    "
-      newIndentBuilder = B.byteString newIndent
-      closer = newline <> B.byteString indent <> arrayClose
+      newIndentBuilder = BB.byteString newIndent
+      closer = newline <> BB.byteString indent <> arrayClose
       addValue field builder = commaNewline <> newIndentBuilder <> encodeHelp newIndent field <> builder
    in arrayOpen <> newIndentBuilder <> encodeHelp newIndent first <> foldr addValue closer rest
 
-encodeObject :: BSC.ByteString -> (Json.String, Value) -> [(Json.String, Value)] -> B.Builder
+encodeObject :: BSC.ByteString -> (Json.String, Value) -> [(Json.String, Value)] -> BB.Builder
 encodeObject indent first rest =
   let newIndent = indent <> "    "
-      newIndentBuilder = B.byteString newIndent
-      closer = newline <> B.byteString indent <> objectClose
+      newIndentBuilder = BB.byteString newIndent
+      closer = newline <> BB.byteString indent <> objectClose
       addValue field builder = commaNewline <> newIndentBuilder <> encodeField newIndent field <> builder
    in objectOpen <> newIndentBuilder <> encodeField newIndent first <> foldr addValue closer rest
 
-arrayOpen :: B.Builder
-arrayOpen = B.string7 "[\n"
+arrayOpen :: BB.Builder
+arrayOpen = BB.string7 "[\n"
 
-arrayClose :: B.Builder
-arrayClose = B.char7 ']'
+arrayClose :: BB.Builder
+arrayClose = BB.char7 ']'
 
-objectOpen :: B.Builder
-objectOpen = B.string7 "{\n"
+objectOpen :: BB.Builder
+objectOpen = BB.string7 "{\n"
 
-objectClose :: B.Builder
-objectClose = B.char7 '}'
+objectClose :: BB.Builder
+objectClose = BB.char7 '}'
 
-encodeField :: BSC.ByteString -> (Json.String, Value) -> B.Builder
+encodeField :: BSC.ByteString -> (Json.String, Value) -> BB.Builder
 encodeField indent (key, value) =
-  B.char7 '"' <> Utf8.toBuilder key <> B.string7 "\": " <> encodeHelp indent value
+  BB.char7 '"' <> Utf8.toBuilder key <> BB.string7 "\": " <> encodeHelp indent value
 
-commaNewline :: B.Builder
-commaNewline = B.string7 ",\n"
+commaNewline :: BB.Builder
+commaNewline = BB.string7 ",\n"
 
-newline :: B.Builder
-newline = B.char7 '\n'
+newline :: BB.Builder
+newline = BB.char7 '\n'

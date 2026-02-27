@@ -10,8 +10,8 @@ import qualified Canopy.ModuleName as ModuleName
 import Control.Monad (forM)
 import qualified Data.Map.Strict as Map
 import qualified Data.Name as Name
-import qualified Reporting.Annotation as A
-import qualified Reporting.Error.Type as E
+import qualified Reporting.Annotation as Ann
+import qualified Reporting.Error.Type as TypeError
 import qualified Type.Constrain.Expression as Expr
 import qualified Type.Instantiate as Instantiate
 import Type.Type (Constraint (..), Type (..), mkFlexVar, nameToRigid, never, (==>))
@@ -51,7 +51,7 @@ constrainDecls decls finalConstraint =
           Can.Def _ _ _ ->
             return Map.empty
         constrainDecls otherDecls finalConstraint >>= \con ->
-          Expr.constrainDef (Map.map VarN rtv) def con (E.NoExpectation (VarN v))
+          Expr.constrainDef (Map.map VarN rtv) def con (TypeError.NoExpectation (VarN v))
     Can.DeclareRec def defs otherDecls ->
       do
         -- Build RTV from all TypedDefs in recursive group
@@ -75,13 +75,13 @@ letPort name port_ makeConstraint =
       do
         vars <- Map.traverseWithKey (\k _ -> nameToRigid k) freeVars
         tipe <- Instantiate.fromSrcType (Map.map VarN vars) srcType
-        let header = Map.singleton name (A.At A.zero tipe)
+        let header = Map.singleton name (Ann.At Ann.zero tipe)
         CLet (Map.elems vars) [] header CTrue <$> makeConstraint <*> pure Nothing
     Can.Outgoing freeVars _ srcType ->
       do
         vars <- Map.traverseWithKey (\k _ -> nameToRigid k) freeVars
         tipe <- Instantiate.fromSrcType (Map.map VarN vars) srcType
-        let header = Map.singleton name (A.At A.zero tipe)
+        let header = Map.singleton name (Ann.At Ann.zero tipe)
         CLet (Map.elems vars) [] header CTrue <$> makeConstraint <*> pure Nothing
 
 -- EFFECT MANAGER HELPERS
@@ -92,7 +92,7 @@ letCmd home tipe constraint =
     msgVar <- mkFlexVar
     let msg = VarN msgVar
     let cmdType = FunN (AppN home tipe [msg]) (AppN ModuleName.cmd Name.cmd [msg])
-    let header = Map.singleton "command" (A.At A.zero cmdType)
+    let header = Map.singleton "command" (Ann.At Ann.zero cmdType)
     return $ CLet [msgVar] [] header CTrue constraint Nothing
 
 letSub :: ModuleName.Canonical -> Name.Name -> Constraint -> IO Constraint
@@ -101,10 +101,10 @@ letSub home tipe constraint =
     msgVar <- mkFlexVar
     let msg = VarN msgVar
     let subType = FunN (AppN home tipe [msg]) (AppN ModuleName.sub Name.sub [msg])
-    let header = Map.singleton "subscription" (A.At A.zero subType)
+    let header = Map.singleton "subscription" (Ann.At Ann.zero subType)
     return $ CLet [msgVar] [] header CTrue constraint Nothing
 
-constrainEffects :: ModuleName.Canonical -> A.Region -> A.Region -> A.Region -> Can.Manager -> IO Constraint
+constrainEffects :: ModuleName.Canonical -> Ann.Region -> Ann.Region -> Ann.Region -> Can.Manager -> IO Constraint
 constrainEffects home r0 r1 r2 manager =
   do
     s0 <- mkFlexVar
@@ -132,12 +132,12 @@ constrainEffects home r0 r1 r2 manager =
 
     let effectCons =
           CAnd
-            [ CLocal r0 "init" (E.NoExpectation (task state0)),
-              CLocal r1 "onEffects" (E.NoExpectation onEffects),
-              CLocal r2 "onSelfMsg" (E.NoExpectation onSelfMsg),
-              CEqual r1 E.Effects state0 (E.NoExpectation state1),
-              CEqual r2 E.Effects state0 (E.NoExpectation state2),
-              CEqual r2 E.Effects self1 (E.NoExpectation self2)
+            [ CLocal r0 "init" (TypeError.NoExpectation (task state0)),
+              CLocal r1 "onEffects" (TypeError.NoExpectation onEffects),
+              CLocal r2 "onSelfMsg" (TypeError.NoExpectation onSelfMsg),
+              CEqual r1 TypeError.Effects state0 (TypeError.NoExpectation state1),
+              CEqual r2 TypeError.Effects state0 (TypeError.NoExpectation state2),
+              CEqual r2 TypeError.Effects self1 (TypeError.NoExpectation self2)
             ]
 
     CLet [] [s0, s1, s2, m1, m2, sm1, sm2] Map.empty effectCons
@@ -168,7 +168,7 @@ checkMap name home tipe constraint =
     a <- mkFlexVar
     b <- mkFlexVar
     let mapType = toMapType home tipe (VarN a) (VarN b)
-    let mapCon = CLocal A.zero name (E.NoExpectation mapType)
+    let mapCon = CLocal Ann.zero name (TypeError.NoExpectation mapType)
     return $ CLet [a, b] [] Map.empty mapCon constraint Nothing
 
 toMapType :: ModuleName.Canonical -> Name.Name -> Type -> Type -> Type

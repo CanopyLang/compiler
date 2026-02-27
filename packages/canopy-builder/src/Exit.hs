@@ -24,7 +24,7 @@ where
 
 import Reporting.Diagnostic (Diagnostic)
 import qualified Reporting.Diagnostic as Diag
-import qualified Reporting.Doc as D
+import qualified Reporting.Doc as Doc
 import qualified Reporting.Error as Error
 
 -- | Build-level errors.
@@ -98,28 +98,28 @@ makeErrorToString = \case
 -- BEAUTIFUL ERROR OUTPUT
 
 -- | Convert error to beautiful colored Doc.
-toDoc :: BuildError -> D.Doc
+toDoc :: BuildError -> Doc.Doc
 toDoc = \case
   BuildCannotCompile compileErr ->
     compileErrorToDoc compileErr
   BuildProjectNotFound path ->
     structuredError "PROJECT NOT FOUND"
-      (D.reflow ("I cannot find a project at: " ++ path))
-      (D.reflow "Make sure you are running this command from a directory with a canopy.json or elm.json file.")
+      (Doc.reflow ("I cannot find a project at: " ++ path))
+      (Doc.reflow "Make sure you are running this command from a directory with a canopy.json or elm.json file.")
   BuildInvalidOutline msg ->
     structuredError "INVALID PROJECT"
-      (D.reflow "There is a problem with your project configuration:")
-      (D.indent 4 (D.dullyellow (D.fromChars msg)))
+      (Doc.reflow "There is a problem with your project configuration:")
+      (Doc.indent 4 (Doc.dullyellow (Doc.fromChars msg)))
   BuildDependencyError msg ->
-    structuredErrorNoFix "DEPENDENCY ERROR" (D.reflow msg)
+    structuredErrorNoFix "DEPENDENCY ERROR" (Doc.reflow msg)
   BuildBadArgs msg ->
-    structuredErrorNoFix "BAD ARGUMENTS" (D.reflow msg)
+    structuredErrorNoFix "BAD ARGUMENTS" (Doc.reflow msg)
 
 -- | Convert compile error to beautiful colored Doc.
 --
 -- 'CompileDiagnosticError' renders using the structured diagnostic
 -- system with error codes, source snippets, and suggestions.
-compileErrorToDoc :: CompileError -> D.Doc
+compileErrorToDoc :: CompileError -> Doc.Doc
 compileErrorToDoc = \case
   CompileParseError path msg ->
     legacyErrorDoc "Parse error" path msg
@@ -131,8 +131,8 @@ compileErrorToDoc = \case
     legacyErrorDoc "Optimization error" path msg
   CompileModuleNotFound path ->
     structuredError "MODULE NOT FOUND"
-      (D.indent 4 (D.dullyellow (D.fromChars path)))
-      (D.toSimpleHint "Check the \"source-directories\" in your canopy.json or elm.json to make sure the module is in one of the listed directories.")
+      (Doc.indent 4 (Doc.dullyellow (Doc.fromChars path)))
+      (Doc.toSimpleHint "Check the \"source-directories\" in your canopy.json or elm.json to make sure the module is in one of the listed directories.")
   CompileDiagnosticError path diags ->
     renderDiagnostics path diags
 
@@ -141,28 +141,28 @@ compileErrorToDoc = \case
 -- Each diagnostic is rendered with its error code, title bar, message,
 -- suggestions, and notes. This produces the same high-quality output
 -- as the core compiler's error reporting.
-renderDiagnostics :: FilePath -> [Diagnostic] -> D.Doc
+renderDiagnostics :: FilePath -> [Diagnostic] -> Doc.Doc
 renderDiagnostics path diags =
-  D.vcat (fmap (renderOneDiagnostic path) (Error.filterCascadeList diags))
+  Doc.vcat (fmap (renderOneDiagnostic path) (Error.filterCascadeList diags))
 
 -- | Render a single diagnostic.
-renderOneDiagnostic :: FilePath -> Diagnostic -> D.Doc
+renderOneDiagnostic :: FilePath -> Diagnostic -> Doc.Doc
 renderOneDiagnostic path diag =
   Diag.diagnosticToDoc path diag
 
 -- | Render a legacy string-based error with colored formatting.
-legacyErrorDoc :: String -> FilePath -> String -> D.Doc
+legacyErrorDoc :: String -> FilePath -> String -> Doc.Doc
 legacyErrorDoc label path msg =
-  D.vcat
-    [ D.reflow (label ++ " in " ++ path ++ ":"),
+  Doc.vcat
+    [ Doc.reflow (label ++ " in " ++ path ++ ":"),
       "",
-      D.indent 4 (D.dullyellow (D.fromChars msg))
+      Doc.indent 4 (Doc.dullyellow (Doc.fromChars msg))
     ]
 
 -- | Build a structured error with title bar, explanation, and fix.
-structuredError :: String -> D.Doc -> D.Doc -> D.Doc
+structuredError :: String -> Doc.Doc -> Doc.Doc -> Doc.Doc
 structuredError title explanation fix =
-  D.vcat
+  Doc.vcat
     [ errorBar title,
       "",
       explanation,
@@ -172,9 +172,9 @@ structuredError title explanation fix =
     ]
 
 -- | Build a structured error without a fix suggestion.
-structuredErrorNoFix :: String -> D.Doc -> D.Doc
+structuredErrorNoFix :: String -> Doc.Doc -> Doc.Doc
 structuredErrorNoFix title explanation =
-  D.vcat
+  Doc.vcat
     [ errorBar title,
       "",
       explanation,
@@ -182,8 +182,8 @@ structuredErrorNoFix title explanation =
     ]
 
 -- | Render the colored error title bar.
-errorBar :: String -> D.Doc
+errorBar :: String -> Doc.Doc
 errorBar title =
-  D.dullred ("--" <> " " <> D.fromChars title <> " " <> D.fromChars dashes)
+  Doc.dullred ("--" <> " " <> Doc.fromChars title <> " " <> Doc.fromChars dashes)
   where
     dashes = replicate (max 1 (80 - 4 - length title)) '-'

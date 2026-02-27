@@ -11,7 +11,7 @@ import qualified Build
 import qualified Canopy.Details as Details
 import Data.ByteString (ByteString)
 import qualified Data.ByteString as BS
-import qualified Data.ByteString.Builder as B
+import qualified Data.ByteString.Builder as BB
 import qualified Data.ByteString.Lazy as LBS
 import qualified Data.NonEmptyList as NE
 import qualified Generate
@@ -40,7 +40,7 @@ buildReactorFrontEnd =
             details <- Task.io (Details.loadForReactorTH Reporting.silent root) >>= either (Task.throw . Exit.ReactorBadDetails) pure
             artifacts <- Task.io (Build.fromPaths Reporting.silent root details (NE.toList paths)) >>= either (Task.throw . Exit.ReactorBadBuild) pure
             javascript <- Task.mapError Exit.ReactorBadGenerate $ Generate.prod root details artifacts
-            return (LBS.toStrict (B.toLazyByteString javascript))
+            return (LBS.toStrict (BB.toLazyByteString javascript))
 
 paths :: NE.List FilePath
 paths =

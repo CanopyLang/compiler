@@ -10,7 +10,7 @@ module Canopy.Kernel
 
 import Control.Monad (liftM2)
 import Data.Binary (Binary, get, put, getWord8, putWord8)
-import qualified Data.ByteString.Internal as B
+import qualified Data.ByteString.Internal as BSI
 import qualified Data.List as List
 import qualified Data.Map as Map
 import qualified Data.Name as Name
@@ -26,9 +26,9 @@ import qualified Parse.Module as Module
 import qualified Parse.Space as Space
 import qualified Parse.Variable as Var
 import Parse.Primitives hiding (fromByteString)
-import qualified Parse.Primitives as P
+import qualified Parse.Primitives as Parse
 import qualified Data.Text as Text
-import qualified Reporting.Annotation as A
+import qualified Reporting.Annotation as Ann
 import qualified Reporting.InternalError as InternalError
 
 
@@ -37,7 +37,7 @@ import qualified Reporting.InternalError as InternalError
 
 
 data Chunk
-  = JS B.ByteString
+  = JS BSI.ByteString
   | CanopyVar ModuleName.Canonical Name.Name
   | JsVar Name.Name Name.Name
   | CanopyField Name.Name
@@ -81,9 +81,9 @@ type Foreigns =
   Map.Map ModuleName.Raw Pkg.Name
 
 
-fromByteString :: Pkg.Name -> Foreigns -> B.ByteString -> Maybe Content
+fromByteString :: Pkg.Name -> Foreigns -> BSI.ByteString -> Maybe Content
 fromByteString pkg foreigns bytes =
-  case P.fromByteString (parser pkg foreigns) toError bytes of
+  case Parse.fromByteString (parser pkg foreigns) toError bytes of
     Right content ->
       Just content
 
@@ -118,13 +118,13 @@ ignoreError _ _ _ =
 
 parseChunks :: VarTable -> Enums -> Fields -> Parser () [Chunk]
 parseChunks vtable enums fields =
-  P.Parser $ \(P.State src pos end indent row col) cok _ cerr _ ->
+  Parse.Parser $ \(Parse.State src pos end indent row col) cok _ cerr _ ->
     let
       (# chunks, newPos, newRow, newCol #) =
         chompChunks vtable enums fields src pos end row col pos []
     in
     if newPos == end then
-      cok chunks (P.State src newPos end indent newRow newCol)
+      cok chunks (Parse.State src newPos end indent newRow newCol)
     else
       cerr row col toError
 
@@ -158,13 +158,13 @@ chompChunks vs es fs src pos end row col lastPos revChunks =
       chompChunks vs es fs src newPos end row (col + 1) lastPos revChunks
 
 
-toByteString :: ForeignPtr Word8 -> Ptr Word8 -> Ptr Word8 -> B.ByteString
+toByteString :: ForeignPtr Word8 -> Ptr Word8 -> Ptr Word8 -> BSI.ByteString
 toByteString src pos end =
   let
     !off = minusPtr pos (unsafeForeignPtrToPtr src)
     !len = minusPtr end pos
   in
-  B.PS src off len
+  BSI.PS src off len
 
 
 
@@ -272,7 +272,7 @@ toVarTable pkg foreigns = List.foldl' (addImport pkg foreigns) Map.empty
 
 
 addImport :: Pkg.Name -> Foreigns -> VarTable -> Src.Import -> VarTable
-addImport pkg foreigns vtable (Src.Import (A.At _ importName) maybeAlias exposing _isLazy) =
+addImport pkg foreigns vtable (Src.Import (Ann.At _ importName) maybeAlias exposing _isLazy) =
   if Name.isKernel importName then
     case maybeAlias of
       Just _ ->
@@ -331,10 +331,10 @@ toNames exposing =
 toName :: Src.Exposed -> Name.Name
 toName exposed =
   case exposed of
-    Src.Lower (A.At _ name) ->
+    Src.Lower (Ann.At _ name) ->
       name
 
-    Src.Upper (A.At _ name) Src.Private ->
+    Src.Upper (Ann.At _ name) Src.Private ->
       name
 
     Src.Upper _ (Src.Public _) ->

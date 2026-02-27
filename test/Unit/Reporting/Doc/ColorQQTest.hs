@@ -5,7 +5,7 @@ module Unit.Reporting.Doc.ColorQQTest (tests) where
 
 import Data.List (isInfixOf)
 import Reporting.Doc.ColorQQ (c)
-import qualified Reporting.Doc as D
+import qualified Reporting.Doc as Doc
 import Test.Tasty
 import Test.Tasty.HUnit
 
@@ -27,11 +27,11 @@ literalTests =
   testGroup
     "literal text"
     [ testCase "simple literal" $
-        D.toString [c|Hello, world!|] @?= "Hello, world!",
+        Doc.toString [c|Hello, world!|] @?= "Hello, world!",
       testCase "empty QQ" $
-        D.toString [c||] @?= "",
+        Doc.toString [c||] @?= "",
       testCase "literal with punctuation" $
-        D.toString [c|Error: file not found.|] @?= "Error: file not found."
+        Doc.toString [c|Error: file not found.|] @?= "Error: file not found."
     ]
 
 interpolationTests :: TestTree
@@ -40,17 +40,17 @@ interpolationTests =
     "variable interpolation"
     [ testCase "single variable" $
         let path = "/usr/local" :: String
-         in D.toString [c|Load from #{path}|] @?= "Load from /usr/local",
+         in Doc.toString [c|Load from #{path}|] @?= "Load from /usr/local",
       testCase "variable in middle" $
         let name = "Main" :: String
-         in D.toString [c|Module #{name} not found|] @?= "Module Main not found",
+         in Doc.toString [c|Module #{name} not found|] @?= "Module Main not found",
       testCase "multiple variables" $
         let src = "Foo" :: String
             dst = "Bar" :: String
-         in D.toString [c|Rename #{src} to #{dst}|] @?= "Rename Foo to Bar",
+         in Doc.toString [c|Rename #{src} to #{dst}|] @?= "Rename Foo to Bar",
       testCase "adjacent to literal" $
         let x = "ok" :: String
-         in D.toString [c|#{x}!|] @?= "ok!"
+         in Doc.toString [c|#{x}!|] @?= "ok!"
     ]
 
 docEmbeddingTests :: TestTree
@@ -58,11 +58,11 @@ docEmbeddingTests =
   testGroup
     "Doc embedding"
     [ testCase "embed a Doc value" $
-        let detail = D.fromChars "some detail"
-         in D.toString [c|Error: @{detail}|] @?= "Error: some detail",
+        let detail = Doc.fromChars "some detail"
+         in Doc.toString [c|Error: @{detail}|] @?= "Error: some detail",
       testCase "embed colored Doc" $
-        let note = D.fromChars "important"
-         in D.toString [c|See @{note} here|] @?= "See important here"
+        let note = Doc.fromChars "important"
+         in Doc.toString [c|See @{note} here|] @?= "See important here"
     ]
 
 colorTests :: TestTree
@@ -70,42 +70,42 @@ colorTests =
   testGroup
     "color markup"
     [ testCase "red" $
-        D.toString [c|{red|ERROR}|] @?= "ERROR",
+        Doc.toString [c|{red|ERROR}|] @?= "ERROR",
       testCase "green" $
-        D.toString [c|{green|OK}|] @?= "OK",
+        Doc.toString [c|{green|OK}|] @?= "OK",
       testCase "blue" $
-        D.toString [c|{blue|info}|] @?= "info",
+        Doc.toString [c|{blue|info}|] @?= "info",
       testCase "cyan" $
-        D.toString [c|{cyan|hint}|] @?= "hint",
+        Doc.toString [c|{cyan|hint}|] @?= "hint",
       testCase "magenta" $
-        D.toString [c|{magenta|note}|] @?= "note",
+        Doc.toString [c|{magenta|note}|] @?= "note",
       testCase "yellow" $
-        D.toString [c|{yellow|warn}|] @?= "warn",
+        Doc.toString [c|{yellow|warn}|] @?= "warn",
       testCase "black" $
-        D.toString [c|{black|dark}|] @?= "dark",
+        Doc.toString [c|{black|dark}|] @?= "dark",
       testCase "white" $
-        D.toString [c|{white|light}|] @?= "light",
+        Doc.toString [c|{white|light}|] @?= "light",
       testCase "dullred" $
-        D.toString [c|{dullred|muted}|] @?= "muted",
+        Doc.toString [c|{dullred|muted}|] @?= "muted",
       testCase "dullgreen" $
-        D.toString [c|{dullgreen|subtle}|] @?= "subtle",
+        Doc.toString [c|{dullgreen|subtle}|] @?= "subtle",
       testCase "dullblue" $
-        D.toString [c|{dullblue|dim}|] @?= "dim",
+        Doc.toString [c|{dullblue|dim}|] @?= "dim",
       testCase "dullcyan" $
-        D.toString [c|{dullcyan|soft}|] @?= "soft",
+        Doc.toString [c|{dullcyan|soft}|] @?= "soft",
       testCase "dullmagenta" $
-        D.toString [c|{dullmagenta|faded}|] @?= "faded",
+        Doc.toString [c|{dullmagenta|faded}|] @?= "faded",
       testCase "dullyellow" $
-        D.toString [c|{dullyellow|pale}|] @?= "pale",
+        Doc.toString [c|{dullyellow|pale}|] @?= "pale",
       testCase "bold" $
-        D.toString [c|{bold|strong}|] @?= "strong",
+        Doc.toString [c|{bold|strong}|] @?= "strong",
       testCase "underline" $
-        D.toString [c|{underline|emphasis}|] @?= "emphasis",
+        Doc.toString [c|{underline|emphasis}|] @?= "emphasis",
       testCase "color with surrounding text" $
-        D.toString [c|{red|ERROR}: No canopy.json found.|]
+        Doc.toString [c|{red|ERROR}: No canopy.json found.|]
           @?= "ERROR: No canopy.json found.",
       testCase "color preserves in encode" $
-        let encoded = show (D.encode [c|{red|ERROR}|])
+        let encoded = show (Doc.encode [c|{red|ERROR}|])
          in assertBool "encode output should contain RED (vivid)" ("RED" `isInfixOf` encoded)
     ]
 
@@ -114,11 +114,11 @@ multilineTests =
   testGroup
     "multiline handling"
     [ testCase "newline becomes line break" $
-        let result = D.toString [c|line one
+        let result = Doc.toString [c|line one
 line two|]
          in result @?= "line one\nline two",
       testCase "multiple newlines" $
-        let result = D.toString [c|a
+        let result = Doc.toString [c|a
 b
 c|]
          in result @?= "a\nb\nc"
@@ -129,9 +129,9 @@ escapeTests =
   testGroup
     "brace escaping"
     [ testCase "escaped open brace" $
-        D.toString [c|Use {{red|..}} for color.|] @?= "Use {red|..} for color.",
+        Doc.toString [c|Use {{red|..}} for color.|] @?= "Use {red|..} for color.",
       testCase "double escaped braces" $
-        D.toString [c|a {{b}} c|] @?= "a {b} c"
+        Doc.toString [c|a {{b}} c|] @?= "a {b} c"
     ]
 
 combinationTests :: TestTree
@@ -140,13 +140,13 @@ combinationTests =
     "combined features"
     [ testCase "color and interpolation" $
         let path = "/src/Main.can" :: String
-         in D.toString [c|{red|ERROR}: Load from {cyan|#{path}}|]
+         in Doc.toString [c|{red|ERROR}: Load from {cyan|#{path}}|]
               @?= "ERROR: Load from /src/Main.can",
       testCase "nested color with text" $
-        D.toString [c|{red|ERROR}: {cyan|hint} here|]
+        Doc.toString [c|{red|ERROR}: {cyan|hint} here|]
           @?= "ERROR: hint here",
       testCase "doc embed with color" $
-        let detail = D.fromChars "detail"
-         in D.toString [c|{red|ERROR}: @{detail}|]
+        let detail = Doc.fromChars "detail"
+         in Doc.toString [c|{red|ERROR}: @{detail}|]
               @?= "ERROR: detail"
     ]

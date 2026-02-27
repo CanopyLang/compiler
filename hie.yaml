@@ -1,6 +1,18 @@
 cradle:
-  cabal:
-    - path: "./compiler"
-      component: "exe:canopy"
-    - path: "./tests/TestMain.hs"
-      component: "test:canopy-tests"
+  stack:
+    - path: "./app"
+      component: "canopy:exe:canopy"
+    - path: "./src"
+      component: "canopy:lib"
+    - path: "./test"
+      component: "canopy:test:canopy-test"
+    - path: "./packages/canopy-builder/src"
+      component: "canopy-builder:lib"
+    - path: "./packages/canopy-core/src"
+      component: "canopy-core:lib"
+    - path: "./packages/canopy-driver/src"
+      component: "canopy-driver:lib"
+    - path: "./packages/canopy-query/src"
+      component: "canopy-query:lib"
+    - path: "./packages/canopy-terminal/src"
+      component: "canopy-terminal:lib"

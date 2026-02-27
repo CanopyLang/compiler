@@ -11,10 +11,10 @@ module Unit.Reporting.DiagnosticJsonTest (tests) where
 import qualified Data.ByteString.Builder as BB
 import qualified Data.ByteString.Lazy.Char8 as BL
 import qualified Data.List as List
-import qualified Json.Encode as E
-import qualified Reporting.Annotation as A
+import qualified Json.Encode as Encode
+import qualified Reporting.Annotation as Ann
 import qualified Reporting.Diagnostic as Diag
-import qualified Reporting.Doc as D
+import qualified Reporting.Doc as Doc
 import Test.Tasty
 import Test.Tasty.HUnit
 
@@ -78,8 +78,8 @@ suggestionJsonTests =
 
 -- HELPERS
 
-testRegion :: A.Region
-testRegion = A.Region (A.Position 5 10) (A.Position 5 20)
+testRegion :: Ann.Region
+testRegion = Ann.Region (Ann.Position 5 10) (Ann.Position 5 20)
 
 testSpan :: Diag.LabeledSpan
 testSpan = Diag.LabeledSpan testRegion "type mismatch" Diag.SpanPrimary
@@ -93,17 +93,17 @@ testDiag =
     "TYPE MISMATCH"
     "Expression type mismatch"
     testSpan
-    (D.reflow "The type does not match.")
+    (Doc.reflow "The type does not match.")
 
 testSuggestion :: Diag.Suggestion
 testSuggestion =
   Diag.Suggestion testRegion "String.fromInt x" "Convert with String.fromInt" Diag.Likely
 
 -- | Assert that encoding a JSON value produces output containing a substring.
-assertJsonContains :: E.Value -> String -> Assertion
+assertJsonContains :: Encode.Value -> String -> Assertion
 assertJsonContains value substr =
   assertBool
     ("JSON should contain " <> show substr <> " but got: " <> rendered)
     (List.isInfixOf substr rendered)
   where
-    rendered = BL.unpack (BB.toLazyByteString (E.encode value))
+    rendered = BL.unpack (BB.toLazyByteString (Encode.encode value))

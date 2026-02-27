@@ -26,7 +26,7 @@ import qualified Data.Map as Map
 import qualified Data.Maybe as Maybe
 import qualified Data.Name as Name
 import qualified Data.NonEmptyList as NE
-import qualified Reporting.Annotation as A
+import qualified Reporting.Annotation as Ann
 import qualified Reporting.InternalError as InternalError
 
 -- PATTERN
@@ -46,7 +46,7 @@ data Literal
 -- CREATE SIMPLIFIED PATTERNS
 
 simplify :: Can.Pattern -> Pattern
-simplify (A.At _ pattern) =
+simplify (Ann.At _ pattern) =
   case pattern of
     Can.PAnything ->
       Anything
@@ -149,8 +149,8 @@ nilName = "[]"
 -- ERROR
 
 data Error
-  = Incomplete A.Region Context [Pattern]
-  | Redundant A.Region A.Region Int
+  = Incomplete Ann.Region Context [Pattern]
+  | Redundant Ann.Region Ann.Region Int
   deriving (Show)
 
 data Context
@@ -192,17 +192,17 @@ checkDef def errors =
       foldr checkTypedArg (checkExpr body errors) args
 
 checkArg :: Can.Pattern -> [Error] -> [Error]
-checkArg pattern@(A.At region _) errors =
+checkArg pattern@(Ann.At region _) errors =
   checkPatterns region BadArg [pattern] errors
 
 checkTypedArg :: (Can.Pattern, tipe) -> [Error] -> [Error]
-checkTypedArg (pattern@(A.At region _), _) errors =
+checkTypedArg (pattern@(Ann.At region _), _) errors =
   checkPatterns region BadArg [pattern] errors
 
 -- CHECK EXPRESSIONS
 
 checkExpr :: Can.Expr -> [Error] -> [Error]
-checkExpr (A.At region expression) errors =
+checkExpr (Ann.At region expression) errors =
   case expression of
     Can.VarLocal _ ->
       errors
@@ -243,7 +243,7 @@ checkExpr (A.At region expression) errors =
       checkDef def $ checkExpr body errors
     Can.LetRec defs body ->
       foldr checkDef (checkExpr body errors) defs
-    Can.LetDestruct pattern@(A.At reg _) expr body ->
+    Can.LetDestruct pattern@(Ann.At reg _) expr body ->
       checkPatterns reg BadDestruct [pattern] $
         checkExpr expr $ checkExpr body errors
     Can.Case expr branches ->
@@ -283,7 +283,7 @@ checkIfBranch (condition, branch) errs =
 
 -- CHECK CASE EXPRESSION
 
-checkCases :: A.Region -> [Can.CaseBranch] -> [Error] -> [Error]
+checkCases :: Ann.Region -> [Can.CaseBranch] -> [Error] -> [Error]
 checkCases region branches errors =
   let (patterns, newErrors) =
         foldr checkCaseBranch ([], errors) branches
@@ -297,7 +297,7 @@ checkCaseBranch (Can.CaseBranch pattern expr) (patterns, errors) =
 
 -- CHECK PATTERNS
 
-checkPatterns :: A.Region -> Context -> [Can.Pattern] -> [Error] -> [Error]
+checkPatterns :: Ann.Region -> Context -> [Can.Pattern] -> [Error] -> [Error]
 checkPatterns region context patterns errors =
   case toNonRedundantRows region patterns of
     Left err ->
@@ -373,17 +373,17 @@ recoverCtor union name arity patterns =
 -- REDUNDANT PATTERNS
 
 -- INVARIANT: Produces a list of rows where (forall row. length row == 1)
-toNonRedundantRows :: A.Region -> [Can.Pattern] -> Either Error [[Pattern]]
+toNonRedundantRows :: Ann.Region -> [Can.Pattern] -> Either Error [[Pattern]]
 toNonRedundantRows region patterns =
   toSimplifiedUsefulRows region [] patterns
 
 -- INVARIANT: Produces a list of rows where (forall row. length row == 1)
-toSimplifiedUsefulRows :: A.Region -> [[Pattern]] -> [Can.Pattern] -> Either Error [[Pattern]]
+toSimplifiedUsefulRows :: Ann.Region -> [[Pattern]] -> [Can.Pattern] -> Either Error [[Pattern]]
 toSimplifiedUsefulRows overallRegion checkedRows uncheckedPatterns =
   case uncheckedPatterns of
     [] ->
       Right checkedRows
-    pattern@(A.At region _) : rest ->
+    pattern@(Ann.At region _) : rest ->
       let nextRow = [simplify pattern]
        in if isUseful checkedRows nextRow
             then toSimplifiedUsefulRows overallRegion (nextRow : checkedRows) rest

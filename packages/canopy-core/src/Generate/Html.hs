@@ -8,7 +8,7 @@ module Generate.Html
 where
 
 import Data.ByteString.Builder (Builder)
-import qualified Data.ByteString.Builder as B
+import qualified Data.ByteString.Builder as BB
 import qualified Data.Name as Name
 import Text.RawString.QQ (r)
 
@@ -130,6 +130,6 @@ prefetchTags = mconcat . map prefetchTag
 -- | Generate a single @\<link rel=\"prefetch\"\>@ tag.
 prefetchTag :: FilePath -> Builder
 prefetchTag filename =
-  B.stringUtf8 "  <link rel=\"prefetch\" href=\""
-    <> B.stringUtf8 filename
-    <> B.stringUtf8 "\">\n"
+  BB.stringUtf8 "  <link rel=\"prefetch\" href=\""
+    <> BB.stringUtf8 filename
+    <> BB.stringUtf8 "\">\n"

@@ -54,10 +54,10 @@ import qualified Data.Name as Name
 import qualified Data.Utf8 as Utf8
 import Data.Word (Word8)
 import Foreign.Ptr (Ptr, minusPtr, plusPtr)
-import qualified Json.Decode as D
-import qualified Json.Encode as E
+import qualified Json.Decode as Decode
+import qualified Json.Encode as Encode
 import Parse.Primitives (Col, Row)
-import qualified Parse.Primitives as P
+import qualified Parse.Primitives as Parse
 import qualified Parse.Variable as Var
 import qualified System.FilePath as FP
 import Prelude hiding (maybe)
@@ -80,23 +80,23 @@ toHyphenPath name =
 
 -- JSON
 
-encode :: Raw -> E.Value
+encode :: Raw -> Encode.Value
 encode =
-  E.name
+  Encode.name
 
-decoder :: D.Decoder (Row, Col) Raw
+decoder :: Decode.Decoder (Row, Col) Raw
 decoder =
-  D.customString parser (,)
+  Decode.customString parser (,)
 
 -- PARSER
 
-parser :: P.Parser (Row, Col) Raw
+parser :: Parse.Parser (Row, Col) Raw
 parser =
-  P.Parser $ \(P.State src pos end indent row col) cok _ cerr eerr ->
+  Parse.Parser $ \(Parse.State src pos end indent row col) cok _ cerr eerr ->
     let (# isGood, newPos, newCol #) = chompStart pos end col
      in if isGood && minusPtr newPos pos < 256
           then
-            let !newState = P.State src newPos end indent row newCol
+            let !newState = Parse.State src newPos end indent row newCol
              in cok (Utf8.fromPtr pos newPos) newState
           else
             if col == newCol
@@ -115,7 +115,7 @@ chompInner pos end col =
   if pos >= end
     then (# True, pos, col #)
     else
-      let !word = P.unsafeIndex pos
+      let !word = Parse.unsafeIndex pos
           !width = Var.getInnerWidthHelp pos end word
        in if width == 0
             then
@@ -177,7 +177,7 @@ instance Aeson.FromJSONKey Canonical where
     case Text.breakOn "@" txt of
       (pkgText, modText) | not (Text.null modText) ->
         let modStr = Text.unpack (Text.drop 1 modText)
-         in case P.fromByteString Pkg.parser (,) (TextEnc.encodeUtf8 pkgText) of
+         in case Parse.fromByteString Pkg.parser (,) (TextEnc.encodeUtf8 pkgText) of
               Right pkg -> pure (Canonical pkg (Name.fromChars modStr))
               Left _ -> fail ("Invalid package in canonical key: " ++ Text.unpack pkgText)
       _ -> fail ("Invalid canonical module name key format: " ++ Text.unpack txt)

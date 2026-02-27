@@ -37,7 +37,7 @@ module Interface.JSON
   )
 where
 
-import qualified Canopy.Interface as I
+import qualified Canopy.Interface as Interface
 import Control.Monad (unless)
 import Data.Aeson (FromJSON, ToJSON, eitherDecode, encode)
 import qualified Data.ByteString.Lazy as BL
@@ -55,7 +55,7 @@ import System.Directory (doesFileExist)
 data InterfaceFile = InterfaceFile
   { ifVersion :: !String,
     -- ^ Format version (currently "1.0.0")
-    ifModule :: !I.Interface,
+    ifModule :: !Interface.Interface,
     -- ^ Module interface with type information
     ifSourceHash :: !String,
     -- ^ Content hash of source file
@@ -77,7 +77,7 @@ instance FromJSON InterfaceFile
 writeInterface ::
   FilePath ->
   -- ^ Base path (without extension)
-  I.Interface ->
+  Interface.Interface ->
   -- ^ Interface to write
   String ->
   -- ^ Source content hash
@@ -104,7 +104,7 @@ writeInterface basePath iface sourceHash depsHash = do
 --
 -- Reads JSON format only since interface files are regenerated on every
 -- compilation. No binary fallback needed for generated artifacts.
-readInterface :: FilePath -> IO (Either String I.Interface)
+readInterface :: FilePath -> IO (Either String Interface.Interface)
 readInterface basePath = do
   let jsonPath = basePath ++ ".cani.json"
   jsonExists <- doesFileExist jsonPath
@@ -113,7 +113,7 @@ readInterface basePath = do
     else return (Left ("JSON interface not found: " ++ jsonPath))
 
 -- | Read interface from JSON file.
-readInterfaceJSON :: FilePath -> IO (Either String I.Interface)
+readInterfaceJSON :: FilePath -> IO (Either String Interface.Interface)
 readInterfaceJSON path = do
   content <- BL.readFile path
   case eitherDecode content of

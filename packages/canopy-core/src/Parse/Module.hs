@@ -17,23 +17,23 @@ import qualified Data.Name as Name
 import qualified Parse.Declaration as Decl
 import qualified Parse.Keyword as Keyword
 import Parse.Primitives hiding (State, fromByteString)
-import qualified Parse.Primitives as P
+import qualified Parse.Primitives as Parse
 import qualified Parse.Space as Space
 import qualified Parse.Symbol as Symbol
 import qualified Parse.Variable as Var
-import qualified Reporting.Annotation as A
-import qualified Reporting.Error.Syntax as E
+import qualified Reporting.Annotation as Ann
+import qualified Reporting.Error.Syntax as SyntaxError
 import qualified Foreign.FFI as FFI
 import qualified Parse.String as String
 import qualified Canopy.String as ES
 
 -- FROM BYTE STRING
 
-fromByteString :: ProjectType -> BS.ByteString -> Either E.Error Src.Module
+fromByteString :: ProjectType -> BS.ByteString -> Either SyntaxError.Error Src.Module
 fromByteString projectType source =
-  case P.fromByteString (chompModule projectType) E.ModuleBadEnd source of
+  case Parse.fromByteString (chompModule projectType) SyntaxError.ModuleBadEnd source of
     Right modul -> checkModule projectType modul
-    Left err -> Left (E.ParseError err)
+    Left err -> Left (SyntaxError.ParseError err)
 
 -- PROJECT TYPE
 
@@ -59,11 +59,11 @@ data Module = Module
   { _header :: Maybe Header,
     _imports :: [Src.Import],
     _foreignImports :: [Src.ForeignImport],
-    _infixes :: [A.Located Src.Infix],
+    _infixes :: [Ann.Located Src.Infix],
     _decls :: [Decl.Decl]
   }
 
-chompModule :: ProjectType -> Parser E.Module Module
+chompModule :: ProjectType -> Parser SyntaxError.Module Module
 chompModule projectType =
   do
     header <- chompHeader
@@ -76,17 +76,17 @@ chompModule projectType =
         do
           (imports, foreignImports) <- chompAllImports (if isCore projectType then [] else Imports.defaults) []
           infixes <- if isKernel projectType then chompInfixes [] else return []
-          decls <- specialize E.Declarations $ chompDecls []
+          decls <- specialize SyntaxError.Declarations $ chompDecls []
           return (Module header imports foreignImports infixes decls)
 
-chompFFIModule :: ProjectType -> Maybe Header -> Parser E.Module Module
+chompFFIModule :: ProjectType -> Maybe Header -> Parser SyntaxError.Module Module
 chompFFIModule projectType header =
   do
     (imports, foreignImports, decls) <- chompFFIContent (if isCore projectType then [] else Imports.defaults) [] []
     infixes <- if isKernel projectType then chompInfixes [] else return []
     return (Module header imports foreignImports infixes decls)
 
-chompFFIContent :: [Src.Import] -> [Src.ForeignImport] -> [Decl.Decl] -> Parser E.Module ([Src.Import], [Src.ForeignImport], [Decl.Decl])
+chompFFIContent :: [Src.Import] -> [Src.ForeignImport] -> [Decl.Decl] -> Parser SyntaxError.Module ([Src.Import], [Src.ForeignImport], [Decl.Decl])
 chompFFIContent imports foreignImports decls =
   oneOfWithFallback
     [ do
@@ -96,14 +96,14 @@ chompFFIContent imports foreignImports decls =
         import_ <- chompImport
         chompFFIContent (import_ : imports) foreignImports decls,
       do
-        (decl, _) <- specialize E.Declarations Decl.declaration
+        (decl, _) <- specialize SyntaxError.Declarations Decl.declaration
         chompFFIContent imports foreignImports (decl : decls)
     ]
     (reverse imports, reverse foreignImports, reverse decls)
 
 -- CHECK MODULE
 
-checkModule :: ProjectType -> Module -> Either E.Error Src.Module
+checkModule :: ProjectType -> Module -> Either SyntaxError.Error Src.Module
 checkModule projectType (Module maybeHeader imports foreignImports infixes decls) =
   let (values, unions, aliases, ports) = categorizeDecls [] [] [] [] decls
    in case maybeHeader of
@@ -111,13 +111,13 @@ checkModule projectType (Module maybeHeader imports foreignImports infixes decls
           Src.Module (Just name) exports (toDocs docs decls) imports foreignImports values unions aliases infixes
             <$> checkEffects projectType ports effects
         Nothing ->
-          Right . Src.Module Nothing (A.At A.one Src.Open) (Src.NoDocs A.one) imports foreignImports values unions aliases infixes $
+          Right . Src.Module Nothing (Ann.At Ann.one Src.Open) (Src.NoDocs Ann.one) imports foreignImports values unions aliases infixes $
             ( case ports of
                 [] -> Src.NoEffects
                 _ : _ -> Src.Ports ports
             )
 
-checkEffects :: ProjectType -> [Src.Port] -> Effects -> Either E.Error Src.Effects
+checkEffects :: ProjectType -> [Src.Port] -> Effects -> Either SyntaxError.Error Src.Effects
 checkEffects projectType ports effects =
   case effects of
     NoEffects region ->
@@ -126,32 +126,32 @@ checkEffects projectType ports effects =
           Right Src.NoEffects
         Src.Port name _ : _ ->
           case projectType of
-            Package _ -> Left (E.NoPortsInPackage name)
-            Application -> Left (E.UnexpectedPort region)
+            Package _ -> Left (SyntaxError.NoPortsInPackage name)
+            Application -> Left (SyntaxError.UnexpectedPort region)
     Ports region ->
       case projectType of
         Package _ ->
-          Left (E.NoPortModulesInPackage region)
+          Left (SyntaxError.NoPortModulesInPackage region)
         Application ->
           case ports of
-            [] -> Left (E.NoPorts region)
+            [] -> Left (SyntaxError.NoPorts region)
             _ : _ -> Right (Src.Ports ports)
     FFI region ->
       case projectType of
         Package _ ->
-          Left (E.NoFFIModulesInPackage region)
+          Left (SyntaxError.NoFFIModulesInPackage region)
         Application ->
           case ports of
             [] -> Right (Src.FFI [])  -- Foreign imports handled separately
-            _ : _ -> Left (E.UnexpectedPort region)
+            _ : _ -> Left (SyntaxError.UnexpectedPort region)
     Manager region manager ->
       if isKernel projectType
         then case ports of
           [] -> Right (Src.Manager region manager)
-          _ : _ -> Left (E.UnexpectedPort region)
-        else Left (E.NoEffectsOutsideKernel region)
+          _ : _ -> Left (SyntaxError.UnexpectedPort region)
+        else Left (SyntaxError.NoEffectsOutsideKernel region)
 
-categorizeDecls :: [A.Located Src.Value] -> [A.Located Src.Union] -> [A.Located Src.Alias] -> [Src.Port] -> [Decl.Decl] -> ([A.Located Src.Value], [A.Located Src.Union], [A.Located Src.Alias], [Src.Port])
+categorizeDecls :: [Ann.Located Src.Value] -> [Ann.Located Src.Union] -> [Ann.Located Src.Alias] -> [Src.Port] -> [Decl.Decl] -> ([Ann.Located Src.Value], [Ann.Located Src.Union], [Ann.Located Src.Alias], [Src.Port])
 categorizeDecls values unions aliases ports decls =
   case decls of
     [] ->
@@ -165,7 +165,7 @@ categorizeDecls values unions aliases ports decls =
 
 -- TO DOCS
 
-toDocs :: Either A.Region Src.Comment -> [Decl.Decl] -> Src.Docs
+toDocs :: Either Ann.Region Src.Comment -> [Decl.Decl] -> Src.Docs
 toDocs comment decls =
   case comment of
     Right overview ->
@@ -180,39 +180,39 @@ getComments decls comments =
       comments
     decl : otherDecls ->
       case decl of
-        Decl.Value c (A.At _ (Src.Value n _ _ _)) -> getComments otherDecls (addComment c n comments)
-        Decl.Union c (A.At _ (Src.Union n _ _)) -> getComments otherDecls (addComment c n comments)
-        Decl.Alias c (A.At _ (Src.Alias n _ _)) -> getComments otherDecls (addComment c n comments)
+        Decl.Value c (Ann.At _ (Src.Value n _ _ _)) -> getComments otherDecls (addComment c n comments)
+        Decl.Union c (Ann.At _ (Src.Union n _ _)) -> getComments otherDecls (addComment c n comments)
+        Decl.Alias c (Ann.At _ (Src.Alias n _ _)) -> getComments otherDecls (addComment c n comments)
         Decl.Port c (Src.Port n _) -> getComments otherDecls (addComment c n comments)
 
-addComment :: Maybe Src.Comment -> A.Located Name.Name -> [(Name.Name, Src.Comment)] -> [(Name.Name, Src.Comment)]
-addComment maybeComment (A.At _ name) comments =
+addComment :: Maybe Src.Comment -> Ann.Located Name.Name -> [(Name.Name, Src.Comment)] -> [(Name.Name, Src.Comment)]
+addComment maybeComment (Ann.At _ name) comments =
   case maybeComment of
     Just comment -> (name, comment) : comments
     Nothing -> comments
 
 -- FRESH LINES
 
-freshLine :: (Row -> Col -> E.Module) -> Parser E.Module ()
+freshLine :: (Row -> Col -> SyntaxError.Module) -> Parser SyntaxError.Module ()
 freshLine toFreshLineError =
   do
-    Space.chomp E.ModuleSpace
+    Space.chomp SyntaxError.ModuleSpace
     Space.checkFreshLine toFreshLineError
 
 -- CHOMP DECLARATIONS
 
-chompDecls :: [Decl.Decl] -> Parser E.Decl [Decl.Decl]
+chompDecls :: [Decl.Decl] -> Parser SyntaxError.Decl [Decl.Decl]
 chompDecls decls =
   do
     (decl, _) <- Decl.declaration
     oneOfWithFallback
       [ do
-          Space.checkFreshLine E.DeclStart
+          Space.checkFreshLine SyntaxError.DeclStart
           chompDecls (decl : decls)
       ]
       (reverse (decl : decls))
 
-chompInfixes :: [A.Located Src.Infix] -> Parser E.Module [A.Located Src.Infix]
+chompInfixes :: [Ann.Located Src.Infix] -> Parser SyntaxError.Module [Ann.Located Src.Infix]
 chompInfixes infixes =
   oneOfWithFallback
     [ do
@@ -223,15 +223,15 @@ chompInfixes infixes =
 
 -- MODULE DOC COMMENT
 
-chompModuleDocCommentSpace :: Parser E.Module (Either A.Region Src.Comment)
+chompModuleDocCommentSpace :: Parser SyntaxError.Module (Either Ann.Region Src.Comment)
 chompModuleDocCommentSpace =
   do
-    (A.At region ()) <- addLocation (freshLine E.FreshLine)
+    (Ann.At region ()) <- addLocation (freshLine SyntaxError.FreshLine)
     oneOfWithFallback
       [ do
-          docComment <- Space.docComment E.ImportStart E.ModuleSpace
-          Space.chomp E.ModuleSpace
-          Space.checkFreshLine E.FreshLine
+          docComment <- Space.docComment SyntaxError.ImportStart SyntaxError.ModuleSpace
+          Space.chomp SyntaxError.ModuleSpace
+          Space.checkFreshLine SyntaxError.FreshLine
           return (Right docComment)
       ]
       (Left region)
@@ -239,100 +239,100 @@ chompModuleDocCommentSpace =
 -- HEADER
 
 data Header
-  = Header (A.Located Name.Name) Effects (A.Located Src.Exposing) (Either A.Region Src.Comment)
+  = Header (Ann.Located Name.Name) Effects (Ann.Located Src.Exposing) (Either Ann.Region Src.Comment)
 
 data Effects
-  = NoEffects A.Region
-  | Ports A.Region
-  | Manager A.Region Src.Manager
-  | FFI A.Region
+  = NoEffects Ann.Region
+  | Ports Ann.Region
+  | Manager Ann.Region Src.Manager
+  | FFI Ann.Region
 
-chompHeader :: Parser E.Module (Maybe Header)
+chompHeader :: Parser SyntaxError.Module (Maybe Header)
 chompHeader =
   do
-    freshLine E.FreshLine
+    freshLine SyntaxError.FreshLine
     start <- getPosition
     oneOfWithFallback
       [ -- module MyThing exposing (..)
         do
-          Keyword.module_ E.ModuleProblem
+          Keyword.module_ SyntaxError.ModuleProblem
           effectEnd <- getPosition
-          Space.chompAndCheckIndent E.ModuleSpace E.ModuleProblem
-          name <- addLocation (Var.moduleName E.ModuleName)
-          Space.chompAndCheckIndent E.ModuleSpace E.ModuleProblem
-          Keyword.exposing_ E.ModuleProblem
-          Space.chompAndCheckIndent E.ModuleSpace E.ModuleProblem
-          exports <- addLocation (specialize E.ModuleExposing exposing)
-          Just . Header name (NoEffects (A.Region start effectEnd)) exports <$> chompModuleDocCommentSpace,
+          Space.chompAndCheckIndent SyntaxError.ModuleSpace SyntaxError.ModuleProblem
+          name <- addLocation (Var.moduleName SyntaxError.ModuleName)
+          Space.chompAndCheckIndent SyntaxError.ModuleSpace SyntaxError.ModuleProblem
+          Keyword.exposing_ SyntaxError.ModuleProblem
+          Space.chompAndCheckIndent SyntaxError.ModuleSpace SyntaxError.ModuleProblem
+          exports <- addLocation (specialize SyntaxError.ModuleExposing exposing)
+          Just . Header name (NoEffects (Ann.Region start effectEnd)) exports <$> chompModuleDocCommentSpace,
         -- port module MyThing exposing (..)
         do
-          Keyword.port_ E.PortModuleProblem
-          Space.chompAndCheckIndent E.ModuleSpace E.PortModuleProblem
-          Keyword.module_ E.PortModuleProblem
+          Keyword.port_ SyntaxError.PortModuleProblem
+          Space.chompAndCheckIndent SyntaxError.ModuleSpace SyntaxError.PortModuleProblem
+          Keyword.module_ SyntaxError.PortModuleProblem
           effectEnd <- getPosition
-          Space.chompAndCheckIndent E.ModuleSpace E.PortModuleProblem
-          name <- addLocation (Var.moduleName E.PortModuleName)
-          Space.chompAndCheckIndent E.ModuleSpace E.PortModuleProblem
-          Keyword.exposing_ E.PortModuleProblem
-          Space.chompAndCheckIndent E.ModuleSpace E.PortModuleProblem
-          exports <- addLocation (specialize E.PortModuleExposing exposing)
-          Just . Header name (Ports (A.Region start effectEnd)) exports <$> chompModuleDocCommentSpace,
+          Space.chompAndCheckIndent SyntaxError.ModuleSpace SyntaxError.PortModuleProblem
+          name <- addLocation (Var.moduleName SyntaxError.PortModuleName)
+          Space.chompAndCheckIndent SyntaxError.ModuleSpace SyntaxError.PortModuleProblem
+          Keyword.exposing_ SyntaxError.PortModuleProblem
+          Space.chompAndCheckIndent SyntaxError.ModuleSpace SyntaxError.PortModuleProblem
+          exports <- addLocation (specialize SyntaxError.PortModuleExposing exposing)
+          Just . Header name (Ports (Ann.Region start effectEnd)) exports <$> chompModuleDocCommentSpace,
         -- ffi module MyThing exposing (..)
         do
-          Keyword.ffi_ E.FFIModuleProblem
-          Space.chompAndCheckIndent E.ModuleSpace E.FFIModuleProblem
-          Keyword.module_ E.FFIModuleProblem
+          Keyword.ffi_ SyntaxError.FFIModuleProblem
+          Space.chompAndCheckIndent SyntaxError.ModuleSpace SyntaxError.FFIModuleProblem
+          Keyword.module_ SyntaxError.FFIModuleProblem
           effectEnd <- getPosition
-          Space.chompAndCheckIndent E.ModuleSpace E.FFIModuleProblem
-          name <- addLocation (Var.moduleName E.FFIModuleName)
-          Space.chompAndCheckIndent E.ModuleSpace E.FFIModuleProblem
-          Keyword.exposing_ E.FFIModuleProblem
-          Space.chompAndCheckIndent E.ModuleSpace E.FFIModuleProblem
-          exports <- addLocation (specialize E.FFIModuleExposing exposing)
-          Just . Header name (FFI (A.Region start effectEnd)) exports <$> chompModuleDocCommentSpace,
+          Space.chompAndCheckIndent SyntaxError.ModuleSpace SyntaxError.FFIModuleProblem
+          name <- addLocation (Var.moduleName SyntaxError.FFIModuleName)
+          Space.chompAndCheckIndent SyntaxError.ModuleSpace SyntaxError.FFIModuleProblem
+          Keyword.exposing_ SyntaxError.FFIModuleProblem
+          Space.chompAndCheckIndent SyntaxError.ModuleSpace SyntaxError.FFIModuleProblem
+          exports <- addLocation (specialize SyntaxError.FFIModuleExposing exposing)
+          Just . Header name (FFI (Ann.Region start effectEnd)) exports <$> chompModuleDocCommentSpace,
         -- effect module MyThing where { command = MyCmd } exposing (..)
         do
-          Keyword.effect_ E.Effect
-          Space.chompAndCheckIndent E.ModuleSpace E.Effect
-          Keyword.module_ E.Effect
+          Keyword.effect_ SyntaxError.Effect
+          Space.chompAndCheckIndent SyntaxError.ModuleSpace SyntaxError.Effect
+          Keyword.module_ SyntaxError.Effect
           effectEnd <- getPosition
-          Space.chompAndCheckIndent E.ModuleSpace E.Effect
-          name <- addLocation (Var.moduleName E.ModuleName)
-          Space.chompAndCheckIndent E.ModuleSpace E.Effect
-          Keyword.where_ E.Effect
-          Space.chompAndCheckIndent E.ModuleSpace E.Effect
+          Space.chompAndCheckIndent SyntaxError.ModuleSpace SyntaxError.Effect
+          name <- addLocation (Var.moduleName SyntaxError.ModuleName)
+          Space.chompAndCheckIndent SyntaxError.ModuleSpace SyntaxError.Effect
+          Keyword.where_ SyntaxError.Effect
+          Space.chompAndCheckIndent SyntaxError.ModuleSpace SyntaxError.Effect
           manager <- chompManager
-          Space.chompAndCheckIndent E.ModuleSpace E.Effect
-          Keyword.exposing_ E.Effect
-          Space.chompAndCheckIndent E.ModuleSpace E.Effect
-          exports <- addLocation (specialize (const E.Effect) exposing)
-          Just . Header name (Manager (A.Region start effectEnd) manager) exports <$> chompModuleDocCommentSpace
+          Space.chompAndCheckIndent SyntaxError.ModuleSpace SyntaxError.Effect
+          Keyword.exposing_ SyntaxError.Effect
+          Space.chompAndCheckIndent SyntaxError.ModuleSpace SyntaxError.Effect
+          exports <- addLocation (specialize (const SyntaxError.Effect) exposing)
+          Just . Header name (Manager (Ann.Region start effectEnd) manager) exports <$> chompModuleDocCommentSpace
       ]
       -- default header
       Nothing
 
-chompManager :: Parser E.Module Src.Manager
+chompManager :: Parser SyntaxError.Module Src.Manager
 chompManager =
   do
-    word1 0x7B {- { -} E.Effect
+    word1 0x7B {- { -} SyntaxError.Effect
     spacesEm
     oneOf
-      E.Effect
+      SyntaxError.Effect
       [ do
           cmd <- chompCommand
           spacesEm
           oneOf
-            E.Effect
+            SyntaxError.Effect
             [ do
-                word1 0x7D {-}-} E.Effect
+                word1 0x7D {-}-} SyntaxError.Effect
                 spacesEm
                 return (Src.Cmd cmd),
               do
-                word1 0x2C {-,-} E.Effect
+                word1 0x2C {-,-} SyntaxError.Effect
                 spacesEm
                 sub <- chompSubscription
                 spacesEm
-                word1 0x7D {-}-} E.Effect
+                word1 0x7D {-}-} SyntaxError.Effect
                 spacesEm
                 return (Src.Fx cmd sub)
             ],
@@ -340,47 +340,47 @@ chompManager =
           sub <- chompSubscription
           spacesEm
           oneOf
-            E.Effect
+            SyntaxError.Effect
             [ do
-                word1 0x7D {-}-} E.Effect
+                word1 0x7D {-}-} SyntaxError.Effect
                 spacesEm
                 return (Src.Sub sub),
               do
-                word1 0x2C {-,-} E.Effect
+                word1 0x2C {-,-} SyntaxError.Effect
                 spacesEm
                 cmd <- chompCommand
                 spacesEm
-                word1 0x7D {-}-} E.Effect
+                word1 0x7D {-}-} SyntaxError.Effect
                 spacesEm
                 return (Src.Fx cmd sub)
             ]
       ]
 
-chompCommand :: Parser E.Module (A.Located Name.Name)
+chompCommand :: Parser SyntaxError.Module (Ann.Located Name.Name)
 chompCommand =
   do
-    Keyword.command_ E.Effect
+    Keyword.command_ SyntaxError.Effect
     spacesEm
-    word1 0x3D {-=-} E.Effect
+    word1 0x3D {-=-} SyntaxError.Effect
     spacesEm
-    addLocation (Var.upper E.Effect)
+    addLocation (Var.upper SyntaxError.Effect)
 
-chompSubscription :: Parser E.Module (A.Located Name.Name)
+chompSubscription :: Parser SyntaxError.Module (Ann.Located Name.Name)
 chompSubscription =
   do
-    Keyword.subscription_ E.Effect
+    Keyword.subscription_ SyntaxError.Effect
     spacesEm
-    word1 0x3D {-=-} E.Effect
+    word1 0x3D {-=-} SyntaxError.Effect
     spacesEm
-    addLocation (Var.upper E.Effect)
+    addLocation (Var.upper SyntaxError.Effect)
 
-spacesEm :: Parser E.Module ()
+spacesEm :: Parser SyntaxError.Module ()
 spacesEm =
-  Space.chompAndCheckIndent E.ModuleSpace E.Effect
+  Space.chompAndCheckIndent SyntaxError.ModuleSpace SyntaxError.Effect
 
 -- IMPORTS
 
-chompAllImports :: [Src.Import] -> [Src.ForeignImport] -> Parser E.Module ([Src.Import], [Src.ForeignImport])
+chompAllImports :: [Src.Import] -> [Src.ForeignImport] -> Parser SyntaxError.Module ([Src.Import], [Src.ForeignImport])
 chompAllImports imports foreignImports =
   oneOfWithFallback
     [ do
@@ -392,7 +392,7 @@ chompAllImports imports foreignImports =
     ]
     (reverse imports, reverse foreignImports)
 
-chompImports :: [Src.Import] -> Parser E.Module [Src.Import]
+chompImports :: [Src.Import] -> Parser SyntaxError.Module [Src.Import]
 chompImports is =
   oneOfWithFallback
     [ do
@@ -401,97 +401,97 @@ chompImports is =
     ]
     (reverse is)
 
-chompImport :: Parser E.Module Src.Import
+chompImport :: Parser SyntaxError.Module Src.Import
 chompImport =
   do
     isLazy <- chompLazyKeyword
-    Keyword.import_ E.ImportStart
-    Space.chompAndCheckIndent E.ModuleSpace E.ImportIndentName
-    name@(A.At (A.Region _ end) _) <- addLocation (Var.moduleName E.ImportName)
-    Space.chomp E.ModuleSpace
+    Keyword.import_ SyntaxError.ImportStart
+    Space.chompAndCheckIndent SyntaxError.ModuleSpace SyntaxError.ImportIndentName
+    name@(Ann.At (Ann.Region _ end) _) <- addLocation (Var.moduleName SyntaxError.ImportName)
+    Space.chomp SyntaxError.ModuleSpace
     oneOf
-      E.ImportEnd
+      SyntaxError.ImportEnd
       [ do
-          Space.checkFreshLine E.ImportEnd
+          Space.checkFreshLine SyntaxError.ImportEnd
           return $ Src.Import name Nothing (Src.Explicit []) isLazy,
         do
-          Space.checkIndent end E.ImportEnd
+          Space.checkIndent end SyntaxError.ImportEnd
           oneOf
-            E.ImportAs
+            SyntaxError.ImportAs
             [ chompAs name isLazy,
               chompExposing name Nothing isLazy
             ]
       ]
 
-chompLazyKeyword :: Parser E.Module Bool
+chompLazyKeyword :: Parser SyntaxError.Module Bool
 chompLazyKeyword =
   oneOfWithFallback
     [ do
-        Keyword.lazy_ E.ImportStart
-        Space.chompAndCheckIndent E.ModuleSpace E.ImportIndentName
+        Keyword.lazy_ SyntaxError.ImportStart
+        Space.chompAndCheckIndent SyntaxError.ModuleSpace SyntaxError.ImportIndentName
         return True
     ]
     False
 
-chompAs :: A.Located Name.Name -> Bool -> Parser E.Module Src.Import
+chompAs :: Ann.Located Name.Name -> Bool -> Parser SyntaxError.Module Src.Import
 chompAs name isLazy =
   do
-    Keyword.as_ E.ImportAs
-    Space.chompAndCheckIndent E.ModuleSpace E.ImportIndentAlias
-    alias <- Var.upper E.ImportAlias
+    Keyword.as_ SyntaxError.ImportAs
+    Space.chompAndCheckIndent SyntaxError.ModuleSpace SyntaxError.ImportIndentAlias
+    alias <- Var.upper SyntaxError.ImportAlias
     end <- getPosition
-    Space.chomp E.ModuleSpace
+    Space.chomp SyntaxError.ModuleSpace
     oneOf
-      E.ImportEnd
+      SyntaxError.ImportEnd
       [ do
-          Space.checkFreshLine E.ImportEnd
+          Space.checkFreshLine SyntaxError.ImportEnd
           return $ Src.Import name (Just alias) (Src.Explicit []) isLazy,
         do
-          Space.checkIndent end E.ImportEnd
+          Space.checkIndent end SyntaxError.ImportEnd
           chompExposing name (Just alias) isLazy
       ]
 
-chompExposing :: A.Located Name.Name -> Maybe Name.Name -> Bool -> Parser E.Module Src.Import
+chompExposing :: Ann.Located Name.Name -> Maybe Name.Name -> Bool -> Parser SyntaxError.Module Src.Import
 chompExposing name maybeAlias isLazy =
   do
-    Keyword.exposing_ E.ImportExposing
-    Space.chompAndCheckIndent E.ModuleSpace E.ImportIndentExposingList
-    exposed <- specialize E.ImportExposingList exposing
-    freshLine E.ImportEnd
+    Keyword.exposing_ SyntaxError.ImportExposing
+    Space.chompAndCheckIndent SyntaxError.ModuleSpace SyntaxError.ImportIndentExposingList
+    exposed <- specialize SyntaxError.ImportExposingList exposing
+    freshLine SyntaxError.ImportEnd
     return $ Src.Import name maybeAlias exposed isLazy
 
 -- FOREIGN IMPORTS
 
-chompForeignImport :: Parser E.Module Src.ForeignImport
+chompForeignImport :: Parser SyntaxError.Module Src.ForeignImport
 chompForeignImport =
   do
     start <- getPosition
-    Keyword.foreign_ E.ImportStart
-    Space.chompAndCheckIndent E.ModuleSpace E.ImportIndentName
-    Keyword.import_ E.ImportStart
-    Space.chompAndCheckIndent E.ModuleSpace E.ImportIndentName
+    Keyword.foreign_ SyntaxError.ImportStart
+    Space.chompAndCheckIndent SyntaxError.ModuleSpace SyntaxError.ImportIndentName
+    Keyword.import_ SyntaxError.ImportStart
+    Space.chompAndCheckIndent SyntaxError.ModuleSpace SyntaxError.ImportIndentName
     target <- chompForeignTarget
-    Space.chompAndCheckIndent E.ModuleSpace E.ImportIndentAlias
-    Keyword.as_ E.ImportAs
-    Space.chompAndCheckIndent E.ModuleSpace E.ImportIndentAlias
-    alias <- addLocation (Var.upper E.ImportAlias)
+    Space.chompAndCheckIndent SyntaxError.ModuleSpace SyntaxError.ImportIndentAlias
+    Keyword.as_ SyntaxError.ImportAs
+    Space.chompAndCheckIndent SyntaxError.ModuleSpace SyntaxError.ImportIndentAlias
+    alias <- addLocation (Var.upper SyntaxError.ImportAlias)
     end <- getPosition
-    freshLine E.ImportEnd
-    let region = A.Region start end
+    freshLine SyntaxError.ImportEnd
+    let region = Ann.Region start end
     return $ Src.ForeignImport target alias region
 
-chompForeignTarget :: Parser E.Module FFI.FFITarget
+chompForeignTarget :: Parser SyntaxError.Module FFI.FFITarget
 chompForeignTarget =
   oneOf
-    E.ImportName
+    SyntaxError.ImportName
     [ do
-        Keyword.javascript_ E.ImportName
-        Space.chompAndCheckIndent E.ModuleSpace E.ImportIndentName
-        path <- parseStringLiteral E.ImportName
+        Keyword.javascript_ SyntaxError.ImportName
+        Space.chompAndCheckIndent SyntaxError.ModuleSpace SyntaxError.ImportIndentName
+        path <- parseStringLiteral SyntaxError.ImportName
         return (FFI.JavaScriptFFI path)
     ]
 
-parseStringLiteral :: (Row -> Col -> E.Module) -> Parser E.Module String
+parseStringLiteral :: (Row -> Col -> SyntaxError.Module) -> Parser SyntaxError.Module String
 parseStringLiteral toError =
   do
     esString <- String.string toError (\_ _ _ -> toError 0 0)
@@ -499,73 +499,73 @@ parseStringLiteral toError =
 
 -- LISTING
 
-exposing :: Parser E.Exposing Src.Exposing
+exposing :: Parser SyntaxError.Exposing Src.Exposing
 exposing =
   do
-    word1 0x28 {-(-} E.ExposingStart
-    Space.chompAndCheckIndent E.ExposingSpace E.ExposingIndentValue
+    word1 0x28 {-(-} SyntaxError.ExposingStart
+    Space.chompAndCheckIndent SyntaxError.ExposingSpace SyntaxError.ExposingIndentValue
     oneOf
-      E.ExposingValue
+      SyntaxError.ExposingValue
       [ do
-          word2 0x2E 0x2E {-..-} E.ExposingValue
-          Space.chompAndCheckIndent E.ExposingSpace E.ExposingIndentEnd
-          word1 0x29 {-)-} E.ExposingEnd
+          word2 0x2E 0x2E {-..-} SyntaxError.ExposingValue
+          Space.chompAndCheckIndent SyntaxError.ExposingSpace SyntaxError.ExposingIndentEnd
+          word1 0x29 {-)-} SyntaxError.ExposingEnd
           return Src.Open,
         do
           exposed <- chompExposed
-          Space.chompAndCheckIndent E.ExposingSpace E.ExposingIndentEnd
+          Space.chompAndCheckIndent SyntaxError.ExposingSpace SyntaxError.ExposingIndentEnd
           exposingHelp [exposed]
       ]
 
-exposingHelp :: [Src.Exposed] -> Parser E.Exposing Src.Exposing
+exposingHelp :: [Src.Exposed] -> Parser SyntaxError.Exposing Src.Exposing
 exposingHelp revExposed =
   oneOf
-    E.ExposingEnd
+    SyntaxError.ExposingEnd
     [ do
-        word1 0x2C {-,-} E.ExposingEnd
-        Space.chompAndCheckIndent E.ExposingSpace E.ExposingIndentValue
+        word1 0x2C {-,-} SyntaxError.ExposingEnd
+        Space.chompAndCheckIndent SyntaxError.ExposingSpace SyntaxError.ExposingIndentValue
         exposed <- chompExposed
-        Space.chompAndCheckIndent E.ExposingSpace E.ExposingIndentEnd
+        Space.chompAndCheckIndent SyntaxError.ExposingSpace SyntaxError.ExposingIndentEnd
         exposingHelp (exposed : revExposed),
       do
-        word1 0x29 {-)-} E.ExposingEnd
+        word1 0x29 {-)-} SyntaxError.ExposingEnd
         return (Src.Explicit (reverse revExposed))
     ]
 
-chompExposed :: Parser E.Exposing Src.Exposed
+chompExposed :: Parser SyntaxError.Exposing Src.Exposed
 chompExposed =
   do
     start <- getPosition
     oneOf
-      E.ExposingValue
+      SyntaxError.ExposingValue
       [ do
-          name <- Var.lower E.ExposingValue
+          name <- Var.lower SyntaxError.ExposingValue
           end <- getPosition
-          return . Src.Lower $ A.at start end name,
+          return . Src.Lower $ Ann.at start end name,
         do
-          word1 0x28 {-(-} E.ExposingValue
-          op <- Symbol.operator E.ExposingOperator E.ExposingOperatorReserved
-          word1 0x29 {-)-} E.ExposingOperatorRightParen
+          word1 0x28 {-(-} SyntaxError.ExposingValue
+          op <- Symbol.operator SyntaxError.ExposingOperator SyntaxError.ExposingOperatorReserved
+          word1 0x29 {-)-} SyntaxError.ExposingOperatorRightParen
           end <- getPosition
-          return $ Src.Operator (A.Region start end) op,
+          return $ Src.Operator (Ann.Region start end) op,
         do
-          name <- Var.upper E.ExposingValue
+          name <- Var.upper SyntaxError.ExposingValue
           end <- getPosition
-          Space.chompAndCheckIndent E.ExposingSpace E.ExposingIndentEnd
-          Src.Upper (A.at start end name) <$> privacy
+          Space.chompAndCheckIndent SyntaxError.ExposingSpace SyntaxError.ExposingIndentEnd
+          Src.Upper (Ann.at start end name) <$> privacy
       ]
 
-privacy :: Parser E.Exposing Src.Privacy
+privacy :: Parser SyntaxError.Exposing Src.Privacy
 privacy =
   oneOfWithFallback
     [ do
-        word1 0x28 {-(-} E.ExposingTypePrivacy
-        Space.chompAndCheckIndent E.ExposingSpace E.ExposingTypePrivacy
+        word1 0x28 {-(-} SyntaxError.ExposingTypePrivacy
+        Space.chompAndCheckIndent SyntaxError.ExposingSpace SyntaxError.ExposingTypePrivacy
         start <- getPosition
-        word2 0x2E 0x2E {-..-} E.ExposingTypePrivacy
+        word2 0x2E 0x2E {-..-} SyntaxError.ExposingTypePrivacy
         end <- getPosition
-        Space.chompAndCheckIndent E.ExposingSpace E.ExposingTypePrivacy
-        word1 0x29 {-)-} E.ExposingTypePrivacy
-        return $ Src.Public (A.Region start end)
+        Space.chompAndCheckIndent SyntaxError.ExposingSpace SyntaxError.ExposingTypePrivacy
+        word1 0x29 {-)-} SyntaxError.ExposingTypePrivacy
+        return $ Src.Public (Ann.Region start end)
     ]
     Src.Private

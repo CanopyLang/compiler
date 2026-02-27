@@ -35,7 +35,7 @@ import qualified AST.Canonical as Can
 import qualified AST.Optimized as Opt
 import qualified AST.Source as Src
 import qualified Canonicalize.Module as Canonicalize
-import qualified Canopy.Interface as I
+import qualified Canopy.Interface as Interface
 import qualified Canopy.ModuleName as ModuleName
 import qualified Canopy.Package as Pkg
 import qualified Foreign.FFI as FFI
@@ -54,13 +54,13 @@ import qualified Query.Engine as Engine
 import Query.Simple
 import qualified Worker.Pool as Pool
 import qualified Parse.Module as Parse
-import qualified Reporting.Annotation as A
+import qualified Reporting.Annotation as Ann
 
 -- | Compilation result with all artifacts.
 data CompileResult = CompileResult
   { compileResultModule :: !Can.Module,
     compileResultTypes :: !(Map Name.Name Can.Annotation),
-    compileResultInterface :: !I.Interface,
+    compileResultInterface :: !Interface.Interface,
     compileResultLocalGraph :: !Opt.LocalGraph,
     compileResultFFIInfo :: !(Map String JS.FFIInfo)
   }
@@ -68,7 +68,7 @@ data CompileResult = CompileResult
 -- | Compile a module from file path (simplified).
 compileModule ::
   Pkg.Name ->
-  Map ModuleName.Raw I.Interface ->
+  Map ModuleName.Raw Interface.Interface ->
   FilePath ->
   Parse.ProjectType ->
   IO (Either QueryError CompileResult)
@@ -87,7 +87,7 @@ compileModule pkg ifaces path projectType = do
 compileModuleWithEngine ::
   Engine.QueryEngine ->
   Pkg.Name ->
-  Map ModuleName.Raw I.Interface ->
+  Map ModuleName.Raw Interface.Interface ->
   FilePath ->
   Parse.ProjectType ->
   IO (Either QueryError CompileResult)
@@ -102,7 +102,7 @@ compileModuleWithEngine engine pkg ifaces path projectType = do
 -- Used when integrating with existing build systems that parse separately.
 compileFromSource ::
   Pkg.Name ->
-  Map ModuleName.Raw I.Interface ->
+  Map ModuleName.Raw Interface.Interface ->
   Src.Module ->
   IO (Either QueryError CompileResult)
 compileFromSource pkg ifaces sourceModule = do
@@ -142,7 +142,7 @@ compileFromSource pkg ifaces sourceModule = do
 compileModuleFull ::
   Engine.QueryEngine ->
   Pkg.Name ->
-  Map ModuleName.Raw I.Interface ->
+  Map ModuleName.Raw Interface.Interface ->
   FilePath ->
   Parse.ProjectType ->
   IO (Either QueryError CompileResult)
@@ -221,7 +221,7 @@ buildSingleFFI :: Map String String -> Src.ForeignImport -> [(String, JS.FFIInfo
 buildSingleFFI contentMap (Src.ForeignImport (FFI.JavaScriptFFI jsPath) alias _region) =
   case Map.lookup jsPath contentMap of
     Just content ->
-      [(jsPath, JS.FFIInfo jsPath (Text.pack content) (A.toValue alias))]
+      [(jsPath, JS.FFIInfo jsPath (Text.pack content) (Ann.toValue alias))]
     Nothing -> []
 buildSingleFFI _ _ = []
 
@@ -234,7 +234,7 @@ runCanonicalizePhase ::
   FilePath ->
   Pkg.Name ->
   Parse.ProjectType ->
-  Map ModuleName.Raw I.Interface ->
+  Map ModuleName.Raw Interface.Interface ->
   Map String String ->
   Src.Module ->
   IO (Either QueryError Can.Module)
@@ -273,17 +273,17 @@ generateInterface ::
   Pkg.Name ->
   Can.Module ->
   Map Name.Name Can.Annotation ->
-  IO I.Interface
+  IO Interface.Interface
 generateInterface pkg canonModule@(Can.Module modName _ _ _ _ _ _ _ _) types = do
   Log.logEvent (InterfaceSaved (show modName))
-  let iface = I.fromModule pkg canonModule types
+  let iface = Interface.fromModule pkg canonModule types
   return iface
 
 -- | Compile multiple modules in parallel.
 compileModulesParallel ::
   Pool.PoolConfig ->
   Pkg.Name ->
-  Map ModuleName.Raw I.Interface ->
+  Map ModuleName.Raw Interface.Interface ->
   [(FilePath, Parse.ProjectType)] ->
   IO [Either QueryError CompileResult]
 compileModulesParallel config pkg ifaces modules = do
@@ -303,7 +303,7 @@ compileModulesParallel config pkg ifaces modules = do
 compileModulesWithProgress ::
   Pool.PoolConfig ->
   Pkg.Name ->
-  Map ModuleName.Raw I.Interface ->
+  Map ModuleName.Raw Interface.Interface ->
   [(FilePath, Parse.ProjectType)] ->
   (Pool.Progress -> IO ()) ->
   IO [Either QueryError CompileResult]
@@ -321,7 +321,7 @@ compileModulesWithProgress config pkg ifaces modules progressCallback = do
   return results
 
 -- | Create compile task from module info.
-createTask :: Pkg.Name -> Map ModuleName.Raw I.Interface -> (FilePath, Parse.ProjectType) -> Pool.CompileTask
+createTask :: Pkg.Name -> Map ModuleName.Raw Interface.Interface -> (FilePath, Parse.ProjectType) -> Pool.CompileTask
 createTask pkg ifaces (path, projectType) =
   Pool.CompileTask
     { Pool.taskPackage = pkg,

@@ -58,20 +58,20 @@ import qualified Data.Name as Name
 import Data.Word (Word16)
 import Parse.Primitives (Col, Row)
 import Parse.Symbol (BadOperator (..))
-import qualified Reporting.Annotation as A
+import qualified Reporting.Annotation as Ann
 import Prelude hiding (Char, String)
 
 -- ALL SYNTAX ERRORS
 
 data Error
   = ModuleNameUnspecified ModuleName.Raw
-  | ModuleNameMismatch ModuleName.Raw (A.Located ModuleName.Raw)
-  | UnexpectedPort A.Region
-  | NoPorts A.Region
-  | NoPortsInPackage (A.Located Name.Name)
-  | NoPortModulesInPackage A.Region
-  | NoFFIModulesInPackage A.Region
-  | NoEffectsOutsideKernel A.Region
+  | ModuleNameMismatch ModuleName.Raw (Ann.Located ModuleName.Raw)
+  | UnexpectedPort Ann.Region
+  | NoPorts Ann.Region
+  | NoPortsInPackage (Ann.Located Name.Name)
+  | NoPortModulesInPackage Ann.Region
+  | NoFFIModulesInPackage Ann.Region
+  | NoEffectsOutsideKernel Ann.Region
   | ParseError Module
   deriving (Show)
 

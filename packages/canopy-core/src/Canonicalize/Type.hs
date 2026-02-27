@@ -13,7 +13,7 @@ import qualified Canonicalize.Environment.Dups as Dups
 import qualified Data.List as List
 import qualified Data.Map as Map
 import qualified Data.Name as Name
-import qualified Reporting.Annotation as A
+import qualified Reporting.Annotation as Ann
 import qualified Reporting.Error.Canonicalize as Error
 import qualified Reporting.Result as Result
 
@@ -33,7 +33,7 @@ toAnnotation env srcType =
 -- CANONICALIZE TYPES
 
 canonicalize :: Env.Env -> Src.Type -> Result i w Can.Type
-canonicalize env (A.At typeRegion tipe) =
+canonicalize env (Ann.At typeRegion tipe) =
   case tipe of
     Src.TVar x ->
       Result.ok (Can.TVar x)
@@ -48,7 +48,7 @@ canonicalize env (A.At typeRegion tipe) =
     Src.TRecord fields ext ->
       do
         cfields <- Dups.checkFields (canonicalizeFields env fields) >>= sequenceA
-        return $ Can.TRecord cfields (fmap A.toValue ext)
+        return $ Can.TRecord cfields (fmap Ann.toValue ext)
     Src.TUnit ->
       Result.ok Can.TUnit
     Src.TTuple a b cs ->
@@ -63,7 +63,7 @@ canonicalize env (A.At typeRegion tipe) =
           _ ->
             Result.throw $ Error.TupleLargerThanThree typeRegion
 
-canonicalizeFields :: Env.Env -> [(A.Located Name.Name, Src.Type)] -> [(A.Located Name.Name, Result i w Can.FieldType)]
+canonicalizeFields :: Env.Env -> [(Ann.Located Name.Name, Src.Type)] -> [(Ann.Located Name.Name, Result i w Can.FieldType)]
 canonicalizeFields env fields =
   let len = fromIntegral (length fields)
       canonicalizeField index (name, srcType) =
@@ -72,7 +72,7 @@ canonicalizeFields env fields =
 
 -- CANONICALIZE TYPE
 
-canonicalizeType :: Env.Env -> A.Region -> Name.Name -> [Src.Type] -> Env.Type -> Result i w Can.Type
+canonicalizeType :: Env.Env -> Ann.Region -> Name.Name -> [Src.Type] -> Env.Type -> Result i w Can.Type
 canonicalizeType env region name args info =
   do
     cargs <- traverse (canonicalize env) args
@@ -84,7 +84,7 @@ canonicalizeType env region name args info =
         checkArity arity region name args $
           Can.TType home name cargs
 
-checkArity :: Int -> A.Region -> Name.Name -> [A.Located arg] -> answer -> Result i w answer
+checkArity :: Int -> Ann.Region -> Name.Name -> [Ann.Located arg] -> answer -> Result i w answer
 checkArity expected region name args answer =
   let actual = length args
    in if expected == actual

@@ -24,11 +24,11 @@ module Generate.JavaScript.CodeSplit.Generate
 where
 
 import qualified AST.Optimized as Opt
-import qualified Canopy.Kernel as K
+import qualified Canopy.Kernel as Kernel
 import qualified Canopy.ModuleName as ModuleName
 import Data.ByteString (ByteString)
 import Data.ByteString.Builder (Builder)
-import qualified Data.ByteString.Builder as B
+import qualified Data.ByteString.Builder as BB
 import qualified Data.ByteString.Lazy as BL
 import Data.Word (Word8)
 import qualified Data.Index as Index
@@ -60,7 +60,7 @@ import qualified Generate.JavaScript.CodeSplit.Analyze as Analyze
 import qualified Generate.JavaScript.SourceMap as SourceMap
 import qualified Generate.JavaScript.StringPool as StringPool
 import qualified Generate.Mode as Mode
-import qualified Reporting.Annotation as A
+import qualified Reporting.Annotation as Ann
 import qualified Reporting.InternalError as InternalError
 import Prelude hiding (cycle, print)
 
@@ -117,7 +117,7 @@ generateForChunk ::
   Mode.Mode ->
   Graph ->
   Set Opt.Global ->
-  Map Opt.Global A.Region ->
+  Map Opt.Global Ann.Region ->
   (Builder, [SourceMap.Mapping])
 generateForChunk mode graph chunkGlobals srcLocs =
   (stateToBuilder finalState, _stMappings finalState)
@@ -173,7 +173,7 @@ generateLazyChunk mode graph _chunkGraph chunk =
     exports = generateChunkExports mode (_chunkGlobals chunk)
     jsBuilder =
       "__canopy_register(\""
-        <> B.stringUtf8 (Text.unpack cidText)
+        <> BB.stringUtf8 (Text.unpack cidText)
         <> "\", function() {\n"
         <> bodyBuilder
         <> "return {"
@@ -198,7 +198,7 @@ generateSharedChunk mode graph _chunkGraph chunk =
     exports = generateChunkExports mode (_chunkGlobals chunk)
     jsBuilder =
       "__canopy_register(\""
-        <> B.stringUtf8 (Text.unpack cidText)
+        <> BB.stringUtf8 (Text.unpack cidText)
         <> "\", function() {\n"
         <> bodyBuilder
         <> "return {"
@@ -227,11 +227,11 @@ data TraversalState = TraversalState
     _stSeenKernelChunks :: !(Set ByteString),
     _stOutputLine :: !Int,
     _stMappings :: ![SourceMap.Mapping],
-    _stSourceLocs :: !(Map Opt.Global A.Region)
+    _stSourceLocs :: !(Map Opt.Global Ann.Region)
   }
 
 -- | Empty traversal state.
-emptyTraversalState :: Map Opt.Global A.Region -> TraversalState
+emptyTraversalState :: Map Opt.Global Ann.Region -> TraversalState
 emptyTraversalState locs =
   TraversalState mempty [] Set.empty Set.empty 0 [] locs
 
@@ -398,10 +398,10 @@ emitLeaf home@(ModuleName.Canonical _ moduleName) name =
     JS.Call (JS.Ref (JsName.fromKernel Name.platform "leaf")) [JS.String (Name.toBuilder moduleName)]
 
 -- | Emit kernel code.
-emitKernel :: Mode.Mode -> [K.Chunk] -> TraversalState -> Opt.Global -> TraversalState
+emitKernel :: Mode.Mode -> [Kernel.Chunk] -> TraversalState -> Opt.Global -> TraversalState
 emitKernel mode chunks state currentGlobal =
   let kernelCode = generateKernel mode chunks
-      kernelBytes = BL.toStrict (B.toLazyByteString kernelCode)
+      kernelBytes = BL.toStrict (BB.toLazyByteString kernelCode)
    in if Set.member kernelBytes (_stSeenKernelChunks state)
         then state {_stSeen = Set.insert currentGlobal (_stSeen state)}
         else
@@ -413,21 +413,21 @@ emitKernel mode chunks state currentGlobal =
             }
 
 -- | Generate kernel JavaScript.
-generateKernel :: Mode.Mode -> [K.Chunk] -> Builder
+generateKernel :: Mode.Mode -> [Kernel.Chunk] -> Builder
 generateKernel mode = List.foldr (addKernelChunk mode) mempty
 
 -- | Add a single kernel chunk to the builder.
-addKernelChunk :: Mode.Mode -> K.Chunk -> Builder -> Builder
+addKernelChunk :: Mode.Mode -> Kernel.Chunk -> Builder -> Builder
 addKernelChunk mode chunk builder =
   case chunk of
-    K.JS javascript -> B.byteString javascript <> builder
-    K.CanopyVar home name -> JsName.toBuilder (JsName.fromGlobal home name) <> builder
-    K.JsVar home name -> JsName.toBuilder (JsName.fromKernel home name) <> builder
-    K.CanopyField name -> JsName.toBuilder (Expr.generateField mode name) <> builder
-    K.JsField int -> JsName.toBuilder (JsName.fromInt int) <> builder
-    K.JsEnum int -> B.intDec int <> builder
-    K.Debug -> handleDebugChunk mode builder
-    K.Prod -> handleProdChunk mode builder
+    Kernel.JS javascript -> BB.byteString javascript <> builder
+    Kernel.CanopyVar home name -> JsName.toBuilder (JsName.fromGlobal home name) <> builder
+    Kernel.JsVar home name -> JsName.toBuilder (JsName.fromKernel home name) <> builder
+    Kernel.CanopyField name -> JsName.toBuilder (Expr.generateField mode name) <> builder
+    Kernel.JsField int -> JsName.toBuilder (JsName.fromInt int) <> builder
+    Kernel.JsEnum int -> BB.intDec int <> builder
+    Kernel.Debug -> handleDebugChunk mode builder
+    Kernel.Prod -> handleProdChunk mode builder
 
 -- | Handle debug kernel chunk.
 handleDebugChunk :: Mode.Mode -> Builder -> Builder
@@ -485,7 +485,7 @@ addBuilder state builder =
 -- | Count newline bytes in a Builder.
 countNewlines :: Builder -> Int
 countNewlines b =
-  BL.foldl' countNL 0 (B.toLazyByteString b)
+  BL.foldl' countNL 0 (BB.toLazyByteString b)
   where
     countNL :: Int -> Word8 -> Int
     countNL !acc 0x0A = acc + 1

@@ -16,9 +16,9 @@ where
 
 import GHC.IO.Handle (hIsTerminalDevice)
 import Json.Encode ((==>))
-import qualified Json.Encode as E
+import qualified Json.Encode as Encode
 import Reporting.Doc ((<+>))
-import qualified Reporting.Doc as D
+import qualified Reporting.Doc as Doc
 import qualified Reporting.Error as Error
 import System.IO (Handle, hPutStr, stderr, stdout)
 
@@ -29,18 +29,18 @@ data Report
   | Report
       { _title :: String,
         _path :: Maybe FilePath,
-        _message :: D.Doc
+        _message :: Doc.Doc
       }
 
-report :: String -> Maybe FilePath -> String -> [D.Doc] -> Report
+report :: String -> Maybe FilePath -> String -> [Doc.Doc] -> Report
 report title path startString others =
-  Report title path (D.stack (D.reflow startString : others))
+  Report title path (Doc.stack (Doc.reflow startString : others))
 
-docReport :: String -> Maybe FilePath -> D.Doc -> [D.Doc] -> Report
+docReport :: String -> Maybe FilePath -> Doc.Doc -> [Doc.Doc] -> Report
 docReport title path startDoc others =
-  Report title path (D.stack (startDoc : others))
+  Report title path (Doc.stack (startDoc : others))
 
-jsonReport :: String -> Maybe FilePath -> D.Doc -> Report
+jsonReport :: String -> Maybe FilePath -> Doc.Doc -> Report
 jsonReport =
   Report
 
@@ -54,7 +54,7 @@ compilerDiagnosticReport =
 
 -- TO DOC
 
-reportToDoc :: Report -> D.Doc
+reportToDoc :: Report -> Doc.Doc
 reportToDoc report_ =
   case report_ of
     DiagnosticReport root e es ->
@@ -62,53 +62,53 @@ reportToDoc report_ =
     Report title maybePath message ->
       formatReportBar title maybePath message
 
-diagnosticModuleDocs :: FilePath -> [Error.Module] -> D.Doc
+diagnosticModuleDocs :: FilePath -> [Error.Module] -> Doc.Doc
 diagnosticModuleDocs root modules =
-  D.vcat (fmap (Error.toDiagnosticDoc root) modules)
+  Doc.vcat (fmap (Error.toDiagnosticDoc root) modules)
 
-formatReportBar :: String -> Maybe FilePath -> D.Doc -> D.Doc
+formatReportBar :: String -> Maybe FilePath -> Doc.Doc -> Doc.Doc
 formatReportBar title maybePath message =
-  D.stack [errorBar, message, ""]
+  Doc.stack [errorBar, message, ""]
   where
-    errorBar = D.dullcyan ("--" <+> D.fromChars title <+> D.fromChars errorBarEnd)
+    errorBar = Doc.dullcyan ("--" <+> Doc.fromChars title <+> Doc.fromChars errorBarEnd)
     errorBarEnd = maybe (makeDashes (4 + length title)) pathDashes maybePath
     pathDashes path = makeDashes (5 + length title + length path) <> " " <> path
     makeDashes n = replicate (max 1 (80 - n)) '-'
 
 -- TO JSON
 
-reportToJson :: Report -> E.Value
+reportToJson :: Report -> Encode.Value
 reportToJson report_ =
   case report_ of
     DiagnosticReport _ e es ->
-      E.object
-        [ "type" ==> E.chars "compile-errors",
-          "errors" ==> E.list Error.toDiagnosticJson (e : es)
+      Encode.object
+        [ "type" ==> Encode.chars "compile-errors",
+          "errors" ==> Encode.list Error.toDiagnosticJson (e : es)
         ]
     Report title maybePath message ->
-      E.object
-        [ "type" ==> E.chars "error",
-          "path" ==> maybe E.null E.chars maybePath,
-          "title" ==> E.chars title,
-          "message" ==> D.encode message
+      Encode.object
+        [ "type" ==> Encode.chars "error",
+          "path" ==> maybe Encode.null Encode.chars maybePath,
+          "title" ==> Encode.chars title,
+          "message" ==> Doc.encode message
         ]
 
 -- OUTPUT
 
-toString :: D.Doc -> String
+toString :: Doc.Doc -> String
 toString =
-  D.toString
+  Doc.toString
 
-toStdout :: D.Doc -> IO ()
+toStdout :: Doc.Doc -> IO ()
 toStdout = toHandle stdout
 
-toStderr :: D.Doc -> IO ()
+toStderr :: Doc.Doc -> IO ()
 toStderr = toHandle stderr
 
-toHandle :: Handle -> D.Doc -> IO ()
+toHandle :: Handle -> Doc.Doc -> IO ()
 toHandle handle doc =
   do
     isTerminal <- hIsTerminalDevice handle
     if isTerminal
-      then D.toAnsi handle doc
+      then Doc.toAnsi handle doc
       else hPutStr handle (toString doc)

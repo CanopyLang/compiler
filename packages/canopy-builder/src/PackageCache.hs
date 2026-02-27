@@ -40,10 +40,10 @@ module PackageCache
   ) where
 
 import qualified AST.Optimized as Opt
-import qualified Canopy.Interface as I
+import qualified Canopy.Interface as Interface
 import qualified Canopy.ModuleName as ModuleName
 import qualified Canopy.Package as Pkg
-import qualified Canopy.Version as V
+import qualified Canopy.Version as Version
 import Control.Concurrent.Async (mapConcurrently)
 import Control.Monad (liftM2, liftM3)
 import Data.Binary (Binary)
@@ -59,7 +59,7 @@ import qualified System.Directory as Dir
 import System.FilePath ((</>))
 
 -- | Map of module names to their dependency interfaces.
-type PackageInterfaces = Map ModuleName.Raw I.DependencyInterface
+type PackageInterfaces = Map ModuleName.Raw Interface.DependencyInterface
 
 -- | Complete package artifacts including interfaces, optimized code, and FFI info.
 data PackageArtifacts = PackageArtifacts
@@ -70,7 +70,7 @@ data PackageArtifacts = PackageArtifacts
   deriving (Show)
 
 -- | Fingerprint tracking package dependencies (matches old Details.hs).
-type Fingerprint = Map Pkg.Name V.Version
+type Fingerprint = Map Pkg.Name Version.Version
 
 -- | Artifact cache structure (matches old/builder/src/Canopy/Details.hs).
 data ArtifactCache = ArtifactCache
@@ -228,7 +228,7 @@ loadElmCoreInterfaces =
 --
 -- Uses parallel I/O for significant performance improvement.
 --
--- >>> let deps = [(Pkg.Name "elm" "core", V.Version 1 0 5)]
+-- >>> let deps = [(Pkg.Name "elm" "core", Version.Version 1 0 5)]
 -- >>> allInterfaces <- loadAllDependencyInterfaces deps
 --
 -- ==== Behavior
@@ -241,14 +241,14 @@ loadElmCoreInterfaces =
 -- @since 0.19.1
 loadAllDependencyInterfaces ::
   -- | List of (package, version) pairs
-  [(Pkg.Name, V.Version)] ->
+  [(Pkg.Name, Version.Version)] ->
   IO PackageInterfaces
 loadAllDependencyInterfaces deps = do
   -- Load in parallel using async
   interfaceLists <- mapConcurrently loadDep deps
   return (Map.unions (concat interfaceLists))
   where
-    loadDep (Pkg.Name author project, V.Version major minor patch) = do
+    loadDep (Pkg.Name author project, Version.Version major minor patch) = do
       let authorStr = Utf8.toChars author
           projectStr = Utf8.toChars project
           versionStr = show major ++ "." ++ show minor ++ "." ++ show patch
@@ -284,7 +284,7 @@ loadPackageArtifacts author package version = do
 -- @since 0.19.1
 loadAllPackageArtifacts ::
   -- | List of (package, version) pairs
-  [(Pkg.Name, V.Version)] ->
+  [(Pkg.Name, Version.Version)] ->
   IO (Maybe PackageArtifacts)
 loadAllPackageArtifacts deps = do
   -- Load packages in parallel using async - major performance improvement
@@ -294,7 +294,7 @@ loadAllPackageArtifacts deps = do
     then return Nothing
     else return (Just (mergeArtifacts validArtifacts))
   where
-    loadDep (Pkg.Name author project, V.Version major minor patch) = do
+    loadDep (Pkg.Name author project, Version.Version major minor patch) = do
       let authorStr = Utf8.toChars author
           projectStr = Utf8.toChars project
           versionStr = show major ++ "." ++ show minor ++ "." ++ show patch
@@ -339,7 +339,7 @@ loadModuleInterface ::
   -- ^ Project root directory
   String ->
   -- ^ Module name (e.g., "Main", "Utils")
-  IO (Either String I.Interface)
+  IO (Either String Interface.Interface)
 loadModuleInterface root moduleName = do
   let interfaceDir = root </> "canopy-stuff" </> "0.19.1" </> "i.cani"
       basePath = interfaceDir </> moduleName

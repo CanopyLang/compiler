@@ -16,7 +16,7 @@ import qualified Data.Index as Index
 import qualified Data.List as List
 import qualified Data.Map.Strict as Map
 import qualified Data.Name as Name
-import qualified Reporting.Annotation as A
+import qualified Reporting.Annotation as Ann
 import qualified Reporting.Error.Canonicalize as Error
 import qualified Reporting.Result as Result
 
@@ -26,7 +26,7 @@ type Result i w a =
   Result.Result i w Error.Error a
 
 type Bindings =
-  Map.Map Name.Name A.Region
+  Map.Map Name.Name Ann.Region
 
 -- VERIFY
 
@@ -52,18 +52,18 @@ verify context (Result.Result k) =
 -- CANONICALIZE
 
 type DupsDict =
-  Dups.Dict A.Region
+  Dups.Dict Ann.Region
 
 canonicalize :: Env.Env -> Src.Pattern -> Result DupsDict w Can.Pattern
-canonicalize env (A.At region pattern) =
-  A.At region
+canonicalize env (Ann.At region pattern) =
+  Ann.At region
     <$> case pattern of
       Src.PAnything ->
         Result.ok Can.PAnything
       Src.PVar name ->
         logVar name region (Can.PVar name)
       Src.PRecord fields ->
-        logFields fields (Can.PRecord (map A.toValue fields))
+        logFields fields (Can.PRecord (map Ann.toValue fields))
       Src.PUnit ->
         Result.ok Can.PUnit
       Src.PTuple a b cs ->
@@ -81,7 +81,7 @@ canonicalize env (A.At region pattern) =
         Can.PCons
           <$> canonicalize env first
           <*> canonicalize env rest
-      Src.PAlias ptrn (A.At reg name) ->
+      Src.PAlias ptrn (Ann.At reg name) ->
         do
           cpattern <- canonicalize env ptrn
           logVar name reg (Can.PAlias cpattern name)
@@ -92,7 +92,7 @@ canonicalize env (A.At region pattern) =
       Src.PInt int ->
         Result.ok (Can.PInt int)
 
-canonicalizeCtor :: Env.Env -> A.Region -> Name.Name -> [Src.Pattern] -> Env.Ctor -> Result DupsDict w Can.Pattern_
+canonicalizeCtor :: Env.Env -> Ann.Region -> Name.Name -> [Src.Pattern] -> Env.Ctor -> Result DupsDict w Can.Pattern_
 canonicalizeCtor env region name patterns ctor =
   case ctor of
     Env.Ctor home tipe union index args ->
@@ -110,7 +110,7 @@ canonicalizeCtor env region name patterns ctor =
     Env.RecordCtor _ _ _ ->
       Result.throw (Error.PatternHasRecordCtor region name)
 
-canonicalizeTuple :: A.Region -> Env.Env -> [Src.Pattern] -> Result DupsDict w (Maybe Can.Pattern)
+canonicalizeTuple :: Ann.Region -> Env.Env -> [Src.Pattern] -> Result DupsDict w (Maybe Can.Pattern)
 canonicalizeTuple tupleRegion env extras =
   case extras of
     [] ->
@@ -132,14 +132,14 @@ canonicalizeList env list =
 
 -- LOG BINDINGS
 
-logVar :: Name.Name -> A.Region -> a -> Result DupsDict w a
+logVar :: Name.Name -> Ann.Region -> a -> Result DupsDict w a
 logVar name region value =
   Result.Result $ \bindings warnings _ ok ->
     ok (Dups.insert name region region bindings) warnings value
 
-logFields :: [A.Located Name.Name] -> a -> Result DupsDict w a
+logFields :: [Ann.Located Name.Name] -> a -> Result DupsDict w a
 logFields fields value =
-  let addField dict (A.At region name) =
+  let addField dict (Ann.At region name) =
         Dups.insert name region region dict
    in Result.Result $ \bindings warnings _ ok ->
         ok (List.foldl' addField bindings fields) warnings value

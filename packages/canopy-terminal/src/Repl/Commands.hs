@@ -23,11 +23,11 @@ import qualified AST.Source as Src
 import Data.ByteString (ByteString)
 import qualified Data.Char as Char
 import qualified Data.List as List
-import qualified Data.Name as N
+import qualified Data.Name as Name
 import qualified Parse.Declaration as PD
 import qualified Parse.Expression as PE
 import qualified Parse.Module as PM
-import qualified Parse.Primitives as P
+import qualified Parse.Primitives as Parse
 import qualified Parse.Space as PS
 import qualified Parse.Type as PT
 import qualified Parse.Variable as PV
@@ -41,10 +41,10 @@ import Repl.Types
     isSingleLine,
     linesToByteString,
   )
-import qualified Reporting.Annotation as A
-import qualified Reporting.Doc as D
+import qualified Reporting.Annotation as Ann
+import qualified Reporting.Doc as Doc
 import qualified Reporting.Diagnostic as Diag
-import qualified Reporting.Error.Syntax as ES
+import qualified Reporting.Error.Syntax as SyntaxError
 import qualified Reporting.Render.Code as Code
 
 -- | Categorize user input into appropriate action.
@@ -74,11 +74,11 @@ attemptImport inputLines =
   either failHandler successHandler parseResult
   where
     src = linesToByteString inputLines
-    parser = P.specialize (\_ _ _ -> ()) PM.chompImport
-    parseResult = P.fromByteString parser (\_ _ -> ()) src
+    parser = Parse.specialize (\_ _ _ -> ()) PM.chompImport
+    parseResult = Parse.fromByteString parser (\_ _ -> ()) src
 
-    successHandler (Src.Import (A.At _ name) _ _ _) = Done (Import name src)
-    failHandler () = ifFail inputLines (Import (N.fromChars "ERR") src)
+    successHandler (Src.Import (Ann.At _ name) _ _ _) = Done (Import name src)
+    failHandler () = ifFail inputLines (Import (Name.fromChars "ERR") src)
 
 -- | Handle parsing failure with continuation logic.
 --
@@ -108,9 +108,9 @@ attemptDeclOrExpr inputLines =
     handleDeclFailure = handleDeclError inputLines src exprParser
     handleDeclSuccess (decl, _) = processDeclaration inputLines src decl
     src = linesToByteString inputLines
-    exprParser = P.specialize (toExprPosition src) PE.expression
-    declParser = P.specialize (toDeclPosition src) PD.declaration
-    declResult = P.fromByteString declParser (,) src
+    exprParser = Parse.specialize (toExprPosition src) PE.expression
+    declParser = Parse.specialize (toDeclPosition src) PD.declaration
+    declResult = Parse.fromByteString declParser (,) src
 
 -- | Process successfully parsed declaration.
 --
@@ -118,29 +118,29 @@ attemptDeclOrExpr inputLines =
 processDeclaration :: Lines -> ByteString -> PD.Decl -> CategorizedInput
 processDeclaration inputLines src decl =
   case decl of
-    PD.Value _ (A.At _ (Src.Value (A.At _ name) _ _ _)) ->
+    PD.Value _ (Ann.At _ (Src.Value (Ann.At _ name) _ _ _)) ->
       ifDone inputLines (Decl name src)
-    PD.Union _ (A.At _ (Src.Union (A.At _ name) _ _)) ->
+    PD.Union _ (Ann.At _ (Src.Union (Ann.At _ name) _ _)) ->
       ifDone inputLines (Type name src)
-    PD.Alias _ (A.At _ (Src.Alias (A.At _ name) _ _)) ->
+    PD.Alias _ (Ann.At _ (Src.Alias (Ann.At _ name) _ _)) ->
       ifDone inputLines (Type name src)
     PD.Port _ _ -> Done Port
 
 -- | Handle declaration parsing error.
 --
 -- @since 0.19.1
-handleDeclError :: Lines -> ByteString -> P.Parser (P.Row, P.Col) (Src.Expr, a) -> (P.Row, P.Col) -> CategorizedInput
+handleDeclError :: Lines -> ByteString -> Parse.Parser (Parse.Row, Parse.Col) (Src.Expr, a) -> (Parse.Row, Parse.Col) -> CategorizedInput
 handleDeclError inputLines src exprParser declPosition
-  | startsWithKeyword "type" inputLines = ifFail inputLines (Type (N.fromChars "ERR") src)
+  | startsWithKeyword "type" inputLines = ifFail inputLines (Type (Name.fromChars "ERR") src)
   | startsWithKeyword "port" inputLines = Done Port
   | otherwise = tryParseExpression inputLines src exprParser declPosition
 
 -- | Try parsing as expression after declaration failed.
 --
 -- @since 0.19.1
-tryParseExpression :: Lines -> ByteString -> P.Parser (P.Row, P.Col) (Src.Expr, a) -> (P.Row, P.Col) -> CategorizedInput
+tryParseExpression :: Lines -> ByteString -> Parse.Parser (Parse.Row, Parse.Col) (Src.Expr, a) -> (Parse.Row, Parse.Col) -> CategorizedInput
 tryParseExpression inputLines src exprParser declPosition =
-  case P.fromByteString exprParser (,) src of
+  case Parse.fromByteString exprParser (,) src of
     Right _ -> ifDone inputLines (Expr src)
     Left exprPosition ->
       if exprPosition >= declPosition
@@ -152,9 +152,9 @@ tryParseExpression inputLines src exprParser declPosition =
 -- @since 0.19.1
 handleAnnotation :: Lines -> ByteString -> CategorizedInput
 handleAnnotation inputLines src =
-  case P.fromByteString annotation (\_ _ -> ()) src of
+  case Parse.fromByteString annotation (\_ _ -> ()) src of
     Right name -> Continue (DefStart name)
-    Left () -> ifFail inputLines (Decl (N.fromChars "ERR") src)
+    Left () -> ifFail inputLines (Decl (Name.fromChars "ERR") src)
 
 -- | Check if input starts with colon (command).
 --
@@ -191,31 +191,31 @@ startsWithKeyword keyword inputLines =
 -- | Convert expression position for error reporting.
 --
 -- @since 0.19.1
-toExprPosition :: ByteString -> ES.Expr -> P.Row -> P.Col -> (P.Row, P.Col)
+toExprPosition :: ByteString -> SyntaxError.Expr -> Parse.Row -> Parse.Col -> (Parse.Row, Parse.Col)
 toExprPosition src expr row col =
-  toDeclPosition src (ES.DeclDef N.replValueToPrint (ES.DeclDefBody expr row col) row col) row col
+  toDeclPosition src (SyntaxError.DeclDef Name.replValueToPrint (SyntaxError.DeclDefBody expr row col) row col) row col
 
 -- | Convert declaration position for error reporting.
 --
 -- @since 0.19.1
-toDeclPosition :: ByteString -> ES.Decl -> P.Row -> P.Col -> (P.Row, P.Col)
+toDeclPosition :: ByteString -> SyntaxError.Decl -> Parse.Row -> Parse.Col -> (Parse.Row, Parse.Col)
 toDeclPosition src decl r c =
   (row, col)
   where
-    err = ES.ParseError (ES.Declarations decl r c)
-    diag = ES.toDiagnostic (Code.toSource src) err
-    A.Region (A.Position row col) _ = Diag._spanRegion (Diag._diagPrimary diag)
+    err = SyntaxError.ParseError (SyntaxError.Declarations decl r c)
+    diag = SyntaxError.toDiagnostic (Code.toSource src) err
+    Ann.Region (Ann.Position row col) _ = Diag._spanRegion (Diag._diagPrimary diag)
 
 -- | Parse type annotation.
 --
 -- @since 0.19.1
-annotation :: P.Parser () N.Name
+annotation :: Parse.Parser () Name.Name
 annotation = do
   name <- PV.lower err
   PS.chompAndCheckIndent err_ err
-  P.word1 0x3A {-:-} err
+  Parse.word1 0x3A {-:-} err
   PS.chompAndCheckIndent err_ err
-  (_, _) <- P.specialize err_ PT.expression
+  (_, _) <- Parse.specialize err_ PT.expression
   PS.checkFreshLine err
   pure name
   where
@@ -240,7 +240,7 @@ renderPrefill :: Prefill -> String
 renderPrefill prefill =
   case prefill of
     Indent -> "  "
-    DefStart name -> N.toChars name <> " "
+    DefStart name -> Name.toChars name <> " "
 
 -- | Generate help message for commands.
 --
@@ -263,5 +263,5 @@ genericHelpMessage =
   \  :reset   Clear all previous imports and definitions\n\
   \\n\
   \More info at "
-    <> D.makeLink "repl"
+    <> Doc.makeLink "repl"
     <> "\n"

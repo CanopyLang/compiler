@@ -30,7 +30,7 @@
 -- * 'Module' - Top-level module structure with declarations
 -- * 'Def' - Function and value definitions
 --
--- Each major construct is paired with location information via 'A.Located'
+-- Each major construct is paired with location information via 'Ann.Located'
 -- to enable precise error reporting and source map generation.
 --
 -- == Usage Examples
@@ -137,8 +137,8 @@ import qualified Canopy.Float as EF
 import qualified Canopy.String as ES
 import Data.Name (Name)
 import qualified Data.Name as Name
-import qualified Parse.Primitives as P
-import qualified Reporting.Annotation as A
+import qualified Parse.Primitives as Parse
+import qualified Reporting.Annotation as Ann
 
 -- FFI Support
 import qualified Foreign.FFI as FFI
@@ -152,7 +152,7 @@ import qualified Foreign.FFI as FFI
 -- type used throughout parsing and early compilation phases.
 --
 -- @since 0.19.1
-type Expr = A.Located Expr_
+type Expr = Ann.Located Expr_
 
 -- | Core expression forms in Canopy source code.
 --
@@ -215,7 +215,7 @@ data Expr_
     -- Represents chains of binary operators like @a + b * c@.
     -- Each tuple contains (left expression, operator). Final expression is the rightmost operand.
     -- Precedence resolution happens in later compilation phases.
-    Binops [(Expr, A.Located Name)] Expr
+    Binops [(Expr, Ann.Located Name)] Expr
   | -- | Lambda expression.
     --
     -- Represents lambda expressions like @\\x -> x + 1@, @\\x y -> x * y@.
@@ -236,7 +236,7 @@ data Expr_
     --
     -- Represents let-in expressions with local definitions.
     -- Contains list of local definitions and body expression.
-    Let [A.Located Def] Expr
+    Let [Ann.Located Def] Expr
   | -- | Case expression.
     --
     -- Represents pattern matching like @case x of Just y -> y; Nothing -> 0@.
@@ -251,17 +251,17 @@ data Expr_
     --
     -- Represents field access like @user.name@, @config.timeout@.
     -- Extracts named field from the record expression.
-    Access Expr (A.Located Name)
+    Access Expr (Ann.Located Name)
   | -- | Record update.
     --
     -- Represents record updates like @{ user | name = "John" }@.
     -- Updates specified fields while preserving others.
-    Update (A.Located Name) [(A.Located Name, Expr)]
+    Update (Ann.Located Name) [(Ann.Located Name, Expr)]
   | -- | Record literal.
     --
     -- Represents record literals like @{ name = "John", age = 25 }@.
     -- Contains field name and value expression pairs.
-    Record [(A.Located Name, Expr)]
+    Record [(Ann.Located Name, Expr)]
   | -- | Unit literal.
     --
     -- Represents the unit value @()@.
@@ -319,7 +319,7 @@ data Def
     --
     -- Contains the definition name, parameter patterns, body expression,
     -- and optional type annotation.
-    Define (A.Located Name) [Pattern] Expr (Maybe Type)
+    Define (Ann.Located Name) [Pattern] Expr (Maybe Type)
   | -- | Destructuring definition.
     --
     -- Represents destructuring assignments like:
@@ -341,7 +341,7 @@ data Def
 -- error reporting for pattern matching issues.
 --
 -- @since 0.19.1
-type Pattern = A.Located Pattern_
+type Pattern = Ann.Located Pattern_
 
 -- | Core pattern matching constructs.
 --
@@ -368,12 +368,12 @@ data Pattern_
     --
     -- Represents record patterns like @{name, age}@, @{x, y}@.
     -- Extracts specified fields from record values.
-    PRecord [A.Located Name]
+    PRecord [Ann.Located Name]
   | -- | Pattern alias.
     --
     -- Represents aliased patterns like @x as (Just y)@, @data as {name}@.
     -- Binds the entire matched value to alias while also matching the pattern.
-    PAlias Pattern (A.Located Name)
+    PAlias Pattern (Ann.Located Name)
   | -- | Unit pattern.
     --
     -- Represents the unit pattern @()@ that matches unit values.
@@ -388,12 +388,12 @@ data Pattern_
     --
     -- Represents constructor patterns like @Just x@, @Node left right@.
     -- Matches values constructed with the specified constructor.
-    PCtor A.Region Name [Pattern]
+    PCtor Ann.Region Name [Pattern]
   | -- | Qualified constructor pattern.
     --
     -- Represents qualified constructor patterns like @Maybe.Just x@.
     -- First Name is module, second Name is constructor.
-    PCtorQual A.Region Name Name [Pattern]
+    PCtorQual Ann.Region Name Name [Pattern]
   | -- | List pattern.
     --
     -- Represents list patterns like @[x, y, z]@, @[]@.
@@ -431,7 +431,7 @@ data Pattern_
 --
 -- @since 0.19.1
 type Type =
-  A.Located Type_
+  Ann.Located Type_
 
 -- | Core type constructs in Canopy.
 --
@@ -455,17 +455,17 @@ data Type_
     --
     -- Represents type applications like @List Int@, @Maybe String@.
     -- Contains source region, constructor name, and type arguments.
-    TType A.Region Name [Type]
+    TType Ann.Region Name [Type]
   | -- | Qualified type constructor.
     --
     -- Represents qualified type applications like @Dict.Dict String Int@.
     -- First Name is module, second Name is type constructor.
-    TTypeQual A.Region Name Name [Type]
+    TTypeQual Ann.Region Name Name [Type]
   | -- | Record type.
     --
     -- Represents record types like @{ name : String, age : Int }@.
     -- Optional extension variable enables row polymorphism.
-    TRecord [(A.Located Name, Type)] (Maybe (A.Located Name))
+    TRecord [(Ann.Located Name, Type)] (Maybe (Ann.Located Name))
   | -- | Unit type.
     --
     -- Represents the unit type @()@.
@@ -494,15 +494,15 @@ data Type_
 --
 -- @since 0.19.1
 data Module = Module
-  { _name :: Maybe (A.Located Name),
-    _exports :: A.Located Exposing,
+  { _name :: Maybe (Ann.Located Name),
+    _exports :: Ann.Located Exposing,
     _docs :: Docs,
     _imports :: [Import],
     _foreignImports :: [ForeignImport],
-    _values :: [A.Located Value],
-    _unions :: [A.Located Union],
-    _aliases :: [A.Located Alias],
-    _binops :: [A.Located Infix],
+    _values :: [Ann.Located Value],
+    _unions :: [Ann.Located Union],
+    _aliases :: [Ann.Located Alias],
+    _binops :: [Ann.Located Infix],
     _effects :: Effects
   }
   deriving (Show)
@@ -525,7 +525,7 @@ data Module = Module
 getName :: Module -> Name
 getName (Module maybeName _ _ _ _ _ _ _ _ _) =
   case maybeName of
-    Just (A.At _ moduleName) ->
+    Just (Ann.At _ moduleName) ->
       moduleName
     Nothing ->
       Name._Main
@@ -545,7 +545,7 @@ getName (Module maybeName _ _ _ _ _ _ _ _ _) =
 --
 -- @since 0.19.1
 getImportName :: Import -> Name
-getImportName (Import (A.At _ impName) _ _ _) =
+getImportName (Import (Ann.At _ impName) _ _ _) =
   impName
 
 -- | Import declaration in source code.
@@ -562,7 +562,7 @@ getImportName (Import (A.At _ impName) _ _ _) =
 --
 -- @since 0.19.1
 data Import = Import
-  { _importName :: A.Located Name,
+  { _importName :: Ann.Located Name,
     _importAlias :: Maybe Name,
     _importExposing :: Exposing,
     _importLazy :: !Bool
@@ -582,8 +582,8 @@ data Import = Import
 -- @since 0.19.1
 data ForeignImport = ForeignImport
   { _foreignTarget :: FFI.FFITarget,
-    _foreignAlias :: A.Located Name,
-    _foreignLocation :: A.Region
+    _foreignAlias :: Ann.Located Name,
+    _foreignLocation :: Ann.Region
   }
   deriving (Show)
 
@@ -594,7 +594,7 @@ data ForeignImport = ForeignImport
 -- module's values list.
 --
 -- @since 0.19.1
-data Value = Value (A.Located Name) [Pattern] Expr (Maybe Type)
+data Value = Value (Ann.Located Name) [Pattern] Expr (Maybe Type)
   deriving (Show)
 
 -- | Union type definition in source code.
@@ -608,7 +608,7 @@ data Value = Value (A.Located Name) [Pattern] Expr (Maybe Type)
 -- Contains type name, type parameters, and constructor definitions.
 --
 -- @since 0.19.1
-data Union = Union (A.Located Name) [A.Located Name] [(A.Located Name, [Type])]
+data Union = Union (Ann.Located Name) [Ann.Located Name] [(Ann.Located Name, [Type])]
   deriving (Show)
 
 -- | Type alias definition in source code.
@@ -622,7 +622,7 @@ data Union = Union (A.Located Name) [A.Located Name] [(A.Located Name, [Type])]
 -- Contains alias name, type parameters, and target type.
 --
 -- @since 0.19.1
-data Alias = Alias (A.Located Name) [A.Located Name] Type
+data Alias = Alias (Ann.Located Name) [Ann.Located Name] Type
   deriving (Show)
 
 -- | Infix operator definition in source code.
@@ -650,7 +650,7 @@ data Infix = Infix Name Binop.Associativity Binop.Precedence Name
 -- Ports enable controlled interaction with external JavaScript code.
 --
 -- @since 0.19.1
-data Port = Port (A.Located Name) Type
+data Port = Port (Ann.Located Name) Type
   deriving (Show)
 
 -- | Effect declarations for modules.
@@ -663,7 +663,7 @@ data Port = Port (A.Located Name) Type
 data Effects
   = NoEffects
   | Ports [Port]
-  | Manager A.Region Manager
+  | Manager Ann.Region Manager
   | FFI [ForeignImport]
   deriving (Show)
 
@@ -674,9 +674,9 @@ data Effects
 --
 -- @since 0.19.1
 data Manager
-  = Cmd (A.Located Name)
-  | Sub (A.Located Name)
-  | Fx (A.Located Name) (A.Located Name)
+  = Cmd (Ann.Located Name)
+  | Sub (Ann.Located Name)
+  | Fx (Ann.Located Name) (Ann.Located Name)
   deriving (Show)
 
 -- | Documentation in source code.
@@ -686,7 +686,7 @@ data Manager
 --
 -- @since 0.19.1
 data Docs
-  = NoDocs A.Region
+  = NoDocs Ann.Region
   | YesDocs Comment [(Name, Comment)]
   deriving (Show)
 
@@ -697,7 +697,7 @@ data Docs
 --
 -- @since 0.19.1
 newtype Comment
-  = Comment P.Snippet
+  = Comment Parse.Snippet
   deriving (Show)
 
 -- EXPOSING
@@ -725,9 +725,9 @@ data Exposing
 --
 -- @since 0.19.1
 data Exposed
-  = Lower (A.Located Name)
-  | Upper (A.Located Name) Privacy
-  | Operator A.Region Name
+  = Lower (Ann.Located Name)
+  | Upper (Ann.Located Name) Privacy
+  | Operator Ann.Region Name
   deriving (Show)
 
 -- | Privacy specification for exposed types.
@@ -740,7 +740,7 @@ data Exposed
 --
 -- @since 0.19.1
 data Privacy
-  = Public A.Region
+  = Public Ann.Region
   | Private
   deriving (Show)
 

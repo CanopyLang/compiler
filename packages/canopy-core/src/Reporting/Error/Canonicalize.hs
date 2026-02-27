@@ -22,9 +22,9 @@ import qualified Data.Map as Map
 import qualified Data.Name as Name
 import qualified Data.OneOrMore as OneOrMore
 import qualified Data.Set as Set
-import qualified Reporting.Annotation as A
+import qualified Reporting.Annotation as Ann
 import Reporting.Doc (Doc, (<+>))
-import qualified Reporting.Doc as D
+import qualified Reporting.Doc as Doc
 import qualified Reporting.Render.Code as Code
 import qualified Reporting.Render.Type as RT
 import qualified Reporting.Report as Report
@@ -37,57 +37,57 @@ import qualified Reporting.ErrorCode as EC
 -- CANONICALIZATION ERRORS
 
 data Error
-  = AnnotationTooShort A.Region Name.Name Index.ZeroBased Int
-  | AmbiguousVar A.Region (Maybe Name.Name) Name.Name ModuleName.Canonical (OneOrMore.OneOrMore ModuleName.Canonical)
-  | AmbiguousType A.Region (Maybe Name.Name) Name.Name ModuleName.Canonical (OneOrMore.OneOrMore ModuleName.Canonical)
-  | AmbiguousVariant A.Region (Maybe Name.Name) Name.Name ModuleName.Canonical (OneOrMore.OneOrMore ModuleName.Canonical)
-  | AmbiguousBinop A.Region Name.Name ModuleName.Canonical (OneOrMore.OneOrMore ModuleName.Canonical)
-  | BadArity A.Region BadArityContext Name.Name Int Int
-  | Binop A.Region Name.Name Name.Name
-  | DuplicateDecl Name.Name A.Region A.Region
-  | DuplicateType Name.Name A.Region A.Region
-  | DuplicateCtor Name.Name A.Region A.Region
-  | DuplicateBinop Name.Name A.Region A.Region
-  | DuplicateField Name.Name A.Region A.Region
-  | DuplicateAliasArg Name.Name Name.Name A.Region A.Region
-  | DuplicateUnionArg Name.Name Name.Name A.Region A.Region
-  | DuplicatePattern DuplicatePatternContext Name.Name A.Region A.Region
-  | EffectNotFound A.Region Name.Name
-  | EffectFunctionNotFound A.Region Name.Name
-  | ExportDuplicate Name.Name A.Region A.Region
-  | ExportNotFound A.Region VarKind Name.Name [Name.Name]
-  | ExportOpenAlias A.Region Name.Name
-  | ImportCtorByName A.Region Name.Name Name.Name
-  | ImportNotFound A.Region Name.Name [ModuleName.Canonical]
-  | ImportOpenAlias A.Region Name.Name
-  | ImportExposingNotFound A.Region ModuleName.Canonical Name.Name [Name.Name]
-  | NotFoundVar A.Region (Maybe Name.Name) Name.Name PossibleNames
-  | NotFoundType A.Region (Maybe Name.Name) Name.Name PossibleNames
-  | NotFoundVariant A.Region (Maybe Name.Name) Name.Name PossibleNames
-  | NotFoundBinop A.Region Name.Name (Set.Set Name.Name)
-  | PatternHasRecordCtor A.Region Name.Name
-  | PortPayloadInvalid A.Region Name.Name Can.Type InvalidPayload
-  | PortTypeInvalid A.Region Name.Name PortProblem
-  | RecursiveAlias A.Region Name.Name [Name.Name] Src.Type [Name.Name]
-  | RecursiveDecl A.Region Name.Name [Name.Name]
-  | RecursiveLet (A.Located Name.Name) [Name.Name]
-  | Shadowing Name.Name A.Region A.Region
-  | TupleLargerThanThree A.Region
-  | TypeVarsUnboundInUnion A.Region Name.Name [Name.Name] (Name.Name, A.Region) [(Name.Name, A.Region)]
-  | TypeVarsMessedUpInAlias A.Region Name.Name [Name.Name] [(Name.Name, A.Region)] [(Name.Name, A.Region)]
-  | FFIFileNotFound A.Region FilePath
-  | FFIFileTimeout A.Region FilePath Int
-  | FFIParseError A.Region FilePath String
-  | FFIPathTraversal A.Region FilePath String
-  | FFIInvalidType A.Region FilePath Name.Name String
-  | FFIMissingAnnotation A.Region FilePath Name.Name
-  | FFICircularDependency A.Region FilePath [FilePath]
-  | FFITypeNotFound A.Region FilePath Name.Name String [Name.Name]
-  | LazyImportNotFound A.Region Name.Name [Name.Name]
-  | LazyImportCoreModule A.Region Name.Name
-  | LazyImportInPackage A.Region Name.Name
-  | LazyImportSelf A.Region Name.Name
-  | LazyImportKernel A.Region Name.Name
+  = AnnotationTooShort Ann.Region Name.Name Index.ZeroBased Int
+  | AmbiguousVar Ann.Region (Maybe Name.Name) Name.Name ModuleName.Canonical (OneOrMore.OneOrMore ModuleName.Canonical)
+  | AmbiguousType Ann.Region (Maybe Name.Name) Name.Name ModuleName.Canonical (OneOrMore.OneOrMore ModuleName.Canonical)
+  | AmbiguousVariant Ann.Region (Maybe Name.Name) Name.Name ModuleName.Canonical (OneOrMore.OneOrMore ModuleName.Canonical)
+  | AmbiguousBinop Ann.Region Name.Name ModuleName.Canonical (OneOrMore.OneOrMore ModuleName.Canonical)
+  | BadArity Ann.Region BadArityContext Name.Name Int Int
+  | Binop Ann.Region Name.Name Name.Name
+  | DuplicateDecl Name.Name Ann.Region Ann.Region
+  | DuplicateType Name.Name Ann.Region Ann.Region
+  | DuplicateCtor Name.Name Ann.Region Ann.Region
+  | DuplicateBinop Name.Name Ann.Region Ann.Region
+  | DuplicateField Name.Name Ann.Region Ann.Region
+  | DuplicateAliasArg Name.Name Name.Name Ann.Region Ann.Region
+  | DuplicateUnionArg Name.Name Name.Name Ann.Region Ann.Region
+  | DuplicatePattern DuplicatePatternContext Name.Name Ann.Region Ann.Region
+  | EffectNotFound Ann.Region Name.Name
+  | EffectFunctionNotFound Ann.Region Name.Name
+  | ExportDuplicate Name.Name Ann.Region Ann.Region
+  | ExportNotFound Ann.Region VarKind Name.Name [Name.Name]
+  | ExportOpenAlias Ann.Region Name.Name
+  | ImportCtorByName Ann.Region Name.Name Name.Name
+  | ImportNotFound Ann.Region Name.Name [ModuleName.Canonical]
+  | ImportOpenAlias Ann.Region Name.Name
+  | ImportExposingNotFound Ann.Region ModuleName.Canonical Name.Name [Name.Name]
+  | NotFoundVar Ann.Region (Maybe Name.Name) Name.Name PossibleNames
+  | NotFoundType Ann.Region (Maybe Name.Name) Name.Name PossibleNames
+  | NotFoundVariant Ann.Region (Maybe Name.Name) Name.Name PossibleNames
+  | NotFoundBinop Ann.Region Name.Name (Set.Set Name.Name)
+  | PatternHasRecordCtor Ann.Region Name.Name
+  | PortPayloadInvalid Ann.Region Name.Name Can.Type InvalidPayload
+  | PortTypeInvalid Ann.Region Name.Name PortProblem
+  | RecursiveAlias Ann.Region Name.Name [Name.Name] Src.Type [Name.Name]
+  | RecursiveDecl Ann.Region Name.Name [Name.Name]
+  | RecursiveLet (Ann.Located Name.Name) [Name.Name]
+  | Shadowing Name.Name Ann.Region Ann.Region
+  | TupleLargerThanThree Ann.Region
+  | TypeVarsUnboundInUnion Ann.Region Name.Name [Name.Name] (Name.Name, Ann.Region) [(Name.Name, Ann.Region)]
+  | TypeVarsMessedUpInAlias Ann.Region Name.Name [Name.Name] [(Name.Name, Ann.Region)] [(Name.Name, Ann.Region)]
+  | FFIFileNotFound Ann.Region FilePath
+  | FFIFileTimeout Ann.Region FilePath Int
+  | FFIParseError Ann.Region FilePath String
+  | FFIPathTraversal Ann.Region FilePath String
+  | FFIInvalidType Ann.Region FilePath Name.Name String
+  | FFIMissingAnnotation Ann.Region FilePath Name.Name
+  | FFICircularDependency Ann.Region FilePath [FilePath]
+  | FFITypeNotFound Ann.Region FilePath Name.Name String [Name.Name]
+  | LazyImportNotFound Ann.Region Name.Name [Name.Name]
+  | LazyImportCoreModule Ann.Region Name.Name
+  | LazyImportInPackage Ann.Region Name.Name
+  | LazyImportSelf Ann.Region Name.Name
+  | LazyImportKernel Ann.Region Name.Name
   deriving (Show)
 
 data BadArityContext
@@ -137,13 +137,13 @@ toKindInfo :: VarKind -> Name.Name -> (Doc, Doc, Doc)
 toKindInfo kind name =
   case kind of
     BadOp ->
-      ("an", "operator", "(" <> D.fromName name <> ")")
+      ("an", "operator", "(" <> Doc.fromName name <> ")")
     BadVar ->
-      ("a", "value", "`" <> D.fromName name <> "`")
+      ("a", "value", "`" <> Doc.fromName name <> "`")
     BadPattern ->
-      ("a", "pattern", "`" <> D.fromName name <> "`")
+      ("a", "pattern", "`" <> Doc.fromName name <> "`")
     BadType ->
-      ("a", "type", "`" <> D.fromName name <> "`")
+      ("a", "type", "`" <> Doc.fromName name <> "`")
 
 -- TO REPORT
 
@@ -158,13 +158,13 @@ toReport source err =
               source
               region
               Nothing
-              ( D.reflow $
+              ( Doc.reflow $
                   "The type annotation for `" <> Name.toChars name <> "` says it can accept "
-                    <> D.args numTypeArgs
+                    <> Doc.args numTypeArgs
                     <> ", but the definition says it has "
-                    <> D.args numDefArgs
+                    <> Doc.args numDefArgs
                     <> ":",
-                D.reflow $
+                Doc.reflow $
                   "Is the type annotation missing something? Should some argument"
                     <> (if leftovers == 1 then "" else "s")
                     <> " be deleted? Maybe some parentheses are missing?"
@@ -189,13 +189,13 @@ toReport source err =
                   source
                   region
                   Nothing
-                  ( D.reflow $
+                  ( Doc.reflow $
                       "The `" <> Name.toChars name <> "` " <> thing <> " needs "
-                        <> D.args expected
+                        <> Doc.args expected
                         <> ", but I see "
                         <> show actual
                         <> " instead:",
-                    D.reflow "What is missing? Are some parentheses misplaced?"
+                    Doc.reflow "What is missing? Are some parentheses misplaced?"
                   )
             else
               Report.Report "TOO MANY ARGS" region [] $
@@ -203,9 +203,9 @@ toReport source err =
                   source
                   region
                   Nothing
-                  ( D.reflow $
+                  ( Doc.reflow $
                       "The `" <> Name.toChars name <> "` " <> thing <> " needs "
-                        <> D.args expected
+                        <> Doc.args expected
                         <> ", but I see "
                         <> show actual
                         <> " instead:",
@@ -219,9 +219,9 @@ toReport source err =
           source
           region
           Nothing
-          ( D.reflow $
+          ( Doc.reflow $
               "You cannot mix (" <> Name.toChars op1 <> ") and (" <> Name.toChars op2 <> ") without parentheses.",
-            D.reflow
+            Doc.reflow
               "I do not know how to group these expressions. Add parentheses for me!"
           )
     DuplicateDecl name r1 r2 ->
@@ -264,8 +264,8 @@ toReport source err =
           source
           region
           Nothing
-          ( D.reflow ("You have declared that `" <> (Name.toChars name <> "` is an effect type:")),
-            D.reflow ("But I cannot find a custom type named `" <> (Name.toChars name <> "` in this file!"))
+          ( Doc.reflow ("You have declared that `" <> (Name.toChars name <> "` is an effect type:")),
+            Doc.reflow ("But I cannot find a custom type named `" <> (Name.toChars name <> "` in this file!"))
           )
     EffectFunctionNotFound region name ->
       Report.Report "EFFECT PROBLEM" region [] $
@@ -273,8 +273,8 @@ toReport source err =
           source
           region
           Nothing
-          ( D.reflow ("This kind of effect module must define a `" <> (Name.toChars name <> "` function.")),
-            D.reflow ("But I cannot find `" <> (Name.toChars name <> "` in this file!"))
+          ( Doc.reflow ("This kind of effect module must define a `" <> (Name.toChars name <> "` function.")),
+            Doc.reflow ("But I cannot find `" <> (Name.toChars name <> "` in this file!"))
           )
     ExportDuplicate name r1 r2 ->
       let messageThatEndsWithPunctuation =
@@ -284,10 +284,10 @@ toReport source err =
               source
               r1
               r2
-              ( D.reflow messageThatEndsWithPunctuation,
+              ( Doc.reflow messageThatEndsWithPunctuation,
                 "Remove one of them and you should be all set!"
               )
-              ( D.reflow (messageThatEndsWithPunctuation <> " Once here:"),
+              ( Doc.reflow (messageThatEndsWithPunctuation <> " Once here:"),
                 "And again right here:",
                 "Remove one of them and you should be all set!"
               )
@@ -296,8 +296,8 @@ toReport source err =
             (fmap Name.toChars . take 4 $ Suggest.sort (Name.toChars rawName) Name.toChars possibleNames)
        in Report.Report "UNKNOWN EXPORT" region suggestions $
             let (a, thing, name) = toKindInfo kind rawName
-             in D.stack
-                  [ D.fillSep
+             in Doc.stack
+                  [ Doc.fillSep
                       [ "You",
                         "are",
                         "trying",
@@ -314,15 +314,15 @@ toReport source err =
                         "its",
                         "definition."
                       ],
-                    case fmap D.fromChars suggestions of
+                    case fmap Doc.fromChars suggestions of
                       [] ->
-                        D.reflow "I do not see any super similar names in this file. Is the definition missing?"
+                        Doc.reflow "I do not see any super similar names in this file. Is the definition missing?"
                       [alt] ->
-                        D.fillSep ["Maybe", "you", "want", D.dullyellow alt, "instead?"]
+                        Doc.fillSep ["Maybe", "you", "want", Doc.dullyellow alt, "instead?"]
                       alts ->
-                        D.stack
+                        Doc.stack
                           [ "These names seem close though:",
-                            D.indent 4 . D.vcat $ fmap D.dullyellow alts
+                            Doc.indent 4 . Doc.vcat $ fmap Doc.dullyellow alts
                           ]
                   ]
     ExportOpenAlias region name ->
@@ -331,8 +331,8 @@ toReport source err =
           source
           region
           Nothing
-          ( D.reflow ("The (..) syntax is for exposing variants of a custom type. It cannot be used with a type alias like `" <> (Name.toChars name <> "` though.")),
-            D.reflow "Remove the (..) and you should be fine!"
+          ( Doc.reflow ("The (..) syntax is for exposing variants of a custom type. It cannot be used with a type alias like `" <> (Name.toChars name <> "` though.")),
+            Doc.reflow "Remove the (..) and you should be fine!"
           )
     ImportCtorByName region ctor tipe ->
       Report.Report "BAD IMPORT" region [] $
@@ -340,20 +340,20 @@ toReport source err =
           source
           region
           Nothing
-          ( D.reflow $
+          ( Doc.reflow $
               "You are trying to import the `" <> Name.toChars ctor
                 <> "` variant by name:",
-            D.fillSep
+            Doc.fillSep
               [ "Try",
                 "importing",
-                D.green (D.fromName tipe <> "(..)"),
+                Doc.green (Doc.fromName tipe <> "(..)"),
                 "instead.",
                 "The",
                 "dots",
                 "mean",
                 "“expose",
                 "the",
-                D.fromName tipe,
+                Doc.fromName tipe,
                 "type",
                 "and",
                 "all",
@@ -365,7 +365,7 @@ toReport source err =
                 "you",
                 "access",
                 "to",
-                D.fromName ctor <> "."
+                Doc.fromName ctor <> "."
               ]
           )
     ImportNotFound region name _ ->
@@ -378,7 +378,7 @@ toReport source err =
           source
           region
           Nothing
-          ( D.reflow $
+          ( Doc.reflow $
               "I could not find a `" <> Name.toChars name <> "` module to import!",
             mempty
           )
@@ -388,9 +388,9 @@ toReport source err =
           source
           region
           Nothing
-          ( D.reflow $
+          ( Doc.reflow $
               "The `" <> Name.toChars name <> "` type alias cannot be followed by (..) like this:",
-            D.reflow "Remove the (..) and it should work."
+            Doc.reflow "Remove the (..) and it should work."
           )
     ImportExposingNotFound region (ModuleName.Canonical _ home) value possibleNames ->
       let suggestions =
@@ -400,20 +400,20 @@ toReport source err =
               source
               region
               Nothing
-              ( D.reflow $
+              ( Doc.reflow $
                   "The `" <> Name.toChars home
                     <> "` module does not expose `"
                     <> Name.toChars value
                     <> "`:",
-                case fmap D.fromChars suggestions of
+                case fmap Doc.fromChars suggestions of
                   [] ->
                     "I cannot find any super similar exposed names. Maybe it is private?"
                   [alt] ->
-                    D.fillSep ["Maybe", "you", "want", D.dullyellow alt, "instead?"]
+                    Doc.fillSep ["Maybe", "you", "want", Doc.dullyellow alt, "instead?"]
                   alts ->
-                    D.stack
+                    Doc.stack
                       [ "These names seem close though:",
-                        D.indent 4 . D.vcat $ fmap D.dullyellow alts
+                        Doc.indent 4 . Doc.vcat $ fmap Doc.dullyellow alts
                       ]
               )
     NotFoundVar region prefix name possibleNames ->
@@ -441,10 +441,10 @@ toReport source err =
                   source
                   region
                   Nothing
-                  ( D.reflow "Canopy uses a different name for the “not equal” operator:",
-                    D.stack
-                      [ D.reflow "Switch to (/=) instead.",
-                        D.toSimpleNote ("Our (/=) operator is supposed to look like a real “not equal” sign (≠). I hope that history will remember (" <> (Name.toChars op <> ") as a weird and temporary choice."))
+                  ( Doc.reflow "Canopy uses a different name for the “not equal” operator:",
+                    Doc.stack
+                      [ Doc.reflow "Switch to (/=) instead.",
+                        Doc.toSimpleNote ("Our (/=) operator is supposed to look like a real “not equal” sign (≠). I hope that history will remember (" <> (Name.toChars op <> ") as a weird and temporary choice."))
                       ]
                   )
             else
@@ -455,8 +455,8 @@ toReport source err =
                       source
                       region
                       Nothing
-                      ( D.reflow "I do not recognize the (**) operator:",
-                        D.reflow "Switch to (^) for exponentiation. Or switch to (*) for multiplication."
+                      ( Doc.reflow "I do not recognize the (**) operator:",
+                        Doc.reflow "Switch to (^) for exponentiation. Or switch to (*) for multiplication."
                       )
                 else
                   if op == "%"
@@ -466,15 +466,15 @@ toReport source err =
                           source
                           region
                           Nothing
-                          ( D.reflow "Canopy does not use (%) as the remainder operator:",
-                            D.stack
-                              [ D.reflow
+                          ( Doc.reflow "Canopy does not use (%) as the remainder operator:",
+                            Doc.stack
+                              [ Doc.reflow
                                   "If you want the behavior of (%) like in JavaScript, switch to:\
                                   \ <https://package.canopy-lang.org/packages/canopy/core/latest/Basics#remainderBy>",
-                                D.reflow
+                                Doc.reflow
                                   "If you want modular arithmetic like in math, switch to:\
                                   \ <https://package.canopy-lang.org/packages/canopy/core/latest/Basics#modBy>",
-                                D.reflow "The difference is how things work when negative numbers are involved."
+                                Doc.reflow "The difference is how things work when negative numbers are involved."
                               ]
                           )
                     else
@@ -482,20 +482,20 @@ toReport source err =
                             (fmap Name.toChars . take 2 $ Suggest.sort (Name.toChars op) Name.toChars (Set.toList locals))
 
                           format altOp =
-                            D.green $ "(" <> altOp <> ")"
+                            Doc.green $ "(" <> altOp <> ")"
                        in Report.Report "UNKNOWN OPERATOR" region suggestions $
                             Code.toSnippet
                               source
                               region
                               Nothing
-                              ( D.reflow ("I do not recognize the (" <> (Name.toChars op <> ") operator.")),
-                                D.fillSep
+                              ( Doc.reflow ("I do not recognize the (" <> (Name.toChars op <> ") operator.")),
+                                Doc.fillSep
                                   ( ["Is", "there", "an", "`import`", "and", "`exposing`", "entry", "for", "it?"]
-                                      <> ( case fmap D.fromChars suggestions of
+                                      <> ( case fmap Doc.fromChars suggestions of
                                              [] ->
                                                []
                                              alts ->
-                                               ["Maybe", "you", "want"] <> (D.commaSep "or" format alts <> ["instead?"])
+                                               ["Maybe", "you", "want"] <> (Doc.commaSep "or" format alts <> ["instead?"])
                                          )
                                   )
                               )
@@ -505,10 +505,10 @@ toReport source err =
           source
           region
           Nothing
-          ( D.reflow $
+          ( Doc.reflow $
               "You can construct records by using `" <> Name.toChars name
                 <> "` as a function, but it is not available in pattern matching like this:",
-            D.reflow "I recommend matching the record as a variable and unpacking it later."
+            Doc.reflow "I recommend matching the record as a variable and unpacking it later."
           )
     PortPayloadInvalid region portName _badType invalidPayload ->
       let formatDetails (aBadKindOfThing, elaboration) =
@@ -517,11 +517,11 @@ toReport source err =
                 source
                 region
                 Nothing
-                ( D.reflow $
+                ( Doc.reflow $
                     "The `" <> Name.toChars portName <> "` port is trying to transmit " <> aBadKindOfThing <> ":",
-                  D.stack
+                  Doc.stack
                     [ elaboration,
-                      D.link
+                      Doc.link
                         "Hint"
                         "Ports are not a traditional FFI, so if you have tons of annoying ports, definitely read"
                         "ports"
@@ -532,18 +532,18 @@ toReport source err =
             case invalidPayload of
               ExtendedRecord ->
                 ( "an extended record",
-                  D.reflow "But the exact shape of the record must be known at compile time. No type variables!"
+                  Doc.reflow "But the exact shape of the record must be known at compile time. No type variables!"
                 )
               Function ->
                 ( "a function",
-                  D.reflow
+                  Doc.reflow
                     "But functions cannot be sent in and out ports. If we allowed functions in from JS\
                     \ they may perform some side-effects. If we let functions out, they could produce\
                     \ incorrect results because Canopy optimizations assume there are no side-effects."
                 )
               TypeVariable name ->
                 ( "an unspecified type",
-                  D.reflow $
+                  Doc.reflow $
                     "But type variables like `" <> Name.toChars name
                       <> "` cannot flow through ports.\
                          \ I need to know exactly what type of data I am getting, so I can guarantee that\
@@ -551,12 +551,12 @@ toReport source err =
                 )
               UnsupportedType name ->
                 ( "a `" <> Name.toChars name <> "` value",
-                  D.stack
-                    [ D.reflow "I cannot handle that. The types that CAN flow in and out of Canopy include:",
-                      D.indent 4 . D.reflow $
+                  Doc.stack
+                    [ Doc.reflow "I cannot handle that. The types that CAN flow in and out of Canopy include:",
+                      Doc.indent 4 . Doc.reflow $
                         "Ints, Floats, Bools, Strings, Maybes, Lists, Arrays,\
                         \ tuples, records, and JSON values.",
-                      D.reflow
+                      Doc.reflow
                         "Since JSON values can flow through, you can use JSON encoders and decoders\
                         \ to allow other types through as well. More advanced users often just do\
                         \ everything with encoders and decoders for more control and better errors."
@@ -565,10 +565,10 @@ toReport source err =
     PortTypeInvalid region name portProblem ->
       let formatDetails (before, after) =
             ( Report.Report "BAD PORT" region [] . Code.toSnippet source region Nothing $
-                ( D.reflow before,
-                  D.stack
+                ( Doc.reflow before,
+                  Doc.stack
                     [ after,
-                      D.link
+                      Doc.link
                         "Hint"
                         "Read"
                         "ports"
@@ -580,7 +580,7 @@ toReport source err =
             case portProblem of
               CmdNoArg ->
                 ( "The `" <> Name.toChars name <> "` port cannot be just a command.",
-                  D.reflow
+                  Doc.reflow
                     "It can be (() -> Cmd msg) if you just need to trigger a JavaScript\
                     \ function, but there is often a better way to set things up."
                 )
@@ -590,21 +590,21 @@ toReport source err =
                         | n == 2 = "both of these items into a tuple or record"
                         | n == 3 = ("these " <> (show n <> " items into a tuple or record"))
                         | otherwise = ("these " <> (show n <> " items into a record"))
-                   in D.reflow ("You can put " <> (theseItemsInSomething <> " to send them out though."))
+                   in Doc.reflow ("You can put " <> (theseItemsInSomething <> " to send them out though."))
                 )
               CmdBadMsg ->
                 ( "The `" <> Name.toChars name <> "` port cannot send any messages to the `update` function.",
-                  D.reflow
+                  Doc.reflow
                     "It must produce a (Cmd msg) type. Notice the lower case `msg` type\
                     \ variable. The command will trigger some JS code, but it will not send\
                     \ anything particular back to Canopy."
                 )
               SubBad ->
                 ( "There is something off about this `" <> Name.toChars name <> "` port declaration.",
-                  D.stack
-                    [ D.reflow "To receive messages from JavaScript, you need to define a port like this:",
-                      (D.indent 4 . D.dullyellow) . D.fromChars $ ("port " <> Name.toChars name <> " : (Int -> msg) -> Sub msg"),
-                      D.reflow
+                  Doc.stack
+                    [ Doc.reflow "To receive messages from JavaScript, you need to define a port like this:",
+                      (Doc.indent 4 . Doc.dullyellow) . Doc.fromChars $ ("port " <> Name.toChars name <> " : (Int -> msg) -> Sub msg"),
+                      Doc.reflow
                         "Now every time JS sends an `Int` to this port, it is converted to a `msg`.\
                         \ And if you subscribe, those `msg` values will be piped into your `update`\
                         \ function. The only thing you can customize here is the `Int` type."
@@ -612,7 +612,7 @@ toReport source err =
                 )
               NotCmdOrSub ->
                 ( "I am confused about the `" <> Name.toChars name <> "` port declaration.",
-                  D.reflow
+                  Doc.reflow
                     "Ports need to produce a command (Cmd) or a subscription (Sub) but\
                     \ this is neither. I do not know how to handle this."
                 )
@@ -620,16 +620,16 @@ toReport source err =
       aliasRecursionReport source region name args tipe others
     RecursiveDecl region name names ->
       let makeTheory question details =
-            D.fillSep (fmap (D.dullyellow . D.fromChars) (words question) <> fmap D.fromChars (words details))
+            Doc.fillSep (fmap (Doc.dullyellow . Doc.fromChars) (words question) <> fmap Doc.fromChars (words details))
        in ( Report.Report "CYCLIC DEFINITION" region [] . Code.toSnippet source region Nothing $
               ( case names of
                   [] ->
-                    ( D.reflow $
+                    ( Doc.reflow $
                         "The `" <> Name.toChars name <> "` value is defined directly in terms of itself, causing an infinite loop.",
-                      D.stack
+                      Doc.stack
                         [ makeTheory "Are you trying to mutate a variable?" ("Canopy does not have mutation, so when I see " <> (Name.toChars name <> (" defined in terms of " <> (Name.toChars name <> ", I treat it as a recursive definition. Try giving the new value a new name!")))),
                           makeTheory "Maybe you DO want a recursive value?" ("To define " <> (Name.toChars name <> (" we need to know what " <> (Name.toChars name <> (" is, so let’s expand it. Wait, but now we need to know what " <> (Name.toChars name <> " is, so let’s expand it... This will keep going infinitely!")))))),
-                          D.link
+                          Doc.link
                             "Hint"
                             "The root problem is often a typo in some variable name, but I recommend reading"
                             "bad-recursion"
@@ -637,14 +637,14 @@ toReport source err =
                         ]
                     )
                   _ : _ ->
-                    ( D.reflow $
+                    ( Doc.reflow $
                         "The `" <> Name.toChars name <> "` definition is causing a very tricky infinite loop.",
-                      D.stack
-                        [ D.reflow $
+                      Doc.stack
+                        [ Doc.reflow $
                             "The `" <> Name.toChars name
                               <> "` value depends on itself through the following chain of definitions:",
-                          D.cycle 4 name names,
-                          D.link
+                          Doc.cycle 4 name names,
+                          Doc.link
                             "Hint"
                             "The root problem is often a typo in some variable name, but I recommend reading"
                             "bad-recursion"
@@ -653,18 +653,18 @@ toReport source err =
                     )
               )
           )
-    RecursiveLet (A.At region name) names ->
+    RecursiveLet (Ann.At region name) names ->
       Report.Report "CYCLIC VALUE" region [] . Code.toSnippet source region Nothing $
         ( case names of
             [] ->
               let makeTheory question details =
-                    D.fillSep (fmap (D.dullyellow . D.fromChars) (words question) <> fmap D.fromChars (words details))
-               in ( D.reflow $
+                    Doc.fillSep (fmap (Doc.dullyellow . Doc.fromChars) (words question) <> fmap Doc.fromChars (words details))
+               in ( Doc.reflow $
                       "The `" <> Name.toChars name <> "` value is defined directly in terms of itself, causing an infinite loop.",
-                    D.stack
+                    Doc.stack
                       [ makeTheory "Are you trying to mutate a variable?" ("Canopy does not have mutation, so when I see " <> (Name.toChars name <> (" defined in terms of " <> (Name.toChars name <> ", I treat it as a recursive definition. Try giving the new value a new name!")))),
                         makeTheory "Maybe you DO want a recursive value?" ("To define " <> (Name.toChars name <> (" we need to know what " <> (Name.toChars name <> (" is, so let’s expand it. Wait, but now we need to know what " <> (Name.toChars name <> " is, so let’s expand it... This will keep going infinitely!")))))),
-                        D.link
+                        Doc.link
                           "Hint"
                           "The root problem is often a typo in some variable name, but I recommend reading"
                           "bad-recursion"
@@ -672,13 +672,13 @@ toReport source err =
                       ]
                   )
             _ ->
-              ( D.reflow "I do not allow cyclic values in `let` expressions.",
-                D.stack
-                  [ D.reflow $
+              ( Doc.reflow "I do not allow cyclic values in `let` expressions.",
+                Doc.stack
+                  [ Doc.reflow $
                       "The `" <> Name.toChars name
                         <> "` value depends on itself through the following chain of definitions:",
-                    D.cycle 4 name names,
-                    D.link
+                    Doc.cycle 4 name names,
+                    Doc.link
                       "Hint"
                       "The root problem is often a typo in some variable name, but I recommend reading"
                       "bad-recursion"
@@ -695,15 +695,15 @@ toReport source err =
           ( "These variables cannot have the same name:",
             advice
           )
-          ( D.reflow $ "The name `" <> Name.toChars name <> "` is first defined here:",
+          ( Doc.reflow $ "The name `" <> Name.toChars name <> "` is first defined here:",
             "But then it is defined AGAIN over here:",
             advice
           )
       where
         advice =
-          D.stack
-            [ D.reflow "Think of a more helpful name for one of them and you should be all set!",
-              D.link
+          Doc.stack
+            [ Doc.reflow "Think of a more helpful name for one of them and you should be all set!",
+              Doc.link
                 "Note"
                 "Linters advise against shadowing, so Canopy makes “best practices” the default. Read"
                 "shadowing"
@@ -716,11 +716,11 @@ toReport source err =
           region
           Nothing
           ( "I only accept tuples with two or three items. This has too many:",
-            D.stack
-              [ D.reflow
+            Doc.stack
+              [ Doc.reflow
                   "I recommend switching to records. Each item will be named, and you can use\
                   \ the `point.x` syntax to access them.",
-                D.link
+                Doc.link
                   "Note"
                   "Read"
                   "tuples"
@@ -733,7 +733,7 @@ toReport source err =
       case (unusedVars, unboundVars) of
         (unused : unuseds, []) ->
           let backQuote name =
-                "`" <> D.fromName name <> "`"
+                "`" <> Doc.fromName name <> "`"
 
               allUnusedNames =
                 fmap fst unusedVars
@@ -754,24 +754,24 @@ toReport source err =
                         "type",
                         "variable."
                       ],
-                      [D.dullyellow (backQuote (fst unused))]
+                      [Doc.dullyellow (backQuote (fst unused))]
                     )
                   _ : _ ->
                     ( "UNUSED TYPE VARIABLES",
                       Nothing,
-                      ["Type", "variables"] <> (D.commaSep "and" id (fmap D.fromName allUnusedNames) <> ["are", "unused", "in", "the", backQuote typeName, "definition."]),
-                      D.commaSep "and" D.dullyellow (fmap D.fromName allUnusedNames)
+                      ["Type", "variables"] <> (Doc.commaSep "and" id (fmap Doc.fromName allUnusedNames) <> ["are", "unused", "in", "the", backQuote typeName, "definition."]),
+                      Doc.commaSep "and" Doc.dullyellow (fmap Doc.fromName allUnusedNames)
                     )
            in Report.Report title aliasRegion [] $
                 Code.toSnippet
                   source
                   aliasRegion
                   subRegion
-                  ( D.fillSep overview,
-                    D.stack
-                      [ D.fillSep (["I", "recommend", "removing"] <> (stuff <> ["from", "the", "declaration,", "like", "this:"])),
-                        D.indent 4 . D.hsep $ (["type", "alias", D.green (D.fromName typeName)] <> (fmap D.fromName (filter (`notElem` allUnusedNames) allVars) <> ["=", "..."])),
-                        D.reflow
+                  ( Doc.fillSep overview,
+                    Doc.stack
+                      [ Doc.fillSep (["I", "recommend", "removing"] <> (stuff <> ["from", "the", "declaration,", "like", "this:"])),
+                        Doc.indent 4 . Doc.hsep $ (["type", "alias", Doc.green (Doc.fromName typeName)] <> (fmap Doc.fromName (filter (`notElem` allUnusedNames) allVars) <> ["=", "..."])),
+                        Doc.reflow
                           "Why? Well, if I allowed `type alias Height a = Float` I would need to answer\
                           \ some weird questions. Is `Height Bool` the same as `Float`? Is `Height Bool`\
                           \ the same as `Height Int`? My solution is to not need to ask them!"
@@ -788,7 +788,7 @@ toReport source err =
                   [x] ->
                     [ "Type",
                       "variable",
-                      D.dullyellow ("`" <> D.fromName x <> "`"),
+                      Doc.dullyellow ("`" <> Doc.fromName x <> "`"),
                       "appears",
                       "in",
                       "the",
@@ -802,7 +802,7 @@ toReport source err =
                       "declared."
                     ]
                   _ ->
-                    ["Type", "variables"] <> (D.commaSep "and" D.dullyellow (fmap D.fromName unbound) <> ["are", "used", "in", "the", "definition,", "but", "I", "do", "not", "see", "them", "declared."])
+                    ["Type", "variables"] <> (Doc.commaSep "and" Doc.dullyellow (fmap Doc.fromName unbound) <> ["are", "used", "in", "the", "definition,", "but", "I", "do", "not", "see", "them", "declared."])
 
               butTheseAreUnused =
                 case unused of
@@ -810,7 +810,7 @@ toReport source err =
                     [ "Likewise,",
                       "type",
                       "variable",
-                      D.dullyellow ("`" <> D.fromName x <> "`"),
+                      Doc.dullyellow ("`" <> Doc.fromName x <> "`"),
                       "is",
                       "delared,",
                       "but",
@@ -818,77 +818,77 @@ toReport source err =
                       "used."
                     ]
                   _ ->
-                    ["Likewise,", "type", "variables"] <> (D.commaSep "and" D.dullyellow (fmap D.fromName unused) <> ["are", "delared,", "but", "not", "used."])
+                    ["Likewise,", "type", "variables"] <> (Doc.commaSep "and" Doc.dullyellow (fmap Doc.fromName unused) <> ["are", "delared,", "but", "not", "used."])
            in Report.Report "TYPE VARIABLE PROBLEMS" aliasRegion [] $
                 Code.toSnippet
                   source
                   aliasRegion
                   Nothing
-                  ( D.reflow $
+                  ( Doc.reflow $
                       "Type alias `" <> Name.toChars typeName <> "` has some type variable problems.",
-                    D.stack
-                      [ D.fillSep (theseAreUsed <> butTheseAreUnused),
-                        D.reflow "My guess is that a definition like this will work better:",
-                        D.indent 4 . D.hsep $ (["type", "alias", D.fromName typeName] <> (fmap D.fromName (filter (`notElem` unused) allVars) <> (fmap (D.green . D.fromName) unbound <> ["=", "..."])))
+                    Doc.stack
+                      [ Doc.fillSep (theseAreUsed <> butTheseAreUnused),
+                        Doc.reflow "My guess is that a definition like this will work better:",
+                        Doc.indent 4 . Doc.hsep $ (["type", "alias", Doc.fromName typeName] <> (fmap Doc.fromName (filter (`notElem` unused) allVars) <> (fmap (Doc.green . Doc.fromName) unbound <> ["=", "..."])))
                       ]
                   )
     FFIFileNotFound region filePath ->
       Report.Report "FFI FILE NOT FOUND" region [] $
         Code.toSnippet source region Nothing
-          ( D.reflow ("Cannot find FFI file: " <> filePath)
-          , D.reflow "Make sure the file exists and the path is correct."
+          ( Doc.reflow ("Cannot find FFI file: " <> filePath)
+          , Doc.reflow "Make sure the file exists and the path is correct."
           )
     FFIFileTimeout region filePath timeout ->
       Report.Report "FFI FILE TIMEOUT" region [] $
         Code.toSnippet source region Nothing
-          ( D.reflow ("Timeout reading FFI file: " <> filePath <> " after " <> show timeout <> "ms")
-          , D.reflow "The file may be too large or there may be a filesystem issue."
+          ( Doc.reflow ("Timeout reading FFI file: " <> filePath <> " after " <> show timeout <> "ms")
+          , Doc.reflow "The file may be too large or there may be a filesystem issue."
           )
     FFIParseError region filePath parseErr ->
       Report.Report "FFI PARSE ERROR" region [] $
         Code.toSnippet source region Nothing
-          ( D.reflow ("Error parsing FFI file: " <> filePath)
-          , D.reflow ("Parse error: " <> parseErr)
+          ( Doc.reflow ("Error parsing FFI file: " <> filePath)
+          , Doc.reflow ("Parse error: " <> parseErr)
           )
     FFIPathTraversal region filePath reason ->
       Report.Report "FFI PATH ERROR" region [] $
         Code.toSnippet source region Nothing
-          ( D.reflow ("The foreign import path is not allowed: " <> filePath)
-          , D.stack
-              [ D.reflow reason
-              , D.reflow "FFI source paths must be relative paths within your project directory, ending in .js or .mjs, without '..' components."
+          ( Doc.reflow ("The foreign import path is not allowed: " <> filePath)
+          , Doc.stack
+              [ Doc.reflow reason
+              , Doc.reflow "FFI source paths must be relative paths within your project directory, ending in .js or .mjs, without '..' components."
               ]
           )
     FFIInvalidType region filePath typeName typeErr ->
       Report.Report "FFI INVALID TYPE" region [] $
         Code.toSnippet source region Nothing
-          ( D.reflow ("Invalid type in FFI file: " <> filePath)
-          , D.reflow ("Type " <> Name.toChars typeName <> ": " <> typeErr)
+          ( Doc.reflow ("Invalid type in FFI file: " <> filePath)
+          , Doc.reflow ("Type " <> Name.toChars typeName <> ": " <> typeErr)
           )
     FFIMissingAnnotation region filePath funcName ->
       Report.Report "FFI MISSING ANNOTATION" region [] $
         Code.toSnippet source region Nothing
-          ( D.reflow ("Missing type annotation in FFI file: " <> filePath)
-          , D.reflow ("Function " <> Name.toChars funcName <> " needs a type annotation.")
+          ( Doc.reflow ("Missing type annotation in FFI file: " <> filePath)
+          , Doc.reflow ("Function " <> Name.toChars funcName <> " needs a type annotation.")
           )
     FFICircularDependency region filePath deps ->
       Report.Report "FFI CIRCULAR DEPENDENCY" region [] $
         Code.toSnippet source region Nothing
-          ( D.reflow ("Circular dependency detected in FFI file: " <> filePath)
-          , D.reflow ("Dependency chain: " <> show deps)
+          ( Doc.reflow ("Circular dependency detected in FFI file: " <> filePath)
+          , Doc.reflow ("Dependency chain: " <> show deps)
           )
     FFITypeNotFound region filePath typeName typeErr suggestions ->
       let nearbyNames =
             fmap Name.toChars (take 4 (Suggest.sort (Name.toChars typeName) Name.toChars suggestions))
        in Report.Report "FFI TYPE NOT FOUND" region nearbyNames $
             Code.toSnippet source region Nothing
-              ( D.reflow ("Unknown type in FFI file: " <> filePath)
-              , D.stack
-                  [ D.reflow ("The type `" <> Name.toChars typeName <> "` is not in scope: " <> typeErr)
-                  , case fmap D.fromChars nearbyNames of
-                      [] -> D.reflow "Make sure this type is imported or defined in your module."
-                      [alt] -> D.fillSep ["Maybe", "you", "want", D.dullyellow alt, "instead?"]
-                      alts -> D.stack ["These types seem close though:", D.indent 4 (D.vcat (fmap D.dullyellow alts))]
+              ( Doc.reflow ("Unknown type in FFI file: " <> filePath)
+              , Doc.stack
+                  [ Doc.reflow ("The type `" <> Name.toChars typeName <> "` is not in scope: " <> typeErr)
+                  , case fmap Doc.fromChars nearbyNames of
+                      [] -> Doc.reflow "Make sure this type is imported or defined in your module."
+                      [alt] -> Doc.fillSep ["Maybe", "you", "want", Doc.dullyellow alt, "instead?"]
+                      alts -> Doc.stack ["These types seem close though:", Doc.indent 4 (Doc.vcat (fmap Doc.dullyellow alts))]
                   ]
               )
     LazyImportNotFound region name suggestions ->
@@ -896,35 +896,35 @@ toReport source err =
             fmap Name.toChars (take 4 (Suggest.sort (Name.toChars name) Name.toChars suggestions))
        in Report.Report "LAZY IMPORT NOT FOUND" region nearbyNames $
             Code.toSnippet source region Nothing
-              ( D.reflow ("I cannot find a `" <> Name.toChars name <> "` module for this lazy import:")
-              , case fmap D.fromChars nearbyNames of
-                  [] -> D.reflow "I cannot find any similar module names. Is the module missing from your dependencies?"
-                  [alt] -> D.fillSep ["Maybe", "you", "want", D.dullyellow alt, "instead?"]
-                  alts -> D.stack ["These names seem close though:", D.indent 4 (D.vcat (fmap D.dullyellow alts))]
+              ( Doc.reflow ("I cannot find a `" <> Name.toChars name <> "` module for this lazy import:")
+              , case fmap Doc.fromChars nearbyNames of
+                  [] -> Doc.reflow "I cannot find any similar module names. Is the module missing from your dependencies?"
+                  [alt] -> Doc.fillSep ["Maybe", "you", "want", Doc.dullyellow alt, "instead?"]
+                  alts -> Doc.stack ["These names seem close though:", Doc.indent 4 (Doc.vcat (fmap Doc.dullyellow alts))]
               )
     LazyImportCoreModule region name ->
       Report.Report "BAD LAZY IMPORT" region [] $
         Code.toSnippet source region Nothing
-          ( D.reflow ("The `" <> Name.toChars name <> "` module is a core library module:")
-          , D.reflow "Core modules like Basics, List, Maybe, Result, String, and Platform are always loaded eagerly. They cannot be lazy-imported because they are required for every Canopy program."
+          ( Doc.reflow ("The `" <> Name.toChars name <> "` module is a core library module:")
+          , Doc.reflow "Core modules like Basics, List, Maybe, Result, String, and Platform are always loaded eagerly. They cannot be lazy-imported because they are required for every Canopy program."
           )
     LazyImportInPackage region name ->
       Report.Report "BAD LAZY IMPORT" region [] $
         Code.toSnippet source region Nothing
-          ( D.reflow ("You are using `lazy import " <> Name.toChars name <> "` inside a package:")
-          , D.reflow "Lazy imports enable code splitting, which only works in applications. Packages must use regular imports so their code can be bundled by the application that depends on them."
+          ( Doc.reflow ("You are using `lazy import " <> Name.toChars name <> "` inside a package:")
+          , Doc.reflow "Lazy imports enable code splitting, which only works in applications. Packages must use regular imports so their code can be bundled by the application that depends on them."
           )
     LazyImportSelf region name ->
       Report.Report "BAD LAZY IMPORT" region [] $
         Code.toSnippet source region Nothing
-          ( D.reflow ("The module `" <> Name.toChars name <> "` is trying to lazy-import itself:")
-          , D.reflow "A module cannot lazily load itself. Remove the `lazy` keyword from this import."
+          ( Doc.reflow ("The module `" <> Name.toChars name <> "` is trying to lazy-import itself:")
+          , Doc.reflow "A module cannot lazily load itself. Remove the `lazy` keyword from this import."
           )
     LazyImportKernel region name ->
       Report.Report "BAD LAZY IMPORT" region [] $
         Code.toSnippet source region Nothing
-          ( D.reflow ("The `" <> Name.toChars name <> "` module is an internal kernel module:")
-          , D.reflow "Kernel modules are internal to the compiler runtime and cannot be lazy-imported. They are always loaded eagerly as part of the runtime system."
+          ( Doc.reflow ("The `" <> Name.toChars name <> "` module is an internal kernel module:")
+          , Doc.reflow "Kernel modules are internal to the compiler runtime and cannot be lazy-imported. They are always loaded eagerly as part of the runtime system."
           )
 
 -- TO DIAGNOSTIC
@@ -1055,7 +1055,7 @@ toDiagnostic source err =
       recursiveAliasDiagnostic source region name args tipe others
     RecursiveDecl region name names ->
       recursiveDeclDiagnostic source region name names
-    RecursiveLet (A.At region name) names ->
+    RecursiveLet (Ann.At region name) names ->
       recursiveLetDiagnostic source region name names
     Shadowing name r1 r2 ->
       shadowingDiagnostic source name r1 r2
@@ -1092,15 +1092,15 @@ toDiagnostic source err =
     LazyImportKernel region name ->
       lazyImportKernelDiagnostic source region name
 
--- | Extract the message 'D.Doc' from a 'Report.Report'.
+-- | Extract the message 'Doc.Doc' from a 'Report.Report'.
 --
 -- Allows diagnostic helpers to reuse the message-building logic already
 -- present in 'toReport' without duplicating complex Doc construction.
-extractReportMessage :: Report.Report -> D.Doc
+extractReportMessage :: Report.Report -> Doc.Doc
 extractReportMessage (Report.Report _ _ _ msg) = msg
 
 -- | Build a diagnostic for a type annotation argument count mismatch.
-annotationTooShortDiagnostic :: Code.Source -> A.Region -> Name.Name -> Index.ZeroBased -> Int -> Diagnostic
+annotationTooShortDiagnostic :: Code.Source -> Ann.Region -> Name.Name -> Index.ZeroBased -> Int -> Diagnostic
 annotationTooShortDiagnostic source region name index leftovers =
   Diag.makeDiagnostic
     (EC.canonError 0)
@@ -1115,19 +1115,19 @@ annotationTooShortDiagnostic source region name index leftovers =
     numDefArgs = numTypeArgs + leftovers
 
 -- | Format the primary message for an annotation-too-short error.
-annotationTooShortMessage :: Name.Name -> Int -> Int -> D.Doc
+annotationTooShortMessage :: Name.Name -> Int -> Int -> Doc.Doc
 annotationTooShortMessage name numTypeArgs numDefArgs =
-  D.reflow ("The type annotation for `" <> Name.toChars name <> "` says it can accept " <> D.args numTypeArgs <> ", but the definition says it has " <> D.args numDefArgs <> ":")
+  Doc.reflow ("The type annotation for `" <> Name.toChars name <> "` says it can accept " <> Doc.args numTypeArgs <> ", but the definition says it has " <> Doc.args numDefArgs <> ":")
 
 -- | Format the hint for an annotation-too-short error.
-annotationTooShortHint :: Int -> D.Doc
+annotationTooShortHint :: Int -> Doc.Doc
 annotationTooShortHint leftovers =
-  D.reflow ("Is the type annotation missing something? Should some argument" <> (if leftovers == 1 then "" else "s") <> " be deleted? Maybe some parentheses are missing?")
+  Doc.reflow ("Is the type annotation missing something? Should some argument" <> (if leftovers == 1 then "" else "s") <> " be deleted? Maybe some parentheses are missing?")
 
 -- | Build a diagnostic for an ambiguous name (variable, type, variant, or operator).
 --
 -- Delegates the complex message Doc to the existing 'ambiguousName' helper.
-ambiguousNameDiagnostic :: Code.Source -> A.Region -> Maybe Name.Name -> Name.Name -> ModuleName.Canonical -> OneOrMore.OneOrMore ModuleName.Canonical -> String -> Diag.ErrorCode -> Diagnostic
+ambiguousNameDiagnostic :: Code.Source -> Ann.Region -> Maybe Name.Name -> Name.Name -> ModuleName.Canonical -> OneOrMore.OneOrMore ModuleName.Canonical -> String -> Diag.ErrorCode -> Diagnostic
 ambiguousNameDiagnostic source region maybePrefix name h hs thing code =
   Diag.makeDiagnostic
     code
@@ -1139,7 +1139,7 @@ ambiguousNameDiagnostic source region maybePrefix name h hs thing code =
     (extractReportMessage (ambiguousName source region maybePrefix name h hs thing))
 
 -- | Build a diagnostic for an arity mismatch (too few or too many arguments).
-badArityDiagnostic :: Code.Source -> A.Region -> BadArityContext -> Name.Name -> Int -> Int -> Diagnostic
+badArityDiagnostic :: Code.Source -> Ann.Region -> BadArityContext -> Name.Name -> Int -> Int -> Diagnostic
 badArityDiagnostic source region badArityContext name expected actual =
   Diag.makeDiagnostic
     (EC.canonError 5)
@@ -1158,18 +1158,18 @@ badArityContextThing badArityContext =
     PatternArity -> "Variant"
 
 -- | Build the message Doc for a bad-arity error.
-badArityMessage :: Code.Source -> A.Region -> BadArityContext -> Name.Name -> Int -> Int -> D.Doc
+badArityMessage :: Code.Source -> Ann.Region -> BadArityContext -> Name.Name -> Int -> Int -> Doc.Doc
 badArityMessage source region badArityContext name expected actual =
   let thing = case badArityContext of
                 TypeArity -> "type"
                 PatternArity -> "variant"
-      base = D.reflow ("The `" <> Name.toChars name <> "` " <> thing <> " needs " <> D.args expected <> ", but I see " <> show actual <> " instead:")
+      base = Doc.reflow ("The `" <> Name.toChars name <> "` " <> thing <> " needs " <> Doc.args expected <> ", but I see " <> show actual <> " instead:")
   in if actual < expected
-    then Code.toSnippet source region Nothing (base, D.reflow "What is missing? Are some parentheses misplaced?")
+    then Code.toSnippet source region Nothing (base, Doc.reflow "What is missing? Are some parentheses misplaced?")
     else Code.toSnippet source region Nothing (base, if actual - expected == 1 then "Which is the extra one? Maybe some parentheses are missing?" else "Which are the extra ones? Maybe some parentheses are missing?")
 
 -- | Build a diagnostic for mixed infix operators without parentheses.
-binopDiagnostic :: Code.Source -> A.Region -> Name.Name -> Name.Name -> Diagnostic
+binopDiagnostic :: Code.Source -> Ann.Region -> Name.Name -> Name.Name -> Diagnostic
 binopDiagnostic source region op1 op2 =
   Diag.makeDiagnostic
     (EC.canonError 6)
@@ -1178,12 +1178,12 @@ binopDiagnostic source region op1 op2 =
     "INFIX PROBLEM"
     (Text.pack ("Cannot mix (" <> Name.toChars op1 <> ") and (" <> Name.toChars op2 <> ") without parentheses"))
     (LabeledSpan region "mixed operators" SpanPrimary)
-    (Code.toSnippet source region Nothing (D.reflow ("You cannot mix (" <> Name.toChars op1 <> ") and (" <> Name.toChars op2 <> ") without parentheses."), D.reflow "I do not know how to group these expressions. Add parentheses for me!"))
+    (Code.toSnippet source region Nothing (Doc.reflow ("You cannot mix (" <> Name.toChars op1 <> ") and (" <> Name.toChars op2 <> ") without parentheses."), Doc.reflow "I do not know how to group these expressions. Add parentheses for me!"))
 
 -- | Build a diagnostic for a name clash (duplicate declaration, type, ctor, etc.).
 --
 -- Delegates the message Doc to the existing 'nameClash' helper.
-nameClashDiagnostic :: Code.Source -> A.Region -> A.Region -> Diag.ErrorCode -> String -> Diagnostic
+nameClashDiagnostic :: Code.Source -> Ann.Region -> Ann.Region -> Diag.ErrorCode -> String -> Diagnostic
 nameClashDiagnostic source r1 r2 code message =
   Diag.makeDiagnostic
     code
@@ -1205,7 +1205,7 @@ duplicatePatternMessage context name =
     DPDestruct -> "This pattern contains multiple `" <> Name.toChars name <> "` variables."
 
 -- | Build a diagnostic for a missing effect type declaration.
-effectNotFoundDiagnostic :: Code.Source -> A.Region -> Name.Name -> Diagnostic
+effectNotFoundDiagnostic :: Code.Source -> Ann.Region -> Name.Name -> Diagnostic
 effectNotFoundDiagnostic source region name =
   Diag.makeDiagnostic
     (EC.canonError 15)
@@ -1214,10 +1214,10 @@ effectNotFoundDiagnostic source region name =
     "EFFECT PROBLEM"
     (Text.pack ("Effect type `" <> Name.toChars name <> "` not found in this file"))
     (LabeledSpan region "effect type not found" SpanPrimary)
-    (Code.toSnippet source region Nothing (D.reflow ("You have declared that `" <> (Name.toChars name <> "` is an effect type:")), D.reflow ("But I cannot find a custom type named `" <> (Name.toChars name <> "` in this file!"))))
+    (Code.toSnippet source region Nothing (Doc.reflow ("You have declared that `" <> (Name.toChars name <> "` is an effect type:")), Doc.reflow ("But I cannot find a custom type named `" <> (Name.toChars name <> "` in this file!"))))
 
 -- | Build a diagnostic for a missing effect function declaration.
-effectFunctionNotFoundDiagnostic :: Code.Source -> A.Region -> Name.Name -> Diagnostic
+effectFunctionNotFoundDiagnostic :: Code.Source -> Ann.Region -> Name.Name -> Diagnostic
 effectFunctionNotFoundDiagnostic source region name =
   Diag.makeDiagnostic
     (EC.canonError 16)
@@ -1226,10 +1226,10 @@ effectFunctionNotFoundDiagnostic source region name =
     "EFFECT PROBLEM"
     (Text.pack ("Effect function `" <> Name.toChars name <> "` not defined in this file"))
     (LabeledSpan region "effect function not found" SpanPrimary)
-    (Code.toSnippet source region Nothing (D.reflow ("This kind of effect module must define a `" <> (Name.toChars name <> "` function.")), D.reflow ("But I cannot find `" <> (Name.toChars name <> "` in this file!"))))
+    (Code.toSnippet source region Nothing (Doc.reflow ("This kind of effect module must define a `" <> (Name.toChars name <> "` function.")), Doc.reflow ("But I cannot find `" <> (Name.toChars name <> "` in this file!"))))
 
 -- | Build a diagnostic for a duplicated export.
-exportDuplicateDiagnostic :: Code.Source -> Name.Name -> A.Region -> A.Region -> Diagnostic
+exportDuplicateDiagnostic :: Code.Source -> Name.Name -> Ann.Region -> Ann.Region -> Diagnostic
 exportDuplicateDiagnostic source name r1 r2 =
   Diag.makeDiagnostic
     (EC.canonError 17)
@@ -1238,14 +1238,14 @@ exportDuplicateDiagnostic source name r1 r2 =
     "REDUNDANT EXPORT"
     (Text.pack msg)
     (LabeledSpan r2 "duplicate export" SpanPrimary)
-    (Code.toPair source r1 r2 (D.reflow msg, "Remove one of them and you should be all set!") (D.reflow (msg <> " Once here:"), "And again right here:", "Remove one of them and you should be all set!"))
+    (Code.toPair source r1 r2 (Doc.reflow msg, "Remove one of them and you should be all set!") (Doc.reflow (msg <> " Once here:"), "And again right here:", "Remove one of them and you should be all set!"))
   where
     msg = "You are trying to expose `" <> Name.toChars name <> "` multiple times!"
 
 -- | Build a diagnostic for an export that references an unknown name.
 --
 -- Delegates the message Doc to 'toReport' to reuse suggestion-formatting logic.
-exportNotFoundDiagnostic :: Code.Source -> A.Region -> VarKind -> Name.Name -> [Name.Name] -> Diagnostic
+exportNotFoundDiagnostic :: Code.Source -> Ann.Region -> VarKind -> Name.Name -> [Name.Name] -> Diagnostic
 exportNotFoundDiagnostic source region kind rawName possibleNames =
   Diag.makeDiagnostic
     (EC.canonError 18)
@@ -1257,7 +1257,7 @@ exportNotFoundDiagnostic source region kind rawName possibleNames =
     (extractReportMessage (toReport source (ExportNotFound region kind rawName possibleNames)))
 
 -- | Build a diagnostic for exposing (..) on a type alias in an export.
-exportOpenAliasDiagnostic :: Code.Source -> A.Region -> Name.Name -> Diagnostic
+exportOpenAliasDiagnostic :: Code.Source -> Ann.Region -> Name.Name -> Diagnostic
 exportOpenAliasDiagnostic source region name =
   Diag.makeDiagnostic
     (EC.canonError 19)
@@ -1266,10 +1266,10 @@ exportOpenAliasDiagnostic source region name =
     "BAD EXPORT"
     (Text.pack ("Cannot use (..) with type alias `" <> Name.toChars name <> "`"))
     (LabeledSpan region "open alias in export" SpanPrimary)
-    (Code.toSnippet source region Nothing (D.reflow ("The (..) syntax is for exposing variants of a custom type. It cannot be used with a type alias like `" <> (Name.toChars name <> "` though.")), D.reflow "Remove the (..) and you should be fine!"))
+    (Code.toSnippet source region Nothing (Doc.reflow ("The (..) syntax is for exposing variants of a custom type. It cannot be used with a type alias like `" <> (Name.toChars name <> "` though.")), Doc.reflow "Remove the (..) and you should be fine!"))
 
 -- | Build a diagnostic for importing a variant constructor by name directly.
-importCtorByNameDiagnostic :: Code.Source -> A.Region -> Name.Name -> Name.Name -> Diagnostic
+importCtorByNameDiagnostic :: Code.Source -> Ann.Region -> Name.Name -> Name.Name -> Diagnostic
 importCtorByNameDiagnostic source region ctor tipe =
   Diag.makeDiagnostic
     (EC.canonError 20)
@@ -1281,7 +1281,7 @@ importCtorByNameDiagnostic source region ctor tipe =
     (extractReportMessage (toReport source (ImportCtorByName region ctor tipe)))
 
 -- | Build a diagnostic for an unknown module import.
-importNotFoundDiagnostic :: Code.Source -> A.Region -> Name.Name -> Diagnostic
+importNotFoundDiagnostic :: Code.Source -> Ann.Region -> Name.Name -> Diagnostic
 importNotFoundDiagnostic source region name =
   Diag.makeDiagnostic
     (EC.canonError 21)
@@ -1290,10 +1290,10 @@ importNotFoundDiagnostic source region name =
     "UNKNOWN IMPORT"
     (Text.pack ("Cannot find module `" <> Name.toChars name <> "`"))
     (LabeledSpan region "module not found" SpanPrimary)
-    (Code.toSnippet source region Nothing (D.reflow ("I could not find a `" <> Name.toChars name <> "` module to import!"), mempty))
+    (Code.toSnippet source region Nothing (Doc.reflow ("I could not find a `" <> Name.toChars name <> "` module to import!"), mempty))
 
 -- | Build a diagnostic for using (..) with a type alias in an import.
-importOpenAliasDiagnostic :: Code.Source -> A.Region -> Name.Name -> Diagnostic
+importOpenAliasDiagnostic :: Code.Source -> Ann.Region -> Name.Name -> Diagnostic
 importOpenAliasDiagnostic source region name =
   Diag.makeDiagnostic
     (EC.canonError 22)
@@ -1302,12 +1302,12 @@ importOpenAliasDiagnostic source region name =
     "BAD IMPORT"
     (Text.pack ("Cannot use (..) with type alias `" <> Name.toChars name <> "` in import"))
     (LabeledSpan region "open alias in import" SpanPrimary)
-    (Code.toSnippet source region Nothing (D.reflow ("The `" <> Name.toChars name <> "` type alias cannot be followed by (..) like this:"), D.reflow "Remove the (..) and it should work."))
+    (Code.toSnippet source region Nothing (Doc.reflow ("The `" <> Name.toChars name <> "` type alias cannot be followed by (..) like this:"), Doc.reflow "Remove the (..) and it should work."))
 
 -- | Build a diagnostic for an exposing clause that references an unknown name.
 --
 -- Delegates the message Doc to 'toReport' to reuse suggestion-formatting logic.
-importExposingNotFoundDiagnostic :: Code.Source -> A.Region -> ModuleName.Canonical -> Name.Name -> [Name.Name] -> Diagnostic
+importExposingNotFoundDiagnostic :: Code.Source -> Ann.Region -> ModuleName.Canonical -> Name.Name -> [Name.Name] -> Diagnostic
 importExposingNotFoundDiagnostic source region home value possibleNames =
   Diag.makeDiagnostic
     (EC.canonError 23)
@@ -1323,7 +1323,7 @@ importExposingNotFoundDiagnostic source region home value possibleNames =
 -- | Build a diagnostic for a name that cannot be resolved.
 --
 -- Delegates the message Doc to the existing 'notFound' helper.
-notFoundDiagnostic :: Code.Source -> A.Region -> Maybe Name.Name -> Name.Name -> String -> PossibleNames -> Diag.ErrorCode -> Diagnostic
+notFoundDiagnostic :: Code.Source -> Ann.Region -> Maybe Name.Name -> Name.Name -> String -> PossibleNames -> Diag.ErrorCode -> Diagnostic
 notFoundDiagnostic source region maybePrefix name thing possibleNames code =
   addNameSuggestions region name possibleNames
     ( Diag.makeDiagnostic
@@ -1339,7 +1339,7 @@ notFoundDiagnostic source region maybePrefix name thing possibleNames code =
     givenName = maybe Name.toChars toQualString maybePrefix name
 
 -- | Add structured suggestions from PossibleNames to a diagnostic.
-addNameSuggestions :: A.Region -> Name.Name -> PossibleNames -> Diagnostic -> Diagnostic
+addNameSuggestions :: Ann.Region -> Name.Name -> PossibleNames -> Diagnostic -> Diagnostic
 addNameSuggestions region name (PossibleNames locals quals) diag =
   foldr Diag.addSuggestion diag (take 3 (fmap (toNameSuggestion region) sorted))
   where
@@ -1347,7 +1347,7 @@ addNameSuggestions region name (PossibleNames locals quals) diag =
     sorted = Suggest.sort (Name.toChars name) Name.toChars allNames
 
 -- | Convert a suggested name into a structured Suggestion.
-toNameSuggestion :: A.Region -> Name.Name -> Suggestion
+toNameSuggestion :: Ann.Region -> Name.Name -> Suggestion
 toNameSuggestion region suggested =
   Suggestion
     region
@@ -1358,7 +1358,7 @@ toNameSuggestion region suggested =
 -- | Build a diagnostic for an unknown binary operator.
 --
 -- Delegates the message Doc to 'toReport' to reuse the operator-specific hints.
-notFoundBinopDiagnostic :: Code.Source -> A.Region -> Name.Name -> Set.Set Name.Name -> Diagnostic
+notFoundBinopDiagnostic :: Code.Source -> Ann.Region -> Name.Name -> Set.Set Name.Name -> Diagnostic
 notFoundBinopDiagnostic source region op locals =
   addBinopSuggestions region op locals
     ( Diag.makeDiagnostic
@@ -1372,14 +1372,14 @@ notFoundBinopDiagnostic source region op locals =
     )
 
 -- | Add structured suggestions for operators.
-addBinopSuggestions :: A.Region -> Name.Name -> Set.Set Name.Name -> Diagnostic -> Diagnostic
+addBinopSuggestions :: Ann.Region -> Name.Name -> Set.Set Name.Name -> Diagnostic -> Diagnostic
 addBinopSuggestions region op locals diag =
   foldr Diag.addSuggestion diag (take 2 (fmap (toNameSuggestion region) sorted))
   where
     sorted = Suggest.sort (Name.toChars op) Name.toChars (Set.toList locals)
 
 -- | Build a diagnostic for using a record constructor in a pattern.
-patternHasRecordCtorDiagnostic :: Code.Source -> A.Region -> Name.Name -> Diagnostic
+patternHasRecordCtorDiagnostic :: Code.Source -> Ann.Region -> Name.Name -> Diagnostic
 patternHasRecordCtorDiagnostic source region name =
   Diag.makeDiagnostic
     (EC.canonError 28)
@@ -1388,12 +1388,12 @@ patternHasRecordCtorDiagnostic source region name =
     "BAD PATTERN"
     (Text.pack ("Record constructor `" <> Name.toChars name <> "` cannot be used in a pattern"))
     (LabeledSpan region "record ctor in pattern" SpanPrimary)
-    (Code.toSnippet source region Nothing (D.reflow ("You can construct records by using `" <> Name.toChars name <> "` as a function, but it is not available in pattern matching like this:"), D.reflow "I recommend matching the record as a variable and unpacking it later."))
+    (Code.toSnippet source region Nothing (Doc.reflow ("You can construct records by using `" <> Name.toChars name <> "` as a function, but it is not available in pattern matching like this:"), Doc.reflow "I recommend matching the record as a variable and unpacking it later."))
 
 -- | Build a diagnostic for an invalid port payload type.
 --
 -- Delegates the message Doc to 'toReport' to reuse the payload-kind message logic.
-portPayloadInvalidDiagnostic :: Code.Source -> A.Region -> Name.Name -> InvalidPayload -> Diagnostic
+portPayloadInvalidDiagnostic :: Code.Source -> Ann.Region -> Name.Name -> InvalidPayload -> Diagnostic
 portPayloadInvalidDiagnostic source region portName invalidPayload =
   Diag.makeDiagnostic
     (EC.canonError 29)
@@ -1405,11 +1405,11 @@ portPayloadInvalidDiagnostic source region portName invalidPayload =
     (portPayloadMessage source region portName invalidPayload)
 
 -- | Build the message Doc for a port payload error.
-portPayloadMessage :: Code.Source -> A.Region -> Name.Name -> InvalidPayload -> D.Doc
+portPayloadMessage :: Code.Source -> Ann.Region -> Name.Name -> InvalidPayload -> Doc.Doc
 portPayloadMessage source region portName invalidPayload =
   Code.toSnippet source region Nothing
-    ( D.reflow ("The `" <> Name.toChars portName <> "` port is trying to transmit " <> portPayloadKind invalidPayload <> ":"),
-      D.stack [portPayloadElaboration invalidPayload, D.link "Hint" "Ports are not a traditional FFI, so if you have tons of annoying ports, definitely read" "ports" "to learn how they are meant to work. They require a different mindset!"]
+    ( Doc.reflow ("The `" <> Name.toChars portName <> "` port is trying to transmit " <> portPayloadKind invalidPayload <> ":"),
+      Doc.stack [portPayloadElaboration invalidPayload, Doc.link "Hint" "Ports are not a traditional FFI, so if you have tons of annoying ports, definitely read" "ports" "to learn how they are meant to work. They require a different mindset!"]
     )
 
 -- | Name the kind of invalid payload for use in the error message.
@@ -1422,22 +1422,22 @@ portPayloadKind invalidPayload =
     UnsupportedType name -> "a `" <> Name.toChars name <> "` value"
 
 -- | Provide the elaboration sentence for an invalid payload type.
-portPayloadElaboration :: InvalidPayload -> D.Doc
+portPayloadElaboration :: InvalidPayload -> Doc.Doc
 portPayloadElaboration invalidPayload =
   case invalidPayload of
     ExtendedRecord ->
-      D.reflow "But the exact shape of the record must be known at compile time. No type variables!"
+      Doc.reflow "But the exact shape of the record must be known at compile time. No type variables!"
     Function ->
-      D.reflow "But functions cannot be sent in and out ports. If we allowed functions in from JS they may perform some side-effects. If we let functions out, they could produce incorrect results because Canopy optimizations assume there are no side-effects."
+      Doc.reflow "But functions cannot be sent in and out ports. If we allowed functions in from JS they may perform some side-effects. If we let functions out, they could produce incorrect results because Canopy optimizations assume there are no side-effects."
     TypeVariable name ->
-      D.reflow ("But type variables like `" <> Name.toChars name <> "` cannot flow through ports. I need to know exactly what type of data I am getting, so I can guarantee that unexpected data cannot sneak in and crash the Canopy program.")
+      Doc.reflow ("But type variables like `" <> Name.toChars name <> "` cannot flow through ports. I need to know exactly what type of data I am getting, so I can guarantee that unexpected data cannot sneak in and crash the Canopy program.")
     UnsupportedType _ ->
-      D.stack [D.reflow "I cannot handle that. The types that CAN flow in and out of Canopy include:", D.indent 4 (D.reflow "Ints, Floats, Bools, Strings, Maybes, Lists, Arrays, tuples, records, and JSON values."), D.reflow "Since JSON values can flow through, you can use JSON encoders and decoders to allow other types through as well. More advanced users often just do everything with encoders and decoders for more control and better errors."]
+      Doc.stack [Doc.reflow "I cannot handle that. The types that CAN flow in and out of Canopy include:", Doc.indent 4 (Doc.reflow "Ints, Floats, Bools, Strings, Maybes, Lists, Arrays, tuples, records, and JSON values."), Doc.reflow "Since JSON values can flow through, you can use JSON encoders and decoders to allow other types through as well. More advanced users often just do everything with encoders and decoders for more control and better errors."]
 
 -- | Build a diagnostic for an invalid port type structure.
 --
 -- Delegates the message Doc to 'toReport' to reuse the port-problem hints.
-portTypeInvalidDiagnostic :: Code.Source -> A.Region -> Name.Name -> PortProblem -> Diagnostic
+portTypeInvalidDiagnostic :: Code.Source -> Ann.Region -> Name.Name -> PortProblem -> Diagnostic
 portTypeInvalidDiagnostic source region name portProblem =
   Diag.makeDiagnostic
     (EC.canonError 30)
@@ -1451,7 +1451,7 @@ portTypeInvalidDiagnostic source region name portProblem =
 -- | Build a diagnostic for a recursive type alias.
 --
 -- Delegates the message Doc to the existing 'aliasRecursionReport' helper.
-recursiveAliasDiagnostic :: Code.Source -> A.Region -> Name.Name -> [Name.Name] -> Src.Type -> [Name.Name] -> Diagnostic
+recursiveAliasDiagnostic :: Code.Source -> Ann.Region -> Name.Name -> [Name.Name] -> Src.Type -> [Name.Name] -> Diagnostic
 recursiveAliasDiagnostic source region name args tipe others =
   Diag.makeDiagnostic
     (EC.canonError 31)
@@ -1465,7 +1465,7 @@ recursiveAliasDiagnostic source region name args tipe others =
 -- | Build a diagnostic for a recursive value or function declaration.
 --
 -- Delegates the message Doc to 'toReport' to reuse the cycle explanation.
-recursiveDeclDiagnostic :: Code.Source -> A.Region -> Name.Name -> [Name.Name] -> Diagnostic
+recursiveDeclDiagnostic :: Code.Source -> Ann.Region -> Name.Name -> [Name.Name] -> Diagnostic
 recursiveDeclDiagnostic source region name names =
   Diag.makeDiagnostic
     (EC.canonError 32)
@@ -1479,7 +1479,7 @@ recursiveDeclDiagnostic source region name names =
 -- | Build a diagnostic for a cyclic value in a let expression.
 --
 -- Delegates the message Doc to 'toReport' to reuse the cycle explanation.
-recursiveLetDiagnostic :: Code.Source -> A.Region -> Name.Name -> [Name.Name] -> Diagnostic
+recursiveLetDiagnostic :: Code.Source -> Ann.Region -> Name.Name -> [Name.Name] -> Diagnostic
 recursiveLetDiagnostic source region name names =
   Diag.makeDiagnostic
     (EC.canonError 33)
@@ -1488,12 +1488,12 @@ recursiveLetDiagnostic source region name names =
     "CYCLIC VALUE"
     (Text.pack ("Let binding `" <> Name.toChars name <> "` is defined in terms of itself"))
     (LabeledSpan region "cyclic let binding" SpanPrimary)
-    (extractReportMessage (toReport source (RecursiveLet (A.At region name) names)))
+    (extractReportMessage (toReport source (RecursiveLet (Ann.At region name) names)))
 
 -- | Build a diagnostic for a shadowed variable binding.
 --
 -- Delegates the message Doc to 'toReport' to reuse the shadowing advice link.
-shadowingDiagnostic :: Code.Source -> Name.Name -> A.Region -> A.Region -> Diagnostic
+shadowingDiagnostic :: Code.Source -> Name.Name -> Ann.Region -> Ann.Region -> Diagnostic
 shadowingDiagnostic source name r1 r2 =
   Diag.makeDiagnostic
     (EC.canonError 34)
@@ -1505,7 +1505,7 @@ shadowingDiagnostic source name r1 r2 =
     (extractReportMessage (toReport source (Shadowing name r1 r2)))
 
 -- | Build a diagnostic for a tuple with more than three elements.
-tupleLargerThanThreeDiagnostic :: Code.Source -> A.Region -> Diagnostic
+tupleLargerThanThreeDiagnostic :: Code.Source -> Ann.Region -> Diagnostic
 tupleLargerThanThreeDiagnostic source region =
   Diag.makeDiagnostic
     (EC.canonError 35)
@@ -1519,7 +1519,7 @@ tupleLargerThanThreeDiagnostic source region =
 -- | Build a diagnostic for unbound type variables in a union type.
 --
 -- Delegates the message Doc to the existing 'unboundTypeVars' helper.
-typeVarsUnboundInUnionDiagnostic :: Code.Source -> A.Region -> Name.Name -> [Name.Name] -> (Name.Name, A.Region) -> [(Name.Name, A.Region)] -> Diagnostic
+typeVarsUnboundInUnionDiagnostic :: Code.Source -> Ann.Region -> Name.Name -> [Name.Name] -> (Name.Name, Ann.Region) -> [(Name.Name, Ann.Region)] -> Diagnostic
 typeVarsUnboundInUnionDiagnostic source unionRegion typeName allVars unbound unbounds =
   Diag.makeDiagnostic
     (EC.canonError 36)
@@ -1533,7 +1533,7 @@ typeVarsUnboundInUnionDiagnostic source unionRegion typeName allVars unbound unb
 -- | Build a diagnostic for type variable problems in a type alias.
 --
 -- Delegates the message Doc to 'toReport' to reuse the complex alias-variable logic.
-typeVarsMessedUpInAliasDiagnostic :: Code.Source -> A.Region -> Name.Name -> [Name.Name] -> [(Name.Name, A.Region)] -> [(Name.Name, A.Region)] -> Diagnostic
+typeVarsMessedUpInAliasDiagnostic :: Code.Source -> Ann.Region -> Name.Name -> [Name.Name] -> [(Name.Name, Ann.Region)] -> [(Name.Name, Ann.Region)] -> Diagnostic
 typeVarsMessedUpInAliasDiagnostic source aliasRegion typeName allVars unusedVars unboundVars =
   Diag.makeDiagnostic
     (EC.canonError 37)
@@ -1545,7 +1545,7 @@ typeVarsMessedUpInAliasDiagnostic source aliasRegion typeName allVars unusedVars
     (extractReportMessage (toReport source (TypeVarsMessedUpInAlias aliasRegion typeName allVars unusedVars unboundVars)))
 
 -- | Build a diagnostic for a missing FFI file.
-ffiFileNotFoundDiagnostic :: Code.Source -> A.Region -> FilePath -> Diagnostic
+ffiFileNotFoundDiagnostic :: Code.Source -> Ann.Region -> FilePath -> Diagnostic
 ffiFileNotFoundDiagnostic source region filePath =
   Diag.makeDiagnostic
     (EC.canonError 38)
@@ -1554,10 +1554,10 @@ ffiFileNotFoundDiagnostic source region filePath =
     "FFI FILE NOT FOUND"
     (Text.pack ("Cannot find FFI file: " <> filePath))
     (LabeledSpan region "FFI file not found" SpanPrimary)
-    (Code.toSnippet source region Nothing (D.reflow ("Cannot find FFI file: " <> filePath), D.reflow "Make sure the file exists and the path is correct."))
+    (Code.toSnippet source region Nothing (Doc.reflow ("Cannot find FFI file: " <> filePath), Doc.reflow "Make sure the file exists and the path is correct."))
 
 -- | Build a diagnostic for an FFI file that took too long to read.
-ffiFileTimeoutDiagnostic :: Code.Source -> A.Region -> FilePath -> Int -> Diagnostic
+ffiFileTimeoutDiagnostic :: Code.Source -> Ann.Region -> FilePath -> Int -> Diagnostic
 ffiFileTimeoutDiagnostic source region filePath timeout =
   Diag.makeDiagnostic
     (EC.canonError 39)
@@ -1566,10 +1566,10 @@ ffiFileTimeoutDiagnostic source region filePath timeout =
     "FFI FILE TIMEOUT"
     (Text.pack ("Timeout reading FFI file: " <> filePath))
     (LabeledSpan region "FFI file timeout" SpanPrimary)
-    (Code.toSnippet source region Nothing (D.reflow ("Timeout reading FFI file: " <> filePath <> " after " <> show timeout <> "ms"), D.reflow "The file may be too large or there may be a filesystem issue."))
+    (Code.toSnippet source region Nothing (Doc.reflow ("Timeout reading FFI file: " <> filePath <> " after " <> show timeout <> "ms"), Doc.reflow "The file may be too large or there may be a filesystem issue."))
 
 -- | Build a diagnostic for an FFI file that failed to parse.
-ffiParseErrorDiagnostic :: Code.Source -> A.Region -> FilePath -> String -> Diagnostic
+ffiParseErrorDiagnostic :: Code.Source -> Ann.Region -> FilePath -> String -> Diagnostic
 ffiParseErrorDiagnostic source region filePath parseErr =
   Diag.makeDiagnostic
     (EC.canonError 40)
@@ -1578,10 +1578,10 @@ ffiParseErrorDiagnostic source region filePath parseErr =
     "FFI PARSE ERROR"
     (Text.pack ("Error parsing FFI file: " <> filePath))
     (LabeledSpan region "FFI parse error" SpanPrimary)
-    (Code.toSnippet source region Nothing (D.reflow ("Error parsing FFI file: " <> filePath), D.reflow ("Parse error: " <> parseErr)))
+    (Code.toSnippet source region Nothing (Doc.reflow ("Error parsing FFI file: " <> filePath), Doc.reflow ("Parse error: " <> parseErr)))
 
 -- | Build a diagnostic for an FFI path traversal attempt.
-ffiPathTraversalDiagnostic :: Code.Source -> A.Region -> FilePath -> String -> Diagnostic
+ffiPathTraversalDiagnostic :: Code.Source -> Ann.Region -> FilePath -> String -> Diagnostic
 ffiPathTraversalDiagnostic source region filePath reason =
   Diag.makeDiagnostic
     (EC.canonError 49)
@@ -1590,10 +1590,10 @@ ffiPathTraversalDiagnostic source region filePath reason =
     "FFI PATH ERROR"
     (Text.pack ("FFI path not allowed: " <> filePath))
     (LabeledSpan region "invalid FFI path" SpanPrimary)
-    (Code.toSnippet source region Nothing (D.reflow ("The foreign import path is not allowed: " <> filePath), D.reflow reason))
+    (Code.toSnippet source region Nothing (Doc.reflow ("The foreign import path is not allowed: " <> filePath), Doc.reflow reason))
 
 -- | Build a diagnostic for an invalid type in an FFI file.
-ffiInvalidTypeDiagnostic :: Code.Source -> A.Region -> FilePath -> Name.Name -> String -> Diagnostic
+ffiInvalidTypeDiagnostic :: Code.Source -> Ann.Region -> FilePath -> Name.Name -> String -> Diagnostic
 ffiInvalidTypeDiagnostic source region filePath typeName typeErr =
   Diag.makeDiagnostic
     (EC.canonError 41)
@@ -1602,10 +1602,10 @@ ffiInvalidTypeDiagnostic source region filePath typeName typeErr =
     "FFI INVALID TYPE"
     (Text.pack ("Invalid type in FFI file: " <> filePath))
     (LabeledSpan region "FFI invalid type" SpanPrimary)
-    (Code.toSnippet source region Nothing (D.reflow ("Invalid type in FFI file: " <> filePath), D.reflow ("Type " <> Name.toChars typeName <> ": " <> typeErr)))
+    (Code.toSnippet source region Nothing (Doc.reflow ("Invalid type in FFI file: " <> filePath), Doc.reflow ("Type " <> Name.toChars typeName <> ": " <> typeErr)))
 
 -- | Build a diagnostic for a missing type annotation in an FFI file.
-ffiMissingAnnotationDiagnostic :: Code.Source -> A.Region -> FilePath -> Name.Name -> Diagnostic
+ffiMissingAnnotationDiagnostic :: Code.Source -> Ann.Region -> FilePath -> Name.Name -> Diagnostic
 ffiMissingAnnotationDiagnostic source region filePath funcName =
   Diag.makeDiagnostic
     (EC.canonError 42)
@@ -1614,10 +1614,10 @@ ffiMissingAnnotationDiagnostic source region filePath funcName =
     "FFI MISSING ANNOTATION"
     (Text.pack ("Missing type annotation in FFI file: " <> filePath))
     (LabeledSpan region "FFI missing annotation" SpanPrimary)
-    (Code.toSnippet source region Nothing (D.reflow ("Missing type annotation in FFI file: " <> filePath), D.reflow ("Function " <> Name.toChars funcName <> " needs a type annotation.")))
+    (Code.toSnippet source region Nothing (Doc.reflow ("Missing type annotation in FFI file: " <> filePath), Doc.reflow ("Function " <> Name.toChars funcName <> " needs a type annotation.")))
 
 -- | Build a diagnostic for a circular dependency in FFI files.
-ffiCircularDependencyDiagnostic :: Code.Source -> A.Region -> FilePath -> [FilePath] -> Diagnostic
+ffiCircularDependencyDiagnostic :: Code.Source -> Ann.Region -> FilePath -> [FilePath] -> Diagnostic
 ffiCircularDependencyDiagnostic source region filePath deps =
   Diag.makeDiagnostic
     (EC.canonError 43)
@@ -1626,10 +1626,10 @@ ffiCircularDependencyDiagnostic source region filePath deps =
     "FFI CIRCULAR DEPENDENCY"
     (Text.pack ("Circular dependency in FFI file: " <> filePath))
     (LabeledSpan region "FFI circular dependency" SpanPrimary)
-    (Code.toSnippet source region Nothing (D.reflow ("Circular dependency detected in FFI file: " <> filePath), D.reflow ("Dependency chain: " <> show deps)))
+    (Code.toSnippet source region Nothing (Doc.reflow ("Circular dependency detected in FFI file: " <> filePath), Doc.reflow ("Dependency chain: " <> show deps)))
 
 -- | Build a diagnostic for an FFI type that is not in scope.
-ffiTypeNotFoundDiagnostic :: Code.Source -> A.Region -> FilePath -> Name.Name -> String -> [Name.Name] -> Diagnostic
+ffiTypeNotFoundDiagnostic :: Code.Source -> Ann.Region -> FilePath -> Name.Name -> String -> [Name.Name] -> Diagnostic
 ffiTypeNotFoundDiagnostic source region filePath typeName typeErr suggestions =
   Diag.makeDiagnostic
     (EC.canonError 44)
@@ -1638,19 +1638,19 @@ ffiTypeNotFoundDiagnostic source region filePath typeName typeErr suggestions =
     "FFI TYPE NOT FOUND"
     (Text.pack ("Unknown type `" <> Name.toChars typeName <> "` in FFI file: " <> filePath))
     (LabeledSpan region "FFI type not found" SpanPrimary)
-    (Code.toSnippet source region Nothing (D.reflow ("Unknown type in FFI file: " <> filePath), hintDoc))
+    (Code.toSnippet source region Nothing (Doc.reflow ("Unknown type in FFI file: " <> filePath), hintDoc))
   where
     nearbyNames = fmap Name.toChars (take 4 (Suggest.sort (Name.toChars typeName) Name.toChars suggestions))
-    hintDoc = D.stack
-      [ D.reflow ("The type `" <> Name.toChars typeName <> "` is not in scope: " <> typeErr)
-      , case fmap D.fromChars nearbyNames of
-          [] -> D.reflow "Make sure this type is imported or defined in your module."
-          [alt] -> D.fillSep ["Maybe", "you", "want", D.dullyellow alt, "instead?"]
-          alts -> D.stack ["These types seem close though:", D.indent 4 (D.vcat (fmap D.dullyellow alts))]
+    hintDoc = Doc.stack
+      [ Doc.reflow ("The type `" <> Name.toChars typeName <> "` is not in scope: " <> typeErr)
+      , case fmap Doc.fromChars nearbyNames of
+          [] -> Doc.reflow "Make sure this type is imported or defined in your module."
+          [alt] -> Doc.fillSep ["Maybe", "you", "want", Doc.dullyellow alt, "instead?"]
+          alts -> Doc.stack ["These types seem close though:", Doc.indent 4 (Doc.vcat (fmap Doc.dullyellow alts))]
       ]
 
 -- | Build a diagnostic for a lazy import referencing a non-existent module.
-lazyImportNotFoundDiagnostic :: Code.Source -> A.Region -> Name.Name -> [Name.Name] -> Diagnostic
+lazyImportNotFoundDiagnostic :: Code.Source -> Ann.Region -> Name.Name -> [Name.Name] -> Diagnostic
 lazyImportNotFoundDiagnostic source region name suggestions =
   Diag.makeDiagnostic
     (EC.canonError 45)
@@ -1662,7 +1662,7 @@ lazyImportNotFoundDiagnostic source region name suggestions =
     (extractReportMessage (toReport source (LazyImportNotFound region name suggestions)))
 
 -- | Build a diagnostic for a lazy import of a core/stdlib module.
-lazyImportCoreModuleDiagnostic :: Code.Source -> A.Region -> Name.Name -> Diagnostic
+lazyImportCoreModuleDiagnostic :: Code.Source -> Ann.Region -> Name.Name -> Diagnostic
 lazyImportCoreModuleDiagnostic source region name =
   Diag.makeDiagnostic
     (EC.canonError 46)
@@ -1674,7 +1674,7 @@ lazyImportCoreModuleDiagnostic source region name =
     (extractReportMessage (toReport source (LazyImportCoreModule region name)))
 
 -- | Build a diagnostic for a lazy import inside a package context.
-lazyImportInPackageDiagnostic :: Code.Source -> A.Region -> Name.Name -> Diagnostic
+lazyImportInPackageDiagnostic :: Code.Source -> Ann.Region -> Name.Name -> Diagnostic
 lazyImportInPackageDiagnostic source region name =
   Diag.makeDiagnostic
     (EC.canonError 47)
@@ -1686,7 +1686,7 @@ lazyImportInPackageDiagnostic source region name =
     (extractReportMessage (toReport source (LazyImportInPackage region name)))
 
 -- | Build a diagnostic for a module lazy-importing itself.
-lazyImportSelfDiagnostic :: Code.Source -> A.Region -> Name.Name -> Diagnostic
+lazyImportSelfDiagnostic :: Code.Source -> Ann.Region -> Name.Name -> Diagnostic
 lazyImportSelfDiagnostic source region name =
   Diag.makeDiagnostic
     (EC.canonError 48)
@@ -1698,7 +1698,7 @@ lazyImportSelfDiagnostic source region name =
     (extractReportMessage (toReport source (LazyImportSelf region name)))
 
 -- | Build a diagnostic for a lazy import of an internal kernel module.
-lazyImportKernelDiagnostic :: Code.Source -> A.Region -> Name.Name -> Diagnostic
+lazyImportKernelDiagnostic :: Code.Source -> Ann.Region -> Name.Name -> Diagnostic
 lazyImportKernelDiagnostic source region name =
   Diag.makeDiagnostic
     (EC.canonError 49)
@@ -1711,33 +1711,33 @@ lazyImportKernelDiagnostic source region name =
 
 -- BAD TYPE VARIABLES
 
-unboundTypeVars :: Code.Source -> A.Region -> [D.Doc] -> Name.Name -> [Name.Name] -> (Name.Name, A.Region) -> [(Name.Name, A.Region)] -> Report.Report
+unboundTypeVars :: Code.Source -> Ann.Region -> [Doc.Doc] -> Name.Name -> [Name.Name] -> (Name.Name, Ann.Region) -> [(Name.Name, Ann.Region)] -> Report.Report
 unboundTypeVars source declRegion tipe typeName allVars (unboundVar, varRegion) unboundVars =
   let backQuote name =
-        "`" <> D.fromName name <> "`"
+        "`" <> Doc.fromName name <> "`"
 
       (title, subRegion, overview) =
         case fmap fst unboundVars of
           [] ->
             ( "UNBOUND TYPE VARIABLE",
               Just varRegion,
-              ["The", backQuote typeName] <> (tipe <> ["uses", "an", "unbound", "type", "variable", D.dullyellow (backQuote unboundVar), "in", "its", "definition:"])
+              ["The", backQuote typeName] <> (tipe <> ["uses", "an", "unbound", "type", "variable", Doc.dullyellow (backQuote unboundVar), "in", "its", "definition:"])
             )
           vars ->
             ( "UNBOUND TYPE VARIABLES",
               Nothing,
-              ["Type", "variables"] <> (D.commaSep "and" D.dullyellow (D.fromName unboundVar : fmap D.fromName vars) <> (["are", "unbound", "in", "the", backQuote typeName] <> (tipe <> ["definition:"])))
+              ["Type", "variables"] <> (Doc.commaSep "and" Doc.dullyellow (Doc.fromName unboundVar : fmap Doc.fromName vars) <> (["are", "unbound", "in", "the", backQuote typeName] <> (tipe <> ["definition:"])))
             )
    in Report.Report title declRegion [] $
         Code.toSnippet
           source
           declRegion
           subRegion
-          ( D.fillSep overview,
-            D.stack
-              [ D.reflow "You probably need to change the declaration to something like this:",
-                D.indent 4 . D.hsep $ (tipe <> ([D.fromName typeName] <> (fmap D.fromName allVars <> (fmap (D.green . D.fromName) (unboundVar : fmap fst unboundVars) <> ["=", "..."])))),
-                D.reflow
+          ( Doc.fillSep overview,
+            Doc.stack
+              [ Doc.reflow "You probably need to change the declaration to something like this:",
+                Doc.indent 4 . Doc.hsep $ (tipe <> ([Doc.fromName typeName] <> (fmap Doc.fromName allVars <> (fmap (Doc.green . Doc.fromName) (unboundVar : fmap fst unboundVars) <> ["=", "..."])))),
+                Doc.reflow
                   ( "Why? Well, imagine one `"
                       <> ( Name.toChars typeName
                              <> ( "` where `"
@@ -1753,61 +1753,61 @@ unboundTypeVars source declRegion tipe typeName allVars (unboundVar, varRegion) 
 
 -- NAME CLASH
 
-nameClash :: Code.Source -> A.Region -> A.Region -> String -> Report.Report
+nameClash :: Code.Source -> Ann.Region -> Ann.Region -> String -> Report.Report
 nameClash source r1 r2 messageThatEndsWithPunctuation =
   Report.Report "NAME CLASH" r2 [] $
     Code.toPair
       source
       r1
       r2
-      ( D.reflow messageThatEndsWithPunctuation,
+      ( Doc.reflow messageThatEndsWithPunctuation,
         "How can I know which one you want? Rename one of them!"
       )
-      ( D.reflow (messageThatEndsWithPunctuation <> " One here:"),
+      ( Doc.reflow (messageThatEndsWithPunctuation <> " One here:"),
         "And another one here:",
         "How can I know which one you want? Rename one of them!"
       )
 
 -- AMBIGUOUS NAME
 
-ambiguousName :: Code.Source -> A.Region -> Maybe Name.Name -> Name.Name -> ModuleName.Canonical -> OneOrMore.OneOrMore ModuleName.Canonical -> String -> Report.Report
+ambiguousName :: Code.Source -> Ann.Region -> Maybe Name.Name -> Name.Name -> ModuleName.Canonical -> OneOrMore.OneOrMore ModuleName.Canonical -> String -> Report.Report
 ambiguousName source region maybePrefix name h hs thing =
   let possibleHomes = List.sort (h : OneOrMore.destruct (:) hs)
    in ( Report.Report "AMBIGUOUS NAME" region [] . Code.toSnippet source region Nothing $
           ( case maybePrefix of
               Nothing ->
                 let homeToYellowDoc (ModuleName.Canonical _ home) =
-                      D.dullyellow (D.fromName home <> "." <> D.fromName name)
-                 in ( D.reflow ("This usage of `" <> (Name.toChars name <> "` is ambiguous:")),
-                      D.stack
-                        [ D.reflow
+                      Doc.dullyellow (Doc.fromName home <> "." <> Doc.fromName name)
+                 in ( Doc.reflow ("This usage of `" <> (Name.toChars name <> "` is ambiguous:")),
+                      Doc.stack
+                        [ Doc.reflow
                             ( "This name is exposed by "
                                 <> ( show (length possibleHomes)
                                        <> " of your imports, so I am not\
                                           \ sure which one to use:"
                                    )
                             ),
-                          D.indent 4 . D.vcat $ fmap homeToYellowDoc possibleHomes,
-                          D.reflow
+                          Doc.indent 4 . Doc.vcat $ fmap homeToYellowDoc possibleHomes,
+                          Doc.reflow
                             "I recommend using qualified names for imported values. I also recommend having\
                             \ at most one `exposing (..)` per file to make name clashes like this less common\
                             \ in the long run.",
-                          D.link "Note" "Check out" "imports" "for more info on the import syntax."
+                          Doc.link "Note" "Check out" "imports" "for more info on the import syntax."
                         ]
                     )
               Just prefix ->
                 let homeToYellowDoc (ModuleName.Canonical _ home) =
                       if prefix == home
-                        then D.cyan "import" <+> D.fromName home
-                        else D.cyan "import" <+> D.fromName home <+> D.cyan "as" <+> D.fromName prefix
+                        then Doc.cyan "import" <+> Doc.fromName home
+                        else Doc.cyan "import" <+> Doc.fromName home <+> Doc.cyan "as" <+> Doc.fromName prefix
 
                     eitherOrAny =
                       if length possibleHomes == 2 then "either" else "any"
-                 in ( D.reflow ("This usage of `" <> (toQualString prefix name <> "` is ambiguous.")),
-                      D.stack
-                        [ D.reflow ("It could refer to a " <> (thing <> (" from " <> (eitherOrAny <> " of these imports:")))),
-                          D.indent 4 . D.vcat $ fmap homeToYellowDoc possibleHomes,
-                          D.reflowLink "Read" "imports" "to learn how to clarify which one you want."
+                 in ( Doc.reflow ("This usage of `" <> (toQualString prefix name <> "` is ambiguous.")),
+                      Doc.stack
+                        [ Doc.reflow ("It could refer to a " <> (thing <> (" from " <> (eitherOrAny <> " of these imports:")))),
+                          Doc.indent 4 . Doc.vcat $ fmap homeToYellowDoc possibleHomes,
+                          Doc.reflowLink "Read" "imports" "to learn how to clarify which one you want."
                         ]
                     )
           )
@@ -1815,7 +1815,7 @@ ambiguousName source region maybePrefix name h hs thing =
 
 -- NOT FOUND
 
-notFound :: Code.Source -> A.Region -> Maybe Name.Name -> Name.Name -> String -> PossibleNames -> Report.Report
+notFound :: Code.Source -> Ann.Region -> Maybe Name.Name -> Name.Name -> String -> PossibleNames -> Report.Report
 notFound source region maybePrefix name thing (PossibleNames locals quals) =
   let givenName =
         maybe Name.toChars toQualString maybePrefix name
@@ -1831,22 +1831,22 @@ notFound source region maybePrefix name thing (PossibleNames locals quals) =
       toDetails noSuggestionDetails yesSuggestionDetails =
         case nearbyNames of
           [] ->
-            D.stack
-              [ D.reflow noSuggestionDetails,
-                D.link "Hint" "Read" "imports" "to see how `import` declarations work in Canopy."
+            Doc.stack
+              [ Doc.reflow noSuggestionDetails,
+                Doc.link "Hint" "Read" "imports" "to see how `import` declarations work in Canopy."
               ]
           suggestions ->
-            D.stack
-              [ D.reflow yesSuggestionDetails,
-                (D.indent 4 . D.vcat) (fmap (D.dullyellow . D.fromChars) suggestions),
-                D.link "Hint" "Read" "imports" "to see how `import` declarations work in Canopy."
+            Doc.stack
+              [ Doc.reflow yesSuggestionDetails,
+                (Doc.indent 4 . Doc.vcat) (fmap (Doc.dullyellow . Doc.fromChars) suggestions),
+                Doc.link "Hint" "Read" "imports" "to see how `import` declarations work in Canopy."
               ]
    in Report.Report "NAMING ERROR" region nearbyNames $
         Code.toSnippet
           source
           region
           Nothing
-          ( D.reflow ("I cannot find a `" <> (givenName <> ("` " <> (thing <> ":")))),
+          ( Doc.reflow ("I cannot find a `" <> (givenName <> ("` " <> (thing <> ":")))),
             case maybePrefix of
               Nothing ->
                 toDetails
@@ -1874,20 +1874,20 @@ varErrorToReport :: VarError -> Report.Report
 varErrorToReport (VarError kind name problem suggestions) =
   let
     learnMore orMaybe =
-      D.reflow $
+      Doc.reflow $
         orMaybe <> " `import` works different than you expect? Learn all about it here: "
-        <> D.hintLink "imports"
+        <> Doc.hintLink "imports"
 
     namingError overview maybeStarter specializedSuggestions =
       Report.reportDoc "NAMING ERROR" Nothing overview $
-        case D.maybeYouWant' maybeStarter specializedSuggestions of
+        case Doc.maybeYouWant' maybeStarter specializedSuggestions of
           Nothing ->
             learnMore "Maybe"
           Just doc ->
-            D.stack [ doc, learnMore "Or maybe" ]
+            Doc.stack [ doc, learnMore "Or maybe" ]
 
     specialNamingError specialHint =
-      Report.reportDoc "NAMING ERROR" Nothing (cannotFind kind name) (D.hsep specialHint)
+      Report.reportDoc "NAMING ERROR" Nothing (cannotFind kind name) (Doc.hsep specialHint)
   in
   case problem of
     Ambiguous ->
@@ -1908,47 +1908,47 @@ varErrorToReport (VarError kind name problem suggestions) =
     FFIFileNotFound region filePath ->
       Report.Report "FFI FILE NOT FOUND" region [] $
         Code.toSnippet source region Nothing
-          ( D.reflow $ "Cannot find FFI file: " <> filePath
-          , D.reflow "Make sure the file exists and the path is correct."
+          ( Doc.reflow $ "Cannot find FFI file: " <> filePath
+          , Doc.reflow "Make sure the file exists and the path is correct."
           )
     FFIFileTimeout region filePath timeout ->
       Report.Report "FFI FILE TIMEOUT" region [] $
         Code.toSnippet source region Nothing
-          ( D.reflow $ "Timeout reading FFI file: " <> filePath <> " after " <> show timeout <> "ms"
-          , D.reflow "The file may be too large or there may be a filesystem issue."
+          ( Doc.reflow $ "Timeout reading FFI file: " <> filePath <> " after " <> show timeout <> "ms"
+          , Doc.reflow "The file may be too large or there may be a filesystem issue."
           )
     FFIParseError region filePath parseErr ->
       Report.Report "FFI PARSE ERROR" region [] $
         Code.toSnippet source region Nothing
-          ( D.reflow $ "Error parsing FFI file: " <> filePath
-          , D.reflow $ "Parse error: " <> parseErr
+          ( Doc.reflow $ "Error parsing FFI file: " <> filePath
+          , Doc.reflow $ "Parse error: " <> parseErr
           )
     FFIPathTraversal region filePath reason ->
       Report.Report "FFI PATH ERROR" region [] $
         Code.toSnippet source region Nothing
-          ( D.reflow $ "The foreign import path is not allowed: " <> filePath
-          , D.stack
-              [ D.reflow reason
-              , D.reflow "FFI source paths must be relative paths within your project directory, ending in .js or .mjs, without '..' components."
+          ( Doc.reflow $ "The foreign import path is not allowed: " <> filePath
+          , Doc.stack
+              [ Doc.reflow reason
+              , Doc.reflow "FFI source paths must be relative paths within your project directory, ending in .js or .mjs, without '..' components."
               ]
           )
     FFIInvalidType region filePath typeName typeErr ->
       Report.Report "FFI INVALID TYPE" region [] $
         Code.toSnippet source region Nothing
-          ( D.reflow $ "Invalid type in FFI file: " <> filePath
-          , D.reflow $ "Type " <> Name.toChars typeName <> ": " <> typeErr
+          ( Doc.reflow $ "Invalid type in FFI file: " <> filePath
+          , Doc.reflow $ "Type " <> Name.toChars typeName <> ": " <> typeErr
           )
     FFIMissingAnnotation region filePath funcName ->
       Report.Report "FFI MISSING ANNOTATION" region [] $
         Code.toSnippet source region Nothing
-          ( D.reflow $ "Missing type annotation in FFI file: " <> filePath
-          , D.reflow $ "Function " <> Name.toChars funcName <> " needs a type annotation."
+          ( Doc.reflow $ "Missing type annotation in FFI file: " <> filePath
+          , Doc.reflow $ "Function " <> Name.toChars funcName <> " needs a type annotation."
           )
     FFICircularDependency region filePath deps ->
       Report.Report "FFI CIRCULAR DEPENDENCY" region [] $
         Code.toSnippet source region Nothing
-          ( D.reflow $ "Circular dependency detected in FFI file: " <> filePath
-          , D.reflow $ "Dependency chain: " <> show deps
+          ( Doc.reflow $ "Circular dependency detected in FFI file: " <> filePath
+          , Doc.reflow $ "Dependency chain: " <> show deps
           )
     ExposedUnknown ->
       case name of
@@ -1961,31 +1961,31 @@ varErrorToReport (VarError kind name problem suggestions) =
 cannotFind :: VarKind -> Text -> [Doc]
 cannotFind kind rawName =
   let ( a, thing, name ) = toKindInfo kind rawName in
-  [ "Cannot", "find", a, thing, "named", D.dullyellow name <> ":" ]
+  [ "Cannot", "find", a, thing, "named", Doc.dullyellow name <> ":" ]
 
 ambiguous :: VarKind -> Text -> [Doc]
 ambiguous kind rawName =
   let ( _a, thing, name ) = toKindInfo kind rawName in
-  [ "This", "usage", "of", "the", D.dullyellow name, thing, "is", "ambiguous." ]
+  [ "This", "usage", "of", "the", Doc.dullyellow name, thing, "is", "ambiguous." ]
 
 notEqualsHint :: Text -> [Doc]
 notEqualsHint op =
   [ "Looking", "for", "the", "“not", "equal”", "operator?", "The", "traditional"
-  , D.dullyellow $ text $ "(" <> op <> ")"
-  , "is", "replaced", "by", D.green "(/=)", "in", "Canopy.", "It", "is", "meant"
+  , Doc.dullyellow $ text $ "(" <> op <> ")"
+  , "is", "replaced", "by", Doc.green "(/=)", "in", "Canopy.", "It", "is", "meant"
   , "to", "look", "like", "the", "“not", "equal”", "sign", "from", "math!", "(≠)"
   ]
 
 equalsHint :: [Doc]
 equalsHint =
-  [ "A", "special", D.dullyellow "(===)", "operator", "is", "not", "needed"
-  , "in", "Canopy.", "We", "use", D.green "(==)", "for", "everything!"
+  [ "A", "special", Doc.dullyellow "(===)", "operator", "is", "not", "needed"
+  , "in", "Canopy.", "We", "use", Doc.green "(==)", "for", "everything!"
   ]
 
 modHint :: [Doc]
 modHint =
-  [ "Rather", "than", "a", D.dullyellow "(%)", "operator,"
-  , "Canopy", "has", "a", D.green "modBy", "function."
+  [ "Rather", "than", "a", Doc.dullyellow "(%)", "operator,"
+  , "Canopy", "has", "a", Doc.green "modBy", "function."
   , "Learn", "more", "here:"
   , "<https://package.canopy-lang.org/packages/canopy/core/latest/Basics#modBy>"
   ]
@@ -1994,7 +1994,7 @@ modHint =
 
 -- ARG MISMATCH
 
-_argMismatchReport :: Code.Source -> A.Region -> String -> Name.Name -> Int -> Int -> Report.Report
+_argMismatchReport :: Code.Source -> Ann.Region -> String -> Name.Name -> Int -> Int -> Report.Report
 _argMismatchReport source region kind name expected actual =
   let numArgs =
         "too "
@@ -2005,15 +2005,15 @@ _argMismatchReport source region kind name expected actual =
           source
           region
           Nothing
-          ( D.reflow $
+          ( Doc.reflow $
               kind <> " " <> Name.toChars name <> " has " <> numArgs <> ".",
-            D.reflow $
+            Doc.reflow $
               "Expecting " <> show expected <> ", but got " <> show actual <> "."
           )
 
 -- BAD ALIAS RECURSION
 
-aliasRecursionReport :: Code.Source -> A.Region -> Name.Name -> [Name.Name] -> Src.Type -> [Name.Name] -> Report.Report
+aliasRecursionReport :: Code.Source -> Ann.Region -> Name.Name -> [Name.Name] -> Src.Type -> [Name.Name] -> Report.Report
 aliasRecursionReport source region name args tipe others =
   case others of
     [] ->
@@ -2023,13 +2023,13 @@ aliasRecursionReport source region name args tipe others =
           region
           Nothing
           ( "This type alias is recursive, forming an infinite type!",
-            D.stack
-              [ D.reflow
+            Doc.stack
+              [ Doc.reflow
                   "When I expand a recursive type alias, it just keeps getting bigger and bigger.\
                   \ So dealiasing results in an infinitely large type! Try this instead:",
-                D.indent 4 $
+                Doc.indent 4 $
                   aliasToUnionDoc name args tipe,
-                D.link
+                Doc.link
                   "Hint"
                   "This is kind of a subtle distinction. I suggested the naive fix, but I recommend reading"
                   "recursive-alias"
@@ -2043,11 +2043,11 @@ aliasRecursionReport source region name args tipe others =
           region
           Nothing
           ( "This type alias is part of a mutually recursive set of type aliases.",
-            D.stack
+            Doc.stack
               [ "It is part of this cycle of type aliases:",
-                D.cycle 4 name others,
-                D.reflow "You need to convert at least one of these type aliases into a `type`.",
-                D.link
+                Doc.cycle 4 name others,
+                Doc.reflow "You need to convert at least one of these type aliases into a `type`.",
+                Doc.link
                   "Note"
                   "Read"
                   "recursive-alias"
@@ -2057,11 +2057,11 @@ aliasRecursionReport source region name args tipe others =
 
 aliasToUnionDoc :: Name.Name -> [Name.Name] -> Src.Type -> Doc
 aliasToUnionDoc name args tipe =
-  D.vcat
-    [ D.dullyellow $
-        "type" <+> D.fromName name <+> (foldr (((<+>)) . D.fromName) "=" args),
-      D.green $
-        D.indent 4 (D.fromName name),
-      D.dullyellow $
-        D.indent 8 (RT.srcToDoc RT.App tipe)
+  Doc.vcat
+    [ Doc.dullyellow $
+        "type" <+> Doc.fromName name <+> (foldr (((<+>)) . Doc.fromName) "=" args),
+      Doc.green $
+        Doc.indent 4 (Doc.fromName name),
+      Doc.dullyellow $
+        Doc.indent 8 (RT.srcToDoc RT.App tipe)
     ]

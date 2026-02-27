@@ -16,63 +16,63 @@ import Foreign.Ptr (plusPtr)
 import qualified Parse.Keyword as Keyword
 import qualified Parse.Number as Number
 import Parse.Primitives (Parser, addEnd, addLocation, getPosition, inContext, oneOf, oneOfWithFallback, word1, word2)
-import qualified Parse.Primitives as P
+import qualified Parse.Primitives as Parse
 import qualified Parse.Space as Space
 import qualified Parse.String as String
 import qualified Parse.Variable as Var
-import qualified Reporting.Annotation as A
-import qualified Reporting.Error.Syntax as E
+import qualified Reporting.Annotation as Ann
+import qualified Reporting.Error.Syntax as SyntaxError
 
 -- TERM
 
-term :: Parser E.Pattern Src.Pattern
+term :: Parser SyntaxError.Pattern Src.Pattern
 term =
   do
     start <- getPosition
     oneOf
-      E.PStart
+      SyntaxError.PStart
       [ record start,
         tuple start,
         list start,
         termHelp start
       ]
 
-termHelp :: A.Position -> Parser E.Pattern Src.Pattern
+termHelp :: Ann.Position -> Parser SyntaxError.Pattern Src.Pattern
 termHelp start =
   oneOf
-    E.PStart
+    SyntaxError.PStart
     [ do
         wildcard
         addEnd start Src.PAnything,
       do
-        name <- Var.lower E.PStart
+        name <- Var.lower SyntaxError.PStart
         addEnd start (Src.PVar name),
       do
-        upper <- Var.foreignUpper E.PStart
+        upper <- Var.foreignUpper SyntaxError.PStart
         end <- getPosition
-        let region = A.Region start end
+        let region = Ann.Region start end
         return $
-          A.at start end $
+          Ann.at start end $
             case upper of
               Var.Unqualified name ->
                 Src.PCtor region name []
               Var.Qualified home name ->
                 Src.PCtorQual region home name [],
       do
-        number <- Number.number E.PStart E.PNumber
+        number <- Number.number SyntaxError.PStart SyntaxError.PNumber
         end <- getPosition
         case number of
           Number.Int int ->
-            return (A.at start end (Src.PInt int))
+            return (Ann.at start end (Src.PInt int))
           Number.Float float ->
-            P.Parser $ \(P.State _ _ _ _ row col) _ _ cerr _ ->
+            Parse.Parser $ \(Parse.State _ _ _ _ row col) _ _ cerr _ ->
               let width = fromIntegral (Utf8.size float)
-               in cerr row (col - width) (E.PFloat width),
+               in cerr row (col - width) (SyntaxError.PFloat width),
       do
-        str <- String.string E.PStart E.PString
+        str <- String.string SyntaxError.PStart SyntaxError.PString
         addEnd start (Src.PStr str),
       do
-        chr <- String.character E.PStart E.PChar
+        chr <- String.character SyntaxError.PStart SyntaxError.PChar
         addEnd start (Src.PChr chr)
     ]
 
@@ -81,85 +81,85 @@ termHelp start =
 -- A bare underscore `_` is a wildcard pattern (PAnything).
 -- An underscore followed by letters like `_description` is a regular variable (PVar).
 
-wildcard :: Parser E.Pattern ()
+wildcard :: Parser SyntaxError.Pattern ()
 wildcard =
-  P.Parser $ \(P.State src pos end indent row col) cok _ _ eerr ->
-    if pos == end || P.unsafeIndex pos /= 0x5F {- _ -}
-      then eerr row col E.PStart
+  Parse.Parser $ \(Parse.State src pos end indent row col) cok _ _ eerr ->
+    if pos == end || Parse.unsafeIndex pos /= 0x5F {- _ -}
+      then eerr row col SyntaxError.PStart
       else
         let !newPos = plusPtr pos 1
             !newCol = col + 1
          in if Var.getInnerWidth newPos end > 0
               then
                 -- Has characters after underscore - not a wildcard, let Var.lower handle it
-                eerr row col E.PStart
+                eerr row col SyntaxError.PStart
               else
-                let !newState = P.State src newPos end indent row newCol
+                let !newState = Parse.State src newPos end indent row newCol
                  in cok () newState
 
 -- RECORDS
 
-record :: A.Position -> Parser E.Pattern Src.Pattern
+record :: Ann.Position -> Parser SyntaxError.Pattern Src.Pattern
 record start =
-  inContext E.PRecord (word1 0x7B {- { -} E.PStart) $
+  inContext SyntaxError.PRecord (word1 0x7B {- { -} SyntaxError.PStart) $
     do
-      Space.chompAndCheckIndent E.PRecordSpace E.PRecordIndentOpen
+      Space.chompAndCheckIndent SyntaxError.PRecordSpace SyntaxError.PRecordIndentOpen
       oneOf
-        E.PRecordOpen
+        SyntaxError.PRecordOpen
         [ do
-            var <- addLocation (Var.lower E.PRecordField)
-            Space.chompAndCheckIndent E.PRecordSpace E.PRecordIndentEnd
+            var <- addLocation (Var.lower SyntaxError.PRecordField)
+            Space.chompAndCheckIndent SyntaxError.PRecordSpace SyntaxError.PRecordIndentEnd
             recordHelp start [var],
           do
-            word1 0x7D {-}-} E.PRecordEnd
+            word1 0x7D {-}-} SyntaxError.PRecordEnd
             addEnd start (Src.PRecord [])
         ]
 
-recordHelp :: A.Position -> [A.Located Name.Name] -> Parser E.PRecord Src.Pattern
+recordHelp :: Ann.Position -> [Ann.Located Name.Name] -> Parser SyntaxError.PRecord Src.Pattern
 recordHelp start vars =
   oneOf
-    E.PRecordEnd
+    SyntaxError.PRecordEnd
     [ do
-        word1 0x2C {-,-} E.PRecordEnd
-        Space.chompAndCheckIndent E.PRecordSpace E.PRecordIndentField
-        var <- addLocation (Var.lower E.PRecordField)
-        Space.chompAndCheckIndent E.PRecordSpace E.PRecordIndentEnd
+        word1 0x2C {-,-} SyntaxError.PRecordEnd
+        Space.chompAndCheckIndent SyntaxError.PRecordSpace SyntaxError.PRecordIndentField
+        var <- addLocation (Var.lower SyntaxError.PRecordField)
+        Space.chompAndCheckIndent SyntaxError.PRecordSpace SyntaxError.PRecordIndentEnd
         recordHelp start (var : vars),
       do
-        word1 0x7D {-}-} E.PRecordEnd
+        word1 0x7D {-}-} SyntaxError.PRecordEnd
         addEnd start (Src.PRecord (reverse vars))
     ]
 
 -- TUPLES
 
-tuple :: A.Position -> Parser E.Pattern Src.Pattern
+tuple :: Ann.Position -> Parser SyntaxError.Pattern Src.Pattern
 tuple start =
-  inContext E.PTuple (word1 0x28 {-(-} E.PStart) $
+  inContext SyntaxError.PTuple (word1 0x28 {-(-} SyntaxError.PStart) $
     do
-      Space.chompAndCheckIndent E.PTupleSpace E.PTupleIndentExpr1
+      Space.chompAndCheckIndent SyntaxError.PTupleSpace SyntaxError.PTupleIndentExpr1
       oneOf
-        E.PTupleOpen
+        SyntaxError.PTupleOpen
         [ do
-            (pattern, end) <- P.specialize E.PTupleExpr expression
-            Space.checkIndent end E.PTupleIndentEnd
+            (pattern, end) <- Parse.specialize SyntaxError.PTupleExpr expression
+            Space.checkIndent end SyntaxError.PTupleIndentEnd
             tupleHelp start pattern [],
           do
-            word1 0x29 {-)-} E.PTupleEnd
+            word1 0x29 {-)-} SyntaxError.PTupleEnd
             addEnd start Src.PUnit
         ]
 
-tupleHelp :: A.Position -> Src.Pattern -> [Src.Pattern] -> Parser E.PTuple Src.Pattern
+tupleHelp :: Ann.Position -> Src.Pattern -> [Src.Pattern] -> Parser SyntaxError.PTuple Src.Pattern
 tupleHelp start firstPattern revPatterns =
   oneOf
-    E.PTupleEnd
+    SyntaxError.PTupleEnd
     [ do
-        word1 0x2C {-,-} E.PTupleEnd
-        Space.chompAndCheckIndent E.PTupleSpace E.PTupleIndentExprN
-        (pattern, end) <- P.specialize E.PTupleExpr expression
-        Space.checkIndent end E.PTupleIndentEnd
+        word1 0x2C {-,-} SyntaxError.PTupleEnd
+        Space.chompAndCheckIndent SyntaxError.PTupleSpace SyntaxError.PTupleIndentExprN
+        (pattern, end) <- Parse.specialize SyntaxError.PTupleExpr expression
+        Space.checkIndent end SyntaxError.PTupleIndentEnd
         tupleHelp start firstPattern (pattern : revPatterns),
       do
-        word1 0x29 {-)-} E.PTupleEnd
+        word1 0x29 {-)-} SyntaxError.PTupleEnd
         case reverse revPatterns of
           [] ->
             return firstPattern
@@ -169,66 +169,66 @@ tupleHelp start firstPattern revPatterns =
 
 -- LIST
 
-list :: A.Position -> Parser E.Pattern Src.Pattern
+list :: Ann.Position -> Parser SyntaxError.Pattern Src.Pattern
 list start =
-  inContext E.PList (word1 0x5B {-[-} E.PStart) $
+  inContext SyntaxError.PList (word1 0x5B {-[-} SyntaxError.PStart) $
     do
-      Space.chompAndCheckIndent E.PListSpace E.PListIndentOpen
+      Space.chompAndCheckIndent SyntaxError.PListSpace SyntaxError.PListIndentOpen
       oneOf
-        E.PListOpen
+        SyntaxError.PListOpen
         [ do
-            (pattern, end) <- P.specialize E.PListExpr expression
-            Space.checkIndent end E.PListIndentEnd
+            (pattern, end) <- Parse.specialize SyntaxError.PListExpr expression
+            Space.checkIndent end SyntaxError.PListIndentEnd
             listHelp start [pattern],
           do
-            word1 0x5D {-]-} E.PListEnd
+            word1 0x5D {-]-} SyntaxError.PListEnd
             addEnd start (Src.PList [])
         ]
 
-listHelp :: A.Position -> [Src.Pattern] -> Parser E.PList Src.Pattern
+listHelp :: Ann.Position -> [Src.Pattern] -> Parser SyntaxError.PList Src.Pattern
 listHelp start patterns =
   oneOf
-    E.PListEnd
+    SyntaxError.PListEnd
     [ do
-        word1 0x2C {-,-} E.PListEnd
-        Space.chompAndCheckIndent E.PListSpace E.PListIndentExpr
-        (pattern, end) <- P.specialize E.PListExpr expression
-        Space.checkIndent end E.PListIndentEnd
+        word1 0x2C {-,-} SyntaxError.PListEnd
+        Space.chompAndCheckIndent SyntaxError.PListSpace SyntaxError.PListIndentExpr
+        (pattern, end) <- Parse.specialize SyntaxError.PListExpr expression
+        Space.checkIndent end SyntaxError.PListIndentEnd
         listHelp start (pattern : patterns),
       do
-        word1 0x5D {-]-} E.PListEnd
+        word1 0x5D {-]-} SyntaxError.PListEnd
         addEnd start (Src.PList (reverse patterns))
     ]
 
 -- EXPRESSION
 
-expression :: Space.Parser E.Pattern Src.Pattern
+expression :: Space.Parser SyntaxError.Pattern Src.Pattern
 expression =
   do
     start <- getPosition
     ePart <- exprPart
     exprHelp start [] ePart
 
-exprHelp :: A.Position -> [Src.Pattern] -> (Src.Pattern, A.Position) -> Space.Parser E.Pattern Src.Pattern
+exprHelp :: Ann.Position -> [Src.Pattern] -> (Src.Pattern, Ann.Position) -> Space.Parser SyntaxError.Pattern Src.Pattern
 exprHelp start revPatterns (pattern, end) =
   oneOfWithFallback
     [ do
-        Space.checkIndent end E.PIndentStart
-        word2 0x3A 0x3A {-::-} E.PStart
-        Space.chompAndCheckIndent E.PSpace E.PIndentStart
+        Space.checkIndent end SyntaxError.PIndentStart
+        word2 0x3A 0x3A {-::-} SyntaxError.PStart
+        Space.chompAndCheckIndent SyntaxError.PSpace SyntaxError.PIndentStart
         ePart <- exprPart
         exprHelp start (pattern : revPatterns) ePart,
       do
-        Space.checkIndent end E.PIndentStart
-        Keyword.as_ E.PStart
-        Space.chompAndCheckIndent E.PSpace E.PIndentAlias
+        Space.checkIndent end SyntaxError.PIndentStart
+        Keyword.as_ SyntaxError.PStart
+        Space.chompAndCheckIndent SyntaxError.PSpace SyntaxError.PIndentAlias
         nameStart <- getPosition
-        name <- Var.lower E.PAlias
+        name <- Var.lower SyntaxError.PAlias
         newEnd <- getPosition
-        Space.chomp E.PSpace
-        let alias = A.at nameStart newEnd name
+        Space.chomp SyntaxError.PSpace
+        let alias = Ann.at nameStart newEnd name
         return
-          ( A.at start newEnd (Src.PAlias (List.foldl' cons pattern revPatterns) alias),
+          ( Ann.at start newEnd (Src.PAlias (List.foldl' cons pattern revPatterns) alias),
             newEnd
           )
     ]
@@ -238,37 +238,37 @@ exprHelp start revPatterns (pattern, end) =
 
 cons :: Src.Pattern -> Src.Pattern -> Src.Pattern
 cons tl hd =
-  A.merge hd tl (Src.PCons hd tl)
+  Ann.merge hd tl (Src.PCons hd tl)
 
 -- EXPRESSION PART
 
-exprPart :: Space.Parser E.Pattern Src.Pattern
+exprPart :: Space.Parser SyntaxError.Pattern Src.Pattern
 exprPart =
   oneOf
-    E.PStart
+    SyntaxError.PStart
     [ do
         start <- getPosition
-        upper <- Var.foreignUpper E.PStart
+        upper <- Var.foreignUpper SyntaxError.PStart
         end <- getPosition
-        exprTermHelp (A.Region start end) upper start [],
+        exprTermHelp (Ann.Region start end) upper start [],
       do
-        eterm@(A.At (A.Region _ end) _) <- term
-        Space.chomp E.PSpace
+        eterm@(Ann.At (Ann.Region _ end) _) <- term
+        Space.chomp SyntaxError.PSpace
         return (eterm, end)
     ]
 
-exprTermHelp :: A.Region -> Var.Upper -> A.Position -> [Src.Pattern] -> Space.Parser E.Pattern Src.Pattern
+exprTermHelp :: Ann.Region -> Var.Upper -> Ann.Position -> [Src.Pattern] -> Space.Parser SyntaxError.Pattern Src.Pattern
 exprTermHelp region upper start revArgs =
   do
     end <- getPosition
-    Space.chomp E.PSpace
+    Space.chomp SyntaxError.PSpace
     oneOfWithFallback
       [ do
-          Space.checkIndent end E.PIndentStart
+          Space.checkIndent end SyntaxError.PIndentStart
           arg <- term
           exprTermHelp region upper start (arg : revArgs)
       ]
-      ( A.at start end $
+      ( Ann.at start end $
           case upper of
             Var.Unqualified name ->
               Src.PCtor region name (reverse revArgs)

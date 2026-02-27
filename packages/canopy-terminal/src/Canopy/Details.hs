@@ -76,10 +76,10 @@ load ::
   FilePath ->
   IO (Either FilePath Details)
 load _style _scope root = do
-  maybeOutline <- Outline.read root
-  case maybeOutline of
-    Nothing -> pure (Left root)
-    Just outline -> do
+  eitherOutline <- Outline.read root
+  case eitherOutline of
+    Left _ -> pure (Left root)
+    Right outline -> do
       time <- Time.getCurrentTime
       let details =
             Details

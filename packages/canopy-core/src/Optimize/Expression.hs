@@ -19,7 +19,7 @@ import qualified Data.Set as Set
 import qualified Optimize.Case as Case
 import qualified Optimize.ConstantFold as ConstantFold
 import qualified Optimize.Names as Names
-import qualified Reporting.Annotation as A
+import qualified Reporting.Annotation as Ann
 import Prelude hiding (cycle)
 
 -- OPTIMIZE
@@ -28,7 +28,7 @@ type Cycle =
   Set.Set Name.Name
 
 optimize :: Cycle -> Can.Expr -> Names.Tracker Opt.Expr
-optimize cycle (A.At region expression) =
+optimize cycle (Ann.At region expression) =
   case expression of
     Can.VarLocal name ->
       pure (Opt.VarLocal name)
@@ -119,7 +119,7 @@ optimize cycle (A.At region expression) =
                   return $ Opt.Let (Opt.Def temp oexpr) (Case.optimize temp temp obranches)
     Can.Accessor field ->
       Names.registerField field (Opt.Accessor field)
-    Can.Access record (A.At _ field) ->
+    Can.Access record (Ann.At _ field) ->
       do
         optRecord <- optimize cycle record
         Names.registerField field (Opt.Access optRecord field)
@@ -151,9 +151,9 @@ optimizeUpdate cycle (Can.FieldUpdate _ expr) =
 optimizeDef :: Cycle -> Can.Def -> Opt.Expr -> Names.Tracker Opt.Expr
 optimizeDef cycle def body =
   case def of
-    Can.Def (A.At _ name) args expr ->
+    Can.Def (Ann.At _ name) args expr ->
       optimizeDefHelp cycle name args expr body
-    Can.TypedDef (A.At _ name) _ typedArgs expr _ ->
+    Can.TypedDef (Ann.At _ name) _ typedArgs expr _ ->
       optimizeDefHelp cycle name (map fst typedArgs) expr body
 
 optimizeDefHelp :: Cycle -> Name.Name -> [Can.Pattern] -> Can.Expr -> Opt.Expr -> Names.Tracker Opt.Expr
@@ -354,7 +354,7 @@ destructCase rootName pattern =
   reverse <$> destructHelp (Opt.Root rootName) pattern []
 
 destruct :: Can.Pattern -> Names.Tracker (Name.Name, [Opt.Destructor])
-destruct pattern@(A.At _ ptrn) =
+destruct pattern@(Ann.At _ ptrn) =
   case ptrn of
     Can.PVar name ->
       pure (name, [])
@@ -369,7 +369,7 @@ destruct pattern@(A.At _ ptrn) =
         pure (name, reverse revDs)
 
 destructHelp :: Opt.Path -> Can.Pattern -> [Opt.Destructor] -> Names.Tracker [Opt.Destructor]
-destructHelp path (A.At region pattern) revDs =
+destructHelp path (Ann.At region pattern) revDs =
   case pattern of
     Can.PAnything ->
       pure revDs
@@ -402,7 +402,7 @@ destructHelp path (A.At region pattern) revDs =
     Can.PList [] ->
       pure revDs
     Can.PList (hd : tl) ->
-      destructTwo path hd (A.At region (Can.PList tl)) revDs
+      destructTwo path hd (Ann.At region (Can.PList tl)) revDs
     Can.PCons hd tl ->
       destructTwo path hd tl revDs
     Can.PChr _ ->
@@ -451,9 +451,9 @@ destructCtorArg path revDs (Can.PatternCtorArg index _ arg) =
 optimizePotentialTailCallDef :: Cycle -> Can.Def -> Names.Tracker Opt.Def
 optimizePotentialTailCallDef cycle def =
   case def of
-    Can.Def (A.At _ name) args expr ->
+    Can.Def (Ann.At _ name) args expr ->
       optimizePotentialTailCall cycle name args expr
-    Can.TypedDef (A.At _ name) _ typedArgs expr _ ->
+    Can.TypedDef (Ann.At _ name) _ typedArgs expr _ ->
       optimizePotentialTailCall cycle name (map fst typedArgs) expr
 
 optimizePotentialTailCall :: Cycle -> Name.Name -> [Can.Pattern] -> Can.Expr -> Names.Tracker Opt.Def
@@ -464,14 +464,14 @@ optimizePotentialTailCall cycle name args expr =
       <$> optimizeTail cycle name argNames expr
 
 optimizeTail :: Cycle -> Name.Name -> [Name.Name] -> Can.Expr -> Names.Tracker Opt.Expr
-optimizeTail cycle rootName argNames locExpr@(A.At _ expression) =
+optimizeTail cycle rootName argNames locExpr@(Ann.At _ expression) =
   case expression of
     Can.Call func args ->
       do
         oargs <- traverse (optimize cycle) args
 
         let isMatchingName =
-              case A.toValue func of
+              case Ann.toValue func of
                 Can.VarLocal name -> rootName == name
                 Can.VarTopLevel _ name -> rootName == name
                 _ -> False

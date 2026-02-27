@@ -14,10 +14,10 @@
 -- The formatter is idempotent: formatting an already-formatted file
 -- produces the same output.
 --
--- Internally, all rendering functions produce 'P.Doc' values from the
+-- Internally, all rendering functions produce 'PP.Doc' values from the
 -- @ansi-wl-pprint@ pretty-printer library.  Only the three public entry
 -- points ('formatModule', 'formatFile', 'formatBytes') convert the final
--- 'P.Doc' into 'Text'.
+-- 'PP.Doc' into 'Text'.
 --
 -- == Usage
 --
@@ -62,9 +62,9 @@ import Data.Text (Text)
 import qualified Data.Text as Text
 import qualified Data.Text.Encoding as TE
 import qualified Parse.Module as Parse
-import qualified Reporting.Annotation as A
-import qualified Reporting.Error.Syntax as E
-import qualified Text.PrettyPrint.ANSI.Leijen as P
+import qualified Reporting.Annotation as Ann
+import qualified Reporting.Error.Syntax as SyntaxError
+import qualified Text.PrettyPrint.ANSI.Leijen as PP
 
 -- ---------------------------------------------------------------------------
 -- Configuration
@@ -96,34 +96,34 @@ defaultFormatConfig =
 -- ---------------------------------------------------------------------------
 
 -- | Render a Doc to plain Text at the configured line width.
-renderToText :: FormatConfig -> P.Doc -> Text
+renderToText :: FormatConfig -> PP.Doc -> Text
 renderToText config doc =
-  Text.pack (P.displayS (P.renderPretty 1.0 (_fmtLineWidth config) (P.plain doc)) "")
+  Text.pack (PP.displayS (PP.renderPretty 1.0 (_fmtLineWidth config) (PP.plain doc)) "")
 
 -- ---------------------------------------------------------------------------
 -- Internal Doc helpers
 -- ---------------------------------------------------------------------------
 
 -- | Produce a newline followed by indentation at the given level.
-nlIndent :: FormatConfig -> Int -> P.Doc
+nlIndent :: FormatConfig -> Int -> PP.Doc
 nlIndent config levels =
-  P.line <> P.text (replicate (levels * _fmtIndent config) ' ')
+  PP.line <> PP.text (replicate (levels * _fmtIndent config) ' ')
 
 -- | Render a Name to a Doc.
-nameDoc :: Name -> P.Doc
-nameDoc name = P.text (Name.toChars name)
+nameDoc :: Name -> PP.Doc
+nameDoc name = PP.text (Name.toChars name)
 
 -- | Render a located Name to a Doc.
-locNameDoc :: A.Located Name -> P.Doc
-locNameDoc locName = nameDoc (A.toValue locName)
+locNameDoc :: Ann.Located Name -> PP.Doc
+locNameDoc locName = nameDoc (Ann.toValue locName)
 
 -- | Wrap a Doc in parentheses.
-parens :: P.Doc -> P.Doc
-parens d = P.text "(" <> d <> P.text ")"
+parens :: PP.Doc -> PP.Doc
+parens d = PP.text "(" <> d <> PP.text ")"
 
 -- | Separate Docs with commas and spaces.
-commaSepDocs :: [P.Doc] -> P.Doc
-commaSepDocs = P.hcat . P.punctuate (P.text ", ")
+commaSepDocs :: [PP.Doc] -> PP.Doc
+commaSepDocs = PP.hcat . PP.punctuate (PP.text ", ")
 
 -- ---------------------------------------------------------------------------
 -- Public API
@@ -140,16 +140,16 @@ formatModule config modul =
   renderToText config (renderModule config modul)
 
 -- | Render a full module to a Doc, separating sections with blank lines.
-renderModule :: FormatConfig -> Src.Module -> P.Doc
+renderModule :: FormatConfig -> Src.Module -> PP.Doc
 renderModule config modul =
-  P.vcat (P.punctuate (P.line <> P.line) (List.filter notEmpty sections))
+  PP.vcat (PP.punctuate (PP.line <> PP.line) (List.filter notEmpty sections))
   where
     sections =
       [ renderHeader modul
       , renderImports modul
       , renderDeclarations config modul
       ]
-    notEmpty doc = not (null (P.displayS (P.renderPretty 1.0 80 (P.plain doc)) ""))
+    notEmpty doc = not (null (PP.displayS (PP.renderPretty 1.0 80 (PP.plain doc)) ""))
 
 -- | Read, parse, and format a @.can@ source file.
 --
@@ -157,7 +157,7 @@ renderModule config modul =
 -- or 'Right' with the formatted source text on success.
 --
 -- @since 0.19.1
-formatFile :: FormatConfig -> FilePath -> IO (Either E.Error Text)
+formatFile :: FormatConfig -> FilePath -> IO (Either SyntaxError.Error Text)
 formatFile config path = do
   bytes <- BS.readFile path
   pure (formatBytes config bytes)
@@ -168,7 +168,7 @@ formatFile config path = do
 -- where bytes are already available in memory.
 --
 -- @since 0.19.1
-formatBytes :: FormatConfig -> BS.ByteString -> Either E.Error Text
+formatBytes :: FormatConfig -> BS.ByteString -> Either SyntaxError.Error Text
 formatBytes config bytes =
   fmap (formatModule config) (Parse.fromByteString Parse.Application bytes)
 
@@ -182,39 +182,39 @@ formatBytes config bytes =
 -- When no explicit header exists the module is anonymous; we emit nothing
 -- so that files without a module declaration remain unmodified in that
 -- respect.
-renderHeader :: Src.Module -> P.Doc
+renderHeader :: Src.Module -> PP.Doc
 renderHeader (Src.Module maybeName exports _ _ _ _ _ _ _ effects) =
-  maybe P.empty (renderNamedHeader effects exports) maybeName
+  maybe PP.empty (renderNamedHeader effects exports) maybeName
 
 -- | Render a named module header line.
-renderNamedHeader :: Src.Effects -> A.Located Src.Exposing -> A.Located Name -> P.Doc
+renderNamedHeader :: Src.Effects -> Ann.Located Src.Exposing -> Ann.Located Name -> PP.Doc
 renderNamedHeader effects exports locName =
   effectsKeyword effects
-    P.<+> locNameDoc locName
-    P.<+> P.text "exposing"
-    P.<+> formatExposing (A.toValue exports)
+    PP.<+> locNameDoc locName
+    PP.<+> PP.text "exposing"
+    PP.<+> formatExposing (Ann.toValue exports)
 
 -- | Determine the module keyword from the effects declaration.
-effectsKeyword :: Src.Effects -> P.Doc
-effectsKeyword Src.NoEffects    = P.text "module"
-effectsKeyword (Src.Ports _)    = P.text "port module"
-effectsKeyword (Src.FFI _)      = P.text "ffi module"
-effectsKeyword (Src.Manager _ _) = P.text "effect module"
+effectsKeyword :: Src.Effects -> PP.Doc
+effectsKeyword Src.NoEffects    = PP.text "module"
+effectsKeyword (Src.Ports _)    = PP.text "port module"
+effectsKeyword (Src.FFI _)      = PP.text "ffi module"
+effectsKeyword (Src.Manager _ _) = PP.text "effect module"
 
 -- ---------------------------------------------------------------------------
 -- Import rendering
 -- ---------------------------------------------------------------------------
 
 -- | Render all import declarations, sorted alphabetically by module name.
-renderImports :: Src.Module -> P.Doc
+renderImports :: Src.Module -> PP.Doc
 renderImports (Src.Module _ _ _ imports _ _ _ _ _ _) =
   renderSortedImports (List.sortBy compareImports imports)
 
 -- | Render a sorted list of imports with newlines between them.
-renderSortedImports :: [Src.Import] -> P.Doc
-renderSortedImports [] = P.empty
+renderSortedImports :: [Src.Import] -> PP.Doc
+renderSortedImports [] = PP.empty
 renderSortedImports sorted =
-  P.vcat (P.punctuate P.line (map formatImport sorted))
+  PP.vcat (PP.punctuate PP.line (map formatImport sorted))
 
 -- | Compare imports by their module name for alphabetical sorting.
 compareImports :: Src.Import -> Src.Import -> Ordering
@@ -235,143 +235,143 @@ compareImports a b =
 -- @
 --
 -- @since 0.19.1
-formatImport :: Src.Import -> P.Doc
+formatImport :: Src.Import -> PP.Doc
 formatImport (Src.Import locName maybeAlias exposing isLazy) =
-  P.hsep (List.filter notEmpty parts)
+  PP.hsep (List.filter notEmpty parts)
   where
     parts =
-      [ if isLazy then P.text "lazy" else P.empty
-      , P.text "import"
+      [ if isLazy then PP.text "lazy" else PP.empty
+      , PP.text "import"
       , locNameDoc locName
-      , maybe P.empty renderAlias maybeAlias
+      , maybe PP.empty renderAlias maybeAlias
       , exposingClause exposing
       ]
-    notEmpty doc = not (null (P.displayS (P.renderPretty 1.0 80 (P.plain doc)) ""))
+    notEmpty doc = not (null (PP.displayS (PP.renderPretty 1.0 80 (PP.plain doc)) ""))
 
 -- | Render an alias clause for an import.
-renderAlias :: Name -> P.Doc
-renderAlias a = P.text "as" P.<+> nameDoc a
+renderAlias :: Name -> PP.Doc
+renderAlias a = PP.text "as" PP.<+> nameDoc a
 
 -- | Render the exposing clause for an import (empty when nothing is exposed).
-exposingClause :: Src.Exposing -> P.Doc
-exposingClause Src.Open = P.text "exposing (..)"
-exposingClause (Src.Explicit []) = P.empty
+exposingClause :: Src.Exposing -> PP.Doc
+exposingClause Src.Open = PP.text "exposing (..)"
+exposingClause (Src.Explicit []) = PP.empty
 exposingClause (Src.Explicit exposed) =
-  P.text "exposing (" <> commaSepDocs (map formatExposed exposed) <> P.text ")"
+  PP.text "exposing (" <> commaSepDocs (map formatExposed exposed) <> PP.text ")"
 
 -- | Format an individual exposed item.
-formatExposed :: Src.Exposed -> P.Doc
+formatExposed :: Src.Exposed -> PP.Doc
 formatExposed (Src.Lower locName) = locNameDoc locName
 formatExposed (Src.Upper locName privacy) =
   locNameDoc locName <> formatPrivacy privacy
 formatExposed (Src.Operator _ name) = parens (nameDoc name)
 
 -- | Format the privacy annotation for an exposed type.
-formatPrivacy :: Src.Privacy -> P.Doc
-formatPrivacy Src.Private = P.empty
-formatPrivacy (Src.Public _) = P.text "(..)"
+formatPrivacy :: Src.Privacy -> PP.Doc
+formatPrivacy Src.Private = PP.empty
+formatPrivacy (Src.Public _) = PP.text "(..)"
 
 -- | Format an exposing clause in module declaration position.
 --
 -- @since 0.19.1
-formatExposing :: Src.Exposing -> P.Doc
-formatExposing Src.Open = P.text "(..)"
-formatExposing (Src.Explicit []) = P.text "()"
+formatExposing :: Src.Exposing -> PP.Doc
+formatExposing Src.Open = PP.text "(..)"
+formatExposing (Src.Explicit []) = PP.text "()"
 formatExposing (Src.Explicit exposed) =
-  P.text "(" <> commaSepDocs (map formatExposed exposed) <> P.text ")"
+  PP.text "(" <> commaSepDocs (map formatExposed exposed) <> PP.text ")"
 
 -- ---------------------------------------------------------------------------
 -- Declaration rendering
 -- ---------------------------------------------------------------------------
 
 -- | Render all top-level declarations with blank lines between them.
-renderDeclarations :: FormatConfig -> Src.Module -> P.Doc
+renderDeclarations :: FormatConfig -> Src.Module -> PP.Doc
 renderDeclarations config (Src.Module _ _ _ _ _ values unions aliases binops effects) =
   stackNonEmpty allDecls
   where
     allDecls =
-      map (formatUnion config . A.toValue) unions
-        ++ map (formatAlias config . A.toValue) aliases
-        ++ map (formatInfix . A.toValue) binops
-        ++ map (formatValue config . A.toValue) values
+      map (formatUnion config . Ann.toValue) unions
+        ++ map (formatAlias config . Ann.toValue) aliases
+        ++ map (formatInfix . Ann.toValue) binops
+        ++ map (formatValue config . Ann.toValue) values
         ++ formatEffects effects
 
 -- | Stack a list of Docs with blank lines, filtering out empty ones.
-stackNonEmpty :: [P.Doc] -> P.Doc
+stackNonEmpty :: [PP.Doc] -> PP.Doc
 stackNonEmpty docs =
-  P.vcat (P.punctuate (P.line <> P.line) (List.filter notEmpty docs))
+  PP.vcat (PP.punctuate (PP.line <> PP.line) (List.filter notEmpty docs))
   where
-    notEmpty doc = not (null (P.displayS (P.renderPretty 1.0 80 (P.plain doc)) ""))
+    notEmpty doc = not (null (PP.displayS (PP.renderPretty 1.0 80 (PP.plain doc)) ""))
 
 -- | Format a union type definition.
-formatUnion :: FormatConfig -> Src.Union -> P.Doc
+formatUnion :: FormatConfig -> Src.Union -> PP.Doc
 formatUnion config (Src.Union locName params variants) =
-  P.text "type" P.<+> locNameDoc locName
+  PP.text "type" PP.<+> locNameDoc locName
     <> formatTypeParams params
-    <> nlIndent config 1 <> P.text "= "
-    <> joinWith (nlIndent config 1 <> P.text "| ") (map formatVariant variants)
+    <> nlIndent config 1 <> PP.text "= "
+    <> joinWith (nlIndent config 1 <> PP.text "| ") (map formatVariant variants)
 
 -- | Join a list of Docs with a separator Doc.
-joinWith :: P.Doc -> [P.Doc] -> P.Doc
-joinWith _ [] = P.empty
+joinWith :: PP.Doc -> [PP.Doc] -> PP.Doc
+joinWith _ [] = PP.empty
 joinWith sep (d : ds) = foldl (\acc x -> acc <> sep <> x) d ds
 
 -- | Format constructor type parameters for a union type.
-formatTypeParams :: [A.Located Name] -> P.Doc
-formatTypeParams [] = P.empty
+formatTypeParams :: [Ann.Located Name] -> PP.Doc
+formatTypeParams [] = PP.empty
 formatTypeParams ps =
-  P.text " " <> P.hsep (map locNameDoc ps)
+  PP.text " " <> PP.hsep (map locNameDoc ps)
 
 -- | Format a single variant of a union type.
-formatVariant :: (A.Located Name, [Src.Type]) -> P.Doc
+formatVariant :: (Ann.Located Name, [Src.Type]) -> PP.Doc
 formatVariant (locName, types) =
-  locNameDoc locName <> foldMap (\t -> P.text " " <> formatTypeArg t) types
+  locNameDoc locName <> foldMap (\t -> PP.text " " <> formatTypeArg t) types
 
 -- | Format a type alias definition.
-formatAlias :: FormatConfig -> Src.Alias -> P.Doc
+formatAlias :: FormatConfig -> Src.Alias -> PP.Doc
 formatAlias config (Src.Alias locName params body) =
-  P.text "type alias" P.<+> locNameDoc locName
+  PP.text "type alias" PP.<+> locNameDoc locName
     <> formatTypeParams params
-    <> P.text " =" <> nlIndent config 1 <> formatType body
+    <> PP.text " =" <> nlIndent config 1 <> formatType body
 
 -- | Format an infix operator declaration.
-formatInfix :: Src.Infix -> P.Doc
+formatInfix :: Src.Infix -> PP.Doc
 formatInfix (Src.Infix opName assoc (Binop.Precedence prec) funcName) =
-  P.text "infix" P.<+> formatAssoc assoc P.<+> P.text (show prec)
-    P.<+> parens (nameDoc opName) P.<+> P.text "=" P.<+> nameDoc funcName
+  PP.text "infix" PP.<+> formatAssoc assoc PP.<+> PP.text (show prec)
+    PP.<+> parens (nameDoc opName) PP.<+> PP.text "=" PP.<+> nameDoc funcName
 
 -- | Format associativity keyword.
-formatAssoc :: Binop.Associativity -> P.Doc
-formatAssoc Binop.Left  = P.text "left"
-formatAssoc Binop.Right = P.text "right"
-formatAssoc Binop.Non   = P.text "non"
+formatAssoc :: Binop.Associativity -> PP.Doc
+formatAssoc Binop.Left  = PP.text "left"
+formatAssoc Binop.Right = PP.text "right"
+formatAssoc Binop.Non   = PP.text "non"
 
 -- | Format a value / function definition.
-formatValue :: FormatConfig -> Src.Value -> P.Doc
+formatValue :: FormatConfig -> Src.Value -> PP.Doc
 formatValue config (Src.Value locName params body maybeType) =
   typeAnnotation <> definition
   where
     nameD = locNameDoc locName
-    typeAnnotation = maybe P.empty (renderTypeAnnotation nameD) maybeType
-    paramText = foldMap (\p -> P.text " " <> formatPattern p) params
-    definition = nameD <> paramText <> P.text " =" <> nlIndent config 1 <> formatExpr config body
+    typeAnnotation = maybe PP.empty (renderTypeAnnotation nameD) maybeType
+    paramText = foldMap (\p -> PP.text " " <> formatPattern p) params
+    definition = nameD <> paramText <> PP.text " =" <> nlIndent config 1 <> formatExpr config body
 
 -- | Render a type annotation line for a value definition.
-renderTypeAnnotation :: P.Doc -> Src.Type -> P.Doc
+renderTypeAnnotation :: PP.Doc -> Src.Type -> PP.Doc
 renderTypeAnnotation nameD t =
-  nameD P.<+> P.text ":" P.<+> formatType t <> P.line
+  nameD PP.<+> PP.text ":" PP.<+> formatType t <> PP.line
 
 -- | Format the effects portion of a module (ports and FFI declarations).
-formatEffects :: Src.Effects -> [P.Doc]
+formatEffects :: Src.Effects -> [PP.Doc]
 formatEffects Src.NoEffects     = []
 formatEffects (Src.Manager _ _) = []
 formatEffects (Src.Ports ports) = map formatPort ports
 formatEffects (Src.FFI _)       = []
 
 -- | Format a port declaration.
-formatPort :: Src.Port -> P.Doc
+formatPort :: Src.Port -> PP.Doc
 formatPort (Src.Port locName portType) =
-  P.text "port" P.<+> locNameDoc locName P.<+> P.text ":" P.<+> formatType portType
+  PP.text "port" PP.<+> locNameDoc locName PP.<+> PP.text ":" PP.<+> formatType portType
 
 -- ---------------------------------------------------------------------------
 -- Type rendering
@@ -380,94 +380,94 @@ formatPort (Src.Port locName portType) =
 -- | Format a type annotation.
 --
 -- @since 0.19.1
-formatType :: Src.Type -> P.Doc
-formatType (A.At _ typ) = formatType_ typ
+formatType :: Src.Type -> PP.Doc
+formatType (Ann.At _ typ) = formatType_ typ
 
 -- | Format a type without location wrapper.
-formatType_ :: Src.Type_ -> P.Doc
+formatType_ :: Src.Type_ -> PP.Doc
 formatType_ (Src.TLambda a b) =
-  formatType a P.<+> P.text "->" P.<+> formatType b
+  formatType a PP.<+> PP.text "->" PP.<+> formatType b
 formatType_ (Src.TVar name) = nameDoc name
 formatType_ (Src.TType _ name []) = nameDoc name
 formatType_ (Src.TType _ name args) =
-  nameDoc name P.<+> P.hsep (map formatTypeArg args)
+  nameDoc name PP.<+> PP.hsep (map formatTypeArg args)
 formatType_ (Src.TTypeQual _ mod_ name []) =
-  nameDoc mod_ <> P.text "." <> nameDoc name
+  nameDoc mod_ <> PP.text "." <> nameDoc name
 formatType_ (Src.TTypeQual _ mod_ name args) =
-  nameDoc mod_ <> P.text "." <> nameDoc name
-    P.<+> P.hsep (map formatTypeArg args)
+  nameDoc mod_ <> PP.text "." <> nameDoc name
+    PP.<+> PP.hsep (map formatTypeArg args)
 formatType_ (Src.TRecord fields maybeExt) =
   formatRecordType fields maybeExt
-formatType_ Src.TUnit = P.text "()"
+formatType_ Src.TUnit = PP.text "()"
 formatType_ (Src.TTuple a b rest) =
-  P.text "( " <> commaSepDocs (map formatType (a : b : rest)) <> P.text " )"
+  PP.text "( " <> commaSepDocs (map formatType (a : b : rest)) <> PP.text " )"
 
 -- | Format a type argument, adding parentheses around complex types.
-formatTypeArg :: Src.Type -> P.Doc
-formatTypeArg t@(A.At _ typ) = formatTypeArgInner t typ
+formatTypeArg :: Src.Type -> PP.Doc
+formatTypeArg t@(Ann.At _ typ) = formatTypeArgInner t typ
 
 -- | Determine whether a type argument needs parenthesising.
-formatTypeArgInner :: Src.Type -> Src.Type_ -> P.Doc
+formatTypeArgInner :: Src.Type -> Src.Type_ -> PP.Doc
 formatTypeArgInner t (Src.TLambda _ _)         = parens (formatType t)
 formatTypeArgInner t (Src.TType _ _ (_:_))     = parens (formatType t)
 formatTypeArgInner t (Src.TTypeQual _ _ _ (_:_)) = parens (formatType t)
 formatTypeArgInner t _                         = formatType t
 
 -- | Format a record type literal.
-formatRecordType :: [(A.Located Name, Src.Type)] -> Maybe (A.Located Name) -> P.Doc
+formatRecordType :: [(Ann.Located Name, Src.Type)] -> Maybe (Ann.Located Name) -> PP.Doc
 formatRecordType fields maybeExt =
-  P.text "{ " <> extPrefix <> commaSepDocs (map formatFieldType fields) <> P.text " }"
+  PP.text "{ " <> extPrefix <> commaSepDocs (map formatFieldType fields) <> PP.text " }"
   where
-    extPrefix = maybe P.empty (\n -> locNameDoc n <> P.text " | ") maybeExt
+    extPrefix = maybe PP.empty (\n -> locNameDoc n <> PP.text " | ") maybeExt
 
 -- | Format a single record field type.
-formatFieldType :: (A.Located Name, Src.Type) -> P.Doc
+formatFieldType :: (Ann.Located Name, Src.Type) -> PP.Doc
 formatFieldType (locName, fieldType) =
-  locNameDoc locName P.<+> P.text ":" P.<+> formatType fieldType
+  locNameDoc locName PP.<+> PP.text ":" PP.<+> formatType fieldType
 
 -- ---------------------------------------------------------------------------
 -- Pattern rendering
 -- ---------------------------------------------------------------------------
 
 -- | Format a pattern.
-formatPattern :: Src.Pattern -> P.Doc
-formatPattern (A.At _ pat) = formatPattern_ pat
+formatPattern :: Src.Pattern -> PP.Doc
+formatPattern (Ann.At _ pat) = formatPattern_ pat
 
 -- | Format a pattern without the location wrapper.
-formatPattern_ :: Src.Pattern_ -> P.Doc
-formatPattern_ Src.PAnything = P.text "_"
+formatPattern_ :: Src.Pattern_ -> PP.Doc
+formatPattern_ Src.PAnything = PP.text "_"
 formatPattern_ (Src.PVar name) = nameDoc name
 formatPattern_ (Src.PRecord fields) =
-  P.text "{ " <> commaSepDocs (map locNameDoc fields) <> P.text " }"
+  PP.text "{ " <> commaSepDocs (map locNameDoc fields) <> PP.text " }"
 formatPattern_ (Src.PAlias inner locName) =
-  formatPattern inner P.<+> P.text "as" P.<+> locNameDoc locName
-formatPattern_ Src.PUnit = P.text "()"
+  formatPattern inner PP.<+> PP.text "as" PP.<+> locNameDoc locName
+formatPattern_ Src.PUnit = PP.text "()"
 formatPattern_ (Src.PTuple a b rest) =
-  P.text "( " <> commaSepDocs (map formatPattern (a : b : rest)) <> P.text " )"
+  PP.text "( " <> commaSepDocs (map formatPattern (a : b : rest)) <> PP.text " )"
 formatPattern_ (Src.PCtor _ name []) = nameDoc name
 formatPattern_ (Src.PCtor _ name args) =
-  nameDoc name P.<+> P.hsep (map formatPatternArg args)
+  nameDoc name PP.<+> PP.hsep (map formatPatternArg args)
 formatPattern_ (Src.PCtorQual _ mod_ name []) =
-  nameDoc mod_ <> P.text "." <> nameDoc name
+  nameDoc mod_ <> PP.text "." <> nameDoc name
 formatPattern_ (Src.PCtorQual _ mod_ name args) =
-  nameDoc mod_ <> P.text "." <> nameDoc name
-    P.<+> P.hsep (map formatPatternArg args)
+  nameDoc mod_ <> PP.text "." <> nameDoc name
+    PP.<+> PP.hsep (map formatPatternArg args)
 formatPattern_ (Src.PList items) =
-  P.text "[ " <> commaSepDocs (map formatPattern items) <> P.text " ]"
+  PP.text "[ " <> commaSepDocs (map formatPattern items) <> PP.text " ]"
 formatPattern_ (Src.PCons hd tl) =
-  formatPattern hd P.<+> P.text "::" P.<+> formatPattern tl
+  formatPattern hd PP.<+> PP.text "::" PP.<+> formatPattern tl
 formatPattern_ (Src.PChr s) =
-  P.text "'" <> P.text (ES.toChars s) <> P.text "'"
+  PP.text "'" <> PP.text (ES.toChars s) <> PP.text "'"
 formatPattern_ (Src.PStr s) =
-  P.text "\"" <> P.text (ES.toChars s) <> P.text "\""
-formatPattern_ (Src.PInt n) = P.text (show n)
+  PP.text "\"" <> PP.text (ES.toChars s) <> PP.text "\""
+formatPattern_ (Src.PInt n) = PP.text (show n)
 
 -- | Format a constructor pattern argument (add parens around complex patterns).
-formatPatternArg :: Src.Pattern -> P.Doc
-formatPatternArg p@(A.At _ pat) = formatPatternArgInner p pat
+formatPatternArg :: Src.Pattern -> PP.Doc
+formatPatternArg p@(Ann.At _ pat) = formatPatternArgInner p pat
 
 -- | Determine whether a pattern argument needs parenthesising.
-formatPatternArgInner :: Src.Pattern -> Src.Pattern_ -> P.Doc
+formatPatternArgInner :: Src.Pattern -> Src.Pattern_ -> PP.Doc
 formatPatternArgInner p (Src.PCtor _ _ (_:_))     = parens (formatPattern p)
 formatPatternArgInner p (Src.PCtorQual _ _ _ (_:_)) = parens (formatPattern p)
 formatPatternArgInner p (Src.PCons _ _)           = parens (formatPattern p)
@@ -479,62 +479,62 @@ formatPatternArgInner p _                         = formatPattern p
 -- ---------------------------------------------------------------------------
 
 -- | Format an expression.
-formatExpr :: FormatConfig -> Src.Expr -> P.Doc
-formatExpr config (A.At _ expr) = formatExpr_ config expr
+formatExpr :: FormatConfig -> Src.Expr -> PP.Doc
+formatExpr config (Ann.At _ expr) = formatExpr_ config expr
 
 -- | Format an expression without the location wrapper.
-formatExpr_ :: FormatConfig -> Src.Expr_ -> P.Doc
-formatExpr_ _      (Src.Chr s) = P.text "'" <> P.text (ES.toChars s) <> P.text "'"
-formatExpr_ _      (Src.Str s) = P.text "\"" <> P.text (ES.toChars s) <> P.text "\""
-formatExpr_ _      (Src.Int n) = P.text (show n)
+formatExpr_ :: FormatConfig -> Src.Expr_ -> PP.Doc
+formatExpr_ _      (Src.Chr s) = PP.text "'" <> PP.text (ES.toChars s) <> PP.text "'"
+formatExpr_ _      (Src.Str s) = PP.text "\"" <> PP.text (ES.toChars s) <> PP.text "\""
+formatExpr_ _      (Src.Int n) = PP.text (show n)
 formatExpr_ _      (Src.Float f) = floatDoc f
 formatExpr_ _      (Src.Var _ name) = nameDoc name
-formatExpr_ _      (Src.VarQual _ mod_ name) = nameDoc mod_ <> P.text "." <> nameDoc name
+formatExpr_ _      (Src.VarQual _ mod_ name) = nameDoc mod_ <> PP.text "." <> nameDoc name
 formatExpr_ config (Src.List items) = formatListExpr config items
 formatExpr_ _      (Src.Op name) = parens (nameDoc name)
-formatExpr_ config (Src.Negate e) = P.text "-" <> formatExprArg config e
+formatExpr_ config (Src.Negate e) = PP.text "-" <> formatExprArg config e
 formatExpr_ config (Src.Binops pairs final) = formatBinops config pairs final
 formatExpr_ config (Src.Lambda pats body) = formatLambda config pats body
 formatExpr_ config (Src.Call func args) = formatCall config func args
 formatExpr_ config (Src.If branches elseBranch) = formatIf config branches elseBranch
 formatExpr_ config (Src.Let defs body) = formatLet config defs body
 formatExpr_ config (Src.Case subj branches) = formatCase config subj branches
-formatExpr_ _      (Src.Accessor name) = P.text "." <> nameDoc name
+formatExpr_ _      (Src.Accessor name) = PP.text "." <> nameDoc name
 formatExpr_ config (Src.Access rec_ locName) =
-  formatExprArg config rec_ <> P.text "." <> locNameDoc locName
+  formatExprArg config rec_ <> PP.text "." <> locNameDoc locName
 formatExpr_ config (Src.Update locName updates) = formatUpdate config locName updates
 formatExpr_ config (Src.Record fields) = formatRecord config fields
-formatExpr_ _      Src.Unit = P.text "()"
+formatExpr_ _      Src.Unit = PP.text "()"
 formatExpr_ config (Src.Tuple a b rest) =
-  P.text "( " <> commaSepDocs (map (formatExpr config) (a : b : rest)) <> P.text " )"
-formatExpr_ _      (Src.Shader _ _) = P.text "[glsl| ... |]"
+  PP.text "( " <> commaSepDocs (map (formatExpr config) (a : b : rest)) <> PP.text " )"
+formatExpr_ _      (Src.Shader _ _) = PP.text "[glsl| ... |]"
 
 -- | Render a float literal to a Doc via its builder representation.
-floatDoc :: EF.Float -> P.Doc
+floatDoc :: EF.Float -> PP.Doc
 floatDoc f =
-  P.text (Text.unpack (TE.decodeUtf8 (BL.toStrict (BB.toLazyByteString (EF.toBuilder f)))))
+  PP.text (Text.unpack (TE.decodeUtf8 (BL.toStrict (BB.toLazyByteString (EF.toBuilder f)))))
 
 -- | Format a list expression.
-formatListExpr :: FormatConfig -> [Src.Expr] -> P.Doc
+formatListExpr :: FormatConfig -> [Src.Expr] -> PP.Doc
 formatListExpr config items =
-  P.text "[ " <> commaSepDocs (map (formatExpr config) items) <> P.text " ]"
+  PP.text "[ " <> commaSepDocs (map (formatExpr config) items) <> PP.text " ]"
 
 -- | Format a lambda expression.
-formatLambda :: FormatConfig -> [Src.Pattern] -> Src.Expr -> P.Doc
+formatLambda :: FormatConfig -> [Src.Pattern] -> Src.Expr -> PP.Doc
 formatLambda config pats body =
-  P.text "\\" <> P.hsep (map formatPattern pats) P.<+> P.text "->" P.<+> formatExpr config body
+  PP.text "\\" <> PP.hsep (map formatPattern pats) PP.<+> PP.text "->" PP.<+> formatExpr config body
 
 -- | Format a function call expression.
-formatCall :: FormatConfig -> Src.Expr -> [Src.Expr] -> P.Doc
+formatCall :: FormatConfig -> Src.Expr -> [Src.Expr] -> PP.Doc
 formatCall config func args =
-  formatExprArg config func <> foldMap (\a -> P.text " " <> formatExprArg config a) args
+  formatExprArg config func <> foldMap (\a -> PP.text " " <> formatExprArg config a) args
 
 -- | Wrap an expression in parentheses when it needs them as an argument.
-formatExprArg :: FormatConfig -> Src.Expr -> P.Doc
-formatExprArg config e@(A.At _ expr) = formatExprArgInner config e expr
+formatExprArg :: FormatConfig -> Src.Expr -> PP.Doc
+formatExprArg config e@(Ann.At _ expr) = formatExprArgInner config e expr
 
 -- | Determine whether an expression argument needs parenthesising.
-formatExprArgInner :: FormatConfig -> Src.Expr -> Src.Expr_ -> P.Doc
+formatExprArgInner :: FormatConfig -> Src.Expr -> Src.Expr_ -> PP.Doc
 formatExprArgInner config e (Src.Binops _ _)  = parens (formatExpr config e)
 formatExprArgInner config e (Src.Lambda _ _)  = parens (formatExpr config e)
 formatExprArgInner config e (Src.If _ _)      = parens (formatExpr config e)
@@ -544,75 +544,75 @@ formatExprArgInner config e (Src.Call _ (_:_)) = parens (formatExpr config e)
 formatExprArgInner config e _                 = formatExpr config e
 
 -- | Format a binary operator chain.
-formatBinops :: FormatConfig -> [(Src.Expr, A.Located Name)] -> Src.Expr -> P.Doc
+formatBinops :: FormatConfig -> [(Src.Expr, Ann.Located Name)] -> Src.Expr -> PP.Doc
 formatBinops config [] final = formatExpr config final
 formatBinops config ((lhs, locOp) : rest) final =
-  formatExpr config lhs P.<+> locNameDoc locOp
-    P.<+> formatBinops config rest final
+  formatExpr config lhs PP.<+> locNameDoc locOp
+    PP.<+> formatBinops config rest final
 
 -- | Format an if-then-else expression.
-formatIf :: FormatConfig -> [(Src.Expr, Src.Expr)] -> Src.Expr -> P.Doc
+formatIf :: FormatConfig -> [(Src.Expr, Src.Expr)] -> Src.Expr -> PP.Doc
 formatIf config [] elseExpr =
-  P.text "else" <> nlIndent config 1 <> formatExpr config elseExpr
+  PP.text "else" <> nlIndent config 1 <> formatExpr config elseExpr
 formatIf config ((cond, thenExpr) : rest) elseExpr =
-  P.text "if" P.<+> formatExpr config cond P.<+> P.text "then"
+  PP.text "if" PP.<+> formatExpr config cond PP.<+> PP.text "then"
     <> nlIndent config 1 <> formatExpr config thenExpr
-    <> P.line <> nlIndent config 0 <> formatIf config rest elseExpr
+    <> PP.line <> nlIndent config 0 <> formatIf config rest elseExpr
 
 -- | Format a let-in expression.
-formatLet :: FormatConfig -> [A.Located Src.Def] -> Src.Expr -> P.Doc
+formatLet :: FormatConfig -> [Ann.Located Src.Def] -> Src.Expr -> PP.Doc
 formatLet config defs body =
-  P.text "let" <> nlIndent config 1
-    <> joinWith (nlIndent config 1) (map (formatDef config . A.toValue) defs)
-    <> P.line <> P.text "  in" <> P.line <> P.text "  " <> formatExpr config body
+  PP.text "let" <> nlIndent config 1
+    <> joinWith (nlIndent config 1) (map (formatDef config . Ann.toValue) defs)
+    <> PP.line <> PP.text "  in" <> PP.line <> PP.text "  " <> formatExpr config body
 
 -- | Format a local definition inside a let expression.
-formatDef :: FormatConfig -> Src.Def -> P.Doc
+formatDef :: FormatConfig -> Src.Def -> PP.Doc
 formatDef config (Src.Define locName params body maybeType) =
   typeAnn <> locNameDoc locName <> paramText
-    <> P.text " =" <> nlIndent config 2 <> formatExpr config body
+    <> PP.text " =" <> nlIndent config 2 <> formatExpr config body
   where
-    typeAnn = maybe P.empty (renderDefTypeAnn config locName) maybeType
-    paramText = foldMap (\p -> P.text " " <> formatPattern p) params
+    typeAnn = maybe PP.empty (renderDefTypeAnn config locName) maybeType
+    paramText = foldMap (\p -> PP.text " " <> formatPattern p) params
 formatDef config (Src.Destruct pat body) =
-  formatPattern pat <> P.text " =" <> nlIndent config 2 <> formatExpr config body
+  formatPattern pat <> PP.text " =" <> nlIndent config 2 <> formatExpr config body
 
 -- | Render the type annotation line for a local definition.
-renderDefTypeAnn :: FormatConfig -> A.Located Name -> Src.Type -> P.Doc
+renderDefTypeAnn :: FormatConfig -> Ann.Located Name -> Src.Type -> PP.Doc
 renderDefTypeAnn config locName t =
-  locNameDoc locName P.<+> P.text ":" P.<+> formatType t <> nlIndent config 1
+  locNameDoc locName PP.<+> PP.text ":" PP.<+> formatType t <> nlIndent config 1
 
 -- | Format a case expression.
-formatCase :: FormatConfig -> Src.Expr -> [(Src.Pattern, Src.Expr)] -> P.Doc
+formatCase :: FormatConfig -> Src.Expr -> [(Src.Pattern, Src.Expr)] -> PP.Doc
 formatCase config subj branches =
-  P.text "case" P.<+> formatExpr config subj P.<+> P.text "of"
+  PP.text "case" PP.<+> formatExpr config subj PP.<+> PP.text "of"
     <> nlIndent config 1
     <> joinWith (nlIndent config 1) (map (formatBranch config) branches)
 
 -- | Format a single case branch.
-formatBranch :: FormatConfig -> (Src.Pattern, Src.Expr) -> P.Doc
+formatBranch :: FormatConfig -> (Src.Pattern, Src.Expr) -> PP.Doc
 formatBranch config (pat, body) =
-  formatPattern pat P.<+> P.text "->"
+  formatPattern pat PP.<+> PP.text "->"
     <> nlIndent config 2 <> formatExpr config body
 
 -- | Format a record update expression.
-formatUpdate :: FormatConfig -> A.Located Name -> [(A.Located Name, Src.Expr)] -> P.Doc
+formatUpdate :: FormatConfig -> Ann.Located Name -> [(Ann.Located Name, Src.Expr)] -> PP.Doc
 formatUpdate config locName updates =
-  P.text "{ " <> locNameDoc locName <> P.text " | "
-    <> commaSepDocs (map (formatFieldUpdate config) updates) <> P.text " }"
+  PP.text "{ " <> locNameDoc locName <> PP.text " | "
+    <> commaSepDocs (map (formatFieldUpdate config) updates) <> PP.text " }"
 
 -- | Format a single field update.
-formatFieldUpdate :: FormatConfig -> (A.Located Name, Src.Expr) -> P.Doc
+formatFieldUpdate :: FormatConfig -> (Ann.Located Name, Src.Expr) -> PP.Doc
 formatFieldUpdate config (locName, expr) =
-  locNameDoc locName P.<+> P.text "=" P.<+> formatExpr config expr
+  locNameDoc locName PP.<+> PP.text "=" PP.<+> formatExpr config expr
 
 -- | Format a record literal expression.
-formatRecord :: FormatConfig -> [(A.Located Name, Src.Expr)] -> P.Doc
-formatRecord _ [] = P.text "{}"
+formatRecord :: FormatConfig -> [(Ann.Located Name, Src.Expr)] -> PP.Doc
+formatRecord _ [] = PP.text "{}"
 formatRecord config fields =
-  P.text "{ " <> commaSepDocs (map (formatField config) fields) <> P.text " }"
+  PP.text "{ " <> commaSepDocs (map (formatField config) fields) <> PP.text " }"
 
 -- | Format a single record field assignment.
-formatField :: FormatConfig -> (A.Located Name, Src.Expr) -> P.Doc
+formatField :: FormatConfig -> (Ann.Located Name, Src.Expr) -> PP.Doc
 formatField config (locName, expr) =
-  locNameDoc locName P.<+> P.text "=" P.<+> formatExpr config expr
+  locNameDoc locName PP.<+> PP.text "=" PP.<+> formatExpr config expr

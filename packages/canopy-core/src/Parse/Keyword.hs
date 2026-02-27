@@ -35,7 +35,7 @@ where
 import Data.Word (Word8)
 import Foreign.Ptr (plusPtr)
 import Parse.Primitives (Col, Parser, Row)
-import qualified Parse.Primitives as P
+import qualified Parse.Primitives as Parse
 import qualified Parse.Variable as Var
 
 -- DECLARATIONS
@@ -120,23 +120,23 @@ command_ = k7 0x63 0x6F 0x6D 0x6D 0x61 0x6E 0x64
 
 subscription_ :: (Row -> Col -> x) -> Parser x ()
 subscription_ toError =
-  P.Parser $ \(P.State src pos end indent row col) cok _ _ eerr ->
+  Parse.Parser $ \(Parse.State src pos end indent row col) cok _ _ eerr ->
     let !pos12 = plusPtr pos 12
      in if pos12 <= end
-          && P.unsafeIndex (pos) == 0x73
-          && P.unsafeIndex (plusPtr pos 1) == 0x75
-          && P.unsafeIndex (plusPtr pos 2) == 0x62
-          && P.unsafeIndex (plusPtr pos 3) == 0x73
-          && P.unsafeIndex (plusPtr pos 4) == 0x63
-          && P.unsafeIndex (plusPtr pos 5) == 0x72
-          && P.unsafeIndex (plusPtr pos 6) == 0x69
-          && P.unsafeIndex (plusPtr pos 7) == 0x70
-          && P.unsafeIndex (plusPtr pos 8) == 0x74
-          && P.unsafeIndex (plusPtr pos 9) == 0x69
-          && P.unsafeIndex (plusPtr pos 10) == 0x6F
-          && P.unsafeIndex (plusPtr pos 11) == 0x6E
+          && Parse.unsafeIndex (pos) == 0x73
+          && Parse.unsafeIndex (plusPtr pos 1) == 0x75
+          && Parse.unsafeIndex (plusPtr pos 2) == 0x62
+          && Parse.unsafeIndex (plusPtr pos 3) == 0x73
+          && Parse.unsafeIndex (plusPtr pos 4) == 0x63
+          && Parse.unsafeIndex (plusPtr pos 5) == 0x72
+          && Parse.unsafeIndex (plusPtr pos 6) == 0x69
+          && Parse.unsafeIndex (plusPtr pos 7) == 0x70
+          && Parse.unsafeIndex (plusPtr pos 8) == 0x74
+          && Parse.unsafeIndex (plusPtr pos 9) == 0x69
+          && Parse.unsafeIndex (plusPtr pos 10) == 0x6F
+          && Parse.unsafeIndex (plusPtr pos 11) == 0x6E
           && Var.getInnerWidth pos12 end == 0
-          then let !s = P.State src pos12 end indent row (col + 12) in cok () s
+          then let !s = Parse.State src pos12 end indent row (col + 12) in cok () s
           else eerr row col toError
 
 -- LAZY IMPORTS
@@ -151,119 +151,119 @@ foreign_ = k7 0x66 0x6F 0x72 0x65 0x69 0x67 0x6E
 
 javascript_ :: (Row -> Col -> x) -> Parser x ()
 javascript_ toError =
-  P.Parser $ \(P.State src pos end indent row col) cok _ _ eerr ->
+  Parse.Parser $ \(Parse.State src pos end indent row col) cok _ _ eerr ->
     let !pos10 = plusPtr pos 10
      in if pos10 <= end
-          && P.unsafeIndex (pos) == 0x6A
-          && P.unsafeIndex (plusPtr pos 1) == 0x61
-          && P.unsafeIndex (plusPtr pos 2) == 0x76
-          && P.unsafeIndex (plusPtr pos 3) == 0x61
-          && P.unsafeIndex (plusPtr pos 4) == 0x73
-          && P.unsafeIndex (plusPtr pos 5) == 0x63
-          && P.unsafeIndex (plusPtr pos 6) == 0x72
-          && P.unsafeIndex (plusPtr pos 7) == 0x69
-          && P.unsafeIndex (plusPtr pos 8) == 0x70
-          && P.unsafeIndex (plusPtr pos 9) == 0x74
+          && Parse.unsafeIndex (pos) == 0x6A
+          && Parse.unsafeIndex (plusPtr pos 1) == 0x61
+          && Parse.unsafeIndex (plusPtr pos 2) == 0x76
+          && Parse.unsafeIndex (plusPtr pos 3) == 0x61
+          && Parse.unsafeIndex (plusPtr pos 4) == 0x73
+          && Parse.unsafeIndex (plusPtr pos 5) == 0x63
+          && Parse.unsafeIndex (plusPtr pos 6) == 0x72
+          && Parse.unsafeIndex (plusPtr pos 7) == 0x69
+          && Parse.unsafeIndex (plusPtr pos 8) == 0x70
+          && Parse.unsafeIndex (plusPtr pos 9) == 0x74
           && Var.getInnerWidth pos10 end == 0
-          then let !s = P.State src pos10 end indent row (col + 10) in cok () s
+          then let !s = Parse.State src pos10 end indent row (col + 10) in cok () s
           else eerr row col toError
 
 -- KEYWORDS
 
 k2 :: Word8 -> Word8 -> (Row -> Col -> x) -> Parser x ()
 k2 w1 w2 toError =
-  P.Parser $ \(P.State src pos end indent row col) cok _ _ eerr ->
+  Parse.Parser $ \(Parse.State src pos end indent row col) cok _ _ eerr ->
     let !pos2 = plusPtr pos 2
      in if pos2 <= end
-          && P.unsafeIndex (pos) == w1
-          && P.unsafeIndex (plusPtr pos 1) == w2
+          && Parse.unsafeIndex (pos) == w1
+          && Parse.unsafeIndex (plusPtr pos 1) == w2
           && Var.getInnerWidth pos2 end == 0
-          then let !s = P.State src pos2 end indent row (col + 2) in cok () s
+          then let !s = Parse.State src pos2 end indent row (col + 2) in cok () s
           else eerr row col toError
 
 k3 :: Word8 -> Word8 -> Word8 -> (Row -> Col -> x) -> Parser x ()
 k3 w1 w2 w3 toError =
-  P.Parser $ \(P.State src pos end indent row col) cok _ _ eerr ->
+  Parse.Parser $ \(Parse.State src pos end indent row col) cok _ _ eerr ->
     let !pos3 = plusPtr pos 3
      in if pos3 <= end
-          && P.unsafeIndex (pos) == w1
-          && P.unsafeIndex (plusPtr pos 1) == w2
-          && P.unsafeIndex (plusPtr pos 2) == w3
+          && Parse.unsafeIndex (pos) == w1
+          && Parse.unsafeIndex (plusPtr pos 1) == w2
+          && Parse.unsafeIndex (plusPtr pos 2) == w3
           && Var.getInnerWidth pos3 end == 0
-          then let !s = P.State src pos3 end indent row (col + 3) in cok () s
+          then let !s = Parse.State src pos3 end indent row (col + 3) in cok () s
           else eerr row col toError
 
 k4 :: Word8 -> Word8 -> Word8 -> Word8 -> (Row -> Col -> x) -> Parser x ()
 k4 w1 w2 w3 w4 toError =
-  P.Parser $ \(P.State src pos end indent row col) cok _ _ eerr ->
+  Parse.Parser $ \(Parse.State src pos end indent row col) cok _ _ eerr ->
     let !pos4 = plusPtr pos 4
      in if pos4 <= end
-          && P.unsafeIndex (pos) == w1
-          && P.unsafeIndex (plusPtr pos 1) == w2
-          && P.unsafeIndex (plusPtr pos 2) == w3
-          && P.unsafeIndex (plusPtr pos 3) == w4
+          && Parse.unsafeIndex (pos) == w1
+          && Parse.unsafeIndex (plusPtr pos 1) == w2
+          && Parse.unsafeIndex (plusPtr pos 2) == w3
+          && Parse.unsafeIndex (plusPtr pos 3) == w4
           && Var.getInnerWidth pos4 end == 0
-          then let !s = P.State src pos4 end indent row (col + 4) in cok () s
+          then let !s = Parse.State src pos4 end indent row (col + 4) in cok () s
           else eerr row col toError
 
 k5 :: Word8 -> Word8 -> Word8 -> Word8 -> Word8 -> (Row -> Col -> x) -> Parser x ()
 k5 w1 w2 w3 w4 w5 toError =
-  P.Parser $ \(P.State src pos end indent row col) cok _ _ eerr ->
+  Parse.Parser $ \(Parse.State src pos end indent row col) cok _ _ eerr ->
     let !pos5 = plusPtr pos 5
      in if pos5 <= end
-          && P.unsafeIndex (pos) == w1
-          && P.unsafeIndex (plusPtr pos 1) == w2
-          && P.unsafeIndex (plusPtr pos 2) == w3
-          && P.unsafeIndex (plusPtr pos 3) == w4
-          && P.unsafeIndex (plusPtr pos 4) == w5
+          && Parse.unsafeIndex (pos) == w1
+          && Parse.unsafeIndex (plusPtr pos 1) == w2
+          && Parse.unsafeIndex (plusPtr pos 2) == w3
+          && Parse.unsafeIndex (plusPtr pos 3) == w4
+          && Parse.unsafeIndex (plusPtr pos 4) == w5
           && Var.getInnerWidth pos5 end == 0
-          then let !s = P.State src pos5 end indent row (col + 5) in cok () s
+          then let !s = Parse.State src pos5 end indent row (col + 5) in cok () s
           else eerr row col toError
 
 k6 :: Word8 -> Word8 -> Word8 -> Word8 -> Word8 -> Word8 -> (Row -> Col -> x) -> Parser x ()
 k6 w1 w2 w3 w4 w5 w6 toError =
-  P.Parser $ \(P.State src pos end indent row col) cok _ _ eerr ->
+  Parse.Parser $ \(Parse.State src pos end indent row col) cok _ _ eerr ->
     let !pos6 = plusPtr pos 6
      in if pos6 <= end
-          && P.unsafeIndex (pos) == w1
-          && P.unsafeIndex (plusPtr pos 1) == w2
-          && P.unsafeIndex (plusPtr pos 2) == w3
-          && P.unsafeIndex (plusPtr pos 3) == w4
-          && P.unsafeIndex (plusPtr pos 4) == w5
-          && P.unsafeIndex (plusPtr pos 5) == w6
+          && Parse.unsafeIndex (pos) == w1
+          && Parse.unsafeIndex (plusPtr pos 1) == w2
+          && Parse.unsafeIndex (plusPtr pos 2) == w3
+          && Parse.unsafeIndex (plusPtr pos 3) == w4
+          && Parse.unsafeIndex (plusPtr pos 4) == w5
+          && Parse.unsafeIndex (plusPtr pos 5) == w6
           && Var.getInnerWidth pos6 end == 0
-          then let !s = P.State src pos6 end indent row (col + 6) in cok () s
+          then let !s = Parse.State src pos6 end indent row (col + 6) in cok () s
           else eerr row col toError
 
 k7 :: Word8 -> Word8 -> Word8 -> Word8 -> Word8 -> Word8 -> Word8 -> (Row -> Col -> x) -> Parser x ()
 k7 w1 w2 w3 w4 w5 w6 w7 toError =
-  P.Parser $ \(P.State src pos end indent row col) cok _ _ eerr ->
+  Parse.Parser $ \(Parse.State src pos end indent row col) cok _ _ eerr ->
     let !pos7 = plusPtr pos 7
      in if pos7 <= end
-          && P.unsafeIndex (pos) == w1
-          && P.unsafeIndex (plusPtr pos 1) == w2
-          && P.unsafeIndex (plusPtr pos 2) == w3
-          && P.unsafeIndex (plusPtr pos 3) == w4
-          && P.unsafeIndex (plusPtr pos 4) == w5
-          && P.unsafeIndex (plusPtr pos 5) == w6
-          && P.unsafeIndex (plusPtr pos 6) == w7
+          && Parse.unsafeIndex (pos) == w1
+          && Parse.unsafeIndex (plusPtr pos 1) == w2
+          && Parse.unsafeIndex (plusPtr pos 2) == w3
+          && Parse.unsafeIndex (plusPtr pos 3) == w4
+          && Parse.unsafeIndex (plusPtr pos 4) == w5
+          && Parse.unsafeIndex (plusPtr pos 5) == w6
+          && Parse.unsafeIndex (plusPtr pos 6) == w7
           && Var.getInnerWidth pos7 end == 0
-          then let !s = P.State src pos7 end indent row (col + 7) in cok () s
+          then let !s = Parse.State src pos7 end indent row (col + 7) in cok () s
           else eerr row col toError
 
 k8 :: Word8 -> Word8 -> Word8 -> Word8 -> Word8 -> Word8 -> Word8 -> Word8 -> (Row -> Col -> x) -> Parser x ()
 k8 w1 w2 w3 w4 w5 w6 w7 w8 toError =
-  P.Parser $ \(P.State src pos end indent row col) cok _ _ eerr ->
+  Parse.Parser $ \(Parse.State src pos end indent row col) cok _ _ eerr ->
     let !pos8 = plusPtr pos 8
      in if pos8 <= end
-          && P.unsafeIndex (pos) == w1
-          && P.unsafeIndex (plusPtr pos 1) == w2
-          && P.unsafeIndex (plusPtr pos 2) == w3
-          && P.unsafeIndex (plusPtr pos 3) == w4
-          && P.unsafeIndex (plusPtr pos 4) == w5
-          && P.unsafeIndex (plusPtr pos 5) == w6
-          && P.unsafeIndex (plusPtr pos 6) == w7
-          && P.unsafeIndex (plusPtr pos 7) == w8
+          && Parse.unsafeIndex (pos) == w1
+          && Parse.unsafeIndex (plusPtr pos 1) == w2
+          && Parse.unsafeIndex (plusPtr pos 2) == w3
+          && Parse.unsafeIndex (plusPtr pos 3) == w4
+          && Parse.unsafeIndex (plusPtr pos 4) == w5
+          && Parse.unsafeIndex (plusPtr pos 5) == w6
+          && Parse.unsafeIndex (plusPtr pos 6) == w7
+          && Parse.unsafeIndex (plusPtr pos 7) == w8
           && Var.getInnerWidth pos8 end == 0
-          then let !s = P.State src pos8 end indent row (col + 8) in cok () s
+          then let !s = Parse.State src pos8 end indent row (col + 8) in cok () s
           else eerr row col toError

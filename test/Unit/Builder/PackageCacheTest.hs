@@ -9,7 +9,7 @@ module Unit.Builder.PackageCacheTest (tests) where
 
 import qualified Canopy.ModuleName as ModuleName
 import qualified Canopy.Package as Pkg
-import qualified Canopy.Version as V
+import qualified Canopy.Version as Version
 import qualified Data.Map.Strict as Map
 import qualified Data.Utf8 as Utf8
 import qualified PackageCache
@@ -196,6 +196,6 @@ makePackage :: String -> String -> Pkg.Name
 makePackage author project =
   Pkg.Name (Utf8.fromChars author) (Utf8.fromChars project)
 
-makeVersion :: Int -> Int -> Int -> V.Version
+makeVersion :: Int -> Int -> Int -> Version.Version
 makeVersion major minor patch =
-  V.Version (fromIntegral major) (fromIntegral minor) (fromIntegral patch)
+  Version.Version (fromIntegral major) (fromIntegral minor) (fromIntegral patch)

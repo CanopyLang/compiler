@@ -33,33 +33,33 @@ import qualified Data.Name as Name
 import qualified Data.Text as Text
 import Data.Word (Word16)
 import Parse.Primitives (Col, Row)
-import qualified Reporting.Annotation as A
+import qualified Reporting.Annotation as Ann
 import qualified Reporting.Diagnostic as Diag
-import qualified Reporting.Doc as D
+import qualified Reporting.Doc as Doc
 import Reporting.Error.Syntax.Types (Space (..))
 import qualified Reporting.Render.Code as Code
 import qualified Reporting.Report as Report
 import Prelude hiding (Char, String)
 
 -- | Construct a zero-width region at the given position.
-toRegion :: Row -> Col -> A.Region
+toRegion :: Row -> Col -> Ann.Region
 toRegion row col =
-  let pos = A.Position row col
-   in A.Region pos pos
+  let pos = Ann.Position row col
+   in Ann.Region pos pos
 
 -- | Construct a region that extends @extra@ columns to the right.
-toWiderRegion :: Row -> Col -> Word16 -> A.Region
+toWiderRegion :: Row -> Col -> Word16 -> Ann.Region
 toWiderRegion row col extra =
-  A.Region
-    (A.Position row col)
-    (A.Position row (col + extra))
+  Ann.Region
+    (Ann.Position row col)
+    (Ann.Position row (col + extra))
 
 -- | Construct a region that covers a keyword starting at the given position.
-toKeywordRegion :: Row -> Col -> [Char.Char] -> A.Region
+toKeywordRegion :: Row -> Col -> [Char.Char] -> Ann.Region
 toKeywordRegion row col keyword =
-  A.Region
-    (A.Position row col)
-    (A.Position row (col + fromIntegral (length keyword)))
+  Ann.Region
+    (Ann.Position row col)
+    (Ann.Position row (col + fromIntegral (length keyword)))
 
 -- | Context type for expression reporting.
 data Context
@@ -97,7 +97,7 @@ isWithin desiredNode context =
     InNode actualNode _ _ _ -> desiredNode == actualNode
 
 -- | Wrap a 'Report.Report' into a 'Diag.Diagnostic' with structured metadata.
-wrapReport :: Diag.ErrorCode -> A.Region -> Report.Report -> Diag.Diagnostic
+wrapReport :: Diag.ErrorCode -> Ann.Region -> Report.Report -> Diag.Diagnostic
 wrapReport code _region report =
   Diag.makeDiagnostic
     code
@@ -122,9 +122,9 @@ toSpaceReport source space row col =
               source
               region
               Nothing
-              ( D.reflow $
+              ( Doc.reflow $
                   "I ran into a tab, but tabs are not allowed in Canopy files.",
-                D.reflow $
+                Doc.reflow $
                   "Replace the tab with spaces."
               )
     EndlessMultiComment ->
@@ -134,11 +134,11 @@ toSpaceReport source space row col =
               source
               region
               Nothing
-              ( D.reflow $
+              ( Doc.reflow $
                   "I cannot find the end of this multi-line comment:",
-                D.stack
-                  [ D.reflow "Add a -} somewhere after this to end the comment.",
-                    D.toSimpleHint
+                Doc.stack
+                  [ Doc.reflow "Add a -} somewhere after this to end the comment.",
+                    Doc.toSimpleHint
                       "Multi-line comments can be nested in Canopy, so {- {- -} -} is a comment\
                       \ that happens to contain another comment. Like parentheses and curly braces,\
                       \ the start and end markers must always be balanced. Maybe that is the problem?"
@@ -146,57 +146,57 @@ toSpaceReport source space row col =
               )
 
 -- | Documentation note for case expression errors.
-noteForCaseError :: D.Doc
+noteForCaseError :: Doc.Doc
 noteForCaseError =
-  D.stack
-    [ D.toSimpleNote $
+  Doc.stack
+    [ Doc.toSimpleNote $
         "Here is an example of a valid `case` expression for reference.",
-      D.vcat $
-        [ D.indent 4 $ D.fillSep [D.cyan "case", "maybeWidth", D.cyan "of"],
-          D.indent 6 $ D.fillSep [D.blue "Just", "width", "->"],
-          D.indent 8 $ D.fillSep ["width", "+", D.dullyellow "200"],
+      Doc.vcat $
+        [ Doc.indent 4 $ Doc.fillSep [Doc.cyan "case", "maybeWidth", Doc.cyan "of"],
+          Doc.indent 6 $ Doc.fillSep [Doc.blue "Just", "width", "->"],
+          Doc.indent 8 $ Doc.fillSep ["width", "+", Doc.dullyellow "200"],
           "",
-          D.indent 6 $ D.fillSep [D.blue "Nothing", "->"],
-          D.indent 8 $ D.fillSep [D.dullyellow "400"]
+          Doc.indent 6 $ Doc.fillSep [Doc.blue "Nothing", "->"],
+          Doc.indent 8 $ Doc.fillSep [Doc.dullyellow "400"]
         ],
-      D.reflow $
+      Doc.reflow $
         "Notice the indentation. Each pattern is aligned, and each branch is indented\
         \ a bit more than the corresponding pattern. That is important!"
     ]
 
 -- | Documentation note for case expression indentation errors.
-noteForCaseIndentError :: D.Doc
+noteForCaseIndentError :: Doc.Doc
 noteForCaseIndentError =
-  D.stack
-    [ D.toSimpleNote $
+  Doc.stack
+    [ Doc.toSimpleNote $
         "Sometimes I get confused by indentation, so try to make your `case` look\
         \ something like this:",
-      D.vcat $
-        [ D.indent 4 $ D.fillSep [D.cyan "case", "maybeWidth", D.cyan "of"],
-          D.indent 6 $ D.fillSep [D.blue "Just", "width", "->"],
-          D.indent 8 $ D.fillSep ["width", "+", D.dullyellow "200"],
+      Doc.vcat $
+        [ Doc.indent 4 $ Doc.fillSep [Doc.cyan "case", "maybeWidth", Doc.cyan "of"],
+          Doc.indent 6 $ Doc.fillSep [Doc.blue "Just", "width", "->"],
+          Doc.indent 8 $ Doc.fillSep ["width", "+", Doc.dullyellow "200"],
           "",
-          D.indent 6 $ D.fillSep [D.blue "Nothing", "->"],
-          D.indent 8 $ D.fillSep [D.dullyellow "400"]
+          Doc.indent 6 $ Doc.fillSep [Doc.blue "Nothing", "->"],
+          Doc.indent 8 $ Doc.fillSep [Doc.dullyellow "400"]
         ],
-      D.reflow $
+      Doc.reflow $
         "Notice the indentation! Patterns are aligned with each other. Same indentation.\
         \ The expressions after each arrow are all indented a bit more than the patterns.\
         \ That is important!"
     ]
 
 -- | Documentation note explaining why packages cannot have ports.
-noteForPortsInPackage :: D.Doc
+noteForPortsInPackage :: Doc.Doc
 noteForPortsInPackage =
-  D.stack
-    [ D.toSimpleNote $
+  Doc.stack
+    [ Doc.toSimpleNote $
         "One of the major goals of the package ecosystem is to be completely written\
         \ in Canopy. This means when you install a Canopy package, you can be sure you are safe\
         \ from security issues on install and that you are not going to get any runtime\
         \ exceptions coming from your new dependency. This design also sets the ecosystem\
         \ up to target other platforms more easily (like mobile phones, WebAssembly, etc.)\
         \ since no community code explicitly depends on JavaScript even existing.",
-      D.reflow $
+      Doc.reflow $
         "Given that overall goal, allowing ports in packages would lead to some pretty\
         \ surprising behavior. If ports were allowed in packages, you could install a\
         \ package but not realize that it brings in an indirect dependency that defines a\

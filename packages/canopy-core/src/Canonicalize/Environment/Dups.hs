@@ -16,7 +16,7 @@ where
 import qualified Data.Map as Map
 import qualified Data.Name as Name
 import qualified Data.OneOrMore as OneOrMore
-import qualified Reporting.Annotation as A
+import qualified Reporting.Annotation as Ann
 import qualified Reporting.Error.Canonicalize as Error
 import qualified Reporting.Result as Result
 
@@ -26,14 +26,14 @@ type Dict value =
   Map.Map Name.Name (OneOrMore.OneOrMore (Info value))
 
 data Info value = Info
-  { _region :: A.Region,
+  { _region :: Ann.Region,
     _value :: value
   }
 
 -- DETECT
 
 type ToError =
-  Name.Name -> A.Region -> A.Region -> Error.Error
+  Name.Name -> Ann.Region -> Ann.Region -> Error.Error
 
 detect :: ToError -> Dict a -> Result.Result i w Error.Error (Map.Map Name.Name a)
 detect toError = Map.traverseWithKey (detectHelp toError)
@@ -50,19 +50,19 @@ detectHelp toError name values =
 
 -- CHECK FIELDS
 
-checkFields :: [(A.Located Name.Name, a)] -> Result.Result i w Error.Error (Map.Map Name.Name a)
+checkFields :: [(Ann.Located Name.Name, a)] -> Result.Result i w Error.Error (Map.Map Name.Name a)
 checkFields fields =
   detect Error.DuplicateField (foldr addField none fields)
 
-addField :: (A.Located Name.Name, a) -> Dict a -> Dict a
-addField (A.At region name, value) = Map.insertWith OneOrMore.more name (OneOrMore.one (Info region value))
+addField :: (Ann.Located Name.Name, a) -> Dict a -> Dict a
+addField (Ann.At region name, value) = Map.insertWith OneOrMore.more name (OneOrMore.one (Info region value))
 
-checkFields' :: (A.Region -> a -> b) -> [(A.Located Name.Name, a)] -> Result.Result i w Error.Error (Map.Map Name.Name b)
+checkFields' :: (Ann.Region -> a -> b) -> [(Ann.Located Name.Name, a)] -> Result.Result i w Error.Error (Map.Map Name.Name b)
 checkFields' toValue fields =
   detect Error.DuplicateField (foldr (addField' toValue) none fields)
 
-addField' :: (A.Region -> a -> b) -> (A.Located Name.Name, a) -> Dict b -> Dict b
-addField' toValue (A.At region name, value) = Map.insertWith OneOrMore.more name (OneOrMore.one (Info region (toValue region value)))
+addField' :: (Ann.Region -> a -> b) -> (Ann.Located Name.Name, a) -> Dict b -> Dict b
+addField' toValue (Ann.At region name, value) = Map.insertWith OneOrMore.more name (OneOrMore.one (Info region (toValue region value)))
 
 -- BUILDING DICTIONARIES
 
@@ -70,11 +70,11 @@ none :: Dict a
 none =
   Map.empty
 
-one :: Name.Name -> A.Region -> value -> Dict value
+one :: Name.Name -> Ann.Region -> value -> Dict value
 one name region value =
   Map.singleton name (OneOrMore.one (Info region value))
 
-insert :: Name.Name -> A.Region -> a -> Dict a -> Dict a
+insert :: Name.Name -> Ann.Region -> a -> Dict a -> Dict a
 insert name region value = Map.insertWith (flip OneOrMore.more) name (OneOrMore.one (Info region value))
 
 union :: Dict a -> Dict a -> Dict a

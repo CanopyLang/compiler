@@ -37,7 +37,7 @@ import qualified Build.Parallel as Parallel
 import qualified Builder.Graph as Graph
 import qualified Builder.Hash as Hash
 import qualified Builder.Incremental as Incremental
-import qualified Canopy.Interface as I
+import qualified Canopy.Interface as Interface
 import qualified Canopy.ModuleName as ModuleName
 import qualified Canopy.Outline as Outline
 import qualified Canopy.Package as Pkg
@@ -65,7 +65,7 @@ import qualified Query.Engine as Engine
 import qualified Query.Simple as Query
 import qualified PackageCache
 import qualified Parse.Module as Parse
-import qualified Reporting.Annotation as A
+import qualified Reporting.Annotation as Ann
 import qualified Data.Time.Clock as Time
 import System.FilePath ((</>), normalise)
 import qualified System.Directory as Dir
@@ -131,7 +131,7 @@ data SrcDir
 -- was freshly compiled or loaded from the incremental cache.
 data ModuleResult = ModuleResult
   { mrModuleName :: !ModuleName.Raw
-  , mrInterface :: !I.Interface
+  , mrInterface :: !Interface.Interface
   , mrLocalGraph :: !Opt.LocalGraph
   , mrFFIInfo :: !(Map.Map String JS.FFIInfo)
   , mrLazyImports :: !(Set.Set ModuleName.Canonical)
@@ -185,7 +185,7 @@ discoverTransitiveDeps ::
   FilePath ->
   [SrcDir] ->
   [FilePath] ->
-  Map.Map ModuleName.Raw I.Interface ->
+  Map.Map ModuleName.Raw Interface.Interface ->
   Parse.ProjectType ->
   IO (Map.Map ModuleName.Raw (FilePath, [ModuleName.Raw]))
 discoverTransitiveDeps root srcDirs initialPaths depInterfaces projectType = do
@@ -217,7 +217,7 @@ discoverImports ::
   Map.Map ModuleName.Raw (FilePath, [ModuleName.Raw]) ->
   Set.Set ModuleName.Raw ->
   [Src.Module] ->
-  Map.Map ModuleName.Raw I.Interface ->
+  Map.Map ModuleName.Raw Interface.Interface ->
   Parse.ProjectType ->
   IO (Map.Map ModuleName.Raw (FilePath, [ModuleName.Raw]))
 discoverImports root srcDirs found visited modules depInterfaces projectType =
@@ -258,7 +258,7 @@ parseModuleAtPath projectType (_modName, path) = do
 -- | Extract import names from a parsed module.
 extractImports :: Src.Module -> [ModuleName.Raw]
 extractImports modul =
-  [A.toValue (Src._importName imp) | imp <- Src._imports modul]
+  [Ann.toValue (Src._importName imp) | imp <- Src._imports modul]
 
 findModulePath :: FilePath -> [SrcDir] -> ModuleName.Raw -> IO (Maybe FilePath)
 findModulePath root srcDirs modName = do
@@ -275,9 +275,9 @@ compileModulesInOrder ::
   Pkg.Name ->
   Parse.ProjectType ->
   FilePath ->
-  Map.Map ModuleName.Raw I.Interface ->
+  Map.Map ModuleName.Raw Interface.Interface ->
   Map.Map ModuleName.Raw (FilePath, [ModuleName.Raw]) ->
-  IO (Either Exit.BuildError ([ModuleResult], Map.Map ModuleName.Raw I.Interface))
+  IO (Either Exit.BuildError ([ModuleResult], Map.Map ModuleName.Raw Interface.Interface))
 compileModulesInOrder pkg projectType root initialInterfaces moduleInfo = do
   Log.logEvent (BuildStarted (Text.pack ("parallel compilation: " ++ show (Map.size moduleInfo) ++ " modules")))
 
@@ -319,9 +319,9 @@ compileModulesInOrder pkg projectType root initialInterfaces moduleInfo = do
       IORef Int -> IORef Int ->
       Graph.DependencyGraph ->
       Map.Map ModuleName.Raw FilePath ->
-      Map.Map ModuleName.Raw I.Interface ->
+      Map.Map ModuleName.Raw Interface.Interface ->
       Map.Map ModuleName.Raw [ModuleName.Raw] ->
-      IO (Either Exit.BuildError ([ModuleResult], Map.Map ModuleName.Raw I.Interface))
+      IO (Either Exit.BuildError ([ModuleResult], Map.Map ModuleName.Raw Interface.Interface))
     compileWithCache queryEngine cacheRef hitRef missRef graph statuses initialIfaces modImportMap = do
       let plan = Parallel.groupByDependencyLevel graph
           levels = Parallel.planLevels plan
@@ -334,11 +334,11 @@ compileModulesInOrder pkg projectType root initialInterfaces moduleInfo = do
       IORef Incremental.BuildCache ->
       IORef Int -> IORef Int ->
       [[ModuleName.Raw]] ->
-      Map.Map ModuleName.Raw I.Interface ->
+      Map.Map ModuleName.Raw Interface.Interface ->
       [ModuleResult] ->
       Map.Map ModuleName.Raw FilePath ->
       Map.Map ModuleName.Raw [ModuleName.Raw] ->
-      IO (Either Exit.BuildError ([ModuleResult], Map.Map ModuleName.Raw I.Interface))
+      IO (Either Exit.BuildError ([ModuleResult], Map.Map ModuleName.Raw Interface.Interface))
     -- Accumulates results in reverse order for O(1) prepend, reverses at the end.
     compileLevels _ _ _ _ [] ifaces compiled _ _ = return (Right (reverse compiled, ifaces))
     compileLevels queryEngine cacheRef hitRef missRef (level : restLevels) ifaces compiled statuses modImportMap = do
@@ -356,10 +356,10 @@ compileModulesInOrder pkg projectType root initialInterfaces moduleInfo = do
       IORef Incremental.BuildCache ->
       IORef Int -> IORef Int ->
       [ModuleName.Raw] ->
-      Map.Map ModuleName.Raw I.Interface ->
+      Map.Map ModuleName.Raw Interface.Interface ->
       Map.Map ModuleName.Raw FilePath ->
       Map.Map ModuleName.Raw [ModuleName.Raw] ->
-      IO (Either Exit.BuildError ([ModuleResult], Map.Map ModuleName.Raw I.Interface))
+      IO (Either Exit.BuildError ([ModuleResult], Map.Map ModuleName.Raw Interface.Interface))
     compileLevelInParallel queryEngine cacheRef hitRef missRef modules ifaces statuses modImportMap = do
       results <- Async.mapConcurrently (compileOneModule queryEngine cacheRef hitRef missRef ifaces statuses modImportMap) modules
       let (errors, successes) = partitionEithers results
@@ -375,11 +375,11 @@ compileModulesInOrder pkg projectType root initialInterfaces moduleInfo = do
       Engine.QueryEngine ->
       IORef Incremental.BuildCache ->
       IORef Int -> IORef Int ->
-      Map.Map ModuleName.Raw I.Interface ->
+      Map.Map ModuleName.Raw Interface.Interface ->
       Map.Map ModuleName.Raw FilePath ->
       Map.Map ModuleName.Raw [ModuleName.Raw] ->
       ModuleName.Raw ->
-      IO (Either Exit.BuildError (ModuleResult, (ModuleName.Raw, I.Interface)))
+      IO (Either Exit.BuildError (ModuleResult, (ModuleName.Raw, Interface.Interface)))
     compileOneModule queryEngine cacheRef hitRef missRef ifaces statuses modImportMap modName =
       case Map.lookup modName statuses of
         Nothing ->
@@ -407,8 +407,8 @@ compileModulesInOrder pkg projectType root initialInterfaces moduleInfo = do
       ModuleName.Raw ->
       FilePath ->
       [ModuleName.Raw] ->
-      Map.Map ModuleName.Raw I.Interface ->
-      IO (Either Exit.BuildError (ModuleResult, (ModuleName.Raw, I.Interface)))
+      Map.Map ModuleName.Raw Interface.Interface ->
+      IO (Either Exit.BuildError (ModuleResult, (ModuleName.Raw, Interface.Interface)))
     compileFresh queryEngine cacheRef projRoot modName path modImports ifaces = do
       compilationResult <- Driver.compileModuleWithEngine queryEngine pkg ifaces path projectType
       case compilationResult of
@@ -443,10 +443,10 @@ queryErrorToCompileError path qErr =
 --
 -- Reads project dependencies from canopy.json/elm.json using 'Outline.read',
 -- then loads cached package artifacts in parallel.
-loadDependencyArtifacts :: FilePath -> IO (Maybe (Map.Map ModuleName.Raw I.Interface, Opt.GlobalGraph, Map.Map String JS.FFIInfo))
+loadDependencyArtifacts :: FilePath -> IO (Maybe (Map.Map ModuleName.Raw Interface.Interface, Opt.GlobalGraph, Map.Map String JS.FFIInfo))
 loadDependencyArtifacts root = do
-  maybeOutline <- Outline.read root
-  let deps = maybe [] Outline.allDeps maybeOutline
+  eitherOutline <- Outline.read root
+  let deps = either (const []) Outline.allDeps eitherOutline
   Log.logEvent (BuildModuleQueued (Text.pack ("loading " ++ show (length deps) ++ " dependencies")))
 
   case deps of
@@ -468,14 +468,14 @@ loadDependencyArtifacts root = do
           return (Just (convertedInterfaces, globalGraph, ffiInfo))
 
 -- Helper: Convert DependencyInterface map to Interface map
-convertDependencyInterfaces :: Map.Map ModuleName.Raw I.DependencyInterface -> Map.Map ModuleName.Raw I.Interface
+convertDependencyInterfaces :: Map.Map ModuleName.Raw Interface.DependencyInterface -> Map.Map ModuleName.Raw Interface.Interface
 convertDependencyInterfaces = Map.mapMaybe extractInterface
   where
-    extractInterface :: I.DependencyInterface -> Maybe I.Interface
-    extractInterface (I.Public iface) = Just iface
-    extractInterface (I.Private pkg unions aliases) =
+    extractInterface :: Interface.DependencyInterface -> Maybe Interface.Interface
+    extractInterface (Interface.Public iface) = Just iface
+    extractInterface (Interface.Private pkg unions aliases) =
       -- Convert Private to Interface by wrapping unions and aliases
-      Just (I.Interface pkg Map.empty (Map.map I.PrivateUnion unions) (Map.map I.PrivateAlias aliases) Map.empty)
+      Just (Interface.Interface pkg Map.empty (Map.map Interface.PrivateUnion unions) (Map.map Interface.PrivateAlias aliases) Map.empty)
 
 -- | Convert a ModuleResult to Build.Module.
 moduleResultToModule :: ModuleResult -> Build.Module
@@ -506,7 +506,7 @@ tryCacheHit ::
   ModuleName.Raw ->
   FilePath ->
   [ModuleName.Raw] ->
-  Map.Map ModuleName.Raw I.Interface ->
+  Map.Map ModuleName.Raw Interface.Interface ->
   IO (Maybe ModuleResult)
 tryCacheHit cacheRef root modName path modImports ifaces = do
   cache <- readIORef cacheRef
@@ -533,7 +533,7 @@ loadCachedArtifact root modName = do
 -- saved by 'saveToCacheAsync'. Checks the magic header and schema
 -- version before decoding. Falls back to unversioned legacy formats
 -- when the magic header is absent.
-decodeCachedModule :: FilePath -> IO (I.Interface, Opt.LocalGraph, Map.Map String JS.FFIInfo)
+decodeCachedModule :: FilePath -> IO (Interface.Interface, Opt.LocalGraph, Map.Map String JS.FFIInfo)
 decodeCachedModule artifactFile = do
   bytes <- LBS.readFile artifactFile
   case decodeVersioned bytes of
@@ -544,7 +544,7 @@ decodeCachedModule artifactFile = do
 --
 -- Tries triple format first, falls back to pair format (pre-FFI).
 -- Avoids re-reading the file by operating on the in-memory bytes.
-decodeLegacyBytes :: LBS.ByteString -> IO (I.Interface, Opt.LocalGraph, Map.Map String JS.FFIInfo)
+decodeLegacyBytes :: LBS.ByteString -> IO (Interface.Interface, Opt.LocalGraph, Map.Map String JS.FFIInfo)
 decodeLegacyBytes bytes =
   case Binary.decodeOrFail bytes of
     Right (_, _, triple) -> return triple
@@ -556,7 +556,7 @@ decodeLegacyBytes bytes =
 -- | Handle the result of attempting to decode a cached module.
 handleDecodeResult ::
   ModuleName.Raw ->
-  Either SomeException (I.Interface, Opt.LocalGraph, Map.Map String JS.FFIInfo) ->
+  Either SomeException (Interface.Interface, Opt.LocalGraph, Map.Map String JS.FFIInfo) ->
   IO (Maybe ModuleResult)
 handleDecodeResult modName result =
   case result of
@@ -573,7 +573,7 @@ saveToCacheAsync ::
   ModuleName.Raw ->
   FilePath ->
   [ModuleName.Raw] ->
-  Map.Map ModuleName.Raw I.Interface ->
+  Map.Map ModuleName.Raw Interface.Interface ->
   ModuleResult ->
   IO ()
 saveToCacheAsync cacheRef root modName path modImports ifaces mr = do
@@ -602,7 +602,7 @@ saveToCacheAsync cacheRef root modName path modImports ifaces mr = do
 -- Only hashes the interfaces of modules this module actually imports,
 -- not the entire interface map. This ensures cache invalidation occurs
 -- only when a direct dependency changes, preventing excessive recompilation.
-computeDepsHash :: [ModuleName.Raw] -> Map.Map ModuleName.Raw I.Interface -> Hash.ContentHash
+computeDepsHash :: [ModuleName.Raw] -> Map.Map ModuleName.Raw Interface.Interface -> Hash.ContentHash
 computeDepsHash modImports ifaces =
   Hash.hashDependencies ifaceHashes
   where

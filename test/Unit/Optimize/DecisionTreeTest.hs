@@ -13,7 +13,7 @@ import qualified Data.Name as Name
 import qualified Data.Utf8 as Utf8
 import Optimize.DecisionTree (DecisionTree (..), Path (..), Test (..))
 import qualified Optimize.DecisionTree as DT
-import qualified Reporting.Annotation as A
+import qualified Reporting.Annotation as Ann
 import Test.Tasty
 import Test.Tasty.HUnit
 
@@ -34,7 +34,7 @@ tests =
 
 -- | Create a canonical pattern at region zero.
 mkPat :: Can.Pattern_ -> Can.Pattern
-mkPat = A.At A.zero
+mkPat = Ann.At Ann.zero
 
 -- | Create a simple wildcard pattern.
 mkAnything :: Can.Pattern

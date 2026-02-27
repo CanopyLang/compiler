@@ -59,7 +59,7 @@
 --   pure (fromSnippet snippet)
 --
 -- -- Process parsed content
--- processString :: P.Snippet -> Json.String
+-- processString :: Parse.Snippet -> Json.String
 -- processString snippet =
 --   let jsonStr = fromSnippet snippet
 --   in if isEmpty jsonStr
@@ -73,7 +73,7 @@
 -- -- Efficient JSON encoding
 -- encodeStringValue :: Json.String -> Builder
 -- encodeStringValue str =
---   B.char7 '"' <> toBuilder str <> B.char7 '"'
+--   BB.char7 '"' <> toBuilder str <> BB.char7 '"'
 --
 -- -- Combine multiple strings efficiently
 -- combineStrings :: [Json.String] -> Builder
@@ -84,11 +84,11 @@
 --
 -- @
 -- -- Extract strings from comments with escape handling
--- processComment :: P.Snippet -> Json.String
+-- processComment :: Parse.Snippet -> Json.String
 -- processComment commentSnippet = fromComment commentSnippet
 --
 -- -- Example: Extract documentation strings
--- extractDocString :: P.Snippet -> Json.String
+-- extractDocString :: Parse.Snippet -> Json.String
 -- extractDocString snippet =
 --   let processed = fromComment snippet
 --   in if isEmpty processed
@@ -155,7 +155,7 @@ module Json.String
   )
 where
 
-import qualified Data.ByteString.Builder as B
+import qualified Data.ByteString.Builder as BB
 import qualified Data.Coerce as Coerce
 import qualified Data.Name as Name
 import Data.Utf8 (MBA)
@@ -167,7 +167,7 @@ import qualified Foreign.Ptr as Ptr
 import GHC.Exts (RealWorld)
 import qualified GHC.IO as IO
 import GHC.ST (ST)
-import qualified Parse.Primitives as P
+import qualified Parse.Primitives as Parse
 import Prelude hiding (String)
 
 -- CORE STRING TYPE
@@ -396,10 +396,10 @@ fromChars = Utf8.fromChars
 --
 -- Efficient string extraction:
 -- @
--- extractIdentifier :: P.Snippet -> Json.String
+-- extractIdentifier :: Parse.Snippet -> Json.String
 -- extractIdentifier snippet = fromSnippet snippet
 --
--- processTokens :: [P.Snippet] -> [Json.String]
+-- processTokens :: [Parse.Snippet] -> [Json.String]
 -- processTokens = map fromSnippet
 -- @
 --
@@ -424,7 +424,7 @@ fromChars = Utf8.fromChars
 -- * **Parser Integration**: Optimal for high-throughput parsing
 --
 -- @since 0.19.1
-fromSnippet :: P.Snippet -> String
+fromSnippet :: Parse.Snippet -> String
 fromSnippet = Utf8.fromSnippet
 
 -- | Construct a JSON string from a Canopy compiler name.
@@ -548,24 +548,24 @@ toChars = Utf8.toChars
 -- ==== Examples
 --
 -- >>> let builder = toBuilder (fromChars "hello")
--- >>> B.toLazyByteString builder
+-- >>> BB.toLazyByteString builder
 -- "hello"
 --
 -- JSON encoding:
 -- @
--- encodeJsonString :: Json.String -> B.Builder
+-- encodeJsonString :: Json.String -> BB.Builder
 -- encodeJsonString str =
---   B.char7 '"' <> toBuilder str <> B.char7 '"'
+--   BB.char7 '"' <> toBuilder str <> BB.char7 '"'
 --
--- combineStrings :: [Json.String] -> B.Builder
+-- combineStrings :: [Json.String] -> BB.Builder
 -- combineStrings strs = mconcat (map toBuilder strs)
 -- @
 --
 -- Efficient serialization:
 -- @
--- serializeFields :: [(Json.String, Json.String)] -> B.Builder
+-- serializeFields :: [(Json.String, Json.String)] -> BB.Builder
 -- serializeFields fields = mconcat
---   [ toBuilder key <> B.char7 ':' <> toBuilder value <> B.char7 ','
+--   [ toBuilder key <> BB.char7 ':' <> toBuilder value <> BB.char7 ','
 --   | (key, value) <- fields
 --   ]
 -- @
@@ -589,7 +589,7 @@ toChars = Utf8.toChars
 --
 -- @since 0.19.1
 {-# INLINE toBuilder #-}
-toBuilder :: String -> B.Builder
+toBuilder :: String -> BB.Builder
 toBuilder = Utf8.toBuilder
 
 -- SPECIALIZED CONSTRUCTION
@@ -607,10 +607,10 @@ toBuilder = Utf8.toBuilder
 --
 -- Documentation processing:
 -- @
--- processDocComment :: P.Snippet -> IO Json.String
+-- processDocComment :: Parse.Snippet -> IO Json.String
 -- processDocComment snippet = fromComment snippet
 --
--- extractComment :: P.Snippet -> IO Json.String
+-- extractComment :: Parse.Snippet -> IO Json.String
 -- extractComment commentSnippet = do
 --   processed <- fromComment commentSnippet
 --   pure $ if isEmpty processed
@@ -649,8 +649,8 @@ toBuilder = Utf8.toBuilder
 -- maintaining efficient in-place escape processing.
 --
 -- @since 0.19.1
-fromComment :: P.Snippet -> IO String
-fromComment (P.Snippet fptr off len _ _) =
+fromComment :: Parse.Snippet -> IO String
+fromComment (Parse.Snippet fptr off len _ _) =
   ForeignPtr.withForeignPtr fptr $
     ( \ptr -> do
         let !pos = Ptr.plusPtr ptr off
@@ -680,7 +680,7 @@ chompChunks pos end start revChunks =
 -- @since 0.19.1
 processCharacter :: Ptr Word8 -> Ptr Word8 -> Ptr Word8 -> [Chunk] -> [Chunk]
 processCharacter pos end start revChunks =
-  let !word = P.unsafeIndex pos
+  let !word = Parse.unsafeIndex pos
    in case word of
         0x0A {-\n-} ->
           let !pos1 = Ptr.plusPtr pos 1
@@ -713,7 +713,7 @@ processCarriageReturn pos end start revChunks =
 -- @since 0.19.1
 processRegularChar :: Ptr Word8 -> Ptr Word8 -> Ptr Word8 -> [Chunk] -> [Chunk]
 processRegularChar pos end start revChunks =
-  let !width = P.getCharWidth (P.unsafeIndex pos)
+  let !width = Parse.getCharWidth (Parse.unsafeIndex pos)
       !newPos = Ptr.plusPtr pos width
    in chompChunks newPos end start revChunks
 

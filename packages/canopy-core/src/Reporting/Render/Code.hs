@@ -12,7 +12,7 @@ module Reporting.Render.Code
   )
 where
 
-import qualified Data.ByteString as B
+import qualified Data.ByteString as BS
 import qualified Data.ByteString.UTF8 as UTF8_BS
 import qualified Data.Char as Char
 import qualified Data.IntSet as IntSet
@@ -24,42 +24,42 @@ import Data.Word (Word16)
 import Parse.Primitives (Col, Row)
 import Parse.Symbol (binopCharSet)
 import Parse.Variable (reservedWords)
-import qualified Reporting.Annotation as A
+import qualified Reporting.Annotation as Ann
 import Reporting.Doc (Doc)
-import qualified Reporting.Doc as D
+import qualified Reporting.Doc as Doc
 
 -- CODE
 
 newtype Source
   = Source [(Word16, String)]
 
-toSource :: B.ByteString -> Source
+toSource :: BS.ByteString -> Source
 toSource source =
   Source . zip [1 ..] $ (lines (UTF8_BS.toString source) <> [""])
 
 -- CODE FORMATTING
 
-toSnippet :: Source -> A.Region -> Maybe A.Region -> (D.Doc, D.Doc) -> D.Doc
+toSnippet :: Source -> Ann.Region -> Maybe Ann.Region -> (Doc.Doc, Doc.Doc) -> Doc.Doc
 toSnippet source region highlight (preHint, postHint) =
-  D.vcat
+  Doc.vcat
     [ preHint,
       "",
       render source region highlight,
       postHint
     ]
 
-toPair :: Source -> A.Region -> A.Region -> (D.Doc, D.Doc) -> (D.Doc, D.Doc, D.Doc) -> D.Doc
+toPair :: Source -> Ann.Region -> Ann.Region -> (Doc.Doc, Doc.Doc) -> (Doc.Doc, Doc.Doc, Doc.Doc) -> Doc.Doc
 toPair source r1 r2 (oneStart, oneEnd) (twoStart, twoMiddle, twoEnd) =
   case renderPair source r1 r2 of
     OneLine codeDocs ->
-      D.vcat
+      Doc.vcat
         [ oneStart,
           "",
           codeDocs,
           oneEnd
         ]
     TwoChunks code1 code2 ->
-      D.vcat
+      Doc.vcat
         [ twoStart,
           "",
           code1,
@@ -75,8 +75,8 @@ toPair source r1 r2 (oneStart, oneEnd) (twoStart, twoMiddle, twoEnd) =
 (|>) a f =
   f a
 
-render :: Source -> A.Region -> Maybe A.Region -> Doc
-render (Source sourceLines) region@(A.Region (A.Position startLine _) (A.Position endLine _)) maybeSubRegion =
+render :: Source -> Ann.Region -> Maybe Ann.Region -> Doc
+render (Source sourceLines) region@(Ann.Region (Ann.Position startLine _) (Ann.Position endLine _)) maybeSubRegion =
   let relevantLines =
         sourceLines
           |> drop (fromIntegral (startLine - 1))
@@ -89,26 +89,26 @@ render (Source sourceLines) region@(A.Region (A.Position startLine _) (A.Positio
         Data.Maybe.fromMaybe region maybeSubRegion
    in case makeUnderline width endLine smallerRegion of
         Nothing ->
-          drawLines True width smallerRegion relevantLines D.empty
+          drawLines True width smallerRegion relevantLines Doc.empty
         Just underline ->
           drawLines False width smallerRegion relevantLines underline
 
-makeUnderline :: Int -> Word16 -> A.Region -> Maybe Doc
-makeUnderline width realEndLine (A.Region (A.Position start c1) (A.Position end c2)) =
+makeUnderline :: Int -> Word16 -> Ann.Region -> Maybe Doc
+makeUnderline width realEndLine (Ann.Region (Ann.Position start c1) (Ann.Position end c2)) =
   if start /= end || end < realEndLine
     then Nothing
     else
       let spaces = replicate (fromIntegral c1 + width + 1) ' '
           zigzag = replicate (max 1 (fromIntegral (c2 - c1))) '^'
-       in Just (D.fromChars spaces <> D.red (D.fromChars zigzag))
+       in Just (Doc.fromChars spaces <> Doc.red (Doc.fromChars zigzag))
 
-drawLines :: Bool -> Int -> A.Region -> [(Word16, String)] -> Doc -> Doc
-drawLines addZigZag width (A.Region (A.Position startLine _) (A.Position endLine _)) sourceLines finalLine =
-  D.vcat (fmap (drawLine addZigZag width startLine endLine) sourceLines <> [finalLine])
+drawLines :: Bool -> Int -> Ann.Region -> [(Word16, String)] -> Doc -> Doc
+drawLines addZigZag width (Ann.Region (Ann.Position startLine _) (Ann.Position endLine _)) sourceLines finalLine =
+  Doc.vcat (fmap (drawLine addZigZag width startLine endLine) sourceLines <> [finalLine])
 
 drawLine :: Bool -> Int -> Word16 -> Word16 -> (Word16, String) -> Doc
 drawLine addZigZag width startLine endLine (n, line) =
-  addLineNumber addZigZag width startLine endLine n (D.fromChars line)
+  addLineNumber addZigZag width startLine endLine n (Doc.fromChars line)
 
 addLineNumber :: Bool -> Int -> Word16 -> Word16 -> Word16 -> Doc -> Doc
 addLineNumber addZigZag width start end n line =
@@ -120,9 +120,9 @@ addLineNumber addZigZag width start end n line =
 
       spacer =
         if addZigZag && start <= n && n <= end
-          then D.red ">"
+          then Doc.red ">"
           else " "
-   in D.fromChars lineNumber <> spacer <> line
+   in Doc.fromChars lineNumber <> spacer <> line
 
 -- RENDER PAIR
 
@@ -130,10 +130,10 @@ data CodePair
   = OneLine Doc
   | TwoChunks Doc Doc
 
-renderPair :: Source -> A.Region -> A.Region -> CodePair
+renderPair :: Source -> Ann.Region -> Ann.Region -> CodePair
 renderPair source@(Source sourceLines) region1 region2 =
-  let (A.Region (A.Position startRow1 startCol1) (A.Position endRow1 endCol1)) = region1
-      (A.Region (A.Position startRow2 startCol2) (A.Position endRow2 endCol2)) = region2
+  let (Ann.Region (Ann.Position startRow1 startCol1) (Ann.Position endRow1 endCol1)) = region1
+      (Ann.Region (Ann.Position startRow2 startCol2) (Ann.Position endRow2 endCol2)) = region2
    in if startRow1 == endRow1 && endRow1 == startRow2 && startRow2 == endRow2
         then
           let lineNumber = show startRow1
@@ -144,11 +144,11 @@ renderPair source@(Source sourceLines) region1 region2 =
 
               line = Data.Maybe.fromMaybe "" (List.lookup startRow1 sourceLines)
            in OneLine $
-                D.vcat
-                  [ D.fromChars lineNumber <> "| " <> D.fromChars line,
-                    D.fromChars spaces1 <> D.red (D.fromChars zigzag1)
-                      <> D.fromChars spaces2
-                      <> D.red (D.fromChars zigzag2)
+                Doc.vcat
+                  [ Doc.fromChars lineNumber <> "| " <> Doc.fromChars line,
+                    Doc.fromChars spaces1 <> Doc.red (Doc.fromChars zigzag1)
+                      <> Doc.fromChars spaces2
+                      <> Doc.red (Doc.fromChars zigzag2)
                   ]
         else
           TwoChunks

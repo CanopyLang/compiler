@@ -35,7 +35,7 @@ import Canopy.Constraint (Constraint)
 import qualified Canopy.Constraint as Con
 import Canopy.Package (Name)
 import qualified Canopy.Package as Pkg
-import qualified Canopy.Version as V
+import qualified Canopy.Version as Version
 import Control.Lens ((&), (.~), (^.))
 import qualified Data.Map as Map
 import Init.Types
@@ -165,7 +165,7 @@ defaultDepsTests =
           _ -> Test.assertFailure "Expected default deps configuration",
       Test.testCase "DefaultDeps supports constraint updates" $ do
         let original = defaultDeps
-            testConstraint = Con.exactly V.one
+            testConstraint = Con.exactly Version.one
             updated = original & depsCore .~ testConstraint
         case (original, updated) of
           (DefaultDeps origCore _ _, DefaultDeps updatedCore _ _) -> do
@@ -265,7 +265,7 @@ lensTests =
           _ -> Test.assertFailure "Expected immutable context updates",
       Test.testCase "ProjectContext dependency operations work correctly" $ do
         let original = defaultContext
-            newDeps = Map.fromList [(Pkg.core, Con.exactly V.one)]
+            newDeps = Map.fromList [(Pkg.core, Con.exactly Version.one)]
             modified = original & contextDependencies .~ newDeps
         case (original, modified) of
           (ProjectContext _ _ originalDeps _, ProjectContext _ _ modifiedDeps _) -> do

@@ -46,7 +46,7 @@ where
 import Data.Binary (Get, Put, get, getWord8, put, putWord8)
 import Data.Binary.Get.Internal (readN)
 import Data.Binary.Put (putBuilder)
-import qualified Data.ByteString.Internal as B
+import qualified Data.ByteString.Internal as BSI
 import Data.Utf8.Builder (toBuilder)
 import Data.Utf8.Core (Utf8 (..), copyFromPtr, empty, freeze, newByteArray, size)
 import Foreign.ForeignPtr (touchForeignPtr)
@@ -88,8 +88,8 @@ getVeryLong =
 -- COPY FROM BYTESTRING
 
 {-# INLINE copyFromByteString #-}
-copyFromByteString :: Int -> B.ByteString -> Utf8 t
-copyFromByteString len (B.PS fptr offset _) =
+copyFromByteString :: Int -> BSI.ByteString -> Utf8 t
+copyFromByteString len (BSI.PS fptr offset _) =
   unsafeDupablePerformIO
     ( do
         mba <- stToIO (newByteArray len)

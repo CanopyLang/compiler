@@ -118,7 +118,7 @@ loadLatestRegistries mgr customData cache config = do
 loadProjectOutline :: FilePath -> Task Publish Outline
 loadProjectOutline root = do
   result <- Task.io (Outline.read root)
-  maybe (Task.throw Exit.PublishNoOutline) pure result
+  either (const (Task.throw Exit.PublishNoOutline)) pure result
 
 -- | Initialize Git command wrapper.
 --

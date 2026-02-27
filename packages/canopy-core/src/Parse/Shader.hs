@@ -5,7 +5,7 @@ module Parse.Shader
   where
 
 
-import qualified Data.ByteString.Internal as B
+import qualified Data.ByteString.Internal as BSI
 import qualified Data.ByteString.UTF8 as BS_UTF8
 import qualified Data.Map as Map
 import qualified Data.Name as Name
@@ -21,40 +21,40 @@ import qualified AST.Source as Src
 import qualified AST.Utils.Shader as Shader
 import qualified Reporting.InternalError as InternalError
 import Parse.Primitives (Parser, Row, Col)
-import qualified Parse.Primitives as P
-import qualified Reporting.Annotation as A
-import qualified Reporting.Error.Syntax as E
+import qualified Parse.Primitives as Parse
+import qualified Reporting.Annotation as Ann
+import qualified Reporting.Error.Syntax as SyntaxError
 
 
 
 -- SHADER
 
 
-shader :: A.Position -> Parser E.Expr Src.Expr
-shader start@(A.Position row col) =
+shader :: Ann.Position -> Parser SyntaxError.Expr Src.Expr
+shader start@(Ann.Position row col) =
   do  block <- parseBlock
       shdr <- parseGlsl row col block
-      end <- P.getPosition
-      return (A.at start end (Src.Shader (Shader.fromChars block) shdr))
+      end <- Parse.getPosition
+      return (Ann.at start end (Src.Shader (Shader.fromChars block) shdr))
 
 
 
 -- BLOCK
 
 
-parseBlock :: Parser E.Expr String
+parseBlock :: Parser SyntaxError.Expr String
 parseBlock =
-  P.Parser $ \(P.State src pos end indent row col) cok _ cerr eerr ->
+  Parse.Parser $ \(Parse.State src pos end indent row col) cok _ cerr eerr ->
     let
       !pos6 = plusPtr pos 6
     in
     if pos6 <= end
-      && P.unsafeIndex (        pos  ) == 0x5B {- [ -}
-      && P.unsafeIndex (plusPtr pos 1) == 0x67 {- g -}
-      && P.unsafeIndex (plusPtr pos 2) == 0x6C {- l -}
-      && P.unsafeIndex (plusPtr pos 3) == 0x73 {- s -}
-      && P.unsafeIndex (plusPtr pos 4) == 0x6C {- l -}
-      && P.unsafeIndex (plusPtr pos 5) == 0x7C {- | -}
+      && Parse.unsafeIndex (        pos  ) == 0x5B {- [ -}
+      && Parse.unsafeIndex (plusPtr pos 1) == 0x67 {- g -}
+      && Parse.unsafeIndex (plusPtr pos 2) == 0x6C {- l -}
+      && Parse.unsafeIndex (plusPtr pos 3) == 0x73 {- s -}
+      && Parse.unsafeIndex (plusPtr pos 4) == 0x6C {- l -}
+      && Parse.unsafeIndex (plusPtr pos 5) == 0x7C {- | -}
     then
       let
         (# status, newPos, newRow, newCol #) =
@@ -65,16 +65,16 @@ parseBlock =
           let
             !off = minusPtr pos6 (unsafeForeignPtrToPtr src)
             !len = minusPtr newPos pos6
-            !block = BS_UTF8.toString (B.PS src off len)
-            !newState = P.State src (plusPtr newPos 2) end indent newRow (newCol + 2)
+            !block = BS_UTF8.toString (BSI.PS src off len)
+            !newState = Parse.State src (plusPtr newPos 2) end indent newRow (newCol + 2)
           in
           cok block newState
 
         Unending ->
-          cerr row col E.EndlessShader
+          cerr row col SyntaxError.EndlessShader
 
     else
-      eerr row col E.Start
+      eerr row col SyntaxError.Start
 
 
 data Status
@@ -88,15 +88,15 @@ eatShader pos end row col =
     (# Unending, pos, row, col #)
 
   else
-    let !word = P.unsafeIndex pos in
-    if word == 0x007C {- | -} && P.isWord (plusPtr pos 1) end 0x5D {- ] -} then
+    let !word = Parse.unsafeIndex pos in
+    if word == 0x007C {- | -} && Parse.isWord (plusPtr pos 1) end 0x5D {- ] -} then
       (# Good, pos, row, col #)
 
     else if word == 0x0A {- \n -} then
       eatShader (plusPtr pos 1) end (row + 1) 1
 
     else
-      let !newPos = plusPtr pos (P.getCharWidth word) in
+      let !newPos = plusPtr pos (Parse.getCharWidth word) in
       eatShader newPos end row (col + 1)
 
 
@@ -104,7 +104,7 @@ eatShader pos end row col =
 -- GLSL
 
 
-parseGlsl :: Row -> Col -> String -> Parser E.Expr Shader.Types
+parseGlsl :: Row -> Col -> String -> Parser SyntaxError.Expr Shader.Types
 parseGlsl startRow startCol src =
   case GLP.parse src of
     Right (GLS.TranslationUnit decls) ->
@@ -129,10 +129,10 @@ parseGlsl startRow startCol src =
         else failure (startRow + row - 1) col msg
 
 
-failure :: Row -> Col -> String -> Parser E.Expr a
+failure :: Row -> Col -> String -> Parser SyntaxError.Expr a
 failure row col msg =
-  P.Parser $ \(P.State {}) _ _ cerr _ ->
-    cerr row col (E.ShaderProblem msg)
+  Parse.Parser $ \(Parse.State {}) _ _ cerr _ ->
+    cerr row col (SyntaxError.ShaderProblem msg)
 
 
 

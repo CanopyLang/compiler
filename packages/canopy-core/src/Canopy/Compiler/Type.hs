@@ -15,16 +15,16 @@ where
 
 import qualified AST.Source as Src
 import qualified Data.Name as Name
-import qualified Json.Decode as D
+import qualified Json.Decode as Decode
 import Json.Encode ((==>))
-import qualified Json.Encode as E
+import qualified Json.Encode as Encode
 import qualified Json.String as Json
-import qualified Parse.Primitives as P
+import qualified Parse.Primitives as Parse
 import qualified Parse.Type as Type
-import qualified Reporting.Annotation as A
-import qualified Reporting.Doc as D
+import qualified Reporting.Annotation as Ann
+import qualified Reporting.Doc as Doc
 import qualified Reporting.Render.Type as RT
-import qualified Reporting.Render.Type.Localizer as L
+import qualified Reporting.Render.Type.Localizer as Localizer
 
 -- TYPES
 
@@ -48,18 +48,18 @@ data Union = Union Name.Name [Name.Name] [(Name.Name, [Type])]
 
 -- TO DOC
 
-toDoc :: L.Localizer -> RT.Context -> Type -> D.Doc
+toDoc :: Localizer.Localizer -> RT.Context -> Type -> Doc.Doc
 toDoc localizer context tipe =
   case tipe of
     Lambda _ _ ->
       let docs = fmap (toDoc localizer RT.Func) (collectLambdas tipe)
           (a, b, cs) = case docs of
             x : y : zs -> (x, y, zs)
-            [x] -> (x, D.fromChars "()", [])
-            [] -> (D.fromChars "()", D.fromChars "()", [])
+            [x] -> (x, Doc.fromChars "()", [])
+            [] -> (Doc.fromChars "()", Doc.fromChars "()", [])
        in RT.lambda context a b cs
     Var name ->
-      D.fromName name
+      Doc.fromName name
     Unit ->
       "()"
     Tuple a b cs ->
@@ -70,16 +70,16 @@ toDoc localizer context tipe =
     Type name args ->
       RT.apply
         context
-        (D.fromName name)
+        (Doc.fromName name)
         (fmap (toDoc localizer RT.App) args)
     Record fields ext ->
       RT.record
         (fmap (entryToDoc localizer) fields)
-        (fmap D.fromName ext)
+        (fmap Doc.fromName ext)
 
-entryToDoc :: L.Localizer -> (Name.Name, Type) -> (D.Doc, D.Doc)
+entryToDoc :: Localizer.Localizer -> (Name.Name, Type) -> (Doc.Doc, Doc.Doc)
 entryToDoc localizer (field, fieldType) =
-  (D.fromName field, toDoc localizer RT.None fieldType)
+  (Doc.fromName field, toDoc localizer RT.None fieldType)
 
 collectLambdas :: Type -> [Type]
 collectLambdas tipe =
@@ -91,18 +91,18 @@ collectLambdas tipe =
 
 -- JSON for TYPE
 
-encode :: Type -> E.Value
+encode :: Type -> Encode.Value
 encode tipe =
-  E.chars $ D.toLine (toDoc L.empty RT.None tipe)
+  Encode.chars $ Doc.toLine (toDoc Localizer.empty RT.None tipe)
 
-decoder :: D.Decoder () Type
+decoder :: Decode.Decoder () Type
 decoder =
   let parser =
-        P.specialize (\_ _ _ -> ()) (fromRawType . fst <$> Type.expression)
-   in D.customString parser (\_ _ -> ())
+        Parse.specialize (\_ _ _ -> ()) (fromRawType . fst <$> Type.expression)
+   in Decode.customString parser (\_ _ -> ())
 
 fromRawType :: Src.Type -> Type
-fromRawType (A.At _ astType) =
+fromRawType (Ann.At _ astType) =
   case astType of
     Src.TLambda t1 t2 ->
       Lambda (fromRawType t1) (fromRawType t2)
@@ -120,39 +120,39 @@ fromRawType (A.At _ astType) =
     Src.TTypeQual _ _ name args ->
       Type name (fmap fromRawType args)
     Src.TRecord fields ext ->
-      let fromField (A.At _ field, tipe) = (field, fromRawType tipe)
+      let fromField (Ann.At _ field, tipe) = (field, fromRawType tipe)
        in Record
             (fmap fromField fields)
-            (fmap A.toValue ext)
+            (fmap Ann.toValue ext)
 
 -- JSON for PROGRAM
 
-encodeMetadata :: DebugMetadata -> E.Value
+encodeMetadata :: DebugMetadata -> Encode.Value
 encodeMetadata (DebugMetadata msg aliases unions) =
-  E.object
+  Encode.object
     [ "message" ==> encode msg,
-      "aliases" ==> E.object (fmap toTypeAliasField aliases),
-      "unions" ==> E.object (fmap toCustomTypeField unions)
+      "aliases" ==> Encode.object (fmap toTypeAliasField aliases),
+      "unions" ==> Encode.object (fmap toCustomTypeField unions)
     ]
 
-toTypeAliasField :: Alias -> (Json.String, E.Value)
+toTypeAliasField :: Alias -> (Json.String, Encode.Value)
 toTypeAliasField (Alias name args tipe) =
   ( Json.fromName name,
-    E.object
-      [ "args" ==> E.list E.name args,
+    Encode.object
+      [ "args" ==> Encode.list Encode.name args,
         "type" ==> encode tipe
       ]
   )
 
-toCustomTypeField :: Union -> (Json.String, E.Value)
+toCustomTypeField :: Union -> (Json.String, Encode.Value)
 toCustomTypeField (Union name args constructors) =
   ( Json.fromName name,
-    E.object
-      [ "args" ==> E.list E.name args,
-        "tags" ==> E.object (fmap toVariantObject constructors)
+    Encode.object
+      [ "args" ==> Encode.list Encode.name args,
+        "tags" ==> Encode.object (fmap toVariantObject constructors)
       ]
   )
 
-toVariantObject :: (Name.Name, [Type]) -> (Json.String, E.Value)
+toVariantObject :: (Name.Name, [Type]) -> (Json.String, Encode.Value)
 toVariantObject (name, args) =
-  (Json.fromName name, E.list encode args)
+  (Json.fromName name, Encode.list encode args)

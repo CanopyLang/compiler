@@ -16,7 +16,7 @@ import qualified Canopy.ModuleName as ModuleName
 import Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
 import qualified Data.Name as Name
-import qualified Reporting.Annotation as A
+import qualified Reporting.Annotation as Ann
 import qualified Reporting.Error.Type as Error
 import Test.Tasty
 import Test.Tasty.HUnit
@@ -27,9 +27,9 @@ import qualified Type.Type as Type
 -- HELPERS
 
 -- | A standard region for test constraints, using row 1 col 1.
-testRegion :: A.Region
+testRegion :: Ann.Region
 testRegion =
-  A.Region (A.Position 1 1) (A.Position 1 1)
+  Ann.Region (Ann.Position 1 1) (Ann.Position 1 1)
 
 -- | Build a CEqual constraint asserting two types should unify.
 -- Uses 'Error.Number' as the category and 'Error.NoExpectation' wrapping

@@ -23,7 +23,7 @@ module Develop.Generate.Help
 where
 
 import Data.ByteString.Builder (Builder)
-import qualified Data.ByteString.Builder as B
+import qualified Data.ByteString.Builder as BB
 import qualified Data.Name as Name
 import qualified Json.Encode as Encode
 import Text.RawString.QQ (r)
@@ -60,7 +60,7 @@ makeCodeHtml title code =
 <head>
   <meta charset="UTF-8">
   <title>|]
-    <> B.stringUtf8 title
+    <> BB.stringUtf8 title
     <> [r|</title>
   <style type="text/css">
     @import url(/_canopy/source-code-pro.ttf);

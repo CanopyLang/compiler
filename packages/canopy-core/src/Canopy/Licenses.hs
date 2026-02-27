@@ -5,13 +5,14 @@ module Canopy.Licenses
     bsd3,
     encode,
     decoder,
+    check,
   )
 where
 
 import qualified Data.Map as Map
 import qualified Data.Utf8 as Utf8
-import qualified Json.Decode as D
-import qualified Json.Encode as E
+import qualified Json.Decode as Decode
+import qualified Json.Encode as Encode
 import qualified Json.String as Json
 import qualified Reporting.Suggest as Suggest
 
@@ -25,19 +26,19 @@ bsd3 :: License
 bsd3 =
   License (Json.fromChars "BSD-3-Clause")
 
-encode :: License -> E.Value
+encode :: License -> Encode.Value
 encode (License code) =
-  E.string code
+  Encode.string code
 
-decoder :: (Json.String -> [Json.String] -> e) -> D.Decoder e License
+decoder :: (Json.String -> [Json.String] -> e) -> Decode.Decoder e License
 decoder toError =
   do
-    str <- D.string
+    str <- Decode.string
     case check str of
       Right license ->
         return license
       Left suggestions ->
-        D.failure (toError str suggestions)
+        Decode.failure (toError str suggestions)
 
 -- CHECK
 

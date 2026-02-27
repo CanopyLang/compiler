@@ -13,7 +13,7 @@ import qualified AST.Optimized as Opt
 import qualified Data.Index as Index
 import qualified Data.Name as Name
 import qualified Optimize.Case as Case
-import qualified Reporting.Annotation as A
+import qualified Reporting.Annotation as Ann
 import Test.Tasty
 import Test.Tasty.HUnit
 
@@ -32,7 +32,7 @@ tests =
 
 -- | Create a canonical pattern at region zero.
 mkPat :: Can.Pattern_ -> Can.Pattern
-mkPat = A.At A.zero
+mkPat = Ann.At Ann.zero
 
 -- | Create a wildcard pattern.
 mkAnything :: Can.Pattern
