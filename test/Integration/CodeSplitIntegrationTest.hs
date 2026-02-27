@@ -1,5 +1,4 @@
 {-# LANGUAGE OverloadedStrings #-}
-{-# OPTIONS_GHC -Wall #-}
 
 -- | Integration tests for the complete code splitting pipeline.
 --

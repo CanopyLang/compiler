@@ -1,6 +1,5 @@
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE LambdaCase #-}
-{-# OPTIONS_GHC -Wall #-}
 
 -- | Canopy Source Code Generator
 --

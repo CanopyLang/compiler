@@ -1,5 +1,4 @@
 {-# LANGUAGE BangPatterns #-}
-{-# OPTIONS_GHC -Wall #-}
 
 -- | Parallel compilation for the pure builder.
 --

@@ -1,6 +1,5 @@
 {-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE OverloadedStrings #-}
-{-# OPTIONS_GHC -Wall #-}
 
 -- | Unit tests for Init.Project module.
 --

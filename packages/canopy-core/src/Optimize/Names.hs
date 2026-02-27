@@ -1,6 +1,5 @@
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE Rank2Types #-}
-{-# OPTIONS_GHC -Wall #-}
 
 module Optimize.Names
   ( Tracker,

@@ -1,6 +1,5 @@
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE QuasiQuotes #-}
-{-# OPTIONS_GHC -Wall #-}
 
 -- | Package publishing functionality for the Canopy compiler.
 --

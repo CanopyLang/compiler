@@ -1,6 +1,5 @@
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE QuasiQuotes #-}
-{-# OPTIONS_GHC -Wall #-}
 
 -- | HTML help page generation for the Canopy development server.
 --

@@ -1,5 +1,4 @@
 {-# LANGUAGE StandaloneDeriving #-}
-{-# OPTIONS_GHC -Wall #-}
 
 -- |
 -- Module: Data.OneOrMore

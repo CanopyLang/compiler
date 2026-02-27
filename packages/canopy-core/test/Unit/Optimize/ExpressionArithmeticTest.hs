@@ -1,5 +1,4 @@
 {-# LANGUAGE OverloadedStrings #-}
-{-# OPTIONS_GHC -Wall #-}
 
 -- | Unit.Optimize.ExpressionArithmeticTest - Comprehensive tests for arithmetic optimization
 --

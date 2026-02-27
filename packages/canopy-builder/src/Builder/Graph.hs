@@ -1,4 +1,3 @@
-{-# OPTIONS_GHC -Wall #-}
 
 -- | Pure dependency graph without STM.
 --

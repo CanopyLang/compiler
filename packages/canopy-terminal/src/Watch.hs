@@ -1,4 +1,3 @@
-{-# OPTIONS_GHC -Wall #-}
 
 -- | File system watcher with event debouncing.
 --

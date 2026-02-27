@@ -1,4 +1,3 @@
-{-# OPTIONS_GHC -Wall #-}
 
 -- | TTY-aware terminal output using 'P.Doc' values.
 --

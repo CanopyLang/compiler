@@ -1,5 +1,4 @@
 {-# LANGUAGE OverloadedStrings #-}
-{-# OPTIONS_GHC -Wall #-}
 
 -- | Unit.AST.SourceArithmeticTest - Comprehensive tests for arithmetic AST nodes
 --

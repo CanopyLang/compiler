@@ -1,4 +1,3 @@
-{-# OPTIONS_GHC -Wall -fno-warn-unused-do-bind #-}
 {-# LANGUAGE OverloadedStrings #-}
 module Parse.Expression
   ( expression

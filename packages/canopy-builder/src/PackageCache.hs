@@ -1,4 +1,3 @@
-{-# OPTIONS_GHC -Wall #-}
 
 -- | Package artifact cache loading for dependency interfaces.
 --

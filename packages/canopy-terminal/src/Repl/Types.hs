@@ -1,4 +1,3 @@
-{-# OPTIONS_GHC -Wall #-}
 
 -- | Core types for the Canopy REPL.
 --

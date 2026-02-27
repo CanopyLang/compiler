@@ -1,5 +1,4 @@
 {-# LANGUAGE OverloadedStrings #-}
-{-# OPTIONS_GHC -Wall #-}
 
 -- | Unit.AST.CanonicalArithmeticTest - Comprehensive tests for Canonical AST arithmetic operators
 --

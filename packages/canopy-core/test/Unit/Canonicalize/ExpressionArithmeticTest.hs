@@ -1,5 +1,4 @@
 {-# LANGUAGE OverloadedStrings #-}
-{-# OPTIONS_GHC -Wall #-}
 
 -- | Unit.Canonicalize.ExpressionArithmeticTest - Tests for arithmetic canonicalization
 --

@@ -1,7 +1,6 @@
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE QuasiQuotes #-}
-{-# OPTIONS_GHC -Wall #-}
 
 -- | Progress reporting for Canopy package publishing.
 --

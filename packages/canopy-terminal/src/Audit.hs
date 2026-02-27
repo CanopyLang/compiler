@@ -1,7 +1,6 @@
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE QuasiQuotes #-}
 {-# LANGUAGE TemplateHaskell #-}
-{-# OPTIONS_GHC -Wall #-}
 
 -- | Dependency audit command for Canopy projects.
 --

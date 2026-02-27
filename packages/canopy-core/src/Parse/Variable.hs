@@ -2,7 +2,6 @@
 {-# LANGUAGE MagicHash #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE UnboxedTuples #-}
-{-# OPTIONS_GHC -Wall #-}
 
 module Parse.Variable
   ( lower,

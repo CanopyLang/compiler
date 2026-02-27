@@ -1,5 +1,4 @@
 {-# LANGUAGE TemplateHaskell #-}
-{-# OPTIONS_GHC -Wall #-}
 
 -- | Quasi-quoter for colorized 'P.Doc' values with inline interpolation.
 --

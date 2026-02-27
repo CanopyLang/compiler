@@ -1,5 +1,4 @@
 {-# LANGUAGE StandaloneDeriving #-}
-{-# OPTIONS_GHC -Wall #-}
 
 module Reporting.Annotation
   ( Located (..),

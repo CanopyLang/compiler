@@ -2,7 +2,6 @@
 {-# LANGUAGE EmptyDataDecls #-}
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE UnboxedTuples #-}
-{-# OPTIONS_GHC -Wall #-}
 
 module Canopy.Package
   ( Name (..),

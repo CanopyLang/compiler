@@ -1,5 +1,4 @@
 {-# LANGUAGE GADTs #-}
-{-# OPTIONS_GHC -Wall #-}
 
 -- | Simplified query system without complex type families.
 --

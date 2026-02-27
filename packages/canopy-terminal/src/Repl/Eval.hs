@@ -1,5 +1,4 @@
 {-# LANGUAGE QuasiQuotes #-}
-{-# OPTIONS_GHC -Wall #-}
 
 -- | REPL evaluation engine and JavaScript execution.
 --

@@ -1,5 +1,4 @@
 {-# LANGUAGE BangPatterns #-}
-{-# OPTIONS_GHC -Wall #-}
 
 -- | Pure builder state management with single IORef.
 --

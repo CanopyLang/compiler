@@ -1,5 +1,4 @@
 {-# LANGUAGE Rank2Types #-}
-{-# OPTIONS_GHC -Wall #-}
 
 module Reporting.Result
   ( Result (..),

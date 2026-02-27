@@ -1,7 +1,6 @@
 {-# LANGUAGE BangPatterns #-}
 {-# LANGUAGE Rank2Types #-}
 {-# LANGUAGE UnboxedTuples #-}
-{-# OPTIONS_GHC -Wall #-}
 {-# OPTIONS_GHC -fno-warn-name-shadowing #-}
 {-# OPTIONS_GHC -fno-warn-noncanonical-monad-instances #-}
 

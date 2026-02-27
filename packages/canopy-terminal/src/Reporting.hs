@@ -1,6 +1,5 @@
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE QuasiQuotes #-}
-{-# OPTIONS_GHC -Wall #-}
 
 -- | Pure reporting and error display for Terminal.
 --

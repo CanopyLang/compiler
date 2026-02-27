@@ -1,6 +1,5 @@
 {-# LANGUAGE GADTs #-}
 {-# LANGUAGE InstanceSigs #-}
-{-# OPTIONS_GHC -Wall #-}
 
 -- | Internal Terminal framework data types and operations.
 --

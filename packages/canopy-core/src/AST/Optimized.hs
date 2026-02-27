@@ -1,6 +1,5 @@
 {-# LANGUAGE StandaloneDeriving #-}
 {-# LANGUAGE TemplateHaskell #-}
-{-# OPTIONS_GHC -Wall #-}
 
 -- | AST.Optimized - Optimized AST for efficient code generation
 --

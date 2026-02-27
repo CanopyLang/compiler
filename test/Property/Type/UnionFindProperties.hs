@@ -1,5 +1,4 @@
 {-# LANGUAGE OverloadedStrings #-}
-{-# OPTIONS_GHC -Wall #-}
 
 -- | Property.Type.UnionFindProperties - Property-based tests for the union-find structure
 --

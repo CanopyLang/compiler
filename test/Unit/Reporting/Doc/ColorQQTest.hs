@@ -1,5 +1,4 @@
 {-# LANGUAGE QuasiQuotes #-}
-{-# OPTIONS_GHC -Wall #-}
 
 -- | Tests for the @[c|...|]@ color quasi-quoter.
 module Unit.Reporting.Doc.ColorQQTest (tests) where

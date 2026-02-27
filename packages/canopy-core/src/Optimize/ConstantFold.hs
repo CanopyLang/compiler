@@ -1,4 +1,3 @@
-{-# OPTIONS_GHC -Wall #-}
 
 -- | Compile-time evaluation of arithmetic on constant operands.
 --

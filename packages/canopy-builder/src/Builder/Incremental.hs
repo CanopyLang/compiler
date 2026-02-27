@@ -1,5 +1,4 @@
 {-# LANGUAGE DeriveGeneric #-}
-{-# OPTIONS_GHC -Wall #-}
 
 -- | Incremental compilation support using content hashing.
 --

@@ -2,7 +2,6 @@
 {-# LANGUAGE MultiWayIf #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE UnboxedTuples #-}
-{-# OPTIONS_GHC -Wall #-}
 
 module Canopy.Docs
   ( Documentation,

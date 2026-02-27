@@ -1,4 +1,3 @@
-{-# OPTIONS_GHC -Wall #-}
 
 module Unit.Optimize.ConstantFoldTest (tests) where
 

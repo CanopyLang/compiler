@@ -1,5 +1,4 @@
 {-# LANGUAGE OverloadedStrings #-}
-{-# OPTIONS_GHC -Wall #-}
 
 -- | Unit.Generate.JavaScript.ExpressionArithmeticTest - JS codegen tests for arithmetic
 --

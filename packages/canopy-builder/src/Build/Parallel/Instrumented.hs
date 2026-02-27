@@ -1,5 +1,4 @@
 {-# LANGUAGE BangPatterns #-}
-{-# OPTIONS_GHC -Wall #-}
 
 -- | Instrumented parallel compilation for verification.
 --

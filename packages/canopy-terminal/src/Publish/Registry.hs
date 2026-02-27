@@ -1,6 +1,5 @@
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE LambdaCase #-}
-{-# OPTIONS_GHC -Wall #-}
 
 -- | Package registry operations for Canopy publishing.
 --

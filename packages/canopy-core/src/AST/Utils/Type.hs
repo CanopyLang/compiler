@@ -1,4 +1,3 @@
-{-# OPTIONS_GHC -Wall #-}
 
 -- | AST.Utils.Type - Type manipulation utilities for canonical types
 --

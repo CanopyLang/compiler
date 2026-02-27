@@ -1,5 +1,4 @@
 {-# LANGUAGE OverloadedStrings #-}
-{-# OPTIONS_GHC -Wall #-}
 
 -- | Property.ArithmeticLawsTest - Property-based tests for arithmetic operator laws
 --

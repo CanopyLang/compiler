@@ -1,4 +1,3 @@
-{-# OPTIONS_GHC -Wall #-}
 
 -- | AST.Utils.Binop - Binary operator precedence and associativity utilities
 --

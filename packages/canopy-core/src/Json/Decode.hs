@@ -4,10 +4,8 @@
 {-# LANGUAGE StandaloneDeriving #-}
 {-# LANGUAGE TemplateHaskell #-}
 {-# LANGUAGE UnboxedTuples #-}
-{-# OPTIONS_GHC -Wall #-}
 {-# OPTIONS_GHC -fno-warn-name-shadowing #-}
 {-# OPTIONS_GHC -fno-warn-noncanonical-monad-instances #-}
-{-# OPTIONS_GHC -fno-warn-unused-do-bind #-}
 
 -- | Json.Decode - High-performance JSON decoding with rich error reporting
 --

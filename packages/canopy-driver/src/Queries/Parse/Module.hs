@@ -1,4 +1,3 @@
-{-# OPTIONS_GHC -Wall #-}
 
 -- | Query-based module parsing with caching and debug logging.
 --

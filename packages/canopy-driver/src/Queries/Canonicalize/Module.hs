@@ -1,4 +1,3 @@
-{-# OPTIONS_GHC -Wall #-}
 
 -- | Query-based canonicalization with caching and debug logging.
 --

@@ -1,5 +1,4 @@
 {-# LANGUAGE BangPatterns #-}
-{-# OPTIONS_GHC -Wall #-}
 
 -- | Parse cache for the NEW query system.
 --

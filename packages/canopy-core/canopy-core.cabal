@@ -142,6 +142,13 @@ library
       Reporting.Error.Main
       Reporting.Error.Pattern
       Reporting.Error.Syntax
+      Reporting.Error.Syntax.Declaration
+      Reporting.Error.Syntax.Expression
+      Reporting.Error.Syntax.Helpers
+      Reporting.Error.Syntax.Literal
+      Reporting.Error.Syntax.Module
+      Reporting.Error.Syntax.Pattern
+      Reporting.Error.Syntax.Type
       Reporting.Error.Syntax.Types
       Reporting.Error.Type
       Reporting.ErrorCode

@@ -1,4 +1,3 @@
-{-# OPTIONS_GHC -Wall #-}
 
 {-|
 Module: Unit.Type.UnionFindTest

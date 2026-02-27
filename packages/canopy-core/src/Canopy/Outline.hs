@@ -1,5 +1,5 @@
 {-# LANGUAGE OverloadedStrings #-}
-{-# OPTIONS_GHC -Wall -Wno-orphans #-}
+{-# OPTIONS_GHC -Wno-orphans #-}
 
 -- | Pure project outline (canopy.json) for Terminal.
 --

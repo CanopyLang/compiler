@@ -1,4 +1,3 @@
-{-# OPTIONS_GHC -Wall #-}
 
 -- | Comprehensive tests for Worker.Pool module.
 --

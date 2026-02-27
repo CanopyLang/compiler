@@ -1,5 +1,4 @@
 {-# LANGUAGE OverloadedStrings #-}
-{-# OPTIONS_GHC -Wall -fno-warn-unused-do-bind #-}
 
 -- | Unit.Parse.ExpressionArithmeticTest - Comprehensive parser tests for arithmetic
 --

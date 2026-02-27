@@ -1,6 +1,5 @@
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE DeriveGeneric #-}
-{-# OPTIONS_GHC -Wall #-}
 
 -- | WebIDL Specification Sources
 --

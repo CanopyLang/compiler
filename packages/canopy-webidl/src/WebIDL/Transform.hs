@@ -1,6 +1,5 @@
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE LambdaCase #-}
-{-# OPTIONS_GHC -Wall #-}
 
 -- | WebIDL Type Transformation
 --

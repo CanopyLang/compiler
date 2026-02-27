@@ -1,5 +1,4 @@
 {-# LANGUAGE EmptyDataDecls #-}
-{-# OPTIONS_GHC -Wall #-}
 
 -- | AST.Utils.Shader - GLSL shader integration utilities
 --

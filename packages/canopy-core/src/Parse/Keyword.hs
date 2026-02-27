@@ -1,5 +1,4 @@
 {-# LANGUAGE BangPatterns #-}
-{-# OPTIONS_GHC -Wall #-}
 
 module Parse.Keyword
   ( type_,

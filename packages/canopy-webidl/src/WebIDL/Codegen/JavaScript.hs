@@ -1,6 +1,5 @@
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE LambdaCase #-}
-{-# OPTIONS_GHC -Wall #-}
 
 -- | JavaScript Kernel Code Generator
 --

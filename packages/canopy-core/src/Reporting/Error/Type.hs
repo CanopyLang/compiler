@@ -1,6 +1,5 @@
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE StandaloneDeriving #-}
-{-# OPTIONS_GHC -Wall #-}
 
 module Reporting.Error.Type
   ( Error (..),

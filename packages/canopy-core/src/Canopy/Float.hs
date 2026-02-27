@@ -1,6 +1,5 @@
 {-# LANGUAGE EmptyDataDecls #-}
 {-# LANGUAGE FlexibleInstances #-}
-{-# OPTIONS_GHC -Wall #-}
 
 module Canopy.Float
   ( Float,

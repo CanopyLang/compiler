@@ -1,5 +1,4 @@
 {-# LANGUAGE OverloadedStrings #-}
-{-# OPTIONS_GHC -Wall #-}
 
 -- | Generate.JavaScript.CodeSplit.Analyze — Chunk graph analysis
 --

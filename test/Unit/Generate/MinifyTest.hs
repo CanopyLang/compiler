@@ -1,4 +1,3 @@
-{-# OPTIONS_GHC -Wall #-}
 
 module Unit.Generate.MinifyTest (tests) where
 

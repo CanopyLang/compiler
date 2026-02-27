@@ -1,5 +1,4 @@
 {-# LANGUAGE LambdaCase #-}
-{-# OPTIONS_GHC -Wall #-}
 
 -- | Interactive Read-Eval-Print Loop for Canopy.
 --

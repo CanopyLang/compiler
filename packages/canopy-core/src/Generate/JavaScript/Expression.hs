@@ -1,5 +1,4 @@
 {-# LANGUAGE OverloadedStrings #-}
-{-# OPTIONS_GHC -Wno-unused-top-binds -Wno-unused-matches #-}
 
 module Generate.JavaScript.Expression
   ( generate,

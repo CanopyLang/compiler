@@ -1,5 +1,4 @@
 {-# LANGUAGE DeriveGeneric #-}
-{-# OPTIONS_GHC -Wall #-}
 
 -- | JSON interface file format for Canopy compiler.
 --
