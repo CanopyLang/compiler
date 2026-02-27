@@ -142,6 +142,7 @@ library
       Reporting.Error.Main
       Reporting.Error.Pattern
       Reporting.Error.Syntax
+      Reporting.Error.Syntax.Types
       Reporting.Error.Type
       Reporting.ErrorCode
       Reporting.Exit.Help
