@@ -71,6 +71,9 @@ module CLI.Commands
 
     -- * WebIDL Commands
     createWebIDLCommand,
+
+    -- * Self-Update Commands
+    createSelfUpdateCommand,
   )
 where
 
@@ -98,6 +101,7 @@ import qualified Terminal.Helpers as Terminal
 import qualified Test
 import qualified Test.FFI as FFI
 import qualified Upgrade
+import qualified SelfUpdate
 import qualified WebIDL.Command as WebIDLCmd
 import Text.PrettyPrint.ANSI.Leijen (Doc)
 import qualified Text.PrettyPrint.ANSI.Leijen as PP
@@ -720,3 +724,27 @@ createWebIDLFlags =
   Terminal.flags WebIDLCmd.Flags
     |-- Terminal.flag "output" (Terminal.stringParser "DIR" "output directory") "Directory for generated modules (default: current directory)."
     |-- Terminal.onOff "verbose" "Show verbose output."
+
+-- | Create the self-update command for checking and installing compiler updates.
+--
+-- The self-update command checks for newer versions of the Canopy compiler
+-- and provides instructions for updating.
+--
+-- @since 0.19.2
+createSelfUpdateCommand :: Command
+createSelfUpdateCommand =
+  Terminal.Command "self-update" Terminal.Uncommon details example Terminal.noArgs flags SelfUpdate.run
+  where
+    details = "The `self-update` command checks for and installs Canopy compiler updates:"
+    example =
+      stackDocuments
+        [ PP.indent 4 (PP.green "canopy self-update"),
+          PP.indent 4 (PP.green "canopy self-update --check")
+        ]
+    flags = createSelfUpdateFlags
+
+createSelfUpdateFlags :: Terminal.Flags SelfUpdate.Flags
+createSelfUpdateFlags =
+  Terminal.flags SelfUpdate.Flags
+    |-- Terminal.onOff "check" "Only check for updates, do not download or install."
+    |-- Terminal.onOff "force" "Force update even if already at the latest version."

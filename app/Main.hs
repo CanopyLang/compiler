@@ -67,6 +67,7 @@ import CLI.Commands
     createReplCommand,
     createSetupCommand,
     createTestCommand,
+    createSelfUpdateCommand,
     createUpgradeCommand,
     createWebIDLCommand,
   )
@@ -131,5 +132,6 @@ createAllCommands =
     createBumpCommand,
     createDiffCommand,
     createPublishCommand,
-    createWebIDLCommand
+    createWebIDLCommand,
+    createSelfUpdateCommand
   ]
