@@ -83,6 +83,7 @@ module Http
   )
 where
 
+import qualified Canopy.PathValidation as PathValidation
 import qualified Canopy.Version as Version
 import qualified Codec.Archive.Zip as Zip
 import qualified Control.Exception as Exception
@@ -154,10 +155,18 @@ isFileUrl url =
     Just uri -> URI.uriScheme uri == "file:"
     Nothing -> False
 
+-- | Extract a filesystem path from a @file:\/\/@ URL.
+--
+-- Validates the extracted path against directory traversal, absolute
+-- path escapes, and null byte injection before returning it.
+-- Returns 'Nothing' for non-file URLs or paths that fail validation.
+--
+-- @since 0.19.2
 fileUrlToPath :: String -> Maybe FilePath
 fileUrlToPath url =
   case URI.parseURI url of
-    Just uri | URI.uriScheme uri == "file:" -> Just (URI.uriPath uri)
+    Just uri | URI.uriScheme uri == "file:" ->
+      either (const Nothing) Just (PathValidation.validatePath (URI.uriPath uri))
     _ -> Nothing
 
 -- FETCH

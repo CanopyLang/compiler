@@ -47,7 +47,6 @@ import qualified Canopy.Package as Pkg
 import qualified Control.Concurrent as Concurrent
 import qualified Control.Concurrent.Chan as Chan
 import Control.Concurrent.Chan (Chan)
-import Control.Exception (IOException)
 import qualified Control.Exception as Exception
 import qualified Data.IORef as IORef
 import Data.IORef (IORef)

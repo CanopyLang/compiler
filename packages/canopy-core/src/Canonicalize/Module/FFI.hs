@@ -26,6 +26,7 @@ import qualified Canonicalize.Environment as Env
 import qualified Canopy.Data.Name as Name
 import qualified Canopy.ModuleName as ModuleName
 import qualified Canopy.Package as Pkg
+import qualified Canopy.PathValidation as PathValidation
 import Control.Exception (IOException)
 import qualified Control.Exception as Exception
 import Data.List (isPrefixOf, isInfixOf)
@@ -85,19 +86,29 @@ loadSingleFFI _ _ = return []
 
 -- | Validate an FFI source file path for safety.
 --
--- Rejects absolute paths, path traversal (..), null bytes,
--- and non-JavaScript extensions.
+-- Delegates generic filesystem checks (absolute path, traversal,
+-- null bytes) to 'PathValidation.validatePath', then applies the
+-- FFI-specific constraint that the file must be a JavaScript file.
+--
+-- @since 0.19.2
 validateFFIPath :: FilePath -> Either String FilePath
-validateFFIPath path
-  | FP.isAbsolute path =
-      Left "FFI source path must be relative"
-  | ".." `elem` FP.splitDirectories path =
-      Left "FFI source path cannot contain '..'"
-  | '\0' `elem` path =
-      Left "FFI source path contains null byte"
-  | not (FP.takeExtension path `elem` [".js", ".mjs"]) =
-      Left "FFI source path must end in .js or .mjs"
-  | otherwise = Right (FP.normalise path)
+validateFFIPath path =
+  either pathErrorToString checkExtension (PathValidation.validatePath path)
+
+-- | Convert a generic 'PathValidation.PathError' to a user-facing message.
+pathErrorToString :: PathValidation.PathError -> Either String a
+pathErrorToString (PathValidation.PathAbsolute _) =
+  Left "FFI source path must be relative"
+pathErrorToString (PathValidation.PathTraversal _) =
+  Left "FFI source path cannot contain '..'"
+pathErrorToString (PathValidation.PathNullByte _) =
+  Left "FFI source path contains null byte"
+
+-- | Verify the file has a JavaScript extension.
+checkExtension :: FilePath -> Either String FilePath
+checkExtension path
+  | FP.takeExtension path `elem` [".js", ".mjs"] = Right path
+  | otherwise = Left "FFI source path must end in .js or .mjs"
 
 -- | Load an FFI JavaScript file, catching only IO exceptions.
 --
