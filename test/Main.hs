@@ -99,6 +99,7 @@ import qualified Unit.Generate.MinifyTest as MinifyTest
 import qualified Unit.Generate.NameTest as GenerateNameTest
 import qualified Unit.Generate.SourceMapTest as SourceMapTest
 import qualified Unit.Generate.StringPoolTest as StringPoolTest
+import qualified Unit.Generate.TreeShakeTest as TreeShakeTest
 import qualified Unit.Optimize.CaseTest as CaseTest
 import qualified Unit.Optimize.ConstantFoldTest as ConstantFoldTest
 import qualified Unit.Optimize.DecisionTreeTest as DecisionTreeTest
@@ -230,6 +231,7 @@ unitTests =
       CodeSplitManifestTest.tests,
       CodeSplitRuntimeTest.tests,
       CodeSplitTypesTest.tests,
+      TreeShakeTest.tests,
       ColorQQTest.tests,
       LoggingEventTest.tests,
       LoggingConfigTest.tests,
