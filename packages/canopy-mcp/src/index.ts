@@ -142,6 +142,104 @@ const TOOLS = [
       },
     },
   },
+  {
+    name: "canopy_format",
+    description:
+      "Format Canopy source code. Reads a .can or .canopy file and returns the formatted version.",
+    inputSchema: {
+      type: "object" as const,
+      properties: {
+        file: {
+          type: "string",
+          description: "Path to the Canopy source file to format",
+        },
+      },
+      required: ["file"],
+    },
+  },
+  {
+    name: "canopy_lint",
+    description:
+      "Run lint rules on a Canopy project to find code quality issues.",
+    inputSchema: {
+      type: "object" as const,
+      properties: {
+        path: {
+          type: "string",
+          description: "Path to the Canopy project directory (default: current directory)",
+        },
+      },
+    },
+  },
+  {
+    name: "canopy_get_completions",
+    description:
+      "Get autocomplete suggestions at a position in a Canopy source file.",
+    inputSchema: {
+      type: "object" as const,
+      properties: {
+        file: {
+          type: "string",
+          description: "Path to the Canopy source file",
+        },
+        line: {
+          type: "number",
+          description: "Line number (1-indexed)",
+        },
+        column: {
+          type: "number",
+          description: "Column number (1-indexed)",
+        },
+        prefix: {
+          type: "string",
+          description: "The text prefix to complete (optional)",
+        },
+      },
+      required: ["file", "line", "column"],
+    },
+  },
+  {
+    name: "canopy_get_dependencies",
+    description:
+      "List all dependencies of a Canopy project as specified in canopy.json.",
+    inputSchema: {
+      type: "object" as const,
+      properties: {
+        path: {
+          type: "string",
+          description: "Path to the Canopy project directory (default: current directory)",
+        },
+      },
+    },
+  },
+  {
+    name: "canopy_get_errors",
+    description:
+      "Get current compilation errors for a Canopy project as structured JSON diagnostics.",
+    inputSchema: {
+      type: "object" as const,
+      properties: {
+        path: {
+          type: "string",
+          description: "Path to the Canopy project directory (default: current directory)",
+        },
+      },
+    },
+  },
+  {
+    name: "canopy_get_outline",
+    description:
+      "Read and return the canopy.json project configuration file.",
+    inputSchema: {
+      type: "object" as const,
+      properties: {
+        path: {
+          type: "string",
+          description: "Path to the Canopy project directory (default: current directory)",
+        },
+      },
+    },
+  },
 ];
 
 // Prompts for common Canopy tasks
@@ -231,9 +329,9 @@ async function findCanopyFiles(dir: string): Promise<string[]> {
     const entries = await readdir(currentDir, { withFileTypes: true });
     for (const entry of entries) {
       const fullPath = join(currentDir, entry.name);
-      if (entry.isDirectory() && !entry.name.startsWith(".") && entry.name !== "node_modules") {
+      if (entry.isDirectory() && !entry.name.startsWith(".") && entry.name !== "node_modules" && entry.name !== "canopy-stuff" && entry.name !== "elm-stuff") {
         await scan(fullPath);
-      } else if (entry.isFile() && (entry.name.endsWith(".can") || entry.name.endsWith(".elm"))) {
+      } else if (entry.isFile() && (entry.name.endsWith(".can") || entry.name.endsWith(".canopy") || entry.name.endsWith(".elm"))) {
         files.push(fullPath);
       }
     }
@@ -403,6 +501,179 @@ async function main() {
               {
                 type: "text",
                 text: `Error scanning for modules: ${error}`,
+              },
+            ],
+            isError: true,
+          };
+        }
+      }
+
+      case "canopy_format": {
+        const file = args?.file as string;
+
+        if (!file) {
+          return {
+            content: [{ type: "text", text: "Error: 'file' argument is required" }],
+            isError: true,
+          };
+        }
+
+        const result = await execCommand("canopy", ["format", file]);
+
+        return {
+          content: [
+            {
+              type: "text",
+              text:
+                result.exitCode === 0
+                  ? `Formatted successfully.\n${result.stdout}`
+                  : `Format failed:\n${result.stderr || result.stdout}`,
+            },
+          ],
+          isError: result.exitCode !== 0,
+        };
+      }
+
+      case "canopy_lint": {
+        const path = (args?.path as string) || ".";
+
+        const result = await execCommand("canopy", ["lint"], path);
+
+        return {
+          content: [
+            {
+              type: "text",
+              text:
+                result.exitCode === 0
+                  ? result.stdout || "No lint issues found."
+                  : `Lint issues found:\n${result.stderr || result.stdout}`,
+            },
+          ],
+          isError: result.exitCode !== 0,
+        };
+      }
+
+      case "canopy_get_completions": {
+        return {
+          content: [
+            {
+              type: "text",
+              text: "Not yet implemented: autocompletion requires the Canopy Language Server (LSP), which is not yet available.\n\nWorkarounds:\n  - Check the module's exposing list for available functions\n  - Use 'canopy_get_docs' to see module documentation\n  - Use 'canopy_list_modules' to discover available modules",
+            },
+          ],
+          isError: true,
+        };
+      }
+
+      case "canopy_get_dependencies": {
+        const path = (args?.path as string) || ".";
+
+        try {
+          const canopyJson = await readFile(join(path, "canopy.json"), "utf-8");
+          const config = JSON.parse(canopyJson);
+
+          const deps = config.dependencies || config["direct-dependencies"] || {};
+          const testDeps = config["test-dependencies"] || {};
+
+          const depLines = Object.entries(deps).map(
+            ([name, version]) => `  ${name}: ${version}`
+          );
+          const testDepLines = Object.entries(testDeps).map(
+            ([name, version]) => `  ${name}: ${version}`
+          );
+
+          let output = "# Dependencies\n\n";
+          output += depLines.length > 0
+            ? `## Direct\n${depLines.join("\n")}\n`
+            : "## Direct\n  (none)\n";
+
+          if (testDepLines.length > 0) {
+            output += `\n## Test\n${testDepLines.join("\n")}\n`;
+          }
+
+          return {
+            content: [{ type: "text", text: output }],
+          };
+        } catch (error) {
+          return {
+            content: [
+              {
+                type: "text",
+                text: `Error reading dependencies: ${error}\n\nMake sure canopy.json exists in ${path}`,
+              },
+            ],
+            isError: true,
+          };
+        }
+      }
+
+      case "canopy_get_errors": {
+        const path = (args?.path as string) || ".";
+
+        const result = await execCommand(
+          "canopy",
+          ["make", "src/Main.can", "--output=/dev/null", "--report=json"],
+          path
+        );
+
+        if (result.exitCode === 0) {
+          return {
+            content: [
+              {
+                type: "text",
+                text: JSON.stringify({ errors: [], warnings: [] }, null, 2),
+              },
+            ],
+          };
+        }
+
+        // Try to parse structured error output; fall back to raw text
+        const errorOutput = result.stderr || result.stdout;
+        try {
+          const parsed = JSON.parse(errorOutput);
+          return {
+            content: [
+              {
+                type: "text",
+                text: JSON.stringify(parsed, null, 2),
+              },
+            ],
+            isError: true,
+          };
+        } catch {
+          return {
+            content: [
+              {
+                type: "text",
+                text: errorOutput,
+              },
+            ],
+            isError: true,
+          };
+        }
+      }
+
+      case "canopy_get_outline": {
+        const path = (args?.path as string) || ".";
+
+        try {
+          const content = await readFile(join(path, "canopy.json"), "utf-8");
+          const config = JSON.parse(content);
+
+          return {
+            content: [
+              {
+                type: "text",
+                text: JSON.stringify(config, null, 2),
+              },
+            ],
+          };
+        } catch (error) {
+          return {
+            content: [
+              {
+                type: "text",
+                text: `Error reading canopy.json: ${error}\n\nMake sure canopy.json exists in ${path}`,
               },
             ],
             isError: true,
