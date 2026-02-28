@@ -29,6 +29,10 @@ module Builder.Incremental
     invalidateModule,
     invalidateTransitive,
 
+    -- * Interface-Aware Caching
+    getInterfaceHash,
+    interfaceUnchanged,
+
     -- * Cache Management
     pruneCache,
     getCacheStats,
@@ -37,7 +41,7 @@ where
 
 import qualified Builder.Hash as Hash
 import qualified Canopy.ModuleName as ModuleName
-import Data.Aeson (FromJSON (..), ToJSON (..), (.:), (.=))
+import Data.Aeson (FromJSON (..), ToJSON (..), (.:), (.:?), (.=))
 import qualified Data.Aeson as Aeson
 import qualified Data.ByteString.Lazy as BSL
 import Data.Map.Strict (Map)
@@ -52,11 +56,17 @@ import qualified Logging.Logger as Log
 import qualified System.Directory as Dir
 
 -- | Cache entry for a module.
+--
+-- The 'cacheInterfaceHash' field enables interface-aware cache invalidation:
+-- when a module is recompiled but its exported interface (types, values,
+-- unions, aliases, binops) is unchanged, downstream dependents skip
+-- recompilation because their deps hash remains stable.
 data CacheEntry = CacheEntry
   { cacheSourceHash :: !Hash.ContentHash,
     cacheDepsHash :: !Hash.ContentHash,
     cacheArtifactPath :: !FilePath,
-    cacheTimestamp :: !UTCTime
+    cacheTimestamp :: !UTCTime,
+    cacheInterfaceHash :: !(Maybe Hash.ContentHash)
   }
   deriving (Show, Eq, Generic)
 
@@ -66,7 +76,8 @@ instance ToJSON CacheEntry where
       [ "sourceHash" .= Hash.toHexString (Hash.hashValue (cacheSourceHash entry)),
         "depsHash" .= Hash.toHexString (Hash.hashValue (cacheDepsHash entry)),
         "artifactPath" .= cacheArtifactPath entry,
-        "timestamp" .= cacheTimestamp entry
+        "timestamp" .= cacheTimestamp entry,
+        "interfaceHash" .= fmap (Hash.toHexString . Hash.hashValue) (cacheInterfaceHash entry)
       ]
 
 instance FromJSON CacheEntry where
@@ -75,13 +86,16 @@ instance FromJSON CacheEntry where
     depsHashStr <- obj .: "depsHash"
     artifactPath <- obj .: "artifactPath"
     timestamp <- obj .: "timestamp"
+    maybeIfaceHashStr <- obj Aeson..:? "interfaceHash"
     let srcHash = maybe (Hash.HashValue mempty) id (Hash.fromHexString sourceHashStr)
         depsHash = maybe (Hash.HashValue mempty) id (Hash.fromHexString depsHashStr)
+        ifaceHash = maybeIfaceHashStr >>= Hash.fromHexString
     return CacheEntry
       { cacheSourceHash = Hash.ContentHash srcHash "loaded",
         cacheDepsHash = Hash.ContentHash depsHash "loaded",
         cacheArtifactPath = artifactPath,
-        cacheTimestamp = timestamp
+        cacheTimestamp = timestamp,
+        cacheInterfaceHash = fmap (\hv -> Hash.ContentHash hv "interface") ifaceHash
       })
 
 -- | Build cache for incremental compilation.
@@ -221,6 +235,23 @@ invalidateTransitive cache moduleName reverseDeps =
                 else
                   let deps = Set.fromList (maybe [] id (Map.lookup current reverseDeps))
                    in collectTransitive (Set.union rest deps) (Set.insert current visited)
+
+-- | Retrieve the cached interface hash for a module, if available.
+--
+-- Returns 'Nothing' when the module is not in the cache or when the
+-- cache entry predates interface-hash tracking.
+getInterfaceHash :: BuildCache -> ModuleName.Raw -> Maybe Hash.ContentHash
+getInterfaceHash cache moduleName =
+  lookupCache cache moduleName >>= cacheInterfaceHash
+
+-- | Check whether a module's interface is unchanged between builds.
+--
+-- Compares the newly computed interface hash against the cached one.
+-- When both exist and are equal, downstream dependents can skip
+-- recompilation because the exported API has not changed.
+interfaceUnchanged :: BuildCache -> ModuleName.Raw -> Hash.ContentHash -> Bool
+interfaceUnchanged cache moduleName newIfaceHash =
+  maybe False (Hash.hashesEqual newIfaceHash) (getInterfaceHash cache moduleName)
 
 -- | Prune old entries from cache.
 pruneCache :: BuildCache -> UTCTime -> BuildCache

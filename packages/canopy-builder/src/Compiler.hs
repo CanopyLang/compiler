@@ -59,7 +59,7 @@ import qualified Data.Text as Text
 import Control.Exception (IOException)
 import qualified Control.Exception as Exception
 import Data.Word (Word16)
-import Control.Monad (filterM)
+import Control.Monad (filterM, when)
 import qualified Control.Concurrent.Async as Async
 import qualified Control.Concurrent.QSem as QSem
 import qualified GHC.Conc as Conc
@@ -474,6 +474,12 @@ compileModulesInOrder pkg projectType root initialInterfaces moduleInfo = do
         Left err -> return (Left (Exit.BuildCannotCompile (queryErrorToCompileError path err)))
         Right compiledResult -> do
           let moduleResult = fromDriverResult compiledResult
+          -- Check interface stability for downstream optimization
+          cache <- readIORef cacheRef
+          let newIfaceHash = Hash.hashBytes (LBS.toStrict (Binary.encode (mrInterface moduleResult)))
+              stable = Incremental.interfaceUnchanged cache modName newIfaceHash
+          when stable $
+            Log.logEvent (InterfaceSaved (Name.toChars modName ++ " (interface stable)"))
           -- Save to incremental cache
           saveToCacheAsync cacheRef projRoot modName path modImports ifaces moduleResult
           return (Right (moduleResult, (modName, mrInterface moduleResult)))
@@ -667,13 +673,15 @@ saveToCacheAsync cacheRef root modName path modImports ifaces mr = do
   -- Write versioned binary artifact (magic + version + Interface + LocalGraph + FFIInfo)
   LBS.writeFile artifactFile (encodeVersioned (mrInterface mr, mrLocalGraph mr, mrFFIInfo mr))
 
-  -- Update cache index
+  -- Update cache index with interface hash for downstream invalidation tracking
   now <- Time.getCurrentTime
-  let entry = Incremental.CacheEntry
+  let ifaceHash = Hash.hashBytes (LBS.toStrict (Binary.encode (mrInterface mr)))
+      entry = Incremental.CacheEntry
         { Incremental.cacheSourceHash = sourceHash
         , Incremental.cacheDepsHash = depsHash
         , Incremental.cacheArtifactPath = artifactFile
         , Incremental.cacheTimestamp = now
+        , Incremental.cacheInterfaceHash = Just ifaceHash
         }
   atomicModifyIORef' cacheRef (\c -> (Incremental.insertCache c modName entry, ()))
 

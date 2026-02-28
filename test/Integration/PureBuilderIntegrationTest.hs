@@ -357,7 +357,8 @@ testCacheManagement =
                 { Incremental.cacheSourceHash = sourceHash,
                   Incremental.cacheDepsHash = depsHash,
                   Incremental.cacheArtifactPath = "/test/artifact.canopyi",
-                  Incremental.cacheTimestamp = now
+                  Incremental.cacheTimestamp = now,
+                  Incremental.cacheInterfaceHash = Nothing
                 }
 
         let cache = Incremental.insertCache emptyCache moduleName entry
@@ -381,7 +382,8 @@ testCacheManagement =
                 { Incremental.cacheSourceHash = sourceHash,
                   Incremental.cacheDepsHash = depsHash,
                   Incremental.cacheArtifactPath = "/test/artifact.canopyi",
-                  Incremental.cacheTimestamp = now
+                  Incremental.cacheTimestamp = now,
+                  Incremental.cacheInterfaceHash = Nothing
                 }
 
         let cache = Incremental.insertCache emptyCache moduleName entry
