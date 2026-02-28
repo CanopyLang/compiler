@@ -138,6 +138,7 @@ import qualified Unit.Deps.AdvisoryTest as AdvisoryTest
 import qualified Unit.Deps.RegistryTest as RegistryTest
 import qualified Unit.AuditTest as AuditTest
 import qualified Unit.VersionCheckTest as VersionCheckTest
+import qualified Unit.Plugin.PipelineTest as PluginPipelineTest
 import qualified Property.ArithmeticLawsTest as ArithmeticLawsTest
 import qualified Property.Type.UnifyProperties as UnifyProperties
 import qualified Property.Type.UnionFindProperties as UnionFindProperties
@@ -278,7 +279,8 @@ unitTests =
       AuditTest.tests,
       VersionCheckTest.tests,
       WorkspaceTest.tests,
-      LiveReloadTest.tests
+      LiveReloadTest.tests,
+      PluginPipelineTest.tests
     ]
 
 propertyTests :: TestTree
