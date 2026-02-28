@@ -434,6 +434,7 @@ createMakeFlags =
     |-- Terminal.onOff "no-split" "Force single-file output even when lazy imports are present. Useful for debugging code splitting issues."
     |-- Terminal.onOff "ffi-unsafe" "Disable runtime type validation at FFI boundaries. Use only when you are confident FFI types are correct and need maximum performance."
     |-- Terminal.onOff "ffi-debug" "Enable verbose FFI validation logging. When enabled, generated validators include detailed type mismatch information in error messages."
+    |-- Terminal.flag "jobs" Make.jobsParser "Maximum parallel compilation workers. 0 = auto (uses all CPU cores), 1 = sequential (useful for debugging). Default: auto."
 
 createInstallDetails :: String
 createInstallDetails =

@@ -55,6 +55,8 @@ import qualified Control.Exception as Exception
 import Data.Word (Word16)
 import Control.Monad (filterM)
 import qualified Control.Concurrent.Async as Async
+import qualified Control.Concurrent.QSem as QSem
+import qualified GHC.Conc as Conc
 import Data.IORef (IORef, newIORef, readIORef, atomicModifyIORef')
 import qualified Data.Maybe as Maybe
 import qualified Data.Map.Strict as Map
@@ -369,7 +371,9 @@ compileModulesInOrder pkg projectType root initialInterfaces moduleInfo = do
       Map.Map ModuleName.Raw [ModuleName.Raw] ->
       IO (Either Exit.BuildError ([ModuleResult], Map.Map ModuleName.Raw Interface.Interface))
     compileLevelInParallel queryEngine cacheRef hitRef missRef modules ifaces statuses modImportMap = do
-      results <- Async.mapConcurrently (compileOneModule queryEngine cacheRef hitRef missRef ifaces statuses modImportMap) modules
+      numCaps <- Conc.getNumCapabilities
+      sem <- QSem.newQSem (max 1 numCaps)
+      results <- Async.mapConcurrently (withSemaphore sem . compileOneModule queryEngine cacheRef hitRef missRef ifaces statuses modImportMap) modules
       let (errors, successes) = partitionEithers results
       case errors of
         [err] -> return (Left err)
@@ -443,6 +447,17 @@ extractCompileErrors :: Exit.BuildError -> [Exit.CompileError]
 extractCompileErrors (Exit.BuildCannotCompile err) = [err]
 extractCompileErrors (Exit.BuildMultipleErrors errs) = errs
 extractCompileErrors _ = []
+
+-- | Bound an IO action with a semaphore for concurrency control.
+--
+-- Acquires the semaphore before running the action and releases it
+-- afterward, even if the action throws an exception. This limits
+-- the number of concurrent compilations to prevent file descriptor
+-- and memory exhaustion on large projects.
+--
+-- @since 0.19.2
+withSemaphore :: QSem.QSem -> IO a -> IO a
+withSemaphore sem = Exception.bracket_ (QSem.waitQSem sem) (QSem.signalQSem sem)
 
 -- Helper: Convert QueryError to CompileError with proper categorization.
 --

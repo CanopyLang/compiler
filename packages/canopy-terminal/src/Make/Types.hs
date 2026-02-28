@@ -39,6 +39,7 @@ module Make.Types
     noSplit,
     ffiUnsafe,
     ffiDebug,
+    jobs,
 
     -- ** BuildContext Lenses
     bcStyle,
@@ -91,7 +92,9 @@ data Flags = Flags
     -- | Disable FFI runtime type validation (unsafe mode)
     _ffiUnsafe :: !Bool,
     -- | Enable verbose FFI debug logging in generated validators
-    _ffiDebug :: !Bool
+    _ffiDebug :: !Bool,
+    -- | Maximum parallel compilation jobs (0 = auto-detect from CPU count)
+    _jobs :: !(Maybe Int)
   }
   deriving (Eq, Show)
 

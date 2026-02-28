@@ -22,6 +22,7 @@ module Make.Parser
     reportType,
     output,
     docsFile,
+    jobsParser,
 
     -- * Helper Functions
     parseOutput,
@@ -33,6 +34,7 @@ where
 import Make.Types (Output (..), ReportType (..))
 import qualified System.FilePath as FilePath
 import Terminal (Parser (..))
+import Text.Read (readMaybe)
 
 -- | Parser for error reporting format.
 --
@@ -187,3 +189,27 @@ hasExtension ext path =
 isDevNull :: String -> Bool
 isDevNull name =
   name == "/dev/null" || name == "NUL" || name == "$null"
+
+-- | Parser for job count (parallel compilation workers).
+--
+-- Accepts non-negative integers:
+--   * 0 = auto-detect from CPU capabilities (default)
+--   * 1 = sequential compilation (useful for debugging)
+--   * N = use exactly N parallel workers
+--
+-- @since 0.19.2
+jobsParser :: Parser Int
+jobsParser =
+  Parser
+    { _singular = "job count",
+      _plural = "job counts",
+      _parser = parseNonNegativeInt,
+      _suggest = \_ -> pure [],
+      _examples = \_ -> pure ["0", "1", "4", "8"]
+    }
+
+-- | Parse a non-negative integer (>= 0).
+parseNonNegativeInt :: String -> Maybe Int
+parseNonNegativeInt input = do
+  n <- readMaybe input
+  if n >= 0 then Just n else Nothing

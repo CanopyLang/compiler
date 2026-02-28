@@ -38,6 +38,7 @@ module Make
     reportType,
     output,
     docsFile,
+    jobsParser,
   )
 where
 
@@ -56,7 +57,7 @@ import qualified Logging.Logger as Log
 import Make.Builder (buildFromExposed, buildFromPaths, createSplitBuilder, shouldSplitOutput)
 import Make.Environment (createBuildContext, getDesiredMode, getReportingStyle, setupEnvironment)
 import Make.Output (generateOutput, generateSplitJavaScript)
-import Make.Parser (docsFile, output, reportType)
+import Make.Parser (docsFile, jobsParser, output, reportType)
 import Make.Types
   ( BuildContext,
     Flags (..),
