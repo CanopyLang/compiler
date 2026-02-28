@@ -368,11 +368,14 @@ hasCapabilities m =
     || not (null (Manifest._manifestModules m))
 
 -- | Parse FFI content for capability annotations.
+--
+-- Files that fail to parse are included with an empty function list
+-- since capability checking is advisory — a parse error in JSDoc
+-- should not block compilation.
 parseFFICapabilities :: Map.Map String a -> IO [(Text.Text, [FFI.JSDocFunction])]
 parseFFICapabilities ffiInfoMap =
   traverse parseOne (Map.keys ffiInfoMap)
   where
     parseOne path = do
       result <- FFI.parseJSDocFromFile path
-      let functions = either (const []) id result
-      pure (Text.pack path, functions)
+      pure (Text.pack path, either (const []) id result)

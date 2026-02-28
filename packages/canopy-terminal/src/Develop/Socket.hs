@@ -56,7 +56,8 @@ module Develop.Socket
 where
 
 import Control.Concurrent (forkIO, threadDelay)
-import Control.Exception (SomeException, catch)
+import Control.Exception (IOException)
+import qualified Control.Exception as Exception
 import qualified Data.ByteString.Char8 as BS
 import Data.IORef (IORef, newIORef, readIORef, writeIORef)
 import qualified Data.Time.Clock as Time
@@ -180,16 +181,19 @@ maintainConnection connection = do
   runConnectionPinger connection 1
 
 -- | Run message receiver loop.
+--
+-- Catches 'WS.ConnectionException' for expected disconnections
+-- (client closes tab, network loss). Other exceptions propagate.
 runMessageReceiver :: WS.Connection -> IO ()
 runMessageReceiver connection = do
-  messageLoop connection `catch` handleConnectionError
+  messageLoop connection `Exception.catch` handleConnectionClose
   where
     messageLoop conn = do
       _message <- WS.receiveDataMessage conn
       messageLoop conn
 
-    handleConnectionError :: SomeException -> IO ()
-    handleConnectionError _exception = pure () -- Graceful shutdown
+    handleConnectionClose :: WS.ConnectionException -> IO ()
+    handleConnectionClose _ = pure ()
 
 -- | Run connection pinger with periodic keep-alive messages.
 runConnectionPinger :: WS.Connection -> Integer -> IO ()
@@ -209,21 +213,26 @@ sendPingMessage connection pingNumber = do
   pure result
 
 -- | Safely send ping with error handling.
+--
+-- Returns False on connection close so the pinger loop terminates.
 safeSendPing :: WS.Connection -> BS.ByteString -> IO Bool
 safeSendPing connection pingData = do
-  (WS.sendPing connection pingData >> pure True) `catch` handlePingError
+  (WS.sendPing connection pingData >> pure True) `Exception.catch` handlePingError
   where
-    handlePingError :: SomeException -> IO Bool
-    handlePingError _exception = pure False
+    handlePingError :: WS.ConnectionException -> IO Bool
+    handlePingError _ = pure False
 
 -- | Ping interval in microseconds (5 seconds).
 pingInterval :: Int
 pingInterval = 5 * 1000 * 1000
 
 -- | Clean up file watchers on shutdown.
+--
+-- Ignores IO errors during cleanup since the watchers may already
+-- have been invalidated if the watched directory was deleted.
 cleanupWatchers :: [IO ()] -> IO ()
 cleanupWatchers watchers = mapM_ executeCleanup watchers
   where
-    executeCleanup cleanup = cleanup `catch` ignoreCleanupErrors
-    ignoreCleanupErrors :: SomeException -> IO ()
-    ignoreCleanupErrors _exception = pure ()
+    executeCleanup cleanup = cleanup `Exception.catch` handleCleanupError
+    handleCleanupError :: IOException -> IO ()
+    handleCleanupError _ = pure ()

@@ -29,8 +29,7 @@ import qualified Data.ByteString.Char8 as BS
 import qualified Data.ByteString.Lazy as LBS
 import qualified Json.Encode as Encode
 import qualified Json.String as JsonString
-import Control.Exception (SomeException)
-import qualified Control.Exception as Exception
+import Control.Exception (IOException)
 import Network.HTTP.Client (HttpException(..), HttpExceptionContent(..))
 import Control.Monad (forM_)
 import qualified Data.List as List
@@ -42,7 +41,7 @@ data TestError = TestArchiveError | TestHttpError String deriving (Eq, Show)
 httpErrorToTestError :: Http.Error -> TestError
 httpErrorToTestError (Http.BadUrl url reason) = TestHttpError ("BadUrl: " ++ url ++ " - " ++ reason)
 httpErrorToTestError (Http.BadHttp url _) = TestHttpError ("BadHttp: " ++ url)
-httpErrorToTestError (Http.BadMystery url _) = TestHttpError ("BadMystery: " ++ url)
+httpErrorToTestError (Http.BadIO url _) = TestHttpError ("BadIO: " ++ url)
 
 -- | Main test tree containing all Http tests.
 --
@@ -475,12 +474,12 @@ testErrorTypes = testGroup "Error Types"
         Http.BadHttp url _ -> url @?= "https://example.com"
         _ -> assertFailure "Expected BadHttp constructor"
 
-  , testCase "BadMystery error structure" $ do
-      let ex = Exception.toException (userError "test error")
-      let err = Http.BadMystery "https://example.com" ex
+  , testCase "BadIO error structure" $ do
+      let ex = userError "test error"
+      let err = Http.BadIO "https://example.com" ex
       case err of
-        Http.BadMystery url _ -> url @?= "https://example.com"
-        _ -> assertFailure "Expected BadMystery constructor"
+        Http.BadIO url _ -> url @?= "https://example.com"
+        _ -> assertFailure "Expected BadIO constructor"
   ]
 
 testExceptionHandling :: TestTree

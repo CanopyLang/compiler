@@ -107,7 +107,7 @@ import qualified Network.HTTP.Client.TLS as TLS
 import Network.HTTP.Types.Header (Header, hAccept, hAcceptEncoding, hUserAgent)
 import Network.HTTP.Types.Method (Method, methodGet, methodPost)
 import Http.Archive (readArchive, readLocalArchive)
-import Http.Error (Error (..), handleHttpException, handleSomeException)
+import Http.Error (Error (..), handleHttpException, handleIOException)
 import Http.Upload
   ( upload,
     uploadWithHeaders,
@@ -184,7 +184,7 @@ fetch methodVerb manager url headers onError onSuccess =
     verb = Text.pack (BS.unpack methodVerb)
 
     fetchLocal =
-      Exception.handle (handleSomeException url onError) $
+      Exception.handle (handleIOException url onError) $
         case fileUrlToPath url of
           Just filePath -> do
             fileExists <- Directory.doesFileExist filePath
@@ -201,7 +201,7 @@ fetch methodVerb manager url headers onError onSuccess =
             return (Left (onError (BadUrl url "Invalid file:// URL format")))
 
     fetchRemote =
-      Exception.handle (handleSomeException url onError) . Exception.handle (handleHttpException url onError) $ do
+      Exception.handle (handleIOException url onError) . Exception.handle (handleHttpException url onError) $ do
         Log.logEvent (PackageOperation verb urlText)
         req0 <- parseUrlThrow url
         let req1 =
@@ -284,7 +284,7 @@ getArchiveWithHeaders manager url headers onError err onSuccess =
     urlText = Text.pack url
 
     fetchLocalArchive =
-      Exception.handle (handleSomeException url onError) $
+      Exception.handle (handleIOException url onError) $
         case fileUrlToPath url of
           Just filePath -> do
             Log.logEvent (ArchiveOperation "local-read" (Text.pack filePath))
@@ -301,7 +301,7 @@ getArchiveWithHeaders manager url headers onError err onSuccess =
             return (Left (onError (BadUrl url "Invalid file:// URL format")))
 
     fetchRemoteArchive =
-      Exception.handle (handleSomeException url onError) . Exception.handle (handleHttpException url onError) $ do
+      Exception.handle (handleIOException url onError) . Exception.handle (handleHttpException url onError) $ do
         Log.logEvent (PackageOperation "http-get" urlText)
         req0 <- parseUrlThrow url
         let req1 =

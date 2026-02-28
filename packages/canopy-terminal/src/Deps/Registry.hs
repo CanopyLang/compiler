@@ -42,7 +42,7 @@ import qualified Canopy.CustomRepositoryData as CustomRepo
 import qualified Canopy.Package as Pkg
 import qualified Canopy.Version as Version
 import qualified Control.Exception as Exception
-import Control.Exception (SomeException)
+import Control.Exception (IOException)
 import qualified Data.Aeson as Aeson
 import qualified Data.Aeson.Key as AesonKey
 import qualified Data.Aeson.KeyMap as AesonKM
@@ -184,12 +184,18 @@ getVersions' (CanopyRegistries mainReg customRegs _) pkg =
 emptyRegistry :: Registry
 emptyRegistry = Registry 0 Map.empty
 
--- | Attempt to parse the binary cache file, returning Nothing on any error.
+-- | Attempt to parse the binary cache file, returning Nothing on IO errors.
+--
+-- Catches only 'IOException' (file not found, permission denied) rather
+-- than all exceptions. Binary decode failures are handled by 'decodeFully'.
 parseRegistryFile :: FilePath -> IO (Maybe Registry)
 parseRegistryFile path =
-  Exception.handle ignoreException $ do
+  Exception.handle handleIOError $ do
     bytes <- LBS.readFile path
     pure (either (const Nothing) Just (decodeFully bytes))
+  where
+    handleIOError :: IOException -> IO (Maybe Registry)
+    handleIOError _ = pure Nothing
 
 -- | Decode a lazy ByteString, returning Left on partial decode or failure.
 decodeFully :: LBS.ByteString -> Either String Registry
@@ -197,10 +203,6 @@ decodeFully bytes =
   case Binary.decodeOrFail bytes of
     Right (_, _, reg) -> Right reg
     Left (_, _, msg) -> Left msg
-
--- | Suppress any IO exception and return Nothing.
-ignoreException :: SomeException -> IO (Maybe a)
-ignoreException _ = pure Nothing
 
 -- | Perform an HTTP GET to the registry endpoint and parse the response.
 fetchFromNetwork :: Http.Manager -> IO (Either String Registry)
@@ -213,8 +215,8 @@ httpErrorToString (Http.BadUrl url reason) =
   "Bad URL " <> url <> ": " <> reason
 httpErrorToString (Http.BadHttp url _) =
   "HTTP error for " <> url
-httpErrorToString (Http.BadMystery url _) =
-  "Unexpected error for " <> url
+httpErrorToString (Http.BadIO url _) =
+  "IO error for " <> url
 
 -- | Parse the strict ByteString JSON response into a 'Registry'.
 --
@@ -271,16 +273,18 @@ parseVersionText txt =
     Aeson.Success v -> Just v
     _ -> Nothing
 
--- | Write the registry to the binary cache file (best-effort, silently ignores errors).
+-- | Write the registry to the binary cache file (best-effort).
+--
+-- Catches only 'IOException'. Write failures are non-fatal — the
+-- compiler will re-fetch from the network next time.
 writeCache :: FilePath -> Registry -> IO ()
 writeCache cache registry =
-  Exception.handle ignoreWriteException $ do
+  Exception.handle handleIOError $ do
     Dir.createDirectoryIfMissing True cache
     LBS.writeFile (registryCacheFile cache) (Binary.encode registry)
-
--- | Suppress write exceptions (best-effort caching).
-ignoreWriteException :: SomeException -> IO ()
-ignoreWriteException _ = pure ()
+  where
+    handleIOError :: IOException -> IO ()
+    handleIOError _ = pure ()
 
 -- | Return the first 'Just' result from applying a function over a list.
 firstJust :: (a -> Maybe b) -> [a] -> Maybe b

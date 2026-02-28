@@ -12,11 +12,11 @@
 module Http.Error
   ( Error (..),
     handleHttpException,
-    handleSomeException,
+    handleIOException,
   )
 where
 
-import Control.Exception (SomeException)
+import Control.Exception (IOException)
 import qualified Data.Text as Text
 import Logging.Event (LogEvent (..))
 import qualified Logging.Logger as Log
@@ -37,8 +37,8 @@ data Error
     BadUrl String String
   | -- | HTTP protocol or network error.
     BadHttp String HttpExceptionContent
-  | -- | Unexpected system-level error.
-    BadMystery String SomeException
+  | -- | IO-level error (file access, DNS, network).
+    BadIO String IOException
   deriving (Show)
 
 -- | Convert an 'HttpException' into a typed 'Error' wrapped by @onError@.
@@ -51,8 +51,12 @@ handleHttpException url onError httpException = do
     HttpExceptionRequest _ content ->
       return (Left (onError (BadHttp url content)))
 
--- | Convert a 'SomeException' into a typed 'Error' wrapped by @onError@.
-handleSomeException :: String -> (Error -> e) -> SomeException -> IO (Either e a)
-handleSomeException url onError exception = do
-  Log.logEvent (PackageOperation "exception" (Text.pack url <> " " <> Text.pack (show exception)))
-  return (Left (onError (BadMystery url exception)))
+-- | Convert an 'IOException' into a typed 'Error' wrapped by @onError@.
+--
+-- Replaces the old @handleSomeException@ to catch only IO-level failures
+-- (file not found for file:// URLs, DNS resolution, network errors)
+-- while allowing programming errors to propagate.
+handleIOException :: String -> (Error -> e) -> IOException -> IO (Either e a)
+handleIOException url onError ioException = do
+  Log.logEvent (PackageOperation "io-error" (Text.pack url <> " " <> Text.pack (show ioException)))
+  return (Left (onError (BadIO url ioException)))

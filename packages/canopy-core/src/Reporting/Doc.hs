@@ -128,17 +128,24 @@ reflow paragraph =
   PP.fillSep (fmap PP.text (words paragraph))
 
 commaSep :: PP.Doc -> (PP.Doc -> PP.Doc) -> [PP.Doc] -> [PP.Doc]
+commaSep _conjunction _addStyle [] = []
+commaSep _conjunction addStyle [name] =
+  [addStyle name]
+commaSep conjunction addStyle [name1, name2] =
+  [addStyle name1, conjunction, addStyle name2]
 commaSep conjunction addStyle names =
-  case names of
-    [name] ->
-      [addStyle name]
-    [name1, name2] ->
-      [addStyle name1, conjunction, addStyle name2]
-    _ ->
-      fmap (\name -> addStyle name <> ",") (init names)
-        <> [ conjunction,
-             addStyle (last names)
-           ]
+  fmap (\name -> addStyle name <> ",") leading
+    <> [conjunction, addStyle final]
+  where
+    (leading, final) = splitLast names
+
+-- | Split a non-empty list into all-but-last and last elements.
+splitLast :: [a] -> ([a], a)
+splitLast [x] = ([], x)
+splitLast (x : xs) =
+  let (rest, final) = splitLast xs
+   in (x : rest, final)
+splitLast [] = error "Reporting.Doc.splitLast: unreachable — guarded by commaSep"
 
 -- NOTES
 

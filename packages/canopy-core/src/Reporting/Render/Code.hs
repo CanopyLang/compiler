@@ -83,7 +83,7 @@ render (Source sourceLines) region@(Ann.Region (Ann.Position startLine _) (Ann.P
           |> take (fromIntegral (1 + endLine - startLine))
 
       width =
-        length (show (fst (last relevantLines)))
+        maybe 0 (length . show . fst) (safeLast relevantLines)
 
       smallerRegion =
         Data.Maybe.fromMaybe region maybeSubRegion
@@ -92,6 +92,11 @@ render (Source sourceLines) region@(Ann.Region (Ann.Position startLine _) (Ann.P
           drawLines True width smallerRegion relevantLines Doc.empty
         Just underline ->
           drawLines False width smallerRegion relevantLines underline
+
+-- | Safe last element extraction.
+safeLast :: [a] -> Maybe a
+safeLast [] = Nothing
+safeLast xs = Just (List.last xs)
 
 makeUnderline :: Int -> Word16 -> Ann.Region -> Maybe Doc
 makeUnderline width realEndLine (Ann.Region (Ann.Position start c1) (Ann.Position end c2)) =

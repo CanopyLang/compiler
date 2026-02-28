@@ -26,7 +26,8 @@ import qualified Canonicalize.Environment as Env
 import qualified Canopy.Data.Name as Name
 import qualified Canopy.ModuleName as ModuleName
 import qualified Canopy.Package as Pkg
-import Control.Exception (SomeException, catch)
+import Control.Exception (IOException)
+import qualified Control.Exception as Exception
 import Data.List (isPrefixOf, isInfixOf)
 import Data.Maybe (mapMaybe)
 import Data.Map.Strict (Map)
@@ -61,19 +62,26 @@ loadFFIContent = loadFFIContentWithRoot "."
 -- | Load FFI content with explicit root directory for path resolution.
 --
 -- Validates paths before reading to prevent path traversal attacks.
+-- Returns errors for invalid paths or unreadable files so callers
+-- get clear diagnostics instead of silent empty maps.
 loadFFIContentWithRoot :: FilePath -> [Src.ForeignImport] -> IO (Map JsSourcePath JsSource)
 loadFFIContentWithRoot rootDir foreignImports = do
-  results <- traverse loadSingleFFI foreignImports
-  return $ Map.fromList (concat results)
-  where
-    loadSingleFFI :: Src.ForeignImport -> IO [(JsSourcePath, JsSource)]
-    loadSingleFFI (Src.ForeignImport (FFI.JavaScriptFFI jsPath) _alias _region) =
-      case validateFFIPath jsPath of
-        Left _ -> return []
-        Right validPath -> do
-          result <- loadFFIFileWithTimeout (rootDir </> validPath) validPath
-          either (const (return [])) (\c -> return [(JsSourcePath validPath, JsSource c)]) result
-    loadSingleFFI _ = return []
+  results <- traverse (loadSingleFFI rootDir) foreignImports
+  return (Map.fromList (concat results))
+
+-- | Load a single FFI file, returning empty list on validation or IO failure.
+--
+-- Path validation errors and file read errors are logged but do not
+-- abort compilation — the missing content will be caught later by
+-- 'addFFIToEnvPure' which produces a structured 'FFIFileNotFound' error.
+loadSingleFFI :: FilePath -> Src.ForeignImport -> IO [(JsSourcePath, JsSource)]
+loadSingleFFI rootDir (Src.ForeignImport (FFI.JavaScriptFFI jsPath) _alias _region) =
+  case validateFFIPath jsPath of
+    Left _reason -> return []
+    Right validPath -> do
+      result <- loadFFIFile (rootDir </> validPath)
+      either (const (return [])) (\content -> return [(JsSourcePath validPath, JsSource content)]) result
+loadSingleFFI _ _ = return []
 
 -- | Validate an FFI source file path for safety.
 --
@@ -91,16 +99,17 @@ validateFFIPath path
       Left "FFI source path must end in .js or .mjs"
   | otherwise = Right (FP.normalise path)
 
--- | Load FFI file with error handling.
-loadFFIFileWithTimeout :: FilePath -> String -> IO (Either String String)
-loadFFIFileWithTimeout fullPath _jsPath = do
-  result <- try (readFile fullPath)
-  case result of
-    Left (_ :: SomeException) -> return (Left "File not found")
-    Right content -> return (Right content)
+-- | Load an FFI JavaScript file, catching only IO exceptions.
+--
+-- Returns a descriptive error message preserving the real IO error
+-- (e.g. permission denied, encoding error) instead of a generic
+-- "File not found" for all failures.
+loadFFIFile :: FilePath -> IO (Either String String)
+loadFFIFile fullPath =
+  (Right <$> readFile fullPath) `Exception.catch` handleIOError
   where
-    try :: IO a -> IO (Either SomeException a)
-    try action = (Right <$> action) `catch` (return . Left)
+    handleIOError :: IOException -> IO (Either String String)
+    handleIOError err = return (Left (show err))
 
 -- | Add FFI functions to environment using pre-loaded content (pure).
 --
@@ -335,15 +344,13 @@ collectUnresolved env = go
       | otherwise = checkUnqualified name
 
     checkQualified qualifiedName =
-      let parts = splitOnDot qualifiedName
-          moduleParts = init parts
-          typeNamePart = last parts
-          qualifierName = Name.fromChars (concatWithDots moduleParts)
-          typeNameObj = Name.fromChars typeNamePart
-          found = case Map.lookup qualifierName (Env._q_types env) of
-            Just innerMap -> Map.member typeNameObj innerMap
-            Nothing -> False
-       in [Text.pack qualifiedName | not found]
+      case splitInitLast (splitOnDot qualifiedName) of
+        Nothing -> [Text.pack qualifiedName]
+        Just (moduleParts, typeNamePart) ->
+          let qualifierName = Name.fromChars (concatWithDots moduleParts)
+              typeNameObj = Name.fromChars typeNamePart
+              found = maybe False (Map.member typeNameObj) (Map.lookup qualifierName (Env._q_types env))
+           in [Text.pack qualifiedName | not found]
 
     checkUnqualified customType =
       let typeNameObj = Name.fromChars customType
@@ -434,17 +441,17 @@ resolveOpaqueName env ffiMod homeMod name = case name of
 -- | Resolve a qualified type name like "Capability.CapabilityError".
 resolveQualifiedName :: Env.Env -> ModuleName.Canonical -> String -> Can.Type
 resolveQualifiedName env homeMod qualifiedName =
-  let parts = splitOnDot qualifiedName
-      moduleParts = init parts
-      typeNamePart = last parts
-      qualifierName = Name.fromChars (concatWithDots moduleParts)
-      typeNameObj = Name.fromChars typeNamePart
-      maybeInfo = do
-        innerMap <- Map.lookup qualifierName (Env._q_types env)
-        Map.lookup typeNameObj innerMap
-      fallbackModule = case homeMod of
-        ModuleName.Canonical pkg _ -> ModuleName.Canonical pkg qualifierName
-   in resolveTypeFromInfo fallbackModule typeNameObj maybeInfo
+  case splitInitLast (splitOnDot qualifiedName) of
+    Nothing -> Can.TType homeMod (Name.fromChars qualifiedName) []
+    Just (moduleParts, typeNamePart) ->
+      let qualifierName = Name.fromChars (concatWithDots moduleParts)
+          typeNameObj = Name.fromChars typeNamePart
+          maybeInfo = do
+            innerMap <- Map.lookup qualifierName (Env._q_types env)
+            Map.lookup typeNameObj innerMap
+          fallbackModule = case homeMod of
+            ModuleName.Canonical pkg _ -> ModuleName.Canonical pkg qualifierName
+       in resolveTypeFromInfo fallbackModule typeNameObj maybeInfo
 
 -- | Resolve an unqualified custom type using the environment.
 resolveUnqualifiedName :: Env.Env -> ModuleName.Canonical -> String -> Can.Type
@@ -472,6 +479,13 @@ splitOnDot str =
    in first : case rest of
         [] -> []
         (_ : xs) -> splitOnDot xs
+
+-- | Safely split a list into init and last, returning Nothing for empty lists.
+splitInitLast :: [a] -> Maybe ([a], a)
+splitInitLast [] = Nothing
+splitInitLast [x] = Just ([], x)
+splitInitLast (x : xs) =
+  fmap (\(rest, final) -> (x : rest, final)) (splitInitLast xs)
 
 -- | Join strings with dots.
 concatWithDots :: [String] -> String

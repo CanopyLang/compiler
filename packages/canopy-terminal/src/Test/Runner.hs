@@ -81,13 +81,13 @@ reportNodeMissing = do
 getNpmGlobalRoot :: IO (Maybe FilePath)
 getNpmGlobalRoot =
   fmap extractPath (Process.readProcessWithExitCode "npm" ["root", "-g"] "")
-    `Exception.catch` ignoreException
+    `Exception.catch` handleIOError
   where
     extractPath (ExitSuccess, out, _) = Just (filter (/= '\n') out)
     extractPath _ = Nothing
 
-    ignoreException :: Exception.SomeException -> IO (Maybe FilePath)
-    ignoreException _ = pure Nothing
+    handleIOError :: Exception.IOException -> IO (Maybe FilePath)
+    handleIOError _ = pure Nothing
 
 -- | Build the @NODE_PATH@ search list from the project's local
 -- @node_modules@ and the optional global npm root.

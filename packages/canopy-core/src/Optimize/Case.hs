@@ -1,4 +1,7 @@
 
+{-# LANGUAGE LambdaCase #-}
+{-# LANGUAGE OverloadedStrings #-}
+
 module Optimize.Case
   ( optimize,
   )
@@ -9,6 +12,8 @@ import qualified AST.Optimized as Opt
 import Control.Arrow (second)
 import qualified Data.Map.Strict as Map
 import qualified Data.Maybe as Maybe
+import qualified Data.Set as Set
+import qualified Data.Text as Text
 import qualified Canopy.Data.Name as Name
 import qualified Optimize.DecisionTree as DT
 import qualified Reporting.InternalError as InternalError
@@ -23,13 +28,18 @@ optimize temp root optBranches =
       decider = treeToDecider (DT.compile patterns)
       targetCounts = countTargets decider
 
+      reachableBranches = filter (isReachable targetCounts) indexedBranches
       (choices, maybeJumps) =
-        unzip (map (createChoices targetCounts) indexedBranches)
-   in Opt.Case
-        temp
-        root
-        (insertChoices (Map.fromList choices) decider)
-        (Maybe.catMaybes maybeJumps)
+        unzip (map (createChoices targetCounts) reachableBranches)
+      finalDecider = insertChoices (Map.fromList choices) decider
+      jumpTable = Maybe.catMaybes maybeJumps
+   in validateCaseConsistency finalDecider jumpTable
+        (Opt.Case temp root finalDecider jumpTable)
+
+-- | A branch is reachable when the decision tree references its target.
+isReachable :: Map.Map Int Int -> (Int, a) -> Bool
+isReachable targetCounts (target, _) =
+  Map.member target targetCounts
 
 indexify :: Int -> (a, b) -> ((a, Int), (Int, b))
 indexify index (pattern, branch) =
@@ -72,7 +82,10 @@ treeToDecider tree =
 
 splitEdges :: [(a, b)] -> ([(a, b)], b)
 splitEdges [] = InternalError.report "Optimize.Case.splitEdges" "Empty edges list" "Cannot split an empty edge list into init and last."
-splitEdges xs = (Prelude.init xs, snd (Prelude.last xs))
+splitEdges [x] = ([], snd x)
+splitEdges (x : xs) =
+  let (rest, final) = splitEdges xs
+   in (x : rest, final)
 
 toChain :: DT.Path -> DT.Test -> DT.DecisionTree -> DT.DecisionTree -> Opt.Decider Int
 toChain path test successTree failureTree =
@@ -139,3 +152,30 @@ insertChoices choiceDict decider =
           Opt.Chain testChain (go success) (go failure)
         Opt.FanOut path tests fallback ->
           Opt.FanOut path (map (second go) tests) (go fallback)
+
+-- VALIDATION
+
+-- | Verify that every 'Jump' index in the decider has a corresponding
+-- entry in the jump table. Reports an internal error on mismatch to
+-- catch regressions early rather than producing invalid JavaScript.
+validateCaseConsistency :: Opt.Decider Opt.Choice -> [(Int, Opt.Expr)] -> a -> a
+validateCaseConsistency decider jumpTable result =
+  let jumpIndices = collectJumpIndices decider
+      tableIndices = Set.fromList (map fst jumpTable)
+      missing = Set.difference jumpIndices tableIndices
+   in if Set.null missing
+        then result
+        else InternalError.report
+          "Optimize.Case.validateCaseConsistency"
+          ("Jump indices " <> Text.pack (show (Set.toList missing)) <> " have no table entry")
+          "Every Jump in the decision tree must have a corresponding expression in the jump table."
+
+-- | Collect all Jump indices from a decision tree.
+collectJumpIndices :: Opt.Decider Opt.Choice -> Set.Set Int
+collectJumpIndices = \case
+  Opt.Leaf (Opt.Jump idx) -> Set.singleton idx
+  Opt.Leaf (Opt.Inline _) -> Set.empty
+  Opt.Chain _ success failure ->
+    Set.union (collectJumpIndices success) (collectJumpIndices failure)
+  Opt.FanOut _ tests fallback ->
+    Set.unions (collectJumpIndices fallback : map (collectJumpIndices . snd) tests)

@@ -38,6 +38,7 @@ module FFI.TypeParser
 where
 
 import qualified Data.Char as Char
+import qualified Data.Set as Set
 import qualified Data.Text as Text
 import Data.Text (Text)
 import FFI.Types (FFIType (..))
@@ -248,11 +249,29 @@ parseParenOrTuple tokens =
           _ -> Nothing
 
 -- | Parse record type: @{ name : Type, age : Int }@
+--
+-- Rejects records with duplicate field names by returning 'Nothing'.
 parseRecordType :: [Token] -> Maybe FFIType
-parseRecordType tokens =
+parseRecordType tokens = do
   let inner = takeWhile (/= TCloseBrace) tokens
       fieldGroups = splitAtTopLevelCommas inner
-   in FFIRecord <$> traverseMaybe parseRecordField fieldGroups
+  fields <- traverseMaybe parseRecordField fieldGroups
+  if hasDuplicateFields fields then Nothing else Just (FFIRecord fields)
+
+-- | Check for duplicate field names in a record.
+hasDuplicateFields :: [(Text, a)] -> Bool
+hasDuplicateFields fields =
+  let names = map fst fields
+   in length names /= length (nubOrd names)
+
+-- | Remove duplicate elements preserving order (O(n log n)).
+nubOrd :: (Ord a) => [a] -> [a]
+nubOrd = go Set.empty
+  where
+    go _ [] = []
+    go seen (x : xs)
+      | Set.member x seen = go seen xs
+      | otherwise = x : go (Set.insert x seen) xs
 
 -- | Parse a single record field: @name : Type@
 parseRecordField :: [Token] -> Maybe (Text, FFIType)

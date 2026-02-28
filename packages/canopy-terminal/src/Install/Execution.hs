@@ -195,6 +195,7 @@ performInstallation ctx scope = do
     Left exit -> rollbackInstallation root oldOutline (Exit.InstallBadDetails exit)
     Right () -> do
       generateLockFileFromOutline root newOutline
+      verifyLockFileHashes root
       confirmInstallation
 
 -- | Rollback installation changes after failure.
@@ -227,6 +228,33 @@ cancelInstallation :: IO (Either Exit.Install ())
 cancelInstallation = do
   Display.reportCancellation
   return (Right ())
+
+-- | Verify package hashes against the lock file after generation.
+--
+-- Reads the newly-generated lock file and verifies each cached
+-- package's config file hash matches. Prints warnings for any
+-- mismatches (potential tampering or corruption).
+--
+-- @since 0.19.2
+verifyLockFileHashes :: FilePath -> IO ()
+verifyLockFileHashes root = do
+  maybeLf <- LockFile.readLockFile root
+  case maybeLf of
+    Nothing -> pure ()
+    Just lf -> do
+      result <- LockFile.verifyPackageHashes lf
+      case result of
+        LockFile.AllVerified -> pure ()
+        LockFile.NotCached _ -> pure ()
+        LockFile.HashMismatch mismatches -> do
+          Print.printErrLn [c|{yellow|WARNING:} Package hash verification found mismatches:|]
+          mapM_ reportMismatch mismatches
+
+-- | Report a single hash mismatch.
+reportMismatch :: (Pkg.Name, a, b) -> IO ()
+reportMismatch (pkg, _, _) = do
+  let name = Pkg.toChars pkg
+  Print.printErrLn [c|  {red|MISMATCH:} #{name} — cached config differs from lock file|]
 
 -- | Generate a lock file from the resolved outline dependencies.
 --

@@ -30,6 +30,7 @@ import qualified Reporting.Error as Error
 -- | Build-level errors.
 data BuildError
   = BuildCannotCompile CompileError
+  | BuildMultipleErrors [CompileError]
   | BuildProjectNotFound FilePath
   | BuildInvalidOutline String
   | BuildDependencyError String
@@ -64,6 +65,8 @@ toString :: BuildError -> String
 toString = \case
   BuildCannotCompile compileErr ->
     "BUILD ERROR: " ++ compileErrorToString compileErr
+  BuildMultipleErrors errs ->
+    unlines (fmap (\e -> "BUILD ERROR: " ++ compileErrorToString e) errs)
   BuildProjectNotFound path ->
     "BUILD ERROR: Project not found at " ++ path
   BuildInvalidOutline msg ->
@@ -105,6 +108,8 @@ toDoc :: BuildError -> Doc.Doc
 toDoc = \case
   BuildCannotCompile compileErr ->
     compileErrorToDoc compileErr
+  BuildMultipleErrors errs ->
+    Doc.vcat (fmap compileErrorToDoc errs)
   BuildProjectNotFound path ->
     structuredError "PROJECT NOT FOUND"
       (Doc.reflow ("I cannot find a project at: " ++ path))

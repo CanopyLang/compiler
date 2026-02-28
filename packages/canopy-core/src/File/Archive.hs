@@ -168,11 +168,17 @@ extractRelativePath rootDepth entry =
       pathComponents = FP.splitDirectories originalPath
       droppedComponents = List.drop rootDepth pathComponents
       joinedPath = FP.joinPath droppedComponents
-  in if List.null droppedComponents
-     then ""
-     else if List.last originalPath == '/' && not (List.null joinedPath) && List.last joinedPath /= '/'
+   in if List.null droppedComponents
+        then ""
+        else if endsWithSlash originalPath && not (List.null joinedPath) && not (endsWithSlash joinedPath)
           then joinedPath ++ "/"
           else joinedPath
+
+-- | Check if a path string ends with a forward slash.
+endsWithSlash :: String -> Bool
+endsWithSlash [] = False
+endsWithSlash [c] = c == '/'
+endsWithSlash (_ : rest) = endsWithSlash rest
 
 -- | Check if a path is allowed for extraction.
 --
@@ -202,7 +208,7 @@ isAllowedPath path =
 -- Determines if the path is a directory by checking for trailing slash,
 -- following ZIP archive conventions.
 isDirectoryPath :: FilePath -> Bool
-isDirectoryPath path = not (List.null path) && List.last path == '/'
+isDirectoryPath = endsWithSlash
 
 -- | Check if a file is critical and needs atomic writes.
 --

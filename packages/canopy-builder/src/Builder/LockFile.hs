@@ -55,6 +55,10 @@ module Builder.LockFile
 
     -- * Generation
     generateLockFile,
+
+    -- * Verification
+    verifyPackageHashes,
+    VerifyResult (..),
   )
 where
 
@@ -63,7 +67,8 @@ import qualified Canopy.Constraint as Constraint
 import qualified Canopy.Outline as Outline
 import qualified Canopy.Package as Pkg
 import qualified Canopy.Version as Version
-import Control.Exception (SomeException, catch)
+import Control.Exception (IOException)
+import qualified Control.Exception as Exception
 import Control.Lens (makeLenses)
 import Data.Aeson ((.=))
 import qualified Data.Aeson as Json
@@ -252,13 +257,15 @@ readPackageDeps pkgDir resolvedDeps = do
   result <- safeReadOutline pkgDir
   pure (extractDepsFromOutline result resolvedDeps)
 
--- | Safely read a package outline, catching all exceptions.
+-- | Safely read a package outline, catching IO exceptions.
+--
+-- Returns a descriptive error on failure instead of a generic message.
 safeReadOutline :: FilePath -> IO (Either String Outline.Outline)
 safeReadOutline pkgDir =
-  (Outline.read pkgDir) `catch` handleException
+  Outline.read pkgDir `Exception.catch` handleIOError
   where
-    handleException :: SomeException -> IO (Either String Outline.Outline)
-    handleException _ = pure (Left "failed to read outline")
+    handleIOError :: IOException -> IO (Either String Outline.Outline)
+    handleIOError err = pure (Left ("failed to read outline: " ++ show err))
 
 -- | Extract resolved dependency versions from a package outline.
 --
@@ -317,3 +324,49 @@ instance Json.FromJSON LockedPackage where
       <$> o Json..: "version"
       <*> o Json..: "hash"
       <*> o Json..: "dependencies"
+
+-- VERIFICATION
+
+-- | Result of verifying package hashes against the lock file.
+data VerifyResult
+  = AllVerified
+    -- ^ All cached packages match their lock file hashes
+  | HashMismatch ![(Pkg.Name, Text.Text, Text.Text)]
+    -- ^ Packages with mismatched hashes: (name, expected, actual)
+  | NotCached ![Pkg.Name]
+    -- ^ Packages not yet cached (hash is @sha256:not-cached@)
+  deriving (Show)
+
+-- | Verify that all cached packages match their lock file hashes.
+--
+-- For each package in the lock file, computes the current SHA-256
+-- hash of its config file and compares against the stored hash.
+-- Packages with @sha256:not-cached@ are reported as not yet cached.
+-- Packages with mismatched hashes indicate potential tampering or
+-- corruption.
+--
+-- @since 0.19.2
+verifyPackageHashes :: LockFile -> IO VerifyResult
+verifyPackageHashes lf = do
+  cacheDir <- getPackageCacheDir
+  results <- traverse (verifyOne cacheDir) (Map.toList (_lockPackages lf))
+  let mismatches = [r | Left r <- results]
+      uncached = [n | Right n <- results]
+  pure (classifyResults mismatches uncached)
+
+-- | Verify a single package's hash.
+verifyOne :: FilePath -> (Pkg.Name, LockedPackage) -> IO (Either (Pkg.Name, Text.Text, Text.Text) Pkg.Name)
+verifyOne cacheDir (pkg, lp)
+  | _lpHash lp == "sha256:not-cached" = pure (Right pkg)
+  | otherwise = do
+      let pkgDir = packageCachePath cacheDir pkg (_lpVersion lp)
+      actualHash <- hashPackageConfig pkgDir
+      pure (if actualHash == _lpHash lp
+        then Right pkg
+        else Left (pkg, _lpHash lp, actualHash))
+
+-- | Classify verification results.
+classifyResults :: [(Pkg.Name, Text.Text, Text.Text)] -> [Pkg.Name] -> VerifyResult
+classifyResults [] [] = AllVerified
+classifyResults mismatches@(_ : _) _ = HashMismatch mismatches
+classifyResults [] uncached = NotCached uncached

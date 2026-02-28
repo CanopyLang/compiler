@@ -47,6 +47,7 @@ import qualified Canopy.Package as Pkg
 import qualified Control.Concurrent as Concurrent
 import qualified Control.Concurrent.Chan as Chan
 import Control.Concurrent.Chan (Chan)
+import Control.Exception (IOException)
 import qualified Control.Exception as Exception
 import qualified Data.IORef as IORef
 import Data.IORef (IORef)
@@ -187,10 +188,10 @@ handleTask workerId engine progressRef compileFn task resultChan = do
   result <- Exception.try (compileFn engine task)
 
   case result of
-    Left (err :: Exception.SomeException) -> do
+    Left (err :: Exception.IOException) -> do
       Log.logEvent (WorkerFailed workerId (Text.pack (show err)))
       updateProgress progressRef False
-      Chan.writeChan resultChan (TaskFailure (OtherError ("Exception: " ++ show err)))
+      Chan.writeChan resultChan (TaskFailure (OtherError ("IO exception: " ++ show err)))
     Right (Left queryErr) -> do
       Log.logEvent (WorkerFailed workerId (Text.pack (show queryErr)))
       updateProgress progressRef False

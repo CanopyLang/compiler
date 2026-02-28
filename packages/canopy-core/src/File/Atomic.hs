@@ -60,7 +60,7 @@ module File.Atomic
   , checksumFile
   ) where
 
-import Control.Exception (IOException, SomeException)
+import Control.Exception (IOException)
 import qualified Control.Exception as Exception
 import qualified Control.Monad as Monad
 import Data.Binary (Binary)
@@ -250,11 +250,11 @@ withTempFile targetPath action = do
 --
 -- @since 0.19.1
 cleanupTempFile :: FilePath -> IO ()
-cleanupTempFile tempPath = do
-  Exception.handle ignoreErrors $ Dir.removeFile tempPath
+cleanupTempFile tempPath =
+  Exception.handle handleIOError (Dir.removeFile tempPath)
   where
-    ignoreErrors :: SomeException -> IO ()
-    ignoreErrors _ = pure ()
+    handleIOError :: IOException -> IO ()
+    handleIOError _ = pure ()
 
 -- | Atomically rename a file using OS-level atomic operations.
 --

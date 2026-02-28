@@ -703,8 +703,12 @@ reportExternalError err = do
   Print.println [c|Run {green|canopy setup} to install core packages.|]
   pure (ExitFailure 1)
 
--- | Handle unexpected exceptions during browser test setup.
-handleBrowserError :: Exception.SomeException -> IO ExitCode
+-- | Handle IO exceptions during browser test setup.
+--
+-- Catches 'IOException' from process spawning, file operations, and
+-- network access during playwright setup. Displays the error and
+-- returns a non-zero exit code.
+handleBrowserError :: Exception.IOException -> IO ExitCode
 handleBrowserError err = do
   let errStr = show err
   Print.printErrLn [c|{red|Browser test setup failed:} #{errStr}|]

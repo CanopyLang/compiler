@@ -44,7 +44,8 @@ import qualified Canopy.Package as Pkg
 import qualified Data.Binary as Binary
 import qualified Data.ByteString.Lazy as LBS
 import qualified Data.Text as Text
-import Control.Exception (SomeException, try)
+import Control.Exception (IOException)
+import qualified Control.Exception as Exception
 import Data.Word (Word16)
 import Control.Monad (filterM)
 import qualified Control.Concurrent.Async as Async
@@ -364,7 +365,8 @@ compileModulesInOrder pkg projectType root initialInterfaces moduleInfo = do
       results <- Async.mapConcurrently (compileOneModule queryEngine cacheRef hitRef missRef ifaces statuses modImportMap) modules
       let (errors, successes) = partitionEithers results
       case errors of
-        (err : _) -> return (Left err)
+        [err] -> return (Left err)
+        (_ : _) -> return (Left (Exit.BuildMultipleErrors (concatMap extractCompileErrors errors)))
         [] -> do
           let compiled = map fst successes
               newIfaces = Map.fromList [pair | (_, pair) <- successes]
@@ -425,6 +427,15 @@ compileModulesInOrder pkg projectType root initialInterfaces moduleInfo = do
       where
         left a (l, r) = (a : l, r)
         right b (l, r) = (l, b : r)
+
+-- | Extract compile errors from a build error.
+--
+-- For single errors, wraps in a list. For multiple errors,
+-- returns all contained compile errors.
+extractCompileErrors :: Exit.BuildError -> [Exit.CompileError]
+extractCompileErrors (Exit.BuildCannotCompile err) = [err]
+extractCompileErrors (Exit.BuildMultipleErrors errs) = errs
+extractCompileErrors _ = []
 
 -- Helper: Convert QueryError to CompileError with proper categorization.
 --
@@ -525,7 +536,7 @@ loadCachedArtifact root modName = do
   if not exists
     then return Nothing
     else do
-      result <- try (decodeCachedModule artifactFile)
+      result <- Exception.try (decodeCachedModule artifactFile)
       handleDecodeResult modName result
 
 -- | Decode a cached module from a binary file.
@@ -557,7 +568,7 @@ decodeLegacyBytes bytes =
 -- | Handle the result of attempting to decode a cached module.
 handleDecodeResult ::
   ModuleName.Raw ->
-  Either SomeException (Interface.Interface, Opt.LocalGraph, Map.Map String JS.FFIInfo) ->
+  Either IOException (Interface.Interface, Opt.LocalGraph, Map.Map String JS.FFIInfo) ->
   IO (Maybe ModuleResult)
 handleDecodeResult modName result =
   case result of

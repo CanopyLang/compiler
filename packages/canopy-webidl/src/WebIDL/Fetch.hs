@@ -49,7 +49,8 @@ module WebIDL.Fetch
   , downloadWebSysSpecs
   ) where
 
-import Control.Exception (try, SomeException)
+import Control.Exception (IOException)
+import qualified Control.Exception as Exception
 import Control.Monad (forM, when)
 import Data.ByteString (ByteString)
 import Data.Foldable (forM_)
@@ -221,12 +222,12 @@ fetchFromSource source name = do
         })
 
 
--- | Perform HTTP GET
+-- | Perform HTTP GET, catching IO exceptions from network operations.
 httpGet :: SpecUrl -> IO (Either FetchError Text)
 httpGet url = do
-  result <- try (httpGetInternal url)
+  result <- Exception.try (httpGetInternal url)
   case result of
-    Left (ex :: SomeException) ->
+    Left (ex :: IOException) ->
       pure (Left (NetworkError (Text.pack (show ex))))
     Right (status, body) ->
       if status == 200

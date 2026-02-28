@@ -41,7 +41,7 @@ import qualified Network.HTTP.Client as Client
 import qualified Network.HTTP.Client.MultipartFormData as Multi
 import Network.HTTP.Types.Header (Header, hAcceptEncoding, hUserAgent)
 import Network.HTTP.Types.Method (methodPost)
-import Http.Error (Error, handleHttpException, handleSomeException)
+import Http.Error (Error, handleHttpException, handleIOException)
 
 -- | Create a TLS-aware user-agent header value.
 --
@@ -67,7 +67,7 @@ addUploadDefaultHeaders headers =
 -- @since 0.19.1
 uploadWithHeaders :: Manager -> String -> [Multi.Part] -> [Header] -> IO (Either Error ())
 uploadWithHeaders manager url parts headers =
-  Exception.handle (handleSomeException url id) . Exception.handle (handleHttpException url id) $ do
+  Exception.handle (handleIOException url id) . Exception.handle (handleHttpException url id) $ do
     Log.logEvent (PackageOperation "upload" (Text.pack url))
     req0 <- parseUrlThrow url
     req1 <-
