@@ -54,7 +54,29 @@ data LogConfig = LogConfig
   }
   deriving (Show, Eq)
 
--- | Cached configuration. Initialized once from environment on first access.
+-- | Cached logging configuration, initialized once from environment variables.
+--
+-- __SAFETY__: This use of 'unsafePerformIO' is safe because:
+--
+--   1. __Single initialization__: The @NOINLINE@ pragma prevents GHC from
+--      inlining or duplicating this CAF. The 'IORef' is allocated exactly
+--      once, populated from environment variables at first access.
+--   2. __Thread safety__: Reads use 'IORef.readIORef' (atomic on GHC).
+--      The only mutation site is 'enableVerbose', which uses
+--      'IORef.writeIORef' -- safe because 'LogConfig' is a small immutable
+--      value and GHC guarantees pointer-width atomic writes.
+--   3. __Idempotent initialization__: Re-reading the same environment
+--      variables would yield the same 'LogConfig', so duplicating the
+--      initialization (which @NOINLINE@ prevents) would be harmless.
+--
+-- __Alternatives rejected__:
+--
+--   * @ReaderT LogConfig IO@ would require threading the config through
+--     every compiler function that might log, adding parameter noise to
+--     hundreds of call sites.
+--   * Passing 'LogConfig' explicitly is rejected for the same reason.
+--
+-- @since 0.19.1
 {-# NOINLINE configRef #-}
 configRef :: IORef LogConfig
 configRef = unsafePerformIO (parseConfig >>= IORef.newIORef)

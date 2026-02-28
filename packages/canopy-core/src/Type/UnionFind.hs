@@ -59,6 +59,28 @@ pointId :: Point a -> Int
 pointId (Pt pid _) = pid
 
 -- | Global counter for assigning unique point IDs.
+--
+-- __SAFETY__: This use of 'unsafePerformIO' is safe because:
+--
+--   1. __Single initialization__: The @NOINLINE@ pragma prevents GHC from
+--      inlining or duplicating this CAF. The counter starts at 0 and
+--      only increases.
+--   2. __Thread safety__: All increments use 'atomicModifyIORef'' (see
+--      'fresh'), which is safe under concurrent access.
+--   3. __No observable side effects__: The counter produces unique IDs
+--      for type variables in the union-find. The exact ID values do not
+--      matter for correctness -- only uniqueness within a single type
+--      checking session matters, and that is guaranteed by the atomic
+--      increment.
+--
+-- __Alternatives rejected__:
+--
+--   * Threading a counter via 'StateT' would require changing the
+--     signature of 'fresh' and every function that transitively calls
+--     it throughout the type checker, which is essentially the entire
+--     constraint solver.
+--
+-- @since 0.19.2
 {-# NOINLINE nextPointId #-}
 nextPointId :: IORef Int
 nextPointId = unsafePerformIO (newIORef 0)

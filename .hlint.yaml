@@ -137,3 +137,15 @@
 
 # Ignore camelCase violations in existing APIs to avoid breaking changes
 - ignore: { name: Use camelCase, within: [Reporting.Exit] }
+
+# Flag new unsafePerformIO usage. All existing uses are audited and documented
+# (see Plan 38). New uses require an explicit safety review before merging.
+- functions:
+    - { name: System.IO.Unsafe.unsafePerformIO, within: [], message: "unsafePerformIO requires a safety review. See Plan 38 and CLAUDE.md." }
+- ignore:
+    name: "Avoid restricted function"
+    within:
+      - Logging.Logger
+      - Logging.Config
+      - Query.Simple
+      - Type.UnionFind

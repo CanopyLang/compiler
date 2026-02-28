@@ -32,12 +32,30 @@ import qualified Reporting.Error.Syntax as Syntax
 import qualified Reporting.Render.Code as Code
 import System.IO.Unsafe (unsafePerformIO)
 
--- | Global parse cache (module-level IORef for sharing across queries).
+-- | Global parse cache shared across query executions.
 --
--- This is safe because:
--- 1. Parse cache is append-only (never invalidated)
--- 2. Concurrent access is thread-safe with IORef
--- 3. Improves performance by caching across query executions
+-- __SAFETY__: This use of 'unsafePerformIO' is safe because:
+--
+--   1. __Single initialization__: The @NOINLINE@ pragma prevents GHC from
+--      inlining or duplicating this CAF. The 'IORef' is created exactly
+--      once, starting with an empty cache.
+--   2. __Thread safety__: Reads use 'readIORef' and writes use 'writeIORef'.
+--      In the current single-threaded query executor, there is no concurrent
+--      access. If the executor becomes multi-threaded, these must be upgraded
+--      to 'atomicModifyIORef'' to avoid lost updates.
+--   3. __Append-only semantics__: The cache grows monotonically -- entries
+--      are added but never removed or overwritten. Even if a race condition
+--      caused a stale read, the worst outcome is a redundant re-parse, not
+--      incorrect behavior.
+--
+-- __Alternatives rejected__:
+--
+--   * Threading the cache via 'StateT' would require changing the
+--     'executeQuery' signature and all call sites.
+--   * An 'MVar' would add unnecessary contention for the current
+--     single-threaded use case.
+--
+-- @since 0.19.1
 {-# NOINLINE globalParseCache #-}
 globalParseCache :: IORef Parse.Cache.ParseCache
 globalParseCache = unsafePerformIO (newIORef Parse.Cache.emptyCache)

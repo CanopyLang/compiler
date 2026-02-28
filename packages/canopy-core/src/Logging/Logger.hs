@@ -42,9 +42,25 @@ import qualified System.IO as IO
 
 -- | Cached sink built from the configuration at startup.
 --
--- This 'IORef' is initialized once via 'unsafePerformIO'. The sink
--- encapsulates all output logic so 'logEvent' only needs to check
--- the config guard and call the sink.
+-- __SAFETY__: This use of 'unsafePerformIO' is safe because:
+--
+--   1. __Single initialization__: The @NOINLINE@ pragma prevents GHC from
+--      inlining or duplicating this CAF, so the 'IORef' is created exactly
+--      once per program execution.
+--   2. __Thread safety__: The 'IORef' is read via 'IORef.readIORef' which is
+--      atomic on GHC. The sink value is set once at initialization and never
+--      mutated afterward (effectively immutable after construction).
+--   3. __No observable side effects__: The initialization reads environment
+--      config and opens file handles. These are idempotent -- re-executing
+--      them would produce the same result.
+--
+-- __Alternatives rejected__:
+--
+--   * @ReaderT Sink IO@ would require threading the sink through every
+--     function in the compiler, adding noise to hundreds of signatures.
+--   * @implicit parameters@ are fragile and not widely used in the ecosystem.
+--
+-- @since 0.19.1
 {-# NOINLINE sinkRef #-}
 sinkRef :: IORef Sink.Sink
 sinkRef = unsafePerformIO (buildSink >>= IORef.newIORef)
