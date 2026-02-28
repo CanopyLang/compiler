@@ -343,6 +343,7 @@ compilePackageFromSource _flags author packageName versionStr pkgDir = do
     Right outline ->
       case outline of
         Outline.App _ -> pure (Left "Expected package outline, found application outline")
+        Outline.Workspace _ -> pure (Left "Expected package outline, found workspace outline")
         Outline.Pkg pkgOutline ->
           case exposedToNonEmpty (Outline._pkgExposed pkgOutline) of
             Nothing -> pure (Left "No exposed modules found in canopy.json")

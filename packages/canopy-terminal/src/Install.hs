@@ -170,6 +170,7 @@ planAndExecuteInstall context pkg outline =
   case outline of
     Outline.App appOutline -> installInApplication context pkg appOutline
     Outline.Pkg pkgOutline -> installInPackage context pkg pkgOutline
+    Outline.Workspace _ -> Task.throw (Exit.InstallBadOutline "Cannot install packages directly in a workspace root. Run install from a member package.")
 
 -- | Install a package in an application project.
 --

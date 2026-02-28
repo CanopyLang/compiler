@@ -148,4 +148,5 @@ validatePackageOutline ::
 validatePackageOutline (root, cache, manager, registry, outline) =
   case outline of
     Outline.App _ -> Task.throw Exit.BumpApplication
+    Outline.Workspace _ -> Task.throw Exit.BumpApplication
     Outline.Pkg pkgOutline -> pure (Env root cache manager registry pkgOutline)

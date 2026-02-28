@@ -336,6 +336,7 @@ extractTestDeps :: Outline.Outline -> [(Pkg.Name, Version.Version)]
 extractTestDeps (Outline.App o) = Map.toList (Outline._appTestDepsDirect o)
 extractTestDeps (Outline.Pkg o) =
   Map.toList (Map.map Constraint.lowerBound (Outline._pkgTestDeps o))
+extractTestDeps (Outline.Workspace _) = []
 
 -- | Compile a single test-dependency package if it lacks artifacts.
 --
@@ -374,6 +375,7 @@ compileTestDepFromSource pkgName version pkgDir = do
 -- @since 0.19.1
 compileTestDepOutline :: Pkg.Name -> Version.Version -> FilePath -> FilePath -> Outline.Outline -> IO ()
 compileTestDepOutline _ _ _ _ (Outline.App _) = pure ()
+compileTestDepOutline _ _ _ _ (Outline.Workspace _) = pure ()
 compileTestDepOutline pkgName version pkgDir srcPath (Outline.Pkg pkgOutline) =
   case flattenExposedToNonEmpty (Outline._pkgExposed pkgOutline) of
     Nothing -> pure ()

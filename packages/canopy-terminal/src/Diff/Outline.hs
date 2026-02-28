@@ -57,6 +57,7 @@ validateOutlineType :: Outline.Outline -> Task Outline.Outline
 validateOutlineType outline =
   case outline of
     Outline.App _ -> Task.throw Exit.DiffApplication
+    Outline.Workspace _ -> Task.throw Exit.DiffApplication
     Outline.Pkg _ -> pure outline
 
 -- | Extract package name from validated outline.
@@ -69,6 +70,7 @@ extractPackageName :: Outline.Outline -> Task Name
 extractPackageName outline =
   case outline of
     Outline.App _ -> Task.throw Exit.DiffApplication
+    Outline.Workspace _ -> Task.throw Exit.DiffApplication
     Outline.Pkg (Outline.PkgOutline pkg _ _ _ _ _ _ _) -> pure pkg
 
 -- | Extract package version from validated outline.
@@ -81,4 +83,5 @@ extractPackageVersion :: Outline.Outline -> Task Version
 extractPackageVersion outline =
   case outline of
     Outline.App _ -> Task.throw Exit.DiffApplication
+    Outline.Workspace _ -> Task.throw Exit.DiffApplication
     Outline.Pkg (Outline.PkgOutline _ _ _ ver _ _ _ _) -> pure ver

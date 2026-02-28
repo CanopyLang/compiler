@@ -200,6 +200,7 @@ advisoryFindings advisories outline lockDeps =
 outlineVersions :: Outline.Outline -> Map Pkg.Name Version.Version
 outlineVersions (Outline.App appOutline) = Outline._appDepsDirect appOutline
 outlineVersions (Outline.Pkg _) = Map.empty
+outlineVersions (Outline.Workspace wsOutline) = Outline._wsSharedDeps wsOutline
 
 -- | Convert an advisory audit result to a Finding.
 --
@@ -227,6 +228,8 @@ analyzeOutline (Outline.App appOutline) =
     ++ checkIndirectDeps (Outline._appDepsIndirect appOutline)
 analyzeOutline (Outline.Pkg pkgOutline) =
   checkConstraintDeps (Outline._pkgDeps pkgOutline)
+analyzeOutline (Outline.Workspace wsOutline) =
+  checkDirectDeps (Outline._wsSharedDeps wsOutline)
 
 -- | Check direct dependencies for version issues.
 --

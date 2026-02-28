@@ -105,6 +105,25 @@ validateOutline outline =
     Outline.App appOutline -> ValidApp appOutline
     Outline.Pkg (Outline.PkgOutline pkg _ _ _ exposed _ _ _) ->
       ValidPkg pkg (getExposedList exposed) []
+    Outline.Workspace _ -> ValidApp defaultWorkspaceApp
+
+-- | A placeholder 'AppOutline' used when a workspace is loaded directly.
+--
+-- Workspaces delegate compilation to their member packages; the
+-- workspace root itself has no source directories or dependencies.
+--
+-- @since 0.19.2
+defaultWorkspaceApp :: Outline.AppOutline
+defaultWorkspaceApp =
+  Outline.AppOutline
+    { Outline._appCanopy = Version.compiler,
+      Outline._appSrcDirs = [],
+      Outline._appDeps = Map.empty,
+      Outline._appTestDeps = Map.empty,
+      Outline._appDepsDirect = Map.empty,
+      Outline._appDepsIndirect = Map.empty,
+      Outline._appTestDepsDirect = Map.empty
+    }
 
 -- | Get exposed modules list from either list or dict format.
 getExposedList :: Outline.Exposed -> [ModuleName.Raw]
@@ -117,6 +136,7 @@ getSrcDirs outline =
     Outline.App (Outline.AppOutline _ srcDirs _ _ _ _ _) ->
       map toAbsPath srcDirs
     Outline.Pkg _ -> ["src"]
+    Outline.Workspace _ -> []
   where
     toAbsPath (Outline.AbsoluteSrcDir dir) = dir
     toAbsPath (Outline.RelativeSrcDir dir) = dir
@@ -130,6 +150,8 @@ extractDeps outline =
         `Map.union` Map.map (const ()) (Outline._appDepsIndirect appOutline)
     Outline.Pkg pkgOutline ->
       Map.map (const ()) (Outline._pkgDeps pkgOutline)
+    Outline.Workspace wsOutline ->
+      Map.map (const ()) (Outline._wsSharedDeps wsOutline)
 
 -- | Load details for Reactor (development server).
 --
@@ -200,6 +222,8 @@ checkCompilerVersion (Outline.App appOutline) =
   checkAppVersion (Outline._appCanopy appOutline)
 checkCompilerVersion (Outline.Pkg pkgOutline) =
   checkPkgVersion (Outline._pkgCanopy pkgOutline)
+checkCompilerVersion (Outline.Workspace wsOutline) =
+  checkAppVersion (Outline._wsCanopy wsOutline)
 
 -- | Check an app's required version against the compiler.
 --

@@ -131,6 +131,8 @@ extractFromOutline (Outline.App appOutline) =
   pure (Outline._appDepsDirect appOutline)
 extractFromOutline (Outline.Pkg _) =
   pure Map.empty
+extractFromOutline (Outline.Workspace wsOutline) =
+  pure (Outline._wsSharedDeps wsOutline)
 
 -- ENCODE
 

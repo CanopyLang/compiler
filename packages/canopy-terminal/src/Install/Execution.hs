@@ -330,6 +330,8 @@ extractResolvedDeps (Outline.App appOutline) =
     (Outline._appDepsIndirect appOutline)
 extractResolvedDeps (Outline.Pkg pkgOutline) =
   Map.map Constraint.lowerBound (Outline._pkgDeps pkgOutline)
+extractResolvedDeps (Outline.Workspace wsOutline) =
+  Outline._wsSharedDeps wsOutline
 
 -- | Report installation status to the user.
 --

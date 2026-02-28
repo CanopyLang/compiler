@@ -12,6 +12,7 @@ module Canopy.Outline
     Outline (..),
     AppOutline (..),
     PkgOutline (..),
+    WorkspaceOutline (..),
     Exposed (..),
     SrcDir (..),
 
@@ -25,6 +26,7 @@ module Canopy.Outline
     -- * Utilities
     flattenExposed,
     allDeps,
+    isWorkspace,
 
     -- * Defaults
     defaultSummary,
@@ -37,7 +39,7 @@ import qualified Canopy.ModuleName as ModuleName
 import qualified Canopy.Package as Pkg
 import qualified Canopy.Version as Version
 import Control.Applicative ((<|>))
-import Data.Aeson ((.=))
+import Data.Aeson ((.!=), (.=), (.:?))
 import Data.Aeson.Types (Parser)
 import qualified Data.Aeson as Json
 import qualified Data.ByteString.Lazy as LBS
@@ -76,10 +78,11 @@ instance Json.FromJSON Licenses.License where
       Right license -> pure license
       Left _ -> fail ("Invalid SPDX license identifier: " ++ Text.unpack txt)
 
--- | Project outline (App or Pkg).
+-- | Project outline (App, Pkg, or Workspace).
 data Outline
   = App AppOutline
   | Pkg PkgOutline
+  | Workspace WorkspaceOutline
   deriving (Show)
 
 -- | Application outline.
@@ -106,6 +109,21 @@ data PkgOutline = PkgOutline
     _pkgCanopy :: !Constraint.Constraint
   }
   deriving (Show)
+
+-- | Workspace outline for monorepo support.
+--
+-- A workspace groups multiple Canopy packages (or applications) under a
+-- single root directory.  The workspace @canopy.json@ lists the relative
+-- paths to member packages and optionally declares shared dependency
+-- constraints that every member inherits.
+--
+-- @since 0.19.2
+data WorkspaceOutline = WorkspaceOutline
+  { _wsPackages :: ![FilePath],
+    _wsSharedDeps :: !(Map Pkg.Name Version.Version),
+    _wsCanopy :: !Version.Version
+  }
+  deriving (Show, Eq)
 
 -- | Exposed modules specification.
 data Exposed
@@ -199,10 +217,12 @@ outlineTooLargeMessage path actual limit =
 instance Json.ToJSON Outline where
   toJSON (App appOutline) = Json.toJSON appOutline
   toJSON (Pkg pkgOutline) = Json.toJSON pkgOutline
+  toJSON (Workspace wsOutline) = Json.toJSON wsOutline
 
 instance Json.FromJSON Outline where
   parseJSON value =
-    (App <$> Json.parseJSON value)
+    (Workspace <$> Json.parseJSON value)
+      <|> (App <$> Json.parseJSON value)
       <|> (Pkg <$> Json.parseJSON value)
 
 instance Json.ToJSON AppOutline where
@@ -261,6 +281,26 @@ instance Json.FromJSON PkgOutline where
       <*> o Json..: "test-dependencies"
       <*> pure canopyVer
 
+instance Json.ToJSON WorkspaceOutline where
+  toJSON (WorkspaceOutline packages sharedDeps canopy) =
+    Json.object
+      [ "type" .= ("workspace" :: Text.Text),
+        "packages" .= packages,
+        "shared-dependencies" .= sharedDeps,
+        "canopy-version" .= canopy
+      ]
+
+instance Json.FromJSON WorkspaceOutline where
+  parseJSON = Json.withObject "WorkspaceOutline" $ \o -> do
+    typeField <- o Json..: "type"
+    if (typeField :: Text.Text) /= "workspace"
+      then fail "Not a workspace outline"
+      else do
+        canopyVer <- (o Json..: "canopy-version") <|> (o Json..: "elm-version")
+        packages <- o Json..: "packages"
+        sharedDeps <- o .:? "shared-dependencies" .!= Map.empty
+        pure (WorkspaceOutline packages sharedDeps canopyVer)
+
 instance Json.ToJSON Exposed where
   toJSON (ExposedList mods) = Json.toJSON mods
   toJSON (ExposedDict dict) = Json.toJSON (Map.fromList dict)
@@ -286,6 +326,7 @@ instance Json.FromJSON SrcDir where
 encode :: Outline -> Encode.Value
 encode (App appOutline) = encodeAppOutline appOutline
 encode (Pkg pkgOutline) = encodePkgOutline pkgOutline
+encode (Workspace wsOutline) = encodeWorkspaceOutline wsOutline
 
 -- | Encode application outline.
 encodeAppOutline :: AppOutline -> Encode.Value
@@ -314,6 +355,16 @@ encodePkgOutline (PkgOutline name summary license version exposed deps testDeps 
       "dependencies" ==> Encode.dict Pkg.toJsonString Constraint.encode deps,
       "test-dependencies" ==> Encode.dict Pkg.toJsonString Constraint.encode testDeps,
       "canopy-version" ==> Constraint.encode canopy
+    ]
+
+-- | Encode workspace outline.
+encodeWorkspaceOutline :: WorkspaceOutline -> Encode.Value
+encodeWorkspaceOutline (WorkspaceOutline packages sharedDeps canopy) =
+  Encode.object
+    [ "type" ==> Encode.chars "workspace",
+      "packages" ==> Encode.list Encode.chars packages,
+      "shared-dependencies" ==> Encode.dict Pkg.toJsonString Version.encode sharedDeps,
+      "canopy-version" ==> Version.encode canopy
     ]
 
 -- | Encode exposed modules.
@@ -350,3 +401,12 @@ allDeps (App o) =
     ++ Map.toList (_appTestDepsDirect o)
 allDeps (Pkg o) =
   Map.toList (Map.map Constraint.lowerBound (Map.union (_pkgDeps o) (_pkgTestDeps o)))
+allDeps (Workspace o) =
+  Map.toList (_wsSharedDeps o)
+
+-- | Check whether an outline represents a workspace.
+--
+-- @since 0.19.2
+isWorkspace :: Outline -> Bool
+isWorkspace (Workspace _) = True
+isWorkspace _ = False

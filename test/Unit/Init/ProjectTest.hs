@@ -100,7 +100,7 @@ outlineConfigTests =
 
             -- Test dependencies should be empty by default
             Map.null testDeps @?= True
-          Outline.Pkg _ -> fail "Expected App outline, got Pkg",
+          _ -> fail "Expected App outline, got non-App",
       Test.testCase "createOutlineConfig handles custom source directories" $ do
         let context = defaultContext & contextSourceDirs Lens..~ ["src", "lib"]
             solverDetails = Map.fromList [(Pkg.core, Solver.Details Version.one Map.empty)]

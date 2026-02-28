@@ -39,6 +39,7 @@ library
       Builder.Paths
       Builder.Solver
       Builder.State
+      Builder.Workspace
       Compiler
       Crypto.ConstantTime
       Crypto.Signature

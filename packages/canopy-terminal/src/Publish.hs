@@ -163,6 +163,7 @@ publish :: Env -> RepositoryLocalName -> Task Publish ()
 publish env repositoryLocalName =
   case env ^. envOutline of
     Outline.App _ -> Task.throw Exit.PublishApplication
+    Outline.Workspace _ -> Task.throw Exit.PublishApplication
     Outline.Pkg pkgOutline -> publishPackage env repositoryLocalName pkgOutline
 
 -- | Publish a package to the specified repository.

@@ -366,6 +366,7 @@ extractDepsFromOutline (Right outline) resolvedDeps =
 outlineDeps :: Outline.Outline -> Map Pkg.Name Constraint.Constraint
 outlineDeps (Outline.App appOutline) = Outline._appDeps appOutline
 outlineDeps (Outline.Pkg pkgOutline) = Outline._pkgDeps pkgOutline
+outlineDeps (Outline.Workspace _) = Map.empty
 
 -- JSON serialization
 
