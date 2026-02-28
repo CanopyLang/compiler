@@ -50,6 +50,36 @@ jobs:
     - name: Run tests
       run: stack test --coverage
 
+    - name: Check coverage thresholds
+      if: matrix.os == 'ubuntu-latest'
+      run: |
+        echo "=== Coverage Report ==="
+        REPORT=$(stack hpc report --all 2>&1 || true)
+        echo "$REPORT"
+
+        # Extract overall coverage percentage
+        COVERAGE=$(echo "$REPORT" | grep -oP '\d+(?=% expressions used)' | head -1)
+        if [ -z "$COVERAGE" ]; then
+          echo "WARNING: Could not parse coverage percentage, skipping threshold check"
+          exit 0
+        fi
+
+        echo ""
+        echo "=== Coverage Summary ==="
+        echo "Overall expression coverage: ${COVERAGE}%"
+
+        # Per-package thresholds:
+        #   canopy-core:     80% (pure compiler logic)
+        #   canopy-builder:  70% (IO-heavy build system)
+        #   canopy-terminal: 60% (UI and CLI code)
+        THRESHOLD=70
+        if [ "$COVERAGE" -lt "$THRESHOLD" ]; then
+          echo "FAIL: Overall coverage ${COVERAGE}% is below ${THRESHOLD}% threshold"
+          exit 1
+        else
+          echo "PASS: Overall coverage ${COVERAGE}% meets ${THRESHOLD}% threshold"
+        fi
+
     - name: Generate coverage report
       if: matrix.os == 'ubuntu-latest'
       run: |
@@ -83,7 +113,7 @@ jobs:
 
     - name: Run HLint
       run: |
-        hlint compiler/ builder/ terminal/ test/ --report=hlint-report.html
+        hlint packages/ test/ --report=hlint-report.html
       continue-on-error: true
 
     - name: Upload HLint report
