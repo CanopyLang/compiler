@@ -134,18 +134,11 @@ commaSep _conjunction addStyle [name] =
 commaSep conjunction addStyle [name1, name2] =
   [addStyle name1, conjunction, addStyle name2]
 commaSep conjunction addStyle names =
-  fmap (\name -> addStyle name <> ",") leading
-    <> [conjunction, addStyle final]
+  maybe [] formatWithCommas (List.unsnoc names)
   where
-    (leading, final) = splitLast names
-
--- | Split a non-empty list into all-but-last and last elements.
-splitLast :: [a] -> ([a], a)
-splitLast [x] = ([], x)
-splitLast (x : xs) =
-  let (rest, final) = splitLast xs
-   in (x : rest, final)
-splitLast [] = error "Reporting.Doc.splitLast: unreachable — guarded by commaSep"
+    formatWithCommas (leading, final) =
+      fmap (\name -> addStyle name <> ",") leading
+        <> [conjunction, addStyle final]
 
 -- NOTES
 

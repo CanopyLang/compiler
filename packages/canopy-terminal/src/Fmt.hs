@@ -40,6 +40,7 @@ where
 import qualified Data.ByteString as BS
 import qualified Data.List as List
 import qualified Data.Maybe as Maybe
+import qualified Data.Set as Set
 import qualified Data.Text as Text
 import qualified Data.Text.Encoding as Text
 import Format (FormatConfig (..))
@@ -207,7 +208,7 @@ resolveTargets :: [FilePath] -> IO [FilePath]
 resolveTargets [] = discoverCanopyFiles "src"
 resolveTargets paths = do
   expanded <- mapM expandPath paths
-  pure (List.nub (concat expanded))
+  pure (ordNub (concat expanded))
 
 -- | Expand a single path to a list of @.can@ files.
 --
@@ -257,3 +258,17 @@ isCanopyFile p = FP.takeExtension p `elem` [".can", ".canopy"]
 -- | Predicate: is the directory not a hidden directory?
 isNotHidden :: FilePath -> Bool
 isNotHidden = not . List.isPrefixOf "." . FP.takeFileName
+
+-- | O(n log n) deduplication for 'Ord' types.
+--
+-- Unlike 'Data.List.nub' which is O(n^2), this uses a 'Set' to track
+-- seen elements. Preserves the original list order.
+--
+-- @since 0.19.2
+ordNub :: (Ord a) => [a] -> [a]
+ordNub = go Set.empty
+  where
+    go _ [] = []
+    go seen (x : xs)
+      | Set.member x seen = go seen xs
+      | otherwise = x : go (Set.insert x seen) xs
