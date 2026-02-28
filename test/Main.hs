@@ -142,6 +142,7 @@ import qualified Unit.Plugin.PipelineTest as PluginPipelineTest
 import qualified Unit.Reporting.ErrorHierarchyTest as ErrorHierarchyTest
 import qualified Unit.Editor.IntegrationTest as EditorIntegrationTest
 import qualified Unit.SelfUpdateTest as SelfUpdateTest
+import qualified Unit.Builder.ModuleLoaderTest as ModuleLoaderTest
 import qualified Unit.WebIDL.CommandTest as WebIDLCommandTest
 import qualified Property.ArithmeticLawsTest as ArithmeticLawsTest
 import qualified Property.Type.UnifyProperties as UnifyProperties
@@ -288,7 +289,8 @@ unitTests =
       ErrorHierarchyTest.tests,
       WebIDLCommandTest.tests,
       EditorIntegrationTest.tests,
-      SelfUpdateTest.tests
+      SelfUpdateTest.tests,
+      ModuleLoaderTest.tests
     ]
 
 propertyTests :: TestTree
