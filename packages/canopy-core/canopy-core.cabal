@@ -118,6 +118,7 @@ library
       Generate.JavaScript.SourceMap
       Generate.JavaScript.StringPool
       Generate.Mode
+      Generate.TreeShake
       Json.Decode
       Json.Decode.AST
       Json.Decode.Combinators

@@ -43,6 +43,7 @@ library
       Crypto.ConstantTime
       Crypto.Signature
       Crypto.TrustedKeys
+      Deps.Advisory
       Exit
       Http
       Http.Archive

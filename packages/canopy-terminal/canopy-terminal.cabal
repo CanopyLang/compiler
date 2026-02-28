@@ -69,6 +69,8 @@ library
       Diff.Outline
       Diff.Output
       Diff.Types
+      Docs
+      Docs.Render
       Fmt
       Generate
       Init
@@ -111,6 +113,7 @@ library
       Repl.Commands
       Repl.Eval
       Repl.State
+      Repl.TypeQuery
       Repl.Types
       Reporting
       Reporting.Ask
