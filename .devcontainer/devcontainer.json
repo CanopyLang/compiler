@@ -1,0 +1,25 @@
+{
+  "name": "Canopy Development",
+  "image": "haskell:9.8",
+  "features": {
+    "ghcr.io/devcontainers/features/node:1": {
+      "version": "18"
+    }
+  },
+  "postCreateCommand": "./scripts/setup-dev.sh",
+  "customizations": {
+    "vscode": {
+      "extensions": [
+        "haskell.haskell",
+        "justusadam.language-haskell"
+      ],
+      "settings": {
+        "haskell.formattingProvider": "ormolu",
+        "editor.formatOnSave": true
+      }
+    }
+  },
+  "remoteEnv": {
+    "STACK_ROOT": "/home/vscode/.stack"
+  }
+}
