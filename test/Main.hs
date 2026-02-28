@@ -29,6 +29,7 @@ import qualified Unit.AST.SourceTest as SourceAstTest
 import qualified Unit.AST.Utils.BinopTest as ASTUtilsBinopTest
 import qualified Unit.AST.Utils.ShaderTest as ASTUtilsShaderTest
 import qualified Unit.AST.Utils.TypeTest as ASTUtilsTypeTest
+import qualified Unit.Builder.CacheVersionTest as BuilderCacheVersionTest
 import qualified Unit.Builder.GraphTest as BuilderGraphTest
 import qualified Unit.Builder.HashTest as BuilderHashTest
 import qualified Unit.Builder.IncrementalTest as BuilderIncrementalTest
@@ -184,6 +185,7 @@ unitTests =
       ASTUtilsShaderTest.tests,
       ASTUtilsTypeTest.tests,
       BuilderHashTest.tests,
+      BuilderCacheVersionTest.tests,
       BuilderGraphTest.tests,
       BuilderLockFileTest.tests,
       BuilderStateTest.tests,

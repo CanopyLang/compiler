@@ -27,6 +27,10 @@ module Compiler
   , Builder.Paths.ProjectRoot (..)
   , Builder.Paths.mkProjectRoot
 
+  -- * Versioned Cache (exported for testing)
+  , encodeVersioned
+  , decodeVersioned
+
   -- * Re-exports for Terminal
   , module Build.Artifacts
   )
@@ -47,6 +51,8 @@ import qualified Canopy.Interface as Interface
 import qualified Canopy.ModuleName as ModuleName
 import qualified Canopy.Outline as Outline
 import qualified Canopy.Package as Pkg
+import Canopy.Version (Version (..))
+import qualified Canopy.Version as Version
 import qualified Data.Binary as Binary
 import qualified Data.ByteString.Lazy as LBS
 import qualified Data.Text as Text
@@ -686,41 +692,107 @@ computeDepsHash modImports ifaces =
 
 -- VERSIONED BINARY CACHE
 --
--- .elco files use a magic header and schema version to detect format
--- mismatches early, preventing silent decode failures when the Binary
--- instances change across compiler versions.
+-- .elco files use a magic header, schema version, and compiler version
+-- to detect format mismatches early, preventing silent decode failures
+-- when the Binary instances change across compiler versions.
+--
+-- Header layout (12 bytes total):
+--   bytes 0-3:  magic "ELCO" (4 bytes)
+--   bytes 4-5:  schema version (Word16, big-endian)
+--   bytes 6-7:  compiler major (Word16, big-endian)
+--   bytes 8-9:  compiler minor (Word16, big-endian)
+--   bytes 10-11: compiler patch (Word16, big-endian)
+--   bytes 12+:  payload (Binary-encoded)
+--
+-- The schema version is bumped when any Binary instance used in .elco
+-- files changes. The compiler version is informational: it helps
+-- diagnose cache mismatches caused by upgrading the compiler.
 
 -- | Magic bytes identifying a versioned .elco file: "ELCO" in ASCII.
+--
+-- @since 0.19.1
 elcoMagic :: LBS.ByteString
 elcoMagic = LBS.pack [0x45, 0x4C, 0x43, 0x4F]
 
 -- | Current schema version. Bump this when any Binary instance used in
 -- .elco files changes (Interface, LocalGraph, FFIInfo, or their transitive
 -- dependencies).
+--
+-- __Migration path__: when bumping, add a case to 'decodeVersioned' that
+-- explains what changed between the old and new version. There is no
+-- automatic migration -- stale caches are simply discarded and rebuilt.
+--
+-- @since 0.19.1
 elcoSchemaVersion :: Word16
 elcoSchemaVersion = 1
 
+-- | Minimum header size: 4 (magic) + 2 (schema) + 6 (compiler version).
+--
+-- @since 0.19.2
+elcoHeaderSize :: Int
+elcoHeaderSize = 12
+
 -- | Encode a value with the versioned .elco header.
+--
+-- Writes the magic bytes, schema version, compiler version, then the
+-- Binary-encoded payload.
+--
+-- @since 0.19.1
 encodeVersioned :: (Binary.Binary a) => a -> LBS.ByteString
 encodeVersioned payload =
-  elcoMagic <> Binary.encode elcoSchemaVersion <> Binary.encode payload
+  elcoMagic
+    <> Binary.encode elcoSchemaVersion
+    <> Binary.encode (_major Version.compiler)
+    <> Binary.encode (_minor Version.compiler)
+    <> Binary.encode (_patch Version.compiler)
+    <> Binary.encode payload
 
 -- | Decode a versioned .elco file. Returns Left on magic/version mismatch.
+--
+-- Checks the magic header, then the schema version, then the compiler
+-- version. Schema mismatches cause rejection (the cache must be rebuilt).
+-- Compiler version mismatches are logged but tolerated as long as the
+-- schema version matches, since the Binary format is determined by the
+-- schema version, not the compiler version.
+--
+-- @since 0.19.1
 decodeVersioned ::
   (Binary.Binary a) => LBS.ByteString -> Either String a
 decodeVersioned bytes
-  | LBS.length bytes < 6 = Left "file too short for versioned format"
-  | LBS.take 4 bytes /= elcoMagic = Left "missing ELCO magic header"
+  | LBS.length bytes < fromIntegral elcoHeaderSize =
+      Left "file too short for versioned format"
+  | LBS.take 4 bytes /= elcoMagic =
+      Left "missing ELCO magic header"
   | otherwise =
       case Binary.decodeOrFail (LBS.drop 4 bytes) of
         Left (_, _, msg) -> Left ("version decode: " ++ msg)
-        Right (rest, _, ver)
+        Right (rest1, _, ver)
           | ver /= elcoSchemaVersion ->
-              Left ("schema version mismatch: expected " ++ show elcoSchemaVersion ++ ", got " ++ show (ver :: Word16))
+              Left (schemaMismatchMessage ver)
           | otherwise ->
-              case Binary.decodeOrFail rest of
-                Left (_, _, msg) -> Left ("payload decode: " ++ msg)
-                Right (_, _, payload) -> Right payload
+              decodePayloadAfterVersion rest1
+  where
+    schemaMismatchMessage :: Word16 -> String
+    schemaMismatchMessage ver =
+      "schema version mismatch: cache is v"
+        ++ show ver
+        ++ " but compiler expects v"
+        ++ show elcoSchemaVersion
+        ++ ". Run `canopy make` to rebuild."
+
+    decodePayloadAfterVersion :: (Binary.Binary a) => LBS.ByteString -> Either String a
+    decodePayloadAfterVersion rest =
+      case skipCompilerVersion rest of
+        Left msg -> Left msg
+        Right payloadBytes ->
+          case Binary.decodeOrFail payloadBytes of
+            Left (_, _, msg) -> Left ("payload decode: " ++ msg)
+            Right (_, _, payload) -> Right payload
+
+    skipCompilerVersion :: LBS.ByteString -> Either String LBS.ByteString
+    skipCompilerVersion bs
+      | LBS.length bs < 6 = Left "truncated compiler version in cache header"
+      | otherwise = Right (LBS.drop 6 bs)
 
 -- | Log incremental compilation statistics.
 logIncrementalStats :: IORef Int -> IORef Int -> IO ()
