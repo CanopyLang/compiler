@@ -31,6 +31,9 @@ module Install.Types
   ( -- * Arguments
     Args (..),
 
+    -- * Flags
+    Flags (..),
+
     -- * Installation Context
     InstallContext (..),
 
@@ -93,6 +96,18 @@ import qualified Reporting.Task as Task
 data Args
   = NoArgs
   | Install Pkg.Name
+  deriving (Eq, Show)
+
+-- | Command-line flags for the install command.
+--
+-- Controls optional behaviour such as disabling fallback to the
+-- Elm registry when canopy-lang.org is unreachable.
+--
+-- @since 0.19.2
+data Flags = Flags
+  { -- | When 'True', disable fallback from canopy-lang.org to elm-lang.org.
+    _installNoFallback :: !Bool
+  }
   deriving (Eq, Show)
 
 -- | Installation context containing all necessary state.

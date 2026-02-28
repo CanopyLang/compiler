@@ -40,6 +40,9 @@ module Install
   ( -- * Command Arguments
     Args (..),
 
+    -- * Flags
+    Flags (..),
+
     -- * Command Execution
     run,
   )
@@ -56,6 +59,7 @@ import Install.Execution (executeInstallation)
 import Install.PkgPlan (makePkgPlan)
 import Install.Types
   ( Args (..),
+    Flags (..),
     InstallContext (..),
     Task,
   )
@@ -80,8 +84,8 @@ import qualified Stuff
 -- * File system errors during installation
 --
 -- @since 0.19.1
-run :: Args -> () -> IO ()
-run args () =
+run :: Args -> Flags -> IO ()
+run args _flags =
   Reporting.attempt Exit.installToReport $
     processInstallRequest args
 

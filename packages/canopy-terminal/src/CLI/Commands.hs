@@ -159,11 +159,12 @@ createMakeCommand =
 -- @since 0.19.1
 createInstallCommand :: Command
 createInstallCommand =
-  Terminal.Command "install" Terminal.Uncommon details example args Terminal.noFlags Install.run
+  Terminal.Command "install" Terminal.Uncommon details example args flags Install.run
   where
     details = createInstallDetails
     example = createInstallExample
     args = createInstallArgs
+    flags = createInstallFlags
 
 -- | Create the publish command for package distribution.
 --
@@ -462,6 +463,11 @@ createInstallArgs =
     [ Terminal.require0 Install.NoArgs,
       Terminal.require1 Install.Install Terminal.package
     ]
+
+createInstallFlags :: Terminal.Flags Install.Flags
+createInstallFlags =
+  Terminal.flags Install.Flags
+    |-- Terminal.onOff "no-fallback" "Do not fall back to elm-lang.org when canopy-lang.org is unreachable. Use this to ensure packages are fetched only from the Canopy registry."
 
 createPublishDetails :: String
 createPublishDetails =

@@ -67,7 +67,8 @@ module Http
     shaToChars,
     getArchive,
     getArchiveWithHeaders,
-    -- * Fallback
+    -- * Fallback Policy
+    FallbackPolicy (..),
     getWithFallback,
     getArchiveWithFallback,
     getArchiveWithHeadersAndFallback,
@@ -116,6 +117,7 @@ import Http.Upload
     stringPart,
     bytesPart,
   )
+import qualified System.IO as IO
 import Prelude hiding (zip)
 
 -- MANAGER
@@ -230,6 +232,23 @@ accept :: ByteString -> Header
 accept mime =
   (hAccept, mime)
 
+-- FALLBACK POLICY
+
+-- | Policy controlling whether fallback from canopy-lang.org to
+-- elm-lang.org is permitted.
+--
+-- When 'AllowFallback' is used, a user-visible warning is printed to
+-- stderr before attempting the fallback URL. 'DenyFallback' causes the
+-- original error to be returned without attempting any fallback.
+--
+-- @since 0.19.2
+data FallbackPolicy
+  = -- | Allow fallback with a user-visible warning.
+    AllowFallback
+  | -- | Deny fallback; return the primary error.
+    DenyFallback
+  deriving (Eq, Show)
+
 -- FALLBACK
 
 -- | Convert a @canopy-lang.org@ URL to its @elm-lang.org@ equivalent.
@@ -336,46 +355,76 @@ getArchive manager url = getArchiveWithHeaders manager url []
 
 -- | GET with automatic fallback from @canopy-lang.org@ to @elm-lang.org@.
 --
--- @since 0.19.1
-getWithFallback :: Manager -> String -> [Header] -> (Error -> e) -> (ByteString -> IO (Either e a)) -> IO (Either e a)
-getWithFallback manager url headers onError onSuccess = do
+-- When 'AllowFallback' is set and the primary request fails, a warning
+-- is printed to stderr before attempting the fallback URL. With
+-- 'DenyFallback', the primary error is returned immediately.
+--
+-- @since 0.19.2
+getWithFallback :: FallbackPolicy -> Manager -> String -> [Header] -> (Error -> e) -> (ByteString -> IO (Either e a)) -> IO (Either e a)
+getWithFallback policy manager url headers onError onSuccess = do
   result <- get manager url headers onError onSuccess
-  case result of
-    Left networkErr -> do
-      let fallbackUrl = fallbackToElmUrl url
-      if fallbackUrl /= url
-        then do
-          Log.logEvent (PackageOperation "fallback" (Text.pack fallbackUrl))
-          get manager fallbackUrl headers onError onSuccess
-        else pure (Left networkErr)
-    Right success -> pure (Right success)
+  either (tryFallbackGet policy manager url headers onError onSuccess) (pure . Right) result
+
+-- | Attempt a GET fallback if the policy allows it.
+tryFallbackGet :: FallbackPolicy -> Manager -> String -> [Header] -> (Error -> e) -> (ByteString -> IO (Either e a)) -> e -> IO (Either e a)
+tryFallbackGet DenyFallback _ _ _ _ _ primaryErr =
+  pure (Left primaryErr)
+tryFallbackGet AllowFallback manager url headers onError onSuccess primaryErr =
+  let fallbackUrl = fallbackToElmUrl url
+   in if fallbackUrl /= url
+        then warnAndFetchGet manager fallbackUrl headers onError onSuccess
+        else pure (Left primaryErr)
+
+-- | Warn the user and perform a fallback GET request.
+warnAndFetchGet :: Manager -> String -> [Header] -> (Error -> e) -> (ByteString -> IO (Either e a)) -> IO (Either e a)
+warnAndFetchGet manager fallbackUrl headers onError onSuccess = do
+  emitFallbackWarning fallbackUrl
+  Log.logEvent (PackageOperation "fallback" (Text.pack fallbackUrl))
+  get manager fallbackUrl headers onError onSuccess
 
 -- | Archive download with automatic fallback from @canopy-lang.org@ to @elm-lang.org@.
 --
--- @since 0.19.1
+-- When 'AllowFallback' is set and the primary request fails, a warning
+-- is printed to stderr before attempting the fallback URL.
+--
+-- @since 0.19.2
 getArchiveWithFallback ::
+  FallbackPolicy ->
   Manager ->
   String ->
   (Error -> e) ->
   e ->
   ((Sha, Zip.Archive) -> IO (Either e a)) ->
   IO (Either e a)
-getArchiveWithFallback manager url onError err onSuccess = do
+getArchiveWithFallback policy manager url onError err onSuccess = do
   result <- getArchive manager url onError err onSuccess
-  case result of
-    Left networkErr -> do
-      let fallbackUrl = fallbackToElmUrl url
-      if fallbackUrl /= url
-        then do
-          Log.logEvent (PackageOperation "archive-fallback" (Text.pack fallbackUrl))
-          getArchive manager fallbackUrl onError err onSuccess
-        else pure (Left networkErr)
-    Right success -> pure (Right success)
+  either (tryFallbackArchive policy manager url onError err onSuccess) (pure . Right) result
+
+-- | Attempt an archive fallback if the policy allows it.
+tryFallbackArchive :: FallbackPolicy -> Manager -> String -> (Error -> e) -> e -> ((Sha, Zip.Archive) -> IO (Either e a)) -> e -> IO (Either e a)
+tryFallbackArchive DenyFallback _ _ _ _ _ primaryErr =
+  pure (Left primaryErr)
+tryFallbackArchive AllowFallback manager url onError err onSuccess primaryErr =
+  let fallbackUrl = fallbackToElmUrl url
+   in if fallbackUrl /= url
+        then warnAndFetchArchive manager fallbackUrl onError err onSuccess
+        else pure (Left primaryErr)
+
+-- | Warn the user and perform a fallback archive request.
+warnAndFetchArchive :: Manager -> String -> (Error -> e) -> e -> ((Sha, Zip.Archive) -> IO (Either e a)) -> IO (Either e a)
+warnAndFetchArchive manager fallbackUrl onError err onSuccess = do
+  emitFallbackWarning fallbackUrl
+  Log.logEvent (PackageOperation "archive-fallback" (Text.pack fallbackUrl))
+  getArchive manager fallbackUrl onError err onSuccess
 
 -- | Archive download with custom headers and automatic fallback.
 --
--- @since 0.19.1
+-- When 'AllowFallback' is set and the primary request fails, a warning
+-- is printed to stderr before attempting the fallback URL.
+--
+-- @since 0.19.2
 getArchiveWithHeadersAndFallback ::
+  FallbackPolicy ->
   Manager ->
   String ->
   [Header] ->
@@ -383,14 +432,33 @@ getArchiveWithHeadersAndFallback ::
   e ->
   ((Sha, Zip.Archive) -> IO (Either e a)) ->
   IO (Either e a)
-getArchiveWithHeadersAndFallback manager url headers onError err onSuccess = do
+getArchiveWithHeadersAndFallback policy manager url headers onError err onSuccess = do
   result <- getArchiveWithHeaders manager url headers onError err onSuccess
-  case result of
-    Left networkErr -> do
-      let fallbackUrl = fallbackToElmUrl url
-      if fallbackUrl /= url
-        then do
-          Log.logEvent (PackageOperation "fallback" (Text.pack fallbackUrl))
-          getArchiveWithHeaders manager fallbackUrl headers onError err onSuccess
-        else pure (Left networkErr)
-    Right success -> pure (Right success)
+  either (tryFallbackHeadersArchive policy manager url headers onError err onSuccess) (pure . Right) result
+
+-- | Attempt a headers+archive fallback if the policy allows it.
+tryFallbackHeadersArchive :: FallbackPolicy -> Manager -> String -> [Header] -> (Error -> e) -> e -> ((Sha, Zip.Archive) -> IO (Either e a)) -> e -> IO (Either e a)
+tryFallbackHeadersArchive DenyFallback _ _ _ _ _ _ primaryErr =
+  pure (Left primaryErr)
+tryFallbackHeadersArchive AllowFallback manager url headers onError err onSuccess primaryErr =
+  let fallbackUrl = fallbackToElmUrl url
+   in if fallbackUrl /= url
+        then warnAndFetchHeadersArchive manager fallbackUrl headers onError err onSuccess
+        else pure (Left primaryErr)
+
+-- | Warn the user and perform a fallback headers+archive request.
+warnAndFetchHeadersArchive :: Manager -> String -> [Header] -> (Error -> e) -> e -> ((Sha, Zip.Archive) -> IO (Either e a)) -> IO (Either e a)
+warnAndFetchHeadersArchive manager fallbackUrl headers onError err onSuccess = do
+  emitFallbackWarning fallbackUrl
+  Log.logEvent (PackageOperation "fallback" (Text.pack fallbackUrl))
+  getArchiveWithHeaders manager fallbackUrl headers onError err onSuccess
+
+-- | Emit a user-visible fallback warning to stderr.
+--
+-- This ensures users are aware when a request is being served from
+-- the Elm registry instead of the Canopy registry, which is a
+-- supply-chain concern.
+emitFallbackWarning :: String -> IO ()
+emitFallbackWarning fallbackUrl =
+  IO.hPutStrLn IO.stderr $
+    "WARNING: canopy-lang.org unreachable, falling back to " <> fallbackUrl
