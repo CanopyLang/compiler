@@ -66,6 +66,7 @@ tests =
     , backwardCompatTests
     , determinismTests
     , prefetchHintTests
+    , htmlSecurityTests
     , incrementalCacheTests
     ]
 
@@ -467,6 +468,36 @@ prefetchHintTests =
     ]
   where
     chunkFiles = ["chunk-Dashboard-abc.js", "shared-0-def.js"]
+
+-- HTML SECURITY TESTS (Plan 44)
+
+htmlSecurityTests :: TestTree
+htmlSecurityTests =
+  testGroup
+    "HTML security"
+    [ testCase "CSP meta tag present in sandwich output" $ do
+        let html = renderBuilder (Html.sandwich (Name.fromChars "Main") mempty)
+        containsStr "Content-Security-Policy" html @?= True
+        containsStr "script-src 'unsafe-inline'" html @?= True
+    , testCase "CSP meta tag present in sandwichWithPrefetch output" $ do
+        let html = renderBuilder (Html.sandwichWithPrefetch (Name.fromChars "Main") mempty ["chunk.js"])
+        containsStr "Content-Security-Policy" html @?= True
+    , testCase "prefetch filenames with HTML special chars are escaped" $ do
+        let html = renderBuilder (Html.sandwichWithPrefetch (Name.fromChars "Main") mempty ["chunk\">.js"])
+        containsStr "&quot;" html @?= True
+        containsStr "chunk\">" html @?= False
+    , testCase "prefetch filenames with angle brackets are escaped" $ do
+        let html = renderBuilder (Html.sandwichWithPrefetch (Name.fromChars "Main") mempty ["<script>alert(1)</script>"])
+        containsStr "&lt;script&gt;" html @?= True
+        containsStr "<script>alert" html @?= False
+    , testCase "prefetch filenames with ampersands are escaped" $ do
+        let html = renderBuilder (Html.sandwichWithPrefetch (Name.fromChars "Main") mempty ["file&name.js"])
+        containsStr "&amp;" html @?= True
+    , testCase "error handler uses innerText not innerHTML" $ do
+        let html = renderBuilder (Html.sandwich (Name.fromChars "Main") mempty)
+        containsStr "innerText" html @?= True
+        containsStr "innerHTML" html @?= False
+    ]
 
 -- INCREMENTAL CACHE TESTS (Phase 9C)
 
