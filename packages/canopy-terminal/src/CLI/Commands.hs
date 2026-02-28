@@ -38,6 +38,7 @@
 module CLI.Commands
   ( -- * Project Commands
     createInitCommand,
+    createNewCommand,
     createReplCommand,
     createReactorCommand,
 
@@ -81,6 +82,7 @@ import qualified Init
 import qualified Install
 import qualified Lint
 import qualified Make
+import qualified New
 import qualified Publish
 import qualified Repl
 import qualified Setup
@@ -105,6 +107,23 @@ createInitCommand =
     summary = createInitSummary
     details = createInitDetails
     example = createInitExample
+
+-- | Create the new command for scaffolding complete Canopy projects.
+--
+-- The new command creates a new project directory with all necessary
+-- files including canopy.json, source templates, and optional git
+-- initialization.
+--
+-- @since 0.19.1
+createNewCommand :: Command
+createNewCommand =
+  Terminal.Command "new" (Terminal.Common summary) details example args flags New.run
+  where
+    summary = createNewSummary
+    details = createNewDetails
+    example = createNewExample
+    args = Terminal.require1 id (Terminal.stringParser "PROJECT_NAME" "project name")
+    flags = createNewFlags
 
 -- | Create the REPL command for interactive programming sessions.
 --
@@ -363,6 +382,31 @@ createInitExample =
   reflowText
     "It will ask permission to create a canopy.json file, the one thing common\
     \ to all Canopy projects. It also provides a link explaining what to do from there."
+
+createNewSummary :: String
+createNewSummary =
+  "Create a new Canopy project in a fresh directory with all the files\
+  \ you need to get started."
+
+createNewDetails :: String
+createNewDetails =
+  "The `new` command creates a complete Canopy project:"
+
+createNewExample :: Doc
+createNewExample =
+  stackDocuments
+    [ reflowText "For example:",
+      PP.indent 4 (PP.green "canopy new my-app"),
+      reflowText
+        "This creates a my-app/ directory with canopy.json, a starter Main.can,\
+        \ and initializes a git repository."
+    ]
+
+createNewFlags :: Terminal.Flags New.Flags
+createNewFlags =
+  Terminal.flags New.Flags
+    |-- Terminal.flag "template" New.templateParser "Project template to use: app (default) or package."
+    |-- Terminal.onOff "no-git" "Skip git repository initialization."
 
 createReplSummary :: String
 createReplSummary =

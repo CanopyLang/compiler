@@ -22,6 +22,7 @@
 -- The CLI provides these commands:
 --
 -- * @init@ - Initialize new Canopy projects
+-- * @new@ - Create a new project in a fresh directory
 -- * @repl@ - Interactive programming session
 -- * @reactor@ - Development server with hot reload
 -- * @make@ - Compile Canopy code to JavaScript or HTML
@@ -58,6 +59,7 @@ import CLI.Commands
     createInstallCommand,
     createLintCommand,
     createMakeCommand,
+    createNewCommand,
     createPublishCommand,
     createReactorCommand,
     createReplCommand,
@@ -108,6 +110,7 @@ createAllCommands :: [Terminal.Command]
 createAllCommands =
   [ createReplCommand,
     createInitCommand,
+    createNewCommand,
     createSetupCommand,
     createReactorCommand,
     createMakeCommand,
