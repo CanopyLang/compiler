@@ -109,6 +109,8 @@ data LintRule
   | DropConcatOfLists
   | UseConsOverConcat
   | MissingTypeAnnotation
+  | ShadowedVariable
+  | UnusedLetVariable
   deriving (Eq, Ord, Show)
 
 -- | Description of an auto-fix action.

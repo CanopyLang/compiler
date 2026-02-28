@@ -14,6 +14,8 @@
 -- * 'checkDropConcatOfLists' - @[a] ++ [b]@ that should be @[a, b]@
 -- * 'checkUseConsOverConcat' - @[a] ++ list@ that should be @a :: list@
 -- * 'checkMissingTypeAnnotation' - Top-level function without a type signature
+-- * 'checkShadowedVariable' - Let\/case\/lambda bindings that shadow outer names
+-- * 'checkUnusedLetVariable' - Bound but unused variables in let expressions
 --
 -- == Usage
 --
@@ -96,6 +98,8 @@ defaultLintConfig = LintConfig
       , (DropConcatOfLists, RuleConfig SevWarning)
       , (UseConsOverConcat, RuleConfig SevInfo)
       , (MissingTypeAnnotation, RuleConfig SevWarning)
+      , (ShadowedVariable, RuleConfig SevWarning)
+      , (UnusedLetVariable, RuleConfig SevWarning)
       ]
   }
 
@@ -207,7 +211,9 @@ ruleRegistry =
     (UnnecessaryParens, Rules.checkUnnecessaryParens),
     (DropConcatOfLists, Rules.checkDropConcatOfLists),
     (UseConsOverConcat, Rules.checkUseConsOverConcat),
-    (MissingTypeAnnotation, Rules.checkMissingTypeAnnotation)
+    (MissingTypeAnnotation, Rules.checkMissingTypeAnnotation),
+    (ShadowedVariable, Rules.checkShadowedVariable),
+    (UnusedLetVariable, Rules.checkUnusedLetVariable)
   ]
 
 -- | Filter the rule registry to only those rules that are enabled

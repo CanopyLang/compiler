@@ -124,6 +124,7 @@ import qualified Unit.Canonicalize.PatternTest as CanonicalizePatternTest
 import qualified Unit.Type.UnionFindTest as UnionFindTest
 import qualified Unit.FFI.ManifestTest as FFIManifestTest
 import qualified Unit.FFI.ValidatorTest as FFIValidatorTest
+import qualified Unit.Terminal.Lint.RulesTest as LintRulesTest
 import qualified Property.ArithmeticLawsTest as ArithmeticLawsTest
 import qualified Property.Type.UnifyProperties as UnifyProperties
 import qualified Property.Type.UnionFindProperties as UnionFindProperties
@@ -250,7 +251,8 @@ unitTests =
       CanonicalizeModuleTest.tests,
       LazyImportValidationTest.tests,
       FFIManifestTest.tests,
-      FFIValidatorTest.tests
+      FFIValidatorTest.tests,
+      LintRulesTest.tests
     ]
 
 propertyTests :: TestTree

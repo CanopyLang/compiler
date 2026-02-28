@@ -168,6 +168,8 @@ ruleName UnnecessaryParens = "UnnecessaryParens"
 ruleName DropConcatOfLists = "DropConcatOfLists"
 ruleName UseConsOverConcat = "UseConsOverConcat"
 ruleName MissingTypeAnnotation = "MissingTypeAnnotation"
+ruleName ShadowedVariable = "ShadowedVariable"
+ruleName UnusedLetVariable = "UnusedLetVariable"
 
 -- | Return the human-readable name for a severity level.
 severityName :: Severity -> String
