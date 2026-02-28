@@ -18,7 +18,7 @@ import System.FilePath ((</>))
 import qualified System.IO.Temp as Temp
 import System.Timeout (timeout)
 import Test.Tasty (TestTree, testGroup)
-import Test.Tasty.HUnit (assertBool, assertEqual, assertFailure, testCase)
+import Test.Tasty.HUnit (assertBool, assertFailure, testCase)
 import qualified Watch
 
 tests :: TestTree

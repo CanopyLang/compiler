@@ -136,6 +136,7 @@ tests:
       - canopy-driver
       - canopy-builder
       - canopy-terminal
+      - canopy-webidl
       - tasty
       - tasty-hunit
       - tasty-quickcheck

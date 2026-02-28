@@ -68,6 +68,7 @@ import CLI.Commands
     createSetupCommand,
     createTestCommand,
     createUpgradeCommand,
+    createWebIDLCommand,
   )
 import CLI.Documentation (createIntroduction, createOutro)
 import qualified Terminal
@@ -106,6 +107,7 @@ main =
 -- * Developer tools (fmt, lint, test, docs, audit, upgrade, bench)
 -- * FFI testing (test-ffi)
 -- * Package management (install, bump, diff, publish)
+-- * Code generation (webidl)
 --
 -- @since 0.19.1
 createAllCommands :: [Terminal.Command]
@@ -128,5 +130,6 @@ createAllCommands =
     createInstallCommand,
     createBumpCommand,
     createDiffCommand,
-    createPublishCommand
+    createPublishCommand,
+    createWebIDLCommand
   ]

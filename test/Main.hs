@@ -140,6 +140,7 @@ import qualified Unit.AuditTest as AuditTest
 import qualified Unit.VersionCheckTest as VersionCheckTest
 import qualified Unit.Plugin.PipelineTest as PluginPipelineTest
 import qualified Unit.Reporting.ErrorHierarchyTest as ErrorHierarchyTest
+import qualified Unit.WebIDL.CommandTest as WebIDLCommandTest
 import qualified Property.ArithmeticLawsTest as ArithmeticLawsTest
 import qualified Property.Type.UnifyProperties as UnifyProperties
 import qualified Property.Type.UnionFindProperties as UnionFindProperties
@@ -282,7 +283,8 @@ unitTests =
       WorkspaceTest.tests,
       LiveReloadTest.tests,
       PluginPipelineTest.tests,
-      ErrorHierarchyTest.tests
+      ErrorHierarchyTest.tests,
+      WebIDLCommandTest.tests
     ]
 
 propertyTests :: TestTree

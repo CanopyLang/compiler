@@ -21,6 +21,7 @@
 -- * 'createAuditCommand' - Dependency audit
 -- * 'createUpgradeCommand' - Migrate Elm projects to Canopy
 -- * 'createBenchCommand' - Compilation benchmarking
+-- * 'createWebIDLCommand' - Generate FFI bindings from WebIDL specs
 -- * 'createInstallCommand' - Package installation
 -- * 'createPublishCommand' - Package publishing
 -- * 'createBumpCommand' - Version bumping
@@ -67,6 +68,9 @@ module CLI.Commands
 
     -- * Setup Commands
     createSetupCommand,
+
+    -- * WebIDL Commands
+    createWebIDLCommand,
   )
 where
 
@@ -94,6 +98,7 @@ import qualified Terminal.Helpers as Terminal
 import qualified Test
 import qualified Test.FFI as FFI
 import qualified Upgrade
+import qualified WebIDL.Command as WebIDLCmd
 import Text.PrettyPrint.ANSI.Leijen (Doc)
 import qualified Text.PrettyPrint.ANSI.Leijen as PP
 
@@ -689,3 +694,29 @@ createSetupFlags :: Terminal.Flags Setup.Flags
 createSetupFlags =
   Terminal.flags Setup.Flags
     |-- Terminal.onOff "verbose" "Show verbose output during setup."
+
+-- | Create the webidl command for generating FFI bindings from WebIDL.
+--
+-- The webidl command parses WebIDL specification files and generates
+-- type-safe Canopy modules with corresponding JavaScript FFI runtime
+-- code.
+--
+-- @since 0.19.2
+createWebIDLCommand :: Command
+createWebIDLCommand =
+  Terminal.Command "webidl" Terminal.Uncommon details example args flags WebIDLCmd.run
+  where
+    details = "The `webidl` command generates Canopy FFI bindings from WebIDL specifications:"
+    example =
+      stackDocuments
+        [ PP.indent 4 (PP.green "canopy webidl specs/dom.webidl"),
+          PP.indent 4 (PP.green "canopy webidl --output=src/Web/ specs/dom.webidl specs/fetch.webidl")
+        ]
+    args = Terminal.zeroOrMore (Terminal.stringParser "FILE" "WebIDL specification file (.webidl)")
+    flags = createWebIDLFlags
+
+createWebIDLFlags :: Terminal.Flags WebIDLCmd.Flags
+createWebIDLFlags =
+  Terminal.flags WebIDLCmd.Flags
+    |-- Terminal.flag "output" (Terminal.stringParser "DIR" "output directory") "Directory for generated modules (default: current directory)."
+    |-- Terminal.onOff "verbose" "Show verbose output."

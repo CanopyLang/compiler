@@ -57,6 +57,7 @@ dependencies:
   - canopy-query
   - canopy-driver
   - canopy-builder
+  - canopy-webidl
 
 default-extensions:
   - ConstraintKinds
