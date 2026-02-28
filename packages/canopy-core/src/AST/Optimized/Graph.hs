@@ -34,8 +34,8 @@ import qualified Canopy.Package as Pkg
 import Control.Applicative ((<|>))
 import qualified Control.Monad as Monad
 import qualified Data.Binary as Binary
-import Data.Map (Map)
-import qualified Data.Map as Map
+import Data.Map.Strict (Map)
+import qualified Data.Map.Strict as Map
 import Data.Set (Set)
 import qualified Data.Set as Set
 import Data.Word (Word8)
@@ -249,7 +249,7 @@ instance Binary.Binary Main where
       1 -> Monad.liftM2 Dynamic Binary.get Binary.get
       2 -> return TestMain
       3 -> return BrowserTestMain
-      _ -> fail "problem getting Opt.Main binary"
+      _ -> fail ("Opt.Main: unexpected tag " ++ show word ++ " (expected 0-3). Delete canopy-stuff/ to rebuild.")
 
 instance Binary.Binary Node where
   put = putNode
@@ -300,7 +300,7 @@ getNode = do
   case word of
     n | n <= 4 -> getNodeSimple n
     n | n <= 10 -> getNodeComplex n
-    _ -> fail "problem getting Opt.Node binary"
+    _ -> fail ("Opt.Node: unexpected tag " ++ show word ++ " (expected 0-10). Delete canopy-stuff/ to rebuild.")
 
 -- | Deserialize simple nodes.
 --
@@ -312,7 +312,7 @@ getNodeSimple word = case word of
   2 -> Monad.liftM2 Ctor Binary.get Binary.get
   3 -> fmap Enum Binary.get
   4 -> return Box
-  _ -> fail "getNodeSimple: unexpected word"
+  _ -> fail ("Opt.Node.Simple: unexpected tag " ++ show word ++ " (expected 0-4). Delete canopy-stuff/ to rebuild.")
 
 -- | Deserialize complex nodes.
 --
@@ -325,7 +325,7 @@ getNodeComplex word = case word of
   8 -> Monad.liftM2 Kernel Binary.get Binary.get
   9 -> Monad.liftM2 PortIncoming Binary.get Binary.get
   10 -> Monad.liftM2 PortOutgoing Binary.get Binary.get
-  _ -> fail "getNodeComplex: unexpected word"
+  _ -> fail ("Opt.Node.Complex: unexpected tag " ++ show word ++ " (expected 5-10). Delete canopy-stuff/ to rebuild.")
 
 instance Binary.Binary EffectsType where
   put effectsType =
@@ -339,4 +339,4 @@ instance Binary.Binary EffectsType where
       0 -> return Cmd
       1 -> return Sub
       2 -> return Fx
-      _ -> fail "problem getting Opt.EffectsType binary"
+      _ -> fail ("Opt.EffectsType: unexpected tag " ++ show word ++ " (expected 0-2). Delete canopy-stuff/ to rebuild.")

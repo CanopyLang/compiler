@@ -20,8 +20,8 @@ where
 import qualified Canopy.ModuleName as ModuleName
 import Control.Monad (zipWithM)
 import qualified Canopy.Data.Bag as Bag
-import Data.Map (Map)
-import qualified Data.Map as Map
+import Data.Map.Strict (Map)
+import qualified Data.Map.Strict as Map
 import qualified Data.Maybe as Maybe
 import qualified Canopy.Data.Name as Name
 import qualified Reporting.Doc as Doc

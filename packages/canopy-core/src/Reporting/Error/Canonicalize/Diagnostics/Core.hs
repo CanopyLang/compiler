@@ -48,7 +48,7 @@ import qualified Canopy.Data.Index as Index
 import qualified Canopy.Data.Name as Name
 import qualified Canopy.Data.OneOrMore as OneOrMore
 import qualified Canopy.ModuleName as ModuleName
-import qualified Data.Map as Map
+import qualified Data.Map.Strict as Map
 import qualified Data.Set as Set
 import qualified Data.Text as Text
 import qualified Reporting.Annotation as Ann

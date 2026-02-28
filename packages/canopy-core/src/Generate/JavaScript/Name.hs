@@ -23,7 +23,7 @@ module Generate.JavaScript.Name
 
 import Data.ByteString.Builder (Builder)
 import qualified Data.ByteString.Builder as BB
-import qualified Data.Map as Map
+import qualified Data.Map.Strict as Map
 import qualified Canopy.Data.Name as Name
 import qualified Data.Set as Set
 import qualified Canopy.Data.Utf8 as Utf8

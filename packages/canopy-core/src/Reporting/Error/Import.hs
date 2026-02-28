@@ -9,7 +9,7 @@ where
 
 import qualified Canopy.ModuleName as ModuleName
 import qualified Canopy.Package as Pkg
-import qualified Data.Map as Map
+import qualified Data.Map.Strict as Map
 import qualified Data.Set as Set
 import qualified Data.Text as Text
 import qualified Reporting.Annotation as Ann

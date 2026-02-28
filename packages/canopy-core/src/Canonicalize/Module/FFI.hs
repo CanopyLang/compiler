@@ -27,13 +27,14 @@ import qualified Canopy.Data.Name as Name
 import qualified Canopy.ModuleName as ModuleName
 import qualified Canopy.Package as Pkg
 import Control.Exception (SomeException, catch)
-import Data.List (intercalate, isPrefixOf, isInfixOf)
+import Data.List (isPrefixOf, isInfixOf)
 import Data.Maybe (mapMaybe)
-import Data.Map (Map)
-import qualified Data.Map as Map
+import Data.Map.Strict (Map)
+import qualified Data.Map.Strict as Map
 import qualified Data.List as List
 import qualified Data.Text as Text
-import FFI.Types (JsSourcePath (..), JsSource (..))
+import qualified FFI.TypeParser as TypeParser
+import FFI.Types (JsSourcePath (..), JsSource (..), FFIBinding (..), FFIFuncName (..), FFITypeAnnotation (..))
 import qualified Foreign.FFI as FFI
 import qualified Reporting.Annotation as Ann
 import qualified Reporting.Error.Canonicalize as Error
@@ -105,7 +106,7 @@ loadFFIFileWithTimeout fullPath _jsPath = do
 --
 -- Processes all FFI imports sequentially, threading the updated
 -- environment through each import so all foreign functions are available.
-addFFIToEnvPure :: Env.Env -> [Src.ForeignImport] -> Map JsSourcePath JsSource -> Result i [w] Env.Env
+addFFIToEnvPure :: Env.Env -> [Src.ForeignImport] -> Map JsSourcePath JsSource -> Result i [Warning.Warning] Env.Env
 addFFIToEnvPure env [] _ffiContentMap = Result.ok env
 addFFIToEnvPure env (fi : rest) ffiContentMap =
   addOneFFI env fi >>= \updatedEnv -> addFFIToEnvPure updatedEnv rest ffiContentMap
@@ -118,7 +119,7 @@ addFFIToEnvPure env (fi : rest) ffiContentMap =
       Result.throw (Error.FFIParseError region "WebAssembly" "WebAssembly FFI is not yet supported")
 
 -- Process single FFI import with comprehensive error handling
-processFFIImport :: Env.Env -> FilePath -> Ann.Located Name.Name -> Ann.Region -> Map JsSourcePath JsSource -> Result i [w] Env.Env
+processFFIImport :: Env.Env -> FilePath -> Ann.Located Name.Name -> Ann.Region -> Map JsSourcePath JsSource -> Result i [Warning.Warning] Env.Env
 processFFIImport env jsPath alias region ffiContentMap =
   let aliasName = Ann.toValue alias
       home = Env._home env
@@ -128,30 +129,30 @@ processFFIImport env jsPath alias region ffiContentMap =
        Just (JsSource jsContent) -> parseAndAddFFI env ffiModuleName aliasName jsPath region jsContent
 
 -- Parse FFI content and add to environment with validation
-parseAndAddFFI :: Env.Env -> ModuleName.Canonical -> Name.Name -> FilePath -> Ann.Region -> String -> Result i [w] Env.Env
+parseAndAddFFI :: Env.Env -> ModuleName.Canonical -> Name.Name -> FilePath -> Ann.Region -> String -> Result i [Warning.Warning] Env.Env
 parseAndAddFFI env ffiModuleName aliasName jsPath region jsContent =
   case parseJavaScriptContentPure jsContent (Name.toChars aliasName) of
     Left err -> Result.throw (Error.FFIParseError region jsPath err)
-    Right functions -> validateAndAddFunctions env ffiModuleName aliasName jsPath region functions
+    Right bindings -> validateAndAddFunctions env ffiModuleName aliasName jsPath region bindings
 
 -- Validate and add FFI functions to environment
-validateAndAddFunctions :: Env.Env -> ModuleName.Canonical -> Name.Name -> FilePath -> Ann.Region -> [(String, String)] -> Result i [w] Env.Env
-validateAndAddFunctions env ffiModuleName aliasName jsPath region functions =
-  case validateFFIFunctions jsPath region functions of
+validateAndAddFunctions :: Env.Env -> ModuleName.Canonical -> Name.Name -> FilePath -> Ann.Region -> [FFIBinding] -> Result i [Warning.Warning] Env.Env
+validateAndAddFunctions env ffiModuleName aliasName jsPath region bindings =
+  case validateFFIFunctions jsPath region bindings of
     Left err -> Result.throw err
-    Right validFunctions -> addParsedFunctionsToEnv env ffiModuleName aliasName jsPath region validFunctions
+    Right validBindings -> addParsedFunctionsToEnv env ffiModuleName aliasName jsPath region validBindings
 
 -- Validate FFI functions have proper type annotations
-validateFFIFunctions :: FilePath -> Ann.Region -> [(String, String)] -> Either Error.Error [(String, String)]
-validateFFIFunctions jsPath region functions =
-  traverse (validateSingleFunction jsPath region) functions
+validateFFIFunctions :: FilePath -> Ann.Region -> [FFIBinding] -> Either Error.Error [FFIBinding]
+validateFFIFunctions jsPath region =
+  traverse (validateSingleFunction jsPath region)
 
 -- Validate single FFI function signature
-validateSingleFunction :: FilePath -> Ann.Region -> (String, String) -> Either Error.Error (String, String)
-validateSingleFunction jsPath region (fname, typeStr) =
-  if null typeStr
-    then Left (Error.FFIMissingAnnotation region jsPath (Name.fromChars fname))
-    else Right (fname, typeStr)
+validateSingleFunction :: FilePath -> Ann.Region -> FFIBinding -> Either Error.Error FFIBinding
+validateSingleFunction jsPath region binding =
+  if null (unFFITypeAnnotation (_bindingTypeAnnotation binding))
+    then Left (Error.FFIMissingAnnotation region jsPath (Name.fromChars (unFFIFuncName (_bindingFuncName binding))))
+    else Right binding
 
 -- | Parse JavaScript content purely without IO operations
 --
@@ -159,25 +160,25 @@ validateSingleFunction jsPath region (fname, typeStr) =
 -- unsafePerformIO for file reading.
 --
 -- @since 0.19.1
-parseJavaScriptContentPure :: String -> String -> Either String [(String, String)]
+parseJavaScriptContentPure :: String -> String -> Either String [FFIBinding]
 parseJavaScriptContentPure jsContent _alias =
   Right (extractFunctionsWithTypes (lines jsContent))
 
 -- Extract functions with their @canopy-type annotations
 -- Now properly handles JSDoc comments with @name and @canopy-type annotations
-extractFunctionsWithTypes :: [String] -> [(String, String)]
+extractFunctionsWithTypes :: [String] -> [FFIBinding]
 extractFunctionsWithTypes [] = []
 extractFunctionsWithTypes inputLines = extractFromJSDocBlocks inputLines
 
 -- Extract functions from JSDoc comment blocks
-extractFromJSDocBlocks :: [String] -> [(String, String)]
+extractFromJSDocBlocks :: [String] -> [FFIBinding]
 extractFromJSDocBlocks [] = []
 extractFromJSDocBlocks (line:rest)
   | isJSDocStart line =
       let (commentBlock, remaining) = takeJSDocBlock (line:rest)
-          mbFunction = parseJSDocBlock commentBlock
-      in case mbFunction of
-           Just func -> func : extractFromJSDocBlocks remaining
+          mbBinding = parseJSDocBlock commentBlock
+      in case mbBinding of
+           Just binding -> binding : extractFromJSDocBlocks remaining
            Nothing -> extractFromJSDocBlocks remaining
   | otherwise = extractFromJSDocBlocks rest
 
@@ -201,11 +202,11 @@ isJSDocEnd :: String -> Bool
 isJSDocEnd line = "*/" `isInfixOf` line
 
 -- Parse a JSDoc comment block to extract function name and type
-parseJSDocBlock :: [String] -> Maybe (String, String)
+parseJSDocBlock :: [String] -> Maybe FFIBinding
 parseJSDocBlock commentLines = do
   functionName <- findNameAnnotation commentLines
   canopyType <- findCanopyTypeAnnotation commentLines
-  pure (functionName, canopyType)
+  pure (FFIBinding (FFIFuncName functionName) (FFITypeAnnotation canopyType))
 
 -- Find @name annotation in JSDoc block
 findNameAnnotation :: [String] -> Maybe String
@@ -246,23 +247,25 @@ parseCanopyTypeAnnotation line =
      else Nothing
 
 -- DYNAMIC FUNCTION ENVIRONMENT GENERATION
-addParsedFunctionsToEnv :: Env.Env -> ModuleName.Canonical -> Name.Name -> FilePath -> Ann.Region -> [(String, String)] -> Result i [w] Env.Env
-addParsedFunctionsToEnv env ffiModuleName aliasName jsPath region functions = do
+addParsedFunctionsToEnv :: Env.Env -> ModuleName.Canonical -> Name.Name -> FilePath -> Ann.Region -> [FFIBinding] -> Result i [Warning.Warning] Env.Env
+addParsedFunctionsToEnv env ffiModuleName aliasName jsPath region bindings = do
   let homeModuleName = Env._home env
-  processedFunctions <- traverse (processParsedFunction env ffiModuleName homeModuleName jsPath region) functions
+  processedFunctions <- traverse (processParsedFunction env ffiModuleName homeModuleName jsPath region) bindings
   let (vars, qVars) = buildDynamicEnvironment aliasName processedFunctions
       newVars = List.foldl' (\acc (name, var) -> Map.insert name var acc) (Env._vars env) vars
       newQVars = Map.insertWith Map.union aliasName qVars (Env._q_vars env)
       newEnv = env { Env._vars = newVars, Env._q_vars = newQVars }
   Result.ok newEnv
 
--- Process a single parsed function (name, typeString) into Canopy types
-processParsedFunction :: Env.Env -> ModuleName.Canonical -> ModuleName.Canonical -> FilePath -> Ann.Region -> (String, String) -> Result i [w] (String, Can.Annotation, Env.Var)
-processParsedFunction env ffiModuleName homeModuleName jsPath region (functionName, typeString) = do
-  canopyType <- parseTypeStringWithHome env ffiModuleName homeModuleName jsPath region functionName typeString
+-- Process a single parsed FFI binding into Canopy types
+processParsedFunction :: Env.Env -> ModuleName.Canonical -> ModuleName.Canonical -> FilePath -> Ann.Region -> FFIBinding -> Result i [Warning.Warning] (String, Can.Annotation, Env.Var)
+processParsedFunction env ffiModuleName homeModuleName jsPath region binding = do
+  let funcName = _bindingFuncName binding
+      typeAnnotation = _bindingTypeAnnotation binding
+  canopyType <- parseTypeStringWithHome env ffiModuleName homeModuleName jsPath region funcName typeAnnotation
   let annotation = Can.Forall Map.empty canopyType
       var = Env.Foreign ffiModuleName annotation
-  Result.ok (functionName, annotation, var)
+  Result.ok (unFFIFuncName funcName, annotation, var)
 
 -- Build the dynamic environment from processed functions with proper qualified name registration
 buildDynamicEnvironment :: Name.Name -> [(String, Can.Annotation, Env.Var)] -> ([(Name.Name, Env.Var)], Map.Map Name.Name (Env.Info Can.Annotation))
@@ -280,261 +283,177 @@ buildQualifiedVars ffiModuleName processedFunctions =
     toQualifiedEntry (fname, annotation, _) =
       (Name.fromChars fname, Env.Specific ffiModuleName annotation)
 
--- Parse type string with home module context for custom type resolution
--- ffiModuleName is used as fallback for unknown opaque types (FFI-specific types)
-parseTypeStringWithHome :: Env.Env -> ModuleName.Canonical -> ModuleName.Canonical -> FilePath -> Ann.Region -> String -> String -> Result i [w] Can.Type
-parseTypeStringWithHome env ffiModuleName homeModuleName jsPath region functionName typeStr =
-  case parseTypeTokensWithHome env ffiModuleName homeModuleName (tokenizeCanopyType (Text.pack typeStr)) of
-    Just canopyType -> Result.ok canopyType
-    Nothing -> Result.throw (Error.FFIInvalidType region jsPath (Name.fromChars functionName) ("Failed to parse type: " ++ typeStr))
-
--- Tokenize Canopy type string correctly, handling multi-word types
--- Splits by top-level arrows (respecting parentheses and braces), then tokenizes each segment
-tokenizeCanopyType :: Text.Text -> [String]
-tokenizeCanopyType typeText =
-  let arrowSegments = splitArrowsRespectingParens typeText
-      nonEmptySegments = filter (not . Text.null . Text.strip) arrowSegments
-      tokenizedSegments = map (tokenizeTypeSegment . Text.strip) nonEmptySegments
-  in case tokenizedSegments of
-       [] -> []
-       [singleSegment] -> singleSegment
-       multipleSegments -> List.intercalate ["->"] multipleSegments
-
--- | Split a type string by @->@ arrows at the top level only.
+-- | Parse type string with home module context for custom type resolution.
 --
--- Parenthesized and braced groups are treated as atomic, so arrows
--- inside @(Browser -> Expectation)@ or @{ a : Int -> String }@ are preserved.
-splitArrowsRespectingParens :: Text.Text -> [Text.Text]
-splitArrowsRespectingParens input = go [] "" (0 :: Int) (Text.unpack input)
+-- Uses the unified 'FFI.TypeParser' to parse the type string into
+-- 'FFIType', then converts to 'Can.Type' using environment-aware
+-- resolution. Emits warnings for opaque types that cannot be found
+-- in the environment.
+parseTypeStringWithHome :: Env.Env -> ModuleName.Canonical -> ModuleName.Canonical -> FilePath -> Ann.Region -> FFIFuncName -> FFITypeAnnotation -> Result i [Warning.Warning] Can.Type
+parseTypeStringWithHome env ffiModuleName homeModuleName jsPath region funcName typeAnnotation =
+  case TypeParser.parseType (Text.pack (unFFITypeAnnotation typeAnnotation)) of
+    Just ffiType ->
+      let canType = ffiTypeToCanonical env ffiModuleName homeModuleName ffiType
+          unresolvedNames = collectUnresolved env ffiType
+       in warnUnresolved jsPath funcName unresolvedNames
+            >> Result.ok canType
+    Nothing ->
+      Result.throw (Error.FFIInvalidType region jsPath (Name.fromChars (unFFIFuncName funcName)) ("Failed to parse type: " ++ unFFITypeAnnotation typeAnnotation))
+
+-- | Emit warnings for each unresolved opaque type name.
+warnUnresolved :: FilePath -> FFIFuncName -> [Text.Text] -> Result i [Warning.Warning] ()
+warnUnresolved _ _ [] = Result.ok ()
+warnUnresolved jsPath funcName (name : rest) = do
+  Result.warn (Warning.FFIUnresolvedType (Text.pack jsPath) (Text.pack (unFFIFuncName funcName)) name)
+  warnUnresolved jsPath funcName rest
+
+-- | Collect opaque type names that cannot be resolved in the environment.
+collectUnresolved :: Env.Env -> FFI.FFIType -> [Text.Text]
+collectUnresolved env = go
   where
-    go :: [Text.Text] -> String -> Int -> String -> [Text.Text]
-    go acc current _ [] =
-      reverse (Text.pack current : acc)
-    go acc current depth ('(' : cs) =
-      go acc (current ++ "(") (depth + 1) cs
-    go acc current depth ('{' : cs) =
-      go acc (current ++ "{") (depth + 1) cs
-    go acc current depth (')' : cs) =
-      go acc (current ++ ")") (max 0 (depth - 1)) cs
-    go acc current depth ('}' : cs) =
-      go acc (current ++ "}") (max 0 (depth - 1)) cs
-    go acc current 0 ('-' : '>' : cs) =
-      go (Text.pack current : acc) "" 0 cs
-    go acc current depth (c : cs) =
-      go acc (current ++ [c]) depth cs
+    go ffiType = case ffiType of
+      FFI.FFIInt -> []
+      FFI.FFIFloat -> []
+      FFI.FFIString -> []
+      FFI.FFIBool -> []
+      FFI.FFIUnit -> []
+      FFI.FFIList inner -> go inner
+      FFI.FFIMaybe inner -> go inner
+      FFI.FFIResult e v -> go e ++ go v
+      FFI.FFITask e v -> go e ++ go v
+      FFI.FFIFunctionType params ret -> concatMap go params ++ go ret
+      FFI.FFITuple types -> concatMap go types
+      FFI.FFIRecord fields -> concatMap (go . snd) fields
+      FFI.FFIOpaque name -> checkOpaque (Text.unpack name)
 
--- Tokenize a single type segment into words, preserving parenthesized expressions
-tokenizeTypeSegment :: Text.Text -> [String]
-tokenizeTypeSegment segment =
-  go [] "" (0 :: Int) (Text.unpack segment)
-  where
-    go acc current _depth [] =
-      if null current then reverse acc else reverse (current : acc)
-    go acc current depth (c:cs)
-      | c == '(' = go acc (current ++ "(") (depth + 1) cs
-      | c == ')' =
-          let newCurrent = current ++ ")"
-          in if depth == 1
-               then go (newCurrent : acc) "" (depth - 1) cs
-               else go acc newCurrent (depth - 1) cs
-      | c == ' ' && depth == 0 =
-          if null current
-            then go acc "" 0 cs
-            else go (current : acc) "" 0 cs
-      | otherwise = go acc (current ++ [c]) depth cs
+    checkOpaque name
+      -- Single lowercase letter = type variable, always OK
+      | [ch] <- name, ch >= 'a' && ch <= 'z' = []
+      -- Qualified name: check in qualified types map
+      | '.' `elem` name = checkQualified name
+      -- Unqualified name: check in types map
+      | otherwise = checkUnqualified name
 
--- Split tokens at top-level arrow (not inside parentheses)
-splitAtArrow :: [String] -> Maybe ([String], [String])
-splitAtArrow tokens =
-  go tokens 0 []
-  where
-    go :: [String] -> Int -> [String] -> Maybe ([String], [String])
-    go [] _ _ = Nothing
-    go ("(" : rest) depth acc = go rest (depth + 1) (acc ++ ["("])
-    go (")" : rest) depth acc = go rest (depth - 1) (acc ++ [")"])
-    go ("->" : rest) 0 acc = Just (acc, rest)
-    go ("->" : rest) depth acc = go rest depth (acc ++ ["->"])
-    go (t : rest) depth acc = go rest depth (acc ++ [t])
+    checkQualified qualifiedName =
+      let parts = splitOnDot qualifiedName
+          moduleParts = init parts
+          typeNamePart = last parts
+          qualifierName = Name.fromChars (concatWithDots moduleParts)
+          typeNameObj = Name.fromChars typeNamePart
+          found = case Map.lookup qualifierName (Env._q_types env) of
+            Just innerMap -> Map.member typeNameObj innerMap
+            Nothing -> False
+       in [Text.pack qualifiedName | not found]
 
--- Parse type tokens with home module context for custom type resolution
--- ffiModuleName is used as fallback for unknown opaque types (FFI-specific types)
-parseTypeTokensWithHome :: Env.Env -> ModuleName.Canonical -> ModuleName.Canonical -> [String] -> Maybe Can.Type
-parseTypeTokensWithHome env ffiModuleName homeModuleName tokens =
-  case tokens of
-    [] -> Nothing
-    [typeName] -> Just (parseBasicTypeWithHome env ffiModuleName homeModuleName typeName)
-    ["(", ")"] -> Just Can.TUnit
-    _ -> case splitAtArrow tokens of
-      Just (leftTokens, rightTokens) ->
-        case (parseComplexTypeWithHome env ffiModuleName homeModuleName leftTokens, parseTypeTokensWithHome env ffiModuleName homeModuleName rightTokens) of
-          (Just leftType, Just restType) -> Just (Can.TLambda leftType restType)
-          _ -> Nothing
-      Nothing -> parseComplexTypeWithHome env ffiModuleName homeModuleName tokens
+    checkUnqualified customType =
+      let typeNameObj = Name.fromChars customType
+       in [Text.pack customType | not (Map.member typeNameObj (Env._types env))]
 
--- Parse one complete type from the beginning of the token list
--- Returns (parsed type, remaining tokens)
--- ffiModuleName is used as fallback for unknown opaque types
-parseOneType :: Env.Env -> ModuleName.Canonical -> ModuleName.Canonical -> [String] -> Maybe (Can.Type, [String])
-parseOneType _env _ffiModuleName _homeModuleName [] = Nothing
-parseOneType _env _ffiModuleName _homeModuleName ["(", ")"] = Just (Can.TUnit, [])
-parseOneType env ffiModuleName homeModuleName ("Task" : rest) = do
-  (errorType, rest1) <- parseOneType env ffiModuleName homeModuleName rest
-  (resultType, rest2) <- parseOneType env ffiModuleName homeModuleName rest1
-  let taskAlias = Can.TAlias
-        ModuleName.task
-        (Name.fromChars "Task")
-        [(Name.fromChars "x", errorType), (Name.fromChars "a", resultType)]
-        (Can.Filled (Can.TType ModuleName.platform (Name.fromChars "Task") [errorType, resultType]))
-  return (taskAlias, rest2)
-parseOneType env ffiModuleName homeModuleName ("Result" : rest) = do
-  (errorType, rest1) <- parseOneType env ffiModuleName homeModuleName rest
-  (valueType, rest2) <- parseOneType env ffiModuleName homeModuleName rest1
-  let resultAlias = Can.TAlias
-        ModuleName.result
-        (Name.fromChars "Result")
-        [(Name.fromChars "e", errorType), (Name.fromChars "a", valueType)]
-        (Can.Filled (Can.TType ModuleName.result (Name.fromChars "Result") [errorType, valueType]))
-  return (resultAlias, rest2)
-parseOneType env ffiModuleName homeModuleName ("List" : rest) = do
-  (elementType, rest1) <- parseOneType env ffiModuleName homeModuleName rest
-  let listAlias = Can.TAlias
-        ModuleName.list
-        (Name.fromChars "List")
-        [(Name.fromChars "a", elementType)]
-        (Can.Filled (Can.TType ModuleName.list (Name.fromChars "List") [elementType]))
-  return (listAlias, rest1)
-parseOneType env ffiModuleName homeModuleName ("Maybe" : rest) = do
-  (valueType, rest1) <- parseOneType env ffiModuleName homeModuleName rest
-  let maybeAlias = Can.TAlias
-        ModuleName.maybe
-        (Name.fromChars "Maybe")
-        [(Name.fromChars "a", valueType)]
-        (Can.Filled (Can.TType ModuleName.maybe (Name.fromChars "Maybe") [valueType]))
-  return (maybeAlias, rest1)
-parseOneType env ffiModuleName homeModuleName ("Capability.Initialized" : rest) = do
-  (paramType, rest1) <- parseOneType env ffiModuleName homeModuleName rest
-  let capabilityModule = case homeModuleName of
-        ModuleName.Canonical pkg _ -> ModuleName.Canonical pkg (Name.fromChars "Capability")
-  return (Can.TType capabilityModule (Name.fromChars "Initialized") [paramType], rest1)
-parseOneType env ffiModuleName homeModuleName ("Capability.Permitted" : rest) = do
-  (paramType, rest1) <- parseOneType env ffiModuleName homeModuleName rest
-  let capabilityModule = case homeModuleName of
-        ModuleName.Canonical pkg _ -> ModuleName.Canonical pkg (Name.fromChars "Capability")
-  return (Can.TType capabilityModule (Name.fromChars "Permitted") [paramType], rest1)
-parseOneType env ffiModuleName homeModuleName ("Capability.Available" : rest) = do
-  (paramType, rest1) <- parseOneType env ffiModuleName homeModuleName rest
-  let capabilityModule = case homeModuleName of
-        ModuleName.Canonical pkg _ -> ModuleName.Canonical pkg (Name.fromChars "Capability")
-  return (Can.TType capabilityModule (Name.fromChars "Available") [paramType], rest1)
-parseOneType env ffiModuleName homeModuleName ("(" : rest) = do
-  let (tupleTokens, afterParen) = span (/= ")") rest
-  case afterParen of
-    (")" : remaining) -> do
-      let elements = splitTupleTokens tupleTokens
-      parsedElements <- mapM (parseOneType env ffiModuleName homeModuleName) elements
-      let types = map fst parsedElements
-      case types of
-        [] -> Just (Can.TUnit, remaining)
-        [single] -> Just (single, remaining)
-        [first, second] -> Just (Can.TTuple first second Nothing, remaining)
-        [first, second, third] -> Just (Can.TTuple first second (Just third), remaining)
-        _ -> Nothing
-    _ -> Nothing
-  where
-    splitTupleTokens :: [String] -> [[String]]
-    splitTupleTokens toks =
-      let go :: [String] -> Int -> [String] -> [[String]] -> [[String]]
-          go [] _ acc result = if null acc then result else result ++ [reverse acc]
-          go ("," : ts) 0 acc result = go ts 0 [] (result ++ [reverse acc])
-          go ("(" : ts) depth acc result = go ts (depth + 1) ("(" : acc) result
-          go (")" : ts) depth acc result = go ts (depth - 1) (")" : acc) result
-          go (t : ts) depth acc result = go ts depth (t : acc) result
-      in go toks (0 :: Int) [] []
-parseOneType env ffiModuleName homeModuleName (t : rest) = Just (parseBasicTypeWithHome env ffiModuleName homeModuleName t, rest)
+-- FFI TYPE TO CANONICAL CONVERSION
 
--- | Parse complex types with home module context.
+-- | Convert an 'FFIType' to a canonical 'Can.Type'.
 --
--- Returns Nothing when the tokens cannot be parsed into a valid type,
--- allowing callers to report proper errors instead of silently degrading.
--- ffiModuleName is used as fallback for unknown opaque types
-parseComplexTypeWithHome :: Env.Env -> ModuleName.Canonical -> ModuleName.Canonical -> [String] -> Maybe Can.Type
-parseComplexTypeWithHome env ffiModuleName homeModuleName tokens =
-  case parseOneType env ffiModuleName homeModuleName tokens of
-    Just (tipe, _) -> Just tipe
-    Nothing -> Nothing
+-- Uses the environment to resolve custom type names to their
+-- defining modules. Built-in types (Int, String, etc.) are mapped
+-- to their well-known canonical module names.
+ffiTypeToCanonical :: Env.Env -> ModuleName.Canonical -> ModuleName.Canonical -> FFI.FFIType -> Can.Type
+ffiTypeToCanonical env ffiMod homeMod ffiType = case ffiType of
+  FFI.FFIInt -> Can.TType ModuleName.basics (Name.fromChars "Int") []
+  FFI.FFIFloat -> Can.TType ModuleName.basics (Name.fromChars "Float") []
+  FFI.FFIString -> Can.TType ModuleName.string (Name.fromChars "String") []
+  FFI.FFIBool -> Can.TType ModuleName.basics (Name.fromChars "Bool") []
+  FFI.FFIUnit -> Can.TUnit
 
--- Parse basic type names with home module context for custom types
--- Uses env to look up imported types and resolve them to their defining module
--- ffiModuleName is used as fallback for unknown opaque types (FFI-specific types)
-parseBasicTypeWithHome :: Env.Env -> ModuleName.Canonical -> ModuleName.Canonical -> String -> Can.Type
-parseBasicTypeWithHome env ffiModuleName homeModuleName typeName =
-  let trimmedName = dropWhileEnd (== ' ') (dropWhile (== ' ') typeName)
-      dropWhileEnd predicate xs = foldr (\x acc -> if predicate x && null acc then [] else x:acc) [] xs
-      isTuple = isTupleString trimmedName
-      unparenthesized = case trimmedName of
-        "()" -> "()"
-        ('(' : rest) | not (null rest) && last rest == ')' -> init rest
-        other -> other
-      isComplexType = ' ' `elem` unparenthesized && unparenthesized /= "()" && not isTuple
-  in if isTuple
-       then parseTupleString env ffiModuleName homeModuleName trimmedName
-       else if isComplexType
-         then maybe (Can.TType ffiModuleName (Name.fromChars trimmedName) [])
-                id
-                (parseComplexTypeWithHome env ffiModuleName homeModuleName (tokenizeTypeSegment (Text.pack unparenthesized)))
-         else resolveBasicType env ffiModuleName homeModuleName trimmedName unparenthesized
+  FFI.FFIList inner ->
+    makeAlias ModuleName.list "List" [("a", inner)]
 
--- Resolve a basic (non-complex, non-tuple) type by name
-resolveBasicType :: Env.Env -> ModuleName.Canonical -> ModuleName.Canonical -> String -> String -> Can.Type
-resolveBasicType env ffiModuleName homeModuleName trimmedName unparenthesized =
-  case unparenthesized of
-    "Int" -> Can.TType ModuleName.basics (Name.fromChars "Int") []
-    "Float" -> Can.TType ModuleName.basics (Name.fromChars "Float") []
-    "Bool" -> Can.TType ModuleName.basics (Name.fromChars "Bool") []
-    "String" -> Can.TType ModuleName.string (Name.fromChars "String") []
-    "()" -> Can.TUnit
-    "Unit" -> Can.TUnit
-    "Task" -> Can.TType ModuleName.task (Name.fromChars "Task") []
-    "Result" -> Can.TType ModuleName.result (Name.fromChars "Result") []
-    "List" -> Can.TType ModuleName.list (Name.fromChars "List") []
-    "Maybe" -> Can.TType ModuleName.maybe (Name.fromChars "Maybe") []
-    tupleStr | isTupleString tupleStr ->
-      parseTupleString env ffiModuleName homeModuleName tupleStr
-    [ch] | ch >= 'a' && ch <= 'z' ->
-      Can.TType homeModuleName (Name.fromChars trimmedName) []
-    qualifiedType | '.' `elem` qualifiedType ->
-      resolveQualifiedType env ffiModuleName homeModuleName qualifiedType
-    customType ->
-      if customType == "String"
-        then Can.TType ModuleName.string (Name.fromChars "String") []
-        else resolveCustomType env ffiModuleName customType
+  FFI.FFIMaybe inner ->
+    makeAlias ModuleName.maybe "Maybe" [("a", inner)]
 
--- Resolve a module-qualified type like "Capability.CapabilityError"
-resolveQualifiedType :: Env.Env -> ModuleName.Canonical -> ModuleName.Canonical -> String -> Can.Type
-resolveQualifiedType env _ffiModuleName homeModuleName qualifiedType =
-  let parts = splitOn '.' qualifiedType
+  FFI.FFIResult errTy valTy ->
+    makeAlias ModuleName.result "Result" [("e", errTy), ("a", valTy)]
+
+  FFI.FFITask errTy valTy ->
+    makeTaskAlias errTy valTy
+
+  FFI.FFIFunctionType params retTy ->
+    foldr (\p acc -> Can.TLambda (recur p) acc) (recur retTy) params
+
+  FFI.FFITuple types ->
+    convertTuple (map recur types)
+
+  FFI.FFIOpaque name ->
+    resolveOpaqueName env ffiMod homeMod (Text.unpack name)
+
+  FFI.FFIRecord fields ->
+    Can.TRecord (Map.fromList (map convertField fields)) Nothing
+  where
+    recur = ffiTypeToCanonical env ffiMod homeMod
+
+    makeAlias modName typeName argPairs =
+      let canArgs = map (\(n, t) -> (Name.fromChars n, recur t)) argPairs
+          innerTypes = map snd canArgs
+       in Can.TAlias
+            modName
+            (Name.fromChars typeName)
+            canArgs
+            (Can.Filled (Can.TType modName (Name.fromChars typeName) innerTypes))
+
+    makeTaskAlias errTy valTy =
+      let canErr = recur errTy
+          canVal = recur valTy
+       in Can.TAlias
+            ModuleName.task
+            (Name.fromChars "Task")
+            [(Name.fromChars "x", canErr), (Name.fromChars "a", canVal)]
+            (Can.Filled (Can.TType ModuleName.platform (Name.fromChars "Task") [canErr, canVal]))
+
+    convertField (name, ffiTy) =
+      (Name.fromChars (Text.unpack name), Can.FieldType 0 (recur ffiTy))
+
+-- | Convert tuple types, handling Canopy's 2/3-element tuple limit.
+convertTuple :: [Can.Type] -> Can.Type
+convertTuple [] = Can.TUnit
+convertTuple [single] = single
+convertTuple [a, b] = Can.TTuple a b Nothing
+convertTuple [a, b, c] = Can.TTuple a b (Just c)
+convertTuple types =
+  let mid = length types `div` 2
+      (left, right) = splitAt mid types
+   in Can.TTuple (convertTuple left) (convertTuple right) Nothing
+
+-- | Resolve an opaque type name using the environment.
+resolveOpaqueName :: Env.Env -> ModuleName.Canonical -> ModuleName.Canonical -> String -> Can.Type
+resolveOpaqueName env ffiMod homeMod name = case name of
+  [ch] | ch >= 'a' && ch <= 'z' ->
+    Can.TType homeMod (Name.fromChars name) []
+  _ | '.' `elem` name ->
+    resolveQualifiedName env homeMod name
+  _ -> resolveUnqualifiedName env ffiMod name
+
+-- | Resolve a qualified type name like "Capability.CapabilityError".
+resolveQualifiedName :: Env.Env -> ModuleName.Canonical -> String -> Can.Type
+resolveQualifiedName env homeMod qualifiedName =
+  let parts = splitOnDot qualifiedName
       moduleParts = init parts
       typeNamePart = last parts
-      moduleNameStr = intercalate "." moduleParts
-      qualifierName = Name.fromChars moduleNameStr
+      qualifierName = Name.fromChars (concatWithDots moduleParts)
       typeNameObj = Name.fromChars typeNamePart
-      maybeQualifiedTypeInfo = do
+      maybeInfo = do
         innerMap <- Map.lookup qualifierName (Env._q_types env)
         Map.lookup typeNameObj innerMap
-      fallbackModule = case homeModuleName of
+      fallbackModule = case homeMod of
         ModuleName.Canonical pkg _ -> ModuleName.Canonical pkg qualifierName
-  in case maybeQualifiedTypeInfo of
-       Just info -> resolveTypeFromInfo fallbackModule typeNameObj (Just info)
-       Nothing -> Can.TType fallbackModule typeNameObj []
+   in resolveTypeFromInfo fallbackModule typeNameObj maybeInfo
 
--- Resolve a custom unqualified type using the environment
-resolveCustomType :: Env.Env -> ModuleName.Canonical -> String -> Can.Type
-resolveCustomType env ffiModuleName customType =
+-- | Resolve an unqualified custom type using the environment.
+resolveUnqualifiedName :: Env.Env -> ModuleName.Canonical -> String -> Can.Type
+resolveUnqualifiedName env ffiMod customType =
   let typeNameObj = Name.fromChars customType
-      maybeTypeInfo = Map.lookup typeNameObj (Env._types env)
-  in resolveTypeFromInfo ffiModuleName typeNameObj maybeTypeInfo
+      maybeInfo = Map.lookup typeNameObj (Env._types env)
+   in resolveTypeFromInfo ffiMod typeNameObj maybeInfo
 
--- Resolve a type from its environment Info entry
+-- | Resolve a type from its environment Info entry.
 resolveTypeFromInfo :: ModuleName.Canonical -> Name.Name -> Maybe (Env.Info Env.Type) -> Can.Type
 resolveTypeFromInfo fallback tname Nothing =
   Can.TType fallback tname []
@@ -545,57 +464,20 @@ resolveTypeFromInfo _fallback tname (Just (Env.Specific _defMod (Env.Union _arit
 resolveTypeFromInfo _fallback tname (Just (Env.Ambiguous defMod _)) =
   Can.TType defMod tname []
 
--- Helper: split a string on a delimiter character
-splitOn :: Char -> String -> [String]
-splitOn _ [] = []
-splitOn delim str =
-  let (first, rest) = break (== delim) str
-  in first : case rest of
-               [] -> []
-               (_:xs) -> splitOn delim xs
+-- | Split a string on dots.
+splitOnDot :: String -> [String]
+splitOnDot [] = []
+splitOnDot str =
+  let (first, rest) = break (== '.') str
+   in first : case rest of
+        [] -> []
+        (_ : xs) -> splitOnDot xs
 
--- Check if a type string represents a tuple
-isTupleString :: String -> Bool
-isTupleString str =
-  let trimmed = dropWhile (== ' ') str
-  in case trimmed of
-       ('(' : rest) ->
-         let inner = takeWhile (/= ')') rest
-         in ',' `elem` inner
-       _ -> False
-
--- Parse a tuple string like "(Float, Float)" into a Can.TTuple
--- For 4+ element tuples, constructs nested pairs: (a,b,c,d) -> ((a,b),(c,d))
--- ffiModuleName is used as fallback for unknown opaque types
-parseTupleString :: Env.Env -> ModuleName.Canonical -> ModuleName.Canonical -> String -> Can.Type
-parseTupleString env ffiModuleName homeModuleName str =
-  let trimmed = dropWhile (== ' ') str
-      withoutParens = case trimmed of
-                        ('(' : rest) -> takeWhile (/= ')') rest
-                        other -> other
-      elements = splitByComma withoutParens
-      parsedElements = map (parseBasicTypeWithHome env ffiModuleName homeModuleName . trim) elements
-  in buildTupleType parsedElements
-  where
-    trim = dropWhile (== ' ') . reverse . dropWhile (== ' ') . reverse
-    splitByComma s = go [] [] s
-      where
-        go acc current [] = reverse (reverse current : acc)
-        go acc current (',' : cs) = go (reverse current : acc) [] cs
-        go acc current (c : cs) = go acc (c : current) cs
-
--- Build tuple type, handling 4+ elements with nested pairs
-buildTupleType :: [Can.Type] -> Can.Type
-buildTupleType [] = Can.TUnit
-buildTupleType [single] = single
-buildTupleType [first, second] = Can.TTuple first second Nothing
-buildTupleType [first, second, third] = Can.TTuple first second (Just third)
-buildTupleType types =
-  let midpoint = length types `div` 2
-      (leftTypes, rightTypes) = splitAt midpoint types
-      leftTuple = buildTupleType leftTypes
-      rightTuple = buildTupleType rightTypes
-  in Can.TTuple leftTuple rightTuple Nothing
+-- | Join strings with dots.
+concatWithDots :: [String] -> String
+concatWithDots [] = ""
+concatWithDots [x] = x
+concatWithDots (x : xs) = x ++ "." ++ concatWithDots xs
 
 -- CAPABILITY WARNING EXTRACTION
 

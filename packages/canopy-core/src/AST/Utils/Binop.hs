@@ -196,7 +196,7 @@ instance Binary Associativity where
         0 -> return Left
         1 -> return Non
         2 -> return Right
-        _ -> fail "Error reading valid associativity from serialized string"
+        _ -> fail ("Associativity: unexpected tag " ++ show n ++ " (expected 0-2). Delete canopy-stuff/ to rebuild.")
 
   put assoc =
     putWord8 $

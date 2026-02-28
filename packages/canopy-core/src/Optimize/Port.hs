@@ -13,7 +13,7 @@ import qualified AST.Utils.Type as Type
 import qualified Canopy.ModuleName as ModuleName
 import Control.Monad (foldM)
 import qualified Canopy.Data.Index as Index
-import qualified Data.Map as Map
+import qualified Data.Map.Strict as Map
 import qualified Canopy.Data.Name as Name
 import qualified Optimize.Names as Names
 import qualified Reporting.InternalError as InternalError

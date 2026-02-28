@@ -37,8 +37,8 @@ import qualified Canopy.Package as Pkg
 import Parse.Module (ProjectType (..))
 import qualified Data.Graph as Graph
 import qualified Canopy.Data.Index as Index
-import Data.Map (Map)
-import qualified Data.Map as Map
+import Data.Map.Strict (Map)
+import qualified Data.Map.Strict as Map
 import qualified Canopy.Data.Name as Name
 import Data.Set (Set)
 import qualified Data.Set as Set

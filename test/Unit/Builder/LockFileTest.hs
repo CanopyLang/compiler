@@ -14,6 +14,7 @@ import qualified Canopy.Version as Version
 import qualified Canopy.Data.Utf8 as Utf8
 import Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
+import qualified Data.Text as Text
 import System.FilePath ((</>))
 import System.IO.Temp (withSystemTempDirectory)
 import Test.Tasty
@@ -29,7 +30,9 @@ tests =
       testGenerateAndRead,
       testLockFilePath,
       testEmptyPackagesRoundtrip,
-      testCurrentLockFile
+      testCurrentLockFile,
+      testUncachedPackageHash,
+      testGeneratedHashFormat
     ]
 
 -- | Make a test package name from author/project strings.
@@ -181,3 +184,37 @@ testCurrentLockFile =
         Just lf -> do
           current <- LockFile.isLockFileCurrent lf tmpDir
           current @?= True
+
+testUncachedPackageHash :: TestTree
+testUncachedPackageHash =
+  testCase "uncached package gets sha256:not-cached hash" $
+    withSystemTempDirectory "lockfile-test" $ \tmpDir -> do
+      writeFile (tmpDir </> "canopy.json") "{\"type\":\"application\"}"
+      let fakePkg = mkPkg "nonexistent" "package"
+          deps = Map.singleton fakePkg (mkVer 99 99 99)
+      LockFile.generateLockFile tmpDir deps
+      result <- LockFile.readLockFile tmpDir
+      case result of
+        Nothing -> assertFailure "Expected lock file to be readable"
+        Just lf ->
+          case Map.lookup fakePkg (LockFile._lockPackages lf) of
+            Nothing -> assertFailure "Expected package in lock file"
+            Just lp -> LockFile._lpHash lp @?= "sha256:not-cached"
+
+testGeneratedHashFormat :: TestTree
+testGeneratedHashFormat =
+  testCase "generated root hash starts with sha256: prefix" $
+    withSystemTempDirectory "lockfile-test" $ \tmpDir -> do
+      writeFile (tmpDir </> "canopy.json") "{\"type\":\"application\"}"
+      LockFile.generateLockFile tmpDir Map.empty
+      result <- LockFile.readLockFile tmpDir
+      case result of
+        Nothing -> assertFailure "Expected lock file to be readable"
+        Just lf -> do
+          let rootHash = LockFile._lockRootHash lf
+          assertBool
+            "root hash should start with sha256:"
+            (Text.isPrefixOf "sha256:" rootHash)
+          assertBool
+            "root hash should have hex digits after prefix"
+            (Text.length rootHash > Text.length "sha256:")

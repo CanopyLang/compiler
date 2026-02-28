@@ -263,7 +263,14 @@ integrationTests =
       InitIT.tests,
       CodeSplitIT.tests,
       PureBuilderIT.tests,
-      EndToEndIT.tests
+      EndToEndIT.tests,
+      DevelopIT.tests,
+      InstallIT.tests,
+      MakeIT.tests,
+      ChompIT.tests,
+      TerminalIT.tests,
+      WatchIT.tests,
+      JsonIT.tests
     ]
 
 goldenTests :: TestTree

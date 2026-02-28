@@ -62,7 +62,7 @@ instance Binary.Binary CtorOpts where
         0 -> return Normal
         1 -> return Enum
         2 -> return Unbox
-        _ -> fail "binary encoding of CtorOpts was corrupted"
+        _ -> fail ("CtorOpts: unexpected tag " ++ show n ++ " (expected 0-2). Delete canopy-stuff/ to rebuild.")
 
 instance Binary.Binary Annotation where
   get = Monad.liftM2 Forall Binary.get Binary.get
@@ -148,7 +148,7 @@ getTypeSimple word = case word of
   3 -> return TUnit
   4 -> Monad.liftM3 TTuple Binary.get Binary.get Binary.get
   5 -> Monad.liftM4 TAlias Binary.get Binary.get Binary.get Binary.get
-  _ -> fail "getTypeSimple: unexpected word"
+  _ -> fail ("Can.Type: unexpected tag " ++ show word ++ " (expected 0-5). Delete canopy-stuff/ to rebuild.")
 
 -- | Deserialize TType with optimized length encoding.
 --
@@ -172,7 +172,7 @@ instance Binary.Binary AliasType where
       case n of
         0 -> fmap Holey Binary.get
         1 -> fmap Filled Binary.get
-        _ -> fail "binary encoding of AliasType was corrupted"
+        _ -> fail ("AliasType: unexpected tag " ++ show n ++ " (expected 0-1). Delete canopy-stuff/ to rebuild.")
 
 instance Binary.Binary FieldType where
   get = Monad.liftM2 FieldType Binary.get Binary.get
@@ -211,7 +211,7 @@ getArithOp = do
     1 -> pure Sub
     2 -> pure Mul
     3 -> pure Div
-    _ -> fail ("binary encoding of ArithOp was corrupted: " ++ show w)
+    _ -> fail ("ArithOp: unexpected tag " ++ show w ++ " (expected 0-3). Delete canopy-stuff/ to rebuild.")
 
 -- | Binary serialization for BinopKind.
 --
@@ -230,4 +230,4 @@ instance Binary.Binary BinopKind where
     case tag of
       0 -> fmap NativeArith Binary.get
       1 -> Monad.liftM3 UserDefined Binary.get Binary.get Binary.get
-      _ -> fail ("binary encoding of BinopKind was corrupted: " ++ show tag)
+      _ -> fail ("BinopKind: unexpected tag " ++ show tag ++ " (expected 0-1). Delete canopy-stuff/ to rebuild.")

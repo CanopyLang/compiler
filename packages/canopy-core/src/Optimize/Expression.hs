@@ -15,7 +15,7 @@ import qualified Canopy.Data.Name as Name
 import qualified Canopy.Data.Utf8 as Utf8
 import qualified Canopy.ModuleName as ModuleName
 import Control.Monad (foldM)
-import qualified Data.Map as Map
+import qualified Data.Map.Strict as Map
 import qualified Data.Set as Set
 import qualified Optimize.Case as Case
 import qualified Optimize.ConstantFold as ConstantFold

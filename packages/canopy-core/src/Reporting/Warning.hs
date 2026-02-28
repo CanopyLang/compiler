@@ -22,5 +22,7 @@ data Warning
   | MissingTypeAnnotation Ann.Region Name.Name Can.Type
   | CapabilityNotice !Text !Text ![Text]
     -- ^ Module name, function name, list of required capabilities
+  | FFIUnresolvedType !Text !Text !Text
+    -- ^ FFI file path, function name, unresolved type name
 
 data Context = Def | Pattern

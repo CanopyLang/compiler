@@ -34,13 +34,14 @@ import qualified Data.ByteString.Builder as BB
 import qualified Data.ByteString.Lazy as BL
 import Data.Word (Word8)
 import qualified Data.List as List
-import Data.Map (Map)
-import qualified Data.Map as Map
+import Data.Map.Strict (Map)
+import qualified Data.Map.Strict as Map
 import qualified Data.Maybe
 import qualified Canopy.Data.Name as Name
 import Data.Set (Set)
 import qualified Data.Set as Set
 import qualified Data.Text as Text
+import qualified FFI.TypeParser as TypeParser
 import qualified FFI.Validator as Validator
 import qualified Generate.JavaScript.Builder as JS
 import qualified Generate.JavaScript.Expression as Expr
@@ -224,7 +225,7 @@ findFunctionName (line:rest) =
 -- | Generate JavaScript binding for a single function as Builders.
 generateFunctionBinding :: Mode.Mode -> Graph -> String -> String -> (String, String) -> [Builder]
 generateFunctionBinding mode _graph _filePath alias (funcName, canopyType) =
-  let arity = countArrows canopyType
+  let arity = maybe 0 TypeParser.countArity (TypeParser.parseType (Text.pack canopyType))
       jsVarName = "$author$project$" ++ alias ++ "$" ++ funcName
       callPath = "'" ++ alias ++ "." ++ funcName ++ "'"
   in if Mode.isFFIStrict mode
@@ -308,42 +309,6 @@ ffiTypeToValidator ffiType = case ffiType of
     "$validate.Function"
   Validator.FFIRecord _ ->
     "$validate.Record"
-
--- Count arrows in a type signature to determine arity.
-countArrows :: String -> Int
-countArrows typeStr =
-  let tokens = tokenizeCanopyType (Text.pack typeStr)
-      result = countFunctionArrows tokens
-  in result
-  where
-    tokenizeCanopyType :: Text.Text -> [Text.Text]
-    tokenizeCanopyType typeText = filter (not . Text.null) (go [] "" typeText)
-      where
-        go :: [Text.Text] -> Text.Text -> Text.Text -> [Text.Text]
-        go acc current text
-          | Text.null text = if Text.null current then acc else acc ++ [current]
-          | Text.head text == '(' =
-              let newAcc = if Text.null current then acc else acc ++ [current]
-              in go (newAcc ++ ["("]) "" (Text.tail text)
-          | Text.head text == ')' =
-              let newAcc = if Text.null current then acc else acc ++ [current]
-              in go (newAcc ++ [")"]) "" (Text.tail text)
-          | Text.head text == ' ' =
-              if Text.null current
-                then go acc "" (Text.tail text)
-                else go (acc ++ [current]) "" (Text.tail text)
-          | otherwise =
-              go acc (current <> Text.take 1 text) (Text.tail text)
-
-    countFunctionArrows :: [Text.Text] -> Int
-    countFunctionArrows tokens = go tokens (0 :: Int) (0 :: Int)
-      where
-        go [] _parenCount arrowCount = arrowCount
-        go (token:rest) parenCount arrowCount
-          | token == "(" = go rest (parenCount + 1) arrowCount
-          | token == ")" = go rest (parenCount - 1) arrowCount
-          | token == "->" && parenCount == 0 = go rest parenCount (arrowCount + 1)
-          | otherwise = go rest parenCount arrowCount
 
 -- | Trim leading and trailing whitespace from a string.
 trim :: String -> String

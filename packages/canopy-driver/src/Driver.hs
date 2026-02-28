@@ -53,6 +53,7 @@ import qualified Queries.Parse.Module as ParseQuery
 import qualified Queries.Type.Check as TypeQuery
 import qualified Query.Engine as Engine
 import Query.Simple
+import qualified System.Timeout as Timeout
 import qualified Worker.Pool as Pool
 import qualified Parse.Module as Parse
 import qualified Reporting.Annotation as Ann
@@ -139,7 +140,21 @@ compileFromSource pkg ifaces sourceModule = do
                     )
                 )
 
+-- | Per-module compilation timeout in microseconds (5 minutes).
+--
+-- Prevents pathological inputs from hanging the compiler indefinitely.
+-- This is a conservative limit — even very large modules should compile
+-- well within this window.
+--
+-- @since 0.19.2
+moduleTimeoutMicroseconds :: Int
+moduleTimeoutMicroseconds = 300000000
+
 -- | Compile a module with existing engine (for batch compilation).
+--
+-- Wraps the compilation pipeline with a timeout to prevent pathological
+-- inputs from hanging the compiler. Returns 'TimeoutError' if the
+-- module exceeds the per-module time limit.
 compileModuleFull ::
   Engine.QueryEngine ->
   Pkg.Name ->
@@ -148,6 +163,20 @@ compileModuleFull ::
   Parse.ProjectType ->
   IO (Either QueryError CompileResult)
 compileModuleFull engine pkg ifaces path projectType = do
+  result <- Timeout.timeout moduleTimeoutMicroseconds (compileModuleCore engine pkg ifaces path projectType)
+  case result of
+    Just compilation -> return compilation
+    Nothing -> return (Left (TimeoutError path))
+
+-- | Core module compilation pipeline without timeout wrapper.
+compileModuleCore ::
+  Engine.QueryEngine ->
+  Pkg.Name ->
+  Map ModuleName.Raw Interface.Interface ->
+  FilePath ->
+  Parse.ProjectType ->
+  IO (Either QueryError CompileResult)
+compileModuleCore engine pkg ifaces path projectType = do
   Log.logEvent (CompileStarted path)
 
   parseResult <- runParsePhase engine path projectType

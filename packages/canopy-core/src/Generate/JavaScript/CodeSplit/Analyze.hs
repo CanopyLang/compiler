@@ -32,7 +32,7 @@ where
 import qualified AST.Optimized as Opt
 import qualified Canopy.ModuleName as ModuleName
 import Control.Lens ((&), (.~), (^.))
-import Data.Map (Map)
+import Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
 import Data.Set (Set)
 import qualified Data.Set as Set

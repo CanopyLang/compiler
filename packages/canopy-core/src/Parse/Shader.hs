@@ -7,7 +7,7 @@ module Parse.Shader
 
 import qualified Data.ByteString.Internal as BSI
 import qualified Data.ByteString.UTF8 as BS_UTF8
-import qualified Data.Map as Map
+import qualified Data.Map.Strict as Map
 import qualified Canopy.Data.Name as Name
 import Data.Word (Word8)
 import Foreign.Ptr (Ptr, plusPtr, minusPtr)

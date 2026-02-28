@@ -217,8 +217,8 @@ where
 import qualified Control.Arrow as Arrow
 import qualified Data.ByteString.Builder as BB
 import qualified Data.ByteString.Char8 as BSC
-import Data.Map (Map)
-import qualified Data.Map as Map
+import Data.Map.Strict (Map)
+import qualified Data.Map.Strict as Map
 import qualified Canopy.Data.Name as Name
 import qualified Data.Scientific as Sci
 import qualified Canopy.Data.Utf8 as Utf8

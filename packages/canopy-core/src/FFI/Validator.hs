@@ -41,15 +41,15 @@ module FFI.Validator
     -- * FFI type representation (re-exported from FFI.Types)
   , FFIType(..)
 
-    -- * Type string parsing
+    -- * Type string parsing (delegated to FFI.TypeParser)
   , parseFFIType
   , parseReturnType
   ) where
 
-import qualified Data.Char as Char
 import qualified Data.Text as Text
 import Data.Text (Text)
 import FFI.Types (FFIType (..))
+import qualified FFI.TypeParser as TypeParser
 
 -- | Configuration for validator generation
 data ValidatorConfig = ValidatorConfig
@@ -233,186 +233,14 @@ generateAllValidators config ffiType =
       FFIRecord fields -> map snd fields
       _ -> []
 
--- | Parse a type string into FFIType
+-- | Parse a type string into FFIType.
+--
+-- Delegates to the unified parser in "FFI.TypeParser".
 parseFFIType :: Text -> Maybe FFIType
-parseFFIType input =
-  let tokens = tokenize (Text.unpack (Text.strip input))
-  in parseTokens tokens
+parseFFIType = TypeParser.parseType
 
--- | Parse and extract just the return type from a function type string
+-- | Parse and extract just the return type from a function type string.
+--
+-- Delegates to the unified parser in "FFI.TypeParser".
 parseReturnType :: Text -> Maybe FFIType
-parseReturnType input =
-  let tokens = tokenize (Text.unpack (Text.strip input))
-      parts = splitAtArrows tokens
-  in case parts of
-    [] -> Nothing
-    _ -> parseTokens (last parts)
-
--- | Token type for parsing
-data Token
-  = TWord String
-  | TArrow
-  | TOpenParen
-  | TCloseParen
-  | TComma
-  deriving (Eq, Show)
-
--- | Tokenize a type string
-tokenize :: String -> [Token]
-tokenize [] = []
-tokenize ('-':'>':rest) = TArrow : tokenize rest
-tokenize ('(':rest) = TOpenParen : tokenize rest
-tokenize (')':rest) = TCloseParen : tokenize rest
-tokenize (',':rest) = TComma : tokenize rest
-tokenize (c:rest)
-  | Char.isSpace c = tokenize rest
-  | Char.isAlpha c || c == '.' =
-      let (word, remaining) = span isWordChar (c:rest)
-      in TWord word : tokenize remaining
-  | otherwise = tokenize rest
-  where
-    isWordChar ch = Char.isAlphaNum ch || ch == '.' || ch == '_'
-
--- | Split tokens at top-level arrows
-splitAtArrows :: [Token] -> [[Token]]
-splitAtArrows tokens = go [] [] (0 :: Int) tokens
-  where
-    go groups current _ [] = reverse (reverse current : groups)
-    go groups current depth (t:ts) = case t of
-      TOpenParen -> go groups (t:current) (depth + 1) ts
-      TCloseParen -> go groups (t:current) (max 0 (depth - 1)) ts
-      TArrow
-        | depth == 0 -> go (reverse current : groups) [] 0 ts
-        | otherwise -> go groups (t:current) depth ts
-      _ -> go groups (t:current) depth ts
-
--- | Parse tokens into FFIType
-parseTokens :: [Token] -> Maybe FFIType
-parseTokens tokens =
-  case tokens of
-    [] -> Nothing
-    [TWord "Int"] -> Just FFIInt
-    [TWord "Float"] -> Just FFIFloat
-    [TWord "String"] -> Just FFIString
-    [TWord "Bool"] -> Just FFIBool
-    [TWord "()"] -> Just FFIUnit
-    [TWord name] -> Just (FFIOpaque (Text.pack name))
-
-    -- List a
-    (TWord "List" : rest) ->
-      FFIList <$> parseTokens rest
-
-    -- Maybe a
-    (TWord "Maybe" : rest) ->
-      FFIMaybe <$> parseTokens rest
-
-    -- Result e a
-    (TWord "Result" : rest) ->
-      parseResultType rest
-
-    -- Task e a
-    (TWord "Task" : rest) ->
-      parseTaskType rest
-
-    -- Tuple (a, b, ...)
-    (TOpenParen : rest) ->
-      parseTupleType rest
-
-    -- Function type
-    _ | hasTopLevelArrow tokens ->
-      parseFunctionType tokens
-
-    _ -> Nothing
-
--- | Check if tokens contain a top-level arrow (not inside parentheses)
-hasTopLevelArrow :: [Token] -> Bool
-hasTopLevelArrow = go (0 :: Int)
-  where
-    go _ [] = False
-    go depth (t:ts) = case t of
-      TOpenParen -> go (depth + 1) ts
-      TCloseParen -> go (max 0 (depth - 1)) ts
-      TArrow | depth == 0 -> True
-      _ -> go depth ts
-
--- | Parse Result e a type
-parseResultType :: [Token] -> Maybe FFIType
-parseResultType tokens =
-  let (errTokens, rest) = takeTypeArg tokens
-  in case (parseTokens errTokens, parseTokens rest) of
-    (Just errType, Just valType) -> Just (FFIResult errType valType)
-    _ -> Nothing
-
--- | Parse Task e a type
-parseTaskType :: [Token] -> Maybe FFIType
-parseTaskType tokens =
-  let (errTokens, rest) = takeTypeArg tokens
-  in case (parseTokens errTokens, parseTokens rest) of
-    (Just errType, Just valType) -> Just (FFITask errType valType)
-    _ -> Nothing
-
--- | Parse tuple type (a, b, ...) or parenthesized expression (a) or unit ()
-parseTupleType :: [Token] -> Maybe FFIType
-parseTupleType tokens =
-  let inner = takeWhile (/= TCloseParen) tokens
-      parts = splitAtCommas inner
-  in case parts of
-    [[]] -> Just FFIUnit  -- Empty parens () is Unit type
-    _ -> case traverseMaybe parseTokens parts of
-      Just [singleType] -> Just singleType  -- Parenthesized expression, not 1-tuple
-      Just types -> Just (FFITuple types)
-      Nothing -> Nothing
-
--- | Parse function type a -> b -> c
-parseFunctionType :: [Token] -> Maybe FFIType
-parseFunctionType tokens =
-  let parts = splitAtArrows tokens
-  in case parts of
-    [] -> Nothing
-    [single] -> parseTokens single
-    _ ->
-      let argParts = init parts
-          retPart = last parts
-      in case (traverseMaybe parseTokens argParts, parseTokens retPart) of
-        (Just args, Just ret) -> Just (FFIFunctionType args ret)
-        _ -> Nothing
-
--- | Take one type argument from token list
-takeTypeArg :: [Token] -> ([Token], [Token])
-takeTypeArg [] = ([], [])
-takeTypeArg (TOpenParen : rest) =
-  let (inside, remaining) = takeParenthesized rest 1 []
-  in (TOpenParen : inside ++ [TCloseParen], remaining)
-takeTypeArg (TWord w : rest) = ([TWord w], rest)
-takeTypeArg tokens = ([], tokens)
-
--- | Take tokens inside parentheses
-takeParenthesized :: [Token] -> Int -> [Token] -> ([Token], [Token])
-takeParenthesized [] _ acc = (reverse acc, [])
-takeParenthesized (TCloseParen : rest) 1 acc = (reverse acc, rest)
-takeParenthesized (TCloseParen : rest) n acc =
-  takeParenthesized rest (n - 1) (TCloseParen : acc)
-takeParenthesized (TOpenParen : rest) n acc =
-  takeParenthesized rest (n + 1) (TOpenParen : acc)
-takeParenthesized (t : rest) n acc = takeParenthesized rest n (t : acc)
-
--- | Split tokens at commas (top-level only)
-splitAtCommas :: [Token] -> [[Token]]
-splitAtCommas tokens = go [] [] (0 :: Int) tokens
-  where
-    go groups current _ [] = reverse (reverse current : groups)
-    go groups current depth (t:ts) = case t of
-      TOpenParen -> go groups (t:current) (depth + 1) ts
-      TCloseParen -> go groups (t:current) (max 0 (depth - 1)) ts
-      TComma
-        | depth == 0 -> go (reverse current : groups) [] 0 ts
-        | otherwise -> go groups (t:current) depth ts
-      _ -> go groups (t:current) depth ts
-
--- | Traverse helper for Maybe
-traverseMaybe :: (a -> Maybe b) -> [a] -> Maybe [b]
-traverseMaybe _ [] = Just []
-traverseMaybe f (x:xs) =
-  case f x of
-    Nothing -> Nothing
-    Just y -> (y :) <$> traverseMaybe f xs
+parseReturnType = TypeParser.parseReturnType

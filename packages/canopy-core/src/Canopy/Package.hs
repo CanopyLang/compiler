@@ -51,8 +51,8 @@ import qualified Data.Aeson.Key as AesonKey
 import Data.Binary (Binary, get, put)
 import qualified Data.Coerce as Coerce
 import qualified Data.List as List
-import Data.Map (Map)
-import qualified Data.Map as Map
+import Data.Map.Strict (Map)
+import qualified Data.Map.Strict as Map
 import qualified Canopy.Data.Name as Name
 import qualified Data.Text as Text
 import qualified Data.Text.Encoding as TextEnc

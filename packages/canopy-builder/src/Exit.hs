@@ -48,6 +48,7 @@ data CompileError
   | CompileOptimizeError FilePath String
   | CompileModuleNotFound FilePath
   | CompileDiagnosticError FilePath [Diagnostic]
+  | CompileTimeoutError FilePath
   deriving (Show)
 
 -- | Make command errors.
@@ -86,6 +87,8 @@ compileErrorToString = \case
     "Module not found: " ++ path
   CompileDiagnosticError path diags ->
     "Compile error in " ++ path ++ ": " ++ show (length diags) ++ " diagnostic(s)"
+  CompileTimeoutError path ->
+    "Compilation timed out for " ++ path ++ " (exceeded 5 minute limit)"
 
 -- | Convert make error to string.
 makeErrorToString :: MakeError -> String
@@ -135,6 +138,10 @@ compileErrorToDoc = \case
       (Doc.toSimpleHint "Check the \"source-directories\" in your canopy.json or elm.json to make sure the module is in one of the listed directories.")
   CompileDiagnosticError path diags ->
     renderDiagnostics path diags
+  CompileTimeoutError path ->
+    structuredError "COMPILATION TIMEOUT"
+      (Doc.indent 4 (Doc.dullyellow (Doc.fromChars path)))
+      (Doc.toSimpleHint "This module took too long to compile. This can happen with very large modules or pathological type inference. Try splitting the module into smaller parts.")
 
 -- | Render structured diagnostics using the Diagnostic rendering system.
 --

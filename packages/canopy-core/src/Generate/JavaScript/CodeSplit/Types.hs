@@ -57,7 +57,7 @@ import qualified AST.Optimized as Opt
 import qualified Canopy.ModuleName as ModuleName
 import Control.Lens (makeLenses)
 import Data.ByteString.Builder (Builder)
-import Data.Map (Map)
+import Data.Map.Strict (Map)
 import Data.Set (Set)
 import qualified Data.Text as Text
 

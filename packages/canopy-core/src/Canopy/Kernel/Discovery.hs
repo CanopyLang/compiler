@@ -246,7 +246,9 @@ readKernelRegistry stuffDir = do
   if exists
     then do
       bytes <- BS.readFile kernelsPath
-      pure (Just (Binary.decode (BS.fromStrict bytes)))
+      case Binary.decodeOrFail (BS.fromStrict bytes) of
+        Right (_, _, registry) -> pure (Just registry)
+        Left _ -> pure Nothing
     else pure Nothing
 
 -- | Write kernel registry to disk.

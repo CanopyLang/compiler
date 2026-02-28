@@ -59,7 +59,7 @@ testCompleteParsingWorkflows =
           Right (filename, ()) -> filename @?= "input.txt"
           Left _ -> assertFailure "Expected successful parsing",
       testCase "boolean flag parsing" $ do
-        let args = Args []
+        let args = Args [Exactly (Done ())]
             verboseFlag = OnOff "verbose" "enable verbose output"
             flags = FMore (FDone id) verboseFlag
             (_, result) = Chomp.chomp Nothing ["--verbose"] args flags
@@ -98,7 +98,7 @@ testErrorRecoveryScenarios =
           Left _ -> pure () -- Expected error for missing argument
           Right _ -> assertFailure "Should fail with missing argument",
       testCase "unknown flag error with suggestions" $ do
-        let args = Args []
+        let args = Args [Exactly (Done ())]
             knownFlag = OnOff "verbose" "enable verbose output"
             flags = FMore (FDone id) knownFlag
             (suggestions, result) = Chomp.chomp (Just 1) ["--verbos"] args flags -- Request suggestions for flag position (similar to verbose)
@@ -130,7 +130,7 @@ testSuggestionGeneration =
         suggestionList <- suggestions
         length suggestionList @?= 2, -- Expected file extension suggestions
       testCase "flag name completion suggestions" $ do
-        let args = Args []
+        let args = Args [Exactly (Done ())]
             flag1 = OnOff "verbose" "verbose output"
             flag2 = OnOff "version" "show version"
             flags = FMore (FMore (FDone (\v1 v2 -> (v1, v2))) flag1) flag2
@@ -214,7 +214,7 @@ testFlagAndArgumentIntegration =
           Left _ -> assertFailure "Expected successful complex parsing",
       testCase "flag value extraction with equals syntax" $ do
         let outputParser = stringParser "output" "output directory"
-            args = Args []
+            args = Args [Exactly (Done ())]
             outputFlag = Flag "output" outputParser "output directory"
             flags = FMore (FDone id) outputFlag
             (_, result) = Chomp.chomp Nothing ["--output=results/"] args flags

@@ -19,6 +19,11 @@ module FFI.Types
     -- * Domain newtypes for FFI content
   , JsSourcePath(..)
   , JsSource(..)
+
+    -- * Domain newtypes for FFI bindings
+  , FFIFuncName(..)
+  , FFITypeAnnotation(..)
+  , FFIBinding(..)
   )
 where
 
@@ -104,3 +109,32 @@ newtype JsSourcePath = JsSourcePath { unJsSourcePath :: String }
 -- @since 0.19.2
 newtype JsSource = JsSource { unJsSource :: String }
   deriving (Eq, Show)
+
+-- | FFI function name extracted from a JSDoc @name annotation.
+--
+-- Wraps the Canopy-side function name to prevent confusion with
+-- type annotation strings, file paths, or other identifiers.
+--
+-- @since 0.19.2
+newtype FFIFuncName = FFIFuncName { unFFIFuncName :: String }
+  deriving (Eq, Ord, Show)
+
+-- | Canopy type annotation extracted from a JSDoc @canopy-type annotation.
+--
+-- Wraps the type string (e.g. @"Int -> Int -> Int"@) to prevent confusion
+-- with function names, file paths, or other identifiers.
+--
+-- @since 0.19.2
+newtype FFITypeAnnotation = FFITypeAnnotation { unFFITypeAnnotation :: String }
+  deriving (Eq, Show)
+
+-- | A parsed FFI binding pairing a function name with its type annotation.
+--
+-- Replaces the stringly-typed @(String, String)@ tuples to prevent
+-- accidental field swapping between function names and type annotations.
+--
+-- @since 0.19.2
+data FFIBinding = FFIBinding
+  { _bindingFuncName :: !FFIFuncName
+  , _bindingTypeAnnotation :: !FFITypeAnnotation
+  } deriving (Eq, Show)

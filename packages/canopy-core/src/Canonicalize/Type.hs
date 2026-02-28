@@ -11,7 +11,7 @@ import qualified AST.Source as Src
 import qualified Canonicalize.Environment as Env
 import qualified Canonicalize.Environment.Dups as Dups
 import qualified Data.List as List
-import qualified Data.Map as Map
+import qualified Data.Map.Strict as Map
 import qualified Canopy.Data.Name as Name
 import qualified Reporting.Annotation as Ann
 import qualified Reporting.Error.Canonicalize as Error

@@ -20,7 +20,7 @@ import qualified AST.Utils.Type as Type
 import qualified Canopy.Compiler.Type as CompilerType
 import qualified Canopy.Interface as Interface
 import qualified Canopy.ModuleName as ModuleName
-import qualified Data.Map as Map
+import qualified Data.Map.Strict as Map
 import qualified Data.Maybe as Maybe
 import qualified Canopy.Data.Name as Name
 import qualified Data.Text as Text

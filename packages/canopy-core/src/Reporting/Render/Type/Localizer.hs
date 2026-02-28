@@ -12,7 +12,7 @@ where
 
 import qualified AST.Source as Src
 import qualified Canopy.ModuleName as ModuleName
-import qualified Data.Map as Map
+import qualified Data.Map.Strict as Map
 import qualified Data.Maybe
 import qualified Canopy.Data.Name as Name
 import qualified Data.Set as Set

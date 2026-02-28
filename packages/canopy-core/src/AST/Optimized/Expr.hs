@@ -31,7 +31,7 @@ import qualified Canopy.ModuleName as ModuleName
 import qualified Canopy.String as ES
 import qualified Control.Monad as Monad
 import qualified Data.Binary as Binary
-import Data.Map (Map)
+import Data.Map.Strict (Map)
 import Data.Set (Set)
 import Data.Word (Word8)
 import qualified Optimize.DecisionTree as DT
@@ -314,7 +314,7 @@ getExpr = do
     n | n <= 19 -> getExprControl n
     n | n <= 26 -> getExprData n
     27 -> Monad.liftM3 ArithBinop Binary.get Binary.get Binary.get
-    _ -> fail "problem getting Opt.Expr binary"
+    _ -> fail ("Opt.Expr: unexpected tag " ++ show word ++ " (expected 0-27). Delete canopy-stuff/ to rebuild.")
 
 -- | Deserialize simple expressions (Bool, Chr, Str, Int, Float).
 --
@@ -326,7 +326,7 @@ getExprSimple word = case word of
   2 -> fmap Str Binary.get
   3 -> fmap Int Binary.get
   4 -> fmap Float Binary.get
-  _ -> fail "getExprSimple: unexpected word"
+  _ -> fail ("Opt.Expr.Simple: unexpected tag " ++ show word ++ " (expected 0-4). Delete canopy-stuff/ to rebuild.")
 
 -- | Deserialize variable expressions.
 --
@@ -340,7 +340,7 @@ getExprVar word = case word of
   9 -> Monad.liftM2 VarCycle Binary.get Binary.get
   10 -> Monad.liftM4 VarDebug Binary.get Binary.get Binary.get Binary.get
   11 -> Monad.liftM2 VarKernel Binary.get Binary.get
-  _ -> fail "getExprVar: unexpected word"
+  _ -> fail ("Opt.Expr.Var: unexpected tag " ++ show word ++ " (expected 5-11). Delete canopy-stuff/ to rebuild.")
 
 -- | Deserialize control flow expressions.
 --
@@ -355,7 +355,7 @@ getExprControl word = case word of
   17 -> Monad.liftM2 Let Binary.get Binary.get
   18 -> Monad.liftM2 Destruct Binary.get Binary.get
   19 -> Monad.liftM4 Case Binary.get Binary.get Binary.get Binary.get
-  _ -> fail "getExprControl: unexpected word"
+  _ -> fail ("Opt.Expr.Control: unexpected tag " ++ show word ++ " (expected 12-19). Delete canopy-stuff/ to rebuild.")
 
 -- | Deserialize data structure expressions.
 --
@@ -369,7 +369,7 @@ getExprData word = case word of
   24 -> pure Unit
   25 -> Monad.liftM3 Tuple Binary.get Binary.get Binary.get
   26 -> Monad.liftM3 Shader Binary.get Binary.get Binary.get
-  _ -> fail "getExprData: unexpected word"
+  _ -> fail ("Opt.Expr.Data: unexpected tag " ++ show word ++ " (expected 20-26). Delete canopy-stuff/ to rebuild.")
 
 instance Binary.Binary Def where
   put def =
@@ -381,7 +381,7 @@ instance Binary.Binary Def where
     case word of
       0 -> Monad.liftM2 Def Binary.get Binary.get
       1 -> Monad.liftM3 TailDef Binary.get Binary.get Binary.get
-      _ -> fail "problem getting Opt.Def binary"
+      _ -> fail ("Opt.Def: unexpected tag " ++ show word ++ " (expected 0-1). Delete canopy-stuff/ to rebuild.")
 
 instance Binary.Binary Destructor where
   get = Monad.liftM2 Destructor Binary.get Binary.get
@@ -401,7 +401,7 @@ instance Binary.Binary Path where
       1 -> Monad.liftM2 Field Binary.get Binary.get
       2 -> fmap Unbox Binary.get
       3 -> fmap Root Binary.get
-      _ -> fail "problem getting Opt.Path binary"
+      _ -> fail ("Opt.Path: unexpected tag " ++ show word ++ " (expected 0-3). Delete canopy-stuff/ to rebuild.")
 
 instance (Binary.Binary a) => Binary.Binary (Decider a) where
   put decider =
@@ -415,7 +415,7 @@ instance (Binary.Binary a) => Binary.Binary (Decider a) where
       0 -> fmap Leaf Binary.get
       1 -> Monad.liftM3 Chain Binary.get Binary.get Binary.get
       2 -> Monad.liftM3 FanOut Binary.get Binary.get Binary.get
-      _ -> fail "problem getting Opt.Decider binary"
+      _ -> fail ("Opt.Decider: unexpected tag " ++ show word ++ " (expected 0-2). Delete canopy-stuff/ to rebuild.")
 
 instance Binary.Binary Choice where
   put choice =
@@ -427,4 +427,4 @@ instance Binary.Binary Choice where
     case word of
       0 -> fmap Inline Binary.get
       1 -> fmap Jump Binary.get
-      _ -> fail "problem getting Opt.Choice binary"
+      _ -> fail ("Opt.Choice: unexpected tag " ++ show word ++ " (expected 0-1). Delete canopy-stuff/ to rebuild.")

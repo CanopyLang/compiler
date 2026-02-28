@@ -28,7 +28,7 @@ import qualified Canopy.Compiler.Type.Extract as Extract
 import qualified Canopy.ModuleName as ModuleName
 import qualified Data.Coerce as Coerce
 import qualified Data.List as List
-import qualified Data.Map as Map
+import qualified Data.Map.Strict as Map
 import qualified Data.Text as Text
 import qualified Reporting.InternalError as InternalError
 import qualified Data.Map.Merge.Strict as Map

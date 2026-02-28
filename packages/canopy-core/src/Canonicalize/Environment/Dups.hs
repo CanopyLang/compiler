@@ -13,7 +13,7 @@ module Canonicalize.Environment.Dups
   )
 where
 
-import qualified Data.Map as Map
+import qualified Data.Map.Strict as Map
 import qualified Canopy.Data.Name as Name
 import qualified Canopy.Data.OneOrMore as OneOrMore
 import qualified Reporting.Annotation as Ann

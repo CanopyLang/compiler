@@ -7,7 +7,7 @@ where
 import qualified AST.Canonical as Can
 import qualified AST.Optimized as Opt
 import Control.Arrow (second)
-import qualified Data.Map as Map
+import qualified Data.Map.Strict as Map
 import qualified Data.Maybe as Maybe
 import qualified Canopy.Data.Name as Name
 import qualified Optimize.DecisionTree as DT

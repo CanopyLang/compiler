@@ -81,6 +81,7 @@ library
       Canopy.Version
       FFI.Capability
       FFI.Manifest
+      FFI.TypeParser
       FFI.Types
       FFI.Validator
       File

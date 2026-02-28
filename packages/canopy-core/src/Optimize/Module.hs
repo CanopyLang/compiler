@@ -12,7 +12,7 @@ import qualified Canonicalize.Effects as Effects
 import qualified Canopy.ModuleName as ModuleName
 import Control.Monad (foldM)
 import qualified Data.List as List
-import qualified Data.Map as Map
+import qualified Data.Map.Strict as Map
 import qualified Data.Text as Text
 import qualified Reporting.InternalError as InternalError
 import qualified Canopy.Data.Name as Name

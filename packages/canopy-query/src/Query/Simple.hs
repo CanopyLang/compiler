@@ -68,6 +68,7 @@ data QueryError
   | FileNotFound FilePath
   | OtherError String
   | DiagnosticError FilePath [Diagnostic]
+  | TimeoutError FilePath
   deriving (Show)
 
 -- | Query results (existential type).

@@ -59,8 +59,11 @@ module Builder.LockFile
 where
 
 import qualified Builder.Hash as Hash
+import qualified Canopy.Constraint as Constraint
+import qualified Canopy.Outline as Outline
 import qualified Canopy.Package as Pkg
 import qualified Canopy.Version as Version
+import Control.Exception (SomeException, catch)
 import Control.Lens (makeLenses)
 import Data.Aeson ((.=))
 import qualified Data.Aeson as Json
@@ -156,8 +159,9 @@ isLockFileCurrent lf root = do
 --
 -- Takes the project root and the map of resolved package versions,
 -- computes the @canopy.json@ hash, and writes the lock file. Package
--- hashes are looked up from the local cache when available; packages
--- not yet cached receive a placeholder that will be filled on first download.
+-- hashes are computed from the cached package config files. Dependencies
+-- are read from each package's own outline and cross-referenced with
+-- the resolved versions map.
 --
 -- @since 0.19.1
 generateLockFile :: FilePath -> Map Pkg.Name Version.Version -> IO ()
@@ -167,7 +171,8 @@ generateLockFile root resolvedDeps = do
   let rootHash = Text.pack ("sha256:" ++ Hash.toHexString (Hash.hashValue contentHash))
   now <- Time.getCurrentTime
   let generated = Text.pack (ISO8601.iso8601Show now)
-  packages <- traverse (buildLockedPackage root) (Map.toList resolvedDeps)
+  cacheDir <- getPackageCacheDir
+  packages <- traverse (buildLockedPackage cacheDir resolvedDeps) (Map.toList resolvedDeps)
   let lf =
         LockFile
           { _lockVersion = 1,
@@ -178,16 +183,99 @@ generateLockFile root resolvedDeps = do
   writeLockFile root lf
   Log.logEvent (PackageOperation "lock-generated" (Text.pack (show (Map.size resolvedDeps)) <> " packages"))
 
+-- | Resolve the global package cache directory (@~\/.canopy\/packages\/@).
+getPackageCacheDir :: IO FilePath
+getPackageCacheDir = do
+  home <- Dir.getHomeDirectory
+  pure (home </> ".canopy" </> "packages")
+
 -- | Build a 'LockedPackage' entry for a single resolved dependency.
-buildLockedPackage :: FilePath -> (Pkg.Name, Version.Version) -> IO (Pkg.Name, LockedPackage)
-buildLockedPackage _root (pkg, ver) = do
+--
+-- Looks up the package in the cache directory, hashes its config file
+-- for integrity verification, and reads its declared dependencies
+-- (cross-referenced against the full resolved versions map).
+--
+-- If the package is not yet cached, uses @\"sha256:not-cached\"@ as
+-- a placeholder that will be filled on next download.
+--
+-- @since 0.19.1
+buildLockedPackage :: FilePath -> Map Pkg.Name Version.Version -> (Pkg.Name, Version.Version) -> IO (Pkg.Name, LockedPackage)
+buildLockedPackage cacheDir resolvedDeps (pkg, ver) = do
+  let pkgDir = packageCachePath cacheDir pkg ver
+  pkgHash <- hashPackageConfig pkgDir
+  pkgDeps <- readPackageDeps pkgDir resolvedDeps
   let lp =
         LockedPackage
           { _lpVersion = ver,
-            _lpHash = "sha256:pending",
-            _lpDependencies = Map.empty
+            _lpHash = pkgHash,
+            _lpDependencies = pkgDeps
           }
   pure (pkg, lp)
+
+-- | Compute the cache path for a specific package version.
+--
+-- Layout: @{cacheDir}\/{author}\/{project}\/{version}\/@
+packageCachePath :: FilePath -> Pkg.Name -> Version.Version -> FilePath
+packageCachePath cacheDir pkg ver =
+  cacheDir </> Pkg.toFilePath pkg </> Version.toChars ver
+
+-- | Hash the package's config file for integrity verification.
+--
+-- Tries @canopy.json@ first, then falls back to @elm.json@.
+-- Returns @\"sha256:not-cached\"@ if neither exists.
+hashPackageConfig :: FilePath -> IO Text.Text
+hashPackageConfig pkgDir = do
+  let canopyJson = pkgDir </> "canopy.json"
+      elmJson = pkgDir </> "elm.json"
+  canopyExists <- Dir.doesFileExist canopyJson
+  if canopyExists
+    then hashFileToText canopyJson
+    else do
+      elmExists <- Dir.doesFileExist elmJson
+      if elmExists
+        then hashFileToText elmJson
+        else pure "sha256:not-cached"
+
+-- | Hash a file and format as @\"sha256:{hex}\"@.
+hashFileToText :: FilePath -> IO Text.Text
+hashFileToText path = do
+  contentHash <- Hash.hashFile path
+  pure (Text.pack ("sha256:" ++ Hash.toHexString (Hash.hashValue contentHash)))
+
+-- | Read a package's declared dependencies and resolve to exact versions.
+--
+-- Reads the package's outline, extracts its dependency constraints,
+-- and looks up the exact resolved version for each dependency.
+-- Only includes dependencies present in the resolved map.
+readPackageDeps :: FilePath -> Map Pkg.Name Version.Version -> IO (Map Pkg.Name Version.Version)
+readPackageDeps pkgDir resolvedDeps = do
+  result <- safeReadOutline pkgDir
+  pure (extractDepsFromOutline result resolvedDeps)
+
+-- | Safely read a package outline, catching all exceptions.
+safeReadOutline :: FilePath -> IO (Either String Outline.Outline)
+safeReadOutline pkgDir =
+  (Outline.read pkgDir) `catch` handleException
+  where
+    handleException :: SomeException -> IO (Either String Outline.Outline)
+    handleException _ = pure (Left "failed to read outline")
+
+-- | Extract resolved dependency versions from a package outline.
+--
+-- For each dependency declared in the outline, looks up its exact
+-- version in the resolved map. Dependencies not in the resolved
+-- map are omitted (they are not part of the current closure).
+extractDepsFromOutline :: Either String Outline.Outline -> Map Pkg.Name Version.Version -> Map Pkg.Name Version.Version
+extractDepsFromOutline (Left _) _ = Map.empty
+extractDepsFromOutline (Right outline) resolvedDeps =
+  Map.intersection resolvedDeps declaredDeps
+  where
+    declaredDeps = outlineDeps outline
+
+-- | Extract the dependency map from an outline.
+outlineDeps :: Outline.Outline -> Map Pkg.Name Constraint.Constraint
+outlineDeps (Outline.App appOutline) = Outline._appDeps appOutline
+outlineDeps (Outline.Pkg pkgOutline) = Outline._pkgDeps pkgOutline
 
 -- JSON serialization
 

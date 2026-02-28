@@ -91,7 +91,7 @@ module Canopy.Data.Map.Utils
 where
 
 import Control.Monad (join)
-import qualified Data.Map as Map
+import qualified Data.Map.Strict as Map
 import Data.Map.Internal (Map (..))
 import qualified Canopy.Data.NonEmptyList as NE
 import Prelude hiding (any)

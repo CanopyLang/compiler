@@ -23,6 +23,7 @@ module Deps.Solver
   )
 where
 
+import qualified Canopy.Constraint as Constraint
 import qualified Canopy.Outline as Outline
 import qualified Canopy.Package as Pkg
 import qualified Canopy.Version as Version
@@ -77,17 +78,51 @@ initEnv = do
       registries = Registry.CanopyRegistries registry [] Map.empty
   pure (Right (Env cache manager () registries Map.empty))
 
--- | Verify solver details.
-verify :: a -> b -> c -> d -> IO (SolverResult (Map Pkg.Name Details))
-verify _ _ _ _ = pure (Ok Map.empty)
+-- | Verify that all dependency constraints can be satisfied.
+--
+-- For each package in the constraint map, looks up available versions
+-- in the registry and selects the highest version that satisfies the
+-- constraint. Returns a 'Details' map with resolved versions.
+--
+-- @since 0.19.2
+verify ::
+  Stuff.PackageCache ->
+  Connection ->
+  Registry.CanopyRegistries ->
+  Map Pkg.Name Constraint.Constraint ->
+  IO (SolverResult (Map Pkg.Name Details))
+verify _cache _connection registry constraints =
+  case resolveConstraints registry (Map.toList constraints) of
+    Just resolved -> pure (Ok resolved)
+    Nothing -> pure NoSolution
+
+-- | Resolve each constraint against the registry.
+--
+-- Returns 'Nothing' if any package is unknown or no version satisfies
+-- its constraint.
+resolveConstraints ::
+  Registry.CanopyRegistries ->
+  [(Pkg.Name, Constraint.Constraint)] ->
+  Maybe (Map Pkg.Name Details)
+resolveConstraints registry = fmap Map.fromList . traverse (resolveOne registry)
+
+-- | Resolve a single package constraint against the registry.
+resolveOne ::
+  Registry.CanopyRegistries ->
+  (Pkg.Name, Constraint.Constraint) ->
+  Maybe (Pkg.Name, Details)
+resolveOne registry (pkg, constraint) = do
+  Registry.KnownVersions latest older <- Registry.getVersions' registry pkg
+  version <- findSatisfying constraint (latest : older)
+  Just (pkg, Details version Map.empty)
 
 -- | Add package to application dependencies.
 --
--- Attempts to add a new package to an application's dependencies by solving
--- for compatible versions. Returns the old and new dependency sets along with
--- the updated outline.
+-- Looks up the latest available version of the requested package in
+-- the registry and inserts it into the application's direct dependencies.
+-- Returns 'NoSolution' if the package is not found in the registry.
 --
--- @since 0.19.1
+-- @since 0.19.2
 addToApp ::
   Stuff.PackageCache ->
   Connection ->
@@ -95,22 +130,32 @@ addToApp ::
   Pkg.Name ->
   Outline.AppOutline ->
   IO (SolverResult AppSolution)
-addToApp _cache _connection _registry newPkg outline =
+addToApp _cache _connection registry newPkg outline =
+  case Registry.getVersions' registry newPkg of
+    Nothing -> pure NoSolution
+    Just (Registry.KnownVersions latestVersion _) ->
+      pure (Ok (buildAppSolution outline newPkg latestVersion))
+
+-- | Build an 'AppSolution' by inserting a package at a given version.
+buildAppSolution :: Outline.AppOutline -> Pkg.Name -> Version.Version -> AppSolution
+buildAppSolution outline pkg version =
   let oldDeps = Outline._appDepsDirect outline
       oldIndirect = Outline._appDepsIndirect outline
       oldCombined = Map.union oldDeps oldIndirect
-      newDeps = Map.insert newPkg Version.one oldDeps
-      newIndirect = oldIndirect
-      newCombined = Map.insert newPkg Version.one oldCombined
-      newOutline =
-        outline
-          { Outline._appDepsDirect = newDeps,
-            Outline._appDepsIndirect = newIndirect
-          }
-      solution =
-        AppSolution
-          { appSolutionOld = oldCombined,
-            appSolutionNew = newCombined,
-            appSolutionOutline = newOutline
-          }
-   in pure (Ok solution)
+      newDeps = Map.insert pkg version oldDeps
+      newCombined = Map.insert pkg version oldCombined
+      newOutline = outline
+        { Outline._appDepsDirect = newDeps
+        , Outline._appDepsIndirect = oldIndirect
+        }
+   in AppSolution oldCombined newCombined newOutline
+
+-- | Find the highest version that satisfies a constraint.
+--
+-- Versions are expected in descending order (latest first), so the
+-- first satisfying version is the highest one.
+findSatisfying :: Constraint.Constraint -> [Version.Version] -> Maybe Version.Version
+findSatisfying constraint versions =
+  case filter (Constraint.satisfies constraint) versions of
+    [] -> Nothing
+    (v : _) -> Just v

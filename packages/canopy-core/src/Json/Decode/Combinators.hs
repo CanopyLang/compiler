@@ -27,7 +27,7 @@ module Json.Decode.Combinators
 where
 
 import qualified Data.ByteString.Internal as BSI
-import qualified Data.Map as Map
+import qualified Data.Map.Strict as Map
 import Json.Decode.AST
   ( AST,
     AST_ (..),

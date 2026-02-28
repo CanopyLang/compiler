@@ -119,7 +119,7 @@ import Data.Binary (Binary, get, put)
 import qualified Data.ByteString as BS
 import qualified Data.ByteString.Builder as BB
 import qualified Data.ByteString.UTF8 as BS_UTF8
-import qualified Data.Map as Map
+import qualified Data.Map.Strict as Map
 import qualified Canopy.Data.Name as Name
 
 -- SOURCE

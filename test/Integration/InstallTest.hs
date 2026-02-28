@@ -37,17 +37,27 @@ testArgumentValidation =
     "Argument validation"
     [ testCase "NoArgs validation in empty directory" $ do
         withSystemTempDirectory "canopy-test" $ \tmpDir -> do
-          result <- Arguments.validateArgs NoArgs
-          case result of
-            Left _ -> pure () -- Expected failure
-            Right _ -> assertFailure "Should fail without canopy.json",
+          origDir <- Dir.getCurrentDirectory
+          bracket
+            (Dir.setCurrentDirectory tmpDir)
+            (\_ -> Dir.setCurrentDirectory origDir)
+            $ \_ -> do
+              result <- Arguments.validateArgs NoArgs
+              case result of
+                Left _ -> pure () -- Expected failure
+                Right _ -> assertFailure "Should fail without canopy.json",
       testCase "Install args validation without project" $ do
         withSystemTempDirectory "canopy-test" $ \tmpDir -> do
-          let pkg = Pkg.core
-          result <- Arguments.validateArgs (Install pkg)
-          case result of
-            Left _ -> pure () -- Expected failure
-            Right _ -> assertFailure "Should fail without canopy.json"
+          origDir <- Dir.getCurrentDirectory
+          bracket
+            (Dir.setCurrentDirectory tmpDir)
+            (\_ -> Dir.setCurrentDirectory origDir)
+            $ \_ -> do
+              let pkg = Pkg.core
+              result <- Arguments.validateArgs (Install pkg)
+              case result of
+                Left _ -> pure () -- Expected failure
+                Right _ -> assertFailure "Should fail without canopy.json"
     ]
 
 -- | Test project structure detection.

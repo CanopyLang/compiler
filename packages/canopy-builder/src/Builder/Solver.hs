@@ -131,13 +131,17 @@ mergeConstraints (RangeVersion min1 max1) (RangeVersion min2 max2) =
         else Nothing
 mergeConstraints _ _ = Nothing -- Incompatible
 
--- | Pick a version satisfying constraint.
+-- | Pick a version satisfying a constraint.
+--
+-- For ranges, picks the highest allowed version. For open-ended
+-- constraints (MinVersion), returns the lower bound since the upper
+-- bound is unknown without a registry lookup.
 pickVersion :: Pkg.Name -> Constraint -> Maybe Version.Version
-pickVersion _ AnyVersion = Just Version.one -- Default to 1.0.0
+pickVersion _ AnyVersion = Just Version.one
 pickVersion _ (ExactVersion v) = Just v
 pickVersion _ (MinVersion v) = Just v
 pickVersion _ (MaxVersion v) = Just v
-pickVersion _ (RangeVersion minV _) = Just minV
+pickVersion _ (RangeVersion _ maxV) = Just maxV
 
 -- | Check if solution is compatible with remaining constraints.
 isCompatible :: Solution -> [(Pkg.Name, [Constraint])] -> Bool

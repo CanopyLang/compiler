@@ -28,7 +28,7 @@ import qualified Canopy.Data.Name as Name
 import qualified Canopy.Data.OneOrMore as OneOrMore
 import qualified Canopy.ModuleName as ModuleName
 import qualified Data.List as List
-import qualified Data.Map as Map
+import qualified Data.Map.Strict as Map
 import qualified Data.Set as Set
 import Reporting.Doc (Doc, (<+>))
 import qualified Reporting.Doc as Doc

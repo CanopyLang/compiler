@@ -13,8 +13,8 @@ import qualified Canonicalize.Environment as Env
 import qualified Canonicalize.Type as Type
 import qualified Canopy.ModuleName as ModuleName
 import qualified Data.Foldable as Foldable
-import Data.Map (Map)
-import qualified Data.Map as Map
+import Data.Map.Strict (Map)
+import qualified Data.Map.Strict as Map
 import qualified Canopy.Data.Name as Name
 import qualified Reporting.Annotation as Ann
 import qualified Reporting.Error.Canonicalize as Error

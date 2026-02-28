@@ -97,7 +97,7 @@ module AST.Utils.Type
 where
 
 import AST.Canonical (AliasType (..), FieldType (..), Type (..))
-import qualified Data.Map as Map
+import qualified Data.Map.Strict as Map
 import qualified Canopy.Data.Name as Name
 
 -- DELAMBDA

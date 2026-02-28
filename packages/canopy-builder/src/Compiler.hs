@@ -438,6 +438,7 @@ queryErrorToCompileError path qErr =
     Query.FileNotFound fpath -> Exit.CompileModuleNotFound fpath
     Query.OtherError msg -> Exit.CompileCanonicalizeError path msg
     Query.DiagnosticError diagPath diags -> Exit.CompileDiagnosticError diagPath diags
+    Query.TimeoutError tpath -> Exit.CompileTimeoutError tpath
 
 -- | Load all dependency artifacts (interfaces, GlobalGraph, FFI info).
 --
