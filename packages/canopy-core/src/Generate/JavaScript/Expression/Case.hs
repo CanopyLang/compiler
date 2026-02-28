@@ -113,7 +113,7 @@ generateIfTest genExpr mode root (path, test) =
         DT.IsCtor home name index _ opts ->
           let tag =
                 case mode of
-                  Mode.Dev _ _ _ _ -> JS.Access value JsName.dollar
+                  Mode.Dev _ _ _ _ _ -> JS.Access value JsName.dollar
                   Mode.Prod {} ->
                     case opts of
                       Can.Normal -> JS.Access value JsName.dollar
@@ -121,7 +121,7 @@ generateIfTest genExpr mode root (path, test) =
                       Can.Unbox -> value
            in Call.strictEq tag $
                 case mode of
-                  Mode.Dev _ _ _ _ -> JS.String (Name.toBuilder name)
+                  Mode.Dev _ _ _ _ _ -> JS.String (Name.toBuilder name)
                   Mode.Prod {} -> JS.Int (ctorToInt home name index)
         DT.IsBool True ->
           value
@@ -132,7 +132,7 @@ generateIfTest genExpr mode root (path, test) =
         DT.IsChr char ->
           Call.strictEq (JS.String (Utf8.toBuilder char)) $
             case mode of
-              Mode.Dev _ _ _ _ -> JS.Call (JS.Access value (JsName.fromLocal "valueOf")) []
+              Mode.Dev _ _ _ _ _ -> JS.Call (JS.Access value (JsName.fromLocal "valueOf")) []
               Mode.Prod {} -> value
         DT.IsStr string ->
           Call.strictEq value (JS.String (Utf8.toBuilder string))
@@ -164,7 +164,7 @@ generateCaseValue mode test =
   case test of
     DT.IsCtor home name index _ _ ->
       case mode of
-        Mode.Dev _ _ _ _ -> JS.String (Name.toBuilder name)
+        Mode.Dev _ _ _ _ _ -> JS.String (Name.toBuilder name)
         Mode.Prod {} -> JS.Int (ctorToInt home name index)
     DT.IsInt int ->
       JS.Int int
@@ -204,7 +204,7 @@ generateCaseTest genExpr mode root path exampleTest =
           if name == Name.bool && home == ModuleName.basics
             then value
             else case mode of
-              Mode.Dev _ _ _ _ ->
+              Mode.Dev _ _ _ _ _ ->
                 JS.Access value JsName.dollar
               Mode.Prod {} ->
                 case opts of
@@ -220,7 +220,7 @@ generateCaseTest genExpr mode root path exampleTest =
           value
         DT.IsChr _ ->
           case mode of
-            Mode.Dev _ _ _ _ ->
+            Mode.Dev _ _ _ _ _ ->
               JS.Call (JS.Access value (JsName.fromLocal "valueOf")) []
             Mode.Prod {} ->
               value
@@ -260,7 +260,7 @@ pathToJsExpr genExpr mode root path =
       JS.Access (pathToJsExpr genExpr mode root subPath) (JsName.fromIndex index)
     DT.Unbox subPath ->
       case mode of
-        Mode.Dev _ _ _ _ ->
+        Mode.Dev _ _ _ _ _ ->
           JS.Access (pathToJsExpr genExpr mode root subPath) (JsName.fromIndex Index.first)
         Mode.Prod {} ->
           pathToJsExpr genExpr mode root subPath

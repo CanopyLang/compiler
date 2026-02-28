@@ -435,7 +435,7 @@ artifactsToJavaScript artifacts =
     globalGraph = artifacts ^. Build.artifactsGlobalGraph
     ffiInfo = artifacts ^. Build.artifactsFFIInfo
     mains = collectMains artifacts
-    (builder, _sourceMap) = JS.generate (Mode.Dev Nothing False False Set.empty) globalGraph mains ffiInfo
+    (builder, _sourceMap) = JS.generate (Mode.Dev Nothing False False False Set.empty) globalGraph mains ffiInfo
     rawJs = builderToString builder
 
 -- | Post-process JavaScript to fix syntax issues.

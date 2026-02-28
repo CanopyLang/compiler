@@ -38,6 +38,7 @@ module Make.Types
     verbose,
     noSplit,
     ffiUnsafe,
+    ffiDebug,
 
     -- ** BuildContext Lenses
     bcStyle,
@@ -46,6 +47,7 @@ module Make.Types
     bcDesiredMode,
     bcPackage,
     bcFfiUnsafe,
+    bcFfiDebug,
 
     -- * Type Aliases
     Task,
@@ -87,7 +89,9 @@ data Flags = Flags
     -- | Disable code splitting even when lazy imports are present
     _noSplit :: !Bool,
     -- | Disable FFI runtime type validation (unsafe mode)
-    _ffiUnsafe :: !Bool
+    _ffiUnsafe :: !Bool,
+    -- | Enable verbose FFI debug logging in generated validators
+    _ffiDebug :: !Bool
   }
   deriving (Eq, Show)
 
@@ -114,7 +118,9 @@ data BuildContext = BuildContext
     -- | Package name
     _bcPackage :: !Details.PkgName,
     -- | FFI unsafe mode (disables runtime validation)
-    _bcFfiUnsafe :: !Bool
+    _bcFfiUnsafe :: !Bool,
+    -- | FFI debug mode (verbose validator error messages)
+    _bcFfiDebug :: !Bool
   }
 
 -- | Output format and target file.

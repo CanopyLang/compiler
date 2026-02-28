@@ -73,7 +73,7 @@ generate mode expression =
     Opt.Chr char ->
       JsExpr $
         case mode of
-          Mode.Dev _ _ _ _ ->
+          Mode.Dev _ _ _ _ _ ->
             JS.Call toChar [JS.String (Utf8.toBuilder char)]
           Mode.Prod {} ->
             JS.String (Utf8.toBuilder char)
@@ -98,14 +98,14 @@ generate mode expression =
             else JsExpr $ JS.Ref (JsName.fromGlobal home name)
     Opt.VarEnum (Opt.Global home name) index ->
       case mode of
-        Mode.Dev _ _ _ _ ->
+        Mode.Dev _ _ _ _ _ ->
           JsExpr $ JS.Ref (JsName.fromGlobal home name)
         Mode.Prod {} ->
           JsExpr $ JS.Int (Index.toMachine index)
     Opt.VarBox (Opt.Global home name) ->
       JsExpr . JS.Ref $
         ( case mode of
-            Mode.Dev _ _ _ _ -> JsName.fromGlobal home name
+            Mode.Dev _ _ _ _ _ -> JsName.fromGlobal home name
             Mode.Prod {} -> JsName.fromGlobal ModuleName.basics Name.identity
         )
     Opt.VarCycle home name ->
@@ -178,7 +178,7 @@ generate mode expression =
       JsExpr $ generateRecord mode fields
     Opt.Unit ->
       case mode of
-        Mode.Dev _ _ _ _ ->
+        Mode.Dev _ _ _ _ _ ->
           JsExpr $ JS.Ref (JsName.fromKernel Name.utils "Tuple0")
         Mode.Prod {} ->
           JsExpr $ JS.Int 0
@@ -336,7 +336,7 @@ generateCtor mode (Opt.Global home name) index arity =
 
       ctorTag =
         case mode of
-          Mode.Dev _ _ _ _ -> JS.String (Name.toBuilder name)
+          Mode.Dev _ _ _ _ _ -> JS.String (Name.toBuilder name)
           Mode.Prod {} -> JS.Int (ctorToInt home name index)
    in ((generateFunction argNames . JsExpr) . JS.Object $ ((JsName.dollar, ctorTag) : fmap (\n -> (n, JS.Ref n)) argNames))
 
@@ -369,9 +369,9 @@ generateRecord mode fields =
 generateField :: Mode.Mode -> Name.Name -> JsName.Name
 generateField mode name =
   case mode of
-    Mode.Dev _ _ _ _ ->
+    Mode.Dev _ _ _ _ _ ->
       JsName.fromLocal name
-    Mode.Prod fields _ _ _ _ ->
+    Mode.Prod fields _ _ _ _ _ ->
       maybe
         (InternalError.report "Generate.JavaScript.Expression.generateField" "Unknown field name in production mode" "The field shortener map is missing an expected field.")
         id
@@ -621,7 +621,7 @@ generatePath mode path =
       JS.Access (generatePath mode subPath) (generateField mode field)
     Opt.Unbox subPath ->
       case mode of
-        Mode.Dev _ _ _ _ ->
+        Mode.Dev _ _ _ _ _ ->
           JS.Access (generatePath mode subPath) (JsName.fromIndex Index.first)
         Mode.Prod {} ->
           generatePath mode subPath
@@ -746,9 +746,9 @@ toDebugMetadata mode msgType =
   case mode of
     Mode.Prod {} ->
       JS.Int 0
-    Mode.Dev Nothing _ _ _ ->
+    Mode.Dev Nothing _ _ _ _ ->
       JS.Int 0
-    Mode.Dev (Just interfaces) _ _ _ ->
+    Mode.Dev (Just interfaces) _ _ _ _ ->
       JS.Json . Encode.object $
         [ "versions" ==> Encode.object ["canopy" ==> Version.encode Version.compiler],
           "types" ==> Type.encodeMetadata (Extract.fromMsg interfaces msgType)

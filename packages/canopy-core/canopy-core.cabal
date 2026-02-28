@@ -77,6 +77,7 @@ library
       Canopy.ModuleName
       Canopy.Outline
       Canopy.Package
+      Canopy.PathValidation
       Canopy.String
       Canopy.Version
       FFI.Capability

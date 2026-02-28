@@ -67,6 +67,7 @@ import Make.Types
     debug,
     docs,
     ffiUnsafe,
+    ffiDebug,
     noSplit,
     optimize,
     report,
@@ -148,7 +149,7 @@ coordinateBuildWithRoot root paths flags style scope = do
   Task.io (checkLockFileStaleness root)
   details <- loadProjectDetailsFromRoot style scope root
   mode <- getDesiredMode (flags ^. debug) (flags ^. optimize)
-  let ctx = createBuildContext style root details mode (flags ^. ffiUnsafe)
+  let ctx = createBuildContext style root details mode (flags ^. ffiUnsafe) (flags ^. ffiDebug)
   executeBuildStrategy ctx paths (flags ^. docs) (flags ^. Types.output) (flags ^. noSplit)
 
 -- | Load project details from root directory.

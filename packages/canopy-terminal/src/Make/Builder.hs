@@ -65,6 +65,7 @@ import Make.Types
     Task,
     bcDesiredMode,
     bcDetails,
+    bcFfiDebug,
     bcFfiUnsafe,
     bcPackage,
     bcRoot,
@@ -138,7 +139,8 @@ createBuilder ::
 createBuilder ctx artifacts = do
   let mode = ctx ^. bcDesiredMode
   let ffiUnsafeFlag = ctx ^. bcFfiUnsafe
-  generateForMode mode ffiUnsafeFlag artifacts
+  let ffiDebugFlag = ctx ^. bcFfiDebug
+  generateForMode mode ffiUnsafeFlag ffiDebugFlag artifacts
 
 -- | Check whether code splitting should be used for the given artifacts.
 --
@@ -164,10 +166,11 @@ createSplitBuilder ::
   Task Split.SplitOutput
 createSplitBuilder ctx artifacts =
   Task.mapError Exit.MakeBadGenerate $
-    return (generateSplit (desiredToMode mode ffiUnsafeFlag globalGraph) artifacts)
+    return (generateSplit (desiredToMode mode ffiUnsafeFlag ffiDebugFlag globalGraph) artifacts)
   where
     mode = ctx ^. bcDesiredMode
     ffiUnsafeFlag = ctx ^. bcFfiUnsafe
+    ffiDebugFlag = ctx ^. bcFfiDebug
     globalGraph = extractGlobalGraph artifacts
 
 -- | Generate split output for artifacts using the code splitting pipeline.
@@ -189,29 +192,33 @@ buildSplitConfig artifacts =
     }
 
 -- | Convert DesiredMode to Mode.Mode for code generation.
+--
 -- The ffiUnsafeFlag controls whether FFI validation is disabled.
-desiredToMode :: DesiredMode -> Bool -> Opt.GlobalGraph -> Mode.Mode
-desiredToMode Debug ffiUnsafeFlag _ = Mode.Dev Nothing False ffiUnsafeFlag Set.empty
-desiredToMode Dev ffiUnsafeFlag _ = Mode.Dev Nothing False ffiUnsafeFlag Set.empty
-desiredToMode Prod ffiUnsafeFlag globalGraph =
-  Mode.Prod (Mode.shortenFieldNames globalGraph) False ffiUnsafeFlag StringPool.emptyPool Set.empty
+-- The ffiDebugFlag enables verbose error messages in generated validators.
+desiredToMode :: DesiredMode -> Bool -> Bool -> Opt.GlobalGraph -> Mode.Mode
+desiredToMode Debug ffiUnsafeFlag ffiDebugFlag _ = Mode.Dev Nothing False ffiUnsafeFlag ffiDebugFlag Set.empty
+desiredToMode Dev ffiUnsafeFlag ffiDebugFlag _ = Mode.Dev Nothing False ffiUnsafeFlag ffiDebugFlag Set.empty
+desiredToMode Prod ffiUnsafeFlag ffiDebugFlag globalGraph =
+  Mode.Prod (Mode.shortenFieldNames globalGraph) False ffiUnsafeFlag ffiDebugFlag StringPool.emptyPool Set.empty
 
 -- | Generate builder for specific build mode.
 --
 -- Delegates to JavaScript generation based on mode.
 -- Each mode has different optimization and output characteristics.
 -- The ffiUnsafeFlag is passed through to Mode to control FFI validation.
+-- The ffiDebugFlag enables verbose debug output in generated validators.
 generateForMode ::
   DesiredMode ->
   Bool ->
+  Bool ->
   Compiler.Artifacts ->
   Task (Builder, Maybe SourceMap.SourceMap)
-generateForMode mode ffiUnsafeFlag artifacts =
+generateForMode mode ffiUnsafeFlag ffiDebugFlag artifacts =
   Task.mapError Exit.MakeBadGenerate $
     case mode of
-      Debug -> return (generateJS (Mode.Dev Nothing False ffiUnsafeFlag Set.empty) artifacts)
-      Dev -> return (generateJS (Mode.Dev Nothing False ffiUnsafeFlag Set.empty) artifacts)
-      Prod -> return (generateJS (Mode.Prod (Mode.shortenFieldNames globalGraph) False ffiUnsafeFlag StringPool.emptyPool Set.empty) artifacts)
+      Debug -> return (generateJS (Mode.Dev Nothing False ffiUnsafeFlag ffiDebugFlag Set.empty) artifacts)
+      Dev -> return (generateJS (Mode.Dev Nothing False ffiUnsafeFlag ffiDebugFlag Set.empty) artifacts)
+      Prod -> return (generateJS (Mode.Prod (Mode.shortenFieldNames globalGraph) False ffiUnsafeFlag ffiDebugFlag StringPool.emptyPool Set.empty) artifacts)
   where
     globalGraph = extractGlobalGraph artifacts
 

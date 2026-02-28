@@ -3,6 +3,7 @@ module Generate.Mode
   , isDebug
   , isElmCompatible
   , isFFIStrict
+  , isFFIDebug
   , isFFIAlias
   , ShortFieldNames
   , shortenFieldNames
@@ -28,17 +29,17 @@ import qualified Generate.JavaScript.StringPool as StringPool
 --
 -- @since 0.19.1
 data Mode
-  = Dev (Maybe Extract.Types) Bool Bool (Set Name.Name)
-    -- ^ Development mode: (debug types, elm-compatibility, ffi-unsafe, ffi-aliases)
-  | Prod ShortFieldNames Bool Bool StringPool.StringPool (Set Name.Name)
-    -- ^ Production mode: (short names, elm-compatibility, ffi-unsafe, string pool, ffi-aliases)
+  = Dev (Maybe Extract.Types) Bool Bool Bool (Set Name.Name)
+    -- ^ Development mode: (debug types, elm-compatibility, ffi-unsafe, ffi-debug, ffi-aliases)
+  | Prod ShortFieldNames Bool Bool Bool StringPool.StringPool (Set Name.Name)
+    -- ^ Production mode: (short names, elm-compatibility, ffi-unsafe, ffi-debug, string pool, ffi-aliases)
   deriving (Show)
 
 -- | Check if debug mode is enabled.
 isDebug :: Mode -> Bool
 isDebug mode =
   case mode of
-    Dev mi _ _ _ -> Maybe.isJust mi
+    Dev mi _ _ _ _ -> Maybe.isJust mi
     Prod {} -> False
 
 -- ELM COMPATIBILITY
@@ -47,8 +48,8 @@ isDebug mode =
 isElmCompatible :: Mode -> Bool
 isElmCompatible mode =
   case mode of
-    Dev _ elmCompat _ _ -> elmCompat
-    Prod _ elmCompat _ _ _ -> elmCompat
+    Dev _ elmCompat _ _ _ -> elmCompat
+    Prod _ elmCompat _ _ _ _ -> elmCompat
 
 -- FFI VALIDATION MODE
 
@@ -65,8 +66,21 @@ isElmCompatible mode =
 isFFIStrict :: Mode -> Bool
 isFFIStrict mode =
   case mode of
-    Dev _ _ ffiUnsafe _ -> not ffiUnsafe
-    Prod _ _ ffiUnsafe _ _ -> not ffiUnsafe
+    Dev _ _ ffiUnsafe _ _ -> not ffiUnsafe
+    Prod _ _ ffiUnsafe _ _ _ -> not ffiUnsafe
+
+-- | Check if FFI debug mode is enabled.
+--
+-- When enabled, generated FFI validators include detailed debug
+-- information in their error messages, such as the expected and
+-- actual types and the call context.
+--
+-- @since 0.19.2
+isFFIDebug :: Mode -> Bool
+isFFIDebug mode =
+  case mode of
+    Dev _ _ _ ffiDebug _ -> ffiDebug
+    Prod _ _ _ ffiDebug _ _ -> ffiDebug
 
 -- | Check if a module name is an FFI alias (from foreign import statements).
 --
@@ -77,8 +91,8 @@ isFFIStrict mode =
 isFFIAlias :: Mode -> Name.Name -> Bool
 isFFIAlias mode name =
   case mode of
-    Dev _ _ _ ffiAliases -> Set.member name ffiAliases
-    Prod _ _ _ _ ffiAliases -> Set.member name ffiAliases
+    Dev _ _ _ _ ffiAliases -> Set.member name ffiAliases
+    Prod _ _ _ _ _ ffiAliases -> Set.member name ffiAliases
 
 -- STRING POOL
 
@@ -87,7 +101,7 @@ stringPool :: Mode -> StringPool.StringPool
 stringPool mode =
   case mode of
     Dev {} -> StringPool.emptyPool
-    Prod _ _ _ pool _ -> pool
+    Prod _ _ _ _ pool _ -> pool
 
 -- SHORTEN FIELD NAMES
 

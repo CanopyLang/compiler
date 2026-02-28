@@ -96,11 +96,11 @@ addChunk mode chunk builder =
       BB.intDec int <> builder
     Kernel.Debug ->
       case mode of
-        Mode.Dev _ _ _ _ -> builder
+        Mode.Dev _ _ _ _ _ -> builder
         Mode.Prod {} -> "_UNUSED" <> builder
     Kernel.Prod ->
       case mode of
-        Mode.Dev _ _ _ _ -> "_UNUSED" <> builder
+        Mode.Dev _ _ _ _ _ -> "_UNUSED" <> builder
         Mode.Prod {} -> builder
 
 -- CYCLE GENERATION
@@ -125,7 +125,7 @@ buildRealStmts mode home names values =
     realBlock@(_ : _) ->
       case mode of
         Mode.Prod {} -> realBlock
-        Mode.Dev _ _ _ _ ->
+        Mode.Dev _ _ _ _ _ ->
           [(JS.Try (JS.Block realBlock) JsName.dollar . JS.Throw) . JS.String $
             ( "Some top-level definitions from `" <> Name.toBuilder (ModuleName._module home) <> "` are causing infinite recursion:\\n"
                 <> drawCycle names
@@ -185,7 +185,7 @@ generateEnum :: Mode.Mode -> Opt.Global -> Index.ZeroBased -> JS.Stmt
 generateEnum mode global@(Opt.Global home name) index =
   JS.Var (JsName.fromGlobal home name) $
     case mode of
-      Mode.Dev _ _ _ _ ->
+      Mode.Dev _ _ _ _ _ ->
         Expr.codeToExpr (Expr.generateCtor mode global index 0)
       Mode.Prod {} ->
         JS.Int (Index.toMachine index)
@@ -197,7 +197,7 @@ generateBox :: Mode.Mode -> Opt.Global -> JS.Stmt
 generateBox mode global@(Opt.Global home name) =
   JS.Var (JsName.fromGlobal home name) $
     case mode of
-      Mode.Dev _ _ _ _ ->
+      Mode.Dev _ _ _ _ _ ->
         Expr.codeToExpr (Expr.generateCtor mode global Index.first 1)
       Mode.Prod {} ->
         JS.Ref (JsName.fromGlobal ModuleName.basics Name.identity)

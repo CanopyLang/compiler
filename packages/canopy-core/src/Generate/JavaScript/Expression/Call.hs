@@ -69,7 +69,7 @@ generateCall genExpr mode func args =
         generateCoreCall genExpr mode global args
     Opt.VarBox _ ->
       case mode of
-        Mode.Dev _ _ _ _ ->
+        Mode.Dev _ _ _ _ _ ->
           generateCallHelp genExpr mode func args
         Mode.Prod {} ->
           case args of

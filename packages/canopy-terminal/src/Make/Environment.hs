@@ -82,21 +82,24 @@ configureLogging _flags =
 --   * Loaded project details
 --   * Desired build mode
 --   * FFI unsafe mode flag (True disables validation)
+--   * FFI debug mode flag (True enables verbose validator output)
 createBuildContext ::
   Reporting.Style ->
   FilePath ->
   Details.Details ->
   DesiredMode ->
   Bool ->
+  Bool ->
   BuildContext
-createBuildContext style root details mode ffiUnsafeFlag =
+createBuildContext style root details mode ffiUnsafeFlag ffiDebugFlag =
   BuildContext
     { _bcStyle = style,
       _bcRoot = root,
       _bcDetails = details,
       _bcDesiredMode = mode,
       _bcPackage = extractPackageName details,
-      _bcFfiUnsafe = ffiUnsafeFlag
+      _bcFfiUnsafe = ffiUnsafeFlag,
+      _bcFfiDebug = ffiDebugFlag
     }
   where
     extractPackageName (Details.Details _ outline _ _ _ _) =

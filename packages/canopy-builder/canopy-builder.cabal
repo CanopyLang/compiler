@@ -39,6 +39,7 @@ library
       Builder.Solver
       Builder.State
       Compiler
+      Crypto.ConstantTime
       Crypto.Signature
       Crypto.TrustedKeys
       Exit

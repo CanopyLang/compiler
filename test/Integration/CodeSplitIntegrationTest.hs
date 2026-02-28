@@ -112,7 +112,7 @@ lazyConfig modNames =
 
 -- | Dev mode for testing.
 devMode :: Mode.Mode
-devMode = Mode.Dev Nothing False False Set.empty
+devMode = Mode.Dev Nothing False False False Set.empty
 
 -- | Render a builder to a string.
 renderBuilder :: BB.Builder -> String
