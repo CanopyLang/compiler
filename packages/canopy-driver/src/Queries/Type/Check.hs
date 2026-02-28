@@ -14,8 +14,8 @@ where
 
 import qualified AST.Canonical as Can
 import qualified Data.ByteString as BS
-import Data.Map (Map)
-import qualified Data.Map as Map
+import Data.Map.Strict (Map)
+import qualified Data.Map.Strict as Map
 import qualified Canopy.Data.Name as Name
 import Canopy.Data.NonEmptyList (List)
 import qualified Canopy.Data.NonEmptyList as NE

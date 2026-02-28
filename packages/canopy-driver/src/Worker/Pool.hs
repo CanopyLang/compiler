@@ -50,7 +50,7 @@ import Control.Concurrent.Chan (Chan)
 import qualified Control.Exception as Exception
 import qualified Data.IORef as IORef
 import Data.IORef (IORef)
-import Data.Map (Map)
+import Data.Map.Strict (Map)
 import qualified GHC.Conc as GHC
 import qualified Data.Text as Text
 import Logging.Event (LogEvent (..), Duration (..))

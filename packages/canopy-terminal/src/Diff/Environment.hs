@@ -49,7 +49,7 @@ module Diff.Environment
 where
 
 import Canopy.CustomRepositoryData (CustomRepositoriesData)
-import qualified Data.Map as Map
+import qualified Data.Map.Strict as Map
 import Deps.CustomRepositoryDataIO (loadCustomRepositoriesData)
 import qualified Deps.Registry as Registry
 import Diff.Types (Env (..), Task)

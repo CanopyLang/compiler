@@ -33,7 +33,7 @@ import qualified Canopy.ModuleName as ModuleName
 import qualified Canopy.Package as Pkg
 import Data.ByteString (ByteString)
 import qualified Data.ByteString as BS
-import Data.Map (Map)
+import Data.Map.Strict (Map)
 import qualified Data.Text as Text
 import Logging.Event (LogEvent (..))
 import qualified Logging.Logger as Log

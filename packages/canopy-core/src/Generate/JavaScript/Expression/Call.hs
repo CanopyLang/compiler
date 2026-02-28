@@ -39,7 +39,7 @@ import qualified AST.Optimized as Opt
 import qualified Canopy.Data.Name as Name
 import qualified Canopy.ModuleName as ModuleName
 import qualified Canopy.Package as Pkg
-import qualified Data.IntMap as IntMap
+import qualified Data.IntMap.Strict as IntMap
 import qualified Data.List as List
 import qualified Generate.JavaScript.Builder as JS
 import qualified Generate.JavaScript.Name as JsName

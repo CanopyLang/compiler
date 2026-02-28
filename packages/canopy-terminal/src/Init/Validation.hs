@@ -56,8 +56,8 @@ import Canopy.Package (Name)
 import qualified Canopy.Package as Pkg
 import qualified Canopy.Data.Utf8 as Utf8
 import Control.Lens ((^.))
-import Data.Map (Map)
-import qualified Data.Map as Map
+import Data.Map.Strict (Map)
+import qualified Data.Map.Strict as Map
 import Init.Types
   ( InitConfig (..),
     InitError (..),

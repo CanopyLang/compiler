@@ -22,8 +22,8 @@ import FFI.Types (JsSourcePath, JsSource)
 import Control.Monad (when)
 import qualified Parse.Module as Parse
 import qualified Data.ByteString as BS
-import Data.Map (Map)
-import qualified Data.Map as Map
+import Data.Map.Strict (Map)
+import qualified Data.Map.Strict as Map
 import qualified Canopy.Data.OneOrMore as OneOrMore
 import qualified Data.Text as Text
 import Logging.Event (LogEvent (..), CanonStats (..), VarResolution (..))

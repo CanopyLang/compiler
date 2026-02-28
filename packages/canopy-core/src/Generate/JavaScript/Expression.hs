@@ -35,7 +35,7 @@ import qualified Canopy.Data.Name as Name
 import qualified Canopy.Data.Utf8 as Utf8
 import qualified Canopy.ModuleName as ModuleName
 import qualified Canopy.Version as Version
-import qualified Data.IntMap as IntMap
+import qualified Data.IntMap.Strict as IntMap
 import qualified Data.Map.Strict as Map
 import qualified Data.Set as Set
 import qualified Generate.JavaScript.Builder as JS

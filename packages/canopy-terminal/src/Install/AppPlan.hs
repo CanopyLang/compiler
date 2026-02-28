@@ -45,7 +45,7 @@ where
 import qualified Canopy.Outline as Outline
 import qualified Canopy.Package as Pkg
 import qualified Canopy.Version as Version
-import qualified Data.Map as Map
+import qualified Data.Map.Strict as Map
 import qualified Deps.Registry as Registry
 import qualified Deps.Solver as Solver
 import Install.Changes (detectChanges)

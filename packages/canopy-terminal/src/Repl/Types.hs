@@ -47,7 +47,7 @@ import Data.ByteString.Builder (Builder)
 import qualified Data.ByteString.Builder as BB
 import qualified Data.ByteString.Char8 as BSC
 import qualified Data.ByteString.UTF8 as BS_UTF8
-import Data.Map (Map)
+import Data.Map.Strict (Map)
 import qualified Canopy.Data.Name as Name
 import System.Exit (ExitCode)
 

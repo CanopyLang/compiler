@@ -51,7 +51,7 @@ import qualified Canopy.Docs as Docs
 import qualified Canopy.Magnitude as Magnitude
 import Control.Lens ((^.))
 import qualified Data.List as List
-import qualified Data.Map as Map
+import qualified Data.Map.Strict as Map
 import qualified Data.Maybe as Maybe
 import qualified Canopy.Data.Name as Name
 import Deps.Diff (Changes (..), ModuleChanges (..), PackageChanges (..))

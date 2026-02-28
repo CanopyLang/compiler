@@ -19,8 +19,8 @@ where
 import qualified AST.Optimized as Opt
 import qualified Canopy.ModuleName as ModuleName
 import Data.ByteString.Builder (Builder)
-import Data.Map (Map)
-import qualified Data.Map as Map
+import Data.Map.Strict (Map)
+import qualified Data.Map.Strict as Map
 import qualified Generate.JavaScript as JS
 import qualified Generate.Mode as Mode
 import qualified Data.Text as Text

@@ -11,7 +11,7 @@ import qualified Canopy.Version as Version
 import Control.Monad (filterM)
 import Data.ByteString.Builder (Builder)
 import qualified Data.List as List
-import qualified Data.Map as Map
+import qualified Data.Map.Strict as Map
 import qualified Develop.Generate.Help as Help
 import Json.Encode ((==>))
 import qualified Json.Encode as Encode

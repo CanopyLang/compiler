@@ -40,7 +40,7 @@ import qualified Codec.Archive.Zip as Zip
 import Control.Lens ((^.))
 import qualified Data.ByteString.Char8 as BS
 import qualified Data.CaseInsensitive as CI
-import qualified Data.Map as Map
+import qualified Data.Map.Strict as Map
 import qualified Data.Maybe as Maybe
 import qualified Data.Text as Text
 import Deps.Registry (RegistryKey, CanopyRegistries, createAuthHeader)

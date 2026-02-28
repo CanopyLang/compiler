@@ -46,8 +46,8 @@ where
 import qualified Canopy.Constraint as Constraint
 import qualified Canopy.Outline as Outline
 import qualified Canopy.Package as Pkg
-import Data.Map (Map, (!))
-import qualified Data.Map as Map
+import Data.Map.Strict (Map, (!))
+import qualified Data.Map.Strict as Map
 import qualified Data.Map.Merge.Strict as Map
 import qualified Deps.Registry as Registry
 import qualified Deps.Solver as Solver

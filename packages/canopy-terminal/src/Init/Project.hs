@@ -70,8 +70,8 @@ import qualified Canopy.Outline as Outline
 import Canopy.Package (Name)
 import qualified Canopy.Version as Version
 import Control.Lens ((^.))
-import Data.Map (Map)
-import qualified Data.Map as Map
+import Data.Map.Strict (Map)
+import qualified Data.Map.Strict as Map
 import qualified Canopy.Data.NonEmptyList as NE
 import qualified Deps.Solver as Solver
 import Init.Types

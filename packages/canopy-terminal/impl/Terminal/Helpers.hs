@@ -15,7 +15,7 @@ import qualified Canopy.Version as Version
 import qualified Data.ByteString.UTF8 as ByteString
 import qualified Data.Char as Char
 import qualified Data.List as List
-import qualified Data.Map as Map
+import qualified Data.Map.Strict as Map
 import qualified Data.Text as Text
 import qualified Deps.Registry as Registry
 import qualified Parse.Primitives as Parse

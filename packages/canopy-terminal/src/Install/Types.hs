@@ -79,7 +79,7 @@ import qualified Canopy.Outline as Outline
 import qualified Canopy.Package as Pkg
 import qualified Canopy.Version as Version
 import Control.Lens.TH (makeLenses)
-import Data.Map (Map)
+import Data.Map.Strict (Map)
 import qualified Deps.Solver as Solver
 import Reporting.Doc (Doc)
 import qualified Reporting.Exit as Exit

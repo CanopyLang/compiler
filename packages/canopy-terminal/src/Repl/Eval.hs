@@ -33,8 +33,8 @@ import qualified Canopy.Version as Version
 import Control.Applicative ((<|>))
 import Data.ByteString.Builder (Builder)
 import qualified Data.ByteString.Builder as BB
-import Data.Map (Map)
-import qualified Data.Map as Map
+import Data.Map.Strict (Map)
+import qualified Data.Map.Strict as Map
 import qualified Generate
 import qualified Repl.Commands as Commands
 import Repl.State (addDecl, addImport, addType, initialState)
