@@ -14,11 +14,13 @@ module Diff.Outline
 
     -- * Information Extraction
     extractPackageName,
+    extractPackageVersion,
   )
 where
 
 import qualified Canopy.Outline as Outline
 import Canopy.Package (Name)
+import Canopy.Version (Version)
 import Control.Lens ((^.))
 import Diff.Types (Env, Task, envMaybeRoot)
 import qualified Reporting.Exit as Exit
@@ -68,3 +70,15 @@ extractPackageName outline =
   case outline of
     Outline.App _ -> Task.throw Exit.DiffApplication
     Outline.Pkg (Outline.PkgOutline pkg _ _ _ _ _ _ _) -> pure pkg
+
+-- | Extract package version from validated outline.
+--
+-- Retrieves the current package version from a validated outline.
+-- Used to compute suggested version bumps in diff output.
+--
+-- @since 0.19.2
+extractPackageVersion :: Outline.Outline -> Task Version
+extractPackageVersion outline =
+  case outline of
+    Outline.App _ -> Task.throw Exit.DiffApplication
+    Outline.Pkg (Outline.PkgOutline _ _ _ ver _ _ _ _) -> pure ver

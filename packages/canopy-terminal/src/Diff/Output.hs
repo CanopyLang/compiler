@@ -33,9 +33,11 @@
 module Diff.Output
   ( -- * Main Display
     display,
+    displayWithVersion,
 
     -- * Formatting
     formatChanges,
+    formatChangesWithVersion,
     buildSections,
 
     -- * Section Building
@@ -49,6 +51,8 @@ import qualified Canopy.Compiler.Type as Type
 import Canopy.Docs (Alias, Binop, Documentation, Union, Value)
 import qualified Canopy.Docs as Docs
 import qualified Canopy.Magnitude as Magnitude
+import Canopy.Version (Version)
+import qualified Canopy.Version as Version
 import Control.Lens ((^.))
 import qualified Data.List as List
 import qualified Data.Map.Strict as Map
@@ -79,6 +83,26 @@ display oldDocs newDocs = do
       formattedDoc = formatChanges localizer changes
   Help.toStdout (formattedDoc <> "\n")
 
+-- | Display formatted diff results with a suggested version bump.
+--
+-- Like 'display', but appends a version suggestion line based on
+-- the current version and the magnitude of the API changes. This
+-- gives the user a concrete next version number rather than just
+-- the magnitude classification.
+--
+-- ==== Examples
+--
+-- >>> displayWithVersion oldDocs newDocs (Version 1 0 0)
+-- -- Outputs: "... Suggested version: 2.0.0 (MAJOR)"
+--
+-- @since 0.19.2
+displayWithVersion :: Documentation -> Documentation -> Version -> IO ()
+displayWithVersion oldDocs newDocs currentVersion = do
+  let changes = Diff.diff oldDocs newDocs
+      localizer = Localizer.fromNames (Map.union oldDocs newDocs)
+      formattedDoc = formatChangesWithVersion localizer changes currentVersion
+  Help.toStdout (formattedDoc <> "\n")
+
 -- | Format package changes into documentation.
 --
 -- Transforms computed package changes into structured documentation
@@ -90,6 +114,30 @@ formatChanges localizer changes@(PackageChanges added changed removed) =
   if hasNoChanges added changed removed
     then "No API changes detected, so this is a" <+> Doc.green "PATCH" <+> "change."
     else createFormattedDoc localizer changes added changed removed
+
+-- | Format package changes with a suggested version bump.
+--
+-- Like 'formatChanges', but appends a line showing the concrete next
+-- version number based on the magnitude of API changes and the
+-- current version. This helps users understand exactly which version
+-- they should publish.
+--
+-- @since 0.19.2
+formatChangesWithVersion :: Localizer.Localizer -> PackageChanges -> Version -> Doc.Doc
+formatChangesWithVersion localizer changes currentVersion =
+  formatChanges localizer changes
+    <> "\n"
+    <> "\n"
+    <> versionSuggestion
+  where
+    magnitude = Diff.toMagnitude changes
+    suggestedVersion = Diff.bump changes currentVersion
+    versionSuggestion =
+      "Suggested version:"
+        <+> Doc.green (Doc.fromChars (Version.toChars suggestedVersion))
+        <+> "("
+        <> Doc.fromChars (Magnitude.toChars magnitude)
+        <> ")"
 
 -- | Check if package has any changes.
 hasNoChanges :: [a] -> Map.Map b c -> [d] -> Bool

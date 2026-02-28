@@ -1,20 +1,28 @@
+{-# LANGUAGE OverloadedStrings #-}
 
--- | Unit tests for main Diff module.
+-- | Unit tests for the Diff system.
 --
--- Tests the main diff orchestration, error handling, and integration
--- between sub-modules. Validates the complete diff workflow and
--- proper error propagation following CLAUDE.md testing patterns.
+-- Tests the API difference classification, magnitude computation,
+-- version bump suggestion, and output formatting. Uses concrete
+-- 'Documentation' values to exercise the actual diff logic rather
+-- than testing type-level properties.
 --
 -- @since 0.19.1
 module Unit.DiffTest (tests) where
 
-import qualified Canopy.Package as Package
-import Canopy.Version (Version)
+import qualified Canopy.Compiler.Type as Type
+import qualified Canopy.Docs as Docs
+import qualified Canopy.Magnitude as Magnitude
+import Canopy.Version (Version (..))
 import qualified Canopy.Version as Version
-import Diff (Args (..), run)
+import qualified Data.Map.Strict as Map
+import qualified Canopy.Data.Name as Name
+import Deps.Diff (Changes (..), ModuleChanges (..), PackageChanges (..))
+import qualified Deps.Diff as Diff
+import qualified Json.String as Json
 import Test.Tasty (TestTree)
 import qualified Test.Tasty as Test
-import Test.Tasty.HUnit (assertBool, assertFailure, (@?=))
+import Test.Tasty.HUnit ((@?=))
 import qualified Test.Tasty.HUnit as Test
 
 -- | Main test suite for Diff module.
@@ -22,128 +30,200 @@ tests :: TestTree
 tests =
   Test.testGroup
     "Diff Tests"
-    [ argsTests,
-      integrationTests,
-      errorHandlingTests
+    [ magnitudeTests,
+      classificationTests,
+      versionBumpTests,
+      moduleChangesTests
     ]
 
--- | Tests for argument handling and validation.
-argsTests :: TestTree
-argsTests =
+-- | Tests for magnitude computation from PackageChanges.
+magnitudeTests :: TestTree
+magnitudeTests =
   Test.testGroup
-    "Args Tests"
-    [ Test.testCase "CodeVsLatest represents latest code comparison" $
-        ( do
-            let args = CodeVsLatest
-            -- Test business logic: CodeVsLatest should be distinct pattern
-            isCodeVsLatest args @?= True
-        ),
-      Test.testCase "CodeVsExactly accepts version parameter" $
-        ( do
-            let version = Version.one
-                args = CodeVsExactly version
-            -- Test business logic: version should be extractable
-            extractVersionFromArgs args @?= Just version
-        ),
-      Test.testCase "LocalInquiry compares two versions correctly" $
-        ( do
-            let v1 = Version.one
-                v2 = Version.Version 2 0 0
-                args = LocalInquiry v1 v2
-            -- Test business logic: both versions should be extractable
-            extractVersionsFromLocalInquiry args @?= (v1, v2)
-        ),
-      Test.testCase "GlobalInquiry supports package context" $
-        ( do
-            let pkg = Package.core
-                v1 = Version.one
-                v2 = Version.Version 1 1 0
-                args = GlobalInquiry pkg v1 v2
-            -- Test business logic: package and versions should be extractable
-            extractPackageFromGlobalInquiry args @?= pkg
-        )
+    "Magnitude"
+    [ Test.testCase "no changes yields PATCH" $
+        Diff.toMagnitude noChanges @?= Magnitude.PATCH,
+      Test.testCase "added module yields MINOR" $
+        Diff.toMagnitude addedModuleChanges @?= Magnitude.MINOR,
+      Test.testCase "removed module yields MAJOR" $
+        Diff.toMagnitude removedModuleChanges @?= Magnitude.MAJOR,
+      Test.testCase "added and removed yields MAJOR" $
+        Diff.toMagnitude addedAndRemovedChanges @?= Magnitude.MAJOR
     ]
 
--- | Tests for integration between modules.
-integrationTests :: TestTree
-integrationTests =
+-- | Tests for the diff classification of actual documentation.
+classificationTests :: TestTree
+classificationTests =
   Test.testGroup
-    "Integration Tests"
-    [ Test.testCase "run orchestrates sub-modules properly" $
-        ( do
-            -- Test that run function coordinates modules correctly
-            -- The run function should accept all Args variants and return IO ()
-            let testCodeVsLatest = run CodeVsLatest ()
-                testCodeVsExactly = run (CodeVsExactly Version.one) ()
-                testLocalInquiry = run (LocalInquiry Version.one (Version.Version 2 0 0)) ()
-                testGlobalInquiry = run (GlobalInquiry Package.core Version.one (Version.Version 2 0 0)) ()
-            -- All variants should type-check and be callable
-            -- Successful compilation proves module orchestration is properly typed
-            pure ()
-        ),
-      Test.testCase "environment setup integrates with execution" $
-        ( do
-            -- Test environment flows properly to execution
-            -- The run function has type Args -> () -> IO () which indicates
-            -- it handles environment setup internally and returns clean IO ()
-            let codeVsLatestType = run CodeVsLatest () :: IO ()
-                exactlyType = run (CodeVsExactly Version.one) () :: IO ()
-            -- Type system enforces proper environment integration
-            pure ()
-        )
+    "Classification"
+    [ Test.testCase "identical docs yield no changes" $ do
+        let result = Diff.diff singleModuleDocs singleModuleDocs
+        _modulesAdded result @?= []
+        _modulesRemoved result @?= []
+        Map.null (_modulesChanged result) @?= True,
+      Test.testCase "adding a module is detected" $ do
+        let result = Diff.diff singleModuleDocs twoModuleDocs
+        _modulesAdded result @?= [listModuleName],
+      Test.testCase "removing a module is detected" $ do
+        let result = Diff.diff twoModuleDocs singleModuleDocs
+        _modulesRemoved result @?= [listModuleName],
+      Test.testCase "adding a value to a module is detected" $ do
+        let result = Diff.diff singleModuleDocs singleModuleWithExtraDocs
+        -- Changed module should appear
+        Map.member basicsModuleName (_modulesChanged result) @?= True
     ]
 
--- | Tests for error handling and reporting.
-errorHandlingTests :: TestTree
-errorHandlingTests =
+-- | Tests for version bump computation.
+versionBumpTests :: TestTree
+versionBumpTests =
   Test.testGroup
-    "Error Handling Tests"
-    [ Test.testCase "run handles environment setup errors" $
-        ( do
-            -- Test proper error handling for setup failures
-            -- The run function uses Reporting.attempt which handles errors internally
-            -- Function signature IO () means errors don't propagate as exceptions
-            let errorProneArgs = GlobalInquiry Package.core Version.one (Version.Version 2 0 0)
-            -- Even potentially failing args should be handled gracefully
-            assertBool "run function structured for internal error handling" True
-        ),
-      Test.testCase "run propagates execution errors" $
-        ( do
-            -- Test error propagation from execution layer
-            -- Different Args may lead to different execution paths and potential errors
-            let globalArgs = GlobalInquiry Package.core Version.one (Version.Version 2 0 0)
-                localArgs = LocalInquiry Version.one (Version.Version 2 0 0)
-            -- All should be handled through the same IO () interface using Reporting.attempt
-            assertBool "different arguments supported by same error handling" True
-        ),
-      Test.testCase "structured error reporting works" $
-        ( do
-            -- Test that errors are formatted properly for users
-            -- The run function uses Reporting.attempt Exit.diffToReport which indicates
-            -- it properly integrates with structured error reporting system
-            -- This is verified by the module imports and type signature
-            assertBool "run function integrates with Exit.diffToReport for structured errors" True
-        )
+    "Version Bump"
+    [ Test.testCase "PATCH bump from 1.0.0" $
+        Diff.bump noChanges (Version 1 0 0) @?= Version 1 0 1,
+      Test.testCase "MINOR bump from 1.0.0" $
+        Diff.bump addedModuleChanges (Version 1 0 0) @?= Version 1 1 0,
+      Test.testCase "MAJOR bump from 1.0.0" $
+        Diff.bump removedModuleChanges (Version 1 0 0) @?= Version 2 0 0,
+      Test.testCase "PATCH bump from 2.3.5" $
+        Diff.bump noChanges (Version 2 3 5) @?= Version 2 3 6,
+      Test.testCase "MINOR bump from 2.3.5" $
+        Diff.bump addedModuleChanges (Version 2 3 5) @?= Version 2 4 0,
+      Test.testCase "MAJOR bump from 2.3.5" $
+        Diff.bump removedModuleChanges (Version 2 3 5) @?= Version 3 0 0
     ]
 
--- | Helper functions for testing business logic instead of Show instances
+-- | Tests for module-level change magnitude.
+moduleChangesTests :: TestTree
+moduleChangesTests =
+  Test.testGroup
+    "Module Changes"
+    [ Test.testCase "empty module changes are PATCH" $
+        Diff.moduleChangeMagnitude emptyModuleChanges @?= Magnitude.PATCH,
+      Test.testCase "added value is MINOR" $
+        Diff.moduleChangeMagnitude addedValueModuleChanges @?= Magnitude.MINOR,
+      Test.testCase "removed value is MAJOR" $
+        Diff.moduleChangeMagnitude removedValueModuleChanges @?= Magnitude.MAJOR,
+      Test.testCase "changed value type is MAJOR" $
+        Diff.moduleChangeMagnitude changedValueModuleChanges @?= Magnitude.MAJOR
+    ]
 
--- Check if Args represents CodeVsLatest
-isCodeVsLatest :: Args -> Bool
-isCodeVsLatest CodeVsLatest = True
-isCodeVsLatest _ = False
+-- HELPERS: Test data construction
 
--- Extract version from CodeVsExactly args
-extractVersionFromArgs :: Args -> Maybe Version.Version
-extractVersionFromArgs (CodeVsExactly v) = Just v
-extractVersionFromArgs _ = Nothing
+emptyComment :: Json.String
+emptyComment = Json.fromChars ""
 
--- Extract both versions from LocalInquiry
-extractVersionsFromLocalInquiry :: Args -> (Version.Version, Version.Version)
-extractVersionsFromLocalInquiry (LocalInquiry v1 v2) = (v1, v2)
-extractVersionsFromLocalInquiry _ = error "extractVersionsFromLocalInquiry: not LocalInquiry"
+basicsModuleName :: Name.Name
+basicsModuleName = Name.fromChars "Basics"
 
--- Extract package from GlobalInquiry
-extractPackageFromGlobalInquiry :: Args -> Package.Name
-extractPackageFromGlobalInquiry (GlobalInquiry pkg _ _) = pkg
-extractPackageFromGlobalInquiry _ = error "extractPackageFromGlobalInquiry: not GlobalInquiry"
+listModuleName :: Name.Name
+listModuleName = Name.fromChars "List"
+
+intType :: Type.Type
+intType = Type.Type (Name.fromChars "Int") []
+
+stringType :: Type.Type
+stringType = Type.Type (Name.fromChars "String") []
+
+boolType :: Type.Type
+boolType = Type.Type (Name.fromChars "Bool") []
+
+-- | A module with a single value export.
+basicsModule :: Docs.Module
+basicsModule =
+  Docs.Module
+    basicsModuleName
+    emptyComment
+    Map.empty
+    Map.empty
+    (Map.singleton (Name.fromChars "toFloat") (Docs.Value emptyComment (Type.Lambda intType (Type.Type (Name.fromChars "Float") []))))
+    Map.empty
+
+-- | A module with an extra value compared to basicsModule.
+basicsModuleWithExtra :: Docs.Module
+basicsModuleWithExtra =
+  Docs.Module
+    basicsModuleName
+    emptyComment
+    Map.empty
+    Map.empty
+    ( Map.fromList
+        [ (Name.fromChars "toFloat", Docs.Value emptyComment (Type.Lambda intType (Type.Type (Name.fromChars "Float") []))),
+          (Name.fromChars "toString", Docs.Value emptyComment (Type.Lambda intType stringType))
+        ]
+    )
+    Map.empty
+
+-- | A simple list module.
+listModule :: Docs.Module
+listModule =
+  Docs.Module
+    listModuleName
+    emptyComment
+    Map.empty
+    Map.empty
+    (Map.singleton (Name.fromChars "length") (Docs.Value emptyComment (Type.Lambda (Type.Type (Name.fromChars "List") [Type.Var (Name.fromChars "a")]) intType)))
+    Map.empty
+
+-- | Documentation with one module.
+singleModuleDocs :: Docs.Documentation
+singleModuleDocs =
+  Map.singleton basicsModuleName basicsModule
+
+-- | Documentation with one module and an extra value.
+singleModuleWithExtraDocs :: Docs.Documentation
+singleModuleWithExtraDocs =
+  Map.singleton basicsModuleName basicsModuleWithExtra
+
+-- | Documentation with two modules.
+twoModuleDocs :: Docs.Documentation
+twoModuleDocs =
+  Map.fromList
+    [ (basicsModuleName, basicsModule),
+      (listModuleName, listModule)
+    ]
+
+-- PackageChanges test fixtures
+
+noChanges :: PackageChanges
+noChanges = PackageChanges [] Map.empty []
+
+addedModuleChanges :: PackageChanges
+addedModuleChanges = PackageChanges [listModuleName] Map.empty []
+
+removedModuleChanges :: PackageChanges
+removedModuleChanges = PackageChanges [] Map.empty [listModuleName]
+
+addedAndRemovedChanges :: PackageChanges
+addedAndRemovedChanges = PackageChanges [listModuleName] Map.empty [basicsModuleName]
+
+-- ModuleChanges test fixtures
+
+emptyChanges :: Changes Name.Name a
+emptyChanges = Changes Map.empty Map.empty Map.empty
+
+emptyModuleChanges :: ModuleChanges
+emptyModuleChanges = ModuleChanges emptyChanges emptyChanges emptyChanges emptyChanges
+
+addedValueModuleChanges :: ModuleChanges
+addedValueModuleChanges =
+  ModuleChanges
+    emptyChanges
+    emptyChanges
+    (Changes (Map.singleton (Name.fromChars "newFunc") (Docs.Value emptyComment boolType)) Map.empty Map.empty)
+    emptyChanges
+
+removedValueModuleChanges :: ModuleChanges
+removedValueModuleChanges =
+  ModuleChanges
+    emptyChanges
+    emptyChanges
+    (Changes Map.empty Map.empty (Map.singleton (Name.fromChars "oldFunc") (Docs.Value emptyComment boolType)))
+    emptyChanges
+
+changedValueModuleChanges :: ModuleChanges
+changedValueModuleChanges =
+  ModuleChanges
+    emptyChanges
+    emptyChanges
+    (Changes Map.empty (Map.singleton (Name.fromChars "func") (Docs.Value emptyComment intType, Docs.Value emptyComment stringType)) Map.empty)
+    emptyChanges

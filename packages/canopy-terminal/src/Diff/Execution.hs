@@ -95,6 +95,7 @@ run env args =
 --
 -- Compares two published versions of a package from the registry.
 -- Loads documentation for both versions and computes differences.
+-- Includes a suggested version bump based on the newer version.
 --
 -- @since 0.19.1
 runGlobal :: Env -> Name -> Version -> Version -> Task ()
@@ -102,7 +103,7 @@ runGlobal env name v1 v2 = do
   versions <- lookupPackageVersions env name
   oldDocs <- Documentation.getLocal env name versions (min v1 v2)
   newDocs <- Documentation.getLocal env name versions (max v1 v2)
-  computeDiff oldDocs newDocs
+  computeDiff oldDocs newDocs (Just (max v1 v2))
 
 -- | Look up available versions for package.
 lookupPackageVersions :: Env -> Name -> Task Registry.KnownVersions
@@ -122,33 +123,35 @@ runLocal env v1 v2 = do
   (name, versions) <- loadOutlineInfo env
   oldDocs <- Documentation.getLocal env name versions (min v1 v2)
   newDocs <- Documentation.getLocal env name versions (max v1 v2)
-  computeDiff oldDocs newDocs
+  computeDiff oldDocs newDocs (Just (max v1 v2))
 
 -- | Execute code vs latest comparison.
 --
 -- Compares local source code against the latest published version.
 -- Generates documentation from source and loads latest from registry.
+-- Includes a suggested version bump based on the current package version.
 --
 -- @since 0.19.1
 runCodeVsLatest :: Env -> Task ()
 runCodeVsLatest env = do
-  (name, versions) <- loadOutlineInfo env
+  (name, versions, currentVersion) <- loadOutlineInfoWithVersion env
   oldDocs <- Documentation.getLatest env name versions
   newDocs <- Documentation.generate env
-  computeDiff oldDocs newDocs
+  computeDiff oldDocs newDocs (Just currentVersion)
 
 -- | Execute code vs specific version comparison.
 --
 -- Compares local source code against a specific published version.
 -- Generates documentation from source and loads target version.
+-- Includes a suggested version bump based on the current package version.
 --
 -- @since 0.19.1
 runCodeVsSpecific :: Env -> Version -> Task ()
 runCodeVsSpecific env version = do
-  (name, versions) <- loadOutlineInfo env
+  (name, versions, currentVersion) <- loadOutlineInfoWithVersion env
   oldDocs <- Documentation.getLocal env name versions version
   newDocs <- Documentation.generate env
-  computeDiff oldDocs newDocs
+  computeDiff oldDocs newDocs (Just currentVersion)
 
 -- | Load project outline information.
 --
@@ -163,12 +166,30 @@ loadOutlineInfo env = do
   versions <- lookupPackageVersions env packageName
   pure (packageName, versions)
 
+-- | Load project outline information including the current package version.
+--
+-- Like 'loadOutlineInfo', but also extracts the current version from
+-- the package outline. Used by code-vs-published comparisons to
+-- suggest a concrete next version number.
+--
+-- @since 0.19.2
+loadOutlineInfoWithVersion :: Env -> Task (Name, Registry.KnownVersions, Version)
+loadOutlineInfoWithVersion env = do
+  outline <- Outline.load env
+  packageName <- Outline.extractPackageName outline
+  currentVersion <- Outline.extractPackageVersion outline
+  versions <- lookupPackageVersions env packageName
+  pure (packageName, versions, currentVersion)
+
 -- | Compute and output diff between documentation sets.
 --
 -- Performs API difference analysis and formats results for display.
--- Handles diff computation and output formatting in a single operation.
+-- When a current version is provided, includes a suggested version
+-- bump in the output.
 --
 -- @since 0.19.1
-computeDiff :: Documentation -> Documentation -> Task ()
-computeDiff oldDocs newDocs =
-  Task.io (Output.display oldDocs newDocs)
+computeDiff :: Documentation -> Documentation -> Maybe Version -> Task ()
+computeDiff oldDocs newDocs maybeVersion =
+  case maybeVersion of
+    Nothing -> Task.io (Output.display oldDocs newDocs)
+    Just version -> Task.io (Output.displayWithVersion oldDocs newDocs version)
