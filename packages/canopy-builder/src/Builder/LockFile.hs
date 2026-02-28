@@ -81,6 +81,7 @@ import qualified Canopy.Version as Version
 import Control.Exception (IOException)
 import qualified Control.Exception as Exception
 import Control.Lens (makeLenses)
+import qualified Crypto.ConstantTime as CT
 import qualified Crypto.Signature as Sig
 import qualified Crypto.TrustedKeys as TrustedKeys
 import Data.Aeson ((.=))
@@ -191,7 +192,7 @@ isLockFileCurrent lf root = do
     then do
       contentHash <- Hash.hashFile canopyJsonPath
       let currentHex = Text.pack ("sha256:" ++ Hash.toHexString (Hash.hashValue contentHash))
-      pure (currentHex == _lockRootHash lf)
+      pure (CT.secureCompare currentHex (_lockRootHash lf))
     else pure False
 
 -- | Generate a lock file from resolved dependencies.
@@ -416,7 +417,7 @@ verifyOne cacheDir (pkg, lp)
   | otherwise = do
       let pkgDir = packageCachePath cacheDir pkg (_lpVersion lp)
       actualHash <- hashPackageConfig pkgDir
-      pure (if actualHash == _lpHash lp
+      pure (if CT.secureCompare actualHash (_lpHash lp)
         then Right pkg
         else Left (pkg, _lpHash lp, actualHash))
 
