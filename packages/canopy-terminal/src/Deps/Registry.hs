@@ -36,6 +36,10 @@ module Deps.Registry
     createAuthHeader,
     getVersions',
 
+    -- * Registry Configuration
+    resolveRegistryUrl,
+    resolveRegistryToken,
+
     -- * TTL Caching
     registryCacheTTL,
     isCacheExpired,
@@ -52,6 +56,7 @@ import qualified Data.Aeson.Key as AesonKey
 import qualified Data.Aeson.KeyMap as AesonKM
 import qualified Data.Binary as Binary
 import Data.ByteString (ByteString)
+import qualified Data.ByteString.Char8 as BS8
 import qualified Data.ByteString.Lazy as LBS
 import Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
@@ -62,6 +67,7 @@ import qualified Canopy.Data.Utf8 as Utf8
 import qualified Http
 import qualified Stuff
 import qualified System.Directory as Dir
+import qualified System.Environment as Env
 import System.FilePath ((</>))
 import Prelude hiding (read)
 
@@ -131,8 +137,12 @@ registryCacheFile cache = cache </> "registry.dat"
 -- EXPORTED OPERATIONS
 
 -- | Create an HTTP Authorization header from a bearer token.
-createAuthHeader :: String -> (String, String)
-createAuthHeader token = ("Authorization", "Bearer " <> token)
+--
+-- Returns a properly typed 'Http.Header' for use with the Http module.
+--
+-- @since 0.19.2
+createAuthHeader :: String -> Http.Header
+createAuthHeader token = Http.authorization (BS8.pack ("Bearer " <> token))
 
 -- | Read a 'Registry' from the binary cache file.
 --
@@ -183,12 +193,21 @@ isCacheExpired cache = do
 --
 -- 1. If the binary cache is younger than 'registryCacheTTL', return it
 --    without a network request.
--- 2. Otherwise, fetch from 'registryUrl' via HTTP GET and parse the
---    JSON response.
+-- 2. Otherwise, fetch from the resolved registry URL via HTTP GET and parse
+--    the JSON response.
 -- 3. On success, write the result to the binary cache and return it.
 -- 4. On any network or parse failure, return the cached registry when one
 --    exists, otherwise return an empty registry so the compiler degrades
 --    gracefully.
+--
+-- The registry URL is resolved in priority order:
+--
+-- 1. @CANOPY_REGISTRY_URL@ environment variable
+-- 2. First entry in 'CustomRepositoriesData'
+-- 3. Default public registry ('registryUrl')
+--
+-- Authentication tokens are resolved similarly via @CANOPY_REGISTRY_TOKEN@
+-- or the custom repository configuration.
 --
 -- @since 0.19.2
 latest
@@ -197,23 +216,26 @@ latest
   -> Stuff.CanopySpecificCache
   -> Stuff.CanopyCustomRepositoryConfigFilePath
   -> IO (Either String Registry)
-latest manager _customRepos cache _reposConfig = do
+latest manager customRepos cache _reposConfig = do
   expired <- isCacheExpired cache
+  url <- resolveRegistryUrl customRepos
+  maybeToken <- resolveRegistryToken customRepos
+  let headers = maybe [] (\t -> [Http.authorization (BS8.pack ("Bearer " <> t))]) maybeToken
   if expired
-    then fetchAndFallback manager cache
-    else readOrFetch manager cache
+    then fetchAndFallbackFrom manager cache url headers
+    else readOrFetchFrom manager cache url headers
 
 -- | Read the cache, falling back to a network fetch if missing.
-readOrFetch :: Http.Manager -> FilePath -> IO (Either String Registry)
-readOrFetch manager cache = do
+readOrFetchFrom :: Http.Manager -> FilePath -> String -> [Http.Header] -> IO (Either String Registry)
+readOrFetchFrom manager cache url headers = do
   cached <- read cache
-  maybe (fetchAndFallback manager cache) (pure . Right) cached
+  maybe (fetchAndFallbackFrom manager cache url headers) (pure . Right) cached
 
 -- | Fetch from network and fall back to cached data on failure.
-fetchAndFallback :: Http.Manager -> FilePath -> IO (Either String Registry)
-fetchAndFallback manager cache = do
+fetchAndFallbackFrom :: Http.Manager -> FilePath -> String -> [Http.Header] -> IO (Either String Registry)
+fetchAndFallbackFrom manager cache url headers = do
   cached <- read cache
-  networkResult <- fetchFromNetwork manager
+  networkResult <- fetchFromNetworkUrl manager url headers
   case networkResult of
     Right fresh -> do
       writeCache cache fresh
@@ -228,6 +250,66 @@ fetchAndFallback manager cache = do
 getVersions' :: CanopyRegistries -> Pkg.Name -> Maybe KnownVersions
 getVersions' (CanopyRegistries mainReg customRegs _) pkg =
   firstJust (lookupInRegistry pkg) (mainReg : customRegs)
+
+-- REGISTRY CONFIGURATION
+
+-- | Resolve the registry URL from environment or custom repos.
+--
+-- Priority order:
+--
+-- 1. @CANOPY_REGISTRY_URL@ environment variable
+-- 2. First custom repository URL from 'CustomRepositoriesData'
+-- 3. Default public registry ('registryUrl')
+--
+-- @since 0.19.2
+resolveRegistryUrl :: CustomRepo.CustomRepositoriesData -> IO String
+resolveRegistryUrl customRepos = do
+  envUrl <- lookupEnv "CANOPY_REGISTRY_URL"
+  pure (selectUrl envUrl customRepos)
+  where
+    selectUrl (Just url) _ = url
+    selectUrl Nothing repos
+      | Map.null repos = registryUrl
+      | otherwise = extractFirstUrl repos
+
+    extractFirstUrl repos =
+      maybe registryUrl repoToUrl (Map.lookupMin repos)
+
+    repoToUrl (_, CustomRepo.DefaultPackageServerRepoData _ url _) = Text.unpack url
+    repoToUrl (_, CustomRepo.PZRPackageServerRepoData _ url _) = Text.unpack url
+
+-- | Resolve the registry authentication token from environment or custom repos.
+--
+-- Priority order:
+--
+-- 1. @CANOPY_REGISTRY_TOKEN@ environment variable
+-- 2. First custom repository auth token from 'CustomRepositoriesData'
+-- 3. 'Nothing' (no authentication)
+--
+-- @since 0.19.2
+resolveRegistryToken :: CustomRepo.CustomRepositoriesData -> IO (Maybe String)
+resolveRegistryToken customRepos = do
+  envToken <- lookupEnv "CANOPY_REGISTRY_TOKEN"
+  pure (selectToken envToken customRepos)
+  where
+    selectToken (Just token) _ = Just token
+    selectToken Nothing repos
+      | Map.null repos = Nothing
+      | otherwise = extractFirstToken repos
+
+    extractFirstToken repos =
+      Map.lookupMin repos >>= repoToToken
+
+    repoToToken (_, CustomRepo.DefaultPackageServerRepoData _ _ maybeToken) =
+      fmap Text.unpack maybeToken
+    repoToToken (_, CustomRepo.PZRPackageServerRepoData _ _ maybeToken) =
+      fmap Text.unpack maybeToken
+
+-- | Look up an environment variable, returning 'Nothing' when absent.
+--
+-- Wraps 'Env.lookupEnv' to isolate IO from the pure resolution logic.
+lookupEnv :: String -> IO (Maybe String)
+lookupEnv = Env.lookupEnv
 
 -- INTERNAL HELPERS
 
@@ -255,10 +337,14 @@ decodeFully bytes =
     Right (_, _, reg) -> Right reg
     Left (_, _, msg) -> Left msg
 
--- | Perform an HTTP GET to the registry endpoint and parse the response.
-fetchFromNetwork :: Http.Manager -> IO (Either String Registry)
-fetchFromNetwork manager =
-  Http.get manager registryUrl [] httpErrorToString parseRegistryResponse
+-- | Perform an HTTP GET to the given registry URL and parse the response.
+--
+-- Uses the provided headers for authentication when connecting to
+-- private registries. Falls back to default 'registryUrl' when called
+-- without explicit URL configuration.
+fetchFromNetworkUrl :: Http.Manager -> String -> [Http.Header] -> IO (Either String Registry)
+fetchFromNetworkUrl manager url headers =
+  Http.get manager url headers httpErrorToString parseRegistryResponse
 
 -- | Convert an HTTP error to a descriptive String for error reporting.
 httpErrorToString :: Http.Error -> String

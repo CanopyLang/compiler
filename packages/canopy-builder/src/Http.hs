@@ -61,6 +61,7 @@ module Http
     post,
     Header,
     accept,
+    authorization,
     Error (..),
     -- * Archives
     Sha,
@@ -240,6 +241,15 @@ userAgent =
 accept :: ByteString -> Header
 accept mime =
   (hAccept, mime)
+
+-- | Create an Authorization header with the given value.
+--
+-- Typically used with a @Bearer@ token for private registry access.
+--
+-- @since 0.19.2
+authorization :: ByteString -> Header
+authorization value =
+  ("Authorization", value)
 
 -- FALLBACK POLICY
 

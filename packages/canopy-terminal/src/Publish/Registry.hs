@@ -39,7 +39,6 @@ import Codec.Archive.Zip (Archive)
 import qualified Codec.Archive.Zip as Zip
 import Control.Lens ((^.))
 import qualified Data.ByteString.Char8 as BS
-import qualified Data.CaseInsensitive as CI
 import qualified Data.Map.Strict as Map
 import qualified Data.Maybe as Maybe
 import qualified Data.Text as Text
@@ -155,9 +154,7 @@ registerToPZRServer :: Manager -> RepositoryUrl -> RepositoryAuthToken -> Name -
 registerToPZRServer manager repositoryUrl authToken pkg vsn docs zipArchive = do
   let url = createPZRUrl repositoryUrl pkg vsn
   let uploadParts = createPZRUploadParts docs zipArchive
-  let authHeaderValue = Text.unpack authToken
-  let (headerName, headerValue) = createAuthHeader authHeaderValue
-  let authHeader = (CI.mk (BS.pack headerName), BS.pack headerValue)
+  let authHeader = createAuthHeader (Text.unpack authToken)
   result <- Task.io (Http.uploadWithHeaders manager url uploadParts [authHeader])
   either (Task.throw . Exit.PublishCannotRegister . show) pure result
 

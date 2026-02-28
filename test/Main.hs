@@ -132,6 +132,7 @@ import qualified Unit.Repl.TypeQueryTest as ReplTypeQueryTest
 import qualified Unit.Repl.StateTest as ReplStateTest
 import qualified Unit.Repl.TypesTest as ReplTypesTest
 import qualified Unit.Deps.AdvisoryTest as AdvisoryTest
+import qualified Unit.Deps.RegistryTest as RegistryTest
 import qualified Unit.AuditTest as AuditTest
 import qualified Unit.VersionCheckTest as VersionCheckTest
 import qualified Property.ArithmeticLawsTest as ArithmeticLawsTest
@@ -269,6 +270,7 @@ unitTests =
       ReplStateTest.tests,
       ReplTypesTest.tests,
       AdvisoryTest.tests,
+      RegistryTest.tests,
       AuditTest.tests,
       VersionCheckTest.tests
     ]
