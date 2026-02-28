@@ -117,14 +117,17 @@ lookupCompletions string = do
 
 -- | REPL command completions.
 --
--- @since 0.19.1
+-- @since 0.19.2
 commands :: Map Name.Name ()
 commands =
   Map.fromList
     [ (Name.fromChars ":exit", ()),
       (Name.fromChars ":quit", ()),
       (Name.fromChars ":reset", ()),
-      (Name.fromChars ":help", ())
+      (Name.fromChars ":help", ()),
+      (Name.fromChars ":type", ()),
+      (Name.fromChars ":t", ()),
+      (Name.fromChars ":browse", ())
     ]
 
 -- | Add matching completions from a name map.

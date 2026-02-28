@@ -25,14 +25,20 @@ where
 import qualified BackgroundWriter as BW
 import qualified Build
 import qualified Canopy.Constraint as Constraint
+import qualified Canopy.Data.Name as Name
 import qualified Canopy.Details as Details
+import qualified Canopy.Interface as Interface
 import qualified Canopy.Licenses as Licenses
+import qualified Canopy.ModuleName as ModuleName
 import qualified Canopy.Outline as Outline
 import qualified Canopy.Package as Pkg
 import qualified Canopy.Version as Version
 import Control.Applicative ((<|>))
+import qualified Data.ByteString as BS
 import Data.ByteString.Builder (Builder)
 import qualified Data.ByteString.Builder as BB
+import qualified Data.ByteString.Char8 as BSC
+import qualified Data.ByteString.Lazy as LBS
 import Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
 import qualified Generate
@@ -47,6 +53,7 @@ import Repl.Types
     State (..),
     toPrintName,
   )
+import qualified Repl.TypeQuery as TypeQuery
 import qualified Reporting
 import Reporting.Doc.ColorQQ (c)
 import qualified Reporting.Exit as Exit
@@ -95,6 +102,10 @@ processInput env oldState (Decl name src) =
   Loop <$> attemptEval env oldState (addDecl name src oldState) (OutputDecl name)
 processInput env state (Expr src) =
   Loop <$> attemptEval env state state (OutputExpr src)
+processInput env state (TypeOf exprStr) =
+  handleTypeOf env state exprStr >> pure (Loop state)
+processInput env state (Browse maybeMod) =
+  handleBrowse env state maybeMod >> pure (Loop state)
 
 -- | Attempt to evaluate code with error handling.
 --
@@ -106,14 +117,11 @@ attemptEval :: Env -> State -> State -> Output -> IO State
 attemptEval (Env root interpreter ansi) oldState newState output =
   compileAndExecute >>= handleResult
   where
-    compileAndExecute = do
-      compResult <- BW.withScope (runCompilation root ansi newState output)
-      case compResult of
-        Left err -> pure (Left err)
-        Right Nothing -> pure (Right Nothing)
-        Right (Just javascript) -> do
-          result <- executeJavaScript interpreter javascript
-          pure (Right result)
+    compileAndExecute =
+      BW.withScope (runCompilation root ansi newState output)
+        >>= either (pure . Left) (fmap Right . maybeExecute)
+
+    maybeExecute = maybe (pure Nothing) (executeJavaScript interpreter)
 
     handleResult = either handleError handleSuccess
 
@@ -123,6 +131,147 @@ attemptEval (Env root interpreter ansi) oldState newState output =
     checkExecution javascript = do
       exitCode <- interpret interpreter javascript
       pure (if exitCode == Exit.ExitSuccess then newState else oldState)
+
+-- | Handle the @:type@ command by compiling the expression and
+-- extracting its type from the resulting interface.
+--
+-- The expression is wrapped as a declaration and compiled through
+-- the normal pipeline.  On success, the type is extracted from the
+-- compiled module's interface and displayed.
+--
+-- @since 0.19.2
+handleTypeOf :: Env -> State -> String -> IO ()
+handleTypeOf (Env root _interpreter _ansi) state exprStr = do
+  result <- BW.withScope (compileForTypeOf root state exprStr)
+  case result of
+    Left exit -> Exit.toStderr (Exit.replToReport exit)
+    Right Nothing -> Print.println [c|{red|I could not determine the type of that expression.}|]
+    Right (Just typeStr) -> Print.println [c|#{typeStr}|]
+
+-- | Compile an expression and extract its type.
+--
+-- Writes the current REPL state plus the expression as a temporary
+-- source module, compiles it, and looks up the type of the expression
+-- binding in the resulting interface.
+--
+-- @since 0.19.2
+compileForTypeOf :: FilePath -> State -> String -> BW.Scope -> IO (Either Exit.Repl (Maybe String))
+compileForTypeOf rootDir state exprStr scope = do
+  writeReplSource rootDir state exprStr
+  Stuff.withRootLock rootDir (Task.run typeTask)
+  where
+    typeTask = do
+      details <- loadDetails scope rootDir
+      artifacts <- compileRepl rootDir details
+      pure (findTypeInModules Name.replValueToPrint (Build._artifactsModules artifacts))
+
+    loadDetails sc rd =
+      Task.io (Details.load Reporting.silent sc rd)
+        >>= either (Task.throw . Exit.ReplBadDetails) pure
+
+    compileRepl rd det =
+      Task.io (Build.fromRepl rd det)
+        >>= either (Task.throw . Exit.ReplCannotBuild) pure
+
+-- | Search for a name's type across compiled modules.
+--
+-- @since 0.19.2
+findTypeInModules :: Name.Name -> [Build.Module] -> Maybe String
+findTypeInModules name modules =
+  case modules of
+    [] -> Nothing
+    Build.Fresh _ iface _ : rest ->
+      maybe (findTypeInModules name rest) Just (TypeQuery.formatTypeOf name iface)
+
+-- | Write the REPL module source file to disk for compilation.
+--
+-- Creates a Canopy source module at @\<root\>\/src\/Main.can@ containing
+-- the accumulated REPL state (imports, types, declarations) plus the
+-- given expression wrapped as a @replValueToPrint@ binding.  The module
+-- is named @Main@ to match what 'Build.fromRepl' expects.
+--
+-- @since 0.19.2
+writeReplSource :: FilePath -> State -> String -> IO ()
+writeReplSource rootDir (State imports types decls) exprStr =
+  BS.writeFile sourcePath (LBS.toStrict (BB.toLazyByteString moduleBuilder))
+  where
+    sourcePath = rootDir </> "src" </> "Main.can"
+
+    moduleBuilder =
+      mconcat
+        [ BB.stringUtf8 "module Main exposing (..)\n",
+          Map.foldr mappend mempty imports,
+          Map.foldr mappend mempty types,
+          Map.foldr mappend mempty decls,
+          Name.toBuilder Name.replValueToPrint,
+          BB.stringUtf8 " =\n  ",
+          BB.byteString (BSC.pack exprStr),
+          BB.stringUtf8 "\n"
+        ]
+
+-- | Handle the @:browse@ command by listing module exports.
+--
+-- When no module name is given, lists all available modules from
+-- the dependency interfaces.  When a module name is specified,
+-- displays its exported values and types.
+--
+-- @since 0.19.2
+handleBrowse :: Env -> State -> Maybe String -> IO ()
+handleBrowse (Env root _interpreter _ansi) _state maybeMod = do
+  result <- BW.withScope (compileForBrowse root)
+  either (Exit.toStderr . Exit.replToReport) (displayBrowseResult maybeMod) result
+
+-- | Display browse results, dispatching based on whether a module
+-- name was provided.
+--
+-- @since 0.19.2
+displayBrowseResult :: Maybe String -> Build.Artifacts -> IO ()
+displayBrowseResult maybeMod artifacts =
+  maybe displayAllModules (browseModule artifacts) maybeMod
+  where
+    stateInfo = TypeQuery.formatBrowseState artifacts
+    displayAllModules = Print.println [c|#{stateInfo}|]
+
+-- | Compile the REPL project to access dependency interfaces.
+--
+-- @since 0.19.2
+compileForBrowse :: FilePath -> BW.Scope -> IO (Either Exit.Repl Build.Artifacts)
+compileForBrowse rootDir scope =
+  Stuff.withRootLock rootDir (Task.run browseTask)
+  where
+    browseTask = do
+      details <- loadDetails scope rootDir
+      Task.io (Build.fromRepl rootDir details)
+        >>= either (Task.throw . Exit.ReplCannotBuild) pure
+
+    loadDetails sc rd =
+      Task.io (Details.load Reporting.silent sc rd)
+        >>= either (Task.throw . Exit.ReplBadDetails) pure
+
+-- | Browse a specific module's exports.
+--
+-- @since 0.19.2
+browseModule :: Build.Artifacts -> String -> IO ()
+browseModule artifacts modName =
+  case findModuleInterface (Name.fromChars modName) (Build._artifactsDeps artifacts) of
+    Nothing -> Print.println [c|{red|I cannot find a module named #{modName}.}|]
+    Just iface -> Print.println [c|#{browseOutput}|]
+      where
+        browseOutput = TypeQuery.formatBrowseModule (Name.fromChars modName) iface
+
+-- | Find a module's public interface by raw name.
+--
+-- @since 0.19.2
+findModuleInterface ::
+  ModuleName.Raw ->
+  Map ModuleName.Canonical Interface.DependencyInterface ->
+  Maybe Interface.Interface
+findModuleInterface rawName deps =
+  case Map.elems (Map.filterWithKey matchesRawName deps) of
+    Interface.Public iface : _ -> Just iface
+    _ -> Nothing
+  where
+    matchesRawName (ModuleName.Canonical _ name) _ = name == rawName
 
 -- | Run compilation task.
 --

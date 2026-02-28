@@ -26,6 +26,7 @@
 -- * @repl@ - Interactive programming session
 -- * @reactor@ - Development server with hot reload
 -- * @make@ - Compile Canopy code to JavaScript or HTML
+-- * @docs@ - Generate project documentation
 -- * @test-ffi@ - Test and validate FFI functions
 -- * @install@ - Install packages from repositories
 -- * @publish@ - Publish packages to repositories
@@ -53,6 +54,7 @@ import CLI.Commands
     createBumpCommand,
     createCheckCommand,
     createDiffCommand,
+    createDocsCommand,
     createFFITestCommand,
     createFmtCommand,
     createInitCommand,
@@ -101,7 +103,7 @@ main =
 --
 -- * Interactive commands (repl, init, reactor)
 -- * Build commands (make, check)
--- * Developer tools (fmt, lint, test, audit, upgrade, bench)
+-- * Developer tools (fmt, lint, test, docs, audit, upgrade, bench)
 -- * FFI testing (test-ffi)
 -- * Package management (install, bump, diff, publish)
 --
@@ -118,6 +120,7 @@ createAllCommands =
     createFmtCommand,
     createLintCommand,
     createTestCommand,
+    createDocsCommand,
     createAuditCommand,
     createUpgradeCommand,
     createBenchCommand,

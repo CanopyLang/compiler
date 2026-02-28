@@ -17,6 +17,7 @@
 -- * 'createFmtCommand' - Format source files
 -- * 'createLintCommand' - Static analysis (lint)
 -- * 'createTestCommand' - Run test suite
+-- * 'createDocsCommand' - Generate documentation
 -- * 'createAuditCommand' - Dependency audit
 -- * 'createUpgradeCommand' - Migrate Elm projects to Canopy
 -- * 'createBenchCommand' - Compilation benchmarking
@@ -50,6 +51,7 @@ module CLI.Commands
     createFmtCommand,
     createLintCommand,
     createTestCommand,
+    createDocsCommand,
     createAuditCommand,
     createUpgradeCommand,
     createBenchCommand,
@@ -77,6 +79,7 @@ import CLI.Parsers (createIntParser, createInterpreterParser, createPortParser)
 import CLI.Types (Command, (|--))
 import qualified Develop
 import qualified Diff
+import qualified Docs
 import qualified Fmt
 import qualified Init
 import qualified Install
@@ -292,6 +295,26 @@ createTestCommand =
         ]
     args = Terminal.zeroOrMore Terminal.canopyFileOrDir
     flags = createTestFlags
+
+-- | Create the docs command for generating documentation.
+--
+-- The docs command extracts type-level documentation from compiled
+-- build artifacts and renders it in the requested output format.
+--
+-- @since 0.19.2
+createDocsCommand :: Command
+createDocsCommand =
+  Terminal.Command "docs" Terminal.Uncommon details example args flags Docs.run
+  where
+    details = "The `docs` command generates documentation for your Canopy project:"
+    example =
+      PP.vcat
+        [ PP.indent 4 (PP.green "canopy docs"),
+          PP.indent 4 (PP.green "canopy docs --format markdown --output docs.md"),
+          PP.indent 4 (PP.green "canopy docs src/Main.can --output docs.json")
+        ]
+    args = Terminal.zeroOrMore Terminal.canopyFile
+    flags = createDocsFlags
 
 -- | Create the audit command for dependency analysis.
 --
@@ -635,6 +658,12 @@ createTestFlags =
     |-- Terminal.onOff "headed" "Show the browser window when running browser tests (non-headless mode)."
     |-- Terminal.flag "app" Test.appParser "Application entry point for browser tests (e.g. src/Main.can). Can also be set via @browser-app annotation in test files."
     |-- Terminal.flag "slowmo" Test.slowMoParser "Slow down Playwright browser actions by N milliseconds. Useful for debugging browser tests."
+
+createDocsFlags :: Terminal.Flags Docs.Flags
+createDocsFlags =
+  Terminal.flags Docs.Flags
+    |-- Terminal.flag "format" Docs.formatParser "Output format: json (default) or markdown."
+    |-- Terminal.flag "output" Docs.outputParser "Write documentation to a file instead of stdout."
 
 createAuditFlags :: Terminal.Flags Audit.Flags
 createAuditFlags =

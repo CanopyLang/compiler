@@ -73,6 +73,17 @@ module Reporting.Exit
     New (..),
     newToReport,
 
+    -- * Docs Errors
+    Docs
+      ( DocsNoOutline,
+        DocsBadDetails,
+        DocsCannotBuild,
+        DocsAppNeedsFileNames,
+        DocsPkgNeedsExposing,
+        DocsCannotWrite
+      ),
+    docsToReport,
+
     -- * Setup Errors
     Setup (..),
     setupToReport,
@@ -162,6 +173,27 @@ checkToReport (CheckBadDetails path) = badDetailsError path
 checkToReport (CheckCannotBuild buildErr) = BuildExit.toDoc buildErr
 checkToReport CheckAppNeedsFileNames = appNeedsFileNamesError "canopy check src/Main.can"
 checkToReport CheckPkgNeedsExposing = pkgNeedsExposingError
+
+-- DOCS ERRORS
+
+-- | Documentation generation errors.
+data Docs
+  = DocsNoOutline
+  | DocsBadDetails FilePath
+  | DocsCannotBuild BuildExit.BuildError
+  | DocsAppNeedsFileNames
+  | DocsPkgNeedsExposing
+  | DocsCannotWrite FilePath String
+  deriving (Show)
+
+-- | Convert a 'Docs' error to a structured 'Report'.
+docsToReport :: Docs -> Report
+docsToReport DocsNoOutline = noOutlineError "canopy docs"
+docsToReport (DocsBadDetails path) = badDetailsError path
+docsToReport (DocsCannotBuild buildErr) = BuildExit.toDoc buildErr
+docsToReport DocsAppNeedsFileNames = appNeedsFileNamesError "canopy docs src/Main.can"
+docsToReport DocsPkgNeedsExposing = pkgNeedsExposingError
+docsToReport (DocsCannotWrite path msg) = docsCannotWriteError path msg
 
 -- MAKE ERRORS
 
@@ -705,3 +737,11 @@ newGitInitFailedError msg =
       , ""
       , fixLine (Doc.green "canopy new my-project --no-git")
       ])
+
+-- DOCS ERROR MESSAGE BUILDERS
+
+docsCannotWriteError :: FilePath -> String -> Report
+docsCannotWriteError path msg =
+  structuredError "CANNOT WRITE DOCS"
+    (Doc.reflow ("I could not write documentation to " ++ path ++ ": " ++ msg))
+    (Doc.reflow "Check that you have write permissions and sufficient disk space.")

@@ -12,7 +12,7 @@
 -- * Type and value declarations
 -- * Module imports
 -- * Multi-line input with smart continuation
--- * Command system (:help, :reset, :exit)
+-- * Command system (:help, :reset, :exit, :type, :browse)
 -- * Auto-completion
 -- * History management
 --

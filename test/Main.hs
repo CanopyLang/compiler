@@ -125,6 +125,12 @@ import qualified Unit.Type.UnionFindTest as UnionFindTest
 import qualified Unit.FFI.ManifestTest as FFIManifestTest
 import qualified Unit.FFI.ValidatorTest as FFIValidatorTest
 import qualified Unit.Terminal.Lint.RulesTest as LintRulesTest
+import qualified Unit.Docs.RenderTest as DocsRenderTest
+import qualified Unit.Docs.CommandTest as DocsCommandTest
+import qualified Unit.Repl.CommandsTest as ReplCommandsTest
+import qualified Unit.Repl.TypeQueryTest as ReplTypeQueryTest
+import qualified Unit.Repl.StateTest as ReplStateTest
+import qualified Unit.Repl.TypesTest as ReplTypesTest
 import qualified Property.ArithmeticLawsTest as ArithmeticLawsTest
 import qualified Property.Type.UnifyProperties as UnifyProperties
 import qualified Property.Type.UnionFindProperties as UnionFindProperties
@@ -252,7 +258,13 @@ unitTests =
       LazyImportValidationTest.tests,
       FFIManifestTest.tests,
       FFIValidatorTest.tests,
-      LintRulesTest.tests
+      LintRulesTest.tests,
+      DocsRenderTest.tests,
+      DocsCommandTest.tests,
+      ReplCommandsTest.tests,
+      ReplTypeQueryTest.tests,
+      ReplStateTest.tests,
+      ReplTypesTest.tests
     ]
 
 propertyTests :: TestTree

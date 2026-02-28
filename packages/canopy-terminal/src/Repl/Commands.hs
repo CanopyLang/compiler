@@ -170,12 +170,22 @@ startsWithColon inputLines =
 -- @since 0.19.1
 toCommand :: Lines -> Input
 toCommand inputLines =
-  case drop 1 (dropWhile (== ' ') (getFirstLine inputLines)) of
-    "reset" -> Reset
-    "exit" -> Exit
-    "quit" -> Exit
-    "help" -> Help Nothing
-    rest -> Help (Just (takeWhile (/= ' ') rest))
+  parseCommand (drop 1 (dropWhile (== ' ') (getFirstLine inputLines)))
+
+-- | Dispatch to the appropriate command based on the command name.
+--
+-- @since 0.19.2
+parseCommand :: String -> Input
+parseCommand "reset" = Reset
+parseCommand "exit" = Exit
+parseCommand "quit" = Exit
+parseCommand "help" = Help Nothing
+parseCommand cmdLine
+  | "type " `List.isPrefixOf` cmdLine = TypeOf (dropWhile (== ' ') (drop 5 cmdLine))
+  | "t " `List.isPrefixOf` cmdLine = TypeOf (dropWhile (== ' ') (drop 2 cmdLine))
+  | "browse" == cmdLine = Browse Nothing
+  | "browse " `List.isPrefixOf` cmdLine = Browse (Just (dropWhile (== ' ') (drop 7 cmdLine)))
+  | otherwise = Help (Just (takeWhile (/= ' ') cmdLine))
 
 -- | Check if input starts with specific keyword.
 --
@@ -253,14 +263,16 @@ toHelpMessage maybeBadCommand =
 
 -- | Generic help message text.
 --
--- @since 0.19.1
+-- @since 0.19.2
 genericHelpMessage :: String
 genericHelpMessage =
   "Valid commands include:\n\
   \\n\
-  \  :exit    Exit the REPL\n\
-  \  :help    Show this information\n\
-  \  :reset   Clear all previous imports and definitions\n\
+  \  :exit          Exit the REPL\n\
+  \  :help          Show this information\n\
+  \  :reset         Clear all previous imports and definitions\n\
+  \  :type <expr>   Show the type of an expression (alias: :t)\n\
+  \  :browse [mod]  List exports of the current or specified module\n\
   \\n\
   \More info at "
     <> Doc.makeLink "repl"

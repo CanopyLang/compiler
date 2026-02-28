@@ -102,6 +102,10 @@ data Input
     Skip
   | -- | Show help message
     Help !(Maybe String)
+  | -- | Show the type of an expression without evaluating it
+    TypeOf !String
+  | -- | Browse exports of a module
+    Browse !(Maybe String)
   deriving (Eq, Show)
 
 -- | Multi-line input accumulator.
