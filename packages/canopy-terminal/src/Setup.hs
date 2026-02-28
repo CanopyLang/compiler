@@ -351,7 +351,7 @@ compilePackageFromSource _flags author packageName versionStr pkgDir = do
               let pkg = mkPkg author packageName
                   srcDir = pkgDir </> "src"
               compileResult <- Dir.withCurrentDirectory pkgDir
-                (Compiler.compileFromExposed pkg False pkgDir [Compiler.AbsoluteSrcDir srcDir] exposedModules)
+                (Compiler.compileFromExposed pkg False (Compiler.ProjectRoot pkgDir) [Compiler.AbsoluteSrcDir srcDir] exposedModules)
               case compileResult of
                 Left err -> pure (Left (show err))
                 Right artifacts -> do

@@ -94,7 +94,7 @@ buildFromExposed ctx srcDirs exposedModules = do
       details = ctx ^. bcDetails
       isApp = isAppOutline (details ^. Details.detailsOutline)
 
-  result <- Task.io $ Compiler.compileFromExposed pkg isApp root srcDirs exposedModules
+  result <- Task.io $ Compiler.compileFromExposed pkg isApp (Compiler.ProjectRoot root) srcDirs exposedModules
   either (Task.throw . Exit.MakeCannotBuild) pure result
 
 -- | Build project from specific file paths.
@@ -119,7 +119,7 @@ buildFromPaths ctx paths = do
       srcDirs = map Compiler.RelativeSrcDir (Details._detailsSrcDirs details)
       isApp = isAppOutline (details ^. Details.detailsOutline)
 
-  result <- Task.io $ Compiler.compileFromPaths pkg isApp root srcDirs (NonEmptyList.toList paths)
+  result <- Task.io $ Compiler.compileFromPaths pkg isApp (Compiler.ProjectRoot root) srcDirs (NonEmptyList.toList paths)
   either (Task.throw . Exit.MakeCannotBuild) pure result
 
 -- | Create output builder from compiled artifacts.

@@ -164,7 +164,7 @@ checkExposedModules ::
 checkExposedModules root srcDirs details = do
   exposed <- resolveExposedModules details
   let pkg = resolvePkgName details
-  result <- Task.io (Compiler.compileFromExposed pkg False root srcDirs exposed)
+  result <- Task.io (Compiler.compileFromExposed pkg False (Compiler.ProjectRoot root) srcDirs exposed)
   either (Task.throw . Exit.CheckCannotBuild) (const (pure ())) result
 
 -- | Check a non-empty list of explicitly specified file paths.
@@ -177,7 +177,7 @@ checkFilePaths ::
 checkFilePaths root srcDirs details paths = do
   let pkg = resolvePkgName details
       isApp = detailsIsApp details
-  result <- Task.io (Compiler.compileFromPaths pkg isApp root srcDirs (NE.toList paths))
+  result <- Task.io (Compiler.compileFromPaths pkg isApp (Compiler.ProjectRoot root) srcDirs (NE.toList paths))
   either (Task.throw . Exit.CheckCannotBuild) (const (pure ())) result
 
 -- | Extract the exposed module list from project details.

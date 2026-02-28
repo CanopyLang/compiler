@@ -242,13 +242,35 @@ verifyLockFileHashes root = do
   case maybeLf of
     Nothing -> pure ()
     Just lf -> do
-      result <- LockFile.verifyPackageHashes lf
-      case result of
-        LockFile.AllVerified -> pure ()
-        LockFile.NotCached _ -> pure ()
-        LockFile.HashMismatch mismatches -> do
-          Print.printErrLn [c|{yellow|WARNING:} Package hash verification found mismatches:|]
-          mapM_ reportMismatch mismatches
+      verifyHashes lf
+      verifySignatures lf
+
+-- | Check hash integrity of cached packages.
+verifyHashes :: LockFile.LockFile -> IO ()
+verifyHashes lf = do
+  result <- LockFile.verifyPackageHashes lf
+  case result of
+    LockFile.AllVerified -> pure ()
+    LockFile.NotCached _ -> pure ()
+    LockFile.HashMismatch mismatches -> do
+      Print.printErrLn [c|{yellow|WARNING:} Package hash verification found mismatches:|]
+      mapM_ reportMismatch mismatches
+
+-- | Check cryptographic signatures of packages.
+verifySignatures :: LockFile.LockFile -> IO ()
+verifySignatures lf =
+  case LockFile.verifyPackageSignatures lf of
+    LockFile.AllSigned -> pure ()
+    LockFile.UnsignedPackages _ -> pure ()
+    LockFile.InvalidSignatures invalids -> do
+      Print.printErrLn [c|{yellow|WARNING:} Package signature verification found issues:|]
+      mapM_ reportInvalidSignature invalids
+
+-- | Report an invalid package signature.
+reportInvalidSignature :: (Pkg.Name, a) -> IO ()
+reportInvalidSignature (pkg, _) = do
+  let name = Pkg.toChars pkg
+  Print.printErrLn [c|  {red|INVALID SIGNATURE:} #{name} — signature could not be verified|]
 
 -- | Report a single hash mismatch.
 reportMismatch :: (Pkg.Name, a, b) -> IO ()

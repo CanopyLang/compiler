@@ -81,7 +81,7 @@ fromPaths _style root details paths = do
       srcDirs = details ^. Details.detailsSrcDirs
   case paths of
     [] -> pure (Left (BuildExit.BuildBadArgs "No paths provided"))
-    _ -> Compiler.compileFromPaths pkg isApp root (fmap Compiler.RelativeSrcDir srcDirs) paths
+    _ -> Compiler.compileFromPaths pkg isApp (Compiler.ProjectRoot root) (fmap Compiler.RelativeSrcDir srcDirs) paths
 
 -- | Build from exposed modules.
 fromExposed ::
@@ -96,7 +96,7 @@ fromExposed (ExposedBuildConfig _style root details) exposedModules = do
         Details.ValidApp _ -> True
         Details.ValidPkg _ _ _ -> False
       srcDirs = details ^. Details.detailsSrcDirs
-  Compiler.compileFromExposed pkg isApp root (fmap Compiler.AbsoluteSrcDir srcDirs) exposedModules
+  Compiler.compileFromExposed pkg isApp (Compiler.ProjectRoot root) (fmap Compiler.AbsoluteSrcDir srcDirs) exposedModules
 
 -- | Build for REPL.
 fromRepl ::
@@ -112,7 +112,7 @@ fromRepl root details = do
         Details.ValidPkg _ _ _ -> False
       srcDirs = details ^. Details.detailsSrcDirs
   -- For REPL, compile all source directories
-  Compiler.compileFromExposed pkg isApp root (fmap Compiler.AbsoluteSrcDir srcDirs) (NonEmptyList.List (Name.fromChars "Main") [])
+  Compiler.compileFromExposed pkg isApp (Compiler.ProjectRoot root) (fmap Compiler.AbsoluteSrcDir srcDirs) (NonEmptyList.List (Name.fromChars "Main") [])
 
 -- | Extract root module names from artifacts.
 getRootNames :: Artifacts -> List ModuleName.Raw

@@ -23,6 +23,10 @@ module Compiler
   -- * Types
   , SrcDir (..)
 
+  -- * Path Types (re-exported)
+  , Builder.Paths.ProjectRoot (..)
+  , Builder.Paths.mkProjectRoot
+
   -- * Re-exports for Terminal
   , module Build.Artifacts
   )
@@ -37,6 +41,8 @@ import qualified Build.Parallel as Parallel
 import qualified Builder.Graph as Graph
 import qualified Builder.Hash as Hash
 import qualified Builder.Incremental as Incremental
+import Builder.Paths (ProjectRoot (..))
+import qualified Builder.Paths
 import qualified Canopy.Interface as Interface
 import qualified Canopy.ModuleName as ModuleName
 import qualified Canopy.Outline as Outline
@@ -77,12 +83,12 @@ import qualified System.Directory as Dir
 -- Now includes source directories for transitive import discovery.
 compileFromPaths ::
   Pkg.Name ->
-  Bool -> -- Is this an application (True) or package (False)?
-  FilePath ->
+  Bool ->
+  ProjectRoot ->
   [SrcDir] ->
   [FilePath] ->
   IO (Either Exit.BuildError Build.Artifacts)
-compileFromPaths pkg isApp root srcDirs paths = do
+compileFromPaths pkg isApp (ProjectRoot root) srcDirs paths = do
   Log.logEvent (BuildStarted (Text.pack "compileFromPaths"))
 
   -- Load dependency artifacts (interfaces + GlobalGraph + FFI info)
@@ -166,18 +172,19 @@ cacheArtifactPath root modName =
 
 compileFromExposed ::
   Pkg.Name ->
-  Bool -> -- Is this an application (True) or package (False)?
-  FilePath ->
+  Bool ->
+  ProjectRoot ->
   [SrcDir] ->
   NE.List ModuleName.Raw ->
   IO (Either Exit.BuildError Build.Artifacts)
-compileFromExposed pkg isApp root srcDirs exposedModules = do
+compileFromExposed pkg isApp projectRoot srcDirs exposedModules = do
   Log.logEvent (BuildStarted (Text.pack "compileFromExposed"))
 
   -- Discover module paths
+  let root = unProjectRoot projectRoot
   paths <- discoverModulePaths root srcDirs (NE.toList exposedModules)
 
-  compileFromPaths pkg isApp root srcDirs paths
+  compileFromPaths pkg isApp projectRoot srcDirs paths
 
 -- | Discover transitive dependencies, returning both file paths and
 -- pre-computed import lists. This avoids a redundant re-parse when

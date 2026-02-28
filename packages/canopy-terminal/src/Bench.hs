@@ -119,7 +119,7 @@ compileWithDetails root details = do
       pkg = Details.dummyPkgName
       absSrcDirs = map (resolveSrcDir root) srcDirs
   canFiles <- fmap concat (mapM findCanFiles absSrcDirs)
-  result <- Compiler.compileFromPaths pkg True root srcDirs canFiles
+  result <- Compiler.compileFromPaths pkg True (Compiler.ProjectRoot root) srcDirs canFiles
   case result of
     Left _ -> Print.printErrLn [c|  {yellow|Warning:} Compilation failed during benchmark|]
     Right _ -> pure ()

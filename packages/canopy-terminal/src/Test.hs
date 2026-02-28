@@ -305,7 +305,7 @@ compileTestFiles root testFiles = do
           Compiler.RelativeSrcDir "tests",
           Compiler.RelativeSrcDir "test"
         ]
-  result <- Compiler.compileFromPaths pkg True root srcDirs testFiles
+  result <- Compiler.compileFromPaths pkg True (Compiler.ProjectRoot root) srcDirs testFiles
   case result of
     Left err -> do
       let errStr = show err
@@ -379,7 +379,7 @@ compileTestDepOutline pkgName version pkgDir srcPath (Outline.Pkg pkgOutline) =
     Nothing -> pure ()
     Just exposedModules -> do
       compileResult <- Dir.withCurrentDirectory pkgDir
-        (Compiler.compileFromExposed pkgName False pkgDir [Compiler.AbsoluteSrcDir srcPath] exposedModules)
+        (Compiler.compileFromExposed pkgName False (Compiler.ProjectRoot pkgDir) [Compiler.AbsoluteSrcDir srcPath] exposedModules)
       either reportTestDepError (writeTestDepArtifacts pkgName version) compileResult
   where
     reportTestDepError err = do

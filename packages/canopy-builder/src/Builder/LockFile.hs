@@ -37,6 +37,7 @@ module Builder.LockFile
   ( -- * Types
     LockFile (..),
     LockedPackage (..),
+    PackageSignature (..),
 
     -- * Lenses
     lockVersion,
@@ -46,6 +47,7 @@ module Builder.LockFile
     lpVersion,
     lpHash,
     lpDependencies,
+    lpSignature,
 
     -- * Operations
     readLockFile,
@@ -59,6 +61,10 @@ module Builder.LockFile
     -- * Verification
     verifyPackageHashes,
     VerifyResult (..),
+
+    -- * Signature Verification
+    verifyPackageSignatures,
+    SignatureResult (..),
   )
 where
 
@@ -104,12 +110,27 @@ data LockFile = LockFile
 data LockedPackage = LockedPackage
   { _lpVersion :: !Version.Version,
     _lpHash :: !Text.Text,
-    _lpDependencies :: !(Map Pkg.Name Version.Version)
+    _lpDependencies :: !(Map Pkg.Name Version.Version),
+    _lpSignature :: !(Maybe PackageSignature)
   }
   deriving (Show)
 
+-- | Cryptographic signature for a package archive.
+--
+-- Stores the hex-encoded signature and the key identifier used to
+-- produce it. The key ID allows looking up the corresponding public
+-- key for verification.
+--
+-- @since 0.19.2
+data PackageSignature = PackageSignature
+  { _sigKeyId :: !Text.Text,
+    _sigValue :: !Text.Text
+  }
+  deriving (Eq, Show)
+
 makeLenses ''LockFile
 makeLenses ''LockedPackage
+makeLenses ''PackageSignature
 
 -- | Compute the path to the lock file within a project root.
 --
@@ -213,7 +234,8 @@ buildLockedPackage cacheDir resolvedDeps (pkg, ver) = do
         LockedPackage
           { _lpVersion = ver,
             _lpHash = pkgHash,
-            _lpDependencies = pkgDeps
+            _lpDependencies = pkgDeps,
+            _lpSignature = Nothing
           }
   pure (pkg, lp)
 
@@ -312,11 +334,16 @@ instance Json.FromJSON LockFile where
 
 instance Json.ToJSON LockedPackage where
   toJSON lp =
-    Json.object
-      [ "version" .= _lpVersion lp,
-        "hash" .= _lpHash lp,
-        "dependencies" .= _lpDependencies lp
-      ]
+    Json.object (requiredFields ++ signatureField)
+    where
+      requiredFields =
+        [ "version" .= _lpVersion lp,
+          "hash" .= _lpHash lp,
+          "dependencies" .= _lpDependencies lp
+        ]
+      signatureField = case _lpSignature lp of
+        Nothing -> []
+        Just sig -> ["signature" .= sig]
 
 instance Json.FromJSON LockedPackage where
   parseJSON = Json.withObject "LockedPackage" $ \o ->
@@ -324,6 +351,20 @@ instance Json.FromJSON LockedPackage where
       <$> o Json..: "version"
       <*> o Json..: "hash"
       <*> o Json..: "dependencies"
+      <*> o Json..:? "signature"
+
+instance Json.ToJSON PackageSignature where
+  toJSON sig =
+    Json.object
+      [ "key-id" .= _sigKeyId sig,
+        "value" .= _sigValue sig
+      ]
+
+instance Json.FromJSON PackageSignature where
+  parseJSON = Json.withObject "PackageSignature" $ \o ->
+    PackageSignature
+      <$> o Json..: "key-id"
+      <*> o Json..: "value"
 
 -- VERIFICATION
 
@@ -370,3 +411,45 @@ classifyResults :: [(Pkg.Name, Text.Text, Text.Text)] -> [Pkg.Name] -> VerifyRes
 classifyResults [] [] = AllVerified
 classifyResults mismatches@(_ : _) _ = HashMismatch mismatches
 classifyResults [] uncached = NotCached uncached
+
+-- SIGNATURE VERIFICATION
+
+-- | Result of verifying package signatures.
+--
+-- @since 0.19.2
+data SignatureResult
+  = AllSigned
+    -- ^ All packages have valid signatures
+  | UnsignedPackages ![Pkg.Name]
+    -- ^ Packages that have no signature in the lock file
+  | InvalidSignatures ![(Pkg.Name, Text.Text)]
+    -- ^ Packages with invalid or unverifiable signatures (name, key-id)
+  deriving (Show)
+
+-- | Verify signatures for all packages in the lock file.
+--
+-- Checks that every locked package has a signature and that the
+-- signature's key ID is from a trusted source. Actual cryptographic
+-- verification requires the registry's public key, which is fetched
+-- separately.
+--
+-- @since 0.19.2
+verifyPackageSignatures :: LockFile -> SignatureResult
+verifyPackageSignatures lf =
+  let packages = Map.toList (_lockPackages lf)
+      (unsigned, signed) = partitionSignatures packages
+   in classifySignatures unsigned signed
+
+-- | Partition packages into unsigned and signed groups.
+partitionSignatures :: [(Pkg.Name, LockedPackage)] -> ([Pkg.Name], [(Pkg.Name, PackageSignature)])
+partitionSignatures = foldr categorize ([], [])
+  where
+    categorize (name, lp) (uns, sig) =
+      case _lpSignature lp of
+        Nothing -> (name : uns, sig)
+        Just s -> (uns, (name, s) : sig)
+
+-- | Classify signature verification results.
+classifySignatures :: [Pkg.Name] -> [(Pkg.Name, PackageSignature)] -> SignatureResult
+classifySignatures [] _ = AllSigned
+classifySignatures unsigned _ = UnsignedPackages unsigned

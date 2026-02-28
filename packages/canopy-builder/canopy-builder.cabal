@@ -35,6 +35,7 @@ library
       Builder.Hash
       Builder.Incremental
       Builder.LockFile
+      Builder.Paths
       Builder.Solver
       Builder.State
       Compiler
