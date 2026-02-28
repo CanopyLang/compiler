@@ -8,6 +8,7 @@
 module Unit.Builder.LockFileTest (tests) where
 
 import qualified Builder.LockFile as LockFile
+import qualified Builder.LockFile.Types as LFT
 import Canopy.Package (Name (..))
 import qualified Canopy.Package as Pkg
 import qualified Canopy.Version as Version
@@ -49,8 +50,8 @@ sampleLockFile :: LockFile.LockFile
 sampleLockFile =
   LockFile.LockFile
     { LockFile._lockVersion = 1,
-      LockFile._lockGenerated = "2026-02-27T12:00:00Z",
-      LockFile._lockRootHash = "sha256:abc123",
+      LockFile._lockGenerated = LFT.mkTimestamp "2026-02-27T12:00:00Z",
+      LockFile._lockRootHash = LFT.unsafeContentHash "sha256:abc123",
       LockFile._lockPackages = samplePackages
     }
 
@@ -60,7 +61,7 @@ samplePackages =
     [ ( mkPkg "elm" "core",
         LockFile.LockedPackage
           { LockFile._lpVersion = mkVer 1 0 5,
-            LockFile._lpHash = "sha256:def456",
+            LockFile._lpHash = LFT.unsafeContentHash "sha256:def456",
             LockFile._lpDependencies = Map.empty,
             LockFile._lpSignature = Nothing,
             LockFile._lpSource = Nothing
@@ -69,7 +70,7 @@ samplePackages =
       ( mkPkg "elm" "json",
         LockFile.LockedPackage
           { LockFile._lpVersion = mkVer 1 1 3,
-            LockFile._lpHash = "sha256:ghi789",
+            LockFile._lpHash = LFT.unsafeContentHash "sha256:ghi789",
             LockFile._lpDependencies = Map.singleton (mkPkg "elm" "core") (mkVer 1 0 5),
             LockFile._lpSignature = Nothing,
             LockFile._lpSource = Nothing
@@ -90,12 +91,12 @@ testWriteReadRoundtrip =
         withSystemTempDirectory "lockfile-test" $ \tmpDir -> do
           LockFile.writeLockFile tmpDir sampleLockFile
           result <- LockFile.readLockFile tmpDir
-          fmap LockFile._lockGenerated result @?= Just "2026-02-27T12:00:00Z",
+          fmap (LFT.unTimestamp . LockFile._lockGenerated) result @?= Just "2026-02-27T12:00:00Z",
       testCase "roundtrip preserves root hash" $
         withSystemTempDirectory "lockfile-test" $ \tmpDir -> do
           LockFile.writeLockFile tmpDir sampleLockFile
           result <- LockFile.readLockFile tmpDir
-          fmap LockFile._lockRootHash result @?= Just "sha256:abc123",
+          fmap (LFT.unContentHash . LockFile._lockRootHash) result @?= Just "sha256:abc123",
       testCase "roundtrip preserves package count" $
         withSystemTempDirectory "lockfile-test" $ \tmpDir -> do
           LockFile.writeLockFile tmpDir sampleLockFile
@@ -167,8 +168,8 @@ testEmptyPackagesRoundtrip =
       let lf =
             LockFile.LockFile
               { LockFile._lockVersion = 1,
-                LockFile._lockGenerated = "2026-01-01T00:00:00Z",
-                LockFile._lockRootHash = "sha256:empty",
+                LockFile._lockGenerated = LFT.mkTimestamp "2026-01-01T00:00:00Z",
+                LockFile._lockRootHash = LFT.unsafeContentHash "sha256:empty",
                 LockFile._lockPackages = Map.empty
               }
       LockFile.writeLockFile tmpDir lf
@@ -203,7 +204,7 @@ testUncachedPackageHash =
         Just lf ->
           case Map.lookup fakePkg (LockFile._lockPackages lf) of
             Nothing -> assertFailure "Expected package in lock file"
-            Just lp -> LockFile._lpHash lp @?= "sha256:not-cached"
+            Just lp -> LockFile._lpHash lp @?= LFT.notCachedHash
 
 testGeneratedHashFormat :: TestTree
 testGeneratedHashFormat =
@@ -215,7 +216,7 @@ testGeneratedHashFormat =
       case result of
         Nothing -> assertFailure "Expected lock file to be readable"
         Just lf -> do
-          let rootHash = LockFile._lockRootHash lf
+          let rootHash = LFT.unContentHash (LockFile._lockRootHash lf)
           assertBool
             "root hash should start with sha256:"
             (Text.isPrefixOf "sha256:" rootHash)

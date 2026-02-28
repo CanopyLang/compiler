@@ -39,6 +39,17 @@ module Builder.LockFile
     LockedPackage (..),
     PackageSignature (..),
 
+    -- * Domain Newtypes (re-exported)
+    LFT.ContentHash,
+    LFT.Timestamp,
+    LFT.KeyId,
+    LFT.SignatureValue,
+    LFT.unContentHash,
+    LFT.unTimestamp,
+    LFT.unKeyId,
+    LFT.unSignatureValue,
+    LFT.notCachedHash,
+
     -- * Lenses
     lockVersion,
     lockGenerated,
@@ -74,6 +85,13 @@ module Builder.LockFile
 where
 
 import qualified Builder.Hash as Hash
+import Builder.LockFile.Types
+  ( ContentHash,
+    KeyId,
+    SignatureValue,
+    Timestamp,
+  )
+import qualified Builder.LockFile.Types as LFT
 import qualified Canopy.Constraint as Constraint
 import qualified Canopy.Outline as Outline
 import qualified Canopy.Package as Pkg
@@ -108,8 +126,8 @@ import System.FilePath ((</>))
 -- @since 0.19.1
 data LockFile = LockFile
   { _lockVersion :: !Int,
-    _lockGenerated :: !Text.Text,
-    _lockRootHash :: !Text.Text,
+    _lockGenerated :: !Timestamp,
+    _lockRootHash :: !ContentHash,
     _lockPackages :: !(Map Pkg.Name LockedPackage)
   }
   deriving (Show)
@@ -122,7 +140,7 @@ data LockFile = LockFile
 -- @since 0.19.1
 data LockedPackage = LockedPackage
   { _lpVersion :: !Version.Version,
-    _lpHash :: !Text.Text,
+    _lpHash :: !ContentHash,
     _lpDependencies :: !(Map Pkg.Name Version.Version),
     _lpSignature :: !(Maybe PackageSignature),
     _lpSource :: !(Maybe Fetch.PackageSource)
@@ -137,8 +155,8 @@ data LockedPackage = LockedPackage
 --
 -- @since 0.19.2
 data PackageSignature = PackageSignature
-  { _sigKeyId :: !Text.Text,
-    _sigValue :: !Text.Text
+  { _sigKeyId :: !KeyId,
+    _sigValue :: !SignatureValue
   }
   deriving (Eq, Show)
 
@@ -190,9 +208,8 @@ isLockFileCurrent lf root = do
   exists <- Dir.doesFileExist canopyJsonPath
   if exists
     then do
-      contentHash <- Hash.hashFile canopyJsonPath
-      let currentHex = Text.pack ("sha256:" ++ Hash.toHexString (Hash.hashValue contentHash))
-      pure (CT.secureCompare currentHex (_lockRootHash lf))
+      currentHash <- hashFileToContentHash canopyJsonPath
+      pure (CT.secureCompare (LFT.unContentHash currentHash) (LFT.unContentHash (_lockRootHash lf)))
     else pure False
 
 -- | Generate a lock file from resolved dependencies.
@@ -207,10 +224,9 @@ isLockFileCurrent lf root = do
 generateLockFile :: FilePath -> Map Pkg.Name Version.Version -> IO ()
 generateLockFile root resolvedDeps = do
   let canopyJsonPath = root </> "canopy.json"
-  contentHash <- Hash.hashFile canopyJsonPath
-  let rootHash = Text.pack ("sha256:" ++ Hash.toHexString (Hash.hashValue contentHash))
+  rootHash <- hashFileToContentHash canopyJsonPath
   now <- Time.getCurrentTime
-  let generated = Text.pack (ISO8601.iso8601Show now)
+  let generated = LFT.mkTimestamp (Text.pack (ISO8601.iso8601Show now))
   cacheDir <- getPackageCacheDir
   packages <- traverse (buildLockedPackage cacheDir resolvedDeps) (Map.toList resolvedDeps)
   let lf =
@@ -264,25 +280,25 @@ packageCachePath cacheDir pkg ver =
 -- | Hash the package's config file for integrity verification.
 --
 -- Tries @canopy.json@ first, then falls back to @elm.json@.
--- Returns @\"sha256:not-cached\"@ if neither exists.
-hashPackageConfig :: FilePath -> IO Text.Text
+-- Returns 'LFT.notCachedHash' if neither exists.
+hashPackageConfig :: FilePath -> IO ContentHash
 hashPackageConfig pkgDir = do
   let canopyJson = pkgDir </> "canopy.json"
       elmJson = pkgDir </> "elm.json"
   canopyExists <- Dir.doesFileExist canopyJson
   if canopyExists
-    then hashFileToText canopyJson
+    then hashFileToContentHash canopyJson
     else do
       elmExists <- Dir.doesFileExist elmJson
       if elmExists
-        then hashFileToText elmJson
-        else pure "sha256:not-cached"
+        then hashFileToContentHash elmJson
+        else pure LFT.notCachedHash
 
--- | Hash a file and format as @\"sha256:{hex}\"@.
-hashFileToText :: FilePath -> IO Text.Text
-hashFileToText path = do
+-- | Hash a file and wrap as a 'ContentHash' with @\"sha256:\"@ prefix.
+hashFileToContentHash :: FilePath -> IO ContentHash
+hashFileToContentHash path = do
   contentHash <- Hash.hashFile path
-  pure (Text.pack ("sha256:" ++ Hash.toHexString (Hash.hashValue contentHash)))
+  pure (LFT.unsafeContentHash (Text.pack ("sha256:" ++ Hash.toHexString (Hash.hashValue contentHash))))
 
 -- | Read a package's declared dependencies and resolve to exact versions.
 --
@@ -387,10 +403,10 @@ instance Json.FromJSON PackageSignature where
 data VerifyResult
   = AllVerified
     -- ^ All cached packages match their lock file hashes
-  | HashMismatch ![(Pkg.Name, Text.Text, Text.Text)]
+  | HashMismatch ![(Pkg.Name, ContentHash, ContentHash)]
     -- ^ Packages with mismatched hashes: (name, expected, actual)
   | NotCached ![Pkg.Name]
-    -- ^ Packages not yet cached (hash is @sha256:not-cached@)
+    -- ^ Packages not yet cached (hash is 'notCachedHash')
   deriving (Show)
 
 -- | Verify that all cached packages match their lock file hashes.
@@ -411,18 +427,18 @@ verifyPackageHashes lf = do
   pure (classifyResults mismatches uncached)
 
 -- | Verify a single package's hash.
-verifyOne :: FilePath -> (Pkg.Name, LockedPackage) -> IO (Either (Pkg.Name, Text.Text, Text.Text) Pkg.Name)
+verifyOne :: FilePath -> (Pkg.Name, LockedPackage) -> IO (Either (Pkg.Name, ContentHash, ContentHash) Pkg.Name)
 verifyOne cacheDir (pkg, lp)
-  | _lpHash lp == "sha256:not-cached" = pure (Right pkg)
+  | _lpHash lp == LFT.notCachedHash = pure (Right pkg)
   | otherwise = do
       let pkgDir = packageCachePath cacheDir pkg (_lpVersion lp)
       actualHash <- hashPackageConfig pkgDir
-      pure (if CT.secureCompare actualHash (_lpHash lp)
+      pure (if CT.secureCompare (LFT.unContentHash actualHash) (LFT.unContentHash (_lpHash lp))
         then Right pkg
         else Left (pkg, _lpHash lp, actualHash))
 
 -- | Classify verification results.
-classifyResults :: [(Pkg.Name, Text.Text, Text.Text)] -> [Pkg.Name] -> VerifyResult
+classifyResults :: [(Pkg.Name, ContentHash, ContentHash)] -> [Pkg.Name] -> VerifyResult
 classifyResults [] [] = AllVerified
 classifyResults mismatches@(_ : _) _ = HashMismatch mismatches
 classifyResults [] uncached = NotCached uncached
@@ -437,7 +453,7 @@ data SignatureResult
     -- ^ All packages have valid signatures
   | UnsignedPackages ![Pkg.Name]
     -- ^ Packages that have no signature in the lock file
-  | InvalidSignatures ![(Pkg.Name, Text.Text)]
+  | InvalidSignatures ![(Pkg.Name, KeyId)]
     -- ^ Packages with invalid or unverifiable signatures (name, key-id)
   deriving (Show)
 
@@ -480,14 +496,14 @@ classifySignatures [] signed =
 -- | Verify a single package signature against the trusted key store.
 verifyOneSignature :: (Pkg.Name, PackageSignature) -> Bool
 verifyOneSignature (pkg, sig) =
-  case TrustedKeys.lookupTrustedKey (_sigKeyId sig) of
+  case TrustedKeys.lookupTrustedKey (LFT.unKeyId (_sigKeyId sig)) of
     Nothing -> False
     Just pubKey -> verifySigBytes pubKey pkg sig
 
 -- | Verify the Ed25519 signature bytes for a package.
 verifySigBytes :: Sig.PublicKey -> Pkg.Name -> PackageSignature -> Bool
 verifySigBytes pubKey pkg sig =
-  case Sig.parseSignatureHex (_sigValue sig) of
+  case Sig.parseSignatureHex (LFT.unSignatureValue (_sigValue sig)) of
     Left _ -> False
     Right parsedSig ->
       let msg = TextEnc.encodeUtf8 (Text.pack (Pkg.toChars pkg))
