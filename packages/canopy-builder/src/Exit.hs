@@ -35,6 +35,7 @@ data BuildError
   | BuildInvalidOutline String
   | BuildDependencyError String
   | BuildBadArgs String
+  | BuildFileTooLarge FilePath Int Int
   deriving (Show)
 
 -- | Compilation errors.
@@ -50,6 +51,7 @@ data CompileError
   | CompileModuleNotFound FilePath
   | CompileDiagnosticError FilePath [Diagnostic]
   | CompileTimeoutError FilePath
+  | CompileFileTooLarge FilePath Int Int
   deriving (Show)
 
 -- | Make command errors.
@@ -75,6 +77,9 @@ toString = \case
     "BUILD ERROR: Dependency error: " ++ msg
   BuildBadArgs msg ->
     "BUILD ERROR: Bad arguments: " ++ msg
+  BuildFileTooLarge path actual limit ->
+    "BUILD ERROR: File too large: " ++ path
+      ++ " (" ++ showMB actual ++ " exceeds " ++ showMB limit ++ " limit)"
 
 compileErrorToString :: CompileError -> String
 compileErrorToString = \case
@@ -92,6 +97,9 @@ compileErrorToString = \case
     "Compile error in " ++ path ++ ": " ++ show (length diags) ++ " diagnostic(s)"
   CompileTimeoutError path ->
     "Compilation timed out for " ++ path ++ " (exceeded 5 minute limit)"
+  CompileFileTooLarge path actual limit ->
+    "File too large: " ++ path
+      ++ " (" ++ showMB actual ++ " exceeds " ++ showMB limit ++ " limit)"
 
 -- | Convert make error to string.
 makeErrorToString :: MakeError -> String
@@ -122,6 +130,8 @@ toDoc = \case
     structuredErrorNoFix "DEPENDENCY ERROR" (Doc.reflow msg)
   BuildBadArgs msg ->
     structuredErrorNoFix "BAD ARGUMENTS" (Doc.reflow msg)
+  BuildFileTooLarge path actual limit ->
+    fileTooLargeDoc path actual limit
 
 -- | Convert compile error to beautiful colored Doc.
 --
@@ -147,6 +157,8 @@ compileErrorToDoc = \case
     structuredError "COMPILATION TIMEOUT"
       (Doc.indent 4 (Doc.dullyellow (Doc.fromChars path)))
       (Doc.toSimpleHint "This module took too long to compile. This can happen with very large modules or pathological type inference. Try splitting the module into smaller parts.")
+  CompileFileTooLarge path actual limit ->
+    fileTooLargeDoc path actual limit
 
 -- | Render structured diagnostics using the Diagnostic rendering system.
 --
@@ -199,3 +211,24 @@ errorBar title =
   Doc.dullred ("--" <> " " <> Doc.fromChars title <> " " <> Doc.fromChars dashes)
   where
     dashes = replicate (max 1 (80 - 4 - length title)) '-'
+
+-- | Format a byte count as a human-readable megabyte string.
+--
+-- @since 0.19.2
+showMB :: Int -> String
+showMB bytes =
+  show (bytes `div` (1024 * 1024)) ++ " MB"
+
+-- | Render a file-too-large error with a clear suggestion.
+--
+-- @since 0.19.2
+fileTooLargeDoc :: FilePath -> Int -> Int -> Doc.Doc
+fileTooLargeDoc path actual limit =
+  structuredError "FILE TOO LARGE"
+    (Doc.vcat
+      [ Doc.indent 4 (Doc.dullyellow (Doc.fromChars path)),
+        "",
+        Doc.reflow ("This file is " ++ showMB actual
+          ++ ", which exceeds the " ++ showMB limit ++ " limit.")
+      ])
+    (Doc.reflow "Consider splitting it into smaller modules.")

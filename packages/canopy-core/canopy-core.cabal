@@ -73,6 +73,7 @@ library
       Canopy.Kernel
       Canopy.Kernel.Discovery
       Canopy.Licenses
+      Canopy.Limits
       Canopy.Magnitude
       Canopy.ModuleName
       Canopy.Outline

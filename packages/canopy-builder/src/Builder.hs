@@ -81,7 +81,9 @@ import Logging.Event (LogEvent (..), Duration (..), Phase (..), CompileStats (..
 import qualified Logging.Logger as Log
 import qualified PackageCache
 import qualified Parse.Module as Parse
+import qualified System.Directory as Dir
 import System.FilePath (takeDirectory, (</>))
+import qualified Canopy.Limits as Limits
 
 -- | Pure builder with single IORef.
 data PureBuilder = PureBuilder
@@ -218,12 +220,18 @@ parseAllModules paths = do
     else return (Left ("Parse errors: " ++ show (length errors)))
 
 -- | Parse single module from path.
+--
+-- Checks file size against 'Limits.maxSourceFileBytes' before reading.
 parseModuleFromPath :: FilePath -> IO (Either String (FilePath, Src.Module))
 parseModuleFromPath path = do
-  sourceBytes <- BS.readFile path
-  case Parse.fromByteString Parse.Application sourceBytes of
-    Left parseErr -> return (Left (path ++ ": " ++ show parseErr))
-    Right sourceModule -> return (Right (path, sourceModule))
+  sizeResult <- checkSourceFileSize path
+  case sizeResult of
+    Left msg -> return (Left msg)
+    Right () -> do
+      sourceBytes <- BS.readFile path
+      case Parse.fromByteString Parse.Application sourceBytes of
+        Left parseErr -> return (Left (path ++ ": " ++ show parseErr))
+        Right sourceModule -> return (Right (path, sourceModule))
 
 -- | Extract dependencies from parsed modules.
 extractDependencies :: [(FilePath, Src.Module)] -> [(ModuleName.Raw, [ModuleName.Raw])]
@@ -417,13 +425,17 @@ getModuleDependencies ::
   FilePath ->
   IO [FilePath]
 getModuleDependencies root srcDirs path = do
-  sourceBytes <- BS.readFile path
-  case Parse.fromByteString Parse.Application sourceBytes of
+  sizeResult <- checkSourceFileSize path
+  case sizeResult of
     Left _ -> return []
-    Right sourceModule -> do
-      let imports = Src._imports sourceModule
-          importNames = map Src.getImportName imports
-      discoverModulePaths root srcDirs importNames
+    Right () -> do
+      sourceBytes <- BS.readFile path
+      case Parse.fromByteString Parse.Application sourceBytes of
+        Left _ -> return []
+        Right sourceModule -> do
+          let imports = Src._imports sourceModule
+              importNames = map Src.getImportName imports
+          discoverModulePaths root srcDirs importNames
 
 -- | Build single module with full compilation pipeline.
 -- REMOVED: buildModule function used OLD Compile module (moved to old/)
@@ -464,3 +476,27 @@ getBuildProgress builder = do
   statuses <- State.getAllStatuses (builderEngine builder)
   let total = length statuses
   return (completed, total)
+
+-- | Check that a source file does not exceed the size limit.
+--
+-- Returns @Right ()@ if the file is within bounds, or @Left@ with
+-- a descriptive error message if it exceeds 'Limits.maxSourceFileBytes'.
+--
+-- @since 0.19.2
+checkSourceFileSize :: FilePath -> IO (Either String ())
+checkSourceFileSize path = do
+  size <- Dir.getFileSize path
+  pure (validateSourceSize path (fromIntegral size))
+
+-- | Pure validation of source file size.
+--
+-- @since 0.19.2
+validateSourceSize :: FilePath -> Int -> Either String ()
+validateSourceSize path size =
+  case Limits.checkFileSize path size Limits.maxSourceFileBytes of
+    Nothing -> Right ()
+    Just (Limits.FileSizeError fp actual limit) ->
+      Left (fp ++ ": file is " ++ showMB actual
+        ++ ", exceeds " ++ showMB limit ++ " limit")
+  where
+    showMB bytes = show (bytes `div` (1024 * 1024)) ++ " MB"

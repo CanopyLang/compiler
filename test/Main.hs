@@ -38,6 +38,7 @@ import qualified Unit.Builder.StateTest as BuilderStateTest
 import qualified Unit.CLI.CommandsTest as CLICommandsTest
 import qualified Unit.CLI.DocumentationTest as CLIDocumentationTest
 import qualified Unit.CLI.ParsersTest as CLIParsersTest
+import qualified Unit.Canopy.LimitsTest as LimitsTest
 import qualified Unit.Canopy.VersionTest as VersionTest
 import qualified Unit.Data.NameTest as NameTest
 import qualified Unit.Data.IndexTest as IndexTest
@@ -152,6 +153,7 @@ unitTests =
       OneOrMoreTest.tests,
       MapUtilsTest.tests,
       Utf8Test.tests,
+      LimitsTest.tests,
       VersionTest.tests,
       JsonDecodeTest.tests,
       JsonEncodeTest.tests,

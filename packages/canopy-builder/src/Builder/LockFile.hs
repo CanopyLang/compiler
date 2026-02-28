@@ -116,6 +116,7 @@ import qualified Logging.Logger as Log
 import qualified PackageCache.Fetch as Fetch
 import qualified System.Directory as Dir
 import System.FilePath ((</>))
+import qualified Canopy.Limits as Limits
 
 -- | Lock file capturing the full dependency closure.
 --
@@ -182,9 +183,38 @@ readLockFile root = do
   if exists
     then do
       Log.logEvent (PackageOperation "lock-read" (Text.pack path))
+      enforceLockFileLimit path
       content <- LBS.readFile path
       pure (Json.decode content)
     else pure Nothing
+
+-- | Enforce the lock file size limit.
+--
+-- Checks the file size on disk against 'Limits.maxLockFileBytes' before
+-- reading. Throws an 'IOError' with a descriptive message if the lock
+-- file exceeds the limit.
+--
+-- @since 0.19.2
+enforceLockFileLimit :: FilePath -> IO ()
+enforceLockFileLimit path = do
+  size <- Dir.getFileSize path
+  case Limits.checkFileSize path (fromIntegral size) Limits.maxLockFileBytes of
+    Nothing -> pure ()
+    Just (Limits.FileSizeError fp actual limit) ->
+      ioError (userError (lockFileTooLargeMsg fp actual limit))
+
+-- | Format a file-too-large error message for lock files.
+--
+-- @since 0.19.2
+lockFileTooLargeMsg :: FilePath -> Int -> Int -> String
+lockFileTooLargeMsg path actual limit =
+  "FILE TOO LARGE -- " ++ path ++ "\n\n"
+    ++ "    This lock file is " ++ showMB actual
+    ++ ", which exceeds the " ++ showMB limit ++ " limit.\n\n"
+    ++ "    The lock file may be corrupted. Try deleting it and\n"
+    ++ "    running 'canopy install' to regenerate it.\n"
+  where
+    showMB bytes = show (bytes `div` (1024 * 1024)) ++ " MB"
 
 -- | Write a lock file to disk.
 --

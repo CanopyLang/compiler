@@ -78,6 +78,7 @@ import qualified Reporting.Annotation as Ann
 import qualified Data.Time.Clock as Time
 import System.FilePath ((</>), normalise)
 import qualified System.Directory as Dir
+import qualified Canopy.Limits as Limits
 
 -- | Compile from file paths using NEW compiler.
 --
@@ -208,7 +209,7 @@ discoverTransitiveDeps root srcDirs initialPaths depInterfaces projectType = do
   return result
   where
     parseModuleFile projType path = do
-      content <- BS.readFile path
+      content <- readSourceWithLimit path
       case Parse.fromByteString projType content of
         Left err -> InternalError.report
           "Compiler.discoverTransitiveDeps.parseModuleFile"
@@ -257,13 +258,52 @@ discoverImports root srcDirs found visited modules depInterfaces projectType =
 -- caller already resolved the path during import discovery.
 parseModuleAtPath :: Parse.ProjectType -> (ModuleName.Raw, FilePath) -> IO Src.Module
 parseModuleAtPath projectType (_modName, path) = do
-  content <- BS.readFile path
+  content <- readSourceWithLimit path
   case Parse.fromByteString projectType content of
     Left err -> InternalError.report
       "Compiler.parseModuleAtPath"
       ("Failed to parse: " <> Text.pack path)
       ("Parse error: " <> Text.pack (show err))
     Right m -> return m
+
+-- | Read a source file with a size limit check.
+--
+-- Checks the file size on disk against 'Limits.maxSourceFileBytes'
+-- before reading. This prevents out-of-memory conditions when
+-- encountering accidentally-huge or malicious source files.
+--
+-- Throws an 'IOError' with a descriptive message if the file exceeds
+-- the limit. The error is caught and displayed by the caller's error
+-- handling, producing a clear user-facing message.
+--
+-- @since 0.19.2
+readSourceWithLimit :: FilePath -> IO BS.ByteString
+readSourceWithLimit path = do
+  size <- Dir.getFileSize path
+  enforceSourceLimit path (fromIntegral size)
+  BS.readFile path
+
+-- | Enforce the source file size limit.
+--
+-- @since 0.19.2
+enforceSourceLimit :: FilePath -> Int -> IO ()
+enforceSourceLimit path size =
+  case Limits.checkFileSize path size Limits.maxSourceFileBytes of
+    Nothing -> pure ()
+    Just (Limits.FileSizeError fp actual limit) ->
+      ioError (userError (fileTooLargeMessage fp actual limit))
+
+-- | Format a file-too-large error message for source files.
+--
+-- @since 0.19.2
+fileTooLargeMessage :: FilePath -> Int -> Int -> String
+fileTooLargeMessage path actual limit =
+  "FILE TOO LARGE -- " ++ path ++ "\n\n"
+    ++ "    This source file is " ++ showMB actual
+    ++ ", which exceeds the " ++ showMB limit ++ " limit.\n\n"
+    ++ "    Consider splitting it into smaller modules.\n"
+  where
+    showMB bytes = show (bytes `div` (1024 * 1024)) ++ " MB"
 
 -- | Extract import names from a parsed module.
 extractImports :: Src.Module -> [ModuleName.Raw]

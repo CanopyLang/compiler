@@ -50,6 +50,7 @@ import qualified Json.Encode as Encode
 import Prelude hiding (read)
 import qualified System.Directory
 import System.FilePath ((</>))
+import qualified Canopy.Limits as Limits
 
 -- Orphan JSON instances for core types used in outline serialization.
 instance Json.ToJSON Constraint.Constraint where
@@ -153,13 +154,46 @@ write root outline = do
 defaultSummary :: Text.Text
 defaultSummary = "A Canopy project"
 
--- | Safe file reading.
+-- | Safe file reading with size limit.
+--
+-- Returns 'Nothing' if the file does not exist. Returns the content
+-- wrapped in 'Just' if it exists and is within the outline size limit.
+-- Throws an 'IOError' if the file exceeds 'Limits.maxOutlineBytes',
+-- preventing out-of-memory conditions from corrupted config files.
+--
+-- @since 0.19.2
 safeReadFile :: FilePath -> IO (Maybe LBS.ByteString)
 safeReadFile path = do
   exists <- System.Directory.doesFileExist path
   if exists
-    then Just <$> LBS.readFile path
+    then do
+      size <- System.Directory.getFileSize path
+      enforceOutlineLimit path (fromIntegral size)
+      Just <$> LBS.readFile path
     else pure Nothing
+
+-- | Enforce the outline file size limit.
+--
+-- @since 0.19.2
+enforceOutlineLimit :: FilePath -> Int -> IO ()
+enforceOutlineLimit path size =
+  case Limits.checkFileSize path size Limits.maxOutlineBytes of
+    Nothing -> pure ()
+    Just (Limits.FileSizeError fp actual limit) ->
+      ioError (userError (outlineTooLargeMessage fp actual limit))
+
+-- | Format a file-too-large error message for outline files.
+--
+-- @since 0.19.2
+outlineTooLargeMessage :: FilePath -> Int -> Int -> String
+outlineTooLargeMessage path actual limit =
+  "FILE TOO LARGE -- " ++ path ++ "\n\n"
+    ++ "    This configuration file is " ++ showMB actual
+    ++ ", which exceeds the " ++ showMB limit ++ " limit.\n\n"
+    ++ "    A valid canopy.json should be much smaller. Check if this\n"
+    ++ "    file has been corrupted or accidentally overwritten.\n"
+  where
+    showMB bytes = show (bytes `div` (1024 * 1024)) ++ " MB"
 
 -- JSON instances (minimal)
 instance Json.ToJSON Outline where
