@@ -43,6 +43,8 @@ dependencies:
   - filelock
   - aeson
   - aeson-pretty
+  - async
+  - stm
 
 default-extensions:
   - ConstraintKinds

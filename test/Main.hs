@@ -145,6 +145,7 @@ import qualified Unit.SelfUpdateTest as SelfUpdateTest
 import qualified Unit.Builder.ModuleLoaderTest as ModuleLoaderTest
 import qualified Unit.WebIDL.CommandTest as WebIDLCommandTest
 import qualified Unit.Publish.ArchiveTest as PublishArchiveTest
+import qualified Unit.Type.ParallelTest as TypeParallelTest
 import qualified Property.ArithmeticLawsTest as ArithmeticLawsTest
 import qualified Property.Type.UnifyProperties as UnifyProperties
 import qualified Property.Type.UnionFindProperties as UnionFindProperties
@@ -292,7 +293,8 @@ unitTests =
       EditorIntegrationTest.tests,
       SelfUpdateTest.tests,
       ModuleLoaderTest.tests,
-      PublishArchiveTest.tests
+      PublishArchiveTest.tests,
+      TypeParallelTest.tests
     ]
 
 propertyTests :: TestTree
