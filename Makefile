@@ -22,6 +22,9 @@ help:
 	@echo "bench-csv: Run benchmarks with CSV output"
 	@echo "build-webidl: Build the canopy-webidl package"
 	@echo "test-webidl: Run canopy-webidl tests"
+	@echo "profile-build: Build with profiling enabled"
+	@echo "profile-run: Run with time/allocation profiling"
+	@echo "profile-heap: Run with heap profiling"
 
 build:
 	@stack install --fast --pedantic --ghc-options "-j +RTS -A128m -n2m -RTS"
@@ -117,3 +120,20 @@ example:
 	@make build
 	@cd example && canopy make src/Main.can --output=canopy.js --verbose
 	@cd ..
+
+# -- Profiling targets -------------------------------------------------------
+
+profile-build:
+	@echo "Building with profiling enabled..."
+	@stack build --profile --ghc-options="-fprof-auto -rtsopts"
+
+profile-run:
+	@echo "Running with time and allocation profiling..."
+	@stack exec --profile -- canopy make src/Main.can +RTS -p -hT -l -RTS
+	@echo "See canopy.prof for time/allocation breakdown"
+
+profile-heap:
+	@echo "Running with heap profiling..."
+	@stack exec --profile -- canopy make src/Main.can +RTS -hc -p -RTS
+	@hp2ps -c canopy.hp 2>/dev/null || echo "Run hp2ps manually: hp2ps -c canopy.hp"
+	@echo "See canopy.ps for heap profile"
