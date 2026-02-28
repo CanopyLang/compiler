@@ -89,6 +89,7 @@ import qualified Unit.Query.EngineTest as QueryEngineTest
 import qualified Unit.Builder.PackageCacheTest as PackageCacheTest
 import qualified Unit.Worker.PoolTest as WorkerPoolTest
 import qualified Unit.Builder.WorkspaceTest as WorkspaceTest
+import qualified Unit.Watch.LiveReloadTest as LiveReloadTest
 import qualified Unit.Queries.ParseModuleTest as ParseModuleQueryTest
 import qualified Unit.Generate.CodeSplit.AnalyzeTest as CodeSplitAnalyzeTest
 import qualified Unit.Generate.CodeSplit.ManifestTest as CodeSplitManifestTest
@@ -274,7 +275,8 @@ unitTests =
       RegistryTest.tests,
       AuditTest.tests,
       VersionCheckTest.tests,
-      WorkspaceTest.tests
+      WorkspaceTest.tests,
+      LiveReloadTest.tests
     ]
 
 propertyTests :: TestTree
