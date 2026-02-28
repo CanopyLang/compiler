@@ -25,6 +25,7 @@ data Install
   | InstallBadOutline String
   | InstallBadRegistry String
   | InstallBadDetails FilePath
+  | InstallBadFetch
   | InstallUnknownPackageOnline String [String]
   | InstallUnknownPackageOffline String [String]
   | InstallNoOnlinePkgSolution String
@@ -41,6 +42,7 @@ installToReport InstallNoOutline = noOutlineError "canopy install"
 installToReport (InstallBadOutline msg) = badOutlineError msg
 installToReport (InstallBadRegistry msg) = badRegistryError msg
 installToReport (InstallBadDetails path) = badDetailsError path
+installToReport InstallBadFetch = badFetchError
 installToReport (InstallUnknownPackageOnline pkg suggestions) = unknownPackageError pkg suggestions
 installToReport (InstallUnknownPackageOffline pkg suggestions) = unknownPackageOfflineError pkg suggestions
 installToReport (InstallNoOnlinePkgSolution pkg) = noSolutionError pkg
@@ -93,6 +95,20 @@ badDetailsError path =
       , ""
       , fixLine (Doc.green "rm -rf canopy-stuff/")
       , fixLine (Doc.green "canopy make")
+      ])
+
+badFetchError :: Report
+badFetchError =
+  structuredError "PACKAGE FETCH FAILED"
+    (Doc.reflow "I could not download one or more packages from the registry or GitHub.")
+    (Doc.vcat
+      [ Doc.reflow "Possible causes:"
+      , ""
+      , fixLine (Doc.fromChars "1. No internet connection")
+      , fixLine (Doc.fromChars "2. The package registry is temporarily down")
+      , fixLine (Doc.fromChars "3. GitHub rate limiting")
+      , ""
+      , Doc.reflow "Try again later, or check your network connection."
       ])
 
 badOutlineError :: String -> Report

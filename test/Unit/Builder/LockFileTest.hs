@@ -62,7 +62,8 @@ samplePackages =
           { LockFile._lpVersion = mkVer 1 0 5,
             LockFile._lpHash = "sha256:def456",
             LockFile._lpDependencies = Map.empty,
-            LockFile._lpSignature = Nothing
+            LockFile._lpSignature = Nothing,
+            LockFile._lpSource = Nothing
           }
       ),
       ( mkPkg "elm" "json",
@@ -70,7 +71,8 @@ samplePackages =
           { LockFile._lpVersion = mkVer 1 1 3,
             LockFile._lpHash = "sha256:ghi789",
             LockFile._lpDependencies = Map.singleton (mkPkg "elm" "core") (mkVer 1 0 5),
-            LockFile._lpSignature = Nothing
+            LockFile._lpSignature = Nothing,
+            LockFile._lpSource = Nothing
           }
       )
     ]

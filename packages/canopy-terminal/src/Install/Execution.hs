@@ -61,6 +61,9 @@ import Install.Types
     icOldOutline,
     icRoot,
   )
+import qualified Network.HTTP.Client as Client
+import qualified Network.HTTP.Client.TLS as TLS
+import qualified PackageCache.Fetch as Fetch
 import qualified Reporting
 import Reporting.Doc (Doc)
 import qualified Reporting.Doc as Doc
@@ -175,10 +178,11 @@ promptForApproval question = Reporting.ask (Doc.toString question)
 
 -- | Perform the actual installation operations.
 --
--- Executes the file operations and dependency verification
--- with automatic rollback on failure.
+-- Fetches any missing packages from the network before writing the
+-- outline and verifying the installation. Packages are fetched using
+-- the cascading strategy in "PackageCache.Fetch".
 --
--- @since 0.19.1
+-- @since 0.19.2
 performInstallation :: InstallContext -> BackgroundWriter.Scope -> IO (Either Exit.Install ())
 performInstallation ctx scope = do
   let root = ctx ^. icRoot
@@ -186,17 +190,47 @@ performInstallation ctx scope = do
       oldOutline = ctx ^. icOldOutline
       newOutline = ctx ^. icNewOutline
 
-  -- Write the new outline atomically
-  Outline.write root newOutline
+  fetchResult <- fetchMissingPackages newOutline
+  either
+    (\_ -> rollbackInstallation root oldOutline Exit.InstallBadFetch)
+    (\_ -> writeAndVerify root env oldOutline newOutline scope)
+    fetchResult
 
-  -- Verify the installation
+-- | Write the outline and verify the installation.
+writeAndVerify :: FilePath -> a -> Outline.Outline -> Outline.Outline -> BackgroundWriter.Scope -> IO (Either Exit.Install ())
+writeAndVerify root env oldOutline newOutline scope = do
+  Outline.write root newOutline
   result <- Details.verifyInstall scope root env newOutline
-  case result of
-    Left exit -> rollbackInstallation root oldOutline (Exit.InstallBadDetails exit)
-    Right () -> do
-      generateLockFileFromOutline root newOutline
-      verifyLockFileHashes root
-      confirmInstallation
+  either
+    (\exit -> rollbackInstallation root oldOutline (Exit.InstallBadDetails exit))
+    (\_ -> finalizeInstall root newOutline)
+    result
+
+-- | Finalize installation by generating lock file and confirming.
+finalizeInstall :: FilePath -> Outline.Outline -> IO (Either Exit.Install ())
+finalizeInstall root newOutline = do
+  generateLockFileFromOutline root newOutline
+  verifyLockFileHashes root
+  confirmInstallation
+
+-- | Fetch any missing packages before installation.
+--
+-- Uses the cascading fetch strategy: local cache, Elm cache,
+-- registry endpoint, then direct GitHub download.
+--
+-- @since 0.19.2
+fetchMissingPackages :: Outline.Outline -> IO (Either [Fetch.FetchError] [Fetch.FetchSource])
+fetchMissingPackages outline = do
+  manager <- TLS.newTlsManager
+  let resolvedDeps = Map.toList (extractResolvedDeps outline)
+  results <- traverse (fetchOne manager) resolvedDeps
+  let errors = [e | Left e <- results]
+      sources = [s | Right s <- results]
+  pure (if null errors then Right sources else Left errors)
+
+-- | Fetch a single package if it is not already cached.
+fetchOne :: Client.Manager -> (Pkg.Name, Version.Version) -> IO (Either Fetch.FetchError Fetch.FetchSource)
+fetchOne manager (pkg, ver) = Fetch.fetchPackage manager pkg ver
 
 -- | Rollback installation changes after failure.
 --

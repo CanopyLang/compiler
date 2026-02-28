@@ -48,6 +48,7 @@ module Builder.LockFile
     lpHash,
     lpDependencies,
     lpSignature,
+    lpSource,
 
     -- * Operations
     readLockFile,
@@ -65,6 +66,10 @@ module Builder.LockFile
     -- * Signature Verification
     verifyPackageSignatures,
     SignatureResult (..),
+
+    -- * Signature Lenses
+    sigKeyId,
+    sigValue,
   )
 where
 
@@ -86,6 +91,7 @@ import qualified Data.Time as Time
 import qualified Data.Time.Format.ISO8601 as ISO8601
 import Logging.Event (LogEvent (..))
 import qualified Logging.Logger as Log
+import qualified PackageCache.Fetch as Fetch
 import qualified System.Directory as Dir
 import System.FilePath ((</>))
 
@@ -104,14 +110,18 @@ data LockFile = LockFile
   }
   deriving (Show)
 
--- | A single locked package with version, integrity hash, and dependencies.
+-- | A single locked package with version, integrity hash, dependencies, and source.
+--
+-- The optional '_lpSource' field records where the package was originally
+-- obtained from, enabling resilient re-fetching when the registry is down.
 --
 -- @since 0.19.1
 data LockedPackage = LockedPackage
   { _lpVersion :: !Version.Version,
     _lpHash :: !Text.Text,
     _lpDependencies :: !(Map Pkg.Name Version.Version),
-    _lpSignature :: !(Maybe PackageSignature)
+    _lpSignature :: !(Maybe PackageSignature),
+    _lpSource :: !(Maybe Fetch.PackageSource)
   }
   deriving (Show)
 
@@ -235,7 +245,8 @@ buildLockedPackage cacheDir resolvedDeps (pkg, ver) = do
           { _lpVersion = ver,
             _lpHash = pkgHash,
             _lpDependencies = pkgDeps,
-            _lpSignature = Nothing
+            _lpSignature = Nothing,
+            _lpSource = Nothing
           }
   pure (pkg, lp)
 
@@ -334,16 +345,15 @@ instance Json.FromJSON LockFile where
 
 instance Json.ToJSON LockedPackage where
   toJSON lp =
-    Json.object (requiredFields ++ signatureField)
+    Json.object (requiredFields ++ signatureField ++ sourceField)
     where
       requiredFields =
         [ "version" .= _lpVersion lp,
           "hash" .= _lpHash lp,
           "dependencies" .= _lpDependencies lp
         ]
-      signatureField = case _lpSignature lp of
-        Nothing -> []
-        Just sig -> ["signature" .= sig]
+      signatureField = maybe [] (\sig -> ["signature" .= sig]) (_lpSignature lp)
+      sourceField = maybe [] (\src -> ["source" .= src]) (_lpSource lp)
 
 instance Json.FromJSON LockedPackage where
   parseJSON = Json.withObject "LockedPackage" $ \o ->
@@ -352,6 +362,7 @@ instance Json.FromJSON LockedPackage where
       <*> o Json..: "hash"
       <*> o Json..: "dependencies"
       <*> o Json..:? "signature"
+      <*> o Json..:? "source"
 
 instance Json.ToJSON PackageSignature where
   toJSON sig =

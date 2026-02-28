@@ -35,6 +35,10 @@ module Deps.Registry
     latest,
     createAuthHeader,
     getVersions',
+
+    -- * TTL Caching
+    registryCacheTTL,
+    isCacheExpired,
   )
 where
 
@@ -53,6 +57,7 @@ import Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
 import Data.Maybe (mapMaybe)
 import qualified Data.Text as Text
+import qualified Data.Time as Time
 import qualified Canopy.Data.Utf8 as Utf8
 import qualified Http
 import qualified Stuff
@@ -145,15 +150,47 @@ read cache = do
 mergeRegistries :: Registry -> Registry
 mergeRegistries = id
 
--- | Fetch the latest registry, using the disk cache when available.
+-- | TTL for the registry cache in seconds (1 hour).
+--
+-- The registry is only re-fetched from the network when the local
+-- binary cache is older than this duration. This avoids redundant
+-- network requests during rapid @canopy install@ iterations while
+-- ensuring packages are reasonably fresh.
+--
+-- @since 0.19.2
+registryCacheTTL :: Time.NominalDiffTime
+registryCacheTTL = 3600
+
+-- | Check whether the registry cache file is older than the TTL.
+--
+-- Returns 'True' when the cache does not exist or is stale.
+--
+-- @since 0.19.2
+isCacheExpired :: FilePath -> IO Bool
+isCacheExpired cache = do
+  let path = registryCacheFile cache
+  exists <- Dir.doesFileExist path
+  if exists
+    then do
+      modTime <- Dir.getModificationTime path
+      now <- Time.getCurrentTime
+      pure (Time.diffUTCTime now modTime > registryCacheTTL)
+    else pure True
+
+-- | Fetch the latest registry, using TTL-based disk caching.
 --
 -- Attempts in order:
 --
--- 1. Fetch from 'registryUrl' via HTTP GET and parse the JSON response.
--- 2. On success, write the result to the binary cache and return it.
--- 3. On any network or parse failure, return the cached registry when one
+-- 1. If the binary cache is younger than 'registryCacheTTL', return it
+--    without a network request.
+-- 2. Otherwise, fetch from 'registryUrl' via HTTP GET and parse the
+--    JSON response.
+-- 3. On success, write the result to the binary cache and return it.
+-- 4. On any network or parse failure, return the cached registry when one
 --    exists, otherwise return an empty registry so the compiler degrades
 --    gracefully.
+--
+-- @since 0.19.2
 latest
   :: Http.Manager
   -> CustomRepo.CustomRepositoriesData
@@ -161,6 +198,20 @@ latest
   -> Stuff.CanopyCustomRepositoryConfigFilePath
   -> IO (Either String Registry)
 latest manager _customRepos cache _reposConfig = do
+  expired <- isCacheExpired cache
+  if expired
+    then fetchAndFallback manager cache
+    else readOrFetch manager cache
+
+-- | Read the cache, falling back to a network fetch if missing.
+readOrFetch :: Http.Manager -> FilePath -> IO (Either String Registry)
+readOrFetch manager cache = do
+  cached <- read cache
+  maybe (fetchAndFallback manager cache) (pure . Right) cached
+
+-- | Fetch from network and fall back to cached data on failure.
+fetchAndFallback :: Http.Manager -> FilePath -> IO (Either String Registry)
+fetchAndFallback manager cache = do
   cached <- read cache
   networkResult <- fetchFromNetwork manager
   case networkResult of
