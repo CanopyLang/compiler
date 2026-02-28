@@ -125,6 +125,7 @@ import qualified Unit.Canonicalize.ModuleTest as CanonicalizeModuleTest
 import qualified Unit.Canonicalize.PatternTest as CanonicalizePatternTest
 import qualified Unit.Type.UnionFindTest as UnionFindTest
 import qualified Unit.FFI.ManifestTest as FFIManifestTest
+import qualified Unit.FFI.ResolveTest as FFIResolveTest
 import qualified Unit.FFI.ValidatorTest as FFIValidatorTest
 import qualified Unit.Terminal.Lint.RulesTest as LintRulesTest
 import qualified Unit.Docs.RenderTest as DocsRenderTest
@@ -263,6 +264,7 @@ unitTests =
       CanonicalizeModuleTest.tests,
       LazyImportValidationTest.tests,
       FFIManifestTest.tests,
+      FFIResolveTest.tests,
       FFIValidatorTest.tests,
       LintRulesTest.tests,
       DocsRenderTest.tests,
