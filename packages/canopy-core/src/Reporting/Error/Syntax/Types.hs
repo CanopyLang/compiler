@@ -227,6 +227,8 @@ data Expr
   | EndlessInterpolation Row Col
   | InterpolationExpr Expr Row Col
   | InterpolationClose Row Col
+  | -- | Field access chain exceeds maximum depth
+    TooDeepFieldAccess Int Row Col
   deriving (Show)
 
 data Record
@@ -292,6 +294,8 @@ data Case
   | CaseIndentArrow Row Col
   | CaseIndentBranch Row Col
   | CasePatternAlignment Word16 Row Col
+  | -- | Case expression exceeds maximum branch count
+    CaseTooManyBranches Int Row Col
   deriving (Show)
 
 data If

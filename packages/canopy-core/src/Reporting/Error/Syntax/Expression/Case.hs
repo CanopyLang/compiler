@@ -95,6 +95,13 @@ toCaseReport exprReport source context case_ startRow startCol =
       toUnfinishCaseReport source row col startRow startCol $
         Doc.reflow $
           "I suspect this is a pattern that is not indented far enough? (" ++ show indent ++ " spaces)"
+    CaseTooManyBranches limit row col ->
+      toUnfinishCaseReport source row col startRow startCol $
+        Doc.reflow $
+          "This case expression has more than "
+            ++ show limit
+            ++ " branches, which exceeds the parser limit. \
+               \Consider refactoring into smaller helper functions."
 
 toCaseArrowReport :: Code.Source -> Row -> Col -> Row -> Col -> Report.Report
 toCaseArrowReport source startRow startCol row col =

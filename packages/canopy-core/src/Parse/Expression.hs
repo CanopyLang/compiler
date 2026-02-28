@@ -21,6 +21,7 @@ import qualified Parse.Variable as Var
 import Parse.Primitives hiding (State)
 import qualified Parse.Primitives as Parse
 import qualified Reporting.Annotation as Ann
+import qualified Parse.Limits as Limits
 import qualified Reporting.Error.Syntax as SyntaxError
 
 
@@ -32,14 +33,14 @@ term :: Parser SyntaxError.Expr Src.Expr
 term =
   do  start <- getPosition
       oneOf SyntaxError.Start
-        [ variable start >>= accessible start
+        [ variable start >>= accessible start 0
         , string start
         , number start
         , Shader.shader start
         , Interpolation.interpolation expression start
         , list start
-        , record start >>= accessible start
-        , tuple start >>= accessible start
+        , record start >>= accessible start 0
+        , tuple start >>= accessible start 0
         , accessor start
         , character start
         ]
@@ -79,17 +80,23 @@ variable start =
       addEnd start var
 
 
-accessible :: Ann.Position -> Src.Expr -> Parser SyntaxError.Expr Src.Expr
-accessible start expr =
-  oneOfWithFallback
-    [ do  word1 0x2E {-.-} SyntaxError.Dot
-          pos <- getPosition
-          field <- Var.lower SyntaxError.Access
-          end <- getPosition
-          accessible start $
-            Ann.at start end (Src.Access expr (Ann.at pos end field))
-    ]
-    expr
+accessible :: Ann.Position -> Int -> Src.Expr -> Parser SyntaxError.Expr Src.Expr
+accessible start depth expr =
+  if depth >= Limits.maxFieldAccessDepth
+    then do
+      pos <- getPosition
+      let (Ann.Position row col) = pos
+      Parser (\_ _ _ cerr _ -> cerr row col (\r c -> SyntaxError.TooDeepFieldAccess Limits.maxFieldAccessDepth r c))
+    else
+      oneOfWithFallback
+        [ do  word1 0x2E {-.-} SyntaxError.Dot
+              pos <- getPosition
+              field <- Var.lower SyntaxError.Access
+              end <- getPosition
+              accessible start (depth + 1) $
+                Ann.at start end (Src.Access expr (Ann.at pos end field))
+        ]
+        expr
 
 
 
@@ -448,12 +455,18 @@ chompBranch =
 
 chompCaseEnd :: [(Src.Pattern, Src.Expr)] -> Ann.Position -> Space.Parser SyntaxError.Case [(Src.Pattern, Src.Expr)]
 chompCaseEnd branches end =
-  oneOfWithFallback
-    [ do  Space.checkAligned SyntaxError.CasePatternAlignment
-          (branch, newEnd) <- chompBranch
-          chompCaseEnd (branch:branches) newEnd
-    ]
-    (reverse branches, end)
+  if length branches >= Limits.maxCaseBranches
+    then
+      Parser (\_ _ _ cerr _ ->
+        let (Ann.Position row col) = end
+        in cerr row col (\r c -> SyntaxError.CaseTooManyBranches Limits.maxCaseBranches r c))
+    else
+      oneOfWithFallback
+        [ do  Space.checkAligned SyntaxError.CasePatternAlignment
+              (branch, newEnd) <- chompBranch
+              chompCaseEnd (branch:branches) newEnd
+        ]
+        (reverse branches, end)
 
 
 

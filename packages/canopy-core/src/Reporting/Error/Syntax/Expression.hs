@@ -116,6 +116,8 @@ toExprReport source context expr startRow startCol =
       toExprReport source context innerExpr row col
     InterpolationClose row col ->
       toInterpolationCloseReport source row col
+    TooDeepFieldAccess limit row col ->
+      toTooDeepFieldAccessReport source limit row col
 
 -- | Render a let expression parse error.
 toLetReport :: Code.Source -> Context -> Let -> Row -> Col -> Report.Report
@@ -467,5 +469,28 @@ toIndentOperatorRightReport source op startRow startCol row col =
                   \ the "
                     ++ Name.toChars op
                     ++ " operator on the same line."
+              ]
+          )
+
+-- | Render an error for field access chains exceeding the depth limit.
+toTooDeepFieldAccessReport :: Code.Source -> Int -> Row -> Col -> Report.Report
+toTooDeepFieldAccessReport source limit row col =
+  let region = toRegion row col
+   in Report.Report "TOO DEEP FIELD ACCESS" region [] $
+        Code.toSnippet
+          source
+          region
+          Nothing
+          ( Doc.reflow $
+              "This field access chain exceeds the maximum depth of "
+                ++ show limit
+                ++ ":",
+            Doc.stack
+              [ Doc.reflow
+                  "Field access chains like record.a.b.c... are limited to prevent \
+                  \stack overflows on deeply nested expressions.",
+                Doc.toSimpleNote
+                  "Consider refactoring by introducing intermediate variables \
+                  \to break up the chain."
               ]
           )

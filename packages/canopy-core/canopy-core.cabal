@@ -140,6 +140,7 @@ library
       Parse.Expression
       Parse.Interpolation
       Parse.Keyword
+      Parse.Limits
       Parse.Module
       Parse.Number
       Parse.Pattern
