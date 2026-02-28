@@ -39,6 +39,8 @@ library
       Builder.Solver
       Builder.State
       Compiler
+      Crypto.Signature
+      Crypto.TrustedKeys
       Exit
       Http
       Http.Archive
@@ -94,6 +96,7 @@ library
     , canopy-driver
     , canopy-query
     , containers
+    , crypton
     , crypton-connection
     , directory
     , edit-distance
@@ -104,6 +107,7 @@ library
     , http-client-tls
     , http-types
     , lens
+    , memory
     , mtl
     , network
     , network-uri

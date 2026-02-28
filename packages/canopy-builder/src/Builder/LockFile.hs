@@ -81,12 +81,15 @@ import qualified Canopy.Version as Version
 import Control.Exception (IOException)
 import qualified Control.Exception as Exception
 import Control.Lens (makeLenses)
+import qualified Crypto.Signature as Sig
+import qualified Crypto.TrustedKeys as TrustedKeys
 import Data.Aeson ((.=))
 import qualified Data.Aeson as Json
 import qualified Data.ByteString.Lazy as LBS
 import Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
 import qualified Data.Text as Text
+import qualified Data.Text.Encoding as TextEnc
 import qualified Data.Time as Time
 import qualified Data.Time.Format.ISO8601 as ISO8601
 import Logging.Event (LogEvent (..))
@@ -439,10 +442,14 @@ data SignatureResult
 
 -- | Verify signatures for all packages in the lock file.
 --
--- Checks that every locked package has a signature and that the
--- signature's key ID is from a trusted source. Actual cryptographic
--- verification requires the registry's public key, which is fetched
--- separately.
+-- Performs actual Ed25519 cryptographic verification against the
+-- trusted key registry. For each signed package:
+--
+-- 1. Looks up the signing key by key ID in 'TrustedKeys'
+-- 2. Parses the hex-encoded signature
+-- 3. Verifies the signature over the package hash
+--
+-- Unsigned packages are reported separately from invalid signatures.
 --
 -- @since 0.19.2
 verifyPackageSignatures :: LockFile -> SignatureResult
@@ -460,7 +467,27 @@ partitionSignatures = foldr categorize ([], [])
         Nothing -> (name : uns, sig)
         Just s -> (uns, (name, s) : sig)
 
--- | Classify signature verification results.
+-- | Classify signature verification results with actual crypto verification.
 classifySignatures :: [Pkg.Name] -> [(Pkg.Name, PackageSignature)] -> SignatureResult
-classifySignatures [] _ = AllSigned
-classifySignatures unsigned _ = UnsignedPackages unsigned
+classifySignatures unsigned@(_ : _) _ = UnsignedPackages unsigned
+classifySignatures [] signed =
+  let invalids = filter (not . verifyOneSignature) signed
+   in if null invalids
+        then AllSigned
+        else InvalidSignatures [(n, _sigKeyId s) | (n, s) <- invalids]
+
+-- | Verify a single package signature against the trusted key store.
+verifyOneSignature :: (Pkg.Name, PackageSignature) -> Bool
+verifyOneSignature (pkg, sig) =
+  case TrustedKeys.lookupTrustedKey (_sigKeyId sig) of
+    Nothing -> False
+    Just pubKey -> verifySigBytes pubKey pkg sig
+
+-- | Verify the Ed25519 signature bytes for a package.
+verifySigBytes :: Sig.PublicKey -> Pkg.Name -> PackageSignature -> Bool
+verifySigBytes pubKey pkg sig =
+  case Sig.parseSignatureHex (_sigValue sig) of
+    Left _ -> False
+    Right parsedSig ->
+      let msg = TextEnc.encodeUtf8 (Text.pack (Pkg.toChars pkg))
+       in Sig.verifyEd25519 pubKey msg parsedSig

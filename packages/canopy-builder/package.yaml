@@ -43,7 +43,9 @@ dependencies:
   - mtl
   - network
   - network-uri
+  - crypton
   - crypton-connection
+  - memory
   - process
   - SHA
   - snap-core
