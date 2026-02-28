@@ -10,20 +10,39 @@
 --
 -- == Features
 --
+-- * Security advisory matching against installed packages
+-- * Severity-level filtering (@--level@) for CI integration
+-- * Lock file integration for exact version checking
 -- * Dependency version freshness checking
--- * Unused dependency detection
 -- * Transitive dependency analysis
--- * License compatibility warnings
--- * JSON output for CI integration
+-- * JSON output for CI pipelines
 --
 -- @since 0.19.1
 module Audit
   ( -- * Command Interface
     Flags (..),
     run,
+
+    -- * Types (exported for testing)
+    Severity (..),
+    Finding (..),
+
+    -- * Analysis (exported for testing)
+    analyzeOutline,
+    advisoryFindings,
+    checkDirectDeps,
+    checkIndirectDeps,
+    formatSummary,
+    severityPrefix,
+    severityLabel,
+    parseSeverityFlag,
+
+    -- * Parsers (for CLI flag registration)
+    levelParser,
   )
 where
 
+import qualified Builder.LockFile as LockFile
 import qualified Canopy.Outline as Outline
 import qualified Canopy.Package as Pkg
 import qualified Canopy.Version as Version
@@ -32,17 +51,25 @@ import qualified Data.ByteString.Builder as BB
 import qualified Data.ByteString.Lazy as LBS
 import Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
+import qualified Deps.Advisory as Advisory
 import qualified Json.Encode as Encode
 import Reporting.Doc.ColorQQ (c)
 import qualified Stuff
+import System.FilePath ((</>))
 import qualified System.IO as IO
+import qualified Terminal
 import qualified Terminal.Print as Print
+import Text.PrettyPrint.ANSI.Leijen (Doc)
 
 -- | Audit command flags.
+--
+-- @since 0.19.1
 data Flags = Flags
-  { -- | Output results as JSON
+  { -- | Output results as JSON for CI pipelines
     _json :: !Bool,
-    -- | Show verbose details
+    -- | Minimum severity level to report (low, medium, high, critical)
+    _level :: !(Maybe String),
+    -- | Show verbose details including advisory IDs
     _auditVerbose :: !Bool
   }
   deriving (Eq, Show)
@@ -50,111 +77,219 @@ data Flags = Flags
 makeLenses ''Flags
 
 -- | Severity level for audit findings.
+--
+-- Ordered from lowest to highest. Used for both display and filtering.
+--
+-- @since 0.19.1
 data Severity
   = Info
   | Warning
   | Critical
-  deriving (Eq, Show)
+  deriving (Eq, Ord, Show)
 
 -- | A single audit finding.
+--
+-- Carries severity, affected package name, the finding message, and
+-- an optional fix recommendation.
+--
+-- @since 0.19.1
 data Finding = Finding
   { _findingSeverity :: !Severity,
     _findingPackage :: !String,
-    _findingMessage :: !String
+    _findingMessage :: !String,
+    _findingFix :: !(Maybe String)
   }
   deriving (Eq, Show)
 
 -- | Run the audit command.
 --
--- Loads the project outline, analyzes dependencies, and reports findings.
--- Exits with code 1 if critical findings are detected.
+-- Loads the project outline and lock file, checks all dependencies
+-- against the advisory database, and reports findings. Exits with
+-- code 1 if critical findings are detected.
 --
 -- @since 0.19.1
 run :: () -> Flags -> IO ()
-run () flags = do
-  maybeRoot <- Stuff.findRoot
-  case maybeRoot of
-    Nothing -> reportNoProject
-    Just root -> auditProject root flags
+run () flags =
+  Stuff.findRoot >>= maybe reportNoProject (auditProject flags)
 
 -- | Report that no project was found.
+--
+-- @since 0.19.1
 reportNoProject :: IO ()
 reportNoProject =
   Print.printErrLn [c|{red|Error:} No canopy.json found. Run this from a Canopy project directory.|]
 
 -- | Audit a project at the given root.
-auditProject :: FilePath -> Flags -> IO ()
-auditProject root flags = do
-  if flags ^. auditVerbose
-    then Print.println [c|  {dullcyan|[verbose]} Auditing project at: {cyan|#{root}}|]
-    else pure ()
+--
+-- @since 0.19.1
+auditProject :: Flags -> FilePath -> IO ()
+auditProject flags root = do
+  logVerbose flags [c|  {dullcyan|[verbose]} Auditing project at: {cyan|#{root}}|]
   eitherOutline <- Outline.read root
-  case eitherOutline of
-    Left err -> Print.printErrLn [c|{red|Error:} Could not read canopy.json: #{err}|]
-    Right outline -> reportFindings flags (analyzeOutline outline)
+  either reportOutlineError (runAudit flags root) eitherOutline
 
--- | Analyze an outline for audit findings.
+-- | Report an outline read error.
+--
+-- @since 0.19.2
+reportOutlineError :: String -> IO ()
+reportOutlineError err =
+  Print.printErrLn [c|{red|Error:} Could not read canopy.json: #{err}|]
+
+-- | Run the full audit pipeline: load advisories, load lock file,
+-- analyze dependencies, filter by severity, and report.
+--
+-- @since 0.19.2
+runAudit :: Flags -> FilePath -> Outline.Outline -> IO ()
+runAudit flags root outline = do
+  advisories <- loadProjectAdvisories root
+  lockDeps <- loadLockFileDeps root
+  let outlineFindings = analyzeOutline outline
+  let advFindings = advisoryFindings advisories outline lockDeps
+  let allFindings = outlineFindings ++ advFindings
+  let filtered = filterByLevel flags allFindings
+  reportFindings flags filtered
+
+-- | Load advisories from the project directory and merge with defaults.
+--
+-- Looks for @canopy-advisories.json@ in the project root. Falls back
+-- to the compiler's built-in advisory list if no file is found.
+--
+-- @since 0.19.2
+loadProjectAdvisories :: FilePath -> IO [Advisory.Advisory]
+loadProjectAdvisories root = do
+  projectAdvs <- Advisory.loadAdvisories (root </> "canopy-advisories.json")
+  pure (Advisory.defaultAdvisories ++ projectAdvs)
+
+-- | Load dependency versions from the lock file.
+--
+-- Returns the locked package versions if a lock file exists, or an
+-- empty map otherwise.
+--
+-- @since 0.19.2
+loadLockFileDeps :: FilePath -> IO (Map Pkg.Name Version.Version)
+loadLockFileDeps root = do
+  maybeLock <- LockFile.readLockFile root
+  pure (maybe Map.empty extractLockVersions maybeLock)
+
+-- | Extract package versions from a lock file.
+--
+-- @since 0.19.2
+extractLockVersions :: LockFile.LockFile -> Map Pkg.Name Version.Version
+extractLockVersions lockFile =
+  Map.map LockFile._lpVersion (LockFile._lockPackages lockFile)
+
+-- | Generate findings from advisory matches.
+--
+-- Cross-references the advisory database against the project's
+-- dependencies (preferring lock file versions for precision,
+-- falling back to outline versions).
+--
+-- @since 0.19.2
+advisoryFindings :: [Advisory.Advisory] -> Outline.Outline -> Map Pkg.Name Version.Version -> [Finding]
+advisoryFindings advisories outline lockDeps =
+  fmap auditResultToFinding (Advisory.matchAdvisories advisories depVersions)
+  where
+    depVersions = if Map.null lockDeps then outlineVersions outline else lockDeps
+
+-- | Extract version information from an outline.
+--
+-- For applications, uses the direct dependencies map.
+-- For packages, there are no exact versions, so returns empty.
+--
+-- @since 0.19.2
+outlineVersions :: Outline.Outline -> Map Pkg.Name Version.Version
+outlineVersions (Outline.App appOutline) = Outline._appDepsDirect appOutline
+outlineVersions (Outline.Pkg _) = Map.empty
+
+-- | Convert an advisory audit result to a Finding.
+--
+-- @since 0.19.2
+auditResultToFinding :: Advisory.AuditResult -> Finding
+auditResultToFinding result =
+  Finding Critical (Advisory._advisoryPackage adv) message fixSuggestion
+  where
+    adv = Advisory._auditAdvisory result
+    ver = Advisory._auditInstalledVersion result
+    advId = Advisory._advisoryId adv
+    advDesc = Advisory._advisoryDescription adv
+    verStr = Version.toChars ver
+    message = advId ++ ": " ++ advDesc ++ " (installed: " ++ verStr ++ ")"
+    fixSuggestion = fmap formatFixVersion (Advisory._advisoryFixedIn adv)
+    formatFixVersion fixVer =
+      "Run: canopy install " ++ Advisory._advisoryPackage adv ++ "@" ++ Version.toChars fixVer
+
+-- | Analyze an outline for structural audit findings.
+--
+-- @since 0.19.1
 analyzeOutline :: Outline.Outline -> [Finding]
-analyzeOutline outline =
-  case outline of
-    Outline.App appOutline -> analyzeAppDeps appOutline
-    Outline.Pkg pkgOutline -> analyzePkgDeps pkgOutline
-
--- | Analyze application dependencies.
-analyzeAppDeps :: Outline.AppOutline -> [Finding]
-analyzeAppDeps appOutline =
+analyzeOutline (Outline.App appOutline) =
   checkDirectDeps (Outline._appDepsDirect appOutline)
     ++ checkIndirectDeps (Outline._appDepsIndirect appOutline)
-
--- | Analyze package dependencies.
-analyzePkgDeps :: Outline.PkgOutline -> [Finding]
-analyzePkgDeps pkgOutline =
+analyzeOutline (Outline.Pkg pkgOutline) =
   checkConstraintDeps (Outline._pkgDeps pkgOutline)
 
--- | Check direct dependencies for issues.
+-- | Check direct dependencies for version issues.
+--
+-- @since 0.19.1
 checkDirectDeps :: Map Pkg.Name Version.Version -> [Finding]
 checkDirectDeps deps =
   Map.foldlWithKey' checkDep [] deps
   where
-    checkDep acc pkg version =
-      acc ++ checkSingleDep pkg version
+    checkDep acc pkg version = acc ++ checkOldVersion pkg version
 
--- | Check a single dependency for known issues.
-checkSingleDep :: Pkg.Name -> Version.Version -> [Finding]
-checkSingleDep pkg version =
-  checkDeprecated pkg ++ checkOldVersion pkg version
-
--- | Check if a package is known deprecated.
+-- | Check if a version is pre-1.0 (potentially unstable API).
 --
--- Returns findings for packages in the deprecation list. Currently empty
--- as the Canopy package ecosystem has no deprecated packages yet.
--- When packages are deprecated, their names should be added here.
-checkDeprecated :: Pkg.Name -> [Finding]
-checkDeprecated _pkg = []
-
--- | Check if a version is very old.
+-- @since 0.19.1
 checkOldVersion :: Pkg.Name -> Version.Version -> [Finding]
 checkOldVersion pkg version
   | Version._major version == 0 =
-      [Finding Info (Pkg.toChars pkg) "Pre-1.0 version — API may be unstable"]
+      [Finding Info (Pkg.toChars pkg) "Pre-1.0 version -- API may be unstable" Nothing]
   | otherwise = []
 
--- | Check indirect dependencies.
+-- | Check indirect dependencies for tree size issues.
+--
+-- @since 0.19.1
 checkIndirectDeps :: Map Pkg.Name Version.Version -> [Finding]
 checkIndirectDeps deps
   | Map.size deps > 20 =
-      [Finding Warning "project" ("Large transitive dependency tree: " ++ show (Map.size deps) ++ " indirect dependencies")]
+      [Finding Warning "project" (largeTreeMsg (Map.size deps)) Nothing]
   | otherwise = []
+  where
+    largeTreeMsg n =
+      "Large transitive dependency tree: " ++ show n ++ " indirect dependencies"
 
--- | Check constraint-based dependencies.
+-- | Check constraint-based dependencies for package projects.
+--
+-- @since 0.19.1
 checkConstraintDeps :: Map Pkg.Name a -> [Finding]
 checkConstraintDeps deps
   | Map.null deps =
-      [Finding Info "project" "No dependencies declared"]
+      [Finding Info "project" "No dependencies declared" Nothing]
   | otherwise =
-      [Finding Info "project" (show (Map.size deps) ++ " dependencies declared")]
+      [Finding Info "project" (show (Map.size deps) ++ " dependencies declared") Nothing]
+
+-- | Filter findings by the --level flag if provided.
+--
+-- @since 0.19.2
+filterByLevel :: Flags -> [Finding] -> [Finding]
+filterByLevel flags findings =
+  maybe findings applyFilter (flags ^. level >>= parseSeverityFlag)
+  where
+    applyFilter minSev = filter (atOrAbove minSev) findings
+    atOrAbove minSev (Finding sev _ _ _) = sev >= minSev
+
+-- | Parse a severity string from the --level flag.
+--
+-- @since 0.19.2
+parseSeverityFlag :: String -> Maybe Severity
+parseSeverityFlag "info" = Just Info
+parseSeverityFlag "warning" = Just Warning
+parseSeverityFlag "critical" = Just Critical
+parseSeverityFlag _ = Nothing
 
 -- | Report audit findings to the user.
+--
+-- @since 0.19.1
 reportFindings :: Flags -> [Finding] -> IO ()
 reportFindings flags findings = do
   if flags ^. json
@@ -163,17 +298,25 @@ reportFindings flags findings = do
   reportSummary findings
 
 -- | Report findings in terminal format.
+--
+-- @since 0.19.1
 reportFindingsTerminal :: [Finding] -> IO ()
-reportFindingsTerminal findings =
-  mapM_ printFinding findings
+reportFindingsTerminal =
+  mapM_ printFinding
   where
-    printFinding (Finding sev pkg msg) =
+    printFinding (Finding sev pkg msg mFix) = do
       let prefix = severityPrefix sev
-       in Print.println [c|#{prefix} #{pkg}: #{msg}|]
+      Print.println [c|#{prefix} #{pkg}: #{msg}|]
+      maybe (pure ()) printFix mFix
+
+    printFix fix =
+      Print.println [c|  {green|#{fix}}|]
 
 -- | Report findings in JSON format using the Json.Encode infrastructure.
 --
 -- Produces well-formed, properly escaped JSON output via 'Encode.encodeUgly'.
+--
+-- @since 0.19.1
 reportFindingsJson :: [Finding] -> IO ()
 reportFindingsJson findings =
   LBS.putStr (BB.toLazyByteString builder) >> IO.hPutStrLn IO.stdout ""
@@ -181,6 +324,8 @@ reportFindingsJson findings =
     builder = Encode.encodeUgly (encodeFindingsPayload findings)
 
 -- | Encode the top-level JSON payload wrapping the findings list.
+--
+-- @since 0.19.1
 encodeFindingsPayload :: [Finding] -> Encode.Value
 encodeFindingsPayload findings =
   Encode.object
@@ -188,15 +333,21 @@ encodeFindingsPayload findings =
     ]
 
 -- | Encode a single 'Finding' as a JSON object.
+--
+-- @since 0.19.1
 encodeFinding :: Finding -> Encode.Value
-encodeFinding (Finding sev pkg msg) =
+encodeFinding (Finding sev pkg msg mFix) =
   Encode.object
-    [ "severity" Encode.==> Encode.chars (severityLabel sev)
-    , "package" Encode.==> Encode.chars pkg
-    , "message" Encode.==> Encode.chars msg
-    ]
+    ( [ "severity" Encode.==> Encode.chars (severityLabel sev),
+        "package" Encode.==> Encode.chars pkg,
+        "message" Encode.==> Encode.chars msg
+      ]
+        ++ maybe [] (\f -> ["fix" Encode.==> Encode.chars f]) mFix
+    )
 
 -- | Report summary line.
+--
+-- @since 0.19.1
 reportSummary :: [Finding] -> IO ()
 reportSummary findings = do
   Print.newline
@@ -208,30 +359,85 @@ reportSummary findings = do
     infoCount = length (filter isInfo findings)
 
 -- | Format the summary line.
+--
+-- @since 0.19.1
 formatSummary :: Int -> Int -> Int -> String
 formatSummary crits warns infos =
-  "Audit complete: " ++ show crits ++ " critical, " ++ show warns ++ " warnings, " ++ show infos ++ " info"
+  "Audit complete: "
+    ++ show crits
+    ++ " critical, "
+    ++ show warns
+    ++ " warnings, "
+    ++ show infos
+    ++ " info"
 
--- | Severity helpers.
+-- | Human-readable severity prefix for terminal output.
+--
+-- @since 0.19.1
 severityPrefix :: Severity -> String
 severityPrefix Info = "[info]"
 severityPrefix Warning = "[warn]"
 severityPrefix Critical = "[CRITICAL]"
 
 -- | Machine-readable severity label for JSON output.
+--
+-- @since 0.19.1
 severityLabel :: Severity -> String
 severityLabel Info = "info"
 severityLabel Warning = "warning"
 severityLabel Critical = "critical"
 
+-- | Severity predicate helpers.
+--
+-- @since 0.19.1
 isCritical :: Finding -> Bool
-isCritical (Finding Critical _ _) = True
+isCritical (Finding Critical _ _ _) = True
 isCritical _ = False
 
+-- | Check if a finding is a warning.
+--
+-- @since 0.19.1
 isWarning :: Finding -> Bool
-isWarning (Finding Warning _ _) = True
+isWarning (Finding Warning _ _ _) = True
 isWarning _ = False
 
+-- | Check if a finding is informational.
+--
+-- @since 0.19.1
 isInfo :: Finding -> Bool
-isInfo (Finding Info _ _) = True
+isInfo (Finding Info _ _ _) = True
 isInfo _ = False
+
+-- | Parser for the @--level@ flag.
+--
+-- Accepts severity level strings: info, warning, critical.
+-- Used to filter out findings below the given severity threshold.
+--
+-- @since 0.19.2
+levelParser :: Terminal.Parser String
+levelParser =
+  Terminal.Parser
+    { Terminal._singular = "severity level",
+      Terminal._plural = "severity levels",
+      Terminal._parser = parseLevelArg,
+      Terminal._suggest = suggestLevels,
+      Terminal._examples = exampleLevels
+    }
+  where
+    parseLevelArg s
+      | s `elem` validLevels = Just s
+      | otherwise = Nothing
+
+    suggestLevels _ = pure validLevels
+
+    exampleLevels _ = pure validLevels
+
+    validLevels = ["info", "warning", "critical"]
+
+-- | Log a message only when verbose mode is enabled.
+--
+-- @since 0.19.2
+logVerbose :: Flags -> Doc -> IO ()
+logVerbose flags doc
+  | flags ^. auditVerbose = Print.println doc
+  | otherwise = pure ()
