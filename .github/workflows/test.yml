@@ -7,8 +7,31 @@ on:
     branches: [ main, master, develop ]
 
 jobs:
+  # Fast checks that don't require building the project
+  preflight:
+    name: Preflight checks
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Validate package DAG
+      run: bash scripts/check-package-dag.sh
+
+    - name: Security scan
+      run: |
+        echo "=== Checking for unsafe patterns ==="
+        # unsafePerformIO without NOINLINE is always a bug
+        UNSAFE=$(grep -rn "unsafePerformIO" packages/ --include="*.hs" | grep -v NOINLINE | grep -v "^Binary" || true)
+        if [ -n "$UNSAFE" ]; then
+          echo "FAIL: unsafePerformIO without NOINLINE found:"
+          echo "$UNSAFE"
+          exit 1
+        fi
+        echo "No unsafe patterns found."
+
   test:
     name: Test on ${{ matrix.os }} with GHC ${{ matrix.ghc }}
+    needs: preflight
     runs-on: ${{ matrix.os }}
     strategy:
       matrix:
@@ -17,7 +40,7 @@ jobs:
         include:
           - os: macos-latest
             ghc: '9.8.4'
-          - os: windows-latest  
+          - os: windows-latest
             ghc: '9.8.4'
 
     steps:
@@ -80,6 +103,25 @@ jobs:
           echo "PASS: Overall coverage ${COVERAGE}% meets ${THRESHOLD}% threshold"
         fi
 
+    - name: Check binary size
+      if: matrix.os == 'ubuntu-latest'
+      run: |
+        BINARY=$(stack path --local-install-root)/bin/canopy
+        if [ -f "$BINARY" ]; then
+          SIZE=$(stat -c%s "$BINARY")
+          SIZE_MB=$((SIZE / 1024 / 1024))
+          echo "Binary size: ${SIZE_MB} MB ($SIZE bytes)"
+          # 50 MB threshold prevents accidental bloat
+          if [ "$SIZE" -gt 52428800 ]; then
+            echo "FAIL: Binary exceeds 50 MB threshold"
+            exit 1
+          else
+            echo "PASS: Binary size within 50 MB threshold"
+          fi
+        else
+          echo "WARNING: Binary not found at $BINARY"
+        fi
+
     - name: Generate coverage report
       if: matrix.os == 'ubuntu-latest'
       run: |
@@ -96,10 +138,10 @@ jobs:
   lint:
     name: Lint
     runs-on: ubuntu-latest
-    
+
     steps:
     - uses: actions/checkout@v4
-    
+
     - name: Setup Haskell
       uses: haskell/actions/setup@v2
       with:
