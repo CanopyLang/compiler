@@ -46,6 +46,7 @@ import qualified BackgroundWriter as BW
 import qualified Builder.LockFile as LockFile
 import qualified Canopy.Details as Details
 import qualified Canopy.ModuleName as ModuleName
+import qualified Canopy.Outline as Outline
 import qualified Compiler
 import Control.Lens ((^.))
 import Canopy.Data.NonEmptyList (List)
@@ -149,6 +150,7 @@ coordinateBuildWithRoot :: FilePath -> [FilePath] -> Flags -> Reporting.Style ->
 coordinateBuildWithRoot root paths flags style scope = do
   Task.io (Log.logEvent (BuildStarted (Text.pack "Loading project details")))
   Task.io (checkLockFileStaleness root)
+  Task.io (warnOnVersionMismatch root)
   details <- loadProjectDetailsFromRoot style scope root
   mode <- getDesiredMode (flags ^. debug) (flags ^. optimize)
   let ctx = createBuildContext style root details mode (flags ^. ffiUnsafe) (flags ^. ffiDebug)
@@ -245,6 +247,37 @@ checkLockFileStaleness root = do
       if current
         then Log.logEvent (PackageOperation "lock-ok" "canopy.lock is current")
         else Log.logEvent (PackageOperation "lock-stale" "canopy.lock is stale — run 'canopy install' to update")
+
+-- | Warn the user if the project's Canopy version requirement does
+-- not match the running compiler.
+--
+-- Reads the outline and checks 'Details.checkCompilerVersion'. If
+-- there is a mismatch, logs a warning event. This is a non-blocking
+-- check: the build continues regardless, because version constraints
+-- are advisory for now.
+--
+-- @since 0.19.2
+warnOnVersionMismatch :: FilePath -> IO ()
+warnOnVersionMismatch root = do
+  eitherOutline <- Outline.read root
+  either (const (pure ())) checkOutlineVersion eitherOutline
+  where
+    checkOutlineVersion outline =
+      case Details.checkCompilerVersion outline of
+        Details.VersionOk -> pure ()
+        Details.VersionMismatch required actual ->
+          Log.logEvent
+            ( PackageOperation
+                "version-mismatch"
+                ( Text.pack
+                    ( "Project requires Canopy "
+                        ++ required
+                        ++ " but you have "
+                        ++ actual
+                        ++ " installed"
+                    )
+                )
+            )
 
 -- | Extract exposed modules from project details.
 --

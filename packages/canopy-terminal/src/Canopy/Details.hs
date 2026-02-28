@@ -18,6 +18,10 @@ module Canopy.Details
     loadForReactorTH,
     verifyInstall,
 
+    -- * Version Checking
+    checkCompilerVersion,
+    VersionCheck (..),
+
     -- * Utilities
     dummyPkgName,
 
@@ -31,9 +35,11 @@ module Canopy.Details
   )
 where
 
+import qualified Canopy.Constraint as Constraint
 import qualified Canopy.ModuleName as ModuleName
 import qualified Canopy.Outline as Outline
 import qualified Canopy.Package as Pkg
+import qualified Canopy.Version as Version
 import Control.Lens (makeLenses)
 import qualified Canopy.Data.Utf8 as Utf8
 import Data.Map.Strict (Map)
@@ -165,3 +171,64 @@ verifyInstall _scope root _env newOutline = do
     verifyDetailsStructure details
       | null (_detailsSrcDirs details) = Left "No source directories found"
       | otherwise = Right ()
+
+-- | Result of a compiler version compatibility check.
+--
+-- @since 0.19.2
+data VersionCheck
+  = -- | The project's Canopy version requirement is satisfied.
+    VersionOk
+  | -- | The compiler version does not match the project's requirement.
+    --
+    -- Carries the required version description and the running compiler version.
+    VersionMismatch !String !String
+  deriving (Eq, Show)
+
+-- | Check whether the running compiler satisfies the project's
+-- version requirement.
+--
+-- For application outlines, checks that the compiler's major and minor
+-- version match the project's @canopy-version@ field. Patch differences
+-- are allowed since they are backward-compatible.
+--
+-- For package outlines, uses the constraint range in @canopy@ to
+-- determine compatibility via 'Constraint.goodCanopy'.
+--
+-- @since 0.19.2
+checkCompilerVersion :: Outline.Outline -> VersionCheck
+checkCompilerVersion (Outline.App appOutline) =
+  checkAppVersion (Outline._appCanopy appOutline)
+checkCompilerVersion (Outline.Pkg pkgOutline) =
+  checkPkgVersion (Outline._pkgCanopy pkgOutline)
+
+-- | Check an app's required version against the compiler.
+--
+-- Applications pin to a specific version. We consider it compatible
+-- if the major and minor versions match (patch can differ).
+--
+-- @since 0.19.2
+checkAppVersion :: Version.Version -> VersionCheck
+checkAppVersion requiredVersion
+  | isCompatible = VersionOk
+  | otherwise =
+      VersionMismatch
+        (Version.toChars requiredVersion)
+        (Version.toChars Version.compiler)
+  where
+    isCompatible =
+      Version._major requiredVersion == Version._major Version.compiler
+        && Version._minor requiredVersion == Version._minor Version.compiler
+
+-- | Check a package's constraint against the compiler.
+--
+-- Packages specify a version range. Uses 'Constraint.goodCanopy'
+-- which checks 'Constraint.satisfies' against 'Version.compiler'.
+--
+-- @since 0.19.2
+checkPkgVersion :: Constraint.Constraint -> VersionCheck
+checkPkgVersion constraint
+  | Constraint.goodCanopy constraint = VersionOk
+  | otherwise =
+      VersionMismatch
+        (Constraint.toChars constraint)
+        (Version.toChars Version.compiler)

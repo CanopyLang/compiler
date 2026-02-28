@@ -133,6 +133,7 @@ import qualified Unit.Repl.StateTest as ReplStateTest
 import qualified Unit.Repl.TypesTest as ReplTypesTest
 import qualified Unit.Deps.AdvisoryTest as AdvisoryTest
 import qualified Unit.AuditTest as AuditTest
+import qualified Unit.VersionCheckTest as VersionCheckTest
 import qualified Property.ArithmeticLawsTest as ArithmeticLawsTest
 import qualified Property.Type.UnifyProperties as UnifyProperties
 import qualified Property.Type.UnionFindProperties as UnionFindProperties
@@ -268,7 +269,8 @@ unitTests =
       ReplStateTest.tests,
       ReplTypesTest.tests,
       AdvisoryTest.tests,
-      AuditTest.tests
+      AuditTest.tests,
+      VersionCheckTest.tests
     ]
 
 propertyTests :: TestTree
