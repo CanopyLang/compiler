@@ -73,6 +73,7 @@ import Make.Types
     optimize,
     report,
     verbose,
+    verifyReproducible,
     watch,
   )
 import qualified Make.Types as Types
@@ -151,7 +152,7 @@ coordinateBuildWithRoot root paths flags style scope = do
   details <- loadProjectDetailsFromRoot style scope root
   mode <- getDesiredMode (flags ^. debug) (flags ^. optimize)
   let ctx = createBuildContext style root details mode (flags ^. ffiUnsafe) (flags ^. ffiDebug)
-  executeBuildStrategy ctx paths (flags ^. docs) (flags ^. Types.output) (flags ^. noSplit)
+  executeBuildStrategy ctx paths (flags ^. docs) (flags ^. Types.output) (flags ^. noSplit) (flags ^. verifyReproducible)
 
 -- | Load project details from root directory.
 --
@@ -174,17 +175,18 @@ executeBuildStrategy ::
   Maybe FilePath ->
   Maybe Output ->
   Bool ->
+  Bool ->
   Task ()
-executeBuildStrategy ctx [] _maybeDocs maybeOutput forceSingleFile = do
+executeBuildStrategy ctx [] _maybeDocs maybeOutput forceSingleFile doVerify = do
   Task.io (Log.logEvent (BuildStarted (Text.pack "Building exposed modules (no paths provided)")))
   exposed <- getExposedModules (ctx ^. bcDetails)
   let srcDirs = getSrcDirsFromDetails (ctx ^. bcDetails)
   artifacts <- buildFromExposed ctx srcDirs exposed
-  emitOutput ctx artifacts maybeOutput forceSingleFile
-executeBuildStrategy ctx (p : ps) _maybeDocs maybeOutput forceSingleFile = do
+  emitOutput ctx artifacts maybeOutput forceSingleFile doVerify
+executeBuildStrategy ctx (p : ps) _maybeDocs maybeOutput forceSingleFile doVerify = do
   Task.io (Log.logEvent (BuildStarted (Text.pack ("Building from paths: " <> show (p : ps)))))
   artifacts <- buildFromPaths ctx (NE.List p ps)
-  emitOutput ctx artifacts maybeOutput forceSingleFile
+  emitOutput ctx artifacts maybeOutput forceSingleFile doVerify
 
 -- | Emit output, choosing between single-file and code-split pipelines.
 --
@@ -200,14 +202,15 @@ emitOutput ::
   Compiler.Artifacts ->
   Maybe Output ->
   Bool ->
+  Bool ->
   Task ()
-emitOutput ctx artifacts maybeOutput forceSingleFile
+emitOutput ctx artifacts maybeOutput forceSingleFile doVerify
   | not forceSingleFile && shouldSplitOutput artifacts && isSplittableTarget maybeOutput = do
       Task.io (Log.logEvent (BuildStarted (Text.pack "Code splitting: lazy imports detected")))
       splitOutput <- createSplitBuilder ctx artifacts
       generateSplitJavaScript ctx splitOutput (splitTargetDir maybeOutput)
   | otherwise =
-      generateOutput ctx artifacts maybeOutput
+      generateOutput ctx artifacts maybeOutput doVerify
 
 -- | Check whether the output target supports code splitting.
 --

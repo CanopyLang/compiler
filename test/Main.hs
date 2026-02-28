@@ -82,6 +82,7 @@ import qualified Unit.TerminalTest as TerminalTest
 import qualified Unit.WatchTest as WatchTest
 import qualified Unit.New.Compiler.DriverTest as NewCompilerDriverTest
 import qualified Unit.NewTest as NewTest
+import qualified Unit.Make.ReproducibleTest as ReproducibleTest
 import qualified Unit.Query.EngineTest as QueryEngineTest
 import qualified Unit.Builder.PackageCacheTest as PackageCacheTest
 import qualified Unit.Worker.PoolTest as WorkerPoolTest
@@ -205,6 +206,7 @@ unitTests =
       HttpTest.tests,
       NewCompilerDriverTest.tests,
       NewTest.tests,
+      ReproducibleTest.tests,
       QueryEngineTest.tests,
       PackageCacheTest.tests,
       WorkerPoolTest.tests,

@@ -59,12 +59,14 @@ import Logging.Event (LogEvent (..))
 import qualified Logging.Logger as Log
 import Make.Builder (createBuilder, extractMainModules, hasExactlyOneMain)
 import Make.Generation (writeOutputFile)
+import qualified Make.Reproducible as Reproducible
 import Make.Types
   ( BuildContext,
     Output (..),
     Task,
     bcStyle,
   )
+import qualified Reporting.Exit as Exit
 import qualified Reporting.Task as Task
 import qualified System.Directory as Dir
 import qualified System.FilePath as FilePath
@@ -83,11 +85,12 @@ generateOutput ::
   BuildContext ->
   Build.Artifacts ->
   Maybe Output ->
+  Bool ->
   Task ()
-generateOutput ctx artifacts maybeTarget =
+generateOutput ctx artifacts maybeTarget doVerify =
   case maybeTarget of
     Nothing -> selectOutputFormat ctx artifacts
-    Just target -> generateForTarget ctx artifacts target
+    Just target -> generateForTarget ctx artifacts target doVerify
 
 -- | Select output format based on main function analysis.
 --
@@ -106,12 +109,12 @@ chooseFormatFromMains ctx artifacts =
 --
 -- Creates output according to the specified target type. Validates
 -- that the target is compatible with the compiled artifacts.
-generateForTarget :: BuildContext -> Build.Artifacts -> Output -> Task ()
-generateForTarget _ _ DevNull = generateDevNull
-generateForTarget ctx artifacts (JS target) =
-  generateJavaScript ctx artifacts target
-generateForTarget ctx artifacts (Html target) =
-  generateHtml ctx artifacts target
+generateForTarget :: BuildContext -> Build.Artifacts -> Output -> Bool -> Task ()
+generateForTarget _ _ DevNull _ = generateDevNull
+generateForTarget ctx artifacts (JS target) doVerify =
+  generateJavaScript ctx artifacts target doVerify
+generateForTarget ctx artifacts (Html target) doVerify =
+  generateHtml ctx artifacts target doVerify
 
 -- | Generate JavaScript output to specified file.
 --
@@ -121,12 +124,15 @@ generateJavaScript ::
   BuildContext ->
   Build.Artifacts ->
   FilePath ->
+  Bool ->
   Task ()
-generateJavaScript ctx artifacts target = do
+generateJavaScript ctx artifacts target doVerify = do
   Task.io (Log.logEvent (BuildStarted (Text.pack ("Generating JavaScript to: " <> target))))
   (builder, maybeSourceMap) <- createBuilder ctx artifacts
+  verifyIfRequested ctx artifacts doVerify builder
   let rootNames = Build.getRootNames artifacts
       jsWithRef = appendSourceMapRef target builder maybeSourceMap
+  Task.io (Reproducible.reportContentHash target (Reproducible.hashBuilder builder) doVerify)
   writeOutputFile (ctx ^. bcStyle) target jsWithRef rootNames
   Task.io (writeSourceMapFile target maybeSourceMap)
   Task.io (writeCapabilitiesManifest target artifacts)
@@ -216,14 +222,16 @@ generateHtml ::
   BuildContext ->
   Build.Artifacts ->
   FilePath ->
+  Bool ->
   Task ()
-generateHtml ctx artifacts target = do
+generateHtml ctx artifacts target doVerify = do
   Task.io (Log.logEvent (BuildStarted (Text.pack ("Generating HTML to: " <> target))))
   mainName <- hasExactlyOneMain artifacts
   (builder, _sourceMap) <- createBuilder ctx artifacts
-  -- Apply JavaScript spacing fixes to embedded JS before HTML wrapping
+  verifyIfRequested ctx artifacts doVerify builder
   let fixedBuilder = fixEmbeddedJavaScript builder
   let htmlBuilder = Html.sandwich mainName fixedBuilder
+  Task.io (Reproducible.reportContentHash target (Reproducible.hashBuilder htmlBuilder) doVerify)
   writeOutputFile (ctx ^. bcStyle) target htmlBuilder (NonEmptyList.List mainName [])
 
 -- | Generate null output (no files created).
@@ -379,3 +387,23 @@ parseFFICapabilities ffiInfoMap =
     parseOne path = do
       result <- FFI.parseJSDocFromFile path
       pure (Text.pack path, either (const []) id result)
+
+-- | Verify build reproducibility if the flag is set.
+--
+-- Runs code generation a second time from the same artifacts and
+-- compares the output byte-for-byte with the first build. Throws
+-- 'Exit.MakeReproducibilityFailure' if the outputs differ.
+--
+-- @since 0.19.2
+verifyIfRequested ::
+  BuildContext ->
+  Build.Artifacts ->
+  Bool ->
+  Builder.Builder ->
+  Task ()
+verifyIfRequested _ _ False _ = pure ()
+verifyIfRequested ctx artifacts True firstBuilder = do
+  Task.io (Log.logEvent (BuildStarted "Running second build for reproducibility verification"))
+  (secondBuilder, _) <- createBuilder ctx artifacts
+  result <- Task.io (Reproducible.verifyBuilderReproducibility firstBuilder secondBuilder)
+  maybe (pure ()) (Task.throw . Exit.MakeReproducibilityFailure) result

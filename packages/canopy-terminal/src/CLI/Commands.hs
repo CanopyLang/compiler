@@ -479,6 +479,7 @@ createMakeFlags =
     |-- Terminal.onOff "ffi-unsafe" "Disable runtime type validation at FFI boundaries. Use only when you are confident FFI types are correct and need maximum performance."
     |-- Terminal.onOff "ffi-debug" "Enable verbose FFI validation logging. When enabled, generated validators include detailed type mismatch information in error messages."
     |-- Terminal.flag "jobs" Make.jobsParser "Maximum parallel compilation workers. 0 = auto (uses all CPU cores), 1 = sequential (useful for debugging). Default: auto."
+    |-- Terminal.onOff "verify-reproducible" "Build twice and compare output to verify reproducibility. Fails if the two builds produce different byte-for-byte output."
 
 createInstallDetails :: String
 createInstallDetails =

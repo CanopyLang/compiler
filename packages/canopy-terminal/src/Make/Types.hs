@@ -40,6 +40,7 @@ module Make.Types
     ffiUnsafe,
     ffiDebug,
     jobs,
+    verifyReproducible,
 
     -- ** BuildContext Lenses
     bcStyle,
@@ -94,7 +95,9 @@ data Flags = Flags
     -- | Enable verbose FFI debug logging in generated validators
     _ffiDebug :: !Bool,
     -- | Maximum parallel compilation jobs (0 = auto-detect from CPU count)
-    _jobs :: !(Maybe Int)
+    _jobs :: !(Maybe Int),
+    -- | Build twice and compare output to verify reproducibility
+    _verifyReproducible :: !Bool
   }
   deriving (Eq, Show)
 

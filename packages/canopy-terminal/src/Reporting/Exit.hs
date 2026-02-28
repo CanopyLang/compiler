@@ -25,7 +25,8 @@ module Reporting.Exit
         MakeNoMain,
         MakeMultipleFilesIntoHtml,
         MakeCannotBuild,
-        MakeCannotOptimizeAndDebug
+        MakeCannotOptimizeAndDebug,
+        MakeReproducibilityFailure
       ),
     makeToReport,
 
@@ -176,6 +177,8 @@ data Make
   | MakeMultipleFilesIntoHtml
   | MakeCannotBuild BuildExit.BuildError
   | MakeCannotOptimizeAndDebug
+  | -- | Two builds produced different output at the given byte offset
+    MakeReproducibilityFailure !Int
   deriving (Show)
 
 -- | Convert a 'Make' error to a structured 'Report'.
@@ -190,6 +193,7 @@ makeToReport MakeNoMain = noMainError
 makeToReport MakeMultipleFilesIntoHtml = multipleFilesHtmlError
 makeToReport (MakeCannotBuild buildErr) = BuildExit.toDoc buildErr
 makeToReport MakeCannotOptimizeAndDebug = optimizeAndDebugError
+makeToReport (MakeReproducibilityFailure offset) = reproducibilityFailureError offset
 
 -- REPL ERRORS
 
@@ -460,6 +464,20 @@ generateError msg =
   structuredError "CODE GENERATION ERROR"
     (Doc.reflow ("Code generation failed: " ++ msg))
     (Doc.reflow "This is likely a compiler bug. Please report it at the project repository.")
+
+-- | Error for when two builds of the same source produce different output.
+reproducibilityFailureError :: Int -> Report
+reproducibilityFailureError offset =
+  structuredError "REPRODUCIBILITY FAILURE"
+    (Doc.reflow ("Two builds of the same source produced different output. First divergence at byte " ++ show offset ++ "."))
+    (Doc.vcat
+      [ Doc.reflow "This indicates non-determinism in code generation."
+      , ""
+      , Doc.reflow "Please report this as a bug at the project repository with:"
+      , fixLine (Doc.green "1. The project source code")
+      , fixLine (Doc.green "2. The exact canopy version (canopy --version)")
+      , fixLine (Doc.green "3. Your operating system and architecture")
+      ])
 
 onlyPackagesError :: String -> Report
 onlyPackagesError cmd =

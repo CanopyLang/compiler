@@ -97,6 +97,7 @@ library
       Make.Generation
       Make.Output
       Make.Parser
+      Make.Reproducible
       Make.Types
       New
       Publish
