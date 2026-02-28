@@ -11,6 +11,7 @@ module Type.UnionFind
     get,
     set,
     modify,
+    pointId,
   )
 where
 
@@ -29,15 +30,38 @@ Compared to the Haskell implementation, the major changes here include:
 -}
 
 import Control.Monad (when)
-import Data.IORef (IORef, modifyIORef', newIORef, readIORef, writeIORef)
+import Data.IORef (IORef, atomicModifyIORef', modifyIORef', newIORef, readIORef, writeIORef)
 import Data.Word (Word32)
 import qualified Reporting.InternalError as InternalError
+import System.IO.Unsafe (unsafePerformIO)
 
 -- POINT
 
-newtype Point a
-  = Pt (IORef (PointInfo a))
-  deriving (Eq)
+-- | A union-find point with a unique integer identity.
+--
+-- The 'Int' field provides a stable, unique identifier for each point,
+-- enabling O(log n) membership checks via 'Data.IntSet' in the occurs
+-- check. Without this, the occurs check must use O(n) list membership.
+data Point a
+  = Pt {-# UNPACK #-} !Int (IORef (PointInfo a))
+
+instance Eq (Point a) where
+  (Pt _ ref1) == (Pt _ ref2) = ref1 == ref2
+
+-- | Extract the unique integer identifier from a point.
+--
+-- This ID is assigned at creation time via 'fresh' and never changes,
+-- even as the union-find structure evolves. Useful for building 'IntSet'
+-- membership structures in the occurs check.
+--
+-- @since 0.19.2
+pointId :: Point a -> Int
+pointId (Pt pid _) = pid
+
+-- | Global counter for assigning unique point IDs.
+{-# NOINLINE nextPointId #-}
+nextPointId :: IORef Int
+nextPointId = unsafePerformIO (newIORef 0)
 
 data PointInfo a
   = Info {-# UNPACK #-} !(IORef Word32) {-# UNPACK #-} !(IORef a)
@@ -48,19 +72,20 @@ data PointInfo a
 fresh :: a -> IO (Point a)
 fresh value =
   do
+    pid <- atomicModifyIORef' nextPointId (\n -> (n + 1, n))
     weight <- newIORef 1
     desc <- newIORef value
     link <- newIORef (Info weight desc)
-    return (Pt link)
+    return (Pt pid link)
 
 repr :: Point a -> IO (Point a)
-repr point@(Pt ref) =
+repr point@(Pt _ ref) =
   do
     pInfo <- readIORef ref
     case pInfo of
       Info _ _ ->
         return point
-      Link point1@(Pt ref1) ->
+      Link point1@(Pt _ ref1) ->
         do
           point2 <- repr point1
           when (point2 /= point1) $
@@ -70,13 +95,13 @@ repr point@(Pt ref) =
           return point2
 
 get :: Point a -> IO a
-get point@(Pt ref) =
+get point@(Pt _ ref) =
   do
     pInfo <- readIORef ref
     case pInfo of
       Info _ descRef ->
         readIORef descRef
-      Link (Pt ref1) ->
+      Link (Pt _ ref1) ->
         do
           link' <- readIORef ref1
           case link' of
@@ -86,13 +111,13 @@ get point@(Pt ref) =
               repr point >>= get
 
 set :: Point a -> a -> IO ()
-set point@(Pt ref) newDesc =
+set point@(Pt _ ref) newDesc =
   do
     pInfo <- readIORef ref
     case pInfo of
       Info _ descRef ->
         writeIORef descRef newDesc
-      Link (Pt ref1) ->
+      Link (Pt _ ref1) ->
         do
           link' <- readIORef ref1
           case link' of
@@ -104,13 +129,13 @@ set point@(Pt ref) newDesc =
                 set newPoint newDesc
 
 modify :: Point a -> (a -> a) -> IO ()
-modify point@(Pt ref) func =
+modify point@(Pt _ ref) func =
   do
     pInfo <- readIORef ref
     case pInfo of
       Info _ descRef ->
         modifyIORef' descRef func
-      Link (Pt ref1) ->
+      Link (Pt _ ref1) ->
         do
           link' <- readIORef ref1
           case link' of
@@ -124,8 +149,8 @@ modify point@(Pt ref) func =
 union :: Point a -> Point a -> a -> IO ()
 union p1 p2 newDesc =
   do
-    point1@(Pt ref1) <- repr p1
-    point2@(Pt ref2) <- repr p2
+    point1@(Pt _ ref1) <- repr p1
+    point2@(Pt _ ref2) <- repr p2
 
     desc1 <- readIORef ref1
     desc2 <- readIORef ref2
@@ -159,7 +184,7 @@ equivalent p1 p2 =
     return (v1 == v2)
 
 redundant :: Point a -> IO Bool
-redundant (Pt ref) =
+redundant (Pt _ ref) =
   do
     pInfo <- readIORef ref
     case pInfo of
