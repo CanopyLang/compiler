@@ -1,3 +1,4 @@
+{-# LANGUAGE StrictData #-}
 
 module Canopy.Interface
   ( Interface (..),

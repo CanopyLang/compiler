@@ -40,10 +40,7 @@ module Builder.Workspace
 where
 
 import qualified Canopy.Outline as Outline
-import qualified Canopy.Package as Pkg
 import qualified Canopy.Version as Version
-import Data.Map.Strict (Map)
-import qualified Data.Map.Strict as Map
 import qualified System.Directory as Dir
 import System.FilePath ((</>), takeDirectory)
 

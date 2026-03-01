@@ -1,4 +1,5 @@
 {-# LANGUAGE DeriveGeneric #-}
+{-# LANGUAGE StrictData #-}
 
 -- | Incremental compilation support using content hashing.
 --
@@ -41,7 +42,7 @@ where
 
 import qualified Builder.Hash as Hash
 import qualified Canopy.ModuleName as ModuleName
-import Data.Aeson (FromJSON (..), ToJSON (..), (.:), (.:?), (.=))
+import Data.Aeson (FromJSON (..), ToJSON (..), (.:), (.=))
 import qualified Data.Aeson as Aeson
 import qualified Data.ByteString.Lazy as BSL
 import Data.Map.Strict (Map)

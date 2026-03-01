@@ -1,3 +1,4 @@
+{-# LANGUAGE StrictData #-}
 -- | Expression constraint generation.
 --
 -- This is the top-level entry point for generating type constraints from

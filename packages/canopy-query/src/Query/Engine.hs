@@ -1,3 +1,4 @@
+{-# LANGUAGE StrictData #-}
 
 -- | Query engine with caching and dependency tracking.
 --

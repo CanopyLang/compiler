@@ -1,3 +1,4 @@
+{-# LANGUAGE StrictData #-}
 -- | AST.Optimized - Optimized AST for efficient code generation
 --
 -- This module defines the Optimized AST representation used after optimization

@@ -29,6 +29,10 @@ module SelfUpdate
     Flags (..),
     run,
 
+    -- * Flags Lenses
+    checkOnly,
+    force,
+
     -- * Version Checking
     currentVersion,
     compareVersions,
@@ -37,6 +41,11 @@ module SelfUpdate
     -- * Platform Detection
     PlatformInfo (..),
     detectPlatform,
+
+    -- * Platform Lenses
+    platformOS,
+    platformArch,
+    platformSlug,
   )
 where
 
@@ -114,7 +123,7 @@ checkAndUpdate _flags = do
   Print.println [c|{bold|Canopy Self-Update}|]
   Print.println [c|Current version: #{versionStr}|]
   platform <- detectPlatform
-  let platformStr = Text.unpack (_platformSlug platform)
+  let platformStr = Text.unpack (platform ^. platformSlug)
   Print.println [c|Platform: #{platformStr}|]
   reportUpdateInstructions
   where

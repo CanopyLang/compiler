@@ -34,7 +34,6 @@ import qualified Canopy.Docs as Docs
 import qualified Data.ByteString.Builder as BB
 import qualified Data.Map.Strict as Map
 import qualified Json.Encode as Encode
-import Json.Encode ((==>))
 import qualified Json.String as Json
 import qualified Reporting.Doc as Doc
 import qualified Reporting.Render.Type as RT

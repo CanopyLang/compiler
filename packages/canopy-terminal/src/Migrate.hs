@@ -30,7 +30,6 @@ where
 
 import qualified Canopy.Outline as Outline
 import Control.Lens (makeLenses, (^.))
-import qualified Data.Aeson as Json
 import qualified Data.Aeson.Encode.Pretty as Pretty
 import qualified Data.ByteString.Lazy as LBS
 import Reporting.Doc.ColorQQ (c)

@@ -1,3 +1,4 @@
+{-# LANGUAGE StrictData #-}
 
 -- | Pure dependency graph without STM.
 --
