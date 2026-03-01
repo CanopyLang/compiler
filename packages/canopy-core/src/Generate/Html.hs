@@ -17,6 +17,7 @@
 module Generate.Html
   ( sandwich,
     sandwichWithPrefetch,
+    escapeHtmlAttr,
   )
 where
 

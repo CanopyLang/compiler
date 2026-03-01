@@ -97,6 +97,7 @@ import qualified Unit.Generate.CodeSplit.ManifestTest as CodeSplitManifestTest
 import qualified Unit.Generate.CodeSplit.RuntimeTest as CodeSplitRuntimeTest
 import qualified Unit.Generate.CodeSplit.TypesTest as CodeSplitTypesTest
 import qualified Unit.Generate.ExpressionTest as ExpressionTest
+import qualified Unit.Generate.HtmlSecurityTest as HtmlSecurityTest
 import qualified Unit.Generate.JavaScript.ExpressionArithmeticTest as JSExpressionArithmeticTest
 import qualified Unit.Generate.MinifyTest as MinifyTest
 import qualified Unit.Generate.NameTest as GenerateNameTest
@@ -249,6 +250,7 @@ unitTests =
       JSExpressionArithmeticTest.tests,
       MinifyTest.tests,
       GenerateNameTest.tests,
+      HtmlSecurityTest.tests,
       ExpressionTest.tests,
       SourceMapTest.tests,
       StringPoolTest.tests,
