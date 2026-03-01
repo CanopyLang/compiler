@@ -264,17 +264,38 @@ decodeVersioned bytes
 
     decodePayloadAfterVersion :: (Binary.Binary a) => LBS.ByteString -> Either String a
     decodePayloadAfterVersion rest =
-      case skipCompilerVersion rest of
+      case verifyCompilerVersion rest of
         Left msg -> Left msg
         Right payloadBytes ->
           case Binary.decodeOrFail payloadBytes of
             Left (_, _, msg) -> Left ("payload decode: " ++ msg)
             Right (_, _, payload) -> Right payload
 
-    skipCompilerVersion :: LBS.ByteString -> Either String LBS.ByteString
-    skipCompilerVersion bs
+    verifyCompilerVersion :: LBS.ByteString -> Either String LBS.ByteString
+    verifyCompilerVersion bs
       | LBS.length bs < 6 = Left "truncated compiler version in cache header"
-      | otherwise = Right (LBS.drop 6 bs)
+      | otherwise =
+          decodeWord16 bs >>= \(rest1, major) ->
+            decodeWord16 rest1 >>= \(rest2, minor) ->
+              decodeWord16 rest2 >>= \(payloadBytes, patch) ->
+                let actual = Version major minor patch
+                 in if actual == Version.compiler
+                      then Right payloadBytes
+                      else Left (versionMismatchMessage actual)
+
+    decodeWord16 :: LBS.ByteString -> Either String (LBS.ByteString, Word16)
+    decodeWord16 input =
+      case Binary.decodeOrFail input of
+        Left (_, _, msg) -> Left ("version decode: " ++ msg)
+        Right (rest, _, w) -> Right (rest, w)
+
+    versionMismatchMessage :: Version -> String
+    versionMismatchMessage actual =
+      "compiler version mismatch: cache compiled with v"
+        ++ Version.toChars actual
+        ++ " but current compiler is v"
+        ++ Version.toChars Version.compiler
+        ++ ". Run `canopy make` to rebuild."
 
 -- | Log incremental compilation statistics.
 logIncrementalStats :: IORef Int -> IORef Int -> IO ()

@@ -9,6 +9,8 @@
 -- @since 0.19.2
 module Unit.Builder.CacheVersionTest (tests) where
 
+import Canopy.Version (Version (..))
+import qualified Canopy.Version as Version
 import qualified Compiler
 import qualified Data.Binary as Binary
 import qualified Data.ByteString.Lazy as LBS
@@ -77,7 +79,28 @@ tests =
           testCase "truncated header fails" $
             case Compiler.decodeVersioned (LBS.pack [0x45, 0x4C, 0x43, 0x4F, 0x00]) :: Either String Int of
               Left _ -> pure ()
-              Right _ -> assertFailure "should fail on truncated header"
+              Right _ -> assertFailure "should fail on truncated header",
+          testCase "wrong compiler version fails with actionable message" $ do
+            let Version cMajor cMinor cPatch = Version.compiler
+                wrongMajor = cMajor + 1
+                schemaVersion = 1 :: Word16
+                wrongCompilerBytes =
+                  LBS.pack [0x45, 0x4C, 0x43, 0x4F]
+                    <> Binary.encode schemaVersion
+                    <> Binary.encode wrongMajor
+                    <> Binary.encode cMinor
+                    <> Binary.encode cPatch
+                    <> Binary.encode (42 :: Int)
+            case Compiler.decodeVersioned wrongCompilerBytes :: Either String Int of
+              Left msg -> do
+                assertBool "should mention compiler version" ("compiler version" `isInfixOfStr` msg)
+                assertBool "should mention rebuild" ("rebuild" `isInfixOfStr` msg)
+              Right _ -> assertFailure "should fail on wrong compiler version",
+          testCase "correct compiler version succeeds" $ do
+            let encoded = Compiler.encodeVersioned (99 :: Int)
+            case Compiler.decodeVersioned encoded :: Either String Int of
+              Left msg -> assertFailure ("should succeed with correct version: " ++ msg)
+              Right decoded -> decoded @?= 99
         ]
     ]
 
