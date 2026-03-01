@@ -34,6 +34,7 @@ data Install
   | InstallNoOfflineAppSolution String
   | InstallHadSolverTrouble String
   | InstallNoArgs FilePath
+  | InstallBadSignature [String]
   deriving (Show)
 
 -- | Convert an 'Install' error to a structured 'Report'.
@@ -51,6 +52,7 @@ installToReport (InstallNoOnlineAppSolution pkg) = noSolutionError pkg
 installToReport (InstallNoOfflineAppSolution pkg) = noOfflineSolutionError pkg
 installToReport (InstallHadSolverTrouble msg) = solverTroubleError msg
 installToReport (InstallNoArgs home) = installNoArgsError home
+installToReport (InstallBadSignature pkgs) = badSignatureError pkgs
 
 -- SHARED HELPERS (duplicated from parent for independence)
 
@@ -195,4 +197,20 @@ installNoArgsError home =
       , fixLine (Doc.green "canopy install author/package")
       , ""
       , Doc.reflow ("Canopy home: " ++ home)
+      ])
+
+badSignatureError :: [String] -> Report
+badSignatureError pkgs =
+  structuredError "INVALID PACKAGE SIGNATURES"
+    (Doc.vcat
+      [ Doc.reflow "The following packages have signatures that could not be verified against any trusted key:"
+      , ""
+      , Doc.vcat (fmap (\p -> fixLine (Doc.dullred (Doc.fromChars p))) pkgs)
+      ])
+    (Doc.vcat
+      [ Doc.reflow "This may indicate that the packages have been tampered with."
+      , ""
+      , Doc.reflow "If you trust these packages, you can skip verification with:"
+      , ""
+      , fixLine (Doc.green "canopy install --no-verify")
       ])

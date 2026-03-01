@@ -58,6 +58,7 @@ import Install.Types
     Task,
     icEnv,
     icNewOutline,
+    icNoVerify,
     icOffline,
     icOldOutline,
     icRoot,
@@ -191,29 +192,36 @@ performInstallation ctx scope = do
       oldOutline = ctx ^. icOldOutline
       newOutline = ctx ^. icNewOutline
       offline = ctx ^. icOffline
+      noVerify = ctx ^. icNoVerify
 
   fetchResult <- fetchMissingPackages offline newOutline
   either
     (\_ -> rollbackInstallation root oldOutline Exit.InstallBadFetch)
-    (\_ -> writeAndVerify root env oldOutline newOutline scope)
+    (\_ -> writeAndVerify root env oldOutline newOutline noVerify scope)
     fetchResult
 
 -- | Write the outline and verify the installation.
-writeAndVerify :: FilePath -> a -> Outline.Outline -> Outline.Outline -> BackgroundWriter.Scope -> IO (Either Exit.Install ())
-writeAndVerify root env oldOutline newOutline scope = do
+writeAndVerify :: FilePath -> a -> Outline.Outline -> Outline.Outline -> Bool -> BackgroundWriter.Scope -> IO (Either Exit.Install ())
+writeAndVerify root env oldOutline newOutline noVerify scope = do
   Outline.write root newOutline
   result <- Details.verifyInstall scope root env newOutline
   either
     (\exit -> rollbackInstallation root oldOutline (Exit.InstallBadDetails exit))
-    (\_ -> finalizeInstall root newOutline)
+    (\_ -> finalizeInstall root newOutline noVerify)
     result
 
 -- | Finalize installation by generating lock file and confirming.
-finalizeInstall :: FilePath -> Outline.Outline -> IO (Either Exit.Install ())
-finalizeInstall root newOutline = do
+--
+-- When @noVerify@ is 'False', performs hash and signature verification
+-- on the generated lock file. Invalid signatures produce a hard error
+-- that aborts installation.
+--
+-- @since 0.19.2
+finalizeInstall :: FilePath -> Outline.Outline -> Bool -> IO (Either Exit.Install ())
+finalizeInstall root newOutline noVerify = do
   generateLockFileFromOutline root newOutline
-  verifyLockFileHashes root
-  confirmInstallation
+  verifyResult <- verifyLockFileHashes root noVerify
+  maybe confirmInstallation (pure . Left) verifyResult
 
 -- | Fetch any missing packages before installation.
 --
@@ -296,15 +304,23 @@ cancelInstallation = do
 -- package's config file hash matches. Prints warnings for any
 -- mismatches (potential tampering or corruption).
 --
+-- When @noVerify@ is 'True', all verification is skipped.
+--
+-- Returns 'Just' an error if signature verification fails with
+-- invalid signatures (a hard error). Returns 'Nothing' on success.
+--
 -- @since 0.19.2
-verifyLockFileHashes :: FilePath -> IO ()
-verifyLockFileHashes root = do
+verifyLockFileHashes :: FilePath -> Bool -> IO (Maybe Exit.Install)
+verifyLockFileHashes _root True = pure Nothing
+verifyLockFileHashes root False = do
   maybeLf <- LockFile.readLockFile root
-  case maybeLf of
-    Nothing -> pure ()
-    Just lf -> do
-      verifyHashes lf
-      verifySignatures lf
+  maybe (pure Nothing) verifyLockFile maybeLf
+
+-- | Verify hashes and signatures for a parsed lock file.
+verifyLockFile :: LockFile.LockFile -> IO (Maybe Exit.Install)
+verifyLockFile lf = do
+  verifyHashes lf
+  verifySignatures lf
 
 -- | Check hash integrity of cached packages.
 verifyHashes :: LockFile.LockFile -> IO ()
@@ -318,14 +334,38 @@ verifyHashes lf = do
       mapM_ reportMismatch mismatches
 
 -- | Check cryptographic signatures of packages.
-verifySignatures :: LockFile.LockFile -> IO ()
+--
+-- Unsigned packages produce an informational message (the Canopy
+-- registry does not yet sign packages, so this is expected).
+-- Invalid signatures produce a hard error because they indicate
+-- potential tampering with a package that claims to be signed.
+--
+-- @since 0.19.2
+verifySignatures :: LockFile.LockFile -> IO (Maybe Exit.Install)
 verifySignatures lf =
   case LockFile.verifyPackageSignatures lf of
-    LockFile.AllSigned -> pure ()
-    LockFile.UnsignedPackages _ -> pure ()
+    LockFile.AllSigned -> pure Nothing
+    LockFile.UnsignedPackages pkgs -> do
+      reportUnsignedPackages pkgs
+      pure Nothing
     LockFile.InvalidSignatures invalids -> do
-      Print.printErrLn [c|{yellow|WARNING:} Package signature verification found issues:|]
+      Print.printErrLn [c|{red|ERROR:} Package signature verification failed:|]
       mapM_ reportInvalidSignature invalids
+      pure (Just (Exit.InstallBadSignature (fmap formatInvalidPkg invalids)))
+  where
+    formatInvalidPkg (pkg, _) = Pkg.toChars pkg
+
+-- | Report that packages are unsigned.
+--
+-- This is informational only, not an error. The Canopy registry does
+-- not yet sign packages, so unsigned packages are expected.
+--
+-- @since 0.19.2
+reportUnsignedPackages :: [Pkg.Name] -> IO ()
+reportUnsignedPackages pkgs =
+  Print.println [c|{cyan|Note:} #{count} package(s) are unsigned (signature verification skipped for these).|]
+  where
+    count = show (length pkgs)
 
 -- | Report an invalid package signature.
 reportInvalidSignature :: (Pkg.Name, a) -> IO ()

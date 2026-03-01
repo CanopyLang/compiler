@@ -43,6 +43,7 @@ module Install.Types
     icOldOutline,
     icNewOutline,
     icOffline,
+    icNoVerify,
 
     -- * Changes
     Changes (..),
@@ -102,15 +103,18 @@ data Args
 -- | Command-line flags for the install command.
 --
 -- Controls optional behaviour such as disabling fallback to the
--- Elm registry when canopy-lang.org is unreachable, or restricting
--- resolution to locally cached packages only.
+-- Elm registry when canopy-lang.org is unreachable, restricting
+-- resolution to locally cached packages only, or skipping
+-- cryptographic signature verification.
 --
 -- @since 0.19.2
 data Flags = Flags
   { -- | When 'True', disable fallback from canopy-lang.org to elm-lang.org.
     _installNoFallback :: !Bool,
     -- | When 'True', skip all network requests and use only cached packages.
-    _installOffline :: !Bool
+    _installOffline :: !Bool,
+    -- | When 'True', skip lock file hash and signature verification entirely.
+    _installNoVerify :: !Bool
   }
   deriving (Eq, Show)
 
@@ -131,7 +135,9 @@ data InstallContext = InstallContext
     -- | Updated canopy.json outline after changes
     _icNewOutline :: !Outline.Outline,
     -- | When 'True', skip all network requests and use only cached packages.
-    _icOffline :: !Bool
+    _icOffline :: !Bool,
+    -- | When 'True', skip lock file hash and signature verification.
+    _icNoVerify :: !Bool
   }
 
 -- | Changes to be applied to dependency configuration.

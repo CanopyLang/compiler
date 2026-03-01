@@ -153,6 +153,7 @@ createInstallFlags =
   Terminal.flags Install.Flags
     |-- Terminal.onOff "no-fallback" "Do not fall back to elm-lang.org when canopy-lang.org is unreachable. Use this to ensure packages are fetched only from the Canopy registry."
     |-- Terminal.onOff "offline" "Skip all network requests and use only locally cached packages. Useful for air-gapped environments or when you know all dependencies are already cached."
+    |-- Terminal.onOff "no-verify" "Skip lock file hash and signature verification. Use only in trusted environments where verification is handled externally."
 
 createPublishArgs :: Terminal.Args Publish.Args
 createPublishArgs =

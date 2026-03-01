@@ -7,11 +7,22 @@
 -- (the first 16 hex chars of the public key), allowing key rotation
 -- without breaking existing lock files.
 --
+-- == Current Status
+--
+-- The key store is intentionally empty because the Canopy package registry
+-- does not yet sign packages. All packages will be classified as
+-- 'UnsignedPackages' during verification, which produces an informational
+-- message. If a package claims to be signed but the key is not in this
+-- store, verification fails with 'InvalidSignatures' (a hard error).
+--
+-- Users can skip all verification with @canopy install --no-verify@.
+--
 -- == Key Management
 --
--- Currently, the Canopy registry signing key is embedded at compile time.
--- Future versions may support fetching trusted keys from the registry
--- server or a well-known HTTPS endpoint.
+-- When the Canopy registry begins signing packages, its Ed25519 public
+-- key will be embedded here at compile time. Future versions may support
+-- fetching trusted keys from the registry server or a well-known HTTPS
+-- endpoint.
 --
 -- == Key Rotation
 --

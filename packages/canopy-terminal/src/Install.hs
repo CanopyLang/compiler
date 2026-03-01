@@ -62,6 +62,7 @@ import Install.Types
     Flags (..),
     InstallContext (..),
     Task,
+    _installNoVerify,
     _installOffline,
   )
 import qualified Reporting
@@ -88,7 +89,7 @@ import qualified Stuff
 run :: Args -> Flags -> IO ()
 run args flags =
   Reporting.attempt Exit.installToReport $
-    processInstallRequest args (_installOffline flags)
+    processInstallRequest args (_installOffline flags) (_installNoVerify flags)
 
 -- | Process an installation request with full validation.
 --
@@ -96,12 +97,12 @@ run args flags =
 -- based on the project type (application vs package).
 --
 -- @since 0.19.1
-processInstallRequest :: Args -> Bool -> IO (Either Exit.Install ())
-processInstallRequest args offline = do
+processInstallRequest :: Args -> Bool -> Bool -> IO (Either Exit.Install ())
+processInstallRequest args offline noVerify = do
   validationResult <- validateArgs args
   case validationResult of
     Left exit -> return (Left exit)
-    Right (root, validArgs) -> executeValidatedInstall root validArgs offline
+    Right (root, validArgs) -> executeValidatedInstall root validArgs offline noVerify
 
 -- | Execute installation after validation.
 --
@@ -109,11 +110,11 @@ processInstallRequest args offline = do
 -- planning strategy based on project type.
 --
 -- @since 0.19.1
-processValidatedInstall :: FilePath -> Args -> Bool -> Task ()
-processValidatedInstall root args offline =
+processValidatedInstall :: FilePath -> Args -> Bool -> Bool -> Task ()
+processValidatedInstall root args offline noVerify =
   case args of
     NoArgs -> handleNoArgsCase
-    Install pkg -> installPackageInProject root pkg offline
+    Install pkg -> installPackageInProject root pkg offline noVerify
 
 -- | Handle the case when no package is specified.
 --
@@ -131,9 +132,9 @@ handleNoArgsCase = do
 -- for the installation workflow.
 --
 -- @since 0.19.1
-executeValidatedInstall :: FilePath -> Args -> Bool -> IO (Either Exit.Install ())
-executeValidatedInstall root args offline =
-  Task.run (processValidatedInstall root args offline)
+executeValidatedInstall :: FilePath -> Args -> Bool -> Bool -> IO (Either Exit.Install ())
+executeValidatedInstall root args offline noVerify =
+  Task.run (processValidatedInstall root args offline noVerify)
 
 -- | Install a package in a Canopy project.
 --
@@ -141,13 +142,13 @@ executeValidatedInstall root args offline =
 -- configuration, and creates an appropriate installation plan.
 --
 -- @since 0.19.1
-installPackageInProject :: FilePath -> Pkg.Name -> Bool -> Task ()
-installPackageInProject root pkg offline = do
+installPackageInProject :: FilePath -> Pkg.Name -> Bool -> Bool -> Task ()
+installPackageInProject root pkg offline noVerify = do
   envResult <- Task.io Solver.initEnv
   env <- either (Task.throw . Exit.InstallBadRegistry) pure envResult
   eitherOutline <- Task.io (Outline.read root)
   oldOutline <- either (Task.throw . Exit.InstallBadOutline) pure eitherOutline
-  context <- createInstallContext root env oldOutline offline
+  context <- createInstallContext root env oldOutline offline noVerify
   planAndExecuteInstall context pkg oldOutline
 
 -- | Create installation context from validated inputs.
@@ -156,9 +157,9 @@ installPackageInProject root pkg offline = do
 -- workflow with all required environment information.
 --
 -- @since 0.19.1
-createInstallContext :: FilePath -> Solver.Env -> Outline.Outline -> Bool -> Task InstallContext
-createInstallContext root env outline offline =
-  return $ InstallContext root env outline outline offline
+createInstallContext :: FilePath -> Solver.Env -> Outline.Outline -> Bool -> Bool -> Task InstallContext
+createInstallContext root env outline offline noVerify =
+  return $ InstallContext root env outline outline offline noVerify
 
 -- | Plan and execute installation based on project type.
 --
@@ -181,7 +182,7 @@ planAndExecuteInstall context pkg outline =
 -- @since 0.19.1
 installInApplication :: InstallContext -> Pkg.Name -> Outline.AppOutline -> Task ()
 installInApplication context pkg outline = do
-  let InstallContext _ env _ _ _ = context
+  let InstallContext _ env _ _ _ _ = context
   changes <- makeAppPlan env pkg outline
   executeInstallation context changes Version.toChars
 
@@ -193,6 +194,6 @@ installInApplication context pkg outline = do
 -- @since 0.19.1
 installInPackage :: InstallContext -> Pkg.Name -> Outline.PkgOutline -> Task ()
 installInPackage context pkg outline = do
-  let InstallContext _ env _ _ _ = context
+  let InstallContext _ env _ _ _ _ = context
   changes <- makePkgPlan env pkg outline
   executeInstallation context changes Constraint.toChars
