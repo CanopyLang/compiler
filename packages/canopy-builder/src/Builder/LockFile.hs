@@ -103,6 +103,7 @@ import qualified Crypto.ConstantTime as CT
 import qualified Data.Aeson as Json
 import qualified Data.ByteString.Lazy as LBS
 import qualified Data.Text as Text
+import qualified File.Atomic as Atomic
 import Logging.Event (LogEvent (..))
 import qualified Logging.Logger as Log
 import qualified System.Directory as Dir
@@ -161,7 +162,7 @@ writeLockFile :: FilePath -> LockFile -> IO ()
 writeLockFile root lf = do
   let path = lockFilePath root
   Log.logEvent (PackageOperation "lock-write" (Text.pack path))
-  LBS.writeFile path (Json.encode lf)
+  Atomic.writeLazyBytesAtomic path (Json.encode lf)
 
 -- | Check whether the lock file is current with respect to @canopy.json@.
 --

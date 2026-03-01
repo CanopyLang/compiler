@@ -33,13 +33,13 @@ import qualified Canopy.Version as Version
 import Control.Exception (IOException)
 import qualified Control.Exception as Exception
 import qualified Data.Aeson as Json
-import qualified Data.ByteString.Lazy as LBS
 import Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
 import qualified Data.Text as Text
 import qualified Data.Time as Time
 import qualified Data.Time.Format.ISO8601 as ISO8601
 import Logging.Event (LogEvent (..))
+import qualified File.Atomic as Atomic
 import qualified Logging.Logger as Log
 import qualified System.Directory as Dir
 import System.FilePath ((</>))
@@ -70,7 +70,7 @@ generateLockFile root resolvedDeps = do
           }
   let path = root </> "canopy.lock"
   Log.logEvent (PackageOperation "lock-write" (Text.pack path))
-  LBS.writeFile path (Json.encode lf)
+  Atomic.writeLazyBytesAtomic path (Json.encode lf)
   Log.logEvent (PackageOperation "lock-generated" (Text.pack (show (Map.size resolvedDeps)) <> " packages"))
 
 -- | Resolve the global package cache directory.
