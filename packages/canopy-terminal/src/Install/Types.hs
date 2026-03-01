@@ -42,6 +42,7 @@ module Install.Types
     icEnv,
     icOldOutline,
     icNewOutline,
+    icOffline,
 
     -- * Changes
     Changes (..),
@@ -101,19 +102,23 @@ data Args
 -- | Command-line flags for the install command.
 --
 -- Controls optional behaviour such as disabling fallback to the
--- Elm registry when canopy-lang.org is unreachable.
+-- Elm registry when canopy-lang.org is unreachable, or restricting
+-- resolution to locally cached packages only.
 --
 -- @since 0.19.2
 data Flags = Flags
   { -- | When 'True', disable fallback from canopy-lang.org to elm-lang.org.
-    _installNoFallback :: !Bool
+    _installNoFallback :: !Bool,
+    -- | When 'True', skip all network requests and use only cached packages.
+    _installOffline :: !Bool
   }
   deriving (Eq, Show)
 
 -- | Installation context containing all necessary state.
 --
 -- Bundles together the file system root, solver environment,
--- and outline information needed for installation operations.
+-- outline information, and network policy needed for installation
+-- operations.
 --
 -- @since 0.19.1
 data InstallContext = InstallContext
@@ -124,7 +129,9 @@ data InstallContext = InstallContext
     -- | Original canopy.json outline before changes
     _icOldOutline :: !Outline.Outline,
     -- | Updated canopy.json outline after changes
-    _icNewOutline :: !Outline.Outline
+    _icNewOutline :: !Outline.Outline,
+    -- | When 'True', skip all network requests and use only cached packages.
+    _icOffline :: !Bool
   }
 
 -- | Changes to be applied to dependency configuration.

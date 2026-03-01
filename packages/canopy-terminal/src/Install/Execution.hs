@@ -58,6 +58,7 @@ import Install.Types
     Task,
     icEnv,
     icNewOutline,
+    icOffline,
     icOldOutline,
     icRoot,
   )
@@ -189,8 +190,9 @@ performInstallation ctx scope = do
       env = ctx ^. icEnv
       oldOutline = ctx ^. icOldOutline
       newOutline = ctx ^. icNewOutline
+      offline = ctx ^. icOffline
 
-  fetchResult <- fetchMissingPackages newOutline
+  fetchResult <- fetchMissingPackages offline newOutline
   either
     (\_ -> rollbackInstallation root oldOutline Exit.InstallBadFetch)
     (\_ -> writeAndVerify root env oldOutline newOutline scope)
@@ -218,19 +220,44 @@ finalizeInstall root newOutline = do
 -- Uses the cascading fetch strategy: local cache, Elm cache,
 -- registry endpoint, then direct GitHub download.
 --
+-- When @offline@ is 'True', only local caches are checked and
+-- no network requests are made.
+--
 -- @since 0.19.2
-fetchMissingPackages :: Outline.Outline -> IO (Either [Fetch.FetchError] [Fetch.FetchSource])
-fetchMissingPackages outline = do
+fetchMissingPackages :: Bool -> Outline.Outline -> IO (Either [Fetch.FetchError] [Fetch.FetchSource])
+fetchMissingPackages offline outline = do
   manager <- TLS.newTlsManager
   let resolvedDeps = Map.toList (extractResolvedDeps outline)
-  results <- traverse (fetchOne manager) resolvedDeps
+  results <- traverse (fetchOne offline manager) resolvedDeps
   let errors = [e | Left e <- results]
       sources = [s | Right s <- results]
   pure (if null errors then Right sources else Left errors)
 
 -- | Fetch a single package if it is not already cached.
-fetchOne :: Client.Manager -> (Pkg.Name, Version.Version) -> IO (Either Fetch.FetchError Fetch.FetchSource)
-fetchOne manager (pkg, ver) = Fetch.fetchPackage manager pkg ver
+--
+-- In offline mode, only local and Elm caches are consulted. Network
+-- sources are skipped entirely.
+fetchOne :: Bool -> Client.Manager -> (Pkg.Name, Version.Version) -> IO (Either Fetch.FetchError Fetch.FetchSource)
+fetchOne offline manager (pkg, ver)
+  | offline = fetchOffline pkg ver
+  | otherwise = Fetch.fetchPackage manager pkg ver
+
+-- | Attempt to resolve a package from local caches only.
+--
+-- Checks the Canopy cache and then the Elm cache. Returns
+-- 'AllSourcesFailed' when neither cache contains the package.
+--
+-- @since 0.19.2
+fetchOffline :: Pkg.Name -> Version.Version -> IO (Either Fetch.FetchError Fetch.FetchSource)
+fetchOffline pkg ver = do
+  localResult <- Fetch.checkLocalCache pkg ver
+  maybe (tryElmCacheOffline pkg ver) (pure . Right) localResult
+
+-- | Elm cache fallback for offline mode.
+tryElmCacheOffline :: Pkg.Name -> Version.Version -> IO (Either Fetch.FetchError Fetch.FetchSource)
+tryElmCacheOffline pkg ver = do
+  elmResult <- Fetch.checkElmCache pkg ver
+  pure (maybe (Left (Fetch.AllSourcesFailed pkg ver)) Right elmResult)
 
 -- | Rollback installation changes after failure.
 --

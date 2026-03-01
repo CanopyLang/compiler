@@ -42,6 +42,7 @@ module CLI.Commands
     createPublishCommand,
     createBumpCommand,
     createDiffCommand,
+    createVendorCommand,
 
     -- * Tool Commands
     createFFITestCommand,
@@ -71,6 +72,7 @@ import CLI.Commands.Package
     createDiffCommand,
     createInstallCommand,
     createPublishCommand,
+    createVendorCommand,
   )
 import CLI.Commands.Project
   ( createInitCommand,

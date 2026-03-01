@@ -42,6 +42,11 @@ library
       Canopy.Details
       Check
       CLI.Commands
+      CLI.Commands.Build
+      CLI.Commands.Dev
+      CLI.Commands.Package
+      CLI.Commands.Project
+      CLI.Commands.Tools
       CLI.Documentation
       CLI.Parsers
       CLI.Types
@@ -91,6 +96,13 @@ library
       Lint.Fix
       Lint.Report
       Lint.Rules
+      Lint.Rules.Complexity
+      Lint.Rules.Helpers
+      Lint.Rules.Imports
+      Lint.Rules.Lists
+      Lint.Rules.Safety
+      Lint.Rules.Scope
+      Lint.Rules.Style
       Lint.Types
       LocalPackage
       Make
@@ -101,6 +113,7 @@ library
       Make.Parser
       Make.Reproducible
       Make.Types
+      Migrate
       New
       Publish
       Publish.Archive
@@ -137,6 +150,7 @@ library
       Test.Runner
       Test.Server
       Upgrade
+      Vendor
       Watch
       Watch.LiveReload
       WebIDL.Command
@@ -198,6 +212,7 @@ library
   build-depends:
       SHA
     , aeson
+    , aeson-pretty
     , ansi-terminal
     , ansi-wl-pprint
     , base

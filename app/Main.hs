@@ -66,10 +66,11 @@ import CLI.Commands
     createPublishCommand,
     createReactorCommand,
     createReplCommand,
+    createSelfUpdateCommand,
     createSetupCommand,
     createTestCommand,
-    createSelfUpdateCommand,
     createUpgradeCommand,
+    createVendorCommand,
     createWebIDLCommand,
   )
 import CLI.Documentation (createIntroduction, createOutro)
@@ -134,6 +135,7 @@ createAllCommands =
     createBumpCommand,
     createDiffCommand,
     createPublishCommand,
+    createVendorCommand,
     createWebIDLCommand,
     createSelfUpdateCommand
   ]
