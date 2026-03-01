@@ -200,7 +200,9 @@ appWithPre1Dep =
       Outline._appTestDeps = Map.empty,
       Outline._appDepsDirect = Map.singleton Pkg.core (Version.Version 0 9 0),
       Outline._appDepsIndirect = Map.empty,
-      Outline._appTestDepsDirect = Map.empty
+      Outline._appTestDepsDirect = Map.empty,
+      Outline._appScripts = Nothing,
+      Outline._appRepository = Nothing
     }
 
 -- | App outline with stable (>= 1.0) dependencies
@@ -213,7 +215,9 @@ appWithStableDeps =
       Outline._appTestDeps = Map.empty,
       Outline._appDepsDirect = Map.singleton Pkg.core (Version.Version 1 0 5),
       Outline._appDepsIndirect = Map.empty,
-      Outline._appTestDepsDirect = Map.empty
+      Outline._appTestDepsDirect = Map.empty,
+      Outline._appScripts = Nothing,
+      Outline._appRepository = Nothing
     }
 
 -- | App outline with a dependency affected by the test advisory
@@ -226,7 +230,9 @@ appWithAffectedDep =
       Outline._appTestDeps = Map.empty,
       Outline._appDepsDirect = Map.singleton Pkg.http (Version.Version 1 0 3),
       Outline._appDepsIndirect = Map.empty,
-      Outline._appTestDepsDirect = Map.empty
+      Outline._appTestDepsDirect = Map.empty,
+      Outline._appScripts = Nothing,
+      Outline._appRepository = Nothing
     }
 
 -- | Package outline with some deps

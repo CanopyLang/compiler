@@ -86,6 +86,13 @@ data Outline
   deriving (Show)
 
 -- | Application outline.
+--
+-- The optional '_appScripts' field maps script names to shell commands,
+-- enabling custom build hooks (prebuild, postbuild, test, etc.).
+-- The optional '_appRepository' field records the project's source
+-- repository URL for package metadata.
+--
+-- @since 0.19.2
 data AppOutline = AppOutline
   { _appCanopy :: !Version.Version,
     _appSrcDirs :: ![SrcDir],
@@ -93,7 +100,9 @@ data AppOutline = AppOutline
     _appTestDeps :: !(Map Pkg.Name Constraint.Constraint),
     _appDepsDirect :: !(Map Pkg.Name Version.Version),
     _appDepsIndirect :: !(Map Pkg.Name Version.Version),
-    _appTestDepsDirect :: !(Map Pkg.Name Version.Version)
+    _appTestDepsDirect :: !(Map Pkg.Name Version.Version),
+    _appScripts :: !(Maybe (Map Text.Text Text.Text)),
+    _appRepository :: !(Maybe Text.Text)
   }
   deriving (Show)
 
@@ -226,32 +235,46 @@ instance Json.FromJSON Outline where
       <|> (Pkg <$> Json.parseJSON value)
 
 instance Json.ToJSON AppOutline where
-  toJSON (AppOutline canopy srcDirs deps testDeps depsDirect depsIndirect testDepsDirect) =
-    Json.object
-      [ "type" .= ("application" :: Text.Text),
-        "canopy-version" .= canopy,
-        "source-directories" .= srcDirs,
-        "dependencies" .= deps,
-        "test-dependencies" .= testDeps,
-        "dependencies-direct" .= depsDirect,
-        "dependencies-indirect" .= depsIndirect,
-        "test-dependencies-direct" .= testDepsDirect
-      ]
+  toJSON app =
+    Json.object (requiredFields ++ optionalFields)
+    where
+      requiredFields =
+        [ "type" .= ("application" :: Text.Text),
+          "canopy-version" .= _appCanopy app,
+          "source-directories" .= _appSrcDirs app,
+          "dependencies" .= _appDeps app,
+          "test-dependencies" .= _appTestDeps app,
+          "dependencies-direct" .= _appDepsDirect app,
+          "dependencies-indirect" .= _appDepsIndirect app,
+          "test-dependencies-direct" .= _appTestDepsDirect app
+        ]
+      optionalFields =
+        maybe [] (\s -> ["scripts" .= s]) (_appScripts app)
+          ++ maybe [] (\r -> ["repository" .= r]) (_appRepository app)
 
 instance Json.FromJSON AppOutline where
   parseJSON = Json.withObject "AppOutline" $ \o -> do
-    -- Support both "canopy-version" and "elm-version" for compatibility
     canopyVer <- (o Json..: "canopy-version") <|> (o Json..: "elm-version")
     srcDirs <- o Json..: "source-directories"
-
     deps <- o Json..: "dependencies"
     depsDirect <- deps Json..: "direct"
     depsIndirect <- deps Json..: "indirect"
-
     testDeps <- o Json..: "test-dependencies"
     testDepsDirect <- testDeps Json..: "direct"
-
-    pure (AppOutline canopyVer srcDirs Map.empty Map.empty depsDirect depsIndirect testDepsDirect)
+    scripts <- o .:? "scripts"
+    repository <- o .:? "repository"
+    pure
+      AppOutline
+        { _appCanopy = canopyVer,
+          _appSrcDirs = srcDirs,
+          _appDeps = Map.empty,
+          _appTestDeps = Map.empty,
+          _appDepsDirect = depsDirect,
+          _appDepsIndirect = depsIndirect,
+          _appTestDepsDirect = testDepsDirect,
+          _appScripts = scripts,
+          _appRepository = repository
+        }
 
 instance Json.ToJSON PkgOutline where
   toJSON (PkgOutline name summary license version exposed deps testDeps canopy) =
@@ -330,16 +353,16 @@ encode (Workspace wsOutline) = encodeWorkspaceOutline wsOutline
 
 -- | Encode application outline.
 encodeAppOutline :: AppOutline -> Encode.Value
-encodeAppOutline (AppOutline canopy srcDirs deps testDeps depsDirect depsIndirect testDepsDirect) =
+encodeAppOutline app =
   Encode.object
     [ "type" ==> Encode.chars "application",
-      "canopy-version" ==> Version.encode canopy,
-      "source-directories" ==> Encode.list encodeSrcDir srcDirs,
-      "dependencies" ==> Encode.dict Pkg.toJsonString Constraint.encode deps,
-      "test-dependencies" ==> Encode.dict Pkg.toJsonString Constraint.encode testDeps,
-      "dependencies-direct" ==> Encode.dict Pkg.toJsonString Version.encode depsDirect,
-      "dependencies-indirect" ==> Encode.dict Pkg.toJsonString Version.encode depsIndirect,
-      "test-dependencies-direct" ==> Encode.dict Pkg.toJsonString Version.encode testDepsDirect
+      "canopy-version" ==> Version.encode (_appCanopy app),
+      "source-directories" ==> Encode.list encodeSrcDir (_appSrcDirs app),
+      "dependencies" ==> Encode.dict Pkg.toJsonString Constraint.encode (_appDeps app),
+      "test-dependencies" ==> Encode.dict Pkg.toJsonString Constraint.encode (_appTestDeps app),
+      "dependencies-direct" ==> Encode.dict Pkg.toJsonString Version.encode (_appDepsDirect app),
+      "dependencies-indirect" ==> Encode.dict Pkg.toJsonString Version.encode (_appDepsIndirect app),
+      "test-dependencies-direct" ==> Encode.dict Pkg.toJsonString Version.encode (_appTestDepsDirect app)
     ]
 
 -- | Encode package outline.

@@ -230,13 +230,16 @@ createOutlineConfig context solverDetails =
       testDepsConstraints = context ^. contextTestDeps
    in Outline.App $
         Outline.AppOutline
-          Version.compiler
-          sourceDirs
-          depsConstraints
-          testDepsConstraints
-          directs
-          indirects
-          testDeps
+          { Outline._appCanopy = Version.compiler,
+            Outline._appSrcDirs = sourceDirs,
+            Outline._appDeps = depsConstraints,
+            Outline._appTestDeps = testDepsConstraints,
+            Outline._appDepsDirect = directs,
+            Outline._appDepsIndirect = indirects,
+            Outline._appTestDepsDirect = testDeps,
+            Outline._appScripts = Nothing,
+            Outline._appRepository = Nothing
+          }
 
 -- | Extract version information from solver details.
 extractVersions :: Map Name Solver.Details -> Map Name Version.Version

@@ -55,6 +55,7 @@ module CLI.Commands
     createDocsCommand,
     createAuditCommand,
     createUpgradeCommand,
+    createMigrateCommand,
     createBenchCommand,
 
     -- * Testing Commands
@@ -92,6 +93,7 @@ import qualified Init
 import qualified Install
 import qualified Lint
 import qualified Make
+import qualified Migrate
 import qualified New
 import qualified Publish
 import qualified Repl
@@ -352,6 +354,21 @@ createUpgradeCommand =
     details = "The `upgrade` command migrates Elm projects to Canopy:"
     example = PP.indent 4 (PP.green "canopy upgrade")
     flags = createUpgradeFlags
+
+-- | Create the migrate command for elm.json to canopy.json conversion.
+--
+-- Reads an existing elm.json, converts field names to Canopy equivalents,
+-- and writes a canopy.json file.  The original elm.json is preserved
+-- unless @--remove-old@ is specified.
+--
+-- @since 0.19.2
+createMigrateCommand :: Command
+createMigrateCommand =
+  Terminal.Command "migrate" Terminal.Uncommon details example Terminal.noArgs flags Migrate.run
+  where
+    details = "The `migrate` command converts elm.json to canopy.json format:"
+    example = PP.indent 4 (PP.green "canopy migrate")
+    flags = createMigrateFlags
 
 -- | Create the bench command for compilation benchmarking.
 --
@@ -686,6 +703,12 @@ createUpgradeFlags =
   Terminal.flags Upgrade.Flags
     |-- Terminal.onOff "dry-run" "Preview changes without applying them."
     |-- Terminal.onOff "verbose" "Show verbose output."
+
+createMigrateFlags :: Terminal.Flags Migrate.Flags
+createMigrateFlags =
+  Terminal.flags Migrate.Flags
+    |-- Terminal.onOff "dry-run" "Preview changes without writing files."
+    |-- Terminal.onOff "remove-old" "Delete elm.json after successful migration."
 
 createBenchFlags :: Terminal.Flags Bench.Flags
 createBenchFlags =

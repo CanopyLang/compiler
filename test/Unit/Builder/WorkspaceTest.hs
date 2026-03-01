@@ -74,15 +74,17 @@ testWorkspaceOutlineTypes =
       testCase "isWorkspace returns False for App" $ do
         let app =
               Outline.App
-                ( Outline.AppOutline
-                    Version.compiler
-                    []
-                    Map.empty
-                    Map.empty
-                    Map.empty
-                    Map.empty
-                    Map.empty
-                )
+                Outline.AppOutline
+                  { Outline._appCanopy = Version.compiler,
+                    Outline._appSrcDirs = [],
+                    Outline._appDeps = Map.empty,
+                    Outline._appTestDeps = Map.empty,
+                    Outline._appDepsDirect = Map.empty,
+                    Outline._appDepsIndirect = Map.empty,
+                    Outline._appTestDepsDirect = Map.empty,
+                    Outline._appScripts = Nothing,
+                    Outline._appRepository = Nothing
+                  }
         Outline.isWorkspace app @?= False,
       testCase "allDeps returns shared deps for workspace" $ do
         let coreName = Pkg.core

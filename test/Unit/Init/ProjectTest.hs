@@ -88,7 +88,9 @@ outlineConfigTests =
 
         case outline of
           Outline.App appOutline -> do
-            let Outline.AppOutline _ sourceDirs _ _ directs _ testDeps = appOutline
+            let sourceDirs = Outline._appSrcDirs appOutline
+                directs = Outline._appDepsDirect appOutline
+                testDeps = Outline._appTestDepsDirect appOutline
             -- Verify source directories
             case sourceDirs of
               (Outline.RelativeSrcDir first : _) ->
@@ -107,8 +109,8 @@ outlineConfigTests =
             outline = Project.createOutlineConfig context solverDetails
 
         case outline of
-          Outline.App (Outline.AppOutline _ sourceDirs _ _ _ _ _) -> do
-            case sourceDirs of
+          Outline.App app -> do
+            case Outline._appSrcDirs app of
               [Outline.RelativeSrcDir first, Outline.RelativeSrcDir second] -> do
                 first @?= "src"
                 second @?= "lib"
@@ -125,10 +127,10 @@ outlineConfigTests =
             outline = Project.createOutlineConfig context allSolverDeps
 
         case outline of
-          Outline.App (Outline.AppOutline _ _ _ _ directs indirects _) -> do
-            Map.member Pkg.core directs @?= True
-            Map.member Pkg.browser indirects @?= True
-            Map.member Pkg.browser directs @?= False
+          Outline.App app -> do
+            Map.member Pkg.core (Outline._appDepsDirect app) @?= True
+            Map.member Pkg.browser (Outline._appDepsIndirect app) @?= True
+            Map.member Pkg.browser (Outline._appDepsDirect app) @?= False
           _ -> fail "Expected App outline"
     ]
 
@@ -236,8 +238,8 @@ sourceDirTests =
             outline = Project.createOutlineConfig context solverDetails
 
         case outline of
-          Outline.App (Outline.AppOutline _ sourceDirs _ _ _ _ _) -> do
-            case sourceDirs of
+          Outline.App app -> do
+            case Outline._appSrcDirs app of
               [Outline.RelativeSrcDir dir] -> do
                 dir @?= "custom"
               _ -> fail "Expected single custom directory"
@@ -260,21 +262,17 @@ integrationTests =
             outline = Project.createOutlineConfig context solverDetails
 
         case outline of
-          Outline.App (Outline.AppOutline compiler sourceDirs _ _ directs _ testDeps) -> do
-            -- Should use current compiler version
-            compiler @?= Version.compiler
+          Outline.App app -> do
+            Outline._appCanopy app @?= Version.compiler
 
-            -- Should have default source directory
-            case sourceDirs of
+            case Outline._appSrcDirs app of
               [Outline.RelativeSrcDir "src"] -> pure ()
               _ -> fail "Expected default src directory"
 
-            -- Should include all default dependencies as direct
-            Map.size directs @?= 3
-            Map.member Pkg.core directs @?= True
+            Map.size (Outline._appDepsDirect app) @?= 3
+            Map.member Pkg.core (Outline._appDepsDirect app) @?= True
 
-            -- Test dependencies should be empty
-            Map.null testDeps @?= True
+            Map.null (Outline._appTestDepsDirect app) @?= True
           _ -> fail "Expected App outline",
       Test.testCase "project creation with custom context" $ do
         let customContext =
@@ -285,14 +283,12 @@ integrationTests =
             outline = Project.createOutlineConfig customContext solverDetails
 
         case outline of
-          Outline.App (Outline.AppOutline _ sourceDirs _ _ _ _ testDeps) -> do
-            -- Should have custom source directories
-            case sourceDirs of
+          Outline.App app -> do
+            case Outline._appSrcDirs app of
               [Outline.RelativeSrcDir "app", Outline.RelativeSrcDir "shared"] -> pure ()
               _ -> fail "Expected custom source directories"
 
-            -- Should have test dependencies
-            Map.size testDeps @?= 1
+            Map.size (Outline._appTestDepsDirect app) @?= 1
           _ -> fail "Expected App outline"
     ]
 
@@ -322,10 +318,9 @@ errorHandlingTests =
             outline = Project.createOutlineConfig context Map.empty
 
         case outline of
-          Outline.App (Outline.AppOutline _ _ _ _ directs indirects _) -> do
-            -- Should have empty dependencies
-            Map.null directs @?= True
-            Map.null indirects @?= True
+          Outline.App app -> do
+            Map.null (Outline._appDepsDirect app) @?= True
+            Map.null (Outline._appDepsIndirect app) @?= True
           _ -> fail "Expected App outline",
       Test.testCase "dependency extraction is safe with empty data" $ do
         let emptyFormatted = Project.formatDependencies Map.empty

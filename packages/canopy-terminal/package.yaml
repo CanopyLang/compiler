@@ -24,6 +24,7 @@ category: Compiler, Language
 dependencies:
   - base
   - aeson
+  - aeson-pretty
   - ansi-terminal
   - binary
   - ansi-wl-pprint

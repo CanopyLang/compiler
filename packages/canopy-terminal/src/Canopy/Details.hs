@@ -122,7 +122,9 @@ defaultWorkspaceApp =
       Outline._appTestDeps = Map.empty,
       Outline._appDepsDirect = Map.empty,
       Outline._appDepsIndirect = Map.empty,
-      Outline._appTestDepsDirect = Map.empty
+      Outline._appTestDepsDirect = Map.empty,
+      Outline._appScripts = Nothing,
+      Outline._appRepository = Nothing
     }
 
 -- | Get exposed modules list from either list or dict format.
@@ -133,8 +135,8 @@ getExposedList = Outline.flattenExposed
 getSrcDirs :: Outline.Outline -> [FilePath]
 getSrcDirs outline =
   case outline of
-    Outline.App (Outline.AppOutline _ srcDirs _ _ _ _ _) ->
-      map toAbsPath srcDirs
+    Outline.App app ->
+      map toAbsPath (Outline._appSrcDirs app)
     Outline.Pkg _ -> ["src"]
     Outline.Workspace _ -> []
   where

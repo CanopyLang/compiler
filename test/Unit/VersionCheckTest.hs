@@ -119,7 +119,9 @@ appWithVersion ver =
       Outline._appTestDeps = Map.empty,
       Outline._appDepsDirect = Map.singleton Pkg.core Version.one,
       Outline._appDepsIndirect = Map.empty,
-      Outline._appTestDepsDirect = Map.empty
+      Outline._appTestDepsDirect = Map.empty,
+      Outline._appScripts = Nothing,
+      Outline._appRepository = Nothing
     }
 
 -- | Create a PkgOutline with a specific Canopy constraint.
