@@ -36,6 +36,7 @@ module File.Archive
   , writePackageReturnCanopyJson
     -- * Entry Processing
   , writeEntry
+  , writeEntrySafeForJson
   , writeEntryReturnCanopyJson
     -- * Path Utilities
   , extractRelativePath
@@ -57,11 +58,13 @@ import System.FilePath ((</>))
 import qualified Codec.Archive.Zip as Zip
 import qualified Control.Monad as Monad
 import qualified Data.Foldable as Foldable
+import qualified Data.IORef as IORef
 import qualified Data.Traversable as Traversable
 import qualified Data.ByteString as BS
 import qualified Data.ByteString.Lazy as LBS
 import qualified Data.List as List
 import qualified Data.Text as Text
+import qualified Canopy.Limits as Limits
 import Logging.Event (LogEvent (..))
 import qualified Logging.Logger as Log
 import qualified System.Directory as Dir
@@ -96,7 +99,8 @@ writePackage destination archive =
     allEntries@(firstEntry : _) -> do
       checkDestinationExists destination
       let rootDepth = calculateRootDepth firstEntry
-      Foldable.traverse_ (writeEntry destination rootDepth) allEntries
+      totalRef <- IORef.newIORef (0 :: Int)
+      Foldable.traverse_ (writeEntrySafe destination rootDepth totalRef) allEntries
 
 -- | Check if destination directory exists (for logging).
 checkDestinationExists :: FilePath -> IO ()
@@ -124,14 +128,14 @@ calculateRootDepth _ =
 -- Returns 'Just' ByteString content if config file was found and extracted,
 -- 'Nothing' if no config file (canopy.json or elm.json) exists in the archive.
 writePackageReturnCanopyJson :: FilePath -> Zip.Archive -> IO (Maybe BS.ByteString)
-writePackageReturnCanopyJson destination archive = do
+writePackageReturnCanopyJson destination archive =
   case Zip.zEntries archive of
-    [] -> do
-      pure Nothing
+    [] -> pure Nothing
     allEntries@(firstEntry : _) -> do
       logPackageWrite destination
       let rootDepth = calculateRootDepth firstEntry
-      canopyJsonResults <- Traversable.traverse (writeEntryReturnCanopyJson destination rootDepth) allEntries
+      totalRef <- IORef.newIORef (0 :: Int)
+      canopyJsonResults <- Traversable.traverse (writeEntrySafeForJson destination rootDepth totalRef) allEntries
       pure (Monad.msum canopyJsonResults)
 
 -- | Log package extraction operation.
@@ -141,6 +145,79 @@ logPackageWrite destination = do
   destinationExists <- Dir.doesDirectoryExist destination
   Log.logEvent (ArchiveOperation "extract" (Text.pack (destination <> " exists: " <> show destinationExists)))
 
+-- | Extract a single ZIP entry with size enforcement.
+--
+-- Checks per-entry and cumulative size limits before writing.
+-- Throws an 'IOError' if either limit is exceeded.
+writeEntrySafe :: FilePath -> Int -> IORef.IORef Int -> Zip.Entry -> IO ()
+writeEntrySafe destination rootDepth totalRef entry = do
+  let relativePath = extractRelativePath rootDepth entry
+      allowed = isAllowedPath relativePath && isWithinDestination destination relativePath
+      entrySize = fromIntegral (Zip.eUncompressedSize entry)
+  Monad.when allowed $ do
+    enforceEntryLimit relativePath entrySize
+    enforceTotalLimit totalRef entrySize
+    writeEntryContent destination relativePath entry
+
+-- | Reject a single entry that exceeds the per-file size limit.
+enforceEntryLimit :: FilePath -> Int -> IO ()
+enforceEntryLimit relativePath entrySize =
+  Monad.when (entrySize > Limits.maxArchiveEntryBytes) $
+    ioError (userError (entryTooLargeMsg relativePath entrySize))
+
+-- | Build the error message for an oversized entry.
+entryTooLargeMsg :: FilePath -> Int -> String
+entryTooLargeMsg relativePath entrySize =
+  "Archive entry too large: " <> relativePath
+    <> " (" <> show entrySize <> " bytes, limit "
+    <> show Limits.maxArchiveEntryBytes <> ")"
+
+-- | Reject extraction when cumulative bytes exceed the total limit.
+enforceTotalLimit :: IORef.IORef Int -> Int -> IO ()
+enforceTotalLimit totalRef entrySize = do
+  currentTotal <- IORef.readIORef totalRef
+  let newTotal = currentTotal + entrySize
+  Monad.when (newTotal > Limits.maxArchiveExtractedBytes) $
+    ioError (userError (totalTooLargeMsg newTotal))
+  IORef.writeIORef totalRef newTotal
+
+-- | Build the error message for exceeding the total extraction limit.
+totalTooLargeMsg :: Int -> String
+totalTooLargeMsg newTotal =
+  "Archive extraction exceeds total size limit: "
+    <> show newTotal <> " bytes (limit "
+    <> show Limits.maxArchiveExtractedBytes <> ")"
+
+-- | Write a single entry's content (file or directory).
+writeEntryContent :: FilePath -> FilePath -> Zip.Entry -> IO ()
+writeEntryContent destination relativePath entry =
+  if isDirectoryPath relativePath
+    then do
+      Log.logEvent . ArchiveOperation "extract" . Text.pack $ ("EXTRACT_DIRECTORY: " <> relativePath)
+      createEntryDirectory destination relativePath
+    else do
+      Log.logEvent . ArchiveOperation "extract" . Text.pack $ ("EXTRACT_FILE: " <> relativePath)
+      writeEntryFile destination relativePath entry
+
+-- | Extract a single ZIP entry with size enforcement, returning config content.
+--
+-- Checks per-entry and cumulative size limits before writing, then returns
+-- config file content (canopy.json or elm.json) if found.
+-- Throws an 'IOError' if either size limit is exceeded.
+--
+-- @since 0.19.2
+writeEntrySafeForJson :: FilePath -> Int -> IORef.IORef Int -> Zip.Entry -> IO (Maybe BS.ByteString)
+writeEntrySafeForJson destination rootDepth totalRef entry
+  | not allowed = pure Nothing
+  | otherwise = do
+      enforceEntryLimit relativePath entrySize
+      enforceTotalLimit totalRef entrySize
+      processAllowedEntry destination relativePath entry
+  where
+    relativePath = extractRelativePath rootDepth entry
+    allowed = isAllowedPath relativePath && isWithinDestination destination relativePath
+    entrySize = fromIntegral (Zip.eUncompressedSize entry)
+
 -- | Extract a single ZIP entry to the destination.
 --
 -- Processes one entry from the ZIP archive, checking security constraints
@@ -149,14 +226,8 @@ writeEntry :: FilePath -> Int -> Zip.Entry -> IO ()
 writeEntry destination rootDepth entry = do
   let relativePath = extractRelativePath rootDepth entry
       allowed = isAllowedPath relativePath && isWithinDestination destination relativePath
-  Monad.when allowed $ do
-    if isDirectoryPath relativePath
-      then do
-        Log.logEvent . ArchiveOperation "extract" . Text.pack $ ("EXTRACT_DIRECTORY: " <> relativePath)
-        createEntryDirectory destination relativePath
-      else do
-        Log.logEvent . ArchiveOperation "extract" . Text.pack $ ("EXTRACT_FILE: " <> relativePath)
-        writeEntryFile destination relativePath entry
+  Monad.when allowed $
+    writeEntryContent destination relativePath entry
 
 -- | Extract relative path from ZIP entry.
 --

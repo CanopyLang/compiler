@@ -38,6 +38,10 @@ module Canopy.Limits
     maxModuleCount,
     maxImportsPerModule,
 
+    -- * Archive Limits
+    maxArchiveExtractedBytes,
+    maxArchiveEntryBytes,
+
     -- * Validation
     checkFileSize,
     FileSizeError (..),
@@ -97,6 +101,26 @@ maxModuleCount = 10000
 -- @since 0.19.2
 maxImportsPerModule :: Int
 maxImportsPerModule = 500
+
+-- | Maximum total extracted bytes from a package archive (200 MB).
+--
+-- Package archives should decompress to at most a few MB. This limit
+-- provides protection against zip bombs while being generous enough
+-- for any legitimate package.
+--
+-- @since 0.19.2
+maxArchiveExtractedBytes :: Int
+maxArchiveExtractedBytes = 200 * 1024 * 1024
+
+-- | Maximum size of a single extracted file (50 MB).
+--
+-- No individual file in a package should be this large. Source files
+-- are already limited to 10 MB by 'maxSourceFileBytes'; this limit
+-- catches oversized assets and binary blobs.
+--
+-- @since 0.19.2
+maxArchiveEntryBytes :: Int
+maxArchiveEntryBytes = 50 * 1024 * 1024
 
 -- | Result of a file size check.
 --
