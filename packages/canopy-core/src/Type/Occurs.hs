@@ -52,8 +52,9 @@ occursContent _seen (FlexSuper _ _) foundCycle = return foundCycle
 occursContent _seen (RigidVar _) foundCycle = return foundCycle
 occursContent _seen (RigidSuper _ _) foundCycle = return foundCycle
 occursContent seen (Structure term) foundCycle = occursTerm seen term foundCycle
-occursContent seen (Alias _ _ args _) foundCycle =
+occursContent seen (Alias _ _ args realVar) foundCycle =
   foldrM (occursHelp seen) foundCycle (fmap snd args)
+    >>= occursHelp seen realVar
 occursContent _seen Error foundCycle = return foundCycle
 
 -- | Check occurs within a flat type term.

@@ -423,7 +423,7 @@ adjustRankContent youngMark visitMark groupRank content =
     RigidVar _ -> return groupRank
     RigidSuper _ _ -> return groupRank
     Structure flatType -> adjustRankStructure go flatType
-    Alias _ _ args _ -> adjustRankAlias go args
+    Alias _ _ args realVar -> adjustRankAlias go args realVar
     Error -> return groupRank
 
 adjustRankStructure :: (Variable -> IO Int) -> FlatType -> IO Int
@@ -448,9 +448,11 @@ adjustRankTuple go a b maybeC = do
     Nothing -> return (max ma mb)
     Just c -> max (max ma mb) <$> go c
 
-adjustRankAlias :: (Variable -> IO Int) -> [(Name.Name, Variable)] -> IO Int
-adjustRankAlias go args =
-  foldM (\rank (_, argVar) -> max rank <$> go argVar) outermostRank args
+adjustRankAlias :: (Variable -> IO Int) -> [(Name.Name, Variable)] -> Variable -> IO Int
+adjustRankAlias go args realVar = do
+  argsRank <- foldM (\rank (_, argVar) -> max rank <$> go argVar) outermostRank args
+  realRank <- go realVar
+  return (max argsRank realRank)
 
 -- COPY
 
