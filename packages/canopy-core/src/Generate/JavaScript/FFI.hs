@@ -393,10 +393,18 @@ isValidJsIdentifier (c : cs) = isValidFirst c && all isValidRest cs
     isValidRest x = Char.isAlphaNum x || x == '_' || x == '$'
 isValidJsIdentifier [] = False
 
--- | Escape a string for safe inclusion in a JavaScript single-quoted literal.
+-- | Escape a string for safe inclusion in a JavaScript string literal.
 --
--- Escapes backslashes and single quotes to prevent string breakout
--- when constructing JS string literals for FFI call paths.
+-- Escapes all characters that could break out of or corrupt a JS string:
+--
+-- * Backslash (@\\@) -- escape character itself
+-- * Single quote (@\'@) -- string delimiter
+-- * Double quote (@\"@) -- defense-in-depth for double-quoted contexts
+-- * Newline (@\\n@) -- line terminator
+-- * Carriage return (@\\r@) -- line terminator
+-- * Null byte (@\\0@) -- string terminator in some engines
+-- * U+2028 LINE SEPARATOR -- JS line terminator (pre-ES2019)
+-- * U+2029 PARAGRAPH SEPARATOR -- JS line terminator (pre-ES2019)
 --
 -- @since 0.19.2
 escapeJsString :: String -> String
@@ -404,6 +412,10 @@ escapeJsString = concatMap escapeJsChar
   where
     escapeJsChar '\\' = "\\\\"
     escapeJsChar '\'' = "\\'"
+    escapeJsChar '"' = "\\\""
     escapeJsChar '\n' = "\\n"
     escapeJsChar '\r' = "\\r"
+    escapeJsChar '\0' = "\\0"
+    escapeJsChar '\x2028' = "\\u2028"
+    escapeJsChar '\x2029' = "\\u2029"
     escapeJsChar c = [c]

@@ -1,0 +1,534 @@
+cabal-version: 2.2
+
+-- This file has been generated from package.yaml by hpack version 0.38.1.
+--
+-- see: https://github.com/sol/hpack
+
+name:           canopy
+version:        0.19.1
+synopsis:       The `canopy` command line interface.
+description:    This includes commands like `canopy make`, `canopy repl`, and many others
+                for helping make Canopy developers happy and productive.
+category:       Compiler, Language
+homepage:       https://github.com/quinten/canopy
+author:         Quinten Kasteel
+maintainer:     info@canopy-lang.org
+copyright:      Copyright (c) 2025-present, Quinten Kasteel
+license:        BSD-3-Clause
+license-file:   LICENSE
+build-type:     Simple
+
+library
+  other-modules:
+      Paths_canopy
+  autogen-modules:
+      Paths_canopy
+  default-extensions:
+      ConstraintKinds
+      DataKinds
+      DerivingStrategies
+      DerivingVia
+      DeriveFunctor
+      DeriveGeneric
+      DeriveDataTypeable
+      DuplicateRecordFields
+      FlexibleContexts
+      FlexibleInstances
+      GADTs
+      KindSignatures
+      LambdaCase
+      MultiParamTypeClasses
+      NamedFieldPuns
+      OverloadedStrings
+      PolyKinds
+      RankNTypes
+      ScopedTypeVariables
+      StandaloneDeriving
+      TypeApplications
+      TypeFamilies
+      TypeOperators
+      ViewPatterns
+      UndecidableInstances
+  ghc-options: -Wall -fwarn-tabs -O2
+  build-depends:
+      HTTP
+    , SHA
+    , ansi-terminal
+    , ansi-wl-pprint <0.7
+    , async
+    , base
+    , binary
+    , bytestring
+    , canopy-builder
+    , canopy-core
+    , canopy-driver
+    , canopy-query
+    , canopy-terminal
+    , containers
+    , crypton-connection
+    , deepseq
+    , directory
+    , edit-distance
+    , file-embed
+    , filelock
+    , filepath
+    , fsnotify
+    , ghc-prim
+    , haskeline
+    , http-client
+    , http-client-tls
+    , http-types
+    , language-glsl
+    , language-javascript
+    , lens
+    , mtl
+    , network
+    , network-uri
+    , parsec
+    , process
+    , raw-strings-qq
+    , scientific
+    , snap-core
+    , snap-server
+    , stm
+    , template-haskell
+    , text
+    , time
+    , tls <2
+    , unordered-containers
+    , utf8-string
+    , vector
+    , websockets
+    , zip-archive
+  default-language: Haskell2010
+
+executable canopy
+  main-is: Main.hs
+  other-modules:
+      Paths_canopy
+  autogen-modules:
+      Paths_canopy
+  hs-source-dirs:
+      app
+  default-extensions:
+      ConstraintKinds
+      DataKinds
+      DerivingStrategies
+      DerivingVia
+      DeriveFunctor
+      DeriveGeneric
+      DeriveDataTypeable
+      DuplicateRecordFields
+      FlexibleContexts
+      FlexibleInstances
+      GADTs
+      KindSignatures
+      LambdaCase
+      MultiParamTypeClasses
+      NamedFieldPuns
+      OverloadedStrings
+      PolyKinds
+      RankNTypes
+      ScopedTypeVariables
+      StandaloneDeriving
+      TypeApplications
+      TypeFamilies
+      TypeOperators
+      ViewPatterns
+      UndecidableInstances
+  ghc-options: -Wall -fwarn-tabs -rtsopts -threaded -with-rtsopts=-N -Werror=incomplete-patterns -Werror=missing-fields
+  build-depends:
+      HTTP
+    , SHA
+    , ansi-terminal
+    , ansi-wl-pprint <0.7
+    , async
+    , base
+    , binary
+    , bytestring
+    , canopy
+    , canopy-builder
+    , canopy-core
+    , canopy-driver
+    , canopy-query
+    , canopy-terminal
+    , containers
+    , crypton-connection
+    , deepseq
+    , directory
+    , edit-distance
+    , file-embed
+    , filelock
+    , filepath
+    , fsnotify
+    , ghc-prim
+    , haskeline
+    , http-client
+    , http-client-tls
+    , http-types
+    , language-glsl
+    , language-javascript
+    , lens
+    , mtl
+    , network
+    , network-uri
+    , parsec
+    , process
+    , raw-strings-qq
+    , scientific
+    , snap-core
+    , snap-server
+    , stm
+    , template-haskell
+    , text
+    , time
+    , tls <2
+    , unordered-containers
+    , utf8-string
+    , vector
+    , websockets
+    , zip-archive
+  default-language: Haskell2010
+
+test-suite canopy-test
+  type: exitcode-stdio-1.0
+  main-is: Main.hs
+  other-modules:
+      Golden.JsGenGolden
+      Golden.ParseAliasGolden
+      Golden.ParseExprGolden
+      Golden.ParseModuleGolden
+      Golden.ParseTypeGolden
+      Golden.SecurityGolden
+      Integration.CanExtensionTest
+      Integration.CodeSplitIntegrationTest
+      Integration.CompilerTest
+      Integration.DevelopTest
+      Integration.EndToEndTest
+      Integration.InitTest
+      Integration.InstallTest
+      Integration.JsonIntegrationTest
+      Integration.MakeTest
+      Integration.PureBuilderIntegrationTest
+      Integration.Terminal.ChompIntegrationTest
+      Integration.TerminalIntegrationTest
+      Integration.WatchIntegrationTest
+      Property.ArithmeticLawsTest
+      Property.Data.NameProperties
+      Property.Generate.CodeSplitProperties
+      Property.Generate.SourceMapProperties
+      Property.Type.UnifyProperties
+      Property.Type.UnionFindProperties
+      Unit.AST.CanonicalArithmeticTest
+      Unit.AST.CanonicalTypeTest
+      Unit.AST.OptimizedTest
+      Unit.AST.SourceArithmeticTest
+      Unit.AST.SourceTest
+      Unit.AST.Utils.BinopTest
+      Unit.AST.Utils.ShaderTest
+      Unit.AST.Utils.TypeTest
+      Unit.AuditTest
+      Unit.Builder.CacheVersionTest
+      Unit.Builder.GraphTest
+      Unit.Builder.HashTest
+      Unit.Builder.IncrementalTest
+      Unit.Builder.LockFileTest
+      Unit.Builder.ModuleLoaderTest
+      Unit.Builder.PackageCacheTest
+      Unit.Builder.SolverTest
+      Unit.Builder.StateTest
+      Unit.Builder.WorkspaceTest
+      Unit.Canonicalize.DupsTest
+      Unit.Canonicalize.ExpressionArithmeticTest
+      Unit.Canonicalize.LazyImportValidationTest
+      Unit.Canonicalize.ModuleTest
+      Unit.Canonicalize.PatternTest
+      Unit.Canopy.LimitsTest
+      Unit.Canopy.VersionTest
+      Unit.CLI.CommandsTest
+      Unit.CLI.DocumentationTest
+      Unit.CLI.ParsersTest
+      Unit.Data.BagTest
+      Unit.Data.IndexTest
+      Unit.Data.Map.UtilsTest
+      Unit.Data.NameTest
+      Unit.Data.NonEmptyListTest
+      Unit.Data.OneOrMoreTest
+      Unit.Data.Utf8Test
+      Unit.Deps.AdvisoryTest
+      Unit.Deps.RegistryTest
+      Unit.DevelopMainTest
+      Unit.DiffTest
+      Unit.Docs.CommandTest
+      Unit.Docs.RenderTest
+      Unit.Editor.IntegrationTest
+      Unit.FFI.EscapeTest
+      Unit.FFI.ManifestTest
+      Unit.FFI.ResolveTest
+      Unit.FFI.ValidatorTest
+      Unit.File.ArchiveTest
+      Unit.File.BinaryTest
+      Unit.File.FileSystemTest
+      Unit.File.TimeTest
+      Unit.File.Utf8Test
+      Unit.Generate.CodeSplit.AnalyzeTest
+      Unit.Generate.CodeSplit.ManifestTest
+      Unit.Generate.CodeSplit.RuntimeTest
+      Unit.Generate.CodeSplit.TypesTest
+      Unit.Generate.ExpressionTest
+      Unit.Generate.HtmlSecurityTest
+      Unit.Generate.JavaScript.ExpressionArithmeticTest
+      Unit.Generate.MinifyTest
+      Unit.Generate.NameTest
+      Unit.Generate.SourceMapTest
+      Unit.Generate.StringPoolTest
+      Unit.Generate.TreeShakeTest
+      Unit.HttpTest
+      Unit.Init.DisplayTest
+      Unit.Init.EnvironmentTest
+      Unit.Init.ProjectTest
+      Unit.Init.TypesTest
+      Unit.Init.ValidationTest
+      Unit.InitTest
+      Unit.InstallTest
+      Unit.Json.DecodeTest
+      Unit.Json.EncodeTest
+      Unit.Json.StringTest
+      Unit.Logging.ConfigTest
+      Unit.Logging.EventTest
+      Unit.Logging.SinkTest
+      Unit.MainTest
+      Unit.Make.ReproducibleTest
+      Unit.MakeTest
+      Unit.NameReversalTest
+      Unit.New.Compiler.DriverTest
+      Unit.NewTest
+      Unit.Optimize.CaseTest
+      Unit.Optimize.ConstantFoldTest
+      Unit.Optimize.DecisionTreeTest
+      Unit.Optimize.ExpressionArithmeticTest
+      Unit.Optimize.NamesTest
+      Unit.OutlineFormatTest
+      Unit.Parse.ExpressionArithmeticTest
+      Unit.Parse.ExpressionTest
+      Unit.Parse.LazyImportTest
+      Unit.Parse.ModuleTest
+      Unit.Parse.PatternTest
+      Unit.Parse.TypeTest
+      Unit.Plugin.PipelineTest
+      Unit.Publish.ArchiveTest
+      Unit.Queries.ParseModuleTest
+      Unit.Query.EngineTest
+      Unit.Repl.CommandsTest
+      Unit.Repl.StateTest
+      Unit.Repl.TypeQueryTest
+      Unit.Repl.TypesTest
+      Unit.Reporting.DiagnosticJsonTest
+      Unit.Reporting.DiagnosticTest
+      Unit.Reporting.Doc.ColorQQTest
+      Unit.Reporting.ErrorCodeTest
+      Unit.Reporting.ErrorHierarchyTest
+      Unit.ScriptsTest
+      Unit.SelfUpdateTest
+      Unit.Terminal.ChompTest
+      Unit.Terminal.Error.FormattingTest
+      Unit.Terminal.Error.SuggestionsTest
+      Unit.Terminal.Error.TypesTest
+      Unit.Terminal.ErrorTest
+      Unit.Terminal.Lint.ConfigTest
+      Unit.Terminal.Lint.RulesTest
+      Unit.TerminalTest
+      Unit.Type.InstantiateTest
+      Unit.Type.OccursTest
+      Unit.Type.ParallelTest
+      Unit.Type.SolveTest
+      Unit.Type.UnifyTest
+      Unit.Type.UnionFindTest
+      Unit.VendorTest
+      Unit.VersionCheckTest
+      Unit.Watch.LiveReloadTest
+      Unit.WatchTest
+      Unit.WebIDL.CommandTest
+      Unit.Worker.PoolTest
+  hs-source-dirs:
+      test
+  default-extensions:
+      ConstraintKinds
+      DataKinds
+      DerivingStrategies
+      DerivingVia
+      DeriveFunctor
+      DeriveGeneric
+      DeriveDataTypeable
+      DuplicateRecordFields
+      FlexibleContexts
+      FlexibleInstances
+      GADTs
+      KindSignatures
+      LambdaCase
+      MultiParamTypeClasses
+      NamedFieldPuns
+      OverloadedStrings
+      PolyKinds
+      RankNTypes
+      ScopedTypeVariables
+      StandaloneDeriving
+      TypeApplications
+      TypeFamilies
+      TypeOperators
+      ViewPatterns
+      UndecidableInstances
+  ghc-options: -Wall -fwarn-tabs -rtsopts -threaded -with-rtsopts=-N
+  build-depends:
+      HTTP
+    , QuickCheck
+    , SHA
+    , aeson
+    , ansi-terminal
+    , ansi-wl-pprint <0.7
+    , async
+    , base
+    , binary
+    , bytestring
+    , canopy
+    , canopy-builder
+    , canopy-core
+    , canopy-driver
+    , canopy-query
+    , canopy-terminal
+    , canopy-webidl
+    , containers
+    , crypton-connection
+    , deepseq
+    , directory
+    , edit-distance
+    , file-embed
+    , filelock
+    , filepath
+    , fsnotify
+    , ghc-prim
+    , haskeline
+    , http-client
+    , http-client-tls
+    , http-types
+    , language-glsl
+    , language-javascript
+    , lens
+    , mtl
+    , network
+    , network-uri
+    , parsec
+    , process
+    , raw-strings-qq
+    , scientific
+    , snap-core
+    , snap-server
+    , stm
+    , tasty
+    , tasty-golden
+    , tasty-hunit
+    , tasty-quickcheck
+    , template-haskell
+    , temporary
+    , text
+    , time
+    , tls <2
+    , unordered-containers
+    , utf8-string
+    , vector
+    , websockets
+    , zip-archive
+  default-language: Haskell2010
+
+benchmark canopy-bench
+  type: exitcode-stdio-1.0
+  main-is: Main.hs
+  other-modules:
+      Bench.Cache
+      Bench.Generate
+      Bench.Hash
+      Bench.Json
+      Bench.Optimize
+      Bench.Parse
+      Bench.TreeShake
+      Paths_canopy
+  autogen-modules:
+      Paths_canopy
+  hs-source-dirs:
+      bench
+  default-extensions:
+      ConstraintKinds
+      DataKinds
+      DerivingStrategies
+      DerivingVia
+      DeriveFunctor
+      DeriveGeneric
+      DeriveDataTypeable
+      DuplicateRecordFields
+      FlexibleContexts
+      FlexibleInstances
+      GADTs
+      KindSignatures
+      LambdaCase
+      MultiParamTypeClasses
+      NamedFieldPuns
+      OverloadedStrings
+      PolyKinds
+      RankNTypes
+      ScopedTypeVariables
+      StandaloneDeriving
+      TypeApplications
+      TypeFamilies
+      TypeOperators
+      ViewPatterns
+      UndecidableInstances
+  ghc-options: -Wall -fwarn-tabs -rtsopts -threaded -with-rtsopts=-N -O2
+  build-depends:
+      HTTP
+    , SHA
+    , ansi-terminal
+    , ansi-wl-pprint <0.7
+    , async
+    , base
+    , binary
+    , bytestring
+    , canopy-builder
+    , canopy-core
+    , containers
+    , criterion
+    , crypton-connection
+    , deepseq
+    , directory
+    , edit-distance
+    , file-embed
+    , filelock
+    , filepath
+    , fsnotify
+    , ghc-prim
+    , haskeline
+    , http-client
+    , http-client-tls
+    , http-types
+    , language-glsl
+    , language-javascript
+    , lens
+    , mtl
+    , network
+    , network-uri
+    , parsec
+    , process
+    , raw-strings-qq
+    , scientific
+    , snap-core
+    , snap-server
+    , stm
+    , template-haskell
+    , text
+    , time
+    , tls <2
+    , unordered-containers
+    , utf8-string
+    , vector
+    , websockets
+    , zip-archive
+  default-language: Haskell2010
