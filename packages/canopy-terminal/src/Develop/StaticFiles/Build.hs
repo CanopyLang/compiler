@@ -16,6 +16,7 @@ import qualified Data.ByteString.Lazy as LBS
 import qualified Canopy.Data.NonEmptyList as NE
 import qualified Generate
 import qualified Reporting
+import qualified Reporting.Diagnostic as Diag
 import qualified Reporting.Exit as Exit
 import qualified Reporting.Task as Task
 import qualified System.Directory as Dir
@@ -39,8 +40,13 @@ buildReactorFrontEnd =
           do
             details <- Task.io (Details.loadForReactorTH Reporting.silent root) >>= either (Task.throw . Exit.ReactorBadDetails) pure
             artifacts <- Task.io (Build.fromPaths Reporting.silent root details (NE.toList paths)) >>= either (Task.throw . Exit.ReactorBadBuild) pure
-            javascript <- Task.mapError Exit.ReactorBadGenerate $ Generate.prod root details artifacts
+            javascript <- Task.mapError wrapGenerate $ Generate.prod root details artifacts
             return (LBS.toStrict (BB.toLazyByteString javascript))
+
+-- | Wrap a legacy string error into a structured Reactor error.
+wrapGenerate :: String -> Exit.Reactor
+wrapGenerate msg =
+  Exit.ReactorBadGenerate [Diag.stringToDiagnostic Diag.PhaseGenerate "CODE GENERATION ERROR" msg]
 
 paths :: NE.List FilePath
 paths =

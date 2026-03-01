@@ -55,6 +55,7 @@ import Repl.Types
   )
 import qualified Repl.TypeQuery as TypeQuery
 import qualified Reporting
+import qualified Reporting.Diagnostic as Diag
 import Reporting.Doc.ColorQQ (c)
 import qualified Reporting.Exit as Exit
 import qualified Reporting.Task as Task
@@ -287,7 +288,9 @@ runCompilation rootDir enableAnsi _state output scope =
 
     generateJavaScript projectRoot projectDetails projectAnsi artifacts name =
       let config = Generate.ReplConfig projectAnsi name
-      in Task.mapError Exit.ReplBadGenerate (Generate.repl projectRoot projectDetails config artifacts)
+      in Task.mapError wrapGenerate (Generate.repl projectRoot projectDetails config artifacts)
+
+    wrapGenerate msg = Exit.ReplBadGenerate [Diag.stringToDiagnostic Diag.PhaseGenerate "CODE GENERATION ERROR" msg]
 
 -- | Execute JavaScript and return result.
 --

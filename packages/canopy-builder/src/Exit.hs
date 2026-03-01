@@ -4,7 +4,7 @@
 --
 -- Clean, minimal exit codes and error types for the NEW builder.
 -- Provides beautiful colored error output using the Reporting infrastructure.
--- 'CompileDiagnosticError' carries structured 'Diagnostic' values from
+-- All compilation errors carry structured 'Diagnostic' values from
 -- the compiler phases for rich terminal and JSON output.
 --
 -- @since 0.19.1
@@ -40,24 +40,20 @@ data BuildError
 
 -- | Compilation errors.
 --
--- 'CompileDiagnosticError' carries structured diagnostics from the
--- compiler phases (parse, canonicalize, type check). These provide
+-- 'CompileError' carries structured diagnostics from the compiler
+-- phases (parse, canonicalize, type check, optimize). These provide
 -- error codes, source spans, suggestions, and colored output.
 data CompileError
-  = CompileParseError FilePath String
-  | CompileTypeError FilePath String
-  | CompileCanonicalizeError FilePath String
-  | CompileOptimizeError FilePath String
+  = CompileError FilePath [Diagnostic]
   | CompileModuleNotFound FilePath
-  | CompileDiagnosticError FilePath [Diagnostic]
   | CompileTimeoutError FilePath
   | CompileFileTooLarge FilePath Int Int
   deriving (Show)
 
 -- | Make command errors.
 data MakeError
-  = MakeBuildError String
-  | MakeBadGenerate String
+  = MakeBuildError [Diagnostic]
+  | MakeBadGenerate [Diagnostic]
   | MakeNoMain
   | MakeMultipleFilesIntoHtml
   deriving (Show)
@@ -83,18 +79,10 @@ toString = \case
 
 compileErrorToString :: CompileError -> String
 compileErrorToString = \case
-  CompileParseError path msg ->
-    "Parse error in " ++ path ++ ": " ++ msg
-  CompileTypeError path msg ->
-    "Type error in " ++ path ++ ": " ++ msg
-  CompileCanonicalizeError path msg ->
-    "Canonicalization error in " ++ path ++ ": " ++ msg
-  CompileOptimizeError path msg ->
-    "Optimization error in " ++ path ++ ": " ++ msg
+  CompileError path diags ->
+    "Compile error in " ++ path ++ ": " ++ show (length diags) ++ " diagnostic(s)"
   CompileModuleNotFound path ->
     "Module not found: " ++ path
-  CompileDiagnosticError path diags ->
-    "Compile error in " ++ path ++ ": " ++ show (length diags) ++ " diagnostic(s)"
   CompileTimeoutError path ->
     "Compilation timed out for " ++ path ++ " (exceeded 5 minute limit)"
   CompileFileTooLarge path actual limit ->
@@ -104,8 +92,10 @@ compileErrorToString = \case
 -- | Convert make error to string.
 makeErrorToString :: MakeError -> String
 makeErrorToString = \case
-  MakeBuildError msg -> "BUILD ERROR: " ++ msg
-  MakeBadGenerate msg -> "GENERATE ERROR: " ++ msg
+  MakeBuildError diags ->
+    "BUILD ERROR: " ++ show (length diags) ++ " diagnostic(s)"
+  MakeBadGenerate diags ->
+    "GENERATE ERROR: " ++ show (length diags) ++ " diagnostic(s)"
   MakeNoMain -> "ERROR: No main function found"
   MakeMultipleFilesIntoHtml -> "ERROR: Cannot generate HTML from multiple files"
 
@@ -135,24 +125,16 @@ toDoc = \case
 
 -- | Convert compile error to beautiful colored Doc.
 --
--- 'CompileDiagnosticError' renders using the structured diagnostic
+-- All compilation errors render using the structured diagnostic
 -- system with error codes, source snippets, and suggestions.
 compileErrorToDoc :: CompileError -> Doc.Doc
 compileErrorToDoc = \case
-  CompileParseError path msg ->
-    legacyErrorDoc "Parse error" path msg
-  CompileTypeError path msg ->
-    legacyErrorDoc "Type error" path msg
-  CompileCanonicalizeError path msg ->
-    legacyErrorDoc "Error" path msg
-  CompileOptimizeError path msg ->
-    legacyErrorDoc "Optimization error" path msg
+  CompileError path diags ->
+    renderDiagnostics path diags
   CompileModuleNotFound path ->
     structuredError "MODULE NOT FOUND"
       (Doc.indent 4 (Doc.dullyellow (Doc.fromChars path)))
       (Doc.toSimpleHint "Check the \"source-directories\" in your canopy.json or elm.json to make sure the module is in one of the listed directories.")
-  CompileDiagnosticError path diags ->
-    renderDiagnostics path diags
   CompileTimeoutError path ->
     structuredError "COMPILATION TIMEOUT"
       (Doc.indent 4 (Doc.dullyellow (Doc.fromChars path)))
@@ -173,15 +155,6 @@ renderDiagnostics path diags =
 renderOneDiagnostic :: FilePath -> Diagnostic -> Doc.Doc
 renderOneDiagnostic path diag =
   Diag.diagnosticToDoc path diag
-
--- | Render a legacy string-based error with colored formatting.
-legacyErrorDoc :: String -> FilePath -> String -> Doc.Doc
-legacyErrorDoc label path msg =
-  Doc.vcat
-    [ Doc.reflow (label ++ " in " ++ path ++ ":"),
-      "",
-      Doc.indent 4 (Doc.dullyellow (Doc.fromChars msg))
-    ]
 
 -- | Build a structured error with title bar, explanation, and fix.
 structuredError :: String -> Doc.Doc -> Doc.Doc -> Doc.Doc

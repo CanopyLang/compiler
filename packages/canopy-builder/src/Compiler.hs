@@ -69,6 +69,7 @@ import qualified Data.Map.Strict as Map
 import qualified Data.Text as Text
 import qualified Exit
 import qualified Generate.JavaScript as JS
+import qualified Reporting.Diagnostic as Diag
 import Logging.Event (LogEvent (..))
 import qualified Logging.Logger as Log
 import qualified PackageCache
@@ -100,7 +101,8 @@ compileFromPaths pkg isApp (ProjectRoot root) srcDirs paths = do
   discoveryResult <- discoverTransitiveDeps root srcDirs paths depInterfaces projectType
   case discoveryResult of
     Left (DiscoveryParseError path msg) ->
-      return (Left (Exit.BuildCannotCompile (Exit.CompileParseError path (Text.unpack msg))))
+      return (Left (Exit.BuildCannotCompile (Exit.CompileError path
+        [Diag.stringToDiagnostic Diag.PhaseParse "SYNTAX ERROR" (Text.unpack msg)])))
     Right allModuleInfo -> do
       Log.logEvent (BuildModuleQueued (Text.pack ("discovered " ++ show (Map.size allModuleInfo) ++ " total modules")))
       compileResult <- compileModulesInOrder pkg projectType root depInterfaces allModuleInfo

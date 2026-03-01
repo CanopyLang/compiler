@@ -58,6 +58,7 @@ import qualified Data.Text as Text
 import qualified Driver
 import qualified Exit
 import qualified GHC.Conc as Conc
+import qualified Reporting.Diagnostic as Diag
 import qualified Generate.JavaScript as JS
 import Logging.Event (LogEvent (..), Phase (..))
 import qualified Logging.Logger as Log
@@ -92,8 +93,8 @@ compileModulesInOrder pkg projectType root initialInterfaces moduleInfo = do
   Log.logEvent (BuildModuleQueued (Text.pack ("dependency graph: " ++ show (Map.size moduleInfo) ++ " modules")))
   case Parallel.groupByDependencyLevel graph of
     Left (Parallel.CycleDetectedDuringLeveling cycleModules) ->
-      return (Left (Exit.BuildCannotCompile (Exit.CompileParseError ""
-        ("Dependency cycle detected among modules: " ++ show cycleModules))))
+      return (Left (Exit.BuildCannotCompile (Exit.CompileError ""
+        [Diag.stringToDiagnostic Diag.PhaseBuild "DEPENDENCY CYCLE" ("Dependency cycle detected among modules: " ++ show cycleModules)])))
     Right plan -> do
       let levels = Parallel.planLevels plan
           modulePaths = Map.map fst moduleInfo
@@ -261,15 +262,24 @@ finishCompilation cacheRef root modName path modImports ifaces compiledResult = 
   return (Right (moduleResult, (modName, mrInterface moduleResult)))
 
 -- | Convert a QueryError to a CompileError with proper categorization.
+--
+-- All string-based 'QueryError' constructors are wrapped into
+-- structured 'Diagnostic' values with appropriate phases.
 queryErrorToCompileError :: FilePath -> Query.QueryError -> Exit.CompileError
 queryErrorToCompileError path qErr =
   case qErr of
-    Query.ParseError _ msg -> Exit.CompileParseError path msg
-    Query.TypeError msg -> Exit.CompileTypeError path msg
-    Query.FileNotFound fpath -> Exit.CompileModuleNotFound fpath
-    Query.OtherError msg -> Exit.CompileCanonicalizeError path msg
-    Query.DiagnosticError diagPath diags -> Exit.CompileDiagnosticError diagPath diags
-    Query.TimeoutError tpath -> Exit.CompileTimeoutError tpath
+    Query.ParseError _ msg ->
+      Exit.CompileError path [Diag.stringToDiagnostic Diag.PhaseParse "SYNTAX ERROR" msg]
+    Query.TypeError msg ->
+      Exit.CompileError path [Diag.stringToDiagnostic Diag.PhaseType "TYPE ERROR" msg]
+    Query.FileNotFound fpath ->
+      Exit.CompileModuleNotFound fpath
+    Query.OtherError msg ->
+      Exit.CompileError path [Diag.stringToDiagnostic Diag.PhaseCanon "CANONICALIZATION ERROR" msg]
+    Query.DiagnosticError diagPath diags ->
+      Exit.CompileError diagPath diags
+    Query.TimeoutError tpath ->
+      Exit.CompileTimeoutError tpath
 
 -- ARTIFACT ASSEMBLY
 

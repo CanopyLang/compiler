@@ -102,6 +102,8 @@ where
 
 import qualified Data.List as List
 import qualified Exit as BuildExit
+import Reporting.Diagnostic (Diagnostic)
+import qualified Reporting.Diagnostic as Diag
 import Reporting.Doc ((<+>))
 import qualified Reporting.Doc as Doc
 import Reporting.Exit.Install
@@ -201,8 +203,8 @@ docsToReport (DocsCannotWrite path msg) = docsCannotWriteError path msg
 data Make
   = MakeNoOutline
   | MakeBadDetails FilePath
-  | MakeBuildError String
-  | MakeBadGenerate String
+  | MakeBuildError [Diagnostic]
+  | MakeBadGenerate [Diagnostic]
   | MakeAppNeedsFileNames
   | MakePkgNeedsExposing
   | MakeNoMain
@@ -217,8 +219,8 @@ data Make
 makeToReport :: Make -> Report
 makeToReport MakeNoOutline = noOutlineError "canopy make"
 makeToReport (MakeBadDetails path) = badDetailsError path
-makeToReport (MakeBuildError msg) = buildError msg
-makeToReport (MakeBadGenerate msg) = generateError msg
+makeToReport (MakeBuildError diags) = diagnosticReport "BUILD ERROR" diags
+makeToReport (MakeBadGenerate diags) = diagnosticReport "CODE GENERATION ERROR" diags
 makeToReport MakeAppNeedsFileNames = appNeedsFileNamesError "canopy make src/Main.can"
 makeToReport MakePkgNeedsExposing = pkgNeedsExposingError
 makeToReport MakeNoMain = noMainError
@@ -232,14 +234,14 @@ makeToReport (MakeReproducibilityFailure offset) = reproducibilityFailureError o
 -- | REPL errors.
 data Repl
   = ReplBadDetails FilePath
-  | ReplBadGenerate String
+  | ReplBadGenerate [Diagnostic]
   | ReplCannotBuild BuildExit.BuildError
   deriving (Show)
 
 -- | Convert a 'Repl' error to a structured 'Report'.
 replToReport :: Repl -> Report
 replToReport (ReplBadDetails path) = badDetailsError path
-replToReport (ReplBadGenerate msg) = generateError msg
+replToReport (ReplBadGenerate diags) = diagnosticReport "CODE GENERATION ERROR" diags
 replToReport (ReplCannotBuild buildErr) = BuildExit.toDoc buildErr
 
 -- DIFF ERRORS
@@ -385,20 +387,20 @@ setupToReport (SetupCacheFailed msg) = setupCacheFailedError msg
 
 -- | Errors from the development server (reactor).
 data Reactor
-  = ReactorCompileError String
-  | ReactorBuildError String
+  = ReactorCompileError [Diagnostic]
+  | ReactorBuildError [Diagnostic]
   | ReactorBadDetails FilePath
   | ReactorBadBuild BuildExit.BuildError
-  | ReactorBadGenerate String
+  | ReactorBadGenerate [Diagnostic]
   deriving (Show)
 
 -- | Convert a 'Reactor' error to a structured 'Report'.
 reactorToReport :: Reactor -> Report
-reactorToReport (ReactorCompileError msg) = reactorCompileError msg
-reactorToReport (ReactorBuildError msg) = reactorBuildErrorMsg msg
+reactorToReport (ReactorCompileError diags) = diagnosticReport "COMPILE ERROR" diags
+reactorToReport (ReactorBuildError diags) = diagnosticReport "BUILD ERROR" diags
 reactorToReport (ReactorBadDetails path) = badDetailsError path
 reactorToReport (ReactorBadBuild buildErr) = BuildExit.toDoc buildErr
-reactorToReport (ReactorBadGenerate msg) = generateError msg
+reactorToReport (ReactorBadGenerate diags) = diagnosticReport "CODE GENERATION ERROR" diags
 
 -- SHARED ERROR MESSAGE BUILDERS
 
@@ -486,16 +488,19 @@ optimizeAndDebugError =
       , fixLine (Doc.green "canopy make --debug       " <+> Doc.fromChars "for development builds")
       ])
 
-buildError :: String -> Report
-buildError msg =
-  structuredErrorNoFix "BUILD ERROR"
-    (Doc.reflow msg)
-
-generateError :: String -> Report
-generateError msg =
-  structuredError "CODE GENERATION ERROR"
-    (Doc.reflow ("Code generation failed: " ++ msg))
-    (Doc.reflow "This is likely a compiler bug. Please report it at the project repository.")
+-- | Render a list of diagnostics under a titled error bar.
+--
+-- Falls back to a generic message when the diagnostic list is empty.
+diagnosticReport :: String -> [Diagnostic] -> Report
+diagnosticReport title [] =
+  structuredErrorNoFix title (Doc.reflow "An error occurred.")
+diagnosticReport title diags =
+  Doc.vcat
+    [ errorBar title,
+      "",
+      Doc.vcat (fmap (Diag.diagnosticToDoc "<unknown>") diags),
+      ""
+    ]
 
 -- | Error for when two builds of the same source produce different output.
 reproducibilityFailureError :: Int -> Report
@@ -664,16 +669,6 @@ setupCacheFailedError msg =
   structuredError "CACHE ERROR"
     (Doc.reflow ("The package cache encountered an error: " ++ msg))
     (Doc.reflow "Check disk space and permissions for ~/.canopy/")
-
-reactorCompileError :: String -> Report
-reactorCompileError msg =
-  structuredErrorNoFix "COMPILE ERROR"
-    (Doc.reflow msg)
-
-reactorBuildErrorMsg :: String -> Report
-reactorBuildErrorMsg msg =
-  structuredErrorNoFix "BUILD ERROR"
-    (Doc.reflow msg)
 
 -- NEW ERROR MESSAGE BUILDERS
 

@@ -55,6 +55,7 @@ import qualified Canopy.Data.NonEmptyList as NE
 import qualified Generate
 import qualified Generate.Html as Html
 import qualified Reporting
+import qualified Reporting.Diagnostic as Diag
 import qualified Reporting.Exit as Exit
 import qualified Reporting.Task as Task
 import qualified Stuff
@@ -140,7 +141,9 @@ buildSourceArtifacts root details path = do
 -- | Generate JavaScript code from build artifacts.
 generateJavaScriptCode :: FilePath -> Details.Details -> Build.Artifacts -> Task.Task Exit.Reactor Builder
 generateJavaScriptCode root details artifacts =
-  Task.mapError Exit.ReactorBadGenerate (Generate.dev root details artifacts)
+  Task.mapError wrapGenerate (Generate.dev root details artifacts)
+  where
+    wrapGenerate msg = Exit.ReactorBadGenerate [Diag.stringToDiagnostic Diag.PhaseGenerate "CODE GENERATION ERROR" msg]
 
 -- | Validate project structure for compilation.
 --

@@ -81,6 +81,8 @@ import Logging.Event (LogEvent (..), Duration (..), Phase (..), CompileStats (..
 import qualified Logging.Logger as Log
 import qualified PackageCache
 import qualified Parse.Module as Parse
+import Reporting.Diagnostic (Diagnostic)
+import qualified Reporting.Diagnostic as Diag
 import qualified System.Directory as Dir
 import System.FilePath (takeDirectory, (</>))
 import qualified Canopy.Limits as Limits
@@ -98,14 +100,14 @@ data BuildError
   = BuildErrorSolver !Solver.SolverError
   | BuildErrorCycle ![ModuleName.Raw]
   | BuildErrorMissing ![ModuleName.Raw]
-  | BuildErrorCompile !String
-  deriving (Show, Eq)
+  | BuildErrorCompile ![Diag.Diagnostic]
+  deriving (Show)
 
 -- | Build result.
 data BuildResult
   = BuildSuccess !Int -- ^ Number of modules compiled
   | BuildFailure !BuildError
-  deriving (Show, Eq)
+  deriving (Show)
 
 -- | Initialize pure builder.
 --
@@ -173,7 +175,7 @@ buildFromPaths builder paths = do
   parsedModules <- parseAllModules paths
 
   case parsedModules of
-    Left err -> return (BuildFailure (BuildErrorCompile err))
+    Left diags -> return (BuildFailure (BuildErrorCompile diags))
     Right modules -> do
       Log.logEvent (BuildModuleQueued (Text.pack ("parsed " ++ show (length modules) ++ " modules")))
 
@@ -207,31 +209,37 @@ buildFromPaths builder paths = do
               return (BuildSuccess successCount)
             else do
               let failures = filter (not . isSuccess) results
-              Log.logEvent (BuildFailed (Text.pack (show (length failures) ++ " modules failed")))
-              return (BuildFailure (BuildErrorCompile (show (length failures) ++ " modules failed")))
+                  failCount = length failures
+              Log.logEvent (BuildFailed (Text.pack (show failCount ++ " modules failed")))
+              return (BuildFailure (BuildErrorCompile [Diag.stringToDiagnostic Diag.PhaseBuild "BUILD FAILURE" (show failCount ++ " modules failed")]))
 
 -- | Parse all modules from file paths.
-parseAllModules :: [FilePath] -> IO (Either String [(FilePath, Src.Module)])
+--
+-- Returns structured diagnostics for any parse failures.
+parseAllModules :: [FilePath] -> IO (Either [Diagnostic] [(FilePath, Src.Module)])
 parseAllModules paths = do
   results <- mapM parseModuleFromPath paths
   let (errors, successes) = partitionEithers results
   if null errors
     then return (Right successes)
-    else return (Left ("Parse errors: " ++ show (length errors)))
+    else return (Left (concat errors))
 
 -- | Parse single module from path.
 --
 -- Checks file size against 'Limits.maxSourceFileBytes' before reading.
-parseModuleFromPath :: FilePath -> IO (Either String (FilePath, Src.Module))
+-- Returns structured diagnostics on failure.
+parseModuleFromPath :: FilePath -> IO (Either [Diagnostic] (FilePath, Src.Module))
 parseModuleFromPath path = do
   sizeResult <- checkSourceFileSize path
   case sizeResult of
-    Left msg -> return (Left msg)
+    Left diags -> return (Left diags)
     Right () -> do
       sourceBytes <- BS.readFile path
       case Parse.fromByteString Parse.Application sourceBytes of
-        Left parseErr -> return (Left (path ++ ": " ++ show parseErr))
-        Right sourceModule -> return (Right (path, sourceModule))
+        Left parseErr ->
+          return (Left [Diag.stringToDiagnostic Diag.PhaseParse "SYNTAX ERROR" (path ++ ": " ++ show parseErr)])
+        Right sourceModule ->
+          return (Right (path, sourceModule))
 
 -- | Extract dependencies from parsed modules.
 extractDependencies :: [(FilePath, Src.Module)] -> [(ModuleName.Raw, [ModuleName.Raw])]
@@ -295,9 +303,10 @@ compileWithDriver builder moduleName path = do
   case result of
     Left err -> do
       let errStr = show err
+          diag = Diag.stringToDiagnostic Diag.PhaseBuild "COMPILE ERROR" errStr
       Log.logEvent (CompileFailed path PhaseBuild (Text.pack errStr))
       State.setModuleStatus (builderEngine builder) moduleName (State.StatusFailed errStr now)
-      return (BuildFailure (BuildErrorCompile errStr))
+      return (BuildFailure (BuildErrorCompile [diag]))
     Right compiled -> do
       Log.logEvent (CompileCompleted path (CompileStats 1 (Duration 0)))
       accumulateInterface builder compiled
@@ -480,10 +489,10 @@ getBuildProgress builder = do
 -- | Check that a source file does not exceed the size limit.
 --
 -- Returns @Right ()@ if the file is within bounds, or @Left@ with
--- a descriptive error message if it exceeds 'Limits.maxSourceFileBytes'.
+-- a structured diagnostic if it exceeds 'Limits.maxSourceFileBytes'.
 --
 -- @since 0.19.2
-checkSourceFileSize :: FilePath -> IO (Either String ())
+checkSourceFileSize :: FilePath -> IO (Either [Diagnostic] ())
 checkSourceFileSize path = do
   size <- Dir.getFileSize path
   pure (validateSourceSize path (fromIntegral size))
@@ -491,12 +500,13 @@ checkSourceFileSize path = do
 -- | Pure validation of source file size.
 --
 -- @since 0.19.2
-validateSourceSize :: FilePath -> Int -> Either String ()
+validateSourceSize :: FilePath -> Int -> Either [Diagnostic] ()
 validateSourceSize path size =
   case Limits.checkFileSize path size Limits.maxSourceFileBytes of
     Nothing -> Right ()
     Just (Limits.FileSizeError fp actual limit) ->
-      Left (fp ++ ": file is " ++ showMB actual
-        ++ ", exceeds " ++ showMB limit ++ " limit")
-  where
-    showMB bytes = show (bytes `div` (1024 * 1024)) ++ " MB"
+      Left [Diag.stringToDiagnostic Diag.PhaseBuild "FILE TOO LARGE" msg]
+      where
+        msg = fp ++ ": file is " ++ showMB actual
+          ++ ", exceeds " ++ showMB limit ++ " limit"
+        showMB bytes = show (bytes `div` (1024 * 1024)) ++ " MB"

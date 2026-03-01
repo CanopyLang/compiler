@@ -27,6 +27,7 @@ module Reporting.Diagnostic
     -- * Construction helpers
     makeDiagnostic,
     makeSimpleDiagnostic,
+    stringToDiagnostic,
     addSuggestion,
     addSecondarySpan,
     addNote,
@@ -224,6 +225,27 @@ makeSimpleDiagnostic code phase title region message =
       _diagNotes = [],
       _diagPhase = phase
     }
+
+-- | Create a diagnostic from a legacy string error message.
+--
+-- Used during the migration from raw @String@ error types to
+-- structured @Diagnostic@ values. The string message is wrapped
+-- in a minimal diagnostic with a dummy region and the given
+-- phase and title. This preserves error information while the
+-- production sites are incrementally updated to produce proper
+-- diagnostics.
+--
+-- @since 0.19.2
+stringToDiagnostic :: Phase -> Text -> String -> Diagnostic
+stringToDiagnostic phase title msg =
+  makeSimpleDiagnostic
+    (ErrorCode 0)
+    phase
+    title
+    dummyRegion
+    (Doc.fromChars msg)
+  where
+    dummyRegion = Ann.Region (Ann.Position 1 1) (Ann.Position 1 1)
 
 -- | Add a suggestion to a diagnostic.
 addSuggestion :: Suggestion -> Diagnostic -> Diagnostic

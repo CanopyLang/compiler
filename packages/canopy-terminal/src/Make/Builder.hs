@@ -70,6 +70,7 @@ import Make.Types
     bcPackage,
     bcRoot,
   )
+import qualified Reporting.Diagnostic as Diag
 import qualified Reporting.Exit as Exit
 import qualified Reporting.Task as Task
 
@@ -165,13 +166,14 @@ createSplitBuilder ::
   Compiler.Artifacts ->
   Task Split.SplitOutput
 createSplitBuilder ctx artifacts =
-  Task.mapError Exit.MakeBadGenerate $
+  Task.mapError wrapGenerate $
     return (generateSplit (desiredToMode mode ffiUnsafeFlag ffiDebugFlag globalGraph) artifacts)
   where
     mode = ctx ^. bcDesiredMode
     ffiUnsafeFlag = ctx ^. bcFfiUnsafe
     ffiDebugFlag = ctx ^. bcFfiDebug
     globalGraph = extractGlobalGraph artifacts
+    wrapGenerate msg = Exit.MakeBadGenerate [Diag.stringToDiagnostic Diag.PhaseGenerate "CODE GENERATION ERROR" msg]
 
 -- | Generate split output for artifacts using the code splitting pipeline.
 generateSplit :: Mode.Mode -> Compiler.Artifacts -> Split.SplitOutput
@@ -214,13 +216,14 @@ generateForMode ::
   Compiler.Artifacts ->
   Task (Builder, Maybe SourceMap.SourceMap)
 generateForMode mode ffiUnsafeFlag ffiDebugFlag artifacts =
-  Task.mapError Exit.MakeBadGenerate $
+  Task.mapError wrapGenerate $
     case mode of
       Debug -> return (generateJS (Mode.Dev Nothing False ffiUnsafeFlag ffiDebugFlag Set.empty) artifacts)
       Dev -> return (generateJS (Mode.Dev Nothing False ffiUnsafeFlag ffiDebugFlag Set.empty) artifacts)
       Prod -> return (generateJS (Mode.Prod (Mode.shortenFieldNames globalGraph) False ffiUnsafeFlag ffiDebugFlag StringPool.emptyPool Set.empty) artifacts)
   where
     globalGraph = extractGlobalGraph artifacts
+    wrapGenerate msg = Exit.MakeBadGenerate [Diag.stringToDiagnostic Diag.PhaseGenerate "CODE GENERATION ERROR" msg]
 
 -- Helper: Generate JavaScript from artifacts
 generateJS :: Mode.Mode -> Compiler.Artifacts -> (Builder, Maybe SourceMap.SourceMap)
