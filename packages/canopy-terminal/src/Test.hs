@@ -73,6 +73,7 @@ import qualified Canopy.Data.Utf8 as Utf8
 import qualified Data.ByteString.Builder as Builder
 import qualified Data.ByteString.Lazy as LBS
 import qualified Data.List as List
+import qualified Data.Text.Encoding as TextEnc
 import qualified Data.Map.Strict as Map
 import qualified Data.Maybe as Maybe
 import qualified Canopy.Data.NonEmptyList as NE
@@ -297,7 +298,7 @@ compileAndRunWithRoot root testFiles flags = do
 -- canonicalised under @Pkg.test@, not @Pkg.dummyName@).
 --
 -- @since 0.19.1
-compileTestFiles :: FilePath -> [FilePath] -> IO (Maybe (String, Map.Map ModuleName.Canonical Opt.Main))
+compileTestFiles :: FilePath -> [FilePath] -> IO (Maybe (Text.Text, Map.Map ModuleName.Canonical Opt.Main))
 compileTestFiles root testFiles = do
   ensureTestDepArtifacts root
   let pkg = Pkg.dummyName
@@ -430,28 +431,32 @@ testDepDir :: FilePath -> Pkg.Name -> Version.Version -> FilePath
 testDepDir cacheDir (Pkg.Name author project) version =
   cacheDir </> Utf8.toChars author </> Utf8.toChars project </> Version.toChars version
 
--- | Generate a JavaScript string from compiled artifacts.
-artifactsToJavaScript :: Compiler.Artifacts -> String
+-- | Generate JavaScript text from compiled artifacts.
+--
+-- Converts the Builder output directly to Text via UTF-8 decoding,
+-- avoiding the intermediate @[Char]@ allocation that the old
+-- @builderToString@ path imposed.
+--
+-- @since 0.19.2
+artifactsToJavaScript :: Compiler.Artifacts -> Text.Text
 artifactsToJavaScript artifacts =
-  postProcessJavaScript rawJs
+  postProcessJavaScript rawText
   where
     globalGraph = artifacts ^. Build.artifactsGlobalGraph
     ffiInfo = artifacts ^. Build.artifactsFFIInfo
     mains = collectMains artifacts
     (builder, _sourceMap) = JS.generate (Mode.Dev Nothing False False False Set.empty) globalGraph mains ffiInfo
-    rawJs = builderToString builder
+    rawText = TextEnc.decodeUtf8 (LBS.toStrict (Builder.toLazyByteString builder))
 
--- | Post-process JavaScript to fix syntax issues.
-postProcessJavaScript :: String -> String
-postProcessJavaScript js =
-  replace "elseif" "else if" js
-  where
-    replace old new = go
-      where
-        go [] = []
-        go str@(x : xs)
-          | old `List.isPrefixOf` str = new ++ go (drop (length old) str)
-          | otherwise = x : go xs
+-- | Post-process JavaScript to fix the @language-javascript@ rendering
+-- quirk where @else if@ is emitted as @elseif@.
+--
+-- Uses 'Text.replace' for O(n) text replacement instead of the previous
+-- character-by-character @isPrefixOf@ approach.
+--
+-- @since 0.19.2
+postProcessJavaScript :: Text.Text -> Text.Text
+postProcessJavaScript = Text.replace "elseif" "else if"
 
 -- | Collect main entries from all roots of the artifacts.
 collectMains :: Compiler.Artifacts -> Map.Map ModuleName.Canonical Opt.Main
@@ -469,11 +474,6 @@ extractMain pkg root =
     Build.Outside name _ (Opt.LocalGraph maybeMain _ _ _) ->
       fmap (\m -> (ModuleName.Canonical pkg name, m)) maybeMain
 
--- | Convert a 'Builder.Builder' to a plain 'String'.
-builderToString :: Builder.Builder -> String
-builderToString b =
-  map (toEnum . fromIntegral) (LBS.unpack (Builder.toLazyByteString b))
-
 -- ── Test Dispatch ────────────────────────────────────────────────────
 
 -- | Detect test type and dispatch to the appropriate execution pipeline.
@@ -482,7 +482,7 @@ builderToString b =
 -- 'Opt.BrowserTestMain' runs tests in a real browser via Playwright.
 -- 'Opt.TestMain' indicates a non-visual program (test or async).
 -- 'Opt.Static' indicates a standard HTML program (unit test with DOM output).
-dispatchByTestType :: String -> Map.Map ModuleName.Canonical Opt.Main -> [FilePath] -> Flags -> IO ExitCode
+dispatchByTestType :: Text.Text -> Map.Map ModuleName.Canonical Opt.Main -> [FilePath] -> Flags -> IO ExitCode
 dispatchByTestType jsContent mains testFiles flags
   | hasBrowserTestMain mains = executeBrowserExecutionTests jsContent testFiles flags
   | hasTestMain mains = executeBrowserTests jsContent testFiles flags
@@ -512,7 +512,7 @@ hasTestMain = any isTestMain . Map.elems
 -- NDJSON results from console.log events.
 --
 -- @since 0.19.1
-executeBrowserExecutionTests :: String -> [FilePath] -> Flags -> IO ExitCode
+executeBrowserExecutionTests :: Text.Text -> [FilePath] -> Flags -> IO ExitCode
 executeBrowserExecutionTests jsContent testFiles flags = do
   Print.println [c|{cyan|Browser execution tests detected.} Setting up real browser environment...|]
   Print.newline
@@ -520,7 +520,7 @@ executeBrowserExecutionTests jsContent testFiles flags = do
     `Exception.catch` handleBrowserError
 
 -- | Run the browser execution pipeline.
-runBrowserExecutionPipeline :: String -> [FilePath] -> Flags -> IO ExitCode
+runBrowserExecutionPipeline :: Text.Text -> [FilePath] -> Flags -> IO ExitCode
 runBrowserExecutionPipeline jsContent _testFiles flags = do
   playwrightReady <- Playwright.ensurePlaywrightInstalled
   if not playwrightReady
@@ -533,7 +533,7 @@ runBrowserExecutionPipeline jsContent _testFiles flags = do
           runBrowserExecutionWithServer jsContent flags browserRunner rpcModule
 
 -- | Start server, write HTML harness, launch Playwright, collect results.
-runBrowserExecutionWithServer :: String -> Flags -> JsContent -> JsContent -> IO ExitCode
+runBrowserExecutionWithServer :: Text.Text -> Flags -> JsContent -> JsContent -> IO ExitCode
 runBrowserExecutionWithServer jsContent flags browserRunner rpcModule = do
   setTestFilter (flags ^. testFilter)
   portResult <- Server.findAvailablePort
@@ -545,7 +545,7 @@ runBrowserExecutionWithServer jsContent flags browserRunner rpcModule = do
       tmpDir <- Dir.getTemporaryDirectory
       let htmlPath = tmpDir </> "canopy-browser-test.html"
           rpcPath = tmpDir </> "canopy-playwright-rpc.js"
-          harness = Harness.generateBrowserTestHarness (JsContent (Text.pack jsContent)) browserRunner
+          harness = Harness.generateBrowserTestHarness (JsContent jsContent) browserRunner
       writeFile htmlPath (Text.unpack (unHarnessContent harness))
       writeFile rpcPath (Text.unpack (unJsContent rpcModule))
       server <- Server.startTestServer tmpDir port
@@ -602,12 +602,12 @@ launchPlaywrightForBrowserTests port flags tmpDir = do
 -- ── Unit Test Execution ──────────────────────────────────────────────
 
 -- | Execute simple unit tests via the virtual DOM text harness.
-executeUnitTests :: String -> Flags -> IO ExitCode
+executeUnitTests :: Text.Text -> Flags -> IO ExitCode
 executeUnitTests jsContent flags = do
   setTestFilter (flags ^. testFilter)
   tmpDir <- Dir.getTemporaryDirectory
   let runnerPath = tmpDir </> "canopy-test-runner.js"
-      harness = Harness.generateUnitHarness (JsContent (Text.pack jsContent))
+      harness = Harness.generateUnitHarness (JsContent jsContent)
   writeFile runnerPath (Text.unpack (unHarnessContent harness))
   Runner.runNodeAndReport runnerPath (flags ^. testVerbose)
 
@@ -622,7 +622,7 @@ executeUnitTests jsContent flags = do
 -- 5. Generate the browser test harness
 -- 6. Execute via Node.js
 -- 7. Stop the server
-executeBrowserTests :: String -> [FilePath] -> Flags -> IO ExitCode
+executeBrowserTests :: Text.Text -> [FilePath] -> Flags -> IO ExitCode
 executeBrowserTests jsContent testFiles flags = do
   Print.println [c|{cyan|Browser tests detected.} Setting up test infrastructure...|]
   Print.newline
@@ -634,7 +634,7 @@ executeBrowserTests jsContent testFiles flags = do
 -- Checks Playwright installation first and prompts the user to install
 -- if missing. This ensures browser tests have browser binaries available
 -- before attempting execution.
-runBrowserPipeline :: String -> [FilePath] -> Flags -> IO ExitCode
+runBrowserPipeline :: Text.Text -> [FilePath] -> Flags -> IO ExitCode
 runBrowserPipeline jsContent testFiles flags = do
   playwrightReady <- Playwright.ensurePlaywrightInstalled
   if not playwrightReady
@@ -647,7 +647,7 @@ runBrowserPipeline jsContent testFiles flags = do
           runWithExternals jsContent testFiles flags runner executor playwright
 
 -- | Continue browser pipeline after loading external modules.
-runWithExternals :: String -> [FilePath] -> Flags -> JsContent -> JsContent -> JsContent -> IO ExitCode
+runWithExternals :: Text.Text -> [FilePath] -> Flags -> JsContent -> JsContent -> JsContent -> IO ExitCode
 runWithExternals jsContent testFiles flags runner executor playwright = do
   appResult <- resolveAppEntry testFiles flags
   appDir <- case appResult of
@@ -667,7 +667,7 @@ resolveAppEntry testFiles flags =
 -- Starts a file server from the given directory and generates the test
 -- harness with the server URL. When no @\@browser-app@ annotation is
 -- found, the current working directory is used.
-runBrowserTestsWithServer :: String -> Flags -> JsContent -> JsContent -> JsContent -> FilePath -> IO ExitCode
+runBrowserTestsWithServer :: Text.Text -> Flags -> JsContent -> JsContent -> JsContent -> FilePath -> IO ExitCode
 runBrowserTestsWithServer jsContent flags runner executor playwright appDir = do
   portResult <- Server.findAvailablePort
   case portResult of
@@ -679,7 +679,7 @@ runBrowserTestsWithServer jsContent flags runner executor playwright appDir = do
       when (flags ^. testVerbose) $ do
         let portStr = show (unServerPort port)
         Print.println [c|  Listening on {cyan|http://127.0.0.1:#{portStr}}|]
-      result <- generateAndRun flags runner executor playwright (JsContent (Text.pack jsContent)) (Just port) appDir
+      result <- generateAndRun flags runner executor playwright (JsContent jsContent) (Just port) appDir
       Server.stopTestServer server
       pure result
 
