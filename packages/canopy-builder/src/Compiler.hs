@@ -21,6 +21,7 @@
 module Compiler
   ( -- * Compilation Functions
     compileFromPaths,
+    compileFromPathsTimed,
     compileFromExposed,
 
     -- * Types (re-exported from Compiler.Types)
@@ -41,6 +42,9 @@ module Compiler
 
     -- * Re-exports for Terminal
     module Build.Artifacts,
+
+    -- * Re-exports for Bench
+    Driver.PhaseTimings (..),
   )
 where
 
@@ -57,7 +61,8 @@ import qualified Canopy.Package as Pkg
 import qualified Canopy.Version as Version
 import Compiler.Cache (decodeVersioned, elcoSchemaVersion, encodeVersioned)
 import Compiler.Discovery (DiscoveryError (..), discoverModulePaths, discoverTransitiveDeps)
-import Compiler.Parallel (assembleArtifacts, compileModulesInOrder)
+import Compiler.Parallel (assembleArtifacts, compileModulesInOrder, compileModulesInOrderTimed)
+import qualified Driver
 import Compiler.Types
   ( ModuleResult (..),
     SrcDir (..),
@@ -107,6 +112,36 @@ compileFromPaths pkg isApp (ProjectRoot root) srcDirs paths = do
       Log.logEvent (BuildModuleQueued (Text.pack ("discovered " ++ show (Map.size allModuleInfo) ++ " total modules")))
       compileResult <- compileModulesInOrder pkg projectType root depInterfaces allModuleInfo
       either (return . Left) (return . Right . assembleArtifacts pkg depGlobalGraph depFFIInfo) compileResult
+
+-- | Like 'compileFromPaths' but also returns aggregate per-phase timings.
+--
+-- Used by the bench command to report per-phase compilation breakdown.
+-- The timings sum across all compiled modules (cache hits report zero).
+--
+-- @since 0.19.2
+compileFromPathsTimed ::
+  Pkg.Name ->
+  Bool ->
+  ProjectRoot ->
+  [SrcDir] ->
+  [FilePath] ->
+  IO (Either Exit.BuildError (Build.Artifacts, Driver.PhaseTimings))
+compileFromPathsTimed pkg isApp (ProjectRoot root) srcDirs paths = do
+  Log.logEvent (BuildStarted (Text.pack "compileFromPathsTimed"))
+  maybeArtifacts <- loadDependencyArtifacts root
+  let (depInterfaces, depGlobalGraph, depFFIInfo) = extractArtifactTriple maybeArtifacts
+  let projectType = if isApp then Parse.Application else Parse.Package pkg
+  discoveryResult <- discoverTransitiveDeps root srcDirs paths depInterfaces projectType
+  case discoveryResult of
+    Left (DiscoveryParseError path msg) ->
+      return (Left (Exit.BuildCannotCompile (Exit.CompileError path
+        [Diag.stringToDiagnostic Diag.PhaseParse "SYNTAX ERROR" (Text.unpack msg)])))
+    Right allModuleInfo -> do
+      timedResult <- compileModulesInOrderTimed pkg projectType root depInterfaces allModuleInfo
+      case timedResult of
+        Left err -> return (Left err)
+        Right (compilationResult, timings) ->
+          return (Right (assembleArtifacts pkg depGlobalGraph depFFIInfo compilationResult, timings))
 
 -- | Compile from exposed modules using the query-based compiler.
 --

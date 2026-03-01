@@ -11,6 +11,7 @@
 module Compiler.Parallel
   ( -- * Parallel Compilation
     compileModulesInOrder,
+    compileModulesInOrderTimed,
 
     -- * Artifact Assembly
     assembleArtifacts,
@@ -56,6 +57,7 @@ import qualified Data.Maybe as Maybe
 import qualified Data.Set as Set
 import qualified Data.Text as Text
 import qualified Driver
+import Driver (PhaseTimings (..))
 import qualified Exit
 import qualified GHC.Conc as Conc
 import qualified Reporting.Diagnostic as Diag
@@ -106,6 +108,204 @@ compileModulesInOrder pkg projectType root initialInterfaces moduleInfo = do
       logIncrementalStats hitRef missRef
       Driver.logCacheStats engine
       return result
+
+-- | Compile modules in order with per-phase timing accumulation.
+--
+-- Like 'compileModulesInOrder' but also returns aggregate 'PhaseTimings'
+-- summed across all compiled modules. Used by the bench command to report
+-- per-phase breakdown.
+--
+-- @since 0.19.2
+compileModulesInOrderTimed ::
+  Pkg.Name ->
+  Parse.ProjectType ->
+  FilePath ->
+  Map.Map ModuleName.Raw Interface.Interface ->
+  Map.Map ModuleName.Raw (FilePath, [ModuleName.Raw]) ->
+  IO (Either Exit.BuildError (([ModuleResult], Map.Map ModuleName.Raw Interface.Interface), PhaseTimings))
+compileModulesInOrderTimed pkg projectType root initialInterfaces moduleInfo = do
+  timingsRef <- newIORef Driver.emptyTimings
+  result <- compileModulesInOrderWithTimings timingsRef pkg projectType root initialInterfaces moduleInfo
+  timings <- readIORef timingsRef
+  case result of
+    Left err -> return (Left err)
+    Right ok -> return (Right (ok, timings))
+
+-- | Internal: compile modules with a timing accumulator.
+compileModulesInOrderWithTimings ::
+  IORef PhaseTimings ->
+  Pkg.Name ->
+  Parse.ProjectType ->
+  FilePath ->
+  Map.Map ModuleName.Raw Interface.Interface ->
+  Map.Map ModuleName.Raw (FilePath, [ModuleName.Raw]) ->
+  IO (Either Exit.BuildError ([ModuleResult], Map.Map ModuleName.Raw Interface.Interface))
+compileModulesInOrderWithTimings timingsRef pkg projectType root initialInterfaces moduleInfo = do
+  Log.logEvent (BuildStarted (Text.pack ("timed parallel compilation: " ++ show (Map.size moduleInfo) ++ " modules")))
+  buildCache <- loadBuildCache root
+  cacheRef <- newIORef buildCache
+  hitRef <- newIORef (0 :: Int)
+  missRef <- newIORef (0 :: Int)
+  engine <- Engine.initEngine
+  let graph = buildDependencyGraph moduleInfo
+  case Parallel.groupByDependencyLevel graph of
+    Left (Parallel.CycleDetectedDuringLeveling cycleModules) ->
+      return (Left (Exit.BuildCannotCompile (Exit.CompileError ""
+        [Diag.stringToDiagnostic Diag.PhaseBuild "DEPENDENCY CYCLE" ("Dependency cycle detected among modules: " ++ show cycleModules)])))
+    Right plan -> do
+      let levels = Parallel.planLevels plan
+          modulePaths = Map.map fst moduleInfo
+          importMap = Map.map snd moduleInfo
+      result <- compileLevelsTimed timingsRef engine cacheRef hitRef missRef pkg projectType root levels initialInterfaces [] modulePaths importMap
+      finalCache <- readIORef cacheRef
+      saveBuildCache root finalCache
+      logIncrementalStats hitRef missRef
+      Driver.logCacheStats engine
+      return result
+
+-- | Compile dependency levels with timing accumulation.
+compileLevelsTimed ::
+  IORef PhaseTimings ->
+  Engine.QueryEngine ->
+  IORef Incremental.BuildCache ->
+  IORef Int ->
+  IORef Int ->
+  Pkg.Name ->
+  Parse.ProjectType ->
+  FilePath ->
+  [[ModuleName.Raw]] ->
+  Map.Map ModuleName.Raw Interface.Interface ->
+  [ModuleResult] ->
+  Map.Map ModuleName.Raw FilePath ->
+  Map.Map ModuleName.Raw [ModuleName.Raw] ->
+  IO (Either Exit.BuildError ([ModuleResult], Map.Map ModuleName.Raw Interface.Interface))
+compileLevelsTimed _ _ _ _ _ _ _ _ [] ifaces compiled _ _ = return (Right (reverse compiled, ifaces))
+compileLevelsTimed timingsRef engine cacheRef hitRef missRef pkg projType root (level : restLevels) ifaces compiled statuses importMap = do
+  levelResult <- compileLevelInParallelTimed timingsRef engine cacheRef hitRef missRef pkg projType root level ifaces statuses importMap
+  case levelResult of
+    Left err -> return (Left err)
+    Right (levelCompiled, levelIfaces) ->
+      compileLevelsTimed timingsRef engine cacheRef hitRef missRef pkg projType root restLevels
+        (Map.union levelIfaces ifaces) (reverse levelCompiled ++ compiled) statuses importMap
+
+-- | Compile a single dependency level in parallel with timing accumulation.
+compileLevelInParallelTimed ::
+  IORef PhaseTimings ->
+  Engine.QueryEngine ->
+  IORef Incremental.BuildCache ->
+  IORef Int ->
+  IORef Int ->
+  Pkg.Name ->
+  Parse.ProjectType ->
+  FilePath ->
+  [ModuleName.Raw] ->
+  Map.Map ModuleName.Raw Interface.Interface ->
+  Map.Map ModuleName.Raw FilePath ->
+  Map.Map ModuleName.Raw [ModuleName.Raw] ->
+  IO (Either Exit.BuildError ([ModuleResult], Map.Map ModuleName.Raw Interface.Interface))
+compileLevelInParallelTimed timingsRef engine cacheRef hitRef missRef pkg projType root modules ifaces statuses importMap = do
+  numCaps <- Conc.getNumCapabilities
+  sem <- QSem.newQSem (max 1 numCaps)
+  results <- Async.mapConcurrently (withSemaphore sem . compileOneModuleTimed timingsRef engine cacheRef hitRef missRef pkg projType root ifaces statuses importMap) modules
+  let (errors, successes) = partitionEithers results
+  case errors of
+    [err] -> return (Left err)
+    (_ : _) -> return (Left (Exit.BuildMultipleErrors (concatMap extractCompileErrors errors)))
+    [] -> return (Right (map fst successes, Map.fromList [pair | (_, pair) <- successes]))
+
+-- | Compile a single module with timing accumulation.
+compileOneModuleTimed ::
+  IORef PhaseTimings ->
+  Engine.QueryEngine ->
+  IORef Incremental.BuildCache ->
+  IORef Int ->
+  IORef Int ->
+  Pkg.Name ->
+  Parse.ProjectType ->
+  FilePath ->
+  Map.Map ModuleName.Raw Interface.Interface ->
+  Map.Map ModuleName.Raw FilePath ->
+  Map.Map ModuleName.Raw [ModuleName.Raw] ->
+  ModuleName.Raw ->
+  IO (Either Exit.BuildError (ModuleResult, (ModuleName.Raw, Interface.Interface)))
+compileOneModuleTimed timingsRef engine cacheRef hitRef missRef pkg projType root ifaces statuses importMap modName =
+  case Map.lookup modName statuses of
+    Nothing ->
+      return (Left (Exit.BuildCannotCompile (Exit.CompileModuleNotFound errMsg)))
+      where errMsg = "Internal error: Module " ++ Name.toChars modName ++ " not found in module paths"
+    Just path -> do
+      let modImports = Maybe.fromMaybe [] (Map.lookup modName importMap)
+      cached <- tryCacheHit cacheRef root modName path modImports ifaces
+      maybe (handleCacheMissTimed timingsRef engine cacheRef missRef pkg projType root modName path modImports ifaces)
+            (handleCacheHit hitRef modName) cached
+
+-- | Handle a cache miss with timing accumulation.
+handleCacheMissTimed ::
+  IORef PhaseTimings ->
+  Engine.QueryEngine ->
+  IORef Incremental.BuildCache ->
+  IORef Int ->
+  Pkg.Name ->
+  Parse.ProjectType ->
+  FilePath ->
+  ModuleName.Raw ->
+  FilePath ->
+  [ModuleName.Raw] ->
+  Map.Map ModuleName.Raw Interface.Interface ->
+  IO (Either Exit.BuildError (ModuleResult, (ModuleName.Raw, Interface.Interface)))
+handleCacheMissTimed timingsRef engine cacheRef missRef pkg projType root modName path modImports ifaces = do
+  atomicModifyIORef' missRef (\n -> (n + 1, ()))
+  Log.logEvent (CacheMiss PhaseBuild (Text.pack (Name.toChars modName)))
+  compileFreshTimed timingsRef engine cacheRef pkg projType root modName path modImports ifaces
+
+-- | Compile a module fresh with timing accumulation.
+compileFreshTimed ::
+  IORef PhaseTimings ->
+  Engine.QueryEngine ->
+  IORef Incremental.BuildCache ->
+  Pkg.Name ->
+  Parse.ProjectType ->
+  FilePath ->
+  ModuleName.Raw ->
+  FilePath ->
+  [ModuleName.Raw] ->
+  Map.Map ModuleName.Raw Interface.Interface ->
+  IO (Either Exit.BuildError (ModuleResult, (ModuleName.Raw, Interface.Interface)))
+compileFreshTimed timingsRef engine cacheRef pkg projType root modName path modImports ifaces = do
+  compilationResult <- Driver.compileModuleWithEngine engine pkg ifaces path projType
+  either
+    (return . Left . Exit.BuildCannotCompile . queryErrorToCompileError path)
+    (finishCompilationTimed timingsRef cacheRef root modName path modImports ifaces)
+    compilationResult
+
+-- | Finish compilation with timing accumulation.
+finishCompilationTimed ::
+  IORef PhaseTimings ->
+  IORef Incremental.BuildCache ->
+  FilePath ->
+  ModuleName.Raw ->
+  FilePath ->
+  [ModuleName.Raw] ->
+  Map.Map ModuleName.Raw Interface.Interface ->
+  Driver.CompileResult ->
+  IO (Either Exit.BuildError (ModuleResult, (ModuleName.Raw, Interface.Interface)))
+finishCompilationTimed timingsRef cacheRef root modName path modImports ifaces compiledResult = do
+  accumulateTimings timingsRef (Driver.compileResultTimings compiledResult)
+  finishCompilation cacheRef root modName path modImports ifaces compiledResult
+
+-- | Atomically add per-module timings to the accumulator.
+accumulateTimings :: IORef PhaseTimings -> PhaseTimings -> IO ()
+accumulateTimings ref new =
+  atomicModifyIORef' ref (\old -> (addTimings old new, ()))
+
+-- | Sum two 'PhaseTimings' values.
+addTimings :: PhaseTimings -> PhaseTimings -> PhaseTimings
+addTimings a b = PhaseTimings
+  { _timeParse = _timeParse a + _timeParse b
+  , _timeCanonicalize = _timeCanonicalize a + _timeCanonicalize b
+  , _timeTypeCheck = _timeTypeCheck a + _timeTypeCheck b
+  , _timeOptimize = _timeOptimize a + _timeOptimize b
+  }
 
 -- | Build the dependency graph from pre-computed module info.
 buildDependencyGraph ::

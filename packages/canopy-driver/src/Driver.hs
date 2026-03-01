@@ -16,6 +16,8 @@
 module Driver
   ( -- * Driver Types
     CompileResult (..),
+    PhaseTimings (..),
+    emptyTimings,
 
     -- * Single Module Compilation
     compileModule,
@@ -54,10 +56,43 @@ import qualified Queries.Parse.Module as ParseQuery
 import qualified Queries.Type.Check as TypeQuery
 import qualified Query.Engine as Engine
 import Query.Simple
+import qualified Data.Time.Clock as Clock
 import qualified System.Timeout as Timeout
 import qualified Worker.Pool as Pool
 import qualified Parse.Module as Parse
 import qualified Reporting.Annotation as Ann
+
+-- | Per-phase timing results for a single module compilation.
+--
+-- Each field records elapsed wall-clock seconds for one compiler phase.
+-- Used by the bench command to report per-phase breakdown.
+--
+-- @since 0.19.2
+data PhaseTimings = PhaseTimings
+  { _timeParse :: !Double,
+    _timeCanonicalize :: !Double,
+    _timeTypeCheck :: !Double,
+    _timeOptimize :: !Double
+  }
+  deriving (Eq, Show)
+
+-- | Zero timings for cache hits or untimed paths.
+--
+-- @since 0.19.2
+emptyTimings :: PhaseTimings
+emptyTimings = PhaseTimings 0 0 0 0
+
+-- | Time a single IO action, returning the result and elapsed seconds.
+--
+-- Uses 'Clock.getCurrentTime' for wall-clock measurement.
+--
+-- @since 0.19.2
+timePhase :: IO a -> IO (a, Double)
+timePhase action = do
+  start <- Clock.getCurrentTime
+  result <- action
+  end <- Clock.getCurrentTime
+  pure (result, realToFrac (Clock.diffUTCTime end start))
 
 -- | Compilation result with all artifacts.
 data CompileResult = CompileResult
@@ -65,7 +100,8 @@ data CompileResult = CompileResult
     compileResultTypes :: !(Map Name.Name Can.Annotation),
     compileResultInterface :: !Interface.Interface,
     compileResultLocalGraph :: !Opt.LocalGraph,
-    compileResultFFIInfo :: !(Map String JS.FFIInfo)
+    compileResultFFIInfo :: !(Map String JS.FFIInfo),
+    compileResultTimings :: !PhaseTimings
   }
 
 -- | Compile a module from file path (simplified).
@@ -115,20 +151,22 @@ compileFromSource pkg ifaces sourceModule = do
   ffiContent <- loadFFIContent sourceModule
   let foreignImports = Src._foreignImports sourceModule
       ffiInfoMap = buildFFIInfoMap foreignImports ffiContent
-  canonResult <- runCanonicalizePhase engine "<source>" pkg Parse.Application ifaces ffiContent sourceModule
+  (canonResult, canonTime) <- timePhase (runCanonicalizePhase engine "<source>" pkg Parse.Application ifaces ffiContent sourceModule)
   case canonResult of
     Left err -> return (Left err)
     Right canonModule -> do
-      typeResult <- runTypeCheckPhase engine "<unknown>" canonModule
+      (typeResult, typeTime) <- timePhase (runTypeCheckPhase engine "<unknown>" canonModule)
       case typeResult of
         Left err -> return (Left err)
         Right types -> do
-          optimizeResult <- runOptimizePhase engine types canonModule
+          (optimizeResult, optTime) <- timePhase (runOptimizePhase engine types canonModule)
           case optimizeResult of
             Left err -> return (Left err)
             Right localGraph -> do
               iface <- generateInterface pkg canonModule types
-              Log.logEvent (CompileCompleted "<source>" (CompileStats 1 (Duration 0)))
+              let totalMicros = round ((canonTime + typeTime + optTime) * 1000000)
+                  timings = PhaseTimings 0 canonTime typeTime optTime
+              Log.logEvent (CompileCompleted "<source>" (CompileStats 1 (Duration totalMicros)))
               return
                 ( Right
                     ( CompileResult
@@ -136,7 +174,8 @@ compileFromSource pkg ifaces sourceModule = do
                           compileResultTypes = types,
                           compileResultInterface = iface,
                           compileResultLocalGraph = localGraph,
-                          compileResultFFIInfo = ffiInfoMap
+                          compileResultFFIInfo = ffiInfoMap,
+                          compileResultTimings = timings
                         }
                     )
                 )
@@ -180,27 +219,29 @@ compileModuleCore ::
 compileModuleCore engine pkg ifaces path projectType = do
   Log.logEvent (CompileStarted path)
 
-  parseResult <- runParsePhase engine path projectType
+  (parseResult, parseTime) <- timePhase (runParsePhase engine path projectType)
   case parseResult of
     Left err -> return (Left err)
     Right sourceModule -> do
       ffiContent <- loadFFIContent sourceModule
       let foreignImports = Src._foreignImports sourceModule
           ffiInfoMap = buildFFIInfoMap foreignImports ffiContent
-      canonResult <- runCanonicalizePhase engine path pkg projectType ifaces ffiContent sourceModule
+      (canonResult, canonTime) <- timePhase (runCanonicalizePhase engine path pkg projectType ifaces ffiContent sourceModule)
       case canonResult of
         Left err -> return (Left err)
         Right canonModule -> do
-          typeResult <- runTypeCheckPhase engine path canonModule
+          (typeResult, typeTime) <- timePhase (runTypeCheckPhase engine path canonModule)
           case typeResult of
             Left err -> return (Left err)
             Right types -> do
-              optimizeResult <- runOptimizePhase engine types canonModule
+              (optimizeResult, optTime) <- timePhase (runOptimizePhase engine types canonModule)
               case optimizeResult of
                 Left err -> return (Left err)
                 Right localGraph -> do
                   iface <- generateInterface pkg canonModule types
-                  Log.logEvent (CompileCompleted path (CompileStats 1 (Duration 0)))
+                  let totalMicros = round ((parseTime + canonTime + typeTime + optTime) * 1000000)
+                      timings = PhaseTimings parseTime canonTime typeTime optTime
+                  Log.logEvent (CompileCompleted path (CompileStats 1 (Duration totalMicros)))
                   return
                     ( Right
                         ( CompileResult
@@ -208,7 +249,8 @@ compileModuleCore engine pkg ifaces path projectType = do
                               compileResultTypes = types,
                               compileResultInterface = iface,
                               compileResultLocalGraph = localGraph,
-                              compileResultFFIInfo = ffiInfoMap
+                              compileResultFFIInfo = ffiInfoMap,
+                              compileResultTimings = timings
                             }
                         )
                     )
