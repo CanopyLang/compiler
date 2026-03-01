@@ -81,7 +81,8 @@ tests =
       cCaseBranchesIsolatedTests,
       cLetTests,
       cPatternTests,
-      compositeConstraintTests
+      compositeConstraintTests,
+      deferredLetTests
     ]
 
 -- CTRUE TESTS
@@ -258,3 +259,137 @@ compositeConstraintTests =
         result <- Solve.run (CAnd [good1, good2, bad])
         assertSolveFailure result
     ]
+
+-- DEFERRED LET GENERALIZATION TESTS
+
+deferredLetTests :: TestTree
+deferredLetTests =
+  testGroup
+    "CLet deferred generalization"
+    [ testDeferredWithRigidVars,
+      testDeferredWithExpectedType,
+      testLetWithFlexVarInHeader,
+      testLetWithHeaderConstraint,
+      testLetNestedWithCTrue,
+      testLetFlexVarUnifiesInBody
+    ]
+
+-- | CLet with rigid vars triggers the deferred generalization path
+-- (shouldDefer = True via hasOwnRigids). Verify the solver still
+-- succeeds with CTrue constraints.
+testDeferredWithRigidVars :: TestTree
+testDeferredWithRigidVars =
+  testCase "CLet with rigid vars triggers deferred path and succeeds" $ do
+    rigidVar <- Type.nameToRigid "a"
+    let constraint = CLet
+          { _rigidVars = [rigidVar]
+          , _flexVars = []
+          , _header = Map.empty
+          , _headerCon = CTrue
+          , _bodyCon = CTrue
+          , _expectedType = Nothing
+          }
+    result <- Solve.run constraint
+    assertSolveSuccess result
+
+-- | CLet with expectedType set triggers the deferred path via
+-- hasExpectedType. Verify the solver succeeds when the expected
+-- type matches the body.
+testDeferredWithExpectedType :: TestTree
+testDeferredWithExpectedType =
+  testCase "CLet with expectedType triggers deferred path and succeeds" $ do
+    flexVar <- Type.mkFlexVar
+    let constraint = CLet
+          { _rigidVars = []
+          , _flexVars = [flexVar]
+          , _header = Map.empty
+          , _headerCon = CTrue
+          , _bodyCon = CTrue
+          , _expectedType = Just (VarN flexVar)
+          }
+    result <- Solve.run constraint
+    assertSolveSuccess result
+
+-- | CLet with a flex var bound in the header. The header maps
+-- a name to a type containing the flex var. Verifies the standard
+-- generalization path produces an annotation for the binding.
+testLetWithFlexVarInHeader :: TestTree
+testLetWithFlexVarInHeader =
+  testCase "CLet with flex var in header produces Right" $ do
+    flexVar <- Type.mkFlexVar
+    let header = Map.singleton "x" (Ann.At testRegion (VarN flexVar))
+    let constraint = CLet
+          { _rigidVars = []
+          , _flexVars = [flexVar]
+          , _header = header
+          , _headerCon = CTrue
+          , _bodyCon = CTrue
+          , _expectedType = Nothing
+          }
+    result <- Solve.run constraint
+    assertSolveSuccess result
+
+-- | CLet where the header constraint forces the flex var to Int.
+-- The binding "x" should be generalized as Int.
+testLetWithHeaderConstraint :: TestTree
+testLetWithHeaderConstraint =
+  testCase "CLet with header constraint unifying flex var to Int succeeds" $ do
+    flexVar <- Type.mkFlexVar
+    let header = Map.singleton "x" (Ann.At testRegion (VarN flexVar))
+    let headerCon = mkCEqual (VarN flexVar) Type.int
+    let constraint = CLet
+          { _rigidVars = []
+          , _flexVars = [flexVar]
+          , _header = header
+          , _headerCon = headerCon
+          , _bodyCon = CTrue
+          , _expectedType = Nothing
+          }
+    result <- Solve.run constraint
+    assertSolveSuccess result
+
+-- | Nested CLet: outer binds "x", inner body is CTrue.
+-- Tests that nested let structure does not cause solver failure.
+testLetNestedWithCTrue :: TestTree
+testLetNestedWithCTrue =
+  testCase "nested CLet with CTrue inner body succeeds" $ do
+    outerFlex <- Type.mkFlexVar
+    innerFlex <- Type.mkFlexVar
+    let outerHeader = Map.singleton "x" (Ann.At testRegion (VarN outerFlex))
+    let innerLet = CLet
+          { _rigidVars = []
+          , _flexVars = [innerFlex]
+          , _header = Map.empty
+          , _headerCon = CTrue
+          , _bodyCon = CTrue
+          , _expectedType = Nothing
+          }
+    let constraint = CLet
+          { _rigidVars = []
+          , _flexVars = [outerFlex]
+          , _header = outerHeader
+          , _headerCon = CTrue
+          , _bodyCon = innerLet
+          , _expectedType = Nothing
+          }
+    result <- Solve.run constraint
+    assertSolveSuccess result
+
+-- | CLet where a flex var is constrained in the body. The body
+-- uses CEqual to force the flex var to Int, which should succeed.
+testLetFlexVarUnifiesInBody :: TestTree
+testLetFlexVarUnifiesInBody =
+  testCase "CLet flex var unified in body constraint succeeds" $ do
+    flexVar <- Type.mkFlexVar
+    let header = Map.singleton "y" (Ann.At testRegion (VarN flexVar))
+    let bodyCon = mkCEqual (VarN flexVar) Type.int
+    let constraint = CLet
+          { _rigidVars = []
+          , _flexVars = [flexVar]
+          , _header = header
+          , _headerCon = CTrue
+          , _bodyCon = bodyCon
+          , _expectedType = Nothing
+          }
+    result <- Solve.run constraint
+    assertSolveSuccess result
