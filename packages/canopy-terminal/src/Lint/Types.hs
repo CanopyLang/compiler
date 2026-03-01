@@ -111,6 +111,15 @@ data LintRule
   | MissingTypeAnnotation
   | ShadowedVariable
   | UnusedLetVariable
+  | PartialFunction
+  | UnsafeCoerce
+  | ListAppendInLoop
+  | UnnecessaryLazyPattern
+  | StringConcatInLoop
+  | TooManyArguments
+  | LongFunction
+  | MagicNumber
+  | InconsistentNaming
   deriving (Eq, Ord, Show)
 
 -- | Description of an auto-fix action.

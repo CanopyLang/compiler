@@ -170,6 +170,15 @@ ruleName UseConsOverConcat = "UseConsOverConcat"
 ruleName MissingTypeAnnotation = "MissingTypeAnnotation"
 ruleName ShadowedVariable = "ShadowedVariable"
 ruleName UnusedLetVariable = "UnusedLetVariable"
+ruleName PartialFunction = "PartialFunction"
+ruleName UnsafeCoerce = "UnsafeCoerce"
+ruleName ListAppendInLoop = "ListAppendInLoop"
+ruleName UnnecessaryLazyPattern = "UnnecessaryLazyPattern"
+ruleName StringConcatInLoop = "StringConcatInLoop"
+ruleName TooManyArguments = "TooManyArguments"
+ruleName LongFunction = "LongFunction"
+ruleName MagicNumber = "MagicNumber"
+ruleName InconsistentNaming = "InconsistentNaming"
 
 -- | Return the human-readable name for a severity level.
 severityName :: Severity -> String

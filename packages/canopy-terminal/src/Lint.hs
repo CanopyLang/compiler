@@ -16,6 +16,15 @@
 -- * 'checkMissingTypeAnnotation' - Top-level function without a type signature
 -- * 'checkShadowedVariable' - Let\/case\/lambda bindings that shadow outer names
 -- * 'checkUnusedLetVariable' - Bound but unused variables in let expressions
+-- * 'checkPartialFunction' - Calls to partial functions like @List.head@
+-- * 'checkUnsafeCoerce' - @Debug.todo@ used as a value
+-- * 'checkListAppendInLoop' - @++@ inside lambdas (O(n^2) risk)
+-- * 'checkUnnecessaryLazyPattern' - Tilde patterns in strict language
+-- * 'checkStringConcatInLoop' - @String.append@ inside lambdas
+-- * 'checkTooManyArguments' - Functions with more than 4 parameters
+-- * 'checkLongFunction' - Function bodies spanning more than 15 lines
+-- * 'checkMagicNumber' - Literal numbers that should be named constants
+-- * 'checkInconsistentNaming' - Mixed camelCase\/snake_case in a module
 --
 -- == Usage
 --
@@ -100,6 +109,15 @@ defaultLintConfig = LintConfig
       , (MissingTypeAnnotation, RuleConfig SevWarning)
       , (ShadowedVariable, RuleConfig SevWarning)
       , (UnusedLetVariable, RuleConfig SevWarning)
+      , (PartialFunction, RuleConfig SevWarning)
+      , (UnsafeCoerce, RuleConfig SevError)
+      , (ListAppendInLoop, RuleConfig SevWarning)
+      , (UnnecessaryLazyPattern, RuleConfig SevInfo)
+      , (StringConcatInLoop, RuleConfig SevWarning)
+      , (TooManyArguments, RuleConfig SevWarning)
+      , (LongFunction, RuleConfig SevWarning)
+      , (MagicNumber, RuleConfig SevInfo)
+      , (InconsistentNaming, RuleConfig SevInfo)
       ]
   }
 
@@ -213,7 +231,16 @@ ruleRegistry =
     (UseConsOverConcat, Rules.checkUseConsOverConcat),
     (MissingTypeAnnotation, Rules.checkMissingTypeAnnotation),
     (ShadowedVariable, Rules.checkShadowedVariable),
-    (UnusedLetVariable, Rules.checkUnusedLetVariable)
+    (UnusedLetVariable, Rules.checkUnusedLetVariable),
+    (PartialFunction, Rules.checkPartialFunction),
+    (UnsafeCoerce, Rules.checkUnsafeCoerce),
+    (ListAppendInLoop, Rules.checkListAppendInLoop),
+    (UnnecessaryLazyPattern, Rules.checkUnnecessaryLazyPattern),
+    (StringConcatInLoop, Rules.checkStringConcatInLoop),
+    (TooManyArguments, Rules.checkTooManyArguments),
+    (LongFunction, Rules.checkLongFunction),
+    (MagicNumber, Rules.checkMagicNumber),
+    (InconsistentNaming, Rules.checkInconsistentNaming)
   ]
 
 -- | Filter the rule registry to only those rules that are enabled

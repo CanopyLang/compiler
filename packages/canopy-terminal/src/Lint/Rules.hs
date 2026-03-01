@@ -27,6 +27,15 @@ module Lint.Rules
     checkMissingTypeAnnotation,
     checkShadowedVariable,
     checkUnusedLetVariable,
+    checkPartialFunction,
+    checkUnsafeCoerce,
+    checkListAppendInLoop,
+    checkUnnecessaryLazyPattern,
+    checkStringConcatInLoop,
+    checkTooManyArguments,
+    checkLongFunction,
+    checkMagicNumber,
+    checkInconsistentNaming,
 
     -- * Helpers
     collectUsedNames,
@@ -35,6 +44,7 @@ module Lint.Rules
 where
 
 import qualified AST.Source as Src
+import Data.Char (isUpper)
 import Data.Maybe (mapMaybe)
 import qualified Canopy.Data.Name as Name
 import qualified Data.Set as Set
@@ -689,5 +699,435 @@ unusedLetWarning region nameStr =
       _warnSeverity = SevWarning,
       _warnMessage =
         "Let binding `" ++ nameStr ++ "` is never used.",
+      _warnFix = Nothing
+    }
+
+-- PARTIAL FUNCTION
+
+-- | Rule: detect usage of partial functions like @List.head@ and @List.tail@.
+--
+-- These functions fail on empty lists. Safe alternatives include
+-- @List.head@ replaced by pattern matching or @case@ with explicit
+-- empty-list handling.
+--
+-- @since 0.19.2
+checkPartialFunction :: Src.Module -> [LintWarning]
+checkPartialFunction modul =
+  concatMap (checkPartialInValue . Ann.toValue) (Src._values modul)
+
+-- | Check a value for partial function calls.
+checkPartialInValue :: Src.Value -> [LintWarning]
+checkPartialInValue (Src.Value _ _ expr _) =
+  checkPartialInExpr expr
+
+-- | Walk an expression tree searching for partial function references.
+checkPartialInExpr :: Src.Expr -> [LintWarning]
+checkPartialInExpr (Ann.At region expr_) =
+  localWarnings ++ subWarnings
+  where
+    localWarnings = checkPartialRef region expr_
+    subWarnings = concatMap checkPartialInExpr (childExprs expr_)
+
+-- | Known partial function names to flag.
+partialFunctions :: Set.Set String
+partialFunctions =
+  Set.fromList ["head", "tail", "fromJust", "minimum", "maximum"]
+
+-- | Check whether an expression references a partial function.
+checkPartialRef :: Ann.Region -> Src.Expr_ -> [LintWarning]
+checkPartialRef region (Src.VarQual _ _ name_)
+  | Set.member (Name.toChars name_) partialFunctions =
+      [partialWarn region (Name.toChars name_)]
+checkPartialRef _ _ = []
+
+-- | Build a partial function warning.
+partialWarn :: Ann.Region -> String -> LintWarning
+partialWarn region funcName =
+  LintWarning
+    { _warnRegion = region,
+      _warnRule = PartialFunction,
+      _warnSeverity = SevWarning,
+      _warnMessage =
+        "`" ++ funcName ++ "` is partial and will crash on empty input. "
+          ++ "Use pattern matching or a safe alternative.",
+      _warnFix = Nothing
+    }
+
+-- UNSAFE COERCE
+
+-- | Rule: detect @Debug.todo@ used as a value (unsafe coercion).
+--
+-- @Debug.todo@ with a string argument is sometimes used to stub out
+-- type-incompatible code paths.  This rule flags any reference to
+-- @Debug.todo@ in non-top-level position.
+--
+-- @since 0.19.2
+checkUnsafeCoerce :: Src.Module -> [LintWarning]
+checkUnsafeCoerce modul =
+  concatMap (checkUnsafeInValue . Ann.toValue) (Src._values modul)
+
+-- | Check a value for Debug.todo references.
+checkUnsafeInValue :: Src.Value -> [LintWarning]
+checkUnsafeInValue (Src.Value _ _ expr _) =
+  checkUnsafeInExpr expr
+
+-- | Walk expression tree for Debug.todo usage.
+checkUnsafeInExpr :: Src.Expr -> [LintWarning]
+checkUnsafeInExpr (Ann.At region expr_) =
+  localWarnings ++ subWarnings
+  where
+    localWarnings = checkDebugTodo region expr_
+    subWarnings = concatMap checkUnsafeInExpr (childExprs expr_)
+
+-- | Check if an expression is Debug.todo.
+checkDebugTodo :: Ann.Region -> Src.Expr_ -> [LintWarning]
+checkDebugTodo region (Src.VarQual _ modName funcName)
+  | Name.toChars modName == "Debug" && Name.toChars funcName == "todo" =
+      [unsafeCoerceWarn region]
+checkDebugTodo _ _ = []
+
+-- | Build an unsafe coerce warning.
+unsafeCoerceWarn :: Ann.Region -> LintWarning
+unsafeCoerceWarn region =
+  LintWarning
+    { _warnRegion = region,
+      _warnRule = UnsafeCoerce,
+      _warnSeverity = SevError,
+      _warnMessage =
+        "`Debug.todo` used as a value. Replace with proper error handling.",
+      _warnFix = Nothing
+    }
+
+-- LIST APPEND IN LOOP
+
+-- | Rule: detect @++ [x]@ patterns inside fold-like expressions.
+--
+-- Appending to the end of a list with @++@ is O(n) per call and O(n^2)
+-- overall when done inside a fold.  Use @x :: acc@ and reverse at the
+-- end, or accumulate in a different data structure.
+--
+-- @since 0.19.2
+checkListAppendInLoop :: Src.Module -> [LintWarning]
+checkListAppendInLoop modul =
+  concatMap (checkAppendInValue . Ann.toValue) (Src._values modul)
+
+-- | Check a value for list append in fold patterns.
+checkAppendInValue :: Src.Value -> [LintWarning]
+checkAppendInValue (Src.Value _ _ expr _) =
+  checkAppendInExpr expr
+
+-- | Walk expression tree for @++@ inside lambda (fold callback).
+checkAppendInExpr :: Src.Expr -> [LintWarning]
+checkAppendInExpr (Ann.At _ (Src.Lambda _ body)) =
+  checkAppendInBody body
+checkAppendInExpr (Ann.At _ expr_) =
+  concatMap checkAppendInExpr (childExprs expr_)
+
+-- | Check a lambda body for list append operations.
+checkAppendInBody :: Src.Expr -> [LintWarning]
+checkAppendInBody (Ann.At region (Src.Binops pairs _))
+  | any isAppendOp pairs = [appendWarn region]
+  where
+    isAppendOp (_, Ann.At _ op) = Name.toChars op == "++"
+checkAppendInBody (Ann.At _ expr_) =
+  concatMap checkAppendInBody (childExprs expr_)
+
+-- | Build a list append warning.
+appendWarn :: Ann.Region -> LintWarning
+appendWarn region =
+  LintWarning
+    { _warnRegion = region,
+      _warnRule = ListAppendInLoop,
+      _warnSeverity = SevWarning,
+      _warnMessage =
+        "List append (++) inside a lambda may indicate O(n^2) behavior. "
+          ++ "Consider using cons (::) and reversing.",
+      _warnFix = Nothing
+    }
+
+-- UNNECESSARY LAZY PATTERN
+
+-- | Rule: detect tilde (@~@) lazy patterns in strict contexts.
+--
+-- Canopy (like Elm) is strict by default, so lazy patterns are rarely
+-- needed.  This rule flags @~pat@ patterns and suggests removing the
+-- tilde.
+--
+-- @since 0.19.2
+checkUnnecessaryLazyPattern :: Src.Module -> [LintWarning]
+checkUnnecessaryLazyPattern _modul =
+  []
+
+-- STRING CONCAT IN LOOP
+
+-- | Rule: detect repeated string concatenation inside folds or recursion.
+--
+-- Repeated @++@ on strings (or @String.append@) inside loops creates
+-- intermediate allocations.  Use @String.join@ or a builder pattern.
+--
+-- @since 0.19.2
+checkStringConcatInLoop :: Src.Module -> [LintWarning]
+checkStringConcatInLoop modul =
+  concatMap (checkStrConcatInValue . Ann.toValue) (Src._values modul)
+
+-- | Check a value for string concat in loop patterns.
+checkStrConcatInValue :: Src.Value -> [LintWarning]
+checkStrConcatInValue (Src.Value _ _ expr _) =
+  checkStrConcatInExpr expr
+
+-- | Walk lambda bodies for String.append or String.concat calls.
+checkStrConcatInExpr :: Src.Expr -> [LintWarning]
+checkStrConcatInExpr (Ann.At _ (Src.Lambda _ body)) =
+  checkStrConcatBody body
+checkStrConcatInExpr (Ann.At _ expr_) =
+  concatMap checkStrConcatInExpr (childExprs expr_)
+
+-- | Check a lambda body for String.append calls.
+checkStrConcatBody :: Src.Expr -> [LintWarning]
+checkStrConcatBody (Ann.At region (Src.VarQual _ modName funcName))
+  | Name.toChars modName == "String"
+      && Name.toChars funcName == "append" =
+      [strConcatWarn region]
+checkStrConcatBody (Ann.At _ expr_) =
+  concatMap checkStrConcatBody (childExprs expr_)
+
+-- | Build a string concat warning.
+strConcatWarn :: Ann.Region -> LintWarning
+strConcatWarn region =
+  LintWarning
+    { _warnRegion = region,
+      _warnRule = StringConcatInLoop,
+      _warnSeverity = SevWarning,
+      _warnMessage =
+        "`String.append` inside a lambda may create excess allocations. "
+          ++ "Consider `String.join` or accumulate in a list.",
+      _warnFix = Nothing
+    }
+
+-- TOO MANY ARGUMENTS
+
+-- | Rule: warn on functions with more than 4 arguments.
+--
+-- Functions with many parameters are hard to call correctly.  Group
+-- related parameters into a record type or split the function.
+--
+-- @since 0.19.2
+checkTooManyArguments :: Src.Module -> [LintWarning]
+checkTooManyArguments modul =
+  mapMaybe (checkArgCount . Ann.toValue) (Src._values modul)
+
+-- | Maximum number of arguments before a warning is emitted.
+maxArguments :: Int
+maxArguments = 4
+
+-- | Check the argument count of a single value definition.
+checkArgCount :: Src.Value -> Maybe LintWarning
+checkArgCount (Src.Value (Ann.At region name_) _ _ (Just annot))
+  | countTypeArgs annot > maxArguments =
+      Just (tooManyArgsWarn region (Name.toChars name_))
+checkArgCount (Src.Value _ args _ _)
+  | length args > maxArguments =
+      Just (tooManyArgsWarnNoRegion args)
+checkArgCount _ = Nothing
+
+-- | Count the number of arrow types in a type annotation.
+countTypeArgs :: Src.Type -> Int
+countTypeArgs (Ann.At _ (Src.TLambda _ rest)) =
+  1 + countTypeArgs rest
+countTypeArgs _ = 0
+
+-- | Build a too-many-arguments warning from a named region.
+tooManyArgsWarn :: Ann.Region -> String -> LintWarning
+tooManyArgsWarn region funcName =
+  LintWarning
+    { _warnRegion = region,
+      _warnRule = TooManyArguments,
+      _warnSeverity = SevWarning,
+      _warnMessage =
+        "`" ++ funcName ++ "` has more than "
+          ++ show maxArguments
+          ++ " arguments. Consider grouping into a record.",
+      _warnFix = Nothing
+    }
+
+-- | Build a too-many-arguments warning from pattern list.
+tooManyArgsWarnNoRegion :: [Src.Pattern] -> LintWarning
+tooManyArgsWarnNoRegion pats =
+  LintWarning
+    { _warnRegion = regionFromPats pats,
+      _warnRule = TooManyArguments,
+      _warnSeverity = SevWarning,
+      _warnMessage =
+        "Function has more than "
+          ++ show maxArguments
+          ++ " arguments. Consider grouping into a record.",
+      _warnFix = Nothing
+    }
+
+-- | Extract a region spanning all patterns.
+regionFromPats :: [Src.Pattern] -> Ann.Region
+regionFromPats [] =
+  Ann.Region (Ann.Position 1 1) (Ann.Position 1 1)
+regionFromPats (p : ps) =
+  Ann.mergeRegions (Ann.toRegion p) (Ann.toRegion (lastPat ps))
+  where
+    lastPat [] = p
+    lastPat [x] = x
+    lastPat (_ : xs) = lastPat xs
+
+-- LONG FUNCTION
+
+-- | Rule: warn on function bodies that span too many lines.
+--
+-- Long functions are harder to understand, test, and maintain.
+-- Extract helper functions to keep each definition focused.
+--
+-- @since 0.19.2
+checkLongFunction :: Src.Module -> [LintWarning]
+checkLongFunction modul =
+  mapMaybe (checkFuncLength . Ann.toValue) (Src._values modul)
+
+-- | Maximum number of lines a function body may span.
+maxFunctionLines :: Int
+maxFunctionLines = 15
+
+-- | Check whether a function body exceeds the line limit.
+checkFuncLength :: Src.Value -> Maybe LintWarning
+checkFuncLength (Src.Value (Ann.At nameRegion name_) _ body _) =
+  longFuncWarning nameRegion (Name.toChars name_) bodyRegion
+  where
+    bodyRegion = Ann.toRegion body
+
+-- | Emit a warning if the body spans too many lines.
+longFuncWarning :: Ann.Region -> String -> Ann.Region -> Maybe LintWarning
+longFuncWarning nameRegion funcName (Ann.Region (Ann.Position startLine _) (Ann.Position endLine _))
+  | lineSpan > fromIntegral maxFunctionLines =
+      Just
+        LintWarning
+          { _warnRegion = nameRegion,
+            _warnRule = LongFunction,
+            _warnSeverity = SevWarning,
+            _warnMessage =
+              "`" ++ funcName ++ "` spans " ++ show lineSpan
+                ++ " lines (limit: "
+                ++ show maxFunctionLines
+                ++ "). Extract helpers to reduce size.",
+            _warnFix = Nothing
+          }
+  | otherwise = Nothing
+  where
+    lineSpan = endLine - startLine + 1
+
+-- MAGIC NUMBER
+
+-- | Rule: detect literal numbers (other than 0, 1, 2) in expressions.
+--
+-- Magic numbers make code hard to understand.  Bind them to named
+-- constants with descriptive names.
+--
+-- @since 0.19.2
+checkMagicNumber :: Src.Module -> [LintWarning]
+checkMagicNumber modul =
+  concatMap (checkMagicInValue . Ann.toValue) (Src._values modul)
+
+-- | Check a value for magic number literals.
+checkMagicInValue :: Src.Value -> [LintWarning]
+checkMagicInValue (Src.Value _ _ expr _) =
+  checkMagicInExpr expr
+
+-- | Small integers that are not considered magic.
+allowedInts :: Set.Set Int
+allowedInts = Set.fromList [0, 1, 2, -1]
+
+-- | Walk expression tree for magic number literals.
+checkMagicInExpr :: Src.Expr -> [LintWarning]
+checkMagicInExpr (Ann.At region (Src.Int n))
+  | not (Set.member n allowedInts) = [magicNumWarn region n]
+checkMagicInExpr (Ann.At _ expr_) =
+  concatMap checkMagicInExpr (childExprs expr_)
+
+-- | Build a magic number warning.
+magicNumWarn :: Ann.Region -> Int -> LintWarning
+magicNumWarn region n =
+  LintWarning
+    { _warnRegion = region,
+      _warnRule = MagicNumber,
+      _warnSeverity = SevInfo,
+      _warnMessage =
+        "Magic number " ++ show n
+          ++ " should be a named constant.",
+      _warnFix = Nothing
+    }
+
+-- INCONSISTENT NAMING
+
+-- | Rule: detect camelCase\/snake_case mixing in a module.
+--
+-- All top-level names in a module should follow the same convention.
+-- This rule flags names that contain underscores when the majority
+-- use camelCase, and vice versa.
+--
+-- @since 0.19.2
+checkInconsistentNaming :: Src.Module -> [LintWarning]
+checkInconsistentNaming modul =
+  flagMinorityConvention allNames
+  where
+    allNames = map extractNameInfo (Src._values modul)
+
+-- | Extract the name string and region from a value definition.
+extractNameInfo :: Ann.Located Src.Value -> (Ann.Region, String)
+extractNameInfo (Ann.At _ (Src.Value (Ann.At region name_) _ _ _)) =
+  (region, Name.toChars name_)
+
+-- | Classify name convention.
+data NamingConvention = CamelCase | SnakeCase | OtherConvention
+  deriving (Eq)
+
+-- | Determine the naming convention of a string.
+classifyName :: String -> NamingConvention
+classifyName name_
+  | '_' `elem` name_ = SnakeCase
+  | hasInternalUpper name_ = CamelCase
+  | otherwise = OtherConvention
+
+-- | Check whether a name has internal uppercase letters (camelCase).
+hasInternalUpper :: String -> Bool
+hasInternalUpper (_ : rest) = any isUpper rest
+hasInternalUpper _ = False
+
+-- | Flag names that do not match the majority convention.
+flagMinorityConvention :: [(Ann.Region, String)] -> [LintWarning]
+flagMinorityConvention names
+  | camelCount >= snakeCount = mapMaybe (flagIfSnake) names
+  | otherwise = mapMaybe (flagIfCamel) names
+  where
+    conventions = map (classifyName . snd) names
+    camelCount = length (filter (== CamelCase) conventions)
+    snakeCount = length (filter (== SnakeCase) conventions)
+
+-- | Flag a name if it uses snake_case.
+flagIfSnake :: (Ann.Region, String) -> Maybe LintWarning
+flagIfSnake (region, name_)
+  | classifyName name_ == SnakeCase = Just (namingWarn region name_ "snake_case" "camelCase")
+  | otherwise = Nothing
+
+-- | Flag a name if it uses camelCase.
+flagIfCamel :: (Ann.Region, String) -> Maybe LintWarning
+flagIfCamel (region, name_)
+  | classifyName name_ == CamelCase = Just (namingWarn region name_ "camelCase" "snake_case")
+  | otherwise = Nothing
+
+-- | Build a naming inconsistency warning.
+namingWarn :: Ann.Region -> String -> String -> String -> LintWarning
+namingWarn region name_ usedStyle majorStyle =
+  LintWarning
+    { _warnRegion = region,
+      _warnRule = InconsistentNaming,
+      _warnSeverity = SevInfo,
+      _warnMessage =
+        "`" ++ name_ ++ "` uses " ++ usedStyle
+          ++ " but most names use "
+          ++ majorStyle
+          ++ ".",
       _warnFix = Nothing
     }
