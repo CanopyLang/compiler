@@ -123,13 +123,19 @@ partitionSignatures = foldr categorize ([], [])
         Just s -> (uns, (name, s) : sig)
 
 -- | Classify signature verification results with actual crypto verification.
+--
+-- Invalid signatures take priority over unsigned packages. Even in a
+-- mixed-signing environment, a package with a bad signature is always
+-- a hard error -- it indicates tampering rather than merely missing
+-- infrastructure.
 classifySignatures :: [Pkg.Name] -> [(Pkg.Name, PackageSignature)] -> SignatureResult
-classifySignatures unsigned@(_ : _) _ = UnsignedPackages unsigned
-classifySignatures [] signed =
-  let invalids = filter (not . verifyOneSignature) signed
-   in if null invalids
-        then AllSigned
-        else InvalidSignatures [(n, _sigKeyId s) | (n, s) <- invalids]
+classifySignatures unsigned signed =
+  let invalids = [(n, _sigKeyId s) | (n, s) <- signed, not (verifyOneSignature (n, s))]
+   in case invalids of
+        _ : _ -> InvalidSignatures invalids
+        [] -> case unsigned of
+          _ : _ -> UnsignedPackages unsigned
+          [] -> AllSigned
 
 -- | Verify a single package signature against the trusted key store.
 verifyOneSignature :: (Pkg.Name, PackageSignature) -> Bool

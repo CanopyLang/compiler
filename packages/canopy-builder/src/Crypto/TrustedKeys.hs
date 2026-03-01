@@ -82,18 +82,39 @@ trustedKeyIds = Map.keys trustedKeys
 -- This is the root of trust for package verification. Keys are
 -- mapped by their key ID (first 16 hex chars of the public key).
 --
--- The initial key set is empty because the Canopy registry has not
+-- The key store is currently empty because the Canopy registry has not
 -- yet published a signing key. When the registry begins signing
--- packages, its public key will be added here.
+-- packages, add each hex-encoded public key to 'registryKeyHexValues'
+-- and this map will be populated automatically.
 --
--- To add a key:
---
--- @
--- trustedKeys = Map.fromList
---   [ ("ab01cd23ef456789", key)
---   ]
---   where
---     Right key = Sig.parsePublicKeyHex "ab01cd23ef456789..."
--- @
+-- @since 0.19.2
 trustedKeys :: Map Text.Text Sig.PublicKey
-trustedKeys = Map.empty
+trustedKeys =
+  Map.fromList (concatMap parseEntry registryKeyHexValues)
+  where
+    parseEntry hex =
+      case Sig.parsePublicKeyHex hex of
+        Right pk -> [(keyIdFromPublicKey pk, pk)]
+        Left _ -> []
+
+-- | Hex-encoded Ed25519 public keys for the Canopy package registry.
+--
+-- Each entry is a 64-character hex string representing a 32-byte Ed25519
+-- public key. The first key in the list should be the current signing key.
+-- Previous keys are retained to verify packages signed before key rotation.
+--
+-- To generate a new key pair (on an air-gapped machine):
+--
+-- @
+-- bash scripts\/generate-signing-key.sh
+-- @
+--
+-- Then paste the resulting 64-character hex string here.
+--
+-- @since 0.19.2
+registryKeyHexValues :: [Text.Text]
+registryKeyHexValues =
+  [
+    -- When the registry begins signing, add the public key hex here:
+    -- "64_character_hex_encoded_ed25519_public_key_from_generate_script"
+  ]
