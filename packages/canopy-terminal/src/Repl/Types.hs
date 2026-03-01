@@ -39,6 +39,8 @@ module Repl.Types
   )
 where
 
+import qualified Build
+import qualified Canopy.Details as Details
 import qualified Canopy.ModuleName as ModuleName
 import Control.Monad.State.Strict (StateT)
 import Data.ByteString (ByteString)
@@ -47,6 +49,7 @@ import Data.ByteString.Builder (Builder)
 import qualified Data.ByteString.Builder as BB
 import qualified Data.ByteString.Char8 as BSC
 import qualified Data.ByteString.UTF8 as BS_UTF8
+import Data.IORef (IORef)
 import Data.Map.Strict (Map)
 import qualified Canopy.Data.Name as Name
 import System.Exit (ExitCode)
@@ -64,18 +67,28 @@ data Flags = Flags
 
 -- | REPL runtime environment configuration.
 --
--- Contains paths and settings determined at startup.
+-- Contains paths and settings determined at startup, plus mutable
+-- caches for project details and build artifacts. Caching these
+-- across REPL iterations avoids redundant package resolution and
+-- dependency compilation on every input.
 --
 -- @since 0.19.1
 data Env = Env
-  { -- | Project root directory
+  { -- | Project root directory.
     _root :: !FilePath,
-    -- | JavaScript interpreter executable path
+    -- | JavaScript interpreter executable path.
     _interpreter :: !FilePath,
-    -- | Whether ANSI colors are enabled
-    _ansi :: !Bool
+    -- | Whether ANSI colors are enabled.
+    _ansi :: !Bool,
+    -- | Cached project details (packages, source dirs).
+    -- Loaded once on first compilation and reused for
+    -- subsequent REPL inputs.
+    _cachedDetails :: !(IORef (Maybe Details.Details)),
+    -- | Cached build artifacts (dependency interfaces, objects).
+    -- Invalidated when imports change, otherwise reused to
+    -- skip redundant dependency compilation.
+    _cachedArtifacts :: !(IORef (Maybe Build.Artifacts))
   }
-  deriving (Eq, Show)
 
 -- | User input categorized by type.
 --

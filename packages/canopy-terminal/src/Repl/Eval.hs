@@ -39,6 +39,7 @@ import Data.ByteString.Builder (Builder)
 import qualified Data.ByteString.Builder as BB
 import qualified Data.ByteString.Char8 as BSC
 import qualified Data.ByteString.Lazy as LBS
+import qualified Data.IORef as IORef
 import Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
 import qualified Generate
@@ -96,13 +97,17 @@ processInput _ state (Help maybeCmd) =
 processInput _ state Port =
   Print.println [c|{yellow|I cannot handle port declarations.}|] >> pure (Loop state)
 processInput env oldState (Import name src) =
-  Loop <$> attemptEval env oldState (addImport name src oldState) OutputNothing
+  invalidateArtifactCache env
+    >> fmap Loop (attemptEval env oldState (addImport name src oldState) OutputNothing)
 processInput env oldState (Type name src) =
-  Loop <$> attemptEval env oldState (addType name src oldState) OutputNothing
+  invalidateArtifactCache env
+    >> fmap Loop (attemptEval env oldState (addType name src oldState) OutputNothing)
 processInput env oldState (Decl name src) =
-  Loop <$> attemptEval env oldState (addDecl name src oldState) (OutputDecl name)
+  invalidateArtifactCache env
+    >> fmap Loop (attemptEval env oldState (addDecl name src oldState) (OutputDecl name))
 processInput env state (Expr src) =
-  Loop <$> attemptEval env state state (OutputExpr src)
+  invalidateArtifactCache env
+    >> fmap Loop (attemptEval env state state (OutputExpr src))
 processInput env state (TypeOf exprStr) =
   handleTypeOf env state exprStr >> pure (Loop state)
 processInput env state (Browse maybeMod) =
@@ -115,14 +120,14 @@ processInput env state (Browse maybeMod) =
 --
 -- @since 0.19.1
 attemptEval :: Env -> State -> State -> Output -> IO State
-attemptEval (Env root interpreter ansi) oldState newState output =
+attemptEval env oldState newState output =
   compileAndExecute >>= handleResult
   where
     compileAndExecute =
-      BW.withScope (runCompilation root ansi newState output)
+      BW.withScope (runCompilation env newState output)
         >>= either (pure . Left) (fmap Right . maybeExecute)
 
-    maybeExecute = maybe (pure Nothing) (executeJavaScript interpreter)
+    maybeExecute = maybe (pure Nothing) (executeJavaScript (_interpreter env))
 
     handleResult = either handleError handleSuccess
 
@@ -130,7 +135,7 @@ attemptEval (Env root interpreter ansi) oldState newState output =
     handleSuccess = maybe (pure newState) checkExecution
 
     checkExecution javascript = do
-      exitCode <- interpret interpreter javascript
+      exitCode <- interpret (_interpreter env) javascript
       pure (if exitCode == Exit.ExitSuccess then newState else oldState)
 
 -- | Handle the @:type@ command by compiling the expression and
@@ -142,36 +147,36 @@ attemptEval (Env root interpreter ansi) oldState newState output =
 --
 -- @since 0.19.2
 handleTypeOf :: Env -> State -> String -> IO ()
-handleTypeOf (Env root _interpreter _ansi) state exprStr = do
-  result <- BW.withScope (compileForTypeOf root state exprStr)
-  case result of
-    Left exit -> Exit.toStderr (Exit.replToReport exit)
-    Right Nothing -> Print.println [c|{red|I could not determine the type of that expression.}|]
-    Right (Just typeStr) -> Print.println [c|#{typeStr}|]
+handleTypeOf env state exprStr = do
+  result <- BW.withScope (compileForTypeOf env state exprStr)
+  either
+    (Exit.toStderr . Exit.replToReport)
+    (maybe printCannotDetermine (\s -> Print.println [c|#{s}|]))
+    result
+  where
+    printCannotDetermine =
+      Print.println [c|{red|I could not determine the type of that expression.}|]
 
 -- | Compile an expression and extract its type.
 --
 -- Writes the current REPL state plus the expression as a temporary
 -- source module, compiles it, and looks up the type of the expression
--- binding in the resulting interface.
+-- binding in the resulting interface. Uses cached Details to avoid
+-- redundant package resolution.
 --
 -- @since 0.19.2
-compileForTypeOf :: FilePath -> State -> String -> BW.Scope -> IO (Either Exit.Repl (Maybe String))
-compileForTypeOf rootDir state exprStr scope = do
-  writeReplSource rootDir state exprStr
-  Stuff.withRootLock rootDir (Task.run typeTask)
+compileForTypeOf :: Env -> State -> String -> BW.Scope -> IO (Either Exit.Repl (Maybe String))
+compileForTypeOf env state exprStr scope = do
+  writeReplSource (_root env) state exprStr
+  Stuff.withRootLock (_root env) (Task.run typeTask)
   where
     typeTask = do
-      details <- loadDetails scope rootDir
-      artifacts <- compileRepl rootDir details
+      details <- loadCachedDetails env scope
+      artifacts <- compileRepl details
       pure (findTypeInModules Name.replValueToPrint (Build._artifactsModules artifacts))
 
-    loadDetails sc rd =
-      Task.io (Details.load Reporting.silent sc rd)
-        >>= either (Task.throw . Exit.ReplBadDetails) pure
-
-    compileRepl rd det =
-      Task.io (Build.fromRepl rd det)
+    compileRepl det =
+      Task.io (Build.fromRepl (_root env) det)
         >>= either (Task.throw . Exit.ReplCannotBuild) pure
 
 -- | Search for a name's type across compiled modules.
@@ -218,8 +223,8 @@ writeReplSource rootDir (State imports types decls) exprStr =
 --
 -- @since 0.19.2
 handleBrowse :: Env -> State -> Maybe String -> IO ()
-handleBrowse (Env root _interpreter _ansi) _state maybeMod = do
-  result <- BW.withScope (compileForBrowse root)
+handleBrowse env _state maybeMod = do
+  result <- BW.withScope (compileForBrowse env)
   either (Exit.toStderr . Exit.replToReport) (displayBrowseResult maybeMod) result
 
 -- | Display browse results, dispatching based on whether a module
@@ -235,19 +240,18 @@ displayBrowseResult maybeMod artifacts =
 
 -- | Compile the REPL project to access dependency interfaces.
 --
+-- Uses cached Details to avoid redundant package resolution on
+-- repeated browse commands.
+--
 -- @since 0.19.2
-compileForBrowse :: FilePath -> BW.Scope -> IO (Either Exit.Repl Build.Artifacts)
-compileForBrowse rootDir scope =
-  Stuff.withRootLock rootDir (Task.run browseTask)
+compileForBrowse :: Env -> BW.Scope -> IO (Either Exit.Repl Build.Artifacts)
+compileForBrowse env scope =
+  Stuff.withRootLock (_root env) (Task.run browseTask)
   where
     browseTask = do
-      details <- loadDetails scope rootDir
-      Task.io (Build.fromRepl rootDir details)
+      details <- loadCachedDetails env scope
+      Task.io (Build.fromRepl (_root env) details)
         >>= either (Task.throw . Exit.ReplCannotBuild) pure
-
-    loadDetails sc rd =
-      Task.io (Details.load Reporting.silent sc rd)
-        >>= either (Task.throw . Exit.ReplBadDetails) pure
 
 -- | Browse a specific module's exports.
 --
@@ -274,23 +278,81 @@ findModuleInterface rawName deps =
   where
     matchesRawName (ModuleName.Canonical _ name) _ = name == rawName
 
--- | Run compilation task.
+-- | Run compilation task with cached Details and Artifacts.
+--
+-- Loads Details from cache (or computes and caches on first use).
+-- Loads Artifacts from cache when available, falling back to full
+-- compilation. The artifact cache is populated after successful builds
+-- and invalidated when imports change.
 --
 -- @since 0.19.1
-runCompilation :: FilePath -> Bool -> State -> Output -> BW.Scope -> IO (Either Exit.Repl (Maybe Builder))
-runCompilation rootDir enableAnsi _state output scope =
+runCompilation :: Env -> State -> Output -> BW.Scope -> IO (Either Exit.Repl (Maybe Builder))
+runCompilation env _state output scope =
   Stuff.withRootLock rootDir (Task.run compilationTask)
   where
+    rootDir = _root env
+
     compilationTask = do
-      details <- Task.io (Details.load Reporting.silent scope rootDir) >>= either (Task.throw . Exit.ReplBadDetails) pure
-      artifacts <- Task.io (Build.fromRepl rootDir details) >>= either (Task.throw . Exit.ReplCannotBuild) pure
-      traverse (generateJavaScript rootDir details enableAnsi artifacts) (toPrintName output)
+      details <- loadCachedDetails env scope
+      artifacts <- loadCachedArtifacts env details
+      traverse (generateJavaScript details artifacts) (toPrintName output)
 
-    generateJavaScript projectRoot projectDetails projectAnsi artifacts name =
-      let config = Generate.ReplConfig projectAnsi name
-      in Task.mapError wrapGenerate (Generate.repl projectRoot projectDetails config artifacts)
+    generateJavaScript projectDetails artifacts name =
+      Task.mapError wrapGenerate (Generate.repl rootDir projectDetails config artifacts)
+      where
+        config = Generate.ReplConfig (_ansi env) name
 
-    wrapGenerate msg = Exit.ReplBadGenerate [Diag.stringToDiagnostic Diag.PhaseGenerate "CODE GENERATION ERROR" msg]
+    wrapGenerate msg =
+      Exit.ReplBadGenerate [Diag.stringToDiagnostic Diag.PhaseGenerate "CODE GENERATION ERROR" msg]
+
+-- | Load Details from cache or compute and cache on first use.
+--
+-- Details (package resolution, source directories, etc.) never
+-- change during a REPL session, so they are loaded once and
+-- reused for all subsequent compilations.
+--
+-- @since 0.19.2
+loadCachedDetails :: Env -> BW.Scope -> Task.Task Exit.Repl Details.Details
+loadCachedDetails env scope = do
+  cached <- Task.io (IORef.readIORef (_cachedDetails env))
+  maybe loadAndCache pure cached
+  where
+    loadAndCache = do
+      details <-
+        Task.io (Details.load Reporting.silent scope (_root env))
+          >>= either (Task.throw . Exit.ReplBadDetails) pure
+      Task.io (IORef.writeIORef (_cachedDetails env) (Just details))
+      pure details
+
+-- | Load Artifacts from cache or compile and cache.
+--
+-- Artifacts are cached after successful compilation and reused
+-- when the REPL state has not changed (e.g., repeated browse or
+-- type queries). When imports, types, or declarations change,
+-- the cache is invalidated by 'invalidateArtifactCache'.
+--
+-- @since 0.19.2
+loadCachedArtifacts :: Env -> Details.Details -> Task.Task Exit.Repl Build.Artifacts
+loadCachedArtifacts env details = do
+  cached <- Task.io (IORef.readIORef (_cachedArtifacts env))
+  maybe compileAndCache pure cached
+  where
+    compileAndCache = do
+      artifacts <-
+        Task.io (Build.fromRepl (_root env) details)
+          >>= either (Task.throw . Exit.ReplCannotBuild) pure
+      Task.io (IORef.writeIORef (_cachedArtifacts env) (Just artifacts))
+      pure artifacts
+
+-- | Invalidate the cached build artifacts.
+--
+-- Called when the REPL state changes (new import, type, or
+-- declaration) to force recompilation on the next input.
+--
+-- @since 0.19.2
+invalidateArtifactCache :: Env -> IO ()
+invalidateArtifactCache env =
+  IORef.writeIORef (_cachedArtifacts env) Nothing
 
 -- | Execute JavaScript and return result.
 --
@@ -321,7 +383,9 @@ initEnv :: Flags -> IO Env
 initEnv (Flags maybeInterpreter noColors) = do
   root <- getRoot
   interpreter <- getInterpreter maybeInterpreter
-  pure (Env root interpreter (not noColors))
+  detailsRef <- IORef.newIORef Nothing
+  artifactsRef <- IORef.newIORef Nothing
+  pure (Env root interpreter (not noColors) detailsRef artifactsRef)
 
 -- | Find or create project root directory.
 --
