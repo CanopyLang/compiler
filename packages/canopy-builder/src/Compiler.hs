@@ -37,6 +37,7 @@ module Compiler
     -- * Cache (re-exported from Compiler.Cache)
     encodeVersioned,
     decodeVersioned,
+    elcoSchemaVersion,
 
     -- * Re-exports for Terminal
     module Build.Artifacts,
@@ -54,7 +55,7 @@ import qualified Canopy.ModuleName as ModuleName
 import qualified Canopy.Outline as Outline
 import qualified Canopy.Package as Pkg
 import qualified Canopy.Version as Version
-import Compiler.Cache (decodeVersioned, encodeVersioned)
+import Compiler.Cache (decodeVersioned, elcoSchemaVersion, encodeVersioned)
 import Compiler.Discovery (discoverModulePaths, discoverTransitiveDeps)
 import Compiler.Parallel (assembleArtifacts, compileModulesInOrder)
 import Compiler.Types

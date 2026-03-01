@@ -142,8 +142,8 @@ resolveUserFFI modName funcName =
     ( ResolvedFFI
         { _resolvedOrigin =
             UserFFIOrigin
-              (FFI.JsSourcePath (moduleToJsPath modName))
-              (FFI.FFIFuncName (Text.unpack funcName)),
+              (FFI.JsSourcePath (Text.pack (moduleToJsPath modName)))
+              (FFI.FFIFuncName funcName),
           _resolvedName = funcName
         }
     )

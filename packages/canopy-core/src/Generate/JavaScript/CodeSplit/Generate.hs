@@ -27,10 +27,10 @@ import qualified AST.Optimized as Opt
 import qualified Canopy.Kernel as Kernel
 import qualified Canopy.ModuleName as ModuleName
 import Data.ByteString (ByteString)
+import qualified Data.ByteString as BS
 import Data.ByteString.Builder (Builder)
 import qualified Data.ByteString.Builder as BB
 import qualified Data.ByteString.Lazy as BL
-import Data.Word (Word8)
 import qualified Canopy.Data.Index as Index
 import qualified Data.List as List
 import Data.Map.Strict (Map)
@@ -409,7 +409,7 @@ emitKernel mode chunks state currentGlobal =
             { _stRevKernels = kernelCode : _stRevKernels state,
               _stSeen = Set.insert currentGlobal (_stSeen state),
               _stSeenKernelChunks = Set.insert kernelBytes (_stSeenKernelChunks state),
-              _stOutputLine = _stOutputLine state + countNewlines kernelCode
+              _stOutputLine = _stOutputLine state + countNewlinesBS kernelBytes
             }
 
 -- | Generate kernel JavaScript.
@@ -482,14 +482,21 @@ addBuilder state builder =
       _stOutputLine = _stOutputLine state + countNewlines builder
     }
 
--- | Count newline bytes in a Builder.
+-- | Count newline bytes in a Builder by materializing it.
+--
+-- Prefer 'countNewlinesBS' when the bytes are already materialized
+-- to avoid double allocation.
 countNewlines :: Builder -> Int
 countNewlines b =
-  BL.foldl' countNL 0 (BB.toLazyByteString b)
-  where
-    countNL :: Int -> Word8 -> Int
-    countNL !acc 0x0A = acc + 1
-    countNL !acc _ = acc
+  countNewlinesBS (BL.toStrict (BB.toLazyByteString b))
+
+-- | Count newline bytes in a strict ByteString.
+--
+-- O(n) single-pass scan using 'BS.count'. Used by 'emitKernel'
+-- where the kernel bytes are already materialized for deduplication.
+countNewlinesBS :: ByteString -> Int
+countNewlinesBS =
+  BS.count 0x0A
 
 -- MAIN EXPORTS (duplicated from Generate.JavaScript for chunk-level use)
 

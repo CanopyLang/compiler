@@ -25,6 +25,8 @@ benchmarks =
     [ Criterion.bench "small module (10 lines)" (Criterion.whnf parseApp smallModule),
       Criterion.bench "medium module (50 lines)" (Criterion.whnf parseApp mediumModule),
       Criterion.bench "large module (200 lines)" (Criterion.whnf parseApp largeModule),
+      Criterion.bench "xlarge module (500 lines)" (Criterion.whnf parseApp xlargeModule),
+      Criterion.bench "xxlarge module (1000 lines)" (Criterion.whnf parseApp xxlargeModule),
       Criterion.bench "expression-heavy" (Criterion.whnf parseApp exprHeavyModule),
       Criterion.bench "type-heavy" (Criterion.whnf parseApp typeHeavyModule),
       Criterion.bench "pattern-heavy" (Criterion.whnf parseApp patternHeavyModule)
@@ -104,6 +106,46 @@ largeModule =
        , "import Time"
        , ""
        ] ++ generateManyFunctions 40))
+
+-- | Extra large module (~500 lines) with many functions and types.
+xlargeModule :: BS.ByteString
+xlargeModule =
+  BSC.pack
+    (unlines
+      ([ "module XLarge exposing (..)"
+       , ""
+       , "import Html"
+       , "import Html.Events"
+       , "import Html.Attributes"
+       , "import Json.Decode"
+       , "import Json.Encode"
+       , "import Http"
+       , "import Task"
+       , "import Time"
+       , ""
+       ] ++ generateManyFunctions 60
+         ++ generateTypeDeclarations 20
+         ++ generatePatternFunctions 10))
+
+-- | Very large module (~1000 lines) for stress testing.
+xxlargeModule :: BS.ByteString
+xxlargeModule =
+  BSC.pack
+    (unlines
+      ([ "module XXLarge exposing (..)"
+       , ""
+       , "import Html"
+       , "import Html.Events"
+       , "import Html.Attributes"
+       , "import Json.Decode"
+       , "import Json.Encode"
+       , "import Http"
+       , "import Task"
+       , "import Time"
+       , ""
+       ] ++ generateManyFunctions 120
+         ++ generateTypeDeclarations 40
+         ++ generatePatternFunctions 20))
 
 -- | Module with deeply nested expressions.
 exprHeavyModule :: BS.ByteString

@@ -213,9 +213,12 @@ elcoMagic = LBS.pack [0x45, 0x4C, 0x43, 0x4F]
 
 -- | Current schema version.
 --
+-- Bump this when the Binary encoding of cached types changes
+-- (e.g. FFIInfo serialization format) to force cache invalidation.
+--
 -- @since 0.19.1
 elcoSchemaVersion :: Word16
-elcoSchemaVersion = 1
+elcoSchemaVersion = 2
 
 -- | Minimum header size: 4 (magic) + 2 (schema) + 6 (compiler version).
 --

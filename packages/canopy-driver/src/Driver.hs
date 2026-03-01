@@ -250,9 +250,9 @@ buildFFIInfoList foreignImports contentMap =
 -- canonicalization with a proper error message.
 buildSingleFFI :: Map JsSourcePath JsSource -> Src.ForeignImport -> [(String, JS.FFIInfo)]
 buildSingleFFI contentMap (Src.ForeignImport (FFI.JavaScriptFFI jsPath) alias _region) =
-  case Map.lookup (JsSourcePath jsPath) contentMap of
+  case Map.lookup (JsSourcePath (Text.pack jsPath)) contentMap of
     Just (JsSource content) ->
-      [(jsPath, JS.FFIInfo jsPath (Text.pack content) (Ann.toValue alias))]
+      [(jsPath, JS.FFIInfo jsPath content (Ann.toValue alias))]
     Nothing -> []
 buildSingleFFI _ _ = []
 

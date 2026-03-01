@@ -31,10 +31,10 @@ import qualified Canopy.Kernel as Kernel
 import qualified Canopy.ModuleName as ModuleName
 import qualified Canopy.Package as Pkg
 import Data.ByteString (ByteString)
+import qualified Data.ByteString as BS
 import Data.ByteString.Builder (Builder)
 import qualified Data.ByteString.Builder as BB
 import qualified Data.ByteString.Lazy as BL
-import Data.Word (Word8)
 import qualified Data.List as List
 import Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
@@ -43,6 +43,7 @@ import qualified Canopy.Data.Name as Name
 import Data.Set (Set)
 import qualified Data.Set as Set
 import qualified Data.Text as Text
+import qualified Data.Text.Encoding as TextEnc
 import qualified FFI.TypeParser as TypeParser
 import qualified FFI.Validator as Validator
 import qualified Generate.JavaScript.Builder as JS
@@ -85,13 +86,13 @@ data FFIInfo = FFIInfo
 instance Binary.Binary FFIInfo where
   put (FFIInfo path content alias) = do
     Binary.put path
-    Binary.put (Text.unpack content)
+    Binary.put (TextEnc.encodeUtf8 content)
     Binary.put alias
   get = do
     path <- Binary.get
-    contentStr <- Binary.get
+    contentBytes <- Binary.get
     alias <- Binary.get
-    return (FFIInfo path (Text.pack contentStr) alias)
+    return (FFIInfo path (TextEnc.decodeUtf8 contentBytes) alias)
 
 makeLenses ''FFIInfo
 
@@ -146,8 +147,8 @@ generateFFIValidators mode ffiInfos =
 
     collectValidators :: String -> FFIInfo -> [Builder] -> [Builder]
     collectValidators _key info acc =
-      let content = Text.unpack (_ffiContent info)
-          functions = extractCanopyTypeFunctions (lines content)
+      let contentStr = Text.unpack (_ffiContent info)
+          functions = extractCanopyTypeFunctions (lines contentStr)
           validatorBuilders = concatMap (generateValidatorForFunction config) functions
       in validatorBuilders ++ acc
 
@@ -156,7 +157,7 @@ generateValidatorForFunction :: Validator.ValidatorConfig -> (String, String) ->
 generateValidatorForFunction config (_funcName, typeStr) =
   case Validator.parseReturnType (Text.pack typeStr) of
     Just returnType ->
-      [BB.stringUtf8 (Text.unpack (Validator.generateAllValidators config returnType))]
+      [BB.byteString (TextEnc.encodeUtf8 (Validator.generateAllValidators config returnType))]
     Nothing -> []
 
 -- | Derive a 'ValidatorConfig' from the compilation 'Mode'.
@@ -180,7 +181,7 @@ modeToValidatorConfig mode =
 formatFFIFileFromInfo :: String -> FFIInfo -> [Builder] -> [Builder]
 formatFFIFileFromInfo _key info acc =
   ("\n// From " <> BB.stringUtf8 (_ffiFilePath info) <> "\n")
-    : BB.stringUtf8 (Text.unpack (_ffiContent info))
+    : BB.byteString (TextEnc.encodeUtf8 (_ffiContent info))
     : "\n"
     : acc
 
@@ -189,7 +190,7 @@ generateFFIBindingsFromInfo :: Mode.Mode -> Graph -> String -> FFIInfo -> [Build
 generateFFIBindingsFromInfo mode graph _key info acc
   | not (isValidJsIdentifier alias) = acc
   | otherwise =
-      case extractFFIFunctionBindings mode graph path content alias of
+      case extractFFIFunctionBindings mode graph path contentStr alias of
         [] -> acc
         bindings ->
           ("\n// Bindings for " <> BB.stringUtf8 path <> "\n")
@@ -197,7 +198,7 @@ generateFFIBindingsFromInfo mode graph _key info acc
             : map (<> "\n") bindings ++ ["\n"] ++ acc
   where
     path = _ffiFilePath info
-    content = Text.unpack (_ffiContent info)
+    contentStr = Text.unpack (_ffiContent info)
     alias = Name.toChars (_ffiAlias info)
 
 -- | Extract and generate bindings for FFI functions from JavaScript content.
@@ -341,7 +342,7 @@ ffiTypeToValidator ffiType = case ffiType of
   Validator.FFITuple types ->
     "$validate.Tuple(" <> mconcat (List.intersperse ", " (map ffiTypeToValidator types)) <> ")"
   Validator.FFIOpaque name ->
-    "$validate.Opaque('" <> BB.stringUtf8 (Text.unpack name) <> "')"
+    "$validate.Opaque('" <> BB.byteString (TextEnc.encodeUtf8 name) <> "')"
   Validator.FFIFunctionType _ _ ->
     "$validate.Function"
   Validator.FFIRecord _ ->
@@ -717,7 +718,7 @@ addKernelChunks mode currentGlobal (State revKernels revBuilders seen seenChunks
       kernelBytes = BL.toStrict (BB.toLazyByteString kernelCode)
   in if Set.member kernelBytes seenChunks
      then State revKernels revBuilders (Set.insert currentGlobal seen) seenChunks outLine smMappings srcLocs
-     else State (kernelCode : revKernels) revBuilders (Set.insert currentGlobal seen) (Set.insert kernelBytes seenChunks) (outLine + countNewlines kernelCode) smMappings srcLocs
+     else State (kernelCode : revKernels) revBuilders (Set.insert currentGlobal seen) (Set.insert kernelBytes seenChunks) (outLine + countNewlinesBS kernelBytes) smMappings srcLocs
 
 addStmt :: State -> JS.Stmt -> State
 addStmt state stmt =
@@ -727,14 +728,21 @@ addBuilder :: State -> Builder -> State
 addBuilder (State revKernels revBuilders seen seenChunks outLine smMappings srcLocs) builder =
   State revKernels (builder : revBuilders) seen seenChunks (outLine + countNewlines builder) smMappings srcLocs
 
--- | Count newline bytes in a Builder.
+-- | Count newline bytes in a Builder by materializing it.
+--
+-- Prefer 'countNewlinesBS' when the bytes are already materialized
+-- to avoid double allocation.
 countNewlines :: Builder -> Int
 countNewlines b =
-  BL.foldl' countNL 0 (BB.toLazyByteString b)
-  where
-    countNL :: Int -> Word8 -> Int
-    countNL !acc 0x0A = acc + 1
-    countNL !acc _ = acc
+  countNewlinesBS (BL.toStrict (BB.toLazyByteString b))
+
+-- | Count newline bytes in a strict ByteString.
+--
+-- O(n) single-pass scan using 'BS.count'. Used by 'addKernelChunks'
+-- where the kernel bytes are already materialized for deduplication.
+countNewlinesBS :: ByteString -> Int
+countNewlinesBS =
+  BS.count 0x0A
 
 -- | Emit a source map mapping for a global before generating its JS.
 emitMapping :: Opt.Global -> State -> State

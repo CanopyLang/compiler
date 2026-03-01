@@ -12,6 +12,7 @@
 module Main (main) where
 
 import Criterion.Main (defaultMain)
+import qualified Bench.Cache as Cache
 import qualified Bench.Generate as Generate
 import qualified Bench.Hash as Hash
 import qualified Bench.Json as Json
@@ -27,5 +28,6 @@ main =
       Hash.benchmarks,
       Generate.benchmarks,
       Optimize.benchmarks,
-      TreeShake.benchmarks
+      TreeShake.benchmarks,
+      Cache.benchmarks
     ]

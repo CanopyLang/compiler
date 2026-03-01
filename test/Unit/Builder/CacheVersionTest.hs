@@ -83,7 +83,7 @@ tests =
           testCase "wrong compiler version fails with actionable message" $ do
             let Version cMajor cMinor cPatch = Version.compiler
                 wrongMajor = cMajor + 1
-                schemaVersion = 1 :: Word16
+                schemaVersion = Compiler.elcoSchemaVersion
                 wrongCompilerBytes =
                   LBS.pack [0x45, 0x4C, 0x43, 0x4F]
                     <> Binary.encode schemaVersion

@@ -188,8 +188,8 @@ sourceProperties = testGroup "Source Properties"
       let source = fromChars str
           result = toJsStringBuilder source
           resultLength = BL.length (BB.toLazyByteString result)
-          inputLength = length str
-      in if inputLength > 0 then resultLength > 0 else resultLength == 0
+          hasNonCR = any (/= '\r') str
+      in if hasNonCR then resultLength > 0 else resultLength == 0
   , testProperty "toJsStringBuilder is deterministic" $ \str ->
       let source = fromChars str
           result1 = toJsStringBuilder source

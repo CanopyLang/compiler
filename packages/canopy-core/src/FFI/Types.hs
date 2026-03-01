@@ -98,7 +98,7 @@ newtype ResourceName = ResourceName { unResourceName :: Text }
 -- or other string values in the FFI pipeline.
 --
 -- @since 0.19.2
-newtype JsSourcePath = JsSourcePath { unJsSourcePath :: String }
+newtype JsSourcePath = JsSourcePath { unJsSourcePath :: Text }
   deriving (Eq, Ord, Show)
 
 -- | Content of a JavaScript FFI source file.
@@ -107,7 +107,7 @@ newtype JsSourcePath = JsSourcePath { unJsSourcePath :: String }
 -- or other string values in the FFI pipeline.
 --
 -- @since 0.19.2
-newtype JsSource = JsSource { unJsSource :: String }
+newtype JsSource = JsSource { unJsSource :: Text }
   deriving (Eq, Show)
 
 -- | FFI function name extracted from a JSDoc @name annotation.
@@ -116,7 +116,7 @@ newtype JsSource = JsSource { unJsSource :: String }
 -- type annotation strings, file paths, or other identifiers.
 --
 -- @since 0.19.2
-newtype FFIFuncName = FFIFuncName { unFFIFuncName :: String }
+newtype FFIFuncName = FFIFuncName { unFFIFuncName :: Text }
   deriving (Eq, Ord, Show)
 
 -- | Canopy type annotation extracted from a JSDoc @canopy-type annotation.
@@ -125,7 +125,7 @@ newtype FFIFuncName = FFIFuncName { unFFIFuncName :: String }
 -- with function names, file paths, or other identifiers.
 --
 -- @since 0.19.2
-newtype FFITypeAnnotation = FFITypeAnnotation { unFFITypeAnnotation :: String }
+newtype FFITypeAnnotation = FFITypeAnnotation { unFFITypeAnnotation :: Text }
   deriving (Eq, Show)
 
 -- | A parsed FFI binding pairing a function name with its type annotation.
