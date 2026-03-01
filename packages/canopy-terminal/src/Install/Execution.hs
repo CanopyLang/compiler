@@ -248,7 +248,7 @@ fetchMissingPackages offline outline = do
 fetchOne :: Bool -> Client.Manager -> (Pkg.Name, Version.Version) -> IO (Either Fetch.FetchError Fetch.FetchSource)
 fetchOne offline manager (pkg, ver)
   | offline = fetchOffline pkg ver
-  | otherwise = Fetch.fetchPackage manager pkg ver
+  | otherwise = Fetch.fetchPackage manager pkg ver Nothing
 
 -- | Attempt to resolve a package from local caches only.
 --

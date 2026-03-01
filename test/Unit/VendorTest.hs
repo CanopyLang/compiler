@@ -164,9 +164,9 @@ testFetchSourceTypes =
       testCase "FetchedRegistry stores URL and hash" $
         let src = Fetch.FetchedRegistry "https://example.com/pkg.zip" "abc123"
          in show src @?= "FetchedRegistry \"https://example.com/pkg.zip\" \"abc123\"",
-      testCase "FetchedGitHub stores URL" $
-        let src = Fetch.FetchedGitHub "https://github.com/canopy/core/zipball/1.0.5/"
-         in show src @?= "FetchedGitHub \"https://github.com/canopy/core/zipball/1.0.5/\"",
+      testCase "FetchedGitHub stores URL and hash" $
+        let src = Fetch.FetchedGitHub "https://github.com/canopy/core/zipball/1.0.5/" "abc123def456"
+         in show src @?= "FetchedGitHub \"https://github.com/canopy/core/zipball/1.0.5/\" \"abc123def456\"",
       testCase "FetchError AllSourcesFailed contains package info" $ do
         let err = Fetch.AllSourcesFailed Pkg.core (makeVersion 1 0 0)
             rendered = show err

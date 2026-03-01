@@ -54,6 +54,7 @@ module PackageCache.Fetch
 
     -- * Hash Verification
     verifyArchiveHash,
+    verifyGitHubArchive,
 
     -- * Source Helpers
     gitRepoUrl,
@@ -97,8 +98,12 @@ data FetchSource
     CachedElm !FilePath
   | -- | Downloaded via the registry's endpoint.json with verified hash.
     FetchedRegistry !Text.Text !Text.Text
-  | -- | Downloaded directly from GitHub (no hash verification).
-    FetchedGitHub !Text.Text
+  | -- | Downloaded directly from GitHub with computed hash.
+    --
+    -- The first field is the download URL. The second field is the
+    -- SHA-256 hex digest computed from the downloaded archive bytes,
+    -- stored for lock file verification on subsequent fetches.
+    FetchedGitHub !Text.Text !Text.Text
   deriving (Eq, Show)
 
 -- | Errors that can occur during package fetching.
@@ -191,21 +196,24 @@ toPackageSource pkg archiveUrl =
 -- 1. Local Canopy cache (@~\/.canopy\/packages\/@)
 -- 2. Elm cache (@~\/.elm\/0.19.1\/packages\/@)
 -- 3. Registry endpoint.json
--- 4. Direct GitHub ZIP
+-- 4. Direct GitHub ZIP (with hash verification against lock file)
 --
--- Returns the 'FetchSource' indicating where the package was found.
+-- The optional 'Text.Text' parameter is the expected SHA-256 hex
+-- digest from the lock file. When present and the GitHub fallback
+-- is used, the downloaded archive is verified against this hash.
+-- When absent, the hash is computed and returned for storage.
 --
 -- @since 0.19.2
-fetchPackage :: Client.Manager -> Pkg.Name -> Version.Version -> IO (Either FetchError FetchSource)
-fetchPackage manager pkg ver = do
+fetchPackage :: Client.Manager -> Pkg.Name -> Version.Version -> Maybe Text.Text -> IO (Either FetchError FetchSource)
+fetchPackage manager pkg ver expectedHash = do
   localResult <- checkLocalCache pkg ver
-  maybe (tryElmCache manager pkg ver) (pure . Right) localResult
+  maybe (tryElmCache manager pkg ver expectedHash) (pure . Right) localResult
 
 -- | After local cache miss, try the Elm cache then network sources.
-tryElmCache :: Client.Manager -> Pkg.Name -> Version.Version -> IO (Either FetchError FetchSource)
-tryElmCache manager pkg ver = do
+tryElmCache :: Client.Manager -> Pkg.Name -> Version.Version -> Maybe Text.Text -> IO (Either FetchError FetchSource)
+tryElmCache manager pkg ver expectedHash = do
   elmResult <- checkElmCache pkg ver
-  maybe (fetchFromNetwork manager pkg ver) (pure . Right) elmResult
+  maybe (fetchFromNetwork manager pkg ver expectedHash) (pure . Right) elmResult
 
 -- | Check the local Canopy package cache.
 --
@@ -287,14 +295,14 @@ fallbackPkg (Pkg.Name author project)
 -- | Attempt to fetch a package from network sources.
 --
 -- Tries the registry endpoint.json first, then falls back to
--- a direct GitHub ZIP download.
+-- a direct GitHub ZIP download with optional hash verification.
 --
 -- @since 0.19.2
-fetchFromNetwork :: Client.Manager -> Pkg.Name -> Version.Version -> IO (Either FetchError FetchSource)
-fetchFromNetwork manager pkg ver = do
+fetchFromNetwork :: Client.Manager -> Pkg.Name -> Version.Version -> Maybe Text.Text -> IO (Either FetchError FetchSource)
+fetchFromNetwork manager pkg ver expectedHash = do
   Log.logEvent (PackageOperation "network-fetch" (Text.pack (Pkg.toChars pkg <> " " <> Version.toChars ver)))
   registryResult <- fetchViaEndpoint manager pkg ver
-  either (\_ -> fetchFromGitHub manager pkg ver) (pure . Right) registryResult
+  either (\_ -> fetchFromGitHub manager pkg ver expectedHash) (pure . Right) registryResult
 
 -- | Fetch a package via the registry's endpoint.json.
 --
@@ -409,25 +417,52 @@ instance Json.FromJSON EndpointResponse where
       <$> o Json..: "url"
       <*> o Json..: "hash"
 
--- | Fetch a package directly from GitHub.
+-- | Fetch a package directly from GitHub with optional hash verification.
 --
 -- Uses the deterministic URL pattern for Canopy packages on GitHub:
 -- @https:\/\/github.com\/{author}\/{project}\/zipball\/{version}\/@
 --
--- This is the last-resort fallback when both the local caches
--- and the registry are unavailable. Archives from GitHub are accepted
--- without hash verification since no registry-provided hash exists.
--- A warning is logged to indicate the unverified download.
+-- This is the last-resort fallback when both the local caches and
+-- the registry are unavailable. When an expected hash is provided
+-- (from the lock file), the downloaded archive is verified against
+-- it using constant-time comparison. When no hash is available
+-- (fresh install), the hash is computed and returned for lock file
+-- storage, and a warning is logged.
 --
 -- @since 0.19.2
-fetchFromGitHub :: Client.Manager -> Pkg.Name -> Version.Version -> IO (Either FetchError FetchSource)
-fetchFromGitHub manager pkg ver = do
+fetchFromGitHub :: Client.Manager -> Pkg.Name -> Version.Version -> Maybe Text.Text -> IO (Either FetchError FetchSource)
+fetchFromGitHub manager pkg ver expectedHash = do
   let zipUrl = gitHubZipUrl pkg ver
   Log.logEvent (PackageOperation "github-fetch" (Text.pack zipUrl))
   result <- safeHttpGet manager zipUrl
-  pure (either (Left . GitHubUnavailable) (handleGitHubSuccess zipUrl) result)
+  pure (either (Left . GitHubUnavailable) (verifyGitHubArchive pkg ver zipUrl expectedHash) result)
+
+-- | Verify a GitHub-downloaded archive against an optional expected hash.
+--
+-- When a hash is expected (from the lock file), the archive is
+-- verified using constant-time comparison and rejected on mismatch.
+-- When no hash is expected, the archive is accepted and its computed
+-- hash is returned for future verification.
+--
+-- @since 0.19.2
+verifyGitHubArchive :: Pkg.Name -> Version.Version -> String -> Maybe Text.Text -> ByteString -> Either FetchError FetchSource
+verifyGitHubArchive pkg ver url expectedHash archiveBytes =
+  maybe acceptUnverified verifyExpected expectedHash
   where
-    handleGitHubSuccess url _bytes = Right (FetchedGitHub (Text.pack url))
+    actualHash = computeSha256Hex archiveBytes
+    urlText = Text.pack url
+    acceptUnverified = Right (FetchedGitHub urlText actualHash)
+    verifyExpected expected = verifyExpectedHash pkg ver urlText actualHash expected
+
+-- | Verify archive hash against an expected value with constant-time comparison.
+--
+-- @since 0.19.2
+verifyExpectedHash :: Pkg.Name -> Version.Version -> Text.Text -> Text.Text -> Text.Text -> Either FetchError FetchSource
+verifyExpectedHash pkg ver url actualHash expected
+  | ConstantTime.secureCompareBS (TextEnc.encodeUtf8 expected) (TextEnc.encodeUtf8 actualHash) =
+      Right (FetchedGitHub url actualHash)
+  | otherwise =
+      Left (IntegrityCheckFailed (buildMismatchMessage pkg ver expected actualHash))
 
 -- | Perform a safe HTTP GET, catching exceptions and returning errors.
 safeHttpGet :: Client.Manager -> String -> IO (Either Text.Text ByteString)
