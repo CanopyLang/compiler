@@ -36,6 +36,7 @@ library
       Builder.Incremental
       Builder.LockFile
       Builder.LockFile.Types
+      Builder.ModuleLoader
       Builder.Paths
       Builder.Solver
       Builder.State

@@ -103,6 +103,7 @@ library
       Make.Types
       New
       Publish
+      Publish.Archive
       Publish.Environment
       Publish.Git
       Publish.Progress
@@ -121,6 +122,7 @@ library
       Reporting.Exit.Install
       Reporting.Exit.Publish
       Reporting.Task
+      SelfUpdate
       Setup
       Stuff
       Terminal.Output
@@ -136,6 +138,8 @@ library
       Test.Server
       Upgrade
       Watch
+      Watch.LiveReload
+      WebIDL.Command
       Terminal
       Terminal.Application
       Terminal.Chomp
@@ -203,6 +207,7 @@ library
     , canopy-core
     , canopy-driver
     , canopy-query
+    , canopy-webidl
     , case-insensitive
     , containers
     , directory
