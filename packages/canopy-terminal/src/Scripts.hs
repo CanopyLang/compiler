@@ -55,6 +55,8 @@ data ScriptResult
     ScriptFailure !Int
   | -- | No script with the given name was found.
     ScriptNotFound
+  | -- | Script execution was skipped because @--run-scripts@ was not passed.
+    ScriptSkipped
   deriving (Eq, Show)
 
 -- | Look up a named script in the application outline.
@@ -78,18 +80,29 @@ hasScript name appOutline =
 
 -- | Run a named script from the application outline.
 --
--- Looks up the script by name, then executes it via the system shell.
--- Prints the script name and command before execution.
+-- Scripts only execute when @allowScripts@ is 'True' (i.e., the user
+-- passed @--run-scripts@). Without the flag, scripts are silently
+-- skipped and 'ScriptSkipped' is returned.
+--
+-- This is a security measure: a malicious @canopy.json@ could define
+-- arbitrary shell commands in the @\"scripts\"@ field. Requiring an
+-- explicit opt-in prevents unintended execution.
+--
+-- A clear warning is printed before execution so the user can see
+-- exactly what command will be run.
 --
 -- @since 0.19.2
-runScript :: ScriptName -> Outline.AppOutline -> IO ScriptResult
-runScript name appOutline =
-  maybe (pure ScriptNotFound) executeCommand (lookupScript name appOutline)
+runScript :: Bool -> ScriptName -> Outline.AppOutline -> IO ScriptResult
+runScript allowScripts name appOutline
+  | not allowScripts = pure ScriptSkipped
+  | otherwise =
+      maybe (pure ScriptNotFound) executeCommand (lookupScript name appOutline)
   where
     executeCommand cmd = do
       let cmdStr = Text.unpack cmd
           nameStr = Text.unpack name
-      Print.println [c|{bold|Running script} {cyan|#{nameStr}}: #{cmdStr}|]
+      Print.println [c|{yellow|WARNING:} Running script {cyan|#{nameStr}}: #{cmdStr}|]
+      Print.println [c|Use {bold|--no-scripts} to skip script execution.|]
       exitCode <- Process.system cmdStr
       toScriptResult nameStr exitCode
 
@@ -97,25 +110,26 @@ runScript name appOutline =
 --
 -- Unlike 'runScript', this function silently succeeds when the hook
 -- is not defined.  If the hook IS defined and fails, it returns
--- the 'ScriptFailure'.
+-- the 'ScriptFailure'. Requires @allowScripts@ to be 'True'.
 --
 -- @since 0.19.2
-runHook :: ScriptName -> Outline.AppOutline -> IO ScriptResult
-runHook name appOutline =
+runHook :: Bool -> ScriptName -> Outline.AppOutline -> IO ScriptResult
+runHook allowScripts name appOutline =
   if hasScript name appOutline
-    then runScript name appOutline
+    then runScript allowScripts name appOutline
     else pure ScriptSuccess
 
 -- | Run a build lifecycle hook using project 'Details.Details'.
 --
 -- Extracts the 'Outline.AppOutline' from the validated outline.
 -- For package projects (which have no scripts field), this is a no-op.
+-- Requires @allowScripts@ to be 'True' for actual execution.
 --
 -- @since 0.19.2
-runBuildHook :: ScriptName -> Details.Details -> IO ScriptResult
-runBuildHook name details =
+runBuildHook :: Bool -> ScriptName -> Details.Details -> IO ScriptResult
+runBuildHook allowScripts name details =
   case Details._detailsOutline details of
-    Details.ValidApp appOutline -> runHook name appOutline
+    Details.ValidApp appOutline -> runHook allowScripts name appOutline
     Details.ValidPkg {} -> pure ScriptSuccess
 
 -- | Convert a process exit code to a 'ScriptResult' and print status.
