@@ -89,7 +89,8 @@ generate inputMode (Opt.GlobalGraph rawGraph _ sourceLocs) mains ffiInfos =
            in (minified, Mode.Prod fields elmCompat ffiUnsafe ffiDbg pool ffiAliases)
         Mode.Dev debugTypes elmCompat ffiUnsafe ffiDbg _ ->
           (rawGraph, Mode.Dev debugTypes elmCompat ffiUnsafe ffiDbg ffiAliases)
-      baseState = Map.foldrWithKey (addMain mode graph) (emptyState sourceLocs) mains
+      trackLines = case mode of Mode.Dev {} -> True; Mode.Prod {} -> False
+      baseState = Map.foldrWithKey (addMain mode graph) (emptyState trackLines sourceLocs) mains
       shouldInclude global =
         not (Kernel_.isDebugger global && not (Mode.isDebug mode))
       filteredGraph = Map.filterWithKey (\global _ -> shouldInclude global) graph
@@ -155,7 +156,7 @@ perfNote mode =
 generateForRepl :: Bool -> Localizer.Localizer -> Opt.GlobalGraph -> ModuleName.Canonical -> Name.Name -> Can.Annotation -> Builder
 generateForRepl ansi localizer (Opt.GlobalGraph graph _ _) home name (Can.Forall _ tipe) =
   let mode = Mode.Dev Nothing True False False Set.empty
-      debugState = addGlobal mode graph (emptyState Map.empty) (Opt.Global ModuleName.debug "toString")
+      debugState = addGlobal mode graph (emptyState False Map.empty) (Opt.Global ModuleName.debug "toString")
       evalState = addGlobal mode graph debugState (Opt.Global home name)
       processExceptionHandler = JS.stmtToBuilder $
         JS.ExprStmt $
@@ -243,7 +244,7 @@ generateForReplEndpoint :: Localizer.Localizer -> Opt.GlobalGraph -> ModuleName.
 generateForReplEndpoint localizer (Opt.GlobalGraph graph _ _) home maybeName (Can.Forall _ tipe) =
   let name = Data.Maybe.fromMaybe Name.replValueToPrint maybeName
       mode = Mode.Dev Nothing True False False Set.empty
-      debugState = addGlobal mode graph (emptyState Map.empty) (Opt.Global ModuleName.debug "toString")
+      debugState = addGlobal mode graph (emptyState False Map.empty) (Opt.Global ModuleName.debug "toString")
       evalState = addGlobal mode graph debugState (Opt.Global home name)
    in Functions.functions
         <> stateToBuilder evalState
@@ -278,15 +279,21 @@ data State = State
     _seenKernelChunks :: Set ByteString,
     _outputLine :: !Int,
     _sourceMapMappings :: ![SourceMap.Mapping],
-    _sourceLocations :: Map Opt.Global Ann.Region
+    _sourceLocations :: Map Opt.Global Ann.Region,
+    _trackLines :: !Bool
   }
 
-emptyState :: Map Opt.Global Ann.Region -> State
-emptyState locs =
-  State mempty [] Set.empty Set.empty 0 [] locs
+-- | Create initial codegen state.
+--
+-- When 'trackLines' is 'True', newlines are counted per-statement
+-- for source map line tracking (dev mode). When 'False', counting
+-- is skipped entirely to avoid double materialization (prod mode).
+emptyState :: Bool -> Map Opt.Global Ann.Region -> State
+emptyState trackLines locs =
+  State mempty [] Set.empty Set.empty 0 [] locs trackLines
 
 stateToBuilder :: State -> Builder
-stateToBuilder (State revKernels revBuilders _ _ _ _ _) =
+stateToBuilder (State revKernels revBuilders _ _ _ _ _ _) =
   prependBuilders revKernels (prependBuilders revBuilders mempty)
 
 prependBuilders :: [Builder] -> Builder -> Builder
@@ -296,12 +303,12 @@ prependBuilders revBuilders monolith =
 -- ADD DEPENDENCIES
 
 addGlobal :: Mode.Mode -> Graph -> State -> Opt.Global -> State
-addGlobal mode graph state@(State revKernels builders seen seenChunks outLine smMappings srcLocs) global =
+addGlobal mode graph state@(State revKernels builders seen seenChunks outLine smMappings srcLocs tl) global =
   if Set.member global seen
     then state
     else
       addGlobalHelp mode graph global $
-        State revKernels builders (Set.insert global seen) seenChunks outLine smMappings srcLocs
+        State revKernels builders (Set.insert global seen) seenChunks outLine smMappings srcLocs tl
 
 filterEssentialDeps :: Mode.Mode -> Set Opt.Global -> Set Opt.Global
 filterEssentialDeps mode deps =
@@ -415,20 +422,23 @@ dispatchNode mode graph currentGlobal addDeps globalInGraph state =
       addStmt (emitMapping currentGlobal (addDeps deps state)) (Kernel_.generatePort mode currentGlobal "outgoingPort" encoder)
 
 addKernelChunks :: Mode.Mode -> Opt.Global -> State -> [Kernel.Chunk] -> State
-addKernelChunks mode currentGlobal (State revKernels revBuilders seen seenChunks outLine smMappings srcLocs) chunks =
+addKernelChunks mode currentGlobal (State revKernels revBuilders seen seenChunks outLine smMappings srcLocs tl) chunks =
   let kernelCode = Kernel_.generateKernel mode chunks
       kernelBytes = BL.toStrict (BB.toLazyByteString kernelCode)
   in if Set.member kernelBytes seenChunks
-     then State revKernels revBuilders (Set.insert currentGlobal seen) seenChunks outLine smMappings srcLocs
-     else State (kernelCode : revKernels) revBuilders (Set.insert currentGlobal seen) (Set.insert kernelBytes seenChunks) (outLine + countNewlinesBS kernelBytes) smMappings srcLocs
+     then State revKernels revBuilders (Set.insert currentGlobal seen) seenChunks outLine smMappings srcLocs tl
+     else
+       let newLine = if tl then outLine + countNewlinesBS kernelBytes else outLine
+       in State (kernelCode : revKernels) revBuilders (Set.insert currentGlobal seen) (Set.insert kernelBytes seenChunks) newLine smMappings srcLocs tl
 
 addStmt :: State -> JS.Stmt -> State
 addStmt state stmt =
   addBuilder state (JS.stmtToBuilder stmt)
 
 addBuilder :: State -> Builder -> State
-addBuilder (State revKernels revBuilders seen seenChunks outLine smMappings srcLocs) builder =
-  State revKernels (builder : revBuilders) seen seenChunks (outLine + countNewlines builder) smMappings srcLocs
+addBuilder (State revKernels revBuilders seen seenChunks outLine smMappings srcLocs tl) builder =
+  let newLine = if tl then outLine + countNewlines builder else outLine
+  in State revKernels (builder : revBuilders) seen seenChunks newLine smMappings srcLocs tl
 
 -- | Count newline bytes in a Builder by materializing it.
 --
