@@ -35,13 +35,19 @@ library
       Builder.Hash
       Builder.Incremental
       Builder.LockFile
+      Builder.LockFile.Generate
       Builder.LockFile.Types
+      Builder.LockFile.Verify
       Builder.ModuleLoader
       Builder.Paths
       Builder.Solver
       Builder.State
       Builder.Workspace
       Compiler
+      Compiler.Cache
+      Compiler.Discovery
+      Compiler.Parallel
+      Compiler.Types
       Crypto.ConstantTime
       Crypto.Signature
       Crypto.TrustedKeys

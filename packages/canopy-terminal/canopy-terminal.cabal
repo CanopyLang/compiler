@@ -93,6 +93,7 @@ library
       Install.PkgPlan
       Install.Types
       Lint
+      Lint.Config
       Lint.Fix
       Lint.Report
       Lint.Rules
@@ -135,8 +136,11 @@ library
       Reporting.Exit.Install
       Reporting.Exit.Publish
       Reporting.Task
+      Scripts
       SelfUpdate
       Setup
+      Setup.LocalCompilation
+      Setup.PackageLocator
       Stuff
       Terminal.Output
       Terminal.Print
