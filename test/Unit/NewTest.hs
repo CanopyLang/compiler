@@ -171,15 +171,15 @@ testContentGeneration :: TestTree
 testContentGeneration =
   testGroup
     "content generation"
-    [ testCase "app canopy.json includes elm/core" $
-        assertBool "should include elm/core"
-          (List.isInfixOf "elm/core" (New.canopyJsonContent New.AppTemplate)),
-      testCase "app canopy.json includes elm/html" $
-        assertBool "should include elm/html"
-          (List.isInfixOf "elm/html" (New.canopyJsonContent New.AppTemplate)),
-      testCase "app canopy.json includes elm/browser" $
-        assertBool "should include elm/browser"
-          (List.isInfixOf "elm/browser" (New.canopyJsonContent New.AppTemplate)),
+    [ testCase "app canopy.json includes canopy/core" $
+        assertBool "should include canopy/core"
+          (List.isInfixOf "canopy/core" (New.canopyJsonContent New.AppTemplate)),
+      testCase "app canopy.json includes canopy/html" $
+        assertBool "should include canopy/html"
+          (List.isInfixOf "canopy/html" (New.canopyJsonContent New.AppTemplate)),
+      testCase "app canopy.json includes canopy/browser" $
+        assertBool "should include canopy/browser"
+          (List.isInfixOf "canopy/browser" (New.canopyJsonContent New.AppTemplate)),
       testCase "app canopy.json has source-directories" $
         assertBool "should have source-directories"
           (List.isInfixOf "source-directories" (New.canopyJsonContent New.AppTemplate)),

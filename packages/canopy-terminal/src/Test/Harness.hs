@@ -70,7 +70,7 @@ newtype HarnessContent = HarnessContent {unHarnessContent :: Text}
 -- compiled tests, and configuration into a single self-contained
 -- Node.js script. The load order matters:
 --
--- 1. DOM shim (provides @document@\/@window@ for Elm runtime)
+-- 1. DOM shim (provides @document@\/@window@ for Canopy runtime)
 -- 2. Task executor (sets @window.CanopyTaskExecutor@)
 -- 3. Compiled test code (includes FFI JS from package artifacts)
 -- 4. Playwright bindings (overrides FFI functions with URL resolution)
@@ -132,9 +132,9 @@ configSection config =
     headedText = if config ^. harnessHeaded then "true" else "false"
     slowMoText = Text.pack (show (config ^. harnessSlowMo))
 
--- | Generate a minimal DOM shim so the Elm runtime initializes in Node.js.
+-- | Generate a minimal DOM shim so the Canopy runtime initializes in Node.js.
 --
--- The compiled Elm code sets @_VirtualDom_doc = typeof document !== 'undefined' ? document : {}@.
+-- The compiled Canopy code sets @_VirtualDom_doc = typeof document !== 'undefined' ? document : {}@.
 -- Without a global @document@, the runtime gets an empty object and crashes
 -- when calling @createElement@, @createTextNode@, etc.
 --

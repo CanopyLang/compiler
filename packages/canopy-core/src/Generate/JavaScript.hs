@@ -387,7 +387,7 @@ perfNote mode =
       mempty
     Mode.Dev Nothing elmCompatible _ _ _ ->
       let optimizeUrl = if elmCompatible
-                        then "https://elm-lang.org/0.19.1/optimize"
+                        then "https://canopy-lang.org/0.19.1/optimize"
                         else Doc.makeNakedLink "optimize"
       in JS.stmtToBuilder $
            JS.ExprStmtWithSemi $
@@ -400,7 +400,7 @@ perfNote mode =
                ]
     Mode.Dev (Just _) elmCompatible _ _ _ ->
       let optimizeUrl = if elmCompatible
-                        then "https://elm-lang.org/0.19.1/optimize"
+                        then "https://canopy-lang.org/0.19.1/optimize"
                         else Doc.makeNakedLink "optimize"
       in JS.stmtToBuilder $
            JS.ExprStmtWithSemi $

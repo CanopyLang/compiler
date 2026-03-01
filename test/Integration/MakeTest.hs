@@ -56,7 +56,7 @@ testComponentIntegration =
             pkg1 = Package.core
             pkg2 = Package.core
         "1.0.0" @?= Version.toChars ver1
-        Package.toChars pkg1 @?= "elm/core",
+        Package.toChars pkg1 @?= "canopy/core",
       testCase "names integrate with string conversion" $ do
         let testInput = "test"
             name1 = Name.fromChars testInput
@@ -156,7 +156,7 @@ testPackageHandling =
             show1 = show core1
             show2 = show core2
         assertEqual "package show representation stable" show1 show2
-        Package.toChars core1 @?= "elm/core",
+        Package.toChars core1 @?= "canopy/core",
       testCase "package integrates with other types" $ do
         let packageCore = Package.core
             versionOne = Version.one
@@ -205,7 +205,7 @@ testMakeSystemIntegration =
             buildVer = Version.one
             entryPoint = Name._main
         assertBool "source modules are available" (all (\m -> m /= ModuleName.basics || m == ModuleName.basics) sourceModules)
-        Package.toChars targetPackage @?= "elm/core"
+        Package.toChars targetPackage @?= "canopy/core"
         "1.0.0" @?= Version.toChars buildVer
         Name.toChars entryPoint @?= "main"
         assertBool "pipeline components integrate" (length sourceModules == 3),
@@ -237,7 +237,7 @@ testBuildWorkflowIntegration =
                 devVer = Version.one
             assertBool "development modules available" (length devModules == 2)
             assertBool "development names available" (length devNames == 3)
-            Package.toChars devPackage @?= "elm/core"
+            Package.toChars devPackage @?= "canopy/core"
             "1.0.0" @?= Version.toChars devVer
             assertBool "development modules have string representations" (all (\m -> length (show m) > 0) devModules)
         ),
@@ -249,7 +249,7 @@ testBuildWorkflowIntegration =
                 prodVer = Version.one
                 prodEntryPoint = Name._main
             assertBool "production modules comprehensive" (length prodModules == 4)
-            Package.toChars prodPackage @?= "elm/core"
+            Package.toChars prodPackage @?= "canopy/core"
             "1.0.0" @?= Version.toChars prodVer
             Name.toChars prodEntryPoint @?= "main"
             assertBool "prod workflow ready" (all (\m -> m `elem` prodModules) [ModuleName.basics, ModuleName.list])
@@ -262,7 +262,7 @@ testBuildWorkflowIntegration =
                 testPackage = Package.core
             assertBool "test modules available" (length testModules == 2)
             assertBool "test names available" (length testNames == 3)
-            Package.toChars testPackage @?= "elm/core"
+            Package.toChars testPackage @?= "canopy/core"
             assertBool "testing workflow supported" (Name.true `elem` testNames && Name.false `elem` testNames)
         ),
       testCase "build optimization workflow integration" $
@@ -273,7 +273,7 @@ testBuildWorkflowIntegration =
                 optVer = Version.one
                 criticalNames = [Name._main, Name.value, Name.identity]
             assertBool "optimization modules complete" (length optModules == 4)
-            Package.toChars optPackage @?= "elm/core"
+            Package.toChars optPackage @?= "canopy/core"
             "1.0.0" @?= Version.toChars optVer
             assertBool "critical names available" (length criticalNames == 3)
             assertBool "optimization workflow ready" (all (`elem` criticalNames) [Name._main, Name.value])

@@ -232,7 +232,7 @@ findCanopyFilesIn dir = do
 
 -- ── Header Bar ──────────────────────────────────────────────────────
 
--- | Format a dullcyan header bar in the Elm report style.
+-- | Format a dullcyan header bar in the Canopy report style.
 --
 -- Single file:    @-- TEST RESULTS ---------- test\/PlaywrightTest.can@
 -- Multiple files: @-- TEST RESULTS ----------------------- 3 files@

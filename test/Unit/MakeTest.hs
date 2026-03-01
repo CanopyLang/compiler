@@ -51,15 +51,15 @@ testPackageHandling =
   testGroup
     "Package handling"
     [ testCase "package toChars conversion works correctly" $ do
-        Package.toChars Package.core @?= "elm/core"
-        Package.toChars Package.browser @?= "elm/browser"
-        Package.toChars Package.html @?= "elm/html",
+        Package.toChars Package.core @?= "canopy/core"
+        Package.toChars Package.browser @?= "canopy/browser"
+        Package.toChars Package.html @?= "canopy/html",
       testCase "package toUrl conversion works correctly" $ do
-        Package.toUrl Package.core @?= "elm/core"
-        Package.toUrl Package.json @?= "elm/json",
+        Package.toUrl Package.core @?= "canopy/core"
+        Package.toUrl Package.json @?= "canopy/json",
       testCase "package toFilePath conversion works correctly" $ do
-        Package.toFilePath Package.core @?= "elm/core"
-        Package.toFilePath Package.http @?= "elm/http"
+        Package.toFilePath Package.core @?= "canopy/core"
+        Package.toFilePath Package.http @?= "canopy/http"
     ]
 
 -- | Test Version functionality used by Make system.

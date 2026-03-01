@@ -481,9 +481,10 @@ function _Platform_setupIncomingPort(name, sendToApp)
 
 function _Platform_export__PROD(exports)
 {
-	scope['Elm']
-		? _Platform_mergeExportsProd(scope['Elm'], exports)
-		: scope['Elm'] = exports;
+	scope['Canopy']
+		? _Platform_mergeExportsProd(scope['Canopy'], exports)
+		: scope['Canopy'] = exports;
+	scope['Elm'] = scope['Canopy'];
 }
 
 
@@ -502,9 +503,10 @@ function _Platform_mergeExportsProd(obj, exports)
 
 function _Platform_export__DEBUG(exports)
 {
-	scope['Elm']
-		? _Platform_mergeExportsDebug('Elm', scope['Elm'], exports)
-		: scope['Elm'] = exports;
+	scope['Canopy']
+		? _Platform_mergeExportsDebug('Canopy', scope['Canopy'], exports)
+		: scope['Canopy'] = exports;
+	scope['Elm'] = scope['Canopy'];
 }
 
 

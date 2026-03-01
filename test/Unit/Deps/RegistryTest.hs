@@ -34,7 +34,7 @@ testRegistryUrlResolution =
     [ testCase "empty custom repos uses default URL" $ do
         unsetRegistryEnv
         url <- Registry.resolveRegistryUrl Map.empty
-        url @?= "https://package.elm-lang.org/all-packages",
+        url @?= "https://package.canopy-lang.org/all-packages",
       testCase "custom repo URL is used when set" $ do
         unsetRegistryEnv
         let customUrl = "https://packages.mycompany.com/all-packages"

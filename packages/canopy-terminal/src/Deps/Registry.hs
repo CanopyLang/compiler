@@ -126,9 +126,9 @@ instance Binary.Binary Registry where
 
 -- CONSTANTS
 
--- | Default registry URL (Elm package registry, which Canopy is compatible with).
+-- | Default registry URL for the Canopy package registry.
 registryUrl :: String
-registryUrl = "https://package.elm-lang.org/all-packages"
+registryUrl = "https://package.canopy-lang.org/all-packages"
 
 -- | Absolute path of the binary cache file within the canopy cache directory.
 registryCacheFile :: FilePath -> FilePath
@@ -361,7 +361,7 @@ httpErrorToString (Http.BadIO url _) =
 -- to arrays of version strings:
 --
 -- @
--- { "elm/core": ["1.0.0", "1.0.1"], "elm/html": ["1.0.0"] }
+-- { "canopy/core": ["1.0.0", "1.0.1"], "canopy/html": ["1.0.0"] }
 -- @
 parseRegistryResponse :: ByteString -> IO (Either String Registry)
 parseRegistryResponse bytes =

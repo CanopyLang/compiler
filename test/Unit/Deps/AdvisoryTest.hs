@@ -136,12 +136,12 @@ defaultAdvisoriesTests =
 
 -- TEST FIXTURES
 
--- | Advisory for elm/http versions 1.0.0 through 1.0.5
+-- | Advisory for canopy/http versions 1.0.0 through 1.0.5
 testAdvisory :: Advisory.Advisory
 testAdvisory =
   Advisory.Advisory
     { Advisory._advisoryId = "CANOPY-2026-001",
-      Advisory._advisoryPackage = "elm/http",
+      Advisory._advisoryPackage = "canopy/http",
       Advisory._advisoryAffectedLower = Version.Version 1 0 0,
       Advisory._advisoryAffectedUpper = Version.Version 1 0 5,
       Advisory._advisorySeverity = Advisory.SevHigh,
@@ -149,12 +149,12 @@ testAdvisory =
       Advisory._advisoryFixedIn = Just (Version.Version 1 0 6)
     }
 
--- | Second advisory for elm/http (overlapping range)
+-- | Second advisory for canopy/http (overlapping range)
 testAdvisory2 :: Advisory.Advisory
 testAdvisory2 =
   Advisory.Advisory
     { Advisory._advisoryId = "CANOPY-2026-002",
-      Advisory._advisoryPackage = "elm/http",
+      Advisory._advisoryPackage = "canopy/http",
       Advisory._advisoryAffectedLower = Version.Version 1 0 2,
       Advisory._advisoryAffectedUpper = Version.Version 1 0 4,
       Advisory._advisorySeverity = Advisory.SevMedium,
@@ -167,7 +167,7 @@ singleVersionAdvisory :: Advisory.Advisory
 singleVersionAdvisory =
   Advisory.Advisory
     { Advisory._advisoryId = "CANOPY-2026-003",
-      Advisory._advisoryPackage = "elm/json",
+      Advisory._advisoryPackage = "canopy/json",
       Advisory._advisoryAffectedLower = Version.Version 2 0 0,
       Advisory._advisoryAffectedUpper = Version.Version 2 0 0,
       Advisory._advisorySeverity = Advisory.SevCritical,
@@ -175,12 +175,12 @@ singleVersionAdvisory =
       Advisory._advisoryFixedIn = Just (Version.Version 2 0 1)
     }
 
--- | Dependencies where elm/http is in the affected range
+-- | Dependencies where canopy/http is in the affected range
 affectedDeps :: Map Pkg.Name Version.Version
 affectedDeps =
   Map.singleton Pkg.http (Version.Version 1 0 3)
 
--- | Dependencies where elm/http is above the affected range
+-- | Dependencies where canopy/http is above the affected range
 unaffectedDeps :: Map Pkg.Name Version.Version
 unaffectedDeps =
   Map.singleton Pkg.http (Version.Version 2 0 0)

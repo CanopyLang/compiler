@@ -31,11 +31,11 @@ tests =
 -- that no errors are produced.
 testSimpleModule :: IO ()
 testSimpleModule = do
-  -- Load elm/core interfaces for Basics, List, etc.
+  -- Load core interfaces for Basics, List, etc.
   maybeCoreIfaces <- PackageCache.loadElmCoreInterfaces
   case maybeCoreIfaces of
     Nothing ->
-      assertFailure "elm/core not installed - run 'elm install elm/core' first"
+      assertFailure "core not installed - run 'canopy install canopy/core' first"
     Just depIfaces -> do
       -- Convert DependencyInterface to Interface for compilation
       let ifaces = Map.map extractPublicInterface depIfaces

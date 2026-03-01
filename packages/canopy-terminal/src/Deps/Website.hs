@@ -3,7 +3,7 @@
 -- | URL construction utilities for the package registry website.
 --
 -- Provides URL routing helpers for constructing API endpoints on
--- @package.elm-lang.org@. Used by the publish and diff commands to
+-- @package.canopy-lang.org@. Used by the publish and diff commands to
 -- build download and documentation URLs.
 --
 -- @since 0.19.1

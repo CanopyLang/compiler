@@ -61,8 +61,8 @@ try {
         <> javascript
         <> [r|
 
-  // Create Canopy alias for backward compatibility
-  window.Canopy = window.Elm;
+  // Create Elm alias for backward compatibility
+  window.Elm = window.Canopy;
 
   var app = Canopy.|]
         <> name
@@ -123,8 +123,8 @@ try {
         <> javascript
         <> [r|
 
-  // Create Canopy alias for backward compatibility
-  window.Canopy = window.Elm;
+  // Create Elm alias for backward compatibility
+  window.Elm = window.Canopy;
 
   var app = Canopy.|]
         <> name

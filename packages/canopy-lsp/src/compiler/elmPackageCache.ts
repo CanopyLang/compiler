@@ -208,7 +208,7 @@ export class ElmPackageCache implements IElmPackageCache {
     if (!ElmPackageCache.allPackagesFromWebsite) {
       ElmPackageCache.allPackagesFromWebsite = JSON.parse(
         await this.host.readFile(
-          URI.parse("https://package.elm-lang.org/all-packages/"),
+          URI.parse("https://package.canopy-lang.org/all-packages/"),
         ),
       ) as { [packageNameAndMaintainer: string]: string[] };
     }

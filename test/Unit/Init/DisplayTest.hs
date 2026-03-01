@@ -122,12 +122,12 @@ errorFormattingTests =
         let err = NoSolution [Pkg.core, Pkg.browser]
             rendered = Doc.toString (Display.formatErrorMessage err)
         rendered
-          @?= "-- NO SOLUTION\n\nNo valid dependency solution found for:\n    Name {_author = elm, _project = core}\n    Name {_author = elm, _project = browser}",
+          @?= "-- NO SOLUTION\n\nNo valid dependency solution found for:\n    Name {_author = canopy, _project = core}\n    Name {_author = canopy, _project = browser}",
       Test.testCase "formatErrorMessage handles NoOfflineSolution" $ do
         let err = NoOfflineSolution [Pkg.html]
             rendered = Doc.toString (Display.formatErrorMessage err)
         rendered
-          @?= "-- NO OFFLINE SOLUTION\n\nNo offline solution available for:\n    Name {_author = elm, _project = html}",
+          @?= "-- NO OFFLINE SOLUTION\n\nNo offline solution available for:\n    Name {_author = canopy, _project = html}",
       Test.testCase "formatErrorMessage handles RegistryFailure" $ do
         let err = RegistryFailure (Exit.RegistryBadData "Test error")
             rendered = Doc.toString (Display.formatErrorMessage err)

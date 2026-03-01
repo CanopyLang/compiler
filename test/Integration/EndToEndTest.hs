@@ -71,7 +71,7 @@ compileSource path source = do
   maybeCoreIfaces <- PackageCache.loadElmCoreInterfaces
   case maybeCoreIfaces of
     Nothing ->
-      return (Left (OtherError "elm/core not installed"))
+      return (Left (OtherError "canopy/core not installed"))
     Just depIfaces -> do
       let ifaces = Map.map extractPublicInterface depIfaces
       IO.writeFile path source

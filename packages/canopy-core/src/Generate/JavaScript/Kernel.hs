@@ -294,7 +294,7 @@ toMainExports mode mains =
   let export = JsName.fromKernel Name.platform "export"
       exports = generateExports mode (Map.foldrWithKey addToTrie emptyTrie mains)
    in JsName.toBuilder export <> "(" <> exports <> ");"
-        <> "scope['Canopy'] = scope['Elm'];"
+        <> "scope['Elm'] = scope['Canopy'];"
 
 -- | Render a trie of mains as a nested JavaScript object literal.
 --

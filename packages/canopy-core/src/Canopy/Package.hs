@@ -31,6 +31,8 @@ module Canopy.Package
     --
     elm,
     canopy,
+    elmExplorations,
+    canopyExplorations,
     --
     suggestions,
     nearbyNames,
@@ -75,7 +77,7 @@ data Name = Name
   { _author :: !Author,
     _project :: !Project
   }
-  deriving (Ord, Show)
+  deriving (Show)
 
 type Author = Utf8 AUTHOR
 
@@ -139,7 +141,7 @@ kernel =
 {-# NOINLINE core #-}
 core :: Name
 core =
-  toName elm "core"
+  toName canopy "core"
 
 zokkaCore :: Name
 zokkaCore =
@@ -148,42 +150,42 @@ zokkaCore =
 {-# NOINLINE browser #-}
 browser :: Name
 browser =
-  toName elm "browser"
+  toName canopy "browser"
 
 {-# NOINLINE virtualDom #-}
 virtualDom :: Name
 virtualDom =
-  toName elm "virtual-dom"
+  toName canopy "virtual-dom"
 
 {-# NOINLINE html #-}
 html :: Name
 html =
-  toName elm "html"
+  toName canopy "html"
 
 {-# NOINLINE json #-}
 json :: Name
 json =
-  toName elm "json"
+  toName canopy "json"
 
 {-# NOINLINE http #-}
 http :: Name
 http =
-  toName elm "http"
+  toName canopy "http"
 
 {-# NOINLINE url #-}
 url :: Name
 url =
-  toName elm "url"
+  toName canopy "url"
 
 {-# NOINLINE webgl #-}
 webgl :: Name
 webgl =
-  toName elmExplorations "webgl"
+  toName canopyExplorations "webgl"
 
 {-# NOINLINE linearAlgebra #-}
 linearAlgebra :: Name
 linearAlgebra =
-  toName elmExplorations "linear-algebra"
+  toName canopyExplorations "linear-algebra"
 
 {-# NOINLINE test #-}
 test :: Name
@@ -219,9 +221,9 @@ canopyExplorations =
 
 suggestions :: Map Name.Name Name
 suggestions =
-  let random = toName elm "random"
-      time = toName elm "time"
-      file = toName elm "file"
+  let random = toName canopy "random"
+      time = toName canopy "time"
+      file = toName canopy "file"
    in Map.fromList
         [ "Browser" ==> browser,
           "File" ==> file,
@@ -266,9 +268,35 @@ projectDistance given possibility =
 
 -- INSTANCES
 
+-- | Normalize an author for comparison purposes.
+--
+-- Treats @elm@ and @canopy@ as the same author, and likewise for
+-- @elm-explorations@ and @canopy-explorations@. This ensures that
+-- packages cached under the legacy @elm@ author are considered equal
+-- to their @canopy@ equivalents during type checking and unification.
+--
+-- Without this normalization, types from cached @elm\/core@ interfaces
+-- (stored in @~\/.elm\/0.19.1\/packages\/@) would fail to unify with
+-- types produced by the compiler using @canopy\/core@, causing spurious
+-- type errors during compilation.
+--
+-- @since 0.19.2
+{-# INLINE normalizeAuthor #-}
+normalizeAuthor :: Author -> Author
+normalizeAuthor a
+  | a == elm = canopy
+  | a == elmExplorations = canopyExplorations
+  | otherwise = a
+
 instance Eq Name where
   (==) (Name author1 project1) (Name author2 project2) =
-    project1 == project2 && author1 == author2
+    project1 == project2 && normalizeAuthor author1 == normalizeAuthor author2
+
+instance Ord Name where
+  compare (Name author1 project1) (Name author2 project2) =
+    case compare (normalizeAuthor author1) (normalizeAuthor author2) of
+      EQ -> compare project1 project2
+      x -> x
 
 instance Eq Canonical where
   (==) (Canonical package1 version1) (Canonical package2 version2) =

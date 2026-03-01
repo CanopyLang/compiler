@@ -267,7 +267,7 @@ isHexDigest :: Text.Text -> Bool
 isHexDigest t =
   Text.length t == 64 && Text.all isHexChar t
   where
-    isHexChar c = Char.isHexDigit c
+    isHexChar ch = Char.isHexDigit ch
 
 -- | Map GHC os identifier to release slug.
 mapOS :: String -> Text.Text

@@ -47,10 +47,10 @@ testResolvePackagePath :: TestTree
 testResolvePackagePath =
   testGroup
     "resolvePackagePath"
-    [ testCase "finds elm/core in cache" $ do
+    [ testCase "finds core in cache" $ do
         result <- Vendor.resolvePackagePath Pkg.core (makeVersion 1 0 5)
         case result of
-          Nothing -> assertFailure "elm/core 1.0.5 should be found in local or Elm cache"
+          Nothing -> assertFailure "core 1.0.5 should be found in local or Elm cache"
           Just path -> assertBool ("path should exist: " ++ path) =<< Dir.doesDirectoryExist path,
       testCase "returns Nothing for nonexistent package" $ do
         let fakePkg = Pkg.Name (Utf8.fromChars "fake") (Utf8.fromChars "nonexistent")
@@ -133,7 +133,7 @@ testCheckElmCache :: TestTree
 testCheckElmCache =
   testGroup
     "checkElmCache"
-    [ testCase "finds elm/core in Elm cache" $ do
+    [ testCase "finds core in Elm cache" $ do
         result <- Fetch.checkElmCache Pkg.core (makeVersion 1 0 5)
         case result of
           Nothing -> pure ()
@@ -163,13 +163,13 @@ testFetchSourceTypes =
         let src = Fetch.FetchedRegistry "https://example.com/pkg.zip"
          in show src @?= "FetchedRegistry \"https://example.com/pkg.zip\"",
       testCase "FetchedGitHub stores URL" $
-        let src = Fetch.FetchedGitHub "https://github.com/elm/core/zipball/1.0.5/"
-         in show src @?= "FetchedGitHub \"https://github.com/elm/core/zipball/1.0.5/\"",
+        let src = Fetch.FetchedGitHub "https://github.com/canopy/core/zipball/1.0.5/"
+         in show src @?= "FetchedGitHub \"https://github.com/canopy/core/zipball/1.0.5/\"",
       testCase "FetchError AllSourcesFailed contains package info" $ do
         let err = Fetch.AllSourcesFailed Pkg.core (makeVersion 1 0 0)
             rendered = show err
         assertBool "should mention AllSourcesFailed" ("AllSourcesFailed" `isIn` rendered)
-        assertBool "should mention elm" ("elm" `isIn` rendered)
+        assertBool "should mention canopy" ("canopy" `isIn` rendered)
         assertBool "should mention core" ("core" `isIn` rendered)
     ]
 
@@ -179,21 +179,21 @@ testPackageSourceJson =
   testGroup
     "PackageSource JSON"
     [ testCase "toPackageSource builds correct structure" $ do
-        let ps = Fetch.toPackageSource Pkg.core (Just "https://github.com/elm/core/zipball/1.0.5/")
-        Fetch._psGitUrl ps @?= "https://github.com/elm/core"
-        Fetch._psArchiveUrl ps @?= Just "https://github.com/elm/core/zipball/1.0.5/",
+        let ps = Fetch.toPackageSource Pkg.core (Just "https://github.com/canopy/core/zipball/1.0.5/")
+        Fetch._psGitUrl ps @?= "https://github.com/canopy/core"
+        Fetch._psArchiveUrl ps @?= Just "https://github.com/canopy/core/zipball/1.0.5/",
       testCase "toPackageSource with Nothing archive" $ do
         let ps = Fetch.toPackageSource Pkg.core Nothing
-        Fetch._psGitUrl ps @?= "https://github.com/elm/core"
+        Fetch._psGitUrl ps @?= "https://github.com/canopy/core"
         Fetch._psArchiveUrl ps @?= Nothing,
       testCase "gitHubZipUrl builds correct URL" $
         Fetch.gitHubZipUrl Pkg.core (makeVersion 1 0 5)
-          @?= "https://github.com/elm/core/zipball/1.0.5/",
+          @?= "https://github.com/canopy/core/zipball/1.0.5/",
       testCase "gitRepoUrl builds correct URL" $
         Fetch.gitRepoUrl Pkg.core
-          @?= "https://github.com/elm/core",
-      testCase "registryBase is elm-lang.org" $
-        Fetch.registryBase @?= "https://package.elm-lang.org"
+          @?= "https://github.com/canopy/core",
+      testCase "registryBase is canopy-lang.org" $
+        Fetch.registryBase @?= "https://package.canopy-lang.org"
     ]
 
 -- Helpers

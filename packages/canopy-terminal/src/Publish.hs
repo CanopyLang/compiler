@@ -228,7 +228,7 @@ publishToRepository env pkg vsn docs customRepositoryData =
 -- | Publish to a default package server repository.
 --
 -- Validates that the repository is not the standard Canopy repository
--- (which should use elm publish instead) and proceeds with Git verification.
+-- (which should use canopy publish instead) and proceeds with Git verification.
 --
 -- @since 0.19.1
 publishToDefaultServer :: Env -> Name -> Version -> Documentation -> CustomSingleRepositoryData -> Task Publish ()

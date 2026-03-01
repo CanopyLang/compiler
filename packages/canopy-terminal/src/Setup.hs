@@ -135,7 +135,7 @@ reportSummary located missing localCompiled = do
       Print.newline
       Print.println [c|To install missing packages:|]
       Print.println [c|  1. If you previously used Elm, Canopy can import cached artifacts from ~/.elm/|]
-      Print.println [c|  2. Otherwise, run '{green|canopy install elm/core}' to fetch packages directly.|]
+      Print.println [c|  2. Otherwise, run '{green|canopy install canopy/core}' to fetch packages directly.|]
     else do
       Print.newline
       Print.println [c|  All standard library packages are available.|]

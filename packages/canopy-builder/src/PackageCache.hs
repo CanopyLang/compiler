@@ -107,30 +107,35 @@ instance Binary LegacyArtifactCache where
   get = liftM2 LegacyArtifactCache Binary.get Binary.get
   put (LegacyArtifactCache fps arts) = Binary.put fps >> Binary.put arts
 
--- | Map legacy elm package references to canopy equivalents.
+-- | Map between canopy and elm package authors for fallback lookups.
 --
--- When looking up @elm\/core@, also try @canopy\/core@ since Canopy provides
--- its own drop-in replacement packages with additional features (FFI runtime, etc.).
+-- When looking up @canopy\/core@, also try @elm\/core@ on disk since the
+-- package cache may still be stored under the legacy @elm@ author.
+-- Conversely, @elm\/core@ lookups also try @canopy\/core@.
 --
 -- @since 0.19.1
-canopyMappedAuthor :: String -> Maybe String
-canopyMappedAuthor "elm" = Just "canopy"
-canopyMappedAuthor _ = Nothing
+fallbackAuthor :: String -> Maybe String
+fallbackAuthor "canopy" = Just "elm"
+fallbackAuthor "canopy-explorations" = Just "elm-explorations"
+fallbackAuthor "elm" = Just "canopy"
+fallbackAuthor "elm-explorations" = Just "canopy-explorations"
+fallbackAuthor _ = Nothing
 
 -- | Build the search paths for loading package artifacts.
 --
 -- Returns paths in priority order:
 --
 -- 1. @~\/.canopy\/packages\/{author}\/{package}\/{version}\/artifacts.dat@
--- 2. @~\/.canopy\/packages\/canopy\/{package}\/{version}\/artifacts.dat@ (if author is @elm@)
+-- 2. @~\/.canopy\/packages\/{fallback-author}\/{package}\/{version}\/artifacts.dat@ (if author has a fallback mapping)
 -- 3. @~\/.elm\/0.19.1\/packages\/{author}\/{package}\/{version}\/artifacts.dat@
 --
 -- @since 0.19.1
 packageArtifactPaths :: FilePath -> String -> String -> String -> [FilePath]
 packageArtifactPaths homeDir author package version =
   [homeDir </> ".canopy" </> "packages" </> author </> package </> version </> "artifacts.dat"]
-  ++ maybe [] (\mapped -> [homeDir </> ".canopy" </> "packages" </> mapped </> package </> version </> "artifacts.dat"]) (canopyMappedAuthor author)
+  ++ maybe [] (\mapped -> [homeDir </> ".canopy" </> "packages" </> mapped </> package </> version </> "artifacts.dat"]) (fallbackAuthor author)
   ++ [homeDir </> ".elm" </> "0.19.1" </> "packages" </> author </> package </> version </> "artifacts.dat"]
+  ++ maybe [] (\mapped -> [homeDir </> ".elm" </> "0.19.1" </> "packages" </> mapped </> package </> version </> "artifacts.dat"]) (fallbackAuthor author)
 
 -- | Try loading from a list of paths, returning the first successful result.
 --
@@ -208,9 +213,10 @@ loadCompleteArtifactsFile path = do
         Left _ ->
           return Nothing
 
--- | Load elm\/core package interfaces.
+-- | Load core package interfaces.
 --
--- Convenience function to load the core Elm package interfaces.
+-- Convenience function to load the core package interfaces (looks up
+-- as @elm\/core@ on disk for backward compatibility with existing caches).
 -- This package contains Basics, List, Maybe, Result, String, etc.
 -- Returns 'Nothing' when the package is not installed or its
 -- artifact cache is missing.

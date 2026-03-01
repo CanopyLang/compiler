@@ -99,18 +99,18 @@ fromGlobalTests :: TestTree
 fromGlobalTests =
   testGroup
     "fromGlobal"
-    [ testCase "global name for elm/core List.map has correct structure" $
+    [ testCase "global name for canopy/core List.map has correct structure" $
         let home = ModuleName.Canonical Pkg.core (name "List")
             result = nameToString (JsName.fromGlobal home (name "map"))
-        in result @?= "$elm$core$List$map",
+        in result @?= "$canopy$core$List$map",
       testCase "global name for dotted module escapes dots to dollar signs" $
         let home = ModuleName.Canonical Pkg.core (name "Dict.Helper")
             result = nameToString (JsName.fromGlobal home (name "get"))
-        in result @?= "$elm$core$Dict$Helper$get",
+        in result @?= "$canopy$core$Dict$Helper$get",
       testCase "global name for package with dashes escapes to underscores" $
         let home = ModuleName.Canonical Pkg.virtualDom (name "VirtualDom")
             result = nameToString (JsName.fromGlobal home (name "node"))
-        in result @?= "$elm$virtual_dom$VirtualDom$node"
+        in result @?= "$canopy$virtual_dom$VirtualDom$node"
     ]
 
 -- FROM KERNEL TESTS
@@ -142,7 +142,7 @@ fromCycleTests =
     [ testCase "cycle name has $cyclic$ marker and module prefix" $
         let home = ModuleName.Canonical Pkg.core (name "Main")
             result = nameToString (JsName.fromCycle home (name "myVal"))
-        in result @?= "$elm$core$Main$cyclic$myVal"
+        in result @?= "$canopy$core$Main$cyclic$myVal"
     ]
 
 -- FROM INT TESTS

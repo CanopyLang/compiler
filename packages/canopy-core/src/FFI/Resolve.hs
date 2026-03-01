@@ -158,7 +158,12 @@ moduleToJsPath modName =
 
 -- | Check whether a package is in the trusted set for kernel modules.
 --
--- Only packages authored by @\"elm\"@ are allowed to use kernel modules.
+-- Packages authored by @\"canopy\"@, @\"canopy-explorations\"@, @\"elm\"@,
+-- or @\"elm-explorations\"@ are allowed to use kernel modules.
 isTrustedPackage :: Pkg.Name -> Bool
 isTrustedPackage pkg =
-  Utf8.toChars (Pkg._author pkg) == "elm"
+  let author = Pkg._author pkg
+   in author == Pkg.canopy
+        || author == Pkg.elm
+        || author == Pkg.canopyExplorations
+        || author == Pkg.elmExplorations

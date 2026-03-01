@@ -297,7 +297,7 @@ readCachedDocs path = do
 -- | Download documentation from registry and cache it.
 downloadAndCacheDocs :: Http.Manager -> Pkg.Name -> Version.Version -> FilePath -> FilePath -> IO (Either String Docs.Documentation)
 downloadAndCacheDocs manager name version home path = do
-  let url = Website.route "https://package.elm-lang.org" ("/packages/" <> Pkg.toUrl name <> "/" <> Version.toChars version) [("file", "docs.json")]
+  let url = Website.route "https://package.canopy-lang.org" ("/packages/" <> Pkg.toUrl name <> "/" <> Version.toChars version) [("file", "docs.json")]
   Http.getWithFallback Http.AllowFallback manager url [] show $ \body ->
     case Decode.fromByteString Docs.decoder body of
       Right docs -> do

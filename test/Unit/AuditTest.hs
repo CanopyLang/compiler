@@ -182,7 +182,7 @@ testAdvisory :: Advisory.Advisory
 testAdvisory =
   Advisory.Advisory
     { Advisory._advisoryId = "CANOPY-2026-001",
-      Advisory._advisoryPackage = "elm/http",
+      Advisory._advisoryPackage = "canopy/http",
       Advisory._advisoryAffectedLower = Version.Version 1 0 0,
       Advisory._advisoryAffectedUpper = Version.Version 1 0 5,
       Advisory._advisorySeverity = Advisory.SevHigh,

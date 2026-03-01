@@ -34,7 +34,7 @@ function transformToQuickPickItems(packages: {
 
 async function getJSON(): Promise<{ [K in string]: string[] }> {
   const response = await request.xhr({
-    url: "https://package.elm-lang.org/all-packages",
+    url: "https://package.canopy-lang.org/all-packages",
   });
   return JSON.parse(response.body.toString()) as { [x: string]: string[] };
 }
@@ -98,13 +98,13 @@ function browsePackage(): Thenable<void> {
         .then(async (selectedVersion) => {
           const uri = selectedVersion
             ? vscode.Uri.parse(
-                "https://package.elm-lang.org/packages/" +
+                "https://package.canopy-lang.org/packages/" +
                   selectedPackage.label +
                   "/" +
                   selectedVersion.label,
               )
             : vscode.Uri.parse(
-                "https://package.elm-lang.org/packages/" +
+                "https://package.canopy-lang.org/packages/" +
                   selectedPackage.label +
                   "/latest",
               );

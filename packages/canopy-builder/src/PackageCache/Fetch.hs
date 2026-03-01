@@ -7,7 +7,7 @@
 --
 -- 1. Local Canopy cache (@~\/.canopy\/packages\/{author}\/{project}\/{version}\/@)
 -- 2. Elm cache fallback (@~\/.elm\/0.19.1\/packages\/{author}\/{project}\/{version}\/@)
--- 3. Elm registry endpoint.json (provides download URL and hash)
+-- 3. Canopy registry endpoint.json (provides download URL and hash)
 -- 4. Direct GitHub ZIP download (deterministic URL from package name)
 --
 -- This design ensures that @canopy install@ degrades gracefully when the
@@ -16,7 +16,7 @@
 --
 -- == Architecture
 --
--- All Elm packages are hosted on GitHub (a requirement for @elm publish@),
+-- All Canopy packages are hosted on GitHub (a requirement for @canopy publish@),
 -- so the GitHub URL pattern @github.com\/{author}\/{project}\/zipball\/{version}\/@
 -- is deterministic and serves as a reliable last-resort source.
 --
@@ -128,11 +128,11 @@ instance Json.FromJSON PackageSource where
       <$> o Json..: "git-url"
       <*> o Json..:? "archive-url"
 
--- | The Elm package registry base URL.
+-- | The Canopy package registry base URL.
 --
 -- @since 0.19.2
 registryBase :: String
-registryBase = "https://package.elm-lang.org"
+registryBase = "https://package.canopy-lang.org"
 
 -- | Build the GitHub ZIP download URL for a package version.
 --
@@ -193,7 +193,8 @@ tryElmCache manager pkg ver = do
 -- | Check the local Canopy package cache.
 --
 -- Looks for @~\/.canopy\/packages\/{author}\/{project}\/{version}\/@ and
--- returns 'CachedLocal' if the directory exists.
+-- returns 'CachedLocal' if the directory exists. Also checks the fallback
+-- author mapping (e.g. @canopy@ -> @elm@) for backward compatibility.
 --
 -- @since 0.19.2
 checkLocalCache :: Pkg.Name -> Version.Version -> IO (Maybe FetchSource)
@@ -205,12 +206,14 @@ checkLocalCache pkg ver = do
     then do
       Log.logEvent (PackageOperation "cache-hit" (Text.pack path))
       pure (Just (CachedLocal path))
-    else pure Nothing
+    else
+      maybe (pure Nothing) (checkLocalCacheDirect ver) (fallbackPkg pkg)
 
 -- | Check the legacy Elm 0.19.1 package cache.
 --
 -- Looks for @~\/.elm\/0.19.1\/packages\/{author}\/{project}\/{version}\/@ and
--- returns 'CachedElm' if found.
+-- returns 'CachedElm' if found. Also checks the fallback author mapping
+-- for backward compatibility.
 --
 -- @since 0.19.2
 checkElmCache :: Pkg.Name -> Version.Version -> IO (Maybe FetchSource)
@@ -222,7 +225,47 @@ checkElmCache pkg ver = do
     then do
       Log.logEvent (PackageOperation "elm-cache-hit" (Text.pack path))
       pure (Just (CachedElm path))
+    else
+      maybe (pure Nothing) (checkElmCacheDirect ver) (fallbackPkg pkg)
+
+-- | Non-recursive local cache check (avoids infinite fallback loop).
+checkLocalCacheDirect :: Version.Version -> Pkg.Name -> IO (Maybe FetchSource)
+checkLocalCacheDirect ver pkg = do
+  home <- Dir.getHomeDirectory
+  let path = home </> ".canopy" </> "packages" </> Pkg.toFilePath pkg </> Version.toChars ver
+  exists <- Dir.doesDirectoryExist path
+  if exists
+    then do
+      Log.logEvent (PackageOperation "cache-hit-fallback" (Text.pack path))
+      pure (Just (CachedLocal path))
     else pure Nothing
+
+-- | Non-recursive Elm cache check (avoids infinite fallback loop).
+checkElmCacheDirect :: Version.Version -> Pkg.Name -> IO (Maybe FetchSource)
+checkElmCacheDirect ver pkg = do
+  home <- Dir.getHomeDirectory
+  let path = home </> ".elm" </> "0.19.1" </> "packages" </> Pkg.toFilePath pkg </> Version.toChars ver
+  exists <- Dir.doesDirectoryExist path
+  if exists
+    then do
+      Log.logEvent (PackageOperation "elm-cache-hit-fallback" (Text.pack path))
+      pure (Just (CachedElm path))
+    else pure Nothing
+
+-- | Map a package to its fallback author equivalent.
+--
+-- When @canopy\/core@ is not found on disk, try @elm\/core@ and vice versa.
+-- Returns 'Nothing' if no fallback mapping exists or if the package has
+-- already been tried (to prevent infinite recursion).
+--
+-- @since 0.19.2
+fallbackPkg :: Pkg.Name -> Maybe Pkg.Name
+fallbackPkg (Pkg.Name author project)
+  | author == Pkg.canopy = Just (Pkg.Name Pkg.elm project)
+  | author == Pkg.canopyExplorations = Just (Pkg.Name Pkg.elmExplorations project)
+  | author == Pkg.elm = Just (Pkg.Name Pkg.canopy project)
+  | author == Pkg.elmExplorations = Just (Pkg.Name Pkg.canopyExplorations project)
+  | otherwise = Nothing
 
 -- | Attempt to fetch a package from network sources.
 --

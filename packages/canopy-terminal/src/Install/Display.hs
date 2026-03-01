@@ -93,11 +93,11 @@ data FormatContext a = FormatContext
 -- Here is my plan:
 --
 --   Add:
---     elm/http    1.0.0
---     elm/json    1.1.2
+--     canopy/http    1.0.0
+--     canopy/json    1.1.2
 --
 --   Change:
---     elm/core    1.0.0 => 1.0.2
+--     canopy/core    1.0.0 => 1.0.2
 --
 -- Would you like me to update your canopy.json accordingly? [Y/n]:
 -- @
