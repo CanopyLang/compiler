@@ -42,6 +42,7 @@ module Foreign.FFI
 
 import qualified Data.Text as Text
 import Data.Text (Text)
+import qualified Data.Text.Encoding as TextEnc
 import qualified Canopy.Data.Name as Name
 import qualified FFI.TypeParser as TypeParser
 import qualified Reporting.Annotation as Ann
@@ -212,10 +213,11 @@ extractJSDocFromComments :: [JSToken.CommentAnnotation] -> [Text]
 extractJSDocFromComments [] = []
 extractJSDocFromComments (comment:rest) =
   case comment of
-    JSToken.CommentA _ commentText ->
-      if Text.isPrefixOf "/**" (Text.pack commentText) && Text.isInfixOf "@canopy-type" (Text.pack commentText)
-        then Text.pack commentText : extractJSDocFromComments rest
-        else extractJSDocFromComments rest
+    JSToken.CommentA _ commentBytes ->
+      let commentText = TextEnc.decodeUtf8Lenient commentBytes
+      in if Text.isPrefixOf "/**" commentText && Text.isInfixOf "@canopy-type" commentText
+           then commentText : extractJSDocFromComments rest
+           else extractJSDocFromComments rest
     _ -> extractJSDocFromComments rest
 
 -- | Parse JSDoc text manually to extract function information

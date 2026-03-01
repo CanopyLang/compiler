@@ -490,13 +490,6 @@ renderTypeAnnotation :: PP.Doc -> Src.Type -> PP.Doc
 renderTypeAnnotation nameD t =
   nameD PP.<+> PP.text ":" PP.<+> formatType t <> PP.line
 
--- | Format the effects portion of a module (ports and FFI declarations).
-formatEffects :: Src.Effects -> [PP.Doc]
-formatEffects Src.NoEffects     = []
-formatEffects (Src.Manager _ _) = []
-formatEffects (Src.Ports ports) = map formatPort ports
-formatEffects (Src.FFI _)       = []
-
 -- | Format a port declaration.
 formatPort :: Src.Port -> PP.Doc
 formatPort (Src.Port locName portType) =

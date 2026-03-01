@@ -17,6 +17,7 @@ category: Compiler, Language
 
 dependencies:
   - base
+  - blaze-builder
   - bytestring
   - containers
   - text
