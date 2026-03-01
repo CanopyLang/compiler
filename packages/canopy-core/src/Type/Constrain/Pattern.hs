@@ -1,4 +1,3 @@
-{-# LANGUAGE StrictData #-}
 
 module Type.Constrain.Pattern
   ( State (..),

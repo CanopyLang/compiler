@@ -44,6 +44,7 @@ library
       RankNTypes
       ScopedTypeVariables
       StandaloneDeriving
+      StrictData
       TypeApplications
       TypeFamilies
       TypeOperators
@@ -131,6 +132,7 @@ executable canopy
       RankNTypes
       ScopedTypeVariables
       StandaloneDeriving
+      StrictData
       TypeApplications
       TypeFamilies
       TypeOperators
@@ -373,6 +375,7 @@ test-suite canopy-test
       RankNTypes
       ScopedTypeVariables
       StandaloneDeriving
+      StrictData
       TypeApplications
       TypeFamilies
       TypeOperators
@@ -477,6 +480,7 @@ benchmark canopy-bench
       RankNTypes
       ScopedTypeVariables
       StandaloneDeriving
+      StrictData
       TypeApplications
       TypeFamilies
       TypeOperators

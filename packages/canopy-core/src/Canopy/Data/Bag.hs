@@ -126,8 +126,8 @@ data Bag a
     Empty
   | -- | Singleton bag with one element
     One a
-  | -- | Combined bag from two sub-bags
-    Two (Bag a) (Bag a)
+  | -- | Combined bag from two sub-bags (lazy for O(1) concatenation)
+    Two ~(Bag a) ~(Bag a)
 
 -- | Create an empty bag.
 --

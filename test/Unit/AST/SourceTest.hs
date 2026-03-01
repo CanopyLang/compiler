@@ -146,6 +146,7 @@ emptyModule =
       Src._exports = Ann.At Ann.one Src.Open,
       Src._docs = Src.NoDocs Ann.one,
       Src._imports = [],
+      Src._foreignImports = [],
       Src._values = [],
       Src._unions = [],
       Src._aliases = [],

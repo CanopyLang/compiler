@@ -1,4 +1,3 @@
-{-# LANGUAGE StrictData #-}
 
 -- | Content hashing for incremental compilation.
 --

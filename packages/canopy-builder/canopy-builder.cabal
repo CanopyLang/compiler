@@ -87,6 +87,7 @@ library
       RankNTypes
       ScopedTypeVariables
       StandaloneDeriving
+      StrictData
       TypeApplications
       TypeFamilies
       TypeOperators

@@ -1,5 +1,4 @@
 {-# LANGUAGE OverloadedStrings #-}
-{-# LANGUAGE StrictData #-}
 
 -- | AST.Canonical.Types - Core type definitions for the Canonical AST
 --

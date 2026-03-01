@@ -59,6 +59,7 @@ library
       RankNTypes
       ScopedTypeVariables
       StandaloneDeriving
+      StrictData
       TypeApplications
       ViewPatterns
   ghc-options: -Wall -fwarn-tabs -O2
@@ -86,8 +87,9 @@ executable canopy-webidl-gen
   hs-source-dirs:
       app
   default-extensions:
-      OverloadedStrings
       LambdaCase
+      OverloadedStrings
+      StrictData
   ghc-options: -Wall -threaded -rtsopts -with-rtsopts=-N
   build-depends:
       base >= 4.12 && < 5
@@ -111,8 +113,9 @@ test-suite canopy-webidl-test
   hs-source-dirs:
       test
   default-extensions:
-      OverloadedStrings
       LambdaCase
+      OverloadedStrings
+      StrictData
   ghc-options: -Wall -threaded -rtsopts -with-rtsopts=-N
   build-depends:
       base >= 4.12 && < 5

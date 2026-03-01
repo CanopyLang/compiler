@@ -124,8 +124,8 @@ import Prelude hiding (map)
 data OneOrMore a
   = -- | Single element (leaf node)
     One a
-  | -- | Combined collections (internal node)
-    More (OneOrMore a) (OneOrMore a)
+  | -- | Combined collections (internal node, lazy for O(1) concatenation)
+    More ~(OneOrMore a) ~(OneOrMore a)
   deriving (Eq)
 
 -- | Show instance for OneOrMore.

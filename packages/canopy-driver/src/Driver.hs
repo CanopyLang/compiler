@@ -1,4 +1,3 @@
-{-# LANGUAGE StrictData #-}
 
 -- | Query-based compiler driver.
 --
