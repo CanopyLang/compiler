@@ -209,8 +209,8 @@ makeRelativeToPackageUnsafe path =
 --   * Package metadata
 isAllowedPackageFile :: FilePath -> Bool
 isAllowedPackageFile path =
-  -- Reject path traversal attempts
-  not (List.isInfixOf "../" path) &&
+  -- Reject path traversal attempts (platform-independent check)
+  not (".." `elem` FP.splitDirectories path) &&
   -- Only allow relative paths
   FP.isRelative path &&
   -- Allow specific files and src/ directory contents
@@ -227,7 +227,7 @@ isAllowedPackageFile path =
 -- contain security vulnerabilities.
 validatePackagePath :: FilePath -> Either String FilePath
 validatePackagePath path
-  | List.isInfixOf "../" path = Left "Path traversal not allowed"
+  | ".." `elem` FP.splitDirectories path = Left "Path traversal not allowed"
   | FP.isAbsolute path = Left "Absolute paths not allowed"
   | otherwise = Right (FP.normalise path)
 

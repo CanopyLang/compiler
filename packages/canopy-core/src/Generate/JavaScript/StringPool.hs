@@ -92,7 +92,12 @@ countNodeStrings acc node =
        in foldl countDefStrings acc1 functions
     Opt.PortIncoming expr _ -> countExprStrings acc expr
     Opt.PortOutgoing expr _ -> countExprStrings acc expr
-    _ -> acc
+    Opt.Ctor _ _ -> acc
+    Opt.Enum _ -> acc
+    Opt.Box -> acc
+    Opt.Link _ -> acc
+    Opt.Manager _ -> acc
+    Opt.Kernel _ _ -> acc
 
 -- | Count string literals in a definition.
 countDefStrings :: Map ES.String Int -> Opt.Def -> Map ES.String Int

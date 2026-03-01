@@ -180,10 +180,12 @@ propertyTests = testGroup "Property Tests"
         -- All extracted files should be from allowed entries
         QC.assert (all (`elem` allowedBasenames) extractedBasenames)
   , testProperty "isAllowedPath is consistent" $ \path ->
-      let normalizedPath = filter (/= '\0') path  -- Remove null chars
-      in FileArchive.isAllowedPath normalizedPath == 
-         (List.isPrefixOf "src/" normalizedPath || 
-          normalizedPath `elem` ["LICENSE", "README.md", "canopy.json"])
+      let normalizedPath = filter (/= '\0') path
+          hasTraversal = ".." `elem` FP.splitDirectories normalizedPath
+          isAllowed = not hasTraversal &&
+            (List.isPrefixOf "src/" normalizedPath ||
+             normalizedPath `elem` ["LICENSE", "README.md", "canopy.json", "elm.json"])
+      in FileArchive.isAllowedPath normalizedPath == isAllowed
   , testProperty "isDirectoryPath handles all path types" $ \path ->
       let safePath = filter (/= '\0') path
       in FileArchive.isDirectoryPath safePath == 
@@ -305,6 +307,31 @@ errorConditionTests = testGroup "Error Condition Tests"
   , testCase "isAllowedPath with null characters returns False" $ do
       FileArchive.isAllowedPath "src/Main\0.can" @?= False
       FileArchive.isAllowedPath "LICENSE\0" @?= False
+  , testCase "isAllowedPath rejects forward-slash path traversal" $ do
+      -- splitDirectories detects .. components in forward-slash paths
+      FileArchive.isAllowedPath "src/../escape.txt" @?= False
+      FileArchive.isAllowedPath "src/../../etc/passwd" @?= False
+  , testCase "isAllowedPath rejects nested traversal" $ do
+      FileArchive.isAllowedPath "src/../../etc/passwd" @?= False
+  , testCase "isWithinDestination rejects escaping paths" $ do
+      FileArchive.isWithinDestination "/tmp/dest" "../escape" @?= False
+      FileArchive.isWithinDestination "/tmp/dest" "src/../../etc/passwd" @?= False
+  , testCase "isWithinDestination accepts safe paths" $ do
+      FileArchive.isWithinDestination "/tmp/dest" "src/Main.can" @?= True
+      FileArchive.isWithinDestination "/tmp/dest" "LICENSE" @?= True
+  , testCase "writePackage rejects Windows backslash traversal in archive" $ do
+      Temp.withSystemTempDirectory "backslash_test" $ \tempDir -> do
+        let archive = createTestArchive
+              [ ("package/src/..\\..\\escape.txt", "escaped content")
+              , ("package/src/Main.can", "module Main")
+              ]
+        FileArchive.writePackage tempDir archive
+        -- The traversal path should be rejected
+        escapeExists <- Dir.doesFileExist (tempDir FP.</> "escape.txt")
+        escapeExists @?= False
+        -- Normal file should still be extracted
+        srcExists <- Dir.doesFileExist (tempDir FP.</> "src/Main.can")
+        srcExists @?= True
   , testCase "extractRelativePath with negative depth is safe" $ do
       let entry = Zip.toEntry "package/src/Main.can" 0 "content"
           -- This tests the internal function behavior with edge case input

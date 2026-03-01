@@ -40,6 +40,7 @@ module File.Archive
     -- * Path Utilities
   , extractRelativePath
   , isAllowedPath
+  , isWithinDestination
   , isDirectoryPath
     -- * File Operations
   , createEntryDirectory
@@ -147,7 +148,7 @@ logPackageWrite destination = do
 writeEntry :: FilePath -> Int -> Zip.Entry -> IO ()
 writeEntry destination rootDepth entry = do
   let relativePath = extractRelativePath rootDepth entry
-      allowed = isAllowedPath relativePath
+      allowed = isAllowedPath relativePath && isWithinDestination destination relativePath
   Monad.when allowed $ do
     if isDirectoryPath relativePath
       then do
@@ -194,14 +195,28 @@ isAllowedPath :: FilePath -> Bool
 isAllowedPath path =
   -- Reject null characters (security issue)
   not (List.elem '\0' path) &&
-  -- Reject path traversal attempts
-  not (List.isInfixOf "../" path) &&
+  -- Reject path traversal attempts (platform-independent check)
+  not (".." `elem` FP.splitDirectories path) &&
   -- Allow specific files and src/ directory contents
   (List.isPrefixOf "src/" path
     || path == "LICENSE"
     || path == "README.md"
     || path == "canopy.json"
     || path == "elm.json")
+
+-- | Verify the resolved extraction path stays within the destination directory.
+--
+-- Defence-in-depth check: splits the combined @destination \</\> relativePath@
+-- into directory components and rejects any containing @..@. This catches
+-- edge cases where the relative path could escape the extraction root,
+-- even on platforms where @FP.normalise@ does not resolve @..@ components.
+--
+-- @since 0.19.2
+isWithinDestination :: FilePath -> FilePath -> Bool
+isWithinDestination destination relativePath =
+  not (".." `elem` FP.splitDirectories resolvedPath)
+  where
+    resolvedPath = destination </> relativePath
 
 -- | Check if a path represents a directory.
 --
@@ -261,7 +276,7 @@ writeEntryFile destination relativePath entry = do
 writeEntryReturnCanopyJson :: FilePath -> Int -> Zip.Entry -> IO (Maybe BS.ByteString)
 writeEntryReturnCanopyJson destination rootDepth entry = do
   let relativePath = extractRelativePath rootDepth entry
-      allowed = isAllowedPath relativePath
+      allowed = isAllowedPath relativePath && isWithinDestination destination relativePath
   if allowed
     then processAllowedEntry destination relativePath entry
     else pure Nothing

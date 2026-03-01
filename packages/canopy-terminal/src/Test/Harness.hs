@@ -364,7 +364,7 @@ browserTestExecuteSection =
 -- | Generate a simple unit test harness for @Html msg@ programs.
 --
 -- Wraps compiled JavaScript with the DOM shim and a text-capturing
--- root node. After the Elm runtime renders into the node, the harness
+-- root node. After the Canopy runtime renders into the node, the harness
 -- extracts accumulated text content and prints it.
 --
 -- This harness is used for legacy @main : Html msg@ programs that

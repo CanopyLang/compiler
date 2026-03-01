@@ -4,8 +4,8 @@ version: 0.19.1
 synopsis: "Canopy compiler core components"
 description: |
   Core compiler functionality including AST, parsing, type checking,
-  canonicalization, optimization, and code generation. This package
-  contains no STM/MVar/TVar usage - only pure functional code.
+  canonicalization, optimization, and code generation. Includes
+  concurrent type solving via STM and parallel compilation support.
 
 homepage: "https://github.com/quinten/canopy"
 license: BSD-3-Clause

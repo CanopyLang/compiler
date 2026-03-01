@@ -261,10 +261,17 @@ data Def
 
 -- DECLARATIONS
 
+-- | A linked list of top-level declarations in a module.
+--
+-- Declarations form a chain terminated by 'SaveTheEnvironment'.
+-- Non-recursive definitions use 'Declare'; mutually recursive
+-- groups use 'DeclareRec'.
 data Decls
   = Declare Def Decls
   | DeclareRec Def [Def] Decls
-  | SaveTheEnvironment
+  | -- | Sentinel value marking the end of a declaration chain.
+    -- Named for historical reasons (inherited from Elm).
+    SaveTheEnvironment
   deriving (Show)
 
 -- PATTERNS
@@ -311,6 +318,9 @@ data PatternCtorArg = PatternCtorArg
 data Annotation = Forall FreeVars Type
   deriving (Eq, Show)
 
+-- | Free type variables in scope. Uses @Map Name ()@ instead of @Set Name@
+-- for compatibility with existing Map-based operations in the canonicalizer
+-- and type solver, which frequently merge variable maps via 'Map.union'.
 type FreeVars = Map Name ()
 
 data Type

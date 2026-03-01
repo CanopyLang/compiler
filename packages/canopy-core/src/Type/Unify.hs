@@ -208,13 +208,7 @@ unifyRigid context maybeSuper content otherContent =
     FlexVar _ ->
       merge context content
     FlexSuper otherSuper _ ->
-      case maybeSuper of
-        Just super ->
-          if combineRigidSupers super otherSuper
-            then merge context content
-            else mismatch
-        Nothing ->
-          mismatch
+      maybe mismatch (mergeIfCompatible context content otherSuper) maybeSuper
     RigidVar _ ->
       -- Rigid variables only unify with themselves (same union-find node).
       -- Two distinct rigid vars with the same name from different CLet scopes
@@ -228,13 +222,15 @@ unifyRigid context maybeSuper content otherContent =
     Alias {} ->
       mismatch
     Structure flatType ->
-      case maybeSuper of
-        Just super ->
-          unifyStructureRigidSuper (reorient context) flatType super
-        Nothing ->
-          mismatch
+      maybe mismatch (unifyStructureRigidSuper (reorient context) flatType) maybeSuper
     Error ->
       merge context Error
+
+-- | Merge content if the rigid super type is compatible with the other super type.
+mergeIfCompatible :: Context -> Content -> SuperType -> SuperType -> Unify ()
+mergeIfCompatible context content otherSuper super
+  | combineRigidSupers super otherSuper = merge context content
+  | otherwise = mismatch
 
 -- UNIFY SUPER VARIABLES
 
@@ -252,35 +248,54 @@ unifyFlexSuper context super content otherContent =
     FlexVar _ ->
       merge context content
     FlexSuper otherSuper _ ->
-      case super of
-        Number ->
-          case otherSuper of
-            Number -> merge context content
-            Comparable -> merge context content
-            Appendable -> mismatch
-            CompAppend -> mismatch
-        Comparable ->
-          case otherSuper of
-            Comparable -> merge context otherContent
-            Number -> merge context otherContent
-            Appendable -> merge context (Type.unnamedFlexSuper CompAppend)
-            CompAppend -> merge context otherContent
-        Appendable ->
-          case otherSuper of
-            Appendable -> merge context otherContent
-            Comparable -> merge context (Type.unnamedFlexSuper CompAppend)
-            CompAppend -> merge context otherContent
-            Number -> mismatch
-        CompAppend ->
-          case otherSuper of
-            Comparable -> merge context content
-            Appendable -> merge context content
-            CompAppend -> merge context content
-            Number -> mismatch
+      unifyFlexSupers context content otherContent super otherSuper
     Alias _ _ _ realVar ->
       subUnify (_first context) realVar
     Error ->
       merge context Error
+
+-- | Unify two flexible super type variables.
+--
+-- Resolves the compatibility between two super type constraints,
+-- choosing the most specific super type that satisfies both.
+-- For example, Number + Comparable -> Number (more specific).
+--
+-- @since 0.19.2
+unifyFlexSupers :: Context -> Content -> Content -> SuperType -> SuperType -> Unify ()
+unifyFlexSupers context content otherContent super otherSuper =
+  case flexSuperResult super otherSuper of
+    FlexFirst -> merge context content
+    FlexSecond -> merge context otherContent
+    FlexCompAppend -> merge context (Type.unnamedFlexSuper CompAppend)
+    FlexMismatch -> mismatch
+
+-- | Outcome of combining two flex super types.
+data FlexSuperResult
+  = FlexFirst
+  | FlexSecond
+  | FlexCompAppend
+  | FlexMismatch
+
+-- | Determine how to combine two flexible super types.
+--
+-- Returns which content to keep or whether they are incompatible.
+flexSuperResult :: SuperType -> SuperType -> FlexSuperResult
+flexSuperResult Number Number = FlexFirst
+flexSuperResult Number Comparable = FlexFirst
+flexSuperResult Number Appendable = FlexMismatch
+flexSuperResult Number CompAppend = FlexMismatch
+flexSuperResult Comparable Comparable = FlexSecond
+flexSuperResult Comparable Number = FlexSecond
+flexSuperResult Comparable Appendable = FlexCompAppend
+flexSuperResult Comparable CompAppend = FlexSecond
+flexSuperResult Appendable Appendable = FlexSecond
+flexSuperResult Appendable Comparable = FlexCompAppend
+flexSuperResult Appendable CompAppend = FlexSecond
+flexSuperResult Appendable Number = FlexMismatch
+flexSuperResult CompAppend Comparable = FlexFirst
+flexSuperResult CompAppend Appendable = FlexFirst
+flexSuperResult CompAppend CompAppend = FlexFirst
+flexSuperResult CompAppend Number = FlexMismatch
 
 combineRigidSupers :: SuperType -> SuperType -> Bool
 combineRigidSupers rigid flex =
@@ -315,37 +330,57 @@ unifyFlexSuperStructure context super flatType =
         then merge context (Structure flatType)
         else mismatch
     App1 home name [variable] | home == ModuleName.list && name == Name.list ->
-      case super of
-        Number ->
-          mismatch
-        Appendable ->
-          merge context (Structure flatType)
-        Comparable ->
-          do
-            comparableOccursCheck context
-            unifyComparableRecursive variable
-            merge context (Structure flatType)
-        CompAppend ->
-          do
-            comparableOccursCheck context
-            unifyComparableRecursive variable
-            merge context (Structure flatType)
+      unifyListWithSuper context flatType super variable
     Tuple1 a b maybeC ->
-      case super of
-        Number ->
-          mismatch
-        Appendable ->
-          mismatch
-        Comparable ->
-          do
-            comparableOccursCheck context
-            unifyComparableRecursive a
-            unifyComparableRecursive b
-            forM_ maybeC unifyComparableRecursive
-            merge context (Structure flatType)
-        CompAppend ->
-          mismatch
+      unifyTupleWithSuper context flatType super a b maybeC
     _ ->
+      mismatch
+
+-- | Unify a List type with a super type constraint.
+--
+-- Lists are Appendable and Comparable (if their element type is Comparable),
+-- but not Number.
+--
+-- @since 0.19.2
+unifyListWithSuper :: Context -> FlatType -> SuperType -> Variable -> Unify ()
+unifyListWithSuper context flatType super variable =
+  case super of
+    Number ->
+      mismatch
+    Appendable ->
+      merge context (Structure flatType)
+    Comparable ->
+      do
+        comparableOccursCheck context
+        unifyComparableRecursive variable
+        merge context (Structure flatType)
+    CompAppend ->
+      do
+        comparableOccursCheck context
+        unifyComparableRecursive variable
+        merge context (Structure flatType)
+
+-- | Unify a Tuple type with a super type constraint.
+--
+-- Tuples are Comparable (if all elements are Comparable),
+-- but not Number or Appendable.
+--
+-- @since 0.19.2
+unifyTupleWithSuper :: Context -> FlatType -> SuperType -> Variable -> Variable -> Maybe Variable -> Unify ()
+unifyTupleWithSuper context flatType super a b maybeC =
+  case super of
+    Number ->
+      mismatch
+    Appendable ->
+      mismatch
+    Comparable ->
+      do
+        comparableOccursCheck context
+        unifyComparableRecursive a
+        unifyComparableRecursive b
+        forM_ maybeC unifyComparableRecursive
+        merge context (Structure flatType)
+    CompAppend ->
       mismatch
 
 -- Occurs check for comparable types is needed to prevent infinite types.
@@ -381,36 +416,9 @@ unifyStructureRigidSuper context flatType super =
         then merge context (Structure flatType)
         else mismatch
     App1 home name [variable] | home == ModuleName.list && name == Name.list ->
-      case super of
-        Number ->
-          mismatch
-        Appendable ->
-          merge context (Structure flatType)
-        Comparable ->
-          do
-            comparableOccursCheck context
-            unifyComparableRecursive variable
-            merge context (Structure flatType)
-        CompAppend ->
-          do
-            comparableOccursCheck context
-            unifyComparableRecursive variable
-            merge context (Structure flatType)
+      unifyListWithSuper context flatType super variable
     Tuple1 a b maybeC ->
-      case super of
-        Number ->
-          mismatch
-        Appendable ->
-          mismatch
-        Comparable ->
-          do
-            comparableOccursCheck context
-            unifyComparableRecursive a
-            unifyComparableRecursive b
-            forM_ maybeC unifyComparableRecursive
-            merge context (Structure flatType)
-        CompAppend ->
-          mismatch
+      unifyTupleWithSuper context flatType super a b maybeC
     _ ->
       mismatch
 

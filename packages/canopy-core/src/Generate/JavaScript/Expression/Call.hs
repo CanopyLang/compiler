@@ -77,6 +77,9 @@ generateCall genExpr mode func args =
               genExpr mode arg
             _ ->
               generateCallHelp genExpr mode func args
+    -- WILDCARD AUDIT: All non-VarGlobal/non-VarBox calls use the generic
+    -- call helper. New Opt.Expr variants that need specialised call codegen
+    -- should be added above this catch-all.
     _ ->
       generateCallHelp genExpr mode func args
 

@@ -212,12 +212,13 @@ addKernelDepSimple :: Kernel.Chunk -> Set Global -> Set Global
 addKernelDepSimple chunk deps =
   case chunk of
     Kernel.JS _ -> deps
+    Kernel.CanopyVar _ _ -> deps
+    Kernel.JsVar _ _ -> deps
     Kernel.CanopyField _ -> deps
     Kernel.JsField _ -> deps
     Kernel.JsEnum _ -> deps
     Kernel.Debug -> deps
     Kernel.Prod -> deps
-    _ -> deps
 
 -- BINARY INSTANCES
 

@@ -562,7 +562,7 @@ getTailDefArgs :: Opt.Def -> [Name.Name]
 getTailDefArgs def =
   case def of
     Opt.TailDef _ args _ -> args
-    _ -> []
+    Opt.Def _ _ -> []
 
 -- | Extract body from a TailDef.
 --
@@ -690,6 +690,9 @@ crushIfsHelp visitedBranches unvisitedBranches final =
       case final of
         Opt.If subBranches subFinal ->
           crushIfsHelp visitedBranches subBranches subFinal
+        -- WILDCARD AUDIT: All non-If expressions terminate the chain.
+        -- Enumerating every Opt.Expr variant is impractical; new variants
+        -- are terminal by default, which is the correct behaviour.
         _ ->
           (reverse visitedBranches, final)
     visiting : unvisited ->
