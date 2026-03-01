@@ -46,11 +46,22 @@ module SelfUpdate
     platformOS,
     platformArch,
     platformSlug,
+
+    -- * Download URLs
+    binaryUrl,
+    checksumUrl,
+    releaseBaseUrl,
+
+    -- * Checksum Verification
+    verifyChecksum,
+    parseChecksumFile,
   )
 where
 
 import qualified Canopy.Version as Version
 import Control.Lens (makeLenses, (^.))
+import qualified Data.Char as Char
+import qualified Data.Map.Strict as Map
 import qualified Data.Text as Text
 import Reporting.Doc.ColorQQ (c)
 import qualified System.Info as SysInfo
@@ -173,6 +184,90 @@ detectPlatform =
   where
     osName = mapOS SysInfo.os
     archName = mapArch SysInfo.arch
+
+-- DOWNLOAD URL CONSTRUCTION
+
+-- | Base URL for release assets.
+--
+-- @since 0.19.2
+releaseBaseUrl :: Text.Text
+releaseBaseUrl = "https://github.com/canopy-lang/canopy/releases/download"
+
+-- | Construct the download URL for a platform binary at a given version.
+--
+-- Produces URLs of the form:
+--
+-- @
+-- https://github.com/canopy-lang/canopy/releases/download/0.19.2/canopy-0.19.2-linux-x86_64.tar.gz
+-- @
+--
+-- @since 0.19.2
+binaryUrl :: Version.Version -> PlatformInfo -> Text.Text
+binaryUrl version platform =
+  releaseBaseUrl <> "/" <> versionTag <> "/" <> binaryFilename version platform
+  where
+    versionTag = Text.pack (Version.toChars version)
+
+-- | Construct the binary archive filename for a given version and platform.
+binaryFilename :: Version.Version -> PlatformInfo -> Text.Text
+binaryFilename version platform =
+  "canopy-" <> Text.pack (Version.toChars version)
+    <> "-" <> (platform ^. platformSlug)
+    <> ".tar.gz"
+
+-- | Construct the checksum file URL for a given version.
+--
+-- Produces URLs of the form:
+--
+-- @
+-- https://github.com/canopy-lang/canopy/releases/download/0.19.2/SHA256SUMS.txt
+-- @
+--
+-- @since 0.19.2
+checksumUrl :: Version.Version -> Text.Text
+checksumUrl version =
+  releaseBaseUrl <> "/" <> versionTag <> "/SHA256SUMS.txt"
+  where
+    versionTag = Text.pack (Version.toChars version)
+
+-- CHECKSUM VERIFICATION
+
+-- | Verify a SHA-256 hex digest against an expected value.
+--
+-- The comparison is case-insensitive to handle both uppercase and
+-- lowercase hex encoding.
+--
+-- @since 0.19.2
+verifyChecksum :: Text.Text -> Text.Text -> Bool
+verifyChecksum actual expected =
+  Text.toLower (Text.strip actual) == Text.toLower (Text.strip expected)
+
+-- | Parse a SHA256SUMS file into a map of filename to hex digest.
+--
+-- Each line of the file should have the format:
+--
+-- @
+-- <hex-digest>  <filename>
+-- @
+--
+-- Lines that do not match this format are silently skipped.
+--
+-- @since 0.19.2
+parseChecksumFile :: Text.Text -> Map.Map Text.Text Text.Text
+parseChecksumFile content =
+  Map.fromList (concatMap parseLine (Text.lines content))
+  where
+    parseLine line =
+      case Text.words line of
+        [hash, filename] | isHexDigest hash -> [(filename, hash)]
+        _ -> []
+
+-- | Check whether a text value looks like a SHA-256 hex digest.
+isHexDigest :: Text.Text -> Bool
+isHexDigest t =
+  Text.length t == 64 && Text.all isHexChar t
+  where
+    isHexChar c = Char.isHexDigit c
 
 -- | Map GHC os identifier to release slug.
 mapOS :: String -> Text.Text
