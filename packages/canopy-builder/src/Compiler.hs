@@ -56,7 +56,7 @@ import qualified Canopy.Outline as Outline
 import qualified Canopy.Package as Pkg
 import qualified Canopy.Version as Version
 import Compiler.Cache (decodeVersioned, elcoSchemaVersion, encodeVersioned)
-import Compiler.Discovery (discoverModulePaths, discoverTransitiveDeps)
+import Compiler.Discovery (DiscoveryError (..), discoverModulePaths, discoverTransitiveDeps)
 import Compiler.Parallel (assembleArtifacts, compileModulesInOrder)
 import Compiler.Types
   ( ModuleResult (..),
@@ -97,10 +97,14 @@ compileFromPaths pkg isApp (ProjectRoot root) srcDirs paths = do
   let (depInterfaces, depGlobalGraph, depFFIInfo) = extractArtifactTriple maybeArtifacts
   Log.logEvent (BuildModuleQueued (Text.pack ("loaded " ++ show (Map.size depInterfaces) ++ " dependency interfaces")))
   let projectType = if isApp then Parse.Application else Parse.Package pkg
-  allModuleInfo <- discoverTransitiveDeps root srcDirs paths depInterfaces projectType
-  Log.logEvent (BuildModuleQueued (Text.pack ("discovered " ++ show (Map.size allModuleInfo) ++ " total modules")))
-  compileResult <- compileModulesInOrder pkg projectType root depInterfaces allModuleInfo
-  either (return . Left) (return . Right . assembleArtifacts pkg depGlobalGraph depFFIInfo) compileResult
+  discoveryResult <- discoverTransitiveDeps root srcDirs paths depInterfaces projectType
+  case discoveryResult of
+    Left (DiscoveryParseError path msg) ->
+      return (Left (Exit.BuildCannotCompile (Exit.CompileParseError path (Text.unpack msg))))
+    Right allModuleInfo -> do
+      Log.logEvent (BuildModuleQueued (Text.pack ("discovered " ++ show (Map.size allModuleInfo) ++ " total modules")))
+      compileResult <- compileModulesInOrder pkg projectType root depInterfaces allModuleInfo
+      either (return . Left) (return . Right . assembleArtifacts pkg depGlobalGraph depFFIInfo) compileResult
 
 -- | Compile from exposed modules using the query-based compiler.
 --
