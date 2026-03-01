@@ -150,15 +150,14 @@ generateFFIValidators mode ffiInfos =
 
     collectValidators :: String -> FFIInfo -> [Builder] -> [Builder]
     collectValidators _key info acc =
-      let contentStr = Text.unpack (_ffiContent info)
-          functions = extractCanopyTypeFunctions (lines contentStr)
+      let functions = extractCanopyTypeFunctions (Text.lines (_ffiContent info))
           validatorBuilders = concatMap (generateValidatorForFunction config) functions
       in validatorBuilders ++ acc
 
 -- | Generate a validator builder for a single FFI function.
-generateValidatorForFunction :: Validator.ValidatorConfig -> (String, String) -> [Builder]
+generateValidatorForFunction :: Validator.ValidatorConfig -> (Text.Text, Text.Text) -> [Builder]
 generateValidatorForFunction config (_funcName, typeStr) =
-  case Validator.parseReturnType (Text.pack typeStr) of
+  case Validator.parseReturnType typeStr of
     Just returnType ->
       [BB.byteString (TextEnc.encodeUtf8 (Validator.generateAllValidators config returnType))]
     Nothing -> []
@@ -195,30 +194,35 @@ formatFFIFileFromInfo _key info acc =
 -- | Generate JavaScript variable bindings for FFI functions using FFIInfo with proper aliases.
 generateFFIBindingsFromInfo :: Mode.Mode -> Graph -> String -> FFIInfo -> [Builder] -> [Builder]
 generateFFIBindingsFromInfo mode graph _key info acc
-  | not (isValidJsIdentifier alias) = acc
+  | not (isValidJsIdentifier aliasStr) = acc
   | otherwise =
-      case extractFFIFunctionBindings mode graph path contentStr alias of
+      case extractFFIFunctionBindings mode graph path contentText aliasStr of
         [] -> acc
         bindings ->
           ("\n// Bindings for " <> BB.stringUtf8 path <> "\n")
-            : ("var " <> BB.stringUtf8 alias <> " = " <> BB.stringUtf8 alias <> " || {};\n")
+            : ("var " <> BB.stringUtf8 aliasStr <> " = " <> BB.stringUtf8 aliasStr <> " || {};\n")
             : map (<> "\n") bindings ++ ["\n"] ++ acc
   where
     path = _ffiFilePath info
-    contentStr = Text.unpack (_ffiContent info)
-    alias = Name.toChars (_ffiAlias info)
+    contentText = _ffiContent info
+    aliasStr = Name.toChars (_ffiAlias info)
 
 -- | Extract and generate bindings for FFI functions from JavaScript content.
-extractFFIFunctionBindings :: Mode.Mode -> Graph -> String -> String -> String -> [Builder]
+extractFFIFunctionBindings :: Mode.Mode -> Graph -> String -> Text.Text -> String -> [Builder]
 extractFFIFunctionBindings mode graph path content alias =
   concatMap (generateFunctionBinding mode graph path alias) functions
   where
-    functions = extractCanopyTypeFunctions (lines content)
+    functions = extractCanopyTypeFunctions (Text.lines content)
 
 -- PARSE CANOPY TYPE ANNOTATIONS
 
 -- | Extract functions that have \@canopy-type annotations from JavaScript source lines.
-extractCanopyTypeFunctions :: [String] -> [(String, String)]
+--
+-- Operates on 'Text' lines directly to avoid intermediate @[Char]@
+-- allocation from the FFI content.
+--
+-- @since 0.19.2
+extractCanopyTypeFunctions :: [Text.Text] -> [(Text.Text, Text.Text)]
 extractCanopyTypeFunctions [] = []
 extractCanopyTypeFunctions (line:rest) =
   case extractCanopyType line of
@@ -229,38 +233,39 @@ extractCanopyTypeFunctions (line:rest) =
     Nothing -> extractCanopyTypeFunctions rest
 
 -- | Extract \@canopy-type annotation from a single line.
-extractCanopyType :: String -> Maybe String
-extractCanopyType line =
-  if " * @canopy-type " `List.isInfixOf` line
-    then case dropWhile (/= '@') line of
-      ('@':'c':'a':'n':'o':'p':'y':'-':'t':'y':'p':'e':' ':typeStr) -> Just (trim typeStr)
-      _ -> Nothing
-    else Nothing
+--
+-- Uses 'Text.isInfixOf' (O(n) with fast string matching) instead of
+-- the previous 'List.isInfixOf' (O(n*m) on @[Char]@).
+--
+-- @since 0.19.2
+extractCanopyType :: Text.Text -> Maybe Text.Text
+extractCanopyType line
+  | " * @canopy-type " `Text.isInfixOf` line =
+      fmap Text.strip (Text.stripPrefix "@canopy-type " (Text.dropWhile (/= '@') line))
+  | otherwise = Nothing
 
 -- | Find the function name in the following lines.
 --
 -- Handles both @function name(...)@ and @async function name(...)@.
-findFunctionName :: [String] -> Maybe String
+-- Operates on 'Text' lines to avoid @[Char]@ allocation.
+--
+-- @since 0.19.2
+findFunctionName :: [Text.Text] -> Maybe Text.Text
 findFunctionName [] = Nothing
 findFunctionName (line:rest) =
-  let trimmed = trim line
+  let trimmed = Text.strip line
       stripped = stripAsyncPrefix trimmed
-  in if "function " `List.isPrefixOf` stripped
+  in if "function " `Text.isPrefixOf` stripped
        then extractNameAfterFunction stripped
-       else if "*/" `List.isInfixOf` line
-         then findFunctionName rest
-         else findFunctionName rest
+       else findFunctionName rest
   where
     stripAsyncPrefix s
-      | "async " `List.isPrefixOf` s = trim (drop 6 s)
+      | "async " `Text.isPrefixOf` s = Text.strip (Text.drop 6 s)
       | otherwise = s
     extractNameAfterFunction s =
-      case dropWhile (/= ' ') s of
-        (' ':after) ->
-          case takeWhile (\c -> c /= '(' && c /= ' ') (trim after) of
-            "" -> findFunctionName rest
-            name -> Just name
-        _ -> findFunctionName rest
+      let after = Text.strip (Text.dropWhile (/= ' ') s)
+          name = Text.takeWhile (\c -> c /= '(' && c /= ' ') after
+      in if Text.null name then findFunctionName rest else Just name
 
 -- GENERATE FUNCTION BINDINGS
 
@@ -271,16 +276,19 @@ findFunctionName (line:rest) =
 -- preventing injection via crafted \@name annotations.
 --
 -- @since 0.19.2
-generateFunctionBinding :: Mode.Mode -> Graph -> String -> String -> (String, String) -> [Builder]
-generateFunctionBinding mode _graph _filePath alias (funcName, canopyType)
+generateFunctionBinding :: Mode.Mode -> Graph -> String -> String -> (Text.Text, Text.Text) -> [Builder]
+generateFunctionBinding mode _graph _filePath alias (funcNameText, canopyTypeText)
   | not (isValidJsIdentifier funcName) = []
   | otherwise =
-      let arity = maybe 0 TypeParser.countArity (TypeParser.parseType (Text.pack canopyType))
+      let arity = maybe 0 TypeParser.countArity (TypeParser.parseType canopyTypeText)
           jsVarName = "$author$project$" ++ alias ++ "$" ++ funcName
           callPath = "'" ++ escapeJsString (alias ++ "." ++ funcName) ++ "'"
       in if Mode.isFFIStrict mode
            then generateValidatedBinding jsVarName alias funcName arity canopyType callPath
            else generateSimpleBinding jsVarName alias funcName arity
+  where
+    funcName = Text.unpack funcNameText
+    canopyType = Text.unpack canopyTypeText
 
 -- | Generate simple binding without validation.
 generateSimpleBinding :: String -> String -> String -> Int -> [Builder]

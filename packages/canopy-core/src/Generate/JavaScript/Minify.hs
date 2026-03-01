@@ -171,12 +171,19 @@ minifyChoice scope counter choice =
 --
 -- Uses the same scheme as 'Generate.JavaScript.Name.intToAscii':
 -- 0->a, 1->b, ..., 25->z, 26->aa, 27->ab, ...
+--
+-- Builds the character list directly without intermediate Name
+-- conversions to avoid allocation round-trips.
 shortName :: Int -> Name
-shortName n
-  | n < 26 = Name.fromChars [toEnum (fromEnum 'a' + n)]
+shortName n = Name.fromChars (shortNameChars n)
+
+-- | Compute the character list for a short name index.
+shortNameChars :: Int -> String
+shortNameChars n
+  | n < 26 = [toEnum (fromEnum 'a' + n)]
   | otherwise =
       let (q, r) = divMod n 26
-       in Name.fromChars (Name.toChars (shortName (q - 1)) ++ [toEnum (fromEnum 'a' + r)])
+       in shortNameChars (q - 1) ++ [toEnum (fromEnum 'a' + r)]
 
 -- | Allocate a fresh short name for an original name.
 -- Returns the short name and the incremented counter.

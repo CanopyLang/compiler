@@ -50,6 +50,9 @@ module Canopy.Data.Utf8.Core
     join,
     joinConsecutivePairSep,
 
+    -- * Slicing
+    dropBytes,
+
     -- * Conversion
     toChars,
     fromChars,

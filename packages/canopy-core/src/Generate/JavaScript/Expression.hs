@@ -91,11 +91,7 @@ generate mode expression =
     Opt.VarGlobal (Opt.Global home name) ->
       let moduleName = ModuleName._module home
        in if Mode.isFFIAlias mode moduleName
-            then
-              let moduleStr = Name.toChars moduleName
-                  nameStr = Name.toChars name
-                  jsName = Name.fromChars (moduleStr ++ "." ++ nameStr)
-               in JsExpr $ JS.Ref (JsName.fromLocal jsName)
+            then JsExpr $ JS.Ref (JsName.fromLocal (Name.sepBy 0x2E moduleName name))
             else JsExpr $ JS.Ref (JsName.fromGlobal home name)
     Opt.VarEnum (Opt.Global home name) index ->
       case mode of

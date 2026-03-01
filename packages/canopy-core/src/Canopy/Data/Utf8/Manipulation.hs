@@ -19,6 +19,9 @@ module Canopy.Data.Utf8.Manipulation
     join,
     joinConsecutivePairSep,
 
+    -- * Slicing
+    dropBytes,
+
     -- * Low-level Copy Operations
     copy,
     copyFromPtr,
@@ -72,6 +75,21 @@ unsafeSlice str start end =
             mba <- newByteArray len
             copy str start mba 0 len
             freeze mba
+
+-- DROP BYTES
+
+-- | Drop the first @n@ bytes from a Utf8 value.
+--
+-- Returns 'empty' when @n@ exceeds the total size. This operates at the
+-- byte level, so the caller must ensure that @n@ falls on a UTF-8 code
+-- point boundary (e.g., a known ASCII prefix length).
+--
+-- @since 0.19.2
+dropBytes :: Int -> Utf8 t -> Utf8 t
+dropBytes n str
+  | n <= 0 = str
+  | n >= size str = empty
+  | otherwise = unsafeSlice str n (size str)
 
 -- JOIN
 

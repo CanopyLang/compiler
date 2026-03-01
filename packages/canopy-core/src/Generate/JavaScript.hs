@@ -40,6 +40,7 @@ import Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
 import qualified Data.Maybe
 import qualified Canopy.Data.Name as Name
+import qualified Canopy.Data.Utf8 as Utf8
 import Data.Set (Set)
 import qualified Data.Set as Set
 import qualified Data.Text as Text
@@ -340,7 +341,7 @@ resolveAltGlobal graph currentGlobal =
   let Opt.Global globalHome globalName = currentGlobal
       currentPkg = ModuleName._package globalHome
       moduleName = ModuleName._module globalHome
-      isKernelModule = "Kernel." `List.isPrefixOf` Name.toChars moduleName
+      isKernelModule = Utf8.startsWith kernelDotPrefix moduleName
       isKernelPkg = Pkg._project currentPkg == Pkg._project Pkg.kernel
       (altPkg, altModuleName) = computeAltPkg currentPkg moduleName isKernelModule isKernelPkg
       altGlobalHome = ModuleName.Canonical altPkg altModuleName
@@ -352,15 +353,22 @@ resolveAltGlobal graph currentGlobal =
 computeAltPkg :: Pkg.Name -> Name.Name -> Bool -> Bool -> (Pkg.Name, Name.Name)
 computeAltPkg currentPkg moduleName isKernelModule isKernelPkg
   | Pkg._author currentPkg == Pkg.elm && Pkg._project currentPkg == Pkg._project Pkg.core && isKernelModule =
-      let kernelName = drop 7 (Name.toChars moduleName)
-          kernelPkg = Pkg.Name Pkg.elm (Pkg._project Pkg.kernel)
-      in (kernelPkg, Name.fromChars kernelName)
+      let kernelPkg = Pkg.Name Pkg.elm (Pkg._project Pkg.kernel)
+      in (kernelPkg, Utf8.dropBytes 7 moduleName)
   | isKernelPkg && Pkg._author currentPkg == Pkg.elm =
-      let kernelModuleName = "Kernel." ++ Name.toChars moduleName
-      in (Pkg.core, Name.fromChars kernelModuleName)
+      (Pkg.core, Name.fromChars ("Kernel." ++ Name.toChars moduleName))
   | isKernelPkg && Pkg._author currentPkg == Pkg.canopy =
       (Pkg.Name Pkg.elm (Pkg._project Pkg.kernel), moduleName)
   | otherwise = (currentPkg, moduleName)
+
+-- | The @\"Kernel.\"@ prefix used to identify kernel modules during
+-- alt-global resolution. Cached as a top-level constant to avoid
+-- repeated allocation.
+--
+-- @since 0.19.2
+{-# NOINLINE kernelDotPrefix #-}
+kernelDotPrefix :: Name.Name
+kernelDotPrefix = Name.fromChars "Kernel."
 
 reportMissingGlobal :: Graph -> Opt.Global -> Opt.Global -> Opt.Node
 reportMissingGlobal graph currentGlobal altGlobal =
