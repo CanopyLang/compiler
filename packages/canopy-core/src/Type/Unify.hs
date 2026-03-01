@@ -215,16 +215,14 @@ unifyRigid context maybeSuper content otherContent =
             else mismatch
         Nothing ->
           mismatch
-    RigidVar otherName ->
-      -- FIXED: Allow rigid variables with the same name to unify
-      -- This fixes the bug where identical types like "Array a" with RigidVar a
-      -- could not unify with themselves
-      case content of
-        RigidVar thisName | thisName == otherName ->
-          -- FIXED: Allow rigid variables with the same name to unify
-          merge context content
-        _ ->
-          mismatch
+    RigidVar _ ->
+      -- Rigid variables only unify with themselves (same union-find node).
+      -- Two distinct rigid vars with the same name from different CLet scopes
+      -- must NOT unify -- doing so violates Hindley-Milner parametricity.
+      -- Within a single CLet scope, all occurrences of the same rigid name
+      -- share the same physical node (via Map.traverseWithKey in
+      -- constrainAnnotatedDef), so identity-based unification is correct.
+      mismatch
     RigidSuper _ _ ->
       mismatch
     Alias {} ->

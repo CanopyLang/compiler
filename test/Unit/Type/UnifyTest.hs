@@ -252,11 +252,15 @@ rigidVarTests :: TestTree
 rigidVarTests =
   testGroup
     "rigid variable unification"
-    [ testCase "rigid var unifies with same-name rigid var" $ do
+    [ testCase "distinct rigid vars with same name do not unify" $ do
         r1 <- Type.nameToRigid "a"
         r2 <- Type.nameToRigid "a"
         answer <- Unify.unify r1 r2
-        assertBool "expected Ok for same-name rigid vars" (isOk answer),
+        assertBool "expected Err for distinct rigid vars even with same name" (isErr answer),
+      testCase "rigid var unifies with itself (same node)" $ do
+        r <- Type.nameToRigid "a"
+        answer <- Unify.unify r r
+        assertBool "expected Ok for same rigid var node" (isOk answer),
       testCase "rigid var fails with different-name rigid var" $ do
         r1 <- Type.nameToRigid "a"
         r2 <- Type.nameToRigid "b"
