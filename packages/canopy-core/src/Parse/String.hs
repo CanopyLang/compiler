@@ -11,7 +11,7 @@ where
 
 import qualified Canopy.String as ES
 import qualified Canopy.Data.Utf8 as Utf8
-import Data.Word (Word16, Word8)
+import Data.Word (Word32, Word8)
 import Foreign.Ptr (Ptr, minusPtr, plusPtr)
 import qualified Parse.Number as Number
 import Parse.Primitives (Col, Parser, Row)
@@ -39,11 +39,11 @@ character toExpectation toError =
           cerr r c (toError (SyntaxError.CharEscape escape))
 
 data CharResult
-  = Good (Ptr Word8) Col Word16 ES.Chunk
+  = Good (Ptr Word8) Col Word32 ES.Chunk
   | CharEndless Col
   | CharEscape Row Col SyntaxError.Escape
 
-chompChar :: Ptr Word8 -> Ptr Word8 -> Row -> Col -> Word16 -> ES.Chunk -> CharResult
+chompChar :: Ptr Word8 -> Ptr Word8 -> Row -> Col -> Word32 -> ES.Chunk -> CharResult
 chompChar pos end row col numChars mostRecent =
   if pos >= end
     then CharEndless col

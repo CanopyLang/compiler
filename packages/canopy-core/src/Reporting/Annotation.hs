@@ -18,7 +18,7 @@ where
 
 import Control.Monad (liftM2)
 import Data.Binary (Binary, get, put)
-import Data.Word (Word16)
+import Data.Word (Word32)
 import Prelude hiding (traverse)
 
 -- LOCATED
@@ -47,8 +47,8 @@ merge (At r1 _) (At r2 _) = At (mergeRegions r1 r2)
 
 data Position
   = Position
-      {-# UNPACK #-} !Word16
-      {-# UNPACK #-} !Word16
+      {-# UNPACK #-} !Word32
+      {-# UNPACK #-} !Word32
   deriving (Eq, Show)
 
 at :: Position -> Position -> a -> Located a

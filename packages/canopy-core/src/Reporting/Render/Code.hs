@@ -20,7 +20,7 @@ import qualified Data.List as List
 import qualified Data.Maybe
 import qualified Canopy.Data.Name as Name
 import qualified Data.Set as Set
-import Data.Word (Word16)
+import Data.Word (Word32)
 import Parse.Primitives (Col, Row)
 import Parse.Symbol (binopCharSet)
 import Parse.Variable (reservedWords)
@@ -31,7 +31,7 @@ import qualified Reporting.Doc as Doc
 -- CODE
 
 newtype Source
-  = Source [(Word16, String)]
+  = Source [(Word32, String)]
 
 toSource :: BS.ByteString -> Source
 toSource source =
@@ -98,7 +98,7 @@ safeLast :: [a] -> Maybe a
 safeLast [] = Nothing
 safeLast xs = Just (List.last xs)
 
-makeUnderline :: Int -> Word16 -> Ann.Region -> Maybe Doc
+makeUnderline :: Int -> Word32 -> Ann.Region -> Maybe Doc
 makeUnderline width realEndLine (Ann.Region (Ann.Position start c1) (Ann.Position end c2)) =
   if start /= end || end < realEndLine
     then Nothing
@@ -107,15 +107,15 @@ makeUnderline width realEndLine (Ann.Region (Ann.Position start c1) (Ann.Positio
           zigzag = replicate (max 1 (fromIntegral (c2 - c1))) '^'
        in Just (Doc.fromChars spaces <> Doc.red (Doc.fromChars zigzag))
 
-drawLines :: Bool -> Int -> Ann.Region -> [(Word16, String)] -> Doc -> Doc
+drawLines :: Bool -> Int -> Ann.Region -> [(Word32, String)] -> Doc -> Doc
 drawLines addZigZag width (Ann.Region (Ann.Position startLine _) (Ann.Position endLine _)) sourceLines finalLine =
   Doc.vcat (fmap (drawLine addZigZag width startLine endLine) sourceLines <> [finalLine])
 
-drawLine :: Bool -> Int -> Word16 -> Word16 -> (Word16, String) -> Doc
+drawLine :: Bool -> Int -> Word32 -> Word32 -> (Word32, String) -> Doc
 drawLine addZigZag width startLine endLine (n, line) =
   addLineNumber addZigZag width startLine endLine n (Doc.fromChars line)
 
-addLineNumber :: Bool -> Int -> Word16 -> Word16 -> Word16 -> Doc -> Doc
+addLineNumber :: Bool -> Int -> Word32 -> Word32 -> Word32 -> Doc -> Doc
 addLineNumber addZigZag width start end n line =
   let number =
         show n

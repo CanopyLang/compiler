@@ -15,7 +15,7 @@ module Reporting.Error.Syntax.Expression.Let
 where
 
 import qualified Canopy.Data.Name as Name
-import Data.Word (Word16)
+import Data.Word (Word32)
 import Parse.Primitives (Col, Row)
 import qualified Reporting.Annotation as Ann
 import qualified Reporting.Doc as Doc
@@ -533,7 +533,7 @@ toDefIndentBodyReport source name startRow startCol row col =
               ]
           )
 
-toDefAlignmentReport :: Code.Source -> Name.Name -> Word16 -> Row -> Col -> Row -> Col -> Report.Report
+toDefAlignmentReport :: Code.Source -> Name.Name -> Word32 -> Row -> Col -> Row -> Col -> Report.Report
 toDefAlignmentReport source name indent startRow startCol row col =
   let surroundings = Ann.Region (Ann.Position startRow startCol) (Ann.Position row col)
       region = toRegion row col

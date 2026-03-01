@@ -14,7 +14,7 @@ module Parse.Space
   where
 
 
-import Data.Word (Word8, Word16)
+import Data.Word (Word8, Word32)
 import Foreign.Ptr (Ptr, plusPtr, minusPtr)
 import Foreign.ForeignPtr.Unsafe (unsafeForeignPtrToPtr)
 
@@ -66,7 +66,7 @@ checkIndent (Ann.Position endRow endCol) toError =
     else eerr endRow endCol toError
 
 
-checkAligned :: (Word16 -> Row -> Col -> x) -> Parse.Parser x ()
+checkAligned :: (Word32 -> Row -> Col -> x) -> Parse.Parser x ()
 checkAligned toError =
   Parse.Parser $ \state@(Parse.State _ _ _ indent row col) _ eok _ eerr ->
     if col == indent
@@ -207,7 +207,7 @@ data MultiStatus
   | MultiEndless
 
 
-eatMultiCommentHelp :: Ptr Word8 -> Ptr Word8 -> Row -> Col -> Word16 -> (# MultiStatus, Ptr Word8, Row, Col #)
+eatMultiCommentHelp :: Ptr Word8 -> Ptr Word8 -> Row -> Col -> Word32 -> (# MultiStatus, Ptr Word8, Row, Col #)
 eatMultiCommentHelp pos end row col openComments =
   if pos >= end then
     (# MultiEndless, pos, row, col #)

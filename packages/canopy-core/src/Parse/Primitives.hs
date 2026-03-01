@@ -35,7 +35,7 @@ where
 
 import qualified Control.Applicative as Applicative (Applicative (..))
 import qualified Data.ByteString.Internal as BSI
-import Data.Word (Word16, Word8)
+import Data.Word (Word32, Word8)
 import Foreign.ForeignPtr (ForeignPtr, touchForeignPtr)
 import Foreign.ForeignPtr.Unsafe (unsafeForeignPtrToPtr)
 import Foreign.Ptr (Ptr, plusPtr)
@@ -62,14 +62,14 @@ data State -- PERF try taking some out to avoid allocation
   { _src :: ForeignPtr Word8,
     _pos :: !(Ptr Word8),
     _end :: !(Ptr Word8),
-    _indent :: !Word16,
+    _indent :: !Word32,
     _row :: !Row,
     _col :: !Col
   }
 
-type Row = Word16
+type Row = Word32
 
-type Col = Word16
+type Col = Word32
 
 -- FUNCTOR
 
@@ -219,7 +219,7 @@ fromSnippet (Parser parser) toBadEnd (Snippet fptr offset length row col) =
 
 -- POSITION
 
-getCol :: Parser x Word16
+getCol :: Parser x Word32
 getCol =
   Parser $ \state@(State _ _ _ _ _ col) _ eok _ _ ->
     eok col state
@@ -244,12 +244,12 @@ addEnd start value =
 
 -- INDENT
 
-getIndent :: Parser x Word16
+getIndent :: Parser x Word32
 getIndent =
   Parser $ \state@(State _ _ _ indent _ _) _ eok _ _ ->
     eok indent state
 
-setIndent :: Word16 -> Parser x ()
+setIndent :: Word32 -> Parser x ()
 setIndent indent =
   Parser $ \(State src pos end _ row col) _ eok _ _ ->
     let !newState = State src pos end indent row col
@@ -262,7 +262,7 @@ withIndent (Parser parser) =
         eok' a (State s p e _ r c) = eok a (State s p e oldIndent r c)
      in parser (State src pos end col row col) cok' eok' cerr eerr
 
-withBacksetIndent :: Word16 -> Parser x a -> Parser x a
+withBacksetIndent :: Word32 -> Parser x a -> Parser x a
 withBacksetIndent backset (Parser parser) =
   Parser $ \(State src pos end oldIndent row col) cok eok cerr eerr ->
     let cok' a (State s p e _ r c) = cok a (State s p e oldIndent r c)

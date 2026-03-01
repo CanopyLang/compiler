@@ -31,7 +31,7 @@ where
 import qualified Data.Char as Char
 import qualified Canopy.Data.Name as Name
 import qualified Data.Text as Text
-import Data.Word (Word16)
+import Data.Word (Word32)
 import Parse.Primitives (Col, Row)
 import qualified Reporting.Annotation as Ann
 import qualified Reporting.Diagnostic as Diag
@@ -48,7 +48,7 @@ toRegion row col =
    in Ann.Region pos pos
 
 -- | Construct a region that extends @extra@ columns to the right.
-toWiderRegion :: Row -> Col -> Word16 -> Ann.Region
+toWiderRegion :: Row -> Col -> Word32 -> Ann.Region
 toWiderRegion row col extra =
   Ann.Region
     (Ann.Position row col)

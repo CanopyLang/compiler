@@ -15,7 +15,7 @@ module Lint.Report
     printWarning,
     printFix,
     renderRegion,
-    showWord16,
+    showWord32,
 
     -- * JSON Reporting
     reportJson,
@@ -89,13 +89,13 @@ printFix (RemoveLines start end)
 -- | Render a source region as a human-readable @line:col-line:col@ string.
 renderRegion :: Ann.Region -> String
 renderRegion (Ann.Region (Ann.Position startLine startCol) (Ann.Position endLine endCol)) =
-  showWord16 startLine ++ ":" ++ showWord16 startCol
+  showWord32 startLine ++ ":" ++ showWord32 startCol
     ++ "-"
-    ++ showWord16 endLine ++ ":" ++ showWord16 endCol
+    ++ showWord32 endLine ++ ":" ++ showWord32 endCol
 
--- | Convert a 'Word.Word16' to a decimal string.
-showWord16 :: Word.Word16 -> String
-showWord16 = show
+-- | Convert a 'Word.Word32' to a decimal string.
+showWord32 :: Word.Word32 -> String
+showWord32 = show
 
 -- JSON REPORTING
 
@@ -124,7 +124,7 @@ encodeRegion (Ann.Region (Ann.Position sl sc) (Ann.Position el ec)) =
     ]
 
 -- | Encode a source position as a JSON object.
-encodePosition :: Word.Word16 -> Word.Word16 -> Encode.Value
+encodePosition :: Word.Word32 -> Word.Word32 -> Encode.Value
 encodePosition line col =
   Encode.object
     [ (JsonString.fromChars "line", Encode.int (fromIntegral line)),

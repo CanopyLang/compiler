@@ -55,7 +55,7 @@ where
 import qualified Canopy.ModuleName as ModuleName
 import qualified Data.Char as Char
 import qualified Canopy.Data.Name as Name
-import Data.Word (Word16)
+import Data.Word (Word32)
 import Parse.Primitives (Col, Row)
 import Parse.Symbol (BadOperator (..))
 import qualified Reporting.Annotation as Ann
@@ -293,7 +293,7 @@ data Case
   | CaseIndentPattern Row Col
   | CaseIndentArrow Row Col
   | CaseIndentBranch Row Col
-  | CasePatternAlignment Word16 Row Col
+  | CasePatternAlignment Word32 Row Col
   | -- | Case expression exceeds maximum branch count
     CaseTooManyBranches Int Row Col
   deriving (Show)
@@ -318,7 +318,7 @@ data If
 data Let
   = LetSpace Space Row Col
   | LetIn Row Col
-  | LetDefAlignment Word16 Row Col
+  | LetDefAlignment Word32 Row Col
   | LetDefName Row Col
   | LetDef Name.Name Def Row Col
   | LetDestruct Destruct Row Col
@@ -339,7 +339,7 @@ data Def
   | DefIndentEquals Row Col
   | DefIndentType Row Col
   | DefIndentBody Row Col
-  | DefAlignment Word16 Row Col
+  | DefAlignment Word32 Row Col
   deriving (Show)
 
 data Destruct
@@ -362,7 +362,7 @@ data Pattern
   | PChar Char Row Col
   | PString String Row Col
   | PNumber Number Row Col
-  | PFloat Word16 Row Col
+  | PFloat Word32 Row Col
   | PAlias Row Col
   | PWildcardNotVar Name.Name Int Row Col
   | PSpace Space Row Col
@@ -449,7 +449,7 @@ data TTuple
 data Char
   = CharEndless
   | CharEscape Escape
-  | CharNotString Word16
+  | CharNotString Word32
   deriving (Show)
 
 data String
@@ -460,9 +460,9 @@ data String
 
 data Escape
   = EscapeUnknown
-  | BadUnicodeFormat Word16
-  | BadUnicodeCode Word16
-  | BadUnicodeLength Word16 Int Int
+  | BadUnicodeFormat Word32
+  | BadUnicodeCode Word32
+  | BadUnicodeLength Word32 Int Int
   deriving (Show)
 
 data Number
