@@ -1,76 +1,72 @@
-# Canopy Production Readiness Plans — Audit v3
+# Canopy A+ Production Readiness Plans — Audit v4
 
 **Source**: Zero-trust production readiness audit (March 2026)
-**Audit Score**: 38/100 → Target: 85/100
-**Plans**: 24 tasks across 6 phases
+**Current Score**: 62/100 → Target: 95/100 (A+)
+**Plans**: 15 tasks across 5 phases
 
 ---
 
-## Phase 1: Security (Plans 01–06)
+## Phase 1: Architecture Foundation (Plans 01–03)
 
 | # | Plan | Priority | Effort | Risk |
 |---|------|----------|--------|------|
-| 01 | [GitHub Fallback Hash Verification](01-security-github-fallback-hash.md) | CRITICAL | Small | Low |
-| 02 | [Zip Bomb Protection](02-security-zip-bomb-protection.md) | HIGH | Small | Low |
-| 03 | [Atomic Lock File Writes](03-security-atomic-lockfile.md) | HIGH | Small | Low |
-| 04 | [Vendor Symlink Safety](04-security-vendor-symlink.md) | HIGH | Small | Low |
-| 05 | [JS Escape Completeness](05-security-js-escape-completeness.md) | MEDIUM | Small | Low |
-| 06 | [Trusted Key Store Bootstrap](06-security-trusted-key-bootstrap.md) | MEDIUM | Medium | Medium |
+| 01 | [Public/Internal Module Split](01-arch-module-exposure.md) | CRITICAL | Medium | Low |
+| 02 | [InternalError Crash Site Remediation](02-arch-crash-remediation.md) | CRITICAL | Medium | Low |
+| 03 | [Nested Case Violation Fixes](03-arch-nested-case-fixes.md) | HIGH | Small | Low |
 
-## Phase 2: Type System Soundness (Plans 07–08)
+## Phase 2: Type System — Flow-Level Intelligence (Plans 04–08)
 
 | # | Plan | Priority | Effort | Risk |
 |---|------|----------|--------|------|
-| 07 | [Occurs Check Alias Body](07-soundness-occurs-check-alias.md) | CRITICAL | Small | Low |
-| 08 | [Let-Generalization Property Tests](08-soundness-let-generalization-tests.md) | HIGH | Medium | Low |
+| 04 | [Flow-Level FFI Type Checking — Static Analysis of JavaScript](04-types-flow-narrowing.md) | CRITICAL | Large | Medium |
+| 05 | [Sketchy-Null & Unsafe Operations Lint](05-types-sketchy-null-lint.md) | HIGH | Small | Low |
+| 06 | [Opaque Type Supertype Bounds](06-types-opaque-bounds.md) | MEDIUM | Medium | Low |
+| 07 | [Type Guards & Predicate Functions](07-types-type-guards.md) | HIGH | Medium | Medium |
+| 08 | [Variance Annotations](08-types-variance.md) | MEDIUM | Medium | Medium |
 
-## Phase 3: Resilience (Plans 09–10)
-
-| # | Plan | Priority | Effort | Risk |
-|---|------|----------|--------|------|
-| 09 | [Discovery Parse Failure Graceful Degradation](09-resilience-discovery-parse-failure.md) | HIGH | Small | Medium |
-| 10 | [Parallel Build Cycle Detection](10-resilience-parallel-cycle-detection.md) | HIGH | Small | Low |
-
-## Phase 4: Performance (Plans 11–16)
+## Phase 3: Performance (Plans 09–11)
 
 | # | Plan | Priority | Effort | Risk |
 |---|------|----------|--------|------|
-| 11 | [Codegen String Impedance](11-perf-codegen-string-impedance.md) | CRITICAL | Medium | Medium |
-| 12 | [Test Runner String Processing](12-perf-test-runner-string.md) | HIGH | Small | Low |
-| 13 | [Newline Counting Double Materialization](13-perf-newline-counting.md) | MEDIUM | Small | Low |
-| 14 | [StrictData as Default Extension](14-perf-strictdata-default.md) | MEDIUM | Medium | Medium |
-| 15 | [Binary Build Cache](15-perf-binary-build-cache.md) | HIGH | Medium | Low |
-| 16 | [Hot-Path String Allocations](16-perf-hotpath-string-alloc.md) | HIGH | Small | Low |
+| 09 | [FFI Codegen String Elimination](09-perf-ffi-string-elimination.md) | HIGH | Small | Low |
+| 10 | [Parallel Module Discovery](10-perf-parallel-discovery.md) | HIGH | Medium | Medium |
+| 11 | [Advanced Optimization Passes](11-perf-advanced-optimizations.md) | CRITICAL | Large | Medium |
 
-## Phase 5: Developer Experience (Plans 17–20)
+## Phase 4: Quality Enforcement (Plans 12–13)
 
 | # | Plan | Priority | Effort | Risk |
 |---|------|----------|--------|------|
-| 17 | [Formatter Comment Preservation](17-dx-formatter-comment-preservation.md) | HIGH | Large | High |
-| 18 | [Structured Error Migration](18-dx-structured-error-migration.md) | CRITICAL | Medium | Low |
-| 19 | [REPL Incremental Compilation](19-dx-repl-incremental.md) | MEDIUM | Large | High |
-| 20 | [Benchmark Per-Phase Timing](20-dx-benchmark-per-phase.md) | MEDIUM | Small | Low |
+| 12 | [Test Coverage Enforcement with HPC](12-quality-coverage-enforcement.md) | CRITICAL | Medium | Low |
+| 13 | [FFI Runtime Capability Enforcement](13-quality-ffi-capabilities.md) | HIGH | Medium | Medium |
 
-## Phase 6: Code Quality & Ecosystem (Plans 21–24)
+## Phase 5: Developer Experience (Plans 14–15)
 
 | # | Plan | Priority | Effort | Risk |
 |---|------|----------|--------|------|
-| 21 | [Deceptive Test Cleanup](21-quality-deceptive-test-cleanup.md) | HIGH | Medium | Low |
-| 22 | [Row/Col Word16 Overflow](22-resilience-row-col-overflow.md) | MEDIUM | Medium | Medium |
-| 23 | [God Module Decomposition](23-quality-god-module-splits.md) | MEDIUM | Medium | Low |
-| 24 | [Real Dependency Solver](24-ecosystem-real-solver.md) | HIGH | Large | Medium |
+| 14 | [LSP Feature Completion](14-dx-lsp-completion.md) | HIGH | Large | Medium |
+| 15 | [Contributor Onboarding & Architecture Guide](15-dx-contributor-guide.md) | MEDIUM | Small | Low |
 
 ---
 
 ## Priority Summary
 
-- **CRITICAL** (4): Plans 01, 07, 11, 18
-- **HIGH** (12): Plans 02, 03, 04, 08, 09, 10, 12, 15, 16, 17, 21, 24
-- **MEDIUM** (8): Plans 05, 06, 13, 14, 19, 20, 22, 23
+- **CRITICAL** (5): Plans 01, 02, 04, 11, 12
+- **HIGH** (6): Plans 03, 05, 07, 09, 10, 13, 14
+- **MEDIUM** (4): Plans 06, 08, 15
 
 ## Recommended Execution Order
 
-1. **Immediate** (CRITICAL, Small effort): 01, 07
-2. **This sprint** (HIGH, Small effort): 02, 03, 04, 09, 10, 12, 16
-3. **Next sprint** (HIGH/CRITICAL, Medium effort): 08, 11, 15, 18, 21
-4. **Backlog** (Medium priority or Large effort): 05, 06, 13, 14, 17, 19, 20, 22, 23, 24
+1. **Immediate** (CRITICAL, foundation): 01, 02, 03
+2. **This sprint** (HIGH, quick wins): 05, 09, 12
+3. **Next sprint** (CRITICAL/HIGH, medium effort): 04, 07, 10, 11, 13
+4. **Backlog** (Medium priority or Large effort): 06, 08, 14, 15
+
+## Score Impact Estimate
+
+| Phase | Plans | Score Delta |
+|-------|-------|-------------|
+| Phase 1 | 01-03 | +12 (62→74) |
+| Phase 2 | 04-08 | +10 (74→84) |
+| Phase 3 | 09-11 | +5 (84→89) |
+| Phase 4 | 12-13 | +4 (89→93) |
+| Phase 5 | 14-15 | +3 (93→96) |
