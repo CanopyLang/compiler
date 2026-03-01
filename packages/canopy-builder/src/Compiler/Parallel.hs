@@ -90,17 +90,21 @@ compileModulesInOrder pkg projectType root initialInterfaces moduleInfo = do
   engine <- Engine.initEngine
   let graph = buildDependencyGraph moduleInfo
   Log.logEvent (BuildModuleQueued (Text.pack ("dependency graph: " ++ show (Map.size moduleInfo) ++ " modules")))
-  let plan = Parallel.groupByDependencyLevel graph
-      levels = Parallel.planLevels plan
-      modulePaths = Map.map fst moduleInfo
-      importMap = Map.map snd moduleInfo
-  Log.logEvent (BuildModuleQueued (Text.pack (show (length levels) ++ " dependency levels")))
-  result <- compileLevels engine cacheRef hitRef missRef pkg projectType root levels initialInterfaces [] modulePaths importMap
-  finalCache <- readIORef cacheRef
-  saveBuildCache root finalCache
-  logIncrementalStats hitRef missRef
-  Driver.logCacheStats engine
-  return result
+  case Parallel.groupByDependencyLevel graph of
+    Left (Parallel.CycleDetectedDuringLeveling cycleModules) ->
+      return (Left (Exit.BuildCannotCompile (Exit.CompileParseError ""
+        ("Dependency cycle detected among modules: " ++ show cycleModules))))
+    Right plan -> do
+      let levels = Parallel.planLevels plan
+          modulePaths = Map.map fst moduleInfo
+          importMap = Map.map snd moduleInfo
+      Log.logEvent (BuildModuleQueued (Text.pack (show (length levels) ++ " dependency levels")))
+      result <- compileLevels engine cacheRef hitRef missRef pkg projectType root levels initialInterfaces [] modulePaths importMap
+      finalCache <- readIORef cacheRef
+      saveBuildCache root finalCache
+      logIncrementalStats hitRef missRef
+      Driver.logCacheStats engine
+      return result
 
 -- | Build the dependency graph from pre-computed module info.
 buildDependencyGraph ::

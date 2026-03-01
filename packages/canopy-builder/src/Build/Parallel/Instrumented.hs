@@ -75,45 +75,46 @@ compileParallelWithInstrumentation compileOne statuses graph = do
 
   overallStart <- getCurrentTime
 
-  let plan = Parallel.groupByDependencyLevel graph
-      levels = Parallel.planLevels plan
-      totalModules = Parallel.planTotalModules plan
-      totalLevels = length levels
+  case Parallel.groupByDependencyLevel graph of
+    Left err -> do
+      logWarning ("Cycle detected during leveling: " ++ show err)
+      return (Map.empty, emptyStats)
+    Right plan -> do
+      let levels = Parallel.planLevels plan
+          totalModules = Parallel.planTotalModules plan
+          totalLevels = length levels
 
-  logInfo $ "Compilation plan: " ++ show totalLevels ++ " levels, " ++ show totalModules ++ " modules"
-  logInfo $ "Level breakdown: " ++ show (map length levels)
+      logInfo ("Compilation plan: " ++ show totalLevels ++ " levels, " ++ show totalModules ++ " modules")
+      logInfo ("Level breakdown: " ++ show (map length levels))
 
-  -- Compile each level and collect statistics
-  (resultsList, levelStatsList) <-
-    mapM (compileLevelWithStats compileOne statuses) (zip [0..] levels)
-    >>= return . unzip
+      (resultsList, levelStatsList) <-
+        fmap unzip (mapM (compileLevelWithStats compileOne statuses) (zip [0..] levels))
 
-  overallEnd <- getCurrentTime
+      overallEnd <- getCurrentTime
 
-  let results = Map.unions resultsList
-      totalTime = realToFrac $ diffUTCTime overallEnd overallStart
-      allThreadIds = concatMap levelStatsThreadIds levelStatsList
-      uniqueThreads = length $ Map.keys $ Map.fromList [(tid, ()) | tid <- allThreadIds]
-      maxConcurrency = foldr max 0 (map (length . levelStatsThreadIds) levelStatsList)
+      let results = Map.unions resultsList
+          totalTime = realToFrac (diffUTCTime overallEnd overallStart)
+          allThreadIds = concatMap levelStatsThreadIds levelStatsList
+          uniqueThreads = length (Map.keys (Map.fromList [(tid, ()) | tid <- allThreadIds]))
+          maxConcurrency = foldr max 0 (map (length . levelStatsThreadIds) levelStatsList)
 
-      stats = ParallelStats
-        { parallelStatsTotalModules = totalModules,
-          parallelStatsTotalLevels = totalLevels,
-          parallelStatsTotalTime = totalTime,
-          parallelStatsLevels = levelStatsList,
-          parallelStatsMaxConcurrency = maxConcurrency,
-          parallelStatsUniqueThreads = uniqueThreads
-        }
+          stats = ParallelStats
+            { parallelStatsTotalModules = totalModules,
+              parallelStatsTotalLevels = totalLevels,
+              parallelStatsTotalTime = totalTime,
+              parallelStatsLevels = levelStatsList,
+              parallelStatsMaxConcurrency = maxConcurrency,
+              parallelStatsUniqueThreads = uniqueThreads
+            }
 
-  logInfo $ "Compilation complete!"
-  logInfo $ "Total time: " ++ show totalTime ++ "s"
-  logInfo $ "Unique threads used: " ++ show uniqueThreads
-  logInfo $ "Max concurrent modules: " ++ show maxConcurrency
+      logInfo "Compilation complete!"
+      logInfo ("Total time: " ++ show totalTime ++ "s")
+      logInfo ("Unique threads used: " ++ show uniqueThreads)
+      logInfo ("Max concurrent modules: " ++ show maxConcurrency)
 
-  -- Print detailed analysis
-  printParallelAnalysis stats
+      printParallelAnalysis stats
 
-  return (results, stats)
+      return (results, stats)
 
 -- | Compile a single level with instrumentation.
 compileLevelWithStats ::
@@ -186,7 +187,7 @@ compileModuleWithStats compileOne statuses levelNum _levelStart moduleName = do
 
       return ((moduleName, result), stats)
 
-    Nothing -> error $ "Module " ++ show moduleName ++ " not found in statuses map"
+    Nothing -> ioError (userError ("Build.Parallel.Instrumented: module " ++ show moduleName ++ " not found in statuses map"))
 
 -- | Print detailed parallel analysis.
 printParallelAnalysis :: ParallelStats -> IO ()
@@ -237,6 +238,17 @@ printLevelStats level = do
   if length (levelStatsThreadIds level) > 1
     then logInfo "  ✓ Parallel execution confirmed"
     else logInfo "  ✗ Sequential execution (no parallelism)"
+
+-- | Empty statistics for error cases.
+emptyStats :: ParallelStats
+emptyStats = ParallelStats
+  { parallelStatsTotalModules = 0,
+    parallelStatsTotalLevels = 0,
+    parallelStatsTotalTime = 0,
+    parallelStatsLevels = [],
+    parallelStatsMaxConcurrency = 0,
+    parallelStatsUniqueThreads = 0
+  }
 
 -- | Log info message to stderr.
 logInfo :: String -> IO ()
