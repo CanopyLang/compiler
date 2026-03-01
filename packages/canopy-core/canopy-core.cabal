@@ -112,6 +112,7 @@ library
       Generate.JavaScript.Expression
       Generate.JavaScript.Expression.Call
       Generate.JavaScript.Expression.Case
+      Generate.JavaScript.FFI
       Generate.JavaScript.FFIRuntime
       Generate.JavaScript.Functions
       Generate.JavaScript.Kernel

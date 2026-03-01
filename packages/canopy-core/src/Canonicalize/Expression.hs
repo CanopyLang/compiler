@@ -61,13 +61,9 @@ canonicalize env (Ann.At region expression) =
       Src.Float float ->
         Result.ok (Can.Float float)
       Src.Var varType name ->
-        case varType of
-          Src.LowVar -> findVar region env name
-          Src.CapVar -> toVarCtor name <$> Env.findCtor region env name
+        canonicalizeVar region env varType name
       Src.VarQual varType prefix name ->
-        case varType of
-          Src.LowVar -> findVarQual region env prefix name
-          Src.CapVar -> toVarCtor name <$> Env.findCtorQual region env prefix name
+        canonicalizeVarQual region env varType prefix name
       Src.List exprs ->
         Can.List <$> traverse (canonicalize env) exprs
       Src.Op op ->
@@ -79,19 +75,7 @@ canonicalize env (Ann.At region expression) =
       Src.Binops ops final ->
         Ann.toValue <$> canonicalizeBinops region env ops final
       Src.Lambda srcArgs body ->
-        delayedUsage $
-          do
-            (args, bindings) <-
-              Pattern.verify Error.DPLambdaArgs $
-                traverse (Pattern.canonicalize env) srcArgs
-
-            newEnv <-
-              Env.addLocals bindings env
-
-            (cbody, freeLocals) <-
-              verifyBindings Warning.Pattern bindings (canonicalize newEnv body)
-
-            return (Can.Lambda args cbody, freeLocals)
+        canonicalizeLambda env srcArgs body
       Src.Call func args ->
         Can.Call
           <$> canonicalize env func
@@ -133,6 +117,42 @@ canonicalize env (Ann.At region expression) =
         Result.ok (Can.Shader src tipe)
       Src.Interpolation segments ->
         canonicalizeInterpolation env region segments
+
+-- CANONICALIZE VARIABLES
+
+-- | Resolve an unqualified variable reference.
+--
+-- Lowercase variables are resolved through the environment's local
+-- and top-level scope. Uppercase variables are resolved as constructors.
+canonicalizeVar :: Ann.Region -> Env.Env -> Src.VarType -> Name.Name -> Result FreeLocals [Warning.Warning] Can.Expr_
+canonicalizeVar region env Src.LowVar name = findVar region env name
+canonicalizeVar region env Src.CapVar name = toVarCtor name <$> Env.findCtor region env name
+
+-- | Resolve a qualified variable reference (e.g. @Module.function@).
+--
+-- Follows the same lowercase/uppercase dispatch as 'canonicalizeVar'
+-- but uses the qualified lookup path through the environment.
+canonicalizeVarQual :: Ann.Region -> Env.Env -> Src.VarType -> Name.Name -> Name.Name -> Result FreeLocals [Warning.Warning] Can.Expr_
+canonicalizeVarQual region env Src.LowVar prefix name = findVarQual region env prefix name
+canonicalizeVarQual region env Src.CapVar prefix name = toVarCtor name <$> Env.findCtorQual region env prefix name
+
+-- CANONICALIZE LAMBDA
+
+-- | Canonicalize a lambda expression.
+--
+-- Verifies that pattern arguments are non-overlapping, extends the
+-- local environment with the bindings introduced by the patterns,
+-- and canonicalizes the body in the extended scope.
+canonicalizeLambda :: Env.Env -> [Src.Pattern] -> Src.Expr -> Result FreeLocals [Warning.Warning] Can.Expr_
+canonicalizeLambda env srcArgs body =
+  delayedUsage $ do
+    (args, bindings) <-
+      Pattern.verify Error.DPLambdaArgs $
+        traverse (Pattern.canonicalize env) srcArgs
+    newEnv <- Env.addLocals bindings env
+    (cbody, freeLocals) <-
+      verifyBindings Warning.Pattern bindings (canonicalize newEnv body)
+    return (Can.Lambda args cbody, freeLocals)
 
 -- CANONICALIZE TUPLE EXTRAS
 

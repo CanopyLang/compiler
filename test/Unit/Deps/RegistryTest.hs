@@ -6,15 +6,20 @@
 -- and the fallback chain from environment variables to custom
 -- repository configuration to the default public registry.
 --
+-- Environment-variable-dependent tests run sequentially to avoid
+-- race conditions from concurrent process-global env mutation.
+--
 -- @since 0.19.2
 module Unit.Deps.RegistryTest (tests) where
 
 import qualified Canopy.CustomRepositoryData as CustomRepo
+import qualified Control.Exception as Exception
 import qualified Data.Map.Strict as Map
 import qualified Data.Text as Text
 import qualified Deps.Registry as Registry
 import qualified System.Environment as Env
 import Test.Tasty
+
 import Test.Tasty.HUnit
 
 tests :: TestTree
@@ -27,10 +32,13 @@ tests =
       testRegistryDataTypes
     ]
 
+-- | URL resolution tests run sequentially because they mutate
+-- process-global environment variables.
 testRegistryUrlResolution :: TestTree
 testRegistryUrlResolution =
-  testGroup
+  sequentialTestGroup
     "registry URL resolution"
+    AllFinish
     [ testCase "empty custom repos uses default URL" $ do
         unsetRegistryEnv
         url <- Registry.resolveRegistryUrl Map.empty
@@ -41,20 +49,22 @@ testRegistryUrlResolution =
             repos = Map.singleton "mycompany" (mkCustomRepo "mycompany" customUrl Nothing)
         url <- Registry.resolveRegistryUrl repos
         url @?= customUrl,
-      testCase "env var overrides custom repos" $ do
-        unsetRegistryEnv
-        let envUrl = "https://env-registry.example.com/all-packages"
-        Env.setEnv "CANOPY_REGISTRY_URL" envUrl
-        let repos = Map.singleton "mycompany" (mkCustomRepo "mycompany" "https://other.com" Nothing)
-        url <- Registry.resolveRegistryUrl repos
-        Env.unsetEnv "CANOPY_REGISTRY_URL"
-        url @?= envUrl
+      testCase "env var overrides custom repos" $
+        withEnvVar "CANOPY_REGISTRY_URL" envUrl $ do
+          let repos = Map.singleton "mycompany" (mkCustomRepo "mycompany" "https://other.com" Nothing)
+          url <- Registry.resolveRegistryUrl repos
+          url @?= envUrl
     ]
+  where
+    envUrl = "https://env-registry.example.com/all-packages"
 
+-- | Token resolution tests run sequentially because they mutate
+-- process-global environment variables.
 testRegistryTokenResolution :: TestTree
 testRegistryTokenResolution =
-  testGroup
+  sequentialTestGroup
     "registry token resolution"
+    AllFinish
     [ testCase "empty custom repos returns Nothing" $ do
         unsetRegistryEnv
         token <- Registry.resolveRegistryToken Map.empty
@@ -69,13 +79,11 @@ testRegistryTokenResolution =
         let repos = Map.singleton "mycompany" (mkCustomRepo "mycompany" "https://example.com" Nothing)
         token <- Registry.resolveRegistryToken repos
         token @?= Nothing,
-      testCase "env var overrides custom repo token" $ do
-        unsetRegistryEnv
-        Env.setEnv "CANOPY_REGISTRY_TOKEN" "env-token"
-        let repos = Map.singleton "mycompany" (mkCustomRepo "mycompany" "https://example.com" (Just "repo-token"))
-        token <- Registry.resolveRegistryToken repos
-        Env.unsetEnv "CANOPY_REGISTRY_TOKEN"
-        token @?= Just "env-token"
+      testCase "env var overrides custom repo token" $
+        withEnvVar "CANOPY_REGISTRY_TOKEN" "env-token" $ do
+          let repos = Map.singleton "mycompany" (mkCustomRepo "mycompany" "https://example.com" (Just "repo-token"))
+          token <- Registry.resolveRegistryToken repos
+          token @?= Just "env-token"
     ]
 
 testAuthHeader :: TestTree
@@ -111,7 +119,18 @@ mkCustomRepo name url maybeToken =
       CustomRepo._defaultPackageServerRepoAuthToken = fmap Text.pack maybeToken
     }
 
--- | Clean up environment variables after tests.
+-- | Run an IO action with an environment variable temporarily set.
+--
+-- Uses 'Exception.bracket' to guarantee cleanup even on exceptions,
+-- preventing env var leakage between test runs.
+withEnvVar :: String -> String -> IO a -> IO a
+withEnvVar name value action =
+  Exception.bracket
+    (Env.setEnv name value)
+    (\_ -> Env.unsetEnv name)
+    (\_ -> action)
+
+-- | Clean up registry environment variables.
 unsetRegistryEnv :: IO ()
 unsetRegistryEnv = do
   Env.unsetEnv "CANOPY_REGISTRY_URL"

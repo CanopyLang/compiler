@@ -1,0 +1,401 @@
+{-# LANGUAGE BangPatterns #-}
+{-# LANGUAGE StrictData #-}
+{-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE TemplateHaskell #-}
+
+-- | FFI code generation for the Canopy compiler.
+--
+-- This module is responsible for generating JavaScript FFI content,
+-- function bindings, and runtime validators. It handles:
+--
+-- * Emitting raw FFI JavaScript source into the bundle
+-- * Generating curried function bindings for Canopy<->JS interop
+-- * Producing runtime type validators when strict mode is enabled
+-- * Parsing \@canopy-type annotations from JSDoc comments
+--
+-- The 'FFIInfo' type carries all data needed to emit FFI JavaScript
+-- code without relying on global state or MVars.
+--
+-- WARNING: NO HARDCODING OF FFI FILE PATHS!
+-- All FFI file paths MUST come from the actual foreign import statements
+-- in the source code, NOT hardcoded values.
+--
+-- @since 0.19.2
+module Generate.JavaScript.FFI
+  ( -- * Types
+    FFIInfo (..),
+    ffiFilePath,
+    ffiContent,
+    ffiAlias,
+
+    -- * Generation
+    extractFFIAliases,
+    generateFFIContent,
+    generateFFIValidators,
+
+    -- * Internal (exported for testing)
+    extractCanopyTypeFunctions,
+    extractCanopyType,
+    findFunctionName,
+    isValidJsIdentifier,
+    escapeJsString,
+    trim,
+  )
+where
+
+import qualified AST.Optimized as Opt
+import qualified Data.Char as Char
+import Control.Lens (makeLenses)
+import qualified Data.Binary as Binary
+import Data.ByteString.Builder (Builder)
+import qualified Data.ByteString.Builder as BB
+import qualified Data.List as List
+import Data.Map.Strict (Map)
+import qualified Data.Map.Strict as Map
+import qualified Canopy.Data.Name as Name
+import Data.Set (Set)
+import qualified Data.Set as Set
+import qualified Data.Text as Text
+import qualified Data.Text.Encoding as TextEnc
+import qualified FFI.TypeParser as TypeParser
+import qualified FFI.Validator as Validator
+import qualified Generate.Mode as Mode
+
+-- | Graph of optimized global definitions.
+type Graph = Map Opt.Global Opt.Node
+
+-- FFI INFO TYPE
+
+-- | FFI information for JavaScript generation.
+--
+-- Carries everything needed to emit FFI JavaScript code in the bundle
+-- without relying on global storage.  'FilePath' clarifies path semantics,
+-- 'Text' captures Unicode source content, and 'Name.Name' preserves the
+-- alias that appeared in the @foreign import@ declaration.
+data FFIInfo = FFIInfo
+  { _ffiFilePath :: !FilePath     -- ^ Path to the JavaScript file
+  , _ffiContent  :: !Text.Text    -- ^ Content of the JavaScript file
+  , _ffiAlias    :: !Name.Name    -- ^ Alias used in the import statement
+  } deriving (Eq, Show)
+
+-- | Manual 'Binary' instance to avoid depending on orphan instances for
+-- 'Text' and to use the project-standard 'Utf8' serialisation for 'Name'.
+instance Binary.Binary FFIInfo where
+  put (FFIInfo path content alias) = do
+    Binary.put path
+    Binary.put (TextEnc.encodeUtf8 content)
+    Binary.put alias
+  get = do
+    path <- Binary.get
+    contentBytes <- Binary.get
+    alias <- Binary.get
+    return (FFIInfo path (TextEnc.decodeUtf8 contentBytes) alias)
+
+makeLenses ''FFIInfo
+
+-- EXTRACT FFI ALIASES
+
+-- | Extract FFI alias names from FFI info map.
+--
+-- Used to identify which module names correspond to FFI modules vs application modules.
+-- FFI modules use direct JavaScript access, while application modules use qualified names.
+--
+-- @since 0.19.1
+extractFFIAliases :: Map String FFIInfo -> Set Name.Name
+extractFFIAliases ffiInfos =
+  Set.fromList (map _ffiAlias (Map.elems ffiInfos))
+
+-- GENERATE FFI CONTENT
+
+-- | Generate FFI JavaScript content to include in bundle.
+--
+-- Receives FFI information directly through the compilation pipeline
+-- instead of using global storage, eliminating MVar deadlock issues.
+-- When FFI strict mode is enabled, also generates runtime validators.
+generateFFIContent :: Mode.Mode -> Graph -> Map String FFIInfo -> Builder
+generateFFIContent mode graph ffiInfos =
+  if Map.null ffiInfos
+     then mempty
+     else mconcat parts <> validators
+  where
+    parts =
+      [ "\n// FFI JavaScript content from external files\n" ]
+        ++ Map.foldrWithKey formatFFIFileFromInfo [] ffiInfos
+        ++ [ "\n// FFI function bindings\n" ]
+        ++ Map.foldrWithKey (generateFFIBindingsFromInfo mode graph) [] ffiInfos
+    validators =
+      if Mode.isFFIStrict mode
+        then generateFFIValidators mode ffiInfos
+        else mempty
+
+-- GENERATE FFI VALIDATORS
+
+-- | Generate FFI validators for all function return types.
+--
+-- Uses the 'Mode' to derive 'ValidatorConfig', enabling CLI control
+-- over strict mode and debug verbosity in generated validators.
+--
+-- @since 0.19.2
+generateFFIValidators :: Mode.Mode -> Map String FFIInfo -> Builder
+generateFFIValidators mode ffiInfos =
+  if Map.null ffiInfos
+     then mempty
+     else mconcat parts
+  where
+    config = modeToValidatorConfig mode
+
+    parts =
+      [ "\n// FFI type validators (generated by canopy)\n" ]
+        ++ Map.foldrWithKey collectValidators [] ffiInfos
+
+    collectValidators :: String -> FFIInfo -> [Builder] -> [Builder]
+    collectValidators _key info acc =
+      let contentStr = Text.unpack (_ffiContent info)
+          functions = extractCanopyTypeFunctions (lines contentStr)
+          validatorBuilders = concatMap (generateValidatorForFunction config) functions
+      in validatorBuilders ++ acc
+
+-- | Generate a validator builder for a single FFI function.
+generateValidatorForFunction :: Validator.ValidatorConfig -> (String, String) -> [Builder]
+generateValidatorForFunction config (_funcName, typeStr) =
+  case Validator.parseReturnType (Text.pack typeStr) of
+    Just returnType ->
+      [BB.byteString (TextEnc.encodeUtf8 (Validator.generateAllValidators config returnType))]
+    Nothing -> []
+
+-- | Derive a 'ValidatorConfig' from the compilation 'Mode'.
+--
+-- Maps CLI flags to validator configuration:
+--
+-- * Strict mode is always on when validators are generated
+--   (the on\/off is handled by 'Mode.isFFIStrict')
+-- * Debug mode is controlled by @--ffi-debug@
+--
+-- @since 0.19.2
+modeToValidatorConfig :: Mode.Mode -> Validator.ValidatorConfig
+modeToValidatorConfig mode =
+  Validator.ValidatorConfig
+    { Validator._configStrictMode = True
+    , Validator._configValidateOpaque = False
+    , Validator._configDebugMode = Mode.isFFIDebug mode
+    }
+
+-- FORMAT FFI FILE CONTENT
+
+-- | Format FFI file content for inclusion using FFIInfo.
+formatFFIFileFromInfo :: String -> FFIInfo -> [Builder] -> [Builder]
+formatFFIFileFromInfo _key info acc =
+  ("\n// From " <> BB.stringUtf8 (_ffiFilePath info) <> "\n")
+    : BB.byteString (TextEnc.encodeUtf8 (_ffiContent info))
+    : "\n"
+    : acc
+
+-- GENERATE FFI BINDINGS
+
+-- | Generate JavaScript variable bindings for FFI functions using FFIInfo with proper aliases.
+generateFFIBindingsFromInfo :: Mode.Mode -> Graph -> String -> FFIInfo -> [Builder] -> [Builder]
+generateFFIBindingsFromInfo mode graph _key info acc
+  | not (isValidJsIdentifier alias) = acc
+  | otherwise =
+      case extractFFIFunctionBindings mode graph path contentStr alias of
+        [] -> acc
+        bindings ->
+          ("\n// Bindings for " <> BB.stringUtf8 path <> "\n")
+            : ("var " <> BB.stringUtf8 alias <> " = " <> BB.stringUtf8 alias <> " || {};\n")
+            : map (<> "\n") bindings ++ ["\n"] ++ acc
+  where
+    path = _ffiFilePath info
+    contentStr = Text.unpack (_ffiContent info)
+    alias = Name.toChars (_ffiAlias info)
+
+-- | Extract and generate bindings for FFI functions from JavaScript content.
+extractFFIFunctionBindings :: Mode.Mode -> Graph -> String -> String -> String -> [Builder]
+extractFFIFunctionBindings mode graph path content alias =
+  concatMap (generateFunctionBinding mode graph path alias) functions
+  where
+    functions = extractCanopyTypeFunctions (lines content)
+
+-- PARSE CANOPY TYPE ANNOTATIONS
+
+-- | Extract functions that have \@canopy-type annotations from JavaScript source lines.
+extractCanopyTypeFunctions :: [String] -> [(String, String)]
+extractCanopyTypeFunctions [] = []
+extractCanopyTypeFunctions (line:rest) =
+  case extractCanopyType line of
+    Just canopyType ->
+      case findFunctionName rest of
+        Just funcName -> (funcName, canopyType) : extractCanopyTypeFunctions rest
+        Nothing -> extractCanopyTypeFunctions rest
+    Nothing -> extractCanopyTypeFunctions rest
+
+-- | Extract \@canopy-type annotation from a single line.
+extractCanopyType :: String -> Maybe String
+extractCanopyType line =
+  if " * @canopy-type " `List.isInfixOf` line
+    then case dropWhile (/= '@') line of
+      ('@':'c':'a':'n':'o':'p':'y':'-':'t':'y':'p':'e':' ':typeStr) -> Just (trim typeStr)
+      _ -> Nothing
+    else Nothing
+
+-- | Find the function name in the following lines.
+--
+-- Handles both @function name(...)@ and @async function name(...)@.
+findFunctionName :: [String] -> Maybe String
+findFunctionName [] = Nothing
+findFunctionName (line:rest) =
+  let trimmed = trim line
+      stripped = stripAsyncPrefix trimmed
+  in if "function " `List.isPrefixOf` stripped
+       then extractNameAfterFunction stripped
+       else if "*/" `List.isInfixOf` line
+         then findFunctionName rest
+         else findFunctionName rest
+  where
+    stripAsyncPrefix s
+      | "async " `List.isPrefixOf` s = trim (drop 6 s)
+      | otherwise = s
+    extractNameAfterFunction s =
+      case dropWhile (/= ' ') s of
+        (' ':after) ->
+          case takeWhile (\c -> c /= '(' && c /= ' ') (trim after) of
+            "" -> findFunctionName rest
+            name -> Just name
+        _ -> findFunctionName rest
+
+-- GENERATE FUNCTION BINDINGS
+
+-- | Generate JavaScript binding for a single function as Builders.
+--
+-- Validates that the function name is a safe JavaScript identifier
+-- before generating any code. Invalid names are silently skipped,
+-- preventing injection via crafted \@name annotations.
+--
+-- @since 0.19.2
+generateFunctionBinding :: Mode.Mode -> Graph -> String -> String -> (String, String) -> [Builder]
+generateFunctionBinding mode _graph _filePath alias (funcName, canopyType)
+  | not (isValidJsIdentifier funcName) = []
+  | otherwise =
+      let arity = maybe 0 TypeParser.countArity (TypeParser.parseType (Text.pack canopyType))
+          jsVarName = "$author$project$" ++ alias ++ "$" ++ funcName
+          callPath = "'" ++ escapeJsString (alias ++ "." ++ funcName) ++ "'"
+      in if Mode.isFFIStrict mode
+           then generateValidatedBinding jsVarName alias funcName arity canopyType callPath
+           else generateSimpleBinding jsVarName alias funcName arity
+
+-- | Generate simple binding without validation.
+generateSimpleBinding :: String -> String -> String -> Int -> [Builder]
+generateSimpleBinding jsVarName alias funcName arity =
+  let jsVarB = BB.stringUtf8 jsVarName
+      aliasB = BB.stringUtf8 alias
+      funcNameB = BB.stringUtf8 funcName
+      wrapper = if arity <= 1 then mempty else "F" <> BB.intDec arity <> "("
+      closing = if arity <= 1 then mempty else ")"
+      namespaceBinding = aliasB <> "." <> funcNameB <> " = " <> wrapper <> funcNameB <> closing <> ";"
+  in ["var " <> jsVarB <> " = " <> wrapper <> funcNameB <> closing <> ";", namespaceBinding]
+
+-- | Generate binding with runtime validation wrapper.
+generateValidatedBinding :: String -> String -> String -> Int -> String -> String -> [Builder]
+generateValidatedBinding jsVarName alias funcName arity canopyType callPath =
+  let jsVarB = BB.stringUtf8 jsVarName
+      aliasB = BB.stringUtf8 alias
+      funcNameB = BB.stringUtf8 funcName
+      callPathB = BB.stringUtf8 callPath
+      args = if arity <= 0 then [] else map (\i -> "_" <> BB.intDec i) [0 .. arity - 1]
+      argList = mconcat (List.intersperse ", " args)
+      returnType = extractReturnType canopyType
+      validatorExpr = typeToValidator returnType
+      wrappedCall = funcNameB <> "(" <> argList <> ")"
+      validatedCall = validatorExpr <> "(" <> wrappedCall <> ", " <> callPathB <> ")"
+      funcBody = "function(" <> argList <> ") { return " <> validatedCall <> "; }"
+      wrapper = if arity <= 1 then mempty else "F" <> BB.intDec arity <> "("
+      closing = if arity <= 1 then mempty else ")"
+      binding = "var " <> jsVarB <> " = " <> wrapper <> funcBody <> closing <> ";"
+      namespaceBinding = aliasB <> "." <> funcNameB <> " = " <> jsVarB <> ";"
+  in [binding, namespaceBinding]
+
+-- TYPE VALIDATORS
+
+-- | Extract return type from a function type signature.
+extractReturnType :: String -> String
+extractReturnType typeStr =
+  let tokens = words typeStr
+      arrowIndices = findArrowIndices tokens 0 []
+  in if null arrowIndices
+       then typeStr
+       else unwords (drop (maximum arrowIndices + 1) tokens)
+  where
+    findArrowIndices :: [String] -> Int -> [Int] -> [Int]
+    findArrowIndices [] _ acc = acc
+    findArrowIndices (t:ts) idx acc
+      | t == "->" = findArrowIndices ts (idx + 1) (idx : acc)
+      | otherwise = findArrowIndices ts (idx + 1) acc
+
+-- | Convert a type string to a $validate Builder expression.
+typeToValidator :: String -> Builder
+typeToValidator typeStr =
+  case Validator.parseFFIType (Text.pack typeStr) of
+    Just ffiType -> ffiTypeToValidator ffiType
+    Nothing -> "$validate.Any"
+
+-- | Convert FFIType to $validate expression as a Builder.
+ffiTypeToValidator :: Validator.FFIType -> Builder
+ffiTypeToValidator ffiType = case ffiType of
+  Validator.FFIInt -> "$validate.Int"
+  Validator.FFIFloat -> "$validate.Float"
+  Validator.FFIString -> "$validate.String"
+  Validator.FFIBool -> "$validate.Bool"
+  Validator.FFIUnit -> "$validate.Unit"
+  Validator.FFIList inner ->
+    "$validate.List(" <> ffiTypeToValidator inner <> ")"
+  Validator.FFIMaybe inner ->
+    "$validate.Maybe(" <> ffiTypeToValidator inner <> ")"
+  Validator.FFIResult errType valType ->
+    "$validate.Result(" <> ffiTypeToValidator errType <> ", " <> ffiTypeToValidator valType <> ")"
+  Validator.FFITask errType valType ->
+    "$validate.Task(" <> ffiTypeToValidator errType <> ", " <> ffiTypeToValidator valType <> ")"
+  Validator.FFITuple types ->
+    "$validate.Tuple(" <> mconcat (List.intersperse ", " (map ffiTypeToValidator types)) <> ")"
+  Validator.FFIOpaque name ->
+    "$validate.Opaque('" <> BB.byteString (TextEnc.encodeUtf8 name) <> "')"
+  Validator.FFIFunctionType _ _ ->
+    "$validate.Function"
+  Validator.FFIRecord _ ->
+    "$validate.Record"
+
+-- UTILITIES
+
+-- | Trim leading and trailing whitespace from a string.
+trim :: String -> String
+trim = List.dropWhileEnd isSpace . dropWhile isSpace
+  where
+    isSpace c = c `elem` [' ', '\t', '\n', '\r']
+
+-- | Check whether a string is a valid JavaScript identifier.
+--
+-- Valid identifiers start with a letter, underscore, or dollar sign,
+-- and subsequent characters may also include digits. This is used
+-- as a defense-in-depth check for FFI names injected into generated
+-- JavaScript code.
+--
+-- @since 0.19.2
+isValidJsIdentifier :: String -> Bool
+isValidJsIdentifier (c : cs) = isValidFirst c && all isValidRest cs
+  where
+    isValidFirst x = Char.isAlpha x || x == '_' || x == '$'
+    isValidRest x = Char.isAlphaNum x || x == '_' || x == '$'
+isValidJsIdentifier [] = False
+
+-- | Escape a string for safe inclusion in a JavaScript single-quoted literal.
+--
+-- Escapes backslashes and single quotes to prevent string breakout
+-- when constructing JS string literals for FFI call paths.
+--
+-- @since 0.19.2
+escapeJsString :: String -> String
+escapeJsString = concatMap escapeJsChar
+  where
+    escapeJsChar '\\' = "\\\\"
+    escapeJsChar '\'' = "\\'"
+    escapeJsChar '\n' = "\\n"
+    escapeJsChar '\r' = "\\r"
+    escapeJsChar c = [c]
