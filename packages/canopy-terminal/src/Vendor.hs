@@ -34,6 +34,9 @@ import qualified Canopy.Outline as Outline
 import qualified Canopy.Package as Pkg
 import qualified Canopy.Version as Version
 import qualified Data.Map.Strict as Map
+import qualified Data.Text as Text
+import Logging.Event (LogEvent (..))
+import qualified Logging.Logger as Log
 import Reporting.Doc.ColorQQ (c)
 import qualified Stuff
 import qualified System.Directory as Dir
@@ -162,24 +165,39 @@ resolvePackagePath pkg ver = do
 -- | Recursively copy a package directory to the vendor target.
 --
 -- Creates the target directory and copies all files and subdirectories.
--- Preserves the directory structure but not file metadata (timestamps, permissions).
+-- Preserves the directory structure but not file metadata (timestamps,
+-- permissions). Skips symbolic links to prevent following references
+-- outside the package directory.
 --
 -- @since 0.19.2
 copyPackageDir :: FilePath -> FilePath -> IO ()
 copyPackageDir src dst = do
-  Dir.createDirectoryIfMissing True dst
-  contents <- Dir.listDirectory src
-  mapM_ (copyEntry src dst) contents
+  isLink <- Dir.pathIsSymbolicLink src
+  if isLink
+    then Log.logEvent (PackageOperation "vendor-skip-symlink-dir" (Text.pack src))
+    else do
+      Dir.createDirectoryIfMissing True dst
+      contents <- Dir.listDirectory src
+      mapM_ (copyEntry src dst) contents
 
 -- | Copy a single directory entry (file or subdirectory).
+--
+-- Skips symbolic links with a log message to prevent copying files
+-- from outside the package directory via symlink traversal.
+--
+-- @since 0.19.2
 copyEntry :: FilePath -> FilePath -> FilePath -> IO ()
 copyEntry srcBase destBase name = do
   let srcPath = srcBase </> name
       destPath = destBase </> name
-  isDir <- Dir.doesDirectoryExist srcPath
-  if isDir
-    then copyPackageDir srcPath destPath
-    else Dir.copyFile srcPath destPath
+  isLink <- Dir.pathIsSymbolicLink srcPath
+  if isLink
+    then Log.logEvent (PackageOperation "vendor-skip-symlink" (Text.pack srcPath))
+    else do
+      isDir <- Dir.doesDirectoryExist srcPath
+      if isDir
+        then copyPackageDir srcPath destPath
+        else Dir.copyFile srcPath destPath
 
 -- | Report the vendoring summary.
 reportVendorSummary :: Int -> Int -> IO ()

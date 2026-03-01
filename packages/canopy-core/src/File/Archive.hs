@@ -43,6 +43,7 @@ module File.Archive
   , isAllowedPath
   , isWithinDestination
   , isDirectoryPath
+  , isSymlinkEntry
     -- * File Operations
   , createEntryDirectory
   , writeEntryFile
@@ -57,6 +58,7 @@ import qualified System.FilePath as FP
 import System.FilePath ((</>))
 import qualified Codec.Archive.Zip as Zip
 import qualified Control.Monad as Monad
+import Data.Bits ((.&.), shiftR)
 import qualified Data.Foldable as Foldable
 import qualified Data.IORef as IORef
 import qualified Data.Traversable as Traversable
@@ -64,6 +66,7 @@ import qualified Data.ByteString as BS
 import qualified Data.ByteString.Lazy as LBS
 import qualified Data.List as List
 import qualified Data.Text as Text
+import Data.Word (Word32)
 import qualified Canopy.Limits as Limits
 import Logging.Event (LogEvent (..))
 import qualified Logging.Logger as Log
@@ -152,7 +155,9 @@ logPackageWrite destination = do
 writeEntrySafe :: FilePath -> Int -> IORef.IORef Int -> Zip.Entry -> IO ()
 writeEntrySafe destination rootDepth totalRef entry = do
   let relativePath = extractRelativePath rootDepth entry
-      allowed = isAllowedPath relativePath && isWithinDestination destination relativePath
+      allowed = isAllowedPath relativePath
+                && isWithinDestination destination relativePath
+                && not (isSymlinkEntry entry)
       entrySize = fromIntegral (Zip.eUncompressedSize entry)
   Monad.when allowed $ do
     enforceEntryLimit relativePath entrySize
@@ -215,7 +220,9 @@ writeEntrySafeForJson destination rootDepth totalRef entry
       processAllowedEntry destination relativePath entry
   where
     relativePath = extractRelativePath rootDepth entry
-    allowed = isAllowedPath relativePath && isWithinDestination destination relativePath
+    allowed = isAllowedPath relativePath
+              && isWithinDestination destination relativePath
+              && not (isSymlinkEntry entry)
     entrySize = fromIntegral (Zip.eUncompressedSize entry)
 
 -- | Extract a single ZIP entry to the destination.
@@ -225,7 +232,9 @@ writeEntrySafeForJson destination rootDepth totalRef entry
 writeEntry :: FilePath -> Int -> Zip.Entry -> IO ()
 writeEntry destination rootDepth entry = do
   let relativePath = extractRelativePath rootDepth entry
-      allowed = isAllowedPath relativePath && isWithinDestination destination relativePath
+      allowed = isAllowedPath relativePath
+                && isWithinDestination destination relativePath
+                && not (isSymlinkEntry entry)
   Monad.when allowed $
     writeEntryContent destination relativePath entry
 
@@ -296,6 +305,21 @@ isWithinDestination destination relativePath =
 isDirectoryPath :: FilePath -> Bool
 isDirectoryPath = endsWithSlash
 
+-- | Check whether a ZIP entry represents a symbolic link.
+--
+-- Unix symlinks have file type bits @0o120000@ in the external file
+-- attributes. The external attributes store the Unix mode in the upper
+-- 16 bits of the 32-bit field. This check prevents extraction of
+-- symlink entries that could point outside the destination directory.
+--
+-- @since 0.19.2
+isSymlinkEntry :: Zip.Entry -> Bool
+isSymlinkEntry entry =
+  unixMode .&. 0o170000 == 0o120000
+  where
+    attrs = Zip.eExternalFileAttributes entry
+    unixMode = fromIntegral (attrs `shiftR` 16) :: Word32
+
 -- | Check if a file is critical and needs atomic writes.
 --
 -- Critical files are those that could corrupt the build system if
@@ -347,7 +371,9 @@ writeEntryFile destination relativePath entry = do
 writeEntryReturnCanopyJson :: FilePath -> Int -> Zip.Entry -> IO (Maybe BS.ByteString)
 writeEntryReturnCanopyJson destination rootDepth entry = do
   let relativePath = extractRelativePath rootDepth entry
-      allowed = isAllowedPath relativePath && isWithinDestination destination relativePath
+      allowed = isAllowedPath relativePath
+                && isWithinDestination destination relativePath
+                && not (isSymlinkEntry entry)
   if allowed
     then processAllowedEntry destination relativePath entry
     else pure Nothing
