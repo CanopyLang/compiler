@@ -133,8 +133,18 @@ library
       Reporting
       Reporting.Ask
       Reporting.Exit
+      Reporting.Exit.Bump
+      Reporting.Exit.Check
+      Reporting.Exit.Diff
+      Reporting.Exit.Docs
+      Reporting.Exit.Help
+      Reporting.Exit.Init
       Reporting.Exit.Install
+      Reporting.Exit.Make
+      Reporting.Exit.New
       Reporting.Exit.Publish
+      Reporting.Exit.Repl
+      Reporting.Exit.Setup
       Reporting.Task
       Scripts
       SelfUpdate
@@ -146,6 +156,8 @@ library
       Terminal.Print
       Test
       Test.Browser
+      Test.Compile
+      Test.Discovery
       Test.Event
       Test.External
       Test.FFI

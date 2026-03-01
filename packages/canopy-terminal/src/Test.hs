@@ -20,9 +20,9 @@
 --
 -- The command auto-detects three kinds of tests:
 --
--- * __Unit tests__ — synchronous, use the simple virtual DOM text harness
--- * __Async tests__ — use @task-executor.js@ and @test-runner.js@
--- * __Browser tests__ — additionally launch Playwright and an embedded HTTP server
+-- * __Unit tests__ -- synchronous, use the simple virtual DOM text harness
+-- * __Async tests__ -- use @task-executor.js@ and @test-runner.js@
+-- * __Browser tests__ -- additionally launch Playwright and an embedded HTTP server
 --
 -- == Usage
 --
@@ -37,6 +37,8 @@
 --
 -- Sub-modules:
 --
+-- * "Test.Discovery" - Test file discovery
+-- * "Test.Compile" - Test compilation pipeline
 -- * "Test.Event" - NDJSON event types and formatting
 -- * "Test.Runner" - Node.js process execution
 --
@@ -56,31 +58,15 @@ module Test
 where
 
 import qualified AST.Optimized as Opt
-import qualified Build.Artifacts as Build
-import qualified Canopy.Interface as Interface
 import qualified Canopy.ModuleName as ModuleName
-import qualified Canopy.Constraint as Constraint
-import qualified Canopy.Outline as Outline
-import qualified Canopy.Package as Pkg
-import qualified Canopy.Version as Version
-import qualified Compiler
 import Control.Lens ((^.))
 import Control.Lens.TH (makeLenses)
 import qualified Control.Concurrent as Concurrent
 import qualified Control.Exception as Exception
 import Control.Monad (filterM, void)
-import qualified Canopy.Data.Utf8 as Utf8
-import qualified Data.ByteString.Builder as Builder
-import qualified Data.ByteString.Lazy as LBS
-import qualified Data.List as List
-import qualified Data.Text.Encoding as TextEnc
 import qualified Data.Map.Strict as Map
 import qualified Data.Maybe as Maybe
-import qualified Canopy.Data.NonEmptyList as NE
-import qualified Data.Set as Set
 import qualified Data.Text as Text
-import qualified Generate.JavaScript as JS
-import qualified Generate.Mode as Mode
 import qualified System.Directory as Dir
 import System.Exit (ExitCode (..))
 import qualified System.Exit as Exit
@@ -93,7 +79,6 @@ import qualified Terminal.Output as Output
 import Reporting.Doc.ColorQQ (c)
 import qualified Terminal.Print as Print
 import Text.Read (readMaybe)
-import qualified PackageCache
 import qualified Stuff
 
 import Test.Browser (AppEntryPoint (..))
@@ -106,6 +91,9 @@ import qualified Test.Playwright as Playwright
 import Test.Server (ServerPort (..))
 import qualified Test.Server as Server
 import qualified Test.Runner as Runner
+
+import qualified Test.Compile as Compile
+import qualified Test.Discovery as Discovery
 
 -- | Flags for the test command.
 --
@@ -144,7 +132,7 @@ run paths flags =
 -- | Run tests once without watching.
 runOnce :: [FilePath] -> Flags -> IO ()
 runOnce paths flags = do
-  testFiles <- discoverTestFiles paths
+  testFiles <- Discovery.discoverTestFiles paths
   result <- compileAndRunTests testFiles flags
   Exit.exitWith result
 
@@ -152,7 +140,7 @@ runOnce paths flags = do
 runWithWatch :: [FilePath] -> Flags -> IO ()
 runWithWatch paths flags = do
   Print.println [c|{bold|Watching for changes...} Press Ctrl+C to stop.|]
-  testFiles <- discoverTestFiles paths
+  testFiles <- Discovery.discoverTestFiles paths
   _ <- compileAndRunTests testFiles flags
   watchDirsForRerun paths flags
 
@@ -179,7 +167,7 @@ isCanopyFile event =
 onFileChange :: [FilePath] -> Flags -> FSNotify.Event -> IO ()
 onFileChange paths flags _event = do
   Print.println [c|{bold|--- File changed, re-running tests ---}|]
-  testFiles <- discoverTestFiles paths
+  testFiles <- Discovery.discoverTestFiles paths
   _ <- compileAndRunTests testFiles flags
   pure ()
 
@@ -195,51 +183,9 @@ handleInterrupt Exception.UserInterrupt = pure ()
 handleInterrupt Exception.ThreadKilled = pure ()
 handleInterrupt ex = Exception.throwIO ex
 
--- ── Discovery ────────────────────────────────────────────────────────
-
--- | Discover test files from paths or the default @tests\/@ directory.
-discoverTestFiles :: [FilePath] -> IO [FilePath]
-discoverTestFiles [] = do
-  testsDir <- findCanopyFilesIn "tests"
-  testDir <- findCanopyFilesIn "test"
-  pure (testsDir ++ testDir)
-discoverTestFiles paths = do
-  expanded <- mapM expandPath paths
-  pure (concat expanded)
-
--- | Expand a path: files are returned as-is, directories are scanned.
-expandPath :: FilePath -> IO [FilePath]
-expandPath path = do
-  isDir <- Dir.doesDirectoryExist path
-  isFile <- Dir.doesFileExist path
-  if isDir
-    then findCanopyFilesIn path
-    else if isFile then pure [path] else pure []
-
--- | Recursively find all @.can@ files under a directory.
-findCanopyFilesIn :: FilePath -> IO [FilePath]
-findCanopyFilesIn dir = do
-  exists <- Dir.doesDirectoryExist dir
-  if not exists
-    then pure []
-    else do
-      entries <- Dir.listDirectory dir
-      let paths = map (dir </>) entries
-      files <- filterM Dir.doesFileExist paths
-      let canFiles = filter ((".can" ==) . FilePath.takeExtension) files
-      dirs <- filterM Dir.doesDirectoryExist paths
-      let visibleDirs = filter (not . ("." `List.isPrefixOf`) . FilePath.takeFileName) dirs
-      nested <- mapM findCanopyFilesIn visibleDirs
-      pure (canFiles ++ concat nested)
-
 -- ── Header Bar ──────────────────────────────────────────────────────
 
 -- | Format a dullcyan header bar in the Canopy report style.
---
--- Single file:    @-- TEST RESULTS ---------- test\/PlaywrightTest.can@
--- Multiple files: @-- TEST RESULTS ----------------------- 3 files@
---
--- Follows the pattern from 'Reporting.Exit.Help.formatReportBar'.
 testBar :: [FilePath] -> String
 testBar [single] = barWithSuffix single
 testBar files = barWithSuffix (Output.showCount (length files) "file")
@@ -252,7 +198,7 @@ barWithSuffix suffix =
     usedCols = 17 + 1 + length suffix
     dashes = replicate (max 1 (80 - usedCols)) '-'
 
--- ── Compilation ──────────────────────────────────────────────────────
+-- ── Compilation & Execution ──────────────────────────────────────────
 
 -- | Compile test files and run them, returning the overall exit code.
 compileAndRunTests :: [FilePath] -> Flags -> IO ExitCode
@@ -280,208 +226,16 @@ compileAndRunWithRoot root testFiles flags = do
   when (flags ^. testVerbose) $
     Print.println [c|  Project root: {cyan|#{root}}|]
   Print.newline
-  maybeResult <- compileTestFiles root testFiles
+  maybeResult <- Compile.compileTestFiles root testFiles
   case maybeResult of
     Nothing -> do
       Print.printErrLn [c|{red|Compilation failed.}|]
       pure (ExitFailure 1)
     Just (jsContent, mains) -> dispatchByTestType jsContent mains testFiles flags
 
--- | Compile test files to a JavaScript string and main type info.
---
--- Before compiling user test files, ensures that all test-dependency
--- packages have @artifacts.dat@.  Packages with source but no artifacts
--- (e.g. locally symlinked @canopy\/test@ during development) are compiled
--- just-in-time so they receive their correct package identity in the
--- optimizer.  This is critical for type-based dispatch (e.g.
--- @BrowserTestMain@ detection requires the @Test@ module to be
--- canonicalised under @Pkg.test@, not @Pkg.dummyName@).
---
--- @since 0.19.1
-compileTestFiles :: FilePath -> [FilePath] -> IO (Maybe (Text.Text, Map.Map ModuleName.Canonical Opt.Main))
-compileTestFiles root testFiles = do
-  ensureTestDepArtifacts root
-  let pkg = Pkg.dummyName
-      srcDirs =
-        [ Compiler.RelativeSrcDir "src",
-          Compiler.RelativeSrcDir "tests",
-          Compiler.RelativeSrcDir "test"
-        ]
-  result <- Compiler.compileFromPaths pkg True (Compiler.ProjectRoot root) srcDirs testFiles
-  case result of
-    Left err -> do
-      let errStr = show err
-      Print.printErrLn [c|{red|Compilation error:} #{errStr}|]
-      pure Nothing
-    Right artifacts -> pure (Just (artifactsToJavaScript artifacts, collectMains artifacts))
-
--- | Ensure all test-dependency packages have compiled artifacts.
---
--- Reads the project outline, extracts test dependencies, and for each
--- package that has source files but no @artifacts.dat@, compiles the
--- package from source with its real package identity and writes the
--- artifacts to the cache.  Subsequent compilation then loads them via
--- the normal @PackageCache@ pipeline with correct canonical names.
---
--- @since 0.19.1
-ensureTestDepArtifacts :: FilePath -> IO ()
-ensureTestDepArtifacts root = do
-  eitherOutline <- Outline.read root
-  case eitherOutline of
-    Left _ -> pure ()
-    Right outline -> do
-      cacheDir <- Stuff.getPackageCache
-      mapM_ (ensureOneTestDep cacheDir) (extractTestDeps outline)
-
--- | Extract test-dependency (name, version) pairs from an outline.
-extractTestDeps :: Outline.Outline -> [(Pkg.Name, Version.Version)]
-extractTestDeps (Outline.App o) = Map.toList (Outline._appTestDepsDirect o)
-extractTestDeps (Outline.Pkg o) =
-  Map.toList (Map.map Constraint.lowerBound (Outline._pkgTestDeps o))
-extractTestDeps (Outline.Workspace _) = []
-
--- | Compile a single test-dependency package if it lacks artifacts.
---
--- When @artifacts.dat@ exists, this is a no-op.  Otherwise, reads the
--- package's @canopy.json@, compiles all exposed modules with the real
--- package identity, and writes @artifacts.dat@ to the cache.
---
--- @since 0.19.1
-ensureOneTestDep :: FilePath -> (Pkg.Name, Version.Version) -> IO ()
-ensureOneTestDep cacheDir (pkgName, version) = do
-  let pkgDir = testDepDir cacheDir pkgName version
-      artifactsPath = pkgDir </> "artifacts.dat"
-  hasArtifacts <- Dir.doesFileExist artifactsPath
-  if hasArtifacts
-    then pure ()
-    else compileTestDepFromSource pkgName version pkgDir
-
--- | Compile a test-dependency package from source and write artifacts.
---
--- @since 0.19.1
-compileTestDepFromSource :: Pkg.Name -> Version.Version -> FilePath -> IO ()
-compileTestDepFromSource pkgName version pkgDir = do
-  let srcPath = pkgDir </> "src"
-  hasSrc <- Dir.doesDirectoryExist srcPath
-  if not hasSrc
-    then pure ()
-    else do
-      eitherOutline <- Outline.read pkgDir
-      either (const (pure ())) (compileTestDepOutline pkgName version pkgDir srcPath) eitherOutline
-
--- | Compile a test-dependency package given its parsed outline.
---
--- Uses @withCurrentDirectory@ to set the working directory to the
--- package root so that FFI kernel paths resolve correctly.
---
--- @since 0.19.1
-compileTestDepOutline :: Pkg.Name -> Version.Version -> FilePath -> FilePath -> Outline.Outline -> IO ()
-compileTestDepOutline _ _ _ _ (Outline.App _) = pure ()
-compileTestDepOutline _ _ _ _ (Outline.Workspace _) = pure ()
-compileTestDepOutline pkgName version pkgDir srcPath (Outline.Pkg pkgOutline) =
-  case flattenExposedToNonEmpty (Outline._pkgExposed pkgOutline) of
-    Nothing -> pure ()
-    Just exposedModules -> do
-      compileResult <- Dir.withCurrentDirectory pkgDir
-        (Compiler.compileFromExposed pkgName False (Compiler.ProjectRoot pkgDir) [Compiler.AbsoluteSrcDir srcPath] exposedModules)
-      either reportTestDepError (writeTestDepArtifacts pkgName version) compileResult
-  where
-    reportTestDepError err = do
-      let errStr = show err
-      Print.printErrLn [c|{yellow|Warning:} Could not compile test dependency: #{errStr}|]
-
--- | Write compiled artifacts for a test-dependency package.
---
--- @since 0.19.1
-writeTestDepArtifacts :: Pkg.Name -> Version.Version -> Compiler.Artifacts -> IO ()
-writeTestDepArtifacts (Pkg.Name author project) version artifacts =
-  PackageCache.writePackageArtifacts
-    (Utf8.toChars author)
-    (Utf8.toChars project)
-    (Version.toChars version)
-    interfaces
-    globalGraph
-    ffiInfo
-  where
-    interfaces = buildArtifactsToInterfaces artifacts
-    globalGraph = artifacts ^. Build.artifactsGlobalGraph
-    ffiInfo = artifacts ^. Build.artifactsFFIInfo
-
--- | Convert compiled artifacts to package interface map.
---
--- @since 0.19.1
-buildArtifactsToInterfaces :: Compiler.Artifacts -> PackageCache.PackageInterfaces
-buildArtifactsToInterfaces artifacts =
-  Map.fromList
-    [ (name, Interface.Public iface)
-    | Build.Fresh name iface _ <- Build._artifactsModules artifacts
-    ]
-
--- | Flatten exposed modules to a non-empty list.
---
--- @since 0.19.1
-flattenExposedToNonEmpty :: Outline.Exposed -> Maybe (NE.List ModuleName.Raw)
-flattenExposedToNonEmpty exposed =
-  case Outline.flattenExposed exposed of
-    [] -> Nothing
-    (x : xs) -> Just (NE.List x xs)
-
--- | Build the package directory path inside the cache.
-testDepDir :: FilePath -> Pkg.Name -> Version.Version -> FilePath
-testDepDir cacheDir (Pkg.Name author project) version =
-  cacheDir </> Utf8.toChars author </> Utf8.toChars project </> Version.toChars version
-
--- | Generate JavaScript text from compiled artifacts.
---
--- Converts the Builder output directly to Text via UTF-8 decoding,
--- avoiding the intermediate @[Char]@ allocation that the old
--- @builderToString@ path imposed.
---
--- @since 0.19.2
-artifactsToJavaScript :: Compiler.Artifacts -> Text.Text
-artifactsToJavaScript artifacts =
-  postProcessJavaScript rawText
-  where
-    globalGraph = artifacts ^. Build.artifactsGlobalGraph
-    ffiInfo = artifacts ^. Build.artifactsFFIInfo
-    mains = collectMains artifacts
-    (builder, _sourceMap) = JS.generate (Mode.Dev Nothing False False False Set.empty) globalGraph mains ffiInfo
-    rawText = TextEnc.decodeUtf8 (LBS.toStrict (Builder.toLazyByteString builder))
-
--- | Post-process JavaScript to fix the @language-javascript@ rendering
--- quirk where @else if@ is emitted as @elseif@.
---
--- Uses 'Text.replace' for O(n) text replacement instead of the previous
--- character-by-character @isPrefixOf@ approach.
---
--- @since 0.19.2
-postProcessJavaScript :: Text.Text -> Text.Text
-postProcessJavaScript = Text.replace "elseif" "else if"
-
--- | Collect main entries from all roots of the artifacts.
-collectMains :: Compiler.Artifacts -> Map.Map ModuleName.Canonical Opt.Main
-collectMains artifacts =
-  Map.fromList (Maybe.mapMaybe (extractMain pkg) roots)
-  where
-    roots = NE.toList (artifacts ^. Build.artifactsRoots)
-    pkg = artifacts ^. Build.artifactsName
-
--- | Extract a (CanonicalName, Main) pair from a root.
-extractMain :: Pkg.Name -> Build.Root -> Maybe (ModuleName.Canonical, Opt.Main)
-extractMain pkg root =
-  case root of
-    Build.Inside _ -> Nothing
-    Build.Outside name _ (Opt.LocalGraph maybeMain _ _ _) ->
-      fmap (\m -> (ModuleName.Canonical pkg name, m)) maybeMain
-
 -- ── Test Dispatch ────────────────────────────────────────────────────
 
 -- | Detect test type and dispatch to the appropriate execution pipeline.
---
--- Uses the 'Opt.Main' type from compilation artifacts for reliable detection:
--- 'Opt.BrowserTestMain' runs tests in a real browser via Playwright.
--- 'Opt.TestMain' indicates a non-visual program (test or async).
--- 'Opt.Static' indicates a standard HTML program (unit test with DOM output).
 dispatchByTestType :: Text.Text -> Map.Map ModuleName.Canonical Opt.Main -> [FilePath] -> Flags -> IO ExitCode
 dispatchByTestType jsContent mains testFiles flags
   | hasBrowserTestMain mains = executeBrowserExecutionTests jsContent testFiles flags
@@ -505,13 +259,6 @@ hasTestMain = any isTestMain . Map.elems
 -- ── Browser Execution Tests (BrowserTestMain) ───────────────────────
 
 -- | Execute tests in a real browser via Playwright.
---
--- For @main : BrowserTest@ programs. Generates an HTML page with the
--- compiled tests and browser-test-runner.js, serves it via an embedded
--- HTTP server, launches Playwright to navigate to the page, and collects
--- NDJSON results from console.log events.
---
--- @since 0.19.1
 executeBrowserExecutionTests :: Text.Text -> [FilePath] -> Flags -> IO ExitCode
 executeBrowserExecutionTests jsContent testFiles flags = do
   Print.println [c|{cyan|Browser execution tests detected.} Setting up real browser environment...|]
@@ -557,11 +304,6 @@ runBrowserExecutionWithServer jsContent flags browserRunner rpcModule = do
       pure result
 
 -- | Generate and execute a Node.js Playwright launcher script.
---
--- The launcher loads @playwright-rpc.js@, sets up the RPC bridge,
--- navigates to the HTML harness, intercepts console.log events
--- (forwarding NDJSON and handling RPC requests), and waits for
--- @window.__canopyTestsDone@.
 launchPlaywrightForBrowserTests :: ServerPort -> Flags -> FilePath -> IO ExitCode
 launchPlaywrightForBrowserTests port flags tmpDir = do
   let launcherPath = tmpDir </> "canopy-browser-launcher.js"
@@ -614,14 +356,6 @@ executeUnitTests jsContent flags = do
 -- ── Browser Test Execution ───────────────────────────────────────────
 
 -- | Execute browser\/async tests with full infrastructure.
---
--- 1. Ensure Playwright is installed
--- 2. Load external JS modules from the test package
--- 3. Find and compile the application under test
--- 4. Start an embedded HTTP server
--- 5. Generate the browser test harness
--- 6. Execute via Node.js
--- 7. Stop the server
 executeBrowserTests :: Text.Text -> [FilePath] -> Flags -> IO ExitCode
 executeBrowserTests jsContent testFiles flags = do
   Print.println [c|{cyan|Browser tests detected.} Setting up test infrastructure...|]
@@ -630,10 +364,6 @@ executeBrowserTests jsContent testFiles flags = do
     `Exception.catch` handleBrowserError
 
 -- | Run the browser test pipeline, propagating errors.
---
--- Checks Playwright installation first and prompts the user to install
--- if missing. This ensures browser tests have browser binaries available
--- before attempting execution.
 runBrowserPipeline :: Text.Text -> [FilePath] -> Flags -> IO ExitCode
 runBrowserPipeline jsContent testFiles flags = do
   playwrightReady <- Playwright.ensurePlaywrightInstalled
@@ -663,10 +393,6 @@ resolveAppEntry testFiles flags =
     maybeAppFlag = fmap AppEntryPoint (flags ^. testApp)
 
 -- | Run browser tests with an embedded HTTP server.
---
--- Starts a file server from the given directory and generates the test
--- harness with the server URL. When no @\@browser-app@ annotation is
--- found, the current working directory is used.
 runBrowserTestsWithServer :: Text.Text -> Flags -> JsContent -> JsContent -> JsContent -> FilePath -> IO ExitCode
 runBrowserTestsWithServer jsContent flags runner executor playwright appDir = do
   portResult <- Server.findAvailablePort
@@ -710,10 +436,6 @@ reportExternalError err = do
   pure (ExitFailure 1)
 
 -- | Handle IO exceptions during browser test setup.
---
--- Catches 'IOException' from process spawning, file operations, and
--- network access during playwright setup. Displays the error and
--- returns a non-zero exit code.
 handleBrowserError :: Exception.IOException -> IO ExitCode
 handleBrowserError err = do
   let errStr = show err
@@ -730,8 +452,6 @@ when False _ = pure ()
 -- ── CLI Parsers ──────────────────────────────────────────────────────
 
 -- | Parser for the @--filter@ flag.
---
--- @since 0.19.1
 filterParser :: Terminal.Parser String
 filterParser =
   Terminal.Parser
@@ -743,8 +463,6 @@ filterParser =
     }
 
 -- | Parser for the @--app@ flag.
---
--- @since 0.19.1
 appParser :: Terminal.Parser String
 appParser =
   Terminal.Parser
@@ -756,8 +474,6 @@ appParser =
     }
 
 -- | Parser for the @--slowmo@ flag.
---
--- @since 0.19.1
 slowMoParser :: Terminal.Parser Int
 slowMoParser =
   Terminal.Parser
