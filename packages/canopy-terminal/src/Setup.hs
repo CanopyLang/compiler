@@ -1,5 +1,4 @@
 {-# LANGUAGE OverloadedStrings #-}
-{-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE QuasiQuotes #-}
 
 -- | Package bootstrap and environment setup for Canopy.
@@ -8,29 +7,10 @@
 -- by downloading the package registry and ensuring standard library
 -- packages (elm\/core, elm\/html, etc.) are available for compilation.
 --
--- == Package Resolution Strategy
+-- Implementation is split across focused sub-modules:
 --
--- Canopy resolves package artifacts in this order:
---
--- 1. @~\/.canopy\/packages\/{author}\/{project}\/{version}\/artifacts.dat@
--- 2. @~\/.elm\/0.19.1\/packages\/{author}\/{project}\/{version}\/artifacts.dat@
---
--- The setup command checks both locations and copies artifacts from
--- the Elm cache when they are missing from the Canopy cache.
---
--- == Standard Library Packages
---
--- The following packages are required for most Canopy projects:
---
--- * @elm\/core@ 1.0.5 — Foundation types (List, Maybe, Result, String, etc.)
--- * @elm\/json@ 1.1.3 — JSON encoding and decoding
--- * @elm\/html@ 1.0.0 — HTML generation
--- * @elm\/virtual-dom@ 1.0.3 — Virtual DOM diffing (dependency of html)
--- * @elm\/browser@ 1.0.2 — Browser applications
--- * @elm\/url@ 1.0.0 — URL parsing
--- * @elm\/http@ 2.0.0 — HTTP requests
--- * @elm\/time@ 1.0.0 — Time and date handling
--- * @elm\/random@ 1.0.0 — Random number generation
+-- * "Setup.PackageLocator" -- Artifact location and cache copying
+-- * "Setup.LocalCompilation" -- Local package compilation
 --
 -- @since 0.19.1
 module Setup
@@ -42,27 +22,18 @@ module Setup
   )
 where
 
-import qualified Build.Artifacts as Build
-import qualified Canopy.Interface as Interface
-import qualified Canopy.ModuleName as ModuleName
-import qualified Canopy.Outline as Outline
+import qualified Canopy.Data.Utf8 as Utf8
 import qualified Canopy.Package as Pkg
 import qualified Canopy.Version as Version
-import qualified Compiler
-import Control.Exception (IOException)
-import qualified Control.Exception as Exception
 import qualified Data.Map.Strict as Map
-import qualified Canopy.Data.NonEmptyList as NE
-import qualified Canopy.Data.Utf8 as Utf8
 import qualified Deps.Registry as Registry
 import qualified Http
-import qualified PackageCache
 import qualified Reporting
 import qualified Reporting.Exit as Exit
 import Reporting.Doc.ColorQQ (c)
+import Setup.LocalCompilation (compileLocalPackages)
+import Setup.PackageLocator (locatePackage)
 import qualified Stuff
-import qualified System.Directory as Dir
-import System.FilePath ((</>))
 import qualified Terminal.Print as Print
 import qualified Text.PrettyPrint.ANSI.Leijen as PP
 
@@ -74,18 +45,18 @@ data Flags = Flags
 -- | Standard library packages required for Canopy development.
 --
 -- Listed in dependency order so that packages with zero dependencies
--- are processed first. Each entry is @(package, version)@.
+-- are processed first.
 standardPackages :: [(Pkg.Name, Version.Version)]
 standardPackages =
-  [ (Pkg.core, Version.Version 1 0 5)
-  , (mkPkg "elm" "json", Version.Version 1 1 3)
-  , (mkPkg "elm" "virtual-dom", Version.Version 1 0 3)
-  , (mkPkg "elm" "html", Version.Version 1 0 0)
-  , (mkPkg "elm" "browser", Version.Version 1 0 2)
-  , (mkPkg "elm" "url", Version.Version 1 0 0)
-  , (mkPkg "elm" "http", Version.Version 2 0 0)
-  , (mkPkg "elm" "time", Version.Version 1 0 0)
-  , (mkPkg "elm" "random", Version.Version 1 0 0)
+  [ (Pkg.core, Version.Version 1 0 5),
+    (mkPkg "elm" "json", Version.Version 1 1 3),
+    (mkPkg "elm" "virtual-dom", Version.Version 1 0 3),
+    (mkPkg "elm" "html", Version.Version 1 0 0),
+    (mkPkg "elm" "browser", Version.Version 1 0 2),
+    (mkPkg "elm" "url", Version.Version 1 0 0),
+    (mkPkg "elm" "http", Version.Version 2 0 0),
+    (mkPkg "elm" "time", Version.Version 1 0 0),
+    (mkPkg "elm" "random", Version.Version 1 0 0)
   ]
 
 -- | Construct a package name from author and project strings.
@@ -94,13 +65,6 @@ mkPkg author project =
   Pkg.Name (Utf8.fromChars author) (Utf8.fromChars project)
 
 -- | Entry point for @canopy setup@.
---
--- Orchestrates the full bootstrap sequence:
---
--- 1. Create the Canopy package cache directory
--- 2. Fetch and cache the package registry
--- 3. Locate or copy standard library artifacts
--- 4. Report results to the user
 run :: () -> Flags -> IO ()
 run () flags =
   Reporting.attempt Exit.setupToReport (setup flags)
@@ -110,30 +74,20 @@ setup :: Flags -> IO (Either Exit.Setup ())
 setup flags = do
   Print.println [c|{bold|Setting up Canopy package environment...}|]
   Print.newline
-
-  -- Step 1: Create package cache
   cache <- Stuff.getPackageCache
   verboseLog flags [c|Package cache: {cyan|#{cache}}|]
-
-  -- Step 2: Fetch registry
   registryResult <- fetchRegistry cache flags
   case registryResult of
     Left err -> pure (Left err)
     Right registry -> do
       reportRegistryStatus registry
-
-      -- Step 3: Locate standard packages
-      results <- mapM (locatePackage cache flags) standardPackages
+      results <- mapM (locatePackage cache (_setupVerbose flags)) standardPackages
       let located = length (filter id results)
           missing = length standardPackages - located
-
-      -- Step 4: Compile local Canopy packages
       Print.newline
       Print.println [c|{bold|Checking local Canopy packages...}|]
-      localResults <- compileLocalPackages flags
+      localResults <- compileLocalPackages (_setupVerbose flags)
       let localCompiled = length (filter id localResults)
-
-      -- Step 5: Report summary
       Print.newline
       reportSummary located missing localCompiled
       pure (Right ())
@@ -164,223 +118,6 @@ reportRegistryStatus (Registry.Registry count _) =
   let countStr = show count
   in Print.println [c|  Registry: #{countStr} packages indexed|]
 
--- | Locate a package's artifacts, copying from Elm cache if necessary.
---
--- Returns True if artifacts are available after this call.
-locatePackage :: FilePath -> Flags -> (Pkg.Name, Version.Version) -> IO Bool
-locatePackage _cache flags (pkg, version) = do
-  homeDir <- Dir.getHomeDirectory
-  let (author, project) = pkgStrings pkg
-      versionStr = Version.toChars version
-      canopyDir = homeDir </> ".canopy" </> "packages" </> author </> project </> versionStr
-      canopyArtifacts = canopyDir </> "artifacts.dat"
-      elmDir = homeDir </> ".elm" </> "0.19.1" </> "packages" </> author </> project </> versionStr
-      elmArtifacts = elmDir </> "artifacts.dat"
-      label = author <> "/" <> project <> " " <> versionStr
-
-  -- Check Canopy cache first
-  canopyExists <- Dir.doesFileExist canopyArtifacts
-  if canopyExists
-    then do
-      Print.println [c|  #{label}: {green|ready}|]
-      pure True
-    else do
-      -- Check Elm cache
-      elmExists <- Dir.doesFileExist elmArtifacts
-      if elmExists
-        then copyFromElmCache flags label canopyDir canopyArtifacts elmDir
-        else do
-          Print.println [c|  #{label}: {red|not found}|]
-          verboseLog flags [c|    Checked: {cyan|#{canopyArtifacts}}|]
-          verboseLog flags [c|    Checked: {cyan|#{elmArtifacts}}|]
-          pure False
-
--- | Copy package artifacts from the Elm cache to the Canopy cache.
-copyFromElmCache :: Flags -> String -> FilePath -> FilePath -> FilePath -> IO Bool
-copyFromElmCache flags label canopyDir canopyArtifacts elmDir = do
-  verboseLog flags [c|    Copying from Elm cache: {cyan|#{elmDir}}|]
-  Dir.createDirectoryIfMissing True canopyDir
-  let elmArtifacts = elmDir </> "artifacts.dat"
-  copyResult <- safeCopyFile elmArtifacts canopyArtifacts
-  case copyResult of
-    Right () -> do
-      -- Also copy source files if present
-      copyPackageSource flags elmDir canopyDir
-      Print.println [c|  #{label}: {yellow|copied from Elm cache}|]
-      pure True
-    Left err -> do
-      Print.println [c|  #{label}: {red|copy failed (#{err})}|]
-      pure False
-
--- | Copy package source files (src/, elm.json) from one directory to another.
-copyPackageSource :: Flags -> FilePath -> FilePath -> IO ()
-copyPackageSource flags srcDir destDir = do
-  -- Copy elm.json / canopy.json if present
-  copyIfExists flags (srcDir </> "elm.json") (destDir </> "elm.json")
-  -- Copy src directory if present
-  let srcSrcDir = srcDir </> "src"
-  srcExists <- Dir.doesDirectoryExist srcSrcDir
-  if srcExists
-    then do
-      verboseLog flags [c|    Copying source: {cyan|#{srcSrcDir}}|]
-      copyDirectoryRecursive srcSrcDir (destDir </> "src")
-    else pure ()
-
--- | Copy a file only if the source exists.
-copyIfExists :: Flags -> FilePath -> FilePath -> IO ()
-copyIfExists flags src dest = do
-  exists <- Dir.doesFileExist src
-  if exists
-    then do
-      verboseLog flags [c|    Copying: {cyan|#{src}}|]
-      _ <- safeCopyFile src dest
-      pure ()
-    else pure ()
-
--- | Copy a file with error handling.
-safeCopyFile :: FilePath -> FilePath -> IO (Either String ())
-safeCopyFile src dest = do
-  result <- tryIO (Dir.copyFile src dest)
-  pure (either (Left . show) Right result)
-
--- | Copy a directory recursively.
-copyDirectoryRecursive :: FilePath -> FilePath -> IO ()
-copyDirectoryRecursive src dest = do
-  Dir.createDirectoryIfMissing True dest
-  contents <- Dir.listDirectory src
-  mapM_ (copyEntry src dest) contents
-
--- | Copy a single directory entry (file or subdirectory).
-copyEntry :: FilePath -> FilePath -> FilePath -> IO ()
-copyEntry srcBase destBase name = do
-  let srcPath = srcBase </> name
-      destPath = destBase </> name
-  isDir <- Dir.doesDirectoryExist srcPath
-  if isDir
-    then copyDirectoryRecursive srcPath destPath
-    else do
-      _ <- safeCopyFile srcPath destPath
-      pure ()
-
--- | Compile all local Canopy packages that have source but no artifacts.
---
--- Scans @~/.canopy/packages/canopy/@ for packages with source directories
--- but missing artifacts.dat, compiles them, and writes the artifacts.
-compileLocalPackages :: Flags -> IO [Bool]
-compileLocalPackages flags = do
-  homeDir <- Dir.getHomeDirectory
-  let canopyPkgDir = homeDir </> ".canopy" </> "packages" </> "canopy"
-
-  -- Check if canopy packages directory exists
-  exists <- Dir.doesDirectoryExist canopyPkgDir
-  if not exists
-    then pure []
-    else do
-      -- List all packages in canopy/
-      packages <- Dir.listDirectory canopyPkgDir
-      results <- mapM (compileLocalPackage flags canopyPkgDir) packages
-      pure (concat results)
-
--- | Compile a single local Canopy package if needed.
-compileLocalPackage :: Flags -> FilePath -> String -> IO [Bool]
-compileLocalPackage flags canopyPkgDir packageName = do
-  let pkgDir = canopyPkgDir </> packageName
-
-  -- List all versions
-  versionDirs <- tryListDirectory pkgDir
-  mapM (compilePackageVersion flags packageName pkgDir) versionDirs
-
--- | Try to list a directory, returning empty list on failure.
-tryListDirectory :: FilePath -> IO [FilePath]
-tryListDirectory dir = do
-  isDir <- Dir.doesDirectoryExist dir
-  if isDir
-    then Dir.listDirectory dir
-    else pure []
-
--- | Compile a specific version of a package if it has source but no artifacts.
-compilePackageVersion :: Flags -> String -> FilePath -> String -> IO Bool
-compilePackageVersion flags packageName pkgDir versionStr = do
-  let versionDir = pkgDir </> versionStr
-      artifactsPath = versionDir </> "artifacts.dat"
-      canopyJsonPath = versionDir </> "canopy.json"
-      srcDir = versionDir </> "src"
-      label = "canopy/" <> packageName <> " " <> versionStr
-
-  -- Check if artifacts already exist
-  artifactsExist <- Dir.doesFileExist artifactsPath
-  if artifactsExist
-    then do
-      Print.println [c|  #{label}: {green|ready}|]
-      pure True
-    else do
-      -- Check if source exists
-      canopyJsonExists <- Dir.doesFileExist canopyJsonPath
-      srcExists <- Dir.doesDirectoryExist srcDir
-      if canopyJsonExists && srcExists
-        then do
-          Print.println [c|  #{label}: {yellow|compiling from source...}|]
-          result <- compilePackageFromSource flags "canopy" packageName versionStr versionDir
-          case result of
-            Right () -> do
-              Print.println [c|  #{label}: {green|compiled}|]
-              pure True
-            Left err -> do
-              Print.println [c|  #{label}: {red|compilation failed}|]
-              verboseLog flags [c|    Error: #{err}|]
-              pure False
-        else do
-          Print.println [c|  #{label}: {red|no source found}|]
-          pure False
-
--- | Compile a package from source and write its artifacts.
-compilePackageFromSource :: Flags -> String -> String -> String -> FilePath -> IO (Either String ())
-compilePackageFromSource _flags author packageName versionStr pkgDir = do
-  -- Read canopy.json to get exposed modules using proper Aeson parsing
-  eitherOutline <- Outline.read pkgDir
-  case eitherOutline of
-    Left err -> pure (Left err)
-    Right outline ->
-      case outline of
-        Outline.App _ -> pure (Left "Expected package outline, found application outline")
-        Outline.Workspace _ -> pure (Left "Expected package outline, found workspace outline")
-        Outline.Pkg pkgOutline ->
-          case exposedToNonEmpty (Outline._pkgExposed pkgOutline) of
-            Nothing -> pure (Left "No exposed modules found in canopy.json")
-            Just exposedModules -> do
-              -- Compile the package from its own directory so FFI paths resolve
-              let pkg = mkPkg author packageName
-                  srcDir = pkgDir </> "src"
-              compileResult <- Dir.withCurrentDirectory pkgDir
-                (Compiler.compileFromExposed pkg False (Compiler.ProjectRoot pkgDir) [Compiler.AbsoluteSrcDir srcDir] exposedModules)
-              case compileResult of
-                Left err -> pure (Left (show err))
-                Right artifacts -> do
-                  -- Convert Build.Artifacts to PackageInterfaces
-                  let interfaces = buildArtifactsToInterfaces artifacts
-                      globalGraph = Build._artifactsGlobalGraph artifacts
-                      ffiInfo = Build._artifactsFFIInfo artifacts
-                  -- Write artifacts (including FFI info for dependency packages)
-                  PackageCache.writePackageArtifacts author packageName versionStr interfaces globalGraph ffiInfo
-                  pure (Right ())
-
--- | Convert Build.Artifacts to PackageInterfaces (Map ModuleName.Raw Interface.DependencyInterface).
-buildArtifactsToInterfaces :: Build.Artifacts -> PackageCache.PackageInterfaces
-buildArtifactsToInterfaces artifacts =
-  Map.fromList
-    [ (name, Interface.Public iface)
-    | Build.Fresh name iface _ <- Build._artifactsModules artifacts
-    ]
-
--- | Convert Exposed to NonEmpty list of module names.
---
--- Flattens ExposedList or ExposedDict into a non-empty list.
-exposedToNonEmpty :: Outline.Exposed -> Maybe (NE.List ModuleName.Raw)
-exposedToNonEmpty exposed =
-  case Outline.flattenExposed exposed of
-    [] -> Nothing
-    (x:xs) -> Just (NE.List x xs)
-
 -- | Report the final setup summary.
 reportSummary :: Int -> Int -> Int -> IO ()
 reportSummary located missing localCompiled = do
@@ -403,18 +140,9 @@ reportSummary located missing localCompiled = do
       Print.newline
       Print.println [c|  All standard library packages are available.|]
 
--- | Extract author and project strings from a package name.
-pkgStrings :: Pkg.Name -> (String, String)
-pkgStrings (Pkg.Name author project) =
-  (Utf8.toChars author, Utf8.toChars project)
-
 -- | Print a 'PP.Doc' message when verbose mode is enabled.
 verboseLog :: Flags -> PP.Doc -> IO ()
 verboseLog flags doc =
   if _setupVerbose flags
     then Print.println doc
     else pure ()
-
--- | Try an IO action, catching IOExceptions.
-tryIO :: IO a -> IO (Either IOException a)
-tryIO = Exception.try
