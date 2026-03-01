@@ -24,6 +24,7 @@ where
 
 import qualified AST.Canonical as Can
 import qualified AST.Optimized as Opt
+import qualified Data.Char as Char
 import Control.Lens (makeLenses)
 import qualified Data.Binary as Binary
 import qualified Canopy.Kernel as Kernel
@@ -184,16 +185,19 @@ formatFFIFileFromInfo _key info acc =
 
 -- | Generate JavaScript variable bindings for FFI functions using FFIInfo with proper aliases.
 generateFFIBindingsFromInfo :: Mode.Mode -> Graph -> String -> FFIInfo -> [Builder] -> [Builder]
-generateFFIBindingsFromInfo mode graph _key info acc =
-  let path = _ffiFilePath info
-      content = Text.unpack (_ffiContent info)
-      alias = Name.toChars (_ffiAlias info)
-  in case extractFFIFunctionBindings mode graph path content alias of
-    [] -> acc
-    bindings ->
-      ("\n// Bindings for " <> BB.stringUtf8 path <> "\n")
-        : ("var " <> BB.stringUtf8 alias <> " = " <> BB.stringUtf8 alias <> " || {};\n")
-        : map (<> "\n") bindings ++ ["\n"] ++ acc
+generateFFIBindingsFromInfo mode graph _key info acc
+  | not (isValidJsIdentifier alias) = acc
+  | otherwise =
+      case extractFFIFunctionBindings mode graph path content alias of
+        [] -> acc
+        bindings ->
+          ("\n// Bindings for " <> BB.stringUtf8 path <> "\n")
+            : ("var " <> BB.stringUtf8 alias <> " = " <> BB.stringUtf8 alias <> " || {};\n")
+            : map (<> "\n") bindings ++ ["\n"] ++ acc
+  where
+    path = _ffiFilePath info
+    content = Text.unpack (_ffiContent info)
+    alias = Name.toChars (_ffiAlias info)
 
 -- | Extract and generate bindings for FFI functions from JavaScript content.
 extractFFIFunctionBindings :: Mode.Mode -> Graph -> String -> String -> String -> [Builder]
@@ -247,14 +251,22 @@ findFunctionName (line:rest) =
         _ -> findFunctionName rest
 
 -- | Generate JavaScript binding for a single function as Builders.
+--
+-- Validates that the function name is a safe JavaScript identifier
+-- before generating any code. Invalid names are silently skipped,
+-- preventing injection via crafted @\@name@ annotations.
+--
+-- @since 0.19.2
 generateFunctionBinding :: Mode.Mode -> Graph -> String -> String -> (String, String) -> [Builder]
-generateFunctionBinding mode _graph _filePath alias (funcName, canopyType) =
-  let arity = maybe 0 TypeParser.countArity (TypeParser.parseType (Text.pack canopyType))
-      jsVarName = "$author$project$" ++ alias ++ "$" ++ funcName
-      callPath = "'" ++ alias ++ "." ++ funcName ++ "'"
-  in if Mode.isFFIStrict mode
-       then generateValidatedBinding jsVarName alias funcName arity canopyType callPath
-       else generateSimpleBinding jsVarName alias funcName arity
+generateFunctionBinding mode _graph _filePath alias (funcName, canopyType)
+  | not (isValidJsIdentifier funcName) = []
+  | otherwise =
+      let arity = maybe 0 TypeParser.countArity (TypeParser.parseType (Text.pack canopyType))
+          jsVarName = "$author$project$" ++ alias ++ "$" ++ funcName
+          callPath = "'" ++ escapeJsString (alias ++ "." ++ funcName) ++ "'"
+      in if Mode.isFFIStrict mode
+           then generateValidatedBinding jsVarName alias funcName arity canopyType callPath
+           else generateSimpleBinding jsVarName alias funcName arity
 
 -- | Generate simple binding without validation.
 generateSimpleBinding :: String -> String -> String -> Int -> [Builder]
@@ -339,6 +351,36 @@ trim :: String -> String
 trim = List.dropWhileEnd isSpace . dropWhile isSpace
   where
     isSpace c = c `elem` [' ', '\t', '\n', '\r']
+
+-- | Check whether a string is a valid JavaScript identifier.
+--
+-- Valid identifiers start with a letter, underscore, or dollar sign,
+-- and subsequent characters may also include digits. This is used
+-- as a defense-in-depth check for FFI names injected into generated
+-- JavaScript code.
+--
+-- @since 0.19.2
+isValidJsIdentifier :: String -> Bool
+isValidJsIdentifier (c : cs) = isValidFirst c && all isValidRest cs
+  where
+    isValidFirst x = Char.isAlpha x || x == '_' || x == '$'
+    isValidRest x = Char.isAlphaNum x || x == '_' || x == '$'
+isValidJsIdentifier [] = False
+
+-- | Escape a string for safe inclusion in a JavaScript single-quoted literal.
+--
+-- Escapes backslashes and single quotes to prevent string breakout
+-- when constructing JS string literals for FFI call paths.
+--
+-- @since 0.19.2
+escapeJsString :: String -> String
+escapeJsString = concatMap escapeJsChar
+  where
+    escapeJsChar '\\' = "\\\\"
+    escapeJsChar '\'' = "\\'"
+    escapeJsChar '\n' = "\\n"
+    escapeJsChar '\r' = "\\r"
+    escapeJsChar c = [c]
 
 generate :: Mode.Mode -> Opt.GlobalGraph -> Mains -> Map String FFIInfo -> (Builder, Maybe SourceMap.SourceMap)
 generate inputMode (Opt.GlobalGraph rawGraph _ sourceLocs) mains ffiInfos =

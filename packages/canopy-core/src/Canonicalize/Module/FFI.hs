@@ -27,6 +27,7 @@ import qualified Canopy.Data.Name as Name
 import qualified Canopy.ModuleName as ModuleName
 import qualified Canopy.Package as Pkg
 import qualified Canopy.PathValidation as PathValidation
+import qualified Data.Char as Char
 import Control.Exception (IOException)
 import qualified Control.Exception as Exception
 import Data.List (isPrefixOf, isInfixOf)
@@ -244,13 +245,27 @@ findCanopyTypeAnnotation (line:rest) =
     Just typeStr -> Just typeStr
     Nothing -> findCanopyTypeAnnotation rest
 
--- Parse @name annotation from a line
+-- | Parse @name annotation from a line.
+--
+-- Rejects names that contain characters unsafe for JavaScript
+-- identifiers (e.g., @;@, @}@, @\"@, @'@, newlines). Only
+-- alphanumeric characters, underscores, and dollar signs are
+-- allowed, preventing injection via crafted annotations.
+--
+-- @since 0.19.2
 parseNameAnnotation :: String -> Maybe String
 parseNameAnnotation line =
   let trimmed = dropWhile (`elem` (" *" :: String)) line
   in if ("@name " :: String) `isPrefixOf` trimmed
-     then Just (strip (drop (length ("@name " :: String)) trimmed))
+     then validateJsName (strip (drop (length ("@name " :: String)) trimmed))
      else Nothing
+  where
+    validateJsName [] = Nothing
+    validateJsName s@(c : cs)
+      | validFirst c && all validRest cs = Just s
+      | otherwise = Nothing
+    validFirst c = Char.isAlpha c || c == '_' || c == '$'
+    validRest c = Char.isAlphaNum c || c == '_' || c == '$'
 
 -- Strip leading and trailing whitespace
 strip :: String -> String
