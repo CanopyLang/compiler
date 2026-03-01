@@ -150,6 +150,8 @@ import qualified Unit.WebIDL.CommandTest as WebIDLCommandTest
 import qualified Unit.Publish.ArchiveTest as PublishArchiveTest
 import qualified Unit.Type.ParallelTest as TypeParallelTest
 import qualified Unit.VendorTest as VendorTest
+import qualified Unit.ScriptsTest as ScriptsTest
+import qualified Unit.OutlineFormatTest as OutlineFormatTest
 import qualified Property.ArithmeticLawsTest as ArithmeticLawsTest
 import qualified Property.Type.UnifyProperties as UnifyProperties
 import qualified Property.Type.UnionFindProperties as UnionFindProperties
@@ -301,7 +303,9 @@ unitTests =
       ModuleLoaderTest.tests,
       PublishArchiveTest.tests,
       TypeParallelTest.tests,
-      VendorTest.tests
+      VendorTest.tests,
+      ScriptsTest.tests,
+      OutlineFormatTest.tests
     ]
 
 propertyTests :: TestTree
