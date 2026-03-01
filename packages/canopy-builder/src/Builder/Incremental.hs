@@ -10,6 +10,10 @@
 -- * Skipping unchanged modules
 -- * Invalidating transitive dependencies
 --
+-- The build cache uses a versioned binary format ("BCCH" magic header)
+-- for fast serialization. On first load after upgrading from JSON,
+-- the module falls back to JSON parsing and re-saves as binary.
+--
 -- Follows the NEW query engine pattern with pure data structures.
 --
 -- @since 0.19.1
@@ -44,12 +48,15 @@ import qualified Builder.Hash as Hash
 import qualified Canopy.ModuleName as ModuleName
 import Data.Aeson (FromJSON (..), ToJSON (..), (.:), (.=))
 import qualified Data.Aeson as Aeson
+import qualified Data.Binary as Binary
 import qualified Data.ByteString.Lazy as BSL
 import Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
 import qualified Canopy.Data.Name as Name
 import qualified Data.Set as Set
 import Data.Time.Clock (UTCTime, addUTCTime, getCurrentTime)
+import qualified Data.Time.Clock.POSIX as POSIX
+import Data.Word (Word16)
 import GHC.Generics (Generic)
 import qualified Data.Text as Text
 import Logging.Event (LogEvent (..), Phase (..))
@@ -71,6 +78,72 @@ data CacheEntry = CacheEntry
   }
   deriving (Show, Eq, Generic)
 
+-- BINARY INSTANCES
+
+-- | Binary encoding for 'UTCTime' via POSIX seconds.
+--
+-- Converts to/from 'POSIXTime' (a 'NominalDiffTime') for compact
+-- binary representation. Uses 'Double' serialization (8 bytes)
+-- instead of ISO 8601 text strings.
+--
+-- @since 0.19.2
+putUTCTime :: UTCTime -> Binary.Put
+putUTCTime t = Binary.put (realToFrac (POSIX.utcTimeToPOSIXSeconds t) :: Double)
+
+-- | Decode a 'UTCTime' from its binary POSIX seconds representation.
+--
+-- @since 0.19.2
+getUTCTime :: Binary.Get UTCTime
+getUTCTime = POSIX.posixSecondsToUTCTime . realToFrac <$> (Binary.get :: Binary.Get Double)
+
+-- | Binary encoding for 'CacheEntry'.
+--
+-- Serializes all fields directly using their respective Binary instances,
+-- avoiding the JSON overhead of hex-encoding hashes and text timestamps.
+--
+-- @since 0.19.2
+instance Binary.Binary CacheEntry where
+  put entry = do
+    Binary.put (cacheSourceHash entry)
+    Binary.put (cacheDepsHash entry)
+    Binary.put (cacheArtifactPath entry)
+    putUTCTime (cacheTimestamp entry)
+    Binary.put (cacheInterfaceHash entry)
+  get =
+    CacheEntry
+      <$> Binary.get
+      <*> Binary.get
+      <*> Binary.get
+      <*> getUTCTime
+      <*> Binary.get
+
+-- | Build cache for incremental compilation.
+data BuildCache = BuildCache
+  { cacheEntries :: !(Map ModuleName.Raw CacheEntry),
+    cacheVersion :: !String,
+    cacheCreated :: !UTCTime
+  }
+  deriving (Show, Eq, Generic)
+
+-- | Binary encoding for 'BuildCache'.
+--
+-- Serializes the map entries directly using the Binary instance for
+-- 'ModuleName.Raw' (which uses 'Utf8.putUnder256') and 'CacheEntry'.
+--
+-- @since 0.19.2
+instance Binary.Binary BuildCache where
+  put cache = do
+    Binary.put (cacheEntries cache)
+    Binary.put (cacheVersion cache)
+    putUTCTime (cacheCreated cache)
+  get =
+    BuildCache
+      <$> Binary.get
+      <*> Binary.get
+      <*> getUTCTime
+
+-- JSON INSTANCES (kept for legacy migration)
+
 instance ToJSON CacheEntry where
   toJSON entry =
     Aeson.object
@@ -82,30 +155,24 @@ instance ToJSON CacheEntry where
       ]
 
 instance FromJSON CacheEntry where
-  parseJSON = Aeson.withObject "CacheEntry" (\obj -> do
-    sourceHashStr <- obj .: "sourceHash"
-    depsHashStr <- obj .: "depsHash"
-    artifactPath <- obj .: "artifactPath"
-    timestamp <- obj .: "timestamp"
-    maybeIfaceHashStr <- obj Aeson..:? "interfaceHash"
-    let srcHash = maybe (Hash.HashValue mempty) id (Hash.fromHexString sourceHashStr)
-        depsHash = maybe (Hash.HashValue mempty) id (Hash.fromHexString depsHashStr)
-        ifaceHash = maybeIfaceHashStr >>= Hash.fromHexString
-    return CacheEntry
-      { cacheSourceHash = Hash.ContentHash srcHash "loaded",
-        cacheDepsHash = Hash.ContentHash depsHash "loaded",
-        cacheArtifactPath = artifactPath,
-        cacheTimestamp = timestamp,
-        cacheInterfaceHash = fmap (\hv -> Hash.ContentHash hv "interface") ifaceHash
-      })
-
--- | Build cache for incremental compilation.
-data BuildCache = BuildCache
-  { cacheEntries :: !(Map ModuleName.Raw CacheEntry),
-    cacheVersion :: !String,
-    cacheCreated :: !UTCTime
-  }
-  deriving (Show, Eq, Generic)
+  parseJSON = Aeson.withObject "CacheEntry" parseEntry
+    where
+      parseEntry obj = do
+        sourceHashStr <- obj .: "sourceHash"
+        depsHashStr <- obj .: "depsHash"
+        artifactPath <- obj .: "artifactPath"
+        timestamp <- obj .: "timestamp"
+        maybeIfaceHashStr <- obj Aeson..:? "interfaceHash"
+        let srcHash = maybe (Hash.HashValue mempty) id (Hash.fromHexString sourceHashStr)
+            depsHash = maybe (Hash.HashValue mempty) id (Hash.fromHexString depsHashStr)
+            ifaceHash = maybeIfaceHashStr >>= Hash.fromHexString
+        return CacheEntry
+          { cacheSourceHash = Hash.ContentHash srcHash "loaded",
+            cacheDepsHash = Hash.ContentHash depsHash "loaded",
+            cacheArtifactPath = artifactPath,
+            cacheTimestamp = timestamp,
+            cacheInterfaceHash = fmap (\hv -> Hash.ContentHash hv "interface") ifaceHash
+          }
 
 -- Custom serialization to handle ModuleName.Raw keys
 instance ToJSON BuildCache where
@@ -123,23 +190,120 @@ instance ToJSON BuildCache where
           ]
 
 instance FromJSON BuildCache where
-  parseJSON = Aeson.withObject "BuildCache" (\obj -> do
-    entriesList <- obj .: "entries"
-    version <- obj .: "version"
-    created <- obj .: "created"
-    entries <- mapM deserializeEntry entriesList
-    return BuildCache
-      { cacheEntries = Map.fromList entries,
-        cacheVersion = version,
-        cacheCreated = created
-      })
+  parseJSON = Aeson.withObject "BuildCache" parseBuildCache
     where
+      parseBuildCache obj = do
+        entriesList <- obj .: "entries"
+        version <- obj .: "version"
+        created <- obj .: "created"
+        entries <- mapM deserializeEntry entriesList
+        return BuildCache
+          { cacheEntries = Map.fromList entries,
+            cacheVersion = version,
+            cacheCreated = created
+          }
       deserializeEntry = Aeson.withObject "Entry" (\entryObj -> do
         moduleStr <- entryObj .: "module"
         entry <- entryObj .: "entry"
-        -- Parse module name from string using Name.fromChars
         let moduleName = Name.fromChars moduleStr
         return (moduleName, entry))
+
+-- VERSIONED BINARY FORMAT
+
+-- | Magic bytes identifying a build cache file: "BCCH" in ASCII.
+--
+-- Used to distinguish the binary format from legacy JSON caches.
+-- When the magic header is absent, the loader falls back to JSON
+-- parsing for seamless migration.
+--
+-- @since 0.19.2
+buildCacheMagic :: BSL.ByteString
+buildCacheMagic = BSL.pack [0x42, 0x43, 0x43, 0x48]
+
+-- | Current binary schema version for the build cache.
+--
+-- Bump this when the Binary encoding of 'BuildCache' or 'CacheEntry'
+-- changes to force cache invalidation on upgrade.
+--
+-- @since 0.19.2
+buildCacheSchemaVersion :: Word16
+buildCacheSchemaVersion = 1
+
+-- | Minimum header size: 4 (magic) + 2 (schema version).
+--
+-- @since 0.19.2
+buildCacheHeaderSize :: Int
+buildCacheHeaderSize = 6
+
+-- | Encode a 'BuildCache' to the versioned binary format.
+--
+-- Layout: @"BCCH" (4 bytes) ++ schema version (2 bytes) ++ payload@.
+--
+-- @since 0.19.2
+encodeBuildCache :: BuildCache -> BSL.ByteString
+encodeBuildCache cache =
+  buildCacheMagic
+    <> Binary.encode buildCacheSchemaVersion
+    <> Binary.encode cache
+
+-- | Decode a 'BuildCache' from the versioned binary format.
+--
+-- Validates the magic header and schema version before decoding
+-- the payload. Returns 'Left' with a diagnostic message on any
+-- format mismatch or decode failure.
+--
+-- @since 0.19.2
+decodeBuildCache :: BSL.ByteString -> Either String BuildCache
+decodeBuildCache bytes
+  | BSL.length bytes < fromIntegral buildCacheHeaderSize =
+      Left "file too short for binary cache format"
+  | BSL.take 4 bytes /= buildCacheMagic =
+      Left "not a binary cache (missing BCCH magic header)"
+  | otherwise =
+      decodeSchemaAndPayload (BSL.drop 4 bytes)
+
+-- | Decode the schema version and payload after the magic header.
+--
+-- @since 0.19.2
+decodeSchemaAndPayload :: BSL.ByteString -> Either String BuildCache
+decodeSchemaAndPayload bytes =
+  case Binary.decodeOrFail bytes of
+    Left (_, _, msg) -> Left ("schema version decode: " ++ msg)
+    Right (rest, _, ver)
+      | ver /= buildCacheSchemaVersion ->
+          Left (schemaMismatchMsg ver)
+      | otherwise ->
+          decodePayload rest
+  where
+    schemaMismatchMsg :: Word16 -> String
+    schemaMismatchMsg ver =
+      "cache schema v" ++ show ver
+        ++ " but compiler expects v"
+        ++ show buildCacheSchemaVersion
+
+-- | Decode the cache payload after schema version validation.
+--
+-- @since 0.19.2
+decodePayload :: BSL.ByteString -> Either String BuildCache
+decodePayload rest =
+  case Binary.decodeOrFail rest of
+    Left (_, _, msg) -> Left ("payload decode: " ++ msg)
+    Right (_, _, cache) -> Right cache
+
+-- | Try loading a legacy JSON cache for migration.
+--
+-- On first load after upgrading, the binary decode fails (no magic
+-- header), so this fallback parses the JSON format. The next
+-- 'saveCache' call writes the binary format, completing migration.
+--
+-- @since 0.19.2
+tryLegacyJsonLoad :: BSL.ByteString -> Maybe BuildCache
+tryLegacyJsonLoad contents =
+  case Aeson.eitherDecode contents of
+    Right cache -> Just cache
+    Left _ -> Nothing
+
+-- CACHE OPERATIONS
 
 -- | Create empty cache.
 emptyCache :: IO BuildCache
@@ -152,32 +316,72 @@ emptyCache = do
         cacheCreated = now
       }
 
--- | Load cache from disk using JSON deserialization.
+-- | Load cache from disk using versioned binary format.
+--
+-- Tries the binary format first; falls back to legacy JSON for
+-- seamless migration from older Canopy versions.
+--
+-- @since 0.19.2
 loadCache :: FilePath -> IO (Maybe BuildCache)
 loadCache path = do
   Log.logEvent (CacheMiss PhaseCache (Text.pack ("loading from: " ++ path)))
   exists <- Dir.doesFileExist path
   if exists
-    then do
-      contents <- BSL.readFile path
-      case Aeson.eitherDecode contents of
-        Left err -> do
-          Log.logEvent (BuildFailed (Text.pack ("Cache decode error: " ++ err)))
-          return Nothing
-        Right cache -> do
-          Log.logEvent (CacheHit PhaseCache (Text.pack (show (Map.size (cacheEntries cache)) ++ " entries loaded")))
-          return (Just cache)
+    then loadCacheFromFile path
     else do
       Log.logEvent (CacheMiss PhaseCache (Text.pack "no cache file found"))
       return Nothing
 
--- | Save cache to disk using JSON serialization.
+-- | Read and decode a cache file, trying binary then JSON.
+--
+-- @since 0.19.2
+loadCacheFromFile :: FilePath -> IO (Maybe BuildCache)
+loadCacheFromFile path = do
+  contents <- BSL.readFile path
+  case decodeBuildCache contents of
+    Right cache -> do
+      logCacheLoaded cache
+      return (Just cache)
+    Left _binaryErr ->
+      loadLegacyFallback path contents
+
+-- | Attempt legacy JSON fallback and log the result.
+--
+-- @since 0.19.2
+loadLegacyFallback :: FilePath -> BSL.ByteString -> IO (Maybe BuildCache)
+loadLegacyFallback path contents =
+  case tryLegacyJsonLoad contents of
+    Just cache -> do
+      Log.logEvent (CacheHit PhaseCache (Text.pack "migrated from JSON format"))
+      logCacheLoaded cache
+      saveCacheBinary path cache
+      return (Just cache)
+    Nothing -> do
+      Log.logEvent (BuildFailed (Text.pack "cache decode failed (binary and JSON)"))
+      return Nothing
+
+-- | Log that a cache was successfully loaded.
+--
+-- @since 0.19.2
+logCacheLoaded :: BuildCache -> IO ()
+logCacheLoaded cache =
+  Log.logEvent (CacheHit PhaseCache (Text.pack (show (Map.size (cacheEntries cache)) ++ " entries loaded")))
+
+-- | Save cache to disk using versioned binary format.
+--
+-- @since 0.19.2
 saveCache :: FilePath -> BuildCache -> IO ()
 saveCache path cache = do
   Log.logEvent (CacheStored (Text.pack path) (Map.size (cacheEntries cache)))
-  let json = Aeson.encode cache
-  BSL.writeFile path json
+  saveCacheBinary path cache
   Log.logEvent (InterfaceSaved path)
+
+-- | Write the binary-encoded cache to disk.
+--
+-- @since 0.19.2
+saveCacheBinary :: FilePath -> BuildCache -> IO ()
+saveCacheBinary path cache =
+  BSL.writeFile path (encodeBuildCache cache)
 
 -- | Lookup module in cache.
 lookupCache :: BuildCache -> ModuleName.Raw -> Maybe CacheEntry

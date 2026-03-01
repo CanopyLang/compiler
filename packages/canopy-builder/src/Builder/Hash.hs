@@ -39,6 +39,7 @@ module Builder.Hash
   )
 where
 
+import qualified Data.Binary as Binary
 import qualified Data.ByteString as BS
 import Data.ByteString (ByteString)
 import qualified Data.ByteString.Char8 as BSC
@@ -168,3 +169,24 @@ fromHexString hexStr
       | 'a' <= c && c <= 'f' = Just (Char.ord c - Char.ord 'a' + 10)
       | 'A' <= c && c <= 'F' = Just (Char.ord c - Char.ord 'A' + 10)
       | otherwise = Nothing
+
+-- BINARY INSTANCES
+
+-- | Binary encoding for 'HashValue'.
+--
+-- Serializes the raw 'ShortByteString' digest directly, avoiding
+-- the 2x expansion of hex-string encoding used by JSON.
+--
+-- @since 0.19.2
+instance Binary.Binary HashValue where
+  put (HashValue sbs) = Binary.put (SBS.fromShort sbs)
+  get = HashValue . SBS.toShort <$> Binary.get
+
+-- | Binary encoding for 'ContentHash'.
+--
+-- Serializes both the hash value and its source description.
+--
+-- @since 0.19.2
+instance Binary.Binary ContentHash where
+  put (ContentHash hv src) = Binary.put hv >> Binary.put src
+  get = ContentHash <$> Binary.get <*> Binary.get
