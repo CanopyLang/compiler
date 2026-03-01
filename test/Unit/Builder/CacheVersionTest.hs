@@ -12,6 +12,7 @@ module Unit.Builder.CacheVersionTest (tests) where
 import Canopy.Version (Version (..))
 import qualified Canopy.Version as Version
 import qualified Compiler
+import qualified Data.List as List
 import qualified Data.Binary as Binary
 import qualified Data.ByteString.Lazy as LBS
 import Data.Word (Word16)
@@ -106,15 +107,4 @@ tests =
 
 -- | Check if needle appears in haystack (String version).
 isInfixOfStr :: String -> String -> Bool
-isInfixOfStr needle haystack = any (isPrefixOfStr needle) (tails haystack)
-
-isPrefixOfStr :: String -> String -> Bool
-isPrefixOfStr [] _ = True
-isPrefixOfStr _ [] = False
-isPrefixOfStr (x : xs) (y : ys)
-  | x == y = isPrefixOfStr xs ys
-  | otherwise = False
-
-tails :: [a] -> [[a]]
-tails [] = [[]]
-tails xs@(_ : rest) = xs : tails rest
+isInfixOfStr = List.isInfixOf

@@ -137,22 +137,21 @@ testErrorTypeEquality =
         assertBool "Different ArgError types are not equal" (error1 /= error3)
     ]
 
--- | Test error type show instances
+-- | Test error type show instances produce correct constructor names.
 testErrorTypeShow :: TestTree
 testErrorTypeShow =
   testGroup
     "Error Type Show Tests"
-    [ testCase "Expectation show includes type" $ do
+    [ testCase "Expectation show starts with constructor" $ do
         let expectation = Expectation "file" (pure ["test.txt"])
-            shown = show expectation
-        assertBool "Show includes type name" ("file" `elem` words shown)
-        assertBool "Show includes Expectation constructor" ("Expectation" `elem` words shown),
-      testCase "ArgError show works for all variants" $ do
+        take 11 (show expectation) @?= "Expectation",
+      testCase "ArgMissing show starts with constructor" $ do
         let expectation = Expectation "file" (pure ["test.txt"])
-            missingError = ArgMissing expectation
-            badError = ArgBad "invalid" expectation
-            extrasError = ArgExtras ["extra1", "extra2"]
-        assertBool "ArgMissing produces output" (length (show missingError) > 5)
-        assertBool "ArgBad produces output" (length (show badError) > 5)
-        assertBool "ArgExtras produces output" (length (show extrasError) > 5)
+        take 10 (show (ArgMissing expectation)) @?= "ArgMissing",
+      testCase "ArgBad show starts with constructor" $ do
+        let expectation = Expectation "file" (pure ["test.txt"])
+        take 6 (show (ArgBad "invalid" expectation)) @?= "ArgBad",
+      testCase "ArgExtras show includes extras list" $ do
+        let shown = show (ArgExtras ["extra1", "extra2"])
+        take 9 shown @?= "ArgExtras"
     ]

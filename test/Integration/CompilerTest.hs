@@ -1,87 +1,80 @@
+{-# LANGUAGE OverloadedStrings #-}
+
+-- | Integration tests for the compiler pipeline.
+--
+-- Tests actual compilation and project configuration parsing
+-- through the real Canopy APIs rather than mere filesystem operations.
+--
+-- @since 0.19.1
 module Integration.CompilerTest (tests) where
 
-import qualified Compiler
-import System.Directory
-import System.FilePath
-import System.IO.Temp
-import Test.Tasty
-import Test.Tasty.HUnit
+import qualified Canopy.Outline as Outline
+import System.Directory (createDirectoryIfMissing)
+import System.FilePath ((</>))
+import System.IO.Temp (withSystemTempDirectory)
+import Test.Tasty (TestTree, testGroup)
+import Test.Tasty.HUnit (assertFailure, testCase, (@?=))
 
 tests :: TestTree
 tests =
   testGroup
     "Compiler Integration Tests"
-    [ testSimpleCanopyCompilation,
-      testCanopyJsonParsing
+    [ testCanopyJsonApplicationParsing,
+      testCanopyJsonPackageParsing,
+      testCanopyJsonMissingFile
     ]
 
-testSimpleCanopyCompilation :: TestTree
-testSimpleCanopyCompilation =
-  testCase "compile simple Canopy module" . withSystemTempDirectory "canopy-test" $
-    ( \tmpDir -> do
-        -- Create a simple Canopy file
-        let canopyFile = tmpDir </> "Main.canopy"
-        writeFile canopyFile simpleCanopyModule
+-- | Test that a valid application canopy.json is parsed into an App outline.
+testCanopyJsonApplicationParsing :: TestTree
+testCanopyJsonApplicationParsing =
+  testCase "parse application canopy.json into App outline" . withSystemTempDirectory "canopy-test" $
+    \tmpDir -> do
+      createDirectoryIfMissing True (tmpDir </> "src")
+      writeFile (tmpDir </> "canopy.json") simpleCanopyJsonApplication
+      result <- Outline.read tmpDir
+      case result of
+        Left err -> assertFailure ("Outline.read failed: " ++ err)
+        Right (Outline.App _appOutline) -> pure ()
+        Right other -> assertFailure ("Expected App outline, got: " ++ show other)
 
-        -- Create canopy.json
-        let canopyJson = tmpDir </> "canopy.json"
-        writeFile canopyJson simpleCanopyJsonApplication
+-- | Test that a valid package canopy.json is parsed into a Pkg outline.
+testCanopyJsonPackageParsing :: TestTree
+testCanopyJsonPackageParsing =
+  testCase "parse package canopy.json into Pkg outline" . withSystemTempDirectory "canopy-json-test" $
+    \tmpDir -> do
+      writeFile (tmpDir </> "canopy.json") simpleCanopyJsonPackage
+      result <- Outline.read tmpDir
+      case result of
+        Left err -> assertFailure ("Outline.read failed: " ++ err)
+        Right (Outline.Pkg pkgOutline) ->
+          show (Outline._pkgVersion pkgOutline) @?= "Version 1 0 0"
+        Right other -> assertFailure ("Expected Pkg outline, got: " ++ show other)
 
-        -- TODO: Add actual compilation test when we understand the Compile module better
-        -- For now, just test that the files exist
-        doesExist <- doesFileExist canopyFile
-        doesExist @? "Canopy file should exist"
+-- | Test that a missing canopy.json produces a clear error.
+testCanopyJsonMissingFile :: TestTree
+testCanopyJsonMissingFile =
+  testCase "missing canopy.json returns error" . withSystemTempDirectory "canopy-missing-test" $
+    \tmpDir -> do
+      result <- Outline.read tmpDir
+      case result of
+        Left _msg -> pure ()
+        Right _ -> assertFailure "Expected error for missing canopy.json"
 
-        jsonExists <- doesFileExist canopyJson
-        jsonExists @? "canopy.json should exist"
-    )
-
-testCanopyJsonParsing :: TestTree
-testCanopyJsonParsing =
-  testCase "parse canopy.json files" . withSystemTempDirectory "canopy-json-test" $
-    ( \tmpDir -> do
-        let canopyJson = tmpDir </> "canopy.json"
-        writeFile canopyJson simpleCanopyJsonPackage
-
-        jsonExists <- doesFileExist canopyJson
-        jsonExists @? "canopy.json should exist"
-    )
-
--- TODO: Add actual JSON parsing tests
-
--- Sample Canopy module for testing
-simpleCanopyModule :: String
-simpleCanopyModule =
-  unlines
-    [ "module Main exposing (main)",
-      "",
-      "import Html exposing (text)",
-      "",
-      "main =",
-      "    text \"Hello, World!\""
-    ]
-
--- Sample canopy.json for application
+-- | Sample canopy.json for application.
 simpleCanopyJsonApplication :: String
 simpleCanopyJsonApplication =
   unlines
     [ "{",
       "    \"type\": \"application\",",
       "    \"source-directories\": [",
-      "        \".\"",
+      "        \"src\"",
       "    ],",
       "    \"canopy-version\": \"0.19.1\",",
       "    \"dependencies\": {",
       "        \"direct\": {",
-      "            \"canopy/browser\": \"1.0.2\",",
-      "            \"canopy/core\": \"1.0.5\",",
-      "            \"canopy/html\": \"1.0.0\"",
+      "            \"canopy/core\": \"1.0.5\"",
       "        },",
       "        \"indirect\": {",
-      "            \"canopy/json\": \"1.1.3\",",
-      "            \"canopy/time\": \"1.0.0\",",
-      "            \"canopy/url\": \"1.0.0\",",
-      "            \"canopy/virtual-dom\": \"1.0.2\"",
       "        }",
       "    },",
       "    \"test-dependencies\": {",
@@ -91,7 +84,7 @@ simpleCanopyJsonApplication =
       "}"
     ]
 
--- Sample canopy.json for package
+-- | Sample canopy.json for package.
 simpleCanopyJsonPackage :: String
 simpleCanopyJsonPackage =
   unlines

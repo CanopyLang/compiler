@@ -9,6 +9,8 @@ module Unit.Queries.ParseModuleTest (tests) where
 
 import qualified AST.Source as Src
 import qualified Canopy.Package as Pkg
+import Reporting.Annotation (Located (..))
+import qualified Reporting.Annotation as Ann
 import qualified Control.Exception as Exception
 import qualified Data.ByteString as BS
 import qualified Canopy.Data.Name as Name
@@ -205,8 +207,15 @@ makePackage author project =
 nameMatches :: Name.Name -> String -> Bool
 nameMatches actual expected = Name.toChars actual == expected
 
+-- | Check whether a module has a non-empty export list.
+--
+-- Returns 'True' for @exposing (..)@ (open exports) or for
+-- @exposing (name1, name2, ...)@ with at least one item.
 hasExports :: Src.Module -> Bool
-hasExports _ = True -- Simplified for test
+hasExports modul =
+  case Src._exports modul of
+    Ann.At _ Src.Open -> True
+    Ann.At _ (Src.Explicit items) -> not (null items)
 
 withValidModule :: (FilePath -> IO ()) -> IO ()
 withValidModule action =

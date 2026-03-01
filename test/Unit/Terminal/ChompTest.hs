@@ -181,6 +181,3 @@ testLensOperations =
         modified ^. chunkIndex @?= 1 -- Index unchanged
     ]
 
--- Helper function for error testing
-try :: a -> Either String a
-try x = Right x -- Simplified for testing - in real code would catch errors

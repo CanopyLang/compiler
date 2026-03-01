@@ -9,6 +9,7 @@
 -- @since 0.19.2
 module Unit.Reporting.ErrorHierarchyTest (tests) where
 
+import qualified Data.List as List
 import qualified Reporting.Error.Hierarchy as Hierarchy
 import Test.Tasty
 import Test.Tasty.HUnit
@@ -86,8 +87,8 @@ testOutlineError :: TestTree
 testOutlineError =
   testGroup
     "OutlineError"
-    [ testCase "OutlineReadError carries path and message" $
-        outlineReadErr @?= outlineReadErr,
+    [ testCase "OutlineReadError show output" $
+        show outlineReadErr @?= "OutlineReadError \"canopy.json\" \"file not found\"",
       testCase "OutlineReadError show includes path" $
         assertContains "canopy.json" (show outlineReadErr),
       testCase "OutlineDecodeError show includes path" $
@@ -203,20 +204,4 @@ assertContains :: String -> String -> Assertion
 assertContains needle haystack =
   assertBool
     ("Expected " ++ show haystack ++ " to contain " ++ show needle)
-    (needle `isInfixOf` haystack)
-
--- | Check if a list contains a sublist.
-isInfixOf :: (Eq a) => [a] -> [a] -> Bool
-isInfixOf needle haystack =
-  any (isPrefixOf needle) (tails haystack)
-
--- | Check if a list starts with a prefix.
-isPrefixOf :: (Eq a) => [a] -> [a] -> Bool
-isPrefixOf [] _ = True
-isPrefixOf _ [] = False
-isPrefixOf (x : xs) (y : ys) = x == y && isPrefixOf xs ys
-
--- | Get all tails of a list.
-tails :: [a] -> [[a]]
-tails [] = [[]]
-tails xs@(_ : rest) = xs : tails rest
+    (List.isInfixOf needle haystack)

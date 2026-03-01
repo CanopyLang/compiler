@@ -21,6 +21,7 @@ module Integration.CodeSplitIntegrationTest (tests) where
 import qualified AST.Optimized as Opt
 import qualified Canopy.ModuleName as ModuleName
 import qualified Canopy.Package as Pkg
+import qualified Data.List as List
 import Control.Lens ((^.))
 import qualified Data.ByteString.Builder as BB
 import qualified Data.ByteString.Lazy.Char8 as LChar8
@@ -121,18 +122,7 @@ renderBuilder = LChar8.unpack . BB.toLazyByteString
 
 -- | Check if needle is contained in haystack.
 containsStr :: String -> String -> Bool
-containsStr needle haystack = any (isPrefixOfStr needle) (tailsOf haystack)
-
--- | Check if first list is prefix of second.
-isPrefixOfStr :: String -> String -> Bool
-isPrefixOfStr [] _ = True
-isPrefixOfStr _ [] = False
-isPrefixOfStr (x:xs) (y:ys) = x == y && isPrefixOfStr xs ys
-
--- | All suffixes of a list.
-tailsOf :: [a] -> [[a]]
-tailsOf [] = [[]]
-tailsOf xs@(_ : rest) = xs : tailsOf rest
+containsStr = List.isInfixOf
 
 -- | Run the full pipeline (analyze + generate) and return split output.
 runPipeline :: SplitConfig -> Map.Map Opt.Global Opt.Node -> String -> SplitOutput
