@@ -137,17 +137,11 @@ resolveDefaults ::
 resolveDefaults (Solver.Env cache _ connection registry _) deps = do
   result <- Solver.verify cache connection registry deps
   case result of
-    Solver.Err errorMsg ->
+    Solver.SolverErr errorMsg ->
       pure (Left (FileSystemError ("Solver error: " <> errorMsg)))
-    Solver.NoSolution ->
-      pure (Left (NoSolution (Map.keys deps)))
-    Solver.NoOfflineSolution pkgs ->
-      pure (Left (NoOfflineSolution pkgs))
-    Solver.Ok details ->
-      pure (Right details)
-    Solver.Online details ->
-      pure (Right details)
-    Solver.Offline details ->
+    Solver.SolverNoSolution pkgs ->
+      pure (Left (NoSolution (if null pkgs then Map.keys deps else pkgs)))
+    Solver.SolverOk details ->
       pure (Right details)
 
 -- | Validate environment is ready for initialization operations.

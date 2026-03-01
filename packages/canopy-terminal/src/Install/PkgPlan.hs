@@ -192,12 +192,9 @@ solvePkgDependency solverCtx pkg outline = do
 
       result <- Task.io $ Solver.verify cache connection registry newConstraints
       case result of
-        Solver.Ok solution -> return $ buildPkgSolution pkg solution oldConstraints outline
-        Solver.Online solution -> return $ buildPkgSolution pkg solution oldConstraints outline
-        Solver.Offline solution -> return $ buildPkgSolution pkg solution oldConstraints outline
-        Solver.NoSolution -> Task.throw (Exit.InstallNoOnlinePkgSolution (Pkg.toChars pkg))
-        Solver.NoOfflineSolution _ -> Task.throw (Exit.InstallNoOfflinePkgSolution (Pkg.toChars pkg))
-        Solver.Err exit -> Task.throw (Exit.InstallHadSolverTrouble exit)
+        Solver.SolverOk solution -> return $ buildPkgSolution pkg solution oldConstraints outline
+        Solver.SolverNoSolution _ -> Task.throw (Exit.InstallNoOnlinePkgSolution (Pkg.toChars pkg))
+        Solver.SolverErr exit -> Task.throw (Exit.InstallHadSolverTrouble exit)
 
 -- | Build a package solution from solver results.
 --

@@ -210,15 +210,9 @@ attemptAppSolverAddition :: Stuff.PackageCache -> Solver.Connection -> Registry.
 attemptAppSolverAddition cache connection registry pkg outline = do
   result <- Task.io $ Solver.addToApp cache connection registry pkg outline
   case result of
-    Solver.Ok solution ->
+    Solver.SolverOk solution ->
       return (Changes (detectChanges (Solver.appSolutionOld solution) (Solver.appSolutionNew solution)) (Outline.App (Solver.appSolutionOutline solution)))
-    Solver.Online solution ->
-      return (Changes (detectChanges (Solver.appSolutionOld solution) (Solver.appSolutionNew solution)) (Outline.App (Solver.appSolutionOutline solution)))
-    Solver.Offline solution ->
-      return (Changes (detectChanges (Solver.appSolutionOld solution) (Solver.appSolutionNew solution)) (Outline.App (Solver.appSolutionOutline solution)))
-    Solver.NoSolution ->
+    Solver.SolverNoSolution _ ->
       Task.throw (Exit.InstallNoOnlineAppSolution (Pkg.toChars pkg))
-    Solver.NoOfflineSolution _ ->
-      Task.throw (Exit.InstallNoOfflineAppSolution (Pkg.toChars pkg))
-    Solver.Err exit ->
+    Solver.SolverErr exit ->
       Task.throw (Exit.InstallHadSolverTrouble exit)
