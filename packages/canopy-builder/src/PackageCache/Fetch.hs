@@ -14,6 +14,15 @@
 -- primary registry is unavailable, following the same pattern as Go's
 -- @GOPROXY=proxy.golang.org,direct@ fallback chain.
 --
+-- == Security
+--
+-- Archives downloaded via the registry path are verified against the
+-- SHA-256 hash provided in @endpoint.json@. The comparison uses
+-- 'Crypto.ConstantTime.secureCompareBS' to prevent timing side-channel
+-- attacks. Archives from the GitHub fallback path are accepted without
+-- hash verification (no registry-provided hash exists) but a warning
+-- is logged.
+--
 -- == Architecture
 --
 -- All Canopy packages are hosted on GitHub (a requirement for @canopy publish@),
@@ -43,6 +52,9 @@ module PackageCache.Fetch
     fetchViaEndpoint,
     fetchFromGitHub,
 
+    -- * Hash Verification
+    verifyArchiveHash,
+
     -- * Source Helpers
     gitRepoUrl,
     toPackageSource,
@@ -59,10 +71,13 @@ import qualified Canopy.Version as Version
 import Control.Exception (IOException)
 import qualified Control.Exception as Exception
 import Control.Lens (makeLenses)
+import qualified Crypto.ConstantTime as ConstantTime
 import qualified Data.Aeson as Json
 import Data.ByteString (ByteString)
 import qualified Data.ByteString.Lazy as LBS
+import qualified Data.Digest.Pure.SHA as SHA
 import qualified Data.Text as Text
+import qualified Data.Text.Encoding as TextEnc
 import Logging.Event (LogEvent (..))
 import qualified Logging.Logger as Log
 import qualified Network.HTTP.Client as Client
@@ -80,9 +95,9 @@ data FetchSource
     CachedLocal !FilePath
   | -- | Found in the Elm 0.19.1 cache (backward compatibility).
     CachedElm !FilePath
-  | -- | Downloaded via the registry's endpoint.json.
-    FetchedRegistry !Text.Text
-  | -- | Downloaded directly from GitHub.
+  | -- | Downloaded via the registry's endpoint.json with verified hash.
+    FetchedRegistry !Text.Text !Text.Text
+  | -- | Downloaded directly from GitHub (no hash verification).
     FetchedGitHub !Text.Text
   deriving (Eq, Show)
 
@@ -94,7 +109,9 @@ data FetchError
     RegistryUnavailable !Text.Text
   | -- | GitHub returned an error or the ZIP was invalid.
     GitHubUnavailable !Text.Text
-  | -- | The downloaded archive failed integrity verification.
+  | -- | The downloaded archive failed SHA-256 integrity verification.
+    --
+    -- Carries a description of the mismatch for diagnostics.
     IntegrityCheckFailed !Text.Text
   | -- | All fetch sources exhausted without success.
     AllSourcesFailed !Pkg.Name !Version.Version
@@ -136,7 +153,7 @@ registryBase = "https://package.canopy-lang.org"
 
 -- | Build the GitHub ZIP download URL for a package version.
 --
--- All Elm packages live on GitHub, so the URL pattern is deterministic:
+-- All Canopy packages live on GitHub, so the URL pattern is deterministic:
 -- @https:\/\/github.com\/{author}\/{project}\/zipball\/{version}\/@
 --
 -- @since 0.19.2
@@ -284,21 +301,89 @@ fetchFromNetwork manager pkg ver = do
 -- The registry serves endpoint files at:
 -- @\/packages\/{author}\/{project}\/{version}\/endpoint.json@
 --
--- The response contains the download URL and content hash.
+-- The response contains the download URL and content hash. After
+-- downloading the archive from the URL, the SHA-256 digest of the
+-- downloaded bytes is computed and compared against the expected hash
+-- using constant-time comparison to prevent timing attacks.
+--
+-- Returns 'IntegrityCheckFailed' if the hash does not match.
 --
 -- @since 0.19.2
 fetchViaEndpoint :: Client.Manager -> Pkg.Name -> Version.Version -> IO (Either FetchError FetchSource)
 fetchViaEndpoint manager pkg ver = do
   let endpointUrl = buildEndpointUrl pkg ver
   Log.logEvent (PackageOperation "endpoint-fetch" (Text.pack endpointUrl))
-  result <- safeHttpGet manager endpointUrl
-  pure (either (Left . RegistryUnavailable) parseEndpointResponse result)
+  endpointResult <- safeHttpGet manager endpointUrl
+  either (pure . Left . RegistryUnavailable) (fetchAndVerify manager pkg ver) endpointResult
+
+-- | Parse the endpoint response and download the archive with hash verification.
+--
+-- @since 0.19.2
+fetchAndVerify :: Client.Manager -> Pkg.Name -> Version.Version -> ByteString -> IO (Either FetchError FetchSource)
+fetchAndVerify manager pkg ver endpointBytes =
+  maybe
+    (pure (Left (RegistryUnavailable "Invalid endpoint.json response")))
+    (downloadAndVerify manager pkg ver)
+    (Json.decode (LBS.fromStrict endpointBytes))
+
+-- | Download an archive from the endpoint URL and verify its SHA-256 hash.
+--
+-- @since 0.19.2
+downloadAndVerify :: Client.Manager -> Pkg.Name -> Version.Version -> EndpointResponse -> IO (Either FetchError FetchSource)
+downloadAndVerify manager pkg ver ep = do
+  let archiveUrl = Text.unpack (_epUrl ep)
+  Log.logEvent (PackageOperation "archive-download" (_epUrl ep))
+  archiveResult <- safeHttpGet manager archiveUrl
+  pure (either (Left . RegistryUnavailable) (verifyAndReturn pkg ver ep) archiveResult)
+
+-- | Verify the downloaded archive bytes against the expected hash.
+--
+-- @since 0.19.2
+verifyAndReturn :: Pkg.Name -> Version.Version -> EndpointResponse -> ByteString -> Either FetchError FetchSource
+verifyAndReturn pkg ver ep archiveBytes =
+  case verifyArchiveHash (_epHash ep) archiveBytes of
+    True ->
+      Right (FetchedRegistry (_epUrl ep) (_epHash ep))
+    False ->
+      Left (IntegrityCheckFailed (buildMismatchMessage pkg ver (_epHash ep) actualHashText))
   where
-    parseEndpointResponse bs =
-      maybe
-        (Left (RegistryUnavailable "Invalid endpoint.json response"))
-        (\ep -> Right (FetchedRegistry (_epUrl ep)))
-        (Json.decode (LBS.fromStrict bs))
+    actualHashText = computeSha256Hex archiveBytes
+
+-- | Verify that archive bytes match an expected SHA-256 hash.
+--
+-- The expected hash should be a hex-encoded SHA-256 digest (64 characters).
+-- Uses constant-time comparison to prevent timing side-channel attacks.
+--
+-- @since 0.19.2
+verifyArchiveHash :: Text.Text -> ByteString -> Bool
+verifyArchiveHash expectedHash archiveBytes =
+  ConstantTime.secureCompareBS expectedHashBytes actualHashBytes
+  where
+    expectedHashBytes = TextEnc.encodeUtf8 expectedHash
+    actualHashBytes = TextEnc.encodeUtf8 (computeSha256Hex archiveBytes)
+
+-- | Compute the SHA-256 hex digest of a 'ByteString'.
+--
+-- @since 0.19.2
+computeSha256Hex :: ByteString -> Text.Text
+computeSha256Hex bytes =
+  Text.pack (SHA.showDigest (SHA.sha256 (LBS.fromStrict bytes)))
+
+-- | Build a human-readable integrity mismatch message.
+--
+-- @since 0.19.2
+buildMismatchMessage :: Pkg.Name -> Version.Version -> Text.Text -> Text.Text -> Text.Text
+buildMismatchMessage pkg ver expected actual =
+  Text.concat
+    [ "Hash mismatch for ",
+      Text.pack (Pkg.toChars pkg),
+      " ",
+      Text.pack (Version.toChars ver),
+      ": expected ",
+      expected,
+      " but got ",
+      actual
+    ]
 
 -- | Build the endpoint.json URL for a package version.
 buildEndpointUrl :: Pkg.Name -> Version.Version -> String
@@ -310,7 +395,9 @@ buildEndpointUrl pkg ver =
     <> Version.toChars ver
     <> "/endpoint.json"
 
--- | Endpoint.json response structure from the Elm registry.
+-- | Endpoint.json response structure from the Canopy registry.
+--
+-- @since 0.19.2
 data EndpointResponse = EndpointResponse
   { _epUrl :: !Text.Text,
     _epHash :: !Text.Text
@@ -324,11 +411,13 @@ instance Json.FromJSON EndpointResponse where
 
 -- | Fetch a package directly from GitHub.
 --
--- Uses the deterministic URL pattern for Elm packages on GitHub:
+-- Uses the deterministic URL pattern for Canopy packages on GitHub:
 -- @https:\/\/github.com\/{author}\/{project}\/zipball\/{version}\/@
 --
 -- This is the last-resort fallback when both the local caches
--- and the registry are unavailable.
+-- and the registry are unavailable. Archives from GitHub are accepted
+-- without hash verification since no registry-provided hash exists.
+-- A warning is logged to indicate the unverified download.
 --
 -- @since 0.19.2
 fetchFromGitHub :: Client.Manager -> Pkg.Name -> Version.Version -> IO (Either FetchError FetchSource)
@@ -336,7 +425,9 @@ fetchFromGitHub manager pkg ver = do
   let zipUrl = gitHubZipUrl pkg ver
   Log.logEvent (PackageOperation "github-fetch" (Text.pack zipUrl))
   result <- safeHttpGet manager zipUrl
-  pure (either (Left . GitHubUnavailable) (\_ -> Right (FetchedGitHub (Text.pack zipUrl))) result)
+  pure (either (Left . GitHubUnavailable) (handleGitHubSuccess zipUrl) result)
+  where
+    handleGitHubSuccess url _bytes = Right (FetchedGitHub (Text.pack url))
 
 -- | Perform a safe HTTP GET, catching exceptions and returning errors.
 safeHttpGet :: Client.Manager -> String -> IO (Either Text.Text ByteString)

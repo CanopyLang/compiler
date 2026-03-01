@@ -11,6 +11,7 @@ module Unit.VendorTest (tests) where
 import qualified Canopy.Data.Utf8 as Utf8
 import qualified Canopy.Package as Pkg
 import qualified Canopy.Version as Version
+import qualified Data.ByteString.Char8 as BSC
 import qualified Data.List as List
 import qualified PackageCache.Fetch as Fetch
 import qualified System.Directory as Dir
@@ -25,7 +26,8 @@ tests =
   testGroup
     "Vendor & Offline Fetch Tests"
     [ vendorTests,
-      offlineFetchTests
+      offlineFetchTests,
+      hashVerificationTests
     ]
 
 -- -------------------------------------------------------------------
@@ -159,9 +161,9 @@ testFetchSourceTypes =
       testCase "CachedElm stores path" $
         let src = Fetch.CachedElm "/home/.elm/pkg"
          in show src @?= "CachedElm \"/home/.elm/pkg\"",
-      testCase "FetchedRegistry stores URL" $
-        let src = Fetch.FetchedRegistry "https://example.com/pkg.zip"
-         in show src @?= "FetchedRegistry \"https://example.com/pkg.zip\"",
+      testCase "FetchedRegistry stores URL and hash" $
+        let src = Fetch.FetchedRegistry "https://example.com/pkg.zip" "abc123"
+         in show src @?= "FetchedRegistry \"https://example.com/pkg.zip\" \"abc123\"",
       testCase "FetchedGitHub stores URL" $
         let src = Fetch.FetchedGitHub "https://github.com/canopy/core/zipball/1.0.5/"
          in show src @?= "FetchedGitHub \"https://github.com/canopy/core/zipball/1.0.5/\"",
@@ -194,6 +196,34 @@ testPackageSourceJson =
           @?= "https://github.com/canopy/core",
       testCase "registryBase is canopy-lang.org" $
         Fetch.registryBase @?= "https://package.canopy-lang.org"
+    ]
+
+-- -------------------------------------------------------------------
+-- Hash verification tests
+-- -------------------------------------------------------------------
+
+-- | Verify SHA-256 hash verification for downloaded archives.
+hashVerificationTests :: TestTree
+hashVerificationTests =
+  testGroup
+    "Hash Verification"
+    [ testCase "correct hash passes verification" $ do
+        let content = BSC.pack "hello world"
+            -- SHA-256 of "hello world"
+            expectedHash = "b94d27b9934d3e08a52e52d7da7dabfac484efe37a5380ee9088f7ace2efcde9"
+        assertBool "matching hash should verify" (Fetch.verifyArchiveHash expectedHash content),
+      testCase "wrong hash fails verification" $ do
+        let content = BSC.pack "hello world"
+            wrongHash = "0000000000000000000000000000000000000000000000000000000000000000"
+        assertBool "wrong hash should not verify" (not (Fetch.verifyArchiveHash wrongHash content)),
+      testCase "empty content has correct hash" $ do
+        let content = BSC.pack ""
+            -- SHA-256 of empty string
+            expectedHash = "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        assertBool "empty content hash should verify" (Fetch.verifyArchiveHash expectedHash content),
+      testCase "IntegrityCheckFailed error is constructible" $ do
+        let err = Fetch.IntegrityCheckFailed "Hash mismatch for canopy/core 1.0.5"
+        assertBool "should show IntegrityCheckFailed" ("IntegrityCheckFailed" `isIn` show err)
     ]
 
 -- Helpers
