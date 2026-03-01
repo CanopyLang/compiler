@@ -31,7 +31,7 @@ import qualified Vendor
 -- @since 0.19.1
 createInstallCommand :: Command
 createInstallCommand =
-  Terminal.Command "install" Terminal.Uncommon details example args flags Install.run
+  Terminal.Command "install" (Terminal.Common "Install packages from the registry") details example args flags Install.run
   where
     details =
       "The `install` command fetches packages from <https://package.canopy-lang.org> for\

@@ -4,8 +4,10 @@ module Canopy.Constraint
   ( Constraint,
     exactly,
     anything,
+    fromRange,
     lowerBound,
     toChars,
+    fromChars,
     satisfies,
     check,
     intersect,
@@ -24,6 +26,7 @@ where
 import qualified Canopy.Version as Version
 import Control.Monad (liftM4)
 import Data.Binary (Binary, get, getWord8, put, putWord8)
+import qualified Data.ByteString.Char8 as C8
 import qualified Json.Decode as Decode
 import qualified Json.Encode as Encode
 import Parse.Primitives (Col, Row)
@@ -55,6 +58,30 @@ exactly version =
 anything :: Constraint
 anything =
   Range Version.one LessOrEqual LessOrEqual Version.max
+
+-- | Build a constraint from lower\/upper bounds and their operators.
+--
+-- The boolean arguments indicate whether the operator is @<=@ ('True')
+-- or @<@ ('False').
+--
+-- @since 0.19.2
+fromRange :: Version.Version -> Bool -> Bool -> Version.Version -> Constraint
+fromRange lower lowerLe upperLe upper =
+  Range lower (boolToOp lowerLe) (boolToOp upperLe) upper
+  where
+    boolToOp True = LessOrEqual
+    boolToOp False = Less
+
+-- | Parse a constraint from its textual representation.
+--
+-- Accepts both range format (@"1.0.0 <= v < 2.0.0"@) and
+-- bare version strings (@"1.0.0"@, treated as exact constraint).
+-- Returns 'Nothing' on invalid input.
+--
+-- @since 0.19.2
+fromChars :: String -> Maybe Constraint
+fromChars s =
+  either (const Nothing) Just (Parse.fromByteString parser BadFormat (C8.pack s))
 
 -- TO CHARS
 

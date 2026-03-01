@@ -28,7 +28,7 @@ import qualified Text.PrettyPrint.ANSI.Leijen as PP
 -- @since 0.19.1
 createMakeCommand :: Command
 createMakeCommand =
-  Terminal.Command "make" Terminal.Uncommon details example args flags Make.run
+  Terminal.Command "make" (Terminal.Common "Compile Canopy code into JS or HTML") details example args flags Make.run
   where
     details = "The `make` command compiles Canopy code into JS or HTML:"
     example =
@@ -46,7 +46,7 @@ createMakeCommand =
 -- @since 0.19.1
 createCheckCommand :: Command
 createCheckCommand =
-  Terminal.Command "check" Terminal.Uncommon details example args flags Check.run
+  Terminal.Command "check" (Terminal.Common "Type-check files without generating output") details example args flags Check.run
   where
     details = "The `check` command type-checks Canopy files without generating output:"
     example = PP.indent 4 (PP.green "canopy check src/Main.can")

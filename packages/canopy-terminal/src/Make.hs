@@ -52,6 +52,7 @@ import Control.Lens ((^.))
 import Canopy.Data.NonEmptyList (List)
 import qualified Canopy.Data.NonEmptyList as NE
 import qualified Data.Text as Text
+import qualified Data.Time.Clock as Time
 import qualified Logging.Config as Config
 import Logging.Event (LogEvent (..))
 import qualified Logging.Logger as Log
@@ -83,6 +84,7 @@ import qualified Reporting.Exit as Exit
 import qualified Reporting.Task as Task
 import qualified Stuff
 import qualified System.FilePath as FilePath
+import qualified System.IO as IO
 import qualified Watch
 
 -- | Main entry point for the Make system.
@@ -154,7 +156,10 @@ coordinateBuildWithRoot root paths flags style scope = do
   details <- loadProjectDetailsFromRoot style scope root
   mode <- getDesiredMode (flags ^. debug) (flags ^. optimize)
   let ctx = createBuildContext style root details mode (flags ^. ffiUnsafe) (flags ^. ffiDebug)
+  startTime <- Task.io Time.getCurrentTime
   executeBuildStrategy ctx paths (flags ^. docs) (flags ^. Types.output) (flags ^. noSplit) (flags ^. verifyReproducible)
+  endTime <- Task.io Time.getCurrentTime
+  Task.io (reportBuildTiming startTime endTime)
 
 -- | Load project details from root directory.
 --
@@ -181,12 +186,14 @@ executeBuildStrategy ::
   Task ()
 executeBuildStrategy ctx [] _maybeDocs maybeOutput forceSingleFile doVerify = do
   Task.io (Log.logEvent (BuildStarted (Text.pack "Building exposed modules (no paths provided)")))
+  Task.io (progress "Compiling project...")
   exposed <- getExposedModules (ctx ^. bcDetails)
   let srcDirs = getSrcDirsFromDetails (ctx ^. bcDetails)
   artifacts <- buildFromExposed ctx srcDirs exposed
   emitOutput ctx artifacts maybeOutput forceSingleFile doVerify
 executeBuildStrategy ctx (p : ps) _maybeDocs maybeOutput forceSingleFile doVerify = do
   Task.io (Log.logEvent (BuildStarted (Text.pack ("Building from paths: " <> show (p : ps)))))
+  Task.io (progress ("Compiling " <> p <> concatPaths ps <> "..."))
   artifacts <- buildFromPaths ctx (NE.List p ps)
   emitOutput ctx artifacts maybeOutput forceSingleFile doVerify
 
@@ -299,3 +306,32 @@ getExposedModules (Details.Details _ validOutline _ _ _ _) =
 getSrcDirsFromDetails :: Details.Details -> [Compiler.SrcDir]
 getSrcDirsFromDetails (Details.Details _ _ _ _ srcDirs _) =
   map Compiler.RelativeSrcDir srcDirs
+
+-- | Write a progress message unconditionally to stderr.
+--
+-- These messages are always shown regardless of verbose/logging settings,
+-- so the user can see that the compiler is working.
+progress :: String -> IO ()
+progress msg = IO.hPutStrLn IO.stderr msg
+
+-- | Report build timing to stderr.
+--
+-- Shows the elapsed time after compilation completes.
+reportBuildTiming :: Time.UTCTime -> Time.UTCTime -> IO ()
+reportBuildTiming start end =
+  progress ("Success! (" <> formatSeconds elapsed <> ")")
+  where
+    elapsed = Time.diffUTCTime end start
+
+-- | Format a time difference as seconds with one decimal place.
+formatSeconds :: Time.NominalDiffTime -> String
+formatSeconds dt =
+  show (fromIntegral tenths / 10.0 :: Double) <> "s"
+  where
+    tenths :: Int
+    tenths = round (dt * 10)
+
+-- | Format additional paths for progress message.
+concatPaths :: [FilePath] -> String
+concatPaths [] = ""
+concatPaths ps = " (+" <> show (length ps) <> " more)"

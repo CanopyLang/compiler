@@ -208,6 +208,11 @@ stdoutGuard =
 -- @runAndReport@ on the @_testMain@ value. The test runner handles
 -- sync\/async detection, result formatting, and exit codes.
 --
+-- When the @CANOPY_TEST_FILTER@ environment variable is set, only test
+-- modules whose names contain the filter string (case-insensitive) are
+-- initialized. This allows @canopy test --filter "Router"@ to run a
+-- subset of tests.
+--
 -- @since 0.19.1
 executeSection :: Text
 executeSection =
@@ -224,11 +229,19 @@ executeSection =
       "    process.exit(1);",
       "  }",
       "",
+      "  var filterPattern = (typeof process !== 'undefined' && process.env && process.env.CANOPY_TEST_FILTER) || '';",
+      "  var filterLower = filterPattern.toLowerCase();",
+      "",
       "  var scope = (typeof global !== 'undefined' ? global : this);",
       "  var testScope = scope.Canopy || scope.Elm || {};",
       "  var allTestMains = [];",
+      "  var skippedCount = 0;",
       "",
       "  for (var moduleName of Object.keys(testScope)) {",
+      "    if (filterLower && moduleName.toLowerCase().indexOf(filterLower) === -1) {",
+      "      skippedCount++;",
+      "      continue;",
+      "    }",
       "    var mod = testScope[moduleName];",
       "    if (mod && typeof mod.init === 'function') {",
       "      try {",
@@ -244,8 +257,12 @@ executeSection =
       "    }",
       "  }",
       "",
+      "  if (skippedCount > 0) {",
+      "    process.stderr.write('Skipping ' + skippedCount + ' modules not matching \"' + filterPattern + '\"\\n');",
+      "  }",
+      "",
       "  if (allTestMains.length === 0) {",
-      "    console.error('No test modules found.');",
+      "    console.error('No test modules found' + (filterPattern ? ' matching \"' + filterPattern + '\"' : '') + '.');",
       "    process.exit(1);",
       "  }",
       "",

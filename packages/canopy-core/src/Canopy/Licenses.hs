@@ -3,6 +3,7 @@
 module Canopy.Licenses
   ( License,
     bsd3,
+    toChars,
     encode,
     decoder,
     check,
@@ -25,6 +26,13 @@ newtype License
 bsd3 :: License
 bsd3 =
   License (Json.fromChars "BSD-3-Clause")
+
+-- | Extract the SPDX identifier string from a license.
+--
+-- @since 0.19.2
+toChars :: License -> String
+toChars (License code) =
+  Json.toChars code
 
 encode :: License -> Encode.Value
 encode (License code) =

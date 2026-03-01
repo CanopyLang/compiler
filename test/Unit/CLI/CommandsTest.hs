@@ -92,12 +92,12 @@ testMakeCommand =
     [ testCase "command has correct name" $ do
         let cmd = createMakeCommand
         toName cmd @?= "make",
-      testCase "command is marked as uncommon" $ do
+      testCase "command is marked as common" $ do
         let cmd = createMakeCommand
             Terminal.Command _ summary _ _ _ _ _ = cmd
         case summary of
-          Terminal.Uncommon -> pure ()
-          Terminal.Common s -> assertFailure ("Expected Uncommon but got Common " ++ show s)
+          Terminal.Common _ -> pure ()
+          Terminal.Uncommon -> assertFailure "Expected Common but got Uncommon"
     ]
 
 -- | Test install command creation.
@@ -108,12 +108,12 @@ testInstallCommand =
     [ testCase "command has correct name" $ do
         let cmd = createInstallCommand
         toName cmd @?= "install",
-      testCase "command is marked as uncommon" $ do
+      testCase "command is marked as common" $ do
         let cmd = createInstallCommand
             Terminal.Command _ summary _ _ _ _ _ = cmd
         case summary of
-          Terminal.Uncommon -> pure ()
-          Terminal.Common s -> assertFailure ("Expected Uncommon but got Common " ++ show s)
+          Terminal.Common _ -> pure ()
+          Terminal.Uncommon -> assertFailure "Expected Common but got Uncommon"
     ]
 
 -- | Test publish command creation.

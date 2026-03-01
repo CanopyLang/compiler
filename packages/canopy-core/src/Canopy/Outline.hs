@@ -3,8 +3,12 @@
 
 -- | Pure project outline (canopy.json) for Terminal.
 --
--- Minimal NEW implementation of Outline types without STM/MVar.
 -- Handles reading and writing canopy.json configuration files.
+--
+-- The orphan JSON instances for 'Constraint.Constraint' and
+-- 'Licenses.License' live here because 'Canopy.Outline' owns the
+-- JSON schema definition for @canopy.json@. Moving them to the source
+-- modules would create a dependency on @aeson@ in @canopy-core@.
 --
 -- @since 0.19.1
 module Canopy.Outline
@@ -54,13 +58,53 @@ import qualified System.Directory
 import System.FilePath ((</>))
 import qualified Canopy.Limits as Limits
 
--- Orphan JSON instances for core types used in outline serialization.
+-- | Serialize a constraint as its full range string (e.g. @"1.0.0 <= v < 2.0.0"@).
+--
+-- This preserves the exact constraint during round-trips through canopy.json.
+-- The previous implementation destroyed data by always serializing as @"any"@.
 instance Json.ToJSON Constraint.Constraint where
-  toJSON _ = Json.String "any"
+  toJSON c = Json.String (Text.pack (Constraint.toChars c))
 
+-- | Parse a constraint from either a range string or a bare version.
+--
+-- Accepts both @"1.0.0 <= v < 2.0.0"@ (range format from 'Constraint.toChars')
+-- and @"1.0.0"@ (exact version, for backward compatibility with simple specs).
+-- Fails with a parse error on invalid input instead of silently falling back
+-- to 'Constraint.anything'.
 instance Json.FromJSON Constraint.Constraint where
   parseJSON = Json.withText "Constraint" $ \txt ->
-    fmap Constraint.exactly (versionFromText txt) <|> pure Constraint.anything
+    parseConstraintRange txt
+      <|> fmap Constraint.exactly (versionFromText txt)
+
+-- | Attempt to parse a full range constraint like @"1.0.0 <= v < 2.0.0"@.
+parseConstraintRange :: Text.Text -> Parser Constraint.Constraint
+parseConstraintRange txt =
+  case parseRangeText (Text.unpack txt) of
+    Just c -> pure c
+    Nothing -> fail ("Not a valid constraint range: " ++ Text.unpack txt)
+
+-- | Parse a range string by splitting on @" v "@ and extracting bounds.
+--
+-- Expected format: @"<lower> <op1> v <op2> <upper>"@ where ops are @"<"@ or @"<="@.
+parseRangeText :: String -> Maybe Constraint.Constraint
+parseRangeText s =
+  case words s of
+    [lo, op1, "v", op2, hi] -> buildRange lo op1 op2 hi
+    _ -> Nothing
+  where
+    buildRange lo op1 op2 hi = do
+      lower <- Version.fromChars lo
+      upper <- Version.fromChars hi
+      lowerOp <- parseOp op1
+      upperOp <- parseOp op2
+      pure (buildConstraint lower lowerOp upperOp upper)
+
+    parseOp "<" = Just False
+    parseOp "<=" = Just True
+    parseOp _ = Nothing
+
+    buildConstraint lower lowerLe upperLe upper =
+      Constraint.fromRange lower lowerLe upperLe upper
 
 -- | Parse a version string via the Aeson instance for 'Version.Version'.
 versionFromText :: Text.Text -> Parser Version.Version
@@ -69,9 +113,17 @@ versionFromText txt =
     Json.Success v -> pure v
     Json.Error _ -> fail "not a version"
 
+-- | Serialize a license as its SPDX identifier string.
+--
+-- This preserves the actual license during round-trips through canopy.json.
+-- The previous implementation destroyed data by always serializing as @"BSD-3-Clause"@.
 instance Json.ToJSON Licenses.License where
-  toJSON _ = Json.String "BSD-3-Clause"
+  toJSON license = Json.String (Text.pack (Licenses.toChars license))
 
+-- | Parse a license from its SPDX identifier string.
+--
+-- Validates against the OSI-approved SPDX license list. Rejects
+-- invalid identifiers with a parse error.
 instance Json.FromJSON Licenses.License where
   parseJSON = Json.withText "License" $ \txt ->
     case Licenses.check (JsonStr.fromChars (Text.unpack txt)) of

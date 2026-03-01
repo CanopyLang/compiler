@@ -58,7 +58,7 @@ createReplCommand =
 -- @since 0.19.1
 createFmtCommand :: Command
 createFmtCommand =
-  Terminal.Command "fmt" Terminal.Uncommon details example args flags Fmt.run
+  Terminal.Command "fmt" (Terminal.Common "Format Canopy source files") details example args flags Fmt.run
   where
     details = "The `fmt` command formats Canopy source files:"
     example = PP.indent 4 (PP.green "canopy fmt src/Main.can")
@@ -70,7 +70,7 @@ createFmtCommand =
 -- @since 0.19.1
 createLintCommand :: Command
 createLintCommand =
-  Terminal.Command "lint" Terminal.Uncommon details example args flags Lint.run
+  Terminal.Command "lint" (Terminal.Common "Run static analysis on source files") details example args flags Lint.run
   where
     details = "The `lint` command runs static analysis on Canopy source files:"
     example = PP.indent 4 (PP.green "canopy lint src/Main.can")
@@ -82,7 +82,7 @@ createLintCommand =
 -- @since 0.19.1
 createTestCommand :: Command
 createTestCommand =
-  Terminal.Command "test" Terminal.Uncommon details example args flags Test.run
+  Terminal.Command "test" (Terminal.Common "Run Canopy tests") details example args flags Test.run
   where
     details = "The `test` command runs Canopy test files. Browser tests are auto-detected and run with Playwright:"
     example =

@@ -70,6 +70,7 @@ import qualified Reporting.Exit as Exit
 import qualified Reporting.Task as Task
 import qualified System.Directory as Dir
 import qualified System.FilePath as FilePath
+import qualified System.IO as IO
 
 -- | Generate output based on artifacts and optional target.
 --
@@ -127,6 +128,7 @@ generateJavaScript ::
   Bool ->
   Task ()
 generateJavaScript ctx artifacts target doVerify = do
+  Task.io (IO.hPutStrLn IO.stderr ("Generating JavaScript to " <> target))
   Task.io (Log.logEvent (BuildStarted (Text.pack ("Generating JavaScript to: " <> target))))
   (builder, maybeSourceMap) <- createBuilder ctx artifacts
   verifyIfRequested ctx artifacts doVerify builder
@@ -151,6 +153,7 @@ generateSplitJavaScript ::
   FilePath ->
   Task ()
 generateSplitJavaScript _ctx splitOutput targetDir = do
+  Task.io (IO.hPutStrLn IO.stderr ("Generating split JavaScript to " <> targetDir <> "/"))
   Task.io (Log.logEvent (BuildStarted (Text.pack ("Generating split JS to: " <> targetDir))))
   Task.io (Dir.createDirectoryIfMissing True targetDir)
   Task.io (writeChunks targetDir chunks)
@@ -225,6 +228,7 @@ generateHtml ::
   Bool ->
   Task ()
 generateHtml ctx artifacts target doVerify = do
+  Task.io (IO.hPutStrLn IO.stderr ("Generating HTML to " <> target))
   Task.io (Log.logEvent (BuildStarted (Text.pack ("Generating HTML to: " <> target))))
   mainName <- hasExactlyOneMain artifacts
   (builder, _sourceMap) <- createBuilder ctx artifacts

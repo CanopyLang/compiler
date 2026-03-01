@@ -10,6 +10,7 @@ module Canopy.Version
     bumpMinor,
     bumpMajor,
     toChars,
+    fromChars,
     --
     decoder,
     encode,
@@ -21,6 +22,7 @@ where
 import Control.Monad (liftM3)
 import qualified Data.Aeson as Aeson
 import Data.Binary (Binary, get, getWord8, put, putWord8)
+import qualified Data.ByteString.Char8 as C8
 import qualified Data.Text as Text
 import qualified Data.Text.Encoding as TextEnc
 import qualified Data.Version as Version
@@ -85,6 +87,15 @@ bumpMajor (Version major _minor _patch) =
 toChars :: Version -> String
 toChars (Version major minor patch) =
   show major <> ('.' : (show minor <> ('.' : show patch)))
+
+-- | Parse a version from its string representation (e.g. @"1.2.3"@).
+--
+-- Returns 'Nothing' on invalid input.
+--
+-- @since 0.19.2
+fromChars :: String -> Maybe Version
+fromChars s =
+  either (const Nothing) Just (Parse.fromByteString parser (,) (C8.pack s))
 
 -- JSON
 
