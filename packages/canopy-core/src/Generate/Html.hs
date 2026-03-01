@@ -18,9 +18,12 @@ module Generate.Html
   ( sandwich,
     sandwichWithPrefetch,
     escapeHtmlAttr,
+    escapeForHtml,
+    escapeForJsIdentifier,
   )
 where
 
+import qualified Data.Char as Char
 import Data.ByteString.Builder (Builder)
 import qualified Data.ByteString.Builder as BB
 import qualified Canopy.Data.Name as Name
@@ -39,14 +42,15 @@ import Text.RawString.QQ (r)
 -- @since 0.19.1
 sandwich :: Name.Name -> Builder -> Builder
 sandwich moduleName javascript =
-  let name = Name.toBuilder moduleName
+  let htmlName = escapeForHtml moduleName
+      jsName = escapeForJsIdentifier moduleName
    in [r|<!DOCTYPE HTML>
 <html>
 <head>
   <meta charset="UTF-8">
   <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'unsafe-inline'">
   <title>|]
-        <> name
+        <> htmlName
         <> [r|</title>
   <style>body { padding: 0; margin: 0; }</style>
 </head>
@@ -65,7 +69,7 @@ try {
   window.Elm = window.Canopy;
 
   var app = Canopy.|]
-        <> name
+        <> jsName
         <> [r|.init({ node: document.getElementById("canopy") });
 }
 catch (e)
@@ -99,14 +103,15 @@ catch (e)
 -- @since 0.19.2
 sandwichWithPrefetch :: Name.Name -> Builder -> [FilePath] -> Builder
 sandwichWithPrefetch moduleName javascript chunkFilenames =
-  let name = Name.toBuilder moduleName
+  let htmlName = escapeForHtml moduleName
+      jsName = escapeForJsIdentifier moduleName
    in [r|<!DOCTYPE HTML>
 <html>
 <head>
   <meta charset="UTF-8">
   <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'unsafe-inline'">
   <title>|]
-        <> name
+        <> htmlName
         <> [r|</title>
   <style>body { padding: 0; margin: 0; }</style>
 |]
@@ -127,7 +132,7 @@ try {
   window.Elm = window.Canopy;
 
   var app = Canopy.|]
-        <> name
+        <> jsName
         <> [r|.init({ node: document.getElementById("canopy") });
 }
 catch (e)
@@ -183,3 +188,44 @@ escapeHtmlAttr = concatMap escapeChar
     escapeChar '<' = "&lt;"
     escapeChar '>' = "&gt;"
     escapeChar c = [c]
+
+-- | Escape a module name for safe inclusion in an HTML @\<title\>@ tag.
+--
+-- Replaces @\<@, @>@, @&@, @\"@, and @'@ with their HTML entity
+-- equivalents. This prevents a crafted module name like
+-- @\<\/title\>\<script\>alert(1)\<\/script\>@ from breaking out of
+-- the title element and injecting executable content.
+--
+-- @since 0.19.2
+escapeForHtml :: Name.Name -> Builder
+escapeForHtml moduleName =
+  BB.stringUtf8 (escapeHtmlAttr (Name.toChars moduleName))
+
+-- | Validate and sanitize a module name for use as a JavaScript identifier.
+--
+-- Canopy module names are always valid JS identifiers (uppercase start,
+-- alphanumeric + dots), but this provides defense-in-depth by stripping
+-- any character that is not alphanumeric, underscore, dollar sign, or
+-- dot. If the result is empty after filtering, falls back to a safe
+-- default of @\"Main\"@.
+--
+-- This prevents injection via a crafted module name like
+-- @};alert(1);\/\/@ from executing arbitrary JavaScript.
+--
+-- @since 0.19.2
+escapeForJsIdentifier :: Name.Name -> Builder
+escapeForJsIdentifier moduleName =
+  BB.stringUtf8 (sanitizeJsIdent (Name.toChars moduleName))
+
+-- | Strip characters that are not valid in a JS property access path.
+--
+-- Only allows alphanumeric characters, underscores, dollar signs,
+-- and dots (for dotted module names like @App.Utils@).
+sanitizeJsIdent :: String -> String
+sanitizeJsIdent chars =
+  case filter isJsIdentChar chars of
+    [] -> "Main"
+    safe -> safe
+  where
+    isJsIdentChar c =
+      Char.isAlphaNum c || c == '_' || c == '$' || c == '.'
