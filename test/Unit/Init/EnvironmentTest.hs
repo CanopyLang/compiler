@@ -170,7 +170,7 @@ dependencyResolutionTests =
               Left other -> fail ("Unexpected error type: " <> show other)
           Left _ -> pure (),
       Test.testCase "dependency resolution error types are meaningful" $ do
-        let error1 = SolverFailure (Exit.SolverNoSolution "elm/core@1.0.0")
+        let error1 = SolverFailure (Exit.SolverNoSolution "canopy/core@1.0.0")
             error2 = NoSolution [Pkg.core, Pkg.browser]
             error3 = NoOfflineSolution [Pkg.html]
 

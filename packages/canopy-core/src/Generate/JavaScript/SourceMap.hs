@@ -45,6 +45,8 @@ import Data.ByteString.Builder (Builder)
 import qualified Data.ByteString.Builder as BB
 import qualified Data.List as List
 import qualified Data.Text as Text
+import qualified Data.Vector as Vector
+import Data.Vector (Vector)
 import Data.Word (Word8)
 
 -- | Source Map V3 representation.
@@ -275,15 +277,19 @@ emitVLQGroups value
   where
     remaining = value `shiftR` 5
 
--- | Map a 6-bit value (0–63) to its Base64 character.
+-- | Map a 6-bit value (0--63) to its Base64 character.
+--
+-- Uses 'Vector' indexing for bounds safety. The index is guaranteed
+-- to be in range by the VLQ encoding (masked to 6 bits), but safe
+-- indexing prevents undefined behavior if the invariant is violated.
 encodeBase64Digit :: Int -> Builder
 encodeBase64Digit n =
-  BB.word8 (base64Alphabet !! n)
+  BB.word8 (base64Alphabet Vector.! n)
 
 -- | The Base64 encoding alphabet used by VLQ.
-base64Alphabet :: [Word8]
+base64Alphabet :: Vector Word8
 base64Alphabet =
-  map (fromIntegral . fromEnum)
+  Vector.fromList $ map (fromIntegral . fromEnum)
     ("ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/" :: String)
 
 -- JSON HELPERS

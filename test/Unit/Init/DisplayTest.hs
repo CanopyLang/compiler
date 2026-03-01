@@ -134,7 +134,7 @@ errorFormattingTests =
         rendered
           @?= "-- REGISTRY ERROR\n\nFailed to connect to the package registry.\nCheck your network connection and try again.",
       Test.testCase "formatErrorMessage handles SolverFailure" $ do
-        let err = SolverFailure (Exit.SolverNoSolution "elm/core@1.0.0")
+        let err = SolverFailure (Exit.SolverNoSolution "canopy/core@1.0.0")
             rendered = Doc.toString (Display.formatErrorMessage err)
         rendered
           @?= "-- SOLVER ERROR\n\nDependency resolution failed.\nCheck package constraints and try again."
@@ -197,7 +197,7 @@ integrationTests =
                 NoSolution [Pkg.core],
                 NoOfflineSolution [Pkg.browser],
                 RegistryFailure (Exit.RegistryBadData "Test error"),
-                SolverFailure (Exit.SolverNoSolution "elm/core@1.0.0")
+                SolverFailure (Exit.SolverNoSolution "canopy/core@1.0.0")
               ]
 
         let formatted = map Display.formatErrorMessage errors

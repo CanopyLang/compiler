@@ -17,10 +17,10 @@
 --   "generated": "2026-02-27T12:00:00Z",
 --   "root": { "canopy-json-hash": "sha256:abc123..." },
 --   "packages": {
---     "elm/core": {
+--     "canopy/core": {
 --       "version": "1.0.5",
 --       "hash": "sha256:def456...",
---       "dependencies": { "elm/json": "1.1.3" }
+--       "dependencies": { "canopy/json": "1.1.3" }
 --     }
 --   }
 -- }

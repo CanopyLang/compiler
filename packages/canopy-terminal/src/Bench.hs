@@ -28,6 +28,7 @@ where
 import qualified Canopy.Details as Details
 import qualified Compiler
 import Control.Lens (makeLenses, (^.))
+import qualified Data.List.NonEmpty as NE
 import qualified Data.ByteString.Builder as BB
 import qualified Data.ByteString.Lazy as LBS
 import qualified Data.Time.Clock as Clock
@@ -178,8 +179,8 @@ reportResultsTerminal results = do
   where
     times = map _brTotal results
     avg = sum times / fromIntegral (length times)
-    minTime = minimum times
-    maxTime = maximum times
+    minTime = maybe 0 minimum (NE.nonEmpty times)
+    maxTime = maybe 0 maximum (NE.nonEmpty times)
 
 -- | Report a single iteration.
 reportIteration :: BenchResult -> IO ()

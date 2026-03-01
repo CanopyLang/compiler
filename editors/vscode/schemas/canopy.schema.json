@@ -1,6 +1,6 @@
 {
   "$schema": "http://json-schema.org/draft-07/schema#",
-  "title": "JSON schema for elm.json configuration files",
+  "title": "JSON schema for canopy.json configuration files",
   "definitions": {
     "exactDependency": {
       "description": "Dependencies are specified by [author name]/[package name]: [exact version].",

@@ -94,7 +94,7 @@ compileParallelWithInstrumentation compileOne statuses graph = do
       totalTime = realToFrac $ diffUTCTime overallEnd overallStart
       allThreadIds = concatMap levelStatsThreadIds levelStatsList
       uniqueThreads = length $ Map.keys $ Map.fromList [(tid, ()) | tid <- allThreadIds]
-      maxConcurrency = maximum $ map (length . levelStatsThreadIds) levelStatsList
+      maxConcurrency = foldr max 0 (map (length . levelStatsThreadIds) levelStatsList)
 
       stats = ParallelStats
         { parallelStatsTotalModules = totalModules,

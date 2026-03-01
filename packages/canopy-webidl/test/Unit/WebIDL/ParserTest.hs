@@ -14,6 +14,10 @@ import Test.Tasty.HUnit
 import WebIDL.AST
 import WebIDL.Parser
 
+-- | Extract the first element from a list, failing the test if empty.
+firstOf :: (HasCallStack) => String -> [a] -> IO a
+firstOf label [] = assertFailure ("expected at least one " ++ label)
+firstOf _ (x : _) = pure x
 
 tests :: TestTree
 tests = testGroup "WebIDL.Parser"
@@ -89,7 +93,8 @@ operationTests = testGroup "Operation parsing"
       case result of
         Right (DefInterface intf) -> do
           length (intfMembers intf) @?= 1
-          case head (intfMembers intf) of
+          member <- firstOf "member" (intfMembers intf)
+          case member of
             IMOperation op -> do
               opName op @?= Just "cloneNode"
               opArguments op @?= []
@@ -100,12 +105,14 @@ operationTests = testGroup "Operation parsing"
       let input = "interface Element { Element? querySelector(DOMString selectors); };"
       let result = parseDefinition input
       case result of
-        Right (DefInterface intf) ->
-          case head (intfMembers intf) of
+        Right (DefInterface intf) -> do
+          member <- firstOf "member" (intfMembers intf)
+          case member of
             IMOperation op -> do
               opName op @?= Just "querySelector"
               length (opArguments op) @?= 1
-              argName (head (opArguments op)) @?= "selectors"
+              arg <- firstOf "argument" (opArguments op)
+              argName arg @?= "selectors"
             _ -> assertFailure "Expected IMOperation"
         _ -> assertFailure "Expected DefInterface"
 
@@ -113,11 +120,12 @@ operationTests = testGroup "Operation parsing"
       let input = "interface Node { void normalize(optional boolean deep = true); };"
       let result = parseDefinition input
       case result of
-        Right (DefInterface intf) ->
-          case head (intfMembers intf) of
+        Right (DefInterface intf) -> do
+          member <- firstOf "member" (intfMembers intf)
+          case member of
             IMOperation op -> do
               length (opArguments op) @?= 1
-              let arg = head (opArguments op)
+              arg <- firstOf "argument" (opArguments op)
               argOptional arg @?= True
               argDefault arg @?= Just (DVBool True)
             _ -> assertFailure "Expected IMOperation"
@@ -127,8 +135,9 @@ operationTests = testGroup "Operation parsing"
       let input = "interface HTMLCollection { getter Element? item(unsigned long index); };"
       let result = parseDefinition input
       case result of
-        Right (DefInterface intf) ->
-          case head (intfMembers intf) of
+        Right (DefInterface intf) -> do
+          member <- firstOf "member" (intfMembers intf)
+          case member of
             IMOperation op ->
               opSpecial op @?= Just SpecialGetter
             _ -> assertFailure "Expected IMOperation"
@@ -138,8 +147,9 @@ operationTests = testGroup "Operation parsing"
       let input = "interface URL { static boolean canParse(USVString url); };"
       let result = parseDefinition input
       case result of
-        Right (DefInterface intf) ->
-          case head (intfMembers intf) of
+        Right (DefInterface intf) -> do
+          member <- firstOf "member" (intfMembers intf)
+          case member of
             IMStaticMember (IMOperation op) ->
               opName op @?= Just "canParse"
             _ -> assertFailure "Expected IMStaticMember"
@@ -153,8 +163,9 @@ attributeTests = testGroup "Attribute parsing"
       let input = "interface Element { attribute DOMString id; };"
       let result = parseDefinition input
       case result of
-        Right (DefInterface intf) ->
-          case head (intfMembers intf) of
+        Right (DefInterface intf) -> do
+          member <- firstOf "member" (intfMembers intf)
+          case member of
             IMAttribute attr -> do
               attrName attr @?= "id"
               attrReadonly attr @?= False
@@ -165,8 +176,9 @@ attributeTests = testGroup "Attribute parsing"
       let input = "interface Node { readonly attribute unsigned short nodeType; };"
       let result = parseDefinition input
       case result of
-        Right (DefInterface intf) ->
-          case head (intfMembers intf) of
+        Right (DefInterface intf) -> do
+          member <- firstOf "member" (intfMembers intf)
+          case member of
             IMAttribute attr -> do
               attrName attr @?= "nodeType"
               attrReadonly attr @?= True
@@ -177,8 +189,9 @@ attributeTests = testGroup "Attribute parsing"
       let input = "interface HTMLElement { inherit attribute DOMString dir; };"
       let result = parseDefinition input
       case result of
-        Right (DefInterface intf) ->
-          case head (intfMembers intf) of
+        Right (DefInterface intf) -> do
+          member <- firstOf "member" (intfMembers intf)
+          case member of
             IMAttribute attr -> do
               attrName attr @?= "dir"
               attrInherit attr @?= True
@@ -212,7 +225,7 @@ dictionaryTests = testGroup "Dictionary parsing"
       let result = parseDefinition input
       case result of
         Right (DefDictionary dict) -> do
-          let member = head (dictMembers dict)
+          member <- firstOf "dictionary member" (dictMembers dict)
           dmRequired member @?= True
           dmName member @?= "method"
         _ -> assertFailure "Expected DefDictionary"
@@ -258,8 +271,9 @@ typeTests = testGroup "Type parsing"
       let input = "interface Test { attribute boolean flag; };"
       let result = parseDefinition input
       case result of
-        Right (DefInterface intf) ->
-          case head (intfMembers intf) of
+        Right (DefInterface intf) -> do
+          member <- firstOf "member" (intfMembers intf)
+          case member of
             IMAttribute attr ->
               attrType attr @?= TyPrimitive PrimBoolean
             _ -> assertFailure "Expected IMAttribute"
@@ -269,8 +283,9 @@ typeTests = testGroup "Type parsing"
       let input = "interface Test { attribute DOMString? name; };"
       let result = parseDefinition input
       case result of
-        Right (DefInterface intf) ->
-          case head (intfMembers intf) of
+        Right (DefInterface intf) -> do
+          member <- firstOf "member" (intfMembers intf)
+          case member of
             IMAttribute attr ->
               attrType attr @?= TyNullable (TyString StrDOMString)
             _ -> assertFailure "Expected IMAttribute"
@@ -280,8 +295,9 @@ typeTests = testGroup "Type parsing"
       let input = "interface Test { attribute sequence<Element> children; };"
       let result = parseDefinition input
       case result of
-        Right (DefInterface intf) ->
-          case head (intfMembers intf) of
+        Right (DefInterface intf) -> do
+          member <- firstOf "member" (intfMembers intf)
+          case member of
             IMAttribute attr ->
               attrType attr @?= TySequence (TyIdentifier "Element")
             _ -> assertFailure "Expected IMAttribute"
@@ -291,8 +307,9 @@ typeTests = testGroup "Type parsing"
       let input = "interface Test { Promise<Response> fetch(); };"
       let result = parseDefinition input
       case result of
-        Right (DefInterface intf) ->
-          case head (intfMembers intf) of
+        Right (DefInterface intf) -> do
+          member <- firstOf "member" (intfMembers intf)
+          case member of
             IMOperation op ->
               opReturnType op @?= TyPromise (TyIdentifier "Response")
             _ -> assertFailure "Expected IMOperation"
@@ -302,8 +319,9 @@ typeTests = testGroup "Type parsing"
       let input = "interface Test { attribute record<DOMString, any> headers; };"
       let result = parseDefinition input
       case result of
-        Right (DefInterface intf) ->
-          case head (intfMembers intf) of
+        Right (DefInterface intf) -> do
+          member <- firstOf "member" (intfMembers intf)
+          case member of
             IMAttribute attr ->
               attrType attr @?= TyRecord StrDOMString TyAny
             _ -> assertFailure "Expected IMAttribute"
@@ -313,8 +331,9 @@ typeTests = testGroup "Type parsing"
       let input = "interface Test { attribute (DOMString or Blob) data; };"
       let result = parseDefinition input
       case result of
-        Right (DefInterface intf) ->
-          case head (intfMembers intf) of
+        Right (DefInterface intf) -> do
+          member <- firstOf "member" (intfMembers intf)
+          case member of
             IMAttribute attr ->
               attrType attr @?= TyUnion [TyString StrDOMString, TyIdentifier "Blob"]
             _ -> assertFailure "Expected IMAttribute"
@@ -324,8 +343,9 @@ typeTests = testGroup "Type parsing"
       let input = "interface Test { attribute ArrayBuffer buffer; };"
       let result = parseDefinition input
       case result of
-        Right (DefInterface intf) ->
-          case head (intfMembers intf) of
+        Right (DefInterface intf) -> do
+          member <- firstOf "member" (intfMembers intf)
+          case member of
             IMAttribute attr ->
               attrType attr @?= TyBuffer BufArrayBuffer
             _ -> assertFailure "Expected IMAttribute"
@@ -341,7 +361,8 @@ extendedAttributeTests = testGroup "Extended attribute parsing"
       case result of
         Right (DefInterface intf) -> do
           length (intfExtended intf) @?= 1
-          case head (intfExtended intf) of
+          ea <- firstOf "extended attribute" (intfExtended intf)
+          case ea of
             EAIdent name val -> do
               name @?= "Exposed"
               val @?= "Window"
@@ -360,8 +381,9 @@ extendedAttributeTests = testGroup "Extended attribute parsing"
       let input = "interface Element { constructor(); };"
       let result = parseDefinition input
       case result of
-        Right (DefInterface intf) ->
-          case head (intfMembers intf) of
+        Right (DefInterface intf) -> do
+          member <- firstOf "member" (intfMembers intf)
+          case member of
             IMConstructor ctor ->
               ctorArguments ctor @?= []
             _ -> assertFailure "Expected IMConstructor"

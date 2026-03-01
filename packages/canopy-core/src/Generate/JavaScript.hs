@@ -57,6 +57,7 @@ import qualified Generate.JavaScript.StringPool as StringPool
 import qualified Generate.Mode as Mode
 import qualified Reporting.Annotation as Ann
 import qualified Reporting.Doc as Doc
+import qualified Reporting.InternalError as InternalError
 import qualified Reporting.Render.Type as RT
 import qualified Reporting.Render.Type.Localizer as Localizer
 import Prelude hiding (cycle, print)
@@ -668,14 +669,14 @@ computeAltPkg currentPkg moduleName isKernelModule isKernelPkg
 
 reportMissingGlobal :: Graph -> Opt.Global -> Opt.Global -> Opt.Node
 reportMissingGlobal graph currentGlobal altGlobal =
-  let allKeys = Map.keys graph
-      errorMsg = "\n=== GLOBALHELP DEBUG ===\n" <>
-               "Missing: " <> show currentGlobal <> "\n" <>
-               "Also tried: " <> show altGlobal <> "\n" <>
-               "Total keys: " <> show (length allKeys) <> "\n" <>
-               "First 20: " <> show (take 20 allKeys) <> "\n" <>
-               "========================"
-  in error errorMsg
+  InternalError.report
+    "Generate.JavaScript.reportMissingGlobal"
+    (Text.pack msg)
+    (Text.pack ctx)
+  where
+    allKeys = Map.keys graph
+    msg = "Missing global: " <> show currentGlobal <> ", also tried: " <> show altGlobal
+    ctx = "Total keys: " <> show (length allKeys) <> ", first 20: " <> show (take 20 allKeys)
 
 dispatchNode :: Mode.Mode -> Graph -> Opt.Global -> (Set Opt.Global -> State -> State) -> Opt.Node -> State -> State
 dispatchNode mode graph currentGlobal addDeps globalInGraph state =

@@ -118,7 +118,8 @@ mixinResolutionTests = testGroup "Mixin resolution"
       let defs = [mixin, interface, includes]
       let resolved = resolveMixins defs
 
-      case head (filter isInterface resolved) of
+      iface <- firstOf "interface" (filter isInterface resolved)
+      case iface of
         DefInterface intf -> do
           length (intfMembers intf) @?= 2
         _ -> assertFailure "Expected interface"
@@ -130,7 +131,8 @@ mixinResolutionTests = testGroup "Mixin resolution"
       let defs = [mixin, interface, includes]
       let resolved = resolveMixins defs
 
-      case head (filter isInterface resolved) of
+      iface <- firstOf "interface" (filter isInterface resolved)
+      case iface of
         DefInterface intf ->
           length (intfMembers intf) @?= 0
         _ -> assertFailure "Expected interface"
@@ -149,7 +151,8 @@ partialMergeTests = testGroup "Partial interface merging"
       let defs = [main, partial]
       let merged = mergePartials defs
 
-      case head (filter isInterface merged) of
+      iface <- firstOf "interface" (filter isInterface merged)
+      case iface of
         DefInterface intf -> do
           intfName intf @?= "Element"
           length (intfMembers intf) @?= 2
@@ -165,15 +168,21 @@ partialMergeTests = testGroup "Partial interface merging"
       let defs = [main, partial]
       let merged = mergePartials defs
 
-      case head (filter isDictionary merged) of
-        DefDictionary dict -> do
-          dictName dict @?= "Options"
-          length (dictMembers dict) @?= 2
+      dict <- firstOf "dictionary" (filter isDictionary merged)
+      case dict of
+        DefDictionary d -> do
+          dictName d @?= "Options"
+          length (dictMembers d) @?= 2
         _ -> assertFailure "Expected dictionary"
   ]
 
 
--- Helper predicates
+-- Helper predicates and extractors
+
+-- | Extract the first element from a list, failing the test if empty.
+firstOf :: (HasCallStack) => String -> [a] -> IO a
+firstOf label [] = assertFailure ("expected at least one " ++ label)
+firstOf _ (x : _) = pure x
 
 isInterface :: Definition -> Bool
 isInterface (DefInterface _) = True

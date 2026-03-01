@@ -38,21 +38,21 @@ testLoadElmCore =
           Just ifaces -> do
             let size = Map.size ifaces
             assertBool ("Expected >0 modules, got " ++ show size) (size > 0),
-      testCase "elm/core contains Basics module" $ do
+      testCase "canopy/core contains Basics module" $ do
         result <- PackageCache.loadElmCoreInterfaces
         case result of
           Nothing -> assertFailure "canopy/core not installed"
           Just ifaces -> do
             let hasBasics = any isBasics (Map.keys ifaces)
             assertBool "canopy/core should contain Basics" hasBasics,
-      testCase "elm/core contains List module" $ do
+      testCase "canopy/core contains List module" $ do
         result <- PackageCache.loadElmCoreInterfaces
         case result of
           Nothing -> assertFailure "canopy/core not installed"
           Just ifaces -> do
             let hasList = any isList (Map.keys ifaces)
             assertBool "canopy/core should contain List" hasList,
-      testCase "elm/core contains standard modules" $ do
+      testCase "canopy/core contains standard modules" $ do
         result <- PackageCache.loadElmCoreInterfaces
         case result of
           Nothing -> assertFailure "canopy/core not installed"
@@ -70,8 +70,8 @@ testLoadPackageInterfaces :: TestTree
 testLoadPackageInterfaces =
   testGroup
     "specific package loading"
-    [ testCase "load elm/core by version" $ do
-        result <- PackageCache.loadPackageInterfaces "elm" "core" "1.0.5"
+    [ testCase "load canopy/core by version" $ do
+        result <- PackageCache.loadPackageInterfaces "canopy" "core" "1.0.5"
         case result of
           Nothing -> assertFailure "core 1.0.5 not installed"
           Just ifaces -> do
@@ -87,7 +87,7 @@ testLoadPackageInterfaces =
           Nothing -> return ()
           Just _ -> assertFailure "Expected Nothing for nonexistent package",
       testCase "nonexistent version returns Nothing" $ do
-        result <- PackageCache.loadPackageInterfaces "elm" "core" "99.99.99"
+        result <- PackageCache.loadPackageInterfaces "canopy" "core" "99.99.99"
         case result of
           Nothing -> return ()
           Just _ -> assertFailure "Expected Nothing for nonexistent version"
@@ -150,7 +150,7 @@ testMissingPackages =
       testCase "missing project returns Nothing" $ do
         result <-
           PackageCache.loadPackageInterfaces
-            "elm"
+            "canopy"
             "missing-project"
             "1.0.0"
         case result of
@@ -172,7 +172,7 @@ testSearchOrder =
     [ testCase "searches canopy path before elm path" $ do
         -- This test validates the search order by checking that
         -- loadPackageInterfaces tries ~/.canopy before ~/.elm
-        result <- PackageCache.loadPackageInterfaces "elm" "core" "1.0.5"
+        result <- PackageCache.loadPackageInterfaces "canopy" "core" "1.0.5"
         case result of
           Nothing -> assertFailure "core should be found in one location"
           Just _ -> return ()
