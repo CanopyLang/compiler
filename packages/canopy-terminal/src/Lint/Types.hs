@@ -17,12 +17,15 @@ module Lint.Types
 
     -- * Rules
     LintRule (..),
+    ruleToString,
+    ruleFromString,
 
     -- * Fixes
     LintFix (..),
 
     -- * Severity
     Severity (..),
+    severityFromString,
 
     -- * Configuration
     RuleConfig (..),
@@ -143,3 +146,66 @@ data LintFix
         _fixEndLine :: !Int
       }
   deriving (Eq, Show)
+
+-- | Convert a 'LintRule' to its kebab-case string identifier.
+--
+-- These identifiers are used in canopy.json lint configuration
+-- and in the @--rule@ CLI flag.
+--
+-- @since 0.19.2
+ruleToString :: LintRule -> String
+ruleToString UnusedImport = "unused-import"
+ruleToString BooleanCase = "boolean-case"
+ruleToString UnnecessaryParens = "unnecessary-parens"
+ruleToString DropConcatOfLists = "drop-concat-of-lists"
+ruleToString UseConsOverConcat = "use-cons-over-concat"
+ruleToString MissingTypeAnnotation = "missing-type-annotation"
+ruleToString ShadowedVariable = "shadowed-variable"
+ruleToString UnusedLetVariable = "unused-let-variable"
+ruleToString PartialFunction = "partial-function"
+ruleToString UnsafeCoerce = "unsafe-coerce"
+ruleToString ListAppendInLoop = "list-append-in-loop"
+ruleToString UnnecessaryLazyPattern = "unnecessary-lazy-pattern"
+ruleToString StringConcatInLoop = "string-concat-in-loop"
+ruleToString TooManyArguments = "too-many-arguments"
+ruleToString LongFunction = "long-function"
+ruleToString MagicNumber = "magic-number"
+ruleToString InconsistentNaming = "inconsistent-naming"
+
+-- | Parse a kebab-case string into a 'LintRule'.
+--
+-- Returns 'Nothing' if the string does not match any known rule.
+--
+-- @since 0.19.2
+ruleFromString :: String -> Maybe LintRule
+ruleFromString "unused-import" = Just UnusedImport
+ruleFromString "boolean-case" = Just BooleanCase
+ruleFromString "unnecessary-parens" = Just UnnecessaryParens
+ruleFromString "drop-concat-of-lists" = Just DropConcatOfLists
+ruleFromString "use-cons-over-concat" = Just UseConsOverConcat
+ruleFromString "missing-type-annotation" = Just MissingTypeAnnotation
+ruleFromString "shadowed-variable" = Just ShadowedVariable
+ruleFromString "unused-let-variable" = Just UnusedLetVariable
+ruleFromString "partial-function" = Just PartialFunction
+ruleFromString "unsafe-coerce" = Just UnsafeCoerce
+ruleFromString "list-append-in-loop" = Just ListAppendInLoop
+ruleFromString "unnecessary-lazy-pattern" = Just UnnecessaryLazyPattern
+ruleFromString "string-concat-in-loop" = Just StringConcatInLoop
+ruleFromString "too-many-arguments" = Just TooManyArguments
+ruleFromString "long-function" = Just LongFunction
+ruleFromString "magic-number" = Just MagicNumber
+ruleFromString "inconsistent-naming" = Just InconsistentNaming
+ruleFromString _ = Nothing
+
+-- | Parse a severity level from a string.
+--
+-- Accepts @"off"@, @"info"@, @"warn"\/"warning"@, and @"error"@.
+--
+-- @since 0.19.2
+severityFromString :: String -> Maybe Severity
+severityFromString "off" = Just Off
+severityFromString "info" = Just SevInfo
+severityFromString "warn" = Just SevWarning
+severityFromString "warning" = Just SevWarning
+severityFromString "error" = Just SevError
+severityFromString _ = Nothing

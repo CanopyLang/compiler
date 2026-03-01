@@ -71,6 +71,7 @@ import qualified AST.Source as Src
 import qualified Data.ByteString as BS
 import qualified Data.Map.Strict as Map
 import Data.Maybe (mapMaybe)
+import qualified Lint.Config as Config
 import qualified Lint.Fix as Fix
 import qualified Lint.Report as Report
 import qualified Lint.Rules as Rules
@@ -134,7 +135,7 @@ defaultLintConfig = LintConfig
 run :: [FilePath] -> Flags -> IO ()
 run paths flags = do
   files <- resolveTargetFiles paths
-  let config = defaultLintConfig
+  config <- Config.loadLintConfig defaultLintConfig "."
   results <- mapM (lintFile config flags) files
   let allWarnings = concat results
   case _reportFormat flags of

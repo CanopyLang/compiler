@@ -144,6 +144,7 @@ tests:
       - QuickCheck
       - temporary
       - text
+      - aeson
     when:
       - condition: false
         other-modules: Paths_canopy
