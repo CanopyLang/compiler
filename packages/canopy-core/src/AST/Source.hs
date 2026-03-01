@@ -126,6 +126,8 @@ module AST.Source
     Manager (..),
     Docs (..),
     Comment (..),
+    RawComment (..),
+    CommentKind (..),
     Exposing (..),
     Exposed (..),
     Privacy (..),
@@ -136,6 +138,8 @@ import qualified AST.Utils.Binop as Binop
 import qualified AST.Utils.Shader as Shader
 import qualified Canopy.Float as EF
 import qualified Canopy.String as ES
+import qualified Data.ByteString as BS
+import Data.Word (Word32)
 import Canopy.Data.Name (Name)
 import qualified Canopy.Data.Name as Name
 import qualified Parse.Primitives as Parse
@@ -533,7 +537,11 @@ data Module = Module
     _unions :: [Ann.Located Union],
     _aliases :: [Ann.Located Alias],
     _binops :: [Ann.Located Infix],
-    _effects :: Effects
+    _effects :: Effects,
+    -- | All non-doc comments extracted from the source file.
+    -- Sorted by starting position, used by the formatter to
+    -- re-emit comments in the correct locations.
+    _comments :: [RawComment]
   }
   deriving (Show)
 
@@ -553,7 +561,7 @@ data Module = Module
 --
 -- @since 0.19.1
 getName :: Module -> Name
-getName (Module maybeName _ _ _ _ _ _ _ _ _) =
+getName (Module maybeName _ _ _ _ _ _ _ _ _ _) =
   case maybeName of
     Just (Ann.At _ moduleName) ->
       moduleName
@@ -728,6 +736,28 @@ data Docs
 -- @since 0.19.1
 newtype Comment
   = Comment Parse.Snippet
+  deriving (Show)
+
+-- | Distinguishes line comments (@-- ...@) from block comments (@{- ... -}@).
+--
+-- @since 0.19.2
+data CommentKind
+  = LineComment
+  | BlockComment
+  deriving (Show, Eq)
+
+-- | A non-doc comment captured during source scanning.
+--
+-- Carries the comment kind, its source region (for positioning),
+-- and the raw text content (without the @--@ or @{- -}@ delimiters).
+--
+-- @since 0.19.2
+data RawComment = RawComment
+  { _rcKind :: !CommentKind,
+    _rcRow :: !Word32,
+    _rcCol :: !Word32,
+    _rcText :: !BS.ByteString
+  }
   deriving (Show)
 
 -- EXPOSING

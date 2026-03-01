@@ -14,6 +14,7 @@ import qualified Canopy.Compiler.Imports as Imports
 import qualified Canopy.Package as Pkg
 import qualified Data.ByteString as BS
 import qualified Canopy.Data.Name as Name
+import qualified Parse.Comment as Comment
 import qualified Parse.Declaration as Decl
 import qualified Parse.Keyword as Keyword
 import Parse.Primitives hiding (State, fromByteString)
@@ -32,8 +33,18 @@ import qualified Canopy.String as ES
 fromByteString :: ProjectType -> BS.ByteString -> Either SyntaxError.Error Src.Module
 fromByteString projectType source =
   case Parse.fromByteString (chompModule projectType) SyntaxError.ModuleBadEnd source of
-    Right modul -> checkModule projectType modul
+    Right modul -> attachComments source (checkModule projectType modul)
     Left err -> Left (SyntaxError.ParseError err)
+
+-- | Attach extracted comments to a parsed module.
+--
+-- Runs the standalone comment scanner on the raw source bytes and
+-- stores the result in the module's '_comments' field. This is a
+-- separate pass from the parser to avoid modifying the parser's
+-- hot path.
+attachComments :: BS.ByteString -> Either SyntaxError.Error Src.Module -> Either SyntaxError.Error Src.Module
+attachComments source =
+  fmap (\m -> m { Src._comments = Comment.extractComments source })
 
 -- PROJECT TYPE
 
@@ -108,14 +119,16 @@ checkModule projectType (Module maybeHeader imports foreignImports infixes decls
   let (values, unions, aliases, ports) = categorizeDecls [] [] [] [] decls
    in case maybeHeader of
         Just (Header name effects exports docs) ->
-          Src.Module (Just name) exports (toDocs docs decls) imports foreignImports values unions aliases infixes
-            <$> checkEffects projectType ports effects
+          fmap (\eff -> Src.Module (Just name) exports (toDocs docs decls) imports foreignImports values unions aliases infixes eff [])
+            (checkEffects projectType ports effects)
         Nothing ->
-          Right . Src.Module Nothing (Ann.At Ann.one Src.Open) (Src.NoDocs Ann.one) imports foreignImports values unions aliases infixes $
-            ( case ports of
-                [] -> Src.NoEffects
-                _ : _ -> Src.Ports ports
-            )
+          Right $
+            Src.Module Nothing (Ann.At Ann.one Src.Open) (Src.NoDocs Ann.one) imports foreignImports values unions aliases infixes
+              ( case ports of
+                  [] -> Src.NoEffects
+                  _ : _ -> Src.Ports ports
+              )
+              []
 
 checkEffects :: ProjectType -> [Src.Port] -> Effects -> Either SyntaxError.Error Src.Effects
 checkEffects projectType ports effects =

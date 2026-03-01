@@ -123,7 +123,8 @@ emptyModule =
       Src._unions = [],
       Src._aliases = [],
       Src._binops = [],
-      Src._effects = Src.NoEffects
+      Src._effects = Src.NoEffects,
+      Src._comments = []
     }
 
 -- | Helper to make a located expression at region one.

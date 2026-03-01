@@ -45,7 +45,7 @@ addVars module_ (Env.Env home vs ts cs bs qvs qts qcs) =
     Result.ok $ Env.Env home vs2 ts cs bs qvs qts qcs
 
 collectVars :: Src.Module -> Result i w (Map.Map Name.Name Env.Var)
-collectVars (Src.Module _ _ _ _ _foreignImports values _ _ _ effects) =
+collectVars (Src.Module _ _ _ _ _foreignImports values _ _ _ effects _) =
   let addDecl dict (Ann.At _ (Src.Value (Ann.At region name) _ _ _)) =
         Dups.insert name region (Env.TopLevel region) dict
       -- Foreign imports are handled separately in addFFIToEnv, not as regular top-level vars
@@ -77,7 +77,7 @@ toEffectDups effects =
 -- ADD TYPES
 
 addTypes :: Src.Module -> Env.Env -> Result i w Env.Env
-addTypes (Src.Module _ _ _ _ _ _ unions aliases _ _) (Env.Env home vs ts cs bs qvs qts qcs) =
+addTypes (Src.Module _ _ _ _ _ _ unions aliases _ _ _) (Env.Env home vs ts cs bs qvs qts qcs) =
   let addAliasDups dups (Ann.At _ (Src.Alias (Ann.At region name) _ _)) = Dups.insert name region () dups
       addUnionDups dups (Ann.At _ (Src.Union (Ann.At region name) _ _)) = Dups.insert name region () dups
       typeNameDups =
@@ -207,7 +207,7 @@ addFreeVars freeVars (Ann.At region tipe) =
 -- ADD CTORS
 
 addCtors :: Src.Module -> Env.Env -> Result i w (Env.Env, Unions, Aliases)
-addCtors (Src.Module _ _ _ _ _ _ unions aliases _ _) env@(Env.Env home vs ts cs bs qvs qts qcs) =
+addCtors (Src.Module _ _ _ _ _ _ unions aliases _ _ _) env@(Env.Env home vs ts cs bs qvs qts qcs) =
   do
     unionInfo <- traverse (canonicalizeUnion env) unions
     aliasInfo <- traverse (canonicalizeAlias env) aliases

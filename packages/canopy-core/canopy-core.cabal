@@ -141,6 +141,7 @@ library
       Optimize.Module
       Optimize.Names
       Optimize.Port
+      Parse.Comment
       Parse.Declaration
       Parse.Expression
       Parse.Interpolation

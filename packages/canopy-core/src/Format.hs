@@ -56,6 +56,7 @@ import qualified Data.ByteString as BS
 import qualified Data.ByteString.Builder as BB
 import qualified Data.ByteString.Lazy as BL
 import qualified Data.List as List
+import Data.Word (Word32)
 import Canopy.Data.Name (Name)
 import qualified Canopy.Data.Name as Name
 import Data.Text (Text)
@@ -140,14 +141,22 @@ formatModule config modul =
   renderToText config (renderModule config modul)
 
 -- | Render a full module to a Doc, separating sections with blank lines.
+--
+-- Comments are interleaved with declarations by source position.
+-- Comments that fall outside the declaration region (e.g., between
+-- the header and imports) are rendered between the appropriate
+-- sections.
 renderModule :: FormatConfig -> Src.Module -> PP.Doc
 renderModule config modul =
   PP.vcat (PP.punctuate (PP.line <> PP.line) (List.filter notEmpty sections))
   where
+    allComments = Src._comments modul
+    importEnd = importsEndRow modul
     sections =
       [ renderHeader modul
-      , renderImports modul
+      , renderImportsWithComments modul allComments importEnd
       , renderDeclarations config modul
+      , renderTrailingComments config modul
       ]
     notEmpty doc = not (null (PP.displayS (PP.renderPretty 1.0 80 (PP.plain doc)) ""))
 
@@ -183,7 +192,7 @@ formatBytes config bytes =
 -- so that files without a module declaration remain unmodified in that
 -- respect.
 renderHeader :: Src.Module -> PP.Doc
-renderHeader (Src.Module maybeName exports _ _ _ _ _ _ _ effects) =
+renderHeader (Src.Module maybeName exports _ _ _ _ _ _ _ effects _) =
   maybe PP.empty (renderNamedHeader effects exports) maybeName
 
 -- | Render a named module header line.
@@ -207,8 +216,56 @@ effectsKeyword (Src.Manager _ _) = PP.text "effect module"
 
 -- | Render all import declarations, sorted alphabetically by module name.
 renderImports :: Src.Module -> PP.Doc
-renderImports (Src.Module _ _ _ imports _ _ _ _ _ _) =
+renderImports (Src.Module _ _ _ imports _ _ _ _ _ _ _) =
   renderSortedImports (List.sortBy compareImports imports)
+
+-- | Render imports preceded by any comments that fall between the
+-- header and the first declaration.
+renderImportsWithComments :: Src.Module -> [Src.RawComment] -> Word32 -> PP.Doc
+renderImportsWithComments modul allComments impEnd =
+  stackNonEmpty (preImportDocs ++ [renderImports modul] ++ postImportDocs)
+  where
+    preImportDocs = map (renderRawComment . snd) preImportComments
+    postImportDocs = map (renderRawComment . snd) postImportComments
+    (preImportComments, postImportComments) = List.partition isBeforeImports betweenComments
+    betweenComments = [(Src._rcRow c, c) | c <- allComments, isBetweenHeaderAndDecls c modul]
+    isBeforeImports (row, _) = row <= impEnd
+
+-- | Determine whether a comment falls between the header and declarations.
+isBetweenHeaderAndDecls :: Src.RawComment -> Src.Module -> Bool
+isBetweenHeaderAndDecls rc modul =
+  Src._rcRow rc > headerEndRow modul && Src._rcRow rc < declStartRow modul
+
+-- | Get the ending row of the module header (0 if no header).
+headerEndRow :: Src.Module -> Word32
+headerEndRow (Src.Module Nothing _ _ _ _ _ _ _ _ _ _) = 0
+headerEndRow (Src.Module (Just (Ann.At (Ann.Region _ (Ann.Position row _)) _)) _ _ _ _ _ _ _ _ _ _) = row
+
+-- | Get the starting row of the first declaration.
+declStartRow :: Src.Module -> Word32
+declStartRow (Src.Module _ _ _ _ _ values unions aliases binops _ _) =
+  minimum (maxBound : allRows)
+  where
+    allRows = map locRow values ++ map locRow unions ++ map locRow aliases ++ map locRow binops
+    locRow (Ann.At (Ann.Region (Ann.Position row _) _) _) = row
+
+-- | Get the ending row of the last import.
+importsEndRow :: Src.Module -> Word32
+importsEndRow (Src.Module _ _ _ [] _ _ _ _ _ _ _) = 0
+importsEndRow (Src.Module _ _ _ imports _ _ _ _ _ _ _) =
+  maximum (map importRow imports)
+  where
+    importRow (Src.Import (Ann.At (Ann.Region _ (Ann.Position row _)) _) _ _ _) = row
+
+-- | Render comments that appear after all declarations.
+renderTrailingComments :: FormatConfig -> Src.Module -> PP.Doc
+renderTrailingComments _config (Src.Module _ _ _ _ _ values unions aliases binops _ comments) =
+  stackNonEmpty (map renderRawComment trailingComments)
+  where
+    lastDeclRow = maximum (0 : allRows)
+    allRows = map locRow values ++ map locRow unions ++ map locRow aliases ++ map locRow binops
+    locRow (Ann.At (Ann.Region _ (Ann.Position row _)) _) = row
+    trailingComments = filter (\c -> Src._rcRow c > lastDeclRow) comments
 
 -- | Render a sorted list of imports with newlines between them.
 renderSortedImports :: [Src.Import] -> PP.Doc
@@ -284,17 +341,89 @@ formatExposing (Src.Explicit exposed) =
 -- Declaration rendering
 -- ---------------------------------------------------------------------------
 
--- | Render all top-level declarations with blank lines between them.
+-- | Render all top-level declarations with interleaved comments.
+--
+-- Merges declarations and non-doc comments into a single list
+-- sorted by source position, so comments appear at their original
+-- locations relative to declarations.
 renderDeclarations :: FormatConfig -> Src.Module -> PP.Doc
-renderDeclarations config (Src.Module _ _ _ _ _ values unions aliases binops effects) =
-  stackNonEmpty allDecls
+renderDeclarations config (Src.Module _ _ _ _ _ values unions aliases binops effects comments) =
+  stackNonEmpty (map snd sortedItems)
   where
-    allDecls =
-      map (formatUnion config . Ann.toValue) unions
-        ++ map (formatAlias config . Ann.toValue) aliases
-        ++ map (formatInfix . Ann.toValue) binops
-        ++ map (formatValue config . Ann.toValue) values
-        ++ formatEffects effects
+    declItems = declsWithRows config values unions aliases binops effects
+    commentItems = commentsInRange declRange comments
+    declRange = itemRange declItems
+    sortedItems = List.sortBy (\(r1, _) (r2, _) -> compare r1 r2) (declItems ++ commentItems)
+
+-- | Build (row, Doc) pairs for all declarations.
+declsWithRows ::
+  FormatConfig ->
+  [Ann.Located Src.Value] ->
+  [Ann.Located Src.Union] ->
+  [Ann.Located Src.Alias] ->
+  [Ann.Located Src.Infix] ->
+  Src.Effects ->
+  [(Word32, PP.Doc)]
+declsWithRows config values unions aliases binops effects =
+  map (locatedDoc (formatUnion config)) unions
+    ++ map (locatedDoc (formatAlias config)) aliases
+    ++ map (locatedDoc formatInfix) binops
+    ++ map (locatedDoc (formatValue config)) values
+    ++ effectDocs effects
+
+-- | Extract starting row and render a located declaration.
+locatedDoc :: (a -> PP.Doc) -> Ann.Located a -> (Word32, PP.Doc)
+locatedDoc render (Ann.At (Ann.Region (Ann.Position row _) _) val) =
+  (row, render val)
+
+-- | Build (row, Doc) pairs for effect declarations (ports).
+effectDocs :: Src.Effects -> [(Word32, PP.Doc)]
+effectDocs Src.NoEffects = []
+effectDocs (Src.Manager _ _) = []
+effectDocs (Src.FFI _) = []
+effectDocs (Src.Ports ports) = map portDoc ports
+
+-- | Extract starting row and render a port declaration.
+portDoc :: Src.Port -> (Word32, PP.Doc)
+portDoc port@(Src.Port (Ann.At (Ann.Region (Ann.Position row _) _) _) _) =
+  (row, formatPort port)
+
+-- | Filter comments whose row falls within a given range.
+--
+-- Returns (row, Doc) pairs for each comment in range, suitable for
+-- merging with declaration items and sorting by position.
+commentsInRange :: (Word32, Word32) -> [Src.RawComment] -> [(Word32, PP.Doc)]
+commentsInRange (lo, hi) =
+  map renderPositionedComment . filter (inRange lo hi)
+
+-- | Check whether a comment's row falls within [lo, hi].
+inRange :: Word32 -> Word32 -> Src.RawComment -> Bool
+inRange lo hi rc = Src._rcRow rc >= lo && Src._rcRow rc <= hi
+
+-- | Convert a 'RawComment' to a positioned Doc.
+renderPositionedComment :: Src.RawComment -> (Word32, PP.Doc)
+renderPositionedComment rc =
+  (Src._rcRow rc, renderRawComment rc)
+
+-- | Render a raw comment to a Doc, restoring its delimiters.
+renderRawComment :: Src.RawComment -> PP.Doc
+renderRawComment (Src.RawComment Src.LineComment _ _ text) =
+  PP.text "--" <> PP.text (bytesToString text)
+renderRawComment (Src.RawComment Src.BlockComment _ _ text) =
+  PP.text "{-" <> PP.text (bytesToString text) <> PP.text "-}"
+
+-- | Decode a raw ByteString to a String for rendering.
+bytesToString :: BS.ByteString -> String
+bytesToString = Text.unpack . TE.decodeUtf8
+
+-- | Compute the row range (min, max) of a list of positioned items.
+--
+-- Returns @(maxBound, 0)@ for empty lists so that no comments match.
+itemRange :: [(Word32, a)] -> (Word32, Word32)
+itemRange [] = (maxBound, 0)
+itemRange items = (minimum rows, maximum rows)
+  where
+    rows = map fst items
 
 -- | Stack a list of Docs with blank lines, filtering out empty ones.
 stackNonEmpty :: [PP.Doc] -> PP.Doc

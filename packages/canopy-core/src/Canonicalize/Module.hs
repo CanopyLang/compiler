@@ -75,7 +75,7 @@ loadFFIContentWithRoot = FFI.loadFFIContentWithRoot
 --
 -- @since 0.19.1
 canonicalize :: Pkg.Name -> ProjectType -> Map ModuleName.Raw Interface.Interface -> Map JsSourcePath JsSource -> Src.Module -> Result i [Warning.Warning] Can.Module
-canonicalize pkg projectType ifaces ffiContentMap modul@(Src.Module _ exports docs imports foreignImports values _ _ binops effects) =
+canonicalize pkg projectType ifaces ffiContentMap modul@(Src.Module _ exports docs imports foreignImports values _ _ binops effects _) =
   do
     let home = ModuleName.Canonical pkg (Src.getName modul)
     let cbinops = Map.fromList (fmap canonicalizeBinop binops)
@@ -110,7 +110,7 @@ canonicalize pkg projectType ifaces ffiContentMap modul@(Src.Module _ exports do
 --
 -- @deprecated Use canonicalize with pre-loaded FFI content instead
 canonicalizeWithIO :: Pkg.Name -> Map ModuleName.Raw Interface.Interface -> Src.Module -> IO (Result i [Warning.Warning] Can.Module)
-canonicalizeWithIO pkg ifaces modul@(Src.Module _ _ _ _ foreignImports _ _ _ _ _) = do
+canonicalizeWithIO pkg ifaces modul@(Src.Module _ _ _ _ foreignImports _ _ _ _ _ _) = do
   -- Pre-load FFI content
   ffiContentMap <- FFI.loadFFIContent foreignImports
   return $ canonicalize pkg Application ifaces ffiContentMap modul
