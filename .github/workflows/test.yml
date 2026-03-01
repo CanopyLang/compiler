@@ -70,8 +70,8 @@ jobs:
     - name: Build
       run: stack build --test --no-run-tests
 
-    - name: Run tests
-      run: stack test --coverage
+    - name: Run tests with timing
+      run: stack test --coverage --ta="--time"
 
     - name: Check coverage thresholds
       if: matrix.os == 'ubuntu-latest'
@@ -156,7 +156,6 @@ jobs:
     - name: Run HLint
       run: |
         hlint packages/ test/ --report=hlint-report.html
-      continue-on-error: true
 
     - name: Upload HLint report
       uses: actions/upload-artifact@v3

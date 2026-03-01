@@ -1,0 +1,46 @@
+name: Nightly Stress Test
+
+on:
+  schedule:
+    - cron: '0 3 * * *'
+  workflow_dispatch:
+
+jobs:
+  stress-test:
+    name: Stress test (3 runs)
+    runs-on: ubuntu-latest
+
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Setup Haskell
+      uses: haskell/actions/setup@v2
+      with:
+        ghc-version: '9.8.4'
+        enable-stack: true
+        stack-version: 'latest'
+
+    - name: Cache Stack dependencies
+      uses: actions/cache@v3
+      with:
+        path: |
+          ~/.stack
+          .stack-work
+        key: nightly-stack-${{ hashFiles('stack.yaml', 'package.yaml') }}
+        restore-keys: |
+          nightly-stack-
+
+    - name: Install dependencies
+      run: stack build --test --only-dependencies
+
+    - name: Build
+      run: stack build --test --no-run-tests
+
+    - name: Stress run (iteration 1 of 3)
+      run: stack test --ta="--time"
+
+    - name: Stress run (iteration 2 of 3)
+      run: stack test --ta="--time"
+
+    - name: Stress run (iteration 3 of 3)
+      run: stack test --ta="--time"
