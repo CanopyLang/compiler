@@ -3,6 +3,7 @@ module Main (main) where
 -- Import test modules
 
 import qualified Golden.JsGenGolden as JsGenGolden
+import qualified Golden.SecurityGolden as SecurityGolden
 import qualified Golden.ParseAliasGolden as ParseAliasGolden
 import qualified Golden.ParseExprGolden as ParseExprGolden
 import qualified Golden.ParseModuleGolden as ParseModuleGolden
@@ -335,5 +336,6 @@ goldenTests =
       ParseExprGolden.tests,
       ParseTypeGolden.tests,
       ParseAliasGolden.tests,
-      JsGenGolden.tests
+      JsGenGolden.tests,
+      SecurityGolden.tests
     ]
