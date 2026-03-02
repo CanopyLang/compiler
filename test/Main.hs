@@ -129,6 +129,7 @@ import qualified Unit.Type.UnionFindTest as UnionFindTest
 import qualified Unit.FFI.EscapeTest as FFIEscapeTest
 import qualified Unit.FFI.ManifestTest as FFIManifestTest
 import qualified Unit.FFI.ResolveTest as FFIResolveTest
+import qualified Unit.FFI.StaticAnalysisTest as FFIStaticAnalysisTest
 import qualified Unit.FFI.ValidatorTest as FFIValidatorTest
 import qualified Unit.Terminal.Lint.ConfigTest as LintConfigTest
 import qualified Unit.Terminal.Lint.RulesTest as LintRulesTest
@@ -283,6 +284,7 @@ unitTests =
       FFIEscapeTest.tests,
       FFIManifestTest.tests,
       FFIResolveTest.tests,
+      FFIStaticAnalysisTest.tests,
       FFIValidatorTest.tests,
       LintConfigTest.tests,
       LintRulesTest.tests,

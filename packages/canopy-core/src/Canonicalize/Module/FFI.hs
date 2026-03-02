@@ -36,9 +36,12 @@ import qualified Data.Map.Strict as Map
 import qualified Data.List as List
 import qualified Data.Text as Text
 import qualified Data.Text.IO as TextIO
+import qualified FFI.StaticAnalysis as SA
 import qualified FFI.TypeParser as TypeParser
 import FFI.Types (JsSourcePath (..), JsSource (..), FFIBinding (..), FFIFuncName (..), FFITypeAnnotation (..))
 import qualified Foreign.FFI as FFI
+import qualified Language.JavaScript.Parser as JSParser
+import qualified Language.JavaScript.Parser.AST as JSAST
 import qualified Reporting.Annotation as Ann
 import qualified Reporting.Error.Canonicalize as Error
 import qualified Reporting.Result as Result
@@ -154,7 +157,54 @@ parseAndAddFFI :: Env.Env -> ModuleName.Canonical -> Name.Name -> FilePath -> An
 parseAndAddFFI env ffiModuleName aliasName jsPath region jsContent =
   case parseJavaScriptContentPure jsContent (Name.toChars aliasName) of
     Left err -> Result.throw (Error.FFIParseError region jsPath err)
-    Right bindings -> validateAndAddFunctions env ffiModuleName aliasName jsPath region bindings
+    Right bindings -> do
+      emitStaticAnalysisWarnings jsPath jsContent bindings
+      validateAndAddFunctions env ffiModuleName aliasName jsPath region bindings
+
+-- | Run static analysis on the JavaScript source and emit warnings.
+--
+-- Parses the JavaScript with @language-javascript@ to get the AST, then
+-- runs 'SA.analyzeFFIFile' against the declared type annotations. Each
+-- warning is emitted through the 'Result' monad so it reaches the user
+-- without blocking compilation.
+--
+-- @since 0.20.0
+emitStaticAnalysisWarnings :: FilePath -> Text.Text -> [FFIBinding] -> Result i [Warning.Warning] ()
+emitStaticAnalysisWarnings jsPath jsContent bindings =
+  case JSParser.parseModule (Text.unpack jsContent) jsPath of
+    Left _ -> Result.ok ()
+    Right ast ->
+      let stmts = extractStatements ast
+          declaredTypes = buildDeclaredTypeMap bindings
+          analysis = SA.analyzeFFIFile stmts declaredTypes
+          pathText = Text.pack jsPath
+       in traverse_ (emitOneWarning pathText) (SA._analysisWarnings analysis)
+
+-- | Extract top-level statements from a parsed JavaScript AST.
+extractStatements :: JSAST.JSAST -> [JSAST.JSStatement]
+extractStatements (JSAST.JSAstProgram stmts _) = stmts
+extractStatements (JSAST.JSAstModule items _) =
+  [stmt | JSAST.JSModuleStatementListItem stmt <- items]
+extractStatements (JSAST.JSAstStatement stmt _) = [stmt]
+extractStatements _ = []
+
+-- | Build a map of declared FFI types from parsed bindings.
+buildDeclaredTypeMap :: [FFIBinding] -> Map.Map Text.Text FFI.FFIType
+buildDeclaredTypeMap = Map.fromList . concatMap bindingToType
+  where
+    bindingToType binding =
+      case TypeParser.parseType (unFFITypeAnnotation (_bindingTypeAnnotation binding)) of
+        Just ffiType -> [(unFFIFuncName (_bindingFuncName binding), ffiType)]
+        Nothing -> []
+
+-- | Emit a single static analysis warning through the Result monad.
+emitOneWarning :: Text.Text -> SA.FFIWarning -> Result i [Warning.Warning] ()
+emitOneWarning path warning = Result.warn (Warning.FFIStaticAnalysis path warning)
+
+-- | Traverse a list, executing an action for each element and discarding results.
+traverse_ :: (a -> Result i [Warning.Warning] ()) -> [a] -> Result i [Warning.Warning] ()
+traverse_ _ [] = Result.ok ()
+traverse_ f (x : xs) = f x >> traverse_ f xs
 
 -- Validate and add FFI functions to environment
 validateAndAddFunctions :: Env.Env -> ModuleName.Canonical -> Name.Name -> FilePath -> Ann.Region -> [FFIBinding] -> Result i [Warning.Warning] Env.Env

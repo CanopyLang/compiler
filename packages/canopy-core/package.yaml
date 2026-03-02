@@ -124,6 +124,7 @@ library:
     - Editor.Integration
     - FFI.Manifest
     - FFI.Resolve
+    - FFI.StaticAnalysis
     - FFI.Types
     - FFI.Validator
     - File
