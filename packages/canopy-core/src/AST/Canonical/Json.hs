@@ -24,6 +24,7 @@ import AST.Canonical.Types
     Ctor (..),
     CtorOpts (..),
     FieldType (..),
+    GuardInfo (..),
     Type (..),
     Union (..),
   )
@@ -219,3 +220,16 @@ instance Aeson.FromJSON Type where
           <*> o Aeson..: "args"
           <*> o Aeson..: "aliasType"
       _ -> fail ("Unknown Type tag: " ++ tag)
+
+instance Aeson.ToJSON GuardInfo where
+  toJSON (GuardInfo argIndex narrowType) =
+    Aeson.object
+      [ "argIndex" Aeson..= argIndex,
+        "narrowType" Aeson..= narrowType
+      ]
+
+instance Aeson.FromJSON GuardInfo where
+  parseJSON = Aeson.withObject "GuardInfo" $ \o ->
+    GuardInfo
+      <$> o Aeson..: "argIndex"
+      <*> o Aeson..: "narrowType"

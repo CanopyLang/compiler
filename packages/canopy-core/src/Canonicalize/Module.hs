@@ -99,8 +99,9 @@ canonicalize pkg projectType ifaces ffiContentMap modul@(Src.Module _ exports do
     cvalues <- canonicalizeValues envWithFFI values
     ceffects <- Effects.canonicalize envWithFFI values cunions effects
     cexports <- canonicalizeExports values cunions caliases cbinops ceffects exports
+    cguards <- canonicalizeGuards envWithFFI values
 
-    return $ Can.Module home cexports docs cvalues cunions caliases cbinops ceffects lazySet
+    return $ Can.Module home cexports docs cvalues cunions caliases cbinops ceffects lazySet cguards
 
 -- | Legacy canonicalize function for backward compatibility
 --
@@ -226,6 +227,27 @@ canonicalizeValues env values =
     nodes <- traverse (toNodeOne env) values
     detectCycles (Graph.stronglyConnComp nodes)
 
+-- | Canonicalize guard annotations from source values.
+--
+-- For each value that has a @guards@ annotation, the narrow type is
+-- canonicalized and stored in a map keyed by the function name.
+--
+-- @since 0.20.0
+canonicalizeGuards :: Env.Env -> [Ann.Located Src.Value] -> Result i [Warning.Warning] (Map Name.Name Can.GuardInfo)
+canonicalizeGuards env values =
+  Map.fromList <$> traverse (canonicalizeOneGuard env) guardedValues
+  where
+    guardedValues = [(name, ga) | Ann.At _ (Src.Value (Ann.At _ name) _ _ _ (Just ga)) <- values]
+
+-- | Canonicalize a single guard annotation.
+--
+-- @since 0.20.0
+canonicalizeOneGuard :: Env.Env -> (Name.Name, Src.GuardAnnotation) -> Result i [Warning.Warning] (Name.Name, Can.GuardInfo)
+canonicalizeOneGuard env (name, Src.GuardAnnotation argIdx srcNarrowType) =
+  do
+    (Can.Forall _ canNarrowType) <- Type.toAnnotation env srcNarrowType
+    Result.ok (name, Can.GuardInfo argIdx canNarrowType)
+
 detectCycles :: [Graph.SCC NodeTwo] -> Result i w Can.Decls
 detectCycles sccs =
   case sccs of
@@ -276,7 +298,7 @@ type NodeTwo =
   (Can.Def, Name.Name, [Name.Name])
 
 toNodeOne :: Env.Env -> Ann.Located Src.Value -> Result i [Warning.Warning] NodeOne
-toNodeOne env (Ann.At _ (Src.Value aname@(Ann.At _ name) srcArgs body maybeType)) =
+toNodeOne env (Ann.At _ (Src.Value aname@(Ann.At _ name) srcArgs body maybeType _maybeGuard)) =
   case maybeType of
     Nothing ->
       do
@@ -352,7 +374,7 @@ canonicalizeExports values unions aliases binops effects (Ann.At region exposing
         Can.Export <$> Dups.detect Error.ExportDuplicate (Dups.unions infos)
 
 valueToName :: Ann.Located Src.Value -> (Name.Name, ())
-valueToName (Ann.At _ (Src.Value (Ann.At _ name) _ _ _)) =
+valueToName (Ann.At _ (Src.Value (Ann.At _ name) _ _ _ _)) =
   (name, ())
 
 checkExposed ::

@@ -38,7 +38,7 @@ checkDropConcatOfLists modul =
 
 -- | Search a value definition for @[x] ++ [y]@ patterns.
 checkConcatInValue :: Src.Value -> [LintWarning]
-checkConcatInValue (Src.Value _ _ expr _) =
+checkConcatInValue (Src.Value _ _ expr _ _) =
   checkConcatInExpr expr
 
 -- | Walk an expression looking for @[a] ++ [b]@ binop chains.
@@ -88,7 +88,7 @@ checkUseConsOverConcat modul =
 
 -- | Search a value definition for @[a] ++ list@ patterns.
 checkConsInValue :: Src.Value -> [LintWarning]
-checkConsInValue (Src.Value _ _ expr _) =
+checkConsInValue (Src.Value _ _ expr _ _) =
   checkConsInExpr expr
 
 -- | Walk an expression looking for @[a] ++ list@ binop chains.
@@ -140,7 +140,7 @@ checkListAppendInLoop modul =
 
 -- | Check a value for list append in fold patterns.
 checkAppendInValue :: Src.Value -> [LintWarning]
-checkAppendInValue (Src.Value _ _ expr _) =
+checkAppendInValue (Src.Value _ _ expr _ _) =
   checkAppendInExpr expr
 
 -- | Walk expression tree for @++@ inside lambda (fold callback).

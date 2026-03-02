@@ -65,7 +65,7 @@ moduleToDocsPair (Build.Fresh modName iface _) =
 --
 -- @since 0.19.1
 docsModuleFromInterface :: ModuleName.Raw -> Interface.Interface -> Docs.Module
-docsModuleFromInterface modName (Interface.Interface _ values unions aliases binops) =
+docsModuleFromInterface modName (Interface.Interface _ values unions aliases binops _) =
   Docs.Module
     { Docs._name = modName
     , Docs._comment = emptyComment

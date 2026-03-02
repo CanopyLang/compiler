@@ -32,7 +32,7 @@ optimizeModuleQuery ::
   Map Name.Name Can.Annotation ->
   Can.Module ->
   IO (Either QueryError Opt.LocalGraph)
-optimizeModuleQuery annotations canonModule@(Can.Module modName _ _ _ _ _ _ _ _) = do
+optimizeModuleQuery annotations canonModule@(Can.Module modName _ _ _ _ _ _ _ _ _) = do
   let modNameText = Text.pack (show modName)
   Log.logEvent (OptimizeStarted modNameText)
 

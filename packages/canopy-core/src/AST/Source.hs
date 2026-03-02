@@ -118,6 +118,7 @@ module AST.Source
     Import (..),
     ForeignImport (..),
     Value (..),
+    GuardAnnotation (..),
     Union (..),
     Alias (..),
     Infix (..),
@@ -628,11 +629,32 @@ data ForeignImport = ForeignImport
 -- | Value definition in source code.
 --
 -- Represents top-level value and function definitions with optional
--- type annotations. Similar to 'Def' but used specifically in the
--- module's values list.
+-- type annotations and guard annotations. Similar to 'Def' but used
+-- specifically in the module's values list.
+--
+-- The guard annotation (when present) declares that the function is a
+-- type guard: when used as an @if@ condition, the compiler narrows the
+-- argument type in the truthy branch.
 --
 -- @since 0.19.1
-data Value = Value (Ann.Located Name) [Pattern] Expr (Maybe Type)
+data Value = Value (Ann.Located Name) [Pattern] Expr (Maybe Type) (Maybe GuardAnnotation)
+  deriving (Show)
+
+-- | Guard annotation for type-narrowing functions.
+--
+-- When a function is annotated with @guards@, the compiler treats it as
+-- a type guard. In @if guardFn arg then ... else ...@, the argument is
+-- narrowed to 'guardNarrowType' in the truthy branch.
+--
+-- Syntax: @isOk : Result err ok -> Bool guards Ok ok@
+--
+-- @since 0.20.0
+data GuardAnnotation = GuardAnnotation
+  { -- | Which argument is narrowed (0-based index).
+    _guardArgIndex :: !Int,
+    -- | The type that the argument is narrowed to when the guard returns True.
+    _guardNarrowType :: !Type
+  }
   deriving (Show)
 
 -- | Union type definition in source code.

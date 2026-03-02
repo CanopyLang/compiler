@@ -118,7 +118,7 @@ attemptDeclOrExpr inputLines =
 processDeclaration :: Lines -> ByteString -> PD.Decl -> CategorizedInput
 processDeclaration inputLines src decl =
   case decl of
-    PD.Value _ (Ann.At _ (Src.Value (Ann.At _ name) _ _ _)) ->
+    PD.Value _ (Ann.At _ (Src.Value (Ann.At _ name) _ _ _ _)) ->
       ifDone inputLines (Decl name src)
     PD.Union _ (Ann.At _ (Src.Union (Ann.At _ name) _ _)) ->
       ifDone inputLines (Type name src)

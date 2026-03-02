@@ -130,6 +130,8 @@ module AST.Canonical
     -- definitions
     Def (..),
     Decls (..),
+    -- guards
+    GuardInfo (..),
     -- patterns
     Pattern,
     Pattern_ (..),
@@ -174,6 +176,7 @@ import AST.Canonical.Types
     Expr_ (..),
     FieldType (..),
     FieldUpdate (..),
+    GuardInfo (..),
     Manager (Cmd, Fx, SubManager),
     Module (..),
     Pattern,

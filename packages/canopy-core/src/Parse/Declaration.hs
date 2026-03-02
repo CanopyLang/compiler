@@ -9,6 +9,7 @@ module Parse.Declaration
 
 import qualified Canopy.Data.Name as Name
 
+import AST.Source (GuardAnnotation (..))
 import qualified AST.Source as Src
 import qualified AST.Utils.Binop as Binop
 import qualified Parse.Expression as Expr
@@ -79,25 +80,46 @@ valueDecl maybeDocs start =
                 do  word1 0x3A {-:-} SyntaxError.DeclDefEquals
                     Space.chompAndCheckIndent SyntaxError.DeclDefSpace SyntaxError.DeclDefIndentType
                     (tipe, _) <- specialize SyntaxError.DeclDefType Type.expression
+                    maybeGuard <- chompOptionalGuard
                     Space.checkFreshLine SyntaxError.DeclDefNameRepeat
                     defName <- chompMatchingName name
                     Space.chompAndCheckIndent SyntaxError.DeclDefSpace SyntaxError.DeclDefIndentEquals
-                    chompDefArgsAndBody maybeDocs start defName (Just tipe) []
+                    chompDefArgsAndBody maybeDocs start defName (Just tipe) maybeGuard []
               ,
-                chompDefArgsAndBody maybeDocs start (Ann.at start end name) Nothing []
+                chompDefArgsAndBody maybeDocs start (Ann.at start end name) Nothing Nothing []
               ]
 
 
-chompDefArgsAndBody :: Maybe Src.Comment -> Ann.Position -> Ann.Located Name.Name -> Maybe Src.Type -> [Src.Pattern] -> Space.Parser SyntaxError.DeclDef Decl
-chompDefArgsAndBody maybeDocs start name tipe revArgs =
+-- | Optionally parse a @guards@ clause after a type annotation.
+--
+-- Syntax: @guards ConstructorName typeArgs...@
+--
+-- The guard clause narrows the first argument to the specified type
+-- when the function is used as an @if@ condition.
+--
+-- @since 0.20.0
+chompOptionalGuard :: Parser SyntaxError.DeclDef (Maybe GuardAnnotation)
+chompOptionalGuard =
+  oneOfWithFallback
+    [ do  Space.chompAndCheckIndent SyntaxError.DeclDefSpace SyntaxError.DeclDefIndentType
+          Keyword.guards_ SyntaxError.DeclDefEquals
+          Space.chompAndCheckIndent SyntaxError.DeclDefSpace SyntaxError.DeclDefIndentType
+          (narrowType, _) <- specialize SyntaxError.DeclDefType Type.expression
+          return (Just (GuardAnnotation 0 narrowType))
+    ]
+    Nothing
+
+
+chompDefArgsAndBody :: Maybe Src.Comment -> Ann.Position -> Ann.Located Name.Name -> Maybe Src.Type -> Maybe GuardAnnotation -> [Src.Pattern] -> Space.Parser SyntaxError.DeclDef Decl
+chompDefArgsAndBody maybeDocs start name tipe guard revArgs =
   oneOf SyntaxError.DeclDefEquals
     [ do  arg <- specialize SyntaxError.DeclDefArg Pattern.term
           Space.chompAndCheckIndent SyntaxError.DeclDefSpace SyntaxError.DeclDefIndentEquals
-          chompDefArgsAndBody maybeDocs start name tipe (arg : revArgs)
+          chompDefArgsAndBody maybeDocs start name tipe guard (arg : revArgs)
     , do  word1 0x3D {-=-} SyntaxError.DeclDefEquals
           Space.chompAndCheckIndent SyntaxError.DeclDefSpace SyntaxError.DeclDefIndentBody
           (body, end) <- specialize SyntaxError.DeclDefBody Expr.expression
-          let value = Src.Value name (reverse revArgs) body tipe
+          let value = Src.Value name (reverse revArgs) body tipe guard
           let avalue = Ann.at start end value
           return (Value maybeDocs avalue, end)
     ]

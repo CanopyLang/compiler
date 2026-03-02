@@ -19,7 +19,7 @@ import Type.Type (Constraint (..), Type (..), mkFlexVar, nameToRigid, never, (==
 -- CONSTRAIN
 
 constrain :: Can.Module -> IO Constraint
-constrain (Can.Module home _ _ decls _ _ _ effects _) =
+constrain (Can.Module home _ _ decls _ _ _ effects _ _) =
   case effects of
     Can.NoEffects ->
       constrainDecls decls CSaveTheEnvironment

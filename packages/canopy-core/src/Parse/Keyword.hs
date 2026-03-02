@@ -27,6 +27,7 @@ module Parse.Keyword
     foreign_,
     javascript_,
     lazy_,
+    guards_,
     k4,
     k5,
   )
@@ -143,6 +144,11 @@ subscription_ toError =
 
 lazy_ :: (Row -> Col -> x) -> Parser x ()
 lazy_ = k4 0x6C 0x61 0x7A 0x79
+
+-- TYPE GUARDS
+
+guards_ :: (Row -> Col -> x) -> Parser x ()
+guards_ = k6 0x67 0x75 0x61 0x72 0x64 0x73
 
 -- FFI KEYWORDS
 

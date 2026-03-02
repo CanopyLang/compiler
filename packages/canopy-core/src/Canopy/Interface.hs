@@ -19,7 +19,8 @@ where
 import qualified AST.Canonical as Can
 import qualified AST.Utils.Binop as Binop
 import qualified Canopy.Package as Pkg
-import Control.Monad (liftM3, liftM4, liftM5)
+import Control.Applicative ((<|>))
+import Control.Monad (liftM3, liftM4)
 import Data.Aeson (FromJSON, ToJSON, object, withObject, (.:), (.=))
 import qualified Data.Aeson as Aeson
 import Data.Aeson.Types (Parser)
@@ -38,7 +39,9 @@ data Interface = Interface
     _values :: Map.Map Name.Name Can.Annotation,
     _unions :: Map.Map Name.Name Union,
     _aliases :: Map.Map Name.Name Alias,
-    _binops :: Map.Map Name.Name Binop
+    _binops :: Map.Map Name.Name Binop,
+    -- | Guard annotations for exported type guard functions.
+    _ifaceGuards :: !(Map.Map Name.Name Can.GuardInfo)
   }
   deriving (Eq, Show)
 
@@ -64,13 +67,14 @@ data Binop = Binop
 -- FROM MODULE
 
 fromModule :: Pkg.Name -> Can.Module -> Map.Map Name.Name Can.Annotation -> Interface
-fromModule home (Can.Module _ exports _ _ unions aliases binops _ _) annotations =
+fromModule home (Can.Module _ exports _ _ unions aliases binops _ _ guards) annotations =
   Interface
     { _home = home,
       _values = restrict exports annotations,
       _unions = restrictUnions exports unions,
       _aliases = restrictAliases exports aliases,
-      _binops = restrict exports (Map.map (toOp annotations) binops)
+      _binops = restrict exports (Map.map (toOp annotations) binops),
+      _ifaceGuards = restrict exports guards
     }
 
 restrict :: Can.Exports -> Map.Map Name.Name a -> Map.Map Name.Name a
@@ -156,7 +160,7 @@ public =
   Public
 
 private :: Interface -> DependencyInterface
-private (Interface pkg _ unions aliases _) =
+private (Interface pkg _ unions aliases _ _) =
   Private pkg (Map.map extractUnion unions) (Map.map extractAlias aliases)
 
 extractUnion :: Union -> Can.Union
@@ -181,8 +185,8 @@ privatize di =
 -- BINARY
 
 instance Binary Interface where
-  get = liftM5 Interface get get get get get
-  put (Interface a b c d e) = put a >> put b >> put c >> put d >> put e
+  get = Interface <$> get <*> get <*> get <*> get <*> get <*> get
+  put (Interface a b c d e f) = put a >> put b >> put c >> put d >> put e >> put f
 
 instance Binary Union where
   put union =
@@ -238,13 +242,14 @@ instance Binary DependencyInterface where
 -- JSON INSTANCES
 
 instance ToJSON Interface where
-  toJSON (Interface home values unions aliases binops) =
+  toJSON (Interface home values unions aliases binops guards) =
     object
       [ "home" .= home,
         "values" .= values,
         "unions" .= unions,
         "aliases" .= aliases,
-        "binops" .= binops
+        "binops" .= binops,
+        "guards" .= guards
       ]
 
 instance FromJSON Interface where
@@ -255,6 +260,7 @@ instance FromJSON Interface where
       <*> o .: "unions"
       <*> o .: "aliases"
       <*> o .: "binops"
+      <*> (o .: "guards" <|> pure Map.empty)
 
 instance ToJSON Union where
   toJSON union = case union of

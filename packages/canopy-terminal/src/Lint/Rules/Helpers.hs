@@ -83,7 +83,7 @@ collectUsedNames modul =
 
 -- | Collect all name tokens from a value definition.
 collectNamesInValue :: Src.Value -> [String]
-collectNamesInValue (Src.Value _ _ expr _) =
+collectNamesInValue (Src.Value _ _ expr _ _) =
   collectNamesInExpr (Ann.toValue expr)
 
 -- | Collect all name tokens from a union type definition.

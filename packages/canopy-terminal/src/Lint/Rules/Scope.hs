@@ -46,7 +46,7 @@ checkShadowedVariable modul =
 
 -- | Check a top-level value for shadowed variables.
 checkShadowInValue :: Src.Value -> [LintWarning]
-checkShadowInValue (Src.Value _ patterns body _) =
+checkShadowInValue (Src.Value _ patterns body _ _) =
   checkShadowInExpr paramNames body
   where
     paramNames = Set.fromList (concatMap patternNames patterns)
@@ -139,7 +139,7 @@ checkUnusedLetVariable modul =
 
 -- | Check a top-level value for unused let variables.
 checkUnusedLetInValue :: Src.Value -> [LintWarning]
-checkUnusedLetInValue (Src.Value _ _ expr _) =
+checkUnusedLetInValue (Src.Value _ _ expr _ _) =
   checkUnusedLetInExpr expr
 
 -- | Walk an expression looking for let bindings with unused variables.

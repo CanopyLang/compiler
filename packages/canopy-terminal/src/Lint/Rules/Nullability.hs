@@ -61,7 +61,7 @@ checkSketchyMaybe modul =
 
 -- | Check a value definition for sketchy Maybe patterns.
 checkSketchyInValue :: Src.Value -> [LintWarning]
-checkSketchyInValue (Src.Value _ _ expr _) =
+checkSketchyInValue (Src.Value _ _ expr _ _) =
   checkSketchyInExpr expr
 
 -- | Walk the expression tree for sketchy Maybe case patterns.
@@ -152,7 +152,7 @@ checkRedundantMaybeWrap modul =
 
 -- | Check a value for redundant Maybe wrapping.
 checkRedundantInValue :: Src.Value -> [LintWarning]
-checkRedundantInValue (Src.Value (Ann.At region name_) _ body _)
+checkRedundantInValue (Src.Value (Ann.At region name_) _ body _ _)
   | isAlwaysJust (Ann.toValue body) =
       [redundantMaybeWarn region (Name.toChars name_)]
 checkRedundantInValue _ = []
@@ -190,7 +190,7 @@ checkUnnecessaryPatternMatch modul =
 
 -- | Check a value for unnecessary pattern matches.
 checkUnnecessaryInValue :: Src.Value -> [LintWarning]
-checkUnnecessaryInValue (Src.Value _ _ expr _) =
+checkUnnecessaryInValue (Src.Value _ _ expr _ _) =
   checkUnnecessaryInExpr expr
 
 -- | Walk the expression tree for unnecessary case expressions.
@@ -243,7 +243,7 @@ checkSilentFallback modul =
 
 -- | Check a value for silent fallback patterns.
 checkFallbackInValue :: Src.Value -> [LintWarning]
-checkFallbackInValue (Src.Value _ _ expr _) =
+checkFallbackInValue (Src.Value _ _ expr _ _) =
   checkFallbackInExpr expr
 
 -- | Walk expression tree for silent fallback case patterns.
@@ -305,7 +305,7 @@ checkAlwaysFalseComparison modul =
 
 -- | Check a value for always-false comparisons.
 checkComparisonInValue :: Src.Value -> [LintWarning]
-checkComparisonInValue (Src.Value _ _ expr _) =
+checkComparisonInValue (Src.Value _ _ expr _ _) =
   checkComparisonInExpr expr
 
 -- | Walk expression tree for always-false equality comparisons.
@@ -380,7 +380,7 @@ checkUnreachableCode modul =
 
 -- | Check a value for unreachable code patterns.
 checkUnreachableInValue :: Src.Value -> [LintWarning]
-checkUnreachableInValue (Src.Value _ _ expr _) =
+checkUnreachableInValue (Src.Value _ _ expr _ _) =
   checkUnreachableInExpr expr
 
 -- | Walk expression tree for unreachable code patterns.

@@ -25,6 +25,7 @@ import AST.Canonical.Types
     Ctor (..),
     CtorOpts (..),
     FieldType (..),
+    GuardInfo (..),
     Type (..),
     Union (..),
   )
@@ -67,6 +68,10 @@ instance Binary.Binary CtorOpts where
 instance Binary.Binary Annotation where
   get = Monad.liftM2 Forall Binary.get Binary.get
   put (Forall a b) = Binary.put a >> Binary.put b
+
+instance Binary.Binary GuardInfo where
+  get = Monad.liftM2 GuardInfo Binary.get Binary.get
+  put (GuardInfo a b) = Binary.put a >> Binary.put b
 
 instance Binary.Binary Type where
   put = putType

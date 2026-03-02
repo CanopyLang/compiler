@@ -158,7 +158,8 @@ extractPublicInterface (Interface.Private pkg unions aliases) =
       Interface._values = Map.empty,
       Interface._unions = Map.map Interface.PrivateUnion unions,
       Interface._aliases = Map.map Interface.PrivateAlias aliases,
-      Interface._binops = Map.empty
+      Interface._binops = Map.empty,
+      Interface._ifaceGuards = Map.empty
     }
 
 -- | Build from file paths with dependency resolution.
@@ -321,7 +322,7 @@ compileWithDriver builder moduleName path = do
 -- own canonicalization phase.
 accumulateInterface :: PureBuilder -> Driver.CompileResult -> IO ()
 accumulateInterface builder compiled = do
-  let Can.Module canonName _ _ _ _ _ _ _ _ = Driver.compileResultModule compiled
+  let Can.Module canonName _ _ _ _ _ _ _ _ _ = Driver.compileResultModule compiled
       rawName = ModuleName._module canonName
       iface = Driver.compileResultInterface compiled
   modifyIORef' (builderInterfaces builder) (Map.insert rawName iface)

@@ -220,4 +220,4 @@ convertDependencyInterfaces = Map.mapMaybe extractInterface
     extractInterface :: Interface.DependencyInterface -> Maybe Interface.Interface
     extractInterface (Interface.Public iface) = Just iface
     extractInterface (Interface.Private pkg unions aliases) =
-      Just (Interface.Interface pkg Map.empty (Map.map Interface.PrivateUnion unions) (Map.map Interface.PrivateAlias aliases) Map.empty)
+      Just (Interface.Interface pkg Map.empty (Map.map Interface.PrivateUnion unions) (Map.map Interface.PrivateAlias aliases) Map.empty Map.empty)

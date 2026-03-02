@@ -38,7 +38,7 @@ checkPartialFunction modul =
 
 -- | Check a value for partial function calls.
 checkPartialInValue :: Src.Value -> [LintWarning]
-checkPartialInValue (Src.Value _ _ expr _) =
+checkPartialInValue (Src.Value _ _ expr _ _) =
   checkPartialInExpr expr
 
 -- | Walk an expression tree searching for partial function references.
@@ -89,7 +89,7 @@ checkUnsafeCoerce modul =
 
 -- | Check a value for Debug.todo references.
 checkUnsafeInValue :: Src.Value -> [LintWarning]
-checkUnsafeInValue (Src.Value _ _ expr _) =
+checkUnsafeInValue (Src.Value _ _ expr _ _) =
   checkUnsafeInExpr expr
 
 -- | Walk expression tree for Debug.todo usage.

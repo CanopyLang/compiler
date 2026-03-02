@@ -25,6 +25,9 @@ module AST.Canonical.Types
     Def (..),
     Decls (..),
 
+    -- * Guards
+    GuardInfo (..),
+
     -- * Patterns
     Pattern,
     Pattern_ (..),
@@ -258,6 +261,22 @@ data Def
   | TypedDef (Ann.Located Name) FreeVars [(Pattern, Type)] Expr Type
   deriving (Show)
 
+-- GUARDS
+
+-- | Guard function annotation in canonical form.
+--
+-- When a function is annotated with @guards@, calling it in an @if@
+-- condition narrows the argument type in the truthy branch. The narrow
+-- type has been canonicalized from the source-level annotation.
+--
+-- @since 0.20.0
+data GuardInfo = GuardInfo
+  { _giArgIndex :: !Int,
+    -- | The canonical type that the argument is narrowed to.
+    _giNarrowType :: !Type
+  }
+  deriving (Eq, Show)
+
 -- DECLARATIONS
 
 -- | A linked list of top-level declarations in a module.
@@ -362,7 +381,11 @@ data Module = Module
     _aliases :: Map Name Alias,
     _binops :: Map Name Binop,
     _effects :: Effects,
-    _lazyImports :: !(Set ModuleName.Canonical)
+    _lazyImports :: !(Set ModuleName.Canonical),
+    -- | Type guard annotations for functions in this module.
+    -- Maps function name to its guard info when the function
+    -- is annotated with @guards@.
+    _guards :: !(Map Name GuardInfo)
   }
 
 data Alias = Alias [Name] Type

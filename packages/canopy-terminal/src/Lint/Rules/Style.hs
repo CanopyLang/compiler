@@ -41,7 +41,7 @@ checkBooleanCase modul =
 
 -- | Search a value definition for boolean case expressions.
 checkBooleanCaseInValue :: Src.Value -> [LintWarning]
-checkBooleanCaseInValue (Src.Value _ _ expr _) =
+checkBooleanCaseInValue (Src.Value _ _ expr _ _) =
   checkBooleanCaseInExpr expr
 
 -- | Walk an expression tree looking for boolean case expressions.
@@ -99,7 +99,7 @@ checkUnnecessaryParens modul =
 
 -- | Search a value definition for unnecessary parentheses.
 checkParensInValue :: Src.Value -> [LintWarning]
-checkParensInValue (Src.Value _ _ expr _) =
+checkParensInValue (Src.Value _ _ expr _ _) =
   checkParensInExpr expr
 
 -- | Walk an expression looking for parenthesised atomic sub-expressions.
@@ -149,7 +149,7 @@ checkMissingTypeAnnotation modul =
 
 -- | Produce a warning for a value without a type annotation.
 checkAnnotation :: Src.Value -> Maybe LintWarning
-checkAnnotation (Src.Value (Ann.At region name_) _patterns _body Nothing) =
+checkAnnotation (Src.Value (Ann.At region name_) _patterns _body Nothing _) =
   Just
     LintWarning
       { _warnRegion = region,
@@ -180,7 +180,7 @@ checkInconsistentNaming modul =
 
 -- | Extract the name string and region from a value definition.
 extractNameInfo :: Ann.Located Src.Value -> (Ann.Region, String)
-extractNameInfo (Ann.At _ (Src.Value (Ann.At region name_) _ _ _)) =
+extractNameInfo (Ann.At _ (Src.Value (Ann.At region name_) _ _ _ _)) =
   (region, Name.toChars name_)
 
 -- | Classify name convention.

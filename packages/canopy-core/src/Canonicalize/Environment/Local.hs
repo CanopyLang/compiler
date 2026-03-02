@@ -46,7 +46,7 @@ addVars module_ (Env.Env home vs ts cs bs qvs qts qcs) =
 
 collectVars :: Src.Module -> Result i w (Map.Map Name.Name Env.Var)
 collectVars (Src.Module _ _ _ _ _foreignImports values _ _ _ effects _) =
-  let addDecl dict (Ann.At _ (Src.Value (Ann.At region name) _ _ _)) =
+  let addDecl dict (Ann.At _ (Src.Value (Ann.At region name) _ _ _ _)) =
         Dups.insert name region (Env.TopLevel region) dict
       -- Foreign imports are handled separately in addFFIToEnv, not as regular top-level vars
    in Dups.detect Error.DuplicateDecl $

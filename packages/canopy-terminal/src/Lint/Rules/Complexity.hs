@@ -45,10 +45,10 @@ maxArguments = 4
 
 -- | Check the argument count of a single value definition.
 checkArgCount :: Src.Value -> Maybe LintWarning
-checkArgCount (Src.Value (Ann.At region name_) _ _ (Just annot))
+checkArgCount (Src.Value (Ann.At region name_) _ _ (Just annot) _)
   | countTypeArgs annot > maxArguments =
       Just (tooManyArgsWarn region (Name.toChars name_))
-checkArgCount (Src.Value _ args _ _)
+checkArgCount (Src.Value _ args _ _ _)
   | length args > maxArguments =
       Just (tooManyArgsWarnNoRegion args)
 checkArgCount _ = Nothing
@@ -116,7 +116,7 @@ maxFunctionLines = 15
 
 -- | Check whether a function body exceeds the line limit.
 checkFuncLength :: Src.Value -> Maybe LintWarning
-checkFuncLength (Src.Value (Ann.At nameRegion name_) _ body _) =
+checkFuncLength (Src.Value (Ann.At nameRegion name_) _ body _ _) =
   longFuncWarning nameRegion (Name.toChars name_) bodyRegion
   where
     bodyRegion = Ann.toRegion body
@@ -155,7 +155,7 @@ checkMagicNumber modul =
 
 -- | Check a value for magic number literals.
 checkMagicInValue :: Src.Value -> [LintWarning]
-checkMagicInValue (Src.Value _ _ expr _) =
+checkMagicInValue (Src.Value _ _ expr _ _) =
   checkMagicInExpr expr
 
 -- | Small integers that are not considered magic.
@@ -196,7 +196,7 @@ checkStringConcatInLoop modul =
 
 -- | Check a value for string concat in loop patterns.
 checkStrConcatInValue :: Src.Value -> [LintWarning]
-checkStrConcatInValue (Src.Value _ _ expr _) =
+checkStrConcatInValue (Src.Value _ _ expr _ _) =
   checkStrConcatInExpr expr
 
 -- | Walk lambda bodies for String.append or String.concat calls.

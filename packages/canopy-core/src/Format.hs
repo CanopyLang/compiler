@@ -477,18 +477,23 @@ formatAssoc Binop.Non   = PP.text "non"
 
 -- | Format a value / function definition.
 formatValue :: FormatConfig -> Src.Value -> PP.Doc
-formatValue config (Src.Value locName params body maybeType) =
+formatValue config (Src.Value locName params body maybeType maybeGuard) =
   typeAnnotation <> definition
   where
     nameD = locNameDoc locName
-    typeAnnotation = maybe PP.empty (renderTypeAnnotation nameD) maybeType
+    typeAnnotation = maybe PP.empty (renderTypeAnnotationWithGuard nameD maybeGuard) maybeType
     paramText = foldMap (\p -> PP.text " " <> formatPattern p) params
     definition = nameD <> paramText <> PP.text " =" <> nlIndent config 1 <> formatExpr config body
 
--- | Render a type annotation line for a value definition.
-renderTypeAnnotation :: PP.Doc -> Src.Type -> PP.Doc
-renderTypeAnnotation nameD t =
-  nameD PP.<+> PP.text ":" PP.<+> formatType t <> PP.line
+-- | Render a type annotation line for a value definition, including
+-- an optional guard clause.
+renderTypeAnnotationWithGuard :: PP.Doc -> Maybe Src.GuardAnnotation -> Src.Type -> PP.Doc
+renderTypeAnnotationWithGuard nameD maybeGuard t =
+  nameD PP.<+> PP.text ":" PP.<+> formatType t <> guardDoc <> PP.line
+  where
+    guardDoc = maybe PP.empty renderGuard maybeGuard
+    renderGuard (Src.GuardAnnotation _idx narrowTy) =
+      PP.text " guards" PP.<+> formatType narrowTy
 
 -- | Format a port declaration.
 formatPort :: Src.Port -> PP.Doc
