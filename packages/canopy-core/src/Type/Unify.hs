@@ -182,12 +182,7 @@ unifyFlex context content otherContent =
     Error ->
       merge context Error
     FlexVar maybeName ->
-      merge context $
-        case maybeName of
-          Nothing ->
-            content
-          Just _ ->
-            otherContent
+      merge context (maybe content (const otherContent) maybeName)
     FlexSuper _ _ ->
       merge context otherContent
     RigidVar _ ->
@@ -438,9 +433,8 @@ unifyAlias context home name args realVar otherContent =
       if name == otherName && home == otherHome
         then Unify $ \vars ok err ->
           let ok1 vars1 () =
-                case merge context otherContent of
-                  Unify k ->
-                    k vars1 ok err
+                let (Unify k) = merge context otherContent
+                 in k vars1 ok err
            in unifyAliasArgs vars context args otherArgs ok1 err
         else subUnify realVar otherRealVar
     Structure _ ->
@@ -449,25 +443,22 @@ unifyAlias context home name args realVar otherContent =
       merge context Error
 
 unifyAliasArgs :: [Variable] -> Context -> [(Name.Name, Variable)] -> [(Name.Name, Variable)] -> ([Variable] -> () -> IO r) -> ([Variable] -> () -> IO r) -> IO r
-unifyAliasArgs vars context args1 args2 ok err =
-  case args1 of
-    (_, arg1) : others1 ->
-      case args2 of
-        (_, arg2) : others2 ->
-          case subUnify arg1 arg2 of
-            Unify k ->
-              k
-                vars
-                (\vs () -> unifyAliasArgs vs context others1 others2 ok err)
-                (\vs () -> unifyAliasArgs vs context others1 others2 err err)
-        _ ->
-          err vars ()
-    [] ->
-      case args2 of
-        [] ->
-          ok vars ()
-        _ ->
-          err vars ()
+unifyAliasArgs vars _context [] [] ok _err = ok vars ()
+unifyAliasArgs vars _context [] _ _ok err = err vars ()
+unifyAliasArgs vars _context _ [] _ok err = err vars ()
+unifyAliasArgs vars context ((_, arg1) : others1) ((_, arg2) : others2) ok err =
+  unifyOneAliasArg vars context arg1 arg2 others1 others2 ok err
+
+-- | Unify a single pair of alias arguments and continue with the rest.
+--
+-- @since 0.19.2
+unifyOneAliasArg :: [Variable] -> Context -> Variable -> Variable -> [(Name.Name, Variable)] -> [(Name.Name, Variable)] -> ([Variable] -> () -> IO r) -> ([Variable] -> () -> IO r) -> IO r
+unifyOneAliasArg vars context arg1 arg2 rest1 rest2 ok err =
+  let (Unify k) = subUnify arg1 arg2
+   in k
+        vars
+        (\vs () -> unifyAliasArgs vs context rest1 rest2 ok err)
+        (\vs () -> unifyAliasArgs vs context rest1 rest2 err err)
 
 -- UNIFY STRUCTURES
 
@@ -485,77 +476,89 @@ unifyStructure context flatType content otherContent =
     Alias _ _ _ realVar ->
       subUnify (_first context) realVar
     Structure otherFlatType ->
-      case (flatType, otherFlatType) of
-        (App1 home name args, App1 otherHome otherName otherArgs) | home == otherHome && name == otherName ->
-          Unify $ \vars ok err ->
-            let ok1 vars1 () =
-                  case merge context otherContent of
-                    Unify k ->
-                      k vars1 ok err
-             in unifyArgs vars context args otherArgs ok1 err
-        (Fun1 arg1 res1, Fun1 arg2 res2) ->
-          do
-            subUnify arg1 arg2
-            subUnify res1 res2
-            merge context otherContent
-        (EmptyRecord1, EmptyRecord1) ->
-          merge context otherContent
-        (Record1 fields ext, EmptyRecord1)
-          | Map.null fields ->
-            subUnify ext (_second context)
-        (EmptyRecord1, Record1 fields ext)
-          | Map.null fields ->
-            subUnify (_first context) ext
-        (Record1 fields1 ext1, Record1 fields2 ext2) ->
-          Unify $ \vars ok err ->
-            do
-              structure1 <- gatherFields fields1 ext1
-              structure2 <- gatherFields fields2 ext2
-              case unifyRecord context structure1 structure2 of
-                Unify k ->
-                  k vars ok err
-        (Tuple1 a b Nothing, Tuple1 x y Nothing) ->
-          do
-            subUnify a x
-            subUnify b y
-            merge context otherContent
-        (Tuple1 a b (Just c), Tuple1 x y (Just z)) ->
-          do
-            subUnify a x
-            subUnify b y
-            subUnify c z
-            merge context otherContent
-        (Unit1, Unit1) ->
-          merge context otherContent
-        _ ->
-          mismatch
+      unifyFlatTypes context flatType otherFlatType otherContent
     Error ->
       merge context Error
+
+-- | Unify two flat type structures, handling each structural pair.
+--
+-- @since 0.19.2
+unifyFlatTypes :: Context -> FlatType -> FlatType -> Content -> Unify ()
+unifyFlatTypes context flatType otherFlatType otherContent =
+  case (flatType, otherFlatType) of
+    (App1 home name args, App1 otherHome otherName otherArgs) | home == otherHome && name == otherName ->
+      Unify $ \vars ok err ->
+        let ok1 vars1 () =
+              let (Unify k) = merge context otherContent
+               in k vars1 ok err
+         in unifyArgs vars context args otherArgs ok1 err
+    (Fun1 arg1 res1, Fun1 arg2 res2) ->
+      do
+        subUnify arg1 arg2
+        subUnify res1 res2
+        merge context otherContent
+    (EmptyRecord1, EmptyRecord1) ->
+      merge context otherContent
+    (Record1 fields ext, EmptyRecord1)
+      | Map.null fields ->
+        subUnify ext (_second context)
+    (EmptyRecord1, Record1 fields ext)
+      | Map.null fields ->
+        subUnify (_first context) ext
+    (Record1 fields1 ext1, Record1 fields2 ext2) ->
+      unifyRecordFields context fields1 ext1 fields2 ext2
+    (Tuple1 a b Nothing, Tuple1 x y Nothing) ->
+      do
+        subUnify a x
+        subUnify b y
+        merge context otherContent
+    (Tuple1 a b (Just c), Tuple1 x y (Just z)) ->
+      do
+        subUnify a x
+        subUnify b y
+        subUnify c z
+        merge context otherContent
+    (Unit1, Unit1) ->
+      merge context otherContent
+    _ ->
+      mismatch
 
 -- UNIFY ARGS
 
 unifyArgs :: [Variable] -> Context -> [Variable] -> [Variable] -> ([Variable] -> () -> IO r) -> ([Variable] -> () -> IO r) -> IO r
-unifyArgs vars context args1 args2 ok err =
-  case args1 of
-    arg1 : others1 ->
-      case args2 of
-        arg2 : others2 ->
-          case subUnify arg1 arg2 of
-            Unify k ->
-              k
-                vars
-                (\vs () -> unifyArgs vs context others1 others2 ok err)
-                (\vs () -> unifyArgs vs context others1 others2 err err)
-        _ ->
-          err vars ()
-    [] ->
-      case args2 of
-        [] ->
-          ok vars ()
-        _ ->
-          err vars ()
+unifyArgs vars _context [] [] ok _err = ok vars ()
+unifyArgs vars _context [] _ _ok err = err vars ()
+unifyArgs vars _context _ [] _ok err = err vars ()
+unifyArgs vars context (arg1 : others1) (arg2 : others2) ok err =
+  unifyOneArg vars context arg1 arg2 others1 others2 ok err
+
+-- | Unify a single pair of arguments and continue with the rest.
+--
+-- @since 0.19.2
+unifyOneArg :: [Variable] -> Context -> Variable -> Variable -> [Variable] -> [Variable] -> ([Variable] -> () -> IO r) -> ([Variable] -> () -> IO r) -> IO r
+unifyOneArg vars context arg1 arg2 rest1 rest2 ok err =
+  let (Unify k) = subUnify arg1 arg2
+   in k
+        vars
+        (\vs () -> unifyArgs vs context rest1 rest2 ok err)
+        (\vs () -> unifyArgs vs context rest1 rest2 err err)
 
 -- UNIFY RECORDS
+
+-- | Gather record fields from both sides and unify the resulting structures.
+--
+-- This eliminates a nested case expression by wrapping the IO field-gathering
+-- step and the CPS unification into a single helper.
+--
+-- @since 0.19.2
+unifyRecordFields :: Context -> Map Name.Name Variable -> Variable -> Map Name.Name Variable -> Variable -> Unify ()
+unifyRecordFields context fields1 ext1 fields2 ext2 =
+  Unify $ \vars ok err ->
+    do
+      structure1 <- gatherFields fields1 ext1
+      structure2 <- gatherFields fields2 ext2
+      let (Unify k) = unifyRecord context structure1 structure2
+      k vars ok err
 
 unifyRecord :: Context -> RecordStructure -> RecordStructure -> Unify ()
 unifyRecord context (RecordStructure fields1 ext1) (RecordStructure fields2 ext2) =

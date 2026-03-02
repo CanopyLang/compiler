@@ -88,20 +88,32 @@ generateDecider genExpr codeToStmts mode label root decisionTree =
           (JS.Block $ generateDecider genExpr codeToStmts mode label root failure)
       ]
     Opt.FanOut path edges fallback ->
-      [ JS.Switch
-          ( case edges of
-              firstEdge : _ -> generateCaseTest genExpr mode root path (fst firstEdge)
-              [] -> InternalError.report
-                "Generate.JavaScript.Expression.Case.generateDecider"
-                "Empty edges list in FanOut"
-                "A FanOut decision node must have at least one edge. The decision tree builder should never create a FanOut with zero edges."
-          )
-          ( foldr
-              (\edge cases -> generateCaseBranch genExpr codeToStmts mode label root edge : cases)
-              [JS.Default (generateDecider genExpr codeToStmts mode label root fallback)]
-              edges
-          )
-      ]
+      generateFanOut genExpr codeToStmts mode label root path edges fallback
+
+-- | Generate a JavaScript switch statement for a FanOut decision node.
+--
+-- @since 0.19.2
+generateFanOut :: CodeGenerator -> (Mode.Mode -> Opt.Expr -> [JS.Stmt]) -> Mode.Mode -> Name.Name -> Name.Name -> DT.Path -> [(DT.Test, Opt.Decider Opt.Choice)] -> Opt.Decider Opt.Choice -> [JS.Stmt]
+generateFanOut genExpr codeToStmts mode label root path edges fallback =
+  [ JS.Switch
+      (fanOutSwitchExpr genExpr mode root path edges)
+      ( foldr
+          (\edge cases -> generateCaseBranch genExpr codeToStmts mode label root edge : cases)
+          [JS.Default (generateDecider genExpr codeToStmts mode label root fallback)]
+          edges
+      )
+  ]
+
+-- | Extract the switch expression for a FanOut, requiring at least one edge.
+--
+-- @since 0.19.2
+fanOutSwitchExpr :: CodeGenerator -> Mode.Mode -> Name.Name -> DT.Path -> [(DT.Test, Opt.Decider Opt.Choice)] -> JS.Expr
+fanOutSwitchExpr genExpr mode root path = \case
+  firstEdge : _ -> generateCaseTest genExpr mode root path (fst firstEdge)
+  [] -> InternalError.report
+    "Generate.JavaScript.Expression.Case.generateDecider"
+    "Empty edges list in FanOut"
+    "A FanOut decision node must have at least one edge. The decision tree builder should never create a FanOut with zero edges."
 
 -- | Generate JavaScript expression for a single if-chain test in a decision tree.
 --
@@ -111,18 +123,7 @@ generateIfTest genExpr mode root (path, test) =
   let value = pathToJsExpr genExpr mode root path
    in case test of
         DT.IsCtor home name index _ opts ->
-          let tag =
-                case mode of
-                  Mode.Dev _ _ _ _ _ -> JS.Access value JsName.dollar
-                  Mode.Prod {} ->
-                    case opts of
-                      Can.Normal -> JS.Access value JsName.dollar
-                      Can.Enum -> value
-                      Can.Unbox -> value
-           in Call.strictEq tag $
-                case mode of
-                  Mode.Dev _ _ _ _ _ -> JS.String (Name.toBuilder name)
-                  Mode.Prod {} -> JS.Int (ctorToInt home name index)
+          Call.strictEq (ctorTag mode opts value) (ctorTagValue mode home name index)
         DT.IsBool True ->
           value
         DT.IsBool False ->
@@ -130,10 +131,7 @@ generateIfTest genExpr mode root (path, test) =
         DT.IsInt int ->
           Call.strictEq value (JS.Int int)
         DT.IsChr char ->
-          Call.strictEq (JS.String (Utf8.toBuilder char)) $
-            case mode of
-              Mode.Dev _ _ _ _ _ -> JS.Call (JS.Access value (JsName.fromLocal "valueOf")) []
-              Mode.Prod {} -> value
+          Call.strictEq (JS.String (Utf8.toBuilder char)) (chrValueAccess mode value)
         DT.IsStr string ->
           Call.strictEq value (JS.String (Utf8.toBuilder string))
         DT.IsCons ->
@@ -146,6 +144,29 @@ generateIfTest genExpr mode root (path, test) =
             "Generate.JavaScript.Expression.Case.generateIfTest"
             "COMPILER BUG - there should never be tests on a tuple"
             "Tuples are structurally matched and should never appear as a test in the decision tree. This indicates a bug in the pattern match compiler."
+
+-- | Extract the tag accessor for a constructor in a given mode and ctor opts.
+--
+-- @since 0.19.2
+ctorTag :: Mode.Mode -> Can.CtorOpts -> JS.Expr -> JS.Expr
+ctorTag (Mode.Dev _ _ _ _ _) _ value = JS.Access value JsName.dollar
+ctorTag (Mode.Prod {}) Can.Normal value = JS.Access value JsName.dollar
+ctorTag (Mode.Prod {}) Can.Enum value = value
+ctorTag (Mode.Prod {}) Can.Unbox value = value
+
+-- | Generate the tag comparison value for a constructor.
+--
+-- @since 0.19.2
+ctorTagValue :: Mode.Mode -> ModuleName.Canonical -> Name.Name -> Index.ZeroBased -> JS.Expr
+ctorTagValue (Mode.Dev _ _ _ _ _) _ name _ = JS.String (Name.toBuilder name)
+ctorTagValue (Mode.Prod {}) home name index = JS.Int (ctorToInt home name index)
+
+-- | Access the underlying value of a Chr for comparison.
+--
+-- @since 0.19.2
+chrValueAccess :: Mode.Mode -> JS.Expr -> JS.Expr
+chrValueAccess (Mode.Dev _ _ _ _ _) value = JS.Call (JS.Access value (JsName.fromLocal "valueOf")) []
+chrValueAccess (Mode.Prod {}) value = value
 
 -- | Generate a single case branch (test + subtree) for a switch statement.
 --
@@ -160,38 +181,35 @@ generateCaseBranch genExpr codeToStmts mode label root (test, subTree) =
 --
 -- @since 0.19.1
 generateCaseValue :: Mode.Mode -> DT.Test -> JS.Expr
-generateCaseValue mode test =
-  case test of
-    DT.IsCtor home name index _ _ ->
-      case mode of
-        Mode.Dev _ _ _ _ _ -> JS.String (Name.toBuilder name)
-        Mode.Prod {} -> JS.Int (ctorToInt home name index)
-    DT.IsInt int ->
-      JS.Int int
-    DT.IsChr char ->
-      JS.String (Utf8.toBuilder char)
-    DT.IsStr string ->
-      JS.String (Utf8.toBuilder string)
-    DT.IsBool _ ->
-      InternalError.report
-        "Generate.JavaScript.Expression.Case.generateCaseValue"
-        "COMPILER BUG - there should never be three tests on a boolean"
-        "Booleans only have two constructors (True/False) so at most two tests are ever needed. This indicates a bug in the decision tree builder."
-    DT.IsCons ->
-      InternalError.report
-        "Generate.JavaScript.Expression.Case.generateCaseValue"
-        "COMPILER BUG - there should never be three tests on a list"
-        "Lists only have two structural cases (Cons/Nil) so at most two tests are ever needed. This indicates a bug in the decision tree builder."
-    DT.IsNil ->
-      InternalError.report
-        "Generate.JavaScript.Expression.Case.generateCaseValue"
-        "COMPILER BUG - there should never be three tests on a list"
-        "Lists only have two structural cases (Cons/Nil) so at most two tests are ever needed. This indicates a bug in the decision tree builder."
-    DT.IsTuple ->
-      InternalError.report
-        "Generate.JavaScript.Expression.Case.generateCaseValue"
-        "COMPILER BUG - there should never be three tests on a tuple"
-        "Tuples are structurally matched and should never appear as a case value in the decision tree. This indicates a bug in the pattern match compiler."
+generateCaseValue mode = \case
+  DT.IsCtor home name index _ _ ->
+    ctorTagValue mode home name index
+  DT.IsInt int ->
+    JS.Int int
+  DT.IsChr char ->
+    JS.String (Utf8.toBuilder char)
+  DT.IsStr string ->
+    JS.String (Utf8.toBuilder string)
+  DT.IsBool _ ->
+    InternalError.report
+      "Generate.JavaScript.Expression.Case.generateCaseValue"
+      "COMPILER BUG - there should never be three tests on a boolean"
+      "Booleans only have two constructors (True/False) so at most two tests are ever needed. This indicates a bug in the decision tree builder."
+  DT.IsCons ->
+    InternalError.report
+      "Generate.JavaScript.Expression.Case.generateCaseValue"
+      "COMPILER BUG - there should never be three tests on a list"
+      "Lists only have two structural cases (Cons/Nil) so at most two tests are ever needed. This indicates a bug in the decision tree builder."
+  DT.IsNil ->
+    InternalError.report
+      "Generate.JavaScript.Expression.Case.generateCaseValue"
+      "COMPILER BUG - there should never be three tests on a list"
+      "Lists only have two structural cases (Cons/Nil) so at most two tests are ever needed. This indicates a bug in the decision tree builder."
+  DT.IsTuple ->
+    InternalError.report
+      "Generate.JavaScript.Expression.Case.generateCaseValue"
+      "COMPILER BUG - there should never be three tests on a tuple"
+      "Tuples are structurally matched and should never appear as a case value in the decision tree. This indicates a bug in the pattern match compiler."
 
 -- | Generate the switch expression for a FanOut decision node.
 --
@@ -203,27 +221,13 @@ generateCaseTest genExpr mode root path exampleTest =
         DT.IsCtor home name _ _ opts ->
           if name == Name.bool && home == ModuleName.basics
             then value
-            else case mode of
-              Mode.Dev _ _ _ _ _ ->
-                JS.Access value JsName.dollar
-              Mode.Prod {} ->
-                case opts of
-                  Can.Normal ->
-                    JS.Access value JsName.dollar
-                  Can.Enum ->
-                    value
-                  Can.Unbox ->
-                    value
+            else ctorSwitchExpr mode opts value
         DT.IsInt _ ->
           value
         DT.IsStr _ ->
           value
         DT.IsChr _ ->
-          case mode of
-            Mode.Dev _ _ _ _ _ ->
-              JS.Call (JS.Access value (JsName.fromLocal "valueOf")) []
-            Mode.Prod {} ->
-              value
+          chrValueAccess mode value
         DT.IsBool _ ->
           InternalError.report
             "Generate.JavaScript.Expression.Case.generateCaseTest"
@@ -245,6 +249,15 @@ generateCaseTest genExpr mode root path exampleTest =
             "COMPILER BUG - there should never be three tests on a tuple"
             "Tuples are structurally matched and should never appear as a case test. This indicates a bug in the pattern match compiler."
 
+-- | Generate the switch discriminant expression for a constructor in a given mode.
+--
+-- @since 0.19.2
+ctorSwitchExpr :: Mode.Mode -> Can.CtorOpts -> JS.Expr -> JS.Expr
+ctorSwitchExpr (Mode.Dev _ _ _ _ _) _ value = JS.Access value JsName.dollar
+ctorSwitchExpr (Mode.Prod {}) Can.Normal value = JS.Access value JsName.dollar
+ctorSwitchExpr (Mode.Prod {}) Can.Enum value = value
+ctorSwitchExpr (Mode.Prod {}) Can.Unbox value = value
+
 -- PATTERN PATHS
 
 -- | Generate JavaScript expression to access a value at a decision tree path.
@@ -254,18 +267,25 @@ generateCaseTest genExpr mode root path exampleTest =
 --
 -- @since 0.19.1
 pathToJsExpr :: CodeGenerator -> Mode.Mode -> Name.Name -> DT.Path -> JS.Expr
-pathToJsExpr genExpr mode root path =
-  case path of
-    DT.Index index subPath ->
-      JS.Access (pathToJsExpr genExpr mode root subPath) (JsName.fromIndex index)
-    DT.Unbox subPath ->
-      case mode of
-        Mode.Dev _ _ _ _ _ ->
-          JS.Access (pathToJsExpr genExpr mode root subPath) (JsName.fromIndex Index.first)
-        Mode.Prod {} ->
-          pathToJsExpr genExpr mode root subPath
-    DT.Empty ->
-      JS.Ref (JsName.fromLocal root)
+pathToJsExpr genExpr mode root = \case
+  DT.Index index subPath ->
+    JS.Access (pathToJsExpr genExpr mode root subPath) (JsName.fromIndex index)
+  DT.Unbox subPath ->
+    unboxPath genExpr mode root subPath
+  DT.Empty ->
+    JS.Ref (JsName.fromLocal root)
+
+-- | Generate the unbox path expression based on compilation mode.
+--
+-- In dev mode, unboxed values are accessed at index 0. In prod mode,
+-- the unbox is a no-op since single-constructor types are unwrapped.
+--
+-- @since 0.19.2
+unboxPath :: CodeGenerator -> Mode.Mode -> Name.Name -> DT.Path -> JS.Expr
+unboxPath genExpr mode@(Mode.Dev _ _ _ _ _) root subPath =
+  JS.Access (pathToJsExpr genExpr mode root subPath) (JsName.fromIndex Index.first)
+unboxPath genExpr mode@(Mode.Prod {}) root subPath =
+  pathToJsExpr genExpr mode root subPath
 
 -- INTERNAL HELPERS
 

@@ -253,25 +253,26 @@ toBinopStep makeBinop rootOp@(Env.Binop _ _ _ _ rootAssociativity rootPrecedence
   case middle of
     [] ->
       Done (makeBinop final)
-    (expr, op@(Env.Binop _ _ _ _ associativity precedence)) : rest ->
-      if precedence < rootPrecedence
-        then More ((makeBinop expr, op) : rest) final
-        else
-          if precedence > rootPrecedence
-            then case toBinopStep (toBinop op expr) op rest final of
-              Done newLast ->
-                Done (makeBinop newLast)
-              More newMiddle newLast ->
-                toBinopStep makeBinop rootOp newMiddle newLast
-              Error a b ->
-                Error a b
-            else case (rootAssociativity, associativity) of
-              (Binop.Left, Binop.Left) ->
-                toBinopStep (\right -> toBinop op (makeBinop expr) right) op rest final
-              (Binop.Right, Binop.Right) ->
-                toBinopStep (\right -> makeBinop (toBinop op expr right)) op rest final
-              (_, _) ->
-                Error rootOp op
+    (expr, op@(Env.Binop _ _ _ _ associativity precedence)) : rest
+      | precedence < rootPrecedence ->
+          More ((makeBinop expr, op) : rest) final
+      | precedence > rootPrecedence ->
+          applyHigherPrecedence makeBinop rootOp (toBinopStep (toBinop op expr) op rest final)
+      | otherwise ->
+          applyEqualPrecedence makeBinop rootOp op expr rest final rootAssociativity associativity
+
+applyHigherPrecedence :: (Can.Expr -> Can.Expr) -> Env.Binop -> Step -> Step
+applyHigherPrecedence makeBinop _ (Done newLast) = Done (makeBinop newLast)
+applyHigherPrecedence makeBinop rootOp (More newMiddle newLast) = toBinopStep makeBinop rootOp newMiddle newLast
+applyHigherPrecedence _ _ (Error a b) = Error a b
+
+applyEqualPrecedence :: (Can.Expr -> Can.Expr) -> Env.Binop -> Env.Binop -> Can.Expr -> [(Can.Expr, Env.Binop)] -> Can.Expr -> Binop.Associativity -> Binop.Associativity -> Step
+applyEqualPrecedence makeBinop _ op expr rest final Binop.Left Binop.Left =
+  toBinopStep (\right -> toBinop op (makeBinop expr) right) op rest final
+applyEqualPrecedence makeBinop _ op expr rest final Binop.Right Binop.Right =
+  toBinopStep (\right -> makeBinop (toBinop op expr right)) op rest final
+applyEqualPrecedence _ rootOp op _ _ _ _ _ =
+  Error rootOp op
 
 -- | Convert binary operator to canonical expression.
 --
@@ -471,65 +472,59 @@ data Binding
   | Destruct Can.Pattern Can.Expr
 
 addDefNodes :: Env.Env -> [Node] -> Ann.Located Src.Def -> Result FreeLocals [Warning.Warning] [Node]
-addDefNodes env nodes (Ann.At _ def) =
-  case def of
-    Src.Define aname@(Ann.At _ name) srcArgs body maybeType ->
-      case maybeType of
-        Nothing ->
-          do
-            (args, argBindings) <-
-              Pattern.verify (Error.DPFuncArgs name) $
-                traverse (Pattern.canonicalize env) srcArgs
+addDefNodes env nodes (Ann.At _ (Src.Define aname@(Ann.At _ name) srcArgs body maybeType)) =
+  addDefineNode env nodes aname name srcArgs body maybeType
+addDefNodes env nodes (Ann.At _ (Src.Destruct pattern body)) =
+  addDestructNode env nodes pattern body
 
-            newEnv <-
-              Env.addLocals argBindings env
+addDefineNode :: Env.Env -> [Node] -> Ann.Located Name.Name -> Name.Name -> [Src.Pattern] -> Src.Expr -> Maybe Src.Type -> Result FreeLocals [Warning.Warning] [Node]
+addDefineNode env nodes aname name srcArgs body Nothing =
+  do
+    (args, argBindings) <-
+      Pattern.verify (Error.DPFuncArgs name) $
+        traverse (Pattern.canonicalize env) srcArgs
+    newEnv <- Env.addLocals argBindings env
+    (cbody, freeLocals) <-
+      verifyBindings Warning.Pattern argBindings (canonicalize newEnv body)
+    let cdef = Can.Def aname args cbody
+    let node = (Define cdef, name, Map.keys freeLocals)
+    logLetLocals args freeLocals (node : nodes)
+addDefineNode env nodes aname name srcArgs body (Just tipe) =
+  do
+    (Can.Forall freeVars ctipe) <- Type.toAnnotation env tipe
+    ((args, resultType), argBindings) <-
+      Pattern.verify (Error.DPFuncArgs name) $
+        gatherTypedArgs env name srcArgs ctipe Index.first []
+    newEnv <- Env.addLocals argBindings env
+    (cbody, freeLocals) <-
+      verifyBindings Warning.Pattern argBindings (canonicalize newEnv body)
+    let cdef = Can.TypedDef aname freeVars args cbody resultType
+    let node = (Define cdef, name, Map.keys freeLocals)
+    logLetLocals args freeLocals (node : nodes)
 
-            (cbody, freeLocals) <-
-              verifyBindings Warning.Pattern argBindings (canonicalize newEnv body)
-
-            let cdef = Can.Def aname args cbody
-            let node = (Define cdef, name, Map.keys freeLocals)
-            logLetLocals args freeLocals (node : nodes)
-        Just tipe ->
-          do
-            (Can.Forall freeVars ctipe) <- Type.toAnnotation env tipe
-            ((args, resultType), argBindings) <-
-              Pattern.verify (Error.DPFuncArgs name) $
-                gatherTypedArgs env name srcArgs ctipe Index.first []
-
-            newEnv <-
-              Env.addLocals argBindings env
-
-            (cbody, freeLocals) <-
-              verifyBindings Warning.Pattern argBindings (canonicalize newEnv body)
-
-            let cdef = Can.TypedDef aname freeVars args cbody resultType
-            let node = (Define cdef, name, Map.keys freeLocals)
-            logLetLocals args freeLocals (node : nodes)
-    Src.Destruct pattern body ->
-      do
-        (cpattern, _bindings) <-
-          Pattern.verify Error.DPDestruct $
-            Pattern.canonicalize env pattern
-
-        Result.Result $ \fs ws bad good ->
-          case canonicalize env body of
-            Result.Result k ->
-              k
-                Map.empty
-                ws
-                ( \freeLocals warnings errors ->
-                    bad (Map.unionWith combineUses freeLocals fs) warnings errors
-                )
-                ( \freeLocals warnings cbody ->
-                    let names = getPatternNames [] pattern
-                        name = Name.fromManyNames (map Ann.toValue names)
-                        node = (Destruct cpattern cbody, name, Map.keys freeLocals)
-                     in good
-                          (Map.unionWith combineUses fs freeLocals)
-                          warnings
-                          (List.foldl' (addEdge [name]) (node : nodes) names)
-                )
+addDestructNode :: Env.Env -> [Node] -> Src.Pattern -> Src.Expr -> Result FreeLocals [Warning.Warning] [Node]
+addDestructNode env nodes pattern body =
+  do
+    (cpattern, _bindings) <-
+      Pattern.verify Error.DPDestruct $
+        Pattern.canonicalize env pattern
+    Result.Result $ \fs ws bad good ->
+      let (Result.Result k) = canonicalize env body
+       in k
+            Map.empty
+            ws
+            ( \freeLocals warnings errors ->
+                bad (Map.unionWith combineUses freeLocals fs) warnings errors
+            )
+            ( \freeLocals warnings cbody ->
+                let names = getPatternNames [] pattern
+                    name = Name.fromManyNames (map Ann.toValue names)
+                    node = (Destruct cpattern cbody, name, Map.keys freeLocals)
+                 in good
+                      (Map.unionWith combineUses fs freeLocals)
+                      warnings
+                      (List.foldl' (addEdge [name]) (node : nodes) names)
+            )
 
 logLetLocals :: [arg] -> FreeLocals -> value -> Result FreeLocals w value
 logLetLocals args letLocals value =
@@ -598,59 +593,56 @@ gatherTypedArgs env name srcArgs tipe index revTypedArgs =
 -- DETECT CYCLES
 
 detectCycles :: Ann.Region -> [Graph.SCC Binding] -> Can.Expr -> Result i w Can.Expr
-detectCycles letRegion sccs body =
-  case sccs of
-    [] ->
-      Result.ok body
-    scc : subSccs ->
-      case scc of
-        Graph.AcyclicSCC binding ->
-          case binding of
-            Define def ->
-              Ann.At letRegion . Can.Let def <$> detectCycles letRegion subSccs body
-            Edge _ ->
-              detectCycles letRegion subSccs body
-            Destruct pattern expr ->
-              Ann.At letRegion . Can.LetDestruct pattern expr <$> detectCycles letRegion subSccs body
-        Graph.CyclicSCC bindings ->
-          Ann.At letRegion
-            <$> ( Can.LetRec
-                    <$> checkCycle bindings []
-                    <*> detectCycles letRegion subSccs body
-                )
+detectCycles _ [] body = Result.ok body
+detectCycles letRegion (scc : subSccs) body =
+  detectSCC letRegion scc subSccs body
+
+detectSCC :: Ann.Region -> Graph.SCC Binding -> [Graph.SCC Binding] -> Can.Expr -> Result i w Can.Expr
+detectSCC letRegion (Graph.AcyclicSCC binding) subSccs body =
+  detectAcyclicBinding letRegion binding subSccs body
+detectSCC letRegion (Graph.CyclicSCC bindings) subSccs body =
+  Ann.At letRegion
+    <$> ( Can.LetRec
+            <$> checkCycle bindings []
+            <*> detectCycles letRegion subSccs body
+        )
+
+detectAcyclicBinding :: Ann.Region -> Binding -> [Graph.SCC Binding] -> Can.Expr -> Result i w Can.Expr
+detectAcyclicBinding letRegion (Define def) subSccs body =
+  Ann.At letRegion . Can.Let def <$> detectCycles letRegion subSccs body
+detectAcyclicBinding letRegion (Edge _) subSccs body =
+  detectCycles letRegion subSccs body
+detectAcyclicBinding letRegion (Destruct pattern expr) subSccs body =
+  Ann.At letRegion . Can.LetDestruct pattern expr <$> detectCycles letRegion subSccs body
 
 checkCycle :: [Binding] -> [Can.Def] -> Result i w [Can.Def]
-checkCycle bindings defs =
-  case bindings of
-    [] ->
-      Result.ok defs
-    binding : otherBindings ->
-      case binding of
-        Define def@(Can.Def name args _) ->
-          if null args
-            then Result.throw (Error.RecursiveLet name (toNames otherBindings defs))
-            else checkCycle otherBindings (def : defs)
-        Define def@(Can.TypedDef name _ args _ _) ->
-          if null args
-            then Result.throw (Error.RecursiveLet name (toNames otherBindings defs))
-            else checkCycle otherBindings (def : defs)
-        Edge name ->
-          Result.throw (Error.RecursiveLet name (toNames otherBindings defs))
-        Destruct _ _ ->
-          -- a Destruct cannot appear in a cycle without any Edge values
-          -- so we just keep going until we get to the edges
-          checkCycle otherBindings defs
+checkCycle [] defs = Result.ok defs
+checkCycle (binding : otherBindings) defs =
+  checkCycleBinding binding otherBindings defs
+
+checkCycleBinding :: Binding -> [Binding] -> [Can.Def] -> Result i w [Can.Def]
+checkCycleBinding (Define def@(Can.Def name args _)) otherBindings defs
+  | null args = Result.throw (Error.RecursiveLet name (toNames otherBindings defs))
+  | otherwise = checkCycle otherBindings (def : defs)
+checkCycleBinding (Define def@(Can.TypedDef name _ args _ _)) otherBindings defs
+  | null args = Result.throw (Error.RecursiveLet name (toNames otherBindings defs))
+  | otherwise = checkCycle otherBindings (def : defs)
+checkCycleBinding (Edge name) otherBindings defs =
+  Result.throw (Error.RecursiveLet name (toNames otherBindings defs))
+checkCycleBinding (Destruct _ _) otherBindings defs =
+  -- a Destruct cannot appear in a cycle without any Edge values
+  -- so we just keep going until we get to the edges
+  checkCycle otherBindings defs
 
 toNames :: [Binding] -> [Can.Def] -> [Name.Name]
-toNames bindings revDefs =
-  case bindings of
-    [] ->
-      reverse (map getDefName revDefs)
-    binding : otherBindings ->
-      case binding of
-        Define def -> getDefName def : toNames otherBindings revDefs
-        Edge (Ann.At _ name) -> name : toNames otherBindings revDefs
-        Destruct _ _ -> toNames otherBindings revDefs
+toNames [] revDefs = reverse (map getDefName revDefs)
+toNames (binding : otherBindings) revDefs =
+  bindingName binding otherBindings revDefs
+
+bindingName :: Binding -> [Binding] -> [Can.Def] -> [Name.Name]
+bindingName (Define def) otherBindings revDefs = getDefName def : toNames otherBindings revDefs
+bindingName (Edge (Ann.At _ name)) otherBindings revDefs = name : toNames otherBindings revDefs
+bindingName (Destruct _ _) otherBindings revDefs = toNames otherBindings revDefs
 
 getDefName :: Can.Def -> Name.Name
 getDefName def =
@@ -741,44 +733,47 @@ delayedUsage (Result.Result k) =
 
 findVar :: Ann.Region -> Env.Env -> Name.Name -> Result FreeLocals w Can.Expr_
 findVar region (Env.Env localHome vs _ _ _ qvs _ _) name =
-  case Map.lookup name vs of
-    Just var ->
-      case var of
-        Env.Local _ ->
-          logVar name (Can.VarLocal name)
-        Env.TopLevel _ ->
-          logVar name (Can.VarTopLevel localHome name)
-        Env.Foreign home annotation ->
-          Result.ok $
-            if home == ModuleName.debug
-              then Can.VarDebug localHome name annotation
-              else Can.VarForeign home name annotation
-        Env.Foreigns h hs ->
-          Result.throw (Error.AmbiguousVar region Nothing name h hs)
-    Nothing ->
-      Result.throw (Error.NotFoundVar region Nothing name (toPossibleNames vs qvs))
+  maybe
+    (Result.throw (Error.NotFoundVar region Nothing name (toPossibleNames vs qvs)))
+    (resolveVar region localHome name)
+    (Map.lookup name vs)
+
+resolveVar :: Ann.Region -> ModuleName.Canonical -> Name.Name -> Env.Var -> Result FreeLocals w Can.Expr_
+resolveVar _ _ name (Env.Local _) = logVar name (Can.VarLocal name)
+resolveVar _ localHome name (Env.TopLevel _) = logVar name (Can.VarTopLevel localHome name)
+resolveVar _ localHome name (Env.Foreign home annotation)
+  | home == ModuleName.debug = Result.ok (Can.VarDebug localHome name annotation)
+  | otherwise = Result.ok (Can.VarForeign home name annotation)
+resolveVar region _ name (Env.Foreigns h hs) =
+  Result.throw (Error.AmbiguousVar region Nothing name h hs)
 
 findVarQual :: Ann.Region -> Env.Env -> Name.Name -> Name.Name -> Result FreeLocals w Can.Expr_
 findVarQual region (Env.Env localHome vs _ _ _ qvs _ _) prefix name =
-  case Map.lookup prefix qvs of
-    Just qualified ->
-      case Map.lookup name qualified of
-        Just (Env.Specific home annotation) ->
-          Result.ok $
-            if home == ModuleName.debug
-              then Can.VarDebug localHome name annotation
-              else Can.VarForeign home name annotation
-        Just (Env.Ambiguous h hs) ->
-          Result.throw (Error.AmbiguousVar region (Just prefix) name h hs)
-        Nothing ->
-          Result.throw (Error.NotFoundVar region (Just prefix) name (toPossibleNames vs qvs))
-    Nothing ->
-      let isKernelPrefix = Name.isKernel prefix
-          localPackage = ModuleName._package localHome
-          isKernelPackage = Pkg.isKernel localPackage
-      in if isKernelPrefix && isKernelPackage
-          then Result.ok $ Can.VarKernel (Name.getKernel prefix) name
-          else Result.throw (Error.NotFoundVar region (Just prefix) name (toPossibleNames vs qvs))
+  maybe
+    (findKernelOrFail region localHome vs qvs prefix name)
+    (resolveQualified region localHome vs qvs prefix name)
+    (Map.lookup prefix qvs)
+
+resolveQualified :: Ann.Region -> ModuleName.Canonical -> Map.Map Name.Name Env.Var -> Env.Qualified Can.Annotation -> Name.Name -> Name.Name -> Map.Map Name.Name (Env.Info Can.Annotation) -> Result FreeLocals w Can.Expr_
+resolveQualified region localHome vs qvs prefix name qualified =
+  maybe
+    (Result.throw (Error.NotFoundVar region (Just prefix) name (toPossibleNames vs qvs)))
+    (resolveQualifiedInfo region localHome prefix name)
+    (Map.lookup name qualified)
+
+resolveQualifiedInfo :: Ann.Region -> ModuleName.Canonical -> Name.Name -> Name.Name -> Env.Info Can.Annotation -> Result FreeLocals w Can.Expr_
+resolveQualifiedInfo _ localHome _ name (Env.Specific home annotation)
+  | home == ModuleName.debug = Result.ok (Can.VarDebug localHome name annotation)
+  | otherwise = Result.ok (Can.VarForeign home name annotation)
+resolveQualifiedInfo region _ prefix name (Env.Ambiguous h hs) =
+  Result.throw (Error.AmbiguousVar region (Just prefix) name h hs)
+
+findKernelOrFail :: Ann.Region -> ModuleName.Canonical -> Map.Map Name.Name Env.Var -> Env.Qualified Can.Annotation -> Name.Name -> Name.Name -> Result FreeLocals w Can.Expr_
+findKernelOrFail region localHome vs qvs prefix name
+  | Name.isKernel prefix && Pkg.isKernel (ModuleName._package localHome) =
+      Result.ok (Can.VarKernel (Name.getKernel prefix) name)
+  | otherwise =
+      Result.throw (Error.NotFoundVar region (Just prefix) name (toPossibleNames vs qvs))
 
 toPossibleNames :: Map.Map Name.Name Env.Var -> Env.Qualified Can.Annotation -> Error.PossibleNames
 toPossibleNames exposed qualified =

@@ -259,16 +259,17 @@ fromModule modul@(Can.Module _ exports docs _ _ _ _ _ _) =
     Can.ExportEverything region ->
       pure (Left (DocsError.ImplicitExposing region))
     Can.Export exportDict ->
-      case docs of
-        Src.NoDocs region ->
-          pure (Left (DocsError.NoDocs region))
-        Src.YesDocs overview comments ->
-          case parseOverview overview of
-            Left err -> pure (Left err)
-            Right names ->
-              case checkNames exportDict names of
-                Left err -> pure (Left err)
-                Right () -> checkDefsIO exportDict overview (Map.fromList comments) modul
+      fromModuleDocs modul exportDict docs
+
+fromModuleDocs :: Can.Module -> Map.Map Name.Name (Ann.Located Can.Export) -> Src.Docs -> IO (Either DocsError.Error Module)
+fromModuleDocs _ _ (Src.NoDocs region) =
+  pure (Left (DocsError.NoDocs region))
+fromModuleDocs modul exportDict (Src.YesDocs overview comments) =
+  either (pure . Left) (validateAndBuild modul exportDict overview comments) (parseOverview overview)
+
+validateAndBuild :: Can.Module -> Map.Map Name.Name (Ann.Located Can.Export) -> Src.Comment -> [(Name.Name, Src.Comment)] -> [Ann.Located Name.Name] -> IO (Either DocsError.Error Module)
+validateAndBuild modul exportDict overview comments names =
+  either (pure . Left) (const (checkDefsIO exportDict overview (Map.fromList comments) modul)) (checkNames exportDict names)
 
 -- PARSE OVERVIEW
 
