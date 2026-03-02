@@ -25,6 +25,7 @@ import AST.Canonical.Types
     CtorOpts (..),
     FieldType (..),
     GuardInfo (..),
+    SupertypeBound (..),
     Type (..),
     Union (..),
   )
@@ -63,11 +64,28 @@ instance Aeson.FromJSON Ctor where
       <*> o Aeson..: "numArgs"
       <*> o Aeson..: "types"
 
+instance Aeson.ToJSON SupertypeBound where
+  toJSON bound = Aeson.String $ case bound of
+    ComparableBound -> "comparable"
+    AppendableBound -> "appendable"
+    NumberBound -> "number"
+    CompAppendBound -> "compappend"
+
+instance Aeson.FromJSON SupertypeBound where
+  parseJSON = Aeson.withText "SupertypeBound" $ \txt ->
+    case txt of
+      "comparable" -> pure ComparableBound
+      "appendable" -> pure AppendableBound
+      "number" -> pure NumberBound
+      "compappend" -> pure CompAppendBound
+      _ -> fail ("Unknown SupertypeBound: " ++ show txt)
+
 instance Aeson.ToJSON Alias where
-  toJSON (Alias vars tipe) =
+  toJSON (Alias vars tipe bound) =
     Aeson.object
       [ "vars" Aeson..= vars,
-        "type" Aeson..= tipe
+        "type" Aeson..= tipe,
+        "bound" Aeson..= bound
       ]
 
 instance Aeson.FromJSON Alias where
@@ -75,6 +93,7 @@ instance Aeson.FromJSON Alias where
     Alias
       <$> o Aeson..: "vars"
       <*> o Aeson..: "type"
+      <*> o Aeson..:? "bound"
 
 instance Aeson.ToJSON Union where
   toJSON (Union vars alts numAlts opts) =

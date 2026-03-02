@@ -113,7 +113,7 @@ aliasToDocs iAlias =
 --
 -- @since 0.19.1
 buildDocsAlias :: Can.Alias -> Docs.Alias
-buildDocsAlias (Can.Alias tvars tipe) =
+buildDocsAlias (Can.Alias tvars tipe _) =
   Docs.Alias emptyComment tvars (Extract.fromType tipe)
 
 -- | Convert a 'Can.Annotation' to a 'Docs.Value'.

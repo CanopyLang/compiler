@@ -126,7 +126,7 @@ testModuleConstruction = testCase "module with values, unions, aliases, infix, e
   let imports = [Src.Import (Ann.At Ann.one (Name.fromChars "List")) (Just (Name.fromChars "L")) Src.Open False]
   let val = Ann.At Ann.one (Src.Value (Ann.At Ann.one (Name.fromChars "x")) [] (Ann.At Ann.one (Src.Int 1)) Nothing Nothing)
   let union = Ann.At Ann.one (Src.Union (Ann.At Ann.one (Name.fromChars "U")) [] [(Ann.At Ann.one (Name.fromChars "C"), [])])
-  let alias = Ann.At Ann.one (Src.Alias (Ann.At Ann.one (Name.fromChars "Alias")) [] (Ann.At Ann.one (Src.TUnit)))
+  let alias = Ann.At Ann.one (Src.Alias (Ann.At Ann.one (Name.fromChars "Alias")) [] (Ann.At Ann.one (Src.TUnit)) Nothing)
   let _binop = Ann.At Ann.one (Src.Infix (Name.fromChars "+") Binop.Left (Binop.Precedence 5) (Name.fromChars "add"))
   let m = Src.Module Nothing exportAll docs imports [] [val] [union] [alias] [_binop] Src.NoEffects []
   -- Validate import alias and effects

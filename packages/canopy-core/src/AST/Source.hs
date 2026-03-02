@@ -121,6 +121,7 @@ module AST.Source
     GuardAnnotation (..),
     Union (..),
     Alias (..),
+    SupertypeBound (..),
     Infix (..),
     Port (..),
     Effects (..),
@@ -671,18 +672,43 @@ data GuardAnnotation = GuardAnnotation
 data Union = Union (Ann.Located Name) [Ann.Located Name] [(Ann.Located Name, [Type])]
   deriving (Show)
 
+-- | Supertype bound for opaque type aliases.
+--
+-- When a type alias is exported without its constructor (making it opaque),
+-- a supertype bound declares which constrained operations the opaque type
+-- supports. External consumers can use the type with operations matching
+-- the bound without knowing the internal representation.
+--
+-- For example, @type alias UserId = comparable => String@ lets external
+-- modules use @UserId@ in @Set@, @Dict@, and comparisons while keeping
+-- the internal representation hidden.
+--
+-- @since 0.20.0
+data SupertypeBound
+  = -- | The @comparable@ bound: supports @<@, @>@, @==@, @Set@, @Dict@ keys.
+    ComparableBound
+  | -- | The @appendable@ bound: supports @++@ concatenation.
+    AppendableBound
+  | -- | The @number@ bound: supports arithmetic operations @+@, @-@, @*@, @/@.
+    NumberBound
+  | -- | The @compappend@ bound: supports both comparison and concatenation.
+    CompAppendBound
+  deriving (Eq, Show)
+
 -- | Type alias definition in source code.
 --
 -- Represents type alias definitions like:
 -- @
 -- type alias UserId = Int
 -- type alias Point = { x : Float, y : Float }
+-- type alias Email = comparable => String
 -- @
 --
--- Contains alias name, type parameters, and target type.
+-- Contains alias name, type parameters, target type, and an optional
+-- supertype bound for opaque types.
 --
 -- @since 0.19.1
-data Alias = Alias (Ann.Located Name) [Ann.Located Name] Type
+data Alias = Alias (Ann.Located Name) [Ann.Located Name] Type !(Maybe SupertypeBound)
   deriving (Show)
 
 -- | Infix operator definition in source code.

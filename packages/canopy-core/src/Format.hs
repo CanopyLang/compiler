@@ -458,10 +458,24 @@ formatVariant (locName, types) =
 
 -- | Format a type alias definition.
 formatAlias :: FormatConfig -> Src.Alias -> PP.Doc
-formatAlias config (Src.Alias locName params body) =
+formatAlias config (Src.Alias locName params body maybeBound) =
   PP.text "type alias" PP.<+> locNameDoc locName
     <> formatTypeParams params
-    <> PP.text " =" <> nlIndent config 1 <> formatType body
+    <> PP.text " =" <> nlIndent config 1 <> formatBound maybeBound <> formatType body
+
+-- | Format a supertype bound prefix, if present.
+--
+-- Renders as @comparable => @ (with trailing space) so the type body
+-- follows directly.
+formatBound :: Maybe Src.SupertypeBound -> PP.Doc
+formatBound Nothing = PP.empty
+formatBound (Just bound) =
+  PP.text (boundName bound) PP.<+> PP.text "=> "
+  where
+    boundName Src.ComparableBound = "comparable"
+    boundName Src.AppendableBound = "appendable"
+    boundName Src.NumberBound = "number"
+    boundName Src.CompAppendBound = "compappend"
 
 -- | Format an infix operator declaration.
 formatInfix :: Src.Infix -> PP.Doc

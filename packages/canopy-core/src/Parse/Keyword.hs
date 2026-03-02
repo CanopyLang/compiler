@@ -28,6 +28,10 @@ module Parse.Keyword
     javascript_,
     lazy_,
     guards_,
+    comparable_,
+    appendable_,
+    number_,
+    compappend_,
     k4,
     k5,
   )
@@ -149,6 +153,72 @@ lazy_ = k4 0x6C 0x61 0x7A 0x79
 
 guards_ :: (Row -> Col -> x) -> Parser x ()
 guards_ = k6 0x67 0x75 0x61 0x72 0x64 0x73
+
+-- SUPERTYPE BOUND KEYWORDS
+
+-- | Match the keyword @number@ (6 chars).
+number_ :: (Row -> Col -> x) -> Parser x ()
+number_ = k6 0x6E 0x75 0x6D 0x62 0x65 0x72
+
+-- | Match the keyword @comparable@ (10 chars).
+comparable_ :: (Row -> Col -> x) -> Parser x ()
+comparable_ toError =
+  Parse.Parser $ \(Parse.State src pos end indent row col) cok _ _ eerr ->
+    let !pos10 = plusPtr pos 10
+     in if pos10 <= end
+          && Parse.unsafeIndex (pos) == 0x63
+          && Parse.unsafeIndex (plusPtr pos 1) == 0x6F
+          && Parse.unsafeIndex (plusPtr pos 2) == 0x6D
+          && Parse.unsafeIndex (plusPtr pos 3) == 0x70
+          && Parse.unsafeIndex (plusPtr pos 4) == 0x61
+          && Parse.unsafeIndex (plusPtr pos 5) == 0x72
+          && Parse.unsafeIndex (plusPtr pos 6) == 0x61
+          && Parse.unsafeIndex (plusPtr pos 7) == 0x62
+          && Parse.unsafeIndex (plusPtr pos 8) == 0x6C
+          && Parse.unsafeIndex (plusPtr pos 9) == 0x65
+          && Var.getInnerWidth pos10 end == 0
+          then let !s = Parse.State src pos10 end indent row (col + 10) in cok () s
+          else eerr row col toError
+
+-- | Match the keyword @appendable@ (10 chars).
+appendable_ :: (Row -> Col -> x) -> Parser x ()
+appendable_ toError =
+  Parse.Parser $ \(Parse.State src pos end indent row col) cok _ _ eerr ->
+    let !pos10 = plusPtr pos 10
+     in if pos10 <= end
+          && Parse.unsafeIndex (pos) == 0x61
+          && Parse.unsafeIndex (plusPtr pos 1) == 0x70
+          && Parse.unsafeIndex (plusPtr pos 2) == 0x70
+          && Parse.unsafeIndex (plusPtr pos 3) == 0x65
+          && Parse.unsafeIndex (plusPtr pos 4) == 0x6E
+          && Parse.unsafeIndex (plusPtr pos 5) == 0x64
+          && Parse.unsafeIndex (plusPtr pos 6) == 0x61
+          && Parse.unsafeIndex (plusPtr pos 7) == 0x62
+          && Parse.unsafeIndex (plusPtr pos 8) == 0x6C
+          && Parse.unsafeIndex (plusPtr pos 9) == 0x65
+          && Var.getInnerWidth pos10 end == 0
+          then let !s = Parse.State src pos10 end indent row (col + 10) in cok () s
+          else eerr row col toError
+
+-- | Match the keyword @compappend@ (10 chars).
+compappend_ :: (Row -> Col -> x) -> Parser x ()
+compappend_ toError =
+  Parse.Parser $ \(Parse.State src pos end indent row col) cok _ _ eerr ->
+    let !pos10 = plusPtr pos 10
+     in if pos10 <= end
+          && Parse.unsafeIndex (pos) == 0x63
+          && Parse.unsafeIndex (plusPtr pos 1) == 0x6F
+          && Parse.unsafeIndex (plusPtr pos 2) == 0x6D
+          && Parse.unsafeIndex (plusPtr pos 3) == 0x70
+          && Parse.unsafeIndex (plusPtr pos 4) == 0x61
+          && Parse.unsafeIndex (plusPtr pos 5) == 0x70
+          && Parse.unsafeIndex (plusPtr pos 6) == 0x70
+          && Parse.unsafeIndex (plusPtr pos 7) == 0x65
+          && Parse.unsafeIndex (plusPtr pos 8) == 0x6E
+          && Parse.unsafeIndex (plusPtr pos 9) == 0x64
+          && Var.getInnerWidth pos10 end == 0
+          then let !s = Parse.State src pos10 end indent row (col + 10) in cok () s
+          else eerr row col toError
 
 -- FFI KEYWORDS
 

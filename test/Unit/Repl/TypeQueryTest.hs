@@ -199,6 +199,6 @@ aliasInterface =
     Pkg.core
     Map.empty
     Map.empty
-    (Map.singleton (Name.fromChars "Point") (Interface.PublicAlias (Can.Alias [] intType)))
+    (Map.singleton (Name.fromChars "Point") (Interface.PublicAlias (Can.Alias [] intType Nothing)))
     Map.empty
     Map.empty

@@ -1,2 +1,4 @@
 Box/vars=1 fields=[value:a,tag:Int]
 Pair/vars=2 tuple=len2
+Score/vars=0 type=Int bound=number
+UserId/vars=0 type=String bound=comparable

@@ -26,6 +26,7 @@ import AST.Canonical.Types
     CtorOpts (..),
     FieldType (..),
     GuardInfo (..),
+    SupertypeBound (..),
     Type (..),
     Union (..),
   )
@@ -37,9 +38,25 @@ import qualified Data.Foldable as Foldable
 import Data.Word (Word8)
 import qualified Reporting.InternalError as InternalError
 
+instance Binary.Binary SupertypeBound where
+  put bound =
+    Binary.putWord8 $ case bound of
+      ComparableBound -> 0
+      AppendableBound -> 1
+      NumberBound -> 2
+      CompAppendBound -> 3
+  get = do
+    tag <- Binary.getWord8
+    case tag of
+      0 -> pure ComparableBound
+      1 -> pure AppendableBound
+      2 -> pure NumberBound
+      3 -> pure CompAppendBound
+      _ -> fail ("SupertypeBound: unexpected tag " ++ show tag ++ " (expected 0-3). Delete canopy-stuff/ to rebuild.")
+
 instance Binary.Binary Alias where
-  get = Monad.liftM2 Alias Binary.get Binary.get
-  put (Alias a b) = Binary.put a >> Binary.put b
+  get = Monad.liftM3 Alias Binary.get Binary.get Binary.get
+  put (Alias a b c) = Binary.put a >> Binary.put b >> Binary.put c
 
 instance Binary.Binary Union where
   put (Union a b c d) = Binary.put a >> Binary.put b >> Binary.put c >> Binary.put d

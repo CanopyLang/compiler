@@ -41,6 +41,9 @@ module AST.Canonical.Types
     FieldType (..),
     fieldsToList,
 
+    -- * Supertype Bounds
+    SupertypeBound (..),
+
     -- * Module Structure
     Module (..),
     Alias (..),
@@ -388,7 +391,21 @@ data Module = Module
     _guards :: !(Map Name GuardInfo)
   }
 
-data Alias = Alias [Name] Type
+-- | Supertype bound for opaque type aliases.
+--
+-- When a type alias is exported without its constructor (making it opaque),
+-- a supertype bound declares which constrained operations the opaque type
+-- supports externally.
+--
+-- @since 0.20.0
+data SupertypeBound
+  = ComparableBound
+  | AppendableBound
+  | NumberBound
+  | CompAppendBound
+  deriving (Eq, Show)
+
+data Alias = Alias [Name] Type !(Maybe SupertypeBound)
   deriving (Eq, Show)
 
 data Binop = Binop_ Binop.Associativity Binop.Precedence Name

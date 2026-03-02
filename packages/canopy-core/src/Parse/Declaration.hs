@@ -10,6 +10,7 @@ module Parse.Declaration
 import qualified Canopy.Data.Name as Name
 
 import AST.Source (GuardAnnotation (..))
+import AST.Source (SupertypeBound (..))
 import qualified AST.Source as Src
 import qualified AST.Utils.Binop as Binop
 import qualified Parse.Expression as Expr
@@ -159,8 +160,9 @@ typeDecl maybeDocs start =
             inContext SyntaxError.DT_Alias (Keyword.alias_ SyntaxError.DT_Name) $
               do  Space.chompAndCheckIndent SyntaxError.AliasSpace SyntaxError.AliasIndentEquals
                   (name, args) <- chompAliasNameToEquals
+                  maybeBound <- chompOptionalBound
                   (tipe, end) <- specialize SyntaxError.AliasBody Type.expression
-                  let alias = Ann.at start end (Src.Alias name args tipe)
+                  let alias = Ann.at start end (Src.Alias name args tipe maybeBound)
                   return (Alias maybeDocs alias, end)
           ,
             specialize SyntaxError.DT_Union $
@@ -194,6 +196,38 @@ chompAliasNameToEqualsHelp name args =
           return ( name, reverse args )
     ]
 
+
+
+-- SUPERTYPE BOUNDS
+
+
+-- | Optionally parse a supertype bound before the type body in a type alias.
+--
+-- Syntax: @comparable =>@, @appendable =>@, @number =>@, @compappend =>@
+--
+-- The bound keyword must be followed by @=>@ and then whitespace. If no
+-- bound keyword is found, returns 'Nothing' without consuming input.
+--
+-- @since 0.20.0
+chompOptionalBound :: Parser SyntaxError.TypeAlias (Maybe Src.SupertypeBound)
+chompOptionalBound =
+  oneOfWithFallback
+    [ chompBound Keyword.comparable_ ComparableBound,
+      chompBound Keyword.appendable_ AppendableBound,
+      chompBound Keyword.number_ NumberBound,
+      chompBound Keyword.compappend_ CompAppendBound
+    ]
+    Nothing
+
+
+-- | Parse a specific bound keyword followed by @=>@ and whitespace.
+chompBound :: ((Row -> Col -> SyntaxError.TypeAlias) -> Parser SyntaxError.TypeAlias ()) -> Src.SupertypeBound -> Parser SyntaxError.TypeAlias (Maybe Src.SupertypeBound)
+chompBound keywordParser bound =
+  do  keywordParser SyntaxError.AliasEquals
+      Space.chompAndCheckIndent SyntaxError.AliasSpace SyntaxError.AliasIndentBody
+      word2 0x3D 0x3E {-=>-} SyntaxError.AliasEquals
+      Space.chompAndCheckIndent SyntaxError.AliasSpace SyntaxError.AliasIndentBody
+      return (Just bound)
 
 
 -- CUSTOM TYPES

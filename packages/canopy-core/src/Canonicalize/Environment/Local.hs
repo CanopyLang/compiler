@@ -78,7 +78,7 @@ toEffectDups effects =
 
 addTypes :: Src.Module -> Env.Env -> Result i w Env.Env
 addTypes (Src.Module _ _ _ _ _ _ unions aliases _ _ _) (Env.Env home vs ts cs bs qvs qts qcs) =
-  let addAliasDups dups (Ann.At _ (Src.Alias (Ann.At region name) _ _)) = Dups.insert name region () dups
+  let addAliasDups dups (Ann.At _ (Src.Alias (Ann.At region name) _ _ _)) = Dups.insert name region () dups
       addUnionDups dups (Ann.At _ (Src.Union (Ann.At region name) _ _)) = Dups.insert name region () dups
       typeNameDups =
         List.foldl' addUnionDups (List.foldl' addAliasDups Dups.none aliases) unions
@@ -105,7 +105,7 @@ addAliases aliases env =
 addAlias :: Env.Env -> Graph.SCC (Ann.Located Src.Alias) -> Result i w Env.Env
 addAlias env@(Env.Env home vs ts cs bs qvs qts qcs) scc =
   case scc of
-    Graph.AcyclicSCC alias@(Ann.At _ (Src.Alias (Ann.At _ name) _ tipe)) ->
+    Graph.AcyclicSCC alias@(Ann.At _ (Src.Alias (Ann.At _ name) _ tipe _)) ->
       do
         args <- checkAliasFreeVars alias
         ctype <- Type.canonicalize env tipe
@@ -114,16 +114,16 @@ addAlias env@(Env.Env home vs ts cs bs qvs qts qcs) scc =
         Result.ok $ Env.Env home vs ts1 cs bs qvs qts qcs
     Graph.CyclicSCC [] ->
       Result.ok env
-    Graph.CyclicSCC (alias@(Ann.At _ (Src.Alias (Ann.At region name1) _ tipe)) : others) ->
+    Graph.CyclicSCC (alias@(Ann.At _ (Src.Alias (Ann.At region name1) _ tipe _)) : others) ->
       do
         args <- checkAliasFreeVars alias
-        let toName (Ann.At _ (Src.Alias (Ann.At _ name) _ _)) = name
+        let toName (Ann.At _ (Src.Alias (Ann.At _ name) _ _ _)) = name
         Result.throw (Error.RecursiveAlias region name1 args tipe (fmap toName others))
 
 -- DETECT TYPE ALIAS CYCLES
 
 toNode :: Ann.Located Src.Alias -> (Ann.Located Src.Alias, Name.Name, [Name.Name])
-toNode alias@(Ann.At _ (Src.Alias (Ann.At _ name) _ tipe)) =
+toNode alias@(Ann.At _ (Src.Alias (Ann.At _ name) _ tipe _)) =
   (alias, name, getEdges [] tipe)
 
 getEdges :: [Name.Name] -> Src.Type -> [Name.Name]
@@ -163,7 +163,7 @@ checkUnionFreeVars (Ann.At unionRegion (Src.Union (Ann.At _ name) args ctors)) =
               Error.TypeVarsUnboundInUnion unionRegion name (fmap Ann.toValue args) unbound unbounds
 
 checkAliasFreeVars :: Ann.Located Src.Alias -> Result i w [Name.Name]
-checkAliasFreeVars (Ann.At aliasRegion (Src.Alias (Ann.At _ name) args tipe)) =
+checkAliasFreeVars (Ann.At aliasRegion (Src.Alias (Ann.At _ name) args tipe _)) =
   let addArg (Ann.At region arg) = Dups.insert arg region region
    in do
         boundVars <- Dups.detect (Error.DuplicateAliasArg name) (foldr addArg Dups.none args)
@@ -231,18 +231,26 @@ type CtorDups = Dups.Dict (Env.Info Env.Ctor)
 -- CANONICALIZE ALIAS
 
 canonicalizeAlias :: Env.Env -> Ann.Located Src.Alias -> Result i w ((Name.Name, Can.Alias), CtorDups)
-canonicalizeAlias env@(Env.Env home _ _ _ _ _ _ _) (Ann.At _ (Src.Alias (Ann.At region name) args tipe)) =
+canonicalizeAlias env@(Env.Env home _ _ _ _ _ _ _) (Ann.At _ (Src.Alias (Ann.At region name) args tipe maybeBound)) =
   do
     let vars = fmap Ann.toValue args
     ctipe <- Type.canonicalize env tipe
+    let canBound = fmap canonicalizeBound maybeBound
     Result.ok
-      ( (name, Can.Alias vars ctipe),
+      ( (name, Can.Alias vars ctipe canBound),
         case ctipe of
           Can.TRecord fields Nothing ->
             Dups.one name region (Env.Specific home (toRecordCtor home name vars fields))
           _ ->
             Dups.none
       )
+
+-- | Convert a source supertype bound to its canonical representation.
+canonicalizeBound :: Src.SupertypeBound -> Can.SupertypeBound
+canonicalizeBound Src.ComparableBound = Can.ComparableBound
+canonicalizeBound Src.AppendableBound = Can.AppendableBound
+canonicalizeBound Src.NumberBound = Can.NumberBound
+canonicalizeBound Src.CompAppendBound = Can.CompAppendBound
 
 toRecordCtor :: ModuleName.Canonical -> Name.Name -> [Name.Name] -> Map.Map Name.Name Can.FieldType -> Env.Ctor
 toRecordCtor home name vars fields =

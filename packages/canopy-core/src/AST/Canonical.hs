@@ -142,6 +142,8 @@ module AST.Canonical
     AliasType (..),
     FieldType (..),
     fieldsToList,
+    -- supertype bounds
+    SupertypeBound (..),
     -- modules
     Module (..),
     Alias (..),
@@ -183,6 +185,7 @@ import AST.Canonical.Types
     Pattern_ (..),
     PatternCtorArg (..),
     Port (..),
+    SupertypeBound (..),
     Type (..),
     Union (..),
     Binop (..),

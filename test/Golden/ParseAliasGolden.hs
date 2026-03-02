@@ -30,9 +30,17 @@ aliasSummary modul =
    in List.intercalate "\n" (List.sort items)
 
 summarize :: Ann.Located Src.Alias -> String
-summarize (Ann.At _ (Src.Alias (Ann.At _ n) tvars tipe)) =
+summarize (Ann.At _ (Src.Alias (Ann.At _ n) tvars tipe maybeBound)) =
   let header = (Name.toChars n <> ("/vars=" <> show (length tvars)))
-   in (header <> (" " <> body tipe))
+      boundStr = maybe "" (\b -> " bound=" <> showBound b) maybeBound
+   in (header <> (" " <> body tipe <> boundStr))
+
+-- | Render a supertype bound as a short string for golden output.
+showBound :: Src.SupertypeBound -> String
+showBound Src.ComparableBound = "comparable"
+showBound Src.AppendableBound = "appendable"
+showBound Src.NumberBound = "number"
+showBound Src.CompAppendBound = "compappend"
 
 body :: Src.Type -> String
 body (Ann.At _ t) =

@@ -444,7 +444,7 @@ checkExportIO info name (Ann.At region export) =
           pure $ \m -> m {_binops = Map.insert name (Binop comment tipe assoc prec) (_binops m)}
     Can.ExportAlias ->
       do
-        (Can.Alias tvars tipe) <- lookupOrThrow name "alias" (_iAliases info)
+        (Can.Alias tvars tipe _) <- lookupOrThrow name "alias" (_iAliases info)
         Result.ok $ do
           comment <- getCommentIO region name info
           pure $ \m -> m {_aliases = Map.insert name (Alias comment tvars (Extract.fromType tipe)) (_aliases m)}

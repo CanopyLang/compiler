@@ -98,7 +98,7 @@ collectNamesInCtor (_, types) =
 
 -- | Collect names from a type alias definition.
 collectNamesInAlias :: Src.Alias -> [String]
-collectNamesInAlias (Src.Alias _ _ t) =
+collectNamesInAlias (Src.Alias _ _ t _) =
   collectNamesInType (Ann.toValue t)
 
 -- | Collect all identifier tokens used in an expression.

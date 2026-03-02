@@ -155,7 +155,7 @@ aliasToType home name alias =
   aliasToTypeHelp home name <$> Interface.toPublicAlias alias
 
 aliasToTypeHelp :: ModuleName.Canonical -> Name.Name -> Can.Alias -> (Env.Type, Env.Exposed Env.Ctor)
-aliasToTypeHelp home name (Can.Alias vars tipe) =
+aliasToTypeHelp home name (Can.Alias vars tipe _bound) =
   ( Env.Alias (length vars) home vars tipe,
     case tipe of
       Can.TRecord fields Nothing ->

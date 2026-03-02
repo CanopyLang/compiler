@@ -22,7 +22,12 @@ tests =
       testPortModuleApplication,
       testEffectModuleKernel,
       testEffectModuleDisallowedInApp,
-      testAliasGenerics
+      testAliasGenerics,
+      testComparableBound,
+      testAppendableBound,
+      testNumberBound,
+      testCompappendBound,
+      testNoBoundIsNothing
     ]
 
 parseModule :: ParseModule.ProjectType -> String -> Either SyntaxError.Error Src.Module
@@ -165,7 +170,7 @@ testAliasGenerics = testCase "type alias generics referenced in field types" $ d
           ]
   case parseModule ParseModule.Application src of
     Right m -> case Src._aliases m of
-      [Ann.At _ (Src.Alias (Ann.At _ name) typeVars tipe)] -> do
+      [Ann.At _ (Src.Alias (Ann.At _ name) typeVars tipe _)] -> do
         name @?= Name.fromChars "Box"
         -- ensure one type var named 'a'
         case typeVars of
@@ -177,5 +182,90 @@ testAliasGenerics = testCase "type alias generics referenced in field types" $ d
             field @?= Name.fromChars "value"
             v @?= Name.fromChars "a"
           other -> assertFailure ("unexpected alias body: " <> show other)
+      _ -> assertFailure "expected exactly one alias"
+    other -> assertFailure ("unexpected: " <> show other)
+
+-- | Parse a type alias with @comparable =>@ bound and verify the bound is present.
+testComparableBound :: TestTree
+testComparableBound = testCase "comparable bound on type alias" $ do
+  let src =
+        unlines
+          [ "module M exposing (..)",
+            "",
+            "type alias UserId = comparable => String"
+          ]
+  case parseModule ParseModule.Application src of
+    Right m -> case Src._aliases m of
+      [Ann.At _ (Src.Alias (Ann.At _ name) _ _ maybeBound)] -> do
+        name @?= Name.fromChars "UserId"
+        maybeBound @?= Just Src.ComparableBound
+      _ -> assertFailure "expected exactly one alias"
+    other -> assertFailure ("unexpected: " <> show other)
+
+-- | Parse a type alias with @appendable =>@ bound and verify the bound is present.
+testAppendableBound :: TestTree
+testAppendableBound = testCase "appendable bound on type alias" $ do
+  let src =
+        unlines
+          [ "module M exposing (..)",
+            "",
+            "type alias Tag = appendable => String"
+          ]
+  case parseModule ParseModule.Application src of
+    Right m -> case Src._aliases m of
+      [Ann.At _ (Src.Alias (Ann.At _ name) _ _ maybeBound)] -> do
+        name @?= Name.fromChars "Tag"
+        maybeBound @?= Just Src.AppendableBound
+      _ -> assertFailure "expected exactly one alias"
+    other -> assertFailure ("unexpected: " <> show other)
+
+-- | Parse a type alias with @number =>@ bound and verify the bound is present.
+testNumberBound :: TestTree
+testNumberBound = testCase "number bound on type alias" $ do
+  let src =
+        unlines
+          [ "module M exposing (..)",
+            "",
+            "type alias Score = number => Int"
+          ]
+  case parseModule ParseModule.Application src of
+    Right m -> case Src._aliases m of
+      [Ann.At _ (Src.Alias (Ann.At _ name) _ _ maybeBound)] -> do
+        name @?= Name.fromChars "Score"
+        maybeBound @?= Just Src.NumberBound
+      _ -> assertFailure "expected exactly one alias"
+    other -> assertFailure ("unexpected: " <> show other)
+
+-- | Parse a type alias with @compappend =>@ bound and verify the bound is present.
+testCompappendBound :: TestTree
+testCompappendBound = testCase "compappend bound on type alias" $ do
+  let src =
+        unlines
+          [ "module M exposing (..)",
+            "",
+            "type alias Key = compappend => String"
+          ]
+  case parseModule ParseModule.Application src of
+    Right m -> case Src._aliases m of
+      [Ann.At _ (Src.Alias (Ann.At _ name) _ _ maybeBound)] -> do
+        name @?= Name.fromChars "Key"
+        maybeBound @?= Just Src.CompAppendBound
+      _ -> assertFailure "expected exactly one alias"
+    other -> assertFailure ("unexpected: " <> show other)
+
+-- | Parse a type alias without a bound and verify the bound field is 'Nothing'.
+testNoBoundIsNothing :: TestTree
+testNoBoundIsNothing = testCase "alias without bound has Nothing" $ do
+  let src =
+        unlines
+          [ "module M exposing (..)",
+            "",
+            "type alias Pair = ( Int, Int )"
+          ]
+  case parseModule ParseModule.Application src of
+    Right m -> case Src._aliases m of
+      [Ann.At _ (Src.Alias (Ann.At _ name) _ _ maybeBound)] -> do
+        name @?= Name.fromChars "Pair"
+        maybeBound @?= Nothing
       _ -> assertFailure "expected exactly one alias"
     other -> assertFailure ("unexpected: " <> show other)

@@ -67,7 +67,7 @@ addAliases home aliases graph =
   Map.foldrWithKey (addAlias home) graph aliases
 
 addAlias :: ModuleName.Canonical -> Name.Name -> Can.Alias -> Opt.LocalGraph -> Opt.LocalGraph
-addAlias home name (Can.Alias _ tipe) graph@(Opt.LocalGraph main nodes fieldCounts locs) =
+addAlias home name (Can.Alias _ tipe _) graph@(Opt.LocalGraph main nodes fieldCounts locs) =
   case tipe of
     Can.TRecord fields Nothing ->
       let function =

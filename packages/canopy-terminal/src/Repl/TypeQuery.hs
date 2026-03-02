@@ -90,7 +90,7 @@ formatAliasExport (name, iAlias) =
 
 -- | Format a public alias as @type alias Name vars = Type@.
 formatPublicAlias :: Name.Name -> Can.Alias -> [String]
-formatPublicAlias name (Can.Alias tvars tipe) =
+formatPublicAlias name (Can.Alias tvars tipe _) =
   [aliasDecl]
   where
     tvarsStr = concatMap (\v -> " " ++ Name.toChars v) tvars
