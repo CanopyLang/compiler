@@ -26,6 +26,7 @@ canopy.cabal
 .env
 node_modules
 .stack-work
+coverage-report/
 
 # Build artifacts and binaries
 # (No longer needed - executable now builds to proper location)

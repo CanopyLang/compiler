@@ -15,6 +15,9 @@ help:
 	@echo "test-integration: Run integration tests only"
 	@echo "test-watch: Run tests in watch mode"
 	@echo "test-coverage: Run tests with coverage report"
+	@echo "test-coverage-check: Run tests with coverage and enforce 80% threshold"
+	@echo "test-coverage-report: Show per-module coverage breakdown"
+	@echo "test-coverage-badge: Generate coverage badge for documentation"
 	@echo "test-build: Build tests without running them"
 	@echo "test-deps: Install test dependencies"
 	@echo "bench: Run compilation benchmarks (HTML report)"
@@ -88,7 +91,17 @@ test-watch:
 test-coverage:
 	@echo "Running tests with coverage..."
 	@stack test --coverage --fast canopy:canopy-test
-	@echo "Coverage report generated in .stack-work/install/*/doc/"
+	@stack hpc report canopy:canopy-test --destdir=coverage-report 2>/dev/null || true
+	@echo "Coverage report: coverage-report/hpc_index.html"
+
+test-coverage-check: test-coverage
+	@./scripts/check-coverage.sh 80
+
+test-coverage-report:
+	@./scripts/coverage-by-module.sh
+
+test-coverage-badge:
+	@./scripts/coverage-badge.sh
 
 test-build:
 	@echo "Building tests without running..."
