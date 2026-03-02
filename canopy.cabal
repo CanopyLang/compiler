@@ -250,6 +250,7 @@ test-suite canopy-test
       Unit.CLI.CommandsTest
       Unit.CLI.DocumentationTest
       Unit.CLI.ParsersTest
+      Unit.Compiler.DiscoveryTest
       Unit.Data.BagTest
       Unit.Data.IndexTest
       Unit.Data.Map.UtilsTest
