@@ -86,7 +86,9 @@ toOp types (Can.Binop_ associativity precedence name) =
   Binop
     name
     ( maybe
-        (InternalError.report "Canopy.Interface.toOp" ("Annotation missing for binop: " <> Text.pack (show name)) "Every binary operator must have a type annotation in the values map.")
+        (InternalError.report "Canopy.Interface.toOp"
+          ("Annotation missing for binop `" <> Text.pack (Name.toChars name) <> "` in values map with " <> Text.pack (show (Map.size types)) <> " entries")
+          "Every binary operator must have a type annotation in the values map. This indicates a bug in the canonicalization phase.")
         id
         (Map.lookup name types)
     )
@@ -109,8 +111,8 @@ restrictUnions exports unions =
             Can.ExportUnionClosed -> ClosedUnion union
             _ -> InternalError.report
               "Canopy.Interface.restrictUnions"
-              "impossible exports discovered in restrictUnions"
-              "Expected ExportUnionOpen or ExportUnionClosed when zipping exports with unions, but found a non-union export type. This indicates a bug in the module exports analysis."
+              "Non-union export type found in restrictUnions"
+              "Expected ExportUnionOpen or ExportUnionClosed when zipping exports with unions, but found a non-union export type (ExportValue, ExportBinop, ExportAlias, or ExportPort). This indicates a bug in the module exports analysis."
 
 restrictAliases :: Can.Exports -> Map.Map Name.Name Can.Alias -> Map.Map Name.Name Alias
 restrictAliases exports aliases =

@@ -48,6 +48,7 @@ data NameProblem
 data DefProblem
   = NoComment Name.Name Ann.Region
   | NoAnnotation Name.Name Ann.Region
+  | InternalLookupFailure Name.Name Text.Text
   deriving (Show)
 
 -- TO DIAGNOSTICS
@@ -253,6 +254,21 @@ toDefProblemDiagnostic source problem =
                   Doc.link "Note" "Read" "docs" "for more advice on writing great docs. There are a couple important tricks!"
                 ]
             )
+        )
+    InternalLookupFailure name context ->
+      Diag.makeDiagnostic
+        (EC.docsError 5)
+        Diag.SError
+        Diag.PhaseDocs
+        "INTERNAL ERROR"
+        (Text.pack ("Internal lookup failure for `" <> Name.toChars name <> "`"))
+        (LabeledSpan (Ann.Region (Ann.Position 1 1) (Ann.Position 1 1)) (Text.pack ("missing `" <> Name.toChars name <> "`")) SpanPrimary)
+        ( Doc.stack
+            [ Doc.reflow
+                ("I encountered an internal error while generating documentation for `" <> Name.toChars name <> "`."),
+              Doc.reflow (Text.unpack context),
+              Doc.reflow "This is a compiler bug. Please report it at https://github.com/canopy-lang/canopy/issues"
+            ]
         )
 
 -- HELPERS

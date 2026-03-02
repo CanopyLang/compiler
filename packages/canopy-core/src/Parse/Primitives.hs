@@ -34,7 +34,9 @@ where
 
 import qualified Control.Applicative as Applicative (Applicative (..))
 import qualified Data.ByteString.Internal as BSI
+import qualified Data.Text as Text
 import Data.Word (Word32, Word8)
+import qualified Numeric
 import Foreign.ForeignPtr (ForeignPtr, touchForeignPtr)
 import Foreign.ForeignPtr.Unsafe (unsafeForeignPtrToPtr)
 import Foreign.Ptr (Ptr, plusPtr)
@@ -324,12 +326,15 @@ getCharWidth word
   | word < 0x80 = 1
   | word < 0xc0 = InternalError.report
       "Parse.Primitives.getCharWidth"
-      "Need UTF-8 encoded input. Ran into unrecognized continuation byte."
+      ("Invalid UTF-8 continuation byte 0x" <> showHexWord8 word <> " used as leading byte")
       "Byte values in range 0x80-0xBF are UTF-8 continuation bytes and cannot start a character. The input file may not be valid UTF-8."
   | word < 0xe0 = 2
   | word < 0xf0 = 3
   | word < 0xf8 = 4
   | otherwise = InternalError.report
       "Parse.Primitives.getCharWidth"
-      "Need UTF-8 encoded input. Ran into unrecognized leading byte."
+      ("Invalid UTF-8 leading byte 0x" <> showHexWord8 word)
       "Byte values >= 0xF8 are not valid UTF-8 leading bytes. The input file may not be valid UTF-8."
+
+showHexWord8 :: Word8 -> Text.Text
+showHexWord8 w = Text.pack (Numeric.showHex w "")

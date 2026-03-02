@@ -26,6 +26,7 @@ data Error
   = BadType Ann.Region Can.Type
   | BadCycle Ann.Region Name.Name [Name.Name]
   | BadFlags Ann.Region Can.Type CanonicalizeError.InvalidPayload
+  | InternalLookupFailure Name.Name Text
   deriving (Show)
 
 -- TO DIAGNOSTIC
@@ -33,9 +34,10 @@ data Error
 -- | Convert a main error to a structured 'Diagnostic'.
 --
 -- @
--- BadType  -> E0600
--- BadCycle -> E0601
--- BadFlags -> E0602
+-- BadType                -> E0600
+-- BadCycle               -> E0601
+-- BadFlags               -> E0602
+-- InternalLookupFailure  -> E0603
 -- @
 toDiagnostic :: Localizer.Localizer -> Code.Source -> Error -> Diagnostic
 toDiagnostic localizer source err =
@@ -46,6 +48,8 @@ toDiagnostic localizer source err =
       badCycleDiagnostic source region name names
     BadFlags region _badType invalidPayload ->
       badFlagsDiagnostic source region invalidPayload
+    InternalLookupFailure name context ->
+      internalLookupDiagnostic name context
 
 badTypeDiagnostic :: Localizer.Localizer -> Code.Source -> Ann.Region -> Can.Type -> Diagnostic
 badTypeDiagnostic localizer source region tipe =
@@ -150,5 +154,31 @@ payloadDetails = \case
           Doc.reflow
             "Since JSON values can flow through, you can use JSON encoders and decoders\
             \ to allow other types through as well."
+        ]
+    )
+
+-- | Diagnostic for internal lookup failures during optimization.
+--
+-- These indicate compiler bugs where a definition or annotation was expected
+-- to be present in a lookup table but was not found.
+--
+-- @since 0.19.2
+internalLookupDiagnostic :: Name.Name -> Text -> Diagnostic
+internalLookupDiagnostic name context =
+  Diag.makeDiagnostic
+    (EC.mainError 3)
+    Diag.SError
+    Diag.PhaseMain
+    "INTERNAL ERROR"
+    (Text.pack ("Internal lookup failure for `" <> Name.toChars name <> "`"))
+    (LabeledSpan
+      (Ann.Region (Ann.Position 1 1) (Ann.Position 1 1))
+      (Text.pack ("missing `" <> Name.toChars name <> "`"))
+      SpanPrimary)
+    ( Doc.stack
+        [ Doc.reflow
+            ("I encountered an internal error while optimizing `" <> Name.toChars name <> "`."),
+          Doc.reflow (Text.unpack context),
+          Doc.reflow "This is a compiler bug. Please report it at https://github.com/canopy-lang/canopy/issues"
         ]
     )

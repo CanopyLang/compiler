@@ -38,6 +38,7 @@ import qualified Canopy.Version as Version
 import qualified Data.IntMap.Strict as IntMap
 import qualified Data.Map.Strict as Map
 import qualified Data.Set as Set
+import qualified Data.Text as Text
 import qualified Generate.JavaScript.Builder as JS
 import qualified Generate.JavaScript.Expression.Call as Call
 import qualified Generate.JavaScript.Expression.Case as ExprCase
@@ -369,7 +370,9 @@ generateField mode name =
       JsName.fromLocal name
     Mode.Prod fields _ _ _ _ _ ->
       maybe
-        (InternalError.report "Generate.JavaScript.Expression.generateField" "Unknown field name in production mode" "The field shortener map is missing an expected field.")
+        (InternalError.report "Generate.JavaScript.Expression.generateField"
+          ("Unknown field `" <> Text.pack (Name.toChars name) <> "` in production mode field map with " <> Text.pack (show (Map.size fields)) <> " entries")
+          "The field shortener map is missing an expected field. This indicates a field tracking bug in the optimization phase.")
         id
         (Map.lookup name fields)
 

@@ -119,6 +119,7 @@ library
       Reporting.Error
       Reporting.Error.Canonicalize
       Reporting.Error.Hierarchy
+      Reporting.Error.Internal
       Reporting.Error.Syntax
       Reporting.Error.Syntax.Types
       Reporting.Error.Type

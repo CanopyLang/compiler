@@ -120,7 +120,9 @@ createChoices ::
 createChoices targetCounts (target, branch) =
   let count =
         maybe
-          (InternalError.report "Optimize.Case.createChoices" "Target index missing from count map" "All branch targets must appear in the count map built by countTargets.")
+          (InternalError.report "Optimize.Case.createChoices"
+            ("Target index " <> Text.pack (show target) <> " missing from count map with " <> Text.pack (show (Map.size targetCounts)) <> " entries")
+            "All branch targets must appear in the count map built by countTargets. This indicates a pattern match optimization bug.")
           id
           (Map.lookup target targetCounts)
    in if count == 1
@@ -144,7 +146,9 @@ insertChoices choiceDict decider =
         Opt.Leaf target ->
           Opt.Leaf
             ( maybe
-                (InternalError.report "Optimize.Case.insertChoices" "Target missing from choice map" "All leaf targets must have a corresponding choice entry.")
+                (InternalError.report "Optimize.Case.insertChoices"
+                  ("Target " <> Text.pack (show target) <> " missing from choice map with " <> Text.pack (show (Map.size choiceDict)) <> " entries")
+                  "All leaf targets must have a corresponding choice entry. This indicates a pattern match optimization bug.")
                 id
                 (Map.lookup target choiceDict)
             )

@@ -248,7 +248,7 @@ toByte n
   | n == 52 = 95 {- _ -}
   | n == 53 = 36 {- $ -}
   | n < 64  = fromIntegral (48 + n - 54) {- digit -}
-  | otherwise    = InternalError.report "Generate.JavaScript.Name.toByte" (Text.pack ("Cannot convert int " <> show n <> " to ASCII byte")) "The int-to-ASCII conversion received a value outside the valid range 0-63."
+  | otherwise    = InternalError.report "Generate.JavaScript.Name.toByte" ("Cannot convert int " <> Text.pack (show n) <> " to ASCII byte (valid range: 0-63)") "The int-to-ASCII conversion received a value outside the valid range 0-63. This indicates a bug in the name generation algorithm."
 
 
 

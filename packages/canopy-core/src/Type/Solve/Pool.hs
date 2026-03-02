@@ -145,8 +145,8 @@ typeToVar rank pools aliasDict tipe =
       maybe
         (InternalError.report
           "Type.Solve.Pool.typeToVar"
-          (Text.pack ("Unknown placeholder: " <> show name))
-          "Alias dictionary missing expected type variable.")
+          ("Unknown placeholder `" <> Text.pack (Name.toChars name) <> "` not in alias dict with " <> Text.pack (show (Map.size aliasDict)) <> " entries")
+          "Alias dictionary missing expected type variable. This indicates a bug in alias type expansion.")
         return
         (Map.lookup name aliasDict)
     RecordN fields ext -> convertRecordType rank pools go fields ext
@@ -218,8 +218,8 @@ srcTypeToVar rank pools flexVars srcType =
       maybe
         (InternalError.report
           "Type.Solve.Pool.srcTypeToVar"
-          (Text.pack ("Unknown type variable: " <> show name))
-          "Flex vars dictionary missing expected variable.")
+          ("Unknown type variable `" <> Text.pack (Name.toChars name) <> "` not in flexVars map with " <> Text.pack (show (Map.size flexVars)) <> " entries")
+          "Flex vars dictionary missing expected variable. This indicates a bug in type variable allocation.")
         return
         (Map.lookup name flexVars)
     Can.TType home name args -> convertSrcAppType rank pools go home name args
@@ -248,8 +248,8 @@ convertSrcRecordType rank pools flexVars fields maybeExt = do
       maybe
         (InternalError.report
           "Type.Solve.Pool.convertSrcRecordType"
-          (Text.pack ("Unknown record extension: " <> show ext))
-          "Flex vars dictionary missing record extension variable.")
+          ("Unknown record extension `" <> Text.pack (Name.toChars ext) <> "` not in flexVars map with " <> Text.pack (show (Map.size flexVars)) <> " entries")
+          "Flex vars dictionary missing record extension variable. This indicates a bug in type variable allocation.")
         return
         (Map.lookup ext flexVars)
   register rank pools (Structure (Record1 fieldVars extVar))

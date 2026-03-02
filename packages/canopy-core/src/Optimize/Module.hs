@@ -14,7 +14,6 @@ import Control.Monad (foldM)
 import qualified Data.List as List
 import qualified Data.Map.Strict as Map
 import qualified Data.Text as Text
-import qualified Reporting.InternalError as InternalError
 import qualified Canopy.Data.Name as Name
 import qualified Data.Set as Set
 import qualified Optimize.Expression as Expr
@@ -171,18 +170,23 @@ defToName def =
     Can.Def (Ann.At _ name) _ _ -> name
     Can.TypedDef (Ann.At _ name) _ _ _ _ -> name
 
+-- ANNOTATION LOOKUP
+
+lookupAnnotation :: Name.Name -> Annotations -> Result i w Can.Annotation
+lookupAnnotation name annotations =
+  maybe
+    (Result.throw (MainError.InternalLookupFailure name
+      ("Annotation missing for `" <> Text.pack (Name.toChars name) <> "` in the Annotations map. All definitions must have annotations by the time optimization runs.")))
+    Result.ok
+    (Map.lookup name annotations)
+
 -- ADD DEFS
 
 addDef :: ModuleName.Canonical -> Annotations -> Can.Def -> Opt.LocalGraph -> Result i [Warning.Warning] Opt.LocalGraph
 addDef home annotations def graph =
   case def of
     Can.Def (Ann.At region name) args body ->
-      do
-        let (Can.Forall _ tipe) =
-              maybe
-                (InternalError.report "Optimize.Module.addDef" ("Annotation missing for: " <> Text.pack (show name)) "All definitions must have annotations in the Annotations map by the time optimization runs.")
-                id
-                (Map.lookup name annotations)
+      lookupAnnotation name annotations >>= \(Can.Forall _ tipe) -> do
         Result.warn $ Warning.MissingTypeAnnotation region name tipe
         addDefHelp region annotations home name args body graph
     Can.TypedDef (Ann.At region name) _ typedArgs body _ ->
@@ -193,13 +197,8 @@ addDefHelp region annotations home name args body graph@(Opt.LocalGraph _ nodes 
   if name /= Name._main
     then Result.ok (addDefNode home name region args body Set.empty graph)
     else
-      let (Can.Forall _ tipe) =
-            maybe
-              (InternalError.report "Optimize.Module.addDefHelp" ("Annotation missing for main: " <> Text.pack (show name)) "The main definition must have a type annotation present in the Annotations map.")
-              id
-              (Map.lookup name annotations)
-
-          addMain (deps, fields, main) =
+      lookupAnnotation name annotations >>= \(Can.Forall _ tipe) ->
+      let addMain (deps, fields, main) =
             addDefNode home name region args body deps $
               Opt.LocalGraph (Just main) nodes (Map.unionWith (+) fields fieldCounts) locs
        in case Type.deepDealias tipe of

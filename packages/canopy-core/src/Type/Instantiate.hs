@@ -30,7 +30,9 @@ fromSrcType freeVars sourceType =
         <*> fromSrcType freeVars result
     Can.TVar name ->
       maybe
-        (InternalError.report "Type.Instantiate.fromSrcType" ("Free type variable not found: " <> Text.pack (show name)) "All type variables referenced in a type must be bound in the freeVars map at the point of instantiation.")
+        (InternalError.report "Type.Instantiate.fromSrcType"
+          ("Free type variable `" <> Text.pack (Name.toChars name) <> "` not found in freeVars map with " <> Text.pack (show (Map.size freeVars)) <> " entries")
+          "All type variables referenced in a type must be bound in the freeVars map at the point of instantiation. This indicates a type annotation processing bug.")
         return
         (Map.lookup name freeVars)
     Can.TType home name args ->
@@ -59,7 +61,9 @@ fromSrcType freeVars sourceType =
             return EmptyRecordN
           Just ext ->
             maybe
-              (InternalError.report "Type.Instantiate.fromSrcType" ("Extension variable not found: " <> Text.pack (show ext)) "All record extension variables must be bound in the freeVars map at the point of instantiation.")
+              (InternalError.report "Type.Instantiate.fromSrcType"
+                ("Record extension variable `" <> Text.pack (Name.toChars ext) <> "` not found in freeVars map with " <> Text.pack (show (Map.size freeVars)) <> " entries")
+                "All record extension variables must be bound in the freeVars map at the point of instantiation. This indicates a type annotation processing bug.")
               return
               (Map.lookup ext freeVars)
 

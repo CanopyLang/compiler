@@ -144,12 +144,16 @@ extractAlias :: Types -> Opt.Global -> Extractor CompilerType.Alias
 extractAlias (Types dict) (Opt.Global home name) =
   let types_ =
         maybe
-          (InternalError.report "Canopy.Compiler.Type.Extract.extractAlias" ("Module missing from types dict: " <> Text.pack (show home)) "Every referenced module must be present in the transitively available Types.")
+          (InternalError.report "Canopy.Compiler.Type.Extract.extractAlias"
+            ("Module `" <> Text.pack (show home) <> "` missing from types dict with " <> Text.pack (show (Map.size dict)) <> " entries")
+            "Every referenced module must be present in the transitively available Types. This indicates a dependency resolution bug.")
           id
           (Map.lookup home dict)
       (Can.Alias args aliasType) =
         maybe
-          (InternalError.report "Canopy.Compiler.Type.Extract.extractAlias" ("Alias missing from module types: " <> Text.pack (show name)) "Every referenced alias must be present in the module's alias info map.")
+          (InternalError.report "Canopy.Compiler.Type.Extract.extractAlias"
+            ("Alias `" <> Text.pack (show name) <> "` missing from module `" <> Text.pack (show home) <> "` types (has " <> Text.pack (show (Map.size (_alias_info types_))) <> " aliases)")
+            "Every referenced alias must be present in the module's alias info map. This indicates a dependency resolution bug.")
           id
           (Map.lookup name (_alias_info types_))
    in CompilerType.Alias (toPublicName home name) args <$> extract aliasType
@@ -162,12 +166,16 @@ extractUnion (Types dict) (Opt.Global home name) =
       let pname = toPublicName home name
           types_ =
             maybe
-              (InternalError.report "Canopy.Compiler.Type.Extract.extractUnion" ("Module missing from types dict: " <> Text.pack (show home)) "Every referenced module must be present in the transitively available Types.")
+              (InternalError.report "Canopy.Compiler.Type.Extract.extractUnion"
+                ("Module `" <> Text.pack (show home) <> "` missing from types dict with " <> Text.pack (show (Map.size dict)) <> " entries")
+                "Every referenced module must be present in the transitively available Types. This indicates a dependency resolution bug.")
               id
               (Map.lookup home dict)
           (Can.Union vars ctors _ _) =
             maybe
-              (InternalError.report "Canopy.Compiler.Type.Extract.extractUnion" ("Union missing from module types: " <> Text.pack (show name)) "Every referenced union must be present in the module's union info map.")
+              (InternalError.report "Canopy.Compiler.Type.Extract.extractUnion"
+                ("Union `" <> Text.pack (show name) <> "` missing from module `" <> Text.pack (show home) <> "` types (has " <> Text.pack (show (Map.size (_union_info types_))) <> " unions)")
+                "Every referenced union must be present in the module's union info map. This indicates a dependency resolution bug.")
               id
               (Map.lookup name (_union_info types_))
        in CompilerType.Union pname vars <$> traverse extractCtor ctors

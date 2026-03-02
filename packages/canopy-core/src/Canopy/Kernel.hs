@@ -275,11 +275,11 @@ addImport :: Pkg.Name -> Foreigns -> VarTable -> Src.Import -> VarTable
 addImport pkg foreigns vtable (Src.Import (Ann.At _ importName) maybeAlias exposing _isLazy) =
   if Name.isKernel importName then
     case maybeAlias of
-      Just _ ->
+      Just alias ->
         InternalError.report
           "Canopy.Kernel.addImport"
-          "cannot use `as` with kernel import"
-          (Text.pack ("Kernel module '" <> Name.toChars importName <> "' was imported with an `as` alias, which is not permitted for kernel imports. The parser should have rejected this."))
+          ("Cannot use `as " <> Text.pack (Name.toChars alias) <> "` with kernel import `" <> Text.pack (Name.toChars importName) <> "`")
+          "Kernel modules cannot be aliased with `as`. The parser should have rejected this syntax."
 
       Nothing ->
         let
@@ -309,8 +309,8 @@ toPrefix home maybeAlias =
       if Name.hasDot home then
         InternalError.report
           "Canopy.Kernel.toPrefix"
-          "kernel imports with dots need an alias"
-          (Text.pack ("Kernel module '" <> Name.toChars home <> "' contains dots and must be imported with an `as` alias so JavaScript generation can resolve names unambiguously."))
+          ("Kernel import `" <> Text.pack (Name.toChars home) <> "` contains dots and needs an `as` alias")
+          "Kernel modules with dots in the name must be imported with an `as` alias so JavaScript generation can resolve names unambiguously."
       else
         home
 
@@ -377,7 +377,7 @@ instance Binary Chunk where
           5 -> fmap  JsEnum get
           6 -> return Debug
           7 -> return Prod
-          _ -> InternalError.report
+          n -> InternalError.report
             "Canopy.Kernel.Chunk.get"
-            "problem deserializing Canopy.Kernel.Chunk"
+            ("Unknown Chunk tag " <> Text.pack (show n) <> " during deserialization (valid: 0-7)")
             "Encountered an unknown tag while deserializing a Kernel Chunk. The binary data may be corrupted or from an incompatible compiler version."

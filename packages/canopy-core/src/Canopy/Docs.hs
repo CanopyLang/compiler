@@ -30,7 +30,6 @@ import qualified Data.Coerce as Coerce
 import qualified Data.List as List
 import qualified Data.Map.Strict as Map
 import qualified Data.Text as Text
-import qualified Reporting.InternalError as InternalError
 import qualified Data.Map.Merge.Strict as Map
 import qualified Canopy.Data.Name as Name
 import qualified Canopy.Data.NonEmptyList as NE
@@ -437,42 +436,26 @@ checkExportIO info name (Ann.At region export) =
           pure $ \m -> m {_values = Map.insert name (Value comment tipe) (_values m)}
     Can.ExportBinop ->
       do
-        let (Can.Binop_ assoc prec realName) =
-              maybe
-                (InternalError.report "Canopy.Docs.checkExportIO" ("Binop missing from info: " <> Text.pack (show name)) "Every exported binop must have a corresponding entry in the module's binop map.")
-                id
-                (Map.lookup name (_iBinops info))
+        (Can.Binop_ assoc prec realName) <- lookupOrThrow name "binop" (_iBinops info)
         tipe <- getType realName info
         Result.ok $ do
           comment <- getCommentIO region realName info
           pure $ \m -> m {_binops = Map.insert name (Binop comment tipe assoc prec) (_binops m)}
     Can.ExportAlias ->
       do
-        let (Can.Alias tvars tipe) =
-              maybe
-                (InternalError.report "Canopy.Docs.checkExportIO" ("Alias missing from info: " <> Text.pack (show name)) "Every exported alias must have a corresponding entry in the module's alias map.")
-                id
-                (Map.lookup name (_iAliases info))
+        (Can.Alias tvars tipe) <- lookupOrThrow name "alias" (_iAliases info)
         Result.ok $ do
           comment <- getCommentIO region name info
           pure $ \m -> m {_aliases = Map.insert name (Alias comment tvars (Extract.fromType tipe)) (_aliases m)}
     Can.ExportUnionOpen ->
       do
-        let (Can.Union tvars ctors _ _) =
-              maybe
-                (InternalError.report "Canopy.Docs.checkExportIO" ("Open union missing from info: " <> Text.pack (show name)) "Every exported open union must have a corresponding entry in the module's union map.")
-                id
-                (Map.lookup name (_iUnions info))
+        (Can.Union tvars ctors _ _) <- lookupOrThrow name "union" (_iUnions info)
         Result.ok $ do
           comment <- getCommentIO region name info
           pure $ \m -> m {_unions = Map.insert name (Union comment tvars (fmap dector ctors)) (_unions m)}
     Can.ExportUnionClosed ->
       do
-        let (Can.Union tvars _ _ _) =
-              maybe
-                (InternalError.report "Canopy.Docs.checkExportIO" ("Closed union missing from info: " <> Text.pack (show name)) "Every exported closed union must have a corresponding entry in the module's union map.")
-                id
-                (Map.lookup name (_iUnions info))
+        (Can.Union tvars _ _ _) <- lookupOrThrow name "union" (_iUnions info)
         Result.ok $ do
           comment <- getCommentIO region name info
           pure $ \m -> m {_unions = Map.insert name (Union comment tvars []) (_unions m)}
@@ -484,28 +467,37 @@ checkExportIO info name (Ann.At region export) =
           pure $ \m -> m {_values = Map.insert name (Value comment tipe) (_values m)}
 
 
--- | Thread-safe version of getComment that handles IO for comment processing
+-- | Thread-safe version of getComment that handles IO for comment processing.
+-- Returns an empty comment if the name is not found, rather than crashing.
 getCommentIO :: Ann.Region -> Name.Name -> Info -> IO Comment
 getCommentIO _region name info =
   case Map.lookup name (_iComments info) of
     Nothing ->
-      InternalError.report
-        "Canopy.Docs.getCommentIO"
-        "missing comment for exported name"
-        (Text.pack ("Name '" <> show name <> "' was exported but has no associated documentation comment. Every exported declaration must have a Haddock comment before it reaches documentation generation."))
+      pure (Json.fromChars "")
     Just (Src.Comment snippet) ->
       Json.fromComment snippet
 
+-- | Look up a value type from the info map, throwing a recoverable error
+-- instead of crashing if the name is not found.
 getType :: Name.Name -> Info -> Result.Result i w DocsError.DefProblem Type.Type
 getType name info =
-  case maybe
-    (InternalError.report "Canopy.Docs.getType" ("Value type missing from info: " <> Text.pack (show name)) "Every exported value must have a type entry (Left region or Right type) in the module's value map.")
-    id
-    (Map.lookup name (_iValues info)) of
-    Left region ->
+  case Map.lookup name (_iValues info) of
+    Nothing ->
+      Result.throw (DocsError.InternalLookupFailure name "Value type missing from module info. Every exported value must have a type entry.")
+    Just (Left region) ->
       Result.throw (DocsError.NoAnnotation name region)
-    Right tipe ->
+    Just (Right tipe) ->
       Result.ok (Extract.fromType tipe)
+
+-- | Look up a value in a map, throwing a recoverable DefProblem error
+-- instead of crashing if the key is not found.
+lookupOrThrow :: Name.Name -> Text.Text -> Map.Map Name.Name v -> Result.Result i w DocsError.DefProblem v
+lookupOrThrow name category dict =
+  case Map.lookup name dict of
+    Nothing ->
+      Result.throw (DocsError.InternalLookupFailure name ("Expected " <> category <> " to be present in module info, but it was not found."))
+    Just v ->
+      Result.ok v
 
 dector :: Can.Ctor -> (Name.Name, [Type.Type])
 dector (Can.Ctor name _ _ args) =
