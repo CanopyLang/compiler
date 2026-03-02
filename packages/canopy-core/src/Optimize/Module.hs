@@ -19,6 +19,7 @@ import qualified Data.Set as Set
 import qualified Optimize.Expression as Expr
 import qualified Optimize.Names as Names
 import qualified Optimize.Port as Port
+import qualified Optimize.Simplify as Simplify
 import qualified Reporting.Annotation as Ann
 import qualified Reporting.Error.Main as MainError
 import qualified Reporting.Result as Result
@@ -222,7 +223,7 @@ addDefHelp region annotations home name args body graph@(Opt.LocalGraph _ nodes 
 addDefNode :: ModuleName.Canonical -> Name.Name -> Ann.Region -> [Can.Pattern] -> Can.Expr -> Set.Set Opt.Global -> Opt.LocalGraph -> Opt.LocalGraph
 addDefNode home name region args body mainDeps graph =
   let global = Opt.Global home name
-      (deps, fields, def) =
+      (deps, fields, rawDef) =
         Names.run $
           case args of
             [] ->
@@ -232,6 +233,7 @@ addDefNode home name region args body mainDeps graph =
                 (argNames, destructors) <- Expr.destructArgs args
                 obody <- Expr.optimize Set.empty body
                 pure . Opt.Function argNames $ foldr Opt.Destruct obody destructors
+      def = Simplify.simplify rawDef
       graphWithNode = addToGraph global (Opt.Define def (Set.union deps mainDeps)) fields graph
    in addSourceLocation global region graphWithNode
 
@@ -310,8 +312,17 @@ addRecDefHelp cycle (State values funcs) name args body =
     [] ->
       do
         obody <- Expr.optimize cycle body
-        pure $ State ((name, obody) : values) funcs
+        pure $ State ((name, Simplify.simplify obody) : values) funcs
     _ : _ ->
       do
         odef <- Expr.optimizePotentialTailCall cycle name args body
-        pure $ State values (odef : funcs)
+        pure $ State values (simplifyOptDef odef : funcs)
+
+-- | Apply simplification to an optimized definition.
+--
+-- @since 0.19.2
+simplifyOptDef :: Opt.Def -> Opt.Def
+simplifyOptDef def =
+  case def of
+    Opt.Def n e -> Opt.Def n (Simplify.simplify e)
+    Opt.TailDef n ns e -> Opt.TailDef n ns (Simplify.simplify e)

@@ -109,6 +109,7 @@ import qualified Unit.Optimize.ConstantFoldTest as ConstantFoldTest
 import qualified Unit.Optimize.DecisionTreeTest as DecisionTreeTest
 import qualified Unit.Optimize.ExpressionArithmeticTest as OptExpressionArithmeticTest
 import qualified Unit.Optimize.NamesTest as NamesTest
+import qualified Unit.Optimize.SimplifyTest as SimplifyTest
 import qualified Unit.Logging.ConfigTest as LoggingConfigTest
 import qualified Unit.Logging.EventTest as LoggingEventTest
 import qualified Unit.Logging.SinkTest as LoggingSinkTest
@@ -254,6 +255,7 @@ unitTests =
       DecisionTreeTest.tests,
       OptExpressionArithmeticTest.tests,
       NamesTest.tests,
+      SimplifyTest.tests,
       JSExpressionArithmeticTest.tests,
       MinifyTest.tests,
       GenerateNameTest.tests,

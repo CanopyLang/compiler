@@ -313,6 +313,7 @@ test-suite canopy-test
       Unit.Optimize.DecisionTreeTest
       Unit.Optimize.ExpressionArithmeticTest
       Unit.Optimize.NamesTest
+      Unit.Optimize.SimplifyTest
       Unit.OutlineFormatTest
       Unit.Parse.ExpressionArithmeticTest
       Unit.Parse.ExpressionTest

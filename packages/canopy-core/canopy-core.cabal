@@ -105,6 +105,7 @@ library
       Optimize.Expression
       Optimize.Module
       Optimize.Names
+      Optimize.Simplify
       Parse.Declaration
       Parse.Expression
       Parse.Module

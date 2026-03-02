@@ -106,6 +106,9 @@ module Canopy.Data.Name
     _Main,
     dollar,
     identity,
+    and_,
+    or_,
+    not_,
     replModule,
     replValueToPrint,
   )

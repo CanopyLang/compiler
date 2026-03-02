@@ -92,6 +92,9 @@ module Canopy.Data.Name.Constants
     _Main,
     dollar,
     identity,
+    and_,
+    or_,
+    not_,
 
     -- * REPL Names
     replModule,
@@ -261,6 +264,39 @@ dollar = fromChars "$"
 {-# NOINLINE identity #-}
 identity :: Name
 identity = fromChars "identity"
+
+{-# NOINLINE and_ #-}
+
+-- | Name constant for the boolean @and@ function from Basics.
+--
+-- Used in optimization passes to recognize @&&@ operations for
+-- boolean simplification (short-circuit evaluation, constant folding).
+--
+-- @since 0.19.2
+and_ :: Name
+and_ = fromChars "and"
+
+{-# NOINLINE or_ #-}
+
+-- | Name constant for the boolean @or@ function from Basics.
+--
+-- Used in optimization passes to recognize @||@ operations for
+-- boolean simplification (short-circuit evaluation, constant folding).
+--
+-- @since 0.19.2
+or_ :: Name
+or_ = fromChars "or"
+
+{-# NOINLINE not_ #-}
+
+-- | Name constant for the boolean @not@ function from Basics.
+--
+-- Used in optimization passes to recognize @not@ applications for
+-- double negation elimination.
+--
+-- @since 0.19.2
+not_ :: Name
+not_ = fromChars "not"
 
 -- REPL NAMES
 
