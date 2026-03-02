@@ -14,6 +14,7 @@ import qualified Canopy.Package as Pkg
 import qualified Canopy.Version as Version
 import qualified Data.ByteString.Lazy.Char8 as LBS8
 import qualified Data.Map.Strict as Map
+import qualified Data.Set as Set
 import System.FilePath ((</>))
 import qualified System.Directory as Dir
 import qualified System.IO.Temp as Temp
@@ -83,7 +84,8 @@ testWorkspaceOutlineTypes =
                     Outline._appDepsIndirect = Map.empty,
                     Outline._appTestDepsDirect = Map.empty,
                     Outline._appScripts = Nothing,
-                    Outline._appRepository = Nothing
+                    Outline._appRepository = Nothing,
+                    Outline._appCapabilities = Set.empty
                   }
         Outline.isWorkspace app @?= False,
       testCase "allDeps returns shared deps for workspace" $ do

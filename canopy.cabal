@@ -264,6 +264,7 @@ test-suite canopy-test
       Unit.Docs.CommandTest
       Unit.Docs.RenderTest
       Unit.Editor.IntegrationTest
+      Unit.FFI.CapabilityEnforcementTest
       Unit.FFI.EscapeTest
       Unit.FFI.ManifestTest
       Unit.FFI.ResolveTest

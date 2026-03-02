@@ -9,7 +9,9 @@ module Reporting.Exit.Make
   )
 where
 
+import qualified Data.Text as Text
 import qualified Exit as BuildExit
+import qualified FFI.CapabilityEnforcement as CapEnforce
 import Reporting.Diagnostic (Diagnostic)
 import Reporting.Doc ((<+>))
 import qualified Reporting.Doc as Doc
@@ -38,6 +40,8 @@ data Make
   | MakeCannotOptimizeAndDebug
   | -- | Two builds produced different output at the given byte offset
     MakeReproducibilityFailure !Int
+  | -- | FFI functions require capabilities not declared in canopy.json
+    MakeCapabilityError ![CapEnforce.CapabilityError]
   deriving (Show)
 
 -- | Convert a 'Make' error to a structured 'Report'.
@@ -53,6 +57,7 @@ makeToReport MakeMultipleFilesIntoHtml = multipleFilesHtmlError
 makeToReport (MakeCannotBuild buildErr) = BuildExit.toDoc buildErr
 makeToReport MakeCannotOptimizeAndDebug = optimizeAndDebugError
 makeToReport (MakeReproducibilityFailure offset) = reproducibilityFailureError offset
+makeToReport (MakeCapabilityError capErrors) = capabilityError capErrors
 
 noMainError :: Report
 noMainError =
@@ -109,3 +114,37 @@ reproducibilityFailureError offset =
           fixLine (Doc.green "3. Your operating system and architecture")
         ]
     )
+
+-- | Report missing capability declarations.
+--
+-- Produces a structured error listing each FFI function that requires
+-- capabilities not declared in canopy.json, with a concrete fix showing
+-- which capabilities to add.
+capabilityError :: [CapEnforce.CapabilityError] -> Report
+capabilityError capErrors =
+  structuredError
+    "MISSING CAPABILITIES"
+    (Doc.reflow "Some FFI functions require capabilities that are not declared in canopy.json:")
+    ( Doc.vcat
+        (map formatCapError capErrors ++ [suggestion])
+    )
+
+-- | Format a single capability error for display.
+formatCapError :: CapEnforce.CapabilityError -> Doc.Doc
+formatCapError ce =
+  Doc.indent 4 (Doc.fromChars line)
+  where
+    func = Text.unpack (CapEnforce._ceFunctionName ce)
+    file = Text.unpack (CapEnforce._ceFilePath ce)
+    cap = Text.unpack (CapEnforce._ceMissingCapability ce)
+    line = func <> " (" <> file <> ") requires capability " <> show cap
+
+-- | Suggestion text for adding missing capabilities to canopy.json.
+suggestion :: Doc.Doc
+suggestion =
+  Doc.vcat
+    [ "",
+      Doc.reflow "Add the missing capabilities to canopy.json:",
+      "",
+      fixLine (Doc.green "\"capabilities\": [\"geolocation\", \"notifications\"]")
+    ]

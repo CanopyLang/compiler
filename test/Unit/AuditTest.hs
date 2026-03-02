@@ -16,6 +16,7 @@ import qualified Canopy.Package as Pkg
 import qualified Canopy.Version as Version
 import qualified Canopy.Data.Utf8 as Utf8
 import qualified Data.Map.Strict as Map
+import qualified Data.Set as Set
 import qualified Deps.Advisory as Advisory
 import Test.Tasty
 import qualified Test.Tasty.HUnit as HUnit
@@ -202,7 +203,8 @@ appWithPre1Dep =
       Outline._appDepsIndirect = Map.empty,
       Outline._appTestDepsDirect = Map.empty,
       Outline._appScripts = Nothing,
-      Outline._appRepository = Nothing
+      Outline._appRepository = Nothing,
+      Outline._appCapabilities = Set.empty
     }
 
 -- | App outline with stable (>= 1.0) dependencies
@@ -217,7 +219,8 @@ appWithStableDeps =
       Outline._appDepsIndirect = Map.empty,
       Outline._appTestDepsDirect = Map.empty,
       Outline._appScripts = Nothing,
-      Outline._appRepository = Nothing
+      Outline._appRepository = Nothing,
+      Outline._appCapabilities = Set.empty
     }
 
 -- | App outline with a dependency affected by the test advisory
@@ -232,7 +235,8 @@ appWithAffectedDep =
       Outline._appDepsIndirect = Map.empty,
       Outline._appTestDepsDirect = Map.empty,
       Outline._appScripts = Nothing,
-      Outline._appRepository = Nothing
+      Outline._appRepository = Nothing,
+      Outline._appCapabilities = Set.empty
     }
 
 -- | Package outline with some deps

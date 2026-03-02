@@ -13,6 +13,7 @@ import qualified Canopy.Constraint as Constraint
 import qualified Canopy.Outline as Outline
 import qualified Canopy.Version as Version
 import qualified Data.Map.Strict as Map
+import qualified Data.Set as Set
 import qualified Data.Text as Text
 import Scripts (ScriptResult (..))
 import qualified Scripts
@@ -106,7 +107,8 @@ appWithScripts =
       Outline._appDepsIndirect = Map.empty,
       Outline._appTestDepsDirect = Map.empty,
       Outline._appScripts = Just scriptsMap,
-      Outline._appRepository = Nothing
+      Outline._appRepository = Nothing,
+      Outline._appCapabilities = Set.empty
     }
 
 -- | Application outline without scripts.
@@ -121,7 +123,8 @@ appWithoutScripts =
       Outline._appDepsIndirect = Map.empty,
       Outline._appTestDepsDirect = Map.empty,
       Outline._appScripts = Nothing,
-      Outline._appRepository = Nothing
+      Outline._appRepository = Nothing,
+      Outline._appCapabilities = Set.empty
     }
 
 -- | Application outline with empty scripts map.
@@ -136,7 +139,8 @@ appWithEmptyScripts =
       Outline._appDepsIndirect = Map.empty,
       Outline._appTestDepsDirect = Map.empty,
       Outline._appScripts = Just Map.empty,
-      Outline._appRepository = Nothing
+      Outline._appRepository = Nothing,
+      Outline._appCapabilities = Set.empty
     }
 
 -- | Application outline with repository field.
@@ -151,5 +155,6 @@ appWithRepo =
       Outline._appDepsIndirect = Map.empty,
       Outline._appTestDepsDirect = Map.empty,
       Outline._appScripts = Nothing,
-      Outline._appRepository = Just "https://github.com/example/project"
+      Outline._appRepository = Just "https://github.com/example/project",
+      Outline._appCapabilities = Set.empty
     }

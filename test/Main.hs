@@ -126,6 +126,7 @@ import qualified Unit.Canonicalize.LazyImportValidationTest as LazyImportValidat
 import qualified Unit.Canonicalize.ModuleTest as CanonicalizeModuleTest
 import qualified Unit.Canonicalize.PatternTest as CanonicalizePatternTest
 import qualified Unit.Type.UnionFindTest as UnionFindTest
+import qualified Unit.FFI.CapabilityEnforcementTest as FFICapEnforceTest
 import qualified Unit.FFI.EscapeTest as FFIEscapeTest
 import qualified Unit.FFI.ManifestTest as FFIManifestTest
 import qualified Unit.FFI.ResolveTest as FFIResolveTest
@@ -281,6 +282,7 @@ unitTests =
       CanonicalizePatternTest.tests,
       CanonicalizeModuleTest.tests,
       LazyImportValidationTest.tests,
+      FFICapEnforceTest.tests,
       FFIEscapeTest.tests,
       FFIManifestTest.tests,
       FFIResolveTest.tests,

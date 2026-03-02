@@ -49,6 +49,8 @@ import qualified Data.Aeson as Json
 import qualified Data.ByteString.Lazy as LBS
 import Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
+import Data.Set (Set)
+import qualified Data.Set as Set
 import qualified Data.Text as Text
 import qualified Json.String as JsonStr
 import Json.Encode ((==>))
@@ -143,6 +145,8 @@ data Outline
 -- enabling custom build hooks (prebuild, postbuild, test, etc.).
 -- The optional '_appRepository' field records the project's source
 -- repository URL for package metadata.
+-- The optional '_appCapabilities' field declares which browser capabilities
+-- (permissions, APIs) the application is allowed to use through FFI.
 --
 -- @since 0.19.2
 data AppOutline = AppOutline
@@ -154,7 +158,8 @@ data AppOutline = AppOutline
     _appDepsIndirect :: !(Map Pkg.Name Version.Version),
     _appTestDepsDirect :: !(Map Pkg.Name Version.Version),
     _appScripts :: !(Maybe (Map Text.Text Text.Text)),
-    _appRepository :: !(Maybe Text.Text)
+    _appRepository :: !(Maybe Text.Text),
+    _appCapabilities :: !(Set Text.Text)
   }
   deriving (Show)
 
@@ -303,6 +308,10 @@ instance Json.ToJSON AppOutline where
       optionalFields =
         maybe [] (\s -> ["scripts" .= s]) (_appScripts app)
           ++ maybe [] (\r -> ["repository" .= r]) (_appRepository app)
+          ++ capabilitiesField
+      capabilitiesField
+        | Set.null (_appCapabilities app) = []
+        | otherwise = ["capabilities" .= Set.toList (_appCapabilities app)]
 
 instance Json.FromJSON AppOutline where
   parseJSON = Json.withObject "AppOutline" $ \o -> do
@@ -315,6 +324,7 @@ instance Json.FromJSON AppOutline where
     testDepsDirect <- testDeps Json..: "direct"
     scripts <- o .:? "scripts"
     repository <- o .:? "repository"
+    capsList <- o .:? "capabilities" .!= ([] :: [Text.Text])
     pure
       AppOutline
         { _appCanopy = canopyVer,
@@ -325,7 +335,8 @@ instance Json.FromJSON AppOutline where
           _appDepsIndirect = depsIndirect,
           _appTestDepsDirect = testDepsDirect,
           _appScripts = scripts,
-          _appRepository = repository
+          _appRepository = repository,
+          _appCapabilities = Set.fromList capsList
         }
 
 instance Json.ToJSON PkgOutline where
@@ -406,16 +417,21 @@ encode (Workspace wsOutline) = encodeWorkspaceOutline wsOutline
 -- | Encode application outline.
 encodeAppOutline :: AppOutline -> Encode.Value
 encodeAppOutline app =
-  Encode.object
-    [ "type" ==> Encode.chars "application",
-      "canopy-version" ==> Version.encode (_appCanopy app),
-      "source-directories" ==> Encode.list encodeSrcDir (_appSrcDirs app),
-      "dependencies" ==> Encode.dict Pkg.toJsonString Constraint.encode (_appDeps app),
-      "test-dependencies" ==> Encode.dict Pkg.toJsonString Constraint.encode (_appTestDeps app),
-      "dependencies-direct" ==> Encode.dict Pkg.toJsonString Version.encode (_appDepsDirect app),
-      "dependencies-indirect" ==> Encode.dict Pkg.toJsonString Version.encode (_appDepsIndirect app),
-      "test-dependencies-direct" ==> Encode.dict Pkg.toJsonString Version.encode (_appTestDepsDirect app)
-    ]
+  Encode.object (requiredFields ++ capsField)
+  where
+    requiredFields =
+      [ "type" ==> Encode.chars "application",
+        "canopy-version" ==> Version.encode (_appCanopy app),
+        "source-directories" ==> Encode.list encodeSrcDir (_appSrcDirs app),
+        "dependencies" ==> Encode.dict Pkg.toJsonString Constraint.encode (_appDeps app),
+        "test-dependencies" ==> Encode.dict Pkg.toJsonString Constraint.encode (_appTestDeps app),
+        "dependencies-direct" ==> Encode.dict Pkg.toJsonString Version.encode (_appDepsDirect app),
+        "dependencies-indirect" ==> Encode.dict Pkg.toJsonString Version.encode (_appDepsIndirect app),
+        "test-dependencies-direct" ==> Encode.dict Pkg.toJsonString Version.encode (_appTestDepsDirect app)
+      ]
+    capsField
+      | Set.null (_appCapabilities app) = []
+      | otherwise = ["capabilities" ==> Encode.list (Encode.chars . Text.unpack) (Set.toList (_appCapabilities app))]
 
 -- | Encode package outline.
 encodePkgOutline :: PkgOutline -> Encode.Value

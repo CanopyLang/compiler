@@ -34,7 +34,8 @@ module Reporting.Exit
         MakeMultipleFilesIntoHtml,
         MakeCannotBuild,
         MakeCannotOptimizeAndDebug,
-        MakeReproducibilityFailure
+        MakeReproducibilityFailure,
+        MakeCapabilityError
       ),
     makeToReport,
 

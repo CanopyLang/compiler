@@ -47,9 +47,14 @@ import Data.Function ((&))
 import qualified Canopy.Data.Name as Name
 import qualified Canopy.Data.NonEmptyList as NonEmptyList
 import qualified Data.Map.Strict as Map
+import Data.Set (Set)
+import qualified Data.Set as Set
 import qualified Data.Text as Text
 import qualified Data.Text.Encoding as Text
+import qualified FFI.Capability
+import qualified FFI.CapabilityEnforcement as CapEnforce
 import qualified FFI.Manifest as Manifest
+import qualified FFI.Types
 import qualified File
 import qualified Foreign.FFI as FFI
 import qualified Generate.Html as Html
@@ -64,8 +69,11 @@ import Make.Types
   ( BuildContext,
     Output (..),
     Task,
+    bcDetails,
     bcStyle,
   )
+import qualified Canopy.Details as Details
+import qualified Canopy.Outline as Outline
 import qualified Reporting.Exit as Exit
 import qualified Reporting.Task as Task
 import qualified System.Directory as Dir
@@ -88,7 +96,8 @@ generateOutput ::
   Maybe Output ->
   Bool ->
   Task ()
-generateOutput ctx artifacts maybeTarget doVerify =
+generateOutput ctx artifacts maybeTarget doVerify = do
+  validateDeclaredCapabilities ctx artifacts
   case maybeTarget of
     Nothing -> selectOutputFormat ctx artifacts
     Just target -> generateForTarget ctx artifacts target doVerify
@@ -120,6 +129,7 @@ generateForTarget ctx artifacts (Html target) doVerify =
 -- | Generate JavaScript output to specified file.
 --
 -- Creates JavaScript output from artifacts, including source map in dev mode.
+-- Prepends the capability registry when capabilities are declared in canopy.json.
 -- Appends @\/\/# sourceMappingURL@ comment and writes @.js.map@ alongside.
 generateJavaScript ::
   BuildContext ->
@@ -132,9 +142,11 @@ generateJavaScript ctx artifacts target doVerify = do
   Task.io (Log.logEvent (BuildStarted (Text.pack ("Generating JavaScript to: " <> target))))
   (builder, maybeSourceMap) <- createBuilder ctx artifacts
   verifyIfRequested ctx artifacts doVerify builder
-  let rootNames = Build.getRootNames artifacts
-      jsWithRef = appendSourceMapRef target builder maybeSourceMap
-  Task.io (Reproducible.reportContentHash target (Reproducible.hashBuilder builder) doVerify)
+  let caps = extractCapabilities ctx
+      fullBuilder = CapEnforce.generateCapabilityRegistry caps <> builder
+      rootNames = Build.getRootNames artifacts
+      jsWithRef = appendSourceMapRef target fullBuilder maybeSourceMap
+  Task.io (Reproducible.reportContentHash target (Reproducible.hashBuilder fullBuilder) doVerify)
   writeOutputFile (ctx ^. bcStyle) target jsWithRef rootNames
   Task.io (writeSourceMapFile target maybeSourceMap)
   Task.io (writeCapabilitiesManifest target artifacts)
@@ -233,8 +245,10 @@ generateHtml ctx artifacts target doVerify = do
   mainName <- hasExactlyOneMain artifacts
   (builder, _sourceMap) <- createBuilder ctx artifacts
   verifyIfRequested ctx artifacts doVerify builder
-  let fixedBuilder = fixEmbeddedJavaScript builder
-  let htmlBuilder = Html.sandwich mainName fixedBuilder
+  let caps = extractCapabilities ctx
+      fullBuilder = CapEnforce.generateCapabilityRegistry caps <> builder
+      fixedBuilder = fixEmbeddedJavaScript fullBuilder
+      htmlBuilder = Html.sandwich mainName fixedBuilder
   Task.io (Reproducible.reportContentHash target (Reproducible.hashBuilder htmlBuilder) doVerify)
   writeOutputFile (ctx ^. bcStyle) target htmlBuilder (NonEmptyList.List mainName [])
 
@@ -266,9 +280,10 @@ generateSingleAppHtml ::
 generateSingleAppHtml ctx artifacts mainName = do
   Task.io (Log.logEvent (BuildStarted (Text.pack ("Found single main function - generating HTML: " <> Name.toChars mainName))))
   (builder, _sourceMap) <- createBuilder ctx artifacts
-  -- Apply JavaScript spacing fixes to embedded JS before HTML wrapping
-  let fixedBuilder = fixEmbeddedJavaScript builder
-  let htmlBuilder = Html.sandwich mainName fixedBuilder
+  let caps = extractCapabilities ctx
+      fullBuilder = CapEnforce.generateCapabilityRegistry caps <> builder
+      fixedBuilder = fixEmbeddedJavaScript fullBuilder
+      htmlBuilder = Html.sandwich mainName fixedBuilder
       target = "index.html"
   writeOutputFile (ctx ^. bcStyle) target htmlBuilder (NonEmptyList.List mainName [])
 
@@ -288,8 +303,10 @@ generateMultiAppJs ctx artifacts mainNames =
       let nameStrs = fmap Name.toChars mainNames
       Task.io (Log.logEvent (BuildStarted (Text.pack ("Found multiple main functions - generating JS: " <> show nameStrs))))
       (builder, maybeSourceMap) <- createBuilder ctx artifacts
-      let target = "canopy.js"
-          jsWithRef = appendSourceMapRef target builder maybeSourceMap
+      let caps = extractCapabilities ctx
+          fullBuilder = CapEnforce.generateCapabilityRegistry caps <> builder
+          target = "canopy.js"
+          jsWithRef = appendSourceMapRef target fullBuilder maybeSourceMap
       writeOutputFile (ctx ^. bcStyle) target jsWithRef (NonEmptyList.List name rest)
       Task.io (writeSourceMapFile target maybeSourceMap)
 
@@ -391,6 +408,105 @@ parseFFICapabilities ffiInfoMap =
     parseOne path = do
       result <- FFI.parseJSDocFromFile path
       pure (Text.pack path, either (const []) id result)
+
+-- | Validate FFI capability requirements against canopy.json declarations.
+--
+-- Parses FFI files for @capability annotations, then checks:
+--   1. All required capabilities are declared in canopy.json (error if not)
+--   2. All declared capabilities are actually used (warning if not)
+--
+-- Skips validation entirely when no capabilities are declared and no
+-- FFI files require any, which is the common case.
+--
+-- @since 0.20.0
+validateDeclaredCapabilities :: BuildContext -> Build.Artifacts -> Task ()
+validateDeclaredCapabilities ctx artifacts = do
+  let declared = extractCapabilities ctx
+      ffiInfoMap = artifacts ^. Build.artifactsFFIInfo
+  moduleFunctions <- Task.io (parseFFICapabilities ffiInfoMap)
+  let requirements = collectRequirements moduleFunctions
+  validateRequired declared requirements
+  warnUnused declared requirements
+
+-- | Collect (function name, file path, required capabilities) triples
+-- from parsed FFI functions.
+--
+-- Extracts the capability names from each function's parsed
+-- 'CapabilityConstraint' annotation.
+collectRequirements :: [(Text.Text, [FFI.JSDocFunction])] -> [(Text.Text, Text.Text, Set Text.Text)]
+collectRequirements = concatMap collectFromFile
+
+-- | Collect capability requirements from a single FFI file's functions.
+collectFromFile :: (Text.Text, [FFI.JSDocFunction]) -> [(Text.Text, Text.Text, Set Text.Text)]
+collectFromFile (filePath, funcs) =
+  concatMap (collectFromFunction filePath) funcs
+
+-- | Collect capability requirements from a single FFI function.
+collectFromFunction :: Text.Text -> FFI.JSDocFunction -> [(Text.Text, Text.Text, Set Text.Text)]
+collectFromFunction filePath func =
+  case FFI.jsDocFuncCapabilities func of
+    Nothing -> []
+    Just constraint ->
+      let caps = constraintToNames constraint
+          funcName = FFI.unJsFunctionName (FFI.jsDocFuncName func)
+       in [(funcName, filePath, caps) | not (Set.null caps)]
+
+-- | Extract capability name strings from a 'CapabilityConstraint'.
+constraintToNames :: FFI.Capability.CapabilityConstraint -> Set Text.Text
+constraintToNames FFI.Capability.UserActivationRequired =
+  Set.singleton "user-activation"
+constraintToNames (FFI.Capability.PermissionRequired perm) =
+  Set.singleton (FFI.Types.unPermissionName perm)
+constraintToNames (FFI.Capability.InitializationRequired resource) =
+  Set.singleton (FFI.Types.unResourceName resource)
+constraintToNames (FFI.Capability.AvailabilityRequired name) =
+  Set.singleton name
+constraintToNames (FFI.Capability.MultipleConstraints constraints) =
+  Set.unions (map constraintToNames constraints)
+
+-- | Throw a compile error if any required capabilities are missing.
+validateRequired :: Set Text.Text -> [(Text.Text, Text.Text, Set Text.Text)] -> Task ()
+validateRequired declared requirements =
+  case CapEnforce.validateCapabilities declared requirements of
+    [] -> pure ()
+    errors -> Task.throw (Exit.MakeCapabilityError errors)
+
+-- | Log warnings for capabilities declared but not required by any FFI function.
+warnUnused :: Set Text.Text -> [(Text.Text, Text.Text, Set Text.Text)] -> Task ()
+warnUnused declared requirements =
+  let unused = CapEnforce.findUnusedCapabilities declared requirements
+   in Task.io (logUnusedCapabilities unused)
+
+-- | Log a warning for each unused capability.
+logUnusedCapabilities :: Set Text.Text -> IO ()
+logUnusedCapabilities caps =
+  mapM_ logOne (Set.toList caps)
+  where
+    logOne cap =
+      IO.hPutStrLn IO.stderr
+        ( "Warning: Capability "
+            <> show (Text.unpack cap)
+            <> " is declared in canopy.json but no FFI function requires it."
+        )
+
+-- | Extract declared capabilities from the build context.
+--
+-- Looks up the @capabilities@ field from the @canopy.json@ configuration
+-- stored in the build context. Returns an empty set for package projects
+-- since capabilities are only meaningful for applications.
+--
+-- @since 0.20.0
+extractCapabilities :: BuildContext -> Set Text.Text
+extractCapabilities ctx =
+  capabilitiesFromOutline (ctx ^. bcDetails . Details.detailsOutline)
+
+-- | Extract capabilities from a validated project outline.
+--
+-- Applications may declare capabilities in @canopy.json@; packages
+-- and workspaces always have an empty capability set.
+capabilitiesFromOutline :: Details.ValidOutline -> Set Text.Text
+capabilitiesFromOutline (Details.ValidApp app) = Outline._appCapabilities app
+capabilitiesFromOutline (Details.ValidPkg _ _ _) = Set.empty
 
 -- | Verify build reproducibility if the flag is set.
 --

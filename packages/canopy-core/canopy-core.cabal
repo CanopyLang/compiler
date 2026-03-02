@@ -58,6 +58,8 @@ library
       Canopy.String
       Canopy.Version
       Editor.Integration
+      FFI.Capability
+      FFI.CapabilityEnforcement
       FFI.Manifest
       FFI.Resolve
       FFI.StaticAnalysis
@@ -166,7 +168,6 @@ library
       Canopy.Data.Utf8.Manipulation
       Canopy.Data.Utf8.Types
       Canopy.Kernel.Discovery
-      FFI.Capability
       FFI.TypeParser
       File.Cache
       File.JSON

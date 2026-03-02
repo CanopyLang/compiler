@@ -27,5 +27,9 @@ data Warning
     -- ^ FFI file path, function name, unresolved type name
   | FFIStaticAnalysis !Text !SA.FFIWarning
     -- ^ FFI file path and the specific static analysis warning
+  | FFIUnusedCapability !Text
+    -- ^ A capability declared in canopy.json that no FFI function requires
+  | FFIMissingCapability !Text !Text !Text
+    -- ^ Function name, file path, and capability name not declared in canopy.json
 
 data Context = Def | Pattern
