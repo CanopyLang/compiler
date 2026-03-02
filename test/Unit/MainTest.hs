@@ -16,7 +16,6 @@ import CLI.Commands
     createReactorCommand,
     createReplCommand,
   )
-import qualified Terminal
 import Terminal.Internal (Command, toName)
 import Test.Tasty (TestTree, testGroup)
 import Test.Tasty.HUnit (testCase, (@?=))

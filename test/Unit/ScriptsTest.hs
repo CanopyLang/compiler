@@ -9,13 +9,11 @@
 -- @since 0.19.2
 module Unit.ScriptsTest (tests) where
 
-import qualified Canopy.Constraint as Constraint
 import qualified Canopy.Outline as Outline
 import qualified Canopy.Version as Version
 import qualified Data.Map.Strict as Map
 import qualified Data.Set as Set
 import qualified Data.Text as Text
-import Scripts (ScriptResult (..))
 import qualified Scripts
 import Test.Tasty (TestTree)
 import qualified Test.Tasty as Test

@@ -33,21 +33,17 @@ module Unit.Init.ProjectTest
   )
 where
 
-import Canopy.Constraint (Constraint)
 import qualified Canopy.Constraint as Con
 import qualified Canopy.Outline as Outline
-import Canopy.Package (Name)
 import qualified Canopy.Package as Pkg
 import qualified Canopy.Version as Version
-import Control.Lens ((&), (.~), (^.))
+import Control.Lens ((&))
 import qualified Control.Lens as Lens
 import qualified Data.Map as Map
-import qualified Canopy.Data.NonEmptyList as NE
 import qualified Deps.Solver as Solver
 import qualified Init.Project as Project
 import Init.Types
   ( InitError (..),
-    ProjectContext (..),
     contextDependencies,
     contextSourceDirs,
     contextTestDeps,

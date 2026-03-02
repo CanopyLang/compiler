@@ -24,7 +24,6 @@ import qualified Data.Map as Map
 import qualified Canopy.Data.Name as Name
 import qualified Canopy.ModuleName as ModuleName
 import qualified Canopy.Package as Pkg
-import qualified Canopy.Data.Utf8 as Data.Utf8
 
 -- | Main test tree containing all AST.Utils.Type tests.
 --

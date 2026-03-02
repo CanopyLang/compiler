@@ -18,8 +18,7 @@ import qualified Data.Set as Set
 import qualified Canopy.Data.Utf8 as Utf8
 import Generate.JavaScript.CodeSplit.Analyze (analyze, reachableFrom)
 import Generate.JavaScript.CodeSplit.Types
-  ( ChunkGraph,
-    ChunkKind (..),
+  ( ChunkKind (..),
     SplitConfig (..),
     chunkGlobals,
     chunkId,

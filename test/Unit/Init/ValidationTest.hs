@@ -31,18 +31,12 @@ module Unit.Init.ValidationTest
   )
 where
 
-import Canopy.Constraint (Constraint)
 import qualified Canopy.Constraint as Con
-import Canopy.Package (Name)
 import qualified Canopy.Package as Pkg
-import qualified Canopy.Version as Version
-import Control.Lens ((&), (.~), (^.))
-import qualified Control.Lens as Lens
+import Control.Lens ((&), (.~))
 import qualified Data.Map as Map
 import Init.Types
-  ( InitConfig (..),
-    InitError (..),
-    ProjectContext (..),
+  ( InitError (..),
     configForce,
     contextDependencies,
     contextSourceDirs,

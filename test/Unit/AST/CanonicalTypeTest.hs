@@ -35,8 +35,10 @@ testTypeConstructors = testCase "lambda, tuple, type constructors" $ do
   let tvB = Can.TVar (Name.fromChars "b")
   case Can.TLambda tvA tvB of
     Can.TLambda _ _ -> return ()
+    _ -> assertFailure "expected TLambda"
   case Can.TTuple tvA tvB Nothing of
     Can.TTuple _ _ Nothing -> return ()
+    _ -> assertFailure "expected TTuple"
   let listTy = Can.TType ModuleName.list Name.list [tvA]
   case listTy of
     Can.TType _ _ [Can.TVar _] -> return ()
@@ -56,6 +58,8 @@ testExportsAndPorts = testCase "exports and ports data constructors" $ do
   let ex = Can.ExportEverything Ann.one
   case ex of
     Can.ExportEverything _ -> return ()
+    Can.Export _ -> assertFailure "expected ExportEverything"
   let incoming = Can.Incoming Map.empty (Can.TUnit) (Can.TUnit)
   case incoming of
     Can.Incoming {} -> return ()
+    Can.Outgoing {} -> assertFailure "expected Incoming"

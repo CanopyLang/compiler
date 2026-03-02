@@ -9,7 +9,6 @@
 module Unit.Reporting.DiagnosticTest (tests) where
 
 import qualified Canopy.Data.NonEmptyList as NE
-import qualified Data.Text as Text
 import qualified Reporting.Annotation as Ann
 import qualified Reporting.Diagnostic as Diag
 import qualified Reporting.Doc as Doc
@@ -128,7 +127,9 @@ modificationTests =
         let sug = Diag.Suggestion region "String.fromInt x" "Convert with String.fromInt" Diag.Likely
         let modified = Diag.addSuggestion sug diag
         length (Diag._diagSuggestions modified) @?= 1
-        Diag._sugMessage (head (Diag._diagSuggestions modified)) @?= "Convert with String.fromInt",
+        case Diag._diagSuggestions modified of
+          (s:_) -> Diag._sugMessage s @?= "Convert with String.fromInt"
+          [] -> assertFailure "Expected at least one suggestion",
       testCase "addSecondarySpan appends span" $ do
         let diag = baseDiag
         let span_ = Diag.LabeledSpan region2 "defined here" Diag.SpanSecondary

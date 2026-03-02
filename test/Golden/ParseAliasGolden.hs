@@ -44,6 +44,7 @@ body (Ann.At _ t) =
     Src.TTypeQual _ _ name args -> "type=" <> (Name.toChars name <> argsS args)
     Src.TLambda _ _ -> "lambda"
     Src.TVar v -> "var=" <> Name.toChars v
+    Src.TUnit -> "unit"
 
 argsS :: [Src.Type] -> String
 argsS args = if null args then "" else "<" <> (show (length args) <> ">")
@@ -60,3 +61,4 @@ fieldType (Ann.At _ t) =
     Src.TTuple _ _ rest -> "Tuple" <> show (2 + length rest)
     Src.TRecord _ _ -> "Record"
     Src.TLambda _ _ -> "Func"
+    Src.TUnit -> "Unit"

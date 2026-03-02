@@ -93,7 +93,7 @@ codeToStmtListTests =
         let result = Expr.codeToStmtList (Expr.JsExpr (JS.Int 5))
         in do
           length result @?= 1
-          showStmt (head result) @?= "Return (Int 5)",
+          case result of { (r:_) -> showStmt r @?= "Return (Int 5)"; _ -> assertFailure "expected non-empty" },
       testCase "JsStmt passes through as single-element list" $
         let stmt = JS.Return (JS.Bool False)
             result = Expr.codeToStmtList (Expr.JsStmt stmt)

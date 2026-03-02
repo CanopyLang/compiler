@@ -14,7 +14,6 @@ import qualified Canopy.Compiler.Type as Type
 import qualified Canopy.Docs as Docs
 import qualified Canopy.Magnitude as Magnitude
 import Canopy.Version (Version (..))
-import qualified Canopy.Version as Version
 import qualified Data.Map.Strict as Map
 import qualified Canopy.Data.Name as Name
 import Deps.Diff (Changes (..), ModuleChanges (..), PackageChanges (..))

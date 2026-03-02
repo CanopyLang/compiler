@@ -12,7 +12,6 @@
 module Unit.Type.SolveTest (tests) where
 
 import qualified AST.Canonical as Can
-import qualified Canopy.ModuleName as ModuleName
 import Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
 import qualified Canopy.Data.Name as Name

@@ -13,18 +13,13 @@ import qualified Builder.Hash as Hash
 import qualified Builder.Incremental as Incremental
 import qualified Builder.Solver as Solver
 import qualified Builder.State as State
-import qualified Canopy.ModuleName as ModuleName
-import qualified Canopy.Package as Pkg
 import qualified Canopy.Version as Version
-import Control.Monad (forM_)
 import qualified Data.ByteString as BS
 import qualified Data.Map.Strict as Map
 import qualified Canopy.Data.Name as Name
-import Data.Set (Set)
 import qualified Data.Set as Set
 import Data.Time.Clock (getCurrentTime)
-import qualified Canopy.Data.Utf8 as Utf8
-import System.Directory (createDirectoryIfMissing, doesFileExist, removeDirectoryRecursive)
+import System.Directory (createDirectoryIfMissing, doesFileExist)
 import System.FilePath ((</>))
 import System.IO.Temp (withSystemTempDirectory)
 import Test.Tasty (TestTree, testGroup)

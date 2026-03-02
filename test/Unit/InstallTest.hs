@@ -15,7 +15,7 @@ import Control.Lens ((^.))
 import Install (Args (..))
 import qualified Install.Types as Types
 import Test.Tasty (TestTree, testGroup)
-import Test.Tasty.HUnit (assertBool, testCase, (@?=))
+import Test.Tasty.HUnit (testCase, (@?=))
 
 -- | All unit tests for Install module functionality.
 tests :: TestTree

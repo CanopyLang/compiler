@@ -24,8 +24,8 @@ tests =
     ]
 
 -- | Assert Show-based equality for Opt.Expr (no Eq instance).
-assertExprEq :: String -> Opt.Expr -> Opt.Expr -> Assertion
-assertExprEq msg expected actual =
+_assertExprEq :: String -> Opt.Expr -> Opt.Expr -> Assertion
+_assertExprEq msg expected actual =
   assertEqual msg (show expected) (show actual)
 
 -- FUNCTION ARG TESTS

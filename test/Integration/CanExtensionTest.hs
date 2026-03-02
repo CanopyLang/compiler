@@ -16,7 +16,8 @@ tests =
   testGroup
     "Can extension integration"
     [ testDetectCanFiles,
-      testParseCanModule
+      testParseCanModule,
+      testParseElmModule
     ]
 
 testDetectCanFiles :: TestTree

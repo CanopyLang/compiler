@@ -32,16 +32,12 @@ module Unit.Init.DisplayTest
   )
 where
 
-import Canopy.Package (Name)
 import qualified Canopy.Package as Pkg
-import qualified Canopy.Version as Version
-import Control.Lens ((&), (.~), (^.))
+import Control.Lens ((&), (^.))
 import qualified Control.Lens as Lens
-import qualified Deps.Solver as Solver
 import qualified Init.Display as Display
 import Init.Types
-  ( InitConfig (..),
-    InitError (..),
+  ( InitError (..),
     configSkipPrompt,
     defaultConfig,
   )
@@ -49,7 +45,7 @@ import qualified Reporting.Doc as Doc
 import qualified Reporting.Exit as Exit
 import Test.Tasty (TestTree)
 import qualified Test.Tasty as Test
-import Test.Tasty.HUnit (assertBool, (@?=))
+import Test.Tasty.HUnit ((@?=))
 import qualified Test.Tasty.HUnit as Test
 
 -- | Main test suite for Init.Display module.
@@ -79,7 +75,6 @@ promptTests =
         (config ^. configSkipPrompt) @?= False,
       Test.testCase "showConfirmationPrompt contains Hello and Y/n" $ do
         let prompt = Display.showConfirmationPrompt
-            rendered = Doc.toString prompt
         Doc.toString prompt
           @?= "Hello! Canopy projects always start with an canopy.json file. I can create them!\n\nNow you may be wondering, what will be in this file? How do I add Canopy files\nto my project? How do I see it in the browser? How will my code grow? Do I need\nmore directories? What about tests? Etc.\n\nCheck out <https://canopy-lang.org/0.19.1/init> for all the answers!\n\nKnowing all that, would you like me to create a canopy.json file now? [Y/n]: "
     ]

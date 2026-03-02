@@ -1,7 +1,6 @@
 module Golden.ParseModuleGolden (tests) where
 
 import qualified AST.Source as Src
-import qualified Canopy.Package as Pkg
 import qualified Data.ByteString as BS
 import qualified Data.ByteString.Lazy.Char8 as BL8
 import qualified Data.List as List
@@ -46,7 +45,7 @@ comma :: [String] -> String
 comma = List.intercalate ","
 
 getValName :: Ann.Located Src.Value -> Name.Name
-getValName (Ann.At _ (Src.Value (Ann.At _ n) _ _ _)) = n
+getValName (Ann.At _ (Src.Value (Ann.At _ n) _ _ _ _)) = n
 
 aliasWithVars :: Ann.Located Src.Alias -> String
 aliasWithVars (Ann.At _ (Src.Alias (Ann.At _ n) tvars _)) =

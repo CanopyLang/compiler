@@ -17,7 +17,6 @@ import qualified Canopy.Package as Pkg
 import qualified Data.Map.Strict as Map
 import qualified Data.Set as Set
 import Generate.TreeShake (TreeShakeReport (..), computeReport, reachableGlobals)
-import qualified Reporting.Annotation as Ann
 import Test.Tasty (TestTree)
 import qualified Test.Tasty as Test
 import Test.Tasty.HUnit ((@?=))

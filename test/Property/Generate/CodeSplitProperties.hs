@@ -25,8 +25,7 @@ import qualified Canopy.Data.Utf8 as Utf8
 import Generate.JavaScript.CodeSplit.Analyze (analyze)
 import Generate.JavaScript.CodeSplit.Manifest (contentHash)
 import Generate.JavaScript.CodeSplit.Types
-  ( ChunkGraph (..),
-    ChunkKind (..),
+  ( ChunkKind (..),
     SplitConfig (..),
     chunkGlobals,
     chunkKind,
@@ -34,7 +33,6 @@ import Generate.JavaScript.CodeSplit.Types
     cgLazy,
     cgShared,
     cgGlobalToChunk,
-    entryChunkId,
   )
 import Test.Tasty
 import Test.Tasty.QuickCheck
@@ -103,9 +101,6 @@ chunkGraphInvariantTests =
         let numModules = abs n `mod` 5
             globals = [mkGlobal ("Mod" ++ show i) "fn" | i <- [0 .. numModules]]
             mainG = mkGlobal "Main" "main"
-            graph = mkGlobalGraph (Map.fromList
-              ((mainG, mkDefineWithDeps globals)
-               : [(g, mkDefineNode) | g <- globals]))
             config = SplitConfig Set.empty 2
             cg = analyze config (mkGlobalGraph (Map.fromList
               ((mainG, mkDefineWithDeps globals)

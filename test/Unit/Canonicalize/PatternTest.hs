@@ -100,9 +100,9 @@ verifyNoBindingsTests = testGroup "verify with no bindings"
 verifySingleBindingTests :: TestTree
 verifySingleBindingTests = testGroup "verify with single binding"
   [ testCase "single variable binding succeeds with correct value" $ do
-      let inner = logVar (Name.fromChars "x") region1 "matched"
+      let inner = logVar (Name.fromChars "x") region1 ("matched" :: String)
       (val, _) <- expectRight (Result.run (Pattern.verify Error.DPCaseBranch inner))
-      val @?= "matched"
+      val @?= ("matched" :: String)
   , testCase "single binding produces correct bindings map entry" $ do
       let name = Name.fromChars "myVar"
           inner = logVar name region1 (42 :: Int)
@@ -122,7 +122,7 @@ verifyMultipleBindingsTests = testGroup "verify with multiple distinct bindings"
       let inner = logVar (Name.fromChars "x") region1 ()
                     *> logVar (Name.fromChars "y") region2 "result"
       (val, _) <- expectRight (Result.run (Pattern.verify Error.DPCaseBranch inner))
-      val @?= "result"
+      val @?= ("result" :: String)
   , testCase "two distinct variables produce bindings with size 2" $ do
       let inner = logVar (Name.fromChars "a") region1 ()
                     *> logVar (Name.fromChars "b") region2 ()
@@ -132,7 +132,7 @@ verifyMultipleBindingsTests = testGroup "verify with multiple distinct bindings"
       let nameX = Name.fromChars "x"
           nameY = Name.fromChars "y"
           nameZ = Name.fromChars "z"
-          inner = logVars [(nameX, region1), (nameY, region2), (nameZ, region3)] "done"
+          inner = logVars [(nameX, region1), (nameY, region2), (nameZ, region3)] ("done" :: String)
       (_, bindings) <- expectRight (Result.run (Pattern.verify Error.DPCaseBranch inner))
       Map.member nameX bindings @?= True
       Map.member nameY bindings @?= True

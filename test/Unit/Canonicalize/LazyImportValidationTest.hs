@@ -251,7 +251,7 @@ mkNonLazyImport name =
 -- | A minimal empty interface for testing module existence.
 emptyInterface :: Interface.Interface
 emptyInterface =
-  Interface.Interface Pkg.core Map.empty Map.empty Map.empty Map.empty
+  Interface.Interface Pkg.core Map.empty Map.empty Map.empty Map.empty Map.empty
 
 -- HELPERS: RUNNING CANONICALIZATION
 

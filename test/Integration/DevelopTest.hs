@@ -73,7 +73,9 @@ serverSetupWorkflowTests =
         case config ^. scRoot of
           Nothing -> pure () -- No project found, valid
           Just root -> do
-            assertBool "detected root should be absolute path" (head root == '/')
+            case root of
+              ('/':_) -> pure ()
+              _ -> Test.assertFailure "detected root should be absolute path"
             assertBool "detected root should be realistic project path" (length root > 1)
     ]
 

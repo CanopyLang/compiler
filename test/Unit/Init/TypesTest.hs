@@ -31,12 +31,10 @@ module Unit.Init.TypesTest
   )
 where
 
-import Canopy.Constraint (Constraint)
 import qualified Canopy.Constraint as Con
-import Canopy.Package (Name)
 import qualified Canopy.Package as Pkg
 import qualified Canopy.Version as Version
-import Control.Lens ((&), (.~), (^.))
+import Control.Lens ((&), (.~))
 import qualified Data.Map as Map
 import Init.Types
   ( DefaultDeps (..),
@@ -49,17 +47,14 @@ import Init.Types
     contextDependencies,
     contextProjectName,
     contextSourceDirs,
-    contextTestDeps,
     defaultConfig,
     defaultContext,
     defaultDeps,
-    depsBrowser,
     depsCore,
-    depsHtml,
   )
 import Test.Tasty (TestTree)
 import qualified Test.Tasty as Test
-import Test.Tasty.HUnit (assertFailure, (@?=))
+import Test.Tasty.HUnit ((@?=))
 import qualified Test.Tasty.HUnit as Test
 
 -- | Main test suite for Init.Types module.
@@ -153,16 +148,14 @@ defaultDepsTests =
           DefaultDeps core browser html -> do
             core @?= Con.anything
             browser @?= Con.anything
-            html @?= Con.anything
-          _ -> Test.assertFailure "Expected standard DefaultDeps construction",
+            html @?= Con.anything,
       Test.testCase "DefaultDeps provides sensible defaults" $ do
         let deps = defaultDeps
         case deps of
           DefaultDeps core browser html -> do
             core @?= Con.anything
             browser @?= Con.anything
-            html @?= Con.anything
-          _ -> Test.assertFailure "Expected default deps configuration",
+            html @?= Con.anything,
       Test.testCase "DefaultDeps supports constraint updates" $ do
         let original = defaultDeps
             testConstraint = Con.exactly Version.one
@@ -170,8 +163,7 @@ defaultDepsTests =
         case (original, updated) of
           (DefaultDeps origCore _ _, DefaultDeps updatedCore _ _) -> do
             origCore @?= Con.anything
-            updatedCore @?= testConstraint
-          _ -> Test.assertFailure "Expected successful constraint update",
+            updatedCore @?= testConstraint,
       Test.testCase "DefaultDeps equality" $ do
         let deps1 = DefaultDeps Con.anything Con.anything Con.anything
             deps2 = DefaultDeps Con.anything Con.anything Con.anything
@@ -271,8 +263,7 @@ lensTests =
           (ProjectContext _ _ originalDeps _, ProjectContext _ _ modifiedDeps _) -> do
             Map.size originalDeps @?= 3 -- default has 3
             Map.size modifiedDeps @?= 1
-            Map.member Pkg.core modifiedDeps @?= True
-          _ -> Test.assertFailure "Expected successful dependency update",
+            Map.member Pkg.core modifiedDeps @?= True,
       Test.testCase "Configuration composition works correctly" $ do
         let config = defaultConfig
             updated =
@@ -281,7 +272,7 @@ lensTests =
                 & configSkipPrompt .~ False
         case updated of
           InitConfig True True False -> pure ()
-          _ -> Test.assertFailure "Expected successful configuration composition"
+          _ -> Test.assertFailure "Expected InitConfig True True False"
     ]
 
 -- | Test default values and their properties.
@@ -293,28 +284,26 @@ defaultValueTests =
         let config = defaultConfig
         case config of
           InitConfig False False False -> pure ()
-          _ -> Test.assertFailure "Expected non-intrusive default configuration",
+          _ -> Test.assertFailure "Expected InitConfig False False False",
       Test.testCase "defaultContext provides appropriate structure" $ do
         let context = defaultContext
         case context of
           ProjectContext Nothing ["src"] deps testDeps -> do
             Map.size deps @?= 3
             Map.null testDeps @?= True
-          _ -> Test.assertFailure "Expected standard default context",
+          _ -> Test.assertFailure "Expected ProjectContext Nothing [src]",
       Test.testCase "defaultContext includes standard dependencies" $ do
         case defaultContext of
           ProjectContext _ _ deps _ -> do
             Map.member Pkg.core deps @?= True
             Map.member Pkg.browser deps @?= True
-            Map.member Pkg.html deps @?= True
-          _ -> Test.assertFailure "Expected context with standard dependencies",
+            Map.member Pkg.html deps @?= True,
       Test.testCase "defaultDeps provides permissive constraints" $ do
         case defaultDeps of
           DefaultDeps core browser html -> do
             core @?= Con.anything
             browser @?= Con.anything
-            html @?= Con.anything
-          _ -> Test.assertFailure "Expected permissive default constraints",
+            html @?= Con.anything,
       Test.testCase "default values provide consistent experience" $ do
         case (defaultConfig, defaultContext, defaultDeps) of
           (InitConfig False False False, ProjectContext _ ["src"] _ testDeps, DefaultDeps core browser html) -> do
@@ -324,5 +313,5 @@ defaultValueTests =
             core @?= Con.anything
             browser @?= Con.anything
             html @?= Con.anything
-          _ -> Test.assertFailure "Expected consistent default configuration"
+          _ -> Test.assertFailure "Expected consistent defaults"
     ]

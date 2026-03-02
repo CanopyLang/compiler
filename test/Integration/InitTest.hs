@@ -32,20 +32,15 @@ module Integration.InitTest
   )
 where
 
-import Canopy.Constraint (Constraint)
 import qualified Canopy.Constraint as Con
 import qualified Canopy.Outline as Outline
-import Canopy.Package (Name)
 import qualified Canopy.Package as Pkg
 import qualified Canopy.Version as Version
 import Control.Lens ((&), (.~), (^.))
-import qualified Control.Lens as Lens
 import qualified Data.Map as Map
 import qualified Deps.Solver as Solver
 import Init
-  ( InitConfig (..),
-    InitError (..),
-    ProjectContext (..),
+  ( InitError (..),
     defaultConfig,
     defaultContext,
   )
@@ -56,7 +51,7 @@ import qualified Init.Types as Types
 import qualified Init.Validation as Validation
 import Test.Tasty (TestTree)
 import qualified Test.Tasty as Test
-import Test.Tasty.HUnit (assertBool, (@?=))
+import Test.Tasty.HUnit ((@?=))
 import qualified Test.Tasty.HUnit as Test
 
 -- | Main integration test suite for Init system.

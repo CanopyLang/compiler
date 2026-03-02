@@ -59,7 +59,7 @@ runFunctionTests =
             let _ = Develop.run () flags -- Type-checked at compile time
             -- Verify the run function is properly typed and callable
             -- The function type signature requires: () -> Flags -> IO ()
-            let runResult = Develop.run () flags :: IO ()
+            let _runResult = Develop.run () flags :: IO ()
             -- Type system validates proper integration
             assertBool "run function has correct type signature" True
         )

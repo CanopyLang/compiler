@@ -120,7 +120,7 @@ manifestTests =
     , testCase "manifest starts with open brace" $ do
         let outputs = [mkChunkOutput EntryChunk "entry" "abc" "entry.js"]
             manifest = renderBuilder (generateManifest outputs)
-        head manifest @?= '{'
+        case manifest of { ('{':_) -> pure (); _ -> assertFailure "expected { at start" }
     , testCase "manifest ends with close brace" $ do
         let outputs = [mkChunkOutput EntryChunk "entry" "abc" "entry.js"]
             manifest = renderBuilder (generateManifest outputs)

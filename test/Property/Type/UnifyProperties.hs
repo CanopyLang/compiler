@@ -24,7 +24,7 @@ import Test.Tasty.QuickCheck
 import qualified Canopy.ModuleName as ModuleName
 import qualified Canopy.Package as Package
 import qualified Canopy.Data.Name as Name
-import Type.Type (Descriptor (Descriptor), Content (..), FlatType (..), Mark, Variable)
+import Type.Type (Descriptor (Descriptor), Content (..), FlatType (..), Variable)
 import qualified Type.Type as Type
 import qualified Type.Unify as Unify
 import qualified Type.UnionFind as UF

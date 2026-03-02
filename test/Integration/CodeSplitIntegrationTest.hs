@@ -32,8 +32,7 @@ import qualified Canopy.Data.Utf8 as Utf8
 import Generate.JavaScript.CodeSplit.Analyze (analyze, analyzeWithCache, graphHash)
 import Generate.JavaScript.CodeSplit.Generate (generateChunks)
 import Generate.JavaScript.CodeSplit.Types
-  ( ChunkGraphCache (..),
-    ChunkKind (..),
+  ( ChunkKind (..),
     SplitConfig (..),
     SplitOutput,
     cacheConfig,

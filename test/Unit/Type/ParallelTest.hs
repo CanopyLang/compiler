@@ -13,7 +13,6 @@ import qualified Canopy.Interface as Interface
 import qualified Canopy.ModuleName as ModuleName
 import qualified Canopy.Package as Pkg
 import qualified Data.Map.Strict as Map
-import Data.Set (Set)
 import qualified Data.Set as Set
 import Test.Tasty
 import Test.Tasty.HUnit
@@ -215,7 +214,8 @@ testInterface =
       Interface._values = Map.empty,
       Interface._unions = Map.empty,
       Interface._aliases = Map.empty,
-      Interface._binops = Map.empty
+      Interface._binops = Map.empty,
+      Interface._ifaceGuards = Map.empty
     }
 
 -- | Assert that a Maybe value is Just.

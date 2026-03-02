@@ -11,7 +11,6 @@ module Unit.Repl.StateTest (tests) where
 
 import qualified Canopy.Data.Name as Name
 import qualified Data.ByteString.Char8 as BSC
-import qualified Data.List as List
 import qualified Data.Map.Strict as Map
 import qualified Repl.State as State
 import Repl.Types (Output (..), State (..))

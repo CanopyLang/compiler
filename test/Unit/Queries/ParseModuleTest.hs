@@ -9,7 +9,6 @@ module Unit.Queries.ParseModuleTest (tests) where
 
 import qualified AST.Source as Src
 import qualified Canopy.Package as Pkg
-import Reporting.Annotation (Located (..))
 import qualified Reporting.Annotation as Ann
 import qualified Control.Exception as Exception
 import qualified Data.ByteString as BS

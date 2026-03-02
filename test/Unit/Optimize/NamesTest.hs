@@ -91,13 +91,13 @@ generateTests =
          in Name.toChars (getValue tracker) @?= "_v1",
       testCase "sequential generates produce distinct names" $
         let tracker = do
-              n0 <- Names.generate
-              n1 <- Names.generate
-              pure (n0, n1)
-            (n0, n1) = getValue tracker
+              x <- Names.generate
+              y <- Names.generate
+              pure (x, y)
+            (genA, genB) = getValue tracker
          in assertBool
               "generated names must be distinct"
-              (Name.toChars n0 /= Name.toChars n1),
+              (Name.toChars genA /= Name.toChars genB),
       testCase "generate does not add dependencies" $
         getDeps Names.generate @?= Set.empty,
       testCase "generate does not add fields" $
@@ -168,7 +168,7 @@ registerFieldDictTests =
   testGroup
     "registerFieldDict"
     [ testCase "registerFieldDict adds all fields with count 1" $
-        let dict = Map.fromList [(Name.fromChars "a", "val1"), (Name.fromChars "b", "val2")]
+        let dict = Map.fromList [(Name.fromChars "a", "val1" :: String), (Name.fromChars "b", "val2")]
             fields = getFields (Names.registerFieldDict dict ())
          in do
               Map.lookup (Name.fromChars "a") fields @?= Just 1

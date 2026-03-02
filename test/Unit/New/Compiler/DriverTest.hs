@@ -82,4 +82,5 @@ testSimpleModule = do
         , Interface._unions = Map.map Interface.PrivateUnion unions
         , Interface._aliases = Map.map Interface.PrivateAlias aliases
         , Interface._binops = Map.empty
+        , Interface._ifaceGuards = Map.empty
         }

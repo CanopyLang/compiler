@@ -9,16 +9,13 @@ import qualified Canopy.ModuleName as ModuleName
 import qualified Canopy.Package as Pkg
 import qualified Canopy.String as ES
 import qualified Canopy.Data.Index as Index
-import Data.Map (Map)
 import qualified Data.Map as Map
 import Data.Maybe (isJust)
 import Canopy.Data.Name (Name)
 import qualified Canopy.Data.Name as Name
-import Data.Set (Set)
 import qualified Data.Set as Set
-import qualified Optimize.DecisionTree as DT
 import Test.Tasty
-import Test.Tasty.HUnit (assertBool, assertFailure, testCase, (@?=))
+import Test.Tasty.HUnit (assertFailure, testCase, (@?=))
 
 tests :: TestTree
 tests =
@@ -278,8 +275,9 @@ testDefConstructors =
         case def of
           Opt.TailDef n ps e -> do
             n @?= name
-            length ps @?= 1
-            head ps @?= Name.fromChars "x"
+            case ps of
+              [p] -> p @?= Name.fromChars "x"
+              _ -> assertFailure "Expected exactly one parameter"
             extractIntValue e @?= Just 42
           _ -> assertFailure "Expected TailDef constructor"
     ]
@@ -358,7 +356,7 @@ testChoiceConstructors =
         isJumpChoice choice @?= True
         isInlineChoice choice @?= False
         case choice of
-          Opt.Jump id -> id @?= targetId
+          Opt.Jump jid -> jid @?= targetId
           _ -> assertFailure "Expected Jump constructor"
     ]
 
@@ -586,14 +584,14 @@ getTupleThird (Opt.Tuple _ _ third) = third
 getTupleThird _ = Nothing
 
 -- Additional helper to check tuple component types without direct comparison
-getTupleFirstInt :: Opt.Expr -> Maybe Int
-getTupleFirstInt expr = extractIntValue (getTupleFirst expr)
+_getTupleFirstInt :: Opt.Expr -> Maybe Int
+_getTupleFirstInt expr = extractIntValue (getTupleFirst expr)
 
-getTupleSecondInt :: Opt.Expr -> Maybe Int
-getTupleSecondInt expr = extractIntValue (getTupleSecond expr)
+_getTupleSecondInt :: Opt.Expr -> Maybe Int
+_getTupleSecondInt expr = extractIntValue (getTupleSecond expr)
 
-getTupleThirdInt :: Opt.Expr -> Maybe Int
-getTupleThirdInt expr = case getTupleThird expr of
+_getTupleThirdInt :: Opt.Expr -> Maybe Int
+_getTupleThirdInt expr = case getTupleThird expr of
   Just thirdExpr -> extractIntValue thirdExpr
   Nothing -> Nothing
 

@@ -32,17 +32,13 @@ module Unit.Init.EnvironmentTest
   )
 where
 
-import Canopy.Constraint (Constraint)
 import qualified Canopy.Constraint as Con
-import Canopy.Package (Name)
 import qualified Canopy.Package as Pkg
-import qualified Canopy.Version as Version
 import qualified Data.Map as Map
 import qualified Deps.Solver as Solver
 import qualified Init.Environment as Environment
 import Init.Types
   ( InitError (..),
-    ProjectContext (..),
     defaultContext,
   )
 import qualified Reporting.Exit as Exit

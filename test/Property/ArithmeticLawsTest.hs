@@ -1,4 +1,5 @@
 {-# LANGUAGE OverloadedStrings #-}
+{-# OPTIONS_GHC -fno-warn-orphans #-}
 
 -- | Property.ArithmeticLawsTest - Property-based tests for arithmetic operator laws
 --

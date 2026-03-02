@@ -155,12 +155,12 @@ moduleWithValue v = emptyModule {Src._values = [loc v]}
 -- | Helper to create a Value from a name, patterns, and body.
 mkValue :: String -> [Src.Pattern] -> Src.Expr -> Src.Value
 mkValue name pats body =
-  Src.Value (loc (Name.fromChars name)) pats body Nothing
+  Src.Value (loc (Name.fromChars name)) pats body Nothing Nothing
 
 -- | Helper to create a Value with a type annotation.
 mkAnnotatedValue :: String -> [Src.Pattern] -> Src.Expr -> Src.Value
 mkAnnotatedValue name pats body =
-  Src.Value (loc (Name.fromChars name)) pats body (Just (loc Src.TUnit))
+  Src.Value (loc (Name.fromChars name)) pats body (Just (loc Src.TUnit)) Nothing
 
 -- SHADOWED VARIABLE TEST MODULES
 

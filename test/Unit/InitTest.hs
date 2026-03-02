@@ -30,20 +30,15 @@ module Unit.InitTest
   )
 where
 
-import Canopy.Package (Name)
 import qualified Canopy.Package as Pkg
 import Control.Lens ((&), (.~), (^.))
-import qualified Control.Lens as Lens
 import qualified Data.Map as Map
 import Init
-  ( InitConfig (..),
-    InitError (..),
-    ProjectContext (..),
+  ( InitError (..),
     defaultConfig,
     defaultContext,
   )
 import qualified Init.Types as Types
-import qualified Reporting.Exit as Exit
 import Test.Tasty (TestTree)
 import qualified Test.Tasty as Test
 import Test.Tasty.HUnit ((@?=))

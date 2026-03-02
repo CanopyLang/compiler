@@ -97,7 +97,7 @@ moduleWithValue v = emptyModule {Src._values = [loc v]}
 -- | Helper to create a Value from a name, patterns, and body.
 mkValue :: String -> [Src.Pattern] -> Src.Expr -> Src.Value
 mkValue name pats body =
-  Src.Value (loc (Name.fromChars name)) pats body Nothing
+  Src.Value (loc (Name.fromChars name)) pats body Nothing Nothing
 
 -- | Create a PCtor pattern (constructor with sub-patterns).
 pctor :: String -> [Src.Pattern] -> Src.Pattern
