@@ -94,21 +94,21 @@ unit :: Can.Union
 unit =
   let ctor =
         Can.Ctor unitName Index.first 0 []
-   in Can.Union [] [ctor] 1 Can.Normal
+   in Can.Union [] [] [ctor] 1 Can.Normal
 
 {-# NOINLINE pair #-}
 pair :: Can.Union
 pair =
   let ctor =
         Can.Ctor pairName Index.first 2 [Can.TVar "a", Can.TVar "b"]
-   in Can.Union ["a", "b"] [ctor] 1 Can.Normal
+   in Can.Union ["a", "b"] [] [ctor] 1 Can.Normal
 
 {-# NOINLINE triple #-}
 triple :: Can.Union
 triple =
   let ctor =
         Can.Ctor tripleName Index.first 3 [Can.TVar "a", Can.TVar "b", Can.TVar "c"]
-   in Can.Union ["a", "b", "c"] [ctor] 1 Can.Normal
+   in Can.Union ["a", "b", "c"] [] [ctor] 1 Can.Normal
 
 {-# NOINLINE list #-}
 list :: Can.Union
@@ -124,7 +124,7 @@ list =
           [ Can.TVar "a",
             Can.TType ModuleName.list Name.list [Can.TVar "a"]
           ]
-   in Can.Union ["a"] [nilCtor, consCtor] 2 Can.Normal
+   in Can.Union ["a"] [] [nilCtor, consCtor] 2 Can.Normal
 
 {-# NOINLINE unitName #-}
 unitName :: Name.Name
@@ -346,7 +346,7 @@ isExhaustive matrix n =
                   (:) Anything
                     <$> isExhaustive (Maybe.mapMaybe specializeRowByAnything matrix) (n - 1)
                 else
-                  let alts@(Can.Union _ altList numAlts _) = snd (Map.findMin ctors)
+                  let alts@(Can.Union _ _ altList numAlts _) = snd (Map.findMin ctors)
                    in if numSeen < numAlts
                         then
                           (:)
@@ -502,7 +502,7 @@ isComplete matrix =
    in if numSeen == 0
         then No
         else
-          let (Can.Union _ alts numAlts _) = snd (Map.findMin ctors)
+          let (Can.Union _ _ alts numAlts _) = snd (Map.findMin ctors)
            in if numSeen == numAlts then Yes alts else No
 
 -- COLLECT CTORS

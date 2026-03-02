@@ -351,6 +351,7 @@ test-suite canopy-test
       Unit.Type.SolveTest
       Unit.Type.UnifyTest
       Unit.Type.UnionFindTest
+      Unit.Type.VarianceTest
       Unit.VendorTest
       Unit.VersionCheckTest
       Unit.Watch.LiveReloadTest

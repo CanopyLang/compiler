@@ -144,6 +144,8 @@ module AST.Canonical
     fieldsToList,
     -- supertype bounds
     SupertypeBound (..),
+    -- variance
+    Variance (..),
     -- modules
     Module (..),
     Alias (..),
@@ -188,6 +190,7 @@ import AST.Canonical.Types
     SupertypeBound (..),
     Type (..),
     Union (..),
+    Variance (..),
     Binop (..),
     fieldsToList,
   )

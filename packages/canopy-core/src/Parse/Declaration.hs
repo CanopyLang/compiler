@@ -159,17 +159,17 @@ typeDecl maybeDocs start =
           [
             inContext SyntaxError.DT_Alias (Keyword.alias_ SyntaxError.DT_Name) $
               do  Space.chompAndCheckIndent SyntaxError.AliasSpace SyntaxError.AliasIndentEquals
-                  (name, args) <- chompAliasNameToEquals
+                  (name, args, variances) <- chompAliasNameToEquals
                   maybeBound <- chompOptionalBound
                   (tipe, end) <- specialize SyntaxError.AliasBody Type.expression
-                  let alias = Ann.at start end (Src.Alias name args tipe maybeBound)
+                  let alias = Ann.at start end (Src.Alias name args variances tipe maybeBound)
                   return (Alias maybeDocs alias, end)
           ,
             specialize SyntaxError.DT_Union $
-              do  (name, args) <- chompCustomNameToEquals
+              do  (name, args, variances) <- chompCustomNameToEquals
                   (firstVariant, firstEnd) <- Type.variant
                   (variants, end) <- chompVariants [firstVariant] firstEnd
-                  let union = Ann.at start end (Src.Union name args variants)
+                  let union = Ann.at start end (Src.Union name args variances variants)
                   return (Union maybeDocs union, end)
           ]
 
@@ -178,22 +178,61 @@ typeDecl maybeDocs start =
 -- TYPE ALIASES
 
 
-chompAliasNameToEquals :: Parser SyntaxError.TypeAlias (Ann.Located Name.Name, [Ann.Located Name.Name])
+chompAliasNameToEquals :: Parser SyntaxError.TypeAlias (Ann.Located Name.Name, [Ann.Located Name.Name], [Src.Variance])
 chompAliasNameToEquals =
   do  name <- addLocation (Var.upper SyntaxError.AliasName)
       Space.chompAndCheckIndent SyntaxError.AliasSpace SyntaxError.AliasIndentEquals
-      chompAliasNameToEqualsHelp name []
+      chompAliasNameToEqualsHelp name [] []
 
 
-chompAliasNameToEqualsHelp :: Ann.Located Name.Name -> [Ann.Located Name.Name] -> Parser SyntaxError.TypeAlias (Ann.Located Name.Name, [Ann.Located Name.Name])
-chompAliasNameToEqualsHelp name args =
+chompAliasNameToEqualsHelp :: Ann.Located Name.Name -> [Ann.Located Name.Name] -> [Src.Variance] -> Parser SyntaxError.TypeAlias (Ann.Located Name.Name, [Ann.Located Name.Name], [Src.Variance])
+chompAliasNameToEqualsHelp name args variances =
   oneOf SyntaxError.AliasEquals
-    [ do  arg <- addLocation (Var.lower SyntaxError.AliasEquals)
+    [ do  (arg, variance) <- chompVarianceParam SyntaxError.AliasEquals
           Space.chompAndCheckIndent SyntaxError.AliasSpace SyntaxError.AliasIndentEquals
-          chompAliasNameToEqualsHelp name (arg:args)
+          chompAliasNameToEqualsHelp name (arg:args) (variance:variances)
     , do  word1 0x3D {-=-} SyntaxError.AliasEquals
           Space.chompAndCheckIndent SyntaxError.AliasSpace SyntaxError.AliasIndentBody
-          return ( name, reverse args )
+          return ( name, reverse args, reverse variances )
+    ]
+
+
+
+-- VARIANCE PARAMETERS
+
+
+-- | Parse a type parameter with an optional variance annotation.
+--
+-- Syntax:
+--
+--   * @(+varname)@ for covariant
+--   * @(-varname)@ for contravariant
+--   * @varname@ for invariant (default)
+--
+-- @since 0.20.0
+chompVarianceParam :: (Row -> Col -> x) -> Parser x (Ann.Located Name.Name, Src.Variance)
+chompVarianceParam toError =
+  oneOf toError
+    [ do  word1 0x28 {-(-} toError
+          variance <- chompVarianceMarker toError
+          arg <- addLocation (Var.lower toError)
+          word1 0x29 {-)-} toError
+          return (arg, variance)
+    , do  arg <- addLocation (Var.lower toError)
+          return (arg, Src.Invariant)
+    ]
+
+
+-- | Parse a variance marker: @+@ for covariant, @-@ for contravariant.
+--
+-- @since 0.20.0
+chompVarianceMarker :: (Row -> Col -> x) -> Parser x Src.Variance
+chompVarianceMarker toError =
+  oneOf toError
+    [ do  word1 0x2B {-+-} toError
+          return Src.Covariant
+    , do  word1 0x2D {---} toError
+          return Src.Contravariant
     ]
 
 
@@ -233,22 +272,22 @@ chompBound keywordParser bound =
 -- CUSTOM TYPES
 
 
-chompCustomNameToEquals :: Parser SyntaxError.CustomType (Ann.Located Name.Name, [Ann.Located Name.Name])
+chompCustomNameToEquals :: Parser SyntaxError.CustomType (Ann.Located Name.Name, [Ann.Located Name.Name], [Src.Variance])
 chompCustomNameToEquals =
   do  name <- addLocation (Var.upper SyntaxError.CT_Name)
       Space.chompAndCheckIndent SyntaxError.CT_Space SyntaxError.CT_IndentEquals
-      chompCustomNameToEqualsHelp name []
+      chompCustomNameToEqualsHelp name [] []
 
 
-chompCustomNameToEqualsHelp :: Ann.Located Name.Name -> [Ann.Located Name.Name] -> Parser SyntaxError.CustomType (Ann.Located Name.Name, [Ann.Located Name.Name])
-chompCustomNameToEqualsHelp name args =
+chompCustomNameToEqualsHelp :: Ann.Located Name.Name -> [Ann.Located Name.Name] -> [Src.Variance] -> Parser SyntaxError.CustomType (Ann.Located Name.Name, [Ann.Located Name.Name], [Src.Variance])
+chompCustomNameToEqualsHelp name args variances =
   oneOf SyntaxError.CT_Equals
-    [ do  arg <- addLocation (Var.lower SyntaxError.CT_Equals)
+    [ do  (arg, variance) <- chompVarianceParam SyntaxError.CT_Equals
           Space.chompAndCheckIndent SyntaxError.CT_Space SyntaxError.CT_IndentEquals
-          chompCustomNameToEqualsHelp name (arg:args)
+          chompCustomNameToEqualsHelp name (arg:args) (variance:variances)
     , do  word1 0x3D {-=-} SyntaxError.CT_Equals
           Space.chompAndCheckIndent SyntaxError.CT_Space SyntaxError.CT_IndentAfterEquals
-          return ( name, reverse args )
+          return ( name, reverse args, reverse variances )
     ]
 
 

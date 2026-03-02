@@ -48,11 +48,11 @@ getValName :: Ann.Located Src.Value -> Name.Name
 getValName (Ann.At _ (Src.Value (Ann.At _ n) _ _ _ _)) = n
 
 aliasWithVars :: Ann.Located Src.Alias -> String
-aliasWithVars (Ann.At _ (Src.Alias (Ann.At _ n) tvars _ _)) =
+aliasWithVars (Ann.At _ (Src.Alias (Ann.At _ n) tvars _ _ _)) =
   Name.toChars n <> ("(" <> (show (length tvars) <> ")"))
 
 showUnion :: Ann.Located Src.Union -> String
-showUnion (Ann.At _ (Src.Union (Ann.At _ n) _ ctors)) =
+showUnion (Ann.At _ (Src.Union (Ann.At _ n) _ _ ctors)) =
   Name.toChars n <> ("(" <> (comma (fmap (\(Ann.At _ cn, _) -> Name.toChars cn) ctors) <> ")"))
 
 showListImport :: [Src.Import] -> String

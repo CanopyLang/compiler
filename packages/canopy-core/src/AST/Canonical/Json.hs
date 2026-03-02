@@ -28,6 +28,7 @@ import AST.Canonical.Types
     SupertypeBound (..),
     Type (..),
     Union (..),
+    Variance (..),
   )
 import qualified Data.Aeson as Aeson
 import Data.Aeson.Types (Parser)
@@ -80,10 +81,25 @@ instance Aeson.FromJSON SupertypeBound where
       "compappend" -> pure CompAppendBound
       _ -> fail ("Unknown SupertypeBound: " ++ show txt)
 
+instance Aeson.ToJSON Variance where
+  toJSON v = Aeson.String $ case v of
+    Covariant -> "covariant"
+    Contravariant -> "contravariant"
+    Invariant -> "invariant"
+
+instance Aeson.FromJSON Variance where
+  parseJSON = Aeson.withText "Variance" $ \txt ->
+    case txt of
+      "covariant" -> pure Covariant
+      "contravariant" -> pure Contravariant
+      "invariant" -> pure Invariant
+      _ -> fail ("Unknown Variance: " ++ show txt)
+
 instance Aeson.ToJSON Alias where
-  toJSON (Alias vars tipe bound) =
+  toJSON (Alias vars variances tipe bound) =
     Aeson.object
       [ "vars" Aeson..= vars,
+        "variances" Aeson..= variances,
         "type" Aeson..= tipe,
         "bound" Aeson..= bound
       ]
@@ -92,13 +108,15 @@ instance Aeson.FromJSON Alias where
   parseJSON = Aeson.withObject "Alias" $ \o ->
     Alias
       <$> o Aeson..: "vars"
+      <*> (o Aeson..:? "variances" >>= parseVarianceDefault)
       <*> o Aeson..: "type"
       <*> o Aeson..:? "bound"
 
 instance Aeson.ToJSON Union where
-  toJSON (Union vars alts numAlts opts) =
+  toJSON (Union vars variances alts numAlts opts) =
     Aeson.object
       [ "vars" Aeson..= vars,
+        "variances" Aeson..= variances,
         "alts" Aeson..= alts,
         "numAlts" Aeson..= numAlts,
         "opts" Aeson..= opts
@@ -108,9 +126,14 @@ instance Aeson.FromJSON Union where
   parseJSON = Aeson.withObject "Union" $ \o ->
     Union
       <$> o Aeson..: "vars"
+      <*> (o Aeson..:? "variances" >>= parseVarianceDefault)
       <*> o Aeson..: "alts"
       <*> o Aeson..: "numAlts"
       <*> o Aeson..: "opts"
+
+-- | Parse optional variances, defaulting to empty list for backward compatibility.
+parseVarianceDefault :: Maybe [Variance] -> Parser [Variance]
+parseVarianceDefault = pure . maybe [] id
 
 instance Aeson.ToJSON Annotation where
   toJSON (Forall freeVars tipe) =

@@ -141,7 +141,7 @@ unionToType home name union =
   unionToTypeHelp home name <$> Interface.toPublicUnion union
 
 unionToTypeHelp :: ModuleName.Canonical -> Name.Name -> Can.Union -> (Env.Type, Env.Exposed Env.Ctor)
-unionToTypeHelp home name union@(Can.Union vars ctors _ _) =
+unionToTypeHelp home name union@(Can.Union vars _ ctors _ _) =
   let addCtor dict (Can.Ctor ctor index _ args) =
         Map.insert ctor (Env.Specific home (Env.Ctor home name union index args)) dict
    in ( Env.Union (length vars) home,
@@ -155,7 +155,7 @@ aliasToType home name alias =
   aliasToTypeHelp home name <$> Interface.toPublicAlias alias
 
 aliasToTypeHelp :: ModuleName.Canonical -> Name.Name -> Can.Alias -> (Env.Type, Env.Exposed Env.Ctor)
-aliasToTypeHelp home name (Can.Alias vars tipe _bound) =
+aliasToTypeHelp home name (Can.Alias vars _variances tipe _bound) =
   ( Env.Alias (length vars) home vars tipe,
     case tipe of
       Can.TRecord fields Nothing ->

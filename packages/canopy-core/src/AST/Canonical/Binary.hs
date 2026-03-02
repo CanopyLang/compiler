@@ -29,6 +29,7 @@ import AST.Canonical.Types
     SupertypeBound (..),
     Type (..),
     Union (..),
+    Variance (..),
   )
 import Canopy.Data.Name (Name)
 import qualified Canopy.ModuleName as ModuleName
@@ -54,13 +55,27 @@ instance Binary.Binary SupertypeBound where
       3 -> pure CompAppendBound
       _ -> fail ("SupertypeBound: unexpected tag " ++ show tag ++ " (expected 0-3). Delete canopy-stuff/ to rebuild.")
 
+instance Binary.Binary Variance where
+  put variance =
+    Binary.putWord8 $ case variance of
+      Covariant -> 0
+      Contravariant -> 1
+      Invariant -> 2
+  get = do
+    tag <- Binary.getWord8
+    case tag of
+      0 -> pure Covariant
+      1 -> pure Contravariant
+      2 -> pure Invariant
+      _ -> fail ("Variance: unexpected tag " ++ show tag ++ " (expected 0-2). Delete canopy-stuff/ to rebuild.")
+
 instance Binary.Binary Alias where
-  get = Monad.liftM3 Alias Binary.get Binary.get Binary.get
-  put (Alias a b c) = Binary.put a >> Binary.put b >> Binary.put c
+  get = Monad.liftM4 Alias Binary.get Binary.get Binary.get Binary.get
+  put (Alias a b c d) = Binary.put a >> Binary.put b >> Binary.put c >> Binary.put d
 
 instance Binary.Binary Union where
-  put (Union a b c d) = Binary.put a >> Binary.put b >> Binary.put c >> Binary.put d
-  get = Monad.liftM4 Union Binary.get Binary.get Binary.get Binary.get
+  put (Union a b c d e) = Binary.put a >> Binary.put b >> Binary.put c >> Binary.put d >> Binary.put e
+  get = Monad.liftM5 Union Binary.get Binary.get Binary.get Binary.get Binary.get
 
 instance Binary.Binary Ctor where
   get = Monad.liftM4 Ctor Binary.get Binary.get Binary.get Binary.get

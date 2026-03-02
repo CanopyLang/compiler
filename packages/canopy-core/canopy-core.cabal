@@ -144,6 +144,7 @@ library
       Type.Type
       Type.Unify
       Type.UnionFind
+      Type.Variance
   other-modules:
       AST.Canonical.Binary
       AST.Canonical.Expr

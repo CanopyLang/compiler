@@ -121,6 +121,7 @@ import qualified Unit.Type.InstantiateTest as InstantiateTest
 import qualified Unit.Type.OccursTest as OccursTest
 import qualified Unit.Type.SolveTest as SolveTest
 import qualified Unit.Type.UnifyTest as UnifyTest
+import qualified Unit.Type.VarianceTest as VarianceTest
 import qualified Unit.Canonicalize.DupsTest as CanonicalizeDupsTest
 import qualified Unit.Canonicalize.ExpressionArithmeticTest as CanonicalizeExpressionArithmeticTest
 import qualified Unit.Canonicalize.LazyImportValidationTest as LazyImportValidationTest
@@ -279,6 +280,7 @@ unitTests =
       OccursTest.tests,
       SolveTest.tests,
       UnifyTest.tests,
+      VarianceTest.tests,
       UnionFindTest.tests,
       CanonicalizeDupsTest.tests,
       CanonicalizeExpressionArithmeticTest.tests,

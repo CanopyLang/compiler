@@ -44,6 +44,9 @@ module AST.Canonical.Types
     -- * Supertype Bounds
     SupertypeBound (..),
 
+    -- * Variance
+    Variance (..),
+
     -- * Module Structure
     Module (..),
     Alias (..),
@@ -405,7 +408,24 @@ data SupertypeBound
   | CompAppendBound
   deriving (Eq, Show)
 
-data Alias = Alias [Name] Type !(Maybe SupertypeBound)
+-- | Variance annotation for type parameters.
+--
+-- Controls how a type parameter can vary in the canonical representation.
+-- Variance checking verifies that covariant parameters only appear in
+-- positive (output) positions and contravariant parameters only appear
+-- in negative (input) positions.
+--
+-- @since 0.20.0
+data Variance
+  = -- | Covariant (@+a@): output-only positions.
+    Covariant
+  | -- | Contravariant (@-a@): input-only positions.
+    Contravariant
+  | -- | Invariant (default): both input and output positions.
+    Invariant
+  deriving (Eq, Show)
+
+data Alias = Alias [Name] ![Variance] Type !(Maybe SupertypeBound)
   deriving (Eq, Show)
 
 data Binop = Binop_ Binop.Associativity Binop.Precedence Name
@@ -413,6 +433,7 @@ data Binop = Binop_ Binop.Associativity Binop.Precedence Name
 
 data Union = Union
   { _u_vars :: [Name],
+    _u_variances :: ![Variance],
     _u_alts :: [Ctor],
     _u_numAlts :: Int, -- CACHE numAlts for exhaustiveness checking
     _u_opts :: CtorOpts -- CACHE which optimizations are available

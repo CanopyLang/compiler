@@ -47,8 +47,8 @@ testTypeConstructors = testCase "lambda, tuple, type constructors" $ do
 
 testAliasAndRecord :: TestTree
 testAliasAndRecord = testCase "alias and record types" $ do
-  let alias = Can.Alias [Name.fromChars "a"] (Can.TVar (Name.fromChars "a")) Nothing
-  Can.Alias [Name.fromChars "a"] (Can.TVar (Name.fromChars "a")) Nothing @?= alias
+  let alias = Can.Alias [Name.fromChars "a"] [] (Can.TVar (Name.fromChars "a")) Nothing
+  Can.Alias [Name.fromChars "a"] [] (Can.TVar (Name.fromChars "a")) Nothing @?= alias
   let rec = Can.TRecord (Map.fromList [(Name.fromChars "x", Can.FieldType 0 (Can.TUnit))]) Nothing
   case rec of
     Can.TRecord m Nothing -> Map.size m @?= 1
@@ -69,17 +69,17 @@ testExportsAndPorts = testCase "exports and ports data constructors" $ do
 testAliasBounds :: TestTree
 testAliasBounds = testCase "alias supertype bounds" $ do
   let stringType = Can.TType ModuleName.basics (Name.fromChars "String") []
-  let comparable = Can.Alias [] stringType (Just Can.ComparableBound)
-  let appendable = Can.Alias [] stringType (Just Can.AppendableBound)
-  let number = Can.Alias [] (Can.TType ModuleName.basics (Name.fromChars "Int") []) (Just Can.NumberBound)
-  let compappend = Can.Alias [] stringType (Just Can.CompAppendBound)
-  let unbounded = Can.Alias [] stringType Nothing
+  let comparable = Can.Alias [] [] stringType (Just Can.ComparableBound)
+  let appendable = Can.Alias [] [] stringType (Just Can.AppendableBound)
+  let number = Can.Alias [] [] (Can.TType ModuleName.basics (Name.fromChars "Int") []) (Just Can.NumberBound)
+  let compappend = Can.Alias [] [] stringType (Just Can.CompAppendBound)
+  let unbounded = Can.Alias [] [] stringType Nothing
   -- Verify each bound is stored correctly
-  Can.Alias [] stringType (Just Can.ComparableBound) @?= comparable
-  Can.Alias [] stringType (Just Can.AppendableBound) @?= appendable
-  Can.Alias [] (Can.TType ModuleName.basics (Name.fromChars "Int") []) (Just Can.NumberBound) @?= number
-  Can.Alias [] stringType (Just Can.CompAppendBound) @?= compappend
-  Can.Alias [] stringType Nothing @?= unbounded
+  Can.Alias [] [] stringType (Just Can.ComparableBound) @?= comparable
+  Can.Alias [] [] stringType (Just Can.AppendableBound) @?= appendable
+  Can.Alias [] [] (Can.TType ModuleName.basics (Name.fromChars "Int") []) (Just Can.NumberBound) @?= number
+  Can.Alias [] [] stringType (Just Can.CompAppendBound) @?= compappend
+  Can.Alias [] [] stringType Nothing @?= unbounded
   -- Verify bounds are distinct
   (Just Can.ComparableBound /= Just Can.AppendableBound) @?= True
   (Just Can.NumberBound /= Just Can.CompAppendBound) @?= True

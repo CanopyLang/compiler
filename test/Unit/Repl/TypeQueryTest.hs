@@ -163,6 +163,7 @@ simpleUnion :: Can.Union
 simpleUnion =
   Can.Union
     []
+    []
     [ Can.Ctor (Name.fromChars "Red") Index.first 0 [],
       Can.Ctor (Name.fromChars "Green") Index.second 1 [],
       Can.Ctor (Name.fromChars "Blue") Index.third 2 []
@@ -199,6 +200,6 @@ aliasInterface =
     Pkg.core
     Map.empty
     Map.empty
-    (Map.singleton (Name.fromChars "Point") (Interface.PublicAlias (Can.Alias [] intType Nothing)))
+    (Map.singleton (Name.fromChars "Point") (Interface.PublicAlias (Can.Alias [] [] intType Nothing)))
     Map.empty
     Map.empty

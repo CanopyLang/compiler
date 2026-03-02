@@ -434,9 +434,9 @@ stackNonEmpty docs =
 
 -- | Format a union type definition.
 formatUnion :: FormatConfig -> Src.Union -> PP.Doc
-formatUnion config (Src.Union locName params variants) =
+formatUnion config (Src.Union locName params variances variants) =
   PP.text "type" PP.<+> locNameDoc locName
-    <> formatTypeParams params
+    <> formatTypeParamsWithVariance params variances
     <> nlIndent config 1 <> PP.text "= "
     <> joinWith (nlIndent config 1 <> PP.text "| ") (map formatVariant variants)
 
@@ -451,6 +451,27 @@ formatTypeParams [] = PP.empty
 formatTypeParams ps =
   PP.text " " <> PP.hsep (map locNameDoc ps)
 
+-- | Format type parameters with optional variance annotations.
+--
+-- Renders covariant params as @(+a)@, contravariant as @(-a)@,
+-- and invariant params as bare @a@.
+--
+-- @since 0.20.0
+formatTypeParamsWithVariance :: [Ann.Located Name] -> [Src.Variance] -> PP.Doc
+formatTypeParamsWithVariance [] _ = PP.empty
+formatTypeParamsWithVariance ps variances =
+  PP.text " " <> PP.hsep (zipWith formatOneParam ps paddedVariances)
+  where
+    paddedVariances = variances ++ repeat Src.Invariant
+
+-- | Format a single type parameter with its variance annotation.
+formatOneParam :: Ann.Located Name -> Src.Variance -> PP.Doc
+formatOneParam locName Src.Invariant = locNameDoc locName
+formatOneParam (Ann.At _ name) Src.Covariant =
+  PP.text "(+" <> PP.text (Name.toChars name) <> PP.text ")"
+formatOneParam (Ann.At _ name) Src.Contravariant =
+  PP.text "(-" <> PP.text (Name.toChars name) <> PP.text ")"
+
 -- | Format a single variant of a union type.
 formatVariant :: (Ann.Located Name, [Src.Type]) -> PP.Doc
 formatVariant (locName, types) =
@@ -458,9 +479,9 @@ formatVariant (locName, types) =
 
 -- | Format a type alias definition.
 formatAlias :: FormatConfig -> Src.Alias -> PP.Doc
-formatAlias config (Src.Alias locName params body maybeBound) =
+formatAlias config (Src.Alias locName params variances body maybeBound) =
   PP.text "type alias" PP.<+> locNameDoc locName
-    <> formatTypeParams params
+    <> formatTypeParamsWithVariance params variances
     <> PP.text " =" <> nlIndent config 1 <> formatBound maybeBound <> formatType body
 
 -- | Format a supertype bound prefix, if present.

@@ -55,6 +55,7 @@ boolUnion :: Can.Union
 boolUnion =
   Can.Union
     { Can._u_vars = [],
+      Can._u_variances = [],
       Can._u_alts =
         [ Can.Ctor (Name.fromChars "False") Index.first 0 [],
           Can.Ctor (Name.fromChars "True") (Index.next Index.first) 0 []

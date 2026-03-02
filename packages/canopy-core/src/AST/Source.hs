@@ -122,6 +122,7 @@ module AST.Source
     Union (..),
     Alias (..),
     SupertypeBound (..),
+    Variance (..),
     Infix (..),
     Port (..),
     Effects (..),
@@ -669,8 +670,30 @@ data GuardAnnotation = GuardAnnotation
 -- Contains type name, type parameters, and constructor definitions.
 --
 -- @since 0.19.1
-data Union = Union (Ann.Located Name) [Ann.Located Name] [(Ann.Located Name, [Type])]
+data Union = Union (Ann.Located Name) [Ann.Located Name] ![Variance] [(Ann.Located Name, [Type])]
   deriving (Show)
+
+-- | Variance annotation for type parameters.
+--
+-- Controls how a type parameter can vary with respect to subtyping
+-- in the context of Canopy's type system. Used for static checking
+-- that covariant parameters only appear in output (positive) positions
+-- and contravariant parameters only appear in input (negative) positions.
+--
+-- Syntax: @+a@ (covariant), @-a@ (contravariant), @a@ (invariant/default)
+--
+-- @since 0.20.0
+data Variance
+  = -- | Covariant (@+a@): the parameter only appears in output positions.
+    -- A @ReadList (+a)@ can safely be used where a less specific @a@ is expected.
+    Covariant
+  | -- | Contravariant (@-a@): the parameter only appears in input positions.
+    -- A @Sink (-a)@ reverses the subtyping direction for @a@.
+    Contravariant
+  | -- | Invariant (default, no annotation): the parameter appears in both
+    -- input and output positions and requires exact type matching.
+    Invariant
+  deriving (Eq, Show)
 
 -- | Supertype bound for opaque type aliases.
 --
@@ -708,7 +731,7 @@ data SupertypeBound
 -- supertype bound for opaque types.
 --
 -- @since 0.19.1
-data Alias = Alias (Ann.Located Name) [Ann.Located Name] Type !(Maybe SupertypeBound)
+data Alias = Alias (Ann.Located Name) [Ann.Located Name] ![Variance] Type !(Maybe SupertypeBound)
   deriving (Show)
 
 -- | Infix operator definition in source code.

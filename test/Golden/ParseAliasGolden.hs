@@ -30,7 +30,7 @@ aliasSummary modul =
    in List.intercalate "\n" (List.sort items)
 
 summarize :: Ann.Located Src.Alias -> String
-summarize (Ann.At _ (Src.Alias (Ann.At _ n) tvars tipe maybeBound)) =
+summarize (Ann.At _ (Src.Alias (Ann.At _ n) tvars _ tipe maybeBound)) =
   let header = (Name.toChars n <> ("/vars=" <> show (length tvars)))
       boundStr = maybe "" (\b -> " bound=" <> showBound b) maybeBound
    in (header <> (" " <> body tipe <> boundStr))

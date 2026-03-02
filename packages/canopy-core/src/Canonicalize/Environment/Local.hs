@@ -20,6 +20,7 @@ import qualified Canopy.Data.Name as Name
 import qualified Reporting.Annotation as Ann
 import qualified Reporting.Error.Canonicalize as Error
 import qualified Reporting.Result as Result
+import qualified Type.Variance as Variance
 
 -- RESULT
 
@@ -78,8 +79,8 @@ toEffectDups effects =
 
 addTypes :: Src.Module -> Env.Env -> Result i w Env.Env
 addTypes (Src.Module _ _ _ _ _ _ unions aliases _ _ _) (Env.Env home vs ts cs bs qvs qts qcs) =
-  let addAliasDups dups (Ann.At _ (Src.Alias (Ann.At region name) _ _ _)) = Dups.insert name region () dups
-      addUnionDups dups (Ann.At _ (Src.Union (Ann.At region name) _ _)) = Dups.insert name region () dups
+  let addAliasDups dups (Ann.At _ (Src.Alias (Ann.At region name) _ _ _ _)) = Dups.insert name region () dups
+      addUnionDups dups (Ann.At _ (Src.Union (Ann.At region name) _ _ _)) = Dups.insert name region () dups
       typeNameDups =
         List.foldl' addUnionDups (List.foldl' addAliasDups Dups.none aliases) unions
    in do
@@ -88,7 +89,7 @@ addTypes (Src.Module _ _ _ _ _ _ unions aliases _ _ _) (Env.Env home vs ts cs bs
         addAliases aliases (Env.Env home vs ts1 cs bs qvs qts qcs)
 
 addUnion :: ModuleName.Canonical -> Env.Exposed Env.Type -> Ann.Located Src.Union -> Result i w (Env.Exposed Env.Type)
-addUnion home types union@(Ann.At _ (Src.Union (Ann.At _ name) _ _)) =
+addUnion home types union@(Ann.At _ (Src.Union (Ann.At _ name) _ _ _)) =
   do
     arity <- checkUnionFreeVars union
     let one = Env.Specific home (Env.Union arity home)
@@ -105,7 +106,7 @@ addAliases aliases env =
 addAlias :: Env.Env -> Graph.SCC (Ann.Located Src.Alias) -> Result i w Env.Env
 addAlias env@(Env.Env home vs ts cs bs qvs qts qcs) scc =
   case scc of
-    Graph.AcyclicSCC alias@(Ann.At _ (Src.Alias (Ann.At _ name) _ tipe _)) ->
+    Graph.AcyclicSCC alias@(Ann.At _ (Src.Alias (Ann.At _ name) _ _ tipe _)) ->
       do
         args <- checkAliasFreeVars alias
         ctype <- Type.canonicalize env tipe
@@ -114,16 +115,16 @@ addAlias env@(Env.Env home vs ts cs bs qvs qts qcs) scc =
         Result.ok $ Env.Env home vs ts1 cs bs qvs qts qcs
     Graph.CyclicSCC [] ->
       Result.ok env
-    Graph.CyclicSCC (alias@(Ann.At _ (Src.Alias (Ann.At region name1) _ tipe _)) : others) ->
+    Graph.CyclicSCC (alias@(Ann.At _ (Src.Alias (Ann.At region name1) _ _ tipe _)) : others) ->
       do
         args <- checkAliasFreeVars alias
-        let toName (Ann.At _ (Src.Alias (Ann.At _ name) _ _ _)) = name
+        let toName (Ann.At _ (Src.Alias (Ann.At _ name) _ _ _ _)) = name
         Result.throw (Error.RecursiveAlias region name1 args tipe (fmap toName others))
 
 -- DETECT TYPE ALIAS CYCLES
 
 toNode :: Ann.Located Src.Alias -> (Ann.Located Src.Alias, Name.Name, [Name.Name])
-toNode alias@(Ann.At _ (Src.Alias (Ann.At _ name) _ tipe _)) =
+toNode alias@(Ann.At _ (Src.Alias (Ann.At _ name) _ _ tipe _)) =
   (alias, name, getEdges [] tipe)
 
 getEdges :: [Name.Name] -> Src.Type -> [Name.Name]
@@ -147,7 +148,7 @@ getEdges edges (Ann.At _ tipe) =
 -- CHECK FREE VARIABLES
 
 checkUnionFreeVars :: Ann.Located Src.Union -> Result i w Int
-checkUnionFreeVars (Ann.At unionRegion (Src.Union (Ann.At _ name) args ctors)) =
+checkUnionFreeVars (Ann.At unionRegion (Src.Union (Ann.At _ name) args _ ctors)) =
   let addCtorFreeVars (_, tipes) freeVars =
         List.foldl' addFreeVars freeVars tipes
 
@@ -163,7 +164,7 @@ checkUnionFreeVars (Ann.At unionRegion (Src.Union (Ann.At _ name) args ctors)) =
               Error.TypeVarsUnboundInUnion unionRegion name (fmap Ann.toValue args) unbound unbounds
 
 checkAliasFreeVars :: Ann.Located Src.Alias -> Result i w [Name.Name]
-checkAliasFreeVars (Ann.At aliasRegion (Src.Alias (Ann.At _ name) args tipe _)) =
+checkAliasFreeVars (Ann.At aliasRegion (Src.Alias (Ann.At _ name) args _ tipe _)) =
   let addArg (Ann.At region arg) = Dups.insert arg region region
    in do
         boundVars <- Dups.detect (Error.DuplicateAliasArg name) (foldr addArg Dups.none args)
@@ -231,13 +232,15 @@ type CtorDups = Dups.Dict (Env.Info Env.Ctor)
 -- CANONICALIZE ALIAS
 
 canonicalizeAlias :: Env.Env -> Ann.Located Src.Alias -> Result i w ((Name.Name, Can.Alias), CtorDups)
-canonicalizeAlias env@(Env.Env home _ _ _ _ _ _ _) (Ann.At _ (Src.Alias (Ann.At region name) args tipe maybeBound)) =
+canonicalizeAlias env@(Env.Env home _ _ _ _ _ _ _) (Ann.At _ (Src.Alias (Ann.At region name) args srcVariances tipe maybeBound)) =
   do
     let vars = fmap Ann.toValue args
     ctipe <- Type.canonicalize env tipe
     let canBound = fmap canonicalizeBound maybeBound
+    let canVariances = fmap canonicalizeVariance srcVariances
+    Variance.checkAliasVariance region name vars canVariances ctipe
     Result.ok
-      ( (name, Can.Alias vars ctipe canBound),
+      ( (name, Can.Alias vars canVariances ctipe canBound),
         case ctipe of
           Can.TRecord fields Nothing ->
             Dups.one name region (Env.Specific home (toRecordCtor home name vars fields))
@@ -252,6 +255,12 @@ canonicalizeBound Src.AppendableBound = Can.AppendableBound
 canonicalizeBound Src.NumberBound = Can.NumberBound
 canonicalizeBound Src.CompAppendBound = Can.CompAppendBound
 
+-- | Convert a source variance annotation to its canonical representation.
+canonicalizeVariance :: Src.Variance -> Can.Variance
+canonicalizeVariance Src.Covariant = Can.Covariant
+canonicalizeVariance Src.Contravariant = Can.Contravariant
+canonicalizeVariance Src.Invariant = Can.Invariant
+
 toRecordCtor :: ModuleName.Canonical -> Name.Name -> [Name.Name] -> Map.Map Name.Name Can.FieldType -> Env.Ctor
 toRecordCtor home name vars fields =
   let avars = fmap (\var -> (var, Can.TVar var)) vars
@@ -265,12 +274,14 @@ toRecordCtor home name vars fields =
 -- CANONICALIZE UNION
 
 canonicalizeUnion :: Env.Env -> Ann.Located Src.Union -> Result i w ((Name.Name, Can.Union), CtorDups)
-canonicalizeUnion env@(Env.Env home _ _ _ _ _ _ _) (Ann.At _ (Src.Union (Ann.At _ name) avars ctors)) =
+canonicalizeUnion env@(Env.Env home _ _ _ _ _ _ _) (Ann.At _ (Src.Union (Ann.At region name) avars srcVariances ctors)) =
   do
     cctors <- Index.indexedTraverse (canonicalizeCtor env) ctors
     let vars = fmap Ann.toValue avars
     let alts = fmap Ann.toValue cctors
-    let union = Can.Union vars alts (length alts) (toOpts ctors)
+    let canVariances = fmap canonicalizeVariance srcVariances
+    Variance.checkUnionVariance region name vars canVariances alts
+    let union = Can.Union vars canVariances alts (length alts) (toOpts ctors)
     Result.ok
       ( (name, union),
         Dups.unions $ fmap (toCtor home name union) cctors

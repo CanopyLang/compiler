@@ -148,7 +148,7 @@ flatten pathPattern@(path, Ann.At region pattern) otherPathPatterns =
       pathPattern : otherPathPatterns
     Can.PAnything ->
       pathPattern : otherPathPatterns
-    Can.PCtor _ _ (Can.Union _ _ numAlts _) _ _ ctorArgs ->
+    Can.PCtor _ _ (Can.Union _ _ _ numAlts _) _ _ ctorArgs ->
       if numAlts == 1
         then case map dearg ctorArgs of
           [arg] ->
@@ -246,7 +246,7 @@ testAtPath selectedPath (Branch _ pathPatterns) =
       Nothing
     Just (Ann.At _ pattern) ->
       case pattern of
-        Can.PCtor home _ (Can.Union _ _ numAlts opts) name index _ ->
+        Can.PCtor home _ (Can.Union _ _ _ numAlts opts) name index _ ->
           Just (IsCtor home name index numAlts opts)
         Can.PList ps ->
           Just (case ps of [] -> IsNil; _ -> IsCons)
@@ -289,7 +289,7 @@ toRelevantBranch test path branch@(Branch goal pathPatterns) =
   case extract path pathPatterns of
     Found start (Ann.At region pattern) end ->
       case pattern of
-        Can.PCtor _ _ (Can.Union _ _ numAlts _) name _ ctorArgs ->
+        Can.PCtor _ _ (Can.Union _ _ _ numAlts _) name _ ctorArgs ->
           case test of
             IsCtor _ testName _ _ _ | name == testName ->
               Just $

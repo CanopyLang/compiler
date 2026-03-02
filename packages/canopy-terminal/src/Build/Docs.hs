@@ -89,7 +89,7 @@ unionToDocs iUnion =
 --
 -- @since 0.19.1
 buildDocsUnion :: Can.Union -> Docs.Union
-buildDocsUnion (Can.Union tvars ctors _ _) =
+buildDocsUnion (Can.Union tvars _ ctors _ _) =
   Docs.Union emptyComment tvars (map ctorPair ctors)
 
 -- | Convert a canonical constructor to a name/types pair.
@@ -113,7 +113,7 @@ aliasToDocs iAlias =
 --
 -- @since 0.19.1
 buildDocsAlias :: Can.Alias -> Docs.Alias
-buildDocsAlias (Can.Alias tvars tipe _) =
+buildDocsAlias (Can.Alias tvars _ tipe _) =
   Docs.Alias emptyComment tvars (Extract.fromType tipe)
 
 -- | Convert a 'Can.Annotation' to a 'Docs.Value'.

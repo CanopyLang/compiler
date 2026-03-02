@@ -456,5 +456,14 @@ errorCatalog =
           "Kernel modules are internal to the Canopy runtime and are always\n\
           \loaded eagerly. They cannot be lazy-imported. Remove the `lazy`\n\
           \keyword from this import."
+      ),
+      ( canonError 50,
+        ErrorInfo
+          "VARIANCE ERROR"
+          "A type parameter's declared variance does not match its usage."
+          "Covariant (+) parameters must only appear in output positions\n\
+          \(return types, record fields). Contravariant (-) parameters must\n\
+          \only appear in input positions (function arguments). Remove the\n\
+          \variance annotation or restructure the type definition."
       )
     ]

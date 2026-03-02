@@ -444,19 +444,19 @@ checkExportIO info name (Ann.At region export) =
           pure $ \m -> m {_binops = Map.insert name (Binop comment tipe assoc prec) (_binops m)}
     Can.ExportAlias ->
       do
-        (Can.Alias tvars tipe _) <- lookupOrThrow name "alias" (_iAliases info)
+        (Can.Alias tvars _ tipe _) <- lookupOrThrow name "alias" (_iAliases info)
         Result.ok $ do
           comment <- getCommentIO region name info
           pure $ \m -> m {_aliases = Map.insert name (Alias comment tvars (Extract.fromType tipe)) (_aliases m)}
     Can.ExportUnionOpen ->
       do
-        (Can.Union tvars ctors _ _) <- lookupOrThrow name "union" (_iUnions info)
+        (Can.Union tvars _ ctors _ _) <- lookupOrThrow name "union" (_iUnions info)
         Result.ok $ do
           comment <- getCommentIO region name info
           pure $ \m -> m {_unions = Map.insert name (Union comment tvars (fmap dector ctors)) (_unions m)}
     Can.ExportUnionClosed ->
       do
-        (Can.Union tvars _ _ _) <- lookupOrThrow name "union" (_iUnions info)
+        (Can.Union tvars _ _ _ _) <- lookupOrThrow name "union" (_iUnions info)
         Result.ok $ do
           comment <- getCommentIO region name info
           pure $ \m -> m {_unions = Map.insert name (Union comment tvars []) (_unions m)}

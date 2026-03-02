@@ -194,8 +194,8 @@ getComments decls comments =
     decl : otherDecls ->
       case decl of
         Decl.Value c (Ann.At _ (Src.Value n _ _ _ _)) -> getComments otherDecls (addComment c n comments)
-        Decl.Union c (Ann.At _ (Src.Union n _ _)) -> getComments otherDecls (addComment c n comments)
-        Decl.Alias c (Ann.At _ (Src.Alias n _ _ _)) -> getComments otherDecls (addComment c n comments)
+        Decl.Union c (Ann.At _ (Src.Union n _ _ _)) -> getComments otherDecls (addComment c n comments)
+        Decl.Alias c (Ann.At _ (Src.Alias n _ _ _ _)) -> getComments otherDecls (addComment c n comments)
         Decl.Port c (Src.Port n _) -> getComments otherDecls (addComment c n comments)
 
 addComment :: Maybe Src.Comment -> Ann.Located Name.Name -> [(Name.Name, Src.Comment)] -> [(Name.Name, Src.Comment)]

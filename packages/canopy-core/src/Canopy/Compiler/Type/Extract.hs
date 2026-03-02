@@ -149,7 +149,7 @@ extractAlias (Types dict) (Opt.Global home name) =
             "Every referenced module must be present in the transitively available Types. This indicates a dependency resolution bug.")
           id
           (Map.lookup home dict)
-      (Can.Alias args aliasType _) =
+      (Can.Alias args _ aliasType _) =
         maybe
           (InternalError.report "Canopy.Compiler.Type.Extract.extractAlias"
             ("Alias `" <> Text.pack (show name) <> "` missing from module `" <> Text.pack (show home) <> "` types (has " <> Text.pack (show (Map.size (_alias_info types_))) <> " aliases)")
@@ -171,7 +171,7 @@ extractUnion (Types dict) (Opt.Global home name) =
                 "Every referenced module must be present in the transitively available Types. This indicates a dependency resolution bug.")
               id
               (Map.lookup home dict)
-          (Can.Union vars ctors _ _) =
+          (Can.Union vars _ ctors _ _) =
             maybe
               (InternalError.report "Canopy.Compiler.Type.Extract.extractUnion"
                 ("Union `" <> Text.pack (show name) <> "` missing from module `" <> Text.pack (show home) <> "` types (has " <> Text.pack (show (Map.size (_union_info types_))) <> " unions)")

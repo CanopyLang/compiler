@@ -21,6 +21,7 @@ module Reporting.Error.Canonicalize
     DuplicatePatternContext (..),
     PossibleNames (..),
     VarKind (..),
+    VariancePosition (..),
     toDiagnostic,
   )
 where
@@ -34,6 +35,7 @@ import qualified Canopy.ModuleName as ModuleName
 import qualified Data.Map.Strict as Map
 import qualified Data.Set as Set
 import Reporting.Diagnostic (Diagnostic)
+import qualified Reporting.Diagnostic as Diagnostic
 import qualified Reporting.Annotation as Ann
 import qualified Reporting.Doc as Doc
 import qualified Reporting.Error.Canonicalize.Diagnostics as Diags
@@ -97,6 +99,15 @@ data Error
   | LazyImportInPackage Ann.Region Name.Name
   | LazyImportSelf Ann.Region Name.Name
   | LazyImportKernel Ann.Region Name.Name
+  | VarianceViolation Ann.Region Name.Name Name.Name Can.Variance VariancePosition
+  deriving (Show)
+
+-- | Position where a type variable appears that violates its variance annotation.
+data VariancePosition
+  = -- | A covariant parameter appeared in a negative (input) position.
+    NegativePosition
+  | -- | A contravariant parameter appeared in a positive (output) position.
+    PositivePosition
   deriving (Show)
 
 -- | Context for a bad-arity error.
@@ -206,6 +217,7 @@ data VarKind
 -- LazyImportInPackage      -> E0347
 -- LazyImportSelf           -> E0347
 -- LazyImportKernel         -> E0348
+-- VarianceViolation         -> E0350
 -- @
 toDiagnostic :: Code.Source -> Error -> Diagnostic
 toDiagnostic source err =
@@ -314,6 +326,8 @@ toDiagnostic source err =
       Diags.lazyImportSelfDiagnostic source region name
     LazyImportKernel region name ->
       Diags.lazyImportKernelDiagnostic source region name
+    VarianceViolation region typeName varName variance position ->
+      varianceViolationDiagnostic source region typeName varName variance position
 
 -- ---------------------------------------------------------------------------
 -- Private dispatch helpers
@@ -370,3 +384,45 @@ portProblemTag problem =
     CmdBadMsg -> ("cmd-bad-msg", 0)
     SubBad -> ("sub-bad", 0)
     NotCmdOrSub -> ("not-cmd-or-sub", 0)
+
+-- | Build a diagnostic for a variance annotation violation.
+--
+-- Produced when a covariant (+) parameter appears in a negative (input)
+-- position, or a contravariant (-) parameter appears in a positive
+-- (output) position.
+varianceViolationDiagnostic :: Code.Source -> Ann.Region -> Name.Name -> Name.Name -> Can.Variance -> VariancePosition -> Diagnostic
+varianceViolationDiagnostic _source region typeName varName variance position =
+  Diagnostic.makeSimpleDiagnostic
+    (EC.canonError 50)
+    Diagnostic.PhaseCanon
+    "VARIANCE ERROR"
+    region
+    (Doc.stack
+      [ Doc.reflow (varianceViolationMessage typeName varName variance position),
+        Doc.reflow (varianceViolationHint variance)
+      ]
+    )
+
+varianceViolationMessage :: Name.Name -> Name.Name -> Can.Variance -> VariancePosition -> String
+varianceViolationMessage typeName varName variance position =
+  "The type parameter `" <> Name.toChars varName <> "` in `"
+    <> Name.toChars typeName <> "` is declared "
+    <> varianceLabel variance <> " but appears in "
+    <> positionLabel position <> "."
+
+varianceViolationHint :: Can.Variance -> String
+varianceViolationHint Can.Covariant =
+  "Hint: Remove the `+` to make the parameter invariant, or restructure the type so the parameter only appears in output positions (return types, record fields)."
+varianceViolationHint Can.Contravariant =
+  "Hint: Remove the `-` to make the parameter invariant, or restructure the type so the parameter only appears in input positions (function arguments)."
+varianceViolationHint Can.Invariant =
+  "Hint: Invariant parameters can appear in any position."
+
+varianceLabel :: Can.Variance -> String
+varianceLabel Can.Covariant = "covariant (+)"
+varianceLabel Can.Contravariant = "contravariant (-)"
+varianceLabel Can.Invariant = "invariant"
+
+positionLabel :: VariancePosition -> String
+positionLabel NegativePosition = "a contravariant (input) position"
+positionLabel PositivePosition = "a covariant (output) position"
