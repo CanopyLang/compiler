@@ -47,9 +47,12 @@ import FFI.Types (FFIType (..))
 
 -- | Lexical token for FFI type strings.
 --
+-- 'TWord' uses 'Text' to avoid intermediate @[Char]@ allocation when
+-- tokens are later converted to 'Text' for type names.
+--
 -- @since 0.19.2
 data Token
-  = TWord !String
+  = TWord !Text
   | TArrow
   | TOpenParen
   | TCloseParen
@@ -81,7 +84,7 @@ tokenizeChars (c : rest)
   | Char.isSpace c = tokenizeChars rest
   | isWordStart c =
       let (word, remaining) = span isWordChar (c : rest)
-       in TWord word : tokenizeChars remaining
+       in TWord (Text.pack word) : tokenizeChars remaining
   | otherwise = tokenizeChars rest
 
 isWordStart :: Char -> Bool
@@ -190,12 +193,16 @@ parseBasicType tokens = case tokens of
   _ -> Nothing
 
 -- | Parse a single word into a type, handling qualified names.
-parseWordType :: String -> FFIType
+--
+-- Uses 'Text' operations to avoid intermediate @[Char]@ allocation.
+--
+-- @since 0.19.2
+parseWordType :: Text -> FFIType
 parseWordType name
-  | '.' `elem` name = FFIOpaque (Text.pack (takeLastSegment name))
-  | otherwise = FFIOpaque (Text.pack name)
+  | Text.any (== '.') name = FFIOpaque (takeLastSegment name)
+  | otherwise = FFIOpaque name
   where
-    takeLastSegment = reverse . takeWhile (/= '.') . reverse
+    takeLastSegment = snd . Text.breakOnEnd "."
 
 -- | Parse one type argument from remaining tokens.
 parseOneArg :: [Token] -> Maybe FFIType
@@ -277,7 +284,7 @@ nubOrd = go Set.empty
 parseRecordField :: [Token] -> Maybe (Text, FFIType)
 parseRecordField (TWord name : TColon : rest) =
   case parseFunctionType rest of
-    Just ffiType -> Just (Text.pack name, ffiType)
+    Just ffiType -> Just (name, ffiType)
     Nothing -> Nothing
 parseRecordField _ = Nothing
 

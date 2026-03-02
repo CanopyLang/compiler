@@ -274,40 +274,44 @@ findFunctionName (line:rest) =
 -- before generating any code. Invalid names are silently skipped,
 -- preventing injection via crafted \@name annotations.
 --
+-- All intermediate values are kept as 'Builder' or 'Text' to avoid
+-- @[Char]@ allocation in the codegen hot path.
+--
 -- @since 0.19.2
 generateFunctionBinding :: Mode.Mode -> Graph -> String -> String -> (Text.Text, Text.Text) -> [Builder]
 generateFunctionBinding mode _graph _filePath alias (funcNameText, canopyTypeText)
   | not (isValidJsIdentifier funcName) = []
   | otherwise =
       let arity = maybe 0 TypeParser.countArity (TypeParser.parseType canopyTypeText)
-          jsVarName = "$author$project$" ++ alias ++ "$" ++ funcName
-          callPath = "'" ++ escapeJsString (alias ++ "." ++ funcName) ++ "'"
+          jsVarB = BB.stringUtf8 ("$author$project$" ++ alias ++ "$" ++ funcName)
+          aliasB = BB.stringUtf8 alias
+          funcNameB = BB.byteString (TextEnc.encodeUtf8 funcNameText)
+          callPathB = "'" <> escapeJsString (Text.pack alias <> "." <> funcNameText) <> "'"
       in if Mode.isFFIStrict mode
-           then generateValidatedBinding jsVarName alias funcName arity canopyType callPath
-           else generateSimpleBinding jsVarName alias funcName arity
+           then generateValidatedBinding jsVarB aliasB funcNameB arity canopyTypeText callPathB
+           else generateSimpleBinding jsVarB aliasB funcNameB arity
   where
     funcName = Text.unpack funcNameText
-    canopyType = Text.unpack canopyTypeText
 
 -- | Generate simple binding without validation.
-generateSimpleBinding :: String -> String -> String -> Int -> [Builder]
-generateSimpleBinding jsVarName alias funcName arity =
-  let jsVarB = BB.stringUtf8 jsVarName
-      aliasB = BB.stringUtf8 alias
-      funcNameB = BB.stringUtf8 funcName
-      wrapper = if arity <= 1 then mempty else "F" <> BB.intDec arity <> "("
+--
+-- All parameters are pre-converted to 'Builder' at the call site to avoid
+-- intermediate @[Char]@ allocation in the hot path.
+generateSimpleBinding :: Builder -> Builder -> Builder -> Int -> [Builder]
+generateSimpleBinding jsVarB aliasB funcNameB arity =
+  let wrapper = if arity <= 1 then mempty else "F" <> BB.intDec arity <> "("
       closing = if arity <= 1 then mempty else ")"
       namespaceBinding = aliasB <> "." <> funcNameB <> " = " <> wrapper <> funcNameB <> closing <> ";"
   in ["var " <> jsVarB <> " = " <> wrapper <> funcNameB <> closing <> ";", namespaceBinding]
 
 -- | Generate binding with runtime validation wrapper.
-generateValidatedBinding :: String -> String -> String -> Int -> String -> String -> [Builder]
-generateValidatedBinding jsVarName alias funcName arity canopyType callPath =
-  let jsVarB = BB.stringUtf8 jsVarName
-      aliasB = BB.stringUtf8 alias
-      funcNameB = BB.stringUtf8 funcName
-      callPathB = BB.stringUtf8 callPath
-      args = if arity <= 0 then [] else map (\i -> "_" <> BB.intDec i) [0 .. arity - 1]
+--
+-- All name parameters are pre-converted to 'Builder' at the call site.
+-- The @canopyType@ and @callPath@ remain 'Text' since they are parsed
+-- or escaped from source content.
+generateValidatedBinding :: Builder -> Builder -> Builder -> Int -> Text.Text -> Builder -> [Builder]
+generateValidatedBinding jsVarB aliasB funcNameB arity canopyType callPathB =
+  let args = if arity <= 0 then [] else map (\i -> "_" <> BB.intDec i) [0 .. arity - 1]
       argList = mconcat (List.intersperse ", " args)
       returnType = extractReturnType canopyType
       validatorExpr = typeToValidator returnType
@@ -323,24 +327,34 @@ generateValidatedBinding jsVarName alias funcName arity canopyType callPath =
 -- TYPE VALIDATORS
 
 -- | Extract return type from a function type signature.
-extractReturnType :: String -> String
+--
+-- For @"Int -> String -> Bool"@, returns @"Bool"@.
+-- For non-function types, returns the whole type string.
+-- Uses 'Text' to avoid intermediate @[Char]@ allocation.
+--
+-- @since 0.19.2
+extractReturnType :: Text.Text -> Text.Text
 extractReturnType typeStr =
-  let tokens = words typeStr
+  let tokens = Text.words typeStr
       arrowIndices = findArrowIndices tokens 0 []
   in if null arrowIndices
        then typeStr
-       else unwords (drop (maximum arrowIndices + 1) tokens)
+       else Text.unwords (drop (maximum arrowIndices + 1) tokens)
   where
-    findArrowIndices :: [String] -> Int -> [Int] -> [Int]
+    findArrowIndices :: [Text.Text] -> Int -> [Int] -> [Int]
     findArrowIndices [] _ acc = acc
     findArrowIndices (t:ts) idx acc
       | t == "->" = findArrowIndices ts (idx + 1) (idx : acc)
       | otherwise = findArrowIndices ts (idx + 1) acc
 
--- | Convert a type string to a $validate Builder expression.
-typeToValidator :: String -> Builder
+-- | Convert a type string to a @$validate@ Builder expression.
+--
+-- Uses 'Text' input to avoid intermediate @[Char]@ allocation.
+--
+-- @since 0.19.2
+typeToValidator :: Text.Text -> Builder
 typeToValidator typeStr =
-  case Validator.parseFFIType (Text.pack typeStr) of
+  case Validator.parseFFIType typeStr of
     Just ffiType -> ffiTypeToValidator ffiType
     Nothing -> "$validate.Any"
 
@@ -371,11 +385,14 @@ ffiTypeToValidator ffiType = case ffiType of
 
 -- UTILITIES
 
--- | Trim leading and trailing whitespace from a string.
-trim :: String -> String
-trim = List.dropWhileEnd isSpace . dropWhile isSpace
-  where
-    isSpace c = c `elem` [' ', '\t', '\n', '\r']
+-- | Trim leading and trailing whitespace from text.
+--
+-- Uses 'Text.strip' for O(n) whitespace removal without intermediate
+-- @[Char]@ allocation.
+--
+-- @since 0.19.2
+trim :: Text.Text -> Text.Text
+trim = Text.strip
 
 -- | Check whether a string is a valid JavaScript identifier.
 --
@@ -392,8 +409,9 @@ isValidJsIdentifier (c : cs) = isValidFirst c && all isValidRest cs
     isValidRest x = Char.isAlphaNum x || x == '_' || x == '$'
 isValidJsIdentifier [] = False
 
--- | Escape a string for safe inclusion in a JavaScript string literal.
+-- | Escape text for safe inclusion in a JavaScript string literal.
 --
+-- Produces a 'Builder' directly, avoiding intermediate @[Char]@ allocation.
 -- Escapes all characters that could break out of or corrupt a JS string:
 --
 -- * Backslash (@\\@) -- escape character itself
@@ -406,15 +424,16 @@ isValidJsIdentifier [] = False
 -- * U+2029 PARAGRAPH SEPARATOR -- JS line terminator (pre-ES2019)
 --
 -- @since 0.19.2
-escapeJsString :: String -> String
-escapeJsString = concatMap escapeJsChar
-  where
-    escapeJsChar '\\' = "\\\\"
-    escapeJsChar '\'' = "\\'"
-    escapeJsChar '"' = "\\\""
-    escapeJsChar '\n' = "\\n"
-    escapeJsChar '\r' = "\\r"
-    escapeJsChar '\0' = "\\0"
-    escapeJsChar '\x2028' = "\\u2028"
-    escapeJsChar '\x2029' = "\\u2029"
-    escapeJsChar c = [c]
+escapeJsString :: Text.Text -> Builder
+escapeJsString = Text.foldl' (\b c -> b <> escapeJsChar c) mempty
+
+escapeJsChar :: Char -> Builder
+escapeJsChar '\\' = "\\\\"
+escapeJsChar '\'' = "\\'"
+escapeJsChar '"' = "\\\""
+escapeJsChar '\n' = "\\n"
+escapeJsChar '\r' = "\\r"
+escapeJsChar '\0' = "\\0"
+escapeJsChar '\x2028' = "\\u2028"
+escapeJsChar '\x2029' = "\\u2029"
+escapeJsChar c = BB.charUtf8 c

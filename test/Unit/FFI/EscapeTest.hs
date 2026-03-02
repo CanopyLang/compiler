@@ -6,34 +6,46 @@
 -- @since 0.19.2
 module Unit.FFI.EscapeTest (tests) where
 
+import qualified Data.ByteString.Builder as BB
+import qualified Data.ByteString.Lazy as LBS
+import qualified Data.Text as Text
 import qualified Generate.JavaScript.FFI as FFI
 import Test.Tasty (TestTree, testGroup)
 import Test.Tasty.HUnit (testCase, (@?=))
+
+-- | Convert a Builder to a strict ByteString for assertion comparison.
+builderToBS :: BB.Builder -> LBS.ByteString
+builderToBS = BB.toLazyByteString
+
+-- | Helper to test escapeJsString with Text input and expected Builder output.
+assertEscape :: Text.Text -> LBS.ByteString -> IO ()
+assertEscape input expected =
+  builderToBS (FFI.escapeJsString input) @?= expected
 
 tests :: TestTree
 tests =
   testGroup
     "FFI.escapeJsString"
     [ testCase "escapes backslash" $
-        FFI.escapeJsString "a\\b" @?= "a\\\\b",
+        assertEscape "a\\b" "a\\\\b",
       testCase "escapes single quote" $
-        FFI.escapeJsString "it's" @?= "it\\'s",
+        assertEscape "it's" "it\\'s",
       testCase "escapes double quote" $
-        FFI.escapeJsString "say \"hi\"" @?= "say \\\"hi\\\"",
+        assertEscape "say \"hi\"" "say \\\"hi\\\"",
       testCase "escapes newline" $
-        FFI.escapeJsString "a\nb" @?= "a\\nb",
+        assertEscape "a\nb" "a\\nb",
       testCase "escapes carriage return" $
-        FFI.escapeJsString "a\rb" @?= "a\\rb",
+        assertEscape "a\rb" "a\\rb",
       testCase "escapes null byte" $
-        FFI.escapeJsString "a\0b" @?= "a\\0b",
+        assertEscape "a\0b" "a\\0b",
       testCase "escapes U+2028 LINE SEPARATOR" $
-        FFI.escapeJsString ('a' : '\x2028' : "b") @?= "a\\u2028b",
+        assertEscape (Text.pack ['a', '\x2028', 'b']) "a\\u2028b",
       testCase "escapes U+2029 PARAGRAPH SEPARATOR" $
-        FFI.escapeJsString ('a' : '\x2029' : "b") @?= "a\\u2029b",
+        assertEscape (Text.pack ['a', '\x2029', 'b']) "a\\u2029b",
       testCase "leaves normal characters unchanged" $
-        FFI.escapeJsString "hello.world" @?= "hello.world",
+        assertEscape "hello.world" "hello.world",
       testCase "handles empty string" $
-        FFI.escapeJsString "" @?= "",
+        assertEscape "" "",
       testCase "handles multiple special characters" $
-        FFI.escapeJsString "'\\\n\0" @?= "\\'\\\\\\n\\0"
+        assertEscape "'\\\n\0" "\\'\\\\\\n\\0"
     ]
