@@ -21,7 +21,6 @@ import qualified Integration.JsonIntegrationTest as JsonIT
 import qualified Integration.CodeSplitIntegrationTest as CodeSplitIT
 import qualified Integration.PureBuilderIntegrationTest as PureBuilderIT
 import Test.Tasty
-import Test.Tasty.Runners
 import qualified Unit.AST.CanonicalArithmeticTest as CanonicalArithmeticTest
 import qualified Unit.AST.CanonicalTypeTest as CanonicalTypeTest
 import qualified Unit.AST.OptimizedTest as OptimizedTest
@@ -83,6 +82,7 @@ import qualified Unit.Terminal.Error.TypesTest as TerminalErrorTypesTest
 import qualified Unit.Terminal.ErrorTest as TerminalErrorTest
 import qualified Unit.TerminalTest as TerminalTest
 import qualified Unit.WatchTest as WatchTest
+import qualified Unit.Compiler.DiscoveryTest as CompilerDiscoveryTest
 import qualified Unit.New.Compiler.DriverTest as NewCompilerDriverTest
 import qualified Unit.NewTest as NewTest
 import qualified Unit.Make.ReproducibleTest as ReproducibleTest
@@ -241,6 +241,7 @@ unitTests =
       FileTimeTest.tests,
       FileUtf8Test.tests,
       HttpTest.tests,
+      CompilerDiscoveryTest.tests,
       NewCompilerDriverTest.tests,
       NewTest.tests,
       ReproducibleTest.tests,

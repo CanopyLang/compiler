@@ -6,10 +6,11 @@
 -- parsing them to extract import lists, and recursively discovering
 -- all transitive dependencies needed for compilation.
 --
--- The discovery algorithm uses DFS traversal (prepend new modules)
--- instead of BFS (append) to avoid O(N) list append per step.
--- Already-resolved paths are reused to eliminate redundant file
--- system lookups.
+-- The discovery algorithm uses parallel BFS traversal: each frontier
+-- of newly-discovered imports is resolved and parsed concurrently
+-- using bounded parallelism ('QSem'). A concurrent 'PathCache'
+-- eliminates redundant filesystem lookups when multiple modules
+-- import the same dependency.
 --
 -- @since 0.19.1
 module Compiler.Discovery
@@ -42,12 +43,17 @@ import qualified Canopy.Interface as Interface
 import qualified Canopy.Limits as Limits
 import qualified Canopy.ModuleName as ModuleName
 import qualified Canopy.Data.Name as Name
+import qualified Control.Concurrent.Async as Async
+import qualified Control.Concurrent.QSem as QSem
+import qualified Control.Exception as Exception
 import Control.Monad (filterM)
 import qualified Data.ByteString as BS
 import Data.Either (partitionEithers)
+import Data.IORef (IORef, atomicModifyIORef', newIORef, readIORef)
 import qualified Data.Map.Strict as Map
 import qualified Data.Set as Set
 import qualified Data.Text as Text
+import qualified GHC.Conc as Conc
 import Logging.Event (LogEvent (..))
 import qualified Logging.Logger as Log
 import qualified Parse.Module as Parse
@@ -68,14 +74,52 @@ data DiscoveryError
     DiscoveryParseError !FilePath !Text.Text
   deriving (Eq, Show)
 
+-- CONCURRENT PATH CACHE
+
+-- | Thread-safe cache for module path resolution.
+--
+-- Prevents duplicate filesystem lookups when multiple modules import
+-- the same dependency. Uses 'atomicModifyIORef'' for safe concurrent
+-- access from parallel discovery workers.
+--
+-- @since 0.19.2
+type PathCache = IORef (Map.Map ModuleName.Raw (Maybe FilePath))
+
+-- | Look up a module path, consulting the cache first.
+--
+-- If the module is not yet cached, performs the filesystem lookup
+-- and atomically stores the result. Concurrent lookups for the same
+-- module may both perform the filesystem check, but the cache will
+-- converge to the same value, so this is safe without locking.
+--
+-- @since 0.19.2
+lookupCachedPath ::
+  PathCache ->
+  FilePath ->
+  [SrcDir] ->
+  ModuleName.Raw ->
+  IO (Maybe FilePath)
+lookupCachedPath cache root srcDirs modName = do
+  cached <- Map.lookup modName <$> readIORef cache
+  maybe performLookup pure cached
+  where
+    performLookup = do
+      result <- findModulePath root srcDirs modName
+      atomicModifyIORef' cache (\m -> (Map.insert modName result m, ()))
+      pure result
+
 -- TRANSITIVE DISCOVERY
 
--- | Discover transitive dependencies, returning both file paths and
--- pre-computed import lists.
+-- | Discover transitive dependencies using parallel BFS.
 --
--- This avoids a redundant re-parse when building the dependency
--- graph for parallel compilation. Starting from the given initial
--- file paths, recursively discovers all imported modules.
+-- Parses the initial entry-point files, then iteratively discovers
+-- imported modules in parallel batches. Each BFS level is processed
+-- concurrently, with bounded parallelism controlled by a semaphore
+-- sized to the number of runtime capabilities.
+--
+-- Returns a map from module name to (file path, import list) for
+-- every discovered module. This avoids a redundant re-parse when
+-- building the dependency graph for parallel compilation.
 --
 -- @since 0.19.1
 discoverTransitiveDeps ::
@@ -87,18 +131,163 @@ discoverTransitiveDeps ::
   IO (Either DiscoveryError (Map.Map ModuleName.Raw (FilePath, [ModuleName.Raw])))
 discoverTransitiveDeps root srcDirs initialPaths depInterfaces projectType = do
   Log.logEvent (BuildStarted (Text.pack ("discoverTransitiveDeps: " ++ root)))
-  initialResults <- mapM (parseModuleFile projectType) initialPaths
+  numCaps <- Conc.getNumCapabilities
+  sem <- QSem.newQSem (max 1 numCaps)
+  pathCache <- newIORef Map.empty
+  initialResults <- Async.mapConcurrently (withSemaphore sem . parseModuleFile projectType) initialPaths
   case partitionEithers initialResults of
     (err : _, _) -> return (Left err)
     ([], initialModules) -> do
       Log.logEvent (BuildModuleQueued (Text.pack ("parsed " ++ show (length initialModules) ++ " initial modules")))
-      let initialMap = Map.fromList [(Src.getName m, (p, extractImports m)) | (m, p) <- zip initialModules initialPaths]
-      result <- discoverImports root srcDirs initialMap Set.empty initialModules depInterfaces projectType
-      case result of
-        Left err -> return (Left err)
-        Right allModules -> do
-          Log.logEvent (BuildModuleQueued (Text.pack ("discovered " ++ show (Map.size allModules) ++ " modules total")))
-          return (Right allModules)
+      let initialMap = buildInitialMap initialModules initialPaths
+          frontier = collectFrontier initialMap depInterfaces initialModules
+      result <- discoverBfsParallel sem pathCache root srcDirs initialMap depInterfaces projectType frontier
+      logDiscoveryResult result
+      return result
+
+-- | Build the initial module map from parsed modules and their file paths.
+--
+-- @since 0.19.2
+buildInitialMap ::
+  [Src.Module] ->
+  [FilePath] ->
+  Map.Map ModuleName.Raw (FilePath, [ModuleName.Raw])
+buildInitialMap modules paths =
+  Map.fromList [(Src.getName m, (p, extractImports m)) | (m, p) <- zip modules paths]
+
+-- | Collect the initial frontier of undiscovered imports.
+--
+-- Gathers all imports from the initial modules that are not already
+-- in the found map or the dependency interfaces, deduplicating them
+-- into a 'Set'.
+--
+-- @since 0.19.2
+collectFrontier ::
+  Map.Map ModuleName.Raw (FilePath, [ModuleName.Raw]) ->
+  Map.Map ModuleName.Raw Interface.Interface ->
+  [Src.Module] ->
+  Set.Set ModuleName.Raw
+collectFrontier found depInterfaces modules =
+  Set.fromList (filter isNew allImports)
+  where
+    allImports = concatMap extractImports modules
+    isNew imp = not (Map.member imp found) && not (Map.member imp depInterfaces)
+
+-- | Log the final discovery result.
+--
+-- @since 0.19.2
+logDiscoveryResult ::
+  Either DiscoveryError (Map.Map ModuleName.Raw (FilePath, [ModuleName.Raw])) ->
+  IO ()
+logDiscoveryResult (Left _) = pure ()
+logDiscoveryResult (Right allModules) =
+  Log.logEvent (BuildModuleQueued (Text.pack ("discovered " ++ show (Map.size allModules) ++ " modules total")))
+
+-- PARALLEL BFS DISCOVERY
+
+-- | Parallel BFS loop for module discovery.
+--
+-- Each iteration processes the current frontier of undiscovered modules
+-- in parallel. For each module, the path is resolved (with caching),
+-- the file is parsed, and imports are extracted. New imports that have
+-- not been seen before form the next frontier.
+--
+-- Terminates when the frontier is empty (all transitive dependencies
+-- discovered) or when any module fails to parse.
+--
+-- @since 0.19.2
+discoverBfsParallel ::
+  QSem.QSem ->
+  PathCache ->
+  FilePath ->
+  [SrcDir] ->
+  Map.Map ModuleName.Raw (FilePath, [ModuleName.Raw]) ->
+  Map.Map ModuleName.Raw Interface.Interface ->
+  Parse.ProjectType ->
+  Set.Set ModuleName.Raw ->
+  IO (Either DiscoveryError (Map.Map ModuleName.Raw (FilePath, [ModuleName.Raw])))
+discoverBfsParallel _ _ _ _ found _ _ frontier
+  | Set.null frontier = return (Right found)
+discoverBfsParallel sem pathCache root srcDirs found depInterfaces projectType frontier = do
+  let frontierList = Set.toList frontier
+  Log.logEvent (BuildModuleQueued (Text.pack ("BFS level: " ++ show (length frontierList) ++ " modules")))
+  results <- Async.mapConcurrently (withSemaphore sem . discoverOneParallel pathCache root srcDirs projectType) frontierList
+  case partitionEithers results of
+    (err : _, _) -> return (Left err)
+    ([], discoveries) -> do
+      let newFound = foldr insertDiscovery found discoveries
+          newFrontier = collectNewFrontier newFound depInterfaces discoveries
+      discoverBfsParallel sem pathCache root srcDirs newFound depInterfaces projectType newFrontier
+
+-- | Discover a single module during parallel BFS.
+--
+-- Resolves the file path using the shared cache, reads and parses
+-- the source file, and extracts its import list. Returns 'Nothing'
+-- for the path if the module cannot be found on disk (silently
+-- skipped -- it may be a kernel or dependency module).
+--
+-- @since 0.19.2
+discoverOneParallel ::
+  PathCache ->
+  FilePath ->
+  [SrcDir] ->
+  Parse.ProjectType ->
+  ModuleName.Raw ->
+  IO (Either DiscoveryError (ModuleName.Raw, Maybe (FilePath, [ModuleName.Raw])))
+discoverOneParallel pathCache root srcDirs projectType modName = do
+  maybePath <- lookupCachedPath pathCache root srcDirs modName
+  maybe (pure (Right (modName, Nothing))) (resolveAndParse modName projectType) maybePath
+
+-- | Resolve a module path and parse its source to extract imports.
+--
+-- @since 0.19.2
+resolveAndParse ::
+  ModuleName.Raw ->
+  Parse.ProjectType ->
+  FilePath ->
+  IO (Either DiscoveryError (ModuleName.Raw, Maybe (FilePath, [ModuleName.Raw])))
+resolveAndParse modName projectType path = do
+  content <- readSourceWithLimit path
+  pure (either
+    (Left . mkParseError path)
+    (\m -> Right (modName, Just (path, extractImports m)))
+    (Parse.fromByteString projectType content))
+
+-- | Insert a discovery result into the found map.
+--
+-- Modules that were not found on disk (Nothing) are silently skipped.
+--
+-- @since 0.19.2
+insertDiscovery ::
+  (ModuleName.Raw, Maybe (FilePath, [ModuleName.Raw])) ->
+  Map.Map ModuleName.Raw (FilePath, [ModuleName.Raw]) ->
+  Map.Map ModuleName.Raw (FilePath, [ModuleName.Raw])
+insertDiscovery (_, Nothing) acc = acc
+insertDiscovery (modName, Just entry) acc = Map.insert modName entry acc
+
+-- | Collect the next BFS frontier from discovery results.
+--
+-- Gathers all imports from newly-discovered modules that are not
+-- yet in the found map, not in dependency interfaces, and not
+-- modules that failed to resolve (which are tracked as visited).
+--
+-- @since 0.19.2
+collectNewFrontier ::
+  Map.Map ModuleName.Raw (FilePath, [ModuleName.Raw]) ->
+  Map.Map ModuleName.Raw Interface.Interface ->
+  [(ModuleName.Raw, Maybe (FilePath, [ModuleName.Raw]))] ->
+  Set.Set ModuleName.Raw
+collectNewFrontier found depInterfaces discoveries =
+  Set.fromList (filter isNew allNewImports)
+  where
+    allNewImports = concatMap importsFromDiscovery discoveries
+    visitedNotFound = Set.fromList [n | (n, Nothing) <- discoveries]
+    isNew imp =
+      not (Map.member imp found)
+        && not (Map.member imp depInterfaces)
+        && not (Set.member imp visitedNotFound)
+    importsFromDiscovery (_, Nothing) = []
+    importsFromDiscovery (_, Just (_, imports)) = imports
 
 -- | Parse a single source file for discovery purposes.
 --
@@ -111,77 +300,6 @@ parseModuleFile :: Parse.ProjectType -> FilePath -> IO (Either DiscoveryError Sr
 parseModuleFile projType path = do
   content <- readSourceWithLimit path
   pure (either (Left . mkParseError path) Right (Parse.fromByteString projType content))
-
--- RECURSIVE IMPORT DISCOVERY
-
--- | Recursively discover imports using DFS traversal.
---
--- Uses DFS order (prepend new modules) instead of BFS (append) to avoid
--- O(N) list append per step. Also reuses already-resolved paths to
--- eliminate redundant file system lookups. Returns 'Left' on the first
--- parse error encountered.
---
--- @since 0.19.2
-discoverImports ::
-  FilePath ->
-  [SrcDir] ->
-  Map.Map ModuleName.Raw (FilePath, [ModuleName.Raw]) ->
-  Set.Set ModuleName.Raw ->
-  [Src.Module] ->
-  Map.Map ModuleName.Raw Interface.Interface ->
-  Parse.ProjectType ->
-  IO (Either DiscoveryError (Map.Map ModuleName.Raw (FilePath, [ModuleName.Raw])))
-discoverImports root srcDirs found visited modules depInterfaces projectType =
-  case modules of
-    [] -> do
-      Log.logEvent (BuildModuleQueued (Text.pack ("discoverImports complete: " ++ show (Map.size found) ++ " modules")))
-      return (Right found)
-    (modul : rest) ->
-      discoverOneModule root srcDirs found visited modul rest depInterfaces projectType
-
--- | Process a single module during DFS import discovery.
---
--- @since 0.19.2
-discoverOneModule ::
-  FilePath ->
-  [SrcDir] ->
-  Map.Map ModuleName.Raw (FilePath, [ModuleName.Raw]) ->
-  Set.Set ModuleName.Raw ->
-  Src.Module ->
-  [Src.Module] ->
-  Map.Map ModuleName.Raw Interface.Interface ->
-  Parse.ProjectType ->
-  IO (Either DiscoveryError (Map.Map ModuleName.Raw (FilePath, [ModuleName.Raw])))
-discoverOneModule root srcDirs found visited modul rest depInterfaces projectType
-  | Set.member modName visited || Map.member modName depInterfaces =
-      discoverImports root srcDirs found (Set.insert modName visited) rest depInterfaces projectType
-  | otherwise = do
-      let imports = extractImports modul
-          newImports = filter (\imp -> not (Map.member imp found) && not (Map.member imp depInterfaces)) imports
-      newPaths <- mapM (findModulePath root srcDirs) newImports
-      let validPairs = [(imp, path) | (Just path, imp) <- zip newPaths newImports]
-          newFound = foldr (\(imp, path) m -> Map.insert imp (path, []) m) found validPairs
-      newResults <- mapM (parseModuleAtPath projectType) validPairs
-      case partitionEithers newResults of
-        (err : _, _) -> return (Left err)
-        ([], newModules) -> do
-          let newFoundWithImports = foldr backfillImports newFound newModules
-          discoverImports root srcDirs newFoundWithImports (Set.insert modName visited) (newModules ++ rest) depInterfaces projectType
-  where
-    modName = Src.getName modul
-    backfillImports nm acc = Map.adjust (\(p, _) -> (p, extractImports nm)) (Src.getName nm) acc
-
--- | Parse a module at a known file path.
---
--- Unlike 'findModulePath' + parse, this skips path resolution since the
--- caller already resolved the path during import discovery. Returns
--- 'Left' on parse failure for graceful error propagation.
---
--- @since 0.19.2
-parseModuleAtPath :: Parse.ProjectType -> (ModuleName.Raw, FilePath) -> IO (Either DiscoveryError Src.Module)
-parseModuleAtPath projectType (_modName, path) = do
-  content <- readSourceWithLimit path
-  pure (either (Left . mkParseError path) Right (Parse.fromByteString projectType content))
 
 -- | Construct a 'DiscoveryParseError' from a file path and parse error.
 mkParseError :: (Show e) => FilePath -> e -> DiscoveryError
@@ -244,9 +362,9 @@ fileTooLargeMessage path actual limit =
 findModulePath :: FilePath -> [SrcDir] -> ModuleName.Raw -> IO (Maybe FilePath)
 findModulePath root srcDirs modName = do
   paths <- findModuleInDirs root srcDirs modName
-  return (case paths of
-            [] -> Nothing
-            (p:_) -> Just p)
+  pure (case paths of
+          [] -> Nothing
+          (p:_) -> Just p)
 
 -- | Find all file paths for a module across all source directories.
 --
@@ -281,6 +399,17 @@ moduleNameToBasePath moduleName =
   let nameStr = Name.toChars moduleName
       parts = splitOn '.' nameStr
    in foldr1 (</>) parts
+
+-- CONCURRENCY HELPERS
+
+-- | Bound an IO action with a semaphore for concurrency control.
+--
+-- Acquires the semaphore before running the action and releases it
+-- afterward, even if the action throws an exception.
+--
+-- @since 0.19.2
+withSemaphore :: QSem.QSem -> IO a -> IO a
+withSemaphore sem = Exception.bracket_ (QSem.waitQSem sem) (QSem.signalQSem sem)
 
 -- UTILITIES
 
