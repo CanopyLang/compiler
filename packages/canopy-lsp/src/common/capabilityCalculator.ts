@@ -5,6 +5,7 @@ import {
 } from "vscode-languageserver";
 import { CommandManager } from "./commandManager";
 import * as ElmMakeDiagnostics from "./providers/diagnostics/elmMakeDiagnostics";
+import { semanticTokensLegend } from "./providers/semanticTokensProvider";
 
 export class CapabilityCalculator {
   private clientCapabilities: ClientCapabilities;
@@ -37,11 +38,21 @@ export class CapabilityCalculator {
       },
       foldingRangeProvider: true,
       hoverProvider: true,
+      inlayHintProvider: true,
       referencesProvider: true,
       renameProvider: {
         prepareProvider: true,
       },
       selectionRangeProvider: true,
+      semanticTokensProvider: {
+        legend: semanticTokensLegend,
+        full: true,
+        range: true,
+      },
+      signatureHelpProvider: {
+        triggerCharacters: [" "],
+        retriggerCharacters: [" "],
+      },
       textDocumentSync: TextDocumentSyncKind.Incremental,
       workspaceSymbolProvider: true,
       workspace: {

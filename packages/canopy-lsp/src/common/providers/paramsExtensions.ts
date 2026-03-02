@@ -10,11 +10,14 @@ import {
   FileDelete,
   FileRename,
   FoldingRangeParams,
+  InlayHintParams,
   LinkedEditingRangeParams,
   PrepareRenameParams,
   ReferenceParams,
   RenameParams,
   SelectionRangeParams,
+  SemanticTokensParams,
+  SignatureHelpParams,
   TextDocumentContentChangeEvent,
   TextDocumentPositionParams,
 } from "vscode-languageserver";
@@ -43,3 +46,6 @@ export type FileChangeParams = {
   contentChanges?: TextDocumentContentChangeEvent[];
 };
 export type IFileChangeParams = FileChangeParams & IParams;
+export type IInlayHintParams = InlayHintParams & IParams;
+export type ISemanticTokensParams = SemanticTokensParams & IParams;
+export type ISignatureHelpParams = SignatureHelpParams & IParams;

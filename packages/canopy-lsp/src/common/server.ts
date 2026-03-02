@@ -20,10 +20,13 @@ import {
   ElmMakeDiagnostics,
   FoldingRangeProvider,
   HoverProvider,
+  InlayHintsProvider,
   LinkedEditingRangesProvider,
   ReferencesProvider,
   RenameProvider,
   SelectionRangeProvider,
+  SemanticTokensProvider,
+  SignatureHelpProvider,
   WorkspaceSymbolProvider,
 } from "./providers";
 import { ElmLsDiagnostics } from "./providers/diagnostics/elmLsDiagnostics";
@@ -226,6 +229,10 @@ export class Server implements ILanguageServer {
     new RenameProvider();
     new FileEventsHandler();
     new LinkedEditingRangesProvider();
+
+    new InlayHintsProvider();
+    new SemanticTokensProvider();
+    new SignatureHelpProvider();
 
     new FindTestsProvider();
     new VirtualFileProvider();
