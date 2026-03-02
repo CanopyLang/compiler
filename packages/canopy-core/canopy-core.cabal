@@ -22,11 +22,6 @@ build-type:     Simple
 library
   exposed-modules:
       AST.Canonical
-      AST.Canonical.Binary
-      AST.Canonical.Expr
-      AST.Canonical.Json
-      AST.Canonical.Module
-      AST.Canonical.Types
       AST.Optimized
       AST.Optimized.Expr
       AST.Optimized.Graph
@@ -34,17 +29,11 @@ library
       AST.Utils.Binop
       AST.Utils.Shader
       AST.Utils.Type
-      Canonicalize.Effects
       Canonicalize.Environment
       Canonicalize.Environment.Dups
-      Canonicalize.Environment.Foreign
-      Canonicalize.Environment.Local
       Canonicalize.Expression
       Canonicalize.Module
-      Canonicalize.Module.FFI
       Canonicalize.Pattern
-      Canonicalize.Type
-      Canopy.Compiler.Imports
       Canopy.Compiler.Type
       Canopy.Compiler.Type.Extract
       Canopy.Constraint
@@ -52,26 +41,13 @@ library
       Canopy.Data.Index
       Canopy.Data.Map.Utils
       Canopy.Data.Name
-      Canopy.Data.Name.Constants
-      Canopy.Data.Name.Core
-      Canopy.Data.Name.Generation
-      Canopy.Data.Name.Kernel
-      Canopy.Data.Name.TypeVariable
       Canopy.Data.NonEmptyList
       Canopy.Data.OneOrMore
       Canopy.Data.Utf8
-      Canopy.Data.Utf8.Binary
-      Canopy.Data.Utf8.Builder
-      Canopy.Data.Utf8.Core
-      Canopy.Data.Utf8.Creation
-      Canopy.Data.Utf8.Encoding
-      Canopy.Data.Utf8.Manipulation
-      Canopy.Data.Utf8.Types
       Canopy.Docs
       Canopy.Float
       Canopy.Interface
       Canopy.Kernel
-      Canopy.Kernel.Discovery
       Canopy.Licenses
       Canopy.Limits
       Canopy.Magnitude
@@ -82,19 +58,15 @@ library
       Canopy.String
       Canopy.Version
       Editor.Integration
-      FFI.Capability
       FFI.Manifest
       FFI.Resolve
-      FFI.TypeParser
       FFI.Types
       FFI.Validator
       File
       File.Archive
       File.Atomic
       File.Binary
-      File.Cache
       File.FileSystem
-      File.JSON
       File.Package
       File.Time
       File.Utf8
@@ -110,12 +82,7 @@ library
       Generate.JavaScript.CodeSplit.Runtime
       Generate.JavaScript.CodeSplit.Types
       Generate.JavaScript.Expression
-      Generate.JavaScript.Expression.Call
-      Generate.JavaScript.Expression.Case
       Generate.JavaScript.FFI
-      Generate.JavaScript.FFIRuntime
-      Generate.JavaScript.Functions
-      Generate.JavaScript.Kernel
       Generate.JavaScript.Minify
       Generate.JavaScript.Name
       Generate.JavaScript.SourceMap
@@ -123,38 +90,24 @@ library
       Generate.Mode
       Generate.TreeShake
       Json.Decode
-      Json.Decode.AST
-      Json.Decode.Combinators
-      Json.Decode.Core
-      Json.Decode.Parser
       Json.Encode
       Json.String
       Logging.Config
       Logging.Event
       Logging.Logger
       Logging.Sink
-      Nitpick.PatternMatches
       Optimize.Case
       Optimize.ConstantFold
       Optimize.DecisionTree
       Optimize.Expression
       Optimize.Module
       Optimize.Names
-      Optimize.Port
-      Parse.Comment
       Parse.Declaration
       Parse.Expression
-      Parse.Interpolation
-      Parse.Keyword
-      Parse.Limits
       Parse.Module
-      Parse.Number
       Parse.Pattern
       Parse.Primitives
-      Parse.Shader
       Parse.Space
-      Parse.String
-      Parse.Symbol
       Parse.Type
       Parse.Variable
       Plugin.Interface
@@ -165,17 +118,84 @@ library
       Reporting.Doc.ColorQQ
       Reporting.Error
       Reporting.Error.Canonicalize
+      Reporting.Error.Hierarchy
+      Reporting.Error.Syntax
+      Reporting.Error.Syntax.Types
+      Reporting.Error.Type
+      Reporting.ErrorCode
+      Reporting.Exit.Help
+      Reporting.InternalError
+      Reporting.Render.Code
+      Reporting.Render.Type
+      Reporting.Render.Type.Localizer
+      Reporting.Result
+      Reporting.Suggest
+      Reporting.Warning
+      Type.Constrain.Module
+      Type.Instantiate
+      Type.Occurs
+      Type.Parallel
+      Type.Solve
+      Type.Type
+      Type.Unify
+      Type.UnionFind
+  other-modules:
+      AST.Canonical.Binary
+      AST.Canonical.Expr
+      AST.Canonical.Json
+      AST.Canonical.Module
+      AST.Canonical.Types
+      Canonicalize.Effects
+      Canonicalize.Environment.Foreign
+      Canonicalize.Environment.Local
+      Canonicalize.Module.FFI
+      Canonicalize.Type
+      Canopy.Compiler.Imports
+      Canopy.Data.Name.Constants
+      Canopy.Data.Name.Core
+      Canopy.Data.Name.Generation
+      Canopy.Data.Name.Kernel
+      Canopy.Data.Name.TypeVariable
+      Canopy.Data.Utf8.Binary
+      Canopy.Data.Utf8.Builder
+      Canopy.Data.Utf8.Core
+      Canopy.Data.Utf8.Creation
+      Canopy.Data.Utf8.Encoding
+      Canopy.Data.Utf8.Manipulation
+      Canopy.Data.Utf8.Types
+      Canopy.Kernel.Discovery
+      FFI.Capability
+      FFI.TypeParser
+      File.Cache
+      File.JSON
+      Generate.JavaScript.Expression.Call
+      Generate.JavaScript.Expression.Case
+      Generate.JavaScript.FFIRuntime
+      Generate.JavaScript.Functions
+      Generate.JavaScript.Kernel
+      Json.Decode.AST
+      Json.Decode.Combinators
+      Json.Decode.Core
+      Json.Decode.Parser
+      Nitpick.PatternMatches
+      Optimize.Port
+      Parse.Comment
+      Parse.Interpolation
+      Parse.Keyword
+      Parse.Limits
+      Parse.Number
+      Parse.Shader
+      Parse.String
+      Parse.Symbol
       Reporting.Error.Canonicalize.Diagnostics
       Reporting.Error.Canonicalize.Diagnostics.Core
       Reporting.Error.Canonicalize.Diagnostics.Extended
       Reporting.Error.Canonicalize.Helpers
       Reporting.Error.Docs
-      Reporting.Error.Hierarchy
       Reporting.Error.Import
       Reporting.Error.Json
       Reporting.Error.Main
       Reporting.Error.Pattern
-      Reporting.Error.Syntax
       Reporting.Error.Syntax.Declaration
       Reporting.Error.Syntax.Declaration.DeclBody
       Reporting.Error.Syntax.Declaration.DeclStart
@@ -191,8 +211,6 @@ library
       Reporting.Error.Syntax.Module
       Reporting.Error.Syntax.Pattern
       Reporting.Error.Syntax.Type
-      Reporting.Error.Syntax.Types
-      Reporting.Error.Type
       Reporting.Error.Type.Expression
       Reporting.Error.Type.Hint
       Reporting.Error.Type.Operators
@@ -200,33 +218,15 @@ library
       Reporting.Error.Type.Record
       Reporting.Error.Type.Render
       Reporting.Error.Type.Types
-      Reporting.ErrorCode
-      Reporting.Exit.Help
-      Reporting.InternalError
-      Reporting.Render.Code
-      Reporting.Render.Type
-      Reporting.Render.Type.Localizer
       Reporting.Report
-      Reporting.Result
-      Reporting.Suggest
-      Reporting.Warning
       Type.Constrain.Expression
       Type.Constrain.Expression.Control
       Type.Constrain.Expression.Definition
       Type.Constrain.Expression.Operator
       Type.Constrain.Expression.Record
-      Type.Constrain.Module
       Type.Constrain.Pattern
       Type.Error
-      Type.Instantiate
-      Type.Occurs
-      Type.Parallel
-      Type.Solve
       Type.Solve.Pool
-      Type.Type
-      Type.Unify
-      Type.UnionFind
-  other-modules:
       Paths_canopy_core
   autogen-modules:
       Paths_canopy_core
