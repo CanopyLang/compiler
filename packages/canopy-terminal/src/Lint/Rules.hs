@@ -16,6 +16,7 @@
 -- * "Lint.Rules.Scope" - ShadowedVariable, UnusedLetVariable
 -- * "Lint.Rules.Safety" - PartialFunction, UnsafeCoerce, UnnecessaryLazyPattern
 -- * "Lint.Rules.Complexity" - TooManyArguments, LongFunction, MagicNumber, StringConcatInLoop
+-- * "Lint.Rules.Nullability" - SketchyMaybe, RedundantMaybeWrap, UnnecessaryPatternMatch, SilentFallback, AlwaysFalseComparison, UnreachableCode
 --
 -- @since 0.19.1
 module Lint.Rules
@@ -48,6 +49,14 @@ module Lint.Rules
     checkMagicNumber,
     checkStringConcatInLoop,
 
+    -- * Nullability Rules
+    checkSketchyMaybe,
+    checkRedundantMaybeWrap,
+    checkUnnecessaryPatternMatch,
+    checkSilentFallback,
+    checkAlwaysFalseComparison,
+    checkUnreachableCode,
+
     -- * Helpers
     collectUsedNames,
     childExprs,
@@ -66,6 +75,14 @@ import Lint.Rules.Lists
   ( checkDropConcatOfLists,
     checkListAppendInLoop,
     checkUseConsOverConcat,
+  )
+import Lint.Rules.Nullability
+  ( checkAlwaysFalseComparison,
+    checkRedundantMaybeWrap,
+    checkSilentFallback,
+    checkSketchyMaybe,
+    checkUnnecessaryPatternMatch,
+    checkUnreachableCode,
   )
 import Lint.Rules.Safety
   ( checkPartialFunction,

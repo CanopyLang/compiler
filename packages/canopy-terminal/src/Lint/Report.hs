@@ -179,6 +179,12 @@ ruleName TooManyArguments = "TooManyArguments"
 ruleName LongFunction = "LongFunction"
 ruleName MagicNumber = "MagicNumber"
 ruleName InconsistentNaming = "InconsistentNaming"
+ruleName SketchyMaybeCheck = "SketchyMaybeCheck"
+ruleName RedundantMaybeWrap = "RedundantMaybeWrap"
+ruleName UnnecessaryPatternMatch = "UnnecessaryPatternMatch"
+ruleName SilentFallback = "SilentFallback"
+ruleName AlwaysFalseComparison = "AlwaysFalseComparison"
+ruleName UnreachableCode = "UnreachableCode"
 
 -- | Return the human-readable name for a severity level.
 severityName :: Severity -> String

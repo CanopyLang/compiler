@@ -338,6 +338,7 @@ test-suite canopy-test
       Unit.Terminal.Error.TypesTest
       Unit.Terminal.ErrorTest
       Unit.Terminal.Lint.ConfigTest
+      Unit.Terminal.Lint.NullabilityTest
       Unit.Terminal.Lint.RulesTest
       Unit.TerminalTest
       Unit.Type.InstantiateTest

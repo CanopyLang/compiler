@@ -25,6 +25,12 @@
 -- * 'checkLongFunction' - Function bodies spanning more than 15 lines
 -- * 'checkMagicNumber' - Literal numbers that should be named constants
 -- * 'checkInconsistentNaming' - Mixed camelCase\/snake_case in a module
+-- * 'checkSketchyMaybe' - Case on Maybe where Just branch checks for zero
+-- * 'checkRedundantMaybeWrap' - Function that always returns Just, never Nothing
+-- * 'checkUnnecessaryPatternMatch' - Case on unit that can never fail
+-- * 'checkSilentFallback' - Nothing branch silently returns a literal default
+-- * 'checkAlwaysFalseComparison' - Equality of constructors from different types
+-- * 'checkUnreachableCode' - Code after an exhaustive case expression
 --
 -- == Usage
 --
@@ -119,6 +125,12 @@ defaultLintConfig = LintConfig
       , (LongFunction, RuleConfig SevWarning)
       , (MagicNumber, RuleConfig SevInfo)
       , (InconsistentNaming, RuleConfig SevInfo)
+      , (SketchyMaybeCheck, RuleConfig SevWarning)
+      , (RedundantMaybeWrap, RuleConfig SevWarning)
+      , (UnnecessaryPatternMatch, RuleConfig SevWarning)
+      , (SilentFallback, RuleConfig SevWarning)
+      , (AlwaysFalseComparison, RuleConfig SevError)
+      , (UnreachableCode, RuleConfig SevError)
       ]
   }
 
@@ -241,7 +253,13 @@ ruleRegistry =
     (TooManyArguments, Rules.checkTooManyArguments),
     (LongFunction, Rules.checkLongFunction),
     (MagicNumber, Rules.checkMagicNumber),
-    (InconsistentNaming, Rules.checkInconsistentNaming)
+    (InconsistentNaming, Rules.checkInconsistentNaming),
+    (SketchyMaybeCheck, Rules.checkSketchyMaybe),
+    (RedundantMaybeWrap, Rules.checkRedundantMaybeWrap),
+    (UnnecessaryPatternMatch, Rules.checkUnnecessaryPatternMatch),
+    (SilentFallback, Rules.checkSilentFallback),
+    (AlwaysFalseComparison, Rules.checkAlwaysFalseComparison),
+    (UnreachableCode, Rules.checkUnreachableCode)
   ]
 
 -- | Filter the rule registry to only those rules that are enabled

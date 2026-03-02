@@ -123,6 +123,12 @@ data LintRule
   | LongFunction
   | MagicNumber
   | InconsistentNaming
+  | SketchyMaybeCheck
+  | RedundantMaybeWrap
+  | UnnecessaryPatternMatch
+  | SilentFallback
+  | AlwaysFalseComparison
+  | UnreachableCode
   deriving (Eq, Ord, Show)
 
 -- | Description of an auto-fix action.
@@ -171,6 +177,12 @@ ruleToString TooManyArguments = "too-many-arguments"
 ruleToString LongFunction = "long-function"
 ruleToString MagicNumber = "magic-number"
 ruleToString InconsistentNaming = "inconsistent-naming"
+ruleToString SketchyMaybeCheck = "sketchy-maybe"
+ruleToString RedundantMaybeWrap = "redundant-maybe-wrap"
+ruleToString UnnecessaryPatternMatch = "unnecessary-pattern-match"
+ruleToString SilentFallback = "silent-fallback"
+ruleToString AlwaysFalseComparison = "always-false-comparison"
+ruleToString UnreachableCode = "unreachable-code"
 
 -- | Parse a kebab-case string into a 'LintRule'.
 --
@@ -195,6 +207,12 @@ ruleFromString "too-many-arguments" = Just TooManyArguments
 ruleFromString "long-function" = Just LongFunction
 ruleFromString "magic-number" = Just MagicNumber
 ruleFromString "inconsistent-naming" = Just InconsistentNaming
+ruleFromString "sketchy-maybe" = Just SketchyMaybeCheck
+ruleFromString "redundant-maybe-wrap" = Just RedundantMaybeWrap
+ruleFromString "unnecessary-pattern-match" = Just UnnecessaryPatternMatch
+ruleFromString "silent-fallback" = Just SilentFallback
+ruleFromString "always-false-comparison" = Just AlwaysFalseComparison
+ruleFromString "unreachable-code" = Just UnreachableCode
 ruleFromString _ = Nothing
 
 -- | Parse a severity level from a string.

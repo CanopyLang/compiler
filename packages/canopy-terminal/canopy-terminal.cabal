@@ -101,6 +101,7 @@ library
       Lint.Rules.Helpers
       Lint.Rules.Imports
       Lint.Rules.Lists
+      Lint.Rules.Nullability
       Lint.Rules.Safety
       Lint.Rules.Scope
       Lint.Rules.Style

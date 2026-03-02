@@ -132,6 +132,7 @@ import qualified Unit.FFI.ResolveTest as FFIResolveTest
 import qualified Unit.FFI.ValidatorTest as FFIValidatorTest
 import qualified Unit.Terminal.Lint.ConfigTest as LintConfigTest
 import qualified Unit.Terminal.Lint.RulesTest as LintRulesTest
+import qualified Unit.Terminal.Lint.NullabilityTest as LintNullabilityTest
 import qualified Unit.Docs.RenderTest as DocsRenderTest
 import qualified Unit.Docs.CommandTest as DocsCommandTest
 import qualified Unit.Repl.CommandsTest as ReplCommandsTest
@@ -285,6 +286,7 @@ unitTests =
       FFIValidatorTest.tests,
       LintConfigTest.tests,
       LintRulesTest.tests,
+      LintNullabilityTest.tests,
       DocsRenderTest.tests,
       DocsCommandTest.tests,
       ReplCommandsTest.tests,
