@@ -38,6 +38,7 @@ import Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
 import Data.Set (Set)
 import qualified Data.Set as Set
+import qualified Data.Text as Text
 import Data.Word (Word8)
 import qualified Reporting.Annotation as Ann
 import qualified Reporting.InternalError as InternalError
@@ -286,11 +287,21 @@ putNodeSpecial node = case node of
   Kernel a b -> Binary.putWord8 8 >> Binary.put a >> Binary.put b
   PortIncoming a b -> Binary.putWord8 9 >> Binary.put a >> Binary.put b
   PortOutgoing a b -> Binary.putWord8 10 >> Binary.put a >> Binary.put b
-  _ ->
-    InternalError.report
-      "AST.Optimized.Graph.putNodeSpecial"
-      "unexpected node in putNodeSpecial"
-      "putNodeSpecial only handles Kernel, PortIncoming, and PortOutgoing nodes."
+  Define _ _ -> unexpectedNode "Define"
+  DefineTailFunc {} -> unexpectedNode "DefineTailFunc"
+  Ctor _ _ -> unexpectedNode "Ctor"
+  Enum _ -> unexpectedNode "Enum"
+  Box -> unexpectedNode "Box"
+  Link _ -> unexpectedNode "Link"
+  Cycle {} -> unexpectedNode "Cycle"
+  Manager _ -> unexpectedNode "Manager"
+  where
+    unexpectedNode :: Text.Text -> a
+    unexpectedNode name =
+      InternalError.report
+        "AST.Optimized.Graph.putNodeSpecial"
+        ("Unexpected node type `" <> name <> "` in putNodeSpecial")
+        "putNodeSpecial only handles Kernel, PortIncoming, and PortOutgoing nodes. Other node types must be serialized by the main putNode dispatcher."
 
 -- | Deserialize a node from binary format.
 --

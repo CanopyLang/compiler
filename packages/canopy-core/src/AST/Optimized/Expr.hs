@@ -36,6 +36,7 @@ import Data.Set (Set)
 import Data.Word (Word8)
 import qualified Optimize.DecisionTree as DT
 import qualified Reporting.Annotation as Ann
+import qualified Data.Text as Text
 import qualified Reporting.InternalError as InternalError
 
 -- EXPRESSIONS
@@ -296,11 +297,37 @@ putExprRecord expr = case expr of
   Unit -> Binary.putWord8 24
   Tuple a b c -> Binary.putWord8 25 >> Binary.put a >> Binary.put b >> Binary.put c
   Shader a b c -> Binary.putWord8 26 >> Binary.put a >> Binary.put b >> Binary.put c
-  _ ->
-    InternalError.report
-      "AST.Optimized.Expr.putExprRecord"
-      "unexpected expression in putExprRecord"
-      "putExprRecord only handles optimized expression types up to Shader (tag 26)."
+  Bool {} -> unexpectedExprInPutRecord "Bool"
+  Chr {} -> unexpectedExprInPutRecord "Chr"
+  Str {} -> unexpectedExprInPutRecord "Str"
+  Int {} -> unexpectedExprInPutRecord "Int"
+  Float {} -> unexpectedExprInPutRecord "Float"
+  VarLocal {} -> unexpectedExprInPutRecord "VarLocal"
+  VarGlobal {} -> unexpectedExprInPutRecord "VarGlobal"
+  VarEnum {} -> unexpectedExprInPutRecord "VarEnum"
+  VarBox {} -> unexpectedExprInPutRecord "VarBox"
+  VarCycle {} -> unexpectedExprInPutRecord "VarCycle"
+  VarDebug {} -> unexpectedExprInPutRecord "VarDebug"
+  VarKernel {} -> unexpectedExprInPutRecord "VarKernel"
+  List {} -> unexpectedExprInPutRecord "List"
+  Function {} -> unexpectedExprInPutRecord "Function"
+  Call {} -> unexpectedExprInPutRecord "Call"
+  ArithBinop {} -> unexpectedExprInPutRecord "ArithBinop"
+  TailCall {} -> unexpectedExprInPutRecord "TailCall"
+  If {} -> unexpectedExprInPutRecord "If"
+  Let {} -> unexpectedExprInPutRecord "Let"
+  Destruct {} -> unexpectedExprInPutRecord "Destruct"
+  Case {} -> unexpectedExprInPutRecord "Case"
+
+-- | Report an unexpected expression reaching putExprRecord.
+--
+-- @since 0.19.2
+unexpectedExprInPutRecord :: Text.Text -> a
+unexpectedExprInPutRecord ctor =
+  InternalError.report
+    "AST.Optimized.Expr.putExprRecord"
+    ("Unexpected expression `" <> ctor <> "` in putExprRecord")
+    "putExprRecord only handles Accessor through Shader (tags 20-26). Other expression types must be serialized by the main putExpr dispatcher chain."
 
 -- | Deserialize an expression from binary format.
 --

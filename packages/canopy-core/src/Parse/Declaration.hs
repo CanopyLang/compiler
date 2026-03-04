@@ -102,8 +102,7 @@ valueDecl maybeDocs start =
 chompOptionalGuard :: Parser SyntaxError.DeclDef (Maybe GuardAnnotation)
 chompOptionalGuard =
   oneOfWithFallback
-    [ do  Space.chompAndCheckIndent SyntaxError.DeclDefSpace SyntaxError.DeclDefIndentType
-          Keyword.guards_ SyntaxError.DeclDefEquals
+    [ do  Keyword.guards_ SyntaxError.DeclDefEquals
           Space.chompAndCheckIndent SyntaxError.DeclDefSpace SyntaxError.DeclDefIndentType
           (narrowType, _) <- specialize SyntaxError.DeclDefType Type.expression
           return (Just (GuardAnnotation 0 narrowType))

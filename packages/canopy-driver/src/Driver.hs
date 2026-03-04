@@ -60,6 +60,7 @@ import qualified System.Timeout as Timeout
 import qualified Worker.Pool as Pool
 import qualified Parse.Module as Parse
 import qualified Reporting.Annotation as Ann
+import qualified Reporting.InternalError as InternalError
 
 -- | Per-phase timing results for a single module compilation.
 --
@@ -154,7 +155,7 @@ compileFromSource pkg ifaces sourceModule = do
   case canonResult of
     Left err -> return (Left err)
     Right canonModule -> do
-      (typeResult, typeTime) <- timePhase (runTypeCheckPhase engine "<unknown>" canonModule)
+      (typeResult, typeTime) <- timePhase (runTypeCheckPhase engine ifaces "<unknown>" canonModule)
       case typeResult of
         Left err -> return (Left err)
         Right types -> do
@@ -229,7 +230,7 @@ compileModuleCore engine pkg ifaces path projectType = do
       case canonResult of
         Left err -> return (Left err)
         Right canonModule -> do
-          (typeResult, typeTime) <- timePhase (runTypeCheckPhase engine path canonModule)
+          (typeResult, typeTime) <- timePhase (runTypeCheckPhase engine ifaces path canonModule)
           case typeResult of
             Left err -> return (Left err)
             Right types -> do
@@ -301,6 +302,8 @@ buildSingleFFI _ _ = []
 --
 -- Tracks the phase execution through the query engine for accurate
 -- compilation statistics, then delegates to the canonicalization query.
+-- Wraps the action in 'catchInternalError' so that invariant violations
+-- produce a 'QueryError' instead of terminating the process.
 runCanonicalizePhase ::
   Engine.QueryEngine ->
   FilePath ->
@@ -312,25 +315,30 @@ runCanonicalizePhase ::
   IO (Either QueryError Can.Module)
 runCanonicalizePhase engine path pkg projectType ifaces ffiContent sourceModule = do
   Engine.trackPhaseExecution engine "canonicalize"
-  CanonQuery.canonicalizeModuleQuery path pkg projectType ifaces ffiContent sourceModule
+  wrapPhase (CanonQuery.canonicalizeModuleQuery path pkg projectType ifaces ffiContent sourceModule)
 
 -- | Run type check phase.
 --
 -- Tracks the phase execution through the query engine for accurate
 -- compilation statistics, then delegates to the type checking query.
+-- Wraps the action in 'catchInternalError' so that invariant violations
+-- produce a 'QueryError' instead of terminating the process.
 runTypeCheckPhase ::
   Engine.QueryEngine ->
+  Map ModuleName.Raw Interface.Interface ->
   FilePath ->
   Can.Module ->
   IO (Either QueryError (Map Name.Name Can.Annotation))
-runTypeCheckPhase engine path canonModule = do
+runTypeCheckPhase engine ifaces path canonModule = do
   Engine.trackPhaseExecution engine "typecheck"
-  TypeQuery.typeCheckModuleQuery path canonModule
+  wrapPhase (TypeQuery.typeCheckModuleQuery ifaces path canonModule)
 
 -- | Run optimize phase.
 --
 -- Tracks the phase execution through the query engine for accurate
 -- compilation statistics, then delegates to the optimization query.
+-- Wraps the action in 'catchInternalError' so that invariant violations
+-- produce a 'QueryError' instead of terminating the process.
 runOptimizePhase ::
   Engine.QueryEngine ->
   Map Name.Name Can.Annotation ->
@@ -338,7 +346,7 @@ runOptimizePhase ::
   IO (Either QueryError Opt.LocalGraph)
 runOptimizePhase engine types canonModule = do
   Engine.trackPhaseExecution engine "optimize"
-  OptQuery.optimizeModuleQuery types canonModule
+  wrapPhase (OptQuery.optimizeModuleQuery types canonModule)
 
 -- | Generate interface from canonical module.
 generateInterface ::
@@ -411,6 +419,21 @@ compileTaskFn engine task =
     (Pool.taskInterfaces task)
     (Pool.taskFilePath task)
     (Pool.taskProjectType task)
+
+-- | Wrap a phase action in 'InternalError.catchInternalError'.
+--
+-- If the inner action returns @Left queryErr@, that error is propagated.
+-- If it throws an 'InternalError.report' crash, the exception is caught
+-- and converted to @Left (OtherError msg)@. Other exceptions propagate.
+--
+-- @since 0.19.2
+wrapPhase :: IO (Either QueryError a) -> IO (Either QueryError a)
+wrapPhase action = do
+  result <- InternalError.catchInternalError action
+  pure (collapseEither result)
+  where
+    collapseEither (Left errMsg) = Left (OtherError (Text.unpack errMsg))
+    collapseEither (Right inner) = inner
 
 -- | Log cache statistics.
 logCacheStats :: Engine.QueryEngine -> IO ()

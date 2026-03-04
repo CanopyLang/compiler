@@ -33,6 +33,15 @@ import qualified Type.Constrain.Expression.Record as Record
 import qualified Type.Constrain.Pattern as Pattern
 import Type.Type as Type hiding (Descriptor (..))
 
+-- | Guard function annotations map for type narrowing in if-conditions.
+--
+-- Maps function names to their guard info. When a function in this map
+-- is used as a condition in an @if@ expression, the then-branch sees
+-- the guarded argument with the declared narrow type.
+--
+-- @since 0.20.0
+type GuardMap = Map Name.Name Can.GuardInfo
+
 -- | Rigid type variable mapping.
 --
 -- As we step past type annotations, the free type variables are added to
@@ -49,8 +58,14 @@ type RTV =
 -- This is the main dispatch function for expression constraint generation.
 -- It pattern matches on the expression form and delegates to the appropriate
 -- specialized constraint generator, either locally or in a sub-module.
-constrain :: RTV -> Can.Expr -> Expected Type -> IO Constraint
-constrain rtv (Ann.At region expression) expected =
+--
+-- The guard map enables type narrowing in if-conditions: when a condition
+-- calls a guard function, the then-branch sees the guarded argument with
+-- the declared narrow type.
+--
+-- @since 0.20.0
+constrain :: GuardMap -> RTV -> Can.Expr -> Expected Type -> IO Constraint
+constrain guards rtv (Ann.At region expression) expected =
   case expression of
     Can.VarLocal name ->
       return (CLocal region name expected)
@@ -77,33 +92,33 @@ constrain rtv (Ann.At region expression) expected =
     Can.Float _ ->
       return $ CEqual region Float Type.float expected
     Can.List elements ->
-      constrainList rtv region elements expected
+      constrainList guards rtv region elements expected
     Can.Negate expr ->
       do
         numberVar <- mkFlexNumber
         let numberType = VarN numberVar
-        numberCon <- constrain rtv expr (FromContext region Negate numberType)
+        numberCon <- constrain guards rtv expr (FromContext region Negate numberType)
         let negateCon = CEqual region TypeError.Number numberType expected
         return $ exists [numberVar] $ CAnd [numberCon, negateCon]
     Can.BinopOp kind annotation leftExpr rightExpr ->
-      Operator.constrainBinopOp (constrain rtv) region kind annotation leftExpr rightExpr expected
+      Operator.constrainBinopOp (constrain guards rtv) region kind annotation leftExpr rightExpr expected
     Can.Lambda args body ->
-      constrainLambda rtv region args body expected
+      constrainLambda guards rtv region args body expected
     Can.Call func args ->
-      constrainCall rtv region func args expected
+      constrainCall guards rtv region func args expected
     Can.If branches finally ->
-      Control.constrainIf (constrain rtv) region branches finally expected
+      Control.constrainIf guards (constrain guards rtv) region branches finally expected
     Can.Case expr branches ->
-      Control.constrainCase (constrain rtv) region expr branches expected
+      Control.constrainCase (constrain guards rtv) region expr branches expected
     Can.Let def body ->
-      constrain rtv body expected >>= \bodyCon ->
-        constrainDef rtv def bodyCon expected
+      constrain guards rtv body expected >>= \bodyCon ->
+        constrainDef guards rtv def bodyCon expected
     Can.LetRec defs body ->
-      constrainRecursiveDefs rtv defs
-        =<< constrain rtv body expected
+      constrainRecursiveDefs guards rtv defs
+        =<< constrain guards rtv body expected
     Can.LetDestruct pattern expr body ->
-      Def.constrainDestruct (constrain rtv) rtv region pattern expr
-        =<< constrain rtv body expected
+      Def.constrainDestruct (constrain guards rtv) rtv region pattern expr
+        =<< constrain guards rtv body expected
     Can.Accessor field ->
       do
         extVar <- mkFlexVar
@@ -123,7 +138,7 @@ constrain rtv (Ann.At region expression) expected =
         let recordType = RecordN (Map.singleton field fieldType) extType
 
         let context = RecordAccess (Ann.toRegion expr) (getAccessName expr) accessRegion field
-        recordCon <- constrain rtv expr (FromContext region context recordType)
+        recordCon <- constrain guards rtv expr (FromContext region context recordType)
 
         return $
           exists [fieldVar, extVar] $
@@ -132,28 +147,28 @@ constrain rtv (Ann.At region expression) expected =
                 CEqual region (Access field) fieldType expected
               ]
     Can.Update name expr fields ->
-      Record.constrainUpdate (constrain rtv) region name expr fields expected
+      Record.constrainUpdate (constrain guards rtv) region name expr fields expected
     Can.Record fields ->
-      Record.constrainRecord (constrain rtv) region fields expected
+      Record.constrainRecord (constrain guards rtv) region fields expected
     Can.Unit ->
       return $ CEqual region Unit UnitN expected
     Can.Tuple a b maybeC ->
-      Record.constrainTuple (constrain rtv) region a b maybeC expected
+      Record.constrainTuple (constrain guards rtv) region a b maybeC expected
     Can.Shader _src types ->
       Record.constrainShader region types expected
     Can.StringConcat parts ->
-      constrainStringConcat rtv region parts expected
+      constrainStringConcat guards rtv region parts expected
 
 -- CONSTRAIN LAMBDA
 
-constrainLambda :: RTV -> Ann.Region -> [Can.Pattern] -> Can.Expr -> Expected Type -> IO Constraint
-constrainLambda rtv region args body expected =
+constrainLambda :: GuardMap -> RTV -> Ann.Region -> [Can.Pattern] -> Can.Expr -> Expected Type -> IO Constraint
+constrainLambda guards rtv region args body expected =
   do
     (Def.Args vars tipe resultType (Pattern.State headers pvars revCons)) <-
       Def.constrainArgs args
 
     bodyCon <-
-      constrain rtv body (NoExpectation resultType)
+      constrain guards rtv body (NoExpectation resultType)
 
     return $
       exists vars $
@@ -171,8 +186,8 @@ constrainLambda rtv region args body expected =
 
 -- CONSTRAIN CALL
 
-constrainCall :: RTV -> Ann.Region -> Can.Expr -> [Can.Expr] -> Expected Type -> IO Constraint
-constrainCall rtv region func@(Ann.At funcRegion _) args expected =
+constrainCall :: GuardMap -> RTV -> Ann.Region -> Can.Expr -> [Can.Expr] -> Expected Type -> IO Constraint
+constrainCall guards rtv region func@(Ann.At funcRegion _) args expected =
   do
     let maybeName = getName func
 
@@ -181,10 +196,10 @@ constrainCall rtv region func@(Ann.At funcRegion _) args expected =
     let funcType = VarN funcVar
     let resultType = VarN resultVar
 
-    funcCon <- constrain rtv func (NoExpectation funcType)
+    funcCon <- constrain guards rtv func (NoExpectation funcType)
 
     (argVars, argTypes, argCons) <-
-      unzip3 <$> Index.indexedTraverse (constrainArg rtv region maybeName) args
+      unzip3 <$> Index.indexedTraverse (constrainArg guards rtv region maybeName) args
 
     let arityType = foldr FunN resultType argTypes
     let category = CallResult maybeName
@@ -198,12 +213,12 @@ constrainCall rtv region func@(Ann.At funcRegion _) args expected =
             CEqual region category resultType expected
           ]
 
-constrainArg :: RTV -> Ann.Region -> MaybeName -> Index.ZeroBased -> Can.Expr -> IO (Variable, Type, Constraint)
-constrainArg rtv region maybeName index arg =
+constrainArg :: GuardMap -> RTV -> Ann.Region -> MaybeName -> Index.ZeroBased -> Can.Expr -> IO (Variable, Type, Constraint)
+constrainArg guards rtv region maybeName index arg =
   do
     argVar <- mkFlexVar
     let argType = VarN argVar
-    argCon <- constrain rtv arg (FromContext region (CallArg maybeName index) argType)
+    argCon <- constrain guards rtv arg (FromContext region (CallArg maybeName index) argType)
     return (argVar, argType, argCon)
 
 getName :: Can.Expr -> MaybeName
@@ -227,15 +242,15 @@ getAccessName (Ann.At _ expr) =
 
 -- CONSTRAIN LISTS
 
-constrainList :: RTV -> Ann.Region -> [Can.Expr] -> Expected Type -> IO Constraint
-constrainList rtv region entries expected =
+constrainList :: GuardMap -> RTV -> Ann.Region -> [Can.Expr] -> Expected Type -> IO Constraint
+constrainList guards rtv region entries expected =
   do
     entryVar <- mkFlexVar
     let entryType = VarN entryVar
     let listType = AppN ModuleName.list Name.list [entryType]
 
     entryCons <-
-      Index.indexedTraverse (constrainListEntry rtv region entryType) entries
+      Index.indexedTraverse (constrainListEntry guards rtv region entryType) entries
 
     return $
       exists [entryVar] $
@@ -244,37 +259,37 @@ constrainList rtv region entries expected =
             CEqual region List listType expected
           ]
 
-constrainListEntry :: RTV -> Ann.Region -> Type -> Index.ZeroBased -> Can.Expr -> IO Constraint
-constrainListEntry rtv region tipe index expr =
-  constrain rtv expr (FromContext region (ListEntry index) tipe)
+constrainListEntry :: GuardMap -> RTV -> Ann.Region -> Type -> Index.ZeroBased -> Can.Expr -> IO Constraint
+constrainListEntry guards rtv region tipe index expr =
+  constrain guards rtv expr (FromContext region (ListEntry index) tipe)
 
 -- CONSTRAIN STRING CONCAT
 
-constrainStringConcat :: RTV -> Ann.Region -> [Can.Expr] -> Expected Type -> IO Constraint
-constrainStringConcat rtv region parts expected =
+constrainStringConcat :: GuardMap -> RTV -> Ann.Region -> [Can.Expr] -> Expected Type -> IO Constraint
+constrainStringConcat guards rtv region parts expected =
   do
     partCons <-
-      Index.indexedTraverse (constrainStringPart rtv region) parts
+      Index.indexedTraverse (constrainStringPart guards rtv region) parts
     return $
       CAnd
         [ CAnd partCons,
           CEqual region String Type.string expected
         ]
 
-constrainStringPart :: RTV -> Ann.Region -> Index.ZeroBased -> Can.Expr -> IO Constraint
-constrainStringPart rtv region index expr =
-  constrain rtv expr (FromContext region (Interpolation index) Type.string)
+constrainStringPart :: GuardMap -> RTV -> Ann.Region -> Index.ZeroBased -> Can.Expr -> IO Constraint
+constrainStringPart guards rtv region index expr =
+  constrain guards rtv expr (FromContext region (Interpolation index) Type.string)
 
 -- CONSTRAIN DEF (public API delegates to Definition sub-module)
 
 -- | Generate type constraints for a value definition.
-constrainDef :: RTV -> Can.Def -> Constraint -> Expected Type -> IO Constraint
-constrainDef rtv def bodyCon expected =
-  Def.constrainDef (constrain rtv) rtv def bodyCon expected
+constrainDef :: GuardMap -> RTV -> Can.Def -> Constraint -> Expected Type -> IO Constraint
+constrainDef guards rtv def bodyCon expected =
+  Def.constrainDef (constrain guards rtv) rtv def bodyCon expected
 
 -- CONSTRAIN RECURSIVE DEFS (public API delegates to Definition sub-module)
 
 -- | Generate type constraints for a mutually recursive definition group.
-constrainRecursiveDefs :: RTV -> [Can.Def] -> Constraint -> IO Constraint
-constrainRecursiveDefs rtv defs bodyCon =
-  Def.constrainRecursiveDefs (constrain rtv) rtv defs bodyCon
+constrainRecursiveDefs :: GuardMap -> RTV -> [Can.Def] -> Constraint -> IO Constraint
+constrainRecursiveDefs guards rtv defs bodyCon =
+  Def.constrainRecursiveDefs (constrain guards rtv) rtv defs bodyCon

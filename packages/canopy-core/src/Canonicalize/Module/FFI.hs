@@ -38,7 +38,7 @@ import qualified Data.Text as Text
 import qualified Data.Text.IO as TextIO
 import qualified FFI.StaticAnalysis as SA
 import qualified FFI.TypeParser as TypeParser
-import FFI.Types (JsSourcePath (..), JsSource (..), FFIBinding (..), FFIFuncName (..), FFITypeAnnotation (..))
+import FFI.Types (JsSourcePath (..), JsSource (..), FFIBinding (..), FFIFuncName (..), FFITypeAnnotation (..), CapabilityName (..))
 import qualified Foreign.FFI as FFI
 import qualified Language.JavaScript.Parser as JSParser
 import qualified Language.JavaScript.Parser.AST as JSAST
@@ -271,12 +271,27 @@ takeJSDocBlock (line:rest) =
 isJSDocEnd :: Text.Text -> Bool
 isJSDocEnd line = Text.isInfixOf "*/" line
 
--- Parse a JSDoc comment block to extract function name and type
+-- Parse a JSDoc comment block to extract function name, type, and capabilities
 parseJSDocBlock :: [Text.Text] -> Maybe FFIBinding
 parseJSDocBlock commentLines = do
   functionName <- findNameAnnotation commentLines
   canopyType <- findCanopyTypeAnnotation commentLines
-  pure (FFIBinding (FFIFuncName functionName) (FFITypeAnnotation canopyType))
+  let capabilities = findCapabilityPermissions commentLines
+  pure (FFIBinding (FFIFuncName functionName) (FFITypeAnnotation canopyType) capabilities)
+
+-- | Find all @capability permission annotations in a JSDoc block.
+--
+-- Extracts permission names from lines like:
+-- @\@capability permission microphone@
+findCapabilityPermissions :: [Text.Text] -> [CapabilityName]
+findCapabilityPermissions = mapMaybe parsePermissionAnnotation
+
+-- | Parse a @capability permission annotation from a single line.
+parsePermissionAnnotation :: Text.Text -> Maybe CapabilityName
+parsePermissionAnnotation line =
+  case Text.stripPrefix "@capability permission " (stripJSDocLeader line) of
+    Just rest -> Just (CapabilityName (Text.strip rest))
+    Nothing -> Nothing
 
 -- Find @name annotation in JSDoc block
 findNameAnnotation :: [Text.Text] -> Maybe Text.Text
@@ -340,10 +355,50 @@ processParsedFunction :: Env.Env -> ModuleName.Canonical -> ModuleName.Canonical
 processParsedFunction env ffiModuleName homeModuleName jsPath region binding = do
   let funcName = _bindingFuncName binding
       typeAnnotation = _bindingTypeAnnotation binding
+      capabilities = _bindingCapabilities binding
   canopyType <- parseTypeStringWithHome env ffiModuleName homeModuleName jsPath region funcName typeAnnotation
-  let annotation = Can.Forall Map.empty canopyType
+  let typeWithCaps = prependCapabilities capabilities canopyType
+      annotation = Can.Forall Map.empty typeWithCaps
       var = Env.Foreign ffiModuleName annotation
   Result.ok (unFFIFuncName funcName, annotation, var)
+
+-- | Prepend @Capability X ->@ parameters for each capability requirement.
+--
+-- Given @[\"microphone\", \"geolocation\"]@ and a base type @T@, produces
+-- @Capability Microphone -> Capability Geolocation -> T@.
+prependCapabilities :: [CapabilityName] -> Can.Type -> Can.Type
+prependCapabilities caps baseType =
+  foldr prependOneCapability baseType caps
+
+-- | Prepend a single @Capability X ->@ to a type.
+prependOneCapability :: CapabilityName -> Can.Type -> Can.Type
+prependOneCapability (CapabilityName capName) innerType =
+  Can.TLambda (capabilityType capName) innerType
+
+-- | Build the canonical type @Capability X@ for a given permission name.
+--
+-- Maps permission names like @\"microphone\"@ to phantom types like @Microphone@,
+-- producing @Capability Microphone@ as a canonical type.
+capabilityType :: Text.Text -> Can.Type
+capabilityType permissionName =
+  Can.TType ModuleName.capability (Name.fromChars "Capability")
+    [Can.TType ModuleName.capability (permissionToTypeName permissionName) []]
+
+-- | Map a permission string to its corresponding phantom type name.
+--
+-- @\"microphone\"@ becomes @\"Microphone\"@, @\"screen-capture\"@ becomes
+-- @\"ScreenCapture\"@, etc.
+permissionToTypeName :: Text.Text -> Name.Name
+permissionToTypeName = Name.fromChars . Text.unpack . toPascalCase
+
+-- | Convert a kebab-case or lowercase permission name to PascalCase.
+toPascalCase :: Text.Text -> Text.Text
+toPascalCase = Text.concat . fmap capitalizeFirst . Text.splitOn "-"
+
+-- | Capitalize the first character of a text value.
+capitalizeFirst :: Text.Text -> Text.Text
+capitalizeFirst t =
+  maybe t (\(c, rest) -> Text.cons (Char.toUpper c) rest) (Text.uncons t)
 
 -- Build the dynamic environment from processed functions with proper qualified name registration
 buildDynamicEnvironment :: Name.Name -> [(Text.Text, Can.Annotation, Env.Var)] -> ([(Name.Name, Env.Var)], Map.Map Name.Name (Env.Info Can.Annotation))

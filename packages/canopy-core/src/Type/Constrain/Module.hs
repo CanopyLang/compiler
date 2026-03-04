@@ -8,6 +8,7 @@ where
 import qualified AST.Canonical as Can
 import qualified Canopy.ModuleName as ModuleName
 import Control.Monad (forM)
+import Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
 import qualified Canopy.Data.Name as Name
 import qualified Reporting.Annotation as Ann
@@ -19,42 +20,40 @@ import Type.Type (Constraint (..), Type (..), mkFlexVar, nameToRigid, never, (==
 -- CONSTRAIN
 
 constrain :: Can.Module -> IO Constraint
-constrain (Can.Module home _ _ decls _ _ _ effects _ _) =
+constrain (Can.Module home _ _ decls _ _ _ effects _ guards) =
   case effects of
     Can.NoEffects ->
-      constrainDecls decls CSaveTheEnvironment
+      constrainDecls guards decls CSaveTheEnvironment
     Can.Ports ports ->
-      Map.foldrWithKey letPort (constrainDecls decls CSaveTheEnvironment) ports
+      Map.foldrWithKey letPort (constrainDecls guards decls CSaveTheEnvironment) ports
     Can.FFI ->
-      constrainDecls decls CSaveTheEnvironment
+      constrainDecls guards decls CSaveTheEnvironment
     Can.Manager r0 r1 r2 manager ->
       case manager of
         Can.Cmd cmdName ->
-          (constrainEffects home r0 r1 r2 manager >>= constrainDecls decls) >>= letCmd home cmdName
+          (constrainEffects home r0 r1 r2 manager >>= constrainDecls guards decls) >>= letCmd home cmdName
         Can.SubManager subName ->
-          (constrainEffects home r0 r1 r2 manager >>= constrainDecls decls) >>= letSub home subName
+          (constrainEffects home r0 r1 r2 manager >>= constrainDecls guards decls) >>= letSub home subName
         Can.Fx cmdName subName ->
-          ((constrainEffects home r0 r1 r2 manager >>= constrainDecls decls) >>= letSub home subName) >>= letCmd home cmdName
+          ((constrainEffects home r0 r1 r2 manager >>= constrainDecls guards decls) >>= letSub home subName) >>= letCmd home cmdName
 
 -- CONSTRAIN DECLARATIONS
 
-constrainDecls :: Can.Decls -> Constraint -> IO Constraint
-constrainDecls decls finalConstraint =
+constrainDecls :: Map Name.Name Can.GuardInfo -> Can.Decls -> Constraint -> IO Constraint
+constrainDecls guards decls finalConstraint =
   case decls of
     Can.Declare def otherDecls ->
       do
         v <- mkFlexVar
-        -- For TypedDef, create rigids from freeVars and pass in RTV
         rtv <- case def of
           Can.TypedDef _ freeVars _ _ _ ->
             Map.traverseWithKey (\k _ -> nameToRigid k) freeVars
           Can.Def _ _ _ ->
             return Map.empty
-        constrainDecls otherDecls finalConstraint >>= \con ->
-          Expr.constrainDef (Map.map VarN rtv) def con (TypeError.NoExpectation (VarN v))
+        constrainDecls guards otherDecls finalConstraint >>= \con ->
+          Expr.constrainDef guards (Map.map VarN rtv) def con (TypeError.NoExpectation (VarN v))
     Can.DeclareRec def defs otherDecls ->
       do
-        -- Build RTV from all TypedDefs in recursive group
         let allDefs = def : defs
         rtvMaps <- forM allDefs $ \d -> case d of
           Can.TypedDef _ freeVars _ _ _ ->
@@ -62,7 +61,7 @@ constrainDecls decls finalConstraint =
           Can.Def _ _ _ ->
             return Map.empty
         let combinedRtv = Map.unions (fmap (Map.map VarN) rtvMaps)
-        constrainDecls otherDecls finalConstraint >>= Expr.constrainRecursiveDefs combinedRtv allDefs
+        constrainDecls guards otherDecls finalConstraint >>= Expr.constrainRecursiveDefs guards combinedRtv allDefs
     Can.SaveTheEnvironment ->
       return finalConstraint
 

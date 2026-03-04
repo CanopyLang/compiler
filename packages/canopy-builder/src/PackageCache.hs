@@ -31,6 +31,8 @@ module PackageCache
     -- * Loading Complete Artifacts
   , loadPackageArtifacts
   , loadAllPackageArtifacts
+    -- * Loading Old Elm Artifacts
+  , loadOldElmArtifacts
     -- * Writing Artifacts
   , writePackageArtifacts
   , getPackageArtifactPath
@@ -39,6 +41,7 @@ module PackageCache
   , PackageArtifacts(..)
   ) where
 
+import qualified AST.Canonical as Can
 import qualified AST.Optimized as Opt
 import qualified Canopy.Interface as Interface
 import qualified Canopy.ModuleName as ModuleName
@@ -48,6 +51,7 @@ import Control.Concurrent.Async (mapConcurrently)
 import Control.Monad (liftM2, liftM3)
 import Data.Binary (Binary)
 import qualified Data.Binary as Binary
+import Data.Binary.Get (Get)
 import qualified Generate.JavaScript as JS
 import qualified Interface.JSON as IFace
 import Data.Map.Strict (Map)
@@ -106,6 +110,135 @@ data LegacyArtifactCache = LegacyArtifactCache !(Set Fingerprint) !LegacyArtifac
 instance Binary LegacyArtifactCache where
   get = liftM2 LegacyArtifactCache Binary.get Binary.get
   put (LegacyArtifactCache fps arts) = Binary.put fps >> Binary.put arts
+
+-- | Elm-era Union decoder (4 fields: vars, alts, numAlts, opts).
+--
+-- The current format has 5 fields with variances at position 2.
+-- Fills in empty variances for backward compatibility with old Elm artifacts.
+--
+-- @since 0.19.1
+newtype ElmCanUnion = ElmCanUnion { fromElmCanUnion :: Can.Union }
+
+instance Binary ElmCanUnion where
+  get = do
+    vars <- Binary.get
+    alts <- Binary.get
+    numAlts <- Binary.get
+    opts <- Binary.get
+    return (ElmCanUnion (Can.Union vars [] alts numAlts opts))
+  put (ElmCanUnion u) = Binary.put u
+
+-- | Elm-era Alias decoder (2 fields: vars, tipe).
+--
+-- The current format has 4 fields with variances and supertype bound.
+-- Fills in empty variances and Nothing bound.
+--
+-- @since 0.19.1
+newtype ElmCanAlias = ElmCanAlias { fromElmCanAlias :: Can.Alias }
+
+instance Binary ElmCanAlias where
+  get = do
+    vars <- Binary.get
+    tipe <- Binary.get
+    return (ElmCanAlias (Can.Alias vars [] tipe Nothing))
+  put (ElmCanAlias a) = Binary.put a
+
+-- | Elm-era Interface.Union decoder wrapping ElmCanUnion.
+--
+-- @since 0.19.1
+newtype ElmIfaceUnion = ElmIfaceUnion { fromElmIfaceUnion :: Interface.Union }
+
+instance Binary ElmIfaceUnion where
+  get = do
+    tag <- Binary.getWord8
+    case tag of
+      0 -> ElmIfaceUnion . Interface.OpenUnion . fromElmCanUnion <$> Binary.get
+      1 -> ElmIfaceUnion . Interface.ClosedUnion . fromElmCanUnion <$> Binary.get
+      2 -> ElmIfaceUnion . Interface.PrivateUnion . fromElmCanUnion <$> Binary.get
+      _ -> fail "ElmIfaceUnion: corrupt tag"
+  put (ElmIfaceUnion u) = Binary.put u
+
+-- | Elm-era Interface.Alias decoder wrapping ElmCanAlias.
+--
+-- @since 0.19.1
+newtype ElmIfaceAlias = ElmIfaceAlias { fromElmIfaceAlias :: Interface.Alias }
+
+instance Binary ElmIfaceAlias where
+  get = do
+    tag <- Binary.getWord8
+    case tag of
+      0 -> ElmIfaceAlias . Interface.PublicAlias . fromElmCanAlias <$> Binary.get
+      1 -> ElmIfaceAlias . Interface.PrivateAlias . fromElmCanAlias <$> Binary.get
+      _ -> fail "ElmIfaceAlias: corrupt tag"
+  put (ElmIfaceAlias a) = Binary.put a
+
+-- | Elm-era Interface decoder (5 fields, no guards).
+--
+-- The current format has 6 fields with guards at the end.
+-- Fills in an empty guards map for backward compatibility.
+--
+-- @since 0.19.1
+newtype ElmInterface = ElmInterface { fromElmInterface :: Interface.Interface }
+
+instance Binary ElmInterface where
+  get = do
+    home <- Binary.get
+    values <- Binary.get
+    rawUnions <- Binary.get
+    rawAliases <- Binary.get
+    binops <- Binary.get
+    return (ElmInterface (Interface.Interface home values
+      (Map.map fromElmIfaceUnion rawUnions)
+      (Map.map fromElmIfaceAlias rawAliases)
+      binops Map.empty))
+  put (ElmInterface i) = Binary.put i
+
+-- | Elm-era DependencyInterface decoder using ElmInterface.
+--
+-- @since 0.19.1
+newtype ElmDependencyInterface = ElmDependencyInterface
+  { fromElmDI :: Interface.DependencyInterface }
+
+instance Binary ElmDependencyInterface where
+  get = do
+    tag <- Binary.getWord8
+    case tag of
+      0 -> ElmDependencyInterface . Interface.Public . fromElmInterface <$> Binary.get
+      1 -> decodeElmPrivateDI
+      _ -> fail "ElmDependencyInterface: corrupt tag"
+  put (ElmDependencyInterface di) = Binary.put di
+
+-- | Decode a Private DependencyInterface with Elm-era Union/Alias format.
+decodeElmPrivateDI :: Get ElmDependencyInterface
+decodeElmPrivateDI = do
+  pkg <- Binary.get
+  rawUnions <- Binary.get
+  rawAliases <- Binary.get
+  return (ElmDependencyInterface (Interface.Private pkg
+    (Map.map fromElmCanUnion rawUnions)
+    (Map.map fromElmCanAlias rawAliases)))
+
+-- | Elm-era artifacts (old Binary format, no FFI info).
+--
+-- @since 0.19.1
+data ElmFormatLegacyArtifacts = ElmFormatLegacyArtifacts
+  !(Map ModuleName.Raw ElmDependencyInterface)
+  !Opt.GlobalGraph
+
+instance Binary ElmFormatLegacyArtifacts where
+  get = liftM2 ElmFormatLegacyArtifacts Binary.get Binary.get
+  put (ElmFormatLegacyArtifacts a b) = Binary.put a >> Binary.put b
+
+-- | Elm-era artifact cache (old Binary format throughout).
+--
+-- @since 0.19.1
+data ElmFormatArtifactCache = ElmFormatArtifactCache
+  !(Set Fingerprint)
+  !ElmFormatLegacyArtifacts
+
+instance Binary ElmFormatArtifactCache where
+  get = liftM2 ElmFormatArtifactCache Binary.get Binary.get
+  put (ElmFormatArtifactCache a b) = Binary.put a >> Binary.put b
 
 -- | Map between canopy and elm package authors for fallback lookups.
 --
@@ -175,43 +308,85 @@ loadPackageInterfaces ::
   IO (Maybe PackageInterfaces)
 loadPackageInterfaces author package version = do
   homeDir <- Dir.getHomeDirectory
-  tryLoadFirst loadArtifactsFile (packageArtifactPaths homeDir author package version)
+  exactResult <- tryLoadFirst loadArtifactsFile (packageArtifactPaths homeDir author package version)
+  case exactResult of
+    Just ifaces -> return (Just ifaces)
+    Nothing -> scanForCompatibleVersion homeDir author package
+
+-- | Scan installed versions when the exact version is not found.
+--
+-- When a package constraint resolves to a lower-bound version that
+-- isn't installed, this function scans available versions in the
+-- @~\/.canopy\/packages\/@ directory and returns the first one with
+-- a valid @artifacts.dat@.
+--
+-- @since 0.19.1
+scanForCompatibleVersion :: FilePath -> String -> String -> IO (Maybe PackageInterfaces)
+scanForCompatibleVersion homeDir author package = do
+  let authorsToTry = author : maybe [] (:[]) (fallbackAuthor author)
+  tryAuthors authorsToTry
+  where
+    tryAuthors [] = return Nothing
+    tryAuthors (a : rest) = do
+      let pkgDir = homeDir </> ".canopy" </> "packages" </> a </> package
+      exists <- Dir.doesDirectoryExist pkgDir
+      if not exists
+        then tryAuthors rest
+        else do
+          versions <- Dir.listDirectory pkgDir
+          result <- tryLoadFirst loadArtifactsFile
+            [pkgDir </> v </> "artifacts.dat" | v <- versions]
+          maybe (tryAuthors rest) (return . Just) result
+
+-- | Try a list of IO actions returning Maybe, stopping at the first Just.
+tryDecoders :: [IO (Maybe a)] -> IO (Maybe a)
+tryDecoders [] = return Nothing
+tryDecoders (action : rest) =
+  action >>= maybe (tryDecoders rest) (return . Just)
+
+-- | Try decoding a binary file, extracting a value on success.
+tryDecodeAs :: Binary a => (a -> b) -> FilePath -> IO (Maybe b)
+tryDecodeAs extract path =
+  fmap (either (const Nothing) (Just . extract)) (Binary.decodeFileOrFail path)
 
 -- | Load artifacts from a specific file path.
 --
--- Tries the new format (with FFI info) first, falling back to the legacy
--- format for backward compatibility with old @artifacts.dat@ files.
+-- Tries three formats in order:
+--
+-- 1. New Canopy format (with FFI info and current Binary instances)
+-- 2. Legacy Canopy format (no FFI info, current Binary instances)
+-- 3. Elm-era format (no FFI info, old 4-field Union, 2-field Alias, 5-field Interface)
 loadArtifactsFile :: FilePath -> IO (Maybe PackageInterfaces)
-loadArtifactsFile path = do
-  result <- Binary.decodeFileOrFail path
-  case result of
-    Right (ArtifactCache _fingerprints artifacts) ->
-      return (Just (_ifaces artifacts))
-    Left _ -> do
-      legacyResult <- Binary.decodeFileOrFail path
-      case legacyResult of
-        Right (LegacyArtifactCache _fingerprints (LegacyArtifacts ifaces _)) ->
-          return (Just ifaces)
-        Left _ ->
-          return Nothing
+loadArtifactsFile path =
+  tryDecoders
+    [ tryDecodeAs (\(ArtifactCache _ arts) -> _ifaces arts) path
+    , tryDecodeAs (\(LegacyArtifactCache _ (LegacyArtifacts ifaces _)) -> ifaces) path
+    , tryDecodeAs
+        (\(ElmFormatArtifactCache _ (ElmFormatLegacyArtifacts rawDIs _)) ->
+          Map.map fromElmDI rawDIs)
+        path
+    ]
 
 -- | Load complete artifacts (interfaces + objects + FFI info) from a specific file path.
 --
--- Tries the new format first, falling back to the legacy format with
--- empty FFI info for backward compatibility.
+-- Tries three formats in order, filling in empty FFI info and default
+-- field values for older formats.
 loadCompleteArtifactsFile :: FilePath -> IO (Maybe PackageArtifacts)
-loadCompleteArtifactsFile path = do
-  result <- Binary.decodeFileOrFail path
-  case result of
-    Right (ArtifactCache _fingerprints artifacts) ->
-      return (Just (PackageArtifacts (_ifaces artifacts) (_objects artifacts) (_ffiInfo artifacts)))
-    Left _ -> do
-      legacyResult <- Binary.decodeFileOrFail path
-      case legacyResult of
-        Right (LegacyArtifactCache _fingerprints (LegacyArtifacts ifaces objs)) ->
-          return (Just (PackageArtifacts ifaces objs Map.empty))
-        Left _ ->
-          return Nothing
+loadCompleteArtifactsFile path =
+  tryDecoders
+    [ tryDecodeAs
+        (\(ArtifactCache _ arts) ->
+          PackageArtifacts (_ifaces arts) (_objects arts) (_ffiInfo arts))
+        path
+    , tryDecodeAs
+        (\(LegacyArtifactCache _ (LegacyArtifacts ifaces objs)) ->
+          PackageArtifacts ifaces objs Map.empty)
+        path
+    , tryDecodeAs
+        (\(ElmFormatArtifactCache _ (ElmFormatLegacyArtifacts rawDIs objs)) ->
+          PackageArtifacts (Map.map fromElmDI rawDIs) objs Map.empty)
+        path
+    ]
 
 -- | Load core package interfaces.
 --
@@ -352,6 +527,29 @@ loadModuleInterface root moduleName = do
 
   -- Try JSON first, fall back to binary
   IFace.readInterface basePath
+
+-- | Load package artifacts specifically from the old Elm cache.
+--
+-- Used to supplement source-compiled artifacts with kernel module globals
+-- that are only available in the original Elm-compiled artifacts. Kernel
+-- modules (e.g., @Elm.Kernel.Debug@, @Elm.Kernel.Json@) are JavaScript-only
+-- implementations not present in source compilations.
+--
+-- @since 0.19.1
+loadOldElmArtifacts ::
+  -- | Package author
+  String ->
+  -- | Package name
+  String ->
+  -- | Package version
+  String ->
+  IO (Maybe PackageArtifacts)
+loadOldElmArtifacts author package version = do
+  homeDir <- Dir.getHomeDirectory
+  tryLoadFirst loadCompleteArtifactsFile
+    [ homeDir </> ".elm" </> "0.19.1" </> "packages" </> a </> package </> version </> "artifacts.dat"
+    | a <- author : maybe [] (:[]) (fallbackAuthor author)
+    ]
 
 -- | Get the path where a package's artifacts.dat should be stored.
 --

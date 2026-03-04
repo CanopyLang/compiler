@@ -33,8 +33,6 @@ import qualified Canopy.Data.Name as Name
 import qualified Canopy.Data.Utf8 as Utf8
 import qualified Canopy.ModuleName as ModuleName
 import qualified Data.Map.Strict as Map
-import Data.Set (Set)
-import qualified Data.Set as Set
 
 -- | Simplify an optimized expression by applying algebraic rewrites.
 --

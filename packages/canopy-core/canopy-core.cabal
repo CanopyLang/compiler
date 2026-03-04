@@ -57,7 +57,6 @@ library
       Canopy.PathValidation
       Canopy.String
       Canopy.Version
-      Editor.Integration
       FFI.Capability
       FFI.CapabilityEnforcement
       FFI.Manifest
@@ -76,6 +75,7 @@ library
       Foreign.FFI
       Foreign.TestGenerator
       Format
+      Editor.Integration
       Generate.Html
       Generate.JavaScript
       Generate.JavaScript.Builder
@@ -123,9 +123,7 @@ library
       Reporting.Error
       Reporting.Error.Canonicalize
       Reporting.Error.Hierarchy
-      Reporting.Error.Internal
       Reporting.Error.Syntax
-      Reporting.Error.Syntax.Types
       Reporting.Error.Type
       Reporting.ErrorCode
       Reporting.Exit.Help
@@ -146,6 +144,8 @@ library
       Type.UnionFind
       Type.Variance
   other-modules:
+      Reporting.Error.Internal
+      Reporting.Error.Syntax.Types
       AST.Canonical.Binary
       AST.Canonical.Expr
       AST.Canonical.Json

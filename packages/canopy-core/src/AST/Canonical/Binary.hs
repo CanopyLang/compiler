@@ -36,6 +36,7 @@ import qualified Canopy.ModuleName as ModuleName
 import qualified Control.Monad as Monad
 import qualified Data.Binary as Binary
 import qualified Data.Foldable as Foldable
+import Data.Text (Text)
 import Data.Word (Word8)
 import qualified Reporting.InternalError as InternalError
 
@@ -134,9 +135,19 @@ putTypeComplex tipe = case tipe of
   TTuple a b c -> Binary.putWord8 4 >> Binary.put a >> Binary.put b >> Binary.put c
   TAlias a b c d -> Binary.putWord8 5 >> Binary.put a >> Binary.put b >> Binary.put c >> Binary.put d
   TType home name ts -> putTType home name ts
-  _ -> InternalError.report
+  TLambda _ _ -> unexpectedTypeInPutComplex "TLambda"
+  TVar _ -> unexpectedTypeInPutComplex "TVar"
+  TRecord _ _ -> unexpectedTypeInPutComplex "TRecord"
+  TUnit -> unexpectedTypeInPutComplex "TUnit"
+
+-- | Report an unexpected type constructor reaching putTypeComplex.
+--
+-- @since 0.19.2
+unexpectedTypeInPutComplex :: Text -> a
+unexpectedTypeInPutComplex ctor =
+  InternalError.report
     "AST.Canonical.Binary.putTypeComplex"
-    "unexpected type in putTypeComplex"
+    ("Unexpected type constructor `" <> ctor <> "` in putTypeComplex")
     "putTypeComplex only handles TTuple, TAlias, and TType. Other type constructors (TLambda, TVar, TRecord, TUnit) must be serialized by their own Binary.put paths."
 
 -- | Serialize TType with optimization for small type lists.

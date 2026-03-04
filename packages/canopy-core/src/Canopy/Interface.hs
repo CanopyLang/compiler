@@ -54,6 +54,13 @@ data Union
 data Alias
   = PublicAlias Can.Alias
   | PrivateAlias Can.Alias
+  | -- | Opaque alias with a supertype bound.
+    --
+    -- The underlying type is hidden from external modules, but the alias
+    -- satisfies the declared bound constraint (e.g., @comparable@).
+    -- The 'Can.Alias' retains the bound information but its underlying
+    -- type is replaced with a self-referential nominal type.
+    OpaqueAlias Can.Alias
   deriving (Eq, Show)
 
 data Binop = Binop
@@ -122,13 +129,22 @@ restrictAliases :: Can.Exports -> Map.Map Name.Name Can.Alias -> Map.Map Name.Na
 restrictAliases exports aliases =
   case exports of
     Can.ExportEverything _ ->
-      Map.map PublicAlias aliases
+      Map.map classifyAlias aliases
     Can.Export explicitExports ->
       Map.merge onLeft onRight onBoth explicitExports aliases
       where
         onLeft = Map.dropMissing
         onRight = Map.mapMissing (\_ a -> PrivateAlias a)
-        onBoth = Map.zipWithMatched (\_ _ a -> PublicAlias a)
+        onBoth = Map.zipWithMatched (\_ _ a -> classifyAlias a)
+
+-- | Classify an exported alias as public or opaque based on its bound.
+--
+-- Aliases with a supertype bound are exported as opaque: external modules
+-- can use the type in operations matching the bound but cannot see the
+-- underlying type representation.
+classifyAlias :: Can.Alias -> Alias
+classifyAlias alias@(Can.Alias _ _ _ maybeBound) =
+  maybe (PublicAlias alias) (const (OpaqueAlias alias)) maybeBound
 
 -- TO PUBLIC
 
@@ -143,6 +159,7 @@ toPublicAlias :: Alias -> Maybe Can.Alias
 toPublicAlias iAlias =
   case iAlias of
     PublicAlias alias -> Just alias
+    OpaqueAlias alias -> Just alias
     PrivateAlias _ -> Nothing
 
 -- DEPENDENCY INTERFACE
@@ -174,6 +191,7 @@ extractAlias :: Alias -> Can.Alias
 extractAlias iAlias =
   case iAlias of
     PublicAlias alias -> alias
+    OpaqueAlias alias -> alias
     PrivateAlias alias -> alias
 
 privatize :: DependencyInterface -> DependencyInterface
@@ -205,10 +223,11 @@ instance Binary Union where
         _ -> fail "binary encoding of Union was corrupted"
 
 instance Binary Alias where
-  put union =
-    case union of
+  put alias =
+    case alias of
       PublicAlias a -> putWord8 0 >> put a
       PrivateAlias a -> putWord8 1 >> put a
+      OpaqueAlias a -> putWord8 2 >> put a
 
   get =
     do
@@ -216,6 +235,7 @@ instance Binary Alias where
       case n of
         0 -> fmap PublicAlias get
         1 -> fmap PrivateAlias get
+        2 -> fmap OpaqueAlias get
         _ -> fail "binary encoding of Alias was corrupted"
 
 instance Binary Binop where
@@ -302,6 +322,11 @@ instance ToJSON Alias where
         [ "type" .= ("private" :: String),
           "alias" .= a
         ]
+    OpaqueAlias a ->
+      object
+        [ "type" .= ("opaque" :: String),
+          "alias" .= a
+        ]
 
 instance FromJSON Alias where
   parseJSON = withObject "Alias" $ \o -> do
@@ -310,6 +335,7 @@ instance FromJSON Alias where
     case aliasType of
       "public" -> pure (PublicAlias aliasValue)
       "private" -> pure (PrivateAlias aliasValue)
+      "opaque" -> pure (OpaqueAlias aliasValue)
       _ -> fail ("Unknown alias type: " ++ aliasType)
 
 instance ToJSON Binop where

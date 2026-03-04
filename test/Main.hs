@@ -117,8 +117,11 @@ import qualified Unit.Reporting.DiagnosticJsonTest as DiagnosticJsonTest
 import qualified Unit.Reporting.DiagnosticTest as DiagnosticTest
 import qualified Unit.Reporting.Doc.ColorQQTest as ColorQQTest
 import qualified Unit.Reporting.ErrorCodeTest as ErrorCodeTest
+import qualified Unit.Reporting.InternalErrorTest as InternalErrorTest
 import qualified Unit.Type.InstantiateTest as InstantiateTest
 import qualified Unit.Type.OccursTest as OccursTest
+import qualified Unit.Type.GuardNarrowingTest as GuardNarrowingTest
+import qualified Unit.Type.OpaqueBoundsTest as OpaqueBoundsTest
 import qualified Unit.Type.SolveTest as SolveTest
 import qualified Unit.Type.UnifyTest as UnifyTest
 import qualified Unit.Type.VarianceTest as VarianceTest
@@ -129,6 +132,7 @@ import qualified Unit.Canonicalize.ModuleTest as CanonicalizeModuleTest
 import qualified Unit.Canonicalize.PatternTest as CanonicalizePatternTest
 import qualified Unit.Type.UnionFindTest as UnionFindTest
 import qualified Unit.FFI.CapabilityEnforcementTest as FFICapEnforceTest
+import qualified Unit.FFI.CapabilityTypeTest as FFICapTypeTest
 import qualified Unit.FFI.EscapeTest as FFIEscapeTest
 import qualified Unit.FFI.ManifestTest as FFIManifestTest
 import qualified Unit.FFI.ResolveTest as FFIResolveTest
@@ -276,8 +280,11 @@ unitTests =
       DiagnosticTest.tests,
       DiagnosticJsonTest.tests,
       ErrorCodeTest.tests,
+      InternalErrorTest.tests,
       InstantiateTest.tests,
       OccursTest.tests,
+      GuardNarrowingTest.tests,
+      OpaqueBoundsTest.tests,
       SolveTest.tests,
       UnifyTest.tests,
       VarianceTest.tests,
@@ -288,6 +295,7 @@ unitTests =
       CanonicalizeModuleTest.tests,
       LazyImportValidationTest.tests,
       FFICapEnforceTest.tests,
+      FFICapTypeTest.tests,
       FFIEscapeTest.tests,
       FFIManifestTest.tests,
       FFIResolveTest.tests,

@@ -1,0 +1,228 @@
+module Capability exposing
+  ( Capability
+  , Microphone
+  , Geolocation
+  , Camera
+  , Notifications
+  , Clipboard
+  , Storage
+  , Network
+  , Bluetooth
+  , USB
+  , MIDI
+  , ScreenCapture
+  , WakeLock
+  , Payment
+  , microphone
+  , geolocation
+  , camera
+  , notifications
+  , clipboard
+  , storage
+  , network
+  , bluetooth
+  , usb
+  , midi
+  , screenCapture
+  , wakeLock
+  , payment
+  )
+
+{-| Compile-time capability tokens for FFI permission enforcement.
+
+The `Capability` type is an opaque token parameterized by a permission type.
+Its constructor is not exported, so user code cannot forge capability tokens.
+
+When an FFI function requires a browser permission (declared via
+`@capability permission <name>` in its JSDoc), the compiler adds a
+`Capability <Permission>` parameter to that function's type. You must pass
+a matching token to call it.
+
+Tokens are provided as module-level values (`microphone`, `geolocation`, etc.).
+The build system validates that your `canopy.json` declares each capability
+you actually use — attempting to use `Capability.microphone` without
+declaring `"microphone"` in the `"capabilities"` list produces a build error.
+
+# Capability Type
+@docs Capability
+
+# Permission Types
+@docs Microphone, Geolocation, Camera, Notifications, Clipboard
+@docs Storage, Network, Bluetooth, USB, MIDI
+@docs ScreenCapture, WakeLock, Payment
+
+# Tokens
+@docs microphone, geolocation, camera, notifications, clipboard
+@docs storage, network, bluetooth, usb, midi
+@docs screenCapture, wakeLock, payment
+
+-}
+
+import Elm.Kernel.Capability
+
+
+{-| An opaque capability token parameterized by a permission type.
+
+You cannot construct these directly. Use the provided token values
+(`microphone`, `geolocation`, etc.) and pass them to FFI functions
+that require the corresponding capability.
+-}
+type Capability permission
+    = Capability
+
+
+{-| Permission for accessing the microphone via the MediaDevices API. -}
+type Microphone = Microphone
+
+{-| Permission for accessing the device's geolocation. -}
+type Geolocation = Geolocation
+
+{-| Permission for accessing the device's camera. -}
+type Camera = Camera
+
+{-| Permission for sending browser notifications. -}
+type Notifications = Notifications
+
+{-| Permission for reading and writing the system clipboard. -}
+type Clipboard = Clipboard
+
+{-| Permission for accessing persistent storage (IndexedDB, localStorage). -}
+type Storage = Storage
+
+{-| Permission for making network requests beyond same-origin. -}
+type Network = Network
+
+{-| Permission for accessing Bluetooth devices via the Web Bluetooth API. -}
+type Bluetooth = Bluetooth
+
+{-| Permission for accessing USB devices via the WebUSB API. -}
+type USB = USB
+
+{-| Permission for accessing MIDI devices via the Web MIDI API. -}
+type MIDI = MIDI
+
+{-| Permission for capturing the screen via the Screen Capture API. -}
+type ScreenCapture = ScreenCapture
+
+{-| Permission for preventing the screen from dimming or locking. -}
+type WakeLock = WakeLock
+
+{-| Permission for using the Payment Request API. -}
+type Payment = Payment
+
+
+{-| Token granting microphone access.
+
+Requires `"microphone"` in your `canopy.json` capabilities list.
+-}
+microphone : Capability Microphone
+microphone =
+    Elm.Kernel.Capability.grant
+
+
+{-| Token granting geolocation access.
+
+Requires `"geolocation"` in your `canopy.json` capabilities list.
+-}
+geolocation : Capability Geolocation
+geolocation =
+    Elm.Kernel.Capability.grant
+
+
+{-| Token granting camera access.
+
+Requires `"camera"` in your `canopy.json` capabilities list.
+-}
+camera : Capability Camera
+camera =
+    Elm.Kernel.Capability.grant
+
+
+{-| Token granting notification access.
+
+Requires `"notifications"` in your `canopy.json` capabilities list.
+-}
+notifications : Capability Notifications
+notifications =
+    Elm.Kernel.Capability.grant
+
+
+{-| Token granting clipboard access.
+
+Requires `"clipboard"` in your `canopy.json` capabilities list.
+-}
+clipboard : Capability Clipboard
+clipboard =
+    Elm.Kernel.Capability.grant
+
+
+{-| Token granting persistent storage access.
+
+Requires `"storage"` in your `canopy.json` capabilities list.
+-}
+storage : Capability Storage
+storage =
+    Elm.Kernel.Capability.grant
+
+
+{-| Token granting cross-origin network access.
+
+Requires `"network"` in your `canopy.json` capabilities list.
+-}
+network : Capability Network
+network =
+    Elm.Kernel.Capability.grant
+
+
+{-| Token granting Bluetooth device access.
+
+Requires `"bluetooth"` in your `canopy.json` capabilities list.
+-}
+bluetooth : Capability Bluetooth
+bluetooth =
+    Elm.Kernel.Capability.grant
+
+
+{-| Token granting USB device access.
+
+Requires `"usb"` in your `canopy.json` capabilities list.
+-}
+usb : Capability USB
+usb =
+    Elm.Kernel.Capability.grant
+
+
+{-| Token granting MIDI device access.
+
+Requires `"midi"` in your `canopy.json` capabilities list.
+-}
+midi : Capability MIDI
+midi =
+    Elm.Kernel.Capability.grant
+
+
+{-| Token granting screen capture access.
+
+Requires `"screen-capture"` in your `canopy.json` capabilities list.
+-}
+screenCapture : Capability ScreenCapture
+screenCapture =
+    Elm.Kernel.Capability.grant
+
+
+{-| Token granting wake lock access.
+
+Requires `"wake-lock"` in your `canopy.json` capabilities list.
+-}
+wakeLock : Capability WakeLock
+wakeLock =
+    Elm.Kernel.Capability.grant
+
+
+{-| Token granting Payment Request API access.
+
+Requires `"payment"` in your `canopy.json` capabilities list.
+-}
+payment : Capability Payment
+payment =
+    Elm.Kernel.Capability.grant

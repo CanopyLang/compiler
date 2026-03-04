@@ -29,10 +29,15 @@
 -- at each use site.
 module Type.Solve
   ( run,
+    runWithBounds,
+    extractBoundsFromAliases,
+    extractAllInterfaceBounds,
   )
 where
 
 import qualified AST.Canonical as Can
+import qualified Canopy.Interface as Interface
+import qualified Canopy.ModuleName as ModuleName
 import qualified Canopy.Data.Name as Name
 import Control.Lens (makeLenses, (%~), (&), (.~), (^.))
 import Control.Monad (filterM, foldM, forM, when)
@@ -79,7 +84,8 @@ data SolveConfig = SolveConfig
     _solvePools :: !Pools,
     _solveState :: !State,
     _solveAmbientRigids :: ![(Int, Variable)],
-    _solveDeferAllGeneralization :: !Bool
+    _solveDeferAllGeneralization :: !Bool,
+    _solveBounds :: !Unify.BoundsMap
   }
 
 makeLenses ''SolveConfig
@@ -100,23 +106,75 @@ emptyState = State
 -- Creates an initial pool vector and 'SolveConfig', then calls 'solve'.
 -- Returns either the inferred annotations or the accumulated type errors.
 run :: Constraint -> IO (Either (List Error.Error) (Map Name.Name Can.Annotation))
-run constraint = do
+run = runWithBounds Map.empty
+
+-- | Run the constraint solver with opaque alias bounds registered.
+--
+-- The bounds map tells the unifier which nominal types satisfy which
+-- super type constraints (e.g., an opaque @UserId@ type satisfying
+-- @comparable@). This enables opaque bounded aliases to be used in
+-- constrained contexts like @Set@ keys or @Dict@ keys.
+runWithBounds ::
+  Map (ModuleName.Canonical, Name.Name) SuperType ->
+  Constraint ->
+  IO (Either (List Error.Error) (Map Name.Name Can.Annotation))
+runWithBounds bounds constraint = do
   poolsVec <- MVector.replicate 8 []
   pools <- newIORef poolsVec
-  let config = createSolveConfig Map.empty outermostRank pools emptyState
+  let config = createSolveConfig Map.empty outermostRank pools emptyState bounds
   finalState <- solve config constraint
   case finalState ^. stateErrors of
     [] -> Right <$> traverse Type.toAnnotation (finalState ^. stateEnv)
     e : es -> return $ Left (NE.List e es)
 
-createSolveConfig :: Env -> Int -> Pools -> State -> SolveConfig
-createSolveConfig env rank pools state = SolveConfig
+-- | Extract supertype bounds from a map of interface aliases.
+--
+-- Scans all public/opaque aliases in an interface map and returns a bounds
+-- map suitable for 'runWithBounds'. Only aliases with a 'Just' supertype
+-- bound are included.
+extractBoundsFromAliases ::
+  ModuleName.Canonical ->
+  Map Name.Name Can.Alias ->
+  Map (ModuleName.Canonical, Name.Name) SuperType
+extractBoundsFromAliases home =
+  Map.foldlWithKey' collectBound Map.empty
+  where
+    collectBound acc name (Can.Alias _ _ _ maybeBound) =
+      maybe acc (\bound -> Map.insert (home, name) (convertBound bound) acc) maybeBound
+
+-- | Convert a canonical 'SupertypeBound' to the solver's 'SuperType'.
+convertBound :: Can.SupertypeBound -> SuperType
+convertBound Can.ComparableBound = Comparable
+convertBound Can.AppendableBound = Appendable
+convertBound Can.NumberBound = Number
+convertBound Can.CompAppendBound = CompAppend
+
+-- | Extract all supertype bounds from a full dependency interface map.
+--
+-- Iterates over every interface, constructs the canonical module name from
+-- each interface's home package and the raw module name key, then collects
+-- bounds from all aliases that declare a supertype bound.
+extractAllInterfaceBounds ::
+  Map ModuleName.Raw Interface.Interface ->
+  Map (ModuleName.Canonical, Name.Name) SuperType
+extractAllInterfaceBounds =
+  Map.foldlWithKey' collectFromInterface Map.empty
+  where
+    collectFromInterface acc rawName iface =
+      Map.union acc (extractBoundsFromAliases canonical aliasMap)
+      where
+        canonical = ModuleName.Canonical (Interface._home iface) rawName
+        aliasMap = Map.map Interface.extractAlias (Interface._aliases iface)
+
+createSolveConfig :: Env -> Int -> Pools -> State -> Unify.BoundsMap -> SolveConfig
+createSolveConfig env rank pools state bounds = SolveConfig
   { _solveEnv = env
   , _solveRank = rank
   , _solvePools = pools
   , _solveState = state
   , _solveAmbientRigids = []
   , _solveDeferAllGeneralization = False
+  , _solveBounds = bounds
   }
 
 -- SOLVER
@@ -307,7 +365,7 @@ solvePattern config region category tipe expectation = do
 
 handleUnifyResult :: SolveConfig -> Variable -> Variable -> (ET.Type -> ET.Type -> Error.Error) -> IO State
 handleUnifyResult config actual expected errorFunc = do
-  answer <- Unify.unify actual expected
+  answer <- Unify.unify (config ^. solveBounds) actual expected
   case answer of
     Unify.Ok vars -> do
       enabled <- Log.isEnabled
@@ -322,7 +380,7 @@ handleUnifyResult config actual expected errorFunc = do
 
 handlePatternUnifyResult :: SolveConfig -> Variable -> Variable -> (ET.Type -> ET.Type -> Error.Error) -> IO State
 handlePatternUnifyResult config actual expected errorFunc = do
-  answer <- Unify.unify actual expected
+  answer <- Unify.unify (config ^. solveBounds) actual expected
   case answer of
     Unify.Ok vars -> do
       Pool.introduce (config ^. solveRank) (config ^. solvePools) vars

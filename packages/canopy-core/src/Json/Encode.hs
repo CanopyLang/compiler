@@ -752,10 +752,14 @@ encodeSimpleValue value =
     Integer n -> BB.intDec n
     Number scientific -> BB.string7 (Sci.formatScientific Sci.Generic Nothing scientific)
     Null -> "null"
-    _ -> InternalError.report
+    Array _ -> InternalError.report
       "Json.Encode.encodeSimpleValue"
-      "unexpected composite value"
-      "encodeSimpleValue only handles String, Boolean, Integer, Number, and Null. Arrays and Objects must be handled by encodeArray and encodeObject respectively."
+      "Unexpected Array value in encodeSimpleValue"
+      "encodeSimpleValue only handles String, Boolean, Integer, Number, and Null. Arrays must be handled by encodeArray."
+    Object _ -> InternalError.report
+      "Json.Encode.encodeSimpleValue"
+      "Unexpected Object value in encodeSimpleValue"
+      "encodeSimpleValue only handles String, Boolean, Integer, Number, and Null. Objects must be handled by encodeObject."
 
 -- ARRAY AND OBJECT ENCODING
 

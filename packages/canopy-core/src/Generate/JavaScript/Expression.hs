@@ -566,14 +566,12 @@ getTailDefArgs def =
 --
 -- @since 0.19.1
 getTailDefBody :: Opt.Def -> Opt.Expr
-getTailDefBody def =
-  case def of
-    Opt.TailDef _ _ body -> body
-    _ ->
-      InternalError.report
-        "Generate.JavaScript.Expression.getTailDefBody"
-        "Called on non-TailDef"
-        "getTailDefBody must only be called on Opt.TailDef values. The caller must verify the definition is a TailDef before invoking this function."
+getTailDefBody (Opt.TailDef _ _ body) = body
+getTailDefBody (Opt.Def name _) =
+  InternalError.report
+    "Generate.JavaScript.Expression.getTailDefBody"
+    ("Called on non-TailDef: Def `" <> Text.pack (Name.toChars name) <> "`")
+    "getTailDefBody must only be called on Opt.TailDef values. The caller must verify the definition is a TailDef before invoking this function."
 
 -- | Generate the JavaScript expression for a tail-recursive function definition.
 --

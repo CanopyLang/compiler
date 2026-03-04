@@ -24,6 +24,7 @@ module FFI.Types
   , FFIFuncName(..)
   , FFITypeAnnotation(..)
   , FFIBinding(..)
+  , CapabilityName(..)
   )
 where
 
@@ -128,7 +129,8 @@ newtype FFIFuncName = FFIFuncName { unFFIFuncName :: Text }
 newtype FFITypeAnnotation = FFITypeAnnotation { unFFITypeAnnotation :: Text }
   deriving (Eq, Show)
 
--- | A parsed FFI binding pairing a function name with its type annotation.
+-- | A parsed FFI binding pairing a function name with its type annotation
+-- and any capability requirements from @capability annotations.
 --
 -- Replaces the stringly-typed @(String, String)@ tuples to prevent
 -- accidental field swapping between function names and type annotations.
@@ -137,4 +139,15 @@ newtype FFITypeAnnotation = FFITypeAnnotation { unFFITypeAnnotation :: Text }
 data FFIBinding = FFIBinding
   { _bindingFuncName :: !FFIFuncName
   , _bindingTypeAnnotation :: !FFITypeAnnotation
+  , _bindingCapabilities :: ![CapabilityName]
+    -- ^ Capability requirements from @capability permission annotations
   } deriving (Eq, Show)
+
+-- | A capability permission name from a JSDoc @capability annotation.
+--
+-- Wraps the permission name (e.g., \"microphone\", \"geolocation\") to
+-- distinguish it from other text values in the FFI pipeline.
+--
+-- @since 0.20.0
+newtype CapabilityName = CapabilityName { unCapabilityName :: Text }
+  deriving (Eq, Ord, Show)

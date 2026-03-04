@@ -52,10 +52,8 @@ module FFI.StaticAnalysis
 where
 
 import qualified Data.ByteString as BS
-import qualified Data.ByteString.Char8 as BSC
 import qualified Data.Map.Strict as Map
 import Data.Text (Text)
-import qualified Data.Text as Text
 import qualified Data.Text.Encoding as TextEnc
 import FFI.Types (FFIType (..))
 import Language.JavaScript.Parser.AST

@@ -567,5 +567,5 @@ mergeMain a Nothing = a
 mergeMain (Just _) (Just _) =
   InternalError.report
     "Generate.JavaScript.CodeSplit.Generate.mergeMain"
-    "cannot have two modules with the same name"
-    "Module names must be unique."
+    "Duplicate module detected during chunk trie merging"
+    "Two trie entries share the same module path, which should be impossible since module names are unique within a project. This indicates a bug in the code splitting graph analysis."

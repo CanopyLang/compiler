@@ -85,6 +85,7 @@ library:
   generated-other-modules:
     - Paths_canopy_core
   exposed-modules:
+    # -- Public API: Core AST types --
     - AST.Canonical
     - AST.Optimized
     - AST.Optimized.Expr
@@ -93,11 +94,13 @@ library:
     - AST.Utils.Binop
     - AST.Utils.Shader
     - AST.Utils.Type
+    # -- Public API: Canonicalization --
     - Canonicalize.Environment
     - Canonicalize.Environment.Dups
     - Canonicalize.Expression
     - Canonicalize.Module
     - Canonicalize.Pattern
+    # -- Public API: Canopy core types --
     - Canopy.Compiler.Type
     - Canopy.Compiler.Type.Extract
     - Canopy.Constraint
@@ -121,7 +124,7 @@ library:
     - Canopy.PathValidation
     - Canopy.String
     - Canopy.Version
-    - Editor.Integration
+    # -- Public API: FFI --
     - FFI.Capability
     - FFI.CapabilityEnforcement
     - FFI.Manifest
@@ -129,6 +132,7 @@ library:
     - FFI.StaticAnalysis
     - FFI.Types
     - FFI.Validator
+    # -- Public API: File operations --
     - File
     - File.Archive
     - File.Atomic
@@ -137,9 +141,14 @@ library:
     - File.Package
     - File.Time
     - File.Utf8
+    # -- Public API: Foreign --
     - Foreign.FFI
     - Foreign.TestGenerator
+    # -- Public API: Formatting --
     - Format
+    # -- Public API: Editor integration --
+    - Editor.Integration
+    # -- Public API: Code generation --
     - Generate.Html
     - Generate.JavaScript
     - Generate.JavaScript.Builder
@@ -156,13 +165,16 @@ library:
     - Generate.JavaScript.StringPool
     - Generate.Mode
     - Generate.TreeShake
+    # -- Public API: JSON --
     - Json.Decode
     - Json.Encode
     - Json.String
+    # -- Public API: Logging --
     - Logging.Config
     - Logging.Event
     - Logging.Logger
     - Logging.Sink
+    # -- Public API: Optimization --
     - Optimize.Case
     - Optimize.ConstantFold
     - Optimize.DecisionTree
@@ -170,6 +182,7 @@ library:
     - Optimize.Module
     - Optimize.Names
     - Optimize.Simplify
+    # -- Public API: Parsing --
     - Parse.Declaration
     - Parse.Expression
     - Parse.Module
@@ -178,8 +191,10 @@ library:
     - Parse.Space
     - Parse.Type
     - Parse.Variable
+    # -- Public API: Plugin system --
     - Plugin.Interface
     - Plugin.Pipeline
+    # -- Public API: Error reporting --
     - Reporting.Annotation
     - Reporting.Diagnostic
     - Reporting.Doc
@@ -187,9 +202,7 @@ library:
     - Reporting.Error
     - Reporting.Error.Canonicalize
     - Reporting.Error.Hierarchy
-    - Reporting.Error.Internal
     - Reporting.Error.Syntax
-    - Reporting.Error.Syntax.Types
     - Reporting.Error.Type
     - Reporting.ErrorCode
     - Reporting.Exit.Help
@@ -200,6 +213,7 @@ library:
     - Reporting.Result
     - Reporting.Suggest
     - Reporting.Warning
+    # -- Public API: Type system --
     - Type.Constrain.Module
     - Type.Instantiate
     - Type.Occurs
@@ -210,6 +224,8 @@ library:
     - Type.UnionFind
     - Type.Variance
   other-modules:
+    - Reporting.Error.Internal
+    - Reporting.Error.Syntax.Types
     - AST.Canonical.Binary
     - AST.Canonical.Expr
     - AST.Canonical.Json

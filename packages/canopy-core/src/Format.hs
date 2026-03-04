@@ -445,12 +445,6 @@ joinWith :: PP.Doc -> [PP.Doc] -> PP.Doc
 joinWith _ [] = PP.empty
 joinWith sep (d : ds) = foldl (\acc x -> acc <> sep <> x) d ds
 
--- | Format constructor type parameters for a union type.
-formatTypeParams :: [Ann.Located Name] -> PP.Doc
-formatTypeParams [] = PP.empty
-formatTypeParams ps =
-  PP.text " " <> PP.hsep (map locNameDoc ps)
-
 -- | Format type parameters with optional variance annotations.
 --
 -- Renders covariant params as @(+a)@, contravariant as @(-a)@,

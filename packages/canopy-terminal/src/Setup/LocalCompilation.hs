@@ -14,6 +14,7 @@ module Setup.LocalCompilation
   )
 where
 
+import qualified AST.Optimized as Opt
 import qualified Build.Artifacts as Build
 import qualified Canopy.Data.NonEmptyList as NE
 import qualified Canopy.Data.Utf8 as Utf8
@@ -66,7 +67,6 @@ compilePackageVersion :: Bool -> String -> FilePath -> String -> IO Bool
 compilePackageVersion verbose packageName pkgDir versionStr = do
   let versionDir = pkgDir </> versionStr
       artifactsPath = versionDir </> "artifacts.dat"
-      canopyJsonPath = versionDir </> "canopy.json"
       srcDir = versionDir </> "src"
       label = "canopy/" <> packageName <> " " <> versionStr
   artifactsExist <- Dir.doesFileExist artifactsPath
@@ -75,13 +75,24 @@ compilePackageVersion verbose packageName pkgDir versionStr = do
       Print.println [c|  #{label}: {green|ready}|]
       pure True
     else do
-      canopyJsonExists <- Dir.doesFileExist canopyJsonPath
+      hasOutline <- hasPackageOutline versionDir
       srcExists <- Dir.doesDirectoryExist srcDir
-      if canopyJsonExists && srcExists
+      if hasOutline && srcExists
         then compileAndReport verbose label packageName versionStr versionDir
         else do
           Print.println [c|  #{label}: {red|no source found}|]
           pure False
+
+-- | Check whether a package directory contains a valid outline file.
+--
+-- Accepts either @canopy.json@ or @elm.json@ to support both native
+-- Canopy packages and packages copied from the Elm cache.
+hasPackageOutline :: FilePath -> IO Bool
+hasPackageOutline dir = do
+  canopyExists <- Dir.doesFileExist (dir </> "canopy.json")
+  if canopyExists
+    then pure True
+    else Dir.doesFileExist (dir </> "elm.json")
 
 -- | Attempt compilation and report the result.
 compileAndReport :: Bool -> String -> String -> String -> FilePath -> IO Bool
@@ -124,7 +135,12 @@ compileFromOutline author packageName versionStr pkgDir (Outline.Pkg pkgOutline)
           let interfaces = buildArtifactsToInterfaces artifacts
               globalGraph = Build._artifactsGlobalGraph artifacts
               ffiInfo = Build._artifactsFFIInfo artifacts
-          PackageCache.writePackageArtifacts author packageName versionStr interfaces globalGraph ffiInfo
+          maybeOld <- PackageCache.loadOldElmArtifacts author packageName versionStr
+          let mergedGraph = maybe globalGraph
+                (mergeGlobalGraphs globalGraph . PackageCache.artifactObjects) maybeOld
+              mergedFFI = maybe ffiInfo
+                (Map.union ffiInfo . PackageCache.artifactFFIInfo) maybeOld
+          PackageCache.writePackageArtifacts author packageName versionStr interfaces mergedGraph mergedFFI
           pure (Right ())
 
 -- | Convert Build.Artifacts to PackageInterfaces.
@@ -146,6 +162,13 @@ exposedToNonEmpty exposed =
 mkPkg :: String -> String -> Pkg.Name
 mkPkg author project =
   Pkg.Name (Utf8.fromChars author) (Utf8.fromChars project)
+
+-- | Merge two GlobalGraphs, preferring entries from the first (new) graph.
+--
+-- Used to combine source-compiled globals with old Elm kernel module globals.
+mergeGlobalGraphs :: Opt.GlobalGraph -> Opt.GlobalGraph -> Opt.GlobalGraph
+mergeGlobalGraphs (Opt.GlobalGraph nN nF nL) (Opt.GlobalGraph oN oF oL) =
+  Opt.GlobalGraph (Map.union nN oN) (Map.unionWith (+) nF oF) (Map.union nL oL)
 
 -- | Print a 'PP.Doc' message when verbose mode is enabled.
 verboseLog :: Bool -> PP.Doc -> IO ()

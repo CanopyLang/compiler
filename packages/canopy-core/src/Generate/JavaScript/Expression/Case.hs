@@ -111,9 +111,9 @@ fanOutSwitchExpr :: CodeGenerator -> Mode.Mode -> Name.Name -> DT.Path -> [(DT.T
 fanOutSwitchExpr genExpr mode root path = \case
   firstEdge : _ -> generateCaseTest genExpr mode root path (fst firstEdge)
   [] -> InternalError.report
-    "Generate.JavaScript.Expression.Case.generateDecider"
-    "Empty edges list in FanOut"
-    "A FanOut decision node must have at least one edge. The decision tree builder should never create a FanOut with zero edges."
+    "Generate.JavaScript.Expression.Case.fanOutSwitchExpr"
+    "Empty edges list in FanOut decision node"
+    "A FanOut decision node must have at least one edge. The decision tree builder should never create a FanOut with zero edges. This indicates a bug in Optimize.DecisionTree."
 
 -- | Generate JavaScript expression for a single if-chain test in a decision tree.
 --

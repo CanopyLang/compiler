@@ -155,20 +155,23 @@ aliasToType home name alias =
   aliasToTypeHelp home name <$> Interface.toPublicAlias alias
 
 aliasToTypeHelp :: ModuleName.Canonical -> Name.Name -> Can.Alias -> (Env.Type, Env.Exposed Env.Ctor)
-aliasToTypeHelp home name (Can.Alias vars _variances tipe _bound) =
-  ( Env.Alias (length vars) home vars tipe,
-    case tipe of
+aliasToTypeHelp home name (Can.Alias vars _variances tipe maybeBound) =
+  ( Env.Alias (length vars) home vars exposedType,
+    case exposedType of
       Can.TRecord fields Nothing ->
         let avars = fmap (\var -> (var, Can.TVar var)) vars
             alias =
               foldr
                 (\(_, t1) t2 -> Can.TLambda t1 t2)
-                (Can.TAlias home name avars (Can.Filled tipe))
+                (Can.TAlias home name avars (Can.Filled exposedType))
                 (Can.fieldsToList fields)
          in Map.singleton name (Env.Specific home (Env.RecordCtor home vars alias))
       _ ->
         Map.empty
   )
+  where
+    exposedType = maybe tipe (const nominalType) maybeBound
+    nominalType = Can.TType home name (fmap Can.TVar vars)
 
 -- BINOP
 

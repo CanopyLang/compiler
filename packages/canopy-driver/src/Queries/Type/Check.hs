@@ -13,6 +13,8 @@ module Queries.Type.Check
 where
 
 import qualified AST.Canonical as Can
+import qualified Canopy.Interface as Interface
+import qualified Canopy.ModuleName as ModuleName
 import qualified Data.ByteString as BS
 import Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
@@ -34,20 +36,25 @@ countErrors :: List a -> Int
 countErrors (NE.List _ xs) = 1 + length xs
 
 -- | Execute a type check module query.
+--
+-- Extracts opaque alias bounds from dependency interfaces and passes them
+-- to the solver so that opaque bounded types satisfy super type constraints.
 typeCheckModuleQuery ::
+  Map ModuleName.Raw Interface.Interface ->
   FilePath ->
   Can.Module ->
   IO (Either QueryError (Map Name.Name Can.Annotation))
-typeCheckModuleQuery path canonical = do
+typeCheckModuleQuery ifaces path canonical = do
   let modName = Can._name canonical
       modNameText = Text.pack (show modName)
+      bounds = Solve.extractAllInterfaceBounds ifaces
 
   Log.logEvent (TypeConstrainStarted modNameText)
 
   constraint <- Constrain.constrain canonical
 
   Log.logEvent (TypeSolveStarted modNameText 0)
-  solveResult <- Solve.run constraint
+  solveResult <- Solve.runWithBounds bounds constraint
 
   case solveResult of
     Left errors -> do

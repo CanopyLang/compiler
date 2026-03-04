@@ -3,6 +3,7 @@
 
 module Type.Unify
   ( Answer (..),
+    BoundsMap,
     unify,
   )
 where
@@ -17,15 +18,24 @@ import qualified Type.Occurs as Occurs
 import Type.Type as Type
 import qualified Type.UnionFind as UF
 
+-- | Map from qualified type names to their declared supertype bounds.
+--
+-- Passed through the unification system so that opaque bounded alias types
+-- (e.g. @UserId@ declared @comparable@) can be checked against super type
+-- constraints without any global mutable state.
+type BoundsMap = Map (ModuleName.Canonical, Name.Name) SuperType
+
 -- UNIFY
 
 data Answer
   = Ok [Variable]
   | Err [Variable] Error.Type Error.Type
 
-unify :: Variable -> Variable -> IO Answer
-unify v1 v2 =
-  case guardedUnify v1 v2 of
+-- | Unify two type variables, using the provided bounds map to resolve
+-- opaque alias super type constraints.
+unify :: BoundsMap -> Variable -> Variable -> IO Answer
+unify bounds v1 v2 =
+  case guardedUnify bounds v1 v2 of
     Unify k ->
       k [] onSuccess $ \vars () ->
         do
@@ -99,28 +109,29 @@ data Context = Context
   { _first :: Variable,
     _firstDesc :: Descriptor,
     _second :: Variable,
-    _secondDesc :: Descriptor
+    _secondDesc :: Descriptor,
+    _contextBounds :: !BoundsMap
   }
 
 reorient :: Context -> Context
-reorient (Context var1 desc1 var2 desc2) =
-  Context var2 desc2 var1 desc1
+reorient (Context var1 desc1 var2 desc2 bounds) =
+  Context var2 desc2 var1 desc1 bounds
 
 -- MERGE
 
 merge :: Context -> Content -> Unify ()
-merge (Context var1 (Descriptor _ rank1 _ _) var2 (Descriptor _ rank2 _ _)) content =
+merge (Context var1 (Descriptor _ rank1 _ _) var2 (Descriptor _ rank2 _ _) _) content =
   Unify $ \vars ok _ ->
     UF.union var1 var2 (Descriptor content (min rank1 rank2) noMark Nothing) >>= ok vars
 
 fresh :: Context -> Content -> Unify Variable
-fresh (Context _ (Descriptor _ rank1 _ _) _ (Descriptor _ rank2 _ _)) content =
+fresh (Context _ (Descriptor _ rank1 _ _) _ (Descriptor _ rank2 _ _) _) content =
   register . UF.fresh $ Descriptor content (min rank1 rank2) noMark Nothing
 
 -- ACTUALLY UNIFY THINGS
 
-guardedUnify :: Variable -> Variable -> Unify ()
-guardedUnify left right =
+guardedUnify :: BoundsMap -> Variable -> Variable -> Unify ()
+guardedUnify bounds left right =
   Unify $ \vars ok err ->
     do
       -- It might be possible to actually just do == instead of >. This is
@@ -147,15 +158,15 @@ guardedUnify left right =
             else do
               leftDesc <- UF.get left
               rightDesc <- UF.get right
-              case actuallyUnify (Context left leftDesc right rightDesc) of
+              case actuallyUnify (Context left leftDesc right rightDesc bounds) of
                 Unify k ->
                   k vars ok err
 
-subUnify :: Variable -> Variable -> Unify ()
+subUnify :: BoundsMap -> Variable -> Variable -> Unify ()
 subUnify = guardedUnify
 
 actuallyUnify :: Context -> Unify ()
-actuallyUnify context@(Context _ (Descriptor firstContent _ _ _) _ (Descriptor secondContent _ _ _)) =
+actuallyUnify context@(Context _ (Descriptor firstContent _ _ _) _ (Descriptor secondContent _ _ _) _) =
   case firstContent of
     FlexVar _ ->
       unifyFlex context firstContent secondContent
@@ -244,7 +255,7 @@ unifyFlexSuper context super content otherContent =
     FlexSuper otherSuper _ ->
       unifyFlexSupers context content otherContent super otherSuper
     Alias _ _ _ realVar ->
-      subUnify (_first context) realVar
+      subUnify (_contextBounds context) (_first context) realVar
     Error ->
       merge context Error
 
@@ -322,13 +333,36 @@ unifyFlexSuperStructure context super flatType =
     App1 home name [] ->
       if atomMatchesSuper super home name
         then merge context (Structure flatType)
-        else mismatch
+        else checkBoundedAlias context super flatType home name
     App1 home name [variable] | home == ModuleName.list && name == Name.list ->
       unifyListWithSuper context flatType super variable
     Tuple1 a b maybeC ->
       unifyTupleWithSuper context flatType super a b maybeC
     _ ->
       mismatch
+
+-- | Check if a type is an opaque alias with a bound satisfying the super constraint.
+--
+-- Reads the bounds directly from the context rather than a global IORef,
+-- making this function pure within the Unify CPS monad.
+checkBoundedAlias :: Context -> SuperType -> FlatType -> ModuleName.Canonical -> Name.Name -> Unify ()
+checkBoundedAlias context super flatType home name =
+  case Map.lookup (home, name) (_contextBounds context) of
+    Just bound | boundSatisfiesSuper bound super ->
+      merge context (Structure flatType)
+    _ ->
+      mismatch
+
+-- | Check if a declared bound satisfies the required super type constraint.
+--
+-- A bound satisfies a constraint when it is equal to or more specific than
+-- the constraint. For example, @Number@ satisfies @Comparable@ because all
+-- numbers are comparable.
+boundSatisfiesSuper :: SuperType -> SuperType -> Bool
+boundSatisfiesSuper bound required =
+  bound == required
+    || (bound == Number && required == Comparable)
+    || (bound == CompAppend && (required == Comparable || required == Appendable))
 
 -- | Unify a List type with a super type constraint.
 --
@@ -346,12 +380,12 @@ unifyListWithSuper context flatType super variable =
     Comparable ->
       do
         comparableOccursCheck context
-        unifyComparableRecursive variable
+        unifyComparableRecursive (_contextBounds context) variable
         merge context (Structure flatType)
     CompAppend ->
       do
         comparableOccursCheck context
-        unifyComparableRecursive variable
+        unifyComparableRecursive (_contextBounds context) variable
         merge context (Structure flatType)
 
 -- | Unify a Tuple type with a super type constraint.
@@ -370,9 +404,9 @@ unifyTupleWithSuper context flatType super a b maybeC =
     Comparable ->
       do
         comparableOccursCheck context
-        unifyComparableRecursive a
-        unifyComparableRecursive b
-        forM_ maybeC unifyComparableRecursive
+        unifyComparableRecursive (_contextBounds context) a
+        unifyComparableRecursive (_contextBounds context) b
+        forM_ maybeC (unifyComparableRecursive (_contextBounds context))
         merge context (Structure flatType)
     CompAppend ->
       mismatch
@@ -380,7 +414,7 @@ unifyTupleWithSuper context flatType super a b maybeC =
 -- Occurs check for comparable types is needed to prevent infinite types.
 -- Type classes with ordering constraints require this check.
 comparableOccursCheck :: Context -> Unify ()
-comparableOccursCheck (Context _ _ var _) =
+comparableOccursCheck (Context _ _ var _ _) =
   Unify $ \vars ok err ->
     do
       hasOccurred <- Occurs.occurs var
@@ -388,14 +422,14 @@ comparableOccursCheck (Context _ _ var _) =
         then err vars ()
         else ok vars ()
 
-unifyComparableRecursive :: Variable -> Unify ()
-unifyComparableRecursive var =
+unifyComparableRecursive :: BoundsMap -> Variable -> Unify ()
+unifyComparableRecursive bounds var =
   do
     compVar <- register $
       do
         (Descriptor _ rank _ _) <- UF.get var
         UF.fresh $ Descriptor (Type.unnamedFlexSuper Comparable) rank noMark Nothing
-    guardedUnify compVar var
+    guardedUnify bounds compVar var
 
 -- UNIFY STRUCTURE WITH RIGID SUPER
 --
@@ -408,7 +442,7 @@ unifyStructureRigidSuper context flatType super =
     App1 home name [] ->
       if atomMatchesSuper super home name
         then merge context (Structure flatType)
-        else mismatch
+        else checkBoundedAlias context super flatType home name
     App1 home name [variable] | home == ModuleName.list && name == Name.list ->
       unifyListWithSuper context flatType super variable
     Tuple1 a b maybeC ->
@@ -424,11 +458,11 @@ unifyAlias context home name args realVar otherContent =
     FlexVar _ ->
       merge context (Alias home name args realVar)
     FlexSuper _ _ ->
-      subUnify realVar (_second context)
+      subUnify (_contextBounds context) realVar (_second context)
     RigidVar _ ->
-      subUnify realVar (_second context)
+      subUnify (_contextBounds context) realVar (_second context)
     RigidSuper _ _ ->
-      subUnify realVar (_second context)
+      subUnify (_contextBounds context) realVar (_second context)
     Alias otherHome otherName otherArgs otherRealVar ->
       if name == otherName && home == otherHome
         then Unify $ \vars ok err ->
@@ -436,9 +470,9 @@ unifyAlias context home name args realVar otherContent =
                 let (Unify k) = merge context otherContent
                  in k vars1 ok err
            in unifyAliasArgs vars context args otherArgs ok1 err
-        else subUnify realVar otherRealVar
+        else subUnify (_contextBounds context) realVar otherRealVar
     Structure _ ->
-      subUnify realVar (_second context)
+      subUnify (_contextBounds context) realVar (_second context)
     Error ->
       merge context Error
 
@@ -454,7 +488,7 @@ unifyAliasArgs vars context ((_, arg1) : others1) ((_, arg2) : others2) ok err =
 -- @since 0.19.2
 unifyOneAliasArg :: [Variable] -> Context -> Variable -> Variable -> [(Name.Name, Variable)] -> [(Name.Name, Variable)] -> ([Variable] -> () -> IO r) -> ([Variable] -> () -> IO r) -> IO r
 unifyOneAliasArg vars context arg1 arg2 rest1 rest2 ok err =
-  let (Unify k) = subUnify arg1 arg2
+  let (Unify k) = subUnify (_contextBounds context) arg1 arg2
    in k
         vars
         (\vs () -> unifyAliasArgs vs context rest1 rest2 ok err)
@@ -474,7 +508,7 @@ unifyStructure context flatType content otherContent =
     RigidSuper super _ ->
       unifyStructureRigidSuper context flatType super
     Alias _ _ _ realVar ->
-      subUnify (_first context) realVar
+      subUnify (_contextBounds context) (_first context) realVar
     Structure otherFlatType ->
       unifyFlatTypes context flatType otherFlatType otherContent
     Error ->
@@ -494,29 +528,29 @@ unifyFlatTypes context flatType otherFlatType otherContent =
          in unifyArgs vars context args otherArgs ok1 err
     (Fun1 arg1 res1, Fun1 arg2 res2) ->
       do
-        subUnify arg1 arg2
-        subUnify res1 res2
+        subUnify (_contextBounds context) arg1 arg2
+        subUnify (_contextBounds context) res1 res2
         merge context otherContent
     (EmptyRecord1, EmptyRecord1) ->
       merge context otherContent
     (Record1 fields ext, EmptyRecord1)
       | Map.null fields ->
-        subUnify ext (_second context)
+        subUnify (_contextBounds context) ext (_second context)
     (EmptyRecord1, Record1 fields ext)
       | Map.null fields ->
-        subUnify (_first context) ext
+        subUnify (_contextBounds context) (_first context) ext
     (Record1 fields1 ext1, Record1 fields2 ext2) ->
       unifyRecordFields context fields1 ext1 fields2 ext2
     (Tuple1 a b Nothing, Tuple1 x y Nothing) ->
       do
-        subUnify a x
-        subUnify b y
+        subUnify (_contextBounds context) a x
+        subUnify (_contextBounds context) b y
         merge context otherContent
     (Tuple1 a b (Just c), Tuple1 x y (Just z)) ->
       do
-        subUnify a x
-        subUnify b y
-        subUnify c z
+        subUnify (_contextBounds context) a x
+        subUnify (_contextBounds context) b y
+        subUnify (_contextBounds context) c z
         merge context otherContent
     (Unit1, Unit1) ->
       merge context otherContent
@@ -537,7 +571,7 @@ unifyArgs vars context (arg1 : others1) (arg2 : others2) ok err =
 -- @since 0.19.2
 unifyOneArg :: [Variable] -> Context -> Variable -> Variable -> [Variable] -> [Variable] -> ([Variable] -> () -> IO r) -> ([Variable] -> () -> IO r) -> IO r
 unifyOneArg vars context arg1 arg2 rest1 rest2 ok err =
-  let (Unify k) = subUnify arg1 arg2
+  let (Unify k) = subUnify (_contextBounds context) arg1 arg2
    in k
         vars
         (\vs () -> unifyArgs vs context rest1 rest2 ok err)
@@ -569,39 +603,39 @@ unifyRecord context (RecordStructure fields1 ext1) (RecordStructure fields2 ext2
         then
           if Map.null uniqueFields2
             then do
-              subUnify ext1 ext2
+              subUnify (_contextBounds context) ext1 ext2
               unifySharedFields context sharedFields Map.empty ext1
             else do
               subRecord <- fresh context (Structure (Record1 uniqueFields2 ext2))
-              subUnify ext1 subRecord
+              subUnify (_contextBounds context) ext1 subRecord
               unifySharedFields context sharedFields Map.empty subRecord
         else
           if Map.null uniqueFields2
             then do
               subRecord <- fresh context (Structure (Record1 uniqueFields1 ext1))
-              subUnify subRecord ext2
+              subUnify (_contextBounds context) subRecord ext2
               unifySharedFields context sharedFields Map.empty subRecord
             else do
               let otherFields = Map.union uniqueFields1 uniqueFields2
               ext <- fresh context Type.unnamedFlexVar
               sub1 <- fresh context (Structure (Record1 uniqueFields1 ext))
               sub2 <- fresh context (Structure (Record1 uniqueFields2 ext))
-              subUnify ext1 sub2
-              subUnify sub1 ext2
+              subUnify (_contextBounds context) ext1 sub2
+              subUnify (_contextBounds context) sub1 ext2
               unifySharedFields context sharedFields otherFields ext
 
 unifySharedFields :: Context -> Map Name.Name (Variable, Variable) -> Map Name.Name Variable -> Variable -> Unify ()
 unifySharedFields context sharedFields otherFields ext =
   do
-    matchingFields <- Map.traverseMaybeWithKey unifyField sharedFields
+    matchingFields <- Map.traverseMaybeWithKey (unifyField (_contextBounds context)) sharedFields
     if Map.size sharedFields == Map.size matchingFields
       then merge context (Structure (Record1 (Map.union matchingFields otherFields) ext))
       else mismatch
 
-unifyField :: Name.Name -> (Variable, Variable) -> Unify (Maybe Variable)
-unifyField _ (actual, expected) =
+unifyField :: BoundsMap -> Name.Name -> (Variable, Variable) -> Unify (Maybe Variable)
+unifyField bounds _ (actual, expected) =
   Unify $ \vars ok _ ->
-    case subUnify actual expected of
+    case subUnify bounds actual expected of
       Unify k ->
         k
           vars

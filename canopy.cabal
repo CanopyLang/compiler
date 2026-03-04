@@ -266,6 +266,7 @@ test-suite canopy-test
       Unit.Docs.RenderTest
       Unit.Editor.IntegrationTest
       Unit.FFI.CapabilityEnforcementTest
+      Unit.FFI.CapabilityTypeTest
       Unit.FFI.EscapeTest
       Unit.FFI.ManifestTest
       Unit.FFI.ResolveTest
@@ -334,6 +335,7 @@ test-suite canopy-test
       Unit.Reporting.Doc.ColorQQTest
       Unit.Reporting.ErrorCodeTest
       Unit.Reporting.ErrorHierarchyTest
+      Unit.Reporting.InternalErrorTest
       Unit.ScriptsTest
       Unit.SelfUpdateTest
       Unit.Terminal.ChompTest
@@ -345,8 +347,10 @@ test-suite canopy-test
       Unit.Terminal.Lint.NullabilityTest
       Unit.Terminal.Lint.RulesTest
       Unit.TerminalTest
+      Unit.Type.GuardNarrowingTest
       Unit.Type.InstantiateTest
       Unit.Type.OccursTest
+      Unit.Type.OpaqueBoundsTest
       Unit.Type.ParallelTest
       Unit.Type.SolveTest
       Unit.Type.UnifyTest
