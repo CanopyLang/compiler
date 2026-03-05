@@ -14,7 +14,7 @@ import qualified AST.Canonical as Can
 import qualified Canopy.Data.Name as Name
 import qualified Canopy.ModuleName as ModuleName
 import qualified Data.Text as Text
-import FFI.Types (CapabilityName (..), FFIBinding (..), FFIFuncName (..), FFITypeAnnotation (..))
+import FFI.Types (BindingMode (..), CapabilityName (..), FFIBinding (..), FFIFuncName (..), FFITypeAnnotation (..))
 import Test.Tasty
 import Test.Tasty.HUnit
 
@@ -73,15 +73,15 @@ bindingParsingTests =
   testGroup
     "FFIBinding capability extraction"
     [ testCase "binding with no capabilities has empty list" $ do
-        let binding = FFIBinding (FFIFuncName "fn") (FFITypeAnnotation "Int -> Int") []
+        let binding = FFIBinding (FFIFuncName "fn") (FFITypeAnnotation "Int -> Int") [] FunctionCall Nothing
         _bindingCapabilities binding @?= [],
       testCase "binding with one capability" $ do
-        let binding = FFIBinding (FFIFuncName "startRecording") (FFITypeAnnotation "() -> Task String AudioBuffer") [CapabilityName "microphone"]
+        let binding = FFIBinding (FFIFuncName "startRecording") (FFITypeAnnotation "() -> Task String AudioBuffer") [CapabilityName "microphone"] FunctionCall Nothing
         length (_bindingCapabilities binding) @?= 1
         unCapabilityName (head (_bindingCapabilities binding)) @?= "microphone",
       testCase "binding with multiple capabilities" $ do
         let caps = [CapabilityName "camera", CapabilityName "microphone"]
-            binding = FFIBinding (FFIFuncName "getMedia") (FFITypeAnnotation "() -> Task String MediaStream") caps
+            binding = FFIBinding (FFIFuncName "getMedia") (FFITypeAnnotation "() -> Task String MediaStream") caps FunctionCall Nothing
         length (_bindingCapabilities binding) @?= 2
     ]
 

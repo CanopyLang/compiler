@@ -1,4 +1,5 @@
 {-# LANGUAGE BangPatterns #-}
+{-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 
@@ -38,7 +39,7 @@ import qualified Data.Text as Text
 import qualified Data.Text.IO as TextIO
 import qualified FFI.StaticAnalysis as SA
 import qualified FFI.TypeParser as TypeParser
-import FFI.Types (JsSourcePath (..), JsSource (..), FFIBinding (..), FFIFuncName (..), FFITypeAnnotation (..), CapabilityName (..))
+import FFI.Types (JsSourcePath (..), JsSource (..), FFIBinding (..), FFIFuncName (..), FFITypeAnnotation (..), CapabilityName (..), BindingMode (..))
 import qualified Foreign.FFI as FFI
 import qualified Language.JavaScript.Parser as JSParser
 import qualified Language.JavaScript.Parser.AST as JSAST
@@ -271,13 +272,15 @@ takeJSDocBlock (line:rest) =
 isJSDocEnd :: Text.Text -> Bool
 isJSDocEnd line = Text.isInfixOf "*/" line
 
--- Parse a JSDoc comment block to extract function name, type, and capabilities
+-- Parse a JSDoc comment block to extract function name, type, capabilities, bind mode, and canopy name
 parseJSDocBlock :: [Text.Text] -> Maybe FFIBinding
 parseJSDocBlock commentLines = do
   functionName <- findNameAnnotation commentLines
   canopyType <- findCanopyTypeAnnotation commentLines
   let capabilities = findCapabilityPermissions commentLines
-  pure (FFIBinding (FFIFuncName functionName) (FFITypeAnnotation canopyType) capabilities)
+      bindMode = findBindingMode commentLines
+      canopyName = findCanopyName commentLines
+  pure (FFIBinding (FFIFuncName functionName) (FFITypeAnnotation canopyType) capabilities bindMode canopyName)
 
 -- | Find all @capability permission annotations in a JSDoc block.
 --
@@ -292,6 +295,62 @@ parsePermissionAnnotation line =
   case Text.stripPrefix "@capability permission " (stripJSDocLeader line) of
     Just rest -> Just (CapabilityName (Text.strip rest))
     Nothing -> Nothing
+
+-- | Find @canopy-bind annotation in a JSDoc block.
+--
+-- Parses lines like:
+-- @\@canopy-bind method addEventListener@
+-- @\@canopy-bind get currentTime@
+-- @\@canopy-bind set volume@
+-- @\@canopy-bind new AudioContext@
+findBindingMode :: [Text.Text] -> BindingMode
+findBindingMode [] = FunctionCall
+findBindingMode (line:rest) =
+  case parseBindingModeAnnotation line of
+    Just mode -> mode
+    Nothing -> findBindingMode rest
+
+-- | Parse a @canopy-bind annotation from a single line.
+parseBindingModeAnnotation :: Text.Text -> Maybe BindingMode
+parseBindingModeAnnotation line =
+  case Text.stripPrefix "@canopy-bind " (stripJSDocLeader line) of
+    Just rest -> parseBindMode (Text.words (Text.strip rest))
+    Nothing -> Nothing
+
+-- | Parse binding mode from the words after @canopy-bind.
+parseBindMode :: [Text.Text] -> Maybe BindingMode
+parseBindMode ["method", name] = Just (MethodCall name)
+parseBindMode ["get", name] = Just (PropertyGet name)
+parseBindMode ["set", name] = Just (PropertySet name)
+parseBindMode ["new", name] = Just (ConstructorCall name)
+parseBindMode _ = Nothing
+
+-- | Find @canopy-name annotation in a JSDoc block.
+--
+-- Parses lines like: @\@canopy-name setOscillatorFrequency@
+findCanopyName :: [Text.Text] -> Maybe Text.Text
+findCanopyName [] = Nothing
+findCanopyName (line:rest) =
+  case parseCanopyNameAnnotation line of
+    Just name -> Just name
+    Nothing -> findCanopyName rest
+
+-- | Parse a @canopy-name annotation from a single line.
+parseCanopyNameAnnotation :: Text.Text -> Maybe Text.Text
+parseCanopyNameAnnotation line =
+  case Text.stripPrefix "@canopy-name " (stripJSDocLeader line) of
+    Just rest -> validateCanopyName (Text.strip rest)
+    Nothing -> Nothing
+
+-- | Validate a Canopy name is a valid identifier.
+validateCanopyName :: Text.Text -> Maybe Text.Text
+validateCanopyName t
+  | Text.null t = Nothing
+  | validFirst (Text.head t) && Text.all validRest (Text.tail t) = Just t
+  | otherwise = Nothing
+  where
+    validFirst c = Char.isLower c || c == '_'
+    validRest c = Char.isAlphaNum c || c == '_'
 
 -- Find @name annotation in JSDoc block
 findNameAnnotation :: [Text.Text] -> Maybe Text.Text
@@ -340,15 +399,101 @@ parseCanopyTypeAnnotation line =
   Text.stripPrefix "@canopy-type " (stripJSDocLeader line)
 
 -- DYNAMIC FUNCTION ENVIRONMENT GENERATION
+
+-- | Add FFI functions to the environment with auto opaque type inference.
+--
+-- Two-pass approach:
+-- 1. Collect unresolved opaque types from all bindings and inject them
+-- 2. Process functions against the enriched environment
 addParsedFunctionsToEnv :: Env.Env -> ModuleName.Canonical -> Name.Name -> FilePath -> Ann.Region -> [FFIBinding] -> Result i [Warning.Warning] Env.Env
 addParsedFunctionsToEnv env ffiModuleName aliasName jsPath region bindings = do
-  let homeModuleName = Env._home env
-  processedFunctions <- traverse (processParsedFunction env ffiModuleName homeModuleName jsPath region) bindings
+  let envWithOpaques = injectAutoOpaqueTypes env ffiModuleName bindings
+      homeModuleName = Env._home envWithOpaques
+  processedFunctions <- traverse (processParsedFunction envWithOpaques ffiModuleName homeModuleName jsPath region) bindings
   let (vars, qVars) = buildDynamicEnvironment aliasName processedFunctions
-      newVars = List.foldl' (\acc (name, var) -> Map.insert name var acc) (Env._vars env) vars
-      newQVars = Map.insertWith Map.union aliasName qVars (Env._q_vars env)
-      newEnv = env { Env._vars = newVars, Env._q_vars = newQVars }
+      newVars = List.foldl' (\acc (name, var) -> Map.insert name var acc) (Env._vars envWithOpaques) vars
+      newQVars = Map.insertWith Map.union aliasName qVars (Env._q_vars envWithOpaques)
+      newEnv = envWithOpaques { Env._vars = newVars, Env._q_vars = newQVars }
   Result.ok newEnv
+
+-- | Inject auto opaque type definitions for unresolved types in FFI annotations.
+--
+-- Collects all type names from @canopy-type annotations, filters out
+-- those already defined in the environment (or built-in), and creates
+-- opaque type entries (Union 0) for the remaining ones.
+injectAutoOpaqueTypes :: Env.Env -> ModuleName.Canonical -> [FFIBinding] -> Env.Env
+injectAutoOpaqueTypes env ffiModuleName bindings =
+  let opaqueNames = collectOpaqueTypeNames bindings
+      unresolvedNames = filter (isUnresolvedType env) opaqueNames
+      newTypeEntries = List.map (makeOpaqueEntry ffiModuleName) unresolvedNames
+      updatedTypes = List.foldl' insertType (Env._types env) newTypeEntries
+   in env { Env._types = updatedTypes }
+
+-- | Collect all opaque type names from FFI binding annotations.
+collectOpaqueTypeNames :: [FFIBinding] -> [Text.Text]
+collectOpaqueTypeNames = List.nub . concatMap extractOpaqueNames
+
+-- | Extract opaque type names from a single binding's type annotation.
+extractOpaqueNames :: FFIBinding -> [Text.Text]
+extractOpaqueNames binding =
+  case TypeParser.parseType (unFFITypeAnnotation (_bindingTypeAnnotation binding)) of
+    Just ffiType -> collectOpaqueFromType ffiType
+    Nothing -> []
+
+-- | Recursively collect opaque type names from an FFI type.
+collectOpaqueFromType :: FFI.FFIType -> [Text.Text]
+collectOpaqueFromType = \case
+  FFI.FFIInt -> []
+  FFI.FFIFloat -> []
+  FFI.FFIString -> []
+  FFI.FFIBool -> []
+  FFI.FFIUnit -> []
+  FFI.FFIList inner -> collectOpaqueFromType inner
+  FFI.FFIMaybe inner -> collectOpaqueFromType inner
+  FFI.FFIResult e v -> collectOpaqueFromType e ++ collectOpaqueFromType v
+  FFI.FFITask e v -> collectOpaqueFromType e ++ collectOpaqueFromType v
+  FFI.FFIFunctionType params ret -> concatMap collectOpaqueFromType params ++ collectOpaqueFromType ret
+  FFI.FFITuple types -> concatMap collectOpaqueFromType types
+  FFI.FFIRecord fields -> concatMap (collectOpaqueFromType . snd) fields
+  FFI.FFIOpaque name -> [name | isOpaqueCandidate name]
+
+-- | Check if a type name is a candidate for auto opaque inference.
+--
+-- Type variables (single lowercase letter) and built-in types are excluded.
+isOpaqueCandidate :: Text.Text -> Bool
+isOpaqueCandidate name
+  | Text.null name = False
+  | Text.length name == 1 && Char.isLower (Text.head name) = False
+  | name `elem` builtinTypeNames = False
+  | otherwise = True
+
+-- | Built-in type names that should not be auto-created as opaque.
+builtinTypeNames :: [Text.Text]
+builtinTypeNames = ["Int", "Float", "String", "Bool", "Unit", "Never"]
+
+-- | Check if a type name is not already defined in the environment.
+isUnresolvedType :: Env.Env -> Text.Text -> Bool
+isUnresolvedType env name =
+  let nameObj = Name.fromChars (Text.unpack name)
+   in not (Map.member nameObj (Env._types env))
+
+-- | Create an opaque type entry for the environment.
+makeOpaqueEntry :: ModuleName.Canonical -> Text.Text -> (Name.Name, Env.Info Env.Type)
+makeOpaqueEntry ffiModuleName name =
+  let nameObj = Name.fromChars (Text.unpack name)
+   in (nameObj, Env.Specific ffiModuleName (Env.Union 0 ffiModuleName))
+
+-- | Insert a type entry into the types map without overwriting existing entries.
+insertType :: Map Name.Name (Env.Info Env.Type) -> (Name.Name, Env.Info Env.Type) -> Map Name.Name (Env.Info Env.Type)
+insertType types (name, info) =
+  Map.insertWith (\_ existing -> existing) name info types
+
+-- | Determine the Canopy-side name for an FFI binding.
+--
+-- Uses @canopy-name if present, otherwise the JS function name.
+effectiveCanopyName :: FFIBinding -> Text.Text
+effectiveCanopyName binding =
+  maybe (unFFIFuncName (_bindingFuncName binding)) id (_bindingCanopyName binding)
 
 -- Process a single parsed FFI binding into Canopy types
 processParsedFunction :: Env.Env -> ModuleName.Canonical -> ModuleName.Canonical -> FilePath -> Ann.Region -> FFIBinding -> Result i [Warning.Warning] (Text.Text, Can.Annotation, Env.Var)
@@ -356,11 +501,12 @@ processParsedFunction env ffiModuleName homeModuleName jsPath region binding = d
   let funcName = _bindingFuncName binding
       typeAnnotation = _bindingTypeAnnotation binding
       capabilities = _bindingCapabilities binding
+      canopyName = effectiveCanopyName binding
   canopyType <- parseTypeStringWithHome env ffiModuleName homeModuleName jsPath region funcName typeAnnotation
   let typeWithCaps = prependCapabilities capabilities canopyType
       annotation = Can.Forall Map.empty typeWithCaps
       var = Env.Foreign ffiModuleName annotation
-  Result.ok (unFFIFuncName funcName, annotation, var)
+  Result.ok (canopyName, annotation, var)
 
 -- | Prepend @Capability X ->@ parameters for each capability requirement.
 --
@@ -400,13 +546,27 @@ capitalizeFirst :: Text.Text -> Text.Text
 capitalizeFirst t =
   maybe t (\(c, rest) -> Text.cons (Char.toUpper c) rest) (Text.uncons t)
 
--- Build the dynamic environment from processed functions with proper qualified name registration
+-- | Build the dynamic environment from processed functions.
+--
+-- Registers FFI functions both as qualified vars (Alias.func) and as
+-- unqualified vars (func) for auto-binding. This eliminates the need
+-- for manual @functionName = FFI.functionName@ wrapper lines.
 buildDynamicEnvironment :: Name.Name -> [(Text.Text, Can.Annotation, Env.Var)] -> ([(Name.Name, Env.Var)], Map.Map Name.Name (Env.Info Can.Annotation))
 buildDynamicEnvironment aliasName processedFunctions =
   let ffiModuleName = ModuleName.Canonical Pkg.dummyName aliasName
-      vars = []
+      vars = buildUnqualifiedVars processedFunctions
       qVars = buildQualifiedVars ffiModuleName processedFunctions
   in (vars, qVars)
+
+-- | Build unqualified variable bindings for auto-binding.
+--
+-- Each FFI function is available directly by name without requiring
+-- an explicit @functionName = FFI.functionName@ delegation line.
+buildUnqualifiedVars :: [(Text.Text, Can.Annotation, Env.Var)] -> [(Name.Name, Env.Var)]
+buildUnqualifiedVars = List.map toUnqualifiedEntry
+  where
+    toUnqualifiedEntry (fname, _, var) =
+      (Name.fromChars (Text.unpack fname), var)
 
 -- Build qualified vars map for FFI functions (Module.functionName syntax)
 buildQualifiedVars :: ModuleName.Canonical -> [(Text.Text, Can.Annotation, Env.Var)] -> Map.Map Name.Name (Env.Info Can.Annotation)

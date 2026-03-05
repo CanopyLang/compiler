@@ -23,6 +23,7 @@ module Foreign.FFI
   , JsFunctionName(..)
   , PermissionName(..)
   , ResourceName(..)
+  , BindingMode(..)
 
     -- * JSDoc Integration
   , JSDocFunction(..)
@@ -57,7 +58,7 @@ import Language.JavaScript.Parser.AST
   , JSStatement(..)
   )
 import qualified FFI.Capability as Capability
-import FFI.Types (FFIType (..), JsFunctionName(..), PermissionName(..), ResourceName(..))
+import FFI.Types (FFIType (..), JsFunctionName(..), PermissionName(..), ResourceName(..), BindingMode(..))
 
 -- | FFI declaration in Canopy source code
 --
@@ -124,6 +125,10 @@ data JSDocFunction = JSDocFunction
     -- ^ Capability requirements from @canopy-capability annotation
   , jsDocFuncFile :: !FilePath
     -- ^ Source JavaScript file
+  , jsDocFuncBindMode :: !BindingMode
+    -- ^ Binding mode from @canopy-bind annotation
+  , jsDocFuncCanopyName :: !(Maybe Text)
+    -- ^ Optional Canopy-side name override from @canopy-name annotation
   } deriving (Eq, Show)
 
 -- | FFI validation and processing errors
@@ -230,6 +235,8 @@ parseJSDocTextManual jsFile jsDocText =
       params = extractParamsManual jsDocLines
       throws = extractThrowsManual jsDocLines
       capabilities = extractCapabilityManual jsDocLines
+      bindMode = extractBindModeManual jsDocLines
+      canopyName = extractCanopyNameManual jsDocLines
   in case (functionName, canopyType) of
     (Just name, Just ffiType) -> Just $ JSDocFunction
       { jsDocFuncName = JsFunctionName name
@@ -239,6 +246,8 @@ parseJSDocTextManual jsFile jsDocText =
       , jsDocFuncThrows = throws
       , jsDocFuncCapabilities = capabilities
       , jsDocFuncFile = jsFile
+      , jsDocFuncBindMode = bindMode
+      , jsDocFuncCanopyName = canopyName
       }
     _ -> Nothing
 
@@ -328,6 +337,40 @@ extractCapabilityManual (line:rest)
         ("*":"@capability":"init":resource:_) -> Just (Capability.InitializationRequired (ResourceName resource))
         ("*":"@capability":"availability":feature:_) -> Just (Capability.AvailabilityRequired feature)
         _ -> Nothing
+
+-- | Extract @canopy-bind annotation from JSDoc lines.
+--
+-- Parses lines like:
+-- @* \@canopy-bind method addEventListener@
+-- @* \@canopy-bind get currentTime@
+extractBindModeManual :: [Text] -> BindingMode
+extractBindModeManual [] = FunctionCall
+extractBindModeManual (line:rest)
+  | Text.isInfixOf "@canopy-bind" (Text.strip line) =
+      Maybe.fromMaybe (extractBindModeManual rest) (parseBindModeLine line)
+  | otherwise = extractBindModeManual rest
+
+-- | Parse a @canopy-bind annotation line into a BindingMode.
+parseBindModeLine :: Text -> Maybe BindingMode
+parseBindModeLine line =
+  case Text.words (Text.strip line) of
+    ("*":"@canopy-bind":"method":name:_) -> Just (MethodCall name)
+    ("*":"@canopy-bind":"get":name:_) -> Just (PropertyGet name)
+    ("*":"@canopy-bind":"set":name:_) -> Just (PropertySet name)
+    ("*":"@canopy-bind":"new":name:_) -> Just (ConstructorCall name)
+    _ -> Nothing
+
+-- | Extract @canopy-name annotation from JSDoc lines.
+--
+-- Parses lines like: @* \@canopy-name setOscillatorFrequency@
+extractCanopyNameManual :: [Text] -> Maybe Text
+extractCanopyNameManual [] = Nothing
+extractCanopyNameManual (line:rest)
+  | Text.isInfixOf "@canopy-name" (Text.strip line) =
+      case Text.words (Text.strip line) of
+        ("*":"@canopy-name":name:_) -> Just name
+        _ -> extractCanopyNameManual rest
+  | otherwise = extractCanopyNameManual rest
 
 -- | Parse Canopy type annotation from text.
 --

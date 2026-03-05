@@ -26,6 +26,7 @@ module Generate.JavaScript.FFI
     ffiFilePath,
     ffiContent,
     ffiAlias,
+    ExtractedFFI (..),
 
     -- * Generation
     extractFFIAliases,
@@ -34,6 +35,7 @@ module Generate.JavaScript.FFI
 
     -- * Internal (exported for testing)
     extractCanopyTypeFunctions,
+    extractFFIFunctions,
     extractCanopyType,
     findFunctionName,
     isValidJsIdentifier,
@@ -57,6 +59,7 @@ import qualified Data.Set as Set
 import qualified Data.Text as Text
 import qualified Data.Text.Encoding as TextEnc
 import qualified FFI.TypeParser as TypeParser
+import FFI.Types (BindingMode (..))
 import qualified FFI.Validator as Validator
 import qualified Generate.Mode as Mode
 
@@ -209,11 +212,23 @@ generateFFIBindingsFromInfo mode graph _key info acc
 -- | Extract and generate bindings for FFI functions from JavaScript content.
 extractFFIFunctionBindings :: Mode.Mode -> Graph -> String -> Text.Text -> String -> [Builder]
 extractFFIFunctionBindings mode graph path content alias =
-  concatMap (generateFunctionBinding mode graph path alias) functions
+  concatMap (generateFFIBinding mode graph path alias) functions
   where
-    functions = extractCanopyTypeFunctions (Text.lines content)
+    functions = extractFFIFunctions (Text.lines content)
 
 -- PARSE CANOPY TYPE ANNOTATIONS
+
+-- | Extracted FFI function info from JSDoc annotations.
+data ExtractedFFI = ExtractedFFI
+  { _extractedName :: !Text.Text
+    -- ^ Function name (JS side or from @canopy-name)
+  , _extractedType :: !Text.Text
+    -- ^ Type annotation from @canopy-type
+  , _extractedMode :: !BindingMode
+    -- ^ Binding mode from @canopy-bind
+  , _extractedCanopyName :: !(Maybe Text.Text)
+    -- ^ Optional Canopy-side name override
+  } deriving (Eq, Show)
 
 -- | Extract functions that have \@canopy-type annotations from JavaScript source lines.
 --
@@ -222,14 +237,91 @@ extractFFIFunctionBindings mode graph path content alias =
 --
 -- @since 0.19.2
 extractCanopyTypeFunctions :: [Text.Text] -> [(Text.Text, Text.Text)]
-extractCanopyTypeFunctions [] = []
-extractCanopyTypeFunctions (line:rest) =
-  case extractCanopyType line of
-    Just canopyType ->
-      case findFunctionName rest of
-        Just funcName -> (funcName, canopyType) : extractCanopyTypeFunctions rest
-        Nothing -> extractCanopyTypeFunctions rest
-    Nothing -> extractCanopyTypeFunctions rest
+extractCanopyTypeFunctions = List.map toSimple . extractFFIFunctions
+  where
+    toSimple ef = (effectiveName ef, _extractedType ef)
+
+-- | Get the effective Canopy-side name for an extracted FFI function.
+effectiveName :: ExtractedFFI -> Text.Text
+effectiveName ef =
+  maybe (_extractedName ef) id (_extractedCanopyName ef)
+
+-- | Extract full FFI function information from JavaScript source lines.
+extractFFIFunctions :: [Text.Text] -> [ExtractedFFI]
+extractFFIFunctions [] = []
+extractFFIFunctions allLines@(_:_) =
+  extractFromBlocks allLines
+
+-- | Extract FFI functions from JSDoc blocks in source lines.
+extractFromBlocks :: [Text.Text] -> [ExtractedFFI]
+extractFromBlocks [] = []
+extractFromBlocks (line:rest)
+  | isJSDocStart line =
+      let (block, remaining) = takeJSDocBlock (line:rest)
+       in case parseFFIBlock block rest of
+            Just ef -> ef : extractFromBlocks remaining
+            Nothing -> extractFromBlocks remaining
+  | otherwise = extractFromBlocks rest
+
+-- | Check if a line starts a JSDoc comment.
+isJSDocStart :: Text.Text -> Bool
+isJSDocStart line = "/**" `Text.isPrefixOf` Text.stripStart line
+
+-- | Take a complete JSDoc block and the remaining lines.
+takeJSDocBlock :: [Text.Text] -> ([Text.Text], [Text.Text])
+takeJSDocBlock [] = ([], [])
+takeJSDocBlock (line:rest)
+  | "*/" `Text.isInfixOf` line = ([line], rest)
+  | otherwise =
+      let (block, remaining) = takeJSDocBlock rest
+       in (line:block, remaining)
+
+-- | Parse a JSDoc block into an ExtractedFFI.
+parseFFIBlock :: [Text.Text] -> [Text.Text] -> Maybe ExtractedFFI
+parseFFIBlock block followingLines = do
+  canopyType <- findAnnotationInBlock "@canopy-type " block
+  let bindMode = parseBlockBindMode block
+      canopyName = findAnnotationInBlock "@canopy-name " block
+      jsFuncName = findFunctionName followingLines
+  funcName <- findAnnotationInBlock "@name " block
+                <|> jsFuncName
+  Just (ExtractedFFI funcName canopyType bindMode canopyName)
+
+-- | Find a specific annotation value in a JSDoc block.
+findAnnotationInBlock :: Text.Text -> [Text.Text] -> Maybe Text.Text
+findAnnotationInBlock _ [] = Nothing
+findAnnotationInBlock tag (line:rest) =
+  let stripped = stripJSDocLeader line
+   in case Text.stripPrefix tag stripped of
+        Just value -> Just (Text.strip value)
+        Nothing -> findAnnotationInBlock tag rest
+
+-- | Strip JSDoc leader characters from a line.
+stripJSDocLeader :: Text.Text -> Text.Text
+stripJSDocLeader = Text.dropWhile (\c -> c == ' ' || c == '*')
+
+-- | Parse binding mode from a JSDoc block.
+parseBlockBindMode :: [Text.Text] -> BindingMode
+parseBlockBindMode [] = FunctionCall
+parseBlockBindMode (line:rest) =
+  case findAnnotationInBlock "@canopy-bind " [line] of
+    Just value -> parseBindModeText value
+    Nothing -> parseBlockBindMode rest
+
+-- | Parse binding mode from the text after @canopy-bind.
+parseBindModeText :: Text.Text -> BindingMode
+parseBindModeText txt =
+  case Text.words txt of
+    ["method", name] -> MethodCall name
+    ["get", name] -> PropertyGet name
+    ["set", name] -> PropertySet name
+    ["new", name] -> ConstructorCall name
+    _ -> FunctionCall
+
+-- | Alternative combinator for Maybe.
+(<|>) :: Maybe a -> Maybe a -> Maybe a
+(<|>) (Just x) _ = Just x
+(<|>) Nothing y = y
 
 -- | Extract \@canopy-type annotation from a single line.
 --
@@ -268,30 +360,106 @@ findFunctionName (line:rest) =
 
 -- GENERATE FUNCTION BINDINGS
 
--- | Generate JavaScript binding for a single function as Builders.
+-- | Generate JavaScript binding for an extracted FFI function.
 --
 -- Validates that the function name is a safe JavaScript identifier
--- before generating any code. Invalid names are silently skipped,
--- preventing injection via crafted \@name annotations.
+-- before generating any code. For binding modes other than FunctionCall,
+-- generates inline JavaScript expressions (method calls, property access,
+-- constructor invocations) instead of delegating to a JS function.
 --
--- All intermediate values are kept as 'Builder' or 'Text' to avoid
--- @[Char]@ allocation in the codegen hot path.
---
--- @since 0.19.2
-generateFunctionBinding :: Mode.Mode -> Graph -> String -> String -> (Text.Text, Text.Text) -> [Builder]
-generateFunctionBinding mode _graph _filePath alias (funcNameText, canopyTypeText)
-  | not (isValidJsIdentifier funcName) = []
+-- @since 0.20.0
+generateFFIBinding :: Mode.Mode -> Graph -> String -> String -> ExtractedFFI -> [Builder]
+generateFFIBinding mode _graph _filePath alias ef
+  | not (isValidJsIdentifier canopyName) = []
   | otherwise =
-      let arity = maybe 0 TypeParser.countArity (TypeParser.parseType canopyTypeText)
-          jsVarB = BB.stringUtf8 ("$author$project$" ++ alias ++ "$" ++ funcName)
-          aliasB = BB.stringUtf8 alias
-          funcNameB = BB.byteString (TextEnc.encodeUtf8 funcNameText)
-          callPathB = "'" <> escapeJsString (Text.pack alias <> "." <> funcNameText) <> "'"
-      in if Mode.isFFIStrict mode
-           then generateValidatedBinding jsVarB aliasB funcNameB arity canopyTypeText callPathB
-           else generateSimpleBinding jsVarB aliasB funcNameB arity
+      case _extractedMode ef of
+        FunctionCall -> generateFunctionCallBinding mode alias ef
+        MethodCall methodName -> generateMethodBinding alias ef methodName
+        PropertyGet propName -> generatePropertyGetBinding alias ef propName
+        PropertySet propName -> generatePropertySetBinding alias ef propName
+        ConstructorCall className -> generateConstructorBinding alias ef className
   where
-    funcName = Text.unpack funcNameText
+    canopyName = Text.unpack (effectiveName ef)
+
+-- | Generate binding for a standard function call.
+generateFunctionCallBinding :: Mode.Mode -> String -> ExtractedFFI -> [Builder]
+generateFunctionCallBinding mode alias ef =
+  let canopyNameText = effectiveName ef
+      canopyName = Text.unpack canopyNameText
+      canopyTypeText = _extractedType ef
+      arity = maybe 0 TypeParser.countArity (TypeParser.parseType canopyTypeText)
+      jsVarB = BB.stringUtf8 ("$author$project$" ++ alias ++ "$" ++ canopyName)
+      aliasB = BB.stringUtf8 alias
+      funcNameB = BB.byteString (TextEnc.encodeUtf8 canopyNameText)
+      callPathB = "'" <> escapeJsString (Text.pack alias <> "." <> canopyNameText) <> "'"
+   in if Mode.isFFIStrict mode
+        then generateValidatedBinding jsVarB aliasB funcNameB arity canopyTypeText callPathB
+        else generateSimpleBinding jsVarB aliasB funcNameB arity
+
+-- | Generate binding for a method call: @obj.method(args)@.
+generateMethodBinding :: String -> ExtractedFFI -> Text.Text -> [Builder]
+generateMethodBinding alias ef methodName =
+  let canopyNameText = effectiveName ef
+      canopyName = Text.unpack canopyNameText
+      arity = maybe 0 TypeParser.countArity (TypeParser.parseType (_extractedType ef))
+      jsVarB = BB.stringUtf8 ("$author$project$" ++ alias ++ "$" ++ canopyName)
+      aliasB = BB.stringUtf8 alias
+      nameB = BB.byteString (TextEnc.encodeUtf8 canopyNameText)
+      methodB = BB.byteString (TextEnc.encodeUtf8 methodName)
+      args = map (\i -> "_" <> BB.intDec i) [0 .. arity - 1]
+      argList = mconcat (List.intersperse ", " args)
+      restArgs = mconcat (List.intersperse ", " (drop 1 args))
+      body = "_0." <> methodB <> "(" <> restArgs <> ")"
+      funcExpr = wrapArity arity ("function(" <> argList <> ") { return " <> body <> "; }")
+   in ["var " <> jsVarB <> " = " <> funcExpr <> ";", aliasB <> "." <> nameB <> " = " <> jsVarB <> ";"]
+
+-- | Generate binding for a property getter: @obj.propName@.
+generatePropertyGetBinding :: String -> ExtractedFFI -> Text.Text -> [Builder]
+generatePropertyGetBinding alias ef propName =
+  let canopyNameText = effectiveName ef
+      canopyName = Text.unpack canopyNameText
+      jsVarB = BB.stringUtf8 ("$author$project$" ++ alias ++ "$" ++ canopyName)
+      aliasB = BB.stringUtf8 alias
+      nameB = BB.byteString (TextEnc.encodeUtf8 canopyNameText)
+      propB = BB.byteString (TextEnc.encodeUtf8 propName)
+      body = "_0." <> propB
+      funcExpr = "function(_0) { return " <> body <> "; }"
+   in ["var " <> jsVarB <> " = " <> funcExpr <> ";", aliasB <> "." <> nameB <> " = " <> jsVarB <> ";"]
+
+-- | Generate binding for a property setter: @obj.propName = val@.
+generatePropertySetBinding :: String -> ExtractedFFI -> Text.Text -> [Builder]
+generatePropertySetBinding alias ef propName =
+  let canopyNameText = effectiveName ef
+      canopyName = Text.unpack canopyNameText
+      jsVarB = BB.stringUtf8 ("$author$project$" ++ alias ++ "$" ++ canopyName)
+      aliasB = BB.stringUtf8 alias
+      nameB = BB.byteString (TextEnc.encodeUtf8 canopyNameText)
+      propB = BB.byteString (TextEnc.encodeUtf8 propName)
+      body = "_0." <> propB <> " = _1"
+      funcExpr = wrapArity 2 ("function(_0, _1) { " <> body <> "; }")
+   in ["var " <> jsVarB <> " = " <> funcExpr <> ";", aliasB <> "." <> nameB <> " = " <> jsVarB <> ";"]
+
+-- | Generate binding for a constructor call: @new ClassName(args)@.
+generateConstructorBinding :: String -> ExtractedFFI -> Text.Text -> [Builder]
+generateConstructorBinding alias ef className =
+  let canopyNameText = effectiveName ef
+      canopyName = Text.unpack canopyNameText
+      arity = maybe 0 TypeParser.countArity (TypeParser.parseType (_extractedType ef))
+      jsVarB = BB.stringUtf8 ("$author$project$" ++ alias ++ "$" ++ canopyName)
+      aliasB = BB.stringUtf8 alias
+      nameB = BB.byteString (TextEnc.encodeUtf8 canopyNameText)
+      classB = BB.byteString (TextEnc.encodeUtf8 className)
+      args = map (\i -> "_" <> BB.intDec i) [0 .. arity - 1]
+      argList = mconcat (List.intersperse ", " args)
+      body = "new " <> classB <> "(" <> argList <> ")"
+      funcExpr = wrapArity arity ("function(" <> argList <> ") { return " <> body <> "; }")
+   in ["var " <> jsVarB <> " = " <> funcExpr <> ";", aliasB <> "." <> nameB <> " = " <> jsVarB <> ";"]
+
+-- | Wrap a function expression with F<N>() for currying when arity > 1.
+wrapArity :: Int -> Builder -> Builder
+wrapArity arity funcExpr
+  | arity <= 1 = funcExpr
+  | otherwise = "F" <> BB.intDec arity <> "(" <> funcExpr <> ")"
 
 -- | Generate simple binding without validation.
 --

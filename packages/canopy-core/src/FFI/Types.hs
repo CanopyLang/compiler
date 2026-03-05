@@ -25,6 +25,9 @@ module FFI.Types
   , FFITypeAnnotation(..)
   , FFIBinding(..)
   , CapabilityName(..)
+
+    -- * Binding modes for FFI ergonomics
+  , BindingMode(..)
   )
 where
 
@@ -141,7 +144,32 @@ data FFIBinding = FFIBinding
   , _bindingTypeAnnotation :: !FFITypeAnnotation
   , _bindingCapabilities :: ![CapabilityName]
     -- ^ Capability requirements from @capability permission annotations
+  , _bindingMode :: !BindingMode
+    -- ^ How the JavaScript binding is invoked (function call, method, property, constructor)
+  , _bindingCanopyName :: !(Maybe Text)
+    -- ^ Optional Canopy-side name override from @canopy-name annotation
   } deriving (Eq, Show)
+
+-- | Binding mode for FFI functions.
+--
+-- Determines how the compiler generates JavaScript code for the binding.
+-- The default is 'FunctionCall', which calls the JS function directly.
+-- Other modes eliminate the need for JavaScript wrapper functions by
+-- generating method calls, property accesses, or constructor invocations.
+--
+-- @since 0.20.0
+data BindingMode
+  = FunctionCall
+    -- ^ Default: call the JS function directly
+  | MethodCall !Text
+    -- ^ @\@canopy-bind method addEventListener@ generates @obj.addEventListener(...)@
+  | PropertyGet !Text
+    -- ^ @\@canopy-bind get currentTime@ generates @obj.currentTime@
+  | PropertySet !Text
+    -- ^ @\@canopy-bind set currentTime@ generates @obj.currentTime = val@
+  | ConstructorCall !Text
+    -- ^ @\@canopy-bind new AudioContext@ generates @new AudioContext(...)@
+  deriving (Eq, Show)
 
 -- | A capability permission name from a JSDoc @capability annotation.
 --
