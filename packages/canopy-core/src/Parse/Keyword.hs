@@ -32,6 +32,7 @@ module Parse.Keyword
     appendable_,
     number_,
     compappend_,
+    deriving_,
     k4,
     k5,
   )
@@ -219,6 +220,12 @@ compappend_ toError =
           && Var.getInnerWidth pos10 end == 0
           then let !s = Parse.State src pos10 end indent row (col + 10) in cok () s
           else eerr row col toError
+
+-- DERIVING KEYWORDS
+
+-- | Match the keyword @deriving@ (8 chars).
+deriving_ :: (Row -> Col -> x) -> Parser x ()
+deriving_ = k8 0x64 0x65 0x72 0x69 0x76 0x69 0x6E 0x67
 
 -- FFI KEYWORDS
 

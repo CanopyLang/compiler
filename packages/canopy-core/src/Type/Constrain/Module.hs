@@ -15,13 +15,14 @@ import qualified Reporting.Annotation as Ann
 import qualified Reporting.Error.Type as TypeError
 import qualified Type.Constrain.Expression as Expr
 import qualified Type.Instantiate as Instantiate
+import qualified Type.Type as Type
 import Type.Type (Constraint (..), Type (..), mkFlexVar, nameToRigid, never, (==>))
 
 -- CONSTRAIN
 
 constrain :: Can.Module -> IO Constraint
-constrain (Can.Module home _ _ decls _ _ _ effects _ guards) =
-  case effects of
+constrain (Can.Module home _ _ decls unions aliases _ effects _ guards) =
+  letDerived home unions aliases =<< case effects of
     Can.NoEffects ->
       constrainDecls guards decls CSaveTheEnvironment
     Can.Ports ports ->
@@ -173,3 +174,105 @@ checkMap name home tipe constraint =
 toMapType :: ModuleName.Canonical -> Name.Name -> Type -> Type -> Type
 toMapType home tipe a b =
   (a ==> b) ==> AppN home tipe [a] ==> AppN home tipe [b]
+
+-- DERIVED FUNCTION TYPES
+
+-- | Introduce type bindings for derived functions from @deriving@ clauses.
+--
+-- Works like 'letPort' — wraps the constraint in 'CLet' with a header
+-- that maps each derived function name to its type.
+--
+-- @since 0.20.0
+letDerived ::
+  ModuleName.Canonical ->
+  Map Name.Name Can.Union ->
+  Map Name.Name Can.Alias ->
+  Constraint ->
+  IO Constraint
+letDerived home unions aliases constraint =
+  do
+    let unionBindings = Map.foldlWithKey' (derivedUnionBindings home) [] unions
+    aliasBindings <- derivedAllAliasBindings home aliases
+    foldDerivedBindings (unionBindings ++ aliasBindings) constraint
+
+-- | A derived binding pairs a name and type with any rigid type variables
+-- that must be universally quantified (for parametric type aliases).
+type DerivedBinding = ([Type.Variable], Name.Name, Type)
+
+foldDerivedBindings :: [DerivedBinding] -> Constraint -> IO Constraint
+foldDerivedBindings [] constraint = return constraint
+foldDerivedBindings ((rigids, name, tipe) : rest) constraint =
+  do
+    inner <- foldDerivedBindings rest constraint
+    let header = Map.singleton name (Ann.At Ann.zero tipe)
+    return (CLet rigids [] header CTrue inner Nothing)
+
+derivedUnionBindings ::
+  ModuleName.Canonical ->
+  [DerivedBinding] ->
+  Name.Name ->
+  Can.Union ->
+  [DerivedBinding]
+derivedUnionBindings home acc typeName (Can.Union _ _ _ _ _ clauses) =
+  let selfType = AppN home typeName []
+   in foldl (addDerivedBinding [] selfType typeName) acc clauses
+
+derivedAllAliasBindings ::
+  ModuleName.Canonical ->
+  Map Name.Name Can.Alias ->
+  IO [DerivedBinding]
+derivedAllAliasBindings home aliases =
+  Map.foldlWithKey' go (return []) aliases
+  where
+    go acc typeName alias =
+      do
+        prev <- acc
+        bindings <- derivedAliasBindings home typeName alias
+        return (bindings ++ prev)
+
+derivedAliasBindings ::
+  ModuleName.Canonical ->
+  Name.Name ->
+  Can.Alias ->
+  IO [DerivedBinding]
+derivedAliasBindings home typeName (Can.Alias typeParams _ canType _ clauses) =
+  do
+    rigidVars <- traverse (\n -> do { v <- nameToRigid n; return (n, v) }) typeParams
+    let freeVarsMap = Map.fromList [(n, VarN v) | (n, v) <- rigidVars]
+    expandedType <- Instantiate.fromSrcType freeVarsMap canType
+    let typeArgs = [(n, VarN v) | (n, v) <- rigidVars]
+    let selfType = AliasN home typeName typeArgs expandedType
+    let vars = [v | (_, v) <- rigidVars]
+    return (foldl (addDerivedBinding vars selfType typeName) [] clauses)
+
+addDerivedBinding ::
+  [Type.Variable] ->
+  Type ->
+  Name.Name ->
+  [DerivedBinding] ->
+  Can.DerivingClause ->
+  [DerivedBinding]
+addDerivedBinding rigids selfType typeName acc clause =
+  let nameChars = Name.toChars typeName
+      isParametric = not (null rigids)
+   in case clause of
+        Can.DeriveShow ->
+          (rigids, Name.fromChars ("show" ++ nameChars), FunN selfType Type.string) : acc
+        Can.DeriveOrd ->
+          acc
+        Can.DeriveJsonEncode _
+          | isParametric -> acc
+          | otherwise ->
+              (rigids, Name.fromChars ("encode" ++ nameChars), FunN selfType (AppN ModuleName.jsonEncode Name.value [])) : acc
+        Can.DeriveJsonDecode _
+          | isParametric -> acc
+          | otherwise ->
+              (rigids, Name.fromChars (lowerFirst nameChars ++ "Decoder"), AppN ModuleName.jsonDecode (Name.fromChars "Decoder") [selfType]) : acc
+
+lowerFirst :: String -> String
+lowerFirst [] = []
+lowerFirst (c : cs) = toLower c : cs
+  where
+    toLower ch
+      | ch >= 'A' && ch <= 'Z' = toEnum (fromEnum ch + 32)
+      | otherwise = ch

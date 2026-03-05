@@ -61,7 +61,8 @@ boolUnion =
           Can.Ctor (Name.fromChars "True") (Index.next Index.first) 0 []
         ],
       Can._u_numAlts = 2,
-      Can._u_opts = Can.Enum
+      Can._u_opts = Can.Enum,
+      Can._u_deriving = []
     }
 
 -- | Temporary name used for case compilation.

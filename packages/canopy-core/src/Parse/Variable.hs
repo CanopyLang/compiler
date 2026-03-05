@@ -75,7 +75,8 @@ reservedWords =
       "import",
       "exposing",
       "as",
-      "port"
+      "port",
+      "deriving"
     ]
 
 -- MODULE NAME

@@ -102,6 +102,7 @@ library
       Optimize.Case
       Optimize.ConstantFold
       Optimize.DecisionTree
+      Optimize.Derive
       Optimize.Expression
       Optimize.Module
       Optimize.Names

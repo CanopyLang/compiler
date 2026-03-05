@@ -88,7 +88,7 @@ collectNamesInValue (Src.Value _ _ expr _ _) =
 
 -- | Collect all name tokens from a union type definition.
 collectNamesInUnion :: Src.Union -> [String]
-collectNamesInUnion (Src.Union _ _ _ ctors) =
+collectNamesInUnion (Src.Union _ _ _ ctors _) =
   concatMap collectNamesInCtor ctors
 
 -- | Collect names from a constructor definition.
@@ -98,7 +98,7 @@ collectNamesInCtor (_, types) =
 
 -- | Collect names from a type alias definition.
 collectNamesInAlias :: Src.Alias -> [String]
-collectNamesInAlias (Src.Alias _ _ _ t _) =
+collectNamesInAlias (Src.Alias _ _ _ t _ _) =
   collectNamesInType (Ann.toValue t)
 
 -- | Collect all identifier tokens used in an expression.

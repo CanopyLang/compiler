@@ -7,11 +7,13 @@ where
 
 import qualified AST.Canonical as Can
 import qualified AST.Source as Src
+import qualified AST.Utils.Type as TypeUtils
 import qualified Canonicalize.Environment as Env
 import qualified Canonicalize.Environment.Dups as Dups
 import qualified Canonicalize.Type as Type
 import qualified Canopy.ModuleName as ModuleName
 import Control.Monad (foldM)
+import Data.Foldable (traverse_)
 import qualified Data.Graph as Graph
 import qualified Canopy.Data.Index as Index
 import qualified Data.List as List
@@ -42,16 +44,56 @@ addVars module_ (Env.Env home vs ts cs bs qvs qts qcs) =
   do
     topLevelVars <- collectVars module_
     let vs2 = Map.union topLevelVars vs
-    -- Use union to overwrite foreign stuff.
     Result.ok $ Env.Env home vs2 ts cs bs qvs qts qcs
 
 collectVars :: Src.Module -> Result i w (Map.Map Name.Name Env.Var)
-collectVars (Src.Module _ _ _ _ _foreignImports values _ _ _ effects _) =
+collectVars (Src.Module _ _ _ _ _foreignImports values unions aliases _ effects _) =
   let addDecl dict (Ann.At _ (Src.Value (Ann.At region name) _ _ _ _)) =
         Dups.insert name region (Env.TopLevel region) dict
-      -- Foreign imports are handled separately in addFFIToEnv, not as regular top-level vars
+      derivedDups = collectDerivedNames unions aliases
    in Dups.detect Error.DuplicateDecl $
-        List.foldl' addDecl (toEffectDups effects) values
+        Dups.union derivedDups (List.foldl' addDecl (toEffectDups effects) values)
+
+-- | Collect derived function names from union and alias type declarations.
+--
+-- For each type with @deriving@ clauses, generates the corresponding
+-- function names and registers them as top-level variables.
+--
+-- @since 0.20.0
+collectDerivedNames :: [Ann.Located Src.Union] -> [Ann.Located Src.Alias] -> Dups.Dict Env.Var
+collectDerivedNames unions aliases =
+  let unionDups = List.foldl' collectUnionDerived Dups.none unions
+      aliasDups = List.foldl' collectAliasDerived Dups.none aliases
+   in Dups.union unionDups aliasDups
+
+collectUnionDerived :: Dups.Dict Env.Var -> Ann.Located Src.Union -> Dups.Dict Env.Var
+collectUnionDerived dups (Ann.At _ (Src.Union (Ann.At region name) _ _ _ clauses)) =
+  List.foldl' (addDerivedName region name) dups clauses
+
+collectAliasDerived :: Dups.Dict Env.Var -> Ann.Located Src.Alias -> Dups.Dict Env.Var
+collectAliasDerived dups (Ann.At _ (Src.Alias (Ann.At region name) _ _ _ _ clauses)) =
+  List.foldl' (addDerivedName region name) dups clauses
+
+addDerivedName :: Ann.Region -> Name.Name -> Dups.Dict Env.Var -> Src.DerivingClause -> Dups.Dict Env.Var
+addDerivedName region typeName dups clause =
+  let nameChars = Name.toChars typeName
+   in case clause of
+        Src.DeriveShow ->
+          Dups.insert (Name.fromChars ("show" ++ nameChars)) region (Env.TopLevel region) dups
+        Src.DeriveOrd ->
+          dups
+        Src.DeriveJsonEncode _ ->
+          Dups.insert (Name.fromChars ("encode" ++ nameChars)) region (Env.TopLevel region) dups
+        Src.DeriveJsonDecode _ ->
+          Dups.insert (Name.fromChars (lowerFirst nameChars ++ "Decoder")) region (Env.TopLevel region) dups
+
+lowerFirst :: String -> String
+lowerFirst [] = []
+lowerFirst (c : cs) = toLower c : cs
+  where
+    toLower ch
+      | ch >= 'A' && ch <= 'Z' = toEnum (fromEnum ch + 32)
+      | otherwise = ch
 
 toEffectDups :: Src.Effects -> Dups.Dict Env.Var
 toEffectDups effects =
@@ -79,8 +121,8 @@ toEffectDups effects =
 
 addTypes :: Src.Module -> Env.Env -> Result i w Env.Env
 addTypes (Src.Module _ _ _ _ _ _ unions aliases _ _ _) (Env.Env home vs ts cs bs qvs qts qcs) =
-  let addAliasDups dups (Ann.At _ (Src.Alias (Ann.At region name) _ _ _ _)) = Dups.insert name region () dups
-      addUnionDups dups (Ann.At _ (Src.Union (Ann.At region name) _ _ _)) = Dups.insert name region () dups
+  let addAliasDups dups (Ann.At _ (Src.Alias (Ann.At region name) _ _ _ _ _)) = Dups.insert name region () dups
+      addUnionDups dups (Ann.At _ (Src.Union (Ann.At region name) _ _ _ _)) = Dups.insert name region () dups
       typeNameDups =
         List.foldl' addUnionDups (List.foldl' addAliasDups Dups.none aliases) unions
    in do
@@ -89,7 +131,7 @@ addTypes (Src.Module _ _ _ _ _ _ unions aliases _ _ _) (Env.Env home vs ts cs bs
         addAliases aliases (Env.Env home vs ts1 cs bs qvs qts qcs)
 
 addUnion :: ModuleName.Canonical -> Env.Exposed Env.Type -> Ann.Located Src.Union -> Result i w (Env.Exposed Env.Type)
-addUnion home types union@(Ann.At _ (Src.Union (Ann.At _ name) _ _ _)) =
+addUnion home types union@(Ann.At _ (Src.Union (Ann.At _ name) _ _ _ _)) =
   do
     arity <- checkUnionFreeVars union
     let one = Env.Specific home (Env.Union arity home)
@@ -106,7 +148,7 @@ addAliases aliases env =
 addAlias :: Env.Env -> Graph.SCC (Ann.Located Src.Alias) -> Result i w Env.Env
 addAlias env@(Env.Env home vs ts cs bs qvs qts qcs) scc =
   case scc of
-    Graph.AcyclicSCC alias@(Ann.At _ (Src.Alias (Ann.At _ name) _ _ tipe _)) ->
+    Graph.AcyclicSCC alias@(Ann.At _ (Src.Alias (Ann.At _ name) _ _ tipe _ _)) ->
       do
         args <- checkAliasFreeVars alias
         ctype <- Type.canonicalize env tipe
@@ -115,16 +157,16 @@ addAlias env@(Env.Env home vs ts cs bs qvs qts qcs) scc =
         Result.ok $ Env.Env home vs ts1 cs bs qvs qts qcs
     Graph.CyclicSCC [] ->
       Result.ok env
-    Graph.CyclicSCC (alias@(Ann.At _ (Src.Alias (Ann.At region name1) _ _ tipe _)) : others) ->
+    Graph.CyclicSCC (alias@(Ann.At _ (Src.Alias (Ann.At region name1) _ _ tipe _ _)) : others) ->
       do
         args <- checkAliasFreeVars alias
-        let toName (Ann.At _ (Src.Alias (Ann.At _ name) _ _ _ _)) = name
+        let toName (Ann.At _ (Src.Alias (Ann.At _ name) _ _ _ _ _)) = name
         Result.throw (Error.RecursiveAlias region name1 args tipe (fmap toName others))
 
 -- DETECT TYPE ALIAS CYCLES
 
 toNode :: Ann.Located Src.Alias -> (Ann.Located Src.Alias, Name.Name, [Name.Name])
-toNode alias@(Ann.At _ (Src.Alias (Ann.At _ name) _ _ tipe _)) =
+toNode alias@(Ann.At _ (Src.Alias (Ann.At _ name) _ _ tipe _ _)) =
   (alias, name, getEdges [] tipe)
 
 getEdges :: [Name.Name] -> Src.Type -> [Name.Name]
@@ -148,7 +190,7 @@ getEdges edges (Ann.At _ tipe) =
 -- CHECK FREE VARIABLES
 
 checkUnionFreeVars :: Ann.Located Src.Union -> Result i w Int
-checkUnionFreeVars (Ann.At unionRegion (Src.Union (Ann.At _ name) args _ ctors)) =
+checkUnionFreeVars (Ann.At unionRegion (Src.Union (Ann.At _ name) args _ ctors _)) =
   let addCtorFreeVars (_, tipes) freeVars =
         List.foldl' addFreeVars freeVars tipes
 
@@ -164,7 +206,7 @@ checkUnionFreeVars (Ann.At unionRegion (Src.Union (Ann.At _ name) args _ ctors))
               Error.TypeVarsUnboundInUnion unionRegion name (fmap Ann.toValue args) unbound unbounds
 
 checkAliasFreeVars :: Ann.Located Src.Alias -> Result i w [Name.Name]
-checkAliasFreeVars (Ann.At aliasRegion (Src.Alias (Ann.At _ name) args _ tipe _)) =
+checkAliasFreeVars (Ann.At aliasRegion (Src.Alias (Ann.At _ name) args _ tipe _ _)) =
   let addArg (Ann.At region arg) = Dups.insert arg region region
    in do
         boundVars <- Dups.detect (Error.DuplicateAliasArg name) (foldr addArg Dups.none args)
@@ -232,15 +274,17 @@ type CtorDups = Dups.Dict (Env.Info Env.Ctor)
 -- CANONICALIZE ALIAS
 
 canonicalizeAlias :: Env.Env -> Ann.Located Src.Alias -> Result i w ((Name.Name, Can.Alias), CtorDups)
-canonicalizeAlias env@(Env.Env home _ _ _ _ _ _ _) (Ann.At _ (Src.Alias (Ann.At region name) args srcVariances tipe maybeBound)) =
+canonicalizeAlias env@(Env.Env home _ _ _ _ _ _ _) (Ann.At _ (Src.Alias (Ann.At region name) args srcVariances tipe maybeBound srcDeriving)) =
   do
     let vars = fmap Ann.toValue args
     ctipe <- Type.canonicalize env tipe
     let canBound = fmap canonicalizeBound maybeBound
     let canVariances = fmap canonicalizeVariance srcVariances
+    let canDeriving = fmap canonicalizeDerivingClause srcDeriving
     Variance.checkAliasVariance region name vars canVariances ctipe
+    validateDerivingForType region name ctipe canDeriving
     Result.ok
-      ( (name, Can.Alias vars canVariances ctipe canBound),
+      ( (name, Can.Alias vars canVariances ctipe canBound canDeriving),
         case ctipe of
           Can.TRecord fields Nothing ->
             Dups.one name region (Env.Specific home (toRecordCtor home name vars fields))
@@ -261,6 +305,25 @@ canonicalizeVariance Src.Covariant = Can.Covariant
 canonicalizeVariance Src.Contravariant = Can.Contravariant
 canonicalizeVariance Src.Invariant = Can.Invariant
 
+-- | Convert a source deriving clause to its canonical representation.
+canonicalizeDerivingClause :: Src.DerivingClause -> Can.DerivingClause
+canonicalizeDerivingClause Src.DeriveShow = Can.DeriveShow
+canonicalizeDerivingClause Src.DeriveOrd = Can.DeriveOrd
+canonicalizeDerivingClause (Src.DeriveJsonEncode opts) = Can.DeriveJsonEncode (fmap canonicalizeJsonOptions opts)
+canonicalizeDerivingClause (Src.DeriveJsonDecode opts) = Can.DeriveJsonDecode (fmap canonicalizeJsonOptions opts)
+
+-- | Convert source JSON options to canonical representation.
+canonicalizeJsonOptions :: Src.JsonOptions -> Can.JsonOptions
+canonicalizeJsonOptions (Src.JsonOptions fn tf cf on mn us) =
+  Can.JsonOptions (fmap canonicalizeNaming fn) tf cf on mn us
+
+-- | Convert source naming strategy to canonical representation.
+canonicalizeNaming :: Src.NamingStrategy -> Can.NamingStrategy
+canonicalizeNaming Src.IdentityNaming = Can.IdentityNaming
+canonicalizeNaming Src.SnakeCase = Can.SnakeCase
+canonicalizeNaming Src.CamelCase = Can.CamelCase
+canonicalizeNaming Src.KebabCase = Can.KebabCase
+
 toRecordCtor :: ModuleName.Canonical -> Name.Name -> [Name.Name] -> Map.Map Name.Name Can.FieldType -> Env.Ctor
 toRecordCtor home name vars fields =
   let avars = fmap (\var -> (var, Can.TVar var)) vars
@@ -274,14 +337,16 @@ toRecordCtor home name vars fields =
 -- CANONICALIZE UNION
 
 canonicalizeUnion :: Env.Env -> Ann.Located Src.Union -> Result i w ((Name.Name, Can.Union), CtorDups)
-canonicalizeUnion env@(Env.Env home _ _ _ _ _ _ _) (Ann.At _ (Src.Union (Ann.At region name) avars srcVariances ctors)) =
+canonicalizeUnion env@(Env.Env home _ _ _ _ _ _ _) (Ann.At _ (Src.Union (Ann.At region name) avars srcVariances ctors srcDeriving)) =
   do
     cctors <- Index.indexedTraverse (canonicalizeCtor env) ctors
     let vars = fmap Ann.toValue avars
     let alts = fmap Ann.toValue cctors
     let canVariances = fmap canonicalizeVariance srcVariances
+    let canDeriving = fmap canonicalizeDerivingClause srcDeriving
     Variance.checkUnionVariance region name vars canVariances alts
-    let union = Can.Union vars canVariances alts (length alts) (toOpts ctors)
+    validateDerivingForUnion region name alts canDeriving
+    let union = Can.Union vars canVariances alts (length alts) (toOpts ctors) canDeriving
     Result.ok
       ( (name, union),
         Dups.unions $ fmap (toCtor home name union) cctors
@@ -304,3 +369,91 @@ toOpts ctors =
 toCtor :: ModuleName.Canonical -> Name.Name -> Can.Union -> Ann.Located Can.Ctor -> CtorDups
 toCtor home typeName union (Ann.At region (Can.Ctor name index _ args)) =
   Dups.one name region . Env.Specific home $ Env.Ctor home typeName union index args
+
+-- DERIVING VALIDATION
+
+-- | Validate that all deriving clauses are compatible with the alias type.
+validateDerivingForType ::
+  Ann.Region -> Name.Name -> Can.Type -> [Can.DerivingClause] -> Result i w ()
+validateDerivingForType region name tipe clauses =
+  traverse_ (validateOneClause region name tipe) clauses
+
+-- | Validate that all deriving clauses are compatible with the union constructors.
+validateDerivingForUnion ::
+  Ann.Region -> Name.Name -> [Can.Ctor] -> [Can.DerivingClause] -> Result i w ()
+validateDerivingForUnion region name ctors clauses =
+  let allArgTypes = concatMap (\(Can.Ctor _ _ _ argTypes) -> argTypes) ctors
+   in traverse_ (validateOneClause region name (Can.TRecord (toFieldMap allArgTypes) Nothing)) clauses
+  where
+    toFieldMap types =
+      Map.fromList (zip (fmap indexToName [0..]) (fmap (Can.FieldType 0) types))
+    indexToName i = Name.fromChars [toEnum (fromEnum 'a' + i)]
+
+-- | Validate a single deriving clause against a type.
+validateOneClause ::
+  Ann.Region -> Name.Name -> Can.Type -> Can.DerivingClause -> Result i w ()
+validateOneClause region name tipe clause =
+  case clause of
+    Can.DeriveShow -> Result.ok ()
+    Can.DeriveOrd -> Result.ok ()
+    Can.DeriveJsonEncode _ -> validateJsonType region name (derivingClauseName clause) tipe
+    Can.DeriveJsonDecode _ -> validateJsonType region name (derivingClauseName clause) tipe
+
+-- | Get a display name for a deriving clause.
+derivingClauseName :: Can.DerivingClause -> Name.Name
+derivingClauseName Can.DeriveShow = Name.fromChars "Show"
+derivingClauseName Can.DeriveOrd = Name.fromChars "Ord"
+derivingClauseName (Can.DeriveJsonEncode _) = Name.fromChars "Json.Encode"
+derivingClauseName (Can.DeriveJsonDecode _) = Name.fromChars "Json.Decode"
+
+-- | Check that a type can be JSON encoded/decoded.
+validateJsonType ::
+  Ann.Region -> Name.Name -> Name.Name -> Can.Type -> Result i w ()
+validateJsonType region typeName clauseName tipe =
+  case checkJsonCompatible tipe of
+    Nothing -> Result.ok ()
+    Just problem -> Result.throw (Error.DerivingInvalid region typeName clauseName problem)
+
+-- | Check if a type is JSON-compatible. Returns 'Nothing' if valid,
+-- or 'Just problem' describing why it is not.
+checkJsonCompatible :: Can.Type -> Maybe Error.DerivingProblem
+checkJsonCompatible tipe =
+  case tipe of
+    Can.TLambda _ _ -> Just Error.DerivingHasFunction
+    Can.TVar _ -> Nothing
+    Can.TUnit -> Nothing
+    Can.TTuple a b c ->
+      checkJsonCompatible a
+        `orElse` checkJsonCompatible b
+        `orElse` maybe Nothing checkJsonCompatible c
+    Can.TType _ name args ->
+      case args of
+        [] | isJsonPrimitive name -> Nothing
+        [arg] | isJsonContainer name -> checkJsonCompatible arg
+        _ -> Just (Error.DerivingHasUnsupportedType name)
+    Can.TRecord _ (Just _) -> Just Error.DerivingHasExtensibleRecord
+    Can.TRecord fields Nothing ->
+      foldr (\(Can.FieldType _ ft) acc -> checkJsonCompatible ft `orElse` acc) Nothing (Map.elems fields)
+    Can.TAlias _ _ args alias ->
+      checkJsonCompatible (TypeUtils.dealias args alias)
+
+-- | Short-circuit 'Maybe' combination.
+orElse :: Maybe a -> Maybe a -> Maybe a
+orElse (Just x) _ = Just x
+orElse Nothing y = y
+
+-- | Check if a type name is a JSON-encodable primitive.
+isJsonPrimitive :: Name.Name -> Bool
+isJsonPrimitive name =
+  name == Name.float
+    || name == Name.int
+    || name == Name.bool
+    || name == Name.string
+    || name == Name.value
+
+-- | Check if a type name is a JSON-encodable container (takes one type arg).
+isJsonContainer :: Name.Name -> Bool
+isJsonContainer name =
+  name == Name.maybe
+    || name == Name.list
+    || name == Name.array

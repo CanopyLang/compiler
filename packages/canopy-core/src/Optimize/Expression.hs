@@ -432,7 +432,7 @@ destructHelp path (Ann.At region pattern) revDs =
       pure revDs
     Can.PBool _ _ ->
       pure revDs
-    Can.PCtor _ _ (Can.Union _ _ _ _ opts) _ _ args ->
+    Can.PCtor _ _ (Can.Union _ _ _ _ opts _) _ _ args ->
       case args of
         [Can.PatternCtorArg _ _ arg] ->
           case opts of

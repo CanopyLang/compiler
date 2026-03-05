@@ -31,6 +31,7 @@ module Type.Solve
   ( run,
     runWithBounds,
     extractBoundsFromAliases,
+    extractBoundsFromUnions,
     extractAllInterfaceBounds,
   )
 where
@@ -139,7 +140,7 @@ extractBoundsFromAliases ::
 extractBoundsFromAliases home =
   Map.foldlWithKey' collectBound Map.empty
   where
-    collectBound acc name (Can.Alias _ _ _ maybeBound) =
+    collectBound acc name (Can.Alias _ _ _ maybeBound _) =
       maybe acc (\bound -> Map.insert (home, name) (convertBound bound) acc) maybeBound
 
 -- | Convert a canonical 'SupertypeBound' to the solver's 'SuperType'.
@@ -148,6 +149,24 @@ convertBound Can.ComparableBound = Comparable
 convertBound Can.AppendableBound = Appendable
 convertBound Can.NumberBound = Number
 convertBound Can.CompAppendBound = CompAppend
+
+-- | Extract supertype bounds from union types that derive Ord.
+--
+-- When a union has @deriving (Ord)@, it gets @ComparableBound@ so it can
+-- be used as a Dict key or Set member.
+extractBoundsFromUnions ::
+  ModuleName.Canonical ->
+  Map Name.Name Can.Union ->
+  Map (ModuleName.Canonical, Name.Name) SuperType
+extractBoundsFromUnions home =
+  Map.foldlWithKey' collectBound Map.empty
+  where
+    collectBound acc name (Can.Union _ _ _ _ _ deriving_) =
+      if any isOrd deriving_
+        then Map.insert (home, name) Comparable acc
+        else acc
+    isOrd Can.DeriveOrd = True
+    isOrd _ = False
 
 -- | Extract all supertype bounds from a full dependency interface map.
 --
@@ -161,10 +180,13 @@ extractAllInterfaceBounds =
   Map.foldlWithKey' collectFromInterface Map.empty
   where
     collectFromInterface acc rawName iface =
-      Map.union acc (extractBoundsFromAliases canonical aliasMap)
+      Map.union (Map.union acc aliasBounds) unionBounds
       where
         canonical = ModuleName.Canonical (Interface._home iface) rawName
         aliasMap = Map.map Interface.extractAlias (Interface._aliases iface)
+        unionMap = Map.map Interface.extractUnion (Interface._unions iface)
+        aliasBounds = extractBoundsFromAliases canonical aliasMap
+        unionBounds = extractBoundsFromUnions canonical unionMap
 
 createSolveConfig :: Env -> Int -> Pools -> State -> Unify.BoundsMap -> SolveConfig
 createSolveConfig env rank pools state bounds = SolveConfig

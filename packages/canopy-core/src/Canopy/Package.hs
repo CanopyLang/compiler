@@ -42,6 +42,7 @@ module Canopy.Package
     keyDecoder,
     --
     parser,
+    normalizeAuthor,
   )
 where
 

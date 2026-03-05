@@ -146,6 +146,10 @@ module AST.Canonical
     SupertypeBound (..),
     -- variance
     Variance (..),
+    -- deriving
+    DerivingClause (..),
+    JsonOptions (..),
+    NamingStrategy (..),
     -- modules
     Module (..),
     Alias (..),
@@ -191,6 +195,9 @@ import AST.Canonical.Types
     Type (..),
     Union (..),
     Variance (..),
+    DerivingClause (..),
+    JsonOptions (..),
+    NamingStrategy (..),
     Binop (..),
     fieldsToList,
   )

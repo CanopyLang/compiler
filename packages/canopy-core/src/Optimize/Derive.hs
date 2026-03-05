@@ -79,12 +79,16 @@ addAliasClause ::
   Can.DerivingClause ->
   Opt.LocalGraph ->
   Opt.LocalGraph
-addAliasClause home name alias clause graph =
+addAliasClause home name alias@(Can.Alias typeParams _ _ _ _) clause graph =
   case clause of
     Can.DeriveOrd -> graph
     Can.DeriveShow -> addShowAlias home name alias graph
-    Can.DeriveJsonEncode opts -> addJsonEncodeAlias home name alias opts graph
-    Can.DeriveJsonDecode opts -> addJsonDecodeAlias home name alias opts graph
+    Can.DeriveJsonEncode opts
+      | null typeParams -> addJsonEncodeAlias home name alias opts graph
+      | otherwise -> graph
+    Can.DeriveJsonDecode opts
+      | null typeParams -> addJsonDecodeAlias home name alias opts graph
+      | otherwise -> graph
 
 -- EQUALITY HELPER
 
@@ -94,6 +98,16 @@ kernelEq a b =
   do
     eqFn <- Names.registerKernel Name.utils (Opt.VarKernel Name.utils (Name.fromChars "equal"))
     pure (Opt.Call eqFn [a, b])
+
+-- CONSTRUCTOR TAG MATCH
+
+-- | Generate a condition that matches the @$@ field of a value against
+-- a constructor name string. For Normal (non-enum) constructors, the
+-- @$@ field holds the constructor name as a string in dev mode.
+ctorTagMatch :: Name.Name -> Name.Name -> Names.Tracker Opt.Expr
+ctorTagMatch dollar ctorName =
+  let dollarField = Name.fromChars "$"
+   in kernelEq (Opt.Access (Opt.VarLocal dollar) dollarField) (Opt.Str (Name.toCanopyString ctorName))
 
 -- CONSTRUCTOR FIELD ACCESS
 
@@ -108,12 +122,12 @@ ctorArgFieldName i
 
 -- STRING APPEND HELPER
 
--- | Append two strings using the @_Utils_ap@ kernel function.
+-- | Append two strings using @Basics.append@ (which wraps @_Utils_ap@).
 strAppend :: Opt.Expr -> Opt.Expr -> Names.Tracker Opt.Expr
 strAppend a b =
   do
-    ap_ <- Names.registerKernel Name.utils (Opt.VarKernel Name.utils (Name.fromChars "ap"))
-    pure (Opt.Call ap_ [a, b])
+    append_ <- Names.registerGlobal ModuleName.basics (Name.fromChars "append")
+    pure (Opt.Call append_ [a, b])
 
 -- SHOW UNION
 
@@ -175,11 +189,10 @@ toShowCtorExpr home alts =
     pure (Opt.Function [dollar] (buildIfChain branches fallback))
 
 ctorShowBranch :: ModuleName.Canonical -> Can.Ctor -> Names.Tracker (Opt.Expr, Opt.Expr)
-ctorShowBranch home (Can.Ctor ctorName index numArgs _) =
+ctorShowBranch _home (Can.Ctor ctorName _index numArgs _) =
   do
     let dollar = Name.fromChars "$"
-    let dollarField = Name.fromChars "$"
-    cond <- kernelEq (Opt.Access (Opt.VarLocal dollar) dollarField) (Opt.VarEnum (Opt.Global home ctorName) index)
+    cond <- ctorTagMatch dollar ctorName
     let nameStr = Opt.Str (Name.toCanopyString ctorName)
     case numArgs of
       0 -> pure (cond, nameStr)
@@ -293,14 +306,13 @@ taggedEncodeBranch ::
   Opt.Expr ->
   Can.Ctor ->
   Names.Tracker (Opt.Expr, Opt.Expr)
-taggedEncodeBranch home encodeObject encodeString (Can.Ctor ctorName index numArgs argTypes) =
+taggedEncodeBranch _home encodeObject encodeString (Can.Ctor ctorName _index numArgs argTypes) =
   do
     let dollar = Name.fromChars "$"
-    let dollarField = Name.fromChars "$"
     let tagStr = Name.toCanopyString (Name.fromChars "tag")
     let ctorStr = Name.toCanopyString ctorName
     let tagPair = Opt.Tuple (Opt.Str tagStr) (Opt.Call encodeString [Opt.Str ctorStr]) Nothing
-    cond <- kernelEq (Opt.Access (Opt.VarLocal dollar) dollarField) (Opt.VarEnum (Opt.Global home ctorName) index)
+    cond <- ctorTagMatch dollar ctorName
     case numArgs of
       0 ->
         pure (cond, Opt.Call encodeObject [Opt.List [tagPair]])
@@ -418,7 +430,6 @@ taggedDecodeBranch home (Can.Ctor ctorName _ numArgs argTypes) =
   do
     let tagVar = Name.fromChars "tag"
     cond <- kernelEq (Opt.VarLocal tagVar) (Opt.Str (Name.toCanopyString ctorName))
-    succeed <- Names.registerGlobal elmJsonDecode "succeed"
     let ctorVal = Opt.VarGlobal (Opt.Global home ctorName)
     result <- decodeCtorBody ctorVal numArgs argTypes
     pure (cond, result)

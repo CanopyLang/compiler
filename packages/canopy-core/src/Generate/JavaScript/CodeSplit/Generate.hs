@@ -506,7 +506,7 @@ toMainExports mode mains =
   let export = JsName.fromKernel Name.platform "export"
       exports = generateExports mode (Map.foldrWithKey addToTrie emptyTrie mains)
    in JsName.toBuilder export <> "(" <> exports <> ");"
-        <> "scope['Elm'] = scope['Canopy'];"
+        <> "scope['Canopy'] = scope['Elm'];"
 
 -- | Generate nested export object.
 generateExports :: Mode.Mode -> Trie -> Builder

@@ -30,6 +30,9 @@ import AST.Canonical.Types
     Type (..),
     Union (..),
     Variance (..),
+    DerivingClause (..),
+    JsonOptions (..),
+    NamingStrategy (..),
   )
 import Canopy.Data.Name (Name)
 import qualified Canopy.ModuleName as ModuleName
@@ -71,12 +74,46 @@ instance Binary.Binary Variance where
       _ -> fail ("Variance: unexpected tag " ++ show tag ++ " (expected 0-2). Delete canopy-stuff/ to rebuild.")
 
 instance Binary.Binary Alias where
-  get = Monad.liftM4 Alias Binary.get Binary.get Binary.get Binary.get
-  put (Alias a b c d) = Binary.put a >> Binary.put b >> Binary.put c >> Binary.put d
+  get = Alias <$> Binary.get <*> Binary.get <*> Binary.get <*> Binary.get <*> Binary.get
+  put (Alias a b c d e) = Binary.put a >> Binary.put b >> Binary.put c >> Binary.put d >> Binary.put e
 
 instance Binary.Binary Union where
-  put (Union a b c d e) = Binary.put a >> Binary.put b >> Binary.put c >> Binary.put d >> Binary.put e
-  get = Monad.liftM5 Union Binary.get Binary.get Binary.get Binary.get Binary.get
+  put (Union a b c d e f) = Binary.put a >> Binary.put b >> Binary.put c >> Binary.put d >> Binary.put e >> Binary.put f
+  get = Union <$> Binary.get <*> Binary.get <*> Binary.get <*> Binary.get <*> Binary.get <*> Binary.get
+
+instance Binary.Binary DerivingClause where
+  put clause = case clause of
+    DeriveShow -> Binary.putWord8 0
+    DeriveOrd -> Binary.putWord8 2
+    DeriveJsonEncode opts -> Binary.putWord8 3 >> Binary.put opts
+    DeriveJsonDecode opts -> Binary.putWord8 4 >> Binary.put opts
+  get = do
+    tag <- Binary.getWord8
+    case tag of
+      0 -> pure DeriveShow
+      2 -> pure DeriveOrd
+      3 -> DeriveJsonEncode <$> Binary.get
+      4 -> DeriveJsonDecode <$> Binary.get
+      _ -> fail ("DerivingClause: unexpected tag " ++ show tag)
+
+instance Binary.Binary JsonOptions where
+  put (JsonOptions a b c d e f) = Binary.put a >> Binary.put b >> Binary.put c >> Binary.put d >> Binary.put e >> Binary.put f
+  get = JsonOptions <$> Binary.get <*> Binary.get <*> Binary.get <*> Binary.get <*> Binary.get <*> Binary.get
+
+instance Binary.Binary NamingStrategy where
+  put ns = Binary.putWord8 $ case ns of
+    IdentityNaming -> 0
+    SnakeCase -> 1
+    CamelCase -> 2
+    KebabCase -> 3
+  get = do
+    tag <- Binary.getWord8
+    case tag of
+      0 -> pure IdentityNaming
+      1 -> pure SnakeCase
+      2 -> pure CamelCase
+      3 -> pure KebabCase
+      _ -> fail ("NamingStrategy: unexpected tag " ++ show tag)
 
 instance Binary.Binary Ctor where
   get = Monad.liftM4 Ctor Binary.get Binary.get Binary.get Binary.get

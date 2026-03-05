@@ -267,6 +267,7 @@ test-suite canopy-test
       Unit.Editor.IntegrationTest
       Unit.FFI.CapabilityEnforcementTest
       Unit.FFI.CapabilityTypeTest
+      Unit.FFI.ErgonomicsTest
       Unit.FFI.EscapeTest
       Unit.FFI.ManifestTest
       Unit.FFI.ResolveTest

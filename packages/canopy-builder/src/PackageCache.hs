@@ -125,7 +125,7 @@ instance Binary ElmCanUnion where
     alts <- Binary.get
     numAlts <- Binary.get
     opts <- Binary.get
-    return (ElmCanUnion (Can.Union vars [] alts numAlts opts))
+    return (ElmCanUnion (Can.Union vars [] alts numAlts opts []))
   put (ElmCanUnion u) = Binary.put u
 
 -- | Elm-era Alias decoder (2 fields: vars, tipe).
@@ -140,7 +140,7 @@ instance Binary ElmCanAlias where
   get = do
     vars <- Binary.get
     tipe <- Binary.get
-    return (ElmCanAlias (Can.Alias vars [] tipe Nothing))
+    return (ElmCanAlias (Can.Alias vars [] tipe Nothing []))
   put (ElmCanAlias a) = Binary.put a
 
 -- | Elm-era Interface.Union decoder wrapping ElmCanUnion.

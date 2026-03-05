@@ -2,7 +2,7 @@
 
 **Source**: Zero-trust production readiness audit (March 2026)
 **Current Score**: 62/100 → Target: 95/100 (A+)
-**Plans**: 15 tasks across 5 phases
+**Plans**: 17 tasks across 6 phases
 
 ---
 
@@ -46,11 +46,18 @@
 | 14 | [LSP Feature Completion](14-dx-lsp-completion.md) | HIGH | Large | Medium |
 | 15 | [Contributor Onboarding & Architecture Guide](15-dx-contributor-guide.md) | MEDIUM | Small | Low |
 
+## Phase 6: Language Ergonomics (Plans 16–17)
+
+| # | Plan | Priority | Effort | Risk |
+|---|------|----------|--------|------|
+| 16 | [FFI Ergonomics — Compiler-Understood Annotations](16-ffi-ergonomics.md) | CRITICAL | Large | Medium |
+| 17 | [JSON Codec Library + Compiler Deriving](17-json-codec-deriving.md) | CRITICAL | Large | Medium |
+
 ---
 
 ## Priority Summary
 
-- **CRITICAL** (5): Plans 01, 02, 04, 11, 12
+- **CRITICAL** (7): Plans 01, 02, 04, 11, 12, 16, 17
 - **HIGH** (6): Plans 03, 05, 07, 09, 10, 13, 14
 - **MEDIUM** (4): Plans 06, 08, 15
 
@@ -59,7 +66,8 @@
 1. **Immediate** (CRITICAL, foundation): 01, 02, 03
 2. **This sprint** (HIGH, quick wins): 05, 09, 12
 3. **Next sprint** (CRITICAL/HIGH, medium effort): 04, 07, 10, 11, 13
-4. **Backlog** (Medium priority or Large effort): 06, 08, 14, 15
+4. **Language ergonomics** (CRITICAL, large effort): 16, 17
+5. **Backlog** (Medium priority or Large effort): 06, 08, 14, 15
 
 ## Score Impact Estimate
 
@@ -70,3 +78,4 @@
 | Phase 3 | 09-11 | +5 (84→89) |
 | Phase 4 | 12-13 | +4 (89→93) |
 | Phase 5 | 14-15 | +3 (93→96) |
+| Phase 6 | 16-17 | +4 (96→100) |

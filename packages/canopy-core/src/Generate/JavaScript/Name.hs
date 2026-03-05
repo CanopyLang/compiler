@@ -86,7 +86,7 @@ fromKernel home name =
 homeToBuilder :: ModuleName.Canonical -> Builder
 homeToBuilder (ModuleName.Canonical (Pkg.Name author project) home) =
   usd <>
-  Utf8.toEscapedBuilder 0x2D {- - -} 0x5F {- _ -} author
+  Utf8.toEscapedBuilder 0x2D {- - -} 0x5F {- _ -} (Pkg.normalizeAuthor author)
   <> usd <>
   Utf8.toEscapedBuilder 0x2D {- - -} 0x5F {- _ -} project
   <> usd <>

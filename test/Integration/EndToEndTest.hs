@@ -328,7 +328,7 @@ testCustomTypeDefinition =
       let treeUnion = Map.lookup (Name.fromChars "Tree") unions
       case treeUnion of
         Nothing -> assertFailure "Tree union missing from canonical module"
-        Just (Can.Union vars _ alts _ _) -> do
+        Just (Can.Union vars _ alts _ _ _) -> do
           length vars @?= 1
           length alts @?= 2
   where

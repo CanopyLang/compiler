@@ -47,7 +47,10 @@ typeCheckModuleQuery ::
 typeCheckModuleQuery ifaces path canonical = do
   let modName = Can._name canonical
       modNameText = Text.pack (show modName)
-      bounds = Solve.extractAllInterfaceBounds ifaces
+      ifaceBounds = Solve.extractAllInterfaceBounds ifaces
+      localAliasBounds = Solve.extractBoundsFromAliases modName (Can._aliases canonical)
+      localUnionBounds = Solve.extractBoundsFromUnions modName (Can._unions canonical)
+      bounds = Map.union (Map.union ifaceBounds localAliasBounds) localUnionBounds
 
   Log.logEvent (TypeConstrainStarted modNameText)
 

@@ -170,6 +170,7 @@ simpleUnion =
     ]
     0
     Can.Normal
+    []
 
 -- | Interface with a public union type.
 unionInterface :: Interface.Interface
@@ -200,6 +201,6 @@ aliasInterface =
     Pkg.core
     Map.empty
     Map.empty
-    (Map.singleton (Name.fromChars "Point") (Interface.PublicAlias (Can.Alias [] [] intType Nothing)))
+    (Map.singleton (Name.fromChars "Point") (Interface.PublicAlias (Can.Alias [] [] intType Nothing [])))
     Map.empty
     Map.empty

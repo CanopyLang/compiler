@@ -47,6 +47,11 @@ module AST.Canonical.Types
     -- * Variance
     Variance (..),
 
+    -- * Deriving
+    DerivingClause (..),
+    JsonOptions (..),
+    NamingStrategy (..),
+
     -- * Module Structure
     Module (..),
     Alias (..),
@@ -425,7 +430,40 @@ data Variance
     Invariant
   deriving (Eq, Show)
 
-data Alias = Alias [Name] ![Variance] Type !(Maybe SupertypeBound)
+-- | Deriving clause in canonical form.
+--
+-- @since 0.20.0
+data DerivingClause
+  = DeriveShow
+  | DeriveOrd
+  | DeriveJsonEncode !(Maybe JsonOptions)
+  | DeriveJsonDecode !(Maybe JsonOptions)
+  deriving (Eq, Show)
+
+-- | JSON options for deriving encoders/decoders.
+--
+-- @since 0.20.0
+data JsonOptions = JsonOptions
+  { _jsonFieldNaming :: !(Maybe NamingStrategy)
+  , _jsonTagField :: !(Maybe Name)
+  , _jsonContentsField :: !(Maybe Name)
+  , _jsonOmitNothing :: !Bool
+  , _jsonMissingAsNothing :: !Bool
+  , _jsonUnwrapSingle :: !Bool
+  }
+  deriving (Eq, Show)
+
+-- | Field naming strategy for JSON.
+--
+-- @since 0.20.0
+data NamingStrategy
+  = IdentityNaming
+  | SnakeCase
+  | CamelCase
+  | KebabCase
+  deriving (Eq, Show)
+
+data Alias = Alias [Name] ![Variance] Type !(Maybe SupertypeBound) ![DerivingClause]
   deriving (Eq, Show)
 
 data Binop = Binop_ Binop.Associativity Binop.Precedence Name
@@ -436,7 +474,8 @@ data Union = Union
     _u_variances :: ![Variance],
     _u_alts :: [Ctor],
     _u_numAlts :: Int, -- CACHE numAlts for exhaustiveness checking
-    _u_opts :: CtorOpts -- CACHE which optimizations are available
+    _u_opts :: CtorOpts, -- CACHE which optimizations are available
+    _u_deriving :: ![DerivingClause]
   }
   deriving (Eq, Show)
 

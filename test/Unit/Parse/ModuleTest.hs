@@ -170,7 +170,7 @@ testAliasGenerics = testCase "type alias generics referenced in field types" $ d
           ]
   case parseModule ParseModule.Application src of
     Right m -> case Src._aliases m of
-      [Ann.At _ (Src.Alias (Ann.At _ name) typeVars _ tipe _)] -> do
+      [Ann.At _ (Src.Alias (Ann.At _ name) typeVars _ tipe _ _)] -> do
         name @?= Name.fromChars "Box"
         -- ensure one type var named 'a'
         case typeVars of
@@ -196,7 +196,7 @@ testComparableBound = testCase "comparable bound on type alias" $ do
           ]
   case parseModule ParseModule.Application src of
     Right m -> case Src._aliases m of
-      [Ann.At _ (Src.Alias (Ann.At _ name) _ _ _ maybeBound)] -> do
+      [Ann.At _ (Src.Alias (Ann.At _ name) _ _ _ maybeBound _)] -> do
         name @?= Name.fromChars "UserId"
         maybeBound @?= Just Src.ComparableBound
       _ -> assertFailure "expected exactly one alias"
@@ -213,7 +213,7 @@ testAppendableBound = testCase "appendable bound on type alias" $ do
           ]
   case parseModule ParseModule.Application src of
     Right m -> case Src._aliases m of
-      [Ann.At _ (Src.Alias (Ann.At _ name) _ _ _ maybeBound)] -> do
+      [Ann.At _ (Src.Alias (Ann.At _ name) _ _ _ maybeBound _)] -> do
         name @?= Name.fromChars "Tag"
         maybeBound @?= Just Src.AppendableBound
       _ -> assertFailure "expected exactly one alias"
@@ -230,7 +230,7 @@ testNumberBound = testCase "number bound on type alias" $ do
           ]
   case parseModule ParseModule.Application src of
     Right m -> case Src._aliases m of
-      [Ann.At _ (Src.Alias (Ann.At _ name) _ _ _ maybeBound)] -> do
+      [Ann.At _ (Src.Alias (Ann.At _ name) _ _ _ maybeBound _)] -> do
         name @?= Name.fromChars "Score"
         maybeBound @?= Just Src.NumberBound
       _ -> assertFailure "expected exactly one alias"
@@ -247,7 +247,7 @@ testCompappendBound = testCase "compappend bound on type alias" $ do
           ]
   case parseModule ParseModule.Application src of
     Right m -> case Src._aliases m of
-      [Ann.At _ (Src.Alias (Ann.At _ name) _ _ _ maybeBound)] -> do
+      [Ann.At _ (Src.Alias (Ann.At _ name) _ _ _ maybeBound _)] -> do
         name @?= Name.fromChars "Key"
         maybeBound @?= Just Src.CompAppendBound
       _ -> assertFailure "expected exactly one alias"
@@ -264,7 +264,7 @@ testNoBoundIsNothing = testCase "alias without bound has Nothing" $ do
           ]
   case parseModule ParseModule.Application src of
     Right m -> case Src._aliases m of
-      [Ann.At _ (Src.Alias (Ann.At _ name) _ _ _ maybeBound)] -> do
+      [Ann.At _ (Src.Alias (Ann.At _ name) _ _ _ maybeBound _)] -> do
         name @?= Name.fromChars "Pair"
         maybeBound @?= Nothing
       _ -> assertFailure "expected exactly one alias"

@@ -16,6 +16,7 @@ import qualified Data.Map.Strict as Map
 import qualified Data.Text as Text
 import qualified Canopy.Data.Name as Name
 import qualified Data.Set as Set
+import qualified Optimize.Derive as Derive
 import qualified Optimize.Expression as Expr
 import qualified Optimize.Names as Names
 import qualified Optimize.Port as Port
@@ -36,7 +37,7 @@ type Annotations =
 
 optimize :: Annotations -> Can.Module -> Result i [Warning.Warning] Opt.LocalGraph
 optimize annotations (Can.Module home _ _ decls unions aliases _ effects _ _) =
-  ((addDecls home annotations decls . addEffects home effects) . addUnions home unions) . addAliases home aliases $ Opt.LocalGraph Nothing Map.empty Map.empty Map.empty
+  (addDecls home annotations decls . addEffects home effects) . addUnions home unions . Derive.addDerivedDefs home unions aliases . addAliases home aliases $ Opt.LocalGraph Nothing Map.empty Map.empty Map.empty
 
 -- UNION
 
@@ -48,7 +49,7 @@ addUnions home unions (Opt.LocalGraph main nodes fields locs) =
   Opt.LocalGraph main (Map.foldr (addUnion home) nodes unions) fields locs
 
 addUnion :: ModuleName.Canonical -> Can.Union -> Nodes -> Nodes
-addUnion home (Can.Union _ _ ctors _ opts) nodes =
+addUnion home (Can.Union _ _ ctors _ opts _) nodes =
   List.foldl' (addCtorNode home opts) nodes ctors
 
 addCtorNode :: ModuleName.Canonical -> Can.CtorOpts -> Nodes -> Can.Ctor -> Nodes
@@ -67,7 +68,7 @@ addAliases home aliases graph =
   Map.foldrWithKey (addAlias home) graph aliases
 
 addAlias :: ModuleName.Canonical -> Name.Name -> Can.Alias -> Opt.LocalGraph -> Opt.LocalGraph
-addAlias home name (Can.Alias _ _ tipe _) graph@(Opt.LocalGraph main nodes fieldCounts locs) =
+addAlias home name (Can.Alias _ _ tipe _ _) graph@(Opt.LocalGraph main nodes fieldCounts locs) =
   case tipe of
     Can.TRecord fields Nothing ->
       let function =

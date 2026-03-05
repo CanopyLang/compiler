@@ -90,7 +90,7 @@ formatAliasExport (name, iAlias) =
 
 -- | Format a public alias as @type alias Name vars = Type@.
 formatPublicAlias :: Name.Name -> Can.Alias -> [String]
-formatPublicAlias name (Can.Alias tvars _ tipe _) =
+formatPublicAlias name (Can.Alias tvars _ tipe _ _) =
   [aliasDecl]
   where
     tvarsStr = concatMap (\v -> " " ++ Name.toChars v) tvars
@@ -110,7 +110,7 @@ toPublicUnion (Interface.PrivateUnion _) = Nothing
 
 -- | Format a public union as @type Name vars = Ctor1 | Ctor2@.
 formatPublicUnion :: Name.Name -> Can.Union -> [String]
-formatPublicUnion name (Can.Union tvars _ ctors _ _) =
+formatPublicUnion name (Can.Union tvars _ ctors _ _ _) =
   [typeDecl]
   where
     tvarsStr = concatMap (\v -> " " ++ Name.toChars v) tvars

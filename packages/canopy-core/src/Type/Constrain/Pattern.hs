@@ -48,7 +48,7 @@ add (Ann.At region pattern) expectation state =
         return $ State headers vars (unitCon : revCons)
     Can.PTuple a b maybeC ->
       addTuple region a b maybeC expectation state
-    Can.PCtor home typeName (Can.Union typeVars _ _ _ _) ctorName _ args ->
+    Can.PCtor home typeName (Can.Union typeVars _ _ _ _ _) ctorName _ args ->
       addCtor region home typeName typeVars ctorName args expectation state
     Can.PList patterns ->
       do

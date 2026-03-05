@@ -143,7 +143,7 @@ restrictAliases exports aliases =
 -- can use the type in operations matching the bound but cannot see the
 -- underlying type representation.
 classifyAlias :: Can.Alias -> Alias
-classifyAlias alias@(Can.Alias _ _ _ maybeBound) =
+classifyAlias alias@(Can.Alias _ _ _ maybeBound _) =
   maybe (PublicAlias alias) (const (OpaqueAlias alias)) maybeBound
 
 -- TO PUBLIC
@@ -152,7 +152,7 @@ toPublicUnion :: Union -> Maybe Can.Union
 toPublicUnion iUnion =
   case iUnion of
     OpenUnion union -> Just union
-    ClosedUnion (Can.Union vars variances _ _ opts) -> Just (Can.Union vars variances [] 0 opts)
+    ClosedUnion (Can.Union vars variances _ _ opts _) -> Just (Can.Union vars variances [] 0 opts [])
     PrivateUnion _ -> Nothing
 
 toPublicAlias :: Alias -> Maybe Can.Alias

@@ -10,7 +10,7 @@ module Parse.Declaration
 import qualified Canopy.Data.Name as Name
 
 import AST.Source (GuardAnnotation (..))
-import AST.Source (SupertypeBound (..))
+import AST.Source (DerivingClause (..), JsonOptions (..), NamingStrategy (..), SupertypeBound (..))
 import qualified AST.Source as Src
 import qualified AST.Utils.Binop as Binop
 import qualified Parse.Expression as Expr
@@ -160,15 +160,17 @@ typeDecl maybeDocs start =
               do  Space.chompAndCheckIndent SyntaxError.AliasSpace SyntaxError.AliasIndentEquals
                   (name, args, variances) <- chompAliasNameToEquals
                   maybeBound <- chompOptionalBound
-                  (tipe, end) <- specialize SyntaxError.AliasBody Type.expression
-                  let alias = Ann.at start end (Src.Alias name args variances tipe maybeBound)
+                  (tipe, bodyEnd) <- specialize SyntaxError.AliasBody Type.expression
+                  (clauses, end) <- chompOptionalDerivingAlias bodyEnd
+                  let alias = Ann.at start end (Src.Alias name args variances tipe maybeBound clauses)
                   return (Alias maybeDocs alias, end)
           ,
             specialize SyntaxError.DT_Union $
               do  (name, args, variances) <- chompCustomNameToEquals
                   (firstVariant, firstEnd) <- Type.variant
-                  (variants, end) <- chompVariants [firstVariant] firstEnd
-                  let union = Ann.at start end (Src.Union name args variances variants)
+                  (variants, variantsEnd) <- chompVariants [firstVariant] firstEnd
+                  (clauses, end) <- chompOptionalDerivingUnion variantsEnd
+                  let union = Ann.at start end (Src.Union name args variances variants clauses)
                   return (Union maybeDocs union, end)
           ]
 
@@ -266,6 +268,129 @@ chompBound keywordParser bound =
       word2 0x3D 0x3E {-=>-} SyntaxError.AliasEquals
       Space.chompAndCheckIndent SyntaxError.AliasSpace SyntaxError.AliasIndentBody
       return (Just bound)
+
+
+-- DERIVING CLAUSES
+
+
+-- | Optionally parse a @deriving@ clause after a type alias.
+--
+-- @since 0.20.0
+chompOptionalDerivingAlias :: Ann.Position -> Space.Parser SyntaxError.TypeAlias [Src.DerivingClause]
+chompOptionalDerivingAlias end =
+  oneOfWithFallback
+    [ do  Space.checkIndent end SyntaxError.AliasIndentBody
+          Keyword.deriving_ SyntaxError.AliasEquals
+          Space.chompAndCheckIndent SyntaxError.AliasSpace SyntaxError.AliasIndentBody
+          word1 0x28 {-(-} SyntaxError.AliasEquals
+          Space.chompAndCheckIndent SyntaxError.AliasSpace SyntaxError.AliasIndentBody
+          first <- chompDeriveNameAlias
+          rest <- chompDeriveRestAlias []
+          Space.chomp SyntaxError.AliasSpace
+          newEnd <- getPosition
+          return (first : rest, newEnd)
+    ]
+    ([], end)
+
+
+-- | Optionally parse a @deriving@ clause after a union type.
+--
+-- @since 0.20.0
+chompOptionalDerivingUnion :: Ann.Position -> Space.Parser SyntaxError.CustomType [Src.DerivingClause]
+chompOptionalDerivingUnion end =
+  oneOfWithFallback
+    [ do  Space.checkIndent end SyntaxError.CT_IndentBar
+          Keyword.deriving_ SyntaxError.CT_Bar
+          Space.chompAndCheckIndent SyntaxError.CT_Space SyntaxError.CT_IndentAfterEquals
+          word1 0x28 {-(-} SyntaxError.CT_Bar
+          Space.chompAndCheckIndent SyntaxError.CT_Space SyntaxError.CT_IndentAfterEquals
+          first <- chompDeriveNameUnion
+          rest <- chompDeriveRestUnion []
+          Space.chomp SyntaxError.CT_Space
+          newEnd <- getPosition
+          return (first : rest, newEnd)
+    ]
+    ([], end)
+
+
+-- | Parse a derive name in alias context.
+chompDeriveNameAlias :: Parser SyntaxError.TypeAlias Src.DerivingClause
+chompDeriveNameAlias =
+  do  name <- Var.upper SyntaxError.AliasEquals
+      chompDeriveQualifiedAlias name
+
+
+-- | Parse a derive name in union context.
+chompDeriveNameUnion :: Parser SyntaxError.CustomType Src.DerivingClause
+chompDeriveNameUnion =
+  do  name <- Var.upper SyntaxError.CT_Variant
+      chompDeriveQualifiedUnion name
+
+
+-- | Resolve a derive name to its clause (alias context).
+chompDeriveQualifiedAlias :: Name.Name -> Parser SyntaxError.TypeAlias Src.DerivingClause
+chompDeriveQualifiedAlias name =
+  case name of
+    "Show" -> return DeriveShow
+    "Ord" -> return DeriveOrd
+    "Json" ->
+      do  word1 0x2E {-.-} SyntaxError.AliasEquals
+          sub <- Var.upper SyntaxError.AliasEquals
+          case sub of
+            "Encode" -> return (DeriveJsonEncode Nothing)
+            "Decode" -> return (DeriveJsonDecode Nothing)
+            _ -> Parse.Parser $ \(Parse.State _ _ _ _ r c) _ _ _ eerr ->
+                   eerr r c SyntaxError.AliasEquals
+    _ -> Parse.Parser $ \(Parse.State _ _ _ _ r c) _ _ _ eerr ->
+           eerr r c SyntaxError.AliasEquals
+
+
+-- | Resolve a derive name to its clause (union context).
+chompDeriveQualifiedUnion :: Name.Name -> Parser SyntaxError.CustomType Src.DerivingClause
+chompDeriveQualifiedUnion name =
+  case name of
+    "Show" -> return DeriveShow
+    "Ord" -> return DeriveOrd
+    "Json" ->
+      do  word1 0x2E {-.-} SyntaxError.CT_Variant
+          sub <- Var.upper SyntaxError.CT_Variant
+          case sub of
+            "Encode" -> return (DeriveJsonEncode Nothing)
+            "Decode" -> return (DeriveJsonDecode Nothing)
+            _ -> Parse.Parser $ \(Parse.State _ _ _ _ r c) _ _ _ eerr ->
+                   eerr r c SyntaxError.CT_Variant
+    _ -> Parse.Parser $ \(Parse.State _ _ _ _ r c) _ _ _ eerr ->
+           eerr r c SyntaxError.CT_Variant
+
+
+-- | Parse remaining derive names (alias context).
+chompDeriveRestAlias :: [Src.DerivingClause] -> Parser SyntaxError.TypeAlias [Src.DerivingClause]
+chompDeriveRestAlias clauses =
+  oneOfWithFallback
+    [ do  word1 0x29 {-)-} SyntaxError.AliasEquals
+          return (reverse clauses)
+    , do  word1 0x2C {-,-} SyntaxError.AliasEquals
+          Space.chompAndCheckIndent SyntaxError.AliasSpace SyntaxError.AliasIndentBody
+          clause <- chompDeriveNameAlias
+          Space.chompAndCheckIndent SyntaxError.AliasSpace SyntaxError.AliasIndentBody
+          chompDeriveRestAlias (clause : clauses)
+    ]
+    (reverse clauses)
+
+
+-- | Parse remaining derive names (union context).
+chompDeriveRestUnion :: [Src.DerivingClause] -> Parser SyntaxError.CustomType [Src.DerivingClause]
+chompDeriveRestUnion clauses =
+  oneOfWithFallback
+    [ do  word1 0x29 {-)-} SyntaxError.CT_Bar
+          return (reverse clauses)
+    , do  word1 0x2C {-,-} SyntaxError.CT_Bar
+          Space.chompAndCheckIndent SyntaxError.CT_Space SyntaxError.CT_IndentAfterEquals
+          clause <- chompDeriveNameUnion
+          Space.chompAndCheckIndent SyntaxError.CT_Space SyntaxError.CT_IndentAfterEquals
+          chompDeriveRestUnion (clause : clauses)
+    ]
+    (reverse clauses)
 
 
 -- CUSTOM TYPES

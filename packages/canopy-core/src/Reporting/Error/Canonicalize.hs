@@ -19,6 +19,7 @@ module Reporting.Error.Canonicalize
     InvalidPayload (..),
     PortProblem (..),
     DuplicatePatternContext (..),
+    DerivingProblem (..),
     PossibleNames (..),
     VarKind (..),
     VariancePosition (..),
@@ -100,6 +101,7 @@ data Error
   | LazyImportSelf Ann.Region Name.Name
   | LazyImportKernel Ann.Region Name.Name
   | VarianceViolation Ann.Region Name.Name Name.Name Can.Variance VariancePosition
+  | DerivingInvalid Ann.Region Name.Name Name.Name DerivingProblem
   deriving (Show)
 
 -- | Position where a type variable appears that violates its variance annotation.
@@ -108,6 +110,16 @@ data VariancePosition
     NegativePosition
   | -- | A contravariant parameter appeared in a positive (output) position.
     PositivePosition
+  deriving (Show)
+
+-- | Reason why a deriving clause is invalid for a given type.
+data DerivingProblem
+  = -- | A field or constructor arg contains a function type.
+    DerivingHasFunction
+  | -- | A field or constructor arg contains an unsupported custom type.
+    DerivingHasUnsupportedType Name.Name
+  | -- | A field or constructor arg contains an extensible record.
+    DerivingHasExtensibleRecord
   deriving (Show)
 
 -- | Context for a bad-arity error.
@@ -328,6 +340,8 @@ toDiagnostic source err =
       Diags.lazyImportKernelDiagnostic source region name
     VarianceViolation region typeName varName variance position ->
       varianceViolationDiagnostic source region typeName varName variance position
+    DerivingInvalid region typeName clauseName problem ->
+      derivingInvalidDiagnostic source region typeName clauseName problem
 
 -- ---------------------------------------------------------------------------
 -- Private dispatch helpers
@@ -426,3 +440,40 @@ varianceLabel Can.Invariant = "invariant"
 positionLabel :: VariancePosition -> String
 positionLabel NegativePosition = "a contravariant (input) position"
 positionLabel PositivePosition = "a covariant (output) position"
+
+-- | Build a diagnostic for an invalid deriving clause.
+derivingInvalidDiagnostic :: Code.Source -> Ann.Region -> Name.Name -> Name.Name -> DerivingProblem -> Diagnostic
+derivingInvalidDiagnostic _source region typeName clauseName problem =
+  Diagnostic.makeSimpleDiagnostic
+    (EC.canonError 51)
+    Diagnostic.PhaseCanon
+    "DERIVING ERROR"
+    region
+    (Doc.stack
+      [ Doc.reflow (derivingProblemMessage typeName clauseName problem),
+        Doc.reflow (derivingProblemHint problem)
+      ]
+    )
+
+derivingProblemMessage :: Name.Name -> Name.Name -> DerivingProblem -> String
+derivingProblemMessage typeName clauseName problem =
+  "I cannot derive `" <> Name.toChars clauseName <> "` for the `"
+    <> Name.toChars typeName <> "` type because "
+    <> derivingProblemReason problem
+
+derivingProblemReason :: DerivingProblem -> String
+derivingProblemReason DerivingHasFunction =
+  "it contains a function type. Functions cannot be serialized to JSON."
+derivingProblemReason (DerivingHasUnsupportedType name) =
+  "it contains a `" <> Name.toChars name
+    <> "` value, which cannot be automatically encoded or decoded."
+derivingProblemReason DerivingHasExtensibleRecord =
+  "it contains an extensible record. The exact shape of the record must be known at compile time."
+
+derivingProblemHint :: DerivingProblem -> String
+derivingProblemHint DerivingHasFunction =
+  "Hint: Remove the function-typed field, or write the encoder/decoder manually."
+derivingProblemHint (DerivingHasUnsupportedType _) =
+  "Hint: The types that can be derived include: Int, Float, Bool, String, Maybe, List, Array, tuples, and records of these types. For other types, write the encoder/decoder manually."
+derivingProblemHint DerivingHasExtensibleRecord =
+  "Hint: Use a concrete record type instead of an extensible record."

@@ -116,12 +116,12 @@ singleBound home typeName super =
 -- | Make a Can.Alias with a supertype bound.
 mkBoundedAlias :: Can.SupertypeBound -> Can.Alias
 mkBoundedAlias bound =
-  Can.Alias [] [] Can.TUnit (Just bound)
+  Can.Alias [] [] Can.TUnit (Just bound) []
 
 -- | Make a Can.Alias without a bound.
 mkUnboundedAlias :: Can.Alias
 mkUnboundedAlias =
-  Can.Alias [] [] Can.TUnit Nothing
+  Can.Alias [] [] Can.TUnit Nothing []
 
 -- TESTS
 

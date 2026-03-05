@@ -29,6 +29,9 @@ import AST.Canonical.Types
     Type (..),
     Union (..),
     Variance (..),
+    DerivingClause (..),
+    JsonOptions (..),
+    NamingStrategy (..),
   )
 import qualified Data.Aeson as Aeson
 import Data.Aeson.Types (Parser)
@@ -96,12 +99,13 @@ instance Aeson.FromJSON Variance where
       _ -> fail ("Unknown Variance: " ++ show txt)
 
 instance Aeson.ToJSON Alias where
-  toJSON (Alias vars variances tipe bound) =
+  toJSON (Alias vars variances tipe bound deriving_) =
     Aeson.object
       [ "vars" Aeson..= vars,
         "variances" Aeson..= variances,
         "type" Aeson..= tipe,
-        "bound" Aeson..= bound
+        "bound" Aeson..= bound,
+        "deriving" Aeson..= deriving_
       ]
 
 instance Aeson.FromJSON Alias where
@@ -111,15 +115,17 @@ instance Aeson.FromJSON Alias where
       <*> (o Aeson..:? "variances" >>= parseVarianceDefault)
       <*> o Aeson..: "type"
       <*> o Aeson..:? "bound"
+      <*> (o Aeson..:? "deriving" >>= parseDerivingDefault)
 
 instance Aeson.ToJSON Union where
-  toJSON (Union vars variances alts numAlts opts) =
+  toJSON (Union vars variances alts numAlts opts deriving_) =
     Aeson.object
       [ "vars" Aeson..= vars,
         "variances" Aeson..= variances,
         "alts" Aeson..= alts,
         "numAlts" Aeson..= numAlts,
-        "opts" Aeson..= opts
+        "opts" Aeson..= opts,
+        "deriving" Aeson..= deriving_
       ]
 
 instance Aeson.FromJSON Union where
@@ -130,10 +136,74 @@ instance Aeson.FromJSON Union where
       <*> o Aeson..: "alts"
       <*> o Aeson..: "numAlts"
       <*> o Aeson..: "opts"
+      <*> (o Aeson..:? "deriving" >>= parseDerivingDefault)
 
 -- | Parse optional variances, defaulting to empty list for backward compatibility.
 parseVarianceDefault :: Maybe [Variance] -> Parser [Variance]
 parseVarianceDefault = pure . maybe [] id
+
+-- | Parse optional deriving clauses, defaulting to empty list.
+parseDerivingDefault :: Maybe [DerivingClause] -> Parser [DerivingClause]
+parseDerivingDefault = pure . maybe [] id
+
+instance Aeson.ToJSON DerivingClause where
+  toJSON clause = case clause of
+    DeriveShow -> Aeson.String "Show"
+    DeriveOrd -> Aeson.String "Ord"
+    DeriveJsonEncode opts ->
+      Aeson.object ["tag" Aeson..= ("Json.Encode" :: String), "options" Aeson..= opts]
+    DeriveJsonDecode opts ->
+      Aeson.object ["tag" Aeson..= ("Json.Decode" :: String), "options" Aeson..= opts]
+
+instance Aeson.FromJSON DerivingClause where
+  parseJSON (Aeson.String txt) =
+    case txt of
+      "Show" -> pure DeriveShow
+      "Ord" -> pure DeriveOrd
+      _ -> fail ("Unknown DerivingClause: " ++ show txt)
+  parseJSON val = Aeson.withObject "DerivingClause" (\o -> do
+    tag <- o Aeson..: "tag" :: Parser String
+    case tag of
+      "Json.Encode" -> DeriveJsonEncode <$> o Aeson..:? "options"
+      "Json.Decode" -> DeriveJsonDecode <$> o Aeson..:? "options"
+      _ -> fail ("Unknown DerivingClause tag: " ++ tag)) val
+
+instance Aeson.ToJSON JsonOptions where
+  toJSON (JsonOptions fn tf cf on mn us) =
+    Aeson.object
+      [ "fieldNaming" Aeson..= fn,
+        "tagField" Aeson..= tf,
+        "contentsField" Aeson..= cf,
+        "omitNothing" Aeson..= on,
+        "missingAsNothing" Aeson..= mn,
+        "unwrapSingle" Aeson..= us
+      ]
+
+instance Aeson.FromJSON JsonOptions where
+  parseJSON = Aeson.withObject "JsonOptions" $ \o ->
+    JsonOptions
+      <$> o Aeson..:? "fieldNaming"
+      <*> o Aeson..:? "tagField"
+      <*> o Aeson..:? "contentsField"
+      <*> (o Aeson..:? "omitNothing" >>= pure . maybe False id)
+      <*> (o Aeson..:? "missingAsNothing" >>= pure . maybe False id)
+      <*> (o Aeson..:? "unwrapSingle" >>= pure . maybe False id)
+
+instance Aeson.ToJSON NamingStrategy where
+  toJSON ns = Aeson.String $ case ns of
+    IdentityNaming -> "identity"
+    SnakeCase -> "snakeCase"
+    CamelCase -> "camelCase"
+    KebabCase -> "kebabCase"
+
+instance Aeson.FromJSON NamingStrategy where
+  parseJSON = Aeson.withText "NamingStrategy" $ \txt ->
+    case txt of
+      "identity" -> pure IdentityNaming
+      "snakeCase" -> pure SnakeCase
+      "camelCase" -> pure CamelCase
+      "kebabCase" -> pure KebabCase
+      _ -> fail ("Unknown NamingStrategy: " ++ show txt)
 
 instance Aeson.ToJSON Annotation where
   toJSON (Forall freeVars tipe) =

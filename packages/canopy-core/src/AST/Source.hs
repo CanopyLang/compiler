@@ -123,6 +123,9 @@ module AST.Source
     Alias (..),
     SupertypeBound (..),
     Variance (..),
+    DerivingClause (..),
+    JsonOptions (..),
+    NamingStrategy (..),
     Infix (..),
     Port (..),
     Effects (..),
@@ -670,7 +673,7 @@ data GuardAnnotation = GuardAnnotation
 -- Contains type name, type parameters, and constructor definitions.
 --
 -- @since 0.19.1
-data Union = Union (Ann.Located Name) [Ann.Located Name] ![Variance] [(Ann.Located Name, [Type])]
+data Union = Union (Ann.Located Name) [Ann.Located Name] ![Variance] [(Ann.Located Name, [Type])] ![DerivingClause]
   deriving (Show)
 
 -- | Variance annotation for type parameters.
@@ -718,6 +721,49 @@ data SupertypeBound
     CompAppendBound
   deriving (Eq, Show)
 
+-- | Deriving clause for automatic code generation.
+--
+-- Specifies which functions should be automatically generated
+-- for a type definition. Each clause generates different functions:
+--
+-- * 'DeriveShow' generates @showTypeName : TypeName -> String@
+-- * 'DeriveOrd' applies @ComparableBound@ (no generated function)
+-- * 'DeriveJsonEncode' generates @encodeTypeName : TypeName -> Json.Encode.Value@
+-- * 'DeriveJsonDecode' generates @typeNameDecoder : Json.Decode.Decoder TypeName@
+--
+-- @since 0.20.0
+data DerivingClause
+  = DeriveShow
+  | DeriveOrd
+  | DeriveJsonEncode !(Maybe JsonOptions)
+  | DeriveJsonDecode !(Maybe JsonOptions)
+  deriving (Eq, Show)
+
+-- | Options for JSON encoding/decoding generation.
+--
+-- Modeled after aeson's options for controlling JSON format.
+--
+-- @since 0.20.0
+data JsonOptions = JsonOptions
+  { _jsonFieldNaming :: !(Maybe NamingStrategy)
+  , _jsonTagField :: !(Maybe Name)
+  , _jsonContentsField :: !(Maybe Name)
+  , _jsonOmitNothing :: !Bool
+  , _jsonMissingAsNothing :: !Bool
+  , _jsonUnwrapSingle :: !Bool
+  }
+  deriving (Eq, Show)
+
+-- | Field naming strategy for JSON serialization.
+--
+-- @since 0.20.0
+data NamingStrategy
+  = IdentityNaming
+  | SnakeCase
+  | CamelCase
+  | KebabCase
+  deriving (Eq, Show)
+
 -- | Type alias definition in source code.
 --
 -- Represents type alias definitions like:
@@ -731,7 +777,7 @@ data SupertypeBound
 -- supertype bound for opaque types.
 --
 -- @since 0.19.1
-data Alias = Alias (Ann.Located Name) [Ann.Located Name] ![Variance] Type !(Maybe SupertypeBound)
+data Alias = Alias (Ann.Located Name) [Ann.Located Name] ![Variance] Type !(Maybe SupertypeBound) ![DerivingClause]
   deriving (Show)
 
 -- | Infix operator definition in source code.

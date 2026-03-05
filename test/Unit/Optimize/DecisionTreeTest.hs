@@ -71,7 +71,8 @@ boolUnion =
           Can.Ctor (Name.fromChars "True") (Index.next Index.first) 0 []
         ],
       Can._u_numAlts = 2,
-      Can._u_opts = Can.Enum
+      Can._u_opts = Can.Enum,
+      Can._u_deriving = []
     }
 
 -- | Assert that two DecisionTree values are equal.

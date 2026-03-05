@@ -434,7 +434,7 @@ stackNonEmpty docs =
 
 -- | Format a union type definition.
 formatUnion :: FormatConfig -> Src.Union -> PP.Doc
-formatUnion config (Src.Union locName params variances variants) =
+formatUnion config (Src.Union locName params variances variants _) =
   PP.text "type" PP.<+> locNameDoc locName
     <> formatTypeParamsWithVariance params variances
     <> nlIndent config 1 <> PP.text "= "
@@ -473,7 +473,7 @@ formatVariant (locName, types) =
 
 -- | Format a type alias definition.
 formatAlias :: FormatConfig -> Src.Alias -> PP.Doc
-formatAlias config (Src.Alias locName params variances body maybeBound) =
+formatAlias config (Src.Alias locName params variances body maybeBound _) =
   PP.text "type alias" PP.<+> locNameDoc locName
     <> formatTypeParamsWithVariance params variances
     <> PP.text " =" <> nlIndent config 1 <> formatBound maybeBound <> formatType body

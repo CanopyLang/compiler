@@ -120,9 +120,9 @@ processDeclaration inputLines src decl =
   case decl of
     PD.Value _ (Ann.At _ (Src.Value (Ann.At _ name) _ _ _ _)) ->
       ifDone inputLines (Decl name src)
-    PD.Union _ (Ann.At _ (Src.Union (Ann.At _ name) _ _ _)) ->
+    PD.Union _ (Ann.At _ (Src.Union (Ann.At _ name) _ _ _ _)) ->
       ifDone inputLines (Type name src)
-    PD.Alias _ (Ann.At _ (Src.Alias (Ann.At _ name) _ _ _ _)) ->
+    PD.Alias _ (Ann.At _ (Src.Alias (Ann.At _ name) _ _ _ _ _)) ->
       ifDone inputLines (Type name src)
     PD.Port _ _ -> Done Port
 
