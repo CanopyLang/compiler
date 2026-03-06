@@ -78,14 +78,14 @@ addDerivedName :: Ann.Region -> Name.Name -> Dups.Dict Env.Var -> Src.DerivingCl
 addDerivedName region typeName dups clause =
   let nameChars = Name.toChars typeName
    in case clause of
-        Src.DeriveShow ->
-          Dups.insert (Name.fromChars ("show" ++ nameChars)) region (Env.TopLevel region) dups
         Src.DeriveOrd ->
           dups
-        Src.DeriveJsonEncode _ ->
+        Src.DeriveEncode _ ->
           Dups.insert (Name.fromChars ("encode" ++ nameChars)) region (Env.TopLevel region) dups
-        Src.DeriveJsonDecode _ ->
+        Src.DeriveDecode _ ->
           Dups.insert (Name.fromChars (lowerFirst nameChars ++ "Decoder")) region (Env.TopLevel region) dups
+        Src.DeriveEnum ->
+          Dups.insert (Name.fromChars ("all" ++ nameChars)) region (Env.TopLevel region) dups
 
 lowerFirst :: String -> String
 lowerFirst [] = []
@@ -278,9 +278,9 @@ canonicalizeAlias env@(Env.Env home _ _ _ _ _ _ _) (Ann.At _ (Src.Alias (Ann.At 
   do
     let vars = fmap Ann.toValue args
     ctipe <- Type.canonicalize env tipe
-    let canBound = fmap canonicalizeBound maybeBound
     let canVariances = fmap canonicalizeVariance srcVariances
     let canDeriving = fmap canonicalizeDerivingClause srcDeriving
+    let canBound = mergeDeriveOrd (fmap canonicalizeBound maybeBound) canDeriving
     Variance.checkAliasVariance region name vars canVariances ctipe
     validateDerivingForType region name ctipe canDeriving
     Result.ok
@@ -291,6 +291,18 @@ canonicalizeAlias env@(Env.Env home _ _ _ _ _ _ _) (Ann.At _ (Src.Alias (Ann.At 
           _ ->
             Dups.none
       )
+
+-- | Merge @deriving (Ord)@ into the alias bound.
+--
+-- If no explicit bound exists and @DeriveOrd@ is present, set @ComparableBound@.
+mergeDeriveOrd :: Maybe Can.SupertypeBound -> [Can.DerivingClause] -> Maybe Can.SupertypeBound
+mergeDeriveOrd (Just bound) _ = Just bound
+mergeDeriveOrd Nothing clauses
+  | any isOrd clauses = Just Can.ComparableBound
+  | otherwise = Nothing
+  where
+    isOrd Can.DeriveOrd = True
+    isOrd _ = False
 
 -- | Convert a source supertype bound to its canonical representation.
 canonicalizeBound :: Src.SupertypeBound -> Can.SupertypeBound
@@ -307,10 +319,10 @@ canonicalizeVariance Src.Invariant = Can.Invariant
 
 -- | Convert a source deriving clause to its canonical representation.
 canonicalizeDerivingClause :: Src.DerivingClause -> Can.DerivingClause
-canonicalizeDerivingClause Src.DeriveShow = Can.DeriveShow
 canonicalizeDerivingClause Src.DeriveOrd = Can.DeriveOrd
-canonicalizeDerivingClause (Src.DeriveJsonEncode opts) = Can.DeriveJsonEncode (fmap canonicalizeJsonOptions opts)
-canonicalizeDerivingClause (Src.DeriveJsonDecode opts) = Can.DeriveJsonDecode (fmap canonicalizeJsonOptions opts)
+canonicalizeDerivingClause (Src.DeriveEncode opts) = Can.DeriveEncode (fmap canonicalizeJsonOptions opts)
+canonicalizeDerivingClause (Src.DeriveDecode opts) = Can.DeriveDecode (fmap canonicalizeJsonOptions opts)
+canonicalizeDerivingClause Src.DeriveEnum = Can.DeriveEnum
 
 -- | Convert source JSON options to canonical representation.
 canonicalizeJsonOptions :: Src.JsonOptions -> Can.JsonOptions
@@ -376,35 +388,56 @@ toCtor home typeName union (Ann.At region (Can.Ctor name index _ args)) =
 validateDerivingForType ::
   Ann.Region -> Name.Name -> Can.Type -> [Can.DerivingClause] -> Result i w ()
 validateDerivingForType region name tipe clauses =
-  traverse_ (validateOneClause region name tipe) clauses
+  traverse_ (validateOneAliasClause region name tipe) clauses
 
 -- | Validate that all deriving clauses are compatible with the union constructors.
 validateDerivingForUnion ::
   Ann.Region -> Name.Name -> [Can.Ctor] -> [Can.DerivingClause] -> Result i w ()
 validateDerivingForUnion region name ctors clauses =
   let allArgTypes = concatMap (\(Can.Ctor _ _ _ argTypes) -> argTypes) ctors
-   in traverse_ (validateOneClause region name (Can.TRecord (toFieldMap allArgTypes) Nothing)) clauses
+      syntheticType = Can.TRecord (toFieldMap allArgTypes) Nothing
+   in traverse_ (validateOneUnionClause region name ctors syntheticType) clauses
   where
     toFieldMap types =
       Map.fromList (zip (fmap indexToName [0..]) (fmap (Can.FieldType 0) types))
     indexToName i = Name.fromChars [toEnum (fromEnum 'a' + i)]
 
+-- | Validate a single union deriving clause, handling Enum specially.
+validateOneUnionClause ::
+  Ann.Region -> Name.Name -> [Can.Ctor] -> Can.Type -> Can.DerivingClause -> Result i w ()
+validateOneUnionClause region name ctors syntheticType clause =
+  case clause of
+    Can.DeriveEnum -> validateEnumForUnion region name ctors
+    _ -> validateOneClause region name syntheticType clause
+
 -- | Validate a single deriving clause against a type.
+-- | Validate a single alias deriving clause against a type.
+validateOneAliasClause ::
+  Ann.Region -> Name.Name -> Can.Type -> Can.DerivingClause -> Result i w ()
+validateOneAliasClause region name tipe clause =
+  case clause of
+    Can.DeriveOrd ->
+      Result.throw (Error.DerivingInvalid region name (Name.fromChars "Ord") (Error.DerivingOrdNotOnUnion name))
+    Can.DeriveEncode _ -> validateJsonType region name (derivingClauseName clause) tipe
+    Can.DeriveDecode _ -> validateJsonType region name (derivingClauseName clause) tipe
+    Can.DeriveEnum -> Result.ok ()
+
+-- | Validate a single union deriving clause against a type.
 validateOneClause ::
   Ann.Region -> Name.Name -> Can.Type -> Can.DerivingClause -> Result i w ()
 validateOneClause region name tipe clause =
   case clause of
-    Can.DeriveShow -> Result.ok ()
-    Can.DeriveOrd -> Result.ok ()
-    Can.DeriveJsonEncode _ -> validateJsonType region name (derivingClauseName clause) tipe
-    Can.DeriveJsonDecode _ -> validateJsonType region name (derivingClauseName clause) tipe
+    Can.DeriveOrd -> validateOrdType region name tipe
+    Can.DeriveEncode _ -> validateJsonType region name (derivingClauseName clause) tipe
+    Can.DeriveDecode _ -> validateJsonType region name (derivingClauseName clause) tipe
+    Can.DeriveEnum -> Result.ok ()
 
 -- | Get a display name for a deriving clause.
 derivingClauseName :: Can.DerivingClause -> Name.Name
-derivingClauseName Can.DeriveShow = Name.fromChars "Show"
 derivingClauseName Can.DeriveOrd = Name.fromChars "Ord"
-derivingClauseName (Can.DeriveJsonEncode _) = Name.fromChars "Json.Encode"
-derivingClauseName (Can.DeriveJsonDecode _) = Name.fromChars "Json.Decode"
+derivingClauseName (Can.DeriveEncode _) = Name.fromChars "Encode"
+derivingClauseName (Can.DeriveDecode _) = Name.fromChars "Decode"
+derivingClauseName Can.DeriveEnum = Name.fromChars "Enum"
 
 -- | Check that a type can be JSON encoded/decoded.
 validateJsonType ::
@@ -457,3 +490,57 @@ isJsonContainer name =
   name == Name.maybe
     || name == Name.list
     || name == Name.array
+
+-- ORD VALIDATION
+
+-- | Validate that a type is comparable for @deriving (Ord)@.
+validateOrdType :: Ann.Region -> Name.Name -> Can.Type -> Result i w ()
+validateOrdType region typeName tipe =
+  case checkOrdCompatible tipe of
+    Nothing -> Result.ok ()
+    Just problem -> Result.throw (Error.DerivingInvalid region typeName (Name.fromChars "Ord") problem)
+
+-- | Check if a type is comparable. Returns 'Nothing' if valid.
+checkOrdCompatible :: Can.Type -> Maybe Error.DerivingProblem
+checkOrdCompatible tipe =
+  case tipe of
+    Can.TLambda _ _ -> Just Error.DerivingHasFunction
+    Can.TVar _ -> Nothing
+    Can.TUnit -> Nothing
+    Can.TTuple a b c ->
+      checkOrdCompatible a
+        `orElse` checkOrdCompatible b
+        `orElse` maybe Nothing checkOrdCompatible c
+    Can.TType _ name args ->
+      case args of
+        [] | isOrdPrimitive name -> Nothing
+        [arg] | isOrdContainer name -> checkOrdCompatible arg
+        _ -> Nothing
+    Can.TRecord _ _ -> Just Error.DerivingHasExtensibleRecord
+    Can.TAlias _ _ args alias ->
+      checkOrdCompatible (TypeUtils.dealias args alias)
+
+-- | Check if a type name is a comparable primitive.
+isOrdPrimitive :: Name.Name -> Bool
+isOrdPrimitive name =
+  name == Name.int
+    || name == Name.float
+    || name == Name.string
+    || name == Name.char
+
+-- | Check if a type name is a comparable container.
+isOrdContainer :: Name.Name -> Bool
+isOrdContainer name =
+  name == Name.list
+
+-- ENUM VALIDATION
+
+-- | Validate @deriving (Enum)@ — all constructors must be nullary.
+validateEnumForUnion :: Ann.Region -> Name.Name -> [Can.Ctor] -> Result i w ()
+validateEnumForUnion region typeName ctors =
+  case List.find hasArgs ctors of
+    Nothing -> Result.ok ()
+    Just (Can.Ctor ctorName _ _ _) ->
+      Result.throw (Error.DerivingInvalid region typeName (Name.fromChars "Enum") (Error.DerivingHasConstructorArgs ctorName))
+  where
+    hasArgs (Can.Ctor _ _ numArgs _) = numArgs > 0

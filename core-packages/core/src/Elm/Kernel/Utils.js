@@ -57,7 +57,7 @@ function _Utils_eqHelp(x, y, depth, stack)
 	//*/
 
 	/**__PROD/
-	if (x.$ < 0)
+	if (x.$ <= -3)
 	{
 		x = __Dict_toList(x);
 		y = __Dict_toList(y);
@@ -114,9 +114,31 @@ function _Utils_cmp(x, y, ord)
 				: _Utils_cmp(x.c, y.c);
 	}
 
-	// traverse conses until end of a list or a mismatch
-	for (; x.b && y.b && !(ord = _Utils_cmp(x.a, y.a)); x = x.b, y = y.b) {} // WHILE_CONSES
-	return ord || (x.b ? /*GT*/ 1 : y.b ? /*LT*/ -1 : /*EQ*/ 0);
+	// Lists (negative $ tags) — iterative for performance
+	/**__PROD/
+	if (x.$ < 0)
+	//*/
+	/**__DEBUG/
+	if (x.$ === '::' || x.$ === '[]')
+	//*/
+	{
+		for (; x.b && y.b && !(ord = _Utils_cmp(x.a, y.a)); x = x.b, y = y.b) {} // WHILE_CONSES
+		return ord || (x.b ? /*GT*/ 1 : y.b ? /*LT*/ -1 : /*EQ*/ 0);
+	}
+
+	// Custom union types (non-negative $ tags)
+	// Compare constructor tag first, then fields left-to-right
+	ord = _Utils_cmp(x.$, y.$);
+	if (ord) return ord;
+	for (var key in x)
+	{
+		if (key !== '$')
+		{
+			ord = _Utils_cmp(x[key], y[key]);
+			if (ord) return ord;
+		}
+	}
+	return 0;
 }
 
 var _Utils_lt = F2(function(a, b) { return _Utils_cmp(a, b) < 0; });

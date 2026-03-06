@@ -291,12 +291,13 @@ unboxPath genExpr mode@(Mode.Prod {}) root subPath =
 
 -- | Convert constructor to integer tag for production mode.
 --
--- Red-black tree constructors use negative indices for the tree balancing
--- algorithm; all others use zero-based machine indices.
+-- Red-black tree constructors use negative indices starting at -3 to avoid
+-- collision with list tags (-1 for Nil, -2 for Cons). All other constructors
+-- use zero-based machine indices.
 --
 -- @since 0.19.1
 ctorToInt :: CtorToInt
 ctorToInt home name index =
   if home == ModuleName.dict && name == "RBNode_elm_builtin" || name == "RBEmpty_elm_builtin"
-    then negate (Index.toHuman index)
+    then negate (Index.toHuman index) - 2
     else Index.toMachine index

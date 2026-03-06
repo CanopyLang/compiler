@@ -120,6 +120,10 @@ data DerivingProblem
     DerivingHasUnsupportedType Name.Name
   | -- | A field or constructor arg contains an extensible record.
     DerivingHasExtensibleRecord
+  | -- | A constructor has arguments, but @Enum@ requires all nullary.
+    DerivingHasConstructorArgs Name.Name
+  | -- | @Ord@ is only valid on union types, not type aliases.
+    DerivingOrdNotOnUnion Name.Name
   deriving (Show)
 
 -- | Context for a bad-arity error.
@@ -469,6 +473,11 @@ derivingProblemReason (DerivingHasUnsupportedType name) =
     <> "` value, which cannot be automatically encoded or decoded."
 derivingProblemReason DerivingHasExtensibleRecord =
   "it contains an extensible record. The exact shape of the record must be known at compile time."
+derivingProblemReason (DerivingHasConstructorArgs ctorName) =
+  "the constructor `" <> Name.toChars ctorName
+    <> "` has arguments. Enum requires all constructors to be nullary."
+derivingProblemReason (DerivingOrdNotOnUnion _) =
+  "it is a type alias. Only union types can derive Ord."
 
 derivingProblemHint :: DerivingProblem -> String
 derivingProblemHint DerivingHasFunction =
@@ -477,3 +486,7 @@ derivingProblemHint (DerivingHasUnsupportedType _) =
   "Hint: The types that can be derived include: Int, Float, Bool, String, Maybe, List, Array, tuples, and records of these types. For other types, write the encoder/decoder manually."
 derivingProblemHint DerivingHasExtensibleRecord =
   "Hint: Use a concrete record type instead of an extensible record."
+derivingProblemHint (DerivingHasConstructorArgs _) =
+  "Hint: Remove arguments from all constructors, or remove `deriving (Enum)`."
+derivingProblemHint (DerivingOrdNotOnUnion _) =
+  "Hint: Use `deriving (Ord)` on a custom union type instead, or use `comparable` as a type annotation bound."
