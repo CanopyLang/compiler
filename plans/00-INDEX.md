@@ -46,12 +46,14 @@
 | 14 | [LSP Feature Completion](14-dx-lsp-completion.md) | HIGH | Large | Medium |
 | 15 | [Contributor Onboarding & Architecture Guide](15-dx-contributor-guide.md) | MEDIUM | Small | Low |
 
-## Phase 6: Language Ergonomics (Plans 16–17)
+## Phase 6: Language Ergonomics (Plans 16–19)
 
-| # | Plan | Priority | Effort | Risk |
-|---|------|----------|--------|------|
-| 16 | [FFI Ergonomics — Compiler-Understood Annotations](16-ffi-ergonomics.md) | CRITICAL | Large | Medium |
-| 17 | [JSON Codec Library + Compiler Deriving](17-json-codec-deriving.md) | CRITICAL | Large | Medium |
+| # | Plan | Priority | Effort | Risk | Status |
+|---|------|----------|--------|------|--------|
+| 16 | [FFI Ergonomics — Compiler-Understood Annotations](16-ffi-ergonomics.md) | CRITICAL | Large | Medium | DONE |
+| 17 | [JSON Codec Library + Compiler Deriving](17-json-codec-deriving.md) | CRITICAL | Large | Medium | DONE |
+| 18 | [Deriving Bug Fixes and Completion](18-deriving-fixes.md) | CRITICAL | Medium | Low | DONE |
+| 19 | [Ord/Comparable Runtime Support](19-ord-comparable-runtime.md) | HIGH | Medium | Medium | DONE |
 
 ---
 

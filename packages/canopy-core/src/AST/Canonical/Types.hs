@@ -434,10 +434,10 @@ data Variance
 --
 -- @since 0.20.0
 data DerivingClause
-  = DeriveShow
-  | DeriveOrd
-  | DeriveJsonEncode !(Maybe JsonOptions)
-  | DeriveJsonDecode !(Maybe JsonOptions)
+  = DeriveOrd
+  | DeriveEncode !(Maybe JsonOptions)
+  | DeriveDecode !(Maybe JsonOptions)
+  | DeriveEnum
   deriving (Eq, Show)
 
 -- | JSON options for deriving encoders/decoders.

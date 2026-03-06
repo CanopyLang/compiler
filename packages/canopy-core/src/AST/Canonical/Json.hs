@@ -148,24 +148,24 @@ parseDerivingDefault = pure . maybe [] id
 
 instance Aeson.ToJSON DerivingClause where
   toJSON clause = case clause of
-    DeriveShow -> Aeson.String "Show"
     DeriveOrd -> Aeson.String "Ord"
-    DeriveJsonEncode opts ->
-      Aeson.object ["tag" Aeson..= ("Json.Encode" :: String), "options" Aeson..= opts]
-    DeriveJsonDecode opts ->
-      Aeson.object ["tag" Aeson..= ("Json.Decode" :: String), "options" Aeson..= opts]
+    DeriveEncode opts ->
+      Aeson.object ["tag" Aeson..= ("Encode" :: String), "options" Aeson..= opts]
+    DeriveDecode opts ->
+      Aeson.object ["tag" Aeson..= ("Decode" :: String), "options" Aeson..= opts]
+    DeriveEnum -> Aeson.String "Enum"
 
 instance Aeson.FromJSON DerivingClause where
   parseJSON (Aeson.String txt) =
     case txt of
-      "Show" -> pure DeriveShow
       "Ord" -> pure DeriveOrd
+      "Enum" -> pure DeriveEnum
       _ -> fail ("Unknown DerivingClause: " ++ show txt)
   parseJSON val = Aeson.withObject "DerivingClause" (\o -> do
     tag <- o Aeson..: "tag" :: Parser String
     case tag of
-      "Json.Encode" -> DeriveJsonEncode <$> o Aeson..:? "options"
-      "Json.Decode" -> DeriveJsonDecode <$> o Aeson..:? "options"
+      "Encode" -> DeriveEncode <$> o Aeson..:? "options"
+      "Decode" -> DeriveDecode <$> o Aeson..:? "options"
       _ -> fail ("Unknown DerivingClause tag: " ++ tag)) val
 
 instance Aeson.ToJSON JsonOptions where

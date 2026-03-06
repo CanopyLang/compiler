@@ -83,17 +83,17 @@ instance Binary.Binary Union where
 
 instance Binary.Binary DerivingClause where
   put clause = case clause of
-    DeriveShow -> Binary.putWord8 0
     DeriveOrd -> Binary.putWord8 2
-    DeriveJsonEncode opts -> Binary.putWord8 3 >> Binary.put opts
-    DeriveJsonDecode opts -> Binary.putWord8 4 >> Binary.put opts
+    DeriveEncode opts -> Binary.putWord8 3 >> Binary.put opts
+    DeriveDecode opts -> Binary.putWord8 4 >> Binary.put opts
+    DeriveEnum -> Binary.putWord8 5
   get = do
     tag <- Binary.getWord8
     case tag of
-      0 -> pure DeriveShow
       2 -> pure DeriveOrd
-      3 -> DeriveJsonEncode <$> Binary.get
-      4 -> DeriveJsonDecode <$> Binary.get
+      3 -> DeriveEncode <$> Binary.get
+      4 -> DeriveDecode <$> Binary.get
+      5 -> pure DeriveEnum
       _ -> fail ("DerivingClause: unexpected tag " ++ show tag)
 
 instance Binary.Binary JsonOptions where

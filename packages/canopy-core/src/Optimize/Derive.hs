@@ -2,8 +2,8 @@
 
 -- | Optimize.Derive - Code generation for deriving clauses
 --
--- Generates optimized expressions for @deriving (Show, Json.Encode, Json.Decode)@.
--- Show generates string conversion functions. Json uses Port.hs infrastructure.
+-- Generates optimized expressions for @deriving (Encode, Decode)@.
+-- Encode generates JSON encoder functions. Decode generates JSON decoder functions.
 -- Ord is handled separately via ComparableBound (no generated function).
 --
 -- @since 0.20.0
@@ -14,12 +14,15 @@ where
 
 import qualified AST.Canonical as Can
 import qualified AST.Optimized as Opt
+import qualified AST.Utils.Type as TypeUtils
 import qualified Canopy.Data.Name as Name
 import qualified Canopy.Data.Utf8 as Utf8
 import qualified Canopy.String as ES
 import qualified Canopy.ModuleName as ModuleName
 import qualified Canopy.Package as Pkg
+import Control.Monad (foldM)
 import qualified Data.Map.Strict as Map
+import qualified Data.Set as Set
 import qualified Optimize.Names as Names
 import qualified Optimize.Port as Port
 
@@ -57,9 +60,9 @@ addUnionClause ::
 addUnionClause home name union clause graph =
   case clause of
     Can.DeriveOrd -> graph
-    Can.DeriveShow -> addShowUnion home name union graph
-    Can.DeriveJsonEncode opts -> addJsonEncodeUnion home name union opts graph
-    Can.DeriveJsonDecode opts -> addJsonDecodeUnion home name union opts graph
+    Can.DeriveEncode opts -> addEncodeUnion home name union opts graph
+    Can.DeriveDecode opts -> addDecodeUnion home name union opts graph
+    Can.DeriveEnum -> addEnumList home name union graph
 
 -- ALIAS DERIVING
 
@@ -82,13 +85,13 @@ addAliasClause ::
 addAliasClause home name alias@(Can.Alias typeParams _ _ _ _) clause graph =
   case clause of
     Can.DeriveOrd -> graph
-    Can.DeriveShow -> addShowAlias home name alias graph
-    Can.DeriveJsonEncode opts
-      | null typeParams -> addJsonEncodeAlias home name alias opts graph
+    Can.DeriveEncode opts
+      | null typeParams -> addEncodeAlias home name alias opts graph
       | otherwise -> graph
-    Can.DeriveJsonDecode opts
-      | null typeParams -> addJsonDecodeAlias home name alias opts graph
+    Can.DeriveDecode opts
+      | null typeParams -> addDecodeAlias home name alias opts graph
       | otherwise -> graph
+    Can.DeriveEnum -> graph
 
 -- EQUALITY HELPER
 
@@ -120,137 +123,18 @@ ctorArgFieldName i
   | i < 26 = Name.fromChars [toEnum (fromEnum 'a' + i)]
   | otherwise = Name.fromChars [toEnum (fromEnum 'A' + i - 26)]
 
--- STRING APPEND HELPER
-
--- | Append two strings using @Basics.append@ (which wraps @_Utils_ap@).
-strAppend :: Opt.Expr -> Opt.Expr -> Names.Tracker Opt.Expr
-strAppend a b =
-  do
-    append_ <- Names.registerGlobal ModuleName.basics (Name.fromChars "append")
-    pure (Opt.Call append_ [a, b])
-
--- SHOW UNION
-
-addShowUnion ::
-  ModuleName.Canonical ->
-  Name.Name ->
-  Can.Union ->
-  Opt.LocalGraph ->
-  Opt.LocalGraph
-addShowUnion home name (Can.Union _ _ alts _ opts _) graph =
-  let funcName = Name.fromChars ("show" ++ Name.toChars name)
-      (deps, fields, expr) = Names.run (toShowUnionExpr home alts opts)
-      node = Opt.Define expr deps
-   in addToGraph (Opt.Global home funcName) node fields graph
-
-toShowUnionExpr ::
-  ModuleName.Canonical ->
-  [Can.Ctor] ->
-  Can.CtorOpts ->
-  Names.Tracker Opt.Expr
-toShowUnionExpr home alts opts =
-  case opts of
-    Can.Enum -> toShowEnumExpr home alts
-    _ -> toShowCtorExpr home alts
-
-toShowEnumExpr ::
-  ModuleName.Canonical ->
-  [Can.Ctor] ->
-  Names.Tracker Opt.Expr
-toShowEnumExpr home alts =
-  do
-    let dollar = Name.fromChars "$"
-    branches <- traverse (enumShowBranch home) alts
-    let fallback = Opt.Str (Name.toCanopyString (Name.fromChars ""))
-    pure (Opt.Function [dollar] (buildIfChain branches fallback))
-
-enumShowBranch :: ModuleName.Canonical -> Can.Ctor -> Names.Tracker (Opt.Expr, Opt.Expr)
-enumShowBranch home (Can.Ctor ctorName index _ _) =
-  do
-    let dollar = Name.fromChars "$"
-    cond <- kernelEq (Opt.VarLocal dollar) (Opt.VarEnum (Opt.Global home ctorName) index)
-    pure (cond, Opt.Str (Name.toCanopyString ctorName))
-
--- | Generate a Show function for union types with constructor arguments.
---
--- Builds an if-chain that matches on the @$@ field of the value,
--- then for each constructor concatenates the name with @Debug.toString@
--- of each argument field.
-toShowCtorExpr ::
-  ModuleName.Canonical ->
-  [Can.Ctor] ->
-  Names.Tracker Opt.Expr
-toShowCtorExpr home alts =
-  do
-    let dollar = Name.fromChars "$"
-    branches <- traverse (ctorShowBranch home) alts
-    debugToString <- Names.registerGlobal ModuleName.debug "toString"
-    let fallback = Opt.Call debugToString [Opt.VarLocal dollar]
-    pure (Opt.Function [dollar] (buildIfChain branches fallback))
-
-ctorShowBranch :: ModuleName.Canonical -> Can.Ctor -> Names.Tracker (Opt.Expr, Opt.Expr)
-ctorShowBranch _home (Can.Ctor ctorName _index numArgs _) =
-  do
-    let dollar = Name.fromChars "$"
-    cond <- ctorTagMatch dollar ctorName
-    let nameStr = Opt.Str (Name.toCanopyString ctorName)
-    case numArgs of
-      0 -> pure (cond, nameStr)
-      _ -> do
-        result <- ctorShowArgs dollar nameStr numArgs
-        pure (cond, result)
-
--- | Build string concatenation of ctor name with Debug.toString of each arg.
-ctorShowArgs :: Name.Name -> Opt.Expr -> Int -> Names.Tracker Opt.Expr
-ctorShowArgs dollar nameStr numArgs =
-  do
-    debugToString <- Names.registerGlobal ModuleName.debug "toString"
-    let spaceStr = Name.toCanopyString (Name.fromChars " ")
-    let argExprs = fmap (mkArgStr debugToString dollar) [0 .. numArgs - 1]
-    foldl (\accM argExpr -> do acc <- accM; appendWithSpace acc spaceStr argExpr) (pure nameStr) argExprs
-  where
-    mkArgStr dbg d i = Opt.Call dbg [Opt.Access (Opt.VarLocal d) (ctorArgFieldName i)]
-
--- | Append a space and an argument string to an accumulator.
-appendWithSpace :: Opt.Expr -> ES.String -> Opt.Expr -> Names.Tracker Opt.Expr
-appendWithSpace acc spaceStr argExpr =
-  do
-    withSpace <- strAppend acc (Opt.Str spaceStr)
-    strAppend withSpace argExpr
-
--- SHOW ALIAS
-
-addShowAlias ::
-  ModuleName.Canonical ->
-  Name.Name ->
-  Can.Alias ->
-  Opt.LocalGraph ->
-  Opt.LocalGraph
-addShowAlias home name (Can.Alias _ _ tipe _ _) graph =
-  let funcName = Name.fromChars ("show" ++ Name.toChars name)
-      (deps, fields, expr) = Names.run (toShowTypeExpr tipe)
-      node = Opt.Define expr deps
-   in addToGraph (Opt.Global home funcName) node fields graph
-
-toShowTypeExpr :: Can.Type -> Names.Tracker Opt.Expr
-toShowTypeExpr _tipe =
-  let dollar = Name.fromChars "$"
-   in do
-        debugToString <- Names.registerGlobal ModuleName.debug "toString"
-        pure (Opt.Function [dollar] (Opt.Call debugToString [Opt.VarLocal dollar]))
-
 -- JSON ENCODE UNION
 
-addJsonEncodeUnion ::
+addEncodeUnion ::
   ModuleName.Canonical ->
   Name.Name ->
   Can.Union ->
   Maybe Can.JsonOptions ->
   Opt.LocalGraph ->
   Opt.LocalGraph
-addJsonEncodeUnion home name (Can.Union _ _ alts _ opts _) _opts graph =
+addEncodeUnion home name (Can.Union _ _ alts _ opts _) jsonOpts graph =
   let funcName = Name.fromChars ("encode" ++ Name.toChars name)
-      (deps, fields, expr) = Names.run (toEncodeUnionExpr home alts opts)
+      (deps, fields, expr) = Names.run (toEncodeUnionExpr home alts opts jsonOpts)
       node = Opt.Define expr deps
    in addToGraph (Opt.Global home funcName) node fields graph
 
@@ -258,11 +142,12 @@ toEncodeUnionExpr ::
   ModuleName.Canonical ->
   [Can.Ctor] ->
   Can.CtorOpts ->
+  Maybe Can.JsonOptions ->
   Names.Tracker Opt.Expr
-toEncodeUnionExpr home alts opts =
+toEncodeUnionExpr home alts opts jsonOpts =
   case opts of
     Can.Enum -> toEncodeEnumExpr home alts
-    _ -> toEncodeTaggedExpr home alts
+    _ -> toEncodeTaggedExpr home alts jsonOpts
 
 toEncodeEnumExpr :: ModuleName.Canonical -> [Can.Ctor] -> Names.Tracker Opt.Expr
 toEncodeEnumExpr home alts =
@@ -290,13 +175,14 @@ enumEncodeBranch home encodeString (Can.Ctor ctorName index _ _) =
 toEncodeTaggedExpr ::
   ModuleName.Canonical ->
   [Can.Ctor] ->
+  Maybe Can.JsonOptions ->
   Names.Tracker Opt.Expr
-toEncodeTaggedExpr home alts =
+toEncodeTaggedExpr home alts jsonOpts =
   do
     let dollar = Name.fromChars "$"
     encodeObject <- Names.registerGlobal elmJsonEncode "object"
     encodeString <- Names.registerGlobal elmJsonEncode "string"
-    branches <- traverse (taggedEncodeBranch home encodeObject encodeString) alts
+    branches <- traverse (taggedEncodeBranch home encodeObject encodeString jsonOpts) alts
     let fallback = Opt.Call encodeObject [Opt.List []]
     pure (Opt.Function [dollar] (buildIfChain branches fallback))
 
@@ -304,12 +190,13 @@ taggedEncodeBranch ::
   ModuleName.Canonical ->
   Opt.Expr ->
   Opt.Expr ->
+  Maybe Can.JsonOptions ->
   Can.Ctor ->
   Names.Tracker (Opt.Expr, Opt.Expr)
-taggedEncodeBranch _home encodeObject encodeString (Can.Ctor ctorName _index numArgs argTypes) =
+taggedEncodeBranch _home encodeObject encodeString jsonOpts (Can.Ctor ctorName _index numArgs argTypes) =
   do
     let dollar = Name.fromChars "$"
-    let tagStr = Name.toCanopyString (Name.fromChars "tag")
+    let tagStr = tagFieldName jsonOpts
     let ctorStr = Name.toCanopyString ctorName
     let tagPair = Opt.Tuple (Opt.Str tagStr) (Opt.Call encodeString [Opt.Str ctorStr]) Nothing
     cond <- ctorTagMatch dollar ctorName
@@ -320,7 +207,7 @@ taggedEncodeBranch _home encodeObject encodeString (Can.Ctor ctorName _index num
         do
           encoder <- Port.toEncoder (head' argTypes)
           let argExpr = Opt.Access (Opt.VarLocal dollar) (ctorArgFieldName 0)
-          let contentsPair = mkContentsPair (Opt.Call encoder [argExpr])
+          let contentsPair = mkContentsPairWith jsonOpts (Opt.Call encoder [argExpr])
           pure (cond, Opt.Call encodeObject [Opt.List [tagPair, contentsPair]])
       _ ->
         do
@@ -328,7 +215,7 @@ taggedEncodeBranch _home encodeObject encodeString (Can.Ctor ctorName _index num
           encodeList <- Names.registerGlobal elmJsonEncode "list"
           identity <- Names.registerGlobal ModuleName.basics Name.identity
           let contentsVal = Opt.Call encodeList [identity, Opt.List encodedArgs]
-          let contentsPair = mkContentsPair contentsVal
+          let contentsPair = mkContentsPairWith jsonOpts contentsVal
           pure (cond, Opt.Call encodeObject [Opt.List [tagPair, contentsPair]])
 
 -- | Encode each constructor argument by index using Port.toEncoder.
@@ -344,23 +231,23 @@ encodeOneArg dollar (i, argType) =
     let argExpr = Opt.Access (Opt.VarLocal dollar) (ctorArgFieldName i)
     pure (Opt.Call encoder [argExpr])
 
--- | Build a @("contents", value)@ tuple.
-mkContentsPair :: Opt.Expr -> Opt.Expr
-mkContentsPair val =
-  Opt.Tuple (Opt.Str (Name.toCanopyString (Name.fromChars "contents"))) val Nothing
+-- | Build a @("contents", value)@ tuple using options for the field name.
+mkContentsPairWith :: Maybe Can.JsonOptions -> Opt.Expr -> Opt.Expr
+mkContentsPairWith jsonOpts val =
+  Opt.Tuple (Opt.Str (contentsFieldName jsonOpts)) val Nothing
 
 -- JSON DECODE UNION
 
-addJsonDecodeUnion ::
+addDecodeUnion ::
   ModuleName.Canonical ->
   Name.Name ->
   Can.Union ->
   Maybe Can.JsonOptions ->
   Opt.LocalGraph ->
   Opt.LocalGraph
-addJsonDecodeUnion home name (Can.Union _ _ alts _ opts _) _opts graph =
+addDecodeUnion home name (Can.Union _ _ alts _ opts _) jsonOpts graph =
   let funcName = Name.fromChars (lowerFirst (Name.toChars name) ++ "Decoder")
-      (deps, fields, expr) = Names.run (toDecodeUnionExpr home alts opts)
+      (deps, fields, expr) = Names.run (toDecodeUnionExpr home alts opts jsonOpts)
       node = Opt.Define expr deps
    in addToGraph (Opt.Global home funcName) node fields graph
 
@@ -368,11 +255,12 @@ toDecodeUnionExpr ::
   ModuleName.Canonical ->
   [Can.Ctor] ->
   Can.CtorOpts ->
+  Maybe Can.JsonOptions ->
   Names.Tracker Opt.Expr
-toDecodeUnionExpr home alts opts =
+toDecodeUnionExpr home alts opts jsonOpts =
   case opts of
     Can.Enum -> toDecodeEnumExpr home alts
-    _ -> toDecodeTaggedExpr home alts
+    _ -> toDecodeTaggedExpr home alts jsonOpts
 
 toDecodeEnumExpr ::
   ModuleName.Canonical ->
@@ -407,16 +295,17 @@ enumDecodeBranch home succeed (Can.Ctor ctorName _ _ _) =
 toDecodeTaggedExpr ::
   ModuleName.Canonical ->
   [Can.Ctor] ->
+  Maybe Can.JsonOptions ->
   Names.Tracker Opt.Expr
-toDecodeTaggedExpr home alts =
+toDecodeTaggedExpr home alts jsonOpts =
   do
     decodeField <- Names.registerGlobal elmJsonDecode "field"
     decodeString <- Names.registerGlobal elmJsonDecode "string"
     andThen <- Names.registerGlobal elmJsonDecode "andThen"
     fail_ <- Names.registerGlobal elmJsonDecode "fail"
     let tagVar = Name.fromChars "tag"
-    let tagDecoder = Opt.Call decodeField [Opt.Str (Name.toCanopyString (Name.fromChars "tag")), decodeString]
-    branches <- traverse (taggedDecodeBranch home) alts
+    let tagDecoder = Opt.Call decodeField [Opt.Str (tagFieldName jsonOpts), decodeString]
+    branches <- traverse (taggedDecodeBranch home jsonOpts) alts
     let fallback = Opt.Call fail_ [Opt.Str (Name.toCanopyString (Name.fromChars "Unknown variant"))]
     let body = buildIfChain branches fallback
     let decoder = Opt.Function [tagVar] body
@@ -424,46 +313,46 @@ toDecodeTaggedExpr home alts =
 
 taggedDecodeBranch ::
   ModuleName.Canonical ->
+  Maybe Can.JsonOptions ->
   Can.Ctor ->
   Names.Tracker (Opt.Expr, Opt.Expr)
-taggedDecodeBranch home (Can.Ctor ctorName _ numArgs argTypes) =
+taggedDecodeBranch home jsonOpts (Can.Ctor ctorName _ numArgs argTypes) =
   do
     let tagVar = Name.fromChars "tag"
     cond <- kernelEq (Opt.VarLocal tagVar) (Opt.Str (Name.toCanopyString ctorName))
     let ctorVal = Opt.VarGlobal (Opt.Global home ctorName)
-    result <- decodeCtorBody ctorVal numArgs argTypes
+    result <- decodeCtorBody ctorVal numArgs argTypes jsonOpts
     pure (cond, result)
 
 -- | Build the decoder body for a single constructor.
-decodeCtorBody :: Opt.Expr -> Int -> [Can.Type] -> Names.Tracker Opt.Expr
-decodeCtorBody ctorVal numArgs argTypes =
+decodeCtorBody :: Opt.Expr -> Int -> [Can.Type] -> Maybe Can.JsonOptions -> Names.Tracker Opt.Expr
+decodeCtorBody ctorVal numArgs argTypes jsonOpts =
   case numArgs of
     0 -> do
       succeed <- Names.registerGlobal elmJsonDecode "succeed"
       pure (Opt.Call succeed [ctorVal])
-    1 -> decodeSingleArg ctorVal (head' argTypes)
-    _ -> decodeMultiArgs ctorVal argTypes
+    1 -> decodeSingleArg ctorVal (head' argTypes) jsonOpts
+    _ -> decodeMultiArgs ctorVal argTypes jsonOpts
 
 -- | Decode a single-argument constructor from @"contents"@.
-decodeSingleArg :: Opt.Expr -> Can.Type -> Names.Tracker Opt.Expr
-decodeSingleArg ctorVal argType =
+decodeSingleArg :: Opt.Expr -> Can.Type -> Maybe Can.JsonOptions -> Names.Tracker Opt.Expr
+decodeSingleArg ctorVal argType jsonOpts =
   do
     decodeField <- Names.registerGlobal elmJsonDecode "field"
     decodeMap <- Names.registerGlobal elmJsonDecode "map"
     decoder0 <- Port.toDecoder argType
-    let contentsStr = Name.toCanopyString (Name.fromChars "contents")
     let mapped = Opt.Call decodeMap [ctorVal, decoder0]
-    pure (Opt.Call decodeField [Opt.Str contentsStr, mapped])
+    pure (Opt.Call decodeField [Opt.Str (contentsFieldName jsonOpts), mapped])
 
 -- | Decode a multi-argument constructor from @"contents"@ array.
 --
 -- Generates: @field "contents" (index 0 dec0 |> andThen (\a -> index 1 dec1 |> andThen (\b -> succeed (Ctor a b))))@
-decodeMultiArgs :: Opt.Expr -> [Can.Type] -> Names.Tracker Opt.Expr
-decodeMultiArgs ctorVal argTypes =
+decodeMultiArgs :: Opt.Expr -> [Can.Type] -> Maybe Can.JsonOptions -> Names.Tracker Opt.Expr
+decodeMultiArgs ctorVal argTypes jsonOpts =
   do
     decodeField <- Names.registerGlobal elmJsonDecode "field"
     succeed <- Names.registerGlobal elmJsonDecode "succeed"
-    let contentsStr = Name.toCanopyString (Name.fromChars "contents")
+    let contentsStr = contentsFieldName jsonOpts
     let argNames = fmap (\i -> Name.fromVarIndex i) [0 .. length argTypes - 1]
     let ctorCall = Opt.Call ctorVal (fmap Opt.VarLocal argNames)
     let innermost = Opt.Call succeed [ctorCall]
@@ -486,33 +375,159 @@ buildAndThenChain argTypes argNames innerExpr idx
 
 -- JSON ENCODE ALIAS
 
-addJsonEncodeAlias ::
+addEncodeAlias ::
   ModuleName.Canonical ->
   Name.Name ->
   Can.Alias ->
   Maybe Can.JsonOptions ->
   Opt.LocalGraph ->
   Opt.LocalGraph
-addJsonEncodeAlias home name (Can.Alias _ _ tipe _ _) _opts graph =
+addEncodeAlias home name (Can.Alias _ _ tipe _ _) jsonOpts graph =
   let funcName = Name.fromChars ("encode" ++ Name.toChars name)
-      (deps, fields, expr) = Names.run (Port.toEncoder tipe)
+      (deps, fields, expr) = Names.run (toEncoderWithOpts jsonOpts tipe)
       node = Opt.Define expr deps
    in addToGraph (Opt.Global home funcName) node fields graph
 
 -- JSON DECODE ALIAS
 
-addJsonDecodeAlias ::
+addDecodeAlias ::
   ModuleName.Canonical ->
   Name.Name ->
   Can.Alias ->
   Maybe Can.JsonOptions ->
   Opt.LocalGraph ->
   Opt.LocalGraph
-addJsonDecodeAlias home name (Can.Alias _ _ tipe _ _) _opts graph =
+addDecodeAlias home name (Can.Alias _ _ tipe _ _) jsonOpts graph =
   let funcName = Name.fromChars (lowerFirst (Name.toChars name) ++ "Decoder")
-      (deps, fields, expr) = Names.run (Port.toDecoder tipe)
+      (deps, fields, expr) = Names.run (toDecoderWithOpts jsonOpts tipe)
       node = Opt.Define expr deps
    in addToGraph (Opt.Global home funcName) node fields graph
+
+-- ENCODER/DECODER WITH OPTIONS
+
+-- | Like 'Port.toEncoder' but applies field naming from JsonOptions.
+toEncoderWithOpts :: Maybe Can.JsonOptions -> Can.Type -> Names.Tracker Opt.Expr
+toEncoderWithOpts Nothing tipe = Port.toEncoder tipe
+toEncoderWithOpts (Just opts) tipe =
+  case tipe of
+    Can.TRecord fields Nothing ->
+      encodeRecordWithOpts opts fields
+    Can.TAlias _ _ args alias ->
+      toEncoderWithOpts (Just opts) (TypeUtils.dealias args alias)
+    _ -> Port.toEncoder tipe
+
+-- | Encode a record with field naming options applied.
+encodeRecordWithOpts :: Can.JsonOptions -> Map.Map Name.Name Can.FieldType -> Names.Tracker Opt.Expr
+encodeRecordWithOpts opts fields =
+  let encodeField (name, Can.FieldType _ fieldType) =
+        do
+          encoder <- Port.toEncoder fieldType
+          let value = Opt.Call encoder [Opt.Access (Opt.VarLocal Name.dollar) name]
+          let jsonName = applyFieldNaming (Just opts) name
+          return (Opt.Tuple (Opt.Str jsonName) value Nothing)
+   in do
+        object <- Names.registerGlobal ModuleName.jsonEncode "object"
+        keyValuePairs <- traverse encodeField (Map.toList fields)
+        Names.registerFieldDict fields $
+          Opt.Function [Name.dollar] (Opt.Call object [Opt.List keyValuePairs])
+
+-- | Like 'Port.toDecoder' but applies field naming from JsonOptions.
+toDecoderWithOpts :: Maybe Can.JsonOptions -> Can.Type -> Names.Tracker Opt.Expr
+toDecoderWithOpts Nothing tipe = Port.toDecoder tipe
+toDecoderWithOpts (Just opts) tipe =
+  case tipe of
+    Can.TRecord fields Nothing ->
+      decodeRecordWithOpts opts fields
+    Can.TAlias _ _ args alias ->
+      toDecoderWithOpts (Just opts) (TypeUtils.dealias args alias)
+    _ -> Port.toDecoder tipe
+
+-- | Decode a record with field naming options applied.
+decodeRecordWithOpts :: Can.JsonOptions -> Map.Map Name.Name Can.FieldType -> Names.Tracker Opt.Expr
+decodeRecordWithOpts opts fields =
+  let toFieldExpr name _ = Opt.VarLocal name
+      record = Opt.Record (Map.mapWithKey toFieldExpr fields)
+   in do
+        succeed <- Names.registerGlobal elmJsonDecode "succeed"
+        Names.registerFieldDict fields (Map.toList fields)
+          >>= foldM (fieldAndThenWithOpts opts) (Opt.Call succeed [record])
+
+-- | Like 'fieldAndThen' in Port but uses the naming strategy for field keys.
+fieldAndThenWithOpts :: Can.JsonOptions -> Opt.Expr -> (Name.Name, Can.FieldType) -> Names.Tracker Opt.Expr
+fieldAndThenWithOpts opts decoder (key, Can.FieldType _ tipe) =
+  do
+    andThen <- Names.registerGlobal elmJsonDecode "andThen"
+    field <- Names.registerGlobal elmJsonDecode "field"
+    typeDecoder <- Port.toDecoder tipe
+    let jsonKey = applyFieldNaming (Just opts) key
+    return (Opt.Call andThen [Opt.Function [key] decoder, Opt.Call field [Opt.Str jsonKey, typeDecoder]])
+
+-- ENUM LIST
+
+-- | Generate @allTypeName : List TypeName@ as a list of all constructors.
+addEnumList ::
+  ModuleName.Canonical ->
+  Name.Name ->
+  Can.Union ->
+  Opt.LocalGraph ->
+  Opt.LocalGraph
+addEnumList home name (Can.Union _ _ alts _ opts _) graph =
+  let funcName = Name.fromChars ("all" ++ Name.toChars name)
+      ctorExprs = fmap (enumCtorExpr home opts) alts
+      expr = Opt.List ctorExprs
+      deps = Set.fromList (fmap (enumCtorGlobal home) alts)
+      node = Opt.Define expr deps
+   in addToGraph (Opt.Global home funcName) node Map.empty graph
+
+-- | Generate the expression for a single enum constructor.
+enumCtorExpr :: ModuleName.Canonical -> Can.CtorOpts -> Can.Ctor -> Opt.Expr
+enumCtorExpr home opts (Can.Ctor ctorName index _ _) =
+  case opts of
+    Can.Enum -> Opt.VarEnum (Opt.Global home ctorName) index
+    _ -> Opt.VarGlobal (Opt.Global home ctorName)
+
+-- | Get the global reference for a constructor (for dependency tracking).
+enumCtorGlobal :: ModuleName.Canonical -> Can.Ctor -> Opt.Global
+enumCtorGlobal home (Can.Ctor ctorName _ _ _) = Opt.Global home ctorName
+
+-- JSON OPTIONS HELPERS
+
+-- | Get the tag field name from options, defaulting to @"tag"@.
+tagFieldName :: Maybe Can.JsonOptions -> ES.String
+tagFieldName opts =
+  maybe (Name.toCanopyString (Name.fromChars "tag")) (\o -> maybe (Name.toCanopyString (Name.fromChars "tag")) Name.toCanopyString (Can._jsonTagField o)) opts
+
+-- | Get the contents field name from options, defaulting to @"contents"@.
+contentsFieldName :: Maybe Can.JsonOptions -> ES.String
+contentsFieldName opts =
+  maybe (Name.toCanopyString (Name.fromChars "contents")) (\o -> maybe (Name.toCanopyString (Name.fromChars "contents")) Name.toCanopyString (Can._jsonContentsField o)) opts
+
+-- | Apply a naming strategy to a field name.
+applyNaming :: Can.NamingStrategy -> Name.Name -> ES.String
+applyNaming Can.IdentityNaming name = Name.toCanopyString name
+applyNaming Can.SnakeCase name = Name.toCanopyString (Name.fromChars (toSnakeCase (Name.toChars name)))
+applyNaming Can.CamelCase name = Name.toCanopyString name
+applyNaming Can.KebabCase name = Name.toCanopyString (Name.fromChars (toKebabCase (Name.toChars name)))
+
+-- | Convert camelCase to snake_case.
+toSnakeCase :: String -> String
+toSnakeCase [] = []
+toSnakeCase (c : cs)
+  | c >= 'A' && c <= 'Z' = '_' : toEnum (fromEnum c + 32) : toSnakeCase cs
+  | otherwise = c : toSnakeCase cs
+
+-- | Convert camelCase to kebab-case.
+toKebabCase :: String -> String
+toKebabCase [] = []
+toKebabCase (c : cs)
+  | c >= 'A' && c <= 'Z' = '-' : toEnum (fromEnum c + 32) : toKebabCase cs
+  | otherwise = c : toKebabCase cs
+
+-- | Apply field naming from options to a field name.
+applyFieldNaming :: Maybe Can.JsonOptions -> Name.Name -> ES.String
+applyFieldNaming Nothing name = Name.toCanopyString name
+applyFieldNaming (Just opts) name =
+  maybe (Name.toCanopyString name) (\strategy -> applyNaming strategy name) (Can._jsonFieldNaming opts)
 
 -- HELPERS
 

@@ -256,18 +256,18 @@ addDerivedBinding rigids selfType typeName acc clause =
   let nameChars = Name.toChars typeName
       isParametric = not (null rigids)
    in case clause of
-        Can.DeriveShow ->
-          (rigids, Name.fromChars ("show" ++ nameChars), FunN selfType Type.string) : acc
         Can.DeriveOrd ->
           acc
-        Can.DeriveJsonEncode _
+        Can.DeriveEncode _
           | isParametric -> acc
           | otherwise ->
               (rigids, Name.fromChars ("encode" ++ nameChars), FunN selfType (AppN ModuleName.jsonEncode Name.value [])) : acc
-        Can.DeriveJsonDecode _
+        Can.DeriveDecode _
           | isParametric -> acc
           | otherwise ->
               (rigids, Name.fromChars (lowerFirst nameChars ++ "Decoder"), AppN ModuleName.jsonDecode (Name.fromChars "Decoder") [selfType]) : acc
+        Can.DeriveEnum ->
+          ([], Name.fromChars ("all" ++ nameChars), AppN ModuleName.list Name.list [selfType]) : acc
 
 lowerFirst :: String -> String
 lowerFirst [] = []

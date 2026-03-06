@@ -726,17 +726,16 @@ data SupertypeBound
 -- Specifies which functions should be automatically generated
 -- for a type definition. Each clause generates different functions:
 --
--- * 'DeriveShow' generates @showTypeName : TypeName -> String@
 -- * 'DeriveOrd' applies @ComparableBound@ (no generated function)
--- * 'DeriveJsonEncode' generates @encodeTypeName : TypeName -> Json.Encode.Value@
--- * 'DeriveJsonDecode' generates @typeNameDecoder : Json.Decode.Decoder TypeName@
+-- * 'DeriveEncode' generates @encodeTypeName : TypeName -> Json.Encode.Value@
+-- * 'DeriveDecode' generates @typeNameDecoder : Json.Decode.Decoder TypeName@
 --
 -- @since 0.20.0
 data DerivingClause
-  = DeriveShow
-  | DeriveOrd
-  | DeriveJsonEncode !(Maybe JsonOptions)
-  | DeriveJsonDecode !(Maybe JsonOptions)
+  = DeriveOrd
+  | DeriveEncode !(Maybe JsonOptions)
+  | DeriveDecode !(Maybe JsonOptions)
+  | DeriveEnum
   deriving (Eq, Show)
 
 -- | Options for JSON encoding/decoding generation.

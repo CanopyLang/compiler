@@ -465,14 +465,14 @@ addDerivedName :: Name.Name -> Map.Map Name.Name () -> Can.DerivingClause -> Map
 addDerivedName typeName acc clause =
   let nameChars = Name.toChars typeName
    in case clause of
-        Can.DeriveShow ->
-          Map.insert (Name.fromChars ("show" ++ nameChars)) () acc
         Can.DeriveOrd ->
           acc
-        Can.DeriveJsonEncode _ ->
+        Can.DeriveEncode _ ->
           Map.insert (Name.fromChars ("encode" ++ nameChars)) () acc
-        Can.DeriveJsonDecode _ ->
+        Can.DeriveDecode _ ->
           Map.insert (Name.fromChars (lowerFirst nameChars ++ "Decoder")) () acc
+        Can.DeriveEnum ->
+          Map.insert (Name.fromChars ("all" ++ nameChars)) () acc
 
 lowerFirst :: String -> String
 lowerFirst [] = []

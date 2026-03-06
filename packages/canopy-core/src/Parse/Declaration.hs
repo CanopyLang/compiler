@@ -10,7 +10,7 @@ module Parse.Declaration
 import qualified Canopy.Data.Name as Name
 
 import AST.Source (GuardAnnotation (..))
-import AST.Source (DerivingClause (..), JsonOptions (..), NamingStrategy (..), SupertypeBound (..))
+import AST.Source (DerivingClause (..), SupertypeBound (..))
 import qualified AST.Source as Src
 import qualified AST.Utils.Binop as Binop
 import qualified Parse.Expression as Expr
@@ -331,16 +331,10 @@ chompDeriveNameUnion =
 chompDeriveQualifiedAlias :: Name.Name -> Parser SyntaxError.TypeAlias Src.DerivingClause
 chompDeriveQualifiedAlias name =
   case name of
-    "Show" -> return DeriveShow
     "Ord" -> return DeriveOrd
-    "Json" ->
-      do  word1 0x2E {-.-} SyntaxError.AliasEquals
-          sub <- Var.upper SyntaxError.AliasEquals
-          case sub of
-            "Encode" -> return (DeriveJsonEncode Nothing)
-            "Decode" -> return (DeriveJsonDecode Nothing)
-            _ -> Parse.Parser $ \(Parse.State _ _ _ _ r c) _ _ _ eerr ->
-                   eerr r c SyntaxError.AliasEquals
+    "Encode" -> chompOptionalJsonOptions DeriveEncode SyntaxError.AliasEquals SyntaxError.AliasSpace SyntaxError.AliasIndentBody
+    "Decode" -> chompOptionalJsonOptions DeriveDecode SyntaxError.AliasEquals SyntaxError.AliasSpace SyntaxError.AliasIndentBody
+    "Enum" -> return DeriveEnum
     _ -> Parse.Parser $ \(Parse.State _ _ _ _ r c) _ _ _ eerr ->
            eerr r c SyntaxError.AliasEquals
 
@@ -349,18 +343,120 @@ chompDeriveQualifiedAlias name =
 chompDeriveQualifiedUnion :: Name.Name -> Parser SyntaxError.CustomType Src.DerivingClause
 chompDeriveQualifiedUnion name =
   case name of
-    "Show" -> return DeriveShow
     "Ord" -> return DeriveOrd
-    "Json" ->
-      do  word1 0x2E {-.-} SyntaxError.CT_Variant
-          sub <- Var.upper SyntaxError.CT_Variant
-          case sub of
-            "Encode" -> return (DeriveJsonEncode Nothing)
-            "Decode" -> return (DeriveJsonDecode Nothing)
-            _ -> Parse.Parser $ \(Parse.State _ _ _ _ r c) _ _ _ eerr ->
-                   eerr r c SyntaxError.CT_Variant
+    "Encode" -> chompOptionalJsonOptions DeriveEncode SyntaxError.CT_Bar SyntaxError.CT_Space SyntaxError.CT_IndentAfterEquals
+    "Decode" -> chompOptionalJsonOptions DeriveDecode SyntaxError.CT_Bar SyntaxError.CT_Space SyntaxError.CT_IndentAfterEquals
+    "Enum" -> return DeriveEnum
     _ -> Parse.Parser $ \(Parse.State _ _ _ _ r c) _ _ _ eerr ->
            eerr r c SyntaxError.CT_Variant
+
+
+-- | Optionally parse @{ key = value, ... }@ after Encode/Decode.
+chompOptionalJsonOptions ::
+  (Maybe Src.JsonOptions -> Src.DerivingClause) ->
+  (Row -> Col -> x) ->
+  (SyntaxError.Space -> Row -> Col -> x) ->
+  (Row -> Col -> x) ->
+  Parser x Src.DerivingClause
+chompOptionalJsonOptions ctor toError toSpace toIndent =
+  oneOfWithFallback
+    [ do  word1 0x7B {- { -} toError
+          Space.chompAndCheckIndent toSpace toIndent
+          opts <- chompJsonOptionFields defaultJsonOptions toError toSpace toIndent
+          return (ctor (Just opts))
+    ]
+    (ctor Nothing)
+
+
+-- | Default empty JsonOptions.
+defaultJsonOptions :: Src.JsonOptions
+defaultJsonOptions = Src.JsonOptions Nothing Nothing Nothing False False False
+
+
+-- | Parse comma-separated key=value option fields until @}@.
+chompJsonOptionFields ::
+  Src.JsonOptions ->
+  (Row -> Col -> x) ->
+  (SyntaxError.Space -> Row -> Col -> x) ->
+  (Row -> Col -> x) ->
+  Parser x Src.JsonOptions
+chompJsonOptionFields opts toError toSpace toIndent =
+  do  key <- Var.lower toError
+      Space.chompAndCheckIndent toSpace toIndent
+      word1 0x3D {- = -} toError
+      Space.chompAndCheckIndent toSpace toIndent
+      newOpts <- chompJsonOptionValue key opts toError
+      Space.chompAndCheckIndent toSpace toIndent
+      oneOf toError
+        [ do  word1 0x7D {- } -} toError
+              return newOpts
+        , do  word1 0x2C {- , -} toError
+              Space.chompAndCheckIndent toSpace toIndent
+              chompJsonOptionFields newOpts toError toSpace toIndent
+        ]
+
+
+-- | Parse a single option value and update the JsonOptions record.
+chompJsonOptionValue ::
+  Name.Name ->
+  Src.JsonOptions ->
+  (Row -> Col -> x) ->
+  Parser x Src.JsonOptions
+chompJsonOptionValue key opts toError =
+  case key of
+    "fieldNaming" ->
+      do  strategy <- chompNamingStrategy toError
+          return (opts { Src._jsonFieldNaming = Just strategy })
+    "tagField" ->
+      do  fieldName <- chompFieldNameLiteral toError
+          return (opts { Src._jsonTagField = Just fieldName })
+    "contentsField" ->
+      do  fieldName <- chompFieldNameLiteral toError
+          return (opts { Src._jsonContentsField = Just fieldName })
+    "omitNothing" ->
+      do  val <- chompBoolLiteral toError
+          return (opts { Src._jsonOmitNothing = val })
+    "missingAsNothing" ->
+      do  val <- chompBoolLiteral toError
+          return (opts { Src._jsonMissingAsNothing = val })
+    "unwrapSingle" ->
+      do  val <- chompBoolLiteral toError
+          return (opts { Src._jsonUnwrapSingle = val })
+    _ ->
+      Parse.Parser $ \(Parse.State _ _ _ _ r c) _ _ _ eerr ->
+        eerr r c toError
+
+
+-- | Parse a naming strategy identifier.
+chompNamingStrategy :: (Row -> Col -> x) -> Parser x Src.NamingStrategy
+chompNamingStrategy toError =
+  do  name <- Var.upper toError
+      case name of
+        "SnakeCase" -> return Src.SnakeCase
+        "CamelCase" -> return Src.CamelCase
+        "KebabCase" -> return Src.KebabCase
+        "Identity" -> return Src.IdentityNaming
+        _ -> Parse.Parser $ \(Parse.State _ _ _ _ r c) _ _ _ eerr ->
+               eerr r c toError
+
+
+-- | Parse a field name for option values like tagField and contentsField.
+--
+-- Accepts a lowercase identifier (e.g., @tagField = tag@).
+chompFieldNameLiteral :: (Row -> Col -> x) -> Parser x Name.Name
+chompFieldNameLiteral toError =
+  Var.lower toError
+
+
+-- | Parse True or False.
+chompBoolLiteral :: (Row -> Col -> x) -> Parser x Bool
+chompBoolLiteral toError =
+  do  name <- Var.upper toError
+      case name of
+        "True" -> return True
+        "False" -> return False
+        _ -> Parse.Parser $ \(Parse.State _ _ _ _ r c) _ _ _ eerr ->
+               eerr r c toError
 
 
 -- | Parse remaining derive names (alias context).
