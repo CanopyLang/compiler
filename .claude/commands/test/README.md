@@ -14,7 +14,7 @@ The previous agent system had a critical flaw: agents would claim completion whi
 
 Every testing agent MUST run this script before claiming completion:
 ```bash
-/home/quinten/fh/canopy/.claude/commands/test-quality-audit test/
+/home/quinten/projects/canopy/.claude/commands/test-quality-audit test/
 ```
 
 This script detects **332 current violations** including:
@@ -46,7 +46,7 @@ Phase 4: Mandatory audit verification
 ### Before Any Test Work:
 ```bash
 # Check current violations
-/home/quinten/fh/canopy/.claude/commands/test-quality-audit test/
+/home/quinten/projects/canopy/.claude/commands/test-quality-audit test/
 ```
 
 ### When Using Testing Agents:
@@ -60,7 +60,7 @@ Agents will now:
 ### Verification:
 ```bash
 # Verify agents actually completed their work
-/home/quinten/fh/canopy/.claude/commands/test-quality-audit test/
+/home/quinten/projects/canopy/.claude/commands/test-quality-audit test/
 # Should show: "✅ AUDIT PASSED - All test quality requirements met"
 ```
 

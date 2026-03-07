@@ -85,7 +85,7 @@ node test/benchmark/runtime-benchmark.js
 
 ## Benchmark Results
 
-Current results (as of 2025-10-28):
+Current results (as of 2026-03-07):
 
 ### Code Generation Quality
 - **Native Operator Usage:** 100%
@@ -104,7 +104,7 @@ Current results (as of 2025-10-28):
 
 ### 1. Add Function to `ArithmeticBench.can`
 
-```elm
+```canopy
 -- Add your benchmark function
 myBenchmark : Int -> Int -> Int
 myBenchmark a b =
@@ -215,9 +215,6 @@ canopy make test/benchmark/ArithmeticBench.can --output=/tmp/arithmetic-bench.js
 
 ## References
 
-- **Performance Report:** `/home/quinten/fh/canopy/PERFORMANCE_BENCHMARK_REPORT.md`
-- **Execution Summary:** `/home/quinten/fh/canopy/BENCHMARK_EXECUTION_SUMMARY.md`
-- **Analysis Plan:** `/home/quinten/fh/canopy/plans/PERFORMANCE_ANALYSIS_PLAN.md`
 - **Compiler Source:** `packages/canopy-core/src/Generate/JavaScript/Expression.hs`
 
 ## CI Integration (Future)
@@ -291,6 +288,6 @@ For questions or issues with benchmarks:
 
 ---
 
-**Last Updated:** 2025-10-28
-**Status:** ✅ Benchmarks passing, native operators at 100%
-**Next Review:** 2026-01-28 (quarterly)
+**Last Updated:** 2026-03-07
+**Status:** Benchmarks passing, native operators at 100%
+**Next Review:** 2026-06-07 (quarterly)

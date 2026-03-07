@@ -187,7 +187,7 @@
   },
 
   "globalConfig": {
-    "outputBase": "../../core-packages",
+    "outputBase": "../../../packages/canopy",
     "kernelPrefix": "Canopy.Kernel",
     "generateTests": true,
     "includeDocumentation": true,

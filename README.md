@@ -58,7 +58,7 @@ canopy/
     canopy-builder/    -- Build system, dependency resolution, HTTP
     canopy-terminal/   -- CLI commands, test runner, REPL
   test/                -- Test suites (unit, property, integration, golden)
-  core-packages/       -- Standard library packages
+  core-packages/       -- Standard library packages (test, debug)
   example/             -- Example Canopy project
   docs/                -- Architecture and planning documents
 ```
