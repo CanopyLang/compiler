@@ -2,7 +2,7 @@
 
 ## Priority: HIGH — Tier 2
 ## Effort: 4-6 weeks
-## Depends on: Plan 01 (ESM), Plan 04 or Plan 03 (working view layer)
+## Depends on: Plan 01 (ESM) — Plan 03 COMPLETE, canopy-debugger tool exists
 
 ## Problem
 

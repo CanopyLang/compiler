@@ -1,128 +1,80 @@
 # Plan 03: Package Ecosystem Sprint
 
 ## Priority: CRITICAL — Tier 0
-## Effort: 4-5 weeks
+## Status: COMPLETE (except canopy/test library)
+## Effort: ~1 week remaining (canopy/test library only)
 ## Blocks: Plans 04, 05, 07, 11, 13 (everything UI-related + capability enforcement)
 
-## Problem
+> **Status Update (2026-03-07 audit):** This plan is **essentially complete**. All 16 stdlib
+> packages have been fully migrated to `.can` with FFI external JS files, `canopy.json` manifests,
+> and test suites. Zero `.elm` files remain in the packages directory.
+>
+> The only remaining gap is a **canopy/test library package** — the `canopy test` CLI command exists
+> (with `--filter`, `--watch`, `--headed`, NDJSON output, Playwright integration) but there is no
+> `packages/canopy/test/` library for developers to write tests against.
 
-Canopy has 3 packages (core, json, capability). You cannot build a web application without html, virtual-dom, browser, http, and url at minimum. There are 14 missing stdlib packages, plus a testing framework is needed.
+## Completed Work
 
-No amount of compiler innovation matters if developers can't render HTML or write tests.
+All packages below are fully migrated with `.can` source files, FFI external JS, `canopy.json`, and test suites:
 
-## Current State
+| Package | Status | FFI JS | Tests |
+|---------|--------|--------|-------|
+| canopy/core | Done | 14 external JS files | 12 test modules |
+| canopy/json | Done | external/json.js (31 annotations) | Test/Json.can |
+| canopy/capability | Done | external/capability.js | Test/Capability.can |
+| canopy/url | Done | external/url.js | Test/Url.can |
+| canopy/time | Done | external/time.js | Test/Time.can |
+| canopy/regex | Done | external/regex.js | Test/Regex.can |
+| canopy/parser | Done | external/parser.js | Test/Parser.can |
+| canopy/bytes | Done | external/bytes.js | Test/Bytes.can |
+| canopy/random | Done | (pure) | Test/Random.can |
+| canopy/virtual-dom | Done | external/virtual-dom.js | Test/VirtualDom.can |
+| canopy/http | Done | external/http.js | Test/Http.can |
+| canopy/file | Done | external/file.js | Test/File.can |
+| canopy/html | Done | (wraps virtual-dom) | Test/Html.can |
+| canopy/svg | Done | (wraps html) | Test/Svg.can |
+| canopy/browser | Done | external/browser.js | Test/Browser.can |
+| canopy/project-metadata-utils | Done | (pure) | Test/ProjectMetadata.can |
 
-| Package | Status | Effort |
-|---------|--------|--------|
-| canopy/core | Done | — |
-| canopy/json | Exists, needs .elm→.can + FFI | 2 days |
-| canopy/capability | Incomplete (missing module + JS) | 2 days |
-| canopy/url | Missing | 1 day |
-| canopy/time | Missing | 2 days |
-| canopy/regex | Missing | 1 day |
-| canopy/parser | Missing | 1 day |
-| canopy/bytes | Missing | 2 days |
-| canopy/random | Missing | 1 day |
-| canopy/virtual-dom | Missing (CRITICAL) | **10 days** |
-| canopy/http | Missing | 3 days |
-| canopy/file | Missing | 2 days |
-| canopy/html | Missing (CRITICAL) | 2 days |
-| canopy/svg | Missing | 1 day |
-| canopy/browser | Missing (CRITICAL) | 5 days |
-| canopy/test | Missing (NEEDED) | 3 days |
+**Total: 90+ `.can` source files, 27 external FFI JS files, 29 test modules, zero `.elm` files.**
 
-**Total: ~38 days of focused work.**
+## Remaining Work: Publish canopy/test as a Package
 
-### Revised virtual-dom estimate
+The test framework is **fully built** but lives at `compiler/core-packages/test/` instead of `packages/canopy/test/`. It includes 15 `.can` modules:
 
-The original 5-day estimate for virtual-dom was too aggressive. The VDOM kernel is ~1000 lines of tightly coupled JavaScript referencing scheduler internals, managing event delegation, and handling server-side rendering stubs. Budget 10 days.
+| Module | Purpose |
+|--------|---------|
+| `Test.can` | Core test types (unit, group, async, skip, todo, only, fuzz) |
+| `Expect.can` | Assertions (equal, true, notEqual, etc.) |
+| `Fuzz.can` | Property-based testing generators |
+| `Test/Runner.can` | Test runner infrastructure |
+| `Browser.can` | Browser test support |
+| `Browser/Test.can` | Browser test types |
+| `Browser/Expect.can` | Browser assertions |
+| `Browser/Element.can` | Element queries |
+| `Browser/Page.can` | Page-level operations |
+| `Component.can` | Component testing |
+| `Benchmark.can` | Performance benchmarks |
+| `Snapshot.can` | Snapshot testing |
+| `Visual.can` | Visual regression testing |
+| `Accessibility.can` | A11y testing |
 
-**Important**: Since Plan 04 (Fine-Grained Reactivity) will eventually replace the VDOM, consider keeping the VDOM engine as kernel JS rather than converting it to FFI. The goal is a working VDOM now, not a perfect one. Ship > perfect.
+The CLI runner also exists (`compiler/packages/canopy-terminal/src/Test.hs`) with discovery, compilation, Playwright integration, NDJSON output, and `--filter`/`--watch`/`--headed` flags.
 
-## Conversion Strategy
+### Estimated effort: 1-2 days
 
-Use **Hybrid approach** (Option B from PACKAGE-CONVERSION-GUIDE.md):
-- FFI JS exposes leaf browser APIs (fetch, DOM, Date, etc.)
-- Effect manager plumbing stays in pure Canopy code
-- Platform/Scheduler/Process bindings remain as kernel internals
-
-### Phase 1: Leaf packages (Week 1)
-
-No non-core dependencies. Can be done in parallel.
-
-1. **canopy/json** — Convert .elm→.can, create external/json.js
-2. **canopy/url** — Pure + tiny kernel (percentEncode/Decode)
-3. **canopy/regex** — Small kernel (107 lines)
-4. **canopy/parser** — Small kernel (134 lines)
-5. **canopy/bytes** — Medium kernel (185 lines)
-6. **canopy/time** — Small kernel, effect module
-
-### Phase 2: Middle tier (Week 2)
-
-Depend on Phase 1 packages.
-
-7. **canopy/random** — No kernel JS, depends on time
-8. **canopy/file** — Medium kernel (188 lines), FileReader
-9. **canopy/http** — Effect module, XMLHttpRequest wrapper
-
-### Phase 3: UI packages (Weeks 3-5)
-
-The critical path. These enable building actual applications.
-
-10. **canopy/virtual-dom** — The VDOM engine. Largest kernel (~1000 lines). Source in archive/janitor/virtual-dom/. **Strategy: keep as kernel JS** — Plan 04 replaces this with fine-grained reactivity later. Don't gold-plate something we're deprecating.
-11. **canopy/html** — Pure wrapper around virtual-dom. Trivial once virtual-dom exists.
-12. **canopy/svg** — Pure wrapper around html/virtual-dom. Trivial.
-13. **canopy/browser** — Largest package (11 modules). Navigation, DOM events, animation frames, URLs.
-
-### Phase 4: Testing + Cleanup (Week 5)
-
-14. **canopy/test** — Test runner with assertions, expect API, fuzz support. Required for developers to write tests for their own applications. Models after elm-test but with Canopy FFI for test runner internals.
-15. **canopy/capability** — Add missing Capability.Available module, create external/capability.js, fix canopy.json deps
-16. Validate all packages compile together
-17. Integration test: build a real app using all packages
-18. Write tests for the sample app using canopy/test
-
-## Source Material
-
-All source code exists in `archive/elm/` (from GitHub elm/* repos) and `archive/janitor/` (previous Canopy fork). This is conversion work, not green-field development.
-
-## Per-Package Process
-
-1. Copy from archive source
-2. Rename .elm → .can
-3. Update module declarations (`module Elm.X` → `module Canopy.X` or just `module X`)
-4. Convert kernel JS to FFI where appropriate (external/*.js + foreign import)
-5. Update canopy.json with correct dependencies
-6. Write/update tests
-7. Verify compilation
-
-## Risk: Virtual DOM Strategy
-
-The virtual-dom package is the biggest decision point. Three paths:
-
-**Path A (Conservative):** Port the Elm VDOM as-is. ~1000 lines of kernel JS becomes external/virtual-dom.js with FFI bindings. Works now, can be optimized later.
-
-**Path B (Aggressive):** Skip VDOM entirely, go straight to fine-grained reactivity (Plan 04). Higher risk, higher reward, but blocks on Plan 04 being ready.
-
-**Path C (Pragmatic):** Keep VDOM as kernel JS — don't convert to FFI at all. Wrap the Canopy API in .can files that reference kernel, just like canopy/core does. Plan 04 replaces the entire engine later anyway.
-
-**Recommendation:** Path C. The VDOM engine is tightly coupled to the scheduler/platform runtime (uses `_Scheduler_binding`, `_Platform_sendToSelf`). Converting it to FFI is complex work that gets thrown away when Plan 04 ships. Keep it as kernel, wrap the API in .can files, move on.
-
-## Risk: Testing Framework
-
-Without canopy/test, developers cannot write tests for their applications. This is a hard blocker for any production use. The package needs:
-- A test runner (`canopy test` CLI command)
-- An assertion/expect API (`Expect.equal`, `Expect.true`, etc.)
-- Test organization (`describe`, `test` combinators)
-- Fuzz testing support (property-based testing basics)
-
-Source: elm-test provides the design reference. The test runner requires FFI for Node.js process management and exit codes.
+The library is fully built. It just needs to be packaged:
+1. Copy/symlink from `compiler/core-packages/test/` to `packages/canopy/test/`
+2. Add `canopy.json` manifest
+3. Verify all package tests import from the correct location
 
 ## Definition of Done
 
-- All 16 packages compile (15 stdlib + canopy/test)
-- A sample application using Html, Browser, Http renders and works
-- `canopy test` runs tests written with canopy/test
-- All package tests pass
-- Virtual-dom kernel JS kept as-is (to be replaced by Plan 04)
-- All other kernel JS that should be FFI is converted
+- [x] All 16 stdlib packages compile with `.can` source and FFI
+- [x] All packages have `canopy.json` manifests
+- [x] All packages have test suites
+- [x] `canopy test` CLI command works
+- [x] Virtual-dom kept as kernel JS (external/virtual-dom.js)
+- [ ] `packages/canopy/test/` library package exists with test authoring API
+- [ ] Sample application using Html, Browser, Http renders and works
+- [ ] Integration test: build a real app using all packages

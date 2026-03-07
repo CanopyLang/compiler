@@ -1,8 +1,11 @@
 # Plan 12: TypeScript Interop
 
-## Priority: HIGH — Tier 2
+## Priority: HIGH — Tier 1
 ## Effort: 6-8 weeks
 ## Depends on: Plan 01 (ESM output)
+
+> **Note:** This was listed as Tier 2 in some references but is Tier 1 in the master plan.
+> No `.d.ts` generation exists. No `Generate/TypeScript.hs`. Not started.
 
 ## Problem
 

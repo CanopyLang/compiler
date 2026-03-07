@@ -2,7 +2,7 @@
 
 ## Priority: MEDIUM — Tier 3
 ## Effort: 4-5 weeks
-## Depends on: Plan 03 (packages — html package)
+## Depends on: Plan 03 (packages — COMPLETE)
 
 ## Problem
 

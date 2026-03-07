@@ -8,7 +8,7 @@
 > This file is kept for reference. See the split plans for current details.
 
 ## Priority: HIGH — Tier 0 (26a) / Tier 1 (26b)
-## Effort: 1-2 weeks (26a) + 8-12 weeks (26b)
+## Effort: 1 week (26a, reduced — interpolation 90% done) + 8-12 weeks (26b)
 ## Depends on: Nothing (26a) / Stable compiler (26b)
 
 ## Problem

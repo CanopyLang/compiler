@@ -2,7 +2,7 @@
 
 ## Priority: HIGH — Tier 2
 ## Effort: 12-16 weeks (ongoing)
-## Depends on: Plan 03 (packages), Plan 04 (reactivity) or working VDOM
+## Depends on: Plan 03 (packages — COMPLETE), Plan 04 (reactivity) or working VDOM (VDOM exists)
 
 ## Problem
 

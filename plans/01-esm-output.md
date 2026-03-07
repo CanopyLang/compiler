@@ -1,8 +1,21 @@
 # Plan 01: ESM Output
 
 ## Priority: CRITICAL — Tier 0
+## Status: NOT STARTED — highest priority unstarted work
 ## Effort: 2-3 weeks
 ## Blocks: Plans 04, 05, 06, 07, 09 (almost everything)
+
+> **Status Update (2026-03-07 audit):** No ESM generation code exists. The JS generator
+> (`Generate/JavaScript.hs`) only produces IIFE output. No `Generate/JavaScript/ESM.hs` file
+> exists.
+>
+> However, several things are ready for ESM:
+> - The MCP server (`canopy-mcp`) already has an `esm` option in its `format` enum
+> - Code splitting infrastructure (`Generate/JavaScript/CodeSplit/`) produces separate chunks
+>   that would benefit from ESM imports
+> - All packages use FFI external JS files that could become ESM imports
+>
+> **This is the single most critical unstarted task in the entire roadmap.**
 
 ## Problem
 

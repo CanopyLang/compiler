@@ -1,43 +1,59 @@
 # Plan 31: AI Developer Experience
 
 ## Priority: MEDIUM — Tier 2
-## Effort: 4-6 weeks
+## Effort: 3-4 weeks (reduced — MCP server already exists with 5 tools)
 ## Depends on: Stable compiler, LSP (already built)
+
+> **Status Update (2026-03-07 audit):** The MCP server (`canopy-mcp`) is **already built** with
+> 5 working tools:
+>
+> - `canopy_build` — compile with output format selection (iife/esm/commonjs)
+> - `canopy_check` — type check without generating output
+> - `canopy_get_type` — get type of expression at file:line:column
+> - `canopy_find_definition` — go-to-definition for symbols
+> - `canopy_get_docs` — documentation for modules/functions
+>
+> Additionally, a **playground** exists at `compiler/tools/playground/` — a full React/TypeScript
+> app with Vite, CodeMirror-style editor, preview panel, error display, example picker,
+> sharing, and keyboard shortcuts.
+>
+> The LSP (`language-server/`) is a comprehensive TypeScript implementation with:
+> - 25+ code action providers (add missing case branches, extract function, import, etc.)
+> - Diagnostics from compiler, elm-review, and built-in analysis
+> - Completion, hover, definition, references, rename, folding, symbols
+> - Code lens, linked editing ranges, selection ranges
 
 ## Problem
 
 In 2026, 70%+ of developers use AI coding assistants daily. Languages that work well with AI tools get adopted faster. Canopy is uniquely positioned: strong types + explicit effects + pure functions mean AI can generate correct code more reliably than in any other frontend language.
 
-But this advantage is latent — we need to activate it with tooling.
+## What Already Exists
 
-## Existing Assets
+| Component | Location | Status |
+|-----------|----------|--------|
+| MCP server | `compiler/packages/canopy-mcp/` | Built — 5 tools |
+| LSP | `language-server/` | Built — full-featured TypeScript implementation |
+| Playground | `compiler/tools/playground/` | Built — React/Vite app |
+| Debugger | `compiler/tools/canopy-debugger/` | Built — Vite-based |
+| Tree-sitter grammar | (in LSP) | Built |
+| VSCode extension | (in repo) | Built |
 
-- **canopy-mcp**: MCP server already exists in the codebase
-- **canopy-lsp**: Full LSP with hover, completions, diagnostics
-- **Type system**: Every function has a precise type signature
-- **Purity**: No hidden state mutations for AI to miss
-- **FFI types**: `@canopy-type` annotations provide typed JS interop
+## Remaining Work
 
-## Solution: Four AI Integration Points
+### Phase 1: MCP Server Enhancement (Weeks 1-2)
 
-### 1. Enhanced MCP Server for AI Agents
-
-Extend `canopy-mcp` so AI tools (Claude, GPT, Copilot) can:
+Extend `canopy-mcp` with additional tools:
 
 ```
-canopy/compile       -- Compile a module, return typed errors
-canopy/typeOf        -- Get the type of any expression
-canopy/suggest       -- Get type-directed suggestions for a hole
-canopy/explain       -- Explain a compile error in plain English
-canopy/capabilities  -- List capabilities required by current code
-canopy/docs          -- Get documentation for any module/function
+canopy_suggest       -- Type-directed suggestions for a hole position
+canopy_explain       -- Explain a compile error in plain English
+canopy_capabilities  -- List capabilities required by current code
+canopy_completions   -- Get completions at a position (expose LSP completions via MCP)
 ```
 
-This gives AI agents the compiler's knowledge directly, rather than guessing from source text.
+The existing `canopy_build`, `canopy_check`, `canopy_get_type`, `canopy_find_definition`, and `canopy_get_docs` tools handle the core use cases. The additions above fill the gaps for AI-assisted development.
 
-### 2. Type-Directed Code Completion
-
-The LSP already provides completions. Enhance it with:
+### Phase 2: Typed Holes + Enhanced LSP (Weeks 3-4)
 
 **Typed holes**: When the developer writes `_` in an expression position, the compiler infers the expected type and the LSP suggests all values in scope that match:
 
@@ -53,90 +69,34 @@ update msg model =
             --                       []
 ```
 
-**Decoder generation**: When the cursor is after `deriving (Decode)` (Plan 26b), show the generated decoder inline. Before abilities ship, offer a code action "Generate JSON decoder for this type."
+Implementation:
+- Add `_` (typed hole) support in the parser
+- Type inference for holes during constraint solving
+- LSP code actions for hole filling
+- LSP code actions for JSON decoder generation (pre-Plan 26b)
 
-### 3. AI-Assisted Migration Tool
+### Phase 3: AI-Assisted Migration Tool (Future)
 
 ```bash
 canopy migrate --from react src/Component.tsx
 canopy migrate --from elm src/Page.elm
 ```
 
-Takes React/Elm source and produces Canopy source:
-- Maps React hooks to TEA patterns
-- Maps React.useState to Model fields
-- Maps useEffect to Cmd/Sub
-- Maps Elm kernel imports to FFI imports
-- Preserves type information where available
-
-This is powered by the compiler's type system — after initial conversion, run the type checker and use errors to guide refinement.
-
-### 4. Contextual Error Explanations
-
-Enhance error messages with optional AI-style explanations:
-
-```bash
-canopy build --explain
-```
-
-```
--- TYPE MISMATCH ────────────────── src/App.can
-
-The 2nd argument to `div` has the wrong type:
-
-    15| div [ class "main" ] model.items
-                             ^^^^^^^^^^^
-
-`model.items` is:
-
-    List Item
-
-But `div` expects its 2nd argument to be:
-
-    List (Html Msg)
-
-Explanation: You're passing raw data to a view function that expects
-rendered HTML. You probably want to map each item through a view function:
-
-    div [ class "main" ] (List.map viewItem model.items)
-```
-
-The "Explanation" section uses the type context to generate specific, actionable guidance. This can start as template-based (no LLM needed) and later integrate with AI for complex cases.
-
-## Implementation Phases
-
-### Phase 1: MCP Server Enhancement (Weeks 1-2)
-- Extend canopy-mcp with compile/typeOf/suggest/explain endpoints
-- Add capability listing endpoint
-- Test with Claude Code and VS Code Copilot
-
-### Phase 2: Typed Holes + Enhanced LSP (Weeks 3-4)
-- Implement typed hole (`_`) support in the parser
-- Type inference for holes during constraint solving
-- LSP code actions for hole filling
-- LSP code actions for JSON decoder generation
-
-### Phase 3: Migration Tool (Weeks 5-6)
-- React-to-Canopy basic conversion (component → module, hooks → TEA)
-- Elm-to-Canopy conversion (module rename, kernel → FFI)
-- Type-checker-guided refinement loop
-- Documentation: "Migrating from React/Elm to Canopy"
+This depends on Plan 26b (abilities) and Plan 12 (TS interop) being further along. Deferred.
 
 ## Why This Matters
 
-React Compiler v1.0 (October 2025) proved that compiler intelligence is the future. But React Compiler works with JavaScript — it has limited type information. Canopy's compiler knows everything: types, effects, purity, capabilities.
-
 When an AI assistant uses Canopy's MCP server, it gets:
 - Exact types for every expression (not inferred from usage patterns)
-- Exact effects for every function (not guessed from import statements)
 - Exact capabilities required (not audited manually)
+- Compilation results with structured errors
 
 This makes AI-generated Canopy code dramatically more reliable than AI-generated React/Vue/Angular code.
 
 ## Definition of Done
 
-- [ ] canopy-mcp serves compile/typeOf/suggest/explain endpoints
+- [x] canopy-mcp serves build/check/getType/findDefinition/getDocs tools
+- [ ] canopy-mcp serves suggest/explain/capabilities tools
 - [ ] AI agents can compile Canopy code and get structured type errors
 - [ ] Typed holes show suggestions in LSP
-- [ ] `canopy migrate --from elm` converts basic Elm modules
 - [ ] Error messages include contextual explanations with `--explain`

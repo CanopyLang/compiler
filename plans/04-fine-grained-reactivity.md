@@ -2,7 +2,7 @@
 
 ## Priority: MEDIUM — Tier 3 (moved from Tier 1)
 ## Effort: 6-8 weeks
-## Depends on: Plan 01 (ESM output), Plan 03 (packages)
+## Depends on: Plan 01 (ESM output) — Plan 03 (packages) is COMPLETE
 
 > **Note (revised):** This was originally Tier 1 but has been moved to Tier 3. Rationale:
 > The VDOM approach (inherited from Elm) already scores ~90 on Lighthouse. SolidJS scores 98,

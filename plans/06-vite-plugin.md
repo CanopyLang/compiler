@@ -4,6 +4,10 @@
 ## Effort: 2-3 weeks
 ## Depends on: Plan 01 (ESM output)
 
+> **Note (2026-03-07):** No Vite plugin exists. No `vite-plugin-canopy` anywhere in the repo.
+> The playground (`compiler/tools/playground/`) uses Vite but for the playground UI itself,
+> not for compiling .can files. Blocked entirely on Plan 01 (ESM output).
+
 ## Problem
 
 Vite has 98% developer retention (State of JS 2025). Developers expect:

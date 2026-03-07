@@ -2,7 +2,7 @@
 
 ## Priority: HIGH — Tier 1 (moved up from "nice-to-have")
 ## Effort: 4-6 weeks
-## Depends on: Plan 03 (packages), Plan 04 (reactivity helps but not required)
+## Depends on: Plan 03 (packages — COMPLETE), Plan 04 (reactivity helps but not required)
 
 ## Problem
 

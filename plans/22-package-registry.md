@@ -2,7 +2,7 @@
 
 ## Priority: LOW — Tier 4
 ## Effort: 6-8 weeks
-## Depends on: Plan 03 (packages), stable compiler
+## Depends on: Plan 03 (packages — COMPLETE), stable compiler
 
 ## Problem
 

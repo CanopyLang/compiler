@@ -2,7 +2,7 @@
 
 ## Priority: MEDIUM — Tier 2
 ## Effort: 3-4 weeks
-## Depends on: Plan 03 (packages), Plan 13 (capabilities)
+## Depends on: Plan 03 (packages — COMPLETE), Plan 13 (capabilities — core COMPLETE)
 
 ## Problem
 

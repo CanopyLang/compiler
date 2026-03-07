@@ -2,7 +2,7 @@
 
 ## Priority: HIGH — Tier 1
 ## Effort: 8-12 weeks
-## Depends on: Plan 01 (ESM), Plan 03 (packages), Plan 06 (Vite plugin)
+## Depends on: Plan 01 (ESM), Plan 06 (Vite plugin) — Plan 03 (packages) is COMPLETE
 
 ## Problem
 

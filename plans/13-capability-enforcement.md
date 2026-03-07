@@ -1,21 +1,23 @@
 # Plan 13: Capability-Based Security
 
 ## Priority: HIGH — Tier 1 (elevated from Tier 2)
-## Effort: 4-5 weeks (expanded from 3-4)
-## Depends on: Plan 03 (packages — especially capability package)
+## Effort: 2-3 weeks (reduced from 4-5 — core enforcement already built)
+## Depends on: Nothing (packages are complete)
 
-> **Note (revised):** This plan was originally "Capability Enforcement" in Tier 2 with 3-4 weeks
-> effort. It has been elevated to Tier 1 and expanded because the September 2025 npm supply chain
-> attack (chalk, debug, ansi-styles — 2.6B weekly downloads compromised by the "Shai-Hulud" worm)
-> proved that JavaScript's dependency model is fundamentally unsafe. Canopy's capability system is
-> the **language-level answer** to this problem. No other frontend language has this. This is our
-> strongest marketing story and our biggest competitive advantage.
+> **Status Update (2026-03-07 audit):** The core capability enforcement system is **fully
+> implemented**. `@capability` annotations are parsed, validated, and enforced at compile time.
+> Capability manifests are generated. The FFI type system prepends `Capability X ->` to function
+> types. 45+ tests cover the system.
+>
+> What remains is the **supply chain security story**: capability-specific audit command
+> (separate from the existing `canopy audit` which is a dependency vulnerability scanner),
+> per-dependency capability tracking, and the marketing/documentation layer.
+>
+> **Important distinction:** `canopy audit` already exists but audits **dependency vulnerabilities**
+> (advisory matching, version freshness, license compatibility). The Plan 13 `canopy audit` for
+> **capability breakdown per dependency** is a different feature that needs to be added.
 
 ## Problem
-
-### The Technical Problem
-
-Canopy's capability system is designed but not enforced. The `@capability` annotations are parsed and stored but don't produce warnings, manifests, or runtime checks.
 
 ### The Market Problem
 
@@ -25,100 +27,36 @@ Every React, Vue, Angular, and Svelte application was at risk. None of these fra
 
 **Canopy can.** A dependency in Canopy cannot access the network, filesystem, camera, microphone, or any browser API without the application explicitly granting that capability. This is enforced at compile time — no runtime overhead, no escape hatches.
 
-## Current State
+## Current State (What's Already Built)
 
-- `@capability` annotations parsed in FFI JSDoc comments
-- Types exist: `UserActivated`, `Initialized`, `Permitted`, `Available`
-- `FFI/Capability.hs` and `FFI/CapabilityEnforcement.hs` have the framework
-- Nothing is actually enforced
+### Fully Implemented
 
-## Solution: Four-Level Enforcement
+| Component | File | Status |
+|-----------|------|--------|
+| `@capability` annotation parsing | `FFI/Capability.hs` | Done |
+| Capability validation | `FFI/CapabilityEnforcement.hs` | Done — `validateCapabilities`, `findUnusedCapabilities` |
+| Runtime guard generation | `FFI/CapabilityEnforcement.hs` | Done — `generateCapabilityRegistry`, `generateCapabilityGuard` |
+| Manifest generation | `FFI/Manifest.hs` | Done — `collectCapabilities`, `writeManifest` |
+| Type-level enforcement | `Canonicalize/Module/FFI.hs` | Done — `prependCapabilities` adds `Capability X ->` to FFI types |
+| Manifest output in build | `Make/Output.hs` | Done — `hasCapabilities` check |
+| Capability JS runtime | `packages/canopy/capability/external/capability.js` | Done |
+| Capability Canopy API | `packages/canopy/capability/src/Capability.can`, `Capability/Available.can` | Done |
+| Test suite | `packages/canopy/capability/tests/Test/Capability.can` | Done |
+| All FFI packages annotated | All `external/*.js` files | Done — 284 `@canopy-bind`/`@canopy-type`/`@capability` annotations |
+| Dependency vulnerability audit | `compiler/packages/canopy-terminal/src/Audit.hs` | Done — `canopy audit` with JSON output, severity filtering |
 
-### Level 1: Compile-Time Warnings (Week 1)
+### Not Yet Built
 
-When compiling, collect all capabilities required by FFI imports used in the project. Emit warnings listing them:
+| Component | Description |
+|-----------|-------------|
+| Capability-specific audit | `canopy audit --capabilities` showing per-dependency capability breakdown |
+| `capabilities.allow/deny` in canopy.json | Compile-time enforcement of capability allow/deny lists |
+| New-capability-in-update detection | Warning when a dependency version adds a new capability |
+| Marketing/documentation | Blog post, landing page section, comparison table |
 
-```
--- CAPABILITY REQUIREMENTS ────────────── src/App.can
+## Remaining Work
 
-This application requires the following browser capabilities:
-
-  Geolocation (via Maps.getCurrentLocation)
-    @capability permission geolocation
-
-  Camera (via Scanner.openCamera)
-    @capability permission camera
-    @capability userActivation Click
-
-  Notifications (via Alerts.requestPermission)
-    @capability permission notifications
-    @capability initialization notification-api
-
-Consider adding a capability manifest (canopy build --emit-manifest).
-```
-
-Implementation:
-1. During canonicalization, when resolving FFI imports, collect `@capability` annotations
-2. Thread capabilities through the compilation pipeline
-3. In the terminal output phase, format and display the summary
-
-### Level 2: Manifest Generation (Week 2)
-
-`canopy build --emit-manifest` generates `capabilities.json`:
-
-```json
-{
-  "application": "my-app",
-  "version": "1.0.0",
-  "capabilities": {
-    "permissions": [
-      {
-        "name": "geolocation",
-        "usage": [
-          { "module": "Maps", "function": "getCurrentLocation", "file": "src/Maps.can", "line": 42 }
-        ]
-      },
-      {
-        "name": "camera",
-        "usage": [
-          { "module": "Scanner", "function": "openCamera", "file": "src/Scanner.can", "line": 15 }
-        ]
-      }
-    ],
-    "userActivations": [
-      {
-        "type": "Click",
-        "usage": [
-          { "module": "Scanner", "function": "openCamera", "file": "src/Scanner.can", "line": 15 }
-        ]
-      }
-    ],
-    "initializations": [
-      {
-        "name": "notification-api",
-        "usage": [
-          { "module": "Alerts", "function": "requestPermission", "file": "src/Alerts.can", "line": 8 }
-        ]
-      }
-    ],
-    "network": [
-      {
-        "usage": [
-          { "module": "Api", "function": "fetchUsers", "file": "src/Api.can", "line": 12 }
-        ]
-      }
-    ]
-  }
-}
-```
-
-This manifest enables:
-- CI systems checking capabilities against an allow-list
-- Security audits knowing exactly what browser APIs the app uses
-- App stores / enterprise IT reviewing permissions before deployment
-- Diff-based review: any PR that adds a new capability shows up in the manifest diff
-
-### Level 3: Compile-Time Enforcement (Weeks 3-4)
+### Phase 1: Capability Allow/Deny Lists (Week 1)
 
 Add a `capabilities` field to `canopy.json`:
 
@@ -147,18 +85,20 @@ The `capabilities.deny` list in canopy.json includes "microphone".
 To allow this capability, add "microphone" to the `capabilities.allow` list.
 ```
 
-### Level 4: Supply Chain Security Story (Week 5)
+Implementation:
+1. Parse `capabilities` field in `Canopy.Outline`
+2. After canonicalization, compare collected capabilities against allow/deny
+3. Report errors for denied capabilities, warnings for unlisted (in strict mode)
 
-This is the marketing and documentation layer that turns the technical feature into an adoption driver.
+### Phase 2: Capability Audit Command (Week 2)
 
-**Supply chain audit command:**
+Extend the existing `canopy audit` command with a `--capabilities` flag (or create `canopy capabilities` as a separate subcommand):
 
 ```bash
-canopy audit
+canopy audit --capabilities
 ```
 
 Output:
-
 ```
 -- DEPENDENCY CAPABILITY AUDIT ────────────── my-app
 
@@ -177,9 +117,7 @@ Your canopy.json allows:
 Status: ALL DEPENDENCIES WITHIN ALLOWED CAPABILITIES
 ```
 
-**Per-dependency capability tracking:**
-
-The manifest tracks which capabilities come from which dependencies. If a dependency adds a new capability in a version update, the compiler warns:
+**Per-dependency capability tracking:** Track which capabilities come from which dependencies. If a dependency adds a new capability in a version update, warn:
 
 ```
 -- NEW CAPABILITY IN DEPENDENCY ────────────── canopy.json
@@ -188,14 +126,17 @@ The package `my-company/analytics` version 2.1.0 now requires
 the `clipboard-write` capability, which was not required in version 2.0.0.
 
 This capability is not in your allow-list.
-
-    Hint: Review why this package needs clipboard access before adding
-    "clipboard-write" to your capabilities.allow list.
 ```
 
-This is the feature that would have caught the September 2025 npm attack. A malicious package that suddenly starts accessing the network would trigger a compilation failure.
+### Phase 3: Marketing and Documentation (Week 3)
 
-### Server/Client Capability Boundaries
+1. **Blog post**: "How Canopy Would Have Prevented the September 2025 npm Attack"
+2. **Landing page section**: "Supply Chain Security Built Into the Language"
+3. **Comparison table**: Show that React/Vue/Angular/Svelte have zero protection
+4. **Enterprise pitch**: Capability manifests for compliance (SOC2, GDPR)
+5. **Demo**: Live demo showing a malicious dependency failing to compile
+
+### Server/Client Capability Boundaries (Future — with CanopyKit)
 
 For CanopyKit (Plan 05), capabilities enforce the server/client boundary:
 
@@ -206,93 +147,26 @@ For CanopyKit (Plan 05), capabilities enforce the server/client boundary:
 -- Browser capabilities (DOM, localStorage, geolocation)
 -- Only available in view/update functions and client code
 
--- Using a server capability in client code is a compile error:
-view model =
-    div [] [ text (Database.query "SELECT 1") ]  -- COMPILE ERROR
-    -- Error: Database.query requires ServerCapability,
-    -- but view runs in BrowserContext
+-- Using a server capability in client code is a compile error
 ```
-
-## Implementation Details
-
-### Capability Collection
-
-Add a `capabilities` field to the compilation context:
-
-```haskell
-data Capabilities = Capabilities
-    { permissions :: Map PermissionName [Usage]
-    , userActivations :: Map ActivationType [Usage]
-    , initializations :: Map InitName [Usage]
-    , network :: [Usage]
-    , dom :: [Usage]
-    }
-
-data Usage = Usage
-    { usageModule :: ModuleName.Canonical
-    , usageFunction :: Name.Name
-    , usageRegion :: Region
-    , usagePackage :: Package.Name
-    }
-```
-
-During canonicalization, when processing `foreign import` declarations:
-1. Look up the FFI source file
-2. Parse `@capability` annotations
-3. Record in the `Capabilities` accumulator
-4. Track which package each capability comes from
-
-### Manifest Output
-
-New module: `Generate/Capabilities.hs`
-- Takes collected `Capabilities`
-- Formats as JSON
-- Writes to `capabilities.json` alongside build output
-
-### Enforcement
-
-New validation pass after canonicalization:
-1. Load `canopy.json` capability config
-2. Compare collected capabilities against allow/deny lists
-3. Report errors for denied capabilities
-4. Report warnings for unlisted capabilities (if strict mode)
-5. Track capabilities per dependency for supply chain auditing
-
-### Audit Command
-
-New CLI command: `canopy audit`
-- Scans all dependencies and their FFI imports
-- Collects capability requirements per package
-- Compares against allow-list
-- Reports status
 
 ## Testing
 
-- Test that capabilities are correctly collected from FFI annotations
-- Test that manifests are complete and accurate
-- Test that denied capabilities produce compile errors
-- Test server/client boundary enforcement
-- Test per-dependency capability tracking
-- Test that adding a new capability in a dependency version triggers a warning
-- Property test: every FFI import with @capability appears in the manifest
-
-## Marketing and Documentation
-
-This feature needs dedicated marketing material:
-
-1. **Blog post**: "How Canopy Would Have Prevented the September 2025 npm Attack"
-2. **Landing page section**: "Supply Chain Security Built Into the Language"
-3. **Comparison table**: Show that React/Vue/Angular/Svelte have zero protection
-4. **Enterprise pitch**: Capability manifests for compliance (SOC2, GDPR)
-5. **Demo**: Live demo showing a malicious dependency failing to compile
+- [x] Capabilities correctly collected from FFI annotations
+- [x] Manifest generation is complete and accurate
+- [ ] Denied capabilities produce compile errors
+- [ ] Allow-list enforcement works
+- [ ] Per-dependency capability tracking works
+- [ ] New capability in dependency version triggers warning
+- [ ] `canopy audit --capabilities` output is correct
 
 ## Definition of Done
 
-- [ ] `canopy build` warns about required capabilities
-- [ ] `canopy build --emit-manifest` generates capabilities.json
+- [x] `@capability` annotations parsed and enforced at compile time
+- [x] Capability manifest generated during build
+- [x] All FFI packages have correct `@capability` annotations
+- [x] `canopy audit` exists for dependency vulnerabilities
 - [ ] `capabilities.allow/deny` in canopy.json enforced at compile time
-- [ ] `canopy audit` shows per-dependency capability breakdown
+- [ ] `canopy audit --capabilities` shows per-dependency capability breakdown
 - [ ] New capability in dependency update triggers compile warning
-- [ ] Server/client capability boundaries enforced in CanopyKit
-- [ ] All existing FFI packages have correct @capability annotations
 - [ ] Blog post draft: "How Canopy Prevents Supply Chain Attacks"

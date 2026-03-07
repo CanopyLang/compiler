@@ -1,8 +1,19 @@
 # Plan 27: Developer Onboarding & Adoption
 
 ## Priority: CRITICAL — Tier 1
-## Effort: 6-8 weeks (ongoing)
-## Depends on: Plan 03 (packages), Plan 06 (Vite plugin)
+## Effort: 4-6 weeks (reduced — playground already exists)
+## Depends on: Plan 06 (Vite plugin)
+
+> **Status Update (2026-03-07 audit):** Several onboarding assets already exist:
+>
+> - **Playground** (`compiler/tools/playground/`) — Full React/Vite/TypeScript app with:
+>   CodeMirror-style editor, live preview, error panel, example picker, file tabs,
+>   output tabs, share modal, keyboard shortcuts, status bar
+> - **MCP server** (`canopy-mcp`) — AI integration with 5 tools for Claude/Copilot
+> - **VSCode extension** — Editor support ready
+> - **All packages complete** — Plan 03 dependency removed
+>
+> Remaining work: documentation, migration guide, example apps, deployment.
 
 ## Problem
 
@@ -137,10 +148,9 @@ Provide structured examples optimized for LLM code generation:
 - Error message improvements for common React-isms
 
 ### Phase 2: Browser playground (Weeks 4-5)
-- WASM-compiled Canopy compiler for browser execution
-- Monaco editor integration
-- Step-by-step interactive tutorial
-- Shareable code snippets
+- **Playground already exists** (`compiler/tools/playground/`) — needs deployment to play.canopy-lang.org
+- Add step-by-step interactive tutorial mode
+- Ensure shareable code snippets work in production
 
 ### Phase 3: Example applications (Weeks 6-7)
 - Blog and Dashboard examples (full-stack with CanopyKit)

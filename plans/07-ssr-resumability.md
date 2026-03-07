@@ -2,7 +2,7 @@
 
 ## Priority: HIGH — Tier 1
 ## Effort: 6-8 weeks
-## Depends on: Plan 01 (ESM), Plan 03 (packages), Plan 05 (CanopyKit)
+## Depends on: Plan 01 (ESM), Plan 03 (packages — COMPLETE), Plan 05 (CanopyKit)
 
 ## Problem
 
