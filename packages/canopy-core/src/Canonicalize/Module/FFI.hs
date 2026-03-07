@@ -744,8 +744,8 @@ convertTuple types =
    in Can.TTuple (convertTuple left) (convertTuple right) Nothing
 
 -- | Resolve an opaque type name using the environment.
-resolveOpaqueName :: Env.Env -> ModuleName.Canonical -> ModuleName.Canonical -> String -> Can.Type
-resolveOpaqueName env ffiMod homeMod name =
+_resolveOpaqueName :: Env.Env -> ModuleName.Canonical -> ModuleName.Canonical -> String -> Can.Type
+_resolveOpaqueName env ffiMod homeMod name =
   resolveOpaqueNameWithArgs env ffiMod homeMod name []
 
 -- | Resolve an opaque type name with type arguments using the environment.
@@ -758,8 +758,8 @@ resolveOpaqueNameWithArgs env ffiMod homeMod name args = case name of
   _ -> resolveUnqualifiedNameWithArgs env ffiMod name args
 
 -- | Resolve a qualified type name like "Capability.CapabilityError".
-resolveQualifiedName :: Env.Env -> ModuleName.Canonical -> String -> Can.Type
-resolveQualifiedName env homeMod qualifiedName =
+_resolveQualifiedName :: Env.Env -> ModuleName.Canonical -> String -> Can.Type
+_resolveQualifiedName env homeMod qualifiedName =
   resolveQualifiedNameWithArgs env homeMod qualifiedName []
 
 -- | Resolve a qualified type name with type arguments.
@@ -796,8 +796,8 @@ infoHasModule modName (Env.Specific _ (Env.Alias _ (ModuleName.Canonical _ m) _ 
 infoHasModule modName (Env.Ambiguous (ModuleName.Canonical _ m) _) = m == modName
 
 -- | Resolve an unqualified custom type using the environment.
-resolveUnqualifiedName :: Env.Env -> ModuleName.Canonical -> String -> Can.Type
-resolveUnqualifiedName env ffiMod customType =
+_resolveUnqualifiedName :: Env.Env -> ModuleName.Canonical -> String -> Can.Type
+_resolveUnqualifiedName env ffiMod customType =
   resolveUnqualifiedNameWithArgs env ffiMod customType []
 
 -- | Resolve an unqualified custom type with type arguments.

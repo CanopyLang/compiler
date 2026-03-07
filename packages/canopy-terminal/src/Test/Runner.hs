@@ -30,6 +30,7 @@ where
 import qualified Control.Concurrent as Concurrent
 import qualified Control.Exception as Exception
 import qualified Data.Aeson as Aeson
+import Data.Aeson (Value)
 import qualified Data.ByteString.Char8 as BS
 import qualified Data.List as List
 import Reporting.Doc.ColorQQ (c)
@@ -39,29 +40,32 @@ import System.FilePath ((</>))
 import qualified System.IO as IO
 import qualified System.Process as Process
 import qualified Terminal.Print as Print
-import Test.Event (formatTestEvent, isSummaryEvent)
+import Test.Event (TestEvent (..), formatTestEvent, isSummaryEvent)
 
 -- | Find the @node@ executable and execute the runner script.
 --
 -- Reports an error if @node@ is not found on @PATH@.
+-- Returns the exit code and any coverage data collected during the run.
 --
 -- @since 0.19.1
-runNodeAndReport :: FilePath -> Bool -> IO ExitCode
+runNodeAndReport :: FilePath -> Bool -> IO (ExitCode, Maybe Value)
 runNodeAndReport runnerPath verbose = do
   nodeExists <- Dir.findExecutable "node"
   case nodeExists of
-    Nothing -> reportNodeMissing
+    Nothing -> fmap (\ec -> (ec, Nothing)) reportNodeMissing
     Just nodePath -> executeNode nodePath [runnerPath] verbose
 
 -- | Run @node@ for browser tests with @NODE_PATH@ set so
 -- @require('playwright')@ resolves from local or global installs.
 --
+-- Returns the exit code and any coverage data collected during the run.
+--
 -- @since 0.19.1
-runNodeForBrowserTests :: FilePath -> FilePath -> Bool -> IO ExitCode
+runNodeForBrowserTests :: FilePath -> FilePath -> Bool -> IO (ExitCode, Maybe Value)
 runNodeForBrowserTests runnerPath projectDir verbose = do
   nodeExists <- Dir.findExecutable "node"
   case nodeExists of
-    Nothing -> reportNodeMissing
+    Nothing -> fmap (\ec -> (ec, Nothing)) reportNodeMissing
     Just nodePath -> do
       npmRoot <- getNpmGlobalRoot
       let paths = buildNodePaths projectDir npmRoot
@@ -115,8 +119,10 @@ nodePathWrapper paths harnessPath =
 -- passed through as-is. Stderr is drained in a background thread and
 -- printed on failure.
 --
+-- Returns the exit code and any coverage data captured from the NDJSON stream.
+--
 -- @since 0.19.1
-executeNode :: FilePath -> [String] -> Bool -> IO ExitCode
+executeNode :: FilePath -> [String] -> Bool -> IO (ExitCode, Maybe Value)
 executeNode nodePath args verbose =
   Process.withCreateProcess procSpec handleStreams
   where
@@ -132,14 +138,15 @@ executeNode nodePath args verbose =
           IO.hSetBinaryMode hErr True
           stderrVar <- Concurrent.newMVar []
           _ <- Concurrent.forkIO (drainStderr hErr stderrVar)
-          sawSummary <- streamStdout hOut
+          (sawSummary, covData) <- streamStdout hOut
           exitCode <- Process.waitForProcess procHandle
           when (not sawSummary) $
             Print.printErrLn [c|{yellow|Warning: test process exited without summary.}|]
-          reportExitCode exitCode stderrVar verbose args
+          finalCode <- reportExitCode exitCode stderrVar verbose args
+          pure (finalCode, covData)
         _ -> do
           exitCode <- Process.waitForProcess procHandle
-          pure exitCode
+          pure (exitCode, Nothing)
 
 -- | Read stderr lines into a MVar for later display.
 --
@@ -158,42 +165,55 @@ drainStderr hErr var = go
 
 -- | Read stdout line-by-line, parsing NDJSON events and formatting them.
 --
--- Returns 'True' if a summary event was received, 'False' otherwise.
--- The caller uses this to detect when the JS process crashed or was
--- killed before emitting its summary.
+-- Returns @(sawSummary, maybeCoverageData)@. The first element is 'True'
+-- if a summary event was received. The second is the JSON coverage data
+-- from a @CoverageEvent@, if one was emitted.
 --
 -- @since 0.19.1
-streamStdout :: IO.Handle -> IO Bool
-streamStdout hOut = go False
+streamStdout :: IO.Handle -> IO (Bool, Maybe Value)
+streamStdout hOut = go False Nothing
   where
-    go sawSummary = do
+    go sawSummary covData = do
       eof <- IO.hIsEOF hOut
       if eof
-        then pure sawSummary
+        then pure (sawSummary, covData)
         else do
           line <- BS.hGetLine hOut
-          isSummary <- handleOutputLine line
-          go (sawSummary || isSummary)
+          (isSummary, maybeCov) <- handleOutputLine line
+          go (sawSummary || isSummary) (maybeCov `orElse` covData)
+
+    orElse (Just x) _ = Just x
+    orElse Nothing  y = y
 
 -- | Parse a single stdout line as NDJSON or pass through as plain text.
 --
--- Returns 'True' when the line was a summary event, 'False' otherwise.
+-- Returns @(isSummary, maybeCoverageData)@. The first element is 'True'
+-- when the line was a summary event. The second is 'Just' the coverage
+-- JSON payload when the line was a coverage event.
+--
 -- Non-JSON lines are written to stderr so they do not corrupt formatted
 -- test output on stdout. Flushes after each line so results appear
 -- immediately, even when stdout is a pipe.
 --
 -- @since 0.19.1
-handleOutputLine :: BS.ByteString -> IO Bool
+handleOutputLine :: BS.ByteString -> IO (Bool, Maybe Value)
 handleOutputLine line =
   case Aeson.decodeStrict' line of
     Just event -> do
       formatTestEvent event
       IO.hFlush IO.stdout
-      pure (isSummaryEvent event)
+      pure (isSummaryEvent event, extractCoverageData event)
     Nothing -> do
       IO.hPutStrLn IO.stderr (BS.unpack line)
       IO.hFlush IO.stderr
-      pure False
+      pure (False, Nothing)
+
+-- | Extract coverage data from a 'CoverageEvent', if present.
+--
+-- @since 0.19.2
+extractCoverageData :: TestEvent -> Maybe Value
+extractCoverageData (CoverageEvent v) = Just v
+extractCoverageData _ = Nothing
 
 -- | Report exit status, printing stderr and verbose info on failure.
 --

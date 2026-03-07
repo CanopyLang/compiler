@@ -183,8 +183,8 @@ modeToValidatorConfig mode =
 -- FORMAT FFI FILE CONTENT
 
 -- | Format FFI file content for inclusion using FFIInfo.
-formatFFIFileFromInfo :: String -> Text.Text -> [Builder] -> [Builder]
-formatFFIFileFromInfo path content acc =
+_formatFFIFileFromInfo :: String -> Text.Text -> [Builder] -> [Builder]
+_formatFFIFileFromInfo path content acc =
   ("\n// From " <> BB.stringUtf8 path <> "\n")
     : BB.byteString (TextEnc.encodeUtf8 content)
     : "\n"
@@ -202,7 +202,7 @@ formatFFIFileFromInfo path content acc =
 -- @funcName@, giving each FFI file its own namespace while preserving
 -- access to runtime globals like @_Utils_chr@ and @F2@.
 formatFFIWithBindings :: Mode.Mode -> Graph -> String -> FFIInfo -> [Builder] -> [Builder]
-formatFFIWithBindings mode graph key info acc
+formatFFIWithBindings mode graph _key info acc
   | not (isValidJsIdentifier aliasStr) = acc
   | otherwise =
       wrappedContent (reExports ++ bindingsSection ++ acc)

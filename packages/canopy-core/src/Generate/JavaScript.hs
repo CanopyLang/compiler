@@ -21,6 +21,9 @@ module Generate.JavaScript
     ffiAlias,
     extractFFIAliases,
     generateFFIContent,
+
+    -- * Re-exported from Generate.JavaScript.Coverage
+    Coverage.CoverageMap(..),
   )
 where
 
@@ -44,6 +47,7 @@ import Data.Set (Set)
 import qualified Data.Set as Set
 import qualified Data.Text as Text
 import qualified Generate.JavaScript.Builder as JS
+import qualified Generate.JavaScript.Coverage as Coverage
 import qualified Generate.JavaScript.Expression as Expr
 import Generate.JavaScript.FFI
   ( FFIInfo (..),
@@ -79,7 +83,7 @@ type Mains = Map ModuleName.Canonical Opt.Main
 
 -- GENERATE
 
-generate :: Mode.Mode -> Opt.GlobalGraph -> Mains -> Map String FFIInfo -> (Builder, Maybe SourceMap.SourceMap)
+generate :: Mode.Mode -> Opt.GlobalGraph -> Mains -> Map String FFIInfo -> (Builder, Maybe SourceMap.SourceMap, Maybe Coverage.CoverageMap)
 generate inputMode (Opt.GlobalGraph rawGraph _ sourceLocs) mains ffiInfos =
   let ffiAliases = extractFFIAliases ffiInfos
       (graph, mode) = case inputMode of
@@ -87,10 +91,11 @@ generate inputMode (Opt.GlobalGraph rawGraph _ sourceLocs) mains ffiInfos =
           let minified = Minify.minifyGraph rawGraph
               pool = StringPool.buildPool minified
            in (minified, Mode.Prod fields elmCompat ffiUnsafe ffiDbg pool ffiAliases)
-        Mode.Dev debugTypes elmCompat ffiUnsafe ffiDbg _ ->
-          (rawGraph, Mode.Dev debugTypes elmCompat ffiUnsafe ffiDbg ffiAliases)
+        Mode.Dev debugTypes elmCompat ffiUnsafe ffiDbg _ cov ->
+          (rawGraph, Mode.Dev debugTypes elmCompat ffiUnsafe ffiDbg ffiAliases cov)
       trackLines = case mode of Mode.Dev {} -> True; Mode.Prod {} -> False
-      baseState = Map.foldrWithKey (addMain mode graph) (emptyState trackLines sourceLocs) mains
+      covIds = if Mode.isCoverage mode then Coverage.computeBaseIds graph else Map.empty
+      baseState = Map.foldrWithKey (addMain mode graph) (emptyState trackLines sourceLocs covIds) mains
       shouldInclude global =
         not (Kernel_.isDebugger global && not (Mode.isDebug mode))
       filteredGraph = Map.filterWithKey (\global _ -> shouldInclude global) graph
@@ -100,12 +105,14 @@ generate inputMode (Opt.GlobalGraph rawGraph _ sourceLocs) mains ffiInfos =
                else "(function(scope){'use strict';\n"
       debuggerStub = "var _Debugger_unsafeCoerce = function(value) { return value; };\n"
       poolDecls = StringPool.poolDeclarations (Mode.stringPool mode)
+      coveragePreamble = if Mode.isCoverage mode then Coverage.coverageRuntimePreamble else mempty
       jsBuilder =
         header
           <> debuggerStub
           <> Functions.functions
           <> Runtime.embeddedRuntimeForMode mode
           <> FFIRuntime.embeddedRuntimeForMode mode
+          <> coveragePreamble
           <> generateFFIContent mode graph ffiInfos
           <> perfNote mode
           <> poolDecls
@@ -114,7 +121,10 @@ generate inputMode (Opt.GlobalGraph rawGraph _ sourceLocs) mains ffiInfos =
           <> "\nif (typeof global !== 'undefined') { global.Canopy = scope['Canopy']; global.Elm = scope['Elm']; }"
           <> "\n}(typeof window !== 'undefined' ? window : this));"
       sourceMap = buildSourceMap mode state
-   in (jsBuilder, sourceMap)
+      coverageMap = if Mode.isCoverage mode
+                    then Just (Coverage.buildCoverageMap graph sourceLocs)
+                    else Nothing
+   in (jsBuilder, sourceMap, coverageMap)
 
 
 addMain :: Mode.Mode -> Graph -> ModuleName.Canonical -> Opt.Main -> State -> State
@@ -126,7 +136,7 @@ perfNote mode =
   case mode of
     Mode.Prod {} ->
       mempty
-    Mode.Dev Nothing elmCompatible _ _ _ ->
+    Mode.Dev Nothing elmCompatible _ _ _ _ ->
       let optimizeUrl = if elmCompatible
                         then "https://canopy-lang.org/0.19.1/optimize"
                         else Doc.makeNakedLink "optimize"
@@ -139,7 +149,7 @@ perfNote mode =
                      <> BB.stringUtf8 optimizeUrl
                      <> " for better performance and smaller assets."
                ]
-    Mode.Dev (Just _) elmCompatible _ _ _ ->
+    Mode.Dev (Just _) elmCompatible _ _ _ _ ->
       let optimizeUrl = if elmCompatible
                         then "https://canopy-lang.org/0.19.1/optimize"
                         else Doc.makeNakedLink "optimize"
@@ -156,8 +166,8 @@ perfNote mode =
 -- GENERATE FOR REPL
 generateForRepl :: Bool -> Localizer.Localizer -> Opt.GlobalGraph -> ModuleName.Canonical -> Name.Name -> Can.Annotation -> Builder
 generateForRepl ansi localizer (Opt.GlobalGraph graph _ _) home name (Can.Forall _ tipe) =
-  let mode = Mode.Dev Nothing True False False Set.empty
-      debugState = addGlobal mode graph (emptyState False Map.empty) (Opt.Global ModuleName.debug "toString")
+  let mode = Mode.Dev Nothing True False False Set.empty False
+      debugState = addGlobal mode graph (emptyState False Map.empty Map.empty) (Opt.Global ModuleName.debug "toString")
       evalState = addGlobal mode graph debugState (Opt.Global home name)
       processExceptionHandler = JS.stmtToBuilder $
         JS.ExprStmt $
@@ -244,8 +254,8 @@ print ansi localizer home name tipe =
 generateForReplEndpoint :: Localizer.Localizer -> Opt.GlobalGraph -> ModuleName.Canonical -> Maybe Name.Name -> Can.Annotation -> Builder
 generateForReplEndpoint localizer (Opt.GlobalGraph graph _ _) home maybeName (Can.Forall _ tipe) =
   let name = Data.Maybe.fromMaybe Name.replValueToPrint maybeName
-      mode = Mode.Dev Nothing True False False Set.empty
-      debugState = addGlobal mode graph (emptyState False Map.empty) (Opt.Global ModuleName.debug "toString")
+      mode = Mode.Dev Nothing True False False Set.empty False
+      debugState = addGlobal mode graph (emptyState False Map.empty Map.empty) (Opt.Global ModuleName.debug "toString")
       evalState = addGlobal mode graph debugState (Opt.Global home name)
    in Functions.functions
         <> stateToBuilder evalState
@@ -281,7 +291,8 @@ data State = State
     _outputLine :: !Int,
     _sourceMapMappings :: ![SourceMap.Mapping],
     _sourceLocations :: Map Opt.Global Ann.Region,
-    _trackLines :: !Bool
+    _trackLines :: !Bool,
+    _coverageBaseIds :: Map Opt.Global Int
   }
 
 -- | Create initial codegen state.
@@ -289,12 +300,12 @@ data State = State
 -- When 'trackLines' is 'True', newlines are counted per-statement
 -- for source map line tracking (dev mode). When 'False', counting
 -- is skipped entirely to avoid double materialization (prod mode).
-emptyState :: Bool -> Map Opt.Global Ann.Region -> State
-emptyState trackLines locs =
-  State mempty [] Set.empty Set.empty 0 [] locs trackLines
+emptyState :: Bool -> Map Opt.Global Ann.Region -> Map Opt.Global Int -> State
+emptyState trackLines locs covIds =
+  State mempty [] Set.empty Set.empty 0 [] locs trackLines covIds
 
 stateToBuilder :: State -> Builder
-stateToBuilder (State revKernels revBuilders _ _ _ _ _ _) =
+stateToBuilder (State revKernels revBuilders _ _ _ _ _ _ _) =
   prependBuilders revKernels (prependBuilders revBuilders mempty)
 
 prependBuilders :: [Builder] -> Builder -> Builder
@@ -304,12 +315,12 @@ prependBuilders revBuilders monolith =
 -- ADD DEPENDENCIES
 
 addGlobal :: Mode.Mode -> Graph -> State -> Opt.Global -> State
-addGlobal mode graph state@(State revKernels builders seen seenChunks outLine smMappings srcLocs tl) global =
+addGlobal mode graph state@(State revKernels builders seen seenChunks outLine smMappings srcLocs tl covIds) global =
   if Set.member global seen
     then state
     else
       addGlobalHelp mode graph global $
-        State revKernels builders (Set.insert global seen) seenChunks outLine smMappings srcLocs tl
+        State revKernels builders (Set.insert global seen) seenChunks outLine smMappings srcLocs tl covIds
 
 filterEssentialDeps :: Mode.Mode -> Set Opt.Global -> Set Opt.Global
 filterEssentialDeps mode deps =
@@ -412,7 +423,11 @@ dispatchNode :: Mode.Mode -> Graph -> Opt.Global -> (Set Opt.Global -> State -> 
 dispatchNode mode graph currentGlobal addDeps globalInGraph state =
   case globalInGraph of
     Opt.Define expr deps ->
-      addStmt (emitMapping currentGlobal (addDeps deps state)) (var currentGlobal (Expr.generate mode expr))
+      let baseState = emitMapping currentGlobal (addDeps deps state)
+          code = if Mode.isCoverage mode
+                 then covDefineCode mode currentGlobal expr state
+                 else Expr.generate mode expr
+       in addStmt baseState (var currentGlobal code)
     Opt.DefineTailFunc argNames body deps ->
       addStmt (emitMapping currentGlobal (addDeps deps state))
         (let (Opt.Global _ name) = currentGlobal
@@ -441,24 +456,33 @@ dispatchNode mode graph currentGlobal addDeps globalInGraph state =
     Opt.PortOutgoing encoder deps ->
       addStmt (emitMapping currentGlobal (addDeps deps state)) (Kernel_.generatePort mode currentGlobal "outgoingPort" encoder)
 
-addKernelChunks :: Mode.Mode -> Opt.Global -> State -> [Kernel.Chunk] -> State
-addKernelChunks mode currentGlobal (State revKernels revBuilders seen seenChunks outLine smMappings srcLocs tl) chunks =
+-- | Generate coverage-instrumented code for a Define node.
+covDefineCode :: Mode.Mode -> Opt.Global -> Opt.Expr -> State -> Expr.Code
+covDefineCode mode currentGlobal expr state =
+  case Map.lookup currentGlobal (_coverageBaseIds state) of
+    Nothing -> Expr.generate mode expr
+    Just baseId ->
+      let (code, _nextId) = Expr.generateCov mode baseId expr
+       in code
+
+_addKernelChunks :: Mode.Mode -> Opt.Global -> State -> [Kernel.Chunk] -> State
+_addKernelChunks mode currentGlobal (State revKernels revBuilders seen seenChunks outLine smMappings srcLocs tl covIds) chunks =
   let kernelCode = Kernel_.generateKernel mode chunks
       kernelBytes = BL.toStrict (BB.toLazyByteString kernelCode)
   in if Set.member kernelBytes seenChunks
-     then State revKernels revBuilders (Set.insert currentGlobal seen) seenChunks outLine smMappings srcLocs tl
+     then State revKernels revBuilders (Set.insert currentGlobal seen) seenChunks outLine smMappings srcLocs tl covIds
      else
        let newLine = if tl then outLine + countNewlinesBS kernelBytes else outLine
-       in State (kernelCode : revKernels) revBuilders (Set.insert currentGlobal seen) (Set.insert kernelBytes seenChunks) newLine smMappings srcLocs tl
+       in State (kernelCode : revKernels) revBuilders (Set.insert currentGlobal seen) (Set.insert kernelBytes seenChunks) newLine smMappings srcLocs tl covIds
 
 addStmt :: State -> JS.Stmt -> State
 addStmt state stmt =
   addBuilder state (JS.stmtToBuilder stmt)
 
 addBuilder :: State -> Builder -> State
-addBuilder (State revKernels revBuilders seen seenChunks outLine smMappings srcLocs tl) builder =
+addBuilder (State revKernels revBuilders seen seenChunks outLine smMappings srcLocs tl covIds) builder =
   let newLine = if tl then outLine + countNewlines builder else outLine
-  in State revKernels (builder : revBuilders) seen seenChunks newLine smMappings srcLocs tl
+  in State revKernels (builder : revBuilders) seen seenChunks newLine smMappings srcLocs tl covIds
 
 -- | Count newline bytes in a Builder by materializing it.
 --
@@ -501,7 +525,7 @@ buildSourceMap :: Mode.Mode -> State -> Maybe SourceMap.SourceMap
 buildSourceMap mode state =
   case mode of
     Mode.Prod {} -> Nothing
-    Mode.Dev _ _ _ _ _ ->
+    Mode.Dev _ _ _ _ _ _ ->
       let sm = SourceMap.empty "canopy.js"
        in Just sm { SourceMap._smMappings = _sourceMapMappings state }
 

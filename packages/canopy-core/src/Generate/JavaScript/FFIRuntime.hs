@@ -99,9 +99,9 @@ runtimeFooter = BB.stringUtf8 [r|
 embeddedRuntimeForMode :: Mode.Mode -> Builder
 embeddedRuntimeForMode mode =
   case mode of
-    Mode.Dev _ _ False _ _ ->  -- ffiUnsafe=False, validation ENABLED (default)
+    Mode.Dev _ _ False _ _ _ ->  -- ffiUnsafe=False, validation ENABLED (default)
       embeddedRuntime
-    Mode.Dev _ _ True _ _ ->  -- ffiUnsafe=True, validation DISABLED
+    Mode.Dev _ _ True _ _ _ ->  -- ffiUnsafe=True, validation DISABLED
       embeddedMarshal <> embeddedEnvironment  -- Basic runtime in dev
     Mode.Prod _ _ False _ _ _ ->  -- ffiUnsafe=False, validation ENABLED (default)
       embeddedRuntime

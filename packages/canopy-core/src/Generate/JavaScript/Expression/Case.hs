@@ -149,7 +149,7 @@ generateIfTest genExpr mode root (path, test) =
 --
 -- @since 0.19.2
 ctorTag :: Mode.Mode -> Can.CtorOpts -> JS.Expr -> JS.Expr
-ctorTag (Mode.Dev _ _ _ _ _) _ value = JS.Access value JsName.dollar
+ctorTag (Mode.Dev _ _ _ _ _ _) _ value = JS.Access value JsName.dollar
 ctorTag (Mode.Prod {}) Can.Normal value = JS.Access value JsName.dollar
 ctorTag (Mode.Prod {}) Can.Enum value = value
 ctorTag (Mode.Prod {}) Can.Unbox value = value
@@ -158,14 +158,14 @@ ctorTag (Mode.Prod {}) Can.Unbox value = value
 --
 -- @since 0.19.2
 ctorTagValue :: Mode.Mode -> ModuleName.Canonical -> Name.Name -> Index.ZeroBased -> JS.Expr
-ctorTagValue (Mode.Dev _ _ _ _ _) _ name _ = JS.String (Name.toBuilder name)
+ctorTagValue (Mode.Dev _ _ _ _ _ _) _ name _ = JS.String (Name.toBuilder name)
 ctorTagValue (Mode.Prod {}) home name index = JS.Int (ctorToInt home name index)
 
 -- | Access the underlying value of a Chr for comparison.
 --
 -- @since 0.19.2
 chrValueAccess :: Mode.Mode -> JS.Expr -> JS.Expr
-chrValueAccess (Mode.Dev _ _ _ _ _) value = JS.Call (JS.Access value (JsName.fromLocal "valueOf")) []
+chrValueAccess (Mode.Dev _ _ _ _ _ _) value = JS.Call (JS.Access value (JsName.fromLocal "valueOf")) []
 chrValueAccess (Mode.Prod {}) value = value
 
 -- | Generate a single case branch (test + subtree) for a switch statement.
@@ -253,7 +253,7 @@ generateCaseTest genExpr mode root path exampleTest =
 --
 -- @since 0.19.2
 ctorSwitchExpr :: Mode.Mode -> Can.CtorOpts -> JS.Expr -> JS.Expr
-ctorSwitchExpr (Mode.Dev _ _ _ _ _) _ value = JS.Access value JsName.dollar
+ctorSwitchExpr (Mode.Dev _ _ _ _ _ _) _ value = JS.Access value JsName.dollar
 ctorSwitchExpr (Mode.Prod {}) Can.Normal value = JS.Access value JsName.dollar
 ctorSwitchExpr (Mode.Prod {}) Can.Enum value = value
 ctorSwitchExpr (Mode.Prod {}) Can.Unbox value = value
@@ -282,7 +282,7 @@ pathToJsExpr genExpr mode root = \case
 --
 -- @since 0.19.2
 unboxPath :: CodeGenerator -> Mode.Mode -> Name.Name -> DT.Path -> JS.Expr
-unboxPath genExpr mode@(Mode.Dev _ _ _ _ _) root subPath =
+unboxPath genExpr mode@(Mode.Dev _ _ _ _ _ _) root subPath =
   JS.Access (pathToJsExpr genExpr mode root subPath) (JsName.fromIndex Index.first)
 unboxPath genExpr mode@(Mode.Prod {}) root subPath =
   pathToJsExpr genExpr mode root subPath

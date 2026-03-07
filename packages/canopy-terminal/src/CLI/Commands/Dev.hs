@@ -173,6 +173,9 @@ createTestFlags =
     |-- Terminal.onOff "headed" "Show the browser window when running browser tests (non-headless mode)."
     |-- Terminal.flag "app" Test.appParser "Application entry point for browser tests (e.g. src/Main.can). Can also be set via @browser-app annotation in test files."
     |-- Terminal.flag "slowmo" Test.slowMoParser "Slow down Playwright browser actions by N milliseconds. Useful for debugging browser tests."
+    |-- Terminal.onOff "coverage" "Instrument code and show coverage report after tests."
+    |-- Terminal.flag "coverage-format" Test.coverageFormatParser "Coverage output format: istanbul or lcov."
+    |-- Terminal.flag "coverage-output" Test.coverageOutputParser "Write coverage report to file."
 
 createDocsFlags :: Terminal.Flags Docs.Flags
 createDocsFlags =

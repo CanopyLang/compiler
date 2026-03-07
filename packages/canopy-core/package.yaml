@@ -157,6 +157,7 @@ library:
     - Generate.JavaScript.CodeSplit.Manifest
     - Generate.JavaScript.CodeSplit.Runtime
     - Generate.JavaScript.CodeSplit.Types
+    - Generate.JavaScript.Coverage
     - Generate.JavaScript.Expression
     - Generate.JavaScript.FFI
     - Generate.JavaScript.Minify

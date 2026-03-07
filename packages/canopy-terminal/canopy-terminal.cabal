@@ -159,6 +159,7 @@ library
       Test
       Test.Browser
       Test.Compile
+      Test.Coverage
       Test.Discovery
       Test.Event
       Test.External

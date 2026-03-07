@@ -14,6 +14,7 @@
 -- @since 0.19.1
 module Generate.JavaScript.Expression
   ( generate,
+    generateCov,
     generateCtor,
     generateField,
     generateTailDefExpr,
@@ -40,6 +41,7 @@ import qualified Data.Map.Strict as Map
 import qualified Data.Set as Set
 import qualified Data.Text as Text
 import qualified Generate.JavaScript.Builder as JS
+import qualified Generate.JavaScript.Coverage as Coverage
 import qualified Generate.JavaScript.Expression.Call as Call
 import qualified Generate.JavaScript.Expression.Case as ExprCase
 import qualified Generate.JavaScript.Name as JsName
@@ -74,7 +76,7 @@ generate mode expression =
     Opt.Chr char ->
       JsExpr $
         case mode of
-          Mode.Dev _ _ _ _ _ ->
+          Mode.Dev _ _ _ _ _ _ ->
             JS.Call toChar [JS.String (Utf8.toBuilder char)]
           Mode.Prod {} ->
             JS.String (Utf8.toBuilder char)
@@ -95,14 +97,14 @@ generate mode expression =
             else JsExpr $ JS.Ref (JsName.fromGlobal home name)
     Opt.VarEnum (Opt.Global home name) index ->
       case mode of
-        Mode.Dev _ _ _ _ _ ->
+        Mode.Dev _ _ _ _ _ _ ->
           JsExpr $ JS.Ref (JsName.fromGlobal home name)
         Mode.Prod {} ->
           JsExpr $ JS.Int (Index.toMachine index)
     Opt.VarBox (Opt.Global home name) ->
       JsExpr . JS.Ref $
         ( case mode of
-            Mode.Dev _ _ _ _ _ -> JsName.fromGlobal home name
+            Mode.Dev _ _ _ _ _ _ -> JsName.fromGlobal home name
             Mode.Prod {} -> JsName.fromGlobal ModuleName.basics Name.identity
         )
     Opt.VarCycle home name ->
@@ -175,7 +177,7 @@ generate mode expression =
       JsExpr $ generateRecord mode fields
     Opt.Unit ->
       case mode of
-        Mode.Dev _ _ _ _ _ ->
+        Mode.Dev _ _ _ _ _ _ ->
           JsExpr $ JS.Ref (JsName.fromKernel Name.utils "Tuple0")
         Mode.Prod {} ->
           JsExpr $ JS.Int 0
@@ -333,7 +335,7 @@ generateCtor mode (Opt.Global home name) index arity =
 
       ctorTag =
         case mode of
-          Mode.Dev _ _ _ _ _ -> JS.String (Name.toBuilder name)
+          Mode.Dev _ _ _ _ _ _ -> JS.String (Name.toBuilder name)
           Mode.Prod {} -> JS.Int (ctorToInt home name index)
    in ((generateFunction argNames . JsExpr) . JS.Object $ ((JsName.dollar, ctorTag) : fmap (\n -> (n, JS.Ref n)) argNames))
 
@@ -370,7 +372,7 @@ generateRecord mode fields =
 generateField :: Mode.Mode -> Name.Name -> JsName.Name
 generateField mode name =
   case mode of
-    Mode.Dev _ _ _ _ _ ->
+    Mode.Dev _ _ _ _ _ _ ->
       JsName.fromLocal name
     Mode.Prod fields _ _ _ _ _ ->
       maybe
@@ -622,7 +624,7 @@ generatePath mode path =
       JS.Access (generatePath mode subPath) (generateField mode field)
     Opt.Unbox subPath ->
       case mode of
-        Mode.Dev _ _ _ _ _ ->
+        Mode.Dev _ _ _ _ _ _ ->
           JS.Access (generatePath mode subPath) (JsName.fromIndex Index.first)
         Mode.Prod {} ->
           generatePath mode subPath
@@ -750,11 +752,68 @@ toDebugMetadata mode msgType =
   case mode of
     Mode.Prod {} ->
       JS.Int 0
-    Mode.Dev Nothing _ _ _ _ ->
+    Mode.Dev Nothing _ _ _ _ _ ->
       JS.Int 0
-    Mode.Dev (Just interfaces) _ _ _ _ ->
+    Mode.Dev (Just interfaces) _ _ _ _ _ ->
       JS.Json . Encode.object $
         [ "versions" ==> Encode.object ["canopy" ==> Version.encode Version.compiler],
           "types" ==> Type.encodeMetadata (Extract.fromMsg interfaces msgType)
         ]
+
+-- COVERAGE-AWARE GENERATION
+
+-- | Generate JavaScript code with coverage instrumentation for a top-level node.
+--
+-- Threads a counter through the expression tree, emitting @__cov(N)@
+-- calls at function entry points, if-branch sites, and case-branch
+-- targets. Returns the generated code and the next counter value.
+--
+-- @since 0.19.2
+generateCov :: Mode.Mode -> Int -> Opt.Expr -> (Code, Int)
+generateCov mode counter expr =
+  case expr of
+    Opt.Function args body ->
+      let covStmt = covExprStmt counter
+          (bodyCode, nextCounter) = generateCov mode (counter + 1) body
+          fnCode = generateFunction (fmap JsName.fromLocal args) (JsBlock (covStmt : codeToStmtList bodyCode))
+       in (fnCode, nextCounter)
+    Opt.If branches final ->
+      generateCovIf mode counter branches final
+    Opt.Let def body ->
+      let defPts = Coverage.countDefPoints def
+          (bodyCode, nextCounter) = generateCov mode (counter + defPts) body
+          defStmt = generateDef mode def
+          allStmts = flattenStatements [defStmt] ++ codeToStmtList bodyCode
+       in (toCodeBlock (filter notEmpty allStmts), nextCounter)
+    Opt.Call func args ->
+      let pts = Coverage.countExprPoints func + sum (fmap Coverage.countExprPoints args)
+       in (generate mode expr, counter + pts)
+    Opt.Destruct _destructor body ->
+      generateCov mode counter body
+    _ ->
+      (generate mode expr, counter + Coverage.countExprPoints expr)
+
+-- | Generate coverage-instrumented if-expression.
+generateCovIf :: Mode.Mode -> Int -> [(Opt.Expr, Opt.Expr)] -> Opt.Expr -> (Code, Int)
+generateCovIf mode counter branches final =
+  let (branchStmts, counter') = foldr addCovBranch ([], counter) branches
+      covElse = covExprStmt counter'
+      (finalCode, counter'') = generateCov mode (counter' + 1) final
+      finalBlock = JS.Block (covElse : codeToStmtList finalCode)
+   in (JsBlock [foldr addStmtIf finalBlock branchStmts], counter'')
+  where
+    addCovBranch (cond, thenExpr) (acc, c) =
+      let covStmt = covExprStmt c
+          (thenCode, c') = generateCov mode (c + 1) thenExpr
+          thenBlock = JsBlock (covStmt : codeToStmtList thenCode)
+       in ((generateJsExpr mode cond, thenBlock) : acc, c')
+
+-- | Create a @__cov(N)@ expression statement.
+covExprStmt :: Int -> JS.Stmt
+covExprStmt covId =
+  JS.ExprStmt
+    ( JS.Call
+        (JS.Ref (JsName.fromLocal (Name.fromChars "__cov")))
+        [JS.Int covId]
+    )
 

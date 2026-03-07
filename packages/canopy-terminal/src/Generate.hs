@@ -54,7 +54,7 @@ dev ::
   Build.Artifacts ->
   Task Builder
 dev _root _details artifacts = do
-  let mode = Mode.Dev Nothing False False False Set.empty
+  let mode = Mode.Dev Nothing False False False Set.empty False
   pure (generateJS mode artifacts)
 
 -- | Generate production build.
@@ -81,7 +81,7 @@ repl ::
   Build.Artifacts ->
   Task Builder
 repl _root _details _config artifacts = do
-  let mode = Mode.Dev Nothing False False False Set.empty
+  let mode = Mode.Dev Nothing False False False Set.empty False
   pure (generateJS mode artifacts)
 
 -- Helper: Generate JavaScript from artifacts.
@@ -90,7 +90,7 @@ generateJS mode artifacts =
   let globalGraph = extractGlobalGraph artifacts
       mains = extractMains artifacts
       ffiInfo = artifacts ^. Build.artifactsFFIInfo
-      (jsBuilder, _sourceMap) = JS.generate mode globalGraph mains ffiInfo
+      (jsBuilder, _sourceMap, _coverageMap) = JS.generate mode globalGraph mains ffiInfo
    in jsBuilder
 
 -- | Extract the GlobalGraph from build artifacts.

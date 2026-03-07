@@ -278,6 +278,11 @@ executeSection =
       "    }",
       "    await runner.runAndReport({ $: 'TestGroup', a: 'All Tests', b: list });",
       "  }",
+      "",
+      "  if (typeof __canopy_cov !== 'undefined') {",
+      "    var _fs = require('fs');",
+      "    _fs.writeSync(1, JSON.stringify({event:'coverage', data: __canopy_cov}) + '\\n');",
+      "  }",
       "})();"
     ]
 
@@ -361,6 +366,10 @@ browserTestExecuteSection =
       "    combined = { $: '::', a: allTestNodes[j], b: combined };",
       "  }",
       "  await window.__canopyBrowserTestRunner.run({ $: 'InBrowser', a: combined });",
+      "",
+      "  if (typeof __canopy_cov !== 'undefined') {",
+      "    console.log(JSON.stringify({event:'coverage', data: __canopy_cov}));",
+      "  }",
       "})();"
     ]
 
@@ -470,6 +479,11 @@ unitTestBootstrap =
       "if (!hasTests) {",
       "  console.error('No test modules found.');",
       "  process.exit(1);",
+      "}",
+      "",
+      "if (typeof __canopy_cov !== 'undefined') {",
+      "  var _fs = require('fs');",
+      "  _fs.writeSync(1, JSON.stringify({event:'coverage', data: __canopy_cov}) + '\\n');",
       "}",
       "",
       "process.exit(anyFailed ? 1 : 0);"

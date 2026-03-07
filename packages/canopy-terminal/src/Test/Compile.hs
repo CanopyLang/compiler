@@ -12,6 +12,7 @@
 module Test.Compile
   ( compileTestFiles,
     artifactsToJavaScript,
+    artifactsToJavaScriptCov,
     collectMains,
   )
 where
@@ -36,6 +37,7 @@ import qualified Data.Set as Set
 import qualified Data.Text as Text
 import qualified Data.Text.Encoding as TextEnc
 import qualified Generate.JavaScript as JS
+import qualified Generate.JavaScript.Coverage as Coverage
 import qualified Generate.Mode as Mode
 import qualified PackageCache
 import Reporting.Doc.ColorQQ (c)
@@ -52,9 +54,16 @@ import qualified Terminal.Print as Print
 -- just-in-time so they receive their correct package identity in the
 -- optimizer.
 --
+-- When @coverage@ is 'True', also returns the 'Coverage.CoverageMap'
+-- for combining with runtime hit data after tests.
+--
 -- @since 0.19.1
-compileTestFiles :: FilePath -> [FilePath] -> IO (Maybe (Text.Text, Map.Map ModuleName.Canonical Opt.Main))
-compileTestFiles root testFiles = do
+compileTestFiles ::
+  FilePath ->
+  [FilePath] ->
+  Bool ->
+  IO (Maybe (Text.Text, Map.Map ModuleName.Canonical Opt.Main, Maybe Coverage.CoverageMap))
+compileTestFiles root testFiles coverage = do
   ensureTestDepArtifacts root
   pkg <- resolvePackageName root
   let srcDirs =
@@ -68,7 +77,10 @@ compileTestFiles root testFiles = do
       let errStr = show err
       Print.printErrLn [c|{red|Compilation error:} #{errStr}|]
       pure Nothing
-    Right artifacts -> pure (Just (artifactsToJavaScript artifacts, collectMains artifacts))
+    Right artifacts ->
+      if coverage
+        then pure (Just (artifactsToJavaScriptCov artifacts))
+        else pure (Just (artifactsToJavaScript artifacts, collectMains artifacts, Nothing))
 
 -- | Resolve the package name from the project outline.
 --
@@ -236,7 +248,27 @@ artifactsToJavaScript artifacts =
     globalGraph = artifacts ^. Build.artifactsGlobalGraph
     ffiInfo = artifacts ^. Build.artifactsFFIInfo
     mains = collectMains artifacts
-    (builder, _sourceMap) = JS.generate (Mode.Dev Nothing False True False Set.empty) globalGraph mains ffiInfo
+    (builder, _sourceMap, _coverageMap) = JS.generate (Mode.Dev Nothing False True False Set.empty False) globalGraph mains ffiInfo
+    rawText = TextEnc.decodeUtf8 (LBS.toStrict (Builder.toLazyByteString builder))
+
+-- | Generate JavaScript text with coverage instrumentation.
+--
+-- Like 'artifactsToJavaScript' but enables coverage mode in the code
+-- generator, injecting @__cov(N)@ calls at function entries and branch
+-- sites. Returns the JS text, the main map, and the 'CoverageMap' needed
+-- to interpret the runtime hit data.
+--
+-- @since 0.19.2
+artifactsToJavaScriptCov ::
+  Compiler.Artifacts ->
+  (Text.Text, Map.Map ModuleName.Canonical Opt.Main, Maybe Coverage.CoverageMap)
+artifactsToJavaScriptCov artifacts =
+  (postProcessJavaScript rawText, mains, covMap)
+  where
+    globalGraph = artifacts ^. Build.artifactsGlobalGraph
+    ffiInfo = artifacts ^. Build.artifactsFFIInfo
+    mains = collectMains artifacts
+    (builder, _sourceMap, covMap) = JS.generate (Mode.Dev Nothing False True False Set.empty True) globalGraph mains ffiInfo
     rawText = TextEnc.decodeUtf8 (LBS.toStrict (Builder.toLazyByteString builder))
 
 -- | Post-process JavaScript to fix rendering quirks and resolve kernel

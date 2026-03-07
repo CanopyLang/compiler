@@ -54,6 +54,8 @@ module Test
     filterParser,
     appParser,
     slowMoParser,
+    coverageFormatParser,
+    coverageOutputParser,
   )
 where
 
@@ -64,6 +66,7 @@ import Control.Lens.TH (makeLenses)
 import qualified Control.Concurrent as Concurrent
 import qualified Control.Exception as Exception
 import Control.Monad (filterM, void)
+import Data.Aeson (Value)
 import qualified Data.Map.Strict as Map
 import qualified Data.Maybe as Maybe
 import qualified Data.Text as Text
@@ -83,8 +86,10 @@ import qualified Stuff
 
 import Test.Browser (AppEntryPoint (..))
 import qualified Test.Browser as Browser
+import qualified Test.Coverage as Coverage
 import Test.External (JsContent (..), ExternalModuleError)
 import qualified Test.External as External
+import qualified Generate.JavaScript.Coverage as CoverageMap
 import Test.Harness (HarnessConfig (..), HarnessContent (..))
 import qualified Test.Harness as Harness
 import qualified Test.Playwright as Playwright
@@ -111,7 +116,13 @@ data Flags = Flags
     -- | Application entry point for browser tests
     _testApp :: !(Maybe String),
     -- | Slow down browser actions by N ms
-    _testSlowMo :: !(Maybe Int)
+    _testSlowMo :: !(Maybe Int),
+    -- | Instrument code and show coverage report after tests
+    _testCoverage :: !Bool,
+    -- | Coverage output format: istanbul or lcov
+    _testCoverageFormat :: !(Maybe String),
+    -- | Write coverage report to this file path
+    _testCoverageOutput :: !(Maybe String)
   }
   deriving (Eq, Show)
 
@@ -226,17 +237,22 @@ compileAndRunWithRoot root testFiles flags = do
   when (flags ^. testVerbose) $
     Print.println [c|  Project root: {cyan|#{root}}|]
   Print.newline
-  maybeResult <- Compile.compileTestFiles root testFiles
+  maybeResult <- Compile.compileTestFiles root testFiles (flags ^. testCoverage)
   case maybeResult of
     Nothing -> do
       Print.printErrLn [c|{red|Compilation failed.}|]
       pure (ExitFailure 1)
-    Just (jsContent, mains) -> dispatchByTestType jsContent mains testFiles flags
+    Just (jsContent, mains, maybeCovMap) -> do
+      (exitCode, maybeCovData) <- dispatchByTestType jsContent mains testFiles flags
+      handleCoverageOutput flags maybeCovMap maybeCovData
+      pure exitCode
 
 -- ── Test Dispatch ────────────────────────────────────────────────────
 
 -- | Detect test type and dispatch to the appropriate execution pipeline.
-dispatchByTestType :: Text.Text -> Map.Map ModuleName.Canonical Opt.Main -> [FilePath] -> Flags -> IO ExitCode
+--
+-- Returns the exit code and any coverage data captured from the NDJSON stream.
+dispatchByTestType :: Text.Text -> Map.Map ModuleName.Canonical Opt.Main -> [FilePath] -> Flags -> IO (ExitCode, Maybe Value)
 dispatchByTestType jsContent mains testFiles flags
   | hasBrowserTestMain mains = executeBrowserExecutionTests jsContent testFiles flags
   | hasTestMain mains = executeBrowserTests jsContent testFiles flags
@@ -259,35 +275,35 @@ hasTestMain = any isTestMain . Map.elems
 -- ── Browser Execution Tests (BrowserTestMain) ───────────────────────
 
 -- | Execute tests in a real browser via Playwright.
-executeBrowserExecutionTests :: Text.Text -> [FilePath] -> Flags -> IO ExitCode
+executeBrowserExecutionTests :: Text.Text -> [FilePath] -> Flags -> IO (ExitCode, Maybe Value)
 executeBrowserExecutionTests jsContent testFiles flags = do
   Print.println [c|{cyan|Browser execution tests detected.} Setting up real browser environment...|]
   Print.newline
   runBrowserExecutionPipeline jsContent testFiles flags
-    `Exception.catch` handleBrowserError
+    `Exception.catch` handleBrowserErrorWithCov
 
 -- | Run the browser execution pipeline.
-runBrowserExecutionPipeline :: Text.Text -> [FilePath] -> Flags -> IO ExitCode
+runBrowserExecutionPipeline :: Text.Text -> [FilePath] -> Flags -> IO (ExitCode, Maybe Value)
 runBrowserExecutionPipeline jsContent _testFiles flags = do
   playwrightReady <- Playwright.ensurePlaywrightInstalled
   if not playwrightReady
-    then pure (ExitFailure 1)
+    then pure (ExitFailure 1, Nothing)
     else do
       bundleResult <- External.loadBrowserTestBundle
       case bundleResult of
-        Left err -> reportExternalError err
+        Left err -> fmap (\ec -> (ec, Nothing)) (reportExternalError err)
         Right (browserRunner, rpcModule) ->
           runBrowserExecutionWithServer jsContent flags browserRunner rpcModule
 
 -- | Start server, write HTML harness, launch Playwright, collect results.
-runBrowserExecutionWithServer :: Text.Text -> Flags -> JsContent -> JsContent -> IO ExitCode
+runBrowserExecutionWithServer :: Text.Text -> Flags -> JsContent -> JsContent -> IO (ExitCode, Maybe Value)
 runBrowserExecutionWithServer jsContent flags browserRunner rpcModule = do
   setTestFilter (flags ^. testFilter)
   portResult <- Server.findAvailablePort
   case portResult of
     Left _ -> do
       Print.printErrLn [c|{red|Error:} Could not find an available port (8000-9000).|]
-      pure (ExitFailure 1)
+      pure (ExitFailure 1, Nothing)
     Right port -> do
       tmpDir <- Dir.getTemporaryDirectory
       let htmlPath = tmpDir </> "canopy-browser-test.html"
@@ -304,7 +320,7 @@ runBrowserExecutionWithServer jsContent flags browserRunner rpcModule = do
       pure result
 
 -- | Generate and execute a Node.js Playwright launcher script.
-launchPlaywrightForBrowserTests :: ServerPort -> Flags -> FilePath -> IO ExitCode
+launchPlaywrightForBrowserTests :: ServerPort -> Flags -> FilePath -> IO (ExitCode, Maybe Value)
 launchPlaywrightForBrowserTests port flags tmpDir = do
   let launcherPath = tmpDir </> "canopy-browser-launcher.js"
       rpcPath = tmpDir </> "canopy-playwright-rpc.js"
@@ -344,7 +360,7 @@ launchPlaywrightForBrowserTests port flags tmpDir = do
 -- ── Unit Test Execution ──────────────────────────────────────────────
 
 -- | Execute simple unit tests via the virtual DOM text harness.
-executeUnitTests :: Text.Text -> Flags -> IO ExitCode
+executeUnitTests :: Text.Text -> Flags -> IO (ExitCode, Maybe Value)
 executeUnitTests jsContent flags = do
   setTestFilter (flags ^. testFilter)
   tmpDir <- Dir.getTemporaryDirectory
@@ -356,28 +372,28 @@ executeUnitTests jsContent flags = do
 -- ── Browser Test Execution ───────────────────────────────────────────
 
 -- | Execute browser\/async tests with full infrastructure.
-executeBrowserTests :: Text.Text -> [FilePath] -> Flags -> IO ExitCode
+executeBrowserTests :: Text.Text -> [FilePath] -> Flags -> IO (ExitCode, Maybe Value)
 executeBrowserTests jsContent testFiles flags = do
   Print.println [c|{cyan|Browser tests detected.} Setting up test infrastructure...|]
   Print.newline
   runBrowserPipeline jsContent testFiles flags
-    `Exception.catch` handleBrowserError
+    `Exception.catch` handleBrowserErrorWithCov
 
 -- | Run the browser test pipeline, propagating errors.
-runBrowserPipeline :: Text.Text -> [FilePath] -> Flags -> IO ExitCode
+runBrowserPipeline :: Text.Text -> [FilePath] -> Flags -> IO (ExitCode, Maybe Value)
 runBrowserPipeline jsContent testFiles flags = do
   playwrightReady <- Playwright.ensurePlaywrightInstalled
   if not playwrightReady
-    then pure (ExitFailure 1)
+    then pure (ExitFailure 1, Nothing)
     else do
       bundleResult <- External.loadTestRunnerBundle
       case bundleResult of
-        Left err -> reportExternalError err
+        Left err -> fmap (\ec -> (ec, Nothing)) (reportExternalError err)
         Right (runner, executor, playwright) ->
           runWithExternals jsContent testFiles flags runner executor playwright
 
 -- | Continue browser pipeline after loading external modules.
-runWithExternals :: Text.Text -> [FilePath] -> Flags -> JsContent -> JsContent -> JsContent -> IO ExitCode
+runWithExternals :: Text.Text -> [FilePath] -> Flags -> JsContent -> JsContent -> JsContent -> IO (ExitCode, Maybe Value)
 runWithExternals jsContent testFiles flags runner executor playwright = do
   appResult <- resolveAppEntry testFiles flags
   appDir <- case appResult of
@@ -393,13 +409,13 @@ resolveAppEntry testFiles flags =
     maybeAppFlag = fmap AppEntryPoint (flags ^. testApp)
 
 -- | Run browser tests with an embedded HTTP server.
-runBrowserTestsWithServer :: Text.Text -> Flags -> JsContent -> JsContent -> JsContent -> FilePath -> IO ExitCode
+runBrowserTestsWithServer :: Text.Text -> Flags -> JsContent -> JsContent -> JsContent -> FilePath -> IO (ExitCode, Maybe Value)
 runBrowserTestsWithServer jsContent flags runner executor playwright appDir = do
   portResult <- Server.findAvailablePort
   case portResult of
     Left _ -> do
       Print.printErrLn [c|{red|Error:} Could not find an available port (8000-9000).|]
-      pure (ExitFailure 1)
+      pure (ExitFailure 1, Nothing)
     Right port -> do
       server <- Server.startTestServer appDir port
       when (flags ^. testVerbose) $ do
@@ -410,7 +426,7 @@ runBrowserTestsWithServer jsContent flags runner executor playwright appDir = do
       pure result
 
 -- | Generate the harness and execute it via Node.js.
-generateAndRun :: Flags -> JsContent -> JsContent -> JsContent -> JsContent -> Maybe ServerPort -> FilePath -> IO ExitCode
+generateAndRun :: Flags -> JsContent -> JsContent -> JsContent -> JsContent -> Maybe ServerPort -> FilePath -> IO (ExitCode, Maybe Value)
 generateAndRun flags runner executor playwright tests maybePort projectDir = do
   setTestFilter (flags ^. testFilter)
   tmpDir <- Dir.getTemporaryDirectory
@@ -442,12 +458,61 @@ handleBrowserError err = do
   Print.printErrLn [c|{red|Browser test setup failed:} #{errStr}|]
   pure (ExitFailure 1)
 
+-- | Handle IO exceptions during browser test setup (with coverage data).
+handleBrowserErrorWithCov :: Exception.IOException -> IO (ExitCode, Maybe Value)
+handleBrowserErrorWithCov err =
+  fmap (\ec -> (ec, Nothing)) (handleBrowserError err)
+
 -- ── Utilities ────────────────────────────────────────────────────────
 
 -- | Conditional action: execute only when the condition is 'True'.
 when :: Bool -> IO () -> IO ()
 when True action = action
 when False _ = pure ()
+
+-- ── Coverage Output ─────────────────────────────────────────────────
+
+-- | Render and\/or write coverage reports after tests complete.
+--
+-- When the coverage flag is set and both a 'CoverageMap' and runtime
+-- hit data are available, prints a terminal summary and optionally
+-- writes an Istanbul JSON or LCOV file.
+--
+-- @since 0.19.2
+handleCoverageOutput :: Flags -> Maybe CoverageMap.CoverageMap -> Maybe Value -> IO ()
+handleCoverageOutput flags maybeCovMap maybeCovData =
+  case (flags ^. testCoverage, maybeCovMap, maybeCovData) of
+    (True, Just covMap, Just covData) -> do
+      let hits = Coverage.parseCoverageHits covData
+      Coverage.renderTerminalReport covMap hits
+      writeCoverageFile flags covMap hits
+    (True, _, Nothing) ->
+      Print.println [c|{yellow|Warning:} Coverage enabled but no coverage data received from test runner.|]
+    _ -> pure ()
+
+-- | Write a coverage report file if @--coverage-format@ and @--coverage-output@ are set.
+--
+-- @since 0.19.2
+writeCoverageFile :: Flags -> CoverageMap.CoverageMap -> Map.Map Int Int -> IO ()
+writeCoverageFile flags covMap hits =
+  case (flags ^. testCoverageFormat, flags ^. testCoverageOutput) of
+    (Just fmt, Just path) ->
+      case parseCoverageFormatString fmt of
+        Just coverageFormat -> Coverage.writeReport coverageFormat path covMap hits
+        Nothing -> do
+          let fmtStr = fmt
+          Print.printErrLn [c|{red|Error:} Unknown coverage format: #{fmtStr}. Use 'istanbul' or 'lcov'.|]
+    (Just _, Nothing) ->
+      Print.printErrLn [c|{yellow|Warning:} --coverage-format requires --coverage-output.|]
+    _ -> pure ()
+
+-- | Parse a coverage format string into a 'CoverageFormat'.
+--
+-- @since 0.19.2
+parseCoverageFormatString :: String -> Maybe Coverage.CoverageFormat
+parseCoverageFormatString "istanbul" = Just Coverage.Istanbul
+parseCoverageFormatString "lcov" = Just Coverage.LCOV
+parseCoverageFormatString _ = Nothing
 
 -- ── CLI Parsers ──────────────────────────────────────────────────────
 
@@ -513,6 +578,54 @@ suggestSlowMo _ = pure ["100", "250", "500"]
 -- | Provide example slow-mo values.
 exampleSlowMo :: String -> IO [String]
 exampleSlowMo _ = pure ["100", "500"]
+
+-- | Parser for the @--coverage-format@ flag.
+--
+-- @since 0.19.2
+coverageFormatParser :: Terminal.Parser String
+coverageFormatParser =
+  Terminal.Parser
+    { Terminal._singular = "format",
+      Terminal._plural = "formats",
+      Terminal._parser = parseCoverageFormatArg,
+      Terminal._suggest = suggestCoverageFormats,
+      Terminal._examples = exampleCoverageFormats
+    }
+
+-- | Parse a coverage format argument.
+parseCoverageFormatArg :: String -> Maybe String
+parseCoverageFormatArg "istanbul" = Just "istanbul"
+parseCoverageFormatArg "lcov" = Just "lcov"
+parseCoverageFormatArg _ = Nothing
+
+-- | Suggest coverage format values.
+suggestCoverageFormats :: String -> IO [String]
+suggestCoverageFormats _ = pure ["istanbul", "lcov"]
+
+-- | Provide example coverage format values.
+exampleCoverageFormats :: String -> IO [String]
+exampleCoverageFormats _ = pure ["istanbul", "lcov"]
+
+-- | Parser for the @--coverage-output@ flag.
+--
+-- @since 0.19.2
+coverageOutputParser :: Terminal.Parser String
+coverageOutputParser =
+  Terminal.Parser
+    { Terminal._singular = "file",
+      Terminal._plural = "files",
+      Terminal._parser = parseNonEmpty,
+      Terminal._suggest = suggestCoverageOutput,
+      Terminal._examples = exampleCoverageOutput
+    }
+
+-- | Suggest coverage output file paths.
+suggestCoverageOutput :: String -> IO [String]
+suggestCoverageOutput _ = pure ["coverage.json", "coverage.lcov"]
+
+-- | Provide example coverage output paths.
+exampleCoverageOutput :: String -> IO [String]
+exampleCoverageOutput _ = pure ["coverage.json", "coverage.lcov"]
 
 -- | Set the @CANOPY_TEST_FILTER@ environment variable for the Node.js
 -- test harness. When 'Nothing', unsets the variable to ensure a clean

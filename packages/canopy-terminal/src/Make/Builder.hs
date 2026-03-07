@@ -198,8 +198,8 @@ buildSplitConfig artifacts =
 -- The ffiUnsafeFlag controls whether FFI validation is disabled.
 -- The ffiDebugFlag enables verbose error messages in generated validators.
 desiredToMode :: DesiredMode -> Bool -> Bool -> Opt.GlobalGraph -> Mode.Mode
-desiredToMode Debug ffiUnsafeFlag ffiDebugFlag _ = Mode.Dev Nothing False ffiUnsafeFlag ffiDebugFlag Set.empty
-desiredToMode Dev ffiUnsafeFlag ffiDebugFlag _ = Mode.Dev Nothing False ffiUnsafeFlag ffiDebugFlag Set.empty
+desiredToMode Debug ffiUnsafeFlag ffiDebugFlag _ = Mode.Dev Nothing False ffiUnsafeFlag ffiDebugFlag Set.empty False
+desiredToMode Dev ffiUnsafeFlag ffiDebugFlag _ = Mode.Dev Nothing False ffiUnsafeFlag ffiDebugFlag Set.empty False
 desiredToMode Prod ffiUnsafeFlag ffiDebugFlag globalGraph =
   Mode.Prod (Mode.shortenFieldNames globalGraph) False ffiUnsafeFlag ffiDebugFlag StringPool.emptyPool Set.empty
 
@@ -218,8 +218,8 @@ generateForMode ::
 generateForMode mode ffiUnsafeFlag ffiDebugFlag artifacts =
   Task.mapError wrapGenerate $
     case mode of
-      Debug -> return (generateJS (Mode.Dev Nothing False ffiUnsafeFlag ffiDebugFlag Set.empty) artifacts)
-      Dev -> return (generateJS (Mode.Dev Nothing False ffiUnsafeFlag ffiDebugFlag Set.empty) artifacts)
+      Debug -> return (generateJS (Mode.Dev Nothing False ffiUnsafeFlag ffiDebugFlag Set.empty False) artifacts)
+      Dev -> return (generateJS (Mode.Dev Nothing False ffiUnsafeFlag ffiDebugFlag Set.empty False) artifacts)
       Prod -> return (generateJS (Mode.Prod (Mode.shortenFieldNames globalGraph) False ffiUnsafeFlag ffiDebugFlag StringPool.emptyPool Set.empty) artifacts)
   where
     globalGraph = extractGlobalGraph artifacts
@@ -231,7 +231,8 @@ generateJS mode artifacts =
   let globalGraph = extractGlobalGraph artifacts
       mains = extractMains artifacts
       ffiInfo = artifacts ^. Build.artifactsFFIInfo
-   in JS.generate mode globalGraph mains ffiInfo
+      (jsBuilder, sourceMap, _coverageMap) = JS.generate mode globalGraph mains ffiInfo
+   in (jsBuilder, sourceMap)
 
 -- | Extract GlobalGraph from build artifacts.
 extractGlobalGraph :: Compiler.Artifacts -> Opt.GlobalGraph

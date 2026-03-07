@@ -136,4 +136,4 @@ nestedArithmeticTests = testGroup "Nested Arithmetic Generation"
 
 -- | Development mode for testing.
 devMode :: Mode.Mode
-devMode = Mode.Dev Nothing False False False Set.empty
+devMode = Mode.Dev Nothing False False False Set.empty False

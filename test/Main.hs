@@ -101,6 +101,7 @@ import qualified Unit.Generate.HtmlSecurityTest as HtmlSecurityTest
 import qualified Unit.Generate.JavaScript.ExpressionArithmeticTest as JSExpressionArithmeticTest
 import qualified Unit.Generate.MinifyTest as MinifyTest
 import qualified Unit.Generate.NameTest as GenerateNameTest
+import qualified Unit.Generate.CoverageTest as CoverageTest
 import qualified Unit.Generate.SourceMapTest as SourceMapTest
 import qualified Unit.Generate.StringPoolTest as StringPoolTest
 import qualified Unit.Generate.TreeShakeTest as TreeShakeTest
@@ -160,6 +161,8 @@ import qualified Unit.Builder.ModuleLoaderTest as ModuleLoaderTest
 import qualified Unit.WebIDL.CommandTest as WebIDLCommandTest
 import qualified Unit.Publish.ArchiveTest as PublishArchiveTest
 import qualified Unit.Type.ParallelTest as TypeParallelTest
+import qualified Unit.Test.CoverageReportTest as CoverageReportTest
+import qualified Unit.Test.EventCoverageTest as EventCoverageTest
 import qualified Unit.VendorTest as VendorTest
 import qualified Unit.ScriptsTest as ScriptsTest
 import qualified Unit.OutlineFormatTest as OutlineFormatTest
@@ -274,6 +277,9 @@ unitTests =
       CodeSplitRuntimeTest.tests,
       CodeSplitTypesTest.tests,
       TreeShakeTest.tests,
+      CoverageTest.tests,
+      CoverageReportTest.tests,
+      EventCoverageTest.tests,
       ColorQQTest.tests,
       LoggingEventTest.tests,
       LoggingConfigTest.tests,

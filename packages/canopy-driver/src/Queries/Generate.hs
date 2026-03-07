@@ -42,7 +42,7 @@ generateJavaScriptQuery mode globalGraph mains ffiInfos = do
   let modNameText = Text.pack ("js:" ++ show (Map.size mains) ++ " mains")
   Log.logEvent (GenerateStarted modNameText)
 
-  let (jsBuilder, _sourceMap) = JS.generate mode globalGraph mains ffiInfos
+  let (jsBuilder, _sourceMap, _coverageMap) = JS.generate mode globalGraph mains ffiInfos
 
   Log.logEvent (GenerateCompleted modNameText (GenStats 0 0))
 

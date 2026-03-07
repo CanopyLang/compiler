@@ -282,6 +282,7 @@ test-suite canopy-test
       Unit.Generate.CodeSplit.ManifestTest
       Unit.Generate.CodeSplit.RuntimeTest
       Unit.Generate.CodeSplit.TypesTest
+      Unit.Generate.CoverageTest
       Unit.Generate.ExpressionTest
       Unit.Generate.HtmlSecurityTest
       Unit.Generate.JavaScript.ExpressionArithmeticTest
@@ -348,6 +349,8 @@ test-suite canopy-test
       Unit.Terminal.Lint.NullabilityTest
       Unit.Terminal.Lint.RulesTest
       Unit.TerminalTest
+      Unit.Test.CoverageReportTest
+      Unit.Test.EventCoverageTest
       Unit.Type.GuardNarrowingTest
       Unit.Type.InstantiateTest
       Unit.Type.OccursTest

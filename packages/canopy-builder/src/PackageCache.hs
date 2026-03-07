@@ -546,7 +546,7 @@ loadModuleInterface root moduleName = do
 -- implementations not present in source compilations.
 --
 -- @since 0.19.1
-loadOldElmArtifacts ::
+_loadOldElmArtifacts ::
   -- | Package author
   String ->
   -- | Package name
@@ -554,7 +554,7 @@ loadOldElmArtifacts ::
   -- | Package version
   String ->
   IO (Maybe PackageArtifacts)
-loadOldElmArtifacts author package version = do
+_loadOldElmArtifacts author package version = do
   homeDir <- Dir.getHomeDirectory
   tryLoadFirst loadCompleteArtifactsFile
     [ homeDir </> ".elm" </> "0.19.1" </> "packages" </> a </> package </> version </> "artifacts.dat"

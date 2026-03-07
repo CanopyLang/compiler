@@ -13,6 +13,7 @@ module Test.Event
   ( TestEvent (..),
     ResultStatus (..),
     isSummaryEvent,
+    isCoverageEvent,
     formatTestEvent,
     formatResult,
     formatSummary,
@@ -21,7 +22,7 @@ module Test.Event
 where
 
 import qualified Data.Aeson as Aeson
-import Data.Aeson (Object)
+import Data.Aeson (Object, Value)
 import qualified Data.Aeson.Types as AesonTypes
 import qualified Data.Text as Text
 import Reporting.Doc.ColorQQ (c)
@@ -33,6 +34,7 @@ import qualified Terminal.Print as Print
 data TestEvent
   = ResultEvent !ResultStatus !Text.Text !Double !(Maybe Text.Text)
   | SummaryEvent !Int !Int !Int !Int !Int !Double
+  | CoverageEvent !Value
   deriving (Eq, Show)
 
 -- | Status of a single test result.
@@ -47,6 +49,7 @@ instance Aeson.FromJSON TestEvent where
     case (eventType :: Text.Text) of
       "result" -> parseResultEvent obj
       "summary" -> parseSummaryEvent obj
+      "coverage" -> parseCoverageEvent obj
       _ -> fail ("Unknown event type: " ++ Text.unpack eventType)
 
 -- | Parse a result event from a JSON object.
@@ -87,9 +90,26 @@ parseStatus other = fail ("Unknown status: " ++ Text.unpack other)
 -- | Check if a 'TestEvent' is a summary event.
 --
 -- @since 0.19.1
+-- | Parse a coverage event from a JSON object.
+--
+-- @since 0.19.2
+parseCoverageEvent :: Object -> AesonTypes.Parser TestEvent
+parseCoverageEvent obj =
+  CoverageEvent <$> obj Aeson..: "data"
+
+-- | Check if a 'TestEvent' is a summary event.
+--
+-- @since 0.19.1
 isSummaryEvent :: TestEvent -> Bool
 isSummaryEvent (SummaryEvent {}) = True
 isSummaryEvent _ = False
+
+-- | Check if a 'TestEvent' is a coverage event.
+--
+-- @since 0.19.2
+isCoverageEvent :: TestEvent -> Bool
+isCoverageEvent (CoverageEvent {}) = True
+isCoverageEvent _ = False
 
 -- | Format and print a test event using ColorQQ.
 --
@@ -99,6 +119,8 @@ formatTestEvent (ResultEvent status name duration message) =
   formatResult status name duration message
 formatTestEvent (SummaryEvent passed failed skipped todo total duration) =
   formatSummary passed failed skipped todo total duration
+formatTestEvent (CoverageEvent _) =
+  pure ()
 
 -- | Format a single test result line.
 --
