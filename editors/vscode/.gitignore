@@ -1,6 +1,0 @@
-out
-node_modules
-client/*.tsbuildinfo
-.vscode-test
-coverage
-.nyc_output

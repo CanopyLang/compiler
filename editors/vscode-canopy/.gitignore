@@ -1,7 +1,0 @@
-out/
-node_modules/
-*.vsix
-.vscode-test/
-.DS_Store
-*.log
-npm-debug.log*
