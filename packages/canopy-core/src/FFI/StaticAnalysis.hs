@@ -793,7 +793,7 @@ inferReturnType body =
 -- | Check whether an inferred type is compatible with a declared FFI type.
 typesCompatible :: InferredType -> FFIType -> Bool
 typesCompatible InfUnknown _ = True
-typesCompatible _ (FFIOpaque _) = True
+typesCompatible _ (FFIOpaque _ _) = True
 typesCompatible InfNumber FFIInt = True
 typesCompatible InfNumber FFIFloat = True
 typesCompatible InfString FFIString = True

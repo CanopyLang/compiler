@@ -54,6 +54,7 @@ import Generate.JavaScript.FFI
     generateFFIContent,
   )
 import qualified Generate.JavaScript.FFIRuntime as FFIRuntime
+import qualified Generate.JavaScript.Runtime as Runtime
 import qualified Generate.JavaScript.Functions as Functions
 import qualified Generate.JavaScript.Kernel as Kernel_
 import qualified Generate.JavaScript.Minify as Minify
@@ -102,9 +103,10 @@ generate inputMode (Opt.GlobalGraph rawGraph _ sourceLocs) mains ffiInfos =
       jsBuilder =
         header
           <> debuggerStub
-          <> generateFFIContent mode graph ffiInfos
           <> Functions.functions
+          <> Runtime.embeddedRuntimeForMode mode
           <> FFIRuntime.embeddedRuntimeForMode mode
+          <> generateFFIContent mode graph ffiInfos
           <> perfNote mode
           <> poolDecls
           <> stateToBuilder state
@@ -317,14 +319,17 @@ filterEssentialDeps mode deps =
 
 addGlobalHelp :: Mode.Mode -> Graph -> Opt.Global -> State -> State
 addGlobalHelp mode graph currentGlobal state =
-  let Opt.Global globalHome _ = currentGlobal
-      pkg = ModuleName._package globalHome
-      isFFIModule = Pkg._author pkg == Pkg._author Pkg.dummyName
-                 && Pkg._project pkg == Pkg._project Pkg.dummyName
+  let Opt.Global globalHome globalName = currentGlobal
+      moduleName = ModuleName._module globalHome
+      currentPkg = ModuleName._package globalHome
+      isFFIModule = Mode.isFFIAlias mode moduleName
                  && Map.notMember currentGlobal graph
+      isKernelPhantom = globalName == Name.dollar
+                     && Pkg._project currentPkg == Pkg._project Pkg.kernel
+                     && Map.notMember currentGlobal graph
   in if Kernel_.isDebugger currentGlobal && not (Mode.isDebug mode)
      then state
-     else if isFFIModule
+     else if isFFIModule || isKernelPhantom
      then state
      else continueAddGlobal mode graph currentGlobal state
 
@@ -349,23 +354,39 @@ resolveAltGlobal graph currentGlobal =
       moduleName = ModuleName._module globalHome
       isKernelModule = Utf8.startsWith kernelDotPrefix moduleName
       isKernelPkg = Pkg._project currentPkg == Pkg._project Pkg.kernel
-      (altPkg, altModuleName) = computeAltPkg currentPkg moduleName isKernelModule isKernelPkg
-      altGlobalHome = ModuleName.Canonical altPkg altModuleName
-      altGlobal = Opt.Global altGlobalHome globalName
-  in case Map.lookup altGlobal graph of
-       Just x -> x
-       Nothing -> reportMissingGlobal graph currentGlobal altGlobal
+      alts = computeAltPkgs currentPkg moduleName isKernelModule isKernelPkg
+      altGlobals = [Opt.Global (ModuleName.Canonical p m) globalName | (p, m) <- alts]
+  in findFirstGlobal graph currentGlobal altGlobals
 
-computeAltPkg :: Pkg.Name -> Name.Name -> Bool -> Bool -> (Pkg.Name, Name.Name)
-computeAltPkg currentPkg moduleName isKernelModule isKernelPkg
+-- | Try each alt global in order, returning the first match.
+findFirstGlobal :: Graph -> Opt.Global -> [Opt.Global] -> Opt.Node
+findFirstGlobal graph currentGlobal [] =
+  reportMissingGlobal graph currentGlobal currentGlobal
+findFirstGlobal graph currentGlobal (alt : rest) =
+  case Map.lookup alt graph of
+    Just x -> x
+    Nothing -> findFirstGlobal graph currentGlobal rest
+
+-- | Compute alternative (package, moduleName) pairs for a kernel global.
+--
+-- Returns all possible mappings to try, in priority order. This handles
+-- the canopy\/elm author duality for kernel modules.
+computeAltPkgs :: Pkg.Name -> Name.Name -> Bool -> Bool -> [(Pkg.Name, Name.Name)]
+computeAltPkgs currentPkg moduleName isKernelModule isKernelPkg
   | Pkg._author currentPkg == Pkg.elm && Pkg._project currentPkg == Pkg._project Pkg.core && isKernelModule =
       let kernelPkg = Pkg.Name Pkg.elm (Pkg._project Pkg.kernel)
-      in (kernelPkg, Utf8.dropBytes 7 moduleName)
+          strippedName = Utf8.dropBytes 7 moduleName
+      in [(kernelPkg, strippedName), (Pkg.kernel, strippedName)]
   | isKernelPkg && Pkg._author currentPkg == Pkg.elm =
-      (Pkg.core, Name.fromChars ("Kernel." ++ Name.toChars moduleName))
+      [(Pkg.kernel, moduleName), (Pkg.core, Name.fromChars ("Kernel." ++ Name.toChars moduleName))]
+  | isKernelPkg && Pkg._author currentPkg == Pkg.canopy && isKernelModule =
+      let strippedName = Utf8.dropBytes 7 moduleName
+          elmKernelPkg = Pkg.Name Pkg.elm (Pkg._project Pkg.kernel)
+      in [(elmKernelPkg, strippedName), (elmKernelPkg, moduleName)]
   | isKernelPkg && Pkg._author currentPkg == Pkg.canopy =
-      (Pkg.Name Pkg.elm (Pkg._project Pkg.kernel), moduleName)
-  | otherwise = (currentPkg, moduleName)
+      let elmKernelPkg = Pkg.Name Pkg.elm (Pkg._project Pkg.kernel)
+      in [(elmKernelPkg, moduleName)]
+  | otherwise = []
 
 -- | The @\"Kernel.\"@ prefix used to identify kernel modules during
 -- alt-global resolution. Cached as a top-level constant to avoid
@@ -409,8 +430,8 @@ dispatchNode mode graph currentGlobal addDeps globalInGraph state =
            stmt -> addStmt baseState stmt
     Opt.Manager effectsType ->
       generateManager mode graph currentGlobal effectsType state
-    Opt.Kernel chunks deps ->
-      addKernelChunks mode currentGlobal (addDeps deps state) chunks
+    Opt.Kernel _chunks deps ->
+      addDeps deps state
     Opt.Enum index ->
       addStmt (emitMapping currentGlobal state) (Kernel_.generateEnum mode currentGlobal index)
     Opt.Box ->

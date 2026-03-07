@@ -60,8 +60,8 @@ extractKernelName :: Name -> ByteArray# -> Name
 extractKernelName name ba# =
   runST (copyKernelBytes ba# prefixLen#)
   where
-    -- "Canopy." = 7 chars, "Elm." = 4 chars
-    !prefixLen# = if Utf8.startsWith prefixKernel name then 7# else 4#
+    -- "Canopy.Kernel." = 14 chars, "Elm.Kernel." = 11 chars
+    !prefixLen# = if Utf8.startsWith prefixCanopyKernel name then 14# else 11#
 
 copyKernelBytes :: ByteArray# -> Int# -> ST s Name
 copyKernelBytes ba# prefixLen# =
@@ -78,7 +78,7 @@ copyKernelBytes ba# prefixLen# =
 -- STARTS WITH
 
 isKernel :: Name -> Bool
-isKernel name = Utf8.startsWith prefixKernel name || Utf8.startsWith prefixElmKernel name
+isKernel name = Utf8.startsWith prefixCanopyKernel name || Utf8.startsWith prefixElmKernel name
 
 isNumberType :: Name -> Bool
 isNumberType = Utf8.startsWith prefixNumber
@@ -94,9 +94,9 @@ isCompappendType = Utf8.startsWith prefixCompappend
 
 -- PREFIXES
 
-{-# NOINLINE prefixKernel #-}
-prefixKernel :: Name
-prefixKernel = Utf8.fromChars "Canopy."
+{-# NOINLINE prefixCanopyKernel #-}
+prefixCanopyKernel :: Name
+prefixCanopyKernel = Utf8.fromChars "Canopy.Kernel."
 
 {-# NOINLINE prefixElmKernel #-}
 prefixElmKernel :: Name

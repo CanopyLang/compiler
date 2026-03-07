@@ -31,8 +31,6 @@ module PackageCache
     -- * Loading Complete Artifacts
   , loadPackageArtifacts
   , loadAllPackageArtifacts
-    -- * Loading Old Elm Artifacts
-  , loadOldElmArtifacts
     -- * Writing Artifacts
   , writePackageArtifacts
   , getPackageArtifactPath
@@ -322,10 +320,19 @@ loadPackageInterfaces author package version = do
 --
 -- @since 0.19.1
 scanForCompatibleVersion :: FilePath -> String -> String -> IO (Maybe PackageInterfaces)
-scanForCompatibleVersion homeDir author package = do
-  let authorsToTry = author : maybe [] (:[]) (fallbackAuthor author)
+scanForCompatibleVersion = scanForCompatibleVersionWith loadArtifactsFile
+
+-- | Scan installed versions using a custom loader function.
+--
+-- Generalized version of 'scanForCompatibleVersion' that works with any
+-- artifact loader (interfaces-only or complete artifacts).
+--
+-- @since 0.19.1
+scanForCompatibleVersionWith :: (FilePath -> IO (Maybe a)) -> FilePath -> String -> String -> IO (Maybe a)
+scanForCompatibleVersionWith loader homeDir author package =
   tryAuthors authorsToTry
   where
+    authorsToTry = author : maybe [] (:[]) (fallbackAuthor author)
     tryAuthors [] = return Nothing
     tryAuthors (a : rest) = do
       let pkgDir = homeDir </> ".canopy" </> "packages" </> a </> package
@@ -334,7 +341,7 @@ scanForCompatibleVersion homeDir author package = do
         then tryAuthors rest
         else do
           versions <- Dir.listDirectory pkgDir
-          result <- tryLoadFirst loadArtifactsFile
+          result <- tryLoadFirst loader
             [pkgDir </> v </> "artifacts.dat" | v <- versions]
           maybe (tryAuthors rest) (return . Just) result
 
@@ -452,7 +459,10 @@ loadPackageArtifacts ::
   IO (Maybe PackageArtifacts)
 loadPackageArtifacts author package version = do
   homeDir <- Dir.getHomeDirectory
-  tryLoadFirst loadCompleteArtifactsFile (packageArtifactPaths homeDir author package version)
+  exactResult <- tryLoadFirst loadCompleteArtifactsFile (packageArtifactPaths homeDir author package version)
+  case exactResult of
+    Just arts -> return (Just arts)
+    Nothing -> scanForCompatibleVersionWith loadCompleteArtifactsFile homeDir author package
 
 -- | Load all package artifacts for multiple packages.
 --

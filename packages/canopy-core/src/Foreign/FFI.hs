@@ -442,7 +442,8 @@ ffiTypeToCanopyType ffiType = case ffiType of
           [] -> returnTypeText
           _ -> Text.intercalate " -> " paramTypeTexts <> " -> " <> returnTypeText
     Right functionType
-  FFIOpaque typeName -> Right (qualifyBasicType typeName)
+  FFITypeVar name -> Right name
+  FFIOpaque typeName _ -> Right (qualifyBasicType typeName)
   FFITuple types -> do
     typeTexts <- traverse ffiTypeToCanopyType types
     Right $ "( " <> Text.intercalate ", " typeTexts <> " )"

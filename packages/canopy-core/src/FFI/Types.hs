@@ -61,8 +61,10 @@ data FFIType
     -- ^ Task error value type (JavaScript Promise-based)
   | FFITuple ![FFIType]
     -- ^ Tuple type (JavaScript object with positional fields)
-  | FFIOpaque !Text
-    -- ^ Opaque type for custom JavaScript types (e.g., DOMElement)
+  | FFITypeVar !Text
+    -- ^ Type variable (lowercase name: @a@, @msg@, @comparable@, @number@, @appendable@)
+  | FFIOpaque !Text ![FFIType]
+    -- ^ Opaque type with optional type arguments (e.g., @Cmd msg@, @JsArray a@, @DOMElement@)
   | FFIFunctionType ![FFIType] !FFIType
     -- ^ Function type with parameter types and return type
   | FFIRecord ![(Text, FFIType)]

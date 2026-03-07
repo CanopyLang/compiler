@@ -14,7 +14,6 @@ module Setup.LocalCompilation
   )
 where
 
-import qualified AST.Optimized as Opt
 import qualified Build.Artifacts as Build
 import qualified Canopy.Data.NonEmptyList as NE
 import qualified Canopy.Data.Utf8 as Utf8
@@ -23,7 +22,9 @@ import qualified Canopy.ModuleName as ModuleName
 import qualified Canopy.Outline as Outline
 import qualified Canopy.Package as Pkg
 import qualified Compiler
+import qualified Data.List as List
 import qualified Data.Map.Strict as Map
+import qualified Data.Set as Set
 import qualified PackageCache
 import Reporting.Doc.ColorQQ (c)
 import qualified System.Directory as Dir
@@ -35,6 +36,10 @@ import qualified Text.PrettyPrint.ANSI.Leijen as PP
 --
 -- Scans @~/.canopy/packages/canopy/@ for packages with source directories
 -- but missing artifacts.dat, compiles them, and writes the artifacts.
+-- Packages are compiled in dependency order (topological sort) so that
+-- each package's artifacts include its dependencies' FFI info.
+--
+-- @since 0.19.1
 compileLocalPackages :: Bool -> IO [Bool]
 compileLocalPackages verbose = do
   homeDir <- Dir.getHomeDirectory
@@ -43,16 +48,94 @@ compileLocalPackages verbose = do
   if not exists
     then pure []
     else do
-      packages <- Dir.listDirectory canopyPkgDir
-      results <- mapM (compileLocalPackage verbose canopyPkgDir) packages
-      pure (concat results)
+      entries <- discoverPackageEntries canopyPkgDir
+      sorted <- sortByDependencyOrder canopyPkgDir entries
+      mapM (compileEntry verbose canopyPkgDir) sorted
 
--- | Compile a single local Canopy package if needed.
-compileLocalPackage :: Bool -> FilePath -> String -> IO [Bool]
-compileLocalPackage verbose canopyPkgDir packageName = do
+-- | A discovered package entry ready for compilation.
+data PackageEntry = PackageEntry
+  { _entryName :: !String
+  , _entryVersion :: !String
+  } deriving (Eq, Ord, Show)
+
+-- | Discover all (packageName, versionStr) entries under the canopy dir.
+--
+-- @since 0.19.2
+discoverPackageEntries :: FilePath -> IO [PackageEntry]
+discoverPackageEntries canopyPkgDir = do
+  packages <- tryListDirectory canopyPkgDir
+  fmap concat (mapM (discoverVersions canopyPkgDir) packages)
+
+-- | Find all version directories for a given package.
+discoverVersions :: FilePath -> String -> IO [PackageEntry]
+discoverVersions canopyPkgDir packageName = do
   let pkgDir = canopyPkgDir </> packageName
-  versionDirs <- tryListDirectory pkgDir
-  mapM (compilePackageVersion verbose packageName pkgDir) versionDirs
+  versions <- tryListDirectory pkgDir
+  pure (map (PackageEntry packageName) versions)
+
+-- | Sort package entries by dependency order using topological sort.
+--
+-- Reads each package's outline to discover dependencies, then sorts
+-- so that dependencies compile before dependents. This ensures each
+-- package's @artifacts.dat@ includes its dependencies' FFI info.
+--
+-- @since 0.19.2
+sortByDependencyOrder :: FilePath -> [PackageEntry] -> IO [PackageEntry]
+sortByDependencyOrder canopyPkgDir entries = do
+  depPairs <- mapM (readEntryDeps canopyPkgDir) entries
+  let depMap = Map.fromList depPairs
+      known = Set.fromList (map _entryName entries)
+  pure (topoSort known depMap entries)
+
+-- | Read the local-package dependencies of one entry.
+--
+-- Only returns deps that are also @canopy/*@ packages (ignoring
+-- external deps like @elm/*@).
+--
+-- @since 0.19.2
+readEntryDeps :: FilePath -> PackageEntry -> IO (String, [String])
+readEntryDeps canopyPkgDir (PackageEntry name ver) = do
+  let versionDir = canopyPkgDir </> name </> ver
+  eitherOutline <- Outline.read versionDir
+  pure (name, either (const []) extractLocalDeps eitherOutline)
+
+-- | Extract @canopy/*@ dependency names from an outline.
+--
+-- Only uses regular dependencies (not test dependencies) to avoid
+-- circular dependency cycles (e.g. core → test → html → json → core).
+extractLocalDeps :: Outline.Outline -> [String]
+extractLocalDeps (Outline.Pkg o) =
+  [ Utf8.toChars project
+  | Pkg.Name author project <- Map.keys (Outline._pkgDeps o)
+  , Utf8.toChars author == "canopy"
+  ]
+extractLocalDeps _ = []
+
+-- | Topological sort of package entries by dependency order.
+--
+-- Iteratively emits entries whose dependencies have all been emitted,
+-- breaking cycles by falling through to alphabetical order.
+--
+-- @since 0.19.2
+topoSort :: Set.Set String -> Map.Map String [String] -> [PackageEntry] -> [PackageEntry]
+topoSort known depMap = go Set.empty . List.sortOn _entryName
+  where
+    go _emitted [] = []
+    go emitted remaining =
+      case List.partition (isReady emitted) remaining of
+        ([], _) -> remaining
+        (ready, rest) ->
+          let newEmitted = Set.union emitted (Set.fromList (map _entryName ready))
+           in ready ++ go newEmitted rest
+    isReady emitted (PackageEntry name _) =
+      all (\d -> Set.member d emitted || not (Set.member d known)) deps
+      where
+        deps = maybe [] id (Map.lookup name depMap)
+
+-- | Compile a single package entry.
+compileEntry :: Bool -> FilePath -> PackageEntry -> IO Bool
+compileEntry verbose canopyPkgDir (PackageEntry packageName versionStr) =
+  compilePackageVersion verbose packageName (canopyPkgDir </> packageName) versionStr
 
 -- | Try to list a directory, returning empty list on failure.
 tryListDirectory :: FilePath -> IO [FilePath]
@@ -111,11 +194,21 @@ compileAndReport verbose label packageName versionStr versionDir = do
 -- | Compile a package from source and write its artifacts.
 compilePackageFromSource :: String -> String -> String -> FilePath -> IO (Either String ())
 compilePackageFromSource author packageName versionStr pkgDir = do
+  cleanBuildCache pkgDir
   eitherOutline <- Outline.read pkgDir
   case eitherOutline of
     Left err -> pure (Left err)
     Right outline ->
       compileFromOutline author packageName versionStr pkgDir outline
+
+-- | Remove @canopy-stuff\/@ to avoid stale lock files from previous runs.
+cleanBuildCache :: FilePath -> IO ()
+cleanBuildCache pkgDir = do
+  let cacheDir = pkgDir </> "canopy-stuff"
+  exists <- Dir.doesDirectoryExist cacheDir
+  if exists
+    then Dir.removeDirectoryRecursive cacheDir
+    else pure ()
 
 -- | Compile from a parsed package outline.
 compileFromOutline :: String -> String -> String -> FilePath -> Outline.Outline -> IO (Either String ())
@@ -135,12 +228,7 @@ compileFromOutline author packageName versionStr pkgDir (Outline.Pkg pkgOutline)
           let interfaces = buildArtifactsToInterfaces artifacts
               globalGraph = Build._artifactsGlobalGraph artifacts
               ffiInfo = Build._artifactsFFIInfo artifacts
-          maybeOld <- PackageCache.loadOldElmArtifacts author packageName versionStr
-          let mergedGraph = maybe globalGraph
-                (mergeGlobalGraphs globalGraph . PackageCache.artifactObjects) maybeOld
-              mergedFFI = maybe ffiInfo
-                (Map.union ffiInfo . PackageCache.artifactFFIInfo) maybeOld
-          PackageCache.writePackageArtifacts author packageName versionStr interfaces mergedGraph mergedFFI
+          PackageCache.writePackageArtifacts author packageName versionStr interfaces globalGraph ffiInfo
           pure (Right ())
 
 -- | Convert Build.Artifacts to PackageInterfaces.
@@ -162,13 +250,6 @@ exposedToNonEmpty exposed =
 mkPkg :: String -> String -> Pkg.Name
 mkPkg author project =
   Pkg.Name (Utf8.fromChars author) (Utf8.fromChars project)
-
--- | Merge two GlobalGraphs, preferring entries from the first (new) graph.
---
--- Used to combine source-compiled globals with old Elm kernel module globals.
-mergeGlobalGraphs :: Opt.GlobalGraph -> Opt.GlobalGraph -> Opt.GlobalGraph
-mergeGlobalGraphs (Opt.GlobalGraph nN nF nL) (Opt.GlobalGraph oN oF oL) =
-  Opt.GlobalGraph (Map.union nN oN) (Map.unionWith (+) nF oF) (Map.union nL oL)
 
 -- | Print a 'PP.Doc' message when verbose mode is enabled.
 verboseLog :: Bool -> PP.Doc -> IO ()

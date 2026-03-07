@@ -1,5 +1,5 @@
 module Fuzz exposing
-    ( Fuzzer
+    ( Fuzzer(..)
     , Shrinker
     , int
     , intRange

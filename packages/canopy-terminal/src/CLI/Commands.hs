@@ -13,6 +13,7 @@
 -- * "CLI.Commands.Dev" - repl, fmt, lint, test, docs, audit, upgrade, bench
 -- * "CLI.Commands.Package" - install, publish, bump, diff
 -- * "CLI.Commands.Tools" - test-ffi, webidl, self-update
+-- * "CLI.Commands.Link" - link, unlink
 --
 -- @since 0.19.1
 module CLI.Commands
@@ -42,6 +43,10 @@ module CLI.Commands
     createBumpCommand,
     createDiffCommand,
     createVendorCommand,
+
+    -- * Link Commands
+    createLinkCommand,
+    createUnlinkCommand,
 
     -- * Tool Commands
     createFFITestCommand,
@@ -76,6 +81,10 @@ import CLI.Commands.Project
   ( createInitCommand,
     createNewCommand,
     createSetupCommand,
+  )
+import CLI.Commands.Link
+  ( createLinkCommand,
+    createUnlinkCommand,
   )
 import CLI.Commands.Tools
   ( createFFITestCommand,

@@ -44,6 +44,7 @@ library
       CLI.Commands
       CLI.Commands.Build
       CLI.Commands.Dev
+      CLI.Commands.Link
       CLI.Commands.Package
       CLI.Commands.Project
       CLI.Commands.Tools
@@ -92,6 +93,7 @@ library
       Install.Execution
       Install.PkgPlan
       Install.Types
+      Link
       Lint
       Lint.Config
       Lint.Fix

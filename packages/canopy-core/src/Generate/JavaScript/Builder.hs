@@ -234,6 +234,16 @@ builderToByteString = LBS.toStrict . B.toLazyByteString
 wrapInParens :: Expr -> JSExpression
 wrapInParens expr = JS.JSExpressionParen noAnnot (exprToJS expr) noAnnot
 
+-- | Convert the operand of a negate prefix, parenthesizing when the
+-- operand is itself a unary minus or complement to avoid generating
+-- @--x@ (JS decrement) or @-~x@ ambiguity.
+negateOperand :: Expr -> JSExpression
+negateOperand expr = case expr of
+  Prefix PrefixNegate _ -> wrapInParens expr
+  Prefix PrefixComplement _ -> wrapInParens expr
+  Infix _ _ _ -> wrapInParens expr
+  _ -> exprToJS expr
+
 -- | Return 'True' if the expression requires parentheses inside a ternary.
 needsParensInTernary :: Expr -> Bool
 needsParensInTernary expr = case expr of
@@ -241,12 +251,31 @@ needsParensInTernary expr = case expr of
   Prefix _ _ -> True
   _ -> False
 
--- | Return 'True' if the expression requires parentheses as a right operand.
-needsParensAsRightOperand :: Expr -> Bool
-needsParensAsRightOperand expr = case expr of
-  Infix OpAdd _ _ -> True
-  Infix OpSub _ _ -> True
-  _ -> False
+-- | JavaScript operator precedence levels (higher binds tighter).
+--
+-- Based on the MDN operator precedence table. Used to determine when
+-- child expressions in an 'Infix' node need parenthesization.
+jsOpPrecedence :: InfixOp -> Int
+jsOpPrecedence op = case op of
+  OpMul -> 13
+  OpDiv -> 13
+  OpMod -> 13
+  OpAdd -> 12
+  OpSub -> 12
+  OpLShift -> 11
+  OpSpRShift -> 11
+  OpZfRShift -> 11
+  OpLt -> 10
+  OpLe -> 10
+  OpGt -> 10
+  OpGe -> 10
+  OpEq -> 9
+  OpNe -> 9
+  OpBitwiseAnd -> 8
+  OpBitwiseXor -> 7
+  OpBitwiseOr -> 6
+  OpAnd -> 5
+  OpOr -> 4
 
 -- | Convert a Canopy 'Expr' to a @language-javascript@ 'JSExpression'.
 exprToJS :: Expr -> JSExpression
@@ -278,18 +307,27 @@ exprToJS expr = case expr of
   Prefix PrefixNot e ->
     JS.JSUnaryExpression (JS.JSUnaryOpNot noAnnot) (exprToJS e)
   Prefix PrefixNegate e ->
-    JS.JSUnaryExpression (JS.JSUnaryOpMinus noAnnot) (exprToJS e)
+    JS.JSUnaryExpression (JS.JSUnaryOpMinus noAnnot) (negateOperand e)
   Prefix PrefixComplement e ->
     JS.JSUnaryExpression (JS.JSUnaryOpTilde noAnnot) (exprToJS e)
   Infix op left right ->
-    JS.JSExpressionBinary (exprToJS left) (infixOpToJS op) rightJS
+    JS.JSExpressionBinary leftJS (infixOpToJS op) rightJS
     where
-      rightJS = if needsParensAsRightOperand right then wrapInParens right else exprToJS right
+      parentPrec = jsOpPrecedence op
+      leftJS = case left of
+        If _ _ _ -> wrapInParens left
+        Infix childOp _ _ | jsOpPrecedence childOp < parentPrec -> wrapInParens left
+        _ -> exprToJS left
+      rightJS = case right of
+        If _ _ _ -> wrapInParens right
+        Infix childOp _ _ | jsOpPrecedence childOp <= parentPrec -> wrapInParens right
+        _ -> exprToJS right
   If cond thenExpr elseExpr ->
-    JS.JSExpressionTernary condJS noAnnot thenJS noAnnot (exprToJS elseExpr)
+    JS.JSExpressionTernary condJS noAnnot thenJS noAnnot elseJS
     where
       condJS = if needsParensInTernary cond then wrapInParens cond else exprToJS cond
       thenJS = if needsParensInTernary thenExpr then wrapInParens thenExpr else exprToJS thenExpr
+      elseJS = if needsParensInTernary elseExpr then wrapInParens elseExpr else exprToJS elseExpr
   Assign lval e ->
     JS.JSAssignExpression (lvalueToJS lval) (JS.JSAssign spaceAnnot) (exprToJS e)
   Call func args ->

@@ -156,7 +156,8 @@ renderFFIType ffiType = case ffiType of
   FFITask errorType valueType -> "Task " <> renderFFIType errorType <> " " <> renderFFIType valueType
   FFITuple tupleTypes -> "(" <> Text.intercalate ", " (map renderFFIType tupleTypes) <> ")"
   FFIRecord _fields -> "Record"
-  FFIOpaque typeName -> typeName
+  FFITypeVar name -> name
+  FFIOpaque typeName _ -> typeName
 
 -- | Generate a call expression that invokes the FFI function with default
 -- arguments and asserts the result via 'outputAssertion'.
@@ -267,7 +268,8 @@ defaultValueForType ffiType =
     FFITuple types     -> "(" <> Text.intercalate ", " (map defaultValueForType types) <> ")"
     FFIFunctionType _ _ -> "(\\_ -> \"\")"
     FFIRecord _        -> "{}"
-    FFIOpaque _        -> "\"\""
+    FFITypeVar _       -> "\"\""
+    FFIOpaque _ _      -> "\"\""
 
 -- | Produce a boundary/edge-case value literal for a given FFI type.
 --
@@ -288,4 +290,5 @@ boundaryValueForType ffiType =
     FFITuple types     -> "(" <> Text.intercalate ", " (map boundaryValueForType types) <> ")"
     FFIFunctionType _ _ -> "(\\_ -> \"\")"
     FFIRecord _        -> "{}"
-    FFIOpaque _        -> "\"\""
+    FFITypeVar _       -> "\"\""
+    FFIOpaque _ _      -> "\"\""

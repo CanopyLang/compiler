@@ -190,19 +190,50 @@ parseBasicType tokens = case tokens of
   -- Single word (qualified or unqualified)
   [TWord name] -> Just (parseWordType name)
 
+  -- Parameterized opaque type (e.g., Cmd msg, Program flags model msg)
+  (TWord name : rest)
+    | not (Text.null name) && Char.isUpper (Text.head name) ->
+        parseParameterizedOpaque name rest
+
   _ -> Nothing
 
 -- | Parse a single word into a type, handling qualified names.
 --
--- Uses 'Text' operations to avoid intermediate @[Char]@ allocation.
+-- Preserves the full qualified name (e.g. @Json.Decode.Value@) so that the
+-- resolver can look up import aliases progressively. Lowercase-starting names
+-- are treated as type variables.
 --
 -- @since 0.19.2
 parseWordType :: Text -> FFIType
 parseWordType name
-  | Text.any (== '.') name = FFIOpaque (takeLastSegment name)
-  | otherwise = FFIOpaque name
-  where
-    takeLastSegment = snd . Text.breakOnEnd "."
+  | Text.null name = FFIOpaque name []
+  | Char.isLower (Text.head name) = FFITypeVar name
+  | otherwise = FFIOpaque name []
+
+-- | Parse an uppercase type name followed by zero or more type arguments.
+--
+-- Greedily consumes type arguments (words and parenthesized groups)
+-- until no more can be taken. Each argument is parsed as a basic type.
+--
+-- @since 0.20.0
+parseParameterizedOpaque :: Text -> [Token] -> Maybe FFIType
+parseParameterizedOpaque name rest =
+  let (args, _) = collectTypeArgs rest
+   in case traverseMaybe parseBasicType args of
+        Just parsedArgs -> Just (FFIOpaque name parsedArgs)
+        Nothing -> Just (FFIOpaque name [])
+
+-- | Collect type argument token groups from remaining tokens.
+--
+-- Each argument is either a single word token or a parenthesized group.
+-- Stops when no more arguments can be consumed.
+collectTypeArgs :: [Token] -> ([[Token]], [Token])
+collectTypeArgs tokens =
+  case takeOneTypeArg tokens of
+    Just (argTokens, remaining) ->
+      let (moreArgs, finalRemaining) = collectTypeArgs remaining
+       in (argTokens : moreArgs, finalRemaining)
+    Nothing -> ([], tokens)
 
 -- | Parse one type argument from remaining tokens.
 parseOneArg :: [Token] -> Maybe FFIType
@@ -244,21 +275,29 @@ takeMatchingParen (TOpenParen : rest) n acc =
 takeMatchingParen (t : rest) n acc = takeMatchingParen rest n (t : acc)
 
 -- | Parse parenthesized expression or tuple.
+--
+-- Uses depth-aware matching to correctly handle nested parentheses
+-- like @(List (String, a))@.
 parseParenOrTuple :: [Token] -> Maybe FFIType
 parseParenOrTuple tokens =
-  let inner = takeWhile (/= TCloseParen) tokens
-      parts = splitAtTopLevelCommas inner
-   in case parts of
-        [[]] -> Just FFIUnit
-        _ -> case traverseMaybe parseFunctionType parts of
-          Just [single] -> Just single
-          Just types@(_ : _ : _) -> Just (FFITuple types)
-          _ -> Nothing
+  case takeMatchingParen tokens 1 [] of
+    Just (innerReversed, _) ->
+      let inner = reverse innerReversed
+          parts = splitAtTopLevelCommas inner
+       in case parts of
+            [[]] -> Just FFIUnit
+            _ -> case traverseMaybe parseFunctionType parts of
+              Just [single] -> Just single
+              Just types@(_ : _ : _) -> Just (FFITuple types)
+              _ -> Nothing
+    Nothing -> Nothing
 
--- | Parse record type: @{ name : Type, age : Int }@
+-- | Parse record type: @{ name : Type, age : Int }@ or @{}@
 --
 -- Rejects records with duplicate field names by returning 'Nothing'.
+-- Handles empty records @{}@ as @FFIRecord []@.
 parseRecordType :: [Token] -> Maybe FFIType
+parseRecordType (TCloseBrace : _) = Just (FFIRecord [])
 parseRecordType tokens = do
   let inner = takeWhile (/= TCloseBrace) tokens
       fieldGroups = splitAtTopLevelCommas inner

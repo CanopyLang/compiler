@@ -179,6 +179,7 @@ library
       Generate.JavaScript.FFIRuntime
       Generate.JavaScript.Functions
       Generate.JavaScript.Kernel
+      Generate.JavaScript.Runtime
       Json.Decode.AST
       Json.Decode.Combinators
       Json.Decode.Core

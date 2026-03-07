@@ -397,7 +397,7 @@ validateFunction modulePath (funcName, ffiFunc) =
   where
     checkOutputType =
       case FFI.ffiFuncOutputType ffiFunc of
-        FFI.FFIOpaque "" ->
+        FFI.FFIOpaque "" _ ->
           [modulePath ++ ": " ++ Text.unpack funcName ++ " has empty output type"]
         _ -> []
     checkErrorTypes =

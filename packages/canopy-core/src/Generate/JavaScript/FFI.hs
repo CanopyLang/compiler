@@ -120,29 +120,14 @@ generateFFIContent mode graph ffiInfos =
      then mempty
      else mconcat parts <> validators
   where
-    modeDecl = modeDeclaration mode
     parts =
-      [ "\n// FFI JavaScript content from external files\n"
-      , modeDecl
+      [ "\n// FFI JavaScript content and bindings\n"
       ]
-        ++ Map.foldrWithKey formatFFIFileFromInfo [] ffiInfos
-        ++ [ "\n// FFI function bindings\n" ]
-        ++ Map.foldrWithKey (generateFFIBindingsFromInfo mode graph) [] ffiInfos
+        ++ Map.foldrWithKey (formatFFIWithBindings mode graph) [] ffiInfos
     validators =
       if Mode.isFFIStrict mode
         then generateFFIValidators mode ffiInfos
         else mempty
-
--- | Emit a @var __canopy_debug@ declaration so FFI runtime files can
--- select DEBUG vs PROD representations at load time.
---
--- In dev mode: @var __canopy_debug = true;@
--- In prod mode: @var __canopy_debug = false;@
-modeDeclaration :: Mode.Mode -> Builder
-modeDeclaration mode =
-  case mode of
-    Mode.Dev {} -> "var __canopy_debug = true;\n"
-    Mode.Prod {} -> "var __canopy_debug = false;\n"
 
 -- GENERATE FFI VALIDATORS
 
@@ -198,50 +183,138 @@ modeToValidatorConfig mode =
 -- FORMAT FFI FILE CONTENT
 
 -- | Format FFI file content for inclusion using FFIInfo.
-formatFFIFileFromInfo :: String -> FFIInfo -> [Builder] -> [Builder]
-formatFFIFileFromInfo _key info acc =
-  ("\n// From " <> BB.stringUtf8 (_ffiFilePath info) <> "\n")
-    : BB.byteString (TextEnc.encodeUtf8 (_ffiContent info))
+formatFFIFileFromInfo :: String -> Text.Text -> [Builder] -> [Builder]
+formatFFIFileFromInfo path content acc =
+  ("\n// From " <> BB.stringUtf8 path <> "\n")
+    : BB.byteString (TextEnc.encodeUtf8 content)
     : "\n"
     : acc
 
--- GENERATE FFI BINDINGS
-
--- | Generate JavaScript variable bindings for FFI functions using FFIInfo with proper aliases.
-generateFFIBindingsFromInfo :: Mode.Mode -> Graph -> String -> FFIInfo -> [Builder] -> [Builder]
-generateFFIBindingsFromInfo mode graph _key info acc
+-- | Emit FFI file content wrapped in an IIFE, followed by its bindings.
+--
+-- Wraps each FFI file in an Immediately Invoked Function Expression to
+-- isolate its declarations from other FFI files. This prevents collisions
+-- when multiple FFI files define functions with the same name (e.g. both
+-- char.js and string.js define @toLower@).
+--
+-- The IIFE returns an object mapping each annotated function name to its
+-- value. Bindings then reference @_AliasIIFE.funcName@ instead of bare
+-- @funcName@, giving each FFI file its own namespace while preserving
+-- access to runtime globals like @_Utils_chr@ and @F2@.
+formatFFIWithBindings :: Mode.Mode -> Graph -> String -> FFIInfo -> [Builder] -> [Builder]
+formatFFIWithBindings mode graph key info acc
   | not (isValidJsIdentifier aliasStr) = acc
   | otherwise =
-      case extractFFIFunctionBindings mode graph path contentText aliasStr of
-        [] -> acc
-        bindings ->
-          ("\n// Bindings for " <> BB.stringUtf8 path <> "\n")
-            : ("var " <> BB.stringUtf8 aliasStr <> " = " <> BB.stringUtf8 aliasStr <> " || {};\n")
-            : map (<> "\n") bindings ++ ["\n"] ++ acc
+      wrappedContent (reExports ++ bindingsSection ++ acc)
   where
     path = _ffiFilePath info
     contentText = _ffiContent info
     aliasStr = Name.toChars (_ffiAlias info)
+    iifeVar = "_" <> aliasStr <> "IIFE"
+    iifeVarText = Text.pack iifeVar
+    functions = extractFFIFunctions (Text.lines contentText)
+    jsNames = List.map jsReferenceName functions
+    internalNames = extractInternalNames (Text.lines contentText)
+    allExportNames = jsNames ++ internalNames
+    returnObj = buildIIFEReturnObj allExportNames
+    wrappedContent rest =
+      ("\n// From " <> BB.stringUtf8 path <> " (IIFE-isolated)\n")
+        : ("var " <> BB.stringUtf8 iifeVar <> " = (function() {\n")
+        : BB.byteString (TextEnc.encodeUtf8 contentText)
+        : ("\nreturn " <> returnObj <> ";\n")
+        : "})();\n"
+        : rest
+    reExports = List.map (reExportInternal iifeVar) internalNames
+    iifeFunctions = List.map (iifeExtractedFFI iifeVarText) functions
+    bindings = concatMap (generateFFIBinding mode graph path aliasStr) iifeFunctions
+    bindingsSection =
+      case bindings of
+        [] -> []
+        _ ->
+          ("\n// Bindings for " <> BB.stringUtf8 path <> "\n")
+            : ("var " <> BB.stringUtf8 aliasStr <> " = " <> BB.stringUtf8 aliasStr <> " || {};\n")
+            : List.map (<> "\n") bindings ++ ["\n"]
 
--- | Extract and generate bindings for FFI functions from JavaScript content.
-extractFFIFunctionBindings :: Mode.Mode -> Graph -> String -> Text.Text -> String -> [Builder]
-extractFFIFunctionBindings mode graph path content alias =
-  concatMap (generateFFIBinding mode graph path alias) functions
+-- | Re-export an internal @_@-prefixed name from the IIFE to global scope.
+--
+-- Produces @var _Json_unwrap = _JsonFFIIIFE._Json_unwrap;@ so that other
+-- FFI files can reference these conventionally-scoped helper functions.
+reExportInternal :: String -> Text.Text -> Builder
+reExportInternal iifeVar name =
+  "var " <> nameB <> " = " <> BB.stringUtf8 iifeVar <> "." <> nameB <> ";\n"
   where
-    functions = extractFFIFunctions (Text.lines content)
+    nameB = BB.byteString (TextEnc.encodeUtf8 name)
+
+-- | Build the IIFE return object mapping names to their values.
+--
+-- Produces @{ name1: name1, name2: name2, ... }@ for all names
+-- (both annotated FFI functions and internal @_@-prefixed helpers).
+buildIIFEReturnObj :: [Text.Text] -> Builder
+buildIIFEReturnObj names =
+  "{ " <> entries <> " }"
+  where
+    entries = mconcat (List.intersperse ", " (List.map mkEntry names))
+    mkEntry n =
+      let b = BB.byteString (TextEnc.encodeUtf8 n)
+       in b <> ": " <> b
+
+-- | Extract @_@-prefixed top-level function\/var names from FFI content.
+--
+-- These are internal helper functions that follow the Elm kernel naming
+-- convention (@_Module_name@) and may be referenced by other FFI files.
+-- They need to be re-exported to global scope after IIFE wrapping.
+extractInternalNames :: [Text.Text] -> [Text.Text]
+extractInternalNames = extractFromLines
+  where
+    extractFromLines [] = []
+    extractFromLines (line:rest)
+      | "function _" `Text.isPrefixOf` trimmed =
+          maybe id (:) (extractFuncName trimmed) (extractFromLines rest)
+      | "var _" `Text.isPrefixOf` trimmed =
+          maybe id (:) (extractVarDeclName trimmed) (extractFromLines rest)
+      | otherwise = extractFromLines rest
+      where
+        trimmed = Text.stripStart line
+    extractFuncName s =
+      let after = Text.drop 9 s
+          name = Text.takeWhile isIdentChar after
+       in if Text.length name > 1 then Just name else Nothing
+    extractVarDeclName s =
+      let after = Text.drop 4 s
+          name = Text.takeWhile isIdentChar after
+       in if "_" `Text.isPrefixOf` name && Text.length name > 1
+            then Just name
+            else Nothing
+    isIdentChar c =
+      c == '_' || c == '$'
+        || (c >= 'a' && c <= 'z')
+        || (c >= 'A' && c <= 'Z')
+        || (c >= '0' && c <= '9')
+
+-- | Update an 'ExtractedFFI' to reference through the IIFE namespace.
+--
+-- Sets the JS reference name to @_AliasIIFE.originalName@ so bindings
+-- access the function through the IIFE's returned object.
+iifeExtractedFFI :: Text.Text -> ExtractedFFI -> ExtractedFFI
+iifeExtractedFFI iifeVar ef =
+  ef { _extractedJSName = Just qualifiedName }
+  where
+    qualifiedName = iifeVar <> "." <> jsReferenceName ef
 
 -- PARSE CANOPY TYPE ANNOTATIONS
 
 -- | Extracted FFI function info from JSDoc annotations.
 data ExtractedFFI = ExtractedFFI
   { _extractedName :: !Text.Text
-    -- ^ Function name (JS side or from @canopy-name)
+    -- ^ Function name (from @name annotation or JS function declaration)
   , _extractedType :: !Text.Text
     -- ^ Type annotation from @canopy-type
   , _extractedMode :: !BindingMode
     -- ^ Binding mode from @canopy-bind
   , _extractedCanopyName :: !(Maybe Text.Text)
     -- ^ Optional Canopy-side name override
+  , _extractedJSName :: !(Maybe Text.Text)
+    -- ^ Original JS function name when @name annotation overrides it
   } deriving (Eq, Show)
 
 -- | Extract functions that have \@canopy-type annotations from JavaScript source lines.
@@ -259,6 +332,15 @@ extractCanopyTypeFunctions = List.map toSimple . extractFFIFunctions
 effectiveName :: ExtractedFFI -> Text.Text
 effectiveName ef =
   maybe (_extractedName ef) id (_extractedCanopyName ef)
+
+-- | Get the actual JS function name to reference on the RHS of bindings.
+--
+-- When @\@name@ overrides the primary name, the original JS function name
+-- is stored in '_extractedJSName'. Falls back to '_extractedName' when
+-- no override exists (the name IS the JS function name).
+jsReferenceName :: ExtractedFFI -> Text.Text
+jsReferenceName ef =
+  maybe (_extractedName ef) id (_extractedJSName ef)
 
 -- | Extract full FFI function information from JavaScript source lines.
 extractFFIFunctions :: [Text.Text] -> [ExtractedFFI]
@@ -291,15 +373,22 @@ takeJSDocBlock (line:rest)
        in (line:block, remaining)
 
 -- | Parse a JSDoc block into an ExtractedFFI.
+--
+-- When @\@name@ is present, uses it as the primary name and stores the
+-- JS function name separately in '_extractedJSName' so code generation
+-- can reference the actual JS function on the RHS of bindings.
 parseFFIBlock :: [Text.Text] -> [Text.Text] -> Maybe ExtractedFFI
 parseFFIBlock block followingLines = do
   canopyType <- findAnnotationInBlock "@canopy-type " block
   let bindMode = parseBlockBindMode block
       canopyName = findAnnotationInBlock "@canopy-name " block
       jsFuncName = findFunctionName followingLines
-  funcName <- findAnnotationInBlock "@name " block
-                <|> jsFuncName
-  Just (ExtractedFFI funcName canopyType bindMode canopyName)
+      nameAnnotation = findAnnotationInBlock "@name " block
+  funcName <- nameAnnotation <|> jsFuncName
+  let jsName = case nameAnnotation of
+        Just _ -> jsFuncName
+        Nothing -> Nothing
+  Just (ExtractedFFI funcName canopyType bindMode canopyName jsName)
 
 -- | Find a specific annotation value in a JSDoc block.
 findAnnotationInBlock :: Text.Text -> [Text.Text] -> Maybe Text.Text
@@ -349,28 +438,39 @@ extractCanopyType line
       fmap Text.strip (Text.stripPrefix "@canopy-type " (Text.dropWhile (/= '@') line))
   | otherwise = Nothing
 
--- | Find the function name in the following lines.
+-- | Find the JS function\/variable name in the lines following a JSDoc block.
 --
--- Handles both @function name(...)@ and @async function name(...)@.
--- Operates on 'Text' lines to avoid @[Char]@ allocation.
+-- Handles these patterns:
+--
+--   * @function name(...)@
+--   * @async function name(...)@
+--   * @var name = ...@ (for F2-wrapped or expression-assigned functions)
+--
+-- Stops scanning at the next JSDoc block (@\/**@) to avoid finding
+-- inner function declarations from unrelated code.
 --
 -- @since 0.19.2
 findFunctionName :: [Text.Text] -> Maybe Text.Text
 findFunctionName [] = Nothing
-findFunctionName (line:rest) =
-  let trimmed = Text.strip line
-      stripped = stripAsyncPrefix trimmed
-  in if "function " `Text.isPrefixOf` stripped
-       then extractNameAfterFunction stripped
-       else findFunctionName rest
+findFunctionName (line:rest)
+  | isJSDocStart trimmed = Nothing
+  | "function " `Text.isPrefixOf` stripped = extractNameAfterFunction stripped
+  | "var " `Text.isPrefixOf` trimmed = extractVarName trimmed
+  | otherwise = findFunctionName rest
   where
+    trimmed = Text.strip line
+    stripped = stripAsyncPrefix trimmed
     stripAsyncPrefix s
       | "async " `Text.isPrefixOf` s = Text.strip (Text.drop 6 s)
       | otherwise = s
     extractNameAfterFunction s =
       let after = Text.strip (Text.dropWhile (/= ' ') s)
           name = Text.takeWhile (\c -> c /= '(' && c /= ' ') after
-      in if Text.null name then findFunctionName rest else Just name
+       in if Text.null name then findFunctionName rest else Just name
+    extractVarName s =
+      let after = Text.strip (Text.drop 4 s)
+          name = Text.takeWhile (\c -> c /= ' ' && c /= '=') after
+       in if Text.null name then findFunctionName rest else Just name
 
 -- GENERATE FUNCTION BINDINGS
 
@@ -404,11 +504,12 @@ generateFunctionCallBinding mode alias ef =
       arity = maybe 0 TypeParser.countArity (TypeParser.parseType canopyTypeText)
       jsVarB = BB.stringUtf8 ("$author$project$" ++ alias ++ "$" ++ canopyName)
       aliasB = BB.stringUtf8 alias
-      funcNameB = BB.byteString (TextEnc.encodeUtf8 canopyNameText)
+      canopyNameB = BB.byteString (TextEnc.encodeUtf8 canopyNameText)
+      jsNameB = BB.byteString (TextEnc.encodeUtf8 (jsReferenceName ef))
       callPathB = "'" <> escapeJsString (Text.pack alias <> "." <> canopyNameText) <> "'"
    in if Mode.isFFIStrict mode
-        then generateValidatedBinding jsVarB aliasB funcNameB arity canopyTypeText callPathB
-        else generateSimpleBinding jsVarB aliasB funcNameB arity
+        then generateValidatedBinding jsVarB aliasB canopyNameB jsNameB arity canopyTypeText callPathB
+        else generateSimpleBinding jsVarB aliasB canopyNameB jsNameB arity
 
 -- | Generate binding for a method call: @obj.method(args)@.
 generateMethodBinding :: String -> ExtractedFFI -> Text.Text -> [Builder]
@@ -477,33 +578,39 @@ wrapArity arity funcExpr
 
 -- | Generate simple binding without validation.
 --
--- All parameters are pre-converted to 'Builder' at the call site to avoid
--- intermediate @[Char]@ allocation in the hot path.
-generateSimpleBinding :: Builder -> Builder -> Builder -> Int -> [Builder]
-generateSimpleBinding jsVarB aliasB funcNameB arity =
-  let wrapper = if arity <= 1 then mempty else "F" <> BB.intDec arity <> "("
+-- Uses the JS function name (@jsNameB@) on the RHS to reference the actual
+-- function defined in the FFI file, and the Canopy name (@canopyNameB@) for
+-- the namespace property key.
+--
+-- @since 0.19.2
+generateSimpleBinding :: Builder -> Builder -> Builder -> Builder -> Int -> [Builder]
+generateSimpleBinding jsVarB aliasB canopyNameB jsNameB arity =
+  let rawName = if arity > 1 then "(" <> jsNameB <> ".f||" <> jsNameB <> ")" else jsNameB
+      wrapper = if arity <= 1 then mempty else "F" <> BB.intDec arity <> "("
       closing = if arity <= 1 then mempty else ")"
-      namespaceBinding = aliasB <> "." <> funcNameB <> " = " <> wrapper <> funcNameB <> closing <> ";"
-  in ["var " <> jsVarB <> " = " <> wrapper <> funcNameB <> closing <> ";", namespaceBinding]
+      namespaceBinding = aliasB <> "." <> canopyNameB <> " = " <> wrapper <> rawName <> closing <> ";"
+  in ["var " <> jsVarB <> " = " <> wrapper <> rawName <> closing <> ";", namespaceBinding]
 
 -- | Generate binding with runtime validation wrapper.
 --
 -- All name parameters are pre-converted to 'Builder' at the call site.
--- The @canopyType@ and @callPath@ remain 'Text' since they are parsed
--- or escaped from source content.
-generateValidatedBinding :: Builder -> Builder -> Builder -> Int -> Text.Text -> Builder -> [Builder]
-generateValidatedBinding jsVarB aliasB funcNameB arity canopyType callPathB =
+-- The @canopyNameB@ is used for the namespace property key, while
+-- @jsNameB@ is used on the RHS to reference the actual JS function
+-- (which may be IIFE-qualified like @_AliasIIFE.funcName@).
+generateValidatedBinding :: Builder -> Builder -> Builder -> Builder -> Int -> Text.Text -> Builder -> [Builder]
+generateValidatedBinding jsVarB aliasB canopyNameB jsNameB arity canopyType callPathB =
   let args = if arity <= 0 then [] else map (\i -> "_" <> BB.intDec i) [0 .. arity - 1]
       argList = mconcat (List.intersperse ", " args)
       returnType = extractReturnType canopyType
       validatorExpr = typeToValidator returnType
-      wrappedCall = funcNameB <> "(" <> argList <> ")"
+      rawFunc = if arity > 1 then "(" <> jsNameB <> ".f||" <> jsNameB <> ")" else jsNameB
+      wrappedCall = rawFunc <> "(" <> argList <> ")"
       validatedCall = validatorExpr <> "(" <> wrappedCall <> ", " <> callPathB <> ")"
       funcBody = "function(" <> argList <> ") { return " <> validatedCall <> "; }"
       wrapper = if arity <= 1 then mempty else "F" <> BB.intDec arity <> "("
       closing = if arity <= 1 then mempty else ")"
       binding = "var " <> jsVarB <> " = " <> wrapper <> funcBody <> closing <> ";"
-      namespaceBinding = aliasB <> "." <> funcNameB <> " = " <> jsVarB <> ";"
+      namespaceBinding = aliasB <> "." <> canopyNameB <> " = " <> jsVarB <> ";"
   in [binding, namespaceBinding]
 
 -- TYPE VALIDATORS
@@ -558,7 +665,9 @@ ffiTypeToValidator ffiType = case ffiType of
     "$validate.Task(" <> ffiTypeToValidator errType <> ", " <> ffiTypeToValidator valType <> ")"
   Validator.FFITuple types ->
     "$validate.Tuple(" <> mconcat (List.intersperse ", " (map ffiTypeToValidator types)) <> ")"
-  Validator.FFIOpaque name ->
+  Validator.FFITypeVar _ ->
+    "$validate.Any"
+  Validator.FFIOpaque name _ ->
     "$validate.Opaque('" <> BB.byteString (TextEnc.encodeUtf8 name) <> "')"
   Validator.FFIFunctionType _ _ ->
     "$validate.Function"

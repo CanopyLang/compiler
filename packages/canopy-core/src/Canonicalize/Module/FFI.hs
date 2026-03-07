@@ -411,7 +411,7 @@ addParsedFunctionsToEnv env ffiModuleName aliasName jsPath region bindings = do
       homeModuleName = Env._home envWithOpaques
   processedFunctions <- traverse (processParsedFunction envWithOpaques ffiModuleName homeModuleName jsPath region) bindings
   let (vars, qVars) = buildDynamicEnvironment aliasName processedFunctions
-      newVars = List.foldl' (\acc (name, var) -> Map.insert name var acc) (Env._vars envWithOpaques) vars
+      newVars = List.foldl' (\acc (name, var) -> Map.insertWith (\_ existing -> existing) name var acc) (Env._vars envWithOpaques) vars
       newQVars = Map.insertWith Map.union aliasName qVars (Env._q_vars envWithOpaques)
       newEnv = envWithOpaques { Env._vars = newVars, Env._q_vars = newQVars }
   Result.ok newEnv
@@ -455,14 +455,18 @@ collectOpaqueFromType = \case
   FFI.FFIFunctionType params ret -> concatMap collectOpaqueFromType params ++ collectOpaqueFromType ret
   FFI.FFITuple types -> concatMap collectOpaqueFromType types
   FFI.FFIRecord fields -> concatMap (collectOpaqueFromType . snd) fields
-  FFI.FFIOpaque name -> [name | isOpaqueCandidate name]
+  FFI.FFITypeVar _ -> []
+  FFI.FFIOpaque name args -> [name | isOpaqueCandidate name] ++ concatMap collectOpaqueFromType args
 
 -- | Check if a type name is a candidate for auto opaque inference.
 --
--- Type variables (single lowercase letter) and built-in types are excluded.
+-- Type variables (single lowercase letter), built-in types, and qualified
+-- names (containing dots) are excluded. Qualified names should resolve
+-- via the importing module's imports, not be auto-created as opaques.
 isOpaqueCandidate :: Text.Text -> Bool
 isOpaqueCandidate name
   | Text.null name = False
+  | Text.any (== '.') name = False
   | Text.length name == 1 && Char.isLower (Text.head name) = False
   | name `elem` builtinTypeNames = False
   | otherwise = True
@@ -504,7 +508,8 @@ processParsedFunction env ffiModuleName homeModuleName jsPath region binding = d
       canopyName = effectiveCanopyName binding
   canopyType <- parseTypeStringWithHome env ffiModuleName homeModuleName jsPath region funcName typeAnnotation
   let typeWithCaps = prependCapabilities capabilities canopyType
-      annotation = Can.Forall Map.empty typeWithCaps
+      freeVars = collectFreeVarsFromType typeWithCaps
+      annotation = Can.Forall freeVars typeWithCaps
       var = Env.Foreign ffiModuleName annotation
   Result.ok (canopyName, annotation, var)
 
@@ -617,7 +622,8 @@ collectUnresolved env = go
       FFI.FFIFunctionType params ret -> concatMap go params ++ go ret
       FFI.FFITuple types -> concatMap go types
       FFI.FFIRecord fields -> concatMap (go . snd) fields
-      FFI.FFIOpaque name -> checkOpaque (Text.unpack name)
+      FFI.FFITypeVar _ -> []
+      FFI.FFIOpaque name args -> checkOpaque (Text.unpack name) ++ concatMap go args
 
     checkOpaque name
       -- Single lowercase letter = type variable, always OK
@@ -631,14 +637,35 @@ collectUnresolved env = go
       case splitInitLast (splitOnDot qualifiedName) of
         Nothing -> [Text.pack qualifiedName]
         Just (moduleParts, typeNamePart) ->
-          let qualifierName = Name.fromChars (concatWithDots moduleParts)
-              typeNameObj = Name.fromChars typeNamePart
-              found = maybe False (Map.member typeNameObj) (Map.lookup qualifierName (Env._q_types env))
+          let typeNameObj = Name.fromChars typeNamePart
+              fullModPath = Name.fromChars (concatWithDots moduleParts)
+              qualifierPrefixes = [concatWithDots (take n moduleParts) | n <- [length moduleParts, length moduleParts - 1 .. 1]]
+              tryQual prefix = maybe False (Map.member typeNameObj) (Map.lookup (Name.fromChars prefix) (Env._q_types env))
+              tryByCanonical (_, innerMap) = Map.member typeNameObj innerMap && any (infoHasModule fullModPath) (Map.elems innerMap)
+              found = any tryQual qualifierPrefixes || any tryByCanonical (Map.toList (Env._q_types env))
            in [Text.pack qualifiedName | not found]
 
     checkUnqualified customType =
       let typeNameObj = Name.fromChars customType
        in [Text.pack customType | not (Map.member typeNameObj (Env._types env))]
+
+-- | Collect all free type variables from a canonical type into a 'FreeVars' map.
+--
+-- Walks the type tree and collects every 'Can.TVar' name, building the
+-- @Map Name ()@ that 'Can.Forall' expects. This ensures polymorphic FFI
+-- functions have their type variables properly declared.
+collectFreeVarsFromType :: Can.Type -> Map Name.Name ()
+collectFreeVarsFromType = go Map.empty
+  where
+    go acc canType = case canType of
+      Can.TLambda a b -> go (go acc a) b
+      Can.TVar name -> Map.insert name () acc
+      Can.TType _ _ args -> List.foldl' go acc args
+      Can.TRecord fields _ -> List.foldl' goField acc (Map.elems fields)
+      Can.TUnit -> acc
+      Can.TTuple a b mc -> maybe id (flip go) mc (go (go acc a) b)
+      Can.TAlias _ _ pairs _ -> List.foldl' (\m (_, t) -> go m t) acc pairs
+    goField acc (Can.FieldType _ t) = go acc t
 
 -- FFI TYPE TO CANONICAL CONVERSION
 
@@ -673,8 +700,11 @@ ffiTypeToCanonical env ffiMod homeMod ffiType = case ffiType of
   FFI.FFITuple types ->
     convertTuple (map recur types)
 
-  FFI.FFIOpaque name ->
-    resolveOpaqueName env ffiMod homeMod (Text.unpack name)
+  FFI.FFITypeVar name ->
+    Can.TVar (Name.fromChars (Text.unpack name))
+
+  FFI.FFIOpaque name args ->
+    resolveOpaqueNameWithArgs env ffiMod homeMod (Text.unpack name) (map recur args)
 
   FFI.FFIRecord fields ->
     Can.TRecord (Map.fromList (map convertField fields)) Nothing
@@ -715,45 +745,78 @@ convertTuple types =
 
 -- | Resolve an opaque type name using the environment.
 resolveOpaqueName :: Env.Env -> ModuleName.Canonical -> ModuleName.Canonical -> String -> Can.Type
-resolveOpaqueName env ffiMod homeMod name = case name of
+resolveOpaqueName env ffiMod homeMod name =
+  resolveOpaqueNameWithArgs env ffiMod homeMod name []
+
+-- | Resolve an opaque type name with type arguments using the environment.
+resolveOpaqueNameWithArgs :: Env.Env -> ModuleName.Canonical -> ModuleName.Canonical -> String -> [Can.Type] -> Can.Type
+resolveOpaqueNameWithArgs env ffiMod homeMod name args = case name of
   [ch] | ch >= 'a' && ch <= 'z' ->
-    Can.TType homeMod (Name.fromChars name) []
+    Can.TType homeMod (Name.fromChars name) args
   _ | '.' `elem` name ->
-    resolveQualifiedName env homeMod name
-  _ -> resolveUnqualifiedName env ffiMod name
+    resolveQualifiedNameWithArgs env homeMod name args
+  _ -> resolveUnqualifiedNameWithArgs env ffiMod name args
 
 -- | Resolve a qualified type name like "Capability.CapabilityError".
 resolveQualifiedName :: Env.Env -> ModuleName.Canonical -> String -> Can.Type
 resolveQualifiedName env homeMod qualifiedName =
+  resolveQualifiedNameWithArgs env homeMod qualifiedName []
+
+-- | Resolve a qualified type name with type arguments.
+--
+-- Three-phase resolution for qualified FFI type names like @Json.Decode.Value@:
+--   1. Try progressive prefix matching (@Json.Decode@, then @Json@)
+--   2. Scan all qualifiers in the env for matching canonical module name
+--   3. Fall back to constructing a type with the full module path
+resolveQualifiedNameWithArgs :: Env.Env -> ModuleName.Canonical -> String -> [Can.Type] -> Can.Type
+resolveQualifiedNameWithArgs env homeMod qualifiedName args =
   case splitInitLast (splitOnDot qualifiedName) of
-    Nothing -> Can.TType homeMod (Name.fromChars qualifiedName) []
+    Nothing -> Can.TType homeMod (Name.fromChars qualifiedName) args
     Just (moduleParts, typeNamePart) ->
-      let qualifierName = Name.fromChars (concatWithDots moduleParts)
-          typeNameObj = Name.fromChars typeNamePart
-          maybeInfo = do
-            innerMap <- Map.lookup qualifierName (Env._q_types env)
+      let typeNameObj = Name.fromChars typeNamePart
+          fullModPath = Name.fromChars (concatWithDots moduleParts)
+          qualifierPrefixes = [concatWithDots (take n moduleParts) | n <- [length moduleParts, length moduleParts - 1 .. 1]]
+          tryQual prefix = do
+            innerMap <- Map.lookup (Name.fromChars prefix) (Env._q_types env)
             Map.lookup typeNameObj innerMap
+          tryByCanonicalModule (_, innerMap) = do
+            info <- Map.lookup typeNameObj innerMap
+            if infoHasModule fullModPath info then Just info else Nothing
+          maybeInfo = case firstJust tryQual qualifierPrefixes of
+            Just info -> Just info
+            Nothing -> firstJust tryByCanonicalModule (Map.toList (Env._q_types env))
           fallbackModule = case homeMod of
-            ModuleName.Canonical pkg _ -> ModuleName.Canonical pkg qualifierName
-       in resolveTypeFromInfo fallbackModule typeNameObj maybeInfo
+            ModuleName.Canonical pkg _ -> ModuleName.Canonical pkg fullModPath
+       in resolveTypeFromInfo fallbackModule typeNameObj args maybeInfo
+
+-- | Check if a type info entry belongs to a module with the given name.
+infoHasModule :: Name.Name -> Env.Info Env.Type -> Bool
+infoHasModule modName (Env.Specific _ (Env.Union _ (ModuleName.Canonical _ m))) = m == modName
+infoHasModule modName (Env.Specific _ (Env.Alias _ (ModuleName.Canonical _ m) _ _)) = m == modName
+infoHasModule modName (Env.Ambiguous (ModuleName.Canonical _ m) _) = m == modName
 
 -- | Resolve an unqualified custom type using the environment.
 resolveUnqualifiedName :: Env.Env -> ModuleName.Canonical -> String -> Can.Type
 resolveUnqualifiedName env ffiMod customType =
+  resolveUnqualifiedNameWithArgs env ffiMod customType []
+
+-- | Resolve an unqualified custom type with type arguments.
+resolveUnqualifiedNameWithArgs :: Env.Env -> ModuleName.Canonical -> String -> [Can.Type] -> Can.Type
+resolveUnqualifiedNameWithArgs env ffiMod customType args =
   let typeNameObj = Name.fromChars customType
       maybeInfo = Map.lookup typeNameObj (Env._types env)
-   in resolveTypeFromInfo ffiMod typeNameObj maybeInfo
+   in resolveTypeFromInfo ffiMod typeNameObj args maybeInfo
 
 -- | Resolve a type from its environment Info entry.
-resolveTypeFromInfo :: ModuleName.Canonical -> Name.Name -> Maybe (Env.Info Env.Type) -> Can.Type
-resolveTypeFromInfo fallback tname Nothing =
-  Can.TType fallback tname []
-resolveTypeFromInfo _fallback tname (Just (Env.Specific _defMod (Env.Alias _arity home argNames aliasedType))) =
-  Can.TAlias home tname (zip argNames []) (Can.Holey aliasedType)
-resolveTypeFromInfo _fallback tname (Just (Env.Specific _defMod (Env.Union _arity home))) =
-  Can.TType home tname []
-resolveTypeFromInfo _fallback tname (Just (Env.Ambiguous defMod _)) =
-  Can.TType defMod tname []
+resolveTypeFromInfo :: ModuleName.Canonical -> Name.Name -> [Can.Type] -> Maybe (Env.Info Env.Type) -> Can.Type
+resolveTypeFromInfo fallback tname args Nothing =
+  Can.TType fallback tname args
+resolveTypeFromInfo _fallback tname args (Just (Env.Specific _defMod (Env.Alias _arity home argNames aliasedType))) =
+  Can.TAlias home tname (zip argNames args) (Can.Holey aliasedType)
+resolveTypeFromInfo _fallback tname args (Just (Env.Specific _defMod (Env.Union _arity home))) =
+  Can.TType home tname args
+resolveTypeFromInfo _fallback tname args (Just (Env.Ambiguous defMod _)) =
+  Can.TType defMod tname args
 
 -- | Split a string on dots.
 splitOnDot :: String -> [String]
@@ -776,6 +839,11 @@ concatWithDots :: [String] -> String
 concatWithDots [] = ""
 concatWithDots [x] = x
 concatWithDots (x : xs) = x ++ "." ++ concatWithDots xs
+
+-- | Return the first 'Just' result from applying a function to list elements.
+firstJust :: (a -> Maybe b) -> [a] -> Maybe b
+firstJust _ [] = Nothing
+firstJust f (x : xs) = maybe (firstJust f xs) Just (f x)
 
 -- CAPABILITY WARNING EXTRACTION
 

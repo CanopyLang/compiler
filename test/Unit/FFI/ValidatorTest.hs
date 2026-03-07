@@ -30,7 +30,7 @@ parseFFITypeTests =
       testCase "parses Unit" $
         Validator.parseFFIType "()" @?= Just Validator.FFIUnit,
       testCase "parses opaque type" $
-        Validator.parseFFIType "AudioContext" @?= Just (Validator.FFIOpaque "AudioContext"),
+        Validator.parseFFIType "AudioContext" @?= Just (Validator.FFIOpaque "AudioContext" []),
       testCase "parses List Int" $
         Validator.parseFFIType "List Int" @?= Just (Validator.FFIList Validator.FFIInt),
       testCase "parses List Float" $
@@ -42,11 +42,11 @@ parseFFITypeTests =
       testCase "parses Result String Int" $
         Validator.parseFFIType "Result String Int" @?= Just (Validator.FFIResult Validator.FFIString Validator.FFIInt),
       testCase "parses Result Error Value" $
-        Validator.parseFFIType "Result Error Value" @?= Just (Validator.FFIResult (Validator.FFIOpaque "Error") (Validator.FFIOpaque "Value")),
+        Validator.parseFFIType "Result Error Value" @?= Just (Validator.FFIResult (Validator.FFIOpaque "Error" []) (Validator.FFIOpaque "Value" [])),
       testCase "parses Task String Int" $
         Validator.parseFFIType "Task String Int" @?= Just (Validator.FFITask Validator.FFIString Validator.FFIInt),
       testCase "parses Task Error Value" $
-        Validator.parseFFIType "Task Error Value" @?= Just (Validator.FFITask (Validator.FFIOpaque "Error") (Validator.FFIOpaque "Value")),
+        Validator.parseFFIType "Task Error Value" @?= Just (Validator.FFITask (Validator.FFIOpaque "Error" []) (Validator.FFIOpaque "Value" [])),
       testCase "parses nested List Maybe Int" $
         Validator.parseFFIType "List (Maybe Int)" @?= Just (Validator.FFIList (Validator.FFIMaybe Validator.FFIInt)),
       testCase "parses nested Maybe (List String)" $
@@ -78,9 +78,9 @@ parseReturnTypeTests =
       testCase "extracts return type from multi-arg function" $
         Validator.parseReturnType "Int -> String -> Bool" @?= Just Validator.FFIBool,
       testCase "extracts Result return type" $
-        Validator.parseReturnType "Int -> Result Error Value" @?= Just (Validator.FFIResult (Validator.FFIOpaque "Error") (Validator.FFIOpaque "Value")),
+        Validator.parseReturnType "Int -> Result Error Value" @?= Just (Validator.FFIResult (Validator.FFIOpaque "Error" []) (Validator.FFIOpaque "Value" [])),
       testCase "extracts Task return type" $
-        Validator.parseReturnType "String -> Task Error Value" @?= Just (Validator.FFITask (Validator.FFIOpaque "Error") (Validator.FFIOpaque "Value")),
+        Validator.parseReturnType "String -> Task Error Value" @?= Just (Validator.FFITask (Validator.FFIOpaque "Error" []) (Validator.FFIOpaque "Value" [])),
       testCase "returns Nothing for empty string" $
         Validator.parseReturnType "" @?= Nothing,
       testCase "returns type for non-function" $
@@ -108,11 +108,11 @@ generateValidatorNameTests =
       testCase "generates name for Result String Int" $
         Validator.generateValidatorName (Validator.FFIResult Validator.FFIString Validator.FFIInt) @?= "_validate_Result_String_Int",
       testCase "generates name for Task Error Value" $
-        Validator.generateValidatorName (Validator.FFITask (Validator.FFIOpaque "Error") (Validator.FFIOpaque "Value")) @?= "_validate_Task_Opaque_Error_Opaque_Value",
+        Validator.generateValidatorName (Validator.FFITask (Validator.FFIOpaque "Error" []) (Validator.FFIOpaque "Value" [])) @?= "_validate_Task_Opaque_Error_Opaque_Value",
       testCase "generates name for Tuple" $
         Validator.generateValidatorName (Validator.FFITuple [Validator.FFIInt, Validator.FFIString]) @?= "_validate_Tuple_Int_String",
       testCase "generates name for Opaque type" $
-        Validator.generateValidatorName (Validator.FFIOpaque "AudioContext") @?= "_validate_Opaque_AudioContext",
+        Validator.generateValidatorName (Validator.FFIOpaque "AudioContext" []) @?= "_validate_Opaque_AudioContext",
       testCase "generates name for Function" $
         Validator.generateValidatorName (Validator.FFIFunctionType [Validator.FFIInt] Validator.FFIString) @?= "_validate_Fn_String"
     ]
@@ -168,11 +168,11 @@ generateValidatorTests =
               @?= "function _validate_Int(v, ctx) {\n  if (!Number.isInteger(v)) {\n    throw new Error('FFI type error at ' + ctx + ': expected Int, got ' + typeof v + ': ' + JSON.stringify(v));\n  }\n  return v;\n}\n",
       testCase "validates opaque types with instanceof when configured" $
         let config = Validator.defaultConfig {Validator._configValidateOpaque = True}
-         in Validator.generateValidator config (Validator.FFIOpaque "AudioContext")
+         in Validator.generateValidator config (Validator.FFIOpaque "AudioContext" [])
               @?= "function _validate_Opaque_AudioContext(v, ctx) {\n  if (!(v instanceof AudioContext)) {\n    throw new Error('FFI type error at ' + ctx + ': expected AudioContext, got ' + typeof v);\n  }\n  return v;\n}\n",
       testCase "skips instanceof check for opaque when not configured" $
         let config = Validator.defaultConfig {Validator._configValidateOpaque = False}
-         in Validator.generateValidator config (Validator.FFIOpaque "AudioContext")
+         in Validator.generateValidator config (Validator.FFIOpaque "AudioContext" [])
               @?= "function _validate_Opaque_AudioContext(v, ctx) {\n  return v; // Opaque type: AudioContext\n}\n"
     ]
 

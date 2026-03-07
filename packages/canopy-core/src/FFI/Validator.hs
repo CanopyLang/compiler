@@ -87,7 +87,8 @@ generateValidatorName ffiType = "_validate_" <> typeToSuffix ffiType
       FFIResult e v -> "Result_" <> typeToSuffix e <> "_" <> typeToSuffix v
       FFITask e v -> "Task_" <> typeToSuffix e <> "_" <> typeToSuffix v
       FFITuple types -> "Tuple_" <> Text.intercalate "_" (map typeToSuffix types)
-      FFIOpaque name -> "Opaque_" <> sanitizeName name
+      FFITypeVar name -> "Var_" <> sanitizeName name
+      FFIOpaque name _ -> "Opaque_" <> sanitizeName name
       FFIFunctionType _ ret -> "Fn_" <> typeToSuffix ret
       FFIRecord fields -> "Rec_" <> Text.intercalate "_" (map (sanitizeName . fst) fields)
 
@@ -179,7 +180,10 @@ generateValidatorBody config ffiType = case ffiType of
        <> indent <> "}\n"
        <> indent <> "return [" <> Text.intercalate ", " checks <> "];"
 
-  FFIOpaque typeName ->
+  FFITypeVar _ ->
+    indent <> "return v; // Type variable: passthrough"
+
+  FFIOpaque typeName _ ->
     if _configValidateOpaque config
       then indent <> "if (!(v instanceof " <> typeName <> ")) {\n"
            <> indent <> "  " <> throwError config typeName <> "\n"
@@ -231,6 +235,7 @@ generateAllValidators config ffiType =
       FFITuple types -> types
       FFIFunctionType args ret -> args ++ [ret]
       FFIRecord fields -> map snd fields
+      FFITypeVar _ -> []
       _ -> []
 
 -- | Parse a type string into FFIType.

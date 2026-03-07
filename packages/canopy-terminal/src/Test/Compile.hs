@@ -56,13 +56,13 @@ import qualified Terminal.Print as Print
 compileTestFiles :: FilePath -> [FilePath] -> IO (Maybe (Text.Text, Map.Map ModuleName.Canonical Opt.Main))
 compileTestFiles root testFiles = do
   ensureTestDepArtifacts root
-  let pkg = Pkg.dummyName
-      srcDirs =
+  pkg <- resolvePackageName root
+  let srcDirs =
         [ Compiler.RelativeSrcDir "src",
           Compiler.RelativeSrcDir "tests",
           Compiler.RelativeSrcDir "test"
         ]
-  result <- Compiler.compileFromPaths pkg True (Compiler.ProjectRoot root) srcDirs testFiles
+  result <- Compiler.compileFromPaths pkg False (Compiler.ProjectRoot root) srcDirs testFiles
   case result of
     Left err -> do
       let errStr = show err
@@ -70,11 +70,26 @@ compileTestFiles root testFiles = do
       pure Nothing
     Right artifacts -> pure (Just (artifactsToJavaScript artifacts, collectMains artifacts))
 
--- | Ensure all test-dependency packages have compiled artifacts.
+-- | Resolve the package name from the project outline.
 --
--- Reads the project outline, extracts test dependencies, and for each
--- package that has source files but no @artifacts.dat@, compiles the
--- package from source with its real package identity.
+-- For packages, returns the package name from canopy.json. For applications
+-- and workspaces (or when the outline can't be read), falls back to
+-- 'Pkg.dummyName'.
+--
+-- @since 0.19.2
+resolvePackageName :: FilePath -> IO Pkg.Name
+resolvePackageName root = do
+  eitherOutline <- Outline.read root
+  pure (either (const Pkg.dummyName) extractPkgName eitherOutline)
+  where
+    extractPkgName (Outline.Pkg o) = Outline._pkgName o
+    extractPkgName _ = Pkg.dummyName
+
+-- | Ensure all dependency packages (regular + test) have compiled artifacts.
+--
+-- Reads the project outline, collects all dependencies (both regular and
+-- test), resolves transitive dependencies, topologically sorts them, and
+-- compiles any that lack @artifacts.dat@.
 --
 -- @since 0.19.1
 ensureTestDepArtifacts :: FilePath -> IO ()
@@ -84,14 +99,55 @@ ensureTestDepArtifacts root = do
     Left _ -> pure ()
     Right outline -> do
       cacheDir <- Stuff.getPackageCache
-      mapM_ (ensureOneTestDep cacheDir) (extractTestDeps outline)
+      graph <- resolveTransitiveDeps cacheDir (Outline.allDeps outline) Map.empty
+      let sorted = topologicalSort graph
+      mapM_ (ensureOneTestDep cacheDir) sorted
 
--- | Extract test-dependency (name, version) pairs from an outline.
-extractTestDeps :: Outline.Outline -> [(Pkg.Name, Version.Version)]
-extractTestDeps (Outline.App o) = Map.toList (Outline._appTestDepsDirect o)
-extractTestDeps (Outline.Pkg o) =
-  Map.toList (Map.map Constraint.lowerBound (Outline._pkgTestDeps o))
-extractTestDeps (Outline.Workspace _) = []
+-- | Dependency graph: maps each package to its version and direct dep names.
+type DepGraph = Map.Map Pkg.Name (Version.Version, [Pkg.Name])
+
+-- | Resolve transitive dependencies by reading each dep's outline from cache.
+resolveTransitiveDeps ::
+  FilePath ->
+  [(Pkg.Name, Version.Version)] ->
+  DepGraph ->
+  IO DepGraph
+resolveTransitiveDeps _ [] seen = pure seen
+resolveTransitiveDeps cacheDir ((name, ver) : rest) seen
+  | Map.member name seen = resolveTransitiveDeps cacheDir rest seen
+  | otherwise = do
+      subDeps <- readSubDeps cacheDir name ver
+      let seen' = Map.insert name (ver, map fst subDeps) seen
+      resolveTransitiveDeps cacheDir (subDeps ++ rest) seen'
+
+-- | Read a package's dependencies from its cached outline.
+readSubDeps :: FilePath -> Pkg.Name -> Version.Version -> IO [(Pkg.Name, Version.Version)]
+readSubDeps cacheDir pkgName version = do
+  let pkgDir = testDepDir cacheDir pkgName version
+  eitherOutline <- Outline.read pkgDir
+  pure (either (const []) extractPkgDeps eitherOutline)
+
+-- | Extract regular dependencies from a package outline.
+extractPkgDeps :: Outline.Outline -> [(Pkg.Name, Version.Version)]
+extractPkgDeps (Outline.Pkg o) =
+  Map.toList (Map.map Constraint.lowerBound (Outline._pkgDeps o))
+extractPkgDeps _ = []
+
+-- | Topologically sort packages so dependencies compile before dependents.
+--
+-- Uses iterative removal of nodes with no remaining in-graph dependencies.
+-- Packages whose deps are all outside the graph (or already emitted) go first.
+topologicalSort :: DepGraph -> [(Pkg.Name, Version.Version)]
+topologicalSort graph = go graph []
+  where
+    go remaining acc
+      | Map.null remaining = reverse acc
+      | Map.null ready = reverse acc ++ Map.toList (Map.map fst remaining)
+      | otherwise = go remaining' (Map.toList (Map.map fst ready) ++ acc)
+      where
+        readyNames = Map.keysSet (Map.filter (\(_, deps) -> all (`Map.notMember` remaining) deps) remaining)
+        ready = Map.restrictKeys remaining readyNames
+        remaining' = Map.withoutKeys remaining readyNames
 
 -- | Compile a single test-dependency package if it lacks artifacts.
 ensureOneTestDep :: FilePath -> (Pkg.Name, Version.Version) -> IO ()
@@ -180,13 +236,82 @@ artifactsToJavaScript artifacts =
     globalGraph = artifacts ^. Build.artifactsGlobalGraph
     ffiInfo = artifacts ^. Build.artifactsFFIInfo
     mains = collectMains artifacts
-    (builder, _sourceMap) = JS.generate (Mode.Dev Nothing False False False Set.empty) globalGraph mains ffiInfo
+    (builder, _sourceMap) = JS.generate (Mode.Dev Nothing False True False Set.empty) globalGraph mains ffiInfo
     rawText = TextEnc.decodeUtf8 (LBS.toStrict (Builder.toLazyByteString builder))
 
--- | Post-process JavaScript to fix the @language-javascript@ rendering
--- quirk where @else if@ is emitted as @elseif@.
+-- | Post-process JavaScript to fix rendering quirks and resolve kernel
+-- debug\/prod markers for dev mode.
+--
+-- Fixes:
+--   * @else if@ rendered as @elseif@ by @language-javascript@
+--   * @\/\*\*__PROD\/...\/\/\*\/@ blocks removed (dev mode)
+--   * @\/\*\*__DEBUG\/...\/\/\*\/@ blocks unwrapped to their content
+--   * @__DEBUG@ and @__PROD@ function name suffixes resolved
+--
+-- @since 0.19.2
 postProcessJavaScript :: Text.Text -> Text.Text
-postProcessJavaScript = Text.replace "elseif" "else if"
+postProcessJavaScript =
+  Text.replace "elseif" "else if"
+    . resolveKernelProdBlocks
+    . resolveKernelDebugBlocks
+    . resolveKernelFunctionSuffixes
+
+-- | Remove @\/\*\*__PROD\/...\/\/\*\/@ comment blocks (dev mode discards prod code).
+--
+-- @since 0.19.2
+resolveKernelProdBlocks :: Text.Text -> Text.Text
+resolveKernelProdBlocks txt =
+  maybe txt (uncurry replaceProdBlock) (findProdBlock txt)
+
+-- | Find and remove one @\/\*\*__PROD\/...\/\/\*\/@ block, then recurse.
+findProdBlock :: Text.Text -> Maybe (Text.Text, Text.Text)
+findProdBlock txt =
+  case Text.breakOn "/**__PROD/" txt of
+    (_, rest) | Text.null rest -> Nothing
+    (before, rest) ->
+      case Text.breakOn "//*/" (Text.drop 10 rest) of
+        (_, closing) | Text.null closing -> Nothing
+        (_, closing) -> Just (before, Text.drop 4 closing)
+
+-- | Replace one prod block and recurse for any remaining.
+replaceProdBlock :: Text.Text -> Text.Text -> Text.Text
+replaceProdBlock before after =
+  resolveKernelProdBlocks (before <> after)
+
+-- | Unwrap @\/\*\*__DEBUG\/...\/\/\*\/@ comment blocks (dev mode keeps debug code).
+--
+-- @since 0.19.2
+resolveKernelDebugBlocks :: Text.Text -> Text.Text
+resolveKernelDebugBlocks txt =
+  maybe txt (uncurry replaceDebugBlock) (findDebugBlock txt)
+
+-- | Find one @\/\*\*__DEBUG\/...\/\/\*\/@ block and extract its content.
+findDebugBlock :: Text.Text -> Maybe ((Text.Text, Text.Text), Text.Text)
+findDebugBlock txt =
+  case Text.breakOn "/**__DEBUG/" txt of
+    (_, rest) | Text.null rest -> Nothing
+    (before, rest) ->
+      case Text.breakOn "//*/" (Text.drop 11 rest) of
+        (_, closing) | Text.null closing -> Nothing
+        (content, closing) -> Just ((before, content), Text.drop 4 closing)
+
+-- | Replace one debug block with its content and recurse.
+replaceDebugBlock :: (Text.Text, Text.Text) -> Text.Text -> Text.Text
+replaceDebugBlock (before, content) after =
+  resolveKernelDebugBlocks (before <> content <> after)
+
+-- | Resolve @__DEBUG@ and @__PROD@ function name suffixes for dev mode.
+--
+-- In dev mode: @foo__DEBUG@ becomes @foo@, @foo__PROD@ lines are removed.
+--
+-- @since 0.19.2
+resolveKernelFunctionSuffixes :: Text.Text -> Text.Text
+resolveKernelFunctionSuffixes txt =
+  Text.unlines (concatMap resolveLine (Text.lines txt))
+  where
+    resolveLine line
+      | Text.isInfixOf "__PROD" line && not (Text.isInfixOf "/**" line) = []
+      | otherwise = [Text.replace "__DEBUG" "" line]
 
 -- | Collect main entries from all roots of the artifacts.
 collectMains :: Compiler.Artifacts -> Map.Map ModuleName.Canonical Opt.Main

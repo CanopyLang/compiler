@@ -157,10 +157,12 @@ resolvePackagePath pkg ver = do
       elmPath = home </> ".elm" </> "0.19.1" </> "packages" </> Pkg.toFilePath pkg </> Version.toChars ver
   canopyExists <- Dir.doesDirectoryExist canopyPath
   if canopyExists
-    then pure (Just canopyPath)
+    then Just <$> Dir.canonicalizePath canopyPath
     else do
       elmExists <- Dir.doesDirectoryExist elmPath
-      pure (if elmExists then Just elmPath else Nothing)
+      if elmExists
+        then Just <$> Dir.canonicalizePath elmPath
+        else pure Nothing
 
 -- | Recursively copy a package directory to the vendor target.
 --

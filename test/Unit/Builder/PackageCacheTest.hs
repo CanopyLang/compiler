@@ -86,11 +86,12 @@ testLoadPackageInterfaces =
         case result of
           Nothing -> return ()
           Just _ -> assertFailure "Expected Nothing for nonexistent package",
-      testCase "nonexistent version returns Nothing" $ do
+      testCase "nonexistent version falls back to available version" $ do
         result <- PackageCache.loadPackageInterfaces "canopy" "core" "99.99.99"
         case result of
-          Nothing -> return ()
-          Just _ -> assertFailure "Expected Nothing for nonexistent version"
+          Nothing -> assertFailure "Expected version scanning to find an available version"
+          Just ifaces ->
+            assertBool ("Expected >0 modules from fallback, got " ++ show (Map.size ifaces)) (Map.size ifaces > 0)
     ]
 
 testLoadAllDependencies :: TestTree
