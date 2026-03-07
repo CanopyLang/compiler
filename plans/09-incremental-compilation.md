@@ -1,12 +1,25 @@
-# Plan 09: Incremental Compilation
+# Plan 09: Incremental Compilation + Error Recovery
 
 ## Priority: HIGH — Tier 2
-## Effort: 6-8 weeks
+## Effort: 4-6 weeks (reduced — query engine is 80% built)
 ## Depends on: Plan 01 (ESM output)
 
 ## Problem
 
 The current compiler re-runs the full pipeline for every change. For a 100-module project, changing one function recompiles everything. Developers expect Vite-speed feedback (< 100ms).
+
+Additionally, the compiler currently stops at the first error in a module. For IDE usage (LSP), **error recovery and partial compilation** are critical — the LSP must provide completions, hover information, and diagnostics even when the file contains errors. Without this, every typo kills the entire IDE experience until the error is fixed.
+
+> **Note (revised):** The canopy-query engine (Salsa-inspired cache with dependency tracking
+> and content hashing) is already 80% built. This plan integrates it rather than building from
+> scratch. Additionally, error recovery has been added as a requirement for LSP quality.
+
+### Error Recovery Requirements
+
+1. **Parser error recovery**: When a parse error is encountered, skip to the next top-level declaration and continue parsing. Return partial AST + errors.
+2. **Type checker error recovery**: When a type error is found in one binding, continue checking other bindings in the module. Return partial type information + errors.
+3. **Cross-module partial compilation**: If module A has errors but module B (which doesn't depend on A) is clean, module B should still compile fully. The LSP should show full diagnostics for B.
+4. **Stale data on error**: When a module has errors, the LSP should use the last-known-good type information for completions and hover, rather than showing nothing.
 
 ## Solution: Salsa-Style Query Architecture
 

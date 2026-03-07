@@ -120,8 +120,11 @@ generateFFIContent mode graph ffiInfos =
      then mempty
      else mconcat parts <> validators
   where
+    modeDecl = modeDeclaration mode
     parts =
-      [ "\n// FFI JavaScript content from external files\n" ]
+      [ "\n// FFI JavaScript content from external files\n"
+      , modeDecl
+      ]
         ++ Map.foldrWithKey formatFFIFileFromInfo [] ffiInfos
         ++ [ "\n// FFI function bindings\n" ]
         ++ Map.foldrWithKey (generateFFIBindingsFromInfo mode graph) [] ffiInfos
@@ -129,6 +132,17 @@ generateFFIContent mode graph ffiInfos =
       if Mode.isFFIStrict mode
         then generateFFIValidators mode ffiInfos
         else mempty
+
+-- | Emit a @var __canopy_debug@ declaration so FFI runtime files can
+-- select DEBUG vs PROD representations at load time.
+--
+-- In dev mode: @var __canopy_debug = true;@
+-- In prod mode: @var __canopy_debug = false;@
+modeDeclaration :: Mode.Mode -> Builder
+modeDeclaration mode =
+  case mode of
+    Mode.Dev {} -> "var __canopy_debug = true;\n"
+    Mode.Prod {} -> "var __canopy_debug = false;\n"
 
 -- GENERATE FFI VALIDATORS
 

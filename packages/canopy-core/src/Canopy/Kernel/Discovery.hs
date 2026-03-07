@@ -139,6 +139,9 @@ allDiscoveredKernels registry = concat (Map.elems registry)
 -- Scans the package's src/Elm/Kernel/ directory for .js files and creates
 -- discovery records for each found kernel module.
 --
+-- Packages with the @canopy@ author are skipped entirely — they use the
+-- FFI system instead of kernel JS modules.
+--
 -- ==== Examples
 --
 -- >>> discoveries <- discoverKernelModules Pkg.core "/path/to/elm/core/1.0.5"
@@ -147,6 +150,7 @@ allDiscoveredKernels registry = concat (Map.elems registry)
 --
 -- ==== Discovery Rules
 --
+-- * Skips packages with author @canopy@ (use FFI instead)
 -- * Only scans src/Elm/Kernel/ directory
 -- * Only includes .js files (excluding .server.js variants)
 -- * Module name is "Kernel." + base filename
@@ -154,16 +158,18 @@ allDiscoveredKernels registry = concat (Map.elems registry)
 --
 -- @since 0.19.1
 discoverKernelModules :: Pkg.Name -> FilePath -> IO [KernelModuleDiscovery]
-discoverKernelModules packageName packageDir = do
-  let kernelDir = packageDir </> "src" </> "Elm" </> "Kernel"
-  discoveries <- discoverKernelModulesFromDir kernelDir
-  pure
-    [ d
-        { _discoveryPackage = packageName,
-          _discoveryJsPackage = determineJsPackage packageName
-        }
-      | d <- discoveries
-    ]
+discoverKernelModules packageName packageDir
+  | Pkg._author packageName == Pkg.canopy = pure []
+  | otherwise = do
+      let kernelDir = packageDir </> "src" </> "Elm" </> "Kernel"
+      discoveries <- discoverKernelModulesFromDir kernelDir
+      pure
+        [ d
+            { _discoveryPackage = packageName,
+              _discoveryJsPackage = determineJsPackage packageName
+            }
+          | d <- discoveries
+        ]
 
 -- | Discover kernel modules from a specific Kernel/ directory.
 --

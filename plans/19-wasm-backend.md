@@ -1,8 +1,22 @@
 # Plan 19: WebAssembly Backend
 
-## Priority: MEDIUM — Tier 4
+## Priority: MEDIUM — Tier 3 (elevated from Tier 4)
 ## Effort: 12-16 weeks
 ## Depends on: Stable compiler, Plan 01 (ESM for JS parts)
+
+> **Note (revised):** Elevated from Tier 4 to Tier 3. Key developments since original planning:
+>
+> - **Wasm 3.0** became the W3C standard in September 2025
+> - **WasmGC** shipped in all major browsers — languages with GC (like Canopy) can now compile
+>   to Wasm without shipping their own garbage collector
+> - **Google Sheets** migrated its calculation engine to WasmGC and runs **2x faster** than JS
+> - **Figma** saw **3x load time improvements** with their Wasm-compiled C++ graphics engine
+> - For CPU-intensive tasks, Wasm delivers **5-15x performance improvements** over JavaScript
+>
+> A hybrid JS+Wasm strategy (JS for DOM, Wasm for compute-heavy modules like JSON parsing,
+> data transformation, CRDT merging) would give Canopy a genuine "can't do this in React" story.
+> WasmGC eliminates the GC-shipping problem that previously made this impractical for functional
+> languages.
 
 ## Problem
 

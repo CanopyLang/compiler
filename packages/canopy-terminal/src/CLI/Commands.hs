@@ -10,7 +10,7 @@
 --
 -- * "CLI.Commands.Project" - init, new, setup
 -- * "CLI.Commands.Build" - make, check, reactor
--- * "CLI.Commands.Dev" - repl, fmt, lint, test, docs, audit, upgrade, migrate, bench
+-- * "CLI.Commands.Dev" - repl, fmt, lint, test, docs, audit, upgrade, bench
 -- * "CLI.Commands.Package" - install, publish, bump, diff
 -- * "CLI.Commands.Tools" - test-ffi, webidl, self-update
 --
@@ -34,7 +34,6 @@ module CLI.Commands
     createDocsCommand,
     createAuditCommand,
     createUpgradeCommand,
-    createMigrateCommand,
     createBenchCommand,
 
     -- * Package Commands
@@ -62,7 +61,6 @@ import CLI.Commands.Dev
     createDocsCommand,
     createFmtCommand,
     createLintCommand,
-    createMigrateCommand,
     createReplCommand,
     createTestCommand,
     createUpgradeCommand,

@@ -115,7 +115,6 @@ library
       Make.Parser
       Make.Reproducible
       Make.Types
-      Migrate
       New
       Publish
       Publish.Archive

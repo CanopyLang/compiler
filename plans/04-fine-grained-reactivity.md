@@ -1,8 +1,16 @@
 # Plan 04: Fine-Grained Reactivity Compiler
 
-## Priority: HIGH — Tier 1
+## Priority: MEDIUM — Tier 3 (moved from Tier 1)
 ## Effort: 6-8 weeks
 ## Depends on: Plan 01 (ESM output), Plan 03 (packages)
+
+> **Note (revised):** This was originally Tier 1 but has been moved to Tier 3. Rationale:
+> The VDOM approach (inherited from Elm) already scores ~90 on Lighthouse. SolidJS scores 98,
+> Svelte 5 scores 96. The marginal performance improvement matters for benchmarks but not for
+> adoption. Shipping CanopyKit (Plan 05), TypeScript interop (Plan 12), capabilities (Plan 13),
+> and language ergonomics (Plan 26b) will drive adoption far more than shaving milliseconds off
+> render times. Ship with VDOM first, replace with fine-grained reactivity once the platform is
+> established and we have real users to benchmark against.
 
 ## Problem
 

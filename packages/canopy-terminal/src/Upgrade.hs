@@ -232,11 +232,31 @@ convertJsonContent content =
   foldl applyLazyReplacement content jsonReplacements
 
 -- | Replacements for elm.json → canopy.json conversion.
+--
+-- Covers field renames, author rewrites, and package dependency
+-- rewrites from @elm/*@ to @canopy/*@.
 jsonReplacements :: [(LBS.ByteString, LBS.ByteString)]
 jsonReplacements =
-  [ ("\"elm-version\"", "\"canopy-version\"")
+  [ -- Field renames
+    ("\"elm-version\"", "\"canopy-version\"")
   , ("\"elm-explorations\"", "\"canopy-explorations\"")
   , ("\"elm-stuff\"", "\".canopy-stuff\"")
+    -- Package author rewrites
+  , ("\"elm/core\"", "\"canopy/core\"")
+  , ("\"elm/json\"", "\"canopy/json\"")
+  , ("\"elm/html\"", "\"canopy/html\"")
+  , ("\"elm/browser\"", "\"canopy/browser\"")
+  , ("\"elm/http\"", "\"canopy/http\"")
+  , ("\"elm/url\"", "\"canopy/url\"")
+  , ("\"elm/time\"", "\"canopy/time\"")
+  , ("\"elm/virtual-dom\"", "\"canopy/virtual-dom\"")
+  , ("\"elm/random\"", "\"canopy/random\"")
+  , ("\"elm/bytes\"", "\"canopy/bytes\"")
+  , ("\"elm/file\"", "\"canopy/file\"")
+  , ("\"elm/parser\"", "\"canopy/parser\"")
+  , ("\"elm/regex\"", "\"canopy/regex\"")
+  , ("\"elm/svg\"", "\"canopy/svg\"")
+  , ("\"elm/project-metadata-utils\"", "\"canopy/project-metadata-utils\"")
   ]
 
 -- | Apply a single replacement to lazy ByteString content.

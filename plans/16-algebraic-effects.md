@@ -1,8 +1,20 @@
-# Plan 16: Algebraic Effects
+# Plan 16: Effect Annotations (Simplified Algebraic Effects)
 
 ## Priority: MEDIUM — Tier 3
-## Effort: 10-14 weeks
+## Effort: 6-8 weeks (reduced from 10-14 by shipping annotations-first)
 ## Depends on: Stable compiler (Tiers 0-1)
+
+> **Note (revised):** The full algebraic effects system (effect declarations, handlers,
+> row-polymorphic composition) is research-grade work requiring 10-14 weeks. A simpler
+> first step delivers 80% of the value: **inferred effect annotations** that the compiler
+> tracks and displays, without full user-defined handlers.
+>
+> Phase 1 (6-8 weeks): The compiler infers which effects each function uses and displays
+> them in LSP hover, error messages, and `canopy build` output. This enables SSR auto-splitting
+> (functions without DOM effects can run on the server) and better documentation.
+>
+> Phase 2 (future): Full effect handlers, `effect` declarations, and testing with mock handlers.
+> Deferred until Phase 1 proves valuable and the type system stabilization is complete.
 
 ## Problem
 

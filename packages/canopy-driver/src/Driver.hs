@@ -105,6 +105,8 @@ data CompileResult = CompileResult
   }
 
 -- | Compile a module from file path (simplified).
+--
+-- Uses @\".\"@ as the FFI root directory, suitable for application modules.
 compileModule ::
   Pkg.Name ->
   Map ModuleName.Raw Interface.Interface ->
@@ -115,25 +117,29 @@ compileModule pkg ifaces path projectType = do
   Log.logEvent (CompileStarted path)
 
   engine <- Engine.initEngine
-  result <- compileModuleFull engine pkg ifaces path projectType
+  result <- compileModuleFull engine pkg ifaces "." path projectType
 
   logCacheStats engine
 
   return result
 
 -- | Compile a module with a shared query engine for caching across modules.
--- This variant allows cache reuse across multiple module compilations.
+--
+-- The @ffiRoot@ parameter determines where @foreign import javascript@
+-- paths are resolved from.  Pass the project root for application modules
+-- or the package directory for package dependency modules.
 compileModuleWithEngine ::
   Engine.QueryEngine ->
   Pkg.Name ->
   Map ModuleName.Raw Interface.Interface ->
   FilePath ->
+  FilePath ->
   Parse.ProjectType ->
   IO (Either QueryError CompileResult)
-compileModuleWithEngine engine pkg ifaces path projectType = do
+compileModuleWithEngine engine pkg ifaces ffiRoot path projectType = do
   Log.logEvent (CompileStarted path)
 
-  compileModuleFull engine pkg ifaces path projectType
+  compileModuleFull engine pkg ifaces ffiRoot path projectType
 
 -- | Compile from already-parsed source module.
 --
@@ -148,7 +154,7 @@ compileFromSource pkg ifaces sourceModule = do
   Log.logEvent (CompileStarted "<source>")
 
   engine <- Engine.initEngine
-  ffiContent <- loadFFIContent sourceModule
+  ffiContent <- loadFFIContent "." sourceModule
   let foreignImports = Src._foreignImports sourceModule
       ffiInfoMap = buildFFIInfoMap foreignImports ffiContent
   (canonResult, canonTime) <- timePhase (runCanonicalizePhase engine "<source>" pkg Parse.Application ifaces ffiContent sourceModule)
@@ -200,10 +206,11 @@ compileModuleFull ::
   Pkg.Name ->
   Map ModuleName.Raw Interface.Interface ->
   FilePath ->
+  FilePath ->
   Parse.ProjectType ->
   IO (Either QueryError CompileResult)
-compileModuleFull engine pkg ifaces path projectType = do
-  result <- Timeout.timeout moduleTimeoutMicroseconds (compileModuleCore engine pkg ifaces path projectType)
+compileModuleFull engine pkg ifaces ffiRoot path projectType = do
+  result <- Timeout.timeout moduleTimeoutMicroseconds (compileModuleCore engine pkg ifaces ffiRoot path projectType)
   case result of
     Just compilation -> return compilation
     Nothing -> return (Left (TimeoutError path))
@@ -214,16 +221,17 @@ compileModuleCore ::
   Pkg.Name ->
   Map ModuleName.Raw Interface.Interface ->
   FilePath ->
+  FilePath ->
   Parse.ProjectType ->
   IO (Either QueryError CompileResult)
-compileModuleCore engine pkg ifaces path projectType = do
+compileModuleCore engine pkg ifaces ffiRoot path projectType = do
   Log.logEvent (CompileStarted path)
 
   (parseResult, parseTime) <- timePhase (runParsePhase engine path projectType)
   case parseResult of
     Left err -> return (Left err)
     Right sourceModule -> do
-      ffiContent <- loadFFIContent sourceModule
+      ffiContent <- loadFFIContent ffiRoot sourceModule
       let foreignImports = Src._foreignImports sourceModule
           ffiInfoMap = buildFFIInfoMap foreignImports ffiContent
       (canonResult, canonTime) <- timePhase (runCanonicalizePhase engine path pkg projectType ifaces ffiContent sourceModule)
@@ -268,12 +276,16 @@ runParsePhase engine path projectType = do
   Engine.trackPhaseExecution engine "parse"
   ParseQuery.parseModuleQuery projectType path
 
--- | Load FFI content for module.
-loadFFIContent :: Src.Module -> IO (Map JsSourcePath JsSource)
-loadFFIContent sourceModule = do
+-- | Load FFI content for module, resolving paths relative to the given root.
+--
+-- For application modules the root is typically @\".\"@ (CWD).
+-- For package modules the root is the package's source directory so that
+-- @foreign import javascript \"external\/foo.js\"@ resolves correctly.
+loadFFIContent :: FilePath -> Src.Module -> IO (Map JsSourcePath JsSource)
+loadFFIContent ffiRoot sourceModule = do
   let foreignImports = Src._foreignImports sourceModule
   Log.logEvent (FFILoading "ffi-content")
-  Canonicalize.loadFFIContent foreignImports
+  Canonicalize.loadFFIContentWithRoot ffiRoot foreignImports
 
 -- | Build FFIInfo map from foreign imports and content.
 buildFFIInfoMap :: [Src.ForeignImport] -> Map JsSourcePath JsSource -> Map String JS.FFIInfo
@@ -411,12 +423,16 @@ createTask pkg ifaces (path, projectType) =
     }
 
 -- | Compilation function for worker pool.
+--
+-- Uses @\".\"@ as the FFI root since the worker pool is used for
+-- application modules compiled from the project root.
 compileTaskFn :: Engine.QueryEngine -> Pool.CompileTask -> IO (Either QueryError CompileResult)
 compileTaskFn engine task =
   compileModuleFull
     engine
     (Pool.taskPackage task)
     (Pool.taskInterfaces task)
+    "."
     (Pool.taskFilePath task)
     (Pool.taskProjectType task)
 

@@ -272,7 +272,7 @@ compileFreshTimed ::
   Map.Map ModuleName.Raw Interface.Interface ->
   IO (Either Exit.BuildError (ModuleResult, (ModuleName.Raw, Interface.Interface)))
 compileFreshTimed timingsRef engine cacheRef pkg projType root modName path modImports ifaces = do
-  compilationResult <- Driver.compileModuleWithEngine engine pkg ifaces path projType
+  compilationResult <- Driver.compileModuleWithEngine engine pkg ifaces root path projType
   either
     (return . Left . Exit.BuildCannotCompile . queryErrorToCompileError path)
     (finishCompilationTimed timingsRef cacheRef root modName path modImports ifaces)
@@ -435,7 +435,7 @@ compileFresh ::
   Map.Map ModuleName.Raw Interface.Interface ->
   IO (Either Exit.BuildError (ModuleResult, (ModuleName.Raw, Interface.Interface)))
 compileFresh engine cacheRef pkg projType root modName path modImports ifaces = do
-  compilationResult <- Driver.compileModuleWithEngine engine pkg ifaces path projType
+  compilationResult <- Driver.compileModuleWithEngine engine pkg ifaces root path projType
   either
     (return . Left . Exit.BuildCannotCompile . queryErrorToCompileError path)
     (finishCompilation cacheRef root modName path modImports ifaces)
