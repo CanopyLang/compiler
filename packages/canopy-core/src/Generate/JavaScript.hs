@@ -429,10 +429,12 @@ dispatchNode mode graph currentGlobal addDeps globalInGraph state =
                  else Expr.generate mode expr
        in addStmt baseState (var currentGlobal code)
     Opt.DefineTailFunc argNames body deps ->
-      addStmt (emitMapping currentGlobal (addDeps deps state))
-        (let (Opt.Global _ name) = currentGlobal
-             home = case currentGlobal of Opt.Global h _ -> h
-         in JS.Var (JsName.fromGlobal home name) (Expr.generateTailDefExpr mode name argNames body))
+      let baseState = emitMapping currentGlobal (addDeps deps state)
+          (Opt.Global home name) = currentGlobal
+          expr = if Mode.isCoverage mode
+                 then covTailFuncExpr mode currentGlobal argNames body state
+                 else Expr.generateTailDefExpr mode name argNames body
+       in addStmt baseState (JS.Var (JsName.fromGlobal home name) expr)
     Opt.Ctor index arity ->
       addStmt (emitMapping currentGlobal state) (var currentGlobal (Expr.generateCtor mode currentGlobal index arity))
     Opt.Link linkedGlobal ->
@@ -464,6 +466,15 @@ covDefineCode mode currentGlobal expr state =
     Just baseId ->
       let (code, _nextId) = Expr.generateCov mode baseId expr
        in code
+
+-- | Generate coverage-instrumented expression for a DefineTailFunc node.
+covTailFuncExpr :: Mode.Mode -> Opt.Global -> [Name.Name] -> Opt.Expr -> State -> JS.Expr
+covTailFuncExpr mode currentGlobal argNames body state =
+  case Map.lookup currentGlobal (_coverageBaseIds state) of
+    Nothing -> Expr.generateTailDefExpr mode name argNames body
+    Just baseId -> Expr.generateCovTailDefExpr mode baseId name argNames body
+  where
+    (Opt.Global _ name) = currentGlobal
 
 _addKernelChunks :: Mode.Mode -> Opt.Global -> State -> [Kernel.Chunk] -> State
 _addKernelChunks mode currentGlobal (State revKernels revBuilders seen seenChunks outLine smMappings srcLocs tl covIds) chunks =

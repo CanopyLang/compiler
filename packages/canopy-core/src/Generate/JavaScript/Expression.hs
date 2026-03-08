@@ -15,6 +15,7 @@
 module Generate.JavaScript.Expression
   ( generate,
     generateCov,
+    generateCovTailDefExpr,
     generateCtor,
     generateField,
     generateTailDefExpr,
@@ -37,6 +38,7 @@ import qualified Canopy.Data.Utf8 as Utf8
 import qualified Canopy.ModuleName as ModuleName
 import qualified Canopy.Version as Version
 import qualified Data.IntMap.Strict as IntMap
+import qualified Data.List as List
 import qualified Data.Map.Strict as Map
 import qualified Data.Set as Set
 import qualified Data.Text as Text
@@ -773,45 +775,122 @@ generateCov :: Mode.Mode -> Int -> Opt.Expr -> (Code, Int)
 generateCov mode counter expr =
   case expr of
     Opt.Function args body ->
-      let covStmt = covExprStmt counter
-          (bodyCode, nextCounter) = generateCov mode (counter + 1) body
-          fnCode = generateFunction (fmap JsName.fromLocal args) (JsBlock (covStmt : codeToStmtList bodyCode))
+      let (destructStmts, innerBody) = collectDestructs mode body
+          covStmt = covExprStmt counter
+          (bodyCode, nextCounter) = generateCov mode (counter + 1) innerBody
+          allStmts = destructStmts ++ [covStmt] ++ codeToStmtList bodyCode
+          fnCode = generateFunction (fmap JsName.fromLocal args) (JsBlock allStmts)
        in (fnCode, nextCounter)
     Opt.If branches final ->
       generateCovIf mode counter branches final
     Opt.Let def body ->
-      let defPts = Coverage.countDefPoints def
-          (bodyCode, nextCounter) = generateCov mode (counter + defPts) body
-          defStmt = generateDef mode def
+      let (defStmt, counter') = generateCovDef mode counter def
+          (bodyCode, nextCounter) = generateCov mode counter' body
           allStmts = flattenStatements [defStmt] ++ codeToStmtList bodyCode
        in (toCodeBlock (filter notEmpty allStmts), nextCounter)
+    Opt.Case label root decider jumps ->
+      generateCovCase mode counter label root decider jumps
     Opt.Call func args ->
       let pts = Coverage.countExprPoints func + sum (fmap Coverage.countExprPoints args)
        in (generate mode expr, counter + pts)
-    Opt.Destruct _destructor body ->
-      generateCov mode counter body
+    Opt.Destruct (Opt.Destructor name path) body ->
+      let pathDef = JS.Var (JsName.fromLocal name) (generatePath mode path)
+          (bodyCode, nextCounter) = generateCov mode counter body
+       in (JsBlock (pathDef : codeToStmtList bodyCode), nextCounter)
     _ ->
       (generate mode expr, counter + Coverage.countExprPoints expr)
 
 -- | Generate coverage-instrumented if-expression.
+--
+-- Uses 'List.foldl'' to assign counter IDs left-to-right, matching
+-- the traversal order of 'buildCoverageMap'.
 generateCovIf :: Mode.Mode -> Int -> [(Opt.Expr, Opt.Expr)] -> Opt.Expr -> (Code, Int)
 generateCovIf mode counter branches final =
-  let (branchStmts, counter') = foldr addCovBranch ([], counter) branches
+  let (branchStmts, counter') = List.foldl' addCovBranch ([], counter) branches
       covElse = covExprStmt counter'
       (finalCode, counter'') = generateCov mode (counter' + 1) final
       finalBlock = JS.Block (covElse : codeToStmtList finalCode)
    in (JsBlock [foldr addStmtIf finalBlock branchStmts], counter'')
   where
-    addCovBranch (cond, thenExpr) (acc, c) =
+    addCovBranch (acc, c) (cond, thenExpr) =
       let covStmt = covExprStmt c
           (thenCode, c') = generateCov mode (c + 1) thenExpr
           thenBlock = JsBlock (covStmt : codeToStmtList thenCode)
-       in ((generateJsExpr mode cond, thenBlock) : acc, c')
+       in (acc ++ [(generateJsExpr mode cond, thenBlock)], c')
 
--- | Create a @__cov(N)@ expression statement.
+-- | Generate a coverage-instrumented definition statement.
+--
+-- Recurses into the definition body with 'generateCov' so nested
+-- functions and branches inside let-bindings receive @__cov()@ calls.
+--
+-- @since 0.19.2
+generateCovDef :: Mode.Mode -> Int -> Opt.Def -> (JS.Stmt, Int)
+generateCovDef mode counter def =
+  case def of
+    Opt.Def name body ->
+      let (bodyCode, nextCounter) = generateCov mode counter body
+       in (JS.Var (JsName.fromLocal name) (codeToExpr bodyCode), nextCounter)
+    Opt.TailDef name argNames body ->
+      let (bodyCode, nextCounter) = generateCov mode counter body
+          tailCode = generateTailFunction name (fmap JsName.fromLocal argNames) bodyCode
+       in (JS.Var (JsName.fromLocal name) (codeToExpr tailCode), nextCounter)
+
+-- | Generate a coverage-instrumented case expression.
+--
+-- Uses 'List.foldl'' to assign counter IDs left-to-right for jump targets,
+-- matching the traversal order of 'buildCoverageMap'. The decider itself
+-- uses non-coverage generation since inline leaves are not counted.
+--
+-- @since 0.19.2
+generateCovCase :: Mode.Mode -> Int -> Name.Name -> Name.Name -> Opt.Decider Opt.Choice -> [(Int, Opt.Expr)] -> (Code, Int)
+generateCovCase mode counter label root decider jumps =
+  let (covJumps, finalCounter) = List.foldl' addCovJump ([], counter) jumps
+      deciderStmts = ExprCase.generateDecider generateJsExpr generateStmts mode label root decider
+      allStmts = foldr covGoto deciderStmts covJumps
+   in (JsBlock allStmts, finalCounter)
+  where
+    addCovJump (acc, c) (index, branch) =
+      let covStmt = covExprStmt c
+          (bodyCode, c') = generateCov mode (c + 1) branch
+          branchStmts = covStmt : codeToStmtList bodyCode
+       in (acc ++ [(index, branchStmts)], c')
+    covGoto (index, branchStmts) stmts =
+      JS.Labelled (JsName.makeLabel label index) (JS.While (JS.Bool True) (JS.Block stmts))
+        : branchStmts
+
+-- | Generate a tail-recursive function expression with coverage instrumentation.
+--
+-- @since 0.19.2
+generateCovTailDefExpr :: Mode.Mode -> Int -> Name.Name -> [Name.Name] -> Opt.Expr -> JS.Expr
+generateCovTailDefExpr mode baseId name argNames body =
+  let (bodyCode, _) = generateCov mode baseId body
+   in codeToExpr (generateTailFunction name (fmap JsName.fromLocal argNames) bodyCode)
+
+-- | Collect leading 'Opt.Destruct' nodes from a function body.
+--
+-- When a function parameter is pattern-matched, the optimized AST wraps
+-- the body in 'Opt.Destruct' nodes that extract fields. These must be
+-- emitted before any @__cov()@ call, because the coverage call may
+-- reference variables that the destructuring defines.
+--
+-- @since 0.19.2
+collectDestructs :: Mode.Mode -> Opt.Expr -> ([JS.Stmt], Opt.Expr)
+collectDestructs mode expr =
+  case expr of
+    Opt.Destruct (Opt.Destructor name path) body ->
+      let stmt = JS.Var (JsName.fromLocal name) (generatePath mode path)
+          (rest, inner) = collectDestructs mode body
+       in (stmt : rest, inner)
+    _ -> ([], expr)
+
+-- | Create a @__cov(N)@ expression statement with an explicit semicolon.
+--
+-- Uses 'ExprStmtWithSemi' rather than 'ExprStmt' because the latter relies
+-- on automatic semicolon insertion, which fails when the function body is
+-- rendered on a single line (e.g. @F2(function(f,x){ __cov(0) return …})@).
 covExprStmt :: Int -> JS.Stmt
 covExprStmt covId =
-  JS.ExprStmt
+  JS.ExprStmtWithSemi
     ( JS.Call
         (JS.Ref (JsName.fromLocal (Name.fromChars "__cov")))
         [JS.Int covId]

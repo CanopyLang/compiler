@@ -14,6 +14,7 @@ module Test.Compile
     artifactsToJavaScript,
     artifactsToJavaScriptCov,
     collectMains,
+    detectStaleFFI,
   )
 where
 
@@ -36,8 +37,10 @@ import qualified Data.Maybe as Maybe
 import qualified Data.Set as Set
 import qualified Data.Text as Text
 import qualified Data.Text.Encoding as TextEnc
+import qualified Canopy.Data.Name as Name
 import qualified Generate.JavaScript as JS
 import qualified Generate.JavaScript.Coverage as Coverage
+import qualified Generate.JavaScript.FFI as FFI
 import qualified Generate.Mode as Mode
 import qualified PackageCache
 import Reporting.Doc.ColorQQ (c)
@@ -62,7 +65,7 @@ compileTestFiles ::
   FilePath ->
   [FilePath] ->
   Bool ->
-  IO (Maybe (Text.Text, Map.Map ModuleName.Canonical Opt.Main, Maybe Coverage.CoverageMap))
+  IO (Maybe (Text.Text, Map.Map ModuleName.Canonical Opt.Main, Maybe Coverage.CoverageMap, [(String, FilePath)]))
 compileTestFiles root testFiles coverage = do
   ensureTestDepArtifacts root
   pkg <- resolvePackageName root
@@ -79,8 +82,11 @@ compileTestFiles root testFiles coverage = do
       pure Nothing
     Right artifacts ->
       if coverage
-        then pure (Just (artifactsToJavaScriptCov artifacts))
-        else pure (Just (artifactsToJavaScript artifacts, collectMains artifacts, Nothing))
+        then do
+          let (js, mains, covMap) = artifactsToJavaScriptCov artifacts
+              stale = detectStaleFFI (artifacts ^. Build.artifactsFFIInfo) (artifacts ^. Build.artifactsGlobalGraph)
+          pure (Just (js, mains, covMap, stale))
+        else pure (Just (artifactsToJavaScript artifacts, collectMains artifacts, Nothing, []))
 
 -- | Resolve the package name from the project outline.
 --
@@ -360,3 +366,24 @@ extractMain pkg root =
     Build.Inside _ -> Nothing
     Build.Outside name _ (Opt.LocalGraph maybeMain _ _ _) ->
       fmap (\m -> (ModuleName.Canonical pkg name, m)) maybeMain
+
+-- | Detect FFI functions that are defined but never referenced in the
+-- compiled code.
+--
+-- Compares function names extracted from @\@canopy-type@ annotations in
+-- FFI JavaScript files against the set of globals in the dependency graph.
+-- Any annotated function whose name does not appear as a global is
+-- reported as stale.
+--
+-- @since 0.19.2
+detectStaleFFI :: Map.Map String FFI.FFIInfo -> Opt.GlobalGraph -> [(String, FilePath)]
+detectStaleFFI ffiInfos (Opt.GlobalGraph nodes _ _) =
+  concatMap checkFile (Map.toList ffiInfos)
+  where
+    usedNames = Set.fromList (map globalName (Map.keys nodes))
+    globalName (Opt.Global _ n) = Name.toChars n
+
+    checkFile (path, info) =
+      let functions = FFI.extractCanopyTypeFunctions (Text.lines (FFI._ffiContent info))
+          stale = filter (\(name, _) -> not (Set.member (Text.unpack name) usedNames)) functions
+       in map (\(name, _) -> (Text.unpack name, path)) stale

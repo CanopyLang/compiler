@@ -176,6 +176,7 @@ createTestFlags =
     |-- Terminal.onOff "coverage" "Instrument code and show coverage report after tests."
     |-- Terminal.flag "coverage-format" Test.coverageFormatParser "Coverage output format: istanbul or lcov."
     |-- Terminal.flag "coverage-output" Test.coverageOutputParser "Write coverage report to file."
+    |-- Terminal.flag "min-coverage" Test.minCoverageParser "Minimum coverage percentage required (0-100). Fails if not met."
 
 createDocsFlags :: Terminal.Flags Docs.Flags
 createDocsFlags =

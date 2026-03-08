@@ -56,6 +56,7 @@ module Test
     slowMoParser,
     coverageFormatParser,
     coverageOutputParser,
+    minCoverageParser,
   )
 where
 
@@ -122,7 +123,9 @@ data Flags = Flags
     -- | Coverage output format: istanbul or lcov
     _testCoverageFormat :: !(Maybe String),
     -- | Write coverage report to this file path
-    _testCoverageOutput :: !(Maybe String)
+    _testCoverageOutput :: !(Maybe String),
+    -- | Minimum coverage percentage required (fail if below)
+    _testMinCoverage :: !(Maybe Int)
   }
   deriving (Eq, Show)
 
@@ -242,10 +245,11 @@ compileAndRunWithRoot root testFiles flags = do
     Nothing -> do
       Print.printErrLn [c|{red|Compilation failed.}|]
       pure (ExitFailure 1)
-    Just (jsContent, mains, maybeCovMap) -> do
+    Just (jsContent, mains, maybeCovMap, staleFFI) -> do
       (exitCode, maybeCovData) <- dispatchByTestType jsContent mains testFiles flags
-      handleCoverageOutput flags maybeCovMap maybeCovData
-      pure exitCode
+      thresholdPassed <- handleCoverageOutput flags maybeCovMap maybeCovData
+      reportStaleFFI staleFFI
+      pure (if exitCode == ExitSuccess && not thresholdPassed then ExitFailure 1 else exitCode)
 
 -- ── Test Dispatch ────────────────────────────────────────────────────
 
@@ -479,16 +483,18 @@ when False _ = pure ()
 -- writes an Istanbul JSON or LCOV file.
 --
 -- @since 0.19.2
-handleCoverageOutput :: Flags -> Maybe CoverageMap.CoverageMap -> Maybe Value -> IO ()
+handleCoverageOutput :: Flags -> Maybe CoverageMap.CoverageMap -> Maybe Value -> IO Bool
 handleCoverageOutput flags maybeCovMap maybeCovData =
   case (flags ^. testCoverage, maybeCovMap, maybeCovData) of
     (True, Just covMap, Just covData) -> do
       let hits = Coverage.parseCoverageHits covData
       Coverage.renderTerminalReport covMap hits
       writeCoverageFile flags covMap hits
-    (True, _, Nothing) ->
+      checkMinCoverage flags covMap hits
+    (True, _, Nothing) -> do
       Print.println [c|{yellow|Warning:} Coverage enabled but no coverage data received from test runner.|]
-    _ -> pure ()
+      pure True
+    _ -> pure True
 
 -- | Write a coverage report file if @--coverage-format@ and @--coverage-output@ are set.
 --
@@ -513,6 +519,38 @@ parseCoverageFormatString :: String -> Maybe Coverage.CoverageFormat
 parseCoverageFormatString "istanbul" = Just Coverage.Istanbul
 parseCoverageFormatString "lcov" = Just Coverage.LCOV
 parseCoverageFormatString _ = Nothing
+
+-- | Check the @--min-coverage@ threshold and report pass/fail.
+--
+-- Returns 'True' if the threshold is met or not set.
+--
+-- @since 0.19.2
+checkMinCoverage :: Flags -> CoverageMap.CoverageMap -> Map.Map Int Int -> IO Bool
+checkMinCoverage flags covMap hits =
+  case flags ^. testMinCoverage of
+    Nothing -> pure True
+    Just threshold ->
+      if Coverage.checkThreshold threshold covMap hits
+        then pure True
+        else do
+          let thresholdStr = show threshold
+          Print.printErrLn [c|{red|Error:} Coverage #{thresholdStr}% threshold not met.|]
+          pure False
+
+-- | Print warnings for FFI functions that are defined but never referenced.
+--
+-- @since 0.19.2
+reportStaleFFI :: [(String, FilePath)] -> IO ()
+reportStaleFFI [] = pure ()
+reportStaleFFI stale = do
+  Print.newline
+  let countStr = show (length stale)
+  Print.println [c|  {yellow|Warning:} #{countStr} FFI functions defined but never called:|]
+  mapM_ reportOne stale
+  Print.newline
+  where
+    reportOne (name, path) =
+      Print.println [c|    #{name}  ({dullcyan|#{path}})|]
 
 -- ── CLI Parsers ──────────────────────────────────────────────────────
 
@@ -626,6 +664,34 @@ suggestCoverageOutput _ = pure ["coverage.json", "coverage.lcov"]
 -- | Provide example coverage output paths.
 exampleCoverageOutput :: String -> IO [String]
 exampleCoverageOutput _ = pure ["coverage.json", "coverage.lcov"]
+
+-- | Parser for the @--min-coverage@ flag.
+--
+-- @since 0.19.2
+minCoverageParser :: Terminal.Parser Int
+minCoverageParser =
+  Terminal.Parser
+    { Terminal._singular = "percentage",
+      Terminal._plural = "percentages",
+      Terminal._parser = parseMinCoverage,
+      Terminal._suggest = suggestMinCoverage,
+      Terminal._examples = exampleMinCoverage
+    }
+
+-- | Parse a min-coverage percentage (0-100).
+parseMinCoverage :: String -> Maybe Int
+parseMinCoverage s =
+  case readMaybe s of
+    Just n | n >= 0 && n <= 100 -> Just n
+    _ -> Nothing
+
+-- | Suggest min-coverage values.
+suggestMinCoverage :: String -> IO [String]
+suggestMinCoverage _ = pure ["80", "90", "100"]
+
+-- | Provide example min-coverage values.
+exampleMinCoverage :: String -> IO [String]
+exampleMinCoverage _ = pure ["80", "90"]
 
 -- | Set the @CANOPY_TEST_FILTER@ environment variable for the Node.js
 -- test harness. When 'Nothing', unsets the variable to ensure a clean

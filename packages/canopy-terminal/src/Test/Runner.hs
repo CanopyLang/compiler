@@ -31,6 +31,7 @@ import qualified Control.Concurrent as Concurrent
 import qualified Control.Exception as Exception
 import qualified Data.Aeson as Aeson
 import Data.Aeson (Value)
+import qualified Data.Aeson.KeyMap as KM
 import qualified Data.ByteString.Char8 as BS
 import qualified Data.List as List
 import Reporting.Doc.ColorQQ (c)
@@ -180,10 +181,17 @@ streamStdout hOut = go False Nothing
         else do
           line <- BS.hGetLine hOut
           (isSummary, maybeCov) <- handleOutputLine line
-          go (sawSummary || isSummary) (maybeCov `orElse` covData)
+          go (sawSummary || isSummary) (mergeCov maybeCov covData)
 
-    orElse (Just x) _ = Just x
-    orElse Nothing  y = y
+    mergeCov Nothing existing = existing
+    mergeCov (Just new) Nothing = Just new
+    mergeCov (Just new) (Just existing) = Just (mergeValues existing new)
+
+    mergeValues (Aeson.Object a) (Aeson.Object b) = Aeson.Object (KM.unionWith addNumbers a b)
+    mergeValues _ b = b
+
+    addNumbers (Aeson.Number x) (Aeson.Number y) = Aeson.Number (x + y)
+    addNumbers _ y = y
 
 -- | Parse a single stdout line as NDJSON or pass through as plain text.
 --

@@ -42,7 +42,12 @@ tests =
       lcovFormatTests,
       istanbulJsonTests,
       modeCoverageTests,
-      generateCovTests
+      generateCovTests,
+      caseInstrumentationTests,
+      letDefInstrumentationTests,
+      counterConsistencyTests,
+      lcovStructureTests,
+      istanbulStructureTests
     ]
 
 -- HELPERS
@@ -236,7 +241,7 @@ preambleTests =
          in assertBool "should end with newline" (last p == '\n'),
       testCase "preamble exact content" $
         renderBuilder Coverage.coverageRuntimePreamble
-          @?= "var __canopy_cov = {}; function __cov(id) { __canopy_cov[id] = (__canopy_cov[id] || 0) + 1; }\n"
+          @?= "var __canopy_cov = {}; function __cov(id) { __canopy_cov[id] = (__canopy_cov[id] || 0) + 1; } (typeof globalThis !== 'undefined' ? globalThis : (typeof global !== 'undefined' ? global : self)).__canopy_cov = __canopy_cov;\n"
     ]
 
 -- For assertBool with isInfixOf
@@ -375,7 +380,7 @@ istanbulJsonTests =
             rendered = renderBuilder (Encode.encode (Coverage.toIstanbulJson covMap hits))
          in do
               assertBool "fnMap has entry" ("fnMap" `isInfixOf` rendered)
-              assertBool "function name foo" ("foo" `isInfixOf` rendered),
+              assertBool "qualified name Main.foo" ("Main.foo" `isInfixOf` rendered),
       testCase "BranchArm appears in branchMap and b" $
         let pt = Coverage.CoveragePoint 0 (nameStr "Main") (nameStr "bar") (mkRegion 7 1 12 1) (Coverage.BranchArm 0 2)
             covMap = Coverage.CoverageMap (Map.singleton 0 pt)
@@ -461,3 +466,189 @@ generateCovTests =
             (_, nextId) = Expr.generateCov devModeWithCoverage 0 expr
          in nextId @?= 4
     ]
+
+-- CASE INSTRUMENTATION TESTS
+
+caseExpr2Jumps :: Opt.Expr
+caseExpr2Jumps =
+  Opt.Case (nameStr "l") (nameStr "r") (Opt.Leaf (Opt.Jump 0)) [(0, leafExpr), (1, leafExpr)]
+
+caseInstrumentationTests :: TestTree
+caseInstrumentationTests =
+  testGroup
+    "Case instrumentation"
+    [ testCase "generateCov on Case with 2 jumps increments by 2" $
+        let (_, nextId) = Expr.generateCov devModeWithCoverage 0 caseExpr2Jumps
+         in nextId @?= 2,
+      testCase "generateCov on Case with 0 jumps returns same counter" $
+        let expr = Opt.Case (nameStr "l") (nameStr "r") (Opt.Leaf (Opt.Inline leafExpr)) []
+            (_, nextId) = Expr.generateCov devModeWithCoverage 0 expr
+         in nextId @?= 0,
+      testCase "generateCov on Case with function in jump accumulates points" $
+        let expr = Opt.Case (nameStr "l") (nameStr "r") (Opt.Leaf (Opt.Jump 0)) [(0, funcExpr)]
+            (_, nextId) = Expr.generateCov devModeWithCoverage 0 expr
+         in nextId @?= 2,
+      testCase "Case counter IDs match buildCoverageMap" $
+        let g = mkGlobal "Main" "caseFunc"
+            expr = Opt.Function [nameStr "x"] caseExpr2Jumps
+            graph = Map.singleton g (Opt.Define expr Set.empty)
+            locs = Map.singleton g (mkRegion 1 1 10 1)
+            Coverage.CoverageMap points = Coverage.buildCoverageMap graph locs
+            (_, genCounter) = Expr.generateCov devModeWithCoverage 0 expr
+         in do
+              Map.size points @?= genCounter
+              assertBool "IDs are sequential" (Map.keys points == [0 .. genCounter - 1])
+    ]
+
+-- LET DEF INSTRUMENTATION TESTS
+
+letDefInstrumentationTests :: TestTree
+letDefInstrumentationTests =
+  testGroup
+    "Let def instrumentation"
+    [ testCase "Let with Def containing function includes function point" $
+        let letExpr = Opt.Let (Opt.Def (nameStr "f") funcExpr) leafExpr
+            (_, nextId) = Expr.generateCov devModeWithCoverage 0 letExpr
+         in nextId @?= 1,
+      testCase "Let with TailDef containing function includes function point" $
+        let letExpr = Opt.Let (Opt.TailDef (nameStr "f") [nameStr "a"] funcExpr) leafExpr
+            (_, nextId) = Expr.generateCov devModeWithCoverage 0 letExpr
+         in nextId @?= 1,
+      testCase "Let with nested if in def body counts all branch points" $
+        let letExpr = Opt.Let (Opt.Def (nameStr "f") (Opt.Function [nameStr "x"] ifExpr)) leafExpr
+            (_, nextId) = Expr.generateCov devModeWithCoverage 0 letExpr
+         in nextId @?= 4
+    ]
+
+-- COUNTER ID CONSISTENCY TESTS
+
+counterConsistencyTests :: TestTree
+counterConsistencyTests =
+  testGroup
+    "Counter ID consistency"
+    [ testCase "If with 3 branches: IDs 0,1,2,3 (3 branches + else)" $
+        let expr = Opt.If [(Opt.Bool True, leafExpr), (Opt.Bool False, leafExpr), (Opt.Bool True, leafExpr)] leafExpr
+            g = mkGlobal "Main" "ifFunc"
+            graph = Map.singleton g (Opt.Define expr Set.empty)
+            locs = Map.singleton g (mkRegion 1 1 10 1)
+            Coverage.CoverageMap points = Coverage.buildCoverageMap graph locs
+            (_, genCounter) = Expr.generateCov devModeWithCoverage 0 expr
+         in do
+              Map.size points @?= 4
+              genCounter @?= 4
+              Map.keys points @?= [0, 1, 2, 3],
+      testCase "Case with 3 jumps: IDs 0,1,2" $
+        let expr = Opt.Case (nameStr "l") (nameStr "r") (Opt.Leaf (Opt.Jump 0)) [(0, leafExpr), (1, leafExpr), (2, leafExpr)]
+            g = mkGlobal "Main" "caseFunc"
+            graph = Map.singleton g (Opt.Define expr Set.empty)
+            locs = Map.singleton g (mkRegion 1 1 10 1)
+            Coverage.CoverageMap points = Coverage.buildCoverageMap graph locs
+            (_, genCounter) = Expr.generateCov devModeWithCoverage 0 expr
+         in do
+              Map.size points @?= 3
+              genCounter @?= 3
+              Map.keys points @?= [0, 1, 2],
+      testCase "Function(If(Case)) all IDs sequential" $
+        let innerCase = Opt.Case (nameStr "l") (nameStr "r") (Opt.Leaf (Opt.Jump 0)) [(0, leafExpr)]
+            expr = Opt.Function [nameStr "x"] (Opt.If [(Opt.Bool True, innerCase)] leafExpr)
+            g = mkGlobal "Main" "nested"
+            graph = Map.singleton g (Opt.Define expr Set.empty)
+            locs = Map.singleton g (mkRegion 1 1 10 1)
+            Coverage.CoverageMap points = Coverage.buildCoverageMap graph locs
+            (_, genCounter) = Expr.generateCov devModeWithCoverage 0 expr
+         in do
+              Map.size points @?= genCounter
+              assertBool "no gaps in IDs" (Map.keys points == [0 .. genCounter - 1]),
+      testCase "countExprPoints matches map size" $
+        let expr = Opt.Function [nameStr "x"] (Opt.If [(Opt.Bool True, funcExpr)] leafExpr)
+            g = mkGlobal "Main" "cep"
+            graph = Map.singleton g (Opt.Define expr Set.empty)
+            locs = Map.singleton g (mkRegion 1 1 10 1)
+            Coverage.CoverageMap points = Coverage.buildCoverageMap graph locs
+         in Coverage.countExprPoints expr @?= Map.size points
+    ]
+
+-- LCOV STRUCTURE TESTS
+
+lcovStructureTests :: TestTree
+lcovStructureTests =
+  testGroup
+    "LCOV structure"
+    [ testCase "output contains TN: header" $
+        let result = renderLcovWithFunction
+         in assertBool "TN: line" ("TN:" `isInfixOf` result),
+      testCase "output contains SF: with module name" $
+        let result = renderLcovWithFunction
+         in assertBool "SF:Main.can" ("SF:Main.can" `isInfixOf` result),
+      testCase "output contains end_of_record" $
+        let result = renderLcovWithFunction
+         in assertBool "end_of_record" ("end_of_record" `isInfixOf` result),
+      testCase "output contains FNF and FNH" $
+        let result = renderLcovWithFunction
+         in do
+              assertBool "FNF:" ("FNF:" `isInfixOf` result)
+              assertBool "FNH:" ("FNH:" `isInfixOf` result),
+      testCase "output contains BRF and BRH" $
+        let result = renderLcovWithBranch
+         in do
+              assertBool "BRF:" ("BRF:" `isInfixOf` result)
+              assertBool "BRH:" ("BRH:" `isInfixOf` result),
+      testCase "output contains LF and LH" $
+        let result = renderLcovWithFunction
+         in do
+              assertBool "LF:" ("LF:" `isInfixOf` result)
+              assertBool "LH:" ("LH:" `isInfixOf` result),
+      testCase "multi-module output has separate records" $
+        let pt1 = Coverage.CoveragePoint 0 (nameStr "Main") (nameStr "foo") (mkRegion 1 1 5 1) Coverage.FunctionEntry
+            pt2 = Coverage.CoveragePoint 1 (nameStr "Utils") (nameStr "bar") (mkRegion 2 1 8 1) Coverage.FunctionEntry
+            covMap = Coverage.CoverageMap (Map.fromList [(0, pt1), (1, pt2)])
+            result = renderBuilder (Coverage.toLCOV covMap Map.empty)
+         in do
+              assertBool "SF:Main.can" ("SF:Main.can" `isInfixOf` result)
+              assertBool "SF:Utils.can" ("SF:Utils.can" `isInfixOf` result)
+              let recordCount = length (filter (== "end_of_record") (lines result))
+              recordCount @?= 2
+    ]
+  where
+    renderLcovWithFunction =
+      let pt = Coverage.CoveragePoint 0 (nameStr "Main") (nameStr "foo") (mkRegion 5 1 10 1) Coverage.FunctionEntry
+          covMap = Coverage.CoverageMap (Map.singleton 0 pt)
+       in renderBuilder (Coverage.toLCOV covMap (Map.singleton 0 3))
+    renderLcovWithBranch =
+      let pt = Coverage.CoveragePoint 0 (nameStr "Main") (nameStr "bar") (mkRegion 7 1 12 1) (Coverage.BranchArm 0 2)
+          covMap = Coverage.CoverageMap (Map.singleton 0 pt)
+       in renderBuilder (Coverage.toLCOV covMap (Map.singleton 0 5))
+
+-- ISTANBUL STRUCTURE TESTS
+
+istanbulStructureTests :: TestTree
+istanbulStructureTests =
+  testGroup
+    "Istanbul structure"
+    [ testCase "all 6 required keys present" $
+        let rendered = renderIstanbul
+         in do
+              assertBool "fnMap" ("fnMap" `isInfixOf` rendered)
+              assertBool "f" ("\"f\"" `isInfixOf` rendered)
+              assertBool "branchMap" ("branchMap" `isInfixOf` rendered)
+              assertBool "b" ("\"b\"" `isInfixOf` rendered)
+              assertBool "s" ("\"s\"" `isInfixOf` rendered)
+              assertBool "statementMap" ("statementMap" `isInfixOf` rendered),
+      testCase "function names are module-qualified" $
+        let pt = Coverage.CoveragePoint 0 (nameStr "Utils") (nameStr "helper") (mkRegion 3 1 8 1) Coverage.FunctionEntry
+            covMap = Coverage.CoverageMap (Map.singleton 0 pt)
+            rendered = renderBuilder (Encode.encode (Coverage.toIstanbulJson covMap Map.empty))
+         in assertBool "Utils.helper" ("Utils.helper" `isInfixOf` rendered),
+      testCase "loc objects have start/end with line/column" $
+        let rendered = renderIstanbul
+         in do
+              assertBool "start" ("start" `isInfixOf` rendered)
+              assertBool "end" ("end" `isInfixOf` rendered)
+              assertBool "line" ("line" `isInfixOf` rendered)
+              assertBool "column" ("column" `isInfixOf` rendered)
+    ]
+  where
+    renderIstanbul =
+      let pt = Coverage.CoveragePoint 0 (nameStr "Main") (nameStr "foo") (mkRegion 5 1 10 1) Coverage.FunctionEntry
+          covMap = Coverage.CoverageMap (Map.singleton 0 pt)
+       in renderBuilder (Encode.encode (Coverage.toIstanbulJson covMap (Map.singleton 0 1)))

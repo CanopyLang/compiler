@@ -28,6 +28,7 @@ module Generate.JavaScript.Coverage
     covCall,
     toIstanbulJson,
     toLCOV,
+    groupByModule,
   )
 where
 
@@ -243,12 +244,14 @@ computeBaseIds graph =
 
 -- | JavaScript preamble that initializes coverage counters.
 --
--- Emits: @var __canopy_cov = {}; function __cov(id) { __canopy_cov[id] = (__canopy_cov[id] || 0) + 1; }@
+-- Declares @__canopy_cov@ locally and also assigns it to @globalThis@ so the
+-- test harness bootstrap (which runs outside the compiled module's IIFE scope)
+-- can read the hit data after tests complete.
 --
 -- @since 0.19.2
 coverageRuntimePreamble :: Builder
 coverageRuntimePreamble =
-  BB.stringUtf8 "var __canopy_cov = {}; function __cov(id) { __canopy_cov[id] = (__canopy_cov[id] || 0) + 1; }\n"
+  BB.stringUtf8 "var __canopy_cov = {}; function __cov(id) { __canopy_cov[id] = (__canopy_cov[id] || 0) + 1; } (typeof globalThis !== 'undefined' ? globalThis : (typeof global !== 'undefined' ? global : self)).__canopy_cov = __canopy_cov;\n"
 
 -- | Generate a @__cov(N)@ call statement as a JS expression statement.
 --
@@ -282,10 +285,10 @@ toIstanbulJson (CoverageMap points) hits =
 
 -- | Encode a function entry for Istanbul fnMap.
 encodeFnEntry :: (Int, CoveragePoint) -> (Json.String, Encode.Value)
-encodeFnEntry (k, CoveragePoint _ _modName defName region _) =
+encodeFnEntry (k, CoveragePoint _ modName defName region _) =
   ( Json.fromChars (show k),
     Encode.object
-      [ "name" ==> Encode.chars (Name.toChars defName),
+      [ "name" ==> Encode.chars (Name.toChars modName ++ "." ++ Name.toChars defName),
         "loc" ==> encodeRegion region
       ]
   )
@@ -320,46 +323,93 @@ encodeRegion (Ann.Region (Ann.Position startLine startCol) (Ann.Position endLine
 
 -- | Convert a coverage map and hit data to LCOV format.
 --
+-- Groups points by module and emits a complete LCOV record per module
+-- with TN, SF, FN, FNDA, FNF, FNH, BRDA, BRF, BRH, DA, LF, LH,
+-- and end_of_record.
+--
 -- @since 0.19.2
 toLCOV :: CoverageMap -> Map.Map Int Int -> Builder
 toLCOV (CoverageMap points) hits =
-  Map.foldlWithKey' appendLine mempty points
+  Map.foldlWithKey' emitModule mempty (groupByModule points)
   where
-    appendLine acc covId (CoveragePoint _ modName defName region covType) =
-      acc <> formatLCOVLine modName defName region covType (Map.findWithDefault 0 covId hits)
+    emitModule acc modName modPoints =
+      acc <> emitModuleRecord modName modPoints hits
 
--- | Format a single LCOV line.
-formatLCOVLine :: Name.Name -> Name.Name -> Ann.Region -> CoveragePointType -> Int -> Builder
-formatLCOVLine modName defName (Ann.Region (Ann.Position line _) _) covType hitCount =
-  case covType of
-    FunctionEntry ->
-      BB.stringUtf8 "FN:"
-        <> BB.intDec (fromIntegral line)
-        <> BB.char7 ','
-        <> BB.stringUtf8 (Name.toChars modName)
-        <> BB.char7 '.'
-        <> BB.stringUtf8 (Name.toChars defName)
-        <> BB.char7 '\n'
-        <> BB.stringUtf8 "FNDA:"
-        <> BB.intDec hitCount
-        <> BB.char7 ','
-        <> BB.stringUtf8 (Name.toChars modName)
-        <> BB.char7 '.'
-        <> BB.stringUtf8 (Name.toChars defName)
-        <> BB.char7 '\n'
-    BranchArm branchIdx _total ->
-      BB.stringUtf8 "BRDA:"
-        <> BB.intDec (fromIntegral line)
-        <> BB.char7 ','
-        <> BB.intDec 0
-        <> BB.char7 ','
-        <> BB.intDec branchIdx
-        <> BB.char7 ','
-        <> BB.intDec hitCount
-        <> BB.char7 '\n'
-    TopLevelDef ->
-      BB.stringUtf8 "DA:"
-        <> BB.intDec (fromIntegral line)
-        <> BB.char7 ','
-        <> BB.intDec hitCount
-        <> BB.char7 '\n'
+-- | Group coverage points by their module name.
+groupByModule :: Map.Map Int CoveragePoint -> Map.Map Name.Name [(Int, CoveragePoint)]
+groupByModule = Map.foldlWithKey' addToModule Map.empty
+  where
+    addToModule acc covId pt =
+      Map.insertWith (++) (_covModule pt) [(covId, pt)] acc
+
+-- | Emit a complete LCOV record for one module.
+emitModuleRecord :: Name.Name -> [(Int, CoveragePoint)] -> Map.Map Int Int -> Builder
+emitModuleRecord modName pts hits =
+  BB.stringUtf8 "TN:\n"
+    <> BB.stringUtf8 "SF:" <> BB.stringUtf8 (Name.toChars modName) <> BB.stringUtf8 ".can\n"
+    <> emitFunctionLines fnPts hits
+    <> emitFunctionSummary fnPts hits
+    <> emitBranchLines brPts hits
+    <> emitBranchSummary brPts hits
+    <> emitLineData pts hits
+    <> emitLineSummary pts hits
+    <> BB.stringUtf8 "end_of_record\n"
+  where
+    fnPts = filter (isFnEntry . snd) pts
+    brPts = filter (isBrArm . snd) pts
+    isFnEntry (CoveragePoint _ _ _ _ FunctionEntry) = True
+    isFnEntry _ = False
+    isBrArm (CoveragePoint _ _ _ _ (BranchArm _ _)) = True
+    isBrArm _ = False
+
+-- | Emit FN and FNDA lines for all functions in a module.
+emitFunctionLines :: [(Int, CoveragePoint)] -> Map.Map Int Int -> Builder
+emitFunctionLines fnPts hits = foldMap emitOne fnPts
+  where
+    emitOne (covId, CoveragePoint _ modN defN (Ann.Region (Ann.Position line _) _) _) =
+      let qname = Name.toChars modN ++ "." ++ Name.toChars defN
+          hitCount = Map.findWithDefault 0 covId hits
+       in BB.stringUtf8 "FN:" <> BB.intDec (fromIntegral line) <> BB.char7 ',' <> BB.stringUtf8 qname <> BB.char7 '\n'
+            <> BB.stringUtf8 "FNDA:" <> BB.intDec hitCount <> BB.char7 ',' <> BB.stringUtf8 qname <> BB.char7 '\n'
+
+-- | Emit FNF and FNH summary lines.
+emitFunctionSummary :: [(Int, CoveragePoint)] -> Map.Map Int Int -> Builder
+emitFunctionSummary fnPts hits =
+  BB.stringUtf8 "FNF:" <> BB.intDec (length fnPts) <> BB.char7 '\n'
+    <> BB.stringUtf8 "FNH:" <> BB.intDec (countHit fnPts hits) <> BB.char7 '\n'
+
+-- | Emit BRDA lines for all branches in a module.
+emitBranchLines :: [(Int, CoveragePoint)] -> Map.Map Int Int -> Builder
+emitBranchLines brPts hits = foldMap emitOne (zip [0 :: Int ..] brPts)
+  where
+    emitOne (blockNum, (covId, CoveragePoint _ _ _ (Ann.Region (Ann.Position line _) _) (BranchArm brIdx _))) =
+      BB.stringUtf8 "BRDA:" <> BB.intDec (fromIntegral line) <> BB.char7 ','
+        <> BB.intDec blockNum <> BB.char7 ',' <> BB.intDec brIdx <> BB.char7 ','
+        <> BB.intDec (Map.findWithDefault 0 covId hits) <> BB.char7 '\n'
+    emitOne _ = mempty
+
+-- | Emit BRF and BRH summary lines.
+emitBranchSummary :: [(Int, CoveragePoint)] -> Map.Map Int Int -> Builder
+emitBranchSummary brPts hits =
+  BB.stringUtf8 "BRF:" <> BB.intDec (length brPts) <> BB.char7 '\n'
+    <> BB.stringUtf8 "BRH:" <> BB.intDec (countHit brPts hits) <> BB.char7 '\n'
+
+-- | Emit DA lines for all points (one per unique source line).
+emitLineData :: [(Int, CoveragePoint)] -> Map.Map Int Int -> Builder
+emitLineData pts hits = foldMap emitOne pts
+  where
+    emitOne (covId, CoveragePoint _ _ _ (Ann.Region (Ann.Position line _) _) _) =
+      BB.stringUtf8 "DA:" <> BB.intDec (fromIntegral line) <> BB.char7 ','
+        <> BB.intDec (Map.findWithDefault 0 covId hits) <> BB.char7 '\n'
+
+-- | Emit LF and LH summary lines.
+emitLineSummary :: [(Int, CoveragePoint)] -> Map.Map Int Int -> Builder
+emitLineSummary pts hits =
+  BB.stringUtf8 "LF:" <> BB.intDec (length pts) <> BB.char7 '\n'
+    <> BB.stringUtf8 "LH:" <> BB.intDec (countHit pts hits) <> BB.char7 '\n'
+
+-- | Count how many points have hit count > 0.
+countHit :: [(Int, CoveragePoint)] -> Map.Map Int Int -> Int
+countHit pts hits = length (filter isHit pts)
+  where
+    isHit (covId, _) = Map.findWithDefault 0 covId hits > 0

@@ -13,9 +13,11 @@ module Test.Coverage
     parseCoverageHits,
     renderTerminalReport,
     writeReport,
+    checkThreshold,
   )
 where
 
+import qualified Canopy.Data.Name as Name
 import qualified Data.Aeson as Aeson
 import qualified Data.Aeson.Key as Key
 import qualified Data.Aeson.KeyMap as KM
@@ -59,7 +61,7 @@ parseCoverageHits (Aeson.Object obj) =
     extractInt _ = Nothing
 parseCoverageHits _ = Map.empty
 
--- | Print a colored coverage summary table to the terminal.
+-- | Print a colored per-module coverage table to the terminal.
 --
 -- @since 0.19.2
 renderTerminalReport :: Coverage.CoverageMap -> Map.Map Int Int -> IO ()
@@ -67,16 +69,56 @@ renderTerminalReport (Coverage.CoverageMap points) hits = do
   Print.newline
   Print.println [c|{bold|-- COVERAGE REPORT}|]
   Print.newline
-  let totalPoints = Map.size points
-      coveredPoints = Map.size (Map.filter (> 0) (Map.intersectionWith const hits points))
-      pct = if totalPoints == 0 then 100.0 else (fromIntegral coveredPoints / fromIntegral totalPoints * 100.0 :: Double)
-      pctStr = show (round pct :: Int) ++ "%"
-      covStr = show coveredPoints
-      totalStr = show totalPoints
-  if pct >= 80.0
-    then Print.println [c|  Coverage: {green|#{pctStr}} (#{covStr}/#{totalStr} points)|]
-    else Print.println [c|  Coverage: {yellow|#{pctStr}} (#{covStr}/#{totalStr} points)|]
+  mapM_ renderModuleLine (Map.toAscList moduleStats)
   Print.newline
+  renderTotalLine totalCovered totalPoints
+  Print.newline
+  where
+    grouped = Coverage.groupByModule points
+    moduleStats = Map.map computeStats grouped
+    computeStats modPts =
+      let total = length modPts
+          covered = length (filter isHit modPts)
+       in (covered, total)
+    isHit (covId, _) = Map.findWithDefault 0 covId hits > 0
+    totalPoints = Map.size points
+    totalCovered = Map.size (Map.filter (> 0) (Map.intersectionWith const hits points))
+
+-- | Render a single module line with color based on coverage percentage.
+renderModuleLine :: (Name.Name, (Int, Int)) -> IO ()
+renderModuleLine (modName, (covered, total)) = do
+  let pct = if total == 0 then 100 else (covered * 100) `div` total
+      modStr = Name.toChars modName
+      pctStr = show pct ++ "%"
+      countStr = show covered ++ "/" ++ show total
+  if pct >= 80
+    then Print.println [c|  #{modStr}  {green|#{pctStr}} (#{countStr})|]
+    else if pct >= 50
+      then Print.println [c|  #{modStr}  {yellow|#{pctStr}} (#{countStr})|]
+      else Print.println [c|  #{modStr}  {red|#{pctStr}} (#{countStr})|]
+
+-- | Render the total coverage line.
+renderTotalLine :: Int -> Int -> IO ()
+renderTotalLine covered total = do
+  let pct = if total == 0 then 100 else (covered * 100) `div` total
+      pctStr = show pct ++ "%"
+      covStr = show covered
+      totalStr = show total
+  Print.println [c|  {bold|Total: #{pctStr}} (#{covStr}/#{totalStr} points)|]
+
+-- | Check whether coverage meets the given threshold percentage.
+--
+-- Returns 'True' if the overall coverage percentage is at or above the
+-- threshold.
+--
+-- @since 0.19.2
+checkThreshold :: Int -> Coverage.CoverageMap -> Map.Map Int Int -> Bool
+checkThreshold threshold (Coverage.CoverageMap points) hits =
+  pct >= threshold
+  where
+    totalPoints = Map.size points
+    coveredPoints = Map.size (Map.filter (> 0) (Map.intersectionWith const hits points))
+    pct = if totalPoints == 0 then 100 else (coveredPoints * 100) `div` totalPoints
 
 -- | Write a coverage report to a file in the specified format.
 --
