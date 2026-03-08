@@ -62,6 +62,7 @@ where
 
 import qualified AST.Optimized as Opt
 import qualified Canopy.ModuleName as ModuleName
+import qualified Canopy.Package as Pkg
 import Control.Lens ((^.))
 import Control.Lens.TH (makeLenses)
 import qualified Control.Concurrent as Concurrent
@@ -245,9 +246,9 @@ compileAndRunWithRoot root testFiles flags = do
     Nothing -> do
       Print.printErrLn [c|{red|Compilation failed.}|]
       pure (ExitFailure 1)
-    Just (jsContent, mains, maybeCovMap, staleFFI) -> do
+    Just (jsContent, mains, maybeCovMap, staleFFI, pkgName) -> do
       (exitCode, maybeCovData) <- dispatchByTestType jsContent mains testFiles flags
-      thresholdPassed <- handleCoverageOutput flags maybeCovMap maybeCovData
+      thresholdPassed <- handleCoverageOutput flags (Just pkgName) maybeCovMap maybeCovData
       reportStaleFFI staleFFI
       pure (if exitCode == ExitSuccess && not thresholdPassed then ExitFailure 1 else exitCode)
 
@@ -483,14 +484,14 @@ when False _ = pure ()
 -- writes an Istanbul JSON or LCOV file.
 --
 -- @since 0.19.2
-handleCoverageOutput :: Flags -> Maybe CoverageMap.CoverageMap -> Maybe Value -> IO Bool
-handleCoverageOutput flags maybeCovMap maybeCovData =
+handleCoverageOutput :: Flags -> Maybe Pkg.Name -> Maybe CoverageMap.CoverageMap -> Maybe Value -> IO Bool
+handleCoverageOutput flags maybePkg maybeCovMap maybeCovData =
   case (flags ^. testCoverage, maybeCovMap, maybeCovData) of
     (True, Just covMap, Just covData) -> do
       let hits = Coverage.parseCoverageHits covData
-      Coverage.renderTerminalReport covMap hits
+      Coverage.renderTerminalReport maybePkg covMap hits
       writeCoverageFile flags covMap hits
-      checkMinCoverage flags covMap hits
+      checkMinCoverage flags maybePkg covMap hits
     (True, _, Nothing) -> do
       Print.println [c|{yellow|Warning:} Coverage enabled but no coverage data received from test runner.|]
       pure True
@@ -525,12 +526,12 @@ parseCoverageFormatString _ = Nothing
 -- Returns 'True' if the threshold is met or not set.
 --
 -- @since 0.19.2
-checkMinCoverage :: Flags -> CoverageMap.CoverageMap -> Map.Map Int Int -> IO Bool
-checkMinCoverage flags covMap hits =
+checkMinCoverage :: Flags -> Maybe Pkg.Name -> CoverageMap.CoverageMap -> Map.Map Int Int -> IO Bool
+checkMinCoverage flags maybePkg covMap hits =
   case flags ^. testMinCoverage of
     Nothing -> pure True
     Just threshold ->
-      if Coverage.checkThreshold threshold covMap hits
+      if Coverage.checkThreshold threshold maybePkg covMap hits
         then pure True
         else do
           let thresholdStr = show threshold

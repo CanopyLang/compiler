@@ -24,6 +24,7 @@ import qualified Data.Aeson.KeyMap as KM
 import qualified Data.ByteString.Builder as BB
 import qualified Data.ByteString.Lazy as LBS
 import qualified Data.Map.Strict as Map
+import qualified Canopy.Package as Pkg
 import qualified Generate.JavaScript.Coverage as Coverage
 import qualified Json.Encode as Encode
 import Reporting.Doc.ColorQQ (c)
@@ -63,9 +64,12 @@ parseCoverageHits _ = Map.empty
 
 -- | Print a colored per-module coverage table to the terminal.
 --
+-- When a 'Pkg.Name' is provided, the report is filtered to only show
+-- modules belonging to that package, excluding transitive dependencies.
+--
 -- @since 0.19.2
-renderTerminalReport :: Coverage.CoverageMap -> Map.Map Int Int -> IO ()
-renderTerminalReport (Coverage.CoverageMap points) hits = do
+renderTerminalReport :: Maybe Pkg.Name -> Coverage.CoverageMap -> Map.Map Int Int -> IO ()
+renderTerminalReport maybePkg rawCovMap hits = do
   Print.newline
   Print.println [c|{bold|-- COVERAGE REPORT}|]
   Print.newline
@@ -74,6 +78,7 @@ renderTerminalReport (Coverage.CoverageMap points) hits = do
   renderTotalLine totalCovered totalPoints
   Print.newline
   where
+    (Coverage.CoverageMap points) = maybe rawCovMap (\pkg -> Coverage.filterByPackage pkg rawCovMap) maybePkg
     grouped = Coverage.groupByModule points
     moduleStats = Map.map computeStats grouped
     computeStats modPts =
@@ -112,10 +117,11 @@ renderTotalLine covered total = do
 -- threshold.
 --
 -- @since 0.19.2
-checkThreshold :: Int -> Coverage.CoverageMap -> Map.Map Int Int -> Bool
-checkThreshold threshold (Coverage.CoverageMap points) hits =
+checkThreshold :: Int -> Maybe Pkg.Name -> Coverage.CoverageMap -> Map.Map Int Int -> Bool
+checkThreshold threshold maybePkg rawCovMap hits =
   pct >= threshold
   where
+    (Coverage.CoverageMap points) = maybe rawCovMap (\pkg -> Coverage.filterByPackage pkg rawCovMap) maybePkg
     totalPoints = Map.size points
     coveredPoints = Map.size (Map.filter (> 0) (Map.intersectionWith const hits points))
     pct = if totalPoints == 0 then 100 else (coveredPoints * 100) `div` totalPoints

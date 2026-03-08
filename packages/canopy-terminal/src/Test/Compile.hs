@@ -65,7 +65,7 @@ compileTestFiles ::
   FilePath ->
   [FilePath] ->
   Bool ->
-  IO (Maybe (Text.Text, Map.Map ModuleName.Canonical Opt.Main, Maybe Coverage.CoverageMap, [(String, FilePath)]))
+  IO (Maybe (Text.Text, Map.Map ModuleName.Canonical Opt.Main, Maybe Coverage.CoverageMap, [(String, FilePath)], Pkg.Name))
 compileTestFiles root testFiles coverage = do
   ensureTestDepArtifacts root
   pkg <- resolvePackageName root
@@ -85,8 +85,8 @@ compileTestFiles root testFiles coverage = do
         then do
           let (js, mains, covMap) = artifactsToJavaScriptCov artifacts
               stale = detectStaleFFI (artifacts ^. Build.artifactsFFIInfo) (artifacts ^. Build.artifactsGlobalGraph)
-          pure (Just (js, mains, covMap, stale))
-        else pure (Just (artifactsToJavaScript artifacts, collectMains artifacts, Nothing, []))
+          pure (Just (js, mains, covMap, stale, pkg))
+        else pure (Just (artifactsToJavaScript artifacts, collectMains artifacts, Nothing, [], pkg))
 
 -- | Resolve the package name from the project outline.
 --
