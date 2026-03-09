@@ -14,16 +14,16 @@
 --
 -- == Browser Test Harness
 --
--- For browser\/async tests, generates a Node.js script that bundles:
---
--- * @task-executor.js@ — Task monad execution engine
--- * @test-runner.js@ — Async-aware test runner with Playwright support
--- * Compiled test code
--- * Configuration (server URL, browser options)
+-- For browser\/async tests, the compiled output already includes all FFI
+-- JavaScript (test-runner.js, task-executor.js, playwright.js,
+-- browser-test-runner.js) via normal FFI imports. The harness just
+-- wraps the compiled output with a DOM shim, configuration, and
+-- execution bootstrap.
 --
 -- @since 0.19.1
 module Test.Harness
   ( -- * Types
+    JsContent (..),
     HarnessConfig (..),
     HarnessContent (..),
 
@@ -44,8 +44,11 @@ import Data.Text (Text)
 import Data.Word (Word16)
 import qualified Data.Text as Text
 
-import Test.External (JsContent (..))
 import Test.Server (ServerPort (..))
+
+-- | JavaScript file content wrapper.
+newtype JsContent = JsContent {unJsContent :: Text}
+  deriving (Eq, Show)
 
 -- | Configuration for the browser test harness.
 data HarnessConfig = HarnessConfig
@@ -64,29 +67,25 @@ makeLenses ''HarnessConfig
 newtype HarnessContent = HarnessContent {unHarnessContent :: Text}
   deriving (Eq, Show)
 
--- | Generate a browser test harness from components.
+-- | Generate a browser test harness from compiled test output.
 --
--- Bundles the task executor, playwright bindings, test runner,
--- compiled tests, and configuration into a single self-contained
--- Node.js script. The load order matters:
+-- The compiled output already includes all FFI JavaScript
+-- (test-runner.js, task-executor.js, playwright.js) via normal
+-- FFI imports in the Canopy test packages. The harness wraps
+-- the compiled output with:
 --
 -- 1. DOM shim (provides @document@\/@window@ for Canopy runtime)
--- 2. Task executor (sets @window.CanopyTaskExecutor@)
--- 3. Compiled test code (includes FFI JS from package artifacts)
--- 4. Playwright bindings (overrides FFI functions with URL resolution)
--- 5. Test runner (picks up executor and playwright from globals)
--- 6. Configuration
--- 7. Execute section (calls @runAndReport@)
+-- 2. Stdout guard (redirect @console.log@ to stderr)
+-- 3. Compiled test code (includes all FFI JS)
+-- 4. Configuration (server URL, browser options)
+-- 5. Execute section (calls @runAndReport@)
 --
 -- @since 0.19.1
 generateBrowserHarness ::
   HarnessConfig ->
   JsContent ->
-  JsContent ->
-  JsContent ->
-  JsContent ->
   HarnessContent
-generateBrowserHarness config runner executor playwright tests =
+generateBrowserHarness config tests =
   HarnessContent (Text.unlines sections)
   where
     sections =
@@ -98,17 +97,8 @@ generateBrowserHarness config runner executor playwright tests =
         "// --- Stdout Guard (redirect console.log to stderr) ---",
         stdoutGuard,
         "",
-        "// --- Task Executor ---",
-        unJsContent executor,
-        "",
-        "// --- Compiled Tests ---",
+        "// --- Compiled Tests (includes FFI externals) ---",
         unJsContent tests,
-        "",
-        "// --- Playwright Bindings (after compiled tests to override FFI) ---",
-        unJsContent playwright,
-        "",
-        "// --- Test Runner ---",
-        unJsContent runner,
         "",
         "// --- Configuration ---",
         configSection config,
@@ -294,12 +284,12 @@ executeSection =
 --
 -- Produces a self-contained HTML file that:
 --
--- 1. Includes the compiled Canopy test code (with FFI externals)
--- 2. Includes the browser-side test runner
--- 3. Initializes the test module and extracts @_browserTestMain@
--- 4. Runs all tests with real browser APIs
--- 5. Emits NDJSON results via @console.log@
--- 6. Sets @window.__canopyTestsDone@ and @window.__canopyExitCode@
+-- 1. Includes the compiled Canopy test code (with all FFI externals
+--    including browser-test-runner.js)
+-- 2. Initializes the test module and extracts @_browserTestMain@
+-- 3. Runs all tests with real browser APIs
+-- 4. Emits NDJSON results via @console.log@
+-- 5. Sets @window.__canopyTestsDone@ and @window.__canopyExitCode@
 --
 -- The Playwright launcher script navigates to this page and collects
 -- the console.log output as NDJSON.
@@ -307,9 +297,8 @@ executeSection =
 -- @since 0.19.1
 generateBrowserTestHarness ::
   JsContent ->
-  JsContent ->
   HarnessContent
-generateBrowserTestHarness tests browserRunner =
+generateBrowserTestHarness tests =
   HarnessContent (Text.unlines sections)
   where
     sections =
@@ -321,9 +310,6 @@ generateBrowserTestHarness tests browserRunner =
         "  <iframe id=\"test-target\" style=\"width:100%;height:0;border:none;position:absolute;\"></iframe>",
         "  <script>",
         unJsContent tests,
-        "  </script>",
-        "  <script>",
-        unJsContent browserRunner,
         "  </script>",
         "  <script>",
         browserTestExecuteSection,
@@ -343,21 +329,41 @@ browserTestExecuteSection =
   Text.unlines
     [ "(async function() {",
       "  var scope = window.Canopy || window.Elm || {};",
-      "  var moduleNames = Object.keys(scope);",
       "  var allTestNodes = [];",
-      "  for (var i = 0; i < moduleNames.length; i++) {",
-      "    var mod = scope[moduleNames[i]];",
-      "    if (mod && typeof mod.init === 'function') {",
+      "  var hasBrowserElementApps = false;",
+      "  function collectModules(obj, path) {",
+      "    if (!obj || typeof obj !== 'object') return;",
+      "    if (typeof obj.init === 'function') {",
       "      try {",
-      "        var app = mod.init();",
+      "        var app;",
+      "        try { app = obj.init(); } catch (_e1) {",
+      "          console.log(JSON.stringify({event:'result',status:'failed',name:'[debug] Init1 fail ' + path + ': ' + _e1.message,duration:0,message:(_e1.stack||'').split('\\n').slice(0,5).join(' | ')}));",
+      "          var node = document.createElement('div');",
+      "          node.id = 'app-' + (path || 'root').replace(/\\./g, '-');",
+      "          document.body.appendChild(node);",
+      "          try { app = obj.init({ node: node }); console.log(JSON.stringify({event:'result',status:'skipped',name:'[debug] Init2 OK ' + path,duration:0,message:''})); } catch (_e2) { console.log(JSON.stringify({event:'result',status:'failed',name:'[debug] Init2 fail ' + path + ': ' + _e2.message,duration:0,message:(_e2.stack||'').split('\\n').slice(0,5).join(' | ')})); return; }",
+      "        }",
       "        if (app && app._browserTestMain) {",
       "          var cur = app._browserTestMain.a;",
       "          while (cur && cur.$ === '::') { allTestNodes.push(cur.a); cur = cur.b; }",
+      "        } else if (app && app._testMain) {",
+      "          allTestNodes.push(app._testMain);",
+      "        } else {",
+      "          hasBrowserElementApps = true;",
       "        }",
       "      } catch (e) {",
-      "        console.log(JSON.stringify({event:'result',status:'failed',name:'Module init: '+moduleNames[i],duration:0,message:'Init failed: ' + e.message}));",
+      "        console.log(JSON.stringify({event:'result',status:'failed',name:'Module init: '+path,duration:0,message:'Init failed: ' + e.message}));",
       "      }",
+      "      return;",
       "    }",
+      "    var keys = Object.keys(obj);",
+      "    for (var i = 0; i < keys.length; i++) {",
+      "      collectModules(obj[keys[i]], path ? path + '.' + keys[i] : keys[i]);",
+      "    }",
+      "  }",
+      "  collectModules(scope, '');",
+      "  if (hasBrowserElementApps) {",
+      "    await new Promise(function(r) { setTimeout(r, 1000); });",
       "  }",
       "  if (allTestNodes.length === 0) {",
       "    console.log(JSON.stringify({event:'summary',passed:0,failed:1,skipped:0,todo:0,total:1,duration:0}));",

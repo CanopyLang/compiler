@@ -72,7 +72,8 @@ compileTestFiles root testFiles coverage = do
   let srcDirs =
         [ Compiler.RelativeSrcDir "src",
           Compiler.RelativeSrcDir "tests",
-          Compiler.RelativeSrcDir "test"
+          Compiler.RelativeSrcDir "test",
+          Compiler.RelativeSrcDir "test-app"
         ]
   result <- Compiler.compileFromPaths pkg False (Compiler.ProjectRoot root) srcDirs testFiles
   case result of

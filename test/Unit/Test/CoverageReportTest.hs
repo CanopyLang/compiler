@@ -11,6 +11,8 @@
 module Unit.Test.CoverageReportTest (tests) where
 
 import qualified Canopy.Data.Name as Name
+import qualified Canopy.ModuleName as ModuleName
+import qualified Canopy.Package as Pkg
 import qualified Data.Aeson as Aeson
 import qualified Data.Aeson.KeyMap as KM
 import qualified Data.Map.Strict as Map
@@ -89,9 +91,10 @@ nameStr = Name.fromChars
 
 mkPoint :: Int -> String -> String -> Coverage.CoveragePoint
 mkPoint covId modName defName =
-  Coverage.CoveragePoint covId (nameStr modName) (nameStr defName) defaultRegion Coverage.FunctionEntry
+  Coverage.CoveragePoint covId (nameStr modName) (nameStr defName) defaultRegion Coverage.FunctionEntry dummyCanonical
   where
     defaultRegion = Ann.Region (Ann.Position 1 1) (Ann.Position 1 1)
+    dummyCanonical = ModuleName.Canonical Pkg.dummyName (nameStr "Test")
 
 thresholdTests :: TestTree
 thresholdTests =
@@ -100,15 +103,15 @@ thresholdTests =
     [ testCase "coverage above threshold returns True" $
         let covMap = Coverage.CoverageMap (Map.fromList [(0, mkPoint 0 "M" "a"), (1, mkPoint 1 "M" "b")])
             hits = Map.fromList [(0, 1), (1, 1)]
-         in TCoverage.checkThreshold 80 covMap hits @?= True,
+         in TCoverage.checkThreshold 80 Nothing covMap hits @?= True,
       testCase "coverage below threshold returns False" $
         let covMap = Coverage.CoverageMap (Map.fromList [(0, mkPoint 0 "M" "a"), (1, mkPoint 1 "M" "b"), (2, mkPoint 2 "M" "c")])
             hits = Map.singleton 0 1
-         in TCoverage.checkThreshold 80 covMap hits @?= False,
+         in TCoverage.checkThreshold 80 Nothing covMap hits @?= False,
       testCase "coverage exactly at threshold returns True" $
         let covMap = Coverage.CoverageMap (Map.fromList [(0, mkPoint 0 "M" "a"), (1, mkPoint 1 "M" "b")])
             hits = Map.fromList [(0, 1), (1, 1)]
-         in TCoverage.checkThreshold 100 covMap hits @?= True,
+         in TCoverage.checkThreshold 100 Nothing covMap hits @?= True,
       testCase "empty map with any threshold returns True" $
-        TCoverage.checkThreshold 80 (Coverage.CoverageMap Map.empty) Map.empty @?= True
+        TCoverage.checkThreshold 80 Nothing (Coverage.CoverageMap Map.empty) Map.empty @?= True
     ]

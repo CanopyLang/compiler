@@ -447,8 +447,8 @@ dispatchNode mode graph currentGlobal addDeps globalInGraph state =
            stmt -> addStmt baseState stmt
     Opt.Manager effectsType ->
       generateManager mode graph currentGlobal effectsType state
-    Opt.Kernel _chunks deps ->
-      addDeps deps state
+    Opt.Kernel chunks deps ->
+      addKernelChunks mode currentGlobal (addDeps deps state) chunks
     Opt.Enum index ->
       addStmt (emitMapping currentGlobal state) (Kernel_.generateEnum mode currentGlobal index)
     Opt.Box ->
@@ -476,8 +476,8 @@ covTailFuncExpr mode currentGlobal argNames body state =
   where
     (Opt.Global _ name) = currentGlobal
 
-_addKernelChunks :: Mode.Mode -> Opt.Global -> State -> [Kernel.Chunk] -> State
-_addKernelChunks mode currentGlobal (State revKernels revBuilders seen seenChunks outLine smMappings srcLocs tl covIds) chunks =
+addKernelChunks :: Mode.Mode -> Opt.Global -> State -> [Kernel.Chunk] -> State
+addKernelChunks mode currentGlobal (State revKernels revBuilders seen seenChunks outLine smMappings srcLocs tl covIds) chunks =
   let kernelCode = Kernel_.generateKernel mode chunks
       kernelBytes = BL.toStrict (BB.toLazyByteString kernelCode)
   in if Set.member kernelBytes seenChunks

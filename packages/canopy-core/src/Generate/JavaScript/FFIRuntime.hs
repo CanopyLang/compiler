@@ -117,19 +117,25 @@ embeddedMarshal = BB.stringUtf8 [r|
 // $canopy - Type marshalling helpers
 var $canopy = {
   // Result constructors
+  /** @canopy-type a -> Result x a */
   Ok: function(a) { return { $: 'Ok', a: a }; },
+  /** @canopy-type x -> Result x a */
   Err: function(a) { return { $: 'Err', a: a }; },
 
   // Maybe constructors
+  /** @canopy-type a -> Maybe a */
   Just: function(a) { return { $: 'Just', a: a }; },
+  /** @canopy-type Maybe a */
   Nothing: Object.freeze({ $: 'Nothing' }),
 
   // Convert nullable to Maybe
+  /** @canopy-type a -> Maybe a */
   fromNullable: function(v) {
     return v == null ? { $: 'Nothing' } : { $: 'Just', a: v };
   },
 
   // List conversion (Array <-> Canopy List)
+  /** @canopy-type Array a -> List a */
   toList: function(arr) {
     var r = { $: '[]' };
     for (var i = arr.length - 1; i >= 0; i--) {
@@ -138,6 +144,7 @@ var $canopy = {
     return r;
   },
 
+  /** @canopy-type List a -> Array a */
   fromList: function(l) {
     var r = [];
     while (l && l.$ === '::') {
@@ -148,6 +155,7 @@ var $canopy = {
   },
 
   // Map over a Canopy List
+  /** @canopy-type (a -> b) -> List a -> List b */
   mapList: function(f, l) {
     var arr = [];
     while (l && l.$ === '::') {
@@ -162,14 +170,17 @@ var $canopy = {
   },
 
   // Task/Promise helpers
+  /** @canopy-type a -> Task x (Result x a) */
   taskOk: function(a) {
     return Promise.resolve({ $: 'Ok', a: a });
   },
 
+  /** @canopy-type x -> Task x (Result x a) */
   taskErr: function(a) {
     return Promise.resolve({ $: 'Err', a: String(a) });
   },
 
+  /** @canopy-type Promise a -> Task String (Result String a) */
   wrapPromise: function(p) {
     return p.then(
       function(a) { return { $: 'Ok', a: a }; },
@@ -178,24 +189,37 @@ var $canopy = {
   },
 
   // Initialized state wrappers
+  /** @canopy-type a -> InitState a */
   Fresh: function(a) { return { $: 'Fresh', a: a }; },
+  /** @canopy-type a -> InitState a */
   Running: function(a) { return { $: 'Running', a: a }; },
+  /** @canopy-type a -> InitState a */
   Suspended: function(a) { return { $: 'Suspended', a: a }; },
+  /** @canopy-type a -> InitState a */
   Closed: function(a) { return { $: 'Closed', a: a }; },
 
   // Tuple helpers
+  /** @canopy-type a -> b -> ( a, b ) */
   tuple2: function(a, b) { return { a: a, b: b }; },
+  /** @canopy-type a -> b -> c -> ( a, b, c ) */
   tuple3: function(a, b, c) { return { a: a, b: b, c: c }; },
 
   // Unwrap helpers
+  /** @canopy-type { a : a } -> a */
   unwrap: function(w) { return w.a; },
+  /** @canopy-type Result x a -> Maybe a */
   unwrapOk: function(r) { return r.$ === 'Ok' ? r.a : null; },
+  /** @canopy-type Maybe a -> Maybe a */
   unwrapJust: function(m) { return m.$ === 'Just' ? m.a : null; },
 
   // Type checks
+  /** @canopy-type Result x a -> Bool */
   isOk: function(r) { return r.$ === 'Ok'; },
+  /** @canopy-type Result x a -> Bool */
   isErr: function(r) { return r.$ === 'Err'; },
+  /** @canopy-type Maybe a -> Bool */
   isJust: function(m) { return m.$ === 'Just'; },
+  /** @canopy-type Maybe a -> Bool */
   isNothing: function(m) { return m.$ === 'Nothing'; }
 };
 
@@ -210,6 +234,7 @@ embeddedValidate = BB.stringUtf8 [r|
 // $validate - Runtime type validators
 var $validate = {
   // Primitive validators
+  /** @canopy-type a -> String -> Int */
   Int: function(v, p) {
     if (typeof v !== 'number') {
       throw new Error('FFI type error at ' + p + ': expected Int, got ' + typeof v);
@@ -223,6 +248,7 @@ var $validate = {
     return v;
   },
 
+  /** @canopy-type a -> String -> Float */
   Float: function(v, p) {
     if (typeof v !== 'number') {
       throw new Error('FFI type error at ' + p + ': expected Float, got ' + typeof v);
@@ -233,6 +259,7 @@ var $validate = {
     return v;
   },
 
+  /** @canopy-type a -> String -> String */
   String: function(v, p) {
     if (typeof v !== 'string') {
       throw new Error('FFI type error at ' + p + ': expected String, got ' + typeof v);
@@ -240,6 +267,7 @@ var $validate = {
     return v;
   },
 
+  /** @canopy-type a -> String -> Bool */
   Bool: function(v, p) {
     if (typeof v !== 'boolean') {
       throw new Error('FFI type error at ' + p + ': expected Bool, got ' + typeof v);
@@ -248,6 +276,7 @@ var $validate = {
   },
 
   // Composite validators
+  /** @canopy-type (a -> String -> b) -> a -> String -> List b */
   List: function(f) {
     return function(v, p) {
       if (!Array.isArray(v)) {
@@ -262,6 +291,7 @@ var $validate = {
     };
   },
 
+  /** @canopy-type (a -> String -> b) -> a -> String -> Maybe b */
   Maybe: function(f) {
     return function(v, p) {
       if (v == null) {
@@ -271,6 +301,7 @@ var $validate = {
     };
   },
 
+  /** @canopy-type (a -> String -> x) -> (a -> String -> b) -> a -> String -> Result x b */
   Result: function(errV, okV) {
     return function(v, p) {
       if (typeof v !== 'object' || v === null || !('$' in v)) {
@@ -286,6 +317,7 @@ var $validate = {
     };
   },
 
+  /** @canopy-type (a -> String -> x) -> (a -> String -> b) -> a -> String -> Task x b */
   Task: function(errV, okV) {
     return function(v, p) {
       if (typeof v !== 'object' || v === null || typeof v.then !== 'function') {
@@ -305,6 +337,7 @@ var $validate = {
     };
   },
 
+  /** @canopy-type List (a -> String -> b) -> a -> String -> tuple */
   Tuple: function() {
     var validators = Array.prototype.slice.call(arguments);
     return function(v, p) {
@@ -322,6 +355,7 @@ var $validate = {
   },
 
   // Opaque type validator (optional instanceof check)
+  /** @canopy-type String -> Maybe Constructor -> a -> String -> a */
   Opaque: function(name, ctor) {
     return function(v, p) {
       if (ctor && !(v instanceof ctor)) {
@@ -332,6 +366,7 @@ var $validate = {
   },
 
   // Function validator
+  /** @canopy-type a -> String -> (a -> b) */
   Function: function(v, p) {
     if (typeof v !== 'function') {
       throw new Error('FFI type error at ' + p + ': expected Function, got ' + typeof v);
@@ -340,9 +375,11 @@ var $validate = {
   },
 
   // Unit validator (always passes)
+  /** @canopy-type a -> String -> () */
   Unit: function(v, p) { return v; },
 
   // Identity validator (for opaque types without checks)
+  /** @canopy-type a -> String -> a */
   Any: function(v, p) { return v; }
 };
 
@@ -356,11 +393,14 @@ embeddedSmart = BB.stringUtf8 [r|
 // $smart - Smart validation with coercion detection
 var $smart = {
   // Validation level: 'disabled', 'permissive', 'strict', 'smart', 'paranoid'
+  /** @canopy-type String */
   level: 'smart',
 
+  /** @canopy-type String -> () */
   setLevel: function(l) { $smart.level = l; },
 
   // Smart Int validator with coercion detection
+  /** @canopy-type a -> String -> Int */
   Int: function(v, p) {
     if ($smart.level === 'disabled') return v;
 
@@ -386,6 +426,7 @@ var $smart = {
   },
 
   // Smart Float validator
+  /** @canopy-type a -> String -> Float */
   Float: function(v, p) {
     if ($smart.level === 'disabled') return v;
 
@@ -415,6 +456,7 @@ var $smart = {
   },
 
   // Smart String validator
+  /** @canopy-type a -> String -> String */
   String: function(v, p) {
     if ($smart.level === 'disabled') return v;
 
@@ -431,6 +473,7 @@ var $smart = {
   },
 
   // Detect coercion in binary operations
+  /** @canopy-type String -> a -> a -> a -> String -> () */
   detectCoercion: function(op, a, b, result, p) {
     if ($smart.level === 'disabled') return;
 
@@ -468,12 +511,18 @@ embeddedEnvironment = BB.stringUtf8 [r|
 // $env - Environment and capability detection
 var $env = {
   // Runtime detection
+  /** @canopy-type Bool */
   isBrowser: typeof window !== 'undefined' && typeof document !== 'undefined',
+  /** @canopy-type Bool */
   isNode: typeof process !== 'undefined' && process.versions && process.versions.node != null,
+  /** @canopy-type Bool */
   isDeno: typeof Deno !== 'undefined',
+  /** @canopy-type Bool */
   isBun: typeof Bun !== 'undefined',
+  /** @canopy-type Bool */
   isWebWorker: typeof self !== 'undefined' && typeof importScripts === 'function' && typeof window === 'undefined',
 
+  /** @canopy-type () -> String */
   getRuntime: function() {
     if ($env.isBun) return 'bun';
     if ($env.isDeno) return 'deno';
@@ -484,6 +533,7 @@ var $env = {
   },
 
   // Security context
+  /** @canopy-type () -> Bool */
   isSecureContext: function() {
     if (typeof window !== 'undefined' && window.isSecureContext !== undefined) {
       return window.isSecureContext;
@@ -492,6 +542,7 @@ var $env = {
   },
 
   // User activation (required for audio, fullscreen, clipboard, etc.)
+  /** @canopy-type () -> Bool */
   hasUserActivation: function() {
     if (typeof navigator !== 'undefined' && navigator.userActivation) {
       return navigator.userActivation.isActive;
@@ -499,6 +550,7 @@ var $env = {
     return true; // Non-browser: assume available
   },
 
+  /** @canopy-type () -> Bool */
   hasBeenActivated: function() {
     if (typeof navigator !== 'undefined' && navigator.userActivation) {
       return navigator.userActivation.hasBeenActive;
@@ -507,10 +559,12 @@ var $env = {
   },
 
   // API availability checks
+  /** @canopy-type () -> Bool */
   hasAudioContext: function() {
     return typeof AudioContext !== 'undefined' || typeof webkitAudioContext !== 'undefined';
   },
 
+  /** @canopy-type () -> Bool */
   hasWebGL: function() {
     if (typeof document === 'undefined') return false;
     try {
@@ -519,6 +573,7 @@ var $env = {
     } catch (e) { return false; }
   },
 
+  /** @canopy-type () -> Bool */
   hasWebGL2: function() {
     if (typeof document === 'undefined') return false;
     try {
@@ -526,44 +581,54 @@ var $env = {
     } catch (e) { return false; }
   },
 
+  /** @canopy-type () -> Bool */
   hasWebGPU: function() {
     return typeof navigator !== 'undefined' && 'gpu' in navigator;
   },
 
+  /** @canopy-type () -> Bool */
   hasServiceWorker: function() {
     return typeof navigator !== 'undefined' && 'serviceWorker' in navigator;
   },
 
+  /** @canopy-type () -> Bool */
   hasClipboard: function() {
     return typeof navigator !== 'undefined' && 'clipboard' in navigator;
   },
 
+  /** @canopy-type () -> Bool */
   hasGeolocation: function() {
     return typeof navigator !== 'undefined' && 'geolocation' in navigator;
   },
 
+  /** @canopy-type () -> Bool */
   hasNotifications: function() {
     return typeof Notification !== 'undefined';
   },
 
+  /** @canopy-type () -> Bool */
   hasMediaDevices: function() {
     return typeof navigator !== 'undefined' && navigator.mediaDevices && typeof navigator.mediaDevices.getUserMedia === 'function';
   },
 
+  /** @canopy-type () -> Bool */
   hasWebCrypto: function() {
     return typeof crypto !== 'undefined' && crypto.subtle;
   },
 
+  /** @canopy-type () -> Bool */
   hasIndexedDB: function() {
     return typeof indexedDB !== 'undefined';
   },
 
+  /** @canopy-type () -> Bool */
   hasLocalStorage: function() {
     try { return typeof localStorage !== 'undefined' && localStorage !== null; }
     catch (e) { return false; }
   },
 
   // Permission queries
+  /** @canopy-type String -> Task x String */
   queryPermission: function(name) {
     if (typeof navigator === 'undefined' || !navigator.permissions) {
       return Promise.resolve('unavailable');
@@ -573,6 +638,7 @@ var $env = {
       .catch(function() { return 'unavailable'; });
   },
 
+  /** @canopy-type () -> String */
   getNotificationPermission: function() {
     if (typeof Notification === 'undefined') return 'unavailable';
     return Notification.permission;

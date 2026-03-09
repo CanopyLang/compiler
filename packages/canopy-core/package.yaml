@@ -225,6 +225,8 @@ library:
     - Type.Unify
     - Type.UnionFind
     - Type.Variance
+    - Generate.JavaScript.FFIRuntime
+    - Generate.JavaScript.Runtime
   other-modules:
     - Reporting.Error.Internal
     - Reporting.Error.Syntax.Types
@@ -257,10 +259,8 @@ library:
     - File.JSON
     - Generate.JavaScript.Expression.Call
     - Generate.JavaScript.Expression.Case
-    - Generate.JavaScript.FFIRuntime
     - Generate.JavaScript.Functions
     - Generate.JavaScript.Kernel
-    - Generate.JavaScript.Runtime
     - Json.Decode.AST
     - Json.Decode.Combinators
     - Json.Decode.Core

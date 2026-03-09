@@ -35,7 +35,8 @@ module Reporting.Exit
         MakeCannotBuild,
         MakeCannotOptimizeAndDebug,
         MakeReproducibilityFailure,
-        MakeCapabilityError
+        MakeCapabilityError,
+        MakeKernelCodeInProd
       ),
     makeToReport,
 

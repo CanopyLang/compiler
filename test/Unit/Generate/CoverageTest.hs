@@ -58,6 +58,9 @@ renderBuilder = LChar8.unpack . BB.toLazyByteString
 nameStr :: String -> Name
 nameStr = Name.fromChars
 
+dummyCanonical :: ModuleName.Canonical
+dummyCanonical = ModuleName.Canonical Pkg.dummyName (nameStr "Test")
+
 mkGlobal :: String -> String -> Opt.Global
 mkGlobal modName defName =
   Opt.Global (ModuleName.Canonical Pkg.dummyName (nameStr modName)) (nameStr defName)
@@ -333,7 +336,7 @@ lcovFormatTests =
     [ testCase "empty map produces empty output" $
         renderBuilder (Coverage.toLCOV (Coverage.CoverageMap Map.empty) Map.empty) @?= "",
       testCase "FunctionEntry produces FN and FNDA lines" $
-        let pt = Coverage.CoveragePoint 0 (nameStr "Main") (nameStr "foo") (mkRegion 5 1 10 1) Coverage.FunctionEntry
+        let pt = Coverage.CoveragePoint 0 (nameStr "Main") (nameStr "foo") (mkRegion 5 1 10 1) Coverage.FunctionEntry dummyCanonical
             covMap = Coverage.CoverageMap (Map.singleton 0 pt)
             hits = Map.singleton 0 3
             result = renderBuilder (Coverage.toLCOV covMap hits)
@@ -342,19 +345,19 @@ lcovFormatTests =
               assertBool "contains FNDA:" ("FNDA:" `isInfixOf` result)
               assertBool "contains hit count 3" ("FNDA:3," `isInfixOf` result),
       testCase "BranchArm produces BRDA line" $
-        let pt = Coverage.CoveragePoint 0 (nameStr "Main") (nameStr "bar") (mkRegion 7 1 12 1) (Coverage.BranchArm 0 2)
+        let pt = Coverage.CoveragePoint 0 (nameStr "Main") (nameStr "bar") (mkRegion 7 1 12 1) (Coverage.BranchArm 0 2) dummyCanonical
             covMap = Coverage.CoverageMap (Map.singleton 0 pt)
             hits = Map.singleton 0 5
             result = renderBuilder (Coverage.toLCOV covMap hits)
          in assertBool "contains BRDA:" ("BRDA:" `isInfixOf` result),
       testCase "TopLevelDef produces DA line" $
-        let pt = Coverage.CoveragePoint 0 (nameStr "Main") (nameStr "x") (mkRegion 3 1 3 10) Coverage.TopLevelDef
+        let pt = Coverage.CoveragePoint 0 (nameStr "Main") (nameStr "x") (mkRegion 3 1 3 10) Coverage.TopLevelDef dummyCanonical
             covMap = Coverage.CoverageMap (Map.singleton 0 pt)
             hits = Map.singleton 0 1
             result = renderBuilder (Coverage.toLCOV covMap hits)
          in assertBool "contains DA:" ("DA:" `isInfixOf` result),
       testCase "missing hit defaults to 0" $
-        let pt = Coverage.CoveragePoint 0 (nameStr "Main") (nameStr "foo") (mkRegion 5 1 10 1) Coverage.FunctionEntry
+        let pt = Coverage.CoveragePoint 0 (nameStr "Main") (nameStr "foo") (mkRegion 5 1 10 1) Coverage.FunctionEntry dummyCanonical
             covMap = Coverage.CoverageMap (Map.singleton 0 pt)
             result = renderBuilder (Coverage.toLCOV covMap Map.empty)
          in assertBool "contains FNDA:0" ("FNDA:0," `isInfixOf` result)
@@ -374,7 +377,7 @@ istanbulJsonTests =
               assertBool "contains branchMap" ("branchMap" `isInfixOf` rendered)
               assertBool "contains statementMap" ("statementMap" `isInfixOf` rendered),
       testCase "FunctionEntry appears in fnMap and f" $
-        let pt = Coverage.CoveragePoint 0 (nameStr "Main") (nameStr "foo") (mkRegion 5 1 10 1) Coverage.FunctionEntry
+        let pt = Coverage.CoveragePoint 0 (nameStr "Main") (nameStr "foo") (mkRegion 5 1 10 1) Coverage.FunctionEntry dummyCanonical
             covMap = Coverage.CoverageMap (Map.singleton 0 pt)
             hits = Map.singleton 0 7
             rendered = renderBuilder (Encode.encode (Coverage.toIstanbulJson covMap hits))
@@ -382,7 +385,7 @@ istanbulJsonTests =
               assertBool "fnMap has entry" ("fnMap" `isInfixOf` rendered)
               assertBool "qualified name Main.foo" ("Main.foo" `isInfixOf` rendered),
       testCase "BranchArm appears in branchMap and b" $
-        let pt = Coverage.CoveragePoint 0 (nameStr "Main") (nameStr "bar") (mkRegion 7 1 12 1) (Coverage.BranchArm 0 2)
+        let pt = Coverage.CoveragePoint 0 (nameStr "Main") (nameStr "bar") (mkRegion 7 1 12 1) (Coverage.BranchArm 0 2) dummyCanonical
             covMap = Coverage.CoverageMap (Map.singleton 0 pt)
             hits = Map.singleton 0 2
             rendered = renderBuilder (Encode.encode (Coverage.toIstanbulJson covMap hits))
@@ -599,8 +602,8 @@ lcovStructureTests =
               assertBool "LF:" ("LF:" `isInfixOf` result)
               assertBool "LH:" ("LH:" `isInfixOf` result),
       testCase "multi-module output has separate records" $
-        let pt1 = Coverage.CoveragePoint 0 (nameStr "Main") (nameStr "foo") (mkRegion 1 1 5 1) Coverage.FunctionEntry
-            pt2 = Coverage.CoveragePoint 1 (nameStr "Utils") (nameStr "bar") (mkRegion 2 1 8 1) Coverage.FunctionEntry
+        let pt1 = Coverage.CoveragePoint 0 (nameStr "Main") (nameStr "foo") (mkRegion 1 1 5 1) Coverage.FunctionEntry dummyCanonical
+            pt2 = Coverage.CoveragePoint 1 (nameStr "Utils") (nameStr "bar") (mkRegion 2 1 8 1) Coverage.FunctionEntry dummyCanonical
             covMap = Coverage.CoverageMap (Map.fromList [(0, pt1), (1, pt2)])
             result = renderBuilder (Coverage.toLCOV covMap Map.empty)
          in do
@@ -611,11 +614,11 @@ lcovStructureTests =
     ]
   where
     renderLcovWithFunction =
-      let pt = Coverage.CoveragePoint 0 (nameStr "Main") (nameStr "foo") (mkRegion 5 1 10 1) Coverage.FunctionEntry
+      let pt = Coverage.CoveragePoint 0 (nameStr "Main") (nameStr "foo") (mkRegion 5 1 10 1) Coverage.FunctionEntry dummyCanonical
           covMap = Coverage.CoverageMap (Map.singleton 0 pt)
        in renderBuilder (Coverage.toLCOV covMap (Map.singleton 0 3))
     renderLcovWithBranch =
-      let pt = Coverage.CoveragePoint 0 (nameStr "Main") (nameStr "bar") (mkRegion 7 1 12 1) (Coverage.BranchArm 0 2)
+      let pt = Coverage.CoveragePoint 0 (nameStr "Main") (nameStr "bar") (mkRegion 7 1 12 1) (Coverage.BranchArm 0 2) dummyCanonical
           covMap = Coverage.CoverageMap (Map.singleton 0 pt)
        in renderBuilder (Coverage.toLCOV covMap (Map.singleton 0 5))
 
@@ -635,7 +638,7 @@ istanbulStructureTests =
               assertBool "s" ("\"s\"" `isInfixOf` rendered)
               assertBool "statementMap" ("statementMap" `isInfixOf` rendered),
       testCase "function names are module-qualified" $
-        let pt = Coverage.CoveragePoint 0 (nameStr "Utils") (nameStr "helper") (mkRegion 3 1 8 1) Coverage.FunctionEntry
+        let pt = Coverage.CoveragePoint 0 (nameStr "Utils") (nameStr "helper") (mkRegion 3 1 8 1) Coverage.FunctionEntry dummyCanonical
             covMap = Coverage.CoverageMap (Map.singleton 0 pt)
             rendered = renderBuilder (Encode.encode (Coverage.toIstanbulJson covMap Map.empty))
          in assertBool "Utils.helper" ("Utils.helper" `isInfixOf` rendered),
@@ -649,6 +652,6 @@ istanbulStructureTests =
     ]
   where
     renderIstanbul =
-      let pt = Coverage.CoveragePoint 0 (nameStr "Main") (nameStr "foo") (mkRegion 5 1 10 1) Coverage.FunctionEntry
+      let pt = Coverage.CoveragePoint 0 (nameStr "Main") (nameStr "foo") (mkRegion 5 1 10 1) Coverage.FunctionEntry dummyCanonical
           covMap = Coverage.CoverageMap (Map.singleton 0 pt)
        in renderBuilder (Encode.encode (Coverage.toIstanbulJson covMap (Map.singleton 0 1)))

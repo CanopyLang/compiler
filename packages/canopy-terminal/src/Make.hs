@@ -58,6 +58,7 @@ import Logging.Event (LogEvent (..))
 import qualified Logging.Logger as Log
 import Make.Builder (buildFromExposed, buildFromPaths, createSplitBuilder, shouldSplitOutput)
 import Make.Environment (createBuildContext, getDesiredMode, getReportingStyle, setupEnvironment)
+import Make.KernelCheck (detectKernelPackages, emitKernelWarning)
 import Make.Output (generateOutput, generateSplitJavaScript)
 import Make.Parser (docsFile, jobsParser, output, reportType)
 import Make.Types
@@ -67,6 +68,7 @@ import Make.Types
     ReportType (..),
     Task,
     bcDetails,
+    allowKernel,
     debug,
     docs,
     ffiUnsafe,
@@ -153,6 +155,7 @@ coordinateBuildWithRoot root paths flags style scope = do
   Task.io (Log.logEvent (BuildStarted (Text.pack "Loading project details")))
   Task.io (checkLockFileStaleness root)
   Task.io (warnOnVersionMismatch root)
+  checkKernelCodeUsage root flags
   details <- loadProjectDetailsFromRoot style scope root
   mode <- getDesiredMode (flags ^. debug) (flags ^. optimize)
   let ctx = createBuildContext style root details mode (flags ^. ffiUnsafe) (flags ^. ffiDebug)
@@ -285,6 +288,25 @@ warnOnVersionMismatch root = do
                     )
                 )
             )
+
+-- | Check for third-party packages using legacy kernel code.
+--
+-- In development mode, emits a prominent warning to stderr. In production
+-- mode (@--optimize@), raises a hard error unless @--allow-kernel@ is set.
+-- This ensures users are aware of the security implications of kernel code
+-- before deploying to production.
+--
+-- @since 0.19.2
+checkKernelCodeUsage :: FilePath -> Flags -> Task ()
+checkKernelCodeUsage root flags = do
+  kernelPkgs <- Task.io (detectKernelPackages root)
+  case kernelPkgs of
+    [] -> pure ()
+    pkgs
+      | flags ^. optimize && not (flags ^. allowKernel) ->
+          Task.throw (Exit.MakeKernelCodeInProd pkgs)
+      | otherwise ->
+          Task.io (emitKernelWarning pkgs)
 
 -- | Extract exposed modules from project details.
 --

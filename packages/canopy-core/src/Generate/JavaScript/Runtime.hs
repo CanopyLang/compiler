@@ -30,7 +30,8 @@
 -- @since 0.20.0
 module Generate.JavaScript.Runtime
   ( -- * Runtime embedding
-    embeddedRuntimeForMode
+    embeddedRuntimeForMode,
+    embeddedRuntime,
   ) where
 
 import Data.ByteString.Builder (Builder)
@@ -73,18 +74,21 @@ embeddedRuntime = BB.stringUtf8 [r|
 // _Json_runHelp is also a function declaration in json.js (hoisted).
 // We define _Json_run here because json.js exposes it as 'run' (FFI binding
 // name) rather than '_Json_run'.
+/** @canopy-type Json.Decoder a -> Json.Value -> Result Json.Error a */
 var _Json_run = F2(function(decoder, value) {
 	return _Json_runHelp(decoder, _Json_unwrap(value));
 });
 
 // _Json_errorToString is a compiled Canopy function. Provide a fallback
 // for the rare case where flag decoding fails during _Platform_initialize.
+/** @canopy-type Json.Error -> String */
 function _Json_errorToString(error) {
 	return '<json decode error>';
 }
 
 // _Array_toList is needed by Debug.toString (debug mode only).
 // Elm Arrays store data in a tree; the leaf array is in .d field.
+/** @canopy-type Array a -> List a */
 function _Array_toList(array) {
 	return _List_fromArray(array.d || []);
 }
@@ -97,32 +101,46 @@ function _Array_toList(array) {
 // Shared constructors used across multiple FFI files.
 // Debug mode uses string tags; prod uses integer tags.
 
+/** @canopy-type a -> Maybe a */
 function _Maybe_Just(a) { return { $: __canopy_debug ? 'Just' : 0, a: a }; }
+/** @canopy-type Maybe a */
 var _Maybe_Nothing = { $: __canopy_debug ? 'Nothing' : 1 };
+/** @canopy-type Maybe a -> Bool */
 function _Maybe_isJust(m) { return m.$ === (__canopy_debug ? 'Just' : 0); }
 
+/** @canopy-type a -> Result x a */
 function _Result_Ok(a) { return { $: __canopy_debug ? 'Ok' : 0, a: a }; }
+/** @canopy-type x -> Result x a */
 function _Result_Err(a) { return { $: __canopy_debug ? 'Err' : 1, a: a }; }
+/** @canopy-type Result x a -> Bool */
 function _Result_isOk(r) { return r.$ === (__canopy_debug ? 'Ok' : 0); }
 
+/** @canopy-type Never -> a */
 function _Basics_never(_) { /* unreachable by design */ }
 
 
 // ============================================================
-// JSON DECODER PRIMITIVES (used across packages)
+// JSON DECODER PRIMITIVES (early availability for cross-package FFI)
 // ============================================================
+// These must be defined before any FFI IIFE that references them
+// (e.g., file.js uses _Json_decodePrim before json.js IIFE loads).
+// The json.js IIFE will override these with its own definitions.
 
+/** @canopy-type Int */
 var _Json_PRIM = 2;
-function _Json_decodePrim(decoder) { return { $: _Json_PRIM, __decoder: decoder }; }
+/** @canopy-type (Json.Value -> a) -> Json.Decoder a */
+var _Json_decodePrim = function(decoder) { return { $: _Json_PRIM, __decoder: decoder }; };
 
 
 // ============================================================
 // DICT / SET HELPERS
 // ============================================================
 
+/** @canopy-type Dict comparable v -> List ( comparable, v ) */
 function _Dict_toList(dict) {
 	return _Dict_toListHelp(dict, _List_Nil);
 }
+/** @canopy-type Dict comparable v -> List ( comparable, v ) -> List ( comparable, v ) */
 function _Dict_toListHelp(dict, list) {
 	if (dict.$ === (__canopy_debug ? 'RBEmpty_elm_builtin' : -2)) return list;
 	list = _Dict_toListHelp(dict.e, list);
@@ -130,9 +148,11 @@ function _Dict_toListHelp(dict, list) {
 	return _Dict_toListHelp(dict.d, list);
 }
 
+/** @canopy-type Set comparable -> List comparable */
 function _Set_toList(set) {
 	return _Set_toListHelp(set.a, _List_Nil);
 }
+/** @canopy-type Set comparable -> List comparable -> List comparable */
 function _Set_toListHelp(set, list) {
 	if (set.$ === (__canopy_debug ? 'RBEmpty_elm_builtin' : -2)) return list;
 	list = _Set_toListHelp(set.e, list);
@@ -148,6 +168,7 @@ function _Set_toListHelp(set, list) {
 
 // EQUALITY
 
+/** @canopy-type a -> a -> Bool */
 function _Utils_eq(x, y)
 {
 	for (
@@ -160,6 +181,7 @@ function _Utils_eq(x, y)
 	return isEqual;
 }
 
+/** @canopy-type a -> a -> Int -> List ( a, a ) -> Bool */
 function _Utils_eqHelp(x, y, depth, stack)
 {
 	if (x === y)
@@ -222,6 +244,7 @@ function _Utils_eqHelp(x, y, depth, stack)
 
 	for (var key in x)
 	{
+		if (!Object.prototype.hasOwnProperty.call(x, key)) continue;
 		if (!_Utils_eqHelp(x[key], y[key], depth + 1, stack))
 		{
 			return false;
@@ -230,7 +253,9 @@ function _Utils_eqHelp(x, y, depth, stack)
 	return true;
 }
 
+/** @canopy-type a -> a -> Bool */
 var _Utils_equal = F2(_Utils_eq);
+/** @canopy-type a -> a -> Bool */
 var _Utils_notEqual = F2(function(a, b) { return !_Utils_eq(a,b); });
 
 
@@ -240,6 +265,7 @@ var _Utils_notEqual = F2(function(a, b) { return !_Utils_eq(a,b); });
 // Code in Generate/JavaScript.hs, Basics.js, and List.js depends on
 // the particular integer values assigned to LT, EQ, and GT.
 
+/** @canopy-type comparable -> comparable -> Int */
 function _Utils_cmp(x, y, ord)
 {
 	if (typeof x !== 'object')
@@ -267,15 +293,28 @@ function _Utils_cmp(x, y, ord)
 	}
 
 	// traverse conses until end of a list or a mismatch
+	if (!x.b && !y.b && typeof x.$ === 'undefined' && !__canopy_debug)
+	{
+		return 0;
+	}
+	if (__canopy_debug && !x.b && x.$ !== '::' && x.$ !== '[]')
+	{
+		throw new Error('Canopy runtime: _Utils_cmp called on non-comparable object');
+	}
 	for (; x.b && y.b && !(ord = _Utils_cmp(x.a, y.a)); x = x.b, y = y.b) {} // WHILE_CONSES
 	return ord || (x.b ? /*GT*/ 1 : y.b ? /*LT*/ -1 : /*EQ*/ 0);
 }
 
+/** @canopy-type comparable -> comparable -> Bool */
 var _Utils_lt = F2(function(a, b) { return _Utils_cmp(a, b) < 0; });
+/** @canopy-type comparable -> comparable -> Bool */
 var _Utils_le = F2(function(a, b) { return _Utils_cmp(a, b) < 1; });
+/** @canopy-type comparable -> comparable -> Bool */
 var _Utils_gt = F2(function(a, b) { return _Utils_cmp(a, b) > 0; });
+/** @canopy-type comparable -> comparable -> Bool */
 var _Utils_ge = F2(function(a, b) { return _Utils_cmp(a, b) >= 0; });
 
+/** @canopy-type comparable -> comparable -> Order */
 var _Utils_compare = F2(function(x, y)
 {
 	var n = _Utils_cmp(x, y);
@@ -285,17 +324,22 @@ var _Utils_compare = F2(function(x, y)
 
 // COMMON VALUES
 
+/** @canopy-type () */
 var _Utils_Tuple0 = __canopy_debug ? { $: '#0' } : 0;
 
+/** @canopy-type a -> b -> ( a, b ) */
 function _Utils_Tuple2(a, b) { return __canopy_debug ? { $: '#2', a: a, b: b } : { a: a, b: b }; }
 
+/** @canopy-type a -> b -> c -> ( a, b, c ) */
 function _Utils_Tuple3(a, b, c) { return __canopy_debug ? { $: '#3', a: a, b: b, c: c } : { a: a, b: b, c: c }; }
 
+/** @canopy-type String -> Char */
 function _Utils_chr(c) { return __canopy_debug ? new String(c) : c; }
 
 
 // RECORDS
 
+/** @canopy-type record -> record -> record */
 function _Utils_update(oldRecord, updatedFields)
 {
 	var newRecord = {};
@@ -316,8 +360,10 @@ function _Utils_update(oldRecord, updatedFields)
 
 // APPEND
 
+/** @canopy-type appendable -> appendable -> appendable */
 var _Utils_append = F2(_Utils_ap);
 
+/** @canopy-type appendable -> appendable -> appendable */
 function _Utils_ap(xs, ys)
 {
 	// append Strings
@@ -346,12 +392,16 @@ function _Utils_ap(xs, ys)
 // ============================================================
 
 
+/** @canopy-type List a */
 var _List_Nil = __canopy_debug ? { $: '[]' } : { $: 0 };
 
+/** @canopy-type a -> List a -> List a */
 function _List_Cons(hd, tl) { return __canopy_debug ? { $: '::', a: hd, b: tl } : { $: 1, a: hd, b: tl }; }
 
+/** @canopy-type a -> List a -> List a */
 var _List_cons = F2(_List_Cons);
 
+/** @canopy-type Array a -> List a */
 function _List_fromArray(arr)
 {
 	var out = _List_Nil;
@@ -362,6 +412,7 @@ function _List_fromArray(arr)
 	return out;
 }
 
+/** @canopy-type List a -> Array a */
 function _List_toArray(xs)
 {
 	for (var out = []; xs.b; xs = xs.b) // WHILE_CONS
@@ -376,20 +427,31 @@ function _List_toArray(xs)
 // BASICS (compiler built-ins)
 // ============================================================
 
+/** @canopy-type Order */
 var _Basics_LT = __canopy_debug ? { $: 'LT' } : 0;
+/** @canopy-type Order */
 var _Basics_EQ = __canopy_debug ? { $: 'EQ' } : 1;
+/** @canopy-type Order */
 var _Basics_GT = __canopy_debug ? { $: 'GT' } : 2;
 
 // Math operators — curried wrappers for partially-applied uses
+/** @canopy-type number -> number -> number */
 var _Basics_add = F2(function(a, b) { return a + b; });
+/** @canopy-type number -> number -> number */
 var _Basics_sub = F2(function(a, b) { return a - b; });
+/** @canopy-type number -> number -> number */
 var _Basics_mul = F2(function(a, b) { return a * b; });
+/** @canopy-type Float -> Float -> Float */
 var _Basics_fdiv = F2(function(a, b) { return a / b; });
+/** @canopy-type Int -> Int -> Int */
 var _Basics_idiv = F2(function(a, b) { return (a / b) | 0; });
+/** @canopy-type number -> number -> number */
 var _Basics_pow = F2(Math.pow);
 
+/** @canopy-type Int -> Int -> Int */
 var _Basics_remainderBy = F2(function(b, a) { return a % b; });
 
+/** @canopy-type Int -> Int -> Int */
 var _Basics_modBy = F2(function(modulus, x)
 {
 	var answer = x % modulus;
@@ -401,30 +463,52 @@ var _Basics_modBy = F2(function(modulus, x)
 		: answer;
 });
 
+/** @canopy-type Float */
 var _Basics_pi = Math.PI;
+/** @canopy-type Float */
 var _Basics_e = Math.E;
+/** @canopy-type Float -> Float */
 var _Basics_cos = Math.cos;
+/** @canopy-type Float -> Float */
 var _Basics_sin = Math.sin;
+/** @canopy-type Float -> Float */
 var _Basics_tan = Math.tan;
+/** @canopy-type Float -> Float */
 var _Basics_acos = Math.acos;
+/** @canopy-type Float -> Float */
 var _Basics_asin = Math.asin;
+/** @canopy-type Float -> Float */
 var _Basics_atan = Math.atan;
+/** @canopy-type Float -> Float -> Float */
 var _Basics_atan2 = F2(Math.atan2);
 
+/** @canopy-type Int -> Float */
 function _Basics_toFloat(x) { return x; }
+/** @canopy-type Float -> Int */
 function _Basics_truncate(n) { return n | 0; }
+/** @canopy-type Float -> Bool */
 function _Basics_isInfinite(n) { return n === Infinity || n === -Infinity; }
 
+/** @canopy-type Float -> Int */
 var _Basics_ceiling = Math.ceil;
+/** @canopy-type Float -> Int */
 var _Basics_floor = Math.floor;
+/** @canopy-type Float -> Int */
 var _Basics_round = Math.round;
+/** @canopy-type Float -> Float */
 var _Basics_sqrt = Math.sqrt;
+/** @canopy-type Float -> Float */
 var _Basics_log = Math.log;
+/** @canopy-type Float -> Bool */
 var _Basics_isNaN = isNaN;
 
+/** @canopy-type Bool -> Bool */
 function _Basics_not(bool) { return !bool; }
+/** @canopy-type Bool -> Bool -> Bool */
 var _Basics_and = F2(function(a, b) { return a && b; });
+/** @canopy-type Bool -> Bool -> Bool */
 var _Basics_or  = F2(function(a, b) { return a || b; });
+/** @canopy-type Bool -> Bool -> Bool */
 var _Basics_xor = F2(function(a, b) { return a !== b; });
 
 
@@ -433,6 +517,7 @@ var _Basics_xor = F2(function(a, b) { return a !== b; });
 // ============================================================
 
 
+/** @canopy-type String -> a -> a */
 var _Debug_log = __canopy_debug
 	? F2(function(tag, value)
 	{
@@ -444,6 +529,7 @@ var _Debug_log = __canopy_debug
 		return value;
 	});
 
+/** @canopy-type String -> Region -> String -> a */
 function _Debug_todo(moduleName, region)
 {
 	return function(message) {
@@ -451,6 +537,7 @@ function _Debug_todo(moduleName, region)
 	};
 }
 
+/** @canopy-type String -> Region -> a -> String -> b */
 function _Debug_todoCase(moduleName, region, value)
 {
 	return function(message) {
@@ -458,10 +545,12 @@ function _Debug_todoCase(moduleName, region, value)
 	};
 }
 
+/** @canopy-type a -> String */
 var _Debug_toString = __canopy_debug
 	? function(value) { return _Debug_toAnsiString(false, value); }
 	: function(value) { return '<internals>'; };
 
+/** @canopy-type Bool -> a -> String */
 function _Debug_toAnsiString(ansi, value)
 {
 	if (typeof value === 'function')
@@ -583,6 +672,7 @@ function _Debug_toAnsiString(ansi, value)
 	return _Debug_internalColor(ansi, '<internals>');
 }
 
+/** @canopy-type String -> Bool -> String */
 function _Debug_addSlashes(str, isChar)
 {
 	var s = str
@@ -603,41 +693,49 @@ function _Debug_addSlashes(str, isChar)
 	}
 }
 
+/** @canopy-type Bool -> String -> String */
 function _Debug_ctorColor(ansi, string)
 {
 	return ansi ? '\x1b[96m' + string + '\x1b[0m' : string;
 }
 
+/** @canopy-type Bool -> String -> String */
 function _Debug_numberColor(ansi, string)
 {
 	return ansi ? '\x1b[95m' + string + '\x1b[0m' : string;
 }
 
+/** @canopy-type Bool -> String -> String */
 function _Debug_stringColor(ansi, string)
 {
 	return ansi ? '\x1b[93m' + string + '\x1b[0m' : string;
 }
 
+/** @canopy-type Bool -> String -> String */
 function _Debug_charColor(ansi, string)
 {
 	return ansi ? '\x1b[92m' + string + '\x1b[0m' : string;
 }
 
+/** @canopy-type Bool -> String -> String */
 function _Debug_fadeColor(ansi, string)
 {
 	return ansi ? '\x1b[37m' + string + '\x1b[0m' : string;
 }
 
+/** @canopy-type Bool -> String -> String */
 function _Debug_internalColor(ansi, string)
 {
 	return ansi ? '\x1b[36m' + string + '\x1b[0m' : string;
 }
 
+/** @canopy-type Int -> String */
 function _Debug_toHexDigit(n)
 {
 	return String.fromCharCode(n < 10 ? 48 + n : 55 + n);
 }
 
+/** @canopy-type Int -> a */
 var _Debug_crash = __canopy_debug
 	? function(identifier, fact1, fact2, fact3, fact4)
 	{
@@ -699,13 +797,14 @@ var _Debug_crash = __canopy_debug
 		throw new Error('https://github.com/elm/core/blob/1.0.0/hints/' + identifier + '.md');
 	};
 
+/** @canopy-type Region -> String */
 function _Debug_regionToString(region)
 {
-	if (region.__$start.__$line === region.__$end.__$line)
+	if (region.start.line === region.end.line)
 	{
-		return 'on line ' + region.__$start.__$line;
+		return 'on line ' + region.start.line;
 	}
-	return 'on lines ' + region.__$start.__$line + ' through ' + region.__$end.__$line;
+	return 'on lines ' + region.start.line + ' through ' + region.end.line;
 }
 
 
@@ -714,6 +813,7 @@ function _Debug_regionToString(region)
 // ============================================================
 
 
+/** @canopy-type Float -> Task x () */
 function _Process_sleep(time)
 {
 	return _Scheduler_binding(function(callback) {
@@ -731,16 +831,23 @@ function _Process_sleep(time)
 // ============================================================
 
 // Task discriminant tags
+/** @canopy-type Int */
 var _Scheduler_SUCCEED  = 0;
+/** @canopy-type Int */
 var _Scheduler_FAIL     = 1;
+/** @canopy-type Int */
 var _Scheduler_BINDING  = 2;
+/** @canopy-type Int */
 var _Scheduler_AND_THEN = 3;
+/** @canopy-type Int */
 var _Scheduler_ON_ERROR = 4;
+/** @canopy-type Int */
 var _Scheduler_RECEIVE  = 5;
 
 
 // TASKS
 
+/** @canopy-type a -> Task x a */
 function _Scheduler_succeed(value)
 {
 	return {
@@ -749,6 +856,7 @@ function _Scheduler_succeed(value)
 	};
 }
 
+/** @canopy-type x -> Task x a */
 function _Scheduler_fail(error)
 {
 	return {
@@ -757,6 +865,7 @@ function _Scheduler_fail(error)
 	};
 }
 
+/** @canopy-type ((Task x a -> ()) -> Maybe (() -> ())) -> Task x a */
 function _Scheduler_binding(callback)
 {
 	return {
@@ -766,6 +875,7 @@ function _Scheduler_binding(callback)
 	};
 }
 
+/** @canopy-type (a -> Task x b) -> Task x a -> Task x b */
 var _Scheduler_andThen = F2(function(callback, task)
 {
 	return {
@@ -775,6 +885,7 @@ var _Scheduler_andThen = F2(function(callback, task)
 	};
 });
 
+/** @canopy-type (x -> Task y a) -> Task x a -> Task y a */
 var _Scheduler_onError = F2(function(callback, task)
 {
 	return {
@@ -784,6 +895,7 @@ var _Scheduler_onError = F2(function(callback, task)
 	};
 });
 
+/** @canopy-type (msg -> Task x a) -> Task x a */
 function _Scheduler_receive(callback)
 {
 	return {
@@ -795,13 +907,15 @@ function _Scheduler_receive(callback)
 
 // PROCESSES
 
+/** @canopy-type Int */
 var _Scheduler_guid = 0;
 
+/** @canopy-type Task x a -> Process */
 function _Scheduler_rawSpawn(task)
 {
 	var proc = {
 		$: 0,
-		__id: _Scheduler_guid++,
+		__id: (_Scheduler_guid = (_Scheduler_guid + 1) % 9007199254740991),
 		__root: task,
 		__stack: null,
 		__mailbox: []
@@ -812,6 +926,7 @@ function _Scheduler_rawSpawn(task)
 	return proc;
 }
 
+/** @canopy-type Task x a -> Task y Process */
 function _Scheduler_spawn(task)
 {
 	return _Scheduler_binding(function(callback) {
@@ -819,12 +934,14 @@ function _Scheduler_spawn(task)
 	});
 }
 
+/** @canopy-type Process -> msg -> () */
 function _Scheduler_rawSend(proc, msg)
 {
 	proc.__mailbox.push(msg);
 	_Scheduler_enqueue(proc);
 }
 
+/** @canopy-type Process -> msg -> Task x () */
 var _Scheduler_send = F2(function(proc, msg)
 {
 	return _Scheduler_binding(function(callback) {
@@ -833,6 +950,7 @@ var _Scheduler_send = F2(function(proc, msg)
 	});
 });
 
+/** @canopy-type Process -> Task x () */
 function _Scheduler_kill(proc)
 {
 	return _Scheduler_binding(function(callback) {
@@ -843,6 +961,8 @@ function _Scheduler_kill(proc)
 		}
 
 		proc.__root = null;
+		proc.__stack = null;
+		proc.__mailbox = [];
 
 		callback(_Scheduler_succeed(_Utils_Tuple0));
 	});
@@ -862,10 +982,13 @@ type alias Process =
 */
 
 
+/** @canopy-type Bool */
 var _Scheduler_working = false;
+/** @canopy-type List Process */
 var _Scheduler_queue = [];
 
 
+/** @canopy-type Process -> () */
 function _Scheduler_enqueue(proc)
 {
 	_Scheduler_queue.push(proc);
@@ -874,14 +997,21 @@ function _Scheduler_enqueue(proc)
 		return;
 	}
 	_Scheduler_working = true;
-	while (proc = _Scheduler_queue.shift())
+	try
 	{
-		_Scheduler_step(proc);
+		while (proc = _Scheduler_queue.shift())
+		{
+			_Scheduler_step(proc);
+		}
 	}
-	_Scheduler_working = false;
+	finally
+	{
+		_Scheduler_working = false;
+	}
 }
 
 
+/** @canopy-type Process -> () */
 function _Scheduler_step(proc)
 {
 	while (proc.__root)
@@ -934,23 +1064,28 @@ function _Scheduler_step(proc)
 // ============================================================
 
 // Effect bag discriminant tags
+/** @canopy-type Int */
 var _Platform_SELF = 0;
+/** @canopy-type Int */
 var _Platform_LEAF = 1;
+/** @canopy-type Int */
 var _Platform_NODE = 2;
+/** @canopy-type Int */
 var _Platform_MAP  = 3;
 
 
 // PROGRAMS
 
 
+/** @canopy-type { init : flags -> ( model, Cmd msg ), update : msg -> model -> ( model, Cmd msg ), subscriptions : model -> Sub msg } -> Json.Decoder flags -> () -> flags -> Program flags model msg */
 var _Platform_worker = F4(function(impl, flagDecoder, debugMetadata, args)
 {
 	return _Platform_initialize(
 		flagDecoder,
 		args,
-		impl.__$init,
-		impl.__$update,
-		impl.__$subscriptions,
+		impl.init,
+		impl.update,
+		impl.subscriptions,
 		function() { return function() {} }
 	);
 });
@@ -960,6 +1095,7 @@ var _Platform_worker = F4(function(impl, flagDecoder, debugMetadata, args)
 // INITIALIZE A PROGRAM
 
 
+/** @canopy-type Json.Decoder flags -> flags -> (flags -> ( model, Cmd msg )) -> (msg -> model -> ( model, Cmd msg )) -> (model -> Sub msg) -> ((msg -> ()) -> model -> (model -> () -> ())) -> { ports : ports } */
 function _Platform_initialize(flagDecoder, args, init, update, subscriptions, stepperBuilder)
 {
 	var result = A2(_Json_run, flagDecoder, _Json_wrap(args ? args['flags'] : undefined));
@@ -987,9 +1123,11 @@ function _Platform_initialize(flagDecoder, args, init, update, subscriptions, st
 // TRACK PRELOADS
 
 
-var _Platform_preload;
+/** @canopy-type Set String */
+var _Platform_preload = new Set();
 
 
+/** @canopy-type String -> () */
 function _Platform_registerPreload(url)
 {
 	_Platform_preload.add(url);
@@ -1000,9 +1138,11 @@ function _Platform_registerPreload(url)
 // EFFECT MANAGERS
 
 
+/** @canopy-type Dict String EffectManager */
 var _Platform_effectManagers = {};
 
 
+/** @canopy-type Dict String EffectManager -> (msg -> ()) -> Maybe (Dict String Port) */
 function _Platform_setupEffects(managers, sendToApp)
 {
 	var ports;
@@ -1025,6 +1165,7 @@ function _Platform_setupEffects(managers, sendToApp)
 }
 
 
+/** @canopy-type Task Never state -> (Router msg -> List cmd -> List sub -> state -> Task Never state) -> (Router msg -> self -> state -> Task Never state) -> (cmd -> cmd) -> (sub -> sub) -> EffectManager */
 function _Platform_createManager(init, onEffects, onSelfMsg, cmdMap, subMap)
 {
 	return {
@@ -1037,6 +1178,7 @@ function _Platform_createManager(init, onEffects, onSelfMsg, cmdMap, subMap)
 }
 
 
+/** @canopy-type EffectManager -> (msg -> ()) -> Process */
 function _Platform_instantiateManager(info, sendToApp)
 {
 	var router = {
@@ -1074,6 +1216,7 @@ function _Platform_instantiateManager(info, sendToApp)
 // ROUTING
 
 
+/** @canopy-type Router msg -> msg -> Task x () */
 var _Platform_sendToApp = F2(function(router, msg)
 {
 	return _Scheduler_binding(function(callback)
@@ -1084,6 +1227,7 @@ var _Platform_sendToApp = F2(function(router, msg)
 });
 
 
+/** @canopy-type Router msg -> msg -> Task x () */
 var _Platform_sendToSelf = F2(function(router, msg)
 {
 	return A2(_Scheduler_send, router.__selfProcess, {
@@ -1097,6 +1241,7 @@ var _Platform_sendToSelf = F2(function(router, msg)
 // BAGS
 
 
+/** @canopy-type String -> a -> Cmd msg */
 function _Platform_leaf(home)
 {
 	return function(value)
@@ -1110,6 +1255,7 @@ function _Platform_leaf(home)
 }
 
 
+/** @canopy-type List (Cmd msg) -> Cmd msg */
 function _Platform_batch(list)
 {
 	return {
@@ -1119,6 +1265,7 @@ function _Platform_batch(list)
 }
 
 
+/** @canopy-type (a -> msg) -> Cmd a -> Cmd msg */
 var _Platform_map = F2(function(tagger, bag)
 {
 	return {
@@ -1132,10 +1279,13 @@ var _Platform_map = F2(function(tagger, bag)
 
 // PIPE BAGS INTO EFFECT MANAGERS
 
+/** @canopy-type List { managers : Dict String Process, cmdBag : Cmd msg, subBag : Sub msg } */
 var _Platform_effectsQueue = [];
+/** @canopy-type Bool */
 var _Platform_effectsActive = false;
 
 
+/** @canopy-type Dict String Process -> Cmd msg -> Sub msg -> () */
 function _Platform_enqueueEffects(managers, cmdBag, subBag)
 {
 	_Platform_effectsQueue.push({ __managers: managers, __cmdBag: cmdBag, __subBag: subBag });
@@ -1143,14 +1293,21 @@ function _Platform_enqueueEffects(managers, cmdBag, subBag)
 	if (_Platform_effectsActive) return;
 
 	_Platform_effectsActive = true;
-	for (var fx; fx = _Platform_effectsQueue.shift(); )
+	try
 	{
-		_Platform_dispatchEffects(fx.__managers, fx.__cmdBag, fx.__subBag);
+		for (var fx; fx = _Platform_effectsQueue.shift(); )
+		{
+			_Platform_dispatchEffects(fx.__managers, fx.__cmdBag, fx.__subBag);
+		}
 	}
-	_Platform_effectsActive = false;
+	finally
+	{
+		_Platform_effectsActive = false;
+	}
 }
 
 
+/** @canopy-type Dict String Process -> Cmd msg -> Sub msg -> () */
 function _Platform_dispatchEffects(managers, cmdBag, subBag)
 {
 	var effectsDict = {};
@@ -1167,6 +1324,7 @@ function _Platform_dispatchEffects(managers, cmdBag, subBag)
 }
 
 
+/** @canopy-type Bool -> Cmd msg -> Dict String { cmds : List cmd, subs : List sub } -> List (a -> msg) -> () */
 function _Platform_gatherEffects(isCmd, bag, effectsDict, taggers)
 {
 	switch (bag.$)
@@ -1194,6 +1352,7 @@ function _Platform_gatherEffects(isCmd, bag, effectsDict, taggers)
 }
 
 
+/** @canopy-type Bool -> String -> List (a -> msg) -> a -> cmd */
 function _Platform_toEffect(isCmd, home, taggers, value)
 {
 	function applyTaggers(x)
@@ -1213,6 +1372,7 @@ function _Platform_toEffect(isCmd, home, taggers, value)
 }
 
 
+/** @canopy-type Bool -> cmd -> { cmds : List cmd, subs : List sub } -> { cmds : List cmd, subs : List sub } */
 function _Platform_insert(isCmd, newEffect, effects)
 {
 	effects = effects || { __cmds: _List_Nil, __subs: _List_Nil };
@@ -1229,6 +1389,7 @@ function _Platform_insert(isCmd, newEffect, effects)
 // PORTS
 
 
+/** @canopy-type String -> () */
 function _Platform_checkPortName(name)
 {
 	if (_Platform_effectManagers[name])
@@ -1242,6 +1403,7 @@ function _Platform_checkPortName(name)
 // OUTGOING PORTS
 
 
+/** @canopy-type String -> (a -> Json.Value) -> (a -> Cmd msg) */
 function _Platform_outgoingPort(name, converter)
 {
 	_Platform_checkPortName(name);
@@ -1254,9 +1416,11 @@ function _Platform_outgoingPort(name, converter)
 }
 
 
+/** @canopy-type (a -> msg) -> a -> a */
 var _Platform_outgoingPortMap = F2(function(tagger, value) { return value; });
 
 
+/** @canopy-type String -> { subscribe : (Json.Value -> ()) -> (), unsubscribe : (Json.Value -> ()) -> () } */
 function _Platform_setupOutgoingPort(name)
 {
 	var subs = [];
@@ -1317,6 +1481,7 @@ function _Platform_setupOutgoingPort(name)
 // INCOMING PORTS
 
 
+/** @canopy-type String -> Json.Decoder a -> (a -> msg) -> Sub msg */
 function _Platform_incomingPort(name, converter)
 {
 	_Platform_checkPortName(name);
@@ -1329,6 +1494,7 @@ function _Platform_incomingPort(name, converter)
 }
 
 
+/** @canopy-type (a -> msg) -> (Json.Value -> a) -> Json.Value -> msg */
 var _Platform_incomingPortMap = F2(function(tagger, finalTagger)
 {
 	return function(value)
@@ -1338,6 +1504,7 @@ var _Platform_incomingPortMap = F2(function(tagger, finalTagger)
 });
 
 
+/** @canopy-type String -> (msg -> ()) -> { send : Json.Value -> () } */
 function _Platform_setupIncomingPort(name, sendToApp)
 {
 	var subs = _List_Nil;
@@ -1376,6 +1543,7 @@ function _Platform_setupIncomingPort(name, sendToApp)
 
 // EXPORT ELM MODULES
 
+/** @canopy-type a -> () */
 function _Platform_export(exports)
 {
 	if (__canopy_debug)
@@ -1393,6 +1561,7 @@ function _Platform_export(exports)
 }
 
 
+/** @canopy-type a -> a -> () */
 function _Platform_mergeExportsProd(obj, exports)
 {
 	for (var name in exports)
@@ -1406,6 +1575,7 @@ function _Platform_mergeExportsProd(obj, exports)
 }
 
 
+/** @canopy-type String -> a -> a -> () */
 function _Platform_mergeExportsDebug(moduleName, obj, exports)
 {
 	for (var name in exports)
@@ -1417,6 +1587,11 @@ function _Platform_mergeExportsDebug(moduleName, obj, exports)
 			: (obj[name] = exports[name]);
 	}
 }
+
+// CAPABILITY GRANT (phantom type value — compile-time enforcement only)
+// fromKernel "Kernel.Capability" "grant" produces _Kernel_Capability_grant
+/** @canopy-type Capability */
+var _Kernel_Capability_grant = 0;
 
 // ============================================================
 // End Canopy Runtime

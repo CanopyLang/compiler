@@ -99,6 +99,7 @@ import qualified Unit.Generate.CodeSplit.TypesTest as CodeSplitTypesTest
 import qualified Unit.Generate.ExpressionTest as ExpressionTest
 import qualified Unit.Generate.HtmlSecurityTest as HtmlSecurityTest
 import qualified Unit.Generate.JavaScript.ExpressionArithmeticTest as JSExpressionArithmeticTest
+import qualified Unit.Generate.JavaScript.RuntimeAnnotationTest as RuntimeAnnotationTest
 import qualified Unit.Generate.MinifyTest as MinifyTest
 import qualified Unit.Generate.NameTest as GenerateNameTest
 import qualified Unit.Generate.CoverageTest as CoverageTest
@@ -266,6 +267,7 @@ unitTests =
       NamesTest.tests,
       SimplifyTest.tests,
       JSExpressionArithmeticTest.tests,
+      RuntimeAnnotationTest.tests,
       MinifyTest.tests,
       GenerateNameTest.tests,
       HtmlSecurityTest.tests,

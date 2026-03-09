@@ -89,10 +89,9 @@ import qualified Stuff
 import Test.Browser (AppEntryPoint (..))
 import qualified Test.Browser as Browser
 import qualified Test.Coverage as Coverage
-import Test.External (JsContent (..), ExternalModuleError)
-import qualified Test.External as External
+import qualified Data.Text.IO as TextIO
 import qualified Generate.JavaScript.Coverage as CoverageMap
-import Test.Harness (HarnessConfig (..), HarnessContent (..))
+import Test.Harness (JsContent (..), HarnessConfig (..), HarnessContent (..))
 import qualified Test.Harness as Harness
 import qualified Test.Playwright as Playwright
 import Test.Server (ServerPort (..))
@@ -288,21 +287,27 @@ executeBrowserExecutionTests jsContent testFiles flags = do
     `Exception.catch` handleBrowserErrorWithCov
 
 -- | Run the browser execution pipeline.
+--
+-- The compiled output already includes browser-test-runner.js via FFI.
+-- Only playwright-rpc.js needs separate loading (it's a standalone
+-- Node.js launcher, not callable from Canopy).
 runBrowserExecutionPipeline :: Text.Text -> [FilePath] -> Flags -> IO (ExitCode, Maybe Value)
 runBrowserExecutionPipeline jsContent _testFiles flags = do
   playwrightReady <- Playwright.ensurePlaywrightInstalled
   if not playwrightReady
     then pure (ExitFailure 1, Nothing)
     else do
-      bundleResult <- External.loadBrowserTestBundle
-      case bundleResult of
-        Left err -> fmap (\ec -> (ec, Nothing)) (reportExternalError err)
-        Right (browserRunner, rpcModule) ->
-          runBrowserExecutionWithServer jsContent flags browserRunner rpcModule
+      rpcResult <- loadFileFromPackage "canopy" "test" ("external" </> "playwright-rpc.js")
+      case rpcResult of
+        Left err -> do
+          Print.printErrLn [c|{red|Error loading playwright-rpc.js:} #{err}|]
+          pure (ExitFailure 1, Nothing)
+        Right rpcContent ->
+          runBrowserExecutionWithServer jsContent flags (JsContent rpcContent)
 
 -- | Start server, write HTML harness, launch Playwright, collect results.
-runBrowserExecutionWithServer :: Text.Text -> Flags -> JsContent -> JsContent -> IO (ExitCode, Maybe Value)
-runBrowserExecutionWithServer jsContent flags browserRunner rpcModule = do
+runBrowserExecutionWithServer :: Text.Text -> Flags -> JsContent -> IO (ExitCode, Maybe Value)
+runBrowserExecutionWithServer jsContent flags rpcModule = do
   setTestFilter (flags ^. testFilter)
   portResult <- Server.findAvailablePort
   case portResult of
@@ -313,7 +318,7 @@ runBrowserExecutionWithServer jsContent flags browserRunner rpcModule = do
       tmpDir <- Dir.getTemporaryDirectory
       let htmlPath = tmpDir </> "canopy-browser-test.html"
           rpcPath = tmpDir </> "canopy-playwright-rpc.js"
-          harness = Harness.generateBrowserTestHarness (JsContent jsContent) browserRunner
+          harness = Harness.generateBrowserTestHarness (JsContent jsContent)
       writeFile htmlPath (Text.unpack (unHarnessContent harness))
       writeFile rpcPath (Text.unpack (unJsContent rpcModule))
       server <- Server.startTestServer tmpDir port
@@ -385,26 +390,20 @@ executeBrowserTests jsContent testFiles flags = do
     `Exception.catch` handleBrowserErrorWithCov
 
 -- | Run the browser test pipeline, propagating errors.
+--
+-- The compiled output already includes test-runner.js, task-executor.js,
+-- and playwright.js via FFI imports. No external module loading needed.
 runBrowserPipeline :: Text.Text -> [FilePath] -> Flags -> IO (ExitCode, Maybe Value)
 runBrowserPipeline jsContent testFiles flags = do
   playwrightReady <- Playwright.ensurePlaywrightInstalled
   if not playwrightReady
     then pure (ExitFailure 1, Nothing)
     else do
-      bundleResult <- External.loadTestRunnerBundle
-      case bundleResult of
-        Left err -> fmap (\ec -> (ec, Nothing)) (reportExternalError err)
-        Right (runner, executor, playwright) ->
-          runWithExternals jsContent testFiles flags runner executor playwright
-
--- | Continue browser pipeline after loading external modules.
-runWithExternals :: Text.Text -> [FilePath] -> Flags -> JsContent -> JsContent -> JsContent -> IO (ExitCode, Maybe Value)
-runWithExternals jsContent testFiles flags runner executor playwright = do
-  appResult <- resolveAppEntry testFiles flags
-  appDir <- case appResult of
-    Right appEntry -> pure (FilePath.takeDirectory (unAppEntryPoint appEntry))
-    Left _ -> Dir.getCurrentDirectory
-  runBrowserTestsWithServer jsContent flags runner executor playwright appDir
+      appResult <- resolveAppEntry testFiles flags
+      appDir <- case appResult of
+        Right appEntry -> pure (FilePath.takeDirectory (unAppEntryPoint appEntry))
+        Left _ -> Dir.getCurrentDirectory
+      runBrowserTestsWithServer jsContent flags appDir
 
 -- | Resolve the application entry point for browser tests.
 resolveAppEntry :: [FilePath] -> Flags -> IO (Either Browser.AppDiscoveryError AppEntryPoint)
@@ -414,8 +413,8 @@ resolveAppEntry testFiles flags =
     maybeAppFlag = fmap AppEntryPoint (flags ^. testApp)
 
 -- | Run browser tests with an embedded HTTP server.
-runBrowserTestsWithServer :: Text.Text -> Flags -> JsContent -> JsContent -> JsContent -> FilePath -> IO (ExitCode, Maybe Value)
-runBrowserTestsWithServer jsContent flags runner executor playwright appDir = do
+runBrowserTestsWithServer :: Text.Text -> Flags -> FilePath -> IO (ExitCode, Maybe Value)
+runBrowserTestsWithServer jsContent flags appDir = do
   portResult <- Server.findAvailablePort
   case portResult of
     Left _ -> do
@@ -426,13 +425,13 @@ runBrowserTestsWithServer jsContent flags runner executor playwright appDir = do
       when (flags ^. testVerbose) $ do
         let portStr = show (unServerPort port)
         Print.println [c|  Listening on {cyan|http://127.0.0.1:#{portStr}}|]
-      result <- generateAndRun flags runner executor playwright (JsContent jsContent) (Just port) appDir
+      result <- generateAndRun flags (JsContent jsContent) (Just port) appDir
       Server.stopTestServer server
       pure result
 
 -- | Generate the harness and execute it via Node.js.
-generateAndRun :: Flags -> JsContent -> JsContent -> JsContent -> JsContent -> Maybe ServerPort -> FilePath -> IO (ExitCode, Maybe Value)
-generateAndRun flags runner executor playwright tests maybePort projectDir = do
+generateAndRun :: Flags -> JsContent -> Maybe ServerPort -> FilePath -> IO (ExitCode, Maybe Value)
+generateAndRun flags tests maybePort projectDir = do
   setTestFilter (flags ^. testFilter)
   tmpDir <- Dir.getTemporaryDirectory
   let runnerPath = tmpDir </> "canopy-browser-test-runner.js"
@@ -443,18 +442,54 @@ generateAndRun flags runner executor playwright tests maybePort projectDir = do
             _harnessHeaded = flags ^. testHeaded,
             _harnessSlowMo = fromIntegral (Maybe.fromMaybe 0 (flags ^. testSlowMo))
           }
-      harness = Harness.generateBrowserHarness config runner executor playwright tests
+      harness = Harness.generateBrowserHarness config tests
   writeFile runnerPath (Text.unpack (unHarnessContent harness))
   Runner.runNodeForBrowserTests runnerPath projectDir (flags ^. testVerbose)
 
--- | Report external module loading errors.
-reportExternalError :: ExternalModuleError -> IO ExitCode
-reportExternalError err = do
-  let errStr = show err
-  Print.printErrLn [c|{red|Error loading test infrastructure:} #{errStr}|]
-  Print.println [c|Make sure the {cyan|canopy/test} package is installed.|]
-  Print.println [c|Run {green|canopy setup} to install core packages.|]
-  pure (ExitFailure 1)
+-- | Load a file from an installed package in the Canopy package cache.
+--
+-- Resolves the package directory via 'Stuff.getPackageCache', finds
+-- the latest installed version, and reads the file. Used for loading
+-- standalone JS files (like playwright-rpc.js) that cannot go through
+-- the FFI import pipeline.
+loadFileFromPackage :: String -> String -> FilePath -> IO (Either String Text.Text)
+loadFileFromPackage author project relPath = do
+  cacheDir <- Stuff.getPackageCache
+  let pkgDir = cacheDir </> author </> project
+  pkgExists <- Dir.doesDirectoryExist pkgDir
+  if not pkgExists
+    then tryElmFallback author project relPath
+    else loadFromPkgDir pkgDir relPath
+
+-- | Find the latest version directory and read the file.
+loadFromPkgDir :: FilePath -> FilePath -> IO (Either String Text.Text)
+loadFromPkgDir pkgDir relPath = do
+  entries <- Dir.listDirectory pkgDir
+  dirs <- filterM (Dir.doesDirectoryExist . (pkgDir </>)) entries
+  let sorted = reverse (filter (not . ("." `isPrefixOfStr`)) dirs)
+  case sorted of
+    [] -> pure (Left "Package not installed")
+    (latest : _) -> readFileFromDir (pkgDir </> latest </> relPath)
+  where
+    isPrefixOfStr prefix str = take (length prefix) str == prefix
+
+-- | Read a single file, returning Left on missing file.
+readFileFromDir :: FilePath -> IO (Either String Text.Text)
+readFileFromDir path = do
+  exists <- Dir.doesFileExist path
+  if exists
+    then fmap Right (TextIO.readFile path)
+    else pure (Left ("File not found: " ++ path))
+
+-- | Fallback to the Elm package cache.
+tryElmFallback :: String -> String -> FilePath -> IO (Either String Text.Text)
+tryElmFallback author project relPath = do
+  homeDir <- Dir.getHomeDirectory
+  let elmDir = homeDir </> ".elm" </> "0.19.1" </> "packages" </> author </> project
+  elmExists <- Dir.doesDirectoryExist elmDir
+  if elmExists
+    then loadFromPkgDir elmDir relPath
+    else pure (Left "Package not installed (checked Canopy and Elm caches)")
 
 -- | Handle IO exceptions during browser test setup.
 handleBrowserError :: Exception.IOException -> IO ExitCode

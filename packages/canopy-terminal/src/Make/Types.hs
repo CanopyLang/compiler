@@ -41,6 +41,7 @@ module Make.Types
     ffiDebug,
     jobs,
     verifyReproducible,
+    allowKernel,
 
     -- ** BuildContext Lenses
     bcStyle,
@@ -97,7 +98,9 @@ data Flags = Flags
     -- | Maximum parallel compilation jobs (0 = auto-detect from CPU count)
     _jobs :: !(Maybe Int),
     -- | Build twice and compare output to verify reproducibility
-    _verifyReproducible :: !Bool
+    _verifyReproducible :: !Bool,
+    -- | Explicitly allow third-party packages that use kernel code
+    _allowKernel :: !Bool
   }
   deriving (Eq, Show)
 

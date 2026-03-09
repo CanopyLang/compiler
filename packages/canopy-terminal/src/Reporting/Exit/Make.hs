@@ -42,6 +42,8 @@ data Make
     MakeReproducibilityFailure !Int
   | -- | FFI functions require capabilities not declared in canopy.json
     MakeCapabilityError ![CapEnforce.CapabilityError]
+  | -- | Third-party packages use kernel code in production mode without --allow-kernel
+    MakeKernelCodeInProd ![String]
   deriving (Show)
 
 -- | Convert a 'Make' error to a structured 'Report'.
@@ -58,6 +60,7 @@ makeToReport (MakeCannotBuild buildErr) = BuildExit.toDoc buildErr
 makeToReport MakeCannotOptimizeAndDebug = optimizeAndDebugError
 makeToReport (MakeReproducibilityFailure offset) = reproducibilityFailureError offset
 makeToReport (MakeCapabilityError capErrors) = capabilityError capErrors
+makeToReport (MakeKernelCodeInProd pkgs) = kernelCodeInProdError pkgs
 
 noMainError :: Report
 noMainError =
@@ -138,6 +141,37 @@ formatCapError ce =
     file = Text.unpack (CapEnforce._ceFilePath ce)
     cap = Text.unpack (CapEnforce._ceMissingCapability ce)
     line = func <> " (" <> file <> ") requires capability " <> show cap
+
+-- | Report kernel code usage in production builds.
+--
+-- Lists packages using legacy kernel code and suggests migration to the FFI
+-- system or using --allow-kernel as a workaround.
+kernelCodeInProdError :: [String] -> Report
+kernelCodeInProdError pkgs =
+  structuredError
+    "KERNEL CODE IN PRODUCTION BUILD"
+    ( Doc.vcat
+        [ Doc.reflow "The following third-party packages use legacy kernel code instead of the Canopy FFI system:",
+          "",
+          Doc.vcat (map formatKernelPkg pkgs),
+          "",
+          Doc.reflow "Kernel code bypasses Canopy's type safety guarantees at the JavaScript boundary. The FFI system provides type-checked, capability-secured bindings that are safe for production use."
+        ]
+    )
+    ( Doc.vcat
+        [ Doc.reflow "You have two options:",
+          "",
+          fixLine (Doc.green "1." <+> Doc.reflow "Ask the package author to migrate from kernel code to the Canopy FFI system."),
+          fixLine (Doc.green "2." <+> Doc.reflow "Explicitly accept the risk by adding --allow-kernel:"),
+          "",
+          fixLine (Doc.green "canopy make --optimize --allow-kernel")
+        ]
+    )
+
+-- | Format a single package name for the kernel code error.
+formatKernelPkg :: String -> Doc.Doc
+formatKernelPkg pkg =
+  Doc.indent 4 (Doc.dullyellow (Doc.fromChars ("- " <> pkg)))
 
 -- | Suggestion text for adding missing capabilities to canopy.json.
 suggestion :: Doc.Doc

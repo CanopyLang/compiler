@@ -113,6 +113,7 @@ library
       Make.Builder
       Make.Environment
       Make.Generation
+      Make.KernelCheck
       Make.Output
       Make.Parser
       Make.Reproducible
@@ -162,7 +163,6 @@ library
       Test.Coverage
       Test.Discovery
       Test.Event
-      Test.External
       Test.FFI
       Test.Harness
       Test.Playwright

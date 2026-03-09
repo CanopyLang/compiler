@@ -286,6 +286,7 @@ test-suite canopy-test
       Unit.Generate.ExpressionTest
       Unit.Generate.HtmlSecurityTest
       Unit.Generate.JavaScript.ExpressionArithmeticTest
+      Unit.Generate.JavaScript.RuntimeAnnotationTest
       Unit.Generate.MinifyTest
       Unit.Generate.NameTest
       Unit.Generate.SourceMapTest

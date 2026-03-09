@@ -79,7 +79,7 @@ fromCycle home name =
 
 fromKernel :: Name.Name -> Name.Name -> Name
 fromKernel home name =
-  Name ("_" <> Name.toBuilder home <> "_" <> Name.toBuilder name)
+  Name ("_" <> Utf8.toEscapedBuilder 0x2E {- . -} 0x5F {- _ -} home <> "_" <> Name.toBuilder name)
 
 
 {-# INLINE homeToBuilder #-}
