@@ -689,7 +689,7 @@ function _Debug_addSlashes(str, isChar)
 	}
 	else
 	{
-		return s.replace(/\"/g, '\\"');
+		return s.replace(/\"/g, "\\\"");
 	}
 }
 
