@@ -33,15 +33,15 @@ packages:
   original:
     hackage: tls-1.9.0@sha256:8ad332dc0224decb1b137bf6c9678b4f786487b9aaa5c9068cd3ad19d42c39a7,5571
 - completed:
-    commit: 6710f6c45ed3360bfd65a2853781189ad3560161
+    commit: a376f7300c7ea0dc91ad4f385902e41779685273
     git: https://github.com/quintenkasteel/language-javascript.git
     name: language-javascript
     pantry-tree:
-      sha256: 8fd81bb6e0101c333c7a97721c0bb5be0bc89d869f1969f07ee454aedf35926a
+      sha256: dd74565654fcd1fcece506a418b9b74da4f8f645dac731543cfb7261ef679707
       size: 22342
     version: 0.8.0.0
   original:
-    commit: 6710f6c45ed3360bfd65a2853781189ad3560161
+    commit: a376f7300c7ea0dc91ad4f385902e41779685273
     git: https://github.com/quintenkasteel/language-javascript.git
 snapshots:
 - completed:
