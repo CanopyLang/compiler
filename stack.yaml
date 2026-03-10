@@ -22,4 +22,4 @@ extra-deps:
   - ansi-terminal-types-0.11.5@sha256:f78440dfd95c4509e88855ac7cc2d9566ddf956a92c1290404cac93ad1a1b00a,1482
   - tls-1.9.0@sha256:8ad332dc0224decb1b137bf6c9678b4f786487b9aaa5c9068cd3ad19d42c39a7,5571
   - git: https://github.com/quintenkasteel/language-javascript.git
-    commit: 6710f6c45ed3360bfd65a2853781189ad3560161
+    commit: a376f7300c7ea0dc91ad4f385902e41779685273
