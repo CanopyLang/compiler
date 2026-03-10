@@ -27,6 +27,7 @@ module Generate.JavaScript.Builder
   , InfixOp(..), PrefixOp(..)
   , ModuleItem(..)
   , moduleToBuilder
+  , moduleToFormattedBuilder
   , moduleItemToBuilder
   , nameToByteString
   , shorthandObjectExpr
@@ -51,6 +52,7 @@ import qualified Language.JavaScript.Parser.AST as JS
 import Language.JavaScript.Parser.AST (JSAnnot(..), JSAST(..), JSExpression, JSStatement)
 import Language.JavaScript.Parser.SrcLocation (TokenPosn(..))
 import Language.JavaScript.Parser.Token (CommentAnnotation(..))
+import qualified Language.JavaScript.Pretty.Formatted as JSFmt
 import qualified Language.JavaScript.Pretty.Printer as JSP
 
 
@@ -689,6 +691,34 @@ instance Show ModuleItem where
 -- @since 0.20.0
 moduleToBuilder :: [ModuleItem] -> Builder
 moduleToBuilder = mconcat . map moduleItemToBuilder
+
+-- | Render a list of 'ModuleItem' values as formatted, readable ESM content.
+--
+-- Uses the @language-javascript@ formatted pretty printer with 2-space
+-- indentation for human-readable output. Suitable for dev mode where
+-- readability of generated JS is important.
+--
+-- 'RawJS' items are emitted verbatim between formatted AST groups.
+-- AST-convertible items are collected into batches and formatted together
+-- for consistent indentation.
+--
+-- @since 0.20.1
+moduleToFormattedBuilder :: [ModuleItem] -> Builder
+moduleToFormattedBuilder = mconcat . map formatItem
+  where
+    formatItem (RawJS raw) = raw
+    formatItem item =
+      blazeToBuilder (JSFmt.formatToBuilder JSFmt.twoSpaceStyle (JS.JSAstModule [toJSModuleItem item] noAnnot))
+
+    toJSModuleItem (ImportBare path) = importBareToJS path
+    toJSModuleItem (ImportNamed names path) = importNamedToJS (namesToImportSpecifiers names) path
+    toJSModuleItem (ImportNamedRaw rawNames path) = importNamedToJS (rawNamesToImportSpecifiers rawNames) path
+    toJSModuleItem (ExportLocals names) = exportLocalsToJS names
+    toJSModuleItem (ExportLocalsRaw names) = exportLocalsRawToJS names
+    toJSModuleItem (VarShorthandObject name props) = varShorthandObjectToJS name props
+    toJSModuleItem (GlobalThisAssignRaw names) = globalThisAssignRawToJS names
+    toJSModuleItem (ModuleStmt stmt) = JS.JSModuleStatementListItem (stmtToJS stmt)
+    toJSModuleItem (RawJS _) = JS.JSModuleStatementListItem (JS.JSEmptyStatement noAnnot)
 
 -- | Render a single 'ModuleItem' to a 'Builder'.
 --

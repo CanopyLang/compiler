@@ -179,6 +179,9 @@ groupByModule reachable graph =
     addEntry name global node (Just m) = Map.insert name (global, node) m
 
 -- | Generate a single ES module file.
+--
+-- In dev mode, uses the formatted pretty printer for readable output.
+-- In prod mode, uses the compact printer for minimal output.
 generateModule ::
   Mode.Mode ->
   Graph ->
@@ -187,12 +190,17 @@ generateModule ::
   Map Name.Name (Opt.Global, Opt.Node) ->
   Builder
 generateModule mode _graph reachable home entries =
-  JS.moduleToBuilder (commentItems ++ importItems ++ definitionItems ++ exportItems)
+  renderModule mode (commentItems ++ importItems ++ definitionItems ++ exportItems)
   where
     commentItems = [JS.RawJS (moduleComment home)]
     importItems = buildImportItems reachable home entries
     definitionItems = buildDefinitionItems mode entries
     exportItems = buildExportItems entries
+
+-- | Render module items using the appropriate printer for the mode.
+renderModule :: Mode.Mode -> [JS.ModuleItem] -> Builder
+renderModule (Mode.Dev {}) = JS.moduleToFormattedBuilder
+renderModule (Mode.Prod {}) = JS.moduleToBuilder
 
 -- | Generate module header comment.
 moduleComment :: ModuleName.Canonical -> Builder
@@ -348,11 +356,12 @@ generateSingleFFI (FFIInfo _path content alias) =
 --
 -- Imports the main function from the appropriate module and calls
 -- the platform initialization function based on the 'Opt.Main' variant.
+-- Always uses formatted output since entry points should be readable.
 generateEntryPoint :: Mains -> Builder
 generateEntryPoint mains
   | Map.null mains = "// No main functions found.\n"
   | otherwise =
-      JS.moduleToBuilder entryItems
+      JS.moduleToFormattedBuilder entryItems
   where
     entryItems =
       JS.RawJS entryComment
