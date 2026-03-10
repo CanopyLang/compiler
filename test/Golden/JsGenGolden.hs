@@ -126,11 +126,11 @@ interpModule =
       "",
       "greeting : String -> String -> String",
       "greeting first last =",
-      "    [i|Hello #{first} #{last}!|]",
+      "    `Hello ${first} ${last}!`",
       "",
       "plain : String",
       "plain =",
-      "    [i|just a string|]",
+      "    `just a string`",
       "",
       "main =",
       "    text (greeting \"World\" \"!\")"

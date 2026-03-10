@@ -408,7 +408,7 @@ destructureReport mismatch =
       []
     )
 
--- | Report for a string interpolation expression that is not a String.
+-- | Report for a template literal expression that is not a String.
 interpolationReport ::
   ((Maybe Ann.Region, String, String, [Doc.Doc]) -> Report.Report) ->
   Ann.Region ->
@@ -417,13 +417,13 @@ interpolationReport ::
 interpolationReport badType exprRegion index =
   badType
     ( Just exprRegion,
-      "The " <> ith <> " expression in this string interpolation is not a String:",
+      "The " <> ith <> " expression in this template literal is not a String:",
       "It is",
       [ Doc.fillSep
           [ "Every",
             "expression",
             "inside",
-            Doc.dullyellow "#{...}",
+            Doc.dullyellow "${...}",
             "must",
             "be",
             "a",

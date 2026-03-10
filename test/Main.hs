@@ -16,6 +16,7 @@ import qualified Integration.InstallTest as InstallIT
 import qualified Integration.MakeTest as MakeIT
 import qualified Integration.Terminal.ChompIntegrationTest as ChompIT
 import qualified Integration.TerminalIntegrationTest as TerminalIT
+import qualified Integration.TemplateLiteralTest as TemplateLiteralIT
 import qualified Integration.WatchIntegrationTest as WatchIT
 import qualified Integration.JsonIntegrationTest as JsonIT
 import qualified Integration.CodeSplitIntegrationTest as CodeSplitIT
@@ -366,7 +367,8 @@ integrationTests =
       ChompIT.tests,
       TerminalIT.tests,
       WatchIT.tests,
-      JsonIT.tests
+      JsonIT.tests,
+      TemplateLiteralIT.tests
     ]
 
 goldenTests :: TestTree

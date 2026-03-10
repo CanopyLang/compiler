@@ -390,19 +390,19 @@ toShaderProblemReport source problem row col =
 
 toEndlessInterpolationReport :: Code.Source -> Row -> Col -> Report.Report
 toEndlessInterpolationReport source row col =
-  let region = toWiderRegion row col 3
-   in Report.Report "ENDLESS INTERPOLATION" region [] $
+  let region = toWiderRegion row col 1
+   in Report.Report "ENDLESS TEMPLATE LITERAL" region [] $
         Code.toSnippet
           source
           region
           Nothing
-          ( Doc.reflow "I cannot find the end of this string interpolation:",
+          ( Doc.reflow "I cannot find the end of this template literal:",
             Doc.stack
-              [ Doc.reflow "Add a |] somewhere after this to end the interpolation.",
+              [ Doc.reflow "Add a closing backtick somewhere after this.",
                 Doc.toSimpleNote
-                  "String interpolation starts with [i| and ends with |]. For example:"
+                  "Template literals start and end with backticks. For example:"
               , Doc.indent 4 $
-                  Doc.dullyellow (Doc.fromChars "[i|Hello #{name}!|]")
+                  Doc.dullyellow (Doc.fromChars "`Hello ${name}!`")
               ]
           )
 
@@ -417,11 +417,11 @@ toInterpolationCloseReport source row col =
           ( Doc.reflow
               "I was expecting a } to close this interpolation expression:",
             Doc.stack
-              [ Doc.reflow "Every #{ must have a matching }.",
+              [ Doc.reflow "Every ${ must have a matching }.",
                 Doc.toSimpleNote
-                  "String interpolation expressions look like this:"
+                  "Template literal expressions look like this:"
               , Doc.indent 4 $
-                  Doc.dullyellow (Doc.fromChars "[i|Hello #{name}!|]")
+                  Doc.dullyellow (Doc.fromChars "`Hello ${name}!`")
               ]
           )
 

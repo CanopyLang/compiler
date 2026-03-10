@@ -212,6 +212,7 @@ test-suite canopy-test
       Integration.JsonIntegrationTest
       Integration.MakeTest
       Integration.PureBuilderIntegrationTest
+      Integration.TemplateLiteralTest
       Integration.Terminal.ChompIntegrationTest
       Integration.TerminalIntegrationTest
       Integration.WatchIntegrationTest

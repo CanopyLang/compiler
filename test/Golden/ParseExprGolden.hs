@@ -17,10 +17,10 @@ tests =
     "Golden.ParseExpr"
     [ goldenExpr "LambdaTupleMap" "List.map (\\(x,y) -> x) [ (1,2), (3,4) ]" "test/Golden/expected/Expr_LambdaTupleMap.golden",
       goldenExpr "RecordUpdate" "{ r | a = 1, b = 2 }" "test/Golden/expected/Expr_RecordUpdate.golden",
-      goldenExpr "InterpSimple" "[i|Hello #{name}!|]" "test/Golden/expected/Expr_InterpSimple.golden",
-      goldenExpr "InterpMulti" "[i|#{a} and #{b}|]" "test/Golden/expected/Expr_InterpMulti.golden",
-      goldenExpr "InterpPlain" "[i|just text|]" "test/Golden/expected/Expr_InterpPlain.golden",
-      goldenExpr "InterpEmpty" "[i||]" "test/Golden/expected/Expr_InterpEmpty.golden"
+      goldenExpr "InterpSimple" "`Hello ${name}!`" "test/Golden/expected/Expr_InterpSimple.golden",
+      goldenExpr "InterpMulti" "`${a} and ${b}`" "test/Golden/expected/Expr_InterpMulti.golden",
+      goldenExpr "InterpPlain" "`just text`" "test/Golden/expected/Expr_InterpPlain.golden",
+      goldenExpr "InterpEmpty" "``" "test/Golden/expected/Expr_InterpEmpty.golden"
     ]
 
 goldenExpr :: String -> String -> FilePath -> TestTree

@@ -666,16 +666,16 @@ formatExpr_ config (Src.Tuple a b rest) =
 formatExpr_ _      (Src.Shader _ _) = PP.text "[glsl| ... |]"
 formatExpr_ config (Src.Interpolation segments) = formatInterpolation config segments
 
--- | Format a string interpolation expression.
+-- | Format a template literal expression.
 formatInterpolation :: FormatConfig -> [Src.InterpolationSegment] -> PP.Doc
 formatInterpolation config segments =
-  PP.text "[i|" <> PP.hcat (map (formatSegment config) segments) <> PP.text "|]"
+  PP.text "`" <> PP.hcat (map (formatSegment config) segments) <> PP.text "`"
 
--- | Format an interpolation segment.
+-- | Format a template literal segment.
 formatSegment :: FormatConfig -> Src.InterpolationSegment -> PP.Doc
 formatSegment _config (Src.IStr s) = PP.text (ES.toChars s)
 formatSegment config (Src.IExpr expr) =
-  PP.text "#{" <> formatExpr config expr <> PP.text "}"
+  PP.text "${" <> formatExpr config expr <> PP.text "}"
 
 -- | Render a float literal to a Doc via its builder representation.
 floatDoc :: EF.Float -> PP.Doc

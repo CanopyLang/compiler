@@ -1,6 +1,7 @@
 module Unit.Parse.ExpressionTest (tests) where
 
 import qualified AST.Source as Src
+import qualified Canopy.String as ES
 import qualified Data.ByteString.Char8 as C8
 import qualified Canopy.Data.Name as Name
 import qualified Parse.Expression as Expr
@@ -8,7 +9,7 @@ import qualified Parse.Primitives as Parse
 import qualified Reporting.Annotation as Ann
 import qualified Reporting.Error.Syntax as SyntaxError
 import Test.Tasty
-import Test.Tasty.HUnit
+import Test.Tasty.HUnit (assertBool, assertFailure, testCase, testCaseSteps, (@?=))
 
 parseExpr :: String -> Either SyntaxError.Expr Src.Expr
 parseExpr s = fst <$> Parse.fromByteString Expr.expression SyntaxError.Start (C8.pack s)
@@ -33,7 +34,8 @@ tests =
       testLet,
       caseOfTest,
       caseOfComplex,
-      testsNegatives
+      testsNegatives,
+      testTemplateLiterals
     ]
 
 testLiterals :: TestTree
@@ -204,3 +206,83 @@ caseOfComplex = testCase "case/of with record pattern" $ do
   case parseExpr src of
     Right (Ann.At _ (Src.Case _ [(_, _), (_, _)])) -> return ()
     other -> assertFailure ("unexpected: " <> show other)
+
+testTemplateLiterals :: TestTree
+testTemplateLiterals =
+  testGroup
+    "template literals"
+    [ testCase "simple interpolation" $ case parseExpr "`Hello ${name}!`" of
+        Right (Ann.At _ (Src.Interpolation [Src.IStr s1, Src.IExpr _, Src.IStr s2])) -> do
+          ES.toChars s1 @?= "Hello "
+          ES.toChars s2 @?= "!"
+        other -> assertFailure ("unexpected: " <> show other),
+      testCase "multiple interpolations" $ case parseExpr "`${a} and ${b}`" of
+        Right (Ann.At _ (Src.Interpolation [Src.IExpr _, Src.IStr s, Src.IExpr _])) ->
+          ES.toChars s @?= " and "
+        other -> assertFailure ("unexpected: " <> show other),
+      testCase "plain text only" $ case parseExpr "`just text`" of
+        Right (Ann.At _ (Src.Interpolation [Src.IStr s])) ->
+          ES.toChars s @?= "just text"
+        other -> assertFailure ("unexpected: " <> show other),
+      testCase "empty template literal" $ case parseExpr "``" of
+        Right (Ann.At _ (Src.Interpolation [])) -> return ()
+        other -> assertFailure ("unexpected: " <> show other),
+      testCase "escaped dollar sign" $ case parseExpr "`price is \\$100`" of
+        Right (Ann.At _ (Src.Interpolation [Src.IStr s])) ->
+          ES.toChars s @?= "price is $100"
+        other -> assertFailure ("unexpected: " <> show other),
+      testCase "escaped backtick" $ case parseExpr "`use \\` for templates`" of
+        Right (Ann.At _ (Src.Interpolation [Src.IStr s])) ->
+          ES.toChars s @?= "use ` for templates"
+        other -> assertFailure ("unexpected: " <> show other),
+      testCase "dollar without brace is literal" $ case parseExpr "`costs $5`" of
+        Right (Ann.At _ (Src.Interpolation [Src.IStr s])) ->
+          ES.toChars s @?= "costs $5"
+        other -> assertFailure ("unexpected: " <> show other),
+      testCase "expression with function call" $ case parseExpr "`${String.fromInt count} items`" of
+        Right (Ann.At _ (Src.Interpolation [Src.IExpr _, Src.IStr s])) ->
+          ES.toChars s @?= " items"
+        other -> assertFailure ("unexpected: " <> show other),
+      testCase "adjacent interpolations" $ case parseExpr "`${a}${b}`" of
+        Right (Ann.At _ (Src.Interpolation [Src.IExpr _, Src.IExpr _])) -> return ()
+        other -> assertFailure ("unexpected: " <> show other),
+      testCase "interpolation only" $ case parseExpr "`${x}`" of
+        Right (Ann.At _ (Src.Interpolation [Src.IExpr _])) -> return ()
+        other -> assertFailure ("unexpected: " <> show other),
+      testCase "old [i| syntax no longer parses as interpolation" $ case parseExpr "[i|hello|]" of
+        Right (Ann.At _ (Src.Interpolation _)) ->
+          assertFailure "old [i| syntax should not parse as interpolation"
+        _ -> return (),
+      testCase "escaped backslash" $ case parseExpr "`a\\\\b`" of
+        Right (Ann.At _ (Src.Interpolation [Src.IStr s])) ->
+          ES.toChars s @?= "a\\b"
+        other -> assertFailure ("unexpected: " <> show other),
+      testCase "nested template literal" $ case parseExpr "`outer ${`inner`}`" of
+        Right (Ann.At _ (Src.Interpolation [Src.IStr s1, Src.IExpr inner])) -> do
+          ES.toChars s1 @?= "outer "
+          case inner of
+            Ann.At _ (Src.Interpolation [Src.IStr s2]) ->
+              ES.toChars s2 @?= "inner"
+            other -> assertFailure ("expected inner template, got: " <> show other)
+        other -> assertFailure ("unexpected: " <> show other),
+      testCase "expression with parens" $ case parseExpr "`${(a)}`" of
+        Right (Ann.At _ (Src.Interpolation [Src.IExpr _])) -> return ()
+        other -> assertFailure ("unexpected: " <> show other),
+      testCase "unclosed template literal fails" $ case parseExpr "`hello" of
+        Left _ -> return ()
+        Right _ -> assertFailure "expected parse error for unclosed template",
+      testCase "unclosed interpolation expression fails" $ case parseExpr "`${x`" of
+        Left _ -> return ()
+        Right _ -> assertFailure "expected parse error for unclosed ${",
+      testCase "many segments" $ case parseExpr "`${a}-${b}-${c}`" of
+        Right (Ann.At _ (Src.Interpolation segs)) ->
+          length segs @?= 5
+        other -> assertFailure ("unexpected: " <> show other),
+      testCase "if expression inside interpolation" $ case parseExpr "`${if True then x else y}`" of
+        Right (Ann.At _ (Src.Interpolation [Src.IExpr (Ann.At _ (Src.If _ _))])) -> return ()
+        other -> assertFailure ("unexpected: " <> show other),
+      testCase "special chars in literal parts" $ case parseExpr "`<div class=\"foo\">`" of
+        Right (Ann.At _ (Src.Interpolation [Src.IStr s])) ->
+          assertBool "contains HTML" (not (null (ES.toChars s)))
+        other -> assertFailure ("unexpected: " <> show other)
+    ]

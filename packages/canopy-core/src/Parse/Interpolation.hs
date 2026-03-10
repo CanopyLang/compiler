@@ -1,29 +1,31 @@
 {-# LANGUAGE BangPatterns #-}
 {-# LANGUAGE UnboxedTuples #-}
 
--- | Parse.Interpolation - Parser for string interpolation syntax
+-- | Parse.Interpolation - Parser for template literal syntax
 --
--- Parses @[i|...|]@ string interpolation expressions with @#{expr}@
--- interpolation points. Follows the same quasi-quoter pattern as
--- "Parse.Shader" for @[glsl|...|]@.
+-- Parses backtick-delimited template literals with @${expr}@
+-- interpolation points, following JavaScript ES6 template literal
+-- conventions for familiarity with web developers.
 --
--- Interpolation expressions desugar to @Basics.append@ chains during
+-- Template literals desugar to @Basics.append@ chains during
 -- canonicalization, producing zero-overhead native JavaScript @+@
 -- concatenation when string literals are present.
 --
 -- ==== Syntax
 --
 -- @
--- [i|Hello #{name}!|]                     -- simple interpolation
--- [i|#{greeting}, #{name}!|]              -- multiple interpolations
--- [i|just a plain string|]                -- no interpolation (literal)
--- [i|cost is \\#100|]                      -- escaped hash (literal #)
--- [i|#{String.fromInt count} items|]      -- expression interpolation
+-- \`Hello ${name}!\`                       -- simple interpolation
+-- \`${greeting}, ${name}!\`                -- multiple interpolations
+-- \`just a plain string\`                  -- no interpolation (literal)
+-- \`cost is \\$100\`                       -- escaped dollar (literal $)
+-- \`${String.fromInt count} items\`        -- expression interpolation
+-- \`multi
+--   line\`                                 -- multi-line support
 -- @
 --
 -- ==== Desugaring
 --
--- @[i|Hello #{name}!|]@ desugars to @"Hello " ++ name ++ "!"@,
+-- @\`Hello ${name}!\`@ desugars to @"Hello " ++ name ++ "!"@,
 -- which the code generator optimizes to @"Hello " + name + "!"@ in JS.
 --
 -- @since 0.19.2
@@ -44,11 +46,12 @@ import qualified Reporting.Error.Syntax as SyntaxError
 
 -- INTERPOLATION
 
--- | Parse a string interpolation @[i|...|]@ expression.
+-- | Parse a backtick template literal expression.
 --
--- Detects the @[i|@ opening sequence and parses segments until @|]@.
--- Expression segments @#{expr}@ are parsed using the provided expression
--- parser, avoiding circular module dependencies with "Parse.Expression".
+-- Detects the opening backtick and parses segments until the closing
+-- backtick. Expression segments @${expr}@ are parsed using the provided
+-- expression parser, avoiding circular module dependencies with
+-- "Parse.Expression".
 --
 -- @since 0.19.2
 interpolation ::
@@ -57,31 +60,27 @@ interpolation ::
   Parser SyntaxError.Expr Src.Expr
 interpolation exprParser start =
   Parse.Parser $ \(Parse.State src pos end indent row col) cok _ cerr eerr ->
-    let !pos3 = plusPtr pos 3
-     in if pos3 <= end
-          && Parse.unsafeIndex pos == 0x5B {- [ -}
-          && Parse.unsafeIndex (plusPtr pos 1) == 0x69 {- i -}
-          && Parse.unsafeIndex (plusPtr pos 2) == 0x7C {- | -}
-          then
-            let !afterOpen = Parse.State src pos3 end indent row (col + 3)
-                !(Parse.Parser segParser) = chompSegments exprParser []
-             in segParser
-                  afterOpen
-                  ( \segments s ->
-                      let !(Parse.State _ _ _ _ er ec) = s
-                       in cok (Ann.at start (Ann.Position er ec) (Src.Interpolation segments)) s
-                  )
-                  ( \segments s ->
-                      let !(Parse.State _ _ _ _ er ec) = s
-                       in cok (Ann.at start (Ann.Position er ec) (Src.Interpolation segments)) s
-                  )
-                  cerr
-                  cerr
-          else eerr row col SyntaxError.Start
+    if pos < end && Parse.unsafeIndex pos == 0x60 {- ` -}
+      then
+        let !afterOpen = Parse.State src (plusPtr pos 1) end indent row (col + 1)
+            !(Parse.Parser segParser) = chompSegments exprParser []
+         in segParser
+              afterOpen
+              ( \segments s ->
+                  let !(Parse.State _ _ _ _ er ec) = s
+                   in cok (Ann.at start (Ann.Position er ec) (Src.Interpolation segments)) s
+              )
+              ( \segments s ->
+                  let !(Parse.State _ _ _ _ er ec) = s
+                   in cok (Ann.at start (Ann.Position er ec) (Src.Interpolation segments)) s
+              )
+              cerr
+              cerr
+      else eerr row col SyntaxError.Start
 
 -- SEGMENTS
 
--- | Parse interpolation segments until @|]@ is reached.
+-- | Parse interpolation segments until closing backtick is reached.
 --
 -- Alternates between scanning literal text and parsing embedded
 -- expressions. Accumulates segments in reverse order for efficiency.
@@ -106,7 +105,7 @@ chompSegments exprParser revSegments =
       ScanEndless endRow endCol ->
         cerr endRow endCol SyntaxError.EndlessInterpolation
 
--- | Parse an expression inside @#{...}@ and continue with more segments.
+-- | Parse an expression inside @${...}@ and continue with more segments.
 --
 -- Skips leading whitespace, parses the expression, expects closing @}@,
 -- then resumes segment scanning.
@@ -125,19 +124,20 @@ chompExprSegment exprParser revSegments =
 
 -- LITERAL SCANNING
 
--- | Result of scanning literal text within interpolation.
+-- | Result of scanning literal text within a template literal.
 data ScanResult
-  = -- | Found @#{@, returning chunks before it and position after @{@.
+  = -- | Found @${@, returning chunks before it and position after @{@.
     ScanInterp ![ES.Chunk] !(Ptr Word8) !Row !Col
-  | -- | Found @|]@, returning chunks before it and position after @]@.
+  | -- | Found closing backtick, returning chunks before it and position after.
     ScanEnd ![ES.Chunk] !(Ptr Word8) !Row !Col
-  | -- | Reached end of input without finding @|]@.
+  | -- | Reached end of input without finding closing backtick.
     ScanEndless !Row !Col
 
 -- | Scan literal text bytes until a break point is reached.
 --
--- Accumulates text as 'ES.Chunk' slices for efficient string building.
--- Handles escape sequence @\\#@ which produces a literal @#@ character.
+-- Dispatches on the current byte to handle interpolation markers,
+-- closing backticks, escape sequences, and newlines. Accumulates
+-- text as 'ES.Chunk' slices for efficient string building.
 --
 -- @since 0.19.2
 scanLiteral ::
@@ -148,93 +148,89 @@ scanLiteral ::
   Ptr Word8 ->
   [ES.Chunk] ->
   ScanResult
-scanLiteral pos end row col sliceStart revChunks =
-  if pos >= end
-    then ScanEndless row col
-    else
-      let !word = Parse.unsafeIndex pos
-       in if word == 0x23 {- # -}
-            then scanHash pos end row col sliceStart revChunks
-            else
-              if word == 0x7C {- | -}
-                then scanPipe pos end row col sliceStart revChunks
-                else
-                  if word == 0x5C {- \ -}
-                    then scanBackslash pos end row col sliceStart revChunks
-                    else
-                      if word == 0x0A {- \n -}
-                        then scanLiteral (plusPtr pos 1) end (row + 1) 1 sliceStart revChunks
-                        else
-                          let !newPos = plusPtr pos (Parse.getCharWidth word)
-                           in scanLiteral newPos end row (col + 1) sliceStart revChunks
+scanLiteral pos end row col sliceStart revChunks
+  | pos >= end = ScanEndless row col
+  | otherwise = dispatchByte (Parse.unsafeIndex pos) pos end row col sliceStart revChunks
 
--- | Handle @#@ character during literal scanning.
---
--- If followed by @{@, this is an interpolation break.
--- Otherwise, the @#@ is literal text.
+-- | Dispatch on the current byte to the appropriate handler.
 --
 -- @since 0.19.2
-scanHash ::
-  Ptr Word8 ->
-  Ptr Word8 ->
-  Row ->
-  Col ->
-  Ptr Word8 ->
-  [ES.Chunk] ->
-  ScanResult
-scanHash pos end row col sliceStart revChunks =
-  let !pos1 = plusPtr pos 1
-   in if pos1 < end && Parse.unsafeIndex pos1 == 0x7B {- { -}
-        then
-          let !chunks = addSlice sliceStart pos revChunks
-           in ScanInterp chunks (plusPtr pos 2) row (col + 2)
-        else scanLiteral pos1 end row (col + 1) sliceStart revChunks
+dispatchByte ::
+  Word8 -> Ptr Word8 -> Ptr Word8 -> Row -> Col -> Ptr Word8 -> [ES.Chunk] -> ScanResult
+dispatchByte 0x24 {- $ -} = scanDollar
+dispatchByte 0x60 {- ` -} = scanClosingBacktick
+dispatchByte 0x5C {- \ -} = scanBackslash
+dispatchByte 0x0A {- \n -} = scanNewline
+dispatchByte 0x0D {- \r -} = scanCarriageReturn
+dispatchByte word = scanRegularChar word
 
--- | Handle @|@ character during literal scanning.
---
--- If followed by @]@, this is the end of interpolation.
--- Otherwise, the @|@ is literal text.
---
--- @since 0.19.2
-scanPipe ::
-  Ptr Word8 ->
-  Ptr Word8 ->
-  Row ->
-  Col ->
-  Ptr Word8 ->
-  [ES.Chunk] ->
-  ScanResult
-scanPipe pos end row col sliceStart revChunks =
-  let !pos1 = plusPtr pos 1
-   in if pos1 < end && Parse.unsafeIndex pos1 == 0x5D {- ] -}
-        then
-          let !chunks = addSlice sliceStart pos revChunks
-           in ScanEnd chunks (plusPtr pos 2) row (col + 2)
-        else scanLiteral pos1 end row (col + 1) sliceStart revChunks
+-- | Handle @$@ — starts interpolation if followed by @{@, literal otherwise.
+scanDollar :: Ptr Word8 -> Ptr Word8 -> Row -> Col -> Ptr Word8 -> [ES.Chunk] -> ScanResult
+scanDollar pos end row col sliceStart revChunks
+  | Parse.isWord pos1 end 0x7B {- { -} =
+      ScanInterp (addSlice sliceStart pos revChunks) (plusPtr pos 2) row (col + 2)
+  | otherwise =
+      scanLiteral pos1 end row (col + 1) sliceStart revChunks
+  where
+    !pos1 = plusPtr pos 1
 
--- | Handle @\\@ character during literal scanning.
---
--- If followed by @#@, produces a literal @#@ (escape sequence).
--- Otherwise, the backslash is included as literal text.
---
--- @since 0.19.2
-scanBackslash ::
-  Ptr Word8 ->
-  Ptr Word8 ->
-  Row ->
-  Col ->
-  Ptr Word8 ->
-  [ES.Chunk] ->
-  ScanResult
-scanBackslash pos end row col sliceStart revChunks =
-  let !pos1 = plusPtr pos 1
-   in if pos1 < end && Parse.unsafeIndex pos1 == 0x23 {- # -}
-        then
+-- | Handle closing backtick — ends the template literal.
+scanClosingBacktick :: Ptr Word8 -> Ptr Word8 -> Row -> Col -> Ptr Word8 -> [ES.Chunk] -> ScanResult
+scanClosingBacktick pos _end row col sliceStart revChunks =
+  ScanEnd (addSlice sliceStart pos revChunks) (plusPtr pos 1) row (col + 1)
+
+-- | Handle @\\@ — resolves escape sequences via 'resolveEscape'.
+scanBackslash :: Ptr Word8 -> Ptr Word8 -> Row -> Col -> Ptr Word8 -> [ES.Chunk] -> ScanResult
+scanBackslash pos end row col sliceStart revChunks
+  | pos1 >= end = ScanEndless row col
+  | otherwise =
+      case resolveEscape (Parse.unsafeIndex pos1) of
+        EscapeLiteral ->
           let !chunks = addSlice sliceStart pos revChunks
-              !pos2 = plusPtr pos 2
-              !newChunks = ES.Slice pos1 1 : chunks
-           in scanLiteral pos2 end row (col + 2) pos2 newChunks
-        else scanLiteral pos1 end row (col + 1) sliceStart revChunks
+           in scanLiteral pos2 end row (col + 2) pos2 (ES.Slice pos1 1 : chunks)
+        EscapeCode code ->
+          let !chunks = addSlice sliceStart pos revChunks
+           in scanLiteral pos2 end row (col + 2) pos2 (ES.Escape code : chunks)
+        EscapeIgnore ->
+          scanLiteral pos1 end row (col + 1) sliceStart revChunks
+  where
+    !pos1 = plusPtr pos 1
+    !pos2 = plusPtr pos 2
+
+-- | Classify an escape sequence following a backslash.
+data EscapeResult
+  = EscapeLiteral
+  | EscapeCode !Word8
+  | EscapeIgnore
+
+-- | Resolve the byte after @\\@ into an escape action.
+--
+-- @\\$@, @\\`@, @\\\\@ produce the literal character.
+-- @\\n@, @\\t@ produce the corresponding control code.
+-- Anything else ignores the backslash (pass-through).
+resolveEscape :: Word8 -> EscapeResult
+resolveEscape 0x24 {- $ -} = EscapeLiteral
+resolveEscape 0x60 {- ` -} = EscapeLiteral
+resolveEscape 0x5C {- \ -} = EscapeLiteral
+resolveEscape 0x6E {- n -} = EscapeCode 0x6E
+resolveEscape 0x74 {- t -} = EscapeCode 0x74
+resolveEscape _ = EscapeIgnore
+
+-- | Handle newline — emits escape chunk and advances row.
+scanNewline :: Ptr Word8 -> Ptr Word8 -> Row -> Col -> Ptr Word8 -> [ES.Chunk] -> ScanResult
+scanNewline pos end row _col sliceStart revChunks =
+  let !chunks = addSlice sliceStart pos revChunks
+   in scanLiteral (plusPtr pos 1) end (row + 1) 1 (plusPtr pos 1) (ES.Escape 0x6E : chunks)
+
+-- | Handle carriage return — skip without emitting.
+scanCarriageReturn :: Ptr Word8 -> Ptr Word8 -> Row -> Col -> Ptr Word8 -> [ES.Chunk] -> ScanResult
+scanCarriageReturn pos end row col sliceStart revChunks =
+  scanLiteral (plusPtr pos 1) end row col (plusPtr pos 1) (addSlice sliceStart pos revChunks)
+
+-- | Handle a regular character — advance by its UTF-8 width.
+scanRegularChar :: Word8 -> Ptr Word8 -> Ptr Word8 -> Row -> Col -> Ptr Word8 -> [ES.Chunk] -> ScanResult
+scanRegularChar word pos end row col sliceStart revChunks =
+  scanLiteral (plusPtr pos (Parse.getCharWidth word)) end row (col + 1) sliceStart revChunks
 
 -- CHUNK HELPERS
 
