@@ -98,6 +98,10 @@ library
       Generate.JavaScript.StringPool
       Generate.Mode
       Generate.TreeShake
+      Generate.TypeScript
+      Generate.TypeScript.Convert
+      Generate.TypeScript.Render
+      Generate.TypeScript.Types
       Json.Decode
       Json.Encode
       Json.String

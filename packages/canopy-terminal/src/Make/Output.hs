@@ -258,6 +258,7 @@ generateESMOutput outputDir esmOutput = do
   Task.io (writeESMModules outputDir esmOutput)
   Task.io (writeESMFFI outputDir esmOutput)
   Task.io (writeESMEntry outputDir esmOutput)
+  Task.io (writeESMTypeDefs outputDir esmOutput)
 
 -- | Write the runtime module.
 writeESMRuntime :: FilePath -> ESMOutput -> IO ()
@@ -297,6 +298,21 @@ writeFFIFile dir (alias, builder) = do
 writeESMEntry :: FilePath -> ESMOutput -> IO ()
 writeESMEntry dir esmOutput =
   File.writeBuilder (dir </> "main.js") (_eoEntry esmOutput)
+
+-- | Write TypeScript declaration files alongside JS modules.
+writeESMTypeDefs :: FilePath -> ESMOutput -> IO ()
+writeESMTypeDefs dir esmOutput =
+  mapM_ (writeOneTypeDef dir) (Map.toList (_eoTypeDefs esmOutput))
+
+-- | Write a single @.d.ts@ file.
+writeOneTypeDef :: FilePath -> (ModuleName.Canonical, Builder) -> IO ()
+writeOneTypeDef dir (home, builder) =
+  File.writeBuilder (dir </> moduleDtsFilename home) builder
+
+-- | Convert a canonical module name to a @.d.ts@ filename.
+moduleDtsFilename :: ModuleName.Canonical -> FilePath
+moduleDtsFilename (ModuleName.Canonical (Pkg.Name author project) moduleName) =
+  Utf8.toChars author <> "." <> Utf8.toChars project <> "." <> Name.toChars moduleName <> ".d.ts"
 
 -- | Generate HTML output to specified file.
 --

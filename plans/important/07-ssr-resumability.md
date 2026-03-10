@@ -2,7 +2,10 @@
 
 ## Priority: HIGH — Tier 1
 ## Effort: 6-8 weeks
-## Depends on: Plan 01 (ESM), Plan 03 (packages — COMPLETE), Plan 05 (CanopyKit)
+## Depends on: Plan 01 (ESM — COMPLETE), Plan 03 (packages — COMPLETE), Plan 05 (CanopyKit)
+
+> **Status Update (2026-03-10):** Plan 01 (ESM) is now COMPLETE. Plan 03 (packages) is COMPLETE.
+> This plan is blocked only on Plan 05 (CanopyKit). No SSR implementation exists yet.
 
 ## Problem
 

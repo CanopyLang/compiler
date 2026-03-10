@@ -96,11 +96,15 @@ canonicalize env (Ann.At region expression) =
           <$> canonicalize env record
           <*> Result.ok field
       Src.Update (Ann.At reg name) fields ->
-        let makeCanFields =
-              Dups.checkFields' (\r t -> Can.FieldUpdate r <$> canonicalize env t) fields
-         in Can.Update name
-              <$> (Ann.At reg <$> findVar reg env name)
-              <*> (sequenceA =<< makeCanFields)
+        maybe
+          (Ann.toValue <$> canonicalize env (desugarNestedUpdate region (Ann.At reg name) fields))
+          (\flatFields ->
+            let makeCanFields =
+                  Dups.checkFields' (\r t -> Can.FieldUpdate r <$> canonicalize env t) flatFields
+             in Can.Update name
+                  <$> (Ann.At reg <$> findVar reg env name)
+                  <*> (sequenceA =<< makeCanFields))
+          (tryFlattenFields fields)
       Src.Record fields ->
         do
           fieldDict <- Dups.checkFields fields
@@ -116,6 +120,60 @@ canonicalize env (Ann.At region expression) =
         Result.ok (Can.Shader src tipe)
       Src.Interpolation segments ->
         canonicalizeInterpolation env region segments
+
+-- NESTED RECORD UPDATE DESUGARING
+
+
+tryFlattenFields :: [(Ann.Located Name.Name, Src.FieldUpdate)] -> Maybe [(Ann.Located Name.Name, Src.Expr)]
+tryFlattenFields = traverse extractValue
+  where
+    extractValue (k, Src.FieldValue v) = Just (k, v)
+    extractValue (_, Src.FieldNested _) = Nothing
+
+
+desugarNestedUpdate :: Ann.Region -> Ann.Located Name.Name -> [(Ann.Located Name.Name, Src.FieldUpdate)] -> Src.Expr
+desugarNestedUpdate region baseLoc@(Ann.At baseReg baseName) fields =
+  Ann.At region (Src.Let letDefs updateExpr)
+  where
+    baseExpr = Ann.At baseReg (Src.Var Src.LowVar baseName)
+
+    (letDefs, flatFields) = desugarFields region baseExpr fields
+
+    updateExpr = Ann.At region (Src.Update baseLoc flatFields)
+
+
+desugarFields
+  :: Ann.Region
+  -> Src.Expr
+  -> [(Ann.Located Name.Name, Src.FieldUpdate)]
+  -> ([Ann.Located Src.Def], [(Ann.Located Name.Name, Src.FieldUpdate)])
+desugarFields region baseExpr fields =
+  foldr (desugarField region baseExpr) ([], []) fields
+
+
+desugarField
+  :: Ann.Region
+  -> Src.Expr
+  -> (Ann.Located Name.Name, Src.FieldUpdate)
+  -> ([Ann.Located Src.Def], [(Ann.Located Name.Name, Src.FieldUpdate)])
+  -> ([Ann.Located Src.Def], [(Ann.Located Name.Name, Src.FieldUpdate)])
+desugarField _ _ (locName, Src.FieldValue expr) (defs, acc) =
+  (defs, (locName, Src.FieldValue expr) : acc)
+desugarField region baseExpr (locName@(Ann.At fieldReg fieldName), Src.FieldNested subFields) (defs, acc) =
+  (allDefs, (locName, Src.FieldValue innerUpdate) : acc)
+  where
+    tempName = Name.fromChars ("_cnpy_" ++ Name.toChars fieldName)
+    tempLoc = Ann.At fieldReg tempName
+
+    accessExpr = Ann.At fieldReg (Src.Access baseExpr locName)
+    letDef = Ann.At fieldReg (Src.Define tempLoc [] accessExpr Nothing)
+
+    tempBaseExpr = Ann.At fieldReg (Src.Var Src.LowVar tempName)
+    (innerDefs, flatSubFields) = desugarFields region tempBaseExpr subFields
+    innerUpdate = Ann.At fieldReg (Src.Update tempLoc flatSubFields)
+
+    allDefs = letDef : innerDefs ++ defs
+
 
 -- CANONICALIZE VARIABLES
 

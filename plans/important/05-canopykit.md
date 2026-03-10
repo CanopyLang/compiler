@@ -2,7 +2,11 @@
 
 ## Priority: HIGH — Tier 1
 ## Effort: 8-12 weeks
-## Depends on: Plan 01 (ESM), Plan 06 (Vite plugin) — Plan 03 (packages) is COMPLETE
+## Depends on: Plan 01 (ESM — COMPLETE), Plan 06 (Vite plugin) — Plan 03 (packages) is COMPLETE
+
+> **Status Update (2026-03-10):** Plan 01 (ESM) is now COMPLETE (2026-03-10). Plan 06 (Vite
+> plugin) is the remaining blocker. No CanopyKit implementation exists yet. No file-based
+> routing, no SSG/SSR, no `canopy kit` CLI commands.
 
 ## Problem
 

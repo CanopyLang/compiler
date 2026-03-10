@@ -2,8 +2,8 @@
 
 > **This plan has been split into two parts:**
 >
-> - **[Plan 26a: Quick Ergonomics](26a-quick-ergonomics.md)** — String interpolation + nested record updates (Tier 0, 1-2 weeks). Pure parser desugaring, ships immediately.
-> - **[Plan 26b: Abilities + Derive](26b-abilities-derive.md)** — Type classes + JSON codec deriving (Tier 1, 8-12 weeks). Requires type system changes.
+> - **[Plan 26a: Quick Ergonomics](../done/26a-quick-ergonomics.md)** — String interpolation DONE (backtick template literals). Nested record updates still needed (3-4 days).
+> - **[Plan 26b: Abilities + Derive](../important/26b-abilities-derive.md)** — Type classes + JSON codec deriving (Tier 1, 8-12 weeks). Not started. Requires type system changes.
 >
 > This file is kept for reference. See the split plans for current details.
 

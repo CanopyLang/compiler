@@ -137,6 +137,7 @@ module AST.Source
     Exposing (..),
     Exposed (..),
     Privacy (..),
+    FieldUpdate (..),
   )
 where
 
@@ -266,8 +267,9 @@ data Expr_
   | -- | Record update.
     --
     -- Represents record updates like @{ user | name = "John" }@.
+    -- Supports nested updates like @{ user | address { city = "NYC" } }@.
     -- Updates specified fields while preserving others.
-    Update (Ann.Located Name) [(Ann.Located Name, Expr)]
+    Update (Ann.Located Name) [(Ann.Located Name, FieldUpdate)]
   | -- | Record literal.
     --
     -- Represents record literals like @{ name = "John", age = 25 }@.
@@ -295,6 +297,21 @@ data Expr_
     -- embedded expressions. Desugared to @Basics.append@ chains
     -- during canonicalization.
     Interpolation [InterpolationSegment]
+  deriving (Show)
+
+-- | Field update variant in record update expressions.
+--
+-- A field can either be a direct value assignment (@field = expr@) or a
+-- nested record update (@field { subfield = expr }@). Nested updates are
+-- desugared during canonicalization into let-bound intermediate variables
+-- with flat single-level updates.
+--
+-- @since 0.19.2
+data FieldUpdate
+  = -- | Direct field value: @field = expr@
+    FieldValue !Expr
+  | -- | Nested record update: @field { subfield = expr, ... }@
+    FieldNested ![(Ann.Located Name, FieldUpdate)]
   deriving (Show)
 
 -- | Variable type classification for parsing.

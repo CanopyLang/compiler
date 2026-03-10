@@ -4,9 +4,14 @@
 ## Effort: 2-3 weeks
 ## Depends on: Plan 01 (ESM output)
 
-> **Note (2026-03-07):** No Vite plugin exists. No `vite-plugin-canopy` anywhere in the repo.
-> The playground (`compiler/tools/playground/`) uses Vite but for the playground UI itself,
-> not for compiling .can files. Blocked entirely on Plan 01 (ESM output).
+> **Status Update (2026-03-10 deep audit):** No Vite plugin exists. No `vite-plugin-canopy`
+> anywhere in the repo. The playground (`tools/playground/`) uses Vite but for the playground
+> UI itself, not for compiling .can files.
+>
+> **UNBLOCKED**: Plan 01 (ESM output) is now COMPLETE (commits 5dc084c, d546c74, 2026-03-10).
+> The compiler generates per-module ES modules with proper imports/exports, `/*#__PURE__*/`
+> annotations, and a `canopy-runtime.js` shared module. `--output-format=esm` is the default.
+> This plan can now proceed immediately.
 
 ## Problem
 

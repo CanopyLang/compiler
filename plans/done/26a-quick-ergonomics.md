@@ -1,29 +1,31 @@
 # Plan 26a: Quick Ergonomics (String Interpolation + Nested Records)
 
 ## Priority: CRITICAL — Tier 0
-## Effort: 1 week (reduced — interpolation infrastructure 90% built)
+## Effort: 3-4 days remaining (nested records only)
 ## Depends on: Nothing (pure parser desugaring)
 ## Split from: Plan 26 (Language Ergonomics)
 
-> **Status Update (2026-03-07 audit):** String interpolation is **90% implemented**. The full
-> pipeline exists:
+> **Status Update (2026-03-10 deep audit):** String interpolation is **100% COMPLETE**.
+> The old `[i|...|]` quasi-quoter syntax was replaced with JS-style backtick template literals
+> in commit 7057676 (2026-03-10).
 >
-> - `AST.Source.Interpolation [InterpolationSegment]` — source AST node
-> - `AST.Source.InterpolationSegment` — `IStr` (literal) and `IExpr` (expression) variants
-> - `AST.Canonical.Types.StringConcat [Expr]` — canonical AST node
-> - `Parse/Interpolation.hs` — full parser for `[i|Hello #{name}!|]` syntax
-> - `Canonicalize/Expression.hs` — `canonicalizeInterpolation` desugaring to `String.concat`
-> - `Format.hs` — `formatInterpolation` and `formatSegment`
-> - `Reporting/Error/Syntax/Types.hs` — `EndlessInterpolation` error
-> - Integrated into `Parse/Expression.hs` term parser
+> **Current syntax:** `` `Hello ${name}!` `` (backtick template literals)
 >
-> **Current syntax:** `[i|Hello #{name}!|]` (quasi-quoter style)
+> **What's fully implemented:**
+> - `Parse/Interpolation.hs` (244 lines) — backtick parser with `${expr}` holes
+> - `AST/Source.hs` — `Interpolation [InterpolationSegment]` with `IStr`/`IExpr` variants
+> - `Canonicalize/Expression.hs` — `canonicalizeInterpolation` desugaring to `StringConcat`
+> - `Format.hs` — round-trips backtick syntax correctly
+> - Error handling: `EndlessInterpolation`, `InterpolationClose`, `InterpolationExpr`
+> - Escape sequences: `\$`, `` \` ``, `\\`, `\n`, `\t`
+> - Nested templates: `` `outer ${`inner`}` ``
+> - Type checking: only `String` expressions allowed in `${}`
+> - JS codegen: generates string concatenation with `+`
+> - 20+ unit tests, 340+ lines integration tests, golden tests
+> - All 3,872 tests pass
 >
-> **What remains:** Add `${}` syntax inside regular double-quoted strings as an alternative
-> (more familiar to JS/TS developers). The desugaring pipeline, AST nodes, canonicalization,
-> formatting, and error reporting all exist and can be reused.
->
-> Nested record updates are NOT yet implemented — parser and canonicalization changes still needed.
+> **Nested record updates are NOT yet implemented** — parser and canonicalization changes
+> still needed. This is the only remaining work in this plan.
 
 ## Feature 1: String Interpolation — `${}` Syntax
 
@@ -147,11 +149,13 @@ in { model | settings = { _oldSettings | theme = { _oldTheme | primaryColor = bl
 
 ## Definition of Done
 
-- [x] `[i|Hello #{name}!|]` parses and compiles correctly
-- [ ] `"Hello ${name}!"` parses and compiles correctly
-- [ ] Non-String interpolation expressions produce clear type errors with both syntaxes
+- [x] ~~`[i|Hello #{name}!|]` parses and compiles correctly~~ (replaced by backtick syntax)
+- [x] `` `Hello ${name}!` `` parses and compiles correctly (commit 7057676)
+- [x] Non-String interpolation expressions produce clear type errors
+- [x] Nested template literals work: `` `outer ${`inner`}` ``
+- [x] Escape sequences work: `\$`, `` \` ``, `\\`, `\n`, `\t`
+- [x] All 3,872 existing tests pass (no regressions)
+- [x] Formatter handles backtick syntax correctly
 - [ ] `{ model | user.name = x }` parses and compiles correctly
 - [ ] Three-level nesting works: `{ model | a.b.c = x }`
-- [ ] All existing tests pass (no regressions)
 - [ ] LSP provides completions inside `${}` and after dots in record updates
-- [ ] Formatter handles both features correctly

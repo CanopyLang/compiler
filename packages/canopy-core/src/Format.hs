@@ -764,15 +764,18 @@ formatBranch config (pat, body) =
     <> nlIndent config 2 <> formatExpr config body
 
 -- | Format a record update expression.
-formatUpdate :: FormatConfig -> Ann.Located Name -> [(Ann.Located Name, Src.Expr)] -> PP.Doc
+formatUpdate :: FormatConfig -> Ann.Located Name -> [(Ann.Located Name, Src.FieldUpdate)] -> PP.Doc
 formatUpdate config locName updates =
   PP.text "{ " <> locNameDoc locName <> PP.text " | "
     <> commaSepDocs (map (formatFieldUpdate config) updates) <> PP.text " }"
 
--- | Format a single field update.
-formatFieldUpdate :: FormatConfig -> (Ann.Located Name, Src.Expr) -> PP.Doc
-formatFieldUpdate config (locName, expr) =
+-- | Format a single field update (flat or nested).
+formatFieldUpdate :: FormatConfig -> (Ann.Located Name, Src.FieldUpdate) -> PP.Doc
+formatFieldUpdate config (locName, Src.FieldValue expr) =
   locNameDoc locName PP.<+> PP.text "=" PP.<+> formatExpr config expr
+formatFieldUpdate config (locName, Src.FieldNested subFields) =
+  locNameDoc locName PP.<+> PP.text "{ "
+    <> commaSepDocs (map (formatFieldUpdate config) subFields) <> PP.text " }"
 
 -- | Format a record literal expression.
 formatRecord :: FormatConfig -> [(Ann.Located Name, Src.Expr)] -> PP.Doc

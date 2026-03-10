@@ -15,6 +15,7 @@ module Generate.JavaScript.ESM.Types
     eoModules,
     eoFFIModules,
     eoEntry,
+    eoTypeDefs,
 
     -- * Module Bundle Types
     ModuleBundle (..),
@@ -48,7 +49,9 @@ data ESMOutput = ESMOutput
     -- | Per-FFI @.js@ files keyed by alias path
     _eoFFIModules :: !(Map String Builder),
     -- | @main.js@ entry point that imports and starts the app
-    _eoEntry :: !Builder
+    _eoEntry :: !Builder,
+    -- | Per-module @.d.ts@ files keyed by canonical module name
+    _eoTypeDefs :: !(Map ModuleName.Canonical Builder)
   }
 
 -- | A partition of the global graph for a single Canopy module.

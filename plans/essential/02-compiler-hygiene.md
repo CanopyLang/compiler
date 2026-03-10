@@ -1,25 +1,28 @@
 # Plan 02: Compiler Hygiene
 
 ## Priority: CRITICAL — Tier 0
-## Status: MOSTLY COMPLETE — needs final verification
-## Effort: 2-3 days remaining (verification + any remaining -Wall fixes)
+## Status: 95% COMPLETE — final verification tasks remain
+## Effort: 1 day remaining (verification only)
 ## Blocks: Public release
 
-> **Status Update (2026-03-07 audit):** Most hygiene items are done:
+> **Status Update (2026-03-10 deep audit):** Nearly everything is clean:
 >
-> - [x] `HTTP_DEBUG` — zero occurrences remain in compiler/packages/
-> - [x] `Debug.trace` — zero occurrences in production code
-> - [x] Makefile — exists at `compiler/Makefile` with comprehensive targets (build, test,
->   test-unit, test-property, test-integration, test-watch, test-coverage, test-coverage-check,
->   test-coverage-report, test-coverage-badge)
-> - [x] README.md — exists at `compiler/README.md`
-> - [x] CONTRIBUTING.md — exists at `compiler/CONTRIBUTING.md`
+> - [x] `HTTP_DEBUG` — zero occurrences in compiler/ (verified via grep)
+> - [x] `Debug.trace` — zero occurrences in production code (verified via grep)
+> - [x] `import Debug` — zero occurrences (verified via grep)
+> - [x] Makefile — comprehensive with 20+ targets: build, test, test-unit, test-property,
+>   test-integration, test-watch, test-coverage, bench, lint, format, profile, webidl
+> - [x] README.md — 105 lines, covers quick start, architecture, development
+> - [x] CONTRIBUTING.md — 204 lines, references CLAUDE.md, forbids mock tests
+> - [x] All `.cabal` files have `-Wall` — verified across canopy-core, canopy-terminal,
+>   canopy-builder, canopy-query, canopy-driver, canopy-webidl (all have `-Wall -fwarn-tabs -O2`)
+> - [x] All putStrLn usage is legitimate — 13 occurrences, all user-facing output (build
+>   messages, REPL, linting JSON, audit output)
 >
-> Remaining verification needed:
-> - [ ] Confirm all `.cabal` files have `-Wall` in ghc-options
+> Remaining verification (polish, not blocking):
 > - [ ] Confirm zero warnings when building with `-Wall -Werror`
 > - [ ] Audit CLI grammar in user-facing strings
-> - [ ] Verify all Makefile targets work correctly
+> - [ ] Verify all Makefile targets execute successfully
 
 ## Problem
 

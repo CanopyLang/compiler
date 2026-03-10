@@ -58,8 +58,10 @@ import qualified Generate.JavaScript as JS
 import qualified Generate.JavaScript.CodeSplit.Generate as Split
 import qualified Generate.JavaScript.CodeSplit.Types as Split
 import qualified Generate.JavaScript.ESM as ESM
-import Generate.JavaScript.ESM.Types (ESMOutput)
+import Generate.JavaScript.ESM.Types (ESMOutput (..))
 import qualified Generate.JavaScript.SourceMap as SourceMap
+import qualified Generate.TypeScript as TypeScript
+import qualified Canopy.Interface as Interface
 import qualified Generate.JavaScript.StringPool as StringPool
 import qualified Generate.Mode as Mode
 import Make.Types
@@ -167,14 +169,29 @@ createESMBuilder ctx artifacts =
     globalGraph = extractGlobalGraph artifacts
     wrapGenerate msg = Exit.MakeBadGenerate [Diag.stringToDiagnostic Diag.PhaseGenerate "CODE GENERATION ERROR" msg]
 
--- | Generate ESM output from artifacts.
+-- | Generate ESM output from artifacts, including @.d.ts@ type declarations.
 generateESM :: Mode.Mode -> Compiler.Artifacts -> ESMOutput
 generateESM mode artifacts =
-  ESM.generate mode globalGraph mains ffiInfo
+  esmBase {_eoTypeDefs = typeDefs}
   where
+    esmBase = ESM.generate mode globalGraph mains ffiInfo
     globalGraph = extractGlobalGraph artifacts
     mains = extractMains artifacts
     ffiInfo = artifacts ^. Build.artifactsFFIInfo
+    pkgName = artifacts ^. Build.artifactsName
+    typeDefs = generateTypeDefs pkgName (artifacts ^. Build.artifactsModules)
+
+
+-- | Generate TypeScript declarations from module interfaces.
+generateTypeDefs :: Pkg.Name -> [Build.Module] -> Map ModuleName.Canonical Builder
+generateTypeDefs pkgName modules =
+  Map.fromList (map (moduleTypeDef pkgName) modules)
+
+
+-- | Generate a single module's @.d.ts@ content.
+moduleTypeDef :: Pkg.Name -> Build.Module -> (ModuleName.Canonical, Builder)
+moduleTypeDef pkgName (Build.Fresh rawName iface _) =
+  (ModuleName.Canonical pkgName rawName, TypeScript.generateDts iface)
 
 -- | Check whether code splitting should be used for the given artifacts.
 --

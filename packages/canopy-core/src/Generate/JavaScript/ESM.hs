@@ -76,7 +76,8 @@ generate inputMode (Opt.GlobalGraph rawGraph _ _) mains ffiInfos =
     { _eoRuntime = ESMRuntime.generateRuntime mode,
       _eoModules = generateAllModules mode graph mains reachable,
       _eoFFIModules = generateAllFFI ffiInfos,
-      _eoEntry = generateEntryPoint mains
+      _eoEntry = generateEntryPoint mains,
+      _eoTypeDefs = Map.empty
     }
   where
     (graph, mode) = prepareGraph inputMode rawGraph ffiInfos

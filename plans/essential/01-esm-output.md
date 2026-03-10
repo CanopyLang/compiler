@@ -1,21 +1,33 @@
 # Plan 01: ESM Output
 
 ## Priority: CRITICAL — Tier 0
-## Status: NOT STARTED — highest priority unstarted work
-## Effort: 2-3 weeks
-## Blocks: Plans 04, 05, 06, 07, 09 (almost everything)
+## Status: DONE — implemented 2026-03-10
+## Effort: Complete
+## Blocks: Plans 04, 05, 06, 07, 09 — **ALL NOW UNBLOCKED**
 
-> **Status Update (2026-03-07 audit):** No ESM generation code exists. The JS generator
-> (`Generate/JavaScript.hs`) only produces IIFE output. No `Generate/JavaScript/ESM.hs` file
-> exists.
+> **Status Update (2026-03-10 deep audit):** ESM output is **FULLY IMPLEMENTED** across two
+> commits on 2026-03-10:
 >
-> However, several things are ready for ESM:
-> - The MCP server (`canopy-mcp`) already has an `esm` option in its `format` enum
-> - Code splitting infrastructure (`Generate/JavaScript/CodeSplit/`) produces separate chunks
->   that would benefit from ESM imports
-> - All packages use FFI external JS files that could become ESM imports
+> - **Commit 5dc084c**: Complete ESM backend with AST-based JS generation via `language-javascript`
+> - **Commit d546c74**: Formatted pretty printer integration for readable ESM output
 >
-> **This is the single most critical unstarted task in the entire roadmap.**
+> **What's implemented:**
+> - `Generate/JavaScript/ESM.hs` (416 lines) — main orchestrator with reachability analysis
+> - `Generate/JavaScript/ESM/Types.hs` (74 lines) — `ESMOutput`, `ModuleBundle` data types with lenses
+> - `Generate/JavaScript/ESM/Runtime.hs` (118 lines) — `canopy-runtime.js` generation (F2-F9, A2-A9)
+> - `Generate/JavaScript/ESM/FFI.hs` (200 lines) — FFI wrapper module generation
+> - `Generate/JavaScript/ESM/ModuleGraph.hs` (106 lines) — module graph analysis
+> - `Generate/JavaScript/Builder.hs` extended with `ModuleItem` AST: imports, exports, const, pure annotations
+> - `Generate/Mode.hs` — `OutputFormat` ADT: `FormatESM | FormatIIFE`
+> - CLI: `--output-format=esm` (default) / `--output-format=iife` (legacy)
+> - `Make/Output.hs` — `generateESMOutput` writes per-module files, runtime, FFI, entry point
+> - Dev mode: formatted 2-space output via `language-javascript` pretty printer
+> - Prod mode: compact minified output
+>
+> **Remaining polish (not blocking):**
+> - Import map generation (Phase 3 of original plan — convenience feature)
+> - ESM-specific test coverage (integration tests verifying module validity)
+> - IIFE backward compatibility wrapper (nice-to-have for legacy support)
 
 ## Problem
 

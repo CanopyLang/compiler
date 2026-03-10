@@ -171,6 +171,11 @@ library:
     - Generate.JavaScript.StringPool
     - Generate.Mode
     - Generate.TreeShake
+    # -- Public API: TypeScript .d.ts Generation --
+    - Generate.TypeScript
+    - Generate.TypeScript.Convert
+    - Generate.TypeScript.Render
+    - Generate.TypeScript.Types
     # -- Public API: JSON --
     - Json.Decode
     - Json.Encode

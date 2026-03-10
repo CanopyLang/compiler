@@ -7,6 +7,7 @@ import qualified Golden.SecurityGolden as SecurityGolden
 import qualified Golden.ParseAliasGolden as ParseAliasGolden
 import qualified Golden.ParseExprGolden as ParseExprGolden
 import qualified Golden.ParseModuleGolden as ParseModuleGolden
+import qualified Golden.TypeScriptGolden as TypeScriptGolden
 import qualified Golden.ParseTypeGolden as ParseTypeGolden
 import qualified Integration.CanExtensionTest as CanExtensionIT
 import qualified Integration.DevelopTest as DevelopIT
@@ -107,6 +108,7 @@ import qualified Unit.Generate.CoverageTest as CoverageTest
 import qualified Unit.Generate.SourceMapTest as SourceMapTest
 import qualified Unit.Generate.StringPoolTest as StringPoolTest
 import qualified Unit.Generate.TreeShakeTest as TreeShakeTest
+import qualified Unit.Generate.TypeScriptTest as TypeScriptTest
 import qualified Unit.Optimize.CaseTest as CaseTest
 import qualified Unit.Optimize.ConstantFoldTest as ConstantFoldTest
 import qualified Unit.Optimize.DecisionTreeTest as DecisionTreeTest
@@ -280,6 +282,7 @@ unitTests =
       CodeSplitRuntimeTest.tests,
       CodeSplitTypesTest.tests,
       TreeShakeTest.tests,
+      TypeScriptTest.tests,
       CoverageTest.tests,
       CoverageReportTest.tests,
       EventCoverageTest.tests,
@@ -380,5 +383,6 @@ goldenTests =
       ParseTypeGolden.tests,
       ParseAliasGolden.tests,
       JsGenGolden.tests,
-      SecurityGolden.tests
+      SecurityGolden.tests,
+      TypeScriptGolden.tests
     ]

@@ -50,9 +50,15 @@ Every React, Vue, Angular, and Svelte application was at risk. None of these fra
 | Component | Description |
 |-----------|-------------|
 | Capability-specific audit | `canopy audit --capabilities` showing per-dependency capability breakdown |
-| `capabilities.allow/deny` in canopy.json | Compile-time enforcement of capability allow/deny lists |
+| Deny lists in canopy.json | Current: flat allow-list (`"capabilities": ["geo", "net"]`). Missing: separate `{"allow": [...], "deny": [...]}` syntax |
 | New-capability-in-update detection | Warning when a dependency version adds a new capability |
+| Per-dependency capability tracking | Which capabilities come from which dependencies |
 | Marketing/documentation | Blog post, landing page section, comparison table |
+
+> **Note (2026-03-10 deep audit):** The `capabilities` field in `canopy.json` IS parsed and
+> enforced as an allow-list via `validateDeclaredCapabilities` in `Make/Output.hs`. Runtime
+> guards are generated. But the allow/deny split syntax and per-dependency tracking are not
+> implemented.
 
 ## Remaining Work
 

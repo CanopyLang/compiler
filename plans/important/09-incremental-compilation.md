@@ -4,28 +4,31 @@
 ## Effort: 5-7 weeks (revised — query engine is ~40% built, not 80%)
 ## Depends on: Plan 01 (ESM output)
 
-> **Status Update (2026-03-07 audit):** The canopy-query engine exists but is less complete
-> than previously estimated. Honest assessment: **~40% built**, not 80%.
+> **Status Update (2026-03-10 deep audit):** The canopy-query engine exists but is
+> **~40% built**, not 80%. Confirmed via code inspection.
 >
-> **What exists:**
-> - `Query/Engine.hs` (235 lines) — IORef-based state, cache hit/miss tracking
-> - `Query/Simple.hs` — basic query types and content hashing
-> - `Parse/Cache.hs` — parse result caching with content hashing
-> - `runQuery` / `invalidateQuery` / `clearCache` API
-> - SHA256 content-based cache keys
-> - Debug logging infrastructure
+> **What exists (verified):**
+> - `Query/Engine.hs` (235 lines) — IORef-based state, `runQuery`/`invalidateQuery`/`clearCache`,
+>   cache hit/miss tracking, `LogEvent` debug logging
+> - `Query/Simple.hs` (139 lines) — GADT `Query` type with `ParseModuleQuery`, `ContentHash`
+>   via SHA-256, `executeQuery` delegation, global parse cache via `unsafePerformIO`
+> - `Parse/Cache.hs` (73 lines) — content-hash based parse result caching with validation
+> - `Driver.hs` (463 lines) — query-aware driver with per-phase timing, parallel compilation
+>   via worker pool, timeout protection (5 min/module)
+> - Unit tests: `test/Unit/Query/EngineTest.hs` (244 lines) covering init, caching, invalidation
 >
-> **What does NOT exist (despite code comments claiming otherwise):**
-> - **No dependency tracking** — queries don't record which other queries they called.
->   The comment "Query engine with caching and dependency tracking" is aspirational,
->   not factual. `EngineState` has `engineCache` and `engineRunning` but no dependency graph.
-> - **Only parse is cached** — `compileModuleCore` in Driver.hs always re-runs canonicalize,
->   type-check, optimize, and generate phases even when parse result is cached.
-> - **No try-mark-green invalidation** — no RED/GREEN marking, no early cutoff.
-> - **No durability levels** — stdlib is re-checked every time.
-> - **No disk persistence** — cache is in-memory only, lost on restart.
-> - **LSP doesn't use query engine** — the TypeScript LSP (`language-server/`) uses its own
->   tree-sitter-based type checker, completely separate from the Haskell query engine.
+> **What does NOT exist (verified — aspirational comments in code are misleading):**
+> - **No dependency tracking** — `EngineState` has no `engineDeps` field. `runQuery` does NOT
+>   record which queries each execution calls. No dependency graph exists.
+> - **Only parse is cached** — `compileModuleCore` always re-runs canonicalize, type-check,
+>   optimize, and generate even when parse is cached. No downstream phase caching.
+> - **No try-mark-green invalidation** — no RED/GREEN marking, no early cutoff when
+>   intermediate results don't change.
+> - **No durability levels** — stdlib re-checked every time despite never changing.
+> - **No disk persistence** — in-memory only, lost on restart.
+> - **LSP doesn't use query engine** — `language-server/` has its own tree-sitter TypeScript
+>   type checker, completely separate from the Haskell query engine.
+> - **No error recovery** — parser stops at first error, no partial AST generation.
 
 ## Problem
 

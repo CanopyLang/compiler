@@ -4,20 +4,23 @@
 ## Effort: 1-2 weeks (reduced — code splitting infrastructure already exists)
 ## Depends on: Plan 03 (packages — DONE), Plan 05 (CanopyKit for route code splitting)
 
-> **Status Update (2026-03-07 audit):** Code splitting infrastructure is **already built** in
-> the compiler:
+> **Status Update (2026-03-10 deep audit):** Code splitting infrastructure is **fully built**
+> and substantial (1,547 lines across 5 modules):
 >
-> - `Generate/JavaScript/CodeSplit/Types.hs` — chunk IDs, chunk graphs, split config, output types
-> - `Generate/JavaScript/CodeSplit/Analyze.hs` — dependency analysis for split boundaries
-> - `Generate/JavaScript/CodeSplit/Generate.hs` — chunk code generation with manifest output
-> - `Generate/JavaScript/CodeSplit/Manifest.hs` — split manifest for runtime loader
-> - `Generate/JavaScript/CodeSplit/Runtime.hs` — runtime loader for lazy chunks
+> - `Generate/JavaScript/CodeSplit/Types.hs` (218 lines) — ChunkId, ChunkKind (Entry/Lazy/Shared),
+>   Chunk, ChunkGraph, SplitConfig, SplitOutput, ChunkGraphCache with lens support
+> - `Generate/JavaScript/CodeSplit/Analyze.hs` (524 lines) — graph analysis with DFS reachability,
+>   incremental caching via `analyzeWithCache`, content-hash graph invalidation, code motion
+>   optimization (globals pushed deep in DAG), invariant enforcement (disjoint sets, acyclic DAG)
+> - `Generate/JavaScript/CodeSplit/Generate.hs` (572 lines) — per-chunk JS generation with
+>   `__canopy_register()` wrapping for lazy chunks, traversal state machine, kernel/cycle/manager
+>   /port/enum support
+> - `Generate/JavaScript/CodeSplit/Manifest.hs` (155 lines) — JSON manifest with SHA-256 content
+>   hashes, cache-busting filenames, dual output (embedded + disk)
+> - `Generate/JavaScript/CodeSplit/Runtime.hs` (78 lines) — ~40 lines of JS runtime:
+>   `__canopy_register()`, `__canopy_load()`, `__canopy_prefetch()`, promise-based async loading
 >
-> The code splitting system supports `lazy import` declarations, entry/lazy/shared chunk
-> classification, and content-hashed filenames.
->
-> What remains is primarily the **delegation helper library** and **integration with CanopyKit
-> routing** (which depends on Plan 05).
+> What remains: **delegation helper library** and **CanopyKit router integration** (Plan 05).
 
 ## Problem
 

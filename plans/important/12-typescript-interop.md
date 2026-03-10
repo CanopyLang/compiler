@@ -4,8 +4,12 @@
 ## Effort: 6-8 weeks
 ## Depends on: Plan 01 (ESM output)
 
-> **Note:** This was listed as Tier 2 in some references but is Tier 1 in the master plan.
-> No `.d.ts` generation exists. No `Generate/TypeScript.hs`. Not started.
+> **Status Update (2026-03-10 deep audit):** No `.d.ts` generation exists. No
+> `Generate/TypeScript.hs`. Not started.
+>
+> **UNBLOCKED**: Plan 01 (ESM output) is now COMPLETE (2026-03-10). The compiler generates
+> per-module ES modules that Vite/bundlers can consume natively. `.d.ts` files can now be
+> generated alongside the `.js` files. This plan can proceed immediately.
 
 ## Problem
 

@@ -101,10 +101,25 @@ testRecords =
           b @?= Name.fromChars "b"
         other -> assertFailure ("unexpected: " <> show other),
       testCase "update" $ case parseExpr "{ r | a = 1 }" of
-        Right (Ann.At _ (Src.Update (Ann.At _ r) [(Ann.At _ field, _)])) -> do
+        Right (Ann.At _ (Src.Update (Ann.At _ r) [(Ann.At _ field, Src.FieldValue _)])) -> do
           r @?= Name.fromChars "r"
           field @?= Name.fromChars "a"
-        _ -> assertFailure "expected record update"
+        _ -> assertFailure "expected record update",
+      testCase "nested update" $ case parseExpr "{ r | user { name = 1 } }" of
+        Right (Ann.At _ (Src.Update (Ann.At _ r) [(Ann.At _ field, Src.FieldNested [(Ann.At _ sub, Src.FieldValue _)])])) -> do
+          r @?= Name.fromChars "r"
+          field @?= Name.fromChars "user"
+          sub @?= Name.fromChars "name"
+        other -> assertFailure ("expected nested record update, got: " <> show other),
+      testCase "deeply nested update" $ case parseExpr "{ r | a { b { c = 1 } } }" of
+        Right (Ann.At _ (Src.Update _ [(_, Src.FieldNested [(_, Src.FieldNested [(Ann.At _ c, Src.FieldValue _)])])])) ->
+          c @?= Name.fromChars "c"
+        other -> assertFailure ("expected deeply nested update, got: " <> show other),
+      testCase "mixed flat and nested update" $ case parseExpr "{ r | x = 1, y { z = 2 } }" of
+        Right (Ann.At _ (Src.Update _ [(Ann.At _ x, Src.FieldValue _), (Ann.At _ y, Src.FieldNested _)])) -> do
+          x @?= Name.fromChars "x"
+          y @?= Name.fromChars "y"
+        other -> assertFailure ("expected mixed update, got: " <> show other)
     ]
 
 testVariablesAndCalls :: TestTree

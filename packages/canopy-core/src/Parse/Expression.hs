@@ -212,8 +212,8 @@ record start =
                 oneOf SyntaxError.RecordEquals
                   [ do  word1 0x7C {-|-} SyntaxError.RecordEquals
                         Space.chompAndCheckIndent SyntaxError.RecordSpace SyntaxError.RecordIndentField
-                        firstField <- chompField
-                        fields <- chompFields [firstField]
+                        firstField <- chompUpdateField
+                        fields <- chompUpdateFields [firstField]
                         addEnd start (Src.Update starter fields)
                   , do  word1 0x3D {-=-} SyntaxError.RecordEquals
                         Space.chompAndCheckIndent SyntaxError.RecordSpace SyntaxError.RecordIndentExpr
@@ -249,6 +249,40 @@ chompField =
       (value, end) <- specialize SyntaxError.RecordExpr expression
       Space.checkIndent end SyntaxError.RecordIndentEnd
       return (key, value)
+
+
+type UpdateField = ( Ann.Located Name.Name, Src.FieldUpdate )
+
+
+chompUpdateFields :: [UpdateField] -> Parser SyntaxError.Record [UpdateField]
+chompUpdateFields fields =
+  oneOf SyntaxError.RecordEnd
+    [ do  word1 0x2C {-,-} SyntaxError.RecordEnd
+          Space.chompAndCheckIndent SyntaxError.RecordSpace SyntaxError.RecordIndentField
+          f <- chompUpdateField
+          chompUpdateFields (f : fields)
+    , do  word1 0x7D {-}-} SyntaxError.RecordEnd
+          return (reverse fields)
+    ]
+
+
+chompUpdateField :: Parser SyntaxError.Record UpdateField
+chompUpdateField =
+  do  key <- addLocation (Var.lower SyntaxError.RecordField)
+      Space.chompAndCheckIndent SyntaxError.RecordSpace SyntaxError.RecordIndentEquals
+      oneOf SyntaxError.RecordEquals
+        [ do  word1 0x3D {-=-} SyntaxError.RecordEquals
+              Space.chompAndCheckIndent SyntaxError.RecordSpace SyntaxError.RecordIndentExpr
+              (value, end) <- specialize SyntaxError.RecordExpr expression
+              Space.checkIndent end SyntaxError.RecordIndentEnd
+              return (key, Src.FieldValue value)
+        , do  word1 0x7B {- { -} SyntaxError.RecordEquals
+              Space.chompAndCheckIndent SyntaxError.RecordSpace SyntaxError.RecordIndentField
+              firstField <- chompUpdateField
+              nestedFields <- chompUpdateFields [firstField]
+              Space.chompAndCheckIndent SyntaxError.RecordSpace SyntaxError.RecordIndentEnd
+              return (key, Src.FieldNested nestedFields)
+        ]
 
 
 

@@ -4,16 +4,25 @@
 ## Effort: 4-6 weeks (reduced — playground already exists)
 ## Depends on: Plan 06 (Vite plugin)
 
-> **Status Update (2026-03-07 audit):** Several onboarding assets already exist:
+> **Status Update (2026-03-10 deep audit):** Substantial onboarding assets already exist:
 >
-> - **Playground** (`compiler/tools/playground/`) — Full React/Vite/TypeScript app with:
->   CodeMirror-style editor, live preview, error panel, example picker, file tabs,
->   output tabs, share modal, keyboard shortcuts, status bar
-> - **MCP server** (`canopy-mcp`) — AI integration with 5 tools for Claude/Copilot
-> - **VSCode extension** — Editor support ready
-> - **All packages complete** — Plan 03 dependency removed
+> - **Playground** (`tools/playground/`) — React/Vite/TypeScript/Monaco Editor app with
+>   resizable panels, LZ-string URL sharing, live preview
+> - **MCP server** (`mcp/`) — `@canopy/mcp-server` v0.19.2 with build, check, getType,
+>   findDefinition, getDocs tools. Node.js >=18.
+> - **VSCode extension** (`editor/vscode/`) — Published .vsix with LSP integration,
+>   tree-sitter highlighting, JSON schemas for canopy.json
+> - **Neovim support** (`editor/nvim/`) — Plugin configuration files
+> - **Tree-sitter grammar** (`editor/tree-sitter/`) — Multi-language bindings (Node, C,
+>   Python, Go, Swift, Rust, WASM), comprehensive test suite
+> - **Language server** (`language-server/canopy-language-server/`) — Full TypeScript LSP:
+>   diagnostics, completions, go-to-definition, find references, hover, rename,
+>   workspace symbols, code actions, formatting
+> - **Debugger** (`tools/canopy-debugger/`) — Chrome extension (Manifest v3)
+> - **71 stdlib packages** — All with canopy.json manifests
 >
-> Remaining work: documentation, migration guide, example apps, deployment.
+> Remaining work: documentation site, "Canopy for React Developers" guide, example apps,
+> playground deployment, migration codemods.
 
 ## Problem
 

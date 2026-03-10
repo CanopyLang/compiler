@@ -54,10 +54,22 @@ childExprs (Src.Binops pairs last_) =
   map fst pairs ++ [last_]
 childExprs (Src.Negate e) = [e]
 childExprs (Src.Access e _) = [e]
-childExprs (Src.Update _ fields) = map snd fields
+childExprs (Src.Update _ fields) = concatMap (fieldUpdateExprs . snd) fields
 childExprs (Src.Record fields) = map snd fields
 childExprs (Src.Tuple e1 e2 rest) = e1 : e2 : rest
 childExprs _ = []
+
+
+fieldUpdateExprs :: Src.FieldUpdate -> [Src.Expr]
+fieldUpdateExprs (Src.FieldValue expr) = [expr]
+fieldUpdateExprs (Src.FieldNested subFields) = concatMap (fieldUpdateExprs . snd) subFields
+
+
+collectNamesInFieldUpdate :: Src.FieldUpdate -> [String]
+collectNamesInFieldUpdate (Src.FieldValue expr) = collectNamesInExpr (Ann.toValue expr)
+collectNamesInFieldUpdate (Src.FieldNested subFields) =
+  concatMap (collectNamesInFieldUpdate . snd) subFields
+
 
 -- | Extract child expressions from a local definition.
 --
@@ -127,7 +139,7 @@ collectNamesInExpr (Src.Binops pairs last_) =
 collectNamesInExpr (Src.Negate e) = collectNamesInExpr (Ann.toValue e)
 collectNamesInExpr (Src.Access e _) = collectNamesInExpr (Ann.toValue e)
 collectNamesInExpr (Src.Update (Ann.At _ n) fields) =
-  Name.toChars n : concatMap (collectNamesInExpr . Ann.toValue . snd) fields
+  Name.toChars n : concatMap (collectNamesInFieldUpdate . snd) fields
 collectNamesInExpr (Src.Record fields) =
   concatMap (collectNamesInExpr . Ann.toValue . snd) fields
 collectNamesInExpr (Src.Tuple e1 e2 rest) =
