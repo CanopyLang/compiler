@@ -33,9 +33,10 @@ module Generate.JavaScript.FFI
     generateFFIContent,
     generateFFIValidators,
 
-    -- * Internal (exported for testing)
+    -- * Internal (exported for testing and ESM)
     extractCanopyTypeFunctions,
     extractFFIFunctions,
+    extractInternalNames,
     extractCanopyType,
     findFunctionName,
     isValidJsIdentifier,

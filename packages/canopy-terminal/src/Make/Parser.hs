@@ -21,6 +21,7 @@ module Make.Parser
   ( -- * Parsers
     reportType,
     output,
+    outputFormatParser,
     docsFile,
     jobsParser,
 
@@ -31,6 +32,7 @@ module Make.Parser
   )
 where
 
+import Generate.Mode (OutputFormat (..))
 import Make.Types (Output (..), ReportType (..))
 import qualified System.FilePath as FilePath
 import Terminal (Parser (..))
@@ -213,3 +215,24 @@ parseNonNegativeInt :: String -> Maybe Int
 parseNonNegativeInt input = do
   n <- readMaybe input
   if n >= 0 then Just n else Nothing
+
+-- | Parser for output format (ESM or IIFE).
+--
+-- Accepts "esm" or "iife". Default is ESM when not specified.
+--
+-- @since 0.20.0
+outputFormatParser :: Parser OutputFormat
+outputFormatParser =
+  Parser
+    { _singular = "output format",
+      _plural = "output formats",
+      _parser = parseOutputFormat,
+      _suggest = \_ -> pure ["esm", "iife"],
+      _examples = \_ -> pure ["esm", "iife"]
+    }
+
+-- | Parse output format string.
+parseOutputFormat :: String -> Maybe OutputFormat
+parseOutputFormat "esm" = Just FormatESM
+parseOutputFormat "iife" = Just FormatIIFE
+parseOutputFormat _ = Nothing

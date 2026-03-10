@@ -90,6 +90,7 @@ createMakeFlags =
     |-- Terminal.flag "jobs" Make.jobsParser "Maximum parallel compilation workers. 0 = auto (uses all CPU cores), 1 = sequential (useful for debugging). Default: auto."
     |-- Terminal.onOff "verify-reproducible" "Build twice and compare output to verify reproducibility. Fails if the two builds produce different byte-for-byte output."
     |-- Terminal.onOff "allow-kernel" "Allow third-party packages that use legacy kernel code instead of the FFI system. Required for --optimize when such packages are present."
+    |-- Terminal.flag "output-format" Make.outputFormatParser "Output format: 'esm' (default) produces ES modules, 'iife' produces a single IIFE bundle."
 
 createCheckFlags :: Terminal.Flags Check.Flags
 createCheckFlags =

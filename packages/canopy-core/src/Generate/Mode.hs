@@ -1,11 +1,13 @@
 module Generate.Mode
   ( Mode(..)
+  , OutputFormat(..)
   , isDebug
   , isCoverage
   , isElmCompatible
   , isFFIStrict
   , isFFIDebug
   , isFFIAlias
+  , isESM
   , ShortFieldNames
   , shortenFieldNames
   , stringPool
@@ -23,6 +25,20 @@ import Data.Set (Set)
 import qualified Data.Set as Set
 import qualified Generate.JavaScript.Name as JsName
 import qualified Generate.JavaScript.StringPool as StringPool
+
+-- OUTPUT FORMAT
+
+-- | Output format for generated JavaScript.
+--
+-- 'FormatESM' produces one ES module per Canopy module with explicit
+-- import\/export statements.  'FormatIIFE' produces the traditional
+-- single-file IIFE bundle.
+--
+-- @since 0.20.0
+data OutputFormat
+  = FormatESM
+  | FormatIIFE
+  deriving (Eq, Show)
 
 -- MODE
 
@@ -103,6 +119,13 @@ isFFIAlias mode name =
   case mode of
     Dev _ _ _ _ ffiAliases _ -> Set.member name ffiAliases
     Prod _ _ _ _ _ ffiAliases -> Set.member name ffiAliases
+
+-- | Check if a given output format is ESM.
+--
+-- @since 0.20.0
+isESM :: OutputFormat -> Bool
+isESM FormatESM = True
+isESM FormatIIFE = False
 
 -- STRING POOL
 

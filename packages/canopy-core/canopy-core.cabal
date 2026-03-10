@@ -84,6 +84,11 @@ library
       Generate.JavaScript.CodeSplit.Manifest
       Generate.JavaScript.CodeSplit.Runtime
       Generate.JavaScript.CodeSplit.Types
+      Generate.JavaScript.ESM
+      Generate.JavaScript.ESM.FFI
+      Generate.JavaScript.ESM.ModuleGraph
+      Generate.JavaScript.ESM.Runtime
+      Generate.JavaScript.ESM.Types
       Generate.JavaScript.Coverage
       Generate.JavaScript.Expression
       Generate.JavaScript.FFI

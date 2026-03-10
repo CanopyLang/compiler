@@ -24,6 +24,7 @@ module Make.Builder
 
     -- * Builder Creation
     createBuilder,
+    createESMBuilder,
     createSplitBuilder,
     shouldSplitOutput,
 
@@ -56,6 +57,8 @@ import qualified Data.Set as Set
 import qualified Generate.JavaScript as JS
 import qualified Generate.JavaScript.CodeSplit.Generate as Split
 import qualified Generate.JavaScript.CodeSplit.Types as Split
+import qualified Generate.JavaScript.ESM as ESM
+import Generate.JavaScript.ESM.Types (ESMOutput)
 import qualified Generate.JavaScript.SourceMap as SourceMap
 import qualified Generate.JavaScript.StringPool as StringPool
 import qualified Generate.Mode as Mode
@@ -142,6 +145,36 @@ createBuilder ctx artifacts = do
   let ffiUnsafeFlag = ctx ^. bcFfiUnsafe
   let ffiDebugFlag = ctx ^. bcFfiDebug
   generateForMode mode ffiUnsafeFlag ffiDebugFlag artifacts
+
+-- | Create ESM output from compiled artifacts.
+--
+-- Generates per-module ES module files, a shared runtime module,
+-- FFI modules, and an entry point. Returns an 'ESMOutput' containing
+-- builders for all output files.
+--
+-- @since 0.20.0
+createESMBuilder ::
+  BuildContext ->
+  Compiler.Artifacts ->
+  Task ESMOutput
+createESMBuilder ctx artifacts =
+  Task.mapError wrapGenerate $
+    return (generateESM (desiredToMode mode ffiUnsafeFlag ffiDebugFlag globalGraph) artifacts)
+  where
+    mode = ctx ^. bcDesiredMode
+    ffiUnsafeFlag = ctx ^. bcFfiUnsafe
+    ffiDebugFlag = ctx ^. bcFfiDebug
+    globalGraph = extractGlobalGraph artifacts
+    wrapGenerate msg = Exit.MakeBadGenerate [Diag.stringToDiagnostic Diag.PhaseGenerate "CODE GENERATION ERROR" msg]
+
+-- | Generate ESM output from artifacts.
+generateESM :: Mode.Mode -> Compiler.Artifacts -> ESMOutput
+generateESM mode artifacts =
+  ESM.generate mode globalGraph mains ffiInfo
+  where
+    globalGraph = extractGlobalGraph artifacts
+    mains = extractMains artifacts
+    ffiInfo = artifacts ^. Build.artifactsFFIInfo
 
 -- | Check whether code splitting should be used for the given artifacts.
 --

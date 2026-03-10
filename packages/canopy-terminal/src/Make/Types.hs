@@ -42,6 +42,7 @@ module Make.Types
     jobs,
     verifyReproducible,
     allowKernel,
+    outputFormat,
 
     -- ** BuildContext Lenses
     bcStyle,
@@ -51,6 +52,7 @@ module Make.Types
     bcPackage,
     bcFfiUnsafe,
     bcFfiDebug,
+    bcOutputFormat,
 
     -- * Type Aliases
     Task,
@@ -59,6 +61,7 @@ where
 
 import qualified Canopy.Details as Details
 import Control.Lens.TH (makeLenses)
+import Generate.Mode (OutputFormat (..))
 import qualified Reporting
 import qualified Reporting.Exit as Exit
 import qualified Reporting.Task as Task
@@ -100,7 +103,9 @@ data Flags = Flags
     -- | Build twice and compare output to verify reproducibility
     _verifyReproducible :: !Bool,
     -- | Explicitly allow third-party packages that use kernel code
-    _allowKernel :: !Bool
+    _allowKernel :: !Bool,
+    -- | Output format: ESM (default) or IIFE. Nothing means ESM.
+    _outputFormat :: !(Maybe OutputFormat)
   }
   deriving (Eq, Show)
 
@@ -129,7 +134,9 @@ data BuildContext = BuildContext
     -- | FFI unsafe mode (disables runtime validation)
     _bcFfiUnsafe :: !Bool,
     -- | FFI debug mode (verbose validator error messages)
-    _bcFfiDebug :: !Bool
+    _bcFfiDebug :: !Bool,
+    -- | Output format (ESM or IIFE)
+    _bcOutputFormat :: !OutputFormat
   }
 
 -- | Output format and target file.

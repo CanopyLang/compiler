@@ -2,6 +2,7 @@
 module Generate.JavaScript.Name
   ( Name
   , toBuilder
+  , fromBuilder
   , fromIndex
   , fromInt
   , fromLocal
@@ -44,6 +45,16 @@ newtype Name =
   Name { toBuilder :: Builder }
   deriving Show
 
+
+
+-- | Construct a 'Name' from a raw 'Builder'.
+--
+-- Use this for names that don't go through the standard mangling pipeline
+-- (e.g. runtime globals like @__canopy_debug@).
+--
+-- @since 0.20.0
+fromBuilder :: Builder -> Name
+fromBuilder = Name
 
 
 -- CONSTRUCTORS

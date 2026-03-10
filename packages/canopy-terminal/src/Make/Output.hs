@@ -24,6 +24,7 @@ module Make.Output
 
     -- * Specific Generators
     generateJavaScript,
+    generateESMOutput,
     generateSplitJavaScript,
     generateHtml,
     generateDevNull,
@@ -37,14 +38,16 @@ module Make.Output
 where
 
 import qualified Build
+import qualified Canopy.Data.Name as Name
+import qualified Canopy.Data.Utf8 as Utf8
 import qualified Canopy.ModuleName as ModuleName
+import qualified Canopy.Package as Pkg
 import Control.Lens ((^.))
 import Data.ByteString.Builder (Builder)
 import qualified Data.ByteString.Builder as Builder
 import qualified Data.ByteString as ByteString
 import qualified Data.ByteString.Lazy as ByteString.Lazy
 import Data.Function ((&))
-import qualified Canopy.Data.Name as Name
 import qualified Canopy.Data.NonEmptyList as NonEmptyList
 import qualified Data.Map.Strict as Map
 import Data.Set (Set)
@@ -59,6 +62,7 @@ import qualified File
 import qualified Foreign.FFI as FFI
 import qualified Generate.Html as Html
 import qualified Generate.JavaScript.CodeSplit.Types as Split
+import Generate.JavaScript.ESM.Types (ESMOutput (..))
 import qualified Generate.JavaScript.SourceMap as SourceMap
 import Logging.Event (LogEvent (..))
 import qualified Logging.Logger as Log
@@ -77,6 +81,7 @@ import qualified Canopy.Outline as Outline
 import qualified Reporting.Exit as Exit
 import qualified Reporting.Task as Task
 import qualified System.Directory as Dir
+import System.FilePath ((</>))
 import qualified System.FilePath as FilePath
 import qualified System.IO as IO
 
@@ -181,14 +186,14 @@ writeChunks dir = mapM_ (writeChunk dir)
 -- | Write a single chunk file to the output directory.
 writeChunk :: FilePath -> Split.ChunkOutput -> IO ()
 writeChunk dir co = do
-  let path = dir FilePath.</> Split._coFilename co
+  let path = dir </> Split._coFilename co
   File.writeBuilder path (Split._coBuilder co)
   Log.logEvent (BuildStarted (Text.pack ("  wrote chunk: " <> Split._coFilename co)))
 
 -- | Write the JSON manifest file to the output directory.
 writeManifest :: FilePath -> Builder -> IO ()
 writeManifest dir manifest =
-  File.writeBuilder (dir FilePath.</> "manifest.json") manifest
+  File.writeBuilder (dir </> "manifest.json") manifest
 
 -- | Report chunk sizes to the build log.
 --
@@ -228,6 +233,70 @@ totalLine chunks =
   "  Total: " <> formatKB total <> " (" <> show (length chunks) <> " chunks)"
   where
     total = sum (map (chunkBuilderSize . Split._coBuilder) chunks)
+
+-- | Generate ESM output to a directory.
+--
+-- Writes the complete ESM output structure:
+--
+-- @
+--   output\/
+--     canopy-runtime.js
+--     Author.Project.Module.js  (one per module)
+--     ffi\/
+--       Alias.js                (one per FFI file)
+--     main.js
+-- @
+--
+-- @since 0.20.0
+generateESMOutput :: FilePath -> ESMOutput -> Task ()
+generateESMOutput outputDir esmOutput = do
+  Task.io (IO.hPutStrLn IO.stderr ("Generating ESM output to " <> outputDir <> "/"))
+  Task.io (Log.logEvent (BuildStarted (Text.pack ("Generating ESM to: " <> outputDir))))
+  Task.io (Dir.createDirectoryIfMissing True outputDir)
+  Task.io (Dir.createDirectoryIfMissing True (outputDir </> "ffi"))
+  Task.io (writeESMRuntime outputDir esmOutput)
+  Task.io (writeESMModules outputDir esmOutput)
+  Task.io (writeESMFFI outputDir esmOutput)
+  Task.io (writeESMEntry outputDir esmOutput)
+
+-- | Write the runtime module.
+writeESMRuntime :: FilePath -> ESMOutput -> IO ()
+writeESMRuntime dir esmOutput =
+  File.writeBuilder (dir </> "canopy-runtime.js") (_eoRuntime esmOutput)
+
+-- | Write all per-module ES module files.
+writeESMModules :: FilePath -> ESMOutput -> IO ()
+writeESMModules dir esmOutput =
+  mapM_ (writeOneModule dir) (Map.toList (_eoModules esmOutput))
+
+-- | Write a single module file.
+writeOneModule :: FilePath -> (ModuleName.Canonical, Builder) -> IO ()
+writeOneModule dir (home, builder) =
+  File.writeBuilder (dir </> moduleFilename home) builder
+
+-- | Convert a canonical module name to a filename string.
+moduleFilename :: ModuleName.Canonical -> FilePath
+moduleFilename (ModuleName.Canonical (Pkg.Name author project) moduleName) =
+  Utf8.toChars author <> "." <> Utf8.toChars project <> "." <> Name.toChars moduleName <> ".js"
+
+-- | Write all FFI module files.
+writeESMFFI :: FilePath -> ESMOutput -> IO ()
+writeESMFFI dir esmOutput =
+  mapM_ (writeFFIFile dir) (Map.toList (_eoFFIModules esmOutput))
+
+-- | Write a single FFI module file.
+writeFFIFile :: FilePath -> (String, Builder) -> IO ()
+writeFFIFile dir (alias, builder) = do
+  let baseName = FilePath.takeFileName alias
+      filename = if FilePath.takeExtension baseName == ".js" then baseName else baseName <> ".js"
+      path = dir </> "ffi" </> filename
+  Dir.createDirectoryIfMissing True (FilePath.takeDirectory path)
+  File.writeBuilder path builder
+
+-- | Write the entry point file.
+writeESMEntry :: FilePath -> ESMOutput -> IO ()
+writeESMEntry dir esmOutput =
+  File.writeBuilder (dir </> "main.js") (_eoEntry esmOutput)
 
 -- | Generate HTML output to specified file.
 --

@@ -30,6 +30,7 @@ where
 
 import qualified Canopy.Details as Details
 import Control.Lens ((^.))
+import Generate.Mode (OutputFormat)
 import Make.Types
   ( BuildContext (..),
     DesiredMode (..),
@@ -90,8 +91,9 @@ createBuildContext ::
   DesiredMode ->
   Bool ->
   Bool ->
+  OutputFormat ->
   BuildContext
-createBuildContext style root details mode ffiUnsafeFlag ffiDebugFlag =
+createBuildContext style root details mode ffiUnsafeFlag ffiDebugFlag fmt =
   BuildContext
     { _bcStyle = style,
       _bcRoot = root,
@@ -99,7 +101,8 @@ createBuildContext style root details mode ffiUnsafeFlag ffiDebugFlag =
       _bcDesiredMode = mode,
       _bcPackage = extractPackageName details,
       _bcFfiUnsafe = ffiUnsafeFlag,
-      _bcFfiDebug = ffiDebugFlag
+      _bcFfiDebug = ffiDebugFlag,
+      _bcOutputFormat = fmt
     }
   where
     extractPackageName (Details.Details _ outline _ _ _ _) =

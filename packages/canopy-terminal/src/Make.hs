@@ -37,6 +37,7 @@ module Make
     -- * Parsers
     reportType,
     output,
+    outputFormatParser,
     docsFile,
     jobsParser,
   )
@@ -52,15 +53,17 @@ import Control.Lens ((^.))
 import Canopy.Data.NonEmptyList (List)
 import qualified Canopy.Data.NonEmptyList as NE
 import qualified Data.Text as Text
+import qualified Generate.Mode as Mode
 import qualified Data.Time.Clock as Time
 import qualified Logging.Config as Config
 import Logging.Event (LogEvent (..))
 import qualified Logging.Logger as Log
-import Make.Builder (buildFromExposed, buildFromPaths, createSplitBuilder, shouldSplitOutput)
+import Make.Builder (buildFromExposed, buildFromPaths, createESMBuilder, createSplitBuilder, shouldSplitOutput)
 import Make.Environment (createBuildContext, getDesiredMode, getReportingStyle, setupEnvironment)
 import Make.KernelCheck (detectKernelPackages, emitKernelWarning)
-import Make.Output (generateOutput, generateSplitJavaScript)
-import Make.Parser (docsFile, jobsParser, output, reportType)
+import Make.Output (generateESMOutput, generateOutput, generateSplitJavaScript)
+import Make.Parser (docsFile, jobsParser, output, outputFormatParser, reportType)
+import Generate.Mode (OutputFormat (..))
 import Make.Types
   ( BuildContext,
     Flags (..),
@@ -68,6 +71,7 @@ import Make.Types
     ReportType (..),
     Task,
     bcDetails,
+    bcOutputFormat,
     allowKernel,
     debug,
     docs,
@@ -75,6 +79,7 @@ import Make.Types
     ffiDebug,
     noSplit,
     optimize,
+    outputFormat,
     report,
     verbose,
     verifyReproducible,
@@ -158,7 +163,8 @@ coordinateBuildWithRoot root paths flags style scope = do
   checkKernelCodeUsage root flags
   details <- loadProjectDetailsFromRoot style scope root
   mode <- getDesiredMode (flags ^. debug) (flags ^. optimize)
-  let ctx = createBuildContext style root details mode (flags ^. ffiUnsafe) (flags ^. ffiDebug)
+  let fmt = maybe Mode.FormatESM id (flags ^. outputFormat)
+      ctx = createBuildContext style root details mode (flags ^. ffiUnsafe) (flags ^. ffiDebug) fmt
   startTime <- Task.io Time.getCurrentTime
   executeBuildStrategy ctx paths (flags ^. docs) (flags ^. Types.output) (flags ^. noSplit) (flags ^. verifyReproducible)
   endTime <- Task.io Time.getCurrentTime
@@ -217,12 +223,35 @@ emitOutput ::
   Bool ->
   Task ()
 emitOutput ctx artifacts maybeOutput forceSingleFile doVerify
+  | ctx ^. bcOutputFormat == FormatESM =
+      emitESMOutput ctx artifacts maybeOutput
   | not forceSingleFile && shouldSplitOutput artifacts && isSplittableTarget maybeOutput = do
       Task.io (Log.logEvent (BuildStarted (Text.pack "Code splitting: lazy imports detected")))
       splitOutput <- createSplitBuilder ctx artifacts
       generateSplitJavaScript ctx splitOutput (splitTargetDir maybeOutput)
   | otherwise =
       generateOutput ctx artifacts maybeOutput doVerify
+
+-- | Emit ESM output to a directory.
+--
+-- Determines the output directory from the target specification and
+-- generates all ES module files there.
+--
+-- @since 0.20.0
+emitESMOutput ::
+  BuildContext ->
+  Compiler.Artifacts ->
+  Maybe Output ->
+  Task ()
+emitESMOutput ctx artifacts maybeOutput = do
+  Task.io (Log.logEvent (BuildStarted (Text.pack "Generating ESM output")))
+  esmOutput <- createESMBuilder ctx artifacts
+  generateESMOutput (esmOutputDir maybeOutput) esmOutput
+
+-- | Determine the output directory for ESM files.
+esmOutputDir :: Maybe Output -> FilePath
+esmOutputDir (Just (JS target)) = FilePath.takeDirectory target
+esmOutputDir _ = "output"
 
 -- | Check whether the output target supports code splitting.
 --

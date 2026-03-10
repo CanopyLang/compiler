@@ -25,6 +25,11 @@ module Generate.JavaScript.Builder
   , Expr(..), LValue(..)
   , Stmt(..), Case(..)
   , InfixOp(..), PrefixOp(..)
+  , ModuleItem(..)
+  , moduleToBuilder
+  , moduleItemToBuilder
+  , nameToByteString
+  , shorthandObjectExpr
   , sanitizeScriptElementString
   )
   where
@@ -145,6 +150,8 @@ data Stmt
   | Return Expr
   | Var Name Expr
   | Vars [(Name, Expr)]
+  | Const Name Expr
+  | ConstPure Name Expr
   | FunctionStmt Name [Name] [Stmt]
   deriving Show
 
@@ -206,6 +213,13 @@ leadingSpaceAnnot = JSAnnot (TokenPn 0 0 0) [WhiteSpace (TokenPn 0 0 0) " "]
 -- | Annotation with a trailing newline, for statement separation.
 newlineAnnot :: JSAnnot
 newlineAnnot = JSAnnot (TokenPn 0 0 0) [WhiteSpace (TokenPn 0 0 0) "\n"]
+
+-- | Annotation with a @\/\*#__PURE__\*\/@ comment for tree-shaking hints.
+--
+-- Renders as @\/\*#__PURE__\*\/ @ (with trailing space before @const@).
+pureAnnot :: JSAnnot
+pureAnnot = JSAnnot (TokenPn 0 0 0)
+  [CommentA (TokenPn 0 0 0) "/*#__PURE__*/ "]
 
 -- | Select an annotation based on the current compilation mode.
 annotForMode :: Mode.Mode -> JSAnnot -> JSAnnot
@@ -394,6 +408,18 @@ stmtToJS stmt = case stmt of
       (JS.JSSemi noAnnot)
   Vars pairs ->
     JS.JSVariable noAnnot (varsToJSCommaList pairs) (JS.JSSemi newlineAnnot)
+  Const name e ->
+    JS.JSConstant noAnnot
+      (JS.JSLOne (JS.JSVarInitExpression
+        (JS.JSIdentifier leadingSpaceAnnot (nameToByteString name))
+        (JS.JSVarInit spaceAnnot (exprToJS e))))
+      (JS.JSSemi noAnnot)
+  ConstPure name e ->
+    JS.JSConstant pureAnnot
+      (JS.JSLOne (JS.JSVarInitExpression
+        (JS.JSIdentifier leadingSpaceAnnot (nameToByteString name))
+        (JS.JSVarInit spaceAnnot (exprToJS e))))
+      (JS.JSSemi noAnnot)
   FunctionStmt name params body ->
     JS.JSFunction noAnnot
       (JS.JSIdentName leadingSpaceAnnot (nameToByteString name))
@@ -621,3 +647,189 @@ paramsToJSCommaListWithMode mode (firstParam:restParams) =
     paramAnnot = paramAnnotForMode mode
     addParam param acc =
       JS.JSLCons acc paramAnnot (JS.JSIdentifier paramAnnot (nameToByteString param))
+
+
+-- ESM MODULE ITEMS
+
+
+-- | An ESM module-level item.
+--
+-- Represents constructs that appear at the top level of an ES module:
+-- imports, exports, statements, and raw pre-built JavaScript.
+--
+-- @since 0.20.0
+data ModuleItem
+  = ImportBare !ByteString
+  | ImportNamed ![Name] !ByteString
+  | ImportNamedRaw ![ByteString] !ByteString
+  | ExportLocals ![Name]
+  | ExportLocalsRaw ![ByteString]
+  | VarShorthandObject !ByteString ![ByteString]
+  | GlobalThisAssignRaw ![ByteString]
+  | ModuleStmt !Stmt
+  | RawJS !Builder
+
+instance Show ModuleItem where
+  show (ImportBare path) = "ImportBare " <> show path
+  show (ImportNamed names path) = "ImportNamed " <> show names <> " " <> show path
+  show (ImportNamedRaw names path) = "ImportNamedRaw " <> show names <> " " <> show path
+  show (ExportLocals names) = "ExportLocals " <> show names
+  show (ExportLocalsRaw names) = "ExportLocalsRaw " <> show names
+  show (VarShorthandObject name props) = "VarShorthandObject " <> show name <> " " <> show props
+  show (GlobalThisAssignRaw names) = "GlobalThisAssignRaw " <> show names
+  show (ModuleStmt stmt) = "ModuleStmt " <> show stmt
+  show (RawJS _) = "RawJS <builder>"
+
+-- | Render a list of 'ModuleItem' values as ESM module content.
+--
+-- Each item is rendered individually and concatenated. AST-convertible
+-- items go through @language-javascript@ rendering; 'RawJS' items are
+-- emitted verbatim.
+--
+-- @since 0.20.0
+moduleToBuilder :: [ModuleItem] -> Builder
+moduleToBuilder = mconcat . map moduleItemToBuilder
+
+-- | Render a single 'ModuleItem' to a 'Builder'.
+--
+-- 'RawJS' items are emitted verbatim. All other items are converted
+-- to @language-javascript@ AST nodes and pretty-printed.
+--
+-- @since 0.20.0
+moduleItemToBuilder :: ModuleItem -> Builder
+moduleItemToBuilder (RawJS raw) = raw
+moduleItemToBuilder (ImportBare path) =
+  renderModuleItem (importBareToJS path)
+moduleItemToBuilder (ImportNamed names path) =
+  renderModuleItem (importNamedToJS (namesToImportSpecifiers names) path)
+moduleItemToBuilder (ImportNamedRaw rawNames path) =
+  renderModuleItem (importNamedToJS (rawNamesToImportSpecifiers rawNames) path)
+moduleItemToBuilder (ExportLocals names) =
+  renderModuleItem (exportLocalsToJS names)
+moduleItemToBuilder (ExportLocalsRaw names) =
+  renderModuleItem (exportLocalsRawToJS names)
+moduleItemToBuilder (VarShorthandObject name props) =
+  renderModuleItem (varShorthandObjectToJS name props)
+moduleItemToBuilder (GlobalThisAssignRaw names) =
+  renderModuleItem (globalThisAssignRawToJS names)
+moduleItemToBuilder (ModuleStmt stmt) =
+  renderModuleItem (JS.JSModuleStatementListItem (stmtToJS stmt))
+
+-- | Render a single 'JS.JSModuleItem' through the @language-javascript@ printer.
+renderModuleItem :: JS.JSModuleItem -> Builder
+renderModuleItem item =
+  blazeToBuilder (JSP.renderJS (JSAstModule [item] noAnnot))
+    <> B.char7 '\n'
+
+-- | Convert a bare import path to a JS AST node.
+importBareToJS :: ByteString -> JS.JSModuleItem
+importBareToJS path =
+  JS.JSModuleImportDeclaration noAnnot
+    (JS.JSImportDeclarationBare spaceAnnot path Nothing (JS.JSSemi noAnnot))
+
+-- | Convert named imports + path to a JS AST node.
+importNamedToJS :: JS.JSCommaList JS.JSImportSpecifier -> ByteString -> JS.JSModuleItem
+importNamedToJS specifiers path =
+  JS.JSModuleImportDeclaration noAnnot
+    (JS.JSImportDeclaration
+      (JS.JSImportClauseNamed
+        (JS.JSImportsNamed spaceAnnot specifiers spaceAnnot))
+      (JS.JSFromClause spaceAnnot spaceAnnot path)
+      Nothing
+      (JS.JSSemi noAnnot))
+
+-- | Convert export-locals names to a JS AST node.
+exportLocalsToJS :: [Name] -> JS.JSModuleItem
+exportLocalsToJS names =
+  JS.JSModuleExportDeclaration noAnnot
+    (JS.JSExportLocals
+      (JS.JSExportClause spaceAnnot (namesToExportSpecifiers names) spaceAnnot)
+      (JS.JSSemi noAnnot))
+
+-- | Build a comma-separated list of import specifiers from 'Name' values.
+namesToImportSpecifiers :: [Name] -> JS.JSCommaList JS.JSImportSpecifier
+namesToImportSpecifiers [] = JS.JSLNil
+namesToImportSpecifiers names =
+  buildCommaList (map toSpec names)
+  where
+    toSpec n = JS.JSImportSpecifier (JS.JSIdentName spaceAnnot (nameToByteString n))
+
+-- | Build a comma-separated list of import specifiers from raw 'ByteString' values.
+rawNamesToImportSpecifiers :: [ByteString] -> JS.JSCommaList JS.JSImportSpecifier
+rawNamesToImportSpecifiers [] = JS.JSLNil
+rawNamesToImportSpecifiers names =
+  buildCommaList (map toSpec names)
+  where
+    toSpec n = JS.JSImportSpecifier (JS.JSIdentName spaceAnnot n)
+
+-- | Build a comma-separated list of export specifiers from 'Name' values.
+namesToExportSpecifiers :: [Name] -> JS.JSCommaList JS.JSExportSpecifier
+namesToExportSpecifiers [] = JS.JSLNil
+namesToExportSpecifiers names =
+  buildCommaList (map toSpec names)
+  where
+    toSpec n = JS.JSExportSpecifier (JS.JSIdentName spaceAnnot (nameToByteString n))
+
+-- | Build a generic comma-separated list from a list of values.
+buildCommaList :: [a] -> JS.JSCommaList a
+buildCommaList [] = JS.JSLNil
+buildCommaList [x] = JS.JSLOne x
+buildCommaList (first : rest) =
+  foldl (\acc x -> JS.JSLCons acc noAnnot x) (JS.JSLOne first) rest
+
+
+-- SHORTHAND OBJECT AND GLOBALTHIS HELPERS
+
+
+-- | Build a shorthand object expression @{ name1, name2, ... }@ from raw 'ByteString' names.
+--
+-- Uses @JSPropertyIdentRef@ for ES2015 shorthand property syntax.
+--
+-- @since 0.20.0
+shorthandObjectExpr :: [ByteString] -> JSExpression
+shorthandObjectExpr props =
+  JS.JSObjectLiteral spaceAnnot
+    (JS.JSCTLNone (buildCommaList (map shorthandProp props)))
+    spaceAnnot
+  where
+    shorthandProp n = JS.JSPropertyIdentRef spaceAnnot n
+
+-- | Convert an @export { ... }@ with raw 'ByteString' names to a JS AST node.
+--
+-- @since 0.20.0
+exportLocalsRawToJS :: [ByteString] -> JS.JSModuleItem
+exportLocalsRawToJS names =
+  JS.JSModuleExportDeclaration noAnnot
+    (JS.JSExportLocals
+      (JS.JSExportClause spaceAnnot specs spaceAnnot)
+      (JS.JSSemi noAnnot))
+  where
+    specs = buildCommaList (map toSpec names)
+    toSpec n = JS.JSExportSpecifier (JS.JSIdentName spaceAnnot n)
+
+-- | Convert @var name = { prop1, prop2, ... }@ to a JS AST module item.
+--
+-- @since 0.20.0
+varShorthandObjectToJS :: ByteString -> [ByteString] -> JS.JSModuleItem
+varShorthandObjectToJS name props =
+  JS.JSModuleStatementListItem
+    (JS.JSVariable noAnnot
+      (JS.JSLOne (JS.JSVarInitExpression
+        (JS.JSIdentifier leadingSpaceAnnot name)
+        (JS.JSVarInit spaceAnnot (shorthandObjectExpr props))))
+      (JS.JSSemi noAnnot))
+
+-- | Convert @Object.assign(globalThis, { name1, name2, ... })@ to a JS AST module item.
+--
+-- @since 0.20.0
+globalThisAssignRawToJS :: [ByteString] -> JS.JSModuleItem
+globalThisAssignRawToJS names =
+  JS.JSModuleStatementListItem
+    (JS.JSExpressionStatement callExpr (JS.JSSemi noAnnot))
+  where
+    callExpr =
+      JS.JSCallExpression
+        (JS.JSMemberDot (JS.JSIdentifier noAnnot "Object") noAnnot (JS.JSIdentifier noAnnot "assign"))
+        noAnnot
+        (JS.JSLCons (JS.JSLOne (JS.JSIdentifier noAnnot "globalThis")) noAnnot (shorthandObjectExpr names))
+        noAnnot
