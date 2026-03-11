@@ -104,8 +104,13 @@ data Error
   | DerivingInvalid Ann.Region Name.Name Name.Name DerivingProblem
   | UnknownAbility Ann.Region Name.Name
   | OrphanImpl Name.Name Can.Type Ann.Region
-  | MissingMethod Name.Name Name.Name
-  | ExtraMethod Name.Name Name.Name
+  | MissingMethod Name.Name Name.Name Ann.Region
+  | ExtraMethod Name.Name Name.Name Ann.Region
+  | DuplicateAbility Name.Name Ann.Region Ann.Region
+  | DuplicateAbilityMethod Name.Name Name.Name Ann.Region Ann.Region
+  | DuplicateImplMethod Name.Name Name.Name Ann.Region Ann.Region
+  | DuplicateImpl Name.Name Name.Name Ann.Region Ann.Region
+  | UnknownSuperAbility Ann.Region Name.Name Name.Name
   deriving (Show)
 
 -- | Position where a type variable appears that violates its variance annotation.
@@ -356,12 +361,23 @@ toDiagnostic source err =
     OrphanImpl abilityName _implType region ->
       Diagnostic.makeSimpleDiagnostic (EC.canonError 52) Diagnostic.PhaseCanon "ORPHAN IMPL" region
         (Doc.reflow ("This impl is orphan: neither the ability `" <> Name.toChars abilityName <> "` nor the implemented type is defined in this module."))
-    MissingMethod abilityName methodName ->
-      Diagnostic.makeSimpleDiagnostic (EC.canonError 53) Diagnostic.PhaseCanon "MISSING METHOD" Ann.one
+    MissingMethod abilityName methodName region ->
+      Diagnostic.makeSimpleDiagnostic (EC.canonError 53) Diagnostic.PhaseCanon "MISSING METHOD" region
         (Doc.reflow ("The impl is missing method `" <> Name.toChars methodName <> "` required by ability `" <> Name.toChars abilityName <> "`."))
-    ExtraMethod abilityName methodName ->
-      Diagnostic.makeSimpleDiagnostic (EC.canonError 54) Diagnostic.PhaseCanon "EXTRA METHOD" Ann.one
+    ExtraMethod abilityName methodName region ->
+      Diagnostic.makeSimpleDiagnostic (EC.canonError 54) Diagnostic.PhaseCanon "EXTRA METHOD" region
         (Doc.reflow ("The impl defines method `" <> Name.toChars methodName <> "` which is not declared by ability `" <> Name.toChars abilityName <> "`."))
+    DuplicateAbility name r1 r2 ->
+      Diags.nameClashDiagnostic source r1 r2 (EC.canonError 55) ("This file defines multiple `" <> Name.toChars name <> "` abilities.")
+    DuplicateAbilityMethod abilityName methodName r1 r2 ->
+      Diags.nameClashDiagnostic source r1 r2 (EC.canonError 56) ("The `" <> Name.toChars abilityName <> "` ability declares multiple `" <> Name.toChars methodName <> "` methods.")
+    DuplicateImplMethod abilityName methodName r1 r2 ->
+      Diags.nameClashDiagnostic source r1 r2 (EC.canonError 57) ("This impl for `" <> Name.toChars abilityName <> "` defines multiple `" <> Name.toChars methodName <> "` methods.")
+    DuplicateImpl abilityName typeName r1 r2 ->
+      Diags.nameClashDiagnostic source r1 r2 (EC.canonError 58) ("This file has multiple impls of `" <> Name.toChars abilityName <> "` for `" <> Name.toChars typeName <> "`.")
+    UnknownSuperAbility region abilityName superName ->
+      Diagnostic.makeSimpleDiagnostic (EC.canonError 59) Diagnostic.PhaseCanon "UNKNOWN SUPER ABILITY" region
+        (Doc.reflow ("The ability `" <> Name.toChars abilityName <> "` extends `" <> Name.toChars superName <> "`, but I cannot find an ability named `" <> Name.toChars superName <> "`."))
 
 -- ---------------------------------------------------------------------------
 -- Private dispatch helpers

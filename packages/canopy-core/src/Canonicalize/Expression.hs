@@ -802,6 +802,8 @@ resolveVar _ localHome name (Env.TopLevel _) = logVar name (Can.VarTopLevel loca
 resolveVar _ localHome name (Env.Foreign home annotation)
   | home == ModuleName.debug = Result.ok (Can.VarDebug localHome name annotation)
   | otherwise = Result.ok (Can.VarForeign home name annotation)
+resolveVar _ _ name (Env.AbilityMethod home abilityName annotation) =
+  Result.ok (Can.AbilityMethodCall home abilityName name annotation)
 resolveVar region _ name (Env.Foreigns h hs) =
   Result.throw (Error.AmbiguousVar region Nothing name h hs)
 

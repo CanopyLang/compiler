@@ -142,6 +142,8 @@ optimize cycle (Ann.At region expression) =
       pure (Opt.Shader src (Map.keysSet attributes) (Map.keysSet uniforms))
     Can.StringConcat parts ->
       optimizeStringConcat cycle parts
+    Can.AbilityMethodCall home _abilityName methodName _ ->
+      Names.registerFFI home methodName
 
 -- STRING CONCAT
 

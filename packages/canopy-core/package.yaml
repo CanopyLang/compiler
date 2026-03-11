@@ -102,6 +102,7 @@ library:
     - Canonicalize.Expression
     - Canonicalize.Module
     - Canonicalize.Pattern
+    - Canonicalize.ResolveAbilities
     # -- Public API: Canopy core types --
     - Canopy.Compiler.Type
     - Canopy.Compiler.Type.Extract

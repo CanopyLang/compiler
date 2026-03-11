@@ -247,6 +247,11 @@ data Expr_
     --
     -- @since 0.19.2
     StringConcat [Expr]
+  | AbilityMethodCall
+      !ModuleName.Canonical
+      !Name
+      !Name
+      !Annotation
   deriving (Show)
 
 data CaseBranch

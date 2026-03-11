@@ -158,6 +158,8 @@ constrain guards rtv (Ann.At region expression) expected =
       Record.constrainShader region types expected
     Can.StringConcat parts ->
       constrainStringConcat guards rtv region parts expected
+    Can.AbilityMethodCall _home _abilityName methodName annotation ->
+      return (CForeign region methodName annotation expected)
 
 -- CONSTRAIN LAMBDA
 

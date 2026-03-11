@@ -13,6 +13,7 @@ where
 
 import qualified AST.Canonical as Can
 import qualified AST.Optimized as Opt
+import qualified Canonicalize.ResolveAbilities as ResolveAbilities
 import Control.Monad (when)
 import Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
@@ -36,7 +37,14 @@ optimizeModuleQuery annotations canonModule@(Can.Module modName _ _ _ _ _ _ _ _ 
   let modNameText = Text.pack (show modName)
   Log.logEvent (OptimizeStarted modNameText)
 
-  case Result.run (Optimize.optimize annotations canonModule) of
+  -- Rewrite ability method calls to concrete impl dict accesses
+  let rewrittenModule = ResolveAbilities.rewriteModule
+        annotations
+        (Can._impls canonModule)
+        modName
+        canonModule
+
+  case Result.run (Optimize.optimize annotations rewrittenModule) of
     (_warnings, Left err) -> do
       Log.logEvent (OptimizeFailed modNameText (Text.pack (show err)))
       return (Left (OtherError ("Optimization error: " ++ show err)))

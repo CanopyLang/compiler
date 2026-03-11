@@ -242,6 +242,7 @@ test-suite canopy-test
       Unit.Builder.SolverTest
       Unit.Builder.StateTest
       Unit.Builder.WorkspaceTest
+      Unit.Canonicalize.AbilityTest
       Unit.Canonicalize.DupsTest
       Unit.Canonicalize.ExpressionArithmeticTest
       Unit.Canonicalize.LazyImportValidationTest

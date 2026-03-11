@@ -47,12 +47,13 @@ addVars module_ (Env.Env home vs ts cs bs qvs qts qcs) =
     Result.ok $ Env.Env home vs2 ts cs bs qvs qts qcs
 
 collectVars :: Src.Module -> Result i w (Map.Map Name.Name Env.Var)
-collectVars (Src.Module _ _ _ _ _foreignImports values unions aliases _ effects _ _ _) =
+collectVars (Src.Module _ _ _ _ _foreignImports values unions aliases _ effects _ srcAbilities _) =
   let addDecl dict (Ann.At _ (Src.Value (Ann.At region name) _ _ _ _)) =
         Dups.insert name region (Env.TopLevel region) dict
       derivedDups = collectDerivedNames unions aliases
+      abilityMethodDups = collectAbilityMethodNames srcAbilities
    in Dups.detect Error.DuplicateDecl $
-        Dups.union derivedDups (List.foldl' addDecl (toEffectDups effects) values)
+        Dups.unions [derivedDups, abilityMethodDups, List.foldl' addDecl (toEffectDups effects) values]
 
 -- | Collect derived function names from union and alias type declarations.
 --
@@ -94,6 +95,18 @@ lowerFirst (c : cs) = toLower c : cs
     toLower ch
       | ch >= 'A' && ch <= 'Z' = toEnum (fromEnum ch + 32)
       | otherwise = ch
+
+collectAbilityMethodNames :: [Ann.Located Src.AbilityDecl] -> Dups.Dict Env.Var
+collectAbilityMethodNames srcAbilities =
+  List.foldl' collectMethodsFromAbility Dups.none srcAbilities
+
+collectMethodsFromAbility :: Dups.Dict Env.Var -> Ann.Located Src.AbilityDecl -> Dups.Dict Env.Var
+collectMethodsFromAbility dups (Ann.At _ (Src.AbilityDecl _ _ _ methods)) =
+  List.foldl' addMethodName dups methods
+
+addMethodName :: Dups.Dict Env.Var -> (Ann.Located Name.Name, Src.Type) -> Dups.Dict Env.Var
+addMethodName dups (Ann.At region name, _) =
+  Dups.insert name region (Env.TopLevel region) dups
 
 toEffectDups :: Src.Effects -> Dups.Dict Env.Var
 toEffectDups effects =

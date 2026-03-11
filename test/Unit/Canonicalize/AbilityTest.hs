@@ -27,6 +27,7 @@ import qualified Canopy.Package as Pkg
 import qualified Data.ByteString.Char8 as C8
 import qualified Data.Map.Strict as Map
 import qualified Parse.Module as ParseModule
+import qualified Reporting.Annotation as Ann
 import qualified Reporting.Error.Canonicalize as Error
 import qualified Reporting.Result as Result
 import qualified Reporting.Warning as Warning
@@ -40,6 +41,9 @@ tests =
     , implCanonTests
     , multipleMethodTests
     , errorTests
+    , duplicateDetectionTests
+    , multiAbilityModuleTests
+    , abilityMethodCallTests
     ]
 
 -- ABILITY CANONICALIZATION TESTS
@@ -154,6 +158,78 @@ testExtraMethodError = testCase "impl with extra method produces error" $ do
   errs <- canonicalizeSourceErrors extraMethodSrc
   assertErrorContains errs isExtraMethodError "ExtraMethod"
 
+-- DUPLICATE DETECTION TESTS
+
+duplicateDetectionTests :: TestTree
+duplicateDetectionTests =
+  testGroup
+    "duplicate detection"
+    [ testDuplicateAbilityError
+    , testDuplicateImplError
+    ]
+
+testDuplicateAbilityError :: TestTree
+testDuplicateAbilityError = testCase "duplicate ability names produce error" $ do
+  errs <- canonicalizeSourceErrors duplicateAbilitySrc
+  assertBool
+    ("Expected error for duplicate abilities, got: " <> show errs)
+    (not (null errs))
+
+testDuplicateImplError :: TestTree
+testDuplicateImplError = testCase "duplicate impl for same ability+type produces error" $ do
+  errs <- canonicalizeSourceErrors duplicateImplSrc
+  assertErrorContains errs isDuplicateImplError "DuplicateImpl"
+
+-- MULTI-ABILITY MODULE TESTS
+
+multiAbilityModuleTests :: TestTree
+multiAbilityModuleTests =
+  testGroup
+    "multiple abilities in module"
+    [ testTwoAbilitiesPresent
+    , testTwoImplsPresent
+    , testImplTypesCorrect
+    ]
+
+testTwoAbilitiesPresent :: TestTree
+testTwoAbilitiesPresent = testCase "module with two abilities has both" $ do
+  canMod <- canonicalizeSource twoAbilitiesSrc
+  Map.size (Can._abilities canMod) @?= 2
+
+testTwoImplsPresent :: TestTree
+testTwoImplsPresent = testCase "module with two impls has both" $ do
+  canMod <- canonicalizeSource twoImplsSrc
+  length (Can._impls canMod) @?= 2
+
+testImplTypesCorrect :: TestTree
+testImplTypesCorrect = testCase "impls reference correct abilities" $ do
+  canMod <- canonicalizeSource twoImplsSrc
+  let abilityNames = fmap (Name.toChars . Can._implAbility) (Can._impls canMod)
+  assertBool "Show impl present" ("Show" `elem` abilityNames)
+  assertBool "Eq impl present" ("Eq" `elem` abilityNames)
+
+-- ABILITY METHOD CALL TESTS
+
+abilityMethodCallTests :: TestTree
+abilityMethodCallTests =
+  testGroup
+    "AbilityMethodCall generation"
+    [ testMethodCallInBody
+    , testMethodAvailableInValues
+    ]
+
+testMethodCallInBody :: TestTree
+testMethodCallInBody = testCase "ability method in value body produces AbilityMethodCall" $ do
+  canMod <- canonicalizeSource abilityMethodUseSrc
+  let hasAbilityCall = declsContainAbilityMethodCall (Can._decls canMod)
+  assertBool "expected AbilityMethodCall in canonical decls" hasAbilityCall
+
+testMethodAvailableInValues :: TestTree
+testMethodAvailableInValues = testCase "ability method is resolvable in value definitions" $ do
+  canMod <- canonicalizeSource abilityMethodUseSrc
+  let declCount = countDecls (Can._decls canMod)
+  assertBool "module has at least one declaration" (declCount > 0)
+
 -- SOURCE FRAGMENTS
 
 abilityShowSrc :: String
@@ -253,6 +329,83 @@ extraMethodSrc =
     , "    n"
     ]
 
+duplicateAbilitySrc :: String
+duplicateAbilitySrc =
+  unlines
+    [ "module M exposing (..)"
+    , ""
+    , "ability Show a where"
+    , "  show : a -> a"
+    , ""
+    , "ability Show a where"
+    , "  show : a -> a"
+    ]
+
+duplicateImplSrc :: String
+duplicateImplSrc =
+  unlines
+    [ "module M exposing (..)"
+    , ""
+    , "type MyType = MyType"
+    , ""
+    , "ability Show a where"
+    , "  show : a -> a"
+    , ""
+    , "impl Show MyType where"
+    , "  show n ="
+    , "    n"
+    , ""
+    , "impl Show MyType where"
+    , "  show n ="
+    , "    n"
+    ]
+
+twoAbilitiesSrc :: String
+twoAbilitiesSrc =
+  unlines
+    [ "module M exposing (..)"
+    , ""
+    , "ability Show a where"
+    , "  show : a -> a"
+    , ""
+    , "ability Eq a where"
+    , "  eq : a -> a -> a"
+    ]
+
+twoImplsSrc :: String
+twoImplsSrc =
+  unlines
+    [ "module M exposing (..)"
+    , ""
+    , "type MyType = MyType"
+    , ""
+    , "ability Show a where"
+    , "  show : a -> a"
+    , ""
+    , "ability Eq a where"
+    , "  eq : a -> a -> a"
+    , ""
+    , "impl Show MyType where"
+    , "  show n ="
+    , "    n"
+    , ""
+    , "impl Eq MyType where"
+    , "  eq a b ="
+    , "    a"
+    ]
+
+abilityMethodUseSrc :: String
+abilityMethodUseSrc =
+  unlines
+    [ "module M exposing (..)"
+    , ""
+    , "ability Show a where"
+    , "  show : a -> a"
+    , ""
+    , "useShow x ="
+    , "  show x"
+    ]
+
 -- HELPERS
 
 -- | Parse and canonicalize a source string, returning the canonical module.
@@ -340,10 +493,74 @@ isUnknownAbilityError _ = False
 
 -- | Check if an error is a MissingMethod error.
 isMissingMethodError :: Error.Error -> Bool
-isMissingMethodError (Error.MissingMethod _ _) = True
+isMissingMethodError (Error.MissingMethod _ _ _) = True
 isMissingMethodError _ = False
 
 -- | Check if an error is an ExtraMethod error.
 isExtraMethodError :: Error.Error -> Bool
-isExtraMethodError (Error.ExtraMethod _ _) = True
+isExtraMethodError (Error.ExtraMethod _ _ _) = True
 isExtraMethodError _ = False
+
+-- | Check if an error is a DuplicateAbility error.
+isDuplicateAbilityError :: Error.Error -> Bool
+isDuplicateAbilityError (Error.DuplicateAbility _ _ _) = True
+isDuplicateAbilityError _ = False
+
+-- | Check if an error is a DuplicateImpl error.
+isDuplicateImplError :: Error.Error -> Bool
+isDuplicateImplError (Error.DuplicateImpl _ _ _ _) = True
+isDuplicateImplError _ = False
+
+-- | Check if canonical declarations contain an AbilityMethodCall node.
+declsContainAbilityMethodCall :: Can.Decls -> Bool
+declsContainAbilityMethodCall decls =
+  case decls of
+    Can.Declare def rest ->
+      defContainsAbilityMethodCall def || declsContainAbilityMethodCall rest
+    Can.DeclareRec def defs rest ->
+      defContainsAbilityMethodCall def
+        || any defContainsAbilityMethodCall defs
+        || declsContainAbilityMethodCall rest
+    Can.SaveTheEnvironment -> False
+
+-- | Check if a Def body contains an AbilityMethodCall.
+defContainsAbilityMethodCall :: Can.Def -> Bool
+defContainsAbilityMethodCall (Can.Def _ _ body) = exprContainsAbilityMethodCall body
+defContainsAbilityMethodCall (Can.TypedDef _ _ _ body _) = exprContainsAbilityMethodCall body
+
+-- | Recursively check if an expression contains AbilityMethodCall.
+exprContainsAbilityMethodCall :: Can.Expr -> Bool
+exprContainsAbilityMethodCall (Ann.At _ expr) =
+  case expr of
+    Can.AbilityMethodCall _ _ _ _ -> True
+    Can.Call func args ->
+      exprContainsAbilityMethodCall func || any exprContainsAbilityMethodCall args
+    Can.Lambda _ body -> exprContainsAbilityMethodCall body
+    Can.If branches finally ->
+      any (\(c, b) -> exprContainsAbilityMethodCall c || exprContainsAbilityMethodCall b) branches
+        || exprContainsAbilityMethodCall finally
+    Can.Let def body ->
+      defContainsAbilityMethodCall def || exprContainsAbilityMethodCall body
+    Can.LetRec defs body ->
+      any defContainsAbilityMethodCall defs || exprContainsAbilityMethodCall body
+    Can.LetDestruct _ e body ->
+      exprContainsAbilityMethodCall e || exprContainsAbilityMethodCall body
+    Can.Case e branches ->
+      exprContainsAbilityMethodCall e
+        || any (\(Can.CaseBranch _ b) -> exprContainsAbilityMethodCall b) branches
+    Can.List es -> any exprContainsAbilityMethodCall es
+    Can.Negate e -> exprContainsAbilityMethodCall e
+    Can.BinopOp _ _ left right ->
+      exprContainsAbilityMethodCall left || exprContainsAbilityMethodCall right
+    Can.Access e _ -> exprContainsAbilityMethodCall e
+    Can.Tuple a b mc ->
+      exprContainsAbilityMethodCall a
+        || exprContainsAbilityMethodCall b
+        || maybe False exprContainsAbilityMethodCall mc
+    _ -> False
+
+-- | Count declarations in a Decls chain.
+countDecls :: Can.Decls -> Int
+countDecls Can.SaveTheEnvironment = 0
+countDecls (Can.Declare _ rest) = 1 + countDecls rest
+countDecls (Can.DeclareRec _ defs rest) = 1 + length defs + countDecls rest

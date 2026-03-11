@@ -33,11 +33,14 @@ where
 import qualified AST.Canonical as Can
 import qualified AST.Source as Src
 import qualified Canonicalize.Environment as Env
+import qualified Canonicalize.Environment.Dups as Dups
 import qualified Canonicalize.Expression as Expr
 import qualified Canonicalize.Pattern as Pattern
 import qualified Canonicalize.Type as Type
 import qualified Canopy.Data.Index as Index
 import qualified Canopy.ModuleName as ModuleName
+import Data.Foldable (traverse_)
+import qualified Data.List as List
 import qualified Data.Map.Strict as Map
 import qualified Canopy.Data.Name as Name
 import qualified Reporting.Annotation as Ann
@@ -69,7 +72,14 @@ canonicalizeAbilities ::
   [Ann.Located Src.AbilityDecl] ->
   Result i [Warning.Warning] (Map.Map Name.Name Can.Ability)
 canonicalizeAbilities env srcAbilities =
-  fmap Map.fromList (traverse (canonicalizeOneAbility env) srcAbilities)
+  do
+    let addDup dups (Ann.At _ (Src.AbilityDecl (Ann.At region name) _ _ _)) =
+          Dups.insert name region name dups
+    _ <- Dups.detect Error.DuplicateAbility (List.foldl' addDup Dups.none srcAbilities)
+    abilities <- traverse (canonicalizeOneAbility env) srcAbilities
+    let abilityMap = Map.fromList abilities
+    traverse_ (validateSupers abilityMap) srcAbilities
+    Result.ok abilityMap
 
 -- | Canonicalize a single ability declaration.
 --
@@ -78,9 +88,9 @@ canonicalizeOneAbility ::
   Env.Env ->
   Ann.Located Src.AbilityDecl ->
   Result i [Warning.Warning] (Name.Name, Can.Ability)
-canonicalizeOneAbility env (Ann.At _ (Src.AbilityDecl (Ann.At _ name) (Ann.At _ var) supers methodSigs)) =
+canonicalizeOneAbility env (Ann.At _region (Src.AbilityDecl (Ann.At _ name) (Ann.At _ var) supers methodSigs)) =
   do
-    canMethods <- canonicalizeMethods env methodSigs
+    canMethods <- canonicalizeMethods name env methodSigs
     Result.ok (name, Can.Ability name var supers canMethods)
 
 -- | Canonicalize the method signatures of an ability.
@@ -90,11 +100,18 @@ canonicalizeOneAbility env (Ann.At _ (Src.AbilityDecl (Ann.At _ name) (Ann.At _ 
 --
 -- @since 0.20.0
 canonicalizeMethods ::
+  Name.Name ->
   Env.Env ->
   [(Ann.Located Name.Name, Src.Type)] ->
   Result i [Warning.Warning] (Map.Map Name.Name Can.Type)
-canonicalizeMethods env methodSigs =
-  fmap Map.fromList (traverse (canonicalizeMethod env) methodSigs)
+canonicalizeMethods abilityName env methodSigs =
+  do
+    pairs <- traverse (canonicalizeMethod env) methodSigs
+    let addDup dups ((Ann.At region name, _), _) =
+          Dups.insert name region name dups
+        annotated = zip methodSigs pairs
+    _ <- Dups.detect (Error.DuplicateAbilityMethod abilityName) (List.foldl' addDup Dups.none annotated)
+    Result.ok (Map.fromList pairs)
 
 -- | Canonicalize a single method signature.
 --
@@ -128,7 +145,9 @@ canonicalizeImpls ::
   [Ann.Located Src.ImplDecl] ->
   Result i [Warning.Warning] [Can.Impl]
 canonicalizeImpls env home abilities srcImpls =
-  traverse (canonicalizeOneImpl env home abilities) srcImpls
+  do
+    checkDuplicateImpls srcImpls
+    traverse (canonicalizeOneImpl env home abilities) srcImpls
 
 -- | Canonicalize a single impl declaration.
 --
@@ -147,7 +166,7 @@ canonicalizeOneImpl env home abilities (Ann.At region (Src.ImplDecl (Ann.At abil
       do
         canImplType <- Type.canonicalize env srcImplType
         checkOrphan region abilityName home abilities canImplType
-        canMethods <- canonicalizeImplMethods env ability srcMethods
+        canMethods <- canonicalizeImplMethods region env ability srcMethods
         Result.ok (Can.Impl abilityName canImplType canMethods)
 
 -- | Check that an impl is not an orphan.
@@ -196,35 +215,37 @@ isLocalType home canType =
 --
 -- @since 0.20.0
 canonicalizeImplMethods ::
+  Ann.Region ->
   Env.Env ->
   Can.Ability ->
   [Ann.Located Src.Value] ->
   Result i [Warning.Warning] (Map.Map Name.Name Can.Def)
-canonicalizeImplMethods env ability srcMethods =
+canonicalizeImplMethods region env ability srcMethods =
   do
     canDefs <- traverse (canonicalizeImplMethod env) srcMethods
-    let canMethodMap = Map.fromList canDefs
-    checkMethodCoverage ability canMethodMap (map fst canDefs)
+    canMethodMap <- detectImplMethodDups (Can._abilityName ability) canDefs
+    checkMethodCoverage region ability canMethodMap (map fst canDefs)
     Result.ok canMethodMap
 
 -- | Check that an impl covers all required methods and no extra ones.
 --
 -- @since 0.20.0
 checkMethodCoverage ::
+  Ann.Region ->
   Can.Ability ->
   Map.Map Name.Name Can.Def ->
   [Name.Name] ->
   Result i w ()
-checkMethodCoverage (Can.Ability abilityName _ _ declaredMethods) canMethodMap implMethodNames =
+checkMethodCoverage region (Can.Ability abilityName _ _ declaredMethods) canMethodMap implMethodNames =
   let missing = filter (\n -> not (Map.member n canMethodMap)) (Map.keys declaredMethods)
       extras = filter (\n -> not (Map.member n declaredMethods)) implMethodNames
   in case (missing, extras) of
        ([], []) ->
          Result.ok ()
        (m : _, _) ->
-         Result.throw (Error.MissingMethod abilityName m)
+         Result.throw (Error.MissingMethod abilityName m region)
        (_, e : _) ->
-         Result.throw (Error.ExtraMethod abilityName e)
+         Result.throw (Error.ExtraMethod abilityName e region)
 
 -- | Canonicalize a single impl method definition.
 --
@@ -256,3 +277,73 @@ canonicalizeImplMethod env (Ann.At _ (Src.Value aname@(Ann.At _ name) srcArgs bo
         (cbody, _) <-
           Expr.verifyBindings Warning.Pattern argBindings (Expr.canonicalize newEnv body)
         Result.ok (name, Can.TypedDef aname freeVars typedArgs cbody resultType)
+
+-- DUPLICATE IMPL METHOD DETECTION
+
+detectImplMethodDups ::
+  Name.Name ->
+  [(Name.Name, Can.Def)] ->
+  Result i w (Map.Map Name.Name Can.Def)
+detectImplMethodDups abilityName defs =
+  let addDup dict (name, d) =
+        Dups.insert name (extractDefRegion d) d dict
+  in Dups.detect (Error.DuplicateImplMethod abilityName) (List.foldl' addDup Dups.none defs)
+
+extractDefRegion :: Can.Def -> Ann.Region
+extractDefRegion (Can.Def (Ann.At r _) _ _) = r
+extractDefRegion (Can.TypedDef (Ann.At r _) _ _ _ _) = r
+
+-- DUPLICATE IMPL DETECTION
+
+checkDuplicateImpls :: [Ann.Located Src.ImplDecl] -> Result i w ()
+checkDuplicateImpls srcImpls =
+  let groups = groupImpls srcImpls
+  in traverse_ checkOneGroup groups
+
+groupImpls :: [Ann.Located Src.ImplDecl] -> [[(Ann.Region, Name.Name, Name.Name)]]
+groupImpls impls =
+  let entries = fmap extractImplKey impls
+      grouped = List.groupBy (\(_, k1, _) (_, k2, _) -> k1 == k2) (List.sortOn (\(_, k, _) -> k) entries)
+  in grouped
+
+extractImplKey :: Ann.Located Src.ImplDecl -> (Ann.Region, Name.Name, Name.Name)
+extractImplKey (Ann.At region (Src.ImplDecl (Ann.At _ abilityName) srcType _)) =
+  let typeName = Name.fromChars (showSrcType srcType)
+      key = Name.fromChars (Name.toChars abilityName ++ "$" ++ Name.toChars typeName)
+  in (region, key, abilityName)
+
+checkOneGroup :: [(Ann.Region, Name.Name, Name.Name)] -> Result i w ()
+checkOneGroup [] = Result.ok ()
+checkOneGroup [_] = Result.ok ()
+checkOneGroup ((r1, _, abilityName) : (r2, _, _) : _) =
+  Result.throw (Error.DuplicateImpl abilityName (Name.fromChars "type") r1 r2)
+
+showSrcType :: Src.Type -> String
+showSrcType (Ann.At _ srcType) =
+  case srcType of
+    Src.TVar name -> Name.toChars name
+    Src.TType _ name args -> Name.toChars name ++ concatMap (\a -> "_" ++ showSrcType a) args
+    Src.TTypeQual _ _ name args -> Name.toChars name ++ concatMap (\a -> "_" ++ showSrcType a) args
+    _ -> "unknown"
+
+-- SUPER ABILITY VALIDATION
+
+-- | Validate that all super-ability references in a declaration exist.
+validateSupers ::
+  Map.Map Name.Name Can.Ability ->
+  Ann.Located Src.AbilityDecl ->
+  Result i w ()
+validateSupers abilityMap (Ann.At region (Src.AbilityDecl (Ann.At _ name) _ supers _)) =
+  traverse_ (validateOneSuper abilityMap region name) supers
+
+-- | Validate that a single super-ability name exists in the abilities map.
+validateOneSuper ::
+  Map.Map Name.Name Can.Ability ->
+  Ann.Region ->
+  Name.Name ->
+  Name.Name ->
+  Result i w ()
+validateOneSuper abilityMap region abilityName superName =
+  case Map.lookup superName abilityMap of
+    Just _ -> Result.ok ()
+    Nothing -> Result.throw (Error.UnknownSuperAbility region abilityName superName)

@@ -270,6 +270,8 @@ checkExpr (Ann.At region expression) errors =
       errors
     Can.StringConcat parts ->
       foldr checkExpr errors parts
+    Can.AbilityMethodCall _ _ _ _ ->
+      errors
 
 -- CHECK FIELD
 

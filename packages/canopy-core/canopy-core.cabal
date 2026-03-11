@@ -35,6 +35,7 @@ library
       Canonicalize.Expression
       Canonicalize.Module
       Canonicalize.Pattern
+      Canonicalize.ResolveAbilities
       Canopy.Compiler.Type
       Canopy.Compiler.Type.Extract
       Canopy.Constraint

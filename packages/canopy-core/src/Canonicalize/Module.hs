@@ -97,13 +97,16 @@ canonicalize pkg projectType ifaces ffiContentMap modul@(Src.Module _ exports do
     let capWarnings = concatMap (emitCapabilityWarnings ffiContentMap) foreignImports
     traverse_ Result.warn capWarnings
 
-    cvalues <- canonicalizeValues envWithFFI values
-    ceffects <- Effects.canonicalize envWithFFI values cunions effects
-    let derivedNames = collectDerivedFunctionNames cunions caliases
-    cexports <- canonicalizeExports values derivedNames cunions caliases cbinops ceffects exports
-    cguards <- canonicalizeGuards envWithFFI values
+    -- Canonicalize abilities BEFORE values so ability methods are available
     cabilities <- Ability.canonicalizeAbilities envWithFFI srcAbilities
     cimpls <- Ability.canonicalizeImpls envWithFFI home cabilities srcImpls
+    let envWithAbilities = addAbilityMethodsToEnv home envWithFFI cabilities
+
+    cvalues <- canonicalizeValues envWithAbilities values
+    ceffects <- Effects.canonicalize envWithAbilities values cunions effects
+    let derivedNames = collectDerivedFunctionNames cunions caliases
+    cexports <- canonicalizeExports values derivedNames cunions caliases cbinops ceffects exports
+    cguards <- canonicalizeGuards envWithAbilities values
 
     return $ Can.Module home cexports docs cvalues cunions caliases cbinops ceffects lazySet cguards cabilities cimpls
 
@@ -210,6 +213,36 @@ coreModuleNames =
 emitCapabilityWarnings :: Map JsSourcePath JsSource -> Src.ForeignImport -> [Warning.Warning]
 emitCapabilityWarnings ffiContentMap (Src.ForeignImport _ (Ann.At _ aliasName) _) =
   FFI.extractCapabilityWarnings aliasName ffiContentMap
+
+-- ADD ABILITY METHODS TO ENV
+
+addAbilityMethodsToEnv ::
+  ModuleName.Canonical ->
+  Env.Env ->
+  Map Name.Name Can.Ability ->
+  Env.Env
+addAbilityMethodsToEnv home (Env.Env h vs ts cs bs qvs qts qcs) abilities =
+  let methodVars = Map.foldlWithKey' (addAbilityMethods home) Map.empty abilities
+  in Env.Env h (Map.union methodVars vs) ts cs bs qvs qts qcs
+
+addAbilityMethods ::
+  ModuleName.Canonical ->
+  Map Name.Name Env.Var ->
+  Name.Name ->
+  Can.Ability ->
+  Map Name.Name Env.Var
+addAbilityMethods home acc abilityName (Can.Ability _ _ _ methods) =
+  Map.foldlWithKey' (addOneMethod home abilityName) acc methods
+
+addOneMethod ::
+  ModuleName.Canonical ->
+  Name.Name ->
+  Map Name.Name Env.Var ->
+  Name.Name ->
+  Can.Type ->
+  Map Name.Name Env.Var
+addOneMethod home abilityName acc methodName methodType =
+  Map.insert methodName (Env.AbilityMethod home abilityName (Can.Forall Map.empty methodType)) acc
 
 -- CANONICALIZE BINOP
 

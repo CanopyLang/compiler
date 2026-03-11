@@ -132,6 +132,7 @@ import qualified Unit.Type.OpaqueBoundsTest as OpaqueBoundsTest
 import qualified Unit.Type.SolveTest as SolveTest
 import qualified Unit.Type.UnifyTest as UnifyTest
 import qualified Unit.Type.VarianceTest as VarianceTest
+import qualified Unit.Canonicalize.AbilityTest as CanonicalizeAbilityTest
 import qualified Unit.Canonicalize.DupsTest as CanonicalizeDupsTest
 import qualified Unit.Canonicalize.ExpressionArithmeticTest as CanonicalizeExpressionArithmeticTest
 import qualified Unit.Canonicalize.LazyImportValidationTest as LazyImportValidationTest
@@ -306,6 +307,7 @@ unitTests =
       UnifyTest.tests,
       VarianceTest.tests,
       UnionFindTest.tests,
+      CanonicalizeAbilityTest.tests,
       CanonicalizeDupsTest.tests,
       CanonicalizeExpressionArithmeticTest.tests,
       CanonicalizePatternTest.tests,

@@ -151,13 +151,13 @@ implDictName abilityName implType =
 typeToName :: Can.Type -> String
 typeToName canType =
   case canType of
-    Can.TType _ name _ -> Name.toChars name
-    Can.TAlias _ name _ _ -> Name.toChars name
+    Can.TType _ name args -> Name.toChars name ++ concatMap (\a -> "_" ++ typeToName a) args
+    Can.TAlias _ name args _ -> Name.toChars name ++ concatMap (\(_, a) -> "_" ++ typeToName a) args
     Can.TVar name -> Name.toChars name
     Can.TRecord _ _ -> "Record"
     Can.TUnit -> "Unit"
-    Can.TTuple _ _ _ -> "Tuple"
-    Can.TLambda _ _ -> "Func"
+    Can.TTuple a b mc -> "Tuple_" ++ typeToName a ++ "_" ++ typeToName b ++ maybe "" (\c -> "_" ++ typeToName c) mc
+    Can.TLambda a b -> "Func_" ++ typeToName a ++ "_" ++ typeToName b
 
 -- | Optimise all method definitions in an impl.
 --

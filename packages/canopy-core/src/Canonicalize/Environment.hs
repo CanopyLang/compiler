@@ -81,6 +81,7 @@ data Var
   | TopLevel Ann.Region
   | Foreign ModuleName.Canonical Can.Annotation
   | Foreigns ModuleName.Canonical (OneOrMore.OneOrMore ModuleName.Canonical)
+  | AbilityMethod ModuleName.Canonical Name.Name Can.Annotation
 
 -- TYPES
 
@@ -136,6 +137,8 @@ addLocalBoth name region var =
     Foreign _ _ ->
       Result.ok (Local region)
     Foreigns _ _ ->
+      Result.ok (Local region)
+    AbilityMethod _ _ _ ->
       Result.ok (Local region)
     Local parentRegion ->
       Result.throw (Error.Shadowing name parentRegion region)

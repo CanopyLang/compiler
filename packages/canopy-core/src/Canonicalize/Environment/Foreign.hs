@@ -90,7 +90,7 @@ addImport ifaces state@(State vs ts cs bs qvs qts qcs) (Src.Import (Ann.At _ nam
       Nothing ->
         -- Missing interface - module not found
         Result.throw (Error.ImportNotFound Ann.one (Name.fromChars (ModuleName.toChars name)) [])
-      Just (Interface.Interface pkg defs unions aliases binops _guards _abilities _impls) ->
+      Just (Interface.Interface pkg defs unions aliases binops _guards abilities _impls) ->
         let !prefix = Data.Maybe.fromMaybe name maybeAlias
             !home = ModuleName.Canonical pkg name
             !isAliased = Data.Maybe.isJust maybeAlias
@@ -100,7 +100,8 @@ addImport ifaces state@(State vs ts cs bs qvs qts qcs) (Src.Import (Ann.At _ nam
                 (Map.mapMaybeWithKey (unionToType home) unions)
                 (Map.mapMaybeWithKey (aliasToType home) aliases)
 
-            !vars = Map.map (Env.Specific home) defs
+            !abilityMethodVars = extractAbilityMethodVars home abilities
+            !vars = Map.union abilityMethodVars (Map.map (Env.Specific home) defs)
             !types = Map.map (Env.Specific home . fst) rawTypeInfo
             !ctors = Map.foldr (addExposed . snd) Map.empty rawTypeInfo
 
@@ -133,6 +134,34 @@ addQualified _ prefix exposed qualified =
   -- Always merge exports to allow multiple imports with same alias
   -- The shouldDeletePrefix logic above handles stdlib shadowing
   Map.insertWith addExposed prefix exposed qualified
+
+-- ABILITY METHODS
+
+extractAbilityMethodVars ::
+  ModuleName.Canonical ->
+  Map.Map Name.Name Can.Ability ->
+  Env.Exposed Can.Annotation
+extractAbilityMethodVars home abilities =
+  Map.foldlWithKey' (addAbilityMethodVars home) Map.empty abilities
+
+addAbilityMethodVars ::
+  ModuleName.Canonical ->
+  Env.Exposed Can.Annotation ->
+  Name.Name ->
+  Can.Ability ->
+  Env.Exposed Can.Annotation
+addAbilityMethodVars home acc _abilityName ability =
+  Map.foldlWithKey' (addMethodVar home) acc (Can._abilityMethods ability)
+
+addMethodVar ::
+  ModuleName.Canonical ->
+  Env.Exposed Can.Annotation ->
+  Name.Name ->
+  Can.Type ->
+  Env.Exposed Can.Annotation
+addMethodVar home acc methodName methodType =
+  let annotation = Can.Forall Map.empty methodType
+  in Map.insert methodName (Env.Specific home annotation) acc
 
 -- UNION
 
