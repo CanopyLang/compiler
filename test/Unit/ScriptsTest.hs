@@ -107,7 +107,8 @@ appWithScripts =
       Outline._appScripts = Just scriptsMap,
       Outline._appRepository = Nothing,
       Outline._appCapabilities = Outline.emptyCapabilities,
-      Outline._appWebComponents = Nothing
+      Outline._appWebComponents = Nothing,
+      Outline._appKit = Nothing
     }
 
 -- | Application outline without scripts.
@@ -124,7 +125,8 @@ appWithoutScripts =
       Outline._appScripts = Nothing,
       Outline._appRepository = Nothing,
       Outline._appCapabilities = Outline.emptyCapabilities,
-      Outline._appWebComponents = Nothing
+      Outline._appWebComponents = Nothing,
+      Outline._appKit = Nothing
     }
 
 -- | Application outline with empty scripts map.
@@ -141,7 +143,8 @@ appWithEmptyScripts =
       Outline._appScripts = Just Map.empty,
       Outline._appRepository = Nothing,
       Outline._appCapabilities = Outline.emptyCapabilities,
-      Outline._appWebComponents = Nothing
+      Outline._appWebComponents = Nothing,
+      Outline._appKit = Nothing
     }
 
 -- | Application outline with repository field.
@@ -158,5 +161,6 @@ appWithRepo =
       Outline._appScripts = Nothing,
       Outline._appRepository = Just "https://github.com/example/project",
       Outline._appCapabilities = Outline.emptyCapabilities,
-      Outline._appWebComponents = Nothing
+      Outline._appWebComponents = Nothing,
+      Outline._appKit = Nothing
     }

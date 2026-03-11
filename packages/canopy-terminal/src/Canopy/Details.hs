@@ -126,7 +126,8 @@ defaultWorkspaceApp =
       Outline._appScripts = Nothing,
       Outline._appRepository = Nothing,
       Outline._appCapabilities = Outline.emptyCapabilities,
-      Outline._appWebComponents = Nothing
+      Outline._appWebComponents = Nothing,
+      Outline._appKit = Nothing
     }
 
 -- | Get exposed modules list from either list or dict format.

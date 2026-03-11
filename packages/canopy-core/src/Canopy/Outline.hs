@@ -20,6 +20,7 @@ module Canopy.Outline
     Exposed (..),
     SrcDir (..),
     CapabilityConfig (..),
+    KitConfig (..),
 
     -- * Reading/Writing
     read,
@@ -32,11 +33,13 @@ module Canopy.Outline
     flattenExposed,
     allDeps,
     isWorkspace,
+    isKitProject,
     effectiveCapabilities,
 
     -- * Defaults
     defaultSummary,
     emptyCapabilities,
+    defaultKitConfig,
   )
 where
 
@@ -169,6 +172,25 @@ effectiveCapabilities :: CapabilityConfig -> Set Text.Text
 effectiveCapabilities config =
   Set.difference (_capAllow config) (_capDeny config)
 
+-- | CanopyKit configuration for file-based routing applications.
+--
+-- When present in an 'AppOutline', enables CanopyKit features including
+-- file-based routing, layout resolution, and static site generation.
+-- The routes directory is scanned for @page.can@, @layout.can@, and
+-- @error.can@ files to build the route manifest.
+--
+-- @since 0.19.2
+data KitConfig = KitConfig
+  { _kitRoutesDir :: !FilePath
+  }
+  deriving (Eq, Show)
+
+-- | Default kit configuration with @src/routes@ as the routes directory.
+--
+-- @since 0.19.2
+defaultKitConfig :: KitConfig
+defaultKitConfig = KitConfig "src/routes"
+
 -- | Application outline.
 --
 -- The optional '_appScripts' field maps script names to shell commands,
@@ -177,6 +199,8 @@ effectiveCapabilities config =
 -- repository URL for package metadata.
 -- The '_appCapabilities' field declares which browser capabilities
 -- (permissions, APIs) the application is allowed or denied through FFI.
+-- The optional '_appKit' field enables CanopyKit meta-framework features
+-- including file-based routing and static site generation.
 --
 -- @since 0.19.2
 data AppOutline = AppOutline
@@ -190,7 +214,8 @@ data AppOutline = AppOutline
     _appScripts :: !(Maybe (Map Text.Text Text.Text)),
     _appRepository :: !(Maybe Text.Text),
     _appCapabilities :: !CapabilityConfig,
-    _appWebComponents :: !(Maybe [ModuleName.Raw])
+    _appWebComponents :: !(Maybe [ModuleName.Raw]),
+    _appKit :: !(Maybe KitConfig)
   }
   deriving (Show)
 
@@ -322,6 +347,14 @@ instance Json.FromJSON Outline where
       <|> (App <$> Json.parseJSON value)
       <|> (Pkg <$> Json.parseJSON value)
 
+instance Json.ToJSON KitConfig where
+  toJSON kit =
+    Json.object ["routes-dir" .= _kitRoutesDir kit]
+
+instance Json.FromJSON KitConfig where
+  parseJSON = Json.withObject "KitConfig" $ \o ->
+    KitConfig <$> (o .:? "routes-dir" .!= "src/routes")
+
 instance Json.ToJSON AppOutline where
   toJSON app =
     Json.object (requiredFields ++ optionalFields)
@@ -341,6 +374,7 @@ instance Json.ToJSON AppOutline where
           ++ maybe [] (\r -> ["repository" .= r]) (_appRepository app)
           ++ capabilitiesField
           ++ maybe [] (\wc -> ["web-components" .= wc]) (_appWebComponents app)
+          ++ maybe [] (\k -> ["kit" .= k]) (_appKit app)
       capabilitiesField
         | _appCapabilities app == emptyCapabilities = []
         | Set.null (_capDeny (_appCapabilities app)) =
@@ -361,6 +395,7 @@ instance Json.FromJSON AppOutline where
     repository <- o .:? "repository"
     capabilities <- parseCapabilities o
     webComponents <- o .:? "web-components"
+    kit <- o .:? "kit"
     pure
       AppOutline
         { _appCanopy = canopyVer,
@@ -373,7 +408,8 @@ instance Json.FromJSON AppOutline where
           _appScripts = scripts,
           _appRepository = repository,
           _appCapabilities = capabilities,
-          _appWebComponents = webComponents
+          _appWebComponents = webComponents,
+          _appKit = kit
         }
 
 instance Json.ToJSON PkgOutline where
@@ -493,7 +529,7 @@ encode (Workspace wsOutline) = encodeWorkspaceOutline wsOutline
 -- | Encode application outline.
 encodeAppOutline :: AppOutline -> Encode.Value
 encodeAppOutline app =
-  Encode.object (requiredFields ++ capsField)
+  Encode.object (requiredFields ++ capsField ++ kitField)
   where
     requiredFields =
       [ "type" ==> Encode.chars "application",
@@ -508,6 +544,12 @@ encodeAppOutline app =
     capsField
       | _appCapabilities app == emptyCapabilities = []
       | otherwise = ["capabilities" ==> Encode.list (Encode.chars . Text.unpack) (Set.toList (effectiveCapabilities (_appCapabilities app)))]
+    kitField = maybe [] (\k -> ["kit" ==> encodeKitConfig k]) (_appKit app)
+
+-- | Encode kit configuration.
+encodeKitConfig :: KitConfig -> Encode.Value
+encodeKitConfig kit =
+  Encode.object ["routes-dir" ==> Encode.chars (_kitRoutesDir kit)]
 
 -- | Encode package outline.
 encodePkgOutline :: PkgOutline -> Encode.Value
@@ -577,3 +619,13 @@ allDeps (Workspace o) =
 isWorkspace :: Outline -> Bool
 isWorkspace (Workspace _) = True
 isWorkspace _ = False
+
+-- | Check whether an outline is a CanopyKit application.
+--
+-- Returns 'True' when the outline is an 'App' with a 'KitConfig' present,
+-- indicating file-based routing and meta-framework features are enabled.
+--
+-- @since 0.19.2
+isKitProject :: Outline -> Bool
+isKitProject (App app) = maybe False (const True) (_appKit app)
+isKitProject _ = False

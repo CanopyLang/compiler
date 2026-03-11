@@ -14,6 +14,7 @@
 -- * "CLI.Commands.Package" - install, publish, bump, diff
 -- * "CLI.Commands.Tools" - test-ffi, webidl, self-update
 -- * "CLI.Commands.Link" - link, unlink
+-- * "CLI.Commands.Kit" - kit-new, kit-dev, kit-build
 --
 -- @since 0.19.1
 module CLI.Commands
@@ -52,6 +53,11 @@ module CLI.Commands
     createFFITestCommand,
     createWebIDLCommand,
     createSelfUpdateCommand,
+
+    -- * Kit Commands
+    createKitNewCommand,
+    createKitDevCommand,
+    createKitBuildCommand,
   )
 where
 
@@ -85,6 +91,11 @@ import CLI.Commands.Project
 import CLI.Commands.Link
   ( createLinkCommand,
     createUnlinkCommand,
+  )
+import CLI.Commands.Kit
+  ( createKitBuildCommand,
+    createKitDevCommand,
+    createKitNewCommand,
   )
 import CLI.Commands.Tools
   ( createFFITestCommand,

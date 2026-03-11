@@ -44,6 +44,7 @@ library
       CLI.Commands
       CLI.Commands.Build
       CLI.Commands.Dev
+      CLI.Commands.Kit
       CLI.Commands.Link
       CLI.Commands.Package
       CLI.Commands.Project
@@ -93,6 +94,14 @@ library
       Install.Execution
       Install.PkgPlan
       Install.Types
+      Kit
+      Kit.Build
+      Kit.Dev
+      Kit.ErrorBoundary
+      Kit.Layout
+      Kit.New
+      Kit.SSG
+      Kit.Types
       Link
       Lint
       Lint.Config
@@ -143,6 +152,7 @@ library
       Reporting.Exit.Help
       Reporting.Exit.Init
       Reporting.Exit.Install
+      Reporting.Exit.Kit
       Reporting.Exit.Make
       Reporting.Exit.New
       Reporting.Exit.Publish

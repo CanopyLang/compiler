@@ -59,6 +59,9 @@ import CLI.Commands
     createFmtCommand,
     createInitCommand,
     createInstallCommand,
+    createKitBuildCommand,
+    createKitDevCommand,
+    createKitNewCommand,
     createLinkCommand,
     createLintCommand,
     createMakeCommand,
@@ -139,5 +142,8 @@ createAllCommands =
     createUnlinkCommand,
     createVendorCommand,
     createWebIDLCommand,
-    createSelfUpdateCommand
+    createSelfUpdateCommand,
+    createKitNewCommand,
+    createKitDevCommand,
+    createKitBuildCommand
   ]

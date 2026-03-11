@@ -160,6 +160,11 @@ library
       Type.Variance
       Generate.JavaScript.FFIRuntime
       Generate.JavaScript.Runtime
+      Kit.Route.Types
+      Kit.Route.Scanner
+      Kit.Route.Validate
+      Kit.Route.Generate
+      Kit.Route.ClientNav
   other-modules:
       Reporting.Error.Internal
       Reporting.Error.Syntax.Types
@@ -309,6 +314,7 @@ library
     , template-haskell
     , text
     , time
+    , transformers
     , utf8-string
     , vector
     , zip-archive

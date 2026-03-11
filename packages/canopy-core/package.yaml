@@ -46,6 +46,7 @@ dependencies:
   - aeson-pretty
   - async
   - stm
+  - transformers
 
 default-extensions:
   - ConstraintKinds
@@ -241,6 +242,12 @@ library:
     - Type.Variance
     - Generate.JavaScript.FFIRuntime
     - Generate.JavaScript.Runtime
+    # -- Public API: Kit route scanner --
+    - Kit.Route.Types
+    - Kit.Route.Scanner
+    - Kit.Route.Validate
+    - Kit.Route.Generate
+    - Kit.Route.ClientNav
   other-modules:
     - Reporting.Error.Internal
     - Reporting.Error.Syntax.Types

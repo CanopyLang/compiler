@@ -115,7 +115,11 @@ hintAnythingToBool :: [Doc.Doc]
 hintAnythingToBool =
   [ Doc.toSimpleHint
       "Canopy does not have \8220truthiness\8221 such that ints and strings and lists\
-      \ are automatically converted to booleans. Do that conversion explicitly!"
+      \ are automatically converted to booleans. Do that conversion explicitly!",
+    Doc.toSimpleHint
+      "Coming from React/JavaScript? In Canopy, conditions must be Bool values.\
+      \ Use comparisons like `x > 0` or `not (List.isEmpty items)` instead of\
+      \ relying on implicit truthiness."
   ]
 
 hintAnythingFromMaybe :: [Doc.Doc]
@@ -124,7 +128,11 @@ hintAnythingFromMaybe =
       [ "Use", Doc.green "Maybe.withDefault", "to", "handle", "possible", "errors.",
         "Longer", "term,", "it", "is", "usually", "better", "to", "write",
         "out", "the", "full", "`case`", "though!"
-      ]
+      ],
+    Doc.toSimpleHint
+      "Coming from React? Canopy uses Maybe instead of null/undefined.\
+      \ Pattern match with `case maybeValue of` or use `Maybe.withDefault`\
+      \ instead of optional chaining (?.) or nullish coalescing (??)."
   ]
 
 hintArityMismatch :: Int -> Int -> [Doc.Doc]
@@ -188,7 +196,11 @@ hintFieldsMissing fields =
   case fmap (Doc.green . Doc.fromName) fields of
     [] -> []
     [f1] ->
-      [ Doc.toFancyHint ["Looks", "like", "the", f1, "field", "is", "missing."]
+      [ Doc.toFancyHint ["Looks", "like", "the", f1, "field", "is", "missing."],
+        Doc.toSimpleHint
+          "Coming from React? Canopy records are structurally typed. Every field\
+          \ you access must exist in the record type. Use type aliases to define\
+          \ your record shapes, similar to TypeScript interfaces."
       ]
     fieldDocs ->
       [ Doc.toFancyHint

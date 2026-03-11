@@ -240,7 +240,8 @@ createOutlineConfig context solverDetails =
             Outline._appScripts = Nothing,
             Outline._appRepository = Nothing,
             Outline._appCapabilities = Outline.emptyCapabilities,
-            Outline._appWebComponents = Nothing
+            Outline._appWebComponents = Nothing,
+            Outline._appKit = Nothing
           }
 
 -- | Extract version information from solver details.
