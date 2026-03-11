@@ -33,28 +33,35 @@ module FFI.Manifest
     CapabilityManifest (..),
     ModuleCapabilities (..),
     FunctionCapability (..),
+    PackageCapabilities (..),
 
     -- * Lenses
     manifestPermissions,
     manifestInitializations,
     manifestUserActivation,
     manifestModules,
+    manifestByPackage,
     mcModuleName,
     mcFunctions,
     fcFunctionName,
     fcConstraints,
+    pcPackageName,
+    pcCapabilities,
 
     -- * Collection
     collectCapabilities,
+    collectByPackage,
 
     -- * Serialization
     writeManifest,
+    readManifest,
   )
 where
 
 import Control.Lens (makeLenses)
 import qualified Data.Aeson as Json
-import Data.Aeson ((.=))
+import Data.Aeson ((.=), (.:), (.:?))
+import Data.Aeson.Types (Object, Parser)
 import qualified Data.ByteString.Lazy as LBS
 import qualified Data.Map.Strict as Map
 import qualified Data.Set as Set
@@ -65,6 +72,7 @@ import FFI.Types (JsFunctionName (..), PermissionName (..), ResourceName (..))
 import qualified Foreign.FFI as FFI
 import Logging.Event (LogEvent (..))
 import qualified Logging.Logger as Log
+import qualified System.Directory as Dir
 
 -- | Top-level capability manifest for the compiled application.
 --
@@ -73,7 +81,8 @@ data CapabilityManifest = CapabilityManifest
   { _manifestPermissions :: !(Set.Set Text),
     _manifestInitializations :: !(Set.Set Text),
     _manifestUserActivation :: !Bool,
-    _manifestModules :: ![ModuleCapabilities]
+    _manifestModules :: ![ModuleCapabilities],
+    _manifestByPackage :: ![PackageCapabilities]
   }
   deriving (Show)
 
@@ -95,9 +104,22 @@ data FunctionCapability = FunctionCapability
   }
   deriving (Show)
 
+-- | Capabilities grouped by dependency package.
+--
+-- Used by @canopy audit --capabilities@ to show which capabilities
+-- each dependency requires.
+--
+-- @since 0.20.0
+data PackageCapabilities = PackageCapabilities
+  { _pcPackageName :: !Text,
+    _pcCapabilities :: !(Set.Set Text)
+  }
+  deriving (Show)
+
 makeLenses ''CapabilityManifest
 makeLenses ''ModuleCapabilities
 makeLenses ''FunctionCapability
+makeLenses ''PackageCapabilities
 
 -- | Collect capabilities from parsed FFI functions.
 --
@@ -111,7 +133,8 @@ collectCapabilities moduleFunctions =
     { _manifestPermissions = allPermissions,
       _manifestInitializations = allInits,
       _manifestUserActivation = anyUserActivation,
-      _manifestModules = modCaps
+      _manifestModules = modCaps,
+      _manifestByPackage = []
     }
   where
     modCaps = concatMap buildModuleCaps moduleFunctions
@@ -119,6 +142,16 @@ collectCapabilities moduleFunctions =
     allPermissions = Set.fromList [t | t <- allConstraints, "permission:" `Text.isPrefixOf` t]
     allInits = Set.fromList [t | t <- allConstraints, "init:" `Text.isPrefixOf` t]
     anyUserActivation = any ("user-activation" ==) allConstraints
+
+-- | Collect capabilities grouped by package name.
+--
+-- Takes a list of (package name, capability names) pairs and groups them
+-- into 'PackageCapabilities' entries for the manifest.
+--
+-- @since 0.20.0
+collectByPackage :: [(Text, Set.Set Text)] -> [PackageCapabilities]
+collectByPackage =
+  map (\(pkg, caps) -> PackageCapabilities pkg caps) . Map.toList . Map.fromListWith Set.union
 
 -- | Gather all constraint text labels from a module's FFI functions.
 gatherConstraints :: (Text, [FFI.JSDocFunction]) -> [Text]
@@ -181,14 +214,16 @@ writeManifest path manifest = do
 instance Json.ToJSON CapabilityManifest where
   toJSON m =
     Json.object
-      [ "required"
-          .= Json.object
-            [ "permissions" .= Set.toList (_manifestPermissions m),
-              "initialization" .= Set.toList (_manifestInitializations m),
-              "userActivation" .= _manifestUserActivation m
-            ],
-        "by-module" .= Map.fromList (map moduleToKV (_manifestModules m))
-      ]
+      ( [ "required"
+            .= Json.object
+              [ "permissions" .= Set.toList (_manifestPermissions m),
+                "initialization" .= Set.toList (_manifestInitializations m),
+                "userActivation" .= _manifestUserActivation m
+              ],
+          "by-module" .= Map.fromList (map moduleToKV (_manifestModules m))
+        ]
+          ++ byPackageField
+      )
     where
       moduleToKV mc =
         ( _mcModuleName mc,
@@ -198,3 +233,119 @@ instance Json.ToJSON CapabilityManifest where
                   (map (\fc -> (_fcFunctionName fc, Json.toJSON (_fcConstraints fc))) (_mcFunctions mc))
             ]
         )
+      byPackageField
+        | null (_manifestByPackage m) = []
+        | otherwise =
+            ["by-package" .= Map.fromList (map pkgToKV (_manifestByPackage m))]
+      pkgToKV pc = (_pcPackageName pc, Set.toList (_pcCapabilities pc))
+
+instance Json.FromJSON CapabilityManifest where
+  parseJSON = Json.withObject "CapabilityManifest" parseManifestObject
+
+instance Json.FromJSON PackageCapabilities where
+  parseJSON = Json.withObject "PackageCapabilities" parsePackageCaps
+
+-- | Parse the top-level manifest JSON object.
+--
+-- @since 0.20.0
+parseManifestObject :: Object -> Parser CapabilityManifest
+parseManifestObject o = do
+  reqVal <- o .: "required"
+  requiredFields <- Json.withObject "required" parseRequired reqVal
+  byMod <- o .:? "by-module"
+  byPkg <- o .:? "by-package"
+  pure (applyOptionalFields requiredFields (parseByModuleField byMod) byPkg)
+
+-- | Parse the required capabilities section.
+--
+-- @since 0.20.0
+parseRequired :: Object -> Parser ([Text], [Text], Bool)
+parseRequired req = do
+  perms <- req .: "permissions"
+  inits <- req .: "initialization"
+  userAct <- req .: "userActivation"
+  pure (perms, inits, userAct)
+
+-- | Apply optional fields to build the final manifest.
+--
+-- @since 0.20.0
+applyOptionalFields ::
+  ([Text], [Text], Bool) ->
+  [ModuleCapabilities] ->
+  Maybe (Map.Map Text [Text]) ->
+  CapabilityManifest
+applyOptionalFields (perms, inits, userAct) modCaps byPkg =
+  buildManifest perms inits userAct modCaps byPkg
+
+-- | Parse the optional by-module field from the manifest.
+--
+-- Each module entry contains a @functions@ map of function name to
+-- constraint list. When the field is absent, returns an empty list.
+--
+-- @since 0.20.0
+parseByModuleField :: Maybe (Map.Map Text ModuleEntry) -> [ModuleCapabilities]
+parseByModuleField Nothing = []
+parseByModuleField (Just modMap) =
+  map toModCap (Map.toList modMap)
+  where
+    toModCap (name, entry) =
+      ModuleCapabilities name (map toFuncCap (Map.toList (_meFunctions entry)))
+    toFuncCap (fname, constraints) =
+      FunctionCapability fname constraints
+
+-- | Intermediate type for parsing module entries from JSON.
+--
+-- @since 0.20.0
+newtype ModuleEntry = ModuleEntry
+  { _meFunctions :: Map.Map Text [Text]
+  }
+
+instance Json.FromJSON ModuleEntry where
+  parseJSON = Json.withObject "ModuleEntry" (\o -> ModuleEntry <$> o .: "functions")
+
+-- | Assemble a manifest from parsed JSON fields.
+--
+-- @since 0.20.0
+buildManifest ::
+  [Text] ->
+  [Text] ->
+  Bool ->
+  [ModuleCapabilities] ->
+  Maybe (Map.Map Text [Text]) ->
+  CapabilityManifest
+buildManifest perms inits userAct modCaps byPkg =
+  CapabilityManifest
+    { _manifestPermissions = Set.fromList perms,
+      _manifestInitializations = Set.fromList inits,
+      _manifestUserActivation = userAct,
+      _manifestModules = modCaps,
+      _manifestByPackage = maybe [] parsePkgMap byPkg
+    }
+
+-- | Convert a by-package JSON map into package capabilities.
+--
+-- @since 0.20.0
+parsePkgMap :: Map.Map Text [Text] -> [PackageCapabilities]
+parsePkgMap =
+  map (\(name, caps) -> PackageCapabilities name (Set.fromList caps)) . Map.toList
+
+-- | Parse a 'PackageCapabilities' from a JSON object with name and capabilities.
+--
+-- @since 0.20.0
+parsePackageCaps :: Object -> Parser PackageCapabilities
+parsePackageCaps o = do
+  name <- o .: "name"
+  caps <- o .: "capabilities"
+  pure (PackageCapabilities name (Set.fromList caps))
+
+-- | Read a capability manifest from a JSON file.
+--
+-- Returns 'Nothing' if the file does not exist or cannot be parsed.
+--
+-- @since 0.20.0
+readManifest :: FilePath -> IO (Maybe CapabilityManifest)
+readManifest path = do
+  exists <- Dir.doesFileExist path
+  if exists
+    then Json.decode <$> LBS.readFile path
+    else pure Nothing

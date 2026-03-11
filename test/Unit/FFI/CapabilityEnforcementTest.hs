@@ -210,7 +210,8 @@ integrationTests =
               CapEnforce.CapabilityError
                 { CapEnforce._ceFunctionName = "getLocation",
                   CapEnforce._ceFilePath = "ffi/geo.js",
-                  CapEnforce._ceMissingCapability = "geolocation"
+                  CapEnforce._ceMissingCapability = "geolocation",
+                  CapEnforce._ceErrorKind = CapEnforce.MissingCapability
                 }
         let shown = show err
         assertBool "show contains function name" (isInfixOf "getLocation" shown)
@@ -221,19 +222,22 @@ integrationTests =
               CapEnforce.CapabilityError
                 { CapEnforce._ceFunctionName = "fn",
                   CapEnforce._ceFilePath = "a.js",
-                  CapEnforce._ceMissingCapability = "cap"
+                  CapEnforce._ceMissingCapability = "cap",
+                  CapEnforce._ceErrorKind = CapEnforce.MissingCapability
                 }
             err2 =
               CapEnforce.CapabilityError
                 { CapEnforce._ceFunctionName = "fn",
                   CapEnforce._ceFilePath = "a.js",
-                  CapEnforce._ceMissingCapability = "cap"
+                  CapEnforce._ceMissingCapability = "cap",
+                  CapEnforce._ceErrorKind = CapEnforce.MissingCapability
                 }
             err3 =
               CapEnforce.CapabilityError
                 { CapEnforce._ceFunctionName = "other",
                   CapEnforce._ceFilePath = "a.js",
-                  CapEnforce._ceMissingCapability = "cap"
+                  CapEnforce._ceMissingCapability = "cap",
+                  CapEnforce._ceErrorKind = CapEnforce.MissingCapability
                 }
         err1 @?= err2
         assertBool "different errors are not equal" (err1 /= err3)

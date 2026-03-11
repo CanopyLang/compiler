@@ -44,7 +44,6 @@ import Control.Lens (makeLenses)
 import qualified Canopy.Data.Utf8 as Utf8
 import Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
-import qualified Data.Set as Set
 import qualified Data.Time as Time
 import qualified Reporting
 import System.FilePath ((</>))
@@ -126,7 +125,8 @@ defaultWorkspaceApp =
       Outline._appTestDepsDirect = Map.empty,
       Outline._appScripts = Nothing,
       Outline._appRepository = Nothing,
-      Outline._appCapabilities = Set.empty
+      Outline._appCapabilities = Outline.emptyCapabilities,
+      Outline._appWebComponents = Nothing
     }
 
 -- | Get exposed modules list from either list or dict format.

@@ -32,6 +32,9 @@ module Make.Output
     -- * Format Selection
     chooseFormatFromMains,
 
+    -- * TypeScript Integration
+    writeTsConfig,
+
     -- * Utilities
     fixEmbeddedJavaScript,
   )
@@ -78,6 +81,8 @@ import Make.Types
   )
 import qualified Canopy.Details as Details
 import qualified Canopy.Outline as Outline
+import qualified Json.Encode as Encode
+import qualified Json.String as Json
 import qualified Reporting.Exit as Exit
 import qualified Reporting.Task as Task
 import qualified System.Directory as Dir
@@ -313,6 +318,50 @@ writeOneTypeDef dir (home, builder) =
 moduleDtsFilename :: ModuleName.Canonical -> FilePath
 moduleDtsFilename (ModuleName.Canonical (Pkg.Name author project) moduleName) =
   Utf8.toChars author <> "." <> Utf8.toChars project <> "." <> Name.toChars moduleName <> ".d.ts"
+
+-- | Write a @tsconfig.canopy.json@ with paths mapping for Canopy module imports.
+--
+-- Generates path aliases so TypeScript consumers can import Canopy modules
+-- by their original names:
+--
+-- @
+-- {
+--   "compilerOptions": {
+--     "strict": true,
+--     "paths": {
+--       "Author.Project.Module": [".\/Author.Project.Module.d.ts"]
+--     }
+--   }
+-- }
+-- @
+--
+-- @since 0.20.0
+writeTsConfig :: FilePath -> ESMOutput -> IO ()
+writeTsConfig outputDir esmOutput =
+  File.writeBuilder tsconfigPath (Encode.encode (buildTsConfig moduleNames))
+  where
+    tsconfigPath = outputDir </> "tsconfig.canopy.json"
+    moduleNames = Map.keys (_eoTypeDefs esmOutput)
+
+-- | Build the tsconfig JSON value with path mappings.
+buildTsConfig :: [ModuleName.Canonical] -> Encode.Value
+buildTsConfig moduleNames =
+  Encode.object
+    [ (Json.fromChars "compilerOptions", compilerOptions)
+    ]
+  where
+    compilerOptions =
+      Encode.object
+        [ (Json.fromChars "strict", Encode.bool True),
+          (Json.fromChars "paths", Encode.object (map toPathEntry moduleNames))
+        ]
+
+-- | Create a single path entry for a canonical module name.
+toPathEntry :: ModuleName.Canonical -> (Json.String, Encode.Value)
+toPathEntry home =
+  (Json.fromChars (moduleFilename home), pathArray)
+  where
+    pathArray = Encode.list Encode.chars ["./" <> moduleDtsFilename home]
 
 -- | Generate HTML output to specified file.
 --
@@ -590,7 +639,7 @@ extractCapabilities ctx =
 -- Applications may declare capabilities in @canopy.json@; packages
 -- and workspaces always have an empty capability set.
 capabilitiesFromOutline :: Details.ValidOutline -> Set Text.Text
-capabilitiesFromOutline (Details.ValidApp app) = Outline._appCapabilities app
+capabilitiesFromOutline (Details.ValidApp app) = Outline.effectiveCapabilities (Outline._appCapabilities app)
 capabilitiesFromOutline (Details.ValidPkg _ _ _) = Set.empty
 
 -- | Verify build reproducibility if the flag is set.

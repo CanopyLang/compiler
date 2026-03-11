@@ -19,6 +19,7 @@ module Canopy.Outline
     WorkspaceOutline (..),
     Exposed (..),
     SrcDir (..),
+    CapabilityConfig (..),
 
     -- * Reading/Writing
     read,
@@ -31,9 +32,11 @@ module Canopy.Outline
     flattenExposed,
     allDeps,
     isWorkspace,
+    effectiveCapabilities,
 
     -- * Defaults
     defaultSummary,
+    emptyCapabilities,
   )
 where
 
@@ -139,14 +142,41 @@ data Outline
   | Workspace WorkspaceOutline
   deriving (Show)
 
+-- | Capability configuration with allow and deny lists.
+--
+-- The allow list specifies which capabilities the application may use.
+-- The deny list explicitly forbids capabilities, taking precedence over allow.
+-- This enables defense-in-depth: even if a dependency declares a capability,
+-- the deny list can block it at the application level.
+--
+-- @since 0.19.2
+data CapabilityConfig = CapabilityConfig
+  { _capAllow :: !(Set Text.Text),
+    _capDeny :: !(Set Text.Text)
+  }
+  deriving (Eq, Show)
+
+-- | Empty capability configuration (no allow, no deny).
+--
+-- @since 0.19.2
+emptyCapabilities :: CapabilityConfig
+emptyCapabilities = CapabilityConfig Set.empty Set.empty
+
+-- | Compute effective capabilities: allow minus deny.
+--
+-- @since 0.19.2
+effectiveCapabilities :: CapabilityConfig -> Set Text.Text
+effectiveCapabilities config =
+  Set.difference (_capAllow config) (_capDeny config)
+
 -- | Application outline.
 --
 -- The optional '_appScripts' field maps script names to shell commands,
 -- enabling custom build hooks (prebuild, postbuild, test, etc.).
 -- The optional '_appRepository' field records the project's source
 -- repository URL for package metadata.
--- The optional '_appCapabilities' field declares which browser capabilities
--- (permissions, APIs) the application is allowed to use through FFI.
+-- The '_appCapabilities' field declares which browser capabilities
+-- (permissions, APIs) the application is allowed or denied through FFI.
 --
 -- @since 0.19.2
 data AppOutline = AppOutline
@@ -159,7 +189,8 @@ data AppOutline = AppOutline
     _appTestDepsDirect :: !(Map Pkg.Name Version.Version),
     _appScripts :: !(Maybe (Map Text.Text Text.Text)),
     _appRepository :: !(Maybe Text.Text),
-    _appCapabilities :: !(Set Text.Text)
+    _appCapabilities :: !CapabilityConfig,
+    _appWebComponents :: !(Maybe [ModuleName.Raw])
   }
   deriving (Show)
 
@@ -309,9 +340,13 @@ instance Json.ToJSON AppOutline where
         maybe [] (\s -> ["scripts" .= s]) (_appScripts app)
           ++ maybe [] (\r -> ["repository" .= r]) (_appRepository app)
           ++ capabilitiesField
+          ++ maybe [] (\wc -> ["web-components" .= wc]) (_appWebComponents app)
       capabilitiesField
-        | Set.null (_appCapabilities app) = []
-        | otherwise = ["capabilities" .= Set.toList (_appCapabilities app)]
+        | _appCapabilities app == emptyCapabilities = []
+        | Set.null (_capDeny (_appCapabilities app)) =
+            ["capabilities" .= Set.toList (_capAllow (_appCapabilities app))]
+        | otherwise =
+            ["capabilities" .= _appCapabilities app]
 
 instance Json.FromJSON AppOutline where
   parseJSON = Json.withObject "AppOutline" $ \o -> do
@@ -324,7 +359,8 @@ instance Json.FromJSON AppOutline where
     testDepsDirect <- testDeps Json..: "direct"
     scripts <- o .:? "scripts"
     repository <- o .:? "repository"
-    capsList <- o .:? "capabilities" .!= ([] :: [Text.Text])
+    capabilities <- parseCapabilities o
+    webComponents <- o .:? "web-components"
     pure
       AppOutline
         { _appCanopy = canopyVer,
@@ -336,7 +372,8 @@ instance Json.FromJSON AppOutline where
           _appTestDepsDirect = testDepsDirect,
           _appScripts = scripts,
           _appRepository = repository,
-          _appCapabilities = Set.fromList capsList
+          _appCapabilities = capabilities,
+          _appWebComponents = webComponents
         }
 
 instance Json.ToJSON PkgOutline where
@@ -403,6 +440,45 @@ instance Json.ToJSON SrcDir where
 instance Json.FromJSON SrcDir where
   parseJSON value = RelativeSrcDir <$> Json.parseJSON value
 
+-- | Parse capabilities from canopy.json, supporting both formats.
+--
+-- Old format: @"capabilities": ["network", "storage"]@ → allow-only
+-- New format: @"capabilities": {"allow": [...], "deny": [...]}@ → full config
+--
+-- @since 0.19.2
+parseCapabilities :: Json.Object -> Parser CapabilityConfig
+parseCapabilities o = do
+  maybeCaps <- o .:? "capabilities"
+  case maybeCaps of
+    Nothing -> pure emptyCapabilities
+    Just val -> parseCapabilityValue val
+
+-- | Parse a capability value (either a list or an object).
+parseCapabilityValue :: Json.Value -> Parser CapabilityConfig
+parseCapabilityValue val =
+  parseAsList val <|> parseAsObject val
+  where
+    parseAsList v = do
+      capsList <- Json.parseJSON v :: Parser [Text.Text]
+      pure (CapabilityConfig (Set.fromList capsList) Set.empty)
+    parseAsObject v = Json.withObject "CapabilityConfig" parseFields v
+    parseFields obj = do
+      allow <- obj .:? "allow" .!= []
+      deny <- obj .:? "deny" .!= []
+      pure (CapabilityConfig (Set.fromList allow) (Set.fromList deny))
+
+instance Json.ToJSON CapabilityConfig where
+  toJSON config
+    | Set.null (_capDeny config) = Json.toJSON (Set.toList (_capAllow config))
+    | otherwise =
+        Json.object
+          [ "allow" .= Set.toList (_capAllow config),
+            "deny" .= Set.toList (_capDeny config)
+          ]
+
+instance Json.FromJSON CapabilityConfig where
+  parseJSON = parseCapabilityValue
+
 -- | Encode outline for Json.Encode (used by development server).
 --
 -- Converts Outline to Json.Encode.Value for serialization.
@@ -430,8 +506,8 @@ encodeAppOutline app =
         "test-dependencies-direct" ==> Encode.dict Pkg.toJsonString Version.encode (_appTestDepsDirect app)
       ]
     capsField
-      | Set.null (_appCapabilities app) = []
-      | otherwise = ["capabilities" ==> Encode.list (Encode.chars . Text.unpack) (Set.toList (_appCapabilities app))]
+      | _appCapabilities app == emptyCapabilities = []
+      | otherwise = ["capabilities" ==> Encode.list (Encode.chars . Text.unpack) (Set.toList (effectiveCapabilities (_appCapabilities app)))]
 
 -- | Encode package outline.
 encodePkgOutline :: PkgOutline -> Encode.Value

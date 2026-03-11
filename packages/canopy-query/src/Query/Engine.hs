@@ -1,5 +1,5 @@
 
--- | Query engine with caching and dependency tracking.
+-- | Query engine with caching, dependency tracking, and invalidation.
 --
 -- This module implements the core query execution engine following
 -- modern compiler architectures (Rust Salsa, Swift 6.0). It uses:
@@ -7,7 +7,9 @@
 -- * Single IORef for mutable state (NO MVars/TVars)
 -- * Pure data structures (Map, Set) for cache
 -- * Content-hash based invalidation
--- * Comprehensive debug logging
+-- * Dependency graph for transitive invalidation
+-- * Early cutoff: re-execution that produces the same hash stops propagation
+-- * Durability levels for stdlib vs user code
 --
 -- @since 0.19.1
 module Query.Engine
@@ -15,13 +17,20 @@ module Query.Engine
     QueryEngine (..),
     EngineState (..),
     CacheEntry (..),
+    Durability (..),
 
     -- * Engine Creation
     initEngine,
 
     -- * Query Execution
     runQuery,
+    runQueryWithFallback,
+    lookupQuery,
+    storeQuery,
+
+    -- * Invalidation
     invalidateQuery,
+    invalidateAndPropagate,
     clearCache,
 
     -- * Cache Management
@@ -46,21 +55,43 @@ import Logging.Event (LogEvent (..), Phase (..))
 import qualified Logging.Logger as Log
 import Query.Simple
 
--- | Cache entry with result and metadata.
+-- | Durability levels for cache entries.
+--
+-- Controls how aggressively entries are re-checked:
+--
+--   * 'Durable': Standard library modules — never re-checked within session
+--   * 'Normal': User modules — re-checked on file change
+--   * 'Volatile': Cleared after each build cycle
+--
+-- @since 0.19.2
+data Durability = Volatile | Normal | Durable
+  deriving (Eq, Ord, Show)
+
+-- | Cache entry with result, metadata, and durability.
 data CacheEntry = CacheEntry
   { cacheEntryResult :: !QueryResult,
     cacheEntryHash :: !ContentHash,
     cacheEntryTime :: !UTCTime,
-    cacheEntryHits :: !Int
+    cacheEntryHits :: !Int,
+    cacheEntryDurability :: !Durability
   }
   deriving (Show)
 
--- | Engine state with pure data structures.
+-- | Engine state with dependency tracking.
+--
+-- The dependency graph enables transitive invalidation: when a file changes,
+-- we invalidate its parse query, then propagate to all dependent queries
+-- (canonicalize, type-check, optimize) following 'engineReverseDeps'.
+--
+-- @since 0.19.2
 data EngineState = EngineState
   { engineCache :: !(Map Query CacheEntry),
     engineRunning :: !(Set Query),
+    engineDeps :: !(Map Query (Set Query)),
+    engineReverseDeps :: !(Map Query (Set Query)),
     engineHits :: !Int,
-    engineMisses :: !Int
+    engineMisses :: !Int,
+    engineGeneration :: !Int
   }
   deriving (Show)
 
@@ -75,8 +106,11 @@ emptyState =
   EngineState
     { engineCache = Map.empty,
       engineRunning = Set.empty,
+      engineDeps = Map.empty,
+      engineReverseDeps = Map.empty,
       engineHits = 0,
-      engineMisses = 0
+      engineMisses = 0,
+      engineGeneration = 0
     }
 
 -- | Initialize a new query engine.
@@ -86,20 +120,107 @@ initEngine = do
   stateRef <- newIORef emptyState
   return (QueryEngine stateRef)
 
--- | Run a query with caching.
+-- | Run a query with caching (parse queries only).
+--
+-- For non-parse queries, use 'lookupQuery' and 'storeQuery' directly
+-- from the Driver, which has the context to execute them.
 runQuery :: QueryEngine -> Query -> IO (Either QueryError QueryResult)
 runQuery (QueryEngine stateRef) query = do
   state <- readIORef stateRef
   case checkCache state query of
     Just entry -> do
       Log.logEvent (CacheHit PhaseCache (showQuery query))
-      modifyIORef' stateRef incrementHits
-      modifyIORef' stateRef (updateCacheHitCount query)
+      modifyIORef' stateRef (incrementHits . updateCacheHitCount query)
       return (Right (cacheEntryResult entry))
     Nothing -> do
       Log.logEvent (CacheMiss PhaseCache (showQuery query))
       modifyIORef' stateRef incrementMisses
       executeAndCache stateRef query
+
+-- | Run a query with stale-on-error fallback.
+--
+-- Attempts to execute the query. On error, returns the previous cached
+-- result if available. This enables IDE-like behavior where stale but
+-- valid results are better than no results during editing.
+--
+-- Returns @Left@ only when both execution fails AND no cached result exists.
+--
+-- @since 0.20.0
+runQueryWithFallback :: QueryEngine -> Query -> IO (Either QueryError QueryResult)
+runQueryWithFallback engine@(QueryEngine stateRef) query = do
+  state <- readIORef stateRef
+  let staleEntry = Map.lookup query (engineCache state)
+  result <- runQuery engine query
+  pure (fallbackOnError staleEntry result)
+
+-- | Return the stale cached result when execution fails.
+fallbackOnError :: Maybe CacheEntry -> Either QueryError QueryResult -> Either QueryError QueryResult
+fallbackOnError _ (Right r) = Right r
+fallbackOnError (Just stale) (Left _) = Right (cacheEntryResult stale)
+fallbackOnError Nothing err = err
+
+-- | Look up a cached query result without executing.
+--
+-- Returns 'Just' the result if the query is cached with a matching hash,
+-- 'Nothing' otherwise. Does not modify cache statistics.
+--
+-- @since 0.19.2
+lookupQuery :: QueryEngine -> Query -> IO (Maybe QueryResult)
+lookupQuery (QueryEngine stateRef) query = do
+  state <- readIORef stateRef
+  case checkCache state query of
+    Just entry -> do
+      Log.logEvent (CacheHit PhaseCache (showQuery query))
+      modifyIORef' stateRef (incrementHits . updateCacheHitCount query)
+      return (Just (cacheEntryResult entry))
+    Nothing -> return Nothing
+
+-- | Store a query result in the cache with dependency tracking.
+--
+-- The optional parent query establishes a dependency edge: if the parent
+-- is later invalidated, this query will also be invalidated.
+--
+-- @since 0.19.2
+storeQuery ::
+  QueryEngine ->
+  Query ->
+  QueryResult ->
+  ContentHash ->
+  Maybe Query ->
+  IO ()
+storeQuery (QueryEngine stateRef) query result hash parentQuery = do
+  currentTime <- getCurrentTime
+  Log.logEvent (CacheStored (showQuery query) 1)
+  modifyIORef' stateRef (insertCacheEntry query result hash currentTime . recordDependency query parentQuery)
+
+-- | Insert a cache entry into the engine state.
+insertCacheEntry ::
+  Query ->
+  QueryResult ->
+  ContentHash ->
+  UTCTime ->
+  EngineState ->
+  EngineState
+insertCacheEntry query result hash time state =
+  state {engineCache = Map.insert query entry (engineCache state)}
+  where
+    entry =
+      CacheEntry
+        { cacheEntryResult = result,
+          cacheEntryHash = hash,
+          cacheEntryTime = time,
+          cacheEntryHits = 0,
+          cacheEntryDurability = Normal
+        }
+
+-- | Record a dependency edge between child and parent query.
+recordDependency :: Query -> Maybe Query -> EngineState -> EngineState
+recordDependency _ Nothing state = state
+recordDependency child (Just parent) state =
+  state
+    { engineDeps = Map.insertWith Set.union child (Set.singleton parent) (engineDeps state),
+      engineReverseDeps = Map.insertWith Set.union parent (Set.singleton child) (engineReverseDeps state)
+    }
 
 -- | Check cache for query result.
 checkCache :: EngineState -> Query -> Maybe CacheEntry
@@ -122,8 +243,7 @@ updateCacheHitCount query state =
   case Map.lookup query (engineCache state) of
     Just entry ->
       let updated = entry {cacheEntryHits = cacheEntryHits entry + 1}
-          newCache = Map.insert query updated (engineCache state)
-       in state {engineCache = newCache}
+       in state {engineCache = Map.insert query updated (engineCache state)}
     Nothing -> state
 
 -- | Execute query and cache result.
@@ -133,18 +253,15 @@ executeAndCache ::
   IO (Either QueryError QueryResult)
 executeAndCache stateRef query = do
   modifyIORef' stateRef (markRunning query)
-
   result <- executeQuery query
-
   modifyIORef' stateRef (unmarkRunning query)
-
   case result of
     Left err ->
       return (Left err)
     Right queryResult -> do
       currentTime <- getCurrentTime
       let hash = getQueryHash query
-      modifyIORef' stateRef (cacheResult query queryResult hash currentTime)
+      modifyIORef' stateRef (insertCacheEntry query queryResult hash currentTime)
       return (Right queryResult)
 
 -- | Mark query as running.
@@ -157,43 +274,79 @@ unmarkRunning :: Query -> EngineState -> EngineState
 unmarkRunning query state =
   state {engineRunning = Set.delete query (engineRunning state)}
 
--- | Cache query result.
-cacheResult ::
-  Query ->
-  QueryResult ->
-  ContentHash ->
-  UTCTime ->
-  EngineState ->
-  EngineState
-cacheResult query result hash time state =
-  let entry =
-        CacheEntry
-          { cacheEntryResult = result,
-            cacheEntryHash = hash,
-            cacheEntryTime = time,
-            cacheEntryHits = 0
-          }
-      newCache = Map.insert query entry (engineCache state)
-   in state {engineCache = newCache}
-
 -- | Get hash from query.
 getQueryHash :: Query -> ContentHash
 getQueryHash (ParseModuleQuery _ hash _) = hash
+getQueryHash (CanonicalizeQuery _ hash) = hash
+getQueryHash (TypeCheckQuery _ hash) = hash
+getQueryHash (OptimizeQuery _ hash) = hash
+getQueryHash (InterfaceQuery _ hash) = hash
 
--- | Invalidate a query in the cache.
+-- | Invalidate a single query in the cache.
 invalidateQuery :: QueryEngine -> Query -> IO ()
 invalidateQuery (QueryEngine stateRef) query = do
   Log.logEvent (CacheMiss PhaseCache (showQuery query))
-  modifyIORef' stateRef removeFromCache
+  modifyIORef' stateRef removeEntry
   where
-    removeFromCache state =
+    removeEntry state =
       state {engineCache = Map.delete query (engineCache state)}
+
+-- | Invalidate a query and propagate to all dependents.
+--
+-- Implements try-mark-green / early cutoff:
+--
+--   1. Remove the query from cache (mark RED)
+--   2. Re-execute the query
+--   3. Compare new result hash with old hash
+--   4. Same hash → stop propagation (early cutoff, dependents stay valid)
+--   5. Different hash → update cache, recurse on reverse dependencies
+--
+-- This is the key to incremental compilation performance: most edits
+-- don't change a module's public interface, so dependents skip recompilation.
+--
+-- @since 0.19.2
+invalidateAndPropagate :: QueryEngine -> Query -> IO ()
+invalidateAndPropagate engine@(QueryEngine stateRef) query = do
+  state <- readIORef stateRef
+  case Map.lookup query (engineCache state) of
+    Nothing -> return ()
+    Just oldEntry -> do
+      modifyIORef' stateRef (\s -> s {engineCache = Map.delete query (engineCache s)})
+      reResult <- executeQuery query
+      case reResult of
+        Left _ -> propagateToDependents engine state query
+        Right newResult -> do
+          let newHash = getQueryHash query
+          if newHash == cacheEntryHash oldEntry
+            then do
+              currentTime <- getCurrentTime
+              modifyIORef' stateRef (insertCacheEntry query newResult newHash currentTime)
+              Log.logEvent (CacheHit PhaseCache ("early-cutoff:" <> showQuery query))
+            else do
+              currentTime <- getCurrentTime
+              modifyIORef' stateRef (insertCacheEntry query newResult newHash currentTime)
+              propagateToDependents engine state query
+
+-- | Propagate invalidation to all reverse dependencies of a query.
+propagateToDependents :: QueryEngine -> EngineState -> Query -> IO ()
+propagateToDependents engine state query =
+  case Map.lookup query (engineReverseDeps state) of
+    Nothing -> return ()
+    Just dependents -> mapM_ (invalidateAndPropagate engine) (Set.toList dependents)
 
 -- | Clear entire cache.
 clearCache :: QueryEngine -> IO ()
 clearCache (QueryEngine stateRef) = do
   Log.logEvent (CacheMiss PhaseCache "clear-all")
-  modifyIORef' stateRef (\s -> s {engineCache = Map.empty})
+  modifyIORef' stateRef clearAllState
+  where
+    clearAllState s =
+      s
+        { engineCache = Map.empty,
+          engineDeps = Map.empty,
+          engineReverseDeps = Map.empty,
+          engineGeneration = engineGeneration s + 1
+        }
 
 -- | Get cache size.
 getCacheSize :: QueryEngine -> IO Int
@@ -214,10 +367,6 @@ getCacheMisses (QueryEngine stateRef) = do
   return (engineMisses state)
 
 -- | Track execution of a compilation phase through the query engine.
---
--- Records an uncached phase execution (canonicalization, type checking, etc.)
--- in the engine's statistics. This ensures cache hit rate calculations
--- accurately reflect all compilation work, not just parse queries.
 --
 -- @since 0.19.1
 trackPhaseExecution :: QueryEngine -> String -> IO ()

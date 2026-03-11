@@ -131,6 +131,7 @@ library:
     - FFI.Resolve
     - FFI.StaticAnalysis
     - FFI.Types
+    - FFI.TypeValidator
     - FFI.Validator
     # -- Public API: File operations --
     - File
@@ -170,12 +171,14 @@ library:
     - Generate.JavaScript.Name
     - Generate.JavaScript.SourceMap
     - Generate.JavaScript.StringPool
+    - Generate.JavaScript.WebComponent
     - Generate.Mode
     - Generate.TreeShake
     # -- Public API: TypeScript .d.ts Generation --
     - Generate.TypeScript
     - Generate.TypeScript.Convert
     - Generate.TypeScript.Render
+    - Generate.TypeScript.Parser
     - Generate.TypeScript.Types
     # -- Public API: JSON --
     - Json.Decode

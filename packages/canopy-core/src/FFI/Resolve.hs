@@ -33,18 +33,32 @@ module FFI.Resolve
     -- * Resolution
     resolveFFIReference,
     isKernelModule,
+    moduleToJsPath,
+    moduleToDtsPath,
+
+    -- * Validation
+    validateFFIWithDts,
 
     -- * Errors
     FFIResolutionError (..),
   )
 where
 
+import qualified Canopy.Data.Utf8 as Utf8
 import qualified Canopy.ModuleName as ModuleName
 import qualified Canopy.Package as Pkg
 import qualified Data.List as List
+import Data.Text (Text)
 import qualified Data.Text as Text
+import FFI.Types (FFIType)
 import qualified FFI.Types as FFI
-import qualified Canopy.Data.Utf8 as Utf8
+import FFI.TypeValidator (TypeMismatch)
+import qualified FFI.TypeValidator as Validator
+import Generate.TypeScript.Parser (DtsExport (..))
+import qualified Generate.TypeScript.Parser as DtsParser
+import Generate.TypeScript.Types (TsType (..))
+import qualified System.Directory as Dir
+import qualified System.FilePath as FP
 
 -- | A resolved FFI binding with its origin system.
 --
@@ -156,14 +170,89 @@ moduleToJsPath modName =
     replaceDot '.' = '/'
     replaceDot c = c
 
+-- | Convert a module name to its expected @.d.ts@ companion file path.
+--
+-- For @Foo.Bar@ returns @\"Foo/Bar.ffi.d.ts\"@. Used to check for
+-- companion TypeScript declarations alongside FFI JavaScript files.
+--
+-- @since 0.20.0
+moduleToDtsPath :: ModuleName.Raw -> String
+moduleToDtsPath modName =
+  map replaceDot (Utf8.toChars modName) ++ ".ffi.d.ts"
+  where
+    replaceDot '.' = '/'
+    replaceDot c = c
+
 -- | Check whether a package is in the trusted set for kernel modules.
 --
 -- Packages authored by @\"canopy\"@, @\"canopy-explorations\"@, @\"elm\"@,
 -- or @\"elm-explorations\"@ are allowed to use kernel modules.
 isTrustedPackage :: Pkg.Name -> Bool
 isTrustedPackage pkg =
-  let author = Pkg._author pkg
-   in author == Pkg.canopy
-        || author == Pkg.elm
-        || author == Pkg.canopyExplorations
-        || author == Pkg.elmExplorations
+  elem author [Pkg.canopy, Pkg.elm, Pkg.canopyExplorations, Pkg.elmExplorations]
+  where
+    author = Pkg._author pkg
+
+-- | Validate an FFI binding against its companion @.d.ts@ file, if present.
+--
+-- Looks for a @.d.ts@ file alongside the FFI JavaScript file (e.g.,
+-- @Foo.ffi.js@ -> @Foo.ffi.d.ts@). If found, parses the TypeScript
+-- declarations and validates each export against the provided FFI type.
+--
+-- Returns warnings (not errors) for type mismatches. Returns an empty
+-- list if no @.d.ts@ file exists or if all types are compatible.
+--
+-- @since 0.20.0
+validateFFIWithDts ::
+  FilePath ->
+  ModuleName.Raw ->
+  FFIType ->
+  IO [Text]
+validateFFIWithDts srcRoot modName ffiType = do
+  exists <- Dir.doesFileExist dtsPath
+  if exists
+    then readAndValidateDts dtsPath ffiType
+    else pure []
+  where
+    dtsPath = FP.combine srcRoot (moduleToDtsPath modName)
+
+-- | Read a @.d.ts@ file and validate its exports against an FFI type.
+readAndValidateDts :: FilePath -> FFIType -> IO [Text]
+readAndValidateDts dtsPath ffiType = do
+  content <- readFile dtsPath
+  pure (either parseWarning (validateExports ffiType) (DtsParser.parseDtsFile dtsPath content))
+  where
+    parseWarning err =
+      [Text.pack ("Failed to parse " ++ dtsPath ++ ": " ++ err)]
+
+-- | Validate all exports from a parsed @.d.ts@ file against an FFI type.
+validateExports :: FFIType -> [DtsExport] -> [Text]
+validateExports ffiType =
+  concatMap (formatMismatches . validateExport ffiType)
+
+-- | Validate a single export against an FFI type, returning mismatches.
+validateExport :: FFIType -> DtsExport -> [TypeMismatch]
+validateExport ffiType = \case
+  DtsExportFunction _ paramTypes retType ->
+    Validator.validateFFIAgainstTs (TsFunction paramTypes retType) ffiType
+  DtsExportConst _ tsType ->
+    Validator.validateFFIAgainstTs tsType ffiType
+  DtsExportInterface _ _ -> []
+  DtsExportType _ _ _ -> []
+
+-- | Format type mismatches into human-readable warning messages.
+formatMismatches :: [TypeMismatch] -> [Text]
+formatMismatches =
+  map formatMismatch
+
+-- | Format a single type mismatch into a warning message.
+formatMismatch :: TypeMismatch -> Text
+formatMismatch mismatch =
+  Text.concat
+    [ "FFI type mismatch at ",
+      Validator._tmPath mismatch,
+      ": expected ",
+      Validator._tmExpected mismatch,
+      " but got ",
+      Validator._tmActual mismatch
+    ]

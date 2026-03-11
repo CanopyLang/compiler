@@ -37,6 +37,13 @@ module Audit
     severityLabel,
     parseSeverityFlag,
 
+    -- * Capability Audit
+    auditCapabilities,
+    outlineAllowed,
+
+    -- * Lenses
+    capabilities,
+
     -- * Parsers (for CLI flag registration)
     levelParser,
   )
@@ -51,7 +58,12 @@ import qualified Data.ByteString.Builder as BB
 import qualified Data.ByteString.Lazy as LBS
 import Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
+import qualified Data.Set as Set
+import Data.Text (Text)
+import qualified Data.Text as Text
 import qualified Deps.Advisory as Advisory
+import FFI.Manifest (CapabilityManifest, PackageCapabilities)
+import qualified FFI.Manifest as Manifest
 import qualified Json.Encode as Encode
 import Reporting.Doc.ColorQQ (c)
 import qualified Stuff
@@ -70,7 +82,9 @@ data Flags = Flags
     -- | Minimum severity level to report (low, medium, high, critical)
     _level :: !(Maybe String),
     -- | Show verbose details including advisory IDs
-    _auditVerbose :: !Bool
+    _auditVerbose :: !Bool,
+    -- | Show capability usage per dependency
+    _capabilities :: !Bool
   }
   deriving (Eq, Show)
 
@@ -121,12 +135,17 @@ reportNoProject =
 
 -- | Audit a project at the given root.
 --
+-- When the @--capabilities@ flag is set, reads the capability manifest
+-- and prints a per-package report instead of the normal advisory audit.
+--
 -- @since 0.19.1
 auditProject :: Flags -> FilePath -> IO ()
-auditProject flags root = do
-  logVerbose flags [c|  {dullcyan|[verbose]} Auditing project at: {cyan|#{root}}|]
-  eitherOutline <- Outline.read root
-  either reportOutlineError (runAudit flags root) eitherOutline
+auditProject flags root
+  | flags ^. capabilities = auditCapabilities root
+  | otherwise = do
+      logVerbose flags [c|  {dullcyan|[verbose]} Auditing project at: {cyan|#{root}}|]
+      eitherOutline <- Outline.read root
+      either reportOutlineError (runAudit flags root) eitherOutline
 
 -- | Report an outline read error.
 --
@@ -436,6 +455,107 @@ levelParser =
     exampleLevels _ = pure validLevels
 
     validLevels = ["info", "warning", "critical"]
+
+-- | Run a capability audit for the project at the given root.
+--
+-- Reads the capability manifest from @.canopy\/capabilities.json@ and
+-- the project outline to determine which capabilities are allowed.
+-- Prints a per-package report showing allowed and denied capabilities.
+--
+-- @since 0.20.0
+auditCapabilities :: FilePath -> IO ()
+auditCapabilities root = do
+  maybeManifest <- Manifest.readManifest (root </> ".canopy" </> "capabilities.json")
+  maybe reportNoManifest (reportCapabilities root) maybeManifest
+
+-- | Report that no capability manifest was found.
+--
+-- @since 0.20.0
+reportNoManifest :: IO ()
+reportNoManifest =
+  Print.printErrLn [c|No capability manifest found. Run {cyan|canopy make} first.|]
+
+-- | Report capabilities from a manifest, cross-referencing the outline.
+--
+-- Reads the project outline to determine which capabilities are allowed,
+-- then prints each package's capabilities with their status.
+--
+-- @since 0.20.0
+reportCapabilities :: FilePath -> CapabilityManifest -> IO ()
+reportCapabilities root manifest = do
+  eitherOutline <- Outline.read root
+  let allowed = either (const Set.empty) outlineAllowed eitherOutline
+  Print.println [c|{bold|-- CAPABILITY AUDIT --}|]
+  Print.newline
+  mapM_ (printPackageCaps allowed) (Manifest._manifestByPackage manifest)
+  reportCapSummary allowed (Manifest._manifestByPackage manifest)
+
+-- | Extract allowed capabilities from an outline.
+--
+-- For application outlines, returns the effective capabilities (allow minus deny).
+-- For package and workspace outlines, returns an empty set.
+--
+-- @since 0.20.0
+outlineAllowed :: Outline.Outline -> Set.Set Text
+outlineAllowed (Outline.App app) =
+  Outline.effectiveCapabilities (Outline._appCapabilities app)
+outlineAllowed (Outline.Pkg _) = Set.empty
+outlineAllowed (Outline.Workspace _) = Set.empty
+
+-- | Print a single package's capability status.
+--
+-- Shows each capability with a check mark if allowed or an X if denied.
+--
+-- @since 0.20.0
+printPackageCaps :: Set.Set Text -> PackageCapabilities -> IO ()
+printPackageCaps allowed pc = do
+  let pkgName = Text.unpack (Manifest._pcPackageName pc)
+  Print.println [c|{bold|#{pkgName}}|]
+  mapM_ (printOneCap allowed) (Set.toList (Manifest._pcCapabilities pc))
+  Print.newline
+
+-- | Print a single capability line with allowed/denied status.
+--
+-- @since 0.20.0
+printOneCap :: Set.Set Text -> Text -> IO ()
+printOneCap allowed cap
+  | Set.member cap allowed = printAllowedCap capStr
+  | otherwise = printDeniedCap capStr
+  where
+    capStr = Text.unpack cap
+
+-- | Print an allowed capability line.
+--
+-- @since 0.20.0
+printAllowedCap :: String -> IO ()
+printAllowedCap capStr =
+  Print.println [c|  {green|✓} #{capStr} {dullgreen|(allowed)}|]
+
+-- | Print a denied capability line.
+--
+-- @since 0.20.0
+printDeniedCap :: String -> IO ()
+printDeniedCap capStr =
+  Print.println [c|  {red|✗} #{capStr} {dullred|(denied)}|]
+
+-- | Print a summary of the capability audit.
+--
+-- @since 0.20.0
+reportCapSummary :: Set.Set Text -> [PackageCapabilities] -> IO ()
+reportCapSummary allowed pkgs = do
+  let allCaps = Set.unions (map Manifest._pcCapabilities pkgs)
+  let denied = Set.difference allCaps allowed
+  let deniedCount = Set.size denied
+  let totalCount = Set.size allCaps
+  let summary = formatCapSummary totalCount deniedCount
+  Print.println [c|#{summary}|]
+
+-- | Format the capability audit summary line.
+--
+-- @since 0.20.0
+formatCapSummary :: Int -> Int -> String
+formatCapSummary total denied =
+  show total ++ " capabilities across all packages, " ++ show denied ++ " denied"
 
 -- | Log a message only when verbose mode is enabled.
 --

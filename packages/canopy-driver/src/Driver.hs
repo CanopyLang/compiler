@@ -1,15 +1,10 @@
 
--- | Query-based compiler driver.
+-- | Query-based compiler driver with full-phase caching.
 --
 -- This module orchestrates the complete compilation pipeline using the
--- query system. It replaces the traditional Build.fromPaths approach
--- with a query-based architecture that provides:
---
--- * Automatic caching and invalidation
--- * Comprehensive debug logging
--- * Better error reporting
--- * Foundation for incremental compilation
--- * Parallel compilation support
+-- query system. Every phase (parse, canonicalize, type-check, optimize)
+-- is cached with content-hash based invalidation. When inputs haven't
+-- changed, cached results are returned directly.
 --
 -- @since 0.19.1
 module Driver
@@ -37,35 +32,33 @@ import qualified AST.Canonical as Can
 import qualified AST.Optimized as Opt
 import qualified AST.Source as Src
 import qualified Canonicalize.Module as Canonicalize
+import qualified Canopy.Data.Name as Name
 import qualified Canopy.Interface as Interface
 import qualified Canopy.ModuleName as ModuleName
 import qualified Canopy.Package as Pkg
-import FFI.Types (JsSourcePath (..), JsSource (..))
-import qualified Foreign.FFI as FFI
 import Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
-import qualified Canopy.Data.Name as Name
 import qualified Data.Text as Text
+import qualified Data.Text.Encoding as TE
+import qualified Data.Time.Clock as Clock
+import FFI.Types (JsSource (..), JsSourcePath (..))
+import qualified Foreign.FFI as FFI
 import qualified Generate.JavaScript as JS
-import Logging.Event (LogEvent (..), CompileStats (..), Duration (..))
+import Logging.Event (CompileStats (..), Duration (..), LogEvent (..))
 import qualified Logging.Logger as Log
+import qualified Parse.Module as Parse
 import qualified Queries.Canonicalize.Module as CanonQuery
 import qualified Queries.Optimize as OptQuery
 import qualified Queries.Parse.Module as ParseQuery
 import qualified Queries.Type.Check as TypeQuery
 import qualified Query.Engine as Engine
 import Query.Simple
-import qualified Data.Time.Clock as Clock
-import qualified System.Timeout as Timeout
-import qualified Worker.Pool as Pool
-import qualified Parse.Module as Parse
 import qualified Reporting.Annotation as Ann
 import qualified Reporting.InternalError as InternalError
+import qualified System.Timeout as Timeout
+import qualified Worker.Pool as Pool
 
 -- | Per-phase timing results for a single module compilation.
---
--- Each field records elapsed wall-clock seconds for one compiler phase.
--- Used by the bench command to report per-phase breakdown.
 --
 -- @since 0.19.2
 data PhaseTimings = PhaseTimings
@@ -83,8 +76,6 @@ emptyTimings :: PhaseTimings
 emptyTimings = PhaseTimings 0 0 0 0
 
 -- | Time a single IO action, returning the result and elapsed seconds.
---
--- Uses 'Clock.getCurrentTime' for wall-clock measurement.
 --
 -- @since 0.19.2
 timePhase :: IO a -> IO (a, Double)
@@ -105,8 +96,6 @@ data CompileResult = CompileResult
   }
 
 -- | Compile a module from file path (simplified).
---
--- Uses @\".\"@ as the FFI root directory, suitable for application modules.
 compileModule ::
   Pkg.Name ->
   Map ModuleName.Raw Interface.Interface ->
@@ -115,19 +104,12 @@ compileModule ::
   IO (Either QueryError CompileResult)
 compileModule pkg ifaces path projectType = do
   Log.logEvent (CompileStarted path)
-
   engine <- Engine.initEngine
   result <- compileModuleFull engine pkg ifaces "." path projectType
-
   logCacheStats engine
-
   return result
 
--- | Compile a module with a shared query engine for caching across modules.
---
--- The @ffiRoot@ parameter determines where @foreign import javascript@
--- paths are resolved from.  Pass the project root for application modules
--- or the package directory for package dependency modules.
+-- | Compile a module with a shared query engine.
 compileModuleWithEngine ::
   Engine.QueryEngine ->
   Pkg.Name ->
@@ -138,13 +120,9 @@ compileModuleWithEngine ::
   IO (Either QueryError CompileResult)
 compileModuleWithEngine engine pkg ifaces ffiRoot path projectType = do
   Log.logEvent (CompileStarted path)
-
   compileModuleFull engine pkg ifaces ffiRoot path projectType
 
 -- | Compile from already-parsed source module.
---
--- This variant accepts an already-parsed Src.Module instead of a file path.
--- Used when integrating with existing build systems that parse separately.
 compileFromSource ::
   Pkg.Name ->
   Map ModuleName.Raw Interface.Interface ->
@@ -152,11 +130,21 @@ compileFromSource ::
   IO (Either QueryError CompileResult)
 compileFromSource pkg ifaces sourceModule = do
   Log.logEvent (CompileStarted "<source>")
-
   engine <- Engine.initEngine
   ffiContent <- loadFFIContent "." sourceModule
-  let foreignImports = Src._foreignImports sourceModule
-      ffiInfoMap = buildFFIInfoMap foreignImports ffiContent
+  let ffiInfoMap = buildFFIInfoMap (Src._foreignImports sourceModule) ffiContent
+  runFromSource engine pkg ifaces ffiInfoMap ffiContent sourceModule
+
+-- | Run compilation from a pre-parsed source module.
+runFromSource ::
+  Engine.QueryEngine ->
+  Pkg.Name ->
+  Map ModuleName.Raw Interface.Interface ->
+  Map String JS.FFIInfo ->
+  Map JsSourcePath JsSource ->
+  Src.Module ->
+  IO (Either QueryError CompileResult)
+runFromSource engine pkg ifaces ffiInfoMap ffiContent sourceModule = do
   (canonResult, canonTime) <- timePhase (runCanonicalizePhase engine "<source>" pkg Parse.Application ifaces ffiContent sourceModule)
   case canonResult of
     Left err -> return (Left err)
@@ -173,34 +161,15 @@ compileFromSource pkg ifaces sourceModule = do
               let totalMicros = round ((canonTime + typeTime + optTime) * 1000000)
                   timings = PhaseTimings 0 canonTime typeTime optTime
               Log.logEvent (CompileCompleted "<source>" (CompileStats 1 (Duration totalMicros)))
-              return
-                ( Right
-                    ( CompileResult
-                        { compileResultModule = canonModule,
-                          compileResultTypes = types,
-                          compileResultInterface = iface,
-                          compileResultLocalGraph = localGraph,
-                          compileResultFFIInfo = ffiInfoMap,
-                          compileResultTimings = timings
-                        }
-                    )
-                )
+              return (Right (buildResult canonModule types iface localGraph ffiInfoMap timings))
 
 -- | Per-module compilation timeout in microseconds (5 minutes).
---
--- Prevents pathological inputs from hanging the compiler indefinitely.
--- This is a conservative limit — even very large modules should compile
--- well within this window.
 --
 -- @since 0.19.2
 moduleTimeoutMicroseconds :: Int
 moduleTimeoutMicroseconds = 300000000
 
--- | Compile a module with existing engine (for batch compilation).
---
--- Wraps the compilation pipeline with a timeout to prevent pathological
--- inputs from hanging the compiler. Returns 'TimeoutError' if the
--- module exceeds the per-module time limit.
+-- | Compile a module with existing engine, wrapped in timeout.
 compileModuleFull ::
   Engine.QueryEngine ->
   Pkg.Name ->
@@ -211,11 +180,13 @@ compileModuleFull ::
   IO (Either QueryError CompileResult)
 compileModuleFull engine pkg ifaces ffiRoot path projectType = do
   result <- Timeout.timeout moduleTimeoutMicroseconds (compileModuleCore engine pkg ifaces ffiRoot path projectType)
-  case result of
-    Just compilation -> return compilation
-    Nothing -> return (Left (TimeoutError path))
+  maybe (return (Left (TimeoutError path))) return result
 
--- | Core module compilation pipeline without timeout wrapper.
+-- | Core module compilation pipeline with per-phase caching.
+--
+-- Each phase checks the query cache before executing. Input hashes are
+-- computed from upstream phase hashes, ensuring that unchanged inputs
+-- produce cache hits without re-executing expensive phases.
 compileModuleCore ::
   Engine.QueryEngine ->
   Pkg.Name ->
@@ -226,47 +197,141 @@ compileModuleCore ::
   IO (Either QueryError CompileResult)
 compileModuleCore engine pkg ifaces ffiRoot path projectType = do
   Log.logEvent (CompileStarted path)
-
   (parseResult, parseTime) <- timePhase (runParsePhase engine path projectType)
   case parseResult of
     Left err -> return (Left err)
     Right sourceModule -> do
       ffiContent <- loadFFIContent ffiRoot sourceModule
-      let foreignImports = Src._foreignImports sourceModule
-          ffiInfoMap = buildFFIInfoMap foreignImports ffiContent
-      (canonResult, canonTime) <- timePhase (runCanonicalizePhase engine path pkg projectType ifaces ffiContent sourceModule)
-      case canonResult of
+      let ffiInfoMap = buildFFIInfoMap (Src._foreignImports sourceModule) ffiContent
+      runCachedPipeline engine pkg ifaces ffiInfoMap ffiContent path projectType parseTime sourceModule
+
+-- | Run the cached compilation pipeline after parsing.
+runCachedPipeline ::
+  Engine.QueryEngine ->
+  Pkg.Name ->
+  Map ModuleName.Raw Interface.Interface ->
+  Map String JS.FFIInfo ->
+  Map JsSourcePath JsSource ->
+  FilePath ->
+  Parse.ProjectType ->
+  Double ->
+  Src.Module ->
+  IO (Either QueryError CompileResult)
+runCachedPipeline engine pkg ifaces ffiInfoMap ffiContent path _projectType parseTime sourceModule = do
+  let parseHash = computeInputHash path "parse"
+      canonInputHash = combineHashes [parseHash, computeInputHash (show pkg) "canon-pkg", computeInputHash (show (Map.keys ifaces)) "canon-ifaces"]
+      canonQuery = CanonicalizeQuery path canonInputHash
+  (canonResult, canonTime) <- timePhase (runCachedCanon engine canonQuery path pkg _projectType ifaces ffiContent sourceModule)
+  case canonResult of
+    Left err -> return (Left err)
+    Right canonModule -> do
+      let typeInputHash = combineHashes [canonInputHash, computeInputHash (show (Map.keys ifaces)) "type-ifaces"]
+          typeQuery = TypeCheckQuery path typeInputHash
+      (typeResult, typeTime) <- timePhase (runCachedTypeCheck engine typeQuery ifaces path canonModule canonQuery)
+      case typeResult of
         Left err -> return (Left err)
-        Right canonModule -> do
-          (typeResult, typeTime) <- timePhase (runTypeCheckPhase engine ifaces path canonModule)
-          case typeResult of
+        Right types -> do
+          let optInputHash = combineHashes [canonInputHash, typeInputHash]
+              optQuery = OptimizeQuery path optInputHash
+          (optResult, optTime) <- timePhase (runCachedOptimize engine optQuery types canonModule canonQuery)
+          case optResult of
             Left err -> return (Left err)
-            Right types -> do
-              (optimizeResult, optTime) <- timePhase (runOptimizePhase engine types canonModule)
-              case optimizeResult of
-                Left err -> return (Left err)
-                Right localGraph -> do
-                  iface <- generateInterface pkg canonModule types
-                  let totalMicros = round ((parseTime + canonTime + typeTime + optTime) * 1000000)
-                      timings = PhaseTimings parseTime canonTime typeTime optTime
-                  Log.logEvent (CompileCompleted path (CompileStats 1 (Duration totalMicros)))
-                  return
-                    ( Right
-                        ( CompileResult
-                            { compileResultModule = canonModule,
-                              compileResultTypes = types,
-                              compileResultInterface = iface,
-                              compileResultLocalGraph = localGraph,
-                              compileResultFFIInfo = ffiInfoMap,
-                              compileResultTimings = timings
-                            }
-                        )
-                    )
+            Right localGraph -> do
+              iface <- generateInterface pkg canonModule types
+              let totalMicros = round ((parseTime + canonTime + typeTime + optTime) * 1000000)
+                  timings = PhaseTimings parseTime canonTime typeTime optTime
+              Log.logEvent (CompileCompleted path (CompileStats 1 (Duration totalMicros)))
+              return (Right (buildResult canonModule types iface localGraph ffiInfoMap timings))
+
+-- | Run canonicalization with cache lookup.
+runCachedCanon ::
+  Engine.QueryEngine ->
+  Query ->
+  FilePath ->
+  Pkg.Name ->
+  Parse.ProjectType ->
+  Map ModuleName.Raw Interface.Interface ->
+  Map JsSourcePath JsSource ->
+  Src.Module ->
+  IO (Either QueryError Can.Module)
+runCachedCanon engine query path pkg projectType ifaces ffiContent sourceModule = do
+  cached <- Engine.lookupQuery engine query
+  case cached of
+    Just (CanonicalizedModule canMod) -> return (Right canMod)
+    _ -> do
+      result <- runCanonicalizePhase engine path pkg projectType ifaces ffiContent sourceModule
+      case result of
+        Right canMod -> do
+          Engine.storeQuery engine query (CanonicalizedModule canMod) (canonHash query) Nothing
+          return (Right canMod)
+        Left err -> return (Left err)
+
+-- | Run type checking with cache lookup.
+runCachedTypeCheck ::
+  Engine.QueryEngine ->
+  Query ->
+  Map ModuleName.Raw Interface.Interface ->
+  FilePath ->
+  Can.Module ->
+  Query ->
+  IO (Either QueryError (Map Name.Name Can.Annotation))
+runCachedTypeCheck engine query ifaces path canonModule parentQuery = do
+  cached <- Engine.lookupQuery engine query
+  case cached of
+    Just (TypeCheckedModule types) -> return (Right types)
+    _ -> do
+      result <- runTypeCheckPhase engine ifaces path canonModule
+      case result of
+        Right types -> do
+          Engine.storeQuery engine query (TypeCheckedModule types) (typeCheckHash query) (Just parentQuery)
+          return (Right types)
+        Left err -> return (Left err)
+
+-- | Run optimization with cache lookup.
+runCachedOptimize ::
+  Engine.QueryEngine ->
+  Query ->
+  Map Name.Name Can.Annotation ->
+  Can.Module ->
+  Query ->
+  IO (Either QueryError Opt.LocalGraph)
+runCachedOptimize engine query types canonModule parentQuery = do
+  cached <- Engine.lookupQuery engine query
+  case cached of
+    Just (OptimizedModule graph) -> return (Right graph)
+    _ -> do
+      result <- runOptimizePhase engine types canonModule
+      case result of
+        Right graph -> do
+          Engine.storeQuery engine query (OptimizedModule graph) (optimizeHash query) (Just parentQuery)
+          return (Right graph)
+        Left err -> return (Left err)
+
+-- | Compute an input hash from a string key and salt.
+computeInputHash :: String -> String -> ContentHash
+computeInputHash input salt =
+  computeContentHash (TE.encodeUtf8 (Text.pack (input ++ ":" ++ salt)))
+
+-- | Build a CompileResult from its parts.
+buildResult ::
+  Can.Module ->
+  Map Name.Name Can.Annotation ->
+  Interface.Interface ->
+  Opt.LocalGraph ->
+  Map String JS.FFIInfo ->
+  PhaseTimings ->
+  CompileResult
+buildResult canonModule types iface localGraph ffiInfoMap timings =
+  CompileResult
+    { compileResultModule = canonModule,
+      compileResultTypes = types,
+      compileResultInterface = iface,
+      compileResultLocalGraph = localGraph,
+      compileResultFFIInfo = ffiInfoMap,
+      compileResultTimings = timings
+    }
 
 -- | Run parse phase.
---
--- Tracks the phase execution through the query engine for accurate
--- compilation statistics, then delegates to the parse module query.
 runParsePhase ::
   Engine.QueryEngine ->
   FilePath ->
@@ -276,11 +341,7 @@ runParsePhase engine path projectType = do
   Engine.trackPhaseExecution engine "parse"
   ParseQuery.parseModuleQuery projectType path
 
--- | Load FFI content for module, resolving paths relative to the given root.
---
--- For application modules the root is typically @\".\"@ (CWD).
--- For package modules the root is the package's source directory so that
--- @foreign import javascript \"external\/foo.js\"@ resolves correctly.
+-- | Load FFI content for module.
 loadFFIContent :: FilePath -> Src.Module -> IO (Map JsSourcePath JsSource)
 loadFFIContent ffiRoot sourceModule = do
   let foreignImports = Src._foreignImports sourceModule
@@ -290,18 +351,9 @@ loadFFIContent ffiRoot sourceModule = do
 -- | Build FFIInfo map from foreign imports and content.
 buildFFIInfoMap :: [Src.ForeignImport] -> Map JsSourcePath JsSource -> Map String JS.FFIInfo
 buildFFIInfoMap foreignImports contentMap =
-  Map.fromList (buildFFIInfoList foreignImports contentMap)
-
--- | Build list of FFIInfo from imports and content.
-buildFFIInfoList :: [Src.ForeignImport] -> Map JsSourcePath JsSource -> [(String, JS.FFIInfo)]
-buildFFIInfoList foreignImports contentMap =
-  concatMap (buildSingleFFI contentMap) foreignImports
+  Map.fromList (concatMap (buildSingleFFI contentMap) foreignImports)
 
 -- | Build FFI info for a single foreign import.
---
--- Returns empty list when the JavaScript file is not in the content map,
--- which indicates a missing FFI file that will be caught during
--- canonicalization with a proper error message.
 buildSingleFFI :: Map JsSourcePath JsSource -> Src.ForeignImport -> [(String, JS.FFIInfo)]
 buildSingleFFI contentMap (Src.ForeignImport (FFI.JavaScriptFFI jsPath) alias _region) =
   case Map.lookup (JsSourcePath (Text.pack jsPath)) contentMap of
@@ -311,11 +363,6 @@ buildSingleFFI contentMap (Src.ForeignImport (FFI.JavaScriptFFI jsPath) alias _r
 buildSingleFFI _ _ = []
 
 -- | Run canonicalize phase.
---
--- Tracks the phase execution through the query engine for accurate
--- compilation statistics, then delegates to the canonicalization query.
--- Wraps the action in 'catchInternalError' so that invariant violations
--- produce a 'QueryError' instead of terminating the process.
 runCanonicalizePhase ::
   Engine.QueryEngine ->
   FilePath ->
@@ -330,11 +377,6 @@ runCanonicalizePhase engine path pkg projectType ifaces ffiContent sourceModule 
   wrapPhase (CanonQuery.canonicalizeModuleQuery path pkg projectType ifaces ffiContent sourceModule)
 
 -- | Run type check phase.
---
--- Tracks the phase execution through the query engine for accurate
--- compilation statistics, then delegates to the type checking query.
--- Wraps the action in 'catchInternalError' so that invariant violations
--- produce a 'QueryError' instead of terminating the process.
 runTypeCheckPhase ::
   Engine.QueryEngine ->
   Map ModuleName.Raw Interface.Interface ->
@@ -346,11 +388,6 @@ runTypeCheckPhase engine ifaces path canonModule = do
   wrapPhase (TypeQuery.typeCheckModuleQuery ifaces path canonModule)
 
 -- | Run optimize phase.
---
--- Tracks the phase execution through the query engine for accurate
--- compilation statistics, then delegates to the optimization query.
--- Wraps the action in 'catchInternalError' so that invariant violations
--- produce a 'QueryError' instead of terminating the process.
 runOptimizePhase ::
   Engine.QueryEngine ->
   Map Name.Name Can.Annotation ->
@@ -368,8 +405,7 @@ generateInterface ::
   IO Interface.Interface
 generateInterface pkg canonModule@(Can.Module modName _ _ _ _ _ _ _ _ _) types = do
   Log.logEvent (InterfaceSaved (show modName))
-  let iface = Interface.fromModule pkg canonModule types
-  return iface
+  return (Interface.fromModule pkg canonModule types)
 
 -- | Compile multiple modules in parallel.
 compileModulesParallel ::
@@ -380,14 +416,10 @@ compileModulesParallel ::
   IO [Either QueryError CompileResult]
 compileModulesParallel config pkg ifaces modules = do
   Log.logEvent (BuildStarted (Text.pack ("parallel:" ++ show (length modules))))
-
   pool <- Pool.createPool config compileTaskFn
-
   let tasks = map (createTask pkg ifaces) modules
   results <- Pool.compileModules pool tasks
-
   Pool.shutdownPool pool
-
   Log.logEvent (BuildCompleted (length modules) (Duration 0))
   return results
 
@@ -401,14 +433,10 @@ compileModulesWithProgress ::
   IO [Either QueryError CompileResult]
 compileModulesWithProgress config pkg ifaces modules progressCallback = do
   Log.logEvent (BuildStarted (Text.pack ("parallel:" ++ show (length modules))))
-
   pool <- Pool.createPool config compileTaskFn
-
   let tasks = map (createTask pkg ifaces) modules
   results <- Pool.compileModulesWithProgress pool tasks progressCallback
-
   Pool.shutdownPool pool
-
   Log.logEvent (BuildCompleted (length modules) (Duration 0))
   return results
 
@@ -423,9 +451,6 @@ createTask pkg ifaces (path, projectType) =
     }
 
 -- | Compilation function for worker pool.
---
--- Uses @\".\"@ as the FFI root since the worker pool is used for
--- application modules compiled from the project root.
 compileTaskFn :: Engine.QueryEngine -> Pool.CompileTask -> IO (Either QueryError CompileResult)
 compileTaskFn engine task =
   compileModuleFull
@@ -436,11 +461,7 @@ compileTaskFn engine task =
     (Pool.taskFilePath task)
     (Pool.taskProjectType task)
 
--- | Wrap a phase action in 'InternalError.catchInternalError'.
---
--- If the inner action returns @Left queryErr@, that error is propagated.
--- If it throws an 'InternalError.report' crash, the exception is caught
--- and converted to @Left (OtherError msg)@. Other exceptions propagate.
+-- | Wrap a phase action in internal error catching.
 --
 -- @since 0.19.2
 wrapPhase :: IO (Either QueryError a) -> IO (Either QueryError a)
@@ -457,6 +478,5 @@ logCacheStats engine = do
   cacheSize <- Engine.getCacheSize engine
   hits <- Engine.getCacheHits engine
   misses <- Engine.getCacheMisses engine
-
   Log.logEvent (CacheStored "stats" cacheSize)
   Log.logEvent (BuildIncremental hits misses)

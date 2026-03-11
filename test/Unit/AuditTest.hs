@@ -204,7 +204,8 @@ appWithPre1Dep =
       Outline._appTestDepsDirect = Map.empty,
       Outline._appScripts = Nothing,
       Outline._appRepository = Nothing,
-      Outline._appCapabilities = Set.empty
+      Outline._appCapabilities = Outline.emptyCapabilities,
+      Outline._appWebComponents = Nothing
     }
 
 -- | App outline with stable (>= 1.0) dependencies
@@ -220,7 +221,8 @@ appWithStableDeps =
       Outline._appTestDepsDirect = Map.empty,
       Outline._appScripts = Nothing,
       Outline._appRepository = Nothing,
-      Outline._appCapabilities = Set.empty
+      Outline._appCapabilities = Outline.emptyCapabilities,
+      Outline._appWebComponents = Nothing
     }
 
 -- | App outline with a dependency affected by the test advisory
@@ -236,7 +238,8 @@ appWithAffectedDep =
       Outline._appTestDepsDirect = Map.empty,
       Outline._appScripts = Nothing,
       Outline._appRepository = Nothing,
-      Outline._appCapabilities = Set.empty
+      Outline._appCapabilities = Outline.emptyCapabilities,
+      Outline._appWebComponents = Nothing
     }
 
 -- | Package outline with some deps

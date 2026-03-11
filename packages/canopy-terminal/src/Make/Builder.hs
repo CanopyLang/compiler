@@ -61,7 +61,6 @@ import qualified Generate.JavaScript.ESM as ESM
 import Generate.JavaScript.ESM.Types (ESMOutput (..))
 import qualified Generate.JavaScript.SourceMap as SourceMap
 import qualified Generate.TypeScript as TypeScript
-import qualified Canopy.Interface as Interface
 import qualified Generate.JavaScript.StringPool as StringPool
 import qualified Generate.Mode as Mode
 import Make.Types

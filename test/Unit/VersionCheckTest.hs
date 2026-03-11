@@ -123,7 +123,8 @@ appWithVersion ver =
       Outline._appTestDepsDirect = Map.empty,
       Outline._appScripts = Nothing,
       Outline._appRepository = Nothing,
-      Outline._appCapabilities = Set.empty
+      Outline._appCapabilities = Outline.emptyCapabilities,
+      Outline._appWebComponents = Nothing
     }
 
 -- | Create a PkgOutline with a specific Canopy constraint.

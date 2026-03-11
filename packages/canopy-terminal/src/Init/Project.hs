@@ -72,7 +72,6 @@ import qualified Canopy.Version as Version
 import Control.Lens ((^.))
 import Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
-import qualified Data.Set as Set
 import qualified Canopy.Data.NonEmptyList as NE
 import qualified Deps.Solver as Solver
 import Init.Types
@@ -240,7 +239,8 @@ createOutlineConfig context solverDetails =
             Outline._appTestDepsDirect = testDeps,
             Outline._appScripts = Nothing,
             Outline._appRepository = Nothing,
-            Outline._appCapabilities = Set.empty
+            Outline._appCapabilities = Outline.emptyCapabilities,
+            Outline._appWebComponents = Nothing
           }
 
 -- | Extract version information from solver details.

@@ -11,14 +11,17 @@ module Generate.TypeScript.Render
   ( renderDecl,
     renderType,
     renderDecls,
+    renderWebComponentTagMap,
   )
 where
 
 import qualified Canopy.Data.Name as Name
 import Canopy.Data.Name (Name)
+import qualified Canopy.ModuleName as ModuleName
 import Data.ByteString.Builder (Builder)
 import qualified Data.ByteString.Builder as BB
 import qualified Data.List as List
+import qualified Generate.JavaScript.WebComponent as WebComponent
 import Generate.TypeScript.Types (DtsDecl (..), TsType (..))
 
 -- | Render a list of declarations to a complete @.d.ts@ file.
@@ -142,6 +145,37 @@ toUpperName name =
     toUpper c
       | c >= 'a' && c <= 'z' = toEnum (fromEnum c - 32)
       | otherwise = c
+
+
+-- | Render an @HTMLElementTagNameMap@ augmentation for web components.
+--
+-- Given a list of module names registered as web components, emits a
+-- TypeScript declaration that augments the global @HTMLElementTagNameMap@
+-- so that @document.querySelector@ and friends return the correct type.
+--
+-- @
+-- declare global {
+--   interface HTMLElementTagNameMap {
+--     "my-app-counter": HTMLElement;
+--   }
+-- }
+-- @
+--
+-- @since 0.20.0
+renderWebComponentTagMap :: [ModuleName.Raw] -> Builder
+renderWebComponentTagMap [] = mempty
+renderWebComponentTagMap modNames =
+  "declare global {\n"
+    <> "  interface HTMLElementTagNameMap {\n"
+    <> mconcat (map renderTagEntry modNames)
+    <> "  }\n"
+    <> "}\n"
+
+renderTagEntry :: ModuleName.Raw -> Builder
+renderTagEntry modName =
+  "    \"" <> BB.stringUtf8 tagName <> "\": HTMLElement;\n"
+  where
+    tagName = WebComponent.moduleToTagName modName
 
 
 newline :: Builder

@@ -172,6 +172,7 @@ library
       Vendor
       Watch
       Watch.LiveReload
+      Watch.QueryIntegration
       WebIDL.Command
       Terminal
       Terminal.Chomp

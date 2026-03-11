@@ -106,7 +106,8 @@ appWithScripts =
       Outline._appTestDepsDirect = Map.empty,
       Outline._appScripts = Just scriptsMap,
       Outline._appRepository = Nothing,
-      Outline._appCapabilities = Set.empty
+      Outline._appCapabilities = Outline.emptyCapabilities,
+      Outline._appWebComponents = Nothing
     }
 
 -- | Application outline without scripts.
@@ -122,7 +123,8 @@ appWithoutScripts =
       Outline._appTestDepsDirect = Map.empty,
       Outline._appScripts = Nothing,
       Outline._appRepository = Nothing,
-      Outline._appCapabilities = Set.empty
+      Outline._appCapabilities = Outline.emptyCapabilities,
+      Outline._appWebComponents = Nothing
     }
 
 -- | Application outline with empty scripts map.
@@ -138,7 +140,8 @@ appWithEmptyScripts =
       Outline._appTestDepsDirect = Map.empty,
       Outline._appScripts = Just Map.empty,
       Outline._appRepository = Nothing,
-      Outline._appCapabilities = Set.empty
+      Outline._appCapabilities = Outline.emptyCapabilities,
+      Outline._appWebComponents = Nothing
     }
 
 -- | Application outline with repository field.
@@ -154,5 +157,6 @@ appWithRepo =
       Outline._appTestDepsDirect = Map.empty,
       Outline._appScripts = Nothing,
       Outline._appRepository = Just "https://github.com/example/project",
-      Outline._appCapabilities = Set.empty
+      Outline._appCapabilities = Outline.emptyCapabilities,
+      Outline._appWebComponents = Nothing
     }

@@ -63,6 +63,7 @@ library
       FFI.Resolve
       FFI.StaticAnalysis
       FFI.Types
+      FFI.TypeValidator
       FFI.Validator
       File
       File.Archive
@@ -97,11 +98,13 @@ library
       Generate.JavaScript.Name
       Generate.JavaScript.SourceMap
       Generate.JavaScript.StringPool
+      Generate.JavaScript.WebComponent
       Generate.Mode
       Generate.TreeShake
       Generate.TypeScript
       Generate.TypeScript.Convert
       Generate.TypeScript.Render
+      Generate.TypeScript.Parser
       Generate.TypeScript.Types
       Json.Decode
       Json.Encode

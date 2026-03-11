@@ -190,6 +190,7 @@ createAuditFlags =
     |-- Terminal.onOff "json" "Output findings as JSON."
     |-- Terminal.flag "level" Audit.levelParser "Minimum severity to report: info, warning, or critical."
     |-- Terminal.onOff "verbose" "Show verbose details."
+    |-- Terminal.onOff "capabilities" "Show capability usage per dependency."
 
 createUpgradeFlags :: Terminal.Flags Upgrade.Flags
 createUpgradeFlags =

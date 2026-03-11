@@ -23,6 +23,8 @@ library
   exposed-modules:
       Parse.Cache
       Query.Engine
+      Query.Interface
+      Query.Persistence
       Query.Simple
   other-modules:
       Paths_canopy_query
@@ -64,6 +66,8 @@ library
     , canopy-core
     , containers
     , cryptohash-sha256
+    , directory
+    , filepath
     , text
     , time
   default-language: Haskell2010

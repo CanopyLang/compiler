@@ -85,7 +85,8 @@ testWorkspaceOutlineTypes =
                     Outline._appTestDepsDirect = Map.empty,
                     Outline._appScripts = Nothing,
                     Outline._appRepository = Nothing,
-                    Outline._appCapabilities = Set.empty
+                    Outline._appCapabilities = Outline.emptyCapabilities,
+                    Outline._appWebComponents = Nothing
                   }
         Outline.isWorkspace app @?= False,
       testCase "allDeps returns shared deps for workspace" $ do

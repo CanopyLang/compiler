@@ -26,7 +26,9 @@
 module FFI.CapabilityEnforcement
   ( -- * Validation
     CapabilityError (..)
+  , CapabilityErrorKind (..)
   , validateCapabilities
+  , validateCapabilitiesWithDeny
   , findUnusedCapabilities
 
     -- * Runtime Code Generation
@@ -41,38 +43,72 @@ import qualified Data.Set as Set
 import Data.Text (Text)
 import qualified Data.Text as Text
 
--- | A compile-time error for missing capability declarations.
+-- | The kind of capability violation.
+--
+-- @since 0.20.0
+data CapabilityErrorKind
+  = MissingCapability
+  | DeniedCapability
+  deriving (Eq, Show)
+
+-- | A compile-time error for capability violations.
 --
 -- Produced when an FFI function requires a capability that is not
--- declared in canopy.json.
+-- declared in canopy.json or is explicitly denied.
 --
 -- @since 0.20.0
 data CapabilityError = CapabilityError
   { _ceFunctionName :: !Text
   , _ceFilePath :: !Text
   , _ceMissingCapability :: !Text
+  , _ceErrorKind :: !CapabilityErrorKind
   } deriving (Eq, Show)
 
--- | Validate that all required capabilities are declared.
+-- | Validate that all required capabilities are declared (allow-only).
 --
--- Takes the set of capabilities declared in canopy.json and a list of
+-- Takes the set of allowed capabilities and a list of
 -- (function name, file path, required capabilities) triples. Returns
 -- errors for any function whose required capabilities are not a subset
--- of the declared capabilities.
+-- of the allowed capabilities.
 --
 -- @since 0.20.0
 validateCapabilities
   :: Set Text
   -> [(Text, Text, Set Text)]
   -> [CapabilityError]
-validateCapabilities declared = concatMap (validateOne declared)
+validateCapabilities allowed = concatMap (validateOneAllow allowed)
 
--- | Validate a single function's capability requirements.
-validateOne :: Set Text -> (Text, Text, Set Text) -> [CapabilityError]
-validateOne declared (funcName, filePath, required) =
-  map (CapabilityError funcName filePath) (Set.toList missing)
+-- | Validate capabilities with both allow and deny lists.
+--
+-- A capability is valid if it appears in the allow set AND does not
+-- appear in the deny set. The deny set takes precedence.
+--
+-- @since 0.20.0
+validateCapabilitiesWithDeny
+  :: Set Text
+  -> Set Text
+  -> [(Text, Text, Set Text)]
+  -> [CapabilityError]
+validateCapabilitiesWithDeny allowed denied =
+  concatMap (validateOneWithDeny allowed denied)
+
+-- | Validate a single function's capability requirements (allow-only).
+validateOneAllow :: Set Text -> (Text, Text, Set Text) -> [CapabilityError]
+validateOneAllow allowed (funcName, filePath, required) =
+  map (\cap -> CapabilityError funcName filePath cap MissingCapability) (Set.toList missing)
   where
-    missing = Set.difference required declared
+    missing = Set.difference required allowed
+
+-- | Validate a single function with both allow and deny lists.
+validateOneWithDeny :: Set Text -> Set Text -> (Text, Text, Set Text) -> [CapabilityError]
+validateOneWithDeny allowed denied (funcName, filePath, required) =
+  deniedErrors ++ missingErrors
+  where
+    deniedCaps = Set.intersection required denied
+    deniedErrors = map (\cap -> CapabilityError funcName filePath cap DeniedCapability) (Set.toList deniedCaps)
+    remainingRequired = Set.difference required denied
+    missingCaps = Set.difference remainingRequired allowed
+    missingErrors = map (\cap -> CapabilityError funcName filePath cap MissingCapability) (Set.toList missingCaps)
 
 -- | Find capabilities declared in canopy.json that no FFI function requires.
 --

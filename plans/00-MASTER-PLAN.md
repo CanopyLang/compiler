@@ -27,19 +27,20 @@ Research shows that technical superiority accounts for ~20% of adoption. SolidJS
 
 Canopy must solve all five, not just build a better compiler.
 
-## Existing Assets (Audited 2026-03-10)
-
-The codebase audit reveals substantial infrastructure already built:
+## Existing Assets (Audited 2026-03-11)
 
 | Asset | Status | Notes |
 |-------|--------|-------|
 | **71 stdlib packages** | DONE (DRAFT) | All `.can`, FFI JS, canopy.json. 49+ Web API packages. Zero `.elm` files. |
-| **ESM output** | DONE | Per-module ES modules, `/*#__PURE__*/` annotations, `canopy-runtime.js`, `--output-format=esm` (default). Commits 5dc084c, d546c74. |
+| **ESM output** | DONE | Per-module ES modules, `/*#__PURE__*/` annotations, `canopy-runtime.js`, `--output-format=esm` (default). |
 | **canopy test CLI** | DONE | Discovery, compilation, Playwright, NDJSON, --filter/--watch/--headed |
 | **Capability enforcement** | DONE | Compile-time validation, manifests, type-level enforcement, canopy.json allow-list, runtime guards, 150+ tests |
 | **canopy audit** | DONE | Dependency vulnerability auditing with advisory matching, JSON output |
-| **String interpolation** | DONE | Backtick template literals `` `Hello ${name}!` `` fully working. Commit 7057676. Old `[i\|...\|]` replaced. |
+| **String interpolation** | DONE | Backtick template literals `` `Hello ${name}!` `` fully working. |
+| **Nested record updates** | DONE | `{ model \| user.name = x }` syntax — parser + canonicalizer + golden tests |
 | **Code splitting** | DONE | 5-module pipeline: analyze, types, generate, manifest, runtime (1,547 lines) |
+| **Vite plugin + granular HMR** | DONE | Model type hashing, `__canopy_getModel__`/`__canopy_hotSwap__`, state preservation, full reload on Model type change |
+| **.d.ts generation** | DONE | 4 modules, golden tests, auto on build |
 | **canopy-mcp** | DONE | MCP server with tools: build, check, getType, findDefinition, getDocs |
 | **canopy-lsp** | DONE | Full TypeScript LSP: code actions, diagnostics, completion, hover, rename, formatting |
 | **Playground** | DONE | React/Vite/Monaco app with editor, preview, errors, sharing |
@@ -54,108 +55,166 @@ The codebase audit reveals substantial infrastructure already built:
 | **Backend server** | DONE | Yesod web app with auth, search, storage, analytics, Docker |
 | **3,914+ tests** | GREEN | 173 test modules covering unit, integration, property, golden, benchmark |
 | **Source maps** | DONE | V3 spec, auto in dev mode |
-| **.d.ts generation** | DONE | 4 modules (TypeScript.hs, TypeScript/Types.hs, TypeScript/Render.hs, TypeScript/WellKnown.hs), golden tests, auto on build |
-| **Nested record updates** | DONE | `{ model \| user.name = x }` syntax — parser + canonicalizer + golden tests |
-| **Vite plugin (basic)** | DONE | `vite-plugin-canopy` — compilation, error overlay, source maps, full-reload HMR |
 
 ---
 
-## Critical Dependency Chain
+## Completed Plans
 
-```
-Plan 26a (nested records only) ── independent, ship immediately
-Plan 02 (Hygiene verification) ── independent, ship immediately
+These are done and archived in `done/`:
 
-Plan 01 (ESM Output) ── ✅ DONE ──────────────────────────────┐
-    |                                                           |
-    +---> Plan 06 (Vite Plugin) ---> Plan 05 (CanopyKit) ------+
-    |                                                           |
-    +---> Plan 12 (TS Interop) --------------------------------+
-    |                                                           |
-    +---> Plan 09 (Incremental) --> Plan 06 (Vite HMR speed)   |
-                                                                |
-Plan 13 (Capability Supply Chain) ── independent (core done)   |
-Plan 27 (Onboarding) ── independent, critical for adoption     |
-Plan 31 (AI DX) ── independent (MCP server exists)             |
-                                                                |
-Plan 26b (Abilities + Derive) ── depends on stable compiler    |
-```
-
-**Plan 01 (ESM) is COMPLETE — downstream plans are UNBLOCKED.**
-
-**Plan 03 (Packages) is COMPLETE — no longer a blocker.**
-
-**Plan 26a interpolation is COMPLETE — only nested record updates remain.**
+| Old # | Plan | Completed |
+|-------|------|-----------|
+| 01 | [ESM Output](done/01-esm-output.md) | 2026-03-10 |
+| 02 | [Compiler Hygiene](done/02-compiler-hygiene.md) | 2026-03-11 |
+| 03 | Package Ecosystem (71 packages) | 2026-03-10 |
+| 06 | [Vite Plugin + Granular HMR](done/06-vite-plugin.md) | 2026-03-11 |
+| 26a | [Quick Ergonomics (interpolation + nested records)](done/26a-quick-ergonomics.md) | 2026-03-11 |
 
 ---
 
-## Tier 0: Foundation — NEARLY COMPLETE
+## Active Plans — Renumbered & Reprioritized
 
-| # | Plan | What | Status | Remaining Effort |
-|---|------|------|--------|-----------------|
-| 01 | [ESM Output](essential/01-esm-output.md) | Replace IIFE with native ES modules | **DONE** — per-module ESM, runtime extraction, `--output-format` flag, AST-based generation | Tests + import maps |
-| 02 | [Compiler Hygiene](essential/02-compiler-hygiene.md) | Fix debug stmts, Makefile, -Wall, README | **DONE** — zero warnings with `-Wall -Werror`, all Makefile targets work, 3,914 tests green | — |
-| 26a | [Quick Ergonomics](done/26a-quick-ergonomics.md) | Template literals + nested record updates | **DONE** — backtick interpolation + nested record updates (parser, canonicalizer, golden tests) | — |
-| 03 | Package Ecosystem | ~~Complete all 16 stdlib packages~~ | **DONE** — 71 packages exist (DRAFT status) | — |
+All plans below are renumbered cleanly from P01 upward. Old numbers shown for reference.
 
-## Tier 1: Usable Platform (Months 2-5)
+### Dependency Chain
 
-Make it work for real applications. A developer should be able to build and ship a production app.
+```
+P01 (Capability polish) ── independent, 2 wks
+P02 (TEA at Scale) ── independent, 1-2 wks
+P03 (TS Interop phases 2-4) ── independent, 4-5 wks ──┐
+P04 (Developer Onboarding) ── independent, 4-6 wks     ├──→ P05 (CanopyKit)
+                                                         │
+P05 (CanopyKit) ── depends on nothing critical ──────────┤
+    │                                                     │
+    +──→ P07 (Streaming SSR)                              │
+    +──→ P02 integration (delegation + routing)           │
+                                                          │
+P06 (Abilities + Derive) ── depends on stable compiler   │
+P08 (Incremental Compilation) ── improves all dev XP     │
+P09 (Data Fetching) ── depends on P05 for SSR prefetch   │
+P10 (Type-Safe Forms) ── depends on packages             │
+```
 
-**ESM output is done — these plans are now UNBLOCKED.**
+---
 
-| # | Plan | What | Status | Effort |
-|---|------|------|--------|--------|
-| 06 | [Vite Plugin + HMR](essential/06-vite-plugin.md) | First-class Vite integration with hot module replacement | **DONE** — basic plugin + granular HMR with model type hashing, `__canopy_getModel__`/`__canopy_hotSwap__` exports, `import.meta.hot.accept()` injection, state preservation. Full reload on Model type change. | — |
-| 05 | [CanopyKit Meta-Framework](important/05-canopykit.md) | File-based routing, SSG, dev server | Not started | 8-12 wks |
-| 12 | [TypeScript Interop](important/12-typescript-interop.md) | Emit .d.ts, Web Component output, consume npm | **Phase 1 DONE** — .d.ts generation (4 modules, golden tests, auto on build). Phases 2-4 not started. | 4-5 wks |
-| 13 | [Capability Security](important/13-capability-enforcement.md) | Supply chain story: per-dep audit, allow/deny lists | Core enforcement DONE. Allow-list DONE. Missing: deny lists, per-dep audit, new-cap detection | 2 wks |
-| 26b | [Abilities + Derive](important/26b-abilities-derive.md) | Type classes (Roc-style), JSON codec deriving | Not started | 8-12 wks |
-| 27 | [Developer Onboarding](essential/27-developer-onboarding.md) | Playground, React migration guide, gradual adoption | Playground DONE, MCP DONE, VSCode DONE | 4-6 wks |
+### Phase 1: Quick Wins (Weeks 1-4) — Finish what's 80%+ done
 
-## Tier 2: Production Ready (Months 5-9)
+These have the highest ROI because most of the work is already done.
 
-Make it irresistible. Developers who try Canopy should never want to go back.
+| # | Old # | Plan | What Remains | Effort |
+|---|-------|------|-------------|--------|
+| **P01** | 13 | [Capability Security Polish](important/P01-capability-security.md) | Deny lists, per-dep audit tracking, new-capability detection alerts | 2 wks |
+| **P02** | 08 | [TEA at Scale](important/P02-tea-at-scale.md) | Delegation helper library, CanopyKit router integration stub | 1-2 wks |
+| **P03** | 12 | [TypeScript Interop (Phases 2-4)](important/P03-typescript-interop.md) | npm package consumption, Web Component output, tsconfig integration | 4-5 wks |
 
-| # | Plan | What | Status | Effort |
-|---|------|------|--------|--------|
-| 09 | [Incremental Compilation](important/09-incremental-compilation.md) | Salsa-style query system, sub-100ms rebuilds, error recovery | 40% built: parse caching, engine shell, stats. Missing: dep tracking, multi-phase cache, error recovery, disk persistence | 5-7 wks |
-| 07 | [Streaming SSR](important/07-ssr-resumability.md) | Server rendering (Phase 1: basic SSR) | Not started | 4-6 wks |
-| 08 | [TEA at Scale](important/08-state-architecture.md) | Route code splitting + delegation helpers | Code splitting DONE (1,547 lines). Missing: delegation helpers, CanopyKit integration | 1-2 wks |
-| 24 | [Type-Safe Forms](important/24-type-safe-forms.md) | Schema-driven forms with compile-time validation | Not started | 4-5 wks |
-| 25 | [Data Fetching & Caching](important/25-data-fetching.md) | RemoteData, stale-while-revalidate, optimistic updates | Not started | 4-5 wks |
-| 31 | [AI Developer Experience](nice-to-have/31-ai-developer-experience.md) | MCP server enhancement, typed holes, migration tool | MCP server DONE | 3-4 wks |
+### Phase 2: Adoption Enablers (Weeks 3-12) — People need to be able to USE Canopy
 
-## Tier 3: Competitive Advantages (Months 9-13)
+These are the difference between "cool compiler" and "tool people actually adopt."
 
-Features that make Canopy categorically better — things React/Angular/Vue **cannot** do.
+| # | Old # | Plan | What | Effort |
+|---|-------|------|------|--------|
+| **P04** | 27 | [Developer Onboarding](important/P04-developer-onboarding.md) | "Canopy for React Devs" guide, 3+ example apps, migration codemods, deploy playground | 4-6 wks |
+| **P05** | 05 | [CanopyKit Meta-Framework](important/P05-canopykit.md) | File-based routing, SSG/SSR modes, data loading, layouts, API routes, `canopy kit` CLI | 8-12 wks |
+| **P06** | 26b | [Abilities + Derive](important/P06-abilities-derive.md) | Roc-style type classes, `ability`/`impl` keywords, JSON codec deriving, Eq/Ord/Show/Encode/Decode | 8-12 wks |
 
-| # | Plan | What | Status | Effort |
-|---|------|------|--------|--------|
-| 04 | [Fine-Grained Reactivity](04-fine-grained-reactivity.md) | Compile view functions to direct DOM mutations | Not started | 6-8 wks |
-| 14 | [Compile-Time Accessibility](14-compile-time-a11y.md) | Inaccessible HTML doesn't compile | Not started | 4-5 wks |
-| 19 | [WASM Backend](19-wasm-backend.md) | Hybrid JS+WASM compilation via WasmGC | Not started | 12-16 wks |
-| 16 | [Effect Annotations](16-algebraic-effects.md) | Inferred effect types visible in signatures | Not started | 6-8 wks |
-| 15 | [Type-Safe CSS](15-type-safe-css.md) | CSS properties only accept valid values | Not started | 4-6 wks |
-| 29 | [Local-First & Sync](29-local-first-sync.md) | CRDTs, offline-first, real-time collaboration | Not started | 8-10 wks |
-| 17 | [Built-in Property Testing](17-property-testing.md) | Auto-derive generators, first-class fuzz | Not started | 3-4 wks |
-| 18 | [Type-Safe i18n](18-type-safe-i18n.md) | Missing translations are compile errors | Not started | 3-4 wks |
+### Phase 3: Production Ready (Weeks 10-20) — Make real apps possible
 
-## Tier 4: Future-Proofing (Months 13+)
+| # | Old # | Plan | What | Effort |
+|---|-------|------|------|--------|
+| **P07** | 07 | [Streaming SSR](important/P07-streaming-ssr.md) | Dual compilation, HTML string gen, resumability, streaming chunks, model serialization | 4-6 wks |
+| **P08** | 09 | [Incremental Compilation](important/P08-incremental-compilation.md) | Salsa-style queries, dependency tracking, multi-phase cache, error recovery, disk persistence | 5-7 wks |
+| **P09** | 25 | [Data Fetching & Caching](important/P09-data-fetching.md) | RemoteData, Query/Mutation, dedup, stale-while-revalidate, optimistic updates, pagination | 4-5 wks |
+| **P10** | 24 | [Type-Safe Forms](important/P10-type-safe-forms.md) | Schema-driven forms, auto-generated UI, compile-time validation, multi-step wizards | 4-5 wks |
 
-Position Canopy for the next decade.
+### Phase 4: Competitive Advantages (Weeks 20-36) — Things React/Vue/Angular CANNOT do
 
-| # | Plan | What | Status | Effort |
-|---|------|------|--------|--------|
-| 10 | [Browser DevTools](10-browser-devtools.md) | Component tree, state inspector, time-travel debugging | Debugger tool exists | 4-6 wks |
-| 11 | [Component Library](11-component-library.md) | 45+ accessible, themed components | Not started | 12-16 wks |
-| 20 | [Edge Computing Target](20-edge-target.md) | Cloudflare Workers, Deno Deploy, Vercel Edge | Not started | 3-4 wks |
-| 21 | [Transparent Concurrency](21-transparent-concurrency.md) | Web Workers as compiler optimization | Not started | 6-8 wks |
-| 22 | [Package Registry](22-package-registry.md) | Self-hosted registry with private packages | Not started | 6-8 wks |
-| 23 | [Animation & Motion](23-animation-motion.md) | View Transitions, springs, scroll, gestures | Not started | 4-6 wks |
-| 28 | [Auth Patterns](28-auth-patterns.md) | OAuth, JWT, protected routes, RBAC | Not started | 3-4 wks |
-| 30 | [Web API Integration](30-web-api-integration.md) | Navigation API, Temporal, Popover, Container Queries | canopy-webidl exists | 3-4 wks |
-| 32 | [Mobile Deployment](32-mobile-deployment.md) | Capacitor/Tauri integration for hybrid mobile apps | Not started | 2-3 wks |
+| # | Old # | Plan | What | Effort |
+|---|-------|------|------|--------|
+| **P11** | 14 | [Compile-Time Accessibility](nice-to-have/P11-compile-time-a11y.md) | Inaccessible HTML doesn't compile: alt text, headings, labels, ARIA | 4-5 wks |
+| **P12** | 15 | [Type-Safe CSS](nice-to-have/P12-type-safe-css.md) | CSS properties only accept valid values, compile-time extraction | 4-6 wks |
+| **P13** | 04 | [Fine-Grained Reactivity](nice-to-have/P13-fine-grained-reactivity.md) | Compile view functions to direct DOM mutations, no VDOM | 6-8 wks |
+| **P14** | 18 | [Type-Safe i18n](nice-to-have/P14-type-safe-i18n.md) | Missing translations are compile errors | 3-4 wks |
+| **P15** | 17 | [Built-in Property Testing](nice-to-have/P15-property-testing.md) | Auto-derive generators from types, first-class fuzz | 3-4 wks |
+| **P16** | 23 | [Animation & Motion](nice-to-have/P16-animation-motion.md) | View Transitions API, springs, scroll-driven, gestures | 4-6 wks |
+| **P17** | 31 | [AI Developer Experience](nice-to-have/P17-ai-developer-experience.md) | Enhanced typed holes, migration tool, MCP server improvements | 3-4 wks |
+
+### Phase 5: Future-Proofing (Weeks 36+)
+
+| # | Old # | Plan | What | Effort |
+|---|-------|------|------|--------|
+| **P18** | 16 | [Effect Annotations](nice-to-have/P18-effect-annotations.md) | Inferred effect types visible in signatures (Phase 1) | 6-8 wks |
+| **P19** | 19 | [WASM Backend](nice-to-have/P19-wasm-backend.md) | Hybrid JS+WASM via WasmGC, WASI target | 12-16 wks |
+| **P20** | 22 | [Package Registry](nice-to-have/P20-package-registry.md) | Self-hosted registry, private packages, security advisories | 6-8 wks |
+| **P21** | 10 | [Browser DevTools](nice-to-have/P21-browser-devtools.md) | Component tree, state inspector, time-travel debugging | 4-6 wks |
+| **P22** | 11 | [Component Library](nice-to-have/P22-component-library.md) | 45+ accessible, themed components | 12-16 wks |
+| **P23** | 20 | [Edge Computing Target](nice-to-have/P23-edge-target.md) | Cloudflare Workers, Deno Deploy, Vercel Edge | 3-4 wks |
+| **P24** | 21 | [Transparent Concurrency](nice-to-have/P24-transparent-concurrency.md) | Web Workers as compiler optimization | 6-8 wks |
+| **P25** | 29 | [Local-First & Sync](nice-to-have/P25-local-first-sync.md) | CRDTs, offline-first, real-time collaboration | 8-10 wks |
+| **P26** | 28 | [Auth Patterns](nice-to-have/P26-auth-patterns.md) | OAuth, JWT, protected routes, RBAC | 3-4 wks |
+| **P27** | 30 | [Web API Integration](nice-to-have/P27-web-api-integration.md) | Navigation API, Temporal, Popover, Container Queries | 3-4 wks |
+| **P28** | 32 | [Mobile Deployment](nice-to-have/P28-mobile-deployment.md) | Capacitor/Tauri integration | 2-3 wks |
+
+---
+
+## Priority Rationale
+
+### Why this ordering?
+
+**Phase 1 first** because P01-P03 are nearly done. Finishing them costs 2-5 weeks each and delivers huge value. Capability polish completes our security story. TEA at Scale is 90% done. TypeScript Interop phases 2-4 enable the gradual adoption story.
+
+**Phase 2 before Phase 3** because without onboarding docs, example apps, and a meta-framework, nobody will use the production features we build in Phase 3. CanopyKit (P05) is THE product — file-based routing is table stakes in 2026. Abilities (P06) eliminates Elm's #1 pain point (JSON boilerplate).
+
+**Phase 3 in parallel with late Phase 2** because streaming SSR, data fetching, and forms are what production apps actually need. These can begin once CanopyKit routing is scaffolded.
+
+**Phase 4 is the moat** — compile-time accessibility, type-safe CSS, and fine-grained reactivity are things JavaScript frameworks structurally cannot do. These are the "Canopy is categorically better" features.
+
+**Phase 5 is future-proofing** — WASM, effects, edge computing. Important but not adoption-critical today.
+
+### What moved up?
+
+- **Developer Onboarding (P04)** — elevated from Tier 2 to Phase 2. Without docs and examples, nothing else matters.
+- **Type-Safe i18n (P14)** — elevated from Tier 3 to Phase 4. Compile-time translation checking is a strong differentiator and relatively low effort.
+
+### What moved down?
+
+- **Animation & Motion (P16)** — demoted from important/ to Phase 4. CSS animations and View Transitions API are usable without compiler support. Not an adoption blocker.
+- **AI Developer Experience (P17)** — MCP server already works. Enhancements are nice-to-have, not critical path.
+- **Browser DevTools (P21)** — Chrome extension exists. Full component tree/time-travel is impressive but not what blocks adoption.
+
+---
+
+## Mapping: Old Numbers → New Numbers
+
+| Old # | New # | Plan |
+|-------|-------|------|
+| 04 | P13 | Fine-Grained Reactivity |
+| 05 | P05 | CanopyKit Meta-Framework |
+| 07 | P07 | Streaming SSR |
+| 08 | P02 | TEA at Scale |
+| 09 | P08 | Incremental Compilation |
+| 10 | P21 | Browser DevTools |
+| 11 | P22 | Component Library |
+| 12 | P03 | TypeScript Interop |
+| 13 | P01 | Capability Security |
+| 14 | P11 | Compile-Time Accessibility |
+| 15 | P12 | Type-Safe CSS |
+| 16 | P18 | Effect Annotations |
+| 17 | P15 | Built-in Property Testing |
+| 18 | P14 | Type-Safe i18n |
+| 19 | P19 | WASM Backend |
+| 20 | P23 | Edge Computing |
+| 21 | P24 | Transparent Concurrency |
+| 22 | P20 | Package Registry |
+| 23 | P16 | Animation & Motion |
+| 24 | P10 | Type-Safe Forms |
+| 25 | P09 | Data Fetching & Caching |
+| 26b | P06 | Abilities + Derive |
+| 27 | P04 | Developer Onboarding |
+| 28 | P26 | Auth Patterns |
+| 29 | P25 | Local-First & Sync |
+| 30 | P27 | Web API Integration |
+| 31 | P17 | AI Developer Experience |
+| 32 | P28 | Mobile Deployment |
 
 ---
 
@@ -165,16 +224,16 @@ Position Canopy for the next decade.
 - [ ] Sub-2KB hello world bundle (gzipped)
 - [ ] Sub-100ms incremental rebuild
 - [ ] Streaming SSR
-- [x] Vite HMR with state preservation (DONE — model type hashing, hot-swap exports, import.meta.hot.accept)
-- [x] TypeScript .d.ts generation (DONE — auto-generated alongside .js on build)
+- [x] Vite HMR with state preservation
+- [x] TypeScript .d.ts generation
 - [ ] File-based routing meta-framework
 - [ ] Type-safe forms with schema validation
 - [ ] Data fetching with RemoteData enforcement
 - [ ] Gradual adoption path (use Canopy inside React projects)
-- [x] String interpolation (backtick template literals with `${}` — DONE)
+- [x] String interpolation
 - [ ] JSON codec deriving
 - [x] Capability manifest for security auditing
-- [x] Supply chain security story (packages can't exfiltrate without capability grants)
+- [x] Supply chain security story
 - [x] canopy test CLI with test runner
 - [ ] canopy/test library package for developers
 

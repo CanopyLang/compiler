@@ -30,6 +30,9 @@ module Install.Changes
     keepNew,
     filterSignificantChanges,
 
+    -- * Capability Detection
+    detectNewCapabilities,
+
     -- * Utilities
     hasSignificantChanges,
     countChanges,
@@ -40,6 +43,11 @@ import qualified Canopy.Package as Pkg
 import Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
 import qualified Data.Map.Merge.Strict as Map
+import qualified Data.Set as Set
+import Data.Text (Text)
+import qualified Data.Text as Text
+import FFI.Manifest (CapabilityManifest, PackageCapabilities)
+import qualified FFI.Manifest as Manifest
 import Install.Types (Change (..))
 
 -- | Detect changes between old and new dependency maps.
@@ -147,3 +155,59 @@ countChanges changes = Map.foldr countChange (0, 0, 0) changes
         Insert _ -> (inserts + 1, updates, removes)
         Change _ _ -> (inserts, updates + 1, removes)
         Remove _ -> (inserts, updates, removes + 1)
+
+-- | Detect new capabilities introduced by dependency changes.
+--
+-- Compares before\/after capability manifests and reports any new
+-- capabilities that were not present before the install or update.
+-- Returns a list of human-readable warning messages, one per new
+-- capability introduced by a package.
+--
+-- ==== Examples
+--
+-- @
+-- let warnings = detectNewCapabilities oldManifest newManifest
+-- mapM_ putStrLn warnings
+-- -- "⚠ canopy/http now requires capability: network"
+-- @
+--
+-- @since 0.20.0
+detectNewCapabilities ::
+  CapabilityManifest ->
+  CapabilityManifest ->
+  [Text]
+detectNewCapabilities oldManifest newManifest =
+  concatMap (findNewCapsForPackage oldCapsMap) (Manifest._manifestByPackage newManifest)
+  where
+    oldCapsMap = buildPackageCapsMap (Manifest._manifestByPackage oldManifest)
+
+-- | Build a map from package name to capability set for efficient lookup.
+--
+-- @since 0.20.0
+buildPackageCapsMap :: [PackageCapabilities] -> Map Text (Set.Set Text)
+buildPackageCapsMap =
+  Map.fromList . map toPair
+  where
+    toPair pc = (Manifest._pcPackageName pc, Manifest._pcCapabilities pc)
+
+-- | Find new capabilities for a single package compared to old state.
+--
+-- Returns warning messages for each capability that appears in the
+-- new manifest but was not present in the old manifest for this package.
+--
+-- @since 0.20.0
+findNewCapsForPackage :: Map Text (Set.Set Text) -> PackageCapabilities -> [Text]
+findNewCapsForPackage oldCapsMap pc =
+  map (formatNewCapWarning pkgName) (Set.toList newCaps)
+  where
+    pkgName = Manifest._pcPackageName pc
+    currentCaps = Manifest._pcCapabilities pc
+    previousCaps = maybe Set.empty id (Map.lookup pkgName oldCapsMap)
+    newCaps = Set.difference currentCaps previousCaps
+
+-- | Format a warning message for a newly introduced capability.
+--
+-- @since 0.20.0
+formatNewCapWarning :: Text -> Text -> Text
+formatNewCapWarning pkgName capName =
+  Text.concat ["\x26a0 ", pkgName, " now requires capability: ", capName]

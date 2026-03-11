@@ -20,6 +20,8 @@ dependencies:
   - bytestring
   - containers
   - cryptohash-sha256
+  - directory
+  - filepath
   - text
   - time
   - canopy-core
