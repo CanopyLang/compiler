@@ -82,6 +82,8 @@ emptyModule = Src.Module
   , Src._binops = []
   , Src._effects = Src.NoEffects
   , Src._comments = []
+  , Src._abilities = []
+  , Src._impls = []
   }
 
 -- | A module with a specific name.

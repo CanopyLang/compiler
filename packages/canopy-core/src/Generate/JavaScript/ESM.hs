@@ -49,6 +49,7 @@ import qualified Generate.JavaScript.ESM.FFI as ESMFFI
 import qualified Generate.JavaScript.ESM.HMR as HMR
 import qualified Generate.JavaScript.ESM.Runtime as ESMRuntime
 import Generate.JavaScript.ESM.Types (ESMOutput (..))
+import qualified Generate.JavaScript.Ability as Ability
 import qualified Generate.JavaScript.Expression as Expr
 import Generate.JavaScript.FFI (FFIInfo (..))
 import qualified Generate.JavaScript.Kernel as Kernel_
@@ -143,6 +144,8 @@ nodeDeps (Opt.Manager _) = Set.empty
 nodeDeps (Opt.Kernel _ deps) = deps
 nodeDeps (Opt.PortIncoming _ deps) = deps
 nodeDeps (Opt.PortOutgoing _ deps) = deps
+nodeDeps (Opt.AbilityDict _) = Set.empty
+nodeDeps (Opt.ImplDict _ _ deps) = deps
 
 -- | Filter out debugger dependencies unless debug mode is on.
 filterDebugDeps :: Mode.Mode -> Set Opt.Global -> Set Opt.Global
@@ -300,6 +303,10 @@ dispatchNodeESM mode (global, node) =
       [JS.ModuleStmt (varToConst (Kernel_.generatePort mode global "incomingPort" decoder))]
     Opt.PortOutgoing encoder _deps ->
       [JS.ModuleStmt (varToConst (Kernel_.generatePort mode global "outgoingPort" encoder))]
+    Opt.AbilityDict _ ->
+      []
+    Opt.ImplDict abilityName methods _deps ->
+      [JS.ModuleStmt (varToConst (Ability.generateImplDict mode global abilityName methods))]
   where
     Opt.Global home name = global
     globalName = JsName.fromGlobal home name

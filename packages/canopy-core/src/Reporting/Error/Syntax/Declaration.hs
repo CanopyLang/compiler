@@ -69,3 +69,14 @@ toDeclarationsReport source decl =
                   "I was expecting to see the corresponding declaration next, starting on a fresh\
                   \ line with no indentation."
               )
+    DeclImplMethodAlignment _ row col ->
+      let region = toRegion row col
+       in Report.Report "UNFINISHED IMPL" region [] $
+            Code.toSnippet
+              source
+              region
+              Nothing
+              ( Doc.reflow "I am partway through parsing an impl declaration, but I got stuck here:",
+                Doc.reflow $
+                  "I was expecting to see another method definition aligned with the others."
+              )

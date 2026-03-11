@@ -15,8 +15,7 @@ module Kit.Layout
 
 import qualified Data.List as List
 import Kit.Route.Types
-  ( LayoutEntry (..)
-  , RouteManifest (..)
+  ( RouteManifest (..)
   , RouteSegment (..)
   )
 import qualified Kit.Route.Types as Route

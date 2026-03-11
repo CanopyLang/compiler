@@ -235,7 +235,9 @@ emptyModule =
       Src._aliases = [],
       Src._binops = [],
       Src._effects = Src.NoEffects,
-      Src._comments = []
+      Src._comments = [],
+      Src._abilities = [],
+      Src._impls = []
     }
 
 -- | Create a lazy import.

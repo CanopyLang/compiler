@@ -74,6 +74,7 @@ import qualified Unit.NameReversalTest as NameReversalTest
 import qualified Unit.Parse.ExpressionArithmeticTest as ParseExpressionArithmeticTest
 import qualified Unit.Parse.ExpressionTest as ParseExpressionTest
 import qualified Unit.Parse.LazyImportTest as LazyImportTest
+import qualified Unit.Parse.AbilityTest as ParseAbilityTest
 import qualified Unit.Parse.ModuleTest as ParseModuleTest
 import qualified Unit.Parse.PatternTest as ParsePatternTest
 import qualified Unit.Parse.TypeTest as ParseTypeTest
@@ -213,6 +214,7 @@ unitTests =
       ParseExpressionTest.tests,
       ParsePatternTest.tests,
       ParseTypeTest.tests,
+      ParseAbilityTest.tests,
       ParseModuleTest.tests,
       LazyImportTest.tests,
       MakeTest.tests,

@@ -25,7 +25,6 @@ import qualified Data.Text as Text
 import qualified Kit
 import Kit.Types (KitBuildFlags (..), KitCommand (..), KitDevFlags (..))
 import qualified Terminal
-import qualified Terminal.Helpers as Terminal
 import qualified Text.PrettyPrint.ANSI.Leijen as PP
 
 -- | Create the @kit-new@ command for scaffolding a Kit project.

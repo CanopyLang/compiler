@@ -22,8 +22,7 @@ import Control.Lens ((^.))
 import Data.Text (Text)
 import qualified Data.Map.Strict as Map
 import Kit.Route.Types
-  ( RouteEntry
-  , RouteManifest (..)
+  ( RouteManifest (..)
   , RoutePattern (..)
   , RouteSegment (..)
   , ValidationError (..)

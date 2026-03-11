@@ -41,6 +41,7 @@ import Data.Set (Set)
 import qualified Data.Set as Set
 import qualified Data.Text as Text
 import qualified Generate.JavaScript.Builder as JS
+import qualified Generate.JavaScript.Ability as Ability
 import qualified Generate.JavaScript.Expression as Expr
 import qualified Generate.JavaScript.Functions as Functions
 import qualified Generate.JavaScript.Minify as Minify
@@ -296,6 +297,10 @@ emitNode mode graph chunkGlobals currentGlobal node state =
       addStmt (addDeps deps state) (emitPort mode currentGlobal "incomingPort" decoder)
     Opt.PortOutgoing encoder deps ->
       addStmt (addDeps deps state) (emitPort mode currentGlobal "outgoingPort" encoder)
+    Opt.AbilityDict _ ->
+      state
+    Opt.ImplDict abilityName methods deps ->
+      addStmt (addDeps deps state) (emitImplDict mode currentGlobal abilityName methods)
   where
     addDeps deps st =
       Set.foldl' (addGlobalForChunk mode graph chunkGlobals) st deps
@@ -468,6 +473,12 @@ emitPort mode (Opt.Global home name) makePort converter =
       [ JS.String (Name.toBuilder name),
         Expr.codeToExpr (Expr.generate mode converter)
       ]
+
+-- | Emit an impl dictionary for code splitting.
+emitImplDict :: Mode.Mode -> Opt.Global -> Name -> Map Name Opt.Expr -> JS.Stmt
+emitImplDict mode global abilityName methods =
+  Ability.generateImplDict mode global abilityName methods
+
 
 -- | Add a statement to the traversal state.
 addStmt :: TraversalState -> JS.Stmt -> TraversalState

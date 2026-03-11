@@ -63,6 +63,8 @@ toDeclTypeReport source declType startRow startCol =
       toCustomTypeReport source customType row col
     DT_IndentName row col ->
       toDTIndentNameReport source startRow startCol row col
+    DT_MethodAlignment _ row col ->
+      toDTMethodAlignmentReport source startRow startCol row col
 
 toDTNameReport :: Code.Source -> Row -> Col -> Row -> Col -> Report.Report
 toDTNameReport source startRow startCol row col =
@@ -105,6 +107,34 @@ toDTIndentNameReport source startRow startCol row col =
                 customTypeNote
               ]
           )
+
+toDTMethodAlignmentReport :: Code.Source -> Row -> Col -> Row -> Col -> Report.Report
+toDTMethodAlignmentReport source startRow startCol row col =
+  let surroundings = Ann.Region (Ann.Position startRow startCol) (Ann.Position row col)
+      region = toRegion row col
+   in Report.Report "UNFINISHED ABILITY" region [] $
+        Code.toSnippet
+          source
+          surroundings
+          (Just region)
+          ( Doc.reflow "I am partway through parsing an ability declaration, but I got stuck here:",
+            Doc.stack
+              [ Doc.reflow "I was expecting to see another method definition aligned with the others.",
+                abilityNote
+              ]
+          )
+
+abilityNote :: Doc.Doc
+abilityNote =
+  Doc.stack
+    [ Doc.toSimpleNote "Here is an example of a valid `ability` declaration for reference:",
+      Doc.vcat
+        [ Doc.indent 4 $ Doc.fillSep [Doc.cyan "ability", "Show", "a", Doc.cyan "where"],
+          Doc.indent 6 "show : a -> String"
+        ],
+      Doc.reflow $
+        "All method definitions must be indented and aligned at the same column."
+    ]
 
 -- | Render a type alias parse error.
 toTypeAliasReport :: Code.Source -> TypeAlias -> Row -> Col -> Report.Report

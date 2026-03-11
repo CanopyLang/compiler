@@ -139,6 +139,7 @@ data Decl
   | DeclDef Name.Name DeclDef Row Col
   | --
     DeclFreshLineAfterDocComment Row Col
+  | DeclImplMethodAlignment Word32 Row Col
   deriving (Show)
 
 data DeclDef
@@ -174,6 +175,7 @@ data DeclType
   | DT_Union CustomType Row Col
   | --
     DT_IndentName Row Col
+  | DT_MethodAlignment Word32 Row Col
   deriving (Show)
 
 data TypeAlias

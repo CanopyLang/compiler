@@ -549,37 +549,60 @@ abilityDecl maybeDocs start =
         var <- addLocation (Var.lower SyntaxError.DT_Name)
         Space.chompAndCheckIndent SyntaxError.DT_Space SyntaxError.DT_IndentName
         Keyword.where_ SyntaxError.DT_Name
-        Space.chomp SyntaxError.DT_Space
-        Space.checkFreshLine SyntaxError.DT_Name
-        bodyStart <- getPosition
-        ((supers, methods), end) <- chompAbilityBody bodyStart
+        Space.chompAndCheckIndent SyntaxError.DT_Space SyntaxError.DT_IndentName
+        ((supers, methods), end) <-
+          withIndent $
+            do  (entry, entryEnd) <- chompAbilityEntry
+                chompAbilityEntries [entry] entryEnd
         let decl = Src.AbilityDecl name var supers methods
         return (Ability maybeDocs (Ann.at start end decl), end)
 
 
--- | Parse the body of an ability declaration.
-chompAbilityBody :: Ann.Position -> Space.Parser SyntaxError.DeclType ([Name.Name], [(Ann.Located Name.Name, Src.Type)])
-chompAbilityBody initialPos =
-  chompAbilityBodyHelp initialPos [] []
-
-
--- | Accumulate ability body entries (methods and super-ability names).
-chompAbilityBodyHelp :: Ann.Position -> [Name.Name] -> [(Ann.Located Name.Name, Src.Type)] -> Space.Parser SyntaxError.DeclType ([Name.Name], [(Ann.Located Name.Name, Src.Type)])
-chompAbilityBodyHelp end revSupers revMethods =
-  oneOfWithFallback
+-- | Parse a single ability body entry (method signature or super-ability).
+chompAbilityEntry :: Space.Parser SyntaxError.DeclType (Either Name.Name (Ann.Located Name.Name, Src.Type))
+chompAbilityEntry =
+  oneOf SyntaxError.DT_Name
     [ do  methodName <- addLocation (Var.lower SyntaxError.DT_Name)
           Space.chompAndCheckIndent SyntaxError.DT_Space SyntaxError.DT_IndentName
           word1 0x3A {-:-} SyntaxError.DT_Name
           Space.chompAndCheckIndent SyntaxError.DT_Space SyntaxError.DT_IndentName
-          (tipe, newEnd) <- specialize (\t r c -> SyntaxError.DT_Alias (SyntaxError.AliasBody t r c) r c) Type.expression
-          Space.chomp SyntaxError.DT_Space
-          chompAbilityBodyHelp newEnd revSupers ((methodName, tipe) : revMethods)
+          (tipe, end) <- specialize (\t r c -> SyntaxError.DT_Alias (SyntaxError.AliasBody t r c) r c) Type.expression
+          return (Right (methodName, tipe), end)
     , do  superName <- Var.upper SyntaxError.DT_Name
           Space.chomp SyntaxError.DT_Space
-          newEnd <- getPosition
-          chompAbilityBodyHelp newEnd (superName : revSupers) revMethods
+          end <- getPosition
+          return (Left superName, end)
     ]
-    ((reverse revSupers, reverse revMethods), end)
+
+
+-- | Accumulate ability entries using checkAligned for vertical alignment.
+chompAbilityEntries ::
+  [Either Name.Name (Ann.Located Name.Name, Src.Type)] ->
+  Ann.Position ->
+  Space.Parser SyntaxError.DeclType ([Name.Name], [(Ann.Located Name.Name, Src.Type)])
+chompAbilityEntries revEntries end =
+  oneOfWithFallback
+    [ do  Space.checkAligned SyntaxError.DT_MethodAlignment
+          (entry, newEnd) <- chompAbilityEntry
+          chompAbilityEntries (entry : revEntries) newEnd
+    ]
+    (partitionEntries (reverse revEntries), end)
+
+
+-- | Separate ability entries into super-abilities and methods.
+partitionEntries :: [Either Name.Name (Ann.Located Name.Name, Src.Type)] -> ([Name.Name], [(Ann.Located Name.Name, Src.Type)])
+partitionEntries = foldr partitionEntry ([], [])
+
+
+-- | Classify a single ability entry as super-ability or method.
+partitionEntry ::
+  Either Name.Name (Ann.Located Name.Name, Src.Type) ->
+  ([Name.Name], [(Ann.Located Name.Name, Src.Type)]) ->
+  ([Name.Name], [(Ann.Located Name.Name, Src.Type)])
+partitionEntry entry (supers, methods) =
+  case entry of
+    Left s -> (s : supers, methods)
+    Right m -> (supers, m : methods)
 
 
 -- IMPL DECLARATIONS
@@ -603,30 +626,32 @@ implDecl maybeDocs start =
       (implType, _) <- specialize (\t r c -> SyntaxError.DeclType (SyntaxError.DT_Alias (SyntaxError.AliasBody t r c) r c) r c) Type.expression
       Space.chompAndCheckIndent SyntaxError.DeclSpace SyntaxError.DeclStart
       Keyword.where_ SyntaxError.DeclStart
-      Space.chomp SyntaxError.DeclSpace
-      Space.checkFreshLine SyntaxError.DeclStart
-      bodyStart <- getPosition
-      (methods, end) <- chompImplBody bodyStart
+      Space.chompAndCheckIndent SyntaxError.DeclSpace SyntaxError.DeclStart
+      (methods, end) <-
+        withIndent $
+          do  (firstMethod, firstEnd) <- chompImplMethod
+              chompImplMethods [firstMethod] firstEnd
       let decl = Src.ImplDecl abilityName implType methods
       return (Impl maybeDocs (Ann.at start end decl), end)
 
 
--- | Parse the body of an impl declaration (method definitions).
-chompImplBody :: Ann.Position -> Space.Parser SyntaxError.Decl [Ann.Located Src.Value]
-chompImplBody initialPos =
-  chompImplBodyHelp initialPos []
+-- | Parse a single impl method definition.
+chompImplMethod :: Space.Parser SyntaxError.Decl (Ann.Located Src.Value)
+chompImplMethod =
+  do  methodStart <- getPosition
+      name <- Var.lower SyntaxError.DeclStart
+      nameEnd <- getPosition
+      (value, end) <- specialize (SyntaxError.DeclDef name) (chompImplMethodDef methodStart (Ann.at methodStart nameEnd name))
+      return (Ann.at methodStart end value, end)
 
 
--- | Accumulate impl method definitions.
-chompImplBodyHelp :: Ann.Position -> [Ann.Located Src.Value] -> Space.Parser SyntaxError.Decl [Ann.Located Src.Value]
-chompImplBodyHelp end revMethods =
+-- | Accumulate impl methods using checkAligned for vertical alignment.
+chompImplMethods :: [Ann.Located Src.Value] -> Ann.Position -> Space.Parser SyntaxError.Decl [Ann.Located Src.Value]
+chompImplMethods revMethods end =
   oneOfWithFallback
-    [ do  methodStart <- getPosition
-          name <- Var.lower SyntaxError.DeclStart
-          nameEnd <- getPosition
-          (value, newEnd) <- specialize (SyntaxError.DeclDef name) (chompImplMethodDef methodStart (Ann.at methodStart nameEnd name))
-          Space.chomp SyntaxError.DeclSpace
-          chompImplBodyHelp newEnd (Ann.at methodStart newEnd value : revMethods)
+    [ do  Space.checkAligned SyntaxError.DeclImplMethodAlignment
+          (method, newEnd) <- chompImplMethod
+          chompImplMethods (method : revMethods) newEnd
     ]
     (reverse revMethods, end)
 

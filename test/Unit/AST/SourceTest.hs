@@ -128,7 +128,7 @@ testModuleConstruction = testCase "module with values, unions, aliases, infix, e
   let union = Ann.At Ann.one (Src.Union (Ann.At Ann.one (Name.fromChars "U")) [] [] [(Ann.At Ann.one (Name.fromChars "C"), [])] [])
   let alias = Ann.At Ann.one (Src.Alias (Ann.At Ann.one (Name.fromChars "Alias")) [] [] (Ann.At Ann.one (Src.TUnit)) Nothing [])
   let _binop = Ann.At Ann.one (Src.Infix (Name.fromChars "+") Binop.Left (Binop.Precedence 5) (Name.fromChars "add"))
-  let m = Src.Module Nothing exportAll docs imports [] [val] [union] [alias] [_binop] Src.NoEffects []
+  let m = Src.Module Nothing exportAll docs imports [] [val] [union] [alias] [_binop] Src.NoEffects [] [] []
   -- Validate import alias and effects
   case imports of
     [Src.Import _ (Just aliasName) _ _] -> aliasName @?= Name.fromChars "L"
@@ -152,5 +152,7 @@ emptyModule =
       Src._aliases = [],
       Src._binops = [],
       Src._effects = Src.NoEffects,
-      Src._comments = []
+      Src._comments = [],
+      Src._abilities = [],
+      Src._impls = []
     }

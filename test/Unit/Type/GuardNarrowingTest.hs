@@ -121,6 +121,8 @@ mkModule decls guards =
     Can.NoEffects
     mempty
     guards
+    Map.empty
+    []
 
 -- | Build a simple untyped definition: @name = body@
 mkDef :: Name.Name -> Can.Expr -> Can.Def
