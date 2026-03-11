@@ -111,3 +111,5 @@ nodeDeps node =
     Opt.Kernel _ deps -> deps
     Opt.PortIncoming _ deps -> deps
     Opt.PortOutgoing _ deps -> deps
+    Opt.AbilityDict _ -> Set.empty
+    Opt.ImplDict _ _ deps -> deps

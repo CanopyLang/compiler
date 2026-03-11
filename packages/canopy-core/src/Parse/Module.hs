@@ -116,10 +116,10 @@ chompFFIContent imports foreignImports decls =
 
 checkModule :: ProjectType -> Module -> Either SyntaxError.Error Src.Module
 checkModule projectType (Module maybeHeader imports foreignImports infixes decls) =
-  let (values, unions, aliases, ports) = categorizeDecls [] [] [] [] decls
+  let (values, unions, aliases, ports, abilities, impls) = categorizeDecls [] [] [] [] [] [] decls
    in case maybeHeader of
         Just (Header name effects exports docs) ->
-          fmap (\eff -> Src.Module (Just name) exports (toDocs docs decls) imports foreignImports values unions aliases infixes eff [])
+          fmap (\eff -> Src.Module (Just name) exports (toDocs docs decls) imports foreignImports values unions aliases infixes eff [] abilities impls)
             (checkEffects projectType ports effects)
         Nothing ->
           Right $
@@ -128,7 +128,7 @@ checkModule projectType (Module maybeHeader imports foreignImports infixes decls
                   [] -> Src.NoEffects
                   _ : _ -> Src.Ports ports
               )
-              []
+              [] abilities impls
 
 checkEffects :: ProjectType -> [Src.Port] -> Effects -> Either SyntaxError.Error Src.Effects
 checkEffects projectType ports effects =
@@ -164,17 +164,19 @@ checkEffects projectType ports effects =
           _ : _ -> Left (SyntaxError.UnexpectedPort region)
         else Left (SyntaxError.NoEffectsOutsideKernel region)
 
-categorizeDecls :: [Ann.Located Src.Value] -> [Ann.Located Src.Union] -> [Ann.Located Src.Alias] -> [Src.Port] -> [Decl.Decl] -> ([Ann.Located Src.Value], [Ann.Located Src.Union], [Ann.Located Src.Alias], [Src.Port])
-categorizeDecls values unions aliases ports decls =
+categorizeDecls :: [Ann.Located Src.Value] -> [Ann.Located Src.Union] -> [Ann.Located Src.Alias] -> [Src.Port] -> [Ann.Located Src.AbilityDecl] -> [Ann.Located Src.ImplDecl] -> [Decl.Decl] -> ([Ann.Located Src.Value], [Ann.Located Src.Union], [Ann.Located Src.Alias], [Src.Port], [Ann.Located Src.AbilityDecl], [Ann.Located Src.ImplDecl])
+categorizeDecls values unions aliases ports abilities impls decls =
   case decls of
     [] ->
-      (values, unions, aliases, ports)
+      (values, unions, aliases, ports, abilities, impls)
     decl : otherDecls ->
       case decl of
-        Decl.Value _ value -> categorizeDecls (value : values) unions aliases ports otherDecls
-        Decl.Union _ union -> categorizeDecls values (union : unions) aliases ports otherDecls
-        Decl.Alias _ alias -> categorizeDecls values unions (alias : aliases) ports otherDecls
-        Decl.Port _ port_ -> categorizeDecls values unions aliases (port_ : ports) otherDecls
+        Decl.Value _ value -> categorizeDecls (value : values) unions aliases ports abilities impls otherDecls
+        Decl.Union _ union -> categorizeDecls values (union : unions) aliases ports abilities impls otherDecls
+        Decl.Alias _ alias -> categorizeDecls values unions (alias : aliases) ports abilities impls otherDecls
+        Decl.Port _ port_ -> categorizeDecls values unions aliases (port_ : ports) abilities impls otherDecls
+        Decl.Ability _ ability -> categorizeDecls values unions aliases ports (ability : abilities) impls otherDecls
+        Decl.Impl _ impl_ -> categorizeDecls values unions aliases ports abilities (impl_ : impls) otherDecls
 
 -- TO DOCS
 
@@ -197,6 +199,8 @@ getComments decls comments =
         Decl.Union c (Ann.At _ (Src.Union n _ _ _ _)) -> getComments otherDecls (addComment c n comments)
         Decl.Alias c (Ann.At _ (Src.Alias n _ _ _ _ _)) -> getComments otherDecls (addComment c n comments)
         Decl.Port c (Src.Port n _) -> getComments otherDecls (addComment c n comments)
+        Decl.Ability c (Ann.At _ (Src.AbilityDecl n _ _ _)) -> getComments otherDecls (addComment c n comments)
+        Decl.Impl _ _ -> getComments otherDecls comments
 
 addComment :: Maybe Src.Comment -> Ann.Located Name.Name -> [(Name.Name, Src.Comment)] -> [(Name.Name, Src.Comment)]
 addComment maybeComment (Ann.At _ name) comments =

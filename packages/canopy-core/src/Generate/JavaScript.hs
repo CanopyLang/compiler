@@ -15,7 +15,7 @@ module Generate.JavaScript
     generateForReplEndpoint,
 
     -- * Re-exported from Generate.JavaScript.FFI
-    FFIInfo(..),
+    FFIInfo (..),
     ffiFilePath,
     ffiContent,
     ffiAlias,
@@ -23,12 +23,14 @@ module Generate.JavaScript
     generateFFIContent,
 
     -- * Re-exported from Generate.JavaScript.Coverage
-    Coverage.CoverageMap(..),
+    Coverage.CoverageMap (..),
   )
 where
 
 import qualified AST.Canonical as Can
 import qualified AST.Optimized as Opt
+import qualified Canopy.Data.Name as Name
+import qualified Canopy.Data.Utf8 as Utf8
 import qualified Canopy.Kernel as Kernel
 import qualified Canopy.ModuleName as ModuleName
 import qualified Canopy.Package as Pkg
@@ -41,11 +43,10 @@ import qualified Data.List as List
 import Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
 import qualified Data.Maybe
-import qualified Canopy.Data.Name as Name
-import qualified Canopy.Data.Utf8 as Utf8
 import Data.Set (Set)
 import qualified Data.Set as Set
 import qualified Data.Text as Text
+import qualified Generate.JavaScript.Ability as Ability
 import qualified Generate.JavaScript.Builder as JS
 import qualified Generate.JavaScript.Coverage as Coverage
 import qualified Generate.JavaScript.Expression as Expr
@@ -58,11 +59,11 @@ import Generate.JavaScript.FFI
     generateFFIContent,
   )
 import qualified Generate.JavaScript.FFIRuntime as FFIRuntime
-import qualified Generate.JavaScript.Runtime as Runtime
 import qualified Generate.JavaScript.Functions as Functions
 import qualified Generate.JavaScript.Kernel as Kernel_
 import qualified Generate.JavaScript.Minify as Minify
 import qualified Generate.JavaScript.Name as JsName
+import qualified Generate.JavaScript.Runtime as Runtime
 import qualified Generate.JavaScript.SourceMap as SourceMap
 import qualified Generate.JavaScript.StringPool as StringPool
 import qualified Generate.Mode as Mode
@@ -100,9 +101,10 @@ generate inputMode (Opt.GlobalGraph rawGraph _ sourceLocs) mains ffiInfos =
         not (Kernel_.isDebugger global && not (Mode.isDebug mode))
       filteredGraph = Map.filterWithKey (\global _ -> shouldInclude global) graph
       state = Map.foldlWithKey' (\s global _ -> addGlobal mode graph s global) baseState filteredGraph
-      header = if Mode.isElmCompatible mode
-               then "(function(scope){\n'use strict';\n"
-               else "(function(scope){'use strict';\n"
+      header =
+        if Mode.isElmCompatible mode
+          then "(function(scope){\n'use strict';\n"
+          else "(function(scope){'use strict';\n"
       debuggerStub = "var _Debugger_unsafeCoerce = function(value) { return value; };\n"
       poolDecls = StringPool.poolDeclarations (Mode.stringPool mode)
       coveragePreamble = if Mode.isCoverage mode then Coverage.coverageRuntimePreamble else mempty
@@ -121,11 +123,11 @@ generate inputMode (Opt.GlobalGraph rawGraph _ sourceLocs) mains ffiInfos =
           <> "\nif (typeof global !== 'undefined') { global.Canopy = scope['Canopy']; global.Elm = scope['Elm']; }"
           <> "\n}(typeof window !== 'undefined' ? window : this));"
       sourceMap = buildSourceMap mode state
-      coverageMap = if Mode.isCoverage mode
-                    then Just (Coverage.buildCoverageMap graph sourceLocs)
-                    else Nothing
+      coverageMap =
+        if Mode.isCoverage mode
+          then Just (Coverage.buildCoverageMap graph sourceLocs)
+          else Nothing
    in (jsBuilder, sourceMap, coverageMap)
-
 
 addMain :: Mode.Mode -> Graph -> ModuleName.Canonical -> Opt.Main -> State -> State
 addMain mode graph home _ state =
@@ -137,31 +139,33 @@ perfNote mode =
     Mode.Prod {} ->
       mempty
     Mode.Dev Nothing elmCompatible _ _ _ _ ->
-      let optimizeUrl = if elmCompatible
-                        then "https://canopy-lang.org/0.19.1/optimize"
-                        else Doc.makeNakedLink "optimize"
-      in JS.stmtToBuilder $
-           JS.ExprStmtWithSemi $
-             JS.Call
-               (JS.Access (JS.Ref (JsName.fromLocal "console")) (JsName.fromLocal "warn"))
-               [ JS.String $
-                   "Compiled in DEV mode. Follow the advice at "
-                     <> BB.stringUtf8 optimizeUrl
-                     <> " for better performance and smaller assets."
-               ]
+      let optimizeUrl =
+            if elmCompatible
+              then "https://canopy-lang.org/0.19.1/optimize"
+              else Doc.makeNakedLink "optimize"
+       in JS.stmtToBuilder $
+            JS.ExprStmtWithSemi $
+              JS.Call
+                (JS.Access (JS.Ref (JsName.fromLocal "console")) (JsName.fromLocal "warn"))
+                [ JS.String $
+                    "Compiled in DEV mode. Follow the advice at "
+                      <> BB.stringUtf8 optimizeUrl
+                      <> " for better performance and smaller assets."
+                ]
     Mode.Dev (Just _) elmCompatible _ _ _ _ ->
-      let optimizeUrl = if elmCompatible
-                        then "https://canopy-lang.org/0.19.1/optimize"
-                        else Doc.makeNakedLink "optimize"
-      in JS.stmtToBuilder $
-           JS.ExprStmtWithSemi $
-             JS.Call
-               (JS.Access (JS.Ref (JsName.fromLocal "console")) (JsName.fromLocal "warn"))
-               [ JS.String $
-                   "Compiled in DEBUG mode. Follow the advice at "
-                     <> BB.stringUtf8 optimizeUrl
-                     <> " for better performance and smaller assets."
-               ]
+      let optimizeUrl =
+            if elmCompatible
+              then "https://canopy-lang.org/0.19.1/optimize"
+              else Doc.makeNakedLink "optimize"
+       in JS.stmtToBuilder $
+            JS.ExprStmtWithSemi $
+              JS.Call
+                (JS.Access (JS.Ref (JsName.fromLocal "console")) (JsName.fromLocal "warn"))
+                [ JS.String $
+                    "Compiled in DEBUG mode. Follow the advice at "
+                      <> BB.stringUtf8 optimizeUrl
+                      <> " for better performance and smaller assets."
+                ]
 
 -- GENERATE FOR REPL
 generateForRepl :: Bool -> Localizer.Localizer -> Opt.GlobalGraph -> ModuleName.Canonical -> Name.Name -> Can.Annotation -> Builder
@@ -169,27 +173,35 @@ generateForRepl ansi localizer (Opt.GlobalGraph graph _ _) home name (Can.Forall
   let mode = Mode.Dev Nothing True False False Set.empty False
       debugState = addGlobal mode graph (emptyState False Map.empty Map.empty) (Opt.Global ModuleName.debug "toString")
       evalState = addGlobal mode graph debugState (Opt.Global home name)
-      processExceptionHandler = JS.stmtToBuilder $
-        JS.ExprStmt $
-          JS.Call
-            (JS.Access (JS.Ref (JsName.fromLocal "process")) (JsName.fromLocal "on"))
-            [ JS.String "uncaughtException",
-              JS.Function Nothing [JsName.fromLocal "err"] [
-                JS.ExprStmt $ JS.Call
-                  (JS.Access
-                    (JS.Access (JS.Ref (JsName.fromLocal "process")) (JsName.fromLocal "stderr"))
-                    (JsName.fromLocal "write"))
-                  [ JS.Infix JS.OpAdd
-                      (JS.Call
-                        (JS.Access (JS.Ref (JsName.fromLocal "err")) (JsName.fromLocal "toString"))
-                        [])
-                      (JS.String "\\n")
-                  ],
-                JS.ExprStmt $ JS.Call
-                  (JS.Access (JS.Ref (JsName.fromLocal "process")) (JsName.fromLocal "exit"))
-                  [JS.Int 1]
+      processExceptionHandler =
+        JS.stmtToBuilder $
+          JS.ExprStmt $
+            JS.Call
+              (JS.Access (JS.Ref (JsName.fromLocal "process")) (JsName.fromLocal "on"))
+              [ JS.String "uncaughtException",
+                JS.Function
+                  Nothing
+                  [JsName.fromLocal "err"]
+                  [ JS.ExprStmt $
+                      JS.Call
+                        ( JS.Access
+                            (JS.Access (JS.Ref (JsName.fromLocal "process")) (JsName.fromLocal "stderr"))
+                            (JsName.fromLocal "write")
+                        )
+                        [ JS.Infix
+                            JS.OpAdd
+                            ( JS.Call
+                                (JS.Access (JS.Ref (JsName.fromLocal "err")) (JsName.fromLocal "toString"))
+                                []
+                            )
+                            (JS.String "\\n")
+                        ],
+                    JS.ExprStmt $
+                      JS.Call
+                        (JS.Access (JS.Ref (JsName.fromLocal "process")) (JsName.fromLocal "exit"))
+                        [JS.Int 1]
+                  ]
               ]
-            ]
    in processExceptionHandler
         <> Functions.functions
         <> stateToBuilder evalState
@@ -201,52 +213,82 @@ print ansi localizer home name tipe =
       toString = JS.Ref (JsName.fromKernel Name.debug "toAnsiString")
       tipeDoc = RT.canToDoc localizer RT.None tipe
       boolValue = if ansi then JS.Bool True else JS.Bool False
-      valueVar = JS.Var (JsName.fromLocal "_value") $
-        JS.Call toString [boolValue, value]
-      typeVar = JS.Var (JsName.fromLocal "_type") $
-        JS.String $ BB.stringUtf8 (show (Doc.toString tipeDoc))
-      printFunc = JS.FunctionStmt (JsName.fromLocal "_print") [JsName.fromLocal "t"] [
-        JS.ExprStmt $ JS.Call
-          (JS.Access (JS.Ref (JsName.fromLocal "console")) (JsName.fromLocal "log"))
-          [ JS.Infix JS.OpAdd
-              (JS.Ref (JsName.fromLocal "_value"))
-              (JS.If boolValue
-                (JS.Infix JS.OpAdd
-                  (JS.Infix JS.OpAdd (JS.String "\\x1b[90m") (JS.Ref (JsName.fromLocal "t")))
-                  (JS.String "\\x1b[0m"))
-                (JS.Ref (JsName.fromLocal "t")))
+      valueVar =
+        JS.Var (JsName.fromLocal "_value") $
+          JS.Call toString [boolValue, value]
+      typeVar =
+        JS.Var (JsName.fromLocal "_type") $
+          JS.String $
+            BB.stringUtf8 (show (Doc.toString tipeDoc))
+      printFunc =
+        JS.FunctionStmt
+          (JsName.fromLocal "_print")
+          [JsName.fromLocal "t"]
+          [ JS.ExprStmt $
+              JS.Call
+                (JS.Access (JS.Ref (JsName.fromLocal "console")) (JsName.fromLocal "log"))
+                [ JS.Infix
+                    JS.OpAdd
+                    (JS.Ref (JsName.fromLocal "_value"))
+                    ( JS.If
+                        boolValue
+                        ( JS.Infix
+                            JS.OpAdd
+                            (JS.Infix JS.OpAdd (JS.String "\\x1b[90m") (JS.Ref (JsName.fromLocal "t")))
+                            (JS.String "\\x1b[0m")
+                        )
+                        (JS.Ref (JsName.fromLocal "t"))
+                    )
+                ]
           ]
-        ]
-      lengthCondition = JS.Infix JS.OpGe
-        (JS.Infix JS.OpAdd
-          (JS.Infix JS.OpAdd
-            (JS.Access (JS.Ref (JsName.fromLocal "_value")) (JsName.fromLocal "length"))
-            (JS.Int 3))
-          (JS.Access (JS.Ref (JsName.fromLocal "_type")) (JsName.fromLocal "length")))
-        (JS.Int 80)
-      newlineCondition = JS.Infix JS.OpGe
-        (JS.Call
-          (JS.Access (JS.Ref (JsName.fromLocal "_type")) (JsName.fromLocal "indexOf"))
-          [JS.String "\\n"])
-        (JS.Int 0)
+      lengthCondition =
+        JS.Infix
+          JS.OpGe
+          ( JS.Infix
+              JS.OpAdd
+              ( JS.Infix
+                  JS.OpAdd
+                  (JS.Access (JS.Ref (JsName.fromLocal "_value")) (JsName.fromLocal "length"))
+                  (JS.Int 3)
+              )
+              (JS.Access (JS.Ref (JsName.fromLocal "_type")) (JsName.fromLocal "length"))
+          )
+          (JS.Int 80)
+      newlineCondition =
+        JS.Infix
+          JS.OpGe
+          ( JS.Call
+              (JS.Access (JS.Ref (JsName.fromLocal "_type")) (JsName.fromLocal "indexOf"))
+              [JS.String "\\n"]
+          )
+          (JS.Int 0)
       condition = JS.Infix JS.OpOr lengthCondition newlineCondition
-      ifStmt = JS.IfStmt condition
-        (JS.ExprStmt $ JS.Call
-          (JS.Ref (JsName.fromLocal "_print"))
-          [ JS.Infix JS.OpAdd
-              (JS.String "\\n    : ")
-              (JS.Call
-                (JS.Access
-                  (JS.Call
-                    (JS.Access (JS.Ref (JsName.fromLocal "_type")) (JsName.fromLocal "split"))
-                    [JS.String "\\n"])
-                  (JsName.fromLocal "join"))
-                [JS.String "\\n      "])
-          ])
-        (JS.ExprStmt $ JS.Call
-          (JS.Ref (JsName.fromLocal "_print"))
-          [ JS.Infix JS.OpAdd (JS.String " : ") (JS.Ref (JsName.fromLocal "_type")) ]
-        )
+      ifStmt =
+        JS.IfStmt
+          condition
+          ( JS.ExprStmt $
+              JS.Call
+                (JS.Ref (JsName.fromLocal "_print"))
+                [ JS.Infix
+                    JS.OpAdd
+                    (JS.String "\\n    : ")
+                    ( JS.Call
+                        ( JS.Access
+                            ( JS.Call
+                                (JS.Access (JS.Ref (JsName.fromLocal "_type")) (JsName.fromLocal "split"))
+                                [JS.String "\\n"]
+                            )
+                            (JsName.fromLocal "join")
+                        )
+                        [JS.String "\\n      "]
+                    )
+                ]
+          )
+          ( JS.ExprStmt $
+              JS.Call
+                (JS.Ref (JsName.fromLocal "_print"))
+                [JS.Infix JS.OpAdd (JS.String " : ") (JS.Ref (JsName.fromLocal "_type"))]
+          )
    in JS.stmtToBuilder $ JS.Block [valueVar, typeVar, printFunc, ifStmt]
 
 -- GENERATE FOR REPL ENDPOINT
@@ -270,15 +312,17 @@ postMessage localizer home maybeName tipe =
       nameField = case maybeName of
         Nothing -> JS.Null
         Just n -> JS.String (Name.toBuilder n)
-      messageObj = JS.Object
-        [ (JsName.fromLocal "name", nameField),
-          (JsName.fromLocal "value", JS.Call toString [JS.Bool True, value]),
-          (JsName.fromLocal "type", JS.String $ BB.stringUtf8 (show (Doc.toString tipeDoc)))
-        ]
-      postMessageCall = JS.ExprStmt $
-        JS.Call
-          (JS.Access (JS.Ref (JsName.fromLocal "self")) (JsName.fromLocal "postMessage"))
-          [messageObj]
+      messageObj =
+        JS.Object
+          [ (JsName.fromLocal "name", nameField),
+            (JsName.fromLocal "value", JS.Call toString [JS.Bool True, value]),
+            (JsName.fromLocal "type", JS.String $ BB.stringUtf8 (show (Doc.toString tipeDoc)))
+          ]
+      postMessageCall =
+        JS.ExprStmt $
+          JS.Call
+            (JS.Access (JS.Ref (JsName.fromLocal "self")) (JsName.fromLocal "postMessage"))
+            [messageObj]
    in JS.stmtToBuilder postMessageCall
 
 -- GRAPH TRAVERSAL STATE
@@ -333,24 +377,27 @@ addGlobalHelp mode graph currentGlobal state =
   let Opt.Global globalHome globalName = currentGlobal
       moduleName = ModuleName._module globalHome
       currentPkg = ModuleName._package globalHome
-      isFFIModule = Mode.isFFIAlias mode moduleName
-                 && Map.notMember currentGlobal graph
-      isKernelPhantom = globalName == Name.dollar
-                     && Pkg._project currentPkg == Pkg._project Pkg.kernel
-                     && Map.notMember currentGlobal graph
-  in if Kernel_.isDebugger currentGlobal && not (Mode.isDebug mode)
-     then state
-     else if isFFIModule || isKernelPhantom
-     then state
-     else continueAddGlobal mode graph currentGlobal state
+      isFFIModule =
+        Mode.isFFIAlias mode moduleName
+          && Map.notMember currentGlobal graph
+      isKernelPhantom =
+        globalName == Name.dollar
+          && Pkg._project currentPkg == Pkg._project Pkg.kernel
+          && Map.notMember currentGlobal graph
+   in if Kernel_.isDebugger currentGlobal && not (Mode.isDebug mode)
+        then state
+        else
+          if isFFIModule || isKernelPhantom
+            then state
+            else continueAddGlobal mode graph currentGlobal state
 
 continueAddGlobal :: Mode.Mode -> Graph -> Opt.Global -> State -> State
 continueAddGlobal mode graph currentGlobal state =
   let addDeps deps someState =
         let filteredDeps = filterEssentialDeps mode deps
-        in Set.foldl' (addGlobal mode graph) someState filteredDeps
+         in Set.foldl' (addGlobal mode graph) someState filteredDeps
       globalInGraph = resolveGlobal graph currentGlobal
-  in dispatchNode mode graph currentGlobal addDeps globalInGraph state
+   in dispatchNode mode graph currentGlobal addDeps globalInGraph state
 
 resolveGlobal :: Graph -> Opt.Global -> Opt.Node
 resolveGlobal graph currentGlobal =
@@ -367,7 +414,7 @@ resolveAltGlobal graph currentGlobal =
       isKernelPkg = Pkg._project currentPkg == Pkg._project Pkg.kernel
       alts = computeAltPkgs currentPkg moduleName isKernelModule isKernelPkg
       altGlobals = [Opt.Global (ModuleName.Canonical p m) globalName | (p, m) <- alts]
-  in findFirstGlobal graph currentGlobal altGlobals
+   in findFirstGlobal graph currentGlobal altGlobals
 
 -- | Try each alt global in order, returning the first match.
 findFirstGlobal :: Graph -> Opt.Global -> [Opt.Global] -> Opt.Node
@@ -387,16 +434,16 @@ computeAltPkgs currentPkg moduleName isKernelModule isKernelPkg
   | Pkg._author currentPkg == Pkg.elm && Pkg._project currentPkg == Pkg._project Pkg.core && isKernelModule =
       let kernelPkg = Pkg.Name Pkg.elm (Pkg._project Pkg.kernel)
           strippedName = Utf8.dropBytes 7 moduleName
-      in [(kernelPkg, strippedName), (Pkg.kernel, strippedName)]
+       in [(kernelPkg, strippedName), (Pkg.kernel, strippedName)]
   | isKernelPkg && Pkg._author currentPkg == Pkg.elm =
       [(Pkg.kernel, moduleName), (Pkg.core, Name.fromChars ("Kernel." ++ Name.toChars moduleName))]
   | isKernelPkg && Pkg._author currentPkg == Pkg.canopy && isKernelModule =
       let strippedName = Utf8.dropBytes 7 moduleName
           elmKernelPkg = Pkg.Name Pkg.elm (Pkg._project Pkg.kernel)
-      in [(elmKernelPkg, strippedName), (elmKernelPkg, moduleName)]
+       in [(elmKernelPkg, strippedName), (elmKernelPkg, moduleName)]
   | isKernelPkg && Pkg._author currentPkg == Pkg.canopy =
       let elmKernelPkg = Pkg.Name Pkg.elm (Pkg._project Pkg.kernel)
-      in [(elmKernelPkg, moduleName)]
+       in [(elmKernelPkg, moduleName)]
   | otherwise = []
 
 -- | The @\"Kernel.\"@ prefix used to identify kernel modules during
@@ -424,16 +471,18 @@ dispatchNode mode graph currentGlobal addDeps globalInGraph state =
   case globalInGraph of
     Opt.Define expr deps ->
       let baseState = emitMapping currentGlobal (addDeps deps state)
-          code = if Mode.isCoverage mode
-                 then covDefineCode mode currentGlobal expr state
-                 else Expr.generate mode expr
+          code =
+            if Mode.isCoverage mode
+              then covDefineCode mode currentGlobal expr state
+              else Expr.generate mode expr
        in addStmt baseState (var currentGlobal code)
     Opt.DefineTailFunc argNames body deps ->
       let baseState = emitMapping currentGlobal (addDeps deps state)
           (Opt.Global home name) = currentGlobal
-          expr = if Mode.isCoverage mode
-                 then covTailFuncExpr mode currentGlobal argNames body state
-                 else Expr.generateTailDefExpr mode name argNames body
+          expr =
+            if Mode.isCoverage mode
+              then covTailFuncExpr mode currentGlobal argNames body state
+              else Expr.generateTailDefExpr mode name argNames body
        in addStmt baseState (JS.Var (JsName.fromGlobal home name) expr)
     Opt.Ctor index arity ->
       addStmt (emitMapping currentGlobal state) (var currentGlobal (Expr.generateCtor mode currentGlobal index arity))
@@ -442,9 +491,9 @@ dispatchNode mode graph currentGlobal addDeps globalInGraph state =
     Opt.Cycle names values functions deps ->
       let cycleStmt = Kernel_.generateCycle mode currentGlobal names values functions
           baseState = emitMapping currentGlobal (addDeps deps state)
-      in case cycleStmt of
-           JS.Block stmts -> List.foldl' addStmt baseState stmts
-           stmt -> addStmt baseState stmt
+       in case cycleStmt of
+            JS.Block stmts -> List.foldl' addStmt baseState stmts
+            stmt -> addStmt baseState stmt
     Opt.Manager effectsType ->
       generateManager mode graph currentGlobal effectsType state
     Opt.Kernel chunks deps ->
@@ -457,6 +506,10 @@ dispatchNode mode graph currentGlobal addDeps globalInGraph state =
       addStmt (emitMapping currentGlobal (addDeps deps state)) (Kernel_.generatePort mode currentGlobal "incomingPort" decoder)
     Opt.PortOutgoing encoder deps ->
       addStmt (emitMapping currentGlobal (addDeps deps state)) (Kernel_.generatePort mode currentGlobal "outgoingPort" encoder)
+    Opt.AbilityDict _ ->
+      state
+    Opt.ImplDict abilityName methods deps ->
+      addStmt (emitMapping currentGlobal (addDeps deps state)) (Ability.generateImplDict mode currentGlobal abilityName methods)
 
 -- | Generate coverage-instrumented code for a Define node.
 covDefineCode :: Mode.Mode -> Opt.Global -> Opt.Expr -> State -> Expr.Code
@@ -480,11 +533,11 @@ addKernelChunks :: Mode.Mode -> Opt.Global -> State -> [Kernel.Chunk] -> State
 addKernelChunks mode currentGlobal (State revKernels revBuilders seen seenChunks outLine smMappings srcLocs tl covIds) chunks =
   let kernelCode = Kernel_.generateKernel mode chunks
       kernelBytes = BL.toStrict (BB.toLazyByteString kernelCode)
-  in if Set.member kernelBytes seenChunks
-     then State revKernels revBuilders (Set.insert currentGlobal seen) seenChunks outLine smMappings srcLocs tl covIds
-     else
-       let newLine = if tl then outLine + countNewlinesBS kernelBytes else outLine
-       in State (kernelCode : revKernels) revBuilders (Set.insert currentGlobal seen) (Set.insert kernelBytes seenChunks) newLine smMappings srcLocs tl covIds
+   in if Set.member kernelBytes seenChunks
+        then State revKernels revBuilders (Set.insert currentGlobal seen) seenChunks outLine smMappings srcLocs tl covIds
+        else
+          let newLine = if tl then outLine + countNewlinesBS kernelBytes else outLine
+           in State (kernelCode : revKernels) revBuilders (Set.insert currentGlobal seen) (Set.insert kernelBytes seenChunks) newLine smMappings srcLocs tl covIds
 
 addStmt :: State -> JS.Stmt -> State
 addStmt state stmt =
@@ -493,7 +546,7 @@ addStmt state stmt =
 addBuilder :: State -> Builder -> State
 addBuilder (State revKernels revBuilders seen seenChunks outLine smMappings srcLocs tl covIds) builder =
   let newLine = if tl then outLine + countNewlines builder else outLine
-  in State revKernels (builder : revBuilders) seen seenChunks newLine smMappings srcLocs tl covIds
+   in State revKernels (builder : revBuilders) seen seenChunks newLine smMappings srcLocs tl covIds
 
 -- | Count newline bytes in a Builder by materializing it.
 --
@@ -521,15 +574,16 @@ emitMapping global state =
 -- | Build a mapping from a source region.
 emitMappingForRegion :: Ann.Region -> State -> State
 emitMappingForRegion (Ann.Region (Ann.Position srcLine srcCol) _) state =
-  let mapping = SourceMap.Mapping
-        { SourceMap._mGenLine = _outputLine state
-        , SourceMap._mGenCol = 0
-        , SourceMap._mSrcIndex = 0
-        , SourceMap._mSrcLine = fromIntegral srcLine - 1
-        , SourceMap._mSrcCol = fromIntegral srcCol - 1
-        , SourceMap._mNameIndex = Nothing
-        }
-   in state { _sourceMapMappings = mapping : _sourceMapMappings state }
+  let mapping =
+        SourceMap.Mapping
+          { SourceMap._mGenLine = _outputLine state,
+            SourceMap._mGenCol = 0,
+            SourceMap._mSrcIndex = 0,
+            SourceMap._mSrcLine = fromIntegral srcLine - 1,
+            SourceMap._mSrcCol = fromIntegral srcCol - 1,
+            SourceMap._mNameIndex = Nothing
+          }
+   in state {_sourceMapMappings = mapping : _sourceMapMappings state}
 
 -- | Build a SourceMap from accumulated state (dev mode only).
 buildSourceMap :: Mode.Mode -> State -> Maybe SourceMap.SourceMap
@@ -538,7 +592,7 @@ buildSourceMap mode state =
     Mode.Prod {} -> Nothing
     Mode.Dev _ _ _ _ _ _ ->
       let sm = SourceMap.empty "canopy.js"
-       in Just sm { SourceMap._smMappings = _sourceMapMappings state }
+       in Just sm {SourceMap._smMappings = _sourceMapMappings state}
 
 var :: Opt.Global -> Expr.Code -> JS.Stmt
 var (Opt.Global home name) code =

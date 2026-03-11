@@ -129,6 +129,21 @@ data Node
     PortIncoming Expr (Set Global)
   | -- | Outgoing port definition.
     PortOutgoing Expr (Set Global)
+  | -- | Ability dictionary type node.
+    --
+    -- Records the method names of an ability declaration. No runtime code is
+    -- emitted for the ability itself; the node exists to satisfy dead-code
+    -- analysis and allow impl nodes to reference the ability.
+    --
+    -- @since 0.20.0
+    AbilityDict ![Name]
+  | -- | Impl dictionary node for a concrete ability implementation.
+    --
+    -- Generates a JavaScript object literal whose keys are method names and
+    -- whose values are the compiled method functions.
+    --
+    -- @since 0.20.0
+    ImplDict !Name !(Map Name Expr) !(Set Global)
   deriving (Show)
 
 -- | Effect type classification for effect managers.
@@ -293,6 +308,8 @@ putNodeSpecial node = case node of
   Kernel a b -> Binary.putWord8 8 >> Binary.put a >> Binary.put b
   PortIncoming a b -> Binary.putWord8 9 >> Binary.put a >> Binary.put b
   PortOutgoing a b -> Binary.putWord8 10 >> Binary.put a >> Binary.put b
+  AbilityDict a -> Binary.putWord8 11 >> Binary.put a
+  ImplDict a b c -> Binary.putWord8 12 >> Binary.put a >> Binary.put b >> Binary.put c
   Define _ _ -> unexpectedNode "Define"
   DefineTailFunc {} -> unexpectedNode "DefineTailFunc"
   Ctor _ _ -> unexpectedNode "Ctor"
@@ -307,7 +324,7 @@ putNodeSpecial node = case node of
       InternalError.report
         "AST.Optimized.Graph.putNodeSpecial"
         ("Unexpected node type `" <> name <> "` in putNodeSpecial")
-        "putNodeSpecial only handles Kernel, PortIncoming, and PortOutgoing nodes. Other node types must be serialized by the main putNode dispatcher."
+        "putNodeSpecial only handles Kernel, PortIncoming, PortOutgoing, AbilityDict, and ImplDict nodes. Other node types must be serialized by the main putNode dispatcher."
 
 -- | Deserialize a node from binary format.
 --
@@ -317,8 +334,8 @@ getNode = do
   word <- Binary.getWord8
   case word of
     n | n <= 4 -> getNodeSimple n
-    n | n <= 10 -> getNodeComplex n
-    _ -> fail ("Opt.Node: unexpected tag " ++ show word ++ " (expected 0-10). Delete canopy-stuff/ to rebuild.")
+    n | n <= 12 -> getNodeComplex n
+    _ -> fail ("Opt.Node: unexpected tag " ++ show word ++ " (expected 0-12). Delete canopy-stuff/ to rebuild.")
 
 -- | Deserialize simple nodes.
 --
@@ -343,7 +360,9 @@ getNodeComplex word = case word of
   8 -> Monad.liftM2 Kernel Binary.get Binary.get
   9 -> Monad.liftM2 PortIncoming Binary.get Binary.get
   10 -> Monad.liftM2 PortOutgoing Binary.get Binary.get
-  _ -> fail ("Opt.Node.Complex: unexpected tag " ++ show word ++ " (expected 5-10). Delete canopy-stuff/ to rebuild.")
+  11 -> fmap AbilityDict Binary.get
+  12 -> Monad.liftM3 ImplDict Binary.get Binary.get Binary.get
+  _ -> fail ("Opt.Node.Complex: unexpected tag " ++ show word ++ " (expected 5-12). Delete canopy-stuff/ to rebuild.")
 
 instance Binary.Binary EffectsType where
   put effectsType =

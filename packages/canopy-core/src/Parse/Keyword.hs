@@ -5,6 +5,8 @@ module Parse.Keyword
     alias_,
     port_,
     ffi_,
+    ability_,
+    impl_,
     if_,
     then_,
     else_,
@@ -57,6 +59,14 @@ port_ = k4 0x70 0x6F 0x72 0x74
 
 ffi_ :: (Row -> Col -> x) -> Parser x ()
 ffi_ = k3 0x66 0x66 0x69
+
+-- | Match the keyword @ability@ (7 chars: a-b-i-l-i-t-y).
+ability_ :: (Row -> Col -> x) -> Parser x ()
+ability_ = k7 0x61 0x62 0x69 0x6C 0x69 0x74 0x79
+
+-- | Match the keyword @impl@ (4 chars: i-m-p-l).
+impl_ :: (Row -> Col -> x) -> Parser x ()
+impl_ = k4 0x69 0x6D 0x70 0x6C
 
 -- IF EXPRESSIONS
 

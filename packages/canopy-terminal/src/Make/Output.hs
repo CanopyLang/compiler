@@ -40,6 +40,7 @@ module Make.Output
   )
 where
 
+import Control.Applicative ((<|>))
 import qualified Build
 import qualified Canopy.Data.Name as Name
 import qualified Canopy.Data.Utf8 as Utf8
@@ -61,12 +62,16 @@ import qualified FFI.Capability
 import qualified FFI.CapabilityEnforcement as CapEnforce
 import qualified FFI.Manifest as Manifest
 import qualified FFI.Types
+import qualified FFI.TypeValidator as TypeValidator
 import qualified File
 import qualified Foreign.FFI as FFI
 import qualified Generate.Html as Html
 import qualified Generate.JavaScript.CodeSplit.Types as Split
 import Generate.JavaScript.ESM.Types (ESMOutput (..))
+import qualified Generate.JavaScript.FFI as JsFFI
 import qualified Generate.JavaScript.SourceMap as SourceMap
+import qualified Generate.TypeScript.Parser as DtsParser
+import Generate.TypeScript.Types (TsType (TsFunction))
 import Logging.Event (LogEvent (..))
 import qualified Logging.Logger as Log
 import Make.Builder (createBuilder, extractMainModules, hasExactlyOneMain)
@@ -108,6 +113,7 @@ generateOutput ::
   Task ()
 generateOutput ctx artifacts maybeTarget doVerify = do
   validateDeclaredCapabilities ctx artifacts
+  validateDtsTypes ctx artifacts
   case maybeTarget of
     Nothing -> selectOutputFormat ctx artifacts
     Just target -> generateForTarget ctx artifacts target doVerify
@@ -561,6 +567,108 @@ validateDeclaredCapabilities ctx artifacts = do
   let requirements = collectRequirements moduleFunctions
   validateRequired declared requirements
   warnUnused declared requirements
+
+-- | Validate FFI modules against their companion @.d.ts@ files, if present.
+--
+-- For each FFI JavaScript file, checks whether a companion @.ffi.d.ts@
+-- file exists and is parseable. Emits warnings to stderr for parse errors
+-- and type mismatches. This is a warning-only pass — never blocks compilation.
+-- Users who don't ship @.d.ts@ files see no output at all.
+--
+-- @since 0.20.1
+validateDtsTypes :: BuildContext -> Build.Artifacts -> Task ()
+validateDtsTypes _ctx artifacts = do
+  let ffiInfoMap = artifacts ^. Build.artifactsFFIInfo
+  warnings <- Task.io (collectDtsWarnings ffiInfoMap)
+  Task.io (mapM_ logDtsWarning warnings)
+
+-- | Collect @.d.ts@ validation warnings for all FFI files.
+collectDtsWarnings :: Map.Map String JsFFI.FFIInfo -> IO [Text.Text]
+collectDtsWarnings =
+  fmap concat . traverse checkDtsExists . Map.toList
+
+-- | Check if a companion @.d.ts@ file exists and validate it.
+--
+-- Returns an empty list when no @.d.ts@ file is present (the common case).
+-- Returns parse-error warnings when the file exists but cannot be parsed.
+-- Returns type-mismatch warnings when the file parses but types differ.
+checkDtsExists :: (FilePath, JsFFI.FFIInfo) -> IO [Text.Text]
+checkDtsExists (path, info) = do
+  let dtsPath = FilePath.replaceExtension (FilePath.replaceExtension path ".ffi") ".d.ts"
+  exists <- Dir.doesFileExist dtsPath
+  if exists
+    then validateDtsContent dtsPath info
+    else pure []
+
+-- | Parse and validate a @.d.ts@ file against its companion FFI JS file.
+validateDtsContent :: FilePath -> JsFFI.FFIInfo -> IO [Text.Text]
+validateDtsContent dtsPath info = do
+  content <- readFile dtsPath
+  case DtsParser.parseDtsFile dtsPath content of
+    Left parseErr ->
+      pure [Text.pack ("Failed to parse " <> dtsPath <> ": " <> parseErr)]
+    Right exports ->
+      pure (runTypeValidation dtsPath info exports)
+
+-- | Run type compatibility checks between FFI annotations and @.d.ts@ exports.
+--
+-- Extracts @\@canopy-type@ annotations from the JS file and validates each
+-- against the corresponding @.d.ts@ export. Returns one warning per mismatch.
+runTypeValidation :: FilePath -> JsFFI.FFIInfo -> [DtsParser.DtsExport] -> [Text.Text]
+runTypeValidation dtsPath info exports =
+  concatMap (validateOneFunction dtsPath exports) canopyFunctions
+  where
+    jsLines = Text.lines (info ^. JsFFI.ffiContent)
+    canopyFunctions = JsFFI.extractCanopyTypeFunctions jsLines
+
+-- | Validate a single FFI function against its @.d.ts@ export.
+validateOneFunction :: FilePath -> [DtsParser.DtsExport] -> (Text.Text, Text.Text) -> [Text.Text]
+validateOneFunction dtsPath exports (funcName, typeStr) =
+  case (lookupDtsExport funcName exports, FFI.parseCanopyTypeAnnotation typeStr) of
+    (Nothing, _) -> []
+    (_, Nothing) -> []
+    (Just dtsType, Just ffiType) ->
+      map (formatMismatch dtsPath funcName) (TypeValidator.validateFFIAgainstTs dtsType ffiType)
+
+-- | Look up the TypeScript type for a function in @.d.ts@ exports.
+lookupDtsExport :: Text.Text -> [DtsParser.DtsExport] -> Maybe TsType
+lookupDtsExport funcName exports =
+  lookupFunctionExport funcName exports <|> lookupConstExport funcName exports
+
+-- | Look up a function export by name.
+lookupFunctionExport :: Text.Text -> [DtsParser.DtsExport] -> Maybe TsType
+lookupFunctionExport funcName exports =
+  case [TsFunction params ret | DtsParser.DtsExportFunction name params ret <- exports
+                               , Name.toChars name == Text.unpack funcName] of
+    (ty : _) -> Just ty
+    [] -> Nothing
+
+-- | Look up a const export by name.
+lookupConstExport :: Text.Text -> [DtsParser.DtsExport] -> Maybe TsType
+lookupConstExport funcName exports =
+  case [ty | DtsParser.DtsExportConst name ty <- exports
+           , Name.toChars name == Text.unpack funcName] of
+    (ty : _) -> Just ty
+    [] -> Nothing
+
+-- | Format a 'TypeValidator.TypeMismatch' as a warning string.
+formatMismatch :: FilePath -> Text.Text -> TypeValidator.TypeMismatch -> Text.Text
+formatMismatch dtsPath funcName (TypeValidator.TypeMismatch path expected actual) =
+  Text.pack dtsPath
+    <> ": type mismatch for "
+    <> funcName
+    <> " at "
+    <> path
+    <> " (expected "
+    <> expected
+    <> ", got "
+    <> actual
+    <> ")"
+
+-- | Emit a single @.d.ts@ validation warning to stderr.
+logDtsWarning :: Text.Text -> IO ()
+logDtsWarning w =
+  IO.hPutStrLn IO.stderr ("Warning (FFI .d.ts): " <> Text.unpack w)
 
 -- | Collect (function name, file path, required capabilities) triples
 -- from parsed FFI functions.

@@ -36,6 +36,8 @@ data Decl
   | Union (Maybe Src.Comment) (Ann.Located Src.Union)
   | Alias (Maybe Src.Comment) (Ann.Located Src.Alias)
   | Port (Maybe Src.Comment) Src.Port
+  | Ability (Maybe Src.Comment) (Ann.Located Src.AbilityDecl)
+  | Impl (Maybe Src.Comment) (Ann.Located Src.ImplDecl)
 
 
 declaration :: Space.Parser SyntaxError.Decl Decl
@@ -45,6 +47,8 @@ declaration =
       oneOf SyntaxError.DeclStart
         [ typeDecl maybeDocs start
         , portDecl maybeDocs
+        , abilityDecl maybeDocs start
+        , implDecl maybeDocs start
         , valueDecl maybeDocs start
         ]
 
@@ -522,6 +526,130 @@ chompVariants variants end =
     ]
     (reverse variants, end)
 
+
+
+-- ABILITY DECLARATIONS
+
+
+-- | Parse an @ability@ declaration.
+--
+-- Syntax:
+-- @
+-- ability Printable a where
+--   print : a -> String
+-- @
+--
+-- @since 0.20.0
+abilityDecl :: Maybe Src.Comment -> Ann.Position -> Space.Parser SyntaxError.Decl Decl
+abilityDecl maybeDocs start =
+  inContext SyntaxError.DeclType (Keyword.ability_ SyntaxError.DeclStart) $
+    do  Space.chompAndCheckIndent SyntaxError.DT_Space SyntaxError.DT_IndentName
+        name <- addLocation (Var.upper SyntaxError.DT_Name)
+        Space.chompAndCheckIndent SyntaxError.DT_Space SyntaxError.DT_IndentName
+        var <- addLocation (Var.lower SyntaxError.DT_Name)
+        Space.chompAndCheckIndent SyntaxError.DT_Space SyntaxError.DT_IndentName
+        Keyword.where_ SyntaxError.DT_Name
+        Space.chomp SyntaxError.DT_Space
+        Space.checkFreshLine SyntaxError.DT_Name
+        bodyStart <- getPosition
+        ((supers, methods), end) <- chompAbilityBody bodyStart
+        let decl = Src.AbilityDecl name var supers methods
+        return (Ability maybeDocs (Ann.at start end decl), end)
+
+
+-- | Parse the body of an ability declaration.
+chompAbilityBody :: Ann.Position -> Space.Parser SyntaxError.DeclType ([Name.Name], [(Ann.Located Name.Name, Src.Type)])
+chompAbilityBody initialPos =
+  chompAbilityBodyHelp initialPos [] []
+
+
+-- | Accumulate ability body entries (methods and super-ability names).
+chompAbilityBodyHelp :: Ann.Position -> [Name.Name] -> [(Ann.Located Name.Name, Src.Type)] -> Space.Parser SyntaxError.DeclType ([Name.Name], [(Ann.Located Name.Name, Src.Type)])
+chompAbilityBodyHelp end revSupers revMethods =
+  oneOfWithFallback
+    [ do  methodName <- addLocation (Var.lower SyntaxError.DT_Name)
+          Space.chompAndCheckIndent SyntaxError.DT_Space SyntaxError.DT_IndentName
+          word1 0x3A {-:-} SyntaxError.DT_Name
+          Space.chompAndCheckIndent SyntaxError.DT_Space SyntaxError.DT_IndentName
+          (tipe, newEnd) <- specialize (\t r c -> SyntaxError.DT_Alias (SyntaxError.AliasBody t r c) r c) Type.expression
+          Space.chomp SyntaxError.DT_Space
+          chompAbilityBodyHelp newEnd revSupers ((methodName, tipe) : revMethods)
+    , do  superName <- Var.upper SyntaxError.DT_Name
+          Space.chomp SyntaxError.DT_Space
+          newEnd <- getPosition
+          chompAbilityBodyHelp newEnd (superName : revSupers) revMethods
+    ]
+    ((reverse revSupers, reverse revMethods), end)
+
+
+-- IMPL DECLARATIONS
+
+
+-- | Parse an @impl@ declaration.
+--
+-- Syntax:
+-- @
+-- impl Printable Int where
+--   print x = String.fromInt x
+-- @
+--
+-- @since 0.20.0
+implDecl :: Maybe Src.Comment -> Ann.Position -> Space.Parser SyntaxError.Decl Decl
+implDecl maybeDocs start =
+  do  Keyword.impl_ SyntaxError.DeclStart
+      Space.chompAndCheckIndent SyntaxError.DeclSpace SyntaxError.DeclStart
+      abilityName <- addLocation (Var.upper SyntaxError.DeclStart)
+      Space.chompAndCheckIndent SyntaxError.DeclSpace SyntaxError.DeclStart
+      (implType, _) <- specialize (\t r c -> SyntaxError.DeclType (SyntaxError.DT_Alias (SyntaxError.AliasBody t r c) r c) r c) Type.expression
+      Space.chompAndCheckIndent SyntaxError.DeclSpace SyntaxError.DeclStart
+      Keyword.where_ SyntaxError.DeclStart
+      Space.chomp SyntaxError.DeclSpace
+      Space.checkFreshLine SyntaxError.DeclStart
+      bodyStart <- getPosition
+      (methods, end) <- chompImplBody bodyStart
+      let decl = Src.ImplDecl abilityName implType methods
+      return (Impl maybeDocs (Ann.at start end decl), end)
+
+
+-- | Parse the body of an impl declaration (method definitions).
+chompImplBody :: Ann.Position -> Space.Parser SyntaxError.Decl [Ann.Located Src.Value]
+chompImplBody initialPos =
+  chompImplBodyHelp initialPos []
+
+
+-- | Accumulate impl method definitions.
+chompImplBodyHelp :: Ann.Position -> [Ann.Located Src.Value] -> Space.Parser SyntaxError.Decl [Ann.Located Src.Value]
+chompImplBodyHelp end revMethods =
+  oneOfWithFallback
+    [ do  methodStart <- getPosition
+          name <- Var.lower SyntaxError.DeclStart
+          nameEnd <- getPosition
+          (value, newEnd) <- specialize (SyntaxError.DeclDef name) (chompImplMethodDef methodStart (Ann.at methodStart nameEnd name))
+          Space.chomp SyntaxError.DeclSpace
+          chompImplBodyHelp newEnd (Ann.at methodStart newEnd value : revMethods)
+    ]
+    (reverse revMethods, end)
+
+
+-- | Parse the rest of an impl method definition (args and body).
+chompImplMethodDef :: Ann.Position -> Ann.Located Name.Name -> Space.Parser SyntaxError.DeclDef Src.Value
+chompImplMethodDef start name =
+  do  Space.chompAndCheckIndent SyntaxError.DeclDefSpace SyntaxError.DeclDefIndentEquals
+      chompImplMethodArgs start name []
+
+
+-- | Accumulate impl method args then parse body.
+chompImplMethodArgs :: Ann.Position -> Ann.Located Name.Name -> [Src.Pattern] -> Space.Parser SyntaxError.DeclDef Src.Value
+chompImplMethodArgs start name revArgs =
+  oneOf SyntaxError.DeclDefEquals
+    [ do  arg <- specialize SyntaxError.DeclDefArg Pattern.term
+          Space.chompAndCheckIndent SyntaxError.DeclDefSpace SyntaxError.DeclDefIndentEquals
+          chompImplMethodArgs start name (arg : revArgs)
+    , do  word1 0x3D {-=-} SyntaxError.DeclDefEquals
+          Space.chompAndCheckIndent SyntaxError.DeclDefSpace SyntaxError.DeclDefIndentBody
+          (body, end) <- specialize SyntaxError.DeclDefBody Expr.expression
+          return (Src.Value name (reverse revArgs) body Nothing Nothing, end)
+    ]
 
 
 -- PORT

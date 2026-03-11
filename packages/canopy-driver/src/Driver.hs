@@ -403,7 +403,7 @@ generateInterface ::
   Can.Module ->
   Map Name.Name Can.Annotation ->
   IO Interface.Interface
-generateInterface pkg canonModule@(Can.Module modName _ _ _ _ _ _ _ _ _) types = do
+generateInterface pkg canonModule@(Can.Module modName _ _ _ _ _ _ _ _ _ _ _) types = do
   Log.logEvent (InterfaceSaved (show modName))
   return (Interface.fromModule pkg canonModule types)
 

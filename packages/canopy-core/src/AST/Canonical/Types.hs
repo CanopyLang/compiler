@@ -63,6 +63,10 @@ module AST.Canonical.Types
     Effects (..),
     Port (..),
     Manager (Cmd, SubManager, Fx),
+
+    -- * Abilities
+    Ability (..),
+    Impl (..),
   )
 where
 
@@ -396,7 +400,11 @@ data Module = Module
     -- | Type guard annotations for functions in this module.
     -- Maps function name to its guard info when the function
     -- is annotated with @guards@.
-    _guards :: !(Map Name GuardInfo)
+    _guards :: !(Map Name GuardInfo),
+    -- | Ability declarations in this module.
+    _abilities :: !(Map Name Ability),
+    -- | Impl declarations in this module.
+    _impls :: ![Impl]
   }
 
 -- | Supertype bound for opaque type aliases.
@@ -536,3 +544,31 @@ data Manager
   = Cmd Name
   | SubManager Name
   | Fx Name Name
+
+-- ABILITIES
+
+-- | Canonical ability declaration.
+--
+-- An ability declares a named interface with methods. The type variable
+-- (@_abilityVar@) represents the type that will implement this ability.
+--
+-- @since 0.20.0
+data Ability = Ability
+  { _abilityName :: !Name
+  , _abilityVar :: !Name
+  , _abilitySuperAbilities :: ![Name]
+  , _abilityMethods :: !(Map Name Type)
+  }
+  deriving (Eq, Show)
+
+-- | Canonical impl declaration.
+--
+-- An impl provides method implementations for a type to satisfy an ability.
+--
+-- @since 0.20.0
+data Impl = Impl
+  { _implAbility :: !Name
+  , _implType :: !Type
+  , _implMethods :: !(Map Name Def)
+  }
+  deriving (Show)

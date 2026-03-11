@@ -138,6 +138,8 @@ module AST.Source
     Exposed (..),
     Privacy (..),
     FieldUpdate (..),
+    AbilityDecl (..),
+    ImplDecl (..),
   )
 where
 
@@ -564,7 +566,11 @@ data Module = Module
     -- | All non-doc comments extracted from the source file.
     -- Sorted by starting position, used by the formatter to
     -- re-emit comments in the correct locations.
-    _comments :: [RawComment]
+    _comments :: [RawComment],
+    -- | Ability declarations (@ability Name a where ...@) in this module.
+    _abilities :: [Ann.Located AbilityDecl],
+    -- | Impl declarations (@impl AbilityName Type where ...@) in this module.
+    _impls :: [Ann.Located ImplDecl]
   }
   deriving (Show)
 
@@ -584,7 +590,7 @@ data Module = Module
 --
 -- @since 0.19.1
 getName :: Module -> Name
-getName (Module maybeName _ _ _ _ _ _ _ _ _ _) =
+getName (Module maybeName _ _ _ _ _ _ _ _ _ _ _ _) =
   case maybeName of
     Just (Ann.At _ moduleName) ->
       moduleName
@@ -935,5 +941,38 @@ data Exposed
 data Privacy
   = Public Ann.Region
   | Private
+  deriving (Show)
+
+-- | An ability declaration in source form.
+--
+-- Represents ability declarations like:
+-- @
+-- ability Printable a where
+--   print : a -> String
+-- @
+--
+-- @since 0.20.0
+data AbilityDecl = AbilityDecl
+  { _abilityName :: !(Ann.Located Name),
+    _abilityVar :: !(Ann.Located Name),
+    _abilitySuperAbilities :: ![Name],
+    _abilityMethods :: ![(Ann.Located Name, Type)]
+  }
+  deriving (Show)
+
+-- | An impl declaration in source form.
+--
+-- Represents impl declarations like:
+-- @
+-- impl Printable Int where
+--   print x = String.fromInt x
+-- @
+--
+-- @since 0.20.0
+data ImplDecl = ImplDecl
+  { _implAbility :: !(Ann.Located Name),
+    _implType :: !Type,
+    _implMethods :: ![Ann.Located Value]
+  }
   deriving (Show)
 

@@ -102,6 +102,10 @@ data Error
   | LazyImportKernel Ann.Region Name.Name
   | VarianceViolation Ann.Region Name.Name Name.Name Can.Variance VariancePosition
   | DerivingInvalid Ann.Region Name.Name Name.Name DerivingProblem
+  | UnknownAbility Ann.Region Name.Name
+  | OrphanImpl Name.Name Can.Type Ann.Region
+  | MissingMethod Name.Name Name.Name
+  | ExtraMethod Name.Name Name.Name
   deriving (Show)
 
 -- | Position where a type variable appears that violates its variance annotation.
@@ -346,6 +350,18 @@ toDiagnostic source err =
       varianceViolationDiagnostic source region typeName varName variance position
     DerivingInvalid region typeName clauseName problem ->
       derivingInvalidDiagnostic source region typeName clauseName problem
+    UnknownAbility region abilityName ->
+      Diagnostic.makeSimpleDiagnostic (EC.canonError 51) Diagnostic.PhaseCanon "UNKNOWN ABILITY" region
+        (Doc.reflow ("I cannot find an ability named `" <> Name.toChars abilityName <> "`."))
+    OrphanImpl abilityName _implType region ->
+      Diagnostic.makeSimpleDiagnostic (EC.canonError 52) Diagnostic.PhaseCanon "ORPHAN IMPL" region
+        (Doc.reflow ("This impl is orphan: neither the ability `" <> Name.toChars abilityName <> "` nor the implemented type is defined in this module."))
+    MissingMethod abilityName methodName ->
+      Diagnostic.makeSimpleDiagnostic (EC.canonError 53) Diagnostic.PhaseCanon "MISSING METHOD" Ann.one
+        (Doc.reflow ("The impl is missing method `" <> Name.toChars methodName <> "` required by ability `" <> Name.toChars abilityName <> "`."))
+    ExtraMethod abilityName methodName ->
+      Diagnostic.makeSimpleDiagnostic (EC.canonError 54) Diagnostic.PhaseCanon "EXTRA METHOD" Ann.one
+        (Doc.reflow ("The impl defines method `" <> Name.toChars methodName <> "` which is not declared by ability `" <> Name.toChars abilityName <> "`."))
 
 -- ---------------------------------------------------------------------------
 -- Private dispatch helpers

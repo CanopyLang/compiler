@@ -36,8 +36,14 @@ type Annotations =
   Map.Map Name.Name Can.Annotation
 
 optimize :: Annotations -> Can.Module -> Result i [Warning.Warning] Opt.LocalGraph
-optimize annotations (Can.Module home _ _ decls unions aliases _ effects _ _) =
-  (addDecls home annotations decls . addEffects home effects) . addUnions home unions . Derive.addDerivedDefs home unions aliases . addAliases home aliases $ Opt.LocalGraph Nothing Map.empty Map.empty Map.empty
+optimize annotations (Can.Module home _ _ decls unions aliases _ effects _ _ abilities impls) =
+  (addDecls home annotations decls . addEffects home effects)
+    . addImpls home impls
+    . addAbilities home abilities
+    . addUnions home unions
+    . Derive.addDerivedDefs home unions aliases
+    . addAliases home aliases
+    $ Opt.LocalGraph Nothing Map.empty Map.empty Map.empty
 
 -- UNION
 
@@ -86,6 +92,100 @@ addAlias home name (Can.Alias _ _ tipe _ _) graph@(Opt.LocalGraph main nodes fie
 
 addRecordCtorField :: Name.Name -> Can.FieldType -> Map.Map Name.Name Int -> Map.Map Name.Name Int
 addRecordCtorField name _ = Map.insertWith (+) name 1
+
+-- ABILITIES AND IMPLS
+
+-- | Register ability declarations in the optimization graph.
+--
+-- Each ability becomes an 'Opt.AbilityDict' node recording its method names.
+-- No runtime code is emitted for abilities themselves; the node exists so
+-- that impl generation and dead-code elimination can reference ability names.
+--
+-- @since 0.20.0
+addAbilities :: ModuleName.Canonical -> Map.Map Name.Name Can.Ability -> Opt.LocalGraph -> Opt.LocalGraph
+addAbilities home abilities graph =
+  Map.foldrWithKey (addAbility home) graph abilities
+
+-- | Register a single ability declaration as an 'Opt.AbilityDict' node.
+--
+-- @since 0.20.0
+addAbility :: ModuleName.Canonical -> Name.Name -> Can.Ability -> Opt.LocalGraph -> Opt.LocalGraph
+addAbility home name (Can.Ability _ _ _ methods) (Opt.LocalGraph main nodes fields locs) =
+  let global = Opt.Global home name
+      node = Opt.AbilityDict (Map.keys methods)
+  in Opt.LocalGraph main (Map.insert global node nodes) fields locs
+
+-- | Register impl declarations in the optimization graph.
+--
+-- Each impl becomes an 'Opt.ImplDict' node with optimized method expressions.
+-- The generated JavaScript object maps method names to their implementations.
+--
+-- @since 0.20.0
+addImpls :: ModuleName.Canonical -> [Can.Impl] -> Opt.LocalGraph -> Opt.LocalGraph
+addImpls home impls graph =
+  List.foldl' (addImplStep home) graph impls
+
+-- | Register a single impl declaration in the optimization graph.
+--
+-- @since 0.20.0
+addImplStep :: ModuleName.Canonical -> Opt.LocalGraph -> Can.Impl -> Opt.LocalGraph
+addImplStep home graph (Can.Impl abilityName implType methods) =
+  let dictName = implDictName abilityName implType
+      (deps, fields, methodExprs) = Names.run (traverseMethodDefs methods)
+      global = Opt.Global home dictName
+      node = Opt.ImplDict abilityName methodExprs deps
+  in addToGraph global node fields graph
+
+-- | Derive the global name for an impl dictionary from the ability and type.
+--
+-- Produces names of the form @$impl$AbilityName$TypeName@.
+--
+-- @since 0.20.0
+implDictName :: Name.Name -> Can.Type -> Name.Name
+implDictName abilityName implType =
+  Name.fromChars ("$impl$" <> Name.toChars abilityName <> "$" <> typeToName implType)
+
+-- | Convert a canonical type to a name suffix for impl dict naming.
+--
+-- @since 0.20.0
+typeToName :: Can.Type -> String
+typeToName canType =
+  case canType of
+    Can.TType _ name _ -> Name.toChars name
+    Can.TAlias _ name _ _ -> Name.toChars name
+    Can.TVar name -> Name.toChars name
+    Can.TRecord _ _ -> "Record"
+    Can.TUnit -> "Unit"
+    Can.TTuple _ _ _ -> "Tuple"
+    Can.TLambda _ _ -> "Func"
+
+-- | Optimise all method definitions in an impl.
+--
+-- @since 0.20.0
+traverseMethodDefs :: Map.Map Name.Name Can.Def -> Names.Tracker (Map.Map Name.Name Opt.Expr)
+traverseMethodDefs methods =
+  Map.traverseWithKey optimizeMethodDef methods
+
+-- | Optimise a single method definition body into an 'Opt.Expr'.
+--
+-- @since 0.20.0
+optimizeMethodDef :: Name.Name -> Can.Def -> Names.Tracker Opt.Expr
+optimizeMethodDef _ def =
+  case def of
+    Can.Def _ args body -> optimizeMethodBody args body
+    Can.TypedDef _ _ typedArgs body _ -> optimizeMethodBody (fmap fst typedArgs) body
+
+-- | Optimise a method body, wrapping args in a function if present.
+--
+-- @since 0.20.0
+optimizeMethodBody :: [Can.Pattern] -> Can.Expr -> Names.Tracker Opt.Expr
+optimizeMethodBody args body =
+  case args of
+    [] -> Expr.optimize Set.empty body
+    _ -> do
+      (argNames, destructors) <- Expr.destructArgs args
+      obody <- Expr.optimize Set.empty body
+      pure (Opt.Function argNames (foldr Opt.Destruct obody destructors))
 
 -- ADD EFFECTS
 

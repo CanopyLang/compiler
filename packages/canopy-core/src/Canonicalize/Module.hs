@@ -20,6 +20,7 @@ where
 import qualified AST.Canonical as Can
 import qualified AST.Source as Src
 import Data.Foldable (traverse_)
+import qualified Canonicalize.Ability as Ability
 import qualified Canonicalize.Effects as Effects
 import qualified Canonicalize.Environment as Env
 import qualified Canonicalize.Environment.Dups as Dups
@@ -75,7 +76,7 @@ loadFFIContentWithRoot = FFI.loadFFIContentWithRoot
 --
 -- @since 0.19.1
 canonicalize :: Pkg.Name -> ProjectType -> Map ModuleName.Raw Interface.Interface -> Map JsSourcePath JsSource -> Src.Module -> Result i [Warning.Warning] Can.Module
-canonicalize pkg projectType ifaces ffiContentMap modul@(Src.Module _ exports docs imports foreignImports values _ _ binops effects _) =
+canonicalize pkg projectType ifaces ffiContentMap modul@(Src.Module _ exports docs imports foreignImports values _ _ binops effects _ srcAbilities srcImpls) =
   do
     let home = ModuleName.Canonical pkg (Src.getName modul)
     let cbinops = Map.fromList (fmap canonicalizeBinop binops)
@@ -101,8 +102,10 @@ canonicalize pkg projectType ifaces ffiContentMap modul@(Src.Module _ exports do
     let derivedNames = collectDerivedFunctionNames cunions caliases
     cexports <- canonicalizeExports values derivedNames cunions caliases cbinops ceffects exports
     cguards <- canonicalizeGuards envWithFFI values
+    cabilities <- Ability.canonicalizeAbilities envWithFFI srcAbilities
+    cimpls <- Ability.canonicalizeImpls envWithFFI home cabilities srcImpls
 
-    return $ Can.Module home cexports docs cvalues cunions caliases cbinops ceffects lazySet cguards
+    return $ Can.Module home cexports docs cvalues cunions caliases cbinops ceffects lazySet cguards cabilities cimpls
 
 -- | Legacy canonicalize function for backward compatibility
 --
@@ -112,7 +115,7 @@ canonicalize pkg projectType ifaces ffiContentMap modul@(Src.Module _ exports do
 --
 -- @deprecated Use canonicalize with pre-loaded FFI content instead
 canonicalizeWithIO :: Pkg.Name -> Map ModuleName.Raw Interface.Interface -> Src.Module -> IO (Result i [Warning.Warning] Can.Module)
-canonicalizeWithIO pkg ifaces modul@(Src.Module _ _ _ _ foreignImports _ _ _ _ _ _) = do
+canonicalizeWithIO pkg ifaces modul@(Src.Module _ _ _ _ foreignImports _ _ _ _ _ _ _ _) = do
   -- Pre-load FFI content
   ffiContentMap <- FFI.loadFFIContent foreignImports
   return $ canonicalize pkg Application ifaces ffiContentMap modul

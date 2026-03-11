@@ -21,7 +21,7 @@ import Type.Type (Constraint (..), Type (..), mkFlexVar, nameToRigid, never, (==
 -- CONSTRAIN
 
 constrain :: Can.Module -> IO Constraint
-constrain (Can.Module home _ _ decls unions aliases _ effects _ guards) =
+constrain (Can.Module home _ _ decls unions aliases _ effects _ guards _ _) =
   letDerived home unions aliases =<< case effects of
     Can.NoEffects ->
       constrainDecls guards decls CSaveTheEnvironment

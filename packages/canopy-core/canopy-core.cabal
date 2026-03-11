@@ -29,6 +29,7 @@ library
       AST.Utils.Binop
       AST.Utils.Shader
       AST.Utils.Type
+      Canonicalize.Ability
       Canonicalize.Environment
       Canonicalize.Environment.Dups
       Canonicalize.Expression
@@ -64,6 +65,7 @@ library
       FFI.StaticAnalysis
       FFI.Types
       FFI.TypeValidator
+      FFI.TypeScriptValidation
       FFI.Validator
       File
       File.Archive
@@ -79,6 +81,7 @@ library
       Editor.Integration
       Generate.Html
       Generate.JavaScript
+      Generate.JavaScript.Ability
       Generate.JavaScript.Builder
       Generate.JavaScript.CodeSplit.Analyze
       Generate.JavaScript.CodeSplit.Generate
@@ -140,6 +143,7 @@ library
       Reporting.Error.Hierarchy
       Reporting.Error.Syntax
       Reporting.Error.Type
+      Reporting.Error.TypeScript
       Reporting.ErrorCode
       Reporting.Exit.Help
       Reporting.InternalError
@@ -149,6 +153,7 @@ library
       Reporting.Result
       Reporting.Suggest
       Reporting.Warning
+      Type.Ability
       Type.Constrain.Module
       Type.Instantiate
       Type.Occurs

@@ -34,6 +34,8 @@ tests =
       testChoiceConstructors,
       testMainConstructors,
       testNodeConstructors,
+      testAbilityDictNode,
+      testImplDictNode,
       testEffectsTypeConstructors,
       testEdgeCases
     ]
@@ -432,6 +434,61 @@ testNodeConstructors =
           _ -> assertFailure "Expected Manager constructor"
     ]
 
+-- Test AbilityDict node
+testAbilityDictNode :: TestTree
+testAbilityDictNode =
+  testGroup
+    "AbilityDict node"
+    [ testCase "AbilityDict stores method names" $ do
+        let methods = [Name.fromChars "show", Name.fromChars "fromString"]
+            node = Opt.AbilityDict methods
+        case node of
+          Opt.AbilityDict ms -> ms @?= methods
+          _ -> assertFailure "Expected AbilityDict constructor",
+      testCase "AbilityDict with empty method list" $ do
+        let node = Opt.AbilityDict []
+        case node of
+          Opt.AbilityDict ms -> length ms @?= 0
+          _ -> assertFailure "Expected AbilityDict constructor",
+      testCase "AbilityDict is not a Define node" $ do
+        let node = Opt.AbilityDict [Name.fromChars "method"]
+        isDefineNode node @?= False
+    ]
+
+-- Test ImplDict node
+testImplDictNode :: TestTree
+testImplDictNode =
+  testGroup
+    "ImplDict node"
+    [ testCase "ImplDict stores ability name, methods and deps" $ do
+        let abilityName = Name.fromChars "Show"
+            methodName = Name.fromChars "show"
+            methodBody = Opt.Bool True
+            methods = Map.singleton methodName methodBody
+            deps = Set.empty
+            node = Opt.ImplDict abilityName methods deps
+        case node of
+          Opt.ImplDict aName ms d -> do
+            aName @?= abilityName
+            Map.size ms @?= 1
+            Set.null d @?= True
+          _ -> assertFailure "Expected ImplDict constructor",
+      testCase "ImplDict with multiple methods" $ do
+        let abilityName = Name.fromChars "Eq"
+            methods =
+              Map.fromList
+                [ (Name.fromChars "eq", Opt.Bool True),
+                  (Name.fromChars "neq", Opt.Bool False)
+                ]
+            node = Opt.ImplDict abilityName methods Set.empty
+        case node of
+          Opt.ImplDict _ ms _ -> Map.size ms @?= 2
+          _ -> assertFailure "Expected ImplDict constructor",
+      testCase "ImplDict is not an AbilityDict node" $ do
+        let node = Opt.ImplDict (Name.fromChars "Show") Map.empty Set.empty
+        isAbilityDictNode node @?= False
+    ]
+
 -- Test EffectsType constructors
 testEffectsTypeConstructors :: TestTree
 testEffectsTypeConstructors =
@@ -665,6 +722,15 @@ isEnumNode _ = False
 isManagerNode :: Opt.Node -> Bool
 isManagerNode (Opt.Manager _) = True
 isManagerNode _ = False
+
+-- Ability/impl node type checking
+isAbilityDictNode :: Opt.Node -> Bool
+isAbilityDictNode (Opt.AbilityDict _) = True
+isAbilityDictNode _ = False
+
+isImplDictNode :: Opt.Node -> Bool
+isImplDictNode (Opt.ImplDict _ _ _) = True
+isImplDictNode _ = False
 
 -- Effects type checking
 isCmdEffect :: Opt.EffectsType -> Bool

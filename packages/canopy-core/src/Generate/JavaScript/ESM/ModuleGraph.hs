@@ -104,3 +104,5 @@ nodeDeps (Opt.Manager _) = Set.empty
 nodeDeps (Opt.Kernel _ deps) = deps
 nodeDeps (Opt.PortIncoming _ deps) = deps
 nodeDeps (Opt.PortOutgoing _ deps) = deps
+nodeDeps (Opt.AbilityDict _) = Set.empty
+nodeDeps (Opt.ImplDict _ _ deps) = deps

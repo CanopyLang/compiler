@@ -133,6 +133,8 @@ extractNodeDepsForHash (Opt.Enum _) = Set.empty
 extractNodeDepsForHash Opt.Box = Set.empty
 extractNodeDepsForHash (Opt.PortIncoming _ deps) = deps
 extractNodeDepsForHash (Opt.PortOutgoing _ deps) = deps
+extractNodeDepsForHash (Opt.AbilityDict _) = Set.empty
+extractNodeDepsForHash (Opt.ImplDict _ _ deps) = deps
 
 -- | Build chunk graph dispatching on presence of lazy modules.
 buildChunkGraphFromConfig :: SplitConfig -> Graph -> Mains -> ChunkGraph
@@ -226,6 +228,8 @@ extractNodeDeps node =
     Opt.Ctor _ _ -> Set.empty
     Opt.Enum _ -> Set.empty
     Opt.Box -> Set.empty
+    Opt.AbilityDict _ -> Set.empty
+    Opt.ImplDict _ _ deps -> deps
 
 -- | Collect the main entry point globals from the Mains map.
 mainEntryGlobals :: Mains -> Set Opt.Global

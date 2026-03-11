@@ -161,6 +161,9 @@ module AST.Canonical
     Effects (..),
     Port (..),
     Manager (Cmd, SubManager, Fx),
+    -- abilities
+    Ability (..),
+    Impl (..),
   )
 where
 
@@ -200,4 +203,6 @@ import AST.Canonical.Types
     NamingStrategy (..),
     Binop (..),
     fieldsToList,
+    Ability (..),
+    Impl (..),
   )

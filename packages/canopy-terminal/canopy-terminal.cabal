@@ -46,6 +46,7 @@ library
       CLI.Commands.Dev
       CLI.Commands.Kit
       CLI.Commands.Link
+      CLI.Commands.Migrate
       CLI.Commands.Package
       CLI.Commands.Project
       CLI.Commands.Tools
@@ -95,13 +96,16 @@ library
       Install.PkgPlan
       Install.Types
       Kit
+      Kit.ApiHandler
       Kit.Build
+      Kit.DataLoader
       Kit.Dev
       Kit.ErrorBoundary
       Kit.Layout
       Kit.New
       Kit.SSG
       Kit.Types
+      Kit.VitePlugin
       Link
       Lint
       Lint.Config
@@ -127,6 +131,7 @@ library
       Make.Parser
       Make.Reproducible
       Make.Types
+      Migrate
       New
       Publish
       Publish.Archive

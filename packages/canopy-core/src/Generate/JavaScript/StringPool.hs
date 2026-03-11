@@ -98,6 +98,8 @@ countNodeStrings acc node =
     Opt.Link _ -> acc
     Opt.Manager _ -> acc
     Opt.Kernel _ _ -> acc
+    Opt.AbilityDict _ -> acc
+    Opt.ImplDict _ methods _ -> Map.foldl' countExprStrings acc methods
 
 -- | Count string literals in a definition.
 countDefStrings :: Map ES.String Int -> Opt.Def -> Map ES.String Int

@@ -274,6 +274,7 @@ test-suite canopy-test
       Unit.FFI.ManifestTest
       Unit.FFI.ResolveTest
       Unit.FFI.StaticAnalysisTest
+      Unit.FFI.TypeScriptValidationTest
       Unit.FFI.ValidatorTest
       Unit.File.ArchiveTest
       Unit.File.BinaryTest

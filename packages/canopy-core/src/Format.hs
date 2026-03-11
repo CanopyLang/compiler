@@ -192,7 +192,7 @@ formatBytes config bytes =
 -- so that files without a module declaration remain unmodified in that
 -- respect.
 renderHeader :: Src.Module -> PP.Doc
-renderHeader (Src.Module maybeName exports _ _ _ _ _ _ _ effects _) =
+renderHeader (Src.Module maybeName exports _ _ _ _ _ _ _ effects _ _ _) =
   maybe PP.empty (renderNamedHeader effects exports) maybeName
 
 -- | Render a named module header line.
@@ -216,7 +216,7 @@ effectsKeyword (Src.Manager _ _) = PP.text "effect module"
 
 -- | Render all import declarations, sorted alphabetically by module name.
 renderImports :: Src.Module -> PP.Doc
-renderImports (Src.Module _ _ _ imports _ _ _ _ _ _ _) =
+renderImports (Src.Module _ _ _ imports _ _ _ _ _ _ _ _ _) =
   renderSortedImports (List.sortBy compareImports imports)
 
 -- | Render imports preceded by any comments that fall between the
@@ -238,12 +238,12 @@ isBetweenHeaderAndDecls rc modul =
 
 -- | Get the ending row of the module header (0 if no header).
 headerEndRow :: Src.Module -> Word32
-headerEndRow (Src.Module Nothing _ _ _ _ _ _ _ _ _ _) = 0
-headerEndRow (Src.Module (Just (Ann.At (Ann.Region _ (Ann.Position row _)) _)) _ _ _ _ _ _ _ _ _ _) = row
+headerEndRow (Src.Module Nothing _ _ _ _ _ _ _ _ _ _ _ _) = 0
+headerEndRow (Src.Module (Just (Ann.At (Ann.Region _ (Ann.Position row _)) _)) _ _ _ _ _ _ _ _ _ _ _ _) = row
 
 -- | Get the starting row of the first declaration.
 declStartRow :: Src.Module -> Word32
-declStartRow (Src.Module _ _ _ _ _ values unions aliases binops _ _) =
+declStartRow (Src.Module _ _ _ _ _ values unions aliases binops _ _ _ _) =
   minimum (maxBound : allRows)
   where
     allRows = map locRow values ++ map locRow unions ++ map locRow aliases ++ map locRow binops
@@ -251,15 +251,15 @@ declStartRow (Src.Module _ _ _ _ _ values unions aliases binops _ _) =
 
 -- | Get the ending row of the last import.
 importsEndRow :: Src.Module -> Word32
-importsEndRow (Src.Module _ _ _ [] _ _ _ _ _ _ _) = 0
-importsEndRow (Src.Module _ _ _ imports _ _ _ _ _ _ _) =
+importsEndRow (Src.Module _ _ _ [] _ _ _ _ _ _ _ _ _) = 0
+importsEndRow (Src.Module _ _ _ imports _ _ _ _ _ _ _ _ _) =
   maximum (map importRow imports)
   where
     importRow (Src.Import (Ann.At (Ann.Region _ (Ann.Position row _)) _) _ _ _) = row
 
 -- | Render comments that appear after all declarations.
 renderTrailingComments :: FormatConfig -> Src.Module -> PP.Doc
-renderTrailingComments _config (Src.Module _ _ _ _ _ values unions aliases binops _ comments) =
+renderTrailingComments _config (Src.Module _ _ _ _ _ values unions aliases binops _ comments _ _) =
   stackNonEmpty (map renderRawComment trailingComments)
   where
     lastDeclRow = maximum (0 : allRows)
@@ -347,7 +347,7 @@ formatExposing (Src.Explicit exposed) =
 -- sorted by source position, so comments appear at their original
 -- locations relative to declarations.
 renderDeclarations :: FormatConfig -> Src.Module -> PP.Doc
-renderDeclarations config (Src.Module _ _ _ _ _ values unions aliases binops effects comments) =
+renderDeclarations config (Src.Module _ _ _ _ _ values unions aliases binops effects comments _ _) =
   stackNonEmpty (map snd sortedItems)
   where
     declItems = declsWithRows config values unions aliases binops effects
