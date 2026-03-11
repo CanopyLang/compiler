@@ -21,8 +21,8 @@ import Type.Type (Constraint (..), Type (..), mkFlexVar, nameToRigid, never, (==
 -- CONSTRAIN
 
 constrain :: Can.Module -> IO Constraint
-constrain (Can.Module home _ _ decls unions aliases _ effects _ guards _ _) =
-  letDerived home unions aliases =<< case effects of
+constrain (Can.Module home _ _ decls unions aliases _ effects _ guards abilities _) =
+  letAbilityMethods home abilities =<< letDerived home unions aliases =<< case effects of
     Can.NoEffects ->
       constrainDecls guards decls CSaveTheEnvironment
     Can.Ports ports ->
@@ -276,3 +276,45 @@ lowerFirst (c : cs) = toLower c : cs
     toLower ch
       | ch >= 'A' && ch <= 'Z' = toEnum (fromEnum ch + 32)
       | otherwise = ch
+
+-- ABILITY METHOD TYPES
+
+-- | Introduce type bindings for ability method signatures.
+--
+-- Each method in each ability declaration is added to the constraint
+-- environment as a universally quantified function. This allows code
+-- to reference ability methods as regular functions during type checking.
+--
+-- @since 0.20.0
+letAbilityMethods ::
+  ModuleName.Canonical ->
+  Map Name.Name Can.Ability ->
+  Constraint ->
+  IO Constraint
+letAbilityMethods _home abilities constraint =
+  Map.foldlWithKey' letAbilityMethodsHelp (return constraint) abilities
+
+letAbilityMethodsHelp ::
+  IO Constraint ->
+  Name.Name ->
+  Can.Ability ->
+  IO Constraint
+letAbilityMethodsHelp makeConstraint _abilityName ability =
+  do
+    rigidVar <- nameToRigid (Can._abilityVar ability)
+    let freeVars = Map.singleton (Can._abilityVar ability) (VarN rigidVar)
+    Map.foldlWithKey' (letOneMethod [rigidVar] freeVars) makeConstraint (Can._abilityMethods ability)
+
+letOneMethod ::
+  [Type.Variable] ->
+  Map Name.Name Type ->
+  IO Constraint ->
+  Name.Name ->
+  Can.Type ->
+  IO Constraint
+letOneMethod rigids freeVars makeConstraint methodName methodType =
+  do
+    constraint <- makeConstraint
+    tipe <- Instantiate.fromSrcType freeVars methodType
+    let header = Map.singleton methodName (Ann.At Ann.zero tipe)
+    return (CLet rigids [] header CTrue constraint Nothing)

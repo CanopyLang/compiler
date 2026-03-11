@@ -243,10 +243,12 @@ headerEndRow (Src.Module (Just (Ann.At (Ann.Region _ (Ann.Position row _)) _)) _
 
 -- | Get the starting row of the first declaration.
 declStartRow :: Src.Module -> Word32
-declStartRow (Src.Module _ _ _ _ _ values unions aliases binops _ _ _ _) =
+declStartRow (Src.Module _ _ _ _ _ values unions aliases binops _ _ abilities impls) =
   minimum (maxBound : allRows)
   where
-    allRows = map locRow values ++ map locRow unions ++ map locRow aliases ++ map locRow binops
+    allRows =
+      map locRow values ++ map locRow unions ++ map locRow aliases
+        ++ map locRow binops ++ map locRow abilities ++ map locRow impls
     locRow (Ann.At (Ann.Region (Ann.Position row _) _) _) = row
 
 -- | Get the ending row of the last import.
@@ -259,11 +261,13 @@ importsEndRow (Src.Module _ _ _ imports _ _ _ _ _ _ _ _ _) =
 
 -- | Render comments that appear after all declarations.
 renderTrailingComments :: FormatConfig -> Src.Module -> PP.Doc
-renderTrailingComments _config (Src.Module _ _ _ _ _ values unions aliases binops _ comments _ _) =
+renderTrailingComments _config (Src.Module _ _ _ _ _ values unions aliases binops _ comments abilities impls) =
   stackNonEmpty (map renderRawComment trailingComments)
   where
     lastDeclRow = maximum (0 : allRows)
-    allRows = map locRow values ++ map locRow unions ++ map locRow aliases ++ map locRow binops
+    allRows =
+      map locRow values ++ map locRow unions ++ map locRow aliases
+        ++ map locRow binops ++ map locRow abilities ++ map locRow impls
     locRow (Ann.At (Ann.Region _ (Ann.Position row _)) _) = row
     trailingComments = filter (\c -> Src._rcRow c > lastDeclRow) comments
 
@@ -347,10 +351,10 @@ formatExposing (Src.Explicit exposed) =
 -- sorted by source position, so comments appear at their original
 -- locations relative to declarations.
 renderDeclarations :: FormatConfig -> Src.Module -> PP.Doc
-renderDeclarations config (Src.Module _ _ _ _ _ values unions aliases binops effects comments _ _) =
+renderDeclarations config (Src.Module _ _ _ _ _ values unions aliases binops effects comments abilities impls) =
   stackNonEmpty (map snd sortedItems)
   where
-    declItems = declsWithRows config values unions aliases binops effects
+    declItems = declsWithRows config values unions aliases binops effects abilities impls
     commentItems = commentsInRange declRange comments
     declRange = itemRange declItems
     sortedItems = List.sortBy (\(r1, _) (r2, _) -> compare r1 r2) (declItems ++ commentItems)
@@ -363,13 +367,17 @@ declsWithRows ::
   [Ann.Located Src.Alias] ->
   [Ann.Located Src.Infix] ->
   Src.Effects ->
+  [Ann.Located Src.AbilityDecl] ->
+  [Ann.Located Src.ImplDecl] ->
   [(Word32, PP.Doc)]
-declsWithRows config values unions aliases binops effects =
+declsWithRows config values unions aliases binops effects abilities impls =
   map (locatedDoc (formatUnion config)) unions
     ++ map (locatedDoc (formatAlias config)) aliases
     ++ map (locatedDoc formatInfix) binops
     ++ map (locatedDoc (formatValue config)) values
     ++ effectDocs effects
+    ++ map (locatedDoc (formatAbility config)) abilities
+    ++ map (locatedDoc (formatImpl config)) impls
 
 -- | Extract starting row and render a located declaration.
 locatedDoc :: (a -> PP.Doc) -> Ann.Located a -> (Word32, PP.Doc)
@@ -528,6 +536,63 @@ renderTypeAnnotationWithGuard nameD maybeGuard t =
 formatPort :: Src.Port -> PP.Doc
 formatPort (Src.Port locName portType) =
   PP.text "port" PP.<+> locNameDoc locName PP.<+> PP.text ":" PP.<+> formatType portType
+
+-- | Format an ability declaration.
+--
+-- Renders ability declarations in the form:
+--
+-- @
+-- ability Show a where
+--     show : a -> String
+-- @
+--
+-- Super-abilities are rendered as a comma-separated list before @=>@.
+--
+-- @since 0.20.0
+formatAbility :: FormatConfig -> Src.AbilityDecl -> PP.Doc
+formatAbility config (Src.AbilityDecl locName locVar supers methods) =
+  PP.text "ability" PP.<+> locNameDoc locName PP.<+> locNameDoc locVar
+    <> superDoc supers PP.<+> PP.text "where"
+    <> foldMap (formatAbilityMethod config) methods
+  where
+    superDoc [] = PP.empty
+    superDoc ss = PP.text " : " <> commaSepDocs (map nameDoc ss)
+
+-- | Format a single ability method signature.
+--
+-- Renders as an indented line: @    methodName : Type@
+--
+-- @since 0.20.0
+formatAbilityMethod :: FormatConfig -> (Ann.Located Name, Src.Type) -> PP.Doc
+formatAbilityMethod config (locName, methodType) =
+  nlIndent config 1 <> locNameDoc locName PP.<+> PP.text ":" PP.<+> formatType methodType
+
+-- | Format an impl declaration.
+--
+-- Renders impl declarations in the form:
+--
+-- @
+-- impl Show Int where
+--     show n =
+--         String.fromInt n
+-- @
+--
+-- Methods are formatted as indented value definitions.
+--
+-- @since 0.20.0
+formatImpl :: FormatConfig -> Src.ImplDecl -> PP.Doc
+formatImpl config (Src.ImplDecl locAbility implType methods) =
+  PP.text "impl" PP.<+> locNameDoc locAbility PP.<+> formatType implType PP.<+> PP.text "where"
+    <> foldMap (formatImplMethod config) methods
+
+-- | Format a single impl method definition.
+--
+-- Renders as an indented value definition within an impl block.
+--
+-- @since 0.20.0
+formatImplMethod :: FormatConfig -> Ann.Located Src.Value -> PP.Doc
+formatImplMethod config (Ann.At _ val) =
+  nlIndent config 1 <> formatValue config val
 
 -- ---------------------------------------------------------------------------
 -- Type rendering

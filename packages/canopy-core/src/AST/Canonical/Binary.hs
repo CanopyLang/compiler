@@ -17,7 +17,8 @@
 module AST.Canonical.Binary () where
 
 import AST.Canonical.Types
-  ( Alias (..),
+  ( Ability (..),
+    Alias (..),
     AliasType (..),
     Annotation (..),
     ArithOp (..),
@@ -316,3 +317,7 @@ instance Binary.Binary BinopKind where
       0 -> fmap NativeArith Binary.get
       1 -> Monad.liftM3 UserDefined Binary.get Binary.get Binary.get
       _ -> fail ("BinopKind: unexpected tag " ++ show tag ++ " (expected 0-1). Delete canopy-stuff/ to rebuild.")
+
+instance Binary.Binary Ability where
+  put (Ability a b c d) = Binary.put a >> Binary.put b >> Binary.put c >> Binary.put d
+  get = Monad.liftM4 Ability Binary.get Binary.get Binary.get Binary.get

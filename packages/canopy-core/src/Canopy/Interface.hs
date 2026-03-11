@@ -4,6 +4,7 @@ module Canopy.Interface
     Union (..),
     Alias (..),
     Binop (..),
+    ImplHeader (..),
     fromModule,
     toPublicUnion,
     toPublicAlias,
@@ -20,7 +21,7 @@ import qualified AST.Canonical as Can
 import qualified AST.Utils.Binop as Binop
 import qualified Canopy.Package as Pkg
 import Control.Applicative ((<|>))
-import Control.Monad (liftM3, liftM4)
+import Control.Monad (liftM2, liftM3, liftM4)
 import Data.Aeson (FromJSON, ToJSON, object, withObject, (.:), (.=))
 import qualified Data.Aeson as Aeson
 import Data.Aeson.Types (Parser)
@@ -41,7 +42,15 @@ data Interface = Interface
     _aliases :: Map.Map Name.Name Alias,
     _binops :: Map.Map Name.Name Binop,
     -- | Guard annotations for exported type guard functions.
-    _ifaceGuards :: !(Map.Map Name.Name Can.GuardInfo)
+    _ifaceGuards :: !(Map.Map Name.Name Can.GuardInfo),
+    -- | Ability declarations exported from this module.
+    -- Restricted by the module's export list (like unions).
+    _ifaceAbilities :: !(Map.Map Name.Name Can.Ability),
+    -- | Impl headers visible from this module.
+    -- Impls are always public: if a module defines an impl, all importers
+    -- can use it. Only the header (ability name + implementing type) is
+    -- stored because method bodies are not needed across module boundaries.
+    _ifaceImpls :: ![ImplHeader]
   }
   deriving (Eq, Show)
 
@@ -71,18 +80,37 @@ data Binop = Binop
   }
   deriving (Eq, Show)
 
+-- | Serializable summary of an impl declaration for interface files.
+--
+-- Stores only the ability name and implementing type, not the method
+-- bodies. This is sufficient for cross-module type checking: the type
+-- checker needs to know /that/ an impl exists, not /how/ it is
+-- implemented.
+data ImplHeader = ImplHeader
+  { _implAbility :: !Name.Name,
+    _implType :: !Can.Type
+  }
+  deriving (Eq, Show)
+
 -- FROM MODULE
 
 fromModule :: Pkg.Name -> Can.Module -> Map.Map Name.Name Can.Annotation -> Interface
-fromModule home (Can.Module _ exports _ _ unions aliases binops _ _ guards _ _) annotations =
+fromModule home (Can.Module _ exports _ _ unions aliases binops _ _ guards abilities impls) annotations =
   Interface
     { _home = home,
       _values = restrict exports annotations,
       _unions = restrictUnions exports unions,
       _aliases = restrictAliases exports aliases,
       _binops = restrict exports (Map.map (toOp annotations) binops),
-      _ifaceGuards = restrict exports guards
+      _ifaceGuards = restrict exports guards,
+      _ifaceAbilities = restrict exports abilities,
+      _ifaceImpls = fmap toImplHeader impls
     }
+
+-- | Extract the serializable header from a canonical impl declaration.
+toImplHeader :: Can.Impl -> ImplHeader
+toImplHeader (Can.Impl ability tipe _methods) =
+  ImplHeader ability tipe
 
 restrict :: Can.Exports -> Map.Map Name.Name a -> Map.Map Name.Name a
 restrict exports dict =
@@ -177,7 +205,7 @@ public =
   Public
 
 private :: Interface -> DependencyInterface
-private (Interface pkg _ unions aliases _ _) =
+private (Interface pkg _ unions aliases _ _ _ _) =
   Private pkg (Map.map extractUnion unions) (Map.map extractAlias aliases)
 
 extractUnion :: Union -> Can.Union
@@ -203,8 +231,12 @@ privatize di =
 -- BINARY
 
 instance Binary Interface where
-  get = Interface <$> get <*> get <*> get <*> get <*> get <*> get
-  put (Interface a b c d e f) = put a >> put b >> put c >> put d >> put e >> put f
+  get = Interface <$> get <*> get <*> get <*> get <*> get <*> get <*> get <*> get
+  put (Interface a b c d e f g h) = put a >> put b >> put c >> put d >> put e >> put f >> put g >> put h
+
+instance Binary ImplHeader where
+  get = liftM2 ImplHeader get get
+  put (ImplHeader a b) = put a >> put b
 
 instance Binary Union where
   put union =
@@ -262,14 +294,16 @@ instance Binary DependencyInterface where
 -- JSON INSTANCES
 
 instance ToJSON Interface where
-  toJSON (Interface home values unions aliases binops guards) =
+  toJSON (Interface home values unions aliases binops guards abilities impls) =
     object
       [ "home" .= home,
         "values" .= values,
         "unions" .= unions,
         "aliases" .= aliases,
         "binops" .= binops,
-        "guards" .= guards
+        "guards" .= guards,
+        "abilities" .= abilities,
+        "impls" .= impls
       ]
 
 instance FromJSON Interface where
@@ -281,6 +315,8 @@ instance FromJSON Interface where
       <*> o .: "aliases"
       <*> o .: "binops"
       <*> (o .: "guards" <|> pure Map.empty)
+      <*> (o .: "abilities" <|> pure Map.empty)
+      <*> (o .: "impls" <|> pure [])
 
 instance ToJSON Union where
   toJSON union = case union of
@@ -381,3 +417,16 @@ instance FromJSON DependencyInterface where
           <*> o .: "unions"
           <*> o .: "aliases"
       _ -> fail ("Unknown dependency interface type: " ++ depType)
+
+instance ToJSON ImplHeader where
+  toJSON (ImplHeader ability tipe) =
+    object
+      [ "ability" .= ability,
+        "type" .= tipe
+      ]
+
+instance FromJSON ImplHeader where
+  parseJSON = withObject "ImplHeader" $ \o ->
+    ImplHeader
+      <$> o .: "ability"
+      <*> o .: "type"

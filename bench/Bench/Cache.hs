@@ -56,7 +56,7 @@ roundTripGraph bytes =
 -- | A minimal Interface for benchmarking.
 emptyInterface :: Interface.Interface
 emptyInterface =
-  Interface.Interface Pkg.core Map.empty Map.empty Map.empty Map.empty Map.empty
+  Interface.Interface Pkg.core Map.empty Map.empty Map.empty Map.empty Map.empty Map.empty []
 
 -- | Pre-encoded bytes for the empty interface.
 encodedEmptyInterface :: LBS.ByteString

@@ -136,6 +136,7 @@ basicsModule =
     Map.empty
     (Map.singleton (Name.fromChars "toFloat") (Docs.Value emptyComment (Type.Lambda intType (Type.Type (Name.fromChars "Float") []))))
     Map.empty
+    Map.empty
 
 -- | A module with an extra value compared to basicsModule.
 basicsModuleWithExtra :: Docs.Module
@@ -151,6 +152,7 @@ basicsModuleWithExtra =
         ]
     )
     Map.empty
+    Map.empty
 
 -- | A simple list module.
 listModule :: Docs.Module
@@ -161,6 +163,7 @@ listModule =
     Map.empty
     Map.empty
     (Map.singleton (Name.fromChars "length") (Docs.Value emptyComment (Type.Lambda (Type.Type (Name.fromChars "List") [Type.Var (Name.fromChars "a")]) intType)))
+    Map.empty
     Map.empty
 
 -- | Documentation with one module.

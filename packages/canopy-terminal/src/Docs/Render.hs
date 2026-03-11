@@ -97,7 +97,7 @@ renderModuleMarkdown modul =
 
 -- | Internal: render a single module to a list of Markdown lines.
 renderOneModule :: Docs.Module -> [String]
-renderOneModule (Docs.Module name comment unions aliases values binops) =
+renderOneModule (Docs.Module name comment unions aliases values binops abilities) =
   concat
     [ [moduleHeading name],
       renderComment comment,
@@ -105,6 +105,7 @@ renderOneModule (Docs.Module name comment unions aliases values binops) =
       renderAliasesSection aliases,
       renderUnionsSection unions,
       renderBinopsSection binops,
+      renderAbilitiesSection abilities,
       ["", "---", ""]
     ]
 
@@ -231,6 +232,39 @@ renderBinopEntry (name, Docs.Binop comment tipe _assoc _prec) =
       renderComment comment,
       [""]
     ]
+
+-- ABILITIES
+
+-- | Render the abilities section, or empty if there are no abilities.
+renderAbilitiesSection :: Map.Map Name.Name Docs.Ability -> [String]
+renderAbilitiesSection abilities
+  | Map.null abilities = []
+  | otherwise =
+      ["", "## Abilities", ""]
+        ++ concatMap renderAbilityEntry (Map.toAscList abilities)
+
+-- | Render a single ability entry with its methods.
+renderAbilityEntry :: (Name.Name, Docs.Ability) -> [String]
+renderAbilityEntry (name, Docs.Ability comment tvars methods) =
+  concat
+    [ ["### " ++ Name.toChars name, ""],
+      renderAbilityDefinition name tvars methods,
+      renderComment comment,
+      [""]
+    ]
+
+-- | Render an ability definition in Canopy syntax.
+renderAbilityDefinition :: Name.Name -> [Name.Name] -> [(Name.Name, Type.Type)] -> [String]
+renderAbilityDefinition name tvars methods =
+  ["```"]
+    ++ ["ability " ++ Name.toChars name ++ renderTVars tvars]
+    ++ map renderMethodSig methods
+    ++ ["```"]
+
+-- | Render a single method signature.
+renderMethodSig :: (Name.Name, Type.Type) -> String
+renderMethodSig (methodName, tipe) =
+  "    " ++ Name.toChars methodName ++ " : " ++ typeToText tipe
 
 -- HELPERS
 

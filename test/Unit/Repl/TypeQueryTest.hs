@@ -134,7 +134,7 @@ funcTypeStr = "a -> a"
 -- | Empty interface with no exports.
 emptyInterface :: Interface.Interface
 emptyInterface =
-  Interface.Interface Pkg.core Map.empty Map.empty Map.empty Map.empty Map.empty
+  Interface.Interface Pkg.core Map.empty Map.empty Map.empty Map.empty Map.empty Map.empty []
 
 -- | Interface with a single Int value.
 intValueInterface :: Interface.Interface
@@ -146,6 +146,8 @@ intValueInterface =
     Map.empty
     Map.empty
     Map.empty
+    Map.empty
+    []
 
 -- | Interface with a function value.
 funcValueInterface :: Interface.Interface
@@ -157,6 +159,8 @@ funcValueInterface =
     Map.empty
     Map.empty
     Map.empty
+    Map.empty
+    []
 
 -- | A simple union type with constructors.
 simpleUnion :: Can.Union
@@ -182,6 +186,8 @@ unionInterface =
     Map.empty
     Map.empty
     Map.empty
+    Map.empty
+    []
 
 -- | Interface with a private union type.
 privateUnionInterface :: Interface.Interface
@@ -193,6 +199,8 @@ privateUnionInterface =
     Map.empty
     Map.empty
     Map.empty
+    Map.empty
+    []
 
 -- | Interface with an alias type.
 aliasInterface :: Interface.Interface
@@ -204,3 +212,5 @@ aliasInterface =
     (Map.singleton (Name.fromChars "Point") (Interface.PublicAlias (Can.Alias [] [] intType Nothing [])))
     Map.empty
     Map.empty
+    Map.empty
+    []

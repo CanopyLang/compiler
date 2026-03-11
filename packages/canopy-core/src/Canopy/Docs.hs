@@ -12,6 +12,7 @@ module Canopy.Docs
     Alias (..),
     Value (..),
     Binop (..),
+    Ability (..),
     Binop.Associativity (..),
     Binop.Precedence (..),
     Error (..),
@@ -60,7 +61,8 @@ data Module = Module
     _unions :: Map.Map Name.Name Union,
     _aliases :: Map.Map Name.Name Alias,
     _values :: Map.Map Name.Name Value,
-    _binops :: Map.Map Name.Name Binop
+    _binops :: Map.Map Name.Name Binop,
+    _abilities :: Map.Map Name.Name Ability
   }
 
 type Comment = Json.String
@@ -73,6 +75,12 @@ data Value = Value Comment Type.Type
 
 data Binop = Binop Comment Type.Type Binop.Associativity Binop.Precedence
 
+-- | Documentation for an ability declaration.
+--
+-- Contains the doc comment, the type variable, and a list of method
+-- signatures (name and type) that the ability requires.
+data Ability = Ability Comment [Name.Name] [(Name.Name, Type.Type)]
+
 -- JSON
 
 encode :: Documentation -> Encode.Value
@@ -80,14 +88,15 @@ encode docs =
   Encode.list encodeModule (Map.elems docs)
 
 encodeModule :: Module -> Encode.Value
-encodeModule (Module name comment unions aliases values binops) =
+encodeModule (Module name comment unions aliases values binops abilities) =
   Encode.object
     [ "name" ==> ModuleName.encode name,
       "comment" ==> Encode.string comment,
       "unions" ==> Encode.list encodeUnion (Map.toList unions),
       "aliases" ==> Encode.list encodeAlias (Map.toList aliases),
       "values" ==> Encode.list encodeValue (Map.toList values),
-      "binops" ==> Encode.list encodeBinop (Map.toList binops)
+      "binops" ==> Encode.list encodeBinop (Map.toList binops),
+      "abilities" ==> Encode.list encodeAbility (Map.toList abilities)
     ]
 
 data Error
@@ -104,7 +113,7 @@ toDict modules =
   Map.fromList (fmap toDictHelp modules)
 
 toDictHelp :: Module -> (Name.Name, Module)
-toDictHelp modul@(Module name _ _ _ _ _) =
+toDictHelp modul@(Module name _ _ _ _ _ _) =
   (name, modul)
 
 moduleDecoder :: Decode.Decoder Error Module
@@ -116,6 +125,7 @@ moduleDecoder =
     <*> Decode.field "aliases" (dictDecoder alias)
     <*> Decode.field "values" (dictDecoder value)
     <*> Decode.field "binops" (dictDecoder binop)
+    <*> Decode.field "abilities" (dictDecoder ability)
 
 dictDecoder :: Decode.Decoder Error a -> Decode.Decoder Error (Map.Map Name.Name a)
 dictDecoder entryDecoder =
@@ -218,6 +228,32 @@ binop =
     <*> Decode.field "type" typeDecoder
     <*> Decode.field "associativity" assocDecoder
     <*> Decode.field "precedence" precDecoder
+
+-- ABILITY JSON
+
+encodeAbility :: (Name.Name, Ability) -> Encode.Value
+encodeAbility (name, Ability comment args methods) =
+  Encode.object
+    [ "name" ==> Encode.name name,
+      "comment" ==> Encode.string comment,
+      "args" ==> Encode.list Encode.name args,
+      "methods" ==> Encode.list encodeMethod methods
+    ]
+
+encodeMethod :: (Name.Name, Type.Type) -> Encode.Value
+encodeMethod (methodName, tipe) =
+  Encode.list id [Encode.name methodName, Type.encode tipe]
+
+ability :: Decode.Decoder Error Ability
+ability =
+  Ability
+    <$> Decode.field "comment" Decode.string
+    <*> Decode.field "args" (Decode.list nameDecoder)
+    <*> Decode.field "methods" (Decode.list methodDecoder)
+
+methodDecoder :: Decode.Decoder Error (Name.Name, Type.Type)
+methodDecoder =
+  Decode.pair nameDecoder typeDecoder
 
 -- ASSOCIATIVITY JSON
 
@@ -399,7 +435,7 @@ onlyInExports name (Ann.At region _) =
 
 -- | Thread-safe version of checkDefs that handles IO for comment processing
 checkDefsIO :: Map.Map Name.Name (Ann.Located Can.Export) -> Src.Comment -> Map.Map Name.Name Src.Comment -> Can.Module -> IO (Either DocsError.Error Module)
-checkDefsIO exportDict overview comments (Can.Module name _ _ decls unions aliases infixes effects _ _ _ _) = do
+checkDefsIO exportDict overview comments (Can.Module name _ _ decls unions aliases infixes effects _ _ canAbilities _) = do
   let types = gatherTypes decls Map.empty
       info = Info comments types unions aliases infixes effects
   case Result.run (Map.traverseWithKey (checkExportIO info) exportDict) of
@@ -407,12 +443,13 @@ checkDefsIO exportDict overview comments (Can.Module name _ _ decls unions alias
     (_, Right ioInserters) -> do
       inserters <- sequence ioInserters
       emptyMod <- emptyModule name overview
-      pure $ Right $ foldr ($) emptyMod inserters
+      abilityDocs <- buildAbilityDocs comments canAbilities
+      pure $ Right $ (\m -> m {_abilities = abilityDocs}) (foldr ($) emptyMod inserters)
 
 emptyModule :: ModuleName.Canonical -> Src.Comment -> IO Module
 emptyModule (ModuleName.Canonical _ name) (Src.Comment overview) = do
   processedOverview <- Json.fromComment overview
-  pure $ Module name processedOverview Map.empty Map.empty Map.empty Map.empty
+  pure $ Module name processedOverview Map.empty Map.empty Map.empty Map.empty Map.empty
 
 
 data Info = Info
@@ -503,6 +540,34 @@ lookupOrThrow name category dict =
 dector :: Can.Ctor -> (Name.Name, [Type.Type])
 dector (Can.Ctor name _ _ args) =
   (name, fmap Extract.fromType args)
+
+-- BUILD ABILITY DOCS
+
+-- | Build documentation entries for all abilities in the module.
+--
+-- Abilities are always included in documentation when present, since
+-- the export system does not have individual ability exports. The doc
+-- comment is looked up from the module-level comment map.
+buildAbilityDocs :: Map.Map Name.Name Src.Comment -> Map.Map Name.Name Can.Ability -> IO (Map.Map Name.Name Ability)
+buildAbilityDocs comments =
+  Map.traverseWithKey (buildOneAbility comments)
+
+buildOneAbility :: Map.Map Name.Name Src.Comment -> Name.Name -> Can.Ability -> IO Ability
+buildOneAbility comments name (Can.Ability _ abilityVar _ methods) = do
+  comment <- abilityComment comments name
+  pure (Ability comment [abilityVar] (fmap extractMethod (Map.toList methods)))
+
+extractMethod :: (Name.Name, Can.Type) -> (Name.Name, Type.Type)
+extractMethod (methodName, tipe) =
+  (methodName, Extract.fromType tipe)
+
+abilityComment :: Map.Map Name.Name Src.Comment -> Name.Name -> IO Comment
+abilityComment comments name =
+  case Map.lookup name comments of
+    Nothing ->
+      pure (Json.fromChars "")
+    Just (Src.Comment snippet) ->
+      Json.fromComment snippet
 
 -- GATHER TYPES
 

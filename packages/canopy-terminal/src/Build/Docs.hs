@@ -65,7 +65,7 @@ moduleToDocsPair (Build.Fresh modName iface _) =
 --
 -- @since 0.19.1
 docsModuleFromInterface :: ModuleName.Raw -> Interface.Interface -> Docs.Module
-docsModuleFromInterface modName (Interface.Interface _ values unions aliases binops _) =
+docsModuleFromInterface modName (Interface.Interface _ values unions aliases binops _ _ _) =
   Docs.Module
     { Docs._name = modName
     , Docs._comment = emptyComment
@@ -73,6 +73,7 @@ docsModuleFromInterface modName (Interface.Interface _ values unions aliases bin
     , Docs._aliases = Map.mapMaybe aliasToDocs aliases
     , Docs._values = Map.map annotationToValue values
     , Docs._binops = Map.map binopToDocs binops
+    , Docs._abilities = Map.empty
     }
 
 -- | Convert an 'Interface.Union' to a 'Docs.Union', discarding private unions.

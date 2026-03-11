@@ -202,7 +202,8 @@ emptyModule =
       Docs._unions = Map.empty,
       Docs._aliases = Map.empty,
       Docs._values = Map.empty,
-      Docs._binops = Map.empty
+      Docs._binops = Map.empty,
+      Docs._abilities = Map.empty
     }
 
 -- | A module with a single exported value.

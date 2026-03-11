@@ -188,7 +188,7 @@ instance Binary ElmInterface where
     return (ElmInterface (Interface.Interface home values
       (Map.map fromElmIfaceUnion rawUnions)
       (Map.map fromElmIfaceAlias rawAliases)
-      binops Map.empty))
+      binops Map.empty Map.empty []))
   put (ElmInterface i) = Binary.put i
 
 -- | Elm-era DependencyInterface decoder using ElmInterface.

@@ -230,7 +230,7 @@ transitiveDiscoveryTests =
           let srcDir = RelativeSrcDir "src"
           Dir.createDirectory (tmpDir </> "src")
           BS.writeFile (tmpDir </> "src" </> "Main.can") "module Main exposing (..)\nimport ExternalLib\nx = 1\n"
-          let stubInterface = Interface Pkg.core Map.empty Map.empty Map.empty Map.empty Map.empty
+          let stubInterface = Interface Pkg.core Map.empty Map.empty Map.empty Map.empty Map.empty Map.empty []
               depInterfaces = Map.singleton (Name.fromChars "ExternalLib") stubInterface
           result <- discoverTransitiveDeps tmpDir [srcDir] [tmpDir </> "src" </> "Main.can"] depInterfaces Parse.Application
           case result of

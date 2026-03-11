@@ -89,7 +89,7 @@ diff oldDocs newDocs =
 
 -- | Compute diff between two module versions.
 diffModule :: (Docs.Module, Docs.Module) -> ModuleChanges
-diffModule (Docs.Module _ _ u1 a1 v1 b1, Docs.Module _ _ u2 a2 v2 b2) =
+diffModule (Docs.Module _ _ u1 a1 v1 b1 _, Docs.Module _ _ u2 a2 v2 b2 _) =
   ModuleChanges
     (getChanges isEquivalentUnion u1 u2)
     (getChanges isEquivalentAlias a1 a2)

@@ -83,4 +83,6 @@ testSimpleModule = do
         , Interface._aliases = Map.map Interface.PrivateAlias aliases
         , Interface._binops = Map.empty
         , Interface._ifaceGuards = Map.empty
+        , Interface._ifaceAbilities = Map.empty
+        , Interface._ifaceImpls = []
         }

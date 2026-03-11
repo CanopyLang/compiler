@@ -90,7 +90,7 @@ addImport ifaces state@(State vs ts cs bs qvs qts qcs) (Src.Import (Ann.At _ nam
       Nothing ->
         -- Missing interface - module not found
         Result.throw (Error.ImportNotFound Ann.one (Name.fromChars (ModuleName.toChars name)) [])
-      Just (Interface.Interface pkg defs unions aliases binops _guards) ->
+      Just (Interface.Interface pkg defs unions aliases binops _guards _abilities _impls) ->
         let !prefix = Data.Maybe.fromMaybe name maybeAlias
             !home = ModuleName.Canonical pkg name
             !isAliased = Data.Maybe.isJust maybeAlias

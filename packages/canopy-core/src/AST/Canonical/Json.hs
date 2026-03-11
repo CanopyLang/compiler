@@ -18,7 +18,8 @@
 module AST.Canonical.Json () where
 
 import AST.Canonical.Types
-  ( Alias (..),
+  ( Ability (..),
+    Alias (..),
     AliasType (..),
     Annotation (..),
     Ctor (..),
@@ -345,3 +346,20 @@ instance Aeson.FromJSON GuardInfo where
     GuardInfo
       <$> o Aeson..: "argIndex"
       <*> o Aeson..: "narrowType"
+
+instance Aeson.ToJSON Ability where
+  toJSON (Ability name var supers methods) =
+    Aeson.object
+      [ "name" Aeson..= name,
+        "var" Aeson..= var,
+        "superAbilities" Aeson..= supers,
+        "methods" Aeson..= methods
+      ]
+
+instance Aeson.FromJSON Ability where
+  parseJSON = Aeson.withObject "Ability" $ \o ->
+    Ability
+      <$> o Aeson..: "name"
+      <*> o Aeson..: "var"
+      <*> o Aeson..: "superAbilities"
+      <*> o Aeson..: "methods"

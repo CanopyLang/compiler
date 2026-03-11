@@ -215,7 +215,9 @@ testInterface =
       Interface._unions = Map.empty,
       Interface._aliases = Map.empty,
       Interface._binops = Map.empty,
-      Interface._ifaceGuards = Map.empty
+      Interface._ifaceGuards = Map.empty,
+      Interface._ifaceAbilities = Map.empty,
+      Interface._ifaceImpls = []
     }
 
 -- | Assert that a Maybe value is Just.
