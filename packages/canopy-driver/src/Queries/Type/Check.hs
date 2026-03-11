@@ -66,7 +66,50 @@ typeCheckModuleQuery ifaces path canonical = do
     Right typeMap -> do
       let bindings = Map.size typeMap
       Log.logEvent (TypeSolveCompleted modNameText (TypeStats bindings 0 0))
-      return (Right typeMap)
+      validateAbilities canonical typeMap
+
+-- | Validate ability constraints after successful type solving.
+--
+-- Checks that all impl declarations in the module are complete: every
+-- method declared by the ability has a corresponding implementation.
+-- Returns the type map on success, or a 'QueryError' on failure.
+validateAbilities ::
+  Can.Module ->
+  Map Name.Name Can.Annotation ->
+  IO (Either QueryError (Map Name.Name Can.Annotation))
+validateAbilities canonical typeMap =
+  case validateImplCompleteness (Can._abilities canonical) (Can._impls canonical) of
+    [] -> return (Right typeMap)
+    errs -> return (Left (AbilityValidationError errs))
+
+-- | Check that every impl provides all methods declared by its ability.
+validateImplCompleteness ::
+  Map Name.Name Can.Ability ->
+  [Can.Impl] ->
+  [Text.Text]
+validateImplCompleteness abilities = concatMap checkImpl
+  where
+    checkImpl impl =
+      case Map.lookup (Can._implAbility impl) abilities of
+        Nothing -> []
+        Just ability ->
+          let required = Map.keys (Can._abilityMethods ability)
+              provided = Map.keys (Can._implMethods impl)
+              missing = filter (\m -> notElem m provided) required
+          in case missing of
+            [] -> []
+            ms ->
+              [ Text.concat
+                  [ "Incomplete implementation of '"
+                  , nameText (Can._implAbility impl)
+                  , "': missing "
+                  , Text.intercalate ", " (fmap nameText ms)
+                  ]
+              ]
+
+-- | Convert a Name to Text.
+nameText :: Name.Name -> Text.Text
+nameText = Text.pack . Name.toChars
 
 -- | Convert type errors to 'DiagnosticError' with structured diagnostics.
 processErrors :: FilePath -> List Error.Error -> IO QueryError

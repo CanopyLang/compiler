@@ -29,6 +29,7 @@ import qualified Canopy.Data.Name as Name
 import qualified Canopy.Interface as Interface
 import qualified Crypto.Hash.SHA256 as SHA256
 import Data.ByteString (ByteString)
+import Data.Text (Text)
 import qualified Data.ByteString as BS
 import Data.IORef (IORef, newIORef, readIORef, writeIORef)
 import Data.Map.Strict (Map)
@@ -94,6 +95,7 @@ data QueryError
   | FileNotFound FilePath
   | OtherError String
   | DiagnosticError FilePath [Diagnostic]
+  | AbilityValidationError [Text]
   | TimeoutError FilePath
   deriving (Show)
 

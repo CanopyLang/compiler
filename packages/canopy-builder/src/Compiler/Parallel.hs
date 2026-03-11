@@ -480,6 +480,8 @@ queryErrorToCompileError path qErr =
       Exit.CompileError diagPath diags
     Query.TimeoutError tpath ->
       Exit.CompileTimeoutError tpath
+    Query.AbilityValidationError msgs ->
+      Exit.CompileError path (fmap (\m -> Diag.stringToDiagnostic Diag.PhaseType "ABILITY ERROR" (Text.unpack m)) msgs)
 
 -- ARTIFACT ASSEMBLY
 

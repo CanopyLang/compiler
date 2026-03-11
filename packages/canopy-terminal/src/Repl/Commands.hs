@@ -125,6 +125,10 @@ processDeclaration inputLines src decl =
     PD.Alias _ (Ann.At _ (Src.Alias (Ann.At _ name) _ _ _ _ _)) ->
       ifDone inputLines (Type name src)
     PD.Port _ _ -> Done Port
+    PD.Ability _ (Ann.At _ (Src.AbilityDecl (Ann.At _ name) _ _ _)) ->
+      ifDone inputLines (Type name src)
+    PD.Impl _ (Ann.At _ (Src.ImplDecl (Ann.At _ abilityName) _ _)) ->
+      ifDone inputLines (Decl abilityName src)
 
 -- | Handle declaration parsing error.
 --
