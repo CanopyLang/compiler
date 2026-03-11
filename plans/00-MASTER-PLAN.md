@@ -50,9 +50,13 @@ The codebase audit reveals substantial infrastructure already built:
 | **VSCode extension** | DONE | Published .vsix with LSP integration, tree-sitter highlighting |
 | **Neovim support** | DONE | Plugin configuration files present |
 | **FFI system** | DONE | @canopy-type, @canopy-bind, @capability — 284 annotations across packages |
-| **Compiler hygiene** | 95% DONE | Zero debug/trace, -Wall on all packages, README, CONTRIBUTING, comprehensive Makefile |
+| **Compiler hygiene** | DONE | Zero debug/trace, -Wall -Werror clean, README, CONTRIBUTING, comprehensive Makefile |
 | **Backend server** | DONE | Yesod web app with auth, search, storage, analytics, Docker |
-| **3,872+ tests** | GREEN | 173 test modules covering unit, integration, property, golden, benchmark |
+| **3,914+ tests** | GREEN | 173 test modules covering unit, integration, property, golden, benchmark |
+| **Source maps** | DONE | V3 spec, auto in dev mode |
+| **.d.ts generation** | DONE | 4 modules (TypeScript.hs, TypeScript/Types.hs, TypeScript/Render.hs, TypeScript/WellKnown.hs), golden tests, auto on build |
+| **Nested record updates** | DONE | `{ model \| user.name = x }` syntax — parser + canonicalizer + golden tests |
+| **Vite plugin (basic)** | DONE | `vite-plugin-canopy` — compilation, error overlay, source maps, full-reload HMR |
 
 ---
 
@@ -90,8 +94,8 @@ Plan 26b (Abilities + Derive) ── depends on stable compiler    |
 | # | Plan | What | Status | Remaining Effort |
 |---|------|------|--------|-----------------|
 | 01 | [ESM Output](essential/01-esm-output.md) | Replace IIFE with native ES modules | **DONE** — per-module ESM, runtime extraction, `--output-format` flag, AST-based generation | Tests + import maps |
-| 02 | [Compiler Hygiene](essential/02-compiler-hygiene.md) | Fix debug stmts, Makefile, -Wall, README | **95% DONE** — zero debug/trace, -Wall, README, CONTRIBUTING, Makefile all present | Verify -Wall -Werror, audit CLI grammar |
-| 26a | [Quick Ergonomics](done/26a-quick-ergonomics.md) | Template literals + nested record updates | **Interpolation DONE** — backtick `` `${expr}` `` syntax. Nested records NOT done. | 3-4 days (nested records) |
+| 02 | [Compiler Hygiene](essential/02-compiler-hygiene.md) | Fix debug stmts, Makefile, -Wall, README | **DONE** — zero warnings with `-Wall -Werror`, all Makefile targets work, 3,914 tests green | — |
+| 26a | [Quick Ergonomics](done/26a-quick-ergonomics.md) | Template literals + nested record updates | **DONE** — backtick interpolation + nested record updates (parser, canonicalizer, golden tests) | — |
 | 03 | Package Ecosystem | ~~Complete all 16 stdlib packages~~ | **DONE** — 71 packages exist (DRAFT status) | — |
 
 ## Tier 1: Usable Platform (Months 2-5)
@@ -102,9 +106,9 @@ Make it work for real applications. A developer should be able to build and ship
 
 | # | Plan | What | Status | Effort |
 |---|------|------|--------|--------|
-| 06 | [Vite Plugin + HMR](essential/06-vite-plugin.md) | First-class Vite integration with hot module replacement | Not started — **NOW UNBLOCKED** by ESM | 2-3 wks |
+| 06 | [Vite Plugin + HMR](essential/06-vite-plugin.md) | First-class Vite integration with hot module replacement | **DONE** — basic plugin + granular HMR with model type hashing, `__canopy_getModel__`/`__canopy_hotSwap__` exports, `import.meta.hot.accept()` injection, state preservation. Full reload on Model type change. | — |
 | 05 | [CanopyKit Meta-Framework](important/05-canopykit.md) | File-based routing, SSG, dev server | Not started | 8-12 wks |
-| 12 | [TypeScript Interop](important/12-typescript-interop.md) | Emit .d.ts, Web Component output, consume npm | Not started — **NOW UNBLOCKED** by ESM | 6-8 wks |
+| 12 | [TypeScript Interop](important/12-typescript-interop.md) | Emit .d.ts, Web Component output, consume npm | **Phase 1 DONE** — .d.ts generation (4 modules, golden tests, auto on build). Phases 2-4 not started. | 4-5 wks |
 | 13 | [Capability Security](important/13-capability-enforcement.md) | Supply chain story: per-dep audit, allow/deny lists | Core enforcement DONE. Allow-list DONE. Missing: deny lists, per-dep audit, new-cap detection | 2 wks |
 | 26b | [Abilities + Derive](important/26b-abilities-derive.md) | Type classes (Roc-style), JSON codec deriving | Not started | 8-12 wks |
 | 27 | [Developer Onboarding](essential/27-developer-onboarding.md) | Playground, React migration guide, gradual adoption | Playground DONE, MCP DONE, VSCode DONE | 4-6 wks |
@@ -161,8 +165,8 @@ Position Canopy for the next decade.
 - [ ] Sub-2KB hello world bundle (gzipped)
 - [ ] Sub-100ms incremental rebuild
 - [ ] Streaming SSR
-- [ ] Vite HMR with state preservation
-- [ ] TypeScript .d.ts generation
+- [x] Vite HMR with state preservation (DONE — model type hashing, hot-swap exports, import.meta.hot.accept)
+- [x] TypeScript .d.ts generation (DONE — auto-generated alongside .js on build)
 - [ ] File-based routing meta-framework
 - [ ] Type-safe forms with schema validation
 - [ ] Data fetching with RemoteData enforcement

@@ -371,14 +371,16 @@ testMainConstructors =
         isStaticMain main @?= True
         isDynamicMain main @?= False,
       testCase "Dynamic constructor creates dynamic main with message and decoder" $ do
-        let message = Can.TUnit
+        let model = Can.TUnit
+            message = Can.TUnit
             decoder = Opt.Unit
-            main = Opt.Dynamic message decoder
+            main = Opt.Dynamic model message decoder
         -- Test dynamic main properties
         isDynamicMain main @?= True
         isStaticMain main @?= False
         case main of
-          Opt.Dynamic msg dec -> do
+          Opt.Dynamic mdl msg dec -> do
+            mdl @?= Can.TUnit
             msg @?= Can.TUnit
             isUnitExpression dec @?= True
           _ -> assertFailure "Expected Dynamic constructor"
@@ -644,7 +646,7 @@ isStaticMain Opt.Static = True
 isStaticMain _ = False
 
 isDynamicMain :: Opt.Main -> Bool
-isDynamicMain (Opt.Dynamic _ _) = True
+isDynamicMain (Opt.Dynamic _ _ _) = True
 isDynamicMain _ = False
 
 -- Node type checking

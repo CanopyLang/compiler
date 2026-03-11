@@ -87,8 +87,14 @@ data Main
   = -- | Static application without runtime messages.
     Static
   | -- | Dynamic application with message handling.
+    --
+    -- Stores the model type for HMR (Hot Module Replacement) support:
+    -- when a module is hot-swapped, the model type hash determines
+    -- whether the old model state can be preserved or a full reload
+    -- is required.
     Dynamic
-      { _message :: Can.Type,
+      { _model :: Can.Type,
+        _message :: Can.Type,
         _decoder :: Expr
       }
   | -- | Test or non-visual main that should be exported as a raw value.
@@ -241,14 +247,14 @@ instance Binary.Binary Main where
   put main =
     case main of
       Static -> Binary.putWord8 0
-      Dynamic a b -> Binary.putWord8 1 >> Binary.put a >> Binary.put b
+      Dynamic a b c -> Binary.putWord8 1 >> Binary.put a >> Binary.put b >> Binary.put c
       TestMain -> Binary.putWord8 2
       BrowserTestMain -> Binary.putWord8 3
   get = do
     word <- Binary.getWord8
     case word of
       0 -> return Static
-      1 -> Monad.liftM2 Dynamic Binary.get Binary.get
+      1 -> Monad.liftM3 Dynamic Binary.get Binary.get Binary.get
       2 -> return TestMain
       3 -> return BrowserTestMain
       _ -> fail ("Opt.Main: unexpected tag " ++ show word ++ " (expected 0-3). Delete canopy-stuff/ to rebuild.")

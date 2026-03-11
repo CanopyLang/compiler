@@ -286,6 +286,7 @@ test-suite canopy-test
       Unit.Generate.CodeSplit.TypesTest
       Unit.Generate.CoverageTest
       Unit.Generate.ExpressionTest
+      Unit.Generate.HMRTest
       Unit.Generate.HtmlSecurityTest
       Unit.Generate.JavaScript.ExpressionArithmeticTest
       Unit.Generate.JavaScript.RuntimeAnnotationTest

@@ -718,7 +718,7 @@ generateMain mode home main =
         # JS.Ref (JsName.fromGlobal home "main")
         # JS.Int 0
         # JS.Int 0
-    Opt.Dynamic msgType decoder ->
+    Opt.Dynamic _modelType msgType decoder ->
       JS.Ref (JsName.fromGlobal home "main")
         # generateJsExpr mode decoder
         # toDebugMetadata mode msgType

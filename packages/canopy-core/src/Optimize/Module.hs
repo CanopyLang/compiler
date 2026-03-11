@@ -207,10 +207,10 @@ addDefHelp region annotations home name args body graph@(Opt.LocalGraph _ nodes 
             Can.TType hm nm [_]
               | hm == ModuleName.virtualDom && nm == Name.node ->
                 (Result.ok . addMain) . Names.run $ Names.registerKernel Name.virtualDom Opt.Static
-            Can.TType hm nm [flags, _, message] | hm == ModuleName.platform && nm == Name.program ->
+            Can.TType hm nm [flags, model, message] | hm == ModuleName.platform && nm == Name.program ->
               case Effects.checkPayload flags of
                 Right () ->
-                  (Result.ok . addMain) . Names.run $ (Opt.Dynamic message <$> Port.toFlagsDecoder flags)
+                  (Result.ok . addMain) . Names.run $ (Opt.Dynamic model message <$> Port.toFlagsDecoder flags)
                 Left (subType, invalidPayload) ->
                   Result.throw (MainError.BadFlags region subType invalidPayload)
             Can.TType hm nm []

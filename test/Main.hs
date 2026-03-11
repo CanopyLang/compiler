@@ -108,6 +108,7 @@ import qualified Unit.Generate.CoverageTest as CoverageTest
 import qualified Unit.Generate.SourceMapTest as SourceMapTest
 import qualified Unit.Generate.StringPoolTest as StringPoolTest
 import qualified Unit.Generate.TreeShakeTest as TreeShakeTest
+import qualified Unit.Generate.HMRTest as HMRTest
 import qualified Unit.Generate.TypeScriptTest as TypeScriptTest
 import qualified Unit.Optimize.CaseTest as CaseTest
 import qualified Unit.Optimize.ConstantFoldTest as ConstantFoldTest
@@ -283,6 +284,7 @@ unitTests =
       CodeSplitTypesTest.tests,
       TreeShakeTest.tests,
       TypeScriptTest.tests,
+      HMRTest.tests,
       CoverageTest.tests,
       CoverageReportTest.tests,
       EventCoverageTest.tests,

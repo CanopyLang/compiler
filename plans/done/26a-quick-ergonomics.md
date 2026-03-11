@@ -1,7 +1,7 @@
 # Plan 26a: Quick Ergonomics (String Interpolation + Nested Records)
 
 ## Priority: CRITICAL — Tier 0
-## Effort: 3-4 days remaining (nested records only)
+## Effort: Complete
 ## Depends on: Nothing (pure parser desugaring)
 ## Split from: Plan 26 (Language Ergonomics)
 
@@ -24,8 +24,8 @@
 > - 20+ unit tests, 340+ lines integration tests, golden tests
 > - All 3,872 tests pass
 >
-> **Nested record updates are NOT yet implemented** — parser and canonicalization changes
-> still needed. This is the only remaining work in this plan.
+> **Nested record updates are DONE** — parser, canonicalization, and golden tests implemented.
+> Commit fcef70c (2026-03-11) added nested record update support alongside .d.ts generation.
 
 ## Feature 1: String Interpolation — `${}` Syntax
 
@@ -156,6 +156,6 @@ in { model | settings = { _oldSettings | theme = { _oldTheme | primaryColor = bl
 - [x] Escape sequences work: `\$`, `` \` ``, `\\`, `\n`, `\t`
 - [x] All 3,872 existing tests pass (no regressions)
 - [x] Formatter handles backtick syntax correctly
-- [ ] `{ model | user.name = x }` parses and compiles correctly
-- [ ] Three-level nesting works: `{ model | a.b.c = x }`
+- [x] `{ model | user.name = x }` parses and compiles correctly (commit fcef70c)
+- [x] Three-level nesting works: `{ model | a.b.c = x }` (commit fcef70c)
 - [ ] LSP provides completions inside `${}` and after dots in record updates

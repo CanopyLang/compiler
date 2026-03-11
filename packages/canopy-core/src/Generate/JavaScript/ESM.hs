@@ -46,6 +46,7 @@ import Data.Set (Set)
 import qualified Data.Set as Set
 import qualified Generate.JavaScript.Builder as JS
 import qualified Generate.JavaScript.ESM.FFI as ESMFFI
+import qualified Generate.JavaScript.ESM.HMR as HMR
 import qualified Generate.JavaScript.ESM.Runtime as ESMRuntime
 import Generate.JavaScript.ESM.Types (ESMOutput (..))
 import qualified Generate.JavaScript.Expression as Expr
@@ -158,8 +159,8 @@ generateAllModules ::
   Mains ->
   Set Opt.Global ->
   Map ModuleName.Canonical Builder
-generateAllModules mode graph _mains reachable =
-  Map.mapWithKey (generateModule mode graph reachable) moduleNodes
+generateAllModules mode graph mains reachable =
+  Map.mapWithKey (generateModule mode mains graph reachable) moduleNodes
   where
     moduleNodes = groupByModule reachable graph
 
@@ -181,22 +182,25 @@ groupByModule reachable graph =
 
 -- | Generate a single ES module file.
 --
--- In dev mode, uses the formatted pretty printer for readable output.
+-- In dev mode, uses the formatted pretty printer for readable output
+-- and injects HMR support for TEA modules.
 -- In prod mode, uses the compact printer for minimal output.
 generateModule ::
   Mode.Mode ->
+  Mains ->
   Graph ->
   Set Opt.Global ->
   ModuleName.Canonical ->
   Map Name.Name (Opt.Global, Opt.Node) ->
   Builder
-generateModule mode _graph reachable home entries =
-  renderModule mode (commentItems ++ importItems ++ definitionItems ++ exportItems)
+generateModule mode mains _graph reachable home entries =
+  renderModule mode (commentItems ++ importItems ++ definitionItems ++ exportItems ++ hmrItems)
   where
     commentItems = [JS.RawJS (moduleComment home)]
     importItems = buildImportItems reachable home entries
     definitionItems = buildDefinitionItems mode entries
     exportItems = buildExportItems entries
+    hmrItems = HMR.generateHMRItems mode mains home
 
 -- | Render module items using the appropriate printer for the mode.
 renderModule :: Mode.Mode -> [JS.ModuleItem] -> Builder
@@ -388,7 +392,7 @@ mainImportAndInit (home, mainType) =
 -- | Get the platform initialization function name based on main type.
 initFunctionName :: Opt.Main -> JsName.Name
 initFunctionName Opt.Static = JsName.fromKernel Name.platform "worker"
-initFunctionName (Opt.Dynamic _ _) = JsName.fromKernel Name.platform "worker"
+initFunctionName (Opt.Dynamic _ _ _) = JsName.fromKernel Name.platform "worker"
 initFunctionName Opt.TestMain = JsName.fromKernel Name.platform "worker"
 initFunctionName Opt.BrowserTestMain = JsName.fromKernel Name.platform "worker"
 
