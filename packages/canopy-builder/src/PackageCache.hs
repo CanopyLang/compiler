@@ -238,6 +238,106 @@ instance Binary ElmFormatArtifactCache where
   get = liftM2 ElmFormatArtifactCache Binary.get Binary.get
   put (ElmFormatArtifactCache a b) = Binary.put a >> Binary.put b
 
+-- PRE-P06 CANOPY FORMAT DECODERS
+
+-- | Pre-P06 Canopy Interface decoder (6 fields, no abilities or impls).
+--
+-- Canopy added @_ifaceAbilities@ and @_ifaceImpls@ to 'Interface.Interface'
+-- in the P06 ability system (commit accd191). Artifacts built before that
+-- change use this 6-field format: home, values, unions, aliases, binops,
+-- guards. This decoder reads those 6 fields and fills in empty abilities
+-- and impls for backward compatibility.
+--
+-- @since 0.19.2
+newtype CanopyPreP06Interface = CanopyPreP06Interface
+  { fromCanopyPreP06Interface :: Interface.Interface }
+
+instance Binary CanopyPreP06Interface where
+  get = do
+    home <- Binary.get
+    values <- Binary.get
+    unions <- Binary.get
+    aliases <- Binary.get
+    binops <- Binary.get
+    guards <- Binary.get
+    return (CanopyPreP06Interface
+      (Interface.Interface home values unions aliases binops guards Map.empty []))
+  put (CanopyPreP06Interface i) = Binary.put i
+
+-- | Pre-P06 Canopy DependencyInterface decoder.
+--
+-- Wraps 'CanopyPreP06Interface' for decoding 'Interface.DependencyInterface'
+-- values stored in pre-P06 artifact caches.
+--
+-- @since 0.19.2
+newtype CanopyPreP06DependencyInterface = CanopyPreP06DependencyInterface
+  { fromCanopyPreP06DI :: Interface.DependencyInterface }
+
+instance Binary CanopyPreP06DependencyInterface where
+  get = do
+    tag <- Binary.getWord8
+    case tag of
+      0 ->
+        (CanopyPreP06DependencyInterface . Interface.Public . fromCanopyPreP06Interface)
+          <$> Binary.get
+      1 -> decodeCanopyPreP06PrivateDI
+      _ -> fail "CanopyPreP06DependencyInterface: corrupt tag"
+  put (CanopyPreP06DependencyInterface di) = Binary.put di
+
+-- | Decode a pre-P06 Private DependencyInterface.
+decodeCanopyPreP06PrivateDI :: Get CanopyPreP06DependencyInterface
+decodeCanopyPreP06PrivateDI = do
+  pkg <- Binary.get
+  unions <- Binary.get
+  aliases <- Binary.get
+  return (CanopyPreP06DependencyInterface
+    (Interface.Private pkg unions aliases))
+
+-- | Pre-P06 Canopy artifacts (6-field Interface, no FFI info).
+--
+-- @since 0.19.2
+data CanopyPreP06LegacyArtifacts = CanopyPreP06LegacyArtifacts
+  !(Map ModuleName.Raw CanopyPreP06DependencyInterface)
+  !Opt.GlobalGraph
+
+instance Binary CanopyPreP06LegacyArtifacts where
+  get = liftM2 CanopyPreP06LegacyArtifacts Binary.get Binary.get
+  put (CanopyPreP06LegacyArtifacts a b) = Binary.put a >> Binary.put b
+
+-- | Pre-P06 Canopy artifact cache (no FFI info, 6-field Interface).
+--
+-- @since 0.19.2
+data CanopyPreP06LegacyArtifactCache = CanopyPreP06LegacyArtifactCache
+  !(Set Fingerprint)
+  !CanopyPreP06LegacyArtifacts
+
+instance Binary CanopyPreP06LegacyArtifactCache where
+  get = liftM2 CanopyPreP06LegacyArtifactCache Binary.get Binary.get
+  put (CanopyPreP06LegacyArtifactCache a b) = Binary.put a >> Binary.put b
+
+-- | Pre-P06 Canopy artifacts with FFI info (6-field Interface + FFI).
+--
+-- @since 0.19.2
+data CanopyPreP06Artifacts = CanopyPreP06Artifacts
+  !(Map ModuleName.Raw CanopyPreP06DependencyInterface)
+  !Opt.GlobalGraph
+  !(Map String JS.FFIInfo)
+
+instance Binary CanopyPreP06Artifacts where
+  get = liftM3 CanopyPreP06Artifacts Binary.get Binary.get Binary.get
+  put (CanopyPreP06Artifacts a b c) = Binary.put a >> Binary.put b >> Binary.put c
+
+-- | Pre-P06 Canopy artifact cache with FFI info.
+--
+-- @since 0.19.2
+data CanopyPreP06ArtifactCache = CanopyPreP06ArtifactCache
+  !(Set Fingerprint)
+  !CanopyPreP06Artifacts
+
+instance Binary CanopyPreP06ArtifactCache where
+  get = liftM2 CanopyPreP06ArtifactCache Binary.get Binary.get
+  put (CanopyPreP06ArtifactCache a b) = Binary.put a >> Binary.put b
+
 -- | Map between canopy and elm package authors for fallback lookups.
 --
 -- When looking up @canopy\/core@, also try @elm\/core@ on disk since the
@@ -276,9 +376,7 @@ tryLoadFirst _ [] = return Nothing
 tryLoadFirst loader (path : rest) = do
   exists <- Dir.doesFileExist path
   if exists
-    then do
-      result <- loader path
-      maybe (tryLoadFirst loader rest) (return . Just) result
+    then loader path >>= maybe (tryLoadFirst loader rest) (return . Just)
     else tryLoadFirst loader rest
 
 -- | Load package interfaces from artifact cache.
@@ -315,8 +413,8 @@ loadPackageInterfaces author package version = do
 --
 -- When a package constraint resolves to a lower-bound version that
 -- isn't installed, this function scans available versions in the
--- @~\/.canopy\/packages\/@ directory and returns the first one with
--- a valid @artifacts.dat@.
+-- @~\/.canopy\/packages\/@ and @~\/.elm\/0.19.1\/packages\/@ directories,
+-- returning the first version with a valid @artifacts.dat@.
 --
 -- @since 0.19.1
 scanForCompatibleVersion :: FilePath -> String -> String -> IO (Maybe PackageInterfaces)
@@ -327,23 +425,28 @@ scanForCompatibleVersion = scanForCompatibleVersionWith loadArtifactsFile
 -- Generalized version of 'scanForCompatibleVersion' that works with any
 -- artifact loader (interfaces-only or complete artifacts).
 --
+-- Searches both @~\/.canopy\/packages\/@ and @~\/.elm\/0.19.1\/packages\/@
+-- for each author (including fallback author mappings), returning the first
+-- version that can be successfully decoded.
+--
 -- @since 0.19.1
 scanForCompatibleVersionWith :: (FilePath -> IO (Maybe a)) -> FilePath -> String -> String -> IO (Maybe a)
 scanForCompatibleVersionWith loader homeDir author package =
-  tryAuthors authorsToTry
+  tryDirs searchDirs
   where
-    authorsToTry = author : maybe [] (:[]) (fallbackAuthor author)
-    tryAuthors [] = return Nothing
-    tryAuthors (a : rest) = do
-      let pkgDir = homeDir </> ".canopy" </> "packages" </> a </> package
+    authors = author : maybe [] (: []) (fallbackAuthor author)
+    searchDirs =
+      [ homeDir </> ".canopy" </> "packages" </> a </> package | a <- authors ]
+      ++ [ homeDir </> ".elm" </> "0.19.1" </> "packages" </> a </> package | a <- authors ]
+    tryDirs [] = return Nothing
+    tryDirs (pkgDir : rest) = do
       exists <- Dir.doesDirectoryExist pkgDir
       if not exists
-        then tryAuthors rest
+        then tryDirs rest
         else do
           versions <- Dir.listDirectory pkgDir
-          result <- tryLoadFirst loader
-            [pkgDir </> v </> "artifacts.dat" | v <- versions]
-          maybe (tryAuthors rest) (return . Just) result
+          result <- tryLoadFirst loader [pkgDir </> v </> "artifacts.dat" | v <- versions]
+          maybe (tryDirs rest) (return . Just) result
 
 -- | Try a list of IO actions returning Maybe, stopping at the first Just.
 tryDecoders :: [IO (Maybe a)] -> IO (Maybe a)
@@ -358,16 +461,26 @@ tryDecodeAs extract path =
 
 -- | Load artifacts from a specific file path.
 --
--- Tries three formats in order:
+-- Tries formats in priority order:
 --
--- 1. New Canopy format (with FFI info and current Binary instances)
--- 2. Legacy Canopy format (no FFI info, current Binary instances)
--- 3. Elm-era format (no FFI info, old 4-field Union, 2-field Alias, 5-field Interface)
+-- 1. New Canopy format (with FFI info and 8-field Interface)
+-- 2. Legacy Canopy format (no FFI info, 8-field Interface)
+-- 3. Pre-P06 Canopy format (with FFI info, 6-field Interface — no abilities/impls)
+-- 4. Pre-P06 Canopy legacy format (no FFI info, 6-field Interface)
+-- 5. Elm-era format (no FFI info, old 4-field Union, 2-field Alias, 5-field Interface)
 loadArtifactsFile :: FilePath -> IO (Maybe PackageInterfaces)
 loadArtifactsFile path =
   tryDecoders
     [ tryDecodeAs (\(ArtifactCache _ arts) -> _ifaces arts) path
     , tryDecodeAs (\(LegacyArtifactCache _ (LegacyArtifacts ifaces _)) -> ifaces) path
+    , tryDecodeAs
+        (\(CanopyPreP06ArtifactCache _ (CanopyPreP06Artifacts rawDIs _ _)) ->
+          Map.map fromCanopyPreP06DI rawDIs)
+        path
+    , tryDecodeAs
+        (\(CanopyPreP06LegacyArtifactCache _ (CanopyPreP06LegacyArtifacts rawDIs _)) ->
+          Map.map fromCanopyPreP06DI rawDIs)
+        path
     , tryDecodeAs
         (\(ElmFormatArtifactCache _ (ElmFormatLegacyArtifacts rawDIs _)) ->
           Map.map fromElmDI rawDIs)
@@ -376,8 +489,7 @@ loadArtifactsFile path =
 
 -- | Load complete artifacts (interfaces + objects + FFI info) from a specific file path.
 --
--- Tries three formats in order, filling in empty FFI info and default
--- field values for older formats.
+-- Tries formats in priority order, filling in empty fields for older formats.
 loadCompleteArtifactsFile :: FilePath -> IO (Maybe PackageArtifacts)
 loadCompleteArtifactsFile path =
   tryDecoders
@@ -388,6 +500,14 @@ loadCompleteArtifactsFile path =
     , tryDecodeAs
         (\(LegacyArtifactCache _ (LegacyArtifacts ifaces objs)) ->
           PackageArtifacts ifaces objs Map.empty)
+        path
+    , tryDecodeAs
+        (\(CanopyPreP06ArtifactCache _ (CanopyPreP06Artifacts rawDIs objs ffi)) ->
+          PackageArtifacts (Map.map fromCanopyPreP06DI rawDIs) objs ffi)
+        path
+    , tryDecodeAs
+        (\(CanopyPreP06LegacyArtifactCache _ (CanopyPreP06LegacyArtifacts rawDIs objs)) ->
+          PackageArtifacts (Map.map fromCanopyPreP06DI rawDIs) objs Map.empty)
         path
     , tryDecodeAs
         (\(ElmFormatArtifactCache _ (ElmFormatLegacyArtifacts rawDIs objs)) ->
