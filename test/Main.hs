@@ -111,6 +111,8 @@ import qualified Unit.Generate.StringPoolTest as StringPoolTest
 import qualified Unit.Generate.TreeShakeTest as TreeShakeTest
 import qualified Unit.Generate.HMRTest as HMRTest
 import qualified Unit.Generate.TypeScriptTest as TypeScriptTest
+import qualified Unit.Generate.WebComponentTest as WebComponentTest
+import qualified Unit.Generate.WebComponentIntrospectTest as WebComponentIntrospectTest
 import qualified Unit.Optimize.CaseTest as CaseTest
 import qualified Unit.Optimize.ConstantFoldTest as ConstantFoldTest
 import qualified Unit.Optimize.DecisionTreeTest as DecisionTreeTest
@@ -143,6 +145,7 @@ import qualified Unit.FFI.CapabilityEnforcementTest as FFICapEnforceTest
 import qualified Unit.FFI.CapabilityTypeTest as FFICapTypeTest
 import qualified Unit.FFI.EscapeTest as FFIEscapeTest
 import qualified Unit.FFI.ManifestTest as FFIManifestTest
+import qualified Unit.FFI.NpmPipelineTest as NpmPipelineTest
 import qualified Unit.FFI.ResolveTest as FFIResolveTest
 import qualified Unit.FFI.StaticAnalysisTest as FFIStaticAnalysisTest
 import qualified Unit.FFI.ErgonomicsTest as FFIErgonomicsTest
@@ -178,6 +181,9 @@ import qualified Unit.Kit.Route.ValidateTest as KitValidateTest
 import qualified Unit.Kit.Route.GenerateTest as KitGenerateTest
 import qualified Unit.Kit.SSGTest as KitSSGTest
 import qualified Unit.Kit.DataLoaderTest as KitDataLoaderTest
+import qualified Unit.Kit.HydrationTest as KitHydrationTest
+import qualified Unit.Kit.SSRTest as KitSSRTest
+import qualified Unit.Kit.DeployTest as KitDeployTest
 import qualified Property.ArithmeticLawsTest as ArithmeticLawsTest
 import qualified Property.Type.UnifyProperties as UnifyProperties
 import qualified Property.Type.UnionFindProperties as UnionFindProperties
@@ -292,6 +298,8 @@ unitTests =
       CodeSplitTypesTest.tests,
       TreeShakeTest.tests,
       TypeScriptTest.tests,
+      WebComponentTest.tests,
+      WebComponentIntrospectTest.tests,
       HMRTest.tests,
       CoverageTest.tests,
       CoverageReportTest.tests,
@@ -323,6 +331,7 @@ unitTests =
       FFIErgonomicsTest.tests,
       FFIEscapeTest.tests,
       FFIManifestTest.tests,
+      NpmPipelineTest.tests,
       FFIResolveTest.tests,
       FFIStaticAnalysisTest.tests,
       FFIValidatorTest.tests,
@@ -356,7 +365,10 @@ unitTests =
       KitValidateTest.tests,
       KitGenerateTest.tests,
       KitSSGTest.tests,
-      KitDataLoaderTest.tests
+      KitDataLoaderTest.tests,
+      KitHydrationTest.tests,
+      KitSSRTest.tests,
+      KitDeployTest.tests
     ]
 
 propertyTests :: TestTree

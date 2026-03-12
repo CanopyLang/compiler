@@ -62,6 +62,7 @@ library
       FFI.Capability
       FFI.CapabilityEnforcement
       FFI.Manifest
+      FFI.NpmPipeline
       FFI.Resolve
       FFI.StaticAnalysis
       FFI.Types
@@ -104,6 +105,7 @@ library
       Generate.JavaScript.StringPool
       Generate.JavaScript.NpmWrapper
       Generate.JavaScript.WebComponent
+      Generate.JavaScript.WebComponent.Introspect
       Generate.Mode
       Generate.TreeShake
       Generate.TypeScript

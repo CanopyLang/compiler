@@ -15,7 +15,9 @@ import qualified Data.Text.IO as TextIO
 import Kit.Route.Types (PageKind (..), RouteEntry (..), RouteManifest (..), RoutePattern (..), RouteSegment (..))
 import qualified Kit.Deploy.Netlify as Netlify
 import qualified Kit.Deploy.Node as Node
+import qualified Kit.Deploy.Serverless as Serverless
 import qualified Kit.Deploy.Vercel as Vercel
+import qualified System.Directory as Dir
 import qualified System.FilePath as FilePath
 import qualified System.IO.Temp as Temp
 import Test.Tasty (TestTree)
@@ -38,6 +40,15 @@ tests =
     , netlifyTomlBuildSection
     , netlifyTomlRedirects
     , netlifyTomlHeaders
+    , serverlessIsDynamic
+    , serverlessFunctionName
+    , vercelServerlessFunctionCreated
+    , vercelServerlessFunctionContent
+    , vercelJsonDynamicRewrite
+    , netlifyFunctionCreated
+    , netlifyFunctionContent
+    , netlifyTomlDynamicRedirect
+    , netlifyTomlFunctionsDirective
     ]
 
 
@@ -206,8 +217,128 @@ netlifyTomlHeaders =
       outputLines !! 12 @?= "    Cache-Control = \"public, max-age=31536000, immutable\""
 
 
+-- | Serverless isDynamicRoute correctly identifies dynamic pages.
+serverlessIsDynamic :: TestTree
+serverlessIsDynamic =
+  HUnit.testCase "isDynamicRoute identifies dynamic pages" $ do
+    HUnit.assertBool "dynamic route is dynamic" (Serverless.isDynamicRoute dynamicUserRoute)
+    HUnit.assertBool "static route is not dynamic" (not (Serverless.isDynamicRoute staticAboutRoute))
+
+
+-- | Serverless routeToFunctionName converts module names correctly.
+serverlessFunctionName :: TestTree
+serverlessFunctionName =
+  HUnit.testCase "routeToFunctionName converts module name" $
+    Serverless.routeToFunctionName dynamicUserRoute @?= "routes-users-id"
+
+
+-- | Vercel creates a serverless function file for a dynamic route.
+vercelServerlessFunctionCreated :: TestTree
+vercelServerlessFunctionCreated =
+  HUnit.testCase "Vercel creates serverless function for dynamic route" $
+    Temp.withSystemTempDirectory "deploy-vercel" $ \tmpDir -> do
+      Vercel.deployVercel tmpDir dynamicManifest
+      exists <- Dir.doesFileExist (tmpDir FilePath.</> "api" FilePath.</> "routes-users-id.js")
+      HUnit.assertBool "serverless function file exists" exists
+
+
+-- | Vercel serverless function has correct import and handler structure.
+vercelServerlessFunctionContent :: TestTree
+vercelServerlessFunctionContent =
+  HUnit.testCase "Vercel serverless function has correct content" $
+    Temp.withSystemTempDirectory "deploy-vercel" $ \tmpDir -> do
+      Vercel.deployVercel tmpDir dynamicManifest
+      content <- TextIO.readFile (tmpDir FilePath.</> "api" FilePath.</> "routes-users-id.js")
+      let outputLines = Text.lines content
+      outputLines !! 0 @?= "import { renderRoute } from '../ssr-entry.js';"
+      outputLines !! 2 @?= "export default async function handler(req, res) {"
+      outputLines !! 4 @?= "  const html = await renderRoute('Routes.Users.Id', params);"
+
+
+-- | Vercel config includes a rewrite rule pointing to the serverless function.
+vercelJsonDynamicRewrite :: TestTree
+vercelJsonDynamicRewrite =
+  HUnit.testCase "Vercel config includes dynamic route rewrite" $
+    Temp.withSystemTempDirectory "deploy-vercel" $ \tmpDir -> do
+      Vercel.deployVercel tmpDir dynamicManifest
+      content <- TextIO.readFile (tmpDir FilePath.</> "vercel.json")
+      let outputLines = Text.lines content
+      outputLines !! 3 @?= "  \"rewrites\": ["
+      outputLines !! 4 @?= "    { \"source\": \"/users/:id\", \"destination\": \"/api/routes-users-id\" },"
+      outputLines !! 5 @?= "    { \"source\": \"/(.*)\", \"destination\": \"/index.html\" }"
+
+
+-- | Netlify creates a function file for a dynamic route.
+netlifyFunctionCreated :: TestTree
+netlifyFunctionCreated =
+  HUnit.testCase "Netlify creates function for dynamic route" $
+    Temp.withSystemTempDirectory "deploy-netlify" $ \tmpDir -> do
+      Netlify.deployNetlify tmpDir dynamicManifest
+      exists <- Dir.doesFileExist (tmpDir FilePath.</> "netlify" FilePath.</> "functions" FilePath.</> "routes-users-id.js")
+      HUnit.assertBool "netlify function file exists" exists
+
+
+-- | Netlify function has correct SSR entry import path.
+netlifyFunctionContent :: TestTree
+netlifyFunctionContent =
+  HUnit.testCase "Netlify function has correct content" $
+    Temp.withSystemTempDirectory "deploy-netlify" $ \tmpDir -> do
+      Netlify.deployNetlify tmpDir dynamicManifest
+      content <- TextIO.readFile (tmpDir FilePath.</> "netlify" FilePath.</> "functions" FilePath.</> "routes-users-id.js")
+      let outputLines = Text.lines content
+      outputLines !! 0 @?= "import { renderRoute } from '../../ssr-entry.js';"
+      outputLines !! 4 @?= "  const html = await renderRoute('Routes.Users.Id', params);"
+
+
+-- | Netlify config includes a function redirect for the dynamic route.
+netlifyTomlDynamicRedirect :: TestTree
+netlifyTomlDynamicRedirect =
+  HUnit.testCase "Netlify config includes function redirect" $
+    Temp.withSystemTempDirectory "deploy-netlify" $ \tmpDir -> do
+      Netlify.deployNetlify tmpDir dynamicManifest
+      content <- TextIO.readFile (tmpDir FilePath.</> "netlify.toml")
+      let outputLines = Text.lines content
+      outputLines !! 5 @?= "[[redirects]]"
+      outputLines !! 6 @?= "  from = \"/users/:splat\""
+      outputLines !! 7 @?= "  to = \"/.netlify/functions/routes-users-id\""
+      outputLines !! 8 @?= "  status = 200"
+
+
+-- | Netlify config includes functions directive when dynamic routes exist.
+netlifyTomlFunctionsDirective :: TestTree
+netlifyTomlFunctionsDirective =
+  HUnit.testCase "Netlify config includes functions directive" $
+    Temp.withSystemTempDirectory "deploy-netlify" $ \tmpDir -> do
+      Netlify.deployNetlify tmpDir dynamicManifest
+      content <- TextIO.readFile (tmpDir FilePath.</> "netlify.toml")
+      let outputLines = Text.lines content
+      outputLines !! 3 @?= "  functions = \"netlify/functions\""
+
+
 -- TEST DATA
 
 
 emptyManifest :: RouteManifest
 emptyManifest = RouteManifest [] [] []
+
+
+dynamicUserRoute :: RouteEntry
+dynamicUserRoute = RouteEntry
+  { _rePattern = RoutePattern [StaticSegment "users", DynamicSegment "id"] "src/routes/users/[id]/page.can"
+  , _rePageKind = DynamicPage
+  , _reSourceFile = "src/routes/users/[id]/page.can"
+  , _reModuleName = "Routes.Users.Id"
+  }
+
+
+staticAboutRoute :: RouteEntry
+staticAboutRoute = RouteEntry
+  { _rePattern = RoutePattern [StaticSegment "about"] "src/routes/about/page.can"
+  , _rePageKind = StaticPage
+  , _reSourceFile = "src/routes/about/page.can"
+  , _reModuleName = "Routes.About"
+  }
+
+
+dynamicManifest :: RouteManifest
+dynamicManifest = RouteManifest [dynamicUserRoute] [] []

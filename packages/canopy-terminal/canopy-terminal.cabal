@@ -102,10 +102,12 @@ library
       Kit.DataLoader
       Kit.Deploy.Netlify
       Kit.Deploy.Node
+      Kit.Deploy.Serverless
       Kit.Deploy.Static
       Kit.Deploy.Vercel
       Kit.Dev
       Kit.ErrorBoundary
+      Kit.Hydration
       Kit.Layout
       Kit.New
       Kit.Preview
