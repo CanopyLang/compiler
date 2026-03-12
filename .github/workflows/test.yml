@@ -67,41 +67,15 @@ jobs:
     - name: Install dependencies
       run: stack build --test --only-dependencies
 
-    - name: Build
-      run: stack build --test --no-run-tests
+    - name: Build with -Werror
+      run: stack build --test --no-run-tests --ghc-options="-Werror"
 
     - name: Run tests with timing
       run: stack test --coverage --ta="--time"
 
-    - name: Check coverage thresholds
+    - name: Check coverage threshold (80%)
       if: matrix.os == 'ubuntu-latest'
-      run: |
-        echo "=== Coverage Report ==="
-        REPORT=$(stack hpc report --all 2>&1 || true)
-        echo "$REPORT"
-
-        # Extract overall coverage percentage
-        COVERAGE=$(echo "$REPORT" | grep -oP '\d+(?=% expressions used)' | head -1)
-        if [ -z "$COVERAGE" ]; then
-          echo "WARNING: Could not parse coverage percentage, skipping threshold check"
-          exit 0
-        fi
-
-        echo ""
-        echo "=== Coverage Summary ==="
-        echo "Overall expression coverage: ${COVERAGE}%"
-
-        # Per-package thresholds:
-        #   canopy-core:     80% (pure compiler logic)
-        #   canopy-builder:  70% (IO-heavy build system)
-        #   canopy-terminal: 60% (UI and CLI code)
-        THRESHOLD=70
-        if [ "$COVERAGE" -lt "$THRESHOLD" ]; then
-          echo "FAIL: Overall coverage ${COVERAGE}% is below ${THRESHOLD}% threshold"
-          exit 1
-        else
-          echo "PASS: Overall coverage ${COVERAGE}% meets ${THRESHOLD}% threshold"
-        fi
+      run: bash scripts/check-coverage.sh 80
 
     - name: Check binary size
       if: matrix.os == 'ubuntu-latest'
@@ -135,8 +109,9 @@ jobs:
         file: ./codecov.json
       continue-on-error: true
 
-  lint:
-    name: Lint
+  lint-and-format:
+    name: Lint & Format
+    needs: preflight
     runs-on: ubuntu-latest
 
     steps:
@@ -150,12 +125,16 @@ jobs:
         stack-version: 'latest'
 
     - name: Install HLint
-      run: |
-        stack install hlint
+      run: stack install hlint
 
-    - name: Run HLint
-      run: |
-        hlint packages/ test/ --report=hlint-report.html
+    - name: Install Ormolu
+      run: stack install ormolu
+
+    - name: Run HLint (fail on warnings)
+      run: hlint packages/ test/ bench/ --report=hlint-report.html
+
+    - name: Run Ormolu format check
+      run: make format-check
 
     - name: Upload HLint report
       uses: actions/upload-artifact@v3

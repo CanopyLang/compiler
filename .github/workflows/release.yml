@@ -1,0 +1,174 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+jobs:
+  validate:
+    name: Validate before release
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Haskell
+        uses: haskell/actions/setup@v2
+        with:
+          ghc-version: '9.8.4'
+          enable-stack: true
+          stack-version: 'latest'
+
+      - name: Cache Stack dependencies
+        uses: actions/cache@v3
+        with:
+          path: |
+            ~/.stack
+            .stack-work
+          key: validate-${{ runner.os }}-${{ hashFiles('stack.yaml', 'package.yaml') }}
+          restore-keys: |
+            validate-${{ runner.os }}-
+
+      - name: Install dependencies
+        run: stack build --test --only-dependencies
+
+      - name: Build with -Werror
+        run: stack build --test --no-run-tests --ghc-options="-Werror"
+
+      - name: Run tests
+        run: stack test
+
+      - name: Install lint tools
+        run: stack install hlint ormolu
+
+      - name: Run HLint
+        run: hlint packages/ test/ bench/
+
+      - name: Run Ormolu format check
+        run: make format-check
+
+  build:
+    name: Build ${{ matrix.target }}
+    needs: validate
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: linux-x86_64
+            os: ubuntu-latest
+            archive: tar.gz
+          - target: darwin-x86_64
+            os: macos-13
+            archive: tar.gz
+          - target: darwin-aarch64
+            os: macos-latest
+            archive: tar.gz
+          - target: windows-x86_64
+            os: windows-latest
+            archive: zip
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Haskell
+        uses: haskell/actions/setup@v2
+        with:
+          ghc-version: '9.8.4'
+          enable-stack: true
+          stack-version: 'latest'
+
+      - name: Cache Stack dependencies
+        uses: actions/cache@v3
+        with:
+          path: |
+            ~/.stack
+            .stack-work
+          key: release-${{ runner.os }}-${{ matrix.target }}-${{ hashFiles('stack.yaml', 'package.yaml') }}
+          restore-keys: |
+            release-${{ runner.os }}-${{ matrix.target }}-
+            release-${{ runner.os }}-
+
+      - name: Install dependencies
+        run: stack build --only-dependencies
+
+      - name: Build optimized binary
+        run: stack build --copy-bins --local-bin-path=./dist
+        env:
+          STACK_FLAGS: '--ghc-options="-O2"'
+
+      - name: Strip binary (Linux)
+        if: matrix.os == 'ubuntu-latest'
+        run: strip dist/canopy
+
+      - name: Strip binary (macOS)
+        if: startsWith(matrix.os, 'macos')
+        run: strip dist/canopy
+
+      - name: Get version from tag
+        id: version
+        shell: bash
+        run: echo "version=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
+
+      - name: Package archive (Unix)
+        if: matrix.archive == 'tar.gz'
+        shell: bash
+        run: |
+          ARCHIVE="canopy-${{ steps.version.outputs.version }}-${{ matrix.target }}.tar.gz"
+          tar -czf "$ARCHIVE" -C dist canopy
+          echo "archive=$ARCHIVE" >> "$GITHUB_OUTPUT"
+        id: package
+
+      - name: Package archive (Windows)
+        if: matrix.archive == 'zip'
+        shell: pwsh
+        run: |
+          $archive = "canopy-${{ steps.version.outputs.version }}-${{ matrix.target }}.zip"
+          Compress-Archive -Path dist/canopy.exe -DestinationPath $archive
+          echo "archive=$archive" >> $env:GITHUB_OUTPUT
+        id: package-win
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: canopy-${{ matrix.target }}
+          path: canopy-${{ steps.version.outputs.version }}-${{ matrix.target }}.*
+          retention-days: 1
+
+  release:
+    name: Create GitHub Release
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Get version from tag
+        id: version
+        run: echo "version=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
+
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+          merge-multiple: true
+
+      - name: List artifacts
+        run: ls -lR artifacts/
+
+      - name: Generate checksums
+        run: |
+          cd artifacts
+          sha256sum canopy-* > SHA256SUMS.txt
+          cat SHA256SUMS.txt
+
+      - name: Create GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "${{ github.ref_name }}" \
+            --title "Canopy ${{ steps.version.outputs.version }}" \
+            --generate-notes \
+            artifacts/*

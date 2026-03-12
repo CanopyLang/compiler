@@ -28,6 +28,10 @@ help:
 	@echo "profile-build: Build with profiling enabled"
 	@echo "profile-run: Run with time/allocation profiling"
 	@echo "profile-heap: Run with heap profiling"
+	@echo "release-binary: Build optimized, stripped binary for current platform"
+	@echo "release-archive: Package binary into tar.gz/zip archive"
+	@echo "format-check: Check formatting without modifying files (for CI)"
+	@echo "release-checksum: Generate SHA256 checksum for release archive"
 
 build:
 	@stack install --fast --pedantic --ghc-options "-j +RTS -A128m -n2m -RTS"
@@ -35,7 +39,7 @@ build:
 clean:
 	@stack clean
 
-PACKAGE_DIRS = packages/canopy-core/src packages/canopy-builder/src packages/canopy-driver/src packages/canopy-query/src packages/canopy-terminal/src packages/canopy-terminal/impl packages/canopy-webidl/src test
+PACKAGE_DIRS = packages/canopy-core/src packages/canopy-builder/src packages/canopy-driver/src packages/canopy-query/src packages/canopy-terminal/src packages/canopy-terminal/impl packages/canopy-webidl/src test bench
 
 lint:
 	hlint -h .hlint.yaml --no-summary $(PACKAGE_DIRS) -j && \
@@ -63,6 +67,10 @@ fix-lint-folder:
 
 format:
 	@find $(PACKAGE_DIRS) -name '*.hs' -exec ormolu --ghc-opt=-XTypeApplications --mode=inplace {} \;
+
+format-check:
+	@find $(PACKAGE_DIRS) -name "*.hs" -print0 | \
+		xargs -P 8 -0 -I _ ormolu --ghc-opt=-XTypeApplications --mode=check _
 
 test:
 	@echo "Running all tests..."
@@ -150,3 +158,48 @@ profile-heap:
 	@stack exec --profile -- canopy make src/Main.can +RTS -hc -p -RTS
 	@hp2ps -c canopy.hp 2>/dev/null || echo "Run hp2ps manually: hp2ps -c canopy.hp"
 	@echo "See canopy.ps for heap profile"
+
+# -- Release targets ----------------------------------------------------------
+
+DIST_DIR = dist
+VERSION = $(shell grep '^version:' canopy.cabal | head -1 | awk '{print $$2}')
+UNAME_S = $(shell uname -s)
+UNAME_M = $(shell uname -m)
+
+ifeq ($(UNAME_S),Linux)
+  RELEASE_OS = linux
+endif
+ifeq ($(UNAME_S),Darwin)
+  RELEASE_OS = darwin
+endif
+
+ifeq ($(UNAME_M),x86_64)
+  RELEASE_ARCH = x86_64
+endif
+ifeq ($(UNAME_M),arm64)
+  RELEASE_ARCH = aarch64
+endif
+ifeq ($(UNAME_M),aarch64)
+  RELEASE_ARCH = aarch64
+endif
+
+RELEASE_PLATFORM = $(RELEASE_OS)-$(RELEASE_ARCH)
+RELEASE_ARCHIVE = canopy-$(VERSION)-$(RELEASE_PLATFORM).tar.gz
+
+release-binary:
+	@echo "Building optimized binary..."
+	@stack build --ghc-options="-O2" --copy-bins --local-bin-path=$(DIST_DIR)
+	@strip $(DIST_DIR)/canopy 2>/dev/null || true
+	@echo "Binary: $(DIST_DIR)/canopy"
+	@ls -lh $(DIST_DIR)/canopy
+
+release-archive: release-binary
+	@echo "Packaging $(RELEASE_ARCHIVE)..."
+	@tar -czf $(RELEASE_ARCHIVE) -C $(DIST_DIR) canopy
+	@echo "Archive: $(RELEASE_ARCHIVE)"
+	@ls -lh $(RELEASE_ARCHIVE)
+
+release-checksum: release-archive
+	@echo "Generating checksum..."
+	@sha256sum $(RELEASE_ARCHIVE) > SHA256SUMS.txt
+	@cat SHA256SUMS.txt

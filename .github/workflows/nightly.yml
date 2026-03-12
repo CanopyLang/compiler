@@ -1,4 +1,4 @@
-name: Nightly Stress Test
+name: Nightly Validation
 
 on:
   schedule:
@@ -44,3 +44,96 @@ jobs:
 
     - name: Stress run (iteration 3 of 3)
       run: stack test --ta="--time"
+
+  benchmarks:
+    name: Benchmarks
+    runs-on: ubuntu-latest
+
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Setup Haskell
+      uses: haskell/actions/setup@v2
+      with:
+        ghc-version: '9.8.4'
+        enable-stack: true
+        stack-version: 'latest'
+
+    - name: Cache Stack dependencies
+      uses: actions/cache@v3
+      with:
+        path: |
+          ~/.stack
+          .stack-work
+        key: nightly-bench-${{ hashFiles('stack.yaml', 'package.yaml') }}
+        restore-keys: |
+          nightly-bench-
+
+    - name: Install dependencies
+      run: stack build --bench --only-dependencies
+
+    - name: Run benchmarks with CSV output
+      run: stack bench canopy:canopy-bench --benchmark-arguments '--csv bench/results.csv'
+
+    - name: Upload benchmark results
+      uses: actions/upload-artifact@v4
+      with:
+        name: benchmark-results-${{ github.run_number }}
+        path: bench/results.csv
+        retention-days: 90
+
+  lint-and-format:
+    name: Lint & Format
+    runs-on: ubuntu-latest
+
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Setup Haskell
+      uses: haskell/actions/setup@v2
+      with:
+        ghc-version: '9.8.4'
+        enable-stack: true
+        stack-version: 'latest'
+
+    - name: Install lint tools
+      run: stack install hlint ormolu
+
+    - name: Run HLint
+      run: hlint packages/ test/ bench/
+
+    - name: Run Ormolu format check
+      run: make format-check
+
+  coverage:
+    name: Coverage check (80%)
+    runs-on: ubuntu-latest
+
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Setup Haskell
+      uses: haskell/actions/setup@v2
+      with:
+        ghc-version: '9.8.4'
+        enable-stack: true
+        stack-version: 'latest'
+
+    - name: Cache Stack dependencies
+      uses: actions/cache@v3
+      with:
+        path: |
+          ~/.stack
+          .stack-work
+        key: nightly-cov-${{ hashFiles('stack.yaml', 'package.yaml') }}
+        restore-keys: |
+          nightly-cov-
+
+    - name: Install dependencies
+      run: stack build --test --only-dependencies
+
+    - name: Run tests with coverage
+      run: stack test --coverage
+
+    - name: Check coverage threshold (80%)
+      run: bash scripts/check-coverage.sh 80
