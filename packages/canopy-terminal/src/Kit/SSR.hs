@@ -88,29 +88,39 @@ generateSsrScript outputDir _manifest loaders = do
   Text.IO.writeFile scriptPath (renderScript loaders)
 
 -- | Generate the content of the SSR render script.
+--
+-- Imports each route module from the correct ESM path
+-- (@.\/canopy.user.Module.js@) and uses JSDOM to create a DOM
+-- environment for the Canopy app's @init@ function.
 renderScript :: [DataLoader] -> Text
 renderScript loaders =
   Text.unlines
-    [ "import { readFileSync, writeFileSync } from 'fs';"
-    , "import { Ssr } from './main.js';"
+    [ "import { writeFileSync } from 'fs';"
+    , "import { JSDOM } from 'jsdom';"
+    , ""
+    , importLines
     , ""
     , "const moduleName = process.argv[2];"
     , "const outputPath = process.argv[3];"
     , ""
-    , "const loaderMap = {"
-    , Text.intercalate ",\n" (fmap loaderMapEntry loaders)
+    , "const moduleMap = {"
+    , Text.intercalate ",\n" (fmap moduleMapEntry staticLoaders)
     , "};"
     , ""
     , "async function render() {"
-    , "  const loader = loaderMap[moduleName];"
-    , "  const data = loader ? await loader() : {};"
-    , "  const result = Ssr.renderPage({"
-    , "    view: (model) => model.view,"
-    , "    state: JSON.stringify(data),"
-    , "    headContext: Ssr.Head.init(),"
-    , "    statusCode: 200"
-    , "  });"
-    , "  writeFileSync(outputPath, result.html);"
+    , "  const mod = moduleMap[moduleName];"
+    , "  if (!mod) {"
+    , "    console.error('Unknown module:', moduleName);"
+    , "    process.exit(1);"
+    , "  }"
+    , "  const dom = new JSDOM('<!DOCTYPE html><html><body><div id=\"app\"></div></body></html>');"
+    , "  global.document = dom.window.document;"
+    , "  global.window = dom.window;"
+    , "  const node = dom.window.document.getElementById('app');"
+    , "  const loaderData = mod.load ? await mod.load({}) : {};"
+    , "  mod.init({ node: node, flags: loaderData });"
+    , "  const html = '<!DOCTYPE html>' + dom.window.document.documentElement.outerHTML;"
+    , "  writeFileSync(outputPath, html);"
     , "}"
     , ""
     , "render().catch((err) => {"
@@ -118,40 +128,43 @@ renderScript loaders =
     , "  process.exit(1);"
     , "});"
     ]
-
--- | Generate a single loader map entry for the SSR script.
-loaderMapEntry :: DataLoader -> Text
-loaderMapEntry loader =
-  "  '" <> moduleName <> "': () => import('./pages/" <> modulePath <> ".js')"
   where
-    moduleName = loader ^. DataLoader.dlModuleName
-    modulePath = Text.replace "." "/" moduleName
+    staticLoaders = filter isStaticLoader loaders
+    importLines = Text.unlines (fmap importLine staticLoaders)
+    importLine loader =
+      "import * as " <> jsName loader <> " from './canopy.user."
+        <> (loader ^. DataLoader.dlModuleName) <> ".js';"
+
+-- | Generate a single module map entry for the SSR script.
+moduleMapEntry :: DataLoader -> Text
+moduleMapEntry loader =
+  "  '" <> modName <> "': " <> jsName loader
+  where
+    modName = loader ^. DataLoader.dlModuleName
 
 -- | Generate the SSR entry module for server deployment.
 --
 -- For Node.js deployment targets, this generates a module that
 -- exposes an @renderRoute@ function accepting a route path and
--- returning the pre-rendered HTML string.
+-- returning the pre-rendered HTML string via JSDOM.
 --
 -- @since 0.20.1
 generateSsrEntry :: [DataLoader] -> Text
 generateSsrEntry loaders =
   Text.unlines
-    [ "import { Ssr } from './main.js';"
+    [ "import { JSDOM } from 'jsdom';"
     , ""
     , importLines
     , ""
     , "export async function renderRoute(routePath, params) {"
     , "  const handler = routeHandlers[routePath];"
     , "  if (!handler) return null;"
-    , "  const data = await handler(params);"
-    , "  const result = Ssr.renderPage({"
-    , "    view: (model) => model.view,"
-    , "    state: JSON.stringify(data),"
-    , "    headContext: Ssr.Head.init(),"
-    , "    statusCode: 200"
-    , "  });"
-    , "  return result.html;"
+    , "  const { mod, load } = handler;"
+    , "  const data = load ? await load(params) : {};"
+    , "  const dom = new JSDOM('<!DOCTYPE html><html><body><div id=\"app\"></div></body></html>');"
+    , "  const node = dom.window.document.getElementById('app');"
+    , "  mod.init({ node: node, flags: data });"
+    , "  return '<!DOCTYPE html>' + dom.window.document.documentElement.outerHTML;"
     , "}"
     , ""
     , "const routeHandlers = {"
@@ -162,15 +175,20 @@ generateSsrEntry loaders =
     dynamicLoaders = filter isDynamicLoader loaders
     importLines = Text.unlines (fmap importLine dynamicLoaders)
     importLine loader =
-      "import * as " <> jsName loader <> " from './pages/"
-      <> Text.replace "." "/" (loader ^. DataLoader.dlModuleName) <> ".js';"
+      "import * as " <> jsName loader <> " from './canopy.user."
+        <> (loader ^. DataLoader.dlModuleName) <> ".js';"
     handlerEntry loader =
-      "  '" <> (loader ^. DataLoader.dlModuleName) <> "': (params) => "
-      <> jsName loader <> ".load(params)"
-    jsName loader = Text.replace "." "$" (loader ^. DataLoader.dlModuleName)
+      "  '" <> modName <> "': { mod: " <> jsName loader
+        <> ", load: " <> jsName loader <> ".load }"
+      where
+        modName = loader ^. DataLoader.dlModuleName
 
 
 -- INTERNAL HELPERS
+
+-- | Convert a loader's module name to a valid JavaScript identifier.
+jsName :: DataLoader -> Text
+jsName loader = Text.replace "." "$" (loader ^. DataLoader.dlModuleName)
 
 
 -- | Check if a loader is a static loader.

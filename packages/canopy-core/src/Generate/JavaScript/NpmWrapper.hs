@@ -47,6 +47,8 @@ data ParamConversion
     -- ^ Convert Maybe to nullable value.
   | UnwrapNewtype
     -- ^ Unwrap a single-field newtype.
+  | ConvertCallback
+    -- ^ Convert callback parameter to Canopy-compatible function.
   deriving (Show, Eq)
 
 -- | How to convert a JS return value to a Canopy type.
@@ -59,7 +61,7 @@ data ReturnConversion
     -- ^ Wrap Promise in Task scheduler.
   | WrapNullable
     -- ^ Wrap nullable in Maybe.
-  | WrapCallback
+  | WrapCallbackReturn
     -- ^ Convert callback-style to Task.
   | ReturnCmd
     -- ^ Wrap void return in Cmd.
@@ -116,7 +118,7 @@ functionBody config =
     ReturnDirect -> directBody config
     WrapPromise -> promiseBody config
     WrapNullable -> nullableBody config
-    WrapCallback -> callbackBody config
+    WrapCallbackReturn -> callbackBody config
     ReturnCmd -> cmdBody config
 
 -- | Direct return without conversion.
@@ -181,8 +183,10 @@ callExprWithCallback config =
 -- | Convert a single parameter based on its conversion type.
 convertParam :: Int -> ParamConversion -> BB.Builder
 convertParam i PassThrough = paramRef i
-convertParam i UnwrapMaybe = paramRef i <> ".$" <> " === 'Just' ? " <> paramRef i <> ".a : null"
+convertParam i UnwrapMaybe = "'a' in " <> paramRef i <> " ? " <> paramRef i <> ".a : null"
 convertParam i UnwrapNewtype = paramRef i <> ".a"
+convertParam i ConvertCallback =
+  "function() { return " <> paramRef i <> "(Array.prototype.slice.call(arguments)); }"
 
 -- | Reference to a parameter by index.
 paramRef :: Int -> BB.Builder

@@ -193,23 +193,17 @@ registryGenerationTests =
         output @?= "",
       testCase "single capability produces registry and check function" $ do
         let output = builderToText (CapEnforce.generateCapabilityRegistry (Set.singleton "geolocation"))
-        assertBool "registry contains _Canopy_capabilities" (Text.isInfixOf "_Canopy_capabilities" output)
-        assertBool "registry contains geolocation entry" (Text.isInfixOf "\"geolocation\": true" output)
-        assertBool "registry contains check function" (Text.isInfixOf "_Canopy_checkCapability" output),
+        output @?= expectedRegistry "\"geolocation\": true",
       testCase "multiple capabilities all present in registry" $ do
         let caps = Set.fromList ["camera", "geolocation", "notifications"]
             output = builderToText (CapEnforce.generateCapabilityRegistry caps)
-        assertBool "contains camera" (Text.isInfixOf "\"camera\": true" output)
-        assertBool "contains geolocation" (Text.isInfixOf "\"geolocation\": true" output)
-        assertBool "contains notifications" (Text.isInfixOf "\"notifications\": true" output),
+        output @?= expectedRegistry "\"camera\": true, \"geolocation\": true, \"notifications\": true",
       testCase "registry is valid JavaScript structure" $ do
         let output = builderToText (CapEnforce.generateCapabilityRegistry (Set.singleton "geo"))
-        assertBool "starts with var" (Text.isPrefixOf "var _Canopy_capabilities" output)
-        assertBool "has check function" (Text.isInfixOf "function _Canopy_checkCapability" output),
+        output @?= expectedRegistry "\"geo\": true",
       testCase "check function throws on missing capability" $ do
         let output = builderToText (CapEnforce.generateCapabilityRegistry (Set.singleton "geo"))
-        assertBool "throws Error" (Text.isInfixOf "throw new Error" output)
-        assertBool "mentions capability in message" (Text.isInfixOf "Capability" output)
+        output @?= expectedRegistry "\"geo\": true"
     ]
 
 -- GUARD GENERATION TESTS
@@ -223,19 +217,15 @@ guardGenerationTests =
         output @?= "",
       testCase "single capability produces one check call" $ do
         let output = builderToText (CapEnforce.generateCapabilityGuard "getLocation" (Set.singleton "geolocation"))
-        assertBool "calls _Canopy_checkCapability" (Text.isInfixOf "_Canopy_checkCapability" output)
-        assertBool "passes capability name" (Text.isInfixOf "\"geolocation\"" output)
-        assertBool "passes function name" (Text.isInfixOf "\"getLocation\"" output),
+        output @?= "_Canopy_checkCapability(\"geolocation\", \"getLocation\");\n",
       testCase "multiple capabilities produce multiple check calls" $ do
         let caps = Set.fromList ["camera", "microphone"]
             output = builderToText (CapEnforce.generateCapabilityGuard "getMedia" caps)
-        let checkCount = length (Text.splitOn "_Canopy_checkCapability" output) - 1
-        checkCount @?= 2,
+        output @?= "_Canopy_checkCapability(\"camera\", \"getMedia\");\n_Canopy_checkCapability(\"microphone\", \"getMedia\");\n",
       testCase "guard uses correct function name in all checks" $ do
         let caps = Set.fromList ["a", "b"]
             output = builderToText (CapEnforce.generateCapabilityGuard "myFunc" caps)
-        let funcRefCount = length (Text.splitOn "\"myFunc\"" output) - 1
-        funcRefCount @?= 2
+        output @?= "_Canopy_checkCapability(\"a\", \"myFunc\");\n_Canopy_checkCapability(\"b\", \"myFunc\");\n"
     ]
 
 -- INTEGRATION TESTS
@@ -255,8 +245,7 @@ integrationTests =
             registry = builderToText (CapEnforce.generateCapabilityRegistry declared)
         errors @?= []
         unused @?= Set.empty
-        assertBool "registry has geolocation" (Text.isInfixOf "\"geolocation\": true" registry)
-        assertBool "registry has notifications" (Text.isInfixOf "\"notifications\": true" registry),
+        registry @?= expectedRegistry "\"geolocation\": true, \"notifications\": true",
       testCase "library project with no capabilities" $ do
         let declared = Set.empty
             errors = CapEnforce.validateCapabilities declared []
@@ -273,10 +262,7 @@ integrationTests =
                   CapEnforce._ceMissingCapability = "geolocation",
                   CapEnforce._ceErrorKind = CapEnforce.MissingCapability
                 }
-        let shown = show err
-        assertBool "show contains function name" (isInfixOf "getLocation" shown)
-        assertBool "show contains file path" (isInfixOf "ffi/geo.js" shown)
-        assertBool "show contains capability" (isInfixOf "geolocation" shown),
+        show err @?= "CapabilityError {_ceFunctionName = \"getLocation\", _ceFilePath = \"ffi/geo.js\", _ceMissingCapability = \"geolocation\", _ceErrorKind = MissingCapability}",
       testCase "CapabilityError Eq instance" $ do
         let err1 =
               CapEnforce.CapabilityError
@@ -309,6 +295,24 @@ integrationTests =
 builderToText :: Builder.Builder -> Text.Text
 builderToText = Text.decodeUtf8 . Lazy.toStrict . Builder.toLazyByteString
 
--- | Check if a substring is present in a String.
-isInfixOf :: String -> String -> Bool
-isInfixOf needle haystack = Text.isInfixOf (Text.pack needle) (Text.pack haystack)
+-- | Build the expected registry output given the capability entries.
+--
+-- The check function boilerplate is shared across all non-empty registries,
+-- so this helper avoids duplicating it in every test case.
+expectedRegistry :: Text.Text -> Text.Text
+expectedRegistry entries =
+  "var _Canopy_capabilities = {"
+    <> entries
+    <> "};\n"
+    <> checkFunctionText
+
+-- | The expected check function text emitted by 'generateCapabilityRegistry'.
+checkFunctionText :: Text.Text
+checkFunctionText =
+  Text.concat
+    [ "function _Canopy_checkCapability(cap, fn) {"
+    , "  if (!_Canopy_capabilities[cap]) {"
+    , "    throw new Error('Capability \\'' + cap + '\\'"
+    , " required by ' + fn + ' but not granted in canopy.json.');"
+    , "  }}\n"
+    ]

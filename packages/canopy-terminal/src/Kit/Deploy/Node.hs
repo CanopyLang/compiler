@@ -35,18 +35,26 @@ deployNode outputDir manifest = do
     pkgPath = outputDir FilePath.</> "package.json"
 
 -- | Generate the Express.js server source code.
+--
+-- Uses ESM syntax to match the SSR entry module produced by 'Kit.SSR'.
 generateServerJs :: RouteManifest -> Text.Text
 generateServerJs manifest =
   Text.unlines
-    [ "const express = require('express');"
-    , "const path = require('path');"
+    [ "import express from 'express';"
+    , "import { fileURLToPath } from 'url';"
+    , "import path from 'path';"
+    , ""
+    , "const __filename = fileURLToPath(import.meta.url);"
+    , "const __dirname = path.dirname(__filename);"
     , "const app = express();"
     , "const PORT = process.env.PORT || 3000;"
     , ""
     , "// Import SSR renderer for dynamic routes"
     , "let renderRoute = null;"
-    , "try { renderRoute = require('./ssr-entry.js').renderRoute; }"
-    , "catch (e) { /* SSR entry not available, static-only mode */ }"
+    , "try {"
+    , "  const ssrEntry = await import('./ssr-entry.js');"
+    , "  renderRoute = ssrEntry.renderRoute;"
+    , "} catch (e) { /* SSR entry not available, static-only mode */ }"
     , ""
     , "// Serve static assets"
     , "app.use('/assets', express.static(path.join(__dirname, 'assets')));"
@@ -127,12 +135,15 @@ segmentsToHtmlPath segs =
     segToDir _ = ""
 
 -- | Generate a minimal package.json for the server.
+--
+-- Includes @\"type\": \"module\"@ so Node.js treats @.js@ files as ESM.
 generatePackageJson :: Text.Text
 generatePackageJson =
   Text.unlines
     [ "{"
     , "  \"name\": \"canopy-kit-server\","
     , "  \"private\": true,"
+    , "  \"type\": \"module\","
     , "  \"scripts\": {"
     , "    \"start\": \"node server.js\""
     , "  },"

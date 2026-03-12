@@ -13,6 +13,7 @@ module Kit.Dev
   ) where
 
 import Control.Concurrent (forkIO)
+import Control.Concurrent.MVar (newEmptyMVar, takeMVar)
 import Control.Lens ((^.))
 import Control.Monad (void)
 import qualified Data.Text.IO as TextIO
@@ -88,11 +89,14 @@ watchRoutes routesDir =
 startWatcher :: FilePath -> FSNotify.WatchManager -> IO ()
 startWatcher routesDir manager = do
   void (FSNotify.watchTree manager routesDir isRouteFile handleRouteChange)
-  waitForever
-  where
-    waitForever = do
-      _ <- getLine
-      waitForever
+  blockForever
+
+-- | Block the current thread indefinitely.
+--
+-- Uses an empty MVar to block without consuming stdin,
+-- which is more robust when stdin is not connected.
+blockForever :: IO ()
+blockForever = newEmptyMVar >>= takeMVar
 
 -- | Check if a filesystem event is for a route-relevant file.
 isRouteFile :: FSNotify.Event -> Bool
@@ -107,11 +111,22 @@ isRelevantFile path =
     suffixes = ["page.can", "layout.can", "error.can"]
     takeFileName = reverse . takeWhile (/= '/') . reverse
 
--- | Handle a route file change by regenerating modules.
+-- | Handle a route file change by regenerating modules and triggering HMR.
 handleRouteChange :: FSNotify.Event -> IO ()
 handleRouteChange _event = do
   IO.hPutStrLn IO.stderr "[kit] Routes changed, regenerating..."
   generateAllModules
+  touchHmrSentinel
+
+-- | Touch the HMR sentinel file so Vite detects a change.
+--
+-- The Canopy Vite plugin watches @.canopy-hmr-trigger@ alongside
+-- @.can@ files. Touching this file after route regeneration ensures
+-- Vite triggers a full reload even though the changed files are
+-- generated @.can@ modules that Vite may not watch directly.
+touchHmrSentinel :: IO ()
+touchHmrSentinel =
+  writeFile ".canopy-hmr-trigger" ""
 
 -- | Open a browser to the dev server URL if the @--open@ flag is set.
 openBrowserIfRequested :: KitDevFlags -> IO ()
