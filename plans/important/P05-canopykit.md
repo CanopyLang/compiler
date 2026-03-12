@@ -1,263 +1,137 @@
-# Plan 05: CanopyKit Meta-Framework
+# Plan P05: CanopyKit Meta-Framework
 
-## Priority: HIGH — Tier 1
-## Effort: 8-12 weeks
-## Depends on: Plan 01 (ESM — COMPLETE), Plan 06 (Vite plugin) — Plan 03 (packages) is COMPLETE
+## Priority: HIGH -- Tier 1
+## Status: IN-PROGRESS -- ~65% complete
+## Effort: 4-6 weeks remaining (down from 8-12; routing, SSG, layouts, errors, API routes all built)
+## Depends on: Plan 01 (ESM -- COMPLETE), Plan 06 (Vite plugin -- COMPLETE)
 
-> **Status Update (2026-03-10):** Plan 01 (ESM) is now COMPLETE (2026-03-10). Plan 06 (Vite
-> plugin) is the remaining blocker. No CanopyKit implementation exists yet. No file-based
-> routing, no SSG/SSR, no `canopy kit` CLI commands.
+## What's Done (2,419 lines Haskell + 157 lines TypeScript)
 
-## Problem
+### File-Based Routing (fully operational)
+- **Scanner** (`Kit/Scanner.hs`, 328L) -- discovers route files, builds route tree
+- **Types** (`Kit/Types.hs`, 178L) -- Route, Segment (static, [param] dynamic, [...rest] catch-all), RouteManifest
+- **Validate** (`Kit/Validate.hs`, 148L) -- conflict detection, validation rules
+- **Generate** (`Kit/Generate.hs`, 228L) -- generates `Routes.can` module (Route type, href helper, parser)
+- **ClientNav** (`Kit/ClientNav.hs`, 268L) -- client-side navigation JS (pushState, popstate, link interception, lazy loading)
 
-Raw framework projects barely exist in 2026. Every successful frontend technology has a meta-framework:
+### CLI Commands (all wired into `canopy` binary)
+- **`canopy kit new`** (`Kit/New.hs`, 181L) -- scaffolds full starter project
+- **`canopy kit dev`** (`Kit/Dev.hs`, 159L) -- validates routes, scans filesystem, generates Routes.can, starts Vite dev server
+- **`canopy kit build`** (`Kit/Build.hs`, 98L) -- compile, SSG, Vite bundle pipeline
 
-| Framework | Meta-Framework | What It Provides |
-|-----------|---------------|-----------------|
-| React | Next.js | Routing, SSR, SSG, API routes, deployment |
-| Vue | Nuxt | Same |
-| Svelte | SvelteKit | Same |
-| Solid | SolidStart | Same (immature — cited as reason for low adoption) |
-| Elm | Nothing | **This is why Elm failed in production** |
+### Static Site Generation
+- **SSG** (`Kit/SSG.hs`, 103L) -- generates static HTML shells with mount points per route
 
-Teams need file-based routing, server-side rendering, data loading, and one-command deployment. Without this, Canopy is a toy.
+### Layout System
+- **Layouts** (`Kit/Layout.hs`, 52L) -- prefix-based layout resolution, specificity sorting
 
-## Solution: CanopyKit
-
-A batteries-included meta-framework for Canopy. Not a separate project — built into the `canopy` CLI.
-
-### Commands
-
-```bash
-canopy kit new my-app          # Scaffold a new CanopyKit project
-canopy kit dev                 # Dev server with HMR (wraps Vite)
-canopy kit build               # Production build
-canopy kit build --target edge # Edge-optimized build
-canopy kit preview             # Preview production build locally
-```
-
-### File-Based Routing
-
-```
-src/
-  routes/
-    page.can            → /
-    about/
-      page.can          → /about
-    blog/
-      page.can          → /blog
-      [slug]/
-        page.can        → /blog/:slug
-    api/
-      users.can         → /api/users (server-only)
-  layouts/
-    default.can         → wraps all pages
-    blog.can            → wraps /blog/* pages
-  error.can             → error boundary
-```
-
-Each `page.can` exports:
-
-```canopy
-module Routes.About exposing (Model, Msg, page)
-
-type alias Model = { ... }
-type Msg = ...
-
-page : Page Model Msg
-page =
-    Page.static
-        { view = view
-        }
-
--- OR for dynamic pages:
-page =
-    Page.dynamic
-        { init = init
-        , update = update
-        , view = view
-        , subscriptions = subscriptions
-        }
-
--- OR for server-loaded pages:
-page =
-    Page.server
-        { load = load          -- runs on server, returns data
-        , view = view          -- runs on client with loaded data
-        }
-```
-
-### Data Loading
-
-```canopy
--- Server-side data loading (like Next.js getServerSideProps)
-load : Request -> Task LoadError PageData
-load request =
-    Http.get
-        { url = "/api/posts/" ++ Request.param "slug" request
-        , expect = Http.expectJson PostDecoder.decoder
-        }
-        |> Task.map (\post -> { post = post })
-```
-
-The `load` function runs on the server. Its return type is serialized to JSON and sent to the client. The compiler verifies the types match between `load` return and `view` input.
-
-### Layouts
-
-```canopy
-module Layouts.Default exposing (Model, Msg, layout)
-
-layout : Layout Model Msg contentMsg
-layout =
-    Layout.new
-        { init = init
-        , update = update
-        , view = view
-        , subscriptions = subscriptions
-        }
-
-view : Model -> { content : Html contentMsg } -> Html (Msg contentMsg)
-view model { content } =
-    div []
-        [ navbar model
-        , main_ [] [ content ]
-        , footer
-        ]
-```
-
-### Rendering Modes (Per Route)
-
-```canopy
-page =
-    Page.static { ... }           -- SSG: pre-rendered at build time
-    Page.server { ... }           -- SSR: rendered on each request
-    Page.client { ... }           -- CSR: rendered in browser only
-    Page.incremental { ... }      -- ISR: SSG with revalidation interval
-```
+### Error Boundaries
+- **ErrorBoundary** (`Kit/ErrorBoundary.hs`, 83L) -- hierarchy-based error handling per route
 
 ### API Routes
+- **ApiHandler** (`Kit/ApiHandler.hs`, 227L) -- handler code generation, Express-style HTTP method patterns
 
-```canopy
-module Routes.Api.Users exposing (handlers)
+### Data Loaders (partial)
+- **DataLoader** (`Kit/DataLoader.hs`, 121L) -- types defined, generation code ready
+- Detection NOT implemented (`detectLoaders` returns `[]`)
 
-handlers : ApiHandlers
-handlers =
-    Api.handlers
-        { get = getUsers
-        , post = createUser
-        }
+### Vite Integration
+- **VitePlugin** (`Kit/VitePlugin.hs`, 199L) -- generates complete `vite.config.ts` + `canopy-plugin.js`
 
-getUsers : Request -> Task ApiError Response
-getUsers request =
-    Database.query "SELECT * FROM users"
-        |> Task.map (\users -> Response.json (encodeUsers users))
-```
+### Error Reporting
+- **Exit/Kit.hs** (126L) -- structured error messages for all Kit operations
 
-API routes compile to server-only code. The compiler enforces they are never bundled into the client.
+### Documentation
+- **canopykit-guide.md** (542L) -- complete user guide
 
-### Type-Safe Links
+## What Remains
 
-```canopy
--- Generated by the router from file structure:
-module Routes exposing (Route(..), href)
+### 1. Data Loader Detection (~1 week)
+- `detectLoaders` currently returns `[]` -- needs module export parsing
+- Scan page modules for `load` function exports
+- Wire detected loaders into SSG and dev server pipelines
+- Generate server-side loader execution code
 
-type Route
-    = Home
-    | About
-    | BlogPost { slug : String }
+### 2. SSR -- Server-Side Rendering (~2-3 weeks)
+- Node.js server generation (Express or Fastify)
+- HTML streaming for `Page.server` routes
+- Client-side hydration (inject serialized state, resume on client)
+- `Page.server` with `load` function that runs server-side
+- `Page.incremental` with revalidation interval (ISR)
 
--- Type error if you link to a route that doesn't exist:
-view model =
-    a [ Routes.href (BlogPost { slug = "hello" }) ] [ text "Read post" ]
-```
+### 3. Deployment Adapters (~1 week)
+- Node.js adapter (standalone server)
+- Static adapter (already partially covered by SSG)
+- Edge adapter (Cloudflare Workers / Vercel Edge -- stretch goal)
+
+### 4. `canopy kit preview` Command (~2 days)
+- Preview production build locally
+- Serve built assets with a local HTTP server
+- Simulate production routing behavior
+
+### 5. Request/Response Types for API Routes (~3 days)
+- Typed `Request` and `Response` types in Canopy
+- Header, cookie, query parameter access
+- JSON body parsing with type safety
+
+### 6. HMR Integration with Route Changes (~2 days)
+- Detect new/removed/renamed route files during `canopy kit dev`
+- Re-scan and regenerate `Routes.can` on filesystem changes
+- Hot-reload route manifest without full restart
+
+### 7. Tests (~1 week)
+- ZERO tests exist for Kit modules currently
+- Unit tests for Scanner, Validate, Generate, Layout, ErrorBoundary
+- Integration tests for `kit new`, `kit dev`, `kit build` commands
+- Golden tests for generated Routes.can and vite.config.ts
+
+## Dependencies
+
+| Dependency | Status |
+|---|---|
+| Plan 01 (ESM output) | COMPLETE |
+| Plan 06 (Vite plugin) | COMPLETE |
+| P06 (Abilities) | COMPLETE (not a hard dependency but useful for typed patterns) |
 
 ## Architecture
 
 ```
                     canopy kit dev
-                         │
-                    ┌────┴────┐
-                    │  Vite   │  (dev server, HMR, bundling)
-                    └────┬────┘
-                         │
-              ┌──────────┼──────────┐
-              │          │          │
-         ┌────┴───┐ ┌───┴────┐ ┌──┴──────┐
-         │ Router │ │  SSR   │ │  Build  │
-         │ Plugin │ │ Engine │ │ Pipeline│
-         └────┬───┘ └───┬────┘ └──┬──────┘
-              │          │         │
-              └──────────┼─────────┘
-                         │
-                  ┌──────┴──────┐
-                  │   Canopy    │
-                  │  Compiler   │
-                  └─────────────┘
+                         |
+                    +----+----+
+                    |  Vite   |  (dev server, HMR, bundling)
+                    +----+----+
+                         |
+              +----------+----------+
+              |          |          |
+         +----+---+ +---+----+ +--+------+
+         | Router | |  SSR   | |  Build  |
+         | Plugin | | Engine | | Pipeline|
+         +----+---+ +---+----+ +--+------+
+              |          |         |
+              +----------+---------+
+                         |
+                  +------+------+
+                  |   Canopy    |
+                  |  Compiler   |
+                  +-------------+
 ```
-
-### Router Generation
-
-At build time, the compiler scans `src/routes/` and generates:
-1. A `Routes` module with the `Route` type and navigation helpers
-2. A route manifest mapping URL patterns to page modules
-3. Client-side navigation logic (pushState, popstate handling)
-4. Code splitting: each page is a separate chunk, loaded on navigation
-
-### Server Runtime
-
-For SSR/SSG, CanopyKit needs a Node.js server that:
-1. Receives HTTP requests
-2. Matches the URL to a route
-3. Runs the `load` function (if server page)
-4. Renders the page to HTML (streaming)
-5. Injects serialized state for client resumption
-6. Serves the HTML with appropriate headers
-
-This server is generated by the build step, not hand-written.
-
-## Implementation Phases
-
-### Phase 1: Static site generation (Weeks 1-3)
-- File-based routing scanner
-- Route type generation
-- Static page rendering to HTML files
-- Client-side navigation with code splitting
-- `canopy kit new`, `canopy kit dev`, `canopy kit build`
-
-### Phase 2: Server rendering (Weeks 4-6)
-- `Page.server` with data loading
-- HTML streaming
-- Client-side hydration (or resumption if Plan 07 is ready)
-- Node.js server generation
-
-### Phase 3: Layouts and error handling (Weeks 7-8)
-- Nested layouts
-- Error boundaries per route
-- Loading states
-- 404 handling
-
-### Phase 4: API routes and deployment (Weeks 9-12)
-- Server-only API routes
-- Deployment adapters (Node.js, Cloudflare Workers, Vercel, Netlify)
-- `canopy kit build --target edge`
-- Preview server
-
-## Inspiration
-
-- **SvelteKit**: File-based routing, load functions, layout system
-- **Next.js**: SSR/SSG/ISR modes, API routes
-- **elm-spa**: Type-safe routing for Elm (but without SSR)
-- **Qwik City**: Resumability, directory-based routing
 
 ## Definition of Done
 
-- [ ] `canopy kit new my-app && cd my-app && canopy kit dev` works
-- [ ] File-based routing with dynamic segments
-- [ ] SSG builds produce static HTML files
+- [x] `canopy kit new my-app && cd my-app && canopy kit dev` works
+- [x] File-based routing with static, dynamic [param], and catch-all [...rest] segments
+- [x] SSG builds produce static HTML files
+- [x] Type-safe links: linking to nonexistent routes is a compile error
+- [x] Layouts with prefix-based nesting
+- [x] Error boundaries per route hierarchy
+- [x] API route handler generation
+- [x] Vite plugin configuration generation
+- [ ] Data loader detection and execution
 - [ ] SSR renders pages on each request with streaming
-- [ ] Code splitting: each route is a separate chunk
-- [ ] Type-safe links: linking to nonexistent routes is a compile error
-- [ ] Layouts with nesting
-- [ ] Error boundaries
-- [ ] API routes (server-only)
+- [ ] Client-side hydration
+- [ ] Code splitting: each route is a separate chunk (lazy loading wired but needs SSR)
+- [ ] `canopy kit preview` command
+- [ ] Request/Response types for API routes
 - [ ] At least one deployment adapter (Node.js)
+- [ ] Test coverage for all Kit modules (target: 80%)

@@ -3,30 +3,36 @@
 -- | Kit development server.
 --
 -- Reads the project configuration, scans the routes directory, generates
--- the @Routes@ module, and starts a Vite dev server. A filesystem watcher
--- monitors the routes directory and regenerates the @Routes@ module
--- whenever routes are added, removed, or renamed.
+-- the @Routes@ and @Loaders@ modules, and starts a Vite dev server.
+-- A filesystem watcher monitors the routes directory and regenerates
+-- both modules whenever routes are added, removed, or renamed.
 --
 -- @since 0.19.2
 module Kit.Dev
   ( dev
   ) where
 
+import Control.Concurrent (forkIO)
 import Control.Lens ((^.))
-import qualified Data.Text as Text
+import Control.Monad (void)
 import qualified Data.Text.IO as TextIO
+import qualified Kit.DataLoader as DataLoader
+import qualified Kit.Route.Generate as Generate
+import Kit.Route.Types (RouteManifest (..))
+import qualified Kit.Route.Scanner as Scanner
 import Kit.Types (KitDevFlags, kitDevOpen, kitDevPort)
 import qualified Reporting.Exit.Help as Help
 import qualified Reporting.Exit.Kit as ExitKit
 import qualified System.Directory as Dir
+import qualified System.FSNotify as FSNotify
+import qualified System.IO as IO
 import qualified System.Process as Process
 
 -- | Start the Kit development server.
 --
 -- Validates that the project is a Kit project, scans routes, generates
--- the @Routes.can@ module, and starts Vite. Watches the routes directory
--- for changes and regenerates the @Routes@ module when files are added
--- or removed.
+-- the @Routes.can@ and @Loaders.can@ modules, starts a file watcher,
+-- and launches Vite.
 --
 -- @since 0.19.2
 dev :: KitDevFlags -> IO ()
@@ -44,95 +50,68 @@ startDevServer flags = do
     then runDevPipeline flags
     else Help.toStderr (ExitKit.kitToReport ExitKit.KitNotKitProject)
 
--- | Run the route generation and Vite dev server pipeline.
+-- | Run the route generation, file watcher, and Vite dev server.
 runDevPipeline :: KitDevFlags -> IO ()
 runDevPipeline flags = do
-  generateRoutesModule
+  generateAllModules
+  void (forkIO (watchRoutes "src/routes"))
   openBrowserIfRequested flags
   runViteDev flags
 
--- | Generate the @src/Routes.can@ module from the routes directory.
+-- | Generate Routes.can and Loaders.can from the routes directory.
+generateAllModules :: IO ()
+generateAllModules = do
+  scanResult <- Scanner.scanRoutes "src/routes"
+  case scanResult of
+    Left err -> IO.hPutStrLn IO.stderr ("Route scan error: " <> show err)
+    Right manifest -> writeGeneratedModules manifest
+
+-- | Write generated Routes.can and Loaders.can modules.
+writeGeneratedModules :: RouteManifest -> IO ()
+writeGeneratedModules manifest = do
+  TextIO.writeFile "src/Routes.can" (Generate.generateRoutesModule manifest)
+  loaders <- DataLoader.detectLoadersDev (_rmRoutes manifest)
+  TextIO.writeFile "src/Loaders.can" (DataLoader.generateLoaderModule loaders)
+
+-- | Watch the routes directory for changes and regenerate modules.
 --
--- Scans @src/routes/@ for @page.can@ files and emits a @Routes.can@
--- module that maps URL patterns to page modules.
-generateRoutesModule :: IO ()
-generateRoutesModule = do
-  routes <- scanRoutesDirectory "src/routes"
-  TextIO.writeFile "src/Routes.can" (buildRoutesModule routes)
+-- Monitors @src\/routes\/@ for file additions, removals, and renames.
+-- On any change to @page.can@, @layout.can@, or @error.can@ files,
+-- regenerates Routes.can and Loaders.can to trigger Vite HMR.
+--
+-- @since 0.20.1
+watchRoutes :: FilePath -> IO ()
+watchRoutes routesDir =
+  FSNotify.withManager (startWatcher routesDir)
 
--- | Scan the routes directory and collect page file paths.
-scanRoutesDirectory :: FilePath -> IO [FilePath]
-scanRoutesDirectory routesDir = do
-  entries <- Dir.listDirectory routesDir
-  subResults <- traverse (scanEntry routesDir) entries
-  pure (concat subResults)
-
--- | Scan a single directory entry, recursing into subdirectories.
-scanEntry :: FilePath -> FilePath -> IO [FilePath]
-scanEntry parentDir entry = do
-  isDir <- Dir.doesDirectoryExist fullPath
-  if isDir
-    then scanRoutesDirectory fullPath
-    else pure (filterPageFile fullPath)
+-- | Start the filesystem watcher within a manager.
+startWatcher :: FilePath -> FSNotify.WatchManager -> IO ()
+startWatcher routesDir manager = do
+  void (FSNotify.watchTree manager routesDir isRouteFile handleRouteChange)
+  waitForever
   where
-    fullPath = parentDir ++ "/" ++ entry
+    waitForever = do
+      _ <- getLine
+      waitForever
 
--- | Keep the path only if it is a @page.can@ file.
-filterPageFile :: FilePath -> [FilePath]
-filterPageFile path
-  | isPageFile path = [path]
-  | otherwise = []
+-- | Check if a filesystem event is for a route-relevant file.
+isRouteFile :: FSNotify.Event -> Bool
+isRouteFile event =
+  isRelevantFile (FSNotify.eventPath event)
 
--- | Check whether a file path ends with @page.can@.
-isPageFile :: FilePath -> Bool
-isPageFile path =
-  drop (length path - 8) path == "page.can"
-
--- | Build the content of the generated @Routes.can@ module.
-buildRoutesModule :: [FilePath] -> Text.Text
-buildRoutesModule routes =
-  Text.unlines
-    [ "module Routes exposing (..)"
-    , ""
-    , "-- AUTO-GENERATED by canopy kit-dev. Do not edit."
-    , ""
-    , routeImports routes
-    ]
-
--- | Generate import statements for each discovered route module.
-routeImports :: [FilePath] -> Text.Text
-routeImports routes =
-  Text.unlines (fmap toImport routes)
+-- | Check if a file path is a route-relevant file.
+isRelevantFile :: FilePath -> Bool
+isRelevantFile path =
+  any (`elem` suffixes) [takeFileName path]
   where
-    toImport path = "import " <> pathToModuleName (Text.pack path)
+    suffixes = ["page.can", "layout.can", "error.can"]
+    takeFileName = reverse . takeWhile (/= '/') . reverse
 
--- | Convert a file path like @src/routes/about/page.can@ to a module name.
-pathToModuleName :: Text.Text -> Text.Text
-pathToModuleName path =
-  Text.intercalate "." (filter notEmpty segments)
-  where
-    stripped = stripRoutesPrefix (stripPageSuffix path)
-    segments = fmap capitalize (Text.splitOn "/" stripped)
-    notEmpty t = not (Text.null t)
-
--- | Strip the @src/routes/@ prefix from a path.
-stripRoutesPrefix :: Text.Text -> Text.Text
-stripRoutesPrefix path =
-  maybe path id (Text.stripPrefix "src/routes/" path)
-
--- | Strip the @/page.can@ suffix from a path.
-stripPageSuffix :: Text.Text -> Text.Text
-stripPageSuffix path =
-  maybe path id (Text.stripSuffix "/page.can" path)
-
--- | Capitalize the first character of a text segment.
-capitalize :: Text.Text -> Text.Text
-capitalize t =
-  maybe t (\(c, rest) -> Text.cons (toUpper c) rest) (Text.uncons t)
-  where
-    toUpper c
-      | c >= 'a' && c <= 'z' = toEnum (fromEnum c - 32)
-      | otherwise = c
+-- | Handle a route file change by regenerating modules.
+handleRouteChange :: FSNotify.Event -> IO ()
+handleRouteChange _event = do
+  IO.hPutStrLn IO.stderr "[kit] Routes changed, regenerating..."
+  generateAllModules
 
 -- | Open a browser to the dev server URL if the @--open@ flag is set.
 openBrowserIfRequested :: KitDevFlags -> IO ()

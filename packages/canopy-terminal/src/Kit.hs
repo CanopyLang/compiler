@@ -16,6 +16,7 @@ import qualified Data.Text.IO as TextIO
 import qualified Kit.Build as Build
 import qualified Kit.Dev as Dev
 import qualified Kit.New as New
+import qualified Kit.Preview as Preview
 import Kit.Types (KitCommand (..))
 import qualified Reporting.Exit.Help as Help
 import qualified Reporting.Exit.Kit as ExitKit
@@ -27,6 +28,7 @@ run :: KitCommand -> IO ()
 run (KitNew name) = runNew name
 run (KitDev flags) = Dev.dev flags
 run (KitBuild flags) = Build.build flags
+run (KitPreview flags) = Preview.preview flags
 
 -- | Run project scaffolding and report the result.
 runNew :: Text.Text -> IO ()

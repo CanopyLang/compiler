@@ -6,7 +6,9 @@
 -- as Web Components. Each component:
 --
 --   * Extends @HTMLElement@ with Shadow DOM
---   * Maps HTML attributes to Canopy flags
+--   * Maps HTML attributes to Canopy flags with type coercion
+--   * Populates @observedAttributes@ from the module's flags record
+--   * Dispatches typed @CustomEvent@s for outgoing ports
 --   * Calls @customElements.define@ for registration
 --   * Supports lifecycle callbacks for TEA integration
 --
@@ -28,34 +30,77 @@ module Generate.JavaScript.WebComponent
     generateWebComponent,
     generateRegistration,
 
+    -- * Configuration
+    WebComponentConfig (..),
+    FlagAttr (..),
+    PortEvent (..),
+    AttrCoercion (..),
+
     -- * Tag Name Conversion
     moduleToTagName,
+    camelToKebab,
   )
 where
 
-import qualified Canopy.ModuleName as ModuleName
 import qualified Canopy.Data.Utf8 as Utf8
+import qualified Canopy.ModuleName as ModuleName
 import Data.ByteString.Builder (Builder)
 import qualified Data.ByteString.Builder as BB
 import Data.Char (isUpper, toLower)
 import Data.List (intercalate)
 
+-- | Configuration for generating a Web Component.
+--
+-- @since 0.20.1
+data WebComponentConfig = WebComponentConfig
+  { _wcModuleName :: !ModuleName.Raw
+  , _wcFlagAttrs :: ![FlagAttr]
+  , _wcPortEvents :: ![PortEvent]
+  } deriving (Show, Eq)
+
+-- | A flag field mapped to an HTML attribute.
+--
+-- @since 0.20.1
+data FlagAttr = FlagAttr
+  { _faFieldName :: !String
+  , _faAttrName :: !String
+  , _faCoercion :: !AttrCoercion
+  } deriving (Show, Eq)
+
+-- | An outgoing port mapped to a CustomEvent.
+--
+-- @since 0.20.1
+data PortEvent = PortEvent
+  { _pePortName :: !String
+  , _peEventName :: !String
+  } deriving (Show, Eq)
+
+-- | How to coerce an HTML attribute string to a typed flag value.
+--
+-- @since 0.20.1
+data AttrCoercion
+  = CoerceString
+  | CoerceInt
+  | CoerceFloat
+  | CoerceBool
+  deriving (Show, Eq)
+
 -- | Generate a Custom Element class for a Canopy module.
 --
--- The generated class:
---
---   1. Creates a Shadow DOM root in the constructor
---   2. Initializes the Canopy app in @connectedCallback@
---   3. Cleans up in @disconnectedCallback@
---   4. Maps observed attributes to flags
+-- Accepts a 'WebComponentConfig' for rich generation with typed
+-- attributes and events. Falls back to the simple variant when
+-- called with the 'ModuleName.Raw' overload.
 --
 -- @since 0.20.0
-generateWebComponent :: ModuleName.Raw -> Builder
-generateWebComponent modName =
-  classDefinition tagName jsModName
+generateWebComponent :: WebComponentConfig -> Builder
+generateWebComponent config =
+  classDefinition tagName jsModName attrs events
   where
+    modName = _wcModuleName config
     tagName = moduleToTagName modName
     jsModName = moduleToJsName modName
+    attrs = _wcFlagAttrs config
+    events = _wcPortEvents config
 
 -- | Generate the @customElements.define@ registration call.
 --
@@ -71,7 +116,7 @@ generateRegistration modName =
 -- | Convert a Canopy module name to a valid custom element tag name.
 --
 -- Custom elements must contain a hyphen. We convert PascalCase segments
--- to kebab-case: @MyApp.Counter@ → @my-app-counter@.
+-- to kebab-case: @MyApp.Counter@ -> @my-app-counter@.
 --
 -- @since 0.20.0
 moduleToTagName :: ModuleName.Raw -> String
@@ -86,17 +131,34 @@ moduleToTagName modName =
       | isUpper c = ['-', toLower c]
       | otherwise = [c]
 
--- | Generate the class definition.
-classDefinition :: String -> String -> Builder
-classDefinition tagName jsModName =
+-- | Convert camelCase to kebab-case.
+--
+-- @initialCount@ -> @initial-count@, @isEnabled@ -> @is-enabled@.
+--
+-- @since 0.20.1
+camelToKebab :: String -> String
+camelToKebab [] = []
+camelToKebab (c : cs) = toLower c : concatMap expandChar cs
+  where
+    expandChar x
+      | isUpper x = ['-', toLower x]
+      | otherwise = [x]
+
+
+-- INTERNAL
+
+
+-- | Generate the full class definition.
+classDefinition :: String -> String -> [FlagAttr] -> [PortEvent] -> Builder
+classDefinition tagName jsModName attrs events =
   BB.stringUtf8 "class "
     <> BB.stringUtf8 (pascalFromKebab tagName)
     <> BB.stringUtf8 " extends HTMLElement {\n"
     <> constructorDef
-    <> connectedCallback jsModName
+    <> connectedCallback jsModName attrs events
     <> disconnectedCallback
-    <> attributeChangedCallback
-    <> observedAttributes
+    <> attributeChangedCallback attrs
+    <> observedAttributes attrs
     <> BB.stringUtf8 "}\n"
 
 -- | Generate constructor with Shadow DOM.
@@ -108,20 +170,68 @@ constructorDef =
     <> BB.stringUtf8 "    this._app = null;\n"
     <> BB.stringUtf8 "  }\n"
 
--- | Generate connectedCallback that initializes the Canopy app.
-connectedCallback :: String -> Builder
-connectedCallback jsModName =
+-- | Generate connectedCallback with typed flag coercion and port subscriptions.
+connectedCallback :: String -> [FlagAttr] -> [PortEvent] -> Builder
+connectedCallback jsModName attrs events =
   BB.stringUtf8 "  connectedCallback() {\n"
-    <> BB.stringUtf8 "    var flags = {};\n"
-    <> BB.stringUtf8 "    for (var attr of this.attributes) {\n"
-    <> BB.stringUtf8 "      flags[attr.name] = attr.value;\n"
-    <> BB.stringUtf8 "    }\n"
+    <> flagsBlock attrs
     <> BB.stringUtf8 "    var container = document.createElement('div');\n"
     <> BB.stringUtf8 "    this._root.appendChild(container);\n"
     <> BB.stringUtf8 "    this._app = "
     <> BB.stringUtf8 jsModName
     <> BB.stringUtf8 ".init({ node: container, flags: flags });\n"
+    <> portSubscriptions events
     <> BB.stringUtf8 "  }\n"
+
+-- | Generate the flags object construction.
+flagsBlock :: [FlagAttr] -> Builder
+flagsBlock [] =
+  BB.stringUtf8 "    var flags = {};\n"
+    <> BB.stringUtf8 "    for (var attr of this.attributes) {\n"
+    <> BB.stringUtf8 "      flags[attr.name] = attr.value;\n"
+    <> BB.stringUtf8 "    }\n"
+flagsBlock attrs =
+  BB.stringUtf8 "    var flags = {};\n"
+    <> mconcat (map coerceAttr attrs)
+
+-- | Generate coercion code for a single attribute.
+coerceAttr :: FlagAttr -> Builder
+coerceAttr attr =
+  BB.stringUtf8 "    flags['"
+    <> BB.stringUtf8 (_faFieldName attr)
+    <> BB.stringUtf8 "'] = "
+    <> coercionExpr (_faCoercion attr) (BB.stringUtf8 attrGet)
+    <> BB.stringUtf8 ";\n"
+  where
+    attrGet = "this.getAttribute('" ++ _faAttrName attr ++ "')"
+
+-- | Generate the coercion expression for a given type.
+coercionExpr :: AttrCoercion -> Builder -> Builder
+coercionExpr CoerceString val = val
+coercionExpr CoerceInt val = BB.stringUtf8 "parseInt(" <> val <> BB.stringUtf8 ", 10)"
+coercionExpr CoerceFloat val = BB.stringUtf8 "parseFloat(" <> val <> BB.stringUtf8 ")"
+coercionExpr CoerceBool val = val <> BB.stringUtf8 " !== null"
+
+-- | Generate port-to-CustomEvent subscriptions.
+portSubscriptions :: [PortEvent] -> Builder
+portSubscriptions [] = mempty
+portSubscriptions events = mconcat (map subscribePort events)
+
+-- | Subscribe a single port to dispatch a CustomEvent.
+subscribePort :: PortEvent -> Builder
+subscribePort event =
+  BB.stringUtf8 "    if (this._app.ports && this._app.ports."
+    <> BB.stringUtf8 (_pePortName event)
+    <> BB.stringUtf8 ") {\n"
+    <> BB.stringUtf8 "      var self = this;\n"
+    <> BB.stringUtf8 "      this._app.ports."
+    <> BB.stringUtf8 (_pePortName event)
+    <> BB.stringUtf8 ".subscribe(function(data) {\n"
+    <> BB.stringUtf8 "        self.dispatchEvent(new CustomEvent('"
+    <> BB.stringUtf8 (_peEventName event)
+    <> BB.stringUtf8 "', { detail: data, bubbles: true }));\n"
+    <> BB.stringUtf8 "      });\n"
+    <> BB.stringUtf8 "    }\n"
 
 -- | Generate disconnectedCallback for cleanup.
 disconnectedCallback :: Builder
@@ -131,19 +241,42 @@ disconnectedCallback =
     <> BB.stringUtf8 "    this._app = null;\n"
     <> BB.stringUtf8 "  }\n"
 
--- | Generate attributeChangedCallback.
-attributeChangedCallback :: Builder
-attributeChangedCallback =
+-- | Generate attributeChangedCallback with typed coercion.
+attributeChangedCallback :: [FlagAttr] -> Builder
+attributeChangedCallback [] =
   BB.stringUtf8 "  attributeChangedCallback(name, oldValue, newValue) {\n"
     <> BB.stringUtf8 "    if (this._app && this._app.ports && this._app.ports.onAttributeChange) {\n"
     <> BB.stringUtf8 "      this._app.ports.onAttributeChange.send({ name: name, value: newValue });\n"
     <> BB.stringUtf8 "    }\n"
     <> BB.stringUtf8 "  }\n"
+attributeChangedCallback attrs =
+  BB.stringUtf8 "  attributeChangedCallback(name, oldValue, newValue) {\n"
+    <> BB.stringUtf8 "    if (!this._app || !this._app.ports || !this._app.ports.onAttributeChange) return;\n"
+    <> BB.stringUtf8 "    var coerced = newValue;\n"
+    <> mconcat (map coerceInCallback attrs)
+    <> BB.stringUtf8 "    this._app.ports.onAttributeChange.send({ name: name, value: coerced });\n"
+    <> BB.stringUtf8 "  }\n"
 
--- | Generate static observedAttributes getter.
-observedAttributes :: Builder
-observedAttributes =
+-- | Generate a coercion branch for a single attribute in the callback.
+coerceInCallback :: FlagAttr -> Builder
+coerceInCallback attr =
+  BB.stringUtf8 "    if (name === '"
+    <> BB.stringUtf8 (_faAttrName attr)
+    <> BB.stringUtf8 "') coerced = "
+    <> coercionExpr (_faCoercion attr) (BB.stringUtf8 "newValue")
+    <> BB.stringUtf8 ";\n"
+
+-- | Generate static observedAttributes getter from flag attributes.
+observedAttributes :: [FlagAttr] -> Builder
+observedAttributes [] =
   BB.stringUtf8 "  static get observedAttributes() { return []; }\n"
+observedAttributes attrs =
+  BB.stringUtf8 "  static get observedAttributes() { return ["
+    <> attrList
+    <> BB.stringUtf8 "]; }\n"
+  where
+    attrList = mconcat (intersperse (BB.stringUtf8 ", ") quoted)
+    quoted = map (\a -> BB.stringUtf8 "'" <> BB.stringUtf8 (_faAttrName a) <> BB.stringUtf8 "'") attrs
 
 -- | Convert a module name to a JavaScript module reference.
 moduleToJsName :: ModuleName.Raw -> String
@@ -174,3 +307,9 @@ splitOn delim s =
   case break (== delim) s of
     (before, []) -> [before]
     (before, _ : rest) -> before : splitOn delim rest
+
+-- | Intersperse a separator between builder elements.
+intersperse :: Builder -> [Builder] -> [Builder]
+intersperse _ [] = []
+intersperse _ [x] = [x]
+intersperse sep (x : xs) = x : sep : intersperse sep xs

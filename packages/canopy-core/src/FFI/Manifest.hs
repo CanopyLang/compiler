@@ -50,6 +50,7 @@ module FFI.Manifest
 
     -- * Collection
     collectCapabilities,
+    collectCapabilitiesWithPackages,
     collectByPackage,
 
     -- * Serialization
@@ -64,6 +65,7 @@ import Data.Aeson ((.=), (.:), (.:?))
 import Data.Aeson.Types (Object, Parser)
 import qualified Data.ByteString.Lazy as LBS
 import qualified Data.Map.Strict as Map
+import Data.Maybe (mapMaybe)
 import qualified Data.Set as Set
 import Data.Text (Text)
 import qualified Data.Text as Text
@@ -124,17 +126,27 @@ makeLenses ''PackageCapabilities
 -- | Collect capabilities from parsed FFI functions.
 --
 -- Scans the FFI content for @capability annotations and produces
--- a structured manifest.
+-- a structured manifest. Accepts an optional file-to-package mapping
+-- to populate the per-package breakdown used by @canopy audit@.
 --
 -- @since 0.19.1
 collectCapabilities :: [(Text, [FFI.JSDocFunction])] -> CapabilityManifest
-collectCapabilities moduleFunctions =
+collectCapabilities = collectCapabilitiesWithPackages Map.empty
+
+-- | Collect capabilities with a file-to-package name mapping.
+--
+-- When a non-empty mapping is provided, groups capabilities by their
+-- originating package for the @_manifestByPackage@ field.
+--
+-- @since 0.20.1
+collectCapabilitiesWithPackages :: Map.Map Text Text -> [(Text, [FFI.JSDocFunction])] -> CapabilityManifest
+collectCapabilitiesWithPackages pkgMap moduleFunctions =
   CapabilityManifest
     { _manifestPermissions = allPermissions,
       _manifestInitializations = allInits,
       _manifestUserActivation = anyUserActivation,
       _manifestModules = modCaps,
-      _manifestByPackage = []
+      _manifestByPackage = collectByPackage packageCaps
     }
   where
     modCaps = concatMap buildModuleCaps moduleFunctions
@@ -142,6 +154,16 @@ collectCapabilities moduleFunctions =
     allPermissions = Set.fromList [t | t <- allConstraints, "permission:" `Text.isPrefixOf` t]
     allInits = Set.fromList [t | t <- allConstraints, "init:" `Text.isPrefixOf` t]
     anyUserActivation = any ("user-activation" ==) allConstraints
+    packageCaps = mapMaybe (extractPackageCaps pkgMap) moduleFunctions
+
+-- | Extract package capabilities for a single module using the package map.
+extractPackageCaps :: Map.Map Text Text -> (Text, [FFI.JSDocFunction]) -> Maybe (Text, Set.Set Text)
+extractPackageCaps pkgMap (filePath, funcs) =
+  case Map.lookup filePath pkgMap of
+    Nothing -> Nothing
+    Just pkgName ->
+      let caps = Set.fromList (concatMap extractConstraintTexts (extractFunctionConstraints funcs))
+       in if Set.null caps then Nothing else Just (pkgName, caps)
 
 -- | Collect capabilities grouped by package name.
 --

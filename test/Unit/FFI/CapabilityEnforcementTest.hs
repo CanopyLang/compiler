@@ -22,6 +22,7 @@ tests =
   testGroup
     "FFI.CapabilityEnforcement Tests"
     [ validationTests,
+      denyListValidationTests,
       unusedCapabilityTests,
       registryGenerationTests,
       guardGenerationTests,
@@ -87,6 +88,65 @@ validationTests =
         case errors of
           [err] -> CapEnforce._ceFilePath err @?= "src/ffi/deep/path.js"
           _ -> assertFailure "expected exactly one error"
+    ]
+
+-- DENY LIST VALIDATION TESTS
+
+denyListValidationTests :: TestTree
+denyListValidationTests =
+  testGroup
+    "validateCapabilitiesWithDeny"
+    [ testCase "denied capability produces DeniedCapability error" $ do
+        let allowed = Set.fromList ["geolocation", "camera"]
+            denied = Set.singleton "camera"
+            reqs = [("takePhoto", "ffi/cam.js", Set.singleton "camera")]
+            errors = CapEnforce.validateCapabilitiesWithDeny allowed denied reqs
+        length errors @?= 1
+        case errors of
+          [err] -> do
+            CapEnforce._ceErrorKind err @?= CapEnforce.DeniedCapability
+            CapEnforce._ceMissingCapability err @?= "camera"
+          _ -> assertFailure "expected exactly one error",
+      testCase "missing (not denied) capability produces MissingCapability error" $ do
+        let allowed = Set.empty
+            denied = Set.empty
+            reqs = [("getLocation", "ffi/geo.js", Set.singleton "geolocation")]
+            errors = CapEnforce.validateCapabilitiesWithDeny allowed denied reqs
+        length errors @?= 1
+        case errors of
+          [err] -> CapEnforce._ceErrorKind err @?= CapEnforce.MissingCapability
+          _ -> assertFailure "expected exactly one error",
+      testCase "denied takes precedence over allowed" $ do
+        let allowed = Set.singleton "camera"
+            denied = Set.singleton "camera"
+            reqs = [("takePhoto", "ffi/cam.js", Set.singleton "camera")]
+            errors = CapEnforce.validateCapabilitiesWithDeny allowed denied reqs
+        length errors @?= 1
+        case errors of
+          [err] -> CapEnforce._ceErrorKind err @?= CapEnforce.DeniedCapability
+          _ -> assertFailure "expected exactly one error",
+      testCase "mixed denied and missing produces both error kinds" $ do
+        let allowed = Set.singleton "geolocation"
+            denied = Set.singleton "camera"
+            reqs = [("fn", "ffi/mixed.js", Set.fromList ["camera", "microphone"])]
+            errors = CapEnforce.validateCapabilitiesWithDeny allowed denied reqs
+        length errors @?= 2
+        let deniedErrors = filter (\e -> CapEnforce._ceErrorKind e == CapEnforce.DeniedCapability) errors
+            missingErrors = filter (\e -> CapEnforce._ceErrorKind e == CapEnforce.MissingCapability) errors
+        length deniedErrors @?= 1
+        length missingErrors @?= 1,
+      testCase "empty deny list behaves like allow-only validation" $ do
+        let allowed = Set.singleton "geo"
+            denied = Set.empty
+            reqs = [("fn", "f.js", Set.singleton "geo")]
+            errors = CapEnforce.validateCapabilitiesWithDeny allowed denied reqs
+        errors @?= [],
+      testCase "all requirements allowed and not denied produces no errors" $ do
+        let allowed = Set.fromList ["geo", "cam"]
+            denied = Set.singleton "mic"
+            reqs = [("fn", "f.js", Set.fromList ["geo", "cam"])]
+            errors = CapEnforce.validateCapabilitiesWithDeny allowed denied reqs
+        errors @?= []
     ]
 
 -- UNUSED CAPABILITY TESTS

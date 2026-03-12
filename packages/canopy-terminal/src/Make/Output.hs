@@ -52,6 +52,7 @@ import qualified Data.ByteString.Builder as Builder
 import qualified Data.ByteString as ByteString
 import qualified Data.ByteString.Lazy as ByteString.Lazy
 import Data.Function ((&))
+import Data.Maybe (mapMaybe)
 import qualified Canopy.Data.NonEmptyList as NonEmptyList
 import qualified Data.Map.Strict as Map
 import Data.Set (Set)
@@ -515,20 +516,44 @@ writeSourceMapFile target (Just sm) =
 --
 -- Scans FFI info from build artifacts for @capability annotations
 -- and writes a @capabilities.json@ file in the same directory as the
--- JavaScript output. The manifest is only written when FFI content
--- contains capability annotations.
+-- JavaScript output. Populates per-package capability tracking by
+-- extracting package names from FFI file paths.
 --
 -- @since 0.19.1
 writeCapabilitiesManifest :: FilePath -> Build.Artifacts -> IO ()
 writeCapabilitiesManifest target artifacts = do
   let ffiInfoMap = artifacts ^. Build.artifactsFFIInfo
+      pkgMap = buildPackageMap ffiInfoMap
   moduleFunctions <- parseFFICapabilities ffiInfoMap
-  let manifest = Manifest.collectCapabilities moduleFunctions
+  let manifest = Manifest.collectCapabilitiesWithPackages pkgMap moduleFunctions
   if hasCapabilities manifest
     then Manifest.writeManifest manifestPath manifest
     else pure ()
   where
     manifestPath = FilePath.replaceExtension target ".capabilities.json"
+
+-- | Build a mapping from FFI file paths to package names.
+--
+-- Extracts package names from dependency paths that follow the
+-- @~\/.canopy\/packages\/author\/project\/version\/@ convention.
+-- Local project files are mapped to the project's own package name.
+buildPackageMap :: Map.Map String a -> Map.Map Text.Text Text.Text
+buildPackageMap ffiInfoMap =
+  Map.fromList (mapMaybe extractPackageFromPath (Map.keys ffiInfoMap))
+  where
+    extractPackageFromPath path =
+      let parts = FilePath.splitDirectories path
+          textPath = Text.pack path
+       in case findPackageSegments parts of
+            Just pkgName -> Just (textPath, pkgName)
+            Nothing -> Nothing
+
+-- | Find author\/project segments in a file path.
+findPackageSegments :: [String] -> Maybe Text.Text
+findPackageSegments [] = Nothing
+findPackageSegments ("packages" : author : project : _ : _) =
+  Just (Text.pack (author <> "/" <> project))
+findPackageSegments (_ : rest) = findPackageSegments rest
 
 -- | Check whether a manifest contains any capabilities.
 hasCapabilities :: Manifest.CapabilityManifest -> Bool
@@ -552,21 +577,21 @@ parseFFICapabilities ffiInfoMap =
 -- | Validate FFI capability requirements against canopy.json declarations.
 --
 -- Parses FFI files for @capability annotations, then checks:
---   1. All required capabilities are declared in canopy.json (error if not)
+--   1. All required capabilities are declared and not denied (error if not)
 --   2. All declared capabilities are actually used (warning if not)
 --
--- Skips validation entirely when no capabilities are declared and no
--- FFI files require any, which is the common case.
+-- Uses deny-list-aware validation so that capabilities explicitly denied
+-- in canopy.json produce a distinct "denied" error rather than "missing".
 --
 -- @since 0.20.0
 validateDeclaredCapabilities :: BuildContext -> Build.Artifacts -> Task ()
 validateDeclaredCapabilities ctx artifacts = do
-  let declared = extractCapabilities ctx
+  let (allowed, denied) = extractCapabilitySets ctx
       ffiInfoMap = artifacts ^. Build.artifactsFFIInfo
   moduleFunctions <- Task.io (parseFFICapabilities ffiInfoMap)
   let requirements = collectRequirements moduleFunctions
-  validateRequired declared requirements
-  warnUnused declared requirements
+  validateRequired allowed denied requirements
+  warnUnused allowed requirements
 
 -- | Validate FFI modules against their companion @.d.ts@ files, if present.
 --
@@ -706,10 +731,10 @@ constraintToNames (FFI.Capability.AvailabilityRequired name) =
 constraintToNames (FFI.Capability.MultipleConstraints constraints) =
   Set.unions (map constraintToNames constraints)
 
--- | Throw a compile error if any required capabilities are missing.
-validateRequired :: Set Text.Text -> [(Text.Text, Text.Text, Set Text.Text)] -> Task ()
-validateRequired declared requirements =
-  case CapEnforce.validateCapabilities declared requirements of
+-- | Throw a compile error if any required capabilities are missing or denied.
+validateRequired :: Set Text.Text -> Set Text.Text -> [(Text.Text, Text.Text, Set Text.Text)] -> Task ()
+validateRequired allowed denied requirements =
+  case CapEnforce.validateCapabilitiesWithDeny allowed denied requirements of
     [] -> pure ()
     errors -> Task.throw (Exit.MakeCapabilityError errors)
 
@@ -731,7 +756,7 @@ logUnusedCapabilities caps =
             <> " is declared in canopy.json but no FFI function requires it."
         )
 
--- | Extract declared capabilities from the build context.
+-- | Extract declared capabilities from the build context as effective set.
 --
 -- Looks up the @capabilities@ field from the @canopy.json@ configuration
 -- stored in the build context. Returns an empty set for package projects
@@ -742,6 +767,16 @@ extractCapabilities :: BuildContext -> Set Text.Text
 extractCapabilities ctx =
   capabilitiesFromOutline (ctx ^. bcDetails . Details.detailsOutline)
 
+-- | Extract both allow and deny capability sets from the build context.
+--
+-- Returns @(allowed, denied)@ so that validation can distinguish between
+-- capabilities that are missing vs explicitly denied.
+--
+-- @since 0.20.1
+extractCapabilitySets :: BuildContext -> (Set Text.Text, Set Text.Text)
+extractCapabilitySets ctx =
+  capabilitySetsFromOutline (ctx ^. bcDetails . Details.detailsOutline)
+
 -- | Extract capabilities from a validated project outline.
 --
 -- Applications may declare capabilities in @canopy.json@; packages
@@ -749,6 +784,14 @@ extractCapabilities ctx =
 capabilitiesFromOutline :: Details.ValidOutline -> Set Text.Text
 capabilitiesFromOutline (Details.ValidApp app) = Outline.effectiveCapabilities (Outline._appCapabilities app)
 capabilitiesFromOutline (Details.ValidPkg _ _ _) = Set.empty
+
+-- | Extract separate allow and deny sets from a validated project outline.
+capabilitySetsFromOutline :: Details.ValidOutline -> (Set Text.Text, Set Text.Text)
+capabilitySetsFromOutline (Details.ValidApp app) =
+  (Outline._capAllow caps, Outline._capDeny caps)
+  where
+    caps = Outline._appCapabilities app
+capabilitySetsFromOutline (Details.ValidPkg _ _ _) = (Set.empty, Set.empty)
 
 -- | Verify build reproducibility if the flag is set.
 --

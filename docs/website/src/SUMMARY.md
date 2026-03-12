@@ -14,6 +14,7 @@
 - [Functions](./guide/functions.md)
 - [Modules](./guide/modules.md)
 - [Pattern Matching](./guide/pattern-matching.md)
+- [Abilities](./guide/abilities.md)
 
 # Working with Data
 
@@ -24,9 +25,21 @@
 # Advanced Topics
 
 - [JavaScript FFI](./guide/ffi.md)
+- [TypeScript Interop](./guide/typescript-interop.md)
 - [Do-Notation](./guide/do-notation.md)
 - [Testing](./guide/testing.md)
 - [Error Handling](./guide/error-handling.md)
+- [Capability Security](./guide/capability-security.md)
+- [Scaling TEA](./guide/scaling-tea.md)
+
+# Tools
+
+- [CLI Reference](./guide/cli-reference.md)
+- [Packages](./guide/packages.md)
+
+# Deployment
+
+- [Deployment](./guide/deployment.md)
 
 # API Reference
 
@@ -50,6 +63,7 @@
 - [Canopy vs TypeScript](./comparison/vs-typescript.md)
 - [Canopy vs Elm](./comparison/vs-elm.md)
 - [Canopy vs ReScript](./comparison/vs-rescript.md)
+- [Coming from React](./comparison/from-react.md)
 
 ---
 

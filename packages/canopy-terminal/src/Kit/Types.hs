@@ -12,10 +12,13 @@ module Kit.Types
   ( KitCommand (..)
   , KitDevFlags (..)
   , KitBuildFlags (..)
+  , KitPreviewFlags (..)
   , kitDevPort
   , kitDevOpen
   , kitBuildOptimize
   , kitBuildOutput
+  , kitPreviewPort
+  , kitPreviewOpen
   ) where
 
 import Control.Lens (makeLenses)
@@ -34,6 +37,8 @@ data KitCommand
     -- ^ Start the development server.
   | KitBuild !KitBuildFlags
     -- ^ Produce a production build.
+  | KitPreview !KitPreviewFlags
+    -- ^ Preview a production build locally.
   deriving (Eq, Show)
 
 -- | Flags for the @kit-dev@ development server command.
@@ -56,5 +61,16 @@ data KitBuildFlags = KitBuildFlags
     -- ^ Override the default output directory (@build/@).
   } deriving (Eq, Show)
 
+-- | Flags for the @kit-preview@ command.
+--
+-- @since 0.20.1
+data KitPreviewFlags = KitPreviewFlags
+  { _kitPreviewPort :: !(Maybe Int)
+    -- ^ Port number for the preview server (default: 3000).
+  , _kitPreviewOpen :: !Bool
+    -- ^ Whether to open a browser window automatically.
+  } deriving (Eq, Show)
+
 makeLenses ''KitDevFlags
 makeLenses ''KitBuildFlags
+makeLenses ''KitPreviewFlags

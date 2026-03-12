@@ -173,6 +173,11 @@ import qualified Unit.Test.EventCoverageTest as EventCoverageTest
 import qualified Unit.VendorTest as VendorTest
 import qualified Unit.ScriptsTest as ScriptsTest
 import qualified Unit.OutlineFormatTest as OutlineFormatTest
+import qualified Unit.Kit.Route.ScannerTest as KitScannerTest
+import qualified Unit.Kit.Route.ValidateTest as KitValidateTest
+import qualified Unit.Kit.Route.GenerateTest as KitGenerateTest
+import qualified Unit.Kit.SSGTest as KitSSGTest
+import qualified Unit.Kit.DataLoaderTest as KitDataLoaderTest
 import qualified Property.ArithmeticLawsTest as ArithmeticLawsTest
 import qualified Property.Type.UnifyProperties as UnifyProperties
 import qualified Property.Type.UnionFindProperties as UnionFindProperties
@@ -346,7 +351,12 @@ unitTests =
       TypeParallelTest.tests,
       VendorTest.tests,
       ScriptsTest.tests,
-      OutlineFormatTest.tests
+      OutlineFormatTest.tests,
+      KitScannerTest.tests,
+      KitValidateTest.tests,
+      KitGenerateTest.tests,
+      KitSSGTest.tests,
+      KitDataLoaderTest.tests
     ]
 
 propertyTests :: TestTree

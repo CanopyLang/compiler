@@ -1,181 +1,98 @@
-# Plan 27: Developer Onboarding & Adoption
+# Plan P04: Developer Onboarding & Adoption
 
-## Priority: CRITICAL — Tier 1
-## Effort: 4-6 weeks (reduced — playground already exists)
+## Priority: CRITICAL -- Tier 1
+## Status: IN-PROGRESS -- ~65% complete
+## Effort: 3-4 weeks remaining (down from 4-6; substantial assets already exist)
 ## Depends on: Plan 06 (Vite plugin)
 
-> **Status Update (2026-03-10 deep audit):** Substantial onboarding assets already exist:
->
-> - **Playground** (`tools/playground/`) — React/Vite/TypeScript/Monaco Editor app with
->   resizable panels, LZ-string URL sharing, live preview
-> - **MCP server** (`mcp/`) — `@canopy/mcp-server` v0.19.2 with build, check, getType,
->   findDefinition, getDocs tools. Node.js >=18.
-> - **VSCode extension** (`editor/vscode/`) — Published .vsix with LSP integration,
->   tree-sitter highlighting, JSON schemas for canopy.json
-> - **Neovim support** (`editor/nvim/`) — Plugin configuration files
-> - **Tree-sitter grammar** (`editor/tree-sitter/`) — Multi-language bindings (Node, C,
->   Python, Go, Swift, Rust, WASM), comprehensive test suite
-> - **Language server** (`language-server/canopy-language-server/`) — Full TypeScript LSP:
->   diagnostics, completions, go-to-definition, find references, hover, rename,
->   workspace symbols, code actions, formatting
-> - **Debugger** (`tools/canopy-debugger/`) — Chrome extension (Manifest v3)
-> - **71 stdlib packages** — All with canopy.json manifests
->
-> Remaining work: documentation site, "Canopy for React Developers" guide, example apps,
-> playground deployment, migration codemods.
+## What's Done
 
-## Problem
+### Documentation Website (37 guides)
+- **Location:** `docs/website/src/`
+- Getting started, first app, type system, functions, modules, pattern matching
+- Architecture (TEA), JSON, HTTP, FFI, do-notation, testing, error handling
+- Comparison guides: vs Elm, vs TypeScript, vs ReScript
+- API reference: Core, Browser, Html, Json, Http, Platform
+- `canopy-for-react-developers.md` exists at `~/projects/canopy/docs/`
 
-Culture Amp retired Elm because "new hires couldn't be productive quickly." SolidJS has 10% usage despite highest satisfaction. The hiring/learning problem kills languages.
+### Example Apps (11 total)
+- **In docs (5):** Counter, Todo, HTTP, Forms, Routing
+- **In `~/projects/canopy/examples/` (6):** blog, dashboard, audio-ffi, math-ffi, test-core, test-ffi
 
-TypeScript won because every JS file is valid TS. Elm lost because it demanded a complete rewrite.
+### Editor Tooling (fully operational)
+- **VSCode extension** (`editor/vscode/`) -- published .vsix, LSP integration, tree-sitter highlighting, JSON schemas
+- **Neovim** (`editor/nvim/`) -- LSP config files
+- **Editor setup guide** covering VSCode, Neovim, Helix, Zed, Emacs, Sublime
+- **Tree-sitter grammar** (`editor/tree-sitter/`) -- C, Rust, WASM, Node, Python, Go, Swift bindings + test suite
 
-Developer onboarding is not a nice-to-have. It's the #1 adoption determinant.
+### Language Server
+- **Location:** `language-server/canopy-language-server/`
+- Full TypeScript LSP: 15+ providers (diagnostics, completions, go-to-definition, find references, hover, rename, workspace symbols, code actions, formatting)
 
-## Solution: Multi-Layered Onboarding
+### Developer Tools
+- **MCP server** (`mcp/`) -- `@canopy/mcp-server` v0.19.2 with 12 tools + 3 prompts (build, check, getType, findDefinition, getDocs, etc.)
+- **Playground** (`tools/playground/`) -- React/Vite/Monaco app with resizable panels, LZ-string URL sharing, live preview
+- **Browser debugger** (`tools/canopy-debugger/`) -- Chrome/Firefox extension (Manifest v3), React/Zustand/Tailwind
 
-### 1. Interactive Browser Playground
+### Other
+- `CONTRIBUTING.md` with setup instructions
+- `canopykit-guide.md` (542 lines)
+- 71 stdlib packages with canopy.json manifests
 
-A browser-based REPL and tutorial at **play.canopy-lang.org**:
+## What Remains
 
-- Live code editor with syntax highlighting
-- Instant compilation feedback (compile in browser via WASM compiler)
-- Step-by-step tutorial (inspired by Svelte tutorial, Go Tour)
-- Share links for code snippets
-- Pre-loaded examples for every concept
+### 1. Playground Deployment (~3 days)
+- Deploy playground to `play.canopy-lang.org`
+- Verify shareable links work in production
+- Add interactive step-by-step tutorial mode (inspired by Svelte tutorial, Go Tour)
 
-### 2. "Canopy for React Developers" Guide
+### 2. Abilities Documentation (~2 days)
+- User-facing documentation for the ability system (P06 is production-ready)
+- Add ability examples to guides and playground
 
-Not a language reference — a **translation guide**:
+### 3. Production Example Apps (~1 week)
+- E-commerce app (forms, cart, checkout, auth)
+- Chat app (WebSocket, real-time sync, presence)
+- Admin panel (CRUD, pagination, filtering)
+- Each with line-by-line annotations, React comparisons, deployment guide
 
-```
-React                          → Canopy
-─────                            ──────
-useState(0)                    → { count = 0 }
-setCount(c => c + 1)           → { model | count = model.count + 1 }
-useEffect(() => {...}, [])     → subscriptions model = ...
-<div className="foo">          → div [ class "foo" ] [ ... ]
-{items.map(i => <Li item={i}/>)} → List.map viewItem items
-fetch('/api/users')            → Http.get { url = "/api/users", ... }
-try { ... } catch (e) { ... }  → case result of Ok v -> ... ; Err e -> ...
-```
+### 4. Deployment Guides (~2 days)
+- Netlify, Vercel, Docker deployment walkthroughs
+- One-command deploy examples for each platform
 
-### 3. Gradual Adoption Path (The TypeScript Playbook)
+### 5. Video Tutorials (~1 week)
+- "Build your first Canopy app" (5-10 min)
+- "Canopy for React developers" walkthrough
+- "Adding Canopy to an existing React project" (gradual adoption)
 
-Teams must be able to adopt Canopy **without rewriting anything**:
+### 6. Community & Ecosystem (~2 days)
+- Community project showcase page
+- Package publishing guide
+- Troubleshooting/debugging guide beyond FAQ
 
-**Step 1**: Install Vite plugin, write ONE Canopy module, import from TypeScript
-```typescript
-import { formatCurrency } from './utils/Currency.can'
-```
-
-**Step 2**: Build ONE component in Canopy, embed as Web Component
-```html
-<canopy-price-calculator initial-amount="100" />
-```
-
-**Step 3**: Build a new page/route entirely in Canopy within existing app
-
-**Step 4**: Migrate more pages as confidence grows
-
-**Step 5**: Full CanopyKit app (optional — the old React app can stay)
-
-At no point is a "big bang rewrite" required.
-
-### 4. Migration Codemods
-
-Automated tools that convert React/TypeScript patterns to Canopy:
-
-```bash
-canopy migrate ./src/components/UserCard.tsx
-# Generates: ./src/components/UserCard.can
-# With: type-safe props, view function, basic event handlers
-# Manual review needed for: effects, state management, JS interop
-```
-
-Not perfect — but gets developers 60-70% of the way, reducing the manual effort dramatically.
-
-### 5. Error Messages That Teach
-
-Canopy already inherits Elm's excellent error messages. Extend them:
-
-```
-── TYPE MISMATCH ──────────────── src/App.can
-
-The `onClick` attribute expects a message, but you gave it a function:
-
-    15│  button [ onClick (\_ -> DoSomething) ] [ text "Click" ]
-                           ^^^^^^^^^^^^^^^^^^^
-    I was expecting a `Msg` value, not a function.
-
-    Hint: In Canopy, event handlers take a message value directly,
-    not a callback function. Try:
-
-        button [ onClick DoSomething ] [ text "Click" ]
-
-    If you need the event data, use `onClickWith`:
-
-        button [ onClickWith (\event -> DoSomething event.target) ] [ text "Click" ]
-
-    Coming from React? See: https://canopy-lang.org/from-react#events
-```
-
-Every error message for common React-developer mistakes should include a "Coming from React?" link.
-
-### 6. Real-World Example Applications
-
-Not toy demos. Production-scale examples:
-
-| Example | What It Demonstrates |
-|---------|---------------------|
-| **Blog** | SSR, routing, data fetching, markdown rendering |
-| **Dashboard** | Charts, data tables, real-time updates, stores |
-| **E-commerce** | Forms, cart, checkout, auth, payment integration |
-| **Chat** | WebSocket, real-time sync, presence, message history |
-| **Admin Panel** | CRUD, pagination, filtering, role-based access |
-
-Each example includes:
-- Full source code
-- Line-by-line annotations
-- "How this would look in React" comparisons
-- Deployment guide
-
-### 7. AI Training Corpus
-
-Provide structured examples optimized for LLM code generation:
-
-- Annotated code examples in a machine-readable format
-- MCP server for Claude/Copilot integration with Canopy projects
-- Well-documented AST for code generation tools
-
-## Implementation
-
-### Phase 1: Documentation and guides (Weeks 1-3)
-- "Canopy for React Developers" guide
-- Quick start tutorial
-- API reference for core packages
-- Error message improvements for common React-isms
-
-### Phase 2: Browser playground (Weeks 4-5)
-- **Playground already exists** (`compiler/tools/playground/`) — needs deployment to play.canopy-lang.org
-- Add step-by-step interactive tutorial mode
-- Ensure shareable code snippets work in production
-
-### Phase 3: Example applications (Weeks 6-7)
-- Blog and Dashboard examples (full-stack with CanopyKit)
-- Annotated source code
-- Deployment guides
-
-### Phase 4: Migration tooling (Week 8)
-- Basic React-to-Canopy codemod
+### 7. Migration Codemods (~1 week, lower priority)
+- Basic React-to-Canopy component converter
 - TypeScript type-to-Canopy type converter
-- Component structure analyzer
+- Gets developers 60-70% of the way; manual review for effects/state/interop
+
+## Dependencies
+
+| Dependency | Status |
+|---|---|
+| Plan 01 (ESM output) | COMPLETE |
+| Plan 06 (Vite plugin) | COMPLETE |
+| P06 (Abilities) | COMPLETE (needs user-facing docs) |
+| CanopyKit (P05) | 60-70% done (examples should use Kit where possible) |
 
 ## Definition of Done
 
+- [ ] Playground deployed at play.canopy-lang.org with interactive tutorial
+- [ ] Abilities system documented in user-facing guides
+- [ ] 3+ production-scale example apps with annotations and deployment guides
+- [ ] Deployment guides for Netlify, Vercel, Docker
+- [ ] Video tutorials published (at least 2)
+- [ ] Package publishing guide available
+- [ ] Troubleshooting/debugging guide written
 - [ ] A React developer can build and deploy a working Canopy app within 1 day
-- [ ] Browser playground at play.canopy-lang.org
-- [ ] "Canopy for React Developers" guide
-- [ ] 3+ real-world example applications with full source
-- [ ] Error messages include "Coming from React?" hints
+- [ ] Error messages include "Coming from React?" hints for common mistakes
 - [ ] Gradual adoption works (Canopy modules in React projects via Vite)

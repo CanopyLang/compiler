@@ -40,6 +40,8 @@ data Kit
     -- ^ Project scaffolding could not complete.
   | KitViteError !String
     -- ^ Vite process exited with an error.
+  | KitNoBuild
+    -- ^ No build output found for preview.
   deriving (Show)
 
 -- | Convert a 'Kit' error to a structured 'Report'.
@@ -53,6 +55,7 @@ kitToReport (KitRouteValidationError reason) = routeValidationError reason
 kitToReport (KitBuildError reason) = buildError reason
 kitToReport (KitScaffoldError reason) = scaffoldError reason
 kitToReport (KitViteError reason) = viteError reason
+kitToReport KitNoBuild = noBuildError
 
 -- | Error when the project is not a Kit project.
 notKitProjectError :: Report
@@ -108,6 +111,14 @@ scaffoldError reason =
     "SCAFFOLD ERROR"
     (Doc.reflow ("I could not create the project: " ++ reason))
     (Doc.reflow "Check that the target directory does not already exist and that you have write permissions.")
+
+-- | Error when no build output is found for preview.
+noBuildError :: Report
+noBuildError =
+  structuredError
+    "NO BUILD OUTPUT"
+    (Doc.reflow "I could not find a build directory. Run the build command first.")
+    (fixLine (Doc.green "canopy kit-build"))
 
 -- | Error when the Vite process fails.
 viteError :: String -> Report

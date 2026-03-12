@@ -27,16 +27,20 @@ module Kit.DataLoader
 
     -- * Detection
   , detectLoaders
+  , detectLoadersDev
 
     -- * Code Generation
   , generateLoaderModule
   ) where
 
 import Control.Lens (makeLenses, (^.))
+import Data.Maybe (mapMaybe)
 import Data.Text (Text)
 import qualified Data.Text as Text
+import qualified Data.Text.IO as Text.IO
 import Kit.Route.Types (RouteEntry)
 import qualified Kit.Route.Types as Route
+import qualified System.Directory as Dir
 
 
 -- | Kind of data loader.
@@ -61,16 +65,93 @@ data DataLoader = DataLoader
 makeLenses ''DataLoader
 
 
--- | Detect data loaders from route entries.
+-- | Detect data loaders from route entries (production mode).
 --
--- Scans each route's module for a @load@ function export.
--- Currently returns an empty list as loader detection requires
--- parsing module exports, which will be integrated with the
--- route scanner in a future release.
+-- Scans each route's source file for a @load@ function definition.
+-- Classifies as 'StaticLoader' if the return type is pure, or
+-- 'DynamicLoader' if it returns a Task.
 --
--- @since 0.19.2
+-- @since 0.20.1
 detectLoaders :: [RouteEntry] -> IO [DataLoader]
-detectLoaders _routes = pure []
+detectLoaders routes = do
+  results <- traverse (detectOneLoader False) routes
+  pure (mapMaybe id results)
+
+-- | Detect data loaders in dev mode (all forced to DynamicLoader).
+--
+-- In development, all loaders are treated as dynamic for instant
+-- feedback without requiring a full rebuild.
+--
+-- @since 0.20.1
+detectLoadersDev :: [RouteEntry] -> IO [DataLoader]
+detectLoadersDev routes = do
+  results <- traverse (detectOneLoader True) routes
+  pure (mapMaybe id results)
+
+-- | Check a single route entry for a load function.
+detectOneLoader :: Bool -> RouteEntry -> IO (Maybe DataLoader)
+detectOneLoader forceDynamic entry = do
+  let srcFile = Route._reSourceFile entry
+  exists <- Dir.doesFileExist srcFile
+  if exists
+    then detectFromSource forceDynamic entry srcFile
+    else pure Nothing
+
+-- | Parse source file to detect a load function export.
+detectFromSource :: Bool -> RouteEntry -> FilePath -> IO (Maybe DataLoader)
+detectFromSource forceDynamic entry srcFile = do
+  content <- Text.IO.readFile srcFile
+  pure (buildLoader forceDynamic entry content)
+
+-- | Build a DataLoader if the source exports a load function.
+buildLoader :: Bool -> RouteEntry -> Text -> Maybe DataLoader
+buildLoader forceDynamic entry content
+  | not (hasLoadFunction content) = Nothing
+  | otherwise = Just DataLoader
+      { _dlRoute = entry
+      , _dlKind = classifyLoader forceDynamic content
+      , _dlModuleName = Route._reModuleName entry
+      }
+
+-- | Check if source content defines a load function.
+hasLoadFunction :: Text -> Bool
+hasLoadFunction content =
+  any isLoadDefinition (Text.lines content)
+
+-- | Check if a line is a load function definition.
+isLoadDefinition :: Text -> Bool
+isLoadDefinition line =
+  Text.isPrefixOf "load " stripped || Text.isPrefixOf "load :" stripped
+  where
+    stripped = Text.stripStart line
+
+-- | Classify whether a loader is static or dynamic.
+classifyLoader :: Bool -> Text -> LoaderKind
+classifyLoader True _ = DynamicLoader
+classifyLoader False content
+  | hasTaskReturn content = DynamicLoader
+  | otherwise = StaticLoader
+
+-- | Check if the load function's type signature returns a Task.
+hasTaskReturn :: Text -> Bool
+hasTaskReturn content =
+  any isTaskSignature (findLoadSignature content)
+
+-- | Find lines that are part of the load type signature.
+findLoadSignature :: Text -> [Text]
+findLoadSignature content =
+  case dropWhile (not . isLoadTypeAnnotation) (Text.lines content) of
+    [] -> []
+    (sig : _) -> [sig]
+
+-- | Check if a line is the load function's type annotation.
+isLoadTypeAnnotation :: Text -> Bool
+isLoadTypeAnnotation line =
+  Text.isPrefixOf "load :" (Text.stripStart line)
+
+-- | Check if a type signature line mentions Task.
+isTaskSignature :: Text -> Bool
+isTaskSignature line = "Task" `Text.isInfixOf` line
 
 
 -- | Generate a @Loaders.can@ module from detected loaders.

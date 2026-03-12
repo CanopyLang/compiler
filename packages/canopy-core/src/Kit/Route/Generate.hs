@@ -24,35 +24,16 @@ import Kit.Route.Types
   ( RouteEntry
   , RouteManifest (..)
   , RouteSegment (..)
+  , reModuleName
   , rePattern
   , rpSegments
   )
 
 -- | Generate a complete @Routes.can@ module from a manifest.
 --
--- The generated module structure:
---
--- @
--- module Routes exposing (Route(..), href, parser)
---
--- type Route
---     = Home
---     | About
---     | UsersId String
---     ...
---
--- href : Route -> String
--- href route =
---     case route of
---         Home -> "/"
---         ...
---
--- parser : List String -> Maybe Route
--- parser segments =
---     case segments of
---         [] -> Just Home
---         ...
--- @
+-- The generated module includes lazy imports for each route page module
+-- to enable automatic code splitting per route. Each page is loaded
+-- on demand when the user navigates to that route.
 --
 -- @since 0.19.2
 generateRoutesModule :: RouteManifest -> Text
@@ -62,10 +43,27 @@ generateRoutesModule manifest =
     routes = _rmRoutes manifest
     sections =
       [ generateModuleHeader
+      , generateLazyImports routes
       , generateRouteType routes
       , generateHref routes
       , generateParser routes
       ]
+
+-- | Emit @lazy import@ declarations for each route page module.
+--
+-- Produces one @lazy import Pages.Dashboard@ line per route,
+-- which enables code splitting: each page module is loaded on demand
+-- when the user navigates to that route.
+--
+-- @since 0.20.1
+generateLazyImports :: [RouteEntry] -> Text
+generateLazyImports routes =
+  Text.intercalate "\n" (fmap lazyImportLine routes)
+
+-- | Emit a single lazy import line for a route entry.
+lazyImportLine :: RouteEntry -> Text
+lazyImportLine entry =
+  "lazy import " <> (entry ^. reModuleName)
 
 -- | Emit the module declaration and exposing list.
 generateModuleHeader :: Text

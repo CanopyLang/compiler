@@ -102,6 +102,7 @@ library
       Generate.JavaScript.Name
       Generate.JavaScript.SourceMap
       Generate.JavaScript.StringPool
+      Generate.JavaScript.NpmWrapper
       Generate.JavaScript.WebComponent
       Generate.Mode
       Generate.TreeShake

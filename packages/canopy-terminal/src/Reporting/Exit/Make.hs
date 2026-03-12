@@ -118,16 +118,16 @@ reproducibilityFailureError offset =
         ]
     )
 
--- | Report missing capability declarations.
+-- | Report capability violations (missing or denied).
 --
 -- Produces a structured error listing each FFI function that requires
--- capabilities not declared in canopy.json, with a concrete fix showing
--- which capabilities to add.
+-- capabilities not declared in canopy.json or explicitly denied,
+-- with a concrete fix showing which capabilities to add.
 capabilityError :: [CapEnforce.CapabilityError] -> Report
 capabilityError capErrors =
   structuredError
-    "MISSING CAPABILITIES"
-    (Doc.reflow "Some FFI functions require capabilities that are not declared in canopy.json:")
+    "CAPABILITY VIOLATION"
+    (Doc.reflow "Some FFI functions require capabilities that are not available:")
     ( Doc.vcat
         (map formatCapError capErrors ++ [suggestion])
     )
@@ -140,7 +140,14 @@ formatCapError ce =
     func = Text.unpack (CapEnforce._ceFunctionName ce)
     file = Text.unpack (CapEnforce._ceFilePath ce)
     cap = Text.unpack (CapEnforce._ceMissingCapability ce)
-    line = func <> " (" <> file <> ") requires capability " <> show cap
+    line = func <> " (" <> file <> ") " <> kindMessage (CapEnforce._ceErrorKind ce) cap
+
+-- | Produce the appropriate message based on the error kind.
+kindMessage :: CapEnforce.CapabilityErrorKind -> String -> String
+kindMessage CapEnforce.MissingCapability cap =
+  "requires capability " <> show cap <> " which is not declared in canopy.json"
+kindMessage CapEnforce.DeniedCapability cap =
+  "requires capability " <> show cap <> " which is denied in canopy.json"
 
 -- | Report kernel code usage in production builds.
 --

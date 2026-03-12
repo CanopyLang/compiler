@@ -90,6 +90,7 @@ library
       Install
       Install.AppPlan
       Install.Arguments
+      Install.CapabilityCheck
       Install.Changes
       Install.Display
       Install.Execution
@@ -99,11 +100,17 @@ library
       Kit.ApiHandler
       Kit.Build
       Kit.DataLoader
+      Kit.Deploy.Netlify
+      Kit.Deploy.Node
+      Kit.Deploy.Static
+      Kit.Deploy.Vercel
       Kit.Dev
       Kit.ErrorBoundary
       Kit.Layout
       Kit.New
+      Kit.Preview
       Kit.SSG
+      Kit.SSR
       Kit.Types
       Kit.VitePlugin
       Link

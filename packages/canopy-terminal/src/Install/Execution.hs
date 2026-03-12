@@ -51,6 +51,7 @@ import qualified Canopy.Version as Version
 import Control.Lens ((&), (.~), (^.))
 import Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
+import qualified Install.CapabilityCheck as CapCheck
 import qualified Install.Display as Display
 import Install.Types
   ( Changes (..),
@@ -207,7 +208,9 @@ writeAndVerify root env oldOutline newOutline noVerify scope = do
   result <- Details.verifyInstall scope root env newOutline
   either
     (\exit -> rollbackInstallation root oldOutline (Exit.InstallBadDetails exit))
-    (\_ -> finalizeInstall root newOutline noVerify)
+    (\_ -> do
+      CapCheck.warnNewCapabilities oldOutline newOutline
+      finalizeInstall root newOutline noVerify)
     result
 
 -- | Finalize installation by generating lock file and confirming.
@@ -286,7 +289,7 @@ rollbackInstallation root oldOutline exit = do
 confirmInstallation :: IO (Either Exit.Install ())
 confirmInstallation = do
   Display.reportSuccess
-  return (Right ())
+  pure (Right ())
 
 -- | Cancel installation at user request.
 --
