@@ -56,6 +56,7 @@ data WebComponentConfig = WebComponentConfig
   { _wcModuleName :: !ModuleName.Raw
   , _wcFlagAttrs :: ![FlagAttr]
   , _wcPortEvents :: ![PortEvent]
+  , _wcFormAssociated :: !Bool
   } deriving (Show, Eq)
 
 -- | A flag field mapped to an HTML attribute.
@@ -94,13 +95,14 @@ data AttrCoercion
 -- @since 0.20.0
 generateWebComponent :: WebComponentConfig -> Builder
 generateWebComponent config =
-  classDefinition tagName jsModName attrs events
+  classDefinition tagName jsModName attrs events formAssoc
   where
     modName = _wcModuleName config
     tagName = moduleToTagName modName
     jsModName = moduleToJsName modName
     attrs = _wcFlagAttrs config
     events = _wcPortEvents config
+    formAssoc = _wcFormAssociated config
 
 -- | Generate the @customElements.define@ registration call.
 --
@@ -149,17 +151,24 @@ camelToKebab (c : cs) = toLower c : concatMap expandChar cs
 
 
 -- | Generate the full class definition.
-classDefinition :: String -> String -> [FlagAttr] -> [PortEvent] -> Builder
-classDefinition tagName jsModName attrs events =
+classDefinition :: String -> String -> [FlagAttr] -> [PortEvent] -> Bool -> Builder
+classDefinition tagName jsModName attrs events formAssoc =
   BB.stringUtf8 "class "
     <> BB.stringUtf8 (pascalFromKebab tagName)
     <> BB.stringUtf8 " extends HTMLElement {\n"
+    <> formAssociatedStatic formAssoc
     <> constructorDef
     <> connectedCallback jsModName attrs events
-    <> disconnectedCallback
+    <> disconnectedCallback events
     <> attributeChangedCallback attrs
     <> observedAttributes attrs
     <> BB.stringUtf8 "}\n"
+
+-- | Generate static formAssociated property when enabled.
+formAssociatedStatic :: Bool -> Builder
+formAssociatedStatic False = mempty
+formAssociatedStatic True =
+  BB.stringUtf8 "  static formAssociated = true;\n"
 
 -- | Generate constructor with Shadow DOM.
 constructorDef :: Builder
@@ -168,6 +177,7 @@ constructorDef =
     <> BB.stringUtf8 "    super();\n"
     <> BB.stringUtf8 "    this._root = this.attachShadow({ mode: 'open' });\n"
     <> BB.stringUtf8 "    this._app = null;\n"
+    <> BB.stringUtf8 "    this._handlers = {};\n"
     <> BB.stringUtf8 "  }\n"
 
 -- | Generate connectedCallback with typed flag coercion and port subscriptions.
@@ -180,6 +190,7 @@ connectedCallback jsModName attrs events =
     <> BB.stringUtf8 "    this._app = "
     <> BB.stringUtf8 jsModName
     <> BB.stringUtf8 ".init({ node: container, flags: flags });\n"
+    <> ariaForwarding
     <> portSubscriptions events
     <> BB.stringUtf8 "  }\n"
 
@@ -212,50 +223,107 @@ coercionExpr CoerceInt val = BB.stringUtf8 "parseInt(" <> val <> BB.stringUtf8 "
 coercionExpr CoerceFloat val = BB.stringUtf8 "parseFloat(" <> val <> BB.stringUtf8 ")"
 coercionExpr CoerceBool val = val <> BB.stringUtf8 " !== null"
 
+-- | Generate ARIA attribute forwarding from host to shadow container.
+--
+-- Forwards all @aria-*@ attributes and the @role@ attribute from the
+-- host element to the shadow DOM container, ensuring screen readers
+-- can access the component's semantics.
+ariaForwarding :: Builder
+ariaForwarding =
+  BB.stringUtf8 "    for (var attr of this.attributes) {\n"
+    <> BB.stringUtf8 "      if (attr.name.startsWith('aria-') || attr.name === 'role') {\n"
+    <> BB.stringUtf8 "        container.setAttribute(attr.name, attr.value);\n"
+    <> BB.stringUtf8 "      }\n"
+    <> BB.stringUtf8 "    }\n"
+
 -- | Generate port-to-CustomEvent subscriptions.
 portSubscriptions :: [PortEvent] -> Builder
 portSubscriptions [] = mempty
 portSubscriptions events = mconcat (map subscribePort events)
 
--- | Subscribe a single port to dispatch a CustomEvent.
+-- | Subscribe a single port to dispatch a CustomEvent, storing the handler.
 subscribePort :: PortEvent -> Builder
 subscribePort event =
   BB.stringUtf8 "    if (this._app.ports && this._app.ports."
-    <> BB.stringUtf8 (_pePortName event)
+    <> BB.stringUtf8 portName
     <> BB.stringUtf8 ") {\n"
     <> BB.stringUtf8 "      var self = this;\n"
-    <> BB.stringUtf8 "      this._app.ports."
-    <> BB.stringUtf8 (_pePortName event)
-    <> BB.stringUtf8 ".subscribe(function(data) {\n"
+    <> BB.stringUtf8 "      this._handlers['"
+    <> BB.stringUtf8 portName
+    <> BB.stringUtf8 "'] = function(data) {\n"
     <> BB.stringUtf8 "        self.dispatchEvent(new CustomEvent('"
     <> BB.stringUtf8 (_peEventName event)
     <> BB.stringUtf8 "', { detail: data, bubbles: true }));\n"
-    <> BB.stringUtf8 "      });\n"
+    <> BB.stringUtf8 "      };\n"
+    <> BB.stringUtf8 "      this._app.ports."
+    <> BB.stringUtf8 portName
+    <> BB.stringUtf8 ".subscribe(this._handlers['"
+    <> BB.stringUtf8 portName
+    <> BB.stringUtf8 "']);\n"
     <> BB.stringUtf8 "    }\n"
+  where
+    portName = _pePortName event
 
 -- | Generate disconnectedCallback for cleanup.
-disconnectedCallback :: Builder
-disconnectedCallback =
+disconnectedCallback :: [PortEvent] -> Builder
+disconnectedCallback events =
   BB.stringUtf8 "  disconnectedCallback() {\n"
+    <> portUnsubscriptions events
+    <> BB.stringUtf8 "    this._handlers = {};\n"
     <> BB.stringUtf8 "    this._root.innerHTML = '';\n"
     <> BB.stringUtf8 "    this._app = null;\n"
     <> BB.stringUtf8 "  }\n"
+
+-- | Generate unsubscribe calls for all port event handlers.
+portUnsubscriptions :: [PortEvent] -> Builder
+portUnsubscriptions [] = mempty
+portUnsubscriptions events = mconcat (map unsubscribePort events)
+
+-- | Unsubscribe a single port handler.
+unsubscribePort :: PortEvent -> Builder
+unsubscribePort event =
+  BB.stringUtf8 "    if (this._app && this._app.ports && this._app.ports."
+    <> BB.stringUtf8 portName
+    <> BB.stringUtf8 " && this._handlers['"
+    <> BB.stringUtf8 portName
+    <> BB.stringUtf8 "']) {\n"
+    <> BB.stringUtf8 "      this._app.ports."
+    <> BB.stringUtf8 portName
+    <> BB.stringUtf8 ".unsubscribe(this._handlers['"
+    <> BB.stringUtf8 portName
+    <> BB.stringUtf8 "']);\n"
+    <> BB.stringUtf8 "    }\n"
+  where
+    portName = _pePortName event
 
 -- | Generate attributeChangedCallback with typed coercion.
 attributeChangedCallback :: [FlagAttr] -> Builder
 attributeChangedCallback [] =
   BB.stringUtf8 "  attributeChangedCallback(name, oldValue, newValue) {\n"
+    <> ariaCallbackForwarding
     <> BB.stringUtf8 "    if (this._app && this._app.ports && this._app.ports.onAttributeChange) {\n"
     <> BB.stringUtf8 "      this._app.ports.onAttributeChange.send({ name: name, value: newValue });\n"
     <> BB.stringUtf8 "    }\n"
     <> BB.stringUtf8 "  }\n"
 attributeChangedCallback attrs =
   BB.stringUtf8 "  attributeChangedCallback(name, oldValue, newValue) {\n"
+    <> ariaCallbackForwarding
     <> BB.stringUtf8 "    if (!this._app || !this._app.ports || !this._app.ports.onAttributeChange) return;\n"
     <> BB.stringUtf8 "    var coerced = newValue;\n"
     <> mconcat (map coerceInCallback attrs)
     <> BB.stringUtf8 "    this._app.ports.onAttributeChange.send({ name: name, value: coerced });\n"
     <> BB.stringUtf8 "  }\n"
+
+-- | Generate ARIA forwarding within attributeChangedCallback.
+--
+-- Mirrors ARIA attribute changes from the host element to the
+-- shadow container so screen readers stay synchronized.
+ariaCallbackForwarding :: Builder
+ariaCallbackForwarding =
+  BB.stringUtf8 "    if (name.startsWith('aria-') || name === 'role') {\n"
+    <> BB.stringUtf8 "      var container = this._root.firstChild;\n"
+    <> BB.stringUtf8 "      if (container) container.setAttribute(name, newValue);\n"
+    <> BB.stringUtf8 "    }\n"
 
 -- | Generate a coercion branch for a single attribute in the callback.
 coerceInCallback :: FlagAttr -> Builder

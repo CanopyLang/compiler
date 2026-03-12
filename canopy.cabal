@@ -269,6 +269,7 @@ test-suite canopy-test
       Unit.Docs.RenderTest
       Unit.Editor.IntegrationTest
       Unit.FFI.CapabilityEnforcementTest
+      Unit.FFI.CapabilityTest
       Unit.FFI.CapabilityTypeTest
       Unit.FFI.ErgonomicsTest
       Unit.FFI.EscapeTest
@@ -312,14 +313,20 @@ test-suite canopy-test
       Unit.Json.DecodeTest
       Unit.Json.EncodeTest
       Unit.Json.StringTest
+      Unit.Kit.ApiHandlerTest
+      Unit.Kit.BuildTest
       Unit.Kit.DataLoaderTest
       Unit.Kit.DeployTest
+      Unit.Kit.DevTest
+      Unit.Kit.ErrorBoundaryTest
       Unit.Kit.HydrationTest
+      Unit.Kit.LayoutTest
       Unit.Kit.Route.GenerateTest
       Unit.Kit.Route.ScannerTest
       Unit.Kit.Route.ValidateTest
       Unit.Kit.SSGTest
       Unit.Kit.SSRTest
+      Unit.Kit.VitePluginTest
       Unit.Logging.ConfigTest
       Unit.Logging.EventTest
       Unit.Logging.SinkTest

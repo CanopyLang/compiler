@@ -184,6 +184,13 @@ import qualified Unit.Kit.DataLoaderTest as KitDataLoaderTest
 import qualified Unit.Kit.HydrationTest as KitHydrationTest
 import qualified Unit.Kit.SSRTest as KitSSRTest
 import qualified Unit.Kit.DeployTest as KitDeployTest
+import qualified Unit.Kit.BuildTest as KitBuildTest
+import qualified Unit.Kit.VitePluginTest as KitVitePluginTest
+import qualified Unit.Kit.ApiHandlerTest as KitApiHandlerTest
+import qualified Unit.Kit.LayoutTest as KitLayoutTest
+import qualified Unit.Kit.ErrorBoundaryTest as KitErrorBoundaryTest
+import qualified Unit.Kit.DevTest as KitDevTest
+import qualified Unit.FFI.CapabilityTest as FFICapabilityTest
 import qualified Property.ArithmeticLawsTest as ArithmeticLawsTest
 import qualified Property.Type.UnifyProperties as UnifyProperties
 import qualified Property.Type.UnionFindProperties as UnionFindProperties
@@ -368,7 +375,14 @@ unitTests =
       KitDataLoaderTest.tests,
       KitHydrationTest.tests,
       KitSSRTest.tests,
-      KitDeployTest.tests
+      KitDeployTest.tests,
+      KitBuildTest.tests,
+      KitVitePluginTest.tests,
+      KitApiHandlerTest.tests,
+      KitLayoutTest.tests,
+      KitErrorBoundaryTest.tests,
+      KitDevTest.tests,
+      FFICapabilityTest.tests
     ]
 
 propertyTests :: TestTree

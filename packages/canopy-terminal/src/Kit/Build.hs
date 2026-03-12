@@ -197,6 +197,7 @@ writeWebComponent outputDir modName = do
         { _wcModuleName = modName
         , _wcFlagAttrs = wcFlagAttrs wcConfig
         , _wcPortEvents = wcPortEvents wcConfig
+        , _wcFormAssociated = False
         }
       content = WebComponent.generateWebComponent config
           <> "\n"
