@@ -23,7 +23,7 @@ import CLI.Parsers (createPortParser)
 import CLI.Types (Command, (|--))
 import qualified Data.Text as Text
 import qualified Kit
-import Kit.Types (KitBuildFlags (..), KitCommand (..), KitDevFlags (..))
+import Kit.Types (DeployTarget (..), KitBuildFlags (..), KitCommand (..), KitDevFlags (..), parseDeployTarget)
 import qualified Terminal
 import qualified Text.PrettyPrint.ANSI.Leijen as PP
 
@@ -109,6 +109,7 @@ createKitBuildFlags =
   Terminal.flags KitBuildFlags
     |-- Terminal.onOff "optimize" "Enable Canopy optimizations for smaller, faster output."
     |-- Terminal.flag "output" kitOutputParser "Override the default output directory (build/)."
+    |-- Terminal.flag "target" kitTargetParser "Deployment target: static (default), node, vercel, netlify."
 
 -- | Parser for the @--output@ flag on @kit-build@.
 kitOutputParser :: Terminal.Parser FilePath
@@ -119,4 +120,15 @@ kitOutputParser =
     , Terminal._parser = Just
     , Terminal._suggest = \_ -> pure []
     , Terminal._examples = \_ -> pure ["build", "dist", "out"]
+    }
+
+-- | Parser for the @--target@ flag on @kit-build@.
+kitTargetParser :: Terminal.Parser DeployTarget
+kitTargetParser =
+  Terminal.Parser
+    { Terminal._singular = "deploy target"
+    , Terminal._plural = "deploy targets"
+    , Terminal._parser = parseDeployTarget
+    , Terminal._suggest = \_ -> pure ["static", "node", "vercel", "netlify"]
+    , Terminal._examples = \_ -> pure ["static", "node", "vercel", "netlify"]
     }

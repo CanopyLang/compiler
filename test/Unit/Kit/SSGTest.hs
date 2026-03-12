@@ -65,18 +65,19 @@ generatesDoctype :: TestTree
 generatesDoctype =
   HUnit.testCase "generated HTML includes DOCTYPE" $ do
     let pages = SSG.generateStaticPages singleStaticManifest
-        content = head (Map.elems pages)
-    HUnit.assertBool "starts with DOCTYPE"
-      ("<!DOCTYPE html>" `Text.isPrefixOf` content)
+        content = snd (head (Map.toList pages))
+        firstLine = head (Text.lines content)
+    firstLine @?= "<!DOCTYPE html>"
 
 -- | Generated HTML includes the main.js script tag.
 generatesScriptTag :: TestTree
 generatesScriptTag =
   HUnit.testCase "generated HTML includes script tag" $ do
     let pages = SSG.generateStaticPages singleStaticManifest
-        content = head (Map.elems pages)
-    HUnit.assertBool "contains script tag"
-      ("main.js" `Text.isInfixOf` content)
+        content = snd (head (Map.toList pages))
+        outputLines = Text.lines content
+        expected = "    <script type=\"module\" src=\"/main.js\"></script>"
+    elem expected outputLines @?= True
 
 -- | Mixed manifest generates only static pages.
 generatesMultiplePages :: TestTree
@@ -98,8 +99,7 @@ generatesCorrectFilePath =
   HUnit.testCase "output paths use /index.html convention" $ do
     let pages = SSG.generateStaticPages singleStaticManifest
         paths = Map.keys pages
-    HUnit.assertBool "path ends with index.html"
-      (all (Text.isSuffixOf "index.html" . Text.pack) paths)
+    paths @?= ["about/index.html"]
 
 
 -- TEST DATA

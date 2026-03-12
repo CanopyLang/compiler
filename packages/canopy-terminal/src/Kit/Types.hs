@@ -13,12 +13,15 @@ module Kit.Types
   , KitDevFlags (..)
   , KitBuildFlags (..)
   , KitPreviewFlags (..)
+  , DeployTarget (..)
   , kitDevPort
   , kitDevOpen
   , kitBuildOptimize
   , kitBuildOutput
+  , kitBuildTarget
   , kitPreviewPort
   , kitPreviewOpen
+  , parseDeployTarget
   ) where
 
 import Control.Lens (makeLenses)
@@ -51,6 +54,33 @@ data KitDevFlags = KitDevFlags
     -- ^ Whether to open a browser window automatically.
   } deriving (Eq, Show)
 
+-- | Deployment target for the @kit-build@ command.
+--
+-- Determines what deploy adapter runs after bundling to produce
+-- target-specific configuration and entry points.
+--
+-- @since 0.20.1
+data DeployTarget
+  = TargetStatic
+    -- ^ Default: fully static site, no server.
+  | TargetNode
+    -- ^ Node.js server with Express for SSR routes.
+  | TargetVercel
+    -- ^ Vercel platform with @vercel.json@ configuration.
+  | TargetNetlify
+    -- ^ Netlify platform with @netlify.toml@ configuration.
+  deriving (Eq, Show)
+
+-- | Parse a deploy target string from the @--target@ flag.
+--
+-- @since 0.20.1
+parseDeployTarget :: String -> Maybe DeployTarget
+parseDeployTarget "static" = Just TargetStatic
+parseDeployTarget "node" = Just TargetNode
+parseDeployTarget "vercel" = Just TargetVercel
+parseDeployTarget "netlify" = Just TargetNetlify
+parseDeployTarget _ = Nothing
+
 -- | Flags for the @kit-build@ production build command.
 --
 -- @since 0.19.2
@@ -59,6 +89,8 @@ data KitBuildFlags = KitBuildFlags
     -- ^ Enable Canopy optimizations (dead-code elimination, minification).
   , _kitBuildOutput :: !(Maybe FilePath)
     -- ^ Override the default output directory (@build/@).
+  , _kitBuildTarget :: !(Maybe DeployTarget)
+    -- ^ Deployment target (default: 'TargetStatic' when 'Nothing').
   } deriving (Eq, Show)
 
 -- | Flags for the @kit-preview@ command.

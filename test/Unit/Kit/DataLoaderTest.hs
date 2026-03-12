@@ -38,6 +38,7 @@ tests =
     , generatesEmptyLoaderModule
     , generatesLoaderModuleWithEntries
     , handlesMultipleRoutes
+    , detectsMultiLineSignature
     ]
 
 
@@ -81,10 +82,13 @@ generatesEmptyLoaderModule :: TestTree
 generatesEmptyLoaderModule =
   HUnit.testCase "empty loader list produces valid module" $ do
     let output = DataLoader.generateLoaderModule []
-    HUnit.assertBool "starts with module"
-      ("module Loaders" `Text.isPrefixOf` output)
-    HUnit.assertBool "contains loaders value"
-      ("loaders" `Text.isInfixOf` output)
+    output @?= Text.unlines
+      [ "module Loaders exposing (loaders)"
+      , ""
+      , ""
+      , "loaders ="
+      , "  []"
+      ]
 
 -- | Loader list generates imports and entries.
 generatesLoaderModuleWithEntries :: TestTree
@@ -96,10 +100,25 @@ generatesLoaderModuleWithEntries =
           , _dlModuleName = "Routes.About"
           }
         output = DataLoader.generateLoaderModule [loader]
-    HUnit.assertBool "imports module"
-      ("import Routes.About" `Text.isInfixOf` output)
-    HUnit.assertBool "references load function"
-      ("Routes.About.load" `Text.isInfixOf` output)
+    output @?= Text.unlines
+      [ "module Loaders exposing (loaders)"
+      , ""
+      , "import Routes.About"
+      , ""
+      , ""
+      , "loaders ="
+      , "  [ { route = \"Routes.About\", load = Routes.About.load }"
+      , "  ]"
+      ]
+
+-- | A multi-line Task type signature is detected as DynamicLoader.
+detectsMultiLineSignature :: TestTree
+detectsMultiLineSignature =
+  HUnit.testCase "multi-line Task signature detected as DynamicLoader" $
+    withSourceFile multiLineLoadSource $ \entry -> do
+      loaders <- DataLoader.detectLoaders [entry]
+      length loaders @?= 1
+      _dlKind (head loaders) @?= DynamicLoader
 
 -- | Multiple routes are each detected independently.
 handlesMultipleRoutes :: TestTree
@@ -148,6 +167,16 @@ noLoadSource = unlines
   , ""
   , "init ="
   , "  ( {}, Cmd.none )"
+  ]
+
+multiLineLoadSource :: String
+multiLineLoadSource = unlines
+  [ "module Routes.Dashboard exposing (Model, Msg, load, init, update, view)"
+  , ""
+  , "load : Task Http.Error"
+  , "      Data"
+  , "load ="
+  , "  Http.get \"/api/data\""
   ]
 
 

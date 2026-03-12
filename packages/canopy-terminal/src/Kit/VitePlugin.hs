@@ -191,8 +191,10 @@ pluginHandleHotUpdate :: Text.Text
 pluginHandleHotUpdate =
   Text.unlines
     [ "    handleHotUpdate({ file, server }) {"
-    , "      if (!hmr || !file.endsWith('.can')) return;"
-    , "      server.ws.send({ type: 'full-reload', path: '*' });"
-    , "      return [];"
+    , "      if (!hmr) return;"
+    , "      if (file.endsWith('.can') || file.endsWith('.canopy-hmr-trigger')) {"
+    , "        server.ws.send({ type: 'full-reload', path: '*' });"
+    , "        return [];"
+    , "      }"
     , "    },"
     ]

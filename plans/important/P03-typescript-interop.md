@@ -1,140 +1,90 @@
 # P03: TypeScript Interop
 
 ## Priority: HIGH -- Phase 2 (Adoption Enabler)
-## Effort: 3-4 weeks (Phases 2-4 remaining)
-## Depends on: Nothing (Phase 1 complete, ESM output complete)
+## Effort: 1-2 weeks remaining (ARIA + integration tests only)
+## Status: Pipeline wired, bugs fixed -- 2 tasks remain
 
-## Status Overview
+## Post-Remediation Status (2026-03-12)
 
-Phase 1 (.d.ts generation) is **100% complete** and production-ready. FFI TypeScript validation is done. Basic Web Component generation exists. Phases 2-4 (npm package consumption, enhanced Web Components, integration testing) remain and are the critical path for the gradual adoption story.
+The audit remediation completed all pipeline wiring and bug fixes. Only ARIA integration and end-to-end integration tests remain.
 
-| Phase | Status | Effort Remaining |
-|-------|--------|------------------|
-| Phase 1: .d.ts generation | DONE | 0 |
-| FFI TypeScript validation | DONE | 0 |
-| Basic Web Component generation | DONE | 0 |
-| Phase 2: npm package consumption | NOT STARTED | 1.5-2 wks |
-| Phase 3: Enhanced Web Components | NOT STARTED | 1-1.5 wks |
-| Phase 4: Integration testing + docs | NOT STARTED | 0.5-1 wk |
+| Component | Code Exists? | Wired Into Build? | Working? |
+|-----------|-------------|-------------------|----------|
+| .d.ts generation | Yes (4 modules) | **Yes** | **Yes** |
+| FFI TypeScript validation | Yes (181 lines) | **Yes** | **Yes** |
+| .d.ts parser | Yes (320 lines) | **Yes** (npm pipeline) | **Yes** |
+| npm module resolution | Yes (363 lines) | **Yes** (NpmPipeline.hs) | **Yes** |
+| JS wrapper generation | Yes (199 lines) | **Yes** (NpmPipeline.hs) | **Yes** (bug fixed) |
+| Web Component generation | Yes (315 lines) | **Yes** (Kit/Build.hs) | **Yes** (leak fixed) |
+| ARIA/form integration | **No** | N/A | N/A |
 
-## What's Done (with file references)
+### Bugs Fixed (Audit Remediation)
+1. `NpmWrapper.hs` line 184: `UnwrapMaybe` now generates `'a' in p0 ? p0.a : null` (valid across dev/prod)
+2. `WebComponent.hs`: `disconnectedCallback` now unsubscribes all port handlers via `this._handlers`
+3. `FFI/NpmPipeline.hs` created: chains resolve -> parse .d.ts -> type map -> generate wrapper
 
-### Phase 1: .d.ts Generation (100% complete)
+## What's Done
 
-- **`Generate/TypeScript.hs`** -- Main orchestrator, auto-generates .d.ts alongside .js on build
-- **`Generate/TypeScript/Convert.hs`** -- Canopy-to-TypeScript type conversion logic
-- **`Generate/TypeScript/Render.hs`** -- .d.ts file rendering with proper formatting
-- **`Generate/TypeScript/Types.hs`** -- TypeScript AST types used during generation
-- **`Generate/TypeScript/WellKnown.hs`** -- Standard type conversions (String->string, Int->number, etc.)
+### .d.ts Generation (100% complete)
 
-Type mapping (all implemented):
+- `Generate/TypeScript.hs` -- Main orchestrator
+- `Generate/TypeScript/Convert.hs` -- Canopy->TypeScript type conversion
+- `Generate/TypeScript/Render.hs` -- .d.ts file rendering
+- `Generate/TypeScript/Types.hs` -- TypeScript AST types
+- Tests: 34 unit + 6 golden
 
-| Canopy Type | TypeScript Type |
-|-------------|----------------|
-| `String` | `string` |
-| `Int` | `number` |
-| `Float` | `number` |
-| `Bool` | `boolean` |
-| `List a` | `ReadonlyArray<A>` |
-| `Maybe a` | `{ $: 'Just', a: A } \| { $: 'Nothing' }` |
-| `Result e a` | `{ $: 'Ok', a: A } \| { $: 'Err', a: E }` |
-| `Dict k v` | `ReadonlyMap<K, V>` |
-| Record `{ x : Int }` | `{ readonly x: number }` |
-| Custom type | Discriminated union with `$` tag |
-| Opaque type | Opaque branded type |
+### FFI TypeScript Validation (100% complete)
 
-Tests: 34 unit tests + 6 golden tests.
+- `FFI/TypeScriptValidation.hs` (181 lines) -- validates FFI sigs match .d.ts
+- 32 tests
 
-### FFI TypeScript Validation (complete)
+### .d.ts Parser (100% complete, fully used)
 
-- **`FFI/TypeScriptValidation.hs`** (181 lines) -- Validates that FFI type signatures match their TypeScript declarations
-- 32 tests covering type mismatch detection, nullable handling, generic validation
+- `Generate/TypeScript/Parser.hs` (320 lines) -- parses function/interface/type/const exports
+- Used by validator AND npm wrapper pipeline
 
-### Basic Web Component Generation (complete)
+### npm Wrapper Pipeline (100% wired)
 
-- **`Generate/JavaScript/WebComponent.hs`** (177 lines) -- Generates Web Component class extending HTMLElement
-- HTMLElementTagNameMap augmentation in .d.ts output
-- Shadow DOM mounting, observedAttributes, attributeChangedCallback
+- `FFI/NpmPipeline.hs` (~130 lines) -- orchestrates resolve -> parse -> map -> generate
+- Type mapping: TsUnion->UnwrapMaybe, TsObject->UnwrapNewtype, TsVoid->ReturnCmd, Promise->WrapPromise
+- 17 unit tests in `NpmPipelineTest.hs`
+
+### Web Component Generation (100% wired)
+
+- `Generate/JavaScript/WebComponent.hs` -- generates Custom Element class with Shadow DOM
+- Called from `Kit/Build.hs` for modules listed in `_appWebComponents`
+- Port handler lifecycle: subscribe in connected, unsubscribe in disconnected
+- 11 unit tests in `WebComponentTest.hs`
 
 ## What Remains
 
-### Phase 2: npm Package Consumption (1.5-2 weeks)
+### Task 1: ARIA and form integration (2 days)
 
-Enable Canopy code to consume npm packages with type safety by reading `.d.ts` files:
+Not implemented at all. Needed for accessible Web Components.
 
-```canopy
-foreign import javascript "./node_modules/date-fns/format.d.ts"
-    format : Posix -> String -> String
-```
+Steps:
+1. Forward `role`, `aria-*` attributes from host to shadow root
+2. Add `static formAssociated = true` for form-participating elements
+3. Implement `formStateRestoreCallback`
 
-The compiler:
-1. Reads the `.d.ts` file
-2. Validates the Canopy type signature matches the TypeScript type
-3. Generates the JS binding wrapper
-4. Wraps results in appropriate Canopy types (nullable -> Maybe, union -> Result, etc.)
+### Task 2: Integration tests + docs (1 week)
 
-Implementation:
-- Minimal `.d.ts` parser (does not need full TypeScript parser -- only needs to handle exported function signatures, interfaces, and type aliases)
-- Wrapper generation for common patterns: Promise -> Task, callback -> Cmd, nullable -> Maybe, optional params -> Maybe
-- Warning/error system for unsupported TypeScript features (conditional types, mapped types, template literal types)
-
-### Phase 3: Enhanced Web Components (1-1.5 weeks)
-
-Build on the existing `WebComponent.hs` to add:
-- Attribute type validation (string attributes mapped to Canopy types)
-- Two-way property binding for form elements
-- ARIA attribute forwarding through Shadow DOM
-- Named slot support with typed slot content
-- Event dispatching from Canopy to host (CustomEvent with typed detail)
-
-### Phase 4: Integration Testing and Documentation (0.5-1 week)
-
-- Integration tests: use Canopy modules from a TypeScript project (Vite + TS)
-- Integration tests: use npm packages from Canopy (date-fns, zod, etc.)
-- Integration tests: mount Canopy Web Components in React, Vue, Svelte
-- Migration guide: "Using Canopy in an Existing React Project"
-- Guide: "Consuming npm Packages from Canopy"
-- Example apps: Canopy component in Next.js, Canopy component in SvelteKit
-
-## The Gradual Adoption Story
-
-This is how teams adopt Canopy without rewriting:
-
-1. **Week 1**: Add Canopy to existing React/Next.js project via Vite plugin
-2. **Week 2**: Write one utility module in Canopy, import from TypeScript (Phase 1 enables this today)
-3. **Month 1**: Extract business logic into Canopy modules (type-safe, zero runtime errors)
-4. **Month 3**: Build new features as Canopy components, expose as Web Components (Phase 3)
-5. **Month 6**: Core application logic in Canopy, React used only as a shell
-6. **Month 12**: Full migration to CanopyKit
-
-This is TypeScript's playbook adapted for a functional language.
-
-## Dependencies
-
-- Phase 1 (DONE) depends on ESM output (DONE)
-- Phases 2-4 have no external dependencies
-- CanopyKit benefits from Phase 3 (Web Components) but does not block it
-
-## Risks
-
-- **Type mapping fidelity**: Some TypeScript types (conditional types, mapped types, template literals) have no Canopy equivalent. These must be handled gracefully (warn, use opaque type).
-- **Runtime representation**: The discriminated union encoding (`{ $: 'Tag', ... }`) must be stable and documented. Changing it would break TS consumers.
-- **Web Component limitations**: Shadow DOM has known issues with forms, ARIA, and SSR. Document these clearly.
-- **.d.ts parser scope**: A full TypeScript parser is not needed and would be over-engineering. The minimal parser only needs to handle the subset of .d.ts that maps cleanly to Canopy types.
+- Vite + TypeScript project consuming Canopy Web Components
+- React project mounting `<my-canopy-counter>` with typed props
+- npm package consumption test (date-fns format function)
+- Update `typescript-interop.md` with Phase 2-4 examples
 
 ## Definition of Done
 
-- [x] .d.ts files generated automatically alongside .js files on build
-- [x] Full type mapping (Int, String, Bool, List, Maybe, Result, Dict, records, custom types, opaque types)
+- [x] .d.ts files generated automatically alongside .js
+- [x] Full type mapping (Int, String, Bool, List, Maybe, Result, Dict, records, custom types)
 - [x] Web Component HTMLElementTagNameMap augmentation
-- [x] 34 unit tests + 6 golden tests for .d.ts generation
+- [x] 34 unit + 6 golden tests for .d.ts
 - [x] FFI TypeScript validation (32 tests)
-- [x] Basic Web Component generation (177 lines)
-- [ ] npm .d.ts files can be read and validated against Canopy FFI signatures
-- [ ] Wrapper generation for Promise -> Task, callback -> Cmd, nullable -> Maybe
-- [ ] Enhanced Web Components with attribute validation, ARIA, slots, events
+- [x] npm FFI imports -> resolved, validated, wrapper generated **in build pipeline**
+- [x] Web Component generation **called from build pipeline** with typed attributes + events
+- [x] Port unsubscription in disconnectedCallback (no memory leak)
+- [ ] Promise->Task, nullable->Maybe, callback->Task conversions **tested end-to-end**
+- [ ] ARIA attribute forwarding through Shadow DOM
 - [ ] Integration tests: Canopy modules used from TypeScript project
 - [ ] Integration tests: npm packages used from Canopy
-- [ ] Integration tests: Web Components mounted in React, Vue, Svelte
-- [ ] Migration guide: "Using Canopy in an Existing React Project"
-- [ ] At least 2 example apps demonstrating TypeScript interop

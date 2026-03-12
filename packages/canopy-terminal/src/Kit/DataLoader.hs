@@ -135,23 +135,35 @@ classifyLoader False content
 -- | Check if the load function's type signature returns a Task.
 hasTaskReturn :: Text -> Bool
 hasTaskReturn content =
-  any isTaskSignature (findLoadSignature content)
+  "Task" `Text.isInfixOf` joinedSignature
+  where
+    joinedSignature = Text.unwords (findLoadSignature content)
 
--- | Find lines that are part of the load type signature.
+-- | Find all lines that are part of the load type signature.
+--
+-- After finding the @load :@ annotation line, collects continuation
+-- lines (indented lines that are not new definitions) until the next
+-- unindented line or definition.
 findLoadSignature :: Text -> [Text]
 findLoadSignature content =
   case dropWhile (not . isLoadTypeAnnotation) (Text.lines content) of
     [] -> []
-    (sig : _) -> [sig]
+    (sig : rest) -> sig : takeWhile isContinuation rest
 
 -- | Check if a line is the load function's type annotation.
 isLoadTypeAnnotation :: Text -> Bool
 isLoadTypeAnnotation line =
   Text.isPrefixOf "load :" (Text.stripStart line)
 
--- | Check if a type signature line mentions Task.
-isTaskSignature :: Text -> Bool
-isTaskSignature line = "Task" `Text.isInfixOf` line
+-- | Check if a line is a continuation of a multi-line type signature.
+--
+-- A continuation line is indented (starts with whitespace) and is not
+-- a new definition (does not start with an identifier at column 0).
+isContinuation :: Text -> Bool
+isContinuation line
+  | Text.null line = False
+  | Text.null (Text.stripStart line) = False
+  | otherwise = Text.head line == ' ' || Text.head line == '\t'
 
 
 -- | Generate a @Loaders.can@ module from detected loaders.
