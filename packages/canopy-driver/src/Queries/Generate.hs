@@ -1,34 +1,38 @@
 {-# LANGUAGE OverloadedStrings #-}
 
--- | Code generation query for the new compiler.
+-- | Code generation query with caching.
 --
--- This module wraps the existing Generate.JavaScript.generate function
--- in the query system, providing caching and debug logging.
---
--- **CRITICAL FIX**: This module now builds a complete GlobalGraph that
--- includes ALL dependencies, not just the main modules. This fixes the
--- bug where generated JavaScript was missing dependency code.
+-- Wraps 'Generate.JavaScript.generate' in the query system with
+-- content-hash based caching. When the optimization output has not
+-- changed since the last generation, the cached JavaScript is returned
+-- directly, skipping the expensive code generation phase.
 --
 -- @since 0.19.1
 module Queries.Generate
   ( generateJavaScriptQuery,
+    generateCachedJavaScript,
     buildCompleteGlobalGraph,
   )
 where
 
 import qualified AST.Optimized as Opt
 import qualified Canopy.ModuleName as ModuleName
+import qualified Data.Binary as Binary
 import Data.ByteString.Builder (Builder)
+import qualified Data.ByteString.Builder as BB
+import qualified Data.ByteString.Lazy as LBS
 import Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
+import qualified Data.Text as Text
+import qualified Data.Text.Encoding as TE
 import qualified Generate.JavaScript as JS
 import qualified Generate.Mode as Mode
-import qualified Data.Text as Text
-import Logging.Event (LogEvent (..), GenStats (..))
+import Logging.Event (GenStats (..), LogEvent (..), Phase (..))
 import qualified Logging.Logger as Log
+import qualified Query.Engine as Engine
 import Query.Simple
 
--- | Generate JavaScript code from optimized AST.
+-- | Generate JavaScript code from optimized AST (uncached).
 --
 -- This query wraps Generate.JavaScript.generate with debug logging.
 -- Takes mode, global graph, mains, and FFI info, returns JavaScript Builder.
@@ -48,19 +52,66 @@ generateJavaScriptQuery mode globalGraph mains ffiInfos = do
 
   return (Right jsBuilder)
 
+-- | Generate JavaScript with query engine caching.
+--
+-- Computes a content hash of the optimization inputs (GlobalGraph,
+-- mains, mode). If a cached result exists with the same hash, returns
+-- the cached JavaScript directly. Otherwise generates fresh JavaScript
+-- and stores it in the cache.
+--
+-- @since 0.19.2
+generateCachedJavaScript ::
+  Engine.QueryEngine ->
+  Mode.Mode ->
+  Opt.GlobalGraph ->
+  Map ModuleName.Canonical Opt.Main ->
+  Map String JS.FFIInfo ->
+  IO (Either QueryError Builder)
+generateCachedJavaScript engine mode globalGraph mains ffiInfos = do
+  let inputHash = computeGenerateHash mode globalGraph mains
+      query = GenerateQuery "js-output" inputHash
+  cached <- Engine.lookupQuery engine query
+  case cached of
+    Just (GeneratedJS cachedBytes) -> do
+      Log.logEvent (CacheHit PhaseGenerate (Text.pack "js-output"))
+      return (Right (BB.byteString cachedBytes))
+    _ -> do
+      result <- generateJavaScriptQuery mode globalGraph mains ffiInfos
+      cacheGenerateResult engine query result
+      return result
+
+-- | Cache the generation result if successful.
+cacheGenerateResult ::
+  Engine.QueryEngine ->
+  Query ->
+  Either QueryError Builder ->
+  IO ()
+cacheGenerateResult _ _ (Left _) = return ()
+cacheGenerateResult engine query (Right jsBuilder) = do
+  let jsBytes = LBS.toStrict (BB.toLazyByteString jsBuilder)
+      resultHash = computeContentHash jsBytes
+  Engine.storeQuery engine query (GeneratedJS jsBytes) resultHash Nothing
+
+-- | Compute content hash for generation inputs.
+--
+-- Combines the mode, global graph hash, and main modules hash
+-- into a single content hash for the cache key.
+computeGenerateHash ::
+  Mode.Mode ->
+  Opt.GlobalGraph ->
+  Map ModuleName.Canonical Opt.Main ->
+  ContentHash
+computeGenerateHash mode globalGraph mains =
+  combineHashes [modeHash, graphHash, mainsHash]
+  where
+    modeHash = computeContentHash (TE.encodeUtf8 (Text.pack (show mode)))
+    graphHash = computeContentHash (LBS.toStrict (Binary.encode globalGraph))
+    mainsHash = computeContentHash (TE.encodeUtf8 (Text.pack (show (Map.keys mains))))
+
 -- | Build complete GlobalGraph including ALL dependencies.
 --
--- This is the CRITICAL FIX for the code generation bug. Previously, only
--- the main modules' graphs were included in the GlobalGraph, causing the
--- generated JavaScript to miss dependency code.
---
--- This function:
--- 1. Takes all LocalGraphs from compiled modules
--- 2. Merges them into a single GlobalGraph
--- 3. Returns a complete graph containing ALL code needed for generation
---
--- The fix ensures that ALL dependencies are included in the generated
--- JavaScript, not just the main entry points.
+-- Takes all LocalGraphs from compiled modules, merges them into
+-- a single GlobalGraph containing ALL code needed for generation.
 --
 -- @since 0.19.1
 buildCompleteGlobalGraph :: [Opt.LocalGraph] -> Opt.GlobalGraph

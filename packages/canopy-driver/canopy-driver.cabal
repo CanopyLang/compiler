@@ -66,10 +66,12 @@ library
   ghc-options: -Wall -fwarn-tabs -O2 -Wno-unused-do-bind
   build-depends:
       base
+    , binary
     , bytestring
     , canopy-core
     , canopy-query
     , containers
+    , cryptohash-sha256
     , directory
     , filepath
     , text

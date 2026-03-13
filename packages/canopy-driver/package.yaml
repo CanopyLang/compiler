@@ -17,8 +17,10 @@ category: Compiler, Language
 
 dependencies:
   - base
+  - binary
   - bytestring
   - containers
+  - cryptohash-sha256
   - text
   - filepath
   - directory

@@ -39,6 +39,10 @@ module Query.Engine
     getCacheMisses,
     hashQueryResult,
 
+    -- * Persisted Hashes
+    populatePersistedHash,
+    populatePersistedHashes,
+
     -- * Phase Tracking
     trackPhaseExecution,
   )
@@ -94,7 +98,8 @@ data EngineState = EngineState
     engineReverseDeps :: !(Map Query (Set Query)),
     engineHits :: !Int,
     engineMisses :: !Int,
-    engineGeneration :: !Int
+    engineGeneration :: !Int,
+    enginePersistedHashes :: !(Map Query ContentHash)
   }
   deriving (Show)
 
@@ -113,7 +118,8 @@ emptyState =
       engineReverseDeps = Map.empty,
       engineHits = 0,
       engineMisses = 0,
-      engineGeneration = 0
+      engineGeneration = 0,
+      enginePersistedHashes = Map.empty
     }
 
 -- | Initialize a new query engine.
@@ -308,21 +314,28 @@ invalidateQuery (QueryEngine stateRef) query = do
 invalidateAndPropagate :: QueryEngine -> Query -> IO ()
 invalidateAndPropagate engine@(QueryEngine stateRef) query = do
   state <- readIORef stateRef
-  case Map.lookup query (engineCache state) of
+  let maybeOldHash = lookupOldHash state query
+  case maybeOldHash of
     Nothing -> return ()
-    Just oldEntry -> do
+    Just oldHash -> do
       modifyIORef' stateRef (\s -> s {engineCache = Map.delete query (engineCache s)})
       reResult <- executeQuery query
       case reResult of
         Left _ -> propagateToDependents engine state query
         Right newResult -> do
           let newResultHash = hashQueryResult newResult
-              oldResultHash = cacheEntryHash oldEntry
           currentTime <- getCurrentTime
           modifyIORef' stateRef (insertCacheEntry query newResult newResultHash currentTime)
-          if newResultHash == oldResultHash
+          if newResultHash == oldHash
             then Log.logEvent (CacheHit PhaseCache ("early-cutoff:" <> showQuery query))
             else propagateToDependents engine state query
+
+-- | Look up the old result hash from cache or persisted hashes.
+lookupOldHash :: EngineState -> Query -> Maybe ContentHash
+lookupOldHash state query =
+  case Map.lookup query (engineCache state) of
+    Just entry -> Just (cacheEntryHash entry)
+    Nothing -> Map.lookup query (enginePersistedHashes state)
 
 -- | Compute a content hash of a query result for early-cutoff comparison.
 --
@@ -344,6 +357,32 @@ propagateToDependents engine state query =
     Nothing -> return ()
     Just dependents -> mapM_ (invalidateAndPropagate engine) (Set.toList dependents)
 
+-- | Populate a single persisted hash entry from disk cache.
+--
+-- Called during cache loading to restore hash data from a previous
+-- session. These hashes enable early cutoff in 'invalidateAndPropagate'
+-- without requiring full result deserialization.
+--
+-- @since 0.19.2
+populatePersistedHash :: QueryEngine -> Query -> ContentHash -> IO ()
+populatePersistedHash (QueryEngine stateRef) query hash =
+  modifyIORef' stateRef addPersistedHash
+  where
+    addPersistedHash s =
+      s {enginePersistedHashes = Map.insert query hash (enginePersistedHashes s)}
+
+-- | Populate multiple persisted hash entries from disk cache.
+--
+-- Batch version of 'populatePersistedHash' for efficient cache loading.
+--
+-- @since 0.19.2
+populatePersistedHashes :: QueryEngine -> [(Query, ContentHash)] -> IO ()
+populatePersistedHashes (QueryEngine stateRef) entries =
+  modifyIORef' stateRef addAllHashes
+  where
+    addAllHashes s =
+      s {enginePersistedHashes = Map.union (Map.fromList entries) (enginePersistedHashes s)}
+
 -- | Clear entire cache.
 clearCache :: QueryEngine -> IO ()
 clearCache (QueryEngine stateRef) = do
@@ -355,7 +394,8 @@ clearCache (QueryEngine stateRef) = do
         { engineCache = Map.empty,
           engineDeps = Map.empty,
           engineReverseDeps = Map.empty,
-          engineGeneration = engineGeneration s + 1
+          engineGeneration = engineGeneration s + 1,
+          enginePersistedHashes = Map.empty
         }
 
 -- | Get cache size.

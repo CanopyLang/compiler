@@ -29,6 +29,7 @@ import qualified Data.Map.Strict as Map
 import Data.Word (Word8, Word32)
 import Logging.Event (LogEvent (..))
 import qualified Logging.Logger as Log
+import qualified Parse.Module as Parse
 import qualified Query.Engine as Engine
 import Query.Simple (ContentHash (..), Query (..))
 import qualified System.Directory as Dir
@@ -99,6 +100,11 @@ loadCache (Engine.QueryEngine stateRef) path = do
     else Log.logEvent (CacheStored "persist-cold-start" 0)
 
 -- | Attempt to load and populate cache from file.
+--
+-- Decodes all persisted entries and populates the engine's
+-- 'Engine.enginePersistedHashes' map. These hashes enable early
+-- cutoff in watch mode: when a file changes but the compilation
+-- result hash is unchanged, downstream dependents skip recompilation.
 loadAndPopulate :: IORef Engine.EngineState -> FilePath -> IO ()
 loadAndPopulate stateRef path = do
   bytes <- BS.readFile path
@@ -110,13 +116,21 @@ loadAndPopulate stateRef path = do
           Log.logEvent (CacheStored "persist-version-mismatch" 0)
       | otherwise -> do
           let entryCount = decodeEntryCount bytes
-          Log.logEvent (CacheStored "persist-load" (fromIntegral entryCount))
-          modifyIORef' stateRef bumpGeneration
+              entries = decodeAllEntries (BS.drop 8 bytes) (fromIntegral entryCount)
+              hashMap = Map.fromList entries
+          Log.logEvent (CacheStored "persist-load" (Map.size hashMap))
+          modifyIORef' stateRef (populateFromDisk hashMap)
 
--- | Bump the engine generation counter on cache load.
-bumpGeneration :: Engine.EngineState -> Engine.EngineState
-bumpGeneration state =
-  state {Engine.engineGeneration = Engine.engineGeneration state + 1}
+-- | Populate engine state from decoded disk entries.
+--
+-- Sets persisted hashes and bumps generation counter to signal
+-- that cached state was restored from a previous session.
+populateFromDisk :: Map.Map Query ContentHash -> Engine.EngineState -> Engine.EngineState
+populateFromDisk hashMap state =
+  state
+    { Engine.enginePersistedHashes = hashMap,
+      Engine.engineGeneration = Engine.engineGeneration state + 1
+    }
 
 -- | Encode cache entries as a version-tagged binary blob.
 --
@@ -169,6 +183,53 @@ decodeEntryCount :: BS.ByteString -> Word32
 decodeEntryCount bs
   | BS.length bs < 8 = 0
   | otherwise = decodeWord32 (BS.take 4 (BS.drop 4 bs))
+
+-- | Decode all entries from the binary blob after the 8-byte header.
+--
+-- Each entry is: [tag:1][path_len:4][path:n][hash:32][durability:1]
+decodeAllEntries :: BS.ByteString -> Int -> [(Query, ContentHash)]
+decodeAllEntries = go []
+  where
+    go acc _ 0 = reverse acc
+    go acc bs remaining
+      | BS.null bs = reverse acc
+      | otherwise =
+          case decodeOneEntry bs of
+            Nothing -> reverse acc
+            Just (entry, rest) -> go (entry : acc) rest (remaining - 1)
+
+-- | Decode a single entry, returning the entry and remaining bytes.
+decodeOneEntry :: BS.ByteString -> Maybe ((Query, ContentHash), BS.ByteString)
+decodeOneEntry bs
+  | BS.length bs < 6 = Nothing
+  | otherwise =
+      let tag = BS.index bs 0
+          pathLen = fromIntegral (decodeWord32 (BS.take 4 (BS.drop 1 bs)))
+          afterPathLen = BS.drop 5 bs
+       in decodeEntryPayload tag pathLen afterPathLen
+
+-- | Decode entry payload after tag and path length.
+decodeEntryPayload :: Word8 -> Int -> BS.ByteString -> Maybe ((Query, ContentHash), BS.ByteString)
+decodeEntryPayload tag pathLen bs
+  | BS.length bs < pathLen + 33 = Nothing
+  | otherwise =
+      let pathBytes = BS.take pathLen bs
+          path = fmap (toEnum . fromIntegral) (BS.unpack pathBytes)
+          hashBytes = BS.take 32 (BS.drop pathLen bs)
+          contentHash = ContentHash hashBytes
+          rest = BS.drop (pathLen + 33) bs
+          query = tagToQuery tag path contentHash
+       in Just ((query, contentHash), rest)
+
+-- | Reconstruct a query from its persisted tag, path, and hash.
+tagToQuery :: Word8 -> FilePath -> ContentHash -> Query
+tagToQuery 0 path hash = ParseModuleQuery path hash Parse.Application
+tagToQuery 1 path hash = CanonicalizeQuery path hash
+tagToQuery 2 path hash = TypeCheckQuery path hash
+tagToQuery 3 path hash = OptimizeQuery path hash
+tagToQuery 4 path hash = InterfaceQuery path hash
+tagToQuery 5 path hash = GenerateQuery path hash
+tagToQuery _ path hash = ParseModuleQuery path hash Parse.Application
 
 -- | Encode a Word32 as 4 big-endian bytes.
 encodeWord32 :: Word32 -> BS.ByteString
