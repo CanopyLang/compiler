@@ -37,12 +37,14 @@ module Query.Engine
     getCacheSize,
     getCacheHits,
     getCacheMisses,
+    hashQueryResult,
 
     -- * Phase Tracking
     trackPhaseExecution,
   )
 where
 
+import qualified Crypto.Hash.SHA256 as SHA256
 import Data.IORef (IORef, modifyIORef', newIORef, readIORef)
 import Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
@@ -50,6 +52,7 @@ import Data.Set (Set)
 import qualified Data.Set as Set
 import Data.Text (Text)
 import qualified Data.Text as Text
+import qualified Data.Text.Encoding as TE
 import Data.Time.Clock (UTCTime, getCurrentTime)
 import Logging.Event (LogEvent (..), Phase (..))
 import qualified Logging.Logger as Log
@@ -247,6 +250,10 @@ updateCacheHitCount query state =
     Nothing -> state
 
 -- | Execute query and cache result.
+--
+-- Stores the hash of the actual result (not the query key's hash)
+-- so that early cutoff can detect when re-execution produces the
+-- same output despite changed inputs.
 executeAndCache ::
   IORef EngineState ->
   Query ->
@@ -260,8 +267,8 @@ executeAndCache stateRef query = do
       return (Left err)
     Right queryResult -> do
       currentTime <- getCurrentTime
-      let hash = getQueryHash query
-      modifyIORef' stateRef (insertCacheEntry query queryResult hash currentTime)
+      let resultHash = hashQueryResult queryResult
+      modifyIORef' stateRef (insertCacheEntry query queryResult resultHash currentTime)
       return (Right queryResult)
 
 -- | Mark query as running.
@@ -273,15 +280,6 @@ markRunning query state =
 unmarkRunning :: Query -> EngineState -> EngineState
 unmarkRunning query state =
   state {engineRunning = Set.delete query (engineRunning state)}
-
--- | Get hash from query.
-getQueryHash :: Query -> ContentHash
-getQueryHash (ParseModuleQuery _ hash _) = hash
-getQueryHash (CanonicalizeQuery _ hash) = hash
-getQueryHash (TypeCheckQuery _ hash) = hash
-getQueryHash (OptimizeQuery _ hash) = hash
-getQueryHash (InterfaceQuery _ hash) = hash
-getQueryHash (GenerateQuery _ hash) = hash
 
 -- | Invalidate a single query in the cache.
 invalidateQuery :: QueryEngine -> Query -> IO ()
@@ -298,9 +296,10 @@ invalidateQuery (QueryEngine stateRef) query = do
 --
 --   1. Remove the query from cache (mark RED)
 --   2. Re-execute the query
---   3. Compare new result hash with old hash
---   4. Same hash → stop propagation (early cutoff, dependents stay valid)
---   5. Different hash → update cache, recurse on reverse dependencies
+--   3. Compute hash of the NEW result
+--   4. Compare with old result's hash
+--   5. Same hash -> stop propagation (early cutoff, dependents stay valid)
+--   6. Different hash -> update cache, recurse on reverse dependencies
 --
 -- This is the key to incremental compilation performance: most edits
 -- don't change a module's public interface, so dependents skip recompilation.
@@ -317,16 +316,26 @@ invalidateAndPropagate engine@(QueryEngine stateRef) query = do
       case reResult of
         Left _ -> propagateToDependents engine state query
         Right newResult -> do
-          let newHash = getQueryHash query
-          if newHash == cacheEntryHash oldEntry
-            then do
-              currentTime <- getCurrentTime
-              modifyIORef' stateRef (insertCacheEntry query newResult newHash currentTime)
-              Log.logEvent (CacheHit PhaseCache ("early-cutoff:" <> showQuery query))
-            else do
-              currentTime <- getCurrentTime
-              modifyIORef' stateRef (insertCacheEntry query newResult newHash currentTime)
-              propagateToDependents engine state query
+          let newResultHash = hashQueryResult newResult
+              oldResultHash = cacheEntryHash oldEntry
+          currentTime <- getCurrentTime
+          modifyIORef' stateRef (insertCacheEntry query newResult newResultHash currentTime)
+          if newResultHash == oldResultHash
+            then Log.logEvent (CacheHit PhaseCache ("early-cutoff:" <> showQuery query))
+            else propagateToDependents engine state query
+
+-- | Compute a content hash of a query result for early-cutoff comparison.
+--
+-- Uses the 'Show' representation of the result to produce a SHA256 hash.
+-- This captures structural changes in the compilation output: if the
+-- canonical AST, type annotations, or optimized graph change, the hash
+-- changes. If only internal details change (e.g., whitespace, comments),
+-- the hash stays the same because the parsed AST normalizes them away.
+--
+-- @since 0.19.2
+hashQueryResult :: QueryResult -> ContentHash
+hashQueryResult result =
+  ContentHash (SHA256.hash (TE.encodeUtf8 (Text.pack (show result))))
 
 -- | Propagate invalidation to all reverse dependencies of a query.
 propagateToDependents :: QueryEngine -> EngineState -> Query -> IO ()

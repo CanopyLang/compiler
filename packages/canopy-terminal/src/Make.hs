@@ -92,7 +92,12 @@ import qualified Reporting.Task as Task
 import qualified Stuff
 import qualified System.FilePath as FilePath
 import qualified System.IO as IO
+import qualified Parse.Module as Parse
+import qualified Query.Engine as Engine
+import qualified Query.Persistence as Persistence
+import System.FSNotify (Event)
 import qualified Watch
+import qualified Watch.QueryIntegration as QueryIntegration
 
 -- | Main entry point for the Make system.
 --
@@ -111,11 +116,34 @@ run paths flags =
 
 -- | Run build with file watching enabled.
 --
--- Sets up file watching to trigger rebuilds when source files change.
--- Provides continuous feedback during development.
+-- Creates a shared query engine for the watch session and loads any
+-- persisted cache from a previous build. On each file change, the
+-- corresponding parse query is invalidated (triggering cascading
+-- invalidation of dependent queries), then a rebuild is executed.
+-- After each successful build, the cache is persisted to disk.
 watchAndBuild :: [FilePath] -> Flags -> IO ()
-watchAndBuild paths flags =
-  Watch.files (const (runSingleBuild paths flags)) paths
+watchAndBuild paths flags = do
+  engine <- Engine.initEngine
+  Persistence.loadCache engine cachePath
+  runSingleBuild paths flags
+  Persistence.saveCache engine cachePath
+  Watch.files (handleWatchEvent engine paths flags) paths
+  where
+    cachePath = Persistence.defaultCachePath "."
+
+-- | Handle a file change event during watch mode.
+handleWatchEvent ::
+  Engine.QueryEngine ->
+  [FilePath] ->
+  Flags ->
+  Event ->
+  IO ()
+handleWatchEvent engine paths flags event = do
+  QueryIntegration.createInvalidationHandler engine Parse.Application event
+  runSingleBuild paths flags
+  Persistence.saveCache engine cachePath
+  where
+    cachePath = Persistence.defaultCachePath "."
 
 -- | Run a single build without file watching.
 --

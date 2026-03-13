@@ -6,6 +6,7 @@
 --   1. Converting Canopy types to TypeScript declarations
 --   2. Rendering .d.ts output from those declarations
 --   3. NpmPipeline type mapping and wrapper generation
+--   4. Verification of generated .d.ts files via @tsc --noEmit@
 --
 -- These tests verify that the full TypeScript generation pipeline
 -- produces correct output without relying on golden files.
@@ -15,12 +16,18 @@ module Integration.TypeScriptInteropTest (tests) where
 
 import qualified Canopy.Data.Name as Name
 import Canopy.Data.Name (Name)
+import qualified Control.Exception as Exception
 import qualified Data.ByteString.Builder as BB
 import qualified Data.ByteString.Lazy.Char8 as BSL
 import FFI.NpmPipeline (tsTypeToParamConversion, tsTypeToReturnConversion)
 import Generate.JavaScript.NpmWrapper (ParamConversion (..), ReturnConversion (..))
 import Generate.TypeScript.Render (renderDecl, renderDecls, renderWebComponentTagMap)
 import Generate.TypeScript.Types (DtsDecl (..), TsType (..))
+import qualified System.Directory as Dir
+import System.Exit (ExitCode (..))
+import qualified System.IO as IO
+import System.IO.Temp (withSystemTempDirectory)
+import qualified System.Process as Process
 import Test.Tasty (TestTree)
 import qualified Test.Tasty as Test
 import Test.Tasty.HUnit ((@?=))
@@ -32,7 +39,8 @@ tests =
     "TypeScript Interop Integration"
     [ dtsRenderPipelineTests,
       npmTypeMapTests,
-      webComponentDtsTests
+      webComponentDtsTests,
+      tscVerificationTests
     ]
 
 -- | Test the full .d.ts rendering pipeline from declarations to text.
@@ -152,6 +160,9 @@ npmReturnNullableTest =
     tsTypeToReturnConversion (TsUnion []) @?= WrapNullable
 
 -- | Test Web Component tag map .d.ts generation.
+--
+-- Asserts the exact rendered output of 'renderWebComponentTagMap' rather than
+-- using weak substring checks, since the output is fully deterministic.
 webComponentDtsTests :: TestTree
 webComponentDtsTests =
   Test.testGroup
@@ -163,24 +174,156 @@ webComponentDtsTests =
 tagMapSingleModuleTest :: TestTree
 tagMapSingleModuleTest =
   HUnit.testCase "single module generates correct tag map entry" $
-    let output = BSL.unpack (BB.toLazyByteString (renderWebComponentTagMap [Name.fromChars "MyApp.Counter"]))
-     in do
-          HUnit.assertBool "contains HTMLElementTagNameMap"
-            (isIn "HTMLElementTagNameMap" output)
-          HUnit.assertBool "maps tag to HTMLElement"
-            (isIn "\"my-app-counter\": HTMLElement" output)
+    BSL.unpack (BB.toLazyByteString (renderWebComponentTagMap [Name.fromChars "MyApp.Counter"]))
+      @?= expectedSingleTagMap
+  where
+    expectedSingleTagMap =
+      "declare global {\n"
+        ++ "  interface HTMLElementTagNameMap {\n"
+        ++ "    \"my-app-counter\": HTMLElement;\n"
+        ++ "  }\n"
+        ++ "}\n"
 
 tagMapMultiModuleTest :: TestTree
 tagMapMultiModuleTest =
   HUnit.testCase "multiple modules generate correct tag map entries" $
-    let mods = [Name.fromChars "App.Header", Name.fromChars "App.Footer"]
-        output = BSL.unpack (BB.toLazyByteString (renderWebComponentTagMap mods))
-     in do
-          HUnit.assertBool "contains app-header entry"
-            (isIn "\"app-header\": HTMLElement" output)
-          HUnit.assertBool "contains app-footer entry"
-            (isIn "\"app-footer\": HTMLElement" output)
+    BSL.unpack (BB.toLazyByteString (renderWebComponentTagMap mods))
+      @?= expectedMultiTagMap
+  where
+    mods = [Name.fromChars "App.Header", Name.fromChars "App.Footer"]
+    expectedMultiTagMap =
+      "declare global {\n"
+        ++ "  interface HTMLElementTagNameMap {\n"
+        ++ "    \"app-header\": HTMLElement;\n"
+        ++ "    \"app-footer\": HTMLElement;\n"
+        ++ "  }\n"
+        ++ "}\n"
 
+-- | Tests that run @tsc --noEmit@ against generated @.d.ts@ files.
+--
+-- Each test generates a complete @.d.ts@ from a set of declarations, writes
+-- it to a temporary directory alongside a consumer @.ts@ file and a minimal
+-- @tsconfig.json@, then asserts that @tsc --noEmit@ exits with code 0.
+--
+-- When @tsc@ is not available on @PATH@, all tests in this group are skipped
+-- gracefully: the IO action exits without failing.
+tscVerificationTests :: TestTree
+tscVerificationTests =
+  Test.testGroup
+    "tsc --noEmit verification"
+    [ tscValueExportsTest,
+      tscUnionPatternMatchTest,
+      tscWebComponentTagMapTest
+    ]
+
+-- | Verify that generated value declarations are accepted by @tsc@.
+--
+-- Generates a @.d.ts@ with two value exports — a plain number and a
+-- string-returning function — then writes a @.ts@ consumer that references
+-- both.  Asserts @tsc --noEmit@ succeeds.
+tscValueExportsTest :: TestTree
+tscValueExportsTest =
+  HUnit.testCase "value exports accepted by tsc" $
+    withTscOrSkip $ \tscPath ->
+      withSystemTempDirectory "can-tsc-values" $ \tmp ->
+        Exception.finally
+          (runTscTest tscPath tmp valuesDts valuesTs)
+          (pure ())
+  where
+    valuesDts = BSL.unpack (BB.toLazyByteString (renderDecls valueDecls))
+    valueDecls =
+      [ DtsValue (n "count") TsNumber,
+        DtsValue (n "greet") (TsFunction [TsString] TsString)
+      ]
+    valuesTs =
+      "import { count, greet } from './types';\n"
+        ++ "const _c: number = count;\n"
+        ++ "const _g: string = greet('hello');\n"
+        ++ "export { _c, _g };\n"
+
+-- | Verify that a discriminated union generated from Canopy is accepted by @tsc@.
+--
+-- Generates a @.d.ts@ with a tagged union type then writes a @.ts@ consumer
+-- that narrows on the @$@ discriminant.  Asserts @tsc --noEmit@ succeeds.
+tscUnionPatternMatchTest :: TestTree
+tscUnionPatternMatchTest =
+  HUnit.testCase "tagged union pattern match accepted by tsc" $
+    withTscOrSkip $ \tscPath ->
+      withSystemTempDirectory "can-tsc-union" $ \tmp ->
+        Exception.finally
+          (runTscTest tscPath tmp unionDts unionTs)
+          (pure ())
+  where
+    unionDts = renderToStr colorUnionDecl
+    colorUnionDecl =
+      DtsUnionType
+        (n "Color")
+        []
+        ( TsUnion
+            [ TsTaggedVariant (n "Red") [],
+              TsTaggedVariant (n "Green") [],
+              TsTaggedVariant (n "Blue") []
+            ]
+        )
+    unionTs =
+      "import { Color } from './types';\n"
+        ++ "function label(c: Color): string {\n"
+        ++ "  if (c.$ === 'Red') return 'red';\n"
+        ++ "  if (c.$ === 'Green') return 'green';\n"
+        ++ "  return 'blue';\n"
+        ++ "}\n"
+        ++ "export { label };\n"
+
+-- | Verify that an @HTMLElementTagNameMap@ augmentation is accepted by @tsc@.
+--
+-- Generates a @.d.ts@ with a web-component tag map augmentation then writes
+-- a @.tsx@ consumer that calls @document.createElement@ with the custom tag.
+-- Asserts @tsc --noEmit@ succeeds.
+tscWebComponentTagMapTest :: TestTree
+tscWebComponentTagMapTest =
+  HUnit.testCase "web component tag map accepted by tsc" $
+    withTscOrSkip $ \tscPath ->
+      withSystemTempDirectory "can-tsc-wc" $ \tmp ->
+        Exception.finally
+          (runTscTest tscPath tmp tagMapDts tagMapTs)
+          (pure ())
+  where
+    tagMapDts =
+      BSL.unpack (BB.toLazyByteString (renderWebComponentTagMap [Name.fromChars "My.Widget"]))
+    tagMapTs =
+      "/// <reference path=\"./types.d.ts\" />\n"
+        ++ "const el: HTMLElement = document.createElement('my-widget');\n"
+        ++ "export { el };\n"
+
+-- INTERNAL HELPERS
+
+-- | Write temp files and invoke @tsc --noEmit@, asserting exit code 0.
+runTscTest :: FilePath -> FilePath -> String -> String -> IO ()
+runTscTest tscPath tmp dtsContent tsContent = do
+  writeFileUtf8 (tmp ++ "/types.d.ts") dtsContent
+  writeFileUtf8 (tmp ++ "/consumer.ts") tsContent
+  writeFileUtf8 (tmp ++ "/tsconfig.json") tsconfigJson
+  (code, _out, err) <- Process.readProcessWithExitCode tscPath tscArgs ""
+  HUnit.assertEqual ("tsc exited non-zero:\n" ++ err) ExitSuccess code
+  where
+    tscArgs = ["--noEmit", "--project", tmp ++ "/tsconfig.json"]
+    tsconfigJson =
+      "{ \"compilerOptions\": { \"strict\": true, \"target\": \"ES2020\","
+        ++ " \"moduleResolution\": \"node\", \"allowJs\": false },"
+        ++ " \"include\": [\"" ++ tmp ++ "/consumer.ts\"] }"
+
+-- | Run an IO action with the path to @tsc@, or skip the test if unavailable.
+withTscOrSkip :: (FilePath -> IO ()) -> IO ()
+withTscOrSkip action = do
+  mPath <- Dir.findExecutable "tsc"
+  maybe (IO.hPutStrLn IO.stderr "tsc not found — skipping") action mPath
+
+-- | Write a 'String' to a file in UTF-8.
+writeFileUtf8 :: FilePath -> String -> IO ()
+writeFileUtf8 path content =
+  IO.withFile path IO.WriteMode $ \h -> do
+    IO.hSetEncoding h IO.utf8
+    IO.hPutStr h content
 
 -- Helpers
 
@@ -189,12 +332,3 @@ n = Name.fromChars
 
 renderToStr :: DtsDecl -> String
 renderToStr = BSL.unpack . BB.toLazyByteString . renderDecl
-
-isIn :: String -> String -> Bool
-isIn needle haystack = any (startsWith needle) (tails haystack)
-  where
-    startsWith [] _ = True
-    startsWith _ [] = False
-    startsWith (a : as') (b : bs) = a == b && startsWith as' bs
-    tails [] = [[]]
-    tails s@(_ : rest) = s : tails rest

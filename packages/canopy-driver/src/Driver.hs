@@ -38,6 +38,7 @@ import qualified Canopy.ModuleName as ModuleName
 import qualified Canopy.Package as Pkg
 import Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
+import qualified Data.ByteString as BS
 import qualified Data.Text as Text
 import qualified Data.Text.Encoding as TE
 import qualified Data.Time.Clock as Clock
@@ -197,15 +198,22 @@ compileModuleCore ::
   IO (Either QueryError CompileResult)
 compileModuleCore engine pkg ifaces ffiRoot path projectType = do
   Log.logEvent (CompileStarted path)
+  fileBytes <- BS.readFile path
+  let fileContentHash = computeContentHash fileBytes
   (parseResult, parseTime) <- timePhase (runParsePhase engine path projectType)
   case parseResult of
     Left err -> return (Left err)
     Right sourceModule -> do
       ffiContent <- loadFFIContent ffiRoot sourceModule
       let ffiInfoMap = buildFFIInfoMap (Src._foreignImports sourceModule) ffiContent
-      runCachedPipeline engine pkg ifaces ffiInfoMap ffiContent path projectType parseTime sourceModule
+      runCachedPipeline engine pkg ifaces ffiInfoMap ffiContent path fileContentHash parseTime sourceModule
 
 -- | Run the cached compilation pipeline after parsing.
+--
+-- Uses the real file content hash (SHA256 of file bytes) as the basis
+-- for all downstream phase hashes. Each phase combines the file content
+-- hash with phase-specific inputs (package name, interfaces) to produce
+-- a composite hash that changes only when relevant inputs change.
 runCachedPipeline ::
   Engine.QueryEngine ->
   Pkg.Name ->
@@ -213,19 +221,20 @@ runCachedPipeline ::
   Map String JS.FFIInfo ->
   Map JsSourcePath JsSource ->
   FilePath ->
-  Parse.ProjectType ->
+  ContentHash ->
   Double ->
   Src.Module ->
   IO (Either QueryError CompileResult)
-runCachedPipeline engine pkg ifaces ffiInfoMap ffiContent path _projectType parseTime sourceModule = do
-  let parseHash = computeInputHash path "parse"
-      canonInputHash = combineHashes [parseHash, computeInputHash (show pkg) "canon-pkg", computeInputHash (show (Map.keys ifaces)) "canon-ifaces"]
+runCachedPipeline engine pkg ifaces ffiInfoMap ffiContent path fileContentHash parseTime sourceModule = do
+  let pkgHash = computeContentHash (TE.encodeUtf8 (Text.pack (show pkg)))
+      ifaceKeysHash = computeContentHash (TE.encodeUtf8 (Text.pack (show (Map.keys ifaces))))
+      canonInputHash = combineHashes [fileContentHash, pkgHash, ifaceKeysHash]
       canonQuery = CanonicalizeQuery path canonInputHash
-  (canonResult, canonTime) <- timePhase (runCachedCanon engine canonQuery path pkg _projectType ifaces ffiContent sourceModule)
+  (canonResult, canonTime) <- timePhase (runCachedCanon engine canonQuery path pkg Parse.Application ifaces ffiContent sourceModule)
   case canonResult of
     Left err -> return (Left err)
     Right canonModule -> do
-      let typeInputHash = combineHashes [canonInputHash, computeInputHash (show (Map.keys ifaces)) "type-ifaces"]
+      let typeInputHash = combineHashes [canonInputHash, ifaceKeysHash]
           typeQuery = TypeCheckQuery path typeInputHash
       (typeResult, typeTime) <- timePhase (runCachedTypeCheck engine typeQuery ifaces path canonModule canonQuery)
       case typeResult of
@@ -307,10 +316,6 @@ runCachedOptimize engine query types canonModule parentQuery = do
           return (Right graph)
         Left err -> return (Left err)
 
--- | Compute an input hash from a string key and salt.
-computeInputHash :: String -> String -> ContentHash
-computeInputHash input salt =
-  computeContentHash (TE.encodeUtf8 (Text.pack (input ++ ":" ++ salt)))
 
 -- | Build a CompileResult from its parts.
 buildResult ::

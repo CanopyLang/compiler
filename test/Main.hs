@@ -23,6 +23,7 @@ import qualified Integration.TerminalIntegrationTest as TerminalIT
 import qualified Integration.TypeScriptInteropTest as TypeScriptInteropIT
 import qualified Integration.WatchIntegrationTest as WatchIT
 import qualified Integration.JsonIntegrationTest as JsonIT
+import qualified Integration.KitIntegrationTest as KitIT
 import qualified Integration.CodeSplitIntegrationTest as CodeSplitIT
 import qualified Integration.PureBuilderIntegrationTest as PureBuilderIT
 import qualified Integration.WebComponentIntegrationTest as WebComponentIT
@@ -438,6 +439,7 @@ integrationTests =
       TypeScriptInteropIT.tests,
       WatchIT.tests,
       JsonIT.tests,
+      KitIT.tests,
       TemplateLiteralIT.tests,
       WebComponentIT.tests
     ]
