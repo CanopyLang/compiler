@@ -254,15 +254,32 @@ parseTwoArgs ctor tokens =
 
 -- | Take one complete type argument from the beginning of a token list.
 --
--- Handles parenthesized groups as single arguments.
+-- Handles parenthesized groups and brace-delimited record types as single
+-- arguments. This allows parameterized types to accept records directly:
+-- @List { selector : String, declarations : String }@.
 takeOneTypeArg :: [Token] -> Maybe ([Token], [Token])
 takeOneTypeArg [] = Nothing
 takeOneTypeArg (TOpenParen : rest) =
   case takeMatchingParen rest 1 [] of
     Just (inner, remaining) -> Just (TOpenParen : reverse inner ++ [TCloseParen], remaining)
     Nothing -> Nothing
+takeOneTypeArg (TOpenBrace : rest) =
+  case takeMatchingBrace rest 1 [] of
+    Just (inner, remaining) -> Just (TOpenBrace : reverse inner ++ [TCloseBrace], remaining)
+    Nothing -> Nothing
 takeOneTypeArg (TWord w : rest) = Just ([TWord w], rest)
 takeOneTypeArg _ = Nothing
+
+
+-- | Collect tokens until the matching close brace.
+takeMatchingBrace :: [Token] -> Int -> [Token] -> Maybe ([Token], [Token])
+takeMatchingBrace [] _ _ = Nothing
+takeMatchingBrace (TCloseBrace : rest) 1 acc = Just (acc, rest)
+takeMatchingBrace (TCloseBrace : rest) n acc =
+  takeMatchingBrace rest (n - 1) (TCloseBrace : acc)
+takeMatchingBrace (TOpenBrace : rest) n acc =
+  takeMatchingBrace rest (n + 1) (TOpenBrace : acc)
+takeMatchingBrace (t : rest) n acc = takeMatchingBrace rest n (t : acc)
 
 -- | Collect tokens until the matching close paren.
 takeMatchingParen :: [Token] -> Int -> [Token] -> Maybe ([Token], [Token])
