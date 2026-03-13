@@ -1,0 +1,39 @@
+module Layouts.Default exposing (view)
+
+{-| Default layout wrapper for all Kit pages.
+
+Provides consistent header, navigation, footer, and content area.
+Each page's view is rendered inside the `content` slot.
+-}
+
+import Html exposing (Html, a, div, footer, h1, header, li, nav, p, text, ul)
+import Html.Attributes exposing (class, href)
+
+
+view : Html msg -> Html msg
+view content =
+    div [ class "layout" ]
+        [ siteHeader
+        , div [ class "content" ] [ content ]
+        , siteFooter
+        ]
+
+
+siteHeader : Html msg
+siteHeader =
+    header [ class "header" ]
+        [ h1 [] [ text "Kit Demo" ]
+        , nav []
+            [ ul []
+                [ li [] [ a [ href "/" ] [ text "Home" ] ]
+                , li [] [ a [ href "/posts" ] [ text "Posts" ] ]
+                ]
+            ]
+        ]
+
+
+siteFooter : Html msg
+siteFooter =
+    footer [ class "footer" ]
+        [ p [] [ text "Built with Canopy Kit" ]
+        ]

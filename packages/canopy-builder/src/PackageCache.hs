@@ -44,12 +44,15 @@ import qualified AST.Optimized as Opt
 import qualified Canopy.Interface as Interface
 import qualified Canopy.ModuleName as ModuleName
 import qualified Canopy.Package as Pkg
+import Canopy.Version (Version (..))
 import qualified Canopy.Version as Version
 import Control.Concurrent.Async (mapConcurrently)
 import Control.Monad (liftM2, liftM3)
 import Data.Binary (Binary)
 import qualified Data.Binary as Binary
 import Data.Binary.Get (Get)
+import qualified Data.ByteString.Lazy as LBS
+import Data.Word (Word8, Word16)
 import qualified Generate.JavaScript as JS
 import qualified Interface.JSON as IFace
 import Data.Map.Strict (Map)
@@ -58,7 +61,7 @@ import Data.Set (Set)
 import qualified Data.Set as Set
 import qualified Canopy.Data.Utf8 as Utf8
 import qualified System.Directory as Dir
-import System.FilePath ((</>))
+import System.FilePath ((</>), takeDirectory)
 
 -- | Map of module names to their dependency interfaces.
 type PackageInterfaces = Map ModuleName.Raw Interface.DependencyInterface
@@ -338,6 +341,61 @@ instance Binary CanopyPreP06ArtifactCache where
   get = liftM2 CanopyPreP06ArtifactCache Binary.get Binary.get
   put (CanopyPreP06ArtifactCache a b) = Binary.put a >> Binary.put b
 
+-- VERSIONED ARTIFACT FORMAT
+
+-- | Magic bytes identifying a versioned artifacts.dat file.
+artifactMagic :: [Word8]
+artifactMagic = [0x43, 0x41, 0x52, 0x54] -- "CART"
+
+-- | Current schema version for the artifact format.
+artifactSchemaVersion :: Word16
+artifactSchemaVersion = 1
+
+-- | Encode artifacts with a versioned header.
+encodeVersionedArtifacts :: ArtifactCache -> LBS.ByteString
+encodeVersionedArtifacts cache =
+  LBS.pack (fmap fromIntegral artifactMagic)
+    <> Binary.encode artifactSchemaVersion
+    <> Binary.encode (fromIntegral major :: Word16)
+    <> Binary.encode (fromIntegral minor :: Word16)
+    <> Binary.encode (fromIntegral patch :: Word16)
+    <> Binary.encode cache
+  where
+    Version major minor patch = Version.compiler
+
+-- | Try to decode a versioned artifacts.dat file.
+decodeVersionedArtifacts :: LBS.ByteString -> Maybe ArtifactCache
+decodeVersionedArtifacts bytes
+  | LBS.length bytes < 12 = Nothing
+  | not (magicMatches bytes) = Nothing
+  | otherwise =
+      let schemaVer = decodeWord16At 4 bytes
+          compMajor = decodeWord16At 6 bytes
+          compMinor = decodeWord16At 8 bytes
+          compPatch = decodeWord16At 10 bytes
+          Version major minor patch = Version.compiler
+       in if schemaVer /= artifactSchemaVersion
+            || compMajor /= fromIntegral major
+            || compMinor /= fromIntegral minor
+            || compPatch /= fromIntegral patch
+            then Nothing
+            else either (const Nothing) (\(_, _, v) -> Just v) (Binary.decodeOrFail (LBS.drop 12 bytes))
+  where
+    magicMatches bs =
+      LBS.index bs 0 == 0x43
+        && LBS.index bs 1 == 0x41
+        && LBS.index bs 2 == 0x52
+        && LBS.index bs 3 == 0x54
+    decodeWord16At offset bs =
+      fromIntegral (LBS.index bs offset) * 256
+        + fromIntegral (LBS.index bs (offset + 1)) :: Word16
+
+-- | Try decoding a versioned artifacts.dat file, extracting a value on success.
+tryVersionedAs :: (ArtifactCache -> b) -> FilePath -> IO (Maybe b)
+tryVersionedAs extract path = do
+  bytes <- LBS.readFile path
+  pure (fmap extract (decodeVersionedArtifacts bytes))
+
 -- | Map between canopy and elm package authors for fallback lookups.
 --
 -- When looking up @canopy\/core@, also try @elm\/core@ on disk since the
@@ -471,7 +529,8 @@ tryDecodeAs extract path =
 loadArtifactsFile :: FilePath -> IO (Maybe PackageInterfaces)
 loadArtifactsFile path =
   tryDecoders
-    [ tryDecodeAs (\(ArtifactCache _ arts) -> _ifaces arts) path
+    [ tryVersionedAs (\(ArtifactCache _ arts) -> _ifaces arts) path
+    , tryDecodeAs (\(ArtifactCache _ arts) -> _ifaces arts) path
     , tryDecodeAs (\(LegacyArtifactCache _ (LegacyArtifacts ifaces _)) -> ifaces) path
     , tryDecodeAs
         (\(CanopyPreP06ArtifactCache _ (CanopyPreP06Artifacts rawDIs _ _)) ->
@@ -493,7 +552,11 @@ loadArtifactsFile path =
 loadCompleteArtifactsFile :: FilePath -> IO (Maybe PackageArtifacts)
 loadCompleteArtifactsFile path =
   tryDecoders
-    [ tryDecodeAs
+    [ tryVersionedAs
+        (\(ArtifactCache _ arts) ->
+          PackageArtifacts (_ifaces arts) (_objects arts) (_ffiInfo arts))
+        path
+    , tryDecodeAs
         (\(ArtifactCache _ arts) ->
           PackageArtifacts (_ifaces arts) (_objects arts) (_ffiInfo arts))
         path
@@ -726,6 +789,7 @@ writePackageArtifacts ::
   IO ()
 writePackageArtifacts author package version interfaces globalGraph ffiInfo = do
   artifactPath <- getPackageArtifactPath author package version
+  Dir.createDirectoryIfMissing True (takeDirectory artifactPath)
   let artifacts = Artifacts interfaces globalGraph ffiInfo
       cache = ArtifactCache Set.empty artifacts
-  Binary.encodeFile artifactPath cache
+  LBS.writeFile artifactPath (encodeVersionedArtifacts cache)

@@ -84,10 +84,18 @@ newtype HarnessContent = HarnessContent {unHarnessContent :: Text}
 generateBrowserHarness ::
   HarnessConfig ->
   JsContent ->
+  Maybe JsContent ->
   HarnessContent
-generateBrowserHarness config tests =
+generateBrowserHarness config tests maybeRunner =
   HarnessContent (Text.unlines sections)
   where
+    runnerSection = case maybeRunner of
+      Just (JsContent content) ->
+        [ "",
+          "// --- Test Runner (injected from canopy/test) ---",
+          content
+        ]
+      Nothing -> []
     sections =
       [ "// Canopy Browser Test Harness (auto-generated)",
         "",
@@ -98,14 +106,16 @@ generateBrowserHarness config tests =
         stdoutGuard,
         "",
         "// --- Compiled Tests (includes FFI externals) ---",
-        unJsContent tests,
-        "",
-        "// --- Configuration ---",
-        configSection config,
-        "",
-        "// --- Execute ---",
-        executeSection
+        unJsContent tests
       ]
+      ++ runnerSection
+      ++ [ "",
+           "// --- Configuration ---",
+           configSection config,
+           "",
+           "// --- Execute ---",
+           executeSection
+         ]
 
 -- | Generate the configuration JavaScript block.
 configSection :: HarnessConfig -> Text
@@ -297,10 +307,19 @@ executeSection =
 -- @since 0.19.1
 generateBrowserTestHarness ::
   JsContent ->
+  Maybe JsContent ->
   HarnessContent
-generateBrowserTestHarness tests =
+generateBrowserTestHarness tests maybeBrowserRunner =
   HarnessContent (Text.unlines sections)
   where
+    browserRunnerSection = case maybeBrowserRunner of
+      Just (JsContent content) ->
+        [ "  <script>",
+          "// --- Browser Test Runner (injected from canopy/test) ---",
+          content,
+          "  </script>"
+        ]
+      Nothing -> []
     sections =
       [ "<!DOCTYPE html>",
         "<html>",
@@ -310,13 +329,15 @@ generateBrowserTestHarness tests =
         "  <iframe id=\"test-target\" style=\"width:100%;height:0;border:none;position:absolute;\"></iframe>",
         "  <script>",
         unJsContent tests,
-        "  </script>",
-        "  <script>",
-        browserTestExecuteSection,
-        "  </script>",
-        "</body>",
-        "</html>"
+        "  </script>"
       ]
+      ++ browserRunnerSection
+      ++ [ "  <script>",
+           browserTestExecuteSection,
+           "  </script>",
+           "</body>",
+           "</html>"
+         ]
 
 -- | JavaScript execution block for the browser test HTML page.
 --

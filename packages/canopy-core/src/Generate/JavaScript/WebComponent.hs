@@ -157,10 +157,11 @@ classDefinition tagName jsModName attrs events formAssoc =
     <> BB.stringUtf8 (pascalFromKebab tagName)
     <> BB.stringUtf8 " extends HTMLElement {\n"
     <> formAssociatedStatic formAssoc
-    <> constructorDef
+    <> constructorBlock formAssoc
     <> connectedCallback jsModName attrs events
     <> disconnectedCallback events
     <> attributeChangedCallback attrs
+    <> formLifecycleCallbacks formAssoc
     <> observedAttributes attrs
     <> BB.stringUtf8 "}\n"
 
@@ -170,15 +171,22 @@ formAssociatedStatic False = mempty
 formAssociatedStatic True =
   BB.stringUtf8 "  static formAssociated = true;\n"
 
--- | Generate constructor with Shadow DOM.
-constructorDef :: Builder
-constructorDef =
+-- | Generate constructor with Shadow DOM and optional internals.
+constructorBlock :: Bool -> Builder
+constructorBlock formAssoc =
   BB.stringUtf8 "  constructor() {\n"
     <> BB.stringUtf8 "    super();\n"
     <> BB.stringUtf8 "    this._root = this.attachShadow({ mode: 'open' });\n"
     <> BB.stringUtf8 "    this._app = null;\n"
     <> BB.stringUtf8 "    this._handlers = {};\n"
+    <> internalsInit formAssoc
     <> BB.stringUtf8 "  }\n"
+
+-- | Attach ElementInternals when form-associated.
+internalsInit :: Bool -> Builder
+internalsInit False = mempty
+internalsInit True =
+  BB.stringUtf8 "    this._internals = this.attachInternals();\n"
 
 -- | Generate connectedCallback with typed flag coercion and port subscriptions.
 connectedCallback :: String -> [FlagAttr] -> [PortEvent] -> Builder
@@ -333,6 +341,43 @@ coerceInCallback attr =
     <> BB.stringUtf8 "') coerced = "
     <> coercionExpr (_faCoercion attr) (BB.stringUtf8 "newValue")
     <> BB.stringUtf8 ";\n"
+
+-- | Generate form lifecycle callbacks when form-associated.
+formLifecycleCallbacks :: Bool -> Builder
+formLifecycleCallbacks False = mempty
+formLifecycleCallbacks True =
+  formStateRestoreCallback
+    <> formResetCallback
+    <> formDisabledCallback
+
+-- | Generate formStateRestoreCallback.
+formStateRestoreCallback :: Builder
+formStateRestoreCallback =
+  BB.stringUtf8 "  formStateRestoreCallback(state, mode) {\n"
+    <> BB.stringUtf8 "    this._internals.setFormValue(state);\n"
+    <> BB.stringUtf8 "    if (this._app && this._app.ports && this._app.ports.onFormStateRestore) {\n"
+    <> BB.stringUtf8 "      this._app.ports.onFormStateRestore.send({ state: state, mode: mode });\n"
+    <> BB.stringUtf8 "    }\n"
+    <> BB.stringUtf8 "  }\n"
+
+-- | Generate formResetCallback.
+formResetCallback :: Builder
+formResetCallback =
+  BB.stringUtf8 "  formResetCallback() {\n"
+    <> BB.stringUtf8 "    this._internals.setFormValue('');\n"
+    <> BB.stringUtf8 "    if (this._app && this._app.ports && this._app.ports.onFormReset) {\n"
+    <> BB.stringUtf8 "      this._app.ports.onFormReset.send(null);\n"
+    <> BB.stringUtf8 "    }\n"
+    <> BB.stringUtf8 "  }\n"
+
+-- | Generate formDisabledCallback.
+formDisabledCallback :: Builder
+formDisabledCallback =
+  BB.stringUtf8 "  formDisabledCallback(disabled) {\n"
+    <> BB.stringUtf8 "    if (this._app && this._app.ports && this._app.ports.onFormDisabled) {\n"
+    <> BB.stringUtf8 "      this._app.ports.onFormDisabled.send(disabled);\n"
+    <> BB.stringUtf8 "    }\n"
+    <> BB.stringUtf8 "  }\n"
 
 -- | Generate static observedAttributes getter from flag attributes.
 observedAttributes :: [FlagAttr] -> Builder

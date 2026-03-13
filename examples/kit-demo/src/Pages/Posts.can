@@ -1,0 +1,94 @@
+module Pages.Posts exposing (main, load)
+
+{-| Posts page — a dynamic route with a data loader.
+
+The `load` function runs server-side during SSR and at request time
+for client navigation. Its return value is passed as flags to `main`.
+-}
+
+import Browser
+import Html exposing (Html, div, h1, li, p, text, ul)
+import Html.Attributes exposing (class)
+import Json.Decode as Decode
+
+
+type alias Flags =
+    { posts : List Post
+    }
+
+
+type alias Post =
+    { title : String
+    , excerpt : String
+    }
+
+
+type alias Model =
+    { posts : List Post
+    }
+
+
+type Msg
+    = NoOp
+
+
+main : Program Flags Model Msg
+main =
+    Browser.element
+        { init = init
+        , update = update
+        , subscriptions = \_ -> Sub.none
+        , view = view
+        }
+
+
+init : Flags -> ( Model, Cmd Msg )
+init flags =
+    ( { posts = flags.posts }
+    , Cmd.none
+    )
+
+
+update : Msg -> Model -> ( Model, Cmd Msg )
+update msg model =
+    case msg of
+        NoOp ->
+            ( model, Cmd.none )
+
+
+view : Model -> Html Msg
+view model =
+    div [ class "posts" ]
+        [ h1 [] [ text "Posts" ]
+        , ul [] (List.map viewPost model.posts)
+        ]
+
+
+viewPost : Post -> Html Msg
+viewPost post =
+    li [ class "post" ]
+        [ p [ class "title" ] [ text post.title ]
+        , p [ class "excerpt" ] [ text post.excerpt ]
+        ]
+
+
+{-| Data loader — runs server-side during SSR.
+
+Returns a JSON value that is serialized into the HTML as
+`<script id="__CANOPY_DATA__">` for hydration.
+-}
+load : Decode.Value
+load =
+    Decode.succeed
+        { posts =
+            [ { title = "Getting Started with Canopy Kit"
+              , excerpt = "Learn how to build your first Kit application."
+              }
+            , { title = "Data Loaders Explained"
+              , excerpt = "How server-side data fetching works in Kit."
+              }
+            , { title = "Deploying to Production"
+              , excerpt = "Deploy your Kit app to Vercel, Netlify, or Node."
+              }
+            ]
+        }

@@ -1,0 +1,30 @@
+module Pages.NotFound exposing (main)
+
+{-| 404 error boundary page.
+
+Displayed when no route matches the requested URL.
+-}
+
+import Browser
+import Html exposing (Html, a, div, h1, p, text)
+import Html.Attributes exposing (class, href)
+
+
+main : Program () () ()
+main =
+    Browser.sandbox
+        { init = ()
+        , update = \_ model -> model
+        , view = \_ -> view
+        }
+
+
+view : Html ()
+view =
+    div [ class "not-found" ]
+        [ h1 [] [ text "404 — Page Not Found" ]
+        , p [] [ text "The page you're looking for doesn't exist." ]
+        , p []
+            [ a [ href "/" ] [ text "← Back to Home" ]
+            ]
+        ]

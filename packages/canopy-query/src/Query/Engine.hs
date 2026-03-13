@@ -281,6 +281,7 @@ getQueryHash (CanonicalizeQuery _ hash) = hash
 getQueryHash (TypeCheckQuery _ hash) = hash
 getQueryHash (OptimizeQuery _ hash) = hash
 getQueryHash (InterfaceQuery _ hash) = hash
+getQueryHash (GenerateQuery _ hash) = hash
 
 -- | Invalidate a single query in the cache.
 invalidateQuery :: QueryEngine -> Query -> IO ()

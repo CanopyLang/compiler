@@ -210,13 +210,16 @@ test-suite canopy-test
       Integration.EndToEndTest
       Integration.InitTest
       Integration.InstallTest
+      Integration.JsExecutionTest
       Integration.JsonIntegrationTest
       Integration.MakeTest
       Integration.PureBuilderIntegrationTest
       Integration.TemplateLiteralTest
       Integration.Terminal.ChompIntegrationTest
       Integration.TerminalIntegrationTest
+      Integration.TypeScriptInteropTest
       Integration.WatchIntegrationTest
+      Integration.WebComponentIntegrationTest
       Property.ArithmeticLawsTest
       Property.Data.NameProperties
       Property.Generate.CodeSplitProperties
@@ -292,8 +295,11 @@ test-suite canopy-test
       Unit.Generate.ExpressionTest
       Unit.Generate.HMRTest
       Unit.Generate.HtmlSecurityTest
+      Unit.Generate.JavaScript.ESMTest
       Unit.Generate.JavaScript.ExpressionArithmeticTest
+      Unit.Generate.JavaScript.ExpressionGenerateTest
       Unit.Generate.JavaScript.RuntimeAnnotationTest
+      Unit.Generate.JavaScript.RuntimeTest
       Unit.Generate.MinifyTest
       Unit.Generate.NameTest
       Unit.Generate.SourceMapTest
@@ -348,12 +354,17 @@ test-suite canopy-test
       Unit.Parse.ExpressionTest
       Unit.Parse.LazyImportTest
       Unit.Parse.ModuleTest
+      Unit.Parse.NumberTest
       Unit.Parse.PatternTest
+      Unit.Parse.PrimitivesTest
+      Unit.Parse.SpaceTest
+      Unit.Parse.StringTest
       Unit.Parse.TypeTest
       Unit.Plugin.PipelineTest
       Unit.Publish.ArchiveTest
       Unit.Queries.ParseModuleTest
       Unit.Query.EngineTest
+      Unit.Query.RecoveryTest
       Unit.Repl.CommandsTest
       Unit.Repl.StateTest
       Unit.Repl.TypeQueryTest

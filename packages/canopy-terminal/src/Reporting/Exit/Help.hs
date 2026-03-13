@@ -32,6 +32,7 @@ module Reporting.Exit.Help
   )
 where
 
+import Data.List (isPrefixOf)
 import Reporting.Diagnostic (Diagnostic)
 import qualified Reporting.Diagnostic as Diag
 import Reporting.Doc ((<+>))
@@ -109,19 +110,30 @@ noOutlineError cmd =
         ]
     )
 
--- | Error when canopy-stuff/ is corrupted.
-badDetailsError :: FilePath -> Report
-badDetailsError path =
-  structuredError
-    "CORRUPT PROJECT"
-    (Doc.reflow ("I cannot load project details from " ++ path ++ ". The canopy-stuff/ directory may be corrupted."))
-    ( Doc.vcat
-        [ Doc.reflow "Try deleting canopy-stuff/ and rebuilding:",
-          "",
-          fixLine (Doc.green "rm -rf canopy-stuff/"),
-          fixLine (Doc.green "canopy make")
-        ]
-    )
+-- | Error when project details cannot be loaded.
+--
+-- Distinguishes between parse errors (which carry a descriptive message
+-- from 'Outline.read') and generic project failures (bare directory path).
+badDetailsError :: String -> Report
+badDetailsError msg
+  | isParseError msg =
+      structuredError
+        "INVALID canopy.json"
+        (Doc.reflow msg)
+        (Doc.reflow "Check the JSON syntax and ensure all required fields are present.")
+  | otherwise =
+      structuredError
+        "CORRUPT PROJECT"
+        (Doc.reflow ("I cannot load project details from " ++ msg ++ ". The canopy-stuff/ directory may be corrupted."))
+        ( Doc.vcat
+            [ Doc.reflow "Try deleting canopy-stuff/ and rebuilding:",
+              "",
+              fixLine (Doc.green "rm -rf canopy-stuff/"),
+              fixLine (Doc.green "canopy make")
+            ]
+        )
+  where
+    isParseError s = "Failed to parse" `isPrefixOf` s || "No canopy.json" `isPrefixOf` s
 
 -- | Error when canopy.json has invalid content.
 badOutlineError :: String -> Report

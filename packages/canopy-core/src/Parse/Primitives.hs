@@ -86,7 +86,7 @@ instance Functor (Parser x) where
 
 instance Applicative.Applicative (Parser x) where
   {-# INLINE pure #-}
-  pure = pure
+  pure a = Parser (\state _cok eok _cerr _eerr -> eok a state)
 
   {-# INLINE (<*>) #-}
   (<*>) (Parser parserFunc) (Parser parserArg) =

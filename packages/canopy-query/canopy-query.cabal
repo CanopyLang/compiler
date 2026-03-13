@@ -25,6 +25,7 @@ library
       Query.Engine
       Query.Interface
       Query.Persistence
+      Query.Recovery
       Query.Simple
   other-modules:
       Paths_canopy_query

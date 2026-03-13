@@ -84,7 +84,7 @@ load ::
 load _style _scope root = do
   eitherOutline <- Outline.read root
   case eitherOutline of
-    Left _ -> pure (Left root)
+    Left errMsg -> pure (Left errMsg)
     Right outline -> do
       time <- Time.getCurrentTime
       let details =

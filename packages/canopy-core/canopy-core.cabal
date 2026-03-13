@@ -131,6 +131,7 @@ library
       Parse.Declaration
       Parse.Expression
       Parse.Module
+      Parse.Number
       Parse.Pattern
       Parse.Primitives
       Parse.Space
@@ -218,7 +219,6 @@ library
       Parse.Interpolation
       Parse.Keyword
       Parse.Limits
-      Parse.Number
       Parse.Shader
       Parse.String
       Parse.Symbol

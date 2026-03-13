@@ -47,7 +47,7 @@ testCanopyJsonPackageParsing =
       case result of
         Left err -> assertFailure ("Outline.read failed: " ++ err)
         Right (Outline.Pkg pkgOutline) ->
-          show (Outline._pkgVersion pkgOutline) @?= "Version 1 0 0"
+          show (Outline._pkgVersion pkgOutline) @?= "Version {_major = 1, _minor = 0, _patch = 0}"
         Right other -> assertFailure ("Expected Pkg outline, got: " ++ show other)
 
 -- | Test that a missing canopy.json produces a clear error.

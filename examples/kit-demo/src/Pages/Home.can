@@ -1,0 +1,44 @@
+module Pages.Home exposing (main)
+
+{-| Home page — a static route with no data loader.
+
+This page renders immediately with no server-side data fetching.
+It demonstrates the simplest Kit page: a pure view function.
+-}
+
+import Browser
+import Html exposing (Html, div, h1, h2, p, a, text)
+import Html.Attributes exposing (class, href)
+
+
+main : Program () () ()
+main =
+    Browser.sandbox
+        { init = ()
+        , update = \_ model -> model
+        , view = \_ -> view
+        }
+
+
+view : Html ()
+view =
+    div [ class "home" ]
+        [ h1 [] [ text "Welcome to Canopy Kit" ]
+        , p [] [ text "A full-stack framework for building web applications." ]
+        , div [ class "features" ]
+            [ featureCard "File-based Routing" "Pages map to URLs automatically."
+            , featureCard "Data Loaders" "Fetch data at build time or request time."
+            , featureCard "SSR & Hydration" "Server-render pages with zero flash."
+            ]
+        , p []
+            [ a [ href "/posts" ] [ text "View Posts →" ]
+            ]
+        ]
+
+
+featureCard : String -> String -> Html ()
+featureCard title description =
+    div [ class "feature" ]
+        [ h2 [] [ text title ]
+        , p [] [ text description ]
+        ]

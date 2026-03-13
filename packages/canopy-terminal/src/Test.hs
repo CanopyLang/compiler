@@ -288,8 +288,8 @@ executeBrowserExecutionTests jsContent testFiles flags = do
 
 -- | Run the browser execution pipeline.
 --
--- The compiled output already includes browser-test-runner.js via FFI.
--- Only playwright-rpc.js needs separate loading (it's a standalone
+-- Loads browser-test-runner.js from the package cache and injects it
+-- into the HTML harness.  Also loads playwright-rpc.js (a standalone
 -- Node.js launcher, not callable from Canopy).
 runBrowserExecutionPipeline :: Text.Text -> [FilePath] -> Flags -> IO (ExitCode, Maybe Value)
 runBrowserExecutionPipeline jsContent _testFiles flags = do
@@ -298,16 +298,20 @@ runBrowserExecutionPipeline jsContent _testFiles flags = do
     then pure (ExitFailure 1, Nothing)
     else do
       rpcResult <- loadFileFromPackage "canopy" "test" ("external" </> "playwright-rpc.js")
+      browserRunnerResult <- loadFileFromPackage "canopy" "test" ("external" </> "browser-test-runner.js")
+      let maybeBrowserRunner = case browserRunnerResult of
+            Right content -> Just (JsContent content)
+            Left _ -> Nothing
       case rpcResult of
         Left err -> do
           Print.printErrLn [c|{red|Error loading playwright-rpc.js:} #{err}|]
           pure (ExitFailure 1, Nothing)
         Right rpcContent ->
-          runBrowserExecutionWithServer jsContent flags (JsContent rpcContent)
+          runBrowserExecutionWithServer jsContent flags (JsContent rpcContent) maybeBrowserRunner
 
 -- | Start server, write HTML harness, launch Playwright, collect results.
-runBrowserExecutionWithServer :: Text.Text -> Flags -> JsContent -> IO (ExitCode, Maybe Value)
-runBrowserExecutionWithServer jsContent flags rpcModule = do
+runBrowserExecutionWithServer :: Text.Text -> Flags -> JsContent -> Maybe JsContent -> IO (ExitCode, Maybe Value)
+runBrowserExecutionWithServer jsContent flags rpcModule maybeBrowserRunner = do
   setTestFilter (flags ^. testFilter)
   portResult <- Server.findAvailablePort
   case portResult of
@@ -318,7 +322,7 @@ runBrowserExecutionWithServer jsContent flags rpcModule = do
       tmpDir <- Dir.getTemporaryDirectory
       let htmlPath = tmpDir </> "canopy-browser-test.html"
           rpcPath = tmpDir </> "canopy-playwright-rpc.js"
-          harness = Harness.generateBrowserTestHarness (JsContent jsContent)
+          harness = Harness.generateBrowserTestHarness (JsContent jsContent) maybeBrowserRunner
       writeFile htmlPath (Text.unpack (unHarnessContent harness))
       writeFile rpcPath (Text.unpack (unJsContent rpcModule))
       server <- Server.startTestServer tmpDir port
@@ -430,11 +434,17 @@ runBrowserTestsWithServer jsContent flags appDir = do
       pure result
 
 -- | Generate the harness and execute it via Node.js.
+--
+-- Loads @test-runner.js@ and @task-executor.js@ from the @canopy/test@
+-- package cache and injects them into the harness. The test runner provides
+-- @runAndReport@ (the main test execution function), and the task executor
+-- provides async task execution for @asyncTest@ nodes.
 generateAndRun :: Flags -> JsContent -> Maybe ServerPort -> FilePath -> IO (ExitCode, Maybe Value)
 generateAndRun flags tests maybePort projectDir = do
   setTestFilter (flags ^. testFilter)
   tmpDir <- Dir.getTemporaryDirectory
   let runnerPath = tmpDir </> "canopy-browser-test-runner.js"
+      taskExecPath = tmpDir </> "task-executor.js"
       port = Maybe.fromMaybe (ServerPort 0) maybePort
       config =
         HarnessConfig
@@ -442,8 +452,16 @@ generateAndRun flags tests maybePort projectDir = do
             _harnessHeaded = flags ^. testHeaded,
             _harnessSlowMo = fromIntegral (Maybe.fromMaybe 0 (flags ^. testSlowMo))
           }
-      harness = Harness.generateBrowserHarness config tests
+  testRunnerResult <- loadFileFromPackage "canopy" "test" ("external" </> "test-runner.js")
+  let maybeRunner = case testRunnerResult of
+        Right content -> Just (JsContent content)
+        Left _ -> Nothing
+      harness = Harness.generateBrowserHarness config tests maybeRunner
   writeFile runnerPath (Text.unpack (unHarnessContent harness))
+  taskExecResult <- loadFileFromPackage "canopy" "test" ("external" </> "task-executor.js")
+  case taskExecResult of
+    Right content -> writeFile taskExecPath (Text.unpack content)
+    Left _ -> pure ()
   Runner.runNodeForBrowserTests runnerPath projectDir (flags ^. testVerbose)
 
 -- | Load a file from an installed package in the Canopy package cache.

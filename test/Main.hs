@@ -10,18 +10,22 @@ import qualified Golden.ParseModuleGolden as ParseModuleGolden
 import qualified Golden.TypeScriptGolden as TypeScriptGolden
 import qualified Golden.ParseTypeGolden as ParseTypeGolden
 import qualified Integration.CanExtensionTest as CanExtensionIT
+import qualified Integration.CompilerTest as CompilerIT
 import qualified Integration.DevelopTest as DevelopIT
 import qualified Integration.EndToEndTest as EndToEndIT
 import qualified Integration.InitTest as InitIT
 import qualified Integration.InstallTest as InstallIT
+import qualified Integration.JsExecutionTest as JsExecutionIT
 import qualified Integration.MakeTest as MakeIT
 import qualified Integration.Terminal.ChompIntegrationTest as ChompIT
-import qualified Integration.TerminalIntegrationTest as TerminalIT
 import qualified Integration.TemplateLiteralTest as TemplateLiteralIT
+import qualified Integration.TerminalIntegrationTest as TerminalIT
+import qualified Integration.TypeScriptInteropTest as TypeScriptInteropIT
 import qualified Integration.WatchIntegrationTest as WatchIT
 import qualified Integration.JsonIntegrationTest as JsonIT
 import qualified Integration.CodeSplitIntegrationTest as CodeSplitIT
 import qualified Integration.PureBuilderIntegrationTest as PureBuilderIT
+import qualified Integration.WebComponentIntegrationTest as WebComponentIT
 import Test.Tasty
 import qualified Unit.AST.CanonicalArithmeticTest as CanonicalArithmeticTest
 import qualified Unit.AST.CanonicalTypeTest as CanonicalTypeTest
@@ -76,7 +80,11 @@ import qualified Unit.Parse.ExpressionTest as ParseExpressionTest
 import qualified Unit.Parse.LazyImportTest as LazyImportTest
 import qualified Unit.Parse.AbilityTest as ParseAbilityTest
 import qualified Unit.Parse.ModuleTest as ParseModuleTest
+import qualified Unit.Parse.NumberTest as ParseNumberTest
 import qualified Unit.Parse.PatternTest as ParsePatternTest
+import qualified Unit.Parse.PrimitivesTest as ParsePrimitivesTest
+import qualified Unit.Parse.SpaceTest as ParseSpaceTest
+import qualified Unit.Parse.StringTest as ParseStringTest
 import qualified Unit.Parse.TypeTest as ParseTypeTest
 import qualified Unit.Terminal.ChompTest as ChompTest
 import qualified Unit.Terminal.Error.FormattingTest as TerminalErrorFormattingTest
@@ -90,6 +98,7 @@ import qualified Unit.New.Compiler.DriverTest as NewCompilerDriverTest
 import qualified Unit.NewTest as NewTest
 import qualified Unit.Make.ReproducibleTest as ReproducibleTest
 import qualified Unit.Query.EngineTest as QueryEngineTest
+import qualified Unit.Query.RecoveryTest as QueryRecoveryTest
 import qualified Unit.Builder.PackageCacheTest as PackageCacheTest
 import qualified Unit.Worker.PoolTest as WorkerPoolTest
 import qualified Unit.Builder.WorkspaceTest as WorkspaceTest
@@ -101,8 +110,11 @@ import qualified Unit.Generate.CodeSplit.RuntimeTest as CodeSplitRuntimeTest
 import qualified Unit.Generate.CodeSplit.TypesTest as CodeSplitTypesTest
 import qualified Unit.Generate.ExpressionTest as ExpressionTest
 import qualified Unit.Generate.HtmlSecurityTest as HtmlSecurityTest
+import qualified Unit.Generate.JavaScript.ESMTest as JSESMTest
 import qualified Unit.Generate.JavaScript.ExpressionArithmeticTest as JSExpressionArithmeticTest
+import qualified Unit.Generate.JavaScript.ExpressionGenerateTest as JSExpressionGenerateTest
 import qualified Unit.Generate.JavaScript.RuntimeAnnotationTest as RuntimeAnnotationTest
+import qualified Unit.Generate.JavaScript.RuntimeTest as JSRuntimeTest
 import qualified Unit.Generate.MinifyTest as MinifyTest
 import qualified Unit.Generate.NameTest as GenerateNameTest
 import qualified Unit.Generate.CoverageTest as CoverageTest
@@ -149,6 +161,7 @@ import qualified Unit.FFI.NpmPipelineTest as NpmPipelineTest
 import qualified Unit.FFI.ResolveTest as FFIResolveTest
 import qualified Unit.FFI.StaticAnalysisTest as FFIStaticAnalysisTest
 import qualified Unit.FFI.ErgonomicsTest as FFIErgonomicsTest
+import qualified Unit.FFI.TypeScriptValidationTest as FFITypeScriptValidationTest
 import qualified Unit.FFI.ValidatorTest as FFIValidatorTest
 import qualified Unit.Terminal.Lint.ConfigTest as LintConfigTest
 import qualified Unit.Terminal.Lint.RulesTest as LintRulesTest
@@ -231,7 +244,11 @@ unitTests =
       DiffTest.tests,
       ParseExpressionArithmeticTest.tests,
       ParseExpressionTest.tests,
+      ParseNumberTest.tests,
       ParsePatternTest.tests,
+      ParsePrimitivesTest.tests,
+      ParseSpaceTest.tests,
+      ParseStringTest.tests,
       ParseTypeTest.tests,
       ParseAbilityTest.tests,
       ParseModuleTest.tests,
@@ -282,6 +299,7 @@ unitTests =
       NewTest.tests,
       ReproducibleTest.tests,
       QueryEngineTest.tests,
+      QueryRecoveryTest.tests,
       PackageCacheTest.tests,
       WorkerPoolTest.tests,
       ParseModuleQueryTest.tests,
@@ -291,7 +309,10 @@ unitTests =
       OptExpressionArithmeticTest.tests,
       NamesTest.tests,
       SimplifyTest.tests,
+      JSESMTest.tests,
       JSExpressionArithmeticTest.tests,
+      JSExpressionGenerateTest.tests,
+      JSRuntimeTest.tests,
       RuntimeAnnotationTest.tests,
       MinifyTest.tests,
       GenerateNameTest.tests,
@@ -341,6 +362,7 @@ unitTests =
       NpmPipelineTest.tests,
       FFIResolveTest.tests,
       FFIStaticAnalysisTest.tests,
+      FFITypeScriptValidationTest.tests,
       FFIValidatorTest.tests,
       LintConfigTest.tests,
       LintRulesTest.tests,
@@ -402,8 +424,10 @@ integrationTests =
   testGroup
     "Integration Tests"
     [ CanExtensionIT.tests,
+      CompilerIT.tests,
       InitIT.tests,
       CodeSplitIT.tests,
+      JsExecutionIT.tests,
       PureBuilderIT.tests,
       EndToEndIT.tests,
       DevelopIT.tests,
@@ -411,9 +435,11 @@ integrationTests =
       MakeIT.tests,
       ChompIT.tests,
       TerminalIT.tests,
+      TypeScriptInteropIT.tests,
       WatchIT.tests,
       JsonIT.tests,
-      TemplateLiteralIT.tests
+      TemplateLiteralIT.tests,
+      WebComponentIT.tests
     ]
 
 goldenTests :: TestTree

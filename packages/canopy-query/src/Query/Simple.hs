@@ -111,6 +111,7 @@ data QueryResult
   | TypeCheckedModule !(Map Name.Name Can.Annotation)
   | OptimizedModule !Opt.LocalGraph
   | ModuleInterface !Interface.Interface
+  | GeneratedJS !ByteString
 
 instance Show QueryResult where
   show (ParsedModule _) = "ParsedModule"
@@ -118,6 +119,7 @@ instance Show QueryResult where
   show (TypeCheckedModule m) = "TypeCheckedModule(" ++ show (Map.size m) ++ " entries)"
   show (OptimizedModule g) = "OptimizedModule(" ++ show g ++ ")"
   show (ModuleInterface _) = "ModuleInterface"
+  show (GeneratedJS bs) = "GeneratedJS(" ++ show (BS.length bs) ++ " bytes)"
 
 -- | Query type using GADT for all compilation phases.
 --
@@ -153,6 +155,11 @@ data Query where
       ifaceHash :: !ContentHash
     } ->
     Query
+  GenerateQuery ::
+    { generateOutputId :: !FilePath,
+      generateHash :: !ContentHash
+    } ->
+    Query
 
 instance Show Query where
   show (ParseModuleQuery path hash _) =
@@ -165,6 +172,8 @@ instance Show Query where
     "OptimizeQuery " ++ path ++ " " ++ show hash
   show (InterfaceQuery path hash) =
     "InterfaceQuery " ++ path ++ " " ++ show hash
+  show (GenerateQuery outputId hash) =
+    "GenerateQuery " ++ outputId ++ " " ++ show hash
 
 instance Eq Query where
   (ParseModuleQuery f1 h1 _) == (ParseModuleQuery f2 h2 _) =
@@ -176,6 +185,8 @@ instance Eq Query where
   (OptimizeQuery f1 h1) == (OptimizeQuery f2 h2) =
     f1 == f2 && h1 == h2
   (InterfaceQuery f1 h1) == (InterfaceQuery f2 h2) =
+    f1 == f2 && h1 == h2
+  (GenerateQuery f1 h1) == (GenerateQuery f2 h2) =
     f1 == f2 && h1 == h2
   _ == _ = False
 
@@ -189,6 +200,7 @@ queryTag CanonicalizeQuery {} = 1
 queryTag TypeCheckQuery {} = 2
 queryTag OptimizeQuery {} = 3
 queryTag InterfaceQuery {} = 4
+queryTag GenerateQuery {} = 5
 
 -- | Composite key for query ordering within the same tag.
 queryKey :: Query -> (FilePath, ContentHash)
@@ -197,6 +209,7 @@ queryKey (CanonicalizeQuery f h) = (f, h)
 queryKey (TypeCheckQuery f h) = (f, h)
 queryKey (OptimizeQuery f h) = (f, h)
 queryKey (InterfaceQuery f h) = (f, h)
+queryKey (GenerateQuery f h) = (f, h)
 
 -- | Execute a query directly (only parse queries execute here).
 --
