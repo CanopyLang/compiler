@@ -90,6 +90,7 @@ data Category
   | Effects
   | Local Name.Name
   | Foreign Name.Name
+  | Hole
   deriving (Show)
 
 -- | An optional name for the function/constructor/operator in a call.
@@ -129,6 +130,7 @@ addCategory thisIs category =
         FuncName name -> "This `" <> Name.toChars name <> "` call produces:"
         CtorName name -> "This `" <> Name.toChars name <> "` call produces:"
         OpName _ -> thisIs <> ":"
+    Hole -> thisIs <> " a typed hole:"
 
 -- | Classifies what kind of pattern is involved in a pattern type mismatch.
 data PCategory

@@ -160,6 +160,16 @@ constrain guards rtv (Ann.At region expression) expected =
       constrainStringConcat guards rtv region parts expected
     Can.AbilityMethodCall _home _abilityName methodName annotation ->
       return (CForeign region methodName annotation expected)
+    Can.Hole holeRegion holeName ->
+      do
+        holeVar <- mkFlexVar
+        let holeType = VarN holeVar
+        return $
+          exists [holeVar] $
+            CAnd
+              [ CEqual region Hole holeType expected,
+                CHole holeRegion holeName expected
+              ]
 
 -- CONSTRAIN LAMBDA
 

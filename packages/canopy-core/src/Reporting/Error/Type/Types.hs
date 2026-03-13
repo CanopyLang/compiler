@@ -51,6 +51,12 @@ data Error
   = BadExpr Ann.Region Category TypeErr.Type (Expected TypeErr.Type)
   | BadPattern Ann.Region PCategory TypeErr.Type (PExpected TypeErr.Type)
   | InfiniteType Ann.Region Name.Name TypeErr.Type
+  | -- | Typed hole error with expected type and matching bindings from scope.
+    --
+    -- Fields: region, hole name, inferred type, list of (binding name, binding type) suggestions.
+    --
+    -- @since 0.20.0
+    HoleError Ann.Region Name.Name TypeErr.Type [(Name.Name, TypeErr.Type)]
   deriving (Show)
 
 -- ---------------------------------------------------------------------------

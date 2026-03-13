@@ -1,7 +1,7 @@
 # Plan 13: Type-Safe Internationalization
 
 ## Priority: MEDIUM — Tier 3
-## Status: ~40% complete (runtime i18n library exists with translations, ICU, and Intl API)
+## Status: Library COMPLETE (10 source files, 14 test files — runtime i18n fully implemented; compile-time validation not started)
 ## Effort: 2-3 weeks (reduced from 3-4 — library foundation exists)
 ## Depends on: Stable compiler
 
@@ -9,7 +9,7 @@
 
 | Component | Location | Status |
 |-----------|----------|--------|
-| `canopy/i18n` | stdlib package (7 files) | COMPLETE — runtime i18n library |
+| `canopy/i18n` | stdlib package (10 source files, 14 test files) | COMPLETE — runtime i18n library |
 | Translation loading | `canopy/i18n` | COMPLETE — JSON translation file parsing |
 | ICU MessageFormat | `canopy/i18n` | COMPLETE — plural forms, interpolation, select |
 | Intl API bindings | `canopy/i18n` | COMPLETE — number/date/currency formatting via browser Intl |
@@ -65,7 +65,7 @@ Configuration in `canopy.json`:
 
 ## Dependencies
 
-- `canopy/i18n` (7 files) — provides the runtime; compiler adds the validation layer
+- `canopy/i18n` (10 source files, 14 test files) — provides the runtime; compiler adds the validation layer
 - Compiler pre-pass — new module for translation file parsing and module generation
 - CanopyKit — optional integration for locale-based routing and code splitting
 

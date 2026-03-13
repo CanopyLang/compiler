@@ -223,6 +223,8 @@ solve config constraint = do
       foldM (solve . updateSolveState config) (config ^. solveState) constraints
     CCaseBranchesIsolated constraints ->
       foldM (solve . updateSolveState config) (config ^. solveState) constraints
+    CHole region holeName expectation ->
+      solveHole config region holeName expectation
     CLet [] flexs _ headerCon CTrue _ ->
       solveSimpleLet config flexs headerCon
     CLet [] [] header headerCon subCon _ ->
@@ -314,6 +316,7 @@ logConstraintKind = \case
   CLet {} -> Log.logEvent (TypeConstraintSolved "solver" CKLet)
   CAnd {} -> Log.logEvent (TypeConstraintSolved "solver" CKAnd)
   CCaseBranchesIsolated {} -> Log.logEvent (TypeConstraintSolved "solver" CKCase)
+  CHole {} -> Log.logEvent (TypeConstraintSolved "solver" CKEqual)
 
 updateSolveState :: SolveConfig -> State -> SolveConfig
 updateSolveState config newState = config & solveState .~ newState
@@ -384,6 +387,56 @@ solvePattern config region category tipe expectation = do
   actual <- Pool.typeToVariable (config ^. solveRank) (config ^. solvePools) tipe
   expected <- patternExpectationToVariable (config ^. solveRank) (config ^. solvePools) expectation
   handlePatternUnifyResult config actual expected (createPatternError region category expectation)
+
+-- | Solve a typed hole constraint.
+--
+-- Reads the expected type, collects matching bindings from the current
+-- environment, and records a 'HoleError' (informational, not blocking).
+solveHole :: SolveConfig -> Ann.Region -> Name.Name -> Error.Expected Type -> IO State
+solveHole config region holeName expectation = do
+  expected <- expectedToVariable (config ^. solveRank) (config ^. solvePools) expectation
+  expectedType <- Type.toErrorType expected
+  suggestions <- collectHoleSuggestions config expected
+  return $ addError (config ^. solveState) (Error.HoleError region holeName expectedType suggestions)
+
+-- | Collect bindings from the environment whose type unifies with the expected type.
+--
+-- For each binding, we speculatively attempt unification by copying the expected
+-- type variable, so side effects don't leak. Suggestions are capped at 10.
+collectHoleSuggestions :: SolveConfig -> Variable -> IO [(Name.Name, ET.Type)]
+collectHoleSuggestions config expected = do
+  let env = config ^. solveEnv
+  let monoEnv = config ^. solveState . stateMonoEnv
+  let allBindings = Map.toList (Map.union env monoEnv)
+  go [] 0 allBindings
+  where
+    go acc _ [] = return (reverse acc)
+    go acc n _ | n >= (10 :: Int) = return (reverse acc)
+    go acc n ((name, var) : rest) = do
+      matches <- speculativeMatch config expected var
+      if matches
+        then do
+          varType <- Type.toErrorType var
+          go ((name, varType) : acc) (n + 1) rest
+        else go acc n rest
+
+-- | Check if a binding's type unifies with the expected type without side effects.
+--
+-- Creates a fresh copy of the expected type variable and attempts unification.
+-- Returns True if unification succeeds, False otherwise.
+speculativeMatch :: SolveConfig -> Variable -> Variable -> IO Bool
+speculativeMatch config expected candidate = do
+  candidateRepr <- UF.repr candidate
+  (Descriptor _ candidateRank _ _) <- UF.get candidateRepr
+  candidateVar <-
+    if candidateRank == noRank
+      then Pool.makeCopy (config ^. solveRank) (config ^. solvePools) (config ^. solveAmbientRigids) candidateRepr
+      else return candidateRepr
+  expectedCopy <- Pool.makeCopy (config ^. solveRank) (config ^. solvePools) (config ^. solveAmbientRigids) expected
+  answer <- Unify.unify (config ^. solveBounds) candidateVar expectedCopy
+  case answer of
+    Unify.Ok _ -> return True
+    Unify.Err _ _ _ -> return False
 
 handleUnifyResult :: SolveConfig -> Variable -> Variable -> (ET.Type -> ET.Type -> Error.Error) -> IO State
 handleUnifyResult config actual expected errorFunc = do

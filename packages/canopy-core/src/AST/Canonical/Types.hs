@@ -252,6 +252,14 @@ data Expr_
       !Name
       !Name
       !Annotation
+  | -- | Typed hole placeholder.
+    --
+    -- Represents a typed hole (@_@ or @_name@) that the compiler will report
+    -- with the expected type and matching bindings from scope. Holes always
+    -- produce type errors and never reach optimization or code generation.
+    --
+    -- @since 0.20.0
+    Hole !Ann.Region !Name
   deriving (Show)
 
 data CaseBranch

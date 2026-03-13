@@ -72,6 +72,11 @@ data Constraint
         _bodyCon :: Constraint,
         _expectedType :: Maybe Type
       }
+  | -- | Typed hole constraint.
+    --
+    -- Carries the region, hole name, and expected type from context.
+    -- The solver records this as an informational error with suggestions.
+    CHole Ann.Region Name.Name (TypeError.Expected Type)
 
 exists :: [Variable] -> Constraint -> Constraint
 exists flexVars constraint =

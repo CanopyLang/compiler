@@ -730,6 +730,7 @@ formatExpr_ config (Src.Tuple a b rest) =
   PP.text "( " <> commaSepDocs (map (formatExpr config) (a : b : rest)) <> PP.text " )"
 formatExpr_ _      (Src.Shader _ _) = PP.text "[glsl| ... |]"
 formatExpr_ config (Src.Interpolation segments) = formatInterpolation config segments
+formatExpr_ _      (Src.Hole name) = PP.text (Name.toChars name)
 
 -- | Format a template literal expression.
 formatInterpolation :: FormatConfig -> [Src.InterpolationSegment] -> PP.Doc

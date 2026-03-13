@@ -272,6 +272,8 @@ checkExpr (Ann.At region expression) errors =
       foldr checkExpr errors parts
     Can.AbilityMethodCall _ _ _ _ ->
       errors
+    Can.Hole _ _ ->
+      errors
 
 -- CHECK FIELD
 

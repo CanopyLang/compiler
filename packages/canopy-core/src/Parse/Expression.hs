@@ -1,4 +1,7 @@
+{-# LANGUAGE BangPatterns #-}
+{-# LANGUAGE MagicHash #-}
 {-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE UnboxedTuples #-}
 module Parse.Expression
   ( expression
   )
@@ -23,6 +26,8 @@ import qualified Parse.Primitives as Parse
 import qualified Reporting.Annotation as Ann
 import qualified Parse.Limits as Limits
 import qualified Reporting.Error.Syntax as SyntaxError
+import Data.Word (Word8)
+import Foreign.Ptr (Ptr, plusPtr)
 
 
 
@@ -33,7 +38,8 @@ term :: Parser SyntaxError.Expr Src.Expr
 term =
   do  start <- getPosition
       oneOf SyntaxError.Start
-        [ variable start >>= accessible start 0
+        [ hole start
+        , variable start >>= accessible start 0
         , string start
         , number start
         , Shader.shader start
@@ -44,6 +50,40 @@ term =
         , accessor start
         , character start
         ]
+
+
+hole :: Ann.Position -> Parser SyntaxError.Expr Src.Expr
+hole start =
+  Parse.Parser $ \(Parse.State src pos end indent row col) cok _ _ eerr ->
+    if pos < end && unsafeIndex pos == 0x5F {- _ -}
+      then
+        let !afterUnderscore = plusPtr pos 1
+            (# nameEnd, nameCol #) = chompHoleName afterUnderscore end (col + 1)
+            !name = Name.fromPtr pos nameEnd
+            !newState = Parse.State src nameEnd end indent row nameCol
+            !endPos = Ann.Position row nameCol
+            !expr = Ann.At (Ann.Region start endPos) (Src.Hole name)
+        in cok expr newState
+      else eerr row col (\r c -> SyntaxError.Start r c)
+
+
+chompHoleName :: Ptr Word8 -> Ptr Word8 -> Col -> (# Ptr Word8, Col #)
+chompHoleName pos end col =
+  if pos < end
+    then
+      let !w = unsafeIndex pos
+      in if isInner w
+           then chompHoleName (plusPtr pos 1) end (col + 1)
+           else (# pos, col #)
+    else (# pos, col #)
+
+
+isInner :: Word8 -> Bool
+isInner w =
+  (0x61 <= w && w <= 0x7A) ||
+  (0x41 <= w && w <= 0x5A) ||
+  (0x30 <= w && w <= 0x39) ||
+  w == 0x5F
 
 
 string :: Ann.Position -> Parser SyntaxError.Expr Src.Expr

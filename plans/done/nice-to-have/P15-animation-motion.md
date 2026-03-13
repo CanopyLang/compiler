@@ -1,7 +1,7 @@
 # Plan 15: Animation & Motion System
 
 ## Priority: MEDIUM — Tier 3
-## Status: ~50% complete (core animation library and spring physics exist)
+## Status: Library COMPLETE (7 source files, 7 test files — animation, spring, scroll, timeline all implemented; View Transitions API integration not started)
 ## Effort: 2-3 weeks (reduced from 4-6 — core libraries exist)
 ## Depends on: Plan 03 (packages — COMPLETE), CanopyKit router (for View Transitions)
 
@@ -9,16 +9,17 @@
 
 | Component | Location | Status |
 |-----------|----------|--------|
-| `canopy/animation` | stdlib package (7 files) | COMPLETE — CSS keyframe animation library |
-| `canopy/animation-motion` | stdlib package | COMPLETE — spring physics engine |
-| CSS transitions | `canopy/animation` | COMPLETE — declarative CSS transition helpers |
-| Keyframe animations | `canopy/animation` | COMPLETE — `@keyframes` generation |
-| Spring physics | `canopy/animation-motion` | COMPLETE — spring-based animation with velocity/damping |
-| Easing functions | `canopy/animation` | COMPLETE — standard easing curves |
+| `canopy/animation` | stdlib package (7 source files, 7 test files) | COMPLETE — CSS keyframe animation library |
+| CSS transitions | `canopy/animation` (Transition.can) | COMPLETE — declarative CSS transition helpers |
+| Keyframe animations | `canopy/animation` (Animation.can) | COMPLETE — `@keyframes` generation |
+| Spring physics | `canopy/animation` (Spring.can) | COMPLETE — spring-based animation with velocity/damping |
+| Easing functions | `canopy/animation` (Easing.can) | COMPLETE — standard easing curves |
+| Scroll-driven | `canopy/animation` (Scroll.can) | COMPLETE — scroll-linked animation support |
+| Timeline | `canopy/animation` (Timeline.can) | COMPLETE — animation timeline sequencing |
 
-The animation foundation is solid. `canopy/animation` (7 files) provides CSS keyframe animations, transitions, and easing functions. `canopy/animation-motion` adds spring physics with interruptible motion. Together these cover the most common animation use cases.
+The animation library is complete. `canopy/animation` (7 source files, 7 test files) provides CSS keyframe animations, transitions, easing functions, spring physics, scroll-driven animations, and timeline sequencing — all in a single package with full test coverage.
 
-What does NOT exist: View Transitions API integration (requires a router), gesture handling, and scroll-driven animations.
+What does NOT exist: View Transitions API integration (requires CanopyKit router) and gesture handling.
 
 ## What Remains
 
@@ -85,8 +86,7 @@ The compiler analyzes animation expressions and chooses the best strategy:
 
 ## Dependencies
 
-- `canopy/animation` (7 files) — provides CSS animation foundation
-- `canopy/animation-motion` — provides spring physics engine
+- `canopy/animation` (7 source files, 7 test files) — provides complete CSS animation foundation including spring physics
 - CanopyKit router — required for View Transitions API integration (Phase 1)
 - `canopy/css` — type-safe CSS properties used in animation value types
 

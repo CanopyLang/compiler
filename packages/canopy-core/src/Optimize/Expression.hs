@@ -21,6 +21,7 @@ import qualified Optimize.Case as Case
 import qualified Optimize.ConstantFold as ConstantFold
 import qualified Optimize.Names as Names
 import qualified Reporting.Annotation as Ann
+import qualified Reporting.InternalError as InternalError
 import Prelude hiding (cycle)
 
 -- OPTIMIZE
@@ -144,6 +145,11 @@ optimize cycle (Ann.At region expression) =
       optimizeStringConcat cycle parts
     Can.AbilityMethodCall home _abilityName methodName _ ->
       Names.registerFFI home methodName
+    Can.Hole _ _ ->
+      InternalError.report
+        "Optimize.Expression.optimize"
+        "Encountered a typed hole in optimization"
+        "Typed holes should always produce type errors and never reach the optimization phase. If this error occurs, it means the type checker allowed a hole to pass through without generating an error."
 
 -- STRING CONCAT
 

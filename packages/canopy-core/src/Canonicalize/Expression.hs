@@ -120,6 +120,8 @@ canonicalize env (Ann.At region expression) =
         Result.ok (Can.Shader src tipe)
       Src.Interpolation segments ->
         canonicalizeInterpolation env region segments
+      Src.Hole name ->
+        Result.ok (Can.Hole region name)
 
 -- NESTED RECORD UPDATE DESUGARING
 

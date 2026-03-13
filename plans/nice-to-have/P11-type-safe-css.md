@@ -1,7 +1,7 @@
 # Plan 11: Type-Safe CSS
 
 ## Priority: MEDIUM — Tier 3
-## Status: ~20% complete (CSS utility library exists, compile-time extraction not started)
+## Status: ~35% complete (CSS utility library exists with 9 source files and 8 test files, compile-time extraction not started)
 ## Effort: 4-6 weeks
 ## Depends on: Plan 03 (packages — COMPLETE)
 
@@ -9,7 +9,7 @@
 
 | Component | Location | Status |
 |-----------|----------|--------|
-| `canopy/css` | stdlib package (8 files) | COMPLETE — CSS utility library |
+| `canopy/css` | stdlib package (9 source files, 8 test files) | COMPLETE — CSS utility library |
 | CSS property helpers | `canopy/css` | COMPLETE — typed property functions |
 | Inline style API | `canopy/html` | COMPLETE — `style` attribute support |
 
@@ -66,7 +66,7 @@ zIndex (Px 10)                 -- zIndex takes Int, not Length
 
 ## Dependencies
 
-- `canopy/css` (8 files) — provides the type definitions and API surface
+- `canopy/css` (9 source files, 8 test files) — provides the type definitions and API surface
 - Compiler optimization pass — new `Optimize/CSS.hs` module for style extraction
 - Code generation — `Generate/JavaScript.hs` modifications to emit `.css` file alongside `.js`
 

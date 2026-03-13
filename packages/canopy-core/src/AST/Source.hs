@@ -299,6 +299,14 @@ data Expr_
     -- embedded expressions. Desugared to @Basics.append@ chains
     -- during canonicalization.
     Interpolation [InterpolationSegment]
+  | -- | Typed hole expression.
+    --
+    -- Represents typed holes like @_@ or @_foo@ in expression position.
+    -- The compiler reports the expected type and suggests matching bindings
+    -- from scope. Anonymous holes use an empty name.
+    --
+    -- @since 0.20.0
+    Hole Name
   deriving (Show)
 
 -- | Field update variant in record update expressions.

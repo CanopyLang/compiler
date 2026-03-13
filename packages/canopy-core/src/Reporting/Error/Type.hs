@@ -44,11 +44,13 @@ where
 import qualified Canopy.Data.Name as Name
 import qualified Data.Text as Text
 import qualified Reporting.Annotation as Ann
+import qualified Reporting.Doc as Doc
 import qualified Reporting.Diagnostic as Diag
 import Reporting.Diagnostic (Diagnostic, LabeledSpan (..), SpanStyle (..))
 import qualified Reporting.ErrorCode as EC
 import qualified Reporting.Render.Code as Code
 import qualified Reporting.Render.Type.Localizer as Localizer
+import qualified Reporting.Render.Type as RT
 import qualified Reporting.Report as Report
 import qualified Type.Error as TypeErr
 import Reporting.Error.Type.Expression (toExprReport)
@@ -88,6 +90,8 @@ toDiagnostic localizer source err =
       badPatternDiagnostic localizer source region category tipe expected
     InfiniteType region name tipe ->
       infiniteTypeDiagnostic localizer source region name tipe
+    HoleError region name tipe suggestions ->
+      holeDiagnostic localizer source region name tipe suggestions
 
 -- | Produce a diagnostic for a 'BadExpr' type error.
 badExprDiagnostic :: Localizer.Localizer -> Code.Source -> Ann.Region -> Category -> TypeErr.Type -> Expected TypeErr.Type -> Diagnostic
@@ -125,6 +129,48 @@ infiniteTypeDiagnostic localizer source region name tipe =
     (LabeledSpan region "infinite type here" SpanPrimary)
     (Report._message (toInfiniteReport source localizer region name tipe))
 
+-- | Produce a diagnostic for a 'HoleError' typed hole.
+holeDiagnostic :: Localizer.Localizer -> Code.Source -> Ann.Region -> Name.Name -> TypeErr.Type -> [(Name.Name, TypeErr.Type)] -> Diagnostic
+holeDiagnostic localizer source region name tipe suggestions =
+  Diag.makeDiagnostic
+    (EC.typeError 3)
+    Diag.SError
+    Diag.PhaseType
+    "TYPED HOLE"
+    (Text.pack ("Found typed hole `" <> Name.toChars name <> "`"))
+    (LabeledSpan region "typed hole here" SpanPrimary)
+    (Report._message (toHoleReport source localizer region name tipe suggestions))
+
+-- | Render a typed hole report with expected type and suggestions.
+toHoleReport :: Code.Source -> Localizer.Localizer -> Ann.Region -> Name.Name -> TypeErr.Type -> [(Name.Name, TypeErr.Type)] -> Report.Report
+toHoleReport source localizer region name tipe suggestions =
+  Report.Report "TYPED HOLE" region [] $
+    Code.toSnippet source region Nothing
+      ( Doc.reflow ("I found a typed hole `" <> Name.toChars name <> "` here:")
+      , Doc.stack
+          ( [ Doc.reflow "The surrounding context expects:"
+            , Doc.indent 4 (Doc.dullyellow (TypeErr.toDoc localizer RT.None tipe))
+            ]
+            <> suggestionsDoc
+          )
+      )
+  where
+    suggestionsDoc =
+      if null suggestions
+        then []
+        else
+          [ Doc.empty
+          , Doc.reflow "Values in scope that match:"
+          , Doc.vcat (fmap renderSuggestion suggestions)
+          ]
+
+    renderSuggestion (sName, sType) =
+      Doc.indent 4
+        ( Doc.fromChars (Name.toChars sName)
+            <> Doc.fromChars " : "
+            <> TypeErr.toDoc localizer RT.None sType
+        )
+
 -- ---------------------------------------------------------------------------
 -- Category helpers
 -- ---------------------------------------------------------------------------
@@ -155,6 +201,7 @@ categorySummary category =
     Effects -> "An effects value has the wrong type."
     Local name -> "The value `" <> Name.toChars name <> "` has the wrong type."
     Foreign name -> "The value `" <> Name.toChars name <> "` has the wrong type."
+    Hole -> "Found a typed hole."
 
 -- | Map a 'PCategory' to a one-line summary for diagnostic output.
 patternCategorySummary :: PCategory -> String
