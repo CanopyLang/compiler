@@ -30,6 +30,8 @@ import qualified Canopy.Package as Pkg
 import qualified Canopy.Version as Version
 import qualified Compiler
 import Control.Lens ((^.))
+import qualified Exit as BuildExit
+import qualified Reporting.Doc as Doc
 import qualified Data.ByteString.Builder as Builder
 import qualified Data.ByteString.Lazy as LBS
 import qualified Data.Map.Strict as Map
@@ -78,8 +80,9 @@ compileTestFiles root testFiles coverage = do
   result <- Compiler.compileFromPaths pkg False (Compiler.ProjectRoot root) srcDirs testFiles
   case result of
     Left err -> do
-      let errStr = show err
-      Print.printErrLn [c|{red|Compilation error:} #{errStr}|]
+      Print.printErrLn [c|{red|Compilation failed.}|]
+      Print.printErrLn (Doc.fromChars "")
+      Print.printErrLn (BuildExit.toDoc err)
       pure Nothing
     Right artifacts ->
       if coverage
@@ -204,8 +207,9 @@ compileTestDepOutline pkgName version pkgDir srcPath (Outline.Pkg pkgOutline) =
       either reportTestDepError (writeTestDepArtifacts pkgName version) compileResult
   where
     reportTestDepError err = do
-      let errStr = show err
-      Print.printErrLn [c|{yellow|Warning:} Could not compile test dependency: #{errStr}|]
+      Print.printErrLn [c|{yellow|Warning:} Could not compile test dependency:|]
+      Print.printErrLn (Doc.fromChars "")
+      Print.printErrLn (BuildExit.toDoc err)
 
 -- | Write compiled artifacts for a test-dependency package.
 writeTestDepArtifacts :: Pkg.Name -> Version.Version -> Compiler.Artifacts -> IO ()
