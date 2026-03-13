@@ -64,6 +64,7 @@ import qualified Generate.JavaScript.Kernel as Kernel_
 import qualified Generate.JavaScript.Minify as Minify
 import qualified Generate.JavaScript.Name as JsName
 import qualified Generate.JavaScript.Runtime as Runtime
+import qualified Generate.JavaScript.Runtime.Registry as Registry
 import qualified Generate.JavaScript.SourceMap as SourceMap
 import qualified Generate.JavaScript.StringPool as StringPool
 import qualified Generate.Mode as Mode
@@ -101,25 +102,42 @@ generate inputMode (Opt.GlobalGraph rawGraph _ sourceLocs) mains ffiInfos =
         not (Kernel_.isDebugger global && not (Mode.isDebug mode))
       filteredGraph = Map.filterWithKey (\global _ -> shouldInclude global) graph
       state = Map.foldlWithKey' (\s global _ -> addGlobal mode graph s global) baseState filteredGraph
-      header =
-        if Mode.isElmCompatible mode
-          then "(function(scope){\n'use strict';\n"
-          else "(function(scope){'use strict';\n"
-      debuggerStub = "var _Debugger_unsafeCoerce = function(value) { return value; };\n"
-      poolDecls = StringPool.poolDeclarations (Mode.stringPool mode)
+
+      -- Build all non-runtime JS content (FFI, kernels, user code, exports)
+      ffiRuntimeBuilder =
+        if Map.null ffiInfos then mempty else FFIRuntime.embeddedRuntimeForMode mode
       coveragePreamble = if Mode.isCoverage mode then Coverage.coverageRuntimePreamble else mempty
-      jsBuilder =
-        header
-          <> debuggerStub
-          <> Functions.functions
-          <> Runtime.embeddedRuntimeForMode mode
-          <> FFIRuntime.embeddedRuntimeForMode mode
+      poolDecls = StringPool.poolDeclarations (Mode.stringPool mode)
+      appContent =
+        ffiRuntimeBuilder
           <> coveragePreamble
           <> generateFFIContent mode graph ffiInfos
           <> perfNote mode
           <> poolDecls
           <> stateToBuilder state
           <> Kernel_.toMainExports mode mains
+
+      -- Scan the generated content for actual runtime references
+      scannedRtNeeds = Registry.scanRuntimeRefs appContent
+      closedRtNeeds = Registry.closeDeps scannedRtNeeds
+
+      -- Scan for F/A arities from both app code and needed runtime code
+      runtimeBuilder = Runtime.emitNeeded mode closedRtNeeds
+      appArities = Registry.scanArityRefs appContent
+      runtimeArities = Registry.scanArityRefs runtimeBuilder
+      allArities = Set.union appArities runtimeArities
+
+      header =
+        if Mode.isElmCompatible mode
+          then "(function(scope){\n'use strict';\n"
+          else "(function(scope){'use strict';\n"
+      debuggerStub = "var _Debugger_unsafeCoerce = function(value) { return value; };\n"
+      jsBuilder =
+        header
+          <> debuggerStub
+          <> Functions.generateConditionalFunctions allArities
+          <> runtimeBuilder
+          <> appContent
           <> "\nif (typeof global !== 'undefined') { global.Canopy = scope['Canopy']; global.Elm = scope['Elm']; }"
           <> "\n}(typeof window !== 'undefined' ? window : this));"
       sourceMap = buildSourceMap mode state
@@ -511,6 +529,7 @@ dispatchNode mode graph currentGlobal addDeps globalInGraph state =
     Opt.ImplDict abilityName methods deps ->
       addStmt (emitMapping currentGlobal (addDeps deps state)) (Ability.generateImplDict mode currentGlobal abilityName methods)
 
+
 -- | Generate coverage-instrumented code for a Define node.
 covDefineCode :: Mode.Mode -> Opt.Global -> Opt.Expr -> State -> Expr.Code
 covDefineCode mode currentGlobal expr state =
@@ -611,3 +630,5 @@ generateManager mode graph (Opt.Global home@(ModuleName.Canonical _ moduleName) 
       createManager =
         (JS.ExprStmt . JS.Assign managerLVar $ JS.Call (JS.Ref (JsName.fromKernel Name.platform "createManager")) args)
    in List.foldl' addStmt (List.foldl' (addGlobal mode graph) state deps) (createManager : stmts)
+
+

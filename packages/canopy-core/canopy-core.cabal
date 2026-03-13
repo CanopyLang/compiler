@@ -209,6 +209,7 @@ library
       Generate.JavaScript.Expression.Case
       Generate.JavaScript.Functions
       Generate.JavaScript.Kernel
+      Generate.JavaScript.Runtime.Registry
       Json.Decode.AST
       Json.Decode.Combinators
       Json.Decode.Core
