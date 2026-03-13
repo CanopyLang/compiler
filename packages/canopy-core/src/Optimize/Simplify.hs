@@ -313,8 +313,8 @@ nameUsedIn name = go
           any (\(c, b) -> go c || go b) branches || go elseExpr
         Opt.Let def body -> goInDef def || go body
         Opt.Destruct _ body -> go body
-        Opt.Case _ _ decider jumps ->
-          nameInDecider name decider || any (go . snd) jumps
+        Opt.Case label root decider jumps ->
+          label == name || root == name || nameInDecider name decider || any (go . snd) jumps
         Opt.Function _ body -> go body
         Opt.TailCall _ pairs -> any (go . snd) pairs
         Opt.List items -> any go items

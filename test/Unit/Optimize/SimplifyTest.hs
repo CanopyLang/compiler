@@ -45,6 +45,7 @@ tests =
       doubleNegationTests,
       stringFoldingTests,
       deadBindingTests,
+      caseRootBindingTests,
       preservationTests,
       nestedSimplificationTests
     ]
@@ -227,6 +228,47 @@ deadBindingTests =
         let defName = Name.fromChars "loop"
             body = varLocal "result"
             input = Opt.Let (Opt.TailDef defName [Name.fromChars "n"] (varLocal "n")) body
+         in assertExprEq input (Simplify.simplify input)
+    ]
+
+-- CASE ROOT/LABEL BINDING TESTS
+
+-- | Test that let-bindings referenced by Case root/label fields are preserved.
+--
+-- Regression tests for the bug where @nameUsedIn@ did not inspect the
+-- @root@ and @label@ 'Name' fields of 'Opt.Case', causing dead-binding
+-- elimination to incorrectly remove bindings used as Case roots (e.g.
+-- tuple case expressions).
+caseRootBindingTests :: TestTree
+caseRootBindingTests =
+  Test.testGroup
+    "Case Root Binding Preservation"
+    [ Test.testCase "let-binding used as Case root is preserved" $
+        let x = Name.fromChars "x"
+            lbl = Name.fromChars "lbl"
+            binding = Opt.Def x (Opt.Tuple (varLocal "a") (varLocal "b") Nothing)
+            body = Opt.Case lbl x (Opt.Leaf (Opt.Inline (varLocal "a"))) []
+            input = Opt.Let binding body
+         in assertExprEq input (Simplify.simplify input),
+      Test.testCase "let-binding used as Case label is preserved" $
+        let lbl = Name.fromChars "lbl"
+            root = Name.fromChars "root"
+            binding = Opt.Def lbl (Opt.Tuple (varLocal "a") (varLocal "b") Nothing)
+            body = Opt.Case lbl root (Opt.Leaf (Opt.Inline (varLocal "a"))) []
+            input = Opt.Let binding body
+         in assertExprEq input (Simplify.simplify input),
+      Test.testCase "let-binding unused by Case is eliminated" $
+        let unused = Name.fromChars "unused"
+            lbl = Name.fromChars "lbl"
+            root = Name.fromChars "root"
+            binding = Opt.Def unused (Opt.Int 42)
+            body = Opt.Case lbl root (Opt.Leaf (Opt.Inline (varLocal "a"))) []
+         in assertExprEq body (Simplify.simplify (Opt.Let binding body)),
+      Test.testCase "pure tuple let-binding used as Case root is preserved" $
+        let v0 = Name.fromChars "_v0"
+            binding = Opt.Def v0 (Opt.Tuple (varLocal "a") (varLocal "b") Nothing)
+            body = Opt.Case v0 v0 (Opt.Leaf (Opt.Inline (varLocal "a"))) []
+            input = Opt.Let binding body
          in assertExprEq input (Simplify.simplify input)
     ]
 
