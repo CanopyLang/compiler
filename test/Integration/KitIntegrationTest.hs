@@ -24,12 +24,14 @@ import qualified Data.Text.IO as TextIO
 import Kit.DataLoader (DataLoader (..), LoaderKind (..))
 import Kit.Deploy.Node (deployNode)
 import Kit.Hydration (generateHydrationBootstrap, generateHydrationCheck)
+import Control.Lens ((.~), (&))
 import Kit.Route.Types
   ( PageKind (..)
   , RouteEntry (..)
   , RouteManifest (..)
   , RoutePattern (..)
   , RouteSegment (..)
+  , rmRoutes
   )
 import qualified Kit.Route.Scanner as Scanner
 import Kit.SSR (generateSsrScript)
@@ -425,7 +427,7 @@ emptyManifest = RouteManifest
 
 -- | A manifest containing the given route entries.
 manifestWithRoutes :: [RouteEntry] -> RouteManifest
-manifestWithRoutes routes = emptyManifest { _rmRoutes = routes }
+manifestWithRoutes routes = emptyManifest & rmRoutes .~ routes
 
 -- | Build a static-page 'RouteEntry' from a list of plain segment names.
 staticPageEntry :: [Text.Text] -> RouteEntry

@@ -313,9 +313,7 @@ extractMainFromRoot ::
 extractMainFromRoot pkg root = case root of
   Compiler.Inside _name -> Nothing
   Compiler.Outside name _iface (Opt.LocalGraph maybeMain _ _ _) ->
-    case maybeMain of
-      Just main -> Just (ModuleName.Canonical pkg name, main)
-      Nothing -> Nothing
+    fmap (\main -> (ModuleName.Canonical pkg name, main)) maybeMain
 
 -- | Extract modules that contain main functions.
 --
@@ -354,9 +352,7 @@ hasExactlyOneMain :: Compiler.Artifacts -> Task ModuleName.Raw
 hasExactlyOneMain (Compiler.Artifacts _ _ roots modules _ _ _) =
   case roots of
     NonEmptyList.List root [] ->
-      case getModuleMain modules root of
-        Just mainName -> pure mainName
-        Nothing -> Task.throw Exit.MakeNoMain
+      maybe (Task.throw Exit.MakeNoMain) pure (getModuleMain modules root)
     NonEmptyList.List _ (_ : _) ->
       Task.throw Exit.MakeMultipleFilesIntoHtml
 
@@ -372,9 +368,7 @@ getModuleMain modules root =
         then Just name
         else Nothing
     Compiler.Outside name _ (Opt.LocalGraph maybeMain _ _ _) ->
-      case maybeMain of
-        Just _ -> Just name
-        Nothing -> Nothing
+      name <$ maybeMain
 
 -- | Get non-main module from build root.
 --
@@ -388,9 +382,7 @@ getNonMainModule modules root =
         then Nothing
         else Just name
     Compiler.Outside name _ (Opt.LocalGraph maybeMain _ _ _) ->
-      case maybeMain of
-        Just _ -> Nothing
-        Nothing -> Just name
+      maybe (Just name) (const Nothing) maybeMain
 
 -- | Check if module contains a main function.
 --

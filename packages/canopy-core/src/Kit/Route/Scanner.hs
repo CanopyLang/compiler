@@ -21,6 +21,7 @@ module Kit.Route.Scanner
   ( scanRoutes
   ) where
 
+import Control.Lens ((.~), (&))
 import qualified Control.Exception as Exception
 import qualified Control.Monad.Trans as Trans
 import Control.Monad.Trans.Except (ExceptT)
@@ -35,6 +36,9 @@ import Kit.Route.Types
   , RoutePattern (..)
   , RouteSegment (..)
   , ScanError (..)
+  , rmRoutes
+  , rmLayouts
+  , rmErrorBoundaries
   )
 import qualified System.Directory as Dir
 import qualified System.FilePath as FP
@@ -108,7 +112,7 @@ processEntries dir prefix entries = do
 collectPages
   :: FilePath -> [RouteSegment] -> [FilePath] -> RouteManifest
 collectPages dir prefix entries =
-  emptyManifest { _rmRoutes = routes }
+  emptyManifest & rmRoutes .~ routes
   where
     routes = maybe [] pure (findPage dir prefix entries)
 
@@ -159,7 +163,7 @@ isDynamic (StaticSegment _) = False
 -- | Find @layout.can@ files and produce layout entries.
 collectLayouts :: FilePath -> [RouteSegment] -> [FilePath] -> RouteManifest
 collectLayouts dir prefix entries =
-  emptyManifest { _rmLayouts = layouts }
+  emptyManifest & rmLayouts .~ layouts
   where
     layouts = collectSpecialFile "layout.can" dir prefix entries
 
@@ -167,7 +171,7 @@ collectLayouts dir prefix entries =
 collectErrorBoundaries
   :: FilePath -> [RouteSegment] -> [FilePath] -> RouteManifest
 collectErrorBoundaries dir prefix entries =
-  emptyManifest { _rmErrorBoundaries = boundaries }
+  emptyManifest & rmErrorBoundaries .~ boundaries
   where
     boundaries = collectSpecialFile "error.can" dir prefix entries
 

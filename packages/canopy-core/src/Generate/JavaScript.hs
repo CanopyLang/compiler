@@ -88,13 +88,7 @@ type Mains = Map ModuleName.Canonical Opt.Main
 generate :: Mode.Mode -> Opt.GlobalGraph -> Mains -> Map String FFIInfo -> (Builder, Maybe SourceMap.SourceMap, Maybe Coverage.CoverageMap)
 generate inputMode (Opt.GlobalGraph rawGraph _ sourceLocs) mains ffiInfos =
   let ffiAliases = extractFFIAliases ffiInfos
-      (graph, mode) = case inputMode of
-        Mode.Prod fields elmCompat ffiUnsafe ffiDbg _ _ ->
-          let minified = Minify.minifyGraph rawGraph
-              pool = StringPool.buildPool minified
-           in (minified, Mode.Prod fields elmCompat ffiUnsafe ffiDbg pool ffiAliases)
-        Mode.Dev debugTypes elmCompat ffiUnsafe ffiDbg _ cov ->
-          (rawGraph, Mode.Dev debugTypes elmCompat ffiUnsafe ffiDbg ffiAliases cov)
+      (graph, mode) = buildModeAndGraph inputMode rawGraph ffiAliases
       trackLines = case mode of Mode.Dev {} -> True; Mode.Prod {} -> False
       covIds = if Mode.isCoverage mode then Coverage.computeBaseIds graph else Map.empty
       state = Map.foldrWithKey (addMain mode graph) (emptyState trackLines sourceLocs covIds) mains
@@ -157,6 +151,20 @@ generate inputMode (Opt.GlobalGraph rawGraph _ sourceLocs) mains ffiInfos =
 addMain :: Mode.Mode -> Graph -> ModuleName.Canonical -> Opt.Main -> State -> State
 addMain mode graph home _ state =
   addGlobal mode graph state (Opt.Global home "main")
+
+-- | Prepare the graph and mode for code generation.
+--
+-- In production mode, minifies the graph and builds a string pool.
+-- In development mode, passes the raw graph through unchanged.
+buildModeAndGraph :: Mode.Mode -> Graph -> Set Name.Name -> (Graph, Mode.Mode)
+buildModeAndGraph inputMode rawGraph ffiAliases =
+  case inputMode of
+    Mode.Prod fields elmCompat ffiUnsafe ffiDbg _ _ ->
+      let minified = Minify.minifyGraph rawGraph
+          pool = StringPool.buildPool minified
+       in (minified, Mode.Prod fields elmCompat ffiUnsafe ffiDbg pool ffiAliases)
+    Mode.Dev debugTypes elmCompat ffiUnsafe ffiDbg _ cov ->
+      (rawGraph, Mode.Dev debugTypes elmCompat ffiUnsafe ffiDbg ffiAliases cov)
 
 perfNote :: Mode.Mode -> Builder
 perfNote mode =

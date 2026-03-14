@@ -124,11 +124,13 @@ checkModule projectType (Module maybeHeader imports foreignImports infixes decls
         Nothing ->
           Right $
             Src.Module Nothing (Ann.At Ann.one Src.Open) (Src.NoDocs Ann.one) imports foreignImports values unions aliases infixes
-              ( case ports of
-                  [] -> Src.NoEffects
-                  _ : _ -> Src.Ports ports
-              )
+              (portsToEffects ports)
               [] abilities impls
+
+-- | Convert a port list to effects for headerless modules.
+portsToEffects :: [Src.Port] -> Src.Effects
+portsToEffects [] = Src.NoEffects
+portsToEffects ps@(_ : _) = Src.Ports ps
 
 checkEffects :: ProjectType -> [Src.Port] -> Effects -> Either SyntaxError.Error Src.Effects
 checkEffects projectType ports effects =

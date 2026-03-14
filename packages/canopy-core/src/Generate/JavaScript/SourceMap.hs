@@ -1,4 +1,5 @@
 {-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE TemplateHaskell #-}
 
 -- | Source Map V3 generation for the Canopy compiler.
 --
@@ -28,6 +29,13 @@ module Generate.JavaScript.SourceMap
     SourceMap (..)
   , Mapping (..)
 
+    -- * Lenses
+  , smFile
+  , smSources
+  , smSourcesContent
+  , smNames
+  , smMappings
+
     -- * Construction
   , empty
   , addMapping
@@ -40,6 +48,7 @@ module Generate.JavaScript.SourceMap
   , encodeVLQ
   ) where
 
+import Control.Lens (makeLenses, (%~), (&))
 import Data.Bits ((.&.), (.|.), shiftL, shiftR)
 import Data.ByteString.Builder (Builder)
 import qualified Data.ByteString.Builder as BB
@@ -83,6 +92,8 @@ data Mapping = Mapping
   , _mNameIndex :: !(Maybe Int)
   } deriving (Show, Eq)
 
+makeLenses ''SourceMap
+
 -- | Create an empty source map for the given output file.
 --
 -- @since 0.19.2
@@ -98,7 +109,7 @@ empty outputFile =
 -- @since 0.19.2
 addMapping :: Mapping -> SourceMap -> SourceMap
 addMapping m sm =
-  sm { _smMappings = m : _smMappings sm }
+  sm & smMappings %~ (m :)
 
 -- | Register a source file, returning its index and the updated map.
 --
@@ -114,9 +125,8 @@ addSource path maybeContent sm =
       let idx = length (_smSources sm)
           content = maybe Text.empty id maybeContent
        in ( idx
-          , sm { _smSources = _smSources sm ++ [path]
-               , _smSourcesContent = _smSourcesContent sm ++ [content]
-               }
+          , sm & smSources %~ (++ [path])
+               & smSourcesContent %~ (++ [content])
           )
 
 -- | Serialize the source map to a JSON 'Builder'.
