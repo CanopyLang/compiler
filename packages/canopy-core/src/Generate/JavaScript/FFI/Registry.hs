@@ -33,7 +33,6 @@ module Generate.JavaScript.FFI.Registry
   , emitNeededBlocks
   ) where
 
-import qualified Canopy.Data.Name as Name
 import Data.ByteString (ByteString)
 import qualified Data.ByteString as BS
 import qualified Data.ByteString.Char8 as BS8
@@ -117,50 +116,53 @@ closeFFIDeps reg seeds = go Set.empty seeds
 
 -- | Compute transitive closure of FFI block dependencies across multiple files.
 --
--- Given per-alias registries and initial seed blocks, iteratively resolves
+-- Given per-file registries and initial seed blocks, iteratively resolves
 -- cross-file references until stable. When a needed block in file A references
 -- an identifier defined in file B, that block is added as a seed for file B.
 --
+-- Keyed by file path (not alias name) to avoid collisions when multiple
+-- modules share the same FFI alias (e.g. Platform, Platform.Cmd, Platform.Sub).
+--
 -- Most cross-file references resolve in 2 iterations (direct refs are rarely chained).
 closeFFICrossFileDeps
-  :: Map Name.Name (Map FFIBlockId FFIBlock)
-  -> Map Name.Name (Set FFIBlockId)
-  -> Map Name.Name (Set FFIBlockId)
+  :: Map String (Map FFIBlockId FFIBlock)
+  -> Map String (Set FFIBlockId)
+  -> Map String (Set FFIBlockId)
 closeFFICrossFileDeps registries initialSeeds =
   closeFinal (iterateSeeds initialSeeds)
   where
     crossFileIndex = buildCrossFileIndex registries
     closeFinal = Map.mapWithKey closeLocal
-    closeLocal alias blocks =
-      maybe blocks (`closeFFIDeps` blocks) (Map.lookup alias registries)
+    closeLocal fileKey blocks =
+      maybe blocks (`closeFFIDeps` blocks) (Map.lookup fileKey registries)
     iterateSeeds seeds =
       let closed = Map.mapWithKey closeLocal seeds
           newCross = collectCrossSeeds closed
           merged = Map.unionWith Set.union seeds newCross
        in if merged == seeds then seeds else iterateSeeds merged
     collectCrossSeeds = Map.foldlWithKey' findCrossRefs Map.empty
-    findCrossRefs acc alias blocks =
-      maybe acc (resolveUnresolved acc alias blocks) (Map.lookup alias registries)
-    resolveUnresolved acc alias blocks reg =
-      Set.foldl' (addCrossRef alias) acc crossRefs
+    findCrossRefs acc fileKey blocks =
+      maybe acc (resolveUnresolved acc fileKey blocks) (Map.lookup fileKey registries)
+    resolveUnresolved acc fileKey blocks reg =
+      Set.foldl' (addCrossRef fileKey) acc crossRefs
       where
         crossRefs = Set.map FFIBlockId (unresolvedRefs reg blocks)
-    addCrossRef sourceAlias acc bid =
+    addCrossRef sourceFile acc bid =
       case Map.lookup bid crossFileIndex of
-        Just targetAlias
-          | targetAlias /= sourceAlias ->
-              Map.insertWith Set.union targetAlias (Set.singleton bid) acc
+        Just targetFile
+          | targetFile /= sourceFile ->
+              Map.insertWith Set.union targetFile (Set.singleton bid) acc
         _ -> acc
 
--- | Build index mapping each block ID to the alias that defines it.
+-- | Build index mapping each block ID to the file path that defines it.
 buildCrossFileIndex
-  :: Map Name.Name (Map FFIBlockId FFIBlock)
-  -> Map FFIBlockId Name.Name
+  :: Map String (Map FFIBlockId FFIBlock)
+  -> Map FFIBlockId String
 buildCrossFileIndex =
-  Map.foldlWithKey' addAlias Map.empty
+  Map.foldlWithKey' addFile Map.empty
   where
-    addAlias acc alias reg =
-      Map.foldlWithKey' (\a bid _ -> Map.insert bid alias a) acc reg
+    addFile acc fileKey reg =
+      Map.foldlWithKey' (\a bid _ -> Map.insert bid fileKey a) acc reg
 
 -- | Extract identifiers referenced by needed blocks that aren't defined locally.
 --

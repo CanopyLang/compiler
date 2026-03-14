@@ -323,7 +323,7 @@ generateBrowserTestHarness tests maybeBrowserRunner =
     sections =
       [ "<!DOCTYPE html>",
         "<html>",
-        "<head><title>Canopy Browser Tests</title></head>",
+        "<head><meta charset=\"utf-8\"><title>Canopy Browser Tests</title></head>",
         "<body>",
         "  <div id=\"test-root\"></div>",
         "  <iframe id=\"test-target\" style=\"width:100%;height:0;border:none;position:absolute;\"></iframe>",

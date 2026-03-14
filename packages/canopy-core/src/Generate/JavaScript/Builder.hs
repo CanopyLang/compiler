@@ -528,9 +528,9 @@ fieldsToJSCommaList :: [(Name, Expr)] -> JS.JSCommaList JS.JSObjectProperty
 fieldsToJSCommaList [] = JS.JSLNil
 fieldsToJSCommaList [f] = JS.JSLOne (fieldToJSProperty f)
 fieldsToJSCommaList (f:fs) =
-  foldr (\field acc -> JS.JSLCons acc noAnnot (fieldToJSProperty field))
-        (JS.JSLOne (fieldToJSProperty (last (f:fs))))
-        (init (f:fs))
+  foldl (\acc field -> JS.JSLCons acc noAnnot (fieldToJSProperty field))
+        (JS.JSLOne (fieldToJSProperty f))
+        fs
 
 -- | Convert a @(key, value)@ pair to a @language-javascript@ property node.
 fieldToJSProperty :: (Name, Expr) -> JS.JSObjectProperty

@@ -137,45 +137,48 @@ generateFFIContent mode graph ffiInfos usedFuncs =
      then mempty
      else mconcat parts <> validators
   where
-    aliasRegistries = buildAliasRegistries ffiInfos
-    initialSeeds = computeInitialSeeds ffiInfos usedFuncs aliasRegistries
-    resolvedNeeded = FFIRegistry.closeFFICrossFileDeps aliasRegistries initialSeeds
+    fileRegistries = buildAliasRegistries ffiInfos
+    initialSeeds = computeInitialSeeds ffiInfos usedFuncs fileRegistries
+    resolvedNeeded = FFIRegistry.closeFFICrossFileDeps fileRegistries initialSeeds
     parts =
       [ "\n// FFI JavaScript content and bindings\n"
       ]
-        ++ Map.foldrWithKey (formatFFIWithBindings mode graph usedFuncs aliasRegistries resolvedNeeded) [] ffiInfos
+        ++ Map.foldrWithKey (formatFFIWithBindings mode graph usedFuncs fileRegistries resolvedNeeded) [] ffiInfos
     validators =
       if Mode.isFFIStrict mode
         then generateFFIValidators mode ffiInfos
         else mempty
 
--- | Build per-alias FFI registries for all FFI files.
+-- | Build per-file FFI registries for all FFI files.
+--
+-- Keyed by file path (not alias name) to avoid collisions when multiple
+-- modules share the same FFI alias (e.g. Platform, Platform.Cmd, and
+-- Platform.Sub all use PlatformFFI but import different JS files).
 buildAliasRegistries
   :: Map String FFIInfo
-  -> Map Name.Name (Map FFIRegistry.FFIBlockId FFIRegistry.FFIBlock)
+  -> Map String (Map FFIRegistry.FFIBlockId FFIRegistry.FFIBlock)
 buildAliasRegistries ffiInfos =
-  Map.fromList
-    [ (_ffiAlias info, FFIRegistry.buildFFIRegistry (_ffiContent info))
-    | info <- Map.elems ffiInfos
-    ]
+  Map.map (\info -> FFIRegistry.buildFFIRegistry (_ffiContent info)) ffiInfos
 
--- | Compute initial seed blocks per alias from used function tracking.
+-- | Compute initial seed blocks per file from used function tracking.
+--
+-- Keyed by file path to match the per-file registries, avoiding alias
+-- collisions when multiple modules share the same FFI alias name.
 computeInitialSeeds
   :: Map String FFIInfo
   -> Map Name.Name (Set Name.Name)
-  -> Map Name.Name (Map FFIRegistry.FFIBlockId FFIRegistry.FFIBlock)
-  -> Map Name.Name (Set FFIRegistry.FFIBlockId)
-computeInitialSeeds ffiInfos usedFuncs aliasRegistries =
-  Map.fromList
-    [ (alias, seeds)
-    | info <- Map.elems ffiInfos
-    , let alias = _ffiAlias info
+  -> Map String (Map FFIRegistry.FFIBlockId FFIRegistry.FFIBlock)
+  -> Map String (Set FFIRegistry.FFIBlockId)
+computeInitialSeeds ffiInfos usedFuncs fileRegistries =
+  Map.mapWithKey computeForFile ffiInfos
+  where
+    computeForFile filePath info =
+      let alias = _ffiAlias info
           functions = extractFFIFunctions (Text.lines (_ffiContent info))
           neededNames = Map.findWithDefault Set.empty alias usedFuncs
           neededFunctions = filterNeededFunctions functions neededNames
-          reg = Map.findWithDefault Map.empty alias aliasRegistries
-          seeds = computeSeedBlocks reg neededFunctions
-    ]
+          reg = Map.findWithDefault Map.empty filePath fileRegistries
+       in computeSeedBlocks reg neededFunctions
 
 -- GENERATE FFI VALIDATORS
 
@@ -256,13 +259,13 @@ formatFFIWithBindings
   :: Mode.Mode
   -> Graph
   -> Map Name.Name (Set Name.Name)
-  -> Map Name.Name (Map FFIRegistry.FFIBlockId FFIRegistry.FFIBlock)
-  -> Map Name.Name (Set FFIRegistry.FFIBlockId)
+  -> Map String (Map FFIRegistry.FFIBlockId FFIRegistry.FFIBlock)
+  -> Map String (Set FFIRegistry.FFIBlockId)
   -> String
   -> FFIInfo
   -> [Builder]
   -> [Builder]
-formatFFIWithBindings mode graph usedFuncs aliasRegistries resolvedNeeded _key info acc
+formatFFIWithBindings mode graph usedFuncs fileRegistries resolvedNeeded _key info acc
   | not (isValidJsIdentifier aliasStr) = acc
   | otherwise =
       wrappedContent (reExports ++ bindingsSection ++ acc)
@@ -280,9 +283,9 @@ formatFFIWithBindings mode graph usedFuncs aliasRegistries resolvedNeeded _key i
     neededFuncNames = Map.findWithDefault Set.empty alias usedFuncs
     neededFunctions = filterNeededFunctions functions neededFuncNames
 
-    -- Use pre-computed registry and resolved needed blocks
-    ffiRegistry = Map.findWithDefault Map.empty alias aliasRegistries
-    allNeeded = Map.findWithDefault Set.empty alias resolvedNeeded
+    -- Use pre-computed per-file registry and resolved needed blocks
+    ffiRegistry = Map.findWithDefault Map.empty path fileRegistries
+    allNeeded = Map.findWithDefault Set.empty path resolvedNeeded
 
     -- Emit only needed content if tree-shaking found blocks;
     -- fall back to full content if registry found nothing

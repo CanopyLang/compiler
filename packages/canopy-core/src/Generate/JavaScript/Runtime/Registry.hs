@@ -490,7 +490,7 @@ function _Utils_eqHelp(x, y, depth, stack)
 		return true;
 	}
 
-	if (typeof x !== 'object' || x === null || y === null)
+	if (typeof x !== 'object' || x === null || typeof y !== 'object' || y === null)
 	{
 		typeof x === 'function' && _Debug_crash(5);
 		return false;
