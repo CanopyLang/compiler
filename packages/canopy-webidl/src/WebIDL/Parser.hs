@@ -23,7 +23,7 @@ module WebIDL.Parser
   , pExtendedAttributes
   ) where
 
-import Control.Monad (void)
+import qualified Control.Monad as Monad
 import Data.Text (Text)
 import qualified Data.Text as Text
 import Data.Void (Void)
@@ -96,12 +96,12 @@ brackets = between (symbol "[") (symbol "]")
 
 -- | Parse a semicolon
 semi :: Parser ()
-semi = void (symbol ";")
+semi = Monad.void (symbol ";")
 
 
 -- | Parse a comma
 comma :: Parser ()
-comma = void (symbol ",")
+comma = Monad.void (symbol ",")
 
 
 -- | Parse comma-separated list
@@ -151,7 +151,7 @@ floatLiteral = lexeme (try Lexer.float <|> specialFloat)
 
 -- | Parse a keyword
 keyword :: Text -> Parser ()
-keyword kw = lexeme (void (string kw <* notFollowedBy alphaNumChar))
+keyword kw = lexeme (Monad.void (string kw <* notFollowedBy alphaNumChar))
 
 
 -- * Definition Parsers
@@ -281,7 +281,7 @@ pCallbackDef extAttrs = do
       semi
       pure (DefCallbackInterface (CallbackInterface extAttrs name members))
     else do
-      void (symbol "=")
+      Monad.void (symbol "=")
       retType <- pType
       args <- parens (commaSep pArgument)
       semi
@@ -367,7 +367,7 @@ pConst extAttrs = do
   keyword "const"
   ty <- pConstType
   name <- identifier
-  void (symbol "=")
+  Monad.void (symbol "=")
   val <- pConstValue
   semi
   pure (Const extAttrs ty name val)
@@ -739,7 +739,7 @@ pExtendedAttribute = do
 -- | Parse extended attribute with identifier value
 pIdent :: Text -> Parser ExtendedAttribute
 pIdent name = do
-  void (symbol "=")
+  Monad.void (symbol "=")
   val <- identifier
   pure (EAIdent name val)
 
@@ -747,10 +747,10 @@ pIdent name = do
 -- | Parse extended attribute with identifier list
 pIdentList :: Text -> Parser ExtendedAttribute
 pIdentList name = do
-  void (symbol "=")
-  void (symbol "(")
+  Monad.void (symbol "=")
+  Monad.void (symbol "(")
   vals <- commaSep1 identifier
-  void (symbol ")")
+  Monad.void (symbol ")")
   pure (EAIdentList name vals)
 
 
@@ -764,7 +764,7 @@ pArgList name = do
 -- | Parse extended attribute with named argument list
 pNamedArgList :: Text -> Parser ExtendedAttribute
 pNamedArgList name = do
-  void (symbol "=")
+  Monad.void (symbol "=")
   ident <- identifier
   args <- parens (commaSep pArgument)
   pure (EANamedArgList name ident args)

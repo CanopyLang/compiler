@@ -20,7 +20,7 @@ import qualified Canonicalize.Type as Type
 import qualified Canopy.Data.Utf8 as Utf8
 import qualified Canopy.ModuleName as ModuleName
 import qualified Canopy.Package as Pkg
-import Control.Monad (foldM)
+import qualified Control.Monad as Monad
 import qualified Data.Graph as Graph
 import qualified Canopy.Data.Index as Index
 import qualified Data.List as List
@@ -474,7 +474,7 @@ canonicalizeLet letRegion env defs body =
 
       verifyBindings Warning.Def bindings $
         do
-          nodes <- foldM (addDefNodes newEnv) [] defs
+          nodes <- Monad.foldM (addDefNodes newEnv) [] defs
           cbody <- canonicalize newEnv body
           detectCycles letRegion (Graph.stronglyConnComp nodes) cbody
 

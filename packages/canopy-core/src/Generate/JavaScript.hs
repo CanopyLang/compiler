@@ -49,6 +49,7 @@ import qualified Data.Set as Set
 import qualified Data.Text as Text
 import qualified Generate.JavaScript.Builder as JS
 import qualified Generate.JavaScript.Coverage as Coverage
+import qualified Generate.JavaScript.Ability as Ability
 import qualified Generate.JavaScript.Expression as Expr
 import Generate.JavaScript.FFI
   ( FFIInfo (..),
@@ -131,7 +132,7 @@ generate inputMode (Opt.GlobalGraph rawGraph _ sourceLocs) mains ffiInfos =
           <> Runtime.embeddedRuntimeForMode mode
           <> FFIRuntime.embeddedRuntimeForMode mode
           <> coveragePreamble
-          <> generateFFIContent mode graph ffiInfos
+          <> generateFFIContent mode graph ffiInfos Map.empty
           <> perfNote mode
           <> poolDecls
           <> stateToBuilder state
@@ -459,6 +460,10 @@ dispatchNode mode graph currentGlobal addDeps globalInGraph state =
       addStmt (emitMapping currentGlobal (addDeps deps state)) (Kernel_.generatePort mode currentGlobal "incomingPort" decoder)
     Opt.PortOutgoing encoder deps ->
       addStmt (emitMapping currentGlobal (addDeps deps state)) (Kernel_.generatePort mode currentGlobal "outgoingPort" encoder)
+    Opt.AbilityDict _ ->
+      state
+    Opt.ImplDict abilityName methods deps ->
+      addStmt (emitMapping currentGlobal (addDeps deps state)) (Ability.generateImplDict mode currentGlobal abilityName methods)
 
 -- | Generate coverage-instrumented code for a Define node.
 covDefineCode :: Mode.Mode -> Opt.Global -> Opt.Expr -> State -> Expr.Code

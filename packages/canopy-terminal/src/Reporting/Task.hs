@@ -22,7 +22,7 @@ module Reporting.Task
   )
 where
 
-import Control.Monad (void)
+import qualified Control.Monad as Monad
 import Control.Monad.IO.Class (liftIO)
 import Control.Monad.Trans.Except (ExceptT, runExceptT, throwE, withExceptT)
 
@@ -55,4 +55,4 @@ mapError = withExceptT
 
 -- | Run IO action for side effects, ignoring result.
 mio :: IO a -> Task e ()
-mio action = void (liftIO action)
+mio action = Monad.void (liftIO action)

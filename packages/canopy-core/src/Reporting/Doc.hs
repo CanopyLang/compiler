@@ -164,18 +164,18 @@ toFancyHint chunks =
 
 link :: String -> String -> String -> String -> PP.Doc
 link word before fileName after =
-  PP.fillSep $
+  PP.fillSep (
     (PP.underline (PP.text word) <> ":") :
     ( fmap PP.text (words before)
         <> ( PP.text (makeLink fileName) :
              fmap PP.text (words after)
            )
-    )
+    ))
 
 fancyLink :: String -> [PP.Doc] -> String -> [PP.Doc] -> PP.Doc
 fancyLink word before fileName after =
-  PP.fillSep $
-    (PP.underline (PP.text word) <> ":") : (before <> (PP.text (makeLink fileName) : after))
+  PP.fillSep (
+    (PP.underline (PP.text word) <> ":") : (before <> (PP.text (makeLink fileName) : after)))
 
 makeLink :: String -> String
 makeLink fileName =
@@ -227,7 +227,7 @@ intToOrdinal number =
 cycle :: Int -> Name.Name -> [Name.Name] -> PP.Doc
 cycle indent name names =
   let toLn n = cycleLn <> PP.dullyellow (fromName n)
-   in (PP.indent indent . PP.vcat $ (cycleTop : (List.intersperse cycleMid (toLn name : fmap toLn names) <> [cycleEnd])))
+   in ((PP.indent indent . PP.vcat) (cycleTop : (List.intersperse cycleMid (toLn name : fmap toLn names) <> [cycleEnd])))
 
 cycleTop, cycleLn, cycleMid, cycleEnd :: PP.Doc
 cycleTop = if isWindows then "+-----+" else "┌─────┐"
@@ -297,7 +297,7 @@ sgrToStyle sgrs style@(Style bold underline color) =
     [] ->
       style
     sgr : rest ->
-      sgrToStyle rest $
+      sgrToStyle rest (
         case sgr of
           Ansi.Reset -> noStyle
           Ansi.SetConsoleIntensity i -> Style (isBold i) underline color
@@ -311,7 +311,7 @@ sgrToStyle sgrs style@(Style bold underline color) =
           -- Palette and default color commands are passed through without
           -- modification since they don't map to the simplified color model.
           Ansi.SetPaletteColor _ _ -> style
-          Ansi.SetDefaultColor _ -> style
+          Ansi.SetDefaultColor _ -> style)
 
 isBold :: Ansi.ConsoleIntensity -> Bool
 isBold intensity =
@@ -337,7 +337,7 @@ toColor layer intensity color =
             case intensity of
               Ansi.Dull -> dull
               Ansi.Vivid -> vivid
-       in Just $
+       in Just (
             case color of
               Ansi.Red -> pick Red RED
               Ansi.Magenta -> pick Magenta MAGENTA
@@ -346,7 +346,7 @@ toColor layer intensity color =
               Ansi.Cyan -> pick Cyan CYAN
               Ansi.Blue -> pick Blue BLUE
               Ansi.White -> pick White WHITE
-              Ansi.Black -> pick Black BLACK
+              Ansi.Black -> pick Black BLACK)
 
 encodeChunks :: Style -> [String] -> Encode.Value
 encodeChunks (Style bold underline color) revChunks =
@@ -365,7 +365,7 @@ encodeChunks (Style bold underline color) revChunks =
 
 encodeColor :: Color -> Encode.Value
 encodeColor color =
-  Encode.string . Json.fromChars $
+  (Encode.string . Json.fromChars) (
     ( case color of
         Red -> "red"
         RED -> "RED"
@@ -383,4 +383,4 @@ encodeColor color =
         BLACK -> "BLACK"
         White -> "white"
         WHITE -> "WHITE"
-    )
+    ))

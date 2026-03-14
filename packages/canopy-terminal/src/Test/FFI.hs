@@ -44,14 +44,13 @@ import qualified System.Directory as Dir
 import System.FilePath ((</>))
 import qualified System.FilePath as FilePath
 import qualified System.Exit as Exit
-import Data.Either (partitionEithers)
+import qualified Data.Either as Either
 import qualified Data.List as List
 
 import qualified Foreign.FFI as FFI
 import qualified Foreign.TestGenerator as TestGen
 import qualified System.Process as Process
-import System.Directory (findExecutable)
-import Control.Monad (filterM, void, when)
+import qualified Control.Monad as Monad
 import qualified Control.Concurrent as Concurrent
 import qualified Control.Exception as Exception
 import qualified System.FSNotify as FSNotify
@@ -206,12 +205,12 @@ watchAndRerun :: FFITestConfig -> IO Exit.ExitCode
 watchAndRerun config =
   FSNotify.withManager $ \mgr -> do
     let watchDirs = ["src", "external"]
-    existingDirs <- filterM Dir.doesDirectoryExist watchDirs
+    existingDirs <- Monad.filterM Dir.doesDirectoryExist watchDirs
     mapM_ (watchDir mgr) existingDirs
     keepAlive
   where
     watchDir mgr dir =
-      void (FSNotify.watchTree mgr dir isRelevantFile handleChange)
+      Monad.void (FSNotify.watchTree mgr dir isRelevantFile handleChange)
 
     isRelevantFile event =
       let path = FSNotify.eventPath event
@@ -252,7 +251,7 @@ runTests config = do
 -- | Generate tests for a single FFI module
 generateTestsForModule :: FFITestConfig -> FilePath -> IO Bool
 generateTestsForModule config modulePath = do
-  when (ffiTestVerbose config) $
+  Monad.when (ffiTestVerbose config) $
     Print.println [c|  {cyan|📄} Processing: {cyan|#{modulePath}}|]
 
   -- Parse FFI functions from the module's JavaScript file
@@ -266,7 +265,7 @@ generateTestsForModule config modulePath = do
     Right ffiFunctions -> do
       if Map.null ffiFunctions
         then do
-          when (ffiTestVerbose config) $
+          Monad.when (ffiTestVerbose config) $
             Print.println [c|{yellow|⚠️} No FFI functions found in {cyan|#{modulePath}}|]
           return True
         else do
@@ -306,7 +305,7 @@ parseForeignImports canopyFile = do
       -- Resolve relative paths and parse each JavaScript file
       let resolvedPaths = map (resolveJSPath moduleDir) foreignImports
       results <- mapM parseJavaScriptFile resolvedPaths
-      let (errors, successes) = partitionEithers results
+      let (errors, successes) = Either.partitionEithers results
 
       if not (null errors)
         then return (Left (Text.unlines errors))
@@ -411,7 +410,7 @@ validateFunction modulePath (funcName, ffiFunc) =
 findFFIModules :: FilePath -> IO [FilePath]
 findFFIModules rootDir = do
   canopyFiles <- findCanopyFiles rootDir
-  filterM hasForeignImports canopyFiles
+  Monad.filterM hasForeignImports canopyFiles
 
 -- | Find all Canopy source files
 findCanopyFiles :: FilePath -> IO [FilePath]
@@ -419,10 +418,10 @@ findCanopyFiles dir = do
   contents <- Dir.listDirectory dir
   paths <- mapM (\name -> return (dir </> name)) contents
 
-  files <- filterM Dir.doesFileExist paths
+  files <- Monad.filterM Dir.doesFileExist paths
   let canopyFiles = filter (\f -> FilePath.takeExtension f `elem` [".can", ".canopy"]) files
 
-  dirs <- filterM Dir.doesDirectoryExist paths
+  dirs <- Monad.filterM Dir.doesDirectoryExist paths
   let nonHiddenDirs = filter (not . ("." `List.isPrefixOf`) . FilePath.takeFileName) dirs
   nestedFiles <- mapM findCanopyFiles nonHiddenDirs
 
@@ -603,7 +602,7 @@ generateTestFunctionsJS testFunctions =
 -- | Generate JavaScript for a single test function.
 --
 -- Generates tests that verify the function exists on the module,
--- is callable, and does not throw when invoked. These are the
+-- is callable, and does not throw Monad.when invoked. These are the
 -- minimum viable tests for any FFI function binding.
 generateSingleTestJS :: String -> [String]
 generateSingleTestJS functionName =
@@ -688,7 +687,7 @@ runTestsInNode config = do
   let runnerPath = getOutputDir config </> "run-all-tests.js"
 
   -- Check if Node.js is available
-  nodeExists <- findExecutable "node"
+  nodeExists <- Dir.findExecutable "node"
   case nodeExists of
     Nothing -> do
       Print.println [c|{red|❌} Node.js not found. Please install Node.js to run FFI tests.|]

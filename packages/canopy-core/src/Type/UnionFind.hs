@@ -29,8 +29,9 @@ Compared to the Haskell implementation, the major changes here include:
 
 -}
 
-import Control.Monad (when)
-import Data.IORef (IORef, atomicModifyIORef', modifyIORef', newIORef, readIORef, writeIORef)
+import qualified Control.Monad as Monad
+import Data.IORef (IORef)
+import qualified Data.IORef as IORef
 import Data.Word (Word32)
 import qualified Reporting.InternalError as InternalError
 import System.IO.Unsafe (unsafePerformIO)
@@ -83,7 +84,7 @@ pointId (Pt pid _) = pid
 -- @since 0.19.2
 {-# NOINLINE nextPointId #-}
 nextPointId :: IORef Int
-nextPointId = unsafePerformIO (newIORef 0)
+nextPointId = unsafePerformIO (IORef.newIORef 0)
 
 data PointInfo a
   = Info {-# UNPACK #-} !(IORef Word32) {-# UNPACK #-} !(IORef a)
@@ -94,57 +95,57 @@ data PointInfo a
 fresh :: a -> IO (Point a)
 fresh value =
   do
-    pid <- atomicModifyIORef' nextPointId (\n -> (n + 1, n))
-    weight <- newIORef 1
-    desc <- newIORef value
-    link <- newIORef (Info weight desc)
+    pid <- IORef.atomicModifyIORef' nextPointId (\n -> (n + 1, n))
+    weight <- IORef.newIORef 1
+    desc <- IORef.newIORef value
+    link <- IORef.newIORef (Info weight desc)
     return (Pt pid link)
 
 repr :: Point a -> IO (Point a)
 repr point@(Pt _ ref) =
   do
-    pInfo <- readIORef ref
+    pInfo <- IORef.readIORef ref
     case pInfo of
       Info _ _ ->
         return point
       Link point1@(Pt _ ref1) ->
         do
           point2 <- repr point1
-          when (point2 /= point1) $
+          Monad.when (point2 /= point1) $
             do
-              pInfo1 <- readIORef ref1
-              writeIORef ref pInfo1
+              pInfo1 <- IORef.readIORef ref1
+              IORef.writeIORef ref pInfo1
           return point2
 
 get :: Point a -> IO a
 get point@(Pt _ ref) =
   do
-    pInfo <- readIORef ref
+    pInfo <- IORef.readIORef ref
     case pInfo of
       Info _ descRef ->
-        readIORef descRef
+        IORef.readIORef descRef
       Link (Pt _ ref1) ->
         do
-          link' <- readIORef ref1
+          link' <- IORef.readIORef ref1
           case link' of
             Info _ descRef ->
-              readIORef descRef
+              IORef.readIORef descRef
             Link _ ->
               repr point >>= get
 
 set :: Point a -> a -> IO ()
 set point@(Pt _ ref) newDesc =
   do
-    pInfo <- readIORef ref
+    pInfo <- IORef.readIORef ref
     case pInfo of
       Info _ descRef ->
-        writeIORef descRef newDesc
+        IORef.writeIORef descRef newDesc
       Link (Pt _ ref1) ->
         do
-          link' <- readIORef ref1
+          link' <- IORef.readIORef ref1
           case link' of
             Info _ descRef ->
-              writeIORef descRef newDesc
+              IORef.writeIORef descRef newDesc
             Link _ ->
               do
                 newPoint <- repr point
@@ -153,16 +154,16 @@ set point@(Pt _ ref) newDesc =
 modify :: Point a -> (a -> a) -> IO ()
 modify point@(Pt _ ref) func =
   do
-    pInfo <- readIORef ref
+    pInfo <- IORef.readIORef ref
     case pInfo of
       Info _ descRef ->
-        modifyIORef' descRef func
+        IORef.modifyIORef' descRef func
       Link (Pt _ ref1) ->
         do
-          link' <- readIORef ref1
+          link' <- IORef.readIORef ref1
           case link' of
             Info _ descRef ->
-              modifyIORef' descRef func
+              IORef.modifyIORef' descRef func
             Link _ ->
               do
                 newPoint <- repr point
@@ -174,26 +175,26 @@ union p1 p2 newDesc =
     point1@(Pt _ ref1) <- repr p1
     point2@(Pt _ ref2) <- repr p2
 
-    desc1 <- readIORef ref1
-    desc2 <- readIORef ref2
+    desc1 <- IORef.readIORef ref1
+    desc2 <- IORef.readIORef ref2
 
     case (desc1, desc2) of
       (Info w1 d1, Info w2 d2) ->
         if point1 == point2
-          then writeIORef d1 newDesc
+          then IORef.writeIORef d1 newDesc
           else do
-            weight1 <- readIORef w1
-            weight2 <- readIORef w2
+            weight1 <- IORef.readIORef w1
+            weight2 <- IORef.readIORef w2
             let !newWeight = weight1 + weight2
             if weight1 >= weight2
               then do
-                writeIORef ref2 (Link point1)
-                writeIORef w1 newWeight
-                writeIORef d1 newDesc
+                IORef.writeIORef ref2 (Link point1)
+                IORef.writeIORef w1 newWeight
+                IORef.writeIORef d1 newDesc
               else do
-                writeIORef ref1 (Link point2)
-                writeIORef w2 newWeight
-                writeIORef d2 newDesc
+                IORef.writeIORef ref1 (Link point2)
+                IORef.writeIORef w2 newWeight
+                IORef.writeIORef d2 newDesc
       _ ->
         InternalError.report "Type.UnionFind" "repr returned a Link node in union"
           "The repr function should always resolve to an Info node. A Link node here indicates a bug in the union-find implementation."
@@ -208,7 +209,7 @@ equivalent p1 p2 =
 redundant :: Point a -> IO Bool
 redundant (Pt _ ref) =
   do
-    pInfo <- readIORef ref
+    pInfo <- IORef.readIORef ref
     case pInfo of
       Info _ _ ->
         return False

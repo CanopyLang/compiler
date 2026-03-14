@@ -89,7 +89,7 @@ module Canopy.Data.NonEmptyList
   )
 where
 
-import Control.Monad (liftM2)
+import qualified Control.Monad as Monad
 import Data.Binary (Binary, get, put)
 import qualified Data.List as List
 import Prelude hiding (head)
@@ -406,4 +406,4 @@ sortBy toRank (List x xs) =
 -- @since 0.19.1
 instance (Binary a) => Binary (List a) where
   put (List x xs) = put x >> put xs
-  get = liftM2 List get get
+  get = Monad.liftM2 List get get

@@ -31,7 +31,7 @@ import qualified Canopy.PathValidation as PathValidation
 import qualified Data.Char as Char
 import Control.Exception (IOException)
 import qualified Control.Exception as Exception
-import Data.Maybe (mapMaybe)
+import qualified Data.Maybe as Maybe
 import Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
 import qualified Data.List as List
@@ -287,7 +287,7 @@ parseJSDocBlock commentLines = do
 -- Extracts permission names from lines like:
 -- @\@capability permission microphone@
 findCapabilityPermissions :: [Text.Text] -> [CapabilityName]
-findCapabilityPermissions = mapMaybe parsePermissionAnnotation
+findCapabilityPermissions = Maybe.mapMaybe parsePermissionAnnotation
 
 -- | Parse a @capability permission annotation from a single line.
 parsePermissionAnnotation :: Text.Text -> Maybe CapabilityName
@@ -886,7 +886,7 @@ parseCapabilityBlock commentLines = do
 
 -- | Find all @capability annotations in a JSDoc block.
 findAllCapabilities :: [Text.Text] -> [Text.Text]
-findAllCapabilities = mapMaybe parseCapabilityAnnotation
+findAllCapabilities = Maybe.mapMaybe parseCapabilityAnnotation
 
 -- | Parse a @capability annotation from a single line.
 parseCapabilityAnnotation :: Text.Text -> Maybe Text.Text

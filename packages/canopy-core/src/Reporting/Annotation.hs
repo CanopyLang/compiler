@@ -15,7 +15,7 @@ module Reporting.Annotation
   )
 where
 
-import Control.Monad (liftM2)
+import qualified Control.Monad as Monad
 import Data.Binary (Binary, get, put)
 import Data.Word (Word32)
 import Prelude hiding (traverse)
@@ -76,8 +76,8 @@ one =
 
 instance Binary Region where
   put (Region a b) = put a >> put b
-  get = liftM2 Region get get
+  get = Monad.liftM2 Region get get
 
 instance Binary Position where
   put (Position a b) = put a >> put b
-  get = liftM2 Position get get
+  get = Monad.liftM2 Position get get

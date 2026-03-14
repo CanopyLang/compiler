@@ -12,7 +12,7 @@ import qualified Canonicalize.Environment as Env
 import qualified Canonicalize.Environment.Dups as Dups
 import qualified Canonicalize.Type as Type
 import qualified Canopy.ModuleName as ModuleName
-import Control.Monad (foldM)
+import qualified Control.Monad as Monad
 import Data.Foldable (traverse_)
 import qualified Data.Graph as Graph
 import qualified Canopy.Data.Index as Index
@@ -140,7 +140,7 @@ addTypes (Src.Module _ _ _ _ _ _ unions aliases _ _ _ _ _) (Env.Env home vs ts c
         List.foldl' addUnionDups (List.foldl' addAliasDups Dups.none aliases) unions
    in do
         _ <- Dups.detect Error.DuplicateType typeNameDups
-        ts1 <- foldM (addUnion home) ts unions
+        ts1 <- Monad.foldM (addUnion home) ts unions
         addAliases aliases (Env.Env home vs ts1 cs bs qvs qts qcs)
 
 addUnion :: ModuleName.Canonical -> Env.Exposed Env.Type -> Ann.Located Src.Union -> Result i w (Env.Exposed Env.Type)
@@ -156,7 +156,7 @@ addAliases :: [Ann.Located Src.Alias] -> Env.Env -> Result i w Env.Env
 addAliases aliases env =
   let nodes = fmap toNode aliases
       sccs = Graph.stronglyConnComp nodes
-   in foldM addAlias env sccs
+   in Monad.foldM addAlias env sccs
 
 addAlias :: Env.Env -> Graph.SCC (Ann.Located Src.Alias) -> Result i w Env.Env
 addAlias env@(Env.Env home vs ts cs bs qvs qts qcs) scc =

@@ -43,7 +43,7 @@ module Canopy.ModuleName
 where
 
 import qualified Canopy.Package as Pkg
-import Control.Monad (liftM2)
+import qualified Control.Monad as Monad
 import qualified Data.Aeson as Aeson
 import qualified Data.Aeson.Encoding as AesonEnc
 import qualified Data.Aeson.Key as AesonKey
@@ -147,7 +147,7 @@ instance Ord Canonical where
 
 instance Binary Canonical where
   put (Canonical a b) = put a >> put b
-  get = liftM2 Canonical get get
+  get = Monad.liftM2 Canonical get get
 
 -- AESON JSON INSTANCES
 

@@ -49,7 +49,8 @@ module Query.Engine
 where
 
 import qualified Crypto.Hash.SHA256 as SHA256
-import Data.IORef (IORef, modifyIORef', newIORef, readIORef)
+import Data.IORef (IORef)
+import qualified Data.IORef as IORef
 import Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
 import Data.Set (Set)
@@ -57,7 +58,8 @@ import qualified Data.Set as Set
 import Data.Text (Text)
 import qualified Data.Text as Text
 import qualified Data.Text.Encoding as TE
-import Data.Time.Clock (UTCTime, getCurrentTime)
+import Data.Time.Clock (UTCTime)
+import qualified Data.Time.Clock as Time
 import Logging.Event (LogEvent (..), Phase (..))
 import qualified Logging.Logger as Log
 import Query.Simple
@@ -126,7 +128,7 @@ emptyState =
 initEngine :: IO QueryEngine
 initEngine = do
   Log.logEvent (BuildStarted "query-engine-init")
-  stateRef <- newIORef emptyState
+  stateRef <- IORef.newIORef emptyState
   return (QueryEngine stateRef)
 
 -- | Run a query with caching (parse queries only).
@@ -135,15 +137,15 @@ initEngine = do
 -- from the Driver, which has the context to execute them.
 runQuery :: QueryEngine -> Query -> IO (Either QueryError QueryResult)
 runQuery (QueryEngine stateRef) query = do
-  state <- readIORef stateRef
+  state <- IORef.readIORef stateRef
   case checkCache state query of
     Just entry -> do
       Log.logEvent (CacheHit PhaseCache (showQuery query))
-      modifyIORef' stateRef (incrementHits . updateCacheHitCount query)
+      IORef.modifyIORef' stateRef (incrementHits . updateCacheHitCount query)
       return (Right (cacheEntryResult entry))
     Nothing -> do
       Log.logEvent (CacheMiss PhaseCache (showQuery query))
-      modifyIORef' stateRef incrementMisses
+      IORef.modifyIORef' stateRef incrementMisses
       executeAndCache stateRef query
 
 -- | Run a query with stale-on-error fallback.
@@ -157,7 +159,7 @@ runQuery (QueryEngine stateRef) query = do
 -- @since 0.20.0
 runQueryWithFallback :: QueryEngine -> Query -> IO (Either QueryError QueryResult)
 runQueryWithFallback engine@(QueryEngine stateRef) query = do
-  state <- readIORef stateRef
+  state <- IORef.readIORef stateRef
   let staleEntry = Map.lookup query (engineCache state)
   result <- runQuery engine query
   pure (fallbackOnError staleEntry result)
@@ -176,11 +178,11 @@ fallbackOnError Nothing err = err
 -- @since 0.19.2
 lookupQuery :: QueryEngine -> Query -> IO (Maybe QueryResult)
 lookupQuery (QueryEngine stateRef) query = do
-  state <- readIORef stateRef
+  state <- IORef.readIORef stateRef
   case checkCache state query of
     Just entry -> do
       Log.logEvent (CacheHit PhaseCache (showQuery query))
-      modifyIORef' stateRef (incrementHits . updateCacheHitCount query)
+      IORef.modifyIORef' stateRef (incrementHits . updateCacheHitCount query)
       return (Just (cacheEntryResult entry))
     Nothing -> return Nothing
 
@@ -198,9 +200,9 @@ storeQuery ::
   Maybe Query ->
   IO ()
 storeQuery (QueryEngine stateRef) query result hash parentQuery = do
-  currentTime <- getCurrentTime
+  currentTime <- Time.getCurrentTime
   Log.logEvent (CacheStored (showQuery query) 1)
-  modifyIORef' stateRef (insertCacheEntry query result hash currentTime . recordDependency query parentQuery)
+  IORef.modifyIORef' stateRef (insertCacheEntry query result hash currentTime . recordDependency query parentQuery)
 
 -- | Insert a cache entry into the engine state.
 insertCacheEntry ::
@@ -265,16 +267,16 @@ executeAndCache ::
   Query ->
   IO (Either QueryError QueryResult)
 executeAndCache stateRef query = do
-  modifyIORef' stateRef (markRunning query)
+  IORef.modifyIORef' stateRef (markRunning query)
   result <- executeQuery query
-  modifyIORef' stateRef (unmarkRunning query)
+  IORef.modifyIORef' stateRef (unmarkRunning query)
   case result of
     Left err ->
       return (Left err)
     Right queryResult -> do
-      currentTime <- getCurrentTime
+      currentTime <- Time.getCurrentTime
       let resultHash = hashQueryResult queryResult
-      modifyIORef' stateRef (insertCacheEntry query queryResult resultHash currentTime)
+      IORef.modifyIORef' stateRef (insertCacheEntry query queryResult resultHash currentTime)
       return (Right queryResult)
 
 -- | Mark query as running.
@@ -291,7 +293,7 @@ unmarkRunning query state =
 invalidateQuery :: QueryEngine -> Query -> IO ()
 invalidateQuery (QueryEngine stateRef) query = do
   Log.logEvent (CacheMiss PhaseCache (showQuery query))
-  modifyIORef' stateRef removeEntry
+  IORef.modifyIORef' stateRef removeEntry
   where
     removeEntry state =
       state {engineCache = Map.delete query (engineCache state)}
@@ -313,19 +315,19 @@ invalidateQuery (QueryEngine stateRef) query = do
 -- @since 0.19.2
 invalidateAndPropagate :: QueryEngine -> Query -> IO ()
 invalidateAndPropagate engine@(QueryEngine stateRef) query = do
-  state <- readIORef stateRef
+  state <- IORef.readIORef stateRef
   let maybeOldHash = lookupOldHash state query
   case maybeOldHash of
     Nothing -> return ()
     Just oldHash -> do
-      modifyIORef' stateRef (\s -> s {engineCache = Map.delete query (engineCache s)})
+      IORef.modifyIORef' stateRef (\s -> s {engineCache = Map.delete query (engineCache s)})
       reResult <- executeQuery query
       case reResult of
         Left _ -> propagateToDependents engine state query
         Right newResult -> do
           let newResultHash = hashQueryResult newResult
-          currentTime <- getCurrentTime
-          modifyIORef' stateRef (insertCacheEntry query newResult newResultHash currentTime)
+          currentTime <- Time.getCurrentTime
+          IORef.modifyIORef' stateRef (insertCacheEntry query newResult newResultHash currentTime)
           if newResultHash == oldHash
             then Log.logEvent (CacheHit PhaseCache ("early-cutoff:" <> showQuery query))
             else propagateToDependents engine state query
@@ -366,7 +368,7 @@ propagateToDependents engine state query =
 -- @since 0.19.2
 populatePersistedHash :: QueryEngine -> Query -> ContentHash -> IO ()
 populatePersistedHash (QueryEngine stateRef) query hash =
-  modifyIORef' stateRef addPersistedHash
+  IORef.modifyIORef' stateRef addPersistedHash
   where
     addPersistedHash s =
       s {enginePersistedHashes = Map.insert query hash (enginePersistedHashes s)}
@@ -378,7 +380,7 @@ populatePersistedHash (QueryEngine stateRef) query hash =
 -- @since 0.19.2
 populatePersistedHashes :: QueryEngine -> [(Query, ContentHash)] -> IO ()
 populatePersistedHashes (QueryEngine stateRef) entries =
-  modifyIORef' stateRef addAllHashes
+  IORef.modifyIORef' stateRef addAllHashes
   where
     addAllHashes s =
       s {enginePersistedHashes = Map.union (Map.fromList entries) (enginePersistedHashes s)}
@@ -387,7 +389,7 @@ populatePersistedHashes (QueryEngine stateRef) entries =
 clearCache :: QueryEngine -> IO ()
 clearCache (QueryEngine stateRef) = do
   Log.logEvent (CacheMiss PhaseCache "clear-all")
-  modifyIORef' stateRef clearAllState
+  IORef.modifyIORef' stateRef clearAllState
   where
     clearAllState s =
       s
@@ -401,19 +403,19 @@ clearCache (QueryEngine stateRef) = do
 -- | Get cache size.
 getCacheSize :: QueryEngine -> IO Int
 getCacheSize (QueryEngine stateRef) = do
-  state <- readIORef stateRef
+  state <- IORef.readIORef stateRef
   return (Map.size (engineCache state))
 
 -- | Get cache hit count.
 getCacheHits :: QueryEngine -> IO Int
 getCacheHits (QueryEngine stateRef) = do
-  state <- readIORef stateRef
+  state <- IORef.readIORef stateRef
   return (engineHits state)
 
 -- | Get cache miss count.
 getCacheMisses :: QueryEngine -> IO Int
 getCacheMisses (QueryEngine stateRef) = do
-  state <- readIORef stateRef
+  state <- IORef.readIORef stateRef
   return (engineMisses state)
 
 -- | Track execution of a compilation phase through the query engine.
@@ -422,7 +424,7 @@ getCacheMisses (QueryEngine stateRef) = do
 trackPhaseExecution :: QueryEngine -> String -> IO ()
 trackPhaseExecution (QueryEngine stateRef) phaseName = do
   Log.logEvent (CompilePhaseEnter PhaseBuild (showText phaseName))
-  modifyIORef' stateRef incrementMisses
+  IORef.modifyIORef' stateRef incrementMisses
 
 -- | Convert a Query to Text for logging.
 showQuery :: Query -> Text

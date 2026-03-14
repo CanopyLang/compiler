@@ -8,7 +8,7 @@ where
 import qualified Canopy.Outline as Outline
 import qualified Canopy.Package as Pkg
 import qualified Canopy.Version as Version
-import Control.Monad (filterM)
+import qualified Control.Monad as Monad
 import Data.ByteString.Builder (Builder)
 import qualified Data.List as List
 import qualified Data.Map.Strict as Map
@@ -81,14 +81,14 @@ getReadme dir =
 -- GET DIRECTORIES
 
 getDirs :: FilePath -> [FilePath] -> IO [FilePath]
-getDirs pwd = filterM (Dir.doesDirectoryExist . (pwd </>))
+getDirs pwd = Monad.filterM (Dir.doesDirectoryExist . (pwd </>))
 
 -- GET FILES
 
 getFiles :: FilePath -> [FilePath] -> IO [File]
 getFiles pwd contents =
   do
-    paths <- filterM (Dir.doesFileExist . (pwd </>)) contents
+    paths <- Monad.filterM (Dir.doesFileExist . (pwd </>)) contents
     traverse (toFile pwd) paths
 
 toFile :: FilePath -> FilePath -> IO File

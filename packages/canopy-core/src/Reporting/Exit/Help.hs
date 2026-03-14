@@ -20,7 +20,8 @@ import qualified Json.Encode as Encode
 import Reporting.Doc ((<+>))
 import qualified Reporting.Doc as Doc
 import qualified Reporting.Error as Error
-import System.IO (Handle, hPutStr, stderr, stdout)
+import System.IO (Handle)
+import qualified System.IO as IO
 
 -- REPORT
 
@@ -100,10 +101,10 @@ toString =
   Doc.toString
 
 toStdout :: Doc.Doc -> IO ()
-toStdout = toHandle stdout
+toStdout = toHandle IO.stdout
 
 toStderr :: Doc.Doc -> IO ()
-toStderr = toHandle stderr
+toStderr = toHandle IO.stderr
 
 toHandle :: Handle -> Doc.Doc -> IO ()
 toHandle handle doc =
@@ -111,4 +112,4 @@ toHandle handle doc =
     isTerminal <- hIsTerminalDevice handle
     if isTerminal
       then Doc.toAnsi handle doc
-      else hPutStr handle (toString doc)
+      else IO.hPutStr handle (toString doc)

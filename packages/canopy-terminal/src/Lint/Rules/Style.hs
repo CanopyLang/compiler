@@ -16,7 +16,7 @@ where
 
 import qualified AST.Source as Src
 import Data.Char (isUpper)
-import Data.Maybe (mapMaybe)
+import qualified Data.Maybe as Maybe
 import qualified Canopy.Data.Name as Name
 import qualified Data.Set as Set
 import Lint.Rules.Helpers (childExprs)
@@ -145,7 +145,7 @@ isAtomic _ = False
 -- @since 0.19.1
 checkMissingTypeAnnotation :: Src.Module -> [LintWarning]
 checkMissingTypeAnnotation modul =
-  mapMaybe (checkAnnotation . Ann.toValue) (Src._values modul)
+  Maybe.mapMaybe (checkAnnotation . Ann.toValue) (Src._values modul)
 
 -- | Produce a warning for a value without a type annotation.
 checkAnnotation :: Src.Value -> Maybe LintWarning
@@ -202,8 +202,8 @@ hasInternalUpper _ = False
 -- | Flag names that do not match the majority convention.
 flagMinorityConvention :: [(Ann.Region, String)] -> [LintWarning]
 flagMinorityConvention names
-  | camelCount >= snakeCount = mapMaybe (flagIfSnake) names
-  | otherwise = mapMaybe (flagIfCamel) names
+  | camelCount >= snakeCount = Maybe.mapMaybe (flagIfSnake) names
+  | otherwise = Maybe.mapMaybe (flagIfCamel) names
   where
     conventions = map (classifyName . snd) names
     camelCount = length (filter (== CamelCase) conventions)

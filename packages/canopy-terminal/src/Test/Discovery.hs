@@ -9,7 +9,7 @@ module Test.Discovery
   )
 where
 
-import Control.Monad (filterM)
+import qualified Control.Monad as Monad
 import qualified Data.List as List
 import qualified System.Directory as Dir
 import System.FilePath ((</>))
@@ -49,9 +49,9 @@ findCanopyFilesIn dir = do
     else do
       entries <- Dir.listDirectory dir
       let paths = map (dir </>) entries
-      files <- filterM Dir.doesFileExist paths
+      files <- Monad.filterM Dir.doesFileExist paths
       let canFiles = filter ((".can" ==) . FilePath.takeExtension) files
-      dirs <- filterM Dir.doesDirectoryExist paths
+      dirs <- Monad.filterM Dir.doesDirectoryExist paths
       let visibleDirs = filter (not . ("." `List.isPrefixOf`) . FilePath.takeFileName) dirs
       nested <- mapM findCanopyFilesIn visibleDirs
       pure (canFiles ++ concat nested)

@@ -57,7 +57,7 @@ where
 import Control.Lens ((^.))
 import GHC.IO.Handle (hIsTerminalDevice)
 import qualified System.Exit as Exit
-import System.IO (hPutStrLn, stderr)
+import qualified System.IO as IO
 import Terminal.Error.Formatting
   ( formatExamplesList,
     formatTokenName,
@@ -338,11 +338,11 @@ formatErrorMessage summary details =
 -- @since 0.19.1
 exitWithDocs :: Exit.ExitCode -> [Doc.Doc] -> IO a
 exitWithDocs code docs = do
-  isTerminal <- hIsTerminalDevice stderr
+  isTerminal <- hIsTerminalDevice IO.stderr
   let adjust = if isTerminal then id else Doc.plain
       formattedDocs = Doc.vcat $ concatMap (\d -> [d, ""]) docs
-  ((Doc.displayIO stderr . Doc.renderPretty 1 80) . adjust) formattedDocs
-  hPutStrLn stderr ""
+  ((Doc.displayIO IO.stderr . Doc.renderPretty 1 80) . adjust) formattedDocs
+  IO.hPutStrLn IO.stderr ""
   Exit.exitWith code
 
 -- | Exit with specific exit code (convenience wrapper).

@@ -11,7 +11,7 @@ import qualified AST.Canonical as Can
 import qualified AST.Optimized as Opt
 import qualified AST.Utils.Type as Type
 import qualified Canopy.ModuleName as ModuleName
-import Control.Monad (foldM)
+import qualified Control.Monad as Monad
 import qualified Canopy.Data.Index as Index
 import qualified Data.Map.Strict as Map
 import qualified Canopy.Data.Name as Name
@@ -267,7 +267,7 @@ decodeRecord fields =
         Opt.Record (Map.mapWithKey toFieldExpr fields)
    in do
         succeed <- decode "succeed"
-        Names.registerFieldDict fields (Map.toList fields) >>= foldM fieldAndThen (Opt.Call succeed [record])
+        Names.registerFieldDict fields (Map.toList fields) >>= Monad.foldM fieldAndThen (Opt.Call succeed [record])
 
 fieldAndThen :: Opt.Expr -> (Name.Name, Can.FieldType) -> Names.Tracker Opt.Expr
 fieldAndThen decoder (key, Can.FieldType _ tipe) =

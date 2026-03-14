@@ -16,7 +16,7 @@ module Kit.Build
   ) where
 
 import Control.Lens ((^.))
-import Control.Monad (void)
+import qualified Control.Monad as Monad
 import qualified Data.Aeson as Aeson
 import Data.Aeson ((.:?))
 import qualified Data.Map.Strict as Map
@@ -150,7 +150,7 @@ buildMakeArgs flags =
 writeStaticPages :: RouteManifest -> IO ()
 writeStaticPages manifest = do
   Dir.createDirectoryIfMissing True "build"
-  void (Map.traverseWithKey writeStaticPage (generateStaticPages manifest))
+  Monad.void (Map.traverseWithKey writeStaticPage (generateStaticPages manifest))
 
 -- | Pre-render SSR pages for routes with static data loaders.
 renderSsrPages :: FilePath -> RouteManifest -> [DataLoader] -> IO ()

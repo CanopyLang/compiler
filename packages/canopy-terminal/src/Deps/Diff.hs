@@ -27,7 +27,7 @@ import qualified Canopy.Magnitude as Magnitude
 import qualified Canopy.Package as Pkg
 import qualified Canopy.Version as Version
 import qualified Json.String as Json
-import Control.Monad (zipWithM)
+import qualified Control.Monad as Monad
 import Data.Function (on)
 import qualified Data.List as List
 import Data.Map.Strict (Map)
@@ -148,7 +148,7 @@ diffType oldType newType =
     (Type.Type oldName oldArgs, Type.Type newName newArgs) ->
       if not (isSameName oldName newName) || length oldArgs /= length newArgs
         then Nothing
-        else concat <$> zipWithM diffType oldArgs newArgs
+        else concat <$> Monad.zipWithM diffType oldArgs newArgs
     (Type.Record fields maybeExt, Type.Record fields' maybeExt') ->
       case (maybeExt, maybeExt') of
         (Nothing, Just _) -> Nothing
@@ -163,7 +163,7 @@ diffType oldType newType =
         else do
           aVars <- diffType a x
           bVars <- diffType b y
-          cVars <- concat <$> zipWithM diffType cs zs
+          cVars <- concat <$> Monad.zipWithM diffType cs zs
           pure (aVars <> (bVars <> cVars))
     (_, _) -> Nothing
 
@@ -184,7 +184,7 @@ diffFields oldRawFields newRawFields =
       newFields = sort newRawFields
    in if length oldRawFields /= length newRawFields || or (zipWith ((/=) `on` fst) oldFields newFields)
         then Nothing
-        else concat <$> zipWithM (diffType `on` snd) oldFields newFields
+        else concat <$> Monad.zipWithM (diffType `on` snd) oldFields newFields
 
 -- TYPE VARIABLE EQUIVALENCE
 

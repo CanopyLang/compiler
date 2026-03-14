@@ -37,7 +37,7 @@ import qualified Reporting.Ask as Ask
 import qualified Reporting.Doc as Doc
 import Reporting.Doc.ColorQQ (c)
 import qualified Reporting.Exit as Exit
-import System.IO (hPutStrLn, stdout)
+import qualified System.IO as IO
 import qualified Terminal.Output as Output
 import qualified Terminal.Print as Print
 
@@ -103,11 +103,11 @@ reportGenerate style moduleNames targetPath =
     Terminal -> printGenerationSuccess moduleNames targetPath
     Json -> outputJson (buildGenerateJson moduleNames targetPath)
 
--- | Output a JSON value to stdout.
+-- | Output a JSON value to IO.stdout.
 outputJson :: Encode.Value -> IO ()
 outputJson value =
-  LBS.hPut stdout (BB.toLazyByteString (Encode.encode value))
-    >> hPutStrLn stdout ""
+  LBS.hPut IO.stdout (BB.toLazyByteString (Encode.encode value))
+    >> IO.hPutStrLn IO.stdout ""
 
 -- | Build JSON value for generation success report.
 buildGenerateJson :: List ModuleName.Raw -> FilePath -> Encode.Value

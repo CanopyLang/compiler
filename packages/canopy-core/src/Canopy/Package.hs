@@ -47,7 +47,7 @@ module Canopy.Package
 where
 
 import qualified Canopy.Version as Version
-import Control.Monad (liftM2)
+import qualified Control.Monad as Monad
 import qualified Data.Aeson as Aeson
 import qualified Data.Aeson.Encoding as AesonEnc
 import qualified Data.Aeson.Key as AesonKey
@@ -306,11 +306,11 @@ instance Eq Canonical where
 -- BINARY
 
 instance Binary Name where -- PERF try storing as a Word16
-  get = liftM2 Name Utf8.getUnder256 Utf8.getUnder256
+  get = Monad.liftM2 Name Utf8.getUnder256 Utf8.getUnder256
   put (Name a b) = Utf8.putUnder256 a >> Utf8.putUnder256 b
 
 instance Binary Canonical where
-  get = liftM2 Canonical get get
+  get = Monad.liftM2 Canonical get get
   put (Canonical a b) = put a >> put b
 
 -- AESON JSON INSTANCES

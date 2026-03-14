@@ -15,7 +15,7 @@ module Kit.Dev
 import Control.Concurrent (forkIO)
 import Control.Concurrent.MVar (newEmptyMVar, takeMVar)
 import Control.Lens ((^.))
-import Control.Monad (void)
+import qualified Control.Monad as Monad
 import qualified Data.Text.IO as TextIO
 import qualified Kit.DataLoader as DataLoader
 import qualified Kit.Route.Generate as Generate
@@ -55,7 +55,7 @@ startDevServer flags = do
 runDevPipeline :: KitDevFlags -> IO ()
 runDevPipeline flags = do
   generateAllModules
-  void (forkIO (watchRoutes "src/routes"))
+  Monad.void (forkIO (watchRoutes "src/routes"))
   openBrowserIfRequested flags
   runViteDev flags
 
@@ -88,7 +88,7 @@ watchRoutes routesDir =
 -- | Start the filesystem watcher within a manager.
 startWatcher :: FilePath -> FSNotify.WatchManager -> IO ()
 startWatcher routesDir manager = do
-  void (FSNotify.watchTree manager routesDir isRouteFile handleRouteChange)
+  Monad.void (FSNotify.watchTree manager routesDir isRouteFile handleRouteChange)
   blockForever
 
 -- | Block the current thread indefinitely.

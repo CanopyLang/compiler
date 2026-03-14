@@ -9,7 +9,7 @@ where
 import qualified AST.Canonical as Can
 import qualified Canopy.ModuleName as ModuleName
 import Control.Arrow (second)
-import Control.Monad (foldM)
+import qualified Control.Monad as Monad
 import qualified Canopy.Data.Index as Index
 import qualified Data.Map.Strict as Map
 import qualified Canopy.Data.Name as Name
@@ -57,7 +57,7 @@ add (Ann.At region pattern) expectation state =
         let listType = AppN ModuleName.list Name.list [entryType]
 
         (State headers vars revCons) <-
-          foldM (addEntry region entryType) state (Index.indexedMap (,) patterns)
+          Monad.foldM (addEntry region entryType) state (Index.indexedMap (,) patterns)
 
         let listCon = CPattern region TypeError.PList listType expectation
         return $ State headers (entryVar : vars) (listCon : revCons)
@@ -189,7 +189,7 @@ addCtor region home typeName typeVarNames ctorName args expectation state =
     let freeVarDict = Map.fromList typePairs
 
     (State headers vars revCons) <-
-      foldM (addCtorArg region ctorName freeVarDict) state args
+      Monad.foldM (addCtorArg region ctorName freeVarDict) state args
 
     let ctorType = AppN home typeName (map snd typePairs)
     let ctorCon = CPattern region (TypeError.PCtor ctorName) ctorType expectation

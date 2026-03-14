@@ -30,7 +30,7 @@ where
 
 import qualified Data.ByteString as BS
 import qualified Data.List as List
-import Data.Maybe (mapMaybe)
+import qualified Data.Maybe as Maybe
 import Data.Ord (Down (..))
 import Lint.Types
   ( Flags (..),
@@ -59,7 +59,7 @@ applyFixesIfRequested flags path warnings
 applyFixes :: FilePath -> [LintWarning] -> IO ()
 applyFixes path warnings = do
   source <- readFile path
-  let (lineRemoves, textReplaces) = partitionFixes (mapMaybe _warnFix warnings)
+  let (lineRemoves, textReplaces) = partitionFixes (Maybe.mapMaybe _warnFix warnings)
       sortedRemoves = List.sortOn (Down . _fixStartLine) lineRemoves
       afterRemoves = foldl applyOneFix source sortedRemoves
       fixed = foldl applyOneFix afterRemoves textReplaces

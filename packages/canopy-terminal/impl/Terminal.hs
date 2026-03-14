@@ -105,7 +105,7 @@ import qualified Data.List as List
 import qualified System.Environment as Environment
 import qualified System.Exit as Exit
 import GHC.IO.Encoding (setLocaleEncoding, utf8)
-import System.IO (hPutStrLn, stdout)
+import qualified System.IO as IO
 import qualified Text.PrettyPrint.ANSI.Leijen as Doc
 
 import qualified Canopy.Version as Version
@@ -162,7 +162,7 @@ runApp intro outro commands = do
       Error.exitWithOverview intro outro commands
 
     ["--version"] -> do
-      hPutStrLn stdout (Version.toChars Version.compiler)
+      IO.hPutStrLn IO.stdout (Version.toChars Version.compiler)
       Exit.exitSuccess
 
     commandName : chunks ->
@@ -276,7 +276,7 @@ runSingleCommand details examples args_ flags_ handler = do
       Error.exitWithHelp Nothing (renderDoc details) examples args_ flags_
 
     ["--version"] -> do
-      hPutStrLn stdout (Version.toChars Version.compiler)
+      IO.hPutStrLn IO.stdout (Version.toChars Version.compiler)
       Exit.exitSuccess
 
     chunks ->

@@ -41,7 +41,7 @@ import qualified Canopy.Interface as Interface
 import qualified Canopy.ModuleName as ModuleName
 import qualified Canopy.Data.Name as Name
 import Control.Lens (makeLenses, (%~), (&), (.~), (^.))
-import Control.Monad (filterM, foldM, forM, when)
+import qualified Control.Monad as Monad
 import Data.Foldable (for_, traverse_)
 import Data.IORef
 import Data.Map.Strict (Map)
@@ -207,7 +207,7 @@ createSolveConfig env rank pools state bounds = SolveConfig
 solve :: SolveConfig -> Constraint -> IO State
 solve config constraint = do
   enabled <- Log.isEnabled
-  when enabled (logConstraintKind constraint)
+  Monad.when enabled (logConstraintKind constraint)
   case constraint of
     CTrue -> return (config ^. solveState)
     CSaveTheEnvironment -> return $ config ^. solveState & stateEnv .~ (config ^. solveEnv)
@@ -220,9 +220,9 @@ solve config constraint = do
     CPattern region category tipe expectation ->
       solvePattern config region category tipe expectation
     CAnd constraints ->
-      foldM (solve . updateSolveState config) (config ^. solveState) constraints
+      Monad.foldM (solve . updateSolveState config) (config ^. solveState) constraints
     CCaseBranchesIsolated constraints ->
-      foldM (solve . updateSolveState config) (config ^. solveState) constraints
+      Monad.foldM (solve . updateSolveState config) (config ^. solveState) constraints
     CHole region holeName expectation ->
       solveHole config region holeName expectation
     CLet [] flexs _ headerCon CTrue _ ->
@@ -244,7 +244,7 @@ resetRigidToNoRank var = do
 
 -- | Recursively generalise a variable and all nested variables to rank 0.
 --
--- Ensures that when 'makeCopy' is called, all parts of the type structure are
+-- Ensures that Monad.when 'makeCopy' is called, all parts of the type structure are
 -- properly instantiated with fresh variables.
 --
 -- 'Error' and 'RigidVar' are never generalised; 'RigidSuper' must be
@@ -444,12 +444,12 @@ handleUnifyResult config actual expected errorFunc = do
   case answer of
     Unify.Ok vars -> do
       enabled <- Log.isEnabled
-      when enabled (Log.logEvent (TypeUnified "solver" "actual" "expected"))
+      Monad.when enabled (Log.logEvent (TypeUnified "solver" "actual" "expected"))
       Pool.introduce (config ^. solveRank) (config ^. solvePools) vars
       return (config ^. solveState)
     Unify.Err vars actualType expectedType -> do
       enabled <- Log.isEnabled
-      when enabled (Log.logEvent (TypeUnifyFailed "solver" (Text.pack (show actualType)) (Text.pack (show expectedType))))
+      Monad.when enabled (Log.logEvent (TypeUnifyFailed "solver" (Text.pack (show actualType)) (Text.pack (show expectedType))))
       Pool.introduce (config ^. solveRank) (config ^. solvePools) vars
       return $ addError (config ^. solveState) (errorFunc actualType expectedType)
 
@@ -523,18 +523,18 @@ solveEmptyLet config header headerCon subCon = do
   let newEnv = Map.union (config ^. solveEnv) (Map.map Ann.toValue locals)
   let newConfig = config & solveEnv .~ newEnv & solveState .~ state1
   state2 <- solve newConfig subCon
-  foldM occurs state2 (Map.toList locals)
+  Monad.foldM occurs state2 (Map.toList locals)
 
 solveFullLet :: SolveConfig -> [Variable] -> [Variable] -> Map Name.Name (Ann.Located Type) -> Constraint -> Constraint -> Maybe Type -> IO State
 solveFullLet config rigids flexs header headerCon subCon expectedType = do
   enabled <- Log.isEnabled
-  when enabled (Log.logEvent (TypeLetGeneralized "solver" "let-binding" (length flexs)))
+  Monad.when enabled (Log.logEvent (TypeLetGeneralized "solver" "let-binding" (length flexs)))
   nextPools <- prepareNextPools config
   let nextRank = (config ^. solveRank) + 1
   nextConfig <- introduceLetVariables config rigids flexs nextRank nextPools
   (locals, solvedState) <- solveHeaderInNextPool nextConfig header headerCon
   finalState <- finalizeLetSolving nextConfig locals solvedState rigids subCon nextRank nextPools expectedType
-  foldM occurs finalState (Map.toList locals)
+  Monad.foldM occurs finalState (Map.toList locals)
 
 prepareNextPools :: SolveConfig -> IO Pools
 prepareNextPools config = do
@@ -556,7 +556,7 @@ introduceLetVariables config rigids flexs nextRank nextPools = do
       Descriptor content nextRank mark copy
   currentPools <- readIORef nextPools
   MVector.write currentPools nextRank vars
-  validRigids <- filterM isNotError rigids
+  validRigids <- Monad.filterM isNotError rigids
   let rankedRigids = [(nextRank, rigid) | rigid <- validRigids]
   let newAmbientRigids = (config ^. solveAmbientRigids) <> rankedRigids
   return $ config
@@ -589,7 +589,7 @@ finalizeLetSolving config locals solvedState rigids subCon nextRank nextPools ex
     then finalizeDeferredLet config locals solvedState rigids subCon nextRank ambientRigids
     else finalizeStandardLet config locals solvedState rigids subCon nextRank nextPools ambientRigids
 
--- | Finalise a let-binding when generalisation must be deferred.
+-- | Finalise a let-binding Monad.when generalisation must be deferred.
 --
 -- Adds bindings to 'monoEnv', solves the body, then checks which variables
 -- unified with outer scope and can be retroactively generalised.
@@ -644,7 +644,7 @@ finalizeOriginalDeferred bodyState config locals ambientRigids rigids nextRank n
   let finalMonoEnv = bodyState ^. stateMonoEnv
   let outerRigids = [(rank, var) | (rank, var) <- ambientRigids, rank < nextRank]
   let dummyPos = Ann.Position 0 0
-  varsFromMonoEnv <- forM (Map.toList finalMonoEnv) $ \(name, var) ->
+  varsFromMonoEnv <- Monad.forM (Map.toList finalMonoEnv) $ \(name, var) ->
     if Set.member name newVarsThisLevel
       then do
         actualVar <- UF.repr var
@@ -656,10 +656,10 @@ finalizeOriginalDeferred bodyState config locals ambientRigids rigids nextRank n
   let varsFromMonoEnvFiltered = [x | Just x <- varsFromMonoEnv]
   let localsToCheck = [(name, locatedVar) | (name, locatedVar) <- Map.toList locals]
   let varsToCheckFiltered = varsFromMonoEnvFiltered <> localsToCheck
-  monoToPolyVars <- foldM (checkAndGeneralizeWithParent nextRank parentRank outerRigids locals) [] varsToCheckFiltered
+  monoToPolyVars <- Monad.foldM (checkAndGeneralizeWithParent nextRank parentRank outerRigids locals) [] varsToCheckFiltered
   let polyEnv = Map.fromList [(name, var) | (name, var) <- monoToPolyVars]
   let finalEnv = Map.union (config ^. solveEnv) polyEnv
-  remainingMonoVars <- foldM (retainOuterMonoVar polyEnv parentRank) Map.empty
+  remainingMonoVars <- Monad.foldM (retainOuterMonoVar polyEnv parentRank) Map.empty
     [(name, var) | (name, Ann.At _ var) <- varsToCheckFiltered]
   let (_, _, finalMark) = calculateMarks bodyState
   traverse_ resetRigidToNoRank rigids
@@ -742,8 +742,8 @@ checkAndGeneralizeWithParent youngRank parentRank outerRigids locals acc (name, 
   let rigidRankThreshold = if isLocal then parentRank else actualRank
   let strictlyOuterRigids = [(r, v) | (r, v) <- outerRigids, r < rigidRankThreshold]
   let rigidsToCheck = fmap snd strictlyOuterRigids
-  equivalences <- forM allVarsInType $ \typeVar ->
-    forM rigidsToCheck $ \rigidVar ->
+  equivalences <- Monad.forM allVarsInType $ \typeVar ->
+    Monad.forM rigidsToCheck $ \rigidVar ->
       UF.equivalent typeVar rigidVar
   let isUnifiedWithRigid = any id (concat equivalences)
   let hasOuterRigids = not (null outerRigids)

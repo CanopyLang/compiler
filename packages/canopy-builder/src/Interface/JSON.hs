@@ -38,15 +38,17 @@ module Interface.JSON
 where
 
 import qualified Canopy.Interface as Interface
-import Control.Monad (unless)
-import Data.Aeson (FromJSON, ToJSON, eitherDecode, encode)
+import qualified Control.Monad as Monad
+import Data.Aeson (FromJSON, ToJSON)
+import qualified Data.Aeson as Aeson
 import qualified Data.ByteString.Lazy as BL
 import qualified Data.Text as Text
-import Data.Time.Clock (UTCTime, getCurrentTime)
+import Data.Time.Clock (UTCTime)
+import qualified Data.Time.Clock as Time
 import GHC.Generics (Generic)
 import Logging.Event (LogEvent (..))
 import qualified Logging.Logger as Log
-import System.Directory (doesFileExist)
+import qualified System.Directory as Dir
 
 -- | Interface file with metadata.
 --
@@ -85,7 +87,7 @@ writeInterface ::
   -- ^ Dependencies hash
   IO ()
 writeInterface basePath iface sourceHash depsHash = do
-  timestamp <- getCurrentTime
+  timestamp <- Time.getCurrentTime
   let ifFile =
         InterfaceFile
           { ifVersion = "1.0.0",
@@ -97,7 +99,7 @@ writeInterface basePath iface sourceHash depsHash = do
 
   -- Write JSON format only
   let jsonPath = basePath ++ ".cani.json"
-  BL.writeFile jsonPath (encode ifFile)
+  BL.writeFile jsonPath (Aeson.encode ifFile)
   Log.logEvent (InterfaceSaved jsonPath)
 
 -- | Read interface from JSON file.
@@ -107,7 +109,7 @@ writeInterface basePath iface sourceHash depsHash = do
 readInterface :: FilePath -> IO (Either String Interface.Interface)
 readInterface basePath = do
   let jsonPath = basePath ++ ".cani.json"
-  jsonExists <- doesFileExist jsonPath
+  jsonExists <- Dir.doesFileExist jsonPath
   if jsonExists
     then readInterfaceJSON jsonPath
     else return (Left ("JSON interface not found: " ++ jsonPath))
@@ -116,7 +118,7 @@ readInterface basePath = do
 readInterfaceJSON :: FilePath -> IO (Either String Interface.Interface)
 readInterfaceJSON path = do
   content <- BL.readFile path
-  case eitherDecode content of
+  case Aeson.eitherDecode content of
     Right ifFile -> do
       Log.logEvent (InterfaceLoaded path)
       validateVersion (ifVersion ifFile)
@@ -126,5 +128,5 @@ readInterfaceJSON path = do
 -- | Validate interface file version.
 validateVersion :: String -> IO ()
 validateVersion version =
-  unless (version == "1.0.0") $ do
+  Monad.unless (version == "1.0.0") $ do
     Log.logEvent (BuildFailed (Text.pack ("Interface version mismatch: " ++ version)))

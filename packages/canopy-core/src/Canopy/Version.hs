@@ -19,7 +19,7 @@ module Canopy.Version
   )
 where
 
-import Control.Monad (liftM3)
+import qualified Control.Monad as Monad
 import qualified Data.Aeson as Aeson
 import Data.Binary (Binary, get, getWord8, put, putWord8)
 import qualified Data.ByteString.Char8 as C8
@@ -114,7 +114,7 @@ instance Binary Version where
     do
       word <- getWord8
       if word == 255
-        then liftM3 Version get get get
+        then Monad.liftM3 Version get get get
         else do
           minor <- getWord8
           Version (fromIntegral word) (fromIntegral minor) . fromIntegral <$> getWord8

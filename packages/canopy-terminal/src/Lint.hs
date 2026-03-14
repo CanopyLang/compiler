@@ -76,7 +76,7 @@ where
 import qualified AST.Source as Src
 import qualified Data.ByteString as BS
 import qualified Data.Map.Strict as Map
-import Data.Maybe (mapMaybe)
+import qualified Data.Maybe as Maybe
 import qualified Lint.Config as Config
 import qualified Lint.Fix as Fix
 import qualified Lint.Report as Report
@@ -266,7 +266,7 @@ ruleRegistry =
 -- (severity greater than 'Off') in the given config.
 enabledRules :: LintConfig -> [(Severity, Src.Module -> [LintWarning])]
 enabledRules config =
-  mapMaybe lookupEnabled ruleRegistry
+  Maybe.mapMaybe lookupEnabled ruleRegistry
   where
     lookupEnabled (rule, check) =
       case Map.lookup rule (_lcRules config) of

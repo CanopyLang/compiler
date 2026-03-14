@@ -58,7 +58,8 @@ import Control.Exception (IOException)
 import qualified Control.Exception as Exception
 import qualified Data.Binary as Binary
 import qualified Data.ByteString.Lazy as LBS
-import Data.IORef (IORef, atomicModifyIORef', readIORef)
+import Data.IORef (IORef)
+import qualified Data.IORef as IORef
 import qualified Data.Map.Strict as Map
 import qualified Data.Set as Set
 import Data.Word (Word16)
@@ -109,7 +110,7 @@ tryCacheHit ::
   Map.Map ModuleName.Raw Interface.Interface ->
   IO (Maybe ModuleResult)
 tryCacheHit cacheRef root modName path modImports ifaces = do
-  cache <- readIORef cacheRef
+  cache <- IORef.readIORef cacheRef
   sourceHash <- Hash.hashFile path
   let depsHash = computeDepsHash modImports ifaces
   if Incremental.needsRecompile cache modName sourceHash depsHash
@@ -191,7 +192,7 @@ saveToCacheAsync cacheRef root modName path modImports ifaces mr = do
             Incremental.cacheTimestamp = now,
             Incremental.cacheInterfaceHash = Just ifaceHash
           }
-  atomicModifyIORef' cacheRef (\c -> (Incremental.insertCache c modName entry, ()))
+  IORef.atomicModifyIORef' cacheRef (\c -> (Incremental.insertCache c modName entry, ()))
 
 -- | Compute a combined hash of a module's actual dependency interfaces.
 computeDepsHash :: [ModuleName.Raw] -> Map.Map ModuleName.Raw Interface.Interface -> Hash.ContentHash
@@ -302,6 +303,6 @@ decodeVersioned bytes
 -- | Log incremental compilation statistics.
 logIncrementalStats :: IORef Int -> IORef Int -> IO ()
 logIncrementalStats hitRef missRef = do
-  hits <- readIORef hitRef
-  misses <- readIORef missRef
+  hits <- IORef.readIORef hitRef
+  misses <- IORef.readIORef missRef
   Log.logEvent (BuildIncremental hits misses)

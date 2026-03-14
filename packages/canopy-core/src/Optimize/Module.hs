@@ -11,7 +11,7 @@ import qualified AST.Utils.Type as Type
 import qualified Canonicalize.Effects as Effects
 import qualified Canopy.ModuleName as ModuleName
 import qualified Canopy.Package as Pkg
-import Control.Monad (foldM)
+import qualified Control.Monad as Monad
 import qualified Data.List as List
 import qualified Data.Map.Strict as Map
 import qualified Data.Text as Text
@@ -364,7 +364,7 @@ addRecDefs home defs (Opt.LocalGraph main nodes fieldCounts locs) =
 
       (deps, fields, State values funcs) =
         Names.run $
-          foldM (addRecDef cycle) (State [] []) defs
+          Monad.foldM (addRecDef cycle) (State [] []) defs
 
       recLocs = foldr (addRecDefRegion home) Map.empty defs
    in Opt.LocalGraph

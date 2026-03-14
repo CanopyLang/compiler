@@ -13,7 +13,7 @@ module Lint.Rules.Imports
 where
 
 import qualified AST.Source as Src
-import Data.Maybe (mapMaybe)
+import qualified Data.Maybe as Maybe
 import qualified Canopy.Data.Name as Name
 import qualified Data.Set as Set
 import Lint.Rules.Helpers (collectUsedNames, regionLineRange)
@@ -30,7 +30,7 @@ import qualified Reporting.Annotation as Ann
 -- @since 0.19.1
 checkUnusedImport :: Src.Module -> [LintWarning]
 checkUnusedImport modul =
-  mapMaybe (checkOneImport usedNames) (Src._imports modul)
+  Maybe.mapMaybe (checkOneImport usedNames) (Src._imports modul)
   where
     usedNames = collectUsedNames modul
 
@@ -52,7 +52,7 @@ isImportUsed usedNames (Src.Import (Ann.At _ modName) alias exposing _isLazy) =
 -- | Extract the list of explicitly exposed names from an exposing clause.
 exposedNames :: Src.Exposing -> [String]
 exposedNames Src.Open = []
-exposedNames (Src.Explicit items) = mapMaybe exposedItemName items
+exposedNames (Src.Explicit items) = Maybe.mapMaybe exposedItemName items
 
 -- | Extract the string representation of a single exposed item.
 exposedItemName :: Src.Exposed -> Maybe String

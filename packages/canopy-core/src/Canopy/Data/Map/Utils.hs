@@ -90,7 +90,7 @@ module Canopy.Data.Map.Utils
   )
 where
 
-import Control.Monad (join)
+import qualified Control.Monad as Monad
 import qualified Data.Map.Strict as Map
 import Data.Map.Internal (Map (..))
 import qualified Canopy.Data.NonEmptyList as NE
@@ -313,7 +313,7 @@ flattenMaps nestedMaps = result
   where
     mapAsList = Map.toList nestedMaps
     listOfLists = fmap (\(k, innerMap) -> fmap (addToTuple k) (Map.toList innerMap)) mapAsList
-    result = join listOfLists
+    result = Monad.join listOfLists
 
 -- | Exchange the order of keys in a nested map structure.
 --

@@ -25,8 +25,9 @@ import qualified Control.Concurrent as Concurrent
 import qualified Control.Concurrent.Async as Async
 import Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
-import Data.Time.Clock (UTCTime, diffUTCTime, getCurrentTime)
-import System.IO (hFlush, hPutStrLn, stderr)
+import Data.Time.Clock (UTCTime)
+import qualified Data.Time.Clock as Time
+import qualified System.IO as IO
 
 -- | Statistics for a single module compilation.
 data ModuleStats = ModuleStats
@@ -73,7 +74,7 @@ compileParallelWithInstrumentation ::
 compileParallelWithInstrumentation compileOne statuses graph = do
   logInfo "Starting instrumented parallel compilation"
 
-  overallStart <- getCurrentTime
+  overallStart <- Time.getCurrentTime
 
   case Parallel.groupByDependencyLevel graph of
     Left err -> do
@@ -90,10 +91,10 @@ compileParallelWithInstrumentation compileOne statuses graph = do
       (resultsList, levelStatsList) <-
         fmap unzip (mapM (compileLevelWithStats compileOne statuses) (zip [0..] levels))
 
-      overallEnd <- getCurrentTime
+      overallEnd <- Time.getCurrentTime
 
       let results = Map.unions resultsList
-          totalTime = realToFrac (diffUTCTime overallEnd overallStart)
+          totalTime = realToFrac (Time.diffUTCTime overallEnd overallStart)
           allThreadIds = concatMap levelStatsThreadIds levelStatsList
           uniqueThreads = length (Map.keys (Map.fromList [(tid, ()) | tid <- allThreadIds]))
           maxConcurrency = foldr max 0 (map (length . levelStatsThreadIds) levelStatsList)
@@ -127,12 +128,12 @@ compileLevelWithStats compileOne statuses (levelNum, modules) = do
   logInfo $ "Modules: " ++ show (length modules)
   logInfo $ "Module names: " ++ show modules
 
-  levelStart <- getCurrentTime
+  levelStart <- Time.getCurrentTime
 
   -- Compile all modules concurrently and track thread IDs
   results <- Async.mapConcurrently (compileModuleWithStats compileOne statuses levelNum levelStart) modules
 
-  levelEnd <- getCurrentTime
+  levelEnd <- Time.getCurrentTime
 
   let (moduleResults, moduleStatsList) = unzip results
       resultMap = Map.fromList moduleResults
@@ -148,7 +149,7 @@ compileLevelWithStats compileOne statuses (levelNum, modules) = do
           levelStatsThreadIds = uniqueThreadIds
         }
 
-  let levelTime = realToFrac $ diffUTCTime levelEnd levelStart :: Double
+  let levelTime = realToFrac $ Time.diffUTCTime levelEnd levelStart :: Double
   logInfo $ "Level " ++ show levelNum ++ " complete in " ++ show levelTime ++ "s"
   logInfo $ "Thread IDs used: " ++ show uniqueThreadIds
   logInfo $ "Concurrent threads: " ++ show (length uniqueThreadIds)
@@ -165,16 +166,16 @@ compileModuleWithStats ::
   IO ((ModuleName.Raw, a), ModuleStats)
 compileModuleWithStats compileOne statuses levelNum _levelStart moduleName = do
   threadId <- Concurrent.myThreadId
-  startTime <- getCurrentTime
+  startTime <- Time.getCurrentTime
 
   logInfo $ "  [Thread " ++ show threadId ++ "] Starting: " ++ show moduleName
 
   case Map.lookup moduleName statuses of
     Just status -> do
       result <- compileOne moduleName status
-      endTime <- getCurrentTime
+      endTime <- Time.getCurrentTime
 
-      let compileTime = realToFrac $ diffUTCTime endTime startTime :: Double
+      let compileTime = realToFrac $ Time.diffUTCTime endTime startTime :: Double
       logInfo $ "  [Thread " ++ show threadId ++ "] Finished: " ++ show moduleName ++ " (" ++ show compileTime ++ "s)"
 
       let stats = ModuleStats
@@ -224,7 +225,7 @@ printParallelAnalysis stats = do
 -- | Print statistics for a single level.
 printLevelStats :: LevelStats -> IO ()
 printLevelStats level = do
-  let levelTime = realToFrac $ diffUTCTime (levelStatsEndTime level) (levelStatsStartTime level) :: Double
+  let levelTime = realToFrac $ Time.diffUTCTime (levelStatsEndTime level) (levelStatsStartTime level) :: Double
       avgTime = levelTime / fromIntegral (levelStatsModuleCount level)
 
   logInfo $ "\nLevel " ++ show (levelStatsNumber level) ++ ":"
@@ -253,11 +254,11 @@ emptyStats = ParallelStats
 -- | Log info message to stderr.
 logInfo :: String -> IO ()
 logInfo msg = do
-  hPutStrLn stderr $ "[PARALLEL] " ++ msg
-  hFlush stderr
+  IO.hPutStrLn IO.stderr $ "[PARALLEL] " ++ msg
+  IO.hFlush IO.stderr
 
 -- | Log warning message to stderr.
 logWarning :: String -> IO ()
 logWarning msg = do
-  hPutStrLn stderr $ "[WARNING] " ++ msg
-  hFlush stderr
+  IO.hPutStrLn IO.stderr $ "[WARNING] " ++ msg
+  IO.hFlush IO.stderr

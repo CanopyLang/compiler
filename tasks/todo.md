@@ -48,5 +48,17 @@
 - [ ] Phase 4: Error message polish for FFI type mismatches
 
 ## Build Status
-- All 3,924 tests passing
+- Build passing (4 pre-existing test failures unrelated to import changes)
 - Clean build with no warnings
+
+## Phase 5: Import Qualification
+- [x] canopy-builder: Builder.hs, Builder/State.hs, Builder/Incremental.hs, Compiler/Parallel.hs, Compiler/Discovery.hs, Compiler/Cache.hs, Interface/JSON.hs, Deps/Advisory.hs, PackageCache.hs, Build/Parallel/Instrumented.hs
+- [x] canopy-query: Query/Engine.hs, Query/Simple.hs, Query/Persistence.hs
+- [x] canopy-core: Type/UnionFind.hs, Type/Solve.hs, Type/Constrain/Module.hs, Type/Constrain/Pattern.hs, Type/Error.hs, Type/Solve/Pool.hs, Optimize/DecisionTree.hs, Optimize/Module.hs, Optimize/Expression.hs, Optimize/Derive.hs, Optimize/Port.hs, Canonicalize/Expression.hs, Canonicalize/Environment/Foreign.hs, Canonicalize/Environment/Local.hs, Canonicalize/Module/FFI.hs, FFI/Manifest.hs, Canopy/Version.hs, Canopy/ModuleName.hs, Canopy/Data/NonEmptyList.hs, Canopy/Interface.hs, Canopy/Constraint.hs, Canopy/Package.hs, Canopy/Kernel.hs, Canopy/Data/Map/Utils.hs, Canopy/Data/Utf8/Builder.hs, Reporting/Annotation.hs, Reporting/Exit/Help.hs
+- [x] canopy-terminal: Watch.hs, Deps/Diff.hs, Kit/Build.hs, Kit/Dev.hs, Develop/Socket.hs, Develop/Server.hs, Develop/Generate/Index.hs, Publish/Progress.hs, Publish/Validation.hs, Reporting/Task.hs, Test.hs, Test/Discovery.hs, Test/FFI.hs, impl/Terminal.hs, impl/Terminal/Error/Display.hs, Reporting.hs, Lint.hs, Lint/Config.hs, Lint/Fix.hs, Lint/Rules/Complexity.hs, Lint/Rules/Scope.hs, Lint/Rules/Style.hs, Lint/Rules/Imports.hs, Make/Output.hs, Deps/Registry.hs, Kit/DataLoader.hs
+- [x] canopy-driver: Queries/Optimize.hs, Queries/Canonicalize/Module.hs
+- [x] canopy-webidl: app/Main.hs, WebIDL/Codegen.hs, WebIDL/Fetch.hs, WebIDL/Parser.hs
+
+## Phase 7: Let→Where Conversion
+- [x] Generate/JavaScript/CodeSplit/Manifest.hs (2 conversions at function level)
+- [x] Remaining let...in patterns are inside case arms (where not applicable) or parser primitives with bang patterns (semantically required)

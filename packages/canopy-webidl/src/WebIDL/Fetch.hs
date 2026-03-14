@@ -51,7 +51,7 @@ module WebIDL.Fetch
 
 import Control.Exception (IOException)
 import qualified Control.Exception as Exception
-import Control.Monad (forM, when)
+import qualified Control.Monad as Monad
 import Data.ByteString (ByteString)
 import Data.Foldable (forM_)
 import Data.List (isSuffixOf)
@@ -151,7 +151,7 @@ clearCache :: IO ()
 clearCache = do
   cacheDir <- getCacheDir
   exists <- doesDirectoryExist cacheDir
-  when exists (removeDirectoryRecursive cacheDir)
+  Monad.when exists (removeDirectoryRecursive cacheDir)
   createDirectoryIfMissing True cacheDir
 
 
@@ -248,7 +248,7 @@ httpGetInternal url = do
 -- | Fetch multiple specs
 fetchSpecs :: [InterfaceName] -> IO (Map InterfaceName (Either FetchError FetchResult))
 fetchSpecs names = do
-  results <- forM names $ \name -> do
+  results <- Monad.forM names $ \name -> do
     result <- fetchSpec name
     pure (name, result)
   pure (Map.fromList results)
@@ -384,7 +384,7 @@ specInterfaceMap = Map.fromList (mkEntry <$> entries)
 fetchAllGroups :: IO (Map GroupName (Map InterfaceName (Either FetchError FetchResult)))
 fetchAllGroups = do
   let groupNames = Map.keys apiGroups
-  results <- forM groupNames $ \name -> do
+  results <- Monad.forM groupNames $ \name -> do
     groupResults <- fetchGroup name
     pure (name, groupResults)
   pure (Map.fromList results)
@@ -408,7 +408,7 @@ loadLocalSpecs dir = do
     else do
       files <- listDirectory dir
       let webidlFiles = filter (".webidl" `isSuffixOf`) files
-      results <- forM webidlFiles $ \file -> do
+      results <- Monad.forM webidlFiles $ \file -> do
         let name = Types.mkInterfaceName (Text.pack (takeBaseName file))
             path = dir </> file
         content <- TIO.readFile path
@@ -427,7 +427,7 @@ downloadWebSysSpecs :: FilePath -> IO (Int, Int)
 downloadWebSysSpecs dir = do
   createDirectoryIfMissing True dir
   let allInterfaces = concatMap snd (Map.toList specInterfaceMap)
-  results <- forM allInterfaces $ \name -> do
+  results <- Monad.forM allInterfaces $ \name -> do
     result <- fetchSpec name
     case result of
       Right fr -> do

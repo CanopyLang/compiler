@@ -19,7 +19,7 @@ module WebIDL.Codegen
 import Data.Text (Text)
 import qualified Data.Text as Text
 import qualified Data.Text.IO as TIO
-import System.Directory (createDirectoryIfMissing)
+import qualified System.Directory as Dir
 import System.FilePath ((</>), takeDirectory)
 
 import WebIDL.AST
@@ -50,7 +50,7 @@ writeCanopyModule config canopyMod = do
       filePath = outDir </> moduleToFilePath (cmName canopyMod) ".can"
       content = Canopy.renderModule config canopyMod
 
-  createDirectoryIfMissing True (takeDirectory filePath)
+  Dir.createDirectoryIfMissing True (takeDirectory filePath)
   TIO.writeFile filePath content
 
 
@@ -63,7 +63,7 @@ writeJavaScriptModule config canopyMod = do
       filePath = outDir </> moduleToFilePath moduleName ".js"
       content = JavaScript.renderModule config canopyMod
 
-  createDirectoryIfMissing True (takeDirectory filePath)
+  Dir.createDirectoryIfMissing True (takeDirectory filePath)
   TIO.writeFile filePath content
 
 
@@ -76,5 +76,5 @@ moduleToFilePath moduleName ext =
 -- | Create all necessary directories for output
 createDirectories :: Config -> IO ()
 createDirectories config = do
-  createDirectoryIfMissing True (outputCanopyDir (configOutput config))
-  createDirectoryIfMissing True (outputJsDir (configOutput config))
+  Dir.createDirectoryIfMissing True (outputCanopyDir (configOutput config))
+  Dir.createDirectoryIfMissing True (outputJsDir (configOutput config))

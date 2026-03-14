@@ -20,7 +20,7 @@ import qualified Canopy.Data.Utf8 as Utf8
 import qualified Canopy.String as ES
 import qualified Canopy.ModuleName as ModuleName
 import qualified Canopy.Package as Pkg
-import Control.Monad (foldM)
+import qualified Control.Monad as Monad
 import qualified Data.Map.Strict as Map
 import qualified Data.Set as Set
 import qualified Optimize.Names as Names
@@ -450,7 +450,7 @@ decodeRecordWithOpts opts fields =
    in do
         succeed <- Names.registerGlobal elmJsonDecode "succeed"
         Names.registerFieldDict fields (Map.toList fields)
-          >>= foldM (fieldAndThenWithOpts opts) (Opt.Call succeed [record])
+          >>= Monad.foldM (fieldAndThenWithOpts opts) (Opt.Call succeed [record])
 
 -- | Like 'fieldAndThen' in Port but uses the naming strategy for field keys.
 fieldAndThenWithOpts :: Can.JsonOptions -> Opt.Expr -> (Name.Name, Can.FieldType) -> Names.Tracker Opt.Expr

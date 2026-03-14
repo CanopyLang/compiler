@@ -52,7 +52,7 @@ import qualified Data.ByteString.Builder as Builder
 import qualified Data.ByteString as ByteString
 import qualified Data.ByteString.Lazy as ByteString.Lazy
 import Data.Function ((&))
-import Data.Maybe (mapMaybe)
+import qualified Data.Maybe as Maybe
 import qualified Canopy.Data.NonEmptyList as NonEmptyList
 import qualified Data.Map.Strict as Map
 import Data.Set (Set)
@@ -539,7 +539,7 @@ writeCapabilitiesManifest target artifacts = do
 -- Local project files are mapped to the project's own package name.
 buildPackageMap :: Map.Map String a -> Map.Map Text.Text Text.Text
 buildPackageMap ffiInfoMap =
-  Map.fromList (mapMaybe extractPackageFromPath (Map.keys ffiInfoMap))
+  Map.fromList (Maybe.mapMaybe extractPackageFromPath (Map.keys ffiInfoMap))
   where
     extractPackageFromPath path =
       let parts = FilePath.splitDirectories path

@@ -24,7 +24,7 @@ module Canopy.Constraint
 where
 
 import qualified Canopy.Version as Version
-import Control.Monad (liftM4)
+import qualified Control.Monad as Monad
 import Data.Binary (Binary, get, getWord8, put, putWord8)
 import qualified Data.ByteString.Char8 as C8
 import qualified Json.Decode as Decode
@@ -188,7 +188,7 @@ decoder =
 -- BINARY
 
 instance Binary Constraint where
-  get = liftM4 Range get get get get
+  get = Monad.liftM4 Range get get get get
   put (Range a b c d) = put a >> put b >> put c >> put d
 
 instance Binary Op where

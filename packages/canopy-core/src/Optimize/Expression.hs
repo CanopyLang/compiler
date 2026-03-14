@@ -14,7 +14,7 @@ import qualified Canopy.Data.Index as Index
 import qualified Canopy.Data.Name as Name
 import qualified Canopy.Data.Utf8 as Utf8
 import qualified Canopy.ModuleName as ModuleName
-import Control.Monad (foldM)
+import qualified Control.Monad as Monad
 import qualified Data.Map.Strict as Map
 import qualified Data.Set as Set
 import qualified Optimize.Case as Case
@@ -95,7 +95,7 @@ optimize cycle (Ann.At region expression) =
         _ ->
           do
             obody <- optimize cycle body
-            foldM (\bod def -> optimizeDef cycle def bod) obody defs
+            Monad.foldM (\bod def -> optimizeDef cycle def bod) obody defs
     Can.LetDestruct pattern expr body ->
       do
         (name, destructs) <- destruct pattern
@@ -450,11 +450,11 @@ destructHelp path (Ann.At region pattern) revDs =
         _ ->
           case path of
             Opt.Root _ ->
-              foldM (destructCtorArg path) revDs args
+              Monad.foldM (destructCtorArg path) revDs args
             _ ->
               do
                 name <- Names.generate
-                foldM (destructCtorArg (Opt.Root name)) (Opt.Destructor name path : revDs) args
+                Monad.foldM (destructCtorArg (Opt.Root name)) (Opt.Destructor name path : revDs) args
 
 destructTwo :: Opt.Path -> Can.Pattern -> Can.Pattern -> [Opt.Destructor] -> Names.Tracker [Opt.Destructor]
 destructTwo path a b revDs =
@@ -533,7 +533,7 @@ optimizeTail cycle rootName argNames locExpr@(Ann.At _ expression) =
         _ ->
           do
             obody <- optimizeTail cycle rootName argNames body
-            foldM (\bod def -> optimizeDef cycle def bod) obody defs
+            Monad.foldM (\bod def -> optimizeDef cycle def bod) obody defs
     Can.LetDestruct pattern expr body ->
       do
         (dname, destructors) <- destruct pattern

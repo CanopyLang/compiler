@@ -14,7 +14,7 @@ where
 import qualified AST.Canonical as Can
 import qualified AST.Optimized as Opt
 import qualified Canonicalize.ResolveAbilities as ResolveAbilities
-import Control.Monad (when)
+import qualified Control.Monad as Monad
 import Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
 import qualified Canopy.Data.Name as Name
@@ -52,7 +52,7 @@ optimizeModuleQuery annotations canonModule@(Can.Module modName _ _ _ _ _ _ _ _ 
       let nodeCount = Map.size nodes
       Log.logEvent (OptimizeCompleted modNameText (OptStats nodeCount 0 0))
       enabled <- Log.isEnabled
-      when enabled (emitOptTraceEvents modNameText localGraph)
+      Monad.when enabled (emitOptTraceEvents modNameText localGraph)
       return (Right localGraph)
 
 -- | Emit TRACE-level optimization events from the LocalGraph.

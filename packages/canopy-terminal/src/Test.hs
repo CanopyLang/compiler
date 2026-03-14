@@ -67,7 +67,7 @@ import Control.Lens ((^.))
 import Control.Lens.TH (makeLenses)
 import qualified Control.Concurrent as Concurrent
 import qualified Control.Exception as Exception
-import Control.Monad (filterM, void)
+import qualified Control.Monad as Monad
 import Data.Aeson (Value)
 import qualified Data.Map.Strict as Map
 import qualified Data.Maybe as Maybe
@@ -163,14 +163,14 @@ watchDirsForRerun :: [FilePath] -> Flags -> IO ()
 watchDirsForRerun paths flags =
   FSNotify.withManager $ \mgr -> do
     let candidates = ["tests", "test", "src"]
-    existingDirs <- filterM Dir.doesDirectoryExist candidates
+    existingDirs <- Monad.filterM Dir.doesDirectoryExist candidates
     mapM_ (registerWatcher mgr paths flags) existingDirs
     keepAliveLoop
 
 -- | Register a directory watcher that re-runs tests on each change.
 registerWatcher :: FSNotify.WatchManager -> [FilePath] -> Flags -> FilePath -> IO ()
 registerWatcher mgr paths flags dir =
-  void (FSNotify.watchTree mgr dir isCanopyFile (onFileChange paths flags))
+  Monad.void (FSNotify.watchTree mgr dir isCanopyFile (onFileChange paths flags))
 
 -- | Predicate: is the FSNotify event for a @.can@ file?
 isCanopyFile :: FSNotify.Event -> Bool
@@ -483,7 +483,7 @@ loadFileFromPackage author project relPath = do
 loadFromPkgDir :: FilePath -> FilePath -> IO (Either String Text.Text)
 loadFromPkgDir pkgDir relPath = do
   entries <- Dir.listDirectory pkgDir
-  dirs <- filterM (Dir.doesDirectoryExist . (pkgDir </>)) entries
+  dirs <- Monad.filterM (Dir.doesDirectoryExist . (pkgDir </>)) entries
   let sorted = reverse (filter (not . ("." `isPrefixOfStr`)) dirs)
   case sorted of
     [] -> pure (Left "Package not installed")

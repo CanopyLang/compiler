@@ -46,7 +46,7 @@ import Canopy.Package (Name)
 import Canopy.Version (Version)
 import qualified Canopy.Version as Version
 import Control.Lens ((^.))
-import Control.Monad (when)
+import qualified Control.Monad as Monad
 import Canopy.Data.NonEmptyList (List)
 import qualified Canopy.Data.NonEmptyList as NE
 import qualified Data.Text as Text
@@ -80,14 +80,14 @@ validatePackageForPublishing exposed summary = do
 -- @since 0.19.1
 validateExposedModules :: Exposed -> Task Publish ()
 validateExposedModules exposed =
-  when (noExposed exposed) (Task.throw Exit.PublishNoExposed)
+  Monad.when (noExposed exposed) (Task.throw Exit.PublishNoExposed)
 
 -- | Validate that package has a proper summary.
 --
 -- @since 0.19.1
 validateSummary :: Json.String -> Task Publish ()
 validateSummary summary =
-  when (badSummary summary) (Task.throw Exit.PublishNoSummary)
+  Monad.when (badSummary summary) (Task.throw Exit.PublishNoSummary)
 
 -- | Check if a package has no exposed modules.
 --

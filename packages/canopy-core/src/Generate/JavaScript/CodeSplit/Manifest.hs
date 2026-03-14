@@ -129,13 +129,16 @@ manifestEntry co =
 -- | Extract chunk ID text from a ChunkOutput.
 chunkIdText :: ChunkOutput -> Builder
 chunkIdText co =
-  let ChunkId cid = _coChunkId co
-   in BB.stringUtf8 (Text.unpack cid)
+  BB.stringUtf8 (Text.unpack cid)
+  where
+    ChunkId cid = _coChunkId co
 
 -- | Extract chunk ID as Text.
 chunkIdText' :: ChunkOutput -> Text.Text
 chunkIdText' co =
-  let ChunkId cid = _coChunkId co in cid
+  cid
+  where
+    ChunkId cid = _coChunkId co
 
 -- | Format a JSON key-value pair.
 jsonField :: Builder -> Builder -> Bool -> Builder

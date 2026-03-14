@@ -23,9 +23,9 @@ where
 
 import qualified Control.Concurrent as Concurrent
 import qualified Control.Exception as Exception
-import Control.Monad (void)
 import qualified Control.Monad as Monad
-import Data.IORef (IORef, newIORef, readIORef, writeIORef)
+import Data.IORef (IORef)
+import qualified Data.IORef as IORef
 import qualified Data.Foldable as Foldable
 import qualified Data.Time.Clock as Time
 import qualified System.Directory as Directory
@@ -74,12 +74,12 @@ file handleEvent path = do
       FSNotify.withManager (startWatching watchDir)
   where
     startWatching dir mgr = do
-      lastEventRef <- newIORef Nothing
+      lastEventRef <- IORef.newIORef Nothing
       setupWatcher dir mgr lastEventRef
       runDebounceLoop lastEventRef
 
     setupWatcher dir mgr lastEventRef =
-      void (FSNotify.watchTree mgr dir acceptAll (recordEvent lastEventRef))
+      Monad.void (FSNotify.watchTree mgr dir acceptAll (recordEvent lastEventRef))
 
     acceptAll = const True
 
@@ -87,7 +87,7 @@ file handleEvent path = do
     recordEvent :: IORef (Maybe (Event, Time.UTCTime)) -> Event -> IO ()
     recordEvent ref event = do
       now <- Time.getCurrentTime
-      writeIORef ref (Just (event, now))
+      IORef.writeIORef ref (Just (event, now))
 
     -- | Poll loop that fires the handler after the debounce window expires.
     runDebounceLoop :: IORef (Maybe (Event, Time.UTCTime)) -> IO ()
@@ -96,14 +96,14 @@ file handleEvent path = do
       where
         pollOnce = do
           Concurrent.threadDelay pollIntervalMicros
-          maybeEvent <- readIORef lastEventRef
+          maybeEvent <- IORef.readIORef lastEventRef
           case maybeEvent of
             Nothing -> return ()
             Just (event, eventTime) -> do
               now <- Time.getCurrentTime
               let elapsed = Time.diffUTCTime now eventTime
               Monad.when (elapsed >= debounceSeconds) $ do
-                writeIORef lastEventRef Nothing
+                IORef.writeIORef lastEventRef Nothing
                 handleEvent event
 
     handleThreadKilled Exception.ThreadKilled = return ()

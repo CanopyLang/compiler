@@ -8,7 +8,7 @@ module Canopy.Kernel
   where
 
 
-import Control.Monad (liftM2)
+import qualified Control.Monad as Monad
 import Data.Binary (Binary, get, put, getWord8, putWord8)
 import qualified Data.ByteString.Internal as BSI
 import qualified Data.List as List
@@ -370,8 +370,8 @@ instance Binary Chunk where
     do  word <- getWord8
         case word of
           0 -> fmap  JS get
-          1 -> liftM2 CanopyVar get get
-          2 -> liftM2 JsVar get get
+          1 -> Monad.liftM2 CanopyVar get get
+          2 -> Monad.liftM2 JsVar get get
           3 -> fmap  CanopyField get
           4 -> fmap  JsField get
           5 -> fmap  JsEnum get

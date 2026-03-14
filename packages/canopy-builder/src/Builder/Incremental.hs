@@ -53,7 +53,8 @@ import Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
 import qualified Canopy.Data.Name as Name
 import qualified Data.Set as Set
-import Data.Time.Clock (UTCTime, addUTCTime, getCurrentTime)
+import Data.Time.Clock (UTCTime)
+import qualified Data.Time.Clock as Time
 import qualified Data.Time.Clock.POSIX as POSIX
 import Data.Word (Word16)
 import GHC.Generics (Generic)
@@ -307,7 +308,7 @@ tryLegacyJsonLoad contents =
 -- | Create empty cache.
 emptyCache :: IO BuildCache
 emptyCache = do
-  now <- getCurrentTime
+  now <- Time.getCurrentTime
   return
     BuildCache
       { cacheEntries = Map.empty,
@@ -472,10 +473,10 @@ pruneCache cache cutoff =
 -- compilation pipeline (see Compiler.compileModulesInOrder).
 getCacheStats :: BuildCache -> IO (Int, Int, Int)
 getCacheStats cache = do
-  now <- getCurrentTime
+  now <- Time.getCurrentTime
   let entries = cacheEntries cache
       totalEntries = Map.size entries
-      recentCutoff = addUTCTime (-3600) now
+      recentCutoff = Time.addUTCTime (-3600) now
       validEntries = Map.size (Map.filter (\e -> cacheTimestamp e > recentCutoff) entries)
       expiredEntries = totalEntries - validEntries
   return (totalEntries, validEntries, expiredEntries)

@@ -12,12 +12,12 @@
 -- @since 0.20.0
 module Main where
 
-import Control.Monad (when)
+import qualified Control.Monad as Monad
 import Data.Text (Text)
 import Options.Applicative
-import System.Directory (doesFileExist)
+import qualified System.Directory as Dir
 import System.Exit (exitFailure, exitSuccess)
-import System.IO (hPutStrLn, stderr)
+import qualified System.IO as IO
 
 import qualified WebIDL
 import WebIDL.Config (Config(..), OutputConfig(..), PackageConfig(..))
@@ -105,17 +105,17 @@ loadConfiguration opts = do
 loadBaseConfig :: Maybe FilePath -> IO Config
 loadBaseConfig Nothing = pure Config.defaultConfig
 loadBaseConfig (Just path) = do
-  exists <- doesFileExist path
+  exists <- Dir.doesFileExist path
   if exists
     then do
       result <- Config.loadConfig path
       case result of
         Left err -> do
-          hPutStrLn stderr ("Error loading config: " <> err)
+          IO.hPutStrLn IO.stderr ("Error loading config: " <> err)
           exitFailure
         Right cfg -> pure cfg
     else do
-      hPutStrLn stderr ("Config file not found: " <> path)
+      IO.hPutStrLn IO.stderr ("Config file not found: " <> path)
       exitFailure
 
 
@@ -146,7 +146,7 @@ applyOutputOverrides opts out = out
 -- | Run the generator
 runGenerator :: Options -> Config -> IO ()
 runGenerator opts config = do
-  when (optVerbose opts) $ do
+  Monad.when (optVerbose opts) $ do
     putStrLn "WebIDL Generator"
     putStrLn "================"
     putStrLn ("Input files: " <> show (optInputFiles opts))
@@ -157,11 +157,11 @@ runGenerator opts config = do
   result <- WebIDL.parseFiles (optInputFiles opts)
   case result of
     Left err -> do
-      hPutStrLn stderr "Parse error:"
-      hPutStrLn stderr err
+      IO.hPutStrLn IO.stderr "Parse error:"
+      IO.hPutStrLn IO.stderr err
       exitFailure
     Right defs -> do
-      when (optVerbose opts) $ do
+      Monad.when (optVerbose opts) $ do
         putStrLn ("Parsed " <> show (length defs) <> " definitions")
         putStrLn ""
 
@@ -170,14 +170,14 @@ runGenerator opts config = do
           putStrLn "Dry run - no files generated"
           exitSuccess
         else do
-          when (optVerbose opts) $
+          Monad.when (optVerbose opts) $
             putStrLn "Generating Canopy modules..."
           WebIDL.generateCanopy config defs
 
-          when (optVerbose opts) $
+          Monad.when (optVerbose opts) $
             putStrLn "Generating JavaScript runtime..."
           WebIDL.generateJavaScript config defs
 
-          when (optVerbose opts) $
+          Monad.when (optVerbose opts) $
             putStrLn "Done!"
           exitSuccess

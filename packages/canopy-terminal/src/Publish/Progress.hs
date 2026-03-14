@@ -39,7 +39,7 @@ import Canopy.Package (Name)
 import qualified Canopy.Package as Pkg
 import Canopy.Version (Version)
 import qualified Canopy.Version as Version
-import Control.Monad (void)
+import qualified Control.Monad as Monad
 import Deps.Registry (KnownVersions)
 import Publish.Types (GoodVersion)
 import qualified Publish.Types as Types
@@ -98,7 +98,7 @@ reportSemverCheck version work =
       waiting = "Checking semantic versioning rules. Is " <> vsn <> " correct?"
       failure = "Version " <> vsn <> " is not correct!"
       success result = formatVersionSuccess vsn result
-   in void (reportCustomCheck waiting success failure work)
+   in Monad.void (reportCustomCheck waiting success failure work)
 
 -- | Format version validation success message.
 --

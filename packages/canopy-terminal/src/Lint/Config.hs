@@ -33,7 +33,7 @@ import qualified Data.Aeson.KeyMap as KeyMap
 import qualified Data.Aeson.Key as Key
 import qualified Data.ByteString.Lazy as LBS
 import qualified Data.Map.Strict as Map
-import Data.Maybe (mapMaybe)
+import qualified Data.Maybe as Maybe
 import qualified Data.Text as Text
 import Lint.Types
   ( LintConfig (..),
@@ -89,7 +89,7 @@ applyFromJson defaults _ = defaults
 --
 -- @since 0.19.2
 parseLintOverrides :: KeyMap.KeyMap Json.Value -> [(LintRule, Severity)]
-parseLintOverrides = mapMaybe parseEntry . KeyMap.toList
+parseLintOverrides = Maybe.mapMaybe parseEntry . KeyMap.toList
   where
     parseEntry :: (Key.Key, Json.Value) -> Maybe (LintRule, Severity)
     parseEntry (key, value) = do

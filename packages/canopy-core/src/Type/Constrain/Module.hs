@@ -7,7 +7,7 @@ where
 
 import qualified AST.Canonical as Can
 import qualified Canopy.ModuleName as ModuleName
-import Control.Monad (forM)
+import qualified Control.Monad as Monad
 import Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
 import qualified Canopy.Data.Name as Name
@@ -56,7 +56,7 @@ constrainDecls guards decls finalConstraint =
     Can.DeclareRec def defs otherDecls ->
       do
         let allDefs = def : defs
-        rtvMaps <- forM allDefs $ \d -> case d of
+        rtvMaps <- Monad.forM allDefs $ \d -> case d of
           Can.TypedDef _ freeVars _ _ _ ->
             Map.traverseWithKey (\k _ -> nameToRigid k) freeVars
           Can.Def _ _ _ ->

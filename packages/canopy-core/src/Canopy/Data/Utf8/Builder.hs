@@ -37,7 +37,7 @@ module Canopy.Data.Utf8.Builder
   )
 where
 
-import Control.Monad (when)
+import qualified Control.Monad as Monad
 import qualified Data.ByteString.Builder.Internal as BBI
 import Canopy.Data.Utf8.Core (Utf8 (..))
 import Foreign.Ptr (minusPtr, plusPtr)
@@ -103,7 +103,7 @@ toEscapedBuilderHelp before after name@(Utf8 ba#) k =
 
 escape :: Word8 -> Word8 -> Ptr a -> Utf8 t -> Int -> Int -> Int -> IO ()
 escape before@(W8# before#) after ptr name@(Utf8 ba#) offset@(I# offset#) len@(I# len#) i@(I# i#) =
-  when (isTrue# (i# <# len#)) $
+  Monad.when (isTrue# (i# <# len#)) $
     if isTrue# (eqWord8# before# (indexWord8Array# ba# (offset# +# i#)))
       then do
         writeWordToPtr ptr i after

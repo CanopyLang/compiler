@@ -49,9 +49,11 @@ import Compiler.Types
 import qualified Control.Concurrent.Async as Async
 import qualified Control.Concurrent.QSem as QSem
 import qualified Control.Exception as Exception
+import qualified Control.Monad as Monad
 import qualified Data.Binary as Binary
 import qualified Data.ByteString.Lazy as LBS
-import Data.IORef (IORef, atomicModifyIORef', newIORef, readIORef)
+import Data.IORef (IORef)
+import qualified Data.IORef as IORef
 import qualified Data.Map.Strict as Map
 import qualified Data.Maybe as Maybe
 import qualified Data.Set as Set
@@ -60,14 +62,13 @@ import qualified Driver
 import Driver (PhaseTimings (..))
 import qualified Exit
 import qualified GHC.Conc as Conc
-import qualified Reporting.Diagnostic as Diag
 import qualified Generate.JavaScript as JS
 import Logging.Event (LogEvent (..), Phase (..))
 import qualified Logging.Logger as Log
 import qualified Parse.Module as Parse
 import qualified Query.Engine as Engine
 import qualified Query.Simple as Query
-import Control.Monad (when)
+import qualified Reporting.Diagnostic as Diag
 
 -- | Compile modules in dependency order with parallel execution and
 -- incremental caching.
@@ -87,23 +88,30 @@ compileModulesInOrder ::
 compileModulesInOrder pkg projectType root initialInterfaces moduleInfo = do
   Log.logEvent (BuildStarted (Text.pack ("parallel compilation: " ++ show (Map.size moduleInfo) ++ " modules")))
   buildCache <- loadBuildCache root
-  cacheRef <- newIORef buildCache
-  hitRef <- newIORef (0 :: Int)
-  missRef <- newIORef (0 :: Int)
+  cacheRef <- IORef.newIORef buildCache
+  hitRef <- IORef.newIORef (0 :: Int)
+  missRef <- IORef.newIORef (0 :: Int)
   engine <- Engine.initEngine
   let graph = buildDependencyGraph moduleInfo
   Log.logEvent (BuildModuleQueued (Text.pack ("dependency graph: " ++ show (Map.size moduleInfo) ++ " modules")))
   case Parallel.groupByDependencyLevel graph of
     Left (Parallel.CycleDetectedDuringLeveling cycleModules) ->
-      return (Left (Exit.BuildCannotCompile (Exit.CompileError ""
-        [Diag.stringToDiagnostic Diag.PhaseBuild "DEPENDENCY CYCLE" ("Dependency cycle detected among modules: " ++ show cycleModules)])))
+      return
+        ( Left
+            ( Exit.BuildCannotCompile
+                ( Exit.CompileError
+                    ""
+                    [Diag.stringToDiagnostic Diag.PhaseBuild "DEPENDENCY CYCLE" ("Dependency cycle detected among modules: " ++ show cycleModules)]
+                )
+            )
+        )
     Right plan -> do
       let levels = Parallel.planLevels plan
           modulePaths = Map.map fst moduleInfo
           importMap = Map.map snd moduleInfo
       Log.logEvent (BuildModuleQueued (Text.pack (show (length levels) ++ " dependency levels")))
       result <- compileLevels engine cacheRef hitRef missRef pkg projectType root levels initialInterfaces [] modulePaths importMap
-      finalCache <- readIORef cacheRef
+      finalCache <- IORef.readIORef cacheRef
       saveBuildCache root finalCache
       logIncrementalStats hitRef missRef
       Driver.logCacheStats engine
@@ -124,9 +132,9 @@ compileModulesInOrderTimed ::
   Map.Map ModuleName.Raw (FilePath, [ModuleName.Raw]) ->
   IO (Either Exit.BuildError (([ModuleResult], Map.Map ModuleName.Raw Interface.Interface), PhaseTimings))
 compileModulesInOrderTimed pkg projectType root initialInterfaces moduleInfo = do
-  timingsRef <- newIORef Driver.emptyTimings
+  timingsRef <- IORef.newIORef Driver.emptyTimings
   result <- compileModulesInOrderWithTimings timingsRef pkg projectType root initialInterfaces moduleInfo
-  timings <- readIORef timingsRef
+  timings <- IORef.readIORef timingsRef
   case result of
     Left err -> return (Left err)
     Right ok -> return (Right (ok, timings))
@@ -143,21 +151,28 @@ compileModulesInOrderWithTimings ::
 compileModulesInOrderWithTimings timingsRef pkg projectType root initialInterfaces moduleInfo = do
   Log.logEvent (BuildStarted (Text.pack ("timed parallel compilation: " ++ show (Map.size moduleInfo) ++ " modules")))
   buildCache <- loadBuildCache root
-  cacheRef <- newIORef buildCache
-  hitRef <- newIORef (0 :: Int)
-  missRef <- newIORef (0 :: Int)
+  cacheRef <- IORef.newIORef buildCache
+  hitRef <- IORef.newIORef (0 :: Int)
+  missRef <- IORef.newIORef (0 :: Int)
   engine <- Engine.initEngine
   let graph = buildDependencyGraph moduleInfo
   case Parallel.groupByDependencyLevel graph of
     Left (Parallel.CycleDetectedDuringLeveling cycleModules) ->
-      return (Left (Exit.BuildCannotCompile (Exit.CompileError ""
-        [Diag.stringToDiagnostic Diag.PhaseBuild "DEPENDENCY CYCLE" ("Dependency cycle detected among modules: " ++ show cycleModules)])))
+      return
+        ( Left
+            ( Exit.BuildCannotCompile
+                ( Exit.CompileError
+                    ""
+                    [Diag.stringToDiagnostic Diag.PhaseBuild "DEPENDENCY CYCLE" ("Dependency cycle detected among modules: " ++ show cycleModules)]
+                )
+            )
+        )
     Right plan -> do
       let levels = Parallel.planLevels plan
           modulePaths = Map.map fst moduleInfo
           importMap = Map.map snd moduleInfo
       result <- compileLevelsTimed timingsRef engine cacheRef hitRef missRef pkg projectType root levels initialInterfaces [] modulePaths importMap
-      finalCache <- readIORef cacheRef
+      finalCache <- IORef.readIORef cacheRef
       saveBuildCache root finalCache
       logIncrementalStats hitRef missRef
       Driver.logCacheStats engine
@@ -185,8 +200,20 @@ compileLevelsTimed timingsRef engine cacheRef hitRef missRef pkg projType root (
   case levelResult of
     Left err -> return (Left err)
     Right (levelCompiled, levelIfaces) ->
-      compileLevelsTimed timingsRef engine cacheRef hitRef missRef pkg projType root restLevels
-        (Map.union levelIfaces ifaces) (reverse levelCompiled ++ compiled) statuses importMap
+      compileLevelsTimed
+        timingsRef
+        engine
+        cacheRef
+        hitRef
+        missRef
+        pkg
+        projType
+        root
+        restLevels
+        (Map.union levelIfaces ifaces)
+        (reverse levelCompiled ++ compiled)
+        statuses
+        importMap
 
 -- | Compile a single dependency level in parallel with timing accumulation.
 compileLevelInParallelTimed ::
@@ -232,12 +259,15 @@ compileOneModuleTimed timingsRef engine cacheRef hitRef missRef pkg projType roo
   case Map.lookup modName statuses of
     Nothing ->
       return (Left (Exit.BuildCannotCompile (Exit.CompileModuleNotFound errMsg)))
-      where errMsg = "Internal error: Module " ++ Name.toChars modName ++ " not found in module paths"
+      where
+        errMsg = "Internal error: Module " ++ Name.toChars modName ++ " not found in module paths"
     Just path -> do
       let modImports = Maybe.fromMaybe [] (Map.lookup modName importMap)
       cached <- tryCacheHit cacheRef root modName path modImports ifaces
-      maybe (handleCacheMissTimed timingsRef engine cacheRef missRef pkg projType root modName path modImports ifaces)
-            (handleCacheHit hitRef modName) cached
+      maybe
+        (handleCacheMissTimed timingsRef engine cacheRef missRef pkg projType root modName path modImports ifaces)
+        (handleCacheHit hitRef modName)
+        cached
 
 -- | Handle a cache miss with timing accumulation.
 handleCacheMissTimed ::
@@ -254,7 +284,7 @@ handleCacheMissTimed ::
   Map.Map ModuleName.Raw Interface.Interface ->
   IO (Either Exit.BuildError (ModuleResult, (ModuleName.Raw, Interface.Interface)))
 handleCacheMissTimed timingsRef engine cacheRef missRef pkg projType root modName path modImports ifaces = do
-  atomicModifyIORef' missRef (\n -> (n + 1, ()))
+  IORef.atomicModifyIORef' missRef (\n -> (n + 1, ()))
   Log.logEvent (CacheMiss PhaseBuild (Text.pack (Name.toChars modName)))
   compileFreshTimed timingsRef engine cacheRef pkg projType root modName path modImports ifaces
 
@@ -296,16 +326,17 @@ finishCompilationTimed timingsRef cacheRef root modName path modImports ifaces c
 -- | Atomically add per-module timings to the accumulator.
 accumulateTimings :: IORef PhaseTimings -> PhaseTimings -> IO ()
 accumulateTimings ref new =
-  atomicModifyIORef' ref (\old -> (addTimings old new, ()))
+  IORef.atomicModifyIORef' ref (\old -> (addTimings old new, ()))
 
 -- | Sum two 'PhaseTimings' values.
 addTimings :: PhaseTimings -> PhaseTimings -> PhaseTimings
-addTimings a b = PhaseTimings
-  { _timeParse = _timeParse a + _timeParse b
-  , _timeCanonicalize = _timeCanonicalize a + _timeCanonicalize b
-  , _timeTypeCheck = _timeTypeCheck a + _timeTypeCheck b
-  , _timeOptimize = _timeOptimize a + _timeOptimize b
-  }
+addTimings a b =
+  PhaseTimings
+    { _timeParse = _timeParse a + _timeParse b,
+      _timeCanonicalize = _timeCanonicalize a + _timeCanonicalize b,
+      _timeTypeCheck = _timeTypeCheck a + _timeTypeCheck b,
+      _timeOptimize = _timeOptimize a + _timeOptimize b
+    }
 
 -- | Build the dependency graph from pre-computed module info.
 buildDependencyGraph ::
@@ -341,8 +372,19 @@ compileLevels engine cacheRef hitRef missRef pkg projType root (level : restLeve
   case levelResult of
     Left err -> return (Left err)
     Right (levelCompiled, levelIfaces) ->
-      compileLevels engine cacheRef hitRef missRef pkg projType root restLevels
-        (Map.union levelIfaces ifaces) (reverse levelCompiled ++ compiled) statuses importMap
+      compileLevels
+        engine
+        cacheRef
+        hitRef
+        missRef
+        pkg
+        projType
+        root
+        restLevels
+        (Map.union levelIfaces ifaces)
+        (reverse levelCompiled ++ compiled)
+        statuses
+        importMap
 
 -- | Compile a single dependency level (all modules in parallel).
 compileLevelInParallel ::
@@ -386,12 +428,15 @@ compileOneModule engine cacheRef hitRef missRef pkg projType root ifaces statuse
   case Map.lookup modName statuses of
     Nothing ->
       return (Left (Exit.BuildCannotCompile (Exit.CompileModuleNotFound errMsg)))
-      where errMsg = "Internal error: Module " ++ Name.toChars modName ++ " not found in module paths"
+      where
+        errMsg = "Internal error: Module " ++ Name.toChars modName ++ " not found in module paths"
     Just path -> do
       let modImports = Maybe.fromMaybe [] (Map.lookup modName importMap)
       cached <- tryCacheHit cacheRef root modName path modImports ifaces
-      maybe (handleCacheMiss engine cacheRef missRef pkg projType root modName path modImports ifaces)
-            (handleCacheHit hitRef modName) cached
+      maybe
+        (handleCacheMiss engine cacheRef missRef pkg projType root modName path modImports ifaces)
+        (handleCacheHit hitRef modName)
+        cached
 
 -- | Handle a cache hit for a module.
 handleCacheHit ::
@@ -400,7 +445,7 @@ handleCacheHit ::
   ModuleResult ->
   IO (Either Exit.BuildError (ModuleResult, (ModuleName.Raw, Interface.Interface)))
 handleCacheHit hitRef modName moduleResult = do
-  atomicModifyIORef' hitRef (\n -> (n + 1, ()))
+  IORef.atomicModifyIORef' hitRef (\n -> (n + 1, ()))
   Log.logEvent (CacheHit PhaseBuild (Text.pack (Name.toChars modName)))
   return (Right (moduleResult, (modName, mrInterface moduleResult)))
 
@@ -418,7 +463,7 @@ handleCacheMiss ::
   Map.Map ModuleName.Raw Interface.Interface ->
   IO (Either Exit.BuildError (ModuleResult, (ModuleName.Raw, Interface.Interface)))
 handleCacheMiss engine cacheRef missRef pkg projType root modName path modImports ifaces = do
-  atomicModifyIORef' missRef (\n -> (n + 1, ()))
+  IORef.atomicModifyIORef' missRef (\n -> (n + 1, ()))
   Log.logEvent (CacheMiss PhaseBuild (Text.pack (Name.toChars modName)))
   compileFresh engine cacheRef pkg projType root modName path modImports ifaces
 
@@ -453,11 +498,10 @@ finishCompilation ::
   IO (Either Exit.BuildError (ModuleResult, (ModuleName.Raw, Interface.Interface)))
 finishCompilation cacheRef root modName path modImports ifaces compiledResult = do
   let moduleResult = fromDriverResult compiledResult
-  cache <- readIORef cacheRef
+  cache <- IORef.readIORef cacheRef
   let newIfaceHash = Hash.hashBytes (LBS.toStrict (Binary.encode (mrInterface moduleResult)))
       stable = Incremental.interfaceUnchanged cache modName newIfaceHash
-  when stable $
-    Log.logEvent (InterfaceSaved (Name.toChars modName ++ " (interface stable)"))
+  Monad.when stable (Log.logEvent (InterfaceSaved (Name.toChars modName ++ " (interface stable)")))
   saveToCacheAsync cacheRef root modName path modImports ifaces moduleResult
   return (Right (moduleResult, (modName, mrInterface moduleResult)))
 

@@ -21,7 +21,7 @@ import qualified AST.Canonical as Can
 import qualified AST.Utils.Binop as Binop
 import qualified Canopy.Package as Pkg
 import Control.Applicative ((<|>))
-import Control.Monad (liftM2, liftM3, liftM4)
+import qualified Control.Monad as Monad
 import Data.Aeson (FromJSON, ToJSON, object, withObject, (.:), (.=))
 import qualified Data.Aeson as Aeson
 import Data.Aeson.Types (Parser)
@@ -235,7 +235,7 @@ instance Binary Interface where
   put (Interface a b c d e f g h) = put a >> put b >> put c >> put d >> put e >> put f >> put g >> put h
 
 instance Binary ImplHeader where
-  get = liftM2 ImplHeader get get
+  get = Monad.liftM2 ImplHeader get get
   put (ImplHeader a b) = put a >> put b
 
 instance Binary Union where
@@ -272,7 +272,7 @@ instance Binary Alias where
 
 instance Binary Binop where
   get =
-    liftM4 Binop get get get get
+    Monad.liftM4 Binop get get get get
 
   put (Binop a b c d) =
     put a >> put b >> put c >> put d
@@ -288,7 +288,7 @@ instance Binary DependencyInterface where
       n <- getWord8
       case n of
         0 -> fmap Public get
-        1 -> liftM3 Private get get get
+        1 -> Monad.liftM3 Private get get get
         _ -> fail "binary encoding of DependencyInterface was corrupted"
 
 -- JSON INSTANCES

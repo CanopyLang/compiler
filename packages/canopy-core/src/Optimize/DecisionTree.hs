@@ -23,7 +23,7 @@ import qualified AST.Canonical as Can
 import qualified Canopy.ModuleName as ModuleName
 import qualified Canopy.String as ES
 import Control.Arrow (second)
-import Control.Monad (liftM, liftM2, liftM5)
+import qualified Control.Monad as Monad
 import Data.Binary
 import qualified Canopy.Data.Index as Index
 import qualified Data.List as List
@@ -489,14 +489,14 @@ instance Binary Test where
     do
       word <- getWord8
       case word of
-        0 -> liftM5 IsCtor get get get get get
+        0 -> Monad.liftM5 IsCtor get get get get get
         1 -> pure IsCons
         2 -> pure IsNil
         3 -> pure IsTuple
-        4 -> liftM IsChr get
-        5 -> liftM IsStr get
-        6 -> liftM IsInt get
-        7 -> liftM IsBool get
+        4 -> Monad.liftM IsChr get
+        5 -> Monad.liftM IsStr get
+        6 -> Monad.liftM IsInt get
+        7 -> Monad.liftM IsBool get
         _ -> fail "problem getting DecisionTree.Test binary"
 
 instance Binary Path where
@@ -510,7 +510,7 @@ instance Binary Path where
     do
       word <- getWord8
       case word of
-        0 -> liftM2 Index get get
-        1 -> liftM Unbox get
+        0 -> Monad.liftM2 Index get get
+        1 -> Monad.liftM Unbox get
         2 -> pure Empty
         _ -> fail "problem getting DecisionTree.Path binary"

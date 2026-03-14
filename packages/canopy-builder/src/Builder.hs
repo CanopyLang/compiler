@@ -69,11 +69,12 @@ import qualified Canopy.Interface as Interface
 import qualified Canopy.ModuleName as ModuleName
 import qualified Canopy.Package as Pkg
 import qualified Data.ByteString as BS
-import Data.IORef (IORef, modifyIORef', newIORef, readIORef, writeIORef)
+import Data.IORef (IORef)
+import qualified Data.IORef as IORef
 import Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
 import qualified Data.Set as Set
-import Data.Time.Clock (getCurrentTime)
+import qualified Data.Time.Clock as Time
 import qualified Driver
 import qualified File
 import qualified Data.Text as Text
@@ -120,10 +121,10 @@ initPureBuilder = do
   Log.logEvent (BuildStarted (Text.pack "pure builder"))
 
   engine <- State.initBuilder
-  cache <- Incremental.emptyCache >>= newIORef
-  graph <- newIORef Graph.emptyGraph
+  cache <- Incremental.emptyCache >>= IORef.newIORef
+  graph <- IORef.newIORef Graph.emptyGraph
   coreIfaces <- loadCoreInterfaces
-  ifacesRef <- newIORef coreIfaces
+  ifacesRef <- IORef.newIORef coreIfaces
 
   return
     PureBuilder
@@ -185,7 +186,7 @@ buildFromPaths builder paths = do
       -- Build dependency graph
       let deps = extractDependencies modules
       let graph = Graph.buildGraph deps
-      writeIORef (builderGraph builder) graph
+      IORef.writeIORef (builderGraph builder) graph
 
       -- Check for cycles
       case Graph.topologicalSort graph of
@@ -284,7 +285,7 @@ compileModuleInOrder builder _root moduleMap moduleName =
 
     Just (path, _sourceModule) -> do
       sourceHash <- Hash.hashFile path
-      cache <- readIORef (builderCache builder)
+      cache <- IORef.readIORef (builderCache builder)
       let depsHash = Hash.hashString ""
 
       if Incremental.needsRecompile cache moduleName sourceHash depsHash
@@ -300,9 +301,9 @@ compileModuleInOrder builder _root moduleMap moduleName =
 compileWithDriver :: PureBuilder -> ModuleName.Raw -> FilePath -> IO BuildResult
 compileWithDriver builder moduleName path = do
   Log.logEvent (CompileStarted path)
-  ifaces <- readIORef (builderInterfaces builder)
+  ifaces <- IORef.readIORef (builderInterfaces builder)
   result <- Driver.compileModule Pkg.dummyName ifaces path Parse.Application
-  now <- getCurrentTime
+  now <- Time.getCurrentTime
   case result of
     Left err -> do
       let errStr = show err
@@ -327,7 +328,7 @@ accumulateInterface builder compiled = do
   let Can.Module canonName _ _ _ _ _ _ _ _ _ _ _ = Driver.compileResultModule compiled
       rawName = ModuleName._module canonName
       iface = Driver.compileResultInterface compiled
-  modifyIORef' (builderInterfaces builder) (Map.insert rawName iface)
+  IORef.modifyIORef' (builderInterfaces builder) (Map.insert rawName iface)
 
 -- | Check if build result is success.
 isSuccess :: BuildResult -> Bool
@@ -457,7 +458,7 @@ getModuleDependencies root srcDirs path = do
 useCache :: PureBuilder -> ModuleName.Raw -> FilePath -> IO BuildResult
 useCache builder moduleName path = do
   Log.logEvent (CacheHit PhaseBuild (Text.pack (show moduleName)))
-  now <- getCurrentTime
+  now <- Time.getCurrentTime
   State.setModuleStatus (builderEngine builder) moduleName
     (State.StatusCompleted now)
   State.setModuleResult (builderEngine builder) moduleName

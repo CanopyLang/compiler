@@ -12,7 +12,7 @@ module Lint.Rules.Scope
 where
 
 import qualified AST.Source as Src
-import Data.Maybe (mapMaybe)
+import qualified Data.Maybe as Maybe
 import qualified Canopy.Data.Name as Name
 import qualified Data.Set as Set
 import Lint.Rules.Helpers
@@ -173,7 +173,7 @@ checkDefUnused usedNames (Ann.At _ (Src.Define (Ann.At region name_) _ _ _)) =
   where
     nameStr = Name.toChars name_
 checkDefUnused usedNames (Ann.At _ (Src.Destruct pat _)) =
-  mapMaybe (checkPatNameUnused usedNames) (patternLocatedNames [pat])
+  Maybe.mapMaybe (checkPatNameUnused usedNames) (patternLocatedNames [pat])
 
 -- | Check a single pattern-bound name for usage.
 checkPatNameUnused :: Set.Set String -> (Ann.Region, String) -> Maybe LintWarning

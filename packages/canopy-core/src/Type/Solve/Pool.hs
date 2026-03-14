@@ -45,7 +45,7 @@ where
 import qualified AST.Canonical as Can
 import qualified Canopy.Data.Name as Name
 import qualified Canopy.ModuleName as ModuleName
-import Control.Monad (foldM, liftM2, liftM3)
+import qualified Control.Monad as Monad
 import Data.Foldable (for_, maximumBy, traverse_)
 import Data.IORef
 import Data.Map.Strict (Map)
@@ -290,10 +290,10 @@ collectAmbientVariables ambientRigids = do
               else go (var : visited) actualVar
           Descriptor (Structure term) _ _ _ -> do
             termVars <- getTermVariables term
-            foldM go (var : visited) termVars
+            Monad.foldM go (var : visited) termVars
           _ ->
             return (var : visited)
-  foldM go [] ambientRigids
+  Monad.foldM go [] ambientRigids
   where
     getTermVariables term = case term of
       App1 _ _ args -> return args
@@ -335,7 +335,7 @@ generalize youngMark visitMark youngRank pools ambientVars = do
 -- The resulting vector has one slot per rank from 0 to @max(youngRank, maxRank)@.
 poolToRankTable :: Mark -> Int -> [Variable] -> IO (Vector.Vector [Variable])
 poolToRankTable youngMark youngRank youngInhabitants = do
-  maxRank <- foldM (\acc var -> do
+  maxRank <- Monad.foldM (\acc var -> do
     (Descriptor _ rank _ _) <- UF.get var
     return (max acc rank)) youngRank youngInhabitants
   mutableTable <- MVector.replicate (maxRank + 1) []
@@ -428,7 +428,7 @@ adjustRankContent youngMark visitMark groupRank content =
 
 adjustRankStructure :: (Variable -> IO Int) -> FlatType -> IO Int
 adjustRankStructure go flatType = case flatType of
-  App1 _ _ args -> foldM (\rank arg -> max rank <$> go arg) outermostRank args
+  App1 _ _ args -> Monad.foldM (\rank arg -> max rank <$> go arg) outermostRank args
   Fun1 arg result -> max <$> go arg <*> go result
   EmptyRecord1 -> return outermostRank
   Record1 fields extension -> adjustRankRecord go fields extension
@@ -438,7 +438,7 @@ adjustRankStructure go flatType = case flatType of
 adjustRankRecord :: (Variable -> IO Int) -> Map.Map Name.Name Variable -> Variable -> IO Int
 adjustRankRecord go fields extension = do
   extRank <- go extension
-  foldM (\rank field -> max rank <$> go field) extRank fields
+  Monad.foldM (\rank field -> max rank <$> go field) extRank fields
 
 adjustRankTuple :: (Variable -> IO Int) -> Variable -> Variable -> Maybe Variable -> IO Int
 adjustRankTuple go a b maybeC = do
@@ -450,7 +450,7 @@ adjustRankTuple go a b maybeC = do
 
 adjustRankAlias :: (Variable -> IO Int) -> [(Name.Name, Variable)] -> Variable -> IO Int
 adjustRankAlias go args realVar = do
-  argsRank <- foldM (\rank (_, argVar) -> max rank <$> go argVar) outermostRank args
+  argsRank <- Monad.foldM (\rank (_, argVar) -> max rank <$> go argVar) outermostRank args
   realRank <- go realVar
   return (max argsRank realRank)
 
@@ -716,12 +716,12 @@ traverseFlatType f flatType =
     App1 home name args ->
       fmap (App1 home name) (traverse f args)
     Fun1 a b ->
-      liftM2 Fun1 (f a) (f b)
+      Monad.liftM2 Fun1 (f a) (f b)
     EmptyRecord1 ->
       pure EmptyRecord1
     Record1 fields ext ->
-      liftM2 Record1 (traverse f fields) (f ext)
+      Monad.liftM2 Record1 (traverse f fields) (f ext)
     Unit1 ->
       pure Unit1
     Tuple1 a b cs ->
-      liftM3 Tuple1 (f a) (f b) (traverse f cs)
+      Monad.liftM3 Tuple1 (f a) (f b) (traverse f cs)

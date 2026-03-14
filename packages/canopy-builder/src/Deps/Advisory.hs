@@ -55,7 +55,7 @@ import qualified Data.Aeson.Types as Json
 import qualified Data.ByteString.Lazy as LBS
 import Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
-import Data.Maybe (mapMaybe)
+import qualified Data.Maybe as Maybe
 
 -- | Severity level for security advisories.
 --
@@ -142,7 +142,7 @@ matchAdvisories advisories deps =
   concatMap matchPackage (Map.toList deps)
   where
     matchPackage (pkg, version) =
-      mapMaybe (matchSingle (Pkg.toChars pkg) version) advisories
+      Maybe.mapMaybe (matchSingle (Pkg.toChars pkg) version) advisories
 
     matchSingle pkgStr version adv
       | _advisoryPackage adv == pkgStr && isAffected adv version =

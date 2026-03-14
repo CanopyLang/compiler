@@ -16,7 +16,7 @@ module Lint.Rules.Complexity
 where
 
 import qualified AST.Source as Src
-import Data.Maybe (mapMaybe)
+import qualified Data.Maybe as Maybe
 import qualified Canopy.Data.Name as Name
 import qualified Data.Set as Set
 import Lint.Rules.Helpers (childExprs)
@@ -37,7 +37,7 @@ import qualified Reporting.Annotation as Ann
 -- @since 0.19.2
 checkTooManyArguments :: Src.Module -> [LintWarning]
 checkTooManyArguments modul =
-  mapMaybe (checkArgCount . Ann.toValue) (Src._values modul)
+  Maybe.mapMaybe (checkArgCount . Ann.toValue) (Src._values modul)
 
 -- | Maximum number of arguments before a warning is emitted.
 maxArguments :: Int
@@ -108,7 +108,7 @@ regionFromPats (p : ps) =
 -- @since 0.19.2
 checkLongFunction :: Src.Module -> [LintWarning]
 checkLongFunction modul =
-  mapMaybe (checkFuncLength . Ann.toValue) (Src._values modul)
+  Maybe.mapMaybe (checkFuncLength . Ann.toValue) (Src._values modul)
 
 -- | Maximum number of lines a function body may span.
 maxFunctionLines :: Int

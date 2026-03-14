@@ -42,10 +42,12 @@ module Builder.State
 where
 
 import qualified Canopy.ModuleName as ModuleName
-import Data.IORef (IORef, modifyIORef', newIORef, readIORef)
+import Data.IORef (IORef)
+import qualified Data.IORef as IORef
 import Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
-import Data.Time.Clock (UTCTime, getCurrentTime)
+import Data.Time.Clock (UTCTime)
+import qualified Data.Time.Clock as Time
 import qualified Data.Text as Text
 import Logging.Event (LogEvent (..))
 import qualified Logging.Logger as Log
@@ -83,7 +85,7 @@ newtype BuilderEngine = BuilderEngine
 -- | Create empty builder state.
 emptyState :: IO BuilderState
 emptyState = do
-  now <- getCurrentTime
+  now <- Time.getCurrentTime
   return
     BuilderState
       { builderStatuses = Map.empty,
@@ -98,20 +100,20 @@ initBuilder :: IO BuilderEngine
 initBuilder = do
   Log.logEvent (BuildStarted (Text.pack "pure builder engine"))
   state <- emptyState
-  stateRef <- newIORef state
+  stateRef <- IORef.newIORef state
   return (BuilderEngine stateRef)
 
 -- | Get status of a specific module.
 getModuleStatus :: BuilderEngine -> ModuleName.Raw -> IO (Maybe ModuleStatus)
 getModuleStatus (BuilderEngine stateRef) moduleName = do
-  state <- readIORef stateRef
+  state <- IORef.readIORef stateRef
   return (Map.lookup moduleName (builderStatuses state))
 
 -- | Set status of a module.
 setModuleStatus :: BuilderEngine -> ModuleName.Raw -> ModuleStatus -> IO ()
 setModuleStatus (BuilderEngine stateRef) moduleName status = do
   Log.logEvent (BuildModuleQueued (Text.pack (show moduleName ++ " -> " ++ show status)))
-  modifyIORef' stateRef updateStatus
+  IORef.modifyIORef' stateRef updateStatus
   where
     updateStatus state =
       state {builderStatuses = Map.insert moduleName status (builderStatuses state)}
@@ -119,14 +121,14 @@ setModuleStatus (BuilderEngine stateRef) moduleName status = do
 -- | Get result of a specific module.
 getModuleResult :: BuilderEngine -> ModuleName.Raw -> IO (Maybe ModuleResult)
 getModuleResult (BuilderEngine stateRef) moduleName = do
-  state <- readIORef stateRef
+  state <- IORef.readIORef stateRef
   return (Map.lookup moduleName (builderResults state))
 
 -- | Set result of a module.
 setModuleResult :: BuilderEngine -> ModuleName.Raw -> ModuleResult -> IO ()
 setModuleResult (BuilderEngine stateRef) moduleName result = do
   Log.logEvent (BuildModuleQueued (Text.pack (show moduleName)))
-  modifyIORef' stateRef updateResult
+  IORef.modifyIORef' stateRef updateResult
   where
     updateResult state =
       let newState = state {builderResults = Map.insert moduleName result (builderResults state)}
@@ -143,25 +145,25 @@ setModuleResult (BuilderEngine stateRef) moduleName result = do
 -- | Get all module statuses.
 getAllStatuses :: BuilderEngine -> IO (Map ModuleName.Raw ModuleStatus)
 getAllStatuses (BuilderEngine stateRef) = do
-  state <- readIORef stateRef
+  state <- IORef.readIORef stateRef
   return (builderStatuses state)
 
 -- | Get all module results.
 getAllResults :: BuilderEngine -> IO (Map ModuleName.Raw ModuleResult)
 getAllResults (BuilderEngine stateRef) = do
-  state <- readIORef stateRef
+  state <- IORef.readIORef stateRef
   return (builderResults state)
 
 -- | Get count of completed modules.
 getCompletedCount :: BuilderEngine -> IO Int
 getCompletedCount (BuilderEngine stateRef) = do
-  state <- readIORef stateRef
+  state <- IORef.readIORef stateRef
   return (builderCompletedCount state)
 
 -- | Get count of pending modules.
 getPendingCount :: BuilderEngine -> IO Int
 getPendingCount (BuilderEngine stateRef) = do
-  state <- readIORef stateRef
+  state <- IORef.readIORef stateRef
   let pending = Map.size (Map.filter isPending (builderStatuses state))
   return pending
   where
@@ -171,7 +173,7 @@ getPendingCount (BuilderEngine stateRef) = do
 -- | Get count of failed modules.
 getFailedCount :: BuilderEngine -> IO Int
 getFailedCount (BuilderEngine stateRef) = do
-  state <- readIORef stateRef
+  state <- IORef.readIORef stateRef
   return (builderFailedCount state)
 
 -- | Get compiled modules with their source paths.
@@ -182,7 +184,7 @@ getFailedCount (BuilderEngine stateRef) = do
 -- separately via 'cacheArtifactPath'.
 getCompiledModules :: BuilderEngine -> IO [(ModuleName.Raw, FilePath)]
 getCompiledModules (BuilderEngine stateRef) = do
-  state <- readIORef stateRef
+  state <- IORef.readIORef stateRef
   let results = builderResults state
       successResults = Map.foldrWithKey extractSuccess [] results
   return successResults

@@ -65,7 +65,7 @@ import Data.Aeson ((.=), (.:), (.:?))
 import Data.Aeson.Types (Object, Parser)
 import qualified Data.ByteString.Lazy as LBS
 import qualified Data.Map.Strict as Map
-import Data.Maybe (mapMaybe)
+import qualified Data.Maybe as Maybe
 import qualified Data.Set as Set
 import Data.Text (Text)
 import qualified Data.Text as Text
@@ -154,7 +154,7 @@ collectCapabilitiesWithPackages pkgMap moduleFunctions =
     allPermissions = Set.fromList [t | t <- allConstraints, "permission:" `Text.isPrefixOf` t]
     allInits = Set.fromList [t | t <- allConstraints, "init:" `Text.isPrefixOf` t]
     anyUserActivation = any ("user-activation" ==) allConstraints
-    packageCaps = mapMaybe (extractPackageCaps pkgMap) moduleFunctions
+    packageCaps = Maybe.mapMaybe (extractPackageCaps pkgMap) moduleFunctions
 
 -- | Extract package capabilities for a single module using the package map.
 extractPackageCaps :: Map.Map Text Text -> (Text, [FFI.JSDocFunction]) -> Maybe (Text, Set.Set Text)

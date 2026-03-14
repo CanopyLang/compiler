@@ -19,7 +19,7 @@ import qualified Canopy.Interface as Interface
 import qualified Canopy.ModuleName as ModuleName
 import qualified Canopy.Package as Pkg
 import FFI.Types (JsSourcePath, JsSource)
-import Control.Monad (when)
+import qualified Control.Monad as Monad
 import qualified Parse.Module as Parse
 import qualified Data.ByteString as BS
 import Data.Map.Strict (Map)
@@ -62,7 +62,7 @@ canonicalizeModuleQuery path pkg projectType ifaces ffiContent modul = do
       let bindings = Map.size (Can._binops canonical)
       Log.logEvent (CanonCompleted modNameText (CanonStats bindings 0 0))
       enabled <- Log.isEnabled
-      when enabled (emitCanonTraceEvents modNameText canonical)
+      Monad.when enabled (emitCanonTraceEvents modNameText canonical)
       return (Right canonical)
 
 -- | Process Result type, extracting errors or the canonical module.

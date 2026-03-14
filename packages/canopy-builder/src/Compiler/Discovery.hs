@@ -46,10 +46,11 @@ import qualified Canopy.Data.Name as Name
 import qualified Control.Concurrent.Async as Async
 import qualified Control.Concurrent.QSem as QSem
 import qualified Control.Exception as Exception
-import Control.Monad (filterM)
+import qualified Control.Monad as Monad
 import qualified Data.ByteString as BS
-import Data.Either (partitionEithers)
-import Data.IORef (IORef, atomicModifyIORef', newIORef, readIORef)
+import qualified Data.Either as Either
+import Data.IORef (IORef)
+import qualified Data.IORef as IORef
 import qualified Data.Map.Strict as Map
 import qualified Data.Set as Set
 import qualified Data.Text as Text
@@ -100,12 +101,12 @@ lookupCachedPath ::
   ModuleName.Raw ->
   IO (Maybe FilePath)
 lookupCachedPath cache root srcDirs modName = do
-  cached <- Map.lookup modName <$> readIORef cache
+  cached <- Map.lookup modName <$> IORef.readIORef cache
   maybe performLookup pure cached
   where
     performLookup = do
       result <- findModulePath root srcDirs modName
-      atomicModifyIORef' cache (\m -> (Map.insert modName result m, ()))
+      IORef.atomicModifyIORef' cache (\m -> (Map.insert modName result m, ()))
       pure result
 
 -- TRANSITIVE DISCOVERY
@@ -133,9 +134,9 @@ discoverTransitiveDeps root srcDirs initialPaths depInterfaces projectType = do
   Log.logEvent (BuildStarted (Text.pack ("discoverTransitiveDeps: " ++ root)))
   numCaps <- Conc.getNumCapabilities
   sem <- QSem.newQSem (max 1 numCaps)
-  pathCache <- newIORef Map.empty
+  pathCache <- IORef.newIORef Map.empty
   initialResults <- Async.mapConcurrently (withSemaphore sem . parseModuleFile projectType) initialPaths
-  case partitionEithers initialResults of
+  case Either.partitionEithers initialResults of
     (err : _, _) -> return (Left err)
     ([], initialModules) -> do
       Log.logEvent (BuildModuleQueued (Text.pack ("parsed " ++ show (length initialModules) ++ " initial modules")))
@@ -212,7 +213,7 @@ discoverBfsParallel sem pathCache root srcDirs found depInterfaces projectType f
   let frontierList = Set.toList frontier
   Log.logEvent (BuildModuleQueued (Text.pack ("BFS level: " ++ show (length frontierList) ++ " modules")))
   results <- Async.mapConcurrently (withSemaphore sem . discoverOneParallel pathCache root srcDirs projectType) frontierList
-  case partitionEithers results of
+  case Either.partitionEithers results of
     (err : _, _) -> return (Left err)
     ([], discoveries) -> do
       let newFound = foldr insertDiscovery found discoveries
@@ -374,7 +375,7 @@ findModuleInDirs :: FilePath -> [SrcDir] -> ModuleName.Raw -> IO [FilePath]
 findModuleInDirs root srcDirs moduleName = do
   let basePath = moduleNameToBasePath moduleName
       candidates = concatMap (buildCandidates root basePath) srcDirs
-  filterM Dir.doesFileExist candidates
+  Monad.filterM Dir.doesFileExist candidates
   where
     buildCandidates :: FilePath -> FilePath -> SrcDir -> [FilePath]
     buildCandidates projectRoot base srcDir =

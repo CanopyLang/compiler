@@ -18,7 +18,7 @@ module Type.Error
 where
 
 import qualified Canopy.ModuleName as ModuleName
-import Control.Monad (zipWithM)
+import qualified Control.Monad as Monad
 import qualified Canopy.Data.Bag as Bag
 import Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
@@ -200,7 +200,7 @@ toDiff localizer ctx tipe1 tipe2 =
           RT.lambda ctx
             <$> toDiff localizer RT.Func a x
             <*> toDiff localizer RT.Func b y
-            <*> zipWithM (toDiff localizer RT.Func) cs zs
+            <*> Monad.zipWithM (toDiff localizer RT.Func) cs zs
         else
           let f = toDoc localizer RT.Func
            in different
@@ -222,11 +222,11 @@ toDiff localizer ctx tipe1 tipe2 =
     (Type home1 name1 args1, Type home2 name2 args2)
       | home1 == home2 && name1 == name2 ->
         RT.apply ctx (Localizer.toDoc localizer home1 name1)
-          <$> zipWithM (toDiff localizer RT.App) args1 args2
+          <$> Monad.zipWithM (toDiff localizer RT.App) args1 args2
     (Alias home1 name1 args1 _, Alias home2 name2 args2 _)
       | home1 == home2 && name1 == name2 ->
         RT.apply ctx (Localizer.toDoc localizer home1 name1)
-          <$> zipWithM (toDiff localizer RT.App) (fmap snd args1) (fmap snd args2)
+          <$> Monad.zipWithM (toDiff localizer RT.App) (fmap snd args1) (fmap snd args2)
     -- start trying to find specific problems
 
     (Type home1 name1 args1, Type home2 name2 args2)

@@ -31,7 +31,8 @@ import qualified Crypto.Hash.SHA256 as SHA256
 import Data.ByteString (ByteString)
 import Data.Text (Text)
 import qualified Data.ByteString as BS
-import Data.IORef (IORef, newIORef, readIORef, writeIORef)
+import Data.IORef (IORef)
+import qualified Data.IORef as IORef
 import Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
 import qualified Parse.Cache
@@ -60,7 +61,7 @@ import System.IO.Unsafe (unsafePerformIO)
 -- @since 0.19.1
 {-# NOINLINE globalParseCache #-}
 globalParseCache :: IORef Parse.Cache.ParseCache
-globalParseCache = unsafePerformIO (newIORef Parse.Cache.emptyCache)
+globalParseCache = unsafePerformIO (IORef.newIORef Parse.Cache.emptyCache)
 
 -- | Content hash for cache invalidation.
 newtype ContentHash = ContentHash ByteString
@@ -221,9 +222,9 @@ queryKey (GenerateQuery f h) = (f, h)
 executeQuery :: Query -> IO (Either QueryError QueryResult)
 executeQuery (ParseModuleQuery path _ projectType) = do
   content <- BS.readFile path
-  cache <- readIORef globalParseCache
+  cache <- IORef.readIORef globalParseCache
   let (result, newCache) = Parse.Cache.cacheLookupOrParse path projectType content cache
-  writeIORef globalParseCache newCache
+  IORef.writeIORef globalParseCache newCache
   case result of
     Left err ->
       let source = Code.toSource content

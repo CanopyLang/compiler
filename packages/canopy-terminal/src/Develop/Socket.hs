@@ -59,7 +59,8 @@ import Control.Concurrent (forkIO, threadDelay)
 import Control.Exception (IOException)
 import qualified Control.Exception as Exception
 import qualified Data.ByteString.Char8 as BS
-import Data.IORef (IORef, newIORef, readIORef, writeIORef)
+import Data.IORef (IORef)
+import qualified Data.IORef as IORef
 import qualified Data.Time.Clock as Time
 import qualified Network.WebSockets as WS
 import Reporting.Doc.ColorQQ (c)
@@ -124,7 +125,7 @@ startFileWatcher manager watchDir = do
 -- @since 0.19.1
 watchCanopyFiles :: Notify.WatchManager -> FilePath -> String -> IO (IO ())
 watchCanopyFiles manager watchDir extension = do
-  lastEventRef <- newIORef Nothing
+  lastEventRef <- IORef.newIORef Nothing
   _ <- forkIO (runDebounceLoop lastEventRef)
   Notify.watchTree manager watchDir (matchesExtension extension) (recordEvent lastEventRef)
   where
@@ -134,14 +135,14 @@ watchCanopyFiles manager watchDir extension = do
     recordEvent :: IORef (Maybe (Notify.Event, Time.UTCTime)) -> Notify.Event -> IO ()
     recordEvent ref event = do
       now <- Time.getCurrentTime
-      writeIORef ref (Just (event, now))
+      IORef.writeIORef ref (Just (event, now))
 
     runDebounceLoop :: IORef (Maybe (Notify.Event, Time.UTCTime)) -> IO ()
     runDebounceLoop ref = pollForever
       where
         pollForever = do
           threadDelay debounceCheckMicros
-          maybeEvent <- readIORef ref
+          maybeEvent <- IORef.readIORef ref
           case maybeEvent of
             Nothing -> pollForever
             Just (event, eventTime) -> do
@@ -149,7 +150,7 @@ watchCanopyFiles manager watchDir extension = do
               let elapsed = Time.diffUTCTime now eventTime
               if elapsed >= debounceWindowSeconds
                 then do
-                  writeIORef ref Nothing
+                  IORef.writeIORef ref Nothing
                   let eventStr = show event
                   Print.println [c|{dullcyan|[watch]} File changed: #{eventStr}|]
                   pollForever

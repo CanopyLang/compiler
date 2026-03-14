@@ -60,7 +60,7 @@ import qualified Data.ByteString.Char8 as BS8
 import qualified Data.ByteString.Lazy as LBS
 import Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
-import Data.Maybe (mapMaybe)
+import qualified Data.Maybe as Maybe
 import qualified Data.Text as Text
 import qualified Data.Time as Time
 import qualified Canopy.Data.Utf8 as Utf8
@@ -377,7 +377,7 @@ parseRegistryJson bytes =
 -- | Build a 'Registry' from the decoded JSON object.
 buildRegistry :: Aeson.Object -> Registry
 buildRegistry obj =
-  let entries = mapMaybe parseEntry (AesonKM.toList obj)
+  let entries = Maybe.mapMaybe parseEntry (AesonKM.toList obj)
    in Registry (length entries) (Map.fromList entries)
 
 -- | Parse a single registry entry (key = "author/project", value = versions array).

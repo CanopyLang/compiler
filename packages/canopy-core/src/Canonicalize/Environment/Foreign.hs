@@ -12,7 +12,7 @@ import qualified Canonicalize.Environment as Env
 import qualified Canopy.Interface as Interface
 import qualified Canopy.ModuleName as ModuleName
 import qualified Canopy.Package as Pkg
-import Control.Monad (foldM)
+import qualified Control.Monad as Monad
 import qualified Data.List as List
 import qualified Data.Map.Strict as Map
 import qualified Data.Maybe
@@ -30,7 +30,7 @@ type Result i w a =
 createInitialEnv :: ModuleName.Canonical -> Map.Map ModuleName.Raw Interface.Interface -> [Src.Import] -> Result i w Env.Env
 createInitialEnv home ifaces imports =
   do
-    (State vs ts cs bs qvs qts qcs) <- foldM (addImport ifaces) emptyState (toSafeImports home imports)
+    (State vs ts cs bs qvs qts qcs) <- Monad.foldM (addImport ifaces) emptyState (toSafeImports home imports)
     Result.ok (Env.Env home (Map.map infoToVar vs) ts cs bs qvs qts qcs)
 
 infoToVar :: Env.Info Can.Annotation -> Env.Var
@@ -120,7 +120,7 @@ addImport ifaces state@(State vs ts cs bs qvs qts qcs) (Src.Import (Ann.At _ nam
               !bs2 = addExposed bs (Map.mapWithKey (binopToBinop home) binops)
            in Result.ok (State vs2 ts2 cs2 bs2 qvs2 qts2 qcs2)
         Src.Explicit exposedList ->
-          foldM
+          Monad.foldM
             (addExposedValue home vars rawTypeInfo binops)
             (State vs ts cs bs qvs2 qts2 qcs2)
             exposedList

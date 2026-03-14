@@ -52,7 +52,7 @@ where
 
 import Control.Applicative ((<|>))
 import Control.Lens ((^.))
-import Control.Monad (guard)
+import qualified Control.Monad as Monad
 import Control.Monad.Trans (MonadIO (liftIO))
 import qualified Data.ByteString as BS
 import Data.ByteString.Builder (Builder)
@@ -138,7 +138,7 @@ handleFiles :: Snap.Snap ()
 handleFiles = do
   path <- FileServe.getSafePath
   fileExists <- liftIO (Dir.doesFileExist path)
-  guard fileExists
+  Monad.guard fileExists
   serveFileWithMode path
 
 -- | Serve file using appropriate mode based on file type.

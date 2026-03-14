@@ -34,7 +34,7 @@ module Kit.DataLoader
   ) where
 
 import Control.Lens (makeLenses, (^.))
-import Data.Maybe (mapMaybe)
+import qualified Data.Maybe as Maybe
 import Data.Text (Text)
 import qualified Data.Text as Text
 import qualified Data.Text.IO as Text.IO
@@ -75,7 +75,7 @@ makeLenses ''DataLoader
 detectLoaders :: [RouteEntry] -> IO [DataLoader]
 detectLoaders routes = do
   results <- traverse (detectOneLoader False) routes
-  pure (mapMaybe id results)
+  pure (Maybe.mapMaybe id results)
 
 -- | Detect data loaders in dev mode (all forced to DynamicLoader).
 --
@@ -86,7 +86,7 @@ detectLoaders routes = do
 detectLoadersDev :: [RouteEntry] -> IO [DataLoader]
 detectLoadersDev routes = do
   results <- traverse (detectOneLoader True) routes
-  pure (mapMaybe id results)
+  pure (Maybe.mapMaybe id results)
 
 -- | Check a single route entry for a load function.
 detectOneLoader :: Bool -> RouteEntry -> IO (Maybe DataLoader)

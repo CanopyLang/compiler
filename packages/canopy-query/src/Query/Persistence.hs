@@ -24,7 +24,8 @@ where
 
 import qualified Control.Exception as Exception
 import qualified Data.ByteString as BS
-import Data.IORef (IORef, modifyIORef', readIORef)
+import Data.IORef (IORef)
+import qualified Data.IORef as IORef
 import qualified Data.Map.Strict as Map
 import Data.Word (Word8, Word32)
 import Logging.Event (LogEvent (..))
@@ -63,7 +64,7 @@ defaultCachePath projectRoot =
 -- @since 0.19.2
 saveCache :: Engine.QueryEngine -> FilePath -> IO ()
 saveCache (Engine.QueryEngine stateRef) path = do
-  state <- readIORef stateRef
+  state <- IORef.readIORef stateRef
   let durable = filterDurable (Engine.engineCache state)
       encoded = encodeEntries durable
   Dir.createDirectoryIfMissing True (FP.takeDirectory path)
@@ -119,7 +120,7 @@ loadAndPopulate stateRef path = do
               entries = decodeAllEntries (BS.drop 8 bytes) (fromIntegral entryCount)
               hashMap = Map.fromList entries
           Log.logEvent (CacheStored "persist-load" (Map.size hashMap))
-          modifyIORef' stateRef (populateFromDisk hashMap)
+          IORef.modifyIORef' stateRef (populateFromDisk hashMap)
 
 -- | Populate engine state from decoded disk entries.
 --

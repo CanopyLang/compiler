@@ -47,7 +47,7 @@ import qualified Canopy.Package as Pkg
 import Canopy.Version (Version (..))
 import qualified Canopy.Version as Version
 import Control.Concurrent.Async (mapConcurrently)
-import Control.Monad (liftM2, liftM3)
+import qualified Control.Monad as Monad
 import Data.Binary (Binary)
 import qualified Data.Binary as Binary
 import Data.Binary.Get (Get)
@@ -84,7 +84,7 @@ data ArtifactCache = ArtifactCache
   }
 
 instance Binary ArtifactCache where
-  get = liftM2 ArtifactCache Binary.get Binary.get
+  get = Monad.liftM2 ArtifactCache Binary.get Binary.get
   put (ArtifactCache fps arts) = Binary.put fps >> Binary.put arts
 
 -- | Compiled artifacts for a package (new format with FFI info).
@@ -95,21 +95,21 @@ data Artifacts = Artifacts
   }
 
 instance Binary Artifacts where
-  get = liftM3 Artifacts Binary.get Binary.get Binary.get
+  get = Monad.liftM3 Artifacts Binary.get Binary.get Binary.get
   put (Artifacts ifaces objs ffi) = Binary.put ifaces >> Binary.put objs >> Binary.put ffi
 
 -- | Legacy artifacts format (no FFI info) for backward-compatible decoding.
 data LegacyArtifacts = LegacyArtifacts !PackageInterfaces !Opt.GlobalGraph
 
 instance Binary LegacyArtifacts where
-  get = liftM2 LegacyArtifacts Binary.get Binary.get
+  get = Monad.liftM2 LegacyArtifacts Binary.get Binary.get
   put (LegacyArtifacts ifaces objs) = Binary.put ifaces >> Binary.put objs
 
 -- | Legacy artifact cache for backward-compatible decoding.
 data LegacyArtifactCache = LegacyArtifactCache !(Set Fingerprint) !LegacyArtifacts
 
 instance Binary LegacyArtifactCache where
-  get = liftM2 LegacyArtifactCache Binary.get Binary.get
+  get = Monad.liftM2 LegacyArtifactCache Binary.get Binary.get
   put (LegacyArtifactCache fps arts) = Binary.put fps >> Binary.put arts
 
 -- | Elm-era Union decoder (4 fields: vars, alts, numAlts, opts).
@@ -227,7 +227,7 @@ data ElmFormatLegacyArtifacts = ElmFormatLegacyArtifacts
   !Opt.GlobalGraph
 
 instance Binary ElmFormatLegacyArtifacts where
-  get = liftM2 ElmFormatLegacyArtifacts Binary.get Binary.get
+  get = Monad.liftM2 ElmFormatLegacyArtifacts Binary.get Binary.get
   put (ElmFormatLegacyArtifacts a b) = Binary.put a >> Binary.put b
 
 -- | Elm-era artifact cache (old Binary format throughout).
@@ -238,7 +238,7 @@ data ElmFormatArtifactCache = ElmFormatArtifactCache
   !ElmFormatLegacyArtifacts
 
 instance Binary ElmFormatArtifactCache where
-  get = liftM2 ElmFormatArtifactCache Binary.get Binary.get
+  get = Monad.liftM2 ElmFormatArtifactCache Binary.get Binary.get
   put (ElmFormatArtifactCache a b) = Binary.put a >> Binary.put b
 
 -- PRE-P06 CANOPY FORMAT DECODERS
@@ -304,7 +304,7 @@ data CanopyPreP06LegacyArtifacts = CanopyPreP06LegacyArtifacts
   !Opt.GlobalGraph
 
 instance Binary CanopyPreP06LegacyArtifacts where
-  get = liftM2 CanopyPreP06LegacyArtifacts Binary.get Binary.get
+  get = Monad.liftM2 CanopyPreP06LegacyArtifacts Binary.get Binary.get
   put (CanopyPreP06LegacyArtifacts a b) = Binary.put a >> Binary.put b
 
 -- | Pre-P06 Canopy artifact cache (no FFI info, 6-field Interface).
@@ -315,7 +315,7 @@ data CanopyPreP06LegacyArtifactCache = CanopyPreP06LegacyArtifactCache
   !CanopyPreP06LegacyArtifacts
 
 instance Binary CanopyPreP06LegacyArtifactCache where
-  get = liftM2 CanopyPreP06LegacyArtifactCache Binary.get Binary.get
+  get = Monad.liftM2 CanopyPreP06LegacyArtifactCache Binary.get Binary.get
   put (CanopyPreP06LegacyArtifactCache a b) = Binary.put a >> Binary.put b
 
 -- | Pre-P06 Canopy artifacts with FFI info (6-field Interface + FFI).
@@ -327,7 +327,7 @@ data CanopyPreP06Artifacts = CanopyPreP06Artifacts
   !(Map String JS.FFIInfo)
 
 instance Binary CanopyPreP06Artifacts where
-  get = liftM3 CanopyPreP06Artifacts Binary.get Binary.get Binary.get
+  get = Monad.liftM3 CanopyPreP06Artifacts Binary.get Binary.get Binary.get
   put (CanopyPreP06Artifacts a b c) = Binary.put a >> Binary.put b >> Binary.put c
 
 -- | Pre-P06 Canopy artifact cache with FFI info.
@@ -338,7 +338,7 @@ data CanopyPreP06ArtifactCache = CanopyPreP06ArtifactCache
   !CanopyPreP06Artifacts
 
 instance Binary CanopyPreP06ArtifactCache where
-  get = liftM2 CanopyPreP06ArtifactCache Binary.get Binary.get
+  get = Monad.liftM2 CanopyPreP06ArtifactCache Binary.get Binary.get
   put (CanopyPreP06ArtifactCache a b) = Binary.put a >> Binary.put b
 
 -- VERSIONED ARTIFACT FORMAT
