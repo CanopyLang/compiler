@@ -226,6 +226,7 @@ formatFFIWithBindings mode graph _key info acc
         : "})();\n"
         : rest
     reExports = List.map (reExportInternal iifeVar) internalNames
+                  ++ kernelReExports aliasStr iifeVar functions
     iifeFunctions = List.map (iifeExtractedFFI iifeVarText) functions
     bindings = concatMap (generateFFIBinding mode graph path aliasStr) iifeFunctions
     bindingsSection =
@@ -235,6 +236,34 @@ formatFFIWithBindings mode graph _key info acc
           ("\n// Bindings for " <> BB.stringUtf8 path <> "\n")
             : ("var " <> BB.stringUtf8 aliasStr <> " = " <> BB.stringUtf8 aliasStr <> " || {};\n")
             : List.map (<> "\n") bindings ++ ["\n"]
+
+-- | Generate kernel-style re-exports for @\@name@-annotated FFI functions.
+--
+-- When an FFI alias ends with @\"FFI\"@ (e.g. @VirtualDomFFI@), the codegen
+-- may reference functions using the kernel naming convention
+-- @_ModuleName_funcName@ (e.g. @_VirtualDom_init@). This function emits
+-- re-exports from the IIFE to create those global bindings.
+--
+-- @since 0.19.2
+kernelReExports :: String -> String -> [ExtractedFFI] -> [Builder]
+kernelReExports aliasStr iifeVar functions =
+  case stripFFISuffix aliasStr of
+    Nothing -> []
+    Just kernelBase ->
+      concatMap (mkKernelReExport kernelBase iifeVar) functions
+
+-- | Strip the @\"FFI\"@ suffix from an alias name.
+stripFFISuffix :: String -> Maybe String
+stripFFISuffix s =
+  fmap Text.unpack (Text.stripSuffix "FFI" (Text.pack s))
+
+-- | Emit a single kernel re-export for an FFI function.
+mkKernelReExport :: String -> String -> ExtractedFFI -> [Builder]
+mkKernelReExport kernelBase iifeVar ef =
+  let funcName = Text.unpack (jsReferenceName ef)
+      kernelName = "_" <> kernelBase <> "_" <> funcName
+      iifeRef = iifeVar <> "." <> funcName
+   in ["var " <> BB.stringUtf8 kernelName <> " = " <> BB.stringUtf8 iifeRef <> ";\n"]
 
 -- | Re-export an internal @_@-prefixed name from the IIFE to global scope.
 --

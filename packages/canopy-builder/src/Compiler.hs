@@ -21,6 +21,7 @@
 module Compiler
   ( -- * Compilation Functions
     compileFromPaths,
+    compileFromPathsWithTestDeps,
     compileFromPathsTimed,
     compileFromExposed,
 
@@ -97,9 +98,25 @@ compileFromPaths ::
   [SrcDir] ->
   [FilePath] ->
   IO (Either Exit.BuildError Build.Artifacts)
-compileFromPaths pkg isApp (ProjectRoot root) srcDirs paths = do
+compileFromPaths = compileFromPathsWithTestDeps False
+
+-- | Like 'compileFromPaths' but includes test dependencies in compilation.
+--
+-- Used by the test runner so that test-only imports (e.g. @Test@, @Expect@)
+-- are available during compilation.
+--
+-- @since 0.19.2
+compileFromPathsWithTestDeps ::
+  Bool ->
+  Pkg.Name ->
+  Bool ->
+  ProjectRoot ->
+  [SrcDir] ->
+  [FilePath] ->
+  IO (Either Exit.BuildError Build.Artifacts)
+compileFromPathsWithTestDeps includeTestDeps pkg isApp (ProjectRoot root) srcDirs paths = do
   Log.logEvent (BuildStarted (Text.pack "compileFromPaths"))
-  maybeArtifacts <- loadDependencyArtifacts root
+  maybeArtifacts <- loadDependencyArtifacts includeTestDeps root
   let (depInterfaces, depGlobalGraph, depFFIInfo) = extractArtifactTriple maybeArtifacts
   Log.logEvent (BuildModuleQueued (Text.pack ("loaded " ++ show (Map.size depInterfaces) ++ " dependency interfaces")))
   let projectType = if isApp then Parse.Application else Parse.Package pkg
@@ -128,7 +145,7 @@ compileFromPathsTimed ::
   IO (Either Exit.BuildError (Build.Artifacts, Driver.PhaseTimings))
 compileFromPathsTimed pkg isApp (ProjectRoot root) srcDirs paths = do
   Log.logEvent (BuildStarted (Text.pack "compileFromPathsTimed"))
-  maybeArtifacts <- loadDependencyArtifacts root
+  maybeArtifacts <- loadDependencyArtifacts False root
   let (depInterfaces, depGlobalGraph, depFFIInfo) = extractArtifactTriple maybeArtifacts
   let projectType = if isApp then Parse.Application else Parse.Package pkg
   discoveryResult <- discoverTransitiveDeps root srcDirs paths depInterfaces projectType
@@ -170,10 +187,11 @@ compileFromExposed pkg isApp projectRoot srcDirs exposedModules = do
 -- then loads cached package artifacts in parallel.
 --
 -- @since 0.19.1
-loadDependencyArtifacts :: FilePath -> IO (Maybe (Map.Map ModuleName.Raw Interface.Interface, Opt.GlobalGraph, Map.Map String JS.FFIInfo))
-loadDependencyArtifacts root = do
+loadDependencyArtifacts :: Bool -> FilePath -> IO (Maybe (Map.Map ModuleName.Raw Interface.Interface, Opt.GlobalGraph, Map.Map String JS.FFIInfo))
+loadDependencyArtifacts includeTestDeps root = do
   eitherOutline <- Outline.read root
-  let deps = either (const []) Outline.allDeps eitherOutline
+  let depsFn = if includeTestDeps then Outline.allDeps else Outline.buildDeps
+  let deps = either (const []) depsFn eitherOutline
   Log.logEvent (BuildModuleQueued (Text.pack ("loading " ++ show (length deps) ++ " dependencies")))
   loadDepsFromList deps
 

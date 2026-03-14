@@ -44,7 +44,7 @@ import qualified System.IO as IO
 detectKernelPackages :: FilePath -> IO [String]
 detectKernelPackages root = do
   eitherOutline <- Outline.read root
-  let deps = either (const []) Outline.allDeps eitherOutline
+  let deps = either (const []) Outline.buildDeps eitherOutline
       thirdPartyDeps = filter (not . isTrustedDep . fst) deps
   filterKernelDeps thirdPartyDeps
 

@@ -97,21 +97,21 @@ generate inputMode (Opt.GlobalGraph rawGraph _ sourceLocs) mains ffiInfos =
           (rawGraph, Mode.Dev debugTypes elmCompat ffiUnsafe ffiDbg ffiAliases cov)
       trackLines = case mode of Mode.Dev {} -> True; Mode.Prod {} -> False
       covIds = if Mode.isCoverage mode then Coverage.computeBaseIds graph else Map.empty
-      baseState = Map.foldrWithKey (addMain mode graph) (emptyState trackLines sourceLocs covIds) mains
-      shouldInclude global =
-        not (Kernel_.isDebugger global && not (Mode.isDebug mode))
-      filteredGraph = Map.filterWithKey (\global _ -> shouldInclude global) graph
-      state = Map.foldlWithKey' (\s global _ -> addGlobal mode graph s global) baseState filteredGraph
+      state = Map.foldrWithKey (addMain mode graph) (emptyState trackLines sourceLocs covIds) mains
+
+      -- Filter FFI infos to only those referenced during DFS
+      usedAliases = _usedFFIAliases state
+      referencedFFI = Map.filter (\info -> Set.member (_ffiAlias info) usedAliases) ffiInfos
 
       -- Build all non-runtime JS content (FFI, kernels, user code, exports)
       ffiRuntimeBuilder =
-        if Map.null ffiInfos then mempty else FFIRuntime.embeddedRuntimeForMode mode
+        if Map.null referencedFFI then mempty else FFIRuntime.embeddedRuntimeForMode mode
       coveragePreamble = if Mode.isCoverage mode then Coverage.coverageRuntimePreamble else mempty
       poolDecls = StringPool.poolDeclarations (Mode.stringPool mode)
       appContent =
         ffiRuntimeBuilder
           <> coveragePreamble
-          <> generateFFIContent mode graph ffiInfos
+          <> generateFFIContent mode graph referencedFFI
           <> perfNote mode
           <> poolDecls
           <> stateToBuilder state
@@ -354,7 +354,8 @@ data State = State
     _sourceMapMappings :: ![SourceMap.Mapping],
     _sourceLocations :: Map Opt.Global Ann.Region,
     _trackLines :: !Bool,
-    _coverageBaseIds :: Map Opt.Global Int
+    _coverageBaseIds :: Map Opt.Global Int,
+    _usedFFIAliases :: Set Name.Name
   }
 
 -- | Create initial codegen state.
@@ -364,10 +365,10 @@ data State = State
 -- is skipped entirely to avoid double materialization (prod mode).
 emptyState :: Bool -> Map Opt.Global Ann.Region -> Map Opt.Global Int -> State
 emptyState trackLines locs covIds =
-  State mempty [] Set.empty Set.empty 0 [] locs trackLines covIds
+  State mempty [] Set.empty Set.empty 0 [] locs trackLines covIds Set.empty
 
 stateToBuilder :: State -> Builder
-stateToBuilder (State revKernels revBuilders _ _ _ _ _ _ _) =
+stateToBuilder (State revKernels revBuilders _ _ _ _ _ _ _ _) =
   prependBuilders revKernels (prependBuilders revBuilders mempty)
 
 prependBuilders :: [Builder] -> Builder -> Builder
@@ -377,12 +378,12 @@ prependBuilders revBuilders monolith =
 -- ADD DEPENDENCIES
 
 addGlobal :: Mode.Mode -> Graph -> State -> Opt.Global -> State
-addGlobal mode graph state@(State revKernels builders seen seenChunks outLine smMappings srcLocs tl covIds) global =
+addGlobal mode graph state@(State revKernels builders seen seenChunks outLine smMappings srcLocs tl covIds usedFFI) global =
   if Set.member global seen
     then state
     else
       addGlobalHelp mode graph global $
-        State revKernels builders (Set.insert global seen) seenChunks outLine smMappings srcLocs tl covIds
+        State revKernels builders (Set.insert global seen) seenChunks outLine smMappings srcLocs tl covIds usedFFI
 
 filterEssentialDeps :: Mode.Mode -> Set Opt.Global -> Set Opt.Global
 filterEssentialDeps mode deps =
@@ -406,7 +407,9 @@ addGlobalHelp mode graph currentGlobal state =
         then state
         else
           if isFFIModule || isKernelPhantom
-            then state
+            then if isFFIModule
+              then state { _usedFFIAliases = Set.insert moduleName (_usedFFIAliases state) }
+              else state
             else continueAddGlobal mode graph currentGlobal state
 
 continueAddGlobal :: Mode.Mode -> Graph -> Opt.Global -> State -> State
@@ -549,23 +552,23 @@ covTailFuncExpr mode currentGlobal argNames body state =
     (Opt.Global _ name) = currentGlobal
 
 addKernelChunks :: Mode.Mode -> Opt.Global -> State -> [Kernel.Chunk] -> State
-addKernelChunks mode currentGlobal (State revKernels revBuilders seen seenChunks outLine smMappings srcLocs tl covIds) chunks =
+addKernelChunks mode currentGlobal (State revKernels revBuilders seen seenChunks outLine smMappings srcLocs tl covIds usedFFI) chunks =
   let kernelCode = Kernel_.generateKernel mode chunks
       kernelBytes = BL.toStrict (BB.toLazyByteString kernelCode)
    in if Set.member kernelBytes seenChunks
-        then State revKernels revBuilders (Set.insert currentGlobal seen) seenChunks outLine smMappings srcLocs tl covIds
+        then State revKernels revBuilders (Set.insert currentGlobal seen) seenChunks outLine smMappings srcLocs tl covIds usedFFI
         else
           let newLine = if tl then outLine + countNewlinesBS kernelBytes else outLine
-           in State (kernelCode : revKernels) revBuilders (Set.insert currentGlobal seen) (Set.insert kernelBytes seenChunks) newLine smMappings srcLocs tl covIds
+           in State (kernelCode : revKernels) revBuilders (Set.insert currentGlobal seen) (Set.insert kernelBytes seenChunks) newLine smMappings srcLocs tl covIds usedFFI
 
 addStmt :: State -> JS.Stmt -> State
 addStmt state stmt =
   addBuilder state (JS.stmtToBuilder stmt)
 
 addBuilder :: State -> Builder -> State
-addBuilder (State revKernels revBuilders seen seenChunks outLine smMappings srcLocs tl covIds) builder =
+addBuilder (State revKernels revBuilders seen seenChunks outLine smMappings srcLocs tl covIds usedFFI) builder =
   let newLine = if tl then outLine + countNewlines builder else outLine
-   in State revKernels (builder : revBuilders) seen seenChunks newLine smMappings srcLocs tl covIds
+   in State revKernels (builder : revBuilders) seen seenChunks newLine smMappings srcLocs tl covIds usedFFI
 
 -- | Count newline bytes in a Builder by materializing it.
 --

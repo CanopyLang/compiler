@@ -32,6 +32,7 @@ module Canopy.Outline
     -- * Utilities
     flattenExposed,
     allDeps,
+    buildDeps,
     isWorkspace,
     isKitProject,
     effectiveCapabilities,
@@ -611,6 +612,21 @@ allDeps (App o) =
 allDeps (Pkg o) =
   Map.toList (Map.map Constraint.lowerBound (Map.union (_pkgDeps o) (_pkgTestDeps o)))
 allDeps (Workspace o) =
+  Map.toList (_wsSharedDeps o)
+
+-- | Extract production dependency packages (excluding test dependencies).
+--
+-- For applications: merges direct and indirect deps only, excluding test-direct.
+-- For packages: extracts 'Constraint.lowerBound' from production deps only.
+--
+-- @since 0.19.2
+buildDeps :: Outline -> [(Pkg.Name, Version.Version)]
+buildDeps (App o) =
+  Map.toList (_appDepsDirect o)
+    ++ Map.toList (_appDepsIndirect o)
+buildDeps (Pkg o) =
+  Map.toList (Map.map Constraint.lowerBound (_pkgDeps o))
+buildDeps (Workspace o) =
   Map.toList (_wsSharedDeps o)
 
 -- | Check whether an outline represents a workspace.

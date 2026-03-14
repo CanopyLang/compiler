@@ -77,7 +77,7 @@ compileTestFiles root testFiles coverage = do
           Compiler.RelativeSrcDir "test",
           Compiler.RelativeSrcDir "test-app"
         ]
-  result <- Compiler.compileFromPaths pkg False (Compiler.ProjectRoot root) srcDirs testFiles
+  result <- Compiler.compileFromPathsWithTestDeps True pkg False (Compiler.ProjectRoot root) srcDirs testFiles
   case result of
     Left err -> do
       Print.printErrLn [c|{red|Compilation failed.}|]
