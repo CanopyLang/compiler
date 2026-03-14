@@ -166,16 +166,9 @@ instance Applicative Diff where
     Diff (aFunc aArg) (bFunc bArg) (merge status1 status2)
 
 merge :: Status -> Status -> Status
-merge status1 status2 =
-  case status1 of
-    Similar ->
-      status2
-    Different problems1 ->
-      case status2 of
-        Similar ->
-          status1
-        Different problems2 ->
-          Different (Bag.append problems1 problems2)
+merge Similar status2 = status2
+merge status1 Similar = status1
+merge (Different p1) (Different p2) = Different (Bag.append p1 p2)
 
 -- COMPARISON
 
