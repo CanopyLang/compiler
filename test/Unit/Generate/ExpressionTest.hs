@@ -202,5 +202,5 @@ generateCtorTests =
             global = Opt.Global home (nameStr "Just")
             result = Expr.codeToExpr (Expr.generateCtor devMode global Index.first 1)
             rendered = LChar8.unpack (BB.toLazyByteString (JS.exprToBuilder result))
-        in rendered @?= " function(a){ return ({a : a,$ :'Just'});}"
+        in rendered @?= " function(a){ return ({$ :'Just',a : a});}"
     ]
