@@ -137,57 +137,45 @@ generateFFIContent mode graph ffiInfos usedFuncs =
      then mempty
      else mconcat parts <> validators
   where
-    crossFFINeeded = collectCrossFFIRefs ffiInfos
+    aliasRegistries = buildAliasRegistries ffiInfos
+    initialSeeds = computeInitialSeeds ffiInfos usedFuncs aliasRegistries
+    resolvedNeeded = FFIRegistry.closeFFICrossFileDeps aliasRegistries initialSeeds
     parts =
       [ "\n// FFI JavaScript content and bindings\n"
       ]
-        ++ Map.foldrWithKey (formatFFIWithBindings mode graph usedFuncs crossFFINeeded) [] ffiInfos
+        ++ Map.foldrWithKey (formatFFIWithBindings mode graph usedFuncs aliasRegistries resolvedNeeded) [] ffiInfos
     validators =
       if Mode.isFFIStrict mode
         then generateFFIValidators mode ffiInfos
         else mempty
 
--- | Collect all @_@-prefixed identifiers that appear across all FFI file contents.
---
--- These are internal helper names (e.g. @_Json_unwrap@, @_Json_wrap@) that one
--- FFI file defines and another references. Since FFI files run in isolated IIFEs,
--- the defining file must re-export these names to global scope so that other files
--- can find them.
---
--- This scan is conservative: it returns every @_UpperCase@ token found in any
--- FFI content, whether or not the token is actually a cross-FFI reference.
--- False positives are harmless — they just cause a few extra names to be
--- re-exported, which adds negligible bytes to the bundle.
-collectCrossFFIRefs :: Map String FFIInfo -> Set Text.Text
-collectCrossFFIRefs ffiInfos =
-  Set.fromList
-    [ name
+-- | Build per-alias FFI registries for all FFI files.
+buildAliasRegistries
+  :: Map String FFIInfo
+  -> Map Name.Name (Map FFIRegistry.FFIBlockId FFIRegistry.FFIBlock)
+buildAliasRegistries ffiInfos =
+  Map.fromList
+    [ (_ffiAlias info, FFIRegistry.buildFFIRegistry (_ffiContent info))
     | info <- Map.elems ffiInfos
-    , name <- extractUnderscoreRefs (_ffiContent info)
     ]
 
--- | Extract all @_UpperCase@-style identifiers from FFI content.
---
--- Finds tokens starting with @_@ followed by an uppercase letter, continuing
--- with identifier characters. These follow the Elm kernel naming convention
--- used by internal FFI helpers.
-extractUnderscoreRefs :: Text.Text -> [Text.Text]
-extractUnderscoreRefs content =
-  concatMap extractFromLine (Text.lines content)
-  where
-    extractFromLine line = extractTokens (Text.unpack line) []
-    extractTokens [] acc = acc
-    extractTokens ('_':rest@(c:_)) acc
-      | isUpperChar c =
-          let (name, remainder) = span isIdentChar ('_' : rest)
-           in extractTokens remainder (Text.pack name : acc)
-    extractTokens (_:rest) acc = extractTokens rest acc
-    isUpperChar c = c >= 'A' && c <= 'Z'
-    isIdentChar c =
-      c == '_' || c == '$'
-        || (c >= 'a' && c <= 'z')
-        || (c >= 'A' && c <= 'Z')
-        || (c >= '0' && c <= '9')
+-- | Compute initial seed blocks per alias from used function tracking.
+computeInitialSeeds
+  :: Map String FFIInfo
+  -> Map Name.Name (Set Name.Name)
+  -> Map Name.Name (Map FFIRegistry.FFIBlockId FFIRegistry.FFIBlock)
+  -> Map Name.Name (Set FFIRegistry.FFIBlockId)
+computeInitialSeeds ffiInfos usedFuncs aliasRegistries =
+  Map.fromList
+    [ (alias, seeds)
+    | info <- Map.elems ffiInfos
+    , let alias = _ffiAlias info
+          functions = extractFFIFunctions (Text.lines (_ffiContent info))
+          neededNames = Map.findWithDefault Set.empty alias usedFuncs
+          neededFunctions = filterNeededFunctions functions neededNames
+          reg = Map.findWithDefault Map.empty alias aliasRegistries
+          seeds = computeSeedBlocks reg neededFunctions
+    ]
 
 -- GENERATE FFI VALIDATORS
 
@@ -262,20 +250,19 @@ _formatFFIFileFromInfo path content acc =
 -- @funcName@, giving each FFI file its own namespace while preserving
 -- access to runtime globals like @_Utils_chr@ and @F2@.
 --
--- The @crossFFINeeded@ set contains @_@-prefixed identifiers referenced
--- across ALL FFI files. Internal names in this set are always re-exported
--- to global scope, even if not directly called by Canopy code, so that
--- other FFI files can find them.
+-- Uses pre-computed registries and resolved needed blocks from
+-- 'closeFFICrossFileDeps' for precise cross-file dependency resolution.
 formatFFIWithBindings
   :: Mode.Mode
   -> Graph
   -> Map Name.Name (Set Name.Name)
-  -> Set Text.Text
+  -> Map Name.Name (Map FFIRegistry.FFIBlockId FFIRegistry.FFIBlock)
+  -> Map Name.Name (Set FFIRegistry.FFIBlockId)
   -> String
   -> FFIInfo
   -> [Builder]
   -> [Builder]
-formatFFIWithBindings mode graph usedFuncs crossFFINeeded _key info acc
+formatFFIWithBindings mode graph usedFuncs aliasRegistries resolvedNeeded _key info acc
   | not (isValidJsIdentifier aliasStr) = acc
   | otherwise =
       wrappedContent (reExports ++ bindingsSection ++ acc)
@@ -293,14 +280,9 @@ formatFFIWithBindings mode graph usedFuncs crossFFINeeded _key info acc
     neededFuncNames = Map.findWithDefault Set.empty alias usedFuncs
     neededFunctions = filterNeededFunctions functions neededFuncNames
 
-    -- Build FFI registry and compute transitive closure.
-    -- Cross-FFI seed blocks: internal names referenced by other FFI files
-    -- must have their defining blocks included so the IIFE can export them.
-    ffiRegistry = FFIRegistry.buildFFIRegistry contentText
-    directSeeds = computeSeedBlocks ffiRegistry neededFunctions
-    crossSeeds = computeCrossFFISeeds ffiRegistry crossFFINeeded
-    seedBlocks = Set.union directSeeds crossSeeds
-    allNeeded = FFIRegistry.closeFFIDeps ffiRegistry seedBlocks
+    -- Use pre-computed registry and resolved needed blocks
+    ffiRegistry = Map.findWithDefault Map.empty alias aliasRegistries
+    allNeeded = Map.findWithDefault Set.empty alias resolvedNeeded
 
     -- Emit only needed content if tree-shaking found blocks;
     -- fall back to full content if registry found nothing
@@ -316,11 +298,11 @@ formatFFIWithBindings mode graph usedFuncs crossFFINeeded _key info acc
         else rawContent
     ffiContent' = BB.byteString minifiedContent
 
-    -- Only export names that exist in needed blocks, plus any cross-FFI refs
+    -- Only export names that exist in needed blocks
     neededInternalNames =
       if treeShaken
         then extractInternalNames (Text.lines contentText)
-        else filterNeededInternals (extractInternalNames (Text.lines contentText)) ffiRegistry allNeeded crossFFINeeded
+        else filterNeededInternals (extractInternalNames (Text.lines contentText)) ffiRegistry allNeeded
     allExportNames =
       if treeShaken
         then jsNames ++ neededInternalNames
@@ -373,50 +355,27 @@ computeSeedBlocks reg functions =
       , name <- [_extractedName ef, jsReferenceName ef]
       ]
 
--- | Compute seed block IDs from cross-FFI referenced internal names.
+-- | Filter internal names to only those in needed blocks.
 --
--- When another FFI file references an @_@-prefixed internal name
--- (e.g. @_Json_unwrap@), that name's defining block must be included
--- in the IIFE content so it can be exported and used globally.
--- This function finds the block IDs for those names.
-computeCrossFFISeeds
-  :: Map FFIRegistry.FFIBlockId FFIRegistry.FFIBlock
-  -> Set Text.Text
-  -> Set FFIRegistry.FFIBlockId
-computeCrossFFISeeds reg crossFFIRefs =
-  Set.filter (\bid -> Map.member bid reg) candidates
-  where
-    candidates = Set.fromList
-      [ FFIRegistry.FFIBlockId (TextEnc.encodeUtf8 name)
-      | name <- Set.toList crossFFIRefs
-      ]
-
--- | Filter internal names to only those in needed blocks or cross-FFI refs.
---
--- An internal name is included when any of the following holds:
+-- An internal name is included when:
 --
 --   * Its block is in the set of needed blocks (@needed@), OR
---   * It has no block in the registry (not tree-shakeable), OR
---   * It appears in @crossFFIRefs@ — another FFI file references it by name
+--   * It has no block in the registry (not tree-shakeable)
 --
--- The third condition handles cross-FFI dependencies such as
--- @virtual-dom.js@ referencing @_Json_unwrap@ from @json.js@.
--- Without this, tree-shaking could remove @_Json_unwrap@ from the
--- @json.js@ IIFE return object even though @virtual-dom.js@ needs it.
+-- Cross-FFI dependencies are handled upstream by 'closeFFICrossFileDeps',
+-- which adds the necessary blocks to the needed set before this runs.
 filterNeededInternals
   :: [Text.Text]
   -> Map FFIRegistry.FFIBlockId FFIRegistry.FFIBlock
   -> Set FFIRegistry.FFIBlockId
-  -> Set Text.Text
   -> [Text.Text]
-filterNeededInternals names reg needed crossFFIRefs =
+filterNeededInternals names reg needed =
   List.filter isInNeeded names
   where
     isInNeeded name =
       let bid = FFIRegistry.FFIBlockId (TextEnc.encodeUtf8 name)
        in Set.member bid needed
             || not (Map.member bid reg)
-            || Set.member name crossFFIRefs
 
 -- | Generate kernel-style re-exports for @\@name@-annotated FFI functions.
 --
