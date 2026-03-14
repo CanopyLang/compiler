@@ -10,6 +10,7 @@ import qualified AST.Optimized as Opt
 import qualified AST.Utils.Type as Type
 import qualified Canonicalize.Effects as Effects
 import qualified Canopy.ModuleName as ModuleName
+import qualified Canopy.Package as Pkg
 import Control.Monad (foldM)
 import qualified Data.List as List
 import qualified Data.Map.Strict as Map
@@ -306,7 +307,7 @@ addDefHelp region annotations home name args body graph@(Opt.LocalGraph _ nodes 
        in case Type.deepDealias tipe of
             Can.TType hm nm [_]
               | hm == ModuleName.virtualDom && nm == Name.node ->
-                (Result.ok . addMain) . Names.run $ Names.registerKernel Name.virtualDom Opt.Static
+                (Result.ok . addMain) . Names.run $ Names.registerFFIDep virtualDomFFI (Name.fromChars "init") Opt.Static
             Can.TType hm nm [flags, model, message] | hm == ModuleName.platform && nm == Name.program ->
               case Effects.checkPayload flags of
                 Right () ->
@@ -320,6 +321,10 @@ addDefHelp region annotations home name args body graph@(Opt.LocalGraph _ nodes 
             -- export the raw value without VirtualDom rendering.
             _ ->
               (Result.ok . addMain) . Names.run $ pure Opt.TestMain
+
+virtualDomFFI :: ModuleName.Canonical
+virtualDomFFI =
+  ModuleName.Canonical Pkg.virtualDom (Name.fromChars "VirtualDomFFI")
 
 addDefNode :: ModuleName.Canonical -> Name.Name -> Ann.Region -> [Can.Pattern] -> Can.Expr -> Set.Set Opt.Global -> Opt.LocalGraph -> Opt.LocalGraph
 addDefNode home name region args body mainDeps graph =
