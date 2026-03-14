@@ -49,8 +49,10 @@ import qualified AST.Optimized as Opt
 import qualified Data.Char as Char
 import Control.Lens (makeLenses)
 import qualified Data.Binary as Binary
+import Data.ByteString (ByteString)
 import Data.ByteString.Builder (Builder)
 import qualified Data.ByteString.Builder as BB
+import qualified Data.ByteString.Lazy as BL
 import qualified Data.List as List
 import Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
@@ -60,6 +62,8 @@ import qualified Data.Set as Set
 import qualified Data.Text as Text
 import qualified Data.Text.Encoding as TextEnc
 import qualified FFI.TypeParser as TypeParser
+import qualified Generate.JavaScript.FFI.Minify as FFIMinify
+import qualified Generate.JavaScript.FFI.Registry as FFIRegistry
 import FFI.Types (BindingMode (..))
 import qualified FFI.Validator as Validator
 import qualified Generate.Mode as Mode
@@ -115,8 +119,13 @@ extractFFIAliases ffiInfos =
 -- Receives FFI information directly through the compilation pipeline
 -- instead of using global storage, eliminating MVar deadlock issues.
 -- When FFI strict mode is enabled, also generates runtime validators.
-generateFFIContent :: Mode.Mode -> Graph -> Map String FFIInfo -> Builder
-generateFFIContent mode graph ffiInfos =
+generateFFIContent
+  :: Mode.Mode
+  -> Graph
+  -> Map String FFIInfo
+  -> Map Name.Name (Set Name.Name)
+  -> Builder
+generateFFIContent mode graph ffiInfos usedFuncs =
   if Map.null ffiInfos
      then mempty
      else mconcat parts <> validators
@@ -124,7 +133,7 @@ generateFFIContent mode graph ffiInfos =
     parts =
       [ "\n// FFI JavaScript content and bindings\n"
       ]
-        ++ Map.foldrWithKey (formatFFIWithBindings mode graph) [] ffiInfos
+        ++ Map.foldrWithKey (formatFFIWithBindings mode graph usedFuncs) [] ffiInfos
     validators =
       if Mode.isFFIStrict mode
         then generateFFIValidators mode ffiInfos
@@ -202,32 +211,72 @@ _formatFFIFileFromInfo path content acc =
 -- value. Bindings then reference @_AliasIIFE.funcName@ instead of bare
 -- @funcName@, giving each FFI file its own namespace while preserving
 -- access to runtime globals like @_Utils_chr@ and @F2@.
-formatFFIWithBindings :: Mode.Mode -> Graph -> String -> FFIInfo -> [Builder] -> [Builder]
-formatFFIWithBindings mode graph _key info acc
+formatFFIWithBindings
+  :: Mode.Mode
+  -> Graph
+  -> Map Name.Name (Set Name.Name)
+  -> String
+  -> FFIInfo
+  -> [Builder]
+  -> [Builder]
+formatFFIWithBindings mode graph usedFuncs _key info acc
   | not (isValidJsIdentifier aliasStr) = acc
   | otherwise =
       wrappedContent (reExports ++ bindingsSection ++ acc)
   where
     path = _ffiFilePath info
     contentText = _ffiContent info
-    aliasStr = Name.toChars (_ffiAlias info)
+    alias = _ffiAlias info
+    aliasStr = Name.toChars alias
     iifeVar = "_" <> aliasStr <> "IIFE"
     iifeVarText = Text.pack iifeVar
     functions = extractFFIFunctions (Text.lines contentText)
     jsNames = List.map jsReferenceName functions
-    internalNames = extractInternalNames (Text.lines contentText)
-    allExportNames = jsNames ++ internalNames
+
+    -- Tree-shake: determine which functions are actually needed
+    neededFuncNames = Map.findWithDefault Set.empty alias usedFuncs
+    neededFunctions = filterNeededFunctions functions neededFuncNames
+
+    -- Build FFI registry and compute transitive closure
+    ffiRegistry = FFIRegistry.buildFFIRegistry contentText
+    seedBlocks = computeSeedBlocks ffiRegistry neededFunctions
+    allNeeded = FFIRegistry.closeFFIDeps ffiRegistry seedBlocks
+
+    -- Emit only needed content if tree-shaking found blocks;
+    -- fall back to full content if registry found nothing
+    treeShaken = Map.null ffiRegistry || Set.null allNeeded
+    isProd = case mode of Mode.Prod {} -> True; _ -> False
+    rawContent =
+      if treeShaken
+        then TextEnc.encodeUtf8 contentText
+        else materializeFFI (FFIRegistry.emitNeededBlocks ffiRegistry allNeeded)
+    minifiedContent =
+      if isProd
+        then FFIMinify.stripDebugBranches (FFIMinify.minifyFFI rawContent)
+        else rawContent
+    ffiContent' = BB.byteString minifiedContent
+
+    -- Only export names that exist in needed blocks
+    neededInternalNames =
+      if treeShaken
+        then extractInternalNames (Text.lines contentText)
+        else filterNeededInternals (extractInternalNames (Text.lines contentText)) ffiRegistry allNeeded
+    allExportNames =
+      if treeShaken
+        then jsNames ++ neededInternalNames
+        else List.map jsReferenceName neededFunctions ++ neededInternalNames
     returnObj = buildIIFEReturnObj allExportNames
+
     wrappedContent rest =
       ("\n// From " <> BB.stringUtf8 path <> " (IIFE-isolated)\n")
         : ("var " <> BB.stringUtf8 iifeVar <> " = (function() {\n")
-        : BB.byteString (TextEnc.encodeUtf8 contentText)
+        : ffiContent'
         : ("\nreturn " <> returnObj <> ";\n")
         : "})();\n"
         : rest
-    reExports = List.map (reExportInternal iifeVar) internalNames
-                  ++ kernelReExports aliasStr iifeVar functions
-    iifeFunctions = List.map (iifeExtractedFFI iifeVarText) functions
+    reExports = List.map (reExportInternal iifeVar) neededInternalNames
+                  ++ kernelReExports aliasStr iifeVar neededFunctions
+    iifeFunctions = List.map (iifeExtractedFFI iifeVarText) neededFunctions
     bindings = concatMap (generateFFIBinding mode graph path aliasStr) iifeFunctions
     bindingsSection =
       case bindings of
@@ -236,6 +285,46 @@ formatFFIWithBindings mode graph _key info acc
           ("\n// Bindings for " <> BB.stringUtf8 path <> "\n")
             : ("var " <> BB.stringUtf8 aliasStr <> " = " <> BB.stringUtf8 aliasStr <> " || {};\n")
             : List.map (<> "\n") bindings ++ ["\n"]
+
+-- | Filter extracted FFI functions to only those actually used.
+filterNeededFunctions :: [ExtractedFFI] -> Set Name.Name -> [ExtractedFFI]
+filterNeededFunctions functions neededNames =
+  if Set.null neededNames
+    then functions
+    else List.filter isNeeded functions
+  where
+    isNeeded ef =
+      let canopyName = effectiveName ef
+          jsName = jsReferenceName ef
+       in Set.member (Name.fromChars (Text.unpack canopyName)) neededNames
+            || Set.member (Name.fromChars (Text.unpack jsName)) neededNames
+
+-- | Compute seed block IDs from needed function names.
+computeSeedBlocks
+  :: Map FFIRegistry.FFIBlockId FFIRegistry.FFIBlock
+  -> [ExtractedFFI]
+  -> Set FFIRegistry.FFIBlockId
+computeSeedBlocks reg functions =
+  Set.filter (\bid -> Map.member bid reg) candidates
+  where
+    candidates = Set.fromList
+      [ FFIRegistry.FFIBlockId (TextEnc.encodeUtf8 name)
+      | ef <- functions
+      , name <- [_extractedName ef, jsReferenceName ef]
+      ]
+
+-- | Filter internal names to only those in needed blocks.
+filterNeededInternals
+  :: [Text.Text]
+  -> Map FFIRegistry.FFIBlockId FFIRegistry.FFIBlock
+  -> Set FFIRegistry.FFIBlockId
+  -> [Text.Text]
+filterNeededInternals names reg needed =
+  List.filter isInNeeded names
+  where
+    isInNeeded name =
+      let bid = FFIRegistry.FFIBlockId (TextEnc.encodeUtf8 name)
+       in Set.member bid needed || not (Map.member bid reg)
 
 -- | Generate kernel-style re-exports for @\@name@-annotated FFI functions.
 --
@@ -705,6 +794,10 @@ ffiTypeToValidator ffiType = case ffiType of
     "$validate.Record"
 
 -- UTILITIES
+
+-- | Materialize a 'Builder' to a strict 'ByteString'.
+materializeFFI :: Builder -> ByteString
+materializeFFI = BL.toStrict . BB.toLazyByteString
 
 -- | Trim leading and trailing whitespace from text.
 --

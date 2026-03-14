@@ -104,18 +104,25 @@ generate inputMode (Opt.GlobalGraph rawGraph _ sourceLocs) mains ffiInfos =
       referencedFFI = Map.filter (\info -> Set.member (_ffiAlias info) usedAliases) ffiInfos
 
       -- Build all non-runtime JS content (FFI, kernels, user code, exports)
-      ffiRuntimeBuilder =
-        if Map.null referencedFFI then mempty else FFIRuntime.embeddedRuntimeForMode mode
       coveragePreamble = if Mode.isCoverage mode then Coverage.coverageRuntimePreamble else mempty
       poolDecls = StringPool.poolDeclarations (Mode.stringPool mode)
-      appContent =
-        ffiRuntimeBuilder
-          <> coveragePreamble
-          <> generateFFIContent mode graph referencedFFI
+      usedFuncs = _usedFFIFunctions state
+      -- Generate FFI + app code WITHOUT the FFI runtime first
+      ffiAndAppContent =
+        coveragePreamble
+          <> generateFFIContent mode graph referencedFFI usedFuncs
           <> perfNote mode
           <> poolDecls
           <> stateToBuilder state
           <> Kernel_.toMainExports mode mains
+
+      -- Scan-based FFI runtime inclusion: only emit modules actually used
+      ffiRuntimeBuilder =
+        if Map.null referencedFFI
+          then mempty
+          else FFIRuntime.scanAndEmitRuntime mode ffiAndAppContent
+
+      appContent = ffiRuntimeBuilder <> ffiAndAppContent
 
       -- Scan the generated content for actual runtime references
       scannedRtNeeds = Registry.scanRuntimeRefs appContent
@@ -355,7 +362,8 @@ data State = State
     _sourceLocations :: Map Opt.Global Ann.Region,
     _trackLines :: !Bool,
     _coverageBaseIds :: Map Opt.Global Int,
-    _usedFFIAliases :: Set Name.Name
+    _usedFFIAliases :: Set Name.Name,
+    _usedFFIFunctions :: Map Name.Name (Set Name.Name)
   }
 
 -- | Create initial codegen state.
@@ -365,10 +373,10 @@ data State = State
 -- is skipped entirely to avoid double materialization (prod mode).
 emptyState :: Bool -> Map Opt.Global Ann.Region -> Map Opt.Global Int -> State
 emptyState trackLines locs covIds =
-  State mempty [] Set.empty Set.empty 0 [] locs trackLines covIds Set.empty
+  State mempty [] Set.empty Set.empty 0 [] locs trackLines covIds Set.empty Map.empty
 
 stateToBuilder :: State -> Builder
-stateToBuilder (State revKernels revBuilders _ _ _ _ _ _ _ _) =
+stateToBuilder (State revKernels revBuilders _ _ _ _ _ _ _ _ _) =
   prependBuilders revKernels (prependBuilders revBuilders mempty)
 
 prependBuilders :: [Builder] -> Builder -> Builder
@@ -378,12 +386,12 @@ prependBuilders revBuilders monolith =
 -- ADD DEPENDENCIES
 
 addGlobal :: Mode.Mode -> Graph -> State -> Opt.Global -> State
-addGlobal mode graph state@(State revKernels builders seen seenChunks outLine smMappings srcLocs tl covIds usedFFI) global =
+addGlobal mode graph state@(State revKernels builders seen seenChunks outLine smMappings srcLocs tl covIds usedFFI usedFFIFuncs) global =
   if Set.member global seen
     then state
     else
       addGlobalHelp mode graph global $
-        State revKernels builders (Set.insert global seen) seenChunks outLine smMappings srcLocs tl covIds usedFFI
+        State revKernels builders (Set.insert global seen) seenChunks outLine smMappings srcLocs tl covIds usedFFI usedFFIFuncs
 
 filterEssentialDeps :: Mode.Mode -> Set Opt.Global -> Set Opt.Global
 filterEssentialDeps mode deps =
@@ -408,7 +416,12 @@ addGlobalHelp mode graph currentGlobal state =
         else
           if isFFIModule || isKernelPhantom
             then if isFFIModule
-              then state { _usedFFIAliases = Set.insert moduleName (_usedFFIAliases state) }
+              then state
+                { _usedFFIAliases = Set.insert moduleName (_usedFFIAliases state)
+                , _usedFFIFunctions =
+                    Map.insertWith Set.union moduleName (Set.singleton globalName)
+                      (_usedFFIFunctions state)
+                }
               else state
             else continueAddGlobal mode graph currentGlobal state
 
@@ -552,23 +565,23 @@ covTailFuncExpr mode currentGlobal argNames body state =
     (Opt.Global _ name) = currentGlobal
 
 addKernelChunks :: Mode.Mode -> Opt.Global -> State -> [Kernel.Chunk] -> State
-addKernelChunks mode currentGlobal (State revKernels revBuilders seen seenChunks outLine smMappings srcLocs tl covIds usedFFI) chunks =
+addKernelChunks mode currentGlobal (State revKernels revBuilders seen seenChunks outLine smMappings srcLocs tl covIds usedFFI usedFFIFuncs) chunks =
   let kernelCode = Kernel_.generateKernel mode chunks
       kernelBytes = BL.toStrict (BB.toLazyByteString kernelCode)
    in if Set.member kernelBytes seenChunks
-        then State revKernels revBuilders (Set.insert currentGlobal seen) seenChunks outLine smMappings srcLocs tl covIds usedFFI
+        then State revKernels revBuilders (Set.insert currentGlobal seen) seenChunks outLine smMappings srcLocs tl covIds usedFFI usedFFIFuncs
         else
           let newLine = if tl then outLine + countNewlinesBS kernelBytes else outLine
-           in State (kernelCode : revKernels) revBuilders (Set.insert currentGlobal seen) (Set.insert kernelBytes seenChunks) newLine smMappings srcLocs tl covIds usedFFI
+           in State (kernelCode : revKernels) revBuilders (Set.insert currentGlobal seen) (Set.insert kernelBytes seenChunks) newLine smMappings srcLocs tl covIds usedFFI usedFFIFuncs
 
 addStmt :: State -> JS.Stmt -> State
 addStmt state stmt =
   addBuilder state (JS.stmtToBuilder stmt)
 
 addBuilder :: State -> Builder -> State
-addBuilder (State revKernels revBuilders seen seenChunks outLine smMappings srcLocs tl covIds usedFFI) builder =
+addBuilder (State revKernels revBuilders seen seenChunks outLine smMappings srcLocs tl covIds usedFFI usedFFIFuncs) builder =
   let newLine = if tl then outLine + countNewlines builder else outLine
-   in State revKernels (builder : revBuilders) seen seenChunks newLine smMappings srcLocs tl covIds usedFFI
+   in State revKernels (builder : revBuilders) seen seenChunks newLine smMappings srcLocs tl covIds usedFFI usedFFIFuncs
 
 -- | Count newline bytes in a Builder by materializing it.
 --

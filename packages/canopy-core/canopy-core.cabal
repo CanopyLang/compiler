@@ -207,6 +207,8 @@ library
       File.JSON
       Generate.JavaScript.Expression.Call
       Generate.JavaScript.Expression.Case
+      Generate.JavaScript.FFI.Minify
+      Generate.JavaScript.FFI.Registry
       Generate.JavaScript.Functions
       Generate.JavaScript.Kernel
       Generate.JavaScript.Runtime.Registry

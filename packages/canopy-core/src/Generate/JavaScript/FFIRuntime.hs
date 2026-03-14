@@ -51,10 +51,16 @@ module Generate.JavaScript.FFIRuntime
 
     -- * Conditional inclusion
   , embeddedRuntimeForMode
+
+    -- * Scan-based inclusion
+  , scanAndEmitRuntime
   ) where
 
+import Data.ByteString (ByteString)
+import qualified Data.ByteString as BS
 import Data.ByteString.Builder (Builder)
 import qualified Data.ByteString.Builder as BB
+import qualified Data.ByteString.Lazy as BL
 import qualified Generate.Mode as Mode
 import Text.RawString.QQ (r)
 
@@ -107,6 +113,42 @@ embeddedRuntimeForMode mode =
       embeddedRuntime
     Mode.Prod _ _ True _ _ _ ->  -- ffiUnsafe=True, validation DISABLED
       embeddedMarshal  -- Minimal runtime in prod
+
+-- | Scan-based FFI runtime inclusion.
+--
+-- Scans the generated FFI + app content for references to @$canopy.@,
+-- @$validate.@, @$smart.@, and @$env.@ and only emits the runtime
+-- modules that are actually used. This avoids shipping ~16KB of unused
+-- runtime for apps that don't need validation or environment detection.
+scanAndEmitRuntime :: Mode.Mode -> Builder -> Builder
+scanAndEmitRuntime mode contentBuilder =
+  runtimeHeader <> modules <> runtimeFooter
+  where
+    content = materializeBuilder contentBuilder
+    needsCanopy = BS.isInfixOf "$canopy." content
+    needsValidate = BS.isInfixOf "$validate." content
+    needsSmart = BS.isInfixOf "$smart." content
+    needsEnv = BS.isInfixOf "$env." content
+    modules =
+      (if needsCanopy then embeddedMarshal else mempty)
+        <> conditionalValidate needsValidate
+        <> conditionalSmart needsSmart
+        <> conditionalEnv needsEnv
+    conditionalValidate needed = case mode of
+      Mode.Dev _ _ False _ _ _ -> if needed then embeddedValidate else mempty
+      Mode.Prod _ _ False _ _ _ -> if needed then embeddedValidate else mempty
+      _ -> mempty
+    conditionalSmart needed = case mode of
+      Mode.Dev _ _ False _ _ _ -> if needed then embeddedSmart else mempty
+      Mode.Prod _ _ False _ _ _ -> if needed then embeddedSmart else mempty
+      _ -> mempty
+    conditionalEnv needed = case mode of
+      Mode.Dev _ _ _ _ _ _ -> if needed then embeddedEnvironment else mempty
+      _ -> mempty
+
+-- | Materialize a 'Builder' to a strict 'ByteString' for scanning.
+materializeBuilder :: Builder -> ByteString
+materializeBuilder = BL.toStrict . BB.toLazyByteString
 
 -- | Marshalling helpers ($canopy)
 --

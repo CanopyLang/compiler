@@ -32,8 +32,11 @@ module Generate.JavaScript.Runtime
 where
 
 import Data.ByteString.Builder (Builder)
+import qualified Data.ByteString.Builder as BB
+import qualified Data.ByteString.Lazy as BL
 import Data.Set (Set)
 import Generate.JavaScript.Runtime.Registry
+import qualified Generate.JavaScript.FFI.Minify as FFIMinify
 import qualified Generate.JavaScript.Runtime.Registry as Registry
 import qualified Generate.Mode as Mode
 
@@ -67,7 +70,13 @@ embeddedRuntime = Registry.rawRuntimeContent
 -- @since 0.20.1
 emitNeeded :: Mode.Mode -> Set RuntimeId -> Builder
 emitNeeded mode needed =
-  modeDeclaration mode <> Registry.topoEmit needed
+  modeDeclaration mode <> minifiedContent
+  where
+    rawContent = Registry.topoEmit needed
+    minifiedContent = case mode of
+      Mode.Prod {} ->
+        BB.byteString (FFIMinify.stripDebugBranches (BL.toStrict (BB.toLazyByteString rawContent)))
+      Mode.Dev {} -> rawContent
 
 -- INTERNAL
 
