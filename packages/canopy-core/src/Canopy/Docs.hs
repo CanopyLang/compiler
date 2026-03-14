@@ -343,13 +343,13 @@ chompDocs :: [Ann.Located Name.Name] -> Parser [Ann.Located Name.Name]
 chompDocs names =
   do
     name <-
-      Parse.addLocation $
+      Parse.addLocation (
         Parse.oneOf
           DocsError.Name
           [ Var.lower DocsError.Name,
             Var.upper DocsError.Name,
             chompOperator
-          ]
+          ])
 
     Space.chomp DocsError.Space
 
@@ -375,10 +375,10 @@ chompOperator =
 --
 chompUntilDocs :: Parser Bool
 chompUntilDocs =
-  Parse.Parser $ \(Parse.State src pos end indent row col) cok _ _ _ ->
+  Parse.Parser (\(Parse.State src pos end indent row col) cok _ _ _ ->
     let (# isDocs, newPos, newRow, newCol #) = untilDocs pos end row col
         !newState = Parse.State src newPos end indent newRow newCol
-     in cok isDocs newState
+     in cok isDocs newState)
 
 untilDocs :: Ptr Word8 -> Ptr Word8 -> Row -> Col -> (# Bool, Ptr Word8, Row, Col #)
 untilDocs pos end row col =
@@ -434,11 +434,11 @@ onlyInDocs :: Name.Name -> OneOrMore.OneOrMore Ann.Region -> Result.Result i w D
 onlyInDocs name regions =
   do
     region <- isUnique name regions
-    Result.throw $ DocsError.NameOnlyInDocs name region
+    Result.throw (DocsError.NameOnlyInDocs name region)
 
 onlyInExports :: Name.Name -> Ann.Located Can.Export -> Result.Result i w DocsError.NameProblem a
 onlyInExports name (Ann.At region _) =
-  Result.throw $ DocsError.NameOnlyInExports name region
+  Result.throw (DocsError.NameOnlyInExports name region)
 
 -- CHECK DEFS (DEPRECATED - use checkDefsIO)
 
@@ -448,17 +448,17 @@ checkDefsIO exportDict overview comments (Can.Module name _ _ decls unions alias
   let types = gatherTypes decls Map.empty
       info = Info comments types unions aliases infixes effects
   case Result.run (Map.traverseWithKey (checkExportIO info) exportDict) of
-    (_, Left problems) -> pure $ Left $ DocsError.DefProblems (OneOrMore.destruct NE.List problems)
+    (_, Left problems) -> pure (Left (DocsError.DefProblems (OneOrMore.destruct NE.List problems)))
     (_, Right ioInserters) -> do
       inserters <- sequence ioInserters
       emptyMod <- emptyModule name overview
       abilityDocs <- buildAbilityDocs comments canAbilities
-      pure $ Right $ (\m -> m {_abilities = abilityDocs}) (foldr ($) emptyMod inserters)
+      pure (Right ((\m -> m {_abilities = abilityDocs}) (foldr ($) emptyMod inserters)))
 
 emptyModule :: ModuleName.Canonical -> Src.Comment -> IO Module
 emptyModule (ModuleName.Canonical _ name) (Src.Comment overview) = do
   processedOverview <- Json.fromComment overview
-  pure $ Module name processedOverview Map.empty Map.empty Map.empty Map.empty Map.empty
+  pure (Module name processedOverview Map.empty Map.empty Map.empty Map.empty Map.empty)
 
 
 data Info = Info
@@ -478,40 +478,40 @@ checkExportIO info name (Ann.At region export) =
     Can.ExportValue ->
       do
         tipe <- getType name info
-        Result.ok $ do
+        Result.ok (do
           comment <- getCommentIO region name info
-          pure $ \m -> m & modValues %~ Map.insert name (Value comment tipe)
+          pure (\m -> m & modValues %~ Map.insert name (Value comment tipe)))
     Can.ExportBinop ->
       do
         (Can.Binop_ assoc prec realName) <- lookupOrThrow name "binop" (_iBinops info)
         tipe <- getType realName info
-        Result.ok $ do
+        Result.ok (do
           comment <- getCommentIO region realName info
-          pure $ \m -> m & modBinops %~ Map.insert name (Binop comment tipe assoc prec)
+          pure (\m -> m & modBinops %~ Map.insert name (Binop comment tipe assoc prec)))
     Can.ExportAlias ->
       do
         (Can.Alias tvars _ tipe _ _) <- lookupOrThrow name "alias" (_iAliases info)
-        Result.ok $ do
+        Result.ok (do
           comment <- getCommentIO region name info
-          pure $ \m -> m & modAliases %~ Map.insert name (Alias comment tvars (Extract.fromType tipe))
+          pure (\m -> m & modAliases %~ Map.insert name (Alias comment tvars (Extract.fromType tipe))))
     Can.ExportUnionOpen ->
       do
         (Can.Union tvars _ ctors _ _ _) <- lookupOrThrow name "union" (_iUnions info)
-        Result.ok $ do
+        Result.ok (do
           comment <- getCommentIO region name info
-          pure $ \m -> m & modUnions %~ Map.insert name (Union comment tvars (fmap dector ctors))
+          pure (\m -> m & modUnions %~ Map.insert name (Union comment tvars (fmap dector ctors))))
     Can.ExportUnionClosed ->
       do
         (Can.Union tvars _ _ _ _ _) <- lookupOrThrow name "union" (_iUnions info)
-        Result.ok $ do
+        Result.ok (do
           comment <- getCommentIO region name info
-          pure $ \m -> m & modUnions %~ Map.insert name (Union comment tvars [])
+          pure (\m -> m & modUnions %~ Map.insert name (Union comment tvars [])))
     Can.ExportPort ->
       do
         tipe <- getType name info
-        Result.ok $ do
+        Result.ok (do
           comment <- getCommentIO region name info
-          pure $ \m -> m & modValues %~ Map.insert name (Value comment tipe)
+          pure (\m -> m & modValues %~ Map.insert name (Value comment tipe)))
 
 
 -- | Thread-safe version of getComment that handles IO for comment processing.

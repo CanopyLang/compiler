@@ -100,7 +100,7 @@ buildFromExposed ctx srcDirs exposedModules = do
       details = ctx ^. bcDetails
       isApp = isAppOutline (details ^. Details.detailsOutline)
 
-  result <- Task.io $ Compiler.compileFromExposed pkg isApp (Compiler.ProjectRoot root) srcDirs exposedModules
+  result <- Task.io (Compiler.compileFromExposed pkg isApp (Compiler.ProjectRoot root) srcDirs exposedModules)
   either (Task.throw . Exit.MakeCannotBuild) pure result
 
 -- | Build project from specific file paths.
@@ -125,7 +125,7 @@ buildFromPaths ctx paths = do
       srcDirs = map Compiler.RelativeSrcDir (Details._detailsSrcDirs details)
       isApp = isAppOutline (details ^. Details.detailsOutline)
 
-  result <- Task.io $ Compiler.compileFromPaths pkg isApp (Compiler.ProjectRoot root) srcDirs (NonEmptyList.toList paths)
+  result <- Task.io (Compiler.compileFromPaths pkg isApp (Compiler.ProjectRoot root) srcDirs (NonEmptyList.toList paths))
   either (Task.throw . Exit.MakeCannotBuild) pure result
 
 -- | Create output builder from compiled artifacts.
@@ -159,8 +159,8 @@ createESMBuilder ::
   Compiler.Artifacts ->
   Task ESMOutput
 createESMBuilder ctx artifacts =
-  Task.mapError wrapGenerate $
-    return (generateESM (desiredToMode mode ffiUnsafeFlag ffiDebugFlag globalGraph) artifacts)
+  Task.mapError wrapGenerate (
+    return (generateESM (desiredToMode mode ffiUnsafeFlag ffiDebugFlag globalGraph) artifacts))
   where
     mode = ctx ^. bcDesiredMode
     ffiUnsafeFlag = ctx ^. bcFfiUnsafe
@@ -215,8 +215,8 @@ createSplitBuilder ::
   Compiler.Artifacts ->
   Task Split.SplitOutput
 createSplitBuilder ctx artifacts =
-  Task.mapError wrapGenerate $
-    return (generateSplit (desiredToMode mode ffiUnsafeFlag ffiDebugFlag globalGraph) artifacts)
+  Task.mapError wrapGenerate (
+    return (generateSplit (desiredToMode mode ffiUnsafeFlag ffiDebugFlag globalGraph) artifacts))
   where
     mode = ctx ^. bcDesiredMode
     ffiUnsafeFlag = ctx ^. bcFfiUnsafe
@@ -265,11 +265,11 @@ generateForMode ::
   Compiler.Artifacts ->
   Task (Builder, Maybe SourceMap.SourceMap)
 generateForMode mode ffiUnsafeFlag ffiDebugFlag artifacts =
-  Task.mapError wrapGenerate $
+  Task.mapError wrapGenerate (
     case mode of
       Debug -> return (generateJS (Mode.Dev Nothing False ffiUnsafeFlag ffiDebugFlag Set.empty False) artifacts)
       Dev -> return (generateJS (Mode.Dev Nothing False ffiUnsafeFlag ffiDebugFlag Set.empty False) artifacts)
-      Prod -> return (generateJS (Mode.Prod (Mode.shortenFieldNames globalGraph) False ffiUnsafeFlag ffiDebugFlag StringPool.emptyPool Set.empty) artifacts)
+      Prod -> return (generateJS (Mode.Prod (Mode.shortenFieldNames globalGraph) False ffiUnsafeFlag ffiDebugFlag StringPool.emptyPool Set.empty) artifacts))
   where
     globalGraph = extractGlobalGraph artifacts
     wrapGenerate msg = Exit.MakeBadGenerate [Diag.stringToDiagnostic Diag.PhaseGenerate "CODE GENERATION ERROR" msg]
