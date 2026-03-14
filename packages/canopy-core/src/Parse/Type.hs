@@ -1,4 +1,17 @@
 {-# LANGUAGE OverloadedStrings #-}
+
+-- | Parse.Type — Canopy type expression parser.
+--
+-- Parses all type syntax: type variables, qualified and unqualified type
+-- constructors with arguments, function types (@->@), unit, tuples, and
+-- record types (with optional extension variable).
+--
+-- Two parsers are exported:
+--
+-- * 'expression' — parses a complete type, including function arrows.
+-- * 'variant' — parses a single custom-type variant (@Ctor Arg1 Arg2@).
+--
+-- @since 0.19.1
 module Parse.Type
   ( expression
   , variant
@@ -80,6 +93,14 @@ term =
 -- TYPE EXPRESSIONS
 
 
+-- | Parse a complete type expression, including function arrows.
+--
+-- Handles the full precedence hierarchy: a leading type constructor
+-- application or atomic term, optionally followed by @->@ and a
+-- recursive type expression.  Returns the parsed type paired with its
+-- end position for indentation tracking.
+--
+-- @since 0.19.1
 expression :: Space.Parser SyntaxError.Type Src.Type
 expression =
   do  start <- getPosition
@@ -193,6 +214,13 @@ chompField =
 -- VARIANT
 
 
+-- | Parse a single custom-type variant declaration.
+--
+-- Reads an uppercase constructor name followed by zero or more type
+-- arguments (each parsed as a non-arrow 'term').  Used by the module
+-- parser when processing @type@ declarations.
+--
+-- @since 0.19.1
 variant :: Space.Parser SyntaxError.CustomType (Ann.Located Name.Name, [Src.Type])
 variant =
   do  name@(Ann.At (Ann.Region _ nameEnd) _) <- addLocation (Var.upper SyntaxError.CT_Variant)

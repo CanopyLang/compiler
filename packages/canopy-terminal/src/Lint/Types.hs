@@ -1,4 +1,5 @@
 {-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE TemplateHaskell #-}
 
 -- | Core types for the Canopy lint system.
 --
@@ -14,6 +15,7 @@ module Lint.Types
 
     -- * Warnings
     LintWarning (..),
+    warnSeverity,
 
     -- * Rules
     LintRule (..),
@@ -36,6 +38,7 @@ module Lint.Types
   )
 where
 
+import Control.Lens (makeLensesFor)
 import Data.Map.Strict (Map)
 import qualified Reporting.Annotation as Ann
 
@@ -152,6 +155,8 @@ data LintFix
         _fixEndLine :: !Int
       }
   deriving (Eq, Show)
+
+makeLensesFor [("_warnSeverity", "warnSeverity")] ''LintWarning
 
 -- | Convert a 'LintRule' to its kebab-case string identifier.
 --

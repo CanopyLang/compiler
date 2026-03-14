@@ -2,6 +2,16 @@
 {-# LANGUAGE MagicHash #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE UnboxedTuples #-}
+
+-- | Parse.Expression — Canopy expression parser.
+--
+-- Parses the full expression language: literals, variables, function
+-- application, binary operators, if\/case\/let expressions, lambdas,
+-- lists, tuples, and records.  The exported 'expression' combinator is
+-- the single entry point consumed by other parser modules (pattern,
+-- type, module).
+--
+-- @since 0.19.1
 module Parse.Expression
   ( expression
   )
@@ -329,6 +339,15 @@ chompUpdateField =
 -- EXPRESSIONS
 
 
+-- | Parse a complete Canopy expression.
+--
+-- This is the top-level expression combinator.  It handles the full
+-- precedence hierarchy: let\/if\/case\/lambda at the lowest level, followed
+-- by binary operators, function application, and primary terms.
+-- The return value pairs the parsed expression with its end position
+-- to allow the caller to enforce indentation rules.
+--
+-- @since 0.19.1
 expression :: Space.Parser SyntaxError.Expr Src.Expr
 expression =
   do  start <- getPosition

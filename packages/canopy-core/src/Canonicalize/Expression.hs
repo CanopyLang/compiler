@@ -1,5 +1,21 @@
 {-# LANGUAGE OverloadedStrings #-}
 
+-- | Canonicalize.Expression — Source-to-canonical AST expression translation.
+--
+-- Resolves all names in a source expression against the current
+-- canonicalization environment, producing a 'Can.Expr'.  Key
+-- responsibilities:
+--
+-- * Resolving unqualified and qualified variable\/constructor references
+--   via the 'Env.Env' scope.
+-- * Desugaring nested record update syntax into chains of @let@
+--   definitions with flat updates.
+-- * Sorting let bindings into their dependency order and detecting
+--   mutually-recursive groups.
+-- * Tracking free local variable usage counts in 'FreeLocals' so that
+--   unused bindings can be reported as warnings.
+--
+-- @since 0.19.1
 module Canonicalize.Expression
   ( canonicalize,
     FreeLocals,
@@ -37,6 +53,11 @@ import qualified Reporting.Warning as Warning
 type Result i w a =
   Result.Result i w Error.Error a
 
+-- | A map from local variable names to their usage counts.
+--
+-- Used to detect and warn about unused bindings in let expressions and
+-- function arguments.
+--
 type FreeLocals =
   Map.Map Name.Name Uses
 

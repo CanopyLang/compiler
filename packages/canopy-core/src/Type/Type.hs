@@ -40,6 +40,7 @@ where
 import qualified AST.Canonical as Can
 import qualified AST.Utils.Type as Type
 import qualified Canopy.ModuleName as ModuleName
+import Control.Lens (Lens', (.~), (&))
 import Control.Monad.State.Strict (StateT, liftIO)
 import qualified Control.Monad.State.Strict as State
 import Data.Foldable (foldrM)
@@ -108,32 +109,12 @@ data Type
 
 -- DESCRIPTORS
 
-data Descriptor = Descriptor
-  { _content :: Content,
-    _rank :: Int,
-    _mark :: Mark,
-    _copy :: Maybe Variable
-  }
-
-data Content
-  = FlexVar (Maybe Name.Name)
-  | FlexSuper SuperType (Maybe Name.Name)
-  | RigidVar Name.Name
-  | RigidSuper SuperType Name.Name
-  | Structure FlatType
-  | Alias ModuleName.Canonical Name.Name [(Name.Name, Variable)] Variable
-  | Error
-
 data SuperType
   = Number
   | Comparable
   | Appendable
   | CompAppend
   deriving (Eq, Show)
-
-makeDescriptor :: Content -> Descriptor
-makeDescriptor content =
-  Descriptor content noRank noMark Nothing
 
 -- RANKS
 
@@ -153,6 +134,34 @@ newtype Mark = Mark Word32
 noMark :: Mark
 noMark =
   Mark 2
+
+data Descriptor = Descriptor
+  { _content :: Content,
+    _rank :: Int,
+    _mark :: Mark,
+    _copy :: Maybe Variable
+  }
+
+data Content
+  = FlexVar (Maybe Name.Name)
+  | FlexSuper SuperType (Maybe Name.Name)
+  | RigidVar Name.Name
+  | RigidSuper SuperType Name.Name
+  | Structure FlatType
+  | Alias ModuleName.Canonical Name.Name [(Name.Name, Variable)] Variable
+  | Error
+
+-- | Lens for the 'Content' field of 'Descriptor'.
+descContent :: Lens' Descriptor Content
+descContent f s = fmap (\x -> s { _content = x }) (f (_content s))
+
+-- | Lens for the 'Mark' field of 'Descriptor'.
+descMark :: Lens' Descriptor Mark
+descMark f s = fmap (\x -> s { _mark = x }) (f (_mark s))
+
+makeDescriptor :: Content -> Descriptor
+makeDescriptor content =
+  Descriptor content noRank noMark Nothing
 
 occursMark :: Mark
 occursMark =
@@ -297,7 +306,7 @@ variableToCanType variable =
           Nothing ->
             do
               name <- getFreshVarName
-              liftIO $ UF.modify variable (\desc -> desc {_content = FlexVar (Just name)})
+              liftIO $ UF.modify variable (\desc -> desc & descContent .~ FlexVar (Just name))
               return (Can.TVar name)
       FlexSuper super maybeName ->
         case maybeName of
@@ -306,7 +315,7 @@ variableToCanType variable =
           Nothing ->
             do
               name <- getFreshSuperName super
-              liftIO $ UF.modify variable (\desc -> desc {_content = FlexSuper super (Just name)})
+              liftIO $ UF.modify variable (\desc -> desc & descContent .~ FlexSuper super (Just name))
               return (Can.TVar name)
       RigidVar name ->
         return (Can.TVar name)
@@ -379,9 +388,9 @@ variableToErrorType variable =
     if mark == occursMark
       then return ET.Infinite
       else do
-        liftIO $ UF.modify variable (\desc -> desc {_mark = occursMark})
+        liftIO $ UF.modify variable (\desc -> desc & descMark .~ occursMark)
         errType <- contentToErrorType variable (_content descriptor)
-        liftIO $ UF.modify variable (\desc -> desc {_mark = mark})
+        liftIO $ UF.modify variable (\desc -> desc & descMark .~ mark)
         return errType
 
 contentToErrorType :: Variable -> Content -> StateT NameState IO ET.Type
@@ -396,7 +405,7 @@ contentToErrorType variable content =
         Nothing ->
           do
             name <- getFreshVarName
-            liftIO $ UF.modify variable (\desc -> desc {_content = FlexVar (Just name)})
+            liftIO $ UF.modify variable (\desc -> desc & descContent .~ FlexVar (Just name))
             return (ET.FlexVar name)
     FlexSuper super maybeName ->
       case maybeName of
@@ -405,7 +414,7 @@ contentToErrorType variable content =
         Nothing ->
           do
             name <- getFreshSuperName super
-            liftIO $ UF.modify variable (\desc -> desc {_content = FlexSuper super (Just name)})
+            liftIO $ UF.modify variable (\desc -> desc & descContent .~ FlexSuper super (Just name))
             return (ET.FlexSuper (superToSuper super) name)
     RigidVar name ->
       return (ET.RigidVar name)
@@ -480,6 +489,30 @@ data NameState = NameState
     _compAppends :: Int
   }
 
+-- | Lens for '_taken' field of 'NameState'.
+nsTaken :: Lens' NameState (Map Name.Name ())
+nsTaken f s = fmap (\x -> s { _taken = x }) (f (_taken s))
+
+-- | Lens for '_normals' field of 'NameState'.
+nsNormals :: Lens' NameState Int
+nsNormals f s = fmap (\x -> s { _normals = x }) (f (_normals s))
+
+-- | Lens for '_numbers' field of 'NameState'.
+nsNumbers :: Lens' NameState Int
+nsNumbers f s = fmap (\x -> s { _numbers = x }) (f (_numbers s))
+
+-- | Lens for '_comparables' field of 'NameState'.
+nsComparables :: Lens' NameState Int
+nsComparables f s = fmap (\x -> s { _comparables = x }) (f (_comparables s))
+
+-- | Lens for '_appendables' field of 'NameState'.
+nsAppendables :: Lens' NameState Int
+nsAppendables f s = fmap (\x -> s { _appendables = x }) (f (_appendables s))
+
+-- | Lens for '_compAppends' field of 'NameState'.
+nsCompAppends :: Lens' NameState Int
+nsCompAppends f s = fmap (\x -> s { _compAppends = x }) (f (_compAppends s))
+
 makeNameState :: Map Name.Name Variable -> NameState
 makeNameState taken =
   NameState (Map.map (const ()) taken) 0 0 0 0 0
@@ -492,7 +525,7 @@ getFreshVarName =
     index <- State.gets _normals
     taken <- State.gets _taken
     let (name, newIndex, newTaken) = getFreshVarNameHelp index taken
-    State.modify $ \state -> state {_taken = newTaken, _normals = newIndex}
+    State.modify (\state -> state & nsTaken .~ newTaken & nsNormals .~ newIndex)
     return name
 
 getFreshVarNameHelp :: Int -> Map Name.Name () -> (Name.Name, Int, Map Name.Name ())
@@ -509,13 +542,13 @@ getFreshSuperName :: (Monad m) => SuperType -> StateT NameState m Name.Name
 getFreshSuperName super =
   case super of
     Number ->
-      getFreshSuper "number" _numbers (\index state -> state {_numbers = index})
+      getFreshSuper "number" _numbers (\index state -> state & nsNumbers .~ index)
     Comparable ->
-      getFreshSuper "comparable" _comparables (\index state -> state {_comparables = index})
+      getFreshSuper "comparable" _comparables (\index state -> state & nsComparables .~ index)
     Appendable ->
-      getFreshSuper "appendable" _appendables (\index state -> state {_appendables = index})
+      getFreshSuper "appendable" _appendables (\index state -> state & nsAppendables .~ index)
     CompAppend ->
-      getFreshSuper "compappend" _compAppends (\index state -> state {_compAppends = index})
+      getFreshSuper "compappend" _compAppends (\index state -> state & nsCompAppends .~ index)
 
 getFreshSuper :: (Monad m) => Name.Name -> (NameState -> Int) -> (Int -> NameState -> NameState) -> StateT NameState m Name.Name
 getFreshSuper prefix getter setter =
@@ -523,7 +556,7 @@ getFreshSuper prefix getter setter =
     index <- State.gets getter
     taken <- State.gets _taken
     let (name, newIndex, newTaken) = getFreshSuperHelp prefix index taken
-    State.modify (\state -> setter newIndex state {_taken = newTaken})
+    State.modify (\state -> setter newIndex (state & nsTaken .~ newTaken))
     return name
 
 getFreshSuperHelp :: Name.Name -> Int -> Map Name.Name () -> (Name.Name, Int, Map Name.Name ())

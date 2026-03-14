@@ -1,5 +1,6 @@
 {-# LANGUAGE GADTs #-}
 {-# LANGUAGE InstanceSigs #-}
+{-# LANGUAGE TemplateHaskell #-}
 
 -- | Internal Terminal framework data types and operations.
 --
@@ -29,12 +30,14 @@ module Terminal.Internal
     Flags (..),
     Flag (..),
     Parser (..),
+    parserFn,
     Args (..),
     CompleteArgs (..),
     RequiredArgs (..),
   )
 where
 
+import Control.Lens (makeLensesFor, (.~), (&))
 import Text.PrettyPrint.ANSI.Leijen (Doc)
 
 -- COMMAND
@@ -70,20 +73,6 @@ data Flag a where
   Flag :: String -> Parser a -> String -> Flag (Maybe a)
   OnOff :: String -> String -> Flag Bool
 
--- PARSERS
-
-data Parser a = Parser
-  { _singular :: String,
-    _plural :: String,
-    _parser :: String -> Maybe a,
-    _suggest :: String -> IO [String],
-    _examples :: String -> IO [String]
-  }
-
-instance Functor Parser where
-  fmap :: (a -> b) -> Parser a -> Parser b
-  fmap f parser = parser {_parser = fmap f . _parser parser}
-
 -- ARGS
 
 newtype Args a
@@ -97,3 +86,19 @@ data CompleteArgs args where
 data RequiredArgs a where
   Done :: a -> RequiredArgs a
   Required :: RequiredArgs (a -> b) -> Parser a -> RequiredArgs b
+
+-- PARSERS
+
+data Parser a = Parser
+  { _singular :: String,
+    _plural :: String,
+    _parser :: String -> Maybe a,
+    _suggest :: String -> IO [String],
+    _examples :: String -> IO [String]
+  }
+
+makeLensesFor [("_parser", "parserFn")] ''Parser
+
+instance Functor Parser where
+  fmap :: (a -> b) -> Parser a -> Parser b
+  fmap f p = p & parserFn .~ (fmap f . _parser p)

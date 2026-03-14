@@ -1,5 +1,19 @@
 {-# LANGUAGE OverloadedStrings #-}
 
+-- | Optimize.Expression — Canonical-to-optimized AST expression lowering.
+--
+-- Translates 'Can.Expr' nodes into 'Opt.Expr' nodes by:
+--
+-- * Resolving global and kernel references and tracking their transitive
+--   dependencies via the 'Names.Tracker' monad.
+-- * Compiling case expressions to decision trees via "Optimize.Case".
+-- * Detecting and marking tail-recursive calls.
+-- * Lowering pattern-matched lambda\/let arguments into 'Opt.Destruct'
+--   chains.
+-- * Applying constant folding to native arithmetic via "Optimize.ConstantFold".
+-- * Desugaring string interpolation into @(++)@ call chains.
+--
+-- @since 0.19.1
 module Optimize.Expression
   ( optimize,
     destructArgs,
@@ -29,6 +43,13 @@ import Prelude hiding (cycle)
 type Cycle =
   Set.Set Name.Name
 
+-- | Optimize a canonical expression into an optimized expression.
+--
+-- The 'Cycle' set names all top-level bindings that participate in a
+-- mutual-recursion cycle; references to cycle members become 'Opt.VarCycle'
+-- nodes so the code generator can emit thunk-breaking wrappers.
+--
+-- @since 0.19.1
 optimize :: Cycle -> Can.Expr -> Names.Tracker Opt.Expr
 optimize cycle (Ann.At region expression) =
   case expression of

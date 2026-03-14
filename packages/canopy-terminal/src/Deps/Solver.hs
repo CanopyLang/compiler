@@ -1,4 +1,5 @@
 {-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE TemplateHaskell #-}
 
 -- | Dependency solver for Terminal.
 --
@@ -33,6 +34,7 @@ import qualified Canopy.Constraint as Constraint
 import qualified Canopy.Outline as Outline
 import qualified Canopy.Package as Pkg
 import qualified Canopy.Version as Version
+import Control.Lens (makeLenses, (%~), (&))
 import Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
 import qualified Data.Set as Set
@@ -87,6 +89,8 @@ data SolverState = SolverState
   { _ssResolved :: !(Map Pkg.Name Version.Version),
     _ssVisiting :: !(Set.Set Pkg.Name)
   }
+
+makeLenses ''SolverState
 
 -- | Initialize the solver environment with the latest package registry.
 --
@@ -212,9 +216,8 @@ tryVersions cache registry state pkg _constraint rest (v : vs) = do
   transDeps <- fetchPackageDeps cache pkg v
   let newState =
         state
-          { _ssResolved = Map.insert pkg v (_ssResolved state),
-            _ssVisiting = Set.insert pkg (_ssVisiting state)
-          }
+          & ssResolved %~ Map.insert pkg v
+          & ssVisiting %~ Set.insert pkg
       transConstraints = maybe [] Map.toList transDeps
   result <- runSolver cache registry newState (transConstraints ++ rest)
   handleBacktrack result cache registry state pkg rest vs

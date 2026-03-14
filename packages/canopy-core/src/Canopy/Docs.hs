@@ -1,6 +1,7 @@
 {-# LANGUAGE BangPatterns #-}
 {-# LANGUAGE MultiWayIf #-}
 {-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE TemplateHaskell #-}
 {-# LANGUAGE UnboxedTuples #-}
 
 module Canopy.Docs
@@ -27,6 +28,7 @@ import qualified AST.Utils.Binop as Binop
 import qualified Canopy.Compiler.Type as Type
 import qualified Canopy.Compiler.Type.Extract as Extract
 import qualified Canopy.ModuleName as ModuleName
+import Control.Lens (makeLensesFor, (%~), (&))
 import qualified Data.Coerce as Coerce
 import qualified Data.List as List
 import qualified Data.Map.Strict as Map
@@ -80,6 +82,13 @@ data Binop = Binop Comment Type.Type Binop.Associativity Binop.Precedence
 -- Contains the doc comment, the type variable, and a list of method
 -- signatures (name and type) that the ability requires.
 data Ability = Ability Comment [Name.Name] [(Name.Name, Type.Type)]
+
+makeLensesFor
+  [ ("_unions", "modUnions")
+  , ("_aliases", "modAliases")
+  , ("_values", "modValues")
+  , ("_binops", "modBinops")
+  ] ''Module
 
 -- JSON
 
@@ -471,38 +480,38 @@ checkExportIO info name (Ann.At region export) =
         tipe <- getType name info
         Result.ok $ do
           comment <- getCommentIO region name info
-          pure $ \m -> m {_values = Map.insert name (Value comment tipe) (_values m)}
+          pure $ \m -> m & modValues %~ Map.insert name (Value comment tipe)
     Can.ExportBinop ->
       do
         (Can.Binop_ assoc prec realName) <- lookupOrThrow name "binop" (_iBinops info)
         tipe <- getType realName info
         Result.ok $ do
           comment <- getCommentIO region realName info
-          pure $ \m -> m {_binops = Map.insert name (Binop comment tipe assoc prec) (_binops m)}
+          pure $ \m -> m & modBinops %~ Map.insert name (Binop comment tipe assoc prec)
     Can.ExportAlias ->
       do
         (Can.Alias tvars _ tipe _ _) <- lookupOrThrow name "alias" (_iAliases info)
         Result.ok $ do
           comment <- getCommentIO region name info
-          pure $ \m -> m {_aliases = Map.insert name (Alias comment tvars (Extract.fromType tipe)) (_aliases m)}
+          pure $ \m -> m & modAliases %~ Map.insert name (Alias comment tvars (Extract.fromType tipe))
     Can.ExportUnionOpen ->
       do
         (Can.Union tvars _ ctors _ _ _) <- lookupOrThrow name "union" (_iUnions info)
         Result.ok $ do
           comment <- getCommentIO region name info
-          pure $ \m -> m {_unions = Map.insert name (Union comment tvars (fmap dector ctors)) (_unions m)}
+          pure $ \m -> m & modUnions %~ Map.insert name (Union comment tvars (fmap dector ctors))
     Can.ExportUnionClosed ->
       do
         (Can.Union tvars _ _ _ _ _) <- lookupOrThrow name "union" (_iUnions info)
         Result.ok $ do
           comment <- getCommentIO region name info
-          pure $ \m -> m {_unions = Map.insert name (Union comment tvars []) (_unions m)}
+          pure $ \m -> m & modUnions %~ Map.insert name (Union comment tvars [])
     Can.ExportPort ->
       do
         tipe <- getType name info
         Result.ok $ do
           comment <- getCommentIO region name info
-          pure $ \m -> m {_values = Map.insert name (Value comment tipe) (_values m)}
+          pure $ \m -> m & modValues %~ Map.insert name (Value comment tipe)
 
 
 -- | Thread-safe version of getComment that handles IO for comment processing.

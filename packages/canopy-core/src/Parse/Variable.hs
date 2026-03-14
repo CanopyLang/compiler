@@ -3,6 +3,21 @@
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE UnboxedTuples #-}
 
+-- | Parse.Variable — Low-level identifier and name parsers.
+--
+-- Provides UTF-8–aware character chompers and higher-level parsers for
+-- the three categories of Canopy identifiers:
+--
+-- * lowercase names (value and type-variable identifiers)
+-- * uppercase names (module and constructor identifiers)
+-- * module-qualified names (@Module.name@, @A.B.Ctor@)
+--
+-- The low-level width functions ('getUpperWidth', 'getInnerWidth',
+-- 'getInnerWidthHelp', 'chompInnerChars') are exported for use by other
+-- performance-sensitive parser modules such as "Parse.Keyword" and
+-- "Parse.Symbol".
+--
+-- @since 0.19.1
 module Parse.Variable
   ( lower,
     upper,
@@ -31,6 +46,13 @@ import qualified Parse.Primitives as Parse
 
 -- LOCAL UPPER
 
+-- | Parse an unqualified uppercase identifier (constructor or module segment).
+--
+-- Succeeds when the current byte starts a Unicode uppercase letter
+-- sequence.  Does not consume qualifiers (dots); use 'foreignUpper' for
+-- qualified names.
+--
+-- @since 0.19.1
 upper :: (Row -> Col -> x) -> Parser x Name.Name
 upper toError =
   Parse.Parser $ \(Parse.State src pos end indent row col) cok _ _ eerr ->
@@ -43,6 +65,14 @@ upper toError =
 
 -- LOCAL LOWER
 
+-- | Parse an unqualified lowercase identifier.
+--
+-- Succeeds when the current byte starts a Unicode lowercase letter or
+-- underscore, and the resulting name is not a reserved keyword.
+-- Underscore-prefixed names like @_description@ are valid variable names
+-- (the bare @_@ wildcard is handled by the pattern parser).
+--
+-- @since 0.19.1
 lower :: (Row -> Col -> x) -> Parser x Name.Name
 lower toError =
   Parse.Parser $ \(Parse.State src pos end indent row col) cok _ _ eerr ->
@@ -58,6 +88,13 @@ lower toError =
                           Parse.State src newPos end indent row newCol
                      in cok name newState
 
+-- | The set of all Canopy reserved keywords.
+--
+-- Used by 'lower' to reject identifier tokens that are syntactically
+-- reserved.  Marked @NOINLINE@ to ensure the set is built once and
+-- shared across all call sites.
+--
+-- @since 0.19.1
 {-# NOINLINE reservedWords #-}
 reservedWords :: Set.Set Name.Name -- PERF try using a trie instead
 reservedWords =
@@ -81,6 +118,13 @@ reservedWords =
 
 -- MODULE NAME
 
+-- | Parse a dotted module name such as @Html.Attributes@ or @Platform@.
+--
+-- Reads one or more uppercase segments joined by dots.  Fails with a
+-- committed error if a dot is found but the following character is not
+-- uppercase, indicating a malformed module name.
+--
+-- @since 0.19.1
 moduleName :: (Row -> Col -> x) -> Parser x Name.Name
 moduleName toError =
   Parse.Parser $ \(Parse.State src pos end indent row col) cok _ cerr eerr ->
@@ -114,10 +158,24 @@ moduleNameHelp pos end col =
 
 -- FOREIGN UPPER
 
+-- | An uppercase identifier that may carry a module qualifier.
+--
+-- 'Unqualified' for bare names like @Just@; 'Qualified' for names like
+-- @Maybe.Just@ where the first field is the module prefix and the second
+-- is the constructor name.
+--
+-- @since 0.19.1
 data Upper
   = Unqualified Name.Name
   | Qualified Name.Name Name.Name
 
+-- | Parse a possibly-qualified uppercase identifier.
+--
+-- Reads zero or more @Module.@ prefixes followed by an uppercase name,
+-- returning 'Unqualified' when there is no prefix and 'Qualified' when
+-- the name is module-prefixed.  Used by the pattern and type parsers.
+--
+-- @since 0.19.1
 foreignUpper :: (Row -> Col -> x) -> Parser x Upper
 foreignUpper toError =
   Parse.Parser $ \(Parse.State src pos end indent row col) cok _ _ eerr ->
@@ -147,6 +205,14 @@ foreignUpperHelp pos end col =
 
 -- FOREIGN ALPHA
 
+-- | Parse a possibly-qualified alpha identifier and determine its 'Src.VarType'.
+--
+-- Handles both lowercase and uppercase starts, as well as module-qualified
+-- names like @Dict.fromList@ or @Html.Attributes.class_@.
+-- Returns a 'Src.Var' or 'Src.VarQual' expression node depending on
+-- whether a qualifier was present.
+--
+-- @since 0.19.1
 foreignAlpha :: (Row -> Col -> x) -> Parser x Src.Expr_
 foreignAlpha toError =
   Parse.Parser $ \(Parse.State src pos end indent row col) cok _ _ eerr ->
@@ -197,6 +263,13 @@ chompUpper pos end col =
         then (# pos, col #)
         else chompInnerChars (plusPtr pos width) end (col + 1)
 
+-- | Return the byte width of the uppercase character at @pos@, or 0.
+--
+-- Checks the leading byte and delegates to the appropriate multi-byte
+-- decoder.  Returns 0 if the position is at the end or the character is
+-- not uppercase.
+--
+-- @since 0.19.1
 {-# INLINE getUpperWidth #-}
 getUpperWidth :: Ptr Word8 -> Ptr Word8 -> Int
 getUpperWidth pos end =
@@ -243,6 +316,12 @@ getLowerWidthHelp pos _ word
 
 -- INNER CHARS
 
+-- | Advance past identifier continuation characters (alphanumeric and @_@).
+--
+-- Called after consuming a leading character to collect the full tail of an
+-- identifier.  Returns the new pointer position and updated column number.
+--
+-- @since 0.19.1
 chompInnerChars :: Ptr Word8 -> Ptr Word8 -> Col -> (# Ptr Word8, Col #)
 chompInnerChars !pos end !col =
   let !width = getInnerWidth pos end
@@ -250,12 +329,25 @@ chompInnerChars !pos end !col =
         then (# pos, col #)
         else chompInnerChars (plusPtr pos width) end (col + 1)
 
+-- | Return the byte width of the identifier continuation character at @pos@, or 0.
+--
+-- A continuation character is ASCII alphanumeric, underscore, or a
+-- multi-byte Unicode alpha character.  Returns 0 at end-of-input or for
+-- non-continuation bytes.
+--
+-- @since 0.19.1
 getInnerWidth :: Ptr Word8 -> Ptr Word8 -> Int
 getInnerWidth pos end =
   if pos < end
     then getInnerWidthHelp pos end (unsafeIndex pos)
     else 0
 
+-- | Dispatch on a pre-fetched leading byte to determine continuation width.
+--
+-- Inlined inner helper for 'getInnerWidth'. Avoids redundant bounds checks
+-- in tight parsing loops.
+--
+-- @since 0.19.1
 {-# INLINE getInnerWidthHelp #-}
 getInnerWidthHelp :: Ptr Word8 -> Ptr Word8 -> Word8 -> Int
 getInnerWidthHelp pos _ word

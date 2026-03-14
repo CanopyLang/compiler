@@ -84,6 +84,7 @@ module Terminal.Parser
   )
 where
 
+import Control.Lens ((.~), (&))
 import qualified Data.List as List
 import qualified System.Directory as Directory
 import qualified System.FilePath as FilePath
@@ -94,6 +95,7 @@ import Terminal.Internal
     Flags (..),
     Parser (..),
     RequiredArgs (..),
+    parserFn,
   )
 import qualified Reporting.InternalError as InternalError
 import qualified Text.Read as Read
@@ -359,18 +361,18 @@ flagChain = FMore
 --
 -- @since 0.19.1
 mapParser :: (a -> b) -> Parser a -> Parser b
-mapParser func parser = parser {_parser = fmap func . _parser parser}
+mapParser func p = p & parserFn .~ (fmap func . _parser p)
 
 -- | Add validation to existing parser.
 --
 -- @since 0.19.1
 validateParser :: (a -> Bool) -> Parser a -> Parser a
-validateParser predicate parser =
-  parser
-    { _parser = \input -> do
-        value <- _parser parser input
-        if predicate value then Just value else Nothing
-    }
+validateParser predicate p =
+  p & parserFn .~ validateFn
+  where
+    validateFn input = do
+      value <- _parser p input
+      if predicate value then Just value else Nothing
 
 -- | Suggest files with extension filtering.
 --

@@ -1,5 +1,20 @@
 {-# LANGUAGE OverloadedStrings #-}
 
+-- | Optimize.DecisionTree — Pattern match compilation to decision trees.
+--
+-- Implements the algorithm described in:
+--
+-- > "When Do Match-Compilation Heuristics Matter?"
+-- > Kevin Scott and Norman Ramsey (1996)
+--
+-- A list of @(pattern, label)@ pairs is compiled into a 'DecisionTree'
+-- that reaches each leaf with the minimum number of run-time tests.
+-- The same SML\/NJ column-selection heuristics are used.
+--
+-- The code generator in "Generate.JavaScript.Expression.Case" consumes
+-- the 'DecisionTree' and @label -> branch@ map produced here.
+--
+-- @since 0.19.1
 module Optimize.DecisionTree
   ( DecisionTree (..),
     compile,

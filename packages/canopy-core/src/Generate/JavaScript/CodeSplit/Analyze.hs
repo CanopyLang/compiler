@@ -31,7 +31,7 @@ where
 
 import qualified AST.Optimized as Opt
 import qualified Canopy.ModuleName as ModuleName
-import Control.Lens ((&), (.~), (^.))
+import Control.Lens ((&), (.~), (%~), (^.))
 import Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
 import Data.Set (Set)
@@ -490,7 +490,7 @@ addMovedGlobals :: Map ChunkId (Set Opt.Global) -> Chunk -> Chunk
 addMovedGlobals destinations chunk =
   case Map.lookup (_chunkId chunk) destinations of
     Nothing -> chunk
-    Just extras -> chunk {_chunkGlobals = Set.union (_chunkGlobals chunk) extras}
+    Just extras -> chunk & chunkGlobals %~ Set.union extras
 
 -- | Compute inter-chunk dependency edges.
 --
@@ -507,7 +507,7 @@ computeChunkDeps graph cg =
     lazyCs = _cgLazy cg
     sharedCs = _cgShared cg
     entryDeps = chunkDepSet graph globalMap (_cgEntry cg)
-    setDeps chunk = chunk {_chunkDeps = chunkDepSet graph globalMap chunk}
+    setDeps chunk = chunk & chunkDeps .~ chunkDepSet graph globalMap chunk
 
 -- | Compute the set of chunk IDs that a chunk depends on.
 chunkDepSet :: Graph -> Map Opt.Global ChunkId -> Chunk -> Set ChunkId

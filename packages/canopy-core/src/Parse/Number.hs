@@ -1,6 +1,17 @@
 {-# LANGUAGE BangPatterns #-}
 {-# LANGUAGE UnboxedTuples #-}
 
+-- | Parse.Number — Canopy numeric literal parser.
+--
+-- Parses integer and floating-point literals, including hexadecimal
+-- integers (@0x…@) and scientific notation (@1.5e3@).  Also provides a
+-- small parser for infix operator precedence digits.
+--
+-- The lower-level 'chompInt' and 'chompHex' functions are exported for
+-- use by the GLSL shader parser and other consumers that need numeric
+-- data without the full 'Parser' wrapper.
+--
+-- @since 0.19.1
 module Parse.Number
   ( Number (..),
     number,
@@ -33,10 +44,24 @@ isDecimalDigit word =
 
 -- NUMBERS
 
+-- | The result of parsing a numeric literal.
+--
+-- 'Int' carries the parsed Haskell 'Int' value; 'Float' carries the raw
+-- UTF-8 bytes of the float literal for exact round-trip representation.
+--
+-- @since 0.19.1
 data Number
   = Int Int
   | Float EF.Float
 
+-- | Parse an integer or floating-point literal.
+--
+-- Accepts decimal integers, hexadecimal integers (@0x…@), and
+-- floating-point literals with optional fractional and exponent parts.
+-- Leading zeros followed by more digits are rejected to avoid octal
+-- ambiguity.
+--
+-- @since 0.19.1
 number :: (Row -> Col -> x) -> (SyntaxError.Number -> Row -> Col -> x) -> Parser x Number
 number toExpectation toError =
   Parse.Parser $ \(Parse.State src pos end indent row col) cok _ cerr eerr ->
@@ -69,8 +94,15 @@ number toExpectation toError =
 
 -- CHOMP OUTCOME
 
--- first Int is newPos
+-- | Result of the internal chomping helpers.
 --
+-- Carries the new read position so callers can update the column count
+-- without a second scan.  'Err' signals a syntactically invalid number
+-- (e.g. @0leading@, @1.e@), 'OkInt' a successfully parsed integer, and
+-- 'OkFloat' a successfully parsed float (the value is read from the
+-- original byte range later).
+--
+-- @since 0.19.1
 data Outcome
   = Err (Ptr Word8) SyntaxError.Number
   | OkInt (Ptr Word8) Int
@@ -78,6 +110,13 @@ data Outcome
 
 -- CHOMP INT
 
+-- | Accumulate a decimal integer starting from an already-consumed first digit.
+--
+-- Reads decimal digits, stopping at the end of input, a dot (indicating a
+-- float), an @e@\/@E@ exponent, or any non-digit character.  A dirty end
+-- (identifier character immediately following the number) is an error.
+--
+-- @since 0.19.1
 chompInt :: Ptr Word8 -> Ptr Word8 -> Int -> Outcome
 chompInt !pos end !n =
   if pos >= end
@@ -180,9 +219,13 @@ chompHexInt pos end =
 
 -- CHOMP HEX
 
--- Return -1 if it has NO digits
--- Return -2 if it has BAD digits
-
+-- | Chomp a hexadecimal digit sequence and return the accumulated value.
+--
+-- Returns @-1@ when no hex digits are found and @-2@ when an invalid
+-- character (not a hex digit but still an identifier character) is
+-- encountered.  Exported for use by the GLSL shader parser.
+--
+-- @since 0.19.1
 {-# INLINE chompHex #-}
 chompHex :: Ptr Word8 -> Ptr Word8 -> (# Ptr Word8, Int #)
 chompHex pos end =
@@ -210,6 +253,13 @@ stepHex pos end word acc
 
 -- PRECEDENCE
 
+-- | Parse a single decimal digit as a binary operator precedence level (0–9).
+--
+-- Used by the module parser when reading @infix@ declarations.
+-- Only a single digit is consumed; multi-digit values are not valid Canopy
+-- precedences.
+--
+-- @since 0.19.1
 precedence :: (Row -> Col -> x) -> Parser x Binop.Precedence
 precedence toExpectation =
   Parse.Parser $ \(Parse.State src pos end indent row col) cok _ _ eerr ->

@@ -30,7 +30,8 @@ import qualified Data.List as List
 import Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
 import qualified Canopy.Data.Name as Name
-import Repl.Types (M, Output (..), State (..), outputToBuilder)
+import Control.Lens ((%~), (&))
+import Repl.Types (M, Output (..), State (..), decls, imports, outputToBuilder, types)
 import System.Console.Haskeline (Completion)
 import qualified System.Console.Haskeline as Repl
 
@@ -47,15 +48,15 @@ initialState = State Map.empty Map.empty Map.empty
 --
 -- @since 0.19.1
 toByteString :: State -> Output -> ByteString
-toByteString (State imports types decls) output =
+toByteString (State stImports stTypes stDecls) output =
   LBS.toStrict (BB.toLazyByteString moduleBuilder)
   where
     moduleBuilder =
       mconcat
         [ moduleHeader,
-          Map.foldr mappend mempty imports,
-          Map.foldr mappend mempty types,
-          Map.foldr mappend mempty decls,
+          Map.foldr mappend mempty stImports,
+          Map.foldr mappend mempty stTypes,
+          Map.foldr mappend mempty stDecls,
           outputToBuilder output
         ]
 
@@ -71,21 +72,21 @@ toByteString (State imports types decls) output =
 -- @since 0.19.1
 addImport :: Name.Name -> ByteString -> State -> State
 addImport name src state =
-  state {_imports = Map.insert name (BB.byteString src) (_imports state)}
+  state & imports %~ Map.insert name (BB.byteString src)
 
 -- | Add a type definition to the REPL state.
 --
 -- @since 0.19.1
 addType :: Name.Name -> ByteString -> State -> State
 addType name src state =
-  state {_types = Map.insert name (BB.byteString src) (_types state)}
+  state & types %~ Map.insert name (BB.byteString src)
 
 -- | Add a declaration to the REPL state.
 --
 -- @since 0.19.1
 addDecl :: Name.Name -> ByteString -> State -> State
 addDecl name src state =
-  state {_decls = Map.insert name (BB.byteString src) (_decls state)}
+  state & decls %~ Map.insert name (BB.byteString src)
 
 -- | Generate auto-completion suggestions.
 --
@@ -95,8 +96,8 @@ addDecl name src state =
 -- @since 0.19.1
 lookupCompletions :: String -> M [Completion]
 lookupCompletions string = do
-  State imports types decls <- State.get
-  pure (buildCompletions string imports types decls)
+  State stImports stTypes stDecls <- State.get
+  pure (buildCompletions string stImports stTypes stDecls)
   where
     buildCompletions str imp typ dec =
       addMatches

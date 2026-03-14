@@ -1,4 +1,5 @@
 {-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE TemplateHaskell #-}
 
 -- | Compiler plugin interface definitions.
 --
@@ -35,9 +36,15 @@ module Plugin.Interface
 
     -- * Plugin Metadata
     PluginMeta (..),
+
+    -- * Lenses
+    errorPlugin,
+    errorMessage,
+    errorDetails,
   )
 where
 
+import Control.Lens (makeLenses)
 import qualified Data.Text as Text
 
 -- | Compiler phases where plugins can hook.
@@ -54,15 +61,6 @@ data PluginPhase
     CustomLint
   deriving (Eq, Show, Ord)
 
--- | A compiler plugin with its metadata and transformation.
---
--- @since 0.19.2
-data Plugin = Plugin
-  { _pluginMeta :: !PluginMeta,
-    _pluginPhase :: !PluginPhase,
-    _pluginTransform :: !PluginTransform
-  }
-
 -- | Plugin metadata for identification and version tracking.
 --
 -- @since 0.19.2
@@ -72,6 +70,38 @@ data PluginMeta = PluginMeta
     _pluginDescription :: !Text.Text
   }
   deriving (Eq, Show)
+
+-- | Errors produced by plugins.
+--
+-- @since 0.19.2
+data PluginError = PluginError
+  { _errorPlugin :: !Text.Text,
+    _errorMessage :: !Text.Text,
+    _errorDetails :: !(Maybe Text.Text)
+  }
+  deriving (Eq, Show)
+
+-- | Warnings produced by lint plugins.
+--
+-- @since 0.19.2
+data PluginWarning = PluginWarning
+  { _warningPlugin :: !Text.Text,
+    _warningMessage :: !Text.Text,
+    _warningLocation :: !(Maybe Text.Text)
+  }
+  deriving (Eq, Show)
+
+makeLenses ''PluginError
+
+-- | A plugin transformation action.
+--
+-- @since 0.19.2
+type PluginAction a = a -> Either PluginError a
+
+-- | A lint analysis action producing warnings.
+--
+-- @since 0.19.2
+type LintAction a = a -> Either PluginError [PluginWarning]
 
 -- | Plugin transformation types.
 --
@@ -95,32 +125,11 @@ data PluginTransform
   | -- | Produce lint warnings without modifying the AST.
     LintAnalysis (LintAction ())
 
--- | A plugin transformation action.
+-- | A compiler plugin with its metadata and transformation.
 --
 -- @since 0.19.2
-type PluginAction a = a -> Either PluginError a
-
--- | A lint analysis action producing warnings.
---
--- @since 0.19.2
-type LintAction a = a -> Either PluginError [PluginWarning]
-
--- | Errors produced by plugins.
---
--- @since 0.19.2
-data PluginError = PluginError
-  { _errorPlugin :: !Text.Text,
-    _errorMessage :: !Text.Text,
-    _errorDetails :: !(Maybe Text.Text)
+data Plugin = Plugin
+  { _pluginMeta :: !PluginMeta,
+    _pluginPhase :: !PluginPhase,
+    _pluginTransform :: !PluginTransform
   }
-  deriving (Eq, Show)
-
--- | Warnings produced by lint plugins.
---
--- @since 0.19.2
-data PluginWarning = PluginWarning
-  { _warningPlugin :: !Text.Text,
-    _warningMessage :: !Text.Text,
-    _warningLocation :: !(Maybe Text.Text)
-  }
-  deriving (Eq, Show)

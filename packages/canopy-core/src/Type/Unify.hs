@@ -1,6 +1,25 @@
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE Rank2Types #-}
 
+-- | Type.Unify — Structural type unification for the Hindley-Milner type checker.
+--
+-- Implements the classic union-find–based unification algorithm extended
+-- with:
+--
+-- * Flexible and rigid type variables (for let-polymorphism and type
+--   annotations).
+-- * Super-type constraints (@number@, @comparable@, @appendable@,
+--   @compappend@) that restrict which concrete types a variable may
+--   unify with.
+-- * Opaque alias bounds: a 'BoundsMap' records which nominal alias types
+--   satisfy which super-type constraints, enabling bounded opaque types
+--   to be used as 'Dict' keys or 'Set' members.
+--
+-- The internal 'Unify' monad is CPS over @IO@ so that the success and
+-- failure continuations can be differentiated without intermediate
+-- allocations.
+--
+-- @since 0.19.1
 module Type.Unify
   ( Answer (..),
     BoundsMap,
@@ -27,6 +46,13 @@ type BoundsMap = Map (ModuleName.Canonical, Name.Name) SuperType
 
 -- UNIFY
 
+-- | Result of a unification attempt.
+--
+-- 'Ok' carries any freshly-created variables that may need to be added
+-- to the current pool for generalisation.  'Err' additionally provides
+-- the two type error terms for error reporting.
+--
+-- @since 0.19.1
 data Answer
   = Ok [Variable]
   | Err [Variable] Error.Type Error.Type

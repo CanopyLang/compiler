@@ -171,7 +171,7 @@ createESMBuilder ctx artifacts =
 -- | Generate ESM output from artifacts, including @.d.ts@ type declarations.
 generateESM :: Mode.Mode -> Compiler.Artifacts -> ESMOutput
 generateESM mode artifacts =
-  esmBase {_eoTypeDefs = typeDefs}
+  esmBase { _eoTypeDefs = typeDefs }
   where
     esmBase = ESM.generate mode globalGraph mains ffiInfo
     globalGraph = extractGlobalGraph artifacts

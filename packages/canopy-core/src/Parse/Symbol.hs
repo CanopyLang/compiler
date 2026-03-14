@@ -1,6 +1,13 @@
 {-# LANGUAGE BangPatterns #-}
 {-# LANGUAGE OverloadedStrings #-}
 
+-- | Parse.Symbol — Canopy operator symbol parser.
+--
+-- Parses infix operator tokens (@+@, @|>@, @<*>@, etc.) from the source
+-- stream and rejects reserved punctuation that must not appear as
+-- user-defined operators.
+--
+-- @since 0.19.1
 module Parse.Symbol
   ( operator,
     BadOperator (..),
@@ -19,6 +26,12 @@ import qualified Parse.Primitives as Parse
 
 -- OPERATOR
 
+-- | Reason an operator token was rejected as invalid.
+--
+-- Each variant names a specific reserved punctuation sequence that must
+-- not be used as a user-defined operator symbol.
+--
+-- @since 0.19.1
 data BadOperator
   = BadDot
   | BadPipe
@@ -27,6 +40,15 @@ data BadOperator
   | BadHasType
   deriving (Show)
 
+-- | Parse an infix operator symbol, rejecting reserved punctuation.
+--
+-- Consumes as many 'binopCharSet' characters as possible, then checks
+-- whether the resulting token is one of the reserved sequences (@.@,
+-- @|@, @->@, @=@, @:@). Reserved sequences produce a committed error
+-- using the @toError@ callback; an empty match produces an empty error
+-- using @toExpectation@.
+--
+-- @since 0.19.1
 operator :: (Row -> Col -> x) -> (BadOperator -> Row -> Col -> x) -> Parser x Name.Name
 operator toExpectation toError =
   Parse.Parser $ \(Parse.State src pos end indent row col) cok _ cerr eerr ->
@@ -60,6 +82,13 @@ binopCharVector :: Vector.Vector Bool
 binopCharVector =
   Vector.generate 128 (\i -> IntSet.member i binopCharSet)
 
+-- | The set of ASCII codepoints that may appear in an operator symbol.
+--
+-- Contains all characters from @+-\/*=.<>:&|^?%!@.  Exported so that
+-- other modules (e.g. "Parse.Number") can detect whether a character
+-- immediately after a numeric literal would form an operator.
+--
+-- @since 0.19.1
 {-# NOINLINE binopCharSet #-}
 binopCharSet :: IntSet.IntSet
 binopCharSet =

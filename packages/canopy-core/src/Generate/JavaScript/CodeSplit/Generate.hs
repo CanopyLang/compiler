@@ -61,6 +61,7 @@ import qualified Generate.JavaScript.CodeSplit.Analyze as Analyze
 import qualified Generate.JavaScript.SourceMap as SourceMap
 import qualified Generate.JavaScript.StringPool as StringPool
 import qualified Generate.Mode as Mode
+import Control.Lens (Lens', (%~), (&))
 import qualified Reporting.Annotation as Ann
 import qualified Reporting.InternalError as InternalError
 import Prelude hiding (cycle, print)
@@ -231,6 +232,26 @@ data TraversalState = TraversalState
     _stSourceLocs :: !(Map Opt.Global Ann.Region)
   }
 
+-- | Lens for '_stRevKernels'.
+stRevKernels :: Lens' TraversalState [Builder]
+stRevKernels f s = fmap (\x -> s { _stRevKernels = x }) (f (_stRevKernels s))
+
+-- | Lens for '_stRevBuilders'.
+stRevBuilders :: Lens' TraversalState [Builder]
+stRevBuilders f s = fmap (\x -> s { _stRevBuilders = x }) (f (_stRevBuilders s))
+
+-- | Lens for '_stSeen'.
+stSeen :: Lens' TraversalState (Set Opt.Global)
+stSeen f s = fmap (\x -> s { _stSeen = x }) (f (_stSeen s))
+
+-- | Lens for '_stSeenKernelChunks'.
+stSeenKernelChunks :: Lens' TraversalState (Set ByteString)
+stSeenKernelChunks f s = fmap (\x -> s { _stSeenKernelChunks = x }) (f (_stSeenKernelChunks s))
+
+-- | Lens for '_stOutputLine'.
+stOutputLine :: Lens' TraversalState Int
+stOutputLine f s = fmap (\x -> s { _stOutputLine = x }) (f (_stOutputLine s))
+
 -- | Empty traversal state.
 emptyTraversalState :: Map Opt.Global Ann.Region -> TraversalState
 emptyTraversalState locs =
@@ -254,7 +275,7 @@ addGlobalForChunk mode graph chunkGlobals state global
   | not (Set.member global chunkGlobals) = state
   | otherwise =
       addGlobalHelp mode graph chunkGlobals global $
-        state {_stSeen = Set.insert global (_stSeen state)}
+        state & stSeen %~ Set.insert global
 
 -- | Process a single global node.
 addGlobalHelp ::
@@ -408,14 +429,13 @@ emitKernel mode chunks state currentGlobal =
   let kernelCode = generateKernel mode chunks
       kernelBytes = BL.toStrict (BB.toLazyByteString kernelCode)
    in if Set.member kernelBytes (_stSeenKernelChunks state)
-        then state {_stSeen = Set.insert currentGlobal (_stSeen state)}
+        then state & stSeen %~ Set.insert currentGlobal
         else
           state
-            { _stRevKernels = kernelCode : _stRevKernels state,
-              _stSeen = Set.insert currentGlobal (_stSeen state),
-              _stSeenKernelChunks = Set.insert kernelBytes (_stSeenKernelChunks state),
-              _stOutputLine = _stOutputLine state + countNewlinesBS kernelBytes
-            }
+            & stRevKernels %~ (kernelCode :)
+            & stSeen %~ Set.insert currentGlobal
+            & stSeenKernelChunks %~ Set.insert kernelBytes
+            & stOutputLine %~ (+ countNewlinesBS kernelBytes)
 
 -- | Generate kernel JavaScript.
 generateKernel :: Mode.Mode -> [Kernel.Chunk] -> Builder
@@ -489,9 +509,8 @@ addStmt state stmt =
 addBuilder :: TraversalState -> Builder -> TraversalState
 addBuilder state builder =
   state
-    { _stRevBuilders = builder : _stRevBuilders state,
-      _stOutputLine = _stOutputLine state + countNewlines builder
-    }
+    & stRevBuilders %~ (builder :)
+    & stOutputLine %~ (+ countNewlines builder)
 
 -- | Count newline bytes in a Builder by materializing it.
 --

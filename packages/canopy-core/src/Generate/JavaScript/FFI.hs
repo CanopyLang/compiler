@@ -1,6 +1,5 @@
 {-# LANGUAGE BangPatterns #-}
 {-# LANGUAGE OverloadedStrings #-}
-{-# LANGUAGE TemplateHaskell #-}
 
 -- | FFI code generation for the Canopy compiler.
 --
@@ -47,7 +46,7 @@ where
 
 import qualified AST.Optimized as Opt
 import qualified Data.Char as Char
-import Control.Lens (makeLenses)
+import Control.Lens (Lens', (.~), (&))
 import qualified Data.Binary as Binary
 import Data.ByteString (ByteString)
 import Data.ByteString.Builder (Builder)
@@ -98,7 +97,37 @@ instance Binary.Binary FFIInfo where
     alias <- Binary.get
     return (FFIInfo path (TextEnc.decodeUtf8 contentBytes) alias)
 
-makeLenses ''FFIInfo
+-- | Lens for '_ffiFilePath' field of 'FFIInfo'.
+ffiFilePath :: Lens' FFIInfo FilePath
+ffiFilePath f s = fmap (\x -> s { _ffiFilePath = x }) (f (_ffiFilePath s))
+
+-- | Lens for '_ffiContent' field of 'FFIInfo'.
+ffiContent :: Lens' FFIInfo Text.Text
+ffiContent f s = fmap (\x -> s { _ffiContent = x }) (f (_ffiContent s))
+
+-- | Lens for '_ffiAlias' field of 'FFIInfo'.
+ffiAlias :: Lens' FFIInfo Name.Name
+ffiAlias f s = fmap (\x -> s { _ffiAlias = x }) (f (_ffiAlias s))
+
+-- EXTRACTED FFI TYPE
+
+-- | Extracted FFI function info from JSDoc annotations.
+data ExtractedFFI = ExtractedFFI
+  { _extractedName :: !Text.Text
+    -- ^ Function name (from @name annotation or JS function declaration)
+  , _extractedType :: !Text.Text
+    -- ^ Type annotation from @canopy-type
+  , _extractedMode :: !BindingMode
+    -- ^ Binding mode from @canopy-bind
+  , _extractedCanopyName :: !(Maybe Text.Text)
+    -- ^ Optional Canopy-side name override
+  , _extractedJSName :: !(Maybe Text.Text)
+    -- ^ Original JS function name when @name annotation overrides it
+  } deriving (Eq, Show)
+
+-- | Lens for '_extractedJSName' field of 'ExtractedFFI'.
+extractedJSName :: Lens' ExtractedFFI (Maybe Text.Text)
+extractedJSName f s = fmap (\x -> s { _extractedJSName = x }) (f (_extractedJSName s))
 
 -- EXTRACT FFI ALIASES
 
@@ -464,31 +493,17 @@ extractInternalNames = extractFromLines
         || (c >= 'A' && c <= 'Z')
         || (c >= '0' && c <= '9')
 
+-- PARSE CANOPY TYPE ANNOTATIONS
+
 -- | Update an 'ExtractedFFI' to reference through the IIFE namespace.
 --
 -- Sets the JS reference name to @_AliasIIFE.originalName@ so bindings
 -- access the function through the IIFE's returned object.
 iifeExtractedFFI :: Text.Text -> ExtractedFFI -> ExtractedFFI
 iifeExtractedFFI iifeVar ef =
-  ef { _extractedJSName = Just qualifiedName }
+  ef & extractedJSName .~ Just qualifiedName
   where
     qualifiedName = iifeVar <> "." <> jsReferenceName ef
-
--- PARSE CANOPY TYPE ANNOTATIONS
-
--- | Extracted FFI function info from JSDoc annotations.
-data ExtractedFFI = ExtractedFFI
-  { _extractedName :: !Text.Text
-    -- ^ Function name (from @name annotation or JS function declaration)
-  , _extractedType :: !Text.Text
-    -- ^ Type annotation from @canopy-type
-  , _extractedMode :: !BindingMode
-    -- ^ Binding mode from @canopy-bind
-  , _extractedCanopyName :: !(Maybe Text.Text)
-    -- ^ Optional Canopy-side name override
-  , _extractedJSName :: !(Maybe Text.Text)
-    -- ^ Original JS function name when @name annotation overrides it
-  } deriving (Eq, Show)
 
 -- | Extract functions that have \@canopy-type annotations from JavaScript source lines.
 --

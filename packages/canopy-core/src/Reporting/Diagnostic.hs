@@ -1,4 +1,5 @@
 {-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE TemplateHaskell #-}
 
 -- | Universal diagnostic type for all compiler error reporting.
 --
@@ -32,6 +33,18 @@ module Reporting.Diagnostic
     addSecondarySpan,
     addNote,
 
+    -- * Lenses
+    diagCode,
+    diagSeverity,
+    diagTitle,
+    diagSummary,
+    diagPrimary,
+    diagSecondary,
+    diagMessage,
+    diagSuggestions,
+    diagNotes,
+    diagPhase,
+
     -- * JSON encoding
     diagnosticToJson,
     labeledSpanToJson,
@@ -43,6 +56,7 @@ module Reporting.Diagnostic
   )
 where
 
+import Control.Lens (makeLenses, (%~), (&))
 import qualified Data.Text as Text
 import Data.Text (Text)
 import Data.Word (Word16)
@@ -171,6 +185,8 @@ data Diagnostic = Diagnostic
     _diagPhase :: !Phase
   }
 
+makeLenses ''Diagnostic
+
 instance Show Diagnostic where
   show diag =
     "Diagnostic {"
@@ -250,17 +266,17 @@ stringToDiagnostic phase title msg =
 -- | Add a suggestion to a diagnostic.
 addSuggestion :: Suggestion -> Diagnostic -> Diagnostic
 addSuggestion sug diag =
-  diag {_diagSuggestions = _diagSuggestions diag <> [sug]}
+  diag & diagSuggestions %~ (<> [sug])
 
 -- | Add a secondary span to a diagnostic.
 addSecondarySpan :: LabeledSpan -> Diagnostic -> Diagnostic
 addSecondarySpan span_ diag =
-  diag {_diagSecondary = _diagSecondary diag <> [span_]}
+  diag & diagSecondary %~ (<> [span_])
 
 -- | Add a note to a diagnostic.
 addNote :: Text -> Diagnostic -> Diagnostic
 addNote note diag =
-  diag {_diagNotes = _diagNotes diag <> [note]}
+  diag & diagNotes %~ (<> [note])
 
 -- TERMINAL RENDERING
 

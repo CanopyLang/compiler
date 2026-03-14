@@ -42,6 +42,7 @@ module Plugin.Pipeline
   )
 where
 
+import Control.Lens ((.~), (&))
 import Plugin.Interface
   ( Plugin (..),
     PluginError (..),
@@ -49,6 +50,7 @@ import Plugin.Interface
     PluginPhase (..),
     PluginTransform (..),
     PluginWarning,
+    errorPlugin,
   )
 import qualified Data.List as List
 import qualified Data.Text as Text
@@ -150,6 +152,6 @@ extractLintAction _ _ = Right []
 annotateError :: PluginMeta -> Either PluginError a -> Either PluginError a
 annotateError meta (Left err)
   | Text.null (_errorPlugin err) =
-      Left (err {_errorPlugin = _pluginName meta})
+      Left (err & errorPlugin .~ _pluginName meta)
   | otherwise = Left err
 annotateError _ result = result

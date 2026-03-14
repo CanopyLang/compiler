@@ -1,3 +1,4 @@
+{-# LANGUAGE TemplateHaskell #-}
 
 -- | Core types for the Canopy REPL.
 --
@@ -19,6 +20,9 @@ module Repl.Types
 
     -- * State Types
     State (..),
+    imports,
+    types,
+    decls,
     Output (..),
 
     -- * Control Types
@@ -42,6 +46,7 @@ where
 import qualified Build
 import qualified Canopy.Details as Details
 import qualified Canopy.ModuleName as ModuleName
+import Control.Lens (makeLenses)
 import Control.Monad.State.Strict (StateT)
 import Data.ByteString (ByteString)
 import qualified Data.ByteString as BS
@@ -169,6 +174,8 @@ data State = State
     -- | Value and function declarations
     _decls :: !(Map Name.Name Builder)
   }
+
+makeLenses ''State
 
 -- | Output type for evaluation results.
 --

@@ -81,6 +81,7 @@ import qualified Lint.Config as Config
 import qualified Lint.Fix as Fix
 import qualified Lint.Report as Report
 import qualified Lint.Rules as Rules
+import Control.Lens ((.~), (&))
 import Lint.Types
   ( Flags (..),
     LintConfig (..),
@@ -90,6 +91,7 @@ import Lint.Types
     ReportFormat (..),
     RuleConfig (..),
     Severity (..),
+    warnSeverity,
   )
 import qualified Parse.Module as Parse
 import qualified Reporting.Annotation as Ann
@@ -230,7 +232,7 @@ runRule modul (sev, check) = map (setSeverity sev) (check modul)
 
 -- | Override the severity field of a warning.
 setSeverity :: Severity -> LintWarning -> LintWarning
-setSeverity sev w = w {_warnSeverity = sev}
+setSeverity sev w = w & warnSeverity .~ sev
 
 -- | Registry mapping each rule identifier to its check function.
 --

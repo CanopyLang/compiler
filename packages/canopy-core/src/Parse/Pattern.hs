@@ -2,6 +2,19 @@
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE UnboxedTuples #-}
 
+-- | Parse.Pattern — Canopy pattern parser.
+--
+-- Parses all pattern forms used in case branches, lambda arguments,
+-- let-destructures, and function definitions: wildcards, variable
+-- bindings, constructor patterns (qualified and unqualified), literals,
+-- records, tuples, lists, cons patterns (@::@), and @as@ aliases.
+--
+-- Two parsers are exported:
+--
+-- * 'term' — parses a single atomic pattern (no cons or @as@).
+-- * 'expression' — parses a full pattern including cons chains and @as@.
+--
+-- @since 0.19.1
 module Parse.Pattern
   ( term,
     expression,
@@ -25,6 +38,14 @@ import qualified Reporting.Error.Syntax as SyntaxError
 
 -- TERM
 
+-- | Parse a single atomic pattern (no @::@ cons or @as@ alias).
+--
+-- Handles record, tuple, list, and the full set of leaf patterns:
+-- wildcard @_@, variable binding, uppercase constructor, integer,
+-- string, and character literals.  Used wherever only a non-binary
+-- pattern is grammatically valid (function argument positions).
+--
+-- @since 0.19.1
 term :: Parser SyntaxError.Pattern Src.Pattern
 term =
   do
@@ -202,6 +223,13 @@ listHelp start patterns =
 
 -- EXPRESSION
 
+-- | Parse a full pattern expression, including cons chains and @as@ aliases.
+--
+-- Extends 'term' with right-associative @::@ cons operators and optional
+-- trailing @as name@ aliases.  Used in case branches and let-destructures
+-- where the richer pattern grammar is allowed.
+--
+-- @since 0.19.1
 expression :: Space.Parser SyntaxError.Pattern Src.Pattern
 expression =
   do
