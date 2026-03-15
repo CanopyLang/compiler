@@ -173,13 +173,14 @@ parseAndAddFFI env ffiModuleName aliasName jsPath region jsContent =
 emitStaticAnalysisWarnings :: FilePath -> Text.Text -> [FFIBinding] -> Result i [Warning.Warning] ()
 emitStaticAnalysisWarnings jsPath jsContent bindings =
   case JSParser.parseModule (Text.unpack jsContent) jsPath of
-    Left _ -> Result.ok ()
+    Left err -> Result.warn (Warning.FFIJSParseFailure (Text.pack jsPath) (Text.pack err))
     Right ast ->
       let stmts = extractStatements ast
-          declaredTypes = buildDeclaredTypeMap bindings
+          (declaredTypes, parseFailures) = buildDeclaredTypeMap bindings
           analysis = SA.analyzeFFIFile stmts declaredTypes
           pathText = Text.pack jsPath
-       in traverse_ (emitOneWarning pathText) (SA._analysisWarnings analysis)
+       in traverse_ (emitTypeParseWarning pathText) parseFailures
+            >> traverse_ (emitOneWarning pathText) (SA._analysisWarnings analysis)
 
 -- | Extract top-level statements from a parsed JavaScript AST.
 extractStatements :: JSAST.JSAST -> [JSAST.JSStatement]
@@ -190,13 +191,23 @@ extractStatements (JSAST.JSAstStatement stmt _) = [stmt]
 extractStatements _ = []
 
 -- | Build a map of declared FFI types from parsed bindings.
-buildDeclaredTypeMap :: [FFIBinding] -> Map.Map Text.Text FFI.FFIType
-buildDeclaredTypeMap = Map.fromList . concatMap bindingToType
+--
+-- Returns both the valid type map and a list of bindings whose types
+-- failed to parse, so callers can emit warnings for parse failures.
+buildDeclaredTypeMap :: [FFIBinding] -> (Map.Map Text.Text FFI.FFIType, [(Text.Text, Text.Text)])
+buildDeclaredTypeMap = foldr accumulate (Map.empty, [])
   where
-    bindingToType binding =
-      case TypeParser.parseType (unFFITypeAnnotation (_bindingTypeAnnotation binding)) of
-        Just ffiType -> [(unFFIFuncName (_bindingFuncName binding), ffiType)]
-        Nothing -> []
+    accumulate binding (successes, failures) =
+      let funcName = unFFIFuncName (_bindingFuncName binding)
+          typeStr = unFFITypeAnnotation (_bindingTypeAnnotation binding)
+       in case TypeParser.parseType typeStr of
+            Just ffiType -> (Map.insert funcName ffiType successes, failures)
+            Nothing -> (successes, (funcName, typeStr) : failures)
+
+-- | Emit a warning for a type annotation that failed to parse.
+emitTypeParseWarning :: Text.Text -> (Text.Text, Text.Text) -> Result i [Warning.Warning] ()
+emitTypeParseWarning path (funcName, typeStr) =
+  Result.warn (Warning.FFITypeParseFailure path funcName typeStr)
 
 -- | Emit a single static analysis warning through the Result monad.
 emitOneWarning :: Text.Text -> SA.FFIWarning -> Result i [Warning.Warning] ()
@@ -473,7 +484,13 @@ isOpaqueCandidate name
 
 -- | Built-in type names that should not be auto-created as opaque.
 builtinTypeNames :: [Text.Text]
-builtinTypeNames = ["Int", "Float", "String", "Bool", "Unit", "Never"]
+builtinTypeNames =
+  [ "Int", "Float", "String", "Bool", "Unit", "Never"
+  , "List", "Array", "Dict", "Set", "Char", "Order"
+  , "Maybe", "Result", "Cmd", "Sub", "Task"
+  , "Decoder", "Value", "Program", "Html", "Attribute"
+  , "Color", "Platform", "Router", "Key", "Error"
+  ]
 
 -- | Check if a type name is not already defined in the environment.
 isUnresolvedType :: Env.Env -> Text.Text -> Bool

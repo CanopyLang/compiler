@@ -119,6 +119,9 @@ generateValidatorBody config ffiType = case ffiType of
     indent <> "if (typeof v !== 'number') {\n"
     <> indent <> "  " <> throwError config "Float" <> "\n"
     <> indent <> "}\n"
+    <> indent <> "if (!Number.isFinite(v)) {\n"
+    <> indent <> "  " <> throwError config "finite Float" <> "\n"
+    <> indent <> "}\n"
     <> indent <> "return v;"
 
   FFIString ->
@@ -151,7 +154,7 @@ generateValidatorBody config ffiType = case ffiType of
   FFIResult errType valType ->
     let errValidator = generateValidatorName errType
         valValidator = generateValidatorName valType
-    in indent <> "if (typeof v !== 'object' || v === null || !('$' in v)) {\n"
+    in indent <> "if (typeof v !== 'object' || v === null || !Object.prototype.hasOwnProperty.call(v, '$')) {\n"
        <> indent <> "  " <> throwError config "Result" <> "\n"
        <> indent <> "}\n"
        <> indent <> "if (v.$ === 'Ok') {\n"
@@ -168,8 +171,14 @@ generateValidatorBody config ffiType = case ffiType of
        <> indent <> "  " <> throwError config "Task (expected Promise)" <> "\n"
        <> indent <> "}\n"
        <> indent <> "return v.then(\n"
-       <> indent <> "  function(ok) { return { $: 'Ok', a: " <> valValidator <> "(ok, ctx + '.then') }; },\n"
-       <> indent <> "  function(err) { return { $: 'Err', a: " <> errValidator <> "(err, ctx + '.catch') }; }\n"
+       <> indent <> "  function(ok) {\n"
+       <> indent <> "    try { return { $: 'Ok', a: " <> valValidator <> "(ok, ctx + '.then') }; }\n"
+       <> indent <> "    catch (e) { return { $: 'Err', a: " <> errValidator <> "(String(e), ctx + '.validation') }; }\n"
+       <> indent <> "  },\n"
+       <> indent <> "  function(err) {\n"
+       <> indent <> "    try { return { $: 'Err', a: " <> errValidator <> "(err, ctx + '.catch') }; }\n"
+       <> indent <> "    catch (e) { return { $: 'Err', a: String(e) }; }\n"
+       <> indent <> "  }\n"
        <> indent <> ");"
 
   FFITuple types ->
@@ -181,15 +190,21 @@ generateValidatorBody config ffiType = case ffiType of
        <> indent <> "return [" <> Text.intercalate ", " checks <> "];"
 
   FFITypeVar _ ->
-    indent <> "return v; // Type variable: passthrough"
+    indent <> "if (typeof v === 'undefined') {\n"
+    <> indent <> "  " <> throwError config "non-undefined value" <> "\n"
+    <> indent <> "}\n"
+    <> indent <> "return v;"
 
   FFIOpaque typeName _ ->
-    if _configValidateOpaque config
-      then indent <> "if (!(v instanceof " <> typeName <> ")) {\n"
-           <> indent <> "  " <> throwError config typeName <> "\n"
-           <> indent <> "}\n"
-           <> indent <> "return v;"
-      else indent <> "return v; // Opaque type: " <> typeName
+    indent <> "if (v == null) {\n"
+    <> indent <> "  " <> throwError config typeName <> "\n"
+    <> indent <> "}\n"
+    <> (if _configValidateOpaque config
+         then indent <> "if (!(v instanceof " <> typeName <> ")) {\n"
+              <> indent <> "  " <> throwError config typeName <> "\n"
+              <> indent <> "}\n"
+         else "")
+    <> indent <> "return v;"
 
   FFIFunctionType _ _ ->
     indent <> "if (typeof v !== 'function') {\n"
@@ -198,7 +213,7 @@ generateValidatorBody config ffiType = case ffiType of
     <> indent <> "return v;"
 
   FFIRecord fields ->
-    indent <> "if (typeof v !== 'object' || v === null) {\n"
+    indent <> "if (typeof v !== 'object' || v === null || Array.isArray(v)) {\n"
     <> indent <> "  " <> throwError config "Record" <> "\n"
     <> indent <> "}\n"
     <> Text.concat (map validateField fields)
@@ -206,7 +221,10 @@ generateValidatorBody config ffiType = case ffiType of
 
   where
     validateField (name, fieldType) =
-      indent <> generateValidatorName fieldType <> "(v." <> name <> ", ctx + '." <> name <> "');\n"
+      indent <> "if (!Object.prototype.hasOwnProperty.call(v, '" <> name <> "')) {\n"
+      <> indent <> "  " <> throwError config ("Record (missing field " <> name <> ")") <> "\n"
+      <> indent <> "}\n"
+      <> indent <> generateValidatorName fieldType <> "(v." <> name <> ", ctx + '." <> name <> "');\n"
     indent = "  "
 
 -- | Generate error throwing statement

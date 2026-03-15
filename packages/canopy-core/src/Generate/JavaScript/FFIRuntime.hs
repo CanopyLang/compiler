@@ -52,6 +52,9 @@ module Generate.JavaScript.FFIRuntime
     -- * Conditional inclusion
   , embeddedRuntimeForMode
 
+    -- * Minimal validators for unsafe mode
+  , embeddedValidateMinimal
+
     -- * Scan-based inclusion
   , scanAndEmitRuntime
   ) where
@@ -107,12 +110,12 @@ embeddedRuntimeForMode mode =
   case mode of
     Mode.Dev _ _ False _ _ _ ->  -- ffiUnsafe=False, validation ENABLED (default)
       embeddedRuntime
-    Mode.Dev _ _ True _ _ _ ->  -- ffiUnsafe=True, validation DISABLED
-      embeddedMarshal <> embeddedEnvironment  -- Basic runtime in dev
+    Mode.Dev _ _ True _ _ _ ->  -- ffiUnsafe=True, minimal validation
+      embeddedMarshal <> embeddedValidateMinimal <> embeddedEnvironment
     Mode.Prod _ _ False _ _ _ ->  -- ffiUnsafe=False, validation ENABLED (default)
       embeddedRuntime
-    Mode.Prod _ _ True _ _ _ ->  -- ffiUnsafe=True, validation DISABLED
-      embeddedMarshal  -- Minimal runtime in prod
+    Mode.Prod _ _ True _ _ _ ->  -- ffiUnsafe=True, minimal validation
+      embeddedMarshal <> embeddedValidateMinimal
 
 -- | Scan-based FFI runtime inclusion.
 --
@@ -295,8 +298,8 @@ var $validate = {
     if (typeof v !== 'number') {
       throw new Error('FFI type error at ' + p + ': expected Float, got ' + typeof v);
     }
-    if (Number.isNaN(v)) {
-      throw new Error('FFI type error at ' + p + ': got NaN');
+    if (!Number.isFinite(v)) {
+      throw new Error('FFI type error at ' + p + ': expected finite Float, got ' + v);
     }
     return v;
   },
@@ -346,7 +349,7 @@ var $validate = {
   /** @canopy-type (a -> String -> x) -> (a -> String -> b) -> a -> String -> Result x b */
   Result: function(errV, okV) {
     return function(v, p) {
-      if (typeof v !== 'object' || v === null || !('$' in v)) {
+      if (typeof v !== 'object' || v === null || !Object.prototype.hasOwnProperty.call(v, '$')) {
         throw new Error('FFI type error at ' + p + ': expected Result object with $ tag');
       }
       if (v.$ === 'Ok') {
@@ -369,8 +372,14 @@ var $validate = {
         $: 2,
         b: function(callback) {
           v.then(
-            function(ok) { callback({ $: 0, a: okV(ok, p + '.then') }); },
-            function(err) { callback({ $: 1, a: errV(err, p + '.catch') }); }
+            function(ok) {
+              try { callback({ $: 0, a: okV(ok, p + '.then') }); }
+              catch (e) { callback({ $: 1, a: errV(String(e), p + '.validation') }); }
+            },
+            function(err) {
+              try { callback({ $: 1, a: errV(err, p + '.catch') }); }
+              catch (e) { callback({ $: 1, a: String(e) }); }
+            }
           );
           return null;
         },
@@ -396,10 +405,32 @@ var $validate = {
     };
   },
 
-  // Opaque type validator (optional instanceof check)
+  // Record validator (field presence + type checking)
+  /** @canopy-type List (String, Validator) -> a -> String -> a */
+  Record: function(fields) {
+    return function(v, p) {
+      if (typeof v !== 'object' || v === null || Array.isArray(v)) {
+        throw new Error('FFI type error at ' + p + ': expected Record, got ' + (v === null ? 'null' : typeof v));
+      }
+      for (var i = 0; i < fields.length; i++) {
+        var name = fields[i][0];
+        var validator = fields[i][1];
+        if (!Object.prototype.hasOwnProperty.call(v, name)) {
+          throw new Error('FFI type error at ' + p + ': missing field "' + name + '"');
+        }
+        validator(v[name], p + '.' + name);
+      }
+      return v;
+    };
+  },
+
+  // Opaque type validator (null/undefined + optional instanceof check)
   /** @canopy-type String -> Maybe Constructor -> a -> String -> a */
   Opaque: function(name, ctor) {
     return function(v, p) {
+      if (v == null) {
+        throw new Error('FFI type error at ' + p + ': expected ' + name + ', got ' + (v === null ? 'null' : 'undefined'));
+      }
       if (ctor && !(v instanceof ctor)) {
         throw new Error('FFI type error at ' + p + ': expected ' + name + ' instance');
       }
@@ -420,9 +451,14 @@ var $validate = {
   /** @canopy-type a -> String -> () */
   Unit: function(v, p) { return v; },
 
-  // Identity validator (for opaque types without checks)
+  // Type variable validator (rejects undefined)
   /** @canopy-type a -> String -> a */
-  Any: function(v, p) { return v; }
+  Any: function(v, p) {
+    if (typeof v === 'undefined') {
+      throw new Error('FFI type error at ' + p + ': got undefined');
+    }
+    return v;
+  }
 };
 
 |]
@@ -485,12 +521,11 @@ var $smart = {
     }
 
     if (typeof v === 'number' && !Number.isFinite(v)) {
-      var msg = 'FFI constraint at ' + p + ': got ' + (v > 0 ? 'Infinity' : '-Infinity');
+      var msg = 'FFI constraint at ' + p + ': got ' + (Number.isNaN(v) ? 'NaN' : (v > 0 ? 'Infinity' : '-Infinity'));
       if ($smart.level === 'permissive') {
         console.warn(msg);
         return v;
       }
-      if ($smart.level !== 'paranoid') return v;
       throw new Error(msg);
     }
 
@@ -685,6 +720,62 @@ var $env = {
     if (typeof Notification === 'undefined') return 'unavailable';
     return Notification.permission;
   }
+};
+
+|]
+
+-- | Minimal validators for --ffi-unsafe mode.
+--
+-- Only includes primitive type checks (Int, Float, String, Bool, Unit)
+-- to catch the most common FFI type errors. Composite types (List, Maybe,
+-- Result, Task, Record, Opaque) become passthroughs, preserving the
+-- performance benefit of unsafe mode while catching trivial type mismatches.
+--
+-- @since 0.20.0
+embeddedValidateMinimal :: Builder
+embeddedValidateMinimal = BB.stringUtf8 [r|
+// $validate - Minimal validators (--ffi-unsafe mode)
+var $validate = {
+  Int: function(v, p) {
+    if (typeof v !== 'number') {
+      throw new Error('FFI type error at ' + p + ': expected Int, got ' + typeof v);
+    }
+    if (!Number.isInteger(v)) {
+      throw new Error('FFI type error at ' + p + ': expected Int, got Float (' + v + ')');
+    }
+    return v;
+  },
+  Float: function(v, p) {
+    if (typeof v !== 'number') {
+      throw new Error('FFI type error at ' + p + ': expected Float, got ' + typeof v);
+    }
+    if (!Number.isFinite(v)) {
+      throw new Error('FFI type error at ' + p + ': expected finite Float, got ' + v);
+    }
+    return v;
+  },
+  String: function(v, p) {
+    if (typeof v !== 'string') {
+      throw new Error('FFI type error at ' + p + ': expected String, got ' + typeof v);
+    }
+    return v;
+  },
+  Bool: function(v, p) {
+    if (typeof v !== 'boolean') {
+      throw new Error('FFI type error at ' + p + ': expected Bool, got ' + typeof v);
+    }
+    return v;
+  },
+  Unit: function(v, p) { return v; },
+  List: function(f) { return function(v, p) { return v; }; },
+  Maybe: function(f) { return function(v, p) { return v; }; },
+  Result: function(e, o) { return function(v, p) { return v; }; },
+  Task: function(e, o) { return function(v, p) { return v; }; },
+  Tuple: function() { return function(v, p) { return v; }; },
+  Record: function(f) { return function(v, p) { return v; }; },
+  Opaque: function(n, c) { return function(v, p) { return v; }; },
+  Function: function(v, p) { return v; },
+  Any: function(v, p) { return v; }
 };
 
 |]

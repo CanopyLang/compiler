@@ -859,8 +859,12 @@ ffiTypeToValidator ffiType = case ffiType of
     "$validate.Opaque('" <> BB.byteString (TextEnc.encodeUtf8 name) <> "')"
   Validator.FFIFunctionType _ _ ->
     "$validate.Function"
-  Validator.FFIRecord _ ->
-    "$validate.Record"
+  Validator.FFIRecord fields ->
+    "$validate.Record([" <> fieldList <> "])"
+    where
+      fieldList = mconcat (List.intersperse ", " (map emitField fields))
+      emitField (name, fieldTy) =
+        "['" <> BB.byteString (TextEnc.encodeUtf8 name) <> "', " <> ffiTypeToValidator fieldTy <> "]"
 
 -- UTILITIES
 

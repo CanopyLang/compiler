@@ -31,5 +31,9 @@ data Warning
     -- ^ A capability declared in canopy.json that no FFI function requires
   | FFIMissingCapability !Text !Text !Text
     -- ^ Function name, file path, and capability name not declared in canopy.json
+  | FFITypeParseFailure !Text !Text !Text
+    -- ^ FFI file path, function name, and unparseable type annotation string
+  | FFIJSParseFailure !Text !Text
+    -- ^ FFI file path and JavaScript parse error message
 
 data Context = Def | Pattern
