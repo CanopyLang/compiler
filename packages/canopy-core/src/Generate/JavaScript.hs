@@ -65,6 +65,7 @@ import qualified Generate.JavaScript.Functions as Functions
 import qualified Generate.JavaScript.Kernel as Kernel_
 import qualified Generate.JavaScript.Minify as Minify
 import qualified Generate.JavaScript.Name as JsName
+import qualified Generate.JavaScript.Runtime.Names as KN
 import qualified Generate.JavaScript.SourceMap as SourceMap
 import qualified Generate.JavaScript.StringPool as StringPool
 import Control.Lens (makeLenses, (&), (%~), (.~), (^.))
@@ -217,7 +218,7 @@ generateForRepl ansi localizer (Opt.GlobalGraph graph _ _) home name (Can.Forall
 print :: Bool -> Localizer.Localizer -> ModuleName.Canonical -> Name.Name -> Can.Type -> Builder
 print ansi localizer home name tipe =
   let value = JS.Ref (JsName.fromGlobal home name)
-      toString = JS.Ref (JsName.fromKernel Name.debug "toAnsiString")
+      toString = JS.Ref KN.debugToAnsiString
       tipeDoc = RT.canToDoc localizer RT.None tipe
       boolValue = if ansi then JS.Bool True else JS.Bool False
       valueVar = JS.Var (JsName.fromLocal "_value") $
@@ -284,7 +285,7 @@ postMessage :: Localizer.Localizer -> ModuleName.Canonical -> Maybe Name.Name ->
 postMessage localizer home maybeName tipe =
   let name = Data.Maybe.fromMaybe Name.replValueToPrint maybeName
       value = JS.Ref (JsName.fromGlobal home name)
-      toString = JS.Ref (JsName.fromKernel Name.debug "toAnsiString")
+      toString = JS.Ref KN.debugToAnsiString
       tipeDoc = RT.canToDoc localizer RT.None tipe
       nameField = case maybeName of
         Nothing -> JS.Null
@@ -566,10 +567,10 @@ generateManager :: Mode.Mode -> Graph -> Opt.Global -> Opt.EffectsType -> State 
 generateManager mode graph (Opt.Global home@(ModuleName.Canonical _ moduleName) _) effectsType state =
   let managerLVar =
         JS.LBracket
-          (JS.Ref (JsName.fromKernel Name.platform "effectManagers"))
+          (JS.Ref KN.platformEffectManagers)
           (JS.String (Name.toBuilder moduleName))
       (deps, args, stmts) =
         Kernel_.generateManagerHelp home effectsType
       createManager =
-        (JS.ExprStmt . JS.Assign managerLVar $ JS.Call (JS.Ref (JsName.fromKernel Name.platform "createManager")) args)
+        (JS.ExprStmt . JS.Assign managerLVar $ JS.Call (JS.Ref KN.platformCreateManager) args)
    in List.foldl' addStmt (List.foldl' (addGlobal mode graph) state deps) (createManager : stmts)

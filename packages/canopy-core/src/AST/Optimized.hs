@@ -55,8 +55,8 @@
 -- -- Global function from same module
 -- let globalVar = VarGlobal (Global currentModule "helper")
 --
--- -- Kernel function
--- let kernelVar = VarKernel "eq" "$eq"
+-- -- Runtime function
+-- let runtimeVar = VarRuntime "utils" "eq"
 -- @
 --
 -- === Optimized Function Definitions

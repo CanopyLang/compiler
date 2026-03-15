@@ -64,6 +64,7 @@ import qualified Canopy.Data.Utf8 as Utf8
 import qualified Generate.JavaScript.Builder as JS
 import qualified Generate.JavaScript.Expression as Expr
 import qualified Generate.JavaScript.Name as JsName
+import qualified Generate.JavaScript.Runtime.Names as KN
 import qualified Generate.Mode as Mode
 import qualified Reporting.Doc as Doc
 import qualified Reporting.InternalError as InternalError
@@ -233,7 +234,7 @@ generateLeaf home@(ModuleName.Canonical _ moduleName) name =
 {-# NOINLINE leaf #-}
 leaf :: JS.Expr
 leaf =
-  JS.Ref (JsName.fromKernel Name.platform "leaf")
+  JS.Ref KN.platformLeaf
 
 -- | Build the dependency list, argument list, and additional statements
 -- for registering an effect manager.
@@ -291,7 +292,7 @@ emptyTrie =
 -- @since 0.19.1
 toMainExports :: Mode.Mode -> Map ModuleName.Canonical Opt.Main -> Builder
 toMainExports mode mains =
-  let export = JsName.fromKernel Name.platform "export"
+  let export = KN.platformExport
       exports = generateExports mode (Map.foldrWithKey addToTrie emptyTrie mains)
    in JsName.toBuilder export <> "(" <> exports <> ");"
         <> "scope['Canopy'] = scope['Elm'];"

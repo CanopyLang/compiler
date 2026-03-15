@@ -198,7 +198,7 @@ data BinopKind
 data Expr_
   = VarLocal Name
   | VarTopLevel ModuleName.Canonical Name
-  | VarKernel Name Name
+  | VarRuntime Name Name
   | VarForeign ModuleName.Canonical Name Annotation
   | VarCtor CtorOpts ModuleName.Canonical Name Index.ZeroBased Annotation
   | VarDebug ModuleName.Canonical Name Annotation

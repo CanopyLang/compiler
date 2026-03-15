@@ -99,7 +99,7 @@ addAliasClause home name alias@(Can.Alias typeParams _ _ _ _) clause graph =
 kernelEq :: Opt.Expr -> Opt.Expr -> Names.Tracker Opt.Expr
 kernelEq a b =
   do
-    eqFn <- Names.registerKernel Name.utils (Opt.VarKernel Name.utils (Name.fromChars "equal"))
+    eqFn <- Names.registerKernel Name.utils (Opt.VarRuntime Name.utils (Name.fromChars "equal"))
     pure (Opt.Call eqFn [a, b])
 
 -- CONSTRUCTOR TAG MATCH

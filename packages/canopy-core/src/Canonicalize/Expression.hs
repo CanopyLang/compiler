@@ -854,7 +854,7 @@ resolveQualifiedInfo region _ prefix name (Env.Ambiguous h hs) =
 findKernelOrFail :: Ann.Region -> ModuleName.Canonical -> Map.Map Name.Name Env.Var -> Env.Qualified Can.Annotation -> Name.Name -> Name.Name -> Result FreeLocals w Can.Expr_
 findKernelOrFail region localHome vs qvs prefix name
   | Name.isKernel prefix && Pkg.isKernel (ModuleName._package localHome) =
-      Result.ok (Can.VarKernel (Name.getKernel prefix) name)
+      Result.ok (Can.VarRuntime (Name.getKernel prefix) name)
   | otherwise =
       Result.throw (Error.NotFoundVar region (Just prefix) name (toPossibleNames vs qvs))
 

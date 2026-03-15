@@ -84,10 +84,10 @@ data Expr
     --
     -- References to debug-only variables with source location information.
     VarDebug Name ModuleName.Canonical Ann.Region (Maybe Name)
-  | -- | Kernel function reference.
+  | -- | Runtime function reference.
     --
-    -- Direct references to built-in kernel functions for maximum efficiency.
-    VarKernel Name Name
+    -- Direct references to built-in runtime functions (e.g. @_Utils_eq@).
+    VarRuntime Name Name
   | -- | List literal.
     List [Expr]
   | -- | Function definition.
@@ -259,7 +259,7 @@ putExprVar expr = case expr of
   VarBox a -> Binary.putWord8 8 >> Binary.put a
   VarCycle a b -> Binary.putWord8 9 >> Binary.put a >> Binary.put b
   VarDebug a b c d -> Binary.putWord8 10 >> Binary.put a >> Binary.put b >> Binary.put c >> Binary.put d
-  VarKernel a b -> Binary.putWord8 11 >> Binary.put a >> Binary.put b
+  VarRuntime a b -> Binary.putWord8 11 >> Binary.put a >> Binary.put b
   _ -> putExprControl expr
 
 -- | Serialize control flow expressions to binary format.
@@ -308,7 +308,7 @@ putExprRecord expr = case expr of
   VarBox {} -> unexpectedExprInPutRecord "VarBox"
   VarCycle {} -> unexpectedExprInPutRecord "VarCycle"
   VarDebug {} -> unexpectedExprInPutRecord "VarDebug"
-  VarKernel {} -> unexpectedExprInPutRecord "VarKernel"
+  VarRuntime {} -> unexpectedExprInPutRecord "VarRuntime"
   List {} -> unexpectedExprInPutRecord "List"
   Function {} -> unexpectedExprInPutRecord "Function"
   Call {} -> unexpectedExprInPutRecord "Call"
@@ -366,7 +366,7 @@ getExprVar word = case word of
   8 -> fmap VarBox Binary.get
   9 -> Monad.liftM2 VarCycle Binary.get Binary.get
   10 -> Monad.liftM4 VarDebug Binary.get Binary.get Binary.get Binary.get
-  11 -> Monad.liftM2 VarKernel Binary.get Binary.get
+  11 -> Monad.liftM2 VarRuntime Binary.get Binary.get
   _ -> fail ("Opt.Expr.Var: unexpected tag " ++ show word ++ " (expected 5-11). Delete canopy-stuff/ to rebuild.")
 
 -- | Deserialize control flow expressions.

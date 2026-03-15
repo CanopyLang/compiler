@@ -35,5 +35,13 @@ data Warning
     -- ^ FFI file path, function name, and unparseable type annotation string
   | FFIJSParseFailure !Text !Text
     -- ^ FFI file path and JavaScript parse error message
+  | IntegerOverflow !Int !Int
+    -- ^ Line number and the overflowing integer value (exceeds JS MAX_SAFE_INTEGER)
+  | DivisionByZero !Int
+    -- ^ Line number where constant division by zero was detected
+  | UnreachableBranch !Int !Text
+    -- ^ Line number and description of the dead branch (e.g., "if True", "if False")
+  | PotentialInfiniteRecursion !Text
+    -- ^ Function name that appears to recurse without a base case
 
 data Context = Def | Pattern

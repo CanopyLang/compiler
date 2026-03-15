@@ -28,6 +28,9 @@ module FFI.Types
 
     -- * Binding modes for FFI ergonomics
   , BindingMode(..)
+
+    -- * Opaque type classification
+  , OpaqueKind(..)
   )
 where
 
@@ -171,6 +174,23 @@ data BindingMode
     -- ^ @\@canopy-bind set currentTime@ generates @obj.currentTime = val@
   | ConstructorCall !Text
     -- ^ @\@canopy-bind new AudioContext@ generates @new AudioContext(...)@
+  deriving (Eq, Show)
+
+-- | Classification of opaque types for type checking strength.
+--
+-- Determines how strictly the compiler validates opaque type usage at
+-- FFI boundaries. 'ClassBacked' opaques get @instanceof@ checks,
+-- 'SymbolBranded' opaques use unique symbol identity, and 'Unverified'
+-- opaques pass through with minimal checking (legacy behavior).
+--
+-- @since 0.20.1
+data OpaqueKind
+  = ClassBacked !Text
+    -- ^ Backed by a JavaScript class — enables @instanceof@ runtime checks
+  | SymbolBranded !Text
+    -- ^ Branded with a unique symbol — identity checked via hidden property
+  | Unverified
+    -- ^ No runtime verification available (legacy opaque types)
   deriving (Eq, Show)
 
 -- | A capability permission name from a JSDoc @capability annotation.

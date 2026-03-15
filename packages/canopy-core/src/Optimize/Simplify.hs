@@ -284,7 +284,7 @@ isPure expr =
     Opt.VarGlobal _ -> True
     Opt.VarEnum _ _ -> True
     Opt.VarBox _ -> True
-    Opt.VarKernel _ _ -> True
+    Opt.VarRuntime _ _ -> True
     Opt.Unit -> True
     Opt.Tuple a b mc ->
       isPure a && isPure b && maybe True isPure mc

@@ -34,6 +34,10 @@ module FFI.StaticAnalysis
     AnalysisResult (..),
     FFIWarning (..),
 
+    -- * Severity Classification
+    FFISeverity (..),
+    warningSeverity,
+
     -- * Inferred Types
     InferredType (..),
 
@@ -129,6 +133,47 @@ data FFIWarning
   | -- | Array contains mixed element types
     MixedArrayElements !Int !Text
   deriving (Eq, Show)
+
+-- SEVERITY CLASSIFICATION
+
+-- | Severity level for FFI static analysis warnings.
+--
+-- Severe issues block compilation; advisory issues are emitted as warnings.
+--
+-- @since 0.20.1
+data FFISeverity
+  = -- | Blocks compilation — type safety is compromised
+    FFIError
+  | -- | Allows compilation — potential issue that may not cause runtime failure
+    FFIWarningLevel
+  deriving (Eq, Show)
+
+-- | Classify an 'FFIWarning' by severity.
+--
+-- Errors (block compilation):
+--
+-- * 'ReturnTypeMismatch' — declared type contradicts inferred return
+-- * 'NullableReturn' — function can return null but type is non-Maybe
+-- * 'AsyncWithoutTask' — async function without Task return type
+-- * 'MissingResultTag' — Result type without @$@ tag construction
+--
+-- Warnings (allow compilation):
+--
+-- * 'LooseEquality' — @==@ instead of @===@
+-- * 'MixedArrayElements' — heterogeneous array elements
+-- * 'MissingReturnPath' — some code paths lack explicit return
+-- * 'MixedTypeOperation' — operands of different types
+--
+-- @since 0.20.1
+warningSeverity :: FFIWarning -> FFISeverity
+warningSeverity (ReturnTypeMismatch {}) = FFIError
+warningSeverity (NullableReturn {}) = FFIError
+warningSeverity (AsyncWithoutTask {}) = FFIError
+warningSeverity (MissingResultTag {}) = FFIError
+warningSeverity (LooseEquality {}) = FFIWarningLevel
+warningSeverity (MixedArrayElements {}) = FFIWarningLevel
+warningSeverity (MissingReturnPath {}) = FFIWarningLevel
+warningSeverity (MixedTypeOperation {}) = FFIWarningLevel
 
 -- ANALYSIS RESULT
 
@@ -793,6 +838,10 @@ inferReturnType body =
 -- | Check whether an inferred type is compatible with a declared FFI type.
 typesCompatible :: InferredType -> FFIType -> Bool
 typesCompatible InfUnknown _ = True
+typesCompatible InfNull (FFIOpaque _ _) = False
+typesCompatible (InfObject _) (FFIOpaque _ _) = True
+typesCompatible (InfUnion types) (FFIOpaque name args) =
+  any (\t -> typesCompatible t (FFIOpaque name args)) types
 typesCompatible _ (FFIOpaque _ _) = True
 typesCompatible InfNumber FFIInt = True
 typesCompatible InfNumber FFIFloat = True

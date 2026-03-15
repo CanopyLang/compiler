@@ -55,6 +55,7 @@ import Generate.JavaScript.FFI (FFIInfo (..))
 import qualified Generate.JavaScript.Kernel as Kernel_
 import qualified Generate.JavaScript.Minify as Minify
 import qualified Generate.JavaScript.Name as JsName
+import qualified Generate.JavaScript.Runtime.Names as KN
 import qualified Generate.JavaScript.StringPool as StringPool
 import qualified Generate.Mode as Mode
 import Prelude hiding (cycle)
@@ -329,10 +330,10 @@ managerStmts _mode (Opt.Global home _) effectsType =
     (_deps, args, stmts) = Kernel_.generateManagerHelp home effectsType
     managerLVar =
       JS.LBracket
-        (JS.Ref (JsName.fromKernel Name.platform "effectManagers"))
+        (JS.Ref KN.platformEffectManagers)
         (JS.String (Name.toBuilder (ModuleName._module home)))
     createManager =
-      JS.ExprStmt (JS.Assign managerLVar (JS.Call (JS.Ref (JsName.fromKernel Name.platform "createManager")) args))
+      JS.ExprStmt (JS.Assign managerLVar (JS.Call (JS.Ref KN.platformCreateManager) args))
 
 -- EXPORT GENERATION
 
@@ -398,10 +399,10 @@ mainImportAndInit (home, mainType) =
 
 -- | Get the platform initialization function name based on main type.
 initFunctionName :: Opt.Main -> JsName.Name
-initFunctionName Opt.Static = JsName.fromKernel Name.platform "worker"
-initFunctionName (Opt.Dynamic _ _ _) = JsName.fromKernel Name.platform "worker"
-initFunctionName Opt.TestMain = JsName.fromKernel Name.platform "worker"
-initFunctionName Opt.BrowserTestMain = JsName.fromKernel Name.platform "worker"
+initFunctionName Opt.Static = KN.platformWorker
+initFunctionName (Opt.Dynamic _ _ _) = KN.platformWorker
+initFunctionName Opt.TestMain = KN.platformWorker
+initFunctionName Opt.BrowserTestMain = KN.platformWorker
 
 -- UTILITIES
 

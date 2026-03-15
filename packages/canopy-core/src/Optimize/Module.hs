@@ -22,6 +22,7 @@ import qualified Optimize.Expression as Expr
 import qualified Optimize.Names as Names
 import qualified Optimize.Port as Port
 import qualified Optimize.Simplify as Simplify
+import qualified Optimize.Warnings as OptWarn
 import qualified Reporting.Annotation as Ann
 import qualified Reporting.Error.Main as MainError
 import qualified Reporting.Result as Result
@@ -295,39 +296,39 @@ addDef home annotations def graph =
     Can.TypedDef (Ann.At region name) _ typedArgs body _ ->
       addDefHelp region annotations home name (fmap fst typedArgs) body graph
 
-addDefHelp :: Ann.Region -> Annotations -> ModuleName.Canonical -> Name.Name -> [Can.Pattern] -> Can.Expr -> Opt.LocalGraph -> Result i w Opt.LocalGraph
+addDefHelp :: Ann.Region -> Annotations -> ModuleName.Canonical -> Name.Name -> [Can.Pattern] -> Can.Expr -> Opt.LocalGraph -> Result i [Warning.Warning] Opt.LocalGraph
 addDefHelp region annotations home name args body graph@(Opt.LocalGraph _ nodes fieldCounts locs) =
   if name /= Name._main
-    then Result.ok (addDefNode home name region args body Set.empty graph)
+    then addDefNode home name region args body Set.empty graph
     else
       lookupAnnotation name annotations >>= \(Can.Forall _ tipe) ->
-      let addMain (deps, fields, main) =
-            addDefNode home name region args body deps $
-              Opt.LocalGraph (Just main) nodes (Map.unionWith (+) fields fieldCounts) locs
+      let addMain triplet =
+            addDefNode home name region args body (tripletDeps triplet) $
+              Opt.LocalGraph (Just (tripletVal triplet)) nodes (Map.unionWith (+) (tripletFields triplet) fieldCounts) locs
        in case Type.deepDealias tipe of
             Can.TType hm nm [_]
               | hm == ModuleName.virtualDom && nm == Name.node ->
-                (Result.ok . addMain) . Names.run $ Names.registerFFIDep virtualDomFFI (Name.fromChars "init") Opt.Static
+                addMain . Names.run $ Names.registerFFIDep virtualDomFFI (Name.fromChars "init") Opt.Static
             Can.TType hm nm [flags, model, message] | hm == ModuleName.platform && nm == Name.program ->
               case Effects.checkPayload flags of
                 Right () ->
-                  (Result.ok . addMain) . Names.run $ (Opt.Dynamic model message <$> Port.toFlagsDecoder flags)
+                  addMain . Names.run $ (Opt.Dynamic model message <$> Port.toFlagsDecoder flags)
                 Left (subType, invalidPayload) ->
                   Result.throw (MainError.BadFlags region subType invalidPayload)
             Can.TType hm nm []
               | hm == ModuleName.test && nm == Name.browserTest ->
-                (Result.ok . addMain) . Names.run $ pure Opt.BrowserTestMain
+                addMain . Names.run $ pure Opt.BrowserTestMain
             -- For non-standard main types (e.g., Test, custom types),
             -- export the raw value without VirtualDom rendering.
             _ ->
-              (Result.ok . addMain) . Names.run $ pure Opt.TestMain
+              addMain . Names.run $ pure Opt.TestMain
 
 virtualDomFFI :: ModuleName.Canonical
 virtualDomFFI =
   ModuleName.Canonical Pkg.virtualDom (Name.fromChars "VirtualDomFFI")
 
-addDefNode :: ModuleName.Canonical -> Name.Name -> Ann.Region -> [Can.Pattern] -> Can.Expr -> Set.Set Opt.Global -> Opt.LocalGraph -> Opt.LocalGraph
-addDefNode home name region args body mainDeps graph =
+addDefNode :: ModuleName.Canonical -> Name.Name -> Ann.Region -> [Can.Pattern] -> Can.Expr -> Set.Set Opt.Global -> Opt.LocalGraph -> Result i [Warning.Warning] Opt.LocalGraph
+addDefNode home name region args body mainDeps graph = do
   let global = Opt.Global home name
       (deps, fields, rawDef) =
         Names.run $
@@ -339,9 +340,29 @@ addDefNode home name region args body mainDeps graph =
                 (argNames, destructors) <- Expr.destructArgs args
                 obody <- Expr.optimize Set.empty body
                 pure . Opt.Function argNames $ foldr Opt.Destruct obody destructors
+      preSimplifyWarnings = OptWarn.collectPreSimplifyWarnings rawDef
+      postFoldWarnings = OptWarn.collectPostFoldWarnings rawDef
       def = Simplify.simplify rawDef
       graphWithNode = addToGraph global (Opt.Define def (Set.union deps mainDeps)) fields graph
-   in addSourceLocation global region graphWithNode
+  emitWarnings (preSimplifyWarnings ++ postFoldWarnings)
+  Result.ok (addSourceLocation global region graphWithNode)
+
+-- | Emit a list of warnings through the Result monad.
+emitWarnings :: [Warning.Warning] -> Result i [Warning.Warning] ()
+emitWarnings [] = Result.ok ()
+emitWarnings (w : ws) = Result.warn w >> emitWarnings ws
+
+-- | Extract dependencies from a Names.run result triple.
+tripletDeps :: (Set.Set Opt.Global, Map.Map Name.Name Int, a) -> Set.Set Opt.Global
+tripletDeps (deps, _, _) = deps
+
+-- | Extract field counts from a Names.run result triple.
+tripletFields :: (Set.Set Opt.Global, Map.Map Name.Name Int, a) -> Map.Map Name.Name Int
+tripletFields (_, fields, _) = fields
+
+-- | Extract the value from a Names.run result triple.
+tripletVal :: (Set.Set Opt.Global, Map.Map Name.Name Int, a) -> a
+tripletVal (_, _, val) = val
 
 -- | Record a source location for a global definition.
 addSourceLocation :: Opt.Global -> Ann.Region -> Opt.LocalGraph -> Opt.LocalGraph

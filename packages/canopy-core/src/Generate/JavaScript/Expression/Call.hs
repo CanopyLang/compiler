@@ -43,6 +43,7 @@ import qualified Data.IntMap.Strict as IntMap
 import qualified Data.List as List
 import qualified Generate.JavaScript.Builder as JS
 import qualified Generate.JavaScript.Name as JsName
+import qualified Generate.JavaScript.Runtime.Names as KN
 import qualified Generate.Mode as Mode
 
 -- | Type alias for the main expression generator to avoid circular imports.
@@ -237,7 +238,7 @@ equal :: JS.Expr -> JS.Expr -> JS.Expr
 equal left right =
   if isLiteral left || isLiteral right
     then strictEq left right
-    else JS.Call (JS.Ref (JsName.fromKernel Name.utils "eq")) [left, right]
+    else JS.Call (JS.Ref KN.utilsEq) [left, right]
 
 -- | Generate JavaScript inequality check.
 --
@@ -248,7 +249,7 @@ notEqual left right =
     then strictNEq left right
     else
       JS.Prefix JS.PrefixNot $
-        JS.Call (JS.Ref (JsName.fromKernel Name.utils "eq")) [left, right]
+        JS.Call (JS.Ref KN.utilsEq) [left, right]
 
 -- | Generate JavaScript comparison using utils.cmp for non-literals.
 --
@@ -260,7 +261,7 @@ cmp idealOp backupOp backupInt left right =
     else
       JS.Infix
         backupOp
-        (JS.Call (JS.Ref (JsName.fromKernel Name.utils "cmp")) [left, right])
+        (JS.Call (JS.Ref KN.utilsCmp) [left, right])
         (JS.Int backupInt)
 
 -- | Check if a JavaScript expression is a literal value.
@@ -310,7 +311,7 @@ append genExpr mode left right =
 -- @since 0.19.1
 jsAppend :: JS.Expr -> JS.Expr -> JS.Expr
 jsAppend a b =
-  JS.Call (JS.Ref (JsName.fromKernel Name.utils "ap")) [a, b]
+  JS.Call (JS.Ref KN.utilsAp) [a, b]
 
 -- | Flatten nested append calls into a sequence for optimization.
 --

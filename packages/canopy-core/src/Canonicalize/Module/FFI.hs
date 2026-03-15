@@ -179,8 +179,38 @@ emitStaticAnalysisWarnings jsPath jsContent bindings =
           (declaredTypes, parseFailures) = buildDeclaredTypeMap bindings
           analysis = SA.analyzeFFIFile stmts declaredTypes
           pathText = Text.pack jsPath
+          (severeWarnings, mildWarnings) = partitionBySeverity (SA._analysisWarnings analysis)
        in traverse_ (emitTypeParseWarning pathText) parseFailures
-            >> traverse_ (emitOneWarning pathText) (SA._analysisWarnings analysis)
+            >> traverse_ (emitOneWarning pathText) mildWarnings
+            >> traverse_ (emitSevereWarning jsPath) severeWarnings
+
+-- | Partition FFI warnings into severe (errors) and mild (warnings) based on severity.
+partitionBySeverity :: [SA.FFIWarning] -> ([SA.FFIWarning], [SA.FFIWarning])
+partitionBySeverity = foldr classify ([], [])
+  where
+    classify w (severe, mild) =
+      case SA.warningSeverity w of
+        SA.FFIError -> (w : severe, mild)
+        SA.FFIWarningLevel -> (severe, w : mild)
+
+-- | Emit a severe FFI static analysis issue as a compilation error.
+emitSevereWarning :: FilePath -> SA.FFIWarning -> Result i [Warning.Warning] ()
+emitSevereWarning jsPath warning =
+  Result.throw (ffiWarningToError jsPath warning)
+
+-- | Convert a severe FFI warning to a canonicalization error.
+ffiWarningToError :: FilePath -> SA.FFIWarning -> Error.Error
+ffiWarningToError jsPath (SA.ReturnTypeMismatch _line name inferred declared) =
+  Error.FFIReturnTypeMismatch Ann.zero jsPath (Name.fromChars (Text.unpack name))
+    ("Inferred " <> show inferred <> " but declared " <> show declared)
+ffiWarningToError jsPath (SA.NullableReturn _line name) =
+  Error.FFINullableReturnNonMaybe Ann.zero jsPath (Name.fromChars (Text.unpack name))
+ffiWarningToError jsPath (SA.AsyncWithoutTask _line name) =
+  Error.FFIAsyncWithoutTask Ann.zero jsPath (Name.fromChars (Text.unpack name))
+ffiWarningToError jsPath (SA.MissingResultTag _line name) =
+  Error.FFIMissingResultTag Ann.zero jsPath (Name.fromChars (Text.unpack name))
+ffiWarningToError jsPath other =
+  Error.FFIParseError Ann.zero jsPath ("Unexpected severe FFI issue: " <> show other)
 
 -- | Extract top-level statements from a parsed JavaScript AST.
 extractStatements :: JSAST.JSAST -> [JSAST.JSStatement]

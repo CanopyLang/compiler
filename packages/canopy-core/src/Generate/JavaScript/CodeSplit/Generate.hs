@@ -46,6 +46,7 @@ import qualified Generate.JavaScript.Expression as Expr
 import qualified Generate.JavaScript.Functions as Functions
 import qualified Generate.JavaScript.Minify as Minify
 import qualified Generate.JavaScript.Name as JsName
+import qualified Generate.JavaScript.Runtime.Names as KN
 import qualified Generate.JavaScript.CodeSplit.Manifest as Manifest
 import qualified Generate.JavaScript.CodeSplit.Runtime as Runtime
 import Generate.JavaScript.CodeSplit.Types
@@ -389,11 +390,11 @@ emitManager mode graph chunkGlobals (Opt.Global home@(ModuleName.Canonical _ mod
     depsState = List.foldl' (addGlobalForChunk mode graph chunkGlobals) state deps
     managerLVar =
       JS.LBracket
-        (JS.Ref (JsName.fromKernel Name.platform "effectManagers"))
+        (JS.Ref KN.platformEffectManagers)
         (JS.String (Name.toBuilder moduleName))
     createManager =
       JS.ExprStmt . JS.Assign managerLVar $
-        JS.Call (JS.Ref (JsName.fromKernel Name.platform "createManager")) args
+        JS.Call (JS.Ref KN.platformCreateManager) args
 
 -- | Manager helper: compute deps, args, and leaf stmts.
 managerHelp :: ModuleName.Canonical -> Opt.EffectsType -> ([Opt.Global], [JS.Expr], [JS.Stmt])
@@ -421,7 +422,7 @@ managerHelp home effectsType =
 emitLeaf :: ModuleName.Canonical -> Name -> JS.Stmt
 emitLeaf home@(ModuleName.Canonical _ moduleName) name =
   JS.Var (JsName.fromGlobal home name) $
-    JS.Call (JS.Ref (JsName.fromKernel Name.platform "leaf")) [JS.String (Name.toBuilder moduleName)]
+    JS.Call (JS.Ref KN.platformLeaf) [JS.String (Name.toBuilder moduleName)]
 
 -- | Emit kernel code.
 emitKernel :: Mode.Mode -> [Kernel.Chunk] -> TraversalState -> Opt.Global -> TraversalState
@@ -533,7 +534,7 @@ countNewlinesBS =
 -- | Generate main export code.
 toMainExports :: Mode.Mode -> Mains -> Builder
 toMainExports mode mains =
-  let export = JsName.fromKernel Name.platform "export"
+  let export = KN.platformExport
       exports = generateExports mode (Map.foldrWithKey addToTrie emptyTrie mains)
    in JsName.toBuilder export <> "(" <> exports <> ");"
         <> "scope['Canopy'] = scope['Elm'];"

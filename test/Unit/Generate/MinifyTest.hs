@@ -106,8 +106,8 @@ kernelPreservationTests :: TestTree
 kernelPreservationTests =
   testGroup
     "kernel references are NOT renamed"
-    [ testCase "VarKernel passes through unchanged" $
-        let kernelRef = Opt.VarKernel (name "utils") (name "eq")
+    [ testCase "VarRuntime passes through unchanged" $
+        let kernelRef = Opt.VarRuntime (name "utils") (name "eq")
             input = defineNode kernelRef
             result = Minify.minifyGraph (Map.singleton testGlobal input)
          in assertNodeExprEq "kernel preserved" input (lookupNode testGlobal result)

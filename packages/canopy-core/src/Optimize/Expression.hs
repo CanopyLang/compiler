@@ -59,8 +59,8 @@ optimize cycle (Ann.At region expression) =
       if Set.member name cycle
         then pure (Opt.VarCycle home name)
         else Names.registerGlobal home name
-    Can.VarKernel home name ->
-      Names.registerKernel home (Opt.VarKernel home name)
+    Can.VarRuntime home name ->
+      Names.registerKernel home (Opt.VarRuntime home name)
     Can.VarForeign home name _ ->
       Names.registerFFI home name
     Can.VarCtor opts home name index _ ->

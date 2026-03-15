@@ -25,7 +25,6 @@ library
       Queries.Canonicalize.Module
       Queries.Foreign
       Queries.Generate
-      Queries.Kernel
       Queries.Optimize
       Queries.Parse.Module
       Queries.Type.Check

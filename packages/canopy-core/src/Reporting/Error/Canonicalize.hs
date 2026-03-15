@@ -111,6 +111,14 @@ data Error
   | DuplicateImplMethod Name.Name Name.Name Ann.Region Ann.Region
   | DuplicateImpl Name.Name Name.Name Ann.Region Ann.Region
   | UnknownSuperAbility Ann.Region Name.Name Name.Name
+  | FFIReturnTypeMismatch Ann.Region FilePath Name.Name String
+    -- ^ Region, FFI file, function name, mismatch description
+  | FFINullableReturnNonMaybe Ann.Region FilePath Name.Name
+    -- ^ Region, FFI file, function that can return null without Maybe type
+  | FFIAsyncWithoutTask Ann.Region FilePath Name.Name
+    -- ^ Region, FFI file, async function without Task return type
+  | FFIMissingResultTag Ann.Region FilePath Name.Name
+    -- ^ Region, FFI file, function returning Result without $ tag
   deriving (Show)
 
 -- | Position where a type variable appears that violates its variance annotation.
@@ -378,6 +386,34 @@ toDiagnostic source err =
     UnknownSuperAbility region abilityName superName ->
       Diagnostic.makeSimpleDiagnostic (EC.canonError 59) Diagnostic.PhaseCanon "UNKNOWN SUPER ABILITY" region
         (Doc.reflow ("The ability `" <> Name.toChars abilityName <> "` extends `" <> Name.toChars superName <> "`, but I cannot find an ability named `" <> Name.toChars superName <> "`."))
+    FFIReturnTypeMismatch region filePath funcName desc ->
+      Diagnostic.makeSimpleDiagnostic (EC.canonError 60) Diagnostic.PhaseCanon "FFI TYPE MISMATCH" region
+        (Doc.stack
+          [ Doc.reflow ("The FFI function `" <> Name.toChars funcName <> "` in " <> filePath <> " has a return type mismatch:"),
+            Doc.indent 4 (Doc.reflow desc),
+            Doc.reflow "The inferred JavaScript return type does not match the declared @canopy-type annotation. Fix the JavaScript code or update the type annotation."
+          ])
+    FFINullableReturnNonMaybe region filePath funcName ->
+      Diagnostic.makeSimpleDiagnostic (EC.canonError 61) Diagnostic.PhaseCanon "FFI NULLABLE RETURN" region
+        (Doc.stack
+          [ Doc.reflow ("The FFI function `" <> Name.toChars funcName <> "` in " <> filePath <> " can return null or undefined,"),
+            Doc.reflow "but its @canopy-type annotation does not use Maybe.",
+            Doc.reflow "Hint: Change the return type to `Maybe YourType` or ensure the JavaScript function never returns null."
+          ])
+    FFIAsyncWithoutTask region filePath funcName ->
+      Diagnostic.makeSimpleDiagnostic (EC.canonError 62) Diagnostic.PhaseCanon "FFI ASYNC WITHOUT TASK" region
+        (Doc.stack
+          [ Doc.reflow ("The FFI function `" <> Name.toChars funcName <> "` in " <> filePath <> " is declared as async,"),
+            Doc.reflow "but its @canopy-type annotation does not use Task.",
+            Doc.reflow "Hint: Change the return type to `Task Error Value` to properly handle the Promise."
+          ])
+    FFIMissingResultTag region filePath funcName ->
+      Diagnostic.makeSimpleDiagnostic (EC.canonError 63) Diagnostic.PhaseCanon "FFI MISSING RESULT TAG" region
+        (Doc.stack
+          [ Doc.reflow ("The FFI function `" <> Name.toChars funcName <> "` in " <> filePath <> " returns a Result type,"),
+            Doc.reflow "but the JavaScript code does not construct objects with the required `$` tag.",
+            Doc.reflow "Hint: Return `{ $: 'Ok', a: value }` or `{ $: 'Err', a: error }`, or use `$canopy.Ok(value)` / `$canopy.Err(error)`."
+          ])
 
 -- ---------------------------------------------------------------------------
 -- Private dispatch helpers

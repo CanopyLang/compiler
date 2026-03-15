@@ -71,7 +71,7 @@ constrain guards rtv (Ann.At region expression) expected =
       return (CLocal region name expected)
     Can.VarTopLevel _ name ->
       return (CLocal region name expected)
-    Can.VarKernel _ _ ->
+    Can.VarRuntime _ _ ->
       return CTrue
     Can.VarForeign _ name annotation ->
       return $ CForeign region name annotation expected
@@ -241,7 +241,7 @@ getName (Ann.At _ expr) =
     Can.VarForeign _ name _ -> FuncName name
     Can.VarCtor _ _ name _ _ -> CtorName name
     Can.VarOperator op _ _ _ -> OpName op
-    Can.VarKernel _ name -> FuncName name
+    Can.VarRuntime _ name -> FuncName name
     _ -> NoName
 
 getAccessName :: Can.Expr -> Maybe Name.Name

@@ -128,6 +128,7 @@ library
       Optimize.Module
       Optimize.Names
       Optimize.Simplify
+      Optimize.Warnings
       Parse.Declaration
       Parse.Expression
       Parse.Module
@@ -201,7 +202,6 @@ library
       Canopy.Data.Utf8.Encoding
       Canopy.Data.Utf8.Manipulation
       Canopy.Data.Utf8.Types
-      Canopy.Kernel.Discovery
       FFI.TypeParser
       File.Cache
       File.JSON
@@ -211,12 +211,14 @@ library
       Generate.JavaScript.FFI.Registry
       Generate.JavaScript.Functions
       Generate.JavaScript.Kernel
+      Generate.JavaScript.Runtime.Names
       Generate.JavaScript.Runtime.Registry
       Json.Decode.AST
       Json.Decode.Combinators
       Json.Decode.Core
       Json.Decode.Parser
       Nitpick.PatternMatches
+      Nitpick.Recursion
       Optimize.Port
       Parse.Comment
       Parse.Interpolation

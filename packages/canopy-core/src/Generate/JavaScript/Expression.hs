@@ -47,6 +47,7 @@ import qualified Generate.JavaScript.Coverage as Coverage
 import qualified Generate.JavaScript.Expression.Call as Call
 import qualified Generate.JavaScript.Expression.Case as ExprCase
 import qualified Generate.JavaScript.Name as JsName
+import qualified Generate.JavaScript.Runtime.Names as KN
 import qualified Generate.JavaScript.StringPool as StringPool
 import qualified Generate.Mode as Mode
 import Json.Encode ((==>))
@@ -113,16 +114,16 @@ generate mode expression =
       JsExpr $ JS.Call (JS.Ref (JsName.fromCycle home name)) []
     Opt.VarDebug name home region unhandledValueName ->
       JsExpr $ generateDebug mode name home region unhandledValueName
-    Opt.VarKernel home name ->
+    Opt.VarRuntime home name ->
       JsExpr $ JS.Ref (JsName.fromKernel home name)
     Opt.List entries ->
       case entries of
         [] ->
-          JsExpr $ JS.Ref (JsName.fromKernel Name.list "Nil")
+          JsExpr $ JS.Ref KN.listNil
         _ ->
           JsExpr $
             JS.Call
-              (JS.Ref (JsName.fromKernel Name.list "fromArray"))
+              (JS.Ref KN.listFromArray)
               [ JS.Array $ fmap (generateJsExpr mode) entries
               ]
     Opt.Function args body ->
@@ -171,7 +172,7 @@ generate mode expression =
     Opt.Update record fields ->
       JsExpr $
         JS.Call
-          (JS.Ref (JsName.fromKernel Name.utils "update"))
+          (JS.Ref KN.utilsUpdate)
           [ generateJsExpr mode record,
             generateRecord mode fields
           ]
@@ -180,7 +181,7 @@ generate mode expression =
     Opt.Unit ->
       case mode of
         Mode.Dev _ _ _ _ _ _ ->
-          JsExpr $ JS.Ref (JsName.fromKernel Name.utils "Tuple0")
+          JsExpr $ JS.Ref KN.utilsTuple0
         Mode.Prod {} ->
           JsExpr $ JS.Int 0
     Opt.Tuple a b maybeC ->
@@ -188,13 +189,13 @@ generate mode expression =
         case maybeC of
           Nothing ->
             JS.Call
-              (JS.Ref (JsName.fromKernel Name.utils "Tuple2"))
+              (JS.Ref KN.utilsTuple2)
               [ generateJsExpr mode a,
                 generateJsExpr mode b
               ]
           Just c ->
             JS.Call
-              (JS.Ref (JsName.fromKernel Name.utils "Tuple3"))
+              (JS.Ref KN.utilsTuple3)
               [ generateJsExpr mode a,
                 generateJsExpr mode b,
                 generateJsExpr mode c
@@ -320,7 +321,7 @@ codeToStmt code =
 {-# NOINLINE toChar #-}
 toChar :: JS.Expr
 toChar =
-  JS.Ref (JsName.fromKernel Name.utils "chr")
+  JS.Ref KN.utilsChr
 
 -- CTOR
 
@@ -420,13 +421,13 @@ generateDebug mode name (ModuleName.Canonical _ home) region unhandledValueName 
     else case unhandledValueName of
       Nothing ->
         JS.Call
-          (JS.Ref (JsName.fromKernel Name.debug "todo"))
+          (JS.Ref KN.debugTodo)
           [ JS.String (Name.toBuilder home),
             regionToJsExpr mode region
           ]
       Just valueName ->
         JS.Call
-          (JS.Ref (JsName.fromKernel Name.debug "todoCase"))
+          (JS.Ref KN.debugTodoCase)
           [ JS.String (Name.toBuilder home),
             regionToJsExpr mode region,
             JS.Ref (JsName.fromLocal valueName)
@@ -714,7 +715,7 @@ generateMain :: Mode.Mode -> ModuleName.Canonical -> Opt.Main -> JS.Expr
 generateMain mode home main =
   case main of
     Opt.Static ->
-      JS.Ref (JsName.fromKernel Name.virtualDom "init")
+      JS.Ref KN.virtualDomInit
         # JS.Ref (JsName.fromGlobal home "main")
         # JS.Int 0
         # JS.Int 0

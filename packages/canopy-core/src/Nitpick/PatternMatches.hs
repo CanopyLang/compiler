@@ -208,7 +208,7 @@ checkExpr (Ann.At region expression) errors =
       errors
     Can.VarTopLevel _ _ ->
       errors
-    Can.VarKernel _ _ ->
+    Can.VarRuntime _ _ ->
       errors
     Can.VarForeign _ _ _ ->
       errors
