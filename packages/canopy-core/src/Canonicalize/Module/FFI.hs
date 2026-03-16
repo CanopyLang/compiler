@@ -16,6 +16,7 @@
 module Canonicalize.Module.FFI
   ( loadFFIContent,
     loadFFIContentWithRoot,
+    loadDtsContentWithRoot,
     addFFIToEnvPure,
     extractCapabilityWarnings,
   )
@@ -39,14 +40,18 @@ import qualified Data.Text as Text
 import qualified Data.Text.IO as TextIO
 import qualified FFI.StaticAnalysis as SA
 import qualified FFI.TypeParser as TypeParser
-import FFI.Types (JsSourcePath (..), JsSource (..), FFIBinding (..), FFIFuncName (..), FFITypeAnnotation (..), CapabilityName (..), BindingMode (..))
+import FFI.Types (JsSourcePath (..), JsSource (..), FFIBinding (..), FFIFuncName (..), FFITypeAnnotation (..), CapabilityName (..), BindingMode (..), OpaqueKind (..))
+import qualified FFI.TypeScriptValidation as TsVal
 import qualified Foreign.FFI as FFI
+import qualified Generate.TypeScript.Parser as DtsParser
+import Generate.TypeScript.Types (TsType (..))
 import qualified Language.JavaScript.Parser as JSParser
 import qualified Language.JavaScript.Parser.AST as JSAST
 import qualified Reporting.Annotation as Ann
 import qualified Reporting.Error.Canonicalize as Error
 import qualified Reporting.Result as Result
 import qualified Reporting.Warning as Warning
+import qualified System.Directory as Dir
 import qualified System.FilePath as FP
 import System.FilePath ((</>))
 
@@ -74,6 +79,36 @@ loadFFIContentWithRoot :: FilePath -> [Src.ForeignImport] -> IO (Map JsSourcePat
 loadFFIContentWithRoot rootDir foreignImports = do
   results <- traverse (loadSingleFFI rootDir) foreignImports
   return (Map.fromList (concat results))
+
+-- | Load @.d.ts@ content alongside JavaScript FFI files.
+--
+-- For each foreign import with path @external/foo.js@, checks whether
+-- @external/foo.d.ts@ exists and loads its content. The returned map
+-- uses the same 'JsSourcePath' keys as 'loadFFIContentWithRoot' so
+-- callers can look up DTS content by the JS path.
+--
+-- @since 0.20.1
+loadDtsContentWithRoot :: FilePath -> [Src.ForeignImport] -> IO (Map JsSourcePath Text.Text)
+loadDtsContentWithRoot rootDir foreignImports = do
+  results <- traverse (loadSingleDts rootDir) foreignImports
+  return (Map.fromList (concat results))
+
+-- | Try to load a @.d.ts@ file for a single FFI import.
+loadSingleDts :: FilePath -> Src.ForeignImport -> IO [(JsSourcePath, Text.Text)]
+loadSingleDts rootDir (Src.ForeignImport (FFI.JavaScriptFFI jsPath) _alias _region) =
+  case validateFFIPath jsPath of
+    Left _reason -> return []
+    Right validPath ->
+      let dtsPath = FP.replaceExtension validPath ".d.ts"
+          fullDtsPath = rootDir </> dtsPath
+       in do
+            exists <- Dir.doesFileExist fullDtsPath
+            if exists
+              then do
+                result <- loadFFIFile fullDtsPath
+                either (const (return [])) (\content -> return [(JsSourcePath (Text.pack validPath), content)]) result
+              else return []
+loadSingleDts _ _ = return []
 
 -- | Load a single FFI file, returning empty list on validation or IO failure.
 --
@@ -131,35 +166,41 @@ loadFFIFile fullPath =
 --
 -- Processes all FFI imports sequentially, threading the updated
 -- environment through each import so all foreign functions are available.
-addFFIToEnvPure :: Env.Env -> [Src.ForeignImport] -> Map JsSourcePath JsSource -> Result i [Warning.Warning] Env.Env
-addFFIToEnvPure env [] _ffiContentMap = Result.ok env
-addFFIToEnvPure env (fi : rest) ffiContentMap =
-  addOneFFI env fi >>= \updatedEnv -> addFFIToEnvPure updatedEnv rest ffiContentMap
+-- When @.d.ts@ content is provided, type mismatches between the Canopy
+-- FFI annotations and the TypeScript declarations are reported as
+-- compilation errors.
+addFFIToEnvPure :: Env.Env -> [Src.ForeignImport] -> Map JsSourcePath JsSource -> Map JsSourcePath Text.Text -> Result i [Warning.Warning] Env.Env
+addFFIToEnvPure env [] _ffiContentMap _dtsContentMap = Result.ok env
+addFFIToEnvPure env (fi : rest) ffiContentMap dtsContentMap =
+  addOneFFI env fi >>= \updatedEnv -> addFFIToEnvPure updatedEnv rest ffiContentMap dtsContentMap
   where
     addOneFFI currentEnv (Src.ForeignImport (FFI.JavaScriptFFI jsPath) alias region) =
       case validateFFIPath jsPath of
         Left reason -> Result.throw (Error.FFIPathTraversal region jsPath reason)
-        Right validPath -> processFFIImport currentEnv validPath alias region ffiContentMap
+        Right validPath -> processFFIImport currentEnv validPath alias region ffiContentMap dtsContentMap
     addOneFFI _currentEnv (Src.ForeignImport (FFI.WebAssemblyFFI _wasmPath) _alias region) =
       Result.throw (Error.FFIParseError region "WebAssembly" "WebAssembly FFI is not yet supported")
 
 -- Process single FFI import with comprehensive error handling
-processFFIImport :: Env.Env -> FilePath -> Ann.Located Name.Name -> Ann.Region -> Map JsSourcePath JsSource -> Result i [Warning.Warning] Env.Env
-processFFIImport env jsPath alias region ffiContentMap =
+processFFIImport :: Env.Env -> FilePath -> Ann.Located Name.Name -> Ann.Region -> Map JsSourcePath JsSource -> Map JsSourcePath Text.Text -> Result i [Warning.Warning] Env.Env
+processFFIImport env jsPath alias region ffiContentMap dtsContentMap =
   let aliasName = Ann.toValue alias
       home = Env._home env
       ffiModuleName = ModuleName.Canonical (ModuleName._package home) aliasName
-  in case Map.lookup (JsSourcePath (Text.pack jsPath)) ffiContentMap of
+      jsKey = JsSourcePath (Text.pack jsPath)
+      dtsContent = Map.lookup jsKey dtsContentMap
+  in case Map.lookup jsKey ffiContentMap of
        Nothing -> Result.throw (Error.FFIFileNotFound region jsPath)
-       Just (JsSource jsContent) -> parseAndAddFFI env ffiModuleName aliasName jsPath region jsContent
+       Just (JsSource jsContent) -> parseAndAddFFI env ffiModuleName aliasName jsPath region jsContent dtsContent
 
 -- Parse FFI content and add to environment with validation
-parseAndAddFFI :: Env.Env -> ModuleName.Canonical -> Name.Name -> FilePath -> Ann.Region -> Text.Text -> Result i [Warning.Warning] Env.Env
-parseAndAddFFI env ffiModuleName aliasName jsPath region jsContent =
+parseAndAddFFI :: Env.Env -> ModuleName.Canonical -> Name.Name -> FilePath -> Ann.Region -> Text.Text -> Maybe Text.Text -> Result i [Warning.Warning] Env.Env
+parseAndAddFFI env ffiModuleName aliasName jsPath region jsContent dtsContent =
   case parseJavaScriptContentPure jsContent (Name.toChars aliasName) of
     Left err -> Result.throw (Error.FFIParseError region jsPath err)
     Right bindings -> do
       emitStaticAnalysisWarnings jsPath jsContent bindings
+      validateDtsIfPresent jsPath region bindings dtsContent
       validateAndAddFunctions env ffiModuleName aliasName jsPath region bindings
 
 -- | Run static analysis on the JavaScript source and emit warnings.
@@ -183,6 +224,64 @@ emitStaticAnalysisWarnings jsPath jsContent bindings =
        in traverse_ (emitTypeParseWarning pathText) parseFailures
             >> traverse_ (emitOneWarning pathText) mildWarnings
             >> traverse_ (emitSevereWarning jsPath) severeWarnings
+
+-- | Validate FFI bindings against a @.d.ts@ file if one was loaded.
+--
+-- When a @.d.ts@ file exists alongside the JavaScript FFI file, any type
+-- mismatches between the Canopy @canopy-type annotations and the TypeScript
+-- declarations are compilation errors — not warnings. This provides an
+-- additional layer of compile-time safety when TypeScript declarations
+-- are available.
+--
+-- @since 0.20.1
+validateDtsIfPresent :: FilePath -> Ann.Region -> [FFIBinding] -> Maybe Text.Text -> Result i [Warning.Warning] ()
+validateDtsIfPresent _ _ _ Nothing = Result.ok ()
+validateDtsIfPresent jsPath region bindings (Just dtsText) =
+  case DtsParser.parseDtsFile dtsPath (Text.unpack dtsText) of
+    Left _parseErr -> Result.ok ()
+    Right dtsExports ->
+      let canopyTypes = buildCanopyTsTypes bindings
+          typeErrors = TsVal.validateFFIAgainstDts canopyTypes dtsExports
+          bindingModes = fmap (\b -> (unFFIFuncName (_bindingFuncName b), _bindingMode b)) bindings
+          modeErrors = TsVal.validateBindingModes bindingModes dtsExports
+       in traverse_ (emitDtsValidationError jsPath region) (typeErrors ++ modeErrors)
+  where
+    dtsPath = FP.replaceExtension jsPath ".d.ts"
+
+-- | Build a list of (function name, TsType) pairs from FFI bindings.
+--
+-- Converts each FFI type annotation to a TsType for comparison against
+-- the @.d.ts@ declarations. Bindings with unparseable types are skipped.
+buildCanopyTsTypes :: [FFIBinding] -> [(Text.Text, TsType)]
+buildCanopyTsTypes = Maybe.mapMaybe bindingToTsPair
+
+-- | Convert a single binding to a (name, TsType) pair if its type parses.
+bindingToTsPair :: FFIBinding -> Maybe (Text.Text, TsType)
+bindingToTsPair binding = do
+  ffiType <- TypeParser.parseType (unFFITypeAnnotation (_bindingTypeAnnotation binding))
+  let tsType = ffiTypeToTsType ffiType
+  Just (unFFIFuncName (_bindingFuncName binding), tsType)
+
+-- | Convert an FFI type to an approximate TsType for validation.
+ffiTypeToTsType :: FFI.FFIType -> TsType
+ffiTypeToTsType = \case
+  FFI.FFIInt -> TsNumber
+  FFI.FFIFloat -> TsNumber
+  FFI.FFIString -> TsString
+  FFI.FFIBool -> TsBoolean
+  FFI.FFIUnit -> TsVoid
+  FFI.FFIList inner -> TsReadonlyArray (ffiTypeToTsType inner)
+  FFI.FFIFunctionType params ret ->
+    TsFunction (fmap ffiTypeToTsType params) (ffiTypeToTsType ret)
+  FFI.FFITypeVar name -> TsTypeVar (Name.fromChars (Text.unpack name))
+  _ -> TsUnknown
+
+-- | Emit a @.d.ts@ validation error as a compilation error.
+emitDtsValidationError :: FilePath -> Ann.Region -> TsVal.ValidationError -> Result i [Warning.Warning] ()
+emitDtsValidationError jsPath region err =
+  Result.throw (Error.FFIReturnTypeMismatch region jsPath
+    (Name.fromChars (Text.unpack (TsVal.veFunctionName err)))
+    (Text.unpack (TsVal.veMessage err)))
 
 -- | Partition FFI warnings into severe (errors) and mild (warnings) based on severity.
 partitionBySeverity :: [SA.FFIWarning] -> ([SA.FFIWarning], [SA.FFIWarning])
@@ -209,6 +308,8 @@ ffiWarningToError jsPath (SA.AsyncWithoutTask _line name) =
   Error.FFIAsyncWithoutTask Ann.zero jsPath (Name.fromChars (Text.unpack name))
 ffiWarningToError jsPath (SA.MissingResultTag _line name) =
   Error.FFIMissingResultTag Ann.zero jsPath (Name.fromChars (Text.unpack name))
+ffiWarningToError jsPath (SA.ArityMismatch _line name jsParams canopyArity) =
+  Error.FFIArityMismatch Ann.zero jsPath (Name.fromChars (Text.unpack name)) jsParams canopyArity
 ffiWarningToError jsPath other =
   Error.FFIParseError Ann.zero jsPath ("Unexpected severe FFI issue: " <> show other)
 
@@ -313,7 +414,7 @@ takeJSDocBlock (line:rest) =
 isJSDocEnd :: Text.Text -> Bool
 isJSDocEnd line = Text.isInfixOf "*/" line
 
--- Parse a JSDoc comment block to extract function name, type, capabilities, bind mode, and canopy name
+-- Parse a JSDoc comment block to extract function name, type, capabilities, bind mode, canopy name, and opaque kind
 parseJSDocBlock :: [Text.Text] -> Maybe FFIBinding
 parseJSDocBlock commentLines = do
   functionName <- findNameAnnotation commentLines
@@ -321,7 +422,33 @@ parseJSDocBlock commentLines = do
   let capabilities = findCapabilityPermissions commentLines
       bindMode = findBindingMode commentLines
       canopyName = findCanopyName commentLines
-  pure (FFIBinding (FFIFuncName functionName) (FFITypeAnnotation canopyType) capabilities bindMode canopyName)
+      opaqueKind = findOpaqueKind commentLines
+  pure (FFIBinding (FFIFuncName functionName) (FFITypeAnnotation canopyType) capabilities bindMode canopyName opaqueKind)
+
+-- | Find @canopy-opaque annotation in a JSDoc block.
+--
+-- Parses lines like:
+-- @\@canopy-opaque class AudioContext@  → 'ClassBacked' @"AudioContext"@
+-- @\@canopy-opaque symbol DOMElement@   → 'SymbolBranded' @"DOMElement"@
+findOpaqueKind :: [Text.Text] -> OpaqueKind
+findOpaqueKind [] = Unverified
+findOpaqueKind (line:rest) =
+  case parseOpaqueAnnotation line of
+    Just kind -> kind
+    Nothing -> findOpaqueKind rest
+
+-- | Parse a @canopy-opaque annotation from a single line.
+parseOpaqueAnnotation :: Text.Text -> Maybe OpaqueKind
+parseOpaqueAnnotation line =
+  case Text.stripPrefix "@canopy-opaque " (stripJSDocLeader line) of
+    Just rest -> parseOpaqueMode (Text.words (Text.strip rest))
+    Nothing -> Nothing
+
+-- | Parse opaque kind from the words after @canopy-opaque.
+parseOpaqueMode :: [Text.Text] -> Maybe OpaqueKind
+parseOpaqueMode ["class", name] = Just (ClassBacked name)
+parseOpaqueMode ["symbol", name] = Just (SymbolBranded name)
+parseOpaqueMode _ = Nothing
 
 -- | Find all @capability permission annotations in a JSDoc block.
 --

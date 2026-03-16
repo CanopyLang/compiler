@@ -54,6 +54,9 @@ module CLI.Commands
     createWebIDLCommand,
     createSelfUpdateCommand,
 
+    -- * Migration Commands
+    createMigrateCommand,
+
     -- * Kit Commands
     createKitNewCommand,
     createKitDevCommand,
@@ -96,6 +99,9 @@ import CLI.Commands.Kit
   ( createKitBuildCommand,
     createKitDevCommand,
     createKitNewCommand,
+  )
+import CLI.Commands.Migrate
+  ( createMigrateCommand,
   )
 import CLI.Commands.Tools
   ( createFFITestCommand,

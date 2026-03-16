@@ -21,6 +21,7 @@ import FFI.Types
     FFIBinding (..),
     FFIFuncName (..),
     FFITypeAnnotation (..),
+    OpaqueKind (..),
   )
 import qualified Generate.JavaScript.FFI as GenFFI
 import Test.Tasty
@@ -43,19 +44,19 @@ bindingModeTests =
   testGroup
     "BindingMode data type"
     [ testCase "FunctionCall is the default" $ do
-        let binding = FFIBinding (FFIFuncName "add") (FFITypeAnnotation "Int -> Int -> Int") [] FunctionCall Nothing
+        let binding = FFIBinding (FFIFuncName "add") (FFITypeAnnotation "Int -> Int -> Int") [] FunctionCall Nothing Unverified
         _bindingMode binding @?= FunctionCall,
       testCase "MethodCall stores method name" $ do
-        let binding = FFIBinding (FFIFuncName "addEventListener") (FFITypeAnnotation "DOMElement -> String -> (Event -> ()) -> ()") [] (MethodCall "addEventListener") Nothing
+        let binding = FFIBinding (FFIFuncName "addEventListener") (FFITypeAnnotation "DOMElement -> String -> (Event -> ()) -> ()") [] (MethodCall "addEventListener") Nothing Unverified
         _bindingMode binding @?= MethodCall "addEventListener",
       testCase "PropertyGet stores property name" $ do
-        let binding = FFIBinding (FFIFuncName "getCurrentTime") (FFITypeAnnotation "AudioContext -> Float") [] (PropertyGet "currentTime") Nothing
+        let binding = FFIBinding (FFIFuncName "getCurrentTime") (FFITypeAnnotation "AudioContext -> Float") [] (PropertyGet "currentTime") Nothing Unverified
         _bindingMode binding @?= PropertyGet "currentTime",
       testCase "PropertySet stores property name" $ do
-        let binding = FFIBinding (FFIFuncName "setCurrentTime") (FFITypeAnnotation "AudioContext -> Float -> ()") [] (PropertySet "currentTime") Nothing
+        let binding = FFIBinding (FFIFuncName "setCurrentTime") (FFITypeAnnotation "AudioContext -> Float -> ()") [] (PropertySet "currentTime") Nothing Unverified
         _bindingMode binding @?= PropertySet "currentTime",
       testCase "ConstructorCall stores class name" $ do
-        let binding = FFIBinding (FFIFuncName "createAudioContext") (FFITypeAnnotation "() -> AudioContext") [] (ConstructorCall "AudioContext") Nothing
+        let binding = FFIBinding (FFIFuncName "createAudioContext") (FFITypeAnnotation "() -> AudioContext") [] (ConstructorCall "AudioContext") Nothing Unverified
         _bindingMode binding @?= ConstructorCall "AudioContext"
     ]
 
@@ -66,10 +67,10 @@ canopyNameTests =
   testGroup
     "@canopy-name"
     [ testCase "binding without canopy-name has Nothing" $ do
-        let binding = FFIBinding (FFIFuncName "add") (FFITypeAnnotation "Int -> Int -> Int") [] FunctionCall Nothing
+        let binding = FFIBinding (FFIFuncName "add") (FFITypeAnnotation "Int -> Int -> Int") [] FunctionCall Nothing Unverified
         _bindingCanopyName binding @?= Nothing,
       testCase "binding with canopy-name stores the override" $ do
-        let binding = FFIBinding (FFIFuncName "setFrequency") (FFITypeAnnotation "OscillatorNode -> Float -> ()") [] FunctionCall (Just "setOscillatorFrequency")
+        let binding = FFIBinding (FFIFuncName "setFrequency") (FFITypeAnnotation "OscillatorNode -> Float -> ()") [] FunctionCall (Just "setOscillatorFrequency") Unverified
         _bindingCanopyName binding @?= Just "setOscillatorFrequency"
     ]
 

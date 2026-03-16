@@ -276,50 +276,19 @@ var $canopy = {
 -- Used when --ffi-strict is enabled.
 embeddedValidate :: Builder
 embeddedValidate = BB.stringUtf8 [r|
-// CanopyFFIError - Structured error type for programmatic handling
-function CanopyFFIError(expected, actual, path, moduleName, functionName) {
-  this.name = 'CanopyFFIError';
-  this.expected = expected;
-  this.actual = actual;
-  this.path = path;
-  this.module = moduleName || '';
-  this.function = functionName || '';
-  this.message = 'FFI type error at ' + path + ': expected ' + expected + ', got ' + actual;
-  if (typeof Error.captureStackTrace === 'function') {
-    Error.captureStackTrace(this, CanopyFFIError);
-  }
-}
-CanopyFFIError.prototype = Object.create(Error.prototype);
-CanopyFFIError.prototype.constructor = CanopyFFIError;
-
 // $validate - Runtime type validators
 var $validate = {
-  // Structured error helper
-  _throw: function(expected, actual, p) {
-    throw new CanopyFFIError(expected, actual, p);
-  },
-
-  // Finite number assertion for NaN/Infinity detection
-  /** @canopy-type a -> String -> a */
-  assertFinite: function(v, p) {
-    if (typeof v === 'number' && !Number.isFinite(v)) {
-      var desc = Number.isNaN(v) ? 'NaN' : (v > 0 ? 'Infinity' : '-Infinity');
-      console.warn('Canopy: non-finite number at ' + p + ': ' + desc);
-    }
-    return v;
-  },
-
   // Primitive validators
   /** @canopy-type a -> String -> Int */
   Int: function(v, p) {
     if (typeof v !== 'number') {
-      $validate._throw('Int', typeof v, p);
+      throw new Error('FFI type error at ' + p + ': expected Int, got ' + typeof v);
     }
     if (!Number.isInteger(v)) {
-      $validate._throw('Int', 'Float (' + v + ')', p);
+      throw new Error('FFI type error at ' + p + ': expected Int, got Float (' + v + ')');
     }
     if (v < -9007199254740991 || v > 9007199254740991) {
-      $validate._throw('Int (safe range)', 'overflow (' + v + ')', p);
+      throw new Error('FFI type error at ' + p + ': integer overflow');
     }
     return v;
   },
@@ -327,10 +296,10 @@ var $validate = {
   /** @canopy-type a -> String -> Float */
   Float: function(v, p) {
     if (typeof v !== 'number') {
-      $validate._throw('Float', typeof v, p);
+      throw new Error('FFI type error at ' + p + ': expected Float, got ' + typeof v);
     }
     if (!Number.isFinite(v)) {
-      $validate._throw('finite Float', String(v), p);
+      throw new Error('FFI type error at ' + p + ': expected finite Float, got ' + v);
     }
     return v;
   },
@@ -338,7 +307,7 @@ var $validate = {
   /** @canopy-type a -> String -> String */
   String: function(v, p) {
     if (typeof v !== 'string') {
-      $validate._throw('String', typeof v, p);
+      throw new Error('FFI type error at ' + p + ': expected String, got ' + typeof v);
     }
     return v;
   },
@@ -346,7 +315,7 @@ var $validate = {
   /** @canopy-type a -> String -> Bool */
   Bool: function(v, p) {
     if (typeof v !== 'boolean') {
-      $validate._throw('Bool', typeof v, p);
+      throw new Error('FFI type error at ' + p + ': expected Bool, got ' + typeof v);
     }
     return v;
   },
@@ -356,7 +325,7 @@ var $validate = {
   List: function(f) {
     return function(v, p) {
       if (!Array.isArray(v)) {
-        $validate._throw('Array', typeof v, p);
+        throw new Error('FFI type error at ' + p + ': expected Array, got ' + typeof v);
       }
       var validated = v.map(function(e, i) { return f(e, p + '[' + i + ']'); });
       var list = { $: '[]' };
@@ -381,7 +350,7 @@ var $validate = {
   Result: function(errV, okV) {
     return function(v, p) {
       if (typeof v !== 'object' || v === null || !Object.prototype.hasOwnProperty.call(v, '$')) {
-        $validate._throw('Result object with $ tag', typeof v === 'object' ? 'object without $ tag' : typeof v, p);
+        throw new Error('FFI type error at ' + p + ': expected Result object with $ tag');
       }
       if (v.$ === 'Ok') {
         return { $: 'Ok', a: okV(v.a, p + '.Ok') };
@@ -389,7 +358,7 @@ var $validate = {
       if (v.$ === 'Err') {
         return { $: 'Err', a: errV(v.a, p + '.Err') };
       }
-      $validate._throw('Result tag (Ok or Err)', v.$, p);
+      throw new Error('FFI type error at ' + p + ': invalid Result tag: ' + v.$);
     };
   },
 
@@ -397,7 +366,7 @@ var $validate = {
   Task: function(errV, okV) {
     return function(v, p) {
       if (typeof v !== 'object' || v === null || typeof v.then !== 'function') {
-        $validate._throw('Promise', typeof v, p);
+        throw new Error('FFI type error at ' + p + ': expected Promise');
       }
       return {
         $: 2,
@@ -424,10 +393,10 @@ var $validate = {
     var validators = Array.prototype.slice.call(arguments);
     return function(v, p) {
       if (!Array.isArray(v)) {
-        $validate._throw('Tuple (Array)', typeof v, p);
+        throw new Error('FFI type error at ' + p + ': expected Tuple (Array)');
       }
       if (v.length !== validators.length) {
-        $validate._throw('Tuple of ' + validators.length + ' elements', 'Array of ' + v.length, p);
+        throw new Error('FFI type error at ' + p + ': expected Tuple of ' + validators.length + ' elements, got ' + v.length);
       }
       var validated = validators.map(function(f, i) { return f(v[i], p + '[' + i + ']'); });
       if (validated.length === 2) { return { a: validated[0], b: validated[1] }; }
@@ -441,13 +410,13 @@ var $validate = {
   Record: function(fields) {
     return function(v, p) {
       if (typeof v !== 'object' || v === null || Array.isArray(v)) {
-        $validate._throw('Record', v === null ? 'null' : typeof v, p);
+        throw new Error('FFI type error at ' + p + ': expected Record, got ' + (v === null ? 'null' : typeof v));
       }
       for (var i = 0; i < fields.length; i++) {
         var name = fields[i][0];
         var validator = fields[i][1];
         if (!Object.prototype.hasOwnProperty.call(v, name)) {
-          $validate._throw('field "' + name + '"', 'missing', p);
+          throw new Error('FFI type error at ' + p + ': missing field "' + name + '"');
         }
         validator(v[name], p + '.' + name);
       }
@@ -460,10 +429,10 @@ var $validate = {
   Opaque: function(name, ctor) {
     return function(v, p) {
       if (v == null) {
-        $validate._throw(name, v === null ? 'null' : 'undefined', p);
+        throw new Error('FFI type error at ' + p + ': expected ' + name + ', got ' + (v === null ? 'null' : 'undefined'));
       }
       if (ctor && !(v instanceof ctor)) {
-        $validate._throw(name + ' instance', typeof v, p);
+        throw new Error('FFI type error at ' + p + ': expected ' + name + ' instance');
       }
       return v;
     };
@@ -473,7 +442,7 @@ var $validate = {
   /** @canopy-type a -> String -> (a -> b) */
   Function: function(v, p) {
     if (typeof v !== 'function') {
-      $validate._throw('Function', typeof v, p);
+      throw new Error('FFI type error at ' + p + ': expected Function, got ' + typeof v);
     }
     return v;
   },
@@ -486,7 +455,7 @@ var $validate = {
   /** @canopy-type a -> String -> a */
   Any: function(v, p) {
     if (typeof v === 'undefined') {
-      $validate._throw('defined value', 'undefined', p);
+      throw new Error('FFI type error at ' + p + ': got undefined');
     }
     return v;
   }

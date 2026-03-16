@@ -153,6 +153,8 @@ data FFIBinding = FFIBinding
     -- ^ How the JavaScript binding is invoked (function call, method, property, constructor)
   , _bindingCanopyName :: !(Maybe Text)
     -- ^ Optional Canopy-side name override from @canopy-name annotation
+  , _bindingOpaqueKind :: !OpaqueKind
+    -- ^ Classification of opaque types from @canopy-opaque annotations
   } deriving (Eq, Show)
 
 -- | Binding mode for FFI functions.

@@ -21,6 +21,7 @@
 module FFI.TypeScriptValidation
   ( -- * Validation
     validateFFIAgainstDts,
+    validateBindingModes,
     ValidationError (..),
     ValidationResult,
   )
@@ -29,6 +30,7 @@ where
 import qualified Canopy.Data.Name as Name
 import Data.Text (Text)
 import qualified Data.Text as Text
+import FFI.Types (BindingMode (..))
 import Generate.TypeScript.Parser (DtsExport (..))
 import Generate.TypeScript.Types (TsType (..))
 
@@ -178,3 +180,64 @@ renderFieldsSuffix fields = "; " <> Text.intercalate "; " (map renderField field
 renderArgs :: [TsType] -> Text
 renderArgs [] = ""
 renderArgs args = "<" <> Text.intercalate ", " (map renderTsType args) <> ">"
+
+-- | Validate binding modes against @.d.ts@ exports.
+--
+-- For each binding with a non-default binding mode ('MethodCall', 'PropertyGet',
+-- 'PropertySet'), checks that the referenced member exists in the @.d.ts@
+-- interface declarations. Returns errors for references to non-existent members.
+--
+-- @since 0.20.1
+validateBindingModes ::
+  [(Text, BindingMode)] ->
+  [DtsExport] ->
+  ValidationResult
+validateBindingModes bindings exports =
+  concatMap (validateOneMode interfaceFields) bindings
+  where
+    interfaceFields = collectInterfaceMembers exports
+
+-- | Collect all field/method names from interface declarations.
+collectInterfaceMembers :: [DtsExport] -> [Text]
+collectInterfaceMembers = concatMap extractMembers
+  where
+    extractMembers (DtsExportInterface _ fields) =
+      fmap (\(n, _) -> Text.pack (Name.toChars n)) fields
+    extractMembers (DtsExportFunction name _ _) =
+      [Text.pack (Name.toChars name)]
+    extractMembers (DtsExportConst name _) =
+      [Text.pack (Name.toChars name)]
+    extractMembers _ = []
+
+-- | Validate a single binding mode against available interface members.
+validateOneMode :: [Text] -> (Text, BindingMode) -> ValidationResult
+validateOneMode _ (_, FunctionCall) = []
+validateOneMode _ (_, ConstructorCall _) = []
+validateOneMode members (funcName, MethodCall methodName)
+  | methodName `elem` members = []
+  | otherwise = [makeModeError funcName "method" methodName]
+validateOneMode members (funcName, PropertyGet propName)
+  | propName `elem` members = []
+  | otherwise = [makeModeError funcName "property" propName]
+validateOneMode members (funcName, PropertySet propName)
+  | propName `elem` members = []
+  | otherwise = [makeModeError funcName "property" propName]
+
+-- | Create a validation error for a missing binding mode reference.
+makeModeError :: Text -> Text -> Text -> ValidationError
+makeModeError funcName kind memberName =
+  ValidationError
+    { veFunctionName = funcName,
+      veExpected = kind <> " " <> memberName,
+      veActual = "not found in .d.ts",
+      veMessage =
+        Text.concat
+          [ "Binding mode validation: ",
+            funcName,
+            " references ",
+            kind,
+            " `",
+            memberName,
+            "` which was not found in the .d.ts declarations"
+          ]
+    }

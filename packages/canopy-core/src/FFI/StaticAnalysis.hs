@@ -60,6 +60,7 @@ import qualified Data.Map.Strict as Map
 import Data.Text (Text)
 import qualified Data.Text.Encoding as TextEnc
 import FFI.Types (FFIType (..))
+import qualified FFI.TypeParser as TypeParser
 import Language.JavaScript.Parser.AST
   ( JSAnnot (..),
     JSArrayElement (..),
@@ -132,6 +133,8 @@ data FFIWarning
     MissingResultTag !Int !Text
   | -- | Array contains mixed element types
     MixedArrayElements !Int !Text
+  | -- | JS function parameter count does not match @canopy-type arity
+    ArityMismatch !Int !Text !Int !Int
   deriving (Eq, Show)
 
 -- SEVERITY CLASSIFICATION
@@ -173,6 +176,7 @@ warningSeverity (MissingResultTag {}) = FFIError
 warningSeverity (LooseEquality {}) = FFIWarningLevel
 warningSeverity (MixedArrayElements {}) = FFIWarningLevel
 warningSeverity (MissingReturnPath {}) = FFIWarningLevel
+warningSeverity (ArityMismatch {}) = FFIError
 warningSeverity (MixedTypeOperation {}) = FFIWarningLevel
 
 -- ANALYSIS RESULT
@@ -235,6 +239,7 @@ data JSFunc = JSFunc
   { _jsFuncName :: !Text,
     _jsFuncLine :: !Int,
     _jsFuncIsAsync :: !Bool,
+    _jsFuncParams :: !Int,
     _jsFuncBody :: !JSBlock
   }
 
@@ -245,43 +250,65 @@ extractFunctions = concatMap extractFromStatement
 -- | Extract function declarations from a single statement.
 extractFromStatement :: JSStatement -> [JSFunc]
 extractFromStatement = \case
-  JSFunction annot ident _ _ _ body _ ->
-    identToFunc annot ident False body
-  JSAsyncFunction _ annot ident _ _ _ body _ ->
-    identToFunc annot ident True body
-  JSAST.JSGenerator _ annot ident _ _ _ body _ ->
-    identToFunc annot ident False body
+  JSFunction annot ident _ params _ body _ ->
+    identToFunc annot ident False (countCommaList params) body
+  JSAsyncFunction _ annot ident _ params _ body _ ->
+    identToFunc annot ident True (countCommaList params) body
+  JSAST.JSGenerator _ annot ident _ params _ body _ ->
+    identToFunc annot ident False (countCommaList params) body
   JSStatementBlock _ stmts _ _ ->
     concatMap extractFromStatement stmts
   _ -> []
 
 -- | Build a JSFunc from an identifier and body, if the identifier is named.
-identToFunc :: JSAnnot -> JSIdent -> Bool -> JSBlock -> [JSFunc]
-identToFunc annot ident isAsync body =
+identToFunc :: JSAnnot -> JSIdent -> Bool -> Int -> JSBlock -> [JSFunc]
+identToFunc annot ident isAsync paramCount body =
   case ident of
     JSIdentName _ nameBS ->
       [ JSFunc
           { _jsFuncName = TextEnc.decodeUtf8Lenient nameBS,
             _jsFuncLine = extractAnnotLine annot,
             _jsFuncIsAsync = isAsync,
+            _jsFuncParams = paramCount,
             _jsFuncBody = body
           }
       ]
     JSIdentNone -> []
+
+-- | Count items in a comma-separated parameter list.
+countCommaList :: JSCommaList a -> Int
+countCommaList JSLNil = 0
+countCommaList (JSLOne _) = 1
+countCommaList cl = length (commaListToList cl)
 
 -- FUNCTION ANALYSIS
 
 -- | Analyze a single function against declared types.
 analyzeFunction :: Map.Map Text FFIType -> JSFunc -> [FFIWarning]
 analyzeFunction declaredTypes func =
-  asyncWarnings ++ returnWarnings ++ bodyWarnings
+  arityWarnings ++ asyncWarnings ++ returnWarnings ++ bodyWarnings
   where
     name = _jsFuncName func
     line = _jsFuncLine func
     declared = Map.lookup name declaredTypes
+    arityWarnings = checkArityMismatch line name (_jsFuncParams func) declared
     asyncWarnings = checkAsyncMismatch line name (_jsFuncIsAsync func) declared
     returnWarnings = analyzeReturns line name (_jsFuncBody func) declared
     bodyWarnings = analyzeBodyExpressions name (_jsFuncBody func)
+
+-- | Check if JS parameter count matches declared @canopy-type arity.
+--
+-- Only checks when the declared type is a function type (arity > 0).
+-- Non-function types (arity 0) are skipped since the JS function may
+-- be a thunk or wrapper.
+checkArityMismatch :: Int -> Text -> Int -> Maybe FFIType -> [FFIWarning]
+checkArityMismatch line name jsParams (Just declaredType)
+  | declaredArity > 0 && jsParams /= declaredArity =
+      [ArityMismatch line name jsParams declaredArity]
+  | otherwise = []
+  where
+    declaredArity = TypeParser.countArity declaredType
+checkArityMismatch _ _ _ Nothing = []
 
 -- | Build the inferred type entry for a function (for the result map).
 inferFunctionEntry :: JSFunc -> [(Text, InferredType)]

@@ -51,8 +51,10 @@ tests =
       resultTagTests,
       returnTypeMismatchTests,
       arrayElementTests,
+      arityMismatchTests,
       integrationTests,
-      commaListHelperTests
+      commaListHelperTests,
+      severityClassificationTests
     ]
 
 -- HELPERS
@@ -109,30 +111,44 @@ jsReturn line expr = JSReturn (annot line) (Just expr) noSemi
 jsReturnVoid :: Int -> JSStatement
 jsReturnVoid line = JSReturn (annot line) Nothing noSemi
 
--- | Create a function statement.
+-- | Create a function statement with no parameters.
 jsFunc :: String -> [JSStatement] -> JSStatement
-jsFunc name body =
+jsFunc name body = jsFuncWithParams name 0 body
+
+-- | Create a function statement with a specified number of parameters.
+jsFuncWithParams :: String -> Int -> [JSStatement] -> JSStatement
+jsFuncWithParams name paramCount body =
   JSFunction
     (annot 1)
     (JSIdentName noAnnot (BSC.pack name))
     noAnnot
-    JSLNil
+    (buildParamList paramCount)
     noAnnot
     (JSBlock noAnnot body noAnnot)
     noSemi
 
--- | Create an async function statement.
+-- | Create an async function statement with no parameters.
 jsAsyncFunc :: String -> [JSStatement] -> JSStatement
-jsAsyncFunc name body =
+jsAsyncFunc name body = jsAsyncFuncWithParams name 0 body
+
+-- | Create an async function statement with a specified number of parameters.
+jsAsyncFuncWithParams :: String -> Int -> [JSStatement] -> JSStatement
+jsAsyncFuncWithParams name paramCount body =
   JSAsyncFunction
     (annot 1)
     (annot 1)
     (JSIdentName noAnnot (BSC.pack name))
     noAnnot
-    JSLNil
+    (buildParamList paramCount)
     noAnnot
     (JSBlock noAnnot body noAnnot)
     noSemi
+
+-- | Build a parameter list with N parameters (named p0, p1, ...).
+buildParamList :: Int -> JSCommaList JSExpression
+buildParamList 0 = JSLNil
+buildParamList 1 = JSLOne (jsIdent "p0")
+buildParamList n = foldl (\acc i -> JSLCons acc noAnnot (jsIdent ("p" ++ show i))) (JSLOne (jsIdent "p0")) [1 .. n - 1]
 
 -- | Create an if/else statement.
 jsIfElse :: JSExpression -> JSStatement -> JSStatement -> JSStatement
@@ -178,10 +194,14 @@ buildCommaList (x : xs) = foldl (\acc item -> JSLCons acc noAnnot item) (JSLOne 
 analyze :: [JSStatement] -> Map.Map Text.Text FFIType -> [SA.FFIWarning]
 analyze stmts types = SA._analysisWarnings (SA.analyzeFFIFile stmts types)
 
--- | Convenience: analyze a single function.
+-- | Convenience: analyze a single function with matching param count.
 analyzeFunc :: String -> [JSStatement] -> FFIType -> [SA.FFIWarning]
 analyzeFunc name body declaredType =
-  analyze [jsFunc name body] (Map.singleton (Text.pack name) declaredType)
+  analyze [jsFuncWithParams name paramCount body] (Map.singleton (Text.pack name) declaredType)
+  where
+    paramCount = case declaredType of
+      FFIFunctionType params _ -> length params
+      _ -> 0
 
 -- TYPE INFERENCE TESTS
 
@@ -489,6 +509,48 @@ arrayElementTests =
          in assertBool "should not warn for empty array" (not (any isMixedArray warnings))
     ]
 
+-- ARITY MISMATCH TESTS
+
+arityMismatchTests :: TestTree
+arityMismatchTests =
+  testGroup
+    "Arity mismatch"
+    [ testCase "matching arity produces no warning" $
+        let stmts = [jsFuncWithParams "add" 2 [jsReturn 2 (jsBinOp (jsIdent "p0") (JSBinOpPlus noAnnot) (jsIdent "p1"))]]
+            types = Map.singleton "add" (FFIFunctionType [FFIInt, FFIInt] FFIInt)
+            warnings = analyze stmts types
+         in assertBool "should not warn for matching arity" (not (any isArityMismatch warnings)),
+      testCase "JS 3 params, Canopy 2 arrows produces ArityMismatch" $
+        let stmts = [jsFuncWithParams "compute" 3 [jsReturn 2 (jsNumber 1)]]
+            types = Map.singleton "compute" (FFIFunctionType [FFIInt, FFIInt] FFIInt)
+            warnings = analyze stmts types
+         in assertBool "should detect arity mismatch" (any isArityMismatch warnings),
+      testCase "JS 1 param, Canopy 3 arrows produces ArityMismatch" $
+        let stmts = [jsFuncWithParams "f" 1 [jsReturn 2 (jsNumber 1)]]
+            types = Map.singleton "f" (FFIFunctionType [FFIInt, FFIString, FFIBool] FFIInt)
+            warnings = analyze stmts types
+         in assertBool "should detect arity mismatch" (any isArityMismatch warnings),
+      testCase "non-function type (arity 0) produces no check" $
+        let stmts = [jsFuncWithParams "getValue" 2 [jsReturn 2 (jsNumber 1)]]
+            types = Map.singleton "getValue" FFIInt
+            warnings = analyze stmts types
+         in assertBool "should not check arity for non-function type" (not (any isArityMismatch warnings)),
+      testCase "ArityMismatch includes correct counts" $
+        let stmts = [jsFuncWithParams "bad" 3 [jsReturn 2 (jsNumber 1)]]
+            types = Map.singleton "bad" (FFIFunctionType [FFIInt] FFIInt)
+            warnings = analyze stmts types
+         in case filter isArityMismatch warnings of
+              (SA.ArityMismatch _ _ jsP canP : _) -> do
+                jsP @?= 3
+                canP @?= 1
+              _ -> assertFailure "expected ArityMismatch warning",
+      testCase "undeclared function produces no arity warning" $
+        let stmts = [jsFuncWithParams "unknown" 5 [jsReturn 2 (jsNumber 1)]]
+            types = Map.empty
+            warnings = analyze stmts types
+         in assertBool "should not warn for undeclared function" (not (any isArityMismatch warnings))
+    ]
+
 -- INTEGRATION TESTS
 
 integrationTests :: TestTree
@@ -560,6 +622,35 @@ commaListHelperTests =
         SA.extractAnnotLine JSNoAnnot @?= 0
     ]
 
+-- SEVERITY CLASSIFICATION TESTS
+
+severityClassificationTests :: TestTree
+severityClassificationTests =
+  testGroup
+    "warningSeverity"
+    [ testCase "ReturnTypeMismatch is FFIError" $
+        SA.warningSeverity (SA.ReturnTypeMismatch 1 "testFunc" SA.InfNumber FFIInt)
+          @?= SA.FFIError,
+      testCase "NullableReturn is FFIError" $
+        SA.warningSeverity (SA.NullableReturn 1 "testFunc")
+          @?= SA.FFIError,
+      testCase "AsyncWithoutTask is FFIError" $
+        SA.warningSeverity (SA.AsyncWithoutTask 1 "testFunc")
+          @?= SA.FFIError,
+      testCase "MissingResultTag is FFIError" $
+        SA.warningSeverity (SA.MissingResultTag 1 "testFunc")
+          @?= SA.FFIError,
+      testCase "LooseEquality is FFIWarningLevel" $
+        SA.warningSeverity (SA.LooseEquality 1 "testFunc")
+          @?= SA.FFIWarningLevel,
+      testCase "MixedTypeOperation is FFIWarningLevel" $
+        SA.warningSeverity (SA.MixedTypeOperation 1 "testFunc" "number + string")
+          @?= SA.FFIWarningLevel,
+      testCase "ArityMismatch is FFIError" $
+        SA.warningSeverity (SA.ArityMismatch 1 "testFunc" 3 2)
+          @?= SA.FFIError
+    ]
+
 -- WARNING PREDICATES
 
 isMixedType :: SA.FFIWarning -> Bool
@@ -593,6 +684,10 @@ isTypeMismatch _ = False
 isMixedArray :: SA.FFIWarning -> Bool
 isMixedArray (SA.MixedArrayElements {}) = True
 isMixedArray _ = False
+
+isArityMismatch :: SA.FFIWarning -> Bool
+isArityMismatch (SA.ArityMismatch {}) = True
+isArityMismatch _ = False
 
 isImplicitUndefinedPath :: SA.ReturnInfo -> Bool
 isImplicitUndefinedPath (SA.ImplicitUndefined _) = True

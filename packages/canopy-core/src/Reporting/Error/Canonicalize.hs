@@ -119,6 +119,8 @@ data Error
     -- ^ Region, FFI file, async function without Task return type
   | FFIMissingResultTag Ann.Region FilePath Name.Name
     -- ^ Region, FFI file, function returning Result without $ tag
+  | FFIArityMismatch Ann.Region FilePath Name.Name Int Int
+    -- ^ Region, FFI file, function name, JS param count, Canopy arity
   deriving (Show)
 
 -- | Position where a type variable appears that violates its variance annotation.
@@ -413,6 +415,13 @@ toDiagnostic source err =
           [ Doc.reflow ("The FFI function `" <> Name.toChars funcName <> "` in " <> filePath <> " returns a Result type,"),
             Doc.reflow "but the JavaScript code does not construct objects with the required `$` tag.",
             Doc.reflow "Hint: Return `{ $: 'Ok', a: value }` or `{ $: 'Err', a: error }`, or use `$canopy.Ok(value)` / `$canopy.Err(error)`."
+          ])
+    FFIArityMismatch region filePath funcName jsParams canopyArity ->
+      Diagnostic.makeSimpleDiagnostic (EC.canonError 64) Diagnostic.PhaseCanon "FFI ARITY MISMATCH" region
+        (Doc.stack
+          [ Doc.reflow ("The FFI function `" <> Name.toChars funcName <> "` in " <> filePath <> " has " <> show jsParams <> " JavaScript parameter(s),"),
+            Doc.reflow ("but the @canopy-type annotation declares " <> show canopyArity <> " parameter(s)."),
+            Doc.reflow "Hint: Update the JavaScript function or the @canopy-type annotation so the parameter counts match."
           ])
 
 -- ---------------------------------------------------------------------------

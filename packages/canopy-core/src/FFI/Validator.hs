@@ -35,11 +35,15 @@ module FFI.Validator
     generateValidator
   , generateValidatorName
   , generateAllValidators
+  , generateOpaqueValidator
   , ValidatorConfig(..)
   , defaultConfig
 
     -- * FFI type representation (re-exported from FFI.Types)
   , FFIType(..)
+
+    -- * Opaque kind (re-exported from FFI.Types)
+  , OpaqueKind(..)
 
     -- * Type string parsing (delegated to FFI.TypeParser)
   , parseFFIType
@@ -48,7 +52,7 @@ module FFI.Validator
 
 import qualified Data.Text as Text
 import Data.Text (Text)
-import FFI.Types (FFIType (..))
+import FFI.Types (FFIType (..), OpaqueKind (..))
 import qualified FFI.TypeParser as TypeParser
 
 -- | Configuration for validator generation
@@ -196,15 +200,7 @@ generateValidatorBody config ffiType = case ffiType of
     <> indent <> "return v;"
 
   FFIOpaque typeName _ ->
-    indent <> "if (v == null) {\n"
-    <> indent <> "  " <> throwError config typeName <> "\n"
-    <> indent <> "}\n"
-    <> (if _configValidateOpaque config
-         then indent <> "if (!(v instanceof " <> typeName <> ")) {\n"
-              <> indent <> "  " <> throwError config typeName <> "\n"
-              <> indent <> "}\n"
-         else "")
-    <> indent <> "return v;"
+    generateOpaqueValidatorBody config typeName Unverified
 
   FFIFunctionType _ _ ->
     indent <> "if (typeof v !== 'function') {\n"
@@ -226,6 +222,51 @@ generateValidatorBody config ffiType = case ffiType of
       <> indent <> "}\n"
       <> indent <> generateValidatorName fieldType <> "(v." <> name <> ", ctx + '." <> name <> "');\n"
     indent = "  "
+
+-- | Generate an opaque type validator body using the 'OpaqueKind' strategy.
+--
+-- * 'ClassBacked' — uses @instanceof@ to verify the JS class
+-- * 'SymbolBranded' — checks for a unique symbol brand property
+-- * 'Unverified' — only rejects null/undefined (legacy behavior)
+--
+-- @since 0.20.1
+generateOpaqueValidatorBody :: ValidatorConfig -> Text -> OpaqueKind -> Text
+generateOpaqueValidatorBody config typeName opaqueKind =
+  indent <> "if (v == null) {\n"
+    <> indent <> "  " <> throwError config typeName <> "\n"
+    <> indent <> "}\n"
+    <> kindCheck
+    <> indent <> "return v;"
+  where
+    indent = "  "
+    kindCheck = case opaqueKind of
+      ClassBacked className ->
+        indent <> "if (!(v instanceof " <> className <> ")) {\n"
+          <> indent <> "  " <> throwError config (typeName <> " (expected instanceof " <> className <> ")") <> "\n"
+          <> indent <> "}\n"
+      SymbolBranded brandName ->
+        indent <> "if (!v['__canopy_brand_" <> brandName <> "']) {\n"
+          <> indent <> "  " <> throwError config (typeName <> " (missing brand " <> brandName <> ")") <> "\n"
+          <> indent <> "}\n"
+      Unverified ->
+        if _configValidateOpaque config
+          then indent <> "if (!(v instanceof " <> typeName <> ")) {\n"
+                <> indent <> "  " <> throwError config typeName <> "\n"
+                <> indent <> "}\n"
+          else ""
+
+-- | Generate a complete opaque validator function with a specific 'OpaqueKind'.
+--
+-- @since 0.20.1
+generateOpaqueValidator :: ValidatorConfig -> Text -> OpaqueKind -> Text
+generateOpaqueValidator config typeName opaqueKind =
+  Text.unlines
+    [ "function _validate_Opaque_" <> sanitize typeName <> "(v, ctx) {",
+      generateOpaqueValidatorBody config typeName opaqueKind,
+      "}"
+    ]
+  where
+    sanitize = Text.filter (\c -> c >= 'a' && c <= 'z' || c >= 'A' && c <= 'Z' || c >= '0' && c <= '9')
 
 -- | Generate error throwing statement
 throwError :: ValidatorConfig -> Text -> Text
