@@ -43,6 +43,7 @@ library
       Check
       CLI.Commands
       CLI.Commands.Build
+      CLI.Commands.Convert
       CLI.Commands.Dev
       CLI.Commands.Kit
       CLI.Commands.Link
@@ -53,6 +54,7 @@ library
       CLI.Documentation
       CLI.Parsers
       CLI.Types
+      CoverageCmd
       Deps.Bump
       Deps.CustomRepositoryDataIO
       Deps.Diff
@@ -185,6 +187,7 @@ library
       Test.Browser
       Test.Compile
       Test.Coverage
+      Test.Coverage.Merge
       Test.Discovery
       Test.Event
       Test.FFI
@@ -260,6 +263,7 @@ library
     , binary
     , bytestring
     , canopy-builder
+    , canopy-convert
     , canopy-core
     , canopy-driver
     , canopy-query

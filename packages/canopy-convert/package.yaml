@@ -1,17 +1,17 @@
 ---
-name: canopy-terminal
+name: canopy-convert
 version: 0.19.1
-synopsis: "Canopy command-line interface and tools"
+synopsis: "Elm-to-Canopy package conversion library"
 description: |
-  Command-line interface for Canopy compiler including commands like
-  make, repl, install, and development tools.
+  Converts pure Elm packages to Canopy format by renaming file extensions
+  (.elm to .can), remapping project file metadata (elm.json to canopy.json),
+  and transforming package dependency references (elm/* to canopy/*).
 
   This package provides:
-    * CLI command implementations
-    * REPL interaction
-    * Project scaffolding
-    * Watch mode
-    * Package management commands
+    * Core conversion logic shared between CLI and server
+    * Package name mapping (elm/* to canopy/*)
+    * Project file transformation
+    * Source file discovery and renaming
 
 homepage: "https://github.com/quinten/canopy"
 license: BSD-3-Clause
@@ -23,43 +23,12 @@ category: Compiler, Language
 
 dependencies:
   - base
-  - aeson
-  - aeson-pretty
-  - ansi-terminal
-  - binary
-  - ansi-wl-pprint
   - bytestring
-  - case-insensitive
   - containers
   - directory
-  - file-embed
   - filepath
-  - haskeline
-  - http-client
-  - http-client-tls
   - lens
-  - mtl
-  - network
-  - process
-  - raw-strings-qq
-  - SHA
-  - snap-core
-  - snap-server
-  - template-haskell
   - text
-  - time
-  - transformers
-  - unordered-containers
-  - utf8-string
-  - fsnotify
-  - websockets
-  - zip-archive
-  - canopy-core
-  - canopy-query
-  - canopy-driver
-  - canopy-builder
-  - canopy-convert
-  - canopy-webidl
 
 default-extensions:
   - ConstraintKinds
@@ -90,11 +59,15 @@ default-extensions:
   - UndecidableInstances
 
 library:
-  source-dirs:
-    - src
-    - impl
+  source-dirs: src
   ghc-options:
     - -Wall
     - -fwarn-tabs
     - -O2
     - -Wno-unused-do-bind
+  exposed-modules:
+    - Convert
+    - Convert.PackageMap
+    - Convert.ProjectFile
+    - Convert.Source
+    - Convert.Types

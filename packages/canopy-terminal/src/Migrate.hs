@@ -51,6 +51,7 @@ where
 import Control.Lens (makeLenses, (^.))
 import qualified Data.ByteString as BS
 import qualified Data.ByteString.Lazy as LBS
+import qualified Convert.PackageMap as PackageMap
 import qualified Data.List as List
 import qualified Data.Text as Text
 import qualified Data.Text.Encoding as TE
@@ -328,27 +329,11 @@ convertJsonContent content =
   List.foldl' applyLazyReplacement content jsonReplacements
 
 -- | Replacements applied to @elm.json@ to produce @canopy.json@.
+--
+-- Delegates to 'PackageMap.elmToCanopyLazyReplacements' as the single
+-- source of truth for all elm-to-canopy package mappings.
 jsonReplacements :: [(LBS.ByteString, LBS.ByteString)]
-jsonReplacements =
-  [ ("\"elm-version\"", "\"canopy-version\"")
-  , ("\"elm-explorations\"", "\"canopy-explorations\"")
-  , ("\"elm-stuff\"", "\".canopy-stuff\"")
-  , ("\"elm/core\"", "\"canopy/core\"")
-  , ("\"elm/json\"", "\"canopy/json\"")
-  , ("\"elm/html\"", "\"canopy/html\"")
-  , ("\"elm/browser\"", "\"canopy/browser\"")
-  , ("\"elm/http\"", "\"canopy/http\"")
-  , ("\"elm/url\"", "\"canopy/url\"")
-  , ("\"elm/time\"", "\"canopy/time\"")
-  , ("\"elm/virtual-dom\"", "\"canopy/virtual-dom\"")
-  , ("\"elm/random\"", "\"canopy/random\"")
-  , ("\"elm/bytes\"", "\"canopy/bytes\"")
-  , ("\"elm/file\"", "\"canopy/file\"")
-  , ("\"elm/parser\"", "\"canopy/parser\"")
-  , ("\"elm/regex\"", "\"canopy/regex\"")
-  , ("\"elm/svg\"", "\"canopy/svg\"")
-  , ("\"elm/project-metadata-utils\"", "\"canopy/project-metadata-utils\"")
-  ]
+jsonReplacements = PackageMap.elmToCanopyLazyReplacements
 
 -- | Apply a lazy ByteString search-and-replace.
 applyLazyReplacement :: LBS.ByteString -> (LBS.ByteString, LBS.ByteString) -> LBS.ByteString

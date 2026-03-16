@@ -6,6 +6,7 @@ packages:
   - packages/canopy-query
   - packages/canopy-driver
   - packages/canopy-builder
+  - packages/canopy-convert
   - packages/canopy-terminal
   - packages/canopy-webidl
 

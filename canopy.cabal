@@ -1,6 +1,6 @@
 cabal-version: 2.2
 
--- This file has been generated from package.yaml by hpack version 0.38.1.
+-- This file has been generated from package.yaml by hpack version 0.36.1.
 --
 -- see: https://github.com/sol/hpack
 
@@ -258,6 +258,7 @@ test-suite canopy-test
       Unit.CLI.DocumentationTest
       Unit.CLI.ParsersTest
       Unit.Compiler.DiscoveryTest
+      Unit.Convert.ConvertTest
       Unit.Data.BagTest
       Unit.Data.IndexTest
       Unit.Data.Map.UtilsTest
@@ -343,12 +344,14 @@ test-suite canopy-test
       Unit.NameReversalTest
       Unit.New.Compiler.DriverTest
       Unit.NewTest
+      Unit.Nitpick.RecursionTest
       Unit.Optimize.CaseTest
       Unit.Optimize.ConstantFoldTest
       Unit.Optimize.DecisionTreeTest
       Unit.Optimize.ExpressionArithmeticTest
       Unit.Optimize.NamesTest
       Unit.Optimize.SimplifyTest
+      Unit.Optimize.WarningsTest
       Unit.OutlineFormatTest
       Unit.Parse.AbilityTest
       Unit.Parse.ExpressionArithmeticTest
@@ -388,6 +391,7 @@ test-suite canopy-test
       Unit.Terminal.Lint.RulesTest
       Unit.TerminalTest
       Unit.Test.CoverageReportTest
+      Unit.Test.CoverageScopeTest
       Unit.Test.EventCoverageTest
       Unit.Type.GuardNarrowingTest
       Unit.Type.InstantiateTest
@@ -447,6 +451,7 @@ test-suite canopy-test
     , bytestring
     , canopy
     , canopy-builder
+    , canopy-convert
     , canopy-core
     , canopy-driver
     , canopy-query

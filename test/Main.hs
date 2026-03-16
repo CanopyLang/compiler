@@ -147,6 +147,7 @@ import qualified Unit.Type.OpaqueBoundsTest as OpaqueBoundsTest
 import qualified Unit.Type.SolveTest as SolveTest
 import qualified Unit.Type.UnifyTest as UnifyTest
 import qualified Unit.Type.VarianceTest as VarianceTest
+import qualified Unit.Convert.ConvertTest as ConvertTest
 import qualified Unit.Canonicalize.AbilityTest as CanonicalizeAbilityTest
 import qualified Unit.Canonicalize.DupsTest as CanonicalizeDupsTest
 import qualified Unit.Canonicalize.ExpressionArithmeticTest as CanonicalizeExpressionArithmeticTest
@@ -407,7 +408,8 @@ unitTests =
       KitLayoutTest.tests,
       KitErrorBoundaryTest.tests,
       KitDevTest.tests,
-      FFICapabilityTest.tests
+      FFICapabilityTest.tests,
+      ConvertTest.tests
     ]
 
 propertyTests :: TestTree

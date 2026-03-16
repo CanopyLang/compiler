@@ -132,6 +132,7 @@ tests:
       - -with-rtsopts=-N
     dependencies:
       - canopy
+      - canopy-convert
       - canopy-core
       - canopy-query
       - canopy-driver
