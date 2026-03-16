@@ -57,10 +57,15 @@ module Test
     coverageFormatParser,
     coverageOutputParser,
     minCoverageParser,
+    includeDepsParser,
+
+    -- * Coverage
+    Coverage.CoverageScope (..),
   )
 where
 
 import qualified AST.Optimized as Opt
+import qualified Canopy.Data.Utf8 as Utf8
 import qualified Canopy.ModuleName as ModuleName
 import qualified Canopy.Package as Pkg
 import Control.Lens ((^.))
@@ -120,12 +125,16 @@ data Flags = Flags
     _testSlowMo :: !(Maybe Int),
     -- | Instrument code and show coverage report after tests
     _testCoverage :: !Bool,
-    -- | Coverage output format: istanbul or lcov
+    -- | Coverage output format: istanbul, lcov, or html
     _testCoverageFormat :: !(Maybe String),
     -- | Write coverage report to this file path
     _testCoverageOutput :: !(Maybe String),
     -- | Minimum coverage percentage required (fail if below)
-    _testMinCoverage :: !(Maybe Int)
+    _testMinCoverage :: !(Maybe Int),
+    -- | Include dependency packages in coverage analysis
+    _testIncludeDeps :: !(Maybe String),
+    -- | Show uncovered source locations after report
+    _testShowUncovered :: !Bool
   }
   deriving (Eq, Show)
 
@@ -247,7 +256,9 @@ compileAndRunWithRoot root testFiles flags = do
       pure (ExitFailure 1)
     Just (jsContent, mains, maybeCovMap, staleFFI, pkgName) -> do
       (exitCode, maybeCovData) <- dispatchByTestType jsContent mains testFiles flags
-      thresholdPassed <- handleCoverageOutput flags (Just pkgName) maybeCovMap maybeCovData
+      let scope = parseCoverageScope (flags ^. testIncludeDeps)
+      thresholdPassed <- handleCoverageOutput flags scope (Just pkgName) maybeCovMap maybeCovData
+      renderUncoveredIfEnabled flags scope (Just pkgName) maybeCovMap maybeCovData
       reportStaleFFI staleFFI
       pure (if exitCode == ExitSuccess && not thresholdPassed then ExitFailure 1 else exitCode)
 
@@ -528,27 +539,71 @@ when :: Bool -> IO () -> IO ()
 when True action = action
 when False _ = pure ()
 
+-- ── Coverage Scope Parsing ──────────────────────────────────────────
+
+-- | Parse the @--include-deps@ flag value into a 'CoverageScope'.
+--
+-- * 'Nothing' -> 'CurrentOnly'
+-- * @Just \"all\"@ -> 'WithAllDeps'
+-- * @Just \"author\/pkg1,author\/pkg2\"@ -> 'WithSpecific [...]'
+--
+-- @since 0.19.2
+parseCoverageScope :: Maybe String -> Coverage.CoverageScope
+parseCoverageScope Nothing = Coverage.CurrentOnly
+parseCoverageScope (Just "all") = Coverage.WithAllDeps
+parseCoverageScope (Just s) =
+  Coverage.WithSpecific (Maybe.mapMaybe parsePkgName (splitOn ',' s))
+
+-- | Parse an @author\/project@ string into a 'Pkg.Name'.
+parsePkgName :: String -> Maybe Pkg.Name
+parsePkgName s =
+  case break (== '/') s of
+    (author, '/' : project)
+      | not (null author) && not (null project) ->
+          Just (Pkg.Name (Utf8.fromChars author) (Utf8.fromChars project))
+    _ -> Nothing
+
+-- | Split a string on a delimiter character.
+splitOn :: Char -> String -> [String]
+splitOn _ [] = []
+splitOn delim s =
+  case break (== delim) s of
+    (chunk, []) -> [chunk]
+    (chunk, _ : rest) -> chunk : splitOn delim rest
+
 -- ── Coverage Output ─────────────────────────────────────────────────
 
 -- | Render and\/or write coverage reports after tests complete.
 --
 -- When the coverage flag is set and both a 'CoverageMap' and runtime
 -- hit data are available, prints a terminal summary and optionally
--- writes an Istanbul JSON or LCOV file.
+-- writes an Istanbul JSON, LCOV, or HTML file.
 --
 -- @since 0.19.2
-handleCoverageOutput :: Flags -> Maybe Pkg.Name -> Maybe CoverageMap.CoverageMap -> Maybe Value -> IO Bool
-handleCoverageOutput flags maybePkg maybeCovMap maybeCovData =
+handleCoverageOutput :: Flags -> Coverage.CoverageScope -> Maybe Pkg.Name -> Maybe CoverageMap.CoverageMap -> Maybe Value -> IO Bool
+handleCoverageOutput flags scope maybePkg maybeCovMap maybeCovData =
   case (flags ^. testCoverage, maybeCovMap, maybeCovData) of
     (True, Just covMap, Just covData) -> do
       let hits = Coverage.parseCoverageHits covData
-      Coverage.renderTerminalReport maybePkg covMap hits
+      Coverage.renderTerminalReport scope maybePkg covMap hits
       writeCoverageFile flags covMap hits
-      checkMinCoverage flags maybePkg covMap hits
+      checkMinCoverage flags scope maybePkg covMap hits
     (True, _, Nothing) -> do
       Print.println [c|{yellow|Warning:} Coverage enabled but no coverage data received from test runner.|]
       pure True
     _ -> pure True
+
+-- | Render uncovered locations if the @--show-uncovered@ flag is set.
+--
+-- @since 0.19.2
+renderUncoveredIfEnabled :: Flags -> Coverage.CoverageScope -> Maybe Pkg.Name -> Maybe CoverageMap.CoverageMap -> Maybe Value -> IO ()
+renderUncoveredIfEnabled flags scope maybePkg maybeCovMap maybeCovData =
+  case (flags ^. testCoverage, flags ^. testShowUncovered, maybeCovMap, maybeCovData) of
+    (True, True, Just covMap, Just covData) -> do
+      let hits = Coverage.parseCoverageHits covData
+          scopedMap = Coverage.applyCoverageScope scope maybePkg covMap
+      Coverage.renderUncoveredLocations scopedMap hits
+    _ -> pure ()
 
 -- | Write a coverage report file if @--coverage-format@ and @--coverage-output@ are set.
 --
@@ -561,7 +616,7 @@ writeCoverageFile flags covMap hits =
         Just coverageFormat -> Coverage.writeReport coverageFormat path covMap hits
         Nothing -> do
           let fmtStr = fmt
-          Print.printErrLn [c|{red|Error:} Unknown coverage format: #{fmtStr}. Use 'istanbul' or 'lcov'.|]
+          Print.printErrLn [c|{red|Error:} Unknown coverage format: #{fmtStr}. Use 'istanbul', 'lcov', or 'html'.|]
     (Just _, Nothing) ->
       Print.printErrLn [c|{yellow|Warning:} --coverage-format requires --coverage-output.|]
     _ -> pure ()
@@ -572,6 +627,7 @@ writeCoverageFile flags covMap hits =
 parseCoverageFormatString :: String -> Maybe Coverage.CoverageFormat
 parseCoverageFormatString "istanbul" = Just Coverage.Istanbul
 parseCoverageFormatString "lcov" = Just Coverage.LCOV
+parseCoverageFormatString "html" = Just Coverage.Html
 parseCoverageFormatString _ = Nothing
 
 -- | Check the @--min-coverage@ threshold and report pass/fail.
@@ -579,12 +635,12 @@ parseCoverageFormatString _ = Nothing
 -- Returns 'True' if the threshold is met or not set.
 --
 -- @since 0.19.2
-checkMinCoverage :: Flags -> Maybe Pkg.Name -> CoverageMap.CoverageMap -> Map.Map Int Int -> IO Bool
-checkMinCoverage flags maybePkg covMap hits =
+checkMinCoverage :: Flags -> Coverage.CoverageScope -> Maybe Pkg.Name -> CoverageMap.CoverageMap -> Map.Map Int Int -> IO Bool
+checkMinCoverage flags scope maybePkg covMap hits =
   case flags ^. testMinCoverage of
     Nothing -> pure True
     Just threshold ->
-      if Coverage.checkThreshold threshold maybePkg covMap hits
+      if Coverage.checkThreshold threshold scope maybePkg covMap hits
         then pure True
         else do
           let thresholdStr = show threshold
@@ -688,15 +744,16 @@ coverageFormatParser =
 parseCoverageFormatArg :: String -> Maybe String
 parseCoverageFormatArg "istanbul" = Just "istanbul"
 parseCoverageFormatArg "lcov" = Just "lcov"
+parseCoverageFormatArg "html" = Just "html"
 parseCoverageFormatArg _ = Nothing
 
 -- | Suggest coverage format values.
 suggestCoverageFormats :: String -> IO [String]
-suggestCoverageFormats _ = pure ["istanbul", "lcov"]
+suggestCoverageFormats _ = pure ["istanbul", "lcov", "html"]
 
 -- | Provide example coverage format values.
 exampleCoverageFormats :: String -> IO [String]
-exampleCoverageFormats _ = pure ["istanbul", "lcov"]
+exampleCoverageFormats _ = pure ["istanbul", "lcov", "html"]
 
 -- | Parser for the @--coverage-output@ flag.
 --
@@ -746,6 +803,29 @@ suggestMinCoverage _ = pure ["80", "90", "100"]
 -- | Provide example min-coverage values.
 exampleMinCoverage :: String -> IO [String]
 exampleMinCoverage _ = pure ["80", "90"]
+
+-- | Parser for the @--include-deps@ flag.
+--
+-- Accepts @\"all\"@ or a comma-separated list of @author\/project@ names.
+--
+-- @since 0.19.2
+includeDepsParser :: Terminal.Parser String
+includeDepsParser =
+  Terminal.Parser
+    { Terminal._singular = "scope",
+      Terminal._plural = "scopes",
+      Terminal._parser = parseNonEmpty,
+      Terminal._suggest = suggestIncludeDeps,
+      Terminal._examples = exampleIncludeDeps
+    }
+
+-- | Suggest include-deps values.
+suggestIncludeDeps :: String -> IO [String]
+suggestIncludeDeps _ = pure ["all", "canopy/core", "canopy/json"]
+
+-- | Provide example include-deps values.
+exampleIncludeDeps :: String -> IO [String]
+exampleIncludeDeps _ = pure ["all", "canopy/core,canopy/json"]
 
 -- | Set the @CANOPY_TEST_FILTER@ environment variable for the Node.js
 -- test harness. When 'Nothing', unsets the variable to ensure a clean

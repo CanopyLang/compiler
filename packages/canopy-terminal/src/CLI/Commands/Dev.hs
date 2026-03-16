@@ -2,7 +2,7 @@
 
 -- | CLI command definitions for developer tools.
 --
--- Contains repl, fmt, lint, test, docs, bench, audit, and upgrade
+-- Contains repl, fmt, lint, test, docs, bench, audit, upgrade, and coverage
 -- commands for development workflow support.
 --
 -- @since 0.19.1
@@ -15,6 +15,7 @@ module CLI.Commands.Dev
     createAuditCommand,
     createUpgradeCommand,
     createBenchCommand,
+    createCoverageCommand,
   )
 where
 
@@ -142,6 +143,37 @@ createBenchCommand =
     example = PP.indent 4 (PP.green "canopy bench")
     flags = createBenchFlags
 
+-- | Data type for the coverage subcommand.
+--
+-- @since 0.19.2
+data CoverageCmd = CoverageCmd
+  { _covCmdCoverageFormat :: !(Maybe String),
+    _covCmdCoverageOutput :: !(Maybe String),
+    _covCmdIncludeDeps :: !(Maybe String)
+  }
+  deriving (Eq, Show)
+
+-- | Create the coverage command for standalone coverage report generation.
+--
+-- @since 0.19.2
+createCoverageCommand :: Command
+createCoverageCommand =
+  Terminal.Command "coverage" Terminal.Uncommon details example Terminal.noArgs flags runCoverage
+  where
+    details = "The `coverage` command generates coverage reports from existing data:"
+    example =
+      PP.vcat
+        [ PP.indent 4 (PP.green "canopy coverage --format html --output coverage-report"),
+          PP.indent 4 (PP.green "canopy coverage --format lcov --output coverage.lcov")
+        ]
+    flags = createCoverageFlags
+
+-- | Run the standalone coverage command.
+runCoverage :: () -> CoverageCmd -> IO ()
+runCoverage () _cmd = do
+  putStrLn "Coverage report generation from existing data is not yet implemented."
+  putStrLn "Use 'canopy test --coverage' to generate coverage during test runs."
+
 -- FLAGS
 
 createReplFlags :: Terminal.Flags Repl.Flags
@@ -174,9 +206,11 @@ createTestFlags =
     |-- Terminal.flag "app" Test.appParser "Application entry point for browser tests (e.g. src/Main.can). Can also be set via @browser-app annotation in test files."
     |-- Terminal.flag "slowmo" Test.slowMoParser "Slow down Playwright browser actions by N milliseconds. Useful for debugging browser tests."
     |-- Terminal.onOff "coverage" "Instrument code and show coverage report after tests."
-    |-- Terminal.flag "coverage-format" Test.coverageFormatParser "Coverage output format: istanbul or lcov."
+    |-- Terminal.flag "coverage-format" Test.coverageFormatParser "Coverage output format: istanbul, lcov, or html."
     |-- Terminal.flag "coverage-output" Test.coverageOutputParser "Write coverage report to file."
     |-- Terminal.flag "min-coverage" Test.minCoverageParser "Minimum coverage percentage required (0-100). Fails if not met."
+    |-- Terminal.flag "include-deps" Test.includeDepsParser "Include dependency packages in coverage: 'all' or comma-separated author/pkg list."
+    |-- Terminal.onOff "show-uncovered" "Show uncovered source locations after the coverage report."
 
 createDocsFlags :: Terminal.Flags Docs.Flags
 createDocsFlags =
@@ -204,3 +238,13 @@ createBenchFlags =
     |-- Terminal.flag "iterations" createIntParser "Number of iterations to run (default: 3)."
     |-- Terminal.onOff "json" "Output results as JSON."
     |-- Terminal.onOff "verbose" "Show verbose output."
+
+-- | Create flags for the standalone coverage command.
+--
+-- @since 0.19.2
+createCoverageFlags :: Terminal.Flags CoverageCmd
+createCoverageFlags =
+  Terminal.flags CoverageCmd
+    |-- Terminal.flag "format" Test.coverageFormatParser "Coverage output format: istanbul, lcov, or html."
+    |-- Terminal.flag "output" Test.coverageOutputParser "Output path for the coverage report."
+    |-- Terminal.flag "include-deps" Test.includeDepsParser "Include dependency packages in coverage: 'all' or comma-separated author/pkg list."

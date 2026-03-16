@@ -53,6 +53,8 @@ import CLI.Commands
     createBenchCommand,
     createBumpCommand,
     createCheckCommand,
+    createConvertCommand,
+    createCoverageCommand,
     createDiffCommand,
     createDocsCommand,
     createFFITestCommand,
@@ -112,7 +114,7 @@ main =
 --
 -- * Interactive commands (repl, init, reactor)
 -- * Build commands (make, check)
--- * Developer tools (fmt, lint, test, docs, audit, upgrade, bench)
+-- * Developer tools (fmt, lint, test, docs, audit, upgrade, bench, coverage)
 -- * FFI testing (test-ffi)
 -- * Package management (install, bump, diff, publish)
 -- * Code generation (webidl)
@@ -127,6 +129,7 @@ createAllCommands =
     createReactorCommand,
     createMakeCommand,
     createCheckCommand,
+    createConvertCommand,
     createFmtCommand,
     createLintCommand,
     createTestCommand,
@@ -134,6 +137,7 @@ createAllCommands =
     createAuditCommand,
     createUpgradeCommand,
     createBenchCommand,
+    createCoverageCommand,
     createMigrateCommand,
     createFFITestCommand,
     createInstallCommand,

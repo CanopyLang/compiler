@@ -103,15 +103,15 @@ thresholdTests =
     [ testCase "coverage above threshold returns True" $
         let covMap = Coverage.CoverageMap (Map.fromList [(0, mkPoint 0 "M" "a"), (1, mkPoint 1 "M" "b")])
             hits = Map.fromList [(0, 1), (1, 1)]
-         in TCoverage.checkThreshold 80 Nothing covMap hits @?= True,
+         in TCoverage.checkThreshold 80 TCoverage.CurrentOnly Nothing covMap hits @?= True,
       testCase "coverage below threshold returns False" $
         let covMap = Coverage.CoverageMap (Map.fromList [(0, mkPoint 0 "M" "a"), (1, mkPoint 1 "M" "b"), (2, mkPoint 2 "M" "c")])
             hits = Map.singleton 0 1
-         in TCoverage.checkThreshold 80 Nothing covMap hits @?= False,
+         in TCoverage.checkThreshold 80 TCoverage.CurrentOnly Nothing covMap hits @?= False,
       testCase "coverage exactly at threshold returns True" $
         let covMap = Coverage.CoverageMap (Map.fromList [(0, mkPoint 0 "M" "a"), (1, mkPoint 1 "M" "b")])
             hits = Map.fromList [(0, 1), (1, 1)]
-         in TCoverage.checkThreshold 100 Nothing covMap hits @?= True,
+         in TCoverage.checkThreshold 100 TCoverage.CurrentOnly Nothing covMap hits @?= True,
       testCase "empty map with any threshold returns True" $
-        TCoverage.checkThreshold 80 Nothing (Coverage.CoverageMap Map.empty) Map.empty @?= True
+        TCoverage.checkThreshold 80 TCoverage.CurrentOnly Nothing (Coverage.CoverageMap Map.empty) Map.empty @?= True
     ]

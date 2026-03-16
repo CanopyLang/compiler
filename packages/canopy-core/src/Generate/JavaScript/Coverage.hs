@@ -19,6 +19,7 @@ module Generate.JavaScript.Coverage
   ( CoveragePointType (..),
     CoveragePoint (..),
     CoverageMap (..),
+    CoverageBreakdown (..),
     buildCoverageMap,
     countNodePoints,
     countExprPoints,
@@ -29,7 +30,10 @@ module Generate.JavaScript.Coverage
     toIstanbulJson,
     toLCOV,
     groupByModule,
+    groupByPackage,
     filterByPackage,
+    computeBreakdown,
+    computeModuleBreakdown,
   )
 where
 
@@ -71,6 +75,16 @@ data CoveragePoint = CoveragePoint
 --
 -- @since 0.19.2
 newtype CoverageMap = CoverageMap (Map.Map Int CoveragePoint)
+  deriving (Eq, Show)
+
+-- | Per-type coverage breakdown with (covered, total) for each category.
+--
+-- @since 0.19.2
+data CoverageBreakdown = CoverageBreakdown
+  { _cbFunctions :: !(Int, Int),
+    _cbBranches :: !(Int, Int),
+    _cbStatements :: !(Int, Int)
+  }
   deriving (Eq, Show)
 
 -- | Build the coverage map from all globals and their source locations.
@@ -356,6 +370,57 @@ groupByModule = Map.foldlWithKey' addToModule Map.empty
   where
     addToModule acc covId pt =
       Map.insertWith (++) (_covModule pt) [(covId, pt)] acc
+
+-- | Group coverage points by their package name.
+--
+-- @since 0.19.2
+groupByPackage :: Map.Map Int CoveragePoint -> Map.Map Pkg.Name [(Int, CoveragePoint)]
+groupByPackage = Map.foldlWithKey' addToPackage Map.empty
+  where
+    addToPackage acc covId pt =
+      Map.insertWith (++) (ModuleName._package (_covPackage pt)) [(covId, pt)] acc
+
+-- | Compute a breakdown of coverage by type (functions, branches, statements).
+--
+-- Returns a 'CoverageBreakdown' with (covered, total) counts for each
+-- category. Statements are the total of all points.
+--
+-- @since 0.19.2
+computeBreakdown :: CoverageMap -> Map.Map Int Int -> CoverageBreakdown
+computeBreakdown (CoverageMap points) hits =
+  CoverageBreakdown
+    { _cbFunctions = countByType isFunctionEntry,
+      _cbBranches = countByType isBranchArm,
+      _cbStatements = (coveredAll, totalAll)
+    }
+  where
+    totalAll = Map.size points
+    coveredAll = Map.size (Map.filterWithKey (\k _ -> Map.findWithDefault 0 k hits > 0) points)
+
+    countByType predicate =
+      let filtered = Map.filter (predicate . _covType) points
+          total = Map.size filtered
+          covered = Map.size (Map.filterWithKey (\k _ -> Map.findWithDefault 0 k hits > 0) filtered)
+       in (covered, total)
+
+    isFunctionEntry FunctionEntry = True
+    isFunctionEntry _ = False
+
+    isBranchArm (BranchArm _ _) = True
+    isBranchArm _ = False
+
+-- | Compute per-module coverage breakdowns.
+--
+-- Returns a map from module name to its 'CoverageBreakdown'.
+--
+-- @since 0.19.2
+computeModuleBreakdown :: CoverageMap -> Map.Map Int Int -> Map.Map Name.Name CoverageBreakdown
+computeModuleBreakdown (CoverageMap points) hits =
+  Map.map computeForModule (groupByModule points)
+  where
+    computeForModule modPts =
+      let modMap = Map.fromList modPts
+       in computeBreakdown (CoverageMap modMap) hits
 
 -- | Emit a complete LCOV record for one module.
 emitModuleRecord :: Name.Name -> [(Int, CoveragePoint)] -> Map.Map Int Int -> Builder

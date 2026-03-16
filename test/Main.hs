@@ -187,6 +187,7 @@ import qualified Unit.Publish.ArchiveTest as PublishArchiveTest
 import qualified Unit.Type.ParallelTest as TypeParallelTest
 import qualified Unit.Test.CoverageReportTest as CoverageReportTest
 import qualified Unit.Test.EventCoverageTest as EventCoverageTest
+import qualified Unit.Test.CoverageScopeTest as CoverageScopeTest
 import qualified Unit.VendorTest as VendorTest
 import qualified Unit.ScriptsTest as ScriptsTest
 import qualified Unit.OutlineFormatTest as OutlineFormatTest
@@ -332,6 +333,7 @@ unitTests =
       HMRTest.tests,
       CoverageTest.tests,
       CoverageReportTest.tests,
+      CoverageScopeTest.tests,
       EventCoverageTest.tests,
       ColorQQTest.tests,
       LoggingEventTest.tests,

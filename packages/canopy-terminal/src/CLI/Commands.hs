@@ -10,7 +10,7 @@
 --
 -- * "CLI.Commands.Project" - init, new, setup
 -- * "CLI.Commands.Build" - make, check, reactor
--- * "CLI.Commands.Dev" - repl, fmt, lint, test, docs, audit, upgrade, bench
+-- * "CLI.Commands.Dev" - repl, fmt, lint, test, docs, audit, upgrade, bench, coverage
 -- * "CLI.Commands.Package" - install, publish, bump, diff
 -- * "CLI.Commands.Tools" - test-ffi, webidl, self-update
 -- * "CLI.Commands.Link" - link, unlink
@@ -37,6 +37,7 @@ module CLI.Commands
     createAuditCommand,
     createUpgradeCommand,
     createBenchCommand,
+    createCoverageCommand,
 
     -- * Package Commands
     createInstallCommand,
@@ -57,6 +58,9 @@ module CLI.Commands
     -- * Migration Commands
     createMigrateCommand,
 
+    -- * Conversion Commands
+    createConvertCommand,
+
     -- * Kit Commands
     createKitNewCommand,
     createKitDevCommand,
@@ -72,6 +76,7 @@ import CLI.Commands.Build
 import CLI.Commands.Dev
   ( createAuditCommand,
     createBenchCommand,
+    createCoverageCommand,
     createDocsCommand,
     createFmtCommand,
     createLintCommand,
@@ -94,6 +99,9 @@ import CLI.Commands.Project
 import CLI.Commands.Link
   ( createLinkCommand,
     createUnlinkCommand,
+  )
+import CLI.Commands.Convert
+  ( createConvertCommand,
   )
 import CLI.Commands.Kit
   ( createKitBuildCommand,
