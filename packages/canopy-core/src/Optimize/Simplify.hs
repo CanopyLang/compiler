@@ -312,7 +312,7 @@ nameUsedIn name = go
         Opt.If branches elseExpr ->
           any (\(c, b) -> go c || go b) branches || go elseExpr
         Opt.Let def body -> goInDef def || go body
-        Opt.Destruct _ body -> go body
+        Opt.Destruct (Opt.Destructor _ path) body -> nameInPath name path || go body
         Opt.Case label root decider jumps ->
           label == name || root == name || nameInDecider name decider || any (go . snd) jumps
         Opt.Function _ body -> go body
@@ -349,6 +349,21 @@ nameInChoice name choice =
   case choice of
     Opt.Inline expr -> nameUsedIn name expr
     Opt.Jump _ -> False
+
+-- | Check whether a name appears in a destructor path.
+--
+-- Destructor paths reference root variables via 'Opt.Root'. Without this
+-- check, 'simplifyLet' would incorrectly eliminate let-bindings whose
+-- names are only referenced through destructor paths (not as 'VarLocal').
+--
+-- @since 0.19.2
+nameInPath :: Name.Name -> Opt.Path -> Bool
+nameInPath name path =
+  case path of
+    Opt.Root n -> n == name
+    Opt.Index _ sub -> nameInPath name sub
+    Opt.Field _ sub -> nameInPath name sub
+    Opt.Unbox sub -> nameInPath name sub
 
 -- RECURSIVE HELPERS
 

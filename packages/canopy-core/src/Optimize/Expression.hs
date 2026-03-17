@@ -464,10 +464,20 @@ destructHelp path (Ann.At region pattern) revDs =
     Can.PCtor _ _ (Can.Union _ _ _ _ opts _) _ _ args ->
       case args of
         [Can.PatternCtorArg _ _ arg] ->
-          case opts of
-            Can.Normal -> destructHelp (Opt.Index Index.first path) arg revDs
-            Can.Unbox -> destructHelp (Opt.Unbox path) arg revDs
-            Can.Enum -> destructHelp (Opt.Index Index.first path) arg revDs
+          case path of
+            Opt.Root _ ->
+              case opts of
+                Can.Normal -> destructHelp (Opt.Index Index.first path) arg revDs
+                Can.Unbox -> destructHelp (Opt.Unbox path) arg revDs
+                Can.Enum -> destructHelp (Opt.Index Index.first path) arg revDs
+            _ ->
+              do
+                name <- Names.generate
+                let newRoot = Opt.Root name
+                case opts of
+                  Can.Normal -> destructHelp (Opt.Index Index.first newRoot) arg (Opt.Destructor name path : revDs)
+                  Can.Unbox -> destructHelp (Opt.Unbox newRoot) arg (Opt.Destructor name path : revDs)
+                  Can.Enum -> destructHelp (Opt.Index Index.first newRoot) arg (Opt.Destructor name path : revDs)
         _ ->
           case path of
             Opt.Root _ ->

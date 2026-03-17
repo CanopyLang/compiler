@@ -212,10 +212,14 @@ compileTestDepOutline pkgName version pkgDir srcPath (Outline.Pkg pkgOutline) =
       Print.printErrLn (BuildExit.toDoc err)
 
 -- | Write compiled artifacts for a test-dependency package.
+--
+-- Uses 'Pkg.normalizeAuthor' so that artifacts for @elm\/core@-era packages
+-- are stored under the @canopy@ namespace, matching the globals the code
+-- generator emits via 'Generate.JavaScript.Name.homeToBuilder'.
 writeTestDepArtifacts :: Pkg.Name -> Version.Version -> Compiler.Artifacts -> IO ()
 writeTestDepArtifacts (Pkg.Name author project) version artifacts =
   PackageCache.writePackageArtifacts
-    (Utf8.toChars author)
+    (Utf8.toChars (Pkg.normalizeAuthor author))
     (Utf8.toChars project)
     (Version.toChars version)
     interfaces
@@ -242,9 +246,12 @@ flattenExposedToNonEmpty exposed =
     (x : xs) -> Just (NE.List x xs)
 
 -- | Build the package directory path inside the cache.
+--
+-- Uses 'Pkg.normalizeAuthor' to match the normalized path used by
+-- 'writeTestDepArtifacts'.
 testDepDir :: FilePath -> Pkg.Name -> Version.Version -> FilePath
 testDepDir cacheDir (Pkg.Name author project) version =
-  cacheDir </> Utf8.toChars author </> Utf8.toChars project </> Version.toChars version
+  cacheDir </> Utf8.toChars (Pkg.normalizeAuthor author) </> Utf8.toChars project </> Version.toChars version
 
 -- | Generate JavaScript text from compiled artifacts.
 --

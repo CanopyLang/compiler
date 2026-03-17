@@ -74,16 +74,30 @@ data FFIBlock = FFIBlock
 -- Parses the FFI JavaScript text, splits at declaration boundaries,
 -- computes inter-block dependencies, and returns a map from block ID
 -- to block definition.
+--
+-- When a @var@ declaration uses comma-separated names (e.g.
+-- @var A = 0, B = 1;@), each name is registered as an alias for the
+-- same block. This ensures that tree-shaking can resolve references
+-- to any declared name, not just the first one in the line.
 buildFFIRegistry :: Text.Text -> Map FFIBlockId FFIBlock
 buildFFIRegistry content =
-  Map.fromList
-    [ (FFIBlockId name, mkBlock name block order allNames)
-    | (name, block, order) <- entries
-    ]
+  Map.union primaryMap aliasMap
   where
     contentBs = TextEnc.encodeUtf8 content
     entries = splitFFI contentBs
     allNames = Set.fromList [name | (name, _, _) <- entries]
+      `Set.union` Set.fromList [alias | (_, block, _) <- entries, alias <- extractVarCommaNames block]
+    primaryMap = Map.fromList
+      [ (FFIBlockId name, mkBlock name block order allNames)
+      | (name, block, order) <- entries
+      ]
+    aliasMap = Map.fromList
+      [ (FFIBlockId alias, block)
+      | (primary, _, _) <- entries
+      , let block = primaryMap Map.! FFIBlockId primary
+      , alias <- extractVarCommaNames (_fbContent block)
+      , not (Map.member (FFIBlockId alias) primaryMap)
+      ]
 
 -- | Create an 'FFIBlock' from a raw block, computing dependencies.
 mkBlock :: ByteString -> ByteString -> Int -> Set ByteString -> FFIBlock
@@ -317,6 +331,32 @@ isIdentByte b =
     || (b >= 0x30 && b <= 0x39) -- 0-9
     || b == 0x5F -- _
     || b == 0x24 -- $
+
+-- | Extract additional variable names from comma-separated @var@ declarations.
+--
+-- Given block content, finds lines starting with @var@ and returns all
+-- declared names beyond the first (which is already the block's primary ID).
+-- For example, @var A = 0, B = 1, C = 2;@ returns @[\"B\", \"C\"]@.
+extractVarCommaNames :: ByteString -> [ByteString]
+extractVarCommaNames blockContent =
+  concatMap namesFromLine (BS8.lines blockContent)
+  where
+    namesFromLine line
+      | Just rest <- BS8.stripPrefix "var " line = extraNames rest
+      | otherwise = []
+    extraNames rest =
+      let afterFirstName = BS8.dropWhile isIdentChar rest
+       in findAfterComma afterFirstName
+    findAfterComma bs
+      | BS.null bs = []
+      | BS8.head bs == ',' =
+          let stripped = BS8.dropWhile (\c -> c == ' ' || c == '\t') (BS8.tail bs)
+              name = BS8.takeWhile isIdentChar stripped
+           in if BS.null name
+                then []
+                else name : findAfterComma (BS8.dropWhile isIdentChar stripped)
+      | BS8.head bs == ';' = []
+      | otherwise = findAfterComma (BS8.tail bs)
 
 -- | Check if a 'Char' is a valid JavaScript identifier character.
 isIdentChar :: Char -> Bool
