@@ -91,7 +91,7 @@ canonicalize pkg projectType ifaces ffiContentMap modul@(Src.Module _ exports do
       Foreign.createInitialEnv home ifaces eagerImports >>= Local.add modul
 
     -- Process FFI imports and add to environment using pre-loaded content
-    envWithFFI <- FFI.addFFIToEnvPure env foreignImports ffiContentMap
+    envWithFFI <- FFI.addFFIToEnvPure env foreignImports ffiContentMap Map.empty
 
     -- Emit capability warnings for FFI functions with @capability annotations
     let capWarnings = concatMap (emitCapabilityWarnings ffiContentMap) foreignImports

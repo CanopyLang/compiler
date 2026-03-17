@@ -110,6 +110,7 @@ library
       Generate.TreeShake
       Generate.TypeScript
       Generate.TypeScript.Convert
+      Generate.TypeScript.FromFFI
       Generate.TypeScript.Render
       Generate.TypeScript.Parser
       Generate.TypeScript.Types
@@ -120,6 +121,7 @@ library
       Logging.Event
       Logging.Logger
       Logging.Sink
+      Nitpick.Recursion
       Optimize.Case
       Optimize.ConstantFold
       Optimize.DecisionTree
@@ -218,7 +220,6 @@ library
       Json.Decode.Core
       Json.Decode.Parser
       Nitpick.PatternMatches
-      Nitpick.Recursion
       Optimize.Port
       Parse.Comment
       Parse.Interpolation
