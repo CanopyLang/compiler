@@ -44,6 +44,7 @@ import Control.Lens (Lens', (.~), (&))
 import Control.Monad.State.Strict (StateT, liftIO)
 import qualified Control.Monad.State.Strict as State
 import Data.Foldable (foldrM)
+import Data.List (foldl')
 import Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
 import qualified Canopy.Data.Name as Name
@@ -288,9 +289,33 @@ toAnnotation :: Variable -> IO Can.Annotation
 toAnnotation variable =
   do
     userNames <- getVarNames variable Map.empty
-    (tipe, NameState freeVars _ _ _ _ _) <-
+    (tipe, _) <-
       State.runStateT (variableToCanType variable) (makeNameState userNames)
-    return $ Can.Forall freeVars tipe
+    return $ Can.Forall (collectFreeVars tipe) tipe
+
+-- | Collect all free type variable names from a canonical type.
+--
+-- This replaces the previous approach of extracting freeVars from the
+-- 'NameState' after conversion, which was incorrect when multiple
+-- bindings shared type variables: the mark-based visited set in
+-- 'getVarNames' would persist across calls, causing later bindings
+-- to produce empty freeVars maps.
+collectFreeVars :: Can.Type -> Map Name.Name ()
+collectFreeVars = go Map.empty
+  where
+    go acc tipe = case tipe of
+      Can.TVar n -> Map.insert n () acc
+      Can.TLambda a b -> go (go acc a) b
+      Can.TType _ _ args -> foldl' go acc args
+      Can.TRecord fs Nothing -> Map.foldl goField acc fs
+      Can.TRecord fs (Just ext) -> Map.insert ext () (Map.foldl goField acc fs)
+      Can.TUnit -> acc
+      Can.TTuple a b mc ->
+        let acc' = go (go acc a) b
+        in maybe acc' (go acc') mc
+      Can.TAlias _ _ args _ ->
+        foldl' (\a (_, arg) -> go a arg) acc args
+    goField acc (Can.FieldType _ ft) = go acc ft
 
 variableToCanType :: Variable -> StateT NameState IO Can.Type
 variableToCanType variable =
@@ -596,8 +621,8 @@ getVarNames var takenNames =
             addName 0 name var RigidVar takenNames
           RigidSuper super name ->
             addName 0 name var (RigidSuper super) takenNames
-          Alias _ _ args _ ->
-            foldrM getVarNames takenNames (fmap snd args)
+          Alias _ _ args realVar ->
+            foldrM getVarNames takenNames (realVar : fmap snd args)
           Structure flatType ->
             case flatType of
               App1 _ _ args ->

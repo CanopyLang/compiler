@@ -226,7 +226,7 @@ srcTypeToVar rank pools flexVars srcType =
     Can.TRecord fields maybeExt -> convertSrcRecordType rank pools flexVars fields maybeExt
     Can.TUnit -> register rank pools unit1
     Can.TTuple a b c -> convertSrcTupleType rank pools go a b c
-    Can.TAlias home name args aliasType -> convertSrcAliasType rank pools go home name args aliasType
+    Can.TAlias home name args aliasType -> convertSrcAliasType rank pools flexVars go home name args aliasType
 
 convertSrcLambdaType :: Int -> Pools -> (Can.Type -> IO Variable) -> Can.Type -> Can.Type -> IO Variable
 convertSrcLambdaType rank pools go argument result = do
@@ -261,11 +261,12 @@ convertSrcTupleType rank pools go a b c = do
   cVar <- traverse go c
   register rank pools (Structure (Tuple1 aVar bVar cVar))
 
-convertSrcAliasType :: Int -> Pools -> (Can.Type -> IO Variable) -> ModuleName.Canonical -> Name.Name -> [(Name.Name, Can.Type)] -> Can.AliasType -> IO Variable
-convertSrcAliasType rank pools go home name args aliasType = do
+convertSrcAliasType :: Int -> Pools -> Map Name.Name Variable -> (Can.Type -> IO Variable) -> ModuleName.Canonical -> Name.Name -> [(Name.Name, Can.Type)] -> Can.AliasType -> IO Variable
+convertSrcAliasType rank pools flexVars go home name args aliasType = do
   argVars <- traverse (traverse go) args
   aliasVar <- case aliasType of
-    Can.Holey tipe -> srcTypeToVar rank pools (Map.fromList argVars) tipe
+    Can.Holey tipe ->
+      srcTypeToVar rank pools (Map.union (Map.fromList argVars) flexVars) tipe
     Can.Filled tipe -> go tipe
   register rank pools (Alias home name argVars aliasVar)
 

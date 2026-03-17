@@ -260,6 +260,16 @@ negateOperand expr = case expr of
   Infix _ _ _ -> wrapInParens expr
   _ -> exprToJS expr
 
+-- | Convert the operand of a logical-not or bitwise-complement prefix,
+-- parenthesizing when the operand is an infix expression to preserve
+-- precedence. In JavaScript, @!@ and @~@ bind tighter than binary operators,
+-- so @!a >= b@ means @(!a) >= b@, not @!(a >= b)@.
+prefixOperand :: Expr -> JSExpression
+prefixOperand expr = case expr of
+  Infix _ _ _ -> wrapInParens expr
+  If _ _ _    -> wrapInParens expr
+  _ -> exprToJS expr
+
 -- | Return 'True' if the expression requires parentheses inside a ternary.
 needsParensInTernary :: Expr -> Bool
 needsParensInTernary expr = case expr of
@@ -321,11 +331,11 @@ exprToJS expr = case expr of
   Index obj key ->
     JS.JSMemberSquare (exprToJS obj) noAnnot (exprToJS key) noAnnot
   Prefix PrefixNot e ->
-    JS.JSUnaryExpression (JS.JSUnaryOpNot noAnnot) (exprToJS e)
+    JS.JSUnaryExpression (JS.JSUnaryOpNot noAnnot) (prefixOperand e)
   Prefix PrefixNegate e ->
     JS.JSUnaryExpression (JS.JSUnaryOpMinus noAnnot) (negateOperand e)
   Prefix PrefixComplement e ->
-    JS.JSUnaryExpression (JS.JSUnaryOpTilde noAnnot) (exprToJS e)
+    JS.JSUnaryExpression (JS.JSUnaryOpTilde noAnnot) (prefixOperand e)
   Infix op left right ->
     JS.JSExpressionBinary leftJS (infixOpToJS op) rightJS
     where
