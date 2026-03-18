@@ -203,7 +203,7 @@ actuallyUnify context@(Context _ (Descriptor firstContent _ _ _) _ (Descriptor s
     RigidSuper super _ ->
       unifyRigid context (Just super) firstContent secondContent
     Alias home name args realVar ->
-      unifyAlias context home name args realVar secondContent
+      unifyAlias context (home, name) (args, realVar) secondContent
     Structure flatType ->
       unifyStructure context flatType firstContent secondContent
     Error ->
@@ -279,7 +279,7 @@ unifyFlexSuper context super content otherContent =
     FlexVar _ ->
       merge context content
     FlexSuper otherSuper _ ->
-      unifyFlexSupers context content otherContent super otherSuper
+      unifyFlexSupers context (content, otherContent) (super, otherSuper)
     Alias _ _ _ realVar ->
       subUnify (_contextBounds context) (_first context) realVar
     Error ->
@@ -292,8 +292,8 @@ unifyFlexSuper context super content otherContent =
 -- For example, Number + Comparable -> Number (more specific).
 --
 -- @since 0.19.2
-unifyFlexSupers :: Context -> Content -> Content -> SuperType -> SuperType -> Unify ()
-unifyFlexSupers context content otherContent super otherSuper =
+unifyFlexSupers :: Context -> (Content, Content) -> (SuperType, SuperType) -> Unify ()
+unifyFlexSupers context (content, otherContent) (super, otherSuper) =
   case flexSuperResult super otherSuper of
     FlexFirst -> merge context content
     FlexSecond -> merge context otherContent
@@ -359,11 +359,11 @@ unifyFlexSuperStructure context super flatType =
     App1 home name [] ->
       if atomMatchesSuper super home name
         then merge context (Structure flatType)
-        else checkBoundedAlias context super flatType home name
+        else checkBoundedAlias (context, super) flatType (home, name)
     App1 home name [variable] | home == ModuleName.list && name == Name.list ->
       unifyListWithSuper context flatType super variable
     Tuple1 a b maybeC ->
-      unifyTupleWithSuper context flatType super a b maybeC
+      unifyTupleWithSuper (context, flatType) super (a, b) maybeC
     _ ->
       mismatch
 
@@ -371,8 +371,8 @@ unifyFlexSuperStructure context super flatType =
 --
 -- Reads the bounds directly from the context rather than a global IORef,
 -- making this function pure within the Unify CPS monad.
-checkBoundedAlias :: Context -> SuperType -> FlatType -> ModuleName.Canonical -> Name.Name -> Unify ()
-checkBoundedAlias context super flatType home name =
+checkBoundedAlias :: (Context, SuperType) -> FlatType -> (ModuleName.Canonical, Name.Name) -> Unify ()
+checkBoundedAlias (context, super) flatType (home, name) =
   case Map.lookup (home, name) (_contextBounds context) of
     Just bound | boundSatisfiesSuper bound super ->
       merge context (Structure flatType)
@@ -420,8 +420,8 @@ unifyListWithSuper context flatType super variable =
 -- but not Number or Appendable.
 --
 -- @since 0.19.2
-unifyTupleWithSuper :: Context -> FlatType -> SuperType -> Variable -> Variable -> Maybe Variable -> Unify ()
-unifyTupleWithSuper context flatType super a b maybeC =
+unifyTupleWithSuper :: (Context, FlatType) -> SuperType -> (Variable, Variable) -> Maybe Variable -> Unify ()
+unifyTupleWithSuper (context, flatType) super (a, b) maybeC =
   case super of
     Number ->
       mismatch
@@ -468,18 +468,18 @@ unifyStructureRigidSuper context flatType super =
     App1 home name [] ->
       if atomMatchesSuper super home name
         then merge context (Structure flatType)
-        else checkBoundedAlias context super flatType home name
+        else checkBoundedAlias (context, super) flatType (home, name)
     App1 home name [variable] | home == ModuleName.list && name == Name.list ->
       unifyListWithSuper context flatType super variable
     Tuple1 a b maybeC ->
-      unifyTupleWithSuper context flatType super a b maybeC
+      unifyTupleWithSuper (context, flatType) super (a, b) maybeC
     _ ->
       mismatch
 
 -- UNIFY ALIASES
 
-unifyAlias :: Context -> ModuleName.Canonical -> Name.Name -> [(Name.Name, Variable)] -> Variable -> Content -> Unify ()
-unifyAlias context home name args realVar otherContent =
+unifyAlias :: Context -> (ModuleName.Canonical, Name.Name) -> ([(Name.Name, Variable)], Variable) -> Content -> Unify ()
+unifyAlias context (home, name) (args, realVar) otherContent =
   case otherContent of
     FlexVar _ ->
       merge context (Alias home name args realVar)
@@ -495,30 +495,22 @@ unifyAlias context home name args realVar otherContent =
           let ok1 vars1 () =
                 let (Unify k) = merge context otherContent
                  in k vars1 ok err
-           in unifyAliasArgs vars context args otherArgs ok1 err
+           in unifyAliasArgs vars context (args, otherArgs) (ok1, err)
         else subUnify (_contextBounds context) realVar otherRealVar
     Structure _ ->
       subUnify (_contextBounds context) realVar (_second context)
     Error ->
       merge context Error
 
-unifyAliasArgs :: [Variable] -> Context -> [(Name.Name, Variable)] -> [(Name.Name, Variable)] -> ([Variable] -> () -> IO r) -> ([Variable] -> () -> IO r) -> IO r
-unifyAliasArgs vars _context [] [] ok _err = ok vars ()
-unifyAliasArgs vars _context [] _ _ok err = err vars ()
-unifyAliasArgs vars _context _ [] _ok err = err vars ()
-unifyAliasArgs vars context ((_, arg1) : others1) ((_, arg2) : others2) ok err =
-  unifyOneAliasArg vars context arg1 arg2 others1 others2 ok err
-
--- | Unify a single pair of alias arguments and continue with the rest.
---
--- @since 0.19.2
-unifyOneAliasArg :: [Variable] -> Context -> Variable -> Variable -> [(Name.Name, Variable)] -> [(Name.Name, Variable)] -> ([Variable] -> () -> IO r) -> ([Variable] -> () -> IO r) -> IO r
-unifyOneAliasArg vars context arg1 arg2 rest1 rest2 ok err =
-  let (Unify k) = subUnify (_contextBounds context) arg1 arg2
-   in k
-        vars
-        (\vs () -> unifyAliasArgs vs context rest1 rest2 ok err)
-        (\vs () -> unifyAliasArgs vs context rest1 rest2 err err)
+unifyAliasArgs :: [Variable] -> Context -> ([(Name.Name, Variable)], [(Name.Name, Variable)]) -> ([Variable] -> () -> IO r, [Variable] -> () -> IO r) -> IO r
+unifyAliasArgs vars _context ([], []) (ok, _err) = ok vars ()
+unifyAliasArgs vars _context ([], _) (_ok, err) = err vars ()
+unifyAliasArgs vars _context (_, []) (_ok, err) = err vars ()
+unifyAliasArgs vars context ((_, arg1) : rest1, (_, arg2) : rest2) (ok, err) =
+  case subUnify (_contextBounds context) arg1 arg2 of
+    Unify k -> k vars
+      (\vs () -> unifyAliasArgs vs context (rest1, rest2) (ok, err))
+      (\vs () -> unifyAliasArgs vs context (rest1, rest2) (err, err))
 
 -- UNIFY STRUCTURES
 
@@ -551,7 +543,7 @@ unifyFlatTypes context flatType otherFlatType otherContent =
         let ok1 vars1 () =
               let (Unify k) = merge context otherContent
                in k vars1 ok err
-         in unifyArgs vars context args otherArgs ok1 err
+         in unifyArgs vars context (args, otherArgs) (ok1, err)
     (Fun1 arg1 res1, Fun1 arg2 res2) ->
       do
         subUnify (_contextBounds context) arg1 arg2
@@ -566,7 +558,7 @@ unifyFlatTypes context flatType otherFlatType otherContent =
       | Map.null fields ->
         subUnify (_contextBounds context) (_first context) ext
     (Record1 fields1 ext1, Record1 fields2 ext2) ->
-      unifyRecordFields context fields1 ext1 fields2 ext2
+      unifyRecordFields context (fields1, ext1) (fields2, ext2)
     (Tuple1 a b Nothing, Tuple1 x y Nothing) ->
       do
         subUnify (_contextBounds context) a x
@@ -585,23 +577,15 @@ unifyFlatTypes context flatType otherFlatType otherContent =
 
 -- UNIFY ARGS
 
-unifyArgs :: [Variable] -> Context -> [Variable] -> [Variable] -> ([Variable] -> () -> IO r) -> ([Variable] -> () -> IO r) -> IO r
-unifyArgs vars _context [] [] ok _err = ok vars ()
-unifyArgs vars _context [] _ _ok err = err vars ()
-unifyArgs vars _context _ [] _ok err = err vars ()
-unifyArgs vars context (arg1 : others1) (arg2 : others2) ok err =
-  unifyOneArg vars context arg1 arg2 others1 others2 ok err
-
--- | Unify a single pair of arguments and continue with the rest.
---
--- @since 0.19.2
-unifyOneArg :: [Variable] -> Context -> Variable -> Variable -> [Variable] -> [Variable] -> ([Variable] -> () -> IO r) -> ([Variable] -> () -> IO r) -> IO r
-unifyOneArg vars context arg1 arg2 rest1 rest2 ok err =
-  let (Unify k) = subUnify (_contextBounds context) arg1 arg2
-   in k
-        vars
-        (\vs () -> unifyArgs vs context rest1 rest2 ok err)
-        (\vs () -> unifyArgs vs context rest1 rest2 err err)
+unifyArgs :: [Variable] -> Context -> ([Variable], [Variable]) -> ([Variable] -> () -> IO r, [Variable] -> () -> IO r) -> IO r
+unifyArgs vars _context ([], []) (ok, _err) = ok vars ()
+unifyArgs vars _context ([], _) (_ok, err) = err vars ()
+unifyArgs vars _context (_, []) (_ok, err) = err vars ()
+unifyArgs vars context (arg1 : rest1, arg2 : rest2) (ok, err) =
+  case subUnify (_contextBounds context) arg1 arg2 of
+    Unify k -> k vars
+      (\vs () -> unifyArgs vs context (rest1, rest2) (ok, err))
+      (\vs () -> unifyArgs vs context (rest1, rest2) (err, err))
 
 -- UNIFY RECORDS
 
@@ -611,8 +595,8 @@ unifyOneArg vars context arg1 arg2 rest1 rest2 ok err =
 -- step and the CPS unification into a single helper.
 --
 -- @since 0.19.2
-unifyRecordFields :: Context -> Map Name.Name Variable -> Variable -> Map Name.Name Variable -> Variable -> Unify ()
-unifyRecordFields context fields1 ext1 fields2 ext2 =
+unifyRecordFields :: Context -> (Map Name.Name Variable, Variable) -> (Map Name.Name Variable, Variable) -> Unify ()
+unifyRecordFields context (fields1, ext1) (fields2, ext2) =
   Unify $ \vars ok err ->
     do
       structure1 <- gatherFields fields1 ext1
@@ -622,33 +606,41 @@ unifyRecordFields context fields1 ext1 fields2 ext2 =
 
 unifyRecord :: Context -> RecordStructure -> RecordStructure -> Unify ()
 unifyRecord context (RecordStructure fields1 ext1) (RecordStructure fields2 ext2) =
-  let sharedFields = Map.intersectionWith (,) fields1 fields2
-      uniqueFields1 = Map.difference fields1 fields2
-      uniqueFields2 = Map.difference fields2 fields1
-   in if Map.null uniqueFields1
-        then
-          if Map.null uniqueFields2
-            then do
-              subUnify (_contextBounds context) ext1 ext2
-              unifySharedFields context sharedFields Map.empty ext1
-            else do
-              subRecord <- fresh context (Structure (Record1 uniqueFields2 ext2))
-              subUnify (_contextBounds context) ext1 subRecord
-              unifySharedFields context sharedFields Map.empty subRecord
-        else
-          if Map.null uniqueFields2
-            then do
-              subRecord <- fresh context (Structure (Record1 uniqueFields1 ext1))
-              subUnify (_contextBounds context) subRecord ext2
-              unifySharedFields context sharedFields Map.empty subRecord
-            else do
-              let otherFields = Map.union uniqueFields1 uniqueFields2
-              ext <- fresh context Type.unnamedFlexVar
-              sub1 <- fresh context (Structure (Record1 uniqueFields1 ext))
-              sub2 <- fresh context (Structure (Record1 uniqueFields2 ext))
-              subUnify (_contextBounds context) ext1 sub2
-              subUnify (_contextBounds context) sub1 ext2
-              unifySharedFields context sharedFields otherFields ext
+  unifyRecordPartitioned context sharedFields (unique1, ext1) (unique2, ext2)
+  where
+    sharedFields = Map.intersectionWith (,) fields1 fields2
+    unique1 = Map.difference fields1 fields2
+    unique2 = Map.difference fields2 fields1
+
+-- | Dispatch record unification based on which sides have unique fields.
+--
+-- Passing the unique fields and extensions as pairs keeps the parameter
+-- count within the four-parameter limit.
+unifyRecordPartitioned :: Context -> Map Name.Name (Variable, Variable) -> (Map Name.Name Variable, Variable) -> (Map Name.Name Variable, Variable) -> Unify ()
+unifyRecordPartitioned context sharedFields (unique1, ext1) (unique2, ext2)
+  | Map.null unique1 && Map.null unique2 =
+      subUnify (_contextBounds context) ext1 ext2
+        >> unifySharedFields context sharedFields Map.empty ext1
+  | Map.null unique1 = do
+      subRecord <- fresh context (Structure (Record1 unique2 ext2))
+      subUnify (_contextBounds context) ext1 subRecord
+      unifySharedFields context sharedFields Map.empty subRecord
+  | Map.null unique2 = do
+      subRecord <- fresh context (Structure (Record1 unique1 ext1))
+      subUnify (_contextBounds context) subRecord ext2
+      unifySharedFields context sharedFields Map.empty subRecord
+  | otherwise =
+      unifyRecordBothUnique context sharedFields (unique1, ext1) (unique2, ext2)
+
+-- | Unify records where both sides have fields the other lacks.
+unifyRecordBothUnique :: Context -> Map Name.Name (Variable, Variable) -> (Map Name.Name Variable, Variable) -> (Map Name.Name Variable, Variable) -> Unify ()
+unifyRecordBothUnique context sharedFields (unique1, ext1) (unique2, ext2) = do
+  ext <- fresh context Type.unnamedFlexVar
+  sub1 <- fresh context (Structure (Record1 unique1 ext))
+  sub2 <- fresh context (Structure (Record1 unique2 ext))
+  subUnify (_contextBounds context) ext1 sub2
+  subUnify (_contextBounds context) sub1 ext2
+  unifySharedFields context sharedFields (Map.union unique1 unique2) ext
 
 unifySharedFields :: Context -> Map Name.Name (Variable, Variable) -> Map Name.Name Variable -> Variable -> Unify ()
 unifySharedFields context sharedFields otherFields ext =

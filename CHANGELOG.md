@@ -9,61 +9,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Performance
 
-#### Performance Optimization Initiative (2025-10-20)
+#### Planned Optimizations
 
-**Status**: 🔴 **BLOCKED - Build System Broken**
-
-**Completed**:
-- ✅ Comprehensive performance analysis and planning
-- ✅ Benchmarking infrastructure design
-- ✅ Profiling methodology documentation
-- ✅ Performance optimization roadmap
-
-**Not Implemented**:
-- ❌ Parse caching (planned, not integrated)
-- ❌ Parallel compilation (planned, not started)
-- ❌ Incremental compilation (planned, not started)
-- ❌ JavaScript generation optimization (status unknown)
-
-**Current State**:
-- **Actual Performance Improvement**: 0% (no optimizations integrated)
-- **Build Status**: Broken (incomplete Parse cache module)
-- **Test Status**: Cannot run (build failures)
-- **Measurements**: None (cannot build to measure)
-
-**Blocker**: Incomplete Parse cache implementation breaks build system
-
-For details see:
-- [FINAL_OPTIMIZATION_REPORT.md](FINAL_OPTIMIZATION_REPORT.md) - Comprehensive status
-- [PERFORMANCE_OPTIMIZATION_RESULTS.md](PERFORMANCE_OPTIMIZATION_RESULTS.md) - Detailed tracking
-
-#### Planned Optimizations (Research Complete, Implementation Blocked)
-
-The following optimizations have been researched and planned:
+The following optimizations have been researched and are planned for future releases:
 
 - **Parse Caching** (40-50% expected improvement)
   - Eliminate triple parsing bottleneck
   - Cache AST and imports after first parse
-  - Status: 🔴 Incomplete implementation breaks build
-  - See: [docs/COMPILER_PERFORMANCE_OPTIMIZATION_PLAN.md](docs/COMPILER_PERFORMANCE_OPTIMIZATION_PLAN.md)
 
 - **Parallel Compilation** (3-5x expected improvement)
   - Dependency-aware task scheduling
   - Multi-core CPU utilization
-  - Status: 📋 Planned, not yet implemented
-  - See: [docs/optimizations/OPTIMIZATION_ROADMAP.md](docs/optimizations/OPTIMIZATION_ROADMAP.md#phase-2)
 
 - **Incremental Compilation** (10-100x for changes)
   - Content-addressable artifact caching
   - Interface stability checking
-  - Status: 📋 Planned, not yet implemented
-  - See: [docs/optimizations/OPTIMIZATION_ROADMAP.md](docs/optimizations/OPTIMIZATION_ROADMAP.md#phase-3)
 
-**Performance Baseline** (documented, from previous measurements):
-- Small project: 33ms average
-- Medium project: 67ms average
-- Large project (CMS, 162 modules): 35.25s average
-- See: [PERFORMANCE_OPTIMIZATION_RESULTS.md](PERFORMANCE_OPTIMIZATION_RESULTS.md)
+**Performance Baseline**:
+- Small project: ~33ms
+- Medium project: ~67ms
+- Large project (162 modules): ~35s
 
 ### Fixed
 
@@ -73,24 +38,18 @@ The following optimizations have been researched and planned:
 - Builder: Infinite loop in topological sort
 - Builder: Proper compilation error categorization
 - Driver: Type error formatting
+- Compiler: Boolean negation precedence and type variable loss in annotations
 
 ### Added
 
-- Performance profiling infrastructure design
-- Comprehensive performance documentation (150KB+)
-- Performance optimization roadmap and planning
-- Benchmarking methodology
+- `canopy-convert` package for Elm-to-Canopy project conversion
+- Coverage command with `--include-deps`, `--show-uncovered`, branch breakdown, merge, and HTML report
+- Benchmarking infrastructure
 
 ### Changed
 
 - Improved type constraint solving
 - Enhanced error reporting
-
-### Known Issues
-
-- 🔴 **Build Broken**: Incomplete Parse cache module prevents compilation
-- 🔴 **Cannot Run Tests**: Build failures block test execution
-- 🔴 **No Performance Improvements**: Zero optimizations successfully integrated
 
 ## [0.19.1] - 2025-10-11
 

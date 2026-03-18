@@ -44,7 +44,6 @@ import qualified Data.Map.Strict as Map
 import qualified Canopy.Data.Name as Name
 import qualified Reporting.Annotation as Ann
 import qualified Reporting.Error.Canonicalize as Error
-import qualified Reporting.InternalError as InternalError
 import qualified Reporting.Result as Result
 import qualified Reporting.Warning as Warning
 
@@ -70,79 +69,91 @@ data Uses = Uses
 
 canonicalize :: Env.Env -> Src.Expr -> Result FreeLocals [Warning.Warning] Can.Expr
 canonicalize env (Ann.At region expression) =
-  Ann.At region
-    <$> case expression of
-      Src.Str string ->
-        Result.ok (Can.Str string)
-      Src.Chr char ->
-        Result.ok (Can.Chr char)
-      Src.Int int ->
-        Result.ok (Can.Int int)
-      Src.Float float ->
-        Result.ok (Can.Float float)
-      Src.Var varType name ->
-        canonicalizeVar region env varType name
-      Src.VarQual varType prefix name ->
-        canonicalizeVarQual region env varType prefix name
-      Src.List exprs ->
-        Can.List <$> traverse (canonicalize env) exprs
-      Src.Op op ->
-        do
-          (Env.Binop _ home name annotation _ _) <- Env.findBinop region env op
-          return (Can.VarOperator op home name annotation)
-      Src.Negate expr ->
-        Can.Negate <$> canonicalize env expr
-      Src.Binops ops final ->
-        Ann.toValue <$> canonicalizeBinops region env ops final
-      Src.Lambda srcArgs body ->
-        canonicalizeLambda env srcArgs body
-      Src.Call func args ->
-        Can.Call
-          <$> canonicalize env func
-          <*> traverse (canonicalize env) args
-      Src.If branches finally ->
-        Can.If
-          <$> traverse (canonicalizeIfBranch env) branches
-          <*> canonicalize env finally
-      Src.Let defs expr ->
-        Ann.toValue <$> canonicalizeLet region env defs expr
-      Src.Case expr branches ->
-        Can.Case
-          <$> canonicalize env expr
-          <*> traverse (canonicalizeCaseBranch env) branches
-      Src.Accessor field ->
-        Result.ok $ Can.Accessor field
-      Src.Access record field ->
-        Can.Access
-          <$> canonicalize env record
-          <*> Result.ok field
-      Src.Update (Ann.At reg name) fields ->
-        maybe
-          (Ann.toValue <$> canonicalize env (desugarNestedUpdate region (Ann.At reg name) fields))
-          (\flatFields ->
-            let makeCanFields =
-                  Dups.checkFields' (\r t -> Can.FieldUpdate r <$> canonicalize env t) flatFields
-             in Can.Update name
-                  <$> (Ann.At reg <$> findVar reg env name)
-                  <*> (sequenceA =<< makeCanFields))
-          (tryFlattenFields fields)
-      Src.Record fields ->
-        do
-          fieldDict <- Dups.checkFields fields
-          Can.Record <$> traverse (canonicalize env) fieldDict
-      Src.Unit ->
-        Result.ok Can.Unit
-      Src.Tuple a b cs ->
-        Can.Tuple
-          <$> canonicalize env a
-          <*> canonicalize env b
-          <*> canonicalizeTupleExtras region env cs
-      Src.Shader src tipe ->
-        Result.ok (Can.Shader src tipe)
-      Src.Interpolation segments ->
-        canonicalizeInterpolation env region segments
-      Src.Hole name ->
-        Result.ok (Can.Hole region name)
+  Ann.At region <$> canonicalize_ region env expression
+
+-- | Dispatch an unwrapped source expression to its specific handler.
+canonicalize_ :: Ann.Region -> Env.Env -> Src.Expr_ -> Result FreeLocals [Warning.Warning] Can.Expr_
+canonicalize_ region env expression =
+  case expression of
+    Src.Str string -> Result.ok (Can.Str string)
+    Src.Chr char -> Result.ok (Can.Chr char)
+    Src.Int int -> Result.ok (Can.Int int)
+    Src.Float float -> Result.ok (Can.Float float)
+    Src.Var varType name -> canonicalizeVar region env varType name
+    Src.VarQual varType prefix name -> canonicalizeVarQual region env varType (prefix, name)
+    Src.List exprs -> Can.List <$> traverse (canonicalize env) exprs
+    Src.Op op -> canonicalizeOp region env op
+    Src.Negate expr -> Can.Negate <$> canonicalize env expr
+    Src.Binops ops final -> Ann.toValue <$> canonicalizeBinops region env ops final
+    Src.Lambda srcArgs body -> canonicalizeLambda env srcArgs body
+    Src.Call func args -> canonicalizeCall env func args
+    Src.If branches finally -> canonicalizeIf env branches finally
+    Src.Let defs expr -> Ann.toValue <$> canonicalizeLet region env defs expr
+    Src.Case expr branches -> canonicalizeCase env expr branches
+    Src.Accessor field -> Result.ok (Can.Accessor field)
+    Src.Access record field -> canonicalizeAccess env record field
+    Src.Update (Ann.At reg name) fields -> canonicalizeUpdate (region, reg) name env fields
+    Src.Record fields -> canonicalizeRecord env fields
+    Src.Unit -> Result.ok Can.Unit
+    Src.Tuple a b cs -> canonicalizeTuple_ region env (a, b, cs)
+    Src.Shader src tipe -> Result.ok (Can.Shader src tipe)
+    Src.Interpolation segments -> canonicalizeInterpolation env region segments
+    Src.Hole name -> Result.ok (Can.Hole region name)
+
+canonicalizeOp :: Ann.Region -> Env.Env -> Name.Name -> Result FreeLocals [Warning.Warning] Can.Expr_
+canonicalizeOp region env op = do
+  (Env.Binop _ home name annotation _ _) <- Env.findBinop region env op
+  return (Can.VarOperator op home name annotation)
+
+canonicalizeCall :: Env.Env -> Src.Expr -> [Src.Expr] -> Result FreeLocals [Warning.Warning] Can.Expr_
+canonicalizeCall env func args =
+  Can.Call
+    <$> canonicalize env func
+    <*> traverse (canonicalize env) args
+
+canonicalizeIf :: Env.Env -> [(Src.Expr, Src.Expr)] -> Src.Expr -> Result FreeLocals [Warning.Warning] Can.Expr_
+canonicalizeIf env branches finally =
+  Can.If
+    <$> traverse (canonicalizeIfBranch env) branches
+    <*> canonicalize env finally
+
+canonicalizeCase :: Env.Env -> Src.Expr -> [(Src.Pattern, Src.Expr)] -> Result FreeLocals [Warning.Warning] Can.Expr_
+canonicalizeCase env expr branches =
+  Can.Case
+    <$> canonicalize env expr
+    <*> traverse (canonicalizeCaseBranch env) branches
+
+canonicalizeAccess :: Env.Env -> Src.Expr -> Ann.Located Name.Name -> Result FreeLocals [Warning.Warning] Can.Expr_
+canonicalizeAccess env record field =
+  Can.Access
+    <$> canonicalize env record
+    <*> Result.ok field
+
+canonicalizeUpdate :: (Ann.Region, Ann.Region) -> Name.Name -> Env.Env -> [(Ann.Located Name.Name, Src.FieldUpdate)] -> Result FreeLocals [Warning.Warning] Can.Expr_
+canonicalizeUpdate (region, reg) name env fields =
+  maybe
+    (Ann.toValue <$> canonicalize env (desugarNestedUpdate region (Ann.At reg name) fields))
+    (canonicalizeFlatUpdate reg name env)
+    (tryFlattenFields fields)
+
+canonicalizeFlatUpdate :: Ann.Region -> Name.Name -> Env.Env -> [(Ann.Located Name.Name, Src.Expr)] -> Result FreeLocals [Warning.Warning] Can.Expr_
+canonicalizeFlatUpdate reg name env flatFields =
+  let makeCanFields = Dups.checkFields' (\r t -> Can.FieldUpdate r <$> canonicalize env t) flatFields
+  in Can.Update name
+       <$> (Ann.At reg <$> findVar reg env name)
+       <*> (sequenceA =<< makeCanFields)
+
+canonicalizeRecord :: Env.Env -> [(Ann.Located Name.Name, Src.Expr)] -> Result FreeLocals [Warning.Warning] Can.Expr_
+canonicalizeRecord env fields = do
+  fieldDict <- Dups.checkFields fields
+  Can.Record <$> traverse (canonicalize env) fieldDict
+
+canonicalizeTuple_ :: Ann.Region -> Env.Env -> (Src.Expr, Src.Expr, [Src.Expr]) -> Result FreeLocals [Warning.Warning] Can.Expr_
+canonicalizeTuple_ region env (a, b, cs) =
+  Can.Tuple
+    <$> canonicalize env a
+    <*> canonicalize env b
+    <*> canonicalizeTupleExtras region env cs
 
 -- NESTED RECORD UPDATE DESUGARING
 
@@ -212,9 +223,9 @@ canonicalizeVar region env Src.CapVar name = toVarCtor name <$> Env.findCtor reg
 --
 -- Follows the same lowercase/uppercase dispatch as 'canonicalizeVar'
 -- but uses the qualified lookup path through the environment.
-canonicalizeVarQual :: Ann.Region -> Env.Env -> Src.VarType -> Name.Name -> Name.Name -> Result FreeLocals [Warning.Warning] Can.Expr_
-canonicalizeVarQual region env Src.LowVar prefix name = findVarQual region env prefix name
-canonicalizeVarQual region env Src.CapVar prefix name = toVarCtor name <$> Env.findCtorQual region env prefix name
+canonicalizeVarQual :: Ann.Region -> Env.Env -> Src.VarType -> (Name.Name, Name.Name) -> Result FreeLocals [Warning.Warning] Can.Expr_
+canonicalizeVarQual region env Src.LowVar (prefix, name) = findVarQual region env prefix name
+canonicalizeVarQual region env Src.CapVar (prefix, name) = toVarCtor name <$> Env.findCtorQual region env prefix name
 
 -- CANONICALIZE LAMBDA
 
@@ -301,15 +312,14 @@ canonicalizeCaseBranch env (pattern, expr) =
 
 canonicalizeBinops :: Ann.Region -> Env.Env -> [(Src.Expr, Ann.Located Name.Name)] -> Src.Expr -> Result FreeLocals [Warning.Warning] Can.Expr
 canonicalizeBinops overallRegion env ops final =
-  let canonicalizeHelp (expr, Ann.At region op) =
-        (,)
-          <$> canonicalize env expr
-          <*> Env.findBinop region env op
-   in runBinopStepper overallRegion
-        =<< ( More
-                <$> traverse canonicalizeHelp ops
-                <*> canonicalize env final
-            )
+  runBinopStepper overallRegion
+    =<< (More <$> traverse (canonicalizeOp1 env) ops <*> canonicalize env final)
+
+canonicalizeOp1 :: Env.Env -> (Src.Expr, Ann.Located Name.Name) -> Result FreeLocals [Warning.Warning] (Can.Expr, Env.Binop)
+canonicalizeOp1 env (expr, Ann.At region op) =
+  (,)
+    <$> canonicalize env expr
+    <*> Env.findBinop region env op
 
 data Step
   = Done Can.Expr
@@ -339,21 +349,17 @@ toBinopStep makeBinop rootOp@(Env.Binop _ _ _ _ rootAssociativity rootPrecedence
           More ((makeBinop expr, op) : rest) final
       | precedence > rootPrecedence ->
           applyHigherPrecedence makeBinop rootOp (toBinopStep (toBinop op expr) op rest final)
+      | (rootAssociativity, associativity) == (Binop.Left, Binop.Left) ->
+          toBinopStep (\right -> toBinop op (makeBinop expr) right) op rest final
+      | (rootAssociativity, associativity) == (Binop.Right, Binop.Right) ->
+          toBinopStep (\right -> makeBinop (toBinop op expr right)) op rest final
       | otherwise ->
-          applyEqualPrecedence makeBinop rootOp op expr rest final rootAssociativity associativity
+          Error rootOp op
 
 applyHigherPrecedence :: (Can.Expr -> Can.Expr) -> Env.Binop -> Step -> Step
 applyHigherPrecedence makeBinop _ (Done newLast) = Done (makeBinop newLast)
 applyHigherPrecedence makeBinop rootOp (More newMiddle newLast) = toBinopStep makeBinop rootOp newMiddle newLast
 applyHigherPrecedence _ _ (Error a b) = Error a b
-
-applyEqualPrecedence :: (Can.Expr -> Can.Expr) -> Env.Binop -> Env.Binop -> Can.Expr -> [(Can.Expr, Env.Binop)] -> Can.Expr -> Binop.Associativity -> Binop.Associativity -> Step
-applyEqualPrecedence makeBinop _ op expr rest final Binop.Left Binop.Left =
-  toBinopStep (\right -> toBinop op (makeBinop expr) right) op rest final
-applyEqualPrecedence makeBinop _ op expr rest final Binop.Right Binop.Right =
-  toBinopStep (\right -> makeBinop (toBinop op expr right)) op rest final
-applyEqualPrecedence _ rootOp op _ _ _ _ _ =
-  Error rootOp op
 
 -- | Convert binary operator to canonical expression.
 --
@@ -511,36 +517,35 @@ addBindings bindings (Ann.At _ def) =
 
 addBindingsHelp :: Dups.Dict Ann.Region -> Src.Pattern -> Dups.Dict Ann.Region
 addBindingsHelp bindings (Ann.At region pattern) =
-  case pattern of
-    Src.PAnything ->
-      bindings
-    Src.PVar name ->
-      Dups.insert name region region bindings
-    Src.PRecord fields ->
-      let addField dict (Ann.At fieldRegion name) =
-            Dups.insert name fieldRegion fieldRegion dict
-       in List.foldl' addField bindings fields
-    Src.PUnit ->
-      bindings
-    Src.PTuple a b cs ->
-      List.foldl' addBindingsHelp bindings (a : b : cs)
-    Src.PCtor _ _ patterns ->
-      List.foldl' addBindingsHelp bindings patterns
-    Src.PCtorQual _ _ _ patterns ->
-      List.foldl' addBindingsHelp bindings patterns
-    Src.PList patterns ->
-      List.foldl' addBindingsHelp bindings patterns
-    Src.PCons hd tl ->
-      addBindingsHelp (addBindingsHelp bindings hd) tl
-    Src.PAlias aliasPattern (Ann.At nameRegion name) ->
-      Dups.insert name nameRegion nameRegion $
-        addBindingsHelp bindings aliasPattern
-    Src.PChr _ ->
-      bindings
-    Src.PStr _ ->
-      bindings
-    Src.PInt _ ->
-      bindings
+  addBindingsPattern region bindings pattern
+
+-- | Dispatch a single pattern constructor to its bindings handler.
+addBindingsPattern :: Ann.Region -> Dups.Dict Ann.Region -> Src.Pattern_ -> Dups.Dict Ann.Region
+addBindingsPattern _ bindings Src.PAnything = bindings
+addBindingsPattern _ bindings Src.PUnit = bindings
+addBindingsPattern _ bindings (Src.PChr _) = bindings
+addBindingsPattern _ bindings (Src.PStr _) = bindings
+addBindingsPattern _ bindings (Src.PInt _) = bindings
+addBindingsPattern region bindings (Src.PVar name) =
+  Dups.insert name region region bindings
+addBindingsPattern _ bindings (Src.PRecord fields) =
+  List.foldl' addFieldBinding bindings fields
+addBindingsPattern _ bindings (Src.PTuple a b cs) =
+  List.foldl' addBindingsHelp bindings (a : b : cs)
+addBindingsPattern _ bindings (Src.PCtor _ _ patterns) =
+  List.foldl' addBindingsHelp bindings patterns
+addBindingsPattern _ bindings (Src.PCtorQual _ _ _ patterns) =
+  List.foldl' addBindingsHelp bindings patterns
+addBindingsPattern _ bindings (Src.PList patterns) =
+  List.foldl' addBindingsHelp bindings patterns
+addBindingsPattern _ bindings (Src.PCons hd tl) =
+  addBindingsHelp (addBindingsHelp bindings hd) tl
+addBindingsPattern _ bindings (Src.PAlias aliasPattern (Ann.At nameRegion name)) =
+  Dups.insert name nameRegion nameRegion (addBindingsHelp bindings aliasPattern)
+
+addFieldBinding :: Dups.Dict Ann.Region -> Ann.Located Name.Name -> Dups.Dict Ann.Region
+addFieldBinding dict (Ann.At fieldRegion name) =
+  Dups.insert name fieldRegion fieldRegion dict
 
 -- BUILD BINDINGS GRAPH
 
@@ -552,14 +557,22 @@ data Binding
   | Edge (Ann.Located Name.Name)
   | Destruct Can.Pattern Can.Expr
 
+-- | Data grouping the definition name, argument patterns, body, and optional type.
+data DefInfo = DefInfo
+  { _defAname :: !(Ann.Located Name.Name)
+  , _defName :: !Name.Name
+  , _defSrcArgs :: ![Src.Pattern]
+  , _defBody :: !Src.Expr
+  }
+
 addDefNodes :: Env.Env -> [Node] -> Ann.Located Src.Def -> Result FreeLocals [Warning.Warning] [Node]
 addDefNodes env nodes (Ann.At _ (Src.Define aname@(Ann.At _ name) srcArgs body maybeType)) =
-  addDefineNode env nodes aname name srcArgs body maybeType
+  addDefineNode env nodes (DefInfo aname name srcArgs body) maybeType
 addDefNodes env nodes (Ann.At _ (Src.Destruct pattern body)) =
   addDestructNode env nodes pattern body
 
-addDefineNode :: Env.Env -> [Node] -> Ann.Located Name.Name -> Name.Name -> [Src.Pattern] -> Src.Expr -> Maybe Src.Type -> Result FreeLocals [Warning.Warning] [Node]
-addDefineNode env nodes aname name srcArgs body Nothing =
+addDefineNode :: Env.Env -> [Node] -> DefInfo -> Maybe Src.Type -> Result FreeLocals [Warning.Warning] [Node]
+addDefineNode env nodes (DefInfo aname name srcArgs body) Nothing =
   do
     (args, argBindings) <-
       Pattern.verify (Error.DPFuncArgs name) $
@@ -567,20 +580,18 @@ addDefineNode env nodes aname name srcArgs body Nothing =
     newEnv <- Env.addLocals argBindings env
     (cbody, freeLocals) <-
       verifyBindings Warning.Pattern argBindings (canonicalize newEnv body)
-    let cdef = Can.Def aname args cbody
-    let node = (Define cdef, name, Map.keys freeLocals)
+    let node = (Define (Can.Def aname args cbody), name, Map.keys freeLocals)
     logLetLocals args freeLocals (node : nodes)
-addDefineNode env nodes aname name srcArgs body (Just tipe) =
+addDefineNode env nodes (DefInfo aname name srcArgs body) (Just tipe) =
   do
     (Can.Forall freeVars ctipe) <- Type.toAnnotation env tipe
     ((args, resultType), argBindings) <-
       Pattern.verify (Error.DPFuncArgs name) $
-        gatherTypedArgs env name srcArgs ctipe Index.first []
+        gatherTypedArgs env name srcArgs ctipe (Index.first, [])
     newEnv <- Env.addLocals argBindings env
     (cbody, freeLocals) <-
       verifyBindings Warning.Pattern argBindings (canonicalize newEnv body)
-    let cdef = Can.TypedDef aname freeVars args cbody resultType
-    let node = (Define cdef, name, Map.keys freeLocals)
+    let node = (Define (Can.TypedDef aname freeVars args cbody resultType), name, Map.keys freeLocals)
     logLetLocals args freeLocals (node : nodes)
 
 addDestructNode :: Env.Env -> [Node] -> Src.Pattern -> Src.Expr -> Result FreeLocals [Warning.Warning] [Node]
@@ -625,51 +636,65 @@ addEdge edges nodes aname@(Ann.At _ name) =
 
 getPatternNames :: [Ann.Located Name.Name] -> Src.Pattern -> [Ann.Located Name.Name]
 getPatternNames names (Ann.At region pattern) =
-  case pattern of
-    Src.PAnything -> names
-    Src.PVar name -> Ann.At region name : names
-    Src.PRecord fields -> fields ++ names
-    Src.PAlias ptrn name -> getPatternNames (name : names) ptrn
-    Src.PUnit -> names
-    Src.PTuple a b cs -> List.foldl' getPatternNames (getPatternNames (getPatternNames names a) b) cs
-    Src.PCtor _ _ args -> List.foldl' getPatternNames names args
-    Src.PCtorQual _ _ _ args -> List.foldl' getPatternNames names args
-    Src.PList patterns -> List.foldl' getPatternNames names patterns
-    Src.PCons hd tl -> getPatternNames (getPatternNames names hd) tl
-    Src.PChr _ -> names
-    Src.PStr _ -> names
-    Src.PInt _ -> names
+  getPatternNames_ region names pattern
+
+-- | Dispatch a single pattern constructor to its name-gathering handler.
+getPatternNames_ :: Ann.Region -> [Ann.Located Name.Name] -> Src.Pattern_ -> [Ann.Located Name.Name]
+getPatternNames_ _ names Src.PAnything = names
+getPatternNames_ _ names Src.PUnit = names
+getPatternNames_ _ names (Src.PChr _) = names
+getPatternNames_ _ names (Src.PStr _) = names
+getPatternNames_ _ names (Src.PInt _) = names
+getPatternNames_ region names (Src.PVar name) = Ann.At region name : names
+getPatternNames_ _ names (Src.PRecord fields) = fields ++ names
+getPatternNames_ _ names (Src.PAlias ptrn name) = getPatternNames (name : names) ptrn
+getPatternNames_ _ names (Src.PTuple a b cs) =
+  List.foldl' getPatternNames (getPatternNames (getPatternNames names a) b) cs
+getPatternNames_ _ names (Src.PCtor _ _ args) = List.foldl' getPatternNames names args
+getPatternNames_ _ names (Src.PCtorQual _ _ _ args) = List.foldl' getPatternNames names args
+getPatternNames_ _ names (Src.PList patterns) = List.foldl' getPatternNames names patterns
+getPatternNames_ _ names (Src.PCons hd tl) = getPatternNames (getPatternNames names hd) tl
 
 -- GATHER TYPED ARGS
+
+-- | Accumulator state for 'gatherTypedArgs'.
+--
+-- Groups the current parameter index and the reversed list of typed
+-- argument pairs so they can be passed as a single value.
+type TypedArgAcc = (Index.ZeroBased, [(Can.Pattern, Can.Type)])
 
 gatherTypedArgs ::
   Env.Env ->
   Name.Name ->
   [Src.Pattern] ->
   Can.Type ->
-  Index.ZeroBased ->
-  [(Can.Pattern, Can.Type)] ->
+  TypedArgAcc ->
   Result Pattern.DupsDict w ([(Can.Pattern, Can.Type)], Can.Type)
-gatherTypedArgs env name srcArgs tipe index revTypedArgs =
+gatherTypedArgs env name srcArgs tipe acc@(_, revTypedArgs) =
   case srcArgs of
     [] ->
       return (reverse revTypedArgs, tipe)
     srcArg : otherSrcArgs ->
-      case Type.iteratedDealias tipe of
-        Can.TLambda argType resultType ->
-          do
-            arg <- Pattern.canonicalize env srcArg
-            gatherTypedArgs env name otherSrcArgs resultType (Index.next index) $
-              (arg, argType) : revTypedArgs
-        _ ->
-          let (Ann.At start _, Ann.At end _) = case (srcArgs, reverse srcArgs) of
-                (firstArg : _, lastArg : _) -> (firstArg, lastArg)
-                _ -> InternalError.report
-                  "Canonicalize.Expression.gatherTypedArgs"
-                  "Expected non-empty srcArgs"
-                  "gatherTypedArgs was called with a non-empty srcArgs list, but the (srcArgs, reverse srcArgs) pattern match failed to extract first and last elements. This should be impossible for a non-empty list."
-           in Result.throw $
-                Error.AnnotationTooShort (Ann.mergeRegions start end) name index (length srcArgs)
+      gatherTypedArgsStep (env, name) (srcArg, otherSrcArgs) tipe acc
+
+gatherTypedArgsStep :: (Env.Env, Name.Name) -> (Src.Pattern, [Src.Pattern]) -> Can.Type -> TypedArgAcc -> Result Pattern.DupsDict w ([(Can.Pattern, Can.Type)], Can.Type)
+gatherTypedArgsStep (env, name) (srcArg, otherSrcArgs) tipe (index, revTypedArgs) =
+  case Type.iteratedDealias tipe of
+    Can.TLambda argType resultType -> do
+      arg <- Pattern.canonicalize env srcArg
+      gatherTypedArgs env name otherSrcArgs resultType (Index.next index, (arg, argType) : revTypedArgs)
+    _ ->
+      Result.throw (Error.AnnotationTooShort (makeArgsRegion srcArg otherSrcArgs) name index (1 + length otherSrcArgs))
+
+makeArgsRegion :: Src.Pattern -> [Src.Pattern] -> Ann.Region
+makeArgsRegion firstArg otherSrcArgs =
+  let (Ann.At start _) = firstArg
+      (Ann.At end _) = lastPatternArg firstArg otherSrcArgs
+  in Ann.mergeRegions start end
+
+lastPatternArg :: Src.Pattern -> [Src.Pattern] -> Src.Pattern
+lastPatternArg current [] = current
+lastPatternArg _ (x : xs) = lastPatternArg x xs
 
 -- DETECT CYCLES
 
@@ -833,26 +858,26 @@ resolveVar region _ name (Env.Foreigns h hs) =
 findVarQual :: Ann.Region -> Env.Env -> Name.Name -> Name.Name -> Result FreeLocals w Can.Expr_
 findVarQual region (Env.Env localHome vs _ _ _ qvs _ _) prefix name =
   maybe
-    (findKernelOrFail region localHome vs qvs prefix name)
-    (resolveQualified region localHome vs qvs prefix name)
+    (findKernelOrFail (region, localHome) (vs, qvs) (prefix, name))
+    (resolveQualified (region, localHome) (vs, qvs) (prefix, name))
     (Map.lookup prefix qvs)
 
-resolveQualified :: Ann.Region -> ModuleName.Canonical -> Map.Map Name.Name Env.Var -> Env.Qualified Can.Annotation -> Name.Name -> Name.Name -> Map.Map Name.Name (Env.Info Can.Annotation) -> Result FreeLocals w Can.Expr_
-resolveQualified region localHome vs qvs prefix name qualified =
+resolveQualified :: (Ann.Region, ModuleName.Canonical) -> (Map.Map Name.Name Env.Var, Env.Qualified Can.Annotation) -> (Name.Name, Name.Name) -> Map.Map Name.Name (Env.Info Can.Annotation) -> Result FreeLocals w Can.Expr_
+resolveQualified (region, localHome) (vs, qvs) (prefix, name) qualified =
   maybe
     (Result.throw (Error.NotFoundVar region (Just prefix) name (toPossibleNames vs qvs)))
-    (resolveQualifiedInfo region localHome prefix name)
+    (resolveQualifiedInfo (region, localHome) (prefix, name))
     (Map.lookup name qualified)
 
-resolveQualifiedInfo :: Ann.Region -> ModuleName.Canonical -> Name.Name -> Name.Name -> Env.Info Can.Annotation -> Result FreeLocals w Can.Expr_
-resolveQualifiedInfo _ localHome _ name (Env.Specific home annotation)
+resolveQualifiedInfo :: (Ann.Region, ModuleName.Canonical) -> (Name.Name, Name.Name) -> Env.Info Can.Annotation -> Result FreeLocals w Can.Expr_
+resolveQualifiedInfo (_, localHome) (_, name) (Env.Specific home annotation)
   | home == ModuleName.debug = Result.ok (Can.VarDebug localHome name annotation)
   | otherwise = Result.ok (Can.VarForeign home name annotation)
-resolveQualifiedInfo region _ prefix name (Env.Ambiguous h hs) =
+resolveQualifiedInfo (region, _) (prefix, name) (Env.Ambiguous h hs) =
   Result.throw (Error.AmbiguousVar region (Just prefix) name h hs)
 
-findKernelOrFail :: Ann.Region -> ModuleName.Canonical -> Map.Map Name.Name Env.Var -> Env.Qualified Can.Annotation -> Name.Name -> Name.Name -> Result FreeLocals w Can.Expr_
-findKernelOrFail region localHome vs qvs prefix name
+findKernelOrFail :: (Ann.Region, ModuleName.Canonical) -> (Map.Map Name.Name Env.Var, Env.Qualified Can.Annotation) -> (Name.Name, Name.Name) -> Result FreeLocals w Can.Expr_
+findKernelOrFail (region, localHome) (vs, qvs) (prefix, name)
   | Name.isKernel prefix && Pkg.isKernel (ModuleName._package localHome) =
       Result.ok (Can.VarRuntime (Name.getKernel prefix) name)
   | otherwise =
@@ -865,13 +890,13 @@ toPossibleNames exposed qualified =
 -- FIND CTOR
 
 toVarCtor :: Name.Name -> Env.Ctor -> Can.Expr_
-toVarCtor name ctor =
-  case ctor of
-    Env.Ctor home typeName (Can.Union vars _ _ _ opts _) index args ->
-      let freeVars = Map.fromList (map (\v -> (v, ())) vars)
-          result = Can.TType home typeName (map Can.TVar vars)
-          tipe = foldr Can.TLambda result args
-       in Can.VarCtor opts home name index (Can.Forall freeVars tipe)
-    Env.RecordCtor home vars tipe ->
-      let freeVars = Map.fromList (map (\v -> (v, ())) vars)
-       in Can.VarCtor Can.Normal home name Index.first (Can.Forall freeVars tipe)
+toVarCtor name (Env.Ctor home typeName (Can.Union vars _ _ _ opts _) index args) =
+  Can.VarCtor opts home name index (Can.Forall freeVars tipe)
+  where
+    freeVars = Map.fromList (map (\v -> (v, ())) vars)
+    result = Can.TType home typeName (map Can.TVar vars)
+    tipe = foldr Can.TLambda result args
+toVarCtor name (Env.RecordCtor home vars tipe) =
+  Can.VarCtor Can.Normal home name Index.first (Can.Forall freeVars tipe)
+  where
+    freeVars = Map.fromList (map (\v -> (v, ())) vars)

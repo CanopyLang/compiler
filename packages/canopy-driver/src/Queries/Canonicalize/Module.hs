@@ -52,7 +52,7 @@ canonicalizeModuleQuery path pkg projectType ifaces ffiContent modul = do
 
   Log.logEvent (CanonStarted modNameText)
 
-  let result = Canonicalize.canonicalize pkg projectType ifaces ffiContent modul
+  let result = Canonicalize.canonicalize (Canonicalize.CanonConfig pkg projectType ifaces) ffiContent modul
   case processResult result of
     Left errors -> do
       Log.logEvent (CanonFailed modNameText (Text.pack (show (length errors))))

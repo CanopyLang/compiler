@@ -63,16 +63,15 @@ data Info a
   | Ambiguous ModuleName.Canonical (OneOrMore.OneOrMore ModuleName.Canonical)
 
 mergeInfo :: Info a -> Info a -> Info a
-mergeInfo info1 info2 =
-  case info1 of
-    Specific h1 _ ->
-      case info2 of
-        Specific h2 _ -> if h1 == h2 then info1 else Ambiguous h1 (OneOrMore.one h2)
-        Ambiguous h2 hs2 -> Ambiguous h1 (OneOrMore.more (OneOrMore.one h2) hs2)
-    Ambiguous h1 hs1 ->
-      case info2 of
-        Specific h2 _ -> Ambiguous h1 (OneOrMore.more hs1 (OneOrMore.one h2))
-        Ambiguous h2 hs2 -> Ambiguous h1 (OneOrMore.more hs1 (OneOrMore.more (OneOrMore.one h2) hs2))
+mergeInfo info1@(Specific h1 _) (Specific h2 _)
+  | h1 == h2 = info1
+  | otherwise = Ambiguous h1 (OneOrMore.one h2)
+mergeInfo (Specific h1 _) (Ambiguous h2 hs2) =
+  Ambiguous h1 (OneOrMore.more (OneOrMore.one h2) hs2)
+mergeInfo (Ambiguous h1 hs1) (Specific h2 _) =
+  Ambiguous h1 (OneOrMore.more hs1 (OneOrMore.one h2))
+mergeInfo (Ambiguous h1 hs1) (Ambiguous h2 hs2) =
+  Ambiguous h1 (OneOrMore.more hs1 (OneOrMore.more (OneOrMore.one h2) hs2))
 
 -- VARIABLES
 
@@ -159,17 +158,15 @@ findType region (Env _ _ ts _ _ _ qts _) name =
 
 findTypeQual :: Ann.Region -> Env -> Name.Name -> Name.Name -> Result i w Type
 findTypeQual region (Env _ _ ts _ _ _ qts _) prefix name =
-  case Map.lookup prefix qts of
-    Just qualified ->
-      case Map.lookup name qualified of
-        Just (Specific _ tipe) ->
-          Result.ok tipe
-        Just (Ambiguous h hs) ->
-          Result.throw (Error.AmbiguousType region (Just prefix) name h hs)
-        Nothing ->
-          Result.throw (Error.NotFoundType region (Just prefix) name (toPossibleNames ts qts))
-    Nothing ->
-      Result.throw (Error.NotFoundType region (Just prefix) name (toPossibleNames ts qts))
+  maybe
+    (Result.throw (Error.NotFoundType region (Just prefix) name (toPossibleNames ts qts)))
+    (resolveTypeInfo region (Just prefix) name)
+    (Map.lookup prefix qts >>= Map.lookup name)
+
+resolveTypeInfo :: Ann.Region -> Maybe Name.Name -> Name.Name -> Info Type -> Result i w Type
+resolveTypeInfo _ _ _ (Specific _ tipe) = Result.ok tipe
+resolveTypeInfo region prefix name (Ambiguous h hs) =
+  Result.throw (Error.AmbiguousType region prefix name h hs)
 
 -- FIND CTOR
 
@@ -185,17 +182,15 @@ findCtor region (Env _ _ _ cs _ _ _ qcs) name =
 
 findCtorQual :: Ann.Region -> Env -> Name.Name -> Name.Name -> Result i w Ctor
 findCtorQual region (Env _ _ _ cs _ _ _ qcs) prefix name =
-  case Map.lookup prefix qcs of
-    Just qualified ->
-      case Map.lookup name qualified of
-        Just (Specific _ pattern) ->
-          Result.ok pattern
-        Just (Ambiguous h hs) ->
-          Result.throw (Error.AmbiguousVariant region (Just prefix) name h hs)
-        Nothing ->
-          Result.throw (Error.NotFoundVariant region (Just prefix) name (toPossibleNames cs qcs))
-    Nothing ->
-      Result.throw (Error.NotFoundVariant region (Just prefix) name (toPossibleNames cs qcs))
+  maybe
+    (Result.throw (Error.NotFoundVariant region (Just prefix) name (toPossibleNames cs qcs)))
+    (resolveCtorInfo region (Just prefix) name)
+    (Map.lookup prefix qcs >>= Map.lookup name)
+
+resolveCtorInfo :: Ann.Region -> Maybe Name.Name -> Name.Name -> Info Ctor -> Result i w Ctor
+resolveCtorInfo _ _ _ (Specific _ ctor) = Result.ok ctor
+resolveCtorInfo region prefix name (Ambiguous h hs) =
+  Result.throw (Error.AmbiguousVariant region prefix name h hs)
 
 -- FIND BINOP
 

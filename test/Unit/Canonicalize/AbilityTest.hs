@@ -432,7 +432,7 @@ parseSrc src =
 -- | Run canonicalization on a source module.
 runCanon :: Src.Module -> ([Warning.Warning], Either (OneOrMore.OneOrMore Error.Error) Can.Module)
 runCanon modul =
-  Result.run (Module.canonicalize Pkg.core (ParseModule.Package Pkg.core) Map.empty Map.empty modul)
+  Result.run (Module.canonicalize (Module.CanonConfig Pkg.core (ParseModule.Package Pkg.core) Map.empty) Map.empty modul)
 
 -- | Extract a successful canonical module from a Result run.
 expectCanonRight :: ([Warning.Warning], Either (OneOrMore.OneOrMore Error.Error) Can.Module) -> IO Can.Module

@@ -66,7 +66,7 @@ runCanonicalize modul =
   Result.run (canonicalizeResult modul)
   where
     canonicalizeResult m =
-      fmap (const ()) (Module.canonicalize Pkg.core Application Map.empty Map.empty m)
+      fmap (const ()) (Module.canonicalize (Module.CanonConfig Pkg.core Application Map.empty) Map.empty m)
 
 -- | A minimal empty source module with no declarations.
 emptyModule :: Src.Module

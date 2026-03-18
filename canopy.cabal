@@ -1,6 +1,6 @@
 cabal-version: 2.2
 
--- This file has been generated from package.yaml by hpack version 0.36.1.
+-- This file has been generated from package.yaml by hpack version 0.38.1.
 --
 -- see: https://github.com/sol/hpack
 
@@ -225,6 +225,9 @@ test-suite canopy-test
       Property.Data.NameProperties
       Property.Generate.CodeSplitProperties
       Property.Generate.SourceMapProperties
+      Property.Parse.FuzzProperties
+      Property.Type.InstantiateProperties
+      Property.Type.SolveProperties
       Property.Type.UnifyProperties
       Property.Type.UnionFindProperties
       Unit.AST.CanonicalArithmeticTest

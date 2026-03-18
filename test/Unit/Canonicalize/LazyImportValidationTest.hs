@@ -264,7 +264,7 @@ runCanonicalize ::
   Src.Module ->
   ([Warning.Warning], Either (OneOrMore.OneOrMore Error.Error) Can.Module)
 runCanonicalize projectType ifaces modul =
-  Result.run (Module.canonicalize Pkg.core projectType ifaces Map.empty modul)
+  Result.run (Module.canonicalize (Module.CanonConfig Pkg.core projectType ifaces) Map.empty modul)
 
 -- | Extract errors from a Result run, failing if it succeeded.
 expectErrors ::

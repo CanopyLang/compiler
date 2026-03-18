@@ -11,6 +11,7 @@
 -- @since 0.19.1
 module Canonicalize.Module
   ( canonicalize,
+    CanonConfig (..),
     canonicalizeWithIO,
     loadFFIContent,
     loadFFIContentWithRoot,
@@ -68,47 +69,77 @@ loadFFIContentWithRoot = FFI.loadFFIContentWithRoot
 
 -- MODULES
 
--- | Canonicalize a source module with pre-loaded FFI content
+-- | Groups the three immutable compilation inputs needed by 'canonicalize'.
 --
--- This function now takes FFI content as a parameter to avoid threading issues
--- with unsafePerformIO. The FFI content should be read before canonicalization
--- in the IO monad and passed through the compilation pipeline.
+-- Bundles the package name, project type, and dependency interface map
+-- so they can be passed as one argument instead of three.
+data CanonConfig = CanonConfig
+  { _ccPkg :: !Pkg.Name
+  , _ccProjectType :: !ProjectType
+  , _ccIfaces :: !(Map ModuleName.Raw Interface.Interface)
+  }
+
+-- | Canonicalize a source module with pre-loaded FFI content.
+--
+-- The 'CanonConfig' bundles the package name, project type, and interface
+-- map so they can be passed as one argument.  The FFI content map and the
+-- source module are passed separately because they vary per-file while the
+-- config is constant across all files in a build.
 --
 -- @since 0.19.1
-canonicalize :: Pkg.Name -> ProjectType -> Map ModuleName.Raw Interface.Interface -> Map JsSourcePath JsSource -> Src.Module -> Result i [Warning.Warning] Can.Module
-canonicalize pkg projectType ifaces ffiContentMap modul@(Src.Module _ exports docs imports foreignImports values _ _ binops effects _ srcAbilities srcImpls) =
+canonicalize :: CanonConfig -> Map JsSourcePath JsSource -> Src.Module -> Result i [Warning.Warning] Can.Module
+canonicalize = canonicalizeWithConfig
+
+-- | Implementation of canonicalize using a 'CanonConfig'.
+canonicalizeWithConfig :: CanonConfig -> Map JsSourcePath JsSource -> Src.Module -> Result i [Warning.Warning] Can.Module
+canonicalizeWithConfig cc ffiContentMap modul@(Src.Module _ exports docs imports foreignImports values _ _ binops effects _ srcAbilities srcImpls) =
   do
-    let home = ModuleName.Canonical pkg (Src.getName modul)
+    let home = ModuleName.Canonical (_ccPkg cc) (Src.getName modul)
     let cbinops = Map.fromList (fmap canonicalizeBinop binops)
-
-    -- Validate lazy imports before environment creation (they are excluded
-    -- from Foreign.createInitialEnv to avoid spurious ImportNotFound errors)
-    lazySet <- validateAndCollectLazyImports pkg projectType home ifaces imports
-
+    lazySet <- validateAndCollectLazyImports (_ccPkg cc) (_ccProjectType cc) home (_ccIfaces cc) imports
     let eagerImports = filter (not . Src._importLazy) imports
-
     (env, cunions, caliases) <-
-      Foreign.createInitialEnv home ifaces eagerImports >>= Local.add modul
-
-    -- Process FFI imports and add to environment using pre-loaded content
-    envWithFFI <- FFI.addFFIToEnvPure env foreignImports ffiContentMap Map.empty
-
-    -- Emit capability warnings for FFI functions with @capability annotations
-    let capWarnings = concatMap (emitCapabilityWarnings ffiContentMap) foreignImports
-    traverse_ Result.warn capWarnings
-
-    -- Canonicalize abilities BEFORE values so ability methods are available
+      Foreign.createInitialEnv home (_ccIfaces cc) eagerImports >>= Local.add modul
+    envWithFFI <- canonicalizeFFIEnv env foreignImports ffiContentMap
+    envWithAbilities <- canonicalizeAbilityEnv home envWithFFI srcAbilities
     cabilities <- Ability.canonicalizeAbilities envWithFFI srcAbilities
     cimpls <- Ability.canonicalizeImpls envWithFFI home cabilities srcImpls
-    let envWithAbilities = addAbilityMethodsToEnv home envWithFFI cabilities
-
-    cvalues <- canonicalizeValues envWithAbilities values
-    ceffects <- Effects.canonicalize envWithAbilities values cunions effects
-    let derivedNames = collectDerivedFunctionNames cunions caliases
-    cexports <- canonicalizeExports values derivedNames cunions caliases cbinops ceffects exports
-    cguards <- canonicalizeGuards envWithAbilities values
-
+    (cvalues, ceffects, cexports, cguards) <-
+      canonicalizeModuleBody envWithAbilities (ModuleBodyArgs values cunions caliases cbinops effects exports)
     return $ Can.Module home cexports docs cvalues cunions caliases cbinops ceffects lazySet cguards cabilities cimpls
+
+-- | Add FFI bindings to the environment and emit capability warnings.
+canonicalizeFFIEnv :: Env.Env -> [Src.ForeignImport] -> Map JsSourcePath JsSource -> Result i [Warning.Warning] Env.Env
+canonicalizeFFIEnv env foreignImports ffiContentMap = do
+  let capWarnings = concatMap (emitCapabilityWarnings ffiContentMap) foreignImports
+  traverse_ Result.warn capWarnings
+  FFI.addFFIToEnvPure env foreignImports ffiContentMap Map.empty
+
+-- | Canonicalize abilities and extend the environment with ability methods.
+canonicalizeAbilityEnv :: ModuleName.Canonical -> Env.Env -> [Ann.Located Src.AbilityDecl] -> Result i [Warning.Warning] Env.Env
+canonicalizeAbilityEnv home envWithFFI srcAbilities = do
+  cabilities <- Ability.canonicalizeAbilities envWithFFI srcAbilities
+  return (addAbilityMethodsToEnv home envWithFFI cabilities)
+
+-- | Groups the declarations needed by 'canonicalizeModuleBody'.
+data ModuleBodyArgs = ModuleBodyArgs
+  { _mbaValues :: ![Ann.Located Src.Value]
+  , _mbaCUnions :: !(Map Name.Name Can.Union)
+  , _mbaCaliases :: !(Map Name.Name Can.Alias)
+  , _mbaCBinops :: !(Map Name.Name Can.Binop)
+  , _mbaEffects :: !Src.Effects
+  , _mbaExports :: !(Ann.Located Src.Exposing)
+  }
+
+-- | Canonicalize the main module body: values, effects, exports, and guards.
+canonicalizeModuleBody :: Env.Env -> ModuleBodyArgs -> Result i [Warning.Warning] (Can.Decls, Can.Effects, Can.Exports, Map Name.Name Can.GuardInfo)
+canonicalizeModuleBody env mba = do
+  cvalues <- canonicalizeValues env (_mbaValues mba)
+  ceffects <- Effects.canonicalize env (_mbaValues mba) (_mbaCUnions mba) (_mbaEffects mba)
+  let derivedNames = collectDerivedFunctionNames (_mbaCUnions mba) (_mbaCaliases mba)
+  cexports <- canonicalizeExports (_mbaValues mba) derivedNames (_mbaCUnions mba) (_mbaCaliases mba) (_mbaCBinops mba) ceffects (_mbaExports mba)
+  cguards <- canonicalizeGuards env (_mbaValues mba)
+  return (cvalues, ceffects, cexports, cguards)
 
 -- | Legacy canonicalize function for backward compatibility
 --
@@ -121,7 +152,7 @@ canonicalizeWithIO :: Pkg.Name -> Map ModuleName.Raw Interface.Interface -> Src.
 canonicalizeWithIO pkg ifaces modul@(Src.Module _ _ _ _ foreignImports _ _ _ _ _ _ _ _) = do
   -- Pre-load FFI content
   ffiContentMap <- FFI.loadFFIContent foreignImports
-  return $ canonicalize pkg Application ifaces ffiContentMap modul
+  return $ canonicalize (CanonConfig pkg Application ifaces) ffiContentMap modul
 
 -- LAZY IMPORT VALIDATION
 
@@ -139,6 +170,10 @@ canonicalizeWithIO pkg ifaces modul@(Src.Module _ _ _ _ foreignImports _ _ _ _ _
 -- throws errors for each invalid lazy import encountered.
 --
 -- @since 0.19.2
+-- | Context for lazy import validation, grouping the three values that never
+-- change across imports within a single module.
+type LazyCtx = (Pkg.Name, ProjectType, ModuleName.Canonical)
+
 validateAndCollectLazyImports ::
   Pkg.Name ->
   ProjectType ->
@@ -147,19 +182,17 @@ validateAndCollectLazyImports ::
   [Src.Import] ->
   Result i w (Set ModuleName.Canonical)
 validateAndCollectLazyImports pkg projectType home ifaces imports =
-  fmap Set.fromList (traverse (validateOneLazy pkg projectType home ifaces) lazyImports)
+  fmap Set.fromList (traverse (validateOneLazy (pkg, projectType, home) ifaces) lazyImports)
   where
     lazyImports = filter Src._importLazy imports
 
 -- | Validate a single lazy import and resolve to its canonical name.
 validateOneLazy ::
-  Pkg.Name ->
-  ProjectType ->
-  ModuleName.Canonical ->
+  LazyCtx ->
   Map ModuleName.Raw Interface.Interface ->
   Src.Import ->
   Result i w ModuleName.Canonical
-validateOneLazy pkg projectType home ifaces (Src.Import (Ann.At region name) _ _ _) =
+validateOneLazy (pkg, projectType, home) ifaces (Src.Import (Ann.At region name) _ _ _) =
   checkNotPackage region name projectType
     >> checkNotSelf region name home
     >> checkNotKernel region name
@@ -286,32 +319,29 @@ canonicalizeOneGuard env (name, Src.GuardAnnotation argIdx srcNarrowType) =
     Result.ok (name, Can.GuardInfo argIdx canNarrowType)
 
 detectCycles :: [Graph.SCC NodeTwo] -> Result i w Can.Decls
-detectCycles sccs =
-  case sccs of
-    [] ->
-      Result.ok Can.SaveTheEnvironment
-    scc : otherSccs ->
-      case scc of
-        Graph.AcyclicSCC (def, _, _) ->
-          Can.Declare def <$> detectCycles otherSccs
-        Graph.CyclicSCC subNodes ->
-          do
-            defs <- traverse detectBadCycles (Graph.stronglyConnComp subNodes)
-            case defs of
-              [] -> detectCycles otherSccs
-              d : ds -> Can.DeclareRec d ds <$> detectCycles otherSccs
+detectCycles [] = Result.ok Can.SaveTheEnvironment
+detectCycles (scc : otherSccs) = detectOneSCC scc otherSccs
+
+detectOneSCC :: Graph.SCC NodeTwo -> [Graph.SCC NodeTwo] -> Result i w Can.Decls
+detectOneSCC (Graph.AcyclicSCC (def, _, _)) otherSccs =
+  Can.Declare def <$> detectCycles otherSccs
+detectOneSCC (Graph.CyclicSCC subNodes) otherSccs =
+  traverse detectBadCycles (Graph.stronglyConnComp subNodes)
+    >>= assembleCyclicDecls otherSccs
+
+assembleCyclicDecls :: [Graph.SCC NodeTwo] -> [Can.Def] -> Result i w Can.Decls
+assembleCyclicDecls otherSccs [] = detectCycles otherSccs
+assembleCyclicDecls otherSccs (d : ds) = Can.DeclareRec d ds <$> detectCycles otherSccs
 
 detectBadCycles :: Graph.SCC Can.Def -> Result i w Can.Def
-detectBadCycles scc =
-  case scc of
-    Graph.AcyclicSCC def ->
-      Result.ok def
-    Graph.CyclicSCC [] ->
-      InternalError.report "Canonicalize.Module.detectBadCycles" "Empty CyclicSCC from Data.Graph" "Data.Graph.SCC should never produce an empty CyclicSCC list."
-    Graph.CyclicSCC (def : defs) ->
-      let (Ann.At region name) = extractDefName def
-          names = fmap (Ann.toValue . extractDefName) defs
-       in Result.throw (Error.RecursiveDecl region name names)
+detectBadCycles (Graph.AcyclicSCC def) = Result.ok def
+detectBadCycles (Graph.CyclicSCC []) =
+  InternalError.report "Canonicalize.Module.detectBadCycles" "Empty CyclicSCC from Data.Graph" "Data.Graph.SCC should never produce an empty CyclicSCC list."
+detectBadCycles (Graph.CyclicSCC (def : defs)) =
+  Result.throw (Error.RecursiveDecl region name names)
+  where
+    (Ann.At region name) = extractDefName def
+    names = fmap (Ann.toValue . extractDefName) defs
 
 extractDefName :: Can.Def -> Ann.Located Name.Name
 extractDefName def =
@@ -334,47 +364,43 @@ type NodeOne =
 type NodeTwo =
   (Can.Def, Name.Name, [Name.Name])
 
+-- | Groups the definition-level fields needed by 'toNodeOne' helpers.
+data DefSpec = DefSpec
+  { _dsAname :: !(Ann.Located Name.Name)
+  , _dsName :: !Name.Name
+  , _dsSrcArgs :: ![Src.Pattern]
+  , _dsBody :: !Src.Expr
+  }
+
 toNodeOne :: Env.Env -> Ann.Located Src.Value -> Result i [Warning.Warning] NodeOne
 toNodeOne env (Ann.At _ (Src.Value aname@(Ann.At _ name) srcArgs body maybeType _maybeGuard)) =
-  case maybeType of
-    Nothing ->
-      do
-        (args, argBindings) <-
-          Pattern.verify (Error.DPFuncArgs name) $
-            traverse (Pattern.canonicalize env) srcArgs
+  maybe
+    (toNodeOneUntyped env (DefSpec aname name srcArgs body))
+    (toNodeOneTyped env (DefSpec aname name srcArgs body))
+    maybeType
 
-        newEnv <-
-          Env.addLocals argBindings env
+toNodeOneUntyped :: Env.Env -> DefSpec -> Result i [Warning.Warning] NodeOne
+toNodeOneUntyped env ds = do
+  (args, argBindings) <-
+    Pattern.verify (Error.DPFuncArgs (_dsName ds)) $
+      traverse (Pattern.canonicalize env) (_dsSrcArgs ds)
+  newEnv <- Env.addLocals argBindings env
+  (cbody, freeLocals) <-
+    Expr.verifyBindings Warning.Pattern argBindings (Expr.canonicalize newEnv (_dsBody ds))
+  let def = Can.Def (_dsAname ds) args cbody
+  return (toNodeTwo (_dsName ds) (_dsSrcArgs ds) def freeLocals, _dsName ds, Map.keys freeLocals)
 
-        (cbody, freeLocals) <-
-          Expr.verifyBindings Warning.Pattern argBindings (Expr.canonicalize newEnv body)
-
-        let def = Can.Def aname args cbody
-        return
-          ( toNodeTwo name srcArgs def freeLocals,
-            name,
-            Map.keys freeLocals
-          )
-    Just srcType ->
-      do
-        (Can.Forall freeVars tipe) <- Type.toAnnotation env srcType
-
-        ((args, resultType), argBindings) <-
-          Pattern.verify (Error.DPFuncArgs name) $
-            Expr.gatherTypedArgs env name srcArgs tipe Index.first []
-
-        newEnv <-
-          Env.addLocals argBindings env
-
-        (cbody, freeLocals) <-
-          Expr.verifyBindings Warning.Pattern argBindings (Expr.canonicalize newEnv body)
-
-        let def = Can.TypedDef aname freeVars args cbody resultType
-        return
-          ( toNodeTwo name srcArgs def freeLocals,
-            name,
-            Map.keys freeLocals
-          )
+toNodeOneTyped :: Env.Env -> DefSpec -> Src.Type -> Result i [Warning.Warning] NodeOne
+toNodeOneTyped env ds srcType = do
+  (Can.Forall freeVars tipe) <- Type.toAnnotation env srcType
+  ((args, resultType), argBindings) <-
+    Pattern.verify (Error.DPFuncArgs (_dsName ds)) $
+      Expr.gatherTypedArgs env (_dsName ds) (_dsSrcArgs ds) tipe (Index.first, [])
+  newEnv <- Env.addLocals argBindings env
+  (cbody, freeLocals) <-
+    Expr.verifyBindings Warning.Pattern argBindings (Expr.canonicalize newEnv (_dsBody ds))
+  let def = Can.TypedDef (_dsAname ds) freeVars args cbody resultType
+  return (toNodeTwo (_dsName ds) (_dsSrcArgs ds) def freeLocals, _dsName ds, Map.keys freeLocals)
 
 toNodeTwo :: Name.Name -> [arg] -> Can.Def -> Expr.FreeLocals -> NodeTwo
 toNodeTwo name args def freeLocals =
@@ -395,9 +421,9 @@ addDirects name (Expr.Uses directUses _) directDeps =
 canonicalizeExports ::
   [Ann.Located Src.Value] ->
   Map.Map Name.Name () ->
-  Map.Map Name.Name union ->
-  Map.Map Name.Name alias ->
-  Map.Map Name.Name binop ->
+  Map.Map Name.Name Can.Union ->
+  Map.Map Name.Name Can.Alias ->
+  Map.Map Name.Name Can.Binop ->
   Can.Effects ->
   Ann.Located Src.Exposing ->
   Result i w Can.Exports
@@ -406,51 +432,93 @@ canonicalizeExports values derivedNames unions aliases binops effects (Ann.At re
     Src.Open ->
       Result.ok (Can.ExportEverything region)
     Src.Explicit exposeds ->
-      do
-        let names = Map.union (Map.fromList (fmap valueToName values)) derivedNames
-        infos <- traverse (checkExposed names unions aliases binops effects) exposeds
-        Can.Export <$> Dups.detect Error.ExportDuplicate (Dups.unions infos)
+      let names = Map.union (Map.fromList (fmap valueToName values)) derivedNames
+          ctx = ExposedCtx names unions aliases binops
+      in canonicalizeExplicitExports ctx effects exposeds
+
+-- | Canonicalize a list of explicitly exported names into a 'Can.Export' map.
+canonicalizeExplicitExports :: ExposedCtx -> Can.Effects -> [Src.Exposed] -> Result i w Can.Exports
+canonicalizeExplicitExports ctx effects exposeds = do
+  infos <- traverse (checkExposed ctx effects) exposeds
+  Can.Export <$> Dups.detect Error.ExportDuplicate (Dups.unions infos)
 
 valueToName :: Ann.Located Src.Value -> (Name.Name, ())
 valueToName (Ann.At _ (Src.Value (Ann.At _ name) _ _ _ _)) =
   (name, ())
 
+-- | Groups the four declaration maps needed during export checking.
+data ExposedCtx = ExposedCtx
+  { _ecValues :: !(Map Name.Name ())
+  , _ecUnions :: !(Map Name.Name Can.Union)
+  , _ecAliases :: !(Map Name.Name Can.Alias)
+  , _ecBinops :: !(Map Name.Name Can.Binop)
+  }
+
 checkExposed ::
-  Map Name.Name value ->
-  Map Name.Name union ->
-  Map Name.Name alias ->
-  Map Name.Name binop ->
+  ExposedCtx ->
   Can.Effects ->
   Src.Exposed ->
   Result i w (Dups.Dict (Ann.Located Can.Export))
-checkExposed values unions aliases binops effects exposed =
+checkExposed ctx effects exposed =
   case exposed of
     Src.Lower (Ann.At region name) ->
-      if Map.member name values
-        then ok name region Can.ExportValue
-        else case checkPorts effects name of
-          Nothing ->
-            ok name region Can.ExportPort
-          Just ports ->
-            Result.throw . Error.ExportNotFound region Error.BadVar name $ (ports <> Map.keys values)
+      checkExposedLower ctx effects region name
     Src.Operator region name ->
-      if Map.member name binops
-        then ok name region Can.ExportBinop
-        else Result.throw . Error.ExportNotFound region Error.BadOp name $ Map.keys binops
+      checkExposedOp (_ecBinops ctx) region name
     Src.Upper (Ann.At region name) (Src.Public dotDotRegion) ->
-      if Map.member name unions
-        then ok name region Can.ExportUnionOpen
-        else
-          if Map.member name aliases
-            then Result.throw $ Error.ExportOpenAlias dotDotRegion name
-            else Result.throw . Error.ExportNotFound region Error.BadType name $ (Map.keys unions <> Map.keys aliases)
+      checkExposedUpperOpen (_ecUnions ctx) (_ecAliases ctx) region name dotDotRegion
     Src.Upper (Ann.At region name) Src.Private ->
-      if Map.member name unions
-        then ok name region Can.ExportUnionClosed
-        else
-          if Map.member name aliases
-            then ok name region Can.ExportAlias
-            else Result.throw . Error.ExportNotFound region Error.BadType name $ (Map.keys unions <> Map.keys aliases)
+      checkExposedUpperClosed (_ecUnions ctx) (_ecAliases ctx) region name
+
+checkExposedLower ::
+  ExposedCtx ->
+  Can.Effects ->
+  Ann.Region ->
+  Name.Name ->
+  Result i w (Dups.Dict (Ann.Located Can.Export))
+checkExposedLower ctx effects region name
+  | Map.member name (_ecValues ctx) = ok name region Can.ExportValue
+  | otherwise = checkExposedLowerPort ctx effects region name
+
+checkExposedLowerPort ::
+  ExposedCtx ->
+  Can.Effects ->
+  Ann.Region ->
+  Name.Name ->
+  Result i w (Dups.Dict (Ann.Located Can.Export))
+checkExposedLowerPort ctx effects region name =
+  maybe
+    (ok name region Can.ExportPort)
+    (\ports -> Result.throw (Error.ExportNotFound region Error.BadVar name (ports <> Map.keys (_ecValues ctx))))
+    (checkPorts effects name)
+
+checkExposedOp :: Map Name.Name binop -> Ann.Region -> Name.Name -> Result i w (Dups.Dict (Ann.Located Can.Export))
+checkExposedOp binops region name
+  | Map.member name binops = ok name region Can.ExportBinop
+  | otherwise = Result.throw (Error.ExportNotFound region Error.BadOp name (Map.keys binops))
+
+checkExposedUpperOpen ::
+  Map Name.Name union ->
+  Map Name.Name alias ->
+  Ann.Region ->
+  Name.Name ->
+  Ann.Region ->
+  Result i w (Dups.Dict (Ann.Located Can.Export))
+checkExposedUpperOpen unions aliases region name dotDotRegion
+  | Map.member name unions = ok name region Can.ExportUnionOpen
+  | Map.member name aliases = Result.throw (Error.ExportOpenAlias dotDotRegion name)
+  | otherwise = Result.throw (Error.ExportNotFound region Error.BadType name (Map.keys unions <> Map.keys aliases))
+
+checkExposedUpperClosed ::
+  Map Name.Name union ->
+  Map Name.Name alias ->
+  Ann.Region ->
+  Name.Name ->
+  Result i w (Dups.Dict (Ann.Located Can.Export))
+checkExposedUpperClosed unions aliases region name
+  | Map.member name unions = ok name region Can.ExportUnionClosed
+  | Map.member name aliases = ok name region Can.ExportAlias
+  | otherwise = Result.throw (Error.ExportNotFound region Error.BadType name (Map.keys unions <> Map.keys aliases))
 
 checkPorts :: Can.Effects -> Name.Name -> Maybe [Name.Name]
 checkPorts effects name =

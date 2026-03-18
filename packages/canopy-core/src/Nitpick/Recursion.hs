@@ -81,7 +81,7 @@ allPathsRecurse name expr =
     Can.Access _ _ -> False
     Can.Update {} -> False
     Can.Hole {} -> False
-    Can.Call fn args -> isDirectSelfCall name fn
+    Can.Call fn _ -> isDirectSelfCall name fn
     Can.If branches elseExpr ->
       all (allPathsRecurseLocated name . snd) branches
         && allPathsRecurseLocated name elseExpr

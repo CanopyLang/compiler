@@ -38,32 +38,43 @@ canonicalize env values unions effects =
     Src.NoEffects ->
       Result.ok Can.NoEffects
     Src.Ports ports ->
-      do
-        pairs <- traverse (canonicalizePort env) ports
-        return $ Can.Ports (Map.fromList pairs)
+      Can.Ports . Map.fromList <$> traverse (canonicalizePort env) ports
     Src.FFI _ ->
       Result.ok Can.FFI
     Src.Manager region manager ->
-      let dict = Map.fromList (fmap toNameRegion values)
-       in Can.Manager
-            <$> verifyManager region dict "init"
-            <*> verifyManager region dict "onEffects"
-            <*> verifyManager region dict "onSelfMsg"
-            <*> case manager of
-              Src.Cmd cmdType ->
-                Can.Cmd
-                  <$> verifyEffectType cmdType unions
-                  <* verifyManager region dict "cmdMap"
-              Src.Sub subType ->
-                Can.SubManager
-                  <$> verifyEffectType subType unions
-                  <* verifyManager region dict "subMap"
-              Src.Fx cmdType subType ->
-                Can.Fx
-                  <$> verifyEffectType cmdType unions
-                  <*> verifyEffectType subType unions
-                  <* verifyManager region dict "cmdMap"
-                  <* verifyManager region dict "subMap"
+      canonicalizeManager values unions region manager
+
+canonicalizeManager ::
+  [Ann.Located Src.Value] ->
+  Map Name.Name union ->
+  Ann.Region ->
+  Src.Manager ->
+  Result i w Can.Effects
+canonicalizeManager values unions region manager =
+  Can.Manager
+    <$> verifyManager region dict "init"
+    <*> verifyManager region dict "onEffects"
+    <*> verifyManager region dict "onSelfMsg"
+    <*> canonicalizeManagerKind unions region dict manager
+  where
+    dict = Map.fromList (fmap toNameRegion values)
+
+canonicalizeManagerKind ::
+  Map Name.Name union ->
+  Ann.Region ->
+  Map Name.Name Ann.Region ->
+  Src.Manager ->
+  Result i w Can.Manager
+canonicalizeManagerKind unions region dict (Src.Cmd cmdType) =
+  Can.Cmd <$> verifyEffectType cmdType unions <* verifyManager region dict "cmdMap"
+canonicalizeManagerKind unions region dict (Src.Sub subType) =
+  Can.SubManager <$> verifyEffectType subType unions <* verifyManager region dict "subMap"
+canonicalizeManagerKind unions region dict (Src.Fx cmdType subType) =
+  Can.Fx
+    <$> verifyEffectType cmdType unions
+    <*> verifyEffectType subType unions
+    <* verifyManager region dict "cmdMap"
+    <* verifyManager region dict "subMap"
 
 -- CANONICALIZE PORT
 
@@ -197,28 +208,11 @@ checkPayload tipe =
     Can.TAlias _ _ args aliasedType ->
       checkPayload (Type.dealias args aliasedType)
     Can.TType home name args ->
-      case args of
-        []
-          | isJson home name -> Right ()
-          | isString home name -> Right ()
-          | isIntFloatBool home name -> Right ()
-        [arg]
-          | isList home name -> checkPayload arg
-          | isMaybe home name -> checkPayload arg
-          | isArray home name -> checkPayload arg
-        _ ->
-          Left (tipe, Error.UnsupportedType name)
+      checkTypePayload tipe home name args
     Can.TUnit ->
       Right ()
     Can.TTuple a b maybeC ->
-      do
-        checkPayload a
-        checkPayload b
-        case maybeC of
-          Nothing ->
-            Right ()
-          Just c ->
-            checkPayload c
+      checkPayload a >> checkPayload b >> Foldable.traverse_ checkPayload maybeC
     Can.TVar name ->
       Left (tipe, Error.TypeVariable name)
     Can.TLambda _ _ ->
@@ -227,6 +221,29 @@ checkPayload tipe =
       Left (tipe, Error.ExtendedRecord)
     Can.TRecord fields Nothing ->
       Foldable.traverse_ checkFieldPayload fields
+
+-- | Check a @TType@ payload by dispatching on its argument list.
+checkTypePayload :: Can.Type -> ModuleName.Canonical -> Name.Name -> [Can.Type] -> Either (Can.Type, Error.InvalidPayload) ()
+checkTypePayload tipe home name [] =
+  checkNullaryTypePayload tipe home name
+checkTypePayload tipe home name [arg] =
+  checkUnaryTypePayload tipe home name arg
+checkTypePayload tipe _ name _ =
+  Left (tipe, Error.UnsupportedType name)
+
+checkNullaryTypePayload :: Can.Type -> ModuleName.Canonical -> Name.Name -> Either (Can.Type, Error.InvalidPayload) ()
+checkNullaryTypePayload tipe home name
+  | isJson home name = Right ()
+  | isString home name = Right ()
+  | isIntFloatBool home name = Right ()
+  | otherwise = Left (tipe, Error.UnsupportedType name)
+
+checkUnaryTypePayload :: Can.Type -> ModuleName.Canonical -> Name.Name -> Can.Type -> Either (Can.Type, Error.InvalidPayload) ()
+checkUnaryTypePayload tipe home name arg
+  | isList home name = checkPayload arg
+  | isMaybe home name = checkPayload arg
+  | isArray home name = checkPayload arg
+  | otherwise = Left (tipe, Error.UnsupportedType name)
 
 checkFieldPayload :: Can.FieldType -> Either (Can.Type, Error.InvalidPayload) ()
 checkFieldPayload (Can.FieldType _ tipe) =

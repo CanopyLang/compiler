@@ -272,7 +272,7 @@ canonicalizeImplMethod env (Ann.At _ (Src.Value aname@(Ann.At _ name) srcArgs bo
         (Can.Forall freeVars tipe) <- Type.toAnnotation env srcType
         ((typedArgs, resultType), argBindings) <-
           Pattern.verify (Error.DPFuncArgs name) $
-            Expr.gatherTypedArgs env name srcArgs tipe Index.first []
+            Expr.gatherTypedArgs env name srcArgs tipe (Index.first, [])
         newEnv <- Env.addLocals argBindings env
         (cbody, _) <-
           Expr.verifyBindings Warning.Pattern argBindings (Expr.canonicalize newEnv body)

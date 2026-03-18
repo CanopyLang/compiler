@@ -210,6 +210,9 @@ import qualified Unit.FFI.CapabilityTest as FFICapabilityTest
 import qualified Property.ArithmeticLawsTest as ArithmeticLawsTest
 import qualified Property.Type.UnifyProperties as UnifyProperties
 import qualified Property.Type.UnionFindProperties as UnionFindProperties
+import qualified Property.Type.SolveProperties as SolveProperties
+import qualified Property.Type.InstantiateProperties as InstantiateProperties
+import qualified Property.Parse.FuzzProperties as ParseFuzzProperties
 import qualified Property.Data.NameProperties as NameProperties
 import qualified Property.Generate.CodeSplitProperties as CodeSplitProperties
 import qualified Property.Generate.SourceMapProperties as SourceMapProperties
@@ -419,6 +422,9 @@ propertyTests =
     [ ArithmeticLawsTest.tests,
       UnifyProperties.tests,
       UnionFindProperties.tests,
+      SolveProperties.tests,
+      InstantiateProperties.tests,
+      ParseFuzzProperties.tests,
       NameProperties.tests,
       SourceMapProperties.tests,
       CodeSplitProperties.tests

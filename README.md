@@ -53,13 +53,11 @@ canopy reactor
 canopy/
   packages/
     canopy-core/       -- Compiler: parsing, type checking, optimization, codegen
-    canopy-query/      -- Query engine and parse caching
-    canopy-driver/     -- Compilation orchestration
     canopy-builder/    -- Build system, dependency resolution, HTTP
     canopy-terminal/   -- CLI commands, test runner, REPL
+    canopy-convert/    -- Elm-to-Canopy project conversion tool
   test/                -- Test suites (unit, property, integration, golden)
-  core-packages/       -- Standard library packages (test, debug)
-  example/             -- Example Canopy project
+  examples/            -- Example Canopy projects
   docs/                -- Architecture and planning documents
 ```
 
