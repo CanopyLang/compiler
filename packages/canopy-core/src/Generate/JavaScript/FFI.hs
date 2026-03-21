@@ -39,6 +39,7 @@ module Generate.JavaScript.FFI
     extractCanopyType,
     findFunctionName,
     isValidJsIdentifier,
+    sanitizeForIdent,
     escapeJsString,
     trim,
   )
@@ -66,6 +67,7 @@ import qualified Generate.JavaScript.FFI.Registry as FFIRegistry
 import FFI.Types (BindingMode (..))
 import qualified FFI.Validator as Validator
 import qualified Generate.Mode as Mode
+import System.FilePath (takeBaseName)
 
 -- | Graph of optimized global definitions.
 type Graph = Map Opt.Global Opt.Node
@@ -303,7 +305,7 @@ formatFFIWithBindings mode graph usedFuncs fileRegistries resolvedNeeded _key in
     contentText = _ffiContent info
     alias = _ffiAlias info
     aliasStr = Name.toChars alias
-    iifeVar = "_" <> aliasStr <> "IIFE"
+    iifeVar = "_" <> sanitizeForIdent (takeBaseName path) <> "_" <> aliasStr <> "IIFE"
     iifeVarText = Text.pack iifeVar
     functions = extractFFIFunctions (Text.lines contentText)
     jsNames = List.map jsReferenceName functions
@@ -895,6 +897,16 @@ isValidJsIdentifier (c : cs) = isValidFirst c && all isValidRest cs
     isValidFirst x = Char.isAlpha x || x == '_' || x == '$'
     isValidRest x = Char.isAlphaNum x || x == '_' || x == '$'
 isValidJsIdentifier [] = False
+
+-- | Replace every character not valid in a JS identifier with @_@.
+--
+-- Used to turn a file basename (e.g. @\"platform-cmd\"@) into a safe fragment
+-- for an IIFE variable name, ensuring that multiple FFI files sharing the
+-- same alias still receive distinct variable names.
+--
+-- @since 0.19.2
+sanitizeForIdent :: String -> String
+sanitizeForIdent = map (\c -> if Char.isAlphaNum c || c == '_' then c else '_')
 
 -- | Escape text for safe inclusion in a JavaScript string literal.
 --

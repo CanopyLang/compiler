@@ -213,10 +213,20 @@ transformStmtKeep (JS.JSMethodCall expr lp args rp semi) =
   JS.JSMethodCall (transformExpr expr) lp (transformCommaList args) rp semi
 transformStmtKeep stmt = stmt
 
+-- | Wrap an expression in parentheses.
+--
+-- Prevents ASI when an object literal directly follows a @return@ keyword:
+-- @return@ then newline then @{@ is misread as @return;@ followed by a
+-- block statement.  Parentheses force @{@ into expression context.
+--
+-- @since 0.20.2
+wrapInParens :: JS.JSExpression -> JS.JSExpression
+wrapInParens e = JS.JSExpressionParen JS.JSAnnotSpace e JS.JSNoAnnot
+
 -- | Transform an expression, replacing debug ternaries with prod values.
 transformExpr :: JS.JSExpression -> JS.JSExpression
 transformExpr (JS.JSExpressionTernary cond _q _thenE _c elseE)
-  | isDebugCondition cond = transformExpr elseE
+  | isDebugCondition cond = wrapInParens (transformExpr elseE)
 transformExpr (JS.JSExpressionTernary cond q thenE c elseE) =
   JS.JSExpressionTernary (transformExpr cond) q (transformExpr thenE) c (transformExpr elseE)
 transformExpr (JS.JSExpressionBinary lhs op rhs) =

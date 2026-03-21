@@ -94,10 +94,15 @@ minifyExpr scope counter expr =
           newScope = Map.insert n short scope
        in Opt.Destruct (Opt.Destructor short (minifyPath scope path)) (minifyExpr newScope newCounter body)
     Opt.Case inputName resultName decider jumps ->
-      let (shortInput, c1) = freshName scope counter inputName
-          (shortResult, c2) = freshName (Map.insert inputName shortInput scope) c1 resultName
+      -- Both inputName and resultName refer to variables already in scope
+      -- (function parameters or let-bound values).  Calling freshName twice
+      -- for the same variable would advance the counter twice and let the
+      -- second write clobber the first, causing the decider to reference an
+      -- undefined variable.  Use lookupRenamed to reuse existing short names.
+      let shortInput = lookupRenamed scope inputName
+          shortResult = lookupRenamed scope resultName
           newScope = Map.insert resultName shortResult (Map.insert inputName shortInput scope)
-       in Opt.Case shortInput shortResult (minifyDecider newScope c2 decider) (map (minifyJump newScope c2) jumps)
+       in Opt.Case shortInput shortResult (minifyDecider newScope counter decider) (map (minifyJump newScope counter) jumps)
     Opt.Access rec field ->
       Opt.Access (minifyExpr scope counter rec) field
     Opt.Update rec fields ->

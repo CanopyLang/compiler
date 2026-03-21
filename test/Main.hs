@@ -158,6 +158,7 @@ import qualified Unit.Type.UnionFindTest as UnionFindTest
 import qualified Unit.FFI.CapabilityEnforcementTest as FFICapEnforceTest
 import qualified Unit.FFI.CapabilityTypeTest as FFICapTypeTest
 import qualified Unit.FFI.EscapeTest as FFIEscapeTest
+import qualified Unit.FFI.IIFEVarTest as FFIIIFEVarTest
 import qualified Unit.FFI.ManifestTest as FFIManifestTest
 import qualified Unit.FFI.NpmPipelineTest as NpmPipelineTest
 import qualified Unit.FFI.ResolveTest as FFIResolveTest
@@ -365,6 +366,7 @@ unitTests =
       FFICapTypeTest.tests,
       FFIErgonomicsTest.tests,
       FFIEscapeTest.tests,
+      FFIIIFEVarTest.tests,
       FFIManifestTest.tests,
       NpmPipelineTest.tests,
       FFIResolveTest.tests,

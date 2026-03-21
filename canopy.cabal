@@ -281,6 +281,7 @@ test-suite canopy-test
       Unit.FFI.CapabilityTypeTest
       Unit.FFI.ErgonomicsTest
       Unit.FFI.EscapeTest
+      Unit.FFI.IIFEVarTest
       Unit.FFI.ManifestTest
       Unit.FFI.NpmPipelineTest
       Unit.FFI.ResolveTest

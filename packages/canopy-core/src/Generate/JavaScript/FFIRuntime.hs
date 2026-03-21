@@ -324,6 +324,12 @@ var $validate = {
   /** @canopy-type (a -> String -> b) -> a -> String -> List b */
   List: function(f) {
     return function(v, p) {
+      // If already a Canopy linked list (returned by internal FFI like List.cons),
+      // pass through directly without conversion.
+      // Debug builds use string tags ('[]', '::'); optimized builds use numeric (0, 1).
+      if (typeof v === 'object' && v !== null && (v.$ === '[]' || v.$ === '::' || v.$ === 0 || v.$ === 1)) {
+        return v;
+      }
       if (!Array.isArray(v)) {
         throw new Error('FFI type error at ' + p + ': expected Array, got ' + typeof v);
       }
@@ -365,26 +371,33 @@ var $validate = {
   /** @canopy-type (a -> String -> x) -> (a -> String -> b) -> a -> String -> Task x b */
   Task: function(errV, okV) {
     return function(v, p) {
-      if (typeof v !== 'object' || v === null || typeof v.then !== 'function') {
-        throw new Error('FFI type error at ' + p + ': expected Promise');
+      // Already a Canopy scheduler task (numeric $ tag: 0=SUCCEED, 1=FAIL, 2=BINDING, etc.).
+      // Pass through unchanged — the scheduler protocol handles it directly.
+      if (typeof v === 'object' && v !== null && typeof v.$ === 'number') {
+        return v;
       }
-      return {
-        $: 2,
-        b: function(callback) {
-          v.then(
-            function(ok) {
-              try { callback({ $: 0, a: okV(ok, p + '.then') }); }
-              catch (e) { callback({ $: 1, a: errV(String(e), p + '.validation') }); }
-            },
-            function(err) {
-              try { callback({ $: 1, a: errV(err, p + '.catch') }); }
-              catch (e) { callback({ $: 1, a: String(e) }); }
-            }
-          );
-          return null;
-        },
-        c: null
-      };
+      // Native Promise: wrap into a Canopy BINDING task using the correct scheduler
+      // field names (__callback, __kill, __value) as defined in runtime.js.
+      if (typeof v === 'object' && v !== null && typeof v.then === 'function') {
+        return {
+          $: 2,
+          __callback: function(callback) {
+            v.then(
+              function(ok) {
+                try { callback({ $: 0, __value: okV(ok, p + '.then') }); }
+                catch (e) { callback({ $: 1, __value: errV(String(e), p + '.validation') }); }
+              },
+              function(err) {
+                try { callback({ $: 1, __value: errV(err, p + '.catch') }); }
+                catch (e) { callback({ $: 1, __value: String(e) }); }
+              }
+            );
+            return null;
+          },
+          __kill: null
+        };
+      }
+      throw new Error('FFI type error at ' + p + ': expected Task or Promise');
     };
   },
 
