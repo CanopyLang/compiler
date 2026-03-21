@@ -36,6 +36,7 @@ module Generate.JavaScript.Runtime.Names
 
     -- * List module
     listNil,
+    listCons,
     listFromArray,
 
     -- * Platform module
@@ -115,6 +116,13 @@ utilsTuple3 = JsName.fromKernel Name.utils "Tuple3"
 -- @since 0.20.2
 listNil :: JsName.Name
 listNil = JsName.fromKernel Name.list "Nil"
+
+-- | @_List_Cons@ — two-argument cons constructor. Used to inline small list
+-- literals without an intermediate JS array allocation.
+--
+-- @since 0.19.2
+listCons :: JsName.Name
+listCons = JsName.fromKernel Name.list "Cons"
 
 -- | @_List_fromArray@ — convert JS array to linked list.
 --

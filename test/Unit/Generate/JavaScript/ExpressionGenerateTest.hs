@@ -55,6 +55,7 @@ tests = testGroup "Generate.JavaScript.Expression Tests"
   , codeToExprTests
   , codeToStmtListTests
   , generateFieldTests
+  , listTests
   ]
 
 -- HELPERS
@@ -321,4 +322,44 @@ generateFieldTests = testGroup "generateField Mode Tests"
           mode = prodModeWithField fieldName shortName
           result = Gen.generateField mode fieldName
       in nameToString result @?= nameToString shortName
+  ]
+
+-- LIST TESTS
+
+-- | Test small list literal inlining via 'generateList'.
+--
+-- Empty list → @_List_Nil@ ref.
+-- Singleton → @_List_Cons(x, _List_Nil)@ (no intermediate JS array).
+-- Two-element → nested @_List_Cons@ calls.
+-- Three-or-more → @_List_fromArray([…])@ unchanged.
+listTests :: TestTree
+listTests = testGroup "List Literal Code Generation"
+  [ testCase "empty list generates JS.Ref _List_Nil" $
+      case toExpr (Gen.generate devMode (Opt.List [])) of
+        JS.Ref name -> nameToString name @?= "_List_Nil"
+        other -> assertFailure ("Expected JS.Ref _List_Nil, got: " ++ show other)
+
+  , testCase "singleton list generates _List_Cons(x, _List_Nil) — no _List_fromArray" $
+      case toExpr (Gen.generate devMode (Opt.List [Opt.Int 42])) of
+        JS.Call (JS.Ref fnName) [JS.Int n, JS.Ref nilName] -> do
+          nameToString fnName @?= "_List_Cons"
+          n @?= 42
+          nameToString nilName @?= "_List_Nil"
+        other -> assertFailure ("Expected _List_Cons(42, _List_Nil), got: " ++ show other)
+
+  , testCase "two-element list generates nested _List_Cons calls" $
+      case toExpr (Gen.generate devMode (Opt.List [Opt.Int 1, Opt.Int 2])) of
+        JS.Call (JS.Ref outerName) [JS.Int a, JS.Call (JS.Ref innerName) [JS.Int b, JS.Ref nilName]] -> do
+          nameToString outerName @?= "_List_Cons"
+          a @?= 1
+          nameToString innerName @?= "_List_Cons"
+          b @?= 2
+          nameToString nilName @?= "_List_Nil"
+        other -> assertFailure ("Expected nested _List_Cons(1, _List_Cons(2, _List_Nil)), got: " ++ show other)
+
+  , testCase "three-element list uses _List_fromArray — not inlined" $
+      case toExpr (Gen.generate devMode (Opt.List [Opt.Int 1, Opt.Int 2, Opt.Int 3])) of
+        JS.Call (JS.Ref fnName) [JS.Array _] ->
+          nameToString fnName @?= "_List_fromArray"
+        other -> assertFailure ("Expected _List_fromArray([1,2,3]), got: " ++ show other)
   ]

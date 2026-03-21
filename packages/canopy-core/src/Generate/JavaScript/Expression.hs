@@ -117,15 +117,7 @@ generate mode expression =
     Opt.VarRuntime home name ->
       JsExpr $ JS.Ref (JsName.fromKernel home name)
     Opt.List entries ->
-      case entries of
-        [] ->
-          JsExpr $ JS.Ref KN.listNil
-        _ ->
-          JsExpr $
-            JS.Call
-              (JS.Ref KN.listFromArray)
-              [ JS.Array $ fmap (generateJsExpr mode) entries
-              ]
+      JsExpr (generateList mode entries)
     Opt.Function args body ->
       if length args > 100
         then generateLargeFunction mode (fmap JsName.fromLocal args) (generate mode body)
@@ -214,6 +206,32 @@ generate mode expression =
                 (JsName.fromLocal "uniforms", toTranslationObject uniforms)
               ]
           )
+
+-- | Generate JavaScript for a list literal.
+--
+-- Inlines 0-, 1-, and 2-element lists as direct @_List_Cons@ chains to
+-- avoid the intermediate JS array allocation that @_List_fromArray@ requires.
+-- Lists of 3 or more elements use @_List_fromArray@ unchanged.
+--
+-- @since 0.19.2
+generateList :: Mode.Mode -> [Opt.Expr] -> JS.Expr
+generateList _mode [] =
+  JS.Ref KN.listNil
+generateList mode [a] =
+  JS.Call (JS.Ref KN.listCons)
+    [ generateJsExpr mode a
+    , JS.Ref KN.listNil
+    ]
+generateList mode [a, b] =
+  JS.Call (JS.Ref KN.listCons)
+    [ generateJsExpr mode a
+    , JS.Call (JS.Ref KN.listCons) [generateJsExpr mode b, JS.Ref KN.listNil]
+    ]
+generateList mode entries =
+  JS.Call
+    (JS.Ref KN.listFromArray)
+    [ JS.Array $ fmap (generateJsExpr mode) entries
+    ]
 
 -- | Filter predicate for non-empty statements.
 --
