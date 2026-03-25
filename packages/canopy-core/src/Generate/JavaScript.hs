@@ -30,6 +30,7 @@ where
 
 import qualified AST.Canonical as Can
 import qualified AST.Optimized as Opt
+import qualified Debug.Trace
 import qualified Canopy.Kernel as Kernel
 import qualified Canopy.ModuleName as ModuleName
 import qualified Canopy.Package as Pkg
@@ -61,7 +62,9 @@ import Generate.JavaScript.FFI
   )
 import qualified Generate.JavaScript.FFIRuntime as FFIRuntime
 import qualified Generate.JavaScript.Runtime as Runtime
+import qualified Generate.JavaScript.Runtime.Registry as Registry
 import qualified Generate.JavaScript.Functions as Functions
+import qualified Generate.TreeShake as TreeShake
 import qualified Generate.JavaScript.Kernel as Kernel_
 import qualified Generate.JavaScript.Minify as Minify
 import qualified Generate.JavaScript.Name as JsName
@@ -104,7 +107,7 @@ makeLenses ''State
 -- GENERATE
 
 generate :: Mode.Mode -> Opt.GlobalGraph -> Mains -> Map String FFIInfo -> (Builder, Maybe SourceMap.SourceMap, Maybe Coverage.CoverageMap)
-generate inputMode (Opt.GlobalGraph rawGraph _ sourceLocs) mains ffiInfos =
+generate inputMode globalGraph@(Opt.GlobalGraph rawGraph _ sourceLocs) mains ffiInfos =
   let ffiAliases = extractFFIAliases ffiInfos
       (graph, mode) = case inputMode of
         Mode.Prod fields elmCompat ffiUnsafe ffiDbg _ _ ->
@@ -115,31 +118,41 @@ generate inputMode (Opt.GlobalGraph rawGraph _ sourceLocs) mains ffiInfos =
           (rawGraph, Mode.Dev debugTypes elmCompat ffiUnsafe ffiDbg ffiAliases cov)
       shouldTrackLines = case mode of Mode.Dev {} -> True; Mode.Prod {} -> False
       covIds = if Mode.isCoverage mode then Coverage.computeBaseIds graph else Map.empty
-      baseState = Map.foldrWithKey (addMain mode graph) (emptyState shouldTrackLines sourceLocs covIds) mains
-      shouldInclude global =
-        not (Kernel_.isDebugger global && not (Mode.isDebug mode))
-      filteredGraph = Map.filterWithKey (\global _ -> shouldInclude global) graph
-      state = Map.foldlWithKey' (\s global _ -> addGlobal mode graph s global) baseState filteredGraph
+      -- Pre-compute FFI usage at AST level before code generation.
+      -- Uses reachableGlobals to find all FFI-alias globals reachable from main
+      -- without inspecting the generated Builder during traversal.
+      usedFFIFuncs = computeFFIUsage ffiAliases rawGraph (TreeShake.reachableGlobals globalGraph mains)
+      -- Traverse only from entry points — dead code is never visited.
+      state = Map.foldrWithKey (addMain mode graph) (emptyState shouldTrackLines sourceLocs covIds) mains
       header = if Mode.isElmCompatible mode
                then "(function(scope){\n'use strict';\n"
                else "(function(scope){'use strict';\n"
       debuggerStub = "var _Debugger_unsafeCoerce = function(value) { return value; };\n"
       poolDecls = StringPool.poolDeclarations (Mode.stringPool mode)
       coveragePreamble = if Mode.isCoverage mode then Coverage.coverageRuntimePreamble else mempty
-      jsBuilder =
-        header
-          <> debuggerStub
-          <> Functions.functions
-          <> Runtime.embeddedRuntimeForMode mode
-          <> FFIRuntime.embeddedRuntimeForMode mode
-          <> coveragePreamble
-          <> generateFFIContent mode graph ffiInfos Map.empty
+      -- Phase 1: generate all non-runtime content inside the IIFE.
+      -- This is everything except the F/A arity helpers and the Canopy runtime.
+      innerContent =
+        debuggerStub
+          <> generateFFIContent mode graph ffiInfos usedFFIFuncs
           <> perfNote mode
           <> poolDecls
+          <> coveragePreamble
           <> stateToBuilder state
           <> Kernel_.toMainExports mode mains
           <> "\nif (typeof global !== 'undefined') { global.Canopy = scope['Canopy']; global.Elm = scope['Elm']; }"
           <> "\n}(typeof window !== 'undefined' ? window : this));"
+      -- Phase 2: scan innerContent to emit only what is actually referenced.
+      -- This eliminates unused F/A arities, unused runtime functions, and
+      -- unused FFI runtime modules.
+      neededArities = Registry.scanArityRefs innerContent
+      neededRuntime = Registry.closeDeps (Registry.scanRuntimeRefs innerContent)
+      jsBuilder =
+        header
+          <> Functions.generateConditionalFunctions neededArities
+          <> Runtime.emitNeeded mode neededRuntime
+          <> FFIRuntime.scanAndEmitRuntime mode innerContent
+          <> innerContent
       sourceMap = buildSourceMap mode state
       coverageMap = if Mode.isCoverage mode
                     then Just (Coverage.buildCoverageMap graph sourceLocs)
@@ -150,6 +163,32 @@ generate inputMode (Opt.GlobalGraph rawGraph _ sourceLocs) mains ffiInfos =
 addMain :: Mode.Mode -> Graph -> ModuleName.Canonical -> Opt.Main -> State -> State
 addMain mode graph home _ state =
   addGlobal mode graph state (Opt.Global home "main")
+
+-- | Compute which FFI functions are reachable from the entry points.
+--
+-- Scans the set of reachable globals produced by 'TreeShake.reachableGlobals'
+-- and extracts the FFI-alias globals: those whose module name is a known FFI
+-- alias and which are absent from the compiled graph (i.e., they are
+-- references into a foreign JS file, not compiled Canopy definitions).
+--
+-- This runs at AST level before code generation, keeping FFI tree-shaking
+-- decisions out of the code-generator state.
+--
+-- @since 0.19.3
+computeFFIUsage
+  :: Set Name.Name
+  -> Graph
+  -> Set Opt.Global
+  -> Map Name.Name (Set Name.Name)
+computeFFIUsage ffiAliases graph reachable =
+  let result = Set.foldl' addIfFFI Map.empty reachable
+  in Debug.Trace.trace ("computeFFIUsage: reachableSize=" ++ show (Set.size reachable) ++ " reachable=" ++ show reachable ++ " result=" ++ show result) result
+  where
+    addIfFFI acc global@(Opt.Global home name) =
+      let moduleName = ModuleName._module home
+      in if Set.member moduleName ffiAliases && Map.notMember global graph
+         then Map.insertWith Set.union moduleName (Set.singleton name) acc
+         else acc
 
 perfNote :: Mode.Mode -> Builder
 perfNote mode =
@@ -344,7 +383,9 @@ addGlobalHelp mode graph currentGlobal state =
                      && Map.notMember currentGlobal graph
   in if Kernel_.isDebugger currentGlobal && not (Mode.isDebug mode)
      then state
-     else if isFFIModule || isKernelPhantom
+     else if isKernelPhantom
+     then state
+     else if isFFIModule
      then state
      else continueAddGlobal mode graph currentGlobal state
 

@@ -383,7 +383,7 @@ stmtToJS stmt = case stmt of
   ExprStmtWithSemi e ->
     JS.JSExpressionStatement (exprToJS e) (JS.JSSemi noAnnot)
   IfStmt cond thenStmt elseStmt ->
-    JS.JSIfElse noAnnot leadingSpaceAnnot (exprToJS cond) leadingSpaceAnnot
+    JS.JSIfElse leadingSpaceAnnot leadingSpaceAnnot (exprToJS cond) leadingSpaceAnnot
       (ensureBlock thenStmt) leadingSpaceAnnot (ensureBlock elseStmt)
     where
       ensureBlock blockStmt = case blockStmt of

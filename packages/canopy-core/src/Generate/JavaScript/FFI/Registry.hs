@@ -38,6 +38,7 @@ import qualified Data.ByteString as BS
 import qualified Data.ByteString.Char8 as BS8
 import Data.ByteString.Builder (Builder)
 import qualified Data.ByteString.Builder as BB
+import Debug.Trace (trace)
 import qualified Data.List as List
 import Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
@@ -100,13 +101,23 @@ buildFFIRegistry content =
       ]
 
 -- | Create an 'FFIBlock' from a raw block, computing dependencies.
+--
+-- Excludes identifiers that are locally declared within the block via
+-- @var X = ...@ patterns (at any indentation). This prevents false
+-- dependencies when a block re-uses a name that also exists as a
+-- top-level declaration in the same file.
+--
+-- For example, @var init = F4(function(...) { var node = ...; })@
+-- should NOT depend on the top-level @node@ function, because @node@
+-- here is a local variable inside @init@'s body.
 mkBlock :: ByteString -> ByteString -> Int -> Set ByteString -> FFIBlock
 mkBlock selfName content order allNames =
   FFIBlock content deps order
   where
     refs = extractIdentifiers content
+    localDecls = extractLocalVarDecls content
     deps = Set.map FFIBlockId
-      (Set.delete selfName (Set.intersection refs allNames))
+      (Set.delete selfName (Set.difference (Set.intersection refs allNames) localDecls))
 
 
 -- TREE-SHAKING
@@ -124,7 +135,8 @@ closeFFIDeps reg seeds = go Set.empty seeds
           let new = Set.difference pending visited
               visited' = Set.union visited new
               directDeps = foldMap depsOf (Set.toList new)
-           in go visited' directDeps
+              _dbg = trace ("  closeFFIDeps step: new=" ++ show (Set.map _fbidName new) ++ " deps=" ++ show (Set.map _fbidName directDeps)) ()
+           in _dbg `seq` go visited' directDeps
     depsOf bid =
       maybe Set.empty _fbDeps (Map.lookup bid reg)
 
@@ -293,23 +305,58 @@ extractDeclName line
 
 -- INTERNAL: IDENTIFIER SCANNING
 
+-- | Extract identifiers declared via @var X = ...@ within block content.
+--
+-- Scans every line of the block, strips leading whitespace, and records
+-- the name following a @var @ prefix. These are local variable declarations
+-- that should be excluded from cross-block dependency computation, even
+-- when the same name also exists as a top-level declaration elsewhere in
+-- the file.
+--
+-- This handles both top-level block declarations (@var foo = ...@) and
+-- declarations nested inside function bodies
+-- (@var init = F4(function(...) { var node = ...; })@).
+extractLocalVarDecls :: ByteString -> Set ByteString
+extractLocalVarDecls content =
+  Set.fromList (concatMap declFromLine (BS8.lines content))
+  where
+    declFromLine line =
+      let stripped = BS8.dropWhile (\c -> c == ' ' || c == '\t') line
+      in case BS8.stripPrefix "var " stripped of
+        Nothing -> []
+        Just rest ->
+          let name = BS8.takeWhile isIdentChar rest
+          in if BS.null name then [] else [name]
+
 -- | Extract all identifier-like tokens from JS source.
 --
 -- Finds both @_Module_name@ style tokens and plain identifiers.
 -- Only extracts tokens that start at a word boundary (preceding
 -- character is not an identifier character).
+--
+-- String literals (@\'...\'@ and @\"...\"@) are skipped entirely to
+-- prevent false dependencies: e.g. @args[\'node\']@ would otherwise
+-- be scanned as a reference to @node@, creating a spurious dep on the
+-- top-level @var node = ...@ declaration.
 extractIdentifiers :: ByteString -> Set ByteString
 extractIdentifiers bs = go 0 Set.empty
   where
     len = BS.length bs
     go i acc
       | i >= len = acc
-      | isIdentStart (BS.index bs i)
+      | b == 0x27 || b == 0x22 = go (skipString (i + 1) b) acc -- ' or "
+      | isIdentStart b
         , i == 0 || not (isIdentByte (BS.index bs (i - 1))) =
           let end = skipIdent (i + 1)
               token = BS.take (end - i) (BS.drop i bs)
            in go end (Set.insert token acc)
       | otherwise = go (i + 1) acc
+      where b = BS.index bs i
+    skipString j quote
+      | j >= len = len
+      | BS.index bs j == 0x5C = skipString (j + 2) quote -- backslash: skip next byte
+      | BS.index bs j == quote = j + 1                   -- closing quote
+      | otherwise = skipString (j + 1) quote
     skipIdent j
       | j >= len = j
       | isIdentByte (BS.index bs j) = skipIdent (j + 1)
@@ -356,6 +403,10 @@ extractVarCommaNames blockContent =
                 then []
                 else name : findAfterComma (BS8.dropWhile isIdentChar stripped)
       | BS8.head bs == ';' = []
+      -- Stop at '(' to avoid parsing function call/expression arguments as
+      -- comma-separated variable names. E.g. `var f = F4(function(a, b, c)`
+      -- should NOT treat `a`, `b`, `c` as additional declared variable names.
+      | BS8.head bs == '(' = []
       | otherwise = findAfterComma (BS8.tail bs)
 
 -- | Check if a 'Char' is a valid JavaScript identifier character.

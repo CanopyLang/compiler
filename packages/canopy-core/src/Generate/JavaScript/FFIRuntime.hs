@@ -345,9 +345,13 @@ var $validate = {
   /** @canopy-type (a -> String -> b) -> a -> String -> Maybe b */
   Maybe: function(f) {
     return function(v, p) {
-      if (v == null) {
-        return { $: 'Nothing' };
+      // Canopy ADT Maybe (DEV mode: string tags, PROD mode: integer tags)
+      if (typeof v === 'object' && v !== null && '$' in v) {
+        if (v.$ === 'Nothing' || v.$ === 0) { return v; }
+        if (v.$ === 'Just' || v.$ === 1) { return { $: v.$, a: f(v.a, p) }; }
       }
+      // JS-native nullable: null/undefined -> Nothing, value -> Just
+      if (v == null) { return { $: 'Nothing' }; }
       return { $: 'Just', a: f(v, p) };
     };
   },

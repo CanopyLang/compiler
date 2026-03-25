@@ -48,7 +48,7 @@ sandwich moduleName javascript =
 <html>
 <head>
   <meta charset="UTF-8">
-  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'unsafe-inline'">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'unsafe-inline'; style-src 'unsafe-inline'">
   <title>|]
         <> htmlName
         <> [r|</title>
@@ -109,7 +109,7 @@ sandwichWithPrefetch moduleName javascript chunkFilenames =
 <html>
 <head>
   <meta charset="UTF-8">
-  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'unsafe-inline'">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'unsafe-inline'; style-src 'unsafe-inline'">
   <title>|]
         <> htmlName
         <> [r|</title>

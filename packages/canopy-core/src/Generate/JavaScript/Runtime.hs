@@ -50,8 +50,13 @@ import qualified Generate.Mode as Mode
 --
 -- @since 0.20.0
 embeddedRuntimeForMode :: Mode.Mode -> Builder
-embeddedRuntimeForMode mode =
-  modeDeclaration mode <> Registry.topoEmit Registry.allIds
+embeddedRuntimeForMode mode = case mode of
+  Mode.Dev {} ->
+    modeDeclaration mode <> Registry.topoEmit Registry.allIds
+  Mode.Prod {} ->
+    let raw = modeDeclaration mode <> Registry.topoEmit Registry.allIds
+        rawBS = BL.toStrict (BB.toLazyByteString raw)
+    in BB.byteString (FFIMinify.stripDebugBranches rawBS)
 
 -- | Full embedded Canopy runtime without mode declaration.
 --

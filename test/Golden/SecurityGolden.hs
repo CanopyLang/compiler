@@ -127,7 +127,7 @@ xssModule =
       "withQuotes : String",
       "withQuotes = \"She said \\\"hello\\\" & goodbye\"",
       "",
-      "main = text dangerous"
+      "main = text (dangerous ++ withQuotes)"
     ]
 
 -- | Module with strings containing backslash sequences.
@@ -150,5 +150,5 @@ backslashModule =
       "withBackslash : String",
       "withBackslash = \"path\\\\to\\\\file\"",
       "",
-      "main = text withNewlines"
+      "main = text (withNewlines ++ withTabs ++ withBackslash)"
     ]

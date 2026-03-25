@@ -90,16 +90,26 @@ contentTests =
     runtimeBS :: BS.ByteString
     runtimeBS = builderToBS Runtime.embeddedRuntime
 
--- | Verify that Dev and Prod runtimes share identical body content after
--- their respective debug-flag prefix lines.
+-- | Verify that the Prod runtime body is strictly smaller than the Dev body.
+--
+-- Prod mode applies 'FFIMinify.stripDebugBranches' to remove conditional
+-- debug-only code paths, so the prod body must be a strict subset of the
+-- dev body in terms of size.
 bodyConsistencyTest :: TestTree
 bodyConsistencyTest =
-  testCase "Dev and Prod runtimes have identical content after the debug flag line" $ do
+  testCase "Prod runtime body is smaller than Dev after debug branches are stripped" $ do
     let devBS = builderToBS (Runtime.embeddedRuntimeForMode devMode)
         prodBS = builderToBS (Runtime.embeddedRuntimeForMode prodMode)
         devBody = BS.drop (BS.length "var __canopy_debug = true;\n") devBS
         prodBody = BS.drop (BS.length "var __canopy_debug = false;\n") prodBS
-    devBody @?= prodBody
+    assertBool
+      ( "Expected Prod body ("
+          ++ show (BS.length prodBody)
+          ++ " bytes) to be smaller than Dev body ("
+          ++ show (BS.length devBody)
+          ++ " bytes) after stripping debug branches"
+      )
+      (BS.length prodBody < BS.length devBody)
 
 -- ── Internal helpers ─────────────────────────────────────────────────────────
 

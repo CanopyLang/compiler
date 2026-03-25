@@ -48,6 +48,7 @@ where
 import qualified AST.Optimized as Opt
 import qualified Data.Char as Char
 import Control.Lens (Lens', (.~), (&))
+import Debug.Trace (trace)
 import qualified Data.Binary as Binary
 import Data.ByteString (ByteString)
 import Data.ByteString.Builder (Builder)
@@ -298,6 +299,10 @@ formatFFIWithBindings
   -> [Builder]
 formatFFIWithBindings mode graph usedFuncs fileRegistries resolvedNeeded _key info acc
   | not (isValidJsIdentifier aliasStr) = acc
+  -- Skip this entire FFI file when none of its functions are reachable from
+  -- the entry point(s). This is only applied when tracking is active (i.e.
+  -- usedFuncs is non-empty); an empty map means "unknown" and includes all.
+  | Set.null neededFuncNames && not (Map.null usedFuncs) = acc
   | otherwise =
       wrappedContent (reExports ++ bindingsSection ++ acc)
   where
@@ -320,7 +325,7 @@ formatFFIWithBindings mode graph usedFuncs fileRegistries resolvedNeeded _key in
 
     -- Emit only needed content if tree-shaking found blocks;
     -- fall back to full content if registry found nothing
-    treeShaken = Map.null ffiRegistry || Set.null allNeeded
+    treeShaken = trace ("FFI tree-shake: path=" ++ path ++ " regSize=" ++ show (Map.size ffiRegistry) ++ " allNeeded=" ++ show (Set.size allNeeded) ++ " neededFuncs=" ++ show (length neededFunctions) ++ " usedFuncsSize=" ++ show (Map.size usedFuncs) ++ " aliasNeeded=" ++ show neededFuncNames ++ " allNeededNames=" ++ show (Set.map FFIRegistry._fbidName allNeeded)) (Map.null ffiRegistry || Set.null allNeeded)
     isProd = case mode of Mode.Prod {} -> True; _ -> False
     rawContent =
       if treeShaken
@@ -363,11 +368,14 @@ formatFFIWithBindings mode graph usedFuncs fileRegistries resolvedNeeded _key in
             : List.map (<> "\n") bindings ++ ["\n"]
 
 -- | Filter extracted FFI functions to only those actually used.
+--
+-- Returns an empty list when 'neededNames' is empty — the caller is
+-- responsible for deciding whether to skip the file entirely. This
+-- changed from the previous "empty set means include all" fallback,
+-- which was a workaround for the old 'Map.empty' usedFuncs argument.
 filterNeededFunctions :: [ExtractedFFI] -> Set Name.Name -> [ExtractedFFI]
 filterNeededFunctions functions neededNames =
-  if Set.null neededNames
-    then functions
-    else List.filter isNeeded functions
+  List.filter isNeeded functions
   where
     isNeeded ef =
       let canopyName = effectiveName ef
@@ -789,19 +797,28 @@ generateSimpleBinding jsVarB aliasB canopyNameB jsNameB arity =
 -- (which may be IIFE-qualified like @_AliasIIFE.funcName@).
 generateValidatedBinding :: Builder -> Builder -> Builder -> Builder -> Int -> Text.Text -> Builder -> [Builder]
 generateValidatedBinding jsVarB aliasB canopyNameB jsNameB arity canopyType callPathB =
-  let args = if arity <= 0 then [] else map (\i -> "_" <> BB.intDec i) [0 .. arity - 1]
-      argList = mconcat (List.intersperse ", " args)
-      returnType = extractReturnType canopyType
+  let returnType = extractReturnType canopyType
       validatorExpr = typeToValidator returnType
-      rawFunc = if arity > 1 then "(" <> jsNameB <> ".f||" <> jsNameB <> ")" else jsNameB
-      wrappedCall = rawFunc <> "(" <> argList <> ")"
-      validatedCall = validatorExpr <> "(" <> wrappedCall <> ", " <> callPathB <> ")"
-      funcBody = "function(" <> argList <> ") { return " <> validatedCall <> "; }"
-      wrapper = if arity <= 1 then mempty else "F" <> BB.intDec arity <> "("
-      closing = if arity <= 1 then mempty else ")"
-      binding = "var " <> jsVarB <> " = " <> wrapper <> funcBody <> closing <> ";"
       namespaceBinding = aliasB <> "." <> canopyNameB <> " = " <> jsVarB <> ";"
-  in [binding, namespaceBinding]
+  in if arity <= 0
+       then
+         -- Value (not a function): validate the value directly without calling it.
+         -- e.g. var $pkg$decodeString = $validate.Opaque('Decoder')(_IIFEAlias.decodeString, 'path');
+         let validatedValue = validatorExpr <> "(" <> jsNameB <> ", " <> callPathB <> ")"
+             binding = "var " <> jsVarB <> " = " <> validatedValue <> ";"
+         in [binding, namespaceBinding]
+       else
+         -- Function (arity >= 1): wrap in a JS function that calls and validates the result.
+         let args = map (\i -> "_" <> BB.intDec i) [0 .. arity - 1]
+             argList = mconcat (List.intersperse ", " args)
+             rawFunc = if arity > 1 then "(" <> jsNameB <> ".f||" <> jsNameB <> ")" else jsNameB
+             wrappedCall = rawFunc <> "(" <> argList <> ")"
+             validatedCall = validatorExpr <> "(" <> wrappedCall <> ", " <> callPathB <> ")"
+             funcBody = "function(" <> argList <> ") { return " <> validatedCall <> "; }"
+             wrapper = if arity <= 1 then mempty else "F" <> BB.intDec arity <> "("
+             closing = if arity <= 1 then mempty else ")"
+             binding = "var " <> jsVarB <> " = " <> wrapper <> funcBody <> closing <> ";"
+         in [binding, namespaceBinding]
 
 -- TYPE VALIDATORS
 
