@@ -9,44 +9,42 @@
 -- This enables the code generator to emit only the FFI functions that are
 -- actually referenced, achieving function-level tree-shaking for FFI files.
 -- For the VirtualDom FFI (2639 lines, 70KB), a hello-world app only needs
--- ~200 lines (~5KB) instead of the full file.
+-- ~8 blocks (~80 lines) instead of the full file.
 --
--- The splitting strategy:
---
---   1. Scan for top-level @var@ and @function@ declarations
---   2. Split at declaration boundaries, grouping preceding JSDoc\/comments
---   3. Compute inter-function dependencies via identifier scanning
---   4. Provide transitive closure for dependency resolution
+-- The splitting strategy uses the @language-javascript@ AST (via
+-- 'Generate.JavaScript.FFI.JSAnalysis') for scope-aware free-variable
+-- extraction. String literals are distinct AST nodes that contribute no
+-- dependencies, eliminating false edges from patterns like @args[\'node\']@.
 --
 -- @since 0.20.2
 module Generate.JavaScript.FFI.Registry
   ( -- * Types
-    FFIBlockId (..)
-  , FFIBlock (..)
+    FFIBlockId (..),
+    FFIBlock (..),
 
     -- * Registry building
-  , buildFFIRegistry
+    buildFFIRegistry,
 
     -- * Tree-shaking
-  , closeFFIDeps
-  , closeFFICrossFileDeps
-  , emitNeededBlocks
-  ) where
+    closeFFIDeps,
+    closeFFICrossFileDeps,
+    emitNeededBlocks,
+  )
+where
 
 import Data.ByteString (ByteString)
 import qualified Data.ByteString as BS
 import qualified Data.ByteString.Char8 as BS8
 import Data.ByteString.Builder (Builder)
 import qualified Data.ByteString.Builder as BB
-import Debug.Trace (trace)
 import qualified Data.List as List
 import Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
 import Data.Set (Set)
 import qualified Data.Set as Set
-import qualified Data.Text as Text
 import qualified Data.Text.Encoding as TextEnc
-import Data.Word (Word8)
+import qualified Data.Text as Text
+import qualified Generate.JavaScript.FFI.JSAnalysis as JSAnalysis
 
 
 -- TYPES
@@ -54,7 +52,7 @@ import Data.Word (Word8)
 -- | Unique identifier for an FFI block — the declared JS name.
 --
 -- Examples: @\"text\"@, @\"init\"@, @\"_VirtualDom_render\"@
-newtype FFIBlockId = FFIBlockId { _fbidName :: ByteString }
+newtype FFIBlockId = FFIBlockId {_fbidName :: ByteString}
   deriving (Eq, Ord, Show)
 
 -- | A single FFI block with dependency metadata.
@@ -63,61 +61,99 @@ data FFIBlock = FFIBlock
     -- ^ Raw JS source including any preceding JSDoc comment.
   , _fbDeps :: !(Set FFIBlockId)
     -- ^ Direct dependencies on other blocks in the same FFI file.
+  , _fbAllFreeVars :: !(Set ByteString)
+    -- ^ All free identifiers referenced by this block (unfiltered).
+    -- Used for cross-file dependency resolution.
   , _fbOrder :: !Int
     -- ^ Original position in the source file (for stable ordering).
-  } deriving (Show)
+  }
+  deriving (Show)
 
 
 -- REGISTRY BUILDING
 
 -- | Build a registry of individually addressable blocks from FFI content.
 --
--- Parses the FFI JavaScript text, splits at declaration boundaries,
--- computes inter-block dependencies, and returns a map from block ID
--- to block definition.
+-- Parses the FFI JavaScript text using 'JSAnalysis.parseBlockGroups',
+-- computes AST-based inter-block dependencies, and returns a map from
+-- block ID to block definition.
+--
+-- Returns an empty map on parse failure, which causes the caller to
+-- fall back to emitting the full file without tree-shaking.
 --
 -- When a @var@ declaration uses comma-separated names (e.g.
 -- @var A = 0, B = 1;@), each name is registered as an alias for the
--- same block. This ensures that tree-shaking can resolve references
--- to any declared name, not just the first one in the line.
+-- same block.
 buildFFIRegistry :: Text.Text -> Map FFIBlockId FFIBlock
 buildFFIRegistry content =
+  maybe Map.empty (buildFromGroups content) (JSAnalysis.parseBlockGroups content)
+
+-- | Build the registry from a parsed list of block groups.
+buildFromGroups :: Text.Text -> [JSAnalysis.BlockGroup] -> Map FFIBlockId FFIBlock
+buildFromGroups content groups =
   Map.union primaryMap aliasMap
   where
-    contentBs = TextEnc.encodeUtf8 content
-    entries = splitFFI contentBs
-    allNames = Set.fromList [name | (name, _, _) <- entries]
-      `Set.union` Set.fromList [alias | (_, block, _) <- entries, alias <- extractVarCommaNames block]
-    primaryMap = Map.fromList
-      [ (FFIBlockId name, mkBlock name block order allNames)
-      | (name, block, order) <- entries
-      ]
-    aliasMap = Map.fromList
+    rawLines = BS8.lines (TextEnc.encodeUtf8 content)
+    totalLines = length rawLines
+    allNames = Set.fromList (concatMap JSAnalysis.groupDeclNames groups)
+    bounds = groupBounds groups rawLines totalLines
+    primaryMap = Map.fromList (zipWith (mkEntry rawLines allNames) groups bounds)
+    aliasMap = buildAliasMap primaryMap groups
+
+-- | Compute (start, end) line index bounds for each group's content.
+--
+-- Each group's content spans from its JSDoc walk-back start to the
+-- walk-back start of the next group (or end of file).
+groupBounds :: [JSAnalysis.BlockGroup] -> [ByteString] -> Int -> [(Int, Int)]
+groupBounds groups rawLines totalLines =
+  zip starts ends
+  where
+    starts = List.map (\g -> walkBackJSDoc (JSAnalysis._bgLine g) rawLines) groups
+    ends = List.drop 1 starts ++ [totalLines]
+
+-- | Build a single registry entry for a block group.
+mkEntry
+  :: [ByteString]
+  -> Set ByteString
+  -> JSAnalysis.BlockGroup
+  -> (Int, Int)
+  -> (FFIBlockId, FFIBlock)
+mkEntry rawLines allNames g (start, end) =
+  (FFIBlockId (JSAnalysis._bgName g), mkBlockFromGroup g allNames blockContent start)
+  where
+    blockContent = BS8.unlines (List.take (end - start) (List.drop start rawLines))
+
+-- | Create an 'FFIBlock' from a parsed group using AST-based dependency analysis.
+mkBlockFromGroup
+  :: JSAnalysis.BlockGroup -> Set ByteString -> ByteString -> Int -> FFIBlock
+mkBlockFromGroup g allNames content order =
+  FFIBlock content deps allFreeVars order
+  where
+    stmts = JSAnalysis._bgStatements g
+    selfName = JSAnalysis._bgName g
+    allFreeVars = JSAnalysis.allFreeVarsInGroup stmts
+    localFreeVars = JSAnalysis.freeVarsInGroup allNames stmts
+    deps = Set.map FFIBlockId (Set.delete selfName localFreeVars)
+
+-- | Build the alias map for comma-separated @var@ declarations.
+--
+-- For @var A = 0, B = 1@, registers @B@ as an alias pointing to
+-- the same 'FFIBlock' as @A@.
+buildAliasMap
+  :: Map FFIBlockId FFIBlock -> [JSAnalysis.BlockGroup] -> Map FFIBlockId FFIBlock
+buildAliasMap primaryMap groups =
+  Map.fromList (concatMap mkAliases groups)
+  where
+    mkAliases g =
+      case JSAnalysis.groupDeclNames g of
+        (primary : aliases) ->
+          maybe [] (mkAliasEntries aliases) (Map.lookup (FFIBlockId primary) primaryMap)
+        [] -> []
+    mkAliasEntries aliases block =
       [ (FFIBlockId alias, block)
-      | (primary, _, _) <- entries
-      , let block = primaryMap Map.! FFIBlockId primary
-      , alias <- extractVarCommaNames (_fbContent block)
+      | alias <- aliases
       , not (Map.member (FFIBlockId alias) primaryMap)
       ]
-
--- | Create an 'FFIBlock' from a raw block, computing dependencies.
---
--- Excludes identifiers that are locally declared within the block via
--- @var X = ...@ patterns (at any indentation). This prevents false
--- dependencies when a block re-uses a name that also exists as a
--- top-level declaration in the same file.
---
--- For example, @var init = F4(function(...) { var node = ...; })@
--- should NOT depend on the top-level @node@ function, because @node@
--- here is a local variable inside @init@'s body.
-mkBlock :: ByteString -> ByteString -> Int -> Set ByteString -> FFIBlock
-mkBlock selfName content order allNames =
-  FFIBlock content deps order
-  where
-    refs = extractIdentifiers content
-    localDecls = extractLocalVarDecls content
-    deps = Set.map FFIBlockId
-      (Set.delete selfName (Set.difference (Set.intersection refs allNames) localDecls))
 
 
 -- TREE-SHAKING
@@ -132,11 +168,11 @@ closeFFIDeps reg seeds = go Set.empty seeds
     go visited pending
       | Set.null pending = visited
       | otherwise =
-          let new = Set.difference pending visited
-              visited' = Set.union visited new
-              directDeps = foldMap depsOf (Set.toList new)
-              _dbg = trace ("  closeFFIDeps step: new=" ++ show (Set.map _fbidName new) ++ " deps=" ++ show (Set.map _fbidName directDeps)) ()
-           in _dbg `seq` go visited' directDeps
+          go visited' directDeps
+          where
+            new = Set.difference pending visited
+            visited' = Set.union visited new
+            directDeps = foldMap depsOf (Set.toList new)
     depsOf bid =
       maybe Set.empty _fbDeps (Map.lookup bid reg)
 
@@ -192,14 +228,16 @@ buildCrossFileIndex =
 
 -- | Extract identifiers referenced by needed blocks that aren't defined locally.
 --
--- These are potential cross-file references to blocks in other FFI files.
+-- Uses the unfiltered free-variable set ('_fbAllFreeVars') stored in each
+-- block, so cross-file references to identifiers defined in other FFI files
+-- are included even though they were excluded from '_fbDeps'.
 unresolvedRefs :: Map FFIBlockId FFIBlock -> Set FFIBlockId -> Set ByteString
 unresolvedRefs localRegistry neededBlocks =
   Set.difference allRefs localBlockNames
   where
     allRefs = foldMap extractBlockRefs (Set.toList neededBlocks)
     extractBlockRefs bid =
-      maybe Set.empty (extractIdentifiers . _fbContent) (Map.lookup bid localRegistry)
+      maybe Set.empty _fbAllFreeVars (Map.lookup bid localRegistry)
     localBlockNames = Set.map _fbidName (Map.keysSet localRegistry)
 
 -- | Emit needed blocks in original source order.
@@ -217,51 +255,7 @@ emitNeededBlocks reg needed =
       List.sortOn (\bid -> maybe maxBound _fbOrder (Map.lookup bid reg))
 
 
--- INTERNAL: FFI SPLITTING
-
--- | Split an FFI JS file into individual blocks.
---
--- Each top-level @var@ or @function@ declaration starts a new block.
--- Preceding JSDoc comments and blank lines are grouped with the
--- declaration they precede.
---
--- Returns @[(blockName, fullContent, lineIndex)]@.
-splitFFI :: ByteString -> [(ByteString, ByteString, Int)]
-splitFFI content =
-  buildEntries linesVec declStarts totalLines
-  where
-    rawLines = BS8.lines content
-    linesVec = rawLines
-    totalLines = length rawLines
-    declStarts = findDeclStarts rawLines 0
-
--- | Find line indices of all top-level declarations.
-findDeclStarts :: [ByteString] -> Int -> [(Int, ByteString)]
-findDeclStarts [] _ = []
-findDeclStarts (line : rest) idx
-  | isTopLevelDecl line = (idx, line) : findDeclStarts rest (idx + 1)
-  | otherwise = findDeclStarts rest (idx + 1)
-
--- | Build entries by slicing lines between declarations.
---
--- For each declaration, we include any preceding JSDoc comment block.
-buildEntries
-  :: [ByteString]
-  -> [(Int, ByteString)]
-  -> Int
-  -> [(ByteString, ByteString, Int)]
-buildEntries _ [] _ = []
-buildEntries allLines ((startIdx, startLine) : rest) totalLines =
-  case extractDeclName startLine of
-    "" -> buildEntries allLines rest totalLines
-    name ->
-      let jsDocStart = walkBackJSDoc startIdx allLines
-          endIdx = case rest of
-            ((nextIdx, _) : _) -> walkBackJSDoc nextIdx allLines
-            [] -> totalLines
-          blockLines = take (endIdx - jsDocStart) (drop jsDocStart allLines)
-          block = BS8.unlines blockLines
-       in (name, block, jsDocStart) : buildEntries allLines rest totalLines
+-- INTERNAL: JSDOC WALK-BACK
 
 -- | Walk backwards from a declaration to find where its JSDoc starts.
 walkBackJSDoc :: Int -> [ByteString] -> Int
@@ -285,135 +279,3 @@ walkBackJSDoc declIdx allLines =
             || BS8.isPrefixOf "*\n" stripped
             || BS8.isPrefixOf "//" stripped
             || stripped == "*"
-
--- | Check if a line starts a top-level declaration.
---
--- Must start at column 0 (no indentation) and be either @var@ or @function@.
-isTopLevelDecl :: ByteString -> Bool
-isTopLevelDecl line =
-  BS8.isPrefixOf "var " line || BS8.isPrefixOf "function " line
-
--- | Extract the declared name from a @var@ or @function@ line.
-extractDeclName :: ByteString -> ByteString
-extractDeclName line
-  | Just rest <- BS8.stripPrefix "var " line =
-      BS8.takeWhile isIdentChar rest
-  | Just rest <- BS8.stripPrefix "function " line =
-      BS8.takeWhile isIdentChar rest
-  | otherwise = ""
-
-
--- INTERNAL: IDENTIFIER SCANNING
-
--- | Extract identifiers declared via @var X = ...@ within block content.
---
--- Scans every line of the block, strips leading whitespace, and records
--- the name following a @var @ prefix. These are local variable declarations
--- that should be excluded from cross-block dependency computation, even
--- when the same name also exists as a top-level declaration elsewhere in
--- the file.
---
--- This handles both top-level block declarations (@var foo = ...@) and
--- declarations nested inside function bodies
--- (@var init = F4(function(...) { var node = ...; })@).
-extractLocalVarDecls :: ByteString -> Set ByteString
-extractLocalVarDecls content =
-  Set.fromList (concatMap declFromLine (BS8.lines content))
-  where
-    declFromLine line =
-      let stripped = BS8.dropWhile (\c -> c == ' ' || c == '\t') line
-      in case BS8.stripPrefix "var " stripped of
-        Nothing -> []
-        Just rest ->
-          let name = BS8.takeWhile isIdentChar rest
-          in if BS.null name then [] else [name]
-
--- | Extract all identifier-like tokens from JS source.
---
--- Finds both @_Module_name@ style tokens and plain identifiers.
--- Only extracts tokens that start at a word boundary (preceding
--- character is not an identifier character).
---
--- String literals (@\'...\'@ and @\"...\"@) are skipped entirely to
--- prevent false dependencies: e.g. @args[\'node\']@ would otherwise
--- be scanned as a reference to @node@, creating a spurious dep on the
--- top-level @var node = ...@ declaration.
-extractIdentifiers :: ByteString -> Set ByteString
-extractIdentifiers bs = go 0 Set.empty
-  where
-    len = BS.length bs
-    go i acc
-      | i >= len = acc
-      | b == 0x27 || b == 0x22 = go (skipString (i + 1) b) acc -- ' or "
-      | isIdentStart b
-        , i == 0 || not (isIdentByte (BS.index bs (i - 1))) =
-          let end = skipIdent (i + 1)
-              token = BS.take (end - i) (BS.drop i bs)
-           in go end (Set.insert token acc)
-      | otherwise = go (i + 1) acc
-      where b = BS.index bs i
-    skipString j quote
-      | j >= len = len
-      | BS.index bs j == 0x5C = skipString (j + 2) quote -- backslash: skip next byte
-      | BS.index bs j == quote = j + 1                   -- closing quote
-      | otherwise = skipString (j + 1) quote
-    skipIdent j
-      | j >= len = j
-      | isIdentByte (BS.index bs j) = skipIdent (j + 1)
-      | otherwise = j
-    isIdentStart b =
-      (b >= 0x61 && b <= 0x7A) -- a-z
-        || (b >= 0x41 && b <= 0x5A) -- A-Z
-        || b == 0x5F -- _
-        || b == 0x24 -- $
-
-
--- INTERNAL: CHARACTER CLASSIFICATION
-
--- | Check if a byte is a valid JavaScript identifier character.
-isIdentByte :: Word8 -> Bool
-isIdentByte b =
-  (b >= 0x61 && b <= 0x7A) -- a-z
-    || (b >= 0x41 && b <= 0x5A) -- A-Z
-    || (b >= 0x30 && b <= 0x39) -- 0-9
-    || b == 0x5F -- _
-    || b == 0x24 -- $
-
--- | Extract additional variable names from comma-separated @var@ declarations.
---
--- Given block content, finds lines starting with @var@ and returns all
--- declared names beyond the first (which is already the block's primary ID).
--- For example, @var A = 0, B = 1, C = 2;@ returns @[\"B\", \"C\"]@.
-extractVarCommaNames :: ByteString -> [ByteString]
-extractVarCommaNames blockContent =
-  concatMap namesFromLine (BS8.lines blockContent)
-  where
-    namesFromLine line
-      | Just rest <- BS8.stripPrefix "var " line = extraNames rest
-      | otherwise = []
-    extraNames rest =
-      let afterFirstName = BS8.dropWhile isIdentChar rest
-       in findAfterComma afterFirstName
-    findAfterComma bs
-      | BS.null bs = []
-      | BS8.head bs == ',' =
-          let stripped = BS8.dropWhile (\c -> c == ' ' || c == '\t') (BS8.tail bs)
-              name = BS8.takeWhile isIdentChar stripped
-           in if BS.null name
-                then []
-                else name : findAfterComma (BS8.dropWhile isIdentChar stripped)
-      | BS8.head bs == ';' = []
-      -- Stop at '(' to avoid parsing function call/expression arguments as
-      -- comma-separated variable names. E.g. `var f = F4(function(a, b, c)`
-      -- should NOT treat `a`, `b`, `c` as additional declared variable names.
-      | BS8.head bs == '(' = []
-      | otherwise = findAfterComma (BS8.tail bs)
-
--- | Check if a 'Char' is a valid JavaScript identifier character.
-isIdentChar :: Char -> Bool
-isIdentChar c =
-  (c >= 'a' && c <= 'z')
-    || (c >= 'A' && c <= 'Z')
-    || (c >= '0' && c <= '9')
-    || c == '_'
-    || c == '$'

@@ -48,7 +48,6 @@ where
 import qualified AST.Optimized as Opt
 import qualified Data.Char as Char
 import Control.Lens (Lens', (.~), (&))
-import Debug.Trace (trace)
 import qualified Data.Binary as Binary
 import Data.ByteString (ByteString)
 import Data.ByteString.Builder (Builder)
@@ -325,7 +324,7 @@ formatFFIWithBindings mode graph usedFuncs fileRegistries resolvedNeeded _key in
 
     -- Emit only needed content if tree-shaking found blocks;
     -- fall back to full content if registry found nothing
-    treeShaken = trace ("FFI tree-shake: path=" ++ path ++ " regSize=" ++ show (Map.size ffiRegistry) ++ " allNeeded=" ++ show (Set.size allNeeded) ++ " neededFuncs=" ++ show (length neededFunctions) ++ " usedFuncsSize=" ++ show (Map.size usedFuncs) ++ " aliasNeeded=" ++ show neededFuncNames ++ " allNeededNames=" ++ show (Set.map FFIRegistry._fbidName allNeeded)) (Map.null ffiRegistry || Set.null allNeeded)
+    treeShaken = Map.null ffiRegistry || Set.null allNeeded
     isProd = case mode of Mode.Prod {} -> True; _ -> False
     rawContent =
       if treeShaken

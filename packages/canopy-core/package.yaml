@@ -293,6 +293,7 @@ library:
     - File.JSON
     - Generate.JavaScript.Expression.Call
     - Generate.JavaScript.Expression.Case
+    - Generate.JavaScript.FFI.JSAnalysis
     - Generate.JavaScript.FFI.Minify
     - Generate.JavaScript.FFI.Registry
     - Generate.JavaScript.Functions

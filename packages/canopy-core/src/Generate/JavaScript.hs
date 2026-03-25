@@ -30,7 +30,6 @@ where
 
 import qualified AST.Canonical as Can
 import qualified AST.Optimized as Opt
-import qualified Debug.Trace
 import qualified Canopy.Kernel as Kernel
 import qualified Canopy.ModuleName as ModuleName
 import qualified Canopy.Package as Pkg
@@ -181,8 +180,7 @@ computeFFIUsage
   -> Set Opt.Global
   -> Map Name.Name (Set Name.Name)
 computeFFIUsage ffiAliases graph reachable =
-  let result = Set.foldl' addIfFFI Map.empty reachable
-  in Debug.Trace.trace ("computeFFIUsage: reachableSize=" ++ show (Set.size reachable) ++ " reachable=" ++ show reachable ++ " result=" ++ show result) result
+  Set.foldl' addIfFFI Map.empty reachable
   where
     addIfFFI acc global@(Opt.Global home name) =
       let moduleName = ModuleName._module home
