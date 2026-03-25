@@ -1,5 +1,8 @@
+{-# LANGUAGE OverloadedStrings #-}
+
 module Unit.FFI.ValidatorTest (tests) where
 
+import qualified Data.Text as Text
 import qualified FFI.Validator as Validator
 import Test.Tasty
 import Test.Tasty.HUnit
@@ -12,7 +15,8 @@ tests =
       parseReturnTypeTests,
       generateValidatorNameTests,
       generateValidatorTests,
-      generateAllValidatorsTests
+      generateAllValidatorsTests,
+      generateAllValidatorsDedupedTests
     ]
 
 parseFFITypeTests :: TestTree
@@ -195,4 +199,34 @@ generateAllValidatorsTests =
       testCase "generates validators for Maybe (List Int)" $
         Validator.generateAllValidators Validator.defaultConfig (Validator.FFIMaybe (Validator.FFIList Validator.FFIInt))
           @?= "function _validate_Maybe_List_Int(v, ctx) {\n  if (v == null) { return { $: 'Nothing' }; }\n  return { $: 'Just', a: _validate_List_Int(v, ctx) };\n}\n\nfunction _validate_List_Int(v, ctx) {\n  if (!Array.isArray(v)) {\n    throw new Error('FFI type error at ' + ctx + ': expected List, got ' + typeof v);\n  }\n  return v.map(function(el, i) { return _validate_Int(el, ctx + '[' + i + ']'); });\n}\n\nfunction _validate_Int(v, ctx) {\n  if (!Number.isInteger(v)) {\n    throw new Error('FFI type error at ' + ctx + ': expected Int, got ' + typeof v);\n  }\n  return v;\n}\n\n"
+    ]
+
+generateAllValidatorsDedupedTests :: TestTree
+generateAllValidatorsDedupedTests =
+  testGroup
+    "generateAllValidatorsDeduped"
+    [ testCase "deduplicates identical types across multiple return types" $
+        -- FFIOpaque "Decoder" with different type args generates the SAME function name.
+        -- nubBy on validator name must emit _validate_Opaque_Decoder only once.
+        let types =
+              [ Validator.FFIOpaque "Decoder" [Validator.FFITypeVar "flags"]
+              , Validator.FFIOpaque "Decoder" [Validator.FFITypeVar "msg"]
+              ]
+            result = Validator.generateAllValidatorsDeduped Validator.defaultConfig types
+            occurrences = length (filter (Text.isPrefixOf "function _validate_Opaque_Decoder") (Text.lines result))
+         in occurrences @?= 1,
+      testCase "emits each validator exactly once when types share subtypes" $
+        -- Two functions returning List Int must not emit _validate_Int twice.
+        let types = [Validator.FFIList Validator.FFIInt, Validator.FFIList Validator.FFIInt]
+            result = Validator.generateAllValidatorsDeduped Validator.defaultConfig types
+            intCount = length (filter (== "function _validate_Int(v, ctx) {") (Text.lines result))
+         in intCount @?= 1,
+      testCase "emits all distinct validators when types differ" $
+        let types = [Validator.FFIList Validator.FFIInt, Validator.FFIList Validator.FFIString]
+            result = Validator.generateAllValidatorsDeduped Validator.defaultConfig types
+         in do
+              length (filter (== "function _validate_List_Int(v, ctx) {") (Text.lines result)) @?= 1
+              length (filter (== "function _validate_List_String(v, ctx) {") (Text.lines result)) @?= 1
+              length (filter (== "function _validate_Int(v, ctx) {") (Text.lines result)) @?= 1
+              length (filter (== "function _validate_String(v, ctx) {") (Text.lines result)) @?= 1
     ]

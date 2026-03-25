@@ -35,7 +35,9 @@ module FFI.Validator
     generateValidator
   , generateValidatorName
   , generateAllValidators
+  , generateAllValidatorsDeduped
   , generateOpaqueValidator
+  , collectAllTypes
   , ValidatorConfig(..)
   , defaultConfig
 
@@ -50,6 +52,7 @@ module FFI.Validator
   , parseReturnType
   ) where
 
+import qualified Data.List as List
 import qualified Data.Text as Text
 import Data.Text (Text)
 import FFI.Types (FFIType (..), OpaqueKind (..))
@@ -296,6 +299,41 @@ generateAllValidators config ffiType =
       FFIRecord fields -> map snd fields
       FFITypeVar _ -> []
       _ -> []
+
+-- | Collect a type and all transitively nested types.
+--
+-- Used to enumerate all validators that need to be emitted for a given
+-- return type.  The returned list may contain duplicates — callers that
+-- want a de-duplicated set should use 'generateAllValidatorsDeduped'.
+collectAllTypes :: FFIType -> [FFIType]
+collectAllTypes t = t : concatMap collectAllTypes (childTypes t)
+  where
+    childTypes ty = case ty of
+      FFIList inner        -> [inner]
+      FFIMaybe inner       -> [inner]
+      FFIResult e v        -> [e, v]
+      FFITask e v          -> [e, v]
+      FFITuple types       -> types
+      FFIFunctionType as r -> as ++ [r]
+      FFIRecord fields     -> map snd fields
+      FFITypeVar _         -> []
+      _                    -> []
+
+-- | Generate deduplicated validators for a collection of return types.
+--
+-- Expands each type into its full set of nested types, merges them all,
+-- removes duplicates, and emits each validator exactly once.  This is
+-- the preferred entry point when validators for multiple functions are
+-- generated together, because it avoids repeating @_validate_String@
+-- and similar base validators once per function.
+generateAllValidatorsDeduped :: ValidatorConfig -> [FFIType] -> Text
+generateAllValidatorsDeduped config returnTypes =
+  Text.unlines (map (generateValidator config) uniqueTypes)
+  where
+    uniqueTypes =
+      List.nubBy
+        (\a b -> generateValidatorName a == generateValidatorName b)
+        (concatMap collectAllTypes returnTypes)
 
 -- | Parse a type string into FFIType.
 --
