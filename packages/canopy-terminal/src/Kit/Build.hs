@@ -74,7 +74,7 @@ runBuild flags = do
 -- | Run each build phase in sequence with the route manifest.
 executeBuildPipeline :: KitBuildFlags -> IO ()
 executeBuildPipeline flags = do
-  scanResult <- Scanner.scanRoutes "src/routes"
+  scanResult <- Scanner.scanRoutes "."
   case scanResult of
     Left err -> reportScanError err
     Right manifest -> validateAndBuild flags manifest
@@ -139,9 +139,14 @@ compileCanopy flags =
   Process.callProcess "canopy" (buildMakeArgs flags)
 
 -- | Build the argument list for @canopy make@.
+--
+-- Kit projects use @src/Routes.can@ as the entry point since
+-- @canopy make@ requires an explicit source file for application
+-- projects. The Routes module transitively imports all page modules
+-- via lazy imports, so compiling it covers the full application.
 buildMakeArgs :: KitBuildFlags -> [String]
 buildMakeArgs flags =
-  ["make", "--output-format=esm"] ++ optimizeArg ++ outputArg
+  ["make", "src/Routes.can", "--output-format=esm"] ++ optimizeArg ++ outputArg
   where
     optimizeArg = if flags ^. kitBuildOptimize then ["--optimize"] else []
     outputArg = maybe [] (\o -> ["--output=" ++ o]) (flags ^. kitBuildOutput)

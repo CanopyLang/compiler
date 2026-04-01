@@ -883,6 +883,7 @@ typesCompatible (InfPromise _) (FFITask _ _) = True
 typesCompatible (InfUnion types) declared = any (`typesCompatible` declared) types
 typesCompatible inferred (FFIMaybe inner) = typesCompatible inferred inner
 typesCompatible inferred (FFIFunctionType _ ret) = typesCompatible inferred ret
+typesCompatible _ (FFITypeVar _) = True
 typesCompatible _ _ = False
 
 -- | Check whether an FFIType has a Maybe return type (unwrapping function types).

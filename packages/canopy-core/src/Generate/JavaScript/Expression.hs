@@ -93,11 +93,8 @@ generate mode expression =
       JsExpr $ JS.Float (Utf8.toBuilder float)
     Opt.VarLocal name ->
       JsExpr $ JS.Ref (JsName.fromLocal name)
-    Opt.VarGlobal (Opt.Global home name) ->
-      let moduleName = ModuleName._module home
-       in if Mode.isFFIAlias mode moduleName
-            then JsExpr $ JS.Ref (JsName.fromLocal (Name.sepBy 0x2E moduleName name))
-            else JsExpr $ JS.Ref (JsName.fromGlobal home name)
+    Opt.VarGlobal global@(Opt.Global home name) ->
+      JsExpr $ JS.Ref (resolveGlobalRef mode global home name)
     Opt.VarEnum (Opt.Global home name) index ->
       case mode of
         Mode.Dev _ _ _ _ _ _ ->
@@ -206,6 +203,22 @@ generate mode expression =
                 (JsName.fromLocal "uniforms", toTranslationObject uniforms)
               ]
           )
+
+-- | Resolve a global reference to a JS name.
+--
+-- Checks in priority order:
+--   1. FFI alias modules use dot-separated names (e.g. @Math.sin@)
+--   2. Prod-mode globals with a rename entry use the short name
+--   3. All other globals use the mangled @$pkg$module$name@ form
+--
+-- @since 0.20.4
+resolveGlobalRef
+  :: Mode.Mode -> Opt.Global -> ModuleName.Canonical -> Name.Name -> JsName.Name
+resolveGlobalRef mode global home name
+  | Mode.isFFIAlias mode (ModuleName._module home) =
+      JsName.fromLocal (Name.sepBy 0x2E (ModuleName._module home) name)
+  | otherwise =
+      maybe (JsName.fromGlobal home name) JsName.fromLocal (Mode.globalName mode global)
 
 -- | Generate JavaScript for a list literal.
 --
@@ -395,7 +408,7 @@ generateField mode name =
   case mode of
     Mode.Dev _ _ _ _ _ _ ->
       JsName.fromLocal name
-    Mode.Prod fields _ _ _ _ _ ->
+    Mode.Prod fields _ _ _ _ _ _ ->
       maybe
         (InternalError.report "Generate.JavaScript.Expression.generateField"
           ("Unknown field `" <> Text.pack (Name.toChars name) <> "` in production mode field map with " <> Text.pack (show (Map.size fields)) <> " entries")

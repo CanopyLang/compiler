@@ -112,9 +112,9 @@ embeddedRuntimeForMode mode =
       embeddedRuntime
     Mode.Dev _ _ True _ _ _ ->  -- ffiUnsafe=True, minimal validation
       embeddedMarshal <> embeddedValidateMinimal <> embeddedEnvironment
-    Mode.Prod _ _ False _ _ _ ->  -- ffiUnsafe=False, validation ENABLED (default)
+    Mode.Prod _ _ False _ _ _ _ ->  -- ffiUnsafe=False, validation ENABLED (default)
       embeddedRuntime
-    Mode.Prod _ _ True _ _ _ ->  -- ffiUnsafe=True, minimal validation
+    Mode.Prod _ _ True _ _ _ _ ->  -- ffiUnsafe=True, minimal validation
       embeddedMarshal <> embeddedValidateMinimal
 
 -- | Scan-based FFI runtime inclusion.
@@ -139,11 +139,11 @@ scanAndEmitRuntime mode contentBuilder =
         <> conditionalEnv needsEnv
     conditionalValidate needed = case mode of
       Mode.Dev _ _ False _ _ _ -> if needed then embeddedValidate else mempty
-      Mode.Prod _ _ False _ _ _ -> if needed then embeddedValidate else mempty
+      Mode.Prod _ _ False _ _ _ _ -> if needed then embeddedValidate else mempty
       _ -> mempty
     conditionalSmart needed = case mode of
       Mode.Dev _ _ False _ _ _ -> if needed then embeddedSmart else mempty
-      Mode.Prod _ _ False _ _ _ -> if needed then embeddedSmart else mempty
+      Mode.Prod _ _ False _ _ _ _ -> if needed then embeddedSmart else mempty
       _ -> mempty
     conditionalEnv needed = case mode of
       Mode.Dev _ _ _ _ _ _ -> if needed then embeddedEnvironment else mempty

@@ -74,68 +74,78 @@ patternsEqual a b = (a ^. rpSegments) == (b ^. rpSegments)
 
 -- | Reject manifests where sibling routes use different dynamic names.
 --
--- Groups all dynamic and catch-all segments by their depth (position
--- index), then checks that each depth has at most one parameter name.
+-- Groups dynamic segments by (staticPrefix, depth): two dynamic segments
+-- only conflict when they share the same static prefix path AND appear at
+-- the same depth, because only then could they match the same URL.
+-- Routes under different static prefixes (e.g. \/packages vs \/blog) are
+-- never ambiguous regardless of what parameter names their dynamic
+-- segments use.
 checkConflictingDynamics :: RouteManifest -> Either ValidationError ()
 checkConflictingDynamics manifest =
-  maybe (Right ()) Left (findConflict dynamicsByDepth patterns)
+  maybe (Right ()) Left (findConflict dynamicsByScopeAndDepth)
   where
     patterns = fmap (^. rePattern) (_rmRoutes manifest)
-    dynamicsByDepth = buildDynamicMap patterns
+    dynamicsByScopeAndDepth = buildDynamicMap patterns
 
--- | Index of (depth, paramName) to the patterns that use that name.
-type DynamicMap = Map.Map Int (Map.Map Text [RoutePattern])
+-- | Index of (staticPrefix, depth) -> paramName -> [RoutePattern].
+--
+-- The 'staticPrefix' is the list of static segment names that precede the
+-- dynamic segment.  Two dynamic segments are siblings only when their
+-- prefixes match AND they sit at the same depth.
+type DynamicMap = Map.Map ([Text], Int) (Map.Map Text [RoutePattern])
 
--- | Build a map from depth to parameter-name groups.
+-- | Build a map keyed by (staticPrefix, depth) from all patterns.
 buildDynamicMap :: [RoutePattern] -> DynamicMap
-buildDynamicMap =
-  foldl insertPattern Map.empty
+buildDynamicMap = foldl insertPattern Map.empty
 
--- | Insert one pattern's dynamic segments into the depth map.
+-- | Insert one pattern's dynamic segments into the scope-keyed map.
 insertPattern :: DynamicMap -> RoutePattern -> DynamicMap
 insertPattern acc pat =
-  foldl (insertSegmentAtDepth pat) acc indexedDynamics
+  foldl (insertScopedSegment pat) acc (scopedDynamics (pat ^. rpSegments))
+
+-- | Extract (staticPrefix, depth, paramName) for each dynamic segment.
+--
+-- The static prefix grows with each 'StaticSegment' encountered.  This
+-- ensures that \/packages\/[author] and \/blog\/[slug] carry different
+-- prefixes and are never grouped together.
+scopedDynamics :: [RouteSegment] -> [([Text], Int, Text)]
+scopedDynamics = go [] 0
   where
-    indexedDynamics = indexedDynamicSegments (pat ^. rpSegments)
+    go _prefix _depth [] = []
+    go prefix depth (StaticSegment name : rest) =
+      go (prefix ++ [name]) (depth + 1) rest
+    go prefix depth (DynamicSegment name : rest) =
+      (prefix, depth, name) : go prefix (depth + 1) rest
+    go prefix depth (CatchAll name : rest) =
+      (prefix, depth, name) : go prefix (depth + 1) rest
 
--- | Extract (depth, paramName) pairs from a segment list.
-indexedDynamicSegments :: [RouteSegment] -> [(Int, Text)]
-indexedDynamicSegments segs =
-  concatMap extractDynamic (zip [0 ..] segs)
-
--- | Extract a dynamic parameter name with its index, if applicable.
-extractDynamic :: (Int, RouteSegment) -> [(Int, Text)]
-extractDynamic (i, DynamicSegment name) = [(i, name)]
-extractDynamic (i, CatchAll name) = [(i, name)]
-extractDynamic (_, StaticSegment _) = []
-
--- | Record a single (depth, name) pair for a given pattern.
-insertSegmentAtDepth
-  :: RoutePattern -> DynamicMap -> (Int, Text) -> DynamicMap
-insertSegmentAtDepth pat acc (depth, name) =
-  Map.alter (Just . addToInner) depth acc
+-- | Record a single (scope, depth, name) triple for a given pattern.
+insertScopedSegment
+  :: RoutePattern -> DynamicMap -> ([Text], Int, Text) -> DynamicMap
+insertScopedSegment pat acc (scope, depth, name) =
+  Map.alter (Just . addToInner) (scope, depth) acc
   where
     addToInner Nothing = Map.singleton name [pat]
-    addToInner (Just inner) =
-      Map.insertWith (<>) name [pat] inner
+    addToInner (Just inner) = Map.insertWith (<>) name [pat] inner
 
--- | Scan the dynamic map for any depth with more than one param name.
-findConflict :: DynamicMap -> [RoutePattern] -> Maybe ValidationError
-findConflict dynMap _patterns =
-  maybe Nothing checkDepth (firstConflictingDepth dynMap)
+-- | Scan the dynamic map for any scope+depth with more than one param name.
+findConflict :: DynamicMap -> Maybe ValidationError
+findConflict dynMap =
+  maybe Nothing checkNameMap (firstConflictingEntry dynMap)
 
--- | Find the first depth where multiple parameter names coexist.
-firstConflictingDepth :: DynamicMap -> Maybe (Map.Map Text [RoutePattern])
-firstConflictingDepth dynMap =
+-- | Find the first entry where multiple parameter names coexist.
+firstConflictingEntry :: DynamicMap -> Maybe (Map.Map Text [RoutePattern])
+firstConflictingEntry dynMap =
   listToMaybe (filter hasConflict (Map.elems dynMap))
 
--- | A depth is conflicting when it maps more than one parameter name.
+-- | A scope+depth entry is conflicting when more than one parameter name
+-- appears at that exact position.
 hasConflict :: Map.Map Text [RoutePattern] -> Bool
 hasConflict nameMap = Map.size nameMap > 1
 
--- | Build a 'ConflictingDynamicSegments' from the conflicting depth.
-checkDepth :: Map.Map Text [RoutePattern] -> Maybe ValidationError
-checkDepth nameMap =
+-- | Build a 'ConflictingDynamicSegments' from the conflicting entry.
+checkNameMap :: Map.Map Text [RoutePattern] -> Maybe ValidationError
+checkNameMap nameMap =
   Just (ConflictingDynamicSegments firstName allPatterns)
   where
     firstName = fst (Map.findMin nameMap)

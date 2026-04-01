@@ -3,21 +3,25 @@
 
 -- | Function-level runtime registry for tree-shaking.
 --
--- Splits the monolithic Canopy runtime into ~144 individually addressable
--- definitions. Each definition has its JS source, automatically computed
--- dependencies on other runtime functions, and tracked F\/A arity usage.
+-- Splits the monolithic Canopy runtime into individually addressable
+-- definitions. Each definition has its JS AST statements, automatically
+-- computed dependencies on other runtime functions, and tracked F\/A arity
+-- usage.
 --
 -- The registry is built lazily from the embedded runtime quasi-quote by:
 --
---   1. Scanning for top-level @var@ and @function@ declarations
---   2. Splitting at declaration boundaries
---   3. Computing inter-function dependencies via identifier scanning
---   4. Tracking F2\/F3\/… and A2\/A3\/… usage per function
+--   1. Parsing the quasi-quoted string via @language-javascript@ AST
+--   2. Grouping into 'BlockGroup's (one per top-level declaration)
+--   3. Computing inter-function dependencies via scope-aware free-variable
+--      analysis (same machinery used for FFI tree-shaking)
+--   4. Tracking F2\/F3\/… and A2\/A3\/… usage via 'JSAnalysis.aritiesInGroup'
 --
--- This enables the code generator to emit only the runtime functions
--- that are actually referenced, achieving function-level tree-shaking.
+-- Definitions are stored as @[JSStatement]@ AST nodes. Rendering to
+-- 'Builder' only happens at final emit time, enabling prod-mode
+-- transformations (debug-branch elimination, minification) without
+-- re-parsing.
 --
--- @since 0.20.1
+-- @since 0.20.4
 module Generate.JavaScript.Runtime.Registry
   ( -- * Types
     RuntimeId (..),
@@ -32,12 +36,12 @@ module Generate.JavaScript.Runtime.Registry
     closeDeps,
     topoEmit,
 
-    -- * Scanning generated output
-    scanRuntimeRefs,
-    scanArityRefs,
-
     -- * Construction
     runtimeIdFromKernel,
+
+    -- * ESM export name lists (AST-derived, no byte scanning)
+    exportedRuntimeNames,
+    exportedRuntimeSymbols,
 
     -- * Raw content (for ESM symbol scanning)
     rawRuntimeContent,
@@ -45,18 +49,23 @@ module Generate.JavaScript.Runtime.Registry
 where
 
 import Data.ByteString (ByteString)
-import qualified Data.ByteString as BS
 import qualified Data.ByteString.Char8 as BS8
 import Data.ByteString.Builder (Builder)
 import qualified Data.ByteString.Builder as BB
+import qualified Blaze.ByteString.Builder as Blaze
 import qualified Data.ByteString.Lazy as BL
 import qualified Data.List as List
 import Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
 import Data.Set (Set)
 import qualified Data.Set as Set
-import Data.Word (Word8)
+import qualified Data.Text as Text
+import qualified Data.Text.Encoding as TextEnc
 import qualified Canopy.Data.Name as Name
+import qualified Generate.JavaScript.FFI.JSAnalysis as JSAnalysis
+import qualified Language.JavaScript.Parser.AST as JSAST
+import qualified Language.JavaScript.Pretty.Printer as JSPrint
+import Language.JavaScript.Process.Minify (minifyJS)
 import Text.RawString.QQ (r)
 
 -- TYPES
@@ -70,10 +79,17 @@ newtype RuntimeId = RuntimeId {_ridName :: ByteString}
 
 -- | A single runtime function definition with dependency metadata.
 --
--- @since 0.20.1
+-- Stores AST statements rather than rendered bytes so that production-mode
+-- transformations (debug-branch elimination, minification) can operate on
+-- the AST directly without re-parsing. Rendering happens once at final
+-- emit time.
+--
+-- @since 0.20.4
 data RuntimeDef = RuntimeDef
-  { -- | Raw JS source for this definition (one or more lines).
-    _rdContent :: !ByteString,
+  { -- | AST statements for this definition.
+    _rdStatements :: ![JSAST.JSStatement],
+    -- | Preceding JSDoc comment text, if any (raw lines including @\/**@).
+    _rdJSDoc :: !(Maybe Text.Text),
     -- | Direct dependencies on other runtime functions.
     _rdDeps :: !(Set RuntimeId),
     -- | F\/A arities used (e.g., @{2}@ if @F2(...)@ appears in the source).
@@ -139,13 +155,40 @@ closeDeps seeds = go Set.empty seeds
 -- Circular dependencies between @function@ declarations are safe
 -- due to JavaScript hoisting.
 --
--- @since 0.20.1
-topoEmit :: Set RuntimeId -> Builder
-topoEmit needed =
+-- When @isProd@ is 'True', 'minifyJS' is applied before rendering each
+-- definition to strip all whitespace and comments.
+--
+-- @since 0.20.4
+topoEmit :: Bool -> Set RuntimeId -> Builder
+topoEmit isProd needed =
   foldMap emitOne (topoSort needed)
   where
-    emitOne rid =
-      maybe mempty (BB.byteString . _rdContent) (Map.lookup rid registry)
+    emitOne rid = maybe mempty (renderRuntimeDef isProd) (Map.lookup rid registry)
+
+-- | Render a 'RuntimeDef' to a 'Builder', including any JSDoc prefix.
+--
+-- When @isProd@ is 'True', applies 'minifyJS' before rendering.
+renderRuntimeDef :: Bool -> RuntimeDef -> Builder
+renderRuntimeDef isProd def =
+  foldMap renderJSDoc (_rdJSDoc def)
+  <> renderStatements isProd (_rdStatements def)
+  <> "\n"
+
+-- | Render JSDoc text to 'Builder'.
+renderJSDoc :: Text.Text -> Builder
+renderJSDoc doc = BB.byteString (TextEnc.encodeUtf8 doc)
+
+-- | Render a list of 'JSStatement' nodes to 'Builder' via the pretty-printer.
+--
+-- When @isProd@ is 'True', applies 'minifyJS' to strip whitespace and comments.
+renderStatements :: Bool -> [JSAST.JSStatement] -> Builder
+renderStatements isProd stmts =
+  BB.lazyByteString
+    (Blaze.toLazyByteString
+      (JSPrint.renderJS ast'))
+  where
+    ast  = JSAST.JSAstProgram stmts JSAST.JSNoAnnot
+    ast' = if isProd then minifyJS ast else ast
 
 -- | Topological sort: dependencies before dependents.
 --
@@ -179,34 +222,54 @@ runtimeIdFromKernel :: Name.Name -> Name.Name -> RuntimeId
 runtimeIdFromKernel home name =
   RuntimeId (BS8.pack ("_" ++ Name.toChars home ++ "_" ++ Name.toChars name))
 
--- SCANNING GENERATED OUTPUT
+-- ESM EXPORT NAMES
 
--- | Scan a generated JS 'Builder' for references to runtime functions.
+-- | All declared runtime symbol names in original source order.
 --
--- Materializes the builder to bytes, extracts all @_Module_name@ tokens,
--- and returns only those that correspond to actual registry entries.
--- This is the primary mechanism for runtime tree-shaking: generate all
--- non-runtime JS first, scan it, then emit only referenced runtime functions.
+-- Derived from the registry via AST analysis — no byte scanning.
+-- Includes only the base runtime symbols (e.g. @_Utils_eq@, @_List_Nil@).
+-- Currying helpers (F\/F2–F9\/A2–A9) and FFI runtime symbols are separate.
+-- Used by 'Generate.JavaScript.ESM.Runtime' to build the export list.
 --
--- @since 0.20.1
-scanRuntimeRefs :: Builder -> Set RuntimeId
-scanRuntimeRefs builder =
-  Set.intersection knownIds candidateIds
+-- @since 0.20.5
+exportedRuntimeNames :: [ByteString]
+exportedRuntimeNames =
+  map _ridName (List.sortOn orderOf (Map.keys registry))
   where
-    bs = materialize builder
-    rawRefs = extractRuntimeRefs bs
-    candidateIds = Set.map RuntimeId rawRefs
-    knownIds = allIds
+    orderOf rid = maybe maxBound _rdOrder (Map.lookup rid registry)
 
--- | Scan a generated JS 'Builder' for F\/A arity references.
+-- | The complete set of all symbols exported by @canopy-runtime.js@.
 --
--- Materializes the builder to bytes and extracts all @F2(@, @A2(@, etc.
--- patterns. Returns the set of arities (2–9) actually referenced.
+-- Includes base runtime symbols, currying helpers (F, F2–F9, A2–A9),
+-- FFI runtime namespace objects (\$canopy, \$validate, \$smart, \$env),
+-- and the debug flag. Used by 'Generate.JavaScript.ESM.FFI' to
+-- determine which free variables in an FFI file must be imported.
 --
--- @since 0.20.1
-scanArityRefs :: Builder -> Set Int
-scanArityRefs builder =
-  extractArities (materialize builder)
+-- @since 0.20.5
+exportedRuntimeSymbols :: Set ByteString
+exportedRuntimeSymbols =
+  Set.fromList (map _ridName (Map.keys registry))
+    `Set.union` Set.fromList curryingSymbols
+    `Set.union` Set.fromList ffiRuntimeSymbols
+    `Set.union` Set.fromList hmrSymbols
+    `Set.union` Set.singleton "__canopy_debug"
+
+-- | Currying helper symbol names (F, F2–F9, A2–A9).
+curryingSymbols :: [ByteString]
+curryingSymbols =
+  "F" : concatMap (\n -> [BS8.pack ('F' : show n), BS8.pack ('A' : show n)]) [2..9 :: Int]
+
+-- | FFI runtime namespace object names declared by 'Generate.JavaScript.FFIRuntime'.
+ffiRuntimeSymbols :: [ByteString]
+ffiRuntimeSymbols = ["$canopy", "$validate", "$smart", "$env"]
+
+-- | HMR helper symbol names injected in dev mode.
+hmrSymbols :: [ByteString]
+hmrSymbols =
+  [ "_Platform_currentModel", "_Platform_currentStepper"
+  , "_Platform_getModel", "_Platform_hotSwap"
+  , "_Platform_trackModel", "_Platform_trackStepper"
+  ]
 
 -- RAW CONTENT
 
@@ -222,132 +285,104 @@ rawRuntimeContent = embeddedRuntimeContent
 -- INTERNAL: REGISTRY BUILDING
 
 -- | Build the complete registry from the embedded runtime source.
+--
+-- Converts the embedded quasi-quoted runtime to 'Text', parses it into
+-- 'JSAnalysis.BlockGroup's, then builds per-definition entries using the
+-- same AST-based machinery used for FFI tree-shaking.
+--
+-- Falls back to an empty registry on parse failure; all callers degrade
+-- gracefully by emitting the full runtime in that case.
 buildRegistry :: Map RuntimeId RuntimeDef
 buildRegistry =
-  let contentBs = materialize embeddedRuntimeContent
-      entries = splitRuntime contentBs
-      allNames = Set.fromList [name | (name, _, _) <- entries]
-   in Map.fromList
-        [ (RuntimeId name, mkDef name block order allNames)
-          | (name, block, order) <- entries
-        ]
-
--- | Create a 'RuntimeDef' from a raw block, computing deps and arities.
-mkDef :: ByteString -> ByteString -> Int -> Set ByteString -> RuntimeDef
-mkDef selfName content order allNames =
-  RuntimeDef content deps arities order
+  case JSAnalysis.parseAllGroups runtimeText of
+    Nothing                 -> Map.empty
+    Just (_, groups)        -> buildFromGroups runtimeText groups
   where
-    refs = extractRuntimeRefs content
-    deps = Set.map RuntimeId (Set.delete selfName (Set.intersection refs allNames))
-    arities = extractArities content
+    runtimeText = TextEnc.decodeUtf8 (BL.toStrict (BB.toLazyByteString embeddedRuntimeContent))
 
--- INTERNAL: RUNTIME SPLITTING
-
--- | Split the monolithic runtime JS into individual function definitions.
---
--- Each top-level @var _X@ or @function _X@ declaration starts a new block.
--- Content before the first declaration (comments, blank lines) is discarded.
---
--- Returns @[(functionName, fullContent, lineIndex)]@.
-splitRuntime :: ByteString -> [(ByteString, ByteString, Int)]
-splitRuntime content =
-  buildEntries rawLines declPositions
+-- | Build the registry map from a parsed list of block groups.
+buildFromGroups :: Text.Text -> [JSAnalysis.BlockGroup] -> Map RuntimeId RuntimeDef
+buildFromGroups content groups =
+  Map.union primaryMap aliasMap
   where
-    rawLines = BS8.lines content
-    indexedLines = zip [0 ..] rawLines
-    declPositions = filter (isDeclLine . snd) indexedLines
-    totalLines = length rawLines
+    textLines    = Text.lines content
+    allNames     = Set.fromList (concatMap JSAnalysis.groupDeclNames groups)
+    starts       = List.map (walkBackJSDocText textLines . JSAnalysis._bgLine) groups
+    primaryMap   = Map.fromList (zipWith (mkEntry textLines allNames) groups starts)
+    aliasMap     = buildAliasMap primaryMap groups
 
-    buildEntries _ [] = []
-    buildEntries allLines ((startIdx, startLine) : rest) =
-      let name = extractDeclName startLine
-          endIdx = case rest of
-            ((nextIdx, _) : _) -> nextIdx
-            [] -> totalLines
-          blockLines = take (endIdx - startIdx) (drop startIdx allLines)
-          block = BS8.unlines blockLines
-       in (name, block, startIdx) : buildEntries allLines rest
-
--- | Check if a line starts a top-level runtime declaration.
-isDeclLine :: ByteString -> Bool
-isDeclLine line =
-  BS8.isPrefixOf "var _" line || BS8.isPrefixOf "function _" line
-
--- | Extract the declared name from a @var@ or @function@ line.
-extractDeclName :: ByteString -> ByteString
-extractDeclName line
-  | Just rest <- BS8.stripPrefix "var " line =
-      BS8.takeWhile isIdentChar rest
-  | Just rest <- BS8.stripPrefix "function " line =
-      BS8.takeWhile isIdentChar rest
-  | otherwise = ""
-
--- INTERNAL: DEPENDENCY SCANNING
-
--- | Extract all @_Module_name@ style references from JS source.
---
--- Finds tokens that start with @_@ followed by an uppercase letter,
--- continuing with identifier characters. Ensures word-boundary start
--- (preceding character must not be an identifier character).
-extractRuntimeRefs :: ByteString -> Set ByteString
-extractRuntimeRefs bs = go 0 Set.empty
+-- | Build a single registry entry for a block group.
+mkEntry
+  :: [Text.Text]
+  -> Set ByteString
+  -> JSAnalysis.BlockGroup
+  -> Int
+  -> (RuntimeId, RuntimeDef)
+mkEntry textLines allNames g start =
+  (RuntimeId (JSAnalysis._bgName g), mkDefFromGroup g allNames jsDoc start)
   where
-    len = BS.length bs
-    go i acc
-      | i >= len = acc
-      | BS.index bs i == 0x5F -- '_'
-        , i + 1 < len
-        , isUpperByte (BS.index bs (i + 1))
-        , i == 0 || not (isIdentByte (BS.index bs (i - 1))) =
-          let end = skipIdent (i + 2)
-              token = BS.take (end - i) (BS.drop i bs)
-           in go end (Set.insert token acc)
-      | otherwise = go (i + 1) acc
-    skipIdent j
-      | j >= len = j
-      | isIdentByte (BS.index bs j) = skipIdent (j + 1)
-      | otherwise = j
+    docLineCount = JSAnalysis._bgLine g - start
+    jsDocLines   = List.take docLineCount (List.drop start textLines)
+    jsDocText    = Text.unlines jsDocLines
+    jsDoc        = if docLineCount > 0 then Just jsDocText else Nothing
 
--- | Extract F\/A arities referenced in JS source.
---
--- Scans for patterns like @F2(@, @F3(@, @A2(@, @A3(@ etc.
-extractArities :: ByteString -> Set Int
-extractArities bs =
-  Set.fromList [n | n <- [2 .. 9], hasArity n]
+-- | Create a 'RuntimeDef' from a parsed group using AST-based analysis.
+mkDefFromGroup
+  :: JSAnalysis.BlockGroup -> Set ByteString -> Maybe Text.Text -> Int -> RuntimeDef
+mkDefFromGroup g allNames jsDoc order =
+  RuntimeDef stmts jsDoc deps arities order
   where
-    hasArity n =
-      let fn = BS8.pack ("F" ++ show n ++ "(")
-          an = BS8.pack ("A" ++ show n ++ "(")
-       in BS.isInfixOf fn bs || BS.isInfixOf an bs
+    stmts         = JSAnalysis._bgStatements g
+    selfName      = JSAnalysis._bgName g
+    localFreeVars = JSAnalysis.freeVarsInGroup allNames stmts
+    deps          = Set.map RuntimeId (Set.delete selfName localFreeVars)
+    arities       = JSAnalysis.aritiesInGroup stmts
 
--- INTERNAL: CHARACTER CLASSIFICATION
+-- | Build alias entries for comma-separated @var@ declarations.
+buildAliasMap
+  :: Map RuntimeId RuntimeDef -> [JSAnalysis.BlockGroup] -> Map RuntimeId RuntimeDef
+buildAliasMap primaryMap groups =
+  Map.fromList (concatMap mkAliases groups)
+  where
+    mkAliases g =
+      case JSAnalysis.groupDeclNames g of
+        (primary : aliases) ->
+          maybe [] (mkAliasEntries aliases) (Map.lookup (RuntimeId primary) primaryMap)
+        [] -> []
+    mkAliasEntries aliases def =
+      [ (RuntimeId alias, def)
+      | alias <- aliases
+      , not (Map.member (RuntimeId alias) primaryMap)
+      ]
 
--- | Check if a byte is an uppercase ASCII letter (A-Z).
-isUpperByte :: Word8 -> Bool
-isUpperByte b = b >= 0x41 && b <= 0x5A
+-- INTERNAL: JSDOC WALK-BACK (TEXT-BASED)
 
--- | Check if a byte is a valid JavaScript identifier character.
-isIdentByte :: Word8 -> Bool
-isIdentByte b =
-  (b >= 0x61 && b <= 0x7A) -- a-z
-    || (b >= 0x41 && b <= 0x5A) -- A-Z
-    || (b >= 0x30 && b <= 0x39) -- 0-9
-    || b == 0x5F -- _
-
--- | Check if a 'Char' is a valid JavaScript identifier character.
-isIdentChar :: Char -> Bool
-isIdentChar c =
-  (c >= 'a' && c <= 'z')
-    || (c >= 'A' && c <= 'Z')
-    || (c >= '0' && c <= '9')
-    || c == '_'
-    || c == '$'
-
--- INTERNAL: UTILITIES
-
--- | Materialize a 'Builder' into a strict 'ByteString'.
-materialize :: Builder -> ByteString
-materialize = BL.toStrict . BB.toLazyByteString
+-- | Walk backwards from a declaration line to find where its JSDoc starts.
+--
+-- Returns the 0-indexed line at which the JSDoc comment (or other immediately
+-- preceding comments\/blank lines) begins, so that the block content includes
+-- the full documentation block.
+walkBackJSDocText :: [Text.Text] -> Int -> Int
+walkBackJSDocText _ 0 = 0
+walkBackJSDocText allLines declIdx = go (declIdx - 1)
+  where
+    go idx
+      | idx < 0   = 0
+      | otherwise =
+          let line     = allLines List.!! idx
+              stripped = Text.dropWhile (== ' ') line
+           in if isJSDocOrComment stripped || Text.null (Text.strip line)
+                then go (idx - 1)
+                else idx + 1
+    isJSDocOrComment l =
+      Text.isPrefixOf "/**" l
+        || Text.isPrefixOf "/*" l
+        || Text.isPrefixOf " *" l
+        || Text.isPrefixOf "*/" l
+        || Text.isPrefixOf "* " l
+        || Text.isPrefixOf "*\n" l
+        || Text.isPrefixOf "//" l
+        || l == "*"
 
 -- INTERNAL: EMBEDDED RUNTIME CONTENT
 

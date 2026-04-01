@@ -94,11 +94,11 @@ prepareGraph ::
   (Graph, Mode.Mode)
 prepareGraph inputMode rawGraph ffiInfos =
   case inputMode of
-    Mode.Prod fields elmCompat ffiUnsafe ffiDbg _ _ ->
+    Mode.Prod fields elmCompat ffiUnsafe ffiDbg _ _ _ ->
       let minified = Minify.minifyGraph rawGraph
           pool = StringPool.buildPool minified
           ffiAliases = extractFFIAliases ffiInfos
-       in (minified, Mode.Prod fields elmCompat ffiUnsafe ffiDbg pool ffiAliases)
+       in (minified, Mode.Prod fields elmCompat ffiUnsafe ffiDbg pool ffiAliases Map.empty)
     Mode.Dev debugTypes elmCompat ffiUnsafe ffiDbg _ cov ->
       let ffiAliases = extractFFIAliases ffiInfos
        in (rawGraph, Mode.Dev debugTypes elmCompat ffiUnsafe ffiDbg ffiAliases cov)

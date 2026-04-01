@@ -24,10 +24,8 @@ module Generate.JavaScript.ESM.Runtime
 where
 
 import Data.ByteString (ByteString)
-import qualified Data.ByteString.Char8 as BS8
 import Data.ByteString.Builder (Builder)
 import qualified Data.ByteString.Builder as BB
-import qualified Data.ByteString.Lazy as LBS
 import Data.Set (Set)
 import qualified Data.Set as Set
 import qualified Generate.JavaScript.Builder as JS
@@ -35,18 +33,15 @@ import qualified Generate.JavaScript.FFIRuntime as FFIRuntime
 import qualified Generate.JavaScript.Functions as Functions
 import qualified Generate.JavaScript.Name as JsName
 import qualified Generate.JavaScript.Runtime as Runtime
+import qualified Generate.JavaScript.Runtime.Registry as Registry
 import qualified Generate.Mode as Mode
 
 -- | Generate the complete @canopy-runtime.js@ ES module.
 --
--- Wraps the existing IIFE runtime content in an ESM shell. All top-level
--- @var@ and @function@ declarations are scanned and automatically added
--- to the @Object.assign(globalThis, ...)@ and @export {}@ blocks.
---
--- This approach avoids duplicating the runtime source — the same
--- embedded strings from 'Runtime.embeddedRuntime' and
--- 'Functions.functions' are reused verbatim, and the export list
--- is derived from them so it can never go out of sync.
+-- Wraps the existing IIFE runtime content in an ESM shell. The export list
+-- is derived from the runtime registry (AST-parsed at build time) and
+-- static name lists for currying helpers, FFI runtime objects, and HMR
+-- helpers. No byte/text scanning occurs.
 --
 -- In dev mode, HMR helper functions (@_Platform_getModel@,
 -- @_Platform_hotSwap@) are injected into the runtime.
@@ -59,13 +54,7 @@ generateRuntime mode =
     runtimeBody = Functions.functions <> Runtime.embeddedRuntime
     ffiRuntimeBody = FFIRuntime.embeddedRuntimeForMode mode
     hmrBody = hmrRuntimeHelpers mode
-    runtimeBs = materialize runtimeBody
-    ffiBs = materialize ffiRuntimeBody
-    hmrBs = materialize hmrBody
-    runtimeSyms = scanTopLevelDecls runtimeBs
-    ffiSyms = scanTopLevelDecls ffiBs
-    hmrSyms = scanTopLevelDecls hmrBs
-    allSymbols = Set.toAscList (Set.insert "__canopy_debug" (Set.union runtimeSyms (Set.union ffiSyms hmrSyms)))
+    allSymbols = Set.toAscList (allRuntimeExportSymbols mode)
     items =
       [ JS.RawJS header,
         JS.ModuleStmt (debugDeclaration mode),
@@ -75,6 +64,21 @@ generateRuntime mode =
         JS.GlobalThisAssignRaw allSymbols,
         JS.ExportLocalsRaw allSymbols
       ]
+
+-- | Compute the full set of symbols to export from @canopy-runtime.js@.
+--
+-- Combines registry-derived runtime names, currying helpers, FFI runtime
+-- namespace objects, HMR helpers (dev mode only), and the debug flag.
+-- All names are derived statically — no byte scanning required.
+allRuntimeExportSymbols :: Mode.Mode -> Set ByteString
+allRuntimeExportSymbols mode =
+  Registry.exportedRuntimeSymbols
+    `Set.union` modeSpecificSymbols mode
+
+-- | Symbols only present in specific compile modes.
+modeSpecificSymbols :: Mode.Mode -> Set ByteString
+modeSpecificSymbols (Mode.Dev {}) = Set.fromList Registry.hmrSymbols
+modeSpecificSymbols (Mode.Prod {}) = Set.empty
 
 -- | ESM file header comment.
 header :: Builder

@@ -114,9 +114,14 @@ import qualified Unit.Generate.HtmlSecurityTest as HtmlSecurityTest
 import qualified Unit.Generate.JavaScript.ESMTest as JSESMTest
 import qualified Unit.Generate.JavaScript.ExpressionArithmeticTest as JSExpressionArithmeticTest
 import qualified Unit.Generate.JavaScript.ExpressionGenerateTest as JSExpressionGenerateTest
+import qualified Unit.Generate.JavaScript.FFI.MinifyTest as JSFFIMinifyTest
+import qualified Unit.Generate.JavaScript.FFI.RegistryTest as JSFFIRegistryTest
+import qualified Unit.Generate.JavaScript.JSAnalysisTest as JSAnalysisTest
+import qualified Unit.Generate.JavaScript.Runtime.RegistryTest as JSRuntimeRegistryTest
 import qualified Unit.Generate.JavaScript.RuntimeAnnotationTest as RuntimeAnnotationTest
 import qualified Unit.Generate.JavaScript.RuntimeTest as JSRuntimeTest
 import qualified Unit.Generate.MinifyTest as MinifyTest
+import qualified Unit.Generate.ModeTest as ModeTest
 import qualified Unit.Generate.NameTest as GenerateNameTest
 import qualified Unit.Generate.CoverageTest as CoverageTest
 import qualified Unit.Generate.SourceMapTest as SourceMapTest
@@ -319,9 +324,14 @@ unitTests =
       JSESMTest.tests,
       JSExpressionArithmeticTest.tests,
       JSExpressionGenerateTest.tests,
+      JSFFIMinifyTest.tests,
+      JSFFIRegistryTest.tests,
+      JSAnalysisTest.tests,
+      JSRuntimeRegistryTest.tests,
       JSRuntimeTest.tests,
       RuntimeAnnotationTest.tests,
       MinifyTest.tests,
+      ModeTest.tests,
       GenerateNameTest.tests,
       HtmlSecurityTest.tests,
       ExpressionTest.tests,

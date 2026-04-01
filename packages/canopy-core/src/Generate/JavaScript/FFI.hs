@@ -49,10 +49,8 @@ import qualified AST.Optimized as Opt
 import qualified Data.Char as Char
 import Control.Lens (Lens', (.~), (&))
 import qualified Data.Binary as Binary
-import Data.ByteString (ByteString)
 import Data.ByteString.Builder (Builder)
 import qualified Data.ByteString.Builder as BB
-import qualified Data.ByteString.Lazy as BL
 import qualified Data.List as List
 import Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
@@ -64,6 +62,7 @@ import qualified Data.Text.Encoding as TextEnc
 import qualified FFI.TypeParser as TypeParser
 import qualified Generate.JavaScript.FFI.Minify as FFIMinify
 import qualified Generate.JavaScript.FFI.Registry as FFIRegistry
+import qualified Language.JavaScript.Parser.AST as JSAST
 import FFI.Types (BindingMode (..))
 import qualified FFI.Validator as Validator
 import qualified Generate.Mode as Mode
@@ -168,28 +167,33 @@ generateFFIContent mode graph ffiInfos usedFuncs =
      then mempty
      else mconcat parts <> validators
   where
-    fileRegistries = buildAliasRegistries ffiInfos
+    fileResults = buildAliasRegistries ffiInfos
+    fileRegistries = Map.map FFIRegistry._frrRegistry fileResults
     initialSeeds = computeInitialSeeds ffiInfos usedFuncs fileRegistries
     resolvedNeeded = FFIRegistry.closeFFICrossFileDeps fileRegistries initialSeeds
     parts =
       [ "\n// FFI JavaScript content and bindings\n"
       ]
-        ++ Map.foldrWithKey (formatFFIWithBindings mode graph usedFuncs fileRegistries resolvedNeeded) [] ffiInfos
+        ++ Map.foldrWithKey (formatFFIWithBindings mode graph usedFuncs fileResults resolvedNeeded) [] ffiInfos
     validators =
       if Mode.isFFIStrict mode
         then generateFFIValidators mode ffiInfos usedFuncs
         else mempty
 
--- | Build per-file FFI registries for all FFI files.
+-- | Build per-file FFI registry results for all FFI files.
 --
 -- Keyed by file path (not alias name) to avoid collisions when multiple
 -- modules share the same FFI alias (e.g. Platform, Platform.Cmd, and
 -- Platform.Sub all use PlatformFFI but import different JS files).
+--
+-- Each result carries both the per-block registry (for tree-shaking) and
+-- the full AST (for the non-tree-shaken emit path), produced from a
+-- single parse per file.
 buildAliasRegistries
   :: Map String FFIInfo
-  -> Map String (Map FFIRegistry.FFIBlockId FFIRegistry.FFIBlock)
-buildAliasRegistries ffiInfos =
-  Map.map (\info -> FFIRegistry.buildFFIRegistry (_ffiContent info)) ffiInfos
+  -> Map String FFIRegistry.FFIRegistryResult
+buildAliasRegistries =
+  Map.map (\info -> FFIRegistry.buildFFIRegistryFull (_ffiContent info))
 
 -- | Compute initial seed blocks per file from used function tracking.
 --
@@ -287,24 +291,35 @@ _formatFFIFileFromInfo path content acc =
 -- @funcName@, giving each FFI file its own namespace while preserving
 -- access to runtime globals like @_Utils_chr@ and @F2@.
 --
--- Uses pre-computed registries and resolved needed blocks from
+-- Uses pre-computed registry results and resolved needed blocks from
 -- 'closeFFICrossFileDeps' for precise cross-file dependency resolution.
+--
+-- All content emission is AST-based. The only place raw 'Text' is encoded
+-- directly is when the JS file failed to parse (empty '_frrFullAST'), in
+-- which case we have no AST and must fall back to the raw source bytes.
 formatFFIWithBindings
   :: Mode.Mode
   -> Graph
   -> Map Name.Name (Set Name.Name)
-  -> Map String (Map FFIRegistry.FFIBlockId FFIRegistry.FFIBlock)
+  -> Map String FFIRegistry.FFIRegistryResult
   -> Map String (Set FFIRegistry.FFIBlockId)
   -> String
   -> FFIInfo
   -> [Builder]
   -> [Builder]
-formatFFIWithBindings mode graph usedFuncs fileRegistries resolvedNeeded _key info acc
+formatFFIWithBindings mode graph usedFuncs fileResults resolvedNeeded _key info acc
   | not (isValidJsIdentifier aliasStr) = acc
   -- Skip this entire FFI file when none of its functions are reachable from
-  -- the entry point(s). This is only applied when tracking is active (i.e.
+  -- the entry point(s). This is only applied when tracking isActive (i.e.
   -- usedFuncs is non-empty); an empty map means "unknown" and includes all.
-  | Set.null neededFuncNames && not (Map.null usedFuncs) = acc
+  --
+  -- Exception: kernel-bridging FFI files (alias ends with "FFI", e.g.
+  -- "JsonFFI") must never be skipped even when tracking shows zero hits.
+  -- Their compiled Canopy callers emit Opt.VarRuntime references that
+  -- bypass the global-graph tracker, so computeFFIUsage never adds them
+  -- to usedFuncs. Any such file present in ffiInfos is a genuine
+  -- dependency; omitting it produces "_Json_decodeField is not defined".
+  | Set.null neededFuncNames && not (Map.null usedFuncs) && not hasKernelReExports = acc
   | otherwise =
       wrappedContent (reExports ++ bindingsSection ++ acc)
   where
@@ -312,6 +327,7 @@ formatFFIWithBindings mode graph usedFuncs fileRegistries resolvedNeeded _key in
     contentText = _ffiContent info
     alias = _ffiAlias info
     aliasStr = Name.toChars alias
+    hasKernelReExports = case stripFFISuffix aliasStr of { Just _ -> True; Nothing -> False }
     iifeVar = "_" <> sanitizeForIdent (takeBaseName path) <> "_" <> aliasStr <> "IIFE"
     iifeVarText = Text.pack iifeVar
     functions = extractFFIFunctions (Text.lines contentText)
@@ -319,25 +335,47 @@ formatFFIWithBindings mode graph usedFuncs fileRegistries resolvedNeeded _key in
 
     -- Tree-shake: determine which functions are actually needed
     neededFuncNames = Map.findWithDefault Set.empty alias usedFuncs
-    neededFunctions = filterNeededFunctions functions neededFuncNames
+    filteredFunctions = filterNeededFunctions functions neededFuncNames
+    -- When the alias-level filter matches nothing in THIS specific file (because
+    -- the alias is shared across multiple FFI files, e.g. PlatformFFI is shared
+    -- by platform.js, platform-cmd.js and platform-sub.js), fall back to ALL
+    -- functions in the file.  The guard above already ensured that the file as a
+    -- whole is reachable (neededFuncNames is non-empty); an empty filteredFunctions
+    -- just means none of this file's exports happened to match the tracked set,
+    -- which occurs for kernel-only FFI files whose functions are referenced via
+    -- Opt.VarKernel rather than through the regular global-reference tracker.
+    neededFunctions = if null filteredFunctions then functions else filteredFunctions
 
-    -- Use pre-computed per-file registry and resolved needed blocks
-    ffiRegistry = Map.findWithDefault Map.empty path fileRegistries
+    -- Extract per-file registry result and resolved needed blocks
+    emptyResult = FFIRegistry.FFIRegistryResult Map.empty []
+    result = Map.findWithDefault emptyResult path fileResults
+    ffiRegistry = FFIRegistry._frrRegistry result
+    fullAST = FFIRegistry._frrFullAST result
     allNeeded = Map.findWithDefault Set.empty path resolvedNeeded
 
-    -- Emit only needed content if tree-shaking found blocks;
-    -- fall back to full content if registry found nothing
+    -- Decide between tree-shaken (per-block) and full-file (complete AST) paths
     treeShaken = Map.null ffiRegistry || Set.null allNeeded
     isProd = case mode of Mode.Prod {} -> True; _ -> False
-    rawContent =
-      if treeShaken
-        then TextEnc.encodeUtf8 contentText
-        else materializeFFI (FFIRegistry.emitNeededBlocks ffiRegistry allNeeded)
-    minifiedContent =
+
+    -- For the tree-shaken path: apply debug elimination to selected blocks, render.
+    -- For the full-file path: render the complete parsed AST.
+    -- The ONLY place raw Text enters the output is when the file failed to parse
+    -- (fullAST is empty), meaning we genuinely have no AST available.
+    processedRegistry =
       if isProd
-        then FFIMinify.stripDebugBranches (FFIMinify.minifyFFI rawContent)
-        else rawContent
-    ffiContent' = BB.byteString minifiedContent
+        then Map.map applyDebugStrip ffiRegistry
+        else ffiRegistry
+    applyDebugStrip block =
+      FFIRegistry.FFIBlock
+        (FFIMinify.stripDebugBranches (FFIRegistry._fbStatements block))
+        (FFIRegistry._fbJSDoc block)
+        (FFIRegistry._fbDeps block)
+        (FFIRegistry._fbAllFreeVars block)
+        (FFIRegistry._fbOrder block)
+    ffiContent' =
+      if treeShaken
+        then emitFullAST fullAST isProd contentText
+        else FFIRegistry.emitNeededBlocks isProd processedRegistry allNeeded
 
     -- Only export names that exist in needed blocks
     neededInternalNames =
@@ -368,6 +406,21 @@ formatFFIWithBindings mode graph usedFuncs fileRegistries resolvedNeeded _key in
           ("\n// Bindings for " <> BB.stringUtf8 path <> "\n")
             : ("var " <> BB.stringUtf8 aliasStr <> " = " <> BB.stringUtf8 aliasStr <> " || {};\n")
             : List.map (<> "\n") bindings ++ ["\n"]
+
+-- | Emit the full FFI file AST as a 'Builder'.
+--
+-- When @isProd@ is set, strips debug branches from the AST before rendering.
+-- Falls back to raw 'Text' encoding only when the AST is empty (parse failure):
+-- this is the sole place raw source bytes can enter the output pipeline.
+emitFullAST :: [JSAST.JSStatement] -> Bool -> Text.Text -> Builder
+emitFullAST [] _ rawText =
+  BB.byteString (TextEnc.encodeUtf8 rawText)
+emitFullAST stmts isProd _ =
+  FFIRegistry.renderStatements isProd processedStmts
+  where
+    processedStmts
+      | isProd    = FFIMinify.stripDebugBranches stmts
+      | otherwise = stmts
 
 -- | Filter extracted FFI functions to only those actually used.
 --
@@ -888,10 +941,6 @@ ffiTypeToValidator ffiType = case ffiType of
         "['" <> BB.byteString (TextEnc.encodeUtf8 name) <> "', " <> ffiTypeToValidator fieldTy <> "]"
 
 -- UTILITIES
-
--- | Materialize a 'Builder' to a strict 'ByteString'.
-materializeFFI :: Builder -> ByteString
-materializeFFI = BL.toStrict . BB.toLazyByteString
 
 -- | Trim leading and trailing whitespace from text.
 --

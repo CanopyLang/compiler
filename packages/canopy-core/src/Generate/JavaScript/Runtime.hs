@@ -32,11 +32,11 @@ module Generate.JavaScript.Runtime
 where
 
 import Data.ByteString.Builder (Builder)
-import qualified Data.ByteString.Builder as BB
-import qualified Data.ByteString.Lazy as BL
 import Data.Set (Set)
 import Generate.JavaScript.Runtime.Registry
 import qualified Generate.JavaScript.FFI.Minify as FFIMinify
+import qualified Data.ByteString.Builder as BB
+import qualified Data.ByteString.Lazy as BL
 import qualified Generate.JavaScript.Runtime.Registry as Registry
 import qualified Generate.Mode as Mode
 
@@ -50,13 +50,14 @@ import qualified Generate.Mode as Mode
 --
 -- @since 0.20.0
 embeddedRuntimeForMode :: Mode.Mode -> Builder
-embeddedRuntimeForMode mode = case mode of
-  Mode.Dev {} ->
-    modeDeclaration mode <> Registry.topoEmit Registry.allIds
-  Mode.Prod {} ->
-    let raw = modeDeclaration mode <> Registry.topoEmit Registry.allIds
-        rawBS = BL.toStrict (BB.toLazyByteString raw)
-    in BB.byteString (FFIMinify.stripDebugBranches rawBS)
+embeddedRuntimeForMode mode =
+  modeDeclaration mode <> prodContent
+  where
+    isProd = case mode of Mode.Prod {} -> True; _ -> False
+    raw    = Registry.topoEmit isProd Registry.allIds
+    prodContent
+      | isProd    = BB.byteString (FFIMinify.stripDebugBranchesBS (BL.toStrict (BB.toLazyByteString raw)))
+      | otherwise = raw
 
 -- | Full embedded Canopy runtime without mode declaration.
 --
@@ -72,16 +73,19 @@ embeddedRuntime = Registry.rawRuntimeContent
 -- The given set should already be closed under dependencies
 -- (use 'Registry.closeDeps' to compute the transitive closure).
 --
+-- When in prod mode, 'minifyJS' is applied per definition (whitespace stripping)
+-- and then 'stripDebugBranchesBS' eliminates debug-conditional branches.
+--
 -- @since 0.20.1
 emitNeeded :: Mode.Mode -> Set RuntimeId -> Builder
 emitNeeded mode needed =
   modeDeclaration mode <> minifiedContent
   where
-    rawContent = Registry.topoEmit needed
-    minifiedContent = case mode of
-      Mode.Prod {} ->
-        BB.byteString (FFIMinify.stripDebugBranches (BL.toStrict (BB.toLazyByteString rawContent)))
-      Mode.Dev {} -> rawContent
+    rawContent = Registry.topoEmit isProd needed
+    isProd     = case mode of Mode.Prod {} -> True; _ -> False
+    minifiedContent
+      | isProd    = BB.byteString (FFIMinify.stripDebugBranchesBS (BL.toStrict (BB.toLazyByteString rawContent)))
+      | otherwise = rawContent
 
 -- INTERNAL
 

@@ -8,12 +8,14 @@ module Generate.Mode
   , isFFIDebug
   , isFFIAlias
   , isESM
+  , globalName
   , ShortFieldNames
   , shortenFieldNames
   , stringPool
   )
 where
 
+import qualified AST.Optimized as Opt
 import AST.Optimized (GlobalGraph (..))
 import qualified Canopy.Compiler.Type.Extract as Extract
 import qualified Data.List as List
@@ -48,8 +50,8 @@ data OutputFormat
 data Mode
   = Dev (Maybe Extract.Types) Bool Bool Bool (Set Name.Name) Bool
     -- ^ Development mode: (debug types, elm-compatibility, ffi-unsafe, ffi-debug, ffi-aliases, coverage)
-  | Prod ShortFieldNames Bool Bool Bool StringPool.StringPool (Set Name.Name)
-    -- ^ Production mode: (short names, elm-compatibility, ffi-unsafe, ffi-debug, string pool, ffi-aliases)
+  | Prod ShortFieldNames Bool Bool Bool StringPool.StringPool (Set Name.Name) (Map Opt.Global Name.Name)
+    -- ^ Production mode: (short field names, elm-compatibility, ffi-unsafe, ffi-debug, string pool, ffi-aliases, global rename map)
   deriving (Show)
 
 -- | Check if debug mode is enabled.
@@ -75,7 +77,7 @@ isElmCompatible :: Mode -> Bool
 isElmCompatible mode =
   case mode of
     Dev _ elmCompat _ _ _ _ -> elmCompat
-    Prod _ elmCompat _ _ _ _ -> elmCompat
+    Prod _ elmCompat _ _ _ _ _ -> elmCompat
 
 -- FFI VALIDATION MODE
 
@@ -93,7 +95,7 @@ isFFIStrict :: Mode -> Bool
 isFFIStrict mode =
   case mode of
     Dev _ _ ffiUnsafe _ _ _ -> not ffiUnsafe
-    Prod _ _ ffiUnsafe _ _ _ -> not ffiUnsafe
+    Prod _ _ ffiUnsafe _ _ _ _ -> not ffiUnsafe
 
 -- | Check if FFI debug mode is enabled.
 --
@@ -106,7 +108,7 @@ isFFIDebug :: Mode -> Bool
 isFFIDebug mode =
   case mode of
     Dev _ _ _ ffiDebug _ _ -> ffiDebug
-    Prod _ _ _ ffiDebug _ _ -> ffiDebug
+    Prod _ _ _ ffiDebug _ _ _ -> ffiDebug
 
 -- | Check if a module name is an FFI alias (from foreign import statements).
 --
@@ -118,7 +120,7 @@ isFFIAlias :: Mode -> Name.Name -> Bool
 isFFIAlias mode name =
   case mode of
     Dev _ _ _ _ ffiAliases _ -> Set.member name ffiAliases
-    Prod _ _ _ _ _ ffiAliases -> Set.member name ffiAliases
+    Prod _ _ _ _ _ ffiAliases _ -> Set.member name ffiAliases
 
 -- | Check if a given output format is ESM.
 --
@@ -127,6 +129,17 @@ isESM :: OutputFormat -> Bool
 isESM FormatESM = True
 isESM FormatIIFE = False
 
+-- | Look up the short prod-mode name for a global, if one was assigned.
+--
+-- Returns 'Just shortName' in prod mode when the global was assigned a
+-- short name by 'buildGlobalRenameMap', and 'Nothing' otherwise (dev mode,
+-- or globals excluded from renaming such as FFI alias modules).
+--
+-- @since 0.20.4
+globalName :: Mode -> Opt.Global -> Maybe Name.Name
+globalName (Prod _ _ _ _ _ _ globalNames) global = Map.lookup global globalNames
+globalName _ _ = Nothing
+
 -- STRING POOL
 
 -- | Extract the string pool from a mode (empty for Dev).
@@ -134,7 +147,7 @@ stringPool :: Mode -> StringPool.StringPool
 stringPool mode =
   case mode of
     Dev {} -> StringPool.emptyPool
-    Prod _ _ _ _ pool _ -> pool
+    Prod _ _ _ _ pool _ _ -> pool
 
 -- SHORTEN FIELD NAMES
 

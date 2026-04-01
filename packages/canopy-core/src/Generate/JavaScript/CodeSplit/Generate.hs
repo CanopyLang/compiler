@@ -103,10 +103,10 @@ generateChunks inputMode globalGraph@(Opt.GlobalGraph rawGraph _ _) mains _ffiIn
 prepareGraph :: Mode.Mode -> Graph -> (Graph, Mode.Mode)
 prepareGraph inputMode rawGraph =
   case inputMode of
-    Mode.Prod fields elmCompat ffiUnsafe ffiDbg _ ffiAliases ->
+    Mode.Prod fields elmCompat ffiUnsafe ffiDbg _ ffiAliases _ ->
       let minified = Minify.minifyGraph rawGraph
           pool = StringPool.buildPool minified
-       in (minified, Mode.Prod fields elmCompat ffiUnsafe ffiDbg pool ffiAliases)
+       in (minified, Mode.Prod fields elmCompat ffiUnsafe ffiDbg pool ffiAliases Map.empty)
     Mode.Dev _ _ _ _ _ _ -> (rawGraph, inputMode)
 
 -- | Generate JavaScript for the globals in a single chunk.

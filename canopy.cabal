@@ -1,6 +1,6 @@
 cabal-version: 2.2
 
--- This file has been generated from package.yaml by hpack version 0.38.1.
+-- This file has been generated from package.yaml by hpack version 0.39.1.
 --
 -- see: https://github.com/sol/hpack
 
@@ -304,9 +304,14 @@ test-suite canopy-test
       Unit.Generate.JavaScript.ESMTest
       Unit.Generate.JavaScript.ExpressionArithmeticTest
       Unit.Generate.JavaScript.ExpressionGenerateTest
+      Unit.Generate.JavaScript.FFI.MinifyTest
+      Unit.Generate.JavaScript.FFI.RegistryTest
+      Unit.Generate.JavaScript.JSAnalysisTest
+      Unit.Generate.JavaScript.Runtime.RegistryTest
       Unit.Generate.JavaScript.RuntimeAnnotationTest
       Unit.Generate.JavaScript.RuntimeTest
       Unit.Generate.MinifyTest
+      Unit.Generate.ModeTest
       Unit.Generate.NameTest
       Unit.Generate.SourceMapTest
       Unit.Generate.StringPoolTest

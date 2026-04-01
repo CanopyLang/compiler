@@ -109,18 +109,25 @@ generate :: Mode.Mode -> Opt.GlobalGraph -> Mains -> Map String FFIInfo -> (Buil
 generate inputMode globalGraph@(Opt.GlobalGraph rawGraph _ sourceLocs) mains ffiInfos =
   let ffiAliases = extractFFIAliases ffiInfos
       (graph, mode) = case inputMode of
-        Mode.Prod fields elmCompat ffiUnsafe ffiDbg _ _ ->
+        Mode.Prod fields elmCompat ffiUnsafe ffiDbg _ _ _ ->
           let minified = Minify.minifyGraph rawGraph
               pool = StringPool.buildPool minified
-           in (minified, Mode.Prod fields elmCompat ffiUnsafe ffiDbg pool ffiAliases)
+              globalRenameMap = Minify.buildGlobalRenameMap ffiAliases minified reachable
+           in (minified, Mode.Prod fields elmCompat ffiUnsafe ffiDbg pool ffiAliases globalRenameMap)
         Mode.Dev debugTypes elmCompat ffiUnsafe ffiDbg _ cov ->
           (rawGraph, Mode.Dev debugTypes elmCompat ffiUnsafe ffiDbg ffiAliases cov)
       shouldTrackLines = case mode of Mode.Dev {} -> True; Mode.Prod {} -> False
       covIds = if Mode.isCoverage mode then Coverage.computeBaseIds graph else Map.empty
+      -- Pre-compute reachable globals once; used for both FFI and runtime deps.
+      reachable = TreeShake.reachableGlobals globalGraph mains
       -- Pre-compute FFI usage at AST level before code generation.
       -- Uses reachableGlobals to find all FFI-alias globals reachable from main
       -- without inspecting the generated Builder during traversal.
-      usedFFIFuncs = computeFFIUsage ffiAliases rawGraph (TreeShake.reachableGlobals globalGraph mains)
+      usedFFIFuncs = computeFFIUsage ffiAliases rawGraph reachable
+      -- Pre-compute runtime deps from the Opt AST — eliminates the Phase 2
+      -- materialization of innerContent for byte-level scanning.
+      (rawNeededRuntime, neededArities) = collectRuntimeDeps rawGraph reachable
+      neededRuntime = Registry.closeDeps rawNeededRuntime
       -- Traverse only from entry points — dead code is never visited.
       state = Map.foldrWithKey (addMain mode graph) (emptyState shouldTrackLines sourceLocs covIds) mains
       header = if Mode.isElmCompatible mode
@@ -141,11 +148,6 @@ generate inputMode globalGraph@(Opt.GlobalGraph rawGraph _ sourceLocs) mains ffi
           <> Kernel_.toMainExports mode mains
           <> "\nif (typeof global !== 'undefined') { global.Canopy = scope['Canopy']; global.Elm = scope['Elm']; }"
           <> "\n}(typeof window !== 'undefined' ? window : this));"
-      -- Phase 2: scan innerContent to emit only what is actually referenced.
-      -- This eliminates unused F/A arities, unused runtime functions, and
-      -- unused FFI runtime modules.
-      neededArities = Registry.scanArityRefs innerContent
-      neededRuntime = Registry.closeDeps (Registry.scanRuntimeRefs innerContent)
       jsBuilder =
         header
           <> Functions.generateConditionalFunctions neededArities
@@ -187,6 +189,122 @@ computeFFIUsage ffiAliases graph reachable =
       in if Set.member moduleName ffiAliases && Map.notMember global graph
          then Map.insertWith Set.union moduleName (Set.singleton name) acc
          else acc
+
+-- | Compute needed runtime functions and F\/A arities from the reachable Opt AST.
+--
+-- Replaces the Phase 2 byte-scan of the generated 'Builder'. Walks every
+-- reachable 'Opt.Node' to find:
+--
+--   * 'Opt.VarRuntime' references — converted to 'Registry.RuntimeId'
+--   * Multi-argument 'Opt.Function' definitions — arity from 'length args'
+--   * Multi-argument 'Opt.Call' applications — arity from 'length args'
+--
+-- An arity @n@ (2–9) is needed when any 'Opt.Function' has @n@ parameters
+-- (causes @Fn(function(...) {...})@) or any 'Opt.Call' has @n@ arguments
+-- (causes @An(f, ...)@). Both use the same arity set.
+--
+-- @since 0.20.4
+collectRuntimeDeps
+  :: Graph
+  -> Set Opt.Global
+  -> (Set Registry.RuntimeId, Set Int)
+collectRuntimeDeps graph = foldMap (nodeDeps graph) . Set.toList
+
+-- | Walk a single node, collecting runtime refs and needed arities.
+nodeDeps :: Graph -> Opt.Global -> (Set Registry.RuntimeId, Set Int)
+nodeDeps graph global =
+  maybe mempty nodeExprDeps (Map.lookup global graph)
+
+-- | Extract runtime deps from a node variant.
+--
+-- 'Opt.Kernel' chunks are scanned for 'Kernel.JsVar' entries so that
+-- runtime constants referenced only from kernel code (e.g. @_Basics_e@,
+-- @_Basics_pi@) are included by the tree-shaker even when no user-code
+-- 'Opt.VarRuntime' reference exists.
+nodeExprDeps :: Opt.Node -> (Set Registry.RuntimeId, Set Int)
+nodeExprDeps node =
+  case node of
+    Opt.Define expr _               -> exprDeps expr
+    Opt.DefineTailFunc _ expr _     -> exprDeps expr
+    Opt.Cycle _ vals fns _          -> foldMap (exprDeps . snd) vals <> foldMap defDeps fns
+    Opt.PortIncoming expr _         -> exprDeps expr
+    Opt.PortOutgoing expr _         -> exprDeps expr
+    Opt.ImplDict _ methods _        -> foldMap exprDeps (Map.elems methods)
+    Opt.Kernel chunks _             -> (foldMap kernelChunkRuntimeId chunks, Set.empty)
+    _                               -> mempty
+
+-- | Collect runtime deps from a single kernel chunk.
+--
+-- Only 'Kernel.JsVar' contributes runtime deps; other chunk kinds are
+-- raw JS or Canopy-level references that don't map to registry entries.
+kernelChunkRuntimeId :: Kernel.Chunk -> Set Registry.RuntimeId
+kernelChunkRuntimeId chunk =
+  case chunk of
+    Kernel.JsVar home name -> Set.singleton (Registry.runtimeIdFromKernel home name)
+    _                      -> Set.empty
+
+-- | Collect runtime deps from a definition.
+defDeps :: Opt.Def -> (Set Registry.RuntimeId, Set Int)
+defDeps (Opt.Def _ expr)         = exprDeps expr
+defDeps (Opt.TailDef _ _ expr)   = exprDeps expr
+
+-- | Collect runtime deps from an expression (exhaustive structural walk).
+exprDeps :: Opt.Expr -> (Set Registry.RuntimeId, Set Int)
+exprDeps expr =
+  case expr of
+    Opt.VarRuntime home name ->
+      (Set.singleton (Registry.runtimeIdFromKernel home name), Set.empty)
+    Opt.Function args body ->
+      arityDep (length args) <> exprDeps body
+    Opt.Call func args ->
+      arityDep (length args) <> exprDeps func <> foldMap exprDeps args
+    Opt.If branches final ->
+      foldMap (\(c, b) -> exprDeps c <> exprDeps b) branches <> exprDeps final
+    Opt.Let def body ->
+      defDeps def <> exprDeps body
+    Opt.Destruct _ body ->
+      exprDeps body
+    Opt.Case _ _ decider jumps ->
+      deciderDeps decider <> foldMap (exprDeps . snd) jumps
+    Opt.ArithBinop _ l r ->
+      exprDeps l <> exprDeps r
+    Opt.TailCall _ pairs ->
+      foldMap (exprDeps . snd) pairs
+    Opt.Access rec _ ->
+      exprDeps rec
+    Opt.Update rec fields ->
+      exprDeps rec <> foldMap exprDeps (Map.elems fields)
+    Opt.Record fields ->
+      foldMap exprDeps (Map.elems fields)
+    Opt.List entries ->
+      foldMap exprDeps entries
+    Opt.Tuple a b mc ->
+      exprDeps a <> exprDeps b <> foldMap exprDeps mc
+    _ ->
+      mempty
+
+-- | Emit the arity dep for a curried call\/function with @n@ arguments.
+--
+-- Returns the singleton arity set when @n@ is in [2..9] (uses @Fn@\/@An@),
+-- and 'mempty' otherwise (falls back to curried single-arg calls).
+arityDep :: Int -> (Set Registry.RuntimeId, Set Int)
+arityDep n
+  | n >= 2 && n <= 9 = (Set.empty, Set.singleton n)
+  | otherwise        = mempty
+
+-- | Collect runtime deps from a decision tree.
+deciderDeps :: Opt.Decider Opt.Choice -> (Set Registry.RuntimeId, Set Int)
+deciderDeps decider =
+  case decider of
+    Opt.Leaf choice             -> choiceDeps choice
+    Opt.Chain _ success failure -> deciderDeps success <> deciderDeps failure
+    Opt.FanOut _ tests fallback ->
+      foldMap (deciderDeps . snd) tests <> deciderDeps fallback
+
+-- | Collect runtime deps from a pattern-match choice.
+choiceDeps :: Opt.Choice -> (Set Registry.RuntimeId, Set Int)
+choiceDeps (Opt.Inline e) = exprDeps e
+choiceDeps (Opt.Jump _)   = mempty
 
 perfNote :: Mode.Mode -> Builder
 perfNote mode =

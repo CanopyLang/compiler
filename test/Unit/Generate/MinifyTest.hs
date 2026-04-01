@@ -1,4 +1,10 @@
 
+-- | Tests for 'Generate.JavaScript.Minify'.
+--
+-- Covers local variable renaming ('minifyGraph') and global short-name
+-- assignment ('buildGlobalRenameMap').
+--
+-- @since 0.19.2
 module Unit.Generate.MinifyTest (tests) where
 
 import qualified AST.Optimized as Opt
@@ -20,7 +26,8 @@ tests =
       letBindingTests,
       nestedScopeTests,
       globalPreservationTests,
-      kernelPreservationTests
+      kernelPreservationTests,
+      buildGlobalRenameMapTests
     ]
 
 -- | Assert Show-based equality for Opt.Expr (no Eq instance).
@@ -135,3 +142,69 @@ lookupNode g m = case Map.lookup g m of
 assertNodeExprEq :: String -> Opt.Node -> Opt.Node -> Assertion
 assertNodeExprEq msg expected actual =
   assertEqual msg (show expected) (show actual)
+
+
+-- BUILD GLOBAL RENAME MAP TESTS
+
+buildGlobalRenameMapTests :: TestTree
+buildGlobalRenameMapTests =
+  testGroup
+    "buildGlobalRenameMap"
+    [ testCase "empty reachable set produces empty rename map" $
+        let result = Minify.buildGlobalRenameMap Set.empty Map.empty Set.empty
+         in Map.size result @?= 0,
+      testCase "single user global gets a short name assigned" $
+        let graph = Map.singleton testGlobal (defineNode (Opt.Int 1))
+            reachable = Set.singleton testGlobal
+            result = Minify.buildGlobalRenameMap Set.empty graph reachable
+         in Map.member testGlobal result @?= True,
+      testCase "global from FFI alias module is excluded from rename map" $
+        let aliasModName = Name.fromChars "MyFFI"
+            ffiHome = ModuleName.Canonical Pkg.core aliasModName
+            ffiGlobal = Opt.Global ffiHome (name "jsFunc")
+            graph = Map.singleton ffiGlobal (defineNode (Opt.Int 1))
+            reachable = Set.singleton ffiGlobal
+            ffiAliases = Set.singleton aliasModName
+            result = Minify.buildGlobalRenameMap ffiAliases graph reachable
+         in Map.member ffiGlobal result @?= False,
+      testCase "global not in graph is excluded from rename map" $
+        let notInGraph = Opt.Global testHome (name "phantom")
+            graph = Map.singleton testGlobal (defineNode (Opt.Int 1))
+            reachable = Set.singleton notInGraph
+            result = Minify.buildGlobalRenameMap Set.empty graph reachable
+         in Map.member notInGraph result @?= False,
+      testCase "assigned names do not include JS reserved word 'if'" $
+        let result = Minify.buildGlobalRenameMap Set.empty manyGlobalsGraph manyReachable
+            assignedNames = map Name.toChars (Map.elems result)
+         in elem "if" assignedNames @?= False,
+      testCase "assigned names do not include JS reserved word 'for'" $
+        let result = Minify.buildGlobalRenameMap Set.empty manyGlobalsGraph manyReachable
+            assignedNames = map Name.toChars (Map.elems result)
+         in elem "for" assignedNames @?= False,
+      testCase "two user globals get different short names" $
+        let g1 = Opt.Global testHome (name "func1")
+            g2 = Opt.Global testHome (name "func2")
+            graph = Map.fromList
+              [ (g1, defineNode (Opt.Int 1))
+              , (g2, defineNode (Opt.Int 2))
+              ]
+            reachable = Set.fromList [g1, g2]
+            result = Minify.buildGlobalRenameMap Set.empty graph reachable
+            names = Map.elems result
+         in length (Set.fromList names) @?= 2,
+      testCase "same input produces same output (deterministic)" $
+        let graph = Map.singleton testGlobal (defineNode (Opt.Int 1))
+            reachable = Set.singleton testGlobal
+            result1 = Minify.buildGlobalRenameMap Set.empty graph reachable
+            result2 = Minify.buildGlobalRenameMap Set.empty graph reachable
+         in result1 @?= result2
+    ]
+  where
+    manyGlobalsGraph :: Map.Map Opt.Global Opt.Node
+    manyGlobalsGraph =
+      Map.fromList
+        [ (Opt.Global testHome (name n), defineNode (Opt.Int 0))
+        | n <- map (\i -> "func" ++ show i) [(1 :: Int)..50]
+        ]
+    manyReachable :: Set.Set Opt.Global
+    manyReachable = Map.keysSet manyGlobalsGraph

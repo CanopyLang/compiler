@@ -68,7 +68,7 @@ prod ::
   Task Builder
 prod _root _details artifacts = do
   let globalGraph = extractGlobalGraph artifacts
-  let mode = Mode.Prod (Mode.shortenFieldNames globalGraph) False False False StringPool.emptyPool Set.empty
+  let mode = Mode.Prod (Mode.shortenFieldNames globalGraph) False False False StringPool.emptyPool Set.empty Map.empty
   pure (generateJS mode artifacts)
 
 -- | Generate REPL evaluation code.

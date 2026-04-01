@@ -11,17 +11,26 @@
 -- 'Opt.Let' bindings, 'Opt.Destruct' targets, 'Opt.TailCall' args,
 -- and 'Opt.Case' names are affected.
 --
+-- 'buildGlobalRenameMap' produces a mapping from reachable user globals
+-- to short names for prod-mode global renaming. Only user-code globals
+-- (present in the compiled graph, not from FFI alias modules) are renamed.
+--
 -- @since 0.19.2
 module Generate.JavaScript.Minify
   ( minifyGraph,
+    buildGlobalRenameMap,
   )
 where
 
 import qualified AST.Optimized as Opt
+import qualified Canopy.ModuleName as ModuleName
 import Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
 import Canopy.Data.Name (Name)
 import qualified Canopy.Data.Name as Name
+import qualified Data.List as List
+import Data.Set (Set)
+import qualified Data.Set as Set
 
 -- | Rename all local variables in a global graph to short names.
 --
@@ -207,3 +216,65 @@ renameList scope counter (n : ns) =
 -- | Look up a renamed name; return the original if not in scope.
 lookupRenamed :: Map Name Name -> Name -> Name
 lookupRenamed scope n = Map.findWithDefault n n scope
+
+
+-- GLOBAL RENAMING
+
+-- | Build a mapping from reachable user globals to short JS names.
+--
+-- Only renames globals present in the compiled graph whose home module
+-- is not an FFI alias module. Kernel and FFI globals keep their mangled
+-- names for runtime\/FFI compatibility.
+--
+-- The result is used in production mode to replace long mangled global
+-- names (@$author$project$Module$func@) with short names (@a@, @b@, …).
+--
+-- @since 0.20.4
+buildGlobalRenameMap
+  :: Set Name         -- ^ FFI alias module names (excluded from renaming)
+  -> Map Opt.Global Opt.Node  -- ^ Full compiled graph (only user globals present)
+  -> Set Opt.Global   -- ^ Reachable globals
+  -> Map Opt.Global Name
+buildGlobalRenameMap ffiAliases graph reachable =
+  Map.fromList (zip userGlobals (globalShortNames 0))
+  where
+    userGlobals = List.sortOn globalSortKey (filter isUserGlobal (Set.toList reachable))
+    isUserGlobal g@(Opt.Global home _) =
+      Map.member g graph
+      && not (Set.member (ModuleName._module home) ffiAliases)
+    globalSortKey (Opt.Global home name) =
+      (Name.toChars (ModuleName._module home), Name.toChars name)
+
+-- | Infinite sequence of valid short names, skipping JS reserved words.
+--
+-- Generates names in the same order as 'shortNameChars' (a, b, …, z, aa, …)
+-- but filters out any name that collides with JavaScript reserved words or
+-- the Canopy F\/A arity helpers (F2–F9, A2–A9).
+globalShortNames :: Int -> [Name]
+globalShortNames n =
+  let candidate = Name.fromChars (shortNameChars n)
+  in if Set.member candidate globalReservedNames
+       then globalShortNames (n + 1)
+       else candidate : globalShortNames (n + 1)
+
+-- | Names that must not be used as global short names.
+--
+-- Includes the Canopy F\/A helpers and common single-letter JS identifiers
+-- that conflict with runtime or built-in names. Does not include the full
+-- JS reserved-word set because 'shortNameChars' only produces lowercase
+-- letters, and lowercase reserved words (do, if, in, for, …) are excluded
+-- here explicitly.
+{-# NOINLINE globalReservedNames #-}
+globalReservedNames :: Set Name
+globalReservedNames =
+  Set.fromList (map Name.fromChars
+    [ "do", "if", "in"
+    , "for", "let", "new", "try", "var"
+    , "case", "else", "this", "void", "with"
+    , "break", "catch", "class", "const", "super", "throw", "while", "yield"
+    , "delete", "return", "switch", "typeof"
+    , "default", "extends"
+    , "finally", "continue"
+    , "debugger", "function"
+    , "instanceof"
+    ])

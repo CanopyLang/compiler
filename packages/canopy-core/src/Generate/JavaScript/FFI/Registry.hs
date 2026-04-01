@@ -3,8 +3,8 @@
 -- | Function-level FFI registry for tree-shaking.
 --
 -- Splits monolithic FFI JavaScript files into individually addressable
--- definitions. Each definition has its JS source and automatically computed
--- dependencies on other definitions within the same FFI file.
+-- definitions. Each definition has its JS AST statements and automatically
+-- computed dependencies on other definitions within the same FFI file.
 --
 -- This enables the code generator to emit only the FFI functions that are
 -- actually referenced, achieving function-level tree-shaking for FFI files.
@@ -16,35 +16,46 @@
 -- extraction. String literals are distinct AST nodes that contribute no
 -- dependencies, eliminating false edges from patterns like @args[\'node\']@.
 --
+-- Blocks are stored as @[JSStatement]@ AST nodes. Rendering to 'Builder'
+-- only happens at the final emit step, eliminating the double-parse
+-- anti-pattern previously needed for debug-branch elimination in production.
+--
 -- @since 0.20.2
 module Generate.JavaScript.FFI.Registry
   ( -- * Types
     FFIBlockId (..),
     FFIBlock (..),
+    FFIRegistryResult (..),
 
     -- * Registry building
     buildFFIRegistry,
+    buildFFIRegistryFull,
 
     -- * Tree-shaking
     closeFFIDeps,
     closeFFICrossFileDeps,
     emitNeededBlocks,
+
+    -- * Rendering
+    renderStatements,
   )
 where
 
 import Data.ByteString (ByteString)
-import qualified Data.ByteString as BS
-import qualified Data.ByteString.Char8 as BS8
 import Data.ByteString.Builder (Builder)
 import qualified Data.ByteString.Builder as BB
+import qualified Blaze.ByteString.Builder as Blaze
 import qualified Data.List as List
 import Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
 import Data.Set (Set)
 import qualified Data.Set as Set
-import qualified Data.Text.Encoding as TextEnc
 import qualified Data.Text as Text
+import qualified Data.Text.Encoding as TextEnc
 import qualified Generate.JavaScript.FFI.JSAnalysis as JSAnalysis
+import qualified Language.JavaScript.Parser.AST as JSAST
+import qualified Language.JavaScript.Pretty.Printer as JSPrint
+import qualified Language.JavaScript.Process.Minify as JSMinify
 
 
 -- TYPES
@@ -56,18 +67,42 @@ newtype FFIBlockId = FFIBlockId {_fbidName :: ByteString}
   deriving (Eq, Ord, Show)
 
 -- | A single FFI block with dependency metadata.
+--
+-- Stores AST statements rather than rendered bytes so that production-mode
+-- transformations (debug-branch elimination) can operate on the AST directly
+-- without re-parsing. Rendering happens once at final emit time.
 data FFIBlock = FFIBlock
-  { _fbContent :: !ByteString
-    -- ^ Raw JS source including any preceding JSDoc comment.
-  , _fbDeps :: !(Set FFIBlockId)
+  { _fbStatements  :: ![JSAST.JSStatement]
+    -- ^ AST statements for this block (the declaration plus any trailing
+    -- non-declaration statements that belong to it).
+  , _fbJSDoc       :: !(Maybe Text.Text)
+    -- ^ Preceding JSDoc comment text, if any (raw lines including @/**@).
+  , _fbDeps        :: !(Set FFIBlockId)
     -- ^ Direct dependencies on other blocks in the same FFI file.
   , _fbAllFreeVars :: !(Set ByteString)
     -- ^ All free identifiers referenced by this block (unfiltered).
     -- Used for cross-file dependency resolution.
-  , _fbOrder :: !Int
+  , _fbOrder       :: !Int
     -- ^ Original position in the source file (for stable ordering).
   }
   deriving (Show)
+
+
+-- | Combined result of building an FFI registry from a source file.
+--
+-- Captures both the per-block registry used for tree-shaking and the
+-- full AST needed for the non-tree-shaken (full-file) output path.
+-- Both are produced from a single parse pass, avoiding redundant work.
+--
+-- When the source file fails to parse, both fields are empty; the caller
+-- must fall back to emitting the raw 'Text.Text' source in that case.
+data FFIRegistryResult = FFIRegistryResult
+  { _frrRegistry :: !(Map FFIBlockId FFIBlock)
+    -- ^ Per-block registry for tree-shaking. Empty on parse failure.
+  , _frrFullAST  :: ![JSAST.JSStatement]
+    -- ^ Full program statements for the fallback (non-tree-shaken) path.
+    -- Empty on parse failure; callers fall back to raw 'Text' in that case.
+  }
 
 
 -- REGISTRY BUILDING
@@ -85,49 +120,53 @@ data FFIBlock = FFIBlock
 -- @var A = 0, B = 1;@), each name is registered as an alias for the
 -- same block.
 buildFFIRegistry :: Text.Text -> Map FFIBlockId FFIBlock
-buildFFIRegistry content =
-  maybe Map.empty (buildFromGroups content) (JSAnalysis.parseBlockGroups content)
+buildFFIRegistry = _frrRegistry . buildFFIRegistryFull
+
+-- | Build a registry result from FFI content in a single parse pass.
+--
+-- Returns both the per-block tree-shaking registry and the complete
+-- top-level statement list for the full-file emit path. Using one parse
+-- for both avoids the redundant parse + render anti-pattern.
+buildFFIRegistryFull :: Text.Text -> FFIRegistryResult
+buildFFIRegistryFull content =
+  case JSAnalysis.parseAllGroups content of
+    Nothing                 -> FFIRegistryResult Map.empty []
+    Just (allStmts, groups) ->
+      FFIRegistryResult (buildFromGroups content groups) allStmts
 
 -- | Build the registry from a parsed list of block groups.
 buildFromGroups :: Text.Text -> [JSAnalysis.BlockGroup] -> Map FFIBlockId FFIBlock
 buildFromGroups content groups =
   Map.union primaryMap aliasMap
   where
-    rawLines = BS8.lines (TextEnc.encodeUtf8 content)
-    totalLines = length rawLines
+    textLines = Text.lines content
     allNames = Set.fromList (concatMap JSAnalysis.groupDeclNames groups)
-    bounds = groupBounds groups rawLines totalLines
-    primaryMap = Map.fromList (zipWith (mkEntry rawLines allNames) groups bounds)
+    starts = List.map (walkBackJSDocText textLines . JSAnalysis._bgLine) groups
+    ends = List.drop 1 starts ++ [length textLines]
+    bounds = zip starts ends
+    primaryMap = Map.fromList (zipWith (mkEntry textLines allNames) groups bounds)
     aliasMap = buildAliasMap primaryMap groups
-
--- | Compute (start, end) line index bounds for each group's content.
---
--- Each group's content spans from its JSDoc walk-back start to the
--- walk-back start of the next group (or end of file).
-groupBounds :: [JSAnalysis.BlockGroup] -> [ByteString] -> Int -> [(Int, Int)]
-groupBounds groups rawLines totalLines =
-  zip starts ends
-  where
-    starts = List.map (\g -> walkBackJSDoc (JSAnalysis._bgLine g) rawLines) groups
-    ends = List.drop 1 starts ++ [totalLines]
 
 -- | Build a single registry entry for a block group.
 mkEntry
-  :: [ByteString]
+  :: [Text.Text]
   -> Set ByteString
   -> JSAnalysis.BlockGroup
   -> (Int, Int)
   -> (FFIBlockId, FFIBlock)
-mkEntry rawLines allNames g (start, end) =
-  (FFIBlockId (JSAnalysis._bgName g), mkBlockFromGroup g allNames blockContent start)
+mkEntry textLines allNames g (start, _end) =
+  (FFIBlockId (JSAnalysis._bgName g), mkBlockFromGroup g allNames jsDoc start)
   where
-    blockContent = BS8.unlines (List.take (end - start) (List.drop start rawLines))
+    docLineCount = JSAnalysis._bgLine g - start
+    jsDocLines = List.take docLineCount (List.drop start textLines)
+    jsDocText = Text.unlines jsDocLines
+    jsDoc = if docLineCount > 0 then Just jsDocText else Nothing
 
 -- | Create an 'FFIBlock' from a parsed group using AST-based dependency analysis.
 mkBlockFromGroup
-  :: JSAnalysis.BlockGroup -> Set ByteString -> ByteString -> Int -> FFIBlock
-mkBlockFromGroup g allNames content order =
-  FFIBlock content deps allFreeVars order
+  :: JSAnalysis.BlockGroup -> Set ByteString -> Maybe Text.Text -> Int -> FFIBlock
+mkBlockFromGroup g allNames jsDoc order =
+  FFIBlock stmts jsDoc deps allFreeVars order
   where
     stmts = JSAnalysis._bgStatements g
     selfName = JSAnalysis._bgName g
@@ -242,40 +281,77 @@ unresolvedRefs localRegistry neededBlocks =
 
 -- | Emit needed blocks in original source order.
 --
--- Given a registry and a set of needed block IDs (already closed
--- over dependencies), emits their content in the original file order.
-emitNeededBlocks :: Map FFIBlockId FFIBlock -> Set FFIBlockId -> Builder
-emitNeededBlocks reg needed =
+-- Given a registry, a prod-mode flag, and a set of needed block IDs
+-- (already closed over dependencies), renders their AST statements to
+-- 'Builder' in the original file order. Any preceding JSDoc comment is
+-- emitted before the rendered statements.
+--
+-- When @isProd@ is 'True', 'minifyJS' is applied before rendering to strip
+-- all whitespace and comments from the output.
+emitNeededBlocks :: Bool -> Map FFIBlockId FFIBlock -> Set FFIBlockId -> Builder
+emitNeededBlocks isProd reg needed =
   foldMap emitOne ordered
   where
     ordered = sortByOrder (Set.toList needed)
     emitOne bid =
-      maybe mempty (BB.byteString . _fbContent) (Map.lookup bid reg)
+      maybe mempty (renderBlock isProd) (Map.lookup bid reg)
     sortByOrder =
       List.sortOn (\bid -> maybe maxBound _fbOrder (Map.lookup bid reg))
 
+-- | Render a single 'FFIBlock' to 'Builder', including any JSDoc prefix.
+--
+-- When @isProd@ is 'True', applies 'minifyJS' before rendering.
+renderBlock :: Bool -> FFIBlock -> Builder
+renderBlock isProd block =
+  foldMap renderJSDoc (_fbJSDoc block)
+  <> renderStatements isProd (_fbStatements block)
+  <> "\n"
 
--- INTERNAL: JSDOC WALK-BACK
+-- | Render JSDoc text to 'Builder'.
+renderJSDoc :: Text.Text -> Builder
+renderJSDoc doc = BB.byteString (TextEnc.encodeUtf8 doc)
 
--- | Walk backwards from a declaration to find where its JSDoc starts.
-walkBackJSDoc :: Int -> [ByteString] -> Int
-walkBackJSDoc 0 _ = 0
-walkBackJSDoc declIdx allLines =
-  go (declIdx - 1)
+-- | Render a list of 'JSStatement' nodes to 'Builder' via the pretty-printer.
+--
+-- Wraps the statements in a 'JSAST.JSAstProgram' so that the printer
+-- produces a top-level program (newline-separated statements) rather than
+-- a single expression or statement fragment.
+--
+-- When @isProd@ is 'True', applies 'minifyJS' to strip whitespace and comments.
+renderStatements :: Bool -> [JSAST.JSStatement] -> Builder
+renderStatements isProd stmts =
+  BB.lazyByteString
+    (Blaze.toLazyByteString
+      (JSPrint.renderJS ast'))
+  where
+    ast  = JSAST.JSAstProgram stmts JSAST.JSNoAnnot
+    ast' = if isProd then JSMinify.minifyJS ast else ast
+
+
+-- INTERNAL: JSDOC WALK-BACK (TEXT-BASED)
+
+-- | Walk backwards from a declaration line to find where its JSDoc starts.
+--
+-- Returns the 0-indexed line at which the JSDoc comment (or other immediately
+-- preceding comments/blank lines) begins, so that the block content includes
+-- the full documentation block.
+walkBackJSDocText :: [Text.Text] -> Int -> Int
+walkBackJSDocText _ 0 = 0
+walkBackJSDocText allLines declIdx = go (declIdx - 1)
   where
     go idx
       | idx < 0 = 0
       | otherwise =
           let line = allLines !! idx
-           in if isJSDocOrComment line || BS.null (BS8.strip line)
+              stripped = Text.dropWhile (== ' ') line
+           in if isJSDocOrComment stripped || Text.null (Text.strip line)
                 then go (idx - 1)
                 else idx + 1
     isJSDocOrComment l =
-      let stripped = BS8.dropWhile (== ' ') l
-       in BS8.isPrefixOf "/**" stripped
-            || BS8.isPrefixOf " *" stripped
-            || BS8.isPrefixOf "*/" stripped
-            || BS8.isPrefixOf "* " stripped
-            || BS8.isPrefixOf "*\n" stripped
-            || BS8.isPrefixOf "//" stripped
-            || stripped == "*"
+      Text.isPrefixOf "/**" l
+        || Text.isPrefixOf " *" l
+        || Text.isPrefixOf "*/" l
+        || Text.isPrefixOf "* " l
+        || Text.isPrefixOf "*\n" l
+        || Text.isPrefixOf "//" l
+        || l == "*"

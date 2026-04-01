@@ -250,7 +250,7 @@ desiredToMode :: DesiredMode -> Bool -> Bool -> Opt.GlobalGraph -> Mode.Mode
 desiredToMode Debug ffiUnsafeFlag ffiDebugFlag _ = Mode.Dev Nothing False ffiUnsafeFlag ffiDebugFlag Set.empty False
 desiredToMode Dev ffiUnsafeFlag ffiDebugFlag _ = Mode.Dev Nothing False ffiUnsafeFlag ffiDebugFlag Set.empty False
 desiredToMode Prod ffiUnsafeFlag ffiDebugFlag globalGraph =
-  Mode.Prod (Mode.shortenFieldNames globalGraph) False ffiUnsafeFlag ffiDebugFlag StringPool.emptyPool Set.empty
+  Mode.Prod (Mode.shortenFieldNames globalGraph) False ffiUnsafeFlag ffiDebugFlag StringPool.emptyPool Set.empty Map.empty
 
 -- | Generate builder for specific build mode.
 --
@@ -269,7 +269,7 @@ generateForMode mode ffiUnsafeFlag ffiDebugFlag artifacts =
     case mode of
       Debug -> return (generateJS (Mode.Dev Nothing False ffiUnsafeFlag ffiDebugFlag Set.empty False) artifacts)
       Dev -> return (generateJS (Mode.Dev Nothing False ffiUnsafeFlag ffiDebugFlag Set.empty False) artifacts)
-      Prod -> return (generateJS (Mode.Prod (Mode.shortenFieldNames globalGraph) False ffiUnsafeFlag ffiDebugFlag StringPool.emptyPool Set.empty) artifacts))
+      Prod -> return (generateJS (Mode.Prod (Mode.shortenFieldNames globalGraph) False ffiUnsafeFlag ffiDebugFlag StringPool.emptyPool Set.empty Map.empty) artifacts))
   where
     globalGraph = extractGlobalGraph artifacts
     wrapGenerate msg = Exit.MakeBadGenerate [Diag.stringToDiagnostic Diag.PhaseGenerate "CODE GENERATION ERROR" msg]

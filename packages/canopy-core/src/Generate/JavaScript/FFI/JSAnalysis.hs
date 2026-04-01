@@ -20,10 +20,14 @@ module Generate.JavaScript.FFI.JSAnalysis
 
     -- * Parsing
   , parseBlockGroups
+  , parseAllGroups
 
     -- * Free-variable analysis
   , freeVarsInGroup
   , allFreeVarsInGroup
+
+    -- * Arity analysis
+  , aritiesInGroup
 
     -- * Group utilities
   , groupDeclNames
@@ -45,6 +49,7 @@ import Language.JavaScript.Parser.AST
   , JSIdent (..)
   , JSObjectProperty (..)
   , JSStatement (..)
+  , JSSwitchParts (..)
   , JSVarInitializer (..)
   )
 import qualified Language.JavaScript.Parser.AST as JSAST
@@ -70,6 +75,21 @@ data BlockGroup = BlockGroup
 
 -- PARSING
 
+-- | Parse an FFI file, returning the full program statements and block groups.
+--
+-- Returns 'Nothing' on parse failure. The full statement list includes ALL
+-- top-level statements (including non-declarations), while the block groups
+-- contain only named declarations with their trailing statements.
+--
+-- Having both in one parse avoids a second round-trip when the caller needs
+-- the complete AST for the non-tree-shaken fallback path.
+parseAllGroups :: Text.Text -> Maybe ([JSStatement], [BlockGroup])
+parseAllGroups content =
+  case JS.parse (Text.unpack content) "<ffi>" of
+    Left _                    -> Nothing
+    Right (JSAstProgram ss _) -> Just (ss, groupStmts ss)
+    Right _                   -> Nothing
+
 -- | Parse an FFI JavaScript file into a list of top-level declaration groups.
 --
 -- Returns 'Nothing' on parse failure; the caller degrades gracefully by
@@ -79,11 +99,7 @@ data BlockGroup = BlockGroup
 -- Statements between two consecutive declarations belong to the preceding
 -- group.
 parseBlockGroups :: Text.Text -> Maybe [BlockGroup]
-parseBlockGroups content =
-  case JS.parse (Text.unpack content) "<ffi>" of
-    Left _                    -> Nothing
-    Right (JSAstProgram ss _) -> Just (groupStmts ss)
-    Right _                   -> Nothing
+parseBlockGroups content = fmap snd (parseAllGroups content)
 
 -- | Group a flat list of statements into declaration groups.
 groupStmts :: [JSStatement] -> [BlockGroup]
@@ -157,7 +173,15 @@ refsInStmt bound = \case
   JSDoWhile _ body _ _ cond _ _ -> refsInStmt bound body <> refsInExpr bound cond
   JSTry _ (JSBlock _ ss _) catches _ ->
     refsInStmts bound ss <> foldMap (refsInCatch bound) catches
+  JSSwitch _ _ switchExpr _ _ cases _ _ ->
+    refsInExpr bound switchExpr <> foldMap (refsInSwitchPart bound) cases
   stmt -> refsInForLike bound stmt
+
+-- | Collect free references in a switch case/default arm.
+refsInSwitchPart :: Set ByteString -> JSSwitchParts -> Set ByteString
+refsInSwitchPart bound = \case
+  JSCase _ caseExpr _ stmts -> refsInExpr bound caseExpr <> refsInStmts bound stmts
+  JSDefault _ _ stmts -> refsInStmts bound stmts
 
 -- | Collect free references in for-loop variants.
 refsInForLike :: Set ByteString -> JSStatement -> Set ByteString
@@ -294,7 +318,14 @@ hoistInStmt = \case
   JSForVar _ _ _ declList _ _ _ _ _ body ->
     Set.fromList (varDeclAllNames declList) <> hoistInStmt body
   JSTry _ (JSBlock _ ss _) _ _ -> hoistVarNames ss
+  JSSwitch _ _ _ _ _ cases _ _ -> foldMap hoistInSwitchPart cases
   _ -> Set.empty
+
+-- | Collect @var@-hoisted names from a switch arm.
+hoistInSwitchPart :: JSSwitchParts -> Set ByteString
+hoistInSwitchPart = \case
+  JSCase _ _ _ stmts -> hoistVarNames stmts
+  JSDefault _ _ stmts -> hoistVarNames stmts
 
 -- | Extract parameter names from a @JSCommaList JSExpression@ param list.
 --
@@ -330,3 +361,117 @@ groupDeclNames bg =
   case _bgStatements bg of
     (JSVariable _ declList _ : _) -> varDeclAllNames declList
     _ -> [_bgName bg]
+
+
+-- ARITY ANALYSIS
+
+-- | Compute the set of F\/A arities referenced in a list of statements.
+--
+-- Scans for calls to @F2@–@F9@ and @A2@–@A9@ in the AST. An arity @n@
+-- is present in the result if the identifier @Fn@ or @An@ appears as
+-- the callee of a call expression anywhere in the statement list.
+--
+-- Used by the runtime registry to determine which F\/A wrappers each
+-- runtime function depends on, enabling precise arity tree-shaking.
+--
+-- @since 0.20.4
+aritiesInGroup :: [JSStatement] -> Set.Set Int
+aritiesInGroup = foldMap aritiesInStmt
+
+-- | Collect arity usages from a single statement.
+aritiesInStmt :: JSStatement -> Set.Set Int
+aritiesInStmt = \case
+  JSVariable _ declList _ ->
+    foldMap aritiesInVarInit (commaListToList declList)
+  JSFunction _ _ _ _ _ (JSBlock _ ss _) _ ->
+    foldMap aritiesInStmt ss
+  JSExpressionStatement expr _ -> aritiesInExpr expr
+  JSAssignStatement lhs _ rhs _ -> aritiesInExpr lhs <> aritiesInExpr rhs
+  JSMethodCall callee _ args _ _ ->
+    aritiesInExpr callee <> foldMap aritiesInExpr (commaListToList args)
+  JSReturn _ mexpr _ -> foldMap aritiesInExpr mexpr
+  JSStatementBlock _ ss _ _ -> foldMap aritiesInStmt ss
+  JSIf _ _ cond _ body -> aritiesInExpr cond <> aritiesInStmt body
+  JSIfElse _ _ cond _ t _ e ->
+    aritiesInExpr cond <> aritiesInStmt t <> aritiesInStmt e
+  JSWhile _ _ cond _ body -> aritiesInExpr cond <> aritiesInStmt body
+  JSDoWhile _ body _ _ cond _ _ -> aritiesInStmt body <> aritiesInExpr cond
+  JSTry _ (JSBlock _ ss _) catches _ ->
+    foldMap aritiesInStmt ss <> foldMap aritiesInCatch catches
+  _ -> Set.empty
+
+-- | Collect arity usages from a catch clause.
+aritiesInCatch :: JSAST.JSTryCatch -> Set.Set Int
+aritiesInCatch (JSAST.JSCatch _ _ _ _ (JSBlock _ ss _)) = foldMap aritiesInStmt ss
+aritiesInCatch _ = Set.empty
+
+-- | Collect arity usages from a variable initializer expression.
+aritiesInVarInit :: JSExpression -> Set.Set Int
+aritiesInVarInit = \case
+  JSVarInitExpression _ (JSVarInit _ e) -> aritiesInExpr e
+  _ -> Set.empty
+
+-- | Collect arity usages from an expression.
+--
+-- Detects @F2@–@F9@ and @A2@–@A9@ as callees in call expressions.
+aritiesInExpr :: JSExpression -> Set.Set Int
+aritiesInExpr = \case
+  JSCallExpression callee _ args _ ->
+    arityFromCallee callee
+    <> aritiesInExpr callee
+    <> foldMap aritiesInExpr (commaListToList args)
+  JSMemberExpression callee _ args _ ->
+    arityFromCallee callee
+    <> aritiesInExpr callee
+    <> foldMap aritiesInExpr (commaListToList args)
+  JSFunctionExpression _ _ _ _ _ (JSBlock _ ss _) ->
+    foldMap aritiesInStmt ss
+  JSAssignExpression l _ r -> aritiesInExpr l <> aritiesInExpr r
+  JSExpressionBinary l _ r -> aritiesInExpr l <> aritiesInExpr r
+  JSExpressionTernary c _ t _ e ->
+    aritiesInExpr c <> aritiesInExpr t <> aritiesInExpr e
+  JSExpressionParen _ e _ -> aritiesInExpr e
+  JSObjectLiteral _ propList _ ->
+    foldMap aritiesInObjProp (trailingListToList propList)
+  JSArrayLiteral _ elems _ -> foldMap aritiesInArrayElem elems
+  _ -> Set.empty
+
+-- | Check if an expression is an F\/A arity callee and return its arity.
+arityFromCallee :: JSExpression -> Set.Set Int
+arityFromCallee (JSIdentifier _ name) = arityFromName name
+arityFromCallee _ = Set.empty
+
+-- | Extract arity from an identifier name matching @F[2-9]@ or @A[2-9]@.
+arityFromName :: ByteString -> Set.Set Int
+arityFromName name =
+  case name of
+    "F2" -> Set.singleton 2
+    "F3" -> Set.singleton 3
+    "F4" -> Set.singleton 4
+    "F5" -> Set.singleton 5
+    "F6" -> Set.singleton 6
+    "F7" -> Set.singleton 7
+    "F8" -> Set.singleton 8
+    "F9" -> Set.singleton 9
+    "A2" -> Set.singleton 2
+    "A3" -> Set.singleton 3
+    "A4" -> Set.singleton 4
+    "A5" -> Set.singleton 5
+    "A6" -> Set.singleton 6
+    "A7" -> Set.singleton 7
+    "A8" -> Set.singleton 8
+    "A9" -> Set.singleton 9
+    _ -> Set.empty
+
+-- | Collect arity usages from an object property.
+aritiesInObjProp :: JSObjectProperty -> Set.Set Int
+aritiesInObjProp = \case
+  JSPropertyNameandValue _ _ exprs -> foldMap aritiesInExpr exprs
+  JSObjectSpread _ e -> aritiesInExpr e
+  _ -> Set.empty
+
+-- | Collect arity usages from an array element.
+aritiesInArrayElem :: JSArrayElement -> Set.Set Int
+aritiesInArrayElem = \case
+  JSArrayElement e -> aritiesInExpr e
+  JSArrayComma _ -> Set.empty

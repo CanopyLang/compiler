@@ -1,27 +1,29 @@
 {-# LANGUAGE OverloadedStrings #-}
 
--- | FFI content minification for production builds.
+-- | FFI content processing for production builds.
 --
--- Applies basic JavaScript minification to FFI file content:
---
---   * Strip single-line comments (@\/\/@) that start a line
---   * Strip multi-line comments (@\/* ... *\/@) except JSDoc with \@canopy-type
---   * Remove blank lines
---   * Remove @if (__canopy_debug)@ branches via AST transformation
+-- Removes @if (__canopy_debug)@ branches via AST transformation.
 --
 -- Debug branch elimination uses the @language-javascript@ AST to correctly
 -- handle ternaries, if\/else blocks, and nested expressions without the
 -- fragility of string-based brace counting.
 --
+-- Comments are dropped naturally during @language-javascript@ parsing, so
+-- there is no need for text-level comment stripping anywhere in the pipeline.
+--
+-- 'stripDebugBranches' operates directly on @[JSStatement]@ and is the
+-- primary entry point for production FFI blocks (already in AST form).
+-- 'stripDebugBranchesBS' is provided for callers that start from 'ByteString'
+-- (e.g. the embedded runtime), and adds a parse + render round-trip.
+--
 -- @since 0.20.2
 module Generate.JavaScript.FFI.Minify
-  ( minifyFFI
-  , stripDebugBranches
+  ( stripDebugBranches
+  , stripDebugBranchesBS
   ) where
 
-import Data.ByteString (ByteString)
 import qualified Blaze.ByteString.Builder as Blaze
-import qualified Data.ByteString as BS
+import Data.ByteString (ByteString)
 import qualified Data.ByteString.Char8 as BS8
 import qualified Data.Maybe as Maybe
 import qualified Language.JavaScript.Parser as JSParser
@@ -29,69 +31,32 @@ import qualified Language.JavaScript.Parser.AST as JS
 import qualified Language.JavaScript.Pretty.Printer as JSPrint
 
 
--- | Apply basic minification to FFI JavaScript content.
---
--- Strips line-leading comments and removes blank lines.
-minifyFFI :: ByteString -> ByteString
-minifyFFI content =
-  BS8.unlines (filter keepLine processedLines)
-  where
-    rawLines = BS8.lines content
-    processedLines = stripBlockComments rawLines
-    keepLine line =
-      let stripped = BS8.strip line
-       in not (BS.null stripped)
-            && not (isFullLineComment stripped)
-
--- | Check if a line is purely a comment (@\/\/@ at start).
-isFullLineComment :: ByteString -> Bool
-isFullLineComment line =
-  BS8.isPrefixOf "//" line
-
--- | Remove multi-line comment blocks, preserving JSDoc with \@canopy-type.
-stripBlockComments :: [ByteString] -> [ByteString]
-stripBlockComments [] = []
-stripBlockComments (line : rest)
-  | isBlockCommentStart (BS8.strip line)
-  , not (hasCanopyType (line : rest)) =
-      stripBlockComments (dropUntilCommentEnd rest)
-  | otherwise = line : stripBlockComments rest
-
--- | Check if a line starts a block comment (@\/*@).
-isBlockCommentStart :: ByteString -> Bool
-isBlockCommentStart line =
-  BS8.isPrefixOf "/*" line || BS8.isPrefixOf "/**" line
-
--- | Check if a block comment contains \@canopy-type.
-hasCanopyType :: [ByteString] -> Bool
-hasCanopyType [] = False
-hasCanopyType (line : rest)
-  | BS8.isInfixOf "@canopy-type" line = True
-  | BS8.isInfixOf "*/" line = False
-  | otherwise = hasCanopyType rest
-
--- | Drop lines until end of block comment (@*\/@).
-dropUntilCommentEnd :: [ByteString] -> [ByteString]
-dropUntilCommentEnd [] = []
-dropUntilCommentEnd (line : rest)
-  | BS8.isInfixOf "*/" line = rest
-  | otherwise = dropUntilCommentEnd rest
-
-
 -- AST-LEVEL DEBUG BRANCH ELIMINATION
 
--- | Strip @__canopy_debug@ branches from JavaScript content.
+-- | Strip @__canopy_debug@ branches from a list of JavaScript statements.
 --
--- Parses the JavaScript into an AST using @language-javascript@, then
--- recursively eliminates debug-conditional patterns:
+-- Recursively eliminates debug-conditional patterns:
 --
 --   * @__canopy_debug ? debugExpr : prodExpr@ becomes @prodExpr@
 --   * @if (__canopy_debug) { ... } else { ... }@ becomes the else body
 --   * @if (__canopy_debug) { ... }@ is removed entirely
 --
--- On parse failure, returns the input unchanged as a defensive fallback.
-stripDebugBranches :: ByteString -> ByteString
-stripDebugBranches content =
+-- Operates on an already-parsed @[JSStatement]@ list, avoiding any
+-- re-parse overhead. Use 'stripDebugBranchesBS' for callers that start
+-- from raw 'ByteString' source.
+stripDebugBranches :: [JS.JSStatement] -> [JS.JSStatement]
+stripDebugBranches = transformStmts
+
+-- | Strip @__canopy_debug@ branches from raw JavaScript 'ByteString' source.
+--
+-- Parses the input into an AST, applies 'stripDebugBranches', then renders
+-- back to 'ByteString'. On parse failure returns the input unchanged.
+--
+-- Use this variant only when starting from raw bytes (e.g. the embedded
+-- runtime). For FFI blocks that are already in AST form, use 'stripDebugBranches'
+-- directly to avoid the redundant parse + render round-trip.
+stripDebugBranchesBS :: ByteString -> ByteString
+stripDebugBranchesBS content =
   case JSParser.parseModule (BS8.unpack content) "<ffi>" of
     Left _ -> content
     Right ast -> renderAST (transformAST ast)
