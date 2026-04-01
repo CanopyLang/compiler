@@ -49,6 +49,7 @@ import qualified AST.Optimized as Opt
 import qualified Data.Char as Char
 import Control.Lens (Lens', (.~), (&))
 import qualified Data.Binary as Binary
+import qualified Data.ByteString.Char8 as BS8
 import Data.ByteString.Builder (Builder)
 import qualified Data.ByteString.Builder as BB
 import qualified Data.List as List
@@ -60,9 +61,15 @@ import qualified Data.Set as Set
 import qualified Data.Text as Text
 import qualified Data.Text.Encoding as TextEnc
 import qualified FFI.TypeParser as TypeParser
+import qualified Generate.JavaScript.Builder as JS
+import Generate.JavaScript.Builder (Expr, Stmt, stmtToJS, noAnnot, spaceAnnot, leadingSpaceAnnot)
 import qualified Generate.JavaScript.FFI.Minify as FFIMinify
 import qualified Generate.JavaScript.FFI.Registry as FFIRegistry
+import qualified Generate.JavaScript.Name as JsName
 import qualified Language.JavaScript.Parser.AST as JSAST
+import qualified Language.JavaScript.Pretty.Printer as JSPrint
+import qualified Language.JavaScript.Process.Minify as JSMinify
+import qualified Blaze.ByteString.Builder as Blaze
 import FFI.Types (BindingMode (..))
 import qualified FFI.Validator as Validator
 import qualified Generate.Mode as Mode
@@ -372,10 +379,6 @@ formatFFIWithBindings mode graph usedFuncs fileResults resolvedNeeded _key info 
         (FFIRegistry._fbDeps block)
         (FFIRegistry._fbAllFreeVars block)
         (FFIRegistry._fbOrder block)
-    ffiContent' =
-      if treeShaken
-        then emitFullAST fullAST isProd contentText
-        else FFIRegistry.emitNeededBlocks isProd processedRegistry allNeeded
 
     -- Only export names that exist in needed blocks
     neededInternalNames =
@@ -386,41 +389,67 @@ formatFFIWithBindings mode graph usedFuncs fileResults resolvedNeeded _key info 
       if treeShaken
         then jsNames ++ neededInternalNames
         else List.map jsReferenceName neededFunctions ++ neededInternalNames
-    returnObj = buildIIFEReturnObj allExportNames
 
-    wrappedContent rest =
-      ("\n// From " <> BB.stringUtf8 path <> " (IIFE-isolated)\n")
-        : ("var " <> BB.stringUtf8 iifeVar <> " = (function() {\n")
-        : ffiContent'
-        : ("\nreturn " <> returnObj <> ";\n")
-        : "})();\n"
-        : rest
-    reExports = List.map (reExportInternal iifeVar) neededInternalNames
-                  ++ kernelReExports aliasStr iifeVar neededFunctions
+    -- Build the IIFE body statements.
+    -- When the registry is empty (parse failure), fullAST is also empty and we
+    -- fall back to raw text for the FFI content. Otherwise we use AST.
+    -- For treeShaken: use fullAST, apply debug strip if needed.
+    -- For non-treeShaken: processedRegistry already has debug stripping applied per-block.
+    hasParsedAST = not (null fullAST) || not (Map.null ffiRegistry)
+
+    iifeBodyStmts
+      | not hasParsedAST = []   -- parse failure: handled by text fallback
+      | treeShaken       = if isProd then FFIMinify.stripDebugBranches fullAST else fullAST
+      | otherwise        = FFIRegistry.collectNeededStatements processedRegistry allNeeded
+
+    -- Return expression: { name1: name1, ... }
+    returnJSStmt = stmtToJS (JS.Return (buildIIFEReturnExpr allExportNames))
+
+    -- var _iifeVar = (function() { body; return {...}; })();
+    iifeJSStmt = buildIIFEJSVarStmt (BS8.pack iifeVar) (iifeBodyStmts ++ [returnJSStmt])
+    iifeProgram = JSAST.JSAstProgram [iifeJSStmt] JSAST.JSNoAnnot
+    iifeProgram' = if isProd then JSMinify.minifyJS iifeProgram else iifeProgram
+
+    -- Post-IIFE: re-exports, namespace init, bindings — all as JS.Stmt then unified JSAST
+    iifeJsName   = JsName.fromBuilder (BB.stringUtf8 iifeVar)
+    aliasJsName  = JsName.fromBuilder (BB.stringUtf8 aliasStr)
     iifeFunctions = List.map (iifeExtractedFFI iifeVarText) neededFunctions
-    bindings = concatMap (generateFFIBinding mode graph path aliasStr) iifeFunctions
-    bindingsSection =
-      case bindings of
-        [] -> []
-        _ ->
-          ("\n// Bindings for " <> BB.stringUtf8 path <> "\n")
-            : ("var " <> BB.stringUtf8 aliasStr <> " = " <> BB.stringUtf8 aliasStr <> " || {};\n")
-            : List.map (<> "\n") bindings ++ ["\n"]
+    bindingJsStmts = concatMap (generateFFIBinding mode graph path aliasStr) iifeFunctions
+    reExportJsStmts =
+      List.map (reExportInternalStmt iifeJsName) neededInternalNames
+        ++ kernelReExportJsStmts aliasStr iifeJsName neededFunctions
+    nsJsStmt = [namespaceInitStmt aliasJsName | not (null bindingJsStmts)]
+    allPostJsStmts = reExportJsStmts ++ nsJsStmt ++ bindingJsStmts
+    postProgram = JSAST.JSAstProgram (map stmtToJS allPostJsStmts) JSAST.JSNoAnnot
+    postProgram' = if isProd then JSMinify.minifyJS postProgram else postProgram
 
--- | Emit the full FFI file AST as a 'Builder'.
---
--- When @isProd@ is set, strips debug branches from the AST before rendering.
--- Falls back to raw 'Text' encoding only when the AST is empty (parse failure):
--- this is the sole place raw source bytes can enter the output pipeline.
-emitFullAST :: [JSAST.JSStatement] -> Bool -> Text.Text -> Builder
-emitFullAST [] _ rawText =
-  BB.byteString (TextEnc.encodeUtf8 rawText)
-emitFullAST stmts isProd _ =
-  FFIRegistry.renderStatements isProd processedStmts
-  where
-    processedStmts
-      | isProd    = FFIMinify.stripDebugBranches stmts
-      | otherwise = stmts
+    renderProg p = BB.lazyByteString (Blaze.toLazyByteString (JSPrint.renderJS p))
+
+    -- Assemble final output builders
+    wrappedContent rest
+      | not hasParsedAST =
+          -- Parse failure fallback: use text-based IIFE wrapping
+          ("\n// From " <> BB.stringUtf8 path <> " (IIFE-isolated)\n")
+            : ("var " <> BB.stringUtf8 iifeVar <> " = (function() {\n")
+            : BB.byteString (TextEnc.encodeUtf8 contentText)
+            : ("\nreturn " <> buildIIFEReturnObjFallback allExportNames <> ";\n")
+            : "})();\n"
+            : rest
+      | otherwise =
+          ("\n// From " <> BB.stringUtf8 path <> " (IIFE-isolated)\n")
+            : renderProg iifeProgram'
+            : "\n"
+            : rest
+
+    reExports = []   -- handled inside allPostJsStmts
+    bindingsSection =
+      if null allPostJsStmts
+        then []
+        else [ "\n// Bindings for " <> BB.stringUtf8 path <> "\n"
+             , renderProg postProgram'
+             , "\n"
+             ]
+
 
 -- | Filter extracted FFI functions to only those actually used.
 --
@@ -474,7 +503,7 @@ filterNeededInternals names reg needed =
        in Set.member bid needed
             || not (Map.member bid reg)
 
--- | Generate kernel-style re-exports for @\@name@-annotated FFI functions.
+-- | Generate kernel-style re-export statements for @\@name@-annotated FFI functions.
 --
 -- When an FFI alias ends with @\"FFI\"@ (e.g. @VirtualDomFFI@), the codegen
 -- may reference functions using the kernel naming convention
@@ -482,48 +511,85 @@ filterNeededInternals names reg needed =
 -- re-exports from the IIFE to create those global bindings.
 --
 -- @since 0.19.2
-kernelReExports :: String -> String -> [ExtractedFFI] -> [Builder]
-kernelReExports aliasStr iifeVar functions =
+kernelReExportJsStmts :: String -> JsName.Name -> [ExtractedFFI] -> [Stmt]
+kernelReExportJsStmts aliasStr iifeJsName functions =
   case stripFFISuffix aliasStr of
     Nothing -> []
     Just kernelBase ->
-      concatMap (mkKernelReExport kernelBase iifeVar) functions
+      concatMap (mkKernelReExportStmt kernelBase iifeJsName) functions
 
 -- | Strip the @\"FFI\"@ suffix from an alias name.
 stripFFISuffix :: String -> Maybe String
 stripFFISuffix s =
   fmap Text.unpack (Text.stripSuffix "FFI" (Text.pack s))
 
--- | Emit a single kernel re-export for an FFI function.
-mkKernelReExport :: String -> String -> ExtractedFFI -> [Builder]
-mkKernelReExport kernelBase iifeVar ef =
-  let funcName = Text.unpack (jsReferenceName ef)
-      kernelName = "_" <> kernelBase <> "_" <> funcName
-      iifeRef = iifeVar <> "." <> funcName
-   in ["var " <> BB.stringUtf8 kernelName <> " = " <> BB.stringUtf8 iifeRef <> ";\n"]
+-- | Emit a single kernel re-export statement for an FFI function.
+--
+-- Produces @var _Module_funcName = _AliasIIFE.funcName;@ as a 'Stmt'.
+mkKernelReExportStmt :: String -> JsName.Name -> ExtractedFFI -> [Stmt]
+mkKernelReExportStmt kernelBase iifeJsName ef =
+  let funcNameText = jsReferenceName ef
+      kernelJsName = JsName.fromBuilder (BB.stringUtf8 ("_" ++ kernelBase ++ "_" ++ Text.unpack funcNameText))
+      funcJsName   = JsName.fromBuilder (BB.byteString (TextEnc.encodeUtf8 funcNameText))
+   in [JS.Var kernelJsName (JS.Access (JS.Ref iifeJsName) funcJsName)]
 
--- | Re-export an internal @_@-prefixed name from the IIFE to global scope.
+-- | Build a 'Stmt' re-exporting an internal @_@-prefixed name from the IIFE.
 --
 -- Produces @var _Json_unwrap = _JsonFFIIIFE._Json_unwrap;@ so that other
 -- FFI files can reference these conventionally-scoped helper functions.
-reExportInternal :: String -> Text.Text -> Builder
-reExportInternal iifeVar name =
-  "var " <> nameB <> " = " <> BB.stringUtf8 iifeVar <> "." <> nameB <> ";\n"
+reExportInternalStmt :: JsName.Name -> Text.Text -> Stmt
+reExportInternalStmt iifeJsName name =
+  JS.Var nameJsName (JS.Access (JS.Ref iifeJsName) nameJsName)
   where
-    nameB = BB.byteString (TextEnc.encodeUtf8 name)
+    nameJsName = JsName.fromBuilder (BB.byteString (TextEnc.encodeUtf8 name))
 
--- | Build the IIFE return object mapping names to their values.
+-- | Build the IIFE return object expression: @{ name1: name1, name2: name2, ... }@.
+buildIIFEReturnExpr :: [Text.Text] -> Expr
+buildIIFEReturnExpr names =
+  JS.Object
+    [ (n, JS.Ref n)
+    | name <- names
+    , let n = JsName.fromBuilder (BB.byteString (TextEnc.encodeUtf8 name))
+    ]
+
+-- | Text-based IIFE return object for the parse-failure fallback path.
 --
--- Produces @{ name1: name1, name2: name2, ... }@ for all names
--- (both annotated FFI functions and internal @_@-prefixed helpers).
-buildIIFEReturnObj :: [Text.Text] -> Builder
-buildIIFEReturnObj names =
+-- Only used when the FFI file could not be parsed into an AST, which is a
+-- rare error condition. All normal paths use 'buildIIFEReturnExpr'.
+buildIIFEReturnObjFallback :: [Text.Text] -> Builder
+buildIIFEReturnObjFallback names =
   "{ " <> entries <> " }"
   where
     entries = mconcat (List.intersperse ", " (List.map mkEntry names))
     mkEntry n =
       let b = BB.byteString (TextEnc.encodeUtf8 n)
        in b <> ": " <> b
+
+-- | Build a namespace initialisation statement: @var Alias = Alias || {};@
+namespaceInitStmt :: JsName.Name -> Stmt
+namespaceInitStmt aliasJsName =
+  JS.Var aliasJsName (JS.Infix JS.OpOr (JS.Ref aliasJsName) (JS.Object []))
+
+-- | Build the @var _iifeVar = (function() { body })();@ JSStatement.
+--
+-- Constructs the IIFE wrapper directly in the @language-javascript@ AST so
+-- that the IIFE body (which may include pre-parsed registry statements) and
+-- the generated bindings can be rendered as a single unified program subject
+-- to minification.
+buildIIFEJSVarStmt :: BS8.ByteString -> [JSAST.JSStatement] -> JSAST.JSStatement
+buildIIFEJSVarStmt iifeVarBS bodyStmts =
+  JSAST.JSVariable noAnnot
+    (JSAST.JSLOne (JSAST.JSVarInitExpression
+      (JSAST.JSIdentifier leadingSpaceAnnot iifeVarBS)
+      (JSAST.JSVarInit spaceAnnot iifeCallExpr)))
+    (JSAST.JSSemi noAnnot)
+  where
+    iifeFuncExpr = JSAST.JSFunctionExpression
+      leadingSpaceAnnot JSAST.JSIdentNone noAnnot JSAST.JSLNil noAnnot
+      (JSAST.JSBlock noAnnot bodyStmts noAnnot)
+    iifeCallExpr = JSAST.JSCallExpression
+      (JSAST.JSExpressionParen noAnnot iifeFuncExpr noAnnot)
+      noAnnot JSAST.JSLNil noAnnot
 
 -- | Extract @_@-prefixed top-level function\/var names from FFI content.
 --
@@ -727,153 +793,164 @@ findFunctionName (line:rest)
 
 -- GENERATE FUNCTION BINDINGS
 
--- | Generate JavaScript binding for an extracted FFI function.
+-- | Build a 'JsName.Name' for an FFI argument: @_0@, @_1@, ...
+ffiArgName :: Int -> JsName.Name
+ffiArgName i = JsName.fromBuilder ("_" <> BB.intDec i)
+
+-- | Build the global binding variable name: @$author$project$Alias$func@.
+ffiVarName :: String -> String -> JsName.Name
+ffiVarName alias canopyName =
+  JsName.fromBuilder (BB.stringUtf8 ("$author$project$" ++ alias ++ "$" ++ canopyName))
+
+-- | Build a simple (unvalidated) function value expression.
+--
+-- For arity > 1 wraps @(fn.f||fn)@ with @F<N>()@ for Canopy's currying
+-- protocol. For arity <= 1 references the function directly.
+buildSimpleExpr :: JsName.Name -> Int -> Expr
+buildSimpleExpr jsRefName arity
+  | arity > 1 =
+      wrapArityExpr arity
+        (JS.Infix JS.OpOr
+          (JS.Access (JS.Ref jsRefName) (JsName.fromBuilder "f"))
+          (JS.Ref jsRefName))
+  | otherwise = JS.Ref jsRefName
+
+-- | Build a validated function value expression using @$validate.*@ wrappers.
+--
+-- Arity 0 (value): validates the value directly.
+-- Arity >= 1 (function): wraps the call in a function that validates the result.
+buildValidatedExpr :: JsName.Name -> Int -> Text.Text -> Text.Text -> Expr
+buildValidatedExpr jsRefName arity canopyType callPath =
+  let validatorE = typeToValidatorExpr (extractReturnType canopyType)
+      callPathE  = JS.String (BB.byteString (TextEnc.encodeUtf8 callPath))
+  in if arity <= 0
+     then JS.Call validatorE [JS.Ref jsRefName, callPathE]
+     else
+       let args     = map ffiArgName [0 .. arity - 1]
+           rawFunc
+             | arity > 1 =
+                 JS.Infix JS.OpOr
+                   (JS.Access (JS.Ref jsRefName) (JsName.fromBuilder "f"))
+                   (JS.Ref jsRefName)
+             | otherwise = JS.Ref jsRefName
+           inner    = JS.Call rawFunc (map JS.Ref args)
+           validated = JS.Call validatorE [inner, callPathE]
+           funcE    = JS.Function Nothing args [JS.Return validated]
+       in wrapArityExpr arity funcE
+
+-- | Emit the two canonical binding statements: var decl + namespace assignment.
+makeBindingStmts :: JsName.Name -> JsName.Name -> JsName.Name -> Expr -> [Stmt]
+makeBindingStmts varName aliasJsName propJsName valueExpr =
+  [ JS.Var varName valueExpr
+  , JS.ExprStmt (JS.Assign (JS.LDot (JS.Ref aliasJsName) propJsName) (JS.Ref varName))
+  ]
+
+-- | Generate JavaScript AST statements for an extracted FFI function binding.
 --
 -- Validates that the function name is a safe JavaScript identifier
--- before generating any code. For binding modes other than FunctionCall,
+-- before generating any code. For binding modes other than 'FunctionCall',
 -- generates inline JavaScript expressions (method calls, property access,
 -- constructor invocations) instead of delegating to a JS function.
 --
--- @since 0.20.0
-generateFFIBinding :: Mode.Mode -> Graph -> String -> String -> ExtractedFFI -> [Builder]
+-- @since 0.20.4
+generateFFIBinding :: Mode.Mode -> Graph -> String -> String -> ExtractedFFI -> [Stmt]
 generateFFIBinding mode _graph _filePath alias ef
   | not (isValidJsIdentifier canopyName) = []
   | otherwise =
       case _extractedMode ef of
-        FunctionCall -> generateFunctionCallBinding mode alias ef
+        FunctionCall          -> generateFunctionCallBinding mode alias ef
         MethodCall methodName -> generateMethodBinding alias ef methodName
-        PropertyGet propName -> generatePropertyGetBinding alias ef propName
-        PropertySet propName -> generatePropertySetBinding alias ef propName
-        ConstructorCall className -> generateConstructorBinding alias ef className
+        PropertyGet propName  -> generatePropertyGetBinding alias ef propName
+        PropertySet propName  -> generatePropertySetBinding alias ef propName
+        ConstructorCall cls   -> generateConstructorBinding alias ef cls
   where
     canopyName = Text.unpack (effectiveName ef)
 
--- | Generate binding for a standard function call.
-generateFunctionCallBinding :: Mode.Mode -> String -> ExtractedFFI -> [Builder]
+-- | Generate binding statements for a standard function call.
+generateFunctionCallBinding :: Mode.Mode -> String -> ExtractedFFI -> [Stmt]
 generateFunctionCallBinding mode alias ef =
-  let canopyNameText = effectiveName ef
-      canopyName = Text.unpack canopyNameText
-      canopyTypeText = _extractedType ef
-      arity = maybe 0 TypeParser.countArity (TypeParser.parseType canopyTypeText)
-      jsVarB = BB.stringUtf8 ("$author$project$" ++ alias ++ "$" ++ canopyName)
-      aliasB = BB.stringUtf8 alias
-      canopyNameB = BB.byteString (TextEnc.encodeUtf8 canopyNameText)
-      jsNameB = BB.byteString (TextEnc.encodeUtf8 (jsReferenceName ef))
-      callPathB = "'" <> escapeJsString (Text.pack alias <> "." <> canopyNameText) <> "'"
-   in if Mode.isFFIStrict mode
-        then generateValidatedBinding jsVarB aliasB canopyNameB jsNameB arity canopyTypeText callPathB
-        else generateSimpleBinding jsVarB aliasB canopyNameB jsNameB arity
+  makeBindingStmts varName aliasJsName canopyJsName valueExpr
+  where
+    canopyNameText = effectiveName ef
+    canopyName     = Text.unpack canopyNameText
+    canopyTypeText = _extractedType ef
+    arity          = maybe 0 TypeParser.countArity (TypeParser.parseType canopyTypeText)
+    varName        = ffiVarName alias canopyName
+    aliasJsName    = JsName.fromBuilder (BB.stringUtf8 alias)
+    canopyJsName   = JsName.fromBuilder (BB.byteString (TextEnc.encodeUtf8 canopyNameText))
+    jsRefName      = JsName.fromBuilder (BB.byteString (TextEnc.encodeUtf8 (jsReferenceName ef)))
+    callPath       = Text.pack alias <> "." <> canopyNameText
+    valueExpr
+      | Mode.isFFIStrict mode = buildValidatedExpr jsRefName arity canopyTypeText callPath
+      | otherwise             = buildSimpleExpr jsRefName arity
 
--- | Generate binding for a method call: @obj.method(args)@.
-generateMethodBinding :: String -> ExtractedFFI -> Text.Text -> [Builder]
+-- | Generate binding statements for a method call: @obj.method(args)@.
+generateMethodBinding :: String -> ExtractedFFI -> Text.Text -> [Stmt]
 generateMethodBinding alias ef methodName =
-  let canopyNameText = effectiveName ef
-      canopyName = Text.unpack canopyNameText
-      arity = maybe 0 TypeParser.countArity (TypeParser.parseType (_extractedType ef))
-      jsVarB = BB.stringUtf8 ("$author$project$" ++ alias ++ "$" ++ canopyName)
-      aliasB = BB.stringUtf8 alias
-      nameB = BB.byteString (TextEnc.encodeUtf8 canopyNameText)
-      methodB = BB.byteString (TextEnc.encodeUtf8 methodName)
-      args = map (\i -> "_" <> BB.intDec i) [0 .. arity - 1]
-      argList = mconcat (List.intersperse ", " args)
-      restArgs = mconcat (List.intersperse ", " (drop 1 args))
-      body = "_0." <> methodB <> "(" <> restArgs <> ")"
-      funcExpr = wrapArity arity ("function(" <> argList <> ") { return " <> body <> "; }")
-   in ["var " <> jsVarB <> " = " <> funcExpr <> ";", aliasB <> "." <> nameB <> " = " <> jsVarB <> ";"]
+  makeBindingStmts varName aliasJsName nameJsName funcExpr
+  where
+    canopyNameText = effectiveName ef
+    canopyName     = Text.unpack canopyNameText
+    arity          = maybe 0 TypeParser.countArity (TypeParser.parseType (_extractedType ef))
+    varName        = ffiVarName alias canopyName
+    aliasJsName    = JsName.fromBuilder (BB.stringUtf8 alias)
+    nameJsName     = JsName.fromBuilder (BB.byteString (TextEnc.encodeUtf8 canopyNameText))
+    methodJsName   = JsName.fromBuilder (BB.byteString (TextEnc.encodeUtf8 methodName))
+    args           = map ffiArgName [0 .. arity - 1]
+    body           = JS.Call (JS.Access (JS.Ref (ffiArgName 0)) methodJsName) (map JS.Ref (drop 1 args))
+    funcExpr       = wrapArityExpr arity (JS.Function Nothing args [JS.Return body])
 
--- | Generate binding for a property getter: @obj.propName@.
-generatePropertyGetBinding :: String -> ExtractedFFI -> Text.Text -> [Builder]
+-- | Generate binding statements for a property getter: @obj.propName@.
+generatePropertyGetBinding :: String -> ExtractedFFI -> Text.Text -> [Stmt]
 generatePropertyGetBinding alias ef propName =
-  let canopyNameText = effectiveName ef
-      canopyName = Text.unpack canopyNameText
-      jsVarB = BB.stringUtf8 ("$author$project$" ++ alias ++ "$" ++ canopyName)
-      aliasB = BB.stringUtf8 alias
-      nameB = BB.byteString (TextEnc.encodeUtf8 canopyNameText)
-      propB = BB.byteString (TextEnc.encodeUtf8 propName)
-      body = "_0." <> propB
-      funcExpr = "function(_0) { return " <> body <> "; }"
-   in ["var " <> jsVarB <> " = " <> funcExpr <> ";", aliasB <> "." <> nameB <> " = " <> jsVarB <> ";"]
+  makeBindingStmts varName aliasJsName nameJsName funcExpr
+  where
+    canopyNameText = effectiveName ef
+    canopyName     = Text.unpack canopyNameText
+    varName        = ffiVarName alias canopyName
+    aliasJsName    = JsName.fromBuilder (BB.stringUtf8 alias)
+    nameJsName     = JsName.fromBuilder (BB.byteString (TextEnc.encodeUtf8 canopyNameText))
+    propJsName     = JsName.fromBuilder (BB.byteString (TextEnc.encodeUtf8 propName))
+    arg0           = ffiArgName 0
+    funcExpr       = JS.Function Nothing [arg0] [JS.Return (JS.Access (JS.Ref arg0) propJsName)]
 
--- | Generate binding for a property setter: @obj.propName = val@.
-generatePropertySetBinding :: String -> ExtractedFFI -> Text.Text -> [Builder]
+-- | Generate binding statements for a property setter: @obj.propName = val@.
+generatePropertySetBinding :: String -> ExtractedFFI -> Text.Text -> [Stmt]
 generatePropertySetBinding alias ef propName =
-  let canopyNameText = effectiveName ef
-      canopyName = Text.unpack canopyNameText
-      jsVarB = BB.stringUtf8 ("$author$project$" ++ alias ++ "$" ++ canopyName)
-      aliasB = BB.stringUtf8 alias
-      nameB = BB.byteString (TextEnc.encodeUtf8 canopyNameText)
-      propB = BB.byteString (TextEnc.encodeUtf8 propName)
-      body = "_0." <> propB <> " = _1"
-      funcExpr = wrapArity 2 ("function(_0, _1) { " <> body <> "; }")
-   in ["var " <> jsVarB <> " = " <> funcExpr <> ";", aliasB <> "." <> nameB <> " = " <> jsVarB <> ";"]
+  makeBindingStmts varName aliasJsName nameJsName funcExpr
+  where
+    canopyNameText = effectiveName ef
+    canopyName     = Text.unpack canopyNameText
+    varName        = ffiVarName alias canopyName
+    aliasJsName    = JsName.fromBuilder (BB.stringUtf8 alias)
+    nameJsName     = JsName.fromBuilder (BB.byteString (TextEnc.encodeUtf8 canopyNameText))
+    propJsName     = JsName.fromBuilder (BB.byteString (TextEnc.encodeUtf8 propName))
+    arg0           = ffiArgName 0
+    arg1           = ffiArgName 1
+    assignBody     = JS.ExprStmt (JS.Assign (JS.LDot (JS.Ref arg0) propJsName) (JS.Ref arg1))
+    funcExpr       = wrapArityExpr 2 (JS.Function Nothing [arg0, arg1] [assignBody])
 
--- | Generate binding for a constructor call: @new ClassName(args)@.
-generateConstructorBinding :: String -> ExtractedFFI -> Text.Text -> [Builder]
+-- | Generate binding statements for a constructor call: @new ClassName(args)@.
+generateConstructorBinding :: String -> ExtractedFFI -> Text.Text -> [Stmt]
 generateConstructorBinding alias ef className =
-  let canopyNameText = effectiveName ef
-      canopyName = Text.unpack canopyNameText
-      arity = maybe 0 TypeParser.countArity (TypeParser.parseType (_extractedType ef))
-      jsVarB = BB.stringUtf8 ("$author$project$" ++ alias ++ "$" ++ canopyName)
-      aliasB = BB.stringUtf8 alias
-      nameB = BB.byteString (TextEnc.encodeUtf8 canopyNameText)
-      classB = BB.byteString (TextEnc.encodeUtf8 className)
-      args = map (\i -> "_" <> BB.intDec i) [0 .. arity - 1]
-      argList = mconcat (List.intersperse ", " args)
-      body = "new " <> classB <> "(" <> argList <> ")"
-      funcExpr = wrapArity arity ("function(" <> argList <> ") { return " <> body <> "; }")
-   in ["var " <> jsVarB <> " = " <> funcExpr <> ";", aliasB <> "." <> nameB <> " = " <> jsVarB <> ";"]
+  makeBindingStmts varName aliasJsName nameJsName funcExpr
+  where
+    canopyNameText = effectiveName ef
+    canopyName     = Text.unpack canopyNameText
+    arity          = maybe 0 TypeParser.countArity (TypeParser.parseType (_extractedType ef))
+    varName        = ffiVarName alias canopyName
+    aliasJsName    = JsName.fromBuilder (BB.stringUtf8 alias)
+    nameJsName     = JsName.fromBuilder (BB.byteString (TextEnc.encodeUtf8 canopyNameText))
+    classJsName    = JsName.fromBuilder (BB.byteString (TextEnc.encodeUtf8 className))
+    args           = map ffiArgName [0 .. arity - 1]
+    body           = JS.New (JS.Ref classJsName) (map JS.Ref args)
+    funcExpr       = wrapArityExpr arity (JS.Function Nothing args [JS.Return body])
 
--- | Wrap a function expression with F<N>() for currying when arity > 1.
-wrapArity :: Int -> Builder -> Builder
-wrapArity arity funcExpr
+-- | Wrap a function expression with @F\<N\>()@ for Canopy's currying protocol.
+wrapArityExpr :: Int -> Expr -> Expr
+wrapArityExpr arity funcExpr
   | arity <= 1 = funcExpr
-  | otherwise = "F" <> BB.intDec arity <> "(" <> funcExpr <> ")"
-
--- | Generate simple binding without validation.
---
--- Uses the JS function name (@jsNameB@) on the RHS to reference the actual
--- function defined in the FFI file, and the Canopy name (@canopyNameB@) for
--- the namespace property key.
---
--- @since 0.19.2
-generateSimpleBinding :: Builder -> Builder -> Builder -> Builder -> Int -> [Builder]
-generateSimpleBinding jsVarB aliasB canopyNameB jsNameB arity =
-  let rawName = if arity > 1 then "(" <> jsNameB <> ".f||" <> jsNameB <> ")" else jsNameB
-      wrapper = if arity <= 1 then mempty else "F" <> BB.intDec arity <> "("
-      closing = if arity <= 1 then mempty else ")"
-      namespaceBinding = aliasB <> "." <> canopyNameB <> " = " <> wrapper <> rawName <> closing <> ";"
-  in ["var " <> jsVarB <> " = " <> wrapper <> rawName <> closing <> ";", namespaceBinding]
-
--- | Generate binding with runtime validation wrapper.
---
--- All name parameters are pre-converted to 'Builder' at the call site.
--- The @canopyNameB@ is used for the namespace property key, while
--- @jsNameB@ is used on the RHS to reference the actual JS function
--- (which may be IIFE-qualified like @_AliasIIFE.funcName@).
-generateValidatedBinding :: Builder -> Builder -> Builder -> Builder -> Int -> Text.Text -> Builder -> [Builder]
-generateValidatedBinding jsVarB aliasB canopyNameB jsNameB arity canopyType callPathB =
-  let returnType = extractReturnType canopyType
-      validatorExpr = typeToValidator returnType
-      namespaceBinding = aliasB <> "." <> canopyNameB <> " = " <> jsVarB <> ";"
-  in if arity <= 0
-       then
-         -- Value (not a function): validate the value directly without calling it.
-         -- e.g. var $pkg$decodeString = $validate.Opaque('Decoder')(_IIFEAlias.decodeString, 'path');
-         let validatedValue = validatorExpr <> "(" <> jsNameB <> ", " <> callPathB <> ")"
-             binding = "var " <> jsVarB <> " = " <> validatedValue <> ";"
-         in [binding, namespaceBinding]
-       else
-         -- Function (arity >= 1): wrap in a JS function that calls and validates the result.
-         let args = map (\i -> "_" <> BB.intDec i) [0 .. arity - 1]
-             argList = mconcat (List.intersperse ", " args)
-             rawFunc = if arity > 1 then "(" <> jsNameB <> ".f||" <> jsNameB <> ")" else jsNameB
-             wrappedCall = rawFunc <> "(" <> argList <> ")"
-             validatedCall = validatorExpr <> "(" <> wrappedCall <> ", " <> callPathB <> ")"
-             funcBody = "function(" <> argList <> ") { return " <> validatedCall <> "; }"
-             wrapper = if arity <= 1 then mempty else "F" <> BB.intDec arity <> "("
-             closing = if arity <= 1 then mempty else ")"
-             binding = "var " <> jsVarB <> " = " <> wrapper <> funcBody <> closing <> ";"
-         in [binding, namespaceBinding]
+  | otherwise  = JS.Call (JS.Ref (JsName.makeF arity)) [funcExpr]
 
 -- TYPE VALIDATORS
 
@@ -898,47 +975,47 @@ extractReturnType typeStr =
       | t == "->" = findArrowIndices ts (idx + 1) (idx : acc)
       | otherwise = findArrowIndices ts (idx + 1) acc
 
--- | Convert a type string to a @$validate@ Builder expression.
+-- | Convert a type string to a @$validate.*@ 'Expr' AST node.
 --
 -- Uses 'Text' input to avoid intermediate @[Char]@ allocation.
 --
--- @since 0.19.2
-typeToValidator :: Text.Text -> Builder
-typeToValidator typeStr =
+-- @since 0.20.4
+typeToValidatorExpr :: Text.Text -> Expr
+typeToValidatorExpr typeStr =
   case Validator.parseFFIType typeStr of
-    Just ffiType -> ffiTypeToValidator ffiType
-    Nothing -> "$validate.Any"
+    Just ffiType -> ffiTypeToValidatorExpr ffiType
+    Nothing      -> JS.Access validateRef (JsName.fromBuilder "Any")
+  where
+    validateRef = JS.Ref (JsName.fromBuilder (BB.stringUtf8 "$validate"))
 
--- | Convert FFIType to $validate expression as a Builder.
-ffiTypeToValidator :: Validator.FFIType -> Builder
-ffiTypeToValidator ffiType = case ffiType of
-  Validator.FFIInt -> "$validate.Int"
-  Validator.FFIFloat -> "$validate.Float"
-  Validator.FFIString -> "$validate.String"
-  Validator.FFIBool -> "$validate.Bool"
-  Validator.FFIUnit -> "$validate.Unit"
-  Validator.FFIList inner ->
-    "$validate.List(" <> ffiTypeToValidator inner <> ")"
-  Validator.FFIMaybe inner ->
-    "$validate.Maybe(" <> ffiTypeToValidator inner <> ")"
-  Validator.FFIResult errType valType ->
-    "$validate.Result(" <> ffiTypeToValidator errType <> ", " <> ffiTypeToValidator valType <> ")"
-  Validator.FFITask errType valType ->
-    "$validate.Task(" <> ffiTypeToValidator errType <> ", " <> ffiTypeToValidator valType <> ")"
-  Validator.FFITuple types ->
-    "$validate.Tuple(" <> mconcat (List.intersperse ", " (map ffiTypeToValidator types)) <> ")"
-  Validator.FFITypeVar _ ->
-    "$validate.Any"
-  Validator.FFIOpaque name _ ->
-    "$validate.Opaque('" <> BB.byteString (TextEnc.encodeUtf8 name) <> "')"
-  Validator.FFIFunctionType _ _ ->
-    "$validate.Function"
-  Validator.FFIRecord fields ->
-    "$validate.Record([" <> fieldList <> "])"
-    where
-      fieldList = mconcat (List.intersperse ", " (map emitField fields))
-      emitField (name, fieldTy) =
-        "['" <> BB.byteString (TextEnc.encodeUtf8 name) <> "', " <> ffiTypeToValidator fieldTy <> "]"
+-- | Convert an 'FFIType' to its @$validate.*@ 'Expr' AST node.
+ffiTypeToValidatorExpr :: Validator.FFIType -> Expr
+ffiTypeToValidatorExpr ffiType =
+  let ref  = JS.Ref (JsName.fromBuilder (BB.stringUtf8 "$validate"))
+      prop name = JS.Access ref (JsName.fromBuilder name)
+      call name args = JS.Call (prop name) args
+  in case ffiType of
+    Validator.FFIInt               -> prop "Int"
+    Validator.FFIFloat             -> prop "Float"
+    Validator.FFIString            -> prop "String"
+    Validator.FFIBool              -> prop "Bool"
+    Validator.FFIUnit              -> prop "Unit"
+    Validator.FFIList inner        -> call "List"   [ffiTypeToValidatorExpr inner]
+    Validator.FFIMaybe inner       -> call "Maybe"  [ffiTypeToValidatorExpr inner]
+    Validator.FFIResult e v        -> call "Result" [ffiTypeToValidatorExpr e, ffiTypeToValidatorExpr v]
+    Validator.FFITask e v          -> call "Task"   [ffiTypeToValidatorExpr e, ffiTypeToValidatorExpr v]
+    Validator.FFITuple ts          -> call "Tuple"  (map ffiTypeToValidatorExpr ts)
+    Validator.FFITypeVar _         -> prop "Any"
+    Validator.FFIFunctionType _ _  -> prop "Function"
+    Validator.FFIOpaque name _     ->
+      call "Opaque" [JS.String (BB.byteString (TextEnc.encodeUtf8 name))]
+    Validator.FFIRecord fields     ->
+      call "Record" [JS.Array (map emitField fields)]
+      where
+        emitField (name, ty) =
+          JS.Array [ JS.String (BB.byteString (TextEnc.encodeUtf8 name))
+                   , ffiTypeToValidatorExpr ty
+                   ]
 
 -- UTILITIES
 

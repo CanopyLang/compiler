@@ -42,6 +42,7 @@ module Generate.JavaScript.Runtime.Registry
     -- * ESM export name lists (AST-derived, no byte scanning)
     exportedRuntimeNames,
     exportedRuntimeSymbols,
+    hmrSymbols,
 
     -- * Raw content (for ESM symbol scanning)
     rawRuntimeContent,
@@ -362,6 +363,11 @@ buildAliasMap primaryMap groups =
 -- Returns the 0-indexed line at which the JSDoc comment (or other immediately
 -- preceding comments\/blank lines) begins, so that the block content includes
 -- the full documentation block.
+--
+-- @*\/@ on its own line is treated as a hard stop: the closing delimiter of a
+-- block comment (@\/* ... *\/@) is not included in the JSDoc. The embedded
+-- runtime uses only single-line @\/** ... *\/@ JSDoc, so a standalone @*\/@
+-- always belongs to a section\/block comment rather than a declaration JSDoc.
 walkBackJSDocText :: [Text.Text] -> Int -> Int
 walkBackJSDocText _ 0 = 0
 walkBackJSDocText allLines declIdx = go (declIdx - 1)
@@ -371,14 +377,15 @@ walkBackJSDocText allLines declIdx = go (declIdx - 1)
       | otherwise =
           let line     = allLines List.!! idx
               stripped = Text.dropWhile (== ' ') line
-           in if isJSDocOrComment stripped || Text.null (Text.strip line)
+           in if Text.isPrefixOf "*/" stripped
+                then idx + 1   -- stop before the */; never include block-comment closers
+                else if isLineComment stripped || Text.null (Text.strip line)
                 then go (idx - 1)
                 else idx + 1
-    isJSDocOrComment l =
+    isLineComment l =
       Text.isPrefixOf "/**" l
         || Text.isPrefixOf "/*" l
         || Text.isPrefixOf " *" l
-        || Text.isPrefixOf "*/" l
         || Text.isPrefixOf "* " l
         || Text.isPrefixOf "*\n" l
         || Text.isPrefixOf "//" l

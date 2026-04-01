@@ -47,6 +47,7 @@ import qualified Canopy.Data.Utf8 as Utf8
 import Data.Set (Set)
 import qualified Data.Set as Set
 import qualified Data.Text as Text
+import qualified Data.Text.Encoding as TextEnc
 import qualified Generate.JavaScript.Builder as JS
 import qualified Generate.JavaScript.Coverage as Coverage
 import qualified Generate.JavaScript.Ability as Ability
@@ -127,7 +128,10 @@ generate inputMode globalGraph@(Opt.GlobalGraph rawGraph _ sourceLocs) mains ffi
       -- Pre-compute runtime deps from the Opt AST — eliminates the Phase 2
       -- materialization of innerContent for byte-level scanning.
       (rawNeededRuntime, neededArities) = collectRuntimeDeps rawGraph reachable
-      neededRuntime = Registry.closeDeps rawNeededRuntime
+      -- Also scan FFI file content for _Module_name references (e.g. _Basics_e)
+      -- that only appear inside embedded FFI files and not in the Canopy AST.
+      ffiRuntimeDeps = collectFFIRuntimeDeps ffiInfos
+      neededRuntime = Registry.closeDeps (rawNeededRuntime <> ffiRuntimeDeps)
       -- Traverse only from entry points — dead code is never visited.
       state = Map.foldrWithKey (addMain mode graph) (emptyState shouldTrackLines sourceLocs covIds) mains
       header = if Mode.isElmCompatible mode
@@ -242,6 +246,40 @@ kernelChunkRuntimeId chunk =
   case chunk of
     Kernel.JsVar home name -> Set.singleton (Registry.runtimeIdFromKernel home name)
     _                      -> Set.empty
+
+-- | Scan FFI file content for _Module_name runtime references used in IIFE mode.
+--
+-- When FFI files are embedded in the IIFE bundle, they may reference runtime
+-- constants (e.g. @_Basics_e@, @_Basics_pi@) that never appear as
+-- 'Opt.VarRuntime' in the Canopy AST. This function scans the raw FFI
+-- content (before IIFE wrapping) to capture those references so the runtime
+-- tree-shaker includes the corresponding definitions.
+--
+-- All FFI files are scanned regardless of whether they are included in the
+-- bundle; entries not in the registry are ignored by 'Registry.closeDeps'.
+collectFFIRuntimeDeps :: Map String FFIInfo -> Set Registry.RuntimeId
+collectFFIRuntimeDeps =
+  foldMap (ffiTextToRuntimeIds . _ffiContent) . Map.elems
+
+-- | Extract runtime IDs from FFI file text by scanning for _Module_name tokens.
+ffiTextToRuntimeIds :: Text.Text -> Set Registry.RuntimeId
+ffiTextToRuntimeIds content =
+  Set.fromList
+    [ Registry.RuntimeId (TextEnc.encodeUtf8 tok)
+    | tok <- Text.words (Text.map normalizeToSpace content)
+    , isKernelToken tok
+    ]
+  where
+    normalizeToSpace c =
+      if (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z')
+         || (c >= '0' && c <= '9') || c == '_' || c == '$'
+      then c
+      else ' '
+    isKernelToken t =
+      Text.length t > 3
+      && Text.index t 0 == '_'
+      && let h = Text.index t 1 in h >= 'A' && h <= 'Z'
+      && Text.elem '_' (Text.drop 2 t)
 
 -- | Collect runtime deps from a definition.
 defDeps :: Opt.Def -> (Set Registry.RuntimeId, Set Int)

@@ -22,6 +22,11 @@ module Generate.JavaScript.Builder
   , exprToBuilder
   , stmtToBuilderWithMode
   , exprToBuilderWithMode
+  , stmtToJS
+  , exprToJS
+  , noAnnot
+  , spaceAnnot
+  , leadingSpaceAnnot
   , Expr(..), LValue(..)
   , Stmt(..), Case(..)
   , InfixOp(..), PrefixOp(..)
@@ -122,6 +127,7 @@ data Expr
   | Assign LValue Expr
   | Call Expr [Expr]
   | Function (Maybe Name) [Name] [Stmt]
+  | New Expr [Expr]     -- ^ @new Foo(args)@ constructor invocation
   deriving Show
 
 -- | An assignable left-hand side in a JavaScript assignment expression.
@@ -366,6 +372,9 @@ exprToJS expr = case expr of
       (paramsToJSCommaList params)
       noAnnot
       (JS.JSBlock noAnnot (map stmtToJS body) noAnnot)
+  New ctor args ->
+    JS.JSNewExpression noAnnot
+      (JS.JSCallExpression (exprToJS ctor) noAnnot (argsToJSCommaList args) noAnnot)
 
 -- | Convert a Canopy 'Stmt' to a @language-javascript@ 'JSStatement'.
 stmtToJS :: Stmt -> JSStatement

@@ -35,6 +35,7 @@ module Generate.JavaScript.FFI.Registry
     closeFFIDeps,
     closeFFICrossFileDeps,
     emitNeededBlocks,
+    collectNeededStatements,
 
     -- * Rendering
     renderStatements,
@@ -297,6 +298,21 @@ emitNeededBlocks isProd reg needed =
       maybe mempty (renderBlock isProd) (Map.lookup bid reg)
     sortByOrder =
       List.sortOn (\bid -> maybe maxBound _fbOrder (Map.lookup bid reg))
+
+-- | Collect needed block statements in source order without rendering.
+--
+-- Returns the raw @[JSStatement]@ for the needed blocks so that callers can
+-- compose them into a larger AST (e.g. an IIFE body) before rendering,
+-- enabling unified minification of the IIFE and its generated bindings as a
+-- single program. Any block not present in the registry is silently skipped.
+--
+-- @since 0.20.4
+collectNeededStatements :: Map FFIBlockId FFIBlock -> Set FFIBlockId -> [JSAST.JSStatement]
+collectNeededStatements reg needed =
+  foldMap _fbStatements ordered
+  where
+    ordered = List.sortOn _fbOrder candidates
+    candidates = [block | bid <- Set.toList needed, Just block <- [Map.lookup bid reg]]
 
 -- | Render a single 'FFIBlock' to 'Builder', including any JSDoc prefix.
 --

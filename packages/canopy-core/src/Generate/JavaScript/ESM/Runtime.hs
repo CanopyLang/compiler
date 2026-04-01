@@ -25,7 +25,6 @@ where
 
 import Data.ByteString (ByteString)
 import Data.ByteString.Builder (Builder)
-import qualified Data.ByteString.Builder as BB
 import Data.Set (Set)
 import qualified Data.Set as Set
 import qualified Generate.JavaScript.Builder as JS
@@ -94,39 +93,6 @@ debugDeclaration (Mode.Prod {}) = JS.Var debugName (JS.Bool False)
 -- | The JS name for the debug flag.
 debugName :: JsName.Name
 debugName = JsName.fromBuilder "__canopy_debug"
-
--- | Materialize a 'Builder' into a strict 'ByteString' for scanning.
-materialize :: Builder -> ByteString
-materialize = LBS.toStrict . BB.toLazyByteString
-
--- | Scan a JavaScript source 'ByteString' for top-level @var@ and @function@
--- declarations, returning the set of declared symbol names.
---
--- Matches lines starting with @var NAME@ or @function NAME@ at column 0.
--- This is reliable because the embedded runtime uses consistent formatting
--- with no indentation for top-level declarations.
-scanTopLevelDecls :: ByteString -> Set ByteString
-scanTopLevelDecls content =
-  Set.fromList (concatMap extractDecl (BS8.lines content))
-
--- | Extract a declaration name from a single line, if it starts with
--- @var@ or @function@ at column 0.
-extractDecl :: ByteString -> [ByteString]
-extractDecl line
-  | Just rest <- BS8.stripPrefix "var " line =
-      [BS8.takeWhile isIdentChar rest]
-  | Just rest <- BS8.stripPrefix "function " line =
-      [BS8.takeWhile isIdentChar rest]
-  | otherwise = []
-
--- | Check if a character is valid in a JavaScript identifier.
-isIdentChar :: Char -> Bool
-isIdentChar c =
-  (c >= 'a' && c <= 'z')
-    || (c >= 'A' && c <= 'Z')
-    || (c >= '0' && c <= '9')
-    || c == '_'
-    || c == '$'
 
 -- HMR RUNTIME HELPERS
 
