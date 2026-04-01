@@ -182,6 +182,9 @@ data InfixOp
   | OpMod -- %
   | OpEq -- ===
   | OpNe -- !==
+  | OpLooseEq -- ==
+  | OpLooseNe -- !=
+  | OpInstanceOf -- instanceof
   | OpLt -- <
   | OpLe -- <=
   | OpGt -- >
@@ -201,6 +204,7 @@ data PrefixOp
   = PrefixNot        -- !
   | PrefixNegate     -- -
   | PrefixComplement -- ~
+  | PrefixTypeof     -- typeof
   deriving Show
 
 
@@ -256,6 +260,16 @@ builderToByteString = LBS.toStrict . B.toLazyByteString
 wrapInParens :: Expr -> JSExpression
 wrapInParens expr = JS.JSExpressionParen noAnnot (exprToJS expr) noAnnot
 
+-- | Convert a call-site function expression, wrapping in parentheses when
+-- the expression has lower precedence than a function call (precedence 19).
+-- Without this, @(f || g)(a, b)@ would render as @f || g(a, b)@ which
+-- the JS parser reads as @f || (g(a, b))@.
+calleeExprToJS :: Expr -> JSExpression
+calleeExprToJS expr = case expr of
+  Infix _ _ _ -> wrapInParens expr
+  If _ _ _    -> wrapInParens expr
+  _           -> exprToJS expr
+
 -- | Convert the operand of a negate prefix, parenthesizing when the
 -- operand is itself a unary minus or complement to avoid generating
 -- @--x@ (JS decrement) or @-~x@ ambiguity.
@@ -303,6 +317,9 @@ jsOpPrecedence op = case op of
   OpGe -> 10
   OpEq -> 9
   OpNe -> 9
+  OpLooseEq -> 9
+  OpLooseNe -> 9
+  OpInstanceOf -> 10
   OpBitwiseAnd -> 8
   OpBitwiseXor -> 7
   OpBitwiseOr -> 6
@@ -342,6 +359,8 @@ exprToJS expr = case expr of
     JS.JSUnaryExpression (JS.JSUnaryOpMinus noAnnot) (negateOperand e)
   Prefix PrefixComplement e ->
     JS.JSUnaryExpression (JS.JSUnaryOpTilde noAnnot) (prefixOperand e)
+  Prefix PrefixTypeof e ->
+    JS.JSUnaryExpression (JS.JSUnaryOpTypeof noAnnot) (prefixOperand e)
   Infix op left right ->
     JS.JSExpressionBinary leftJS (infixOpToJS op) rightJS
     where
@@ -363,7 +382,11 @@ exprToJS expr = case expr of
   Assign lval e ->
     JS.JSAssignExpression (lvalueToJS lval) (JS.JSAssign spaceAnnot) (exprToJS e)
   Call func args ->
-    JS.JSCallExpression (exprToJS func) noAnnot (argsToJSCommaList args) noAnnot
+    -- Parenthesise the callee when it is an infix or ternary expression.
+    -- In JavaScript, function-call (precedence 19) binds tighter than || (4),
+    -- && (6), arithmetic, etc., so `f || g(a, b)` parses as `f || (g(a, b))`,
+    -- not `(f || g)(a, b)`.  An Infix or If callee must be wrapped.
+    JS.JSCallExpression (calleeExprToJS func) noAnnot (argsToJSCommaList args) noAnnot
   Function maybeName params body ->
     JS.JSFunctionExpression
       leadingSpaceAnnot
@@ -373,7 +396,7 @@ exprToJS expr = case expr of
       noAnnot
       (JS.JSBlock noAnnot (map stmtToJS body) noAnnot)
   New ctor args ->
-    JS.JSNewExpression noAnnot
+    JS.JSNewExpression spaceAnnot
       (JS.JSCallExpression (exprToJS ctor) noAnnot (argsToJSCommaList args) noAnnot)
 
 -- | Convert a Canopy 'Stmt' to a @language-javascript@ 'JSStatement'.
@@ -391,6 +414,13 @@ stmtToJS stmt = case stmt of
     JS.JSExpressionStatement (exprToJS e) JS.JSSemiAuto
   ExprStmtWithSemi e ->
     JS.JSExpressionStatement (exprToJS e) (JS.JSSemi noAnnot)
+  IfStmt cond thenStmt EmptyStmt ->
+    JS.JSIf leadingSpaceAnnot leadingSpaceAnnot (exprToJS cond) leadingSpaceAnnot
+      (ensureBlock thenStmt)
+    where
+      ensureBlock blockStmt = case blockStmt of
+        Block _ -> stmtToJS blockStmt
+        _ -> JS.JSStatementBlock noAnnot [stmtToJS blockStmt] noAnnot JS.JSSemiAuto
   IfStmt cond thenStmt elseStmt ->
     JS.JSIfElse leadingSpaceAnnot leadingSpaceAnnot (exprToJS cond) leadingSpaceAnnot
       (ensureBlock thenStmt) leadingSpaceAnnot (ensureBlock elseStmt)
@@ -418,7 +448,7 @@ stmtToJS stmt = case stmt of
       [JS.JSCatch noAnnot noAnnot (JS.JSIdentifier noAnnot (nameToByteString errName)) noAnnot (blockFromStmt catchStmt)]
       JS.JSNoFinally
   Throw e ->
-    JS.JSThrow leadingSpaceAnnot (exprToJS e) JS.JSSemiAuto
+    JS.JSThrow leadingSpaceAnnot (exprToJS e) (JS.JSSemi noAnnot)
   Return e ->
     JS.JSReturn leadingSpaceAnnot (Just (exprToJSWithSpace e)) (JS.JSSemi noAnnot)
   Var name e ->
@@ -460,6 +490,9 @@ infixOpToJS op = case op of
   OpMod -> JS.JSBinOpMod spaceAnnot
   OpEq -> JS.JSBinOpStrictEq spaceAnnot
   OpNe -> JS.JSBinOpStrictNeq spaceAnnot
+  OpLooseEq -> JS.JSBinOpEq spaceAnnot
+  OpLooseNe -> JS.JSBinOpNeq spaceAnnot
+  OpInstanceOf -> JS.JSBinOpInstanceOf spaceAnnot
   OpLt -> JS.JSBinOpLt spaceAnnot
   OpLe -> JS.JSBinOpLe spaceAnnot
   OpGt -> JS.JSBinOpGt spaceAnnot

@@ -12,9 +12,9 @@
 -- runtime type checks for FFI function return values:
 --
 -- @
--- function validateInt(v, name) {
+-- function _validate_Int(v, ctx) {
 --   if (!Number.isInteger(v)) {
---     throw new Error('FFI type error: ' + name + ' expected Int, got ' + typeof v);
+--     throw new Error('FFI type error at ' + ctx + ': expected Int, got ' + typeof v);
 --   }
 --   return v;
 -- }
@@ -28,6 +28,10 @@
 -- * Result types: Structure check ($: 'Ok' | 'Err') + field validation
 -- * Task types: Promise check + result validation on resolution
 -- * Opaque types: Optional instanceof check (configurable)
+--
+-- All validator code is generated through the 'Generate.JavaScript.Builder'
+-- AST rather than text concatenation, ensuring correct JS syntax and
+-- enabling future optimisations.
 --
 -- @since 0.19.1
 module FFI.Validator
@@ -52,11 +56,17 @@ module FFI.Validator
   , parseReturnType
   ) where
 
+import qualified Data.ByteString.Builder as BB
+import Data.ByteString.Builder (Builder)
+import qualified Data.ByteString as BS
 import qualified Data.List as List
 import qualified Data.Text as Text
 import Data.Text (Text)
+import qualified Data.Text.Encoding as TextEnc
 import FFI.Types (FFIType (..), OpaqueKind (..))
 import qualified FFI.TypeParser as TypeParser
+import qualified Generate.JavaScript.Builder as JS
+import qualified Generate.JavaScript.Name as JsName
 
 -- | Configuration for validator generation
 data ValidatorConfig = ValidatorConfig
@@ -78,227 +88,424 @@ defaultConfig = ValidatorConfig
 
 -- FFIType is imported from FFI.Types (single source of truth)
 
--- | Generate a unique validator name for a type
+
+-- INTERNAL AST HELPERS
+
+
+-- | Construct a 'JsName.Name' from a 'String'.
+nm :: String -> JsName.Name
+nm = JsName.fromBuilder . BB.stringUtf8
+
+-- | Construct a 'JsName.Name' from a 'Text' value.
+nameFromText :: Text -> JsName.Name
+nameFromText = JsName.fromBuilder . BB.byteString . TextEnc.encodeUtf8
+
+-- | Reference a JavaScript variable by name (String literal).
+ref :: String -> JS.Expr
+ref = JS.Ref . nm
+
+-- | Reference a JavaScript variable by name (Text value).
+refT :: Text -> JS.Expr
+refT = JS.Ref . nameFromText
+
+-- | JavaScript string expression from a 'Text' value.
+strE :: Text -> JS.Expr
+strE t = JS.String (BB.byteString (TextEnc.encodeUtf8 t))
+
+-- | @Object.prototype.hasOwnProperty.call(v, fieldName)@
+hasProp :: JS.Expr -> Text -> JS.Expr
+hasProp obj fieldName =
+  JS.Call
+    (JS.Access
+      (JS.Access
+        (JS.Access (ref "Object") (nm "prototype"))
+        (nm "hasOwnProperty"))
+      (nm "call"))
+    [obj, strE fieldName]
+
+-- | Build the error or warning message expression for a type mismatch.
+--
+-- In debug mode appends @: @ + JSON.stringify(v) for extra context.
+mismatchMsg :: ValidatorConfig -> Text -> Text -> JS.Expr
+mismatchMsg config prefix expectedType =
+  if _configDebugMode config
+    then JS.Infix JS.OpAdd
+           (JS.Infix JS.OpAdd base (strE ": "))
+           (JS.Call
+             (JS.Access (ref "JSON") (nm "stringify"))
+             [ref "v"])
+    else base
+  where
+    base =
+      JS.Infix JS.OpAdd
+        (JS.Infix JS.OpAdd
+          (JS.Infix JS.OpAdd
+            (strE (prefix <> " at "))
+            (ref "ctx"))
+          (strE (": expected " <> expectedType <> ", got ")))
+        (JS.Prefix JS.PrefixTypeof (ref "v"))
+
+-- | Generate a throw/warn statement for a type mismatch.
+--
+-- In strict mode emits @throw new Error(...)@; in non-strict mode emits
+-- @console.warn(...)@.
+throwMismatch :: ValidatorConfig -> Text -> JS.Stmt
+throwMismatch config expectedType =
+  if _configStrictMode config
+    then JS.Throw (JS.New (ref "Error") [mismatchMsg config "FFI type error" expectedType])
+    else JS.ExprStmt
+           (JS.Call
+             (JS.Access (ref "console") (nm "warn"))
+             [mismatchMsg config "FFI type warning" expectedType])
+
+-- | @if (!condition) { throw/warn ...; }@
+guardType :: ValidatorConfig -> JS.Expr -> Text -> JS.Stmt
+guardType config cond expectedType =
+  JS.IfStmt
+    (JS.Prefix JS.PrefixNot cond)
+    (JS.Block [throwMismatch config expectedType])
+    JS.EmptyStmt
+
+-- | @if (condition) { throw/warn ...; }@
+guardCond :: ValidatorConfig -> JS.Expr -> Text -> JS.Stmt
+guardCond config cond expectedType =
+  JS.IfStmt cond (JS.Block [throwMismatch config expectedType]) JS.EmptyStmt
+
+
+-- VALIDATOR NAME GENERATION
+
+
+-- | Generate a unique validator name for a type.
 generateValidatorName :: FFIType -> Text
 generateValidatorName ffiType = "_validate_" <> typeToSuffix ffiType
   where
     typeToSuffix :: FFIType -> Text
     typeToSuffix t = case t of
-      FFIInt -> "Int"
-      FFIFloat -> "Float"
-      FFIString -> "String"
-      FFIBool -> "Bool"
-      FFIUnit -> "Unit"
-      FFIList inner -> "List_" <> typeToSuffix inner
-      FFIMaybe inner -> "Maybe_" <> typeToSuffix inner
-      FFIResult e v -> "Result_" <> typeToSuffix e <> "_" <> typeToSuffix v
-      FFITask e v -> "Task_" <> typeToSuffix e <> "_" <> typeToSuffix v
-      FFITuple types -> "Tuple_" <> Text.intercalate "_" (map typeToSuffix types)
-      FFITypeVar name -> "Var_" <> sanitizeName name
-      FFIOpaque name _ -> "Opaque_" <> sanitizeName name
+      FFIInt                -> "Int"
+      FFIFloat              -> "Float"
+      FFIString             -> "String"
+      FFIBool               -> "Bool"
+      FFIUnit               -> "Unit"
+      FFIList inner         -> "List_" <> typeToSuffix inner
+      FFIMaybe inner        -> "Maybe_" <> typeToSuffix inner
+      FFIResult e v         -> "Result_" <> typeToSuffix e <> "_" <> typeToSuffix v
+      FFITask e v           -> "Task_" <> typeToSuffix e <> "_" <> typeToSuffix v
+      FFITuple types        -> "Tuple_" <> Text.intercalate "_" (map typeToSuffix types)
+      FFITypeVar name       -> "Var_" <> sanitizeName name
+      FFIOpaque name _      -> "Opaque_" <> sanitizeName name
       FFIFunctionType _ ret -> "Fn_" <> typeToSuffix ret
-      FFIRecord fields -> "Rec_" <> Text.intercalate "_" (map (sanitizeName . fst) fields)
+      FFIRecord fields      -> "Rec_" <> Text.intercalate "_" (map (sanitizeName . fst) fields)
 
     sanitizeName :: Text -> Text
-    sanitizeName = Text.filter (\c -> c >= 'a' && c <= 'z' || c >= 'A' && c <= 'Z' || c >= '0' && c <= '9')
+    sanitizeName =
+      Text.filter (\c ->
+        (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9'))
 
--- | Generate JavaScript validator function for an FFI type
-generateValidator :: ValidatorConfig -> FFIType -> Text
-generateValidator config ffiType =
-  let name = generateValidatorName ffiType
-      body = generateValidatorBody config ffiType
-  in Text.unlines
-       [ "function " <> name <> "(v, ctx) {"
-       , body
-       , "}"
-       ]
 
--- | Generate the body of a validator function
-generateValidatorBody :: ValidatorConfig -> FFIType -> Text
+-- VALIDATOR BODY GENERATION
+
+
+-- | Generate the body statements of a validator function for a given 'FFIType'.
+--
+-- Each case produces a list of 'JS.Stmt' values that form the function body.
+-- Helper cases delegate to 'generateOpaqueValidatorBody'.
+generateValidatorBody :: ValidatorConfig -> FFIType -> [JS.Stmt]
 generateValidatorBody config ffiType = case ffiType of
   FFIInt ->
-    indent <> "if (!Number.isInteger(v)) {\n"
-    <> indent <> "  " <> throwError config "Int" <> "\n"
-    <> indent <> "}\n"
-    <> indent <> "return v;"
+    [ guardType config
+        (JS.Call (JS.Access (ref "Number") (nm "isInteger")) [ref "v"])
+        "Int"
+    , JS.Return (ref "v")
+    ]
 
   FFIFloat ->
-    indent <> "if (typeof v !== 'number') {\n"
-    <> indent <> "  " <> throwError config "Float" <> "\n"
-    <> indent <> "}\n"
-    <> indent <> "if (!Number.isFinite(v)) {\n"
-    <> indent <> "  " <> throwError config "finite Float" <> "\n"
-    <> indent <> "}\n"
-    <> indent <> "return v;"
+    [ guardCond config
+        (JS.Infix JS.OpNe (JS.Prefix JS.PrefixTypeof (ref "v")) (strE "number"))
+        "Float"
+    , guardType config
+        (JS.Call (JS.Access (ref "Number") (nm "isFinite")) [ref "v"])
+        "finite Float"
+    , JS.Return (ref "v")
+    ]
 
   FFIString ->
-    indent <> "if (typeof v !== 'string') {\n"
-    <> indent <> "  " <> throwError config "String" <> "\n"
-    <> indent <> "}\n"
-    <> indent <> "return v;"
+    [ guardCond config
+        (JS.Infix JS.OpNe (JS.Prefix JS.PrefixTypeof (ref "v")) (strE "string"))
+        "String"
+    , JS.Return (ref "v")
+    ]
 
   FFIBool ->
-    indent <> "if (typeof v !== 'boolean') {\n"
-    <> indent <> "  " <> throwError config "Bool" <> "\n"
-    <> indent <> "}\n"
-    <> indent <> "return v;"
+    [ guardCond config
+        (JS.Infix JS.OpNe (JS.Prefix JS.PrefixTypeof (ref "v")) (strE "boolean"))
+        "Bool"
+    , JS.Return (ref "v")
+    ]
 
   FFIUnit ->
-    indent <> "return v;"
+    [ JS.Return (ref "v") ]
 
   FFIList inner ->
-    let innerValidator = generateValidatorName inner
-    in indent <> "if (!Array.isArray(v)) {\n"
-       <> indent <> "  " <> throwError config "List" <> "\n"
-       <> indent <> "}\n"
-       <> indent <> "return v.map(function(el, i) { return " <> innerValidator <> "(el, ctx + '[' + i + ']'); });"
+    [ guardType config
+        (JS.Call (JS.Access (ref "Array") (nm "isArray")) [ref "v"])
+        "List"
+    , JS.Return
+        (JS.Call
+          (JS.Access (ref "v") (nm "map"))
+          [ JS.Function Nothing [nm "el", nm "i"]
+              [ JS.Return
+                  (JS.Call (refT (generateValidatorName inner))
+                    [ ref "el"
+                    , JS.Infix JS.OpAdd
+                        (JS.Infix JS.OpAdd
+                          (JS.Infix JS.OpAdd (ref "ctx") (strE "["))
+                          (ref "i"))
+                        (strE "]")
+                    ])
+              ]
+          ])
+    ]
 
   FFIMaybe inner ->
-    let innerValidator = generateValidatorName inner
-    in indent <> "if (v == null) { return { $: 'Nothing' }; }\n"
-       <> indent <> "return { $: 'Just', a: " <> innerValidator <> "(v, ctx) };"
+    [ JS.IfStmt
+        (JS.Infix JS.OpLooseEq (ref "v") JS.Null)
+        (JS.Block [JS.Return (JS.Object [(nm "$", strE "Nothing")])])
+        JS.EmptyStmt
+    , JS.Return
+        (JS.Object
+          [ (nm "$", strE "Just")
+          , (nm "a",
+              JS.Call (refT (generateValidatorName inner)) [ref "v", ref "ctx"])
+          ])
+    ]
 
   FFIResult errType valType ->
-    let errValidator = generateValidatorName errType
-        valValidator = generateValidatorName valType
-    in indent <> "if (typeof v !== 'object' || v === null || !Object.prototype.hasOwnProperty.call(v, '$')) {\n"
-       <> indent <> "  " <> throwError config "Result" <> "\n"
-       <> indent <> "}\n"
-       <> indent <> "if (v.$ === 'Ok') {\n"
-       <> indent <> "  return { $: 'Ok', a: " <> valValidator <> "(v.a, ctx + '.Ok') };\n"
-       <> indent <> "} else if (v.$ === 'Err') {\n"
-       <> indent <> "  return { $: 'Err', a: " <> errValidator <> "(v.a, ctx + '.Err') };\n"
-       <> indent <> "}\n"
-       <> indent <> throwError config "Result (invalid $)"
+    [ guardCond config invalidResultShape "Result"
+    , JS.IfStmt
+        (JS.Infix JS.OpEq (JS.Access (ref "v") (nm "$")) (strE "Ok"))
+        (JS.Block [JS.Return (resultObject "Ok" valType ".Ok")])
+        (JS.IfStmt
+          (JS.Infix JS.OpEq (JS.Access (ref "v") (nm "$")) (strE "Err"))
+          (JS.Block [JS.Return (resultObject "Err" errType ".Err")])
+          JS.EmptyStmt)
+    , throwMismatch config "Result (invalid $)"
+    ]
+    where
+      invalidResultShape =
+        JS.Infix JS.OpOr
+          (JS.Infix JS.OpOr
+            (JS.Infix JS.OpNe
+              (JS.Prefix JS.PrefixTypeof (ref "v"))
+              (strE "object"))
+            (JS.Infix JS.OpEq (ref "v") JS.Null))
+          (JS.Prefix JS.PrefixNot (hasProp (ref "v") "$"))
+      resultObject tag fieldType ctxSuffix =
+        JS.Object
+          [ (nm "$", strE tag)
+          , (nm "a",
+              JS.Call (refT (generateValidatorName fieldType))
+                [ JS.Access (ref "v") (nm "a")
+                , JS.Infix JS.OpAdd (ref "ctx") (strE ctxSuffix)
+                ])
+          ]
 
   FFITask errType valType ->
-    let errValidator = generateValidatorName errType
-        valValidator = generateValidatorName valType
-    in indent <> "if (typeof v !== 'object' || v === null || typeof v.then !== 'function') {\n"
-       <> indent <> "  " <> throwError config "Task (expected Promise)" <> "\n"
-       <> indent <> "}\n"
-       <> indent <> "return v.then(\n"
-       <> indent <> "  function(ok) {\n"
-       <> indent <> "    try { return { $: 'Ok', a: " <> valValidator <> "(ok, ctx + '.then') }; }\n"
-       <> indent <> "    catch (e) { return { $: 'Err', a: " <> errValidator <> "(String(e), ctx + '.validation') }; }\n"
-       <> indent <> "  },\n"
-       <> indent <> "  function(err) {\n"
-       <> indent <> "    try { return { $: 'Err', a: " <> errValidator <> "(err, ctx + '.catch') }; }\n"
-       <> indent <> "    catch (e) { return { $: 'Err', a: String(e) }; }\n"
-       <> indent <> "  }\n"
-       <> indent <> ");"
+    [ guardCond config invalidTaskShape "Task (expected Promise)"
+    , JS.Return
+        (JS.Call
+          (JS.Access (ref "v") (nm "then"))
+          [ JS.Function Nothing [nm "ok"]
+              [ JS.Try
+                  (JS.Block [JS.Return okResult])
+                  (nm "e")
+                  (JS.Block [JS.Return (JS.Object
+                    [ (nm "$", strE "Err")
+                    , (nm "a",
+                        JS.Call (refT (generateValidatorName errType))
+                          [ JS.Call (ref "String") [ref "e"]
+                          , JS.Infix JS.OpAdd (ref "ctx") (strE ".validation")
+                          ])
+                    ])])
+              ]
+          , JS.Function Nothing [nm "err"]
+              [ JS.Try
+                  (JS.Block [JS.Return errResult])
+                  (nm "e")
+                  (JS.Block [JS.Return (JS.Object
+                    [(nm "$", strE "Err"), (nm "a", JS.Call (ref "String") [ref "e"])])])
+              ]
+          ])
+    ]
+    where
+      invalidTaskShape =
+        JS.Infix JS.OpOr
+          (JS.Infix JS.OpOr
+            (JS.Infix JS.OpNe
+              (JS.Prefix JS.PrefixTypeof (ref "v"))
+              (strE "object"))
+            (JS.Infix JS.OpLooseEq (ref "v") JS.Null))
+          (JS.Infix JS.OpNe
+            (JS.Prefix JS.PrefixTypeof (JS.Access (ref "v") (nm "then")))
+            (strE "function"))
+      okResult =
+        JS.Object
+          [ (nm "$", strE "Ok")
+          , (nm "a",
+              JS.Call (refT (generateValidatorName valType))
+                [ref "ok", JS.Infix JS.OpAdd (ref "ctx") (strE ".then")])
+          ]
+      errResult =
+        JS.Object
+          [ (nm "$", strE "Err")
+          , (nm "a",
+              JS.Call (refT (generateValidatorName errType))
+                [ref "err", JS.Infix JS.OpAdd (ref "ctx") (strE ".catch")])
+          ]
 
   FFITuple types ->
-    let validators = map generateValidatorName types
-        checks = zipWith (\idx vn -> vn <> "(v[" <> Text.pack (show (idx :: Int)) <> "], ctx + '[" <> Text.pack (show idx) <> "]')") [0..] validators
-    in indent <> "if (!Array.isArray(v) || v.length !== " <> Text.pack (show (length types)) <> ") {\n"
-       <> indent <> "  " <> throwError config ("Tuple" <> Text.pack (show (length types))) <> "\n"
-       <> indent <> "}\n"
-       <> indent <> "return [" <> Text.intercalate ", " checks <> "];"
+    [ guardCond config invalidTupleShape ("Tuple" <> Text.pack (show n_))
+    , JS.Return (JS.Array (zipWith elementCheck [0..] types))
+    ]
+    where
+      n_ = length types
+      invalidTupleShape =
+        JS.Infix JS.OpOr
+          (JS.Prefix JS.PrefixNot
+            (JS.Call (JS.Access (ref "Array") (nm "isArray")) [ref "v"]))
+          (JS.Infix JS.OpNe
+            (JS.Access (ref "v") (nm "length"))
+            (JS.Int n_))
+      elementCheck idx elemType =
+        JS.Call (refT (generateValidatorName elemType))
+          [ JS.Index (ref "v") (JS.Int idx)
+          , JS.Infix JS.OpAdd
+              (JS.Infix JS.OpAdd
+                (JS.Infix JS.OpAdd (ref "ctx") (strE "["))
+                (JS.Int idx))
+              (strE "]")
+          ]
 
   FFITypeVar _ ->
-    indent <> "if (typeof v === 'undefined') {\n"
-    <> indent <> "  " <> throwError config "non-undefined value" <> "\n"
-    <> indent <> "}\n"
-    <> indent <> "return v;"
+    [ guardCond config
+        (JS.Infix JS.OpEq
+          (JS.Prefix JS.PrefixTypeof (ref "v"))
+          (strE "undefined"))
+        "non-undefined value"
+    , JS.Return (ref "v")
+    ]
 
   FFIOpaque typeName _ ->
     generateOpaqueValidatorBody config typeName Unverified
 
   FFIFunctionType _ _ ->
-    indent <> "if (typeof v !== 'function') {\n"
-    <> indent <> "  " <> throwError config "Function" <> "\n"
-    <> indent <> "}\n"
-    <> indent <> "return v;"
+    [ guardCond config
+        (JS.Infix JS.OpNe
+          (JS.Prefix JS.PrefixTypeof (ref "v"))
+          (strE "function"))
+        "Function"
+    , JS.Return (ref "v")
+    ]
 
   FFIRecord fields ->
-    indent <> "if (typeof v !== 'object' || v === null || Array.isArray(v)) {\n"
-    <> indent <> "  " <> throwError config "Record" <> "\n"
-    <> indent <> "}\n"
-    <> Text.concat (map validateField fields)
-    <> indent <> "return v;"
+    [ guardCond config invalidRecordShape "Record" ]
+    ++ concatMap validateField fields
+    ++ [ JS.Return (ref "v") ]
+    where
+      invalidRecordShape =
+        JS.Infix JS.OpOr
+          (JS.Infix JS.OpOr
+            (JS.Infix JS.OpNe
+              (JS.Prefix JS.PrefixTypeof (ref "v"))
+              (strE "object"))
+            (JS.Infix JS.OpEq (ref "v") JS.Null))
+          (JS.Call (JS.Access (ref "Array") (nm "isArray")) [ref "v"])
+      validateField (fieldName, fieldType) =
+        [ JS.IfStmt
+            (JS.Prefix JS.PrefixNot (hasProp (ref "v") fieldName))
+            (JS.Block [throwMismatch config ("Record (missing field " <> fieldName <> ")")])
+            JS.EmptyStmt
+        , JS.ExprStmt
+            (JS.Call (refT (generateValidatorName fieldType))
+              [ JS.Access (ref "v") (nameFromText fieldName)
+              , JS.Infix JS.OpAdd (ref "ctx") (strE ("." <> fieldName))
+              ])
+        ]
 
-  where
-    validateField (name, fieldType) =
-      indent <> "if (!Object.prototype.hasOwnProperty.call(v, '" <> name <> "')) {\n"
-      <> indent <> "  " <> throwError config ("Record (missing field " <> name <> ")") <> "\n"
-      <> indent <> "}\n"
-      <> indent <> generateValidatorName fieldType <> "(v." <> name <> ", ctx + '." <> name <> "');\n"
-    indent = "  "
 
--- | Generate an opaque type validator body using the 'OpaqueKind' strategy.
+-- OPAQUE VALIDATOR
+
+
+-- | Generate the body statements of an opaque type validator.
 --
 -- * 'ClassBacked' — uses @instanceof@ to verify the JS class
 -- * 'SymbolBranded' — checks for a unique symbol brand property
 -- * 'Unverified' — only rejects null/undefined (legacy behavior)
 --
 -- @since 0.20.1
-generateOpaqueValidatorBody :: ValidatorConfig -> Text -> OpaqueKind -> Text
+generateOpaqueValidatorBody :: ValidatorConfig -> Text -> OpaqueKind -> [JS.Stmt]
 generateOpaqueValidatorBody config typeName opaqueKind =
-  indent <> "if (v == null) {\n"
-    <> indent <> "  " <> throwError config typeName <> "\n"
-    <> indent <> "}\n"
-    <> kindCheck
-    <> indent <> "return v;"
+  nullCheck : kindStmts ++ [JS.Return (ref "v")]
   where
-    indent = "  "
-    kindCheck = case opaqueKind of
+    nullCheck =
+      JS.IfStmt
+        (JS.Infix JS.OpLooseEq (ref "v") JS.Null)
+        (JS.Block [throwMismatch config typeName])
+        JS.EmptyStmt
+    kindStmts = case opaqueKind of
       ClassBacked className ->
-        indent <> "if (!(v instanceof " <> className <> ")) {\n"
-          <> indent <> "  " <> throwError config (typeName <> " (expected instanceof " <> className <> ")") <> "\n"
-          <> indent <> "}\n"
+        [ JS.IfStmt
+            (JS.Prefix JS.PrefixNot
+              (JS.Infix JS.OpInstanceOf (ref "v") (refT className)))
+            (JS.Block
+              [throwMismatch config
+                (typeName <> " (expected instanceof " <> className <> ")")])
+            JS.EmptyStmt
+        ]
       SymbolBranded brandName ->
-        indent <> "if (!v['__canopy_brand_" <> brandName <> "']) {\n"
-          <> indent <> "  " <> throwError config (typeName <> " (missing brand " <> brandName <> ")") <> "\n"
-          <> indent <> "}\n"
+        [ JS.IfStmt
+            (JS.Prefix JS.PrefixNot
+              (JS.Index (ref "v") (strE ("__canopy_brand_" <> brandName))))
+            (JS.Block
+              [throwMismatch config
+                (typeName <> " (missing brand " <> brandName <> ")")])
+            JS.EmptyStmt
+        ]
       Unverified ->
         if _configValidateOpaque config
-          then indent <> "if (!(v instanceof " <> typeName <> ")) {\n"
-                <> indent <> "  " <> throwError config typeName <> "\n"
-                <> indent <> "}\n"
-          else ""
+          then [ JS.IfStmt
+                   (JS.Prefix JS.PrefixNot
+                     (JS.Infix JS.OpInstanceOf (ref "v") (refT typeName)))
+                   (JS.Block [throwMismatch config typeName])
+                   JS.EmptyStmt
+               ]
+          else []
 
 -- | Generate a complete opaque validator function with a specific 'OpaqueKind'.
 --
 -- @since 0.20.1
-generateOpaqueValidator :: ValidatorConfig -> Text -> OpaqueKind -> Text
+generateOpaqueValidator :: ValidatorConfig -> Text -> OpaqueKind -> JS.Stmt
 generateOpaqueValidator config typeName opaqueKind =
-  Text.unlines
-    [ "function _validate_Opaque_" <> sanitize typeName <> "(v, ctx) {",
-      generateOpaqueValidatorBody config typeName opaqueKind,
-      "}"
-    ]
+  JS.FunctionStmt
+    (nameFromText ("_validate_Opaque_" <> sanitize typeName))
+    [nm "v", nm "ctx"]
+    (generateOpaqueValidatorBody config typeName opaqueKind)
   where
-    sanitize = Text.filter (\c -> c >= 'a' && c <= 'z' || c >= 'A' && c <= 'Z' || c >= '0' && c <= '9')
+    sanitize =
+      Text.filter (\c ->
+        (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9'))
 
--- | Generate error throwing statement
-throwError :: ValidatorConfig -> Text -> Text
-throwError config expectedType =
-  if _configStrictMode config
-    then if _configDebugMode config
-           then "throw new Error('FFI type error at ' + ctx + ': expected " <> expectedType <> ", got ' + typeof v + ': ' + JSON.stringify(v));"
-           else "throw new Error('FFI type error at ' + ctx + ': expected " <> expectedType <> ", got ' + typeof v);"
-    else "console.warn('FFI type warning at ' + ctx + ': expected " <> expectedType <> ", got ' + typeof v);"
 
--- | Generate all required validators for a type and its nested types
-generateAllValidators :: ValidatorConfig -> FFIType -> Text
-generateAllValidators config ffiType =
-  Text.unlines (map (generateValidator config) (collectTypes ffiType))
-  where
-    collectTypes :: FFIType -> [FFIType]
-    collectTypes t = t : concatMap collectTypes (childTypes t)
+-- PUBLIC API
 
-    childTypes :: FFIType -> [FFIType]
-    childTypes ty = case ty of
-      FFIList inner -> [inner]
-      FFIMaybe inner -> [inner]
-      FFIResult e v -> [e, v]
-      FFITask e v -> [e, v]
-      FFITuple types -> types
-      FFIFunctionType args ret -> args ++ [ret]
-      FFIRecord fields -> map snd fields
-      FFITypeVar _ -> []
-      _ -> []
+
+-- | Generate a JavaScript validator 'JS.Stmt' (function declaration) for a
+-- given 'FFIType'.
+generateValidator :: ValidatorConfig -> FFIType -> JS.Stmt
+generateValidator config ffiType =
+  JS.FunctionStmt
+    (nameFromText (generateValidatorName ffiType))
+    [nm "v", nm "ctx"]
+    (generateValidatorBody config ffiType)
 
 -- | Collect a type and all transitively nested types.
 --
@@ -319,6 +526,29 @@ collectAllTypes t = t : concatMap collectAllTypes (childTypes t)
       FFITypeVar _         -> []
       _                    -> []
 
+-- | Generate all required validators for a type and its nested types.
+--
+-- Note: may contain duplicate validator functions for shared sub-types.
+-- Use 'generateAllValidatorsDeduped' when emitting multiple validators.
+generateAllValidators :: ValidatorConfig -> FFIType -> Builder
+generateAllValidators config ffiType =
+  foldMap (JS.stmtToBuilder . generateValidator config) (collectTypes ffiType)
+  where
+    collectTypes :: FFIType -> [FFIType]
+    collectTypes t = t : concatMap collectTypes (childTypes t)
+
+    childTypes :: FFIType -> [FFIType]
+    childTypes ty = case ty of
+      FFIList inner        -> [inner]
+      FFIMaybe inner       -> [inner]
+      FFIResult e v        -> [e, v]
+      FFITask e v          -> [e, v]
+      FFITuple types       -> types
+      FFIFunctionType as r -> as ++ [r]
+      FFIRecord fields     -> map snd fields
+      FFITypeVar _         -> []
+      _                    -> []
+
 -- | Generate deduplicated validators for a collection of return types.
 --
 -- Expands each type into its full set of nested types, merges them all,
@@ -326,16 +556,20 @@ collectAllTypes t = t : concatMap collectAllTypes (childTypes t)
 -- the preferred entry point when validators for multiple functions are
 -- generated together, because it avoids repeating @_validate_String@
 -- and similar base validators once per function.
-generateAllValidatorsDeduped :: ValidatorConfig -> [FFIType] -> Text
+generateAllValidatorsDeduped :: ValidatorConfig -> [FFIType] -> Builder
 generateAllValidatorsDeduped config returnTypes =
-  Text.unlines (map (generateValidator config) uniqueTypes)
+  foldMap (JS.stmtToBuilder . generateValidator config) uniqueTypes
   where
     uniqueTypes =
       List.nubBy
         (\a b -> generateValidatorName a == generateValidatorName b)
         (concatMap collectAllTypes returnTypes)
 
--- | Parse a type string into FFIType.
+
+-- TYPE PARSING
+
+
+-- | Parse a type string into 'FFIType'.
 --
 -- Delegates to the unified parser in "FFI.TypeParser".
 parseFFIType :: Text -> Maybe FFIType

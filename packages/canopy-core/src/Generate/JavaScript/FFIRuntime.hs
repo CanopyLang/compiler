@@ -409,13 +409,20 @@ var $validate = {
   Tuple: function() {
     var validators = Array.prototype.slice.call(arguments);
     return function(v, p) {
-      if (!Array.isArray(v)) {
-        throw new Error('FFI type error at ' + p + ': expected Tuple (Array)');
+      var n = validators.length;
+      var elems;
+      if (Array.isArray(v)) {
+        elems = v;
+      } else if (typeof v === 'object' && v !== null) {
+        var keys = ['a','b','c','d','e','f'];
+        elems = keys.slice(0, n).map(function(k) { return v[k]; });
+      } else {
+        throw new Error('FFI type error at ' + p + ': expected Tuple, got ' + typeof v);
       }
-      if (v.length !== validators.length) {
-        throw new Error('FFI type error at ' + p + ': expected Tuple of ' + validators.length + ' elements, got ' + v.length);
+      if (elems.length !== n) {
+        throw new Error('FFI type error at ' + p + ': expected Tuple of ' + n + ' elements, got ' + elems.length);
       }
-      var validated = validators.map(function(f, i) { return f(v[i], p + '[' + i + ']'); });
+      var validated = validators.map(function(f, i) { return f(elems[i], p + '[' + i + ']'); });
       if (validated.length === 2) { return { a: validated[0], b: validated[1] }; }
       if (validated.length === 3) { return { a: validated[0], b: validated[1], c: validated[2] }; }
       return validated;
