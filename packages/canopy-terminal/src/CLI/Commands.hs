@@ -44,8 +44,6 @@ module CLI.Commands
     createPublishCommand,
     createBumpCommand,
     createDiffCommand,
-    createVendorCommand,
-
     -- * Link Commands
     createLinkCommand,
     createUnlinkCommand,
@@ -89,7 +87,6 @@ import CLI.Commands.Package
     createDiffCommand,
     createInstallCommand,
     createPublishCommand,
-    createVendorCommand,
   )
 import CLI.Commands.Project
   ( createInitCommand,

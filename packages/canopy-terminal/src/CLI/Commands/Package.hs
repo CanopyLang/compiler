@@ -11,7 +11,6 @@ module CLI.Commands.Package
     createPublishCommand,
     createBumpCommand,
     createDiffCommand,
-    createVendorCommand,
   )
 where
 
@@ -24,7 +23,6 @@ import qualified Publish
 import qualified Terminal
 import qualified Terminal.Helpers as Terminal
 import qualified Text.PrettyPrint.ANSI.Leijen as PP
-import qualified Vendor
 
 -- | Create the install command for package management.
 --
@@ -111,34 +109,6 @@ createDiffCommand =
         ]
     args = createDiffArgs
 
--- | Create the vendor command for offline dependency management.
---
--- Copies all resolved dependencies from the global cache into a local
--- @vendor\/@ directory for fully offline builds.
---
--- @since 0.19.2
-createVendorCommand :: Command
-createVendorCommand =
-  Terminal.Command "vendor" Terminal.Uncommon details example Terminal.noArgs flags Vendor.run
-  where
-    details =
-      "The `vendor` command copies all resolved dependencies into a vendor/ directory\
-      \ so that builds can work without any network access:"
-    example =
-      stackDocuments
-        [ reflowText
-            "For example, to vendor all dependencies for your project:",
-          PP.indent 4 (PP.green "canopy vendor"),
-          reflowText
-            "This copies packages from your global cache (~/.canopy/packages/) into\
-            \ ./vendor/ at the project root. Useful for CI pipelines and air-gapped\
-            \ environments.",
-          PP.indent 4 (PP.green "canopy vendor --clean"),
-          reflowText
-            "This removes the existing vendor/ directory before copying fresh packages."
-        ]
-    flags = createVendorFlags
-
 -- ARGS AND FLAGS
 
 createInstallArgs :: Terminal.Args Install.Args
@@ -171,7 +141,3 @@ createDiffArgs =
       Terminal.require3 Diff.GlobalInquiry Terminal.package Terminal.version Terminal.version
     ]
 
-createVendorFlags :: Terminal.Flags Vendor.Flags
-createVendorFlags =
-  Terminal.flags Vendor.Flags
-    |-- Terminal.onOff "clean" "Remove the vendor/ directory before copying fresh packages."

@@ -77,7 +77,6 @@ import CLI.Commands
     createTestCommand,
     createUnlinkCommand,
     createUpgradeCommand,
-    createVendorCommand,
     createWebIDLCommand,
   )
 import CLI.Documentation (createIntroduction, createOutro)
@@ -146,7 +145,6 @@ createAllCommands =
     createPublishCommand,
     createLinkCommand,
     createUnlinkCommand,
-    createVendorCommand,
     createWebIDLCommand,
     createSelfUpdateCommand,
     createKitNewCommand,
