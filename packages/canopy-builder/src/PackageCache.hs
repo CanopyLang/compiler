@@ -605,7 +605,6 @@ loadArtifactsFile :: FilePath -> IO (Maybe PackageInterfaces)
 loadArtifactsFile path =
   tryDecoders
     [ tryVersionedAs (\(ArtifactCache _ arts _) -> _ifaces arts) path
-    , tryDecodeAs (\(ArtifactCache _ arts _) -> _ifaces arts) path
     , tryDecodeAs (\(LegacyArtifactCache _ (LegacyArtifacts ifaces _)) -> ifaces) path
     , tryDecodeAs
         (\(CanopyPreP06ArtifactCache _ (CanopyPreP06Artifacts rawDIs _ _)) ->
@@ -628,10 +627,6 @@ loadCompleteArtifactsFile :: FilePath -> IO (Maybe PackageArtifacts)
 loadCompleteArtifactsFile path =
   tryDecoders
     [ tryVersionedAs
-        (\(ArtifactCache _ arts _) ->
-          PackageArtifacts (_ifaces arts) (_objects arts) (_ffiInfo arts))
-        path
-    , tryDecodeAs
         (\(ArtifactCache _ arts _) ->
           PackageArtifacts (_ifaces arts) (_objects arts) (_ffiInfo arts))
         path
