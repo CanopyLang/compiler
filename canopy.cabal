@@ -240,6 +240,7 @@ test-suite canopy-test
       Unit.AST.Utils.TypeTest
       Unit.AuditTest
       Unit.Builder.CacheVersionTest
+      Unit.Builder.FFICacheTest
       Unit.Builder.GraphTest
       Unit.Builder.HashTest
       Unit.Builder.IncrementalTest

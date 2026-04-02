@@ -30,6 +30,7 @@ module Compiler.Cache
     loadCachedArtifact,
     saveToCacheAsync,
     computeDepsHash,
+    computeFFIHash,
 
     -- * Versioned Binary
     encodeVersioned,
@@ -46,6 +47,7 @@ module Compiler.Cache
 where
 
 import qualified AST.Optimized as Opt
+import qualified AST.Source as Src
 import qualified Builder.Hash as Hash
 import qualified Builder.Incremental as Incremental
 import qualified Canopy.Data.Name as Name
@@ -57,17 +59,21 @@ import Compiler.Types (ModuleResult (..))
 import Control.Exception (IOException)
 import qualified Control.Exception as Exception
 import qualified Data.Binary as Binary
+import qualified Data.ByteString as BS
 import qualified Data.ByteString.Lazy as LBS
 import Data.IORef (IORef)
 import qualified Data.IORef as IORef
+import qualified Data.List as List
 import qualified Data.Map.Strict as Map
 import qualified Data.Set as Set
 import Data.Word (Word16)
 import qualified Data.Text as Text
 import qualified Data.Time.Clock as Time
+import qualified Foreign.FFI as FFI
 import qualified Generate.JavaScript as JS
 import Logging.Event (LogEvent (..), Phase (..))
 import qualified Logging.Logger as Log
+import qualified Parse.Module as Parse
 import qualified System.Directory as Dir
 import System.FilePath ((</>))
 
@@ -99,21 +105,26 @@ cacheArtifactPath root modName =
 
 -- | Try to load a module from the incremental cache.
 --
--- Checks source hash and dependency hash. If both match, loads
--- the cached Interface and LocalGraph from the binary artifact file.
+-- Checks source hash, dependency hash, and FFI file hash.  If all three
+-- match, loads the cached Interface and LocalGraph from the binary artifact
+-- file.  The FFI hash is computed by parsing the source module to discover
+-- which @external\/*.js@ files it references, then hashing their content.
 tryCacheHit ::
   IORef Incremental.BuildCache ->
   FilePath ->
+  Parse.ProjectType ->
   ModuleName.Raw ->
   FilePath ->
   [ModuleName.Raw] ->
   Map.Map ModuleName.Raw Interface.Interface ->
   IO (Maybe ModuleResult)
-tryCacheHit cacheRef root modName path modImports ifaces = do
+tryCacheHit cacheRef root projType modName path modImports ifaces = do
   cache <- IORef.readIORef cacheRef
   sourceHash <- Hash.hashFile path
   let depsHash = computeDepsHash modImports ifaces
-  if Incremental.needsRecompile cache modName sourceHash depsHash
+  ffiPaths <- extractFFIPaths projType path
+  ffiHash <- computeFFIHash root ffiPaths
+  if Incremental.needsRecompile cache modName sourceHash depsHash ffiHash
     then return Nothing
     else loadCachedArtifact root modName
 
@@ -178,10 +189,12 @@ saveToCacheAsync cacheRef root modName path modImports ifaces mr = do
   sourceHash <- Hash.hashFile path
   let depsHash = computeDepsHash modImports ifaces
       artifactFile = cacheArtifactPath root modName
+      ffiPaths = Map.keys (mrFFIInfo mr)
 
   Dir.createDirectoryIfMissing True (root </> "canopy-stuff" </> "cache")
   LBS.writeFile artifactFile (encodeVersioned (mrInterface mr, mrLocalGraph mr, mrFFIInfo mr))
 
+  ffiHash <- computeFFIHash root ffiPaths
   now <- Time.getCurrentTime
   let ifaceHash = Hash.hashBytes (LBS.toStrict (Binary.encode (mrInterface mr)))
       entry =
@@ -190,7 +203,8 @@ saveToCacheAsync cacheRef root modName path modImports ifaces mr = do
             Incremental.cacheDepsHash = depsHash,
             Incremental.cacheArtifactPath = artifactFile,
             Incremental.cacheTimestamp = now,
-            Incremental.cacheInterfaceHash = Just ifaceHash
+            Incremental.cacheInterfaceHash = Just ifaceHash,
+            Incremental.cacheFFIHash = ffiHash
           }
   IORef.atomicModifyIORef' cacheRef (\c -> (Incremental.insertCache c modName entry, ()))
 
@@ -202,6 +216,62 @@ computeDepsHash modImports ifaces =
     relevantIfaces = Map.restrictKeys ifaces (Set.fromList modImports)
     ifaceHashes = Map.map hashInterface relevantIfaces
     hashInterface iface = Hash.hashBytes (LBS.toStrict (Binary.encode iface))
+
+-- | Compute a combined hash of FFI JavaScript files.
+--
+-- Reads each file path (relative to the project root) from disk and
+-- combines their content hashes.  Missing files contribute an empty hash
+-- so that a deleted FFI file still invalidates the cache.  Returns
+-- 'Hash.emptyHash' when the path list is empty (module has no FFI imports).
+--
+-- @since 0.19.3
+computeFFIHash :: FilePath -> [FilePath] -> IO Hash.ContentHash
+computeFFIHash root paths = do
+  hashes <- traverse (hashOneFFI root) (List.sort paths)
+  pure (combineFFIHashes hashes)
+
+-- | Hash a single FFI file, returning 'Hash.emptyHash' if it does not exist.
+hashOneFFI :: FilePath -> FilePath -> IO Hash.ContentHash
+hashOneFFI root relPath = do
+  let absPath = root </> relPath
+  exists <- Dir.doesFileExist absPath
+  if exists
+    then do
+      bytes <- BS.readFile absPath
+      pure (Hash.hashBytes bytes)
+    else pure Hash.emptyHash
+
+-- | Combine a list of hashes into a single hash by hashing their hex representations.
+combineFFIHashes :: [Hash.ContentHash] -> Hash.ContentHash
+combineFFIHashes [] = Hash.emptyHash
+combineFFIHashes hashes =
+  Hash.hashString combined
+  where
+    combined = concatMap (Hash.toHexString . Hash.hashValue) hashes
+
+-- | Parse a source file and extract the FFI file paths it references.
+--
+-- Parses the @.can@ source using the given project type to obtain the
+-- 'Src.Module', then extracts the 'FilePath' from each
+-- @foreign import javascript@ declaration.  Returns an empty list when
+-- the source cannot be parsed (parse errors surface as compilation errors
+-- later in the pipeline, not here).
+--
+-- @since 0.19.3
+extractFFIPaths :: Parse.ProjectType -> FilePath -> IO [FilePath]
+extractFFIPaths projType path = do
+  bytes <- BS.readFile path
+  pure (either (const []) extractFromModule (Parse.fromByteString projType bytes))
+
+-- | Extract FFI file paths from a parsed source module.
+extractFromModule :: Src.Module -> [FilePath]
+extractFromModule modul =
+  [path | fi <- Src._foreignImports modul, path <- ffiTargetPath (Src._foreignTarget fi)]
+
+-- | Extract the file path from an FFI target, if applicable.
+ffiTargetPath :: FFI.FFITarget -> [FilePath]
+ffiTargetPath (FFI.JavaScriptFFI p) = [p]
+ffiTargetPath (FFI.WebAssemblyFFI p) = [p]
 
 -- VERSIONED BINARY CACHE
 
@@ -216,9 +286,14 @@ elcoMagic = LBS.pack [0x45, 0x4C, 0x43, 0x4F]
 -- Bump this when the Binary encoding of cached types changes
 -- (e.g. FFIInfo serialization format) to force cache invalidation.
 --
+-- Version history:
+--   1 — initial binary format
+--   2 — added FFIInfo to artifact payload
+--   3 — 'CacheEntry' gained 'cacheFFIHash' field; old @.elco@ files are stale
+--
 -- @since 0.19.1
 elcoSchemaVersion :: Word16
-elcoSchemaVersion = 2
+elcoSchemaVersion = 3
 
 -- | Minimum header size: 4 (magic) + 2 (schema) + 6 (compiler version).
 --

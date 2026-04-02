@@ -353,7 +353,8 @@ testCacheManagement =
                   Incremental.cacheDepsHash = depsHash,
                   Incremental.cacheArtifactPath = "/test/artifact.canopyi",
                   Incremental.cacheTimestamp = now,
-                  Incremental.cacheInterfaceHash = Nothing
+                  Incremental.cacheInterfaceHash = Nothing,
+                  Incremental.cacheFFIHash = Hash.emptyHash
                 }
 
         let cache = Incremental.insertCache emptyCache moduleName entry
@@ -378,7 +379,8 @@ testCacheManagement =
                   Incremental.cacheDepsHash = depsHash,
                   Incremental.cacheArtifactPath = "/test/artifact.canopyi",
                   Incremental.cacheTimestamp = now,
-                  Incremental.cacheInterfaceHash = Nothing
+                  Incremental.cacheInterfaceHash = Nothing,
+                  Incremental.cacheFFIHash = Hash.emptyHash
                 }
 
         let cache = Incremental.insertCache emptyCache moduleName entry

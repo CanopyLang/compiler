@@ -263,7 +263,7 @@ compileOneModuleTimed timingsRef engine cacheRef hitRef missRef pkg projType roo
         errMsg = "Internal error: Module " ++ Name.toChars modName ++ " not found in module paths"
     Just path -> do
       let modImports = Maybe.fromMaybe [] (Map.lookup modName importMap)
-      cached <- tryCacheHit cacheRef root modName path modImports ifaces
+      cached <- tryCacheHit cacheRef root projType modName path modImports ifaces
       maybe
         (handleCacheMissTimed timingsRef engine cacheRef missRef pkg projType root modName path modImports ifaces)
         (handleCacheHit hitRef modName)
@@ -432,7 +432,7 @@ compileOneModule engine cacheRef hitRef missRef pkg projType root ifaces statuse
         errMsg = "Internal error: Module " ++ Name.toChars modName ++ " not found in module paths"
     Just path -> do
       let modImports = Maybe.fromMaybe [] (Map.lookup modName importMap)
-      cached <- tryCacheHit cacheRef root modName path modImports ifaces
+      cached <- tryCacheHit cacheRef root projType modName path modImports ifaces
       maybe
         (handleCacheMiss engine cacheRef missRef pkg projType root modName path modImports ifaces)
         (handleCacheHit hitRef modName)

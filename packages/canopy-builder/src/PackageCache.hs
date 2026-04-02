@@ -37,10 +37,15 @@ module PackageCache
     -- * Types
   , PackageInterfaces
   , PackageArtifacts(..)
+  , ArtifactCache(..)
+  , Artifacts(..)
+    -- * FFI Fingerprint Validation
+  , verifyFFIFingerprints
   ) where
 
 import qualified AST.Canonical as Can
 import qualified AST.Optimized as Opt
+import qualified Builder.Hash as Hash
 import qualified Canopy.Interface as Interface
 import qualified Canopy.ModuleName as ModuleName
 import qualified Canopy.Package as Pkg
@@ -51,6 +56,7 @@ import qualified Control.Monad as Monad
 import Data.Binary (Binary)
 import qualified Data.Binary as Binary
 import Data.Binary.Get (Get)
+import qualified Data.ByteString as BS
 import qualified Data.ByteString.Lazy as LBS
 import Data.Word (Word8, Word16)
 import qualified Generate.JavaScript as JS
@@ -78,14 +84,22 @@ data PackageArtifacts = PackageArtifacts
 type Fingerprint = Map Pkg.Name Version.Version
 
 -- | Artifact cache structure (matches old/builder/src/Canopy/Details.hs).
+--
+-- The '_ffiFingerprints' field stores the SHA-256 hash of every FFI
+-- JavaScript file that was present when the artifact was compiled.  On
+-- load, each stored fingerprint is verified against the current file on
+-- disk; any mismatch causes the artifact to be treated as stale and
+-- triggers a full package rebuild.
 data ArtifactCache = ArtifactCache
   { _fingerprints :: !(Set Fingerprint)
   , _artifacts :: !Artifacts
+  , _ffiFingerprints :: !(Map FilePath Hash.ContentHash)
   }
 
 instance Binary ArtifactCache where
-  get = Monad.liftM2 ArtifactCache Binary.get Binary.get
-  put (ArtifactCache fps arts) = Binary.put fps >> Binary.put arts
+  get = Monad.liftM3 ArtifactCache Binary.get Binary.get Binary.get
+  put (ArtifactCache fps arts ffiFPs) =
+    Binary.put fps >> Binary.put arts >> Binary.put ffiFPs
 
 -- | Compiled artifacts for a package (new format with FFI info).
 data Artifacts = Artifacts
@@ -348,8 +362,14 @@ artifactMagic :: [Word8]
 artifactMagic = [0x43, 0x41, 0x52, 0x54] -- "CART"
 
 -- | Current schema version for the artifact format.
+--
+-- Version history:
+--   1 — initial versioned format (fingerprints + artifacts)
+--   2 — 'ArtifactCache' gained '_ffiFingerprints' for FFI file change detection
+--
+-- @since 0.19.3
 artifactSchemaVersion :: Word16
-artifactSchemaVersion = 1
+artifactSchemaVersion = 2
 
 -- | Encode artifacts with a versioned header.
 encodeVersionedArtifacts :: ArtifactCache -> LBS.ByteString
@@ -391,10 +411,65 @@ decodeVersionedArtifacts bytes
         + fromIntegral (LBS.index bs (offset + 1)) :: Word16
 
 -- | Try decoding a versioned artifacts.dat file, extracting a value on success.
+--
+-- For the current versioned format (schema v2), also verifies FFI fingerprints
+-- against the current files on disk.  Returns 'Nothing' when any FFI file has
+-- changed since the artifact was compiled.
+-- | Result type for versioned artifact loading that distinguishes
+-- "not this format" from "format matched but FFI files changed".
+data VersionedResult a
+  = VersionedOk a
+  | VersionedStaleFFI  -- ^ Format matched, but FFI fingerprints are stale
+  | VersionedNotThisFormat
+
+-- | Try to load a versioned artifact, returning a structured result.
+tryVersionedAsResult :: (ArtifactCache -> b) -> FilePath -> IO (VersionedResult b)
+tryVersionedAsResult extract path = do
+  bytes <- LBS.readFile path
+  case decodeVersionedArtifacts bytes of
+    Nothing -> pure VersionedNotThisFormat
+    Just cache -> do
+      valid <- verifyFFIFingerprints pkgRoot cache
+      if valid
+        then pure (VersionedOk (extract cache))
+        else pure VersionedStaleFFI
+  where
+    pkgRoot = takeDirectory path
+
+-- | Load a versioned artifact with FFI fingerprint validation.
+--
+-- Returns 'Nothing' both when the format doesn't match AND when
+-- fingerprints are stale.  Use 'tryVersionedAsResult' when the caller
+-- needs to distinguish these cases.
 tryVersionedAs :: (ArtifactCache -> b) -> FilePath -> IO (Maybe b)
 tryVersionedAs extract path = do
-  bytes <- LBS.readFile path
-  pure (fmap extract (decodeVersionedArtifacts bytes))
+  result <- tryVersionedAsResult extract path
+  pure (versionedToMaybe result)
+
+versionedToMaybe :: VersionedResult a -> Maybe a
+versionedToMaybe (VersionedOk a) = Just a
+versionedToMaybe _ = Nothing
+
+-- | Verify that all stored FFI fingerprints still match the current files on disk.
+--
+-- The fingerprints are stored as paths relative to the package directory, so
+-- the caller must supply the package root to resolve them.  Returns 'True'
+-- when all stored fingerprints match or when there are no fingerprints
+-- (i.e., the artifact was built from a package with no FFI).
+verifyFFIFingerprints :: FilePath -> ArtifactCache -> IO Bool
+verifyFFIFingerprints pkgRoot cache =
+  Monad.foldM checkOne True (Map.toList (_ffiFingerprints cache))
+  where
+    checkOne False _ = pure False
+    checkOne True (relPath, storedHash) = do
+      let absPath = pkgRoot </> relPath
+      exists <- Dir.doesFileExist absPath
+      if not exists
+        then pure (Hash.hashesEqual storedHash Hash.emptyHash)
+        else do
+          bytes <- BS.readFile absPath
+          let currentHash = Hash.hashBytes bytes
+          pure (Hash.hashesEqual currentHash storedHash)
 
 -- | Map between canopy and elm package authors for fallback lookups.
 --
@@ -529,8 +604,8 @@ tryDecodeAs extract path =
 loadArtifactsFile :: FilePath -> IO (Maybe PackageInterfaces)
 loadArtifactsFile path =
   tryDecoders
-    [ tryVersionedAs (\(ArtifactCache _ arts) -> _ifaces arts) path
-    , tryDecodeAs (\(ArtifactCache _ arts) -> _ifaces arts) path
+    [ tryVersionedAs (\(ArtifactCache _ arts _) -> _ifaces arts) path
+    , tryDecodeAs (\(ArtifactCache _ arts _) -> _ifaces arts) path
     , tryDecodeAs (\(LegacyArtifactCache _ (LegacyArtifacts ifaces _)) -> ifaces) path
     , tryDecodeAs
         (\(CanopyPreP06ArtifactCache _ (CanopyPreP06Artifacts rawDIs _ _)) ->
@@ -553,11 +628,11 @@ loadCompleteArtifactsFile :: FilePath -> IO (Maybe PackageArtifacts)
 loadCompleteArtifactsFile path =
   tryDecoders
     [ tryVersionedAs
-        (\(ArtifactCache _ arts) ->
+        (\(ArtifactCache _ arts _) ->
           PackageArtifacts (_ifaces arts) (_objects arts) (_ffiInfo arts))
         path
     , tryDecodeAs
-        (\(ArtifactCache _ arts) ->
+        (\(ArtifactCache _ arts _) ->
           PackageArtifacts (_ifaces arts) (_objects arts) (_ffiInfo arts))
         path
     , tryDecodeAs
@@ -789,7 +864,32 @@ writePackageArtifacts ::
   IO ()
 writePackageArtifacts author package version interfaces globalGraph ffiInfo = do
   artifactPath <- getPackageArtifactPath author package version
-  Dir.createDirectoryIfMissing True (takeDirectory artifactPath)
+  let pkgRoot = takeDirectory artifactPath
+  Dir.createDirectoryIfMissing True pkgRoot
+  ffiFingerprints <- buildFFIFingerprints pkgRoot ffiInfo
   let artifacts = Artifacts interfaces globalGraph ffiInfo
-      cache = ArtifactCache Set.empty artifacts
+      cache = ArtifactCache Set.empty artifacts ffiFingerprints
   LBS.writeFile artifactPath (encodeVersionedArtifacts cache)
+
+-- | Build a map of FFI file path to current content hash.
+--
+-- The paths in 'JS.FFIInfo' are relative to the package root, so
+-- @pkgRoot@ is used to resolve them on disk.  The map keys remain
+-- relative so they can be verified later from any working directory.
+--
+-- @since 0.19.3
+buildFFIFingerprints :: FilePath -> Map String JS.FFIInfo -> IO (Map FilePath Hash.ContentHash)
+buildFFIFingerprints pkgRoot ffiInfo = do
+  pairs <- traverse (hashFFIPath pkgRoot) (Map.keys ffiInfo)
+  pure (Map.fromList pairs)
+
+-- | Hash a single FFI file path and return (relative path, hash) pair.
+hashFFIPath :: FilePath -> FilePath -> IO (FilePath, Hash.ContentHash)
+hashFFIPath pkgRoot relPath = do
+  let absPath = pkgRoot </> relPath
+  exists <- Dir.doesFileExist absPath
+  if exists
+    then do
+      bytes <- BS.readFile absPath
+      pure (relPath, Hash.hashBytes bytes)
+    else pure (relPath, Hash.emptyHash)

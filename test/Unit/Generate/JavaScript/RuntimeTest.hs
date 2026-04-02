@@ -38,7 +38,7 @@ devMode = Mode.Dev Nothing False False False Set.empty False
 
 -- | A minimal 'Mode.Prod' value for testing (no short names, no flags).
 prodMode :: Mode.Mode
-prodMode = Mode.Prod Map.empty False False False StringPool.emptyPool Set.empty
+prodMode = Mode.Prod Map.empty False False False StringPool.emptyPool Set.empty Map.empty
 
 -- ── Tests ────────────────────────────────────────────────────────────────────
 

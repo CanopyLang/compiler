@@ -288,7 +288,7 @@ compileModuleInOrder builder _root moduleMap moduleName =
       cache <- IORef.readIORef (builderCache builder)
       let depsHash = Hash.hashString ""
 
-      if Incremental.needsRecompile cache moduleName sourceHash depsHash
+      if Incremental.needsRecompile cache moduleName sourceHash depsHash Hash.emptyHash
         then compileWithDriver builder moduleName path
         else useCache builder moduleName path
 

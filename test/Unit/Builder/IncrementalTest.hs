@@ -65,7 +65,8 @@ testCacheOperations =
                   Incremental.cacheDepsHash = hash2,
                   Incremental.cacheArtifactPath = "path/to/artifact",
                   Incremental.cacheTimestamp = now,
-                  Incremental.cacheInterfaceHash = Nothing
+                  Incremental.cacheInterfaceHash = Nothing,
+                  Incremental.cacheFFIHash = Hash.emptyHash
                 }
         let cache' = Incremental.insertCache cache (mkName "Main") entry
         case Incremental.lookupCache cache' (mkName "Main") of
@@ -83,7 +84,8 @@ testCacheOperations =
                   Incremental.cacheDepsHash = Hash.hashString "d1",
                   Incremental.cacheArtifactPath = "path1",
                   Incremental.cacheTimestamp = now,
-                  Incremental.cacheInterfaceHash = Nothing
+                  Incremental.cacheInterfaceHash = Nothing,
+                  Incremental.cacheFFIHash = Hash.emptyHash
                 }
         let entry2 =
               Incremental.CacheEntry
@@ -91,7 +93,8 @@ testCacheOperations =
                   Incremental.cacheDepsHash = Hash.hashString "d2",
                   Incremental.cacheArtifactPath = "path2",
                   Incremental.cacheTimestamp = now,
-                  Incremental.cacheInterfaceHash = Nothing
+                  Incremental.cacheInterfaceHash = Nothing,
+                  Incremental.cacheFFIHash = Hash.emptyHash
                 }
         let cache' =
               Incremental.insertCache
@@ -108,7 +111,8 @@ testCacheOperations =
                   Incremental.cacheDepsHash = Hash.hashString "deps",
                   Incremental.cacheArtifactPath = "old/path",
                   Incremental.cacheTimestamp = now,
-                  Incremental.cacheInterfaceHash = Nothing
+                  Incremental.cacheInterfaceHash = Nothing,
+                  Incremental.cacheFFIHash = Hash.emptyHash
                 }
         let entry2 =
               Incremental.CacheEntry
@@ -116,7 +120,8 @@ testCacheOperations =
                   Incremental.cacheDepsHash = Hash.hashString "deps",
                   Incremental.cacheArtifactPath = "new/path",
                   Incremental.cacheTimestamp = now,
-                  Incremental.cacheInterfaceHash = Nothing
+                  Incremental.cacheInterfaceHash = Nothing,
+                  Incremental.cacheFFIHash = Hash.emptyHash
                 }
         let cache' =
               Incremental.insertCache
@@ -137,7 +142,7 @@ testChangeDetection =
         cache <- Incremental.emptyCache
         let sourceHash = Hash.hashString "source"
         let depsHash = Hash.hashString "deps"
-        Incremental.needsRecompile cache (mkName "Main") sourceHash depsHash
+        Incremental.needsRecompile cache (mkName "Main") sourceHash depsHash Hash.emptyHash
           @?= True,
       testCase "no recompile when hashes match" $ do
         cache <- Incremental.emptyCache
@@ -150,10 +155,11 @@ testChangeDetection =
                   Incremental.cacheDepsHash = depsHash,
                   Incremental.cacheArtifactPath = "path",
                   Incremental.cacheTimestamp = now,
-                  Incremental.cacheInterfaceHash = Nothing
+                  Incremental.cacheInterfaceHash = Nothing,
+                  Incremental.cacheFFIHash = Hash.emptyHash
                 }
         let cache' = Incremental.insertCache cache (mkName "Main") entry
-        Incremental.needsRecompile cache' (mkName "Main") sourceHash depsHash
+        Incremental.needsRecompile cache' (mkName "Main") sourceHash depsHash Hash.emptyHash
           @?= False,
       testCase "needs recompile when source hash changes" $ do
         cache <- Incremental.emptyCache
@@ -167,10 +173,11 @@ testChangeDetection =
                   Incremental.cacheDepsHash = depsHash,
                   Incremental.cacheArtifactPath = "path",
                   Incremental.cacheTimestamp = now,
-                  Incremental.cacheInterfaceHash = Nothing
+                  Incremental.cacheInterfaceHash = Nothing,
+                  Incremental.cacheFFIHash = Hash.emptyHash
                 }
         let cache' = Incremental.insertCache cache (mkName "Main") entry
-        Incremental.needsRecompile cache' (mkName "Main") newSourceHash depsHash
+        Incremental.needsRecompile cache' (mkName "Main") newSourceHash depsHash Hash.emptyHash
           @?= True,
       testCase "needs recompile when deps hash changes" $ do
         cache <- Incremental.emptyCache
@@ -184,10 +191,11 @@ testChangeDetection =
                   Incremental.cacheDepsHash = oldDepsHash,
                   Incremental.cacheArtifactPath = "path",
                   Incremental.cacheTimestamp = now,
-                  Incremental.cacheInterfaceHash = Nothing
+                  Incremental.cacheInterfaceHash = Nothing,
+                  Incremental.cacheFFIHash = Hash.emptyHash
                 }
         let cache' = Incremental.insertCache cache (mkName "Main") entry
-        Incremental.needsRecompile cache' (mkName "Main") sourceHash newDepsHash
+        Incremental.needsRecompile cache' (mkName "Main") sourceHash newDepsHash Hash.emptyHash
           @?= True
     ]
 
@@ -216,7 +224,8 @@ testCachePersistence =
                     Incremental.cacheDepsHash = Hash.hashString "deps",
                     Incremental.cacheArtifactPath = "artifact/path",
                     Incremental.cacheTimestamp = now,
-                    Incremental.cacheInterfaceHash = Nothing
+                    Incremental.cacheInterfaceHash = Nothing,
+                    Incremental.cacheFFIHash = Hash.emptyHash
                   }
           let cache' = Incremental.insertCache cache (mkName "Main") entry
           Incremental.saveCache path cache'
@@ -247,7 +256,8 @@ testInvalidation =
                   Incremental.cacheDepsHash = Hash.hashString "d",
                   Incremental.cacheArtifactPath = "path",
                   Incremental.cacheTimestamp = now,
-                  Incremental.cacheInterfaceHash = Nothing
+                  Incremental.cacheInterfaceHash = Nothing,
+                  Incremental.cacheFFIHash = Hash.emptyHash
                 }
         let cache' = Incremental.insertCache cache (mkName "Main") entry
         let cache'' = Incremental.invalidateModule cache' (mkName "Main")
@@ -265,7 +275,8 @@ testInvalidation =
                   Incremental.cacheDepsHash = Hash.hashString "d",
                   Incremental.cacheArtifactPath = "path",
                   Incremental.cacheTimestamp = now,
-                  Incremental.cacheInterfaceHash = Nothing
+                  Incremental.cacheInterfaceHash = Nothing,
+                  Incremental.cacheFFIHash = Hash.emptyHash
                 }
         let cache' =
               Incremental.insertCache
@@ -287,7 +298,8 @@ testInvalidation =
                   Incremental.cacheDepsHash = Hash.hashString "d",
                   Incremental.cacheArtifactPath = "path",
                   Incremental.cacheTimestamp = now,
-                  Incremental.cacheInterfaceHash = Nothing
+                  Incremental.cacheInterfaceHash = Nothing,
+                  Incremental.cacheFFIHash = Hash.emptyHash
                 }
         let cache' =
               Incremental.insertCache
@@ -326,7 +338,8 @@ testPruning =
                   Incremental.cacheDepsHash = Hash.hashString "d",
                   Incremental.cacheArtifactPath = "old/path",
                   Incremental.cacheTimestamp = oldTime,
-                  Incremental.cacheInterfaceHash = Nothing
+                  Incremental.cacheInterfaceHash = Nothing,
+                  Incremental.cacheFFIHash = Hash.emptyHash
                 }
         let recentEntry =
               Incremental.CacheEntry
@@ -334,7 +347,8 @@ testPruning =
                   Incremental.cacheDepsHash = Hash.hashString "d",
                   Incremental.cacheArtifactPath = "recent/path",
                   Incremental.cacheTimestamp = recentTime,
-                  Incremental.cacheInterfaceHash = Nothing
+                  Incremental.cacheInterfaceHash = Nothing,
+                  Incremental.cacheFFIHash = Hash.emptyHash
                 }
         let cache' =
               Incremental.insertCache
@@ -355,7 +369,8 @@ testPruning =
                   Incremental.cacheDepsHash = Hash.hashString "d",
                   Incremental.cacheArtifactPath = "path",
                   Incremental.cacheTimestamp = now,
-                  Incremental.cacheInterfaceHash = Nothing
+                  Incremental.cacheInterfaceHash = Nothing,
+                  Incremental.cacheFFIHash = Hash.emptyHash
                 }
         let cache' = Incremental.insertCache cache (mkName "Main") entry
         let cutoffTime = addUTCTime (-3600) now -- 1 hour ago
@@ -379,7 +394,8 @@ testInterfaceHashing =
                   Incremental.cacheDepsHash = Hash.hashString "d",
                   Incremental.cacheArtifactPath = "path",
                   Incremental.cacheTimestamp = now,
-                  Incremental.cacheInterfaceHash = Nothing
+                  Incremental.cacheInterfaceHash = Nothing,
+                  Incremental.cacheFFIHash = Hash.emptyHash
                 }
         let cache' = Incremental.insertCache cache (mkName "Main") entry
         Incremental.getInterfaceHash cache' (mkName "Main") @?= Nothing,
@@ -393,7 +409,8 @@ testInterfaceHashing =
                   Incremental.cacheDepsHash = Hash.hashString "d",
                   Incremental.cacheArtifactPath = "path",
                   Incremental.cacheTimestamp = now,
-                  Incremental.cacheInterfaceHash = Just ifaceHash
+                  Incremental.cacheInterfaceHash = Just ifaceHash,
+                  Incremental.cacheFFIHash = Hash.emptyHash
                 }
         let cache' = Incremental.insertCache cache (mkName "Main") entry
         case Incremental.getInterfaceHash cache' (mkName "Main") of
@@ -409,7 +426,8 @@ testInterfaceHashing =
                   Incremental.cacheDepsHash = Hash.hashString "d",
                   Incremental.cacheArtifactPath = "path",
                   Incremental.cacheTimestamp = now,
-                  Incremental.cacheInterfaceHash = Just ifaceHash
+                  Incremental.cacheInterfaceHash = Just ifaceHash,
+                  Incremental.cacheFFIHash = Hash.emptyHash
                 }
         let cache' = Incremental.insertCache cache (mkName "Main") entry
         Incremental.interfaceUnchanged cache' (mkName "Main") ifaceHash @?= True,
@@ -424,7 +442,8 @@ testInterfaceHashing =
                   Incremental.cacheDepsHash = Hash.hashString "d",
                   Incremental.cacheArtifactPath = "path",
                   Incremental.cacheTimestamp = now,
-                  Incremental.cacheInterfaceHash = Just oldIfaceHash
+                  Incremental.cacheInterfaceHash = Just oldIfaceHash,
+                  Incremental.cacheFFIHash = Hash.emptyHash
                 }
         let cache' = Incremental.insertCache cache (mkName "Main") entry
         Incremental.interfaceUnchanged cache' (mkName "Main") newIfaceHash @?= False,
@@ -444,7 +463,8 @@ testInterfaceHashing =
                     Incremental.cacheDepsHash = Hash.hashString "d",
                     Incremental.cacheArtifactPath = "path",
                     Incremental.cacheTimestamp = now,
-                    Incremental.cacheInterfaceHash = Just ifaceHash
+                    Incremental.cacheInterfaceHash = Just ifaceHash,
+                    Incremental.cacheFFIHash = Hash.emptyHash
                   }
           let cache' = Incremental.insertCache cache (mkName "Main") entry
           Incremental.saveCache path cache'

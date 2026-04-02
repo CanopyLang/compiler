@@ -69,12 +69,18 @@ import qualified System.Directory as Dir
 -- when a module is recompiled but its exported interface (types, values,
 -- unions, aliases, binops) is unchanged, downstream dependents skip
 -- recompilation because their deps hash remains stable.
+--
+-- The 'cacheFFIHash' field tracks the combined hash of all FFI JavaScript
+-- files referenced by the module.  When any @external\/*.js@ file changes,
+-- this hash changes and the module is recompiled even if the @.can@ source
+-- is byte-for-byte identical.
 data CacheEntry = CacheEntry
   { cacheSourceHash :: !Hash.ContentHash,
     cacheDepsHash :: !Hash.ContentHash,
     cacheArtifactPath :: !FilePath,
     cacheTimestamp :: !UTCTime,
-    cacheInterfaceHash :: !(Maybe Hash.ContentHash)
+    cacheInterfaceHash :: !(Maybe Hash.ContentHash),
+    cacheFFIHash :: !Hash.ContentHash
   }
   deriving (Show, Eq, Generic)
 
@@ -109,12 +115,14 @@ instance Binary.Binary CacheEntry where
     Binary.put (cacheArtifactPath entry)
     putUTCTime (cacheTimestamp entry)
     Binary.put (cacheInterfaceHash entry)
+    Binary.put (cacheFFIHash entry)
   get =
     CacheEntry
       <$> Binary.get
       <*> Binary.get
       <*> Binary.get
       <*> getUTCTime
+      <*> Binary.get
       <*> Binary.get
 
 -- | Build cache for incremental compilation.
@@ -151,7 +159,8 @@ instance ToJSON CacheEntry where
         "depsHash" .= Hash.toHexString (Hash.hashValue (cacheDepsHash entry)),
         "artifactPath" .= cacheArtifactPath entry,
         "timestamp" .= cacheTimestamp entry,
-        "interfaceHash" .= fmap (Hash.toHexString . Hash.hashValue) (cacheInterfaceHash entry)
+        "interfaceHash" .= fmap (Hash.toHexString . Hash.hashValue) (cacheInterfaceHash entry),
+        "ffiHash" .= Hash.toHexString (Hash.hashValue (cacheFFIHash entry))
       ]
 
 instance FromJSON CacheEntry where
@@ -163,15 +172,20 @@ instance FromJSON CacheEntry where
         artifactPath <- obj .: "artifactPath"
         timestamp <- obj .: "timestamp"
         maybeIfaceHashStr <- obj Aeson..:? "interfaceHash"
+        maybeFfiHashStr <- obj Aeson..:? "ffiHash"
         let srcHash = maybe (Hash.HashValue mempty) id (Hash.fromHexString sourceHashStr)
             depsHash = maybe (Hash.HashValue mempty) id (Hash.fromHexString depsHashStr)
             ifaceHash = maybeIfaceHashStr >>= Hash.fromHexString
+            ffiHash = maybe Hash.emptyHash
+              (\s -> maybe Hash.emptyHash (\hv -> Hash.ContentHash hv "ffi") (Hash.fromHexString s))
+              maybeFfiHashStr
         return CacheEntry
           { cacheSourceHash = Hash.ContentHash srcHash "loaded",
             cacheDepsHash = Hash.ContentHash depsHash "loaded",
             cacheArtifactPath = artifactPath,
             cacheTimestamp = timestamp,
-            cacheInterfaceHash = fmap (\hv -> Hash.ContentHash hv "interface") ifaceHash
+            cacheInterfaceHash = fmap (\hv -> Hash.ContentHash hv "interface") ifaceHash,
+            cacheFFIHash = ffiHash
           }
 
 -- Custom serialization to handle ModuleName.Raw keys
@@ -225,9 +239,13 @@ buildCacheMagic = BSL.pack [0x42, 0x43, 0x43, 0x48]
 -- Bump this when the Binary encoding of 'BuildCache' or 'CacheEntry'
 -- changes to force cache invalidation on upgrade.
 --
+-- Version history:
+--   1 — initial binary format (source, deps, path, timestamp, interfaceHash)
+--   2 — added 'cacheFFIHash' field to 'CacheEntry'
+--
 -- @since 0.19.2
 buildCacheSchemaVersion :: Word16
-buildCacheSchemaVersion = 1
+buildCacheSchemaVersion = 2
 
 -- | Minimum header size: 4 (magic) + 2 (schema version).
 --
@@ -394,13 +412,19 @@ insertCache cache moduleName entry =
   cache {cacheEntries = Map.insert moduleName entry (cacheEntries cache)}
 
 -- | Check if module needs recompilation.
+--
+-- Returns 'True' when any of the three cache keys diverge from the stored
+-- entry: the @.can@ source hash, the combined dependency-interface hash,
+-- or the combined FFI JavaScript file hash.  All three must match for the
+-- cache to be considered valid.
 needsRecompile ::
   BuildCache ->
   ModuleName.Raw ->
   Hash.ContentHash -> -- ^ Current source hash
   Hash.ContentHash -> -- ^ Current deps hash
+  Hash.ContentHash -> -- ^ Current FFI files hash
   Bool
-needsRecompile cache moduleName sourceHash depsHash =
+needsRecompile cache moduleName sourceHash depsHash ffiHash =
   case lookupCache cache moduleName of
     Nothing ->
       True -- Not in cache, must compile
@@ -408,6 +432,8 @@ needsRecompile cache moduleName sourceHash depsHash =
       | Hash.hashChanged sourceHash (cacheSourceHash entry) ->
           True
       | Hash.hashChanged depsHash (cacheDepsHash entry) ->
+          True
+      | Hash.hashChanged ffiHash (cacheFFIHash entry) ->
           True
       | otherwise ->
           False
