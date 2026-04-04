@@ -161,12 +161,15 @@ outputToBuilderTests :: TestTree
 outputToBuilderTests =
   testGroup
     "outputToBuilder"
-    [ HUnit.testCase "OutputNothing produces unit binding" $
-        HUnit.assertBool "should contain ()" (BSC.isInfixOf "()" (builderToBS (outputToBuilder OutputNothing))),
-      HUnit.testCase "OutputDecl produces unit binding" $
-        HUnit.assertBool "should contain ()" (BSC.isInfixOf "()" (builderToBS (outputToBuilder (OutputDecl (Name.fromChars "x"))))),
-      HUnit.testCase "OutputExpr includes expression" $
-        HUnit.assertBool "should contain expression" (BSC.isInfixOf "42 + 1" (builderToBS (outputToBuilder (OutputExpr "42 + 1"))))
+    [ HUnit.testCase "OutputNothing produces exact unit binding" $
+        builderToBS (outputToBuilder OutputNothing)
+          HUnit.@?= BS_UTF8.fromString "repl_input_value_ = ()\n",
+      HUnit.testCase "OutputDecl produces exact unit binding" $
+        builderToBS (outputToBuilder (OutputDecl (Name.fromChars "x")))
+          HUnit.@?= BS_UTF8.fromString "repl_input_value_ = ()\n",
+      HUnit.testCase "OutputExpr produces exact multiline binding" $
+        builderToBS (outputToBuilder (OutputExpr "42 + 1"))
+          HUnit.@?= BS_UTF8.fromString "repl_input_value_ =\n  42 + 1\n"
     ]
 
 -- CATEGORIZED INPUT TESTS

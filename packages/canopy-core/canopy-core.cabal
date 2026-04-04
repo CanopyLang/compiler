@@ -98,12 +98,15 @@ library
       Generate.JavaScript.ESM.Types
       Generate.JavaScript.Coverage
       Generate.JavaScript.Expression
+      Generate.JavaScript.Expression.Call
+      Generate.JavaScript.Expression.Case
       Generate.JavaScript.FFI
       Generate.JavaScript.Minify
       Generate.JavaScript.Name
       Generate.JavaScript.SourceMap
       Generate.JavaScript.StringPool
       Generate.JavaScript.NpmWrapper
+      Generate.JavaScript.Kernel
       Generate.JavaScript.WebComponent
       Generate.JavaScript.WebComponent.Introspect
       Generate.Mode
@@ -129,8 +132,10 @@ library
       Optimize.Expression
       Optimize.Module
       Optimize.Names
+      Optimize.Port
       Optimize.Simplify
       Optimize.Warnings
+      Parse.Comment
       Parse.Declaration
       Parse.Expression
       Parse.Module
@@ -138,6 +143,7 @@ library
       Parse.Pattern
       Parse.Primitives
       Parse.Space
+      Parse.Symbol
       Parse.Type
       Parse.Variable
       Plugin.Interface
@@ -207,13 +213,10 @@ library
       FFI.TypeParser
       File.Cache
       File.JSON
-      Generate.JavaScript.Expression.Call
-      Generate.JavaScript.Expression.Case
       Generate.JavaScript.FFI.JSAnalysis
       Generate.JavaScript.FFI.Minify
       Generate.JavaScript.FFI.Registry
       Generate.JavaScript.Functions
-      Generate.JavaScript.Kernel
       Generate.JavaScript.Runtime.Names
       Generate.JavaScript.Runtime.Registry
       Json.Decode.AST
@@ -221,14 +224,11 @@ library
       Json.Decode.Core
       Json.Decode.Parser
       Nitpick.PatternMatches
-      Optimize.Port
-      Parse.Comment
       Parse.Interpolation
       Parse.Keyword
       Parse.Limits
       Parse.Shader
       Parse.String
-      Parse.Symbol
       Reporting.Error.Canonicalize.Diagnostics
       Reporting.Error.Canonicalize.Diagnostics.Core
       Reporting.Error.Canonicalize.Diagnostics.Extended

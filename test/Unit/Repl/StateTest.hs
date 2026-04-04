@@ -10,7 +10,6 @@
 module Unit.Repl.StateTest (tests) where
 
 import qualified Canopy.Data.Name as Name
-import qualified Data.ByteString.Char8 as BSC
 import qualified Data.Map.Strict as Map
 import qualified Repl.State as State
 import Repl.Types (Output (..), State (..))
@@ -103,19 +102,15 @@ toByteStringTests :: TestTree
 toByteStringTests =
   testGroup
     "toByteString"
-    [ HUnit.testCase "empty state with OutputNothing contains module header" $
-        HUnit.assertBool "should contain module header" (hasModuleHeader emptyOutput),
-      HUnit.testCase "empty state with OutputNothing contains replValueToPrint" $
-        HUnit.assertBool "should contain replValueToPrint" (hasReplValue emptyOutput),
-      HUnit.testCase "state with import contains import text" $
-        HUnit.assertBool "should contain import text" ("import List" `BSC.isInfixOf` stateWithImport),
-      HUnit.testCase "OutputExpr wraps expression" $
-        HUnit.assertBool "should contain expression text" ("42" `BSC.isInfixOf` exprOutput)
+    [ HUnit.testCase "empty state with OutputNothing produces exact output" $
+        State.toByteString State.initialState OutputNothing
+          HUnit.@?= "module Canopy_Repl exposing (..)\nrepl_input_value_ = ()\n",
+      HUnit.testCase "state with import produces exact output" $
+        State.toByteString
+          (State.addImport (Name.fromChars "List") "import List\n" State.initialState)
+          OutputNothing
+          HUnit.@?= "module Canopy_Repl exposing (..)\nimport List\nrepl_input_value_ = ()\n",
+      HUnit.testCase "OutputExpr produces exact binding" $
+        State.toByteString State.initialState (OutputExpr "42")
+          HUnit.@?= "module Canopy_Repl exposing (..)\nrepl_input_value_ =\n  42\n"
     ]
-  where
-    emptyOutput = State.toByteString State.initialState OutputNothing
-    stateWithImport = State.toByteString (State.addImport (Name.fromChars "List") "import List\n" State.initialState) OutputNothing
-    exprOutput = State.toByteString State.initialState (OutputExpr "42")
-
-    hasModuleHeader bs = "module" `BSC.isInfixOf` bs && "exposing" `BSC.isInfixOf` bs
-    hasReplValue bs = "repl_input_value_" `BSC.isInfixOf` bs

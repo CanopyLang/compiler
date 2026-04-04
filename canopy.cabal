@@ -239,6 +239,7 @@ test-suite canopy-test
       Unit.AST.Utils.ShaderTest
       Unit.AST.Utils.TypeTest
       Unit.AuditTest
+      Unit.Builder.CacheInvalidationTest
       Unit.Builder.CacheVersionTest
       Unit.Builder.FFICacheTest
       Unit.Builder.GraphTest
@@ -253,6 +254,7 @@ test-suite canopy-test
       Unit.Canonicalize.AbilityTest
       Unit.Canonicalize.DupsTest
       Unit.Canonicalize.ExpressionArithmeticTest
+      Unit.Canonicalize.ExpressionCanonTest
       Unit.Canonicalize.LazyImportValidationTest
       Unit.Canonicalize.ModuleTest
       Unit.Canonicalize.PatternTest
@@ -300,18 +302,14 @@ test-suite canopy-test
       Unit.Generate.CodeSplit.TypesTest
       Unit.Generate.CoverageTest
       Unit.Generate.ExpressionTest
-      Unit.Generate.HMRTest
       Unit.Generate.HtmlSecurityTest
-      Unit.Generate.JavaScript.ESMTest
+      Unit.Generate.JavaScript.BuilderTest
       Unit.Generate.JavaScript.ExpressionArithmeticTest
-      Unit.Generate.JavaScript.ExpressionGenerateTest
-      Unit.Generate.JavaScript.FFI.MinifyTest
-      Unit.Generate.JavaScript.FFI.RegistryTest
-      Unit.Generate.JavaScript.JSAnalysisTest
-      Unit.Generate.JavaScript.Runtime.RegistryTest
+      Unit.Generate.JavaScript.ExpressionCallTest
+      Unit.Generate.JavaScript.ExpressionCaseTest
+      Unit.Generate.JavaScript.KernelTest
       Unit.Generate.JavaScript.RuntimeAnnotationTest
       Unit.Generate.JavaScript.RuntimeTest
-      Unit.Generate.MinifyTest
       Unit.Generate.ModeTest
       Unit.Generate.NameTest
       Unit.Generate.SourceMapTest
@@ -358,22 +356,30 @@ test-suite canopy-test
       Unit.Optimize.CaseTest
       Unit.Optimize.ConstantFoldTest
       Unit.Optimize.DecisionTreeTest
+      Unit.Optimize.DeriveTest
       Unit.Optimize.ExpressionArithmeticTest
+      Unit.Optimize.ModuleOptTest
       Unit.Optimize.NamesTest
+      Unit.Optimize.PortOptTest
       Unit.Optimize.SimplifyTest
       Unit.Optimize.WarningsTest
       Unit.OutlineFormatTest
       Unit.Parse.AbilityTest
+      Unit.Parse.CommentTest
+      Unit.Parse.DeclarationTest
       Unit.Parse.ExpressionArithmeticTest
       Unit.Parse.ExpressionTest
       Unit.Parse.LazyImportTest
+      Unit.Parse.LimitsEnforcementTest
       Unit.Parse.ModuleTest
       Unit.Parse.NumberTest
       Unit.Parse.PatternTest
       Unit.Parse.PrimitivesTest
       Unit.Parse.SpaceTest
       Unit.Parse.StringTest
+      Unit.Parse.SymbolTest
       Unit.Parse.TypeTest
+      Unit.Parse.VariableTest
       Unit.Plugin.PipelineTest
       Unit.Publish.ArchiveTest
       Unit.Queries.ParseModuleTest
@@ -403,6 +409,7 @@ test-suite canopy-test
       Unit.Test.CoverageReportTest
       Unit.Test.CoverageScopeTest
       Unit.Test.EventCoverageTest
+      Unit.Type.AbilityConstraintTest
       Unit.Type.GuardNarrowingTest
       Unit.Type.InstantiateTest
       Unit.Type.OccursTest
@@ -412,7 +419,6 @@ test-suite canopy-test
       Unit.Type.UnifyTest
       Unit.Type.UnionFindTest
       Unit.Type.VarianceTest
-      Unit.VendorTest
       Unit.VersionCheckTest
       Unit.Watch.LiveReloadTest
       Unit.WatchTest

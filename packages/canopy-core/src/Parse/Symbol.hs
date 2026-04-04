@@ -38,7 +38,7 @@ data BadOperator
   | BadArrow
   | BadEquals
   | BadHasType
-  deriving (Show)
+  deriving (Eq, Show)
 
 -- | Parse an infix operator symbol, rejecting reserved punctuation.
 --
