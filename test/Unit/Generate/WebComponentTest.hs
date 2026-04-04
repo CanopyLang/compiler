@@ -42,7 +42,12 @@ tests =
       portEventHandlerTests,
       registrationTest,
       ariaForwardingTests,
-      formAssociatedTests
+      formAssociatedTests,
+      flagAttrCoercionTests,
+      multiPortEventTests,
+      observedAttributesTests,
+      camelToKebabEdgeCaseTests,
+      tagNameEdgeCaseTests
     ]
 
 tagNameTests :: TestTree
@@ -275,6 +280,132 @@ formAssociatedDisabledTest =
         output = builderToString (generateWebComponent config)
      in HUnit.assertBool "does not contain formAssociated"
           (not ("formAssociated" `isIn` output))
+
+-- FLAG ATTR COERCION TESTS
+
+-- | Test that each AttrCoercion type generates the correct JS coercion expression.
+flagAttrCoercionTests :: TestTree
+flagAttrCoercionTests =
+  Test.testGroup
+    "FlagAttr coercion types"
+    [ HUnit.testCase "CoerceInt uses parseInt" $
+        let config = withFlagAttr (FlagAttr "count" "count" CoerceInt)
+            output = builderToString (generateWebComponent config)
+         in HUnit.assertBool "uses parseInt" ("parseInt" `isIn` output),
+      HUnit.testCase "CoerceBool uses !== null coercion" $
+        let config = withFlagAttr (FlagAttr "enabled" "enabled" CoerceBool)
+            output = builderToString (generateWebComponent config)
+         in HUnit.assertBool "uses !== null" ("!== null" `isIn` output),
+      HUnit.testCase "CoerceFloat uses parseFloat" $
+        let config = withFlagAttr (FlagAttr "ratio" "ratio" CoerceFloat)
+            output = builderToString (generateWebComponent config)
+         in HUnit.assertBool "uses parseFloat" ("parseFloat" `isIn` output),
+      HUnit.testCase "CoerceString passes value through" $
+        let config = withFlagAttr (FlagAttr "label" "label" CoerceString)
+            output = builderToString (generateWebComponent config)
+         in HUnit.assertBool "references newValue" ("newValue" `isIn` output)
+    ]
+
+-- | Build a config with a single flag attribute.
+withFlagAttr :: FlagAttr -> WebComponentConfig
+withFlagAttr attr =
+  WebComponentConfig
+    { _wcModuleName = Name.fromChars "App.Widget"
+    , _wcFlagAttrs = [attr]
+    , _wcPortEvents = []
+    , _wcFormAssociated = False
+    }
+
+-- MULTI PORT EVENT TESTS
+
+-- | Test that multiple port events are all wired in connectedCallback.
+multiPortEventTests :: TestTree
+multiPortEventTests =
+  Test.testGroup
+    "Multiple PortEvents"
+    [ HUnit.testCase "two port events both subscribed in connectedCallback" $
+        let config = WebComponentConfig
+              { _wcModuleName = Name.fromChars "App.Chat"
+              , _wcFlagAttrs = []
+              , _wcPortEvents = [PortEvent "onMessage" "message", PortEvent "onError" "error"]
+              , _wcFormAssociated = False
+              }
+            output = builderToString (generateWebComponent config)
+         in do
+              HUnit.assertBool "onMessage subscribe present"
+                ("ports.onMessage" `isIn` output)
+              HUnit.assertBool "onError subscribe present"
+                ("ports.onError" `isIn` output),
+      HUnit.testCase "two port events both unsubscribed in disconnectedCallback" $
+        let config = WebComponentConfig
+              { _wcModuleName = Name.fromChars "App.Chat"
+              , _wcFlagAttrs = []
+              , _wcPortEvents = [PortEvent "onMessage" "message", PortEvent "onError" "error"]
+              , _wcFormAssociated = False
+              }
+            output = builderToString (generateWebComponent config)
+            disconnected = takeBlock "  disconnectedCallback()" output
+         in do
+              HUnit.assertBool "onMessage unsubscribe" ("onMessage" `isIn` disconnected)
+              HUnit.assertBool "onError unsubscribe" ("onError" `isIn` disconnected)
+    ]
+
+-- OBSERVED ATTRIBUTES TESTS
+
+-- | Test that observedAttributes lists the right attribute names.
+observedAttributesTests :: TestTree
+observedAttributesTests =
+  Test.testGroup
+    "observedAttributes static getter"
+    [ HUnit.testCase "no flag attrs produces empty array" $
+        let config = WebComponentConfig
+              { _wcModuleName = Name.fromChars "App.Empty"
+              , _wcFlagAttrs = []
+              , _wcPortEvents = []
+              , _wcFormAssociated = False
+              }
+            output = builderToString (generateWebComponent config)
+         in HUnit.assertBool "empty observed attrs" ("return [];" `isIn` output),
+      HUnit.testCase "single flag attr appears in observed list" $
+        let config = WebComponentConfig
+              { _wcModuleName = Name.fromChars "App.Counter"
+              , _wcFlagAttrs = [FlagAttr "count" "count" CoerceInt]
+              , _wcPortEvents = []
+              , _wcFormAssociated = False
+              }
+            output = builderToString (generateWebComponent config)
+         in HUnit.assertBool "count in observed attrs" ("'count'" `isIn` output)
+    ]
+
+-- CAMELTOKEBAB EDGE CASE TESTS
+
+-- | Test camelToKebab edge cases.
+camelToKebabEdgeCaseTests :: TestTree
+camelToKebabEdgeCaseTests =
+  Test.testGroup
+    "camelToKebab edge cases"
+    [ HUnit.testCase "all-uppercase input stays lowercase with hyphens" $
+        camelToKebab "XMLParser" @?= "x-m-l-parser",
+      HUnit.testCase "already-kebab-case input unchanged" $
+        camelToKebab "my-value" @?= "my-value",
+      HUnit.testCase "single uppercase letter becomes lowercase" $
+        camelToKebab "X" @?= "x",
+      HUnit.testCase "multiple consecutive capitals each get hyphens" $
+        camelToKebab "getHTTPResponse" @?= "get-h-t-t-p-response"
+    ]
+
+-- TAG NAME EDGE CASE TESTS
+
+-- | Test moduleToTagName edge cases.
+tagNameEdgeCaseTests :: TestTree
+tagNameEdgeCaseTests =
+  Test.testGroup
+    "moduleToTagName edge cases"
+    [ HUnit.testCase "four-segment module name" $
+        moduleToTagName (Name.fromChars "My.App.View.Counter") @?= "my-app-view-counter",
+      HUnit.testCase "single lowercase module name" $
+        moduleToTagName (Name.fromChars "main") @?= "main"
+    ]
 
 -- | Check if a substring appears in a string.
 isIn :: String -> String -> Bool

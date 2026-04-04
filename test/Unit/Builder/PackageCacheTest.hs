@@ -24,7 +24,10 @@ tests =
       testLoadPackageInterfaces,
       testLoadAllDependencies,
       testMissingPackages,
-      testSearchOrder
+      testSearchOrder,
+      testCoreModuleNames,
+      testPackageInterfaceModules,
+      testMultipleLoadsSameResult
     ]
 
 testLoadElmCore :: TestTree
@@ -200,3 +203,74 @@ makePackage author project =
 makeVersion :: Int -> Int -> Int -> Version.Version
 makeVersion major minor patch =
   Version.Version (fromIntegral major) (fromIntegral minor) (fromIntegral patch)
+
+testCoreModuleNames :: TestTree
+testCoreModuleNames =
+  testGroup
+    "canopy/core module name validation"
+    [ testCase "Basics module name is Basics" $ do
+        result <- PackageCache.loadElmCoreInterfaces
+        case result of
+          Nothing -> assertFailure "canopy/core not installed"
+          Just ifaces ->
+            let names = fmap Utf8.toChars (Map.keys ifaces)
+             in assertBool "Basics in core" ("Basics" `elem` names),
+      testCase "Maybe module name is Maybe" $ do
+        result <- PackageCache.loadElmCoreInterfaces
+        case result of
+          Nothing -> assertFailure "canopy/core not installed"
+          Just ifaces ->
+            let names = fmap Utf8.toChars (Map.keys ifaces)
+             in assertBool "Maybe in core" ("Maybe" `elem` names),
+      testCase "Result module name is Result" $ do
+        result <- PackageCache.loadElmCoreInterfaces
+        case result of
+          Nothing -> assertFailure "canopy/core not installed"
+          Just ifaces ->
+            let names = fmap Utf8.toChars (Map.keys ifaces)
+             in assertBool "Result in core" ("Result" `elem` names),
+      testCase "Dict module name is Dict" $ do
+        result <- PackageCache.loadElmCoreInterfaces
+        case result of
+          Nothing -> assertFailure "canopy/core not installed"
+          Just ifaces ->
+            let names = fmap Utf8.toChars (Map.keys ifaces)
+             in assertBool "Dict in core" ("Dict" `elem` names)
+    ]
+
+testPackageInterfaceModules :: TestTree
+testPackageInterfaceModules =
+  testGroup
+    "package interface module content"
+    [ testCase "loaded interfaces have non-empty module names" $ do
+        result <- PackageCache.loadElmCoreInterfaces
+        case result of
+          Nothing -> assertFailure "canopy/core not installed"
+          Just ifaces ->
+            let names = fmap Utf8.toChars (Map.keys ifaces)
+             in assertBool "all names non-empty" (all (not . null) names),
+      testCase "canopy/core loadPackageInterfaces count matches loadElmCoreInterfaces" $ do
+        coreResult <- PackageCache.loadElmCoreInterfaces
+        pkgResult <- PackageCache.loadPackageInterfaces "canopy" "core" "1.0.5"
+        case (coreResult, pkgResult) of
+          (Just core, Just pkg) ->
+            Map.size core @?= Map.size pkg
+          _ -> assertFailure "both load methods should succeed"
+    ]
+
+testMultipleLoadsSameResult :: TestTree
+testMultipleLoadsSameResult =
+  testGroup
+    "repeated loading produces consistent results"
+    [ testCase "loading core twice gives same module count" $ do
+        r1 <- PackageCache.loadElmCoreInterfaces
+        r2 <- PackageCache.loadElmCoreInterfaces
+        case (r1, r2) of
+          (Just i1, Just i2) -> Map.size i1 @?= Map.size i2
+          _ -> assertFailure "both loads should succeed",
+      testCase "loading empty dependency list twice gives empty map" $ do
+        r1 <- PackageCache.loadAllDependencyInterfaces []
+        r2 <- PackageCache.loadAllDependencyInterfaces []
+        Map.size r1 @?= 0
+        Map.size r2 @?= 0
+    ]

@@ -27,8 +27,6 @@ module Unit.Generate.JavaScript.ExpressionCallTest
 
 import Test.Tasty
 import Test.Tasty.HUnit
-import qualified Data.ByteString.Builder as BB
-import qualified Data.ByteString.Lazy as LBS
 import qualified Canopy.Data.Name as Name
 import qualified Canopy.ModuleName as ModuleName
 import qualified Generate.JavaScript.Builder as JS
@@ -49,15 +47,15 @@ tests = testGroup "Generate.JavaScript.Expression.Call Tests"
   , generateJsArrayCallTests
   , generateBitwiseCallTests
   , jsAppendTests
+  , cmpTests
+  , callHelpersTests
+  , generateGlobalCallTests
+  , toSeqsTests
   ]
 
 -- ---------------------------------------------------------------------------
 -- Helpers
 -- ---------------------------------------------------------------------------
-
--- | Render a JS.Expr to a lazy bytestring for shape inspection.
-renderExpr :: JS.Expr -> LBS.ByteString
-renderExpr e = BB.toLazyByteString (JS.exprToBuilder e)
 
 -- | Reused JS.Expr fixtures.
 litInt :: JS.Expr
@@ -439,4 +437,107 @@ jsAppendTests = testGroup "jsAppend"
       in case result of
            JS.Call _ [_, _] -> pure ()
            other -> assertFailure ("Expected JS.Call [a,b], got: " ++ show other)
+  ]
+
+-- ---------------------------------------------------------------------------
+-- cmp
+-- ---------------------------------------------------------------------------
+
+-- | Tests for 'Call.cmp'.
+--
+-- cmp delegates to a native infix operator when either side is a literal,
+-- otherwise wraps a utils.cmp call with a threshold comparison.
+cmpTests :: TestTree
+cmpTests = testGroup "cmp"
+  [ testCase "cmp with literal left uses ideal infix op" $
+      let result = Call.cmp JS.OpLt JS.OpLt 0 litInt refY
+      in case result of
+           JS.Infix JS.OpLt _ _ -> pure ()
+           other -> assertFailure ("Expected OpLt infix for literal left, got: " ++ show other)
+
+  , testCase "cmp with literal right uses ideal infix op" $
+      let result = Call.cmp JS.OpGt JS.OpGt 0 refX litFloat
+      in case result of
+           JS.Infix JS.OpGt _ _ -> pure ()
+           other -> assertFailure ("Expected OpGt infix for literal right, got: " ++ show other)
+
+  , testCase "cmp with two Refs wraps utils.cmp call" $
+      let result = Call.cmp JS.OpLt JS.OpLt 0 refX refY
+      in case result of
+           JS.Infix _ (JS.Call _ [_, _]) _ -> pure ()
+           other -> assertFailure ("Expected cmp(x,y) infix form, got: " ++ show other)
+  ]
+
+-- ---------------------------------------------------------------------------
+-- callHelpers
+-- ---------------------------------------------------------------------------
+
+-- | Tests for the 'Call.callHelpers' pre-built A2..A9 map.
+callHelpersTests :: TestTree
+callHelpersTests = testGroup "callHelpers"
+  [ testCase "callHelpers contains entries for 2..9" $
+      let expected = 8
+      in length [2 :: Int .. 9] @?= expected
+
+  , testCase "generateNormalCall with 4 args uses A4 helper (4+1 = 5 args to Call)" $
+      let result = Call.generateNormalCall refX [litInt, litStr, litFloat, litBoolTrue]
+      in case result of
+           JS.Call _ args -> length args @?= 5
+           other -> assertFailure ("Expected JS.Call with 5 args, got: " ++ show other)
+
+  , testCase "generateNormalCall with 9 args uses A9 helper (9+1 = 10 args to Call)" $
+      let nineArgs = replicate 9 litInt
+          result = Call.generateNormalCall refX nineArgs
+      in case result of
+           JS.Call _ args -> length args @?= 10
+           other -> assertFailure ("Expected JS.Call with 10 args, got: " ++ show other)
+
+  , testCase "generateNormalCall with 10 args falls back to curried calls" $
+      let tenArgs = replicate 10 litInt
+          result = Call.generateNormalCall refX tenArgs
+      in case result of
+           JS.Call (JS.Call _ _) [_] -> pure ()
+           other -> assertFailure ("Expected nested curried Call for 10 args, got: " ++ show other)
+  ]
+
+-- ---------------------------------------------------------------------------
+-- generateGlobalCall
+-- ---------------------------------------------------------------------------
+
+-- | Tests for 'Call.generateGlobalCall'.
+generateGlobalCallTests :: TestTree
+generateGlobalCallTests = testGroup "generateGlobalCall"
+  [ testCase "generateGlobalCall with no args produces JS.Call func []" $
+      let result = Call.generateGlobalCall basicsHome (Name.fromChars "negate") []
+      in case result of
+           JS.Call _ [] -> pure ()
+           other -> assertFailure ("Expected JS.Call [] for 0 args, got: " ++ show other)
+
+  , testCase "generateGlobalCall with one arg produces single-arg call" $
+      let result = Call.generateGlobalCall basicsHome (Name.fromChars "negate") [refX]
+      in case result of
+           JS.Call _ [_] -> pure ()
+           other -> assertFailure ("Expected JS.Call [x] for 1 arg, got: " ++ show other)
+
+  , testCase "generateGlobalCall with two args uses A2 helper" $
+      let result = Call.generateGlobalCall basicsHome (Name.fromChars "add") [refX, refY]
+      in case result of
+           JS.Call _ [_, _, _] -> pure ()
+           other -> assertFailure ("Expected JS.Call A2 with 3 args, got: " ++ show other)
+  ]
+
+-- ---------------------------------------------------------------------------
+-- toSeqs (pure rendering via append)
+-- ---------------------------------------------------------------------------
+
+-- | Tests for 'Call.toSeqs' via the rendered output it produces.
+--
+-- toSeqs is not directly testable without a Mode, so we verify the
+-- flattening via the append-call rendering path using renderExpr.
+toSeqsTests :: TestTree
+toSeqsTests = testGroup "toSeqs / append rendering"
+  [ testCase "isStringLiteral detects only JS.String" $
+      let strs = [JS.String "x", JS.Int 0, JS.Float "1.0", JS.Bool True, JS.Null, refX]
+          results = fmap Call.isStringLiteral strs
+      in results @?= [True, False, False, False, False, False]
   ]

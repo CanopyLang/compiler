@@ -23,7 +23,10 @@ tests =
       testBuildGraph,
       testTopologicalSort,
       testCycleDetection,
-      testDependencyQueries
+      testDependencyQueries,
+      testTransitiveEdgeCases,
+      testGraphMerge,
+      testLargeLinearChain
     ]
 
 -- Helper to create test module names
@@ -250,4 +253,70 @@ testDependencyQueries =
         let graph = Graph.buildGraph deps
         Graph.reverseDeps graph (mkName "Utils")
           @?= Just (Set.fromList [mkName "Main", mkName "App"])
+    ]
+
+testTransitiveEdgeCases :: TestTree
+testTransitiveEdgeCases =
+  testGroup
+    "transitive dependency edge cases"
+    [ testCase "transitiveDeps for non-existent module is empty" $
+        Graph.transitiveDeps Graph.emptyGraph (mkName "Ghost") @?= Set.empty,
+      testCase "transitiveDeps for leaf module is empty" $
+        let graph = Graph.buildGraph [(mkName "Leaf", [])]
+         in Graph.transitiveDeps graph (mkName "Leaf") @?= Set.empty,
+      testCase "transitiveDeps does not include the module itself" $
+        let graph = Graph.buildGraph [(mkName "Main", [mkName "Utils"]), (mkName "Utils", [])]
+         in Set.member (mkName "Main") (Graph.transitiveDeps graph (mkName "Main")) @?= False,
+      testCase "transitiveDeps includes all levels in wide diamond" $
+        let deps =
+              [ (mkName "Root", [mkName "A", mkName "B", mkName "C"]),
+                (mkName "A", [mkName "Leaf"]),
+                (mkName "B", [mkName "Leaf"]),
+                (mkName "C", [mkName "Leaf"])
+              ]
+            graph = Graph.buildGraph deps
+            trans = Graph.transitiveDeps graph (mkName "Root")
+         in do
+              Set.member (mkName "Leaf") trans @?= True
+              Set.member (mkName "A") trans @?= True
+              Set.member (mkName "B") trans @?= True
+              Set.member (mkName "C") trans @?= True,
+      testCase "reverseDeps for non-existent module returns Nothing" $
+        Graph.reverseDeps Graph.emptyGraph (mkName "Missing") @?= Nothing
+    ]
+
+testGraphMerge :: TestTree
+testGraphMerge =
+  testGroup
+    "incremental graph building"
+    [ testCase "addDependency to existing dependency adds new one" $
+        let graph = Graph.addDependency (Graph.addDependency Graph.emptyGraph (mkName "M") (mkName "A")) (mkName "M") (mkName "B")
+         in Graph.getModuleDeps graph (mkName "M")
+              @?= Just (Set.fromList [mkName "A", mkName "B"]),
+      testCase "adding module after dependencies records it" $
+        let graph = Graph.addModule (Graph.addDependency Graph.emptyGraph (mkName "Dep") (mkName "Base")) (mkName "New")
+         in Set.member (mkName "New") (Set.fromList (Graph.getAllModules graph)) @?= True,
+      testCase "module added with no deps has empty dep set" $
+        let graph = Graph.addModule Graph.emptyGraph (mkName "Solo")
+         in Graph.getModuleDeps graph (mkName "Solo") @?= Just Set.empty
+    ]
+
+testLargeLinearChain :: TestTree
+testLargeLinearChain =
+  testGroup
+    "large linear chain"
+    [ testCase "10-module linear chain topologically sorted correctly" $
+        let names = fmap (\i -> mkName ("M" ++ show (i :: Int))) [0 .. 9]
+            pairs = zip names (fmap (: []) (drop 1 names) ++ [[]])
+            graph = Graph.buildGraph pairs
+         in case Graph.topologicalSort graph of
+              Nothing -> assertFailure "Expected successful sort of linear chain"
+              Just order ->
+                let indexOf n = lookup n (zip order [0 :: Int ..])
+                 in (indexOf (mkName "M0") > indexOf (mkName "M9")) @? "M0 after M9 in topo order",
+      testCase "10-module chain has no cycle" $
+        let names = fmap (\i -> mkName ("N" ++ show (i :: Int))) [0 .. 9]
+            pairs = zip names (fmap (: []) (drop 1 names) ++ [[]])
+            graph = Graph.buildGraph pairs
+         in Graph.hasCycle graph @?= False
     ]

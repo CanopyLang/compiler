@@ -47,7 +47,11 @@ tests =
       letDefInstrumentationTests,
       counterConsistencyTests,
       lcovStructureTests,
-      istanbulStructureTests
+      istanbulStructureTests,
+      countExprExtraTests,
+      coverageMapEqTests,
+      covCallExtraTests,
+      defineTailFuncTests
     ]
 
 -- HELPERS
@@ -655,3 +659,68 @@ istanbulStructureTests =
       let pt = Coverage.CoveragePoint 0 (nameStr "Main") (nameStr "foo") (mkRegion 5 1 10 1) Coverage.FunctionEntry dummyCanonical
           covMap = Coverage.CoverageMap (Map.singleton 0 pt)
        in renderBuilder (Encode.encode (Coverage.toIstanbulJson covMap (Map.singleton 0 1)))
+
+-- ADDITIONAL EDGE CASE TESTS
+
+-- | Additional countExprPoints edge cases covering more Opt.Expr constructors.
+countExprExtraTests :: TestTree
+countExprExtraTests =
+  testGroup
+    "countExprPoints extra constructors"
+    [ testCase "VarGlobal has 0 points" $
+        Coverage.countExprPoints (Opt.VarGlobal (mkGlobal "Main" "foo")) @?= 0,
+      testCase "Record has 0 points" $
+        Coverage.countExprPoints (Opt.Record Map.empty) @?= 0,
+      testCase "Access has 0 points" $
+        Coverage.countExprPoints (Opt.Access leafExpr (nameStr "field")) @?= 0,
+      testCase "Tuple has 0 points" $
+        Coverage.countExprPoints (Opt.Tuple leafExpr leafExpr Nothing) @?= 0,
+      testCase "Unit has 0 points" $
+        Coverage.countExprPoints Opt.Unit @?= 0,
+      testCase "Update with empty map has 0 points" $
+        Coverage.countExprPoints (Opt.Update leafExpr Map.empty) @?= 0,
+      testCase "Accessor has 0 points" $
+        Coverage.countExprPoints (Opt.Accessor (nameStr "field")) @?= 0
+    ]
+
+-- | Tests for CoverageMap equality and Eq instance.
+coverageMapEqTests :: TestTree
+coverageMapEqTests =
+  testGroup
+    "CoverageMap equality"
+    [ testCase "two empty maps are equal" $
+        Coverage.CoverageMap Map.empty @?= Coverage.CoverageMap Map.empty,
+      testCase "map with entry equals itself" $
+        let pt = Coverage.CoveragePoint 0 (nameStr "M") (nameStr "f") (mkRegion 1 1 2 1) Coverage.FunctionEntry dummyCanonical
+            cm = Coverage.CoverageMap (Map.singleton 0 pt)
+         in cm @?= cm,
+      testCase "maps with different entries are not equal" $
+        let pt1 = Coverage.CoveragePoint 0 (nameStr "M") (nameStr "f") (mkRegion 1 1 2 1) Coverage.FunctionEntry dummyCanonical
+            pt2 = Coverage.CoveragePoint 0 (nameStr "M") (nameStr "g") (mkRegion 3 1 4 1) Coverage.FunctionEntry dummyCanonical
+         in assertBool "different maps" (Coverage.CoverageMap (Map.singleton 0 pt1) /= Coverage.CoverageMap (Map.singleton 0 pt2))
+    ]
+
+-- | Tests for covCall with large counter IDs.
+covCallExtraTests :: TestTree
+covCallExtraTests =
+  testGroup
+    "covCall extra"
+    [ testCase "covCall 999 produces __cov(999);" $
+        renderBuilder (Coverage.covCall 999) @?= "__cov(999);\n",
+      testCase "covCall 1 produces __cov(1);" $
+        renderBuilder (Coverage.covCall 1) @?= "__cov(1);\n",
+      testCase "covCall output always ends with newline" $
+        last (renderBuilder (Coverage.covCall 7)) @?= '\n'
+    ]
+
+-- | Tests for DefineTailFunc with if/function body point counts.
+defineTailFuncTests :: TestTree
+defineTailFuncTests =
+  testGroup
+    "DefineTailFunc instrumentation"
+    [ testCase "DefineTailFunc with if body counts branch points" $
+        Coverage.countNodePoints (Opt.DefineTailFunc [nameStr "x"] ifExpr Set.empty) @?= 3,
+      testCase "DefineTailFunc with nested function counts all" $
+        let expr = Opt.Function [nameStr "x"] funcExpr
+         in Coverage.countNodePoints (Opt.DefineTailFunc [nameStr "x"] expr Set.empty) @?= 2
+    ]

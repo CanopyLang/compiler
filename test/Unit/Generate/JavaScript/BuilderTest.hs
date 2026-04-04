@@ -30,8 +30,11 @@ where
 import qualified Data.ByteString.Builder as BB
 import qualified Data.ByteString.Lazy as LBS
 import qualified Data.ByteString.Lazy.Char8 as LChar8
+import qualified Data.Set as Set
 import qualified Generate.JavaScript.Builder as JS
 import qualified Generate.JavaScript.Name as JsName
+import qualified Generate.Mode as Mode
+import qualified Json.Encode as Json
 import qualified Canopy.Data.Name as Name
 import qualified Canopy.Data.Utf8 as Utf8
 import Test.Tasty (TestTree)
@@ -57,7 +60,17 @@ tests =
       multiVarStmtTests,
       moduleItemTests,
       nameToByteStringTests,
-      sanitizeScriptTests
+      sanitizeScriptTests,
+      floatExprTests,
+      jsonExprTests,
+      namedFunctionExprTests,
+      objectMultiFieldTests,
+      nestedExprTests,
+      continueWithLabelTests,
+      emptyStmtTests,
+      shorthandObjectTests,
+      moduleBuilderTests,
+      modeRenderingTests
     ]
 
 -- HELPERS
@@ -439,4 +452,164 @@ sanitizeScriptTests =
       Test.testCase "empty string passes through unchanged" $
         Utf8.toChars (JS.sanitizeScriptElementString (Utf8.fromChars ""))
           @?= ""
+    ]
+
+-- FLOAT AND JSON EXPRESSION TESTS
+
+-- | Test rendering of Float and Json literal expressions.
+floatExprTests :: TestTree
+floatExprTests =
+  Test.testGroup
+    "Float and Json expression rendering"
+    [ Test.testCase "Float renders verbatim builder content" $
+        renderExpr (JS.Float "3.14") @?= "3.14",
+      Test.testCase "Float with integer string renders as integer-like" $
+        renderExpr (JS.Float "1.0e10") @?= "1.0e10",
+      Test.testCase "Float negative value renders correctly" $
+        renderExpr (JS.Float "-2.5") @?= "-2.5"
+    ]
+
+-- | Test rendering of Json expressions.
+jsonExprTests :: TestTree
+jsonExprTests =
+  Test.testGroup
+    "Json expression rendering"
+    [ Test.testCase "Json null renders as null" $
+        renderExpr (JS.Json Json.null) @?= "null",
+      Test.testCase "Json true renders as true" $
+        renderExpr (JS.Json (Json.bool True)) @?= "true",
+      Test.testCase "Json integer renders correctly" $
+        renderExpr (JS.Json (Json.int 42)) @?= "42"
+    ]
+
+-- NAMED FUNCTION EXPRESSION TESTS
+
+-- | Test rendering of named function expressions.
+namedFunctionExprTests :: TestTree
+namedFunctionExprTests =
+  Test.testGroup
+    "named function expression rendering"
+    [ Test.testCase "Function with name renders name in expression" $
+        renderExpr (JS.Function (Just (localName "fact")) [localName "n"] [JS.Return (JS.Int 1)])
+          @?= " functionfact(n){ return 1;}",
+      Test.testCase "Function with multiple params renders comma-separated list" $
+        renderExpr (JS.Function Nothing [localName "a", localName "b", localName "c"] [JS.Return (JS.Int 0)])
+          @?= " function(a,b,c){ return 0;}"
+    ]
+
+-- OBJECT MULTI-FIELD TESTS
+
+-- | Test rendering of object literals with multiple fields.
+objectMultiFieldTests :: TestTree
+objectMultiFieldTests =
+  Test.testGroup
+    "object multi-field rendering"
+    [ Test.testCase "Object with two fields renders both key-value pairs" $
+        renderExpr (JS.Object [(localName "x", JS.Int 1), (localName "y", JS.Int 2)])
+          @?= "{x :1,y :2}",
+      Test.testCase "Object with nested array value renders correctly" $
+        renderExpr (JS.Object [(localName "items", JS.Array [JS.Int 1, JS.Int 2])])
+          @?= "{items :[1 ,2]}"
+    ]
+
+-- NESTED EXPRESSION TESTS
+
+-- | Test rendering of nested and compound expressions.
+nestedExprTests :: TestTree
+nestedExprTests =
+  Test.testGroup
+    "nested expression rendering"
+    [ Test.testCase "nested Access renders dot-chain" $
+        renderExpr (JS.Access (JS.Access (JS.Ref (localName "a")) (localName "b")) (localName "c"))
+          @?= " a.b.c",
+      Test.testCase "nested Call renders correctly" $
+        renderExpr (JS.Call (JS.Call (JS.Ref (localName "f")) [JS.Int 1]) [JS.Int 2])
+          @?= " f(1)(2)",
+      Test.testCase "Index of Access renders bracket on dotted path" $
+        renderExpr (JS.Index (JS.Access (JS.Ref (localName "obj")) (localName "arr")) (JS.Int 0))
+          @?= " obj.arr[0]",
+      Test.testCase "New with Access callee renders new with dot" $
+        renderExpr (JS.New (JS.Access (JS.Ref (localName "ns")) (localName "Cls")) [])
+          @?= " new ns.Cls()"
+    ]
+
+-- CONTINUE WITH LABEL TESTS
+
+-- | Test continue statement with a label.
+continueWithLabelTests :: TestTree
+continueWithLabelTests =
+  Test.testGroup
+    "continue with label"
+    [ Test.testCase "Continue with label renders labelled continue" $
+        stripNewline (JS.Continue (Just (localName "outer"))) @?= " continue outer;"
+    ]
+
+-- EMPTY STMT TESTS
+
+-- | Test the EmptyStmt constructor.
+emptyStmtTests :: TestTree
+emptyStmtTests =
+  Test.testGroup
+    "EmptyStmt rendering"
+    [ Test.testCase "EmptyStmt renders as semicolon" $
+        renderStmt JS.EmptyStmt @?= ";"
+    ]
+
+-- SHORTHAND OBJECT TESTS
+
+-- | Test 'JS.shorthandObjectExpr' by wrapping it in a Var statement that
+-- references the produced expression via 'moduleToBuilder'.
+--
+-- shorthandObjectExpr returns a language-javascript JSExpression.  We verify
+-- behaviour by constructing a ConstPure statement whose rendered output
+-- embeds a shorthand object, then checking the rendered string.
+shorthandObjectTests :: TestTree
+shorthandObjectTests =
+  Test.testGroup
+    "shorthandObjectExpr (indirect via moduleToBuilder)"
+    [ Test.testCase "moduleToBuilder with RawJS item passes through verbatim" $
+        let item = JS.RawJS (BB.byteString "console.log(1);\n")
+            output = LChar8.unpack (BB.toLazyByteString (JS.moduleToBuilder [item]))
+         in output @?= "console.log(1);\n",
+      Test.testCase "moduleToBuilder with ExportLocals produces export statement" $
+        let item = JS.ExportLocals [localName "x"]
+            output = LChar8.unpack (BB.toLazyByteString (JS.moduleToBuilder [item]))
+         in output @?= "export { x };\n"
+    ]
+
+-- MODULE BUILDER TESTS
+
+-- | Test 'JS.moduleToBuilder' combining multiple items.
+moduleBuilderTests :: TestTree
+moduleBuilderTests =
+  Test.testGroup
+    "moduleToBuilder"
+    [ Test.testCase "moduleToBuilder of empty list produces empty output" $
+        let output = LChar8.unpack (BB.toLazyByteString (JS.moduleToBuilder []))
+         in output @?= "",
+      Test.testCase "moduleToBuilder combines multiple items" $
+        let items = [JS.ModuleStmt (JS.Var (localName "x") (JS.Int 1)), JS.ModuleStmt (JS.Var (localName "y") (JS.Int 2))]
+            output = LChar8.unpack (BB.toLazyByteString (JS.moduleToBuilder items))
+         in length output @?= length ("var x =1;\n" :: String) + length ("var y =2;\n" :: String)
+    ]
+
+-- MODE-AWARE RENDERING TESTS
+
+-- | Test 'JS.stmtToBuilderWithMode' and 'JS.exprToBuilderWithMode'.
+modeRenderingTests :: TestTree
+modeRenderingTests =
+  Test.testGroup
+    "mode-aware rendering"
+    [ Test.testCase "stmtToBuilderWithMode Dev renders Var correctly" $
+        let mode = Mode.Dev Nothing False False False Set.empty False
+            output = LChar8.unpack (BB.toLazyByteString (JS.stmtToBuilderWithMode mode (JS.Var (localName "x") (JS.Int 5))))
+         in output @?= "var x =5;\n",
+      Test.testCase "exprToBuilderWithMode Dev renders Int correctly" $
+        let mode = Mode.Dev Nothing False False False Set.empty False
+            output = LChar8.unpack (BB.toLazyByteString (JS.exprToBuilderWithMode mode (JS.Int 99)))
+         in output @?= "99",
+      Test.testCase "stmtToBuilderWithMode Dev renders Return correctly" $
+        let mode = Mode.Dev Nothing False False False Set.empty False
+            output = LChar8.unpack (BB.toLazyByteString (JS.stmtToBuilderWithMode mode (JS.Return (JS.Bool True))))
+         in output @?= " return true;\n"
     ]

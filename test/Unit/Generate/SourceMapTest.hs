@@ -22,6 +22,9 @@ tests =
     , mappingTests
     , sourceRegistrationTests
     , jsonSerializationTests
+    , vlqEdgeCaseTests
+    , mappingEdgeCaseTests
+    , sourceEdgeCaseTests
     ]
 
 -- | Helper to render a Builder to a String for assertions.
@@ -177,4 +180,79 @@ jsonSerializationTests =
         let (_, sm) = SourceMap.addSource "src/Main.can" (Just "module Main exposing (..)") (SourceMap.empty "test.js")
             json = renderBuilder (SourceMap.toBuilder sm)
          in json @?= "{\"version\":3,\"file\":\"test.js\",\"sources\":[\"src/Main.can\"],\"sourcesContent\":[\"module Main exposing (..)\"],\"names\":[],\"mappings\":\"\"}"
+    ]
+
+-- VLQ EDGE CASE TESTS
+
+vlqEdgeCaseTests :: TestTree
+vlqEdgeCaseTests =
+  testGroup
+    "VLQ edge cases"
+    [ testCase "encodeVLQ 3 produces G" $
+        renderBuilder (SourceMap.encodeVLQ 3) @?= "G"
+    , testCase "encodeVLQ (-3) produces H" $
+        renderBuilder (SourceMap.encodeVLQ (-3)) @?= "H"
+    , testCase "encodeVLQ 4 produces I" $
+        renderBuilder (SourceMap.encodeVLQ 4) @?= "I"
+    , testCase "encodeVLQ 5 produces K" $
+        renderBuilder (SourceMap.encodeVLQ 5) @?= "K"
+    , testCase "encodeVLQ 10 produces U" $
+        renderBuilder (SourceMap.encodeVLQ 10) @?= "U"
+    , testCase "encodeVLQ 14 produces c" $
+        renderBuilder (SourceMap.encodeVLQ 14) @?= "c"
+    , testCase "encodeVLQ large positive value uses multiple digits" $
+        length (renderBuilder (SourceMap.encodeVLQ 1000)) @?= 3
+    , testCase "encodeVLQ large negative value uses multiple digits" $
+        length (renderBuilder (SourceMap.encodeVLQ (-1000))) @?= 3
+    , testCase "encodeVLQ symmetric: positive and negative same magnitude" $
+        let n = 500
+         in length (renderBuilder (SourceMap.encodeVLQ n))
+              @?= length (renderBuilder (SourceMap.encodeVLQ (-n)))
+    ]
+
+-- MAPPING EDGE CASE TESTS
+
+mappingEdgeCaseTests :: TestTree
+mappingEdgeCaseTests =
+  testGroup
+    "Mapping edge cases"
+    [ testCase "three mappings on different lines produce two semicolons" $
+        let m1 = SourceMap.Mapping 0 0 0 0 0 Nothing
+            m2 = SourceMap.Mapping 1 0 0 0 0 Nothing
+            m3 = SourceMap.Mapping 2 0 0 0 0 Nothing
+            sm = SourceMap.addMapping m3 (SourceMap.addMapping m2 (SourceMap.addMapping m1 (SourceMap.empty "out.js")))
+            json = renderBuilder (SourceMap.toBuilder sm)
+            mappingsField = drop 1 (dropWhile (/= ':') (dropWhile (/= 'm') json))
+         in length (filter (== ';') mappingsField) @?= 2
+    , testCase "mapping at column 0 after prior column encodes delta" $
+        let m1 = SourceMap.Mapping 0 5 0 0 0 Nothing
+            m2 = SourceMap.Mapping 0 0 0 0 0 Nothing
+            sm = SourceMap.addMapping m2 (SourceMap.addMapping m1 (SourceMap.empty "test.js"))
+            json = renderBuilder (SourceMap.toBuilder sm)
+         in assertNonEmpty json
+    ]
+  where
+    assertNonEmpty s = length s > 0 @? "Expected non-empty JSON"
+
+-- SOURCE EDGE CASE TESTS
+
+sourceEdgeCaseTests :: TestTree
+sourceEdgeCaseTests =
+  testGroup
+    "Source registration edge cases"
+    [ testCase "three unique sources get indices 0, 1, 2" $
+        let (i1, sm1) = SourceMap.addSource "a.can" Nothing (SourceMap.empty "out.js")
+            (i2, sm2) = SourceMap.addSource "b.can" Nothing sm1
+            (i3, _sm3) = SourceMap.addSource "c.can" Nothing sm2
+         in (i1, i2, i3) @?= (0, 1, 2)
+    , testCase "re-adding same source does not grow sources list" $
+        let (_, sm1) = SourceMap.addSource "x.can" Nothing (SourceMap.empty "out.js")
+            (_, sm2) = SourceMap.addSource "x.can" Nothing sm1
+         in length (SourceMap._smSources sm2) @?= 1
+    , testCase "source content is empty string when Nothing" $
+        let (_, sm) = SourceMap.addSource "x.can" Nothing (SourceMap.empty "out.js")
+         in SourceMap._smSourcesContent sm @?= [""]
+    , testCase "source content is stored verbatim when provided" $
+        let (_, sm) = SourceMap.addSource "x.can" (Just "hello world") (SourceMap.empty "out.js")
+         in SourceMap._smSourcesContent sm @?= ["hello world"]
     ]

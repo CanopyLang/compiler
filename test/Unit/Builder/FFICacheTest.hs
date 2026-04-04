@@ -37,7 +37,11 @@ tests =
     [ testComputeFFIHash,
       testModuleCacheFFIInvalidation,
       testCacheEntryRoundTrip,
-      testArtifactFFIFingerprints
+      testArtifactFFIFingerprints,
+      testMultiModuleCache,
+      testCacheInsertLookup,
+      testCacheEntryFields,
+      testArtifactMultipleFiles
     ]
 
 -- HELPERS
@@ -223,6 +227,103 @@ testCacheEntryRoundTrip =
                     @? "FFI hash should survive BuildCache save/load cycle"
     ]
 
+-- MULTI-MODULE CACHE TESTS
+
+testMultiModuleCache :: TestTree
+testMultiModuleCache =
+  testGroup
+    "multi-module cache operations"
+    [ testCase "two modules with different FFI hashes both recompile when changed" $ do
+        cache <- Incremental.emptyCache
+        now <- getCurrentTime
+        let h1 = Hash.hashString "src-a"
+            d1 = Hash.hashString "deps-a"
+            f1 = Hash.hashString "ffi-a"
+            h2 = Hash.hashString "src-b"
+            d2 = Hash.hashString "deps-b"
+            f2 = Hash.hashString "ffi-b"
+            newF1 = Hash.hashString "ffi-a-changed"
+            entry1 = Incremental.CacheEntry h1 d1 "a.elco" now Nothing f1
+            entry2 = Incremental.CacheEntry h2 d2 "b.elco" now Nothing f2
+            cache' = Incremental.insertCache (Incremental.insertCache cache (mkName "ModA") entry1) (mkName "ModB") entry2
+        Incremental.needsRecompile cache' (mkName "ModA") h1 d1 newF1 @?= True,
+      testCase "two modules: first changed does not affect second" $ do
+        cache <- Incremental.emptyCache
+        now <- getCurrentTime
+        let h1 = Hash.hashString "src-a"
+            d1 = Hash.hashString "deps-a"
+            f1 = Hash.hashString "ffi-a"
+            h2 = Hash.hashString "src-b"
+            d2 = Hash.hashString "deps-b"
+            f2 = Hash.hashString "ffi-b"
+            newF1 = Hash.hashString "ffi-a-changed"
+            entry1 = Incremental.CacheEntry h1 d1 "a.elco" now Nothing f1
+            entry2 = Incremental.CacheEntry h2 d2 "b.elco" now Nothing f2
+            cache' = Incremental.insertCache (Incremental.insertCache cache (mkName "ModA") entry1) (mkName "ModB") entry2
+        Incremental.needsRecompile cache' (mkName "ModB") h2 d2 f2 @?= False,
+      testCase "cache lookup returns Nothing for missing module" $ do
+        cache <- Incremental.emptyCache
+        Incremental.lookupCache cache (mkName "NotHere") @?= Nothing,
+      testCase "cache lookup returns entry after insert" $ do
+        cache <- Incremental.emptyCache
+        now <- getCurrentTime
+        let entry = Incremental.CacheEntry (Hash.hashString "s") (Hash.hashString "d") "p" now Nothing Hash.emptyHash
+            cache' = Incremental.insertCache cache (mkName "M") entry
+        case Incremental.lookupCache cache' (mkName "M") of
+          Nothing -> assertFailure "Expected entry after insert"
+          Just e -> Incremental.cacheArtifactPath e @?= "p"
+    ]
+
+-- CACHE INSERT/LOOKUP TESTS
+
+testCacheInsertLookup :: TestTree
+testCacheInsertLookup =
+  testGroup
+    "cache insert and lookup"
+    [ testCase "insert overwrites previous entry" $ do
+        cache <- Incremental.emptyCache
+        now <- getCurrentTime
+        let entry1 = Incremental.CacheEntry (Hash.hashString "s1") (Hash.hashString "d") "path1" now Nothing Hash.emptyHash
+            entry2 = Incremental.CacheEntry (Hash.hashString "s2") (Hash.hashString "d") "path2" now Nothing Hash.emptyHash
+            cache1 = Incremental.insertCache cache (mkName "M") entry1
+            cache2 = Incremental.insertCache cache1 (mkName "M") entry2
+        case Incremental.lookupCache cache2 (mkName "M") of
+          Nothing -> assertFailure "Expected entry after insert"
+          Just e -> Incremental.cacheArtifactPath e @?= "path2",
+      testCase "empty cache has no entries" $ do
+        cache <- Incremental.emptyCache
+        Incremental.lookupCache cache (mkName "Any") @?= Nothing
+    ]
+
+-- CACHE ENTRY FIELD TESTS
+
+testCacheEntryFields :: TestTree
+testCacheEntryFields =
+  testGroup
+    "CacheEntry field access"
+    [ testCase "cacheSourceHash is accessible" $ do
+        now <- getCurrentTime
+        let h = Hash.hashString "source-content"
+            entry = Incremental.CacheEntry h Hash.emptyHash "p" now Nothing Hash.emptyHash
+        Hash.hashesEqual (Incremental.cacheSourceHash entry) h @? "source hash accessible",
+      testCase "cacheDepsHash is accessible" $ do
+        now <- getCurrentTime
+        let h = Hash.hashString "deps-content"
+            entry = Incremental.CacheEntry Hash.emptyHash h "p" now Nothing Hash.emptyHash
+        Hash.hashesEqual (Incremental.cacheDepsHash entry) h @? "deps hash accessible",
+      testCase "cacheInterfaceHash Nothing is preserved" $ do
+        now <- getCurrentTime
+        let entry = Incremental.CacheEntry Hash.emptyHash Hash.emptyHash "p" now Nothing Hash.emptyHash
+        Incremental.cacheInterfaceHash entry @?= Nothing,
+      testCase "cacheInterfaceHash Just is preserved" $ do
+        now <- getCurrentTime
+        let h = Hash.hashString "iface"
+            entry = Incremental.CacheEntry Hash.emptyHash Hash.emptyHash "p" now (Just h) Hash.emptyHash
+        case Incremental.cacheInterfaceHash entry of
+          Nothing -> assertFailure "Expected Just iface hash"
+          Just got -> Hash.hashesEqual got h @? "interface hash preserved"
+    ]
+
 -- ARTIFACT FFI FINGERPRINTS
 
 testArtifactFFIFingerprints :: TestTree
@@ -268,4 +369,40 @@ testArtifactFFIFingerprints =
                 }
           valid <- PackageCache.verifyFFIFingerprints "/nonexistent" cache
           valid @? "empty fingerprints should always pass"
+    ]
+
+-- MULTI-FILE ARTIFACT TESTS
+
+testArtifactMultipleFiles :: TestTree
+testArtifactMultipleFiles =
+  testGroup
+    "ArtifactCache with multiple FFI files"
+    [ testCase "all files match: verifyFFIFingerprints returns True" $
+        withSystemTempDirectory "ffi-multi" $ \root -> do
+          writeFile (root </> "a.js") "aaa"
+          writeFile (root </> "b.js") "bbb"
+          bytesA <- BSC.readFile (root </> "a.js")
+          bytesB <- BSC.readFile (root </> "b.js")
+          let fps = Map.fromList [("a.js", Hash.hashBytes bytesA), ("b.js", Hash.hashBytes bytesB)]
+              cache = PackageCache.ArtifactCache Set.empty emptyArtifacts fps
+          valid <- PackageCache.verifyFFIFingerprints root cache
+          valid @? "both files match original content",
+      testCase "one file changed: verifyFFIFingerprints returns False" $
+        withSystemTempDirectory "ffi-multi" $ \root -> do
+          writeFile (root </> "a.js") "aaa"
+          writeFile (root </> "b.js") "bbb"
+          bytesA <- BSC.readFile (root </> "a.js")
+          bytesB <- BSC.readFile (root </> "b.js")
+          let fps = Map.fromList [("a.js", Hash.hashBytes bytesA), ("b.js", Hash.hashBytes bytesB)]
+              cache = PackageCache.ArtifactCache Set.empty emptyArtifacts fps
+          writeFile (root </> "b.js") "changed-content"
+          valid <- PackageCache.verifyFFIFingerprints root cache
+          not valid @? "one file changed should fail verification",
+      testCase "two files same content have distinct hashes when different" $
+        withSystemTempDirectory "ffi-distinct" $ \root -> do
+          writeFile (root </> "x.js") "content-x"
+          writeFile (root </> "y.js") "content-y"
+          h1 <- Cache.computeFFIHash root ["x.js"]
+          h2 <- Cache.computeFFIHash root ["y.js"]
+          Hash.hashChanged h1 h2 @? "different content should produce different hashes"
     ]

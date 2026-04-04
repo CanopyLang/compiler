@@ -33,7 +33,11 @@ tests =
       testEmptyPackagesRoundtrip,
       testCurrentLockFile,
       testUncachedPackageHash,
-      testGeneratedHashFormat
+      testGeneratedHashFormat,
+      testMultiPackageLockFile,
+      testLockFileOverwrite,
+      testLockFilePackageFields,
+      testContentHashEquality
     ]
 
 -- | Make a test package name from author/project strings.
@@ -223,3 +227,74 @@ testGeneratedHashFormat =
           assertBool
             "root hash should have hex digits after prefix"
             (Text.length rootHash > Text.length "sha256:")
+
+testMultiPackageLockFile :: TestTree
+testMultiPackageLockFile =
+  testCase "lock file with three packages roundtrips" $
+    withSystemTempDirectory "lockfile-test" $ \tmpDir -> do
+      let lf = LockFile.LockFile
+            { LockFile._lockVersion = 1
+            , LockFile._lockGenerated = LFT.mkTimestamp "2026-01-01T00:00:00Z"
+            , LockFile._lockRootHash = LFT.unsafeContentHash "sha256:multi"
+            , LockFile._lockPackages = threePackages
+            }
+      LockFile.writeLockFile tmpDir lf
+      result <- LockFile.readLockFile tmpDir
+      fmap (Map.size . LockFile._lockPackages) result @?= Just 3
+  where
+    threePackages =
+      Map.fromList
+        [ (mkPkg "elm" "core", mkLockedPkg (mkVer 1 0 5))
+        , (mkPkg "elm" "json", mkLockedPkg (mkVer 1 1 3))
+        , (mkPkg "elm" "html", mkLockedPkg (mkVer 1 0 0))
+        ]
+    mkLockedPkg ver =
+      LockFile.LockedPackage
+        { LockFile._lpVersion = ver
+        , LockFile._lpHash = LFT.unsafeContentHash "sha256:x"
+        , LockFile._lpDependencies = Map.empty
+        , LockFile._lpSignature = Nothing
+        , LockFile._lpSource = Nothing
+        }
+
+testLockFileOverwrite :: TestTree
+testLockFileOverwrite =
+  testCase "writing twice overwrites previous lock file" $
+    withSystemTempDirectory "lockfile-test" $ \tmpDir -> do
+      let lf1 = LockFile.LockFile 1 (LFT.mkTimestamp "2026-01-01T00:00:00Z") (LFT.unsafeContentHash "sha256:first") Map.empty
+          lf2 = LockFile.LockFile 2 (LFT.mkTimestamp "2026-06-01T00:00:00Z") (LFT.unsafeContentHash "sha256:second") Map.empty
+      LockFile.writeLockFile tmpDir lf1
+      LockFile.writeLockFile tmpDir lf2
+      result <- LockFile.readLockFile tmpDir
+      fmap LockFile._lockVersion result @?= Just 2
+
+testLockFilePackageFields :: TestTree
+testLockFilePackageFields =
+  testCase "locked package dependency and hash fields roundtrip" $
+    withSystemTempDirectory "lockfile-test" $ \tmpDir -> do
+      let dep = Map.singleton (mkPkg "elm" "core") (mkVer 1 0 5)
+          pkg = LockFile.LockedPackage
+            { LockFile._lpVersion = mkVer 2 0 0
+            , LockFile._lpHash = LFT.unsafeContentHash "sha256:mypkg"
+            , LockFile._lpDependencies = dep
+            , LockFile._lpSignature = Nothing
+            , LockFile._lpSource = Nothing
+            }
+          lf = LockFile.LockFile 1 (LFT.mkTimestamp "2026-01-01T00:00:00Z") (LFT.unsafeContentHash "sha256:root") (Map.singleton (mkPkg "author" "pkg") pkg)
+      LockFile.writeLockFile tmpDir lf
+      result <- LockFile.readLockFile tmpDir
+      let loaded = result >>= Map.lookup (mkPkg "author" "pkg") . LockFile._lockPackages
+      fmap (Map.size . LockFile._lpDependencies) loaded @?= Just 1
+
+testContentHashEquality :: TestTree
+testContentHashEquality =
+  testGroup
+    "ContentHash equality"
+    [ testCase "same unsafeContentHash values are equal" $
+        LFT.unsafeContentHash "sha256:abc" @?= LFT.unsafeContentHash "sha256:abc",
+      testCase "different unsafeContentHash values are not equal" $
+        assertBool "different hashes" (LFT.unsafeContentHash "sha256:a" /= LFT.unsafeContentHash "sha256:b"),
+      testCase "notCachedHash has sha256: prefix" $
+        assertBool "not-cached hash has prefix"
+          (Text.isPrefixOf "sha256:" (LFT.unContentHash LFT.notCachedHash))
+    ]

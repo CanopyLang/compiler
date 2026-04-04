@@ -20,7 +20,10 @@ tests =
     [ testInitBuilder,
       testModuleStatus,
       testModuleResult,
-      testStatistics
+      testStatistics,
+      testConcurrentModules,
+      testStatusTransitions,
+      testResultOverwrite
     ]
 
 -- Helper to create test module names
@@ -238,3 +241,80 @@ testStatistics =
 -- Helper function to create empty test state
 emptyTestState :: IO State.BuilderState
 emptyTestState = State.emptyState
+
+testConcurrentModules :: TestTree
+testConcurrentModules =
+  testGroup
+    "many modules tracking"
+    [ testCase "ten modules tracked independently" $ do
+        engine <- State.initBuilder
+        mapM_ (\i -> State.setModuleStatus engine (mkName ("M" ++ show (i :: Int))) State.StatusPending) [1 .. 10]
+        count <- State.getPendingCount engine
+        count @?= 10,
+      testCase "completing some leaves others pending" $ do
+        engine <- State.initBuilder
+        state <- emptyTestState
+        let time = State.builderStartTime state
+        mapM_ (\i -> State.setModuleStatus engine (mkName ("M" ++ show (i :: Int))) State.StatusPending) [1 .. 5]
+        mapM_ (\i -> State.setModuleStatus engine (mkName ("M" ++ show (i :: Int))) (State.StatusCompleted time)) [1 .. 3]
+        pending <- State.getPendingCount engine
+        pending @?= 2,
+      testCase "getAllStatuses returns all set modules" $ do
+        engine <- State.initBuilder
+        mapM_ (\i -> State.setModuleStatus engine (mkName ("X" ++ show (i :: Int))) State.StatusPending) [1 .. 7]
+        statuses <- State.getAllStatuses engine
+        Map.size statuses @?= 7
+    ]
+
+testStatusTransitions :: TestTree
+testStatusTransitions =
+  testGroup
+    "status transition sequences"
+    [ testCase "Pending -> InProgress -> Completed" $ do
+        engine <- State.initBuilder
+        state <- emptyTestState
+        let time = State.builderStartTime state
+        State.setModuleStatus engine (mkName "M") State.StatusPending
+        State.setModuleStatus engine (mkName "M") (State.StatusInProgress time)
+        State.setModuleStatus engine (mkName "M") (State.StatusCompleted time)
+        status <- State.getModuleStatus engine (mkName "M")
+        case status of
+          Just (State.StatusCompleted _) -> return ()
+          _ -> assertFailure "Expected StatusCompleted",
+      testCase "Pending -> Failed" $ do
+        engine <- State.initBuilder
+        state <- emptyTestState
+        let time = State.builderStartTime state
+        State.setModuleStatus engine (mkName "M") State.StatusPending
+        State.setModuleStatus engine (mkName "M") (State.StatusFailed "compile error" time)
+        status <- State.getModuleStatus engine (mkName "M")
+        case status of
+          Just (State.StatusFailed msg _) -> msg @?= "compile error"
+          _ -> assertFailure "Expected StatusFailed"
+    ]
+
+testResultOverwrite :: TestTree
+testResultOverwrite =
+  testGroup
+    "result overwrite behaviour"
+    [ testCase "result can be updated from Pending to Success" $ do
+        engine <- State.initBuilder
+        state <- emptyTestState
+        let time = State.builderStartTime state
+        State.setModuleResult engine (mkName "M") State.ResultPending
+        State.setModuleResult engine (mkName "M") (State.ResultSuccess "output.js" time)
+        result <- State.getModuleResult engine (mkName "M")
+        case result of
+          Just (State.ResultSuccess path _) -> path @?= "output.js"
+          _ -> assertFailure "Expected ResultSuccess",
+      testCase "setting success twice increments completed count twice" $ do
+        engine <- State.initBuilder
+        state <- emptyTestState
+        let time = State.builderStartTime state
+        State.setModuleResult engine (mkName "M") (State.ResultSuccess "p1" time)
+        count1 <- State.getCompletedCount engine
+        State.setModuleResult engine (mkName "M") (State.ResultSuccess "p2" time)
+        count2 <- State.getCompletedCount engine
+        count1 @?= 1
+        count2 @?= 2
+    ]
