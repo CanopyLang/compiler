@@ -63,7 +63,10 @@ tests =
       testHex,
       testFloats,
       testErrors,
-      testPrecedence
+      testPrecedence,
+      testLargeIntegers,
+      testPreciseFloats,
+      testScientificEdgeCases
     ]
 
 -- INTEGER PARSING
@@ -196,3 +199,46 @@ isFloat _ = False
 isExpect :: Either ParseError a -> Bool
 isExpect (Left (Expect _ _)) = True
 isExpect _ = False
+
+-- LARGE INTEGERS
+
+-- | Tests for large integer values within the parser's range.
+testLargeIntegers :: TestTree
+testLargeIntegers =
+  testGroup
+    "large integers"
+    [ testCase "1000000 parses as Int" $ assertIntResult "1000000" 1000000,
+      testCase "2147483647 (max Int32) parses as Int" $ assertIntResult "2147483647" 2147483647,
+      testCase "0xFFFFFF is 16777215" $ assertIntResult "0xFFFFFF" 0xFFFFFF
+    ]
+
+-- PRECISE FLOATS
+
+-- | Tests for floats with many decimal places and small magnitudes.
+testPreciseFloats :: TestTree
+testPreciseFloats =
+  testGroup
+    "precise floats"
+    [ testCase "0.000001 parses as Float" $
+        isFloat (parseNumber "0.000001") @?= True,
+      testCase "1.23456789 parses as Float" $
+        isFloat (parseNumber "1.23456789") @?= True,
+      testCase "9.99999999 parses as Float" $
+        isFloat (parseNumber "9.99999999") @?= True
+    ]
+
+-- SCIENTIFIC NOTATION EDGE CASES
+
+-- | Tests for edge cases in scientific notation parsing.
+testScientificEdgeCases :: TestTree
+testScientificEdgeCases =
+  testGroup
+    "scientific edge cases"
+    [ testCase "1e0 is Float" $ isFloat (parseNumber "1e0") @?= True,
+      testCase "1E0 uppercase E is Float" $ isFloat (parseNumber "1E0") @?= True,
+      testCase "1e+0 explicit positive exponent is Float" $
+        isFloat (parseNumber "1e+0") @?= True,
+      testCase "1e-0 explicit zero negative exponent is Float" $
+        isFloat (parseNumber "1e-0") @?= True,
+      testCase "1e-1 is Float" $ isFloat (parseNumber "1e-1") @?= True
+    ]

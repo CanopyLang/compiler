@@ -52,7 +52,11 @@ tests =
       testCharacterLiterals,
       testStringErrors,
       testCharErrors,
-      testMultiLineStrings
+      testMultiLineStrings,
+      testUnicodeMultiByte,
+      testAllEscapeSequences,
+      testLongStrings,
+      testMultiLineEdgeCases
     ]
 
 -- ---------------------------------------------------------------------------
@@ -238,4 +242,102 @@ testMultiLineStrings =
       testCase "escape in multi-line" $ case parseExpr "\"\"\"a\\nb\"\"\"" of
         Right (Ann.At _ (Src.Str s)) -> ES.toChars s @?= "a\\nb"
         other -> assertFailure ("unexpected: " <> show other)
+    ]
+
+-- ---------------------------------------------------------------------------
+-- Unicode multi-byte strings
+-- ---------------------------------------------------------------------------
+
+-- | Tests for strings containing multi-byte UTF-8 characters passed through
+-- as literal source bytes (i.e., not via escape sequences).
+testUnicodeMultiByte :: TestTree
+testUnicodeMultiByte =
+  testGroup
+    "unicode multi-byte"
+    [ testCase "latin small letter e with acute (é)" $ case parseExpr "\"\xC3\xA9\"" of
+        Right (Ann.At _ (Src.Str s)) -> ES.toChars s @?= "\xE9"
+        other -> assertFailure ("unexpected: " <> show other),
+      testCase "snowman character (U+2603)" $ case parseExpr "\"\xE2\x98\x83\"" of
+        Right (Ann.At _ (Src.Str s)) -> ES.toChars s @?= "\x2603"
+        other -> assertFailure ("unexpected: " <> show other),
+      testCase "mixed ASCII and multibyte" $ case parseExpr "\"hi\xC3\xA9\"" of
+        Right (Ann.At _ (Src.Str s)) -> ES.toChars s @?= "hi\xE9"
+        other -> assertFailure ("unexpected: " <> show other)
+    ]
+
+-- ---------------------------------------------------------------------------
+-- All escape sequences exhaustive
+-- ---------------------------------------------------------------------------
+
+-- | Exhaustive tests for all recognised backslash escape sequences.
+--
+-- The parser stores escapes as a backslash byte followed by the escape
+-- letter, so 'ES.toChars' returns the two-character sequence rather than
+-- the decoded character.
+testAllEscapeSequences :: TestTree
+testAllEscapeSequences =
+  testGroup
+    "all escape sequences"
+    [ testCase "\\n stored as two chars" $ case parseExpr "\"\\n\"" of
+        Right (Ann.At _ (Src.Str s)) -> ES.toChars s @?= "\\n"
+        other -> assertFailure ("unexpected: " <> show other),
+      testCase "\\t stored as two chars" $ case parseExpr "\"\\t\"" of
+        Right (Ann.At _ (Src.Str s)) -> ES.toChars s @?= "\\t"
+        other -> assertFailure ("unexpected: " <> show other),
+      testCase "\\r stored as two chars" $ case parseExpr "\"\\r\"" of
+        Right (Ann.At _ (Src.Str s)) -> ES.toChars s @?= "\\r"
+        other -> assertFailure ("unexpected: " <> show other),
+      testCase "\\\\ stored as two chars" $ case parseExpr "\"\\\\\"" of
+        Right (Ann.At _ (Src.Str s)) -> ES.toChars s @?= "\\\\"
+        other -> assertFailure ("unexpected: " <> show other),
+      testCase "\\\" stored as two chars" $ case parseExpr "\"\\\"\"" of
+        Right (Ann.At _ (Src.Str s)) -> ES.toChars s @?= "\\\""
+        other -> assertFailure ("unexpected: " <> show other),
+      testCase "\\' stored as two chars" $ case parseExpr "\"\\'\"" of
+        Right (Ann.At _ (Src.Str s)) -> ES.toChars s @?= "\\'"
+        other -> assertFailure ("unexpected: " <> show other)
+    ]
+
+-- ---------------------------------------------------------------------------
+-- Long strings
+-- ---------------------------------------------------------------------------
+
+-- | Tests that the parser handles strings of varying lengths correctly.
+testLongStrings :: TestTree
+testLongStrings =
+  testGroup
+    "long strings"
+    [ testCase "100-char string" $ case parseExpr (surroundWithQuotes str100) of
+        Right (Ann.At _ (Src.Str s)) -> length (ES.toChars s) @?= 100
+        other -> assertFailure ("unexpected: " <> show other),
+      testCase "1000-char string" $ case parseExpr (surroundWithQuotes str1000) of
+        Right (Ann.At _ (Src.Str s)) -> length (ES.toChars s) @?= 1000
+        other -> assertFailure ("unexpected: " <> show other)
+    ]
+  where
+    surroundWithQuotes s = "\"" <> s <> "\""
+    str100 = replicate 100 'a'
+    str1000 = replicate 1000 'b'
+
+-- ---------------------------------------------------------------------------
+-- Multi-line edge cases
+-- ---------------------------------------------------------------------------
+
+-- | Tests for edge cases in triple-quoted multi-line string literals.
+testMultiLineEdgeCases :: TestTree
+testMultiLineEdgeCases =
+  testGroup
+    "multi-line edge cases"
+    [ testCase "embedded double quote in multi-line" $
+        case parseExpr "\"\"\"say \\\"hi\\\"\"\"\"" of
+          Right (Ann.At _ (Src.Str s)) -> ES.toChars s @?= "say \\\"hi\\\""
+          other -> assertFailure ("unexpected: " <> show other),
+      testCase "consecutive escapes in multi-line" $
+        case parseExpr "\"\"\"\\n\\t\\r\"\"\"" of
+          Right (Ann.At _ (Src.Str s)) -> ES.toChars s @?= "\\n\\t\\r"
+          other -> assertFailure ("unexpected: " <> show other),
+      testCase "single quotes in multi-line string are escaped" $
+        case parseExpr "\"\"\"it's fine\"\"\"" of
+          Right (Ann.At _ (Src.Str s)) -> ES.toChars s @?= "it\\'s fine"
+          other -> assertFailure ("unexpected: " <> show other)
     ]

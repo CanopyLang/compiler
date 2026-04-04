@@ -57,7 +57,9 @@ tests =
       testOneOfWithFallback,
       testGetPosition,
       testGetCol,
-      testFromByteString
+      testFromByteString,
+      testGetCharWidth,
+      testAddLocation
     ]
 
 -- ---------------------------------------------------------------------------
@@ -249,3 +251,55 @@ testFromByteString =
 isLeft :: Either a b -> Bool
 isLeft (Left _) = True
 isLeft (Right _) = False
+
+-- ---------------------------------------------------------------------------
+-- getCharWidth
+-- ---------------------------------------------------------------------------
+
+-- | Tests for 'Parse.getCharWidth': returns the number of bytes in the
+-- UTF-8 character introduced by the given leading byte.
+testGetCharWidth :: TestTree
+testGetCharWidth =
+  testGroup
+    "getCharWidth"
+    [ testCase "ASCII byte 0x41 ('A') has width 1" $
+        Parse.getCharWidth 0x41 @?= 1,
+      testCase "ASCII byte 0x7F (DEL) has width 1" $
+        Parse.getCharWidth 0x7F @?= 1,
+      testCase "two-byte leader 0xC3 has width 2" $
+        Parse.getCharWidth 0xC3 @?= 2,
+      testCase "two-byte leader 0xDF has width 2" $
+        Parse.getCharWidth 0xDF @?= 2,
+      testCase "three-byte leader 0xE2 has width 3" $
+        Parse.getCharWidth 0xE2 @?= 3,
+      testCase "three-byte leader 0xEF has width 3" $
+        Parse.getCharWidth 0xEF @?= 3,
+      testCase "four-byte leader 0xF0 has width 4" $
+        Parse.getCharWidth 0xF0 @?= 4,
+      testCase "four-byte leader 0xF4 has width 4" $
+        Parse.getCharWidth 0xF4 @?= 4
+    ]
+
+-- ---------------------------------------------------------------------------
+-- addLocation
+-- ---------------------------------------------------------------------------
+
+-- | Tests for 'Parse.addLocation': wraps a parsed value with its source region.
+testAddLocation :: TestTree
+testAddLocation =
+  testGroup
+    "addLocation"
+    [ testCase "region starts at col 1 for first token" $
+        expectRight
+          (run (Parse.addLocation (Parse.word1 0x61 mkError)) "a")
+          (\(Ann.At (Ann.Region start _) _) -> start @?= Ann.Position 1 1),
+      testCase "region ends at col 2 after consuming one byte" $
+        expectRight
+          (run (Parse.addLocation (Parse.word1 0x61 mkError)) "a")
+          (\(Ann.At (Ann.Region _ end) _) -> end @?= Ann.Position 1 2),
+      testCase "region spans two bytes for word2" $
+        expectRight
+          (run (Parse.addLocation (Parse.word2 0x61 0x62 mkError)) "ab")
+          (\(Ann.At (Ann.Region start end) _) ->
+            (start, end) @?= (Ann.Position 1 1, Ann.Position 1 3))
+    ]
