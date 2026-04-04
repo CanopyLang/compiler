@@ -28,7 +28,11 @@ tests =
       testCachePersistence,
       testInvalidation,
       testPruning,
-      testInterfaceHashing
+      testInterfaceHashing,
+      testLargeCache,
+      testPruningEdgeCases,
+      testInterfaceHashPropagation,
+      testEmptyCacheOperations
     ]
 
 -- Helper to create test module names
@@ -476,6 +480,159 @@ testInterfaceHashing =
                 Nothing -> assertFailure "Expected interface hash after load"
                 Just loadedHash ->
                   Hash.hashesEqual loadedHash ifaceHash @?= True
+    ]
+
+testLargeCache :: TestTree
+testLargeCache =
+  testGroup
+    "large cache tests"
+    [ testCase "cache with 10 entries stores all entries" $ do
+        cache <- Incremental.emptyCache
+        now <- getCurrentTime
+        let names = map (\i -> mkName ("Module" ++ show i)) [1 :: Int .. 10]
+        let cache' = foldr (insertEntry now) cache names
+        Map.size (Incremental.cacheEntries cache') @?= 10,
+      testCase "all 10 entries are retrievable after insertion" $ do
+        cache <- Incremental.emptyCache
+        now <- getCurrentTime
+        let names = map (\i -> mkName ("Module" ++ show i)) [1 :: Int .. 10]
+        let cache' = foldr (insertEntry now) cache names
+        let missing = filter (\n -> Incremental.lookupCache cache' n == Nothing) names
+        missing @?= [],
+      testCase "12 entries can be saved and reloaded" $
+        withSystemTempFile "large-cache.json" $ \path handle -> do
+          hClose handle
+          cache <- Incremental.emptyCache
+          now <- getCurrentTime
+          let names = map (\i -> mkName ("M" ++ show i)) [1 :: Int .. 12]
+          let cache' = foldr (insertEntry now) cache names
+          Incremental.saveCache path cache'
+          loaded <- Incremental.loadCache path
+          case loaded of
+            Nothing -> assertFailure "Failed to load large cache"
+            Just loadedCache ->
+              Map.size (Incremental.cacheEntries loadedCache) @?= 12
+    ]
+
+-- | Insert a simple cache entry for a named module.
+insertEntry :: UTCTime -> Name.Name -> Incremental.BuildCache -> Incremental.BuildCache
+insertEntry now name cache =
+  Incremental.insertCache cache name entry
+  where
+    entry =
+      Incremental.CacheEntry
+        { Incremental.cacheSourceHash = Hash.hashString (show name),
+          Incremental.cacheDepsHash = Hash.hashString "deps",
+          Incremental.cacheArtifactPath = "path/" ++ show name,
+          Incremental.cacheTimestamp = now,
+          Incremental.cacheInterfaceHash = Nothing,
+          Incremental.cacheFFIHash = Hash.emptyHash
+        }
+
+testPruningEdgeCases :: TestTree
+testPruningEdgeCases =
+  testGroup
+    "pruning edge case tests"
+    [ testCase "pruning empty cache returns empty cache" $ do
+        now <- getCurrentTime
+        cache <- Incremental.emptyCache
+        let cutoff = addUTCTime (-3600) now
+        let cache' = Incremental.pruneCache cache cutoff
+        Map.size (Incremental.cacheEntries cache') @?= 0,
+      testCase "prune with future cutoff removes all entries" $ do
+        now <- getCurrentTime
+        cache <- Incremental.emptyCache
+        let entry =
+              Incremental.CacheEntry
+                { Incremental.cacheSourceHash = Hash.hashString "s",
+                  Incremental.cacheDepsHash = Hash.hashString "d",
+                  Incremental.cacheArtifactPath = "path",
+                  Incremental.cacheTimestamp = addUTCTime (-7200) now,
+                  Incremental.cacheInterfaceHash = Nothing,
+                  Incremental.cacheFFIHash = Hash.emptyHash
+                }
+        let cache' = Incremental.insertCache cache (mkName "Old") entry
+        let futureTime = addUTCTime 3600 now
+        let cache'' = Incremental.pruneCache cache' futureTime
+        Map.size (Incremental.cacheEntries cache'') @?= 0,
+      testCase "prune keeps entries exactly at cutoff boundary" $ do
+        now <- getCurrentTime
+        cache <- Incremental.emptyCache
+        let cutoff = addUTCTime (-3600) now
+        let entry =
+              Incremental.CacheEntry
+                { Incremental.cacheSourceHash = Hash.hashString "s",
+                  Incremental.cacheDepsHash = Hash.hashString "d",
+                  Incremental.cacheArtifactPath = "path",
+                  Incremental.cacheTimestamp = addUTCTime (-1800) now,
+                  Incremental.cacheInterfaceHash = Nothing,
+                  Incremental.cacheFFIHash = Hash.emptyHash
+                }
+        let cache' = Incremental.insertCache cache (mkName "Fresh") entry
+        let cache'' = Incremental.pruneCache cache' cutoff
+        Map.size (Incremental.cacheEntries cache'') @?= 1
+    ]
+
+testInterfaceHashPropagation :: TestTree
+testInterfaceHashPropagation =
+  testGroup
+    "interface hash propagation tests"
+    [ testCase "inserting updated entry with new interface hash is reflected" $ do
+        cache <- Incremental.emptyCache
+        now <- getCurrentTime
+        let oldHash = Hash.hashString "old-iface"
+        let newHash = Hash.hashString "new-iface"
+        let mkEntry ifaceHash =
+              Incremental.CacheEntry
+                { Incremental.cacheSourceHash = Hash.hashString "s",
+                  Incremental.cacheDepsHash = Hash.hashString "d",
+                  Incremental.cacheArtifactPath = "path",
+                  Incremental.cacheTimestamp = now,
+                  Incremental.cacheInterfaceHash = Just ifaceHash,
+                  Incremental.cacheFFIHash = Hash.emptyHash
+                }
+        let cache' = Incremental.insertCache cache (mkName "M") (mkEntry oldHash)
+        let cache'' = Incremental.insertCache cache' (mkName "M") (mkEntry newHash)
+        Incremental.interfaceUnchanged cache'' (mkName "M") newHash @?= True,
+      testCase "interfaceUnchanged is False after replacing hash" $ do
+        cache <- Incremental.emptyCache
+        now <- getCurrentTime
+        let h1 = Hash.hashString "iface-v1"
+        let h2 = Hash.hashString "iface-v2"
+        let mkEntry h =
+              Incremental.CacheEntry
+                { Incremental.cacheSourceHash = Hash.hashString "s",
+                  Incremental.cacheDepsHash = Hash.hashString "d",
+                  Incremental.cacheArtifactPath = "path",
+                  Incremental.cacheTimestamp = now,
+                  Incremental.cacheInterfaceHash = Just h,
+                  Incremental.cacheFFIHash = Hash.emptyHash
+                }
+        let cache' = Incremental.insertCache cache (mkName "M") (mkEntry h1)
+        let cache'' = Incremental.insertCache cache' (mkName "M") (mkEntry h2)
+        Incremental.interfaceUnchanged cache'' (mkName "M") h1 @?= False
+    ]
+
+testEmptyCacheOperations :: TestTree
+testEmptyCacheOperations =
+  testGroup
+    "empty cache operation tests"
+    [ testCase "invalidating from empty cache is a no-op" $ do
+        cache <- Incremental.emptyCache
+        let cache' = Incremental.invalidateModule cache (mkName "Ghost")
+        Map.size (Incremental.cacheEntries cache') @?= 0,
+      testCase "invalidateTransitive on empty cache with empty revDeps is a no-op" $ do
+        cache <- Incremental.emptyCache
+        let cache' = Incremental.invalidateTransitive cache (mkName "Ghost") Map.empty
+        Map.size (Incremental.cacheEntries cache') @?= 0,
+      testCase "getInterfaceHash on empty cache returns Nothing" $ do
+        cache <- Incremental.emptyCache
+        Incremental.getInterfaceHash cache (mkName "Missing") @?= Nothing,
+      testCase "needsRecompile on empty cache always returns True" $ do
+        cache <- Incremental.emptyCache
+        let sh = Hash.hashString "src"
+        let dh = Hash.hashString "deps"
+        Incremental.needsRecompile cache (mkName "Any") sh dh Hash.emptyHash @?= True
     ]
 
 hClose :: Handle -> IO ()

@@ -84,6 +84,7 @@ import qualified Unit.Parse.AbilityTest as ParseAbilityTest
 import qualified Unit.Parse.ModuleTest as ParseModuleTest
 import qualified Unit.Parse.NumberTest as ParseNumberTest
 import qualified Unit.Parse.PatternTest as ParsePatternTest
+import qualified Unit.Parse.ShaderTest as ParseShaderTest
 import qualified Unit.Parse.PrimitivesTest as ParsePrimitivesTest
 import qualified Unit.Parse.SpaceTest as ParseSpaceTest
 import qualified Unit.Parse.StringTest as ParseStringTest
@@ -113,6 +114,7 @@ import qualified Unit.Generate.CodeSplit.TypesTest as CodeSplitTypesTest
 import qualified Unit.Generate.ExpressionTest as ExpressionTest
 import qualified Unit.Generate.HtmlSecurityTest as HtmlSecurityTest
 import qualified Unit.Generate.JavaScript.BuilderTest as JSBuilderTest
+import qualified Unit.Generate.JavaScript.KernelTest as JSKernelTest
 import qualified Unit.Generate.JavaScript.ExpressionArithmeticTest as JSExpressionArithmeticTest
 import qualified Unit.Generate.JavaScript.RuntimeAnnotationTest as RuntimeAnnotationTest
 import qualified Unit.Generate.JavaScript.RuntimeTest as JSRuntimeTest
@@ -254,6 +256,7 @@ unitTests =
       ParseExpressionTest.tests,
       ParseNumberTest.tests,
       ParsePatternTest.tests,
+      ParseShaderTest.tests,
       ParsePrimitivesTest.tests,
       ParseSpaceTest.tests,
       ParseStringTest.tests,
@@ -322,6 +325,7 @@ unitTests =
       ModuleOptTest.tests,
       PortOptTest.tests,
       JSBuilderTest.tests,
+      JSKernelTest.tests,
       JSExpressionArithmeticTest.tests,
       JSRuntimeTest.tests,
       RuntimeAnnotationTest.tests,

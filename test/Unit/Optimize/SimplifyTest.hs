@@ -16,6 +16,9 @@
 -- * Empty string append elimination
 -- * Dead let-binding elimination for pure expressions
 -- * Preservation of non-simplifiable expressions
+-- * Collection expression child simplification (List, Tuple, Record)
+-- * Access and Update child simplification
+-- * TailCall and ArithBinop child simplification
 --
 -- @since 0.19.2
 module Unit.Optimize.SimplifyTest
@@ -23,11 +26,13 @@ module Unit.Optimize.SimplifyTest
   )
 where
 
+import qualified AST.Canonical as Can
 import qualified AST.Optimized as Opt
 import qualified Canopy.Data.Name as Name
 import qualified Canopy.Data.Utf8 as Utf8
 import qualified Canopy.ModuleName as ModuleName
 import qualified Canopy.Package as Package
+import qualified Data.Map.Strict as Map
 import qualified Optimize.Simplify as Simplify
 import Test.Tasty (TestTree)
 import qualified Test.Tasty as Test
@@ -47,7 +52,10 @@ tests =
       deadBindingTests,
       caseRootBindingTests,
       preservationTests,
-      nestedSimplificationTests
+      nestedSimplificationTests,
+      collectionSimplificationTests,
+      accessUpdateSimplificationTests,
+      tailCallSimplificationTests
     ]
 
 -- BOOLEAN IF SIMPLIFICATION
@@ -332,6 +340,129 @@ nestedSimplificationTests =
         let ifExpr = Opt.If [(Opt.Bool True, Opt.Int 42)] (Opt.Int 0)
             input = mkIdentityCall ifExpr
          in assertExprEq (Opt.Int 42) (Simplify.simplify input)
+    ]
+
+-- COLLECTION SIMPLIFICATION
+
+-- | Test that simplification recurses into collection expressions.
+--
+-- walkChildren dispatches into List, Tuple, and Record children.
+-- These tests verify that simplifiable sub-expressions inside
+-- collections are fully reduced.
+collectionSimplificationTests :: TestTree
+collectionSimplificationTests =
+  Test.testGroup
+    "Collection Child Simplification"
+    [ Test.testCase "simplifies elements inside List" $
+        let items = [Opt.If [(Opt.Bool True, Opt.Int 1)] (Opt.Int 0), varLocal "x"]
+            input = Opt.List items
+         in assertExprEq
+              (Opt.List [Opt.Int 1, varLocal "x"])
+              (Simplify.simplify input),
+      Test.testCase "empty List is preserved" $
+        assertExprEq (Opt.List []) (Simplify.simplify (Opt.List [])),
+      Test.testCase "simplifies first element of two-element Tuple" $
+        let a = Opt.If [(Opt.Bool True, Opt.Int 10)] (Opt.Int 0)
+            input = Opt.Tuple a (varLocal "b") Nothing
+         in assertExprEq
+              (Opt.Tuple (Opt.Int 10) (varLocal "b") Nothing)
+              (Simplify.simplify input),
+      Test.testCase "simplifies second element of two-element Tuple" $
+        let b = Opt.If [(Opt.Bool True, Opt.Int 20)] (Opt.Int 0)
+            input = Opt.Tuple (varLocal "a") b Nothing
+         in assertExprEq
+              (Opt.Tuple (varLocal "a") (Opt.Int 20) Nothing)
+              (Simplify.simplify input),
+      Test.testCase "simplifies third element of three-element Tuple" $
+        let c = Opt.If [(Opt.Bool True, Opt.Int 30)] (Opt.Int 0)
+            input = Opt.Tuple (varLocal "a") (varLocal "b") (Just c)
+         in assertExprEq
+              (Opt.Tuple (varLocal "a") (varLocal "b") (Just (Opt.Int 30)))
+              (Simplify.simplify input),
+      Test.testCase "simplifies value inside Record field" $
+        let fieldName = Name.fromChars "x"
+            fieldVal = Opt.If [(Opt.Bool True, Opt.Int 99)] (Opt.Int 0)
+            input = Opt.Record (Map.singleton fieldName fieldVal)
+         in assertExprEq
+              (Opt.Record (Map.singleton fieldName (Opt.Int 99)))
+              (Simplify.simplify input)
+    ]
+
+-- ACCESS/UPDATE SIMPLIFICATION
+
+-- | Test that simplification recurses into Access and Update expressions.
+--
+-- Access simplifies the record sub-expression; Update simplifies both
+-- the record and all field values.
+accessUpdateSimplificationTests :: TestTree
+accessUpdateSimplificationTests =
+  Test.testGroup
+    "Access and Update Child Simplification"
+    [ Test.testCase "simplifies record expr inside Access" $
+        let recordExpr = Opt.If [(Opt.Bool True, varLocal "r")] (Opt.Unit)
+            field = Name.fromChars "foo"
+            input = Opt.Access recordExpr field
+         in assertExprEq
+              (Opt.Access (varLocal "r") field)
+              (Simplify.simplify input),
+      Test.testCase "Access with already-simple record is preserved" $
+        let input = Opt.Access (varLocal "r") (Name.fromChars "foo")
+         in assertExprEq input (Simplify.simplify input),
+      Test.testCase "simplifies record expr inside Update" $
+        let recordExpr = Opt.If [(Opt.Bool True, varLocal "r")] Opt.Unit
+            field = Name.fromChars "bar"
+            input = Opt.Update recordExpr (Map.singleton field (Opt.Int 5))
+         in assertExprEq
+              (Opt.Update (varLocal "r") (Map.singleton field (Opt.Int 5)))
+              (Simplify.simplify input),
+      Test.testCase "simplifies field values inside Update" $
+        let field = Name.fromChars "n"
+            newVal = Opt.If [(Opt.Bool True, Opt.Int 7)] (Opt.Int 0)
+            input = Opt.Update (varLocal "r") (Map.singleton field newVal)
+         in assertExprEq
+              (Opt.Update (varLocal "r") (Map.singleton field (Opt.Int 7)))
+              (Simplify.simplify input)
+    ]
+
+-- TAILCALL / ARITHBINOP SIMPLIFICATION
+
+-- | Test that simplification recurses into TailCall args and ArithBinop operands.
+--
+-- walkChildren simplifies the expression pairs inside TailCall and both
+-- operands of ArithBinop. The arithmetic operation itself is not constant-folded
+-- by simplifyExpr, but the operands are fully simplified first.
+tailCallSimplificationTests :: TestTree
+tailCallSimplificationTests =
+  Test.testGroup
+    "TailCall and ArithBinop Child Simplification"
+    [ Test.testCase "simplifies argument inside TailCall" $
+        let fnName = Name.fromChars "go"
+            argName = Name.fromChars "n"
+            argVal = Opt.If [(Opt.Bool True, Opt.Int 1)] (Opt.Int 0)
+            input = Opt.TailCall fnName [(argName, argVal)]
+         in assertExprEq
+              (Opt.TailCall fnName [(argName, Opt.Int 1)])
+              (Simplify.simplify input),
+      Test.testCase "TailCall with already-simple arg is preserved" $
+        let fnName = Name.fromChars "go"
+            argName = Name.fromChars "n"
+            input = Opt.TailCall fnName [(argName, Opt.Int 42)]
+         in assertExprEq input (Simplify.simplify input),
+      Test.testCase "simplifies left operand of ArithBinop" $
+        let lhs = Opt.If [(Opt.Bool True, Opt.Int 3)] (Opt.Int 0)
+            input = Opt.ArithBinop Can.Add lhs (varLocal "y")
+         in assertExprEq
+              (Opt.ArithBinop Can.Add (Opt.Int 3) (varLocal "y"))
+              (Simplify.simplify input),
+      Test.testCase "simplifies right operand of ArithBinop" $
+        let rhs = Opt.If [(Opt.Bool True, Opt.Int 5)] (Opt.Int 0)
+            input = Opt.ArithBinop Can.Add (varLocal "x") rhs
+         in assertExprEq
+              (Opt.ArithBinop Can.Add (varLocal "x") (Opt.Int 5))
+              (Simplify.simplify input),
+      Test.testCase "ArithBinop with literal operands is not folded (only children walked)" $
+        let input = Opt.ArithBinop Can.Add (Opt.Int 2) (Opt.Int 3)
+         in assertExprEq input (Simplify.simplify input)
     ]
 
 -- HELPERS

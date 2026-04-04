@@ -30,7 +30,11 @@ tests =
       testBytesHashing,
       testFileHashing,
       testDependencyHashing,
-      testHashComparison
+      testHashComparison,
+      testCollisionResistance,
+      testDeterminism,
+      testEdgeCaseInputs,
+      testHexRoundTrip
     ]
 
 testEmptyHash :: TestTree
@@ -165,6 +169,99 @@ testHashComparison =
         let h = Hash.hashString "test"
         let shown = Hash.showHash h
         shown @?= "9f86d081... (string)"
+    ]
+
+testCollisionResistance :: TestTree
+testCollisionResistance =
+  testGroup
+    "hash collision resistance tests"
+    [ testCase "similar strings produce different hashes" $ do
+        let h1 = Hash.hashString "abc"
+        let h2 = Hash.hashString "abd"
+        not (Hash.hashesEqual h1 h2) @? "Similar strings should produce different hashes",
+      testCase "prefix and full string produce different hashes" $ do
+        let h1 = Hash.hashString "hello"
+        let h2 = Hash.hashString "hello world"
+        not (Hash.hashesEqual h1 h2) @? "Prefix should produce different hash from full string",
+      testCase "permuted inputs produce different hashes" $ do
+        let h1 = Hash.hashString "ab"
+        let h2 = Hash.hashString "ba"
+        not (Hash.hashesEqual h1 h2) @? "Permuted inputs should produce different hashes",
+      testCase "extra whitespace changes hash" $ do
+        let h1 = Hash.hashString "hello"
+        let h2 = Hash.hashString "hello "
+        not (Hash.hashesEqual h1 h2) @? "Trailing space should change hash",
+      testCase "case change produces different hash" $ do
+        let h1 = Hash.hashString "Hello"
+        let h2 = Hash.hashString "hello"
+        not (Hash.hashesEqual h1 h2) @? "Case difference should change hash"
+    ]
+
+testDeterminism :: TestTree
+testDeterminism =
+  testGroup
+    "hash determinism tests"
+    [ testCase "hashing same string twice gives equal hashes" $ do
+        let h1 = Hash.hashString "deterministic"
+        let h2 = Hash.hashString "deterministic"
+        Hash.hashesEqual h1 h2 @? "Hash must be deterministic",
+      testCase "hashing same bytes twice gives equal hashes" $ do
+        let h1 = Hash.hashBytes (BSC.pack "bytes-test")
+        let h2 = Hash.hashBytes (BSC.pack "bytes-test")
+        Hash.hashesEqual h1 h2 @? "Bytes hash must be deterministic",
+      testCase "hashing empty string is deterministic" $ do
+        let h1 = Hash.hashString ""
+        let h2 = Hash.hashString ""
+        Hash.hashesEqual h1 h2 @? "Empty string hash must be deterministic",
+      testCase "hashing empty bytes is deterministic" $ do
+        let h1 = Hash.hashBytes (BSC.pack "")
+        let h2 = Hash.hashBytes (BSC.pack "")
+        Hash.hashesEqual h1 h2 @? "Empty bytes hash must be deterministic"
+    ]
+
+testEdgeCaseInputs :: TestTree
+testEdgeCaseInputs =
+  testGroup
+    "edge case input tests"
+    [ testCase "empty string hash value is non-empty hex" $ do
+        let h = Hash.hashString ""
+        let hex = Hash.toHexString (Hash.hashValue h)
+        not (null hex) @? "Empty input hash should produce non-empty hex",
+      testCase "large input can be hashed" $ do
+        let large = concat (replicate 1000 "abcdefghijklmnopqrstuvwxyz")
+        let h = Hash.hashString large
+        let hex = Hash.toHexString (Hash.hashValue h)
+        not (null hex) @? "Large input should produce a hash",
+      testCase "large input hash differs from small input hash" $ do
+        let large = concat (replicate 1000 "a")
+        let h1 = Hash.hashString "a"
+        let h2 = Hash.hashString large
+        not (Hash.hashesEqual h1 h2) @? "Large and small inputs should differ",
+      testCase "single character hash is deterministic" $ do
+        let h1 = Hash.hashString "x"
+        let h2 = Hash.hashString "x"
+        Hash.hashesEqual h1 h2 @? "Single-char hash must be deterministic"
+    ]
+
+testHexRoundTrip :: TestTree
+testHexRoundTrip =
+  testGroup
+    "hex round-trip tests"
+    [ testCase "toHexString of empty hash is known constant" $ do
+        let hex = Hash.toHexString (Hash.hashValue Hash.emptyHash)
+        hex @?= "",
+      testCase "hex output of string hash matches known SHA-256 for empty string" $ do
+        let h = Hash.hashString ""
+        let hex = Hash.toHexString (Hash.hashValue h)
+        hex @?= "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      testCase "hex output of hello has correct length" $ do
+        let h = Hash.hashString "hello"
+        let hex = Hash.toHexString (Hash.hashValue h)
+        length hex @?= 64,
+      testCase "hex characters are all valid hex digits" $ do
+        let h = Hash.hashString "round-trip-test"
+        let hex = Hash.toHexString (Hash.hashValue h)
+        all (\c -> c `elem` ("0123456789abcdef" :: String)) hex @?= True
     ]
 
 hClose :: Handle -> IO ()

@@ -375,6 +375,7 @@ test-suite canopy-test
       Unit.Parse.NumberTest
       Unit.Parse.PatternTest
       Unit.Parse.PrimitivesTest
+      Unit.Parse.ShaderTest
       Unit.Parse.SpaceTest
       Unit.Parse.StringTest
       Unit.Parse.SymbolTest

@@ -41,6 +41,9 @@ tests = testGroup "Canonicalize.Pattern Tests"
   , verifyMultipleBindingsTests
   , verifyDuplicateTests
   , verifyErrorPropagationTests
+  , verifyAsPatternTests
+  , verifyNestedConstructorTests
+  , verifyWildcardPositionTests
   ]
 
 -- | Extract a successful Right value from a Result run, or fail the test.
@@ -198,6 +201,81 @@ verifyErrorPropagationTests = testGroup "verify propagates inner errors"
                     *> (Result.throw (Error.TupleLargerThanThree region2) :: Result.Result Pattern.DupsDict [Error.Error] Error.Error ())
       _ <- expectLeft (Result.run (Pattern.verify Error.DPCaseBranch inner))
       return ()
+  ]
+
+-- AS-PATTERN BINDING TESTS
+--
+-- An as-pattern @p@x@ binds both the outer alias name @x@ and any variables
+-- inside the sub-pattern @p@.  We simulate this by logging both names.
+
+verifyAsPatternTests :: TestTree
+verifyAsPatternTests = testGroup "as-pattern (alias) bindings"
+  [ testCase "as-pattern alias and inner variable are both bound" $ do
+      let alias = Name.fromChars "whole"
+          inner = Name.fromChars "part"
+          computation = logVar inner region1 () *> logVar alias region2 ()
+      (_, bindings) <- expectRight (Result.run (Pattern.verify Error.DPCaseBranch computation))
+      Map.member alias bindings @?= True
+      Map.member inner bindings @?= True
+  , testCase "as-pattern alias duplicate with inner name produces error" $ do
+      let name = Name.fromChars "x"
+          computation = logVar name region1 () *> logVar name region2 ()
+      _ <- expectLeft (Result.run (Pattern.verify Error.DPDestruct computation))
+      return ()
+  , testCase "as-pattern binding map has size 2 for distinct alias and inner" $ do
+      let computation = logVar (Name.fromChars "all") region1 ()
+                          *> logVar (Name.fromChars "head") region2 ()
+      (_, bindings) <- expectRight (Result.run (Pattern.verify Error.DPCaseBranch computation))
+      Map.size bindings @?= 2
+  ]
+
+-- NESTED CONSTRUCTOR PATTERN TESTS
+--
+-- Nested constructor patterns flatten into a single binding scope. All
+-- sub-variables must be distinct within that scope.
+
+verifyNestedConstructorTests :: TestTree
+verifyNestedConstructorTests = testGroup "nested constructor patterns"
+  [ testCase "two nested levels with unique names succeed" $ do
+      let computation = logVars
+            [(Name.fromChars "a", region1), (Name.fromChars "b", region2), (Name.fromChars "c", region3)]
+            ()
+      (_, bindings) <- expectRight (Result.run (Pattern.verify Error.DPCaseBranch computation))
+      Map.size bindings @?= 3
+  , testCase "nested collision between inner and outer produces error" $ do
+      let name = Name.fromChars "val"
+          computation = logVar name region1 () *> logVar name region3 ()
+      _ <- expectLeft (Result.run (Pattern.verify Error.DPCaseBranch computation))
+      return ()
+  , testCase "three distinct nested names all appear in bindings" $ do
+      let names = map Name.fromChars ["outer", "middle", "inner"]
+          computation = logVars (zip names [region1, region2, region3]) ()
+      (_, bindings) <- expectRight (Result.run (Pattern.verify Error.DPCaseBranch computation))
+      all (`Map.member` bindings) names @?= True
+  ]
+
+-- WILDCARD PATTERN TESTS
+--
+-- Wildcard (@_@) patterns bind no names, so they produce no entries in the
+-- DupsDict.  We verify this by running @verify@ with no variable logs.
+
+verifyWildcardPositionTests :: TestTree
+verifyWildcardPositionTests = testGroup "wildcard patterns in different positions"
+  [ testCase "wildcard as sole pattern binds no names" $ do
+      let computation = Result.ok () :: Result.Result Pattern.DupsDict [Error.Error] Error.Error ()
+      (_, bindings) <- expectRight (Result.run (Pattern.verify Error.DPCaseBranch computation))
+      Map.null bindings @?= True
+  , testCase "wildcard alongside real variable leaves only real variable bound" $ do
+      let name = Name.fromChars "x"
+          computation = logVar name region1 ()
+      (_, bindings) <- expectRight (Result.run (Pattern.verify Error.DPCaseBranch computation))
+      Map.keys bindings @?= [name]
+  , testCase "multiple wildcards with one real variable binds exactly one name" $ do
+      let name = Name.fromChars "kept"
+          computation = logVar name region2 ()
+      (_, bindings) <- expectRight (Result.run (Pattern.verify Error.DPLambdaArgs computation))
+      Map.size bindings @?= 1
+      Map.member name bindings @?= True
   ]
 
 -- HELPERS

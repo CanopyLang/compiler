@@ -11,8 +11,12 @@
 -- * Basic expression rendering: Int, Float, Bool, Null, String, Ref
 -- * Array and Object expression rendering
 -- * InfixOp and PrefixOp expression rendering
+-- * Access, Index, Assign, Call, New, Function expression rendering
 -- * Statement rendering: VarDecl, ExprStmt, Return, Throw, Block, FunctionStmt
 -- * IfStmt rendering with and without else branch
+-- * While, Switch, Try/Catch, Break, Continue, Labelled statements
+-- * Vars and ConstPure statement rendering
+-- * ModuleItem: ImportBare, ImportNamed, ExportLocals, ExportLocalsRaw
 -- * nameToByteString: converts Name values to ByteString
 -- * sanitizeScriptElementString: escapes script tags and HTML comments
 -- * Edge cases: empty block, nested expressions
@@ -43,7 +47,15 @@ tests =
     [ exprRenderingTests,
       prefixOpTests,
       infixOpTests,
+      assignExprTests,
+      callAndNewExprTests,
       stmtRenderingTests,
+      controlFlowStmtTests,
+      switchStmtTests,
+      tryCatchStmtTests,
+      breakContinueLabelTests,
+      multiVarStmtTests,
+      moduleItemTests,
       nameToByteStringTests,
       sanitizeScriptTests
     ]
@@ -58,6 +70,21 @@ renderExpr = LChar8.unpack . BB.toLazyByteString . JS.exprToBuilder
 renderStmt :: JS.Stmt -> String
 renderStmt stmt =
   LChar8.unpack (LBS.init (BB.toLazyByteString (JS.stmtToBuilder stmt)))
+
+-- | Strip an additional trailing newline from a rendered statement.
+--
+-- Some statements emit a trailing newline inside the rendered output;
+-- this helper removes it so expected strings do not need to embed newlines.
+stripNewline :: JS.Stmt -> String
+stripNewline stmt =
+  let s = renderStmt stmt
+   in if not (null s) && last s == '\n' then init s else s
+
+-- | Render a module item to a String for assertion (trailing newline stripped).
+renderModuleItem :: JS.ModuleItem -> String
+renderModuleItem item =
+  let raw = LChar8.unpack (BB.toLazyByteString (JS.moduleItemToBuilder item))
+   in if not (null raw) && last raw == '\n' then init raw else raw
 
 -- | Build a local Name from a String.
 localName :: String -> JsName.Name
@@ -177,6 +204,51 @@ infixOpTests =
         renderExpr (JS.Infix JS.OpZfRShift (JS.Int 8) (JS.Int 1)) @?= "8 >>>1"
     ]
 
+-- ASSIGN EXPRESSION TESTS
+
+-- | Test rendering of assignment expressions using all LValue variants.
+assignExprTests :: TestTree
+assignExprTests =
+  Test.testGroup
+    "assignment expression rendering"
+    [ Test.testCase "Assign LRef renders simple variable assignment" $
+        renderExpr (JS.Assign (JS.LRef (localName "x")) (JS.Int 5))
+          @?= "x =5",
+      Test.testCase "Assign LDot renders property assignment" $
+        renderExpr (JS.Assign (JS.LDot (JS.Ref (localName "obj")) (localName "field")) (JS.Int 5))
+          @?= " obj.field =5",
+      Test.testCase "Assign LBracket renders index assignment" $
+        renderExpr (JS.Assign (JS.LBracket (JS.Ref (localName "arr")) (JS.Int 0)) (JS.Int 5))
+          @?= " arr[0] =5"
+    ]
+
+-- CALL AND NEW EXPRESSION TESTS
+
+-- | Test rendering of function calls, constructor expressions, and Index access.
+callAndNewExprTests :: TestTree
+callAndNewExprTests =
+  Test.testGroup
+    "call, new, and index expression rendering"
+    [ Test.testCase "Call renders function application with args" $
+        renderExpr (JS.Call (JS.Ref (localName "f")) [JS.Int 1, JS.Int 2])
+          @?= " f(1,2)",
+      Test.testCase "Call with no args renders empty parens" $
+        renderExpr (JS.Call (JS.Ref (localName "f")) [])
+          @?= " f()",
+      Test.testCase "New renders constructor invocation" $
+        renderExpr (JS.New (JS.Ref (localName "Foo")) [JS.Int 1])
+          @?= " new Foo(1)",
+      Test.testCase "New with no args renders empty constructor call" $
+        renderExpr (JS.New (JS.Ref (localName "Foo")) [])
+          @?= " new Foo()",
+      Test.testCase "Index renders bracket access" $
+        renderExpr (JS.Index (JS.Ref (localName "arr")) (JS.Int 0))
+          @?= " arr[0]",
+      Test.testCase "anonymous Function expression renders correctly" $
+        renderExpr (JS.Function Nothing [localName "x"] [JS.Return (JS.Ref (localName "x"))])
+          @?= " function(x){ return ( x);}"
+    ]
+
 -- STATEMENT RENDERING TESTS
 
 -- | Test rendering of JavaScript statements.
@@ -215,6 +287,114 @@ stmtRenderingTests =
       Test.testCase "IfStmt with else renders if-else" $
         renderStmt (JS.IfStmt (JS.Bool True) (JS.Return (JS.Int 1)) (JS.Return (JS.Int 0)))
           @?= " if (true ){ return 1;} else{ return 0;}"
+    ]
+
+-- CONTROL FLOW STATEMENT TESTS
+
+-- | Test rendering of while loops.
+controlFlowStmtTests :: TestTree
+controlFlowStmtTests =
+  Test.testGroup
+    "while loop statement rendering"
+    [ Test.testCase "While with empty block body renders semicolon" $
+        stripNewline (JS.While (JS.Bool True) (JS.Block []))
+          @?= " while (true );",
+      Test.testCase "While with Return body renders block" $
+        stripNewline (JS.While (JS.Bool False) (JS.Return (JS.Int 0)))
+          @?= " while (false ) return 0;"
+    ]
+
+-- SWITCH STATEMENT TESTS
+
+-- | Test rendering of switch statements with case and default arms.
+switchStmtTests :: TestTree
+switchStmtTests =
+  Test.testGroup
+    "switch statement rendering"
+    [ Test.testCase "Switch with Case and Default arms" $
+        stripNewline
+          (JS.Switch (JS.Ref (localName "x"))
+            [ JS.Case (JS.Int 1) [JS.Return (JS.Int 1)],
+              JS.Default [JS.Return (JS.Int 0)]
+            ])
+          @?= " switch( x){ case 1 : return 1; default : return 0;}",
+      Test.testCase "Switch with single Case and Break" $
+        stripNewline
+          (JS.Switch (JS.Ref (localName "x")) [JS.Case (JS.Int 0) [JS.Break Nothing]])
+          @?= " switch( x){ case 0 : break;}"
+    ]
+
+-- TRY/CATCH STATEMENT TESTS
+
+-- | Test rendering of try/catch blocks.
+tryCatchStmtTests :: TestTree
+tryCatchStmtTests =
+  Test.testGroup
+    "try/catch statement rendering"
+    [ Test.testCase "Try renders try-catch with named error binding" $
+        stripNewline
+          (JS.Try (JS.Return (JS.Int 1)) (localName "e") (JS.Throw (JS.Ref (localName "e"))))
+          @?= " try{ return 1;}catch(e){ throw e;}"
+    ]
+
+-- BREAK / CONTINUE / LABEL STATEMENT TESTS
+
+-- | Test rendering of break, continue, and labelled statements.
+breakContinueLabelTests :: TestTree
+breakContinueLabelTests =
+  Test.testGroup
+    "break, continue, and label statement rendering"
+    [ Test.testCase "Break without label renders bare break" $
+        stripNewline (JS.Break Nothing) @?= " break;",
+      Test.testCase "Break with label renders labelled break" $
+        stripNewline (JS.Break (Just (localName "loop"))) @?= " break loop;",
+      Test.testCase "Continue without label renders bare continue" $
+        stripNewline (JS.Continue Nothing) @?= " continue;",
+      Test.testCase "Labelled wraps statement with identifier prefix" $
+        stripNewline (JS.Labelled (localName "loop") (JS.While (JS.Bool True) (JS.Block [])))
+          @?= "loop: while (true );"
+    ]
+
+-- MULTI-VAR AND CONST-PURE STATEMENT TESTS
+
+-- | Test rendering of multi-variable declarations and pure-annotated constants.
+multiVarStmtTests :: TestTree
+multiVarStmtTests =
+  Test.testGroup
+    "multi-var and const-pure statement rendering"
+    [ Test.testCase "Vars with two bindings renders comma-separated declaration" $
+        stripNewline (JS.Vars [(localName "a", JS.Int 1), (localName "b", JS.Int 2)])
+          @?= "var b =2, a =1\n;",
+      Test.testCase "ConstPure renders with tree-shaking PURE annotation" $
+        stripNewline (JS.ConstPure (localName "x") (JS.Int 42))
+          @?= "/*#__PURE__*/ const x =42;"
+    ]
+
+-- MODULE ITEM TESTS
+
+-- | Test rendering of ESM module-level items (import/export declarations).
+moduleItemTests :: TestTree
+moduleItemTests =
+  Test.testGroup
+    "module item rendering"
+    [ Test.testCase "ImportBare renders bare import statement" $
+        renderModuleItem (JS.ImportBare "./foo.js")
+          @?= "import ./foo.js;",
+      Test.testCase "ImportNamed renders named import clause" $
+        renderModuleItem (JS.ImportNamed [localName "foo", localName "bar"] "./foo.js")
+          @?= "import { foo, bar } from ./foo.js;",
+      Test.testCase "ImportNamedRaw renders raw-named import clause" $
+        renderModuleItem (JS.ImportNamedRaw ["foo", "bar"] "./foo.js")
+          @?= "import { foo, bar } from ./foo.js;",
+      Test.testCase "ExportLocals renders named export clause" $
+        renderModuleItem (JS.ExportLocals [localName "foo", localName "bar"])
+          @?= "export { foo, bar };",
+      Test.testCase "ExportLocalsRaw renders raw-named export clause" $
+        renderModuleItem (JS.ExportLocalsRaw ["foo", "bar"])
+          @?= "export { foo, bar };",
+      Test.testCase "ModuleStmt wraps a var statement" $
+        renderModuleItem (JS.ModuleStmt (JS.Var (localName "x") (JS.Int 5)))
+          @?= "var x =5;"
     ]
 
 -- NAME TO BYTESTRING TESTS

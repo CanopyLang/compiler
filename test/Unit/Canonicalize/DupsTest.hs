@@ -41,6 +41,9 @@ tests = testGroup "Canonicalize.Environment.Dups Tests"
   , unionsTests
   , detectTests
   , checkFieldsTests
+  , nearDuplicatesTests
+  , tripleInsertTests
+  , multipleDuplicatedNamesTests
   ]
 
 -- | Run a Result and extract the outcome, discarding warnings.
@@ -257,6 +260,83 @@ checkFieldsTests = testGroup "checkFields"
             ]
       result <- expectRight (runResult (Dups.checkFields fields))
       Map.size result @?= 3
+  ]
+
+-- NEAR-DUPLICATE NAME TESTS
+--
+-- Names that share a prefix but differ (e.g. "foo" vs "fooBar") must NOT
+-- collide.
+
+nearDuplicatesTests :: TestTree
+nearDuplicatesTests = testGroup "near-duplicate names do not collide"
+  [ testCase "foo and fooBar are distinct and both survive detect" $ do
+      let dict = Dups.insert (Name.fromChars "fooBar") region2 (2 :: Int)
+                   (Dups.one (Name.fromChars "foo") region1 1)
+      result <- expectRight (runResult (Dups.detect toError dict))
+      Map.size result @?= 2
+  , testCase "bar and barBaz each appear in result map" $ do
+      let n1 = Name.fromChars "bar"
+          n2 = Name.fromChars "barBaz"
+          dict = Dups.union (Dups.one n1 region1 (10 :: Int)) (Dups.one n2 region2 20)
+      result <- expectRight (runResult (Dups.detect toError dict))
+      Map.lookup n1 result @?= Just 10
+      Map.lookup n2 result @?= Just 20
+  , testCase "prefix and suffix share no collision" $ do
+      let names = map Name.fromChars ["x", "xx", "xxx"]
+          dict = foldr (\(n, r, v) acc -> Dups.insert n r v acc) Dups.none
+                   (zip3 names (map mkRegion [1..3]) [(1 :: Int)..3])
+      result <- expectRight (runResult (Dups.detect toError dict))
+      Map.size result @?= 3
+  ]
+
+-- TRIPLE INSERT TESTS
+--
+-- Inserting the same name three times should still produce a duplicate error.
+
+tripleInsertTests :: TestTree
+tripleInsertTests = testGroup "same name inserted 3+ times"
+  [ testCase "inserting a name three times produces a duplicate error" $ do
+      let n = Name.fromChars "triple"
+          dict = Dups.insert n region3 (3 :: Int)
+                   (Dups.insert n region2 2
+                     (Dups.one n region1 1))
+      _ <- expectLeft (runResult (Dups.detect toError dict))
+      return ()
+  , testCase "inserting a name four times still produces a duplicate error" $ do
+      let n = Name.fromChars "quad"
+          r4 = mkRegion 4
+          dict = Dups.insert n r4 (4 :: Int)
+                   (Dups.insert n region3 3
+                     (Dups.insert n region2 2
+                       (Dups.one n region1 1)))
+      _ <- expectLeft (runResult (Dups.detect toError dict))
+      return ()
+  ]
+
+-- MULTIPLE DIFFERENT NAMES EACH DUPLICATED
+--
+-- When several distinct names are each duplicated, all duplicates should be
+-- detected.
+
+multipleDuplicatedNamesTests :: TestTree
+multipleDuplicatedNamesTests = testGroup "multiple different names each duplicated"
+  [ testCase "two distinct names each duplicated both cause an error" $ do
+      let na = Name.fromChars "alpha"
+          nb = Name.fromChars "beta"
+          dict = Dups.union
+                   (Dups.insert na region2 (2 :: Int) (Dups.one na region1 1))
+                   (Dups.insert nb region3 3 (Dups.one nb region2 2))
+      _ <- expectLeft (runResult (Dups.detect toError dict))
+      return ()
+  , testCase "three names each duplicated all cause errors" $ do
+      let mkDup n r1 r2 = Dups.insert n r2 (2 :: Int) (Dups.one n r1 1)
+          dict = Dups.unions
+                   [ mkDup (Name.fromChars "a") region1 region2
+                   , mkDup (Name.fromChars "b") region2 region3
+                   , mkDup (Name.fromChars "c") region1 region3
+                   ]
+      _ <- expectLeft (runResult (Dups.detect toError dict))
+      return ()
   ]
 
 -- HELPERS

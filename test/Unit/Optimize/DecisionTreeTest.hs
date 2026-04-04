@@ -27,7 +27,9 @@ tests =
       literalPatternTests,
       pathDataTypeTests,
       testDataTypeTests,
-      boolPatternTests
+      boolPatternTests,
+      manyBranchTests,
+      overlappingPatternTests
     ]
 
 -- HELPERS
@@ -201,6 +203,62 @@ boolPatternTests =
         assertNoDefault (DT.compile [(mkBool True, 0), (mkBool False, 1)]),
       testCase "incomplete Bool match (only True) has default" $
         assertHasDefault (DT.compile [(mkBool True, 0), (mkAnything, 1)])
+    ]
+
+-- MANY BRANCH TESTS
+
+-- | Tests for decision trees compiled from many literal branches.
+--
+-- Verifies that the compiler handles large numbers of distinct patterns
+-- correctly, producing a Decision tree with all branch targets reachable.
+manyBranchTests :: TestTree
+manyBranchTests =
+  testGroup
+    "many literal branches"
+    [ testCase "ten Int literals each produce a reachable leaf" $
+        let pairs = [(mkIntPat i, i) | i <- [0 .. 9]] ++ [(mkAnything, 10)]
+            tree = DT.compile pairs
+         in assertDecisionTargets [0 .. 9] tree,
+      testCase "ten Int literals produce a Decision node" $
+        let pairs = [(mkIntPat i, i) | i <- [0 .. 9]] ++ [(mkAnything, 10)]
+         in assertIsDecision (DT.compile pairs),
+      testCase "five distinct large Int values all appear as leaves" $
+        let vals = [100, 200, 300, 400, 500]
+            pairs = [(mkIntPat v, i) | (v, i) <- zip vals [0 ..]] ++ [(mkAnything, 5)]
+            tree = DT.compile pairs
+         in assertDecisionTargets [0 .. 4] tree,
+      testCase "ten branches plus wildcard default is present" $
+        let pairs = [(mkIntPat i, i) | i <- [0 .. 9]] ++ [(mkAnything, 10)]
+            tree = DT.compile pairs
+         in assertContainsLeaf 10 tree
+    ]
+
+-- OVERLAPPING PATTERN TESTS
+
+-- | Tests for first-match semantics with overlapping patterns.
+--
+-- Verifies that when a wildcard precedes a specific pattern the wildcard
+-- wins (first-match), and that two adjacent wildcards also resolve to the
+-- first one.
+overlappingPatternTests :: TestTree
+overlappingPatternTests =
+  testGroup
+    "overlapping pattern first-match semantics"
+    [ testCase "wildcard before specific Int wins (match 0)" $
+        assertTreeEq
+          "first wildcard wins"
+          (Match 0)
+          (DT.compile [(mkAnything, 0), (mkIntPat 1, 1)]),
+      testCase "two wildcards: first wildcard wins (match 10)" $
+        assertTreeEq
+          "first of two wildcards"
+          (Match 10)
+          (DT.compile [(mkAnything, 10), (mkAnything, 20)]),
+      testCase "wildcard first creates no decision node" $
+        let tree = DT.compile [(mkAnything, 0), (mkIntPat 1, 1)]
+         in case tree of
+              Match _ -> pure ()
+              Decision {} -> assertFailure "Expected Match when wildcard is first"
     ]
 
 -- ASSERTION HELPERS

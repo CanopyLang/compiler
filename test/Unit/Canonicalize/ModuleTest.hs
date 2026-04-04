@@ -48,6 +48,9 @@ tests = testGroup "Canonicalize.Module Tests"
   , loadFFIContentWithRootTests
   , canonicalizeEmptyModuleTests
   , canonicalizeExportTests
+  , canonicalizeEmptyExplicitExportsTests
+  , canonicalizeNonexistentExplicitExportsTests
+  , canonicalizeDuplicateExportsTests
   ]
 
 -- | Extract a successful Right value from a Result run, or fail the test.
@@ -191,6 +194,77 @@ canonicalizeExportTests = testGroup "canonicalize with exports"
             }
       errs <- expectLeft (runCanonicalize modul)
       verifyExportNotFoundError errs (Name.fromChars "+++")
+  ]
+
+-- EMPTY EXPLICIT EXPORT TESTS
+
+-- | Module with an empty explicit export list: @module M exposing ()@
+emptyExplicitExportModule :: Src.Module
+emptyExplicitExportModule = emptyModule
+  { Src._exports = Ann.At Ann.one (Src.Explicit []) }
+
+canonicalizeEmptyExplicitExportsTests :: TestTree
+canonicalizeEmptyExplicitExportsTests = testGroup "canonicalize with empty explicit export list"
+  [ testCase "empty explicit export list canonicalizes successfully" $ do
+      _ <- expectRight (runCanonicalize emptyExplicitExportModule)
+      return ()
+  , testCase "empty explicit exports produce no warnings" $ do
+      let (warnings, _) = runCanonicalize emptyExplicitExportModule
+      length warnings @?= 0
+  ]
+
+-- NONEXISTENT EXPLICIT EXPORTS TESTS
+
+-- | Build a module with a single lower-case explicit export of a given name.
+moduleWithLowerExport :: Name.Name -> Src.Module
+moduleWithLowerExport name = emptyModule
+  { Src._exports = Ann.At Ann.one
+      (Src.Explicit [Src.Lower (Ann.At Ann.one name)])
+  }
+
+canonicalizeNonexistentExplicitExportsTests :: TestTree
+canonicalizeNonexistentExplicitExportsTests = testGroup "canonicalize with nonexistent explicit exports"
+  [ testCase "two missing explicit exports both produce errors" $ do
+      let modul = emptyModule
+            { Src._exports = Ann.At Ann.one (Src.Explicit
+                [ Src.Lower (Ann.At Ann.one (Name.fromChars "missing1"))
+                , Src.Lower (Ann.At Ann.one (Name.fromChars "missing2"))
+                ])
+            }
+      _ <- expectLeft (runCanonicalize modul)
+      return ()
+  , testCase "export of missing lower name errors with that name" $ do
+      let name = Name.fromChars "ghostFn"
+      errs <- expectLeft (runCanonicalize (moduleWithLowerExport name))
+      verifyExportNotFoundError errs name
+  ]
+
+-- DUPLICATE EXPORT TESTS
+
+-- | Build a module with two identical lower-case exports.
+moduleWithDuplicateLowerExports :: Name.Name -> Src.Module
+moduleWithDuplicateLowerExports name = emptyModule
+  { Src._exports = Ann.At Ann.one (Src.Explicit
+      [ Src.Lower (Ann.At Ann.one name)
+      , Src.Lower (Ann.At Ann.one name)
+      ])
+  }
+
+canonicalizeDuplicateExportsTests :: TestTree
+canonicalizeDuplicateExportsTests = testGroup "canonicalize duplicate export detection"
+  [ testCase "duplicate lower export produces an error" $ do
+      let name = Name.fromChars "myFn"
+      _ <- expectLeft (runCanonicalize (moduleWithDuplicateLowerExports name))
+      return ()
+  , testCase "duplicate type export produces an error" $ do
+      let modul = emptyModule
+            { Src._exports = Ann.At Ann.one (Src.Explicit
+                [ Src.Upper (Ann.At Ann.one (Name.fromChars "MyType")) Src.Private
+                , Src.Upper (Ann.At Ann.one (Name.fromChars "MyType")) Src.Private
+                ])
+            }
+      _ <- expectLeft (runCanonicalize modul)
+      return ()
   ]
 
 -- HELPERS

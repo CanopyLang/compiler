@@ -11,13 +11,19 @@ import qualified Canopy.Version as Version
 import Test.Tasty
 import Test.Tasty.HUnit
 
+import qualified Canopy.Package as Pkg
+import qualified Data.Map.Strict as Map
+
 tests :: TestTree
 tests =
   testGroup
     "Builder.Solver Tests"
     [ testVersionParsing,
       testConstraintParsing,
-      testVersionComparison
+      testVersionComparison,
+      testSatisfiesConstraint,
+      testSolveConstraints,
+      testVerifySolution
     ]
 
 testVersionParsing :: TestTree
@@ -70,9 +76,9 @@ testConstraintParsing =
           _ -> assertFailure "Expected MaxVersion constraint",
       testCase "parse range constraint" $
         case Solver.parseConstraint ">=1.0.0,<=2.0.0" of
-          Just (Solver.RangeVersion min max) -> do
-            min @?= Version.Version 1 0 0
-            max @?= Version.Version 2 0 0
+          Just (Solver.RangeVersion minV maxV) -> do
+            minV @?= Version.Version 1 0 0
+            maxV @?= Version.Version 2 0 0
           _ -> assertFailure "Expected RangeVersion constraint",
       testCase "reject invalid constraint format" $
         Solver.parseConstraint "invalid" @?= Nothing,
@@ -106,4 +112,90 @@ testVersionComparison =
         let v1 = Version.Version 1 9 9
         let v2 = Version.Version 2 0 0
         v1 < v2 @? "Version 1.9.9 should be less than 2.0.0"
+    ]
+
+testSatisfiesConstraint :: TestTree
+testSatisfiesConstraint =
+  testGroup
+    "satisfiesConstraint tests"
+    [ testCase "AnyVersion is satisfied by any version" $
+        Solver.satisfiesConstraint (Version.Version 3 2 1) Solver.AnyVersion @?= True,
+      testCase "ExactVersion satisfied only by equal version" $
+        Solver.satisfiesConstraint (Version.Version 1 0 0) (Solver.ExactVersion (Version.Version 1 0 0)) @?= True,
+      testCase "ExactVersion not satisfied by different version" $
+        Solver.satisfiesConstraint (Version.Version 1 0 1) (Solver.ExactVersion (Version.Version 1 0 0)) @?= False,
+      testCase "MinVersion satisfied when version is greater" $
+        Solver.satisfiesConstraint (Version.Version 2 0 0) (Solver.MinVersion (Version.Version 1 0 0)) @?= True,
+      testCase "MinVersion satisfied by the minimum itself" $
+        Solver.satisfiesConstraint (Version.Version 1 0 0) (Solver.MinVersion (Version.Version 1 0 0)) @?= True,
+      testCase "MinVersion not satisfied when version is less" $
+        Solver.satisfiesConstraint (Version.Version 0 9 9) (Solver.MinVersion (Version.Version 1 0 0)) @?= False,
+      testCase "MaxVersion satisfied when version is less" $
+        Solver.satisfiesConstraint (Version.Version 0 9 0) (Solver.MaxVersion (Version.Version 1 0 0)) @?= True,
+      testCase "MaxVersion satisfied by the maximum itself" $
+        Solver.satisfiesConstraint (Version.Version 1 0 0) (Solver.MaxVersion (Version.Version 1 0 0)) @?= True,
+      testCase "MaxVersion not satisfied when version exceeds max" $
+        Solver.satisfiesConstraint (Version.Version 1 0 1) (Solver.MaxVersion (Version.Version 1 0 0)) @?= False,
+      testCase "RangeVersion satisfied by version within range" $
+        Solver.satisfiesConstraint (Version.Version 1 5 0)
+          (Solver.RangeVersion (Version.Version 1 0 0) (Version.Version 2 0 0)) @?= True,
+      testCase "RangeVersion not satisfied below minimum" $
+        Solver.satisfiesConstraint (Version.Version 0 9 0)
+          (Solver.RangeVersion (Version.Version 1 0 0) (Version.Version 2 0 0)) @?= False,
+      testCase "RangeVersion not satisfied above maximum" $
+        Solver.satisfiesConstraint (Version.Version 2 0 1)
+          (Solver.RangeVersion (Version.Version 1 0 0) (Version.Version 2 0 0)) @?= False
+    ]
+
+testSolveConstraints :: TestTree
+testSolveConstraints =
+  testGroup
+    "solve constraint tests"
+    [ testCase "empty constraints produce empty solution" $
+        Solver.solve [] @?= Solver.SolverSuccess Map.empty,
+      testCase "single exact version constraint resolves" $
+        case Solver.solve [(Pkg.dummyName, [Solver.ExactVersion (Version.Version 1 2 3)])] of
+          Solver.SolverSuccess sol ->
+            Map.lookup Pkg.dummyName sol @?= Just (Version.Version 1 2 3)
+          Solver.SolverFailure err ->
+            assertFailure ("Expected success, got: " ++ show err),
+      testCase "conflicting exact versions produce failure" $
+        case Solver.solve
+          [ (Pkg.dummyName,
+              [ Solver.ExactVersion (Version.Version 1 0 0)
+              , Solver.ExactVersion (Version.Version 2 0 0)
+              ]) ] of
+          Solver.SolverFailure _ -> return ()
+          Solver.SolverSuccess sol ->
+            assertFailure ("Expected failure, got: " ++ show sol),
+      testCase "AnyVersion constraint resolves to a version" $
+        case Solver.solve [(Pkg.dummyName, [Solver.AnyVersion])] of
+          Solver.SolverSuccess sol ->
+            Map.member Pkg.dummyName sol @?= True
+          Solver.SolverFailure err ->
+            assertFailure ("Expected success, got: " ++ show err)
+    ]
+
+testVerifySolution :: TestTree
+testVerifySolution =
+  testGroup
+    "verifySolution tests"
+    [ testCase "empty solution satisfies empty constraints" $
+        Solver.verifySolution Map.empty [] @?= True,
+      testCase "solution with correct version satisfies exact constraint" $
+        let sol = Map.singleton Pkg.dummyName (Version.Version 1 0 0)
+            constraints = [(Pkg.dummyName, [Solver.ExactVersion (Version.Version 1 0 0)])]
+        in Solver.verifySolution sol constraints @?= True,
+      testCase "solution with wrong version fails exact constraint" $
+        let sol = Map.singleton Pkg.dummyName (Version.Version 2 0 0)
+            constraints = [(Pkg.dummyName, [Solver.ExactVersion (Version.Version 1 0 0)])]
+        in Solver.verifySolution sol constraints @?= False,
+      testCase "solution missing a required package fails" $
+        let sol = Map.empty
+            constraints = [(Pkg.dummyName, [Solver.ExactVersion (Version.Version 1 0 0)])]
+        in Solver.verifySolution sol constraints @?= False,
+      testCase "solution satisfies AnyVersion constraint" $
+        let sol = Map.singleton Pkg.dummyName (Version.Version 5 0 0)
+            constraints = [(Pkg.dummyName, [Solver.AnyVersion])]
+        in Solver.verifySolution sol constraints @?= True
     ]
