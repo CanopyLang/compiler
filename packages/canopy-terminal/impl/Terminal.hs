@@ -101,6 +101,7 @@ where
 
 -- Core imports for Terminal functionality
 
+import qualified Control.Concurrent as Concurrent
 import qualified Data.List as List
 import qualified System.Environment as Environment
 import qualified System.Exit as Exit
@@ -109,6 +110,7 @@ import qualified System.IO as IO
 import qualified Text.PrettyPrint.ANSI.Leijen as Doc
 
 import qualified Canopy.Version as Version
+import qualified SelfUpdate
 import Terminal.Internal
   ( Args (..),
     Command (..),
@@ -154,6 +156,7 @@ runApp ::
   IO ()
 runApp intro outro commands = do
   argStrings <- Environment.getArgs
+  emitStartupNotice argStrings
   case argStrings of
     [] ->
       Error.exitWithOverview intro outro commands
@@ -179,6 +182,18 @@ runApp intro outro commands = do
                 callback argsValue flagsValue
               Left err ->
                 Error.exitWithError err
+
+-- | Emit an update notice (from cache) and kick off a background cache refresh.
+--
+-- The notice is skipped when running @self-update@ itself to avoid
+-- redundant output.  Both operations are non-blocking: the notice reads
+-- only a local file, and the network refresh runs in a forked thread.
+emitStartupNotice :: [String] -> IO ()
+emitStartupNotice ("self-update" : _) = pure ()
+emitStartupNotice _ = do
+  SelfUpdate.printUpdateNoticeIfAvailable
+  _ <- Concurrent.forkIO SelfUpdate.refreshCacheBackground
+  pure ()
 
 -- | Handle shell completion for multi-command application.
 --
@@ -271,6 +286,7 @@ runSingleCommand ::
   IO ()
 runSingleCommand details examples args_ flags_ handler = do
   argStrings <- Environment.getArgs
+  emitStartupNotice argStrings
   case argStrings of
     ["--help"] ->
       Error.exitWithHelp Nothing (renderDoc details) examples args_ flags_

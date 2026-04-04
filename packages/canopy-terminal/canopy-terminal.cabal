@@ -177,6 +177,8 @@ library
       Reporting.Task
       Scripts
       SelfUpdate
+      SelfUpdate.Cache
+      SelfUpdate.Http
       Setup
       Setup.LocalCompilation
       Setup.PackageLocator
