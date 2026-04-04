@@ -2,10 +2,22 @@
 
 module Unit.FFI.ValidatorTest (tests) where
 
+import qualified Data.ByteString.Builder as BB
+import qualified Data.ByteString.Lazy as LBS
 import qualified Data.Text as Text
+import qualified Data.Text.Encoding as TextEnc
 import qualified FFI.Validator as Validator
+import qualified Generate.JavaScript.Builder as JS
 import Test.Tasty
 import Test.Tasty.HUnit
+
+-- | Convert a ByteString 'BB.Builder' to 'Text' for inspection in tests.
+builderToText :: BB.Builder -> Text.Text
+builderToText = TextEnc.decodeUtf8 . LBS.toStrict . BB.toLazyByteString
+
+-- | Convert a 'JS.Stmt' to 'Text' for inspection in tests.
+stmtToText :: JS.Stmt -> Text.Text
+stmtToText = builderToText . JS.stmtToBuilder
 
 tests :: TestTree
 tests =
@@ -126,64 +138,64 @@ generateValidatorTests =
   testGroup
     "generateValidator"
     [ testCase "generates exact Int validator" $
-        Validator.generateValidator Validator.defaultConfig Validator.FFIInt
-          @?= "function _validate_Int(v, ctx) {\n  if (!Number.isInteger(v)) {\n    throw new Error('FFI type error at ' + ctx + ': expected Int, got ' + typeof v);\n  }\n  return v;\n}\n",
+        stmtToText (Validator.generateValidator Validator.defaultConfig Validator.FFIInt)
+          @?= "function _validate_Int(v,ctx){ if (! Number.isInteger( v) ) throw new Error('FFI type error at ' + ctx +': expected Int, got ' +typeof v); return ( v);}\n",
       testCase "generates exact Float validator with Infinity rejection" $
-        Validator.generateValidator Validator.defaultConfig Validator.FFIFloat
-          @?= "function _validate_Float(v, ctx) {\n  if (typeof v !== 'number') {\n    throw new Error('FFI type error at ' + ctx + ': expected Float, got ' + typeof v);\n  }\n  if (!Number.isFinite(v)) {\n    throw new Error('FFI type error at ' + ctx + ': expected finite Float, got ' + typeof v);\n  }\n  return v;\n}\n",
+        stmtToText (Validator.generateValidator Validator.defaultConfig Validator.FFIFloat)
+          @?= "function _validate_Float(v,ctx){ if (typeof v !=='number' ) throw new Error('FFI type error at ' + ctx +': expected Float, got ' +typeof v); if (! Number.isFinite( v) ) throw new Error('FFI type error at ' + ctx +': expected finite Float, got ' +typeof v); return ( v);}\n",
       testCase "generates exact String validator" $
-        Validator.generateValidator Validator.defaultConfig Validator.FFIString
-          @?= "function _validate_String(v, ctx) {\n  if (typeof v !== 'string') {\n    throw new Error('FFI type error at ' + ctx + ': expected String, got ' + typeof v);\n  }\n  return v;\n}\n",
+        stmtToText (Validator.generateValidator Validator.defaultConfig Validator.FFIString)
+          @?= "function _validate_String(v,ctx){ if (typeof v !=='string' ) throw new Error('FFI type error at ' + ctx +': expected String, got ' +typeof v); return ( v);}\n",
       testCase "generates exact Bool validator" $
-        Validator.generateValidator Validator.defaultConfig Validator.FFIBool
-          @?= "function _validate_Bool(v, ctx) {\n  if (typeof v !== 'boolean') {\n    throw new Error('FFI type error at ' + ctx + ': expected Bool, got ' + typeof v);\n  }\n  return v;\n}\n",
+        stmtToText (Validator.generateValidator Validator.defaultConfig Validator.FFIBool)
+          @?= "function _validate_Bool(v,ctx){ if (typeof v !=='boolean' ) throw new Error('FFI type error at ' + ctx +': expected Bool, got ' +typeof v); return ( v);}\n",
       testCase "generates exact Unit validator" $
-        Validator.generateValidator Validator.defaultConfig Validator.FFIUnit
-          @?= "function _validate_Unit(v, ctx) {\n  return v;\n}\n",
+        stmtToText (Validator.generateValidator Validator.defaultConfig Validator.FFIUnit)
+          @?= "function _validate_Unit(v,ctx){ return ( v);}\n",
       testCase "generates exact List Int validator" $
-        Validator.generateValidator Validator.defaultConfig (Validator.FFIList Validator.FFIInt)
-          @?= "function _validate_List_Int(v, ctx) {\n  if (!Array.isArray(v)) {\n    throw new Error('FFI type error at ' + ctx + ': expected List, got ' + typeof v);\n  }\n  return v.map(function(el, i) { return _validate_Int(el, ctx + '[' + i + ']'); });\n}\n",
+        stmtToText (Validator.generateValidator Validator.defaultConfig (Validator.FFIList Validator.FFIInt))
+          @?= "function _validate_List_Int(v,ctx){ if (! Array.isArray( v) ) throw new Error('FFI type error at ' + ctx +': expected List, got ' +typeof v); return ( v.map( function(el,i){ return ( _validate_Int( el, ctx +'[' + i +']'));}));}\n",
       testCase "generates exact Maybe Int validator" $
-        Validator.generateValidator Validator.defaultConfig (Validator.FFIMaybe Validator.FFIInt)
-          @?= "function _validate_Maybe_Int(v, ctx) {\n  if (v == null) { return { $: 'Nothing' }; }\n  return { $: 'Just', a: _validate_Int(v, ctx) };\n}\n",
+        stmtToText (Validator.generateValidator Validator.defaultConfig (Validator.FFIMaybe Validator.FFIInt))
+          @?= "function _validate_Maybe_Int(v,ctx){ if ( v ==null ) return ({$ :'Nothing'}); return ({$ :'Just',a : _validate_Int( v, ctx)});}\n",
       testCase "generates exact Result String Int validator with hasOwnProperty" $
-        Validator.generateValidator Validator.defaultConfig (Validator.FFIResult Validator.FFIString Validator.FFIInt)
-          @?= "function _validate_Result_String_Int(v, ctx) {\n  if (typeof v !== 'object' || v === null || !Object.prototype.hasOwnProperty.call(v, '$')) {\n    throw new Error('FFI type error at ' + ctx + ': expected Result, got ' + typeof v);\n  }\n  if (v.$ === 'Ok') {\n    return { $: 'Ok', a: _validate_Int(v.a, ctx + '.Ok') };\n  } else if (v.$ === 'Err') {\n    return { $: 'Err', a: _validate_String(v.a, ctx + '.Err') };\n  }\n  throw new Error('FFI type error at ' + ctx + ': expected Result (invalid $), got ' + typeof v);\n}\n",
+        stmtToText (Validator.generateValidator Validator.defaultConfig (Validator.FFIResult Validator.FFIString Validator.FFIInt))
+          @?= "function _validate_Result_String_Int(v,ctx){ if (typeof v !=='object' || v ===null ||! Object.prototype.hasOwnProperty.call( v,'$') ) throw new Error('FFI type error at ' + ctx +': expected Result, got ' +typeof v); if ( v.$ ==='Ok' ) return ({$ :'Ok',a : _validate_Int( v.a, ctx +'.Ok')}); else{ if ( v.$ ==='Err' ) return ({$ :'Err',a : _validate_String( v.a, ctx +'.Err')});} throw new Error('FFI type error at ' + ctx +': expected Result (invalid $), got ' +typeof v);}\n",
       testCase "generates exact Task String Int validator with try/catch" $
-        Validator.generateValidator Validator.defaultConfig (Validator.FFITask Validator.FFIString Validator.FFIInt)
-          @?= "function _validate_Task_String_Int(v, ctx) {\n  if (typeof v !== 'object' || v === null || typeof v.then !== 'function') {\n    throw new Error('FFI type error at ' + ctx + ': expected Task (expected Promise), got ' + typeof v);\n  }\n  return v.then(\n    function(ok) {\n      try { return { $: 'Ok', a: _validate_Int(ok, ctx + '.then') }; }\n      catch (e) { return { $: 'Err', a: _validate_String(String(e), ctx + '.validation') }; }\n    },\n    function(err) {\n      try { return { $: 'Err', a: _validate_String(err, ctx + '.catch') }; }\n      catch (e) { return { $: 'Err', a: String(e) }; }\n    }\n  );\n}\n",
+        stmtToText (Validator.generateValidator Validator.defaultConfig (Validator.FFITask Validator.FFIString Validator.FFIInt))
+          @?= "function _validate_Task_String_Int(v,ctx){ if (typeof v !=='object' || v ==null ||typeof v.then !=='function' ) throw new Error('FFI type error at ' + ctx +': expected Task (expected Promise), got ' +typeof v); return ( v.then( function(ok){ try{ return ({$ :'Ok',a : _validate_Int( ok, ctx +'.then')});}catch(e){ return ({$ :'Err',a : _validate_String( String( e), ctx +'.validation')});}}, function(err){ try{ return ({$ :'Err',a : _validate_String( err, ctx +'.catch')});}catch(e){ return ({$ :'Err',a : String( e)});}}));}\n",
       testCase "generates exact Tuple Int String validator" $
-        Validator.generateValidator Validator.defaultConfig (Validator.FFITuple [Validator.FFIInt, Validator.FFIString])
-          @?= "function _validate_Tuple_Int_String(v, ctx) {\n  if (!Array.isArray(v) || v.length !== 2) {\n    throw new Error('FFI type error at ' + ctx + ': expected Tuple2, got ' + typeof v);\n  }\n  return [_validate_Int(v[0], ctx + '[0]'), _validate_String(v[1], ctx + '[1]')];\n}\n",
+        stmtToText (Validator.generateValidator Validator.defaultConfig (Validator.FFITuple [Validator.FFIInt, Validator.FFIString]))
+          @?= "function _validate_Tuple_Int_String(v,ctx){ if (! Array.isArray( v) || v.length !==2 ) throw new Error('FFI type error at ' + ctx +': expected Tuple2, got ' +typeof v); return ([ _validate_Int( v[0], ctx +'[' +0 +']') , _validate_String( v[1], ctx +'[' +1 +']')]);}\n",
       testCase "generates exact Function Int->String validator" $
-        Validator.generateValidator Validator.defaultConfig (Validator.FFIFunctionType [Validator.FFIInt] Validator.FFIString)
-          @?= "function _validate_Fn_String(v, ctx) {\n  if (typeof v !== 'function') {\n    throw new Error('FFI type error at ' + ctx + ': expected Function, got ' + typeof v);\n  }\n  return v;\n}\n",
+        stmtToText (Validator.generateValidator Validator.defaultConfig (Validator.FFIFunctionType [Validator.FFIInt] Validator.FFIString))
+          @?= "function _validate_Fn_String(v,ctx){ if (typeof v !=='function' ) throw new Error('FFI type error at ' + ctx +': expected Function, got ' +typeof v); return ( v);}\n",
       testCase "strict mode generates throw new Error" $
         let config = Validator.defaultConfig {Validator._configStrictMode = True}
-         in Validator.generateValidator config Validator.FFIInt
-              @?= "function _validate_Int(v, ctx) {\n  if (!Number.isInteger(v)) {\n    throw new Error('FFI type error at ' + ctx + ': expected Int, got ' + typeof v);\n  }\n  return v;\n}\n",
+         in stmtToText (Validator.generateValidator config Validator.FFIInt)
+              @?= "function _validate_Int(v,ctx){ if (! Number.isInteger( v) ) throw new Error('FFI type error at ' + ctx +': expected Int, got ' +typeof v); return ( v);}\n",
       testCase "non-strict mode generates console.warn" $
         let config = Validator.defaultConfig {Validator._configStrictMode = False}
-         in Validator.generateValidator config Validator.FFIInt
-              @?= "function _validate_Int(v, ctx) {\n  if (!Number.isInteger(v)) {\n    console.warn('FFI type warning at ' + ctx + ': expected Int, got ' + typeof v);\n  }\n  return v;\n}\n",
+         in stmtToText (Validator.generateValidator config Validator.FFIInt)
+              @?= "function _validate_Int(v,ctx){ if (! Number.isInteger( v) ) console.warn('FFI type warning at ' + ctx +': expected Int, got ' +typeof v) return ( v);}\n",
       testCase "debug mode generates JSON.stringify in error message" $
         let config = Validator.defaultConfig {Validator._configDebugMode = True}
-         in Validator.generateValidator config Validator.FFIInt
-              @?= "function _validate_Int(v, ctx) {\n  if (!Number.isInteger(v)) {\n    throw new Error('FFI type error at ' + ctx + ': expected Int, got ' + typeof v + ': ' + JSON.stringify(v));\n  }\n  return v;\n}\n",
+         in stmtToText (Validator.generateValidator config Validator.FFIInt)
+              @?= "function _validate_Int(v,ctx){ if (! Number.isInteger( v) ) throw new Error('FFI type error at ' + ctx +': expected Int, got ' +typeof v +': ' + JSON.stringify( v)); return ( v);}\n",
       testCase "validates opaque types with null check and instanceof when configured" $
         let config = Validator.defaultConfig {Validator._configValidateOpaque = True}
-         in Validator.generateValidator config (Validator.FFIOpaque "AudioContext" [])
-              @?= "function _validate_Opaque_AudioContext(v, ctx) {\n  if (v == null) {\n    throw new Error('FFI type error at ' + ctx + ': expected AudioContext, got ' + typeof v);\n  }\n  if (!(v instanceof AudioContext)) {\n    throw new Error('FFI type error at ' + ctx + ': expected AudioContext, got ' + typeof v);\n  }\n  return v;\n}\n",
+         in stmtToText (Validator.generateValidator config (Validator.FFIOpaque "AudioContext" []))
+              @?= "function _validate_Opaque_AudioContext(v,ctx){ if ( v ==null ) throw new Error('FFI type error at ' + ctx +': expected AudioContext, got ' +typeof v); if (!( v instanceof AudioContext) ) throw new Error('FFI type error at ' + ctx +': expected AudioContext, got ' +typeof v); return ( v);}\n",
       testCase "validates opaque types with null check even when instanceof not configured" $
         let config = Validator.defaultConfig {Validator._configValidateOpaque = False}
-         in Validator.generateValidator config (Validator.FFIOpaque "AudioContext" [])
-              @?= "function _validate_Opaque_AudioContext(v, ctx) {\n  if (v == null) {\n    throw new Error('FFI type error at ' + ctx + ': expected AudioContext, got ' + typeof v);\n  }\n  return v;\n}\n",
+         in stmtToText (Validator.generateValidator config (Validator.FFIOpaque "AudioContext" []))
+              @?= "function _validate_Opaque_AudioContext(v,ctx){ if ( v ==null ) throw new Error('FFI type error at ' + ctx +': expected AudioContext, got ' +typeof v); return ( v);}\n",
       testCase "type variable validator rejects undefined" $
-        Validator.generateValidator Validator.defaultConfig (Validator.FFITypeVar "a")
-          @?= "function _validate_Var_a(v, ctx) {\n  if (typeof v === 'undefined') {\n    throw new Error('FFI type error at ' + ctx + ': expected non-undefined value, got ' + typeof v);\n  }\n  return v;\n}\n",
+        stmtToText (Validator.generateValidator Validator.defaultConfig (Validator.FFITypeVar "a"))
+          @?= "function _validate_Var_a(v,ctx){ if (typeof v ==='undefined' ) throw new Error('FFI type error at ' + ctx +': expected non-undefined value, got ' +typeof v); return ( v);}\n",
       testCase "record validator generates hasOwnProperty field checks" $
-        Validator.generateValidator Validator.defaultConfig (Validator.FFIRecord [("name", Validator.FFIString), ("age", Validator.FFIInt)])
-          @?= "function _validate_Rec_name_age(v, ctx) {\n  if (typeof v !== 'object' || v === null || Array.isArray(v)) {\n    throw new Error('FFI type error at ' + ctx + ': expected Record, got ' + typeof v);\n  }\n  if (!Object.prototype.hasOwnProperty.call(v, 'name')) {\n    throw new Error('FFI type error at ' + ctx + ': expected Record (missing field name), got ' + typeof v);\n  }\n  _validate_String(v.name, ctx + '.name');\n  if (!Object.prototype.hasOwnProperty.call(v, 'age')) {\n    throw new Error('FFI type error at ' + ctx + ': expected Record (missing field age), got ' + typeof v);\n  }\n  _validate_Int(v.age, ctx + '.age');\n  return v;\n}\n"
+        stmtToText (Validator.generateValidator Validator.defaultConfig (Validator.FFIRecord [("name", Validator.FFIString), ("age", Validator.FFIInt)]))
+          @?= "function _validate_Rec_name_age(v,ctx){ if (typeof v !=='object' || v ===null || Array.isArray( v) ) throw new Error('FFI type error at ' + ctx +': expected Record, got ' +typeof v); if (! Object.prototype.hasOwnProperty.call( v,'name') ) throw new Error('FFI type error at ' + ctx +': expected Record (missing field name), got ' +typeof v); _validate_String( v.name, ctx +'.name') if (! Object.prototype.hasOwnProperty.call( v,'age') ) throw new Error('FFI type error at ' + ctx +': expected Record (missing field age), got ' +typeof v); _validate_Int( v.age, ctx +'.age') return ( v);}\n"
     ]
 
 generateAllValidatorsTests :: TestTree
@@ -191,14 +203,14 @@ generateAllValidatorsTests =
   testGroup
     "generateAllValidators"
     [ testCase "generates validator for List Int and nested Int" $
-        Validator.generateAllValidators Validator.defaultConfig (Validator.FFIList Validator.FFIInt)
-          @?= "function _validate_List_Int(v, ctx) {\n  if (!Array.isArray(v)) {\n    throw new Error('FFI type error at ' + ctx + ': expected List, got ' + typeof v);\n  }\n  return v.map(function(el, i) { return _validate_Int(el, ctx + '[' + i + ']'); });\n}\n\nfunction _validate_Int(v, ctx) {\n  if (!Number.isInteger(v)) {\n    throw new Error('FFI type error at ' + ctx + ': expected Int, got ' + typeof v);\n  }\n  return v;\n}\n\n",
+        builderToText (Validator.generateAllValidators Validator.defaultConfig (Validator.FFIList Validator.FFIInt))
+          @?= "function _validate_List_Int(v,ctx){ if (! Array.isArray( v) ) throw new Error('FFI type error at ' + ctx +': expected List, got ' +typeof v); return ( v.map( function(el,i){ return ( _validate_Int( el, ctx +'[' + i +']'));}));}\nfunction _validate_Int(v,ctx){ if (! Number.isInteger( v) ) throw new Error('FFI type error at ' + ctx +': expected Int, got ' +typeof v); return ( v);}\n",
       testCase "generates validators for Result String Int with hasOwnProperty" $
-        Validator.generateAllValidators Validator.defaultConfig (Validator.FFIResult Validator.FFIString Validator.FFIInt)
-          @?= "function _validate_Result_String_Int(v, ctx) {\n  if (typeof v !== 'object' || v === null || !Object.prototype.hasOwnProperty.call(v, '$')) {\n    throw new Error('FFI type error at ' + ctx + ': expected Result, got ' + typeof v);\n  }\n  if (v.$ === 'Ok') {\n    return { $: 'Ok', a: _validate_Int(v.a, ctx + '.Ok') };\n  } else if (v.$ === 'Err') {\n    return { $: 'Err', a: _validate_String(v.a, ctx + '.Err') };\n  }\n  throw new Error('FFI type error at ' + ctx + ': expected Result (invalid $), got ' + typeof v);\n}\n\nfunction _validate_String(v, ctx) {\n  if (typeof v !== 'string') {\n    throw new Error('FFI type error at ' + ctx + ': expected String, got ' + typeof v);\n  }\n  return v;\n}\n\nfunction _validate_Int(v, ctx) {\n  if (!Number.isInteger(v)) {\n    throw new Error('FFI type error at ' + ctx + ': expected Int, got ' + typeof v);\n  }\n  return v;\n}\n\n",
+        builderToText (Validator.generateAllValidators Validator.defaultConfig (Validator.FFIResult Validator.FFIString Validator.FFIInt))
+          @?= "function _validate_Result_String_Int(v,ctx){ if (typeof v !=='object' || v ===null ||! Object.prototype.hasOwnProperty.call( v,'$') ) throw new Error('FFI type error at ' + ctx +': expected Result, got ' +typeof v); if ( v.$ ==='Ok' ) return ({$ :'Ok',a : _validate_Int( v.a, ctx +'.Ok')}); else{ if ( v.$ ==='Err' ) return ({$ :'Err',a : _validate_String( v.a, ctx +'.Err')});} throw new Error('FFI type error at ' + ctx +': expected Result (invalid $), got ' +typeof v);}\nfunction _validate_String(v,ctx){ if (typeof v !=='string' ) throw new Error('FFI type error at ' + ctx +': expected String, got ' +typeof v); return ( v);}\nfunction _validate_Int(v,ctx){ if (! Number.isInteger( v) ) throw new Error('FFI type error at ' + ctx +': expected Int, got ' +typeof v); return ( v);}\n",
       testCase "generates validators for Maybe (List Int)" $
-        Validator.generateAllValidators Validator.defaultConfig (Validator.FFIMaybe (Validator.FFIList Validator.FFIInt))
-          @?= "function _validate_Maybe_List_Int(v, ctx) {\n  if (v == null) { return { $: 'Nothing' }; }\n  return { $: 'Just', a: _validate_List_Int(v, ctx) };\n}\n\nfunction _validate_List_Int(v, ctx) {\n  if (!Array.isArray(v)) {\n    throw new Error('FFI type error at ' + ctx + ': expected List, got ' + typeof v);\n  }\n  return v.map(function(el, i) { return _validate_Int(el, ctx + '[' + i + ']'); });\n}\n\nfunction _validate_Int(v, ctx) {\n  if (!Number.isInteger(v)) {\n    throw new Error('FFI type error at ' + ctx + ': expected Int, got ' + typeof v);\n  }\n  return v;\n}\n\n"
+        builderToText (Validator.generateAllValidators Validator.defaultConfig (Validator.FFIMaybe (Validator.FFIList Validator.FFIInt)))
+          @?= "function _validate_Maybe_List_Int(v,ctx){ if ( v ==null ) return ({$ :'Nothing'}); return ({$ :'Just',a : _validate_List_Int( v, ctx)});}\nfunction _validate_List_Int(v,ctx){ if (! Array.isArray( v) ) throw new Error('FFI type error at ' + ctx +': expected List, got ' +typeof v); return ( v.map( function(el,i){ return ( _validate_Int( el, ctx +'[' + i +']'));}));}\nfunction _validate_Int(v,ctx){ if (! Number.isInteger( v) ) throw new Error('FFI type error at ' + ctx +': expected Int, got ' +typeof v); return ( v);}\n"
     ]
 
 generateAllValidatorsDedupedTests :: TestTree
@@ -212,21 +224,21 @@ generateAllValidatorsDedupedTests =
               [ Validator.FFIOpaque "Decoder" [Validator.FFITypeVar "flags"]
               , Validator.FFIOpaque "Decoder" [Validator.FFITypeVar "msg"]
               ]
-            result = Validator.generateAllValidatorsDeduped Validator.defaultConfig types
+            result = builderToText (Validator.generateAllValidatorsDeduped Validator.defaultConfig types)
             occurrences = length (filter (Text.isPrefixOf "function _validate_Opaque_Decoder") (Text.lines result))
          in occurrences @?= 1,
       testCase "emits each validator exactly once when types share subtypes" $
         -- Two functions returning List Int must not emit _validate_Int twice.
         let types = [Validator.FFIList Validator.FFIInt, Validator.FFIList Validator.FFIInt]
-            result = Validator.generateAllValidatorsDeduped Validator.defaultConfig types
-            intCount = length (filter (== "function _validate_Int(v, ctx) {") (Text.lines result))
+            result = builderToText (Validator.generateAllValidatorsDeduped Validator.defaultConfig types)
+            intCount = length (filter (Text.isPrefixOf "function _validate_Int(v,ctx)") (Text.lines result))
          in intCount @?= 1,
       testCase "emits all distinct validators when types differ" $
         let types = [Validator.FFIList Validator.FFIInt, Validator.FFIList Validator.FFIString]
-            result = Validator.generateAllValidatorsDeduped Validator.defaultConfig types
+            result = builderToText (Validator.generateAllValidatorsDeduped Validator.defaultConfig types)
          in do
-              length (filter (== "function _validate_List_Int(v, ctx) {") (Text.lines result)) @?= 1
-              length (filter (== "function _validate_List_String(v, ctx) {") (Text.lines result)) @?= 1
-              length (filter (== "function _validate_Int(v, ctx) {") (Text.lines result)) @?= 1
-              length (filter (== "function _validate_String(v, ctx) {") (Text.lines result)) @?= 1
+              length (filter (Text.isPrefixOf "function _validate_List_Int(v,ctx)") (Text.lines result)) @?= 1
+              length (filter (Text.isPrefixOf "function _validate_List_String(v,ctx)") (Text.lines result)) @?= 1
+              length (filter (Text.isPrefixOf "function _validate_Int(v,ctx)") (Text.lines result)) @?= 1
+              length (filter (Text.isPrefixOf "function _validate_String(v,ctx)") (Text.lines result)) @?= 1
     ]

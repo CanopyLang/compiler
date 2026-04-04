@@ -81,7 +81,9 @@ tests =
       cLetTests,
       cPatternTests,
       compositeConstraintTests,
-      deferredLetTests
+      deferredLetTests,
+      advancedCLetTests,
+      advancedCompositeTests
     ]
 
 -- CTRUE TESTS
@@ -391,4 +393,176 @@ testLetFlexVarUnifiesInBody =
           , _expectedType = Nothing
           }
     result <- Solve.run constraint
+    assertSolveSuccess result
+
+-- ADVANCED CLET TESTS
+
+-- | Advanced CLet scenarios: multiple flex vars, typed header bindings,
+-- nested let-in-let, and a body constraint composed of CEqual.
+--
+-- These complement the simpler 'cLetTests' and 'deferredLetTests' groups by
+-- exercising more complex generalisation and constraint interaction paths.
+advancedCLetTests :: TestTree
+advancedCLetTests =
+  testGroup
+    "CLet advanced scenarios"
+    [ testLetMultipleFlexVars,
+      testLetHeaderTypedBindings,
+      testLetNestedInLet,
+      testLetBodyIsCEqual
+    ]
+
+-- | CLet with three flex vars in _flexVars. All three are unconstrained so
+-- the solver generalises each independently. Verifies the multi-flex path
+-- does not produce spurious errors.
+testLetMultipleFlexVars :: TestTree
+testLetMultipleFlexVars =
+  testCase "CLet with multiple flex vars generalises all of them" $ do
+    f1 <- Type.mkFlexVar
+    f2 <- Type.mkFlexVar
+    f3 <- Type.mkFlexVar
+    let header =
+          Map.fromList
+            [ ("a", Ann.At testRegion (VarN f1))
+            , ("b", Ann.At testRegion (VarN f2))
+            , ("c", Ann.At testRegion (VarN f3))
+            ]
+    let constraint = CLet
+          { _rigidVars = []
+          , _flexVars = [f1, f2, f3]
+          , _header = header
+          , _headerCon = CTrue
+          , _bodyCon = CTrue
+          , _expectedType = Nothing
+          }
+    result <- Solve.run constraint
+    assertSolveSuccess result
+
+-- | CLet whose header constraint unifies two flex vars via CEqual,
+-- so the solver must propagate that equality before generalising.
+testLetHeaderTypedBindings :: TestTree
+testLetHeaderTypedBindings =
+  testCase "CLet header with typed bindings unified by headerCon succeeds" $ do
+    fX <- Type.mkFlexVar
+    fY <- Type.mkFlexVar
+    let header =
+          Map.fromList
+            [ ("x", Ann.At testRegion (VarN fX))
+            , ("y", Ann.At testRegion (VarN fY))
+            ]
+    let headerCon =
+          CAnd
+            [ mkCEqual (VarN fX) Type.int
+            , mkCEqual (VarN fY) Type.string
+            ]
+    let constraint = CLet
+          { _rigidVars = []
+          , _flexVars = [fX, fY]
+          , _header = header
+          , _headerCon = headerCon
+          , _bodyCon = CTrue
+          , _expectedType = Nothing
+          }
+    result <- Solve.run constraint
+    assertSolveSuccess result
+
+-- | Nested CLet (let-in-let): the outer let's _bodyCon is itself a CLet.
+-- The inner let introduces its own flex var and header, exercising the
+-- solver's stack of let-scopes.
+testLetNestedInLet :: TestTree
+testLetNestedInLet =
+  testCase "CLet nested inside another CLet bodyCon succeeds" $ do
+    outerFlex <- Type.mkFlexVar
+    innerFlex <- Type.mkFlexVar
+    let innerHeader = Map.singleton "inner" (Ann.At testRegion (VarN innerFlex))
+    let innerLet = CLet
+          { _rigidVars = []
+          , _flexVars = [innerFlex]
+          , _header = innerHeader
+          , _headerCon = mkCEqual (VarN innerFlex) Type.bool
+          , _bodyCon = CTrue
+          , _expectedType = Nothing
+          }
+    let outerHeader = Map.singleton "outer" (Ann.At testRegion (VarN outerFlex))
+    let outerLet = CLet
+          { _rigidVars = []
+          , _flexVars = [outerFlex]
+          , _header = outerHeader
+          , _headerCon = mkCEqual (VarN outerFlex) Type.int
+          , _bodyCon = innerLet
+          , _expectedType = Nothing
+          }
+    result <- Solve.run outerLet
+    assertSolveSuccess result
+
+-- | CLet where _bodyCon is a CEqual constraint. This directly tests the
+-- interaction between the let generalisation pass and an equality check
+-- performed after the header has been solved.
+testLetBodyIsCEqual :: TestTree
+testLetBodyIsCEqual =
+  testCase "CLet with CEqual bodyCon succeeds when types match" $ do
+    flexVar <- Type.mkFlexVar
+    let header = Map.singleton "z" (Ann.At testRegion (VarN flexVar))
+    let constraint = CLet
+          { _rigidVars = []
+          , _flexVars = [flexVar]
+          , _header = header
+          , _headerCon = mkCEqual (VarN flexVar) Type.float
+          , _bodyCon = mkCEqual Type.float Type.float
+          , _expectedType = Nothing
+          }
+    result <- Solve.run constraint
+    assertSolveSuccess result
+
+-- ADVANCED COMPOSITE CONSTRAINT TESTS
+
+-- | Advanced composite constraint scenarios: large CAnd lists, nested CAnd
+-- structures, and mixed CEqual / CLocal combinations.
+advancedCompositeTests :: TestTree
+advancedCompositeTests =
+  testGroup
+    "composite constraints advanced"
+    [ testCAndManyConstraints,
+      testCAndNestedInCAnd,
+      testCAndMixedEqualAndLocal
+    ]
+
+-- | CAnd with six CEqual constraints, all satisfied. Verifies that the
+-- solver does not have off-by-one or early-termination bugs when the list
+-- of sub-constraints is longer than the three-element cases tested above.
+testCAndManyConstraints :: TestTree
+testCAndManyConstraints =
+  testCase "CAnd with 6 CEqual constraints all succeeding produces Right" $ do
+    let constraints =
+          [ mkCEqual Type.int Type.int
+          , mkCEqual Type.string Type.string
+          , mkCEqual Type.bool Type.bool
+          , mkCEqual Type.float Type.float
+          , mkCEqual Type.char Type.char
+          , mkCEqual UnitN UnitN
+          ]
+    result <- Solve.run (CAnd constraints)
+    assertSolveSuccess result
+
+-- | Nested CAnd: the outer CAnd contains another CAnd alongside a CEqual.
+-- This exercises the recursive descent path in the solver's CAnd handler.
+testCAndNestedInCAnd :: TestTree
+testCAndNestedInCAnd =
+  testCase "CAnd containing a nested CAnd with CTrue constraints succeeds" $ do
+    let inner = CAnd [CTrue, mkCEqual Type.int Type.int, CTrue]
+    let outer = CAnd [inner, mkCEqual Type.string Type.string, CTrue]
+    result <- Solve.run outer
+    assertSolveSuccess result
+
+-- | Mixed CAnd containing both CEqual and CLocal. CLocal for an unknown
+-- name creates a fresh flex var and unifies it with the expectation, which
+-- always succeeds. This verifies the two constraint kinds coexist inside
+-- a single CAnd without interfering with each other.
+testCAndMixedEqualAndLocal :: TestTree
+testCAndMixedEqualAndLocal =
+  testCase "CAnd with CEqual and CLocal constraints both succeeding produces Right" $ do
+    let eqConstraint = mkCEqual Type.int Type.int
+    let localName = Name.fromChars "someBinding"
+    let localConstraint = CLocal testRegion localName (Error.NoExpectation Type.int)
+    result <- Solve.run (CAnd [eqConstraint, localConstraint, CTrue])
     assertSolveSuccess result

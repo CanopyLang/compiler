@@ -87,7 +87,9 @@ tests =
       tupleTests,
       equivalenceAfterUnifyTests,
       sequentialUnifyTests,
-      nestedStructureTests
+      nestedStructureTests,
+      recordEdgeCaseTests,
+      tupleEdgeCaseTests
     ]
 
 -- FLEX VAR TESTS
@@ -576,3 +578,131 @@ nestedStructureTests =
         answer <- Unify.unify Map.empty fun1 fun2
         assertBool "expected Ok for (Int -> (String, Bool)) ~ (Int -> (String, Bool))" (isOk answer)
     ]
+
+-- RECORD EDGE CASE TESTS
+
+-- | Edge cases for record unification not covered by the basic 'recordTests'.
+--
+-- Covers same-fields-different-types failure, extension-var absorption,
+-- empty-vs-non-empty failure, and overlapping fields via an extension variable.
+recordEdgeCaseTests :: TestTree
+recordEdgeCaseTests =
+  testGroup
+    "record unification edge cases"
+    [ testRecordSameFieldsDifferentTypes,
+      testRecordExtVarWithConcreteRecord,
+      testRecordEmptyVsNonEmpty,
+      testRecordOverlappingViaExtension
+    ]
+
+-- | Two records with the same field name but incompatible field types must
+-- fail unification.
+testRecordSameFieldsDifferentTypes :: TestTree
+testRecordSameFieldsDifferentTypes =
+  testCase "record with same fields but different types fails unification" $ do
+    nInt <- mkIntVar
+    nStr <- mkStringVar
+    ext1 <- mkStructureVar EmptyRecord1
+    ext2 <- mkStructureVar EmptyRecord1
+    rec1 <- mkStructureVar (Record1 (Map.singleton "n" nInt) ext1)
+    rec2 <- mkStructureVar (Record1 (Map.singleton "n" nStr) ext2)
+    answer <- Unify.unify Map.empty rec1 rec2
+    assertBool "expected Err: {n : Int} vs {n : String}" (isErr answer)
+
+-- | A concrete closed record can be unified against a record with a flex
+-- extension variable that absorbs the remaining fields.
+testRecordExtVarWithConcreteRecord :: TestTree
+testRecordExtVarWithConcreteRecord =
+  testCase "record with extension var unifies with concrete record that has extra fields" $ do
+    xInt <- mkIntVar
+    ext1 <- mkStructureVar EmptyRecord1
+    extFlex <- Type.mkFlexVar
+    rec1 <- mkStructureVar (Record1 (Map.singleton "x" xInt) ext1)
+    rec2 <- mkStructureVar (Record1 Map.empty extFlex)
+    answer <- Unify.unify Map.empty rec1 rec2
+    assertBool "expected Ok: {x : Int | r} ~ {} absorbs extra field" (isOk answer)
+
+-- | Unifying a non-empty record against EmptyRecord1 must fail because
+-- EmptyRecord1 carries no extension variable and cannot absorb extra fields.
+testRecordEmptyVsNonEmpty :: TestTree
+testRecordEmptyVsNonEmpty =
+  testCase "non-empty record vs EmptyRecord1 fails" $ do
+    xInt <- mkIntVar
+    ext <- mkStructureVar EmptyRecord1
+    nonEmpty <- mkStructureVar (Record1 (Map.singleton "x" xInt) ext)
+    empty <- mkStructureVar EmptyRecord1
+    answer <- Unify.unify Map.empty nonEmpty empty
+    assertBool "expected Err: {x : Int} vs {}" (isErr answer)
+
+-- | Two records both have field "x"; one also carries a flex extension var.
+-- Unification should thread the extension var to absorb the shared field.
+testRecordOverlappingViaExtension :: TestTree
+testRecordOverlappingViaExtension =
+  testCase "records with overlapping fields via extension var unify" $ do
+    xInt1 <- mkIntVar
+    xInt2 <- mkIntVar
+    yStr <- mkStringVar
+    ext1 <- mkStructureVar EmptyRecord1
+    extFlex <- Type.mkFlexVar
+    rec1 <- mkStructureVar (Record1 (Map.fromList [("x", xInt1), ("y", yStr)]) ext1)
+    rec2 <- mkStructureVar (Record1 (Map.singleton "x" xInt2) extFlex)
+    answer <- Unify.unify Map.empty rec1 rec2
+    assertBool "expected Ok for overlapping fields with extension" (isOk answer)
+
+-- TUPLE EDGE CASE TESTS
+
+-- | Edge cases for tuple unification not covered by the basic 'tupleTests'.
+--
+-- Covers the unit/tuple distinction, 2-tuple vs 3-tuple, and nested tuples.
+tupleEdgeCaseTests :: TestTree
+tupleEdgeCaseTests =
+  testGroup
+    "tuple unification edge cases"
+    [ testUnitVsTuple,
+      testPairVsTriple,
+      testNestedTuples
+    ]
+
+-- | Unit1 and a 2-element Tuple1 are structurally distinct and must not unify.
+testUnitVsTuple :: TestTree
+testUnitVsTuple =
+  testCase "Unit1 fails with 2-element Tuple1" $ do
+    unit <- mkStructureVar Unit1
+    a <- mkIntVar
+    b <- mkStringVar
+    tup <- mkStructureVar (Tuple1 a b Nothing)
+    answer <- Unify.unify Map.empty unit tup
+    assertBool "expected Err for Unit vs (Int, String)" (isErr answer)
+
+-- | A 2-element tuple must not unify with a 3-element tuple because they
+-- differ in arity (Nothing vs Just third element).
+testPairVsTriple :: TestTree
+testPairVsTriple =
+  testCase "2-tuple fails with 3-tuple" $ do
+    a1 <- mkIntVar
+    b1 <- mkBoolVar
+    a2 <- mkIntVar
+    b2 <- mkBoolVar
+    c2 <- mkStringVar
+    pair <- mkStructureVar (Tuple1 a1 b1 Nothing)
+    triple <- mkStructureVar (Tuple1 a2 b2 (Just c2))
+    answer <- Unify.unify Map.empty pair triple
+    assertBool "expected Err for (Int, Bool) vs (Int, Bool, String)" (isErr answer)
+
+-- | Two nested 2-element tuples must unify recursively when all element
+-- types match at every level.
+testNestedTuples :: TestTree
+testNestedTuples =
+  testCase "nested tuples unify when all element types match" $ do
+    i1 <- mkIntVar
+    s1 <- mkStringVar
+    inner1 <- mkStructureVar (Tuple1 i1 s1 Nothing)
+    b1 <- mkBoolVar
+    outer1 <- mkStructureVar (Tuple1 inner1 b1 Nothing)
+    i2 <- mkIntVar
+    s2 <- mkStringVar
+    inner2 <- mkStructureVar (Tuple1 i2 s2 Nothing)
+    b2 <- mkBoolVar
+    outer2 <- mkStructureVar (Tuple1 inner2 b2 Nothing)
+    answer <- Unify.unify Map.empty outer1 outer2
+    assertBool "expected Ok for ((Int, String), Bool) ~ ((Int, String), Bool)" (isOk answer)

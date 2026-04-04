@@ -112,23 +112,16 @@ import qualified Unit.Generate.CodeSplit.RuntimeTest as CodeSplitRuntimeTest
 import qualified Unit.Generate.CodeSplit.TypesTest as CodeSplitTypesTest
 import qualified Unit.Generate.ExpressionTest as ExpressionTest
 import qualified Unit.Generate.HtmlSecurityTest as HtmlSecurityTest
-import qualified Unit.Generate.JavaScript.ESMTest as JSESMTest
+import qualified Unit.Generate.JavaScript.BuilderTest as JSBuilderTest
 import qualified Unit.Generate.JavaScript.ExpressionArithmeticTest as JSExpressionArithmeticTest
-import qualified Unit.Generate.JavaScript.ExpressionGenerateTest as JSExpressionGenerateTest
-import qualified Unit.Generate.JavaScript.FFI.MinifyTest as JSFFIMinifyTest
-import qualified Unit.Generate.JavaScript.FFI.RegistryTest as JSFFIRegistryTest
-import qualified Unit.Generate.JavaScript.JSAnalysisTest as JSAnalysisTest
-import qualified Unit.Generate.JavaScript.Runtime.RegistryTest as JSRuntimeRegistryTest
 import qualified Unit.Generate.JavaScript.RuntimeAnnotationTest as RuntimeAnnotationTest
 import qualified Unit.Generate.JavaScript.RuntimeTest as JSRuntimeTest
-import qualified Unit.Generate.MinifyTest as MinifyTest
 import qualified Unit.Generate.ModeTest as ModeTest
 import qualified Unit.Generate.NameTest as GenerateNameTest
 import qualified Unit.Generate.CoverageTest as CoverageTest
 import qualified Unit.Generate.SourceMapTest as SourceMapTest
 import qualified Unit.Generate.StringPoolTest as StringPoolTest
 import qualified Unit.Generate.TreeShakeTest as TreeShakeTest
-import qualified Unit.Generate.HMRTest as HMRTest
 import qualified Unit.Generate.TypeScriptTest as TypeScriptTest
 import qualified Unit.Generate.WebComponentTest as WebComponentTest
 import qualified Unit.Generate.WebComponentIntrospectTest as WebComponentIntrospectTest
@@ -136,7 +129,10 @@ import qualified Unit.Optimize.CaseTest as CaseTest
 import qualified Unit.Optimize.ConstantFoldTest as ConstantFoldTest
 import qualified Unit.Optimize.DecisionTreeTest as DecisionTreeTest
 import qualified Unit.Optimize.ExpressionArithmeticTest as OptExpressionArithmeticTest
+import qualified Unit.Optimize.DeriveTest as DeriveTest
+import qualified Unit.Optimize.ModuleOptTest as ModuleOptTest
 import qualified Unit.Optimize.NamesTest as NamesTest
+import qualified Unit.Optimize.PortOptTest as PortOptTest
 import qualified Unit.Optimize.SimplifyTest as SimplifyTest
 import qualified Unit.Logging.ConfigTest as LoggingConfigTest
 import qualified Unit.Logging.EventTest as LoggingEventTest
@@ -196,7 +192,6 @@ import qualified Unit.Type.ParallelTest as TypeParallelTest
 import qualified Unit.Test.CoverageReportTest as CoverageReportTest
 import qualified Unit.Test.EventCoverageTest as EventCoverageTest
 import qualified Unit.Test.CoverageScopeTest as CoverageScopeTest
-import qualified Unit.VendorTest as VendorTest
 import qualified Unit.ScriptsTest as ScriptsTest
 import qualified Unit.OutlineFormatTest as OutlineFormatTest
 import qualified Unit.Kit.Route.ScannerTest as KitScannerTest
@@ -323,16 +318,13 @@ unitTests =
       OptExpressionArithmeticTest.tests,
       NamesTest.tests,
       SimplifyTest.tests,
-      JSESMTest.tests,
+      DeriveTest.tests,
+      ModuleOptTest.tests,
+      PortOptTest.tests,
+      JSBuilderTest.tests,
       JSExpressionArithmeticTest.tests,
-      JSExpressionGenerateTest.tests,
-      JSFFIMinifyTest.tests,
-      JSFFIRegistryTest.tests,
-      JSAnalysisTest.tests,
-      JSRuntimeRegistryTest.tests,
       JSRuntimeTest.tests,
       RuntimeAnnotationTest.tests,
-      MinifyTest.tests,
       ModeTest.tests,
       GenerateNameTest.tests,
       HtmlSecurityTest.tests,
@@ -347,7 +339,6 @@ unitTests =
       TypeScriptTest.tests,
       WebComponentTest.tests,
       WebComponentIntrospectTest.tests,
-      HMRTest.tests,
       CoverageTest.tests,
       CoverageReportTest.tests,
       CoverageScopeTest.tests,
@@ -408,7 +399,6 @@ unitTests =
       ModuleLoaderTest.tests,
       PublishArchiveTest.tests,
       TypeParallelTest.tests,
-      VendorTest.tests,
       ScriptsTest.tests,
       OutlineFormatTest.tests,
       KitScannerTest.tests,

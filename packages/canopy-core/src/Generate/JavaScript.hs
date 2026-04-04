@@ -55,11 +55,13 @@ import qualified Generate.JavaScript.Expression as Expr
 import Generate.JavaScript.FFI
   ( FFIInfo (..),
     extractFFIAliases,
+    extractCanopyTypeFunctions,
     ffiAlias,
     ffiContent,
     ffiFilePath,
     generateFFIContent,
   )
+import qualified FFI.TypeParser as TypeParser
 import qualified Generate.JavaScript.FFIRuntime as FFIRuntime
 import qualified Generate.JavaScript.Runtime as Runtime
 import qualified Generate.JavaScript.Runtime.Registry as Registry
@@ -127,10 +129,14 @@ generate inputMode globalGraph@(Opt.GlobalGraph rawGraph _ sourceLocs) mains ffi
       usedFFIFuncs = computeFFIUsage ffiAliases rawGraph reachable
       -- Pre-compute runtime deps from the Opt AST — eliminates the Phase 2
       -- materialization of innerContent for byte-level scanning.
-      (rawNeededRuntime, neededArities) = collectRuntimeDeps rawGraph reachable
+      (rawNeededRuntime, astArities) = collectRuntimeDeps rawGraph reachable
       -- Also scan FFI file content for _Module_name references (e.g. _Basics_e)
       -- that only appear inside embedded FFI files and not in the Canopy AST.
       ffiRuntimeDeps = collectFFIRuntimeDeps ffiInfos
+      -- Scan FFI files for direct F2-F9 / A2-A9 usage (e.g. F6(...) in list.js).
+      -- These bypass the Canopy optimizer and are invisible to collectRuntimeDeps.
+      ffiArities = collectFFIArities ffiInfos
+      neededArities = astArities <> ffiArities
       neededRuntime = Registry.closeDeps (rawNeededRuntime <> ffiRuntimeDeps)
       -- Traverse only from entry points — dead code is never visited.
       state = Map.foldrWithKey (addMain mode graph) (emptyState shouldTrackLines sourceLocs covIds) mains
@@ -243,7 +249,15 @@ nodeExprDeps node =
     -- AST — so this automatically picks up any future runtime refs added there.
     Opt.Manager effectsType         ->
       (managerRuntimeIds effectsType, Set.empty)
-    _                               -> mempty
+    -- Constructor nodes carry their arity; generateCtor wraps them in F<arity>,
+    -- so the corresponding F/A helpers must be emitted by the tree shaker.
+    Opt.Ctor _ arity                -> arityDep arity
+    -- Link, Enum, and Box carry no runtime deps of their own.
+    -- Link targets are already in the reachable set via TreeShake.reachableGlobals.
+    -- Enum has arity 0 and Box has arity 1, neither requiring F/A wrappers.
+    Opt.Link _                      -> mempty
+    Opt.Enum _                      -> mempty
+    Opt.Box                         -> mempty
 
 -- | Collect runtime deps from a single kernel chunk.
 --
@@ -378,6 +392,30 @@ ffiTextToRuntimeIds content =
       && Text.index t 0 == '_'
       && let h = Text.index t 1 in h >= 'A' && h <= 'Z'
       && Text.elem '_' (Text.drop 2 t)
+
+-- | Collect arity requirements from FFI @\@canopy-type@ annotations.
+--
+-- FFI JavaScript files declare function arities through type annotations
+-- (e.g. @\@canopy-type Int -> Int -> Int -> Int -> Int -> Int -> Int@ declares
+-- arity 6). The code generator wraps these in @F\<arity\>@ wrappers, so the
+-- tree shaker must emit the corresponding F\/A helpers.
+--
+-- This function parses the @\@canopy-type@ annotations from each FFI file
+-- using the same 'TypeParser' infrastructure that code generation uses,
+-- ensuring the arity detection stays in sync with the code generator.
+collectFFIArities :: Map String FFIInfo -> Set Int
+collectFFIArities =
+  foldMap extractArities . Map.elems
+  where
+    extractArities info =
+      let typePairs = extractCanopyTypeFunctions (Text.lines (_ffiContent info))
+      in Set.fromList
+           [ arity
+           | (_, typeAnnotation) <- typePairs
+           , Just parsedType <- [TypeParser.parseType typeAnnotation]
+           , let arity = TypeParser.countArity parsedType
+           , arity >= 2 && arity <= 9
+           ]
 
 -- | Collect runtime deps from a definition.
 defDeps :: Opt.Def -> (Set Registry.RuntimeId, Set Int)
