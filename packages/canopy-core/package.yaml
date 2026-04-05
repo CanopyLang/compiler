@@ -137,6 +137,7 @@ library:
     - FFI.Types
     - FFI.TypeValidator
     - FFI.TypeScriptValidation
+    - FFI.TypeParser
     - FFI.Validator
     # -- Public API: File operations --
     - File
@@ -296,7 +297,6 @@ library:
     - Canopy.Data.Utf8.Encoding
     - Canopy.Data.Utf8.Manipulation
     - Canopy.Data.Utf8.Types
-    - FFI.TypeParser
     - File.Cache
     - File.JSON
     - Generate.JavaScript.FFI.JSAnalysis

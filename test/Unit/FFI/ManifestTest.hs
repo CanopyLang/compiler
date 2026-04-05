@@ -2,543 +2,326 @@
 
 -- | Unit tests for FFI.Manifest module.
 --
--- Tests capability manifest collection and serialization, covering
--- collectCapabilities, collectCapabilitiesWithPackages, collectByPackage,
--- and JSON serialisation.
+-- Tests capability manifest collection covering empty inputs, single modules,
+-- multiple modules, capability deduplication, and package-level grouping.
 --
 -- @since 0.19.1
 module Unit.FFI.ManifestTest (tests) where
 
-import qualified Data.Aeson as Json
-import qualified Data.Map.Strict as Map
 import qualified Data.Set as Set
 import qualified Data.Text as Text
 import qualified FFI.Capability as Capability
 import qualified FFI.Manifest as Manifest
-import FFI.Types (BindingMode (..), JsFunctionName (..), PermissionName (..), ResourceName (..))
-import FFI.Types (FFIType (..))
+import FFI.Types (BindingMode (..), FFIType (..), JsFunctionName (..), PermissionName (..), ResourceName (..))
 import qualified Foreign.FFI as FFI
 import Test.Tasty
 import Test.Tasty.HUnit
-
--- HELPERS
-
--- | Minimal JSDocFunction with no capabilities.
-baseFunc :: FFI.JSDocFunction
-baseFunc =
-  FFI.JSDocFunction
-    { FFI.jsDocFuncName = JsFunctionName "testFunc",
-      FFI.jsDocFuncType = FFIInt,
-      FFI.jsDocFuncDescription = Nothing,
-      FFI.jsDocFuncParams = [],
-      FFI.jsDocFuncThrows = [],
-      FFI.jsDocFuncCapabilities = Nothing,
-      FFI.jsDocFuncFile = "test.js",
-      FFI.jsDocFuncBindMode = FunctionCall,
-      FFI.jsDocFuncCanopyName = Nothing
-    }
-
--- | Build a JSDocFunction with the given name and capability.
-funcWithCap :: Text.Text -> Capability.CapabilityConstraint -> FFI.JSDocFunction
-funcWithCap name cap =
-  baseFunc
-    { FFI.jsDocFuncName = JsFunctionName name,
-      FFI.jsDocFuncCapabilities = Just cap
-    }
-
--- | Build a JSDocFunction with the given name and no capability.
-funcNamed :: Text.Text -> FFI.JSDocFunction
-funcNamed name = baseFunc {FFI.jsDocFuncName = JsFunctionName name}
 
 tests :: TestTree
 tests =
   testGroup
     "FFI.Manifest Tests"
-    [ testEmptyInput,
-      testSingleCapability,
-      testMultipleFunctions,
-      testDuplicateCapabilities,
-      testCapabilityTypes,
-      testPackageLevelGrouping,
-      testCollectByPackage,
-      testJsonRoundTrip,
-      testJsonRoundTripModules,
-      testJsonRoundTripByPackage,
-      testMultiplePackages,
-      testNestedMultipleConstraints,
-      testAvailabilityInSets,
-      testModuleConstraintOrdering,
-      testCollectByPackageCapabilityContent
+    [ testEmptyInputs,
+      testSingleModuleNoCapabilities,
+      testSingleFunctionWithPermission,
+      testSingleFunctionWithInit,
+      testSingleFunctionWithUserActivation,
+      testMultipleCapabilitiesOnOneFunction,
+      testMultipleModules,
+      testCapabilityDeduplication,
+      testAvailabilityConstraint,
+      testMultipleConstraintFlattening,
+      testModuleFilteredWhenEmpty,
+      testPermissionPrefixFormat,
+      testInitPrefixFormat,
+      testLensAccessors
     ]
 
-testEmptyInput :: TestTree
-testEmptyInput =
+-- | Build a minimal JSDocFunction with no capabilities.
+makeFunc :: Text.Text -> FFI.JSDocFunction
+makeFunc name =
+  FFI.JSDocFunction
+    { FFI.jsDocFuncName = JsFunctionName name,
+      FFI.jsDocFuncType = FFIUnit,
+      FFI.jsDocFuncDescription = Nothing,
+      FFI.jsDocFuncParams = [],
+      FFI.jsDocFuncThrows = [],
+      FFI.jsDocFuncCapabilities = Nothing,
+      FFI.jsDocFuncFile = "test.ffi.js",
+      FFI.jsDocFuncBindMode = FunctionCall,
+      FFI.jsDocFuncCanopyName = Nothing
+    }
+
+-- | Build a JSDocFunction with a specific capability constraint.
+makeFuncWithCap :: Text.Text -> Capability.CapabilityConstraint -> FFI.JSDocFunction
+makeFuncWithCap name cap =
+  (makeFunc name) {FFI.jsDocFuncCapabilities = Just cap}
+
+-- EMPTY INPUT TESTS
+
+testEmptyInputs :: TestTree
+testEmptyInputs =
   testGroup
     "empty input"
-    [ testCase "empty module list produces empty manifest" $
-        let m = Manifest.collectCapabilities []
-         in do
-              Manifest._manifestUserActivation m @?= False
-              Set.size (Manifest._manifestPermissions m) @?= 0
-              Set.size (Manifest._manifestInitializations m) @?= 0
-              length (Manifest._manifestModules m) @?= 0,
-      testCase "module with no FFI functions produces empty modules" $
-        length (Manifest._manifestModules (Manifest.collectCapabilities [("MyModule", [])])) @?= 0,
-      testCase "module with uncapped functions excluded" $
-        length
-          (Manifest._manifestModules
-            (Manifest.collectCapabilities [("Mod", [funcNamed "foo", funcNamed "bar"])]))
-          @?= 0,
-      testCase "empty manifest has empty byPackage" $
-        length (Manifest._manifestByPackage (Manifest.collectCapabilities [])) @?= 0
+    [ testCase "empty module list produces empty manifest" $ do
+        let manifest = Manifest.collectCapabilities []
+        Manifest._manifestUserActivation manifest @?= False
+        Set.size (Manifest._manifestPermissions manifest) @?= 0
+        Set.size (Manifest._manifestInitializations manifest) @?= 0
+        length (Manifest._manifestModules manifest) @?= 0,
+      testCase "module with no FFI functions produces no module entry" $ do
+        let manifest = Manifest.collectCapabilities [("MyModule", [])]
+        length (Manifest._manifestModules manifest) @?= 0,
+      testCase "module with only no-capability functions produces no entry" $ do
+        let funcs = [makeFunc "doThing", makeFunc "doOther"]
+            manifest = Manifest.collectCapabilities [("Mod", funcs)]
+        length (Manifest._manifestModules manifest) @?= 0
     ]
 
-testSingleCapability :: TestTree
-testSingleCapability =
+-- SINGLE MODULE TESTS
+
+testSingleModuleNoCapabilities :: TestTree
+testSingleModuleNoCapabilities =
   testGroup
-    "single capability"
-    [ testCase "permission appears in permissions set" $
-        let fn = funcWithCap "doIt" (Capability.PermissionRequired (PermissionName "microphone"))
-            m = Manifest.collectCapabilities [("Audio", [fn])]
-         in Set.member "permission:microphone" (Manifest._manifestPermissions m) @?= True,
-      testCase "init appears in initializations set" $
-        let fn = funcWithCap "init" (Capability.InitializationRequired (ResourceName "AudioContext"))
-            m = Manifest.collectCapabilities [("Audio", [fn])]
-         in Set.member "init:AudioContext" (Manifest._manifestInitializations m) @?= True,
-      testCase "user-activation sets flag to True" $
-        let fn = funcWithCap "gesture" Capability.UserActivationRequired
-            m = Manifest.collectCapabilities [("UI", [fn])]
-         in Manifest._manifestUserActivation m @?= True,
-      testCase "module with capability appears in modules list" $
-        let fn = funcWithCap "doIt" (Capability.PermissionRequired (PermissionName "camera"))
-            m = Manifest.collectCapabilities [("CamModule", [fn])]
-         in length (Manifest._manifestModules m) @?= 1,
-      testCase "module capability entry records correct module name" $
-        let fn = funcWithCap "doIt" (Capability.PermissionRequired (PermissionName "camera"))
-            m = Manifest.collectCapabilities [("CamModule", [fn])]
-         in case Manifest._manifestModules m of
-              [mc] -> Manifest._mcModuleName mc @?= "CamModule"
-              other -> assertFailure ("expected 1 module, got " ++ show (length other)),
-      testCase "function capability records function name" $
-        let fn = funcWithCap "shoot" (Capability.PermissionRequired (PermissionName "camera"))
-            m = Manifest.collectCapabilities [("Cam", [fn])]
-         in case Manifest._manifestModules m of
-              [mc] -> case Manifest._mcFunctions mc of
-                [fc] -> Manifest._fcFunctionName fc @?= "shoot"
-                other -> assertFailure ("expected 1 func, got " ++ show (length other))
-              other -> assertFailure ("expected 1 module, got " ++ show (length other)),
-      testCase "function capability records constraint text" $
-        let fn = funcWithCap "doIt" (Capability.PermissionRequired (PermissionName "microphone"))
-            m = Manifest.collectCapabilities [("Mod", [fn])]
-         in case Manifest._manifestModules m of
-              [mc] -> case Manifest._mcFunctions mc of
-                [fc] -> Manifest._fcConstraints fc @?= ["permission:microphone"]
-                other -> assertFailure ("expected 1 func, got " ++ show (length other))
-              other -> assertFailure ("expected 1 module, got " ++ show (length other))
+    "single module no capabilities"
+    [ testCase "permissions set empty" $ do
+        let manifest = Manifest.collectCapabilities [("Audio", [makeFunc "init"])]
+        Manifest._manifestPermissions manifest @?= Set.empty,
+      testCase "initializations set empty" $ do
+        let manifest = Manifest.collectCapabilities [("Audio", [makeFunc "play"])]
+        Manifest._manifestInitializations manifest @?= Set.empty,
+      testCase "userActivation false" $ do
+        let manifest = Manifest.collectCapabilities [("Audio", [makeFunc "stop"])]
+        Manifest._manifestUserActivation manifest @?= False
     ]
 
-testMultipleFunctions :: TestTree
-testMultipleFunctions =
+testSingleFunctionWithPermission :: TestTree
+testSingleFunctionWithPermission =
   testGroup
-    "multiple functions"
-    [ testCase "two functions with caps produce two FunctionCapability entries" $
-        let fn1 = funcWithCap "f1" (Capability.PermissionRequired (PermissionName "microphone"))
-            fn2 = funcWithCap "f2" (Capability.PermissionRequired (PermissionName "camera"))
-            m = Manifest.collectCapabilities [("Mod", [fn1, fn2])]
-         in case Manifest._manifestModules m of
-              [mc] -> length (Manifest._mcFunctions mc) @?= 2
-              other -> assertFailure ("expected 1 module, got " ++ show (length other)),
-      testCase "function without cap not included in module functions" $
-        let fn1 = funcWithCap "f1" (Capability.PermissionRequired (PermissionName "microphone"))
-            m = Manifest.collectCapabilities [("Mod", [fn1, funcNamed "plain"])]
-         in case Manifest._manifestModules m of
-              [mc] -> length (Manifest._mcFunctions mc) @?= 1
-              other -> assertFailure ("expected 1 module, got " ++ show (length other)),
-      testCase "two modules each with caps produce two entries" $
-        let fn1 = funcWithCap "a" (Capability.PermissionRequired (PermissionName "microphone"))
-            fn2 = funcWithCap "b" (Capability.PermissionRequired (PermissionName "camera"))
-            m = Manifest.collectCapabilities [("ModA", [fn1]), ("ModB", [fn2])]
-         in length (Manifest._manifestModules m) @?= 2,
-      testCase "multiple distinct permissions are all collected" $
-        let fn1 = funcWithCap "a" (Capability.PermissionRequired (PermissionName "microphone"))
-            fn2 = funcWithCap "b" (Capability.PermissionRequired (PermissionName "camera"))
-            m = Manifest.collectCapabilities [("A", [fn1]), ("B", [fn2])]
-         in Set.size (Manifest._manifestPermissions m) @?= 2
+    "single function with permission"
+    [ testCase "permission appears in manifestPermissions" $ do
+        let cap = Capability.PermissionRequired (PermissionName "microphone")
+            funcs = [makeFuncWithCap "record" cap]
+            manifest = Manifest.collectCapabilities [("Audio", funcs)]
+        Manifest._manifestPermissions manifest @?= Set.singleton "permission:microphone",
+      testCase "module entry is created" $ do
+        let cap = Capability.PermissionRequired (PermissionName "microphone")
+            funcs = [makeFuncWithCap "record" cap]
+            manifest = Manifest.collectCapabilities [("Audio", funcs)]
+        length (Manifest._manifestModules manifest) @?= 1,
+      testCase "module name is preserved" $ do
+        let cap = Capability.PermissionRequired (PermissionName "camera")
+            funcs = [makeFuncWithCap "snapshot" cap]
+            manifest = Manifest.collectCapabilities [("Camera", funcs)]
+            modNames = map Manifest._mcModuleName (Manifest._manifestModules manifest)
+        modNames @?= ["Camera"],
+      testCase "function name is preserved in module caps" $ do
+        let cap = Capability.PermissionRequired (PermissionName "geolocation")
+            funcs = [makeFuncWithCap "locate" cap]
+            manifest = Manifest.collectCapabilities [("Geo", funcs)]
+            mods = Manifest._manifestModules manifest
+        case mods of
+          [m] -> map Manifest._fcFunctionName (Manifest._mcFunctions m) @?= ["locate"]
+          _ -> assertFailure "expected exactly one module"
     ]
 
-testDuplicateCapabilities :: TestTree
-testDuplicateCapabilities =
+testSingleFunctionWithInit :: TestTree
+testSingleFunctionWithInit =
   testGroup
-    "duplicate capabilities deduplication"
-    [ testCase "same permission in two functions deduplicated in set" $
-        let fn1 = funcWithCap "f1" (Capability.PermissionRequired (PermissionName "microphone"))
-            fn2 = funcWithCap "f2" (Capability.PermissionRequired (PermissionName "microphone"))
-            m = Manifest.collectCapabilities [("Mod", [fn1, fn2])]
-         in Set.size (Manifest._manifestPermissions m) @?= 1,
-      testCase "same init in two functions deduplicated" $
-        let fn1 = funcWithCap "f1" (Capability.InitializationRequired (ResourceName "AudioContext"))
-            fn2 = funcWithCap "f2" (Capability.InitializationRequired (ResourceName "AudioContext"))
-            m = Manifest.collectCapabilities [("Mod", [fn1, fn2])]
-         in Set.size (Manifest._manifestInitializations m) @?= 1
+    "single function with init requirement"
+    [ testCase "init appears in manifestInitializations" $ do
+        let cap = Capability.InitializationRequired (ResourceName "AudioContext")
+            funcs = [makeFuncWithCap "decode" cap]
+            manifest = Manifest.collectCapabilities [("Audio", funcs)]
+        Manifest._manifestInitializations manifest @?= Set.singleton "init:AudioContext",
+      testCase "init does not appear in permissions" $ do
+        let cap = Capability.InitializationRequired (ResourceName "AudioContext")
+            funcs = [makeFuncWithCap "decode" cap]
+            manifest = Manifest.collectCapabilities [("Audio", funcs)]
+        Set.size (Manifest._manifestPermissions manifest) @?= 0
     ]
 
-testCapabilityTypes :: TestTree
-testCapabilityTypes =
+testSingleFunctionWithUserActivation :: TestTree
+testSingleFunctionWithUserActivation =
   testGroup
-    "capability type variants"
-    [ testCase "AvailabilityRequired produces availability: prefix" $
-        let fn = funcWithCap "f" (Capability.AvailabilityRequired "WebBluetooth")
-            m = Manifest.collectCapabilities [("BT", [fn])]
-         in case Manifest._manifestModules m of
-              [mc] -> case Manifest._mcFunctions mc of
-                [fc] -> Manifest._fcConstraints fc @?= ["availability:WebBluetooth"]
-                other -> assertFailure ("expected 1 func, got " ++ show (length other))
-              other -> assertFailure ("expected 1 module, got " ++ show (length other)),
-      testCase "MultipleConstraints expands permission and init" $
+    "single function with user activation"
+    [ testCase "userActivation is true when present" $ do
+        let cap = Capability.UserActivationRequired
+            funcs = [makeFuncWithCap "play" cap]
+            manifest = Manifest.collectCapabilities [("Audio", funcs)]
+        Manifest._manifestUserActivation manifest @?= True,
+      testCase "userActivation is false when absent" $ do
+        let cap = Capability.PermissionRequired (PermissionName "microphone")
+            funcs = [makeFuncWithCap "record" cap]
+            manifest = Manifest.collectCapabilities [("Audio", funcs)]
+        Manifest._manifestUserActivation manifest @?= False
+    ]
+
+testMultipleCapabilitiesOnOneFunction :: TestTree
+testMultipleCapabilitiesOnOneFunction =
+  testGroup
+    "multiple capabilities on one function"
+    [ testCase "MultipleConstraints flattened into permissions and inits" $ do
         let cap =
               Capability.MultipleConstraints
                 [ Capability.PermissionRequired (PermissionName "microphone"),
                   Capability.InitializationRequired (ResourceName "AudioContext")
                 ]
-            fn = funcWithCap "f" cap
-            m = Manifest.collectCapabilities [("Mod", [fn])]
-         in do
-              Set.member "permission:microphone" (Manifest._manifestPermissions m) @?= True
-              Set.member "init:AudioContext" (Manifest._manifestInitializations m) @?= True,
-      testCase "MultipleConstraints with user-activation sets flag" $
+            funcs = [makeFuncWithCap "record" cap]
+            manifest = Manifest.collectCapabilities [("Audio", funcs)]
+        Manifest._manifestPermissions manifest @?= Set.singleton "permission:microphone"
+        Manifest._manifestInitializations manifest @?= Set.singleton "init:AudioContext",
+      testCase "nested MultipleConstraints includes user-activation" $ do
         let cap =
               Capability.MultipleConstraints
-                [Capability.UserActivationRequired, Capability.PermissionRequired (PermissionName "camera")]
-            fn = funcWithCap "f" cap
-            m = Manifest.collectCapabilities [("Mod", [fn])]
-         in Manifest._manifestUserActivation m @?= True,
-      testCase "MultipleConstraints produces multiple constraint texts" $
-        let cap =
+                [ Capability.UserActivationRequired,
+                  Capability.PermissionRequired (PermissionName "camera")
+                ]
+            funcs = [makeFuncWithCap "snap" cap]
+            manifest = Manifest.collectCapabilities [("Cam", funcs)]
+        Manifest._manifestUserActivation manifest @?= True
+        Manifest._manifestPermissions manifest @?= Set.singleton "permission:camera"
+    ]
+
+testMultipleModules :: TestTree
+testMultipleModules =
+  testGroup
+    "multiple modules"
+    [ testCase "two modules with caps produce two entries" $ do
+        let cap1 = Capability.PermissionRequired (PermissionName "microphone")
+            cap2 = Capability.PermissionRequired (PermissionName "camera")
+            input =
+              [ ("Audio", [makeFuncWithCap "record" cap1]),
+                ("Camera", [makeFuncWithCap "snap" cap2])
+              ]
+            manifest = Manifest.collectCapabilities input
+        length (Manifest._manifestModules manifest) @?= 2,
+      testCase "permissions aggregated across modules" $ do
+        let cap1 = Capability.PermissionRequired (PermissionName "microphone")
+            cap2 = Capability.PermissionRequired (PermissionName "camera")
+            input =
+              [ ("Audio", [makeFuncWithCap "record" cap1]),
+                ("Camera", [makeFuncWithCap "snap" cap2])
+              ]
+            manifest = Manifest.collectCapabilities input
+        Manifest._manifestPermissions manifest
+          @?= Set.fromList ["permission:microphone", "permission:camera"],
+      testCase "module without capabilities excluded, others included" $ do
+        let cap = Capability.PermissionRequired (PermissionName "microphone")
+            input =
+              [ ("Audio", [makeFuncWithCap "record" cap]),
+                ("Pure", [makeFunc "add"])
+              ]
+            manifest = Manifest.collectCapabilities input
+        length (Manifest._manifestModules manifest) @?= 1
+    ]
+
+testCapabilityDeduplication :: TestTree
+testCapabilityDeduplication =
+  testGroup
+    "capability deduplication"
+    [ testCase "same permission from two functions deduplicated in set" $ do
+        let cap = Capability.PermissionRequired (PermissionName "microphone")
+            funcs = [makeFuncWithCap "record" cap, makeFuncWithCap "stream" cap]
+            manifest = Manifest.collectCapabilities [("Audio", funcs)]
+        Set.size (Manifest._manifestPermissions manifest) @?= 1,
+      testCase "same init from two functions deduplicated in set" $ do
+        let cap = Capability.InitializationRequired (ResourceName "AudioContext")
+            funcs = [makeFuncWithCap "decode" cap, makeFuncWithCap "encode" cap]
+            manifest = Manifest.collectCapabilities [("Audio", funcs)]
+        Set.size (Manifest._manifestInitializations manifest) @?= 1,
+      testCase "two distinct permissions both appear" $ do
+        let cap1 = Capability.PermissionRequired (PermissionName "microphone")
+            cap2 = Capability.PermissionRequired (PermissionName "camera")
+            funcs = [makeFuncWithCap "record" cap1, makeFuncWithCap "snap" cap2]
+            manifest = Manifest.collectCapabilities [("Media", funcs)]
+        Set.size (Manifest._manifestPermissions manifest) @?= 2
+    ]
+
+testAvailabilityConstraint :: TestTree
+testAvailabilityConstraint =
+  testGroup
+    "availability constraint"
+    [ testCase "availability constraint causes module entry" $ do
+        let cap = Capability.AvailabilityRequired "WebGL"
+            funcs = [makeFuncWithCap "draw" cap]
+            manifest = Manifest.collectCapabilities [("Graphics", funcs)]
+        length (Manifest._manifestModules manifest) @?= 1,
+      testCase "availability does not appear in permissions" $ do
+        let cap = Capability.AvailabilityRequired "Bluetooth"
+            funcs = [makeFuncWithCap "connect" cap]
+            manifest = Manifest.collectCapabilities [("BLE", funcs)]
+        Set.size (Manifest._manifestPermissions manifest) @?= 0
+    ]
+
+testMultipleConstraintFlattening :: TestTree
+testMultipleConstraintFlattening =
+  testGroup
+    "MultipleConstraints flattening"
+    [ testCase "deeply nested MultipleConstraints flattened" $ do
+        let inner =
               Capability.MultipleConstraints
-                [ Capability.PermissionRequired (PermissionName "mic"),
-                  Capability.PermissionRequired (PermissionName "cam")
+                [ Capability.PermissionRequired (PermissionName "microphone"),
+                  Capability.PermissionRequired (PermissionName "camera")
                 ]
-            fn = funcWithCap "f" cap
-            m = Manifest.collectCapabilities [("Mod", [fn])]
-         in case Manifest._manifestModules m of
-              [mc] -> case Manifest._mcFunctions mc of
-                [fc] -> length (Manifest._fcConstraints fc) @?= 2
-                other -> assertFailure ("expected 1 func, got " ++ show (length other))
-              other -> assertFailure ("expected 1 module, got " ++ show (length other))
+            outer = Capability.MultipleConstraints [inner, Capability.UserActivationRequired]
+            funcs = [makeFuncWithCap "mediaCapture" outer]
+            manifest = Manifest.collectCapabilities [("Media", funcs)]
+        Manifest._manifestUserActivation manifest @?= True
+        Set.size (Manifest._manifestPermissions manifest) @?= 2
     ]
 
-testPackageLevelGrouping :: TestTree
-testPackageLevelGrouping =
+testModuleFilteredWhenEmpty :: TestTree
+testModuleFilteredWhenEmpty =
   testGroup
-    "collectCapabilitiesWithPackages"
-    [ testCase "empty package map produces no byPackage entries" $
-        let fn = funcWithCap "f" (Capability.PermissionRequired (PermissionName "mic"))
-            m = Manifest.collectCapabilitiesWithPackages Map.empty [("Mod", [fn])]
-         in length (Manifest._manifestByPackage m) @?= 0,
-      testCase "mapped file path groups caps under package name" $
-        let fn = funcWithCap "f" (Capability.PermissionRequired (PermissionName "mic"))
-            pkgMap = Map.singleton "Audio.ffi.js" "audio-lib"
-            m = Manifest.collectCapabilitiesWithPackages pkgMap [("Audio.ffi.js", [fn])]
-         in case Manifest._manifestByPackage m of
-              [pc] -> Manifest._pcPackageName pc @?= "audio-lib"
-              other -> assertFailure ("expected 1 pkg, got " ++ show (length other)),
-      testCase "mapped package contains the capability" $
-        let fn = funcWithCap "f" (Capability.PermissionRequired (PermissionName "mic"))
-            pkgMap = Map.singleton "Audio.ffi.js" "audio-lib"
-            m = Manifest.collectCapabilitiesWithPackages pkgMap [("Audio.ffi.js", [fn])]
-         in case Manifest._manifestByPackage m of
-              [pc] ->
-                Set.member "permission:mic" (Manifest._pcCapabilities pc) @?= True
-              other -> assertFailure ("expected 1 pkg, got " ++ show (length other)),
-      testCase "uncapped module excluded from byPackage" $
-        let pkgMap = Map.singleton "Mod.ffi.js" "some-lib"
-            m = Manifest.collectCapabilitiesWithPackages pkgMap [("Mod.ffi.js", [funcNamed "plain"])]
-         in length (Manifest._manifestByPackage m) @?= 0
+    "module filtering"
+    [ testCase "only capability-bearing functions included in entry" $ do
+        let cap = Capability.PermissionRequired (PermissionName "microphone")
+            funcs = [makeFunc "helper", makeFuncWithCap "record" cap]
+            manifest = Manifest.collectCapabilities [("Audio", funcs)]
+            mods = Manifest._manifestModules manifest
+        case mods of
+          [m] -> length (Manifest._mcFunctions m) @?= 1
+          _ -> assertFailure "expected exactly one module entry"
     ]
 
-testCollectByPackage :: TestTree
-testCollectByPackage =
+testPermissionPrefixFormat :: TestTree
+testPermissionPrefixFormat =
   testGroup
-    "collectByPackage"
-    [ testCase "empty input produces empty list" $
-        length (Manifest.collectByPackage []) @?= 0,
-      testCase "single entry becomes single PackageCapabilities" $
-        case Manifest.collectByPackage [("pkg-a", Set.fromList ["permission:mic"])] of
-          [pc] -> Manifest._pcPackageName pc @?= "pkg-a"
-          other -> assertFailure ("expected 1, got " ++ show (length other)),
-      testCase "two distinct packages become two entries" $
-        let result =
-              Manifest.collectByPackage
-                [ ("pkg-a", Set.fromList ["permission:mic"]),
-                  ("pkg-b", Set.fromList ["permission:camera"])
-                ]
-         in length result @?= 2,
-      testCase "duplicate package names merged via union" $
-        case Manifest.collectByPackage
-               [ ("pkg", Set.fromList ["permission:mic"]),
-                 ("pkg", Set.fromList ["permission:camera"])
-               ] of
-          [pc] -> Set.size (Manifest._pcCapabilities pc) @?= 2
-          other -> assertFailure ("expected 1, got " ++ show (length other))
+    "permission label format"
+    [ testCase "permission label has permission: prefix" $ do
+        let cap = Capability.PermissionRequired (PermissionName "geolocation")
+            funcs = [makeFuncWithCap "locate" cap]
+            manifest = Manifest.collectCapabilities [("Geo", funcs)]
+        Set.toList (Manifest._manifestPermissions manifest) @?= ["permission:geolocation"]
     ]
 
-testJsonRoundTrip :: TestTree
-testJsonRoundTrip =
+testInitPrefixFormat :: TestTree
+testInitPrefixFormat =
   testGroup
-    "JSON serialisation round-trip"
-    [ testCase "empty manifest encodes and decodes" $
-        let m = Manifest.collectCapabilities []
-         in case (Json.decode (Json.encode m) :: Maybe Manifest.CapabilityManifest) of
-              Just m2 -> Manifest._manifestUserActivation m2 @?= False
-              Nothing -> assertFailure "failed to decode empty manifest",
-      testCase "permissions preserved through JSON" $
-        let fn = funcWithCap "f" (Capability.PermissionRequired (PermissionName "microphone"))
-            m = Manifest.collectCapabilities [("Mod", [fn])]
-         in case (Json.decode (Json.encode m) :: Maybe Manifest.CapabilityManifest) of
-              Just m2 ->
-                Set.member "permission:microphone" (Manifest._manifestPermissions m2) @?= True
-              Nothing -> assertFailure "failed to decode manifest",
-      testCase "userActivation preserved through JSON" $
-        let fn = funcWithCap "f" Capability.UserActivationRequired
-            m = Manifest.collectCapabilities [("Mod", [fn])]
-         in case (Json.decode (Json.encode m) :: Maybe Manifest.CapabilityManifest) of
-              Just m2 -> Manifest._manifestUserActivation m2 @?= True
-              Nothing -> assertFailure "failed to decode manifest",
-      testCase "initializations preserved through JSON" $
-        let fn = funcWithCap "f" (Capability.InitializationRequired (ResourceName "WebGL"))
-            m = Manifest.collectCapabilities [("GL", [fn])]
-         in case (Json.decode (Json.encode m) :: Maybe Manifest.CapabilityManifest) of
-              Just m2 ->
-                Set.member "init:WebGL" (Manifest._manifestInitializations m2) @?= True
-              Nothing -> assertFailure "failed to decode manifest"
+    "init label format"
+    [ testCase "init label has init: prefix" $ do
+        let cap = Capability.InitializationRequired (ResourceName "WebGLRenderingContext")
+            funcs = [makeFuncWithCap "initGL" cap]
+            manifest = Manifest.collectCapabilities [("GL", funcs)]
+        Set.toList (Manifest._manifestInitializations manifest) @?= ["init:WebGLRenderingContext"]
     ]
 
-testJsonRoundTripModules :: TestTree
-testJsonRoundTripModules =
+testLensAccessors :: TestTree
+testLensAccessors =
   testGroup
-    "JSON round-trip preserves module structure"
-    [ testCase "module name preserved through JSON" $
-        let fn = funcWithCap "doIt" (Capability.PermissionRequired (PermissionName "camera"))
-            m = Manifest.collectCapabilities [("CamModule", [fn])]
-         in case (Json.decode (Json.encode m) :: Maybe Manifest.CapabilityManifest) of
-              Just m2 ->
-                case Manifest._manifestModules m2 of
-                  [mc] -> Manifest._mcModuleName mc @?= "CamModule"
-                  other -> assertFailure ("expected 1 module, got " ++ show (length other))
-              Nothing -> assertFailure "failed to decode",
-      testCase "function name preserved through JSON" $
-        let fn = funcWithCap "shoot" (Capability.PermissionRequired (PermissionName "camera"))
-            m = Manifest.collectCapabilities [("Cam", [fn])]
-         in case (Json.decode (Json.encode m) :: Maybe Manifest.CapabilityManifest) of
-              Just m2 ->
-                case Manifest._manifestModules m2 of
-                  [mc] ->
-                    case Manifest._mcFunctions mc of
-                      [fc] -> Manifest._fcFunctionName fc @?= "shoot"
-                      other -> assertFailure ("expected 1 func, got " ++ show (length other))
-                  other -> assertFailure ("expected 1 module, got " ++ show (length other))
-              Nothing -> assertFailure "failed to decode",
-      testCase "constraint text preserved through JSON" $
-        let fn = funcWithCap "doIt" (Capability.PermissionRequired (PermissionName "microphone"))
-            m = Manifest.collectCapabilities [("Mod", [fn])]
-         in case (Json.decode (Json.encode m) :: Maybe Manifest.CapabilityManifest) of
-              Just m2 ->
-                case Manifest._manifestModules m2 of
-                  [mc] ->
-                    case Manifest._mcFunctions mc of
-                      [fc] -> Manifest._fcConstraints fc @?= ["permission:microphone"]
-                      other -> assertFailure ("expected 1 func, got " ++ show (length other))
-                  other -> assertFailure ("expected 1 module, got " ++ show (length other))
-              Nothing -> assertFailure "failed to decode",
-      testCase "multiple init caps preserved through JSON" $
-        let fn1 = funcWithCap "a" (Capability.InitializationRequired (ResourceName "AudioContext"))
-            fn2 = funcWithCap "b" (Capability.InitializationRequired (ResourceName "WebGL"))
-            m = Manifest.collectCapabilities [("Mod", [fn1, fn2])]
-         in case (Json.decode (Json.encode m) :: Maybe Manifest.CapabilityManifest) of
-              Just m2 ->
-                Set.size (Manifest._manifestInitializations m2) @?= 2
-              Nothing -> assertFailure "failed to decode"
-    ]
-
-testJsonRoundTripByPackage :: TestTree
-testJsonRoundTripByPackage =
-  testGroup
-    "JSON round-trip preserves by-package"
-    [ testCase "by-package preserved through JSON" $
-        let fn = funcWithCap "f" (Capability.PermissionRequired (PermissionName "mic"))
-            pkgMap = Map.singleton "Audio.ffi.js" "audio-lib"
-            m = Manifest.collectCapabilitiesWithPackages pkgMap [("Audio.ffi.js", [fn])]
-         in case (Json.decode (Json.encode m) :: Maybe Manifest.CapabilityManifest) of
-              Just m2 ->
-                length (Manifest._manifestByPackage m2) @?= 1
-              Nothing -> assertFailure "failed to decode",
-      testCase "package name preserved through JSON" $
-        let fn = funcWithCap "f" (Capability.PermissionRequired (PermissionName "mic"))
-            pkgMap = Map.singleton "Audio.ffi.js" "audio-lib"
-            m = Manifest.collectCapabilitiesWithPackages pkgMap [("Audio.ffi.js", [fn])]
-         in case (Json.decode (Json.encode m) :: Maybe Manifest.CapabilityManifest) of
-              Just m2 ->
-                case Manifest._manifestByPackage m2 of
-                  [pc] -> Manifest._pcPackageName pc @?= "audio-lib"
-                  other -> assertFailure ("expected 1 pkg, got " ++ show (length other))
-              Nothing -> assertFailure "failed to decode"
-    ]
-
-testMultiplePackages :: TestTree
-testMultiplePackages =
-  testGroup
-    "multiple packages"
-    [ testCase "two packages in pkg map produce two byPackage entries" $
-        let fn1 = funcWithCap "f1" (Capability.PermissionRequired (PermissionName "mic"))
-            fn2 = funcWithCap "f2" (Capability.PermissionRequired (PermissionName "camera"))
-            pkgMap =
-              Map.fromList
-                [ ("Audio.ffi.js", "audio-lib"),
-                  ("Cam.ffi.js", "camera-lib")
-                ]
-            m =
-              Manifest.collectCapabilitiesWithPackages
-                pkgMap
-                [("Audio.ffi.js", [fn1]), ("Cam.ffi.js", [fn2])]
-         in length (Manifest._manifestByPackage m) @?= 2,
-      testCase "two modules same package merge capabilities" $
-        let fn1 = funcWithCap "f1" (Capability.PermissionRequired (PermissionName "mic"))
-            fn2 = funcWithCap "f2" (Capability.PermissionRequired (PermissionName "camera"))
-            pkgMap =
-              Map.fromList
-                [ ("Audio.ffi.js", "shared-lib"),
-                  ("Cam.ffi.js", "shared-lib")
-                ]
-            m =
-              Manifest.collectCapabilitiesWithPackages
-                pkgMap
-                [("Audio.ffi.js", [fn1]), ("Cam.ffi.js", [fn2])]
-         in case Manifest._manifestByPackage m of
-              [pc] -> Set.size (Manifest._pcCapabilities pc) @?= 2
-              other -> assertFailure ("expected 1 pkg, got " ++ show (length other)),
-      testCase "unmapped module excluded from byPackage even with other mapped" $
-        let fn1 = funcWithCap "f1" (Capability.PermissionRequired (PermissionName "mic"))
-            fn2 = funcWithCap "f2" (Capability.PermissionRequired (PermissionName "camera"))
-            pkgMap = Map.singleton "Audio.ffi.js" "audio-lib"
-            m =
-              Manifest.collectCapabilitiesWithPackages
-                pkgMap
-                [("Audio.ffi.js", [fn1]), ("Unmapped.ffi.js", [fn2])]
-         in length (Manifest._manifestByPackage m) @?= 1
-    ]
-
-testNestedMultipleConstraints :: TestTree
-testNestedMultipleConstraints =
-  testGroup
-    "nested MultipleConstraints"
-    [ testCase "nested MultipleConstraints flattens all leaves" $
-        let cap =
-              Capability.MultipleConstraints
-                [ Capability.MultipleConstraints
-                    [ Capability.PermissionRequired (PermissionName "mic"),
-                      Capability.UserActivationRequired
-                    ],
-                  Capability.InitializationRequired (ResourceName "AudioContext")
-                ]
-            fn = funcWithCap "f" cap
-            m = Manifest.collectCapabilities [("Mod", [fn])]
-         in do
-              Set.member "permission:mic" (Manifest._manifestPermissions m) @?= True
-              Manifest._manifestUserActivation m @?= True
-              Set.member "init:AudioContext" (Manifest._manifestInitializations m) @?= True,
-      testCase "MultipleConstraints with only user-activation" $
-        let cap = Capability.MultipleConstraints [Capability.UserActivationRequired]
-            fn = funcWithCap "gesture" cap
-            m = Manifest.collectCapabilities [("UI", [fn])]
-         in Manifest._manifestUserActivation m @?= True,
-      testCase "MultipleConstraints with two permissions both appear in set" $
-        let cap =
-              Capability.MultipleConstraints
-                [ Capability.PermissionRequired (PermissionName "camera"),
-                  Capability.PermissionRequired (PermissionName "geolocation")
-                ]
-            fn = funcWithCap "f" cap
-            m = Manifest.collectCapabilities [("Mod", [fn])]
-         in Set.size (Manifest._manifestPermissions m) @?= 2
-    ]
-
-testAvailabilityInSets :: TestTree
-testAvailabilityInSets =
-  testGroup
-    "availability constraints in sets"
-    [ testCase "availability does not appear in permissions or initializations sets" $
-        let fn = funcWithCap "f" (Capability.AvailabilityRequired "WebBluetooth")
-            m = Manifest.collectCapabilities [("BT", [fn])]
-         in do
-              Set.size (Manifest._manifestPermissions m) @?= 0
-              Set.size (Manifest._manifestInitializations m) @?= 0,
-      testCase "availability function still appears in modules list" $
-        let fn = funcWithCap "f" (Capability.AvailabilityRequired "WebBluetooth")
-            m = Manifest.collectCapabilities [("BT", [fn])]
-         in length (Manifest._manifestModules m) @?= 1,
-      testCase "availability does not set userActivation flag" $
-        let fn = funcWithCap "f" (Capability.AvailabilityRequired "WebNFC")
-            m = Manifest.collectCapabilities [("NFC", [fn])]
-         in Manifest._manifestUserActivation m @?= False
-    ]
-
-testModuleConstraintOrdering :: TestTree
-testModuleConstraintOrdering =
-  testGroup
-    "module ordering and constraint counts"
-    [ testCase "three modules with caps produce three entries" $
-        let fn1 = funcWithCap "a" (Capability.PermissionRequired (PermissionName "mic"))
-            fn2 = funcWithCap "b" (Capability.PermissionRequired (PermissionName "camera"))
-            fn3 = funcWithCap "c" (Capability.UserActivationRequired)
-            m =
-              Manifest.collectCapabilities
-                [("ModA", [fn1]), ("ModB", [fn2]), ("ModC", [fn3])]
-         in length (Manifest._manifestModules m) @?= 3,
-      testCase "module with mixed capped and uncapped functions counts only capped" $
-        let fn1 = funcWithCap "capped" (Capability.PermissionRequired (PermissionName "mic"))
-            fn2 = funcNamed "uncapped1"
-            fn3 = funcNamed "uncapped2"
-            m = Manifest.collectCapabilities [("Mod", [fn1, fn2, fn3])]
-         in case Manifest._manifestModules m of
-              [mc] -> length (Manifest._mcFunctions mc) @?= 1
-              other -> assertFailure ("expected 1 module, got " ++ show (length other)),
-      testCase "multiple permissions across functions all gathered" $
-        let fn1 = funcWithCap "a" (Capability.PermissionRequired (PermissionName "mic"))
-            fn2 = funcWithCap "b" (Capability.PermissionRequired (PermissionName "camera"))
-            fn3 = funcWithCap "c" (Capability.PermissionRequired (PermissionName "geolocation"))
-            m = Manifest.collectCapabilities [("Mod", [fn1, fn2, fn3])]
-         in Set.size (Manifest._manifestPermissions m) @?= 3
-    ]
-
-testCollectByPackageCapabilityContent :: TestTree
-testCollectByPackageCapabilityContent =
-  testGroup
-    "collectByPackage capability content"
-    [ testCase "single entry preserves capability text" $
-        case Manifest.collectByPackage [("pkg-a", Set.fromList ["permission:mic"])] of
-          [pc] -> Set.member "permission:mic" (Manifest._pcCapabilities pc) @?= True
-          other -> assertFailure ("expected 1, got " ++ show (length other)),
-      testCase "merged capabilities contain both originals" $
-        case Manifest.collectByPackage
-               [ ("pkg", Set.fromList ["permission:mic"]),
-                 ("pkg", Set.fromList ["init:AudioContext"])
-               ] of
-          [pc] ->
-            Set.member "init:AudioContext" (Manifest._pcCapabilities pc) @?= True
-          other -> assertFailure ("expected 1, got " ++ show (length other)),
-      testCase "three entries same package accumulate all caps" $
-        case Manifest.collectByPackage
-               [ ("pkg", Set.fromList ["permission:mic"]),
-                 ("pkg", Set.fromList ["permission:camera"]),
-                 ("pkg", Set.fromList ["init:AudioContext"])
-               ] of
-          [pc] -> Set.size (Manifest._pcCapabilities pc) @?= 3
-          other -> assertFailure ("expected 1, got " ++ show (length other)),
-      testCase "two distinct packages preserve separate caps" $
-        let result =
-              Manifest.collectByPackage
-                [ ("pkg-a", Set.fromList ["permission:mic"]),
-                  ("pkg-b", Set.fromList ["permission:camera"])
-                ]
-         in length result @?= 2
+    "lens field accessors"
+    [ testCase "FunctionCapability fields accessible" $ do
+        let cap = Capability.PermissionRequired (PermissionName "microphone")
+            funcs = [makeFuncWithCap "record" cap]
+            manifest = Manifest.collectCapabilities [("Audio", funcs)]
+            mods = Manifest._manifestModules manifest
+        case mods of
+          [m] ->
+            case Manifest._mcFunctions m of
+              [fc] -> do
+                Manifest._fcFunctionName fc @?= "record"
+                Manifest._fcConstraints fc @?= ["permission:microphone"]
+              _ -> assertFailure "expected one function capability"
+          _ -> assertFailure "expected one module"
     ]

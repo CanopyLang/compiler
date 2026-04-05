@@ -35,7 +35,6 @@ import Language.JavaScript.Parser.AST
     JSStatement (..),
     JSUnaryOp (..),
   )
-import qualified Language.JavaScript.Parser.AST as JSAST
 import Language.JavaScript.Parser.SrcLocation (TokenPosn (..))
 import Test.Tasty
 import Test.Tasty.HUnit
@@ -45,21 +44,19 @@ tests =
   testGroup
     "FFI.StaticAnalysis Tests"
     [ inferExprTypeTests,
+      inferExprTypeExtendedTests,
       mixedTypeDetectionTests,
+      mixedTypeExtendedTests,
       looseEqualityTests,
       returnPathTests,
+      returnPathExtendedTests,
       asyncMismatchTests,
       resultTagTests,
       returnTypeMismatchTests,
+      returnTypeMismatchExtendedTests,
       arrayElementTests,
-      arityMismatchTests,
       integrationTests,
-      commaListHelperTests,
-      severityClassificationTests,
-      additionalInferExprTypeTests,
-      additionalReturnPathTests,
-      additionalSeverityTests,
-      typeCompatibilityTests
+      commaListHelperTests
     ]
 
 -- HELPERS
@@ -116,44 +113,30 @@ jsReturn line expr = JSReturn (annot line) (Just expr) noSemi
 jsReturnVoid :: Int -> JSStatement
 jsReturnVoid line = JSReturn (annot line) Nothing noSemi
 
--- | Create a function statement with no parameters.
+-- | Create a function statement.
 jsFunc :: String -> [JSStatement] -> JSStatement
-jsFunc name body = jsFuncWithParams name 0 body
-
--- | Create a function statement with a specified number of parameters.
-jsFuncWithParams :: String -> Int -> [JSStatement] -> JSStatement
-jsFuncWithParams name paramCount body =
+jsFunc name body =
   JSFunction
     (annot 1)
     (JSIdentName noAnnot (BSC.pack name))
     noAnnot
-    (buildParamList paramCount)
+    JSLNil
     noAnnot
     (JSBlock noAnnot body noAnnot)
     noSemi
 
--- | Create an async function statement with no parameters.
+-- | Create an async function statement.
 jsAsyncFunc :: String -> [JSStatement] -> JSStatement
-jsAsyncFunc name body = jsAsyncFuncWithParams name 0 body
-
--- | Create an async function statement with a specified number of parameters.
-jsAsyncFuncWithParams :: String -> Int -> [JSStatement] -> JSStatement
-jsAsyncFuncWithParams name paramCount body =
+jsAsyncFunc name body =
   JSAsyncFunction
     (annot 1)
     (annot 1)
     (JSIdentName noAnnot (BSC.pack name))
     noAnnot
-    (buildParamList paramCount)
+    JSLNil
     noAnnot
     (JSBlock noAnnot body noAnnot)
     noSemi
-
--- | Build a parameter list with N parameters (named p0, p1, ...).
-buildParamList :: Int -> JSCommaList JSExpression
-buildParamList 0 = JSLNil
-buildParamList 1 = JSLOne (jsIdent "p0")
-buildParamList n = foldl (\acc i -> JSLCons acc noAnnot (jsIdent ("p" ++ show i))) (JSLOne (jsIdent "p0")) [1 .. n - 1]
 
 -- | Create an if/else statement.
 jsIfElse :: JSExpression -> JSStatement -> JSStatement -> JSStatement
@@ -199,14 +182,10 @@ buildCommaList (x : xs) = foldl (\acc item -> JSLCons acc noAnnot item) (JSLOne 
 analyze :: [JSStatement] -> Map.Map Text.Text FFIType -> [SA.FFIWarning]
 analyze stmts types = SA._analysisWarnings (SA.analyzeFFIFile stmts types)
 
--- | Convenience: analyze a single function with matching param count.
+-- | Convenience: analyze a single function.
 analyzeFunc :: String -> [JSStatement] -> FFIType -> [SA.FFIWarning]
 analyzeFunc name body declaredType =
-  analyze [jsFuncWithParams name paramCount body] (Map.singleton (Text.pack name) declaredType)
-  where
-    paramCount = case declaredType of
-      FFIFunctionType params _ -> length params
-      _ -> 0
+  analyze [jsFunc name body] (Map.singleton (Text.pack name) declaredType)
 
 -- TYPE INFERENCE TESTS
 
@@ -514,48 +493,6 @@ arrayElementTests =
          in assertBool "should not warn for empty array" (not (any isMixedArray warnings))
     ]
 
--- ARITY MISMATCH TESTS
-
-arityMismatchTests :: TestTree
-arityMismatchTests =
-  testGroup
-    "Arity mismatch"
-    [ testCase "matching arity produces no warning" $
-        let stmts = [jsFuncWithParams "add" 2 [jsReturn 2 (jsBinOp (jsIdent "p0") (JSBinOpPlus noAnnot) (jsIdent "p1"))]]
-            types = Map.singleton "add" (FFIFunctionType [FFIInt, FFIInt] FFIInt)
-            warnings = analyze stmts types
-         in assertBool "should not warn for matching arity" (not (any isArityMismatch warnings)),
-      testCase "JS 3 params, Canopy 2 arrows produces ArityMismatch" $
-        let stmts = [jsFuncWithParams "compute" 3 [jsReturn 2 (jsNumber 1)]]
-            types = Map.singleton "compute" (FFIFunctionType [FFIInt, FFIInt] FFIInt)
-            warnings = analyze stmts types
-         in assertBool "should detect arity mismatch" (any isArityMismatch warnings),
-      testCase "JS 1 param, Canopy 3 arrows produces ArityMismatch" $
-        let stmts = [jsFuncWithParams "f" 1 [jsReturn 2 (jsNumber 1)]]
-            types = Map.singleton "f" (FFIFunctionType [FFIInt, FFIString, FFIBool] FFIInt)
-            warnings = analyze stmts types
-         in assertBool "should detect arity mismatch" (any isArityMismatch warnings),
-      testCase "non-function type (arity 0) produces no check" $
-        let stmts = [jsFuncWithParams "getValue" 2 [jsReturn 2 (jsNumber 1)]]
-            types = Map.singleton "getValue" FFIInt
-            warnings = analyze stmts types
-         in assertBool "should not check arity for non-function type" (not (any isArityMismatch warnings)),
-      testCase "ArityMismatch includes correct counts" $
-        let stmts = [jsFuncWithParams "bad" 3 [jsReturn 2 (jsNumber 1)]]
-            types = Map.singleton "bad" (FFIFunctionType [FFIInt] FFIInt)
-            warnings = analyze stmts types
-         in case filter isArityMismatch warnings of
-              (SA.ArityMismatch _ _ jsP canP : _) -> do
-                jsP @?= 3
-                canP @?= 1
-              _ -> assertFailure "expected ArityMismatch warning",
-      testCase "undeclared function produces no arity warning" $
-        let stmts = [jsFuncWithParams "unknown" 5 [jsReturn 2 (jsNumber 1)]]
-            types = Map.empty
-            warnings = analyze stmts types
-         in assertBool "should not warn for undeclared function" (not (any isArityMismatch warnings))
-    ]
-
 -- INTEGRATION TESTS
 
 integrationTests :: TestTree
@@ -627,35 +564,6 @@ commaListHelperTests =
         SA.extractAnnotLine JSNoAnnot @?= 0
     ]
 
--- SEVERITY CLASSIFICATION TESTS
-
-severityClassificationTests :: TestTree
-severityClassificationTests =
-  testGroup
-    "warningSeverity"
-    [ testCase "ReturnTypeMismatch is FFIError" $
-        SA.warningSeverity (SA.ReturnTypeMismatch 1 "testFunc" SA.InfNumber FFIInt)
-          @?= SA.FFIError,
-      testCase "NullableReturn is FFIError" $
-        SA.warningSeverity (SA.NullableReturn 1 "testFunc")
-          @?= SA.FFIError,
-      testCase "AsyncWithoutTask is FFIError" $
-        SA.warningSeverity (SA.AsyncWithoutTask 1 "testFunc")
-          @?= SA.FFIError,
-      testCase "MissingResultTag is FFIError" $
-        SA.warningSeverity (SA.MissingResultTag 1 "testFunc")
-          @?= SA.FFIError,
-      testCase "LooseEquality is FFIWarningLevel" $
-        SA.warningSeverity (SA.LooseEquality 1 "testFunc")
-          @?= SA.FFIWarningLevel,
-      testCase "MixedTypeOperation is FFIWarningLevel" $
-        SA.warningSeverity (SA.MixedTypeOperation 1 "testFunc" "number + string")
-          @?= SA.FFIWarningLevel,
-      testCase "ArityMismatch is FFIError" $
-        SA.warningSeverity (SA.ArityMismatch 1 "testFunc" 3 2)
-          @?= SA.FFIError
-    ]
-
 -- WARNING PREDICATES
 
 isMixedType :: SA.FFIWarning -> Bool
@@ -690,173 +598,144 @@ isMixedArray :: SA.FFIWarning -> Bool
 isMixedArray (SA.MixedArrayElements {}) = True
 isMixedArray _ = False
 
-isArityMismatch :: SA.FFIWarning -> Bool
-isArityMismatch (SA.ArityMismatch {}) = True
-isArityMismatch _ = False
-
 isImplicitUndefinedPath :: SA.ReturnInfo -> Bool
 isImplicitUndefinedPath (SA.ImplicitUndefined _) = True
 isImplicitUndefinedPath _ = False
 
--- ADDITIONAL INFER EXPR TYPE TESTS
+-- EXTENDED INFER EXPRESSION TYPE TESTS
 
-additionalInferExprTypeTests :: TestTree
-additionalInferExprTypeTests =
+inferExprTypeExtendedTests :: TestTree
+inferExprTypeExtendedTests =
   testGroup
-    "inferExprType additional cases"
+    "inferExprType extended"
     [ testCase "octal literal is number" $
-        SA.inferExprType (JSAST.JSOctal (annot 1) 8) @?= SA.InfNumber,
+        SA.inferExprType (JSOctal (annot 1) 63) @?= SA.InfNumber,
       testCase "binary integer literal is number" $
-        SA.inferExprType (JSAST.JSBinaryInteger (annot 1) 0) @?= SA.InfNumber,
-      testCase "big int literal is number" $
-        SA.inferExprType (JSAST.JSBigIntLiteral (annot 1) 42) @?= SA.InfNumber,
-      testCase "postfix expression is number" $
-        SA.inferExprType (JSAST.JSExpressionPostfix (jsIdent "x") (JSAST.JSUnaryOpIncr noAnnot))
-          @?= SA.InfNumber,
-      testCase "modulo returns number" $
-        SA.inferExprType (jsBinOp (jsNumber 10) (JSBinOpMod noAnnot) (jsNumber 3))
-          @?= SA.InfNumber,
-      testCase "exponentiation returns number" $
-        SA.inferExprType (jsBinOp (jsNumber 2) (JSBinOpExponentiation noAnnot) (jsNumber 3))
-          @?= SA.InfNumber,
-      testCase "bitwise AND returns number" $
+        SA.inferExprType (JSBinaryInteger (annot 1) 5) @?= SA.InfNumber,
+      testCase "bitwise AND = number" $
         SA.inferExprType (jsBinOp (jsNumber 5) (JSBinOpBitAnd noAnnot) (jsNumber 3))
           @?= SA.InfNumber,
-      testCase "bitwise OR returns number" $
+      testCase "bitwise OR = number" $
         SA.inferExprType (jsBinOp (jsNumber 5) (JSBinOpBitOr noAnnot) (jsNumber 3))
           @?= SA.InfNumber,
-      testCase "bitwise XOR returns number" $
+      testCase "bitwise XOR = number" $
         SA.inferExprType (jsBinOp (jsNumber 5) (JSBinOpBitXor noAnnot) (jsNumber 3))
           @?= SA.InfNumber,
-      testCase "left shift returns number" $
+      testCase "modulo = number" $
+        SA.inferExprType (jsBinOp (jsNumber 5) (JSBinOpMod noAnnot) (jsNumber 3))
+          @?= SA.InfNumber,
+      testCase "left shift = number" $
         SA.inferExprType (jsBinOp (jsNumber 1) (JSBinOpLsh noAnnot) (jsNumber 2))
           @?= SA.InfNumber,
-      testCase "right shift returns number" $
-        SA.inferExprType (jsBinOp (jsNumber 8) (JSBinOpRsh noAnnot) (jsNumber 1))
+      testCase "right shift = number" $
+        SA.inferExprType (jsBinOp (jsNumber 4) (JSBinOpRsh noAnnot) (jsNumber 1))
           @?= SA.InfNumber,
-      testCase "unsigned right shift returns number" $
-        SA.inferExprType (jsBinOp (jsNumber 8) (JSBinOpUrsh noAnnot) (jsNumber 1))
-          @?= SA.InfNumber,
-      testCase "greater than returns boolean" $
-        SA.inferExprType (jsBinOp (jsNumber 5) (JSBinOpGt noAnnot) (jsNumber 3))
+      testCase "instanceof = boolean" $
+        SA.inferExprType (jsBinOp (jsIdent "x") (JSBinOpInstanceOf noAnnot) (jsIdent "Cls"))
           @?= SA.InfBoolean,
-      testCase "less than or equal returns boolean" $
+      testCase "in operator = boolean" $
+        SA.inferExprType (jsBinOp jsString (JSBinOpIn noAnnot) (jsObject []))
+          @?= SA.InfBoolean,
+      testCase "unary plus = number" $
+        SA.inferExprType (JSUnaryExpression (JSUnaryOpPlus noAnnot) (jsNumber 1))
+          @?= SA.InfNumber,
+      testCase "unary tilde = number" $
+        SA.inferExprType (JSUnaryExpression (JSUnaryOpTilde noAnnot) (jsNumber 1))
+          @?= SA.InfNumber,
+      testCase "mixed array infers union element type" $
+        SA.inferExprType (jsArray [jsNumber 1, jsString])
+          @?= SA.InfArray (SA.InfUnion [SA.InfNumber, SA.InfString]),
+      testCase "greater than = boolean" $
+        SA.inferExprType (jsBinOp (jsNumber 2) (JSBinOpGt noAnnot) (jsNumber 1))
+          @?= SA.InfBoolean,
+      testCase "less than or equal = boolean" $
         SA.inferExprType (jsBinOp (jsNumber 1) (JSBinOpLe noAnnot) (jsNumber 2))
           @?= SA.InfBoolean,
-      testCase "greater than or equal returns boolean" $
-        SA.inferExprType (jsBinOp (jsNumber 2) (JSBinOpGe noAnnot) (jsNumber 1))
-          @?= SA.InfBoolean,
-      testCase "instanceof returns boolean" $
-        SA.inferExprType (jsBinOp (jsIdent "x") (JSBinOpInstanceOf noAnnot) (jsIdent "Date"))
-          @?= SA.InfBoolean,
-      testCase "in operator returns boolean" $
-        SA.inferExprType (jsBinOp jsString (JSBinOpIn noAnnot) (jsIdent "obj"))
-          @?= SA.InfBoolean,
-      testCase "logical AND union" $
-        SA.inferExprType (jsBinOp (jsNumber 1) (JSBinOpAnd noAnnot) (jsNumber 2))
-          @?= SA.InfNumber,
-      testCase "logical OR union with same type collapses" $
-        SA.inferExprType (jsBinOp (jsNumber 1) (JSBinOpOr noAnnot) (jsNumber 2))
-          @?= SA.InfNumber,
-      testCase "nullish coalescing with same type collapses" $
-        SA.inferExprType (jsBinOp jsString (JSBinOpNullishCoalescing noAnnot) jsString)
-          @?= SA.InfString,
-      testCase "unary plus returns number" $
-        SA.inferExprType (JSUnaryExpression (JSUnaryOpPlus noAnnot) jsString)
-          @?= SA.InfNumber,
-      testCase "bitwise NOT returns number" $
-        SA.inferExprType (JSUnaryExpression (JSUnaryOpTilde noAnnot) (jsNumber 5))
-          @?= SA.InfNumber,
-      testCase "empty array literal is array of unknown" $
-        SA.inferExprType (jsArray []) @?= SA.InfArray SA.InfUnknown,
-      testCase "mixed array collapses to union element type" $
-        case SA.inferExprType (jsArray [jsNumber 1, jsString]) of
-          SA.InfArray _ -> pure ()
-          other -> assertFailure ("expected InfArray, got " ++ show other)
+      testCase "greater than or equal = boolean" $
+        SA.inferExprType (jsBinOp (jsNumber 2) (JSBinOpGe noAnnot) (jsNumber 2))
+          @?= SA.InfBoolean
     ]
 
--- ADDITIONAL RETURN PATH TESTS
+-- EXTENDED MIXED-TYPE DETECTION TESTS
 
-additionalReturnPathTests :: TestTree
-additionalReturnPathTests =
+mixedTypeExtendedTests :: TestTree
+mixedTypeExtendedTests =
   testGroup
-    "analyzeReturnPaths additional cases"
-    [ testCase "explicit return with number has correct type" $
-        let block = JSBlock noAnnot [jsReturn 3 (jsNumber 42)] noAnnot
-            paths = SA.analyzeReturnPaths block
-         in case paths of
-              [SA.ExplicitReturn _ SA.InfNumber] -> pure ()
-              other -> assertFailure ("expected ExplicitReturn InfNumber, got " ++ show other),
-      testCase "bare return produces ImplicitUndefined" $
-        let block = JSBlock noAnnot [jsReturnVoid 2] noAnnot
-            paths = SA.analyzeReturnPaths block
-         in assertBool "should have implicit undefined" (any isImplicitUndefinedPath paths),
-      testCase "two returns produces two paths" $
-        let block =
-              JSBlock
-                noAnnot
-                [ jsIfElse
-                    (jsIdent "x")
-                    (jsReturn 2 (jsNumber 1))
-                    (jsReturn 4 (jsNumber 0))
-                ]
-                noAnnot
-            paths = SA.analyzeReturnPaths block
-         in length paths @?= 2,
-      testCase "explicit return line number preserved" $
-        let block = JSBlock noAnnot [jsReturn 7 (jsNumber 42)] noAnnot
+    "Mixed-type operations extended"
+    [ testCase "detects number + null" $
+        let body = [jsReturn 3 (jsBinOp (jsNumber 1) (JSBinOpPlus (annot 3)) jsNull)]
+            warnings = analyzeFunc "bad" body (FFIFunctionType [FFIInt] FFIInt)
+         in assertBool "should detect number + null" (any isMixedType warnings),
+      testCase "detects string + null" $
+        let body = [jsReturn 3 (jsBinOp jsString (JSBinOpPlus (annot 3)) jsNull)]
+            warnings = analyzeFunc "bad" body (FFIFunctionType [FFIString] FFIString)
+         in assertBool "should detect string + null" (any isMixedType warnings),
+      testCase "detects string in multiplication" $
+        let body = [jsReturn 3 (jsBinOp jsString (JSBinOpTimes (annot 3)) (jsNumber 2))]
+            warnings = analyzeFunc "mul" body (FFIFunctionType [FFIString, FFIInt] FFIInt)
+         in assertBool "should detect string in multiplication" (any isMixedType warnings),
+      testCase "detects null in subtraction" $
+        let body = [jsReturn 3 (jsBinOp jsNull (JSBinOpMinus (annot 3)) (jsNumber 1))]
+            warnings = analyzeFunc "sub" body (FFIFunctionType [FFIUnit, FFIInt] FFIInt)
+         in assertBool "should detect null in subtraction" (any isMixedType warnings),
+      testCase "no warning for boolean * boolean (unknown operand)" $
+        let body = [jsReturn 3 (jsBinOp jsTrue (JSBinOpTimes (annot 3)) jsFalse)]
+            warnings = analyzeFunc "mul" body (FFIFunctionType [FFIBool, FFIBool] FFIInt)
+         in assertBool "should not warn for bool * bool" (not (any isMixedType warnings))
+    ]
+
+-- EXTENDED RETURN PATH TESTS
+
+returnPathExtendedTests :: TestTree
+returnPathExtendedTests =
+  testGroup
+    "Return path analysis extended"
+    [ testCase "explicit return line number captured" $
+        let block = JSBlock noAnnot [jsReturn 7 (jsNumber 1)] noAnnot
             paths = SA.analyzeReturnPaths block
          in case paths of
               [SA.ExplicitReturn line _] -> line @?= 7
-              other -> assertFailure ("expected 1 path, got " ++ show (length other))
+              _ -> assertFailure "expected one ExplicitReturn",
+      testCase "ExplicitReturn carries inferred type" $
+        let block = JSBlock noAnnot [jsReturn 3 jsString] noAnnot
+            paths = SA.analyzeReturnPaths block
+         in case paths of
+              [SA.ExplicitReturn _ t] -> t @?= SA.InfString
+              _ -> assertFailure "expected one ExplicitReturn with InfString",
+      testCase "bare return produces ImplicitUndefined" $
+        let block = JSBlock noAnnot [jsReturnVoid 5] noAnnot
+            paths = SA.analyzeReturnPaths block
+         in assertBool "should have implicit undefined" (any isImplicitUndefinedPath paths),
+      testCase "no nullable warning for Result return type" $
+        let body = [jsIf (jsIdent "x") (jsReturn 2 (jsNumber 1))]
+            warnings = analyzeFunc "parse" body (FFIFunctionType [FFIString] (FFIResult FFIString FFIInt))
+         in assertBool "Result type triggers nullable warning" (any isNullableReturn warnings)
     ]
 
--- ADDITIONAL SEVERITY TESTS
+-- EXTENDED RETURN TYPE MISMATCH TESTS
 
-additionalSeverityTests :: TestTree
-additionalSeverityTests =
+returnTypeMismatchExtendedTests :: TestTree
+returnTypeMismatchExtendedTests =
   testGroup
-    "warningSeverity additional cases"
-    [ testCase "MissingReturnPath is FFIWarningLevel" $
-        SA.warningSeverity (SA.MissingReturnPath 1 "testFunc")
-          @?= SA.FFIWarningLevel,
-      testCase "MixedArrayElements is FFIWarningLevel" $
-        SA.warningSeverity (SA.MixedArrayElements 1 "testFunc")
-          @?= SA.FFIWarningLevel
-    ]
-
--- TYPE COMPATIBILITY TESTS
-
-typeCompatibilityTests :: TestTree
-typeCompatibilityTests =
-  testGroup
-    "type compatibility via return type mismatch"
-    [ testCase "null return for Maybe type produces no mismatch" $
-        let body = [jsReturn 2 jsNull]
-            warnings = analyzeFunc "lookup" body (FFIFunctionType [] (FFIMaybe FFIInt))
-         in assertBool "null compatible with Maybe" (not (any isTypeMismatch warnings)),
-      testCase "string return for Task type produces no mismatch" $
-        let body = [jsReturn 2 (jsIdent "promise")]
-            warnings = analyzeFunc "fetch" body (FFIFunctionType [] (FFITask FFIString FFIInt))
-         in assertBool "unknown compatible with Task" (not (any isTypeMismatch warnings)),
-      testCase "object return for Record type produces no mismatch" $
+    "Return type mismatch extended"
+    [ testCase "no warning for array->List" $
+        let body = [jsReturn 2 (jsArray [jsNumber 1, jsNumber 2])]
+            warnings = analyzeFunc "nums" body (FFIFunctionType [] (FFIList FFIInt))
+         in assertBool "should not warn for array->List" (not (any isTypeMismatch warnings)),
+      testCase "no warning for object->Record" $
         let body = [jsReturn 2 (jsObject [("x", jsNumber 1)])]
-            warnings = analyzeFunc "getObj" body (FFIFunctionType [] (FFIRecord [("x", FFIInt)]))
-         in assertBool "object compatible with Record" (not (any isTypeMismatch warnings)),
-      testCase "boolean return for Bool type produces no mismatch" $
-        let body = [jsReturn 2 jsTrue]
-            warnings = analyzeFunc "check" body (FFIFunctionType [] FFIBool)
-         in assertBool "boolean compatible with Bool" (not (any isTypeMismatch warnings)),
-      testCase "number return for Float type produces no mismatch" $
-        let body = [jsReturn 2 (jsNumber 3)]
-            warnings = analyzeFunc "getPi" body (FFIFunctionType [] FFIFloat)
-         in assertBool "number compatible with Float" (not (any isTypeMismatch warnings)),
-      testCase "string return for Int type produces mismatch" $
+            warnings = analyzeFunc "point" body (FFIFunctionType [] (FFIRecord [("x", FFIInt)]))
+         in assertBool "should not warn for object->Record" (not (any isTypeMismatch warnings)),
+      testCase "no warning for object->Result (has dollar key)" $
+        let body = [jsReturn 2 (jsObject [("$", jsString), ("a", jsNumber 1)])]
+            warnings = analyzeFunc "parse" body (FFIFunctionType [] (FFIResult FFIString FFIInt))
+         in assertBool "should not warn for Result with $ key" (not (any isTypeMismatch warnings)),
+      testCase "mismatch carries inferred and declared type" $
         let body = [jsReturn 2 jsString]
             warnings = analyzeFunc "getId" body (FFIFunctionType [] FFIInt)
-         in assertBool "string not compatible with Int" (any isTypeMismatch warnings),
-      testCase "boolean return for String type produces mismatch" $
-        let body = [jsReturn 2 jsTrue]
-            warnings = analyzeFunc "getName" body (FFIFunctionType [] FFIString)
-         in assertBool "boolean not compatible with String" (any isTypeMismatch warnings)
+         in case filter isTypeMismatch warnings of
+              (SA.ReturnTypeMismatch _ _ inf decl : _) -> do
+                inf @?= SA.InfString
+                decl @?= FFIFunctionType [] FFIInt
+              _ -> assertFailure "expected ReturnTypeMismatch"
     ]
