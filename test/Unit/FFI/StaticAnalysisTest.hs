@@ -35,6 +35,7 @@ import Language.JavaScript.Parser.AST
     JSStatement (..),
     JSUnaryOp (..),
   )
+import qualified Language.JavaScript.Parser.AST as JSAST
 import Language.JavaScript.Parser.SrcLocation (TokenPosn (..))
 import Test.Tasty
 import Test.Tasty.HUnit
@@ -54,7 +55,11 @@ tests =
       arityMismatchTests,
       integrationTests,
       commaListHelperTests,
-      severityClassificationTests
+      severityClassificationTests,
+      additionalInferExprTypeTests,
+      additionalReturnPathTests,
+      additionalSeverityTests,
+      typeCompatibilityTests
     ]
 
 -- HELPERS
@@ -692,3 +697,166 @@ isArityMismatch _ = False
 isImplicitUndefinedPath :: SA.ReturnInfo -> Bool
 isImplicitUndefinedPath (SA.ImplicitUndefined _) = True
 isImplicitUndefinedPath _ = False
+
+-- ADDITIONAL INFER EXPR TYPE TESTS
+
+additionalInferExprTypeTests :: TestTree
+additionalInferExprTypeTests =
+  testGroup
+    "inferExprType additional cases"
+    [ testCase "octal literal is number" $
+        SA.inferExprType (JSAST.JSOctal (annot 1) 8) @?= SA.InfNumber,
+      testCase "binary integer literal is number" $
+        SA.inferExprType (JSAST.JSBinaryInteger (annot 1) 0) @?= SA.InfNumber,
+      testCase "big int literal is number" $
+        SA.inferExprType (JSAST.JSBigIntLiteral (annot 1) 42) @?= SA.InfNumber,
+      testCase "postfix expression is number" $
+        SA.inferExprType (JSAST.JSExpressionPostfix (jsIdent "x") (JSAST.JSUnaryOpIncr noAnnot))
+          @?= SA.InfNumber,
+      testCase "modulo returns number" $
+        SA.inferExprType (jsBinOp (jsNumber 10) (JSBinOpMod noAnnot) (jsNumber 3))
+          @?= SA.InfNumber,
+      testCase "exponentiation returns number" $
+        SA.inferExprType (jsBinOp (jsNumber 2) (JSBinOpExponentiation noAnnot) (jsNumber 3))
+          @?= SA.InfNumber,
+      testCase "bitwise AND returns number" $
+        SA.inferExprType (jsBinOp (jsNumber 5) (JSBinOpBitAnd noAnnot) (jsNumber 3))
+          @?= SA.InfNumber,
+      testCase "bitwise OR returns number" $
+        SA.inferExprType (jsBinOp (jsNumber 5) (JSBinOpBitOr noAnnot) (jsNumber 3))
+          @?= SA.InfNumber,
+      testCase "bitwise XOR returns number" $
+        SA.inferExprType (jsBinOp (jsNumber 5) (JSBinOpBitXor noAnnot) (jsNumber 3))
+          @?= SA.InfNumber,
+      testCase "left shift returns number" $
+        SA.inferExprType (jsBinOp (jsNumber 1) (JSBinOpLsh noAnnot) (jsNumber 2))
+          @?= SA.InfNumber,
+      testCase "right shift returns number" $
+        SA.inferExprType (jsBinOp (jsNumber 8) (JSBinOpRsh noAnnot) (jsNumber 1))
+          @?= SA.InfNumber,
+      testCase "unsigned right shift returns number" $
+        SA.inferExprType (jsBinOp (jsNumber 8) (JSBinOpUrsh noAnnot) (jsNumber 1))
+          @?= SA.InfNumber,
+      testCase "greater than returns boolean" $
+        SA.inferExprType (jsBinOp (jsNumber 5) (JSBinOpGt noAnnot) (jsNumber 3))
+          @?= SA.InfBoolean,
+      testCase "less than or equal returns boolean" $
+        SA.inferExprType (jsBinOp (jsNumber 1) (JSBinOpLe noAnnot) (jsNumber 2))
+          @?= SA.InfBoolean,
+      testCase "greater than or equal returns boolean" $
+        SA.inferExprType (jsBinOp (jsNumber 2) (JSBinOpGe noAnnot) (jsNumber 1))
+          @?= SA.InfBoolean,
+      testCase "instanceof returns boolean" $
+        SA.inferExprType (jsBinOp (jsIdent "x") (JSBinOpInstanceOf noAnnot) (jsIdent "Date"))
+          @?= SA.InfBoolean,
+      testCase "in operator returns boolean" $
+        SA.inferExprType (jsBinOp jsString (JSBinOpIn noAnnot) (jsIdent "obj"))
+          @?= SA.InfBoolean,
+      testCase "logical AND union" $
+        SA.inferExprType (jsBinOp (jsNumber 1) (JSBinOpAnd noAnnot) (jsNumber 2))
+          @?= SA.InfNumber,
+      testCase "logical OR union with same type collapses" $
+        SA.inferExprType (jsBinOp (jsNumber 1) (JSBinOpOr noAnnot) (jsNumber 2))
+          @?= SA.InfNumber,
+      testCase "nullish coalescing with same type collapses" $
+        SA.inferExprType (jsBinOp jsString (JSBinOpNullishCoalescing noAnnot) jsString)
+          @?= SA.InfString,
+      testCase "unary plus returns number" $
+        SA.inferExprType (JSUnaryExpression (JSUnaryOpPlus noAnnot) jsString)
+          @?= SA.InfNumber,
+      testCase "bitwise NOT returns number" $
+        SA.inferExprType (JSUnaryExpression (JSUnaryOpTilde noAnnot) (jsNumber 5))
+          @?= SA.InfNumber,
+      testCase "empty array literal is array of unknown" $
+        SA.inferExprType (jsArray []) @?= SA.InfArray SA.InfUnknown,
+      testCase "mixed array collapses to union element type" $
+        case SA.inferExprType (jsArray [jsNumber 1, jsString]) of
+          SA.InfArray _ -> pure ()
+          other -> assertFailure ("expected InfArray, got " ++ show other)
+    ]
+
+-- ADDITIONAL RETURN PATH TESTS
+
+additionalReturnPathTests :: TestTree
+additionalReturnPathTests =
+  testGroup
+    "analyzeReturnPaths additional cases"
+    [ testCase "explicit return with number has correct type" $
+        let block = JSBlock noAnnot [jsReturn 3 (jsNumber 42)] noAnnot
+            paths = SA.analyzeReturnPaths block
+         in case paths of
+              [SA.ExplicitReturn _ SA.InfNumber] -> pure ()
+              other -> assertFailure ("expected ExplicitReturn InfNumber, got " ++ show other),
+      testCase "bare return produces ImplicitUndefined" $
+        let block = JSBlock noAnnot [jsReturnVoid 2] noAnnot
+            paths = SA.analyzeReturnPaths block
+         in assertBool "should have implicit undefined" (any isImplicitUndefinedPath paths),
+      testCase "two returns produces two paths" $
+        let block =
+              JSBlock
+                noAnnot
+                [ jsIfElse
+                    (jsIdent "x")
+                    (jsReturn 2 (jsNumber 1))
+                    (jsReturn 4 (jsNumber 0))
+                ]
+                noAnnot
+            paths = SA.analyzeReturnPaths block
+         in length paths @?= 2,
+      testCase "explicit return line number preserved" $
+        let block = JSBlock noAnnot [jsReturn 7 (jsNumber 42)] noAnnot
+            paths = SA.analyzeReturnPaths block
+         in case paths of
+              [SA.ExplicitReturn line _] -> line @?= 7
+              other -> assertFailure ("expected 1 path, got " ++ show (length other))
+    ]
+
+-- ADDITIONAL SEVERITY TESTS
+
+additionalSeverityTests :: TestTree
+additionalSeverityTests =
+  testGroup
+    "warningSeverity additional cases"
+    [ testCase "MissingReturnPath is FFIWarningLevel" $
+        SA.warningSeverity (SA.MissingReturnPath 1 "testFunc")
+          @?= SA.FFIWarningLevel,
+      testCase "MixedArrayElements is FFIWarningLevel" $
+        SA.warningSeverity (SA.MixedArrayElements 1 "testFunc")
+          @?= SA.FFIWarningLevel
+    ]
+
+-- TYPE COMPATIBILITY TESTS
+
+typeCompatibilityTests :: TestTree
+typeCompatibilityTests =
+  testGroup
+    "type compatibility via return type mismatch"
+    [ testCase "null return for Maybe type produces no mismatch" $
+        let body = [jsReturn 2 jsNull]
+            warnings = analyzeFunc "lookup" body (FFIFunctionType [] (FFIMaybe FFIInt))
+         in assertBool "null compatible with Maybe" (not (any isTypeMismatch warnings)),
+      testCase "string return for Task type produces no mismatch" $
+        let body = [jsReturn 2 (jsIdent "promise")]
+            warnings = analyzeFunc "fetch" body (FFIFunctionType [] (FFITask FFIString FFIInt))
+         in assertBool "unknown compatible with Task" (not (any isTypeMismatch warnings)),
+      testCase "object return for Record type produces no mismatch" $
+        let body = [jsReturn 2 (jsObject [("x", jsNumber 1)])]
+            warnings = analyzeFunc "getObj" body (FFIFunctionType [] (FFIRecord [("x", FFIInt)]))
+         in assertBool "object compatible with Record" (not (any isTypeMismatch warnings)),
+      testCase "boolean return for Bool type produces no mismatch" $
+        let body = [jsReturn 2 jsTrue]
+            warnings = analyzeFunc "check" body (FFIFunctionType [] FFIBool)
+         in assertBool "boolean compatible with Bool" (not (any isTypeMismatch warnings)),
+      testCase "number return for Float type produces no mismatch" $
+        let body = [jsReturn 2 (jsNumber 3)]
+            warnings = analyzeFunc "getPi" body (FFIFunctionType [] FFIFloat)
+         in assertBool "number compatible with Float" (not (any isTypeMismatch warnings)),
+      testCase "string return for Int type produces mismatch" $
+        let body = [jsReturn 2 jsString]
+            warnings = analyzeFunc "getId" body (FFIFunctionType [] FFIInt)
+         in assertBool "string not compatible with Int" (any isTypeMismatch warnings),
+      testCase "boolean return for String type produces mismatch" $
+        let body = [jsReturn 2 jsTrue]
+            warnings = analyzeFunc "getName" body (FFIFunctionType [] FFIString)
+         in assertBool "boolean not compatible with String" (any isTypeMismatch warnings)
+    ]

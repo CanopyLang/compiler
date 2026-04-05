@@ -41,7 +41,11 @@ tests =
       opaqueTypeTests,
       parseReturnTypeTests,
       whitespaceTests,
-      errorCaseTests
+      errorCaseTests,
+      tokenizeTests,
+      countArityTests,
+      additionalRecordTests,
+      additionalFunctionTests
     ]
 
 -- PRIMITIVE TYPE TESTS
@@ -340,4 +344,122 @@ errorCaseTests =
       testCase "triple nested containers parse correctly" $
         Validator.parseFFIType "Maybe (List (Maybe Int))"
           @?= Just (FFIMaybe (FFIList (FFIMaybe FFIInt)))
+    ]
+
+-- TOKENIZE BEHAVIOR TESTS (tested via parseFFIType observable behavior)
+
+tokenizeTests :: TestTree
+tokenizeTests =
+  testGroup
+    "tokenization behavior (via parseFFIType)"
+    [ testCase "arrow in type string is parsed correctly" $
+        Validator.parseFFIType "Int -> String"
+          @?= Just (FFIFunctionType [FFIInt] FFIString),
+      testCase "parentheses group a type argument" $
+        Validator.parseFFIType "List (Maybe Int)"
+          @?= Just (FFIList (FFIMaybe FFIInt)),
+      testCase "comma separates tuple elements" $
+        Validator.parseFFIType "(Int, String, Bool)"
+          @?= Just (FFITuple [FFIInt, FFIString, FFIBool]),
+      testCase "colon separates record field name and type" $
+        Validator.parseFFIType "{ x : Int }"
+          @?= Just (FFIRecord [("x", FFIInt)]),
+      testCase "leading and trailing whitespace is stripped" $
+        Validator.parseFFIType "  Bool  " @?= Just FFIBool,
+      testCase "underscore-prefixed name is treated as opaque type" $
+        Validator.parseFFIType "_msg" @?= Just (FFIOpaque "_msg" []),
+      testCase "dot is valid in a word token (qualified name)" $
+        Validator.parseFFIType "Json.Decode.Value"
+          @?= Just (FFIOpaque "Json.Decode.Value" []),
+      testCase "bare arrow with no types returns Nothing" $
+        Validator.parseFFIType "->" @?= Nothing,
+      testCase "whitespace-only returns Nothing" $
+        Validator.parseFFIType "   " @?= Nothing,
+      testCase "unclosed paren returns Nothing" $
+        Validator.parseFFIType "(Int" @?= Nothing
+    ]
+
+-- ARITY BEHAVIOR TESTS (via parseFFIType structure inspection)
+
+countArityTests :: TestTree
+countArityTests =
+  testGroup
+    "function arity via parsed type structure"
+    [ testCase "primitive type has no function params" $
+        Validator.parseFFIType "Int" @?= Just FFIInt,
+      testCase "single-arg function type has one param" $
+        Validator.parseFFIType "Int -> String"
+          @?= Just (FFIFunctionType [FFIInt] FFIString),
+      testCase "two-arg function has two params" $
+        Validator.parseFFIType "Int -> String -> Bool"
+          @?= Just (FFIFunctionType [FFIInt, FFIString] FFIBool),
+      testCase "three-arg function has three params" $
+        Validator.parseFFIType "Int -> Float -> String -> Bool"
+          @?= Just (FFIFunctionType [FFIInt, FFIFloat, FFIString] FFIBool),
+      testCase "Maybe is not a function type" $
+        Validator.parseFFIType "Maybe Int" @?= Just (FFIMaybe FFIInt),
+      testCase "List is not a function type" $
+        Validator.parseFFIType "List String" @?= Just (FFIList FFIString),
+      testCase "Result is not a function type" $
+        Validator.parseFFIType "Result String Int"
+          @?= Just (FFIResult FFIString FFIInt),
+      testCase "Task is not a function type" $
+        Validator.parseFFIType "Task String Int"
+          @?= Just (FFITask FFIString FFIInt),
+      testCase "Tuple is not a function type" $
+        Validator.parseFFIType "(Int, String)"
+          @?= Just (FFITuple [FFIInt, FFIString]),
+      testCase "TypeVar is not a function type" $
+        Validator.parseFFIType "a" @?= Just (FFITypeVar "a"),
+      testCase "Opaque is not a function type" $
+        Validator.parseFFIType "AudioContext"
+          @?= Just (FFIOpaque "AudioContext" [])
+    ]
+
+-- ADDITIONAL RECORD TESTS
+
+additionalRecordTests :: TestTree
+additionalRecordTests =
+  testGroup
+    "additional record tests"
+    [ testCase "record with nested List field" $
+        Validator.parseFFIType "{ items : List Int, name : String }"
+          @?= Just (FFIRecord [("items", FFIList FFIInt), ("name", FFIString)]),
+      testCase "record with Result field" $
+        Validator.parseFFIType "{ result : Result String Int }"
+          @?= Just (FFIRecord [("result", FFIResult FFIString FFIInt)]),
+      testCase "record with Maybe field preserves inner type" $
+        Validator.parseFFIType "{ value : Maybe Bool }"
+          @?= Just (FFIRecord [("value", FFIMaybe FFIBool)]),
+      testCase "three-field record ordering preserved" $
+        Validator.parseFFIType "{ a : Int, b : String, c : Bool }"
+          @?= Just (FFIRecord [("a", FFIInt), ("b", FFIString), ("c", FFIBool)]),
+      testCase "triple duplicate field returns Nothing" $
+        Validator.parseFFIType "{ x : Int, x : String, x : Bool }" @?= Nothing
+    ]
+
+-- ADDITIONAL FUNCTION TESTS
+
+additionalFunctionTests :: TestTree
+additionalFunctionTests =
+  testGroup
+    "additional function type tests"
+    [ testCase "four-arg function type" $
+        Validator.parseFFIType "Int -> Float -> String -> Bool -> ()"
+          @?= Just (FFIFunctionType [FFIInt, FFIFloat, FFIString, FFIBool] FFIUnit),
+      testCase "function returning opaque type" $
+        Validator.parseFFIType "String -> AudioContext"
+          @?= Just (FFIFunctionType [FFIString] (FFIOpaque "AudioContext" [])),
+      testCase "function with Maybe argument" $
+        Validator.parseFFIType "Maybe Int -> String"
+          @?= Just (FFIFunctionType [FFIMaybe FFIInt] FFIString),
+      testCase "function with List argument" $
+        Validator.parseFFIType "List String -> Int"
+          @?= Just (FFIFunctionType [FFIList FFIString] FFIInt),
+      testCase "function with Result return type" $
+        Validator.parseFFIType "String -> Int -> Result String Bool"
+          @?= Just (FFIFunctionType [FFIString, FFIInt] (FFIResult FFIString FFIBool)),
+      testCase "higher-order function in return" $
+        Validator.parseFFIType "Int -> (String -> Bool)"
+          @?= Just (FFIFunctionType [FFIInt] (FFIFunctionType [FFIString] FFIBool))
     ]

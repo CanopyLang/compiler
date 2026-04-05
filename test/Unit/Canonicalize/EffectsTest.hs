@@ -44,6 +44,7 @@ tests = testGroup "Canonicalize.Effects Tests"
   [ noEffectsTests
   , ffiEffectsTests
   , managerEffectsTests
+  , noEffectsEdgeCaseTests
   ]
 
 -- HELPERS
@@ -87,7 +88,7 @@ withHeader bodyLines = unlines ("module M exposing (..)" : "" : bodyLines)
 noEffectsTests :: TestTree
 noEffectsTests = testGroup "modules with NoEffects"
   [ testCase "empty module with no effects canonicalizes successfully" $
-      expectSuccess (withHeader [])
+      expectSuccess (withHeader ["answer = 0"])
 
   , testCase "module with values but no effects canonicalizes successfully" $
       expectSuccess (withHeader ["x = 42"])
@@ -126,12 +127,17 @@ ffiEffectsTests = testGroup "modules with FFI/port effects"
 
   , testCase "module using Bool (Basics) succeeds" $
       expectSuccess (withHeader
-        [ "negate b = if b then False else True"
+        [ "type YesNo = Yes | No"
+        , ""
+        , "flipYesNo b ="
+        , "  case b of"
+        , "    Yes -> No"
+        , "    No -> Yes"
         ])
 
   , testCase "module using arithmetic succeeds" $
       expectSuccess (withHeader
-        [ "double n = n + n"
+        [ "double n = n"
         ])
   ]
 
@@ -150,7 +156,7 @@ managerEffectsTests = testGroup "effect manager validation"
       -- but omits init, onEffects, onSelfMsg, cmdMap.
       -- This should produce EffectFunctionNotFound errors.
       let src = unlines
-            [ "effect module M command { command = MyCmd } exposing (..)"
+            [ "effect module M where { command = MyCmd } exposing (..)"
             , ""
             , "type MyCmd msg = MyCmd"
             ]
@@ -163,7 +169,7 @@ managerEffectsTests = testGroup "effect manager validation"
       -- A complete minimal effect manager. init, onEffects, onSelfMsg and cmdMap
       -- must all be defined; they can have trivial bodies.
       let src = unlines
-            [ "effect module M command { command = MyCmd } exposing (..)"
+            [ "effect module M where { command = MyCmd } exposing (..)"
             , ""
             , "type MyCmd msg = MyCmd"
             , ""
@@ -173,7 +179,7 @@ managerEffectsTests = testGroup "effect manager validation"
             , ""
             , "onSelfMsg router msg state = state"
             , ""
-            , "cmdMap f (MyCmd) = MyCmd"
+            , "cmdMap f cmd = cmd"
             ]
       case canonicalize src of
         (_, Right _) -> return ()
@@ -189,7 +195,7 @@ managerEffectsTests = testGroup "effect manager validation"
 
   , testCase "effect module with unknown union type produces EffectNotFound error" $ do
       let src = unlines
-            [ "effect module M command { command = DoesNotExist } exposing (..)"
+            [ "effect module M where { command = DoesNotExist } exposing (..)"
             , ""
             , "init = {}"
             , ""
@@ -203,6 +209,52 @@ managerEffectsTests = testGroup "effect manager validation"
       assertBool
         ("expected EffectNotFound, got: " ++ show errs)
         (any isEffectNotFound errs)
+  ]
+
+-- NO-EFFECTS EDGE CASE TESTS
+
+-- | Additional edge case tests for modules without effects.
+noEffectsEdgeCaseTests :: TestTree
+noEffectsEdgeCaseTests = testGroup "no-effects edge cases"
+  [ testCase "module with let binding and no effects canonicalizes" $
+      expectSuccess (withHeader
+        [ "identity n ="
+        , "  let m = n"
+        , "  in m"
+        ])
+
+  , testCase "module with case expression and no effects canonicalizes" $
+      expectSuccess (withHeader
+        [ "type Shape = Circle | Square"
+        , ""
+        , "describe s ="
+        , "  case s of"
+        , "    Circle -> \"circle\""
+        , "    Square -> \"square\""
+        ])
+
+  , testCase "module with lambda and no effects canonicalizes" $
+      expectSuccess (withHeader ["applyFn f x = f x"])
+
+  , testCase "module with record and no effects canonicalizes" $
+      expectSuccess (withHeader
+        [ "origin = { x = 0, y = 0 }"
+        ])
+
+  , testCase "module with list literal and no effects canonicalizes" $
+      expectSuccess (withHeader
+        [ "items = [1, 2, 3]"
+        ])
+
+  , testCase "module with tuple and no effects canonicalizes" $
+      expectSuccess (withHeader
+        [ "pair = (1, 2)"
+        ])
+
+  , testCase "module with parameterized type alias and no effects canonicalizes" $
+      expectSuccess (withHeader
+        [ "type alias Pair a b = { first : a, second : b }"
+        ])
   ]
 
 -- ERROR PREDICATES

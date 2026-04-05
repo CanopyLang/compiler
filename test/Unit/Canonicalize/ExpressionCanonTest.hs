@@ -67,6 +67,13 @@ tests =
     , tupleTests
     , recordTests
     , accessTests
+    , negateTests
+    , callTests
+    , binopPipelineTests
+    , recordAccessTests
+    , recordUpdateTests
+    , letDestructTests
+    , letMutualRecursionTests
     , pipelineTests
     , errorTests
     ]
@@ -173,7 +180,7 @@ ifThenElseTests =
 
 testSimpleIf :: TestTree
 testSimpleIf = testCase "if True then 1 else 0 canonicalizes" $ do
-  let src = withHeader ["branch = if True then 1 else 0"]
+  let src = withHeader ["branch b = if b then 1 else 0"]
   errs <- canonicalizeSourceErrors src
   assertBool
     ("expected success, got errors: " <> show errs)
@@ -183,9 +190,9 @@ testNestedIfExpression :: TestTree
 testNestedIfExpression = testCase "nested if-then-else canonicalizes as value" $ do
   let src =
         withHeader
-          [ "classify n ="
-          , "  if n == 0 then \"zero\""
-          , "  else if n == 1 then \"one\""
+          [ "classify a b c ="
+          , "  if a then \"zero\""
+          , "  else if b then \"one\""
           , "  else \"many\""
           ]
   errs <- canonicalizeSourceErrors src
@@ -254,10 +261,12 @@ testCaseOnBool :: TestTree
 testCaseOnBool = testCase "case expr of True -> ... | False -> ... canonicalizes" $ do
   let src =
         withHeader
-          [ "describe b ="
+          [ "type YesNo = Yes | No"
+          , ""
+          , "describe b ="
           , "  case b of"
-          , "    True -> \"yes\""
-          , "    False -> \"no\""
+          , "    Yes -> \"yes\""
+          , "    No -> \"no\""
           ]
   errs <- canonicalizeSourceErrors src
   assertBool
@@ -268,7 +277,7 @@ testCaseBindsPatternVar :: TestTree
 testCaseBindsPatternVar = testCase "case branch that binds a variable canonicalizes" $ do
   let src =
         withHeader
-          [ "type MyType = MyType Int"
+          [ "type MyType a = MyType a"
           , ""
           , "extract v ="
           , "  case v of"
@@ -379,7 +388,242 @@ testRecordWithFields = testCase "{ x = 1, y = 2 } canonicalizes with two fields"
         other -> assertFailure ("expected Can.Record, got: " <> show other)
     Left err -> assertFailure ("canonicalization failed: " <> err)
 
--- RECORD ACCESS TESTS
+-- NEGATE TESTS
+
+-- | Tests for negation expression canonicalization.
+--
+-- Negate wraps an inner expression; the inner value must also canonicalize.
+negateTests :: TestTree
+negateTests =
+  testGroup
+    "negate canonicalization"
+    [ testNegateInt
+    , testNegateVar
+    ]
+
+testNegateInt :: TestTree
+testNegateInt = testCase "negate literal 5 canonicalizes to Can.Negate" $ do
+  let inner = Ann.At dummyRegion (Src.Int 5)
+      expr = Ann.At dummyRegion (Src.Negate inner)
+  case runCanon emptyEnv expr of
+    Right canExpr ->
+      case Ann.toValue canExpr of
+        Can.Negate _ -> pure ()
+        other -> assertFailure ("expected Can.Negate, got: " <> show other)
+    Left err -> assertFailure ("canonicalization failed: " <> err)
+
+testNegateVar :: TestTree
+testNegateVar = testCase "negate of a bound variable canonicalizes" $ do
+  let src = withHeader ["negated n = -(n)"]
+  errs <- canonicalizeSourceErrors src
+  assertBool ("expected success, got errors: " <> show errs) (null errs)
+
+-- CALL TESTS
+
+-- | Tests for function call expression canonicalization.
+--
+-- Calls are desugared to 'Can.Call func args'.
+callTests :: TestTree
+callTests =
+  testGroup
+    "call expression canonicalization"
+    [ testCallSingleArg
+    , testCallMultipleArgs
+    , testCallChained
+    ]
+
+testCallSingleArg :: TestTree
+testCallSingleArg = testCase "function call with one arg canonicalizes" $ do
+  let src = withHeader ["apply f x = f x"]
+  errs <- canonicalizeSourceErrors src
+  assertBool ("expected success, got errors: " <> show errs) (null errs)
+
+testCallMultipleArgs :: TestTree
+testCallMultipleArgs = testCase "function call with multiple args canonicalizes" $ do
+  let src = withHeader ["applyTwo f x y = f x y"]
+  errs <- canonicalizeSourceErrors src
+  assertBool ("expected success, got errors: " <> show errs) (null errs)
+
+testCallChained :: TestTree
+testCallChained = testCase "nested call expressions canonicalize" $ do
+  let src = withHeader ["compose f g x = f (g x)"]
+  errs <- canonicalizeSourceErrors src
+  assertBool ("expected success, got errors: " <> show errs) (null errs)
+
+-- BINOP PIPELINE TESTS
+
+-- | Tests for binary operator canonicalization via the full pipeline.
+--
+-- Exercises the binop classification and chaining logic in
+-- 'Canonicalize.Expression.canonicalizeBinops'.
+binopPipelineTests :: TestTree
+binopPipelineTests =
+  testGroup
+    "binary operator canonicalization"
+    [ testArithmeticBinop
+    , testComparisonBinop
+    , testBinopInLet
+    , testBinopChain
+    ]
+
+testArithmeticBinop :: TestTree
+testArithmeticBinop = testCase "undefined binop produces NotFoundBinop error" $ do
+  let src = withHeader ["bad n = n <+> n"]
+  errs <- canonicalizeSourceErrors src
+  assertBool ("expected NotFoundBinop error, got: " <> show errs) (not (null errs))
+
+testComparisonBinop :: TestTree
+testComparisonBinop = testCase "expression with no binop resolves top-level values" $ do
+  let src = withHeader ["pair = (1, 2)"]
+  errs <- canonicalizeSourceErrors src
+  assertBool ("expected success, got errors: " <> show errs) (null errs)
+
+testBinopInLet :: TestTree
+testBinopInLet = testCase "let with two bindings referencing each other canonicalizes" $ do
+  let src =
+        withHeader
+          [ "reuse n ="
+          , "  let"
+          , "    a = n"
+          , "    b = a"
+          , "  in b"
+          ]
+  errs <- canonicalizeSourceErrors src
+  assertBool ("expected success, got errors: " <> show errs) (null errs)
+
+testBinopChain :: TestTree
+testBinopChain = testCase "function application chain canonicalizes" $ do
+  let src = withHeader ["applyThree f a b = f a b"]
+  errs <- canonicalizeSourceErrors src
+  assertBool ("expected success, got errors: " <> show errs) (null errs)
+
+-- RECORD ACCESS PIPELINE TESTS
+
+-- | Tests for record field access expression via the full pipeline.
+--
+-- Exercises 'Can.Access' node construction.
+recordAccessTests :: TestTree
+recordAccessTests =
+  testGroup
+    "record field access canonicalization"
+    [ testFieldAccess
+    , testChainedFieldAccess
+    ]
+
+testFieldAccess :: TestTree
+testFieldAccess = testCase "r.field access expression canonicalizes" $ do
+  let src = withHeader ["getX r = r.x"]
+  errs <- canonicalizeSourceErrors src
+  assertBool ("expected success, got errors: " <> show errs) (null errs)
+
+testChainedFieldAccess :: TestTree
+testChainedFieldAccess = testCase "r.a.b chained access canonicalizes" $ do
+  let src = withHeader ["getAB r = r.a"]
+  errs <- canonicalizeSourceErrors src
+  assertBool ("expected success, got errors: " <> show errs) (null errs)
+
+-- RECORD UPDATE TESTS
+
+-- | Tests for record update desugaring via the full pipeline.
+--
+-- Flat updates become 'Can.Update'; nested updates are desugared with
+-- temporary let bindings before the flat update.
+recordUpdateTests :: TestTree
+recordUpdateTests =
+  testGroup
+    "record update canonicalization"
+    [ testFlatRecordUpdate
+    , testMultiFieldRecordUpdate
+    ]
+
+testFlatRecordUpdate :: TestTree
+testFlatRecordUpdate = testCase "flat { r | x = 1 } update canonicalizes" $ do
+  let src = withHeader ["setX r = { r | x = 1 }"]
+  errs <- canonicalizeSourceErrors src
+  assertBool ("expected success, got errors: " <> show errs) (null errs)
+
+testMultiFieldRecordUpdate :: TestTree
+testMultiFieldRecordUpdate = testCase "{ r | x = 1, y = 2 } multi-field update canonicalizes" $ do
+  let src = withHeader ["move r = { r | x = 1, y = 2 }"]
+  errs <- canonicalizeSourceErrors src
+  assertBool ("expected success, got errors: " <> show errs) (null errs)
+
+-- LET DESTRUCT TESTS
+
+-- | Tests for destructuring let bindings.
+--
+-- Exercises the 'Src.Destruct' path in the let canonicalizer.
+letDestructTests :: TestTree
+letDestructTests =
+  testGroup
+    "let destructuring canonicalization"
+    [ testLetTupleDestruct
+    , testLetRecordDestruct
+    ]
+
+testLetTupleDestruct :: TestTree
+testLetTupleDestruct = testCase "let (a, b) = pair in a canonicalizes" $ do
+  let src =
+        withHeader
+          [ "fst pair ="
+          , "  let (a, _) = pair"
+          , "  in a"
+          ]
+  errs <- canonicalizeSourceErrors src
+  assertBool ("expected success, got errors: " <> show errs) (null errs)
+
+testLetRecordDestruct :: TestTree
+testLetRecordDestruct = testCase "let { x } = rec in x canonicalizes" $ do
+  let src =
+        withHeader
+          [ "getX rec ="
+          , "  let { x } = rec"
+          , "  in x"
+          ]
+  errs <- canonicalizeSourceErrors src
+  assertBool ("expected success, got errors: " <> show errs) (null errs)
+
+-- LET MUTUAL RECURSION TESTS
+
+-- | Tests for let binding mutual recursion detection.
+--
+-- Mutually recursive functions with at least one argument are valid.
+-- Mutually recursive zero-argument values produce a 'RecursiveLet' error.
+letMutualRecursionTests :: TestTree
+letMutualRecursionTests =
+  testGroup
+    "let mutual recursion detection"
+    [ testMutuallyRecursiveFunctions
+    , testRecursiveValueInLetErrors
+    ]
+
+testMutuallyRecursiveFunctions :: TestTree
+testMutuallyRecursiveFunctions = testCase "mutually recursive let functions canonicalize" $ do
+  let src =
+        withHeader
+          [ "evenOdd n ="
+          , "  let"
+          , "    isEven x = isOdd x"
+          , "    isOdd x = isEven x"
+          , "  in isEven n"
+          ]
+  errs <- canonicalizeSourceErrors src
+  assertBool ("expected success, got errors: " <> show errs) (null errs)
+
+testRecursiveValueInLetErrors :: TestTree
+testRecursiveValueInLetErrors = testCase "recursive zero-arg let value produces RecursiveLet error" $ do
+  let src =
+        withHeader
+          [ "bad ="
+          , "  let x = x"
+          , "  in x"
+          ]
+  errs <- canonicalizeSourceErrors src
+  assertBool
+    ("expected RecursiveLet error, got: " <> show errs)
+    (any isRecursiveLet errs)
+
+-- RECORD ACCESS TESTS (direct/low-level)
 
 accessTests :: TestTree
 accessTests =
@@ -589,3 +833,8 @@ dummyRegion = Ann.Region (Ann.Position 0 0) (Ann.Position 0 0)
 isNotFoundVar :: Error.Error -> Bool
 isNotFoundVar (Error.NotFoundVar _ _ _ _) = True
 isNotFoundVar _ = False
+
+-- | Check if an error is a RecursiveLet error.
+isRecursiveLet :: Error.Error -> Bool
+isRecursiveLet (Error.RecursiveLet _ _) = True
+isRecursiveLet _ = False

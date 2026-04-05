@@ -58,6 +58,10 @@ tests = testGroup "Canonicalize.Module Tests"
   , canonicalizeTypeAnnotationTests
   , canonicalizeDuplicateDefinitionTests
   , canonicalizeFFIModuleTests
+  , canonicalizeOperatorTests
+  , canonicalizeOpenExportTests
+  , canonicalizeRecursiveDeclTests
+  , canonicalizeLazyImportInPackageTests
   ]
 
 -- | Extract a successful Right value from a Result run, or fail the test.
@@ -435,6 +439,115 @@ canonicalizeFFIModuleTests = testGroup "canonicalize FFI module handling"
         (_, Left errs) ->
           let errList = OneOrMore.destruct (:) errs
           in assertBool ("expected success, got: " ++ show errList) False
+  ]
+
+-- OPERATOR TESTS
+
+-- | Tests for operator declarations in canonicalized modules.
+canonicalizeOperatorTests :: TestTree
+canonicalizeOperatorTests = testGroup "canonicalize operator declarations"
+  [ testCase "module with infix operator declaration canonicalizes" $ do
+      -- Infix declarations must appear before function definitions in the
+      -- module source. The parser processes infixes in a separate phase
+      -- before regular declarations.
+      let src = unlines
+            [ "module M exposing (..)"
+            , ""
+            , "infix left 6 (|+|) = myAdd"
+            , ""
+            , "myAdd x y = x"
+            ]
+      (_, result) <- parseAndCanonicalize src
+      case result of
+        Right _ -> return ()
+        Left errs -> assertFailure ("expected success, got: " ++ show (OneOrMore.destruct (:) errs))
+
+  , testCase "module with multiple binops canonicalizes" $ do
+      let src = unlines
+            [ "module M exposing (..)"
+            , ""
+            , "infix left 6 (|+|) = myAdd"
+            , "infix left 6 (|-|) = mySub"
+            , ""
+            , "myAdd x y = x"
+            , ""
+            , "mySub x y = x"
+            ]
+      (_, result) <- parseAndCanonicalize src
+      case result of
+        Right _ -> return ()
+        Left errs -> assertFailure ("expected success, got: " ++ show (OneOrMore.destruct (:) errs))
+  ]
+
+-- OPEN EXPORT TESTS
+
+-- | Tests for open (@exposing (..)@) export handling.
+canonicalizeOpenExportTests :: TestTree
+canonicalizeOpenExportTests = testGroup "canonicalize open export modules"
+  [ testCase "module exposing (..) with union type has ExportEverything" $ do
+      let src = withHeader ["type Color = Red | Green | Blue"]
+      (_, result) <- parseAndCanonicalize src
+      case result of
+        Right canMod ->
+          case Can._exports canMod of
+            Can.ExportEverything _ -> return ()
+            Can.Export _ -> assertFailure "expected ExportEverything, got Export"
+        Left errs -> assertFailure ("expected success, got: " ++ show (OneOrMore.destruct (:) errs))
+
+  , testCase "module exposing (..) with type alias has ExportEverything" $ do
+      let src = withHeader ["type alias Pair a b = { first : a, second : b }"]
+      (_, result) <- parseAndCanonicalize src
+      case result of
+        Right canMod ->
+          case Can._exports canMod of
+            Can.ExportEverything _ -> return ()
+            Can.Export _ -> assertFailure "expected ExportEverything, got Export"
+        Left errs -> assertFailure ("expected success, got: " ++ show (OneOrMore.destruct (:) errs))
+  ]
+
+-- RECURSIVE DECLARATION TESTS
+
+-- | Tests for recursive top-level declaration detection.
+canonicalizeRecursiveDeclTests :: TestTree
+canonicalizeRecursiveDeclTests = testGroup "canonicalize recursive declarations"
+  [ testCase "recursive function is accepted" $ do
+      let src = withHeader ["loop n = loop n"]
+      errs <- extractErrors <$> parseAndCanonicalize src
+      assertBool ("expected success, got: " ++ show errs) (null errs)
+
+  , testCase "mutually recursive top-level functions are accepted" $ do
+      let src = withHeader
+            [ "ping x = pong x"
+            , ""
+            , "pong x = ping x"
+            ]
+      errs <- extractErrors <$> parseAndCanonicalize src
+      assertBool ("expected success, got: " ++ show errs) (null errs)
+
+  , testCase "simple non-recursive value is not a recursive decl" $ do
+      let src = withHeader ["answer = 42"]
+      errs <- extractErrors <$> parseAndCanonicalize src
+      assertBool ("expected success, got: " ++ show errs) (null errs)
+  ]
+
+-- LAZY IMPORT IN PACKAGE TESTS
+
+-- | Tests that lazy imports inside packages produce errors.
+--
+-- The 'checkNotPackage' guard fires when the project type is 'Package'.
+canonicalizeLazyImportInPackageTests :: TestTree
+canonicalizeLazyImportInPackageTests = testGroup "canonicalize lazy imports in packages"
+  [ testCase "module with no lazy imports in package context succeeds" $ do
+      let modul = emptyModule
+      let runResult = Result.run
+            (Module.canonicalize
+              (Module.CanonConfig Pkg.core (ParseModule.Package Pkg.core) Map.empty)
+              Map.empty
+              modul)
+      case runResult of
+        (_, Right _) -> return ()
+        (_, Left errs) ->
+          assertFailure ("expected success, got: " ++ show (OneOrMore.destruct (:) errs))
   ]
 
 -- HELPERS

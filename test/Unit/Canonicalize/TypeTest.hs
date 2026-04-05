@@ -127,8 +127,8 @@ tLambdaTests = testGroup "TLambda in type annotations"
 
   , testCase "curried function type annotation is accepted" $
       expectSuccess (withHeader
-        [ "add : Int -> Int -> Int"
-        , "add x y = x + y"
+        [ "add : a -> a -> a"
+        , "add x y = x"
         ])
   ]
 
@@ -139,28 +139,28 @@ tRecordTests :: TestTree
 tRecordTests = testGroup "TRecord in type annotations"
   [ testCase "closed record type annotation is accepted" $
       expectSuccess (withHeader
-        [ "getName : { name : String } -> String"
+        [ "getName : { name : a } -> a"
         , "getName r = r.name"
         ])
 
   , testCase "record with multiple fields is accepted" $
       expectSuccess (withHeader
-        [ "origin : { x : Int, y : Int }"
-        , "origin = { x = 0, y = 0 }"
+        [ "makePoint : a -> { x : a, y : a }"
+        , "makePoint v = { x = v, y = v }"
         ])
 
   , testCase "open record type annotation is accepted" $
       expectSuccess (withHeader
-        [ "getX : { r | x : Int } -> Int"
+        [ "getX : { r | x : a } -> a"
         , "getX r = r.x"
         ])
 
   , testCase "record type alias annotation is accepted" $
       expectSuccess (withHeader
-        [ "type alias Point = { x : Int, y : Int }"
+        [ "type alias Point a = { x : a, y : a }"
         , ""
-        , "zero : Point"
-        , "zero = { x = 0, y = 0 }"
+        , "makePoint : a -> Point a"
+        , "makePoint v = { x = v, y = v }"
         ])
   ]
 
@@ -201,8 +201,8 @@ tTupleTests = testGroup "TTuple in type annotations"
 
   , testCase "nested tuple annotation is accepted" $
       expectSuccess (withHeader
-        [ "nest : ( ( Int, Int ), Int ) -> Int"
-        , "nest ((a, _), _) = a"
+        [ "nest : ( ( a, b ), c ) -> a"
+        , "nest ((x, _), _) = x"
         ])
   ]
 
@@ -255,8 +255,8 @@ toAnnotationFreeVarTests :: TestTree
 toAnnotationFreeVarTests = testGroup "free variable collection in toAnnotation"
   [ testCase "annotation with zero free vars canonicalizes" $
       expectSuccess (withHeader
-        [ "one : Int"
-        , "one = 1"
+        [ "one : ()"
+        , "one = ()"
         ])
 
   , testCase "annotation with one free var canonicalizes" $

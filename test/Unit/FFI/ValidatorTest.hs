@@ -28,7 +28,11 @@ tests =
       generateValidatorNameTests,
       generateValidatorTests,
       generateAllValidatorsTests,
-      generateAllValidatorsDedupedTests
+      generateAllValidatorsDedupedTests,
+      generateOpaqueValidatorTests,
+      collectAllTypesTests,
+      validatorNameSanitizationTests,
+      additionalValidatorTests
     ]
 
 parseFFITypeTests :: TestTree
@@ -241,4 +245,116 @@ generateAllValidatorsDedupedTests =
               length (filter (Text.isPrefixOf "function _validate_List_String(v,ctx)") (Text.lines result)) @?= 1
               length (filter (Text.isPrefixOf "function _validate_Int(v,ctx)") (Text.lines result)) @?= 1
               length (filter (Text.isPrefixOf "function _validate_String(v,ctx)") (Text.lines result)) @?= 1
+    ]
+
+generateOpaqueValidatorTests :: TestTree
+generateOpaqueValidatorTests =
+  testGroup
+    "generateOpaqueValidator"
+    [ testCase "Unverified opaque null check with validateOpaque=False" $
+        let config = Validator.defaultConfig {Validator._configValidateOpaque = False}
+            result = stmtToText (Validator.generateOpaqueValidator config "AudioContext" Validator.Unverified)
+         in do
+              assertBool "contains null check" (Text.isInfixOf "==null" result)
+              assertBool "no instanceof" (not (Text.isInfixOf "instanceof" result)),
+      testCase "Unverified opaque instanceof check with validateOpaque=True" $
+        let config = Validator.defaultConfig {Validator._configValidateOpaque = True}
+            result = stmtToText (Validator.generateOpaqueValidator config "AudioContext" Validator.Unverified)
+         in assertBool "contains instanceof" (Text.isInfixOf "instanceof" result),
+      testCase "ClassBacked opaque uses instanceof check" $
+        let result = stmtToText (Validator.generateOpaqueValidator Validator.defaultConfig "Foo" (Validator.ClassBacked "FooImpl"))
+         in assertBool "contains instanceof FooImpl" (Text.isInfixOf "instanceof FooImpl" result),
+      testCase "SymbolBranded opaque checks brand property" $
+        let result = stmtToText (Validator.generateOpaqueValidator Validator.defaultConfig "Token" (Validator.SymbolBranded "token"))
+         in assertBool "contains brand check" (Text.isInfixOf "__canopy_brand_token" result),
+      testCase "ClassBacked opaque contains null check" $
+        let result = stmtToText (Validator.generateOpaqueValidator Validator.defaultConfig "MyClass" (Validator.ClassBacked "MyClass"))
+         in assertBool "contains null check" (Text.isInfixOf "==null" result),
+      testCase "SymbolBranded opaque contains null check" $
+        let result = stmtToText (Validator.generateOpaqueValidator Validator.defaultConfig "Brand" (Validator.SymbolBranded "brand"))
+         in assertBool "contains null check" (Text.isInfixOf "==null" result),
+      testCase "generated opaque function contains return v" $
+        let result = stmtToText (Validator.generateOpaqueValidator Validator.defaultConfig "T" Validator.Unverified)
+         in assertBool "contains return v" (Text.isInfixOf "return" result)
+    ]
+
+collectAllTypesTests :: TestTree
+collectAllTypesTests =
+  testGroup
+    "collectAllTypes"
+    [ testCase "primitive type returns singleton list" $
+        Validator.collectAllTypes Validator.FFIInt @?= [Validator.FFIInt],
+      testCase "List Int returns List Int and Int" $
+        Validator.collectAllTypes (Validator.FFIList Validator.FFIInt)
+          @?= [Validator.FFIList Validator.FFIInt, Validator.FFIInt],
+      testCase "Maybe String returns Maybe String and String" $
+        Validator.collectAllTypes (Validator.FFIMaybe Validator.FFIString)
+          @?= [Validator.FFIMaybe Validator.FFIString, Validator.FFIString],
+      testCase "Result String Int returns all three types" $
+        Validator.collectAllTypes (Validator.FFIResult Validator.FFIString Validator.FFIInt)
+          @?= [Validator.FFIResult Validator.FFIString Validator.FFIInt, Validator.FFIString, Validator.FFIInt],
+      testCase "Task String Int returns all three types" $
+        Validator.collectAllTypes (Validator.FFITask Validator.FFIString Validator.FFIInt)
+          @?= [Validator.FFITask Validator.FFIString Validator.FFIInt, Validator.FFIString, Validator.FFIInt],
+      testCase "Tuple includes all element types" $
+        Validator.collectAllTypes (Validator.FFITuple [Validator.FFIInt, Validator.FFIString, Validator.FFIBool])
+          @?= [Validator.FFITuple [Validator.FFIInt, Validator.FFIString, Validator.FFIBool], Validator.FFIInt, Validator.FFIString, Validator.FFIBool],
+      testCase "FunctionType includes arg and return types" $
+        Validator.collectAllTypes (Validator.FFIFunctionType [Validator.FFIInt] Validator.FFIString)
+          @?= [Validator.FFIFunctionType [Validator.FFIInt] Validator.FFIString, Validator.FFIInt, Validator.FFIString],
+      testCase "Record includes all field types" $
+        Validator.collectAllTypes (Validator.FFIRecord [("x", Validator.FFIInt), ("y", Validator.FFIString)])
+          @?= [Validator.FFIRecord [("x", Validator.FFIInt), ("y", Validator.FFIString)], Validator.FFIInt, Validator.FFIString],
+      testCase "TypeVar returns singleton" $
+        Validator.collectAllTypes (Validator.FFITypeVar "a") @?= [Validator.FFITypeVar "a"],
+      testCase "Opaque returns singleton" $
+        Validator.collectAllTypes (Validator.FFIOpaque "AudioContext" [])
+          @?= [Validator.FFIOpaque "AudioContext" []],
+      testCase "nested List (Maybe Int) returns all three" $
+        length (Validator.collectAllTypes (Validator.FFIList (Validator.FFIMaybe Validator.FFIInt))) @?= 3
+    ]
+
+validatorNameSanitizationTests :: TestTree
+validatorNameSanitizationTests =
+  testGroup
+    "validator name sanitization"
+    [ testCase "Record with underscore field strips underscore" $
+        let name = Validator.generateValidatorName (Validator.FFIRecord [("my_field", Validator.FFIInt)])
+         in assertBool "name contains myfield" (Text.isInfixOf "myfield" name),
+      testCase "Opaque with special chars produces valid name" $
+        let name = Validator.generateValidatorName (Validator.FFIOpaque "My.Type" [])
+         in assertBool "name is non-empty" (not (Text.null name)),
+      testCase "TypeVar strips non-alnum chars" $
+        let name = Validator.generateValidatorName (Validator.FFITypeVar "my_var")
+         in Text.isPrefixOf "_validate_Var_" name @?= True,
+      testCase "nested types in name" $
+        let name = Validator.generateValidatorName (Validator.FFIList (Validator.FFIMaybe Validator.FFIInt))
+         in name @?= "_validate_List_Maybe_Int"
+    ]
+
+additionalValidatorTests :: TestTree
+additionalValidatorTests =
+  testGroup
+    "additional validator generation"
+    [ testCase "generates validator name for Record type" $
+        let name = Validator.generateValidatorName (Validator.FFIRecord [("x", Validator.FFIInt)])
+         in Text.isPrefixOf "_validate_Rec_" name @?= True,
+      testCase "generates validator name for empty Tuple" $
+        let name = Validator.generateValidatorName (Validator.FFITuple [])
+         in name @?= "_validate_Tuple_",
+      testCase "generates non-empty output for every primitive" $
+        let prims = [Validator.FFIInt, Validator.FFIFloat, Validator.FFIString, Validator.FFIBool, Validator.FFIUnit]
+         in assertBool "all primitives produce non-empty validator"
+              (all (not . Text.null . stmtToText . Validator.generateValidator Validator.defaultConfig) prims),
+      testCase "non-strict mode uses console.warn for Float" $
+        let config = Validator.defaultConfig {Validator._configStrictMode = False}
+            result = stmtToText (Validator.generateValidator config Validator.FFIFloat)
+         in assertBool "contains console.warn" (Text.isInfixOf "console.warn" result),
+      testCase "debug mode includes JSON.stringify for String" $
+        let config = Validator.defaultConfig {Validator._configDebugMode = True}
+            result = stmtToText (Validator.generateValidator config Validator.FFIString)
+         in assertBool "contains JSON.stringify" (Text.isInfixOf "JSON.stringify" result),
+      testCase "opaque type with type args still validates null" $
+        let result = stmtToText (Validator.generateValidator Validator.defaultConfig (Validator.FFIOpaque "Decoder" [Validator.FFITypeVar "msg"]))
+         in assertBool "contains null check" (Text.isInfixOf "==null" result)
     ]

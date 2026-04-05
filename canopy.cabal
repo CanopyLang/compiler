@@ -256,8 +256,11 @@ test-suite canopy-test
       Unit.Canonicalize.EffectsTest
       Unit.Canonicalize.ExpressionArithmeticTest
       Unit.Canonicalize.ExpressionCanonTest
+      Unit.Canonicalize.ExpressionTest
       Unit.Canonicalize.LazyImportValidationTest
+      Unit.Canonicalize.ModuleExtTest
       Unit.Canonicalize.ModuleTest
+      Unit.Canonicalize.PatternExtTest
       Unit.Canonicalize.PatternTest
       Unit.Canonicalize.TypeTest
       Unit.Canopy.LimitsTest

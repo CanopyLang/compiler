@@ -51,6 +51,11 @@ tests = testGroup "Canonicalize.Pattern Tests"
   , verifyWildcardPositionTests
   , patternCanonicalizationTests
   , patternErrorTests
+  , patternAliasTests
+  , patternLiteralTests
+  , patternTupleTests
+  , patternConsTests
+  , patternUnitTests
   ]
 
 -- | Extract a successful Right value from a Result run, or fail the test.
@@ -380,6 +385,131 @@ patternErrorTests = testGroup "pattern canonicalization error cases"
                     :: Result.Result Pattern.DupsDict [Error.Error] Error.Error String
       errs <- expectLeft (Result.run (Pattern.verify Error.DPCaseBranch inner))
       verifyTupleTooLargeError errs
+  ]
+
+-- AS-PATTERN (ALIAS) CANONICALIZATION TESTS
+
+-- | Tests for @p as x@ alias patterns via the full pipeline.
+patternAliasTests :: TestTree
+patternAliasTests = testGroup "as-pattern canonicalization via full pipeline"
+  [ testCase "n as whole binds both alias and inner" $
+      expectSuccess (withHeader
+        [ "process xs ="
+        , "  case xs of"
+        , "    (n :: _ as whole) -> n"
+        , "    _ -> 0"
+        ])
+
+  , testCase "alias on wildcard pattern canonicalizes" $
+      expectSuccess (withHeader
+        [ "identify v ="
+        , "  case v of"
+        , "    _ as x -> x"
+        ])
+
+  , testCase "alias on literal pattern canonicalizes" $
+      expectSuccess (withHeader
+        [ "checkZero n ="
+        , "  case n of"
+        , "    0 as z -> z"
+        , "    _ -> n"
+        ])
+  ]
+
+-- LITERAL PATTERN TESTS
+
+-- | Tests for literal patterns (int, string, char) via the full pipeline.
+patternLiteralTests :: TestTree
+patternLiteralTests = testGroup "literal pattern canonicalization"
+  [ testCase "multiple int literal patterns canonicalize" $
+      expectSuccess (withHeader
+        [ "classify n ="
+        , "  case n of"
+        , "    0 -> \"zero\""
+        , "    1 -> \"one\""
+        , "    _ -> \"other\""
+        ])
+
+  , testCase "large int literal pattern canonicalizes" $
+      expectSuccess (withHeader
+        [ "isHundred n ="
+        , "  case n of"
+        , "    100 -> 1"
+        , "    _ -> 0"
+        ])
+
+  , testCase "char literal pattern in case canonicalizes" $
+      expectSuccess (withHeader
+        [ "isA c ="
+        , "  case c of"
+        , "    'a' -> 1"
+        , "    _ -> 0"
+        ])
+  ]
+
+-- TUPLE PATTERN TESTS
+
+-- | Tests for tuple patterns via the full pipeline.
+patternTupleTests :: TestTree
+patternTupleTests = testGroup "tuple pattern canonicalization"
+  [ testCase "2-tuple pattern in function arg canonicalizes" $
+      expectSuccess (withHeader ["second (_, b) = b"])
+
+  , testCase "3-tuple pattern in case canonicalizes" $
+      expectSuccess (withHeader
+        [ "thrd triple ="
+        , "  case triple of"
+        , "    (_, _, c) -> c"
+        ])
+
+  , testCase "nested 2-tuple patterns canonicalize" $
+      expectSuccess (withHeader ["inner ((a, _), _) = a"])
+  ]
+
+-- CONS PATTERN TESTS
+
+-- | Tests for cons (@::@) patterns via the full pipeline.
+patternConsTests :: TestTree
+patternConsTests = testGroup "cons pattern canonicalization"
+  [ testCase "x :: xs cons pattern in lambda arg canonicalizes" $
+      expectSuccess (withHeader
+        [ "myHead list ="
+        , "  case list of"
+        , "    (x :: _) -> x"
+        , "    _ -> 0"
+        ])
+
+  , testCase "nested cons x :: y :: rest canonicalizes" $
+      expectSuccess (withHeader
+        [ "secondElem list ="
+        , "  case list of"
+        , "    (_ :: y :: _) -> y"
+        , "    _ -> 0"
+        ])
+
+  , testCase "cons against empty list pattern canonicalizes" $
+      expectSuccess (withHeader
+        [ "single list ="
+        , "  case list of"
+        , "    [x] -> x"
+        , "    _ -> 0"
+        ])
+  ]
+
+-- UNIT PATTERN TESTS
+
+-- | Tests for unit pattern matching via the full pipeline.
+patternUnitTests :: TestTree
+patternUnitTests = testGroup "unit pattern canonicalization"
+  [ testCase "unit pattern () in case canonicalizes" $
+      expectSuccess (withHeader
+        [ "fromUnit v ="
+        , "  case v of"
+        , "    () -> 42"
+        ])
+
+  , testCase "unit pattern in function arg canonicalizes" $
+      expectSuccess (withHeader ["fromUnit () = 0"])
   ]
 
 -- HELPERS

@@ -157,10 +157,16 @@ import qualified Unit.Type.VarianceTest as VarianceTest
 import qualified Unit.Convert.ConvertTest as ConvertTest
 import qualified Unit.Canonicalize.AbilityTest as CanonicalizeAbilityTest
 import qualified Unit.Canonicalize.DupsTest as CanonicalizeDupsTest
+import qualified Unit.Canonicalize.EffectsTest as CanonicalizeEffectsTest
 import qualified Unit.Canonicalize.ExpressionArithmeticTest as CanonicalizeExpressionArithmeticTest
+import qualified Unit.Canonicalize.ExpressionCanonTest as CanonicalizeExpressionCanonTest
+import qualified Unit.Canonicalize.ExpressionTest as CanonicalizeExpressionTest
 import qualified Unit.Canonicalize.LazyImportValidationTest as LazyImportValidationTest
 import qualified Unit.Canonicalize.ModuleTest as CanonicalizeModuleTest
+import qualified Unit.Canonicalize.ModuleExtTest as CanonicalizeModuleExtTest
 import qualified Unit.Canonicalize.PatternTest as CanonicalizePatternTest
+import qualified Unit.Canonicalize.PatternExtTest as CanonicalizePatternExtTest
+import qualified Unit.Canonicalize.TypeTest as CanonicalizeTypeTest
 import qualified Unit.Type.UnionFindTest as UnionFindTest
 import qualified Unit.FFI.CapabilityEnforcementTest as FFICapEnforceTest
 import qualified Unit.FFI.CapabilityTypeTest as FFICapTypeTest
@@ -173,6 +179,7 @@ import qualified Unit.FFI.StaticAnalysisTest as FFIStaticAnalysisTest
 import qualified Unit.FFI.ErgonomicsTest as FFIErgonomicsTest
 import qualified Unit.FFI.TypeScriptValidationTest as FFITypeScriptValidationTest
 import qualified Unit.FFI.ValidatorTest as FFIValidatorTest
+import qualified Unit.FFI.TypeParserTest as FFITypeParserTest
 import qualified Unit.Terminal.Lint.ConfigTest as LintConfigTest
 import qualified Unit.Terminal.Lint.RulesTest as LintRulesTest
 import qualified Unit.Terminal.Lint.NullabilityTest as LintNullabilityTest
@@ -371,9 +378,15 @@ unitTests =
       UnionFindTest.tests,
       CanonicalizeAbilityTest.tests,
       CanonicalizeDupsTest.tests,
+      CanonicalizeEffectsTest.tests,
       CanonicalizeExpressionArithmeticTest.tests,
+      CanonicalizeExpressionCanonTest.tests,
+      CanonicalizeExpressionTest.tests,
       CanonicalizePatternTest.tests,
+      CanonicalizePatternExtTest.tests,
       CanonicalizeModuleTest.tests,
+      CanonicalizeModuleExtTest.tests,
+      CanonicalizeTypeTest.tests,
       LazyImportValidationTest.tests,
       FFICapEnforceTest.tests,
       FFICapTypeTest.tests,
@@ -386,6 +399,7 @@ unitTests =
       FFIStaticAnalysisTest.tests,
       FFITypeScriptValidationTest.tests,
       FFIValidatorTest.tests,
+      FFITypeParserTest.tests,
       LintConfigTest.tests,
       LintRulesTest.tests,
       LintNullabilityTest.tests,
