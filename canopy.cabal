@@ -253,11 +253,13 @@ test-suite canopy-test
       Unit.Builder.WorkspaceTest
       Unit.Canonicalize.AbilityTest
       Unit.Canonicalize.DupsTest
+      Unit.Canonicalize.EffectsTest
       Unit.Canonicalize.ExpressionArithmeticTest
       Unit.Canonicalize.ExpressionCanonTest
       Unit.Canonicalize.LazyImportValidationTest
       Unit.Canonicalize.ModuleTest
       Unit.Canonicalize.PatternTest
+      Unit.Canonicalize.TypeTest
       Unit.Canopy.LimitsTest
       Unit.Canopy.VersionTest
       Unit.CLI.CommandsTest
@@ -289,6 +291,7 @@ test-suite canopy-test
       Unit.FFI.NpmPipelineTest
       Unit.FFI.ResolveTest
       Unit.FFI.StaticAnalysisTest
+      Unit.FFI.TypeParserTest
       Unit.FFI.TypeScriptValidationTest
       Unit.FFI.ValidatorTest
       Unit.File.ArchiveTest
@@ -302,11 +305,14 @@ test-suite canopy-test
       Unit.Generate.CodeSplit.TypesTest
       Unit.Generate.CoverageTest
       Unit.Generate.ExpressionTest
+      Unit.Generate.FormTest
       Unit.Generate.HtmlSecurityTest
+      Unit.Generate.JavaScript.AbilityTest
       Unit.Generate.JavaScript.BuilderTest
       Unit.Generate.JavaScript.ExpressionArithmeticTest
       Unit.Generate.JavaScript.ExpressionCallTest
       Unit.Generate.JavaScript.ExpressionCaseTest
+      Unit.Generate.JavaScript.FunctionsTest
       Unit.Generate.JavaScript.KernelTest
       Unit.Generate.JavaScript.RuntimeAnnotationTest
       Unit.Generate.JavaScript.RuntimeTest

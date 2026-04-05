@@ -47,7 +47,6 @@ import qualified Canopy.Data.Utf8 as Utf8
 import Data.Set (Set)
 import qualified Data.Set as Set
 import qualified Data.Text as Text
-import qualified Data.Text.Encoding as TextEnc
 import qualified Generate.JavaScript.Builder as JS
 import qualified Generate.JavaScript.Coverage as Coverage
 import qualified Generate.JavaScript.Ability as Ability
@@ -62,6 +61,7 @@ import Generate.JavaScript.FFI
     generateFFIContent,
   )
 import qualified FFI.TypeParser as TypeParser
+import qualified Generate.JavaScript.FFI.Registry as FFIRegistry
 import qualified Generate.JavaScript.FFIRuntime as FFIRuntime
 import qualified Generate.JavaScript.Runtime as Runtime
 import qualified Generate.JavaScript.Runtime.Registry as Registry
@@ -359,39 +359,44 @@ jsNameToRuntimeId jsName =
      then Set.singleton (Registry.RuntimeId bs)
      else Set.empty
 
--- | Scan FFI file content for _Module_name runtime references used in IIFE mode.
+-- | Extract runtime references from FFI files using the parsed JavaScript AST.
 --
 -- When FFI files are embedded in the IIFE bundle, they may reference runtime
 -- constants (e.g. @_Basics_e@, @_Basics_pi@) that never appear as
--- 'Opt.VarRuntime' in the Canopy AST. This function scans the raw FFI
--- content (before IIFE wrapping) to capture those references so the runtime
--- tree-shaker includes the corresponding definitions.
+-- 'Opt.VarRuntime' in the Canopy AST. This function parses each FFI file
+-- into a JavaScript AST via 'FFIRegistry.buildFFIRegistryFull', extracts
+-- all free identifiers using scope-aware analysis, and filters for
+-- kernel-style tokens matching @_[A-Z]..._...@.
 --
--- All FFI files are scanned regardless of whether they are included in the
--- bundle; entries not in the registry are ignored by 'Registry.closeDeps'.
+-- All FFI files are processed regardless of whether they are included in
+-- the bundle; entries not in the registry are ignored by 'Registry.closeDeps'.
 collectFFIRuntimeDeps :: Map String FFIInfo -> Set Registry.RuntimeId
 collectFFIRuntimeDeps =
-  foldMap (ffiTextToRuntimeIds . _ffiContent) . Map.elems
-
--- | Extract runtime IDs from FFI file text by scanning for _Module_name tokens.
-ffiTextToRuntimeIds :: Text.Text -> Set Registry.RuntimeId
-ffiTextToRuntimeIds content =
-  Set.fromList
-    [ Registry.RuntimeId (TextEnc.encodeUtf8 tok)
-    | tok <- Text.words (Text.map normalizeToSpace content)
-    , isKernelToken tok
-    ]
+  foldMap collectFromFFI . Map.elems
   where
-    normalizeToSpace c =
-      if (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z')
-         || (c >= '0' && c <= '9') || c == '_' || c == '$'
-      then c
-      else ' '
-    isKernelToken t =
-      Text.length t > 3
-      && Text.index t 0 == '_'
-      && let h = Text.index t 1 in h >= 'A' && h <= 'Z'
-      && Text.elem '_' (Text.drop 2 t)
+    collectFromFFI info =
+      let result = FFIRegistry.buildFFIRegistryFull (_ffiContent info)
+          blocks = Map.elems (FFIRegistry._frrRegistry result)
+          allFreeVars = foldMap FFIRegistry._fbAllFreeVars blocks
+      in Set.fromList
+           [ Registry.RuntimeId ident
+           | ident <- Set.toList allFreeVars
+           , isKernelIdent ident
+           ]
+
+-- | Check if a 'ByteString' identifier matches the kernel pattern @_[A-Z]..._...@.
+--
+-- Kernel runtime identifiers follow the convention @_Module_name@ where
+-- @Module@ starts with an uppercase letter and a second underscore separates
+-- the module from the function name. This filter is applied to free variables
+-- extracted from the parsed FFI JavaScript AST.
+isKernelIdent :: ByteString -> Bool
+isKernelIdent bs =
+  BS.length bs > 3
+    && BS.index bs 0 == 0x5F
+    && BS.index bs 1 >= 0x41
+    && BS.index bs 1 <= 0x5A
+    && Data.Maybe.isJust (BS.elemIndex 0x5F (BS.drop 2 bs))
 
 -- | Collect arity requirements from FFI @\@canopy-type@ annotations.
 --

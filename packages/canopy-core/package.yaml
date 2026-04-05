@@ -155,6 +155,7 @@ library:
     # -- Public API: Editor integration --
     - Editor.Integration
     # -- Public API: Code generation --
+    - Generate.Form
     - Generate.Html
     - Generate.JavaScript
     - Generate.JavaScript.Ability
@@ -175,6 +176,7 @@ library:
     - Generate.JavaScript.Expression.Call
     - Generate.JavaScript.Expression.Case
     - Generate.JavaScript.FFI
+    - Generate.JavaScript.Functions
     - Generate.JavaScript.Minify
     - Generate.JavaScript.Name
     - Generate.JavaScript.SourceMap
@@ -300,7 +302,6 @@ library:
     - Generate.JavaScript.FFI.JSAnalysis
     - Generate.JavaScript.FFI.Minify
     - Generate.JavaScript.FFI.Registry
-    - Generate.JavaScript.Functions
     - Generate.JavaScript.Runtime.Names
     - Generate.JavaScript.Runtime.Registry
     - Json.Decode.AST

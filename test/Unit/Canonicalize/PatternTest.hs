@@ -25,13 +25,18 @@ import Test.Tasty
 import Test.Tasty.HUnit
 
 import qualified Canonicalize.Environment.Dups as Dups
+import qualified Canonicalize.Module as Module
 import qualified Canonicalize.Pattern as Pattern
+import qualified Data.ByteString.Char8 as C8
 import qualified Data.Map.Strict as Map
 import qualified Canopy.Data.Name as Name
 import qualified Canopy.Data.OneOrMore as OneOrMore
+import qualified Canopy.Package as Pkg
+import qualified Parse.Module as ParseModule
 import qualified Reporting.Annotation as Ann
 import qualified Reporting.Error.Canonicalize as Error
 import qualified Reporting.Result as Result
+import qualified Reporting.Warning as Warning
 
 -- | Top-level test tree for the Pattern module.
 tests :: TestTree
@@ -44,6 +49,8 @@ tests = testGroup "Canonicalize.Pattern Tests"
   , verifyAsPatternTests
   , verifyNestedConstructorTests
   , verifyWildcardPositionTests
+  , patternCanonicalizationTests
+  , patternErrorTests
   ]
 
 -- | Extract a successful Right value from a Result run, or fail the test.
@@ -278,7 +285,128 @@ verifyWildcardPositionTests = testGroup "wildcard patterns in different position
       Map.member name bindings @?= True
   ]
 
+-- PATTERN CANONICALIZATION TESTS (full pipeline)
+--
+-- These tests verify that specific pattern forms canonicalize without error
+-- through the full source-to-canonical module pipeline, exercising
+-- 'Pattern.canonicalize' in its natural context.
+
+-- | Full-pipeline pattern canonicalization tests.
+patternCanonicalizationTests :: TestTree
+patternCanonicalizationTests = testGroup "pattern canonicalization via full pipeline"
+  [ testCase "record pattern { x, y } canonicalizes" $
+      expectSuccess (withHeader ["getX { x, y } = x"])
+
+  , testCase "2-tuple pattern (a, b) canonicalizes" $
+      expectSuccess (withHeader ["fst (a, _) = a"])
+
+  , testCase "nested tuple pattern ((a, b), c) canonicalizes" $
+      expectSuccess (withHeader ["extract ((a, _), _) = a"])
+
+  , testCase "constructor pattern with arg canonicalizes" $
+      expectSuccess (withHeader
+        [ "type Wrapper a = Wrap a"
+        , ""
+        , "unwrap (Wrap n) = n"
+        ])
+
+  , testCase "list pattern [a, b] canonicalizes" $
+      expectSuccess (withHeader
+        [ "firstTwo xs ="
+        , "  case xs of"
+        , "    [a, b] -> a"
+        , "    _ -> xs"
+        ])
+
+  , testCase "cons pattern x :: xs canonicalizes" $
+      expectSuccess (withHeader
+        [ "safeHead xs ="
+        , "  case xs of"
+        , "    x :: _ -> x"
+        , "    [] -> 0"
+        ])
+
+  , testCase "Int literal pattern 42 canonicalizes" $
+      expectSuccess (withHeader
+        [ "isFortyTwo n ="
+        , "  case n of"
+        , "    42 -> 1"
+        , "    _ -> 0"
+        ])
+
+  , testCase "wildcard pattern _ canonicalizes" $
+      expectSuccess (withHeader ["ignore _ = 0"])
+
+  , testCase "string literal pattern canonicalizes" $
+      expectSuccess (withHeader
+        [ "isHello s ="
+        , "  case s of"
+        , "    \"hello\" -> 1"
+        , "    _ -> 0"
+        ])
+  ]
+
+-- PATTERN ERROR TESTS
+
+-- | Tests for pattern-related error conditions.
+patternErrorTests :: TestTree
+patternErrorTests = testGroup "pattern canonicalization error cases"
+  [ testCase "duplicate var names in lambda args produces error" $ do
+      let inner = logVar (Name.fromChars "x") region1 ()
+                    *> logVar (Name.fromChars "x") region2 ("v" :: String)
+      _ <- expectLeft (Result.run (Pattern.verify Error.DPLambdaArgs inner))
+      return ()
+
+  , testCase "duplicate var names in case branch produces error" $ do
+      let inner = logVar (Name.fromChars "y") region1 ()
+                    *> logVar (Name.fromChars "y") region2 ("v" :: String)
+      _ <- expectLeft (Result.run (Pattern.verify Error.DPCaseBranch inner))
+      return ()
+
+  , testCase "constructor pattern with wrong arity produces error" $ do
+      let src = withHeader
+            [ "type Color = Red | Green | Blue"
+            , ""
+            , "check x ="
+            , "  case x of"
+            , "    Red _ -> True"
+            , "    _ -> False"
+            ]
+      errs <- canonicalizeErrors src
+      assertBool ("expected BadArity error, got: " ++ show errs) (not (null errs))
+
+  , testCase "4-element tuple pattern produces TupleLargerThanThree error" $ do
+      let inner = Result.throw (Error.TupleLargerThanThree region1)
+                    :: Result.Result Pattern.DupsDict [Error.Error] Error.Error String
+      errs <- expectLeft (Result.run (Pattern.verify Error.DPCaseBranch inner))
+      verifyTupleTooLargeError errs
+  ]
+
 -- HELPERS
+
+-- | Minimal module header for full-pipeline tests.
+withHeader :: [String] -> String
+withHeader bodyLines = unlines ("module M exposing (..)" : "" : bodyLines)
+
+-- | Canonicalize source and return errors.
+canonicalizeErrors :: String -> IO [Error.Error]
+canonicalizeErrors src =
+  case ParseModule.fromByteString (ParseModule.Package Pkg.core) (C8.pack src) of
+    Left err -> assertFailure ("parse failed: " ++ show err) >> error "unreachable"
+    Right m ->
+      pure (extractErrors (Result.run (Module.canonicalize config Map.empty m)))
+  where
+    config = Module.CanonConfig Pkg.core (ParseModule.Package Pkg.core) Map.empty
+
+-- | Canonicalize source expecting no errors.
+expectSuccess :: String -> IO ()
+expectSuccess src = do
+  errs <- canonicalizeErrors src
+  assertBool ("expected success, got: " ++ show errs) (null errs)
+
+extractErrors :: ([Warning.Warning], Either (OneOrMore.OneOrMore Error.Error) a) -> [Error.Error]
+extractErrors (_, Left errs) = OneOrMore.destruct (:) errs
+extractErrors (_, Right _) = []
 
 -- | Verify that an error collection contains a DuplicatePattern error with the expected name.
 verifyDuplicatePatternError :: OneOrMore.OneOrMore Error.Error -> Name.Name -> Assertion

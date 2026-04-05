@@ -112,8 +112,11 @@ import qualified Unit.Generate.CodeSplit.ManifestTest as CodeSplitManifestTest
 import qualified Unit.Generate.CodeSplit.RuntimeTest as CodeSplitRuntimeTest
 import qualified Unit.Generate.CodeSplit.TypesTest as CodeSplitTypesTest
 import qualified Unit.Generate.ExpressionTest as ExpressionTest
+import qualified Unit.Generate.FormTest as FormTest
 import qualified Unit.Generate.HtmlSecurityTest as HtmlSecurityTest
+import qualified Unit.Generate.JavaScript.AbilityTest as JSAbilityTest
 import qualified Unit.Generate.JavaScript.BuilderTest as JSBuilderTest
+import qualified Unit.Generate.JavaScript.FunctionsTest as JSFunctionsTest
 import qualified Unit.Generate.JavaScript.KernelTest as JSKernelTest
 import qualified Unit.Generate.JavaScript.ExpressionArithmeticTest as JSExpressionArithmeticTest
 import qualified Unit.Generate.JavaScript.RuntimeAnnotationTest as RuntimeAnnotationTest
@@ -324,7 +327,9 @@ unitTests =
       DeriveTest.tests,
       ModuleOptTest.tests,
       PortOptTest.tests,
+      JSAbilityTest.tests,
       JSBuilderTest.tests,
+      JSFunctionsTest.tests,
       JSKernelTest.tests,
       JSExpressionArithmeticTest.tests,
       JSRuntimeTest.tests,
@@ -333,6 +338,7 @@ unitTests =
       GenerateNameTest.tests,
       HtmlSecurityTest.tests,
       ExpressionTest.tests,
+      FormTest.tests,
       SourceMapTest.tests,
       StringPoolTest.tests,
       CodeSplitAnalyzeTest.tests,

@@ -23,15 +23,18 @@ module Unit.Canonicalize.ModuleTest
 import Test.Tasty
 import Test.Tasty.HUnit
 
+import qualified AST.Canonical as Can
 import qualified AST.Source as Src
 import qualified Canonicalize.Module as Module
 import qualified Canopy.Package as Pkg
 import Parse.Module (ProjectType (..))
+import qualified Data.ByteString.Char8 as C8
 import qualified Data.Map.Strict as Map
 import qualified Canopy.Data.Name as Name
 import qualified Canopy.Data.OneOrMore as OneOrMore
 import FFI.Types (JsSourcePath (..), JsSource (..))
 import qualified Foreign.FFI as FFI
+import qualified Parse.Module as ParseModule
 import qualified Reporting.Annotation as Ann
 import qualified Reporting.Error.Canonicalize as Error
 import qualified Reporting.Result as Result
@@ -51,6 +54,10 @@ tests = testGroup "Canonicalize.Module Tests"
   , canonicalizeEmptyExplicitExportsTests
   , canonicalizeNonexistentExplicitExportsTests
   , canonicalizeDuplicateExportsTests
+  , canonicalizeValuesTests
+  , canonicalizeTypeAnnotationTests
+  , canonicalizeDuplicateDefinitionTests
+  , canonicalizeFFIModuleTests
   ]
 
 -- | Extract a successful Right value from a Result run, or fail the test.
@@ -267,6 +274,169 @@ canonicalizeDuplicateExportsTests = testGroup "canonicalize duplicate export det
       return ()
   ]
 
+-- CANONICALIZE VALUES TESTS (full pipeline)
+
+-- | Parse and canonicalize a full module source string.
+parseAndCanonicalize :: String -> IO ([Warning.Warning], Either (OneOrMore.OneOrMore Error.Error) Can.Module)
+parseAndCanonicalize src =
+  case ParseModule.fromByteString (ParseModule.Package Pkg.core) (C8.pack src) of
+    Left err -> assertFailure ("parse failed: " ++ show err) >> error "unreachable"
+    Right m -> pure (Result.run (Module.canonicalize pipelineConfig Map.empty m))
+
+-- | Minimal module header.
+withHeader :: [String] -> String
+withHeader bodyLines = unlines ("module M exposing (..)" : "" : bodyLines)
+
+-- | Extract errors from a result.
+extractErrors :: ([Warning.Warning], Either (OneOrMore.OneOrMore Error.Error) a) -> [Error.Error]
+extractErrors (_, Left errs) = OneOrMore.destruct (:) errs
+extractErrors (_, Right _) = []
+
+-- | Shared canonicalization config for full-pipeline tests.
+pipelineConfig :: Module.CanonConfig
+pipelineConfig = Module.CanonConfig Pkg.core (ParseModule.Package Pkg.core) Map.empty
+
+-- | Tests for value canonicalization in modules.
+canonicalizeValuesTests :: TestTree
+canonicalizeValuesTests = testGroup "canonicalize module values"
+  [ testCase "module with single value definition canonicalizes" $ do
+      (_, result) <- parseAndCanonicalize (withHeader ["x = 42"])
+      case result of
+        Right _ -> return ()
+        Left errs -> assertFailure ("expected success, got: " ++ show (OneOrMore.destruct (:) errs))
+
+  , testCase "module with multiple value definitions canonicalizes" $ do
+      let src = withHeader ["a = 1", "", "b = 2", "", "c = 3"]
+      (_, result) <- parseAndCanonicalize src
+      case result of
+        Right _ -> return ()
+        Left errs -> assertFailure ("expected success, got: " ++ show (OneOrMore.destruct (:) errs))
+
+  , testCase "module with union type canonicalizes" $ do
+      let src = withHeader ["type Color = Red | Green | Blue"]
+      (_, result) <- parseAndCanonicalize src
+      case result of
+        Right _ -> return ()
+        Left errs -> assertFailure ("expected success, got: " ++ show (OneOrMore.destruct (:) errs))
+
+  , testCase "module with type alias canonicalizes" $ do
+      let src = withHeader ["type alias Point a = { x : a, y : a }"]
+      (_, result) <- parseAndCanonicalize src
+      case result of
+        Right _ -> return ()
+        Left errs -> assertFailure ("expected success, got: " ++ show (OneOrMore.destruct (:) errs))
+
+  , testCase "module with recursive function canonicalizes" $ do
+      let src = withHeader ["count n = count n"]
+      (_, result) <- parseAndCanonicalize src
+      case result of
+        Right _ -> return ()
+        Left errs -> assertFailure ("expected success, got: " ++ show (OneOrMore.destruct (:) errs))
+  ]
+
+-- TYPE ANNOTATION TESTS
+
+-- | Tests for type annotation handling in canonicalized modules.
+canonicalizeTypeAnnotationTests :: TestTree
+canonicalizeTypeAnnotationTests = testGroup "canonicalize type annotations"
+  [ testCase "function with type annotation canonicalizes" $ do
+      let src = withHeader
+            [ "identity : a -> a"
+            , "identity x = x"
+            ]
+      (_, result) <- parseAndCanonicalize src
+      case result of
+        Right _ -> return ()
+        Left errs -> assertFailure ("expected success, got: " ++ show (OneOrMore.destruct (:) errs))
+
+  , testCase "function with multi-arg type annotation canonicalizes" $ do
+      let src = withHeader
+            [ "first : a -> b -> a"
+            , "first x y = x"
+            ]
+      (_, result) <- parseAndCanonicalize src
+      case result of
+        Right _ -> return ()
+        Left errs -> assertFailure ("expected success, got: " ++ show (OneOrMore.destruct (:) errs))
+
+  , testCase "value with record type annotation canonicalizes" $ do
+      let src = withHeader
+            [ "origin : { x : a, y : a }"
+            , "origin = { x = 0, y = 0 }"
+            ]
+      (_, result) <- parseAndCanonicalize src
+      case result of
+        Right _ -> return ()
+        Left errs -> assertFailure ("expected success, got: " ++ show (OneOrMore.destruct (:) errs))
+  ]
+
+-- DUPLICATE DEFINITION TESTS
+
+-- | Tests for duplicate definition detection in modules.
+canonicalizeDuplicateDefinitionTests :: TestTree
+canonicalizeDuplicateDefinitionTests = testGroup "canonicalize duplicate definition detection"
+  [ testCase "duplicate value definition produces error" $ do
+      let src = withHeader
+            [ "x = 1"
+            , ""
+            , "x = 2"
+            ]
+      errs <- extractErrors <$> parseAndCanonicalize src
+      assertBool ("expected duplicate error, got: " ++ show errs) (not (null errs))
+
+  , testCase "duplicate type alias produces error" $ do
+      let src = withHeader
+            [ "type alias Foo = Int"
+            , ""
+            , "type alias Foo = String"
+            ]
+      errs <- extractErrors <$> parseAndCanonicalize src
+      assertBool ("expected duplicate error, got: " ++ show errs) (not (null errs))
+  ]
+
+-- FFI MODULE TESTS
+
+-- | Tests for module canonicalization with FFI pre-loaded content.
+canonicalizeFFIModuleTests :: TestTree
+canonicalizeFFIModuleTests = testGroup "canonicalize FFI module handling"
+  [ testCase "module with no foreign imports and empty FFI map succeeds" $ do
+      _ <- expectRight (runCanonicalize emptyModule)
+      return ()
+
+  , testCase "module with foreign import pointing to absent file produces error" $ do
+      let modul = emptyModule
+            { Src._foreignImports =
+                [ Src.ForeignImport
+                    (FFI.JavaScriptFFI "missing.js")
+                    (Ann.At Ann.one (Name.fromChars "Missing"))
+                    Ann.one
+                ]
+            }
+      errs <- expectLeft (runCanonicalize modul)
+      let errList = OneOrMore.destruct (:) errs
+      assertBool ("expected FFIFileNotFound, got: " ++ show errList) (any isFFIFileNotFound errList)
+
+  , testCase "module with foreign import and matching FFI content succeeds" $ do
+      let jsFilePath = "foo.js"
+          jsKey = JsSourcePath "foo.js"
+          jsContent = JsSource "var Foo = {};"
+          ffiMap = Map.singleton jsKey jsContent
+          modul = emptyModule
+            { Src._foreignImports =
+                [ Src.ForeignImport
+                    (FFI.JavaScriptFFI jsFilePath)
+                    (Ann.At Ann.one (Name.fromChars "Foo"))
+                    Ann.one
+                ]
+            }
+          runResult = Result.run (Module.canonicalize (Module.CanonConfig Pkg.core Application Map.empty) ffiMap modul)
+      case runResult of
+        (_, Right _) -> return ()
+        (_, Left errs) ->
+          let errList = OneOrMore.destruct (:) errs
+          in assertBool ("expected success, got: " ++ show errList) False
+  ]
+
 -- HELPERS
 
 -- | Create an FFI JavaScript target.
@@ -301,3 +471,8 @@ verifyExportNotFoundError errs expectedName =
          name @?= expectedName
        other ->
          assertFailure ("Expected ExportNotFound error, got: " ++ show other)
+
+-- | Check if an error is a FFIFileNotFound error.
+isFFIFileNotFound :: Error.Error -> Bool
+isFFIFileNotFound (Error.FFIFileNotFound _ _) = True
+isFFIFileNotFound _ = False
