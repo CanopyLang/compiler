@@ -27,7 +27,27 @@
 --
 -- @since 0.20.0
 module Generate.JavaScript.ESM
-  ( generate,
+  ( -- * Top-level generation
+    generate,
+    -- * Module comment helpers
+    moduleComment,
+    canonicalToFilename,
+    canonicalToPathBs,
+    -- * Import/export helpers
+    buildImportItems,
+    buildExportItems,
+    buildMainInitItems,
+    isExternal,
+    isInternalNode,
+    groupDepsByModule,
+    -- * Render helpers
+    renderModule,
+    -- * Statement helpers
+    varToConst,
+    flattenCycleToModule,
+    -- * Dependency helpers
+    nodeDeps,
+    managerEffectDeps,
   )
 where
 

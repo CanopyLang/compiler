@@ -36,6 +36,7 @@ import qualified Unit.AST.SourceTest as SourceAstTest
 import qualified Unit.AST.Utils.BinopTest as ASTUtilsBinopTest
 import qualified Unit.AST.Utils.ShaderTest as ASTUtilsShaderTest
 import qualified Unit.AST.Utils.TypeTest as ASTUtilsTypeTest
+import qualified Unit.Build.ArtifactsTest as BuildArtifactsTest
 import qualified Unit.Builder.CacheVersionTest as BuilderCacheVersionTest
 import qualified Unit.Builder.FFICacheTest as BuilderFFICacheTest
 import qualified Unit.Builder.GraphTest as BuilderGraphTest
@@ -98,6 +99,7 @@ import qualified Unit.TerminalTest as TerminalTest
 import qualified Unit.WatchTest as WatchTest
 import qualified Unit.Compiler.CacheTest as CompilerCacheTest
 import qualified Unit.Compiler.DiscoveryTest as CompilerDiscoveryTest
+import qualified Unit.Compiler.ParallelTest as CompilerParallelTest
 import qualified Unit.New.Compiler.DriverTest as NewCompilerDriverTest
 import qualified Unit.NewTest as NewTest
 import qualified Unit.Make.ReproducibleTest as ReproducibleTest
@@ -117,8 +119,10 @@ import qualified Unit.Generate.FormTest as FormTest
 import qualified Unit.Generate.HtmlSecurityTest as HtmlSecurityTest
 import qualified Unit.Generate.JavaScript.AbilityTest as JSAbilityTest
 import qualified Unit.Generate.JavaScript.BuilderTest as JSBuilderTest
+import qualified Unit.Generate.JavaScript.ESMGenTest as JSESMGenTest
 import qualified Unit.Generate.JavaScript.FunctionsTest as JSFunctionsTest
 import qualified Unit.Generate.JavaScript.FFIGenTest as JSFFIGenTest
+import qualified Unit.Generate.JavaScript.FFIRuntimeGenTest as JSFFIRuntimeGenTest
 import qualified Unit.Generate.JavaScript.KernelTest as JSKernelTest
 import qualified Unit.Generate.JavaScript.MinifyTest as JSMinifyTest
 import qualified Unit.Generate.JavaScript.ExpressionArithmeticTest as JSExpressionArithmeticTest
@@ -128,6 +132,7 @@ import qualified Unit.Generate.ModeTest as ModeTest
 import qualified Unit.Generate.NameTest as GenerateNameTest
 import qualified Unit.Generate.CoverageTest as CoverageTest
 import qualified Unit.Generate.SourceMapTest as SourceMapTest
+import qualified Unit.Generate.JavaScript.SourceMapExtTest as SourceMapExtTest
 import qualified Unit.Generate.StringPoolTest as StringPoolTest
 import qualified Unit.Generate.TreeShakeTest as TreeShakeTest
 import qualified Unit.Generate.TypeScriptTest as TypeScriptTest
@@ -294,6 +299,7 @@ unitTests =
       ASTUtilsBinopTest.tests,
       ASTUtilsShaderTest.tests,
       ASTUtilsTypeTest.tests,
+      BuildArtifactsTest.tests,
       BuilderHashTest.tests,
       BuilderCacheVersionTest.tests,
       BuilderFFICacheTest.tests,
@@ -321,6 +327,7 @@ unitTests =
       HttpTest.tests,
       CompilerCacheTest.tests,
       CompilerDiscoveryTest.tests,
+      CompilerParallelTest.tests,
       NewCompilerDriverTest.tests,
       NewTest.tests,
       ReproducibleTest.tests,
@@ -340,8 +347,10 @@ unitTests =
       PortOptTest.tests,
       JSAbilityTest.tests,
       JSBuilderTest.tests,
+      JSESMGenTest.tests,
       JSFunctionsTest.tests,
       JSFFIGenTest.tests,
+      JSFFIRuntimeGenTest.tests,
       JSKernelTest.tests,
       JSMinifyTest.tests,
       JSExpressionArithmeticTest.tests,
@@ -353,6 +362,7 @@ unitTests =
       ExpressionTest.tests,
       FormTest.tests,
       SourceMapTest.tests,
+      SourceMapExtTest.tests,
       StringPoolTest.tests,
       CodeSplitAnalyzeTest.tests,
       CodeSplitManifestTest.tests,
