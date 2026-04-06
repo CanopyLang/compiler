@@ -32,6 +32,10 @@ import qualified AST.Optimized as Opt
 import qualified Canopy.Data.Index as Index
 import qualified Canopy.Data.Name as Name
 import qualified Canopy.ModuleName as ModuleName
+import qualified Data.ByteString.Builder as BB
+import qualified Data.Text as Text
+import qualified Data.Text.Encoding as TextEnc
+import qualified Data.ByteString.Lazy as LBS
 import qualified Generate.JavaScript.Builder as JS
 import qualified Generate.JavaScript.Kernel as Kernel
 import qualified Generate.Mode as Mode
@@ -204,26 +208,22 @@ checkedMergeTests = testGroup "checkedMerge"
 -- lazy ByteString for inspection.
 drawCycleTests :: TestTree
 drawCycleTests = testGroup "drawCycle"
-  [ testCase "single-name cycle contains that name" $
-      let result = show (Kernel.drawCycle [Name.fromChars "foo"])
-      in assertBool "should contain 'foo'" ("foo" `containedIn` result)
+  [ testCase "single-name cycle produces correct diagram" $
+      renderCycle [Name.fromChars "foo"]
+        @?= "\\n  \9484\9472\9472\9472\9472\9472\9488\\n  \9474    foo\\n  \9492\9472\9472\9472\9472\9472\9496"
 
-  , testCase "two-name cycle contains both names" $
-      let result = show (Kernel.drawCycle [Name.fromChars "alpha", Name.fromChars "beta"])
-      in assertBool "should contain both names"
-           (("alpha" `containedIn` result) && ("beta" `containedIn` result))
+  , testCase "two-name cycle produces correct diagram" $
+      renderCycle [Name.fromChars "alpha", Name.fromChars "beta"]
+        @?= "\\n  \9484\9472\9472\9472\9472\9472\9488\\n  \9474    alpha\\n  \9474     \8595\\n  \9474    beta\\n  \9492\9472\9472\9472\9472\9472\9496"
 
-  , testCase "empty cycle produces some output" $
-      let result = show (Kernel.drawCycle [])
-      in assertBool "should produce non-empty output" (not (null result))
+  , testCase "empty cycle produces top and bottom lines only" $
+      renderCycle []
+        @?= "\\n  \9484\9472\9472\9472\9472\9472\9488\\n  \9492\9472\9472\9472\9472\9472\9496"
   ]
 
--- | Check whether a substring appears in a string.
-containedIn :: String -> String -> Bool
-containedIn sub str = sub `elem` tails str
-  where
-    tails [] = []
-    tails s@(_ : rest) = (take (length sub) s) : tails rest
+-- | Render a drawCycle Builder to Text for exact comparison.
+renderCycle :: [Name.Name] -> Text.Text
+renderCycle = TextEnc.decodeUtf8 . LBS.toStrict . BB.toLazyByteString . Kernel.drawCycle
 
 -- ---------------------------------------------------------------------------
 -- generateEnum

@@ -14,6 +14,7 @@ import qualified Canopy.Package as Pkg
 import qualified Canopy.Version as Version
 import qualified Canopy.Data.Utf8 as Utf8
 import Data.Map.Strict (Map)
+import qualified Data.ByteString.Lazy as LBS
 import qualified Data.Map.Strict as Map
 import qualified Data.Text as Text
 import System.FilePath ((</>))
@@ -37,7 +38,8 @@ tests =
       testMultiPackageLockFile,
       testLockFileOverwrite,
       testLockFilePackageFields,
-      testContentHashEquality
+      testContentHashEquality,
+      testCorruptedLockFile
     ]
 
 -- | Make a test package name from author/project strings.
@@ -297,4 +299,32 @@ testContentHashEquality =
       testCase "notCachedHash has sha256: prefix" $
         assertBool "not-cached hash has prefix"
           (Text.isPrefixOf "sha256:" (LFT.unContentHash LFT.notCachedHash))
+    ]
+
+-- CORRUPTED LOCK FILE TESTS
+
+testCorruptedLockFile :: TestTree
+testCorruptedLockFile =
+  testGroup
+    "corrupted lock file handling"
+    [ testCase "empty file returns Nothing" $
+        withSystemTempDirectory "lockfile-corrupt" $ \tmpDir -> do
+          LBS.writeFile (tmpDir </> "canopy.lock") ""
+          result <- LockFile.readLockFile tmpDir
+          assertBool "empty file should return Nothing" (isNothing result),
+      testCase "truncated JSON returns Nothing" $
+        withSystemTempDirectory "lockfile-corrupt" $ \tmpDir -> do
+          LBS.writeFile (tmpDir </> "canopy.lock") "{\"lock-file-version\":"
+          result <- LockFile.readLockFile tmpDir
+          assertBool "truncated JSON should return Nothing" (isNothing result),
+      testCase "binary garbage returns Nothing" $
+        withSystemTempDirectory "lockfile-corrupt" $ \tmpDir -> do
+          LBS.writeFile (tmpDir </> "canopy.lock") "\xff\xfe\xfd\x00\x01\x02"
+          result <- LockFile.readLockFile tmpDir
+          assertBool "binary garbage should return Nothing" (isNothing result),
+      testCase "valid JSON with wrong schema returns Nothing" $
+        withSystemTempDirectory "lockfile-corrupt" $ \tmpDir -> do
+          LBS.writeFile (tmpDir </> "canopy.lock") "{\"lock-file-version\":999,\"packages\":{}}"
+          result <- LockFile.readLockFile tmpDir
+          assertBool "wrong schema should return Nothing" (isNothing result)
     ]

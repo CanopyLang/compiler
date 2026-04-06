@@ -161,8 +161,7 @@ sourceReadingTests =
           let path = tmpDir </> "test.can"
           BS.writeFile path "module Test exposing (..)\n"
           content <- readSourceWithLimit path
-          assertBool "content is non-empty" (BS.length content > 0)
-          assertBool "content contains module" (BS.isInfixOf "module" content)
+          content @?= "module Test exposing (..)\n"
     ]
 
 -- TRANSITIVE DISCOVERY TESTS

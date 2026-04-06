@@ -237,29 +237,12 @@ preambleTests :: TestTree
 preambleTests =
   testGroup
     "coverageRuntimePreamble"
-    [ testCase "preamble contains __canopy_cov declaration" $
-        let p = renderBuilder Coverage.coverageRuntimePreamble
-         in assertBool "__canopy_cov not found" ("__canopy_cov" `isInfixOf` p),
-      testCase "preamble contains __cov function" $
-        let p = renderBuilder Coverage.coverageRuntimePreamble
-         in assertBool "__cov function not found" ("function __cov" `isInfixOf` p),
-      testCase "preamble ends with newline" $
-        let p = renderBuilder Coverage.coverageRuntimePreamble
-         in assertBool "should end with newline" (last p == '\n'),
-      testCase "preamble exact content" $
+    [ testCase "preamble exact content" $
         renderBuilder Coverage.coverageRuntimePreamble
-          @?= "var __canopy_cov = {}; function __cov(id) { __canopy_cov[id] = (__canopy_cov[id] || 0) + 1; } (typeof globalThis !== 'undefined' ? globalThis : (typeof global !== 'undefined' ? global : self)).__canopy_cov = __canopy_cov;\n"
+          @?= "var __canopy_cov = {}; function __cov(id) { __canopy_cov[id] = (__canopy_cov[id] || 0) + 1; } (typeof globalThis !== 'undefined' ? globalThis : (typeof global !== 'undefined' ? global : self)).__canopy_cov = __canopy_cov;\n",
+      testCase "preamble ends with newline" $
+        last (renderBuilder Coverage.coverageRuntimePreamble) @?= '\n'
     ]
-
--- For assertBool with isInfixOf
-isInfixOf :: String -> String -> Bool
-isInfixOf needle haystack = any (isPrefixOf needle) (tails haystack)
-  where
-    tails [] = [[]]
-    tails xs@(_ : rest) = xs : tails rest
-    isPrefixOf [] _ = True
-    isPrefixOf _ [] = False
-    isPrefixOf (a : as) (b : bs) = a == b && isPrefixOf as bs
 
 -- COVERAGE MAP BUILD TESTS
 
@@ -339,32 +322,29 @@ lcovFormatTests =
     "toLCOV"
     [ testCase "empty map produces empty output" $
         renderBuilder (Coverage.toLCOV (Coverage.CoverageMap Map.empty) Map.empty) @?= "",
-      testCase "FunctionEntry produces FN and FNDA lines" $
+      testCase "FunctionEntry produces correct LCOV record" $
         let pt = Coverage.CoveragePoint 0 (nameStr "Main") (nameStr "foo") (mkRegion 5 1 10 1) Coverage.FunctionEntry dummyCanonical
             covMap = Coverage.CoverageMap (Map.singleton 0 pt)
             hits = Map.singleton 0 3
-            result = renderBuilder (Coverage.toLCOV covMap hits)
-         in do
-              assertBool "contains FN:" ("FN:" `isInfixOf` result)
-              assertBool "contains FNDA:" ("FNDA:" `isInfixOf` result)
-              assertBool "contains hit count 3" ("FNDA:3," `isInfixOf` result),
-      testCase "BranchArm produces BRDA line" $
+         in renderBuilder (Coverage.toLCOV covMap hits)
+              @?= "TN:\nSF:Main.can\nFN:5,Main.foo\nFNDA:3,Main.foo\nFNF:1\nFNH:1\nBRF:0\nBRH:0\nDA:5,3\nLF:1\nLH:1\nend_of_record\n",
+      testCase "BranchArm produces correct LCOV record" $
         let pt = Coverage.CoveragePoint 0 (nameStr "Main") (nameStr "bar") (mkRegion 7 1 12 1) (Coverage.BranchArm 0 2) dummyCanonical
             covMap = Coverage.CoverageMap (Map.singleton 0 pt)
             hits = Map.singleton 0 5
-            result = renderBuilder (Coverage.toLCOV covMap hits)
-         in assertBool "contains BRDA:" ("BRDA:" `isInfixOf` result),
-      testCase "TopLevelDef produces DA line" $
+         in renderBuilder (Coverage.toLCOV covMap hits)
+              @?= "TN:\nSF:Main.can\nFNF:0\nFNH:0\nBRDA:7,0,0,5\nBRF:1\nBRH:1\nDA:7,5\nLF:1\nLH:1\nend_of_record\n",
+      testCase "TopLevelDef produces correct LCOV record" $
         let pt = Coverage.CoveragePoint 0 (nameStr "Main") (nameStr "x") (mkRegion 3 1 3 10) Coverage.TopLevelDef dummyCanonical
             covMap = Coverage.CoverageMap (Map.singleton 0 pt)
             hits = Map.singleton 0 1
-            result = renderBuilder (Coverage.toLCOV covMap hits)
-         in assertBool "contains DA:" ("DA:" `isInfixOf` result),
+         in renderBuilder (Coverage.toLCOV covMap hits)
+              @?= "TN:\nSF:Main.can\nFNF:0\nFNH:0\nBRF:0\nBRH:0\nDA:3,1\nLF:1\nLH:1\nend_of_record\n",
       testCase "missing hit defaults to 0" $
         let pt = Coverage.CoveragePoint 0 (nameStr "Main") (nameStr "foo") (mkRegion 5 1 10 1) Coverage.FunctionEntry dummyCanonical
             covMap = Coverage.CoverageMap (Map.singleton 0 pt)
-            result = renderBuilder (Coverage.toLCOV covMap Map.empty)
-         in assertBool "contains FNDA:0" ("FNDA:0," `isInfixOf` result)
+         in renderBuilder (Coverage.toLCOV covMap Map.empty)
+              @?= "TN:\nSF:Main.can\nFN:5,Main.foo\nFNDA:0,Main.foo\nFNF:1\nFNH:0\nBRF:0\nBRH:0\nDA:5,0\nLF:1\nLH:0\nend_of_record\n"
     ]
 
 -- ISTANBUL JSON TESTS
@@ -374,26 +354,20 @@ istanbulJsonTests =
   testGroup
     "toIstanbulJson"
     [ testCase "empty map produces JSON with empty submaps" $
-        let json = Coverage.toIstanbulJson (Coverage.CoverageMap Map.empty) Map.empty
-            rendered = renderBuilder (Encode.encode json)
-         in do
-              assertBool "contains fnMap" ("fnMap" `isInfixOf` rendered)
-              assertBool "contains branchMap" ("branchMap" `isInfixOf` rendered)
-              assertBool "contains statementMap" ("statementMap" `isInfixOf` rendered),
-      testCase "FunctionEntry appears in fnMap and f" $
+        renderBuilder (Encode.encode (Coverage.toIstanbulJson (Coverage.CoverageMap Map.empty) Map.empty))
+          @?= "{\n    \"fnMap\": {},\n    \"f\": {},\n    \"branchMap\": {},\n    \"b\": {},\n    \"s\": {},\n    \"statementMap\": {}\n}",
+      testCase "FunctionEntry appears in fnMap with qualified name" $
         let pt = Coverage.CoveragePoint 0 (nameStr "Main") (nameStr "foo") (mkRegion 5 1 10 1) Coverage.FunctionEntry dummyCanonical
             covMap = Coverage.CoverageMap (Map.singleton 0 pt)
             hits = Map.singleton 0 7
-            rendered = renderBuilder (Encode.encode (Coverage.toIstanbulJson covMap hits))
-         in do
-              assertBool "fnMap has entry" ("fnMap" `isInfixOf` rendered)
-              assertBool "qualified name Main.foo" ("Main.foo" `isInfixOf` rendered),
-      testCase "BranchArm appears in branchMap and b" $
+         in renderBuilder (Encode.encode (Coverage.toIstanbulJson covMap hits))
+              @?= "{\n    \"fnMap\": {\n        \"0\": {\n            \"name\": \"Main.foo\",\n            \"loc\": {\n                \"start\": {\n                    \"line\": 5,\n                    \"column\": 1\n                },\n                \"end\": {\n                    \"line\": 10,\n                    \"column\": 1\n                }\n            }\n        }\n    },\n    \"f\": {\n        \"0\": 7\n    },\n    \"branchMap\": {},\n    \"b\": {},\n    \"s\": {\n        \"0\": 7\n    },\n    \"statementMap\": {\n        \"0\": {\n            \"start\": {\n                \"line\": 5,\n                \"column\": 1\n            },\n            \"end\": {\n                \"line\": 10,\n                \"column\": 1\n            }\n        }\n    }\n}",
+      testCase "BranchArm appears in branchMap" $
         let pt = Coverage.CoveragePoint 0 (nameStr "Main") (nameStr "bar") (mkRegion 7 1 12 1) (Coverage.BranchArm 0 2) dummyCanonical
             covMap = Coverage.CoverageMap (Map.singleton 0 pt)
             hits = Map.singleton 0 2
-            rendered = renderBuilder (Encode.encode (Coverage.toIstanbulJson covMap hits))
-         in assertBool "branchMap has entry" ("branchMap" `isInfixOf` rendered)
+         in renderBuilder (Encode.encode (Coverage.toIstanbulJson covMap hits))
+              @?= "{\n    \"fnMap\": {},\n    \"f\": {},\n    \"branchMap\": {\n        \"0\": {\n            \"type\": \"if\",\n            \"loc\": {\n                \"start\": {\n                    \"line\": 7,\n                    \"column\": 1\n                },\n                \"end\": {\n                    \"line\": 12,\n                    \"column\": 1\n                }\n            }\n        }\n    },\n    \"b\": {\n        \"0\": 2\n    },\n    \"s\": {\n        \"0\": 2\n    },\n    \"statementMap\": {\n        \"0\": {\n            \"start\": {\n                \"line\": 7,\n                \"column\": 1\n            },\n            \"end\": {\n                \"line\": 12,\n                \"column\": 1\n            }\n        }\n    }\n}"
     ]
 
 -- MODE COVERAGE ACCESSOR TESTS
@@ -581,40 +555,18 @@ lcovStructureTests :: TestTree
 lcovStructureTests =
   testGroup
     "LCOV structure"
-    [ testCase "output contains TN: header" $
-        let result = renderLcovWithFunction
-         in assertBool "TN: line" ("TN:" `isInfixOf` result),
-      testCase "output contains SF: with module name" $
-        let result = renderLcovWithFunction
-         in assertBool "SF:Main.can" ("SF:Main.can" `isInfixOf` result),
-      testCase "output contains end_of_record" $
-        let result = renderLcovWithFunction
-         in assertBool "end_of_record" ("end_of_record" `isInfixOf` result),
-      testCase "output contains FNF and FNH" $
-        let result = renderLcovWithFunction
-         in do
-              assertBool "FNF:" ("FNF:" `isInfixOf` result)
-              assertBool "FNH:" ("FNH:" `isInfixOf` result),
-      testCase "output contains BRF and BRH" $
-        let result = renderLcovWithBranch
-         in do
-              assertBool "BRF:" ("BRF:" `isInfixOf` result)
-              assertBool "BRH:" ("BRH:" `isInfixOf` result),
-      testCase "output contains LF and LH" $
-        let result = renderLcovWithFunction
-         in do
-              assertBool "LF:" ("LF:" `isInfixOf` result)
-              assertBool "LH:" ("LH:" `isInfixOf` result),
+    [ testCase "FunctionEntry LCOV record is exact" $
+        renderLcovWithFunction
+          @?= "TN:\nSF:Main.can\nFN:5,Main.foo\nFNDA:3,Main.foo\nFNF:1\nFNH:1\nBRF:0\nBRH:0\nDA:5,3\nLF:1\nLH:1\nend_of_record\n",
+      testCase "BranchArm LCOV record is exact" $
+        renderLcovWithBranch
+          @?= "TN:\nSF:Main.can\nFNF:0\nFNH:0\nBRDA:7,0,0,5\nBRF:1\nBRH:1\nDA:7,5\nLF:1\nLH:1\nend_of_record\n",
       testCase "multi-module output has separate records" $
         let pt1 = Coverage.CoveragePoint 0 (nameStr "Main") (nameStr "foo") (mkRegion 1 1 5 1) Coverage.FunctionEntry dummyCanonical
             pt2 = Coverage.CoveragePoint 1 (nameStr "Utils") (nameStr "bar") (mkRegion 2 1 8 1) Coverage.FunctionEntry dummyCanonical
             covMap = Coverage.CoverageMap (Map.fromList [(0, pt1), (1, pt2)])
-            result = renderBuilder (Coverage.toLCOV covMap Map.empty)
-         in do
-              assertBool "SF:Main.can" ("SF:Main.can" `isInfixOf` result)
-              assertBool "SF:Utils.can" ("SF:Utils.can" `isInfixOf` result)
-              let recordCount = length (filter (== "end_of_record") (lines result))
-              recordCount @?= 2
+         in renderBuilder (Coverage.toLCOV covMap Map.empty)
+              @?= "TN:\nSF:Main.can\nFN:1,Main.foo\nFNDA:0,Main.foo\nFNF:1\nFNH:0\nBRF:0\nBRH:0\nDA:1,0\nLF:1\nLH:0\nend_of_record\nTN:\nSF:Utils.can\nFN:2,Utils.bar\nFNDA:0,Utils.bar\nFNF:1\nFNH:0\nBRF:0\nBRH:0\nDA:2,0\nLF:1\nLH:0\nend_of_record\n"
     ]
   where
     renderLcovWithFunction =
@@ -632,27 +584,14 @@ istanbulStructureTests :: TestTree
 istanbulStructureTests =
   testGroup
     "Istanbul structure"
-    [ testCase "all 6 required keys present" $
-        let rendered = renderIstanbul
-         in do
-              assertBool "fnMap" ("fnMap" `isInfixOf` rendered)
-              assertBool "f" ("\"f\"" `isInfixOf` rendered)
-              assertBool "branchMap" ("branchMap" `isInfixOf` rendered)
-              assertBool "b" ("\"b\"" `isInfixOf` rendered)
-              assertBool "s" ("\"s\"" `isInfixOf` rendered)
-              assertBool "statementMap" ("statementMap" `isInfixOf` rendered),
+    [ testCase "FunctionEntry Istanbul JSON is exact" $
+        renderIstanbul
+          @?= "{\n    \"fnMap\": {\n        \"0\": {\n            \"name\": \"Main.foo\",\n            \"loc\": {\n                \"start\": {\n                    \"line\": 5,\n                    \"column\": 1\n                },\n                \"end\": {\n                    \"line\": 10,\n                    \"column\": 1\n                }\n            }\n        }\n    },\n    \"f\": {\n        \"0\": 1\n    },\n    \"branchMap\": {},\n    \"b\": {},\n    \"s\": {\n        \"0\": 1\n    },\n    \"statementMap\": {\n        \"0\": {\n            \"start\": {\n                \"line\": 5,\n                \"column\": 1\n            },\n            \"end\": {\n                \"line\": 10,\n                \"column\": 1\n            }\n        }\n    }\n}",
       testCase "function names are module-qualified" $
         let pt = Coverage.CoveragePoint 0 (nameStr "Utils") (nameStr "helper") (mkRegion 3 1 8 1) Coverage.FunctionEntry dummyCanonical
             covMap = Coverage.CoverageMap (Map.singleton 0 pt)
-            rendered = renderBuilder (Encode.encode (Coverage.toIstanbulJson covMap Map.empty))
-         in assertBool "Utils.helper" ("Utils.helper" `isInfixOf` rendered),
-      testCase "loc objects have start/end with line/column" $
-        let rendered = renderIstanbul
-         in do
-              assertBool "start" ("start" `isInfixOf` rendered)
-              assertBool "end" ("end" `isInfixOf` rendered)
-              assertBool "line" ("line" `isInfixOf` rendered)
-              assertBool "column" ("column" `isInfixOf` rendered)
+         in renderBuilder (Encode.encode (Coverage.toIstanbulJson covMap Map.empty))
+              @?= "{\n    \"fnMap\": {\n        \"0\": {\n            \"name\": \"Utils.helper\",\n            \"loc\": {\n                \"start\": {\n                    \"line\": 3,\n                    \"column\": 1\n                },\n                \"end\": {\n                    \"line\": 8,\n                    \"column\": 1\n                }\n            }\n        }\n    },\n    \"f\": {\n        \"0\": 0\n    },\n    \"branchMap\": {},\n    \"b\": {},\n    \"s\": {\n        \"0\": 0\n    },\n    \"statementMap\": {\n        \"0\": {\n            \"start\": {\n                \"line\": 3,\n                \"column\": 1\n            },\n            \"end\": {\n                \"line\": 8,\n                \"column\": 1\n            }\n        }\n    }\n}"
     ]
   where
     renderIstanbul =

@@ -22,12 +22,17 @@ module Property.Parse.FuzzProperties
   ( tests
   ) where
 
+import qualified Control.Exception as Exception
+import qualified Data.ByteString as BS
 import qualified Data.ByteString.Char8 as C8
+import qualified Data.Text as Text
+import qualified Data.Text.Encoding as TextEnc
 import qualified Parse.Expression as Expr
 import qualified Parse.Pattern as Pat
 import qualified Parse.Primitives as Parse
 import qualified Parse.Type as Ty
 import qualified Reporting.Error.Syntax as SyntaxError
+import System.IO.Unsafe (unsafePerformIO)
 import Test.Tasty
 import Test.Tasty.QuickCheck
 
@@ -54,7 +59,7 @@ tests =
 -- matters, not the AST content.
 normaliseExprResult :: String -> Either SyntaxError.Expr SyntaxError.Expr
 normaliseExprResult s =
-  case Parse.fromByteString Expr.expression SyntaxError.Start (C8.pack s) of
+  case Parse.fromByteString Expr.expression SyntaxError.Start (packUtf8 s) of
     Left e -> Left e
     Right _ -> Right (SyntaxError.Start 0 0)
 
@@ -63,7 +68,7 @@ normaliseExprResult s =
 -- Returns 'Right' on success or 'Left' on parse error. Must never throw.
 parsePat :: String -> Either SyntaxError.Pattern SyntaxError.Pattern
 parsePat s =
-  case Parse.fromByteString Pat.expression SyntaxError.PStart (C8.pack s) of
+  case Parse.fromByteString Pat.expression SyntaxError.PStart (packUtf8 s) of
     Left e -> Left e
     Right _ -> Right (SyntaxError.PStart 0 0)
 
@@ -72,16 +77,27 @@ parsePat s =
 -- Returns 'Right' on success or 'Left' on parse error. Must never throw.
 parseType :: String -> Either SyntaxError.Type SyntaxError.Type
 parseType s =
-  case Parse.fromByteString Ty.expression SyntaxError.TIndentStart (C8.pack s) of
+  case Parse.fromByteString Ty.expression SyntaxError.TIndentStart (packUtf8 s) of
     Left e -> Left e
     Right _ -> Right (SyntaxError.TIndentStart 0 0)
 
--- | Classify a parse result as either 'True' (returned without exception).
+-- | Encode a String to a ByteString using proper UTF-8 encoding.
 --
--- The parser satisfies the no-crash property as long as it returns a
--- value of the correct type — 'Left' or 'Right' — for every input.
+-- Unlike 'C8.pack' which truncates Unicode chars to single bytes,
+-- this function properly encodes all Unicode code points as UTF-8.
+packUtf8 :: String -> BS.ByteString
+packUtf8 = TextEnc.encodeUtf8 . Text.pack
+
+-- | Verify that evaluating the Either to WHNF does not throw an exception.
+--
+-- Uses 'evaluate' to force the Either constructor, catching any exception
+-- (including 'error' calls from the parser on invalid UTF-8, etc.).
+-- Returns True if the parser produced a normal Left or Right; False if it
+-- threw an exception, which constitutes a test failure.
 noCrash :: Either a b -> Bool
-noCrash _ = True
+noCrash result = unsafePerformIO $
+  either (\(_ :: Exception.SomeException) -> False) (const True)
+    <$> Exception.try (Exception.evaluate result >> pure ())
 
 -- EXPRESSION FUZZ PROPERTIES
 

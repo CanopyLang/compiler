@@ -42,7 +42,8 @@ tests =
       testChainedFieldAccess,
       testComplexLetBindings,
       testCaseExpressions,
-      testMultilineExpressions
+      testMultilineExpressions,
+      testMalformedInputs
     ]
 
 testLiterals :: TestTree
@@ -426,3 +427,39 @@ testMultilineExpressions =
         Right (Ann.At _ (Src.Record [(_, _), (_, _), (_, _)])) -> return ()
         other -> assertFailure ("expected 3-field record, got: " <> show other)
     ]
+
+-- MALFORMED INPUT TESTS
+
+testMalformedInputs :: TestTree
+testMalformedInputs =
+  testGroup
+    "malformed inputs"
+    [ testCase "empty string returns parse error" $
+        assertBool "should fail" (isLeft (parseExpr "")),
+      testCase "whitespace-only returns parse error" $
+        assertBool "should fail" (isLeft (parseExpr "   ")),
+      testCase "null byte returns parse error" $
+        assertBool "should fail" (isLeft (parseExpr "\0")),
+      testCase "incomplete let returns parse error" $
+        assertBool "should fail" (isLeft (parseExpr "let x =")),
+      testCase "incomplete if returns parse error" $
+        assertBool "should fail" (isLeft (parseExpr "if True then")),
+      testCase "mismatched brackets returns parse error" $
+        assertBool "should fail" (isLeft (parseExpr "[1, 2)")),
+      testCase "binary garbage returns parse error" $
+        assertBool "should fail" (isLeft (parseExpr "\xff\xfe\xfd")),
+      testCase "lone operator returns parse error" $
+        assertBool "should fail" (isLeft (parseExpr "+")),
+      testCase "incomplete binary op returns parse error" $
+        assertBool "should fail" (isLeft (parseExpr "1 +")),
+      testCase "extremely long identifier does not crash" $
+        assertBool "should return a result" (isLeft (parseExpr (replicate 10000 'x')) || isRight (parseExpr (replicate 10000 'x')))
+    ]
+
+isLeft :: Either a b -> Bool
+isLeft (Left _) = True
+isLeft (Right _) = False
+
+isRight :: Either a b -> Bool
+isRight (Right _) = True
+isRight (Left _) = False

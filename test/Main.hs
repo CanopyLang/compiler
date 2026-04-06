@@ -96,6 +96,7 @@ import qualified Unit.Terminal.Error.TypesTest as TerminalErrorTypesTest
 import qualified Unit.Terminal.ErrorTest as TerminalErrorTest
 import qualified Unit.TerminalTest as TerminalTest
 import qualified Unit.WatchTest as WatchTest
+import qualified Unit.Compiler.CacheTest as CompilerCacheTest
 import qualified Unit.Compiler.DiscoveryTest as CompilerDiscoveryTest
 import qualified Unit.New.Compiler.DriverTest as NewCompilerDriverTest
 import qualified Unit.NewTest as NewTest
@@ -117,7 +118,9 @@ import qualified Unit.Generate.HtmlSecurityTest as HtmlSecurityTest
 import qualified Unit.Generate.JavaScript.AbilityTest as JSAbilityTest
 import qualified Unit.Generate.JavaScript.BuilderTest as JSBuilderTest
 import qualified Unit.Generate.JavaScript.FunctionsTest as JSFunctionsTest
+import qualified Unit.Generate.JavaScript.FFIGenTest as JSFFIGenTest
 import qualified Unit.Generate.JavaScript.KernelTest as JSKernelTest
+import qualified Unit.Generate.JavaScript.MinifyTest as JSMinifyTest
 import qualified Unit.Generate.JavaScript.ExpressionArithmeticTest as JSExpressionArithmeticTest
 import qualified Unit.Generate.JavaScript.RuntimeAnnotationTest as RuntimeAnnotationTest
 import qualified Unit.Generate.JavaScript.RuntimeTest as JSRuntimeTest
@@ -316,6 +319,7 @@ unitTests =
       FileTimeTest.tests,
       FileUtf8Test.tests,
       HttpTest.tests,
+      CompilerCacheTest.tests,
       CompilerDiscoveryTest.tests,
       NewCompilerDriverTest.tests,
       NewTest.tests,
@@ -337,7 +341,9 @@ unitTests =
       JSAbilityTest.tests,
       JSBuilderTest.tests,
       JSFunctionsTest.tests,
+      JSFFIGenTest.tests,
       JSKernelTest.tests,
+      JSMinifyTest.tests,
       JSExpressionArithmeticTest.tests,
       JSRuntimeTest.tests,
       RuntimeAnnotationTest.tests,

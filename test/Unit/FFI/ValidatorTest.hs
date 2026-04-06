@@ -253,29 +253,27 @@ generateOpaqueValidatorTests =
     "generateOpaqueValidator"
     [ testCase "Unverified opaque null check with validateOpaque=False" $
         let config = Validator.defaultConfig {Validator._configValidateOpaque = False}
-            result = stmtToText (Validator.generateOpaqueValidator config "AudioContext" Validator.Unverified)
-         in do
-              assertBool "contains null check" (Text.isInfixOf "==null" result)
-              assertBool "no instanceof" (not (Text.isInfixOf "instanceof" result)),
+         in stmtToText (Validator.generateOpaqueValidator config "AudioContext" Validator.Unverified)
+              @?= "function _validate_Opaque_AudioContext(v,ctx){ if ( v ==null ) throw new Error('FFI type error at ' + ctx +': expected AudioContext, got ' +typeof v); return ( v);}\n",
       testCase "Unverified opaque instanceof check with validateOpaque=True" $
         let config = Validator.defaultConfig {Validator._configValidateOpaque = True}
-            result = stmtToText (Validator.generateOpaqueValidator config "AudioContext" Validator.Unverified)
-         in assertBool "contains instanceof" (Text.isInfixOf "instanceof" result),
+         in stmtToText (Validator.generateOpaqueValidator config "AudioContext" Validator.Unverified)
+              @?= "function _validate_Opaque_AudioContext(v,ctx){ if ( v ==null ) throw new Error('FFI type error at ' + ctx +': expected AudioContext, got ' +typeof v); if (!( v instanceof AudioContext) ) throw new Error('FFI type error at ' + ctx +': expected AudioContext, got ' +typeof v); return ( v);}\n",
       testCase "ClassBacked opaque uses instanceof check" $
-        let result = stmtToText (Validator.generateOpaqueValidator Validator.defaultConfig "Foo" (Validator.ClassBacked "FooImpl"))
-         in assertBool "contains instanceof FooImpl" (Text.isInfixOf "instanceof FooImpl" result),
+        stmtToText (Validator.generateOpaqueValidator Validator.defaultConfig "Foo" (Validator.ClassBacked "FooImpl"))
+          @?= "function _validate_Opaque_Foo(v,ctx){ if ( v ==null ) throw new Error('FFI type error at ' + ctx +': expected Foo, got ' +typeof v); if (!( v instanceof FooImpl) ) throw new Error('FFI type error at ' + ctx +': expected Foo (expected instanceof FooImpl), got ' +typeof v); return ( v);}\n",
       testCase "SymbolBranded opaque checks brand property" $
-        let result = stmtToText (Validator.generateOpaqueValidator Validator.defaultConfig "Token" (Validator.SymbolBranded "token"))
-         in assertBool "contains brand check" (Text.isInfixOf "__canopy_brand_token" result),
-      testCase "ClassBacked opaque contains null check" $
-        let result = stmtToText (Validator.generateOpaqueValidator Validator.defaultConfig "MyClass" (Validator.ClassBacked "MyClass"))
-         in assertBool "contains null check" (Text.isInfixOf "==null" result),
-      testCase "SymbolBranded opaque contains null check" $
-        let result = stmtToText (Validator.generateOpaqueValidator Validator.defaultConfig "Brand" (Validator.SymbolBranded "brand"))
-         in assertBool "contains null check" (Text.isInfixOf "==null" result),
-      testCase "generated opaque function contains return v" $
-        let result = stmtToText (Validator.generateOpaqueValidator Validator.defaultConfig "T" Validator.Unverified)
-         in assertBool "contains return v" (Text.isInfixOf "return" result)
+        stmtToText (Validator.generateOpaqueValidator Validator.defaultConfig "Token" (Validator.SymbolBranded "token"))
+          @?= "function _validate_Opaque_Token(v,ctx){ if ( v ==null ) throw new Error('FFI type error at ' + ctx +': expected Token, got ' +typeof v); if (! v['__canopy_brand_token'] ) throw new Error('FFI type error at ' + ctx +': expected Token (missing brand token), got ' +typeof v); return ( v);}\n",
+      testCase "ClassBacked opaque contains null check before instanceof" $
+        stmtToText (Validator.generateOpaqueValidator Validator.defaultConfig "MyClass" (Validator.ClassBacked "MyClass"))
+          @?= "function _validate_Opaque_MyClass(v,ctx){ if ( v ==null ) throw new Error('FFI type error at ' + ctx +': expected MyClass, got ' +typeof v); if (!( v instanceof MyClass) ) throw new Error('FFI type error at ' + ctx +': expected MyClass (expected instanceof MyClass), got ' +typeof v); return ( v);}\n",
+      testCase "SymbolBranded opaque contains null check before brand check" $
+        stmtToText (Validator.generateOpaqueValidator Validator.defaultConfig "Brand" (Validator.SymbolBranded "brand"))
+          @?= "function _validate_Opaque_Brand(v,ctx){ if ( v ==null ) throw new Error('FFI type error at ' + ctx +': expected Brand, got ' +typeof v); if (! v['__canopy_brand_brand'] ) throw new Error('FFI type error at ' + ctx +': expected Brand (missing brand brand), got ' +typeof v); return ( v);}\n",
+      testCase "generated opaque function returns v" $
+        stmtToText (Validator.generateOpaqueValidator Validator.defaultConfig "T" Validator.Unverified)
+          @?= "function _validate_Opaque_T(v,ctx){ if ( v ==null ) throw new Error('FFI type error at ' + ctx +': expected T, got ' +typeof v); return ( v);}\n"
     ]
 
 collectAllTypesTests :: TestTree
@@ -319,11 +317,11 @@ validatorNameSanitizationTests =
   testGroup
     "validator name sanitization"
     [ testCase "Record with underscore field strips underscore" $
-        let name = Validator.generateValidatorName (Validator.FFIRecord [("my_field", Validator.FFIInt)])
-         in assertBool "name contains myfield" (Text.isInfixOf "myfield" name),
-      testCase "Opaque with special chars produces valid name" $
-        let name = Validator.generateValidatorName (Validator.FFIOpaque "My.Type" [])
-         in assertBool "name is non-empty" (not (Text.null name)),
+        Validator.generateValidatorName (Validator.FFIRecord [("my_field", Validator.FFIInt)])
+          @?= "_validate_Rec_myfield",
+      testCase "Opaque with special chars strips dots" $
+        Validator.generateValidatorName (Validator.FFIOpaque "My.Type" [])
+          @?= "_validate_Opaque_MyType",
       testCase "TypeVar strips non-alnum chars" $
         let name = Validator.generateValidatorName (Validator.FFITypeVar "my_var")
          in Text.isPrefixOf "_validate_Var_" name @?= True,
@@ -342,19 +340,24 @@ additionalValidatorTests =
       testCase "generates validator name for empty Tuple" $
         let name = Validator.generateValidatorName (Validator.FFITuple [])
          in name @?= "_validate_Tuple_",
-      testCase "generates non-empty output for every primitive" $
-        let prims = [Validator.FFIInt, Validator.FFIFloat, Validator.FFIString, Validator.FFIBool, Validator.FFIUnit]
-         in assertBool "all primitives produce non-empty validator"
-              (all (not . Text.null . stmtToText . Validator.generateValidator Validator.defaultConfig) prims),
+      testCase "generates exact Int validator output" $
+        stmtToText (Validator.generateValidator Validator.defaultConfig Validator.FFIInt)
+          @?= "function _validate_Int(v,ctx){ if (! Number.isInteger( v) ) throw new Error('FFI type error at ' + ctx +': expected Int, got ' +typeof v); return ( v);}\n",
+      testCase "generates exact Bool validator output" $
+        stmtToText (Validator.generateValidator Validator.defaultConfig Validator.FFIBool)
+          @?= "function _validate_Bool(v,ctx){ if (typeof v !=='boolean' ) throw new Error('FFI type error at ' + ctx +': expected Bool, got ' +typeof v); return ( v);}\n",
+      testCase "generates exact Unit validator output" $
+        stmtToText (Validator.generateValidator Validator.defaultConfig Validator.FFIUnit)
+          @?= "function _validate_Unit(v,ctx){ return ( v);}\n",
       testCase "non-strict mode uses console.warn for Float" $
         let config = Validator.defaultConfig {Validator._configStrictMode = False}
-            result = stmtToText (Validator.generateValidator config Validator.FFIFloat)
-         in assertBool "contains console.warn" (Text.isInfixOf "console.warn" result),
+         in stmtToText (Validator.generateValidator config Validator.FFIFloat)
+              @?= "function _validate_Float(v,ctx){ if (typeof v !=='number' ) console.warn('FFI type warning at ' + ctx +': expected Float, got ' +typeof v) if (! Number.isFinite( v) ) console.warn('FFI type warning at ' + ctx +': expected finite Float, got ' +typeof v) return ( v);}\n",
       testCase "debug mode includes JSON.stringify for String" $
         let config = Validator.defaultConfig {Validator._configDebugMode = True}
-            result = stmtToText (Validator.generateValidator config Validator.FFIString)
-         in assertBool "contains JSON.stringify" (Text.isInfixOf "JSON.stringify" result),
+         in stmtToText (Validator.generateValidator config Validator.FFIString)
+              @?= "function _validate_String(v,ctx){ if (typeof v !=='string' ) throw new Error('FFI type error at ' + ctx +': expected String, got ' +typeof v +': ' + JSON.stringify( v)); return ( v);}\n",
       testCase "opaque type with type args still validates null" $
-        let result = stmtToText (Validator.generateValidator Validator.defaultConfig (Validator.FFIOpaque "Decoder" [Validator.FFITypeVar "msg"]))
-         in assertBool "contains null check" (Text.isInfixOf "==null" result)
+        stmtToText (Validator.generateValidator Validator.defaultConfig (Validator.FFIOpaque "Decoder" [Validator.FFITypeVar "msg"]))
+          @?= "function _validate_Opaque_Decoder(v,ctx){ if ( v ==null ) throw new Error('FFI type error at ' + ctx +': expected Decoder, got ' +typeof v); return ( v);}\n"
     ]
