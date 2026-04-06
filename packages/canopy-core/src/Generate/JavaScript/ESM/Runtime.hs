@@ -20,6 +20,7 @@
 -- @since 0.20.0
 module Generate.JavaScript.ESM.Runtime
   ( generateRuntime,
+    allRuntimeExportSymbols,
   )
 where
 

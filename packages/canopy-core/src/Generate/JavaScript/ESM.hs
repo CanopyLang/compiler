@@ -58,6 +58,10 @@ import qualified Generate.JavaScript.Name as JsName
 import qualified Generate.JavaScript.Runtime.Names as KN
 import qualified Generate.JavaScript.StringPool as StringPool
 import qualified Generate.Mode as Mode
+import qualified Data.ByteString.Char8 as BSC
+import qualified Data.Text as Text
+import qualified Data.Text.Encoding as TextEnc
+import System.FilePath (takeFileName)
 import Prelude hiding (cycle)
 
 -- | Map of main entry points per module.
@@ -78,13 +82,14 @@ generate inputMode (Opt.GlobalGraph rawGraph _ _) mains ffiInfos =
   ESMOutput
     { _eoRuntime = ESMRuntime.generateRuntime mode,
       _eoModules = generateAllModules mode graph mains reachable,
-      _eoFFIModules = generateAllFFI ffiInfos,
-      _eoEntry = generateEntryPoint mains,
+      _eoFFIModules = generateAllFFI runtimeSyms ffiInfos,
+      _eoEntry = generateEntryPoint mode mains (Map.keys ffiInfos),
       _eoTypeDefs = Map.empty
     }
   where
     (graph, mode) = prepareGraph inputMode rawGraph ffiInfos
     reachable = collectReachableGlobals mode graph mains
+    runtimeSyms = Set.map TextEnc.decodeUtf8 (ESMRuntime.allRuntimeExportSymbols mode)
 
 -- | Prepare the graph and mode, applying minification in prod.
 prepareGraph ::
@@ -119,18 +124,19 @@ collectReachableGlobals mode graph mains =
   Map.foldlWithKey' (\s home _ -> addReachable mode graph s (Opt.Global home "main")) Set.empty mains
 
 -- | Recursively add a global and its dependencies to the reachable set.
+--
+-- For 'Opt.Manager' nodes, also follows the manager's effect function deps
+-- ('init', 'onEffects', etc.) which are not listed in 'nodeDeps'.
 addReachable :: Mode.Mode -> Graph -> Set Opt.Global -> Opt.Global -> Set Opt.Global
-addReachable mode graph seen global
+addReachable mode graph seen global@(Opt.Global home _)
   | Set.member global seen = seen
   | Kernel_.isDebugger global && not (Mode.isDebug mode) = seen
-  | otherwise =
-      case Map.lookup global graph of
-        Nothing -> seen
-        Just node ->
-          let seen' = Set.insert global seen
-              deps = nodeDeps node
-              filteredDeps = filterDebugDeps mode deps
-           in Set.foldl' (addReachable mode graph) seen' filteredDeps
+  | otherwise = maybe seen (visitNode mode graph seen') (Map.lookup global graph)
+  where
+    seen' = Set.insert global seen
+    visitNode m g s node = Set.foldl' (addReachable m g) s filteredDeps
+      where
+        filteredDeps = filterDebugDeps mode (Set.union (nodeDeps node) (managerNodeDeps home node))
 
 -- | Extract dependency globals from a node.
 nodeDeps :: Opt.Node -> Set Opt.Global
@@ -198,13 +204,32 @@ generateModule ::
   Map Name.Name (Opt.Global, Opt.Node) ->
   Builder
 generateModule mode mains _graph reachable home entries =
-  renderModule mode (commentItems ++ importItems ++ definitionItems ++ exportItems ++ hmrItems)
+  renderModule mode (commentItems ++ importItems ++ definitionItems ++ exportItems ++ hmrItems ++ initItems)
   where
     commentItems = [JS.RawJS (moduleComment home)]
     importItems = buildImportItems reachable home entries
-    definitionItems = buildDefinitionItems mode entries
+    definitionItems = buildDefinitionItems mode home entries
     exportItems = buildExportItems entries
     hmrItems = HMR.generateHMRItems mode mains home
+    initItems = buildMainInitItems mode mains home
+
+-- | Generate @export const __canopy_init__ = <initExpr>;@ for main modules.
+--
+-- The exported constant holds the partially-applied program initializer,
+-- ready to accept an @args@ object (e.g. @{ node: someElement }@).
+-- This allows @main.js@ to call @__canopy_init__({ node: ... })@ without
+-- needing to import every symbol referenced by the flags decoder.
+buildMainInitItems :: Mode.Mode -> Mains -> ModuleName.Canonical -> [JS.ModuleItem]
+buildMainInitItems mode mains home =
+  maybe [] buildExport (Map.lookup home mains)
+  where
+    buildExport mainType =
+      [ JS.RawJS
+          ( "export const __canopy_init__ = "
+              <> JS.exprToBuilder (Expr.generateMain mode home mainType)
+              <> ";\n"
+          )
+      ]
 
 -- | Render module items using the appropriate printer for the mode.
 renderModule :: Mode.Mode -> [JS.ModuleItem] -> Builder
@@ -267,20 +292,93 @@ globalToJsName (Opt.Global home name) =
 
 -- DEFINITION GENERATION
 
--- | Build definition items for all module entries.
+-- | Build definition items for all module entries, in topological order.
+--
+-- Sorts intra-module definitions so each entry's dependencies are
+-- emitted before the entry itself, satisfying the @const@ temporal
+-- dead zone constraint in ES modules.
 buildDefinitionItems ::
   Mode.Mode ->
+  ModuleName.Canonical ->
   Map Name.Name (Opt.Global, Opt.Node) ->
   [JS.ModuleItem]
-buildDefinitionItems mode entries =
-  concatMap (dispatchNodeESM mode) (Map.elems entries)
+buildDefinitionItems mode home entries =
+  concatMap (dispatchNodeESM mode globalGraph) (topoSortEntries home entries)
+  where
+    globalGraph = Map.map snd entries
+
+-- | Topologically sort module entries so dependencies precede dependents.
+--
+-- Uses DFS post-order: each entry's intra-module deps are recursively
+-- visited before the entry is appended. The result is reversed to get
+-- correct (dependency-first) order.
+topoSortEntries ::
+  ModuleName.Canonical ->
+  Map Name.Name (Opt.Global, Opt.Node) ->
+  [(Opt.Global, Opt.Node)]
+topoSortEntries home entries =
+  reverse (fst (Map.foldl' (visitEntry home entries) ([], Set.empty) entries))
+
+-- | DFS visitor for a single module entry during topological sort.
+visitEntry ::
+  ModuleName.Canonical ->
+  Map Name.Name (Opt.Global, Opt.Node) ->
+  ([(Opt.Global, Opt.Node)], Set Name.Name) ->
+  (Opt.Global, Opt.Node) ->
+  ([(Opt.Global, Opt.Node)], Set Name.Name)
+visitEntry home entries (acc, visited) entry@(Opt.Global _ name, node)
+  | Set.member name visited = (acc, visited)
+  | otherwise = (entry : acc'', visited'')
+  where
+    visited' = Set.insert name visited
+    deps = intraModuleDeps home entries node
+    (acc'', visited'') = Set.foldl' (visitDepByName home entries) (acc, visited') deps
+
+-- | Collect the names of intra-module dependencies for a node.
+--
+-- Manager nodes do not list their deps in 'nodeDeps', so they are
+-- handled explicitly here using their known 'Opt.EffectsType'.
+intraModuleDeps ::
+  ModuleName.Canonical ->
+  Map Name.Name (Opt.Global, Opt.Node) ->
+  Opt.Node ->
+  Set Name.Name
+intraModuleDeps _ entries (Opt.Manager effectsType) =
+  Set.filter (`Map.member` entries) (managerEffectDeps effectsType)
+intraModuleDeps home entries node =
+  Set.fromList [n | Opt.Global h n <- Set.toList (nodeDeps node), h == home, Map.member n entries]
+
+-- | Effect function names that an 'Opt.Manager' node depends on.
+managerEffectDeps :: Opt.EffectsType -> Set Name.Name
+managerEffectDeps Opt.Cmd =
+  Set.fromList (map Name.fromChars ["init", "onEffects", "onSelfMsg", "cmdMap"])
+managerEffectDeps Opt.Sub =
+  Set.fromList (map Name.fromChars ["init", "onEffects", "onSelfMsg", "subMap"])
+managerEffectDeps Opt.Fx =
+  Set.fromList (map Name.fromChars ["init", "onEffects", "onSelfMsg", "cmdMap", "subMap"])
+
+-- | Translate manager effect deps to 'Opt.Global' values in the given home module.
+managerNodeDeps :: ModuleName.Canonical -> Opt.Node -> Set Opt.Global
+managerNodeDeps home (Opt.Manager effectsType) =
+  Set.map (Opt.Global home) (managerEffectDeps effectsType)
+managerNodeDeps _ _ = Set.empty
+
+-- | Visit a dep by name, delegating to 'visitEntry' if not yet visited.
+visitDepByName ::
+  ModuleName.Canonical ->
+  Map Name.Name (Opt.Global, Opt.Node) ->
+  ([(Opt.Global, Opt.Node)], Set Name.Name) ->
+  Name.Name ->
+  ([(Opt.Global, Opt.Node)], Set Name.Name)
+visitDepByName home entries state depName =
+  maybe state (visitEntry home entries state) (Map.lookup depName entries)
 
 -- | Dispatch code generation for a node, producing 'ModuleItem' values.
 --
 -- Mirrors 'Generate.JavaScript.dispatchNode' but emits @const@ instead
 -- of @var@ and adds @\/\*#__PURE__\*\/@ annotations for tree shaking.
-dispatchNodeESM :: Mode.Mode -> (Opt.Global, Opt.Node) -> [JS.ModuleItem]
-dispatchNodeESM mode (global, node) =
+dispatchNodeESM :: Mode.Mode -> Map Name.Name Opt.Node -> (Opt.Global, Opt.Node) -> [JS.ModuleItem]
+dispatchNodeESM mode graph (global, node) =
   case node of
     Opt.Define expr _deps ->
       [JS.ModuleStmt (JS.ConstPure globalName (Expr.codeToExpr (Expr.generate mode expr)))]
@@ -289,9 +387,9 @@ dispatchNodeESM mode (global, node) =
     Opt.Ctor index arity ->
       [JS.ModuleStmt (JS.ConstPure globalName (Expr.codeToExpr (Expr.generateCtor mode global index arity)))]
     Opt.Link linkedGlobal ->
-      [JS.ModuleStmt (JS.Const globalName (JS.Ref (globalToJsName linkedGlobal)))]
+      dispatchLink graph globalName linkedGlobal
     Opt.Cycle names values functions _deps ->
-      [JS.ModuleStmt (varToConst (Kernel_.generateCycle mode global names values functions))]
+      flattenCycleToModule (Kernel_.generateCycle mode global names values functions)
     Opt.Manager effectsType ->
       map JS.ModuleStmt (managerStmts mode global effectsType)
     Opt.Kernel chunks _deps ->
@@ -312,6 +410,27 @@ dispatchNodeESM mode (global, node) =
     Opt.Global home name = global
     globalName = JsName.fromGlobal home name
 
+-- | Resolve an 'Opt.Link' in ESM mode.
+--
+-- Cycle and manager link targets are suppressed because cycle members are
+-- already emitted as top-level @const@ declarations by 'flattenCycleToModule',
+-- and manager state lives in @_Platform_effectManagers@.
+dispatchLink :: Map Name.Name Opt.Node -> JsName.Name -> Opt.Global -> [JS.ModuleItem]
+dispatchLink graph selfName (Opt.Global linkedHome linkedName) =
+  case Map.lookup linkedName graph of
+    Just (Opt.Cycle _ _ _ _) -> []
+    Just (Opt.Manager _) -> []
+    _ -> [JS.ModuleStmt (JS.Const selfName (JS.Ref (JsName.fromGlobal linkedHome linkedName)))]
+
+-- | Flatten a cycle block into module-level @const@ declarations.
+--
+-- 'Kernel_.generateCycle' emits a 'JS.Block' of @var@ statements. In ESM
+-- mode each member must be a separate module-level @const@.
+flattenCycleToModule :: JS.Stmt -> [JS.ModuleItem]
+flattenCycleToModule (JS.Block stmts) = concatMap flattenCycleToModule stmts
+flattenCycleToModule (JS.Var n e) = [JS.ModuleStmt (JS.Const n e)]
+flattenCycleToModule other = [JS.ModuleStmt other]
+
 -- | Convert top-level @var@ declarations to @const@ for ESM output.
 --
 -- Kernel helper functions ('Kernel_.generateEnum', etc.) emit @var@
@@ -323,9 +442,13 @@ varToConst (JS.Block stmts) = JS.Block (map varToConst stmts)
 varToConst other = other
 
 -- | Generate effect manager statements for ESM.
+--
+-- Applies 'varToConst' to leaf declarations so that @var command = leaf(...)@
+-- becomes @const command = leaf(...)@ at module scope. This prevents duplicate
+-- declarations when a manager member is also the target of an 'Opt.Link'.
 managerStmts :: Mode.Mode -> Opt.Global -> Opt.EffectsType -> [JS.Stmt]
 managerStmts _mode (Opt.Global home _) effectsType =
-  createManager : stmts
+  createManager : map varToConst stmts
   where
     (_deps, args, stmts) = Kernel_.generateManagerHelp home effectsType
     managerLVar =
@@ -338,13 +461,24 @@ managerStmts _mode (Opt.Global home _) effectsType =
 -- EXPORT GENERATION
 
 -- | Build export items for a module.
+--
+-- Skips 'Opt.Cycle' and 'Opt.Manager' nodes — they don't create
+-- module-level variable bindings that can be directly exported.
 buildExportItems ::
   Map Name.Name (Opt.Global, Opt.Node) ->
   [JS.ModuleItem]
 buildExportItems entries
-  | Map.null entries = []
+  | Map.null exportable = []
   | otherwise =
-      [JS.ExportLocals (map entryJsName (Map.elems entries))]
+      [JS.ExportLocals (map entryJsName (Map.elems exportable))]
+  where
+    exportable = Map.filter (not . isInternalNode . snd) entries
+
+-- | Returns 'True' for nodes that don't create exportable module-level bindings.
+isInternalNode :: Opt.Node -> Bool
+isInternalNode (Opt.Cycle {}) = True
+isInternalNode (Opt.Manager {}) = True
+isInternalNode _ = False
 
 -- | Get the JS name for a module entry.
 entryJsName :: (Opt.Global, Opt.Node) -> JsName.Name
@@ -354,14 +488,14 @@ entryJsName (Opt.Global home name, _) =
 -- FFI MODULE GENERATION
 
 -- | Generate ESM modules for all FFI files.
-generateAllFFI :: Map String FFIInfo -> Map String Builder
-generateAllFFI =
-  Map.map generateSingleFFI
+generateAllFFI :: Set Text.Text -> Map String FFIInfo -> Map String Builder
+generateAllFFI runtimeSyms =
+  Map.map (generateSingleFFI runtimeSyms)
 
 -- | Generate a single FFI ESM module.
-generateSingleFFI :: FFIInfo -> Builder
-generateSingleFFI (FFIInfo _path content alias) =
-  ESMFFI.generateFFIModule content (Name.toChars alias)
+generateSingleFFI :: Set Text.Text -> FFIInfo -> Builder
+generateSingleFFI runtimeSyms (FFIInfo _path content alias) =
+  ESMFFI.generateFFIModule runtimeSyms content (Name.toChars alias)
 
 -- ENTRY POINT GENERATION
 
@@ -370,16 +504,23 @@ generateSingleFFI (FFIInfo _path content alias) =
 -- Imports the main function from the appropriate module and calls
 -- the platform initialization function based on the 'Opt.Main' variant.
 -- Always uses formatted output since entry points should be readable.
-generateEntryPoint :: Mains -> Builder
-generateEntryPoint mains
+generateEntryPoint :: Mode.Mode -> Mains -> [String] -> Builder
+generateEntryPoint mode mains ffiPaths
   | Map.null mains = "// No main functions found.\n"
   | otherwise =
       JS.moduleToFormattedBuilder entryItems
   where
+    ffiImports = map (JS.ImportBare . ffiPathToImport) ffiPaths
     entryItems =
       JS.RawJS entryComment
         : JS.ImportBare "'./canopy-runtime.js'"
-        : concatMap mainImportAndInit (Map.toAscList mains)
+        : ffiImports
+        ++ concatMap (mainImportAndInit mode) (Map.toAscList mains)
+
+-- | Convert an FFI path to a bare import ByteString.
+ffiPathToImport :: String -> Data.ByteString.ByteString
+ffiPathToImport p =
+  BSC.pack ("'./ffi/" ++ takeFileName p ++ "'")
 
 -- | Entry point header comment.
 entryComment :: Builder
@@ -388,21 +529,38 @@ entryComment =
   \// Auto-generated by the Canopy compiler. Do not edit.\n\n"
 
 -- | Generate import and init items for a single main entry.
-mainImportAndInit :: (ModuleName.Canonical, Opt.Main) -> [JS.ModuleItem]
-mainImportAndInit (home, mainType) =
-  [ JS.ImportNamed [mainJsName] (canonicalToPathBs home)
-  , JS.ModuleStmt (JS.ExprStmtWithSemi (JS.Call (JS.Ref initName) [JS.Ref mainJsName]))
-  ]
+--
+-- For browser programs (@Opt.Static@ and @Opt.Dynamic@), imports
+-- @__canopy_init__@ from the main module (which holds the partially-applied
+-- initializer) and calls it with an auto-detected DOM node.
+-- For headless\/test programs, imports the @main@ symbol and passes it
+-- to @_Platform_worker@.
+mainImportAndInit :: Mode.Mode -> (ModuleName.Canonical, Opt.Main) -> [JS.ModuleItem]
+mainImportAndInit _mode (home, mainType) =
+  case mainType of
+    Opt.TestMain -> workerItems
+    Opt.BrowserTestMain -> workerItems
+    _ -> browserItems
   where
     mainJsName = JsName.fromGlobal home ("main" :: Name.Name)
-    initName = initFunctionName mainType
-
--- | Get the platform initialization function name based on main type.
-initFunctionName :: Opt.Main -> JsName.Name
-initFunctionName Opt.Static = KN.platformWorker
-initFunctionName (Opt.Dynamic _ _ _) = KN.platformWorker
-initFunctionName Opt.TestMain = KN.platformWorker
-initFunctionName Opt.BrowserTestMain = KN.platformWorker
+    path = canonicalToPathBs home
+    workerItems =
+      [ JS.ImportNamed [mainJsName] path
+      , JS.RawJS
+          ( JsName.toBuilder KN.platformWorker
+              <> "("
+              <> JsName.toBuilder mainJsName
+              <> ");\n"
+          )
+      ]
+    browserItems =
+      [ JS.RawJS
+          ( "import { __canopy_init__ } from "
+              <> BB.byteString path
+              <> ";\n"
+              <> "__canopy_init__({ node: document.getElementById('app') || document.body });\n"
+          )
+      ]
 
 -- UTILITIES
 

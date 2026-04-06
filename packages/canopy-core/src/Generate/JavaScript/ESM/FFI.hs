@@ -17,10 +17,12 @@
 module Generate.JavaScript.ESM.FFI
   ( generateFFIModule,
     scanRuntimeRefs,
+    scanRuntimeRefsFiltered,
   )
 where
 
 import Data.ByteString (ByteString)
+import qualified Data.ByteString as BS
 import Data.ByteString.Builder (Builder)
 import qualified Data.ByteString.Builder as BB
 import Data.Set (Set)
@@ -56,11 +58,11 @@ curryingHelpers =
 -- reference @AliasName.funcName(...)@.
 --
 -- @since 0.20.0
-generateFFIModule :: Text.Text -> String -> Builder
-generateFFIModule content alias =
+generateFFIModule :: Set Text.Text -> Text.Text -> String -> Builder
+generateFFIModule runtimeWhitelist content alias =
   JS.moduleToBuilder items
   where
-    refs = scanRuntimeRefs content
+    refs = scanRuntimeRefsFiltered runtimeWhitelist content
     items =
       [JS.RawJS (moduleHeader alias)]
         ++ maybe [] (: []) (runtimeImportItem refs)
@@ -86,28 +88,66 @@ textToBs = Text.encodeUtf8
 
 -- | Generate namespace and globalThis registration as 'ModuleItem' values.
 --
--- Creates @var AliasName = { func1, func2, ... };@ from annotated functions
--- and registers both the namespace and internal @_@-prefixed names on
--- @globalThis@ so they're accessible as bare names in consuming modules.
+-- Uses a merge pattern (@Object.assign(globalThis.Alias || {}, {...})@) so that
+-- multiple FFI files sharing the same alias accumulate rather than overwrite.
+-- Internal @_@-prefixed names are also assigned directly on @globalThis@.
 namespaceItems :: String -> Text.Text -> [JS.ModuleItem]
 namespaceItems alias content =
-  namespaceDeclItem ++ [JS.GlobalThisAssignRaw globalThisNames]
+  mergeItem ++ internalItem
   where
     contentLines = Text.lines content
     functions = FFI.extractFFIFunctions contentLines
-    funcNames = map effectiveName functions
-    internalNames = FFI.extractInternalNames contentLines
+    funcPairs = map (\ef -> (textToBs (FFI._extractedName ef), textToBs (actualJSVarName ef))) functions
+    internalNames = extractTopLevelInternalNames contentLines
     allInternals = Set.toAscList (Set.fromList internalNames)
     aliasBs = textToBs (Text.pack alias)
-    funcNamesBs = map textToBs funcNames
-    namespaceDeclItem =
-      [JS.VarShorthandObject aliasBs funcNamesBs | not (null funcNames)]
-    globalThisNames = aliasBs : map textToBs allInternals
+    mergeItem = [JS.RawJS (mergeIntoGlobalThis aliasBs funcPairs) | not (null funcPairs)]
+    internalItem = [JS.GlobalThisAssignRaw (map textToBs allInternals) | not (null allInternals)]
 
--- | Get the effective name for an extracted FFI function.
-effectiveName :: FFI.ExtractedFFI -> Text.Text
-effectiveName ef =
-  maybe (FFI._extractedName ef) id (FFI._extractedCanopyName ef)
+-- | Emit @globalThis.Alias = Object.assign(globalThis.Alias || {}, { f1, f2 });@
+--
+-- Each pair is @(canopyName, jsVarName)@. When they are equal, shorthand
+-- property syntax is used (@{ f }@); when they differ, explicit syntax is
+-- used (@{ cssScoped: _VirtualDom_cssScoped }@).  Using a merge ensures
+-- that multiple FFI modules with the same alias accumulate their exported
+-- functions instead of clobbering each other.
+mergeIntoGlobalThis :: ByteString -> [(ByteString, ByteString)] -> BB.Builder
+mergeIntoGlobalThis alias pairs =
+  "globalThis."
+    <> BB.byteString alias
+    <> " = Object.assign(globalThis."
+    <> BB.byteString alias
+    <> " || {}, { "
+    <> BB.byteString (BS.intercalate ", " (map renderPair pairs))
+    <> " });\n"
+  where
+    renderPair (k, v)
+      | k == v    = k
+      | otherwise = k <> ": " <> v
+
+-- | Get the actual JavaScript variable name for an extracted FFI function.
+actualJSVarName :: FFI.ExtractedFFI -> Text.Text
+actualJSVarName ef =
+  maybe (FFI._extractedName ef) id (FFI._extractedJSName ef)
+
+-- | Extract only top-level @_@-prefixed @var@ and @function@ declarations.
+--
+-- Unlike 'FFI.extractInternalNames' (which trims leading whitespace and thus
+-- picks up declarations inside function bodies), this only matches lines with
+-- no leading whitespace. In ESM mode only module-scope declarations can be
+-- assigned to @globalThis@ as bare names.
+extractTopLevelInternalNames :: [Text.Text] -> [Text.Text]
+extractTopLevelInternalNames = concatMap extractTopLevel
+  where
+    extractTopLevel line
+      | "var _" `Text.isPrefixOf` line =
+          let name = Text.takeWhile isIdentChar (Text.drop 4 line)
+          in [name | Text.length name > 1]
+      | "function _" `Text.isPrefixOf` line =
+          let name = Text.takeWhile isIdentChar (Text.drop 9 line)
+          in [name | Text.length name > 1]
+      | otherwise = []
+
 
 -- | Scan FFI content for references to runtime symbols.
 --
@@ -124,6 +164,11 @@ scanRuntimeRefs content =
   where
     allRefs = Set.union (scanPrefixedRefs content) (scanCurryingRefs content)
     localDefs = scanLocalDefinitions content
+
+-- | Like 'scanRuntimeRefs' but intersects the result with a whitelist.
+scanRuntimeRefsFiltered :: Set Text.Text -> Text.Text -> Set Text.Text
+scanRuntimeRefsFiltered whitelist content =
+  Set.intersection (scanRuntimeRefs content) whitelist
 
 -- | Scan FFI content for locally defined symbols.
 --
