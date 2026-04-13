@@ -239,6 +239,7 @@ test-suite canopy-test
       Unit.AST.Utils.ShaderTest
       Unit.AST.Utils.TypeTest
       Unit.AuditTest
+      Unit.Build.ArtifactsTest
       Unit.Builder.CacheInvalidationTest
       Unit.Builder.CacheVersionTest
       Unit.Builder.FFICacheTest
@@ -268,7 +269,9 @@ test-suite canopy-test
       Unit.CLI.CommandsTest
       Unit.CLI.DocumentationTest
       Unit.CLI.ParsersTest
+      Unit.Compiler.CacheTest
       Unit.Compiler.DiscoveryTest
+      Unit.Compiler.ParallelTest
       Unit.Convert.ConvertTest
       Unit.Data.BagTest
       Unit.Data.IndexTest
@@ -312,13 +315,20 @@ test-suite canopy-test
       Unit.Generate.HtmlSecurityTest
       Unit.Generate.JavaScript.AbilityTest
       Unit.Generate.JavaScript.BuilderTest
+      Unit.Generate.JavaScript.ESMGenTest
       Unit.Generate.JavaScript.ExpressionArithmeticTest
       Unit.Generate.JavaScript.ExpressionCallTest
       Unit.Generate.JavaScript.ExpressionCaseTest
+      Unit.Generate.JavaScript.ExpressionGenTest
+      Unit.Generate.JavaScript.FFIGenTest
+      Unit.Generate.JavaScript.FFIRuntimeGenTest
       Unit.Generate.JavaScript.FunctionsTest
       Unit.Generate.JavaScript.KernelTest
+      Unit.Generate.JavaScript.MinifyTest
+      Unit.Generate.JavaScript.NameGenTest
       Unit.Generate.JavaScript.RuntimeAnnotationTest
       Unit.Generate.JavaScript.RuntimeTest
+      Unit.Generate.JavaScript.SourceMapExtTest
       Unit.Generate.ModeTest
       Unit.Generate.NameTest
       Unit.Generate.SourceMapTest
