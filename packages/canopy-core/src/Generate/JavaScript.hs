@@ -12,6 +12,9 @@
 -- @since 0.19.1
 module Generate.JavaScript
   ( generate,
+    generateNative,
+    NativeOptions (..),
+    defaultNativeOptions,
     generateForRepl,
     generateForReplEndpoint,
 
@@ -88,6 +91,8 @@ import qualified FFI.TypeParser as TypeParser
 import qualified Generate.JavaScript.FFI.Registry as FFIRegistry
 import qualified Generate.JavaScript.FFIRuntime as FFIRuntime
 import qualified Generate.JavaScript.HermesShim as HermesShim
+import qualified Generate.JavaScript.NativeDCE as NativeDCE
+import qualified Generate.JavaScript.NativeHMR as NativeHMR
 import qualified Generate.JavaScript.Runtime as Runtime
 import qualified Generate.JavaScript.Runtime.Registry as Registry
 import qualified Generate.JavaScript.Functions as Functions
@@ -137,8 +142,63 @@ makeLenses ''State
 
 -- GENERATE
 
+-- | Knobs that distinguish the native (Hermes/JSI) codegen from the web path.
+--
+-- These exist so the native target (CMP-8b) can, WITHOUT touching the web
+-- output by a single byte:
+--
+--   * splice the browser-global stub ('NativeDCE.browserGlobalStub') into the
+--     preamble so the kernel's native-dead @window@/@document@ references
+--     resolve on bare Hermes; and
+--   * emit a source map EVEN under @--optimize@ (against the renamed/minified
+--     names), so a release crash on a device is symbolicatable — the exact
+--     "@--optimize@ drops the map → unsymbolicatable" gap CMP-8b closes. The web
+--     prod path keeps dropping the map (size), so this is gated to native only.
+--
+-- 'defaultNativeOptions' is the web/default shape (all knobs off); 'generate'
+-- uses it, so the web output is unchanged. 'generateNative' flips both on.
+--
+-- @since 0.20.10
+data NativeOptions = NativeOptions
+  { -- | Splice 'NativeDCE.browserGlobalStub' into the preamble (native only).
+    noBrowserStub :: !Bool,
+    -- | Emit a (line-level, renamed-name) source map even under @--optimize@.
+    noProdSourceMap :: !Bool,
+    -- | Emit the native Fast Refresh codegen (CMP-9) — the @__canopy_hmr@
+    -- runtime, the @__canopy_model_typehash@ global the DEV-8 host seam reads,
+    -- and the per-module @register@ boundary — INTO the IIFE. Dev-only inside
+    -- 'NativeHMR.generateNativeHMR', so an @--optimize@ native bundle emits
+    -- nothing even with the knob on. Off on the web path so the ESM\/web IIFE
+    -- (which has its own 'ESM.HMR' via Vite) is unchanged.
+    noFastRefresh :: !Bool
+  }
+
+-- | The web/default options: no browser stub, no prod source map, no native
+-- Fast Refresh — i.e. the behaviour 'generate' had before CMP-8b\/CMP-9.
+-- @--optimize@ still drops the map and the web path keeps its ESM HMR.
+--
+-- @since 0.20.10
+defaultNativeOptions :: NativeOptions
+defaultNativeOptions = NativeOptions {noBrowserStub = False, noProdSourceMap = False, noFastRefresh = False}
+
+-- | Native-target codegen (CMP-8b): the same bundle 'generate' produces, plus
+-- the browser-global stub and a prod source map (under @--optimize@).
+--
+-- This is the entry the @--target native@ build path uses. The bundle BYTES are
+-- 'generate's bytes for a given mode EXCEPT for the spliced stub; the third
+-- difference is that the returned source map is 'Just' even in 'Mode.Prod' (web
+-- 'generate' returns 'Nothing' there).
+--
+-- @since 0.20.10
+generateNative :: Mode.Mode -> Opt.GlobalGraph -> Mains -> Map String FFIInfo -> (Builder, Maybe SourceMap.SourceMap, Maybe Coverage.CoverageMap)
+generateNative =
+  generateWith NativeOptions {noBrowserStub = True, noProdSourceMap = True, noFastRefresh = True}
+
 generate :: Mode.Mode -> Opt.GlobalGraph -> Mains -> Map String FFIInfo -> (Builder, Maybe SourceMap.SourceMap, Maybe Coverage.CoverageMap)
-generate inputMode globalGraph@(Opt.GlobalGraph rawGraph _ sourceLocs) mains ffiInfos =
+generate = generateWith defaultNativeOptions
+
+generateWith :: NativeOptions -> Mode.Mode -> Opt.GlobalGraph -> Mains -> Map String FFIInfo -> (Builder, Maybe SourceMap.SourceMap, Maybe Coverage.CoverageMap)
+generateWith nativeOpts inputMode globalGraph@(Opt.GlobalGraph rawGraph _ sourceLocs) mains ffiInfos =
   let ffiAliases = extractFFIAliases ffiInfos
       (graph, mode) = case inputMode of
         Mode.Prod fields elmCompat ffiUnsafe ffiDbg _ _ _ ->
@@ -156,7 +216,14 @@ generate inputMode globalGraph@(Opt.GlobalGraph rawGraph _ sourceLocs) mains ffi
            in (minified, Mode.Prod fields elmCompat ffiUnsafe ffiDbg pool ffiAliases globalRenameMap)
         Mode.Dev debugTypes elmCompat ffiUnsafe ffiDbg _ cov ->
           (rawGraph, Mode.Dev debugTypes elmCompat ffiUnsafe ffiDbg ffiAliases cov)
-      shouldTrackLines = case mode of Mode.Dev {} -> True; Mode.Prod {} -> False
+      -- Line tracking feeds the source map. Dev always tracks. Prod normally
+      -- skips it (no map, and the per-statement re-materialization is pure waste
+      -- under @--optimize@) — but the NATIVE prod path (CMP-8b) opts back in via
+      -- 'noProdSourceMap' so a release crash on a device is symbolicatable
+      -- against the renamed names. The web prod path leaves it off.
+      shouldTrackLines = case mode of
+        Mode.Dev {} -> True
+        Mode.Prod {} -> noProdSourceMap nativeOpts
       covIds = if Mode.isCoverage mode then Coverage.computeBaseIds graph else Map.empty
       -- Pre-compute reachable globals once; used for both FFI and runtime deps.
       reachable = TreeShake.reachableGlobals globalGraph mains
@@ -206,6 +273,18 @@ generate inputMode globalGraph@(Opt.GlobalGraph rawGraph _ sourceLocs) mains ffi
       -- 'genLineBase' via 'innerPreamble' -> 'bundlePrefix', keeping the dev
       -- source map aligned (CMP-6).
       hermesShim = HermesShim.hermesShimPreamble
+      -- CMP-8b: browser-global stub for the native (Hermes) target. The baked-in
+      -- @canopy/html@ + @canopy/virtual-dom@ kernel carries native-dead but
+      -- still-PRESENT @window.addEventListener@ / @document.body@ references that
+      -- are free identifiers on bare Hermes. The stub installs benign no-op
+      -- @window@/@document@ ONLY when absent (so Node/web are untouched),
+      -- exposing exactly the allowlisted surface ('NativeDCE.allowedBrowserGlobals').
+      -- Emitted right after the Hermes shim, before any kernel module-eval probe
+      -- (the @window.addEventListener@ feature test) can run. Native target only;
+      -- its newline count flows into 'genLineBase' via 'bundlePrefix' so the map
+      -- stays aligned (CMP-6). Empty on the web path, so web bytes are unchanged.
+      browserStub =
+        if noBrowserStub nativeOpts then NativeDCE.browserGlobalStub else mempty
       poolDecls = StringPool.poolDeclarations (Mode.stringPool mode)
       coveragePreamble = if Mode.isCoverage mode then Coverage.coverageRuntimePreamble else mempty
       -- Phase 1: generate all non-runtime content inside the IIFE.
@@ -217,15 +296,32 @@ generate inputMode globalGraph@(Opt.GlobalGraph rawGraph _ sourceLocs) mains ffi
       innerPreamble =
         debuggerStub
           <> hermesShim
+          <> browserStub
           <> generateFFIContent mode graph ffiInfos usedFFIFuncs
           <> perfNote mode
           <> poolDecls
           <> coveragePreamble
+      -- CMP-9: native Fast Refresh codegen. Emitted INSIDE the IIFE, AFTER
+      -- '_Platform_export' (toMainExports) and the @global.Elm@ wiring — so the
+      -- @__canopy_hmr.register@ boundary can reach @scope['Elm']@ and the
+      -- @__canopy_model_typehash@ global the DEV-8 host seam reads is set on the
+      -- live host global. Native-dev only: 'NativeHMR.generateNativeHMR' returns
+      -- 'mempty' under @--optimize@, and the 'noFastRefresh' knob is off on the
+      -- web path, so the web\/ESM IIFE (which has its own 'ESM.HMR' via Vite) and
+      -- the prod native bundle are byte-unchanged. It lands strictly AFTER the
+      -- mapped traversal output ('stateToBuilder state'), so — like the
+      -- 'NativeBundle' trailer — it moves no mapped generated line and the source
+      -- map stays aligned (CMP-6).
+      nativeHMR =
+        if noFastRefresh nativeOpts
+          then NativeHMR.generateNativeHMR mode mains
+          else mempty
       innerContent =
         innerPreamble
           <> stateToBuilder state
           <> Kernel_.toMainExports mode mains
           <> "\nif (typeof global !== 'undefined') { global.Canopy = scope['Canopy']; global.Elm = scope['Elm']; }"
+          <> nativeHMR
           <> "\n}(typeof window !== 'undefined' ? window : this));"
       -- Everything in the final bundle that precedes the IIFE header through the
       -- start of the traversal output ('stateToBuilder state'), in byte order:
@@ -251,7 +347,7 @@ generate inputMode globalGraph@(Opt.GlobalGraph rawGraph _ sourceLocs) mains ffi
           <> BB.byteString runtimeBytes
           <> FFIRuntime.scanAndEmitRuntime mode (BB.byteString innerBytes)
           <> BB.byteString innerBytes
-      sourceMap = buildSourceMap genLineBase mode state
+      sourceMap = buildSourceMap shouldTrackLines genLineBase state
       coverageMap = if Mode.isCoverage mode
                     then Just (Coverage.buildCoverageMap graph sourceLocs)
                     else Nothing
@@ -1133,11 +1229,23 @@ resolveSrcIndex home state =
 -- that output. Adding 'genLineBase' to each @genLine@ re-bases the whole map to
 -- the bundle's true byte layout — without it, every dev red-box line is off by
 -- the entire prepended runtime (CMP-6).
-buildSourceMap :: Int -> Mode.Mode -> State -> Maybe SourceMap.SourceMap
-buildSourceMap genLineBase mode state =
-  case mode of
-    Mode.Prod {} -> Nothing
-    Mode.Dev _ _ _ _ _ _ ->
+-- | Build a SourceMap from accumulated state, when one is requested.
+--
+-- 'emitMap' is the line-tracking decision: 'True' for Dev (always), or for the
+-- NATIVE prod path (CMP-8b), where a renamed-name source map is emitted under
+-- @--optimize@ so a release crash is symbolicatable. 'False' for the web prod
+-- path, which drops the map for size. When 'emitMap' is 'False' no mappings were
+-- collected (line tracking was off), so this returns 'Nothing'.
+--
+-- A native prod map carries the SAME genLine accuracy as a dev map (every
+-- mapping records the byte-accurate generated line, CMP-6); the generated COLUMN
+-- is left at 0 in prod (see 'defNameGenCol'), so it is a line-level map against
+-- the renamed names — enough to turn @canopy.bundle.js:LINE@ into @Module.can@.
+buildSourceMap :: Bool -> Int -> State -> Maybe SourceMap.SourceMap
+buildSourceMap emitMap genLineBase state =
+  if not emitMap
+    then Nothing
+    else
       let orderedSources = map fst (List.sortOn snd (Map.toList (state ^. smSrcIndices)))
           sourcePaths = map renderModulePath orderedSources
           rebasedMappings = map rebase (state ^. sourceMapMappings)

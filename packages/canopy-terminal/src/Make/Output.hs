@@ -74,19 +74,22 @@ import qualified Generate.Html as Html
 import qualified Generate.JavaScript.CodeSplit.Types as Split
 import Generate.JavaScript.ESM.Types (ESMOutput (..))
 import qualified Generate.JavaScript.FFI as JsFFI
+import qualified Generate.JavaScript.HermesContainer as HermesContainer
 import qualified Generate.JavaScript.NativeBundle as NativeBundle
 import qualified Generate.JavaScript.SourceMap as SourceMap
 import qualified Generate.TypeScript.Parser as DtsParser
 import Generate.TypeScript.Types (TsType (TsFunction))
 import Logging.Event (LogEvent (..))
 import qualified Logging.Logger as Log
-import Make.Builder (createBuilder, extractMainModules, hasExactlyOneMain)
+import Make.Builder (createBuilder, createNativeBuilder, extractMainModules, hasExactlyOneMain)
 import Make.Generation (writeOutputFile)
 import qualified Make.Reproducible as Reproducible
 import Make.Types
   ( BuildContext,
+    DesiredMode (..),
     Output (..),
     Task,
+    bcDesiredMode,
     bcDetails,
     bcStyle,
   )
@@ -202,19 +205,35 @@ generateNativeBundle ctx artifacts maybeOutput doVerify = do
   let target = nativeOutputPath maybeOutput
   Task.io (IO.hPutStrLn IO.stderr ("Generating native bundle to " <> target))
   Task.io (Log.logEvent (BuildStarted (Text.pack ("Generating native bundle to: " <> target))))
-  (builder, maybeSourceMap) <- createBuilder ctx artifacts
+  -- CMP-8b: the native path uses 'createNativeBuilder' (browser-global stub +
+  -- prod source map under --optimize), not the web 'createBuilder'.
+  (builder, maybeSourceMap) <- createNativeBuilder ctx artifacts
   verifyIfRequested ctx artifacts doVerify builder
-  let caps = extractCapabilities ctx
+  let -- CMP-8b: an optimized build ARCHIVES the map out-of-band (sibling .js.map
+      -- + sourceMappingURL, not inlined) so the shipped bundle stays small; a
+      -- dev build inlines it (bare Hermes can't fetch a sibling).
+      disposition = NativeBundle.dispositionFor (ctx ^. bcDesiredMode == Prod)
+      caps = extractCapabilities ctx
       -- The capability registry precedes the IIFE exactly as on the web JS path;
       -- it is part of the IIFE the map is aligned to, so it must be prepended
       -- BEFORE assembling the native trailer (which only appends).
       iife = CapEnforce.generateCapabilityRegistry caps <> builder
       (nativeBundle, maybeMapBuilder) =
-        NativeBundle.assemble (FilePath.takeFileName target) iife maybeSourceMap
+        NativeBundle.assembleWith disposition (FilePath.takeFileName target) iife maybeSourceMap
       rootNames = Build.getRootNames artifacts
   Task.io (Reproducible.reportContentHash target (Reproducible.hashBuilder nativeBundle) doVerify)
   writeOutputFile (ctx ^. bcStyle) target nativeBundle rootNames
   Task.io (writeNativeMapFile target maybeMapBuilder)
+  -- CMP-8: emit the versioned bundle container alongside the JS bundle. On this
+  -- toolchain (no hermesc) the payload is the JS-source dev fallback — the
+  -- EXACT bytes just written to the @.js@ file (read back, so the container's
+  -- payload is byte-identical to what the host would otherwise eval, AFTER the
+  -- @.js@ post-processing) — wrapped in the magic + container/bytecode/ABI
+  -- header the host validates and rejects on mismatch. When a version-matched
+  -- hermesc is wired (see Generate.JavaScript.HermesContainer.hermescCommand),
+  -- the build swaps the payload for the .hbc and the kind for HbcBytecode; the
+  -- container, host gate, and golden are unchanged.
+  Task.io (writeNativeContainer target)
   Task.io (writeCapabilitiesManifest target artifacts)
 
 -- | The output path for the native bundle: the explicit @--output@ JS target,
@@ -234,6 +253,26 @@ writeNativeMapFile :: FilePath -> Maybe Builder -> IO ()
 writeNativeMapFile _target Nothing = pure ()
 writeNativeMapFile target (Just mapBuilder) =
   File.writeBuilder (target <> ".map") mapBuilder
+
+-- | Write the CMP-8 versioned bundle container next to the native JS bundle.
+--
+-- The container is @\<bundle\>.container@: the fixed 32-byte header
+-- (magic + container\/payload-kind\/bytecode\/ABI versions + payload length +
+-- header CRC) followed by the payload. With no @hermesc@ on this toolchain the
+-- payload is the JS-source dev fallback — read back from the @.js@ file just
+-- written, so it is byte-identical to what the host would otherwise eval (the
+-- @.js@ post-processing has already been applied) — stamped with the Canopy ABI
+-- version the host gates on. The host reads this header and rejects on any
+-- mismatch BEFORE evaluating a byte; the dev-fallback container always loads
+-- (its bytecode version is 0 and not gated).
+--
+-- @since 0.20.10
+writeNativeContainer :: FilePath -> IO ()
+writeNativeContainer target = do
+  payload <- ByteString.Lazy.fromStrict <$> ByteString.readFile target
+  File.writeBuilder
+    (target <> ".container")
+    (HermesContainer.wrapJsSource HermesContainer.kCanopyAbiVersion payload)
 
 -- | Generate code-split JavaScript output to a directory.
 --

@@ -46,7 +46,10 @@
 module Generate.JavaScript.NativeBundle
   ( -- * Assembly
     assemble
+  , assembleWith
   , assembleBuilder
+  , MapDisposition (..)
+  , dispositionFor
 
     -- * Pieces (exposed for testing)
   , bootHook
@@ -87,22 +90,72 @@ assemble
   -> Builder
   -- ^ the IIFE bundle from 'Generate.JavaScript.generate'
   -> Maybe SourceMap.SourceMap
-  -- ^ its source map (dev only; 'Nothing' under @--optimize@)
+  -- ^ its source map ('Nothing' when no map was produced)
   -> (Builder, Maybe Builder)
 assemble bundleName iife maybeMap =
-  (assembleBuilder bundleName iife maybeMap, fmap SourceMap.toBuilder maybeMap)
+  assembleWith InlineMap bundleName iife maybeMap
 
--- | The JS-only half of 'assemble': the booted bundle 'Builder'.
+-- | How the source map travels with the bundle (CMP-8b).
+--
+-- The map is decoupled from Dev\/Prod: it is the DISPOSITION, not the build
+-- mode, that decides how it ships. Both shapes write the standalone @.js.map@
+-- and the @sourceMappingURL@ comment; they differ only in whether the JSON is
+-- ALSO inlined into the bundle bytes.
+data MapDisposition
+  = -- | Dev: inline @globalThis.__canopy_sourcemap@ AND write the sibling
+    -- @.js.map@. Bare Hermes symbolicates from the in-bundle copy; tools that
+    -- read sibling maps use the file. Both copies are byte-identical.
+    InlineMap
+  | -- | Prod (CMP-8b): write the sibling @.js.map@ and emit the
+    -- @sourceMappingURL@ comment, but do NOT inline the JSON. The map is
+    -- ARCHIVED OUT-OF-BAND — a release crash on a device is still symbolicatable
+    -- by a service that pulls the @.map@, without paying the map's bytes (often
+    -- larger than the minified bundle) in the shipped APK. This is the size
+    -- budget the CMP-8b plan calls for: @--optimize@ no longer DROPS the map, it
+    -- MOVES it out of the bundle.
+    ArchiveMap
+  deriving (Eq, Show)
+
+-- | The disposition for a build: 'InlineMap' for a dev build, 'ArchiveMap' for
+-- an optimized one. A small helper so the caller expresses intent
+-- (@dispositionFor isOptimized@) rather than naming the constructor.
+dispositionFor :: Bool -> MapDisposition
+dispositionFor isOptimized = if isOptimized then ArchiveMap else InlineMap
+
+-- | 'assemble' generalised over the map 'MapDisposition' (CMP-8b).
+--
+-- The returned JS is the IIFE, then the boot hook, then the map trailer per the
+-- disposition:
+--
+--   * 'InlineMap': inline assignment + @sourceMappingURL@ (dev);
+--   * 'ArchiveMap': @sourceMappingURL@ only — the JSON is NOT inlined (prod).
+--
+-- The standalone @.js.map@ 'Builder' (the second component) is returned for BOTH
+-- dispositions when a map exists, since both archive the map to disk; it is
+-- 'Nothing' only when there is no map at all.
+assembleWith
+  :: MapDisposition
+  -> FilePath
+  -> Builder
+  -> Maybe SourceMap.SourceMap
+  -> (Builder, Maybe Builder)
+assembleWith disposition bundleName iife maybeMap =
+  ( assembleBuilder disposition bundleName iife maybeMap
+  , fmap SourceMap.toBuilder maybeMap
+  )
+
+-- | The JS-only half of 'assembleWith': the booted bundle 'Builder'.
 --
 -- Kept separate so callers that only need the JS (e.g. a golden that snapshots
 -- the bundle text, or a host that already has the map) need not re-serialize the
--- map. 'assemble' delegates here for its first component.
+-- map. 'assembleWith' delegates here for its first component.
 assembleBuilder
-  :: FilePath
+  :: MapDisposition
+  -> FilePath
   -> Builder
   -> Maybe SourceMap.SourceMap
   -> Builder
-assembleBuilder bundleName iife maybeMap =
+assembleBuilder disposition bundleName iife maybeMap =
   iife
     <> bootHook
     <> mapTrailer
@@ -111,8 +164,14 @@ assembleBuilder bundleName iife maybeMap =
       case maybeMap of
         Nothing -> mempty
         Just sm ->
-          inlineSourceMap sm
-            <> sourceMappingRef bundleName
+          case disposition of
+            -- Dev: the map travels inside the bundle (bare Hermes can't fetch a
+            -- sibling) PLUS a sourceMappingURL for tools that read siblings.
+            InlineMap -> inlineSourceMap sm <> sourceMappingRef bundleName
+            -- Prod (CMP-8b): the map is archived to the sibling .js.map only.
+            -- We still emit sourceMappingURL so a symbolication service can find
+            -- it, but the JSON itself stays OUT of the shipped bytes.
+            ArchiveMap -> sourceMappingRef bundleName
 
 -- | The native boot hook + ABI fallbacks, appended after the IIFE.
 --

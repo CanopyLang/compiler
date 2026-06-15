@@ -24,6 +24,7 @@ module Make.Builder
 
     -- * Builder Creation
     createBuilder,
+    createNativeBuilder,
     createESMBuilder,
     createSplitBuilder,
     shouldSplitOutput,
@@ -146,6 +147,36 @@ createBuilder ctx artifacts = do
   let ffiUnsafeFlag = ctx ^. bcFfiUnsafe
   let ffiDebugFlag = ctx ^. bcFfiDebug
   generateForMode mode ffiUnsafeFlag ffiDebugFlag artifacts
+
+-- | Create the NATIVE-target output builder from compiled artifacts (CMP-8b).
+--
+-- Identical to 'createBuilder' except it drives 'JS.generateNative', which
+-- splices the browser-global stub into the preamble and — crucially — emits a
+-- source map EVEN under @--optimize@ (the renamed-name prod map, so a release
+-- crash on a device is symbolicatable). The web path keeps 'createBuilder',
+-- which drops the prod map for size, so the web output is unchanged.
+createNativeBuilder ::
+  BuildContext ->
+  Compiler.Artifacts ->
+  Task (Builder, Maybe SourceMap.SourceMap)
+createNativeBuilder ctx artifacts =
+  Task.mapError wrapGenerate (return (generateNativeJS mode artifacts))
+  where
+    desired = ctx ^. bcDesiredMode
+    ffiUnsafeFlag = ctx ^. bcFfiUnsafe
+    ffiDebugFlag = ctx ^. bcFfiDebug
+    globalGraph = extractGlobalGraph artifacts
+    mode = desiredToMode desired ffiUnsafeFlag ffiDebugFlag globalGraph
+    wrapGenerate msg = Exit.MakeBadGenerate [Diag.stringToDiagnostic Diag.PhaseGenerate "CODE GENERATION ERROR" msg]
+
+-- Helper: Generate the native bundle JS + (Dev or prod) source map from artifacts.
+generateNativeJS :: Mode.Mode -> Compiler.Artifacts -> (Builder, Maybe SourceMap.SourceMap)
+generateNativeJS mode artifacts =
+  let globalGraph = extractGlobalGraph artifacts
+      mains = extractMains artifacts
+      ffiInfo = artifacts ^. Build.artifactsFFIInfo
+      (jsBuilder, sourceMap, _coverageMap) = JS.generateNative mode globalGraph mains ffiInfo
+   in (jsBuilder, sourceMap)
 
 -- | Create ESM output from compiled artifacts.
 --

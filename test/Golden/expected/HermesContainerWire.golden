@@ -1,0 +1,20 @@
+== CMP-8 native bundle container wire format (v1) ==
+
+magic (u64 LE)  : 43 41 4e 4f 50 59 01 01  ("CANOPY\x01\x01")
+container ver   : 1
+header size     : 32 bytes
+
+field offsets (a host reads these fixed positions):
+  [ 0..8)  magic            u64 LE
+  [ 8..12) containerVersion u32 LE
+  [12..16) payloadKind      u32 LE   (0=JsSource, 1=HbcBytecode)
+  [16..20) bytecodeVersion  u32 LE   (0 for JsSource)
+  [20..24) abiVersion       u32 LE
+  [24..28) payloadLength    u32 LE
+  [28..32) headerCrc        u32 LE   (CRC-32 of bytes [0,28))
+
+-- HBC container (bytecodeVersion=96, abiVersion=1, payload=8 bytes) --
+header bytes : 43 41 4e 4f 50 59 01 01 01 00 00 00 01 00 00 00 60 00 00 00 01 00 00 00 08 00 00 00 e4 5e d1 70
+
+-- JS-source container (abiVersion=1, payload=8 bytes) --
+header bytes : 43 41 4e 4f 50 59 01 01 01 00 00 00 00 00 00 00 00 00 00 00 01 00 00 00 08 00 00 00 7d a3 eb f6

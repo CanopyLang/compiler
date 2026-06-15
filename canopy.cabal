@@ -216,6 +216,7 @@ test-suite canopy-test
       Integration.KitIntegrationTest
       Integration.MakeTest
       Integration.Native.CodegenSuiteTest
+      Integration.Native.HermesContainerWireTest
       Integration.Native.NativeBundleTargetTest
       Integration.Native.SourceMapColumnTest
       Integration.Native.SourceMapLineBaseTest
@@ -329,10 +330,13 @@ test-suite canopy-test
       Unit.Generate.JavaScript.FFIGenTest
       Unit.Generate.JavaScript.FFIRuntimeGenTest
       Unit.Generate.JavaScript.FunctionsTest
+      Unit.Generate.JavaScript.HermesContainerTest
       Unit.Generate.JavaScript.KernelTest
       Unit.Generate.JavaScript.MinifyTest
       Unit.Generate.JavaScript.NameGenTest
       Unit.Generate.JavaScript.NativeBundleTest
+      Unit.Generate.JavaScript.NativeDCETest
+      Unit.Generate.JavaScript.NativeHMRTest
       Unit.Generate.JavaScript.RelinkTest
       Unit.Generate.JavaScript.RuntimeAnnotationTest
       Unit.Generate.JavaScript.RuntimeTest

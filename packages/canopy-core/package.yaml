@@ -179,9 +179,12 @@ library:
     - Generate.JavaScript.FFI
     - Generate.JavaScript.Functions
     - Generate.JavaScript.HermesShim
+    - Generate.JavaScript.HermesContainer
     - Generate.JavaScript.Minify
     - Generate.JavaScript.Name
     - Generate.JavaScript.NativeBundle
+    - Generate.JavaScript.NativeDCE
+    - Generate.JavaScript.NativeHMR
     - Generate.JavaScript.SourceMap
     - Generate.JavaScript.StringPool
     - Generate.JavaScript.NpmWrapper

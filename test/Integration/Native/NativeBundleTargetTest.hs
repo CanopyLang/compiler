@@ -39,6 +39,9 @@
 module Integration.Native.NativeBundleTargetTest (tests) where
 
 import Data.List (isInfixOf, isPrefixOf)
+import qualified Data.ByteString as BS
+import qualified Generate.JavaScript.HermesContainer as HermesContainer
+import qualified Generate.JavaScript.NativeDCE as NativeDCE
 import qualified Data.ByteString.Lazy as LBS
 import qualified Data.ByteString.Lazy.Char8 as LBS8
 import qualified System.Directory as Dir
@@ -48,7 +51,7 @@ import qualified System.IO.Temp as Temp
 import qualified System.Process as Process
 import Test.Tasty (TestTree, testGroup)
 import Test.Tasty.Golden (goldenVsString)
-import Test.Tasty.HUnit (assertBool, assertFailure, testCase)
+import Test.Tasty.HUnit (assertBool, assertFailure, testCase, (@?=))
 
 tests :: TestTree
 tests =
@@ -59,6 +62,9 @@ tests =
     , mapAlignmentTests
     , prodTests
     , bootabilityTests
+    , browserGateTests
+    , prodMapContentTests
+    , containerTests
     ]
 
 -- ---------------------------------------------------------------------------
@@ -182,22 +188,37 @@ mapAlignmentTests =
     ]
 
 -- ---------------------------------------------------------------------------
--- 4. PROD (no map)
+-- 4. PROD (map archived out-of-band — CMP-8b)
 -- ---------------------------------------------------------------------------
 
+-- | CMP-8b changed the @--optimize@ contract: the prod build no longer DROPS
+-- the map (which left a release crash unsymbolicatable). It now ARCHIVES the map
+-- out-of-band — a standalone @.js.map@ + a @sourceMappingURL@ comment — while
+-- keeping the JSON OUT of the shipped bytes (the size budget). So under
+-- @--optimize@:
+--
+--   * the boot hook is still installed (unchanged);
+--   * a standalone @.js.map@ IS written (against the renamed names);
+--   * the @sourceMappingURL@ comment IS present (a symbolication service finds
+--     the sibling map);
+--   * but the map is NOT inlined (@__canopy_sourcemap@ is absent), so the bundle
+--     stays small.
 prodTests :: TestTree
 prodTests =
-  testCase "optimized native bundle installs boot hook but emits NO map" $ do
+  testCase "optimized native bundle installs boot hook + archives the map out-of-band (CMP-8b)" $ do
     ensurePrereqs
     (bundle, maybeMap) <- compileNative sampleSource OptimizeMode
     assertHas bundle "__canopy_boot" "native boot hook (present under --optimize too)"
-    assertBool "no standalone .map under --optimize" (maybeMap == Nothing)
     assertBool
-      "no inline __canopy_sourcemap under --optimize"
+      "a standalone .js.map MUST be archived under --optimize (CMP-8b prod source map)"
+      (maybeMap /= Nothing)
+    assertBool
+      "the archived prod map must be a valid Source Map V3 (version 3)"
+      (maybe False ("\"version\":3" `isInfixOf`) maybeMap)
+    assertBool
+      "the map must NOT be inlined under --optimize (size budget — it is archived out-of-band)"
       (not ("__canopy_sourcemap" `isInfixOf` bundle))
-    assertBool
-      "no sourceMappingURL under --optimize"
-      (not ("sourceMappingURL" `isInfixOf` bundle))
+    assertHas bundle "//# sourceMappingURL=" "sourceMappingURL comment (points at the sibling .map)"
 
 -- ---------------------------------------------------------------------------
 -- 5. BOOTABILITY  (no free identifiers)
@@ -222,6 +243,128 @@ bootabilityTests =
 isReferenceError :: String -> Bool
 isReferenceError line =
   "ReferenceError" `isInfixOf` line || "is not defined" `isInfixOf` line
+
+-- ---------------------------------------------------------------------------
+-- 6. BROWSER-GLOBAL GATE (CMP-8b)
+-- ---------------------------------------------------------------------------
+
+-- | CMP-8b gates browser-only @window@/@document@ refs for Hermes via an
+-- allowlist + a stub. These assertions hold the gate END TO END on the real
+-- assembled bundle, in BOTH dev and @--optimize@:
+--
+--   * the browser-global STUB is spliced in (so the kernel's native-dead
+--     @window.addEventListener@ / @document.body@ refs resolve on bare Hermes);
+--   * the static GATE 'NativeDCE.unstubbedRefs' finds NO @window@/@document@
+--     access outside the allowlist — i.e. every real browser reference the
+--     bundle carries is one the stub provides. A new unguarded browser ref in
+--     the kernel would surface here as a non-empty result and fail the gate.
+browserGateTests :: TestTree
+browserGateTests =
+  testGroup
+    "browser-global gate (CMP-8b)"
+    [ testCase "dev bundle splices the browser-global stub and has no unstubbed refs" $ do
+        ensurePrereqs
+        (bundle, _) <- compileNative sampleSource DevMode
+        assertHas bundle NativeDCE.stubMarkerName "browser-global stub marker"
+        assertNoUnstubbed bundle
+    , testCase "optimized bundle splices the stub and has no unstubbed refs" $ do
+        ensurePrereqs
+        (bundle, _) <- compileNative sampleSource OptimizeMode
+        assertHas bundle NativeDCE.stubMarkerName "browser-global stub marker (prod)"
+        assertNoUnstubbed bundle
+    ]
+  where
+    assertNoUnstubbed bundle =
+      case NativeDCE.unstubbedRefs bundle of
+        [] -> pure ()
+        refs ->
+          assertFailure
+            ( "the native bundle references browser globals the stub does NOT cover "
+                ++ "(would crash on bare Hermes); extend the allowlist + stub or guard them:\n  "
+                ++ show refs
+            )
+
+-- ---------------------------------------------------------------------------
+-- 7. PROD SOURCE MAP CONTENT (CMP-8b)
+-- ---------------------------------------------------------------------------
+
+-- | The CMP-8b prod map is a real, archived Source Map V3 against the renamed
+-- names: it carries @version 3@, names the @.can@ source modules, and has a
+-- non-empty @mappings@ field — enough to turn a @canopy.bundle.js:LINE@ frame
+-- into a @Module.can@ location on a release crash. It is written to the sibling
+-- @.js.map@ (out-of-band), NOT inlined.
+prodMapContentTests :: TestTree
+prodMapContentTests =
+  testCase "optimized native build archives a valid renamed-name source map (CMP-8b)" $ do
+    ensurePrereqs
+    (_bundle, maybeMap) <- compileNative sampleSource OptimizeMode
+    case maybeMap of
+      Nothing -> assertFailure "--optimize --target native must archive a standalone .js.map (CMP-8b)"
+      Just mapJson -> do
+        assertHas mapJson "\"version\":3" "Source Map V3 version field"
+        assertHas mapJson ".can" "at least one .can source module in the map"
+        assertBool
+          "the prod map must carry a non-empty mappings field (it maps generated lines)"
+          (nonEmptyMappings mapJson)
+  where
+    -- The mappings field is "mappings":"<vlq>" — assert it is present and not "".
+    nonEmptyMappings j =
+      case afterSubstr "\"mappings\":\"" j of
+        [] -> False
+        (c : _) -> c /= '"'
+
+-- ---------------------------------------------------------------------------
+-- 8. VERSIONED BUNDLE CONTAINER (CMP-8)
+-- ---------------------------------------------------------------------------
+
+-- | CMP-8 emits a versioned bundle container next to the native JS bundle:
+-- @canopy.bundle.js.container@. With no @hermesc@ on this toolchain the payload
+-- is the JS-source dev fallback — the SAME assembled bundle bytes — wrapped in
+-- the magic + container/bytecode/ABI-version header the host validates. These
+-- assertions hold that end-to-end on the REAL @canopy@ build:
+--
+--   * the container file is written;
+--   * it parses with the host-mirror parser ('HermesContainer.parseContainer')
+--     — magic, header CRC, and payload length all check out;
+--   * its payload is byte-identical to the assembled @canopy.bundle.js@ (the
+--     dev fallback wraps the exact bundle);
+--   * its stamped ABI version is the host's, payload kind is JsSource; and
+--   * it PASSES the host-mirror validation gate against the engine pin
+--     (bytecode 96) and host ABI (1) — i.e. the host would accept it.
+containerTests :: TestTree
+containerTests =
+  testGroup
+    "versioned bundle container (CMP-8)"
+    [ testCase "dev build writes a container that parses + wraps the exact bundle" $ do
+        ensurePrereqs
+        (bundleBytes, container) <- compileNativeWithContainer sampleSource DevMode
+        case HermesContainer.parseContainer container of
+          Left e -> assertFailure ("the emitted .container failed to parse: " ++ show e)
+          Right (header, payload) -> do
+            assertBool
+              "the container payload must be the exact bytes of canopy.bundle.js (dev fallback)"
+              (payload == bundleBytes)
+            HermesContainer.chPayloadKind header @?= HermesContainer.JsSource
+            HermesContainer.chAbiVersion header @?= HermesContainer.kCanopyAbiVersion
+    , testCase "the emitted container PASSES the host-mirror validation gate" $ do
+        ensurePrereqs
+        (_bundle, container) <- compileNativeWithContainer sampleSource DevMode
+        case HermesContainer.parseContainer container of
+          Left e -> assertFailure ("parse failed: " ++ show e)
+          Right (header, _) ->
+            HermesContainer.validate
+              HermesContainer.kCanopyContainerVersion
+              HermesContainer.kCanopyEngineBytecodeVersion
+              HermesContainer.kCanopyAbiVersion
+              header
+              @?= Right ()
+    , testCase "optimized build also writes a parseable container" $ do
+        ensurePrereqs
+        (_bundle, container) <- compileNativeWithContainer sampleSource OptimizeMode
+        assertBool
+          "the optimized .container must parse (host would accept it)"
+          (either (const False) (const True) (HermesContainer.parseContainer container))
+    ]
 
 -- ---------------------------------------------------------------------------
 -- COMPILE PLUMBING
@@ -249,6 +392,26 @@ compileNative source mode =
     -- force the reads before the temp dir is removed
     length bundle `seq` maybe (pure ()) (\m -> length m `seq` pure ()) maybeMap
     pure (bundle, maybeMap)
+
+-- | Compile the sample with @--target native@ and return the raw bytes of the
+-- written @canopy.bundle.js@ plus the raw bytes of the emitted
+-- @canopy.bundle.js.container@ (CMP-8). Fails the test if the container sidecar
+-- was not written. Both are read as RAW bytes so the byte-identity check
+-- (payload == bundle) is exact, independent of any text decoding.
+compileNativeWithContainer :: String -> Mode -> IO (BS.ByteString, BS.ByteString)
+compileNativeWithContainer source mode =
+  Temp.withSystemTempDirectory "can-cmp8" $ \tmp -> do
+    setupProject tmp source
+    runCompileNative tmp mode
+    bundle <- BS.readFile (tmp </> "canopy.bundle.js")
+    let containerPath = tmp </> "canopy.bundle.js.container"
+    containerExists <- Dir.doesFileExist containerPath
+    if not containerExists
+      then assertFailure "CMP-8: canopy make --target native must write canopy.bundle.js.container"
+      else do
+        container <- BS.readFile containerPath
+        BS.length bundle `seq` BS.length container `seq` pure ()
+        pure (bundle, container)
 
 -- | Compile the sample with @--target native@, then evaluate + boot it under
 -- node behind a minimal Fabric mock, returning combined stdout+stderr.

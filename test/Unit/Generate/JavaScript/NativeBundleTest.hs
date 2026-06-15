@@ -66,6 +66,7 @@ tests =
     , inlineMapTests
     , assembleDevTests
     , assembleProdTests
+    , archiveMapTests
     , escapeTests
     ]
 
@@ -184,6 +185,55 @@ assembleProdTests =
         let (_, maybeMap) = NativeBundle.assemble "canopy.bundle.js" sampleIife Nothing
          in assertBool "expected Nothing for the map builder under --optimize"
               (maybeNull maybeMap)
+    ]
+
+-- ASSEMBLE (PROD — map archived out-of-band, CMP-8b) ------------------------
+
+-- | CMP-8b's 'NativeBundle.ArchiveMap' disposition: when a map IS present (the
+-- native prod path now produces one), an optimized build archives it to the
+-- sibling @.js.map@ and emits the @sourceMappingURL@ comment, but does NOT
+-- inline the JSON into the bundle bytes (the size budget). This is the contrast
+-- with 'InlineMap' (dev), which inlines AND archives.
+archiveMapTests :: TestTree
+archiveMapTests =
+  testGroup
+    "assemble (prod — ArchiveMap, CMP-8b)"
+    [ testCase "dispositionFor True is ArchiveMap; False is InlineMap" $ do
+        NativeBundle.dispositionFor True @?= NativeBundle.ArchiveMap
+        NativeBundle.dispositionFor False @?= NativeBundle.InlineMap
+    , testCase "ArchiveMap still installs the boot hook" $
+        let (js, _) =
+              NativeBundle.assembleWith NativeBundle.ArchiveMap "canopy.bundle.js" sampleIife (Just sampleMap)
+         in assertBool "expected boot hook under ArchiveMap"
+              ("g.__canopy_boot" `isInfixOf` render js)
+    , testCase "ArchiveMap does NOT inline the map (size budget)" $
+        let (js, _) =
+              NativeBundle.assembleWith NativeBundle.ArchiveMap "canopy.bundle.js" sampleIife (Just sampleMap)
+            out = render js
+         in assertBool "the map JSON must not be inlined under ArchiveMap"
+              (not ("__canopy_sourcemap" `isInfixOf` out))
+    , testCase "ArchiveMap STILL emits the sourceMappingURL comment" $
+        let (js, _) =
+              NativeBundle.assembleWith NativeBundle.ArchiveMap "canopy.bundle.js" sampleIife (Just sampleMap)
+         in assertBool "expected sourceMappingURL even when archived"
+              ("//# sourceMappingURL=canopy.bundle.js.map" `isInfixOf` render js)
+    , testCase "ArchiveMap STILL returns the standalone .js.map builder (written to disk)" $
+        case NativeBundle.assembleWith NativeBundle.ArchiveMap "canopy.bundle.js" sampleIife (Just sampleMap) of
+          (_, Nothing) -> assertFailure "ArchiveMap must still hand back the standalone map to write"
+          (_, Just mb) -> render mb @?= render (SourceMap.toBuilder sampleMap)
+    , testCase "ArchiveMap with no map at all emits no trailer (boot hook only)" $
+        let (js, mb) =
+              NativeBundle.assembleWith NativeBundle.ArchiveMap "canopy.bundle.js" sampleIife Nothing
+            out = render js
+         in do
+              assertBool "no map -> no sourceMappingURL" (not ("sourceMappingURL" `isInfixOf` out))
+              assertBool "no map -> no inline assignment" (not ("__canopy_sourcemap" `isInfixOf` out))
+              assertBool "no map -> no standalone builder" (maybeNull mb)
+    , testCase "the assembled JS still begins with the verbatim IIFE under ArchiveMap" $
+        let (js, _) =
+              NativeBundle.assembleWith NativeBundle.ArchiveMap "canopy.bundle.js" sampleIife (Just sampleMap)
+         in assertBool "ArchiveMap must not prepend anything to the IIFE"
+              (render sampleIife `isPrefixOf` render js)
     ]
 
 -- ESCAPING ------------------------------------------------------------------
