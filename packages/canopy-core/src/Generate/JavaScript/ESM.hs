@@ -29,6 +29,9 @@
 module Generate.JavaScript.ESM
   ( -- * Top-level generation
     generate,
+    -- * Per-module generation (exposed for incremental relinking)
+    generateModule,
+    groupByModule,
     -- * Module comment helpers
     moduleComment,
     canonicalToFilename,

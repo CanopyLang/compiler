@@ -17,6 +17,8 @@ import qualified Integration.InitTest as InitIT
 import qualified Integration.InstallTest as InstallIT
 import qualified Integration.JsExecutionTest as JsExecutionIT
 import qualified Integration.MakeTest as MakeIT
+import qualified Integration.Native.CodegenSuiteTest as NativeCodegenSuiteIT
+import qualified Integration.Native.SourceMapLineBaseTest as NativeSourceMapLineBaseIT
 import qualified Integration.Terminal.ChompIntegrationTest as ChompIT
 import qualified Integration.TemplateLiteralTest as TemplateLiteralIT
 import qualified Integration.TerminalIntegrationTest as TerminalIT
@@ -131,6 +133,7 @@ import qualified Unit.Generate.JavaScript.MinifyTest as JSMinifyTest
 import qualified Unit.Generate.JavaScript.ExpressionArithmeticTest as JSExpressionArithmeticTest
 import qualified Unit.Generate.JavaScript.RuntimeAnnotationTest as RuntimeAnnotationTest
 import qualified Unit.Generate.JavaScript.RuntimeTest as JSRuntimeTest
+import qualified Unit.Generate.JavaScript.RelinkTest as JSRelinkTest
 import qualified Unit.Generate.ModeTest as ModeTest
 import qualified Unit.Generate.NameTest as GenerateNameTest
 import qualified Unit.Generate.CoverageTest as CoverageTest
@@ -354,6 +357,7 @@ unitTests =
       JSAbilityTest.tests,
       JSBuilderTest.tests,
       JSESMGenTest.tests,
+      JSRelinkTest.tests,
       JSFunctionsTest.tests,
       JSFFIGenTest.tests,
       JSFFIRuntimeGenTest.tests,
@@ -491,6 +495,8 @@ integrationTests =
       InitIT.tests,
       CodeSplitIT.tests,
       JsExecutionIT.tests,
+      NativeSourceMapLineBaseIT.tests,
+      NativeCodegenSuiteIT.tests,
       PureBuilderIT.tests,
       EndToEndIT.tests,
       DevelopIT.tests,

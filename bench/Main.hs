@@ -18,6 +18,7 @@ import qualified Bench.Hash as Hash
 import qualified Bench.Json as Json
 import qualified Bench.Optimize as Optimize
 import qualified Bench.Parse as Parse
+import qualified Bench.Relink as Relink
 import qualified Bench.TreeShake as TreeShake
 
 main :: IO ()
@@ -29,5 +30,6 @@ main =
       Generate.benchmarks,
       Optimize.benchmarks,
       TreeShake.benchmarks,
-      Cache.benchmarks
+      Cache.benchmarks,
+      Relink.benchmarks
     ]

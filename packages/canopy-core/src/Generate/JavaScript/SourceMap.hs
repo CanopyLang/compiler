@@ -154,36 +154,39 @@ toBuilder sm =
 
 -- | Encode all mappings into the VLQ mappings string.
 --
--- Groups mappings by generated line, separates lines with @;@
--- and segments within a line with @,@. Each segment's fields
--- are encoded as deltas from the previous segment.
+-- Per the Source Map V3 spec, @;@ separates generated lines and @,@
+-- separates segments within a line. The number of @;@ characters that
+-- precede a segment group equals the 0-based generated line of that group:
+-- a segment on line 0 has no leading @;@, on line 1 exactly one, and so on.
+-- Semicolons are pure line SEPARATORS — exactly one is emitted per
+-- advanced line — so a leading run of empty lines (e.g. a native IIFE whose
+-- first mapped def lands hundreds of lines into the runtime) is encoded as
+-- exactly that many @;@, not one too many.
+--
+-- Segment field deltas (genCol relative to the previous segment ON THE SAME
+-- LINE, the rest relative to the previous segment anywhere) are carried in
+-- 'VLQState'. genCol resets to 0 at the start of every generated line.
 encodeMappings :: [Mapping] -> Builder
 encodeMappings mappings =
-  go 0 initialState mappings
+  go 0 (VLQState 0 0 0 0 0) mappings
   where
-    initialState = VLQState 0 0 0 0 0
-    go _currentLine _st [] = mempty
-    go currentLine st ms =
-      let (lineMs, rest) = span (\m -> _mGenLine m == currentLine) ms
-       in encodeOneLine currentLine st lineMs rest
+    -- @prevLine@ is the generated line whose separators have already been
+    -- emitted (0 before anything). For each group we first emit @genLine -
+    -- prevLine@ semicolons to advance to the group's line, then its segments.
+    go _prevLine _st [] = mempty
+    go prevLine st ms@(m : _) =
+      let line = _mGenLine m
+          (lineMs, rest) = span (\m' -> _mGenLine m' == line) ms
+          separators = stimesMonoid (line - prevLine) (BB.char7 ';')
+          -- genCol is line-relative: reset its running total at each new line.
+          (segBuilder, st') = encodeLineSegments st { _prevGenCol = 0 } lineMs
+       in separators <> segBuilder <> go line st' rest
 
--- | Encode mappings for one generated line and continue.
-encodeOneLine :: Int -> VLQState -> [Mapping] -> [Mapping] -> Builder
-encodeOneLine currentLine st lineMs rest =
-  case lineMs of
-    [] ->
-      BB.char7 ';' <> encodeMappingsFrom (currentLine + 1) st rest
-    _ ->
-      let prefix = if currentLine > 0 then BB.char7 ';' else mempty
-          (segBuilder, st') = encodeLineSegments st lineMs
-       in prefix <> segBuilder <> encodeMappingsFrom (currentLine + 1) st' rest
-
--- | Continue encoding from a specific line number.
-encodeMappingsFrom :: Int -> VLQState -> [Mapping] -> Builder
-encodeMappingsFrom _currentLine _st [] = mempty
-encodeMappingsFrom currentLine st ms =
-  let (lineMs, rest) = span (\m -> _mGenLine m == currentLine) ms
-   in encodeOneLine currentLine st lineMs rest
+-- | @n@ copies of a builder concatenated (n >= 0 yields 'mempty' when 0).
+stimesMonoid :: Int -> Builder -> Builder
+stimesMonoid n b
+  | n <= 0    = mempty
+  | otherwise = b <> stimesMonoid (n - 1) b
 
 -- | Accumulator for relative VLQ encoding state.
 --

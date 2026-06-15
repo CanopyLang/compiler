@@ -261,31 +261,40 @@ base64Chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/"
 --
 -- Source maps with no mappings on line 0 must still produce the correct
 -- number of leading semicolons so that segment offsets are accurate.
+--
+-- Per the Source Map V3 spec, @;@ characters are pure line SEPARATORS:
+-- a segment group on 0-based generated line @N@ is preceded by exactly @N@
+-- semicolons (line 0 → none, line 1 → one, line 2 → two). The encoder
+-- previously emitted @N+1@ for @N >= 1@, which was harmless only because the
+-- native IIFE's first mapping happened to sit on line 0 (the line-base bug
+-- fixed by CMP-6). With the generated-line base now correct, every mapping
+-- lands deep in the runtime and this off-by-one would shift every dev red-box
+-- one line down — so these assertions pin the spec-exact semicolon counts.
 mappingsOnHigherLinesTests :: TestTree
 mappingsOnHigherLinesTests =
   testGroup
     "Mappings starting on line > 0"
-    [ testCase "only a line-1 mapping produces ;;AAAA (empty line 0 + line 1 prefix + segment)" $
+    [ testCase "only a line-1 mapping produces ;AAAA (empty line 0 + line-1 segment)" $
         let m = SourceMap.Mapping 1 0 0 0 0 Nothing
             sm = SourceMap.addMapping m (SourceMap.empty "out.js")
             mappingsValue = extractMappingsValue (renderBuilder (SourceMap.toBuilder sm))
-         in mappingsValue @?= ";;AAAA"
-    , testCase "only a line-2 mapping produces three leading semicolons" $
+         in mappingsValue @?= ";AAAA"
+    , testCase "only a line-2 mapping produces exactly two leading semicolons" $
         let m = SourceMap.Mapping 2 0 0 0 0 Nothing
             sm = SourceMap.addMapping m (SourceMap.empty "out.js")
             mappingsValue = extractMappingsValue (renderBuilder (SourceMap.toBuilder sm))
-         in take 3 mappingsValue @?= ";;;"
-    , testCase "line-1-only mapping has exactly 2 semicolons total" $
+         in mappingsValue @?= ";;AAAA"
+    , testCase "line-1-only mapping has exactly 1 semicolon total" $
         let m = SourceMap.Mapping 1 0 0 0 0 Nothing
             sm = SourceMap.addMapping m (SourceMap.empty "out.js")
             mappingsValue = extractMappingsValue (renderBuilder (SourceMap.toBuilder sm))
-         in length (filter (== ';') mappingsValue) @?= 2
-    , testCase "multiple mappings all on line 1 produce ;;AAAA,IAAI" $
+         in length (filter (== ';') mappingsValue) @?= 1
+    , testCase "multiple mappings all on line 1 produce ;AAAA,IAAI" $
         let m1 = SourceMap.Mapping 1 0 0 0 0 Nothing
             m2 = SourceMap.Mapping 1 4 0 0 4 Nothing
             sm = SourceMap.addMapping m2 (SourceMap.addMapping m1 (SourceMap.empty "out.js"))
             mappingsValue = extractMappingsValue (renderBuilder (SourceMap.toBuilder sm))
-         in mappingsValue @?= ";;AAAA,IAAI"
+         in mappingsValue @?= ";AAAA,IAAI"
     ]
 
 -- COMBINED SERIALIZATION TESTS

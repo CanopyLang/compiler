@@ -190,23 +190,47 @@ generate inputMode globalGraph@(Opt.GlobalGraph rawGraph _ sourceLocs) mains ffi
       coveragePreamble = if Mode.isCoverage mode then Coverage.coverageRuntimePreamble else mempty
       -- Phase 1: generate all non-runtime content inside the IIFE.
       -- This is everything except the F/A arity helpers and the Canopy runtime.
-      innerContent =
+      --
+      -- 'innerPreamble' is everything emitted INSIDE the IIFE before the
+      -- traversal output ('stateToBuilder state'). Split out so its newline
+      -- count can feed the source-map generated-line base (see 'genLineBase').
+      innerPreamble =
         debuggerStub
           <> generateFFIContent mode graph ffiInfos usedFFIFuncs
           <> perfNote mode
           <> poolDecls
           <> coveragePreamble
+      innerContent =
+        innerPreamble
           <> stateToBuilder state
           <> Kernel_.toMainExports mode mains
           <> "\nif (typeof global !== 'undefined') { global.Canopy = scope['Canopy']; global.Elm = scope['Elm']; }"
           <> "\n}(typeof window !== 'undefined' ? window : this));"
+      -- Everything in the final bundle that precedes the IIFE header through the
+      -- start of the traversal output ('stateToBuilder state'), in byte order:
+      -- the IIFE header, the F/A arity helpers, the Canopy runtime, the
+      -- FFI-runtime preamble, and the inner preamble. Source-map mappings record
+      -- generated lines relative to the START of the traversal output (State
+      -- begins at outputLine 0), so the whole bundle map must be shifted down by
+      -- the newline count of this prefix — otherwise every dev red-box line is
+      -- off by the entire runtime (CMP-6).
+      bundlePrefix =
+        header
+          <> Functions.generateConditionalFunctions neededArities
+          <> BB.byteString runtimeBytes
+          <> FFIRuntime.scanAndEmitRuntime mode (BB.byteString innerBytes)
+          <> innerPreamble
+      genLineBase =
+        if shouldTrackLines
+          then countNewlines bundlePrefix
+          else 0
       jsBuilder =
         header
           <> Functions.generateConditionalFunctions neededArities
           <> BB.byteString runtimeBytes
           <> FFIRuntime.scanAndEmitRuntime mode (BB.byteString innerBytes)
           <> BB.byteString innerBytes
-      sourceMap = buildSourceMap mode state
+      sourceMap = buildSourceMap genLineBase mode state
       coverageMap = if Mode.isCoverage mode
                     then Just (Coverage.buildCoverageMap graph sourceLocs)
                     else Nothing
@@ -1028,19 +1052,29 @@ resolveSrcIndex home state =
 -- | Build a SourceMap from accumulated state (dev mode only). Populates @sources@ from the
 -- modules seen during emission so each VLQ @srcIndex@ resolves to a @.can@ module name;
 -- @sourcesContent@ is left empty (the host symbolicates to file:line, not inline text).
-buildSourceMap :: Mode.Mode -> State -> Maybe SourceMap.SourceMap
-buildSourceMap mode state =
+--
+-- 'genLineBase' is the number of generated lines emitted BEFORE the traversal
+-- output in the final bundle (IIFE header + F\/A arity helpers + runtime + FFI
+-- runtime + inner preamble). State's 'outputLine' starts at 0 and counts only
+-- the traversal output, so every recorded mapping is relative to the start of
+-- that output. Adding 'genLineBase' to each @genLine@ re-bases the whole map to
+-- the bundle's true byte layout — without it, every dev red-box line is off by
+-- the entire prepended runtime (CMP-6).
+buildSourceMap :: Int -> Mode.Mode -> State -> Maybe SourceMap.SourceMap
+buildSourceMap genLineBase mode state =
   case mode of
     Mode.Prod {} -> Nothing
     Mode.Dev _ _ _ _ _ _ ->
       let orderedSources = map fst (List.sortOn snd (Map.toList (state ^. smSrcIndices)))
           sourcePaths = map renderModulePath orderedSources
+          rebasedMappings = map rebase (state ^. sourceMapMappings)
           sm = SourceMap.empty "canopy.js"
-       in Just sm { SourceMap._smMappings = state ^. sourceMapMappings
+       in Just sm { SourceMap._smMappings = rebasedMappings
                   , SourceMap._smSources = sourcePaths
                   , SourceMap._smSourcesContent = map (const Text.empty) sourcePaths
                   }
   where
+    rebase m = m { SourceMap._mGenLine = SourceMap._mGenLine m + genLineBase }
     renderModulePath home =
       ModuleName.toChars (ModuleName._module home) <> ".can"
 

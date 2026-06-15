@@ -214,6 +214,8 @@ test-suite canopy-test
       Integration.JsonIntegrationTest
       Integration.KitIntegrationTest
       Integration.MakeTest
+      Integration.Native.CodegenSuiteTest
+      Integration.Native.SourceMapLineBaseTest
       Integration.PureBuilderIntegrationTest
       Integration.TemplateLiteralTest
       Integration.Terminal.ChompIntegrationTest
@@ -327,6 +329,7 @@ test-suite canopy-test
       Unit.Generate.JavaScript.KernelTest
       Unit.Generate.JavaScript.MinifyTest
       Unit.Generate.JavaScript.NameGenTest
+      Unit.Generate.JavaScript.RelinkTest
       Unit.Generate.JavaScript.RuntimeAnnotationTest
       Unit.Generate.JavaScript.RuntimeTest
       Unit.Generate.JavaScript.SourceMapExtTest
@@ -550,6 +553,7 @@ benchmark canopy-bench
       Bench.Json
       Bench.Optimize
       Bench.Parse
+      Bench.Relink
       Bench.TreeShake
       Paths_canopy
   autogen-modules:
