@@ -30,8 +30,10 @@ import Test.Tasty.HUnit
 import qualified Canopy.Data.Name as Name
 import qualified Canopy.ModuleName as ModuleName
 import qualified Generate.JavaScript.Builder as JS
+import qualified Data.Set as Set
 import qualified Generate.JavaScript.Expression.Call as Call
 import qualified Generate.JavaScript.Name as JsName
+import qualified Generate.Mode as Mode
 
 -- | Root test tree for Generate.JavaScript.Expression.Call.
 tests :: TestTree
@@ -81,6 +83,14 @@ refY = JS.Ref (JsName.fromLocal (Name.fromChars "y"))
 
 basicsHome :: ModuleName.Canonical
 basicsHome = ModuleName.basics
+
+-- | A development-mode 'Mode.Mode' for the call generators.
+--
+-- In dev mode 'Mode.defName' is the identity over 'JsName.fromGlobal', so these
+-- structural tests (which check arity/A2-helper shape, not specific names) are
+-- unaffected by the prod-mode global rename map.
+devMode :: Mode.Mode
+devMode = Mode.Dev Nothing False False False Set.empty False
 
 -- ---------------------------------------------------------------------------
 -- isLiteral
@@ -311,25 +321,25 @@ generateNormalCallTests = testGroup "generateNormalCall"
 generateTupleCallTests :: TestTree
 generateTupleCallTests = testGroup "generateTupleCall"
   [ testCase "Tuple.first with one arg produces JS.Access" $
-      let result = Call.generateTupleCall basicsHome (Name.fromChars "first") [refX]
+      let result = Call.generateTupleCall devMode basicsHome (Name.fromChars "first") [refX]
       in case result of
            JS.Access _ _ -> pure ()
            other -> assertFailure ("Expected JS.Access for first, got: " ++ show other)
 
   , testCase "Tuple.second with one arg produces JS.Access" $
-      let result = Call.generateTupleCall basicsHome (Name.fromChars "second") [refX]
+      let result = Call.generateTupleCall devMode basicsHome (Name.fromChars "second") [refX]
       in case result of
            JS.Access _ _ -> pure ()
            other -> assertFailure ("Expected JS.Access for second, got: " ++ show other)
 
   , testCase "Tuple.pair falls back to generateGlobalCall (JS.Call)" $
-      let result = Call.generateTupleCall basicsHome (Name.fromChars "pair") [refX, refY]
+      let result = Call.generateTupleCall devMode basicsHome (Name.fromChars "pair") [refX, refY]
       in case result of
            JS.Call _ _ -> pure ()
            other -> assertFailure ("Expected JS.Call fallback for pair, got: " ++ show other)
 
   , testCase "Tuple.first with two args falls back to generateGlobalCall" $
-      let result = Call.generateTupleCall basicsHome (Name.fromChars "first") [refX, refY]
+      let result = Call.generateTupleCall devMode basicsHome (Name.fromChars "first") [refX, refY]
       in case result of
            JS.Call _ _ -> pure ()
            other -> assertFailure ("Expected JS.Call fallback for wrong arity, got: " ++ show other)
@@ -343,25 +353,25 @@ generateTupleCallTests = testGroup "generateTupleCall"
 generateJsArrayCallTests :: TestTree
 generateJsArrayCallTests = testGroup "generateJsArrayCall"
   [ testCase "JsArray.singleton with one arg produces JS.Array" $
-      let result = Call.generateJsArrayCall basicsHome (Name.fromChars "singleton") [refX]
+      let result = Call.generateJsArrayCall devMode basicsHome (Name.fromChars "singleton") [refX]
       in case result of
            JS.Array _ -> pure ()
            other -> assertFailure ("Expected JS.Array for singleton, got: " ++ show other)
 
   , testCase "JsArray.singleton wraps arg in single-element array" $
-      let result = Call.generateJsArrayCall basicsHome (Name.fromChars "singleton") [refX]
+      let result = Call.generateJsArrayCall devMode basicsHome (Name.fromChars "singleton") [refX]
       in case result of
            JS.Array [_] -> pure ()
            other -> assertFailure ("Expected JS.Array [x], got: " ++ show other)
 
   , testCase "JsArray.unsafeGet with two args produces JS.Index" $
-      let result = Call.generateJsArrayCall basicsHome (Name.fromChars "unsafeGet") [litInt, refX]
+      let result = Call.generateJsArrayCall devMode basicsHome (Name.fromChars "unsafeGet") [litInt, refX]
       in case result of
            JS.Index _ _ -> pure ()
            other -> assertFailure ("Expected JS.Index for unsafeGet, got: " ++ show other)
 
   , testCase "JsArray.unknown falls back to JS.Call" $
-      let result = Call.generateJsArrayCall basicsHome (Name.fromChars "initialize") [litInt, refX]
+      let result = Call.generateJsArrayCall devMode basicsHome (Name.fromChars "initialize") [litInt, refX]
       in case result of
            JS.Call _ _ -> pure ()
            other -> assertFailure ("Expected JS.Call fallback, got: " ++ show other)
@@ -375,43 +385,43 @@ generateJsArrayCallTests = testGroup "generateJsArrayCall"
 generateBitwiseCallTests :: TestTree
 generateBitwiseCallTests = testGroup "generateBitwiseCall"
   [ testCase "complement with one arg produces JS.Prefix PrefixComplement" $
-      let result = Call.generateBitwiseCall basicsHome (Name.fromChars "complement") [refX]
+      let result = Call.generateBitwiseCall devMode basicsHome (Name.fromChars "complement") [refX]
       in case result of
            JS.Prefix JS.PrefixComplement _ -> pure ()
            other -> assertFailure ("Expected PrefixComplement, got: " ++ show other)
 
   , testCase "and with two args produces JS.Infix OpBitwiseAnd" $
-      let result = Call.generateBitwiseCall basicsHome (Name.fromChars "and") [refX, refY]
+      let result = Call.generateBitwiseCall devMode basicsHome (Name.fromChars "and") [refX, refY]
       in case result of
            JS.Infix JS.OpBitwiseAnd _ _ -> pure ()
            other -> assertFailure ("Expected OpBitwiseAnd, got: " ++ show other)
 
   , testCase "or with two args produces JS.Infix OpBitwiseOr" $
-      let result = Call.generateBitwiseCall basicsHome (Name.fromChars "or") [refX, refY]
+      let result = Call.generateBitwiseCall devMode basicsHome (Name.fromChars "or") [refX, refY]
       in case result of
            JS.Infix JS.OpBitwiseOr _ _ -> pure ()
            other -> assertFailure ("Expected OpBitwiseOr, got: " ++ show other)
 
   , testCase "xor with two args produces JS.Infix OpBitwiseXor" $
-      let result = Call.generateBitwiseCall basicsHome (Name.fromChars "xor") [refX, refY]
+      let result = Call.generateBitwiseCall devMode basicsHome (Name.fromChars "xor") [refX, refY]
       in case result of
            JS.Infix JS.OpBitwiseXor _ _ -> pure ()
            other -> assertFailure ("Expected OpBitwiseXor, got: " ++ show other)
 
   , testCase "shiftLeftBy with two args produces JS.Infix OpLShift" $
-      let result = Call.generateBitwiseCall basicsHome (Name.fromChars "shiftLeftBy") [refX, refY]
+      let result = Call.generateBitwiseCall devMode basicsHome (Name.fromChars "shiftLeftBy") [refX, refY]
       in case result of
            JS.Infix JS.OpLShift _ _ -> pure ()
            other -> assertFailure ("Expected OpLShift, got: " ++ show other)
 
   , testCase "shiftRightBy with two args produces JS.Infix OpSpRShift" $
-      let result = Call.generateBitwiseCall basicsHome (Name.fromChars "shiftRightBy") [refX, refY]
+      let result = Call.generateBitwiseCall devMode basicsHome (Name.fromChars "shiftRightBy") [refX, refY]
       in case result of
            JS.Infix JS.OpSpRShift _ _ -> pure ()
            other -> assertFailure ("Expected OpSpRShift, got: " ++ show other)
 
   , testCase "shiftRightZfBy with two args produces JS.Infix OpZfRShift" $
-      let result = Call.generateBitwiseCall basicsHome (Name.fromChars "shiftRightZfBy") [refX, refY]
+      let result = Call.generateBitwiseCall devMode basicsHome (Name.fromChars "shiftRightZfBy") [refX, refY]
       in case result of
            JS.Infix JS.OpZfRShift _ _ -> pure ()
            other -> assertFailure ("Expected OpZfRShift, got: " ++ show other)
@@ -508,19 +518,19 @@ callHelpersTests = testGroup "callHelpers"
 generateGlobalCallTests :: TestTree
 generateGlobalCallTests = testGroup "generateGlobalCall"
   [ testCase "generateGlobalCall with no args produces JS.Call func []" $
-      let result = Call.generateGlobalCall basicsHome (Name.fromChars "negate") []
+      let result = Call.generateGlobalCall devMode basicsHome (Name.fromChars "negate") []
       in case result of
            JS.Call _ [] -> pure ()
            other -> assertFailure ("Expected JS.Call [] for 0 args, got: " ++ show other)
 
   , testCase "generateGlobalCall with one arg produces single-arg call" $
-      let result = Call.generateGlobalCall basicsHome (Name.fromChars "negate") [refX]
+      let result = Call.generateGlobalCall devMode basicsHome (Name.fromChars "negate") [refX]
       in case result of
            JS.Call _ [_] -> pure ()
            other -> assertFailure ("Expected JS.Call [x] for 1 arg, got: " ++ show other)
 
   , testCase "generateGlobalCall with two args uses A2 helper" $
-      let result = Call.generateGlobalCall basicsHome (Name.fromChars "add") [refX, refY]
+      let result = Call.generateGlobalCall devMode basicsHome (Name.fromChars "add") [refX, refY]
       in case result of
            JS.Call _ [_, _, _] -> pure ()
            other -> assertFailure ("Expected JS.Call A2 with 3 args, got: " ++ show other)

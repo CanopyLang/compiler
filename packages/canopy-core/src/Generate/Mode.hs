@@ -9,6 +9,7 @@ module Generate.Mode
   , isFFIAlias
   , isESM
   , globalName
+  , defName
   , ShortFieldNames
   , shortenFieldNames
   , stringPool
@@ -139,6 +140,25 @@ isESM FormatIIFE = False
 globalName :: Mode -> Opt.Global -> Maybe Name.Name
 globalName (Prod _ _ _ _ _ _ globalNames) global = Map.lookup global globalNames
 globalName _ _ = Nothing
+
+-- | Resolve the JS name to emit at the DEFINITION site of a global.
+--
+-- This is the definition-side counterpart of the reference resolution in
+-- 'Generate.JavaScript.Expression.resolveGlobalRef': in prod mode a global
+-- that was assigned a short name by 'buildGlobalRenameMap' must be DEFINED
+-- under that same short name, otherwise its callers (which reference the short
+-- name) hit a free identifier — e.g. @var $canopy$html$Html$button = m('button')@
+-- where @m@ is referenced but never defined, crashing under @--optimize@ with
+-- @ReferenceError: m is not defined@.
+--
+-- FFI-alias globals never reach a 'var'/Kernel definition emitter (they are
+-- emitted by the FFI content generator and are excluded from the rename map),
+-- so they correctly fall through to 'JsName.fromGlobal' here.
+--
+-- @since 0.20.8
+defName :: Mode -> Opt.Global -> JsName.Name
+defName mode global@(Opt.Global home name) =
+  maybe (JsName.fromGlobal home name) JsName.fromLocal (globalName mode global)
 
 -- STRING POOL
 

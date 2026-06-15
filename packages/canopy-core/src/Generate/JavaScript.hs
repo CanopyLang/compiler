@@ -141,9 +141,17 @@ generate inputMode globalGraph@(Opt.GlobalGraph rawGraph _ sourceLocs) mains ffi
   let ffiAliases = extractFFIAliases ffiInfos
       (graph, mode) = case inputMode of
         Mode.Prod fields elmCompat ffiUnsafe ffiDbg _ _ _ ->
-          let minified = Minify.minifyGraph rawGraph
+          let -- Assign GLOBAL short names first (rawGraph and the locally-minified
+              -- graph share the same Global keys, so the map is identical either
+              -- way). The set of assigned global short names is then RESERVED
+              -- during local minification so a function-local @var a@ can never
+              -- shadow a referenced top-level global @a@ (the two share one
+              -- single-letter namespace) — which would otherwise read an
+              -- uninitialised local instead of the global and crash.
+              globalRenameMap = Minify.buildGlobalRenameMap ffiAliases rawGraph reachable
+              reservedGlobals = Set.fromList (Map.elems globalRenameMap)
+              minified = Minify.minifyGraph reservedGlobals rawGraph
               pool = StringPool.buildPool minified
-              globalRenameMap = Minify.buildGlobalRenameMap ffiAliases minified reachable
            in (minified, Mode.Prod fields elmCompat ffiUnsafe ffiDbg pool ffiAliases globalRenameMap)
         Mode.Dev debugTypes elmCompat ffiUnsafe ffiDbg _ cov ->
           (rawGraph, Mode.Dev debugTypes elmCompat ffiUnsafe ffiDbg ffiAliases cov)
@@ -919,16 +927,16 @@ dispatchNode mode graph currentGlobal addDeps globalInGraph state =
           code = if Mode.isCoverage mode
                  then covDefineCode mode currentGlobal expr state
                  else Expr.generate mode expr
-       in addStmt baseState (var currentGlobal code)
+       in addStmt baseState (var mode currentGlobal code)
     Opt.DefineTailFunc argNames body deps ->
       let baseState = emitMapping currentGlobal (addDeps deps state)
-          (Opt.Global home name) = currentGlobal
+          (Opt.Global _ name) = currentGlobal
           expr = if Mode.isCoverage mode
                  then covTailFuncExpr mode currentGlobal argNames body state
                  else Expr.generateTailDefExpr mode name argNames body
-       in addStmt baseState (JS.Var (JsName.fromGlobal home name) expr)
+       in addStmt baseState (JS.Var (Mode.defName mode currentGlobal) expr)
     Opt.Ctor index arity ->
-      addStmt (emitMapping currentGlobal state) (var currentGlobal (Expr.generateCtor mode currentGlobal index arity))
+      addStmt (emitMapping currentGlobal state) (var mode currentGlobal (Expr.generateCtor mode currentGlobal index arity))
     Opt.Link linkedGlobal ->
       addGlobal mode graph state linkedGlobal
     Opt.Cycle names values functions deps ->
@@ -1078,9 +1086,9 @@ buildSourceMap genLineBase mode state =
     renderModulePath home =
       ModuleName.toChars (ModuleName._module home) <> ".can"
 
-var :: Opt.Global -> Expr.Code -> JS.Stmt
-var (Opt.Global home name) code =
-  JS.Var (JsName.fromGlobal home name) (Expr.codeToExpr code)
+var :: Mode.Mode -> Opt.Global -> Expr.Code -> JS.Stmt
+var mode global code =
+  JS.Var (Mode.defName mode global) (Expr.codeToExpr code)
 
 -- GENERATE MANAGER
 

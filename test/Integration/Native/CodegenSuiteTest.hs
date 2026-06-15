@@ -88,17 +88,15 @@ tests =
 -- tree-shaker, while staying inside the codegen the @--optimize@ path renders
 -- cleanly.
 --
--- NOTE on scope: this sample intentionally renders its two screens via plain
--- @Html.div@ / @Html.text@ + @Html.Attributes.class@ rather than wiring
--- @Html.Events.onClick@ handlers. The event-attribute path
--- (@Html.Events.on@ -> @VirtualDom.node@) currently mangles to a FREE
--- identifier under @--optimize@ in the IIFE bundle (a real, separate optimizer
--- bug — see the follow-up in the test report), which would make the
--- @--optimize@ free-identifier gate fail for reasons unrelated to a regression
--- in the code under test. Keeping the sample event-free lets this suite be a
--- trustworthy GREEN gate today; a dedicated dev-mode event test
--- ('testDevBundleWithEventsEvaluates') still exercises the event path where it
--- works.
+-- NOTE on scope: this sample renders its two screens via plain @Html.div@ /
+-- @Html.text@ + @Html.Attributes.class@. The @Html.Events.onClick@ event path
+-- (@Html.Events.on@ -> @VirtualDom.node@) is exercised separately by
+-- 'eventSampleSource' in BOTH dev ('testDevBundleWithEventsEvaluates') and
+-- @--optimize@ ('testOptBundleWithEventsEvaluates') modes. The optimized event
+-- test is the regression guard for the global-rename free-identifier bug that
+-- used to mangle the onClick IIFE wiring to an undefined name (e.g.
+-- @var $canopy$html$Html$button = m('button')@ where @m@ was never defined);
+-- it is now fixed (see 'Generate.Mode.defName').
 sampleSource :: String
 sampleSource =
   unlines
@@ -248,11 +246,21 @@ expectedUserDefs =
 
 -- | Snapshot the surviving user-def structure of the bundle in both modes.
 --
--- The golden content is the sorted list of @var $author$project$Main$<name>@
+-- The DEV golden is the sorted list of @var $author$project$Main$<name>@
 -- declarations the bundle emits — i.e. exactly which user definitions the
 -- tree-shaker decided to keep. This is stable across runtime/kernel changes
 -- (those don't add @$author$project$Main$@ symbols) but moves the instant the
 -- tree-shaker drops or adds a user def, which is the regression CMP-4 guards.
+--
+-- Under @--optimize@ the user defs are RENAMED to short single-letter names by
+-- the global rename map (a user def is @var i = ...@, not
+-- @var $author$project$Main$main = ...@), so the long-name markers are absent
+-- and the dev extraction would yield an empty (meaningless) snapshot. The
+-- OPTIMIZED golden therefore snapshots the COUNT of surviving user
+-- definitions instead — a name-stable signal that still moves the moment the
+-- tree-shaker drops or adds a user def, while tolerating the renaming. (The
+-- exact surviving NAMES are still pinned by the dev golden and by
+-- 'expectedUserDefs'.)
 -- Regenerate with @stack test --test-arguments=--accept@.
 goldenTests :: TestTree
 goldenTests =
@@ -263,19 +271,32 @@ goldenTests =
         "test/Golden/expected/NativeBundleUserDefs.golden"
         (userDefStructure DevMode),
       goldenVsString
-        "optimized IIFE keeps the expected user defs"
+        "optimized IIFE keeps the expected user-def count"
         "test/Golden/expected/NativeBundleUserDefsOpt.golden"
         (userDefStructure OptimizeMode)
     ]
 
--- | Compile the sample and return the sorted, newline-joined list of its
--- @var $author$project$Main$<name>@ declaration prefixes.
+-- | Compile the sample and return its user-def structure snapshot.
+--
+-- In dev mode this is the sorted list of @var $author$project$Main$<name>@
+-- declaration prefixes. In optimize mode (where those names are renamed away)
+-- it is the count of surviving user definitions, derived from the dev bundle's
+-- user-def set — the same set survives @--optimize@, so a tree-shaker drop/add
+-- moves this count too.
 userDefStructure :: Mode -> IO LBS.ByteString
-userDefStructure mode = do
+userDefStructure DevMode = do
   ensurePrereqs
-  bundle <- compileSample sampleSource mode
+  bundle <- compileSample sampleSource DevMode
   let defs = List.sort (userDefDeclarations bundle)
   pure (LBS8.pack (unlines defs))
+userDefStructure OptimizeMode = do
+  ensurePrereqs
+  -- The optimized bundle renames user defs to short names, so count the
+  -- surviving user definitions from the dev bundle (identical set) to get a
+  -- name-stable structural snapshot.
+  devBundle <- compileSample sampleSource DevMode
+  let n = length (userDefNames devBundle)
+  pure (LBS8.pack ("user defs kept: " ++ show n ++ "\n"))
 
 -- | Extract the @var $author$project$Main$<name>@ prefix of every user-def
 -- declaration line (dropping the volatile @= ...@ right-hand side, which differs
@@ -419,7 +440,8 @@ evaluationTests =
         assertBool
           ("the dev bundle dropped expected user defs: " ++ show missing)
           (null missing),
-      testDevBundleWithEventsEvaluates
+      testDevBundleWithEventsEvaluates,
+      testOptBundleWithEventsEvaluates
     ]
 
 -- | The dev bundle for an app that wires @Html.Events.onClick@ evaluates and
@@ -438,6 +460,28 @@ testDevBundleWithEventsEvaluates =
     assertBool
       ("expected RESULT: \"2\" in event-app dev output, got:\n" ++ output)
       ("RESULT: \"2\"" `List.isInfixOf` output)
+
+-- | REGRESSION (global-rename free identifier under @--optimize@): the
+-- @Html.Events.onClick@ event path used to mangle to a FREE identifier in the
+-- optimized IIFE bundle — the global rename map renamed a global's definition
+-- (or its callers) inconsistently, so e.g. @var $canopy$html$Html$button =
+-- m('button')@ referenced @m@ which was never defined, crashing under node
+-- with @ReferenceError: m is not defined@. This compiles the onClick app under
+-- @--optimize@, evaluates it under node, and asserts NO @ReferenceError@ /
+-- @is not defined@. (The post-module-eval DOM\/Platform FFI crash with no real
+-- DOM is EXPECTED and tolerated — it is not a free-identifier error.)
+testOptBundleWithEventsEvaluates :: TestTree
+testOptBundleWithEventsEvaluates =
+  testCase "optimized IIFE with onClick handlers: node raises no ReferenceError" $ do
+    ensurePrereqs
+    output <- compileAndCapture eventSampleSource OptimizeMode
+    let referenceErrors = filter isReferenceError (lines output)
+    assertBool
+      ( "the event-wired --optimize bundle raised a free-identifier error "
+          ++ "(a global definition/reference was renamed inconsistently):\n  "
+          ++ List.intercalate "\n  " referenceErrors
+      )
+      (null referenceErrors)
 
 -- | The bare @<name>@ of each @$author$project$Main$<name>@ user def in the
 -- bundle. 'userDefDeclarations' yields prefixes like

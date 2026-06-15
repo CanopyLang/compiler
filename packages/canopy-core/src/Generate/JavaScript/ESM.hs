@@ -123,7 +123,9 @@ prepareGraph ::
 prepareGraph inputMode rawGraph ffiInfos =
   case inputMode of
     Mode.Prod fields elmCompat ffiUnsafe ffiDbg _ _ _ ->
-      let minified = Minify.minifyGraph rawGraph
+      -- ESM output does not rename top-level globals (empty rename map), so no
+      -- global short names need to be reserved during local minification.
+      let minified = Minify.minifyGraph Set.empty rawGraph
           pool = StringPool.buildPool minified
           ffiAliases = extractFFIAliases ffiInfos
        in (minified, Mode.Prod fields elmCompat ffiUnsafe ffiDbg pool ffiAliases Map.empty)

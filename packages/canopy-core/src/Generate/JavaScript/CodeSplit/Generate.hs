@@ -104,7 +104,9 @@ prepareGraph :: Mode.Mode -> Graph -> (Graph, Mode.Mode)
 prepareGraph inputMode rawGraph =
   case inputMode of
     Mode.Prod fields elmCompat ffiUnsafe ffiDbg _ ffiAliases _ ->
-      let minified = Minify.minifyGraph rawGraph
+      -- Code-split output does not rename top-level globals (empty rename map),
+      -- so no global short names need to be reserved during local minification.
+      let minified = Minify.minifyGraph Set.empty rawGraph
           pool = StringPool.buildPool minified
        in (minified, Mode.Prod fields elmCompat ffiUnsafe ffiDbg pool ffiAliases Map.empty)
     Mode.Dev _ _ _ _ _ _ -> (rawGraph, inputMode)

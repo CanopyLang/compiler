@@ -166,6 +166,90 @@ baseline if its header mismatches) under the current compiler after:
 > `canopy test` / `canopy install` use (delete the stale `artifacts.dat` first so the CART
 > header is rewritten with the running compiler version).
 
+### Open problem: a compiler SOURCE change at the same version does not invalidate artifacts (DEFERRED)
+
+The CART header (`PackageCache.encodeVersionedArtifacts` /
+`decodeVersionedArtifacts`) keys staleness on the schema version **plus the compiler
+`Version.compiler` (major.minor.patch = `0.19.1`) only**. A change to compiler SOURCE that
+alters the shape or content of a package artifact — e.g. a codegen change, a new
+`Interface`/`Opt.GlobalGraph` field, a different optimizer pass — but does **not** bump
+`Version.compiler` produces a header that still says `0.19.1`. So `decodeVersionedArtifacts`
+**accepts** an artifact built by an OLDER compiler binary, loads it under the new schema,
+and that stale/incomplete graph silently breaks `canopy make` with the
+"Missing global …" / "I could not find a `Platform.Sub` module to import!" class of error.
+
+#### Why the obvious fix (add a build/content hash) is NOT shipped as-is
+
+The clean fix is to bake a **compiler build/content hash** into the CART header (alongside
+the version) and treat a hash MISMATCH as "stale". That detection is a ~10-line change. The
+problem is the **load path has no auto-rebuild**, so flipping detection on with the existing
+on-disk artifacts (built by the prior binary, so a guaranteed hash mismatch) would RED the
+whole suite. This was verified empirically: bumping `artifactSchemaVersion` (which forces
+the exact same mismatch a content hash would) and rebuilding the binary makes a plain
+`canopy make` against `canopy/core` fail with **"I could not find a `Platform.Sub` module to
+import!"** — the artifact is NOT recompiled, it is silently skipped:
+
+- `PackageCache.loadAllPackageArtifacts` → `loadDep` returns `[]` on any load failure
+  ("Silently skip packages that fail to load"); `loadDepsFromList`
+  (`Compiler.hs`) then substitutes `(Map.empty, Opt.empty, Map.empty)` — **empty interfaces,
+  no rebuild**.
+- `Setup.LocalCompilation.compilePackageVersion` only rebuilds when the `artifacts.dat`
+  **file is absent**; it does **not** validate the CART header, so a stale-but-present
+  artifact is reported `ready` and never regenerated.
+
+So a content hash without a rebuild path is a half-working invalidation that reds the suite —
+exactly what must not ship.
+
+#### Precise remaining wiring for safe, self-healing invalidation
+
+1. **Bake a compiler build hash.** Add `Version.compilerBuildHash :: BS.ByteString` (or a
+   short `Word64`), generated at build time — e.g. a Template Haskell splice over the hash of
+   the codegen/interface source set, or a value injected by the build via
+   `gitDescribe`/`Paths_*`. Encode it into the CART header in
+   `encodeVersionedArtifacts` (bump `artifactSchemaVersion` to 3 and widen the
+   ≥-length guard / `decodeWord16At` offsets accordingly) and compare it in
+   `decodeVersionedArtifacts` (return `Nothing` on mismatch, same as a version mismatch).
+
+2. **Make load failure trigger a SOURCE rebuild instead of empty substitution.** The
+   layering blocker: the package compiler lives in `canopy-terminal`
+   (`Setup.LocalCompilation.compilePackageVersion`) but the failing load is in
+   `canopy-builder` (`PackageCache.loadDep`), and `canopy-builder` must not depend on
+   `canopy-terminal`. Two ways to break the cycle:
+   - **(a) Pre-pass validation (lowest risk).** Before any build/test resolves deps, run a
+     pass that, for every installed `canopy/*` version, reads ONLY the CART header
+     (`decodeVersionedArtifacts` returning `Nothing` ⇒ stale) and, when stale, **deletes the
+     `artifacts.dat` and recompiles from `src/`** via the existing
+     `compilePackageVersion` (which already rebuilds on absence). Hook this into the same
+     entry points that today guarantee artifacts exist (`canopy setup`, and the
+     `Test.Compile`/`Make` pre-build ensure-artifacts step). Net effect: a stale artifact is
+     turned into an absent one, and the existing "absent ⇒ rebuild" path heals it.
+   - **(b) Inject a rebuild callback.** Give `loadAllPackageArtifacts` an
+     `(author -> project -> version -> IO ())` rebuild hook supplied by `canopy-terminal`, so
+     `loadDep` can, on a CART-mismatch (distinguish it from "file missing" via a new
+     `VersionedStale` result threaded out of `tryVersionedAsResult`), invoke the rebuild and
+     retry the load once. More surgical but touches the hot load path and concurrency
+     (`mapConcurrently`), so it carries more suite risk than (a).
+
+3. **Distinguish "stale CART" from "not this format" at the loader.** Today
+   `decodeVersionedArtifacts` collapses version/schema mismatch into the same `Nothing` that
+   means "try the legacy decoders". A CART file whose magic matches but whose
+   version/hash does not should **not** fall through to `tryDecodeAs (LegacyArtifactCache …)`
+   (those re-read the CART bytes under a wrong schema and either fail or, worse, succeed with
+   garbage). Return a dedicated `Stale` signal from the versioned decoder and have
+   `loadArtifactsFile` / `loadCompleteArtifactsFile` short-circuit to "needs rebuild" rather
+   than continuing down the legacy list.
+
+4. **Keep the suite green.** The decisive constraint: the test fixtures load **pre-built**
+   `artifacts.dat`. Whichever of (a)/(b) is chosen MUST run before the first dep load in the
+   `stack test` path (the integration tests shell out to the real `canopy` binary), so the
+   first stale load self-heals transparently. Validate by bumping the build hash, rebuilding,
+   and running `stack test canopy:canopy-test` — it must stay green by rebuilding the package
+   artifacts on first use, not by skipping the check.
+
+Until this lands, the operational rule stands: **after a compiler source change that affects
+package artifacts, rebuild the installed `canopy/*` `artifacts.dat` (delete + recompile) the
+same way a version bump requires** — the version-only CART header will not do it for you.
+
 ## Summary of the resolver code paths
 
 | Concern                                | Location                                                     |

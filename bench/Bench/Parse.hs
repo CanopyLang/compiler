@@ -15,7 +15,11 @@ import qualified Criterion.Main as Criterion
 import qualified Data.ByteString as BS
 import qualified Data.ByteString.Char8 as BSC
 import qualified Parse.Module as Parse
-import qualified Reporting.Error.Syntax.Types as SyntaxError
+-- 'Reporting.Error.Syntax' is the exposed module of canopy-core; it
+-- re-exports everything from the (other-module) 'Reporting.Error.Syntax.Types',
+-- including the 'Error' type used below. Importing the internal Types module
+-- directly fails to link because it is not in canopy-core's exposed-modules.
+import qualified Reporting.Error.Syntax as SyntaxError
 
 -- | All parse benchmarks.
 benchmarks :: Benchmark

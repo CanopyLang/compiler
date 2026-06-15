@@ -60,16 +60,20 @@ generateImplDict ::
   Map Name.Name Opt.Expr ->
   JS.Stmt
 generateImplDict mode global _abilityName methods =
-  let jsName = globalToJsName global
+  let jsName = globalToJsName mode global
       jsObject = JS.Object (Map.foldrWithKey (buildMethodPair mode) [] methods)
   in JS.Var jsName jsObject
 
 -- | Convert a global to its JavaScript variable name.
 --
+-- Resolves through 'Mode.defName' so that, under @--optimize@, an impl-dict
+-- global assigned a short name by the global rename map is DEFINED under that
+-- short name — matching the rename-aware references emitted by
+-- 'Expression.resolveGlobalRef'.
+--
 -- @since 0.20.0
-globalToJsName :: Opt.Global -> JsName.Name
-globalToJsName (Opt.Global home name) =
-  JsName.fromGlobal home name
+globalToJsName :: Mode.Mode -> Opt.Global -> JsName.Name
+globalToJsName = Mode.defName
 
 -- | Build a key-value pair for a method in the dictionary object.
 --

@@ -1,10 +1,1 @@
-var $author$project$Main$Bump
-var $author$project$Main$Detail
-var $author$project$Main$Home
-var $author$project$Main$Navigate
-var $author$project$Main$detailView
-var $author$project$Main$fib
-var $author$project$Main$homeView
-var $author$project$Main$main
-var $author$project$Main$render
-var $author$project$Main$update
+user defs kept: 10

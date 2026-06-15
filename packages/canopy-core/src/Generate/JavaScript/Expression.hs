@@ -105,7 +105,12 @@ generate mode expression =
       JsExpr . JS.Ref $
         ( case mode of
             Mode.Dev _ _ _ _ _ _ -> JsName.fromGlobal home name
-            Mode.Prod {} -> JsName.fromGlobal ModuleName.basics Name.identity
+            -- In prod a box is the identity function. Resolve through
+            -- 'Mode.defName' so that if @Basics.identity@ was assigned a short
+            -- name by the global rename map, this reference matches its
+            -- (renamed) definition instead of emitting a free identifier.
+            Mode.Prod {} ->
+              Mode.defName mode (Opt.Global ModuleName.basics Name.identity)
         )
     Opt.VarCycle home name ->
       JsExpr $ JS.Call (JS.Ref (JsName.fromCycle home name)) []
@@ -448,7 +453,11 @@ chunkList n xs =
 generateDebug :: Mode.Mode -> Name.Name -> ModuleName.Canonical -> Ann.Region -> Maybe Name.Name -> JS.Expr
 generateDebug mode name (ModuleName.Canonical _ home) region unhandledValueName =
   if name /= "todo"
-    then JS.Ref (JsName.fromGlobal ModuleName.debug name)
+    -- A reference to a @Debug.*@ global (e.g. @Debug.log@). Under @--optimize@
+    -- the global may have been assigned a short name by the rename map, so
+    -- resolve through 'Mode.defName' to match its (renamed) definition rather
+    -- than emitting a free @$canopy$core$Debug$log@ identifier.
+    then JS.Ref (Mode.defName mode (Opt.Global ModuleName.debug name))
     else case unhandledValueName of
       Nothing ->
         JS.Call
@@ -744,32 +753,38 @@ crushIfsHelp visitedBranches unvisitedBranches final =
 -- @since 0.19.1
 generateMain :: Mode.Mode -> ModuleName.Canonical -> Opt.Main -> JS.Expr
 generateMain mode home main =
-  case main of
-    Opt.Static ->
-      JS.Ref KN.virtualDomInit
-        # JS.Ref (JsName.fromGlobal home "main")
-        # JS.Int 0
-        # JS.Int 0
-    Opt.Dynamic _modelType msgType decoder ->
-      JS.Ref (JsName.fromGlobal home "main")
-        # generateJsExpr mode decoder
-        # toDebugMetadata mode msgType
-    Opt.TestMain ->
-      JS.Function Nothing []
-        [ JS.Return
-            ( JS.Object
-                [ (JsName.fromLocal "_testMain", JS.Ref (JsName.fromGlobal home "main"))
-                ]
-            )
-        ]
-    Opt.BrowserTestMain ->
-      JS.Function Nothing []
-        [ JS.Return
-            ( JS.Object
-                [ (JsName.fromLocal "_browserTestMain", JS.Ref (JsName.fromGlobal home "main"))
-                ]
-            )
-        ]
+  -- The program export references the user's @main@ definition. Under
+  -- @--optimize@ that definition is emitted under the short name assigned by
+  -- the global rename map, so this reference must use the SAME resolution
+  -- ('Mode.mainRef') or the export hits a free identifier
+  -- (@$author$project$Main$main is not defined@).
+  let mainRef = JS.Ref (Mode.defName mode (Opt.Global home "main"))
+   in case main of
+        Opt.Static ->
+          JS.Ref KN.virtualDomInit
+            # mainRef
+            # JS.Int 0
+            # JS.Int 0
+        Opt.Dynamic _modelType msgType decoder ->
+          mainRef
+            # generateJsExpr mode decoder
+            # toDebugMetadata mode msgType
+        Opt.TestMain ->
+          JS.Function Nothing []
+            [ JS.Return
+                ( JS.Object
+                    [ (JsName.fromLocal "_testMain", mainRef)
+                    ]
+                )
+            ]
+        Opt.BrowserTestMain ->
+          JS.Function Nothing []
+            [ JS.Return
+                ( JS.Object
+                    [ (JsName.fromLocal "_browserTestMain", mainRef)
+                    ]
+                )
+            ]
 
 -- | Left-to-right function application operator.
 --

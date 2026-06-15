@@ -96,8 +96,17 @@ generateCallHelp genExpr mode func args =
 -- | Generate a call to a global (module-qualified) function.
 --
 -- @since 0.19.1
-generateGlobalCall :: ModuleName.Canonical -> Name.Name -> [JS.Expr] -> JS.Expr
-generateGlobalCall home name = generateNormalCall (JS.Ref (JsName.fromGlobal home name))
+-- The callee is resolved through 'Mode.defName' so that, under @--optimize@,
+-- a core global whose definition was given a short name by the global rename
+-- map is CALLED under that same short name. Using the long
+-- @$canopy$core$..@ name here while the definition is emitted short produces a
+-- free identifier (e.g. @$canopy$core$String$fromInt is not defined@). Core
+-- modules are never FFI-alias modules (this path is gated on 'Pkg.isCore'), so
+-- 'Mode.defName' (which only rewrites via the rename map) matches the
+-- reference resolution in 'Expression.resolveGlobalRef'.
+generateGlobalCall :: Mode.Mode -> ModuleName.Canonical -> Name.Name -> [JS.Expr] -> JS.Expr
+generateGlobalCall mode home name =
+  generateNormalCall (JS.Ref (Mode.defName mode (Opt.Global home name)))
 
 -- | Generate a normal function call, using Fn helpers for multi-arg calls.
 --
@@ -133,45 +142,45 @@ callHelpers =
 generateCoreCall :: ExprGenerator -> Mode.Mode -> Opt.Global -> [Opt.Expr] -> JS.Expr
 generateCoreCall genExpr mode (Opt.Global home@(ModuleName.Canonical _ moduleName) name) args
   | moduleName == Name.basics = generateBasicsCall genExpr mode home name args
-  | moduleName == Name.bitwise = generateBitwiseCall home name (fmap (genExpr mode) args)
-  | moduleName == Name.tuple = generateTupleCall home name (fmap (genExpr mode) args)
-  | moduleName == Name.jsArray = generateJsArrayCall home name (fmap (genExpr mode) args)
-  | otherwise = generateGlobalCall home name (fmap (genExpr mode) args)
+  | moduleName == Name.bitwise = generateBitwiseCall mode home name (fmap (genExpr mode) args)
+  | moduleName == Name.tuple = generateTupleCall mode home name (fmap (genExpr mode) args)
+  | moduleName == Name.jsArray = generateJsArrayCall mode home name (fmap (genExpr mode) args)
+  | otherwise = generateGlobalCall mode home name (fmap (genExpr mode) args)
 
 -- | Optimize Tuple.first and Tuple.second to direct field access.
 --
 -- @since 0.19.1
-generateTupleCall :: ModuleName.Canonical -> Name.Name -> [JS.Expr] -> JS.Expr
-generateTupleCall home name args =
+generateTupleCall :: Mode.Mode -> ModuleName.Canonical -> Name.Name -> [JS.Expr] -> JS.Expr
+generateTupleCall mode home name args =
   case args of
     [value] ->
       case name of
         "first" -> JS.Access value (JsName.fromLocal "a")
         "second" -> JS.Access value (JsName.fromLocal "b")
-        _ -> generateGlobalCall home name args
+        _ -> generateGlobalCall mode home name args
     _ ->
-      generateGlobalCall home name args
+      generateGlobalCall mode home name args
 
 -- | Optimize JsArray.singleton and JsArray.unsafeGet to native JS constructs.
 --
 -- @since 0.19.1
-generateJsArrayCall :: ModuleName.Canonical -> Name.Name -> [JS.Expr] -> JS.Expr
-generateJsArrayCall home name args =
+generateJsArrayCall :: Mode.Mode -> ModuleName.Canonical -> Name.Name -> [JS.Expr] -> JS.Expr
+generateJsArrayCall mode home name args =
   case args of
     [entry] | name == "singleton" -> JS.Array [entry]
     [index, array] | name == "unsafeGet" -> JS.Index array index
-    _ -> generateGlobalCall home name args
+    _ -> generateGlobalCall mode home name args
 
 -- | Optimize bitwise operations to native JavaScript operators.
 --
 -- @since 0.19.1
-generateBitwiseCall :: ModuleName.Canonical -> Name.Name -> [JS.Expr] -> JS.Expr
-generateBitwiseCall home name args =
+generateBitwiseCall :: Mode.Mode -> ModuleName.Canonical -> Name.Name -> [JS.Expr] -> JS.Expr
+generateBitwiseCall mode home name args =
   case args of
     [arg] ->
       case name of
         "complement" -> JS.Prefix JS.PrefixComplement arg
-        _ -> generateGlobalCall home name args
+        _ -> generateGlobalCall mode home name args
     [left, right] ->
       case name of
         "and" -> JS.Infix JS.OpBitwiseAnd left right
@@ -180,9 +189,9 @@ generateBitwiseCall home name args =
         "shiftLeftBy" -> JS.Infix JS.OpLShift right left
         "shiftRightBy" -> JS.Infix JS.OpSpRShift right left
         "shiftRightZfBy" -> JS.Infix JS.OpZfRShift right left
-        _ -> generateGlobalCall home name args
+        _ -> generateGlobalCall mode home name args
     _ ->
-      generateGlobalCall home name args
+      generateGlobalCall mode home name args
 
 -- | Optimize Basics module calls to native JavaScript operators.
 --
@@ -200,7 +209,7 @@ generateBasicsCall genExpr mode home name args =
             "negate" -> JS.Prefix JS.PrefixNegate arg
             "toFloat" -> arg
             "truncate" -> JS.Infix JS.OpBitwiseOr arg (JS.Int 0)
-            _ -> generateGlobalCall home name [arg]
+            _ -> generateGlobalCall mode home name [arg]
     [canopyLeft, canopyRight] ->
       case name of
         "append" -> append genExpr mode canopyLeft canopyRight
@@ -225,9 +234,9 @@ generateBasicsCall genExpr mode home name args =
                 "and" -> JS.Infix JS.OpAnd left right
                 "xor" -> JS.Infix JS.OpNe left right
                 "remainderBy" -> JS.Infix JS.OpMod right left
-                _ -> generateGlobalCall home name [left, right]
+                _ -> generateGlobalCall mode home name [left, right]
     _ ->
-      generateGlobalCall home name (fmap (genExpr mode) args)
+      generateGlobalCall mode home name (fmap (genExpr mode) args)
 
 -- EQUALITY AND COMPARISON
 

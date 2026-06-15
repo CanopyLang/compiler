@@ -86,7 +86,12 @@ addChunk mode chunk builder =
     Kernel.JS javascript ->
       BB.byteString javascript <> builder
     Kernel.CanopyVar home name ->
-      JsName.toBuilder (JsName.fromGlobal home name) <> builder
+      -- A Canopy global referenced from inside a kernel JS chunk. Under
+      -- @--optimize@ the global may have been assigned a short name by the
+      -- global rename map; resolve through 'Mode.defName' so the kernel
+      -- reference matches the (possibly renamed) definition rather than
+      -- emitting a free @$pkg$Module$name@ identifier.
+      JsName.toBuilder (Mode.defName mode (Opt.Global home name)) <> builder
     Kernel.JsVar home name ->
       JsName.toBuilder (JsName.fromKernel home name) <> builder
     Kernel.CanopyField name ->
@@ -121,7 +126,7 @@ generateCycle mode (Opt.Global home _) names values functions =
 
 buildRealStmts :: Mode.Mode -> ModuleName.Canonical -> [Name.Name] -> [(Name.Name, Opt.Expr)] -> [JS.Stmt]
 buildRealStmts mode home names values =
-  case fmap (generateRealCycle home) values of
+  case fmap (generateRealCycle mode home) values of
     [] -> []
     realBlock@(_ : _) ->
       case mode of
@@ -142,9 +147,9 @@ generateCycleFunc :: Mode.Mode -> ModuleName.Canonical -> Opt.Def -> JS.Stmt
 generateCycleFunc mode home def =
   case def of
     Opt.Def name expr ->
-      JS.Var (JsName.fromGlobal home name) (Expr.codeToExpr (Expr.generate mode expr))
+      JS.Var (Mode.defName mode (Opt.Global home name)) (Expr.codeToExpr (Expr.generate mode expr))
     Opt.TailDef name args expr ->
-      JS.Var (JsName.fromGlobal home name) (Expr.generateTailDefExpr mode name args expr)
+      JS.Var (Mode.defName mode (Opt.Global home name)) (Expr.generateTailDefExpr mode name args expr)
 
 -- | Generate JavaScript for the safe (thunked) version of a cycle value.
 --
@@ -157,10 +162,10 @@ generateSafeCycle mode home (name, expr) =
 -- | Generate JavaScript to replace a safe cycle thunk with the real value.
 --
 -- @since 0.19.1
-generateRealCycle :: ModuleName.Canonical -> (Name.Name, expr) -> JS.Stmt
-generateRealCycle home (name, _) =
+generateRealCycle :: Mode.Mode -> ModuleName.Canonical -> (Name.Name, expr) -> JS.Stmt
+generateRealCycle mode home (name, _) =
   let safeName = JsName.fromCycle home name
-      realName = JsName.fromGlobal home name
+      realName = Mode.defName mode (Opt.Global home name)
    in JS.Block
         [ JS.Var realName (JS.Call (JS.Ref safeName) []),
           JS.ExprStmt . JS.Assign (JS.LRef safeName) $ JS.Function Nothing [] [JS.Return (JS.Ref realName)]
@@ -183,8 +188,8 @@ drawCycle names =
 --
 -- @since 0.19.1
 generateEnum :: Mode.Mode -> Opt.Global -> Index.ZeroBased -> JS.Stmt
-generateEnum mode global@(Opt.Global home name) index =
-  JS.Var (JsName.fromGlobal home name) $
+generateEnum mode global index =
+  JS.Var (Mode.defName mode global) $
     case mode of
       Mode.Dev _ _ _ _ _ _ ->
         Expr.codeToExpr (Expr.generateCtor mode global index 0)
@@ -195,13 +200,15 @@ generateEnum mode global@(Opt.Global home name) index =
 --
 -- @since 0.19.1
 generateBox :: Mode.Mode -> Opt.Global -> JS.Stmt
-generateBox mode global@(Opt.Global home name) =
-  JS.Var (JsName.fromGlobal home name) $
+generateBox mode global =
+  JS.Var (Mode.defName mode global) $
     case mode of
       Mode.Dev _ _ _ _ _ _ ->
         Expr.codeToExpr (Expr.generateCtor mode global Index.first 1)
       Mode.Prod {} ->
-        JS.Ref (JsName.fromGlobal ModuleName.basics Name.identity)
+        -- A box is the identity function; resolve through 'Mode.defName' so the
+        -- reference matches @Basics.identity@'s (possibly renamed) definition.
+        JS.Ref (Mode.defName mode identity)
 
 -- | The identity global, shared between 'generateBox' usages.
 --
@@ -215,8 +222,8 @@ identity =
 --
 -- @since 0.19.1
 generatePort :: Mode.Mode -> Opt.Global -> Name.Name -> Opt.Expr -> JS.Stmt
-generatePort mode (Opt.Global home name) makePort converter =
-  JS.Var (JsName.fromGlobal home name) $
+generatePort mode global@(Opt.Global _ name) makePort converter =
+  JS.Var (Mode.defName mode global) $
     JS.Call
       (JS.Ref (JsName.fromKernel Name.platform makePort))
       [ JS.String (Name.toBuilder name),

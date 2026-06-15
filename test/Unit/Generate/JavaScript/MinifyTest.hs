@@ -88,26 +88,26 @@ tests = testGroup "Generate.JavaScript.Minify Tests"
 minifyGraphTests :: TestTree
 minifyGraphTests = testGroup "minifyGraph"
   [ testCase "empty graph stays empty" $
-      Map.null (Minify.minifyGraph Map.empty) @?= True
+      Map.null (Minify.minifyGraph Set.empty Map.empty) @?= True
 
   , testCase "Link node passes through unchanged" $
       let g = mkGlobal "foo"
           target = mkGlobal "bar"
           graph = Map.fromList [(g, Opt.Link target)]
-          result = Minify.minifyGraph graph
+          result = Minify.minifyGraph Set.empty graph
       in show (result Map.! g) @?= show (Opt.Link target)
 
   , testCase "Kernel node passes through unchanged" $
       let g = mkGlobal "kfn"
           node = Opt.Kernel [] Set.empty
           graph = Map.fromList [(g, node)]
-          result = Minify.minifyGraph graph
+          result = Minify.minifyGraph Set.empty graph
       in show (result Map.! g) @?= show node
 
   , testCase "Define node with Int body is preserved" $
       let g = mkGlobal "answer"
           node = Opt.Define (intExpr 42) Set.empty
-          result = Minify.minifyGraph (Map.fromList [(g, node)])
+          result = Minify.minifyGraph Set.empty (Map.fromList [(g, node)])
       in show (result Map.! g) @?= show (Opt.Define (intExpr 42) Set.empty)
   ]
 
@@ -124,7 +124,7 @@ minifyDefineTests = testGroup "minifyGraph Define with VarLocal"
   [ testCase "VarLocal not in scope stays as original name" $
       let g = mkGlobal "fn"
           node = Opt.Define (varLocal "x") Set.empty
-          result = Minify.minifyGraph (Map.fromList [(g, node)])
+          result = Minify.minifyGraph Set.empty (Map.fromList [(g, node)])
       in show (result Map.! g) @?= show (Opt.Define (varLocal "x") Set.empty)
 
   , testCase "Define preserves dependency set on Int body" $
@@ -132,7 +132,7 @@ minifyDefineTests = testGroup "minifyGraph Define with VarLocal"
           g = mkGlobal "fn"
           deps = Set.singleton dep
           node = Opt.Define (intExpr 0) deps
-          result = Minify.minifyGraph (Map.fromList [(g, node)])
+          result = Minify.minifyGraph Set.empty (Map.fromList [(g, node)])
       in show (result Map.! g) @?= show (Opt.Define (intExpr 0) deps)
   ]
 
@@ -150,7 +150,7 @@ minifyLetTests = testGroup "minifyGraph Let binding"
       let body = Opt.Let (Opt.Def (Name.fromChars "x") (intExpr 1)) (varLocal "x")
           g = mkGlobal "fn"
           node = Opt.Define body Set.empty
-          result = Minify.minifyGraph (Map.fromList [(g, node)])
+          result = Minify.minifyGraph Set.empty (Map.fromList [(g, node)])
           expected = Opt.Let
             (Opt.Def (Name.fromChars "a") (intExpr 1))
             (varLocal "a")
@@ -161,7 +161,7 @@ minifyLetTests = testGroup "minifyGraph Let binding"
           outer = Opt.Let (Opt.Def (Name.fromChars "x") (intExpr 1)) inner
           g = mkGlobal "fn"
           node = Opt.Define outer Set.empty
-          result = Minify.minifyGraph (Map.fromList [(g, node)])
+          result = Minify.minifyGraph Set.empty (Map.fromList [(g, node)])
           expectedInner = Opt.Let
             (Opt.Def (Name.fromChars "b") (intExpr 2))
             (varLocal "b")
@@ -185,7 +185,7 @@ minifyFunctionScopeTests = testGroup "minifyGraph Function scope"
       let fn = Opt.Function [Name.fromChars "x"] (varLocal "x")
           g = mkGlobal "fn"
           node = Opt.Define fn Set.empty
-          result = Minify.minifyGraph (Map.fromList [(g, node)])
+          result = Minify.minifyGraph Set.empty (Map.fromList [(g, node)])
           expected = Opt.Function [Name.fromChars "a"] (varLocal "a")
       in show (result Map.! g) @?= show (Opt.Define expected Set.empty)
 
@@ -195,7 +195,7 @@ minifyFunctionScopeTests = testGroup "minifyGraph Function scope"
                  (Opt.Call (varLocal "x") [varLocal "y"])
           g = mkGlobal "fn"
           node = Opt.Define fn Set.empty
-          result = Minify.minifyGraph (Map.fromList [(g, node)])
+          result = Minify.minifyGraph Set.empty (Map.fromList [(g, node)])
           expected = Opt.Function
             [Name.fromChars "a", Name.fromChars "b"]
             (Opt.Call (varLocal "a") (varLocal "b" : []))
