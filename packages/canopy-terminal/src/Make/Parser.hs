@@ -22,6 +22,7 @@ module Make.Parser
     reportType,
     output,
     outputFormatParser,
+    targetParser,
     docsFile,
     jobsParser,
 
@@ -33,7 +34,7 @@ module Make.Parser
 where
 
 import Generate.Mode (OutputFormat (..))
-import Make.Types (Output (..), ReportType (..))
+import Make.Types (Output (..), ReportType (..), Target (..))
 import qualified System.FilePath as FilePath
 import Terminal (Parser (..))
 import Text.Read (readMaybe)
@@ -236,3 +237,26 @@ parseOutputFormat :: String -> Maybe OutputFormat
 parseOutputFormat "esm" = Just FormatESM
 parseOutputFormat "iife" = Just FormatIIFE
 parseOutputFormat _ = Nothing
+
+-- | Parser for the deployment target (web or native).
+--
+-- Accepts "web" or "native". Default is web when not specified. @--target
+-- native@ selects the self-contained native (Hermes/JSI) bundle: the IIFE plus
+-- the @__canopy_boot@ hook, ABI fallbacks, and the in-bundle source map (CMP-5).
+--
+-- @since 0.20.9
+targetParser :: Parser Target
+targetParser =
+  Parser
+    { _singular = "target",
+      _plural = "targets",
+      _parser = parseTarget,
+      _suggest = \_ -> pure ["web", "native"],
+      _examples = \_ -> pure ["web", "native"]
+    }
+
+-- | Parse target string.
+parseTarget :: String -> Maybe Target
+parseTarget "web" = Just TargetWeb
+parseTarget "native" = Just TargetNative
+parseTarget _ = Nothing

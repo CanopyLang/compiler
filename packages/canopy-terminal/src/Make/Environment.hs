@@ -36,6 +36,7 @@ import Make.Types
     DesiredMode (..),
     Flags,
     ReportType (..),
+    Target,
     Task,
     bcDesiredMode,
     bcDetails,
@@ -92,8 +93,9 @@ createBuildContext ::
   Bool ->
   Bool ->
   OutputFormat ->
+  Target ->
   BuildContext
-createBuildContext style root details mode ffiUnsafeFlag ffiDebugFlag fmt =
+createBuildContext style root details mode ffiUnsafeFlag ffiDebugFlag fmt tgt =
   BuildContext
     { _bcStyle = style,
       _bcRoot = root,
@@ -102,7 +104,8 @@ createBuildContext style root details mode ffiUnsafeFlag ffiDebugFlag fmt =
       _bcPackage = extractPackageName details,
       _bcFfiUnsafe = ffiUnsafeFlag,
       _bcFfiDebug = ffiDebugFlag,
-      _bcOutputFormat = fmt
+      _bcOutputFormat = fmt,
+      _bcTarget = tgt
     }
   where
     extractPackageName (Details.Details _ outline _ _ _ _) =

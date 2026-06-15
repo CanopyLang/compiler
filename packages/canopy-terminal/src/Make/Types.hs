@@ -25,6 +25,7 @@ module Make.Types
     Output (..),
     ReportType (..),
     DesiredMode (..),
+    Target (..),
 
     -- * Lenses
 
@@ -43,6 +44,7 @@ module Make.Types
     verifyReproducible,
     allowKernel,
     outputFormat,
+    target,
 
     -- ** BuildContext Lenses
     bcStyle,
@@ -53,6 +55,10 @@ module Make.Types
     bcFfiUnsafe,
     bcFfiDebug,
     bcOutputFormat,
+    bcTarget,
+
+    -- * Helpers
+    effectiveOutputFormat,
 
     -- * Type Aliases
     Task,
@@ -105,7 +111,11 @@ data Flags = Flags
     -- | Explicitly allow third-party packages that use kernel code
     _allowKernel :: !Bool,
     -- | Output format: ESM (default) or IIFE. Nothing means ESM.
-    _outputFormat :: !(Maybe OutputFormat)
+    _outputFormat :: !(Maybe OutputFormat),
+    -- | Deployment target: web (default) or native. @--target native@ selects
+    -- the self-contained native bundle (IIFE + boot hook + in-bundle map),
+    -- overriding the output format to IIFE. Nothing means web.
+    _target :: !(Maybe Target)
   }
   deriving (Eq, Show)
 
@@ -136,7 +146,9 @@ data BuildContext = BuildContext
     -- | FFI debug mode (verbose validator error messages)
     _bcFfiDebug :: !Bool,
     -- | Output format (ESM or IIFE)
-    _bcOutputFormat :: !OutputFormat
+    _bcOutputFormat :: !OutputFormat,
+    -- | Deployment target (web or native)
+    _bcTarget :: !Target
   }
 
 -- | Output format and target file.
@@ -175,6 +187,37 @@ data DesiredMode
   | -- | Production mode with full optimization
     Prod
   deriving (Eq, Show)
+
+-- | Deployment target for a build (CMP-5).
+--
+-- 'TargetWeb' is the default reuse path: the chosen 'OutputFormat' (ESM or
+-- IIFE) is emitted as-is. 'TargetNative' selects the self-contained native
+-- bundle assembled by 'Generate.JavaScript.NativeBundle' — the IIFE plus the
+-- @__canopy_boot@ hook, ABI fallbacks, and the in-bundle source map — which the
+-- Hermes/JSI host loads. Choosing 'TargetNative' implies an IIFE base (the
+-- native bundle is a single self-contained file, not a tree of ES modules), so
+-- 'effectiveOutputFormat' forces 'FormatIIFE' for it regardless of
+-- @--output-format@.
+data Target
+  = -- | Web/default reuse path (emit the chosen output format unchanged)
+    TargetWeb
+  | -- | Native (Hermes/JSI) self-contained bundle
+    TargetNative
+  deriving (Eq, Show)
+
+-- | Resolve the effective 'OutputFormat' from the requested format and target.
+--
+-- The native target ('TargetNative') is a single self-contained IIFE bundle, so
+-- it forces 'FormatIIFE' irrespective of @--output-format@ (an explicit
+-- @--output-format=esm --target=native@ is contradictory; the native target
+-- wins, since a tree of ES modules cannot be the one file the host evaluates).
+-- For the web target the explicitly requested format is honored, defaulting to
+-- 'FormatESM' when none was given.
+--
+-- @since 0.20.9
+effectiveOutputFormat :: Maybe Target -> Maybe OutputFormat -> OutputFormat
+effectiveOutputFormat (Just TargetNative) _ = FormatIIFE
+effectiveOutputFormat _ requested = maybe FormatESM id requested
 
 -- | Task monad for build operations.
 --

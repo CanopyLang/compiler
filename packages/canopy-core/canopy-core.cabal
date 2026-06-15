@@ -107,6 +107,7 @@ library
       Generate.JavaScript.HermesShim
       Generate.JavaScript.Minify
       Generate.JavaScript.Name
+      Generate.JavaScript.NativeBundle
       Generate.JavaScript.SourceMap
       Generate.JavaScript.StringPool
       Generate.JavaScript.NpmWrapper

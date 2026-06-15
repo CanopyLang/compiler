@@ -38,6 +38,7 @@ module Make
     reportType,
     output,
     outputFormatParser,
+    targetParser,
     docsFile,
     jobsParser,
   )
@@ -53,7 +54,6 @@ import Control.Lens ((^.))
 import Canopy.Data.NonEmptyList (List)
 import qualified Canopy.Data.NonEmptyList as NE
 import qualified Data.Text as Text
-import qualified Generate.Mode as Mode
 import qualified Data.Time.Clock as Time
 import qualified Logging.Config as Config
 import Logging.Event (LogEvent (..))
@@ -61,8 +61,8 @@ import qualified Logging.Logger as Log
 import Make.Builder (buildFromExposed, buildFromPaths, createESMBuilder, createSplitBuilder, shouldSplitOutput)
 import Make.Environment (createBuildContext, getDesiredMode, getReportingStyle, setupEnvironment)
 import Make.KernelCheck (detectKernelPackages, emitKernelWarning)
-import Make.Output (generateESMOutput, generateOutput, generateSplitJavaScript)
-import Make.Parser (docsFile, jobsParser, output, outputFormatParser, reportType)
+import Make.Output (generateESMOutput, generateNativeBundle, generateOutput, generateSplitJavaScript)
+import Make.Parser (docsFile, jobsParser, output, outputFormatParser, reportType, targetParser)
 import Generate.Mode (OutputFormat (..))
 import Make.Types
   ( BuildContext,
@@ -191,8 +191,11 @@ coordinateBuildWithRoot root paths flags style scope = do
   checkKernelCodeUsage root flags
   details <- loadProjectDetailsFromRoot style scope root
   mode <- getDesiredMode (flags ^. debug) (flags ^. optimize)
-  let fmt = maybe Mode.FormatESM id (flags ^. outputFormat)
-      ctx = createBuildContext style root details mode (flags ^. ffiUnsafe) (flags ^. ffiDebug) fmt
+  let tgt = maybe Types.TargetWeb id (flags ^. Types.target)
+      -- The native target is a single self-contained IIFE bundle, so it forces
+      -- FormatIIFE regardless of --output-format (CMP-5).
+      fmt = Types.effectiveOutputFormat (flags ^. Types.target) (flags ^. outputFormat)
+      ctx = createBuildContext style root details mode (flags ^. ffiUnsafe) (flags ^. ffiDebug) fmt tgt
   startTime <- Task.io Time.getCurrentTime
   executeBuildStrategy ctx paths (flags ^. docs) (flags ^. Types.output) (flags ^. noSplit) (flags ^. verifyReproducible)
   endTime <- Task.io Time.getCurrentTime
@@ -251,6 +254,11 @@ emitOutput ::
   Bool ->
   Task ()
 emitOutput ctx artifacts maybeOutput forceSingleFile doVerify
+  -- Native target (CMP-5): a single self-contained Hermes/JSI bundle — never
+  -- ESM, never code-split. Checked first so --target native overrides format
+  -- and split heuristics.
+  | ctx ^. Types.bcTarget == Types.TargetNative =
+      generateNativeBundle ctx artifacts maybeOutput doVerify
   | ctx ^. bcOutputFormat == FormatESM =
       emitESMOutput ctx artifacts maybeOutput
   | not forceSingleFile && shouldSplitOutput artifacts && isSplittableTarget maybeOutput = do

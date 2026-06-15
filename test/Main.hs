@@ -19,6 +19,7 @@ import qualified Integration.Hermes.ConformanceTest as HermesConformanceIT
 import qualified Integration.JsExecutionTest as JsExecutionIT
 import qualified Integration.MakeTest as MakeIT
 import qualified Integration.Native.CodegenSuiteTest as NativeCodegenSuiteIT
+import qualified Integration.Native.NativeBundleTargetTest as NativeBundleTargetIT
 import qualified Integration.Native.SourceMapColumnTest as NativeSourceMapColumnIT
 import qualified Integration.Native.SourceMapLineBaseTest as NativeSourceMapLineBaseIT
 import qualified Integration.Terminal.ChompIntegrationTest as ChompIT
@@ -141,6 +142,7 @@ import qualified Unit.Generate.NameTest as GenerateNameTest
 import qualified Unit.Generate.CoverageTest as CoverageTest
 import qualified Unit.Generate.SourceMapTest as SourceMapTest
 import qualified Unit.Generate.JavaScript.SourceMapExtTest as SourceMapExtTest
+import qualified Unit.Generate.JavaScript.NativeBundleTest as NativeBundleTest
 import qualified Unit.Generate.StringPoolTest as StringPoolTest
 import qualified Unit.Generate.TreeShakeRootsTest as TreeShakeRootsTest
 import qualified Unit.Generate.TreeShakeTest as TreeShakeTest
@@ -375,6 +377,7 @@ unitTests =
       FormTest.tests,
       SourceMapTest.tests,
       SourceMapExtTest.tests,
+      NativeBundleTest.tests,
       StringPoolTest.tests,
       CodeSplitAnalyzeTest.tests,
       CodeSplitManifestTest.tests,
@@ -500,6 +503,7 @@ integrationTests =
       NativeSourceMapLineBaseIT.tests,
       NativeSourceMapColumnIT.tests,
       NativeCodegenSuiteIT.tests,
+      NativeBundleTargetIT.tests,
       HermesConformanceIT.tests,
       PureBuilderIT.tests,
       EndToEndIT.tests,

@@ -24,10 +24,14 @@ module Make.Output
 
     -- * Specific Generators
     generateJavaScript,
+    generateNativeBundle,
     generateESMOutput,
     generateSplitJavaScript,
     generateHtml,
     generateDevNull,
+
+    -- * Native target helpers
+    nativeOutputPath,
 
     -- * Format Selection
     chooseFormatFromMains,
@@ -70,6 +74,7 @@ import qualified Generate.Html as Html
 import qualified Generate.JavaScript.CodeSplit.Types as Split
 import Generate.JavaScript.ESM.Types (ESMOutput (..))
 import qualified Generate.JavaScript.FFI as JsFFI
+import qualified Generate.JavaScript.NativeBundle as NativeBundle
 import qualified Generate.JavaScript.SourceMap as SourceMap
 import qualified Generate.TypeScript.Parser as DtsParser
 import Generate.TypeScript.Types (TsType (TsFunction))
@@ -167,6 +172,68 @@ generateJavaScript ctx artifacts target doVerify = do
   writeOutputFile (ctx ^. bcStyle) target jsWithRef rootNames
   Task.io (writeSourceMapFile target maybeSourceMap)
   Task.io (writeCapabilitiesManifest target artifacts)
+
+-- | Generate the self-contained native (Hermes/JSI) bundle (CMP-5).
+--
+-- Produces the SAME IIFE the web reuse path compiles, then folds in the
+-- host-facing trailer the native build used to splice by hand:
+--
+--   * the @__canopy_boot(rootTag, flags)@ entry hook + ABI fallbacks the host's
+--     JSI installer calls (see @host/shared/cpp/CanopyFabric.cpp@), and
+--   * the source map, carried IN-BUNDLE as @globalThis.__canopy_sourcemap@
+--     (bare Hermes cannot fetch a sibling @.map@) plus a @sourceMappingURL@
+--     comment for tools that can.
+--
+-- The IIFE and its map come from the SAME 'createBuilder' call, so the map
+-- already describes the IIFE's true byte layout (CMP-6/CMP-7A); the trailer is
+-- appended strictly after it, so no mapped generated line moves and the map
+-- stays aligned by construction — the property the old hand-splice could not
+-- guarantee. The standalone @.js.map@ is written alongside (dev only) and is
+-- byte-identical to the inlined copy.
+--
+-- @since 0.20.9
+generateNativeBundle ::
+  BuildContext ->
+  Build.Artifacts ->
+  Maybe Output ->
+  Bool ->
+  Task ()
+generateNativeBundle ctx artifacts maybeOutput doVerify = do
+  let target = nativeOutputPath maybeOutput
+  Task.io (IO.hPutStrLn IO.stderr ("Generating native bundle to " <> target))
+  Task.io (Log.logEvent (BuildStarted (Text.pack ("Generating native bundle to: " <> target))))
+  (builder, maybeSourceMap) <- createBuilder ctx artifacts
+  verifyIfRequested ctx artifacts doVerify builder
+  let caps = extractCapabilities ctx
+      -- The capability registry precedes the IIFE exactly as on the web JS path;
+      -- it is part of the IIFE the map is aligned to, so it must be prepended
+      -- BEFORE assembling the native trailer (which only appends).
+      iife = CapEnforce.generateCapabilityRegistry caps <> builder
+      (nativeBundle, maybeMapBuilder) =
+        NativeBundle.assemble (FilePath.takeFileName target) iife maybeSourceMap
+      rootNames = Build.getRootNames artifacts
+  Task.io (Reproducible.reportContentHash target (Reproducible.hashBuilder nativeBundle) doVerify)
+  writeOutputFile (ctx ^. bcStyle) target nativeBundle rootNames
+  Task.io (writeNativeMapFile target maybeMapBuilder)
+  Task.io (writeCapabilitiesManifest target artifacts)
+
+-- | The output path for the native bundle: the explicit @--output@ JS target,
+-- or @canopy.bundle.js@ by default (matching the name the native host loads and
+-- the build scripts stage). A non-JS @--output@ (HTML, @\/dev\/null@) is not
+-- meaningful for the native target, so it too falls back to the default name.
+nativeOutputPath :: Maybe Output -> FilePath
+nativeOutputPath (Just (JS path)) = path
+nativeOutputPath _ = "canopy.bundle.js"
+
+-- | Write the standalone @.js.map@ for the native bundle, when one exists.
+--
+-- The builder is already the serialized Source Map V3 JSON (from
+-- 'NativeBundle.assemble'), byte-identical to the in-bundle
+-- @globalThis.__canopy_sourcemap@ copy.
+writeNativeMapFile :: FilePath -> Maybe Builder -> IO ()
+writeNativeMapFile _target Nothing = pure ()
+writeNativeMapFile target (Just mapBuilder) =
+  File.writeBuilder (target <> ".map") mapBuilder
 
 -- | Generate code-split JavaScript output to a directory.
 --

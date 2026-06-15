@@ -1,0 +1,6 @@
+boot-hook marker: yes
+boot-hook def: yes
+abi fallback: yes
+mount call: yes
+inline sourcemap: yes
+sourceMappingURL: yes

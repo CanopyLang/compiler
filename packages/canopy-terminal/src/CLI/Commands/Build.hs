@@ -91,6 +91,7 @@ createMakeFlags =
     |-- Terminal.onOff "verify-reproducible" "Build twice and compare output to verify reproducibility. Fails if the two builds produce different byte-for-byte output."
     |-- Terminal.onOff "allow-kernel" "Allow third-party packages that use legacy kernel code instead of the FFI system. Required for --optimize when such packages are present."
     |-- Terminal.flag "output-format" Make.outputFormatParser "Output format: 'esm' (default) produces ES modules, 'iife' produces a single IIFE bundle."
+    |-- Terminal.flag "target" Make.targetParser "Deployment target: 'web' (default) emits the chosen output format; 'native' emits the self-contained Hermes/JSI bundle (IIFE + __canopy_boot hook + in-bundle source map)."
 
 createCheckFlags :: Terminal.Flags Check.Flags
 createCheckFlags =
