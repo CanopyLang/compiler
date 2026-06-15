@@ -208,6 +208,7 @@ test-suite canopy-test
       Integration.CompilerTest
       Integration.DevelopTest
       Integration.EndToEndTest
+      Integration.Hermes.ConformanceTest
       Integration.InitTest
       Integration.InstallTest
       Integration.JsExecutionTest
@@ -215,6 +216,7 @@ test-suite canopy-test
       Integration.KitIntegrationTest
       Integration.MakeTest
       Integration.Native.CodegenSuiteTest
+      Integration.Native.SourceMapColumnTest
       Integration.Native.SourceMapLineBaseTest
       Integration.PureBuilderIntegrationTest
       Integration.TemplateLiteralTest

@@ -15,9 +15,11 @@ import qualified Integration.DevelopTest as DevelopIT
 import qualified Integration.EndToEndTest as EndToEndIT
 import qualified Integration.InitTest as InitIT
 import qualified Integration.InstallTest as InstallIT
+import qualified Integration.Hermes.ConformanceTest as HermesConformanceIT
 import qualified Integration.JsExecutionTest as JsExecutionIT
 import qualified Integration.MakeTest as MakeIT
 import qualified Integration.Native.CodegenSuiteTest as NativeCodegenSuiteIT
+import qualified Integration.Native.SourceMapColumnTest as NativeSourceMapColumnIT
 import qualified Integration.Native.SourceMapLineBaseTest as NativeSourceMapLineBaseIT
 import qualified Integration.Terminal.ChompIntegrationTest as ChompIT
 import qualified Integration.TemplateLiteralTest as TemplateLiteralIT
@@ -496,7 +498,9 @@ integrationTests =
       CodeSplitIT.tests,
       JsExecutionIT.tests,
       NativeSourceMapLineBaseIT.tests,
+      NativeSourceMapColumnIT.tests,
       NativeCodegenSuiteIT.tests,
+      HermesConformanceIT.tests,
       PureBuilderIT.tests,
       EndToEndIT.tests,
       DevelopIT.tests,

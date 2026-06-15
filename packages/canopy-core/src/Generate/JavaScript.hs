@@ -87,6 +87,7 @@ import Generate.JavaScript.FFI
 import qualified FFI.TypeParser as TypeParser
 import qualified Generate.JavaScript.FFI.Registry as FFIRegistry
 import qualified Generate.JavaScript.FFIRuntime as FFIRuntime
+import qualified Generate.JavaScript.HermesShim as HermesShim
 import qualified Generate.JavaScript.Runtime as Runtime
 import qualified Generate.JavaScript.Runtime.Registry as Registry
 import qualified Generate.JavaScript.Functions as Functions
@@ -194,6 +195,17 @@ generate inputMode globalGraph@(Opt.GlobalGraph rawGraph _ sourceLocs) mains ffi
                then "(function(scope){\n'use strict';\n"
                else "(function(scope){'use strict';\n"
       debuggerStub = "var _Debugger_unsafeCoerce = function(value) { return value; };\n"
+      -- CMP-10: Hermes stdlib shims for the native (Hermes) bundle target.
+      -- This IIFE bundle IS the native bundle the Hermes host loads (the web
+      -- path uses the separate ESM emitter), so the shim is spliced here. It is
+      -- a no-op shape under a full engine (Node/V8) — it normalises Intl/Date and
+      -- gates unsupported RegExp features only when the divergence is present —
+      -- so the SAME bundle is identical under the Node conformance baseline and
+      -- under Hermes. Emitted right after the debugger stub, before any FFI/user
+      -- content can observe Intl/Date/RegExp. Its newline count flows into
+      -- 'genLineBase' via 'innerPreamble' -> 'bundlePrefix', keeping the dev
+      -- source map aligned (CMP-6).
+      hermesShim = HermesShim.hermesShimPreamble
       poolDecls = StringPool.poolDeclarations (Mode.stringPool mode)
       coveragePreamble = if Mode.isCoverage mode then Coverage.coverageRuntimePreamble else mempty
       -- Phase 1: generate all non-runtime content inside the IIFE.
@@ -204,6 +216,7 @@ generate inputMode globalGraph@(Opt.GlobalGraph rawGraph _ sourceLocs) mains ffi
       -- count can feed the source-map generated-line base (see 'genLineBase').
       innerPreamble =
         debuggerStub
+          <> hermesShim
           <> generateFFIContent mode graph ffiInfos usedFFIFuncs
           <> perfNote mode
           <> poolDecls
@@ -923,20 +936,23 @@ dispatchNode :: Mode.Mode -> Graph -> Opt.Global -> (Set Opt.Global -> State -> 
 dispatchNode mode graph currentGlobal addDeps globalInGraph state =
   case globalInGraph of
     Opt.Define expr deps ->
-      let baseState = emitMapping currentGlobal (addDeps deps state)
-          code = if Mode.isCoverage mode
+      let code = if Mode.isCoverage mode
                  then covDefineCode mode currentGlobal expr state
                  else Expr.generate mode expr
-       in addStmt baseState (var mode currentGlobal code)
+          stmt = var mode currentGlobal code
+          baseState = emitMappingCol (defNameGenCol mode currentGlobal stmt) currentGlobal (addDeps deps state)
+       in addStmt baseState stmt
     Opt.DefineTailFunc argNames body deps ->
-      let baseState = emitMapping currentGlobal (addDeps deps state)
-          (Opt.Global _ name) = currentGlobal
+      let (Opt.Global _ name) = currentGlobal
           expr = if Mode.isCoverage mode
                  then covTailFuncExpr mode currentGlobal argNames body state
                  else Expr.generateTailDefExpr mode name argNames body
-       in addStmt baseState (JS.Var (Mode.defName mode currentGlobal) expr)
+          stmt = JS.Var (Mode.defName mode currentGlobal) expr
+          baseState = emitMappingCol (defNameGenCol mode currentGlobal stmt) currentGlobal (addDeps deps state)
+       in addStmt baseState stmt
     Opt.Ctor index arity ->
-      addStmt (emitMapping currentGlobal state) (var mode currentGlobal (Expr.generateCtor mode currentGlobal index arity))
+      let stmt = var mode currentGlobal (Expr.generateCtor mode currentGlobal index arity)
+       in addStmt (emitMappingCol (defNameGenCol mode currentGlobal stmt) currentGlobal state) stmt
     Opt.Link linkedGlobal ->
       addGlobal mode graph state linkedGlobal
     Opt.Cycle names values functions deps ->
@@ -950,9 +966,11 @@ dispatchNode mode graph currentGlobal addDeps globalInGraph state =
     Opt.Kernel chunks deps ->
       addKernelChunks mode currentGlobal (addDeps deps state) chunks
     Opt.Enum index ->
-      addStmt (emitMapping currentGlobal state) (Kernel_.generateEnum mode currentGlobal index)
+      let stmt = Kernel_.generateEnum mode currentGlobal index
+       in addStmt (emitMappingCol (defNameGenCol mode currentGlobal stmt) currentGlobal state) stmt
     Opt.Box ->
-      addStmt (emitMapping currentGlobal (addGlobal mode graph state Kernel_.identity)) (Kernel_.generateBox mode currentGlobal)
+      let stmt = Kernel_.generateBox mode currentGlobal
+       in addStmt (emitMappingCol (defNameGenCol mode currentGlobal stmt) currentGlobal (addGlobal mode graph state Kernel_.identity)) stmt
     Opt.PortIncoming decoder deps ->
       addStmt (emitMapping currentGlobal (addDeps deps state)) (Kernel_.generatePort mode currentGlobal "incomingPort" decoder)
     Opt.PortOutgoing encoder deps ->
@@ -1024,29 +1042,76 @@ countNewlinesBS :: ByteString -> Int
 countNewlinesBS =
   BS.count 0x0A
 
--- | Emit a source map mapping for a global before generating its JS. The global carries
--- its home module, which becomes the mapping's @sources@ entry so a symbolicated frame
--- names the right @.can@ module (not just a line).
+-- | Emit a source map mapping for a global before generating its JS, with the
+-- def's generated COLUMN left at 0 (the start of its generated line).
+--
+-- Used for node shapes whose emitted JS does not begin with a @var \<defName\>@
+-- prefix — cycles, ports, and ability impl-dicts — where there is no single
+-- well-defined "def name column" to point at; a line-precise (column-0) mapping
+-- is the honest answer for those. The @var@-shaped defs (Define, DefineTailFunc,
+-- Ctor, Enum, Box) use 'emitMappingCol' to record the def name's true column.
+--
+-- The global carries its home module, which becomes the mapping's @sources@
+-- entry so a symbolicated frame names the right @.can@ module (not just a line).
 emitMapping :: Opt.Global -> State -> State
-emitMapping global@(Opt.Global home _) state =
+emitMapping = emitMappingCol 0
+
+-- | Like 'emitMapping', but records an explicit generated COLUMN for the def
+-- (CMP-7A). The column is the 0-based byte offset, within the def's generated
+-- line, at which the def's emitted name begins — so a dev red-box resolves to
+-- the right def + column, not merely the right line. Every emitted statement is
+-- newline-terminated, so a def's statement always starts at column 0 of its
+-- generated line; the meaningful, def-distinguishing column is therefore the
+-- offset of the def NAME within that statement (e.g. 4 for @var \<name\>@,
+-- after the @"var "@ prefix), computed by 'defNameGenCol'.
+emitMappingCol :: Int -> Opt.Global -> State -> State
+emitMappingCol genCol global@(Opt.Global home _) state =
   case Map.lookup global (state ^. sourceLocations) of
     Nothing -> state
-    Just region -> emitMappingForRegion home region state
+    Just region -> emitMappingForRegion genCol home region state
 
 -- | Build a mapping from a source region, recording the source module's @sources@ index
--- (assigned on first sight, reused thereafter).
-emitMappingForRegion :: ModuleName.Canonical -> Ann.Region -> State -> State
-emitMappingForRegion home (Ann.Region (Ann.Position srcLine srcCol) _) state =
+-- (assigned on first sight, reused thereafter) and the def's generated column.
+emitMappingForRegion :: Int -> ModuleName.Canonical -> Ann.Region -> State -> State
+emitMappingForRegion genCol home (Ann.Region (Ann.Position srcLine srcCol) _) state =
   let (srcIndex, state') = resolveSrcIndex home state
       mapping = SourceMap.Mapping
         { SourceMap._mGenLine = state' ^. outputLine
-        , SourceMap._mGenCol = 0
+        , SourceMap._mGenCol = genCol
         , SourceMap._mSrcIndex = srcIndex
         , SourceMap._mSrcLine = fromIntegral srcLine - 1
         , SourceMap._mSrcCol = fromIntegral srcCol - 1
         , SourceMap._mNameIndex = Nothing
         }
    in state' & sourceMapMappings %~ (mapping :)
+
+-- | The 0-based generated column at which a @var \<defName\>@ statement places
+-- the def name, computed from the actual rendered statement rather than a
+-- hard-coded constant — so it stays correct if the pretty-printer's prefix
+-- (e.g. @"var "@) ever changes.
+--
+-- Every traversal statement is newline-terminated (and the inner preamble ends
+-- with a newline), so the statement begins at column 0 of its generated line;
+-- the def name's column is then simply its byte offset within the rendered
+-- statement. We locate it by searching the rendered bytes for the def name's
+-- identifier bytes (which are unique within a @var \<name\> = ...@ prefix). If
+-- the name cannot be located (defensive — should not happen for a @var@-shaped
+-- def), we fall back to column 0, degrading to the prior line-only behavior.
+--
+-- Source maps are Dev-only, so this returns 0 immediately in Prod (and whenever
+-- line tracking is off): there is no map to carry the column, and the extra
+-- statement render is pure waste under @--optimize@.
+defNameGenCol :: Mode.Mode -> Opt.Global -> JS.Stmt -> Int
+defNameGenCol mode global stmt =
+  case mode of
+    Mode.Prod {} -> 0
+    Mode.Dev {} ->
+      let nameBytes = BL.toStrict (BB.toLazyByteString (JsName.toBuilder (Mode.defName mode global)))
+          stmtBytes = BL.toStrict (BB.toLazyByteString (JS.stmtToBuilder stmt))
+       in case BS.breakSubstring nameBytes stmtBytes of
+            (prefix, match)
+              | BS.null match -> 0
+              | otherwise     -> BS.length prefix
 
 -- | The @sources@-array index for a module: reuse the existing one, or assign the next.
 resolveSrcIndex :: ModuleName.Canonical -> State -> (Int, State)

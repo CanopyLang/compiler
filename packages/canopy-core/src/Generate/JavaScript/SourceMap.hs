@@ -39,7 +39,12 @@ module Generate.JavaScript.SourceMap
     -- * Construction
   , empty
   , addMapping
+  , addMappings
   , addSource
+
+    -- * Sub-line breadcrumbs (CMP-7B)
+  , Breadcrumb (..)
+  , threadBreadcrumbs
 
     -- * Serialization
   , toBuilder
@@ -111,6 +116,19 @@ addMapping :: Mapping -> SourceMap -> SourceMap
 addMapping m sm =
   sm & smMappings %~ (m :)
 
+-- | Append several mappings at once, preserving their relative order.
+--
+-- Equivalent to folding 'addMapping' left-to-right over the list, so the
+-- LAST element of @ms@ ends up at the head of the internal reverse-ordered
+-- accumulator (matching the single-'addMapping' convention). Used by the
+-- sub-line breadcrumb path (CMP-7B), where a single def contributes a whole
+-- run of same-line, increasing-column mappings in one shot.
+--
+-- @since 0.20.5
+addMappings :: [Mapping] -> SourceMap -> SourceMap
+addMappings ms sm =
+  List.foldl' (flip addMapping) sm ms
+
 -- | Register a source file, returning its index and the updated map.
 --
 -- If the source path is already registered, the existing index is
@@ -128,6 +146,72 @@ addSource path maybeContent sm =
           , sm & smSources %~ (++ [path])
                & smSourcesContent %~ (++ [content])
           )
+
+-- SUB-LINE BREADCRUMBS (CMP-7B)
+
+-- | One sub-line breadcrumb: a fine-grained @region -> generated-position@
+-- correspondence discovered WITHIN a single def's generated line.
+--
+-- Where CMP-7A records a single mapping per top-level def (pointing the
+-- def's generated line+column at the def NAME's source position), CMP-7B
+-- threads additional breadcrumbs for the expressions emitted on that same
+-- generated line — so a red-box can resolve to the specific sub-expression,
+-- not merely the def, when the runtime hands back a precise generated column.
+--
+-- A breadcrumb is intentionally generated-line-relative: it stores the
+-- generated COLUMN at which a token starts (an offset within the def's
+-- generated line) alongside the original source position that token came
+-- from. 'threadBreadcrumbs' lifts a batch of these onto a concrete generated
+-- line and source index, producing ready-to-add 'Mapping's.
+--
+-- All line/column numbers are __0-based__, matching 'Mapping' and the V3 spec.
+--
+-- @since 0.20.5
+data Breadcrumb = Breadcrumb
+  { _bGenCol :: !Int
+    -- ^ 0-based generated column (offset within the def's generated line).
+  , _bSrcLine :: !Int
+    -- ^ 0-based original source line the token came from.
+  , _bSrcCol :: !Int
+    -- ^ 0-based original source column the token came from.
+  } deriving (Show, Eq)
+
+-- | Lift a batch of sub-line breadcrumbs onto a concrete generated line and
+-- source index, yielding spec-valid 'Mapping's ready for 'addMappings'.
+--
+-- This is the post-processing seam the CMP-7B plan calls for: a per-def
+-- builder pass discovers @(genCol, srcPos)@ breadcrumbs for the tokens it
+-- emitted on @genLine@, and this function turns them into mappings WITHOUT
+-- forking the JS printer. The encoder ('encodeMappings') already orders
+-- same-line segments by generated column, so breadcrumbs may be supplied in
+-- any order (source-traversal order is fine).
+--
+-- Breadcrumbs are de-duplicated by generated column (keeping the FIRST
+-- occurrence, i.e. the earliest source position threaded for that column) so
+-- two tokens that the printer happened to emit at the same generated column
+-- do not produce two conflicting segments — a single generated position can
+-- map to only one original position. The result preserves input order; the
+-- encoder performs the final column sort.
+--
+-- @since 0.20.5
+threadBreadcrumbs :: Int -> Int -> [Breadcrumb] -> [Mapping]
+threadBreadcrumbs genLine srcIndex =
+  map toMapping . dedupByGenCol
+  where
+    toMapping (Breadcrumb genCol srcLine srcCol) =
+      Mapping
+        { _mGenLine = genLine
+        , _mGenCol = genCol
+        , _mSrcIndex = srcIndex
+        , _mSrcLine = srcLine
+        , _mSrcCol = srcCol
+        , _mNameIndex = Nothing
+        }
+
+-- | Keep only the first breadcrumb seen at each generated column, preserving
+-- the original input order of the survivors.
+dedupByGenCol :: [Breadcrumb] -> [Breadcrumb]
+dedupByGenCol = List.nubBy (\a b -> _bGenCol a == _bGenCol b)
 
 -- | Serialize the source map to a JSON 'Builder'.
 --
@@ -178,8 +262,16 @@ encodeMappings mappings =
       let line = _mGenLine m
           (lineMs, rest) = span (\m' -> _mGenLine m' == line) ms
           separators = stimesMonoid (line - prevLine) (BB.char7 ';')
+          -- Within one generated line, segments MUST be ordered by ascending
+          -- generated column so the relative-delta encoding never goes
+          -- backwards. Def-level mappings (CMP-7A) already arrive sorted, but
+          -- sub-line breadcrumbs (CMP-7B) are threaded into a def's line in
+          -- source-traversal order, which is not guaranteed to be left-to-right
+          -- on the generated line; a stable sort by genCol restores the
+          -- invariant without disturbing equal-column ties.
+          orderedLineMs = List.sortOn _mGenCol lineMs
           -- genCol is line-relative: reset its running total at each new line.
-          (segBuilder, st') = encodeLineSegments st { _prevGenCol = 0 } lineMs
+          (segBuilder, st') = encodeLineSegments st { _prevGenCol = 0 } orderedLineMs
        in separators <> segBuilder <> go line st' rest
 
 -- | @n@ copies of a builder concatenated (n >= 0 yields 'mempty' when 0).
