@@ -19,6 +19,9 @@ module Setup
 
     -- * Types
     Flags (..),
+
+    -- * Scaffold defaults (exported for testing)
+    standardPackages,
   )
 where
 
@@ -48,15 +51,15 @@ data Flags = Flags
 -- are processed first.
 standardPackages :: [(Pkg.Name, Version.Version)]
 standardPackages =
-  [ (Pkg.core, Version.Version 1 0 5),
+  [ (Pkg.core, Version.Version 1 1 0),
     (mkPkg "canopy" "json", Version.Version 1 1 3),
     (mkPkg "canopy" "time", Version.Version 1 0 0),
     (mkPkg "canopy" "bytes", Version.Version 1 0 8),
     (mkPkg "canopy" "url", Version.Version 1 0 0),
     (mkPkg "canopy" "random", Version.Version 1 0 0),
-    (mkPkg "canopy" "virtual-dom", Version.Version 1 0 3),
-    (mkPkg "canopy" "html", Version.Version 1 0 0),
-    (mkPkg "canopy" "browser", Version.Version 1 0 0),
+    (mkPkg "canopy" "virtual-dom", Version.Version 1 0 5),
+    (mkPkg "canopy" "html", Version.Version 1 0 1),
+    (mkPkg "canopy" "browser", Version.Version 1 0 1),
     (mkPkg "canopy" "http", Version.Version 2 0 0)
   ]
 

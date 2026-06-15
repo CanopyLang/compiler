@@ -1435,6 +1435,72 @@ var _Platform_worker = F4(function(impl, flagDecoder, debugMetadata, args)
 
 
 
+// DEV-3 STATE SEAM (inert unless _Platform_devSeam is set by the host)
+//
+// The TEA runtime lives INSIDE the compiled IIFE, so its single `var model`
+// closure is invisible from outside. For state-preserving reload the debug host
+// (native.js / the JNI bridge — DEV-2/DEV-4) needs to (a) capture the live model
+// before teardown and (b) stop running Subs so a reload does not double-subscribe.
+// This seam bridges that closure to the host global, but ONLY when the host opts
+// in: it reads/writes the flag + handle on the global object, so normal
+// web/SSR/native boots are completely unaffected (the seam never even runs).
+
+
+// Resolve the ambient global object portably (Hermes/JSC/Node/browser) without
+// assuming `globalThis` exists on every engine.
+/** @canopy-type () -> a */
+function _Platform_devGlobal()
+{
+	return (typeof globalThis !== 'undefined') ? globalThis
+		: (typeof self !== 'undefined') ? self
+		: (typeof global !== 'undefined') ? global
+		: (typeof window !== 'undefined') ? window
+		: this;
+}
+
+// True only when the host set `<global>._Platform_devSeam = true` before boot.
+// Always emitted (a plain runtime fn), but returns false by default so the seam
+// stays inert.
+/** @canopy-type () -> Bool */
+function _Platform_devSeam()
+{
+	var g = _Platform_devGlobal();
+	return !!(g && g._Platform_devSeam);
+}
+
+// Published to the host global by _Platform_initialize when the seam is enabled.
+// Holds the live `var model` closure of the running TEA program plus its effect
+// managers:
+//   { getModel : () -> model, setModel : model -> (), managers : Dict, shutdown : () -> () }
+// or null when no program is live / the seam is disabled. Also exposed inside the
+// IIFE so _Platform_shutdown can reach it.
+/** @canopy-type Maybe { getModel : () -> model, setModel : model -> (), managers : Dict String Process } */
+var _Platform_live = null;
+
+// Stops every effect manager's receive-loop so its Subs no longer fire after a
+// state-preserving reload (otherwise a reload would double-subscribe), then
+// clears the published handle. Inert when the seam is disabled / no program is
+// live. Exposed on the host global alongside _Platform_live.
+/** @canopy-type () -> () */
+function _Platform_shutdown()
+{
+	if (!_Platform_live)
+	{
+		return;
+	}
+	var managers = _Platform_live.managers;
+	for (var home in managers)
+	{
+		// _Scheduler_kill returns a Task (binding), so spawn it to run the kill.
+		_Scheduler_rawSpawn(_Scheduler_kill(managers[home]));
+	}
+	_Platform_live = null;
+	var g = _Platform_devGlobal();
+	if (g) { g._Platform_live = null; }
+}
+
+
+
 // INITIALIZE A PROGRAM
 
 
@@ -1454,6 +1520,29 @@ function _Platform_initialize(flagDecoder, args, init, update, subscriptions, st
 		var pair = A2(update, msg, model);
 		stepper(model = pair.a, viewMetadata);
 		_Platform_enqueueEffects(managers, pair.b, subscriptions(model));
+	}
+
+	// DEV-3 state seam: opt-in, inert unless the host set _Platform_devSeam on
+	// the global before boot. Exposes the single `var model` closure (+ effect
+	// managers) so a debug host can capture/restore state across a state-preserving
+	// reload and stop the running Subs via _Platform_shutdown so a reload does not
+	// double-subscribe. Referencing _Platform_live / _Platform_shutdown /
+	// _Platform_devSeam here makes them direct deps of _Platform_initialize, so the
+	// tree-shaker (closeDeps) keeps them.
+	if (_Platform_devSeam())
+	{
+		_Platform_live = {
+			getModel: function () { return model; },
+			setModel: function (m) { stepper(model = m); },
+			managers: managers,
+			shutdown: _Platform_shutdown
+		};
+		var _devG = _Platform_devGlobal();
+		if (_devG)
+		{
+			_devG._Platform_live = _Platform_live;
+			_devG._Platform_shutdown = _Platform_shutdown;
+		}
 	}
 
 	_Platform_enqueueEffects(managers, initPair.b, subscriptions(model));

@@ -12,13 +12,23 @@ import qualified Canopy.Package as Pkg
 import qualified Canopy.Version as Version
 import qualified Data.Map.Strict as Map
 import qualified Canopy.Data.Utf8 as Utf8
+import qualified Canopy.Constraint as Constraint
+import qualified Data.Set as Set
 import qualified PackageCache
 import Test.Tasty
 import Test.Tasty.HUnit
 
+-- | Every test here reads the shared global package cache (@~/.canopy@, @~/.elm@) via
+-- the real @$HOME@, so two of them running at once can race on the same files and yield
+-- a spurious "package not found". Run them sequentially — same rationale (and idiom) as
+-- 'Unit.Builder.PackageCache.ResolveTest' and 'Unit.Deps.RegistryTest'. @AllFinish@ runs
+-- each group's children in order regardless of individual pass/fail.
+seqGroup :: TestName -> [TestTree] -> TestTree
+seqGroup name = sequentialTestGroup name AllFinish
+
 tests :: TestTree
 tests =
-  testGroup
+  seqGroup
     "PackageCache Tests"
     [ testLoadElmCore,
       testLoadPackageInterfaces,
@@ -32,7 +42,7 @@ tests =
 
 testLoadElmCore :: TestTree
 testLoadElmCore =
-  testGroup
+  seqGroup
     "canopy/core loading"
     [ testCase "loadElmCoreInterfaces returns interfaces" $ do
         result <- PackageCache.loadElmCoreInterfaces
@@ -71,12 +81,13 @@ testLoadElmCore =
 
 testLoadPackageInterfaces :: TestTree
 testLoadPackageInterfaces =
-  testGroup
+  seqGroup
     "specific package loading"
     [ testCase "load canopy/core by version" $ do
-        result <- PackageCache.loadPackageInterfaces "canopy" "core" "1.0.5"
+        coreV <- installedCoreVersion
+        result <- PackageCache.loadPackageInterfaces "canopy" "core" coreV
         case result of
-          Nothing -> assertFailure "core 1.0.5 not installed"
+          Nothing -> assertFailure "core 1.1.0 not installed"
           Just ifaces -> do
             let size = Map.size ifaces
             assertBool ("Expected >0 modules, got " ++ show size) (size > 0),
@@ -99,7 +110,7 @@ testLoadPackageInterfaces =
 
 testLoadAllDependencies :: TestTree
 testLoadAllDependencies =
-  testGroup
+  seqGroup
     "multi-package loading"
     [ testCase "load single dependency" $ do
         -- core is version 1.0.5, not 1.0.0
@@ -140,7 +151,7 @@ testLoadAllDependencies =
 
 testMissingPackages :: TestTree
 testMissingPackages =
-  testGroup
+  seqGroup
     "missing package handling"
     [ testCase "missing author returns Nothing" $ do
         result <-
@@ -171,12 +182,13 @@ testMissingPackages =
 
 testSearchOrder :: TestTree
 testSearchOrder =
-  testGroup
+  seqGroup
     "search order validation"
     [ testCase "searches canopy path before elm path" $ do
         -- This test validates the search order by checking that
         -- loadPackageInterfaces tries ~/.canopy before ~/.elm
-        result <- PackageCache.loadPackageInterfaces "canopy" "core" "1.0.5"
+        coreV <- installedCoreVersion
+        result <- PackageCache.loadPackageInterfaces "canopy" "core" coreV
         case result of
           Nothing -> assertFailure "core should be found in one location"
           Just _ -> return ()
@@ -196,6 +208,22 @@ isMaybe name = Utf8.toChars name == "Maybe"
 isResult :: ModuleName.Raw -> Bool
 isResult name = Utf8.toChars name == "Result"
 
+-- | True for canopy/core's own FFI module — present in the canopy fork, absent from the
+-- elm/core baseline. Used to prove the real canopy package loaded (not the elm fallback).
+isFFI :: ModuleName.Raw -> Bool
+isFFI name = Utf8.toChars name == "FFI"
+
+-- | The latest installed canopy/core version, resolved exactly as a build resolves it
+-- (@resolveInstalledVersion@ over the major range). Lets these tests track canopy/core
+-- version bumps automatically instead of pinning a literal that goes stale on each bump.
+-- (elm/core stays the fixed 1.0.5 baseline via @loadElmCoreInterfaces@.)
+installedCoreVersion :: IO String
+installedCoreVersion =
+  Version.toChars
+    <$> PackageCache.resolveInstalledVersion
+      Pkg.core
+      (Constraint.untilNextMajor (Version.Version 1 0 0))
+
 makePackage :: String -> String -> Pkg.Name
 makePackage author project =
   Pkg.Name (Utf8.fromChars author) (Utf8.fromChars project)
@@ -206,7 +234,7 @@ makeVersion major minor patch =
 
 testCoreModuleNames :: TestTree
 testCoreModuleNames =
-  testGroup
+  seqGroup
     "canopy/core module name validation"
     [ testCase "Basics module name is Basics" $ do
         result <- PackageCache.loadElmCoreInterfaces
@@ -240,7 +268,7 @@ testCoreModuleNames =
 
 testPackageInterfaceModules :: TestTree
 testPackageInterfaceModules =
-  testGroup
+  seqGroup
     "package interface module content"
     [ testCase "loaded interfaces have non-empty module names" $ do
         result <- PackageCache.loadElmCoreInterfaces
@@ -249,18 +277,36 @@ testPackageInterfaceModules =
           Just ifaces ->
             let names = fmap Utf8.toChars (Map.keys ifaces)
              in assertBool "all names non-empty" (all (not . null) names),
-      testCase "canopy/core loadPackageInterfaces count matches loadElmCoreInterfaces" $ do
-        coreResult <- PackageCache.loadElmCoreInterfaces
-        pkgResult <- PackageCache.loadPackageInterfaces "canopy" "core" "1.0.5"
-        case (coreResult, pkgResult) of
-          (Just core, Just pkg) ->
-            Map.size core @?= Map.size pkg
-          _ -> assertFailure "both load methods should succeed"
+      testCase "canopy/core is a superset of the elm/core baseline" $ do
+        -- elm/core (pinned 1.0.5) is the frozen language baseline; canopy/core is the
+        -- fork and is free to ADD modules (FFI, FFI.Validator, ...) as it improves. The
+        -- invariant is "no baseline module is dropped + the fork's own surface is
+        -- present" — NOT equal module counts, which falsely breaks on every legitimate
+        -- canopy/core bump (1.0.5 had 18 modules, 1.1.0 has 20).
+        elmResult <- PackageCache.loadElmCoreInterfaces
+        coreV <- installedCoreVersion
+        canopyResult <- PackageCache.loadPackageInterfaces "canopy" "core" coreV
+        case (elmResult, canopyResult) of
+          (Just elmCore, Just canopyCore) -> do
+            let elmMods = Set.fromList (fmap Utf8.toChars (Map.keys elmCore))
+                canopyMods = Set.fromList (fmap Utf8.toChars (Map.keys canopyCore))
+                dropped = Set.toList (Set.difference elmMods canopyMods)
+            assertBool
+              ( "canopy/core "
+                  ++ coreV
+                  ++ " must not drop any elm/core baseline module; dropped: "
+                  ++ show dropped
+              )
+              (null dropped)
+            assertBool
+              "canopy/core must expose its own FFI module (proves the canopy fork loaded, not the elm fallback)"
+              (any isFFI (Map.keys canopyCore))
+          _ -> assertFailure "both elm/core baseline and canopy/core should load"
     ]
 
 testMultipleLoadsSameResult :: TestTree
 testMultipleLoadsSameResult =
-  testGroup
+  seqGroup
     "repeated loading produces consistent results"
     [ testCase "loading core twice gives same module count" $ do
         r1 <- PackageCache.loadElmCoreInterfaces

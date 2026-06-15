@@ -48,7 +48,8 @@ tests =
     "Generate.JavaScript.Runtime"
     [ debugFlagTests,
       contentTests,
-      bodyConsistencyTest
+      bodyConsistencyTest,
+      devSeamTests
     ]
 
 -- | Tests for the @__canopy_debug@ preamble emitted by 'embeddedRuntimeForMode'.
@@ -110,6 +111,84 @@ bodyConsistencyTest =
           ++ " bytes) after stripping debug branches"
       )
       (BS.length prodBody < BS.length devBody)
+
+-- | DEV-3: the inert-unless-requested state seam (_Platform_live /
+-- _Platform_shutdown) must be present in the embedded runtime, installed from
+-- inside _Platform_initialize, and — the load-bearing regression — survive
+-- tree-shaking because _Platform_initialize transitively depends on it.
+devSeamTests :: TestTree
+devSeamTests =
+  testGroup
+    "DEV-3 state seam (_Platform_live / _Platform_shutdown)"
+    [ testCase "embedded runtime declares _Platform_live" $
+        assertContains "_Platform_live" runtimeBS,
+      testCase "embedded runtime declares _Platform_shutdown" $
+        assertContains "_Platform_shutdown" runtimeBS,
+      testCase "embedded runtime declares the _Platform_devSeam opt-in flag" $
+        assertContains "_Platform_devSeam" runtimeBS,
+      testCase "_Platform_initialize body installs the seam (references _Platform_live)" $ do
+        let body = initializeBody runtimeBS
+        assertBool
+          "Expected _Platform_initialize body to reference _Platform_live"
+          ("_Platform_live" `BS.isInfixOf` body),
+      testCase "_Platform_initialize body guards on _Platform_devSeam" $ do
+        let body = initializeBody runtimeBS
+        assertBool
+          "Expected _Platform_initialize body to guard the seam on _Platform_devSeam"
+          ("_Platform_devSeam" `BS.isInfixOf` body),
+      testCase "tree-shaker keeps _Platform_live via closeDeps(_Platform_initialize)" $ do
+        let closure =
+              Runtime.closeDeps (Set.singleton (Runtime.RuntimeId "_Platform_initialize"))
+        assertBool
+          "closeDeps from _Platform_initialize must include _Platform_live"
+          (Set.member (Runtime.RuntimeId "_Platform_live") closure),
+      testCase "tree-shaker keeps _Platform_shutdown via closeDeps(_Platform_initialize)" $ do
+        let closure =
+              Runtime.closeDeps (Set.singleton (Runtime.RuntimeId "_Platform_initialize"))
+        assertBool
+          "closeDeps from _Platform_initialize must include _Platform_shutdown"
+          (Set.member (Runtime.RuntimeId "_Platform_shutdown") closure),
+      testCase "tree-shaker keeps _Platform_devSeam via closeDeps(_Platform_initialize)" $ do
+        let closure =
+              Runtime.closeDeps (Set.singleton (Runtime.RuntimeId "_Platform_initialize"))
+        assertBool
+          "closeDeps from _Platform_initialize must include _Platform_devSeam"
+          (Set.member (Runtime.RuntimeId "_Platform_devSeam") closure),
+      testCase "tree-shaker keeps _Platform_devGlobal via closeDeps(_Platform_initialize)" $ do
+        let closure =
+              Runtime.closeDeps (Set.singleton (Runtime.RuntimeId "_Platform_initialize"))
+        assertBool
+          "closeDeps from _Platform_initialize must include _Platform_devGlobal"
+          (Set.member (Runtime.RuntimeId "_Platform_devGlobal") closure),
+      testCase "shutdown pulls _Scheduler_kill into the closure (Subs are stoppable)" $ do
+        let closure =
+              Runtime.closeDeps (Set.singleton (Runtime.RuntimeId "_Platform_initialize"))
+        assertBool
+          "closeDeps from _Platform_initialize must include _Scheduler_kill"
+          (Set.member (Runtime.RuntimeId "_Scheduler_kill") closure),
+      testCase "emitNeeded(closeDeps _Platform_initialize) byte-contains the seam" $ do
+        let closure =
+              Runtime.closeDeps (Set.singleton (Runtime.RuntimeId "_Platform_initialize"))
+            emitted = builderToBS (Runtime.emitNeeded devMode closure)
+        assertContains "_Platform_live" emitted
+        assertContains "_Platform_shutdown" emitted
+    ]
+  where
+    runtimeBS :: BS.ByteString
+    runtimeBS = builderToBS Runtime.embeddedRuntime
+
+-- | Extract the body of @_Platform_initialize@ from the embedded runtime text,
+-- from its declaration up to the next top-level @function _Platform_@ that
+-- follows it. Good enough to assert the seam install lives inside this function
+-- (not merely elsewhere in the file).
+initializeBody :: BS.ByteString -> BS.ByteString
+initializeBody bs =
+  let afterDecl = snd (BS.breakSubstring "function _Platform_initialize" bs)
+      -- skip past the decl line so the next "function _Platform_" search finds
+      -- the *following* declaration, not _Platform_initialize itself.
+      afterHead = BS.drop (BS.length "function _Platform_initialize") afterDecl
+      next = fst (BS.breakSubstring "\nfunction _Platform_" afterHead)
+   in next
 
 -- ── Internal helpers ─────────────────────────────────────────────────────────
 

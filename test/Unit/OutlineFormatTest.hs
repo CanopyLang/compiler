@@ -6,15 +6,20 @@
 -- are correctly parsed from JSON, and that backward compatibility with
 -- elm.json is maintained.
 --
--- Note: The 'ToJSON' and 'FromJSON' instances for 'AppOutline' use
--- different JSON structures (ToJSON flattens deps, FromJSON reads nested
--- direct\/indirect), so full round-trip testing requires using the decode
--- format for both directions.
+-- The 'ToJSON' and 'FromJSON' instances for 'AppOutline' both use the nested
+-- @{\"direct\": …, \"indirect\": …}@ dependency shape, so @toJSON . parseJSON@
+-- round-trips — including SemVer RANGES for floating canopy/* deps, which must
+-- survive serialization rather than be frozen to exact pins (see
+-- @rangeRoundTripTests@).
 --
 -- @since 0.19.2
 module Unit.OutlineFormatTest (tests) where
 
+import qualified Canopy.Constraint as Constraint
 import qualified Canopy.Outline as Outline
+import qualified Canopy.Package as Pkg
+import qualified Canopy.Data.Utf8 as Utf8
+import qualified Canopy.Version as Version
 import qualified Data.Aeson as Json
 import qualified Data.ByteString.Lazy.Char8 as BL8
 import qualified Data.Map.Strict as Map
@@ -30,7 +35,72 @@ tests =
     [ backwardCompatTests,
       scriptsParsingTests,
       repositoryParsingTests,
-      pkgParsingTests
+      pkgParsingTests,
+      rangeRoundTripTests
+    ]
+
+-- RANGE PARSING + ROUND-TRIP (R5)
+
+-- | A canopy.json whose direct deps mix a floating canopy/* RANGE with an exact
+-- (non-fork) pin, exercising the dual range\/version format and the round-trip.
+appJsonWithRanges :: BL8.ByteString
+appJsonWithRanges =
+  BL8.pack $
+    concat
+      [ "{",
+        "\"type\":\"application\",",
+        "\"canopy-version\":\"0.19.1\",",
+        "\"source-directories\":[\"src\"],",
+        "\"dependencies\":{",
+        "\"direct\":{\"canopy/core\":\"1.0.0 <= v < 2.0.0\",\"elm/browser\":\"1.0.2\"},",
+        "\"indirect\":{\"canopy/virtual-dom\":\"1.0.0 <= v < 2.0.0\"}",
+        "},",
+        "\"test-dependencies\":{\"direct\":{}}",
+        "}"
+      ]
+
+mkName :: String -> String -> Pkg.Name
+mkName author project = Pkg.Name (Utf8.fromChars author) (Utf8.fromChars project)
+
+ver :: String -> Version.Version
+ver s = maybe (error ("bad version " ++ s)) id (Version.fromChars s)
+
+rangeRoundTripTests :: TestTree
+rangeRoundTripTests =
+  Test.testGroup
+    "Range deps parse + round-trip (R5)"
+    [ Test.testCase "a canopy/* range parses to its major floor in the direct map" $
+        decodeAppCheck appJsonWithRanges $ \app ->
+          Map.lookup (mkName "canopy" "core") (Outline._appDepsDirect app)
+            @?= Just (ver "1.0.0"),
+      Test.testCase "an exact (non-fork) pin parses verbatim" $
+        decodeAppCheck appJsonWithRanges $ \app ->
+          Map.lookup (mkName "elm" "browser") (Outline._appDepsDirect app)
+            @?= Just (ver "1.0.2"),
+      Test.testCase "an indirect canopy/* range parses to its floor" $
+        decodeAppCheck appJsonWithRanges $ \app ->
+          Map.lookup (mkName "canopy" "virtual-dom") (Outline._appDepsIndirect app)
+            @?= Just (ver "1.0.0"),
+      Test.testCase "the original range constraint is preserved in _appDeps" $
+        decodeAppCheck appJsonWithRanges $ \app ->
+          Map.lookup (mkName "canopy" "core") (Outline._appDeps app)
+            @?= Constraint.fromChars "1.0.0 <= v < 2.0.0",
+      Test.testCase "toJSON . parseJSON preserves ranges (no freezing to exact pins)" $
+        case Json.eitherDecode appJsonWithRanges :: Either String Outline.Outline of
+          Left err -> Test.assertFailure ("first decode failed: " ++ err)
+          Right outline1 ->
+            -- Re-encode via the App ToJSON, decode again, and assert the dependency maps
+            -- are identical — ranges must survive verbatim, not collapse to exact pins.
+            case Json.eitherDecode (Json.encode outline1) :: Either String Outline.Outline of
+              Left err -> Test.assertFailure ("re-decode failed: " ++ err)
+              Right (Outline.App app2) ->
+                case outline1 of
+                  Outline.App app1 -> do
+                    Outline._appDepsDirect app2 @?= Outline._appDepsDirect app1
+                    Outline._appDepsIndirect app2 @?= Outline._appDepsIndirect app1
+                    Outline._appDeps app2 @?= Outline._appDeps app1
+                  _ -> Test.assertFailure "first outline was not an App"
+              Right other -> Test.assertFailure ("re-decode was not an App: " ++ show other)
     ]
 
 -- BACKWARD COMPATIBILITY

@@ -22,15 +22,18 @@ module Property.Parse.FuzzProperties
   ( tests
   ) where
 
+import qualified Canopy.Data.Name as Name
 import qualified Control.Exception as Exception
 import qualified Data.ByteString as BS
 import qualified Data.ByteString.Char8 as C8
+import qualified Data.Set as Set
 import qualified Data.Text as Text
 import qualified Data.Text.Encoding as TextEnc
 import qualified Parse.Expression as Expr
 import qualified Parse.Pattern as Pat
 import qualified Parse.Primitives as Parse
 import qualified Parse.Type as Ty
+import qualified Parse.Variable as Var
 import qualified Reporting.Error.Syntax as SyntaxError
 import System.IO.Unsafe (unsafePerformIO)
 import Test.Tasty
@@ -265,11 +268,22 @@ genPrintableString =
 -- Identifiers start with a lowercase letter and contain only alphanumeric
 -- characters and underscores.
 genLowercaseIdent :: Gen String
-genLowercaseIdent = do
-  first <- elements ['a'..'z']
-  rest <- listOf (elements (['a'..'z'] ++ ['A'..'Z'] ++ ['0'..'9'] ++ ['_']))
-  len <- choose (0, 8)
-  pure (first : take len rest)
+genLowercaseIdent = genRawLowercaseIdent `suchThat` (not . isReservedWord)
+  where
+    genRawLowercaseIdent = do
+      first <- elements ['a' .. 'z']
+      rest <- listOf (elements (['a' .. 'z'] ++ ['A' .. 'Z'] ++ ['0' .. '9'] ++ ['_']))
+      len <- choose (0, 8)
+      pure (first : take len rest)
+
+-- | True when a string is a Canopy reserved keyword (@if@, @let@, @type@, ...). The
+-- parser legitimately rejects these as value identifiers and patterns, so the
+-- "parses successfully" generators must exclude them — otherwise the properties fail
+-- whenever QuickCheck happens to generate a keyword. Source of truth is
+-- 'Parse.Variable.reservedWords', so a new keyword can never silently reintroduce the
+-- flakiness.
+isReservedWord :: String -> Bool
+isReservedWord s = Name.fromChars s `Set.member` Var.reservedWords
 
 -- | Generate a valid uppercase Canopy type name.
 --

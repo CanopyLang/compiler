@@ -41,11 +41,16 @@ module PackageCache
   , Artifacts(..)
     -- * FFI Fingerprint Validation
   , verifyFFIFingerprints
+
+    -- * Constraint resolution against the installed cache
+  , resolveInstalledVersion
+  , resolveInstalledVersionIn
   ) where
 
 import qualified AST.Canonical as Can
 import qualified AST.Optimized as Opt
 import qualified Builder.Hash as Hash
+import qualified Canopy.Constraint as Constraint
 import qualified Canopy.Interface as Interface
 import qualified Canopy.ModuleName as ModuleName
 import qualified Canopy.Package as Pkg
@@ -58,6 +63,8 @@ import qualified Data.Binary as Binary
 import Data.Binary.Get (Get)
 import qualified Data.ByteString as BS
 import qualified Data.ByteString.Lazy as LBS
+import qualified Data.List as List
+import Data.Ord (Down (..))
 import Data.Word (Word8, Word16)
 import qualified Generate.JavaScript as JS
 import qualified Interface.JSON as IFace
@@ -425,7 +432,11 @@ data VersionedResult a
 -- | Try to load a versioned artifact, returning a structured result.
 tryVersionedAsResult :: (ArtifactCache -> b) -> FilePath -> IO (VersionedResult b)
 tryVersionedAsResult extract path = do
-  bytes <- LBS.readFile path
+  -- Read the artifact strictly (handle closed before we decode) rather than via lazy
+  -- LBS.readFile: lazy file IO keeps the handle open until the bytestring is fully
+  -- forced, which races when many package loads run concurrently (e.g. tasty's parallel
+  -- tests) and intermittently yields a truncated read -> spurious "package not found".
+  bytes <- LBS.fromStrict <$> BS.readFile path
   case decodeVersionedArtifacts bytes of
     Nothing -> pure VersionedNotThisFormat
     Just cache -> do
@@ -485,6 +496,102 @@ fallbackAuthor "elm" = Just "canopy"
 fallbackAuthor "elm-explorations" = Just "canopy-explorations"
 fallbackAuthor _ = Nothing
 
+-- | Resolve a dependency constraint to a concrete version using what is actually
+-- INSTALLED, instead of blindly taking the constraint's lower bound.
+--
+-- This is what lets a package's tests (and any package build) use dev packages linked
+-- at HEAD versions — e.g. @canopy\/virtual-dom 1.0.5@ — without pinning every
+-- @>= 1.0.0@ constraint down to @1.0.0@. It scans the Canopy cache and the Elm-compat
+-- cache for every installed version of the package, keeps those that satisfy the
+-- constraint, and returns the highest — preferring a version installed under the
+-- package's OWN author (a @canopy link@ed source tree) over one only present via the
+-- @canopy<->elm@ fallback, so a linked package always wins over a stale compat copy.
+-- Falls back to the constraint's lower bound when nothing is installed, so a clean,
+-- offline first build still has a definite fetch/build target.
+--
+-- @since 0.19.2
+resolveInstalledVersion :: Pkg.Name -> Constraint.Constraint -> IO Version
+resolveInstalledVersion name constraint = do
+  home <- Dir.getHomeDirectory
+  resolveInstalledVersionIn home name constraint
+
+-- | Like 'resolveInstalledVersion', but resolves against an explicit cache-root @home@
+-- instead of the process-global @$HOME@. Lets tests point the resolver at a fixture
+-- directory without @setEnv "HOME"@, which would race any other test reading @$HOME@
+-- under tasty's parallel scheduler.
+--
+-- @since 0.19.2
+resolveInstalledVersionIn :: FilePath -> Pkg.Name -> Constraint.Constraint -> IO Version
+resolveInstalledVersionIn home name constraint = do
+  installed <- installedVersionsTaggedIn home name
+  let satisfying = filter (Constraint.satisfies constraint . fst) installed
+      primary = [v | (v, True) <- satisfying]
+      fallback = [v | (v, False) <- satisfying]
+  case (primary, fallback) of
+    (v : vs, _) -> pure (maximum (v : vs))
+    ([], v : vs) -> pure (maximum (v : vs))
+    ([], [])
+      -- For the genuinely-forked FFI set ({core, virtual-dom, html, json}) a missing
+      -- install is a HARD error: silently returning the lower bound would feed the
+      -- canopy->elm fallback and load the FFI-less elm namesake — the cryptic
+      -- "Missing global VirtualDomFFI.init" trap. Fail LOUDLY and actionably at resolve
+      -- time instead. (installed is restricted to the package's own author for fork
+      -- packages, so the message reports the canopy-side versions only.)
+      | Pkg.isCanopyFork name ->
+          errorWithoutStackTrace $
+            "No installed "
+              ++ Pkg.toChars name
+              ++ " satisfies "
+              ++ Constraint.toChars constraint
+              ++ "; installed: "
+              ++ showInstalled (map fst installed)
+              ++ ". Install/rebuild it (e.g. `canopy cache rebuild`) — Canopy will not"
+              ++ " silently fall back to the FFI-less elm/"
+              ++ projectChars name
+              ++ "."
+      -- Non-fork packages (browser/time/url, …) keep the lower-bound default so a clean
+      -- offline first build still has a definite fetch/build target.
+      | otherwise -> pure (Constraint.lowerBound constraint)
+  where
+    showInstalled [] = "(none)"
+    showInstalled vs = List.intercalate ", " (map Version.toChars vs)
+    projectChars (Pkg.Name _ project) = Utf8.toChars project
+
+-- | Every installed version of a package, tagged 'True' when it lives under the
+-- package's own author and 'False' when only under a fallback author. Searches both
+-- @~\/.canopy\/packages@ and @~\/.elm\/0.19.1\/packages@.
+installedVersionsTagged :: Pkg.Name -> IO [(Version, Bool)]
+installedVersionsTagged name = do
+  home <- Dir.getHomeDirectory
+  installedVersionsTaggedIn home name
+
+-- | Like 'installedVersionsTagged', but scans under an explicit cache-root @home@ rather
+-- than the process-global @$HOME@.
+installedVersionsTaggedIn :: FilePath -> Pkg.Name -> IO [(Version, Bool)]
+installedVersionsTaggedIn home name@(Pkg.Name authorU projectU) = do
+  let author = Utf8.toChars authorU
+      project = Utf8.toChars projectU
+      roots = [home </> ".canopy" </> "packages", home </> ".elm" </> "0.19.1" </> "packages"]
+      -- For the forked FFI set, DROP the canopy->elm fallback direction entirely: a
+      -- canopy/virtual-dom must never resolve to (or report) elm/virtual-dom, which lacks
+      -- the FFI surface. Non-fork packages (browser/time/url) keep the fallback so they
+      -- still resolve to their elm-only installs.
+      fallbackDirs
+        | Pkg.isCanopyFork name = []
+        | otherwise = [(root </> a </> project, False) | root <- roots, Just a <- [fallbackAuthor author]]
+      dirs =
+        [(root </> author </> project, True) | root <- roots]
+          ++ fallbackDirs
+  concat <$> traverse versionsTagged dirs
+  where
+    versionsTagged (dir, isPrimary) = do
+      exists <- Dir.doesDirectoryExist dir
+      if not exists
+        then pure []
+        else do
+          entries <- Dir.listDirectory dir
+          pure [(v, isPrimary) | entry <- entries, Just v <- [Version.fromChars entry]]
+
 -- | Build the search paths for loading package artifacts.
 --
 -- Returns paths in priority order:
@@ -493,13 +600,24 @@ fallbackAuthor _ = Nothing
 -- 2. @~\/.canopy\/packages\/{fallback-author}\/{package}\/{version}\/artifacts.dat@ (if author has a fallback mapping)
 -- 3. @~\/.elm\/0.19.1\/packages\/{author}\/{package}\/{version}\/artifacts.dat@
 --
+-- For the genuinely-forked FFI set ({core, virtual-dom, html, json}) the canopy->elm
+-- fallback DIRECTION is dropped: a canopy fork package can never load its FFI-less elm
+-- namesake. The fallback is preserved for every other package (browser/time/url exist
+-- only under @~\/.elm@ and must keep resolving there).
+--
 -- @since 0.19.1
 packageArtifactPaths :: FilePath -> String -> String -> String -> [FilePath]
 packageArtifactPaths homeDir author package version =
   [homeDir </> ".canopy" </> "packages" </> author </> package </> version </> "artifacts.dat"]
-  ++ maybe [] (\mapped -> [homeDir </> ".canopy" </> "packages" </> mapped </> package </> version </> "artifacts.dat"]) (fallbackAuthor author)
+  ++ fallbackPaths (homeDir </> ".canopy" </> "packages")
   ++ [homeDir </> ".elm" </> "0.19.1" </> "packages" </> author </> package </> version </> "artifacts.dat"]
-  ++ maybe [] (\mapped -> [homeDir </> ".elm" </> "0.19.1" </> "packages" </> mapped </> package </> version </> "artifacts.dat"]) (fallbackAuthor author)
+  ++ fallbackPaths (homeDir </> ".elm" </> "0.19.1" </> "packages")
+  where
+    isFork = Pkg.isCanopyFork (Pkg.Name (Utf8.fromChars author) (Utf8.fromChars package))
+    fallbackPaths root
+      | isFork = []
+      | otherwise =
+          maybe [] (\mapped -> [root </> mapped </> package </> version </> "artifacts.dat"]) (fallbackAuthor author)
 
 -- | Try loading from a list of paths, returning the first successful result.
 --
@@ -567,7 +685,11 @@ scanForCompatibleVersionWith :: (FilePath -> IO (Maybe a)) -> FilePath -> String
 scanForCompatibleVersionWith loader homeDir author package =
   tryDirs searchDirs
   where
-    authors = author : maybe [] (: []) (fallbackAuthor author)
+    isFork = Pkg.isCanopyFork (Pkg.Name (Utf8.fromChars author) (Utf8.fromChars package))
+    -- Forked FFI packages never scan their elm namesake; everyone else keeps the fallback.
+    authors
+      | isFork = [author]
+      | otherwise = author : maybe [] (: []) (fallbackAuthor author)
     searchDirs =
       [ homeDir </> ".canopy" </> "packages" </> a </> package | a <- authors ]
       ++ [ homeDir </> ".elm" </> "0.19.1" </> "packages" </> a </> package | a <- authors ]
@@ -578,8 +700,24 @@ scanForCompatibleVersionWith loader homeDir author package =
         then tryDirs rest
         else do
           versions <- Dir.listDirectory pkgDir
-          result <- tryLoadFirst loader [pkgDir </> v </> "artifacts.dat" | v <- versions]
+          -- Pick the HIGHEST installed version: sort parseable versions DESCENDING (then
+          -- any unparseable dir names last) so a scan resolves to the newest artifacts
+          -- rather than whatever Dir.listDirectory happened to return first.
+          let ordered = sortVersionsDescending versions
+          result <- tryLoadFirst loader [pkgDir </> v </> "artifacts.dat" | v <- ordered]
           maybe (tryDirs rest) (return . Just) result
+
+-- | Sort version directory names highest-first. Names that don't parse as a version are
+-- kept (so an unconventional dir is still tried) but ordered after every real version.
+sortVersionsDescending :: [String] -> [String]
+sortVersionsDescending =
+  List.sortOn sortKey
+  where
+    -- (parseFailed, Down version): parseable versions (False) sort before unparseable
+    -- (True); within the parseable group, Down orders them descending (highest first).
+    sortKey name = case Version.fromChars name of
+      Just v -> (False, Down v)
+      Nothing -> (True, Down Version.one)
 
 -- | Try a list of IO actions returning Maybe, stopping at the first Just.
 tryDecoders :: [IO (Maybe a)] -> IO (Maybe a)

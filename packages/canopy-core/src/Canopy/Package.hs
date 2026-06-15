@@ -10,6 +10,7 @@ module Canopy.Package
     Canonical (..),
     isCore,
     isKernel,
+    isCanopyFork,
     toChars,
     toUrl,
     toFilePath,
@@ -106,6 +107,32 @@ isKernel (Name author _) =
 -- supports both package ecosystems.
 isCore :: Name -> Bool
 isCore name = name == core || name == zokkaCore
+
+-- | Whether a package is one of the genuinely Canopy-FORKED packages — the ones
+-- Canopy ships with native FFI / behavioural divergence from their Elm namesakes:
+-- @canopy\/core@, @canopy\/virtual-dom@, @canopy\/html@, @canopy\/json@ (and their
+-- @canopy-explorations@ analogues, should any exist).
+--
+-- This is the single source of truth the resolver and the @canopy\<->elm@ fallback
+-- consult. For these packages a missing install must be a LOUD resolve-time error
+-- ("no installed canopy\/virtual-dom satisfies …") rather than a silent degradation to
+-- the FFI-less @elm\/virtual-dom@ copy — loading the Elm version is exactly the
+-- "Missing global VirtualDomFFI.init" trap. Packages Canopy has NOT forked
+-- (@browser@, @time@, @url@, which live only under @~\/.elm@) are deliberately excluded
+-- so they keep the @canopy\<->elm@ fallback.
+--
+-- @since 0.19.2
+isCanopyFork :: Name -> Bool
+isCanopyFork (Name author project) =
+  (author == canopy || author == canopyExplorations)
+    && project `elem` forkProjects
+  where
+    forkProjects =
+      [ Utf8.fromChars "core",
+        Utf8.fromChars "virtual-dom",
+        Utf8.fromChars "html",
+        Utf8.fromChars "json"
+      ]
 
 toChars :: Name -> String
 toChars (Name author project) =

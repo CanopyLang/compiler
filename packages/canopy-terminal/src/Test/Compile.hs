@@ -121,9 +121,47 @@ ensureTestDepArtifacts root = do
     Left _ -> pure ()
     Right outline -> do
       cacheDir <- Stuff.getPackageCache
-      graph <- resolveTransitiveDeps cacheDir (Outline.allDeps outline) Map.empty
+      rootDeps <- resolveRootDeps outline
+      graph <- resolveTransitiveDeps cacheDir rootDeps Map.empty
       let sorted = topologicalSort graph
       mapM_ (ensureOneTestDep cacheDir) sorted
+
+-- | Resolve a package's direct + test dependencies to the versions actually installed
+-- (so dev-linked HEAD packages are used), instead of each constraint's lower bound.
+--
+-- For APPLICATIONS, mirror the build policy ('Compiler.resolveOutlineDeps'): a canopy/*
+-- exact pin becomes the floor of its major range and resolves latest-wins, so test
+-- compiles of an app track newer canopy/* installs exactly as a real build does; elm/*
+-- (and any non-canopy author) stays exactly pinned.
+resolveRootDeps :: Outline.Outline -> IO [(Pkg.Name, Version.Version)]
+resolveRootDeps (Outline.Pkg o) =
+  traverse resolveDep (Map.toList (Map.union (Outline._pkgDeps o) (Outline._pkgTestDeps o)))
+resolveRootDeps (Outline.App o) =
+  let pins =
+        Outline._appDepsDirect o
+          <> Outline._appDepsIndirect o
+          <> Outline._appTestDepsDirect o
+   in traverse resolveAppPin (Map.toList pins)
+resolveRootDeps outline = pure (Outline.allDeps outline)
+
+-- | Resolve one (name, constraint) pair to a concrete installed version.
+resolveDep :: (Pkg.Name, Constraint.Constraint) -> IO (Pkg.Name, Version.Version)
+resolveDep (name, constraint) =
+  (,) name <$> PackageCache.resolveInstalledVersion name constraint
+
+-- | Resolve one app pin: canopy/* floats to the latest install in its major range,
+-- everything else stays exactly pinned.
+resolveAppPin :: (Pkg.Name, Version.Version) -> IO (Pkg.Name, Version.Version)
+resolveAppPin (name, pinned)
+  | isCanopyAuthored name =
+      (,) name <$> PackageCache.resolveInstalledVersion name (Constraint.untilNextMajor pinned)
+  | otherwise = pure (name, pinned)
+
+-- | Whether a package is authored by Canopy (and so participates in the latest-wins
+-- major-range policy).
+isCanopyAuthored :: Pkg.Name -> Bool
+isCanopyAuthored (Pkg.Name author _) =
+  author == Pkg.canopy || author == Pkg.canopyExplorations
 
 -- | Dependency graph: maps each package to its version and direct dep names.
 type DepGraph = Map.Map Pkg.Name (Version.Version, [Pkg.Name])
@@ -142,18 +180,19 @@ resolveTransitiveDeps cacheDir ((name, ver) : rest) seen
       let seen' = Map.insert name (ver, map fst subDeps) seen
       resolveTransitiveDeps cacheDir (subDeps ++ rest) seen'
 
--- | Read a package's dependencies from its cached outline.
+-- | Read a package's dependencies from its cached outline, resolving each to the
+-- installed version.
 readSubDeps :: FilePath -> Pkg.Name -> Version.Version -> IO [(Pkg.Name, Version.Version)]
 readSubDeps cacheDir pkgName version = do
   let pkgDir = testDepDir cacheDir pkgName version
   eitherOutline <- Outline.read pkgDir
-  pure (either (const []) extractPkgDeps eitherOutline)
+  either (const (pure [])) extractPkgDeps eitherOutline
 
--- | Extract regular dependencies from a package outline.
-extractPkgDeps :: Outline.Outline -> [(Pkg.Name, Version.Version)]
+-- | A transitive package's regular dependencies, resolved to installed versions.
+extractPkgDeps :: Outline.Outline -> IO [(Pkg.Name, Version.Version)]
 extractPkgDeps (Outline.Pkg o) =
-  Map.toList (Map.map Constraint.lowerBound (Outline._pkgDeps o))
-extractPkgDeps _ = []
+  traverse resolveDep (Map.toList (Outline._pkgDeps o))
+extractPkgDeps _ = pure []
 
 -- | Topologically sort packages so dependencies compile before dependents.
 --

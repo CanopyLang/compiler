@@ -15,6 +15,29 @@ module Generate.JavaScript
     generateForRepl,
     generateForReplEndpoint,
 
+    -- * Tree-shaker root scan (testing)
+    -- | Exposed for "Unit.Generate.TreeShakeRootsTest". These scan the
+    -- already-generated output bytes for kernel runtime references and F\/A
+    -- arity helpers so the tree-shaker's roots match what the output actually
+    -- emits — guarding against the @F7 is not defined@ /
+    -- @_Platform_export is not defined@ regression in native IIFE bundles.
+    scanRuntimeIdents,
+    scanArities,
+    generatedIdentTokens,
+    arityToken,
+    isIdentByte,
+    isKernelIdent,
+
+    -- * Re-exported from Generate.JavaScript.Runtime.Registry (testing)
+    -- | Re-exported so "Unit.Generate.TreeShakeRootsTest" can name the
+    -- 'Registry.RuntimeId' result type of 'scanRuntimeIdents' and assert the
+    -- registry-closure invariants without depending on the otherwise-hidden
+    -- @Generate.JavaScript.Runtime.Registry@ module.
+    Registry.RuntimeId(..),
+    Registry.allIds,
+    Registry.closeDeps,
+    Registry.lookupDef,
+
     -- * Re-exported from Generate.JavaScript.FFI
     FFIInfo(..),
     ffiFilePath,
@@ -46,6 +69,7 @@ import qualified Canopy.Data.Name as Name
 import qualified Canopy.Data.Utf8 as Utf8
 import Data.Set (Set)
 import qualified Data.Set as Set
+import Data.Word (Word8)
 import qualified Data.Text as Text
 import qualified Generate.JavaScript.Builder as JS
 import qualified Generate.JavaScript.Coverage as Coverage
@@ -101,7 +125,11 @@ data State = State
     _sourceMapMappings :: ![SourceMap.Mapping],
     _sourceLocations :: Map Opt.Global Ann.Region,
     _trackLines :: !Bool,
-    _coverageBaseIds :: Map Opt.Global Int
+    _coverageBaseIds :: Map Opt.Global Int,
+    -- Source map: distinct source modules → their @sources@ array index, accumulated as
+    -- mappings are emitted so each mapping records WHICH module its original position is in
+    -- (dev mode only; empty under @--optimize@).
+    _smSrcIndices :: Map ModuleName.Canonical Int
   }
 
 makeLenses ''State
@@ -136,8 +164,22 @@ generate inputMode globalGraph@(Opt.GlobalGraph rawGraph _ sourceLocs) mains ffi
       -- Scan FFI files for direct F2-F9 / A2-A9 usage (e.g. F6(...) in list.js).
       -- These bypass the Canopy optimizer and are invisible to collectRuntimeDeps.
       ffiArities = collectFFIArities ffiInfos
-      neededArities = astArities <> ffiArities
-      neededRuntime = Registry.closeDeps (rawNeededRuntime <> ffiRuntimeDeps)
+      -- Runtime + arity references emitted by the code GENERATOR itself — absent from the
+      -- optimized AST — would otherwise be dropped by the tree-shaker. The canonical cases:
+      -- the program-export call `_Platform_export({...})` that 'Kernel_.toMainExports'
+      -- appends to 'innerContent', and the `F7`/`A3` arity helpers called by emitted
+      -- runtime functions like `_Json_map6`. Effect-manager glue is the same shape and only
+      -- survives today via a hand-written seed ('managerRuntimeIds'). Rather than hand-seed
+      -- each such symbol (a fragile whack-a-mole that silently regresses to a runtime
+      -- ReferenceError), we make the tree-shaker's roots match the ACTUAL generated output:
+      -- materialize the generated content + the emitted runtime, and scan BOTH for kernel
+      -- identifiers and arity helpers. What ships is then exactly what the output
+      -- references — correct by construction, for every current and future generated ref.
+      innerBytes = BL.toStrict (BB.toLazyByteString innerContent)
+      generatedRuntimeDeps = scanRuntimeIdents innerBytes
+      neededRuntime = Registry.closeDeps (rawNeededRuntime <> ffiRuntimeDeps <> generatedRuntimeDeps)
+      runtimeBytes = BL.toStrict (BB.toLazyByteString (Runtime.emitNeeded mode neededRuntime))
+      neededArities = astArities <> ffiArities <> scanArities innerBytes <> scanArities runtimeBytes
       -- Traverse only from entry points — dead code is never visited.
       state = Map.foldrWithKey (addMain mode graph) (emptyState shouldTrackLines sourceLocs covIds) mains
       header = if Mode.isElmCompatible mode
@@ -161,9 +203,9 @@ generate inputMode globalGraph@(Opt.GlobalGraph rawGraph _ sourceLocs) mains ffi
       jsBuilder =
         header
           <> Functions.generateConditionalFunctions neededArities
-          <> Runtime.emitNeeded mode neededRuntime
-          <> FFIRuntime.scanAndEmitRuntime mode innerContent
-          <> innerContent
+          <> BB.byteString runtimeBytes
+          <> FFIRuntime.scanAndEmitRuntime mode (BB.byteString innerBytes)
+          <> BB.byteString innerBytes
       sourceMap = buildSourceMap mode state
       coverageMap = if Mode.isCoverage mode
                     then Just (Coverage.buildCoverageMap graph sourceLocs)
@@ -397,6 +439,55 @@ isKernelIdent bs =
     && BS.index bs 1 >= 0x41
     && BS.index bs 1 <= 0x5A
     && Data.Maybe.isJust (BS.elemIndex 0x5F (BS.drop 2 bs))
+
+-- | Tokenize already-generated JavaScript on identifier boundaries.
+--
+-- The optimized-AST walk ('collectRuntimeDeps' / 'collectFFIArities') cannot see
+-- references the code generator emits directly into the output — the program-export
+-- call @_Platform_export({...})@ from 'Kernel.toMainExports', and the @F7@/@A3@ arity
+-- helpers used by emitted runtime functions like @_Json_map6@. Scanning the final
+-- bytes for those tokens makes the tree-shaker's roots match what the output actually
+-- references, for every current and future generated reference.
+generatedIdentTokens :: ByteString -> [ByteString]
+generatedIdentTokens = BS.splitWith (not . isIdentByte)
+
+-- | Kernel runtime references (@_[A-Z]..._...@) in generated output. Tokens that are
+-- not registry entries are harmlessly ignored by 'Registry.closeDeps', so the only
+-- effect is that no referenced runtime symbol can be missed.
+scanRuntimeIdents :: ByteString -> Set Registry.RuntimeId
+scanRuntimeIdents bytes =
+  Set.fromList
+    [ Registry.RuntimeId tok
+    | tok <- generatedIdentTokens bytes
+    , isKernelIdent tok
+    ]
+
+-- | Currying-helper arities (@F2@..@F9@ / @A2@..@A9@) referenced in generated output,
+-- so the helper definitions emitted by 'Functions.generateConditionalFunctions' cover
+-- what the output — including the emitted runtime functions — actually calls.
+scanArities :: ByteString -> Set Int
+scanArities bytes =
+  Set.fromList [ n | tok <- generatedIdentTokens bytes, Just n <- [arityToken tok] ]
+
+-- | Recognize an @F<n>@ or @A<n>@ helper token (@n@ in 2..9), returning the arity.
+arityToken :: ByteString -> Maybe Int
+arityToken tok
+  | BS.length tok == 2
+  , h <- BS.index tok 0
+  , h == 0x46 || h == 0x41 -- 'F' or 'A'
+  , d <- BS.index tok 1
+  , d >= 0x32 && d <= 0x39 -- '2'..'9'
+  = Just (fromIntegral (d - 0x30))
+  | otherwise = Nothing
+
+-- | True for bytes that may appear inside a JavaScript identifier (@[A-Za-z0-9_$]@).
+isIdentByte :: Word8 -> Bool
+isIdentByte b =
+  (b >= 0x30 && b <= 0x39) -- 0-9
+    || (b >= 0x41 && b <= 0x5A) -- A-Z
+    || (b >= 0x61 && b <= 0x7A) -- a-z
+    || b == 0x5F -- _
+    || b == 0x24 -- $
 
 -- | Collect arity requirements from FFI @\@canopy-type@ annotations.
 --
@@ -679,7 +770,7 @@ postMessage localizer home maybeName tipe =
 -- is skipped entirely to avoid double materialization (prod mode).
 emptyState :: Bool -> Map Opt.Global Ann.Region -> Map Opt.Global Int -> State
 emptyState doTrackLines locs covIds =
-  State mempty [] Set.empty Set.empty 0 [] locs doTrackLines covIds
+  State mempty [] Set.empty Set.empty 0 [] locs doTrackLines covIds Map.empty
 
 stateToBuilder :: State -> Builder
 stateToBuilder state =
@@ -901,34 +992,57 @@ countNewlinesBS :: ByteString -> Int
 countNewlinesBS =
   BS.count 0x0A
 
--- | Emit a source map mapping for a global before generating its JS.
+-- | Emit a source map mapping for a global before generating its JS. The global carries
+-- its home module, which becomes the mapping's @sources@ entry so a symbolicated frame
+-- names the right @.can@ module (not just a line).
 emitMapping :: Opt.Global -> State -> State
-emitMapping global state =
+emitMapping global@(Opt.Global home _) state =
   case Map.lookup global (state ^. sourceLocations) of
     Nothing -> state
-    Just region -> emitMappingForRegion region state
+    Just region -> emitMappingForRegion home region state
 
--- | Build a mapping from a source region.
-emitMappingForRegion :: Ann.Region -> State -> State
-emitMappingForRegion (Ann.Region (Ann.Position srcLine srcCol) _) state =
-  let mapping = SourceMap.Mapping
-        { SourceMap._mGenLine = state ^. outputLine
+-- | Build a mapping from a source region, recording the source module's @sources@ index
+-- (assigned on first sight, reused thereafter).
+emitMappingForRegion :: ModuleName.Canonical -> Ann.Region -> State -> State
+emitMappingForRegion home (Ann.Region (Ann.Position srcLine srcCol) _) state =
+  let (srcIndex, state') = resolveSrcIndex home state
+      mapping = SourceMap.Mapping
+        { SourceMap._mGenLine = state' ^. outputLine
         , SourceMap._mGenCol = 0
-        , SourceMap._mSrcIndex = 0
+        , SourceMap._mSrcIndex = srcIndex
         , SourceMap._mSrcLine = fromIntegral srcLine - 1
         , SourceMap._mSrcCol = fromIntegral srcCol - 1
         , SourceMap._mNameIndex = Nothing
         }
-   in state & sourceMapMappings %~ (mapping :)
+   in state' & sourceMapMappings %~ (mapping :)
 
--- | Build a SourceMap from accumulated state (dev mode only).
+-- | The @sources@-array index for a module: reuse the existing one, or assign the next.
+resolveSrcIndex :: ModuleName.Canonical -> State -> (Int, State)
+resolveSrcIndex home state =
+  case Map.lookup home (state ^. smSrcIndices) of
+    Just idx -> (idx, state)
+    Nothing  ->
+      let idx = Map.size (state ^. smSrcIndices)
+       in (idx, state & smSrcIndices %~ Map.insert home idx)
+
+-- | Build a SourceMap from accumulated state (dev mode only). Populates @sources@ from the
+-- modules seen during emission so each VLQ @srcIndex@ resolves to a @.can@ module name;
+-- @sourcesContent@ is left empty (the host symbolicates to file:line, not inline text).
 buildSourceMap :: Mode.Mode -> State -> Maybe SourceMap.SourceMap
 buildSourceMap mode state =
   case mode of
     Mode.Prod {} -> Nothing
     Mode.Dev _ _ _ _ _ _ ->
-      let sm = SourceMap.empty "canopy.js"
-       in Just sm { SourceMap._smMappings = state ^. sourceMapMappings }
+      let orderedSources = map fst (List.sortOn snd (Map.toList (state ^. smSrcIndices)))
+          sourcePaths = map renderModulePath orderedSources
+          sm = SourceMap.empty "canopy.js"
+       in Just sm { SourceMap._smMappings = state ^. sourceMapMappings
+                  , SourceMap._smSources = sourcePaths
+                  , SourceMap._smSourcesContent = map (const Text.empty) sourcePaths
+                  }
+  where
+    renderModulePath home =
+      ModuleName.toChars (ModuleName._module home) <> ".can"
 
 var :: Opt.Global -> Expr.Code -> JS.Stmt
 var (Opt.Global home name) code =

@@ -360,15 +360,28 @@ instance Json.ToJSON AppOutline where
   toJSON app =
     Json.object (requiredFields ++ optionalFields)
     where
+      -- Mirror the nested @{"direct": …, "indirect": …}@ shape the FromJSON instance
+      -- reads, so @toJSON . parseJSON@ round-trips. For each pin, prefer the original
+      -- constraint SPEC (a range like @"1.0.0 <= v < 2.0.0"@) captured in _appDeps /
+      -- _appTestDeps over the resolved exact version, so a floating canopy/* dependency
+      -- survives the round-trip instead of being frozen to an exact pin.
+      directSpec = depSpec (_appDeps app) (_appDepsDirect app)
+      indirectSpec = depSpec (_appDeps app) (_appDepsIndirect app)
+      testDirectSpec = depSpec (_appTestDeps app) (_appTestDepsDirect app)
       requiredFields =
         [ "type" .= ("application" :: Text.Text),
           "canopy-version" .= _appCanopy app,
           "source-directories" .= _appSrcDirs app,
-          "dependencies" .= _appDeps app,
-          "test-dependencies" .= _appTestDeps app,
-          "dependencies-direct" .= _appDepsDirect app,
-          "dependencies-indirect" .= _appDepsIndirect app,
-          "test-dependencies-direct" .= _appTestDepsDirect app
+          "dependencies"
+            .= Json.object
+              [ "direct" .= directSpec,
+                "indirect" .= indirectSpec
+              ],
+          "test-dependencies"
+            .= Json.object
+              [ "direct" .= testDirectSpec,
+                "indirect" .= (Map.empty :: Map Pkg.Name Text.Text)
+              ]
         ]
       optionalFields =
         maybe [] (\s -> ["scripts" .= s]) (_appScripts app)
@@ -388,10 +401,10 @@ instance Json.FromJSON AppOutline where
     canopyVer <- (o Json..: "canopy-version") <|> (o Json..: "elm-version")
     srcDirs <- o Json..: "source-directories"
     deps <- o Json..: "dependencies"
-    depsDirect <- deps Json..: "direct"
-    depsIndirect <- deps Json..: "indirect"
+    directConstraints <- parseAppDeps deps "direct"
+    indirectConstraints <- parseAppDeps deps "indirect"
     testDeps <- o Json..: "test-dependencies"
-    testDepsDirect <- testDeps Json..: "direct"
+    testDirectConstraints <- parseAppDeps testDeps "direct"
     scripts <- o .:? "scripts"
     repository <- o .:? "repository"
     capabilities <- parseCapabilities o
@@ -401,17 +414,50 @@ instance Json.FromJSON AppOutline where
       AppOutline
         { _appCanopy = canopyVer,
           _appSrcDirs = srcDirs,
-          _appDeps = Map.empty,
-          _appTestDeps = Map.empty,
-          _appDepsDirect = depsDirect,
-          _appDepsIndirect = depsIndirect,
-          _appTestDepsDirect = testDepsDirect,
+          -- The constraint maps preserve the exact dependency SPEC from canopy.json
+          -- (a range like @"1.0.0 <= v < 2.0.0"@ or a bare version) so the App ToJSON can
+          -- round-trip ranges verbatim instead of collapsing them to exact pins. The
+          -- *-Direct/-Indirect Version maps carry the resolution FLOOR (the constraint's
+          -- lower bound), which the build uses as the major-range floor for canopy/*.
+          _appDeps = Map.union directConstraints indirectConstraints,
+          _appTestDeps = testDirectConstraints,
+          _appDepsDirect = Map.map Constraint.lowerBound directConstraints,
+          _appDepsIndirect = Map.map Constraint.lowerBound indirectConstraints,
+          _appTestDepsDirect = Map.map Constraint.lowerBound testDirectConstraints,
           _appScripts = scripts,
           _appRepository = repository,
           _appCapabilities = capabilities,
           _appWebComponents = webComponents,
           _appKit = kit
         }
+
+-- | Parse an app dependency sub-object (@"direct"@ / @"indirect"@) into a constraint map.
+--
+-- Each value may be either a SemVer range (@"1.0.0 <= v < 2.0.0"@) or a bare exact
+-- version (@"1.1.0"@, treated as @Constraint.exactly@) — the same dual format the
+-- 'Json.FromJSON' 'Constraint.Constraint' instance accepts. Accepting ranges here is what
+-- lets a scaffolded (or hand-edited) app declare floating canopy/* deps without
+-- @canopy install@ rewriting them back to exact pins.
+parseAppDeps :: Json.Object -> Json.Key -> Parser (Map Pkg.Name Constraint.Constraint)
+parseAppDeps obj field = obj .:? field .!= Map.empty
+
+-- | Render an app dependency sub-object for serialization: for each pinned package emit
+-- the dependency SPEC as a string — the original range (e.g. @"1.0.0 <= v < 2.0.0"@) when
+-- one was parsed for that package, otherwise the bare exact version (@"1.1.0"@). This
+-- preserves ranges across @toJSON . parseJSON@ while keeping plain exact pins compact
+-- (an exact pin is NOT rewritten to the verbose @"x <= v <= x"@ range form).
+depSpec ::
+  Map Pkg.Name Constraint.Constraint ->
+  Map Pkg.Name Version.Version ->
+  Map Pkg.Name Text.Text
+depSpec constraints =
+  Map.mapWithKey spec
+  where
+    spec name v =
+      case Map.lookup name constraints of
+        Just c
+          | c /= Constraint.exactly v -> Text.pack (Constraint.toChars c)
+        _ -> Text.pack (Version.toChars v)
 
 instance Json.ToJSON PkgOutline where
   toJSON (PkgOutline name summary license version exposed deps testDeps canopy) =

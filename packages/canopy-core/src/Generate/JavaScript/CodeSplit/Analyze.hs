@@ -55,6 +55,7 @@ import Generate.JavaScript.CodeSplit.Types
     chunkGlobals,
     entryChunkId,
   )
+import Generate.TreeShake (managerFnDeps)
 
 -- | Type alias matching Generate.JavaScript convention.
 type Graph = Map Opt.Global Opt.Node
@@ -127,6 +128,8 @@ extractNodeDepsForHash (Opt.DefineTailFunc _ _ deps) = deps
 extractNodeDepsForHash (Opt.Ctor _ _) = Set.empty
 extractNodeDepsForHash (Opt.Link g) = Set.singleton g
 extractNodeDepsForHash (Opt.Cycle _ _ _ deps) = deps
+-- Manager fn deps need the node's home (see extractNodeDeps); this hash only seeds a
+-- chunk-cache key (not emission), so its slight under-count of manager edges is harmless.
 extractNodeDepsForHash (Opt.Manager _) = Set.empty
 extractNodeDepsForHash (Opt.Kernel _ deps) = deps
 extractNodeDepsForHash (Opt.Enum _) = Set.empty
@@ -211,11 +214,19 @@ dfsGlobal graph visited global
 -- | Extract dependency set from a node in the graph.
 nodeDeps :: Opt.Global -> Graph -> Set Opt.Global
 nodeDeps global graph =
-  maybe Set.empty extractNodeDeps (Map.lookup global graph)
+  maybe Set.empty (extractNodeDeps global) (Map.lookup global graph)
 
 -- | Extract the dependency set from a graph node.
-extractNodeDeps :: Opt.Node -> Set Opt.Global
-extractNodeDeps node =
+--
+-- Code-split EMISSION is gated by this reachable set (a global absent from chunkGlobals is
+-- never emitted), so an effect manager must report its generated functions
+-- (init/onEffects/onSelfMsg/cmdMap/subMap) here — they are reached only through the manager
+-- node and would otherwise be dropped, taking their FFI bindings with them. The fn-name
+-- knowledge is shared with the tree-shaking walk via the single 'managerFnDeps' exported
+-- from Generate.TreeShake (which itself mirrors Generate.JavaScript.Kernel.generateManagerHelp,
+-- the emission source of truth) so the two reachability walks cannot drift.
+extractNodeDeps :: Opt.Global -> Opt.Node -> Set Opt.Global
+extractNodeDeps (Opt.Global home _) node =
   case node of
     Opt.Define _ deps -> deps
     Opt.DefineTailFunc _ _ deps -> deps
@@ -224,7 +235,7 @@ extractNodeDeps node =
     Opt.PortIncoming _ deps -> deps
     Opt.PortOutgoing _ deps -> deps
     Opt.Link target -> Set.singleton target
-    Opt.Manager _ -> Set.empty
+    Opt.Manager effectsType -> managerFnDeps home effectsType
     Opt.Ctor _ _ -> Set.empty
     Opt.Enum _ -> Set.empty
     Opt.Box -> Set.empty

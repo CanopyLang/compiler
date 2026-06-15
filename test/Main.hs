@@ -102,10 +102,12 @@ import qualified Unit.Compiler.DiscoveryTest as CompilerDiscoveryTest
 import qualified Unit.Compiler.ParallelTest as CompilerParallelTest
 import qualified Unit.New.Compiler.DriverTest as NewCompilerDriverTest
 import qualified Unit.NewTest as NewTest
+import qualified Unit.Terminal.ScaffoldVersionGolden as ScaffoldVersionGolden
 import qualified Unit.Make.ReproducibleTest as ReproducibleTest
 import qualified Unit.Query.EngineTest as QueryEngineTest
 import qualified Unit.Query.RecoveryTest as QueryRecoveryTest
 import qualified Unit.Builder.PackageCacheTest as PackageCacheTest
+import qualified Unit.Builder.PackageCache.ResolveTest as PackageCacheResolveTest
 import qualified Unit.Worker.PoolTest as WorkerPoolTest
 import qualified Unit.Builder.WorkspaceTest as WorkspaceTest
 import qualified Unit.Watch.LiveReloadTest as LiveReloadTest
@@ -117,6 +119,7 @@ import qualified Unit.Generate.CodeSplit.TypesTest as CodeSplitTypesTest
 import qualified Unit.Generate.ExpressionTest as ExpressionTest
 import qualified Unit.Generate.FormTest as FormTest
 import qualified Unit.Generate.HtmlSecurityTest as HtmlSecurityTest
+import qualified Unit.Generate.ManagerReachabilityTest as ManagerReachabilityTest
 import qualified Unit.Generate.JavaScript.AbilityTest as JSAbilityTest
 import qualified Unit.Generate.JavaScript.BuilderTest as JSBuilderTest
 import qualified Unit.Generate.JavaScript.ESMGenTest as JSESMGenTest
@@ -134,6 +137,7 @@ import qualified Unit.Generate.CoverageTest as CoverageTest
 import qualified Unit.Generate.SourceMapTest as SourceMapTest
 import qualified Unit.Generate.JavaScript.SourceMapExtTest as SourceMapExtTest
 import qualified Unit.Generate.StringPoolTest as StringPoolTest
+import qualified Unit.Generate.TreeShakeRootsTest as TreeShakeRootsTest
 import qualified Unit.Generate.TreeShakeTest as TreeShakeTest
 import qualified Unit.Generate.TypeScriptTest as TypeScriptTest
 import qualified Unit.Generate.WebComponentTest as WebComponentTest
@@ -330,10 +334,12 @@ unitTests =
       CompilerParallelTest.tests,
       NewCompilerDriverTest.tests,
       NewTest.tests,
+      ScaffoldVersionGolden.tests,
       ReproducibleTest.tests,
       QueryEngineTest.tests,
       QueryRecoveryTest.tests,
       PackageCacheTest.tests,
+      PackageCacheResolveTest.tests,
       WorkerPoolTest.tests,
       ParseModuleQueryTest.tests,
       CaseTest.tests,
@@ -369,6 +375,8 @@ unitTests =
       CodeSplitRuntimeTest.tests,
       CodeSplitTypesTest.tests,
       TreeShakeTest.tests,
+      TreeShakeRootsTest.tests,
+      ManagerReachabilityTest.tests,
       TypeScriptTest.tests,
       WebComponentTest.tests,
       WebComponentIntrospectTest.tests,

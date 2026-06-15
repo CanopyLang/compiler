@@ -72,7 +72,7 @@ simpleCanopyJsonApplication =
       "    \"canopy-version\": \"0.19.1\",",
       "    \"dependencies\": {",
       "        \"direct\": {",
-      "            \"canopy/core\": \"1.0.5\"",
+      "            \"canopy/core\": \"1.1.0\"",
       "        },",
       "        \"indirect\": {",
       "        }",

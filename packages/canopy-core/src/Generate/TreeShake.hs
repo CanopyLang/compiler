@@ -25,6 +25,9 @@ module Generate.TreeShake
     -- * Analysis
     computeReport,
     reachableGlobals,
+
+    -- * Effect-manager glue
+    managerFnDeps,
   )
 where
 
@@ -86,13 +89,50 @@ reachableGlobals graph mains =
     addMainDeps seen home _main =
       addDeps (Global home (Name.fromChars "main")) seen
 
-    addDeps global seen
+    addDeps global@(Global home _) seen
       | Set.member global seen = seen
       | otherwise =
           case Map.lookup global nodes of
             Nothing -> Set.insert global seen
             Just node ->
-              Set.foldl' (flip addDeps) (Set.insert global seen) (nodeDeps node)
+              Set.foldl' (flip addDeps) (Set.insert global seen) (depsOf home node)
+
+    -- Effect-manager nodes (Opt.Manager) carry no deps in 'nodeDeps', but the JS
+    -- emitter (generateManager) recurses into the manager's init/onEffects/onSelfMsg/
+    -- cmdMap/subMap functions (see Generate.JavaScript.Kernel.generateManagerHelp).
+    -- Mirror that here so those functions — and the FFI bindings they reach (e.g.
+    -- Native.Module.callStreaming -> NM.callStreaming) — count as reachable. Otherwise
+    -- the FFI tree-shaker (computeFFIUsage, driven by this set) drops them and the
+    -- bundle throws "Cannot read property 'a' of undefined" at the first subscription.
+    -- The fn-name knowledge lives in the single exported 'managerFnDeps' below so it
+    -- cannot drift from the code-split walk in Generate.JavaScript.CodeSplit.Analyze.
+    depsOf home node =
+      case node of
+        Opt.Manager effectsType -> managerFnDeps home effectsType
+        _ -> nodeDeps node
+
+-- | The globals an effect manager of each kind references through the functions
+-- the JS emitter generates for it.
+--
+-- An @Opt.Manager@ node carries no dependencies of its own, yet
+-- 'Generate.JavaScript.Kernel.generateManagerHelp' (the source of truth) emits and
+-- recurses into @init@/@onEffects@/@onSelfMsg@ plus @cmdMap@ and/or @subMap@. Both
+-- reachability walks — tree-shaking here and code-splitting in
+-- 'Generate.JavaScript.CodeSplit.Analyze' — must mirror that emission, so this single
+-- exported function is the shared source of truth for the fn-name lists. Keeping it in
+-- one place stops the two walks from drifting apart and dropping TEA Cmd/Sub glue (and
+-- the FFI bindings it reaches) under @--optimize@.
+--
+-- @since 0.20.0
+managerFnDeps :: ModuleName.Canonical -> Opt.EffectsType -> Set Global
+managerFnDeps home effectsType =
+  Set.fromList
+    [ Global home (Name.fromChars n)
+    | n <- case effectsType of
+             Opt.Cmd -> ["init", "onEffects", "onSelfMsg", "cmdMap"]
+             Opt.Sub -> ["init", "onEffects", "onSelfMsg", "subMap"]
+             Opt.Fx -> ["init", "onEffects", "onSelfMsg", "cmdMap", "subMap"]
+    ]
 
 -- | Extract the dependency set from a node.
 --

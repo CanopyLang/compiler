@@ -248,6 +248,7 @@ test-suite canopy-test
       Unit.Builder.IncrementalTest
       Unit.Builder.LockFileTest
       Unit.Builder.ModuleLoaderTest
+      Unit.Builder.PackageCache.ResolveTest
       Unit.Builder.PackageCacheTest
       Unit.Builder.SolverTest
       Unit.Builder.StateTest
@@ -329,10 +330,12 @@ test-suite canopy-test
       Unit.Generate.JavaScript.RuntimeAnnotationTest
       Unit.Generate.JavaScript.RuntimeTest
       Unit.Generate.JavaScript.SourceMapExtTest
+      Unit.Generate.ManagerReachabilityTest
       Unit.Generate.ModeTest
       Unit.Generate.NameTest
       Unit.Generate.SourceMapTest
       Unit.Generate.StringPoolTest
+      Unit.Generate.TreeShakeRootsTest
       Unit.Generate.TreeShakeTest
       Unit.Generate.TypeScriptTest
       Unit.Generate.WebComponentIntrospectTest
@@ -425,6 +428,7 @@ test-suite canopy-test
       Unit.Terminal.Lint.ConfigTest
       Unit.Terminal.Lint.NullabilityTest
       Unit.Terminal.Lint.RulesTest
+      Unit.Terminal.ScaffoldVersionGolden
       Unit.TerminalTest
       Unit.Test.CoverageReportTest
       Unit.Test.CoverageScopeTest
