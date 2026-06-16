@@ -318,23 +318,28 @@ prodMapContentTests =
 -- ---------------------------------------------------------------------------
 
 -- | CMP-8 emits a versioned bundle container next to the native JS bundle:
--- @canopy.bundle.js.container@. With no @hermesc@ on this toolchain the payload
--- is the JS-source dev fallback — the SAME assembled bundle bytes — wrapped in
--- the magic + container/bytecode/ABI-version header the host validates. These
--- assertions hold that end-to-end on the REAL @canopy@ build:
+-- @canopy.bundle.js.container@; CMP-11 grows its header with the RN-target pin,
+-- the compiler version, and the runtimeVersion fingerprint. With no @hermesc@ on
+-- this toolchain the payload is the JS-source dev fallback — the SAME assembled
+-- bundle bytes — wrapped in the magic + container/bytecode/ABI/RN-target/compiler
+-- /fingerprint header the host validates. These assertions hold that end-to-end
+-- on the REAL @canopy@ build:
 --
 --   * the container file is written;
 --   * it parses with the host-mirror parser ('HermesContainer.parseContainer')
 --     — magic, header CRC, and payload length all check out;
 --   * its payload is byte-identical to the assembled @canopy.bundle.js@ (the
 --     dev fallback wraps the exact bundle);
---   * its stamped ABI version is the host's, payload kind is JsSource; and
---   * it PASSES the host-mirror validation gate against the engine pin
---     (bytecode 96) and host ABI (1) — i.e. the host would accept it.
+--   * its stamped ABI version is the host's, payload kind is JsSource, the
+--     RN-target stamp is the supported 0.76.9 pin, and the runtimeVersion
+--     fingerprint matches a host recompute (CMP-11); and
+--   * it PASSES the host-mirror validation gate (container version, ABI, RN
+--     target, engine bytecode, and the runtimeVersion fingerprint) — i.e. the
+--     host would accept it.
 containerTests :: TestTree
 containerTests =
   testGroup
-    "versioned bundle container (CMP-8)"
+    "versioned bundle container (CMP-8, CMP-11)"
     [ testCase "dev build writes a container that parses + wraps the exact bundle" $ do
         ensurePrereqs
         (bundleBytes, container) <- compileNativeWithContainer sampleSource DevMode
@@ -346,18 +351,52 @@ containerTests =
               (payload == bundleBytes)
             HermesContainer.chPayloadKind header @?= HermesContainer.JsSource
             HermesContainer.chAbiVersion header @?= HermesContainer.kCanopyAbiVersion
-    , testCase "the emitted container PASSES the host-mirror validation gate" $ do
+            -- CMP-11: the container layout is v2 and carries the RN-target pin.
+            HermesContainer.chContainerVersion header @?= HermesContainer.kCanopyContainerVersion
+            HermesContainer.chRnTargetVersion header
+              @?= HermesContainer.packVersion HermesContainer.kCanopyRnTargetPin
+            -- the stamped compiler version is the LIVE compiler (the single
+            -- source of truth the gate also uses)
+            HermesContainer.chCompilerVersion header
+              @?= HermesContainer.packVersion HermesContainer.kCanopyCompilerVersion
+            -- the runtimeVersion fingerprint equals a host recompute over the
+            -- four version fields (effective bytecode 0 for the JS-source path)
+            HermesContainer.chRuntimeFingerprint header
+              @?= HermesContainer.runtimeFingerprint
+                    0
+                    HermesContainer.kCanopyAbiVersion
+                    (HermesContainer.packVersion HermesContainer.kCanopyRnTargetPin)
+                    (HermesContainer.packVersion HermesContainer.kCanopyCompilerVersion)
+    , testCase "the emitted container PASSES the host-mirror validation gate (CMP-11)" $ do
         ensurePrereqs
         (_bundle, container) <- compileNativeWithContainer sampleSource DevMode
         case HermesContainer.parseContainer container of
           Left e -> assertFailure ("parse failed: " ++ show e)
-          Right (header, _) ->
+          Right (header, _) -> do
+            -- the legacy 3-arg gate (now RN-aware via defaults)
             HermesContainer.validate
               HermesContainer.kCanopyContainerVersion
               HermesContainer.kCanopyEngineBytecodeVersion
               HermesContainer.kCanopyAbiVersion
               header
               @?= Right ()
+            -- the full CMP-11 gate against the default host pins
+            HermesContainer.validateAgainst HermesContainer.hostPins header @?= Right ()
+    , testCase "a host on a different RN pin REJECTS the emitted container (CMP-11)" $ do
+        ensurePrereqs
+        (_bundle, container) <- compileNativeWithContainer sampleSource DevMode
+        case HermesContainer.parseContainer container of
+          Left e -> assertFailure ("parse failed: " ++ show e)
+          Right (header, _) ->
+            -- a host vendored against a hypothetical 0.77.0 RN rejects the 0.76.9
+            -- bundle — the RN-target gate the host applies before evaluation
+            assertBool
+              "a 0.77.0 host must reject the 0.76.9-targeted container"
+              ( HermesContainer.validateAgainst
+                  HermesContainer.hostPins {HermesContainer.hpRnTarget = HermesContainer.RnTarget 0 77 0}
+                  header
+                  /= Right ()
+              )
     , testCase "optimized build also writes a parseable container" $ do
         ensurePrereqs
         (_bundle, container) <- compileNativeWithContainer sampleSource OptimizeMode

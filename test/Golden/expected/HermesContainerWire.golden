@@ -1,20 +1,24 @@
-== CMP-8 native bundle container wire format (v1) ==
+== CMP-8/CMP-11 native bundle container wire format (v2) ==
 
-magic (u64 LE)  : 43 41 4e 4f 50 59 01 01  ("CANOPY\x01\x01")
-container ver   : 1
-header size     : 32 bytes
+magic (u64 LE)  : 43 41 4e 4f 50 59 01 02  ("CANOPY\x01\x02")
+container ver   : 2
+header size     : 48 bytes
 
 field offsets (a host reads these fixed positions):
-  [ 0..8)  magic            u64 LE
-  [ 8..12) containerVersion u32 LE
-  [12..16) payloadKind      u32 LE   (0=JsSource, 1=HbcBytecode)
-  [16..20) bytecodeVersion  u32 LE   (0 for JsSource)
-  [20..24) abiVersion       u32 LE
-  [24..28) payloadLength    u32 LE
-  [28..32) headerCrc        u32 LE   (CRC-32 of bytes [0,28))
+  [ 0..8)  magic              u64 LE
+  [ 8..12) containerVersion   u32 LE
+  [12..16) payloadKind        u32 LE   (0=JsSource, 1=HbcBytecode)
+  [16..20) bytecodeVersion    u32 LE   (0 for JsSource)
+  [20..24) abiVersion         u32 LE
+  [24..28) rnTargetVersion    u32 LE   (CMP-11: major<<20|minor<<10|patch)
+  [28..32) compilerVersion    u32 LE   (CMP-11: packed the same way)
+  [32..36) runtimeFingerprint u32 LE   (CMP-11: CRC over the 4 ver fields)
+  [36..40) payloadLength      u32 LE
+  [40..44) reserved           u32 LE   (0)
+  [44..48) headerCrc          u32 LE   (CRC-32 of bytes [0,44))
 
--- HBC container (bytecodeVersion=96, abiVersion=1, payload=8 bytes) --
-header bytes : 43 41 4e 4f 50 59 01 01 01 00 00 00 01 00 00 00 60 00 00 00 01 00 00 00 08 00 00 00 e4 5e d1 70
+-- HBC container (bytecodeVersion=96, abi=1, rn=0.76.9, compiler=0.20.10, payload=8 bytes) --
+header bytes : 43 41 4e 4f 50 59 01 02 02 00 00 00 01 00 00 00 60 00 00 00 01 00 00 00 09 30 01 00 0a 50 00 00 b5 29 2e 31 08 00 00 00 00 00 00 00 b3 9b a0 ec
 
--- JS-source container (abiVersion=1, payload=8 bytes) --
-header bytes : 43 41 4e 4f 50 59 01 01 01 00 00 00 00 00 00 00 00 00 00 00 01 00 00 00 08 00 00 00 7d a3 eb f6
+-- JS-source container (abi=1, rn=0.76.9, compiler=0.20.10, payload=8 bytes) --
+header bytes : 43 41 4e 4f 50 59 01 02 02 00 00 00 00 00 00 00 00 00 00 00 01 00 00 00 09 30 01 00 0a 50 00 00 32 a4 6f 08 08 00 00 00 00 00 00 00 19 9e 7a 1d

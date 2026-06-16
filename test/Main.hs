@@ -147,6 +147,7 @@ import qualified Unit.Generate.JavaScript.HermesContainerTest as HermesContainer
 import qualified Unit.Generate.JavaScript.NativeBundleTest as NativeBundleTest
 import qualified Unit.Generate.JavaScript.NativeDCETest as NativeDCETest
 import qualified Unit.Generate.JavaScript.NativeHMRTest as NativeHMRTest
+import qualified Unit.Generate.JavaScript.NativeMutationTest as NativeMutationTest
 import qualified Unit.Generate.StringPoolTest as StringPoolTest
 import qualified Unit.Generate.TreeShakeRootsTest as TreeShakeRootsTest
 import qualified Unit.Generate.TreeShakeTest as TreeShakeTest
@@ -385,6 +386,7 @@ unitTests =
       NativeBundleTest.tests,
       NativeDCETest.tests,
       NativeHMRTest.tests,
+      NativeMutationTest.tests,
       StringPoolTest.tests,
       CodeSplitAnalyzeTest.tests,
       CodeSplitManifestTest.tests,

@@ -1,6 +1,6 @@
 {-# LANGUAGE OverloadedStrings #-}
 
--- | Wire-format golden for the CMP-8 native bundle container.
+-- | Wire-format golden for the CMP-8/CMP-11 native bundle container.
 --
 -- == Why this exists
 --
@@ -52,30 +52,48 @@ jsPayload :: BL.ByteString
 jsPayload = "var x=1;"
 
 -- | The whole snapshot: the two header dumps + the offset table.
+--
+-- The two representative containers are built with 'HC.wrapFor' so the RN-target
+-- and compiler-version stamps (CMP-11) are fixed values in the snapshot, not the
+-- live compiler version (which would make the golden move every release).
 wireSnapshot :: BL.ByteString
 wireSnapshot =
   LBS8.pack . unlines $
-    [ "== CMP-8 native bundle container wire format (v1) =="
+    [ "== CMP-8/CMP-11 native bundle container wire format (v2) =="
     , ""
-    , "magic (u64 LE)  : " ++ hexBytes (le64Bytes HC.kCanopyContainerMagic) ++ "  (\"CANOPY\\x01\\x01\")"
+    , "magic (u64 LE)  : " ++ hexBytes (le64Bytes HC.kCanopyContainerMagic) ++ "  (\"CANOPY\\x01\\x02\")"
     , "container ver   : " ++ show HC.kCanopyContainerVersion
     , "header size     : " ++ show HC.kHeaderSize ++ " bytes"
     , ""
     , "field offsets (a host reads these fixed positions):"
-    , "  [ 0..8)  magic            u64 LE"
-    , "  [ 8..12) containerVersion u32 LE"
-    , "  [12..16) payloadKind      u32 LE   (0=JsSource, 1=HbcBytecode)"
-    , "  [16..20) bytecodeVersion  u32 LE   (0 for JsSource)"
-    , "  [20..24) abiVersion       u32 LE"
-    , "  [24..28) payloadLength    u32 LE"
-    , "  [28..32) headerCrc        u32 LE   (CRC-32 of bytes [0,28))"
+    , "  [ 0..8)  magic              u64 LE"
+    , "  [ 8..12) containerVersion   u32 LE"
+    , "  [12..16) payloadKind        u32 LE   (0=JsSource, 1=HbcBytecode)"
+    , "  [16..20) bytecodeVersion    u32 LE   (0 for JsSource)"
+    , "  [20..24) abiVersion         u32 LE"
+    , "  [24..28) rnTargetVersion    u32 LE   (CMP-11: major<<20|minor<<10|patch)"
+    , "  [28..32) compilerVersion    u32 LE   (CMP-11: packed the same way)"
+    , "  [32..36) runtimeFingerprint u32 LE   (CMP-11: CRC over the 4 ver fields)"
+    , "  [36..40) payloadLength      u32 LE"
+    , "  [40..44) reserved           u32 LE   (0)"
+    , "  [44..48) headerCrc          u32 LE   (CRC-32 of bytes [0,44))"
     , ""
-    , "-- HBC container (bytecodeVersion=96, abiVersion=1, payload=8 bytes) --"
-    , "header bytes : " ++ hexBytes (headerOf (HC.wrapHbc 96 1 hbcPayload))
+    , "-- HBC container (bytecodeVersion=96, abi=1, rn=0.76.9, compiler=0.20.10, payload=8 bytes) --"
+    , "header bytes : " ++ hexBytes (headerOf (HC.wrapFor HC.HbcBytecode 96 1 stampedRn stampedCompiler hbcPayload))
     , ""
-    , "-- JS-source container (abiVersion=1, payload=8 bytes) --"
-    , "header bytes : " ++ hexBytes (headerOf (HC.wrapJsSource 1 jsPayload))
+    , "-- JS-source container (abi=1, rn=0.76.9, compiler=0.20.10, payload=8 bytes) --"
+    , "header bytes : " ++ hexBytes (headerOf (HC.wrapFor HC.JsSource 0 1 stampedRn stampedCompiler (BL.toStrict jsPayload)))
     ]
+
+-- | The RN-target pin stamped into the golden containers (CMP-11) — the
+-- supported react-native 0.76.9 pin.
+stampedRn :: HC.RnTarget
+stampedRn = HC.kCanopyRnTargetPin
+
+-- | A FIXED compiler-version stamp for the golden (CMP-11), so the wire snapshot
+-- is stable across compiler releases (the live build stamps 'Version.compiler').
+stampedCompiler :: HC.RnTarget
+stampedCompiler = HC.RnTarget 0 20 10
 
 -- | The first 'HC.kHeaderSize' bytes of a built container — its header.
 headerOf :: BB.Builder -> BS.ByteString

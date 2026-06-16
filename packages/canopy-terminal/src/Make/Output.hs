@@ -254,22 +254,33 @@ writeNativeMapFile _target Nothing = pure ()
 writeNativeMapFile target (Just mapBuilder) =
   File.writeBuilder (target <> ".map") mapBuilder
 
--- | Write the CMP-8 versioned bundle container next to the native JS bundle.
+-- | Write the CMP-8/CMP-11 versioned bundle container next to the native JS
+-- bundle.
 --
--- The container is @\<bundle\>.container@: the fixed 32-byte header
--- (magic + container\/payload-kind\/bytecode\/ABI versions + payload length +
--- header CRC) followed by the payload. With no @hermesc@ on this toolchain the
--- payload is the JS-source dev fallback — read back from the @.js@ file just
--- written, so it is byte-identical to what the host would otherwise eval (the
--- @.js@ post-processing has already been applied) — stamped with the Canopy ABI
--- version the host gates on. The host reads this header and rejects on any
--- mismatch BEFORE evaluating a byte; the dev-fallback container always loads
--- (its bytecode version is 0 and not gated).
+-- The container is @\<bundle\>.container@: the fixed 48-byte header
+-- (magic + container\/payload-kind\/bytecode\/ABI versions + the CMP-11
+-- @--rn-target@ pin, compiler version, and runtimeVersion fingerprint + payload
+-- length + header CRC) followed by the payload. With no @hermesc@ on this
+-- toolchain the payload is the JS-source dev fallback — read back from the @.js@
+-- file just written, so it is byte-identical to what the host would otherwise
+-- eval (the @.js@ post-processing has already been applied) — stamped with the
+-- Canopy ABI version, the RN target pin, and the LIVE compiler version the host
+-- gates on. The host reads this header and rejects on any mismatch (ABI, RN
+-- target, or the umbrella runtimeVersion fingerprint) BEFORE evaluating a byte;
+-- the dev-fallback container always loads on a matching host (its bytecode
+-- version is 0 and not gated).
 --
 -- @since 0.20.10
 writeNativeContainer :: FilePath -> IO ()
 writeNativeContainer target = do
   payload <- ByteString.Lazy.fromStrict <$> ByteString.readFile target
+  -- 'wrapJsSource' stamps, by default, the CMP-11 @--rn-target@ pin
+  -- ('kCanopyRnTargetPin') and the LIVE compiler version
+  -- ('kCanopyCompilerVersion', derived from 'Canopy.Version.compiler'), and
+  -- computes the runtimeVersion fingerprint over the four version fields — the
+  -- single OTA gate number the host validates. The build does not need to thread
+  -- those explicitly while the default pin is the only supported one; a
+  -- multi-target build selects them through 'HermesContainer.wrapFor'.
   File.writeBuilder
     (target <> ".container")
     (HermesContainer.wrapJsSource HermesContainer.kCanopyAbiVersion payload)

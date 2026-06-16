@@ -337,6 +337,7 @@ test-suite canopy-test
       Unit.Generate.JavaScript.NativeBundleTest
       Unit.Generate.JavaScript.NativeDCETest
       Unit.Generate.JavaScript.NativeHMRTest
+      Unit.Generate.JavaScript.NativeMutationTest
       Unit.Generate.JavaScript.RelinkTest
       Unit.Generate.JavaScript.RuntimeAnnotationTest
       Unit.Generate.JavaScript.RuntimeTest

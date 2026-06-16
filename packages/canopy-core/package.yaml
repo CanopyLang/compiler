@@ -185,6 +185,7 @@ library:
     - Generate.JavaScript.NativeBundle
     - Generate.JavaScript.NativeDCE
     - Generate.JavaScript.NativeHMR
+    - Generate.JavaScript.NativeMutation
     - Generate.JavaScript.SourceMap
     - Generate.JavaScript.StringPool
     - Generate.JavaScript.NpmWrapper
