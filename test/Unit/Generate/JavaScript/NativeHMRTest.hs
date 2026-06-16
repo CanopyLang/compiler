@@ -164,8 +164,8 @@ registerTests =
             assertBool "register call present" $ "__canopy_hmr.register(" `isInfixOf` out
         , testCase "register's first arg is the module id \"Main\"" $
             assertBool "moduleId is \"Main\"" $ "__canopy_hmr.register(\"Main\", " `isInfixOf` out
-        , testCase "register reaches the exported program under scope['Elm']" $
-            assertBool "program ref present" $ "scope['Elm']['Main']" `isInfixOf` out
+        , testCase "register reaches the exported program under scope['Canopy']" $
+            assertBool "program ref present" $ "scope['Canopy']['Main']" `isInfixOf` out
         , testCase "register's modelHash equals the typehash global's hex" $
             assertBool ("hash " <> expectedHex counterModel <> " appears twice (global + register)") $
               count (expectedHex counterModel) out >= 2

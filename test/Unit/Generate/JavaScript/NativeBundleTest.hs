@@ -79,17 +79,21 @@ bootHookTests =
     [ testCase "installs __canopy_boot" $
         assertBool "expected g.__canopy_boot assignment"
           ("g.__canopy_boot = function (rootTag, flags)" `isInfixOf` render NativeBundle.bootHook)
-    , testCase "resolves the program via the Elm global the IIFE exports" $
-        assertBool "expected g.Elm lookup"
+    , testCase "resolves the program via the canonical Canopy global the IIFE exports" $
+        assertBool "expected g.Canopy lookup"
+          ("g.Canopy" `isInfixOf` render NativeBundle.bootHook)
+    , testCase "retains the Elm global as a back-compat fallback" $
+        assertBool "expected g.Elm fallback"
           ("g.Elm" `isInfixOf` render NativeBundle.bootHook)
-    , testCase "carries the scope[Elm] ABI fallback" $
-        -- The IIFE assigns scope['Elm'] where scope is window/this; on a bare
-        -- Hermes/JSI global the hook must tolerate the scoped-global shape too.
-        assertBool "expected g.scope.Elm fallback"
-          ("(g.scope && g.scope.Elm)" `isInfixOf` render NativeBundle.bootHook)
+    , testCase "carries the scope[Canopy] ABI fallback (+ scope[Elm] alias)" $
+        -- The IIFE assigns scope['Canopy'] (+ scope['Elm'] alias) where scope is
+        -- window/this; on a bare Hermes/JSI global the hook must tolerate the
+        -- scoped-global shape too.
+        assertBool "expected g.scope.Canopy fallback"
+          ("(g.scope && g.scope.Canopy)" `isInfixOf` render NativeBundle.bootHook)
     , testCase "boots through Main.init({ node, flags })" $
-        assertBool "expected elm.Main.init mount call"
-          ("elm.Main.init({ node: rootTag, flags: flags })" `isInfixOf` render NativeBundle.bootHook)
+        assertBool "expected canopy.Main.init mount call"
+          ("canopy.Main.init({ node: rootTag, flags: flags })" `isInfixOf` render NativeBundle.bootHook)
     , testCase "closes over globalThis with a this fallback" $
         assertBool "expected globalThis-or-this scope tail"
           ("typeof globalThis !== 'undefined' ? globalThis : this" `isInfixOf` render NativeBundle.bootHook)

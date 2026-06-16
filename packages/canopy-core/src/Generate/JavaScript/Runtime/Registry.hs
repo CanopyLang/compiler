@@ -1108,7 +1108,7 @@ var _Debug_crash = __canopy_debug
 
 			case 6:
 				var moduleName = fact1;
-				throw new Error('Your page is loading multiple Elm scripts with a module named ' + moduleName + '. Maybe a duplicate script is getting loaded accidentally? If not, rename one of them so I know which is which!');
+				throw new Error('This runtime is loading multiple Canopy programs with a module named ' + moduleName + '. Maybe a duplicate bundle is getting loaded accidentally? If not, rename one of them so I know which is which!');
 
 			case 8:
 				var moduleName = fact1;
@@ -1973,22 +1973,26 @@ function _Platform_setupIncomingPort(name, sendToApp)
 
 
 
-// EXPORT ELM MODULES
+// EXPORT CANOPY MODULES
 
 /** @canopy-type a -> () */
+// The program publishes under `scope['Canopy']` (the canonical namespace). `scope['Elm']`
+// is kept as a backward-compatible alias by the program-export glue (Kernel.toMainExports),
+// so legacy `Elm.Main.init` consumers still resolve — but the canonical handle the native
+// host, boot hook, Fast-Refresh registry, and duplicate-module guard all key off is `Canopy`.
 function _Platform_export(exports)
 {
 	if (__canopy_debug)
 	{
-		scope['Elm']
-			? _Platform_mergeExportsDebug('Elm', scope['Elm'], exports)
-			: scope['Elm'] = exports;
+		scope['Canopy']
+			? _Platform_mergeExportsDebug('Canopy', scope['Canopy'], exports)
+			: scope['Canopy'] = exports;
 	}
 	else
 	{
-		scope['Elm']
-			? _Platform_mergeExportsProd(scope['Elm'], exports)
-			: scope['Elm'] = exports;
+		scope['Canopy']
+			? _Platform_mergeExportsProd(scope['Canopy'], exports)
+			: scope['Canopy'] = exports;
 	}
 }
 

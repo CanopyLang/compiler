@@ -22,10 +22,18 @@ import Test.Tasty
 
 import Test.Tasty.HUnit
 
+-- The URL- and token-resolution groups each mutate process-global env vars
+-- (CANOPY_REGISTRY_URL / CANOPY_REGISTRY_TOKEN). Each is internally sequential, but
+-- they must ALSO be serialized relative to EACH OTHER: the token group's
+-- 'unsetRegistryEnv' clears CANOPY_REGISTRY_URL, which races the URL group's
+-- 'withEnvVar' when the two run in parallel (a flaky "env var overrides custom repos"
+-- failure). A 'sequentialTestGroup' parent forces the whole module to run one group at
+-- a time, so no concurrent test can clobber an env var mid-assertion.
 tests :: TestTree
 tests =
-  testGroup
+  sequentialTestGroup
     "Deps.Registry Tests"
+    AllFinish
     [ testRegistryUrlResolution,
       testRegistryTokenResolution,
       testAuthHeader,

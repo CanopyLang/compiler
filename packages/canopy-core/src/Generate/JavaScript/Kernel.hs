@@ -294,7 +294,9 @@ emptyTrie :: Trie
 emptyTrie =
   Trie Nothing Map.empty
 
--- | Generate the top-level export call and set @scope['Canopy']@.
+-- | Generate the top-level export call. @_Platform_export@ publishes the program under the
+-- canonical @scope['Canopy']@; this also sets @scope['Elm']@ as a backward-compatible alias so
+-- legacy @Elm.Main.init@ consumers keep resolving to the same program object.
 --
 -- @since 0.19.1
 toMainExports :: Mode.Mode -> Map ModuleName.Canonical Opt.Main -> Builder
@@ -302,7 +304,7 @@ toMainExports mode mains =
   let export = KN.platformExport
       exports = generateExports mode (Map.foldrWithKey addToTrie emptyTrie mains)
    in JsName.toBuilder export <> "(" <> exports <> ");"
-        <> "scope['Canopy'] = scope['Elm'];"
+        <> "scope['Elm'] = scope['Canopy'];"
 
 -- | Render a trie of mains as a nested JavaScript object literal.
 --

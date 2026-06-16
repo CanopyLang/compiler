@@ -177,16 +177,17 @@ programMembers home =
 
 -- | A defensive reference to the exported program object for a module.
 --
--- @scope['Elm']@ is where @_Platform_export@ publishes (see
--- 'Generate.JavaScript.Kernel.toMainExports'); the program nests under its
--- module-name path (e.g. @scope['Elm']['Main']@). We resolve the top-level
--- module segment only (the boundary the host reloads is the whole program), and
--- guard every hop so a shape the IIFE did not publish yields @undefined@ rather
--- than throwing inside the register call.
+-- @scope['Canopy']@ is where @_Platform_export@ publishes (see
+-- 'Generate.JavaScript.Kernel.toMainExports'), with @scope['Elm']@ kept as a
+-- back-compat alias; the program nests under its module-name path
+-- (e.g. @scope['Canopy']['Main']@). We resolve the top-level module segment only
+-- (the boundary the host reloads is the whole program), and guard every hop so a
+-- shape the IIFE did not publish yields @undefined@ rather than throwing inside
+-- the register call.
 programRef :: ModuleName.Canonical -> Builder
 programRef home =
   let topSegment = topModuleSegment home
-   in "(scope && scope['Elm'] && scope['Elm']['" <> topSegment <> "'])"
+   in "(scope && scope['Canopy'] && scope['Canopy']['" <> topSegment <> "'])"
 
 -- | The moduleId for a boundary: the module's full canonical name (dotted).
 --
